@@ -174,7 +174,7 @@
                   </button>
                 </div>
                 <div v-else class="realm-url muted">
-                  <span>{{ r.is_free ? '花能量解锁后可见' : '开通会员后可见' }}</span>
+                  <span>{{ r.is_free ? '公益资格在期或存量凭证在效可见' : '开通会员后可见' }}</span>
                 </div>
               </div>
             </div>

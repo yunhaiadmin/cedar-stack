@@ -855,7 +855,7 @@ export interface UserGrantSubscription {
   cancelled: boolean
 }
 
-/** 公益服的花积分解锁记录（付费服恒为 undefined） */
+/** 公益服的存量查看行记录（付费服恒为 undefined） */
 export interface UserGrantUnlock {
   unlocked: boolean
   unlocked_at: string | null

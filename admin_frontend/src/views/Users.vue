@@ -1015,7 +1015,7 @@ function fmtCount(n: number | null | undefined): string {
                       <CircleSlash :size="12" />到「订阅套餐」授予该服会员，或用该服的会员卡码开通
                     </p>
                     <p v-else-if="card.is_free && !card.unlock?.unlocked" class="grant-note">
-                      <MonitorSmartphone :size="12" />能看全库，但客户端需在个人中心花积分解锁账号地址
+                      <MonitorSmartphone :size="12" />能看全库，但客户端账号地址需公益资格在期（或存量凭证在效）才下发
                     </p>
                   </div>
                 </div>
