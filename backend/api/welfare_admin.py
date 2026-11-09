@@ -319,6 +319,8 @@ WELFARE_CONFIG_KEYS = {
     "tg_notify_transfer_done_enabled": "true",
     "tg_notify_new_request_enabled": "true",
     "tg_notify_merge_window_sec": "60",
+    # 许愿到货群报喜（tg_bot.group_cheer）：默认开，关了只发私聊不发群。
+    "tg_notify_group_arrival_enabled": "true",
     # 频道马甲治理＋退群处置（2026-10-30 借鉴 embyboss 第 1 项；读侧
     # tg_bot.policy，缺省与 policy.DEFAULTS 逐字对齐）
     "bot_channel_guard_enabled": "true",

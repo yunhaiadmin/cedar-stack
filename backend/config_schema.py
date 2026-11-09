@@ -274,6 +274,8 @@ WELFARE_CONFIG_SCHEMA: dict[str, tuple] = {
     "tg_notify_transfer_done_enabled": ("bool",),
     "tg_notify_new_request_enabled": ("bool",),
     "tg_notify_merge_window_sec": ("int", 0, 3600),
+    # 许愿到货群报喜（tg_bot.group_cheer）：默认开；关了只发私聊不发群。
+    "tg_notify_group_arrival_enabled": ("bool",),
 
     "lottery_group_ids": ("str",),
 }
