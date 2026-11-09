@@ -14,7 +14,6 @@ import os
 
 os.environ.setdefault("DATABASE_TYPE", "sqlite")
 os.environ.setdefault("REDIS_ENABLED", "false")
-os.environ["TG_PROACTIVE_FLUSHER"] = "0"
 
 import pytest
 from sqlalchemy import create_engine
@@ -27,6 +26,14 @@ from backend.emby_server import models as em
 from backend.tg_bot import group_cheer, proactive
 
 GROUP_ID = -100123
+
+
+@pytest.fixture(autouse=True)
+def _no_proactive_flusher(monkeypatch):
+    # 关 proactive 刷盘器按用例设置（不许导入期写环境变量，
+    # test_zz_env_import_hygiene 守卫口径）：免它用全局会话误发
+    # 本文件入队的私聊行。
+    monkeypatch.setenv("TG_PROACTIVE_FLUSHER", "0")
 
 
 @pytest.fixture()
