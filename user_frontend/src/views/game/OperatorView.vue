@@ -22,16 +22,7 @@
       </div>
 
       <template v-else>
-        <!-- 公益服说明 -->
-        <div v-if="isFreeRealm" class="v4-sec">
-          <div class="v4-sec-title">接入方式</div>
-          <div class="free-note">
-            <span class="badge free">公益服 · 免费开放</span>
-            <p>{{ realmNote }}</p>
-          </div>
-        </div>
-
-        <!-- 有查看权限：账号密码卡 -->
+        <!-- 有查看权限：账号密码卡（已设置用户首屏第一块就是它，公益说明移到卡后） -->
         <template v-if="viewGranted">
           <section class="v4-sec">
             <div class="v4-sec-title">你的接线账号</div>
@@ -134,18 +125,39 @@
                   >
                     清除
                   </button>
-                  <button type="button" class="text-btn" @click="openSetPlayPwd">
-                    {{ hasPlayPassword ? '修改播放密码' : '设置播放密码' }}
-                  </button>
                 </div>
               </div>
               </template>
               </template>
             </div>
 
+            <!-- 改密码入口移到账号卡下方：首屏先亮账号，改密是次级动作（弹窗与行为不变） -->
+            <div v-if="hasEmbyUsername" class="op-card-actions">
+              <button type="button" class="text-btn" @click="openSetPlayPwd">
+                {{ hasPlayPassword ? '修改播放密码' : '设置播放密码' }}
+              </button>
+            </div>
+
             <p class="op-tip">
               播放密码用于 Emby 客户端登录，和这个网站的登录密码是两回事，互不影响。
             </p>
+          </section>
+
+          <!-- 一键导入。没有用户名时方案列表是空的，仍留说明，避免只看 has_password 就当成已经能导入。 -->
+          <section v-if="showImportSection" class="v4-sec">
+            <div class="v4-sec-title">一键导入到客户端</div>
+            <div class="v4-sec-sub">{{ hasEmbyUsername ? '点一下，直接跳到播放器里填好' : '设好接线账号之后才能导入' }}</div>
+            <div v-if="hasSchemes" class="scheme-btns">
+              <button
+                v-for="(url, name) in importSchemes"
+                :key="name"
+                class="scheme-btn"
+                @click="openScheme(url, name)"
+              >
+                {{ name }}
+              </button>
+            </div>
+            <p class="op-tip">{{ importTip }}</p>
           </section>
 
           <!-- 多服 -->
@@ -178,23 +190,6 @@
                 </div>
               </div>
             </div>
-          </section>
-
-          <!-- 一键导入。没有用户名时方案列表是空的，仍留说明，避免只看 has_password 就当成已经能导入。 -->
-          <section v-if="showImportSection" class="v4-sec">
-            <div class="v4-sec-title">一键导入到客户端</div>
-            <div class="v4-sec-sub">{{ hasEmbyUsername ? '点一下，直接跳到播放器里填好' : '设好接线账号之后才能导入' }}</div>
-            <div v-if="hasSchemes" class="scheme-btns">
-              <button
-                v-for="(url, name) in importSchemes"
-                :key="name"
-                class="scheme-btn"
-                @click="openScheme(url, name)"
-              >
-                {{ name }}
-              </button>
-            </div>
-            <p class="op-tip">{{ importTip }}</p>
           </section>
 
           <!-- 正在播放：旧 PlaybackSessions 一比一恢复（#783 删页面时丢了入口） -->
@@ -300,6 +295,15 @@
             </div>
           </section>
         </template>
+
+        <!-- 公益服说明（原在账号卡之前，会把已设置用户的账号卡挤到首屏下方，现移到账号区之后） -->
+        <div v-if="isFreeRealm" class="v4-sec">
+          <div class="v4-sec-title">接入方式</div>
+          <div class="free-note">
+            <span class="badge free">公益服 · 免费开放</span>
+            <p>{{ realmNote }}</p>
+          </div>
+        </div>
 
         <!-- 没查看权限：解锁入口 -->
         <div v-else-if="viewPermission" class="v4-sec">
@@ -1074,6 +1078,9 @@ watch(viewGranted, (granted) => {
 }
 .op-row-actions .text-btn { white-space: nowrap; margin: 0; min-height: 44px; }
 .op-row-actions .copy-btn { margin: 0; }
+/* 改密码入口：账号卡下方独立一行（首屏先亮账号，改密次级） */
+.op-card-actions { padding: 4px 2px 0; }
+.op-card-actions .text-btn { margin: 0; padding: 12px 4px; min-height: 44px; }
 .cred-form { border-top: 1px dashed var(--line); }
 .cred-input {
   flex: 1;

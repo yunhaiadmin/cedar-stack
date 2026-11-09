@@ -92,6 +92,7 @@
           <section class="pc-group">
             <div class="pc-gtitle">我的服务</div>
             <div class="v4-card pc-rows-card">
+              <PcEntryRow :icon="Plug" name="接线员" meta="我的播放账号" to="/game/operator" />
               <PcEntryRow
                 v-if="driveRowVisible"
                 :icon="HardDrive"
@@ -158,7 +159,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Bird, Briefcase, CalendarCheck, Crown, HardDrive, Heart, List, LogOut,
-  MonitorPlay, Mountain, Route, Search, Settings, Sparkles, Star, Trophy, Wallet,
+  MonitorPlay, Mountain, Plug, Route, Search, Settings, Sparkles, Star, Trophy, Wallet,
 } from 'lucide-vue-next'
 import PcEntryRow from '@/components/profile/PcEntryRow.vue'
 import SeriesFollowsPanel from '@/components/profile/SeriesFollowsPanel.vue'
