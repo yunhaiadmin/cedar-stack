@@ -580,7 +580,10 @@ def _do_checkin_core(db: Session, user: models.WebUser) -> dict:
     暴露，避免「先发积分、后落库失败」或直接 500。
 
     返回 {"points_awarded", "streak", "balance", "penalty", "crit",
-    "milestone_points", "full_attendance_points"}，失败时抛 HTTPException。
+    "milestone_points", "full_attendance_points", "streak_forgiven",
+    "forgive_remaining"}，失败时抛 HTTPException。
+    streak_forgiven/forgive_remaining 为断签保护结果（本次是否豁免了漏签、
+    本月还剩几次），未触发时分别为 False/剩余量（未算时 0）。
     其中 points_awarded 只记当日基础奖励（基础+连签加成−惩罚，含暴击放大），
     里程碑/全勤为独立台账行分开返回；balance 为全部发放后的余额。
     供 POST /api/user/economy/checkin 路由和已废弃的 POST /api/points/signin 复用。
@@ -598,13 +601,37 @@ def _do_checkin_core(db: Session, user: models.WebUser) -> dict:
     if exists:
         raise HTTPException(status_code=400, detail="今天已经签到过啦")
 
-    # 连签：昨天有记录则 +1，否则重置为 1
-    yesterday_record = db.query(models.CheckinRecord).filter(
+    # 连签：昨天有记录则 +1；正好漏 1 天（上次在前天）且本月断签保护
+    # 有余 → 不清零、照常 +1 并消耗 1 次（漏掉那天不补计）；其余情况
+    # （无记录 / 漏 ≥2 天 / 保护关闭或已用完）重置为 1。
+    # 断签保护（2026-11-09 用户批准）：次数键
+    # welfare_streak_forgive_per_month（默认 1，0=关）；用量落
+    # WebUser.streak_forgive_ym（上海自然月键 YYYYMM）+ streak_forgive_used，
+    # 读时月键不符按 0 算＝跨月自动重置，随签到事务一起提交。
+    last_record = db.query(models.CheckinRecord).filter(
         models.CheckinRecord.user_id == user_id,
-        models.CheckinRecord.checkin_date >= today - timedelta(days=1),
         models.CheckinRecord.checkin_date < today,
     ).order_by(models.CheckinRecord.checkin_date.desc()).first()
-    streak = (yesterday_record.streak + 1) if yesterday_record else 1
+    streak = 1
+    streak_forgiven = False
+    forgive_remaining = 0
+    if last_record is not None:
+        if last_record.checkin_date >= today - timedelta(days=1):
+            streak = (last_record.streak or 0) + 1
+        elif last_record.checkin_date >= today - timedelta(days=2):
+            forgive_limit = _get_int_config(
+                db, "welfare_streak_forgive_per_month", 1)
+            _, _, month_key = _checkin_month_window(today)
+            used = 0
+            if (getattr(user, "streak_forgive_ym", None) or "") == month_key:
+                used = int(getattr(user, "streak_forgive_used", 0) or 0)
+            forgive_remaining = max(0, forgive_limit - used)
+            if forgive_limit > 0 and used < forgive_limit:
+                streak = (last_record.streak or 0) + 1
+                streak_forgiven = True
+                user.streak_forgive_ym = month_key
+                user.streak_forgive_used = used + 1
+                forgive_remaining -= 1
 
     # 奖励计算：仅公益服用户获得积分
     is_welfare = bool(getattr(user, "is_welfare", False))
@@ -657,7 +684,8 @@ def _do_checkin_core(db: Session, user: models.WebUser) -> dict:
         description, f"checkin:{today.strftime('%Y%m%d')}",
     )
     # 签到增强（2026-11-01）：连签里程碑——streak 在一轮连签内单调递增、
-    # 断签重置，故 streak 恰达里程碑日即「每轮只发一次」；与签到同事务落账。
+    # 断签（未被断签保护豁免时）重置，故 streak 恰达里程碑日即「每轮只
+    # 发一次」；与签到同事务落账。
     milestone_points = 0
     full_attendance_points = 0
     if is_welfare:
@@ -712,7 +740,9 @@ def _do_checkin_core(db: Session, user: models.WebUser) -> dict:
     return {"points_awarded": reward, "streak": streak, "balance": balance,
             "penalty": penalty, "vitality_gained": vitality_gained, "xp_gained": xp_gained,
             "crit": crit, "milestone_points": milestone_points,
-            "full_attendance_points": full_attendance_points}
+            "full_attendance_points": full_attendance_points,
+            "streak_forgiven": streak_forgiven,
+            "forgive_remaining": forgive_remaining}
 
 
 @router.post("/checkin")
@@ -784,6 +814,9 @@ async def do_checkin(
         "crit": bool(award.get("crit")),
         "milestone_points": award.get("milestone_points", 0),
         "full_attendance_points": award.get("full_attendance_points", 0),
+        # 断签保护（2026-11-09）：本次签到是否豁免了漏签、本月剩余次数
+        "streak_forgiven": bool(award.get("streak_forgiven")),
+        "forgive_remaining": award.get("forgive_remaining", 0),
         "message": message,
     }
 

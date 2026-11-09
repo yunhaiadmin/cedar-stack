@@ -703,6 +703,10 @@ def handle_checkin(db, tg_user: dict, chat_id: int, args: str) -> str:
         rows.append(layout.row("💡", "本次能量", "能量仅限公益服用户领取"))
     if award.get("vitality_gained", 0) > 0:
         rows.append(layout.row("⚡", "活力数值", f"+{award['vitality_gained']}"))
+    if award.get("streak_forgiven"):
+        rows.append(layout.row(
+            "🛡️", "断签保护",
+            f"昨日漏签已豁免，连签保住（本月剩余 {award.get('forgive_remaining', 0)} 次）"))
     return layout.card(layout.title("签到成功！"), rows)
 
 

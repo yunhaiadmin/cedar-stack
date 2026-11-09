@@ -156,6 +156,9 @@ WELFARE_CONFIG_SCHEMA: dict[str, tuple] = {
     # （同 register_gift_* 口径；读侧 economy._get_bool_config 只认 "true"）。
     "welfare_streak_renew_enabled": ("bool",),
     "welfare_streak_renew_days": ("int", 1, 365),
+    # 连签断签保护（2026-11-09）：每月可豁免「漏签 1 天」的次数；
+    # 0 = 关闭、完全回到旧行为（漏 1 天即清零）。上限 31（按月天数量级）。
+    "welfare_streak_forgive_per_month": ("int", 0, 31),
     "welfare_inactive_days": ("int", 0, 3650),
     "welfare_request_monthly": ("int", 0, 10000),
     # 新注册冷启动赠送：福利天数 0=永不过期（grant_welfare 口径）；查看天数最小 1
