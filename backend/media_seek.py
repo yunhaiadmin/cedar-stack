@@ -584,6 +584,69 @@ def daily_votes_used(db: Session, user_id: int) -> int:
     ).count()
 
 
+def _cast_vote_locked(db: Session, user, req) -> None:
+    """在已持行锁的求片行上补一票（权重快照与 toggle 的加票分支同一套）。
+
+    调用方负责前置校验（pending / 非本人 / 每日上限）与 commit；
+    被停权用户只保留基础 1 票，不按等级权重。
+    """
+    weight = 1 if governance.is_governance_frozen(db, user.id) else vote_weight_for_user(db, user, req)
+    db.add(models.MovieRequestVote(
+        request_id=req.id, user_id=user.id, weight_snapshot=weight,
+    ))
+    req.vote_count = (req.vote_count or 0) + 1
+
+
+def ensure_vote(db: Session, user, request_id: int) -> dict:
+    """幂等附议：已附议原样返回，未附议补一票。返回 {"voted", "added",
+    "limited", "vote_count", "weighted_vote_count"}。
+
+    与 toggle 的区别只在语义：toggle 是开关（点两次＝取消），ensure 是
+    「确保投过」（点两次仍是投过）——许愿池选片投愿的查重转换用它。
+    其余规则与 toggle 的加票分支同一套：附议开关关闭 / 求片不存在 /
+    非 pending / 给自己附议 → ValueError；每日上限已满不抛错（返回
+    voted=False + limited=True）——查重转换不该因附议名额用完就把整个
+    投愿打成失败，上层据此只指路不附议。
+    """
+    if not vote_enabled(db):
+        raise ValueError("附议功能已关闭")
+    req = db.query(models.MovieRequest).filter(
+        models.MovieRequest.id == request_id
+    ).with_for_update().first()
+    if req is None:
+        raise ValueError("求片不存在")
+    if req.status != "pending":
+        raise ValueError("该求片已处理，不能附议")
+    if req.user_id == user.id:
+        raise ValueError("不能给自己的求片附议")
+
+    existing = db.query(models.MovieRequestVote).filter(
+        models.MovieRequestVote.request_id == request_id,
+        models.MovieRequestVote.user_id == user.id,
+    ).first()
+
+    added = False
+    limited = False
+    if existing:
+        voted = True
+    elif daily_votes_used(db, user.id) >= daily_vote_limit(db):
+        voted = False
+        limited = True
+    else:
+        _cast_vote_locked(db, user, req)
+        db.commit()
+        voted = True
+        added = True
+    weighted = weighted_votes_for(db, [request_id]).get(request_id, 0)
+    return {
+        "voted": voted,
+        "added": added,
+        "limited": limited,
+        "vote_count": int(req.vote_count or 0),
+        "weighted_vote_count": int(weighted),
+    }
+
+
 def toggle_vote(db: Session, user, request_id: int) -> dict:
     """附议 / 取消附议一条求片。返回 {"voted": bool, "vote_count": int,
     "weighted_vote_count": int}
@@ -625,11 +688,7 @@ def toggle_vote(db: Session, user, request_id: int) -> dict:
     else:
         if daily_votes_used(db, user.id) >= daily_vote_limit(db):
             raise ValueError("今日附议已达上限")
-        weight = 1 if governance.is_governance_frozen(db, user.id) else vote_weight_for_user(db, user, req)
-        db.add(models.MovieRequestVote(
-            request_id=request_id, user_id=user.id, weight_snapshot=weight,
-        ))
-        req.vote_count = (req.vote_count or 0) + 1
+        _cast_vote_locked(db, user, req)
         voted = True
     db.commit()
     weighted = weighted_votes_for(db, [request_id]).get(request_id, 0)
@@ -689,6 +748,7 @@ __all__ = [
     "VOTE_WEIGHTS",
     "daily_vote_limit",
     "daily_votes_used",
+    "ensure_vote",
     "toggle_vote",
     "used_today",
     "vote_enabled",

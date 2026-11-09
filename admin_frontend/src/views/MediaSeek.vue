@@ -375,6 +375,7 @@ function statusLabel(status: string): string {
           <span class="movie-name">《{{ row.movie_name }}》</span>
           <span v-if="row.year" class="movie-year">{{ row.year }}</span>
           <span v-if="row.season_label" class="au-badge au-badge-muted movie-season">{{ row.season_label }}</span>
+          <span v-if="row.title_only" class="au-badge au-badge-amber movie-season" title="用户没选到 TMDB 候选、按原名投下，没绑 tmdb_id，处理前先人工确认是哪一部">原名投下 · 待确认</span>
           <div v-if="row.note" class="movie-note">用户备注：{{ row.note }}</div>
         </template>
 

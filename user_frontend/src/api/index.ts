@@ -672,6 +672,8 @@ export interface MediaSeekRequest {
   season_label?: string
   /** TMDB 条目 id（从候选列表带过来；手填片名为空） */
   tmdb_id?: string | null
+  /** 原名投下的兜底行（没绑 TMDB 候选、待人工确认）；选片行为 false */
+  title_only?: boolean
   /** 已入库的条目 guid：completed 时可直接跳详情观看 */
   emby_item_id?: string | null
   /** 这部片求给哪个服（多服运营时由用户选择 / 单服自动带出） */
@@ -758,7 +760,18 @@ export const mediaSeekApi = {
     /** 剧集按整季申请："1,2" 或 "all"（全季） */
     season?: string
   }) =>
-    api.post<never, { success: boolean; request_id: number; message: string }>('/api/user/media-seek', data),
+    api.post<never, {
+      success: boolean
+      request_id: number
+      message: string
+      /** 选片投愿查重：created=false 表示没建新行（同 tmdb 已有心愿） */
+      created?: boolean
+      /** created=false 时：本次是否已转为附议、那行当前附议数 */
+      voted?: boolean
+      vote_count?: number
+      /** 本次落行是否为原名投下的兜底行（待人工确认） */
+      title_only?: boolean
+    }>('/api/user/media-seek', data),
 
   /** 撤回尚未处理的求片 */
   withdraw: (requestId: number) => api.delete(`/api/user/media-seek/${requestId}`),
@@ -780,6 +793,8 @@ export interface HotMediaSeekRequest {
   movie_name: string
   year?: string | null
   type?: string | null
+  /** 原名投下的兜底行（没绑 TMDB 候选、待人工确认） */
+  title_only?: boolean
   season_label?: string
   vote_count: number
   /** Step 1 加权附议和（投票时刻等级权重快照之和） */
