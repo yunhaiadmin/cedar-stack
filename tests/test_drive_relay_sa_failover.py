@@ -264,20 +264,21 @@ def test_failover_redraw_bound_falls_back(monkeypatch):
 
 
 def test_dc_sa_email_for_token_reverse_lookup(monkeypatch):
+    # 单套缓存语义：drive_changes.sa_email_for_token 委托 drive_auth
+    # 的缓存反查，条目用 monotonic 到期。
     monkeypatch.setitem(
-        _dc._token_cache, "sa1@example.test",
-        ("TOK1", time.time() + 3600))
+        drive_auth._token_cache, "sa1@example.test",
+        ("TOK1", time.monotonic() + 3600))
     assert _dc.sa_email_for_token("TOK1") == "sa1@example.test"
     assert _dc.sa_email_for_token("NOPE") is None
 
 
 def test_invalidate_clears_both_token_caches(monkeypatch):
+    # 收敛后只剩 drive_auth 单套缓存：失效清掉它即对所有口径生效，
+    # 且 drive_changes 上不再有第二套缓存可被架空。
+    assert not hasattr(_dc, "_token_cache")
     monkeypatch.setitem(
         drive_auth._token_cache, "sa1@example.test",
-        ("OLD", time.time() + 3600))
-    monkeypatch.setitem(
-        _dc._token_cache, "sa1@example.test",
-        ("OLD", time.time() + 3600))
+        ("OLD", time.monotonic() + 3600))
     assert drive_auth.invalidate_drive_bearer_token("OLD") is True
     assert "sa1@example.test" not in drive_auth._token_cache
-    assert "sa1@example.test" not in _dc._token_cache

@@ -9,10 +9,15 @@
 - access_token 在本模块再做一层进程内"按 SA 分账号缓存"：以 SA 的
   ``client_email`` 为 key，每个 SA 独立存 (token, expire_at)，TTL 55 分钟，
   剩余有效期大于 120 秒直接命中；由 threading.Lock 保护，减少重复换 token 的开销。
+  这是全站 SA 令牌唯一的缓存（Drive 砍减第 6 项收敛点）：
+  ``drive_changes._sa_access_token`` 只负责 JWT 换取，读/写缓存一律经
+  本模块的 ``get_cached_sa_token`` / ``store_sa_token``，不再另存一份；
+  ``get_token_for_drive`` / ``refresh_sa_token`` 等口径换到的 token 也
+  进同一套缓存，同一 SA 不被重复换发。
 - 任何失败（无可用 SA、换 token 异常等）均返回 None，由调用方降级处理，
   本模块永不抛出异常。
 - 401 失效机制：调用方在 Drive 源站返回 401 时，经 note_drive_unauthorized 按 token 值失效该坏 token，
-  drive_auth 外层缓存与 drive_changes 内层缓存会被同时清除，下次请求重新换取新 token。
+  单套缓存里按值清除对应条目，下次请求重新换取新 token。
   按值而非按 email 清除，避免误删并发场景下刚重换出来的新 token。
 """
 
@@ -29,6 +34,9 @@ __all__ = [
     "DRIVE_HOSTS",
     "is_drive_url",
     "get_drive_bearer_token",
+    "get_cached_sa_token",
+    "store_sa_token",
+    "invalidate_sa_token_by_email",
     "drive_auth_headers",
     "drive_api_media_url",
     "invalidate_drive_bearer_token",
@@ -127,6 +135,66 @@ def _sa_mint_lock_locked(email: str) -> threading.Lock:
         lock = threading.Lock()
         _sa_mint_locks[email] = lock
     return lock
+
+
+def get_cached_sa_token(email: str,
+                        min_remaining_seconds: float = _TOKEN_MIN_REMAIN_SECONDS
+                        ) -> str | None:
+    """读单套 SA 令牌缓存：剩余寿命大于 min_remaining_seconds 才命中。
+
+    全站 SA 令牌唯一的读口——``drive_changes._sa_access_token`` 换取前
+    也经这里查缓存（横切只许一套）。email 为空或命中不足一律回 None，
+    永不抛异常。
+    """
+    if not email:
+        return None
+    try:
+        now = time.monotonic()
+        with _cache_lock:
+            cached = _token_cache.get(email)
+            if cached and now + float(min_remaining_seconds) < cached[1]:
+                return cached[0]
+    except Exception:
+        return None
+    return None
+
+
+def store_sa_token(email: str, token: str, ttl_seconds: float) -> bool:
+    """写单套 SA 令牌缓存：到期按 monotonic 计（ttl 为该 token 的
+    剩余寿命秒数，如谷歌返回的 expires_in）。
+
+    全站 SA 令牌唯一的写口（drive_changes._sa_access_token 换到新
+    token 后经这里写入）。email/token 为空或 ttl 非法不写，返回 False；
+    永不抛异常。
+    """
+    if not email or not token:
+        return False
+    try:
+        ttl = float(ttl_seconds)
+    except (TypeError, ValueError):
+        return False
+    if ttl <= 0:
+        return False
+    try:
+        with _cache_lock:
+            _token_cache[email] = (token, time.monotonic() + ttl)
+        return True
+    except Exception:
+        return False
+
+
+def invalidate_sa_token_by_email(email: str) -> bool:
+    """按 client_email 清单套缓存一条（401 续跑 / 强制刷新用）。
+
+    返回是否清掉了一条；email 为空或无此条目返回 False，永不抛异常。
+    """
+    if not email:
+        return False
+    try:
+        with _cache_lock:
+            return _token_cache.pop(email, None) is not None
+    except Exception:
+        return False
 
 
 def _load_drive_changes() -> ModuleType:
@@ -251,11 +319,11 @@ def get_drive_bearer_token(affinity_key: str | None = None,
     ``affinity_key``：P1 会话级 SA 亲和键（同一文件 90–120s 内固定 SA）；
     为 None 时与旧行为完全一致（每次经抖动轮换选 SA）。
 
-    关键不变式：外层按 ``_TOKEN_TTL_SECONDS``（3300 秒）缓存，故向内层索取
-    token 时要求 ``min_remaining = _TOKEN_TTL_SECONDS + _TOKEN_MIN_REMAIN_SECONDS``
-    （3420 秒）——内层只会返回真实剩余寿命 ≥3420 秒的 token（不够就重新换取），
-    因此外层写入的 3300 秒缓存永远不会超出 token 的真实寿命。内层的剩余寿命
-    比较全部在其内部用 wall clock（``time.time()``）完成，不做跨时间基准换算。
+    关键不变式：本函数按 ``_TOKEN_TTL_SECONDS``（3300 秒）缓存，故向
+    ``_sa_access_token`` 索取 token 时要求 ``min_remaining = _TOKEN_TTL_SECONDS + _TOKEN_MIN_REMAIN_SECONDS``
+    （3420 秒）——单套缓存只会返回真实剩余寿命 ≥3420 秒的 token（不够就重新换取），
+    因此这里写入的 3300 秒缓存永远不会超出 token 的真实寿命。缓存的剩余寿命
+    比较全部在单套缓存内部用 monotonic 时钟完成，不做跨时间基准换算。
     """
     try:
         drive_changes = _load_drive_changes()
@@ -376,13 +444,13 @@ def drive_auth_headers(url: str, affinity_key: str | None = None) -> dict[str, s
 
 
 def invalidate_drive_bearer_token(token: str) -> bool:
-    """按 token 值精确失效 Drive Bearer token 缓存（内外两层同时清除）。
+    """按 token 值精确失效 Drive Bearer token 缓存（单套缓存）。
 
-    401 毒化修复：Drive 源站返回 401 说明该 token 已失效，但外层缓存
-    ``_token_cache``（key=client_email）与 ``drive_changes`` 模块内部的同名
-    缓存都会把坏 token 原样吐回，最长毒化 55 分钟。这里按 **token 值** 匹配
-    清除外层所有值相等的条目，并对涉及的 client_email 顺带清掉
-    ``drive_changes._token_cache`` 的同 key 条目，使下次请求重新换取新 token。
+    401 毒化修复：Drive 源站返回 401 说明该 token 已失效，单套缓存
+    （``_token_cache``，key=client_email）里值相等的条目会被清除，
+    下次请求重新换取新 token。收敛前这里还要 best-effort 清
+    ``drive_changes`` 的内层同名缓存——两套缓存并存是重复换发的
+    根因之一，现内层缓存已删，只清这一套。
 
     只按值删、不按 email 删：并发场景下同一 SA 可能已被其他线程换成新 token，
     按 email 删会误删刚换到的新 token，造成无谓的重复换取。
@@ -391,7 +459,7 @@ def invalidate_drive_bearer_token(token: str) -> bool:
         token: 待失效的 access_token 原始值（不含 "Bearer " 前缀）。
 
     Returns:
-        是否至少清除了一条外层缓存条目；token 为空或任何异常均返回 False。
+        是否至少清除了一条缓存条目；token 为空或任何异常均返回 False。
     """
     if not token:
         return False
@@ -406,17 +474,6 @@ def invalidate_drive_bearer_token(token: str) -> bool:
                 return False
             for email in emails:
                 _token_cache.pop(email, None)
-            # best-effort 清除 drive_changes 内层缓存：内层 key 同样是 client_email，
-            # 不清内层会把坏 token 原样吐回（实测只清外层无效）。
-            try:
-                drive_changes = _load_drive_changes()
-                inner_cache = getattr(drive_changes, "_token_cache", None)
-                if isinstance(inner_cache, dict):
-                    for email in emails:
-                        inner_cache.pop(email, None)
-            except Exception:
-                # 拿不到模块 / 无该属性 / 内层实现变更：静默跳过，外层已失效
-                pass
             logger.info(
                 "drive_auth: 已按值失效 %d 个 SA 的 Drive Bearer token 缓存（401 毒化修复）",
                 len(emails),

@@ -16,14 +16,16 @@
    → 走 PR-4 的 on_binding_failed 同口径落 suspended；
    binding_invalid 暂停成员名下的 ready 副本一律标 stale
    停发（补充节 S4：失效盘副本立即下线）；
-4. 令牌探活：逐个 active 成员取一次令牌（刷新失败在
+4. 令牌探活：每轮轮换取 20 个 active 成员取一次令牌（刷新失败在
    drive_oauth 内自落绑定状态），落态后成员没跟上的用
-   on_binding_failed 补齐；
+   on_binding_failed 补齐（Drive 砍减第 6 项：轮换抽样，不再每轮
+   只探 id 最小的 20 人）；
 5. 死副本对账：ready 池副本用成员令牌验活（成员盘文件 SA
    看不见，故 transfer_variant.patrol_once 对池行整行跳过、
    归本步）——条目没了标 orphan、源 fid 对不上标 stale、
    文件 404/403 记 strike（满 2 次标 stale，与 patrol 同
-   口径 STALE_STRIKES）；成员当场点播侧的死副本对账
+   口径 STALE_STRIKES）；每行 6 小时内只验一次、每轮最多 40 行
+   （Drive 砍减第 6 项抽样）；成员当场点播侧的死副本对账
    （GA-032）是热路径自愈，本步是冷路径全量收尾；
 6. 容量淘汰（design §6.5，仅池开时）：成员盘用量超上限或
    剩余低于保底 → 按 orphan → stale → 闲置冷副本（热度升
@@ -89,6 +91,13 @@ EVICT_MAX_PER_MEMBER = 20
 CLEANUP_BATCH = 30
 #: 每轮令牌探活成员数上限。
 TOKEN_CHECK_BATCH = 20
+#: 巡检每轮 get_file 总量上限（Drive 砍减第 6 项）：死副本对账与
+#: 退出残留收尾共用同一预算，30 分钟一轮最多 40 次 files.get；
+#: 对账吃满后残留收尾顺延到下一轮。
+JANITOR_GET_FILE_BUDGET = 40
+#: 死副本对账每行最短复验间隔（秒）：6 小时——同一份副本 6 小时内
+#: 只验一次，刚验过的不重复打 get_file（Drive 砍减第 6 项）。
+RECONCILE_CHECK_INTERVAL_SEC = 6 * 3600
 #: 每轮补位建单上限。
 REFILL_MAX_PER_ROUND = 3
 #: 补位热度窗（天）：近窗内有起播才算热条目（补充节 S4）。
@@ -208,11 +217,24 @@ def _sweep_binding_backstop(db, now) -> dict:
 
 def _sweep_token_probe(db, now) -> dict:
     stats = {"checked": 0, "suspended": 0}
+    member_ids = [r[0] for r in
+                  db.query(em.PoolMember.id)
+                  .filter(em.PoolMember.status == "active",
+                          em.PoolMember.binding_id.isnot(None))
+                  .order_by(em.PoolMember.id.asc()).all()]
+    if not member_ids:
+        return stats
+    # 轮换窗口（Drive 砍减第 6 项抽样）：按 30 分钟轮次取不同的连续
+    # 20 人，使全部成员轮流被探——旧实现每轮固定取 id 最小的 20 人，
+    # 成员超过 20 后尾部成员永不被探。轮次由 now 的 30 分钟桶决定，
+    # 无进程内状态，测试可按 now 复现。
+    round_index = int(now.timestamp() // JANITOR_INTERVAL_SEC)
+    start = (round_index * TOKEN_CHECK_BATCH) % len(member_ids)
+    picked = [member_ids[(start + i) % len(member_ids)]
+              for i in range(min(TOKEN_CHECK_BATCH, len(member_ids)))]
     members = (db.query(em.PoolMember)
-               .filter(em.PoolMember.status == "active",
-                       em.PoolMember.binding_id.isnot(None))
-               .order_by(em.PoolMember.id.asc())
-               .limit(TOKEN_CHECK_BATCH).all())
+               .filter(em.PoolMember.id.in_(picked))
+               .order_by(em.PoolMember.id.asc()).all())
     for member in members:
         binding = pool_gate._member_binding(db, member)
         if binding is None or binding.status != "active":
@@ -238,11 +260,21 @@ def _sweep_token_probe(db, now) -> dict:
 # ------------------------------------------------------------ 5 死副本对账
 
 
-def _sweep_reconcile_copies(db, now, *, client_factory=None) -> dict:
+def _sweep_reconcile_copies(db, now, *, client_factory=None,
+                            get_file_budget=None) -> dict:
+    """死副本对账：每行副本 6 小时内只验一次（Drive 砍减第 6 项抽样）。
+
+    只取 last_checked_at 为空或早于 now-6h 的 ready 行，按最久未验
+    优先、每轮最多 RECONCILE_BATCH 行；get_file 次数受整轮预算
+    （get_file_budget，{"remaining": N}）约束，耗尽即停、余行下轮再验。
+    """
     stats = {"checked": 0, "stale": 0, "orphaned": 0, "errors": 0}
+    due_since = now - timedelta(seconds=RECONCILE_CHECK_INTERVAL_SEC)
     rows = (db.query(em.TransferVariant)
             .filter(em.TransferVariant.owner_scope == "pool",
-                    em.TransferVariant.status == "ready")
+                    em.TransferVariant.status == "ready",
+                    (em.TransferVariant.last_checked_at.is_(None)
+                     | (em.TransferVariant.last_checked_at < due_since)))
             .order_by(em.TransferVariant.last_checked_at.asc()
                       .nulls_first(),
                       em.TransferVariant.id.asc())
@@ -283,7 +315,11 @@ def _sweep_reconcile_copies(db, now, *, client_factory=None) -> dict:
         fid = (row.variant_file_id or "").strip()
         if not fid:
             continue
+        if get_file_budget is not None and get_file_budget["remaining"] <= 0:
+            break
         try:
+            if get_file_budget is not None:
+                get_file_budget["remaining"] -= 1
             client.get_file(f"myDrive:{member.user_id}", fid)
         except (_tv._NotFound, _tv._Forbidden):
             row.stale_count = int(row.stale_count or 0) + 1
@@ -554,7 +590,12 @@ def _sweep_idle_proactive_evictions(db, cfg, now, *,
 # ------------------------------------------------------------ 7 退出残留收尾
 
 
-def _sweep_leftover_cleanup(db, now, *, client_factory=None) -> dict:
+def _sweep_leftover_cleanup(db, now, *, client_factory=None,
+                           get_file_budget=None) -> dict:
+    """退出残留收尾：逐行核对已 released 行的文件是否还在。
+
+    get_file 次数受整轮预算（get_file_budget，{"remaining": N}）约束，
+    耗尽即停、余行下轮再核（行未落标记，不会丢）。"""
     stats = {"cleaned": 0, "closed": 0, "errors": 0}
     rows = (db.query(em.TransferVariant)
             .filter(em.TransferVariant.owner_scope == "pool",
@@ -588,7 +629,11 @@ def _sweep_leftover_cleanup(db, now, *, client_factory=None) -> dict:
             row.retention_reason = CLOSED_MARKER
             stats["closed"] += 1
             continue
+        if get_file_budget is not None and get_file_budget["remaining"] <= 0:
+            break
         try:
+            if get_file_budget is not None:
+                get_file_budget["remaining"] -= 1
             client.get_file(f"myDrive:{member.user_id}", fid)
         except (_tv._NotFound, _tv._Forbidden):
             row.retention_reason = CLEANED_MARKER
@@ -716,6 +761,9 @@ def run_pool_janitor_once(db, now=None, *, client_factory=None,
     cfg = pool_gate.pool_config_payload(db)
     enabled = bool(cfg["pool_enabled"])
     stats: dict = {"pool_enabled": enabled}
+    # 整轮 get_file 预算（Drive 砍减第 6 项）：死副本对账与退出残留
+    # 收尾共用，30 分钟一轮最多 JANITOR_GET_FILE_BUDGET 次。
+    get_file_budget = {"remaining": JANITOR_GET_FILE_BUDGET}
 
     def _step(name, fn):
         try:
@@ -734,7 +782,8 @@ def run_pool_janitor_once(db, now=None, *, client_factory=None,
     _step("binding_backstop", lambda: _sweep_binding_backstop(db, now))
     _step("token_probe", lambda: _sweep_token_probe(db, now))
     _step("reconcile", lambda: _sweep_reconcile_copies(
-        db, now, client_factory=client_factory))
+        db, now, client_factory=client_factory,
+        get_file_budget=get_file_budget))
     if enabled:
         _step("evict", lambda: _sweep_evictions(
             db, cfg, now, client_factory=client_factory,
@@ -744,7 +793,8 @@ def run_pool_janitor_once(db, now=None, *, client_factory=None,
                   _sweep_idle_proactive_evictions(
                       db, cfg, now, client_factory=client_factory))
     _step("leftover_cleanup", lambda: _sweep_leftover_cleanup(
-        db, now, client_factory=client_factory))
+        db, now, client_factory=client_factory,
+        get_file_budget=get_file_budget))
     if enabled:
         _step("refill", lambda: _sweep_refill(
             db, cfg, now, quota_fn=quota_fn))

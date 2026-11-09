@@ -327,13 +327,17 @@ def test_scanner_skips_transfer_dir(monkeypatch):
 # ---------- 巡检 ----------
 
 def test_patrol_two_strikes(db):
+    from datetime import timedelta
+
     item = _item(db)
     row = _variant(db, item.id)
     stub = _StubDrive(get_ok=False)
-    tv.patrol_once(db, lambda: stub)
+    now = datetime.now()
+    tv.patrol_once(db, lambda: stub, now=now)
     db.refresh(row)
     assert row.status == "ready" and row.stale_count == 1  # 第一次仍 ready
-    tv.patrol_once(db, lambda: stub)
+    # 第二轮须在 6 小时复验间隔之后（行已到期），否则本轮跳过。
+    tv.patrol_once(db, lambda: stub, now=now + timedelta(hours=7))
     db.refresh(row)
     assert row.status == "stale" and row.stale_count == 2  # 第二次算死
 
