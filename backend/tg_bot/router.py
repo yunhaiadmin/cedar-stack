@@ -423,6 +423,18 @@ def dispatch(db, update: dict) -> None:
                 db, update["inline_query"] or {}, cfg)
             return
 
+        # HTML widget 请求（Bot API 10.4）：老虎机拉杆等走这里；
+        # shared_widget_query 来自转发的共享 widget，本机器人不用
+        # 共享 widget，静默忽略（不处理、不报错）。
+        if "widget_query" in update:
+            from backend.tg_bot import slots_widget
+
+            slots_widget.handle_widget_query(
+                db, update["widget_query"] or {})
+            return
+        if "shared_widget_query" in update:
+            return
+
         msg = update.get("message") or {}
         # 频道马甲治理：频道身份的媒体消息没有 text 也要拦，故在判空前拦截
         if _intercept_channel_mask(db, cfg, msg):

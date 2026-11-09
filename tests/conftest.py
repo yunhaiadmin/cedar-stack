@@ -7,7 +7,26 @@ enrich_worker 里有几个模块级 60s TTL 缓存（豆瓣/altmeta/夜间配置
 
 每个测试前把这些缓存清零，保证用例之间相互独立。只影响测试，生产代码无改动。
 """
+import shutil
+import tempfile
+from pathlib import Path
+
 import pytest
+
+
+@pytest.fixture()
+def uds_sock_dir():
+    """AF_UNIX socket 路径上限约 107 字节：本地门 TMPDIR 很长时，
+    tmp_path 下的 socket 路径会超限（bind 报 AF_UNIX path too long），
+    与被测代码无关（2026-11-09 实证：门 TMPDIR 下 4 个 sidecar 测试
+    全因此红，/tmp 下全绿）。socket 文件本身极小，放 /tmp 下的
+    短路径独立目录，用完清理；生产代码与 CI 不受影响。
+    """
+    path = Path(tempfile.mkdtemp(prefix="uds-", dir="/tmp"))
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)

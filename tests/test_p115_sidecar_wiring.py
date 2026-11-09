@@ -118,8 +118,8 @@ def test_supervisor_does_nothing_when_disabled(monkeypatch):
         sup._reset_state_for_tests()
 
 
-def test_supervisor_reuses_healthy_sidecar_and_does_not_stop_it(tmp_path, _sup_env):
-    sock = str(tmp_path / "p115" / "runtime.sock")
+def test_supervisor_reuses_healthy_sidecar_and_does_not_stop_it(uds_sock_dir, _sup_env):
+    sock = str(uds_sock_dir / "p115" / "runtime.sock")
     server = ProviderRuntimeServer(P115SidecarHandler(), sock)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -135,8 +135,8 @@ def test_supervisor_reuses_healthy_sidecar_and_does_not_stop_it(tmp_path, _sup_e
         thread.join(timeout=5)
 
 
-def test_supervisor_spawns_real_sidecar_and_stops_it(tmp_path, _sup_env):
-    sock = str(tmp_path / "p115" / "runtime.sock")
+def test_supervisor_spawns_real_sidecar_and_stops_it(uds_sock_dir, _sup_env):
+    sock = str(uds_sock_dir / "p115" / "runtime.sock")
     assert sup.ensure_started(socket_path=sock, timeout_sec=30) is True
     st = sup.status()
     assert st["mode"] == "spawned"

@@ -258,9 +258,9 @@ class _FakeSidecar(threading.Thread):
         self.join(timeout=5)
 
 
-def test_sidecar_available_via_fake_uds(authed, monkeypatch, tmp_path):
-    monkeypatch.setenv("PROVIDER_RUNTIME_SOCK_DIR", str(tmp_path))
-    sock_dir = tmp_path / "p115"
+def test_sidecar_available_via_fake_uds(authed, monkeypatch, uds_sock_dir):
+    monkeypatch.setenv("PROVIDER_RUNTIME_SOCK_DIR", str(uds_sock_dir))
+    sock_dir = uds_sock_dir / "p115"
     sock_dir.mkdir()
     server = _FakeSidecar(str(sock_dir / "runtime.sock"))
     server.start()

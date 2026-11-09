@@ -478,6 +478,77 @@ def send_dice(db, chat_id: int, emoji: str = "🎰") -> tuple[bool, str | None, 
     return True, None, value, message_id if isinstance(message_id, int) else None
 
 
+def send_widget(db, chat_id: int, html: str, *, public_data: str | None = None,
+                chat_data: str | None = None, caption: str | None = None,
+                allow_queries: bool = False, width: int = 0,
+                height: int = 0) -> tuple[bool, str | None, int | None]:
+    """发 HTML widget 消息（Bot API 10.4 sendWidget）。
+
+    html 为 UTF-8 文本（≤32768 字节、服务端 zlib-9 后 ≤4096 字节，
+    不含 NUL）；public_data/chat_data 为字符串（各 ≤1024 字节），
+    不传表示无状态。width/height 为尺寸锚点，0 = 自动（见官方
+    Widgets 指南 Sizes 一节）。生产环境目前仅限私聊、自动
+    protected content、不可转发。成功时第三项为 message_id。
+    """
+    payload: dict = {
+        "chat_id": chat_id,
+        "html": html,
+        "width": width,
+        "height": height,
+        "allow_queries": allow_queries,
+    }
+    if public_data is not None:
+        payload["public_data"] = public_data
+    if chat_data is not None:
+        payload["chat_data"] = chat_data
+    if caption is not None:
+        payload["caption"] = caption
+    ok, err, result = _call_ex(db, "sendWidget", payload)
+    if not ok or not isinstance(result, dict):
+        return False, err, None
+    message_id = result.get("message_id")
+    return True, None, int(message_id) if isinstance(message_id, int) else None
+
+
+def answer_widget_query(db, widget_query_id: str,
+                        data: str | None = None) -> tuple[bool, str | None]:
+    """应答 widget 请求（Bot API 10.4 answerWidgetQuery）。
+
+    data 为回给 widget 的结果文本（≤1024 字节），只有发起请求的
+    widget 能收到；须在 query 到达后 15 秒内应答，否则 widget 侧
+    TIMEOUT。失败也应答（带 error 的 data），绝不留空。
+    """
+    payload: dict = {"widget_query_id": widget_query_id}
+    if data is not None:
+        payload["data"] = data
+    return _call(db, "answerWidgetQuery", payload)
+
+
+def edit_message_widget_data(db, chat_id: int | None = None,
+                             message_id: int | None = None, *,
+                             inline_message_id: str | None = None,
+                             public_data: str | None = None,
+                             chat_data: str | None = None,
+                             ) -> tuple[bool, str | None]:
+    """改 widget 状态（Bot API 10.4 editMessageWidgetData）。
+
+    原消息按 chat_id + message_id 定位，经 bot 发出的按
+    inline_message_id 定位；不传的字段保持原值。内容未变时
+    Telegram 报 "message is not modified"，调用方按已完成处理。
+    """
+    payload: dict = {}
+    if inline_message_id is not None:
+        payload["inline_message_id"] = inline_message_id
+    else:
+        payload["chat_id"] = chat_id
+        payload["message_id"] = message_id
+    if public_data is not None:
+        payload["public_data"] = public_data
+    if chat_data is not None:
+        payload["chat_data"] = chat_data
+    return _call(db, "editMessageWidgetData", payload)
+
+
 # 三重门·身份门：在群成员列表里才算自己人
 _MEMBER_STATUSES = ("creator", "administrator", "member", "restricted")
 

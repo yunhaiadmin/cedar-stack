@@ -1040,15 +1040,23 @@ def handle_rain(db, tg_user: dict, chat_id: int, args: str,
     )
 
 
-def slots_markup(db) -> dict:
-    """老虎机注额按钮（一行三档）＋回主界面行；陪玩与结果卡共用。"""
+def slots_markup(db, *, widget_button: bool = False) -> dict:
+    """老虎机注额按钮（一行三档）＋回主界面行；陪玩与结果卡共用。
+
+    widget_button=True 时多一行「HTML 版老虎机」入口：只许私聊面板
+    传（生产环境 widget 仅限私聊），群面板与结果卡一律不传。
+    """
     from backend import slots as slots_svc
 
     tier_row = [
         {"text": f"押 {tier}", "callback_data": f"slots_bet:{tier}"}
         for tier in slots_svc.bet_tiers(db)
     ]
-    return {"inline_keyboard": [tier_row, layout.home_row()]}
+    rows = [tier_row]
+    if widget_button:
+        rows.append([{"text": "🎰 HTML 版老虎机", "callback_data": "slots_widget"}])
+    rows.append(layout.home_row())
+    return {"inline_keyboard": rows}
 
 
 def handle_slots(db, tg_user: dict, chat_id: int, args: str) -> str | tuple[str, dict | None]:
@@ -1073,9 +1081,10 @@ def handle_slots(db, tg_user: dict, chat_id: int, args: str) -> str | tuple[str,
             f"赔付：777 ×{pays['seven']} · BAR 三连 ×{pays['bar']} · "
             f"葡萄/柠檬三连 ×{pays['fruit']} · 双 7 返注",
             "结果由 Telegram 原生老虎机决定，公平随机",
+            "HTML 版需新版客户端（13.2+），点下方按钮发 widget",
         ],
     )
-    return (text, slots_markup(db))
+    return (text, slots_markup(db, widget_button=True))
 
 
 def handle_slots_group(db, tg_user: dict, chat_id: int, args: str) -> str | tuple[str, dict | None]:
