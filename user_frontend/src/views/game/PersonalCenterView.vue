@@ -54,8 +54,8 @@
           <section class="pc-group">
             <div class="pc-gtitle">我的片子</div>
             <div class="v4-card pc-rows-card">
-              <PcEntryRow :icon="Heart" name="想看" :meta="wantMeta" to="/want" />
-              <PcEntryRow :icon="Search" name="我的求片" :meta="requestMeta" to="/store-requests" />
+              <PcEntryRow :icon="Heart" name="想看" :meta="wantMeta" to="/game/wishlist" />
+              <PcEntryRow :icon="Search" name="我的求片" :meta="requestMeta" to="/game/wishlist" />
               <PcEntryRow :icon="Star" name="我的收藏" to="/favorites" />
               <PcEntryRow
                 v-if="followVisible"

@@ -1,12 +1,13 @@
-"""想看商店求片 R1：登记 + 榜单 + 入库联动。
+"""想看商店求片 R1 读口 + 入库联动（登记写口已下线）。
 
 不连生产库。总闸关时四个口都是 404（路由级依赖先于鉴权，未登录
-也是 404）。总闸开时登记与列表限会员；库外 tmdb 登记或附议（同一
-tmdb 只建一行处理中行，人数 = 附议数）；库内 tmdb 不登记、指去想看；
-读时同步把已入库的行翻 completed，榜单随即掉出该行（应去想看）。
+也是 404）。登记/附议写口已下线：会员 POST 回 410 Gone（求片登记
+合并到许愿池 MediaSeek 建单，GA-059 收敛处置），非会员仍先 403。
+读口不变：我的列表限会员；读时同步把已入库的行翻 completed，
+榜单随即掉出该行；管理端榜单只读，改状态走既有 MediaSeek 入口。
 
-复用 movie_requests / movie_request_votes，不另建表；管理端榜单只读，
-改状态走既有 MediaSeek 入口。
+复用 movie_requests / movie_request_votes，不另建表。读口测试的
+求片行直接种库（写口已下线，不能再靠 POST 造数据）。
 """
 
 import os
@@ -122,6 +123,30 @@ def _media_item(db, tmdb_id, name="已在库"):
     return item
 
 
+def _seed_request(db, creator, tmdb_id, title=None, voters=()):
+    """直接种一行处理中求片 + 附议行（voters 含创建人时即创建人首票）。
+
+    写口下线后读口测试靠种库造数据：vote_count 与附议行数保持一致，
+    权重快照一律 1（与旧 POST 路径在普通用户上的落数口径相同）。
+    """
+    row = models.MovieRequest(
+        user_id=creator.id,
+        movie_name=title or tmdb_id,
+        tmdb_id=tmdb_id,
+        status="pending",
+        vote_count=len(voters),
+    )
+    db.add(row)
+    db.flush()
+    for voter in voters:
+        db.add(models.MovieRequestVote(
+            request_id=row.id, user_id=voter.id, weight_snapshot=1,
+        ))
+    db.commit()
+    db.refresh(row)
+    return row
+
+
 def _as(client, user):
     client.app.dependency_overrides[get_current_user] = lambda: user
     return client
@@ -155,21 +180,25 @@ def test_flag_on_non_member_post_403(client, db, monkeypatch):
     assert resp.status_code == 403
 
 
-def test_member_registers_out_of_library(client, db, monkeypatch):
+def test_write_endpoint_offline_410_and_creates_nothing(client, db, monkeypatch):
+    """登记写口已下线：会员 POST 回 410，不建行、不落票（GA-059 收敛）。"""
     monkeypatch.setenv("STORE_ENABLED", "1")
     user = _user(db, "seeker")
     _subscribe(db, user)
     resp = _as(client, user).post(
         "/api/user/store/requests", json={"tmdb_id": "123", "title": "星际穿越"})
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["state"] == "registered"
-    assert body["vote_count"] == 1
-    assert body["request_id"] is not None
-    assert body["in_library"] is False
-    row = _request_row(db, "123")
-    assert row is not None and row.status == "pending"
-    assert row.movie_name == "星际穿越"
+    assert resp.status_code == 410
+    assert "许愿池" in resp.json()["detail"]
+    assert _request_row(db, "123") is None
+
+    # 已有处理中行时 POST（原附议形态）同样 410，票数纹丝不动
+    other = _user(db, "other")
+    row = _seed_request(db, other, "125", voters=[other])
+    resp = _as(client, user).post("/api/user/store/requests", json={"tmdb_id": "125"})
+    assert resp.status_code == 410
+    db.expire_all()
+    row = _request_row(db, "125")
+    assert row.vote_count == 1
     votes = (
         db.query(models.MovieRequestVote)
         .filter(models.MovieRequestVote.request_id == row.id)
@@ -178,64 +207,11 @@ def test_member_registers_out_of_library(client, db, monkeypatch):
     assert votes == 1
 
 
-def test_register_without_title_uses_tmdb_placeholder(client, db, monkeypatch):
-    monkeypatch.setenv("STORE_ENABLED", "1")
-    user = _user(db, "seeker")
-    _subscribe(db, user)
-    resp = _as(client, user).post("/api/user/store/requests", json={"tmdb_id": "124"})
-    assert resp.status_code == 200
-    assert resp.json()["movie_name"] == "124"
-
-
-def test_same_tmdb_votes_then_idempotent(client, db, monkeypatch):
-    monkeypatch.setenv("STORE_ENABLED", "1")
-    first = _user(db, "first")
-    second = _user(db, "second")
-    _subscribe(db, first)
-    _subscribe(db, second)
-    _as(client, first).post("/api/user/store/requests", json={"tmdb_id": "125"})
-    resp = _as(client, second).post("/api/user/store/requests", json={"tmdb_id": "125"})
-    assert resp.status_code == 200
-    assert resp.json()["vote_count"] == 2
-    assert resp.json()["state"] == "registered"
-    resp = _as(client, second).post("/api/user/store/requests", json={"tmdb_id": "125"})
-    assert resp.json()["vote_count"] == 2
-    assert resp.json()["message"] == "你已经登记过这部片子了，人数没有重复算。"
-    rows = (
-        db.query(models.MovieRequest)
-        .filter(models.MovieRequest.tmdb_id == "125")
-        .all()
-    )
-    assert len(rows) == 1
-
-
-def test_register_in_library_no_row(client, db, monkeypatch):
-    monkeypatch.setenv("STORE_ENABLED", "1")
-    user = _user(db, "seeker")
-    _subscribe(db, user)
-    _media_item(db, "456")
-    resp = _as(client, user).post("/api/user/store/requests", json={"tmdb_id": "456"})
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["state"] == "in_library"
-    assert body["request_id"] is None
-    assert body["in_library"] is True
-    assert _request_row(db, "456") is None
-
-
-def test_register_bad_tmdb_400(client, db, monkeypatch):
-    monkeypatch.setenv("STORE_ENABLED", "1")
-    user = _user(db, "seeker")
-    _subscribe(db, user)
-    resp = _as(client, user).post("/api/user/store/requests", json={"tmdb_id": "abc"})
-    assert resp.status_code == 400
-
-
 def test_my_list_syncs_to_stored(client, db, monkeypatch):
     monkeypatch.setenv("STORE_ENABLED", "1")
     user = _user(db, "seeker")
     _subscribe(db, user)
-    _as(client, user).post("/api/user/store/requests", json={"tmdb_id": "789"})
+    _seed_request(db, user, "789", voters=[user])
     _media_item(db, "789")
     resp = _as(client, user).get("/api/user/store/requests")
     assert resp.status_code == 200
@@ -252,10 +228,8 @@ def test_board_orders_by_votes_and_drops_stored(client, db, monkeypatch):
     users = [_user(db, f"u{i}") for i in range(4)]
     for user in users:
         _subscribe(db, user)
-    _as(client, users[0]).post("/api/user/store/requests", json={"tmdb_id": "201"})
-    _as(client, users[0]).post("/api/user/store/requests", json={"tmdb_id": "202"})
-    _as(client, users[1]).post("/api/user/store/requests", json={"tmdb_id": "202"})
-    _as(client, users[2]).post("/api/user/store/requests", json={"tmdb_id": "202"})
+    _seed_request(db, users[0], "201", voters=[users[0]])
+    _seed_request(db, users[0], "202", voters=[users[0], users[1], users[2]])
     resp = _as(client, users[3]).get("/api/user/store/requests/board")
     assert resp.status_code == 200
     items = resp.json()["items"]
@@ -273,7 +247,7 @@ def test_admin_board_sees_all_and_guest_401(client, db, monkeypatch):
     admin = _user(db, "boss", staff=True)
     seeker = _user(db, "seeker")
     _subscribe(db, seeker)
-    _as(client, seeker).post("/api/user/store/requests", json={"tmdb_id": "301"})
+    _seed_request(db, seeker, "301", voters=[seeker])
     rejected = models.MovieRequest(
         user_id=seeker.id, movie_name="拒片", tmdb_id="302", status="rejected",
         vote_count=5,
@@ -295,51 +269,3 @@ def test_admin_board_sees_all_and_guest_401(client, db, monkeypatch):
 def test_guest_board_401(client, monkeypatch):
     monkeypatch.setenv("STORE_ENABLED", "1")
     assert client.get("/api/user/store/requests/board").status_code == 401
-
-
-def test_concurrent_vote_conflict_does_not_500(client, db, monkeypatch):
-    """并发附议撞唯一约束不 500：重试后落票成功，人数正确。
-
-    回归：先查后插在并发下会撞 uq_vote_request_user，之前无
-    IntegrityError 处理，并发第二票直接 500。这里用一次“假阳性”
-    flush 失败模拟撞约束：修前该请求 500；修后回滚重试一次，
-    落票成功且人数为 2，再顺序重投仍幂等为 2。
-    """
-    from sqlalchemy.exc import IntegrityError
-    from sqlalchemy.orm import Session as _Session
-
-    monkeypatch.setenv("STORE_ENABLED", "1")
-    first = _user(db, "first-race")
-    second = _user(db, "second-race")
-    _subscribe(db, first)
-    _subscribe(db, second)
-    _as(client, first).post("/api/user/store/requests", json={"tmdb_id": "126"})
-    real_flush = _Session.flush
-    state = {"done": False}
-
-    def _flaky_flush(self, *args, **kwargs):
-        if (not state["done"]
-                and any(isinstance(o, models.MovieRequestVote)
-                        for o in self.new)):
-            state["done"] = True
-            raise IntegrityError(
-                "INSERT", {}, Exception("UNIQUE constraint failed"))
-        return real_flush(self, *args, **kwargs)
-
-    monkeypatch.setattr(_Session, "flush", _flaky_flush)
-    resp = _as(client, second).post(
-        "/api/user/store/requests", json={"tmdb_id": "126"})
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["vote_count"] == 2
-    db.expire_all()
-    row = _request_row(db, "126")
-    assert row.vote_count == 2
-    votes = (
-        db.query(models.MovieRequestVote)
-        .filter(models.MovieRequestVote.request_id == row.id)
-        .count()
-    )
-    assert votes == 2
-    again = _as(client, second).post(
-        "/api/user/store/requests", json={"tmdb_id": "126"})
-    assert again.json()["vote_count"] == 2

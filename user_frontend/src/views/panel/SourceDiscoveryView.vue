@@ -224,7 +224,7 @@ async function confirm(c: SourceCandidate) {
 </script>
 
 <style scoped>
-/* 找源页：与想看页同款纸面口径（输入框/主按钮数值对齐 WantView 的 ww-input/ww-btn-pri） */
+/* 找源页：纸面口径（输入框/主按钮数值对齐原想看页 ww-input/ww-btn-pri，想看已并入许愿池） */
 .sd-searchbar {
   display: flex;
   gap: 8px;
