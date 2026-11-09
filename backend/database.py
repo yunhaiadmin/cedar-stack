@@ -752,6 +752,10 @@ def _auto_migrate():
             ("tg_notify_seek", "BOOLEAN", "1"),
             ("tg_notify_expiry", "BOOLEAN", "1"),
             ("tg_notify_lottery", "BOOLEAN", "1"),
+            # 连签断签保护用量（2026-11-09）：老库补列后 ym=NULL（从未
+            # 用过）、used=0，与新列缺省一致（口径见 models.WebUser）。
+            ("streak_forgive_ym", "VARCHAR(6)", "NULL"),
+            ("streak_forgive_used", "INTEGER", "0"),
         ]),
         # v2.44.0 邀请码白名单（内测码 / 渠道码）：NULL / 空串都按「不限」处理，
         # 所以存量邀请码行为升级前后完全一致（见 backend/api/invitation.py）

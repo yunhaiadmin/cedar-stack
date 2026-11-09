@@ -285,6 +285,9 @@ WELFARE_CONFIG_KEYS = {
     # 连签保资格（streak_renew）总开关（默认开＝现行行为）＋续期天数（默认 30）
     "welfare_streak_renew_enabled": "true",
     "welfare_streak_renew_days": "30",
+    # 连签断签保护：每月豁免「漏签 1 天」的次数（默认 1；0=关、回旧行为；
+    # 读侧 economy._do_checkin_core，用量落 web_users.streak_forgive_*）
+    "welfare_streak_forgive_per_month": "1",
     "welfare_inactive_days": "30",
     "welfare_request_monthly": "3",
     # P0 统一货币体系：充值比例与红包规则

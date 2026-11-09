@@ -280,6 +280,13 @@ class WebUser(Base):
     welfare_expires_at = Column(DateTime, nullable=True)
     welfare_grant_channel = Column(String(20), nullable=True)
     welfare_granted_at = Column(DateTime, nullable=True)
+    # 连签断签保护用量（2026-11-09）：streak_forgive_ym 是计数月键
+    # （Asia/Shanghai 自然月 YYYYMM），streak_forgive_used 是该月已用次数。
+    # 读侧月键与当前月不符即按 0 算＝跨月自动重置，无需定时清零；
+    # 老库补列后 ym=NULL / used=0（从未用过），与新用户缺省一致。
+    # 写点唯一：economy._do_checkin_core（保护触发时随签到事务落库）。
+    streak_forgive_ym = Column(String(6), nullable=True)
+    streak_forgive_used = Column(Integer, default=0, nullable=False, server_default="0")
     # 观影碑时长榜隐私：True=允许上榜（默认），False=不上榜
     show_on_leaderboard = Column(Boolean, default=True, nullable=False, server_default="1")
     # TG 私聊通知偏好（2026-11-08 私聊通报优化批）：三类各一个开关，
