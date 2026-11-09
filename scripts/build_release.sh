@@ -3,7 +3,7 @@
 #
 # 拉取形态：发行包**不含任何源码**。程序本体走镜像仓库分发
 # （.github/workflows/publish-images.yml 在主线 CI 全绿后自动构建并推送
-# ghcr.io/xzb177/aetrix-api 与 ghcr.io/xzb177/aetrix-web，tag 规则：
+# ghcr.io/yunhaiadmin/aetrix-api 与 ghcr.io/yunhaiadmin/aetrix-web，tag 规则：
 # 版本号 / sha-<短码> / latest），买家用随授权码发放的拉取凭据
 # docker login 后 pull 下来直接跑，机器上不需要 Node / Python、不做构建。
 #
@@ -77,9 +77,9 @@ fi
 if grep -qE '^[[:space:]]+build:' "$STAGE/docker-compose.yml"; then
   fail "包内 compose 出现 build: 段（必须是拉取形态）"
 fi
-grep -qF "ghcr.io/xzb177/aetrix-api:\${AETRIX_VERSION:-$VERSION}" \
+grep -qF "ghcr.io/yunhaiadmin/aetrix-api:\${AETRIX_VERSION:-$VERSION}" \
   "$STAGE/docker-compose.yml" || fail "包内 compose 的 aetrix-api 默认镜像版本不是 $VERSION"
-grep -qF "ghcr.io/xzb177/aetrix-web:\${AETRIX_VERSION:-$VERSION}" \
+grep -qF "ghcr.io/yunhaiadmin/aetrix-web:\${AETRIX_VERSION:-$VERSION}" \
   "$STAGE/docker-compose.yml" || fail "包内 compose 的 aetrix-web 默认镜像版本不是 $VERSION"
 # 4. 生产 IP
 if grep -rInE "15\.204\.95\.101|3\.107\.49\.179|144\.24\.114\.219" "$STAGE" 2>/dev/null; then

@@ -22,7 +22,7 @@ name: aetrix-stream-node
 services:
   aetrix-stream:
     # 与主服务同一镜像、同一 tag（前后端版本必须配套）
-    image: ghcr.io/xzb177/aetrix-api:${AETRIX_IMAGE_TAG:-latest}
+    image: ghcr.io/yunhaiadmin/aetrix-api:${AETRIX_IMAGE_TAG:-latest}
     container_name: aetrix-stream
     logging:
       driver: json-file

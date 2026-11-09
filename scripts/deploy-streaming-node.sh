@@ -164,7 +164,7 @@ cat > "$WORKDIR/docker-compose.yml" <<EOF
 name: aetrix-stream-node
 services:
   aetrix-stream:
-    image: ghcr.io/xzb177/aetrix-api:${IMAGE}
+    image: ghcr.io/yunhaiadmin/aetrix-api:${IMAGE}
     container_name: aetrix-stream
     restart: unless-stopped
     # 流角色：只起 EA 出流进程（run_all.py 的 stream 分支）

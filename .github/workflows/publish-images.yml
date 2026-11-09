@@ -118,9 +118,9 @@ jobs:
           docker build --pull \
             --target runtime \
             -f Dockerfile.backend \
-            -t "ghcr.io/xzb177/aetrix-api:$TAG_VERSION" \
-            -t "ghcr.io/xzb177/aetrix-api:sha-$TAG_SHA" \
-            -t "ghcr.io/xzb177/aetrix-api:latest" \
+            -t "ghcr.io/yunhaiadmin/aetrix-api:$TAG_VERSION" \
+            -t "ghcr.io/yunhaiadmin/aetrix-api:sha-$TAG_SHA" \
+            -t "ghcr.io/yunhaiadmin/aetrix-api:latest" \
             .
 
       # ---- 前端镜像 ----
@@ -132,9 +132,9 @@ jobs:
         run: |
           docker build --pull \
             -f Dockerfile.frontend \
-            -t "ghcr.io/xzb177/aetrix-web:$TAG_VERSION" \
-            -t "ghcr.io/xzb177/aetrix-web:sha-$TAG_SHA" \
-            -t "ghcr.io/xzb177/aetrix-web:latest" \
+            -t "ghcr.io/yunhaiadmin/aetrix-web:$TAG_VERSION" \
+            -t "ghcr.io/yunhaiadmin/aetrix-web:sha-$TAG_SHA" \
+            -t "ghcr.io/yunhaiadmin/aetrix-web:latest" \
             .
 
       # 推送前的出厂自检。镜像一旦推上去就成了对外承诺（客户随时可能拉），
@@ -144,7 +144,7 @@ jobs:
         run: |
           set -e
           fail=0
-          for image in ghcr.io/xzb177/aetrix-api ghcr.io/xzb177/aetrix-web; do
+          for image in ghcr.io/yunhaiadmin/aetrix-api ghcr.io/yunhaiadmin/aetrix-web; do
             # .git
             if [ -n "$(docker run --rm --entrypoint sh "$image" -c 'find / -maxdepth 3 -name .git 2>/dev/null' || true)" ]; then
               echo "❌ $image 里存在 .git"; fail=1
@@ -179,7 +179,7 @@ jobs:
         env:
           TAG_SHA: ${{ steps.meta.outputs.short_sha }}
         run: |
-          docker run --rm --entrypoint pip "ghcr.io/xzb177/aetrix-api:sha-$TAG_SHA" freeze > /tmp/aetrix-api-freeze.txt
+          docker run --rm --entrypoint pip "ghcr.io/yunhaiadmin/aetrix-api:sha-$TAG_SHA" freeze > /tmp/aetrix-api-freeze.txt
           python3 scripts/check_image_freeze.py backend/requirements.lock /tmp/aetrix-api-freeze.txt --python-version 3.12
 
       - name: 推送后端镜像
@@ -189,7 +189,7 @@ jobs:
           TAG_SHA: ${{ steps.meta.outputs.short_sha }}
         run: |
           for tag in "$TAG_VERSION" "sha-$TAG_SHA" latest; do
-            docker push "ghcr.io/xzb177/aetrix-api:$tag"
+            docker push "ghcr.io/yunhaiadmin/aetrix-api:$tag"
           done
 
       - name: 推送前端镜像
@@ -199,7 +199,7 @@ jobs:
           TAG_SHA: ${{ steps.meta.outputs.short_sha }}
         run: |
           for tag in "$TAG_VERSION" "sha-$TAG_SHA" latest; do
-            docker push "ghcr.io/xzb177/aetrix-web:$tag"
+            docker push "ghcr.io/yunhaiadmin/aetrix-web:$tag"
           done
 
       - name: 输出镜像地址
@@ -211,8 +211,8 @@ jobs:
             echo "### 镜像已发布（v$TAG_VERSION）"
             echo
             echo '```'
-            echo "ghcr.io/xzb177/aetrix-api:$TAG_VERSION"
-            echo "ghcr.io/xzb177/aetrix-web:$TAG_VERSION"
+            echo "ghcr.io/yunhaiadmin/aetrix-api:$TAG_VERSION"
+            echo "ghcr.io/yunhaiadmin/aetrix-web:$TAG_VERSION"
             echo '```'
             echo
             echo "客户侧：docker login ghcr.io → docker compose pull && docker compose up -d"
@@ -223,4 +223,4 @@ jobs:
         if: steps.gate.outputs.should_publish == 'true'
         run: |
           docker images --format '{{.Repository}}:{{.Tag}}\t{{.Size}}' \
-            | grep -E '^ghcr.io/xzb177/' | tee -a "$GITHUB_STEP_SUMMARY"
+            | grep -E '^ghcr.io/yunhaiadmin/' | tee -a "$GITHUB_STEP_SUMMARY"

@@ -1,7 +1,7 @@
 # Aetrix 发行版 · 买家部署（由 scripts/build_release.sh 放入发行包根目录）
 #
 # 拉取形态：程序本体不在发行包里，两个服务都从镜像仓库拉成品镜像
-# （ghcr.io/xzb177/aetrix-api、ghcr.io/xzb177/aetrix-web，由
+# （ghcr.io/yunhaiadmin/aetrix-api、ghcr.io/yunhaiadmin/aetrix-web，由
 # .github/workflows/publish-images.yml 在主线 CI 全绿后自动发布，
 # tag 规则：版本号 / sha-<短码> / latest）。买家机器上不做任何构建。
 #
@@ -44,7 +44,7 @@ services:
     restart: unless-stopped
 
   aetrix-api:
-    image: ghcr.io/xzb177/aetrix-api:${AETRIX_VERSION:-2.54.0}
+    image: ghcr.io/yunhaiadmin/aetrix-api:${AETRIX_VERSION:-2.54.0}
     container_name: aetrix-api
     # 镜像默认入口是 python serve.py，只起门户 API 一个进程；
     # 发行版要的是单容器全家桶（门户 API + Emby 服务 + 后台任务），
@@ -73,7 +73,7 @@ services:
     restart: unless-stopped
 
   aetrix-web:
-    image: ghcr.io/xzb177/aetrix-web:${AETRIX_VERSION:-2.54.0}
+    image: ghcr.io/yunhaiadmin/aetrix-web:${AETRIX_VERSION:-2.54.0}
     container_name: aetrix-web
     # 镜像内 nginx 的后端地址由 BACKEND_HOST 决定（未设置时默认
     # aetrix-api:8000，这里显式写死，免得将来默认值变动影响发行版）

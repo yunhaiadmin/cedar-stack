@@ -2,7 +2,7 @@
 """部署自检：镜像内 pip freeze 必须与 CI 冻结点（生产锁）一致。
 
 用法（publish-images.yml 的出厂自检之后、推送之前）：
-    docker run --rm --entrypoint pip ghcr.io/xzb177/aetrix-api:sha-<sha> freeze > /tmp/image-freeze.txt
+    docker run --rm --entrypoint pip ghcr.io/yunhaiadmin/aetrix-api:sha-<sha> freeze > /tmp/image-freeze.txt
     python scripts/check_image_freeze.py backend/requirements.lock /tmp/image-freeze.txt --python-version 3.12
 
 规则：
