@@ -264,7 +264,7 @@ def check_compose() -> list[str]:
             f"docker-compose.prod.yml 里出现了 target: {OPS_TARGET} —— "
             "客户编排不应指向自建用的运维变体"
         )
-    for svc in re.findall(r"ghcr\.io/xzb177/([a-z-]+)", prod):
+    for svc in re.findall(r"ghcr\.io/yunhaiadmin/([a-z-]+)", prod):
         if svc not in ("aetrix-api", "aetrix-web"):
             problems.append(f"docker-compose.prod.yml 引用了预期外的镜像：{svc}")
     return problems

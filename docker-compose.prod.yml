@@ -17,7 +17,7 @@ services:
   aetrix-api:
     # 没有 build: —— 客户机器上没有源码，也不该有。镜像来自 GitHub Container Registry。
     # AETRIX_IMAGE_TAG 默认 latest；要固定版本就在 .env 里写死（如 2.42.9），便于回滚。
-    image: ghcr.io/xzb177/aetrix-api:${AETRIX_IMAGE_TAG:-latest}
+    image: ghcr.io/yunhaiadmin/aetrix-api:${AETRIX_IMAGE_TAG:-latest}
     container_name: aetrix-api
     logging:
       driver: json-file
@@ -77,7 +77,7 @@ services:
 
   # 前端：nginx serve 双前端静态文件，/api/* 与 /emby/* 反代到 aetrix-api
   aetrix-web:
-    image: ghcr.io/xzb177/aetrix-web:${AETRIX_IMAGE_TAG:-latest}
+    image: ghcr.io/yunhaiadmin/aetrix-web:${AETRIX_IMAGE_TAG:-latest}
     container_name: aetrix-web
     logging:
       driver: json-file

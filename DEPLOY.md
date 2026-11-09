@@ -286,7 +286,7 @@ Package → Settings → **Change visibility** → 选 **Public**。
 
 ```bash
 docker compose down
-docker image rm ghcr.io/xzb177/aetrix-api:<版本> ghcr.io/xzb177/aetrix-web:<版本>
+docker image rm ghcr.io/yunhaiadmin/aetrix-api:<版本> ghcr.io/yunhaiadmin/aetrix-web:<版本>
 ```
 
 **所以最稳妥的收权方式**：不要把版本锁在 `latest`，而是每份授权单独发一个**带版本号 tag**
