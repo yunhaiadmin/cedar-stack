@@ -580,10 +580,7 @@ def _do_checkin_core(db: Session, user: models.WebUser) -> dict:
     暴露，避免「先发积分、后落库失败」或直接 500。
 
     返回 {"points_awarded", "streak", "balance", "penalty", "crit",
-    "milestone_points", "full_attendance_points", "streak_forgiven",
-    "forgive_remaining"}，失败时抛 HTTPException。
-    streak_forgiven/forgive_remaining 为断签保护结果（本次是否豁免了漏签、
-    本月还剩几次），未触发时分别为 False/剩余量（未算时 0）。
+    "milestone_points", "full_attendance_points"}，失败时抛 HTTPException。
     其中 points_awarded 只记当日基础奖励（基础+连签加成−惩罚，含暴击放大），
     里程碑/全勤为独立台账行分开返回；balance 为全部发放后的余额。
     供 POST /api/user/economy/checkin 路由和已废弃的 POST /api/points/signin 复用。
@@ -601,37 +598,17 @@ def _do_checkin_core(db: Session, user: models.WebUser) -> dict:
     if exists:
         raise HTTPException(status_code=400, detail="今天已经签到过啦")
 
-    # 连签：昨天有记录则 +1；正好漏 1 天（上次在前天）且本月断签保护
-    # 有余 → 不清零、照常 +1 并消耗 1 次（漏掉那天不补计）；其余情况
-    # （无记录 / 漏 ≥2 天 / 保护关闭或已用完）重置为 1。
-    # 断签保护（2026-11-09 用户批准）：次数键
-    # welfare_streak_forgive_per_month（默认 1，0=关）；用量落
-    # WebUser.streak_forgive_ym（上海自然月键 YYYYMM）+ streak_forgive_used，
-    # 读时月键不符按 0 算＝跨月自动重置，随签到事务一起提交。
+    # 连签：昨天有记录则 +1，其余情况（无记录 / 漏签 ≥1 天）重置为 1。
+    # 连签只作展示与里程碑计数，不再承担保号判定（保号已改活力口径，
+    # 见 welfare_expiry._try_vitality_renew）；2026-11-09 上线的「每月
+    # 断签保护」已随之回滚，漏 1 天照旧清零。
     last_record = db.query(models.CheckinRecord).filter(
         models.CheckinRecord.user_id == user_id,
         models.CheckinRecord.checkin_date < today,
     ).order_by(models.CheckinRecord.checkin_date.desc()).first()
     streak = 1
-    streak_forgiven = False
-    forgive_remaining = 0
-    if last_record is not None:
-        if last_record.checkin_date >= today - timedelta(days=1):
-            streak = (last_record.streak or 0) + 1
-        elif last_record.checkin_date >= today - timedelta(days=2):
-            forgive_limit = _get_int_config(
-                db, "welfare_streak_forgive_per_month", 1)
-            _, _, month_key = _checkin_month_window(today)
-            used = 0
-            if (getattr(user, "streak_forgive_ym", None) or "") == month_key:
-                used = int(getattr(user, "streak_forgive_used", 0) or 0)
-            forgive_remaining = max(0, forgive_limit - used)
-            if forgive_limit > 0 and used < forgive_limit:
-                streak = (last_record.streak or 0) + 1
-                streak_forgiven = True
-                user.streak_forgive_ym = month_key
-                user.streak_forgive_used = used + 1
-                forgive_remaining -= 1
+    if last_record is not None and last_record.checkin_date >= today - timedelta(days=1):
+        streak = (last_record.streak or 0) + 1
 
     # 奖励计算：仅公益服用户获得积分
     is_welfare = bool(getattr(user, "is_welfare", False))
@@ -684,8 +661,7 @@ def _do_checkin_core(db: Session, user: models.WebUser) -> dict:
         description, f"checkin:{today.strftime('%Y%m%d')}",
     )
     # 签到增强（2026-11-01）：连签里程碑——streak 在一轮连签内单调递增、
-    # 断签（未被断签保护豁免时）重置，故 streak 恰达里程碑日即「每轮只
-    # 发一次」；与签到同事务落账。
+    # 断签重置，故 streak 恰达里程碑日即「每轮只发一次」；与签到同事务落账。
     milestone_points = 0
     full_attendance_points = 0
     if is_welfare:
@@ -698,21 +674,19 @@ def _do_checkin_core(db: Session, user: models.WebUser) -> dict:
             )
         full_attendance_points, balance = _grant_full_attendance(
             db, user, today, rules, balance)
-    # C1 活力值：公益服用户签到恢复活力（受每日免费获取上限钳制）
-    # 恢复点数走 SystemConfig vitality_checkin_gain（默认 1，填 0 则签到不恢复活力）
+    # C1 活力值：现口径签到不送活力（2026-11-09 用户点选）——活力只靠
+    # 观影奖励与积分兑换获得，签到只发积分。键 vitality_checkin_gain
+    # 保留可配：代码默认 0，管理员显式配正数才恢复发放；恢复发放时也
+    # 不再占用每日免费获取上限（daily_gain_limit 只管观影奖励：
+    # vitality.FREE_GAIN_REASONS 已不含 checkin，本段不再按上限钳制，
+    # PA-014 的签到钳制口径就此作废）。
     vitality_gained = 0
     vitality_recovered = False  # 本次签到是否把活力从 0 拉起来（解封通知用）
     if is_welfare:
         try:
             cfg = _vitality.get_vitality_config(db)
             if cfg["enabled"]:
-                limit = int(cfg.get("daily_gain_limit", 0) or 0)
-                gained = _vitality.get_today_free_gain(db, user_id) if limit > 0 else 0
-                gain = _get_int_config(db, "vitality_checkin_gain", 1)
-                # PA-014：按剩余量钳制，不是只判“未满就全额发”——
-                # 与 vitality._grant_free_vitality（观影活力）同口径。
-                if limit > 0:
-                    gain = max(0, min(gain, limit - gained))
+                gain = _get_int_config(db, "vitality_checkin_gain", 0)
                 if gain > 0:
                     # PA-015：_add_vitality 返回的是钳制后余额，不是增量；
                     # 机器人面板按增量渲染“+N”，故用加后值减加前值。
@@ -740,9 +714,7 @@ def _do_checkin_core(db: Session, user: models.WebUser) -> dict:
     return {"points_awarded": reward, "streak": streak, "balance": balance,
             "penalty": penalty, "vitality_gained": vitality_gained, "xp_gained": xp_gained,
             "crit": crit, "milestone_points": milestone_points,
-            "full_attendance_points": full_attendance_points,
-            "streak_forgiven": streak_forgiven,
-            "forgive_remaining": forgive_remaining}
+            "full_attendance_points": full_attendance_points}
 
 
 @router.post("/checkin")
@@ -814,9 +786,6 @@ async def do_checkin(
         "crit": bool(award.get("crit")),
         "milestone_points": award.get("milestone_points", 0),
         "full_attendance_points": award.get("full_attendance_points", 0),
-        # 断签保护（2026-11-09）：本次签到是否豁免了漏签、本月剩余次数
-        "streak_forgiven": bool(award.get("streak_forgiven")),
-        "forgive_remaining": award.get("forgive_remaining", 0),
         "message": message,
     }
 

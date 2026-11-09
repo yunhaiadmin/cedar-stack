@@ -44,7 +44,10 @@ VITALITY_DEFAULTS = {
 }
 
 # 每日免费获取计入上限的 reason（付费 recharge / 管理员 admin_grant 不计入）
-FREE_GAIN_REASONS = ("checkin", "watch_reward")
+# 每日免费获取上限只统计观影奖励：签到自 2026-11-09 不再送活力
+# （vitality_checkin_gain 默认 0），即便管理员配回正数，签到发放也
+# 不计入本上限——上限此后只管观影这一路。
+FREE_GAIN_REASONS = ("watch_reward",)
 
 
 def _raw(db: Session, key: str) -> str:
@@ -219,7 +222,7 @@ def ensure_can_play(db: Session, user) -> None:
     v = int(getattr(user, "vitality", None) or 0)
     if v >= cfg["limit_threshold"]:
         return
-    raise HTTPException(status_code=403, detail=f"活力值不足（{v}/{cfg['limit_threshold']}），签到或用能量续活力后可继续观影")
+    raise HTTPException(status_code=403, detail=f"活力值不足（{v}/{cfg['limit_threshold']}），观影或用能量续活力后可继续观影")
 
 
 def _lock_user_row(db: Session, user_id: int) -> None:
@@ -256,7 +259,7 @@ def notify_vitality_change(db: Session, user_id: int, kind: str) -> bool:
             return False
         if kind == "suspended":
             text = ("⏸️ 活力值已归零，公益播放已暂停\n"
-                    "签到、观影或用积分都能把活力补回来，补回来后会自动恢复播放。")
+                    "观影或用积分都能把活力补回来，补回来后会自动恢复播放。")
         elif kind == "recovered":
             text = ("▶️ 活力值已恢复，公益播放已解封\n"
                     "可以继续正常观看了。")
@@ -314,7 +317,7 @@ def _add_vitality(db: Session, user_id: int, delta: int, reason: str) -> int:
 
 
 def get_today_free_gain(db: Session, user_id: int) -> int:
-    """今天通过免费途径（签到/观影奖励）已获得的活力值。"""
+    """今天通过免费途径（观影奖励）已获得的活力值。"""
     # r34 口径收口：VitalityLog.created_at 以 UTC naive 入库（容器时区 UTC），
     # 此前用服务器本地日界，上限在北京时间 08:00 才重置。函数内导入 economy
     # 是为了避开循环导入（economy.py 顶层导入了本模块）。
@@ -391,7 +394,7 @@ def award_watch_minutes_reward(db: Session, user_id: int, watched_minutes) -> in
 
     满一档分钟数 → 一档奖；满二档分钟数 → 二档奖（取档位值，不叠加）；
     不足一档返回 0。再走与 award_watch_reward 相同的锁 + 每日免费获取上限
-    钳制（与签到恢复活力共用上限）+ 发放。
+    钳制 + 发放。
 
     返回实际发放的点数（0 表示未发放：功能关闭 / 未满一档 / 已达上限 /
     非公益服用户）。调用方在停播时结算一次；重复停播只受每日上限兜底。

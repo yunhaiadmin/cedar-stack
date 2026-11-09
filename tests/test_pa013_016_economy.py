@@ -1,7 +1,10 @@
 """完美审计 R8（B8 经济）PA-013/014/015/016 回归测试。
 
 - PA-013：不活跃扫描须把签到与播放计为活跃信号，不能只认网站登录。
-- PA-014：签到活力恢复须按每日免费上限剩余量钳制。
+- PA-014：签到活力恢复须按每日免费上限剩余量钳制——此口径已于
+  2026-11-09 被「签到不送活力」新政取代：签到默认不发活力，管理员
+  显式配回时也不再受每日上限钳制、不占观影的上限额度（见下方改写
+  后的 PA-014 用例，编号保留、断言按新政）。
 - PA-015：签到返回的 vitality_gained 须是增量而非加后余额。
 - PA-016：签到状态接口的连签须有“昨天”下界，断签旧记录不算当前连签。
 """
@@ -127,9 +130,10 @@ def _checkin_user(db, name, vitality):
     return u
 
 
-def test_pa014_checkin_vitality_clamped_to_daily_remaining(db):
-    """上限 3（非缺省，证明读的是配置值）、今日已免费得 1、gain 5 →
-    签到只补剩余 2 点活力（修前全额发 5 点）。"""
+def test_pa014_checkin_vitality_not_clamped_and_not_counted(db):
+    """新政（2026-11-09，取代原 PA-014 钳制口径）：每日上限 3、今日已
+    观影得 1、签到 gain 显式配 5 → 签到全额发 5（不再按剩余量钳制），
+    且签到发放不计入每日免费计数——随后观影仍可拿满剩余额度 2。"""
     _seed_checkin_cfg(db, {"vitality_daily_gain_limit": "3",
                            "vitality_checkin_gain": "5"})
     u = _checkin_user(db, "clamp_user", vitality=1)
@@ -139,8 +143,27 @@ def test_pa014_checkin_vitality_clamped_to_daily_remaining(db):
     db.commit()
     award = economy._do_checkin_core(db, u)
     final = db.query(models.WebUser).filter_by(id=u.id).one().vitality
-    assert final == 3
-    assert award["vitality_gained"] == 2
+    assert final == 6
+    assert award["vitality_gained"] == 5
+    # 签到不占每日观影回活力上限：免费计数仍只有观影那 1 点
+    assert vitality.get_today_free_gain(db, u.id) == 1
+    granted = vitality._grant_free_vitality(db, u.id, 99, "test_watch")
+    assert granted == 2  # 上限 3 − 观影已得 1，签到的 5 点不占额度
+    final = db.query(models.WebUser).filter_by(id=u.id).one().vitality
+    assert final == 8
+
+
+def test_checkin_default_grants_no_vitality(db):
+    """新政默认口径：未配 vitality_checkin_gain（代码默认 0）→ 签到只
+    发积分，活力一点不动，返回 vitality_gained=0。"""
+    _seed_checkin_cfg(db, {"vitality_daily_gain_limit": "2"})
+    u = _checkin_user(db, "no_gain_user", vitality=5)
+    award = economy._do_checkin_core(db, u)
+    final = db.query(models.WebUser).filter_by(id=u.id).one().vitality
+    assert award["points_awarded"] == 3
+    assert final == 5
+    assert award["vitality_gained"] == 0
+    assert vitality.get_today_free_gain(db, u.id) == 0
 
 
 def test_pa015_checkin_vitality_gained_is_increment(db):
@@ -166,7 +189,9 @@ def test_pa015_checkin_vitality_full_returns_zero(db):
 
 
 def test_pa014_default_gain_unchanged(db):
-    """默认 gain=1、上限 2、今日未得 → 签到补 1 点，行为不变。"""
+    """显式配 gain=1（管理员恢复签到送活力）、上限 2、今日未得 →
+    签到补 1 点。（代码默认已改 0，默认不发由
+    test_checkin_default_grants_no_vitality 覆盖。）"""
     _seed_checkin_cfg(db, {"vitality_daily_gain_limit": "2",
                            "vitality_checkin_gain": "1"})
     u = _checkin_user(db, "default_user", vitality=5)

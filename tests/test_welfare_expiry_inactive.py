@@ -18,7 +18,9 @@ def _db():
     engine = create_engine("sqlite://")
     models.Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine)()
-    _store.invalidate("welfare_inactive_days", "welfare_grace_days")
+    _store.invalidate("welfare_inactive_days", "welfare_grace_days",
+                      "welfare_vitality_renew_enabled",
+                      "welfare_vitality_renew_min", "welfare_streak_renew_days")
     return s
 
 
@@ -60,13 +62,15 @@ def test_inactive_30_days_loses_welfare():
 
 
 def test_expiry_grace_days_then_auto_expire():
-    """过期 7 天保留期内只记录不取消；超保留期自动取消并记 auto_expire。"""
+    """过期 7 天保留期内只记录不取消；超保留期自动取消并记 auto_expire。
+    两用户活力钉 0（保号线下）：本例测的是保留期/取消路径，不让
+    活力保号（2026-11-09 新口径，默认活力 14 会达线）先行续期分流。"""
     db = _db()
     now = datetime.now()
-    beyond = _user(db, "beyond", last_login_at=now,
+    beyond = _user(db, "beyond", last_login_at=now, vitality=0,
                    welfare_expires_at=now - timedelta(days=8),
                    welfare_granted_at=now - timedelta(days=40))
-    within = _user(db, "within", last_login_at=now,
+    within = _user(db, "within", last_login_at=now, vitality=0,
                    welfare_expires_at=now - timedelta(days=3),
                    welfare_granted_at=now - timedelta(days=40))
     res = welfare_expiry.check_welfare_expiry(db)
