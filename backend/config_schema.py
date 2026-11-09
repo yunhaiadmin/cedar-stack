@@ -448,21 +448,23 @@ DRIVE_API_CONFIG_SCHEMA: dict[str, tuple] = {
     "drive_binding_enabled": ("bool",),
 }
 
-# 公共贡献池（goal-33 PR-1 地基，2026-11-07）：16 键，读取唯一实现
+# 公共贡献池（goal-33 PR-1 地基，2026-11-07）：17 键，读取唯一实现
 # 在 emby_server.pool_gate（POOL_CONFIG_DEFAULTS 与本表同口径）；
 # 默认值按 25TB 补充节修正值（单盘容量 4.5TB、保底空闲 300GiB、
 # 日转存 600GiB），不是 design §3 的旧默认（0 不限 / 20GiB）。
 # 字节类上限给到 10**15：4.5TB 已超 _BIG（10**9）量级。
 # pool_enabled 默认关由读侧兜底（通审决议 1：分阶段接线期默认关，
 # 正式开池由管理员开闸）；激励子家族 pool_reward_* 随 PR-6 注册
-# 为独立家族 POOL_REWARD_CONFIG_SCHEMA（本表 16 键的键集已被
-# PR-1 测试钉死，扩键只能另立家族；校验/存储仍走同一体系）。
+# 为独立家族 POOL_REWARD_CONFIG_SCHEMA（本表键集已被 PR-1 测试
+# 钉死，扩键原则上另立家族；pool_join_min_capacity_bytes 是用户
+# 2026-11-10 亲批的本体扩键，键数 16 → 17；校验/存储仍走同一体系）。
 POOL_CONFIG_SCHEMA: dict[str, tuple] = {
     "pool_enabled": ("bool",),
     "pool_audience": ("enum", ("all", "whitelist", "subscribers")),
     "pool_join_mode": ("enum", ("apply_review", "admin_assign", "open")),
     "pool_enabled_providers": ("str",),
     "pool_member_capacity_bytes": ("int", 0, 10**15),
+    "pool_join_min_capacity_bytes": ("int", 0, 10**15),
     "pool_member_reserve_free_bytes": ("int", 0, 10**15),
     "pool_member_daily_transfer_bytes": ("int", 0, 10**15),
     "pool_member_daily_transfer_jobs": ("int", 0, _BIG),
@@ -481,7 +483,7 @@ POOL_CONFIG_SCHEMA: dict[str, tuple] = {
 # 激励子家族 pool_reward_*（goal-33 PR-6，design §11.3）：计量、
 # 单价、门槛全进配置；默认值在 pool_gate
 # .POOL_REWARD_CONFIG_DEFAULTS（与下表同口径）。独立家族的理由
-# 见 POOL_CONFIG_SCHEMA 上方注释（16 键键集已钉死）。
+# 见 POOL_CONFIG_SCHEMA 上方注释（17 键键集已钉死）。
 POOL_REWARD_CONFIG_SCHEMA: dict[str, tuple] = {
     "pool_reward_enabled": ("bool",),
     # 真发开关（PR-6 任务书新增）：关＝结算只算账落影子行不发钱，
@@ -506,7 +508,7 @@ POOL_REWARD_CONFIG_SCHEMA: dict[str, tuple] = {
 }
 
 # 巡检子家族（闲置主动清理开关，用户 2026-11-09 亲点）：本体
-# POOL_CONFIG_SCHEMA 的 16 键键集已被 PR-1 测试钉死，扩键另立
+# POOL_CONFIG_SCHEMA 的 17 键键集已被 PR-1 测试钉死，扩键另立
 # 家族（同 pool_reward 先例）；默认值在 pool_gate
 # .POOL_JANITOR_CONFIG_DEFAULTS，唯一消费方是 pool_janitor。
 POOL_JANITOR_CONFIG_SCHEMA: dict[str, tuple] = {

@@ -73,6 +73,9 @@ POOL_CONFIG_DEFAULTS: dict = {
     "pool_join_mode": "apply_review",
     "pool_enabled_providers": "drive",
     "pool_member_capacity_bytes": 4_500_000_000_000,
+    # 入池门槛：盘总容量（limit）下限（用户 2026-11-10 亲批）；
+    # 默认 5×10^12 介于 2TB 盘与 5T 档盘实报值之间，0 = 不设门槛。
+    "pool_join_min_capacity_bytes": 5_000_000_000_000,
     "pool_member_reserve_free_bytes": 300 * _GIB,
     "pool_member_daily_transfer_bytes": 600 * _GIB,
     "pool_member_daily_transfer_jobs": 0,
@@ -107,8 +110,8 @@ POOL_PLAY_DEDUP_WINDOW_MIN = 30
 
 #: 激励子家族 pool_reward_* 的代码默认值（goal-33 PR-6，
 #: design §11.3；与 config_schema.POOL_REWARD_CONFIG_SCHEMA 同口径）。
-#: 与本体 16 键分开一份字典：GET /api/admin/pool/config 的
-#: 16 键口径（PR-1 已钉）不许被激励键撑大，激励键走
+#: 与本体 17 键分开一份字典：GET /api/admin/pool/config 的
+#: 17 键口径（PR-1 已钉、入池门槛键为用户亲批扩键）不许被激励键撑大，激励键走
 #: reward-config 端点与 reward_config_payload 这一份读取。
 POOL_REWARD_CONFIG_DEFAULTS: dict = {
     "pool_reward_enabled": False,
@@ -182,7 +185,7 @@ def reward_config_payload(db: Session) -> dict:
         POOL_REWARD_CONFIG_DEFAULTS)
 
 
-#: 巡检子家族的代码默认值：本体 16 键键集已被 PR-1 测试钉死，
+#: 巡检子家族的代码默认值：本体 17 键键集已被 PR-1 测试钉死，
 #: 扩键另立家族（同 POOL_REWARD 先例）；与
 #: config_schema.POOL_JANITOR_CONFIG_SCHEMA 同口径，读取经
 #: janitor_config_payload，唯一消费方是 pool_janitor。
@@ -656,16 +659,17 @@ def clear_pool_quota_cache() -> None:
     _POOL_QUOTA_CACHE.clear()
 
 
-def _member_quota(db: Session, member, quota_fn=None):
-    """成员盘剩余（about.get 口径）：返回 {"limit","usage","free"} 或 None。
+def _binding_quota(db: Session, binding_id, quota_fn=None):
+    """某个绑定盘的配额读数（about.get 口径）：返回
+    {"limit","usage","free"} 或 None。_member_quota 与入池容量
+    门槛共用这一份读数路径，不许另起第二份 about 调用。
 
     quota_fn 可注入（测试用，签名 quota_fn(db, binding)）；默认走
     quota_dashboard._default_drive_quota（UserDriveApiClient
     .about_storage，额度驾驶舱同款路径）。读数按 binding_id
-    缓存 10 分钟。读不到/读失败回 None（未知）：选盘时按容量未知
-    处理（不因一次 about 抖动把成员判死），不抛。
+    缓存 10 分钟。读不到/读失败回 None（未知），不抛——未知怎么
+    判由调用方定（选盘按未知放行，入池门槛按不达标拦）。
     """
-    binding_id = getattr(member, "binding_id", None)
     if binding_id is None:
         return None
     now = datetime.now()
@@ -682,12 +686,25 @@ def _member_quota(db: Session, member, quota_fn=None):
             else:
                 from backend.emby_server import quota_dashboard as _qd
                 quota = _qd._default_drive_quota(db, binding)
-    except Exception:  # noqa: BLE001 — 配额读失败不挡选盘，按未知处理
-        logger.warning("池成员 %s 配额读取失败，按未知处理",
-                       getattr(member, "id", None), exc_info=True)
+    except Exception:  # noqa: BLE001 — 配额读失败回未知，判定归调用方
+        logger.warning("池绑定 %s 配额读取失败，按未知处理",
+                       binding_id, exc_info=True)
         quota = None
     _POOL_QUOTA_CACHE[binding_id] = (now, quota)
     return quota
+
+
+def _member_quota(db: Session, member, quota_fn=None):
+    """成员盘剩余（about.get 口径）：返回 {"limit","usage","free"} 或 None。
+
+    读数走 _binding_quota（按 binding_id 缓存 10 分钟）。读不到/
+    读失败回 None（未知）：选盘时按容量未知处理（不因一次 about
+    抖动把成员判死），不抛。
+    """
+    binding_id = getattr(member, "binding_id", None)
+    if binding_id is None:
+        return None
+    return _binding_quota(db, binding_id, quota_fn=quota_fn)
 
 
 def _member_daily_usage(db: Session, member_id: int):
@@ -1393,7 +1410,7 @@ class PoolLifecycleError(Exception):
 
     kind：not_found / invalid_state / no_binding /
     binding_inactive / provider_not_enabled / needs_rebind /
-    assign_required / ejected。
+    assign_required / ejected / capacity_too_small。
     """
 
     def __init__(self, kind: str, message: str):
@@ -1441,9 +1458,41 @@ def _member_binding(db: Session, member) -> em.UserStorageBinding | None:
             .first())
 
 
-def _check_binding_pool_ready(db: Session, binding) -> None:
+def _min_capacity_label(minimum: int) -> str:
+    """门槛字节数的人话说法：整 10^12 按 T 说（默认 5×10^12 →
+    「5T」），整 TiB 同理，其余回字节数。"""
+    if minimum % 10**12 == 0:
+        return f"{minimum // 10**12}T"
+    tib = 1024 ** 4
+    if minimum >= tib and minimum % tib == 0:
+        return f"{minimum // tib}T"
+    return f"{minimum} 字节"
+
+
+def _join_capacity_block(db: Session, binding, cfg, quota_fn=None) -> str | None:
+    """入池容量门槛判定（用户 2026-11-10 亲批）：盘总容量
+    （about 的 limit、不是剩余量）须达 pool_join_min_capacity_bytes。
+
+    门槛 0 = 关；非 drive 跳过（现网准入名单只有 drive）；
+    读不到/读失败（limit 为 None）按不达标拦（fail-closed）。
+    达标返回 None，不达标返回人话原因（无句号，调用方按语境补）。
+    读数走 _binding_quota 的 10 分钟缓存，与选盘共用一份。
+    """
+    minimum = int(cfg.get("pool_join_min_capacity_bytes") or 0)
+    if minimum <= 0 or binding.provider != "drive":
+        return None
+    quota = _binding_quota(db, binding.id, quota_fn=quota_fn)
+    limit = quota.get("limit") if isinstance(quota, dict) else None
+    if limit is not None and int(limit) >= minimum:
+        return None
+    return (f"这个盘的总容量不到 {_min_capacity_label(minimum)}，"
+            f"不能加入公共池（加入门槛：盘总容量至少 {minimum} 字节）")
+
+
+def _check_binding_pool_ready(db: Session, binding, quota_fn=None) -> None:
     """入池/恢复时对绑定行的硬查（design §2.5）：provider 在配置
-    名单内、drive 含 drive.file 范围。不合格抛 PoolLifecycleError。"""
+    名单内、drive 含 drive.file 范围、盘总容量达入池门槛。
+    不合格抛 PoolLifecycleError。"""
     cfg = pool_config_payload(db)
     if binding.provider not in _enabled_providers(cfg):
         raise PoolLifecycleError(
@@ -1457,6 +1506,9 @@ def _check_binding_pool_ready(db: Session, binding) -> None:
                 "needs_rebind",
                 "这个盘的授权范围不足（缺写入范围），"
                 "请先在「我的网盘」里对它重新授权，再申请加入。")
+    block = _join_capacity_block(db, binding, cfg, quota_fn=quota_fn)
+    if block is not None:
+        raise PoolLifecycleError("capacity_too_small", block + "。")
 
 
 def _require_binding_active(db: Session, member) -> em.UserStorageBinding:
@@ -1502,7 +1554,8 @@ def _land_application(db: Session, member, *, reason="apply"):
     return member
 
 
-def apply_pool_membership(db: Session, user_id: int, binding_id: int):
+def apply_pool_membership(db: Session, user_id: int, binding_id: int,
+                          quota_fn=None):
     """贡献者对自己某个绑定申请入池（用户端 apply 口）。
 
     幂等：该绑定已有非终态成员行直接返回；终态行（exited /
@@ -1522,7 +1575,7 @@ def apply_pool_membership(db: Session, user_id: int, binding_id: int):
         raise PoolLifecycleError(
             "binding_inactive",
             "这个盘当前不可用（绑定已失效），先恢复绑定再申请。")
-    _check_binding_pool_ready(db, binding)
+    _check_binding_pool_ready(db, binding, quota_fn=quota_fn)
     existing = (db.query(em.PoolMember)
                 .filter(em.PoolMember.binding_id == binding.id)
                 .order_by(em.PoolMember.id.asc()).first())
@@ -1559,7 +1612,8 @@ def apply_pool_membership(db: Session, user_id: int, binding_id: int):
     return row
 
 
-def approve_pool_member(db: Session, member_id: int, *, actor_id=None):
+def approve_pool_member(db: Session, member_id: int, *, actor_id=None,
+                        quota_fn=None):
     """待审 → active（管理员批准）。批准前复查绑定仍合格。"""
     member = get_pool_member(db, member_id)
     if member.status != "pending":
@@ -1567,7 +1621,7 @@ def approve_pool_member(db: Session, member_id: int, *, actor_id=None):
             "invalid_state",
             f"成员当前是「{member.status}」，只有待审状态可以批准。")
     binding = _require_binding_active(db, member)
-    _check_binding_pool_ready(db, binding)
+    _check_binding_pool_ready(db, binding, quota_fn=quota_fn)
     if member.joined_at is None:
         member.joined_at = datetime.now()
     transition_member_status(db, member, "active", reason="approve")
@@ -1605,7 +1659,8 @@ def suspend_pool_member(db: Session, member_id: int, *, actor_id=None,
     return member
 
 
-def resume_pool_member(db: Session, member_id: int, *, actor_id=None):
+def resume_pool_member(db: Session, member_id: int, *, actor_id=None,
+                       quota_fn=None):
     """suspended → active（管理员恢复）。绑定已死/范围不足时拒绝，
     防把死盘放回选盘候选集。"""
     member = get_pool_member(db, member_id)
@@ -1614,7 +1669,7 @@ def resume_pool_member(db: Session, member_id: int, *, actor_id=None):
             "invalid_state",
             f"成员当前是「{member.status}」，只有暂停状态可以恢复。")
     binding = _require_binding_active(db, member)
-    _check_binding_pool_ready(db, binding)
+    _check_binding_pool_ready(db, binding, quota_fn=quota_fn)
     member.suspended_reason = None
     member.breaker_until = None
     transition_member_status(db, member, "active", reason="resume")
@@ -1896,6 +1951,11 @@ def _apply_block_reason(db: Session, binding, member, candidate) -> str | None:
 
         if _do.binding_needs_rebind(binding.granted_scopes):
             return "授权范围不足，请先对这个盘重新授权"
+        # 入池容量门槛与申请/批准同一判定（_join_capacity_block，
+        # 读数走 10 分钟缓存，页面打开每盘最多查一次 about）。
+        block = _join_capacity_block(db, binding, cfg)
+        if block is not None:
+            return block
     if (cfg["pool_join_mode"] == "admin_assign" and candidate is None
             and member is None):
         return "公共池由管理员指定成员，请联系管理员授予资格"

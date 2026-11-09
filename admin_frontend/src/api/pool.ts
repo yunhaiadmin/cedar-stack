@@ -7,6 +7,7 @@ export interface PoolConfig {
   pool_join_mode: 'apply_review' | 'admin_assign' | 'open'
   pool_enabled_providers: string
   pool_member_capacity_bytes: number
+  pool_join_min_capacity_bytes: number
   pool_member_reserve_free_bytes: number
   pool_member_daily_transfer_bytes: number
   pool_member_daily_transfer_jobs: number
@@ -27,7 +28,7 @@ export const fetchPoolConfig = () => get<PoolConfig>('/pool/config')
 export const savePoolConfig = (payload: PoolConfigPayload) =>
   put<PoolConfig>('/pool/config', payload)
 
-/** 巡检配置（闲置主动清理开关；与本体 16 键分开一份端点） */
+/** 巡检配置（闲置主动清理开关；与本体 17 键分开一份端点） */
 
 export interface PoolJanitorConfig {
   pool_idle_evict_proactive_enabled: boolean

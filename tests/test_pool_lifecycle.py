@@ -31,6 +31,7 @@ from backend.api.admin_core import get_current_admin
 from backend.database import get_db
 from backend.emby_server import models as em
 from backend.emby_server import pool_gate, user_bindings
+from backend.emby_server import transfer_variant as tv
 from backend.integrations import store
 
 FULL_SCOPES = (
@@ -50,6 +51,33 @@ def db():
     yield session
     session.close()
     engine.dispose()
+
+
+FIVE_T_LIMIT = 5_497_558_138_880
+
+
+def _stub_drive_limit(monkeypatch, limit):
+    """把成员盘总容量打桩到指定 limit（类属性口径，不打实例）。
+
+    limit=None 表示 about 读不到上限（三数里的 limit 为 None）。
+    换读数必须清池配额缓存，否则命中 10 分钟缓存的旧读数。
+    """
+    def fake_about_storage(self, drive_id):
+        return {"limit": limit, "usage": 0,
+                "free": limit if limit is not None else None}
+
+    monkeypatch.setattr(
+        tv.UserDriveApiClient, "about_storage", fake_about_storage)
+    pool_gate.clear_pool_quota_cache()
+
+
+@pytest.fixture(autouse=True)
+def _big_drive_quota(monkeypatch):
+    """入池容量门槛默认开：本文件的盘一律按 5T 档打桩，
+    个别用例用 _stub_drive_limit 改读数。"""
+    _stub_drive_limit(monkeypatch, FIVE_T_LIMIT)
+    yield
+    pool_gate.clear_pool_quota_cache()
 
 
 @pytest.fixture(autouse=True)
@@ -540,3 +568,102 @@ def test_user_contribution_no_binding_states(user_client, db):
         "/api/user/emby/pool/contribution/apply",
         json={"binding_id": 424242})
     assert bad.status_code in (400, 404)
+
+
+# ------------------------------------------------------------ 入池容量门槛
+# 用户 2026-11-10 亲批：pool_join_min_capacity_bytes（默认 5×10^12，
+# 0=关）按盘总容量（limit）拦小盘；读不到按不达标（fail-closed）。
+# 申请/批准/恢复共用 _check_binding_pool_ready 一处收口，用户端
+# contribution_status 的 can_apply 同步给同一句人话原因。
+
+GIB = 1024 ** 3
+SMALL_LIMIT = 15 * GIB
+TWO_T_LIMIT = 2_199_023_255_552
+
+
+def test_apply_blocked_when_drive_total_capacity_too_small(db, monkeypatch):
+    _stub_drive_limit(monkeypatch, SMALL_LIMIT)
+    user = _user(db, "small-disk")
+    binding = _binding(db, user.id)
+    with pytest.raises(pool_gate.PoolLifecycleError) as excinfo:
+        pool_gate.apply_pool_membership(db, user.id, binding.id)
+    assert excinfo.value.kind == "capacity_too_small"
+    assert "总容量不到 5T" in excinfo.value.message
+    assert db.query(em.PoolMember).filter_by(
+        binding_id=binding.id).first() is None
+
+
+def test_apply_ok_when_drive_is_5t_class(db, monkeypatch):
+    _stub_drive_limit(monkeypatch, FIVE_T_LIMIT)
+    user = _user(db, "big-disk")
+    binding = _binding(db, user.id)
+    member = pool_gate.apply_pool_membership(db, user.id, binding.id)
+    assert member.status == "pending"
+
+
+def test_apply_blocked_when_drive_limit_unknown(db, monkeypatch):
+    _stub_drive_limit(monkeypatch, None)
+    user = _user(db, "unknown-disk")
+    binding = _binding(db, user.id)
+    with pytest.raises(pool_gate.PoolLifecycleError) as excinfo:
+        pool_gate.apply_pool_membership(db, user.id, binding.id)
+    assert excinfo.value.kind == "capacity_too_small"
+    assert db.query(em.PoolMember).filter_by(
+        binding_id=binding.id).first() is None
+
+
+def test_approve_blocked_when_drive_shrinks_below_threshold(db, monkeypatch):
+    user = _user(db, "shrink-disk")
+    binding = _binding(db, user.id)
+    member = pool_gate.apply_pool_membership(db, user.id, binding.id)
+    assert member.status == "pending"
+    _stub_drive_limit(monkeypatch, SMALL_LIMIT)
+    with pytest.raises(pool_gate.PoolLifecycleError) as excinfo:
+        pool_gate.approve_pool_member(db, member.id, actor_id=99)
+    assert excinfo.value.kind == "capacity_too_small"
+    db.refresh(member)
+    assert member.status == "pending"
+
+
+def test_resume_blocked_when_drive_below_threshold(db, monkeypatch):
+    _stub_drive_limit(monkeypatch, SMALL_LIMIT)
+    user = _user(db, "resume-small")
+    binding = _binding(db, user.id)
+    member = _member(db, user.id, binding.id, status="suspended",
+                     suspended_reason="manual")
+    with pytest.raises(pool_gate.PoolLifecycleError) as excinfo:
+        pool_gate.resume_pool_member(db, member.id, actor_id=99)
+    assert excinfo.value.kind == "capacity_too_small"
+    db.refresh(member)
+    assert member.status == "suspended"
+
+
+def test_apply_small_disk_ok_when_threshold_disabled(db, monkeypatch):
+    _set_pool(db, pool_join_min_capacity_bytes=0)
+    _stub_drive_limit(monkeypatch, SMALL_LIMIT)
+    user = _user(db, "small-disk-off")
+    binding = _binding(db, user.id)
+    member = pool_gate.apply_pool_membership(db, user.id, binding.id)
+    assert member.status == "pending"
+
+
+def test_apply_2t_disk_ok_when_threshold_lowered(db):
+    _set_pool(db, pool_join_min_capacity_bytes=2_000_000_000_000)
+    user = _user(db, "two-t-disk")
+    binding = _binding(db, user.id)
+    member = pool_gate.apply_pool_membership(
+        db, user.id, binding.id,
+        quota_fn=lambda d, b: {"limit": TWO_T_LIMIT, "usage": 0,
+                               "free": TWO_T_LIMIT})
+    assert member.status == "pending"
+
+
+def test_contribution_status_blocks_small_disk_with_reason(db, monkeypatch):
+    _stub_drive_limit(monkeypatch, SMALL_LIMIT)
+    user = _user(db, "status-small")
+    binding = _binding(db, user.id)
+    status = pool_gate.contribution_status(db, user)
+    entry = [b for b in status["bindings"]
+             if b["binding_id"] == binding.id][0]
+    assert entry["can_apply"] is False
+    assert "总容量不到 5T" in (entry["apply_block_reason"] or "")
