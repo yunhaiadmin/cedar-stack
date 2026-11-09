@@ -228,7 +228,8 @@ const headCellActive = computed(() =>
 const viewCell = computed(() => {
   const vp = accountCard.value?.view_permission
   if (!vp) return null
-  if (!vp.granted) return { value: '未解锁', label: '查看凭证' }
+  if (vp.source === 'welfare') return { value: '已开通', label: '查看凭证 · 随资格开通' }
+  if (!vp.granted) return { value: '未开通', label: '查看凭证 · 续上公益资格即可看' }
   if (!vp.expires_at) return { value: '已解锁', label: '查看凭证 · 永久' }
   const expired = new Date(vp.expires_at).getTime() <= Date.now()
   return {

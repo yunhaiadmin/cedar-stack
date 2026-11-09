@@ -115,24 +115,14 @@ def test_welfare_states(db):
     assert "📊 <b>公益资格</b> | 长期有效" in features.compact_dashboard(db, perm)
 
 
-# ---------- 查看凭证 ----------
+# ---------- 查看行已删除（2026-11-09 资格合并：面板不再展示凭证） ----------
 
-def test_view_unlock_states(db):
-    none = _user(db, tg=TG, name="none")
-    assert "🎟️ <b>查看凭证</b> | 未开通" in features.compact_dashboard(db, none)
+def test_view_row_removed_from_dashboard(db):
     dated = _user(db, tg=TG + 1, name="dated")
     _unlock(db, dated.id, datetime(2030, 1, 1))
-    assert "🎟️ <b>查看凭证</b> | 至 2030-01-01" in features.compact_dashboard(db, dated)
-    perm = _user(db, tg=TG + 2, name="perm")
-    _unlock(db, perm.id, None)
-    assert "🎟️ <b>查看凭证</b> | 长期有效" in features.compact_dashboard(db, perm)
-    expired = _user(db, tg=TG + 3, name="expired")
-    _unlock(db, expired.id, datetime(2020, 1, 1))
-    assert "🎟️ <b>查看凭证</b> | 未开通" in features.compact_dashboard(db, expired)
-    mixed = _user(db, tg=TG + 4, name="mixed")
-    _unlock(db, mixed.id, datetime(2020, 1, 1), realm_id=1)
-    _unlock(db, mixed.id, datetime(2030, 6, 1), realm_id=2)
-    assert "🎟️ <b>查看凭证</b> | 至 2030-06-01" in features.compact_dashboard(db, mixed)
+    text = features.compact_dashboard(db, dated)
+    assert "查看凭证" not in text
+    assert "🎟️" not in text
 
 
 # ---------- 网盘绑定 ----------
@@ -203,7 +193,7 @@ def test_streak_line(db):
     assert "连签天数" not in text
 
 
-# ---------- 卡片版式整版：标题＋11 行汇总行（明细不铺） ----------
+# ---------- 卡片版式整版：标题＋10 行汇总行（明细不铺） ----------
 
 def test_slim_layout_full(db):
     row = _user(db, tg=TG, name="alice", points=16, vitality=14,
@@ -221,7 +211,6 @@ def test_slim_layout_full(db):
         "· ⭐ <b>当前等级</b> | Lv.1 初幕 · 经验 0／100 ░░░░░░░░░░（距 Lv.2 影迷还差 100 经验）",
         "· 🍒 <b>能量余额</b> | <b>16</b>",
         "· 📊 <b>公益资格</b> | 至 2026-11-27",
-        "· 🎟️ <b>查看凭证</b> | 至 2026-11-27",
         "· ⚡ <b>活力数值</b> | 14/14",
         "· 🔗 <b>网盘绑定</b> | Drive 已绑 ✓",
         "· 🐉 <b>当前馆灵</b> | 🦉 夜枭（累计观影 120.0 小时），距守夜者还差 80.0 小时",
@@ -243,4 +232,4 @@ def test_no_bar_chars_full_vitality(db):
     text = features.compact_dashboard(db, row)
     assert "活力数值</b> | 14/14" in text
     assert "──" not in text
-    assert len(text.split("\n")) == 12  # 标题＋11 行汇总行
+    assert len(text.split("\n")) == 11  # 标题＋10 行汇总行（查看行已删）

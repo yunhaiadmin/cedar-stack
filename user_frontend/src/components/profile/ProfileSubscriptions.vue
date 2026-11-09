@@ -15,13 +15,13 @@ export interface SubscriptionItem {
   auto_renew?: boolean
 }
 
-/** 查看凭证（取自账号卡 view_permission，价格与天数均由服务端给，前端不写死） */
+/** 查看状态（取自账号卡 view_permission；资格与凭证合并后只展示状态、无购买动作） */
 export interface ViewUnlockInfo {
   granted: boolean
   /** 已解锁的到期时间（ISO，未解锁/永久为 null） */
   expiresAt: string | null
-  unlockPoints: number
-  unlockDays: number
+  /** 放行来源：welfare＝随公益资格开通 / unlock＝存量凭证在效 / subscription＝付费订阅 */
+  source: 'welfare' | 'unlock' | 'subscription' | null
 }
 
 const props = defineProps<{
@@ -45,22 +45,21 @@ const props = defineProps<{
   viewUnlock?: ViewUnlockInfo | null
   /** 正在续期的公益天数档（7 或 30），无则 null */
   renewingWelfare?: number | null
-  renewingView?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'cancel', sub: any): void
   (e: 'toggle-renew', sub: any): void
   (e: 'renew-welfare', days: 7 | 30): void
-  (e: 'renew-view'): void
 }>()
 
 const router = useRouter()
 
-/** 查看凭证状态：unknown（无数据不展示）/ locked（未解锁）/ permanent（永久）/ valid（有效期内）/ expired（已到期） */
+/** 查看状态：unknown（无数据不展示）/ welfare（随资格开通）/ locked（未开通）/ permanent（存量永久）/ valid（存量在效）/ expired（存量已到期） */
 const viewState = computed(() => {
   const v = props.viewUnlock
   if (!v) return 'unknown'
+  if (v.source === 'welfare') return 'welfare'
   if (!v.granted) return 'locked'
   if (v.expiresAt === null) return 'permanent'
   return new Date(v.expiresAt).getTime() > Date.now() ? 'valid' : 'expired'
@@ -72,12 +71,6 @@ const viewExpiresDate = computed(() => {
   if (!v || v.expiresAt === null) return null
   return v.expiresAt.slice(0, 10)
 })
-const viewRenewInfo = computed(() => {
-  const v = props.viewUnlock
-  if (!v) return null
-  return { points: v.unlockPoints, days: v.unlockDays }
-})
-
 /** 公益到期日（yyyy-mm-dd）：状态口未成功返回时为 null，不展示 */
 const welfareExpiresDate = computed(() => {
   if (!props.welfareStatusLoaded || !props.welfareExpiresAt) return null
@@ -135,7 +128,7 @@ const welfareExpiresDate = computed(() => {
     <div v-else-if="isFreeRealm" class="sub-free">
       <span class="badge free">公益服 · 免费开放</span>
       <p class="pane-empty">{{ realmNote }}</p>
-      <!-- 自助续期：后端口子现成（公益天数 /redeem、查看 /unlock-view），此前个人中心无入口 -->
+      <!-- 自助续期：公益天数走 /redeem；查看已随资格合并，只展示状态 -->
       <div class="renew-block">
         <div class="renew-block-title">公益资格</div>
         <p class="renew-line">{{ welfareIsWelfare ? '生效中' : '未开通' }}<template v-if="welfareExpiresDate"> · 到期 {{ welfareExpiresDate }}</template><template v-else-if="welfareStatusLoaded && welfareIsWelfare"> · 不过期</template><template v-if="pointsBalance != null"> · 当前能量 {{ pointsBalance }}</template></p>
@@ -157,19 +150,12 @@ const welfareExpiresDate = computed(() => {
           >去绑定 Telegram</button>
         </div>
       </div>
-      <div v-if="viewRenewInfo" class="renew-block">
+      <div v-if="viewUnlock" class="renew-block">
         <div class="renew-block-title">查看凭证</div>
-        <p v-if="viewState === 'permanent'" class="renew-line">已永久解锁</p>
-        <p v-else-if="viewState === 'valid'" class="renew-line">已解锁至 {{ viewExpiresDate }}</p>
-        <p v-else class="renew-line">{{ viewState === 'expired' ? '已到期' : '未解锁' }}<template v-if="pointsBalance != null"> · 当前能量 {{ pointsBalance }}</template></p>
-        <div v-if="viewState === 'locked' || viewState === 'expired'" class="renew-btns">
-          <button
-            type="button"
-            class="btn btn-primary renew-btn"
-            :disabled="renewingView || (pointsBalance != null && pointsBalance < viewRenewInfo.points)"
-            @click="emit('renew-view')"
-          >{{ renewingView ? '续费中…' : (pointsBalance != null && pointsBalance < viewRenewInfo.points ? '能量不足' : `花 ${viewRenewInfo.points} 能量续费 ${viewRenewInfo.days > 0 ? viewRenewInfo.days + ' 天' : '永久'}`) }}</button>
-        </div>
+        <p v-if="viewState === 'welfare'" class="renew-line">已随资格开通</p>
+        <p v-else-if="viewState === 'permanent'" class="renew-line">已永久解锁（存量凭证）</p>
+        <p v-else-if="viewState === 'valid'" class="renew-line">已解锁至 {{ viewExpiresDate }}（存量凭证）</p>
+        <p v-else class="renew-line">{{ viewState === 'expired' ? '存量凭证已到期' : '未开通' }} · 续上公益资格即可看</p>
       </div>
     </div>
     <EmptyState

@@ -195,27 +195,6 @@ def _welfare_line(user) -> str:
     return f"公益资格：至 {end.strftime('%Y-%m-%d')}"
 
 
-def _view_unlock_line(db, user_id: int) -> str:
-    """查看凭证：取用户名下有效行（expires_at 为空或未过期）。
-
-    有效性口径与 portal.py 购票校验一致（expires_at IS NULL OR expires_at > now）。
-    多行时永久有效优先，否则取最晚到期日；无有效行写未开通。
-    """
-    now = datetime.now()
-    rows = (
-        db.query(models.EmbyViewUnlock)
-        .filter(models.EmbyViewUnlock.user_id == user_id)
-        .all()
-    )
-    valid = [r for r in rows if r.expires_at is None or r.expires_at > now]
-    if not valid:
-        return "查看凭证：未开通"
-    if any(r.expires_at is None for r in valid):
-        return "查看凭证：长期有效"
-    latest = max(r.expires_at for r in valid)
-    return f"查看凭证：至 {latest.strftime('%Y-%m-%d')}"
-
-
 def _bindings_line(db, user_id: int) -> str:
     """网盘绑定：仅 active 行，按 provider 区分展示；已绑带 ✓。"""
     from backend.emby_server import models as em
@@ -419,8 +398,8 @@ def _subscription_summary(db, user) -> str:
 def account_card(db, user, display_name: str | None = None) -> str:
     """账号卡（唯一构建器）：/me、/account 与用户面板共用同一张精简卡。
 
-    固定 11 行汇总——用户编号/账号名称/当前等级（带经验进度，/level
-    详情并入此行）/能量余额/公益资格/查看凭证/活力数值/网盘绑定/
+    固定 10 行汇总——用户编号/账号名称/当前等级（带经验进度，/level
+    详情并入此行）/能量余额/公益资格/活力数值/网盘绑定/
     当前馆灵（下一阶段差距并进同一行）/成就进度（一行汇总）/订阅状态
     （一行汇总）；成就/订阅/设备不逐条铺、连签行砍掉（签到卡里有）。
     白名单专属版式保留：专属问候标题＋称号/编号行紧跟账号名称行。
@@ -459,7 +438,6 @@ def account_card(db, user, display_name: str | None = None) -> str:
         layout.row("⭐", "当前等级", _level_value(db, user)),
         layout.row("🍒", "能量余额", f"<b>{int(user.points or 0)}</b>"),
         layout.row("📊", "公益资格", _after_colon(_welfare_line(user))),
-        layout.row("🎟️", "查看凭证", _after_colon(_view_unlock_line(db, user.id))),
         layout.row("⚡", "活力数值", vitality_text),
         layout.row("🔗", "网盘绑定", _after_colon(_bindings_line(db, user.id))),
         layout.row("🐉", "当前馆灵", pet_text),

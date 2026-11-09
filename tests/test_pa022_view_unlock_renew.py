@@ -1,18 +1,15 @@
 # -*- coding: utf-8 -*-
-"""PA-022 回归：公益服查看解锁过期后续开。
+"""PA-022 后续：公益服查看购买写口退役（2026-11-09 资格与凭证合并）。
 
-旧实现：前置检查只认未过期行，过期行走到新建 INSERT 撞
-uq_emby_view_unlock_user_realm 唯一约束→回滚（扣费撤销）→重读不滤
-过期→返回 success/already=True 且 expires_at 仍过期——钱没扣、权限
-没给、接口谎报成功（subscriptions.view_grant 仍判无权限）。
+历史：PA-022 钉的是「过期行再次解锁＝原地续开」一类购买口径。
+2026-11-09 用户定版资格与凭证合并后，公益服查看随公益资格自动
+开通（subscriptions.view_grant），购买写口整体退役。本文件改钉
+下线口径：
 
-钉住的口径：
-1. 过期行再次解锁＝续开：原地更新 expires_at、正常扣费（一人一服
-   仍一行），返回的成功必须对应 view_grant 真实生效。
-2. 未过期重复解锁幂等：不重复扣费、到期时间不变。
-3. 能量不足时 409，绝不报成功、行仍过期。
-价格/天数一律走 SystemConfig（emby_view_unlock_points/days），测试里
-显式写配置行，不依赖代码默认值。
+1. 任何人调 unlock-view（公益服）：一律 410 Gone，不落行、不扣分、
+   存量行原样不动（过期行不被续开、有效行不被改动）。
+2. 付费服：保持原 400 口径（查看来自订阅），不进 410 分支。
+价格/天数配置键（emby_view_unlock_points/days）保留可查，与本口无关。
 """
 
 import os
@@ -44,20 +41,17 @@ def db():
     session.close()
 
 
-def _setup(db, points=1000, price=200, days=30, row_expires=None,
-           with_row=True):
-    db.add(models.SystemConfig(key="emby_view_unlock_points",
-                               value=str(price)))
-    db.add(models.SystemConfig(key="emby_view_unlock_days",
-                               value=str(days)))
+def _setup(db, points=1000, row_expires="absent", access_mode="free"):
+    db.add(models.SystemConfig(key="emby_view_unlock_points", value="200"))
+    db.add(models.SystemConfig(key="emby_view_unlock_days", value="30"))
     realm = models.ServerRealm(name="公益服", slug="pa022free",
-                               access_mode="free")
+                               access_mode=access_mode)
     db.add(realm)
     u = models.WebUser(username="pa022user", password_hash="x",
                        is_active=True, points=points)
     db.add(u)
     db.commit()
-    if with_row:
+    if row_expires != "absent":
         db.add(models.EmbyViewUnlock(
             user_id=u.id, realm_id=realm.id,
             unlocked_at=datetime.now() - timedelta(days=40),
@@ -73,73 +67,48 @@ def _row(db, u, realm):
               .first())
 
 
-def test_expired_row_renews_charges_and_grants(db):
-    from backend import subscriptions
-    expired = datetime.now() - timedelta(days=1)
-    realm, u = _setup(db, row_expires=expired)
-    out = unlock_emby_view(UnlockViewRequest(realm_id=realm.id), u, db)
-    assert out["success"] is True
-    assert out["already"] is False
-    assert out["points_spent"] == 200
-    assert out["balance"] == 800
-    db.expire_all()
-    u2 = db.query(models.WebUser).filter(models.WebUser.id == u.id).first()
-    assert int(u2.points) == 800, "续开必须真扣费"
-    rows = (db.query(models.EmbyViewUnlock)
-              .filter(models.EmbyViewUnlock.user_id == u.id,
-                      models.EmbyViewUnlock.realm_id == realm.id).all())
-    assert len(rows) == 1, "一人一服一行：续开原地更新，不新建第二行"
-    row = rows[0]
-    assert row.expires_at is not None
-    assert datetime.now() + timedelta(days=29) < row.expires_at \
-        < datetime.now() + timedelta(days=31), "按配置 30 天从现在重算"
-    granted, _ = subscriptions.view_grant(db, u2, realm.id)
-    assert granted is True, "报成功必须对应真实生效的查看权限"
-
-
-def test_unexpired_row_repeat_no_double_charge(db):
-    future = datetime.now() + timedelta(days=10)
-    realm, u = _setup(db, row_expires=future)
-    out = unlock_emby_view(UnlockViewRequest(realm_id=realm.id), u, db)
-    assert out["success"] is True
-    assert out["already"] is True
-    db.expire_all()
-    u2 = db.query(models.WebUser).filter(models.WebUser.id == u.id).first()
-    assert int(u2.points) == 1000, "未过期重复解锁不许重复扣费"
-    row = _row(db, u, realm)
-    assert abs((row.expires_at - future).total_seconds()) < 60
-
-
-def test_first_unlock_creates_row_and_charges(db):
-    realm, u = _setup(db, with_row=False)
-    out = unlock_emby_view(UnlockViewRequest(realm_id=realm.id), u, db)
-    assert out["success"] is True and out["already"] is False
-    db.expire_all()
-    row = _row(db, u, realm)
-    assert row is not None and row.expires_at > datetime.now()
-    u2 = db.query(models.WebUser).filter(models.WebUser.id == u.id).first()
-    assert int(u2.points) == 800
-
-
-def test_expired_row_insufficient_points_no_fake_success(db):
-    expired = datetime.now() - timedelta(days=1)
-    realm, u = _setup(db, points=100, row_expires=expired)
+def _call(db, u, realm):
     with pytest.raises(HTTPException) as exc:
         unlock_emby_view(UnlockViewRequest(realm_id=realm.id), u, db)
-    assert exc.value.status_code == 409
-    db.expire_all()
-    u2 = db.query(models.WebUser).filter(models.WebUser.id == u.id).first()
-    assert int(u2.points) == 100
-    row = _row(db, u, realm)
-    assert row.expires_at <= datetime.now(), "失败后行仍过期，绝不假续上"
+    return exc.value
 
 
-def test_expired_row_renews_to_permanent_when_days_zero(db):
+def test_retired_no_row_no_charge(db):
+    realm, u = _setup(db)
+    exc = _call(db, u, realm)
+    assert exc.status_code == 410
+    db.refresh(u)
+    assert int(u.points or 0) == 1000
+    assert _row(db, u, realm) is None
+
+
+def test_retired_expired_row_untouched(db):
     expired = datetime.now() - timedelta(days=1)
-    realm, u = _setup(db, days=0, row_expires=expired)
-    out = unlock_emby_view(UnlockViewRequest(realm_id=realm.id), u, db)
-    assert out["success"] is True and out["already"] is False
-    assert out["expires_at"] is None
-    db.expire_all()
+    realm, u = _setup(db, row_expires=expired)
+    exc = _call(db, u, realm)
+    assert exc.status_code == 410
+    db.refresh(u)
     row = _row(db, u, realm)
-    assert row.expires_at is None, "天数配置 0=永久：续开后应为永久行"
+    assert int(u.points or 0) == 1000
+    assert row is not None and row.expires_at == expired  # 没被续开
+
+
+def test_retired_valid_row_untouched(db):
+    valid = datetime.now() + timedelta(days=10)
+    realm, u = _setup(db, row_expires=valid)
+    exc = _call(db, u, realm)
+    assert exc.status_code == 410
+    row = _row(db, u, realm)
+    assert row is not None and row.expires_at == valid
+
+
+def test_retired_insufficient_points_still_410(db):
+    realm, u = _setup(db, points=0)
+    exc = _call(db, u, realm)
+    assert exc.status_code == 410  # 下线与余额无关，不再有「能量不足」
+
+
+def test_paid_realm_keeps_400(db):
+    realm, u = _setup(db, access_mode="paid")
+    exc = _call(db, u, realm)
+    assert exc.status_code == 400

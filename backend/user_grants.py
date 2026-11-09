@@ -7,7 +7,7 @@
 | 问题 | 口径（单一事实来源） |
 |---|---|
 | 这个服**有什么资源** | ``realms.stats``（媒体库 / 条目 / 挂载 / 节点） |
-| 他在这个服**被授权到什么程度** | 付费服看订阅、公益服看积分解锁 → ``subscriptions.view_grant`` |
+| 他在这个服**被授权到什么程度** | 付费服看订阅、公益服看资格（存量查看行） → ``subscriptions.view_grant`` |
 | 授权**能做什么** | ``can_play`` / ``view_grant`` / ``download_allowed``（``backend/subscriptions.py``） |
 
 所以这里**一个服一张卡**，而不是把「订阅记录」再抄一遍表格：订阅记录回答
@@ -20,8 +20,10 @@
    「生效中 / 即将到期 / 已过期」全部按 ``end_date`` 与当下比较得出。
 2. **判定必须带服**。多服部署下同一个用户在每个服各有一份互不影响的订阅
    （``realm_id``），拿「最近一条订阅」当成通用结论就是错的。
-3. **公益服不需要订阅**。free 服 ``can_play`` 恒为真，但**查看 Emby 账号/线路**
-   仍要花积分解锁（``EmbyViewUnlock``）——这两件事不一样，卡片分开写。
+3. **公益服不需要订阅**。free 服 ``can_play`` 恒为真；**查看 Emby 账号/线路**
+   已随公益资格合并（2026-11-09）：资格在期即放行，卡片来源记
+   ``GRANT_WELFARE``；资格不在期但存量查看行（``EmbyViewUnlock``，购买
+   写口已退役）仍在效时记 ``GRANT_UNLOCK`` 并注明来源是存量行。
 
 ## 不做的事
 
@@ -48,15 +50,17 @@ EXPIRING_DAYS = 7
 GRANT_SUBSCRIPTION = "subscription"   # 付费服：有效订阅
 GRANT_EXPIRED = "expired"             # 付费服：有过订阅但已到期 / 已取消
 GRANT_NONE = "none"                   # 付费服：从来没有订阅
-GRANT_UNLOCK = "unlock"               # 公益服：已花积分解锁查看权限
-GRANT_FREE_OPEN = "free_open"         # 公益服：没解锁（能看，账号卡不下发地址）
+GRANT_UNLOCK = "unlock"               # 公益服：存量查看行在效（购买已退役）
+GRANT_WELFARE = "welfare"             # 公益服：资格在期，查看随资格开通
+GRANT_FREE_OPEN = "free_open"         # 公益服：资格不在期且无存量行（账号卡不下发地址）
 
 GRANT_LABELS = {
     GRANT_SUBSCRIPTION: "订阅生效中",
     GRANT_EXPIRED: "订阅已到期",
     GRANT_NONE: "未授权",
-    GRANT_UNLOCK: "积分解锁中",
-    GRANT_FREE_OPEN: "公益服免费开放",
+    GRANT_UNLOCK: "存量查看凭证在效",
+    GRANT_WELFARE: "随公益资格开通",
+    GRANT_FREE_OPEN: "查看未开通",
 }
 
 #: 退款撤销（orders_admin 关单时会把订阅翻成 cancelled）——与「自然到期」分开说，
@@ -158,6 +162,10 @@ def _grant_of(db: Session, user: models.WebUser, realm: models.ServerRealm,
             "expires_at": unlock.expires_at.isoformat() if unlock and unlock.expires_at else None,
             "points_spent": int(unlock.points_spent) if unlock else 0,
         }
+        # 查看跟随资格（2026-11-09 合并）：资格在期优先记 welfare 来源；
+        # 资格不在期靠存量查看行在效的记 unlock（注明来源是存量行）。
+        if subscriptions.welfare_qualification_active(user):
+            return GRANT_WELFARE, {"unlock": unlock_payload}
         return (GRANT_UNLOCK if granted else GRANT_FREE_OPEN), {"unlock": unlock_payload}
 
     sub = _latest_subscription(db, user.id, realm.id)
@@ -188,7 +196,7 @@ def realm_card(db: Session, user: models.WebUser,
 
     if expiring:
         state = "warn"
-    elif grant in (GRANT_SUBSCRIPTION, GRANT_UNLOCK, GRANT_FREE_OPEN):
+    elif grant in (GRANT_SUBSCRIPTION, GRANT_UNLOCK, GRANT_WELFARE):
         state = "ok"
     else:
         state = "off"
@@ -273,6 +281,7 @@ __all__ = [
     "GRANT_NONE",
     "GRANT_SUBSCRIPTION",
     "GRANT_UNLOCK",
+    "GRANT_WELFARE",
     "cards",
     "realm_card",
     "summary",

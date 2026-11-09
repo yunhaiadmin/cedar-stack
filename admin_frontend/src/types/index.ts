@@ -857,7 +857,7 @@ export interface UserGrantSubscription {
   cancelled: boolean
 }
 
-/** 公益服的花积分解锁记录（付费服恒为 undefined） */
+/** 公益服的存量查看行记录（付费服恒为 undefined） */
 export interface UserGrantUnlock {
   unlocked: boolean
   unlocked_at: string | null
@@ -875,8 +875,8 @@ export interface UserGrantCard {
   access_mode: 'paid' | 'free'
   is_free: boolean
   access_note: string
-  /** 授权来源：subscription / expired / none / unlock / free_open */
-  grant: 'subscription' | 'expired' | 'none' | 'unlock' | 'free_open'
+  /** 授权来源：subscription / expired / none / welfare / unlock / free_open */
+  grant: 'subscription' | 'expired' | 'none' | 'welfare' | 'unlock' | 'free_open'
   grant_label: string
   /** 配色语义：ok 生效 / warn 即将到期 / off 未授权或已过期 */
   state: 'ok' | 'warn' | 'off'

@@ -301,6 +301,11 @@ def test_admin_grant_unaffected(db):
 
 
 def test_view_unlock_unaffected(db):
+    """查看购买写口与来源限定门的关系：2026-11-09 购买已退役，
+    本用例改钉退役口径——不论余额来源构成，一律 410、不扣分，
+    来源限定门只管公益 /redeem，不进这条线。"""
+    from fastapi import HTTPException
+
     from backend.emby_server import portal
     realm = models.ServerRealm(name="公益测试服", slug="gatefree",
                                access_mode="free")
@@ -309,11 +314,12 @@ def test_view_unlock_unaffected(db):
     db.refresh(realm)
     u = _make_user(db, "gate_view", age_days=0)
     _log(db, u, 100, "transfer_in", days_ago=0)
-    out = portal.unlock_emby_view(
-        portal.UnlockViewRequest(realm_id=realm.id), u, db)
-    assert out["success"] is True
+    with pytest.raises(HTTPException) as exc:
+        portal.unlock_emby_view(
+            portal.UnlockViewRequest(realm_id=realm.id), u, db)
+    assert exc.value.status_code == 410
     db.refresh(u)
-    assert int(u.points) == 50, "查看行按总余额扣 50，不受来源限定影响"
+    assert int(u.points) == 100, "写口已退役：不扣分"
 
 
 # ==================== 6. 配置注册 ====================

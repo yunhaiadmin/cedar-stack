@@ -10,7 +10,7 @@ callbacks 的 whois:* 回调，每次点击都重新校验点击者 is_staff。
   子视图/写操作按钮；
 - bind：绑定详情（各 provider 的状态与最近验证时间；绑定表无到期
   字段，不编造）；
-- cred：资格与凭证（公益资格状态/到期、各服查看凭证状态/到期）；
+- cred：公益资格（状态/到期）；
 - gift：赠送菜单（预设档位按钮，无自由输入）；
 - ask/do：写操作二次确认——ask 只出确认页（写明对谁、做什么、
   多少），do 才真正执行；执行后回 main 页并回显最新状态。赠送类
@@ -49,7 +49,7 @@ OPS: dict[str, tuple[str, str]] = {
     "gp500": ("赠送能量", "+500 能量"),
     "gw7": ("赠送公益资格", "+7 天"),
     "gw30": ("赠送公益资格", "+30 天"),
-    "gv30": ("赠送查看凭证", "+30 天"),
+    "gv30": ("赠送查看权", "+30 天"),
 }
 
 _GIFT_OPS = ("gp50", "gp100", "gp500", "gw7", "gw30", "gv30")
@@ -96,7 +96,7 @@ def main_markup(user) -> dict:
     return {"inline_keyboard": [
         [
             {"text": "🔗 绑定详情", "callback_data": f"whois:bind:{uid}"},
-            {"text": "🎟️ 资格与凭证", "callback_data": f"whois:cred:{uid}"},
+            {"text": "🎟️ 公益资格", "callback_data": f"whois:cred:{uid}"},
         ],
         [
             ban_btn,
@@ -150,7 +150,12 @@ def bindings_page(db, user) -> tuple[str, dict]:
 
 
 def cred_page(db, user) -> tuple[str, dict]:
-    """资格与凭证页：公益资格状态/到期＋各服查看凭证状态/到期。"""
+    """公益资格页：资格状态/到期。
+
+    查看已随资格合并（2026-11-09），面板不再单独展示凭证行：存量
+    查看行仍是 view_grant 的过渡放行依据；赠送查看权（写口）保留
+    在赠送页，与本展示页无关。
+    """
     from backend.tg_bot import features
 
     welfare = features._welfare_line(user).split("：", 1)[-1]
@@ -164,26 +169,8 @@ def cred_page(db, user) -> tuple[str, dict]:
         layout.row("📊", "公益资格", welfare),
         layout.row("📅", "资格到期", welfare_detail),
     ]
-    unlocks = (
-        db.query(models.EmbyViewUnlock)
-        .filter(models.EmbyViewUnlock.user_id == user.id)
-        .order_by(models.EmbyViewUnlock.id)
-        .all()
-    )
-    if not unlocks:
-        lines.append(layout.row("🎟️", "查看凭证", "未开通"))
-    now = datetime.now()
-    for row in unlocks:
-        if row.expires_at is None:
-            state = "生效中（永久）"
-        elif row.expires_at > now:
-            state = f"生效中，至 {row.expires_at.strftime('%Y-%m-%d')}"
-        else:
-            state = f"已过期（{row.expires_at.strftime('%Y-%m-%d')}）"
-        lines.append(layout.row(
-            "🎟️", "查看凭证", f"服 #{row.realm_id}｜{state}"))
     text = layout.card(
-        layout.title("资格与凭证", f"{user.username}（#{user.id}）"), lines)
+        layout.title("公益资格", f"{user.username}（#{user.id}）"), lines)
     return text, _back_markup(user)
 
 
@@ -358,7 +345,7 @@ def execute(db, admin, target, op: str, nonce: str | None = None) -> str:
         exp_text = (
             row.expires_at.strftime("%Y-%m-%d")
             if row is not None and row.expires_at else "永久")
-        return f"✅ 已给 <b>{name}</b> 赠送查看凭证 30 天，到期 {exp_text}。"
+        return f"✅ 已给 <b>{name}</b> 赠送查看权 30 天，到期 {exp_text}。"
     return "未知操作。"
 
 

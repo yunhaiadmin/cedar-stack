@@ -47,7 +47,9 @@ def _try_vitality_renew(db: Session, user: models.WebUser, now: datetime) -> boo
     与里程碑）。白名单用户活力不扣（豁免在 vitality 侧），天然达线属
     预期行为，此处不特判。
     续期后 expires_at = now + N 天 > now，下一轮 tick 不再过期、不重复续期（幂等）。
-    查看凭证（EmbyViewUnlock）一律不动：查看到期仍需花 50 分续。
+    查看权限已随资格合并（2026-11-09）：资格续上即自动恢复查看，
+    不再单独买凭证；存量查看行（EmbyViewUnlock）不由本流程处理，
+    继续有效到期为止。
     """
     if not _safe_get_bool(db, "welfare_vitality_renew_enabled", True):
         return False

@@ -28,11 +28,9 @@
         :tg-bound="tgBound"
         :view-unlock="viewUnlock"
         :renewing-welfare="renewingWelfare"
-        :renewing-view="renewingView"
         @cancel="cancelSubscription"
         @toggle-renew="toggleAutoRenew"
         @renew-welfare="renewWelfare"
-        @renew-view="renewView"
       />
     </div>
 
@@ -130,7 +128,6 @@ const tgBound = ref<boolean | null>(null)
 const welfareExpiresAt = ref<string | null>(null)
 const welfareStatusLoaded = ref(false)
 const renewingWelfare = ref<number | null>(null)
-const renewingView = ref(false)
 
 const viewUnlock = computed(() => {
   const vp = accountCard.value?.view_permission
@@ -138,8 +135,7 @@ const viewUnlock = computed(() => {
   return {
     granted: vp.granted,
     expiresAt: vp.expires_at,
-    unlockPoints: vp.unlock_points,
-    unlockDays: vp.unlock_days,
+    source: vp.source ?? null,
   }
 })
 const pointsBalance = computed(() => accountCard.value?.view_permission?.points_balance ?? null)
@@ -181,21 +177,6 @@ async function renewWelfare(days: 7 | 30) {
     toast.error(toUserMessage(err, 'renewFailed'))
   } finally {
     renewingWelfare.value = null
-  }
-}
-
-async function renewView() {
-  if (renewingView.value) return
-  renewingView.value = true
-  try {
-    const realmId = accountCard.value?.realm_id ?? undefined
-    const res = await embyApi.unlockView(realmId)
-    toast.success(res.already ? '查看已是解锁状态' : `续费成功${res.expires_at ? `，已延至 ${res.expires_at.slice(0, 10)}` : ''}`)
-    await loadRenewal()
-  } catch (err: any) {
-    toast.error(toUserMessage(err, 'renewFailed'))
-  } finally {
-    renewingView.value = false
   }
 }
 
