@@ -303,21 +303,12 @@
 
         <!-- 没查看权限：解锁入口 -->
         <div v-else-if="viewPermission" class="v4-sec">
-          <div class="v4-sec-title">接线需要解锁</div>
+          <div class="v4-sec-title">还没有查看权限</div>
           <template v-if="viewPermission.realm_free">
             <p class="unlock-desc">
-              花 <strong>{{ viewPermission.unlock_points }}</strong> 能量解锁查看权限，
-              有效期 {{ viewPermission.unlock_days > 0 ? viewPermission.unlock_days + ' 天' : '永久' }}。
-              你当前有 <strong>{{ viewPermission.points_balance }}</strong> 能量。
+              公益服查看已随公益资格自动开通，不用再单独买凭证。
+              续上公益资格，这里的服务器地址和账号就会出现。
             </p>
-            <button
-              class="op-btn primary"
-              :disabled="unlocking || viewPermission.points_balance < viewPermission.unlock_points"
-              @click="openUnlockConfirm"
-            >
-              {{ unlocking ? '解锁中…' : (viewPermission.points_balance < viewPermission.unlock_points ? '能量不足' : `花 ${viewPermission.unlock_points} 能量解锁`) }}
-            </button>
-            <p class="op-tip">能量可通过每日报到、邀请好友等方式获得。</p>
           </template>
           <template v-else>
             <p class="unlock-desc">服务器地址和账号只向会员开放，开通后回来这儿接线。</p>
@@ -408,23 +399,6 @@
       </div>
     </Teleport>
 
-    <!-- 解锁确认弹窗 -->
-    <Teleport to="body">
-      <div v-if="showUnlockConfirm" class="modal-mask" @click.self="closeUnlockConfirm()" @keydown="onModalKeydown">
-        <div class="modal-card" role="dialog" aria-modal="true" aria-label="确认解锁">
-          <h3 class="modal-title">确认解锁？</h3>
-          <p class="modal-desc">
-            将花费 <strong>{{ viewPermission?.unlock_points }}</strong> 能量解锁查看权限。
-          </p>
-          <div class="modal-actions">
-            <button class="op-btn ghost" @click="closeUnlockConfirm()">取消</button>
-            <button class="op-btn primary" :disabled="unlocking" @click="confirmUnlock">
-              {{ unlocking ? '解锁中' : '确认' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
 
     <!-- 结束播放确认弹窗（二次确认，防手滑） -->
     <Teleport to="body">
@@ -498,8 +472,6 @@ const accountReloading = computed(() => loading.value && !!account.value)
 // 查看权限：后端账号卡自带 view_permission（没权限时 200 返回卡，granted=false，只给解锁信息不下发地址）
 // 和 ProfileView 同一口径：从卡里派生，不单独调接口（后端没有 /view-permission 这类端点）
 const viewPermission = computed(() => (account.value?.view_permission || null) as ((ViewPermission & ViewPermissionExtra) | null))
-const unlocking = ref(false)
-const showUnlockConfirm = ref(false)
 
 const copiedField = ref('')
 const showPlayPassword = ref(false)
@@ -691,26 +663,6 @@ async function confirmSetPassword() {
   }
 }
 
-async function confirmUnlock() {
-  unlocking.value = true
-  try {
-    const realmId = account.value?.realm_id ?? viewPermission.value?.realm_id ?? null
-    // R50：realmId 取不到时不带该字段，不发 realm_id: null
-    if (realmId != null) await embyApi.unlockView(realmId)
-    else await embyApi.unlockView()
-    closeUnlockConfirm()
-    // R77-1：先刷新再报喜——刷新失败时页面还停在未解锁态，只报「解锁成功」
-    // 会让用户以为解锁没生效；失败时明确告知解锁已成功、重进本页可见
-    const refreshed = await refreshAccount()
-    if (refreshed) toast.success('解锁成功')
-    else toast.error('解锁成功，但页面刷新失败，重新进入本页就能看到账号')
-  } catch (e) {
-    toast.error(humanizeError(e))
-  } finally {
-    unlocking.value = false
-  }
-}
-
 async function jumpScheme(url: string, appName: string, password: string) {
   // R50：空地址直接提示，不跳转（空串 location.href 会刷新当前页）
   if (!url) {
@@ -857,7 +809,6 @@ function onEsc(e: KeyboardEvent) {
   if (e.key !== 'Escape') return
   if (showImportPwd.value) closeImportPwd()
   else if (showSetPlayPwd.value) closeSetPlayPwd()
-  else if (showUnlockConfirm.value) closeUnlockConfirm()
   else if (sessionToStop.value) closeStopSession()
 }
 
@@ -890,7 +841,7 @@ function focusOpenModalCard() {
     el?.focus()
   })
 }
-/** R38 P2-2：弹窗关闭后焦点回到触发按钮（setPlayPwd / unlock / stopSession 三处共用） */
+/** R38 P2-2：弹窗关闭后焦点回到触发按钮（setPlayPwd / stopSession 两处共用） */
 const lastTrigger = ref<HTMLElement | null>(null)
 function recordTrigger() { lastTrigger.value = document.activeElement as HTMLElement | null }
 function restoreTriggerFocus() {
@@ -921,18 +872,17 @@ function closeImportPwd() {
   pendingScheme.value = null
   restoreTriggerFocus()
 }
-function closeUnlockConfirm() { showUnlockConfirm.value = false; restoreTriggerFocus() }
 function closeStopSession() {
   // R50：先落焦点再关弹窗——此时弹窗仍在 DOM，触发按钮若已被移除可落到弹窗关闭按钮/标题
   restoreTriggerFocus()
   sessionToStop.value = null
 }
 
-/** R41：三个 Teleport 弹窗（设置密码 / 解锁确认 / 结束播放确认）—— 任一打开都锁住背后页面滚动。
- *  代码路径上三者互斥（解锁弹窗只在没权限分支，另两个只在有权限分支；弹窗打开时页面被遮罩盖住点不到别的），
+/** R41：两个 Teleport 弹窗（设置密码 / 结束播放确认）—— 任一打开都锁住背后页面滚动。
+ *  代码路径上两者互斥（弹窗打开时页面被遮罩盖住点不到别的），
  *  但用 anyModalOpen 统一 watch 而不是各写一遍，万一叠加也锁不死：三个全关才释放。 */
 const anyModalOpen = computed(
-  () => showSetPlayPwd.value || showImportPwd.value || showUnlockConfirm.value || sessionToStop.value !== null,
+  () => showSetPlayPwd.value || showImportPwd.value || sessionToStop.value !== null,
 )
 /** R50：body 滚动锁——保存打开前的值，关闭时恢复（避免与其他锁滚动逻辑互相覆盖） */
 let savedBodyOverflow = ''
@@ -952,7 +902,6 @@ function openSetPlayPwd() {
   showSetPlayPwd.value = true
   nextTick(() => setPlayPwdInput.value?.focus())
 }
-function openUnlockConfirm() { recordTrigger(); showUnlockConfirm.value = true; focusOpenModalCard() }
 
 async function doStopSession() {
   const session = sessionToStop.value

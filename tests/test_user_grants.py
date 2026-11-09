@@ -8,7 +8,8 @@
    所以「已到期」必须按 ``end_date`` 与当下比较得出（这里造一条 status='active'
    但 end_date 在过去的行，不钉住这点以后就会有人改回读 status 字段）。
 2. **判定带服**：同一用户在甲服有订阅、在乙服没有，两张卡必须给不同结论。
-3. **公益服两件事分开**：能看（不需要订阅）与能看账号地址（要积分解锁）。
+3. **公益服资格合并（2026-11-09）**：能看（不需要订阅）与能看账号地址
+   （公益资格在期，或存量查看行在效）是两回事。
 """
 from __future__ import annotations
 
@@ -223,7 +224,7 @@ def test_free_realm_needs_no_subscription_but_needs_unlock_for_account(db):
     assert card["is_free"] is True
     assert card["grant"] == user_grants.GRANT_FREE_OPEN
     assert card["can_play"] is True          # 免费开放：不需要订阅
-    assert card["view_granted"] is False     # 但账号地址要花积分解锁
+    assert card["view_granted"] is False     # 无资格、无存量行时账号地址不下发
     assert card["access_note"]              # 公益服规则文案下发给管理员看
 
 

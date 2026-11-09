@@ -240,7 +240,7 @@ def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,
                 layout.row("👥", "群里用法",
                            "回复某人的消息发送 /kk，出精简卡（自动删除）"),
                 layout.row("🎛️", "面板动作",
-                           "查到人后可封禁/解封、赠送能量/公益/查看凭证；"
+                           "查到人后可封禁/解封、赠送能量/公益/查看权；"
                            "只读审计角色仅查看"),
             ])
             markup = handlers.admin_back_markup()

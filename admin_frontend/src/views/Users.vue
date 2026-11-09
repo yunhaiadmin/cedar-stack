@@ -656,11 +656,12 @@ function grantReason(card: UserGrantCard): string {
     if (sub?.cancelled) return `${sub.plan_name || '会员'} 已退款取消`
     return `${sub?.plan_name || '会员'} 已于 ${fmtDay(sub?.end_date ?? null)} 到期`
   }
+  if (card.grant === 'welfare') return '公益资格在期，查看随资格自动开通'
   if (card.grant === 'unlock') {
     const u = card.unlock
-    return u?.expires_at ? `积分解锁 · ${fmtDay(u.expires_at)} 到期` : '积分解锁 · 永久有效'
+    return u?.expires_at ? `存量查看凭证 · ${fmtDay(u.expires_at)} 到期` : '存量查看凭证 · 永久有效'
   }
-  if (card.grant === 'free_open') return '公益服免费开放，未解锁 Emby 账号查看'
+  if (card.grant === 'free_open') return '公益资格不在期，也没有存量查看凭证'
   return '付费服未开通会员，播放会被付费墙拦下'
 }
 

@@ -351,7 +351,7 @@ export interface AccountRealmCard {
 /** Emby 账号/线路查看权限（没权限时地址类字段置空不下发） */
 export interface ViewPermission {
   granted: boolean
-  /** 当前服是否为公益服（公益服用能量解锁，付费服用订阅） */
+  /** 当前服是否为公益服（公益服查看随资格开通，付费服用订阅） */
   realm_free: boolean
   /** 解锁需要的能量 */
   unlock_points: number
@@ -361,6 +361,8 @@ export interface ViewPermission {
   points_balance: number
   /** 已解锁的到期时间（ISO，未解锁/永久为 null） */
   expires_at: string | null
+  /** 放行来源：welfare＝随公益资格开通 / unlock＝存量凭证在效 / subscription＝付费订阅 / null＝未放行 */
+  source?: 'welfare' | 'unlock' | 'subscription' | null
 }
 
 export interface AccountCard {
@@ -532,11 +534,6 @@ export const embyApi = {
       return card
     })
   },
-
-  // 公益服：花能量解锁 Emby 账号/线路查看权限（幂等）
-  unlockView: (realmId?: number) =>
-    api.post<never, { success: boolean; already: boolean; expires_at: string | null; points_spent?: number; balance?: number }>(
-      '/api/user/emby/unlock-view', { realm_id: realmId ?? null }),
 
   /**
    * 设置接线账号。

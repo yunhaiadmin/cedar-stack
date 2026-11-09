@@ -44,7 +44,9 @@ def _try_streak_renew(db: Session, user: models.WebUser, now: datetime) -> bool:
     写入帧一致）；长度：该条记录的 streak 字段。两者缺一不可：断过（streak 被重置）
     或最近记录已 stale（3 天前），都不续。
     续期后 expires_at = now + N 天 > now，下一轮 tick 不再过期、不重复续期（幂等）。
-    查看凭证（EmbyViewUnlock）一律不动：查看到期仍需花 50 分续。
+    查看权限已随资格合并（2026-11-09）：资格续上即自动恢复查看，
+    不再单独买凭证；存量查看行（EmbyViewUnlock）不由本流程处理，
+    继续有效到期为止。
     """
     if not _safe_get_bool(db, "welfare_streak_renew_enabled", True):
         return False

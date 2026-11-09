@@ -130,7 +130,8 @@ def test_whois_panel_bindings_and_cred_pages(db, monkeypatch):
     assert "2026-11-01" in text  # 最近验证时间
     edited = _click(db, monkeypatch, f"whois:cred:{target.id}")
     text, _m = edited[0]
-    assert "查看凭证" in text and "2026-12-01" in text
+    assert "公益资格" in text and "资格到期" in text
+    assert "查看凭证" not in text  # 凭证行已删（2026-11-09），存量行不展示
 
 
 # ---------- 管理员校验：非管理员点击拒绝 ----------

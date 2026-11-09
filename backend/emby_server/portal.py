@@ -319,8 +319,9 @@ def _realm_view_granted(db: Session, user: models.WebUser, realm_id: int | None
                         ) -> tuple[bool, models.EmbyViewUnlock | None]:
     """用户是否有权查看某服的 Emby 账号/线路（口径见 ``subscriptions.view_grant``）。
 
-    规则：付费服 = 有效订阅即权限；公益服 = 花积分解锁即权限
-    （见 unlock_emby_view）。没权限时账号卡不下发地址，前端也不展示。
+    规则：付费服 = 有效订阅即权限；公益服 = 公益资格在期自动放行，
+    或持有未到期的存量查看行（资格与凭证已合并，购买写口已退役，
+    见 unlock_emby_view）。没权限时账号卡不下发地址，前端也不展示。
 
     判定本身在 ``backend/subscriptions.py``——它是全站唯一口径，管理端的
     「用户授权资源卡片」（backend/user_grants.py）读同一份，两边不会漂。
@@ -415,7 +416,7 @@ def _account_card(user: models.WebUser, db: Session, realm_id: int | None = None
     多服部署下同一个用户可能在多个服都有订阅，所以账号卡会带上 **每个服的地址与订阅**
     （``realms``），让客户端知道该连哪一台；顶层字段保持默认服的口径不变。
 
-    查看权限：付费服要求有效订阅，公益服要求积分解锁（见 ``_realm_view_granted``）。
+    查看权限：付费服要求有效订阅，公益服要求资格在期或存量查看行在效（见 ``_realm_view_granted``）。
     没权限时 ``base_url`` / ``import_schemes`` / ``emby_username`` 置空不下发，
     前端据 ``view_permission`` 展示解锁入口。
 
@@ -466,6 +467,17 @@ def _account_card(user: models.WebUser, db: Session, realm_id: int | None = None
             "unlock_days": price_days,
             "points_balance": int(user.points or 0),
             "expires_at": unlock.expires_at.isoformat() if unlock and unlock.expires_at else None,
+            # 放行来源（资格与凭证合并后前端按它展示状态，不再有购买动作）：
+            # welfare＝公益资格在期自动带；unlock＝存量查看行在效；
+            # subscription＝付费服订阅；None＝未放行。
+            "source": (
+                "welfare"
+                if realms.is_free_realm(db, realm_id)
+                and subscriptions.welfare_qualification_active(user)
+                else "unlock" if unlock is not None
+                else "subscription" if granted
+                else None
+            ),
         },
     }
     # PA-036：图片端点加鉴权后，网页端 <img> 只能靠 URL 里的 api_key 带凭据，
@@ -575,16 +587,13 @@ def unlock_emby_view(
     request_user: models.WebUser = Depends(get_admin_or_emby_user),
     db: Session = Depends(get_db),
 ):
-    """公益服：花积分解锁 Emby 账号/线路查看权限。
+    """【已下线】公益服查看权限购买写口（2026-11-09 资格与凭证合并）。
 
-    幂等：已解锁且未过期直接返回成功，不重复扣费。扣费是 SQL 级原子
-    更新（余额检查写在 WHERE 里），并发下不会扣成负数；解锁记录有
-    (user_id, realm_id) 唯一约束一人一服一行——已有行过期走原地续开
-    （从现在重算到期，与 codes 打包发放同口径），不新建；只有无行时
-    才新建，建行冲突时回滚重读、只认未过期行才报幂等成功（PA-022：
-    旧实现对过期行也新建，撞约束回滚后却不滤过期谎报 already 成功，
-    钱没扣、权限没给）。
-    付费服不走这里——查看权限来自有效订阅。
+    公益服查看已改为随公益资格自动开通（见 ``subscriptions.view_grant``），
+    不再单独购买：本路由保留以便旧前端明确得到下线答复而不是 404，
+    前置闸照旧先行（服不存在 404、付费服 400 的口径不变），公益服一律
+    410。存量 EmbyViewUnlock 行继续有效到期为止，与本口无关；历史上
+    这里的原子扣费/原地续开/PA-022 口径随购买语义一并退役。
     """
     realm_id = req.realm_id or realms.active_realm_id(db)
     realm = realms.get_realm(db, realm_id)
@@ -592,70 +601,10 @@ def unlock_emby_view(
         raise HTTPException(status_code=404, detail="服不存在")
     if not realms.is_free_realm(db, realm_id):
         raise HTTPException(status_code=400, detail="当前服为付费服，查看权限来自有效订阅，无需能量解锁")
-    now = datetime.now()
-    existing = (db.query(models.EmbyViewUnlock)
-                  .filter(models.EmbyViewUnlock.user_id == request_user.id,
-                          models.EmbyViewUnlock.realm_id == realm_id,
-                          or_(models.EmbyViewUnlock.expires_at.is_(None),
-                              models.EmbyViewUnlock.expires_at > now))
-                  .first())
-    if existing:
-        return {"success": True, "already": True,
-                "expires_at": existing.expires_at.isoformat() if existing.expires_at else None}
-    price_points, price_days = _view_unlock_pricing(db)
-    if price_points <= 0:
-        raise HTTPException(status_code=400, detail="当前无需能量即可查看")
-    # 原子扣费：余额检查写进 WHERE，并发下至多一个成功
-    rows = (db.query(models.WebUser)
-              .filter(models.WebUser.id == request_user.id,
-                      func.coalesce(models.WebUser.points, 0) >= price_points)
-              .update({models.WebUser.points: func.coalesce(models.WebUser.points, 0) - price_points},
-                      synchronize_session="fetch"))
-    if not rows:
-        raise HTTPException(status_code=409, detail="能量不足")
-    db.flush()
-    balance = int(db.query(models.WebUser.points)
-                    .filter(models.WebUser.id == request_user.id).scalar() or 0)
-    from backend.api.economy import _append_points_log  # C3：流水 hash 链走统一入口
-    _append_points_log(db, request_user.id, -price_points, balance, "view_unlock",
-                       f"解锁{realm.name}查看权限", f"emby-view:{realm_id}")
-    expires_at = None if price_days <= 0 else now + timedelta(days=price_days)
-    # 一人一服一行：已有行（走到这里必为过期行，未过期已在上方幂等返回）
-    # 原地续开。续开用条件 UPDATE（仍过期才更新）防并发双扣：另一请求
-    # 先续开/建行后本条命中 0 行，落到新建分支撞唯一约束→回滚撤销本次
-    # 扣费→重读按未过期口径裁决，绝不出现「报成功但没生效」。
-    renewed = (db.query(models.EmbyViewUnlock)
-                 .filter(models.EmbyViewUnlock.user_id == request_user.id,
-                         models.EmbyViewUnlock.realm_id == realm_id,
-                         models.EmbyViewUnlock.expires_at.isnot(None),
-                         models.EmbyViewUnlock.expires_at <= now)
-                 .update({models.EmbyViewUnlock.expires_at: expires_at,
-                          models.EmbyViewUnlock.unlocked_at: now,
-                          models.EmbyViewUnlock.points_spent: price_points},
-                         synchronize_session="fetch"))
-    if not renewed:
-        db.add(models.EmbyViewUnlock(user_id=request_user.id, realm_id=realm_id,
-                                     unlocked_at=now, expires_at=expires_at,
-                                     points_spent=price_points))
-    try:
-        db.commit()
-    except IntegrityError:
-        # 并发下另一请求已建记录：回滚后走幂等路径（对方那次扣费有效）。
-        # 重读必须与前置检查同口径只认未过期行——仍过期绝不报成功。
-        db.rollback()
-        existing = (db.query(models.EmbyViewUnlock)
-                      .filter(models.EmbyViewUnlock.user_id == request_user.id,
-                              models.EmbyViewUnlock.realm_id == realm_id,
-                              or_(models.EmbyViewUnlock.expires_at.is_(None),
-                                  models.EmbyViewUnlock.expires_at > datetime.now()))
-                      .first())
-        if existing:
-            return {"success": True, "already": True,
-                    "expires_at": existing.expires_at.isoformat() if existing.expires_at else None}
-        raise HTTPException(status_code=409, detail="解锁冲突，请重试")
-    return {"success": True, "already": False,
-            "expires_at": expires_at.isoformat() if expires_at else None,
-            "points_spent": price_points, "balance": balance}
+    raise HTTPException(
+        status_code=410,
+        detail="公益服查看已随公益资格自动开通，不用再单独买凭证",
+    )
 
 
 class SetPasswordRequest(BaseModel):
