@@ -323,7 +323,8 @@ ECONOMY_CONFIG_KEYS = {
     "vitality_watch_tier1_minutes": "int", "vitality_watch_tier1_reward": "int",
     "vitality_watch_tier2_minutes": "int", "vitality_watch_tier2_reward": "int",
     "vitality_checkin_skip_deduct_enabled": "bool",
-    # 签到活力奖励（economy._do_checkin_core 读取；默认 1，填 0 则签到不恢复活力）
+    # 签到活力奖励（economy._do_checkin_core 读取；现口径签到不送活力、
+    # 代码默认 0，键保留可配，管理员填正数才恢复发放）
     "vitality_checkin_gain": "int",
     # 观影能量（货币再设计第一期）：当日累计观影分钟分档发能量，
     # 首看/一档/二档奖励与分钟数＋每日封顶，watch_points 读取

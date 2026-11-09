@@ -149,8 +149,8 @@ def test_milestone_each_milestone_day_in_one_run(db):
 def test_milestone_break_resets_streak(db):
     _seed_cfg(db)
     u = _user(db)
-    # 真断签＝漏 ≥2 天：漏 1 天自 2026-11-09 起有每月断签保护（默认 1 次，
-    # 见 tests/test_welfare_streak_forgive.py），不清零、不算断签。
+    # 断签＝漏 ≥1 天即清零（2026-11-09 的每月断签保护已随保号改活力
+    # 口径回滚，漏 1 天同样清零，见 tests/test_welfare_vitality_renew.py）。
     _seed_streak(db, u, 3, [18, 19, 20])  # 3 天前是最后一签，中间漏了 2 天
     res = economy._do_checkin_core(db, u)
     assert res["streak"] == 1

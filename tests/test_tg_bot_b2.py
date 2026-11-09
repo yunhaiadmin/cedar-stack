@@ -86,12 +86,25 @@ def test_checkin_vitality_gained(db):
     db.add(models.SystemConfig(key="checkin_enabled", value="true"))
     db.commit()
     user = _make_user(db, username="u5", tg_id=910005, is_welfare=True)
-    # PA-015：新用户活力默认值即满值 14，满值签到真实增量为 0、不展示该行；
-    # 旧断言 "…| +1" 只是 "+14" 的子串前缀（正是 PA-015 修掉的余额当增量 bug），
-    # 故本用例须先把活力降到满值以下，让增量真实为 1，并按整行精确匹配。
     user.vitality = 13
     db.commit()
+    # 新政（2026-11-09 签到不送活力）：默认签到不发活力——即便活力未满
+    # 也不出现「活力数值 +N」增量行，活力保持 13。
     text = handlers.handle_checkin(db, {"id": 910005}, 910005, "")
+    assert "签到成功" in text
+    assert "活力数值</b> | +" not in text
+    db.refresh(user)
+    assert user.vitality == 13
+    # 管理员显式配回 vitality_checkin_gain=1 时恢复发放，卡片按 PA-015
+    # 增量语义整行展示 +1（不是余额）。
+    db.add(models.SystemConfig(key="vitality_checkin_gain", value="1"))
+    db.commit()
+    from backend.integrations import store as _store
+    _store.invalidate("vitality_checkin_gain")
+    user2 = _make_user(db, username="u5g", tg_id=910025, is_welfare=True)
+    user2.vitality = 13
+    db.commit()
+    text = handlers.handle_checkin(db, {"id": 910025}, 910025, "")
     assert "· ⚡ <b>活力数值</b> | +1" in text.split("\n")
 
 

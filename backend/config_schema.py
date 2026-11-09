@@ -150,15 +150,17 @@ WELFARE_CONFIG_SCHEMA: dict[str, tuple] = {
     "welfare_redeem_min_account_age_days": ("int", 0, 365),
     "welfare_redeem_min_active_days": ("int", 0, 7),
     "welfare_grace_days": ("int", 0, 3650),
-    "welfare_streak_renew_min": ("int", 0, 3650),
-    # 连签保资格（streak_renew）总开关＋续期天数：此前无开关、续期天数在
-    # welfare_expiry 里写死 30。开关 word 风格 ("bool",) 存 "true"/"false"
-    # （同 register_gift_* 口径；读侧 economy._get_bool_config 只认 "true"）。
-    "welfare_streak_renew_enabled": ("bool",),
+    # 活力保号（vitality_renew，2026-11-09 取代连签保号）总开关＋活力线：
+    # 开关 word 风格 ("bool",) 存 "true"/"false"（同 register_gift_* 口径；
+    # 读侧 economy._get_bool_config 只认 "true"）。活力线默认 3，
+    # 上限 1000（活力上限量级远在其内，留足余量）。
+    "welfare_vitality_renew_enabled": ("bool",),
+    "welfare_vitality_renew_min": ("int", 0, 1000),
+    # 保号续期天数：沿用连签保号时代的既有键（默认 30，1-365），语义已
+    # 转到活力保号——实际延期与 WelfareGrantLog.days 同走此值，不另造键。
+    # （旧键 welfare_streak_renew_min / welfare_streak_renew_enabled /
+    # welfare_streak_forgive_per_month 已随连签保号与断签保护撤除摘掉。）
     "welfare_streak_renew_days": ("int", 1, 365),
-    # 连签断签保护（2026-11-09）：每月可豁免「漏签 1 天」的次数；
-    # 0 = 关闭、完全回到旧行为（漏 1 天即清零）。上限 31（按月天数量级）。
-    "welfare_streak_forgive_per_month": ("int", 0, 31),
     "welfare_inactive_days": ("int", 0, 3650),
     "welfare_request_monthly": ("int", 0, 10000),
     # 新注册冷启动赠送：福利天数 0=永不过期（grant_welfare 口径）；查看天数最小 1
@@ -178,7 +180,7 @@ WELFARE_CONFIG_SCHEMA: dict[str, tuple] = {
     "bot_rate_limit_seconds": ("int", 0, 3600),
     "bot_group_rate_limit": ("int", 0, 100000),
     # 频道马甲治理开关：word 风格 ("bool",) 存 "true"/"false"
-    # （读侧 tg_bot.policy._is_true 只认 "true"，同 welfare_streak_renew 口径）；
+    # （读侧 tg_bot.policy._is_true 只认 "true"，同 welfare_vitality_renew 口径）；
     # 白名单是逗号分隔的频道 id 列表，原文直存（同 bot_group_ids）；
     # 退群动作是封闭枚举，非法值在端点层 400，不许落库后靠读侧猜。
     "bot_channel_guard_enabled": ("bool",),
@@ -730,7 +732,8 @@ ECONOMY_CONFIG_SCHEMA: dict[str, tuple] = {
     "vitality_watch_tier2_minutes": ("int", 0, _BIG),
     "vitality_watch_tier2_reward": ("int", 0, _BIG),
     "vitality_checkin_skip_deduct_enabled": ("bool",),
-    # 签到活力奖励（economy._do_checkin_core 读取；默认 1，填 0 则签到不恢复活力）
+    # 签到活力奖励（economy._do_checkin_core 读取；现口径签到不送活力、
+    # 代码默认 0，键保留可配，管理员填正数才恢复发放）
     "vitality_checkin_gain": ("int", 0, _BIG),
     # 观影能量（货币再设计第一期；watch_points 读取：当日累计分钟分档发能量，
     # 首看/一档/二档奖励与分钟数＋每日封顶，0 奖励=该档关闭、封顶 0=不限）

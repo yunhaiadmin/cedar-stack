@@ -105,13 +105,14 @@ def test_award_watch_reward_non_welfare(db):
 
 
 def test_get_today_free_gain_counts_only_free_reasons(db):
-    """只有 checkin/watch_reward 计入；recharge（付费）不计入"""
+    """只有 watch_reward 计入每日免费上限；recharge（付费）不计入；
+    checkin 自 2026-11-09「签到不送活力」起也不计入（上限只管观影）。"""
     u = _mkuser(db, "gainer", vitality_val=5)
     vitality._add_vitality(db, u.id, 1, "checkin")
     vitality._add_vitality(db, u.id, 1, "watch_reward")
     vitality._add_vitality(db, u.id, 5, "recharge")  # 付费，不计入
     db.commit()
-    assert vitality.get_today_free_gain(db, u.id) == 2
+    assert vitality.get_today_free_gain(db, u.id) == 1
 
 
 def test_clamp_on_archive_only_decreases(db):

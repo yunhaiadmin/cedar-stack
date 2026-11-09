@@ -281,13 +281,12 @@ WELFARE_CONFIG_KEYS = {
     # 服主在管理端改成 true 即可重开，天数仍走 register_gift_view_days）
     "register_gift_view_enabled": "false",
     "welfare_grace_days": "7",
-    "welfare_streak_renew_min": "30",
-    # 连签保资格（streak_renew）总开关（默认开＝现行行为）＋续期天数（默认 30）
-    "welfare_streak_renew_enabled": "true",
+    # 活力保号（vitality_renew，2026-11-09 取代连签保号）总开关（默认开）
+    # ＋活力线（默认 3）；读侧 welfare_expiry._try_vitality_renew
+    "welfare_vitality_renew_enabled": "true",
+    "welfare_vitality_renew_min": "3",
+    # 保号续期天数（默认 30）：沿用连签保号时代的既有键，语义已转活力保号
     "welfare_streak_renew_days": "30",
-    # 连签断签保护：每月豁免「漏签 1 天」的次数（默认 1；0=关、回旧行为；
-    # 读侧 economy._do_checkin_core，用量落 web_users.streak_forgive_*）
-    "welfare_streak_forgive_per_month": "1",
     "welfare_inactive_days": "30",
     "welfare_request_monthly": "3",
     # P0 统一货币体系：充值比例与红包规则

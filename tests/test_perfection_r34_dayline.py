@@ -141,7 +141,7 @@ def test_vitality_today_str_is_shanghai_date():
 def test_vitality_free_gain_uses_shanghai_day(db):
     u = _make_user(db, username="u5")
     db.add(models.VitalityLog(user_id=u.id, delta=2, balance_after=2,
-                              reason="checkin",
+                              reason="watch_reward",
                               created_at=_beijing_4am_today_utc()))
     db.commit()
     assert vitality.get_today_free_gain(db, u.id) == 2
