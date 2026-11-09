@@ -207,3 +207,4 @@ MIT
 如果它帮到了你，或者你看好它能走得更远，可以请开发者喝杯咖啡，支持我把这个项目继续做下去。
 
 <img src="docs/assets/coffee-qr.jpg" width="300" alt="微信赞赏码">
+<!-- 2026-11-09: repository migrated to yunhaiadmin/cedar-stack (private). -->
