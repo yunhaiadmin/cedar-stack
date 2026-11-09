@@ -1,10 +1,10 @@
 """回归测试：外层缓存时长不得超过 token 真实寿命（min_remaining 不变式）。
 
-覆盖 drive_auth.get_drive_bearer_token 外层缓存与 drive_changes._sa_access_token
-内层缓存的 TTL 联动：外层必须向内层索取剩余寿命至少为
-_TOKEN_TTL_SECONDS + _TOKEN_MIN_REMAIN_SECONDS 的 token，避免内层返回
-只剩 300 秒的缓存 token 被外层按 3300 秒长期缓存，导致后续请求拿过期
-token 打 Drive 源站持续 401。
+覆盖 drive_auth.get_drive_bearer_token 单套缓存与
+drive_changes._sa_access_token 的 TTL 联动：外层必须向 _sa_access_token
+索取剩余寿命至少为 _TOKEN_TTL_SECONDS + _TOKEN_MIN_REMAIN_SECONDS 的
+token，避免只剩 300 秒的缓存 token 被外层按 3300 秒长期缓存，导致
+后续请求拿过期 token 打 Drive 源站持续 401。
 """
 
 from __future__ import annotations
@@ -41,9 +41,8 @@ def reset_drive_auth_state():
 
 @pytest.fixture
 def fake_drive_changes(monkeypatch):
-    """挂载假 drive_changes 模块，并显式提供真实的内层 _token_cache 字典。"""
+    """挂载假 drive_changes 模块。"""
     fake = mock.MagicMock()
-    fake._token_cache = {}
     fake._discover_sa_files.return_value = [_make_sa(e) for e in SA_EMAILS]
     # 默认 side_effect 接受新增的 min_remaining 关键字，行为与旧调用方一致
     fake._sa_access_token.side_effect = (
@@ -97,19 +96,27 @@ def test_outer_cache_hit_still_short_circuits(fake_drive_changes):
 
 
 def test_inner_default_threshold_unchanged():
-    """内层默认 min_remaining 仍是 60 秒，既有调用方行为不变。"""
+    """_sa_access_token 默认 min_remaining 仍是 60 秒，既有调用方行为不变。
+
+    单套缓存语义：缓存 token 剩余寿命大于 min_remaining 才命中——
+    剩 300 秒的命中（默认 60），剩 30 秒的不命中（重新换取）。
+    """
     try:
         from backend.emby_server import drive_changes
     except ImportError:  # 兼容以 backend 为根的扁平导入路径
         from emby_server import drive_changes
 
     email = "e@x"
-    drive_changes._token_cache.pop(email, None)
-    drive_changes._token_cache[email] = ("TOK", time.time() + 300)
+    sa = {"client_email": email, "private_key": "x"}
+    drive_auth._token_cache.pop(email, None)
     try:
-        token = drive_changes._sa_access_token(
-            {"client_email": email, "private_key": "x"}
-        )
-        assert token == "TOK"
+        # 剩 300 秒：默认 min_remaining=60，命中缓存 token。
+        drive_auth._token_cache[email] = ("TOK", time.monotonic() + 300)
+        assert drive_changes._sa_access_token(sa) == "TOK"
+        # 剩 30 秒：不够 60，命中失败——换取路径需要真 JWT，
+        # 这里只断言它不再返回缓存 token（会尝试换取并因私钥非法
+        # 返回 None，永不抛异常）。
+        drive_auth._token_cache[email] = ("TOK", time.monotonic() + 30)
+        assert drive_changes._sa_access_token(sa) is None
     finally:
-        drive_changes._token_cache.pop(email, None)
+        drive_auth._token_cache.pop(email, None)

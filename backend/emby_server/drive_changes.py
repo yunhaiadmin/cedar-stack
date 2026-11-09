@@ -151,8 +151,11 @@ _sa_files: list[str] | None = None
 _sa_index = 0
 _sa_lock = threading.Lock()
 
-#: access_token 缓存：sa_path -> (token, expire_at)
-_token_cache: dict[str, tuple[str, float]] = {}
+# SA 令牌缓存已收敛到 drive_auth 一套（Drive 砍减第 6 项，横切只许一套）：
+# 本模块不再维护自己的 _token_cache；_sa_access_token 的读/写缓存
+# 一律经 drive_auth.get_cached_sa_token / store_sa_token。个人盘
+# OAuth 缓存（_oauth_token_cache）是另一类凭据（用户 OAuth 流），
+# 不在此列。
 
 
 def _collect_json_files(dirs: list[str]) -> list[str]:
@@ -272,6 +275,22 @@ def _next_sa() -> dict | None:
         return None
 
 
+def _load_drive_auth() -> ModuleType | None:
+    """惰性导入并返回 drive_auth 模块（失败回 None，调用方按无缓存降级）。
+
+    与 drive_auth 侧的惰性导入对称：drive_auth 不在顶层导入本模块，
+    本模块也不在顶层导入 drive_auth，循环导入无从发生。
+    """
+    try:
+        from . import drive_auth
+    except ImportError:  # 兼容扁平导入（直接以目录方式运行）的场景
+        try:
+            import drive_auth
+        except ImportError:
+            return None
+    return drive_auth
+
+
 def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
@@ -279,20 +298,27 @@ def _b64url(data: bytes) -> str:
 def _sa_access_token(sa: dict, min_remaining: float = 60) -> str | None:
     """用 JWT 断言换 access_token（带缓存）
 
+    缓存是 drive_auth 的单套缓存（全站 SA 令牌唯一存储，横切只许一套）：
+    本函数只负责 JWT 换取，命中检查与换到后的写入一律经
+    ``drive_auth.get_cached_sa_token`` / ``store_sa_token``，本模块
+    不再另存一份。个人盘 OAuth 令牌不在此列（走 _oauth_token_cache）。
+
     ``min_remaining``：缓存命中要求的最小剩余寿命（秒）。仅当缓存 token 的
-    过期时刻晚于 ``now + min_remaining`` 时才复用，否则重新换取新 token。
+    剩余寿命大于 ``min_remaining`` 时才复用，否则重新换取新 token。
     默认 60 保持既有调用方（``_get_token``）行为不变；调用方可传更大的值
     以索取“剩余寿命更长”的 token。
     """
     client_email = sa.get("client_email", "")
-    cache_key = client_email or sa.get("private_key_id", "")
-    now = time.time()
-    cached = _token_cache.get(cache_key)
-    if cached and cached[1] > now + min_remaining:
-        return cached[0]
+    if not client_email:
+        return None
+    drive_auth = _load_drive_auth()
+    if drive_auth is not None:
+        cached = drive_auth.get_cached_sa_token(client_email, min_remaining)
+        if cached:
+            return cached
 
     private_key_pem = sa.get("private_key", "")
-    if not private_key_pem or not client_email:
+    if not private_key_pem:
         return None
     try:
         from cryptography.hazmat.primitives import hashes, serialization
@@ -301,6 +327,7 @@ def _sa_access_token(sa: dict, min_remaining: float = 60) -> str | None:
         key = serialization.load_pem_private_key(
             private_key_pem.encode("utf-8"), password=None)
         header = {"alg": "RS256", "typ": "JWT"}
+        now = time.time()
         claims = {
             "iss": client_email,
             "scope": DRIVE_SCOPE,
@@ -324,7 +351,9 @@ def _sa_access_token(sa: dict, min_remaining: float = 60) -> str | None:
         token = body.get("access_token", "")
         expires_in = int(body.get("expires_in", 3600) or 3600)
         if token:
-            _token_cache[cache_key] = (token, now + expires_in)
+            if drive_auth is not None:
+                drive_auth.store_sa_token(
+                    client_email, token, expires_in)
             return token
     except Exception as exc:
         logger.warning("Drive Changes: SA 换 token 失败 %s: %s", client_email, exc)
@@ -345,23 +374,21 @@ def _get_token() -> str | None:
 
 
 def sa_email_for_token(token: str) -> str | None:
-    """按令牌值反查内层 SA 缓存里的 client_email；查不到返回 None，永不抛。
+    """按令牌值反查单套 SA 缓存里的 client_email；查不到返回 None，永不抛。
 
-    中继 failover 排除已试 SA 用（A-009）：_sa_access_token 每次换取都把
-    (token, expiry) 写进本模块 _token_cache（key=client_email），故同进程
-    内经本模块取到的令牌必能反查。注意与 drive_auth.sa_email_for_token
-    查的不是同一缓存——外层缓存只含 drive_auth 自身换取路径的令牌，
-    中继令牌不在其中，用它反查会恒 miss。
+    中继 failover 排除已试 SA 用（A-009）：所有口径换到的令牌都写进
+    drive_auth 的单套缓存，故同进程内经任何口径取到的令牌必能反查。
+    本函数只委托 drive_auth.sa_email_for_token，不另维护反查表。
     """
     if not token:
         return None
     try:
-        for email, cached in _token_cache.items():
-            if cached and cached[0] == token:
-                return email
+        drive_auth = _load_drive_auth()
+        if drive_auth is None:
+            return None
+        return drive_auth.sa_email_for_token(token)
     except Exception:
         return None
-    return None
 
 
 class DriveAuthError(Exception):
@@ -498,10 +525,17 @@ def refresh_sa_token(sa: dict, min_remaining: float = 1800.0) -> str | None:
     供「单次列举内钉住同一 SA」的 401 续跑语义用：分页 pageToken 与请求身份
     绑定，换 SA 会 400，只能对同一 SA 刷新。min_remaining 沿用 _sa_access_token
     语义（默认 1800：索取剩余寿命足够长的 token，防超大目录枚举中途过期）。
+    缓存弹掉的是 drive_auth 的单套缓存（收敛前只弹内层，drive_auth
+    会继续吐旧 token，是本函数曾有的真 bug）。
     """
     cache_key = sa.get("client_email", "") or sa.get("private_key_id", "")
     if cache_key:
-        _token_cache.pop(cache_key, None)
+        try:
+            drive_auth = _load_drive_auth()
+            if drive_auth is not None:
+                drive_auth.invalidate_sa_token_by_email(cache_key)
+        except Exception:
+            pass
     return _sa_access_token(sa, min_remaining=min_remaining)
 
 

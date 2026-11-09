@@ -1,9 +1,8 @@
-"""回归测试：Drive 源站 401 时坏 token 必须能被按值失效（内外两层）。
+"""回归测试：Drive 源站 401 时坏 token 必须能被按值失效（单套缓存）。
 
-覆盖 401 毒化修复：relay 层拿到 401 之后，必须能把坏 token 同时从
-drive_auth 外层 _token_cache 与 drive_changes 内层 _token_cache 中清除。
-只清外层会被内层架空，坏 token 会被继续复用最长 55 分钟，Drive 下载
-持续 401（毒化缓存）。
+覆盖 401 毒化修复：relay 层拿到 401 之后，必须能把坏 token 从
+drive_auth 单套 _token_cache 中清除。收敛前另有一套 drive_changes
+内层缓存，只清外层会被内层架空——现内层缓存已删，失效只清这一套。
 """
 
 from __future__ import annotations
@@ -41,10 +40,8 @@ def reset_drive_auth_state():
 
 @pytest.fixture
 def fake_drive_changes(monkeypatch):
-    """挂载假 drive_changes 模块，并显式提供真实的内层 _token_cache 字典。"""
+    """挂载假 drive_changes 模块。"""
     fake = mock.MagicMock()
-    # 内层缓存必须是真的 dict：invalidate 会 best-effort 清它。
-    fake._token_cache = {}
     fake._discover_sa_files.return_value = [_make_sa(e) for e in SA_EMAILS]
     fake._sa_access_token.side_effect = lambda sa, min_remaining=60: "token-for-" + sa["client_email"]
     # 固定选第一个 SA，便于断言 client_email 与内层 key 的对应关系。
@@ -100,18 +97,23 @@ def test_invalidate_never_raises(fake_drive_changes):
 
 
 def test_invalidate_clears_inner_cache(fake_drive_changes):
-    """关键回归：外层命中坏 token 时，内层同 client_email 条目必须同时被清。
+    """关键回归：单套缓存失效后，下次取 token 必须重新换取——
+    不再有第二套缓存能把坏 token 原样吐回（收敛前 drive_changes
+    内层 _token_cache 会架空外层失效，见旧版测试与证据脚本
+    repro_inner_cache_defeats；现内层缓存已删，结构上亦无此可能）。"""
+    try:
+        from backend.emby_server import drive_changes
+    except ImportError:  # 兼容以 backend 为根的扁平导入路径
+        from emby_server import drive_changes
 
-    只清外层会被 drive_changes 内层 _token_cache 架空：下一次取 token 时内层
-    把坏 token 原样吐回并重新写入外层（见证据脚本 repro_inner_cache_defeats）。"""
+    assert not hasattr(drive_changes, "_token_cache")
+
     fake_drive_changes._sa_access_token.side_effect = lambda sa, min_remaining=60: "BAD"
 
     assert drive_auth.get_drive_bearer_token() == "BAD"
-    # 模拟生产状态：换取时内层 _token_cache 也写入了同一个坏 token
-    fake_drive_changes._token_cache["sa1@x"] = ("BAD", 9999999999.0)
 
     assert drive_auth.invalidate_drive_bearer_token("BAD") is True
-    assert "sa1@x" not in fake_drive_changes._token_cache
+    assert "sa1@x" not in drive_auth._token_cache
 
     # 外层也被清：下次取 token 必须重新换取
     fake_drive_changes._sa_access_token.side_effect = lambda sa, min_remaining=60: "GOOD"

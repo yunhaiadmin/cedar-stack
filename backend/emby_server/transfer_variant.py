@@ -138,6 +138,14 @@ MAX_ATTEMPTS = 3  # copy 可重试类失败的最多尝试次数（含首次）
 RETRY_BASE_SEC = 60  # 退避基数：60s、120s、240s
 WORKER_INTERVAL_SEC = 60
 PATROL_INTERVAL_SEC = 86400  # 巡检每天一次
+#: 巡检每轮抽样上限（行）：最旧的到期行优先，不再每轮全量 ready 行
+#: 各打一次 get_file（Drive 砍减第 6 项）。现行 ready 行约 610 行，
+#: 200/轮约 3 天覆盖全量；stale 需两次 strike，最坏约 6 天标死。
+PATROL_BATCH = 200
+#: 巡检每行最短复验间隔（秒）：6 小时——同一行 6 小时内只验一次，
+#: 进程重启连跑也不重复打 get_file（Drive 砍减第 6 项）。巡检本身
+#: 每天一轮，稳态下每行约 24 小时验一次；6 小时是下限护栏。
+PATROL_CHECK_INTERVAL_SEC = 6 * 3600
 COPY_IDLE_CLEANUP_INTERVAL_SEC = 3600  # 闲置 TTL 每小时独立一轮（2026-10-28 2 小时单：从每日巡检解耦）
 STALE_STRIKES = 2  # 巡检两次 stale 算死
 MAX_JOBS_PER_ROUND = 10
@@ -8416,6 +8424,10 @@ def process_claimed_round(session_factory, drive_api_factory, now=None,
 def patrol_once(db, drive_api_factory, now=None):
     """副本健康巡检：只读 + 标记，不动原件与条目身份。
 
+    抽样（Drive 砍减第 6 项）：只验 last_checked_at 为空或早于
+    now-6h 的行，按最久未验优先、每轮最多 PATROL_BATCH 行；同一行
+    6 小时内不重复验，进程重启连跑也不重复打 get_file。
+
     - 条目不存在/已软删 → 登记行置 orphan（文件留存，等管理员复核）；
     - get_file 成功 → stale_count 清零；
     - 404/403 → strike+1，满 2 次置 stale（解除锚定，下次播放回原件；
@@ -8432,8 +8444,14 @@ def patrol_once(db, drive_api_factory, now=None):
     stats = {"checked": 0, "stale": 0, "orphaned_items": 0, "errors": 0,
              "revived": 0}
     client = drive_api_factory()
-    rows = db.query(em.TransferVariant).filter(
-        em.TransferVariant.status == "ready").all()
+    due_since = now - timedelta(seconds=PATROL_CHECK_INTERVAL_SEC)
+    rows = (db.query(em.TransferVariant)
+            .filter(em.TransferVariant.status == "ready",
+                    (em.TransferVariant.last_checked_at.is_(None)
+                     | (em.TransferVariant.last_checked_at < due_since)))
+            .order_by(em.TransferVariant.last_checked_at.asc().nulls_first(),
+                      em.TransferVariant.id.asc())
+            .limit(PATROL_BATCH).all())
     for row in rows:
         if (getattr(row, "owner_scope", "") or "") == "pool":
             # 池副本（goal-33 PR-5）：文件在成员自己的盘里，SA
@@ -8625,7 +8643,8 @@ def _daemon_main_loop(stop, state, session_factory, drive_api_factory):
 
 __all__ = [
     "THROTTLE_SEC", "MAX_ATTEMPTS", "RETRY_BASE_SEC", "WORKER_INTERVAL_SEC",
-    "PATROL_INTERVAL_SEC", "COPY_IDLE_CLEANUP_INTERVAL_SEC",
+    "PATROL_INTERVAL_SEC", "PATROL_BATCH", "PATROL_CHECK_INTERVAL_SEC",
+    "COPY_IDLE_CLEANUP_INTERVAL_SEC",
     "STALE_STRIKES", "MAX_JOBS_PER_ROUND",
     "STUCK_RUNNING_SEC",
     "master_enabled", "auto_enabled", "transfer_dir_name",
