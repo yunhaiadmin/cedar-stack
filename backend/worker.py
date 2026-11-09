@@ -532,6 +532,18 @@ def main() -> int:
         except Exception as e:
             logger.warning(f"启动上游地址保鲜 worker 失败（可忽略）: {e}")
 
+        # 谷歌盘主线暖地址（goal-35 批 1）：按信号集（追剧新集/继续观看/
+        # 新入库热门）提前把交付计划与存在性写进现成缓存，点播路径零
+        # 改动。总开关默认关（DRIVE_WARM_ENABLED），关时 start() 直接
+        # 回 False、不启动线程，线上零变化。
+        try:
+            from backend.emby_server import drive_warm_worker
+            if drive_warm_worker.start():
+                started.append("drive_warm_worker")
+                logger.info("✅ Drive 暖地址 worker 已启动")
+        except Exception as e:
+            logger.warning(f"启动 Drive 暖地址 worker 失败（可忽略）: {e}")
+
         try:
             from backend.emby_server import sample_hash_worker
             if sample_hash_worker.start():
