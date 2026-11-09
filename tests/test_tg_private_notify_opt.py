@@ -295,6 +295,7 @@ def test_panel_notify_prefs_roundtrip(db):
     got = panel_api.get_notify_prefs(db=db, user=user)
     assert got["data"] == {
         "seek": True, "expiry": True, "lottery": True,
+        "pool_digest": True,
     }
     out = panel_api.set_notify_prefs(
         panel_api.NotifyPrefsIn(seek=False), db=db, user=user)
@@ -525,8 +526,18 @@ def test_lottery_draw_dm_respects_pref(db, sent):
     assert [c for c in sent if c["chat_id"] == 6003] == []
 
 
-def test_pool_review_notifies_applicant(db, event_calls):
+def test_pool_review_notifies_applicant(db, event_calls, monkeypatch):
     from backend.emby_server import pool_gate
+    from backend.emby_server import transfer_variant as tv
+
+    # 入池容量门槛：本用例的盘按 5T 档打桩（类属性口径），
+    # 只验审核通知、不验容量判定本身。
+    monkeypatch.setattr(
+        tv.UserDriveApiClient, "about_storage",
+        lambda self, drive_id: {
+            "limit": 5_497_558_138_880, "usage": 0,
+            "free": 5_497_558_138_880})
+    pool_gate.clear_pool_quota_cache()
     user = _user(db, "pooler", telegram_id=7001)
     cred = em.MountCredential(
         mount_id=None, scope="user", owner_user_id=user.id,

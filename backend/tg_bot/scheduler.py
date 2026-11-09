@@ -120,6 +120,33 @@ def start_rankpush_scheduler() -> bool:
                     db.rollback()
                 except Exception:
                     pass
+            # 公共池贡献者每日小结（私聊）搭同一条分钟巡检；自带
+            # try 隔离，失败不拖累同拍其他榜。
+            try:
+                from backend.tg_bot import pool_digest
+
+                digest_actions = pool_digest.run_scheduled_tick(db)
+                if digest_actions:
+                    logger.info("pool_digest 调度动作：%s", digest_actions)
+            except Exception:
+                logger.exception("pool_digest 调度 tick 失败")
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+            # 公共池群播报（战报/英雄榜）同拍同理，自带 try 隔离。
+            try:
+                from backend.tg_bot import pool_report
+
+                report_actions = pool_report.run_scheduled_tick(db)
+                if report_actions:
+                    logger.info("pool_report 调度动作：%s", report_actions)
+            except Exception:
+                logger.exception("pool_report 调度 tick 失败")
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
         except Exception:
             logger.exception("rankpush 调度 tick 失败")
             try:

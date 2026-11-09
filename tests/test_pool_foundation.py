@@ -5,7 +5,8 @@
 既有 ensure_binding_playback_allowed* 的行为必须逐字不变（红线回归）。
 口径来源：hidden_files/pr1-task.md + design-pool-v1 §2/§3/§4.1 +
 GOAL.md 通审决议（默认值按补充节修正值：单盘 4.5TB、保底 300GiB、
-日转存 600GiB；新增第 16 键 pool_member_max_bindings_per_user 默认 10）。
+日转存 600GiB；新增第 16 键 pool_member_max_bindings_per_user 默认 10；
+第 17 键 pool_join_min_capacity_bytes 默认 5×10^12 为用户 2026-11-10 亲批的入池容量门槛）。
 """
 from __future__ import annotations
 
@@ -38,6 +39,7 @@ EXPECTED_DEFAULTS = {
     "pool_join_mode": "apply_review",
     "pool_enabled_providers": "drive",
     "pool_member_capacity_bytes": 4_500_000_000_000,
+    "pool_join_min_capacity_bytes": 5_000_000_000_000,
     "pool_member_reserve_free_bytes": 300 * GIB,
     "pool_member_daily_transfer_bytes": 600 * GIB,
     "pool_member_daily_transfer_jobs": 0,
@@ -159,10 +161,10 @@ def test_pool_usage_daily_unique_per_member_day(db):
 def test_pool_config_defaults_exact(db):
     payload = pool_gate.pool_config_payload(db)
     assert payload == EXPECTED_DEFAULTS
-    assert len(payload) == 16
+    assert len(payload) == 17
 
 
-def test_pool_schema_registered_with_16_keys():
+def test_pool_schema_registered_with_17_keys():
     assert "pool" in config_service.SCHEMAS
     schema = config_service.SCHEMAS["pool"]
     assert set(schema) == set(EXPECTED_DEFAULTS)

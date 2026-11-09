@@ -1087,6 +1087,7 @@ const poolForm = reactive<PoolConfig>({
   pool_join_mode: 'apply_review',
   pool_enabled_providers: 'drive',
   pool_member_capacity_bytes: 4500000000000,
+  pool_join_min_capacity_bytes: 5000000000000,
   pool_member_reserve_free_bytes: 322122547200,
   pool_member_daily_transfer_bytes: 644245094400,
   pool_member_daily_transfer_jobs: 0,
@@ -2329,6 +2330,12 @@ watch(
                   <div class="field-stack">
                     <el-input-number v-model="poolForm.pool_member_capacity_bytes" :min="0" :max="1000000000000000" :step="1000000000" controls-position="right" class="num-input" />
                     <span class="field-hint">单个贡献盘最多被池占用多少，默认 4500000000000（约 4.5TB）；0 = 不限</span>
+                  </div>
+                </el-form-item>
+                <el-form-item label="加入门槛：盘总容量至少（字节）">
+                  <div class="field-stack">
+                    <el-input-number v-model="poolForm.pool_join_min_capacity_bytes" :min="0" :max="1000000000000000" :step="1000000000" controls-position="right" class="num-input" />
+                    <span class="field-hint">盘总容量低于此值不能加入公共池（批准时复查，读不到容量同样拦），默认 5000000000000（5T 档盘实报约 5497558138880，2TB 盘约 2199023255552 过不了）；0 = 不设门槛</span>
                   </div>
                 </el-form-item>
                 <el-form-item label="单盘保底空闲（字节）">

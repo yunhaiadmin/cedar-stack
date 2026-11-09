@@ -131,8 +131,8 @@ def test_reward_config_defaults_and_pool_config_untouched(db):
     assert cfg["pool_reward_min_active_days"] == 7
     assert cfg["pool_reward_min_counted_plays"] == 10
     assert cfg["pool_reward_title_enabled"] is True
-    # PR-1 的 16 键配置端点口径不许被本单撑大。
-    assert len(pool_gate.pool_config_payload(db)) == 16
+    # PR-1 的配置端点口径不许被本单撑大（17 键含用户亲批的入池门槛键）。
+    assert len(pool_gate.pool_config_payload(db)) == 17
 
 
 # ------------------------------------------------------------ 影子与真发

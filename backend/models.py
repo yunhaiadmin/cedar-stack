@@ -288,12 +288,13 @@ class WebUser(Base):
     streak_forgive_used = Column(Integer, default=0, nullable=False, server_default="0")
     # 观影碑时长榜隐私：True=允许上榜（默认），False=不上榜
     show_on_leaderboard = Column(Boolean, default=True, nullable=False, server_default="1")
-    # TG 私聊通知偏好（2026-11-08 私聊通报优化批）：三类各一个开关，
+    # TG 私聊通知偏好（2026-11-08 私聊通报优化批）：四类各一个开关，
     # 只管 Telegram 那一份，站内信不受影响。默认 True=收。
     # 语义见 backend/notify_prefs.py。
     tg_notify_seek = Column(Boolean, default=True, nullable=False, server_default="1")
     tg_notify_expiry = Column(Boolean, default=True, nullable=False, server_default="1")
     tg_notify_lottery = Column(Boolean, default=True, nullable=False, server_default="1")
+    tg_notify_pool_digest = Column(Boolean, default=True, nullable=False, server_default="1")
     last_login_at = Column(DateTime)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

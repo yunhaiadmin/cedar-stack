@@ -1028,10 +1028,11 @@ def set_privacy(
 
 
 class NotifyPrefsIn(BaseModel):
-    # 三类 TG 私聊通知偏好；None = 本次不改这一类
+    # 四类 TG 私聊通知偏好；None = 本次不改这一类
     seek: bool | None = None
     expiry: bool | None = None
     lottery: bool | None = None
+    pool_digest: bool | None = None
 
 
 @router.get("/notify-prefs")
@@ -1039,7 +1040,7 @@ def get_notify_prefs(
     db: Session = Depends(get_db),
     user: models.WebUser = Depends(get_current_user),
 ):
-    """我的通知偏好：三类 TG 私聊开关（只管 Telegram，站内信照常）"""
+    """我的通知偏好：四类 TG 私聊开关（只管 Telegram，站内信照常）"""
     _guard()
     db.refresh(user)
     from backend import notify_prefs
