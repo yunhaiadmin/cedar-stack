@@ -93,6 +93,17 @@
               <span class="chip blue">{{ w.vote_count > 0 ? w.vote_count + ' 人也想看 · 加权 ' + (w.weighted_vote_count ?? w.vote_count) : '还没有人附议' }}</span>
             </div>
             <div class="want">{{ shortDate(w.created_at) }} 投入池中</div>
+            <!-- 举报（想看页合并进来；仅公益服）：hot 榜后端只回 pending 行，
+                 id 即求片行 id，与治理举报的目标 id 同域 -->
+            <div v-if="welfareRealm" class="report-line">
+              <a
+                v-if="!reportedIds.has(w.id)"
+                href="#"
+                class="report-link"
+                @click.prevent="openReport(w.id)"
+              >举报</a>
+              <span v-else class="report-done">已举报</span>
+            </div>
             <button
               class="upvote"
               :class="{ done: w.voted }"
@@ -101,6 +112,23 @@
             >
               <span class="lbl">{{ w.voted ? '✓ 已附议，坐等打捞' : voting === w.id ? '附议中' : '+1 附议' }}</span>
             </button>
+            <div v-if="reportingId === w.id" class="report-form">
+              <select v-model="reportReason" class="report-input" aria-label="举报原因">
+                <option value="spam">垃圾内容</option>
+                <option value="duplicate">重复求片</option>
+                <option value="violation">违规内容</option>
+              </select>
+              <input
+                v-model="reportDetail"
+                type="text"
+                placeholder="补充说明（可选）"
+                class="report-input"
+                maxlength="500"
+              />
+              <button class="report-submit" :disabled="reportBusy" @click="submitReport(w.id)">{{ reportBusy ? '提交中…' : '提交举报' }}</button>
+              <button class="report-cancel" :disabled="reportBusy" @click="reportingId = null">取消</button>
+              <div v-if="reportErr" class="v4-err" style="flex:1 1 100%">{{ reportErr }}</div>
+            </div>
           </div>
         </div>
       </section>
@@ -214,6 +242,8 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { facilityStamp } from '@/config/game'
 import { mediaSeekApi, storeApi, type MediaSeekCandidate, type TvSeason, type MediaSeekRequest, type HotMediaSeekRequest, type StoreWantRecord, type StoreWantState } from '@/api'
+import { governanceApi, type GovernanceReportReason } from '@/api/governance'
+import { useUserStore } from '@/stores/user'
 import { imageAuthUrl } from '@/api/emby'
 import { useToast } from '@/composables/useToast'
 import { humanizeError } from '@/composables/usePanelApi'
@@ -236,6 +266,9 @@ const wishInput = ref<HTMLInputElement | null>(null)
 
 const router = useRouter()
 const route = useRoute()
+const userStore = useUserStore()
+/** 举报入口仅公益服：与补给站同款 userStore.isFreeRealm 信号，拿不到按非公益服处理 */
+const welfareRealm = computed(() => userStore.isFreeRealm)
 /** R45：营地已上架的心愿 → 去接线员页（播放器接线入口） */
 function goOperator() {
   router.push('/game/operator')
@@ -322,6 +355,43 @@ async function doWant(c: MediaSeekCandidate) {
     useToast().error(errDetail(e) || humanizeError(e))
   } finally {
     wanting.value = ''
+  }
+}
+
+// ---------- 举报（仅公益服；原因与后端 REPORT_REASONS 逐字一致） ----------
+// hot 榜行 id 就是 movie_requests 行 id（后端只回 pending 行），与老想看页
+// 求片榜的 request_id 同域，直接作治理举报的 target_id。
+const reportingId = ref<number | null>(null)
+const reportReason = ref<GovernanceReportReason>('spam')
+const reportDetail = ref('')
+const reportBusy = ref(false)
+const reportErr = ref('')
+const reportedIds = ref(new Set<number>())
+
+function openReport(requestId: number) {
+  reportingId.value = requestId
+  reportReason.value = 'spam'
+  reportDetail.value = ''
+  reportErr.value = ''
+}
+
+async function submitReport(requestId: number) {
+  reportBusy.value = true
+  reportErr.value = ''
+  try {
+    await governanceApi.createReport(
+      requestId,
+      reportReason.value,
+      reportDetail.value.trim() || undefined,
+    )
+    reportedIds.value = new Set(reportedIds.value).add(requestId)
+    reportingId.value = null
+    useToast().success('举报已提交，待复核')
+  } catch (err) {
+    // 后端文案原样回：403 治理特权已被冻结、409 已举报过该求片、404 求片不存在
+    reportErr.value = errDetail(err) || '举报失败，稍后再试'
+  } finally {
+    reportBusy.value = false
   }
 }
 
@@ -1126,6 +1196,51 @@ onMounted(() => {
   transform: translateY(-50%);
 }
 .picked-wanted { font-size: 12px; color: var(--ink2); white-space: nowrap; }
+/* 求片举报（想看页合并进来；仅公益服）：行内小链接 + 行内展开表单（老页同形态） */
+.report-line { margin-top: 6px; font-size: 11px; }
+.report-link { color: var(--ink2); text-decoration: underline; cursor: pointer; }
+.report-done { color: var(--ink2); }
+.report-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+.report-form .report-input {
+  flex: 1 1 140px;
+  font-size: 13px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--paper-r-md, 10px);
+  background: var(--paper);
+  outline: none;
+  color: var(--ink);
+}
+.report-form .report-input:focus { border-color: var(--gold); }
+.report-submit {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--paper-card);
+  background: var(--red);
+  border: 1px solid var(--red);
+  border-radius: 20px;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.report-submit:disabled { opacity: 0.6; cursor: default; }
+.report-cancel {
+  font-size: 12px;
+  color: var(--ink2);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.report-cancel:disabled { opacity: 0.6; cursor: default; }
 /* 我的想看行：海报 + 标题/状态消息（结构与 .wish 行同口径） */
 .want-poster {
   width: 34px;
