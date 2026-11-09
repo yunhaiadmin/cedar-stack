@@ -718,6 +718,8 @@ export interface MediaSeekQuota {
 /** 库存检查命中项（在自建媒体库中已存在） */
 export interface MediaLookupItem {
   id: string
+  /** 数字主键：追剧订阅口只认它，供选剧订阅取用 */
+  item_id?: number
   name: string
   type: string
   year?: string | number | null
