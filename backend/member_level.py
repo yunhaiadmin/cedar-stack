@@ -278,6 +278,15 @@ def add_xp(
     leveled_up = level > old_level
     if leveled_up:
         logger.info("用户 %s 升级: %s -> %s", user.id, old_level, level)
+        # 群氛围播报：只在唯一收口排队给正式群发祝贺（提交后才真发），
+        # 钩子异常绝不影响发经验主流程。
+        try:
+            from backend.tg_bot import group_cheer as _cheer
+
+            _cheer.queue_level_up_cheer(db, user.id, old_level, level)
+        except Exception:
+            logger.warning("升级群祝贺排队失败 user=%s", user.id,
+                           exc_info=True)
     elif level < old_level:
         logger.info("用户 %s 降级: %s -> %s", user.id, old_level, level)
 

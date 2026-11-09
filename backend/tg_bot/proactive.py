@@ -285,6 +285,15 @@ def note_store_request_completed(db: Session, request_row,
     for user_id in _bound_user_ids(db, user_ids):
         if _claim(db, KIND_ARRIVAL, request_id, user_id, title, ""):
             claimed += 1
+    # 群氛围播报：同一收口顺手给正式群点名报喜排队（提交后才真发；
+    # 独立开关 tg_notify_group_arrival_enabled，失败不影响私聊入队）。
+    try:
+        from backend.tg_bot import group_cheer as _cheer
+
+        _cheer.queue_store_arrival_cheer(db, request_row)
+    except Exception:
+        logger.warning("到货群报喜排队失败 request=%s", request_id,
+                       exc_info=True)
     return claimed
 
 
