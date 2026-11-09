@@ -228,13 +228,13 @@ const headCellActive = computed(() =>
 const viewCell = computed(() => {
   const vp = accountCard.value?.view_permission
   if (!vp) return null
-  if (vp.source === 'welfare') return { value: '已开通', label: '查看凭证 · 随资格开通' }
-  if (!vp.granted) return { value: '未开通', label: '查看凭证 · 续上公益资格即可看' }
-  if (!vp.expires_at) return { value: '已解锁', label: '查看凭证 · 永久' }
+  if (vp.source === 'welfare') return { value: '已开通', label: '随资格开通' }
+  if (!vp.granted) return { value: '未开通', label: '续上公益资格即可看' }
+  if (!vp.expires_at) return { value: '已解锁', label: '永久' }
   const expired = new Date(vp.expires_at).getTime() <= Date.now()
   return {
     value: expired ? '已到期' : '已解锁',
-    label: `查看凭证 · 到期 ${vp.expires_at.slice(0, 10)}`,
+    label: `到期 ${vp.expires_at.slice(0, 10)}`,
   }
 })
 const memberMeta = computed(() => {
