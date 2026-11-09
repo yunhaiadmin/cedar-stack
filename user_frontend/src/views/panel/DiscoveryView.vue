@@ -5,7 +5,7 @@
     <template v-else>
     <!-- C档第2批：≥1280px 三栏仪表盘（d3-root 网格）；<1280px 保持现行单栏，移动端零变化 -->
     <div ref="d3Root" class="v4-page d3-root">
-      <!-- 左栏：问候 / 锚点 / 服务器卡 / 收藏家入口 / 脉搏摘要 / 每日一封 -->
+      <!-- 左栏：问候 / 锚点 / 服务器卡 / 接线员入口 / 脉搏摘要 / 每日一封 -->
       <div class="d3-left">
         <!-- 日志头：问候 + 封存件数 + 连签（<1280 的纸版式；≥1280 正文由问候卡接管） -->
         <header
@@ -69,11 +69,12 @@
           @retry="loadServers"
         />
 
-        <!-- 收藏家入口：退出底栏后收进发现页（DESIGN.md v1.1）；页面本身保留在 /collector -->
-        <RouterLink to="/collector" class="v4-collector-entry d3-ord-collector" aria-label="收藏家">
+        <!-- 接线员入口：原收藏家入口位置换主，接线员页在 /game/operator；收藏家页保留在 /collector，由「我的」页成就行与世界地图小屋到达。
+             类名沿用历史的 collector 命名：v4-paper.css 的排序（.d3-ord-collector）与宽屏边距（.v4-collector-entry）规则按此名挂钩，改名须同步改那边 -->
+        <RouterLink to="/game/operator" class="v4-collector-entry d3-ord-collector" aria-label="接线员">
           <span class="v4-collector-body">
-            <span class="v4-collector-title">收藏家</span>
-            <span class="v4-collector-sub">成就和口味</span>
+            <span class="v4-collector-title">接线员</span>
+            <span class="v4-collector-sub">我的播放账号</span>
           </span>
           <span class="v4-collector-go" aria-hidden="true">›</span>
         </RouterLink>
@@ -752,7 +753,8 @@ const hasLetterData = computed(() => Object.keys(letterData.value).length > 0)
   }
 }
 
-/* 收藏家入口卡（DESIGN.md v1.1：退出底栏后收进发现页）—— 纸面语言：浅卡 + 1px 发丝边 + 16px 圆角，零投影 */
+/* 接线员入口卡（位置沿用 DESIGN.md v1.1 收进发现页的原收藏家卡位；类名保留 collector 历史命名，
+   因 v4-paper.css 按此名挂排序与边距规则）—— 纸面语言：浅卡 + 1px 发丝边 + 16px 圆角，零投影 */
 .v4-collector-entry {
   display: flex;
   align-items: center;
