@@ -350,6 +350,8 @@ export interface MediaSeekRow {
   season_label?: string
   /** TMDB 条目 id（用户从候选列表选则时有；手填片名为空） */
   tmdb_id?: string | null
+  /** 原名投下的兜底行（没绑 TMDB 候选、待人工确认）；选片行为 false */
+  title_only?: boolean
   /** 已入库条目的 guid（标记入库时记下，用户端可直接去观看） */
   emby_item_id?: string | null
   user_id: number

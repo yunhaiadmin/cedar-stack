@@ -884,6 +884,9 @@ def _auto_migrate():
             ("pushed_at", "DATETIME", "NULL"),
             # v2 求片附议数（新表 movie_request_votes 由 create_all 建）
             ("vote_count", "INTEGER", "0"),
+            # 选片投愿（2026-11-09）：原名投下的兜底行标记；老库补列后
+            # 为 0——存量行来源不可考，一律不追溯标记，与新行缺省一致。
+            ("title_only", "BOOLEAN", "0"),
         ]),
         # Step 1 加权附议：附议行投票时刻等级权重快照；老库补列默认 1，
         # 历史票权重与升级前行为一致（每票恒＝1）。

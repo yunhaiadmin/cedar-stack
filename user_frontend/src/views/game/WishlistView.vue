@@ -48,6 +48,7 @@
               <b>《{{ w.movie_name }}》</b>
               <div class="wmeta">
                 {{ shortDate(w.created_at) }} 投下
+                <span v-if="w.title_only"> · 原名投下，待营地确认</span>
                 <span v-if="w.status === 'completed' && w.emby_item_id">
                   · 营地已上架，<button type="button" class="goto-player" @click="goOperator">去播放器看</button>
                 </span>
@@ -226,7 +227,12 @@
           <div v-else-if="seasons.length === 0" class="sels-empty">这部剧没有季数据，将按全季投放</div>
         </div>
 
-        <div v-if="hasTypedName" class="seek-fallback">没找到？就按「{{ wishText.trim() }}」这个名字投</div>
+        <div v-if="nameDup" class="seek-dup">
+          <template v-if="nameDup.kind === 'mine'">你已经投过《{{ nameDup.row.movie_name }}》啦，还在池子里漂着</template>
+          <template v-else>池里已有《{{ nameDup.row.movie_name }}》在漂流（{{ (nameDup.row.vote_count || 0) + 1 }} 人许愿），不用重复投，给它 +1 就好</template>
+        </div>
+        <div v-else-if="fallbackAllowed" class="seek-fallback">没找到对应的片？就按「{{ wishText.trim() }}」这个名字投下，营地会人工确认</div>
+        <div v-if="pickWarn" class="wish-warn">点上面任意一部就能投下；没有你要的，换个片名再搜搜</div>
 
         <div class="mrow">
           <button class="mbtn cancel" @click="closeModal">再想想</button>
@@ -454,6 +460,12 @@ function openModal() {
 /* 智能选片：输入防抖搜 TMDB 候选，选中后带 tmdb_id/year/type/season 提交 */
 const searching = ref<boolean>(false)
 const searchError = ref<string>('')
+/** 本词搜索走到了哪一步（原名投下的放行闸口按它判，见 fallbackAllowed）：
+ *  idle 未搜 / searching 在搜 / done 搜完 / error 失败 / unconfigured 未配 TMDB */
+const searchStatus = ref<'idle' | 'searching' | 'done' | 'error' | 'unconfigured'>('idle')
+/** searchStatus 对应的搜索词；输入一变就与当前词对不上，闸口自动关 */
+const searchFor = ref<string>('')
+const pickWarn = ref<boolean>(false)
 const searchReady = ref<boolean>(true)
 const searchDegraded = ref<boolean>(false)
 const candidates = ref<MediaSeekCandidate[]>([])
@@ -475,12 +487,41 @@ const showCandidates = computed<boolean>(() => (
   && (searching.value || searchError.value !== '' || candidates.value.length > 0)
 ))
 
-const hasTypedName = computed<boolean>(() => !picked.value && wishText.value.trim() !== '')
+/** 原名投下只在「搜过了、确实没候选」时才出现（选片投愿定版）：搜索未配置
+ *  TMDB（无候选可挑）/ 本词搜完零结果 / 搜索失败（另有重试入口）三种情形；
+ *  有候选、搜索未跑完、或输入已变（searchFor 对不上）时都不放行。 */
+const fallbackAllowed = computed<boolean>(() => {
+  if (picked.value) return false
+  const q = wishText.value.trim()
+  if (!q || searchFor.value !== q) return false
+  if (searchStatus.value === 'unconfigured' || searchStatus.value === 'error') return true
+  return searchStatus.value === 'done' && candidates.value.length === 0
+})
+
+/** 片名规范化（原名查重提示用，尽力而为）：去书名号/空白/标点后小写比对 */
+function normTitle(s: string): string {
+  return s.toLowerCase().replace(/[《》\s·•:：,，.。!！?？;；'"“”‘’()（）\-—]/g, '')
+}
+
+/** 输入与池里已有心愿同名时的查重提示：自己未完结的心愿优先，其次众人榜 */
+const nameDup = computed<{ kind: 'mine' | 'hot'; row: MediaSeekRequest | HotMediaSeekRequest } | null>(() => {
+  if (picked.value) return null
+  const key = normTitle(wishText.value)
+  if (!key) return null
+  const mine = myWishes.value.find(
+    (w) => (w.status === 'pending' || w.status === 'approved') && normTitle(w.movie_name) === key,
+  )
+  if (mine) return { kind: 'mine', row: mine }
+  const hot = hotWishes.value.find((w) => !w.mine && normTitle(w.movie_name) === key)
+  if (hot) return { kind: 'hot', row: hot }
+  return null
+})
 
 const primaryBtnText = computed<string>(() => {
   if (throwing.value) return '投放中'
   // R53A-39：装饰 emoji 不进按钮可访问名，避免读屏念成「电影摄影机／帆船」
   if (picked.value && picked.value.in_library) return '已在库，去播放器看'
+  if (nameDup.value?.kind === 'hot') return '给它 +1 附议'
   return '投进池子'
 })
 
@@ -495,6 +536,7 @@ const seasonParam = computed<string | undefined>(() => {
 
 function onWishInput(): void {
   emptyWarn.value = false
+  pickWarn.value = false
   picked.value = null
   seasons.value = []
   invalidateSeasons()
@@ -511,6 +553,8 @@ function onWishInput(): void {
     candidates.value = []
     searching.value = false
     searchError.value = ''
+    searchStatus.value = 'idle'
+    searchFor.value = ''
     return
   }
   searchTimer = setTimeout(() => { void runSearch(q) }, 350)
@@ -520,6 +564,8 @@ async function runSearch(q: string): Promise<void> {
   const seq = ++searchSeq
   searching.value = true
   searchError.value = ''
+  searchStatus.value = 'searching'
+  searchFor.value = q
   try {
     const r = await mediaSeekApi.search(q)
     if (seq !== searchSeq) return
@@ -529,8 +575,11 @@ async function runSearch(q: string): Promise<void> {
     // degraded：TMDB 搜索中途失败时为 true（后端 media_seek.search_candidates 每条返回路径都带）
     searchDegraded.value = r.degraded === true
     candidates.value = r.configured ? (r.results || []) : []
+    searchStatus.value = r.configured ? 'done' : 'unconfigured'
   } catch (e) {
     if (seq !== searchSeq) return
+    // 状态只属于 searchFor 这个词：输入已变时闸口靠 searchFor 对不上自动关
+    searchStatus.value = 'error'
     searchError.value = humanizeError(e)
   } finally {
     if (seq === searchSeq) searching.value = false
@@ -548,6 +597,7 @@ function selectCandidate(c: MediaSeekCandidate): void {
     clearTimeout(searchTimer)
     searchTimer = undefined
   }
+  pickWarn.value = false
   picked.value = c
   candidates.value = []
   searching.value = false
@@ -634,6 +684,9 @@ function closeModal() {
   }
   searching.value = false
   searchError.value = ''
+  searchStatus.value = 'idle'
+  searchFor.value = ''
+  pickWarn.value = false
   candidates.value = []
   picked.value = null
   seasons.value = []
@@ -704,9 +757,37 @@ async function throwWish() {
     goOperator()
     return
   }
+  if (throwing.value) return
+  // 查重命中别人的心愿：主按钮就是附议（走既有 vote 口，不新建行）；
+  // 选片路径的同 tmdb 查重在后端创建口里转附议，两条路殊途同归
+  if (!picked.value && nameDup.value?.kind === 'hot') {
+    const row = nameDup.value.row as HotMediaSeekRequest
+    throwing.value = true
+    try {
+      await upvote(row)
+      if (row.voted) {
+        closeModal()
+        useToast().success('已附议，坐等打捞')
+      }
+    } finally {
+      throwing.value = false
+    }
+    return
+  }
+  if (!picked.value && nameDup.value?.kind === 'mine') {
+    useToast().error('这条心愿你已经投过啦')
+    return
+  }
   const name = picked.value ? picked.value.name : wishText.value.trim()
   if (!name) { emptyWarn.value = true; return }
-  if (throwing.value) return
+  // 没选片时先过闸（选片投愿定版）：有候选必须点选；搜索没跑完就先把
+  // 搜索立刻跑起来；只有「搜过、没候选」才放行原名投下（fallbackAllowed）
+  if (!picked.value && !fallbackAllowed.value) {
+    if (candidates.value.length > 0) { pickWarn.value = true; return }
+    if (searchTimer !== undefined) { clearTimeout(searchTimer); searchTimer = undefined }
+    void runSearch(name)
+    return
+  }
   throwing.value = true
   try {
     const p = picked.value
@@ -721,6 +802,13 @@ async function throwWish() {
       : { movie_name: name }
     const r = await mediaSeekApi.create(payload)
     closeModal()
+    if (r.created === false) {
+      // 同 tmdb 已有心愿：后端没建新行、已转附议——刷新众人榜看热度，
+      // 「我的许愿」里不会多出一条（那是别人的船）
+      useToast().success(r.message)
+      flyBoat(() => { void loadHot(); void loadMine() })
+      return
+    }
     flyBoat(() => {
       // 动画结束后刷新列表并高亮新愿望
       // R53A-42：等列表真的刷到这条新愿望后再起高亮计时，慢网下才看得到「刚投进井里」
@@ -1071,6 +1159,15 @@ onMounted(() => {
 .seek-error { font-size: 12px; color: var(--red); }
 .seek-degraded { font-size: 11px; color: var(--ink2); margin-bottom: 6px; }
 .seek-fallback { font-size: 11px; color: var(--ink2); margin-top: 10px; }
+.seek-dup {
+  font-size: 12px;
+  color: var(--ink);
+  margin-top: 10px;
+  background: var(--paper2);
+  border: 1.5px dashed var(--line);
+  border-radius: var(--paper-r-md, 10px);
+  padding: 8px 10px;
+}
 .cand-list {
   max-height: 220px;
   overflow-y: auto;

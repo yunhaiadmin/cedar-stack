@@ -1574,6 +1574,10 @@ class MovieRequest(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     # v2 求片附议数：用户可对 pending 的求片附议（+1），管理端按热度排序
     vote_count = Column(Integer, default=0, nullable=False)
+    # 选片投愿（2026-11-09）：原名投下（没绑 TMDB 候选）的兜底行标记。
+    # 这类行只有片名、对不上号，须人工确认后才处理，管理端据此区分；
+    # 选片行（带 tmdb_id）恒为 False。老库补列默认 0（见 database.py）。
+    title_only = Column(Boolean, default=False, nullable=False, server_default="0")
 
     user = relationship("WebUser")
 

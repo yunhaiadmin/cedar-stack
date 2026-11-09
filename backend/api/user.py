@@ -714,13 +714,23 @@ def lookup_media(
     }
 
 
-def _create_media_seek_sync(
+def _create_media_seek_result(
     db: Session,
     user: models.WebUser,
     name: str,
     request: "MediaSeekRequest",
-) -> int:
-    """同步落库：去重 / 每日额度 / 写入求片（整段放在线程池里跑，见 create_media_seek）
+) -> dict:
+    """同步落库（富结果版）：去重 / 选片查重转附议 / 每日额度 / 写入求片
+    （整段放在线程池里跑，见 create_media_seek）。
+
+    返回 ``{"request_id", "created", "voted", "vote_count", "title_only"}``：
+
+    - ``created=True``：新建了一行；``title_only`` 表示这行是原名投下的
+      兜底行（没绑 TMDB 候选，待人工确认）；
+    - ``created=False``：同一 tmdb＋同季已有未完结心愿（选片投愿查重），
+      没建行，动作转成对那条心愿的附议——``voted`` 表示本人当前是否
+      已附议（附议开关关 / 每日附议名额满 / 已在打捞中时为 False，
+      只指路不投票，也不占求片额度）。
 
     校验失败照原样抛 HTTPException——线程里抛出的异常会由 await 处原样抛给客户端，
     状态码与文案和以前一致（400 / 409 / 429 的语义没有变）。
@@ -738,6 +748,49 @@ def _create_media_seek_sync(
     # P2 修复（审查）："先 count 后 insert"并发可绕过上限。先锁用户行再统计。
     from backend.api.economy import lock_user_row
     lock_user_row(db, user.id)
+
+    tmdb_id = media_seek.normalize_tmdb_id(request.tmdb_id) or None
+
+    # 选片投愿查重（2026-11-09）：同一 tmdb＋同季已有未完结心愿时不重复
+    # 建行——许愿池里同一部片只该有一条在漂，重复提交转成附议给它加热度。
+    # 季参与查重（同剧不同季是两条独立心愿，与同名去重同一口径）。查重
+    # 同样必须待在用户行锁内（与去重/额度同一道理）；转换走 media_seek
+    # 的幂等附议 ensure_vote，重复提交不会重复计数。本人自己的那条仍按
+    # 409 处理（不能给自己附议，也不许双开）。
+    if tmdb_id:
+        dup = (
+            db.query(models.MovieRequest)
+            .filter(
+                models.MovieRequest.tmdb_id == tmdb_id,
+                func.coalesce(models.MovieRequest.season, "") == season,
+                models.MovieRequest.status.in_(media_seek.ACTIVE_STATUSES),
+            )
+            .order_by(models.MovieRequest.created_at, models.MovieRequest.id)
+            .first()
+        )
+        if dup is not None:
+            # 无季的（电影 / 老数据）保持原来的文案；剧集把季说清楚，用户知道是哪一条在排队
+            suffix = f"（{media_seek.season_label(season)}）" if season and season != media_seek.SEASON_ALL else ""
+            if dup.user_id == user.id:
+                raise HTTPException(status_code=409, detail=f"《{name}》{suffix}已在处理中，请耐心等待（可在列表中看到进度）")
+            voted = False
+            vote_count = dup.vote_count or 0
+            if dup.status == "pending" and media_seek.vote_enabled(db):
+                try:
+                    vr = media_seek.ensure_vote(db, user, dup.id)
+                    voted = bool(vr["voted"])
+                    vote_count = int(vr["vote_count"])
+                except ValueError:
+                    # 附议在校验后又不可用（开关刚关/状态刚变）：只指路，
+                    # 不建行也不把投愿打成失败
+                    db.rollback()
+            return {
+                "request_id": dup.id,
+                "created": False,
+                "voted": voted,
+                "vote_count": vote_count,
+                "title_only": False,
+            }
 
     # 去重：同名**且同季**且仍在处理中的请求不再重复提交（已撤回的不算「在处理中」，可以重新求）。
     # 季参与去重：同一部剧的 S1 在看、S2 还想求，是两条独立请求，不该被名字相同挡回去。
@@ -775,7 +828,10 @@ def _create_media_seek_sync(
         year=request.year,
         type=request.type,
         # TMDB 候选带过来的 id 与季：管理端匹配「真的入库了吗」靠它们
-        tmdb_id=media_seek.normalize_tmdb_id(request.tmdb_id) or None,
+        tmdb_id=tmdb_id,
+        # 没绑 TMDB 候选的原名投下是兜底行：只有片名、对不上号，标记
+        # 待人工确认，管理端与选片行分开处理
+        title_only=tmdb_id is None,
         season=season or None,
         note=request.note,
         status="pending",
@@ -785,7 +841,27 @@ def _create_media_seek_sync(
     db.add(media_request)
     db.commit()
     db.refresh(media_request)
-    return media_request.id
+    return {
+        "request_id": media_request.id,
+        "created": True,
+        "voted": False,
+        "vote_count": 0,
+        "title_only": bool(media_request.title_only),
+    }
+
+
+def _create_media_seek_sync(
+    db: Session,
+    user: models.WebUser,
+    name: str,
+    request: "MediaSeekRequest",
+) -> int:
+    """兼容旧契约：只要请求 id（TG 机器人 /request 等调用方用）。
+
+    查重转附议时返回已有心愿的 id；TG /request 从不带 tmdb_id，
+    走不到转换分支，行为与从前一致。
+    """
+    return _create_media_seek_result(db, user, name, request)["request_id"]
 
 
 @user_router.post("/media-seek")
@@ -808,11 +884,28 @@ async def create_media_seek(
     if not media_seek.seek_enabled(db):
         raise HTTPException(status_code=403, detail="求片功能已关闭")
 
-    # 去重 / 额度 / 落库整段下放线程池：同步 SQLAlchemy 跑在事件循环上时，
+    # 去重 / 查重 / 额度 / 落库整段下放线程池：同步 SQLAlchemy 跑在事件循环上时，
     # 卡住的是**所有人**的请求（求片页是用户会连着点的地方）。
-    request_id = await run_in_threadpool(
-        _create_media_seek_sync, db, current_user, name, request
+    result = await run_in_threadpool(
+        _create_media_seek_result, db, current_user, name, request
     )
+    request_id = result["request_id"]
+
+    # 查重转附议不是新求片：不给管理员发新求片通知，只回提交人一句话
+    if not result["created"]:
+        if result["voted"]:
+            message = f"《{name}》已有 {result['vote_count'] + 1} 人许愿，已帮你 +1 附议"
+        else:
+            message = f"《{name}》已有人许愿，正在处理中"
+        return {
+            "success": True,
+            "request_id": request_id,
+            "message": message,
+            "created": False,
+            "voted": result["voted"],
+            "vote_count": result["vote_count"],
+            "title_only": False,
+        }
 
     # 通知管理员有新求片请求（落站内消息 + WebSocket 推送）
     try:
@@ -841,7 +934,15 @@ async def create_media_seek(
     except Exception as exc:  # 通知失败不应影响求片提交
         logger.warning("求片 TG 管理员通知发送失败: %s", exc)
 
-    return {"success": True, "request_id": request_id, "message": "求片请求已提交"}
+    return {
+        "success": True,
+        "request_id": request_id,
+        "message": "求片请求已提交",
+        "created": True,
+        "voted": False,
+        "vote_count": 0,
+        "title_only": result["title_only"],
+    }
 
 
 @user_router.delete("/media-seek/{request_id}")
@@ -913,6 +1014,8 @@ def hot_media_seeks(
                 "year": r.year,
                 "type": r.type,
                 "season_label": media_seek.season_label(r.season),
+                # 原名投下的兜底行（无 tmdb 绑定）：前端查重提示/标记用
+                "title_only": bool(getattr(r, "title_only", False)),
                 "vote_count": r.vote_count or 0,
                 "weighted_vote_count": weighted_map.get(r.id, 0),
                 "voted": r.id in voted,
@@ -980,6 +1083,8 @@ def get_my_media_seeks(
                 "season": r.season,
                 "season_label": media_seek.season_label(r.season),
                 "tmdb_id": r.tmdb_id,
+                # 原名投下的兜底行：用户列表里标「待确认」，与选片行区分
+                "title_only": bool(getattr(r, "title_only", False)),
                 # 已入库的条目 guid：用户端可以一键跳到详情页（只读进度的一部分）
                 "emby_item_id": r.emby_item_id,
                 # 这部片求给哪个服（用户自己就能看到，不用问管理员）

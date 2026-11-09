@@ -1320,6 +1320,9 @@ def get_media_seeks(
             "season": req.season,
             "season_label": media_seek.season_label(req.season),
             "tmdb_id": req.tmdb_id,
+            # 原名投下的兜底行（没绑 TMDB 候选、对不上号）：面板标出来
+            # 待人工确认，与选片行分开处理
+            "title_only": bool(getattr(req, "title_only", False)),
             "emby_item_id": req.emby_item_id,
             "note": req.note,
             "status": req.status,
