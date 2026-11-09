@@ -960,10 +960,10 @@ export const storeApi = {
   getWants: () => api.get<never, StoreWantsResponse>('/api/user/store/wants'),
 }
 
-// ==================== 想看商店求片 R1（backend/api/store_requests.py） ====================
-// 总闸 STORE_ENABLED 关时三个口都 404（与商店同款惰性 404），调用方按“商店未开启”处理。
-// 登记与榜单都要登录 + 有效会员订阅（非会员 403）；登记≠能播，入库前文案明说不能播。
-// 同一 tmdb 登记两次不重复建行：第二次走附议（人数 +1，已投过原样回）。
+// ==================== 想看商店求片 R1 读口（backend/api/store_requests.py） ====================
+// 总闸 STORE_ENABLED 关时读口都 404（与商店同款惰性 404），调用方按“商店未开启”处理。
+// 读口要登录 + 有效会员订阅（非会员 403）。登记写口已下线（后端 410）：
+// 求片登记合并到许愿池（mediaSeekApi 建单/投票），这里只剩我的列表与榜单两个读口。
 
 /** 求片展示态（与后端 R1_STATE_LABELS 同口径；未知态原样回，前端不编造） */
 export type StoreRequestState =
@@ -995,13 +995,6 @@ export interface StoreRequestListResponse {
 }
 
 export const storeRequestsApi = {
-  // 登记：库外 tmdb 登记或附议；库内回 in_library（request_id 为 null），引导去想看
-  postRequest: (tmdbId: string, title?: string) =>
-    api.post<never, StoreRequestRecord>('/api/user/store/requests', {
-      tmdb_id: tmdbId,
-      ...(title ? { title } : {}),
-    }),
-
   // 我的求片：创建的 + 附议过的（tmdb 绑定行）
   getMine: () => api.get<never, StoreRequestListResponse>('/api/user/store/requests'),
 

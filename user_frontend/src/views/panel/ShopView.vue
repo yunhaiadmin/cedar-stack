@@ -41,19 +41,6 @@
         <div v-if="vitalityHint" class="vitality-hint">{{ vitalityHint }}</div>
       </section>
 
-      <!-- 想看入口：想看 / 求片 / 找源已合并到 /want 一页（不占底栏、不碰发现页），
-           这里只留一行入口卡，原想看商店与求片找源两大块删除 -->
-      <section class="shop-sec shop-sec-tight">
-        <RouterLink to="/want" class="want-card-entry">
-          <span class="wce-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5h18V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3.5 4.1 20.4 2.5l.5 3.7L4 8.3z"/><path d="m7.2 6.8 2.2-2.1M12.2 6.4l2.2-2.1M17.2 6l2.2-2.1"/></svg></span>
-          <span class="wce-main">
-            <span class="wce-name">想看的片子</span>
-            <span class="wce-sub">库里有就想看，库里没有就求片</span>
-          </span>
-          <span class="wce-arrow" aria-hidden="true">→</span>
-        </RouterLink>
-      </section>
-
       <!-- ⚡ 能量补给：公益服下整块隐藏（付费区不在公益服出现） -->
       <section v-if="!welfareRealm" class="shop-sec">
         <div class="v4-sec-title">能量</div>
@@ -1052,55 +1039,6 @@ async function copyInviteCode() {
 
 <style scoped>
 /* 补给站样式：严格抄自设计稿 shop.html（纸色 token 不许改） */
-/* 想看入口卡：一行卡进 /want 想看页（纸卡口径：墨边＋偏移阴影），不改补给站其余布局 */
-.want-card-entry {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  background: var(--paper-card);
-  border: 1.5px solid var(--ink);
-  border-radius: var(--paper-r-lg, 12px);
-  box-shadow: 3px 3px 0 rgba(42, 38, 32, 0.12);
-  color: var(--ink);
-  text-decoration: none;
-}
-.wce-ic {
-  flex: none;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--paper-r-md, 10px);
-  background: rgba(1, 106, 113, 0.08);
-  border: 1px solid rgba(1, 106, 113, 0.22);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #016a71;
-}
-.wce-ic svg {
-  width: 22px;
-  height: 22px;
-}
-.wce-main {
-  flex: 1;
-  min-width: 0;
-}
-.wce-name {
-  display: block;
-  font-size: 15px;
-  font-weight: 600;
-}
-.wce-sub {
-  display: block;
-  font-size: 12px;
-  color: var(--ink2);
-  margin-top: 2px;
-}
-.wce-arrow {
-  color: var(--ink2);
-  font-size: 18px;
-  flex: none;
-}
 .shop-head {
   padding: 26px 20px 14px;
   border-bottom: 2px solid var(--ink);

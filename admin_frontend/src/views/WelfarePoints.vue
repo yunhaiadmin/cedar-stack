@@ -141,10 +141,10 @@ const tgBindEnabled = computed({
   set: (v: boolean) => { form.value['welfare_require_tg_bind'] = v ? '1' : '0' },
 })
 
-// 连签保资格总开关：word 风格 true/false（后端 economy._get_bool_config 只认 'true'）
-const streakRenewEnabled = computed({
-  get: () => (form.value['welfare_streak_renew_enabled'] ?? 'true') === 'true',
-  set: (v: boolean) => { form.value['welfare_streak_renew_enabled'] = v ? 'true' : 'false' },
+// 活力保号总开关：word 风格 true/false（后端 economy._get_bool_config 只认 'true'）
+const vitalityRenewEnabled = computed({
+  get: () => (form.value['welfare_vitality_renew_enabled'] ?? 'true') === 'true',
+  set: (v: boolean) => { form.value['welfare_vitality_renew_enabled'] = v ? 'true' : 'false' },
 })
 
 const botFields = [
@@ -180,9 +180,8 @@ const leaveCancelEnabled = computed({
 const welfareFields = [
   { key: 'welfare_grace_days', label: '到期保留天数', hint: '到期后可登录但不可播放，默认 7', suffix: '天' },
   { key: 'welfare_inactive_days', label: '未活跃禁用天数', hint: '默认 30', suffix: '天' },
-  { key: 'welfare_streak_renew_min', label: '连签续期门槛', hint: '资格到期时，连签达到该天数自动续期、不扣分；查看凭证不自动续，默认 30', suffix: '天' },
-  { key: 'welfare_streak_renew_days', label: '连签续期天数', hint: '连签自动续期一次续多少天，默认 30，范围 1-365', suffix: '天' },
-  { key: 'welfare_streak_forgive_per_month', label: '每月断签保护次数', hint: '漏签 1 天时连签不清零（漏掉的天不补计），每月可用次数，默认 1，填 0 关闭', suffix: '次/月' },
+  { key: 'welfare_vitality_renew_min', label: '活力保号线', hint: '资格到期时，当前活力达到该值自动续期、不扣分（保号只认活力，连签不再参与）；查看凭证不自动续，默认 3', suffix: '点' },
+  { key: 'welfare_streak_renew_days', label: '保号续期天数', hint: '活力保号自动续期一次续多少天，默认 30，范围 1-365', suffix: '天' },
   { key: 'welfare_code_monthly_quota', label: '资格码月配额', hint: '每位管理员每月可生成的公益资格码张数，默认 30，填 0 不限', suffix: '张/月' },
   { key: 'register_gift_welfare_days', label: '新注册送公益天数', hint: '新用户注册默认赠送的公益资格天数，默认 30，填 0 为永不过期', suffix: '天' },
   { key: 'register_gift_view_days', label: '新注册送查看天数', hint: '新用户注册默认赠送的查看凭证天数，默认 30，最小 1', suffix: '天' },
@@ -574,12 +573,12 @@ onMounted(load)
       <SectionCard
         title="公益服规则"
         :icon="Settings2"
-        description="到期保留、未活跃禁用、连签续期与新注册赠送（求片额度在运营参数里统一设置）"
+        description="到期保留、未活跃禁用、活力保号与新注册赠送（求片额度在运营参数里统一设置）"
       >
         <el-form :label-position="labelPosition" label-width="120px" class="config-form">
-          <el-form-item label="连签自动续期">
-            <el-switch v-model="streakRenewEnabled" />
-            <span class="field-hint">开启后资格到期时连签达标自动续期；关闭后到期照常走保留期／取消流程，默认开</span>
+          <el-form-item label="活力自动续期">
+            <el-switch v-model="vitalityRenewEnabled" />
+            <span class="field-hint">开启后资格到期时活力达线自动续期；关闭后到期照常走保留期／取消流程，默认开</span>
           </el-form-item>
           <el-form-item v-for="f in welfareFields" :key="f.key" :label="f.label">
             <el-input v-model="form[f.key]" class="field-input" />

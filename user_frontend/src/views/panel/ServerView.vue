@@ -7,6 +7,17 @@
         <p>连接、任务、媒体库和入库趋势</p>
       </header>
 
+      <!-- 接线员直达：找播放账号的人常从服务器页进来，入口常驻、不随状态加载成败 -->
+      <section class="v4-sec">
+        <RouterLink class="op-entry" to="/game/operator">
+          <span class="op-entry-main">
+            <span class="op-entry-title">接线员 · 我的播放账号</span>
+            <span class="op-entry-sub">服务器地址、用户名、播放密码和一键导入都在这里</span>
+          </span>
+          <span class="op-entry-go" aria-hidden="true">›</span>
+        </RouterLink>
+      </section>
+
       <!-- 顶层错误卡：失败时各区收起，只留这一张 -->
       <div v-if="server.error" class="v4-sec">
         <div class="v4-err" role="alert">{{ server.error }}<br><button class="v4-retry" :disabled="server.loading" @click="retryServer">{{ server.loading ? '正在重连…' : '重试' }}</button></div>
@@ -79,6 +90,23 @@ function retryServer() {
 </script>
 
 <style scoped>
+/* 接线员直达行：纸片卡 + 整行可点（照发现页入口行口径，只用既有令牌） */
+.op-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--paper-card);
+  border: 1.5px solid var(--line);
+  border-radius: var(--paper-r-lg, 12px);
+  color: var(--ink);
+  text-decoration: none;
+}
+.op-entry-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.op-entry-title { font-size: 15px; font-weight: 800; }
+.op-entry-sub { font-size: 12.5px; color: var(--ink2); }
+.op-entry-go { flex: none; font-size: 20px; color: var(--ink2); }
+.op-entry:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
 /* 生长记录区无额外样式，复用 v4-sec */
 /* 空态第二行指引：小一号、弱化，告诉用户"正常还是故障" */
 /* R100-1：硬编码冷灰 #6b7280 改走 --ink2（暖灰 #6B6257），与纸面色系统一 */

@@ -228,21 +228,21 @@ def _vitality_config(db) -> tuple[int, int]:
         return 14, 3
 
 
-def _streak_renew_min(db) -> int:
-    """连签保资格阈值：SystemConfig welfare_streak_renew_min，默认 30。"""
+def _vitality_renew_min(db) -> int:
+    """活力保号线：SystemConfig welfare_vitality_renew_min，默认 3。"""
     try:
         row = (
             db.query(models.SystemConfig)
-            .filter_by(key="welfare_streak_renew_min")
+            .filter_by(key="welfare_vitality_renew_min")
             .first()
         )
-        return int(row.value) if row and row.value is not None else 30
+        return int(row.value) if row and row.value is not None else 3
     except Exception:
-        return 30
+        return 3
 
 
-def _streak_renew_enabled(db) -> bool:
-    """连签保资格总开关：SystemConfig welfare_streak_renew_enabled，默认开。
+def _vitality_renew_enabled(db) -> bool:
+    """活力保号总开关：SystemConfig welfare_vitality_renew_enabled，默认开。
 
     与 welfare_expiry 的读口一致（只认 "true"，缺行默认开）。开关关闭时
     连签行不再宣称「自动续公益资格」——功能在到期 tick 侧同样被门控，
@@ -251,7 +251,7 @@ def _streak_renew_enabled(db) -> bool:
     try:
         row = (
             db.query(models.SystemConfig)
-            .filter_by(key="welfare_streak_renew_enabled")
+            .filter_by(key="welfare_vitality_renew_enabled")
             .first()
         )
         if row is None or row.value is None:
@@ -262,7 +262,11 @@ def _streak_renew_enabled(db) -> bool:
 
 
 def _streak_line(db, user_id: int) -> str:
-    """连签：取最近一条签到记录的 streak 列，无记录为 0 天。"""
+    """连签：取最近一条签到记录的 streak 列，无记录为 0 天。
+
+    保号已改活力口径（2026-11-09）：括注宣称的是活力保号——资格到期时
+    活力达到活力线即自动续，与连签天数无关；连签此处只作计数展示。
+    """
     row = (
         db.query(models.CheckinRecord)
         .filter(models.CheckinRecord.user_id == user_id)
@@ -270,9 +274,9 @@ def _streak_line(db, user_id: int) -> str:
         .first()
     )
     streak = int(row.streak) if row is not None and row.streak is not None else 0
-    if not _streak_renew_enabled(db):
+    if not _vitality_renew_enabled(db):
         return f"📋 连签：{streak} 天"
-    return f"📋 连签：{streak} 天（满 {_streak_renew_min(db)} 天自动续公益资格）"
+    return f"📋 连签：{streak} 天（活力 ≥{_vitality_renew_min(db)} 到期自动续公益资格）"
 
 
 def _bar(frac: float, width: int) -> str:

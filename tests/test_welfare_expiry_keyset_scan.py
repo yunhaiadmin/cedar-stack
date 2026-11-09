@@ -34,8 +34,10 @@ def _seed_expiry(db, n):
                else now - timedelta(days=3) if mod == 1
                else now + timedelta(days=30) if mod == 2
                else None)
+        # vitality=0：钉在活力保号线下，让本文件测的保留期/取消路径
+        # 不被活力续期分流（保号口径 2026-11-09 改活力，默认活力 14 会达线续期）
         u = models.WebUser(username=f"kx{i}", password_hash="x",
-                           is_welfare=True, welfare_expires_at=exp)
+                           is_welfare=True, welfare_expires_at=exp, vitality=0)
         db.add(u)
         db.flush()
         if mod == 0:

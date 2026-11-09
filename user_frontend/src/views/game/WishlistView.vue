@@ -59,6 +59,26 @@
         </div>
       </section>
 
+      <!-- 我的想看：想看页合并进来——库内片「想看」转存到自己盘的任务行；
+           商店未开启/非会员时整区隐藏（许愿池本身不挂商店闸） -->
+      <section v-if="!wantsHidden" class="v4-sec">
+        <div class="v4-sec-title">我的想看</div>
+        <div class="v4-sec-sub">想看的片子，正在往你的盘里搬</div>
+        <div v-if="wantsLoading" class="v4-skeleton" style="height:80px"></div>
+        <div v-else-if="wantsError" class="v4-err">想看清单加载失败：{{ wantsError }}<br><button class="v4-retry" @click="loadWants">重试</button></div>
+        <div v-else-if="myWants.length === 0" class="v4-empty">还没有想看的片子，搜到已在库的片子时点「想看」试试</div>
+        <div v-else>
+          <div v-for="w in myWants" :key="w.job_id ?? w.tmdb_id" class="wish">
+            <img v-if="w.poster_url" :src="imageAuthUrl(w.poster_url)" :alt="w.title || w.tmdb_id" class="want-poster">
+            <div class="want-main">
+              <b>《{{ w.title || `TMDB ${w.tmdb_id}` }}》</b>
+              <div class="wmeta">{{ w.message }}</div>
+            </div>
+            <span class="chip" :class="wantChip(w.state)">{{ wantStateText(w.state) }}</span>
+          </div>
+        </div>
+      </section>
+
       <!-- 众人许愿 -->
       <section class="v4-sec" style="padding-bottom:20px">
         <div class="v4-sec-title">众人许愿</div>
@@ -73,6 +93,17 @@
               <span class="chip blue">{{ w.vote_count > 0 ? w.vote_count + ' 人也想看 · 加权 ' + (w.weighted_vote_count ?? w.vote_count) : '还没有人附议' }}</span>
             </div>
             <div class="want">{{ shortDate(w.created_at) }} 投入池中</div>
+            <!-- 举报（想看页合并进来；仅公益服）：hot 榜后端只回 pending 行，
+                 id 即求片行 id，与治理举报的目标 id 同域 -->
+            <div v-if="welfareRealm" class="report-line">
+              <a
+                v-if="!reportedIds.has(w.id)"
+                href="#"
+                class="report-link"
+                @click.prevent="openReport(w.id)"
+              >举报</a>
+              <span v-else class="report-done">已举报</span>
+            </div>
             <button
               class="upvote"
               :class="{ done: w.voted }"
@@ -81,6 +112,23 @@
             >
               <span class="lbl">{{ w.voted ? '✓ 已附议，坐等打捞' : voting === w.id ? '附议中' : '+1 附议' }}</span>
             </button>
+            <div v-if="reportingId === w.id" class="report-form">
+              <select v-model="reportReason" class="report-input" aria-label="举报原因">
+                <option value="spam">垃圾内容</option>
+                <option value="duplicate">重复求片</option>
+                <option value="violation">违规内容</option>
+              </select>
+              <input
+                v-model="reportDetail"
+                type="text"
+                placeholder="补充说明（可选）"
+                class="report-input"
+                maxlength="500"
+              />
+              <button class="report-submit" :disabled="reportBusy" @click="submitReport(w.id)">{{ reportBusy ? '提交中…' : '提交举报' }}</button>
+              <button class="report-cancel" :disabled="reportBusy" @click="reportingId = null">取消</button>
+              <div v-if="reportErr" class="v4-err" style="flex:1 1 100%">{{ reportErr }}</div>
+            </div>
           </div>
         </div>
       </section>
@@ -140,6 +188,15 @@
             <b>{{ picked.name }}</b>
             <span class="picked-meta">{{ picked.year }} · {{ picked.kind === 'movie' ? '电影' : '剧集' }}</span>
           </div>
+          <!-- 已在库：想看页合并进来的「想看」动作（与原想看页同一个 postWant 口） -->
+          <button
+            v-if="picked.in_library && !wantedIds.has(picked.tmdb_id)"
+            type="button"
+            class="picked-want"
+            :disabled="wanting === picked.tmdb_id"
+            @click="doWant(picked)"
+          >{{ wanting === picked.tmdb_id ? '想看中…' : '想看' }}</button>
+          <span v-else-if="picked.in_library" class="picked-wanted">已想看</span>
           <button type="button" class="picked-change" @click="clearPick">换一部</button>
         </div>
 
@@ -182,9 +239,11 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { facilityStamp } from '@/config/game'
-import { mediaSeekApi, type MediaSeekCandidate, type TvSeason, type MediaSeekRequest, type HotMediaSeekRequest } from '@/api'
+import { mediaSeekApi, storeApi, type MediaSeekCandidate, type TvSeason, type MediaSeekRequest, type HotMediaSeekRequest, type StoreWantRecord, type StoreWantState } from '@/api'
+import { governanceApi, type GovernanceReportReason } from '@/api/governance'
+import { useUserStore } from '@/stores/user'
 import { imageAuthUrl } from '@/api/emby'
 import { useToast } from '@/composables/useToast'
 import { humanizeError } from '@/composables/usePanelApi'
@@ -206,9 +265,134 @@ const wellRef = ref<HTMLElement | null>(null)
 const wishInput = ref<HTMLInputElement | null>(null)
 
 const router = useRouter()
+const route = useRoute()
+const userStore = useUserStore()
+/** 举报入口仅公益服：与补给站同款 userStore.isFreeRealm 信号，拿不到按非公益服处理 */
+const welfareRealm = computed(() => userStore.isFreeRealm)
 /** R45：营地已上架的心愿 → 去接线员页（播放器接线入口） */
 function goOperator() {
   router.push('/game/operator')
+}
+
+// ---------- 我的想看（想看页合并进来：库内片想看转存任务） ----------
+// 想看口挂商店闸（登录/会员/总闸）：闸没过时整区隐藏，许愿池照常；
+// 其余失败亮错误态可重试，不静默吞。
+const myWants = ref<StoreWantRecord[]>([])
+const wantsLoading = ref(true)
+const wantsError = ref('')
+const wantsHidden = ref(false)
+const wanting = ref('')
+/** 已想看集合：我的想看清单 + 本页刚点过的（清单刷新前先本地记下，防重复点） */
+const wantedIds = ref(new Set<string>())
+
+function errStatus(err: unknown): number | null {
+  const s = (err as { response?: { status?: number } })?.response?.status
+  return typeof s === 'number' ? s : null
+}
+function errDetail(err: unknown): string {
+  const d = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  return typeof d === 'string' ? d : ''
+}
+
+function wantStateText(s: StoreWantState): string {
+  return (
+    {
+      wanted: '准备中',
+      resolving: '准备中',
+      transferring: '准备中',
+      ready: '可以看了',
+      failed: '转存失败',
+      missing_source: '库里还没有',
+    }[s] ?? s
+  )
+}
+function wantChip(s: StoreWantState): string {
+  if (s === 'ready') return 'green'
+  if (s === 'failed' || s === 'missing_source') return 'gray'
+  return 'blue'
+}
+
+let wantsSeq = 0
+async function loadWants() {
+  const seq = ++wantsSeq
+  wantsLoading.value = true
+  wantsError.value = ''
+  try {
+    const r = await storeApi.getWants()
+    if (seq !== wantsSeq) return
+    myWants.value = r.items || []
+    wantedIds.value = new Set([
+      ...wantedIds.value,
+      ...myWants.value
+        .filter((w) => w.state !== 'failed' && w.state !== 'missing_source')
+        .map((w) => w.tmdb_id),
+    ])
+  } catch (e) {
+    if (seq !== wantsSeq) return
+    const s = errStatus(e)
+    if (s === 401 || s === 403 || (s === 404 && errDetail(e) === '想看商店未开启')) {
+      wantsHidden.value = true
+      return
+    }
+    wantsError.value = humanizeError(e)
+  } finally {
+    if (seq === wantsSeq) wantsLoading.value = false
+  }
+}
+
+/** 已在库候选的「想看」：与原想看页同一个 postWant 口，点完刷新我的想看 */
+async function doWant(c: MediaSeekCandidate) {
+  if (wanting.value) return
+  wanting.value = c.tmdb_id
+  try {
+    const r = await storeApi.postWant(c.tmdb_id)
+    useToast().success(r.message || '已加入想看')
+    if (r.state !== 'failed' && r.state !== 'missing_source') {
+      wantedIds.value = new Set(wantedIds.value).add(c.tmdb_id)
+    }
+    void loadWants()
+  } catch (e) {
+    useToast().error(errDetail(e) || humanizeError(e))
+  } finally {
+    wanting.value = ''
+  }
+}
+
+// ---------- 举报（仅公益服；原因与后端 REPORT_REASONS 逐字一致） ----------
+// hot 榜行 id 就是 movie_requests 行 id（后端只回 pending 行），与老想看页
+// 求片榜的 request_id 同域，直接作治理举报的 target_id。
+const reportingId = ref<number | null>(null)
+const reportReason = ref<GovernanceReportReason>('spam')
+const reportDetail = ref('')
+const reportBusy = ref(false)
+const reportErr = ref('')
+const reportedIds = ref(new Set<number>())
+
+function openReport(requestId: number) {
+  reportingId.value = requestId
+  reportReason.value = 'spam'
+  reportDetail.value = ''
+  reportErr.value = ''
+}
+
+async function submitReport(requestId: number) {
+  reportBusy.value = true
+  reportErr.value = ''
+  try {
+    await governanceApi.createReport(
+      requestId,
+      reportReason.value,
+      reportDetail.value.trim() || undefined,
+    )
+    reportedIds.value = new Set(reportedIds.value).add(requestId)
+    reportingId.value = null
+    useToast().success('举报已提交，待复核')
+  } catch (err) {
+    // 后端文案原样回：403 治理特权已被冻结、409 已举报过该求片、404 求片不存在
+    reportErr.value = errDetail(err) || '举报失败，稍后再试'
+  } finally {
+    reportBusy.value = false
+  }
 }
 
 // hot 接口返回"所有人 pending（含自己）"，与 myWishes 按 id 去重，避免自己的心愿被算两次
@@ -613,6 +797,14 @@ async function upvote(w: HotMediaSeekRequest) {
 onMounted(() => {
   loadMine()
   loadHot()
+  loadWants()
+  // /want?q=… 旧深链重定向过来时带词：直接打开许愿弹窗并预搜（原想看页同口径）
+  const q = route.query.q
+  if (typeof q === 'string' && q.trim()) {
+    wishText.value = q.trim()
+    openModal()
+    void runSearch(q.trim())
+  }
 })
 </script>
 
@@ -978,6 +1170,94 @@ onMounted(() => {
   padding: 4px 10px;
   cursor: pointer;
   white-space: nowrap;
+}
+/* 已在库候选的「想看」动作（想看页合并进来）：与投心愿同为红主按钮口径 */
+.picked-want {
+  position: relative;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--paper-card);
+  background: var(--red);
+  border: 1px solid var(--red);
+  border-radius: 20px;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.picked-want:disabled { opacity: 0.6; cursor: default; }
+/* 命中区纵向扩到 44px，视觉尺寸保持不变 */
+.picked-want::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 44px;
+  transform: translateY(-50%);
+}
+.picked-wanted { font-size: 12px; color: var(--ink2); white-space: nowrap; }
+/* 求片举报（想看页合并进来；仅公益服）：行内小链接 + 行内展开表单（老页同形态） */
+.report-line { margin-top: 6px; font-size: 11px; }
+.report-link { color: var(--ink2); text-decoration: underline; cursor: pointer; }
+.report-done { color: var(--ink2); }
+.report-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+.report-form .report-input {
+  flex: 1 1 140px;
+  font-size: 13px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--paper-r-md, 10px);
+  background: var(--paper);
+  outline: none;
+  color: var(--ink);
+}
+.report-form .report-input:focus { border-color: var(--gold); }
+.report-submit {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--paper-card);
+  background: var(--red);
+  border: 1px solid var(--red);
+  border-radius: 20px;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.report-submit:disabled { opacity: 0.6; cursor: default; }
+.report-cancel {
+  font-size: 12px;
+  color: var(--ink2);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.report-cancel:disabled { opacity: 0.6; cursor: default; }
+/* 我的想看行：海报 + 标题/状态消息（结构与 .wish 行同口径） */
+.want-poster {
+  width: 34px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  background: var(--paper2);
+}
+.want-main { flex: 1; min-width: 0; }
+.want-main b {
+  display: block;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* 命中区纵向扩到 44px，视觉尺寸保持不变 */
 .picked-change::before {

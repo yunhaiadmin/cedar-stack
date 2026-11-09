@@ -3,9 +3,11 @@
 
 审计结论（2026-10-29）：公益服／经济规则绝大多数早已走标准口径
 （SystemConfig 键＋config_schema＋管理端字段），本单只补缺口：
-1. welfare_streak_renew_min：键＋校验早已有，管理端公益配置页无字段 → 只补字段；
+1. welfare_vitality_renew_min（活力保号线，2026-11-09 取代原
+   welfare_streak_renew_min 连签门槛）：键＋校验与管理端公益配置页字段成套；
 2. vitality_watch_tier1/2_minutes/reward：键＋校验早已有，管理端系统设置活力值卡无字段 → 只补字段；
-3. vitality_checkin_gain：签到恢复活力点数此前硬编码 1 → 提升为 SystemConfig 键（默认 1）；
+3. vitality_checkin_gain：签到恢复活力点数此前硬编码 1 → 提升为 SystemConfig 键
+   （当时默认 1；2026-11-09「签到不送活力」新政后代码默认改 0，键保留可配）；
 4. register_gift_welfare_days／register_gift_view_days：新注册赠送天数此前硬编码 30／30
    → 提升为 SystemConfig 键（默认 30／30）。
 计分语义、默认值、行为一字不许变；故意未暴露项见 PR body。
@@ -93,10 +95,10 @@ def test_new_keys_registered_with_current_defaults():
 
 
 def test_preexisting_keys_for_ui_only_fields_untouched():
-    # 连签续期门槛与观影分档：键＋校验早已有，本单只补管理端字段
-    assert welfare_admin.WELFARE_CONFIG_KEYS["welfare_streak_renew_min"] == "30"
-    assert config_schema.WELFARE_CONFIG_SCHEMA["welfare_streak_renew_min"] == (
-        "int", 0, 3650)
+    # 活力保号线与观影分档：键＋校验与管理端字段成套
+    assert welfare_admin.WELFARE_CONFIG_KEYS["welfare_vitality_renew_min"] == "3"
+    assert config_schema.WELFARE_CONFIG_SCHEMA["welfare_vitality_renew_min"] == (
+        "int", 0, 1000)
     for key in ("vitality_watch_tier1_minutes", "vitality_watch_tier1_reward",
                 "vitality_watch_tier2_minutes", "vitality_watch_tier2_reward"):
         assert admin_economy.ECONOMY_CONFIG_KEYS[key] == "int"
@@ -158,16 +160,16 @@ def test_tier_order_cross_validation_still_applies(db):
 # ==================== 3. 保存后读数生效 ====================
 
 def test_welfare_keys_save_and_read_back(db):
-    save_config(db, {"welfare_streak_renew_min": "45",
+    save_config(db, {"welfare_vitality_renew_min": "5",
                      "register_gift_welfare_days": "45",
                      "register_gift_view_days": "15"}, schema="welfare")
     db.commit()
     got = welfare_admin.welfare_config_get(db=db, current_admin=_make_user(db, "admin"))
-    assert got["welfare_streak_renew_min"] == "45"
+    assert got["welfare_vitality_renew_min"] == "5"
     assert got["register_gift_welfare_days"] == "45"
     assert got["register_gift_view_days"] == "15"
     with pytest.raises(config_schema.ConfigValueError):
-        save_config(db, {"welfare_streak_renew_min": "-1"}, schema="welfare")
+        save_config(db, {"welfare_vitality_renew_min": "-1"}, schema="welfare")
 
 
 def test_economy_keys_save_and_read_back(db):
@@ -189,21 +191,23 @@ def _checkin_welfare_user(db, username, vitality=5):
     return _make_user(db, username, is_welfare=True, vitality=vitality, points=0)
 
 
-def test_checkin_gain_default_is_1(db):
+def test_checkin_gain_default_is_0(db):
+    """新政默认（2026-11-09 签到不送活力）：未配键 → 签到后活力不变。"""
     from backend.api.economy import _do_checkin_core
 
     u = _checkin_welfare_user(db, "welf1", vitality=5)
     _do_checkin_core(db, u)
     db.refresh(u)
-    assert u.vitality == 6
+    assert u.vitality == 5
 
 
 def test_checkin_gain_custom_and_zero(db):
     from backend.api.economy import _do_checkin_core
 
-    # PA-014：签到活力受每日免费上限钳制（默认上限 2 会把 gain 3 压成 2）；
-    # 本用例测的是“自定义 gain 值生效”，故把上限抬到 10 隔离钳制影响，
-    # 钳制本身由 test_pa013_016_economy.py 的 PA-014 用例覆盖。
+    # 本用例测的是“自定义 gain 值生效”（管理员显式配正数恢复签到送
+    # 活力）；签到发放已不再受每日免费上限钳制（上限只管观影，见
+    # test_pa013_016_economy.py 改写后的 PA-014 用例），此处抬上限到
+    # 10 只是隔离旧变量、保持断言只测 gain 本身。
     _set_config(db, "vitality_daily_gain_limit", "10")
     _set_config(db, "vitality_checkin_gain", "3")
     u = _checkin_welfare_user(db, "welf2", vitality=5)

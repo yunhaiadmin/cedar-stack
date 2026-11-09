@@ -1,4 +1,5 @@
-"""观影时长分档活力奖励：档位边界 + 每日上限钳制（与签到共用上限）。"""
+"""观影时长分档活力奖励：档位边界 + 每日上限钳制（上限只管观影；
+签到自 2026-11-09 不送活力、也不再与观影共用上限）。"""
 import os
 import sys
 from datetime import datetime
@@ -62,19 +63,20 @@ def test_tier_boundaries(db):
         assert _vitality_of(db, u.id) == expected
 
 
-def test_daily_cap_shared_with_checkin(db):
-    """与签到共用每日上限 2：当天已签到 +1 时，一小时只能再得 +1。"""
+def test_daily_cap_not_shared_with_checkin(db):
+    """新政（2026-11-09）：每日上限只管观影——当天已有 checkin +1 流水
+    也不占额度，一小时观影仍得满档 +2（上限 2）。"""
     u = _user(db, "capped")
     _gain_log(db, u.id, "checkin", 1)
-    assert vitality.award_watch_minutes_reward(db, u.id, 60) == 1
-    assert _vitality_of(db, u.id) == 1
+    assert vitality.award_watch_minutes_reward(db, u.id, 60) == 2
+    assert _vitality_of(db, u.id) == 2
 
 
 def test_daily_cap_reached_returns_zero(db):
-    """已达上限（签到 +1 + 观影 +1）时，一小时再结算得 0。"""
+    """观影已达上限 2（外加一条不计入的 checkin 流水）时，再结算得 0。"""
     u = _user(db, "full")
     _gain_log(db, u.id, "checkin", 1)
-    _gain_log(db, u.id, "watch_reward", 1)
+    _gain_log(db, u.id, "watch_reward", 2)
     assert vitality.award_watch_minutes_reward(db, u.id, 60) == 0
     assert _vitality_of(db, u.id) == 0
 
