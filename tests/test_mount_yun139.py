@@ -621,8 +621,8 @@ def test_provider_range_text_transfer(enabled, monkeypatch):
 
 # ---------- 真实 UDS 集成（共享 Server + Client + 139 handler） ----------
 
-def test_real_uds_roundtrip(tmp_path):
-    sock = str(tmp_path / "runtime.sock")
+def test_real_uds_roundtrip(uds_sock_dir):
+    sock = str(uds_sock_dir / "runtime.sock")
     handler = Yun139SidecarHandler(upstream=_FakeUpstream())
     server = ProviderRuntimeServer(handler, sock)
     thread = threading.Thread(target=server.serve_forever, daemon=True)

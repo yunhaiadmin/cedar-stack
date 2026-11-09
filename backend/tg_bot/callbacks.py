@@ -36,6 +36,9 @@ def handle_callback(db, callback_query: dict, redpacket_enabled: bool | None = N
     if data.startswith("slots_bet:"):
         _handle_slots_bet(db, callback_query)
         return
+    if data == "slots_widget":
+        _handle_slots_widget(db, callback_query)
+        return
     if data.startswith("duel_accept:"):
         _handle_duel_accept(db, callback_query)
         return
@@ -1170,6 +1173,39 @@ def _handle_duel_accept(db, callback_query: dict) -> None:
     else:
         _answer("本局已退回")
     duel_ui.publish_terminal(db, final)
+
+
+def _handle_slots_widget(db, callback_query: dict) -> None:
+    """发 HTML 版老虎机 widget（Bot API 10.4 sendWidget，私聊限定）。
+
+    生产环境 widget 仅限私聊、自动 protected content、不可转发：
+    群里点到（旧面板残留等）只回 toast、不发。群聊继续走 sendDice 版。
+    """
+    from backend.tg_bot import slots_widget as slots_widget_mod
+
+    cb_id = callback_query.get("id")
+    from_user = callback_query.get("from") or {}
+    tg_id = from_user.get("id")
+    msg = callback_query.get("message") or {}
+    chat_id = (msg.get("chat") or {}).get("id")
+    if not cb_id or not tg_id or not chat_id:
+        return
+
+    def _answer(text: str, show_alert: bool = False) -> None:
+        sender.answer_callback_query(db, cb_id, text=text, show_alert=show_alert)
+
+    if int(chat_id) != int(tg_id):
+        _answer("HTML 版老虎机仅支持私聊，群里请用普通版", show_alert=True)
+        return
+    user = resolve(db, int(tg_id))
+    if user is None:
+        _answer("请先绑定账号后再玩老虎机", show_alert=True)
+        return
+    ok, err, _mid = slots_widget_mod.send_slots_widget(db, chat_id, user)
+    if not ok:
+        _answer(err or "HTML 版老虎机发送失败", show_alert=True)
+        return
+    _answer("HTML 版老虎机已发出")
 
 
 def _handle_slots_bet(db, callback_query: dict) -> None:

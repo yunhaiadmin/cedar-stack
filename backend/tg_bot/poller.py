@@ -153,7 +153,8 @@ def _poll_once(token: str, offset: int, timeout: int = 30) -> list:
     # tests/test_tg_bot_poller_redelivery.py（断言键为 str 且值对上）。
     params = {"offset": offset, "timeout": timeout,
               "allowed_updates": ["message", "callback_query", "inline_query",
-                                  "chat_member", "my_chat_member"]}
+                                  "chat_member", "my_chat_member",
+                                  "widget_query", "shared_widget_query"]}
     with httpx.Client(timeout=timeout + 10) as client:
         resp = client.get(url, params=params)
     if resp.status_code != 200:
