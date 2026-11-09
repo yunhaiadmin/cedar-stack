@@ -4,7 +4,7 @@
    管道，两个开关默认开；手动标记入库不再单独直发 TG。
 2. 承诺落点补齐：举报终审结果、贡献池审核结果、抽奖补发到账。
 3. 公益侧：公益资格到期提醒（同订阅档位/去重）＋活力归零/恢复通知。
-4. 到货消息带「去看看」按钮（site_url 拼 /want；失败保留 whyplay 并存）。
+4. 到货消息带「去看看」按钮（site_url 拼 /game/wishlist；失败保留 whyplay 并存）。
 5. 管理员收口：新片入库私聊默认关（退役并入群通报）；新求片提醒补开关
    且网页提交同口径。
 6. 用户级 TG 通知偏好三类：求片到货 / 到期提醒 / 活动中奖，只管 TG 份。
@@ -250,7 +250,7 @@ def test_watch_button_on_arrival(db, sent):
         db, now=datetime.now() + timedelta(seconds=120)) == 1
     markup = sent[0]["reply_markup"]
     assert markup == {"inline_keyboard": [[
-        {"text": "去看看", "url": "https://example.test/want"},
+        {"text": "去看看", "url": "https://example.test/game/wishlist"},
     ]]}
 
 
@@ -276,7 +276,7 @@ def test_watch_and_whyplay_buttons_coexist(db, sent):
     rows = sent[0]["reply_markup"]["inline_keyboard"]
     flat = [btn for r in rows for btn in r]
     assert any(b.get("callback_data") == "menu:whyplay" for b in flat)
-    assert any(b.get("url") == "https://example.test/want" for b in flat)
+    assert any(b.get("url") == "https://example.test/game/wishlist" for b in flat)
 
 
 # ---------- 6. 用户偏好 ----------

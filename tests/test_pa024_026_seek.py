@@ -1,4 +1,4 @@
-"""PA-024/025/026 回归：求片审核终态守卫、推送状态守卫、商店登记并发双建。
+"""PA-024/025/026 回归：求片审核终态守卫、推送状态守卫、商店登记写口下线。
 
 只读/隔离：内存 SQLite（PA-024/025）与临时文件 SQLite（PA-026 双线程，
 各线程独立 session）；不碰生产库、不调真实外部服务（推送用假替身）。
@@ -149,7 +149,14 @@ def test_push_pending_still_flows(file_db, monkeypatch):
 
 # ==================== PA-026：商店登记并发双建 ====================
 
-def test_concurrent_same_tmdb_registers_single_row(tmp_path):
+def test_concurrent_same_tmdb_write_offline_no_rows(tmp_path):
+    """PA-026 改口径：商店登记写口已下线，并发直调只回 410、不建行。
+
+    原用例守的是登记「先查再新建」的并发单行（串行锁）；想看合并进
+    许愿池后该写口下线（post_request 会员闸后显式 410），登记统一走
+    MediaSeek 建单、并发去重由 test_media_seek_dedupe_race 守。这里
+    改守下线口径本身：两个会员并发直调都吃 410，库里零行零票。
+    """
     from datetime import datetime, timedelta
 
     from backend import subscriptions
@@ -193,7 +200,7 @@ def test_concurrent_same_tmdb_registers_single_row(tmp_path):
                 barrier.wait(timeout=10)
                 user = session.get(models.WebUser, uid)
                 post_request(RequestIn(tmdb_id="999", title="片"), user, session)
-            except Exception as exc:  # noqa: BLE001
+            except HTTPException as exc:
                 errors.append(exc)
             finally:
                 session.close()
@@ -204,19 +211,16 @@ def test_concurrent_same_tmdb_registers_single_row(tmp_path):
             t.start()
         for t in threads:
             t.join(timeout=30)
-        assert errors == []
+        assert len(errors) == 2, "两个会员并发直调都应被下线口拦下"
+        assert all(exc.status_code == 410 for exc in errors)
 
         check = maker()
         rows = (check.query(models.MovieRequest)
-                .filter(models.MovieRequest.tmdb_id == "999",
-                        models.MovieRequest.status.in_(
-                            media_seek.ACTIVE_STATUSES))
+                .filter(models.MovieRequest.tmdb_id == "999")
                 .all())
-        assert len(rows) == 1, "同一 tmdb 并发登记只能剩 1 条处理中行"
-        votes = (check.query(models.MovieRequestVote)
-                 .filter(models.MovieRequestVote.request_id == rows[0].id)
-                 .count())
-        assert votes == 2, "两人的票应落在同一行上"
+        assert rows == [], "写口下线后不许再建任何求片行"
+        votes = check.query(models.MovieRequestVote).count()
+        assert votes == 0, "写口下线后不许再落任何票"
         check.close()
     finally:
         subscriptions.set_process_realm_resolver(previous)

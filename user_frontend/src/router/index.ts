@@ -202,22 +202,18 @@ const router = createRouter({
       component: () => import('@/views/TgBindGuideView.vue'),
       meta: { title: '绑定 Telegram', requiresAuth: true },
     },
-    // 想看：独立页 /want（/store 已 301 到补给站，不能复用）。
-    // 想看商店 / 求片登记 / 找源三入口已合并到这一页：输片名一条主路，
-    // 库里有就想看，没有就点候选求片；求片榜 / 我的求片 / 我的想看同页。
-    // 想看写口与清单、求片各口都要登录 + 会员，所以这里不挂 requiresAuth，
-    // 页内按 401/403 给登录与会员提示；本页不放任何播放入口。
+    // 想看：已合并进许愿池（/game/wishlist）——库内片「想看」动作与
+    // 「我的想看」清单都在许愿池页。旧地址/收藏带 query 跳过去，
+    // 不留重复页（许愿池页接住 ?q= 预填搜索）。
     {
       path: '/want',
-      name: 'want-store',
-      component: () => import('@/views/panel/WantView.vue'),
-      meta: { title: '想看' },
+      redirect: (to) => ({ path: '/game/wishlist', query: to.query }),
     },
-    // 求片登记旧地址：功能已并入 /want 想看页，旧链接/收藏跳过去（带上 query），
+    // 求片登记旧地址：功能已并入许愿池，旧链接/收藏跳过去（带上 query），
     // 不留重复旧页。
     {
       path: '/store-requests',
-      redirect: (to) => ({ path: '/want', query: to.query }),
+      redirect: (to) => ({ path: '/game/wishlist', query: to.query }),
     },
     // 活动提案：独立页 /activities（等级治理用户端补完批）。
     // 仅公益服开放，页内按等级给门槛提示（Lv.2+ 提案、Lv.5+ 直接发起），低等级不画饼。

@@ -453,9 +453,10 @@ def render_notice(rows: list, watch_url: str = "") -> tuple[str, dict | None]:
 
 
 def _watch_url(db: Session) -> str:
-    """「去看看」的落点：站内没有条目详情页，统一落「我的求片/想看」页。
+    """「去看看」的落点：站内没有条目详情页，统一落许愿池页。
 
-    ``site_url`` 没配时返回空串＝不带按钮（不猜域名）。
+    想看已合并进许愿池（/game/wishlist），「我的许愿 / 我的想看」
+    都在那一页。``site_url`` 没配时返回空串＝不带按钮（不猜域名）。
     """
     try:
         from backend.integrations import store as _store
@@ -466,7 +467,7 @@ def _watch_url(db: Session) -> str:
         return ""
     if not base:
         return ""
-    return base.rstrip("/") + "/want"
+    return base.rstrip("/") + "/game/wishlist"
 
 
 def _permanent_failure(err: str | None) -> bool:
