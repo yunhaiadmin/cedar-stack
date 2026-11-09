@@ -187,6 +187,10 @@ def counting_listdir(path):
 
 # ==================== 跑扫描 ====================
 sc.probe_metadata = fake_probe_metadata
+# 钉住扫描工人为 2：下面的断言测的是「探测能并行」本身；工人默认值走 cpu_budget
+# 随机器核数自适应（2 核机默认只给 1 个、给前台留一核），不钉住的话断言测的
+# 就是 CI 机器大小——私密仓 2 核托管 runner 上峰值恒为 1、必假红。
+sc.SCAN_WORKERS = 2
 os.listdir = counting_listdir
 sc.tmdb_client.session = FakeTmdbSession()
 sc.tmdb_client.api_keys = ["fake-key"]
