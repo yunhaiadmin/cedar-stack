@@ -1,0 +1,802 @@
+# -*- coding: utf-8 -*-
+"""谷歌盘主线「暖地址」工人（goal-35 批 1，2026-11-08 用户点选开工）。
+
+为什么有这个工人
+----------------
+生产实证（设计稿 hidden_files/design-v1.md §0）：近 3 天成功起播
+97% 走「绑盘用户播共享条目 → 转存门禁拿到本人副本 → 额度探针
+判 quota → 改道本人 OAuth 令牌 API 中继」；PlaybackInfo 冷路径
+p50 约 6 秒、exists 现查慢尾可达数秒。本工人把点播时现做的活
+（交付计划现算、存在性现查）按信号提前做完，写进点播路径本来
+就会读的现成载体——交付计划表与 Drive 存在性正缓存。
+
+本批范围（批 1：工人骨架＋W5＋W1，不许扩围）
+--------------------------------------------
+- W1 交付计划：按 (用户, 条目) 调 delivery_plan.build_plan 预建，
+  落 playback_delivery_plans 表；新鲜计划（过期前余量 > 提前量）
+  跳过。计划开关关时整步跳过。
+- W5 存在性：对条目原件 fid 与该用户最新 ready 副本 fid 各做
+  一次 files.get（SA 池），200 即调 transfer_variant 既有的
+  publish_drive_exists_ok 写 Redis 正缓存；404 只记 gone、不写
+  墓碑；其他失败只记 failed。SA 池只用于存在性校验。
+- 不做：W2（额度探针/副本授权）、W3（令牌保鲜）、W4（首字节
+  实验）、转存预建——均在批 2/批 3，不进本批。
+
+衔接口径（不许漂移）
+--------------------
+- 只写现成载体，不发明新缓存、不改点播路径一行判定逻辑：
+  全冷时点播行为与今天逐字一致（现建计划、现查存在性）。
+- 信号收集器原样复用 upstream_warm_worker 的三类收集器（追剧
+  新集 / 继续观看含下一集 / 新入库热门），只新增 item→用户展开
+  （D1：只暖近窗播过该条目的用户；从未被任何绑定用户播过的条
+  目只做无用户维度的 W5）。
+- 身份铁律：W1 的计划按 (用户, 条目) 建，绝不把 A 用户的计划
+  写给 B 用户；W5 的存在性断言与用户无关（只断言文件在），写
+  进的正缓存键只含 fid、不含任何用户信息；SA 令牌只用于 W5
+  的 files.get，不下发、不写任何用户绑定行。
+- 存在性实查复用 api._drive_file_exists_sync（全项目唯一的
+  files.get 存在性实现），本模块只包一层缝（_exists_check，
+  懒导入：import 时不拉起 api 大模块）；正缓存键与
+  transfer_variant._DRIVE_EXISTS_OK_PREFIX 逐字一致。
+- 资源纪律与旧工人同口径：总开关默认关、低并发、单轮双预算
+  （时长 600 秒 / 出站请求 400 次硬帽）、任务间随机抖动、起播
+  繁忙或系统高负载整轮让路、失败只记账不冒泡、线程异常不退出
+  循环。W1 建计划是 DB/本地探针、不计出站请求；W5 每次实查
+  计 1 次请求（正缓存新鲜命中不计）。
+"""
+
+import itertools
+import json
+import logging
+import os
+import random
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
+from typing import Optional
+
+from sqlalchemy import func
+
+from backend.emby_server import delivery_plan as dp
+from backend.emby_server import upstream_warm_worker as uw
+from backend.emby_server.env_util import env_float, env_int
+from backend.emby_server import models as em
+
+logger = logging.getLogger(__name__)
+
+#: worker_registry 登记名（/api/health 与管理总览按此名认人）。
+WORKER_NAME = "drive_warm"
+
+#: 运行状态发布缓存键（照 upstream_warm_worker 的形状）。
+STATUS_CACHE_KEY = "aetrix:drive_warm:status"
+_STATUS_TTL_SEC = 1800
+
+#: Drive 存在性正缓存键前缀——须与
+#: transfer_variant._DRIVE_EXISTS_OK_PREFIX /
+#: api._DRIVE_EXISTS_OK_PREFIX 逐字一致（api 读、工人写）。
+_DRIVE_EXISTS_OK_PREFIX = "aetrix:drive_exists:ok:"
+
+
+# ---------------------------------------------------------------------------
+# 配置（全部 env 热读：改配置不用改代码，脏值回默认——与旧工人口径一致）
+# ---------------------------------------------------------------------------
+
+def _env_on(name: str, default: bool = False) -> bool:
+    raw = (os.getenv(name) or "").strip().lower()
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    if raw in ("0", "false", "no", "off"):
+        return False
+    return default
+
+
+def drive_warm_config() -> dict:
+    """Drive 暖地址工人有效配置（每轮热读一次）。
+
+    键名与 env.example 一一对应；总开关默认关（D6 灰度口径：
+    批 1 上线后由用户点头转开并开始计时观察），其余默认值照旧
+    工人保守口径。信号窗口与上限照旧工人同名键改前缀。
+    """
+    return {
+        # 总开关（关 = 工人不启动、在跑的整轮让路退出）
+        "enabled": _env_on("DRIVE_WARM_ENABLED", False),
+        # 轮间隔（秒）
+        "interval_sec": env_float(
+            "DRIVE_WARM_INTERVAL_SEC", 240.0, 30.0, 86400.0),
+        # 轮内并发（条目标并行暖数）
+        "concurrency": env_int("DRIVE_WARM_CONCURRENCY", 2, 1, 8),
+        # 单轮目标上限（(用户, 条目) 对数，三类信号合计、优先级序截断）
+        "max_targets": env_int(
+            "DRIVE_WARM_MAX_TARGETS_PER_ROUND", 120, 1, 2000),
+        # 单轮总时长预算（秒）：到点不再开新任务
+        "round_budget_sec": env_float(
+            "DRIVE_WARM_ROUND_BUDGET_SEC", 600.0, 10.0, 7200.0),
+        # 单轮出站请求预算（W5 实查计数，W1 建计划不计；默认 400 硬帽）
+        "max_requests": env_int(
+            "DRIVE_WARM_MAX_REQUESTS_PER_ROUND", 400, 1, 100000),
+        # 每条目最多展开的用户数（最近活动倒序，默认 3）
+        "users_per_item": env_int(
+            "DRIVE_WARM_USERS_PER_ITEM", 3, 1, 50),
+        # 复验提前量（秒）：计划过期前 / 正缓存剩余 TTL 小于该值即复暖
+        "refresh_lead_sec": env_float(
+            "DRIVE_WARM_REFRESH_LEAD_SEC", 30.0, 0.0, 3600.0),
+        # 任务间随机抖动上限（秒）：0~该值均匀随机，反风控
+        "jitter_sec": env_float(
+            "DRIVE_WARM_JITTER_SEC", 3.0, 0.0, 60.0),
+        # 让路判据一：近 5 分钟起播数 >= 该值 → 整轮跳过
+        "busy_plays_5min": env_int(
+            "DRIVE_WARM_BUSY_PLAYS_5MIN", 30, 1, 100000),
+        # 让路判据二：1 分钟负载 / CPU 数 > 该值 → 跳过/停轮
+        "load_ratio": env_float(
+            "DRIVE_WARM_LOAD_RATIO", 0.85, 0.1, 10.0),
+        # 信号一：新集回望窗（小时）与每剧集数上限
+        "follow_lookback_hours": env_float(
+            "DRIVE_WARM_FOLLOW_LOOKBACK_HOURS", 72.0, 1.0, 2160.0),
+        "follow_per_series": env_int(
+            "DRIVE_WARM_FOLLOW_PER_SERIES", 3, 1, 50),
+        # 信号二：继续观看回望（天）与条目上限
+        "resume_days": env_float(
+            "DRIVE_WARM_RESUME_DAYS", 7.0, 0.5, 90.0),
+        "resume_limit": env_int(
+            "DRIVE_WARM_RESUME_LIMIT", 60, 1, 1000),
+        # 信号三：热度统计窗（小时）/ 新入库界（天）/ 起播次数门槛
+        "hot_window_hours": env_float(
+            "DRIVE_WARM_HOT_WINDOW_HOURS", 48.0, 1.0, 720.0),
+        "hot_new_days": env_float(
+            "DRIVE_WARM_HOT_NEW_DAYS", 7.0, 0.5, 365.0),
+        "hot_min_plays": env_int(
+            "DRIVE_WARM_HOT_MIN_PLAYS", 3, 1, 1000),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 信号展开：item → 用户（D1：只暖近窗播过该条目的用户）
+# ---------------------------------------------------------------------------
+
+def _follow_users(db, series_id, cfg) -> list:
+    """追剧信号的用户展开：该剧的 active 订阅用户（最近订阅在前）。"""
+    if not series_id:
+        return []
+    rows = (
+        db.query(em.SeriesFollow.user_id)
+        .filter(em.SeriesFollow.series_item_id == series_id,
+                em.SeriesFollow.status == "active")
+        .order_by(em.SeriesFollow.created_at.desc().nullslast(),
+                  em.SeriesFollow.id.desc())
+        .limit(cfg["users_per_item"])
+        .all())
+    return [row[0] for row in rows]
+
+
+def _resume_users(db, item, cfg, now=None) -> list:
+    """继续观看信号的用户展开：近窗内看过该条目的用户（最近在前）。
+
+    直接活动为空时（典型是「下一集」：还没人看过它）回落到同剧
+    近窗活动用户——续看某剧的人，下一集暖给他（与收集器
+    collect_resume_item_ids「下一集跟随同一用户」同口径）。
+    """
+    now = now or datetime.now()
+    cutoff = now - timedelta(days=cfg["resume_days"])
+    recency = {}
+
+    def _note(user_id, ts):
+        if user_id is None or ts is None:
+            return
+        if ts > recency.get(user_id, datetime.min):
+            recency[user_id] = ts
+
+    for user_id, last_played, updated in (
+            db.query(em.UserMediaData.user_id,
+                     em.UserMediaData.last_played_at,
+                     em.UserMediaData.updated_at)
+            .filter(em.UserMediaData.item_id == item.id,
+                    (em.UserMediaData.last_played_at >= cutoff)
+                    | (em.UserMediaData.updated_at >= cutoff))
+            .all()):
+        _note(user_id, last_played or updated)
+    for user_id, last_update in (
+            db.query(em.PlaybackSession.user_id,
+                     em.PlaybackSession.last_update_at)
+            .filter(em.PlaybackSession.item_id == item.id,
+                    em.PlaybackSession.last_update_at >= cutoff)
+            .all()):
+        _note(user_id, last_update)
+    if not recency and getattr(item, "series_id", None):
+        # 下一集回落：同剧任一集的近窗活动用户
+        for user_id, last_played, updated in (
+                db.query(em.UserMediaData.user_id,
+                         em.UserMediaData.last_played_at,
+                         em.UserMediaData.updated_at)
+                .join(em.MediaItem,
+                      em.MediaItem.id == em.UserMediaData.item_id)
+                .filter(em.MediaItem.series_id == item.series_id,
+                        em.MediaItem.merged_into_id.is_(None),
+                        (em.UserMediaData.last_played_at >= cutoff)
+                        | (em.UserMediaData.updated_at >= cutoff))
+                .all()):
+            _note(user_id, last_played or updated)
+        for user_id, last_update in (
+                db.query(em.PlaybackSession.user_id,
+                         em.PlaybackSession.last_update_at)
+                .join(em.MediaItem,
+                      em.MediaItem.id == em.PlaybackSession.item_id)
+                .filter(em.MediaItem.series_id == item.series_id,
+                        em.MediaItem.merged_into_id.is_(None),
+                        em.PlaybackSession.last_update_at >= cutoff)
+                .all()):
+            _note(user_id, last_update)
+    ordered = sorted(recency.items(), key=lambda kv: kv[1], reverse=True)
+    return [user_id for user_id, _ts in ordered[:cfg["users_per_item"]]]
+
+
+def _hot_users(db, item_id, cfg, now=None) -> list:
+    """新入库热门信号的用户展开：近窗内成功播过该条目的用户。
+
+    只认 user_id 非空的行——匿名/解析事件不产生用户维度，该条
+    目退回无用户维度的 W5-only 目标（调用方处理）。
+    """
+    now = now or datetime.now()
+    window_start = now - timedelta(hours=cfg["hot_window_hours"])
+    latest = func.max(em.PlayStartEvent.created_at)
+    rows = (
+        db.query(em.PlayStartEvent.user_id, latest)
+        .filter(em.PlayStartEvent.item_id == item_id,
+                em.PlayStartEvent.result == "ok",
+                em.PlayStartEvent.user_id.isnot(None),
+                em.PlayStartEvent.created_at >= window_start)
+        .group_by(em.PlayStartEvent.user_id)
+        .order_by(latest.desc())
+        .limit(cfg["users_per_item"])
+        .all())
+    return [row[0] for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# 目标构建（信号 → (用户, 条目) 目标；优先级 follow > resume > hot）
+# ---------------------------------------------------------------------------
+
+def build_targets(db, cfg, now=None):
+    """把三类信号收敛成暖目标列表 ``[{user_id, item_id, source}]``。
+
+    收集器原样复用 upstream_warm_worker（条目去重、每剧集数帽、
+    下一集展开等口径逐字一致）；本函数只新增 item→用户展开。
+    条目在多个信号里出现时只取优先级最高的信号（与旧工人同口径）；
+    同 (用户, 条目) 只留一个目标；无用户维度的条目留一个
+    ``user_id=None`` 的 W5-only 目标；总量到 max_targets 即停。
+    返回 (targets, stats)。
+    """
+    now = now or datetime.now()
+    follow_ids = uw.collect_follow_episode_ids(db, cfg, now)
+    resume_ids = uw.collect_resume_item_ids(db, cfg, now)
+    hot_ids = uw.collect_hot_item_ids(db, cfg, now)
+    stats = {
+        "follow_items": len(follow_ids),
+        "resume_items": len(resume_ids),
+        "hot_items": len(hot_ids),
+        "items": 0,
+        "targets": 0,
+        "w5_only": 0,
+    }
+    targets, seen_items, seen_pairs = [], set(), set()
+    for item_id, source in itertools.chain(
+            ((i, "follow") for i in follow_ids),
+            ((i, "resume") for i in resume_ids),
+            ((i, "hot") for i in hot_ids)):
+        if len(targets) >= cfg["max_targets"]:
+            break
+        if item_id in seen_items:
+            continue
+        seen_items.add(item_id)
+        item = (db.query(em.MediaItem)
+                .filter(em.MediaItem.id == item_id).first())
+        if item is None:
+            continue
+        try:
+            if source == "follow":
+                users = _follow_users(db, item.series_id, cfg)
+            elif source == "resume":
+                users = _resume_users(db, item, cfg, now)
+            else:
+                users = _hot_users(db, item_id, cfg, now)
+        except Exception:  # noqa: BLE001 — 单条目展开失败不拖垮整轮
+            logger.warning("暖地址目标展开失败 item=%s source=%s",
+                           item_id, source, exc_info=True)
+            continue
+        if not users:
+            if len(targets) >= cfg["max_targets"]:
+                break
+            targets.append({"user_id": None, "item_id": int(item_id),
+                            "source": source})
+            stats["w5_only"] += 1
+            continue
+        for user_id in users:
+            if len(targets) >= cfg["max_targets"]:
+                break
+            key = (int(user_id), int(item_id))
+            if key in seen_pairs:
+                continue
+            seen_pairs.add(key)
+            targets.append({"user_id": int(user_id),
+                            "item_id": int(item_id), "source": source})
+    stats["items"] = len(seen_items)
+    stats["targets"] = len(targets)
+    return targets, stats
+
+
+# ---------------------------------------------------------------------------
+# 衔接缝（与既有机制的唯一接触面；测试在本模块上 monkeypatch 这些
+# 函数，等同仓库既有「patch 类/模块属性」的口径）
+# ---------------------------------------------------------------------------
+
+def _exists_ok_remaining(file_id):
+    """Redis 正缓存剩余 TTL（秒）：键不存在/Redis 不可用回 None。
+
+    供 W5 判断「还新鲜不用再查」：剩余 > 提前量即新鲜。只读，
+    永不抛。
+    """
+    fid = (file_id or "").strip()
+    if not fid:
+        return None
+    try:
+        from backend.database import get_redis
+
+        rc = get_redis()
+        if rc is None:
+            return None
+        ttl = rc.ttl(_DRIVE_EXISTS_OK_PREFIX + fid)
+        if ttl is None or int(ttl) <= 0:
+            return None
+        return int(ttl)
+    except Exception:  # noqa: BLE001 — Redis 故障按「不新鲜」处理
+        return None
+
+
+def _exists_check(db, item, file_id):
+    """存在性实查（SA 池）：复用 api 的 _drive_file_exists_sync。
+
+    返回 "exists"（200，已由该函数写正缓存）/ "gone"（404，文件
+    已删/不可见）/ "unavailable"（无挂载 drive_id、401/403/429/
+    5xx/超时等——下次轮次再试，不写任何缓存）。懒导入：本模块
+    import 时不拉起 api 大模块。永不抛（异常一律转 unavailable）。
+    """
+    try:
+        from backend.emby_server import api as _api
+
+        drive_id = _api._drive_mount_id_for_item(db, item)
+        if not drive_id:
+            return "unavailable"
+        try:
+            _api._drive_file_exists_sync(drive_id, file_id)
+        except _api._DriveFileGone:
+            return "gone"
+        except _api._DriveFileUnavailable:
+            return "unavailable"
+        return "exists"
+    except Exception:  # noqa: BLE001 — 实查本身炸了按不可用记账
+        logger.debug("暖地址存在性实查异常 fid=%s", file_id, exc_info=True)
+        return "unavailable"
+
+
+def _newest_ready_user_copy_fid(db, user_id, item_id):
+    """该用户在该条目上最新 ready 副本的 fid（无则 None）。
+
+    过滤口径与 delivery_plan._probe_user_copy_ready 逐字一致：
+    item + owner_scope=user + owner_ref 本人 + status=ready，
+    quark:/pan115: 前缀的变体行不算（不是 Drive fid）。
+    """
+    for cand in (db.query(em.TransferVariant)
+                 .filter(em.TransferVariant.item_id == item_id,
+                         em.TransferVariant.owner_scope == "user",
+                         em.TransferVariant.owner_ref == str(user_id),
+                         em.TransferVariant.status == "ready")
+                 .order_by(em.TransferVariant.id.desc())
+                 .limit(20).all()):
+        if (cand.variant_drive_id or "").startswith(("quark:", "pan115:")):
+            continue
+        fid = (cand.variant_file_id or "").strip()
+        if fid:
+            return fid
+    return None
+
+
+def _load_ratio() -> float:
+    """1 分钟负载 / CPU 数（取不到按 0：不许因测不准饿死工人）。"""
+    try:
+        load1 = os.getloadavg()[0]
+    except (AttributeError, OSError):
+        return 0.0
+    return load1 / float(os.cpu_count() or 1)
+
+
+def _recent_play_starts(db, minutes, now=None) -> int:
+    """近 N 分钟全站起播数（让路判据；读失败按 0，不许饿死工人）。"""
+    now = now or datetime.now()
+    cutoff = now - timedelta(minutes=minutes)
+    try:
+        return int(
+            db.query(func.count(em.PlayStartEvent.id))
+            .filter(em.PlayStartEvent.created_at >= cutoff)
+            .scalar() or 0)
+    except Exception:  # noqa: BLE001 — 判据读不到不拦保鲜，见 docstring
+        return 0
+
+
+class _RequestCounter:
+    """轮内出站请求计数（线程安全）：预算判据的唯一数据源。"""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.count = 0
+
+    def add(self, n=1):
+        with self._lock:
+            self.count += n
+        return self.count
+
+
+# ---------------------------------------------------------------------------
+# 暖执行：W1 交付计划 / W5 存在性
+# ---------------------------------------------------------------------------
+
+def _warm_plan(db, target, cfg) -> str:
+    """W1：为 (用户, 条目) 预建交付计划。
+
+    返回 built（新建/重建）/ fresh（计划还新鲜，过期前余量 >
+    提前量）/ failed（条目没了或建计划失败）/ skipped（无用户
+    维度，或交付计划开关关）。只调 delivery_plan 的既有入口，
+    不碰点播判定逻辑；建计划本身是 DB/本地探针，不计出站请求。
+    """
+    user_id = target.get("user_id")
+    item_id = target["item_id"]
+    if user_id is None:
+        return "skipped"
+    if not dp.delivery_plan_enabled(db):
+        return "skipped"
+    now = datetime.now()
+    plan = dp.get_fresh_plan(db, user_id, item_id)
+    if plan is not None:
+        try:
+            expires = datetime.fromisoformat(str(plan.get("expires_at")))
+        except (TypeError, ValueError):
+            expires = None
+        if expires is not None and \
+                (expires - now).total_seconds() > cfg["refresh_lead_sec"]:
+            return "fresh"
+    item = (db.query(em.MediaItem)
+            .filter(em.MediaItem.id == item_id).one_or_none())
+    if item is None:
+        return "failed"
+    built = dp.build_plan(db, user_id, item)
+    return "built" if built is not None else "failed"
+
+
+def _warm_exists(db, item, target, cfg, counter):
+    """W5：存在性保鲜，返回 (结果码, 本步实查请求数)。
+
+    查的 fid：条目原件 fid（item.drive_file_id）＋该用户最新
+    ready 副本 fid（有才查）。每 fid 先看 Redis 正缓存剩余 TTL，
+    剩余 > 提前量即新鲜跳过（不计请求）；否则 SA 池实查 1 次。
+    结果码：published（至少一 fid 实查 200 已写正缓存）/
+    fresh（全部新鲜）/ gone（实查 404、且无一 fid 写成）/
+    failed（实查不可用、且无一 fid 写成）/ skipped（无 fid 可查）
+    / budget（轮中预算耗尽，未查完）。
+    """
+    user_id = target.get("user_id")
+    fids = []
+    orig = (getattr(item, "drive_file_id", "") or "").strip()
+    if orig:
+        fids.append(orig)
+    if user_id is not None:
+        copy_fid = _newest_ready_user_copy_fid(db, user_id, item.id)
+        if copy_fid and copy_fid not in fids:
+            fids.append(copy_fid)
+    if not fids:
+        return "skipped", 0
+    lead = cfg["refresh_lead_sec"]
+    published = gone = failed = fresh = 0
+    made = 0
+    for fid in fids:
+        remaining = _exists_ok_remaining(fid)
+        if remaining is not None and remaining > lead:
+            fresh += 1
+            continue
+        if counter.count >= cfg["max_requests"]:
+            return "budget", made
+        counter.add(1)
+        made += 1
+        outcome = _exists_check(db, item, fid)
+        if outcome == "exists":
+            published += 1
+        elif outcome == "gone":
+            gone += 1
+        else:
+            failed += 1
+    if published > 0:
+        return "published", made
+    if failed > 0:
+        return "failed", made
+    if gone > 0:
+        return "gone", made
+    if fresh == len(fids):
+        return "fresh", made
+    return "failed", made
+
+
+#: 进程内最近暖过时刻表：(user_id, item_id) → epoch 秒。只作
+#: 观测（最近一轮统计的补充），不决定新鲜度——新鲜度以计划
+#: 过期时间与正缓存 TTL 为准。
+_warmed_at: dict = {}
+_warmed_lock = threading.Lock()
+
+#: 最近一轮统计（runtime_status / 管理总览的数据源）。
+_last_round: dict = {}
+_last_lock = threading.Lock()
+
+_warm_thread: Optional[threading.Thread] = None
+_stop_event = threading.Event()
+_start_lock = threading.Lock()
+
+
+def _warm_one(target, cfg, counter, session_factory, round_start) -> dict:
+    """暖一个 (用户, 条目) 目标，返回 {outcome, w1, w5, requests}。
+
+    outcome：warmed（至少一步真做了事）/ fresh（全步新鲜或无需做，
+    且无失败）/ failed（有步骤失败且无一步做成）/ budget（预算耗尽）
+    / load（负载越线停轮）。永不抛异常：任何失败都收敛成 failed
+    记账——暖是后台锦上添花，不许把异常漏进工人循环、更不许漏进
+    起播路径（起播路径根本不经过这里）。
+    """
+    if time.monotonic() - round_start > cfg["round_budget_sec"]:
+        return {"outcome": "budget", "w1": "skipped", "w5": "skipped",
+                "requests": 0}
+    if counter.count >= cfg["max_requests"]:
+        return {"outcome": "budget", "w1": "skipped", "w5": "skipped",
+                "requests": 0}
+    if _load_ratio() > cfg["load_ratio"]:
+        return {"outcome": "load", "w1": "skipped", "w5": "skipped",
+                "requests": 0}
+    before = counter.count
+    try:
+        jitter = cfg["jitter_sec"]
+        if jitter > 0:
+            time.sleep(random.uniform(0, jitter))
+        db = session_factory()
+        try:
+            item = (db.query(em.MediaItem)
+                    .filter(em.MediaItem.id == target["item_id"])
+                    .one_or_none())
+            if item is None:
+                return {"outcome": "failed", "w1": "failed",
+                        "w5": "failed",
+                        "requests": counter.count - before}
+            w1 = _warm_plan(db, target, cfg)
+            w5, _made = _warm_exists(db, item, target, cfg, counter)
+        finally:
+            db.close()
+    except Exception as exc:  # noqa: BLE001 — 失败只记账，见 docstring
+        logger.info("暖地址失败 user=%s item=%s: %s",
+                    target.get("user_id"), target["item_id"], exc)
+        return {"outcome": "failed", "w1": "failed", "w5": "failed",
+                "requests": counter.count - before}
+    if w5 == "budget":
+        outcome = "budget"
+    elif w1 == "built" or w5 == "published":
+        outcome = "warmed"
+        with _warmed_lock:
+            _warmed_at[(target.get("user_id"), target["item_id"])] = \
+                time.time()
+    elif w1 == "failed" or w5 in ("failed", "gone"):
+        outcome = "failed"
+    else:
+        outcome = "fresh"
+    return {"outcome": outcome, "w1": w1, "w5": w5,
+            "requests": counter.count - before}
+
+
+def _default_session_factory():
+    from backend.database import SessionLocal
+
+    return SessionLocal
+
+
+def _finish_round(stats, started_monotonic):
+    """收尾：补齐时间字段、存最近轮、发布状态、清理时刻表。"""
+    stats["elapsed_sec"] = round(time.monotonic() - started_monotonic, 2)
+    stats["finished_at"] = datetime.now().isoformat(timespec="seconds")
+    with _last_lock:
+        _last_round.clear()
+        _last_round.update(stats)
+    horizon = time.time() - 3600.0
+    with _warmed_lock:
+        for key in [k for k, ts in _warmed_at.items() if ts < horizon]:
+            _warmed_at.pop(key, None)
+    _publish_status()
+
+
+def warm_once(session_factory=None) -> dict:
+    """跑一轮暖地址，返回本轮统计（任何情况下都返回，不抛）。
+
+    让路顺序：总开关 → 系统负载 → 起播繁忙 → 构建目标 → 低并发
+    执行（轮中双预算与负载复查在 _warm_one 里逐条守）。W1 建
+    计划不计出站请求；W5 每次实查计 1 次。
+    """
+    cfg = drive_warm_config()
+    started = time.monotonic()
+    stats = {
+        "ran": False, "reason": None,
+        "signals": {"follow": 0, "resume": 0, "hot": 0},
+        "items": 0, "targets": 0, "w5_only": 0,
+        "warmed": 0, "fresh": 0, "failed": 0, "budget": 0,
+        "load_skipped": 0,
+        "w1": {"built": 0, "fresh": 0, "failed": 0, "skipped": 0},
+        "w5": {"published": 0, "fresh": 0, "gone": 0, "failed": 0,
+               "skipped": 0, "budget": 0},
+        "requests": 0, "elapsed_sec": 0.0,
+        "started_at": datetime.now().isoformat(timespec="seconds"),
+        "finished_at": None,
+    }
+    try:
+        if not cfg["enabled"]:
+            stats["reason"] = "disabled"
+            return stats
+        if _load_ratio() > cfg["load_ratio"]:
+            stats["reason"] = "load"
+            return stats
+        factory = session_factory or _default_session_factory()
+        db = factory()
+        try:
+            if _recent_play_starts(db, 5) >= cfg["busy_plays_5min"]:
+                stats["reason"] = "busy"
+                return stats
+            targets, sig_stats = build_targets(db, cfg)
+        finally:
+            db.close()
+        stats["signals"] = {
+            "follow": sig_stats.get("follow_items", 0),
+            "resume": sig_stats.get("resume_items", 0),
+            "hot": sig_stats.get("hot_items", 0),
+        }
+        stats["items"] = sig_stats.get("items", 0)
+        stats["targets"] = len(targets)
+        stats["w5_only"] = sig_stats.get("w5_only", 0)
+        counter = _RequestCounter()
+        outcomes = {"warmed": 0, "fresh": 0, "failed": 0,
+                    "budget": 0, "load": 0}
+        if targets:
+            with ThreadPoolExecutor(
+                    max_workers=cfg["concurrency"],
+                    thread_name_prefix="drive-warm") as pool:
+                futures = [
+                    pool.submit(_warm_one, target, cfg, counter,
+                                factory, started)
+                    for target in targets]
+                for future in futures:
+                    try:
+                        res = future.result()
+                    except Exception:  # noqa: BLE001 — _warm_one 本应不抛
+                        outcomes["failed"] += 1
+                        stats["w1"]["failed"] += 1
+                        stats["w5"]["failed"] += 1
+                        continue
+                    outcomes[res["outcome"]] += 1
+                    w1 = res.get("w1", "skipped")
+                    if w1 in stats["w1"]:
+                        stats["w1"][w1] += 1
+                    w5 = res.get("w5", "skipped")
+                    if w5 in stats["w5"]:
+                        stats["w5"][w5] += 1
+        stats["warmed"] = outcomes["warmed"]
+        stats["fresh"] = outcomes["fresh"]
+        stats["failed"] = outcomes["failed"]
+        stats["budget"] = outcomes["budget"]
+        stats["load_skipped"] = outcomes["load"]
+        stats["requests"] = counter.count
+        stats["ran"] = True
+        return stats
+    finally:
+        _finish_round(stats, started)
+
+
+# ---------------------------------------------------------------------------
+# 状态上报（照 upstream_warm_worker 形状：进程内最近轮 + 缓存发布跨进程读）
+# ---------------------------------------------------------------------------
+
+def runtime_status() -> dict:
+    with _last_lock:
+        last = dict(_last_round) if _last_round else None
+    thread = _warm_thread
+    return {
+        "running": bool(thread is not None and thread.is_alive()),
+        "enabled": drive_warm_config()["enabled"],
+        "last_round": last,
+        "reported_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
+def _publish_status() -> None:
+    try:
+        from backend.database import CacheManager
+
+        CacheManager.set(
+            STATUS_CACHE_KEY,
+            json.dumps(runtime_status(), ensure_ascii=False, default=str),
+            ttl=_STATUS_TTL_SEC)
+    except Exception:  # noqa: BLE001 — 状态发布失败不影响暖本体
+        pass
+
+
+def status_snapshot() -> dict:
+    """管理总览读口：本进程在跑给本地状态，否则读工人发布的状态。"""
+    thread = _warm_thread
+    if thread is not None and thread.is_alive():
+        snap = runtime_status()
+        snap["source"] = "local"
+        return snap
+    try:
+        from backend.database import CacheManager
+
+        raw = CacheManager.get(STATUS_CACHE_KEY)
+        if raw:
+            snap = json.loads(raw)
+            snap["source"] = "worker"
+            return snap
+    except Exception:  # noqa: BLE001 — 读不到就回本地空状态
+        pass
+    snap = runtime_status()
+    snap["source"] = "none"
+    return snap
+
+
+# ---------------------------------------------------------------------------
+# 工人线程（照 upstream_warm_worker 的 start/stop/registry 形状）
+# ---------------------------------------------------------------------------
+
+def _warm_loop():
+    logger.info("Drive 暖地址 worker 启动（间隔 %.0f 秒）",
+                drive_warm_config()["interval_sec"])
+    while not _stop_event.is_set():
+        try:
+            stats = warm_once()
+            if stats.get("ran"):
+                logger.info(
+                    "Drive 暖地址一轮：信号 %s，目标 %d，暖好 %d，"
+                    "已新鲜 %d，失败 %d，请求 %d，耗时 %.1fs",
+                    stats["signals"], stats["targets"], stats["warmed"],
+                    stats["fresh"], stats["failed"], stats["requests"],
+                    stats["elapsed_sec"])
+            elif stats.get("reason") not in (None, "disabled"):
+                logger.info("Drive 暖地址本轮让路：%s", stats["reason"])
+        except Exception as exc:  # noqa: BLE001 — 循环体异常不许退出
+            logger.warning("Drive 暖地址一轮异常: %s", exc, exc_info=True)
+        finally:
+            try:
+                from backend.emby_server import worker_registry as _wr
+
+                _wr.heartbeat(WORKER_NAME)
+            except Exception:  # noqa: BLE001
+                pass
+        _stop_event.wait(drive_warm_config()["interval_sec"])
+
+
+def start() -> bool:
+    """启动暖地址后台线程（幂等；总开关关时不启动）。"""
+    global _warm_thread
+    if not drive_warm_config()["enabled"]:
+        logger.info("Drive 暖地址已禁用（DRIVE_WARM_ENABLED=0）")
+        return False
+    with _start_lock:
+        if _warm_thread is not None and _warm_thread.is_alive():
+            return True
+        _stop_event.clear()
+        _warm_thread = threading.Thread(
+            target=_warm_loop, name="drive-warm", daemon=True)
+        _warm_thread.start()
+        from backend.emby_server import worker_registry as _wr
+
+        _wr.register(WORKER_NAME, _warm_thread)
+        return True
+
+
+def stop():
+    _stop_event.set()

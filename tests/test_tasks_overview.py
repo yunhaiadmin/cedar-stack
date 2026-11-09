@@ -138,7 +138,7 @@ def test_overview_returns_five_cards(db, seed):
     assert "fetched_at" in res
     cards = _by_key(res)
     assert set(cards) == {"scan", "probe", "enrich", "thumbnail", "chase_new",
-                          "upstream_warm"}
+                          "upstream_warm", "drive_warm"}
     for key, card in cards.items():
         for field in ("key", "title", "status", "status_text", "summary", "metrics"):
             assert field in card, f"{key} 缺字段 {field}"
@@ -187,6 +187,24 @@ def test_chase_new_card(db, seed):
     assert metrics["上次发现"] == "7 个新文件"
 
 
+def test_drive_warm_card_idle_when_never_run(db, seed, monkeypatch):
+    # goal-35 批 1：开关开着、工人还没跑过第一轮 → idle 卡，不许把「没跑过」报成异常
+    monkeypatch.setenv("DRIVE_WARM_ENABLED", "1")
+    card = _by_key(_call(db))["drive_warm"]
+    assert card["status"] == "idle"
+    assert card["status_text"] == "没跑过"
+    metrics = {m["label"]: m["value"] for m in card["metrics"]}
+    assert metrics["上轮信号条目"] == "0 条"
+    assert metrics["展开目标"] == "0 个（仅存在性 0 个）"
+
+
+def test_drive_warm_card_disabled_by_default(db, seed):
+    # 总开关默认关：未配 DRIVE_WARM_ENABLED 时卡片报 disabled
+    card = _by_key(_call(db))["drive_warm"]
+    assert card["status"] == "disabled"
+    assert card["status_text"] == "已关闭"
+
+
 def test_single_task_failure_degrades_only_that_card(db, seed, monkeypatch):
     """单个任务采集抛异常：该卡 error，其余卡片照常。"""
     def _boom(_db):
@@ -204,8 +222,18 @@ def test_single_task_failure_degrades_only_that_card(db, seed, monkeypatch):
 def _clear_task_snapshots():
     """快照缓存是进程级的：每个测试前后清掉，避免测试间污染。"""
     admin_tasks._clear_task_snapshots()
+    # 暖地址工人状态键也是进程级 CacheManager 落点：别的文件跑过
+    # warm_once 会把 last_round 写进来，本文件的 idle/disabled 断言
+    # 必须读不到它（goal-35 批 1 跨文件污染实测）。
+    from backend.database import CacheManager
+    from backend.emby_server import drive_warm_worker as _dw
+    from backend.emby_server import upstream_warm_worker as _uw
+    CacheManager.delete(_dw.STATUS_CACHE_KEY)
+    CacheManager.delete(_uw.STATUS_CACHE_KEY)
     yield
     admin_tasks._clear_task_snapshots()
+    CacheManager.delete(_dw.STATUS_CACHE_KEY)
+    CacheManager.delete(_uw.STATUS_CACHE_KEY)
 
 
 def test_cards_keep_builders_order(db, seed):
