@@ -267,6 +267,10 @@ WELFARE_CONFIG_SCHEMA: dict[str, tuple] = {
     "bot_playrank_series_enabled": ("bool",),
     "bot_playrank_movies_enabled": ("bool",),
     "bot_playrank_poster_enabled": ("bool",),
+    # 公共池贡献者每日小结（tg_bot.pool_digest 读侧宽容解析）：
+    # 总开关默认开；发送时间原文存储、读侧校验 HH:MM 非法回落 21:00。
+    "bot_pool_digest_enabled": ("bool",),
+    "bot_pool_digest_time": ("str",),
     # 主动私聊提醒（tg_bot.proactive）：两个开关默认开（2026-11-08），
     # 合并窗口秒数默认 60。word 风格 ("bool",) 存 true/false。
     # 关时不发、不写已推记录。新求片提醒管理员（tg_bot.features）默认开。

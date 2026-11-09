@@ -752,6 +752,7 @@ def _auto_migrate():
             ("tg_notify_seek", "BOOLEAN", "1"),
             ("tg_notify_expiry", "BOOLEAN", "1"),
             ("tg_notify_lottery", "BOOLEAN", "1"),
+            ("tg_notify_pool_digest", "BOOLEAN", "1"),
             # 连签断签保护用量（2026-11-09）：老库补列后 ym=NULL（从未
             # 用过）、used=0，与新列缺省一致（口径见 models.WebUser）。
             ("streak_forgive_ym", "VARCHAR(6)", "NULL"),

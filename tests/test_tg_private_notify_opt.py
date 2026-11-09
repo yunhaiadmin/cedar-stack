@@ -295,6 +295,7 @@ def test_panel_notify_prefs_roundtrip(db):
     got = panel_api.get_notify_prefs(db=db, user=user)
     assert got["data"] == {
         "seek": True, "expiry": True, "lottery": True,
+        "pool_digest": True,
     }
     out = panel_api.set_notify_prefs(
         panel_api.NotifyPrefsIn(seek=False), db=db, user=user)
