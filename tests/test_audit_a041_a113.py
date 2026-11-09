@@ -213,3 +213,19 @@ def test_lookup_respects_library_scope(db, monkeypatch):
     assert lookup_media(name="不可见库片", current_user=user, db=db)["items"] == []
     hit = lookup_media(name="可见库片", current_user=user, db=db)
     assert len(hit["items"]) == 1
+
+
+def test_lookup_returns_numeric_item_id_for_series_follow(db):
+    # 追剧订阅口只认 emby_items 数字主键，guid 喂不进去：lookup 回包须纯
+    # 新增 item_id 带出数字主键，既有 id（guid）字段语义一字不变。
+    lib = _library(db, "i")
+    series = _item(db, lib, tmdb_id="9001", name="可选剧集", item_type="series")
+    _item(db, lib, tmdb_id="9002", name="可选电影", item_type="movie")
+    user = _user(db)
+    hit = lookup_media(name="可选剧集", current_user=user, db=db)
+    assert len(hit["items"]) == 1
+    row = hit["items"][0]
+    assert row["item_id"] == series.id
+    assert isinstance(row["item_id"], int)
+    assert row["id"] == series.guid
+    assert row["type"] == "series"

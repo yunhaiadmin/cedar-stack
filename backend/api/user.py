@@ -703,6 +703,9 @@ def lookup_media(
         "items": [
             {
                 "id": i.guid,
+                # 数字主键：追剧订阅口只认它（guid 喂不进去）；纯新增，
+                # 既有 id 字段语义不变，供用户端选剧订阅取用。
+                "item_id": i.id,
                 "name": i.name,
                 "type": i.item_type,
                 "year": i.production_year,
