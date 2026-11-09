@@ -134,6 +134,19 @@ def start_rankpush_scheduler() -> bool:
                     db.rollback()
                 except Exception:
                     pass
+            # 公共池群播报（战报/英雄榜）同拍同理，自带 try 隔离。
+            try:
+                from backend.tg_bot import pool_report
+
+                report_actions = pool_report.run_scheduled_tick(db)
+                if report_actions:
+                    logger.info("pool_report 调度动作：%s", report_actions)
+            except Exception:
+                logger.exception("pool_report 调度 tick 失败")
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
         except Exception:
             logger.exception("rankpush 调度 tick 失败")
             try:

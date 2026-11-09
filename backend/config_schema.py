@@ -271,6 +271,12 @@ WELFARE_CONFIG_SCHEMA: dict[str, tuple] = {
     # 总开关默认开；发送时间原文存储、读侧校验 HH:MM 非法回落 21:00。
     "bot_pool_digest_enabled": ("bool",),
     "bot_pool_digest_time": ("str",),
+    # 公共池群播报（tg_bot.pool_report 读侧宽容解析）：每晚战报
+    # 默认 21:20、每周英雄榜默认周日 20:30，都发群不置顶。
+    "bot_pool_report_enabled": ("bool",),
+    "bot_pool_report_time": ("str",),
+    "bot_pool_hero_enabled": ("bool",),
+    "bot_pool_hero_time": ("str",),
     # 主动私聊提醒（tg_bot.proactive）：两个开关默认开（2026-11-08），
     # 合并窗口秒数默认 60。word 风格 ("bool",) 存 true/false。
     # 关时不发、不写已推记录。新求片提醒管理员（tg_bot.features）默认开。
