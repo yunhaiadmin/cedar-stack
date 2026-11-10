@@ -29,17 +29,27 @@ import { EmptyState, PageHeader, SectionCard, StatTile } from '@/components/ui'
 import {
   deleteRegistrationCode,
   fetchCodeList,
+  fetchCodeRedemptions,
   fetchCodeStats,
   fetchWhitelistAccounts,
   generateCodes,
   patchRegistrationCode,
   revokeWhitelistAccount,
 } from '@/api/admin'
-import type { WhitelistAccount } from '@/api/admin'
+import type { CodeRedemptionRow, WhitelistAccount } from '@/api/admin'
 import type { CodeStats, RegistrationCode } from '@/types'
 import { useRealmStore } from '@/stores/realm'
 import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
+
+/**
+ * 分区变体（2026-11-10 注册码与兑换码分离，Codes.vue 传入）：
+ * - register：注册码专区——列表只看 code_type=1、生成只发注册码、
+ *   按出品人（管理员直发 / 代理出品）筛选、带核销流水；白名单段不出现。
+ * - redeem：会员卡码——注册码整体排除（列表与生成都不出现），其余照旧。
+ */
+const props = defineProps<{ variant?: 'register' | 'redeem' }>()
+const isRegister = computed(() => props.variant === 'register')
 
 const realm = useRealmStore()
 /** 统计范围：当前服（默认）或全部服 */
@@ -54,7 +64,7 @@ const total = ref(0)
 /** 码表加载失败（区别于「还没有生成过会员卡码」） */
 const loadError = ref(false)
 
-const filters = ref({ code_type: 0, state: '', keyword: '' })
+const filters = ref({ code_type: 0, state: '', keyword: '', source: '' })
 /** 最近一次发出查询时用的关键字：防抖 watch 据此跳过「已经查过」的值 */
 let lastKeyword = ''
 
@@ -107,7 +117,7 @@ const ALGORITHMS = [
 ]
 
 const TYPE_META: Record<number, { label: string; desc: string }> = {
-  1: { label: '注册码', desc: '为尚无会员的账号开通会员，已有会员会被拒绝' },
+  1: { label: '注册码', desc: '只用于注册页：新用户验码后建号核销，码附带的权益随注册发放；已有账号在兑换入口用会被拒绝' },
   2: { label: '续期码', desc: '在当前到期时间上叠加天数' },
   3: { label: '白名单码', desc: '置为长期有效（永久）' },
 }
@@ -121,13 +131,17 @@ const columns = computed<DataColumn[]>(() => [
     ? [{ key: 'realm', label: '归属服', minWidth: 120 } as DataColumn]
     : []),
   { key: 'days_text', label: '授予', width: 90 },
+  // 注册码分区要能看出这张码是谁出的（管理员直发 / 代理出品）
+  ...(isRegister.value
+    ? [{ key: 'creator', label: '出品人', width: 130, mobile: 'hide' } as DataColumn]
+    : []),
   { key: 'use_count', label: '用量', width: 84, mobile: 'hide' },
   { key: 'state', label: '状态', width: 92 },
   { key: 'target_username', label: '指名', width: 110, mobile: 'hide' },
   { key: 'expires_at', label: '有效期至', width: 150 },
   { key: 'note', label: '备注', minWidth: 120, mobile: 'hide' },
   { key: 'used_by', label: '使用者', minWidth: 150, mobile: 'hide' },
-  { key: 'actions', label: '操作', width: 150, fixed: 'right', align: 'right' },
+  { key: 'actions', label: '操作', width: 210, fixed: 'right', align: 'right' },
 ])
 
 /** 归属服展示名（未标注 = 升级前的老会员卡码，按当前服算） */
@@ -155,7 +169,10 @@ async function load() {
     const scopeId = scope.value === 'all' ? 0 : (realm.activeId ?? 0)
     const [list, stat] = await Promise.all([
       fetchCodeList({
-        code_type: filters.value.code_type || undefined,
+        // 分区隔离：注册码区只看 type=1（可再按出品人筛），会员卡码区整体排除 type=1
+        ...(isRegister.value
+          ? { code_type: 1, source: filters.value.source || undefined }
+          : { exclude_code_type: 1, code_type: filters.value.code_type || undefined }),
         state: filters.value.state || undefined,
         keyword: filters.value.keyword || undefined,
         realm_id: scopeId,
@@ -215,7 +232,8 @@ async function onRevokeWhitelist(row: WhitelistAccount) {
 
 onMounted(() => {
   load()
-  loadWhitelist()
+  // 白名单账号段只属于会员卡码分区，注册码分区不拉不显
+  if (!isRegister.value) loadWhitelist()
 })
 
 // 关键字搜索防抖：输入停 400ms 自动查询（回车 / 「查询」按钮仍然立即查）
@@ -231,10 +249,10 @@ watch(
 )
 onUnmounted(() => clearTimeout(keywordTimer))
 
-const hasFilter = computed(() => !!(filters.value.code_type || filters.value.state || filters.value.keyword))
+const hasFilter = computed(() => !!(filters.value.code_type || filters.value.state || filters.value.keyword || filters.value.source))
 
 function resetFilters() {
-  filters.value = { code_type: 0, state: '', keyword: '' }
+  filters.value = { code_type: 0, state: '', keyword: '', source: '' }
   clearTimeout(keywordTimer)
   load()
 }
@@ -249,7 +267,8 @@ function searchNow() {
 const TYPE_BADGE: Record<number, string> = { 1: 'au-badge-info', 2: 'au-badge-amber', 3: 'badge-warn' }
 
 function openGenerate(codeType: 1 | 2 | 3) {
-  genForm.value.code_type = codeType
+  // 分区隔离：注册码区只发注册码；会员卡码区不再发注册码（误传 1 时落续期码）
+  genForm.value.code_type = isRegister.value ? 1 : (codeType === 1 ? 2 : codeType)
   genForm.value.days = codeType === 2 ? 7 : 30
   genForm.value.is_decoy = false
   genForm.value.target_username = ''
@@ -306,7 +325,7 @@ async function toggle(row: RegistrationCode) {
 
 async function remove(row: RegistrationCode) {
   try {
-    await ElMessageBox.confirm(`确认删除会员卡码 ${row.code}？`, '删除会员卡码', {
+    await ElMessageBox.confirm(`确认删除${isRegister.value ? '注册码' : '会员卡码'} ${row.code}？`, isRegister.value ? '删除注册码' : '删除会员卡码', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消',
@@ -324,6 +343,34 @@ async function remove(row: RegistrationCode) {
   } finally {
     rowBusyId.value = null
   }
+}
+
+// ---------- 核销流水：谁在何时用这张码注册/兑换 ----------
+const flowVisible = ref(false)
+const flowLoading = ref(false)
+const flowCode = ref('')
+const flowItems = ref<CodeRedemptionRow[]>([])
+
+async function openFlow(row: RegistrationCode) {
+  flowCode.value = row.code
+  flowItems.value = []
+  flowVisible.value = true
+  flowLoading.value = true
+  try {
+    const res = await fetchCodeRedemptions(row.id)
+    flowItems.value = res.items
+  } catch {
+    /* 失败提示由请求拦截器统一处理 */
+  } finally {
+    flowLoading.value = false
+  }
+}
+
+/** 出品人展示：代理出品优先看代理名，管理员直发看发码人，老码无记录显示 — */
+function creatorLabel(row: RegistrationCode): string {
+  if (row.agent_id) return `代理 · ${row.agent_name || `#${row.agent_id}`}`
+  if (row.created_by) return row.created_by_name || `#${row.created_by}`
+  return '—'
 }
 
 /** 旧版「批量生成」入口保留：走类型化接口，默认注册码 */
@@ -377,8 +424,10 @@ function usedByNames(row: RegistrationCode): string {
   <div class="admin-page codes-page">
     <PageHeader
       eyebrow="经营"
-      title="会员卡码管理"
-      description="注册码 / 续期码 / 白名单码 / 诱饵码 / 指名码——生成与审计。会员卡码开的是它所属服的会员。"
+      :title="isRegister ? '注册码管理' : '会员卡码管理'"
+      :description="isRegister
+        ? '注册码只用于注册页：凭码注册时先验码、建号核销，码附带的权益随注册发放。代理出品的码也在此列，按出品人区分。'
+        : '续期码 / 白名单码 / 诱饵码 / 指名码——生成与审计（注册码已拆到「注册码」分区）。会员卡码开的是它所属服的会员。'"
     >
       <template #actions>
         <el-radio-group v-model="scope" @change="load">
@@ -386,13 +435,13 @@ function usedByNames(row: RegistrationCode): string {
           <el-radio-button value="all">全部服</el-radio-button>
         </el-radio-group>
         <el-button :icon="RefreshCw" :loading="loading" aria-label="刷新" @click="load">刷新</el-button>
-        <el-button :icon="Plus" :loading="quickBusy" @click="quickGenerate">快捷生成 5 个注册码</el-button>
-        <el-button type="primary" :icon="Plus" @click="openGenerate(1)">生成会员卡码</el-button>
+        <el-button v-if="isRegister" :icon="Plus" :loading="quickBusy" @click="quickGenerate">快捷生成 5 个注册码</el-button>
+        <el-button type="primary" :icon="Plus" @click="openGenerate(1)">{{ isRegister ? '生成注册码' : '生成会员卡码' }}</el-button>
       </template>
     </PageHeader>
 
-    <!-- 运营总览：数字走正文色，只有诱饵码被命中才染危险色 -->
-    <section v-if="stats" class="stat-row" aria-label="会员卡码总览">
+    <!-- 运营总览：数字走正文色，只有诱饵码被命中才染危险色（注册码分区的口径不同，不复用这组全局数字） -->
+    <section v-if="stats && !isRegister" class="stat-row" aria-label="会员卡码总览">
       <StatTile label="会员卡码总数" :value="stats.total" :icon="KeySquare" :hint="`可用 ${stats.active} · 停用 ${stats.disabled}`" />
       <StatTile
         label="已过期 / 已用尽"
@@ -420,13 +469,13 @@ function usedByNames(row: RegistrationCode): string {
 
     <!-- 注册模式已搬家：同一配置键全站只留一处写入口（系统设置 → 注册策略，含模式＋关闭提示＋注册限流），这里只留跳转提示 -->
     <p class="moved-hint">
-      「注册模式」设置已收敛到 <router-link to="/settings">系统设置 → 注册策略</router-link>，本页只管理会员卡码。
+      「注册模式」设置已收敛到 <router-link to="/settings">系统设置 → 注册策略</router-link>，本页只管理{{ isRegister ? '注册码' : '会员卡码' }}。
     </p>
 
-    <!-- 按类型统计 -->
+    <!-- 按类型统计（注册码分区只留注册码一行） -->
     <SectionCard title="按类型" :icon="Layers" flush>
       <ul v-if="stats?.by_type.length" class="type-list">
-        <li v-for="t in stats.by_type" :key="t.code_type" class="type-row">
+        <li v-for="t in stats.by_type.filter((x) => !isRegister || x.code_type === 1)" :key="t.code_type" class="type-row">
           <span class="au-badge" :class="TYPE_BADGE[t.code_type] || 'au-badge-muted'">{{ t.code_type_name }}</span>
           <span class="type-num"><strong>{{ t.available }}</strong> 可用 / {{ t.total }} 总计</span>
           <span class="type-used">已核销 {{ t.used }} 次</span>
@@ -436,7 +485,7 @@ function usedByNames(row: RegistrationCode): string {
     </SectionCard>
 
     <!-- 生成弹窗：两步向导——①你想送什么 ②码的用途；机械项收进「高级」折叠 -->
-    <el-dialog v-model="genVisible" title="生成会员卡码" width="min(520px, 92vw)">
+    <el-dialog v-model="genVisible" :title="isRegister ? '生成注册码' : '生成会员卡码'" width="min(520px, 92vw)">
       <el-steps :active="genStep" simple class="gen-steps">
         <el-step title="你想送什么" />
         <el-step title="码的用途" />
@@ -498,9 +547,9 @@ function usedByNames(row: RegistrationCode): string {
       <el-form v-show="genStep === 1" label-position="top" class="gen-step">
         <el-form-item label="码的用途">
           <el-radio-group v-model="genForm.code_type">
-            <el-radio-button :value="1">注册码</el-radio-button>
-            <el-radio-button :value="2">续期码</el-radio-button>
-            <el-radio-button :value="3">白名单码</el-radio-button>
+            <el-radio-button v-if="isRegister" :value="1">注册码</el-radio-button>
+            <el-radio-button v-if="!isRegister" :value="2">续期码</el-radio-button>
+            <el-radio-button v-if="!isRegister" :value="3">白名单码</el-radio-button>
           </el-radio-group>
           <div class="form-hint">{{ TYPE_META[genForm.code_type].desc }}</div>
         </el-form-item>
@@ -557,7 +606,7 @@ function usedByNames(row: RegistrationCode): string {
 
     <!-- 码表：筛选在左、计数与查询在右；桌面表格 / 手机卡片 -->
     <SectionCard
-      title="全部会员卡码"
+      :title="isRegister ? '全部注册码' : '全部会员卡码'"
       :icon="KeySquare"
       :meta="`共 ${total} 条${scope === 'realm' ? '（当前服）' : '（全部服）'}`"
       flush
@@ -567,18 +616,22 @@ function usedByNames(row: RegistrationCode): string {
           <el-input
             v-model="filters.keyword"
             class="f-search"
-            placeholder="搜索会员卡码 / 备注 / 指名账号"
+            :placeholder="isRegister ? '搜索注册码 / 备注 / 指名账号' : '搜索会员卡码 / 备注 / 指名账号'"
             clearable
             @keyup.enter="searchNow"
             @clear="searchNow"
           >
             <template #prefix><Search :size="14" /></template>
           </el-input>
-          <el-select v-model="filters.code_type" class="f-select" placeholder="全部类型" @change="load">
+          <el-select v-if="!isRegister" v-model="filters.code_type" class="f-select" placeholder="全部类型" @change="load">
             <el-option :value="0" label="全部类型" />
-            <el-option :value="1" label="注册码" />
             <el-option :value="2" label="续期码" />
             <el-option :value="3" label="白名单码" />
+          </el-select>
+          <el-select v-if="isRegister" v-model="filters.source" class="f-select" placeholder="全部出品人" @change="load">
+            <el-option value="" label="全部出品人" />
+            <el-option value="admin" label="管理员直发" />
+            <el-option value="agent" label="代理出品" />
           </el-select>
           <el-select v-model="filters.state" class="f-select" placeholder="全部状态" @change="load">
             <el-option value="" label="全部状态" />
@@ -594,11 +647,11 @@ function usedByNames(row: RegistrationCode): string {
         </div>
       </div>
 
-      <EmptyState v-if="loadError && !codes.length" :icon="AlertTriangle" title="会员卡码加载失败" description="网络或服务暂时不可用，稍后重试。">
+      <EmptyState v-if="loadError && !codes.length" :icon="AlertTriangle" :title="isRegister ? '注册码加载失败' : '会员卡码加载失败'" description="网络或服务暂时不可用，稍后重试。">
         <template #actions><el-button :loading="loading" @click="load">重试</el-button></template>
       </EmptyState>
 
-      <DataTable v-else class="flush-table" :rows="codes" :columns="columns" :loading="loading" empty="还没有生成过会员卡码">
+      <DataTable v-else class="flush-table" :rows="codes" :columns="columns" :loading="loading" :empty="isRegister ? '还没有生成过注册码' : '还没有生成过会员卡码'">
         <template #cell-code="{ row }">
           <div class="code-cell">
             <button type="button" class="code-chip" title="点击复制" @click.stop="copyText(row.code)">
@@ -617,6 +670,8 @@ function usedByNames(row: RegistrationCode): string {
         </template>
 
         <template #cell-days_text="{ row }">{{ row.days_text }}</template>
+
+        <template #cell-creator="{ row }">{{ creatorLabel(row) }}</template>
 
         <template #cell-use_count="{ row }"><span class="num">{{ row.use_count }} / {{ row.max_uses }}</span></template>
 
@@ -644,6 +699,7 @@ function usedByNames(row: RegistrationCode): string {
         </template>
 
         <template #cell-actions="{ row }">
+          <el-button size="small" plain @click="openFlow(row)">流水</el-button>
           <el-button
             size="small"
             :type="row.is_active ? 'warning' : 'success'"
@@ -662,19 +718,32 @@ function usedByNames(row: RegistrationCode): string {
           <EmptyState
             compact
             :icon="KeySquare"
-            :title="hasFilter ? '没有符合条件的会员卡码' : '还没有生成过会员卡码'"
-            :description="hasFilter ? '换个条件，或清空筛选看全部。' : '用右上角「生成会员卡码」发一批注册码 / 续期码。'"
+            :title="hasFilter ? (isRegister ? '没有符合条件的注册码' : '没有符合条件的会员卡码') : (isRegister ? '还没有生成过注册码' : '还没有生成过会员卡码')"
+            :description="hasFilter ? '换个条件，或清空筛选看全部。' : (isRegister ? '用右上角「生成注册码」发一批。' : '用右上角「生成会员卡码」发一批续期码 / 白名单码。')"
           >
             <template #actions>
               <el-button v-if="hasFilter" size="small" @click="resetFilters">清空筛选</el-button>
-              <el-button v-else size="small" type="primary" :icon="Plus" @click="openGenerate(1)">生成会员卡码</el-button>
+              <el-button v-else size="small" type="primary" :icon="Plus" @click="openGenerate(1)">{{ isRegister ? '生成注册码' : '生成会员卡码' }}</el-button>
             </template>
           </EmptyState>
         </template>
       </DataTable>
     </SectionCard>
 
-    <SectionCard title="白名单账号" :icon="ShieldAlert">
+    <!-- 核销流水：谁在何时用这张码注册/兑换（注册码分区看「谁用它注册」） -->
+    <el-dialog v-model="flowVisible" :title="`核销流水 · ${flowCode}`" width="min(480px, 92vw)">
+      <el-table v-loading="flowLoading" :data="flowItems" size="small" empty-text="还没有人用过这张码">
+        <el-table-column prop="username" label="使用者" min-width="160" />
+        <el-table-column label="核销时间" min-width="160">
+          <template #default="{ row }">{{ fmtDateTime(row.redeemed_at) }}</template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button type="primary" @click="flowVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <SectionCard v-if="!isRegister" title="白名单账号" :icon="ShieldAlert">
       <p class="whitelist-hint">
         核销过白名单码的账号：公益资格、查看凭证与会员订阅均为长期有效、不用续费。
         回收后三处一并到期（账号自己购买/续费的有限期权益不受影响）。

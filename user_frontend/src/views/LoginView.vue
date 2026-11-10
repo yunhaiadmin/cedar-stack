@@ -14,12 +14,12 @@ import { useUserStore } from '@/stores/user'
 import { useToast } from '@/composables/useToast'
 import { toUserMessage } from '@/utils/toUserMessage'
 import { toastFallback } from '@/constants/toastMessages'
-import { User, Lock, Mail, Eye, EyeOff, Clapperboard, Gift, Send } from 'lucide-vue-next'
+import { User, Lock, Mail, Eye, EyeOff, Clapperboard, Gift, Send, KeyRound, BadgeCheck } from 'lucide-vue-next'
 // 人机验证挂件（能力：人机验证）：管理员未开启时该组件自己什么都不渲染
 import CaptchaChallenge from '@/components/ui/CaptchaChallenge.vue'
 // 站名来自「站点与品牌」能力（未配置时用默认值）
 import { branding } from '@/composables/useBranding'
-import { getRegisterConfig } from '@/api/user'
+import { getRegisterConfig, verifyRegisterCode } from '@/api/user'
 import { tgApi } from '@/api/tg'
 import { fetchLoginPosters, fetchTgBotUsername, type LoginPoster } from '@/api/site'
 import PosterCollage from '@/components/ui/PosterCollage.vue'
@@ -30,10 +30,21 @@ const userStore = useUserStore()
 const toast = useToast()
 
 // 注册页开关（管理端可配）：注册模式 + 邀请码开关
-// registration_mode: open=开放注册 / closed=关闭注册（code 模式已下线）
-const registrationMode = ref<'open' | 'closed'>('open')
+// registration_mode: open=开放注册 / code=凭码注册（两步） / closed=关闭注册
+const registrationMode = ref<'open' | 'code' | 'closed'>('open')
 const invitationEnabled = ref(true)
 const registrationClosed = computed(() => registrationMode.value === 'closed')
+
+// 凭码注册两步流程（2026-11-10 定版）：第一步只有注册码输入框，
+// 验码通过才出第二步账号表单；两步不与账号表单同屏。
+const registrationCodeRequired = ref(false)
+const regCodeHint = ref({ text: '', url: '' })
+const registerStep = ref<1 | 2>(1)
+const regCodeInput = ref('')
+const verifiedRegCode = ref('')
+const verifyLoading = ref(false)
+const verifyError = ref('')
+const verifyBenefit = ref('')
  // 注册配置拉取失败标记：失败时注册区显示错误态+重试，不让用户填完表才被拒
  const configError = ref(false)
 
@@ -141,11 +152,52 @@ async function handleLogin() {
   }
 }
 
+/** 两步注册第一步：验注册码（只校验不消耗）；通过才进入账号表单 */
+async function handleVerifyRegCode() {
+  if (verifyLoading.value) return
+  const code = regCodeInput.value.trim()
+  if (!code) {
+    verifyError.value = '请输入注册码'
+    return
+  }
+  verifyError.value = ''
+  verifyLoading.value = true
+  try {
+    const res = await verifyRegisterCode(code)
+    if (!res.valid) {
+      verifyError.value = res.message || '注册码无效'
+      return
+    }
+    verifiedRegCode.value = code
+    verifyBenefit.value = res.realm_name
+      ? `将开通「${res.realm_name}」${res.days_text || ''}`
+      : ''
+    registerStep.value = 2
+    error.value = ''
+  } catch (err) {
+    verifyError.value = friendlyError(err, '验码失败，请稍后重试')
+  } finally {
+    verifyLoading.value = false
+  }
+}
+
+/** 第二步返回第一步换一张码（已验证的码作废重验，尚未消耗） */
+function backToCodeStep() {
+  registerStep.value = 1
+  verifiedRegCode.value = ''
+  verifyBenefit.value = ''
+  error.value = ''
+}
+
 async function handleRegister() {
   // 回车双提交防护（同 handleLogin）
   if (registerLoading.value) return
   if (registrationClosed.value) {
     error.value = '当前未开放注册'
+    return
+  }
+  if (registrationCodeRequired.value && registerStep.value !== 2) {
+    error.value = '请先输入注册码并验证'
     return
   }
   const f = registerForm
@@ -173,6 +225,7 @@ async function handleRegister() {
     await userStore.register(
       f.username.trim(), f.password, f.email || undefined,
       inviteCode || undefined, captchaToken.value,
+      registrationCodeRequired.value ? verifiedRegCode.value : undefined,
     )
     toast.success('注册成功，已自动开通观影账号')
     // 注册后 TG 绑定引导：仅注册流程触发，普通登录不动。
@@ -212,10 +265,12 @@ let postersTimeout: ReturnType<typeof setTimeout> | null = null
 
 function loadRegisterConfig() {
   configError.value = false
-  // 拉取注册页开关（公开接口）：按管理端配置显示/隐藏邀请码输入框、是否关闭注册
+  // 拉取注册页开关（公开接口）：按管理端配置决定注册形态——
+  // 开放=直接出账号表单 / 凭码=先验码再出表单 / 关闭=不开放注册
   getRegisterConfig().then((cfg) => {
-    // code 模式已下线：后端/此处统一归一为 open
-    registrationMode.value = cfg.registration_mode === 'closed' ? 'closed' : 'open'
+    registrationMode.value = cfg.registration_mode
+    registrationCodeRequired.value = cfg.registration_code_required
+    regCodeHint.value = cfg.registration_code_hint
     invitationEnabled.value = cfg.invitation_enabled
     // 注册已关闭时忽略 ?mode=register / ?invite= 参数，强制留在登录页
     if (registrationMode.value === 'closed') mode.value = 'login'
@@ -358,8 +413,44 @@ onUnmounted(() => {
         </div>
       </form>
 
-      <!-- 注册表单 -->
+      <!-- 凭码注册第一步：只有注册码输入框，不与账号表单同屏（2026-11-10 定版两步流程） -->
+      <form v-else-if="registrationCodeRequired && registerStep === 1" id="panel-register" class="auth-form" role="tabpanel" aria-labelledby="tab-register" tabindex="0" @submit.prevent="handleVerifyRegCode">
+        <label class="field">
+          <span class="field-label">注册码</span>
+          <div class="field-box">
+            <KeyRound :size="16" class="field-icon" aria-hidden="true" />
+            <input
+              v-model="regCodeInput"
+              type="text"
+              name="registration-code"
+              autocomplete="off"
+              placeholder="输入注册码，验证通过后填写账号信息"
+              :aria-invalid="!!verifyError"
+              aria-describedby="regcode-verify-error"
+            />
+          </div>
+        </label>
+
+        <p class="regcode-hint">
+          {{ regCodeHint.text }}
+          <a v-if="regCodeHint.url" class="hint-link" :href="regCodeHint.url" target="_blank" rel="noopener">去获取</a>
+        </p>
+        <p v-if="configError" class="closed-notice">注册配置拉取失败，<button type="button" class="retry-link" @click="loadRegisterConfig">点重试</button></p>
+        <p v-if="verifyError" id="regcode-verify-error" class="form-error" role="alert">{{ verifyError }}</p>
+
+        <button type="submit" class="submit-btn" :disabled="verifyLoading || !regCodeInput.trim()">
+          {{ verifyLoading ? '验证中…' : '验证注册码' }}
+        </button>
+      </form>
+
+      <!-- 注册表单（凭码模式下是第二步：验码通过才渲染） -->
       <form v-else id="panel-register" class="auth-form" role="tabpanel" aria-labelledby="tab-register" tabindex="0" @submit.prevent="handleRegister">
+        <p v-if="registrationCodeRequired" class="verified-code">
+          <BadgeCheck :size="15" aria-hidden="true" />
+          <span>注册码 {{ verifiedRegCode }} 已验证<template v-if="verifyBenefit"> · {{ verifyBenefit }}</template></span>
+          <button type="button" class="retry-link" @click="backToCodeStep">更换</button>
+        </p>
+
         <label class="field">
           <span class="field-label">用户名</span>
           <div class="field-box">
@@ -828,6 +919,39 @@ onUnmounted(() => {
   font: inherit;
   text-decoration: underline;
   cursor: pointer;
+}
+
+/* 凭码注册第一步的获取提示 + 第二步的已验码条 */
+.regcode-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--paper-ink-3);
+}
+
+.hint-link {
+  color: var(--paper-primary);
+  text-decoration: underline;
+  white-space: nowrap;
+}
+
+.verified-code {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.625rem 1rem;
+  border-radius: var(--paper-r-md);
+  background: var(--paper-primary-soft, rgba(1, 106, 113, 0.08));
+  color: var(--paper-ink-2);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.verified-code .retry-link {
+  min-height: 32px;
+  margin-left: auto;
 }
 
 /* 渐变胶囊提交按钮 */

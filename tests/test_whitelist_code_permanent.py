@@ -162,12 +162,16 @@ def test_renew_code_unchanged(db):
 
 def test_welfare_code_unchanged_no_subscription(db):
     """普通资格码（code_type=注册码 + reward_type=welfare）仍只发资格+查看，
-    不发订阅——白名单三处全包只属于 code_type=3。"""
+    不发订阅——白名单三处全包只属于 code_type=3。
+
+    2026-11-10 注册码分离定版：该码改走注册页核销入口
+    （consume_registration_code），发放语义与原兑换入口一致。
+    """
     u = _user(db, "plain_welfare")
     _code(db, "REG-WEL000000001", code_type=codes.CODE_TYPE_REGISTER,
           days=30, reward_type="welfare")
     db.commit()
-    result = codes.redeem_code(db, u, "REG-WEL000000001")
+    result = codes.consume_registration_code(db, u, "REG-WEL000000001")
     db.commit()
     assert result["success"] is True
     db.refresh(u)

@@ -159,6 +159,8 @@ export const fetchRegistrationSettings = () => get<RegistrationSettings>('/setti
 export const updateRegistrationSettings = (data: {
   mode: string
   message?: string
+  registration_code_hint_text?: string
+  registration_code_hint_url?: string
   ratelimit_max?: number
   ratelimit_window?: number
 }) => put<{ success: boolean }>('/settings/registration', data)
@@ -191,11 +193,17 @@ export const generateCodes = (data: {
 }>(
   '/registration-codes/generate', data)
 
-/** 会员卡码清单（按服；`realm_id=0` = 全部服，不传 = 当前服） */
+/** 会员卡码清单（按服；`realm_id=0` = 全部服，不传 = 当前服）
+ * 注册码分区用 code_type=1（可再按 source/出品人筛选）；兑换码分区用
+ * exclude_code_type=1 把注册码排除在外。 */
 export const fetchCodeList = (params: {
   code_type?: number
+  exclude_code_type?: number
   state?: string
   keyword?: string
+  source?: string
+  created_by?: number
+  agent_id?: number
   realm_id?: number
   limit?: number
   offset?: number
@@ -206,6 +214,17 @@ export const fetchCodeList = (params: {
   realms: { id: number; name: string }[]
   codes: RegistrationCode[]
 }>('/registration-codes/list', params)
+
+/** 单张码的核销流水：谁在何时用它注册/兑换 */
+export interface CodeRedemptionRow {
+  user_id: number
+  username: string
+  redeemed_at: string | null
+}
+
+export const fetchCodeRedemptions = (codeId: number) =>
+  get<{ code_id: number; code: string; total: number; items: CodeRedemptionRow[] }>(
+    `/registration-codes/${codeId}/redemptions`)
 
 export const fetchCodeStats = (realm_id?: number) =>
   get<CodeStats>('/registration-codes/stats', realm_id === undefined ? undefined : { realm_id })

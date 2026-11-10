@@ -133,9 +133,13 @@ def test_disabled_honeypot_still_traps(db):
 
 
 def test_normal_code_not_affected(db):
-    """普通卡码：兑换成功、用户不被封禁。"""
+    """普通卡码：兑换成功、用户不被封禁。
+
+    2026-11-10 注册码分离定版后，兑换入口只认续期/白名单码，
+    本例改用续期码验证「非诱饵码正常核销不受影响」。
+    """
     u = _user(db, "normal")
-    _code(db, "REG-VALID00000001")
+    _code(db, "REG-VALID00000001", code_type=codes.CODE_TYPE_RENEW)
     db.commit()
 
     result = codes.redeem_code(db, u, "REG-VALID00000001")

@@ -326,8 +326,12 @@ COUPONS_CONFIG_SCHEMA: dict[str, tuple] = {
 # A-112：register_ratelimit_enabled 恢复登记（bool word 风格存 true/false，
 # 与 _get_register_ratelimit 的 =="true" 判定一致；env 显式设置时仍接管））
 REGISTRATION_CONFIG_SCHEMA: dict[str, tuple] = {
-    "registration_mode": ("enum", ("open", "closed")),
+    "registration_mode": ("enum", ("open", "code", "closed")),
     "registration_closed_message": ("str",),
+    # 凭码注册第一步的「没有注册码去哪领」提示（2026-11-10 两步版）：
+    # 文案与链接都走配置，链接不许写死在前端代码里。
+    "registration_code_hint_text": ("str",),
+    "registration_code_hint_url": ("str",),
     "register_ratelimit_enabled": ("bool",),
     "register_ratelimit_max": ("int", 1, _BIG),
     "register_ratelimit_window": ("int", 60, _BIG),

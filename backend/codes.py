@@ -476,6 +476,11 @@ CODE_ERROR_EXPIRED = "CODE_EXPIRED"          # 已过期
 CODE_ERROR_NOT_FOUND = "CODE_NOT_FOUND"      # 不存在
 CODE_ERROR_SELF_USED = "CODE_SELF_USED"      # 自己已使用过（每个账号每张码限用一次）
 CODE_ERROR_NAMED_OTHER = "CODE_NAMED_OTHER"  # 指名码，限指定账号使用
+CODE_ERROR_REGISTER_ONLY = "CODE_REGISTER_ONLY"  # 注册码走错入口（已登录兑换）
+
+# 注册码与兑换码分离（2026-11-10 用户亲定）：code_type=1 只许在注册页
+# 凭码注册时核销；已登录用户走兑换入口一律拒绝并明确指路注册页。
+REGISTER_CODE_ONLY_MESSAGE = "注册码请在注册页使用"
 
 # 「明确无效」集合：命中这些状态的尝试，再试多少次答案都一样，与限流无关。
 # 端点层对这类结果直接返回业务文案，不许用 429 把真原因盖掉（见 api/user.py）。
@@ -567,6 +572,11 @@ def preview_code(db: Session, raw: str, username: Optional[str] = None) -> dict:
         if named_ambiguous and not error:
             # 上面各奖励分支按 named_ok 选文案，会把歧义文案覆盖回「限指定账号」，这里统一盖回。
             preview["message"] = "该卡码的指名账号不唯一，请联系管理员处理"
+        if code.code_type == CODE_TYPE_REGISTER and error is None and named_ok:
+            # 注册码分离（2026-11-10 定版）：预览就如实指路注册页，
+            # 不让已登录用户以为能在兑换入口用掉它。
+            preview["valid"] = False
+            preview["message"] = "这是注册码，请在注册页使用"
         # 明确无效时附机器码：端点层据此把业务文案优先于限流 429 返回
         _ec = reg_code_error_code(code) or (CODE_ERROR_NAMED_OTHER if not named_ok else None)
         if _ec:
@@ -614,11 +624,13 @@ def preview_code(db: Session, raw: str, username: Optional[str] = None) -> dict:
 
 
 def redeem_code(db: Session, user: models.WebUser, raw: str) -> dict:
-    """核销卡码：注册码 / 续期码 / 白名单码
+    """核销卡码（已登录兑换入口）：续期码 / 白名单码
 
     - 奖励类型（reward_type）：subscription 会员天数 / points 能量 /
       discount 折扣权益 / welfare 公益资格（可打包同天数查看行）
-    - 注册码：仅用于尚无生效会员的账号（已有会员请用续期码，与参考实现口径一致）
+    - 注册码（code_type=1）：2026-11-10 定版起与兑换分离——本入口
+      明确拒绝并提示去注册页，核销只发生在凭码注册（见
+      consume_registration_code）
     - 续期码：在当前到期时间上叠加天数
     - 白名单码：置为长期有效
     - 诱饵码：不暴露身份，统一返回「卡码无效」，同时封禁账号并落安全日志
@@ -656,6 +668,97 @@ def redeem_code(db: Session, user: models.WebUser, raw: str) -> dict:
         db.commit()
         return {"success": False, "message": "卡码无效"}
 
+    if code.code_type == CODE_TYPE_REGISTER:
+        # 注册码分离（2026-11-10 定版）：注册码只许在注册页凭码注册时
+        # 核销；已登录兑换入口明确拒绝并指路。判定放在蜜罐之后——
+        # 诱饵码不论类型都要先触发陷阱，不能被这条分流短路掉
+        # 封禁与安全日志。
+        return {"success": False, "message": REGISTER_CODE_ONLY_MESSAGE,
+                "error_code": CODE_ERROR_REGISTER_ONLY}
+
+    return _redeem_found_code(db, user, code)
+
+
+def consume_registration_code(db: Session, user: models.WebUser, raw: str) -> dict:
+    """注册页核销注册码：只认 code_type=1，其余与 redeem_code 共用核销主体。
+
+    调用方（注册端点）必须已在同一事务里建好（flush）新用户行：
+    占位、代理销售归属与附带权益的发放都在该事务内完成，注册失败
+    时由调用方整体回滚，码不消耗、权益不落账。
+
+    蜜罐码在这里只回「注册码无效」不封号：注册端点在建号前已用
+    check_registration_code 拦下蜜罐（根本不会建号），本函数是
+    纵深防御——绝不能像 redeem_code 那样把待建的新用户行提交落库。
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return {"success": False, "message": "请输入注册码"}
+    code = find_reg_code(db, raw)
+    if code is None or is_honeypot(code):
+        return {"success": False, "message": "注册码无效",
+                "error_code": CODE_ERROR_NOT_FOUND}
+    if code.code_type != CODE_TYPE_REGISTER:
+        return {"success": False, "message": "该码不是注册码，无法用于注册"}
+    return _redeem_found_code(db, user, code)
+
+
+def check_registration_code(db: Session, raw: str,
+                            username: Optional[str] = None) -> dict:
+    """注册码校验（只校验、绝不消耗）：两步注册的第一步验码与提交前预检共用。
+
+    返回 {valid, message, code, ...}；valid 时附带权益摘要（reward_type /
+    days_text / realm_name / is_named）供第一步页面展示「这张码能开什么」。
+    ``username`` 给了才查指名匹配（第一步还没填用户名时传 None，
+    指名码先放行、提交注册时由核销主体按新用户名再验一次）。
+    蜜罐码与不存在一律回「注册码无效」，不给撞码的人区分线索。
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return {"valid": False, "message": "请输入注册码", "code": None}
+    code = find_reg_code(db, raw)
+    if code is None or is_honeypot(code):
+        return {"valid": False, "message": "注册码无效", "code": None,
+                "error_code": CODE_ERROR_NOT_FOUND}
+    if code.code_type != CODE_TYPE_REGISTER:
+        return {"valid": False, "message": "该码不是注册码，无法用于注册",
+                "code": None}
+    error = reg_code_error(code)
+    if error:
+        return {"valid": False, "message": error, "code": None,
+                "error_code": reg_code_error_code(code)}
+    if code.target_username:
+        if len(find_users_by_username_ci(db, code.target_username)) > 1:
+            return {"valid": False, "code": None,
+                    "message": "该注册码的指名账号不唯一，请联系管理员处理",
+                    "error_code": CODE_ERROR_NAMED_OTHER}
+        if username and \
+                code.target_username.strip().lower() != username.strip().lower():
+            return {"valid": False, "message": "该注册码限指定账号使用",
+                    "code": None, "error_code": CODE_ERROR_NAMED_OTHER}
+    realm_id = code_realm_id(db, code)
+    days = grant_days_for(code)
+    return {
+        "valid": True,
+        "message": "注册码有效",
+        "code": code,
+        "reward_type": getattr(code, "reward_type", "subscription") or "subscription",
+        "days": days,
+        "days_text": format_days(days),
+        "realm_id": realm_id,
+        "realm_name": realm_label(db, realm_id),
+        "is_named": bool(code.target_username),
+    }
+
+
+def _redeem_found_code(db: Session, user: models.WebUser,
+                       code: models.RegistrationCode) -> dict:
+    """已定位卡码的核销主体：可用性 / 指名 / 原子占位 / 代理归属 / 按奖励发奖。
+
+    redeem_code（已登录兑换）与 consume_registration_code（注册页核销）
+    共用这一份：占位 CAS、代理落账与四种奖励的分派口径只许一套，
+    两条入口只在「认哪种 code_type」上分工。本函数不提交（资格 /
+    白名单分支里 grant_welfare 的自提交除外），提交由入口调用方负责。
+    """
     error = reg_code_error(code)
     if error:
         return {"success": False, "message": error,

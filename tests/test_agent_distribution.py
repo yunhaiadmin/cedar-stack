@@ -245,7 +245,9 @@ def test_redeem_agent_code_records_sale(db, admin, agent_user, plan):
     raw = resp["codes"][0]["code"]
 
     buyer = _user(db, "buyer_1")
-    result = codes.redeem_code(db, buyer, raw)
+    # 2026-11-10 注册码分离定版：code_type=1 已登录兑换入口拒绝，
+    # 核销走注册页入口 consume_registration_code，销售归属口径不变。
+    result = codes.consume_registration_code(db, buyer, raw)
     assert result["success"] is True
     db.commit()
 

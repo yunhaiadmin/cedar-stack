@@ -214,6 +214,11 @@ export interface RegistrationCode {
   is_decoy: boolean
   target_username: string
   source: string
+  /** 出品人：管理员直发看 created_by（含展示名），代理出品看 agent_id（含展示名） */
+  created_by?: number | null
+  created_by_name?: string
+  agent_id?: number | null
+  agent_name?: string
   max_uses: number
   use_count: number
   is_active: boolean
@@ -296,9 +301,12 @@ export interface LoginLogsResponse {
 }
 
 export interface RegistrationSettings {
-  // 注册码门禁（'code'）已下线：后端不再接受 'code'；DB 残留值由前端归一为 'open' 展示
+  // 注册三档：open 开放 / code 凭码（两步流程，2026-11-10 定版）/ closed 关闭
   mode: 'open' | 'closed' | 'code'
   message: string
+  /** 凭码模式下注册页第一步「没有注册码去哪领」的提示文案与链接 */
+  registration_code_hint_text?: string
+  registration_code_hint_url?: string
   // 注册限流（C5）：后端带默认值下发；可选以兼容旧构造处
   ratelimit_enabled?: boolean
   ratelimit_max?: number

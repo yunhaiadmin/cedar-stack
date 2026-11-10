@@ -352,7 +352,8 @@ const original = ref<EconomySettings>({})
 const reg = reactive({
   mode: 'open',
   message: '',
-  legacyCode: false,
+  hintText: '',
+  hintUrl: '',
   ratelimitMax: 5,
   ratelimitWindow: 3600,
 })
@@ -371,17 +372,20 @@ function regFormInstance(): FormInstance | undefined {
 
 /**
  * 注册策略的"干净"快照：load() 成功后同步，用于全局脏检查。
- * legacyCode 是展示态（DB 残留 code 的提示），不参与脏比较。
  */
 const regOriginal = ref({
   mode: 'open',
   message: '',
+  hintText: '',
+  hintUrl: '',
   ratelimitMax: 5,
   ratelimitWindow: 3600,
 })
 const regDirty = computed(() =>
   reg.mode !== regOriginal.value.mode
   || reg.message !== regOriginal.value.message
+  || reg.hintText !== regOriginal.value.hintText
+  || reg.hintUrl !== regOriginal.value.hintUrl
   || reg.ratelimitMax !== regOriginal.value.ratelimitMax
   || reg.ratelimitWindow !== regOriginal.value.ratelimitWindow,
 )
@@ -389,6 +393,8 @@ function snapshotReg() {
   regOriginal.value = {
     mode: reg.mode,
     message: reg.message,
+    hintText: reg.hintText,
+    hintUrl: reg.hintUrl,
     ratelimitMax: reg.ratelimitMax,
     ratelimitWindow: reg.ratelimitWindow,
   }
@@ -406,6 +412,7 @@ const regRules: FormRules = {
 const regModeHint = computed(() => {
   const map: Record<string, string> = {
     open: '任何人都可以直接注册',
+    code: '凭注册码注册：先验码（不消耗），通过才出账号表单，建号时同事务核销',
     closed: '关闭注册入口，仅显示提示文案',
   }
   return map[reg.mode] || ''
@@ -582,10 +589,11 @@ async function load() {
     ])
     Object.assign(settings, econ.settings)
     original.value = { ...econ.settings }
-    // 注册码门禁已下线：DB 里残留的 "code" 一律按 open 展示，保存时后端也会拒绝 "code"
-    reg.mode = registration.mode === 'code' ? 'open' : registration.mode
-    reg.legacyCode = registration.mode === 'code'
+    // 注册三档（open / code 凭码 / closed）后端原样下发，直接展示
+    reg.mode = registration.mode
     reg.message = registration.message || ''
+    reg.hintText = registration.registration_code_hint_text || ''
+    reg.hintUrl = registration.registration_code_hint_url || ''
     reg.ratelimitMax = typeof registration.ratelimit_max === 'number' && Number.isFinite(registration.ratelimit_max)
       ? Math.floor(registration.ratelimit_max)
       : 5
@@ -1252,10 +1260,11 @@ async function saveRegistrationCore(): Promise<boolean> {
     await updateRegistrationSettings({
       mode: reg.mode,
       message: reg.message,
+      registration_code_hint_text: reg.hintText,
+      registration_code_hint_url: reg.hintUrl,
       ratelimit_max: rlMax,
       ratelimit_window: rlWindow,
     })
-    reg.legacyCode = false
     snapshotReg()
     return true
   } catch {
@@ -1612,22 +1621,26 @@ watch(
                 <div class="field-stack">
                   <el-radio-group v-model="reg.mode">
                     <el-radio-button value="open">开放注册</el-radio-button>
+                    <el-radio-button value="code">凭码注册</el-radio-button>
                     <el-radio-button value="closed">关闭注册</el-radio-button>
                   </el-radio-group>
                   <span class="field-hint">{{ regModeHint }}</span>
-                  <!-- 注册码门禁已下线：DB 残留 "code" 自动归一为开放注册 -->
-                  <el-alert
-                    v-if="reg.legacyCode"
-                    type="warning"
-                    show-icon
-                    :closable="false"
-                    title="该站点的注册模式曾设为「注册码」，该模式已下线"
-                    description="已自动按「开放注册」处理，点击保存后将正式更新为开放注册。"
-                  />
                 </div>
               </el-form-item>
               <el-form-item v-if="reg.mode === 'closed'" label="关闭提示" prop="message">
                 <el-input v-model="reg.message" type="textarea" :rows="2" placeholder="展示给无法注册的用户…" />
+              </el-form-item>
+              <el-form-item v-if="reg.mode === 'code'" label="没有注册码的提示文案">
+                <div class="field-stack">
+                  <el-input v-model="reg.hintText" type="textarea" :rows="2" placeholder="展示在注册页第一步，如：没有注册码？可通过官方 Telegram 群或代理渠道获取。" />
+                  <span class="field-hint">留空时用系统默认文案；注册码在「码管理 → 注册码」里生成与发放</span>
+                </div>
+              </el-form-item>
+              <el-form-item v-if="reg.mode === 'code'" label="注册码获取链接">
+                <div class="field-stack">
+                  <el-input v-model="reg.hintUrl" placeholder="https://…（可空，填了会在提示后带「去获取」链接）" />
+                  <span class="field-hint">指向 TG 群 / 代理渠道的链接，由这里统一配置，不写死在页面里</span>
+                </div>
               </el-form-item>
               <el-form-item label="窗口内最大注册次数" prop="ratelimitMax">
                 <div class="field-stack">

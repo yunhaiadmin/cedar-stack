@@ -33,22 +33,59 @@ export async function getMyExclusiveLines(): Promise<MyExclusiveLine[]> {
 
 /** 注册页开关状态（公开接口，未登录可调） */
 export interface RegisterConfig {
-  registration_mode: 'open' | 'closed'
+  registration_mode: 'open' | 'code' | 'closed'
+  /** 凭码模式：注册前必须先验注册码（两步流程第一步） */
+  registration_code_required: boolean
+  /** 「没有注册码去哪领」提示（文案与链接均由管理端配置下发） */
+  registration_code_hint: { text: string; url: string }
   invitation_enabled: boolean
 }
 
 /** 获取注册页开关：注册模式 + 邀请码开关 */
 export async function getRegisterConfig(): Promise<RegisterConfig> {
   try {
-    const res = await api.get<never, { registration_mode: string; invitation_enabled: boolean }>('/api/user/auth/register-config')
-    // code 模式已下线：历史残留值归一为 open
-    const mode = res.registration_mode === 'closed' ? 'closed' : 'open'
+    const res = await api.get<never, {
+      registration_mode: string
+      registration_code_required?: boolean
+      registration_code_hint?: { text?: string; url?: string }
+      invitation_enabled: boolean
+    }>('/api/user/auth/register-config')
+    const mode = res.registration_mode === 'closed'
+      ? 'closed'
+      : res.registration_mode === 'code'
+        ? 'code'
+        : 'open'
     return {
       registration_mode: mode,
+      registration_code_required: res.registration_code_required === true,
+      registration_code_hint: {
+        text: res.registration_code_hint?.text || '',
+        url: res.registration_code_hint?.url || '',
+      },
       invitation_enabled: res.invitation_enabled !== false,
     }
   } catch {
     // 拿不到时按最宽松处理：开放注册 + 邀请码显示（不把用户锁在门外）
-    return { registration_mode: 'open', invitation_enabled: true }
+    return {
+      registration_mode: 'open',
+      registration_code_required: false,
+      registration_code_hint: { text: '', url: '' },
+      invitation_enabled: true,
+    }
   }
+}
+
+/** 凭码注册第一步验码结果（只校验不消耗） */
+export interface RegisterCodeVerifyResult {
+  valid: boolean
+  message: string
+  reward_type?: string
+  days_text?: string
+  realm_name?: string
+  is_named?: boolean
+}
+
+/** 两步注册第一步：校验注册码（公开接口，未登录可调；校验不消耗次数） */
+export async function verifyRegisterCode(code: string): Promise<RegisterCodeVerifyResult> {
+  return api.post<never, RegisterCodeVerifyResult>('/api/user/auth/register-code/verify', { code })
 }
