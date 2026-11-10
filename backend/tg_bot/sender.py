@@ -89,6 +89,7 @@ def send_message(
     text: str,
     reply_markup: dict | None = None,
     parse_mode: str | None = "HTML",
+    reply_parameters: dict | None = None,
 ) -> tuple[bool, str | None]:
     """
     向指定 Telegram 聊天发送消息
@@ -98,6 +99,9 @@ def send_message(
     :param text: 消息文本内容（HTML 转义后的文本；parse_mode 默认为 HTML）
     :param reply_markup: 可选的键盘标记（Telegram API 格式）
     :param parse_mode: Telegram 解析模式，默认 "HTML"；传 None 则不带该字段
+    :param reply_parameters: 可选的回复参数（ReplyParameters 原样透传，
+        如 {"message_id": N} 或富文本引用 rich_quote() 的产物）；
+        默认 None 时 payload 与旧行为逐字一致、不带该字段
     :return: (是否成功, 错误信息)，成功时为 (True, None)
     """
     # 构造请求负载
@@ -109,6 +113,8 @@ def send_message(
         payload["parse_mode"] = parse_mode
     if reply_markup is not None:
         payload["reply_markup"] = reply_markup
+    if reply_parameters is not None:
+        payload["reply_parameters"] = reply_parameters
 
     return _call(db, "sendMessage", payload)
 
@@ -119,11 +125,13 @@ def send_message_ex(
     text: str,
     reply_markup: dict | None = None,
     parse_mode: str | None = "HTML",
+    reply_parameters: dict | None = None,
 ) -> tuple[bool, str | None, int | None]:
     """send_message 的带 message_id 版本（消息自毁调度等场景用）。
 
     负载构造与 send_message 完全一致；成功时第三项为新消息的
     message_id，失败时为 None。旧 send_message 签名/行为不变。
+    reply_parameters 口径同 send_message（默认不带、逐字不变）。
     """
     payload = {
         "chat_id": chat_id,
@@ -133,6 +141,8 @@ def send_message_ex(
         payload["parse_mode"] = parse_mode
     if reply_markup is not None:
         payload["reply_markup"] = reply_markup
+    if reply_parameters is not None:
+        payload["reply_parameters"] = reply_parameters
 
     ok, err, result = _call_ex(db, "sendMessage", payload)
     if not ok or not result:
@@ -596,7 +606,8 @@ def send_dice(db, chat_id: int, emoji: str = "🎰") -> tuple[bool, str | None, 
 def send_widget(db, chat_id: int, html: str, *, public_data: str | None = None,
                 chat_data: str | None = None, caption: str | None = None,
                 allow_queries: bool = False, width: int = 0,
-                height: int = 0) -> tuple[bool, str | None, int | None]:
+                height: int = 0,
+                is_shared: bool = False) -> tuple[bool, str | None, int | None]:
     """发 HTML widget 消息（Bot API 10.4 sendWidget）。
 
     html 为 UTF-8 文本（≤32768 字节、服务端 zlib-9 后 ≤4096 字节，
@@ -604,6 +615,11 @@ def send_widget(db, chat_id: int, html: str, *, public_data: str | None = None,
     不传表示无状态。width/height 为尺寸锚点，0 = 自动（见官方
     Widgets 指南 Sizes 一节）。生产环境目前仅限私聊、自动
     protected content、不可转发。成功时第三项为 message_id。
+
+    is_shared=True 时创建一个共享 widget（可跨消息同步 public_data、
+    用 send_shared_widget 重发）；默认 False 且不进 payload，现有
+    调用方逐字不变。共享 widget 的 widget_id 取自本次返回 Message
+    的 widget.id 字段（Widget.id，非共享时该字段省略）。
     """
     payload: dict = {
         "chat_id": chat_id,
@@ -618,6 +634,8 @@ def send_widget(db, chat_id: int, html: str, *, public_data: str | None = None,
         payload["chat_data"] = chat_data
     if caption is not None:
         payload["caption"] = caption
+    if is_shared:
+        payload["is_shared"] = True
     ok, err, result = _call_ex(db, "sendWidget", payload)
     if not ok or not isinstance(result, dict):
         return False, err, None
@@ -662,6 +680,147 @@ def edit_message_widget_data(db, chat_id: int | None = None,
     if chat_data is not None:
         payload["chat_data"] = chat_data
     return _call(db, "editMessageWidgetData", payload)
+
+
+# ---------------------------------------------------------------------------
+# 共享 widget（Bot API 10.4 shared widgets）：横切只许这一套 wrapper。
+#
+# 核对结论（官方 API 参考，2026-11-11 亲读）：
+# - Widget 类型字段：id（String，可选）/width/height/html/
+#   public_data/chat_data。id 原文："Unique identifier of the shared
+#   widget, which can be used to send the widget again using the method
+#   sendSharedWidget; omitted if the widget isn't shared"。
+#   → widget_id 取得路径：sendWidget(is_shared=True) 返回 Message
+#   的 widget.id；非共享 widget 没有 id、无从重发。
+# - sendSharedWidget 参数：chat_id 与 widget_id 均必填；可选
+#   chat_data/caption 等；没有 html/public_data/allow_queries
+#   （代码与公共状态属于共享 widget 本体，不随重发改）。
+# - editSharedWidgetData 参数：widget_id 与 public_data 均必填
+#   （public_data 0–1024 字节，传空串＝清除）；cache_time 可选
+#   5–3600 秒（客户端缓存时长，缺省保持现值、初始默认 30）。
+#   共享 widget 编辑 ≤1 次/秒；生产环境仍仅限私聊分发。
+# 本期只预埋能力、不落业务（群播报发不到群，见包3 计划结论）。
+# ---------------------------------------------------------------------------
+
+
+def send_shared_widget(db, chat_id: int, widget_id: str | None, *,
+                       chat_data: str | None = None,
+                       caption: str | None = None,
+                       ) -> tuple[bool, str | None, int | None]:
+    """重发一个已创建的共享 widget（Bot API 10.4 sendSharedWidget）。
+
+    widget_id 来自 sendWidget(is_shared=True) 返回 Message 的
+    widget.id；为空时本地拒绝（不发请求）。chat_data 是本条消息
+    私有数据（≤1024 字节）；公共状态不在此传（属 widget 本体，
+    改公共状态走 edit_shared_widget_data）。成功时第三项为
+    message_id。返回 (是否成功, 错误信息, message_id)。
+    """
+    if not widget_id:
+        return False, "widget_id 不能为空", None
+    payload: dict = {"chat_id": chat_id, "widget_id": widget_id}
+    if chat_data is not None:
+        payload["chat_data"] = chat_data
+    if caption is not None:
+        payload["caption"] = caption
+    ok, err, result = _call_ex(db, "sendSharedWidget", payload)
+    if not ok or not isinstance(result, dict):
+        return False, err, None
+    message_id = result.get("message_id")
+    return True, None, int(message_id) if isinstance(message_id, int) else None
+
+
+def edit_shared_widget_data(db, widget_id: str | None,
+                            public_data: str | None = None,
+                            cache_time: int | None = None,
+                            ) -> tuple[bool, str | None]:
+    """改共享 widget 的公共数据（Bot API 10.4 editSharedWidgetData）。
+
+    一处更新、全部副本按 cache_time 同步刷新（非实时：客户端按
+    cache_time 缓存，5–3600 秒、默认 30）。widget_id 与
+    public_data 均为官方必填：widget_id 为空或 public_data 为
+    None 时本地拒绝；public_data 传空串表示清除。编辑频率
+    ≤1 次/秒由调用方节制。返回 (是否成功, 错误信息)。
+    """
+    if not widget_id:
+        return False, "widget_id 不能为空"
+    if public_data is None:
+        return False, "public_data 必填（清除请传空串）"
+    payload: dict = {"widget_id": widget_id, "public_data": public_data}
+    if cache_time is not None:
+        payload["cache_time"] = cache_time
+    return _call(db, "editSharedWidgetData", payload)
+
+
+# ---------------------------------------------------------------------------
+# 包5 通用封装：富文本引用（ReplyParameters.quote_rich_texts）＋
+# getUniqueGift 传输 wrapper。缓存层在 backend/tg_bot/gifts.py，
+# sender 只做纯传输。现行无业务调用方，只备能力。
+# ---------------------------------------------------------------------------
+
+# 官方上限（ReplyParameters.quote_rich_texts）：≤32 段、总长 ≤1024 字符
+RICH_QUOTE_MAX_SEGMENTS = 32
+RICH_QUOTE_MAX_CHARS = 1024
+
+
+def _rich_text_len(node) -> int:
+    """递归统计 RichText 的纯文本长度。
+
+    口径：dict 取其 "text"（可为 str / dict / list）与数学表达式的
+    "expression" 字符串；list 逐项累加；str 取 len；其余类型计 0。
+    这是本地先验口径（防明显超限浪费一次 API 往返），最终以
+    Telegram 服务端校验为准。
+    """
+    if isinstance(node, str):
+        return len(node)
+    if isinstance(node, list):
+        return sum(_rich_text_len(item) for item in node)
+    if isinstance(node, dict):
+        total = 0
+        for key in ("text", "expression"):
+            if key in node:
+                total += _rich_text_len(node[key])
+        return total
+    return 0
+
+
+def rich_quote(texts: list[dict]) -> dict:
+    """组 ReplyParameters 的 quote_rich_texts 片段（富消息引用）。
+
+    入参是被引用富消息的 RichText 段列表（顺序与原文出现顺序
+    一致；首尾段可部分引用、中间必须整段——该语义由调用方按原文
+    组装，本函数只做上限先验）。返回 {"quote_rich_texts": [...]}，
+    调用方并进 reply_parameters 传给 send_message/send_message_ex
+    （quote_rich_texts 非空时官方忽略 quote 三件套）。
+
+    注意：只对回复**富消息**有效；对普通消息误用会被服务端拒绝
+    或忽略。超限（>32 段、总长 >1024 字符、空列表、元素不是
+    RichText 对象/字符串）抛 ValueError，不发。
+    """
+    if not isinstance(texts, list) or not texts:
+        raise ValueError("quote_rich_texts 必须是非空列表")
+    if len(texts) > RICH_QUOTE_MAX_SEGMENTS:
+        raise ValueError(
+            f"引用段数 {len(texts)} 超过 {RICH_QUOTE_MAX_SEGMENTS} 上限")
+    for item in texts:
+        if not isinstance(item, (dict, str)):
+            raise ValueError("每段引用必须是 RichText 对象")
+    total = sum(_rich_text_len(item) for item in texts)
+    if total > RICH_QUOTE_MAX_CHARS:
+        raise ValueError(
+            f"引用总长 {total} 字符超过 {RICH_QUOTE_MAX_CHARS} 上限")
+    return {"quote_rich_texts": list(texts)}
+
+
+def get_unique_gift(db, name: str) -> tuple[bool, str | None, dict | None]:
+    """按名查 unique gift（Bot API 10.4 getUniqueGift）。
+
+    返回 (是否成功, 错误信息, UniqueGift 原样 dict)；名称为空时
+    本地拒绝。带缓存的入口在 backend/tg_bot/gifts.py，本函数是
+    无缓存的纯传输口（横切只许这一套）。
+    """
+    if not name:
+        return False, "礼物名不能为空", None
+    return _call_ex(db, "getUniqueGift", {"name": name})
 
 
 # 三重门·身份门：在群成员列表里才算自己人
