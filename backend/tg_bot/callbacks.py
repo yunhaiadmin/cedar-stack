@@ -11,6 +11,10 @@ from .identity import resolve
 
 logger = logging.getLogger(__name__)
 
+# 群菜单里走按钮回调临时回复的个人结果动作（Bot API 10.4 包1 PR-2）：
+# 结果是点击者本人的，只给他看，不编辑进群共享面板。
+_EPHEMERAL_RESULT_ACTIONS = ("checkin", "points", "chatpoints")
+
 
 def handle_callback(db, callback_query: dict, redpacket_enabled: bool | None = None) -> None:
     """处理 callback_query：菜单按钮（menu:*）+ 抢红包按钮 + 抽奖参加按钮。
@@ -75,6 +79,22 @@ def _handle_menu(db, callback_query: dict) -> None:
     except Exception:
         logger.exception("tg menu render failed: action=%s", action)
         text, markup = "系统繁忙，请稍后再试", handlers.back_markup()
+
+    if action in _EPHEMERAL_RESULT_ACTIONS and not is_private:
+        # 群菜单个人结果临时化（Bot API 10.4 包1 PR-2）：签到/能量是
+        # 点击者本人的结果，改走按钮回调临时回复只发给他，不再编辑
+        # 进群共享面板。回执已在上方照常 answer（官方要求两者并存，
+        # 且临时回复须在回调后 15 秒内发出，本函数同步发送满足）。
+        # 临时卡只读不带按钮：导航仍回共享面板点，避免 menu:* 按钮
+        # 落在不可编辑的临时消息上。发送失败回落下方现行共享面板
+        # 编辑路径，结果绝不丢。
+        ok, err, _eph_id = sender.send_ephemeral_message(
+            db, chat_id, text, callback_query_id=cq_id)
+        if ok:
+            return
+        logger.debug(
+            "tg menu ephemeral result failed, fallback to panel edit: "
+            "action=%s err=%s", action, err)
 
     has_photo = bool(msg.get("photo"))
     fallback_photo = None
