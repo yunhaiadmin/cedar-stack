@@ -594,8 +594,10 @@ def admin_markup(user=None) -> dict:
     """管理面板按钮：两列网格＋末行回主界面，写入口只给可写角色。
 
     读入口（服务器/治理审计/查人说明/群号对账/群权限自检）对全部
-    管理员开放，含只读审计；写入口（推观影榜/红包雨）只对
+    管理员开放，含只读审计；写入口（推榜/红包雨）只对
     can_write 的角色出现——藏按钮只是方便，真正的门在执行层。
+    推榜不设选日/周子页（2026-11-10 砍子面板）：今日榜/本周榜两个
+    推送动作直接挂在本面板上，点一次即推。
     user=None（旧调用）按不可写处理（fail-closed）。
     """
     buttons = [
@@ -606,7 +608,8 @@ def admin_markup(user=None) -> dict:
     ]
     if role_gate.can_write(user):
         buttons += [
-            {"text": "🏆 推观影榜", "callback_data": "menu:admin_rankpush"},
+            {"text": "📅 推今日榜", "callback_data": "menu:admin_rankpush_day"},
+            {"text": "🗓️ 推本周榜", "callback_data": "menu:admin_rankpush_week"},
             {"text": "🌧️ 红包雨", "callback_data": "menu:admin_rain_info"},
         ]
     buttons.append(

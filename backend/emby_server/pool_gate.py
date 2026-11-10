@@ -41,6 +41,12 @@ per_day / pool_breaker_cooldown_sec）与 pool_item_max_copies
 ``large_file_pool_route``，两层共用；分流命中的消费方在池
 没判 serve 时必须回落本人门禁——分流不许变成新门禁。
 
+选盘 v2（用户 2026-11-10 亲点）：盘涨到 19 块/11 人后升级——
+补片打分从「容量+日余量」两项扩为五项加权（+今日负载+健康
+度+新盘扶持，权重进池配置家族可配），加副本分散硬规矩（同
+片副本不堆同一贡献者名下，见 pick_pool_member），播出选副本
+打分加今日已播负载。口径全在各函数 docstring 与常量注释里。
+
 硬闸：池总开关关时一切按池不存在（未绑用户仍走既有门禁原 403，
 回归测试 test_pool_foundation
 .test_redline_existing_gate_unchanged_when_pool_enabled 钉住）。
@@ -100,6 +106,21 @@ POOL_CONFIG_DEFAULTS: dict = {
     # 15GB（十进制，与本家族其他字节键同口径）。
     "pool_large_file_routing_enabled": True,
     "pool_large_file_bytes": 15_000_000_000,
+    # 选盘打分 v2（用户 2026-11-10 亲点：负载＋健康＋新盘扶持＋
+    # 副本分散）：五项权重按百分比（0–100）存，默认合计 100；
+    # 管理员可改占比，合计不必为 100（打分按 /100 折算，排序只
+    # 看相对值）。口径见 _score_member。
+    "pool_pick_weight_capacity": 35,
+    "pool_pick_weight_daily": 20,
+    "pool_pick_weight_load": 20,
+    "pool_pick_weight_health": 15,
+    "pool_pick_weight_new": 10,
+    # 新盘扶持窗口（天）：转 active 未满此天数给扶持分，线性衰
+    # 减到 0；0 = 关闭扶持。
+    "pool_pick_new_member_boost_days": 7,
+    # 播出选副本打分 v2 权重（百分比）：容量 + 今日已播负载反比。
+    "pool_serve_weight_capacity": 60,
+    "pool_serve_weight_load": 40,
 }
 
 #: 视为「有池候选/成员资格」的成员状态集合：这些状态下绑定上限
@@ -123,8 +144,8 @@ POOL_PLAY_DEDUP_WINDOW_MIN = 30
 
 #: 激励子家族 pool_reward_* 的代码默认值（goal-33 PR-6，
 #: design §11.3；与 config_schema.POOL_REWARD_CONFIG_SCHEMA 同口径）。
-#: 与本体 19 键分开一份字典：GET /api/admin/pool/config 的
-#: 19 键口径（PR-1 已钉、入池门槛键与大文件分流两键为用户亲批扩键）不许被激励键撑大，激励键走
+#: 与本体键分开一份字典：GET /api/admin/pool/config 的
+#: 本体口径（PR-1 已钉、扩键均为用户亲批）不许被激励键撑大，激励键走
 #: reward-config 端点与 reward_config_payload 这一份读取。
 POOL_REWARD_CONFIG_DEFAULTS: dict = {
     "pool_reward_enabled": False,
@@ -198,7 +219,7 @@ def reward_config_payload(db: Session) -> dict:
         POOL_REWARD_CONFIG_DEFAULTS)
 
 
-#: 巡检子家族的代码默认值：本体 19 键键集已被 PR-1 测试钉死，
+#: 巡检子家族的代码默认值：本体键集已被 PR-1 测试钉死，
 #: 扩键另立家族（同 POOL_REWARD 先例）；与
 #: config_schema.POOL_JANITOR_CONFIG_SCHEMA 同口径，读取经
 #: janitor_config_payload，唯一消费方是 pool_janitor。
@@ -825,15 +846,180 @@ def _enabled_providers(cfg: dict):
 def _clamp01(value: float) -> float:
     return max(0.0, min(1.0, float(value)))
 
+
+#: 一次起播的字节当量（选盘负载口径）：池副本出流字节不经服务
+#: 器、不可观测（见 PoolUsageDaily 模型注释），只能记起播次数；
+#: 折算成字节才能与「今日已转存字节」放进同一把尺。取 4GiB ≈
+#: 一部片全片中继量级，只作相对折算、不当真实流量用。
+_PLAY_LOAD_EQUIV_BYTES = 4 * _GIB
+
+#: 健康度口径常量（选盘 v2）：近 7 天窗口；不利点 = 熔断触发
+#: （含 retrip）×3 + 因该成员失败的转存 ×1 + 额度命中 ×0.25，
+#: 累满 10 点健康度归零（1 − 点数/10 钳 [0,1]）。
+_HEALTH_WINDOW_DAYS = 7
+_HEALTH_BREAKER_POINTS = 3.0
+_HEALTH_FAILED_JOB_POINTS = 1.0
+_HEALTH_QUOTA_HIT_POINTS = 0.25
+_HEALTH_FULL_PENALTY_POINTS = 10.0
+#: 近 7 天三源（用量/状态事件/转存单）全无数据时的健康度：没
+#: 有证据说它坏、也没证据说它好，给中性偏好 0.8，不判死。
+_HEALTH_NO_DATA_SCORE = 0.8
+
+
+def _daily_load_ratio(transfer_bytes: int, play_starts: int,
+                      cfg: dict, capacity_cap: int) -> float:
+    """今日负载比（选盘 v2）：当量字节 / 尺子，钳 [0, 1]。
+
+    当量字节 = 今日已转存字节 + 今日起播次数 × 一次起播当量；
+    尺子 = 日转存字节上限，上限 0（不限）时改用成员容量上限
+    作尺（仍单调：用得越多分越低）。负载分 = 1 − 本比。
+    """
+    equiv = (int(transfer_bytes or 0)
+             + int(play_starts or 0) * _PLAY_LOAD_EQUIV_BYTES)
+    daily_limit = int(cfg["pool_member_daily_transfer_bytes"])
+    denom = daily_limit if daily_limit > 0 else max(1, int(capacity_cap))
+    return _clamp01(equiv / max(1, denom))
+
+
+def _member_health(db: Session, member_id: int, *, now=None):
+    """成员健康度（选盘 v2）：返回 (健康度, 不利点数, 有无数据)。
+
+    近 7 天三源现查：pool_member_status_events 的熔断事件
+    （reason ∈ breaker/breaker_retrip）、pool_usage_daily 的
+    quota_hits 求和、emby_transfer_jobs 里归属该成员且
+    status=failed 的池单（updated_at 落窗口内；失败行被看门狗
+    回队后状态会变，本口径只数「近 7 天最后落在 failed」的
+    行，是近似值——健康度只是打分分量不是定罪，近似可接受）。
+    三源全无行 → 无数据，健康度按中性偏好
+    _HEALTH_NO_DATA_SCORE。
+    """
+    from sqlalchemy import func
+
+    now = now or datetime.now()
+    since_dt = now - timedelta(days=_HEALTH_WINDOW_DAYS)
+    since_day = since_dt.date()
+    breaker_events = (
+        db.query(func.count(em.PoolMemberStatusEvent.id))
+        .filter(em.PoolMemberStatusEvent.member_id == member_id,
+                em.PoolMemberStatusEvent.reason.in_(
+                    ("breaker", "breaker_retrip")),
+                em.PoolMemberStatusEvent.created_at >= since_dt)
+        .scalar() or 0)
+    usage_rows = (
+        db.query(func.count(em.PoolUsageDaily.id),
+                 func.coalesce(func.sum(em.PoolUsageDaily.quota_hits), 0))
+        .filter(em.PoolUsageDaily.member_id == member_id,
+                em.PoolUsageDaily.day >= since_day)
+        .one())
+    usage_count, quota_hits = int(usage_rows[0] or 0), int(usage_rows[1] or 0)
+    jobs_in_window = (
+        db.query(func.count(em.TransferJob.id))
+        .filter(em.TransferJob.owner_scope == "pool",
+                em.TransferJob.owner_ref == str(member_id),
+                em.TransferJob.updated_at >= since_dt)
+        .scalar() or 0)
+    failed_jobs = (
+        db.query(func.count(em.TransferJob.id))
+        .filter(em.TransferJob.owner_scope == "pool",
+                em.TransferJob.owner_ref == str(member_id),
+                em.TransferJob.status == "failed",
+                em.TransferJob.updated_at >= since_dt)
+        .scalar() or 0)
+    event_rows = (
+        db.query(func.count(em.PoolMemberStatusEvent.id))
+        .filter(em.PoolMemberStatusEvent.member_id == member_id,
+                em.PoolMemberStatusEvent.created_at >= since_dt)
+        .scalar() or 0)
+    has_data = bool(usage_count or jobs_in_window or event_rows)
+    points = (_HEALTH_BREAKER_POINTS * int(breaker_events)
+              + _HEALTH_FAILED_JOB_POINTS * int(failed_jobs)
+              + _HEALTH_QUOTA_HIT_POINTS * quota_hits)
+    if not has_data:
+        return _HEALTH_NO_DATA_SCORE, 0.0, False
+    health = 1.0 - _clamp01(points / _HEALTH_FULL_PENALTY_POINTS)
+    return health, points, True
+
+
+def _member_new_boost(db: Session, member, cfg: dict, *, now=None) -> float:
+    """新盘扶持分（选盘 v2）：转 active 未满扶持天数时线性给分。
+
+    起算点 = joined_at（首次转 active 时落字）；为 None 时回退
+    状态流水里最近一条 to_status=active 的时刻、再回退行
+    created_at，都没有回 0。扶持分 = 1 − 已满天数/扶持天数
+    （钳 [0,1]）；扶持天数配 0 = 关闭。第 1 天 ≈ 1、满期 = 0。
+    """
+    boost_days = int(cfg["pool_pick_new_member_boost_days"])
+    if boost_days <= 0:
+        return 0.0
+    now = now or datetime.now()
+    anchor = getattr(member, "joined_at", None)
+    if anchor is None:
+        event = (db.query(em.PoolMemberStatusEvent)
+                 .filter(em.PoolMemberStatusEvent.member_id == member.id,
+                         em.PoolMemberStatusEvent.to_status == "active")
+                 .order_by(em.PoolMemberStatusEvent.id.desc()).first())
+        anchor = event.created_at if event is not None else None
+    if anchor is None:
+        anchor = getattr(member, "created_at", None)
+    if anchor is None:
+        return 0.0
+    age_days = (now - anchor).total_seconds() / 86400.0
+    return _clamp01(1.0 - max(0.0, age_days) / boost_days)
+
+
+def _pool_copy_holder_users(db: Session, item_id) -> set:
+    """持有该条目池副本的贡献者 user_id 集合（副本分散口径）。
+
+    两类持有都算：① 可下发副本（_servable_pool_rows 同口径：
+    ready + stale_count=0 + 成员 active + 不在熔断冷却）；② 在
+    途池单（emby_transfer_jobs owner_scope=pool 且 status ∈
+    pending/running——副本正往那块盘上备，与
+    _pool_inflight_for_item 的在途口径一致）。分散按 user_id
+    判：一人多盘算同一人，第二份副本别再落他名下。
+    """
+    users = {int(member.user_id)
+             for _, member in _servable_pool_rows(db, item_id)}
+    if item_id is None:
+        return users
+    jobs = (db.query(em.TransferJob)
+            .filter(em.TransferJob.item_id == item_id,
+                    em.TransferJob.owner_scope == "pool",
+                    em.TransferJob.status.in_(("pending", "running")))
+            .all())
+    for job in jobs:
+        try:
+            member_id = int((job.owner_ref or "").strip())
+        except (TypeError, ValueError):
+            continue
+        member = (db.query(em.PoolMember)
+                  .filter(em.PoolMember.id == member_id).first())
+        if member is not None:
+            users.add(int(member.user_id))
+    return users
+
+
 def _score_member(db: Session, member, item, cfg: dict, *,
                   quota_fn=None):
-    """成员打分（design §6.1）：返回 (eligible, score, 明细 dict)。
+    """成员打分（design §6.1 + 选盘 v2）：返回 (eligible, score, 明细)。
 
-    硬过滤：成员非 active、绑定非 active 或 provider 不在池启用
-    列表、余量（free − 保底）< 文件大小、日字节余量 < 文件大小、
-    日单数已满。配额读不到（free 未知）时容量项按中性 0.5 计、
-    不因未知判死。score = 0.7 × 容量比 + 0.3 × 日字节比（各钳
-    [0, 1]；日限 0 = 不限，日字节比按 1.0 计）。
+    硬过滤（v2 一条不改）：成员非 active、绑定非 active 或
+    provider 不在池启用列表、余量（free − 保底）< 文件大小、
+    日字节余量 < 文件大小、日单数已满。配额读不到（free 未
+    知）时容量项按中性 0.5 计、不因未知判死。
+
+    打分 v2（用户 2026-11-10 亲点）：五项分量各钳 [0, 1]，
+    权重为百分比配置（pool_pick_weight_*，默认 35/20/20/15/
+    10），score = Σ(权重 × 分量) / 100：
+    ① 容量比（口径不变）：(free − 保底) / 容量上限；
+    ② 日字节余量比（口径不变）：日限余量 / 日限，0 = 不限按 1；
+    ③ 今日负载分：1 − 今日负载比（_daily_load_ratio：已转存
+       字节 + 起播次数折算当量，对日限取比）；
+    ④ 健康度：近 7 天不利事件扣分（_member_health），无数据
+       按中性 0.8；
+    ⑤ 新盘扶持分：转 active 未满配置天数线性衰减
+       （_member_new_boost）。
+    五项分量全落明细 dict（新键追加、老键不动；权重在配置
+    payload 里可查），供决策留痕复盘「为什么是这块盘」。
     """
     file_size = _tv._to_int(getattr(item, "size", None)) or 0
     detail = {"member_id": int(member.id), "eligible": False,
@@ -869,6 +1055,8 @@ def _score_member(db: Session, member, item, cfg: dict, *,
     else:
         capacity_ratio = 0.5
     used_jobs, used_bytes = _member_daily_usage(db, member.id)
+    usage_row = _member_usage_today(db, member.id)
+    play_starts = int(usage_row.play_starts or 0) if usage_row else 0
     daily_bytes_limit = int(cfg["pool_member_daily_transfer_bytes"])
     daily_jobs_limit = int(cfg["pool_member_daily_transfer_jobs"])
     if daily_jobs_limit > 0 and used_jobs >= daily_jobs_limit:
@@ -885,17 +1073,41 @@ def _score_member(db: Session, member, item, cfg: dict, *,
         detail["daily_bytes_left"] = daily_left
     else:
         daily_ratio = 1.0
-    score = 0.7 * capacity_ratio + 0.3 * daily_ratio
-    detail.update({"eligible": True, "score": round(score, 4),
-                   "reason": "ok"})
+    load_ratio = _daily_load_ratio(
+        used_bytes, play_starts, cfg, capacity_cap)
+    load_score = 1.0 - load_ratio
+    health_score, health_points, _health_has_data = _member_health(
+        db, member.id)
+    new_boost = _member_new_boost(db, member, cfg)
+    score = (
+        int(cfg["pool_pick_weight_capacity"]) * capacity_ratio
+        + int(cfg["pool_pick_weight_daily"]) * daily_ratio
+        + int(cfg["pool_pick_weight_load"]) * load_score
+        + int(cfg["pool_pick_weight_health"]) * health_score
+        + int(cfg["pool_pick_weight_new"]) * new_boost) / 100.0
+    detail.update({
+        "eligible": True, "score": round(score, 4), "reason": "ok",
+        "capacity_ratio": round(capacity_ratio, 4),
+        "daily_ratio": round(daily_ratio, 4),
+        "load_ratio": round(load_ratio, 4),
+        "load_score": round(load_score, 4),
+        "health_score": round(health_score, 4),
+        "health_points": round(health_points, 4),
+        "new_boost": round(new_boost, 4)})
     return True, score, detail
 
 
 def _serve_score(db: Session, member, *, quota_fn=None) -> float:
-    """播出选副本打分：只看容量健康度（free / 容量上限）。
+    """播出选副本打分 v2：容量比 + 今日已播负载反比加权。
 
-    服务既有副本不走进池限额（日限/保底不拦播出）；配额未知按
-    0.5 中性计。返回 [0, 1]。
+    权重为百分比配置（pool_serve_weight_capacity /
+    pool_serve_weight_load，默认 60/40），score = Σ(权重 ×
+    分量) / 100，返回 [0, 1]（权重合计超 100 时钳回）。
+    容量比口径不变（free / 容量上限，配额未知按 0.5 中性）；
+    已播负载只数今日起播次数折算当量（_daily_load_ratio 的
+    播次部分），转存字节不算播出负载。本分只决定多份副本时
+    挑哪份——服务既有副本不走进池限额（日限/保底不拦播出）
+    的老规矩不变，负载再高也只是分低、绝不新增播出拦截。
     """
     cfg = pool_config_payload(db)
     capacity_cap = int(getattr(member, "capacity_cap_bytes", None)
@@ -905,8 +1117,16 @@ def _serve_score(db: Session, member, *, quota_fn=None) -> float:
     if quota is not None:
         free = _tv._to_int(quota.get("free"))
     if free is None:
-        return 0.5
-    return _clamp01(free / max(1, capacity_cap))
+        capacity_ratio = 0.5
+    else:
+        capacity_ratio = _clamp01(free / max(1, capacity_cap))
+    usage_row = _member_usage_today(db, member.id)
+    play_starts = int(usage_row.play_starts or 0) if usage_row else 0
+    load_score = 1.0 - _daily_load_ratio(0, play_starts, cfg, capacity_cap)
+    score = (
+        int(cfg["pool_serve_weight_capacity"]) * capacity_ratio
+        + int(cfg["pool_serve_weight_load"]) * load_score) / 100.0
+    return _clamp01(score)
 
 
 def pick_pool_member(db: Session, item, *, force=False, quota_fn=None,
@@ -921,6 +1141,15 @@ def pick_pool_member(db: Session, item, *, force=False, quota_fn=None,
     记一笔 decision=none 的留痕；有可用盘时留痕记在建单成功处。
     exclude_member_ids（PR-5 补位用）：调用方明示排除的成员
     （如已持有该条目可下发副本的盘，补位不许再往同一盘打）。
+
+    副本分散（选盘 v2 硬规矩，优先于打分）：该条目已有池副本
+    （可下发 ready 或在途池单，_pool_copy_holder_users 口径）
+    挂在贡献者 U 名下、且候选里存在 U 以外的人 eligible 时，
+    候选池收窄到 U 以外成员——同一部片的副本不堆在同一个人
+    的多块盘上（那人退出，多份一起没）。U 以外无人可选时回
+    落全候选（分散让位于备得出去）。收窄在明细留痕：入选池
+    成员 narrowed_for_diversity=1、被收窄掉的另加
+    diversity_excluded=1。
     """
     cfg = pool_config_payload(db)
     excluded = {int(mid) for mid in (exclude_member_ids or ())}
@@ -952,6 +1181,19 @@ def pick_pool_member(db: Session, item, *, force=False, quota_fn=None,
             decision="none", reason="no eligible member",
             candidates=candidates)
         return None, candidates
+    holder_users = _pool_copy_holder_users(db, getattr(item, "id", None))
+    if holder_users:
+        narrowed = [(s, m) for s, m in scored
+                    if int(m.user_id) not in holder_users]
+        if narrowed:
+            kept_ids = {int(m.id) for _, m in narrowed}
+            for cand in candidates:
+                if not cand.get("eligible"):
+                    continue
+                cand["narrowed_for_diversity"] = 1
+                if int(cand["member_id"]) not in kept_ids:
+                    cand["diversity_excluded"] = 1
+            scored = narrowed
     scored.sort(key=lambda pair: pair[0], reverse=True)
     top_k = max(1, int(cfg["pool_pick_top_k"]))
     top = scored[:top_k]

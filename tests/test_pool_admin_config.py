@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """公共贡献池管理端配置端点（PR-1 地基）：GET/PUT /api/admin/pool/config。
 
-- 读：无存量行时回 19 键代码默认值（补充节修正值）；
+- 读：无存量行时回 27 键代码默认值（补充节修正值）；
 - 写：走 config_service 家族 pool 整批校验，非法整批 400 且不落库；
 - 权限：canWrite 口径由 get_current_admin 集中判定——只读（viewer）
   角色对本端点的写请求必须被 admin_roles 集中判定拦下（端点只许用
@@ -89,7 +89,7 @@ def test_get_config_returns_defaults(client):
     assert body["pool_member_max_bindings_per_user"] == 10
     # 闲置天数默认 30 → 7（用户 2026-11-09 亲点：30 天太久）。
     assert body["pool_copy_idle_evict_days"] == 7
-    assert len(body) == 19
+    assert len(body) == 27
 
 
 def test_put_config_roundtrips(client, db):

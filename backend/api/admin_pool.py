@@ -52,10 +52,19 @@ class PoolConfigRequest(BaseModel):
     pool_member_max_bindings_per_user: Optional[int] = None
     pool_large_file_routing_enabled: Optional[bool] = None
     pool_large_file_bytes: Optional[int] = None
+    # 选盘 v2（权重为百分比 0–100；扶持天数 0 = 关扶持）。
+    pool_pick_weight_capacity: Optional[int] = None
+    pool_pick_weight_daily: Optional[int] = None
+    pool_pick_weight_load: Optional[int] = None
+    pool_pick_weight_health: Optional[int] = None
+    pool_pick_weight_new: Optional[int] = None
+    pool_pick_new_member_boost_days: Optional[int] = None
+    pool_serve_weight_capacity: Optional[int] = None
+    pool_serve_weight_load: Optional[int] = None
 
 
 class PoolRewardConfigRequest(BaseModel):
-    # 激励子家族 pool_reward_*（PR-6）：与本体 19 键分开一份端点，
+    # 激励子家族 pool_reward_*（PR-6）：与本体键分开一份端点，
     # 校验走 config_service 家族 pool_reward（与本体同一体系）。
     pool_reward_enabled: Optional[bool] = None
     pool_reward_payout_enabled: Optional[bool] = None
@@ -80,7 +89,7 @@ def pool_get_config(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """池配置生效值：19 键（存量行优先，缺行回代码默认）。"""
+    """池配置生效值：27 键（存量行优先，缺行回代码默认）。"""
     return pool_gate.pool_config_payload(db)
 
 
@@ -127,7 +136,7 @@ def pool_update_reward_config(
 
 
 class PoolJanitorConfigRequest(BaseModel):
-    # 巡检子家族（闲置主动清理）：与本体 19 键分开一份端点，
+    # 巡检子家族（闲置主动清理）：与本体键分开一份端点，
     # 校验走 config_service 家族 pool_janitor（与本体同一体系）。
     pool_idle_evict_proactive_enabled: Optional[bool] = None
 
