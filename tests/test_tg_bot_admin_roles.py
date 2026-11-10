@@ -358,9 +358,14 @@ def test_admin_markup_by_role(db):
     assert "menu:admin_botperms" in v_datas
     assert "menu:server" in v_datas and "menu:govlog" in v_datas
     assert "menu:admin_rankpush" not in v_datas
+    assert "menu:admin_rankpush_day" not in v_datas
+    assert "menu:admin_rankpush_week" not in v_datas
     assert "menu:admin_rain_info" not in v_datas
     o_datas = _datas(handlers.admin_markup(operator))
-    assert "menu:admin_rankpush" in o_datas
+    # 推榜子页已砍：今日/本周两个推送动作直接挂管理面板，无中间入口。
+    assert "menu:admin_rankpush" not in o_datas
+    assert "menu:admin_rankpush_day" in o_datas
+    assert "menu:admin_rankpush_week" in o_datas
     assert "menu:admin_rain_info" in o_datas
     assert "menu:admin_botperms" in o_datas
 
@@ -371,11 +376,29 @@ def test_admin_panel_render_and_rankpush_choice_card(db):
         db, {"id": OPERATOR_TG}, OPERATOR_TG, OPERATOR_TG, True, "admin")
     assert "管理面板" in text and "运营" in text
     assert "menu:admin_whois" in _datas(markup)
+    # 管理面板本身就带推榜两动作，不再经选榜子页。
+    assert "menu:admin_rankpush_day" in _datas(markup)
+    assert "menu:admin_rankpush_week" in _datas(markup)
+
+
+def test_legacy_rankpush_entry_falls_back_to_admin_panel(db):
+    """历史消息上的旧推榜子页入口（menu:admin_rankpush）点到落回管理面板。"""
+    _staff(db)
     text, markup = callbacks._render_menu(
         db, {"id": OPERATOR_TG}, OPERATOR_TG, OPERATOR_TG, True,
         "admin_rankpush")
-    assert "menu:admin_rankpush_day" in _datas(markup)
-    assert "menu:admin_rankpush_week" in _datas(markup)
+    assert "管理面板" in text and "运营" in text
+    datas = _datas(markup)
+    assert "menu:admin_rankpush_day" in datas
+    assert "menu:admin_rankpush_week" in datas
+    # 只读审计落回的管理面板照旧没有推榜写按钮。
+    text, markup = callbacks._render_menu(
+        db, {"id": VIEWER_TG}, VIEWER_TG, VIEWER_TG, True,
+        "admin_rankpush")
+    assert "管理面板" in text and "只读审计" in text
+    datas = _datas(markup)
+    assert "menu:admin_rankpush_day" not in datas
+    assert "menu:admin_rankpush_week" not in datas
 
 
 def test_viewer_rankpush_button_execution_blocked(db, monkeypatch):
