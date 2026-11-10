@@ -186,6 +186,19 @@ const GROUPS: Group[] = [
         hint: '用户端提交求片时的硬性限额，未设置时默认 5 条',
       },
       {
+        key: 'media_seek_auto_approve_enabled',
+        label: '求片自动批准',
+        type: 'bool',
+        hint: '开启后用户新提交的求片直接通过审核（落单即已批准，不再等人工点批准）；默认关',
+      },
+      {
+        key: 'media_seek_fulfill_interval_minutes',
+        label: '到货自动核对间隔',
+        type: 'int',
+        suffix: '分钟',
+        hint: '后台每隔几分钟把处理中的求片与片库对一遍，对上就自动置已入库并通知求片人，默认 5 分钟',
+      },
+      {
         key: 'media_seek_daily_vote_limit',
         label: '每日附议上限',
         type: 'int',

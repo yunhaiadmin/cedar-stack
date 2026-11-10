@@ -747,6 +747,11 @@ ECONOMY_CONFIG_SCHEMA: dict[str, tuple] = {
     "checkin_crit_cap": ("int", 0, _BIG),
     "media_seek_daily_limit": ("int", 0, _BIG),
     "media_seek_daily_vote_limit": ("int", 0, _BIG),
+    # 求片减负（2026-11-10）：自动批准默认关（word 风格）；到货盯梢
+    # 间隔分钟默认 5、钳制 1~1440（media_seek.fulfill_interval_minutes
+    # 读侧同口径钳制，schema 是保存侧的纵深防御）
+    "media_seek_auto_approve_enabled": ("bool",),
+    "media_seek_fulfill_interval_minutes": ("int", 1, 1440),
     # 2026-10-23 去重 #5：两个月限与日限同卡（运营参数）后需在此登记才可
     # 从该页保存；welfare_request_monthly 同时保留在 WELFARE_CONFIG_SCHEMA
     # （公益配置端点的历史口径），paid_request_monthly 此前无任何登记

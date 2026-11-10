@@ -341,6 +341,13 @@ def collect_system_config_defaults() -> list[tuple[str, str, str]]:
                   "求片附议开关（用户可对他人的求片附议+1）"))
     items.append((media_seek.CONFIG_NOTIFY_VOTERS, "1",
                   "求片入库时是否通知附议者"))
+    # 求片减负（2026-11-10）：自动批准默认关（种 "false"，读侧默认
+    # 也是关）；到货盯梢间隔默认 5 分钟（工人每轮热读）
+    items.append((media_seek.CONFIG_AUTO_APPROVE, "false",
+                  "求片自动批准（开启后新求片落单即已批准，默认关）"))
+    items.append((media_seek.CONFIG_FULFILL_INTERVAL,
+                  str(media_seek.DEFAULT_FULFILL_INTERVAL_MINUTES),
+                  "求片到货盯梢间隔（分钟，后台自动核对处理中求片是否已入库）"))
 
     # 7.8 防共享（跨城市轨迹 + 同播检测）：两档都默认 off = 与升级前完全一致，
     # enforce（自动停用 / 自动拦截）只能由管理员显式选，绝不自动生效

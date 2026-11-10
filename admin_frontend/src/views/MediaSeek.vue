@@ -6,9 +6,9 @@ import { toAdminError } from '@/utils/errorMessage'
 import { Check, CloudDownload, Download, MessageSquareDashed, RefreshCw, X } from 'lucide-vue-next'
 import { PageHeader, SectionCard } from '@/components/ui'
 import {
-  fetchMediaSeeks, fetchServersSummary, getMediaSeekUserQuota, markMediaSeekInLibrary, pushMediaSeek, updateMediaSeek,
+  approveAllPendingMediaSeeks, batchApproveMediaSeeks, fetchMediaSeeks, fetchServersSummary, getMediaSeekUserQuota, markMediaSeekInLibrary, pushMediaSeek, updateMediaSeek,
 } from '@/api/admin'
-import type { MediaSeekMonthlyQuota } from '@/api/admin'
+import type { MediaSeekBatchApproveResult, MediaSeekMonthlyQuota } from '@/api/admin'
 import type { MediaSeekRow, ServerKind } from '@/types'
 import { useQueryFilter } from '@/composables/useQueryFilter'
 import { useRealmStore } from '@/stores/realm'
@@ -36,8 +36,8 @@ const columns = computed<DataColumn[]>(() => [
   { key: 'push', label: '转交外部服务', width: 170 },
   { key: 'admin_note', label: '管理备注', minWidth: 140, mobile: 'hide' },
   { key: 'created_at', label: '提交时间', width: 150 },
-  // 所有动作都收进「处理」弹窗：行里只留一个入口，不再挤成一排按钮
-  { key: 'actions', label: '操作', width: 110, fixed: 'right', align: 'right' },
+  // 动作主要收进「处理」弹窗；已在库的行额外给一键「标记已入库」，列宽留够两个按钮
+  { key: 'actions', label: '操作', width: 200, fixed: 'right', align: 'right' },
 ])
 
 const list = ref<MediaSeekRow[]>([])
@@ -115,9 +115,101 @@ function clearStatus() {
   commitQuery()
 }
 
+/** 批量批准勾选（只许勾待审行：已批准再批会重复通知，终态行批不动） */
+const selectedIds = ref<Array<string | number>>([])
+const isRowSelectable = (r: MediaSeekRow) => r.status === 'pending'
+const bulkBusy = ref(false)
+const approveAllBusy = ref(false)
+
+/** 批量结果回报：全成一句成功；有失败逐条列出哪条为什么没批上 */
+function reportBatch(res: MediaSeekBatchApproveResult) {
+  if (!res.failed.length) {
+    ElMessage.success(res.message)
+    return
+  }
+  const lines = res.failed.map((f) => {
+    const row = list.value.find((x) => x.id === f.id)
+    return `《${row?.movie_name || `#${f.id}`}》：${f.reason}`
+  })
+  ElMessageBox.alert(lines.join('\n'), res.message, {
+    type: 'warning', confirmButtonText: '知道了',
+  }).catch(() => {})
+}
+
+/** 批量批准选中的待审求片（后端逐条守卫，失败逐条回报） */
+async function batchApprove() {
+  const ids = selectedIds.value.map(Number).filter((n) => Number.isFinite(n))
+  if (!ids.length || bulkBusy.value) return
+  try {
+    await ElMessageBox.confirm(
+      `将批准选中的 ${ids.length} 条求片，批准后会逐条通知提交用户。`,
+      '批量批准',
+      { type: 'warning', confirmButtonText: '批准', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  bulkBusy.value = true
+  try {
+    const res = await batchApproveMediaSeeks(ids)
+    reportBatch(res)
+    await load()
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    bulkBusy.value = false
+  }
+}
+
+/** 一键批准当前范围内全部待审（范围与列表同口径：当前服 / 全部服） */
+async function approveAllPending() {
+  if (approveAllBusy.value) return
+  const scopeText = scope.value === 'all' ? '全部服' : '当前服'
+  try {
+    await ElMessageBox.confirm(
+      `将批准${scopeText}的全部待审求片（当前列表显示 ${list.value.length} 条），批准后会逐条通知提交用户。`,
+      '批准全部待审',
+      { type: 'warning', confirmButtonText: '全部批准', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  approveAllBusy.value = true
+  try {
+    const res = await approveAllPendingMediaSeeks(
+      scope.value === 'all' ? 0 : (realm.activeId ?? 0),
+    )
+    reportBatch(res)
+    await load()
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    approveAllBusy.value = false
+  }
+}
+
+/**
+ * 行内一键标记已入库：只在后端已判定在库（in_library）时出现，
+ * 判定对得上就不会吃 409，不用再打开处理弹窗走一遍确认流程。
+ */
+async function rowMarkInLibrary(r: MediaSeekRow) {
+  busyId.value = r.id
+  try {
+    const res = await markMediaSeekInLibrary(r.id)
+    ElMessage.success(res.message || '已标记入库')
+    await load()
+  } catch (err: any) {
+    ElMessage.error(toAdminError(err, '标记失败，请稍后重试'))
+  } finally {
+    busyId.value = null
+  }
+}
+
 async function load() {
   loading.value = true
   loadError.value = ''
+  // 列表一刷新勾选就作废：拿旧快照的 id 去批量批准会批错行
+  selectedIds.value = []
   try {
     const params: { status_filter?: string; realm_id?: number; order?: string } = {}
     if (committedStatus.value) params.status_filter = committedStatus.value
@@ -348,6 +440,16 @@ function statusLabel(status: string): string {
           @clear="clearStatus"
         />
         <div class="head-actions">
+          <!-- 待审筛选下的一键全批：省掉逐条点批准（带确认弹窗，后端逐条守卫） -->
+          <el-button
+            v-if="committedStatus === 'pending'"
+            type="success"
+            plain
+            :loading="approveAllBusy"
+            @click="approveAllPending"
+          >
+            批准全部待审
+          </el-button>
           <!-- v2 排序：最新 / 热度（附议数） -->
           <el-radio-group v-model="orderBy" aria-label="排序" @change="load">
             <el-radio-button value="latest">最新</el-radio-button>
@@ -368,9 +470,17 @@ function statusLabel(status: string): string {
         empty="暂无求片记录"
         :empty-description="scope === 'realm' ? '当前服还没人求片；可切到「全部服」看看。' : '用户提交的求片会出现在这里。'"
         :has-active-filters="!!committedStatus"
+        selectable
+        v-model:selectedKeys="selectedIds"
+        :is-row-selectable="isRowSelectable"
         @retry="load"
         @clear-filters="clearStatus"
       >
+        <template #bulk-bar>
+          <el-button type="success" plain size="small" :loading="bulkBusy" @click="batchApprove">
+            批量批准
+          </el-button>
+        </template>
         <template #cell-movie_name="{ row }">
           <span class="movie-name">《{{ row.movie_name }}》</span>
           <span v-if="row.year" class="movie-year">{{ row.year }}</span>
@@ -389,6 +499,14 @@ function statusLabel(status: string): string {
 
         <template #cell-status="{ row }">
           <span class="au-badge" :class="statusBadge(row.status)">{{ statusLabel(row.status) }}</span>
+          <!-- 后端已判定片在库里：直接亮出来，不用点开弹窗试了才知道 -->
+          <span
+            v-if="row.in_library && isActionable(row)"
+            class="au-badge au-badge-green in-lib-badge"
+            title="这部片已经在媒体库里，可直接标记已入库"
+          >
+            已在库
+          </span>
         </template>
 
         <!-- v2 附议数 -->
@@ -416,6 +534,16 @@ function statusLabel(status: string): string {
         <template #cell-created_at="{ row }"><span class="mono">{{ fmtDate(row.created_at) }}</span></template>
 
         <template #cell-actions="{ row }">
+          <!-- 已在库的行给一键标记：判定已对上，不必再开弹窗走 409 确认流程 -->
+          <el-button
+            v-if="row.in_library && isActionable(row)"
+            size="small"
+            type="success"
+            :loading="busyId === row.id"
+            @click="rowMarkInLibrary(row)"
+          >
+            标记已入库
+          </el-button>
           <!-- 一个入口：详情 + 批准 / 拒绝 / 转交 / 标记已入库 都在弹窗里（原来这行有 5 个按钮） -->
           <el-button
             size="small"
@@ -574,6 +702,7 @@ function statusLabel(status: string): string {
 .movie-name { font-weight: 600; color: var(--au-text); }
 .movie-year { font-size: 12px; color: var(--au-text-3); margin-left: 6px; }
 .movie-season { margin-left: 6px; }
+.in-lib-badge { margin-left: 6px; }
 .movie-note { font-size: 12px; color: var(--au-text-3); margin-top: 3px; }
 /* v2 附议数：有附议的高亮 */
 .vote-count { font-size: 13px; color: var(--au-text-3); white-space: nowrap; }
