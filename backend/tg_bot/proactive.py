@@ -443,17 +443,54 @@ def note_pool_member_review(db: Session, member, *, approved: bool) -> bool:
 
 
 def _item_title(db: Session, item_id) -> str:
+    """通知里显示的片名（转存成功/失败共用）。
+
+    剧集条目的 name 往往只是集名（「第 1 集」），只发集名收信人认不出
+    是哪部剧（2026-11-10 生产实证）：有 series_id 的条目拼
+    「剧名 第X季第Y集」；季集号缺失退到「剧名 · 集名」；剧名也取不到
+    就保持原集名——任何一档都不许拼出空段或多余标点。无 series 的
+    条目（电影等）保持原名。
+    """
     if item_id is None:
         return "这部片"
     try:
         from backend.emby_server import models as em
-        row = db.query(em.MediaItem.name).filter(em.MediaItem.id == item_id).first()
+        row = (
+            db.query(
+                em.MediaItem.name, em.MediaItem.series_id,
+                em.MediaItem.season_number, em.MediaItem.episode_number,
+            )
+            .filter(em.MediaItem.id == item_id)
+            .first()
+        )
     except Exception:
         logger.warning("主动提醒查片名失败 item=%s", item_id, exc_info=True)
         return "这部片"
-    name = (row[0] if row else "") or ""
-    name = str(name).strip()
-    return name or "这部片"
+    if row is None:
+        return "这部片"
+    name = str(row[0] or "").strip()
+    series_id = row[1]
+    if not series_id:
+        return name or "这部片"
+    series_name = ""
+    try:
+        srow = (
+            db.query(em.MediaItem.name)
+            .filter(em.MediaItem.id == series_id)
+            .first()
+        )
+        series_name = str((srow[0] if srow else "") or "").strip()
+    except Exception:
+        logger.warning("主动提醒查剧名失败 series=%s", series_id,
+                       exc_info=True)
+    if not series_name:
+        return name or "这部片"
+    season, episode = row[2], row[3]
+    if season is not None and episode is not None:
+        return f"{series_name} 第{int(season)}季第{int(episode)}集"
+    if name:
+        return f"{series_name} · {name}"
+    return series_name
 
 
 def _esc(value: str) -> str:
