@@ -132,6 +132,7 @@ const digestEnabled = computed({
 
 const digestFields = [
   { key: 'bot_update_digest_interval_minutes', label: '攒批间隔', hint: '每隔这段时间把这段时间新入库的攒成一批发出，默认 30，范围 5-1440', suffix: '分钟' },
+  { key: 'bot_update_digest_chat_id', label: '发送目标', hint: '填频道 @用户名或频道 ID 则发频道。机器人须先被设为该频道管理员才能发帖', suffix: '', placeholder: '留空发群里' },
 ]
 
 const slotsFields = [
@@ -520,7 +521,7 @@ onMounted(load)
             <span class="field-hint">关闭后不再往群里发入库播报。默认开。主群用「启用群 ID」里的第一个群；没有新入库时不发空播报。只报已经能看的片，没认出身份的等认出后再报</span>
           </el-form-item>
           <el-form-item v-for="f in digestFields" :key="f.key" :label="f.label">
-            <el-input v-model="form[f.key]" class="field-input" />
+            <el-input v-model="form[f.key]" class="field-input" :placeholder="f.placeholder || ''" />
             <span class="field-suffix">{{ f.suffix }}</span>
             <span class="field-hint">{{ f.hint }}</span>
           </el-form-item>

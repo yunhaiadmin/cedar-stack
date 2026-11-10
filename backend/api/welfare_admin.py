@@ -301,9 +301,10 @@ WELFARE_CONFIG_KEYS = {
     "bot_rankpush_enabled": "true",
     "bot_rankpush_reward_enabled": "false",
     "bot_rankpush_reward_table": "10,8,6,5,4,3,2,1,1,1",
-    # 更新入库播报：总开关默认开 / 攒批间隔默认 30 分钟
+    # 更新入库播报：总开关默认开 / 攒批间隔默认 30 分钟 / 发送目标默认空（发群）
     "bot_update_digest_enabled": "true",
     "bot_update_digest_interval_minutes": "30",
+    "bot_update_digest_chat_id": "",
     # 每日播放排行榜：总开关默认关 / 发送时间默认 21:30 /
     # 每榜默认 5 条 / 三榜分开关默认开 / 海报图默认开
     "bot_playrank_enabled": "false",

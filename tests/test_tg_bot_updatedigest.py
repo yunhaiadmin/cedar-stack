@@ -318,3 +318,39 @@ def test_tick_interval_pacing(db, monkeypatch):
     assert updatedigest.run_scheduled_tick(db, NOW + timedelta(minutes=10)) == []
     # 到点后正常攒下一批
     assert updatedigest.run_scheduled_tick(db, NOW + timedelta(minutes=31)) == ["digest:ok"]
+
+
+# ---------- 发送目标：可改频道 ----------
+
+def test_target_override_channel_username(db, monkeypatch):
+    """bot_update_digest_chat_id 填频道 @用户名 → 发到频道，不发群。"""
+    _ready(db)
+    _set_cfg(db, updatedigest.TARGET_KEY, "@aetrix_channel")
+    _item(db, "movie", "频道播报片", year=2026, tmdb="777")
+    sent = _capture_send(monkeypatch)
+    res = updatedigest.push_digest(db, NOW)
+    assert res["pushed"] and res["reason"] == "ok"
+    assert len(sent["messages"]) == 1
+    assert sent["messages"][0]["chat_id"] == "@aetrix_channel"
+
+
+def test_target_override_channel_numeric_id(db, monkeypatch):
+    """填 -100 开头的频道数字 ID → 原样透传给发送函数。"""
+    _ready(db)
+    _set_cfg(db, updatedigest.TARGET_KEY, "-1009876543210")
+    _item(db, "movie", "频道播报片二", year=2026, tmdb="778")
+    sent = _capture_send(monkeypatch)
+    res = updatedigest.push_digest(db, NOW)
+    assert res["pushed"] and res["reason"] == "ok"
+    assert sent["messages"][0]["chat_id"] == "-1009876543210"
+
+
+def test_target_fallback_to_group_when_empty(db, monkeypatch):
+    """发送目标留空 → 回落 bot_group_ids 第一个群。"""
+    _ready(db)
+    _set_cfg(db, updatedigest.TARGET_KEY, "")
+    _item(db, "movie", "群播报片", year=2026, tmdb="779")
+    sent = _capture_send(monkeypatch)
+    res = updatedigest.push_digest(db, NOW)
+    assert res["pushed"] and res["reason"] == "ok"
+    assert sent["messages"][0]["chat_id"] == GROUP_ID
