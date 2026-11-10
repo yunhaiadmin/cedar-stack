@@ -48,6 +48,19 @@ export const fetchPoolJanitorConfig = () =>
 export const savePoolJanitorConfig = (payload: PoolJanitorConfig) =>
   put<PoolJanitorConfig>('/pool/janitor-config', payload)
 
+/** 重试配置（copy_forbidden 换盘；与本体键分开一份端点） */
+
+export interface PoolRetryConfig {
+  pool_copy_forbidden_cooldown_sec: number
+  pool_copy_forbidden_max_attempts: number
+}
+
+export const fetchPoolRetryConfig = () =>
+  get<PoolRetryConfig>('/pool/retry-config')
+
+export const savePoolRetryConfig = (payload: PoolRetryConfig) =>
+  put<PoolRetryConfig>('/pool/retry-config', payload)
+
 /** 成员管理 API（PR-4，见 backend/api/pool_admin.py） */
 
 export type PoolMemberStatus =
