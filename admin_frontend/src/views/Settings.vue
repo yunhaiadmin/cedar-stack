@@ -1099,6 +1099,14 @@ const poolForm = reactive<PoolConfig>({
   pool_breaker_cooldown_sec: 3600,
   pool_pick_top_k: 3,
   pool_member_max_bindings_per_user: 10,
+  pool_pick_weight_capacity: 35,
+  pool_pick_weight_daily: 20,
+  pool_pick_weight_load: 20,
+  pool_pick_weight_health: 15,
+  pool_pick_weight_new: 10,
+  pool_pick_new_member_boost_days: 7,
+  pool_serve_weight_capacity: 60,
+  pool_serve_weight_load: 40,
 })
 const poolLoading = ref(false)
 const poolSaving = ref(false)
@@ -2396,6 +2404,54 @@ watch(
                   <div class="field-stack">
                     <el-input-number v-model="poolForm.pool_pick_top_k" :min="1" :max="8" :step="1" controls-position="right" class="num-input" />
                     <span class="field-hint">选落盘时在打分前几名里随机挑一个，默认 3</span>
+                  </div>
+                </el-form-item>
+                <el-form-item label="选盘权重·容量">
+                  <div class="field-stack">
+                    <el-input-number v-model="poolForm.pool_pick_weight_capacity" :min="0" :max="100" :step="5" controls-position="right" class="num-input" />
+                    <span class="field-hint">选盘打分五项权重（百分比，合计不必为 100）：盘的剩余容量占比，默认 35</span>
+                  </div>
+                </el-form-item>
+                <el-form-item label="选盘权重·日额度余量">
+                  <div class="field-stack">
+                    <el-input-number v-model="poolForm.pool_pick_weight_daily" :min="0" :max="100" :step="5" controls-position="right" class="num-input" />
+                    <span class="field-hint">今天还能转多少的余量占比，默认 20</span>
+                  </div>
+                </el-form-item>
+                <el-form-item label="选盘权重·今日负载">
+                  <div class="field-stack">
+                    <el-input-number v-model="poolForm.pool_pick_weight_load" :min="0" :max="100" :step="5" controls-position="right" class="num-input" />
+                    <span class="field-hint">今天已转存＋已被播的量，越忙分越低，默认 20</span>
+                  </div>
+                </el-form-item>
+                <el-form-item label="选盘权重·健康度">
+                  <div class="field-stack">
+                    <el-input-number v-model="poolForm.pool_pick_weight_health" :min="0" :max="100" :step="5" controls-position="right" class="num-input" />
+                    <span class="field-hint">近 7 天熔断、转存失败、额度命中越多分越低，默认 15</span>
+                  </div>
+                </el-form-item>
+                <el-form-item label="选盘权重·新盘扶持">
+                  <div class="field-stack">
+                    <el-input-number v-model="poolForm.pool_pick_weight_new" :min="0" :max="100" :step="5" controls-position="right" class="num-input" />
+                    <span class="field-hint">刚加入的盘在扶持天数内加分，随天数减到 0，默认 10</span>
+                  </div>
+                </el-form-item>
+                <el-form-item label="新盘扶持天数">
+                  <div class="field-stack">
+                    <el-input-number v-model="poolForm.pool_pick_new_member_boost_days" :min="0" :max="90" :step="1" controls-position="right" class="num-input" />
+                    <span class="field-hint">转入池后多少天内算新盘，默认 7；0 = 关扶持</span>
+                  </div>
+                </el-form-item>
+                <el-form-item label="播出选副本权重·容量">
+                  <div class="field-stack">
+                    <el-input-number v-model="poolForm.pool_serve_weight_capacity" :min="0" :max="100" :step="5" controls-position="right" class="num-input" />
+                    <span class="field-hint">同一部片有多份副本时挑哪份播：容量占比，默认 60</span>
+                  </div>
+                </el-form-item>
+                <el-form-item label="播出选副本权重·今日已播">
+                  <div class="field-stack">
+                    <el-input-number v-model="poolForm.pool_serve_weight_load" :min="0" :max="100" :step="5" controls-position="right" class="num-input" />
+                    <span class="field-hint">同一部片有多份副本时挑哪份播：今天被播得越少越优先，默认 40</span>
                   </div>
                 </el-form-item>
                 <el-form-item label="池成员绑定上限">

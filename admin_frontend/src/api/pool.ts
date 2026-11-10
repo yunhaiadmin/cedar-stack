@@ -19,6 +19,14 @@ export interface PoolConfig {
   pool_breaker_cooldown_sec: number
   pool_pick_top_k: number
   pool_member_max_bindings_per_user: number
+  pool_pick_weight_capacity: number
+  pool_pick_weight_daily: number
+  pool_pick_weight_load: number
+  pool_pick_weight_health: number
+  pool_pick_weight_new: number
+  pool_pick_new_member_boost_days: number
+  pool_serve_weight_capacity: number
+  pool_serve_weight_load: number
 }
 
 export type PoolConfigPayload = Partial<PoolConfig>
