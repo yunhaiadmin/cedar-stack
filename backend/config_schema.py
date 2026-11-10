@@ -254,8 +254,10 @@ WELFARE_CONFIG_SCHEMA: dict[str, tuple] = {
     "bot_rankpush_reward_enabled": ("bool",),
     "bot_rankpush_reward_table": ("int_list", 0, _BIG),
     # 更新入库播报（tg_bot.updatedigest 读侧宽容解析）：总开关 + 攒批间隔分钟
+    # + 发送目标（空=发群，填频道 @用户名或 -100 ID 则发频道，原文直存）
     "bot_update_digest_enabled": ("bool",),
     "bot_update_digest_interval_minutes": ("int", 5, 1440),
+    "bot_update_digest_chat_id": ("str",),
     # 每日播放排行榜（tg_bot.playrank 读侧宽容解析）：总开关默认关；
     # 发送时间是原文（读侧校验 HH:MM、非法回落 21:30，照
     # bot_rain_schedule 先例）；每榜条数 1~20；三榜分开关默认开；

@@ -12,8 +12,9 @@
     🎬梦寻苏毗女儿国 (2026)
 
 播报口径（站主/parent 定版）：
-- 目标群：bot_group_ids 第一个群（与观影榜日推 rankpush 同一份群配置、
-  同一解析口），不新造配置；发送走 tg_bot.sender 既有通道。
+- 目标：bot_update_digest_chat_id 填了频道（@用户名或 -100 开头的频道
+  ID）就发频道，留空回落 bot_group_ids 第一个群（与观影榜日推 rankpush
+  同一份群配置、同一解析口）；发送走 tg_bot.sender 既有通道。
 - 攒批：每 bot_update_digest_interval_minutes 分钟一批（默认 30），
   无更新不发；不逐条刷屏。
 - 只报「用户真能看的」：顶层行已过身份货架判据（identity_gate
@@ -34,6 +35,7 @@
 开关（SystemConfig，管理后台「公益服经济」页可配）：
 - bot_update_digest_enabled 总开关，默认开。
 - bot_update_digest_interval_minutes 攒批间隔分钟，默认 30（5~1440）。
+- bot_update_digest_chat_id 发送目标，默认空=发群；填频道则发频道。
 调度标记 bot_update_digest_last_run / _seeded 存 SystemConfig，
 只在推送成功/空批/种子完成时推进 last_run；失败下个 tick 重试
 （与 rankpush 同纪律）。
@@ -56,6 +58,7 @@ logger = logging.getLogger(__name__)
 
 ENABLED_KEY = "bot_update_digest_enabled"
 INTERVAL_KEY = "bot_update_digest_interval_minutes"
+TARGET_KEY = "bot_update_digest_chat_id"
 LAST_RUN_KEY = "bot_update_digest_last_run"
 SEEDED_KEY = "bot_update_digest_seeded"
 
@@ -71,6 +74,16 @@ def _cfg(db, key: str, default: str = "") -> str:
     except Exception:
         logger.exception("updatedigest 配置读取失败 key=%s", key)
         return default
+
+
+def target_chat_id(db):
+    """播报发送目标：bot_update_digest_chat_id 填了（频道 @用户名或
+    -100 开头的频道 ID）就原样用它发频道；留空回落 bot_group_ids
+    第一个群（rankpush.target_group_id 同一解析口）。"""
+    raw = _cfg(db, TARGET_KEY, "")
+    if raw:
+        return raw
+    return rankpush.target_group_id(db)
 
 
 def digest_enabled(db) -> bool:
@@ -348,9 +361,9 @@ def push_digest(db, now: datetime | None = None) -> dict:
     if _cfg(db, SEEDED_KEY, "") != "1":
         seeded = _seed_baseline(db, now)
         return {**empty, "reason": "seeded", "seeded": seeded}
-    group_id = rankpush.target_group_id(db)
+    group_id = target_chat_id(db)
     if group_id is None:
-        logger.warning("updatedigest 未配置交流群（bot_group_ids），跳过播报")
+        logger.warning("updatedigest 未配置发送目标（频道未填且 bot_group_ids 为空），跳过播报")
         return {**empty, "reason": "no_group"}
     window_start = now - timedelta(days=WINDOW_DAYS)
     movie_total, movie_rows = _collect_movies(db, window_start)
