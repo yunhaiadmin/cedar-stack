@@ -54,6 +54,9 @@ GROUPS = {
             {"text": "🔗 绑定网盘", "callback_data": "menu:bindings"},
             {"text": "📦 我的转存", "callback_data": "menu:transfers"},
         ],
+        [
+            {"text": "🤝 我的贡献池", "callback_data": "pool_widget"},
+        ],
     ]),
     "account": ("🎟️ 账号权益", [
         [
