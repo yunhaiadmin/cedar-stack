@@ -124,6 +124,16 @@ const playrankFields = [
   { key: 'bot_playrank_top_n', label: '每榜条数', hint: '每个榜最多列几条，默认 5，范围 1-20', suffix: '条' },
 ]
 
+// 更新入库播报：word 风格 true/false，总开关默认开（读侧 tg_bot.updatedigest）
+const digestEnabled = computed({
+  get: () => (form.value['bot_update_digest_enabled'] ?? 'true') === 'true',
+  set: (v: boolean) => { form.value['bot_update_digest_enabled'] = v ? 'true' : 'false' },
+})
+
+const digestFields = [
+  { key: 'bot_update_digest_interval_minutes', label: '攒批间隔', hint: '每隔这段时间把这段时间新入库的攒成一批发出，默认 30，范围 5-1440', suffix: '分钟' },
+]
+
 const slotsFields = [
   { key: 'slots_bet_tiers', label: '注额档位', hint: '逗号分隔的能量数，默认 5,10,20', suffix: '能量' },
   { key: 'slots_pay_777', label: '777 倍数', hint: '777 三连赔付倍数，默认 20（另加抱走头奖池）', suffix: '倍' },
@@ -495,6 +505,24 @@ onMounted(load)
           <el-form-item label="海报图">
             <el-switch v-model="playrankPosterEnabled" />
             <span class="field-hint">播报时配一张海报图（电影/剧集各前 5）与文字榜一起发，默认开；关掉只发文字</span>
+          </el-form-item>
+        </el-form>
+      </SectionCard>
+
+      <SectionCard
+        title="更新入库播报"
+        :icon="RefreshCw"
+        description="新片入库后攒批播报到群里"
+      >
+        <el-form :label-position="labelPosition" label-width="120px" class="config-form">
+          <el-form-item label="总开关">
+            <el-switch v-model="digestEnabled" />
+            <span class="field-hint">关闭后不再往群里发入库播报。默认开。主群用「启用群 ID」里的第一个群；没有新入库时不发空播报。只报已经能看的片，没认出身份的等认出后再报</span>
+          </el-form-item>
+          <el-form-item v-for="f in digestFields" :key="f.key" :label="f.label">
+            <el-input v-model="form[f.key]" class="field-input" />
+            <span class="field-suffix">{{ f.suffix }}</span>
+            <span class="field-hint">{{ f.hint }}</span>
           </el-form-item>
         </el-form>
       </SectionCard>
