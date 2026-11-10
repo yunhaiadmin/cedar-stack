@@ -202,13 +202,21 @@ def _run_action(db, fn, *args, **kwargs):
         raise _lifecycle_http(exc) from exc
 
 
-def _notify_member_review(member: em.PoolMember, *, approved: bool,
-                          admin_id: int) -> None:
-    """审核结果通知申请人（站内信 + TG，2026-11-08 补承诺落点）。
+def _notify_member_review(db: Session, member: em.PoolMember, *,
+                          approved: bool, admin_id: int) -> None:
+    """审核结果通知申请人（站内信 + TG 私聊 + 通过时群欢迎）。
 
-    审核已落库后调用；通知走 quiet 守卫、失败只记日志，不影响审核结果。
-    本端点是同步 def，通知服务是 async 的，用 asyncio.run 在本线程跑完
-    （与 new_media_notify / maintenance 的同步上下文发通知同款范式）。
+    审核已落库后调用（端点先 commit 再调本函数，即业务事务
+    after_commit 纪律）；各路通知各自 quiet、失败只记日志，
+    不影响审核结果。
+
+    - 站内信：既有 notify_admin_event_quiet（本端点是同步 def，
+      通知服务是 async 的，用 asyncio.run 在本线程跑完，与
+      new_media_notify / maintenance 的同步上下文发通知同款范式）。
+    - TG 私聊：proactive 管道新 kind（pool_review_approved /
+      pool_review_rejected），claim 幂等、未绑 TG 跳过、偏好跟
+      「贡献回响」同类；本函数里先入队并提交（提交唤醒发送线程）。
+    - 群欢迎：仅通过时走 group_cheer 收口发正式群一条。
     """
     import asyncio
 
@@ -238,6 +246,20 @@ def _notify_member_review(member: em.PoolMember, *, approved: bool,
     except Exception:
         logger.warning("贡献池审核通知失败 member=%s", member.id,
                        exc_info=True)
+    try:
+        from backend.tg_bot import group_cheer, proactive
+
+        proactive.note_pool_member_review(db, member, approved=approved)
+        db.commit()
+        if approved:
+            group_cheer.send_pool_welcome(db, member)
+    except Exception:
+        logger.warning("贡献池审核 TG 通知失败 member=%s", member.id,
+                       exc_info=True)
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
 
 @pool_admin_router.post("/members/{member_id}/approve")
@@ -253,7 +275,7 @@ def pool_approve_member(
     _audit(db, current_admin, "pool_member_approve", "pool_member",
            member.id, {}, ip=_client_ip(raw_request))
     db.commit()
-    _notify_member_review(member, approved=True,
+    _notify_member_review(db, member, approved=True,
                           admin_id=current_admin.id)
     return _member_payload(db, member)
 
@@ -271,7 +293,7 @@ def pool_reject_member(
     _audit(db, current_admin, "pool_member_reject", "pool_member",
            member.id, {}, ip=_client_ip(raw_request))
     db.commit()
-    _notify_member_review(member, approved=False,
+    _notify_member_review(db, member, approved=False,
                           admin_id=current_admin.id)
     return _member_payload(db, member)
 

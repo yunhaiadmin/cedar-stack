@@ -11,6 +11,10 @@
   （``owner_scope=user`` 且 trigger 属于想看 / 预取 / 点播）到终态时
   私聊本人。服主任务、追剧、配额、找源这类系统单不发。
 
+池成员审核结果（pool_review_approved / pool_review_rejected）也走
+本管道：不受上面两个开关管辖，偏好跟「贡献回响」同类，单独成条
+发送（不与影片行合并）。
+
 关着的时候：不发、不写已推记录。
 
 到货消息带一个「去看看」链接按钮（站内没有条目详情页，落到
@@ -71,6 +75,27 @@ USER_TRIGGERS = frozenset({"store_want", "prefetch", "playback"})
 KIND_ARRIVAL = "store_arrival"
 KIND_OK = "transfer_ok"
 KIND_FAIL = "transfer_fail"
+
+# 公共池成员审核结果（pool_admin 审核收口入队）：与上面三类分开
+# 渲染与偏好——偏好跟「贡献回响」同类（CAT_POOL_DIGEST），文案与
+# 站内信同口径，通过额外带一句奖励口径。subject_id = 成员行 id。
+KIND_POOL_REVIEW_APPROVED = "pool_review_approved"
+KIND_POOL_REVIEW_REJECTED = "pool_review_rejected"
+POOL_REVIEW_KINDS = frozenset({
+    KIND_POOL_REVIEW_APPROVED, KIND_POOL_REVIEW_REJECTED,
+})
+
+POOL_REVIEW_APPROVED_TITLE = "贡献池申请已通过"
+POOL_REVIEW_APPROVED_DETAIL = (
+    "你申请加入公共贡献池已经通过啦。你的网盘会开始为池子提供副本。"
+    "奖励：被看一次 +1 分、在线一天 +5 分，每月最高 900 分，"
+    "还有专属称号「片库贡献者」。贡献情况可以在个人中心的贡献池页面查看。"
+)
+POOL_REVIEW_REJECTED_TITLE = "贡献池申请未通过"
+POOL_REVIEW_REJECTED_DETAIL = (
+    "你申请加入公共贡献池这次没有通过。如需重新申请，"
+    "可以在个人中心的贡献池页面再次提交。"
+)
 
 # 内部错误码 → 人话。未知码用通用说法，绝不把 error_detail 原文发出去。
 FAIL_TEXT = {
@@ -395,6 +420,28 @@ def note_transfer_terminal(db: Session, job) -> bool:
     return _claim(db, KIND_FAIL, job_id, user_id, title, reason)
 
 
+def note_pool_member_review(db: Session, member, *, approved: bool) -> bool:
+    """公共池成员审核结果出来后，给成员本人入队一条私聊。
+
+    审核收口（pool_admin._notify_member_review）在站内信同一触发点
+    调用。未绑 Telegram 直接跳过（不写行、不报错）；同一成员同一
+    结果靠唯一约束只入队一次。调用方负责提交（提交后唤醒发送）。
+    """
+    member_id = getattr(member, "id", None)
+    user_id = getattr(member, "user_id", None)
+    if member_id is None or user_id is None:
+        return False
+    if not _bound_user_ids(db, {int(user_id)}):
+        return False
+    if approved:
+        return _claim(db, KIND_POOL_REVIEW_APPROVED, int(member_id),
+                      int(user_id), POOL_REVIEW_APPROVED_TITLE,
+                      POOL_REVIEW_APPROVED_DETAIL)
+    return _claim(db, KIND_POOL_REVIEW_REJECTED, int(member_id),
+                  int(user_id), POOL_REVIEW_REJECTED_TITLE,
+                  POOL_REVIEW_REJECTED_DETAIL)
+
+
 def _item_title(db: Session, item_id) -> str:
     if item_id is None:
         return "这部片"
@@ -415,12 +462,25 @@ def _esc(value: str) -> str:
 
 def _line(row) -> str:
     title = _esc(row.title or "这部片")
+    if row.kind in POOL_REVIEW_KINDS:
+        body = _esc(row.detail or "")
+        head = _esc(row.title or "")
+        return f"{head}\n{body}" if body else head
     if row.kind == KIND_ARRIVAL:
         return f"你要的《{title}》到了"
     if row.kind == KIND_OK:
         return f"《{title}》可以看了"
     reason = _esc(row.detail or GENERIC_FAIL)
     return f"《{title}》没转成：{reason}"
+
+
+def render_pool_review_notice(rows: list) -> tuple[str, dict | None]:
+    """池审核私聊单独成条（不与影片行合并、不挂按钮）。"""
+    ordered = sorted(rows, key=lambda row: getattr(row, "id", 0) or 0)
+    text = "\n\n".join(_line(row) for row in ordered)
+    if len(text) > TEXT_LIMIT:
+        text = text[: TEXT_LIMIT - 1] + "…"
+    return text, None
 
 
 def render_notice(rows: list, watch_url: str = "") -> tuple[str, dict | None]:
@@ -538,7 +598,18 @@ def flush_due(db: Session, now: datetime | None = None) -> int:
     store_on = store_arrival_enabled(db)
     transfer_on = transfer_done_enabled(db)
     if not store_on and not transfer_on:
-        return 0
+        # 池审核私聊不受这两个开关管辖（只受贡献回响偏好门控）：
+        # 还有这类待发就继续走，别被上面的总闸饿死。
+        pool_pending = (
+            db.query(models.TgProactiveNotice.id)
+            .filter(
+                models.TgProactiveNotice.status == "pending",
+                models.TgProactiveNotice.kind.in_(sorted(POOL_REVIEW_KINDS)),
+            )
+            .first()
+        )
+        if pool_pending is None:
+            return 0
     _requeue_stale_inflight(db, now)
     window = merge_window_sec(db)
     user_ids = [
@@ -565,37 +636,10 @@ def flush_due(db: Session, now: datetime | None = None) -> int:
     return sent_calls
 
 
-def _flush_user(db: Session, user_id: int, now: datetime, window: int,
-                store_on: bool, transfer_on: bool) -> int:
-    pending = (
-        db.query(models.TgProactiveNotice)
-        .filter(
-            models.TgProactiveNotice.user_id == user_id,
-            models.TgProactiveNotice.status == "pending",
-        )
-        .order_by(models.TgProactiveNotice.id)
-        .all()
-    )
-    allowed = []
-    for row in pending:
-        if row.kind == KIND_ARRIVAL and not store_on:
-            continue
-        if row.kind in (KIND_OK, KIND_FAIL) and not transfer_on:
-            continue
-        allowed.append(row)
-    if allowed:
-        # 用户偏好：关了「求片到货类」TG 的用户，这批整批静默丢弃
-        #（标 muted，不补发；站内信不受影响）。
-        from backend import notify_prefs
-
-        if not notify_prefs.tg_allowed(
-                db, user_id, notify_prefs.CAT_SEEK):
-            for row in allowed:
-                row.status = "muted"
-                row.updated_at = now
-            db.commit()
-            return 0
-    ready = _eligible(allowed, now)
+def _flush_batch(db: Session, user_id: int, rows: list, now: datetime,
+                 window: int, render_fn) -> int:
+    """一批同类待发行的领取→发送→记账（合并窗口/退避纪律共用）。"""
+    ready = _eligible(rows, now)
     if not ready:
         return 0
     oldest = min((row.created_at or now) for row in ready)
@@ -637,7 +681,7 @@ def _flush_user(db: Session, user_id: int, now: datetime, window: int,
             row.updated_at = now
         db.commit()
         return 0
-    text, markup = render_notice(rows, watch_url=_watch_url(db))
+    text, markup = render_fn(rows)
     ok, err = _send(db, int(chat_id), text, markup)
     if ok:
         for row in rows:
@@ -664,6 +708,61 @@ def _flush_user(db: Session, user_id: int, now: datetime, window: int,
     db.commit()
     logger.info("主动提醒稍后重试 user=%s", user_id)
     return 1
+
+
+def _flush_user(db: Session, user_id: int, now: datetime, window: int,
+                store_on: bool, transfer_on: bool) -> int:
+    pending = (
+        db.query(models.TgProactiveNotice)
+        .filter(
+            models.TgProactiveNotice.user_id == user_id,
+            models.TgProactiveNotice.status == "pending",
+        )
+        .order_by(models.TgProactiveNotice.id)
+        .all()
+    )
+    # 分两批：影片类（到货/转存）一批、池审核一批——文案形态与偏好
+    # 类别都不同，不许混进同一条消息。
+    seek_rows = []
+    pool_rows = []
+    for row in pending:
+        if row.kind == KIND_ARRIVAL:
+            if store_on:
+                seek_rows.append(row)
+        elif row.kind in (KIND_OK, KIND_FAIL):
+            if transfer_on:
+                seek_rows.append(row)
+        elif row.kind in POOL_REVIEW_KINDS:
+            pool_rows.append(row)
+    # 用户偏好：关了对应类别 TG 的用户，该批整批静默丢弃
+    #（标 muted，不补发；站内信不受影响）。
+    from backend import notify_prefs
+
+    sent_calls = 0
+    if seek_rows:
+        if not notify_prefs.tg_allowed(
+                db, user_id, notify_prefs.CAT_SEEK):
+            for row in seek_rows:
+                row.status = "muted"
+                row.updated_at = now
+            db.commit()
+        else:
+            sent_calls += _flush_batch(
+                db, user_id, seek_rows, now, window,
+                lambda rows: render_notice(
+                    rows, watch_url=_watch_url(db)))
+    if pool_rows:
+        if not notify_prefs.tg_allowed(
+                db, user_id, notify_prefs.CAT_POOL_DIGEST):
+            for row in pool_rows:
+                row.status = "muted"
+                row.updated_at = now
+            db.commit()
+        else:
+            sent_calls += _flush_batch(
+                db, user_id, pool_rows, now, window,
+                render_pool_review_notice)
+    return sent_calls
 
 
 def _send(db: Session, chat_id: int, text: str, markup: dict | None):

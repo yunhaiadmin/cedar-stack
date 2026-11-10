@@ -288,6 +288,10 @@ WELFARE_CONFIG_SCHEMA: dict[str, tuple] = {
     "tg_notify_merge_window_sec": ("int", 0, 3600),
     # 许愿到货群报喜（tg_bot.group_cheer）：默认开；关了只发私聊不发群。
     "tg_notify_group_arrival_enabled": ("bool",),
+    # 新贡献者群欢迎（tg_bot.group_cheer）：池成员审核通过时发群，
+    # 默认开；驳回不发。审核私聊本身走 proactive，无独立总开关
+    # （只受「贡献回响」用户偏好门控）。
+    "tg_notify_group_pool_welcome_enabled": ("bool",),
 
     "lottery_group_ids": ("str",),
 }
