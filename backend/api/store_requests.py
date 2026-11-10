@@ -89,6 +89,11 @@ def _sync_row(db: Session, row: models.MovieRequest) -> bool:
     """
     if row.status not in media_seek.ACTIVE_STATUSES:
         return False
+    # 补缺集行（request_kind='missing_episodes'）不许走这条联动：
+    # 它的剧本来就在库、tmdb 必然对得上，按「在库」翻完成等于
+    # 一落单就假完成。它的完成只认缺集核算工人确认补齐。
+    if (getattr(row, "request_kind", None) or "seek") == "missing_episodes":
+        return False
     if not row.tmdb_id:
         return False
     if find_library_item(db, row.tmdb_id) is None:

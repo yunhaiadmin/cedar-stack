@@ -210,6 +210,8 @@ const navGroups: NavGroup[] = [
       { path: '/metadata-sources', label: '元数据来源', icon: Database },
       // 识别审查：自动刮削认不准（有候选没过置信线）的条目带证据排队，人工在这里处置
       { path: '/identify-review', label: '识别审查', icon: ListChecks },
+      // 缺集清单：哪部剧缺哪几集、缺了多久、几个人在求补
+      { path: '/missing-episodes', label: '缺集清单', icon: ListChecks },
       // 上游源：别人的媒体服当作源接进来（#25 25-1 只做源管理）
       { path: '/upstream-sources', label: '上游源', icon: Server },
       // 贡献池：用户贡献盘组成的公共缓存池，成员生命周期管理（goal-33 PR-4）

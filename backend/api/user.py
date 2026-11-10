@@ -767,6 +767,11 @@ def _create_media_seek_result(
                 models.MovieRequest.tmdb_id == tmdb_id,
                 func.coalesce(models.MovieRequest.season, "") == season,
                 models.MovieRequest.status.in_(media_seek.ACTIVE_STATUSES),
+                # 只认整片求片行：补缺集行（request_kind=
+                # missing_episodes）是另一回事，不许把整片投愿
+                # 误转成它的附议（反之亦然，见补缺集落单口）。
+                func.coalesce(models.MovieRequest.request_kind, "seek")
+                == "seek",
             )
             .order_by(models.MovieRequest.created_at, models.MovieRequest.id)
             .first()
@@ -806,6 +811,7 @@ def _create_media_seek_result(
         func.lower(models.MovieRequest.movie_name) == name.lower(),
         func.coalesce(models.MovieRequest.season, "") == season,
         models.MovieRequest.status.in_(media_seek.ACTIVE_STATUSES),
+        func.coalesce(models.MovieRequest.request_kind, "seek") == "seek",
     ).first()
     if exists:
         # 无季的（电影 / 老数据）保持原来的文案；剧集把季说清楚，用户知道是哪一条在排队
@@ -865,6 +871,297 @@ def _create_media_seek_sync(
     走不到转换分支，行为与从前一致。
     """
     return _create_media_seek_result(db, user, name, request)["request_id"]
+
+
+# ==================== 补缺集求片（缺集全套，2026-11-10） ====================
+
+class MissingEpisodesRequest(BaseModel):
+    """一键求补入参：只认 TMDB 号（剧行与缺集台账都按它对齐）。"""
+
+    tmdb_id: str
+    # 求给哪个服；留空时后端自己推导（与整片求片同口径）
+    realm_id: Optional[int] = None
+
+
+def _find_visible_series_by_tmdb(db: Session, user: models.WebUser,
+                                 tmdb_id: str):
+    """按 TMDB 号找站内可见剧行（与 lookup 同款可见范围口径：
+    不可见库的剧不许经求补口被枚举出来）。"""
+    from backend.emby_server import models as em
+
+    query = library_scope.scope_query(
+        db.query(em.MediaItem),
+        library_scope.effective_ids_safe(db, user),
+    )
+    return (
+        query.filter(
+            em.MediaItem.item_type == "series",
+            em.MediaItem.tmdb_id == str(tmdb_id),
+            em.MediaItem.deleted_at.is_(None),
+            em.MediaItem.merged_into_id.is_(None),
+            em.MediaItem.is_hidden == False,  # noqa: E712
+        )
+        .first()
+    )
+
+
+def _open_missing_record(db: Session, series_item_id: int):
+    """该剧当前未补齐的缺集台账行（工人维护，见 missing_episodes_worker）。"""
+    from backend.emby_server import models as em
+
+    return (
+        db.query(em.MissingEpisodeRecord)
+        .filter(
+            em.MissingEpisodeRecord.series_item_id == series_item_id,
+            em.MissingEpisodeRecord.status == "open",
+        )
+        .first()
+    )
+
+
+def _active_missing_request(db: Session, tmdb_id, series_item_id: int):
+    """该剧未完结的补缺集求片（最早一条；快照里的 series_item_id
+    核对防 TMDB 撞号误伤别的剧行，老快照没带 id 时按 tmdb 认）。"""
+    from backend import missing_episodes as _me
+
+    rows = (
+        db.query(models.MovieRequest)
+        .filter(
+            models.MovieRequest.request_kind == _me.KIND_MISSING,
+            models.MovieRequest.tmdb_id == str(tmdb_id),
+            models.MovieRequest.status.in_(media_seek.ACTIVE_STATUSES),
+        )
+        .order_by(models.MovieRequest.created_at, models.MovieRequest.id)
+        .all()
+    )
+    for row in rows:
+        snap_id = _me.parse_request_detail(
+            row.request_detail).get("series_item_id")
+        if snap_id is None or int(snap_id) == int(series_item_id):
+            return row
+    return None
+
+
+def _missing_info_payload(db: Session, user: models.WebUser,
+                          tmdb_id: str) -> dict:
+    """许愿池候选卡的缺集信息：在不在库、缺不缺、求补到哪一步。"""
+    from backend import missing_episodes as _me
+
+    payload = {
+        "in_library": False,
+        "series_item_id": None,
+        "series_name": "",
+        "has_missing": False,
+        "missing_count": 0,
+        "missing_detail": {},
+        "missing_text": "",
+        "request": None,
+    }
+    series = _find_visible_series_by_tmdb(db, user, tmdb_id)
+    if series is None:
+        return payload
+    payload["in_library"] = True
+    payload["series_item_id"] = series.id
+    payload["series_name"] = series.name or ""
+    record = _open_missing_record(db, series.id)
+    if record is not None:
+        detail = _me.normalize_missing_detail(record.missing_detail)
+        payload["has_missing"] = True
+        payload["missing_detail"] = {
+            str(sn): eps for sn, eps in detail.items()}
+        payload["missing_count"] = _me.missing_count(detail)
+        payload["missing_text"] = _me.missing_text(detail)
+    req = _active_missing_request(db, series.tmdb_id, series.id)
+    if req is not None:
+        voted = media_seek.voted_ids(db, user.id, [req.id])
+        payload["request"] = {
+            "id": req.id,
+            "vote_count": req.vote_count or 0,
+            "voted": req.id in voted,
+            "mine": req.user_id == user.id,
+            "status": req.status,
+        }
+    return payload
+
+
+def _create_missing_episode_request(
+    db: Session,
+    user: models.WebUser,
+    tmdb_id: str,
+    realm_id: Optional[int] = None,
+) -> dict:
+    """一键求补落单（同步版，与 _create_media_seek_result 同契约）。
+
+    与选片投愿同一收口：用户行锁 / 每日＋月度额度（含白名单月度
+    豁免，判定都在 media_seek 里）/ 幂等附议转换；只落
+    movie_requests 同一张表（request_kind='missing_episodes'＋
+    缺集快照），不新开平行的表与额度体系。校验失败抛
+    HTTPException（400 没入库/不缺集、409 本人重复、429 超额）。
+    """
+    from backend import missing_episodes as _me
+
+    tmdb_id = media_seek.normalize_tmdb_id(tmdb_id) or ""
+    series = (
+        _find_visible_series_by_tmdb(db, user, tmdb_id) if tmdb_id else None
+    )
+    if series is None:
+        raise HTTPException(
+            status_code=400, detail="这部剧还没在站里，先去求整片吧")
+    record = _open_missing_record(db, series.id)
+    if record is None:
+        raise HTTPException(
+            status_code=400, detail="这部剧现在不缺集，不用求补")
+    detail = _me.normalize_missing_detail(record.missing_detail)
+    name = series.name or "这部剧"
+
+    # 与整片求片同一把用户行锁：查重/额度/落库整段串行（理由见
+    # _create_media_seek_result 里的并发说明）。
+    from backend.api.economy import lock_user_row
+    lock_user_row(db, user.id)
+
+    dup = _active_missing_request(db, series.tmdb_id, series.id)
+    if dup is not None:
+        if dup.user_id == user.id:
+            raise HTTPException(
+                status_code=409,
+                detail=f"《{name}》缺的集已经在求了，请耐心等待")
+        voted = False
+        vote_count = dup.vote_count or 0
+        if dup.status == "pending" and media_seek.vote_enabled(db):
+            try:
+                vr = media_seek.ensure_vote(db, user, dup.id)
+                voted = bool(vr["voted"])
+                vote_count = int(vr["vote_count"])
+            except ValueError:
+                db.rollback()
+        return {
+            "request_id": dup.id,
+            "created": False,
+            "voted": voted,
+            "vote_count": vote_count,
+            "movie_name": name,
+        }
+
+    limit = media_seek.daily_limit(db)
+    if media_seek.used_today(db, user.id) >= limit:
+        raise HTTPException(
+            status_code=429,
+            detail=f"今日求片已达上限（{limit} 条），请明天再提交")
+    mquota = media_seek.monthly_quota(db, user)
+    if mquota["monthly_remaining"] <= 0:
+        raise HTTPException(
+            status_code=429,
+            detail=f"本月求片额度已用完（{mquota['monthly_used']}/{mquota['monthly_limit']}），请下月再提交",
+        )
+
+    media_request = models.MovieRequest(
+        user_id=user.id,
+        movie_name=name,
+        year=str(series.production_year) if series.production_year else None,
+        type="series",
+        tmdb_id=str(series.tmdb_id),
+        season=None,
+        title_only=False,
+        request_kind=_me.KIND_MISSING,
+        request_detail=_me.build_request_detail(
+            series.id, detail, checked_at=record.last_checked_at),
+        status="pending",
+        realm_id=_resolve_seek_realm(db, user, realm_id),
+    )
+    db.add(media_request)
+    db.commit()
+    db.refresh(media_request)
+    return {
+        "request_id": media_request.id,
+        "created": True,
+        "voted": False,
+        "vote_count": 0,
+        "movie_name": name,
+    }
+
+
+def _request_missing_text(row: models.MovieRequest) -> str:
+    """求片行列表展示用：补缺集行的大白话缺集文案（其余行为空）。"""
+    from backend import missing_episodes as _me
+
+    if (getattr(row, "request_kind", None) or "seek") != _me.KIND_MISSING:
+        return ""
+    return _me.missing_text(_me.request_detail_missing(row.request_detail))
+
+
+@user_router.get("/media-seek/missing")
+def media_seek_missing_info(
+    tmdb_id: str,
+    current_user: models.WebUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """候选卡缺集信息（只读，不占额度）：在库剧缺哪几集、求补进度。"""
+    return _missing_info_payload(db, current_user, tmdb_id)
+
+
+@user_router.post("/media-seek/missing-request")
+async def create_missing_episode_request(
+    request: MissingEpisodesRequest,
+    current_user: models.WebUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """一键求补这些集：落补缺集求片（或转附议），口径见
+    _create_missing_episode_request。"""
+    if not media_seek.seek_enabled(db):
+        raise HTTPException(status_code=403, detail="求片功能已关闭")
+
+    result = await run_in_threadpool(
+        _create_missing_episode_request, db, current_user,
+        request.tmdb_id, request.realm_id,
+    )
+    request_id = result["request_id"]
+    name = result["movie_name"]
+
+    if not result["created"]:
+        if result["voted"]:
+            message = f"《{name}》已有 {result['vote_count'] + 1} 人求补，已帮你 +1 附议"
+        else:
+            message = f"《{name}》缺的集已经有人在求了"
+        return {
+            "success": True,
+            "request_id": request_id,
+            "message": message,
+            "created": False,
+            "voted": result["voted"],
+            "vote_count": result["vote_count"],
+        }
+
+    # 通知管理员（与整片求片同两条现成通道：站内消息＋TG 私聊）
+    try:
+        from backend.notifications import notify_staff_users
+
+        await notify_staff_users(
+            db,
+            title="📥 新的补缺集请求",
+            content=f"{current_user.username} 求补《{name}》缺的集",
+            message_type="media_seek",
+            related_id=request_id,
+        )
+    except Exception as exc:  # 通知失败不应影响求补提交
+        logger.warning("补缺集通知发送失败: %s", exc)
+    try:
+        from backend.tg_bot import features as _tg_features
+
+        await run_in_threadpool(
+            _tg_features._notify_staff_about_request,
+            db, request_id, current_user, name,
+        )
+    except Exception as exc:  # 通知失败不应影响求补提交
+        logger.warning("补缺集 TG 管理员通知发送失败: %s", exc)
+
+    return {
+        "success": True,
+        "request_id": request_id,
+        "message": "求补已提交，补齐后会通知你",
+        "created": True,
+        "voted": False,
+        "vote_count": 0,
+    }
 
 
 @user_router.post("/media-seek")
@@ -1019,6 +1316,9 @@ def hot_media_seeks(
                 "season_label": media_seek.season_label(r.season),
                 # 原名投下的兜底行（无 tmdb 绑定）：前端查重提示/标记用
                 "title_only": bool(getattr(r, "title_only", False)),
+                # 补缺集行：分类与缺集文案（整片求片 missing_text 为空）
+                "request_kind": getattr(r, "request_kind", None) or "seek",
+                "missing_text": _request_missing_text(r),
                 "vote_count": r.vote_count or 0,
                 "weighted_vote_count": weighted_map.get(r.id, 0),
                 "voted": r.id in voted,
@@ -1088,6 +1388,9 @@ def get_my_media_seeks(
                 "tmdb_id": r.tmdb_id,
                 # 原名投下的兜底行：用户列表里标「待确认」，与选片行区分
                 "title_only": bool(getattr(r, "title_only", False)),
+                # 补缺集行：分类与缺集文案（整片求片 missing_text 为空）
+                "request_kind": getattr(r, "request_kind", None) or "seek",
+                "missing_text": _request_missing_text(r),
                 # 已入库的条目 guid：用户端可以一键跳到详情页（只读进度的一部分）
                 "emby_item_id": r.emby_item_id,
                 # 这部片求给哪个服（用户自己就能看到，不用问管理员）

@@ -544,6 +544,18 @@ def main() -> int:
         except Exception as e:
             logger.warning(f"启动 Drive 暖地址 worker 失败（可忽略）: {e}")
 
+        # 缺集核算（缺集全套）：周期拿 TMDB 集表与盘内实有集对表，
+        # 缺集落台账供管理端清单与许愿池求补共用；补齐后自动完成
+        # 补缺集求片并通知。总开关默认开（MISSING_EPISODES_ENABLED），
+        # 工人自带预算/让路/节流，只吃闲置产能。
+        try:
+            from backend.emby_server import missing_episodes_worker
+            if missing_episodes_worker.start():
+                started.append("missing_episodes_worker")
+                logger.info("✅ 缺集核算 worker 已启动")
+        except Exception as e:
+            logger.warning(f"启动缺集核算 worker 失败（可忽略）: {e}")
+
         try:
             from backend.emby_server import sample_hash_worker
             if sample_hash_worker.start():

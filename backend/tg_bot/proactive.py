@@ -39,7 +39,7 @@ import os
 import threading
 from datetime import datetime, timedelta
 
-from sqlalchemy import event
+from sqlalchemy import event, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -313,6 +313,10 @@ def sync_arrived_requests(db: Session) -> int:
             models.MovieRequest.status.in_(media_seek.ACTIVE_STATUSES),
             models.MovieRequest.tmdb_id.isnot(None),
             models.MovieRequest.tmdb_id != "",
+            # 补缺集行不在此列：剧本来就在库，它的完成只认缺集
+            # 核算工人确认补齐（见 missing_episodes_worker）。
+            func.coalesce(models.MovieRequest.request_kind, "seek")
+            != "missing_episodes",
         )
         .all()
     )
