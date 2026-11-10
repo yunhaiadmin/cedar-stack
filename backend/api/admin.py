@@ -1596,6 +1596,12 @@ def _batch_approve_media_seeks_sync(db: Session, admin_id: int,
         except Exception:  # noqa: BLE001 — 单条兜底，整批不许崩
             db.rollback()
             failed.append({"id": request_id, "reason": "处理失败，请稍后重试"})
+    # 写端点审计契约：单条审核已逐条留痕，这里再留一条批次总账
+    # （细节只记改了什么：批上的编号 + 没批上的条数，不记请求体）
+    _audit(db, admin_id, "media_seek_batch_approve", "media_seek", None,
+           {"approved_ids": [e["id"] for e in approved],
+            "failed": len(failed)})
+    db.commit()
     return {"approved": approved, "failed": failed}
 
 
@@ -1610,7 +1616,14 @@ def _approve_all_pending_media_seeks_sync(db: Session, admin_id: int,
     ids = [row[0] for row in query.filter(
         models.MovieRequest.status == "pending"
     ).order_by(models.MovieRequest.created_at).all()]
-    return _batch_approve_media_seeks_sync(db, admin_id, ids)
+    result = _batch_approve_media_seeks_sync(db, admin_id, ids)
+    # 全批入口单独留一条账（与批量批准总账分开，事后分得清入口）
+    _audit(db, admin_id, "media_seek_approve_all", "media_seek", None,
+           {"realm_id": realm_id,
+            "approved": len(result["approved"]),
+            "failed": len(result["failed"])})
+    db.commit()
+    return result
 
 
 @admin_router.post("/media-seek/batch-approve")
