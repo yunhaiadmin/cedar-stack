@@ -4,6 +4,10 @@
 红包消息本体是明示例外（永不由本模块调度）。一期（本模块）只提供
 延时读取与调度能力；router 的具体接线在二期统一挂。
 
+文件下半部另有临时消息（Bot API ephemeral）的删除调度与面板登记：
+与普通自毁同纪律（快照删除函数、顶替语义、登记摘除），但走
+deleteEphemeralMessage 三元组、登记键也不同，两套互不混用。
+
 实现说明：
 - threading.Timer 进程内定时；进程重启会丢失未到期的定时器，
   这是可接受降级（自毁只是群面整洁手段，丢一两条不影响业务）。
@@ -163,3 +167,146 @@ def rearm_delete(db, chat_id: int, message_id: int) -> bool:
     if delay <= 0:
         return False
     return schedule_delete(chat_id, message_id, delay)
+
+
+# ---------------------------------------------------------------------------
+# 临时消息（Bot API ephemeral）的删除调度与面板登记。
+#
+# 临时消息由客户端自行消失（时点不固定、官方无承诺），本节只做我方
+# 主动删除的兜底调度：发送成功后按 bot_msg_autodelete_seconds 挂
+# deleteEphemeralMessage 定时，与普通自毁同纪律（调度时快照删除
+# 函数、同键顶替、到期摘登记、失败只记日志）。登记键是三元组
+# (chat_id, receiver_user_id, ephemeral_message_id)，与普通消息的
+# (chat_id, message_id) 两套分开，绝不混用。
+# _eph_latest 是 (chat_id, receiver_user_id) → 最近一条临时面板消息
+# id 的进程内登记：whois 面板回调的 message 若两个 id 都没带，用它
+# 兜底定位；普通消息（带 message_id）的点击永不查它，防劫持普通面板。
+# ---------------------------------------------------------------------------
+
+# (chat_id, receiver_user_id, ephemeral_message_id) → Timer 登记表
+_eph_timers: dict[tuple[int, int, int], Timer] = {}
+# (chat_id, receiver_user_id) → 最近一条临时消息的 ephemeral_message_id
+_eph_latest: dict[tuple[int, int], int] = {}
+
+
+def note_ephemeral_message(chat_id: int, receiver_user_id: int,
+                           ephemeral_message_id: int) -> None:
+    """登记某接收人最新一条临时消息的 id（新发顶替旧登记；缺标识不记）。"""
+    if not chat_id or not receiver_user_id or not ephemeral_message_id:
+        return
+    with _registry_lock:
+        _eph_latest[(int(chat_id), int(receiver_user_id))] = int(
+            ephemeral_message_id)
+
+
+def ephemeral_message_for(chat_id: int, receiver_user_id: int) -> int | None:
+    """查登记的最近一条临时消息 id；无登记返回 None。"""
+    if not chat_id or not receiver_user_id:
+        return None
+    with _registry_lock:
+        return _eph_latest.get((int(chat_id), int(receiver_user_id)))
+
+
+def _delete_ephemeral_now(chat_id: int, receiver_user_id: int,
+                          ephemeral_message_id: int,
+                          delete_ephemeral_message=None) -> None:
+    """定时器到期执行体：新开会话调 deleteEphemeralMessage，失败只记日志。
+
+    delete_ephemeral_message 为调度时快照的 sender.delete_ephemeral_message；
+    缺省（直接调用本函数时）才现查 sender 模块属性，与 _delete_now 同口径。
+    """
+    from backend.database import SessionLocal
+    from backend.tg_bot import sender
+
+    if delete_ephemeral_message is None:
+        delete_ephemeral_message = sender.delete_ephemeral_message
+    db = SessionLocal()
+    try:
+        ok, err = delete_ephemeral_message(
+            db, chat_id, receiver_user_id, ephemeral_message_id)
+        if not ok:
+            logger.warning(
+                "tg ephemeral message delete failed: chat=%s receiver=%s "
+                "eph=%s err=%s",
+                chat_id, receiver_user_id, ephemeral_message_id, err)
+    except Exception:
+        logger.warning(
+            "tg ephemeral message delete error: chat=%s receiver=%s eph=%s",
+            chat_id, receiver_user_id, ephemeral_message_id, exc_info=True)
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+
+def _fire_ephemeral_delete(chat_id: int, receiver_user_id: int,
+                           ephemeral_message_id: int,
+                           delete_ephemeral_message=None) -> None:
+    """定时器到期执行体：先摘登记再按调度时快照删临时消息，不留死条目。"""
+    with _registry_lock:
+        _eph_timers.pop((chat_id, receiver_user_id, ephemeral_message_id), None)
+    _delete_ephemeral_now(
+        chat_id, receiver_user_id, ephemeral_message_id,
+        delete_ephemeral_message=delete_ephemeral_message)
+
+
+def schedule_ephemeral_delete(chat_id: int, receiver_user_id: int,
+                              ephemeral_message_id: int,
+                              delay_seconds: int) -> bool:
+    """登记一条临时消息在 delay_seconds 秒后用 deleteEphemeralMessage 删除。
+
+    与 schedule_delete 同纪律：延时 <=0（关闭）或任一标识缺失返回
+    False 且不起定时器；同一三元组已有未到期定时器时新调度顶替旧的；
+    删除函数在调度时快照进闭包，到期只调快照。
+    """
+    if (not chat_id or not receiver_user_id or not ephemeral_message_id
+            or not delay_seconds or delay_seconds <= 0):
+        return False
+    from backend.tg_bot import sender
+
+    timer = Timer(
+        delay_seconds, _fire_ephemeral_delete,
+        args=(chat_id, receiver_user_id, ephemeral_message_id),
+        kwargs={"delete_ephemeral_message": sender.delete_ephemeral_message})
+    timer.daemon = True
+    timer.start()
+    key = (chat_id, receiver_user_id, ephemeral_message_id)
+    with _registry_lock:
+        old = _eph_timers.pop(key, None)
+        _eph_timers[key] = timer
+    if old is not None and old is not timer:
+        old.cancel()
+    return True
+
+
+def cancel_ephemeral_delete(chat_id: int, receiver_user_id: int,
+                            ephemeral_message_id: int) -> bool:
+    """取消一条临时消息已登记的删除定时器；无登记返回 False，不抛错。"""
+    if not chat_id or not receiver_user_id or not ephemeral_message_id:
+        return False
+    with _registry_lock:
+        timer = _eph_timers.pop(
+            (chat_id, receiver_user_id, ephemeral_message_id), None)
+    if timer is None:
+        return False
+    timer.cancel()
+    return True
+
+
+def rearm_ephemeral_delete(db, chat_id: int, receiver_user_id: int,
+                           ephemeral_message_id: int) -> bool:
+    """临时消息面板滑动续命：把删除重挂为「现在＋bot_msg 延时」。
+
+    与 rearm_delete 同口径（callbacks 在临时面板编辑成功后调用）：
+    先取消既有定时器，再按当前 bot_msg_autodelete_seconds 重新调度；
+    配置为 0（关闭）时只取消不重挂。标识缺失静默返回 False。
+    """
+    if not chat_id or not receiver_user_id or not ephemeral_message_id:
+        return False
+    cancel_ephemeral_delete(chat_id, receiver_user_id, ephemeral_message_id)
+    delay = bot_msg_delay_seconds(db)
+    if delay <= 0:
+        return False
+    return schedule_ephemeral_delete(
+        chat_id, receiver_user_id, ephemeral_message_id, delay)

@@ -1410,6 +1410,18 @@ def handle_whois(db, tg_user: dict, chat_id: int, args: str,
     return whois.render_whois(db, keyword)
 
 
+def _ephemeral_panel(page: tuple, receiver_tg_id) -> tuple:
+    """把管理员面板页包成临时消息标记（Bot API 10.4 包1）。
+
+    标记形状与 __duel_panel__ 先例同构：("__ephemeral__", 文案, 按钮,
+    接收人 TG 号)，由 router 识别后只发给接收人本人（发送失败回落
+    现行公开路径）。只有定位到具体人的面板页走临时消息；拒绝卡 /
+    绑定指引 / 用法 / 查无此人等不带个人数据的卡维持现行公开路径。
+    """
+    text, markup = page
+    return ("__ephemeral__", text, markup, receiver_tg_id)
+
+
 def _whois_group(db, tg_id, args: str, reply_from: dict | None) -> str:
     """群内精简卡路径（仅管理员，2026-11-01 用户拍板）。
 
@@ -1419,7 +1431,8 @@ def _whois_group(db, tg_id, args: str, reply_from: dict | None) -> str:
     带参（站内用户名 / TG 号，whois.find_lite_user 只查 web_users）。
     查无此人 / 对方未绑定一律回明示卡，不报错、不建行；定位成功出
     管理员面板第一页（whois_panel.main_page：精简卡＋按钮，精简卡
-    字段仍只走 whois.render_whois_lite 的字段白名单）。
+    字段仍只走 whois.render_whois_lite 的字段白名单）。面板页经
+    _ephemeral_panel 包成临时消息标记，只发给发起管理员本人。
     """
     from backend.tg_bot import whois, whois_panel
 
@@ -1444,7 +1457,8 @@ def _whois_group(db, tg_id, args: str, reply_from: dict | None) -> str:
                 f"{reply_from.get('last_name') or ''}").strip()
         if not name:
             name = str(reply_from.get("username") or "")
-        return whois_panel.main_page(db, target, name or None)
+        return _ephemeral_panel(
+            whois_panel.main_page(db, target, name or None), tg_id)
     keyword = (args or "").strip()
     if not keyword:
         return layout.card(
@@ -1460,4 +1474,4 @@ def _whois_group(db, tg_id, args: str, reply_from: dict | None) -> str:
             layout.title("账号速览"),
             [layout.row("📭", "结果", "没查到这个账号")],
         )
-    return whois_panel.main_page(db, target)
+    return _ephemeral_panel(whois_panel.main_page(db, target), tg_id)
