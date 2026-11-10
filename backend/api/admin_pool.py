@@ -50,6 +50,8 @@ class PoolConfigRequest(BaseModel):
     pool_breaker_cooldown_sec: Optional[int] = None
     pool_pick_top_k: Optional[int] = None
     pool_member_max_bindings_per_user: Optional[int] = None
+    pool_large_file_routing_enabled: Optional[bool] = None
+    pool_large_file_bytes: Optional[int] = None
     # 选盘 v2（权重为百分比 0–100；扶持天数 0 = 关扶持）。
     pool_pick_weight_capacity: Optional[int] = None
     pool_pick_weight_daily: Optional[int] = None
@@ -87,7 +89,7 @@ def pool_get_config(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """池配置生效值：25 键（存量行优先，缺行回代码默认）。"""
+    """池配置生效值：27 键（存量行优先，缺行回代码默认）。"""
     return pool_gate.pool_config_payload(db)
 
 

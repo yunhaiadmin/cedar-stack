@@ -7,7 +7,7 @@
 GOAL.md 通审决议（默认值按补充节修正值：单盘 4.5TB、保底 300GiB、
 日转存 600GiB；新增第 16 键 pool_member_max_bindings_per_user 默认 10；
 第 17 键 pool_join_min_capacity_bytes 默认 5×10^12 为用户 2026-11-10 亲批的入池容量门槛；
-第 18–25 键为同日亲点的选盘 v2 权重/扶持键）。
+第 18/19 键 pool_large_file_* 为同日亲批的大文件分流：开关默认开、阈值默认 15GB；第 20–27 键为同日亲点的选盘 v2 权重/扶持键）。
 """
 from __future__ import annotations
 
@@ -52,6 +52,8 @@ EXPECTED_DEFAULTS = {
     "pool_breaker_cooldown_sec": 3600,
     "pool_pick_top_k": 3,
     "pool_member_max_bindings_per_user": 10,
+    "pool_large_file_routing_enabled": True,
+    "pool_large_file_bytes": 15_000_000_000,
     # 选盘 v2（用户 2026-11-10 亲点）：权重为百分比，默认合计 100。
     "pool_pick_weight_capacity": 35,
     "pool_pick_weight_daily": 20,
@@ -171,10 +173,10 @@ def test_pool_usage_daily_unique_per_member_day(db):
 def test_pool_config_defaults_exact(db):
     payload = pool_gate.pool_config_payload(db)
     assert payload == EXPECTED_DEFAULTS
-    assert len(payload) == 25
+    assert len(payload) == 27
 
 
-def test_pool_schema_registered_with_25_keys():
+def test_pool_schema_registered_with_27_keys():
     assert "pool" in config_service.SCHEMAS
     schema = config_service.SCHEMAS["pool"]
     assert set(schema) == set(EXPECTED_DEFAULTS)

@@ -434,4 +434,4 @@ def test_new_config_defaults(db):
     assert payload["pool_pick_new_member_boost_days"] == 7
     assert payload["pool_serve_weight_capacity"] == 60
     assert payload["pool_serve_weight_load"] == 40
-    assert len(payload) == 25
+    assert len(payload) == 27

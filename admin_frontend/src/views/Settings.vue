@@ -1099,6 +1099,8 @@ const poolForm = reactive<PoolConfig>({
   pool_breaker_cooldown_sec: 3600,
   pool_pick_top_k: 3,
   pool_member_max_bindings_per_user: 10,
+  pool_large_file_routing_enabled: true,
+  pool_large_file_bytes: 15000000000,
   pool_pick_weight_capacity: 35,
   pool_pick_weight_daily: 20,
   pool_pick_weight_load: 20,
@@ -2404,6 +2406,18 @@ watch(
                   <div class="field-stack">
                     <el-input-number v-model="poolForm.pool_pick_top_k" :min="1" :max="8" :step="1" controls-position="right" class="num-input" />
                     <span class="field-hint">选落盘时在打分前几名里随机挑一个，默认 3</span>
+                  </div>
+                </el-form-item>
+                <el-form-item label="大文件走池副本">
+                  <div class="field-stack">
+                    <el-switch v-model="poolForm.pool_large_file_routing_enabled" />
+                    <span class="field-hint">已绑盘用户播大文件时，池里有现成副本就直接播池副本，省掉转存到自己盘的等待；默认开</span>
+                  </div>
+                </el-form-item>
+                <el-form-item label="大文件门槛（字节）">
+                  <div class="field-stack">
+                    <el-input-number v-model="poolForm.pool_large_file_bytes" :min="1" :max="1000000000000000" :step="1000000000" controls-position="right" class="num-input" />
+                    <span class="field-hint">文件大小达到这个字节数才算大文件，默认 15000000000（15GB）</span>
                   </div>
                 </el-form-item>
                 <el-form-item label="选盘权重·容量">
