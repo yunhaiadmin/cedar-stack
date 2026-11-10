@@ -93,6 +93,10 @@ ROUTER_MODULES = (
 PRE_AUTH: dict[tuple[str, str], str] = {
     ("POST", "/api/user/auth/register"):
         "注册本身就是取得身份前的动作；走注册模式开关（开放 / 凭码 / 关闭）+ 限流 + 人机验证",
+    ("POST", "/api/user/auth/register-code/verify"):
+        "凭码注册第一步验码：注册前动作，拿不到身份；只校验不消耗、不发任何权益，"
+        "靠 IP 限流（20 次 / 10 分钟）防撞码，且不存在与蜜罐一律回「注册码无效」不给枚举线索；"
+        "提交注册时服务端还会二次校验并同事务核销，本端点放行不是凭据",
     ("POST", "/api/user/auth/login"):
         "登录同理：限流（按 IP）+ 人机验证 + 登录日志（成功与失败都记）",
     ("POST", "/api/user/auth/refresh"):
