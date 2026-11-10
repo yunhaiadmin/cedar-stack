@@ -342,6 +342,32 @@ def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,
             }[action]
             text = fn(db, tg_user, chat_id, "")
             markup = handlers.back_markup()
+    elif action in ("achievements", "mylottery"):
+        # 成就与我的抽奖都是个人数据卡：私聊限定（与 bindings 等私人
+        # 查询同口径），群里点到只回私聊提示卡，绝不把点击者本人的
+        # 成就/抽奖记录编辑进群共享消息。未绑定按现行口径回绑定指引。
+        if not is_private:
+            text = handlers.private_only_card()
+            markup = handlers.private_only_markup(db)
+        else:
+            user = resolve(db, int(tg_id))
+            if user is None:
+                text, markup = handlers._bind_guide_text(), handlers.back_markup()
+            elif action == "achievements":
+                from . import features
+
+                text = features.achievements_card(db, user)
+                markup = handlers.group_back_markup("account", "账号组")
+            else:
+                lot = handlers._lottery()
+                try:
+                    lottery_on = bool(lot.is_enabled(db)) if lot is not None else False
+                except Exception:
+                    logger.warning("lottery.is_enabled failed", exc_info=True)
+                    lottery_on = False
+                text = (handlers.my_lottery_card(db, user) if lottery_on
+                        else "🎲 抽奖功能暂未开启")
+                markup = handlers.group_back_markup("welfare", "福利组")
     elif action == "bind":
         user = resolve(db, int(tg_id))
         if user is not None:
