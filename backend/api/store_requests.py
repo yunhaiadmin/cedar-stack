@@ -81,33 +81,10 @@ def _r1_state(status: str) -> str:
 
 
 def _sync_row(db: Session, row: models.MovieRequest) -> bool:
-    """读时入库联动：处理中的行若 tmdb 已对上库内，当场标 completed。
-
-    只翻状态：不建转存任务、不写 emby_item_id（guid 记录归既有
-    管理端“标记已入库”入口）。开关开着时顺手入队到货私聊，
-    入队失败不影响翻转。返回是否翻了状态。
-    """
-    if row.status not in media_seek.ACTIVE_STATUSES:
-        return False
-    # 补缺集行（request_kind='missing_episodes'）不许走这条联动：
-    # 它的剧本来就在库、tmdb 必然对得上，按「在库」翻完成等于
-    # 一落单就假完成。它的完成只认缺集核算工人确认补齐。
-    if (getattr(row, "request_kind", None) or "seek") == "missing_episodes":
-        return False
-    if not row.tmdb_id:
-        return False
-    if find_library_item(db, row.tmdb_id) is None:
-        return False
-    row.status = "completed"
-    try:
-        from backend.tg_bot.proactive import note_store_request_completed
-        note_store_request_completed(db, row)
-    except Exception:
-        import logging
-        logging.getLogger(__name__).warning(
-            "求片到货提醒入队失败 request=%s", getattr(row, "id", None),
-            exc_info=True)
-    return True
+    """读时入库联动：判定与翻转的唯一实现在
+    ``media_seek.sync_seek_library_row``——到货盯梢工人共用同一条，
+    这里只保留读路径的历史调用名，不许再长出第二套口径。"""
+    return media_seek.sync_seek_library_row(db, row)
 
 
 def _library_hit(db: Session, tmdb_id: str | None):

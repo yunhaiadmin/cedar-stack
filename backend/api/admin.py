@@ -95,6 +95,16 @@ class MediaSeekMarkRequest(BaseModel):
     force: bool = False
 
 
+class MediaSeekBatchApproveRequest(BaseModel):
+    """批量批准：逐条走单条审核的守卫，部分失败逐条回报"""
+    ids: list[int] = Field(default_factory=list)
+
+
+class MediaSeekApproveAllRequest(BaseModel):
+    """批准全部待审：realm_id 与列表同口径（0 = 全部服，不传 = 当前服）"""
+    realm_id: Optional[int] = None
+
+
 class MediaSeekPushRequest(BaseModel):
     """把求片转交给外部服务
 
@@ -1324,10 +1334,20 @@ def get_media_seeks(
 
     result = []
     for req in requests:
+        # 在库标记（求片减负）：处理中的行当场按「标记已入库」的同一
+        # 判定（media_seek.find_library_match：tmdb 优先、退片名）算
+        # 一遍，前端直接亮「已在库」徽标 + 一键标记按钮，管理员不用
+        # 再逐条点开弹窗试 409。已终态的行不算（completed 不需要
+        # 再标记，其余终态标记无意义），一律 False。
+        in_library = (
+            media_seek.find_library_match(db, req) is not None
+            if req.status in media_seek.ACTIVE_STATUSES else False
+        )
         result.append({
             "id": req.id,
             "user_id": req.user_id,
             "movie_name": req.movie_name,
+            "in_library": in_library,
             "year": req.year,
             "type": req.type,
             # 剧集按整季申请：season 是 "1,2" / "all"，label 是给界面看的文案
@@ -1498,6 +1518,46 @@ def _review_media_seek_sync(db: Session, admin_id: int, request_id: int,
             "season": media_request.season}
 
 
+async def _notify_seek_reviewed(db: Session, admin_id: int, request_id: int,
+                                info: dict, status_value: str, note: str) -> None:
+    """审核结果通知（单条审核与批量批准共用同一口径，不许两套文案）。
+
+    用户看到的通知用中文状态与「（全季）」这样的范围说明，不把英文
+    状态码和季混在一起。私聊通报优化批：审批结果纳入用户「求片
+    到货类」TG 偏好——关了就只发站内信（偏好只管 TG，见
+    backend/notify_prefs.py）。r46：通知走 quiet 守卫（失败只记
+    日志，不抛 500）。
+    """
+    event_map = {
+        "approved": AdminEvent.MEDIA_SEEK_APPROVED,
+        "rejected": AdminEvent.MEDIA_SEEK_REJECTED,
+    }
+    title_map = {
+        "approved": "求片请求已批准",
+        "rejected": "求片请求已拒绝",
+    }
+    status_text = {"approved": "已批准", "rejected": "已拒绝"}.get(
+        status_value, status_value)
+    season_text = media_seek.season_label(info["season"])
+    from backend import notify_prefs as _notify_prefs
+
+    _channels = ["in_app", "telegram"] if _notify_prefs.tg_allowed(
+        db, info["user_id"], _notify_prefs.CAT_SEEK) else ["in_app"]
+    await notify_admin_event_quiet(
+        event_type=event_map.get(status_value, "media_seek.updated"),
+        log_ctx=f"review_media_seek request_id={request_id}",
+        user_id=info["user_id"],
+        title=title_map.get(status_value, "求片状态已更新"),
+        content=(f"您的求片《{info['movie_name']}》"
+                 + (f"（{season_text}）" if season_text else "")
+                 + f"状态已更新为：{status_text}"
+                 + (f"\n备注：{note}" if note else "")),
+        related_id=request_id,
+        from_admin_id=admin_id,
+        channels=_channels,
+    )
+
+
 @admin_router.put("/media-seek/{request_id}")
 async def update_media_seek(
     request_id: int,
@@ -1519,38 +1579,109 @@ async def update_media_seek(
         _review_media_seek_sync, db, admin_id, request_id, status_value, note,
     )
 
-    event_map = {
-        "approved": AdminEvent.MEDIA_SEEK_APPROVED,
-        "rejected": AdminEvent.MEDIA_SEEK_REJECTED,
-    }
-    title_map = {
-        "approved": "求片请求已批准",
-        "rejected": "求片请求已拒绝",
-    }
-    # 用户看到的通知用中文状态与「（全季）」这样的范围说明，不把英文状态码和季混在一起
-    status_text = {"approved": "已批准", "rejected": "已拒绝"}.get(status_value, status_value)
-    season_text = media_seek.season_label(info["season"])
-    # 私聊通报优化批：审批结果纳入用户「求片到货类」TG 偏好——关了就
-    # 只发站内信，TG 那份不发（偏好只管 TG，见 backend/notify_prefs.py）。
-    from backend import notify_prefs as _notify_prefs
-
-    _channels = ["in_app", "telegram"] if _notify_prefs.tg_allowed(
-        db, info["user_id"], _notify_prefs.CAT_SEEK) else ["in_app"]
-    # r46：审批已落库，通知走 quiet 守卫（失败只记日志，不抛 500）。
-    await notify_admin_event_quiet(
-        event_type=event_map.get(status_value, "media_seek.updated"),
-        log_ctx=f"review_media_seek request_id={request_id}",
-        user_id=info["user_id"],
-        title=title_map.get(status_value, "求片状态已更新"),
-        content=(f"您的求片《{info['movie_name']}》"
-                 + (f"（{season_text}）" if season_text else "")
-                 + f"状态已更新为：{status_text}"
-                 + (f"\n备注：{note}" if note else "")),
-        related_id=request_id,
-        from_admin_id=admin_id,
-        channels=_channels,
-    )
+    await _notify_seek_reviewed(db, admin_id, request_id, info, status_value, note)
     return {"success": True, "message": "求片状态更新成功"}
+
+
+def _batch_approve_media_seeks_sync(db: Session, admin_id: int,
+                                    ids: list) -> dict:
+    """批量批准（同步落库，整段下放线程池）：逐条走单条审核的同一
+    守卫（``_review_media_seek_sync`` 的状态守卫/审计），不许绕过；
+    批得动的照常批，批不动的（已终态/不存在）逐条记下原因回报，
+    一条失败不拖垮其余。重复 id 只处理一次。"""
+    approved: list = []
+    failed: list = []
+    seen: set = set()
+    for raw_id in ids or []:
+        try:
+            request_id = int(raw_id)
+        except (TypeError, ValueError):
+            failed.append({"id": raw_id, "reason": "编号不合法"})
+            continue
+        if request_id in seen:
+            continue
+        seen.add(request_id)
+        try:
+            info = _review_media_seek_sync(db, admin_id, request_id,
+                                           "approved", "")
+            approved.append({"id": request_id, **info})
+        except HTTPException as exc:
+            failed.append({"id": request_id, "reason": str(exc.detail)})
+        except Exception:  # noqa: BLE001 — 单条兜底，整批不许崩
+            db.rollback()
+            failed.append({"id": request_id, "reason": "处理失败，请稍后重试"})
+    # 写端点审计契约：单条审核已逐条留痕，这里再留一条批次总账
+    # （细节只记改了什么：批上的编号 + 没批上的条数，不记请求体）
+    _audit(db, admin_id, "media_seek_batch_approve", "media_seek", None,
+           {"approved_ids": [e["id"] for e in approved],
+            "failed": len(failed)})
+    db.commit()
+    return {"approved": approved, "failed": failed}
+
+
+def _approve_all_pending_media_seeks_sync(db: Session, admin_id: int,
+                                          realm_id: Optional[int]) -> dict:
+    """批准全部待审（同步落库）：范围与求片清单同口径（realm_id=0
+    全部服、不传 = 当前服），只取 pending 逐条走批量批准同一条路。"""
+    scope_id = None if realm_id == 0 else (realm_id or realms.active_realm_id(db))
+    query = realms.scope_inclusive(
+        db.query(models.MovieRequest.id), models.MovieRequest.realm_id,
+        scope_id)
+    ids = [row[0] for row in query.filter(
+        models.MovieRequest.status == "pending"
+    ).order_by(models.MovieRequest.created_at).all()]
+    result = _batch_approve_media_seeks_sync(db, admin_id, ids)
+    # 全批入口单独留一条账（与批量批准总账分开，事后分得清入口）
+    _audit(db, admin_id, "media_seek_approve_all", "media_seek", None,
+           {"realm_id": realm_id,
+            "approved": len(result["approved"]),
+            "failed": len(result["failed"])})
+    db.commit()
+    return result
+
+
+@admin_router.post("/media-seek/batch-approve")
+async def batch_approve_media_seeks(
+    payload: MediaSeekBatchApproveRequest,
+    current_admin: models.WebUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """批量批准求片：逐条守卫、逐条通知，部分失败逐条回报哪条没批上"""
+    admin_id = current_admin.id
+    result = await run_in_threadpool(
+        _batch_approve_media_seeks_sync, db, admin_id, payload.ids,
+    )
+    for entry in result["approved"]:
+        await _notify_seek_reviewed(
+            db, admin_id, entry["id"], entry, "approved", "")
+    approved_ids = [entry["id"] for entry in result["approved"]]
+    message = f"已批准 {len(approved_ids)} 条"
+    if result["failed"]:
+        message += f"，{len(result['failed'])} 条没批上（见明细）"
+    return {"success": True, "approved_ids": approved_ids,
+            "failed": result["failed"], "message": message}
+
+
+@admin_router.post("/media-seek/approve-all-pending")
+async def approve_all_pending_media_seeks(
+    payload: MediaSeekApproveAllRequest,
+    current_admin: models.WebUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """一键批准当前范围内全部待审求片（前端带确认弹窗）；口径与批量批准一致"""
+    admin_id = current_admin.id
+    result = await run_in_threadpool(
+        _approve_all_pending_media_seeks_sync, db, admin_id, payload.realm_id,
+    )
+    for entry in result["approved"]:
+        await _notify_seek_reviewed(
+            db, admin_id, entry["id"], entry, "approved", "")
+    approved_ids = [entry["id"] for entry in result["approved"]]
+    message = f"已批准全部待审 {len(approved_ids)} 条"
+    if result["failed"]:
+        message += f"，{len(result['failed'])} 条没批上（见明细）"
+    return {"success": True, "approved_ids": approved_ids,
+            "failed": result["failed"], "message": message}
 
 
 def _mark_media_seek_sync(db: Session, admin_id: int, request_id: int, force: bool) -> dict:
