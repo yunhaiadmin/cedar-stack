@@ -24,7 +24,8 @@ import os
 
 os.environ.setdefault("DATABASE_TYPE", "sqlite")
 os.environ.setdefault("REDIS_ENABLED", "false")
-os.environ.setdefault("TG_PROACTIVE_FLUSHER", "0")
+# TG_PROACTIVE_FLUSHER 不许写在导入期（#1888/#1891 同形态守卫
+# test_zz_env_import_hygiene）：刷盘器改用例期关，见下面的 autouse fixture。
 
 import pytest
 from sqlalchemy import create_engine
@@ -38,6 +39,15 @@ from backend.api import user as user_api
 from backend.api.store_requests import _sync_row
 from backend.emby_server import models as em
 from backend.emby_server import seek_fulfill_worker
+
+
+@pytest.fixture(autouse=True)
+def _no_proactive_flusher(monkeypatch):
+    """用例期关掉主动通知刷盘器：入队后提交钩子会唤醒发送线程，
+    本文件只断言入队行、不发真通知。_flusher_enabled() 是每次调用
+    读环境变量（非导入期快照），用例期 monkeypatch 即生效。"""
+    monkeypatch.setenv("TG_PROACTIVE_FLUSHER", "0")
+    yield
 
 
 @pytest.fixture()
