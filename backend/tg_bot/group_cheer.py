@@ -13,6 +13,11 @@
 - 会员升级祝贺：经验唯一收口 member_level.add_xp 检测到跨级时，
   往同一个群发一条：用户名 + Lv.旧 → Lv.新 + 新等级名。只报升级，
   同级/降级不报；多级连跳只发一条（旧 → 最终）。
+- 新贡献者欢迎：池成员审核通过时（pool_admin 审核收口，与站内信
+  同一触发点、业务事务已提交后同步发），往同一个群发一条：站内
+  用户名 + 加入公共片库 + 奖励口径一句。只欢迎通过，驳回不发；
+  开关 ``tg_notify_group_pool_welcome_enabled`` 默认开；锚＝
+  (group_pool_welcome, 成员行 id, 贡献者 id)，只发一次。
 
 幂等：复用 proactive 私聊台账表 TgProactiveNotice 同款唯一约束
 （kind, subject_id, user_id）当锚——到货锚＝(group_store_arrival,
@@ -22,11 +27,13 @@
 发送失败时删锚，留待后续触发重试；失败只记日志，绝不阻塞
 到货翻转、私聊入队与发经验主流程。
 
-触发时机：两个入口都只往会话 info 里排队，真正的 claim+发送在
-业务事务 commit 成功后（Session after_commit 钩子，与 proactive
-唤醒 flusher 同款机制）同步执行——回滚的事务不会发出假消息；
-after_rollback 时排队项直接丢弃。发送在业务线程里同步做：到货
-与升级都是低频事件，失败有界（发送层 15 秒超时、只试一次）。
+触发时机：到货与升级两个入口都只往会话 info 里排队，真正的
+claim+发送在业务事务 commit 成功后（Session after_commit 钩子，
+与 proactive 唤醒 flusher 同款机制）同步执行——回滚的事务不会
+发出假消息；after_rollback 时排队项直接丢弃。新贡献者欢迎的审
+核收口本身就跑在业务提交之后，等价于同一纪律下同步直发。发送
+在业务线程里同步做：都是低频事件，失败有界（发送层 15 秒超时、
+只试一次）。
 """
 
 from __future__ import annotations
@@ -45,9 +52,12 @@ logger = logging.getLogger(__name__)
 
 #: 到货群播报开关（SystemConfig；缺行=开，与私聊到货默认开同口径）
 KEY_GROUP_ARRIVAL = "tg_notify_group_arrival_enabled"
+#: 新贡献者欢迎开关（SystemConfig；缺行=开）
+KEY_GROUP_POOL_WELCOME = "tg_notify_group_pool_welcome_enabled"
 
 KIND_GROUP_ARRIVAL = "group_store_arrival"
 KIND_GROUP_LEVEL_UP = "group_level_up"
+KIND_GROUP_POOL_WELCOME = "group_pool_welcome"
 
 #: 消息里只提站名，不贴链接（与群公告口径一致）
 SITE_NAME = "www.aetrix.love"
@@ -136,6 +146,10 @@ def _config_on(db: Session, key: str, default: bool = True) -> bool:
 
 def group_arrival_enabled(db: Session) -> bool:
     return _config_on(db, KEY_GROUP_ARRIVAL, default=True)
+
+
+def pool_welcome_enabled(db: Session) -> bool:
+    return _config_on(db, KEY_GROUP_POOL_WELCOME, default=True)
 
 
 def target_group_id(db: Session) -> int | None:
@@ -336,3 +350,34 @@ def send_level_up_cheer(db: Session, user_id: int, old_level: int,
     return send_group_cheer(
         db, kind=KIND_GROUP_LEVEL_UP, subject_id=int(new_level),
         claim_user_id=int(user_id), title=f"Lv.{int(new_level)}", text=text)
+
+
+# ------------------------------------------------------------------ 新贡献者欢迎
+
+def send_pool_welcome(db: Session, member) -> bool:
+    """池成员审核通过后，群里欢迎新贡献者一条。
+
+    审核收口（pool_admin._notify_member_review）在业务事务已提交后
+    同步调用（与站内信同一触发点）。文案只提站内用户名与奖励口径，
+    不带盘标签/容量/绑定信息、不贴链接。锚＝(group_pool_welcome,
+    成员行 id, 贡献者 id)，同一成员只欢迎一次；驳回不走本函数。
+    """
+    if not pool_welcome_enabled(db):
+        return False
+    member_id = getattr(member, "id", None)
+    user_id = getattr(member, "user_id", None)
+    if member_id is None or user_id is None:
+        return False
+    user = (db.query(models.WebUser)
+            .filter(models.WebUser.id == int(user_id)).first())
+    if user is None:
+        return False
+    username = (user.username or "").strip() or "有位朋友"
+    text = (
+        f"🎉 欢迎 {username} 加入公共片库，成为新的贡献者！"
+        "贡献有回报：被看一次 +1 分、在线一天 +5 分，每月最高 900 分，"
+        "还有专属称号「片库贡献者」。谢谢分享！"
+    )
+    return send_group_cheer(
+        db, kind=KIND_GROUP_POOL_WELCOME, subject_id=int(member_id),
+        claim_user_id=int(user_id), title=username, text=text)
