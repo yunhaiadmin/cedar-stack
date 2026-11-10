@@ -132,13 +132,13 @@ def _by_key(res):
     return {t["key"]: t for t in res["tasks"]}
 
 
-def test_overview_returns_five_cards(db, seed):
+def test_overview_returns_eight_cards(db, seed):
     res = _call(db)
     assert res["success"] is True
     assert "fetched_at" in res
     cards = _by_key(res)
     assert set(cards) == {"scan", "probe", "enrich", "thumbnail", "chase_new",
-                          "upstream_warm", "drive_warm"}
+                          "upstream_warm", "drive_warm", "missing_episodes"}
     for key, card in cards.items():
         for field in ("key", "title", "status", "status_text", "summary", "metrics"):
             assert field in card, f"{key} 缺字段 {field}"
