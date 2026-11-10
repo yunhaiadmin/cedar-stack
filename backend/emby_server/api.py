@@ -7622,7 +7622,15 @@ async def video_stream(
     # （在飞/受限）就不切——整段按本人路径走完，分流不许
     # 变成新门禁。预判结果 _pool_pre_gate 留给池分支复用，
     # 播出层不对同一决策点重判第二次。
-    _pool_routed_stream = False
+    # 另一条进池路径：二值门禁抛错时裁决来自新判定入口，
+    # kind=pool 且 pool_routed=True 的分流用户 _pool_stream_mode
+    # 一开始就是 True、下面的预判块会被守卫跳过——回落标记
+    # 必须先从裁决本身播种，否则池分支抛错时 except 会把池
+    # 的报错原样甩给分流用户（池没判 serve 必须回落本人流程，
+    # 与预判块命中同一纪律）。原生池观众 pool_routed 恒
+    # False，此播种对其无-op。
+    _pool_routed_stream = bool(
+        getattr(_vs_decision, "pool_routed", False))
     _pool_pre_gate = None
     if (not _pool_stream_mode
             and _vs_decision.kind == "bound"

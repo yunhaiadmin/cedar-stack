@@ -740,6 +740,93 @@ def test_stream_bound_large_pool_dead_copy_falls_back(
         store.invalidate()
 
 
+def test_stream_routed_via_decision_pool_gate_fail_falls_back(
+        client, bound_token, seed, monkeypatch):
+    """第二条进池路径（回归钉死）：本地二值门禁抛错、裁决改由
+    新判定入口给出（kind=pool 且 pool_routed=True）时，
+    _pool_stream_mode 一开始就是 True、预判块被守卫跳过——
+    池门禁判非 serve（failed）也必须回落本人流程：建本人
+    转存单、按本人门禁回准备中明示，不许把池的报错原样甩给
+    分流用户（分流不许变成新门禁）。"""
+    from backend.emby_server import playback_gate as _gate_mod
+    monkeypatch.setenv("TRANSFER_WAIT_STREAM_ENABLED", "0")
+    db = SessionLocal()
+    try:
+        _add_pool_variant(db, seed, seed["big_id"])
+        _set_config(db, "play_inline_transfer_enabled", "false")
+    finally:
+        db.close()
+
+    def _binary_gate_raises(db_, user_, request_=None, *a, **kw):
+        raise HTTPException(status_code=403, detail="二值门禁桩")
+
+    # 二值门禁抛错 → _vs_decision 来自 ensure_playback_allowed
+    # _for_item（本单 _decision 单元例已钉死其为 pool+routed）。
+    monkeypatch.setattr(
+        _gate_mod, "ensure_binding_playback_allowed",
+        _binary_gate_raises)
+    # 池门禁判非 serve：failed → raise_for_transfer_gate 抛 409。
+    monkeypatch.setattr(
+        pool_gate, "ensure_pool_copy_gate",
+        lambda db_, item_, user_, *a, **kw: {
+            "verdict": "failed", "detail": "池门禁失败标记"})
+    try:
+        r = _stream(client, bound_token, seed["big"])
+        assert r.status_code in (409, 503), r.text
+        # 池门禁的报错不许原样甩给分流用户
+        assert "池门禁失败标记" not in r.text
+        assert ORIG_FID not in r.text
+        db = SessionLocal()
+        try:
+            # 本人路径已接管：转存单建给本人、池播不记账
+            assert (db.query(em.TransferJob)
+                    .filter(em.TransferJob.item_id == seed["big_id"],
+                            em.TransferJob.owner_scope == "user")
+                    .count() == 1)
+            assert _play_events(db) == []
+        finally:
+            db.close()
+    finally:
+        db = SessionLocal()
+        try:
+            db.query(models.SystemConfig).filter(
+                models.SystemConfig.key
+                == "play_inline_transfer_enabled").delete(
+                synchronize_session=False)
+            db.commit()
+        finally:
+            db.close()
+        store.invalidate()
+
+
+def test_stream_native_pool_gate_fail_reraises(
+        client, free_token, seed, monkeypatch):
+    """原生池观众（未绑、pool_routed 恒 False）行为逐字不变：
+    池门禁判非 serve 的报错原样上抛，不落本人分支（未绑用户
+    本来就没有本人分支可落）。"""
+    db = SessionLocal()
+    try:
+        _add_pool_variant(db, seed, seed["big_id"])
+    finally:
+        db.close()
+    monkeypatch.setattr(
+        pool_gate, "ensure_pool_copy_gate",
+        lambda db_, item_, user_, *a, **kw: {
+            "verdict": "failed", "detail": "池门禁失败标记"})
+    r = _stream(client, free_token, seed["big"])
+    assert r.status_code == 409, r.text
+    assert "池门禁失败标记" in r.text
+    db = SessionLocal()
+    try:
+        assert (db.query(em.TransferJob)
+                .filter(em.TransferJob.item_id == seed["big_id"],
+                        em.TransferJob.owner_scope == "user")
+                .count() == 0)
+        assert _play_events(db) == []
+    finally:
+        db.close()
+
+
 def test_stream_bound_small_never_pool(client, bound_token, seed,
                                        monkeypatch):
     """播出层同口径：小文件即使池有副本，已绑用户直打流也不走
