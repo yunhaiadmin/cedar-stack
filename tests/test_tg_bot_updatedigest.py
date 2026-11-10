@@ -6,13 +6,15 @@
 - 只报已绑定身份（identity_gate 同源）：未绑定电影不报；集按所属剧
   判据（豆瓣-only 身份的剧其新集可报，未绑定剧的新集不报）；
   合并副本行、超 14 天窗口的存量不报。
-- 防重复：发送成功才记 tg_update_digest_sent，第二批不重播；
-  每栏 10 行上限＋「……本批共 N 部/剧」，余量顺延下一批。
+- 防重复：逐条发送成功才记该条 tg_update_digest_sent，第二批
+  不重播；全量展示（>10 部/组全发、无截断尾行），超长正文按
+  4096 字在行边界分条，中途失败停发、下轮只续发剩余。
 - 首跑基线种子：上线前已在货架的条目记 baseline 不播报，之后
   新入库的正常播；种子时未绑定的行日后绑定仍可播。
 - 配图：优先电影横幅图（本地 backdrop_path），无图纯文字；
   远程 backdrop 走 image_store.localize。
-- 开关/间隔：总开关关不推；last_run 未到间隔不重复攒批。
+- 开关/间隔：总开关关不推；last_run 未到间隔不重复攒批；间隔
+  下限 1 分钟（实时档：满 1 分钟即推）。
 """
 from __future__ import annotations
 
@@ -183,26 +185,119 @@ def test_old_and_merged_excluded(db, monkeypatch):
     assert "老片" not in text and "合并副本" not in text
 
 
-def test_overflow_carries_to_next_batch(db, monkeypatch):
+def test_more_than_ten_rows_all_sent(db, monkeypatch):
+    """全量展示：>10 部电影一批全发完，不截断、无「……本批共 N 部」
+    尾行；已播表记全，下一批 empty 不重播。"""
     _ready(db)
     for i in range(12):
         _item(db, "movie", f"片{i:02d}", year=2026, tmdb=str(100 + i),
               added=NOW - timedelta(hours=12 - i))
     sent = _capture_send(monkeypatch)
     res = updatedigest.push_digest(db, NOW)
-    assert res["pushed"]
-    text = sent["messages"][0]["text"]
-    lines = text.splitlines()
+    assert res["pushed"] and res["reason"] == "ok"
+    all_text = "\n".join(m["text"] for m in sent["messages"])
+    lines = all_text.splitlines()
     assert lines[0] == "电影更新"
-    assert len([ln for ln in lines if ln.startswith("🎬")]) == 10
-    assert lines[-1] == "……本批共 12 部"
-    # 余量顺延：下一批把剩下 2 部报完，不丢不重
-    res2 = updatedigest.push_digest(db, NOW)
-    assert res2["pushed"]
-    text2 = sent["messages"][1]["text"]
-    assert len([ln for ln in text2.splitlines() if ln.startswith("🎬")]) == 2
-    assert "本批共" not in text2
+    assert len([ln for ln in lines if ln.startswith("🎬")]) == 12
+    assert "本批共" not in all_text
     assert db.query(models.TgUpdateDigestSent).count() == 12
+    res2 = updatedigest.push_digest(db, NOW)
+    assert res2["reason"] == "empty"
+
+
+def test_full_batch_over_ten_movies_and_groups(db, monkeypatch):
+    """>10 部电影＋>10 组剧同批：全部行都发出、无截断尾行、
+    已播表记全（电影行＋集行），下一批 empty。"""
+    _ready(db)
+    for i in range(12):
+        _item(db, "movie", f"电影{i:02d}", year=2026, tmdb=str(300 + i),
+              added=NOW - timedelta(hours=12 - i))
+    for s in range(12):
+        series = _item(db, "series", f"剧集{s:02d}", year=2025,
+                       external=f'{{"douban": "{900 + s}"}}')
+        _item(db, "episode", "第1集", series_id=series.id,
+              season_number=1, episode_number=1,
+              added=NOW - timedelta(hours=12 - s))
+    sent = _capture_send(monkeypatch)
+    res = updatedigest.push_digest(db, NOW)
+    assert res["pushed"] and res["reason"] == "ok"
+    assert res["movies"] == 12 and res["tv_groups"] == 12
+    all_text = "\n".join(m["text"] for m in sent["messages"])
+    assert len([ln for ln in all_text.splitlines()
+                if ln.startswith("🎬")]) == 12
+    assert len([ln for ln in all_text.splitlines()
+                if ln.startswith("📺")]) == 12
+    assert "本批共" not in all_text
+    assert db.query(models.TgUpdateDigestSent).count() == 24
+    assert updatedigest.push_digest(db, NOW)["reason"] == "empty"
+
+
+def test_long_batch_split_into_chunks(db, monkeypatch):
+    """超长一批按单条上限分条：每条 ≤4096 字、不劈行（每行要么
+    栏目头要么完整条目行）、条目记全且不重不漏。"""
+    _ready(db)
+    total = 200
+    for i in range(total):
+        _item(db, "movie", f"分片测试长片名{i:03d}号作品加长版",
+              year=2026, tmdb=str(1000 + i),
+              added=NOW - timedelta(minutes=total - i))
+    sent = _capture_send(monkeypatch)
+    res = updatedigest.push_digest(db, NOW)
+    assert res["pushed"] and res["reason"] == "ok"
+    assert len(sent["messages"]) >= 2
+    assert res["chunks"] == len(sent["messages"])
+    assert res["chunks_sent"] == res["chunks"]
+    seen_lines = []
+    for m in sent["messages"]:
+        assert len(m["text"]) <= updatedigest.MESSAGE_LIMIT
+        for ln in m["text"].splitlines():
+            assert ln in ("电视剧更新", "电影更新") or ln.startswith("🎬")
+            if ln.startswith("🎬"):
+                seen_lines.append(ln)
+    assert len(seen_lines) == total
+    assert len(set(seen_lines)) == total
+    assert db.query(models.TgUpdateDigestSent).count() == total
+
+
+def test_second_chunk_failure_partial_and_resume(db, monkeypatch):
+    """第二条发送失败：第一条覆盖的已记表、余下未记；tick 按部分
+    成功推进 last_run；满间隔后下轮只续发剩余（不重发已发条目）。"""
+    _ready(db)
+    _set_cfg(db, updatedigest.INTERVAL_KEY, "1")
+    total = 200
+    for i in range(total):
+        _item(db, "movie", f"续发测试长片名{i:03d}号作品加长版",
+              year=2026, tmdb=str(2000 + i),
+              added=NOW - timedelta(minutes=total - i))
+    calls = {"n": 0, "texts": []}
+
+    def flaky_message(db_, chat_id, text, reply_markup=None,
+                      parse_mode="HTML"):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            return False, "boom"
+        calls["texts"].append(text)
+        return True, None
+
+    monkeypatch.setattr(sender, "send_message", flaky_message)
+    actions = updatedigest.run_scheduled_tick(db, NOW)
+    assert actions == ["digest:partial"]
+    first_lines = [ln for ln in calls["texts"][0].splitlines()
+                   if ln.startswith("🎬")]
+    assert 0 < len(first_lines) < total
+    assert db.query(models.TgUpdateDigestSent).count() == len(first_lines)
+    # last_run 已推进：未满 1 分钟不推
+    assert updatedigest.run_scheduled_tick(
+        db, NOW + timedelta(seconds=30)) == []
+    # 满间隔后续发剩余，不重发已发条目
+    sent2 = _capture_send(monkeypatch)
+    actions2 = updatedigest.run_scheduled_tick(db, NOW + timedelta(minutes=1))
+    assert actions2 == ["digest:ok"]
+    rest_lines = [ln for m in sent2["messages"]
+                  for ln in m["text"].splitlines() if ln.startswith("🎬")]
+    assert len(rest_lines) == total - len(first_lines)
+    assert not set(rest_lines) & set(first_lines)
+    assert db.query(models.TgUpdateDigestSent).count() == total
 
 
 def test_first_run_seeds_baseline(db, monkeypatch):
@@ -318,6 +413,26 @@ def test_tick_interval_pacing(db, monkeypatch):
     assert updatedigest.run_scheduled_tick(db, NOW + timedelta(minutes=10)) == []
     # 到点后正常攒下一批
     assert updatedigest.run_scheduled_tick(db, NOW + timedelta(minutes=31)) == ["digest:ok"]
+
+
+def test_interval_one_minute_pacing(db, monkeypatch):
+    """实时档 interval=1：满 1 分钟即推、未满不推；配置 0 夹到下限 1。"""
+    _ready(db)
+    _set_cfg(db, updatedigest.INTERVAL_KEY, "1")
+    assert updatedigest.interval_minutes(db) == 1
+    _item(db, "movie", "实时第一批", year=2026, tmdb="11")
+    _capture_send(monkeypatch)
+    assert updatedigest.run_scheduled_tick(db, NOW) == ["digest:ok"]
+    _item(db, "movie", "实时第二批", year=2026, tmdb="12")
+    # 未满 1 分钟不推
+    assert updatedigest.run_scheduled_tick(
+        db, NOW + timedelta(seconds=59)) == []
+    # 满 1 分钟即推
+    assert updatedigest.run_scheduled_tick(
+        db, NOW + timedelta(seconds=61)) == ["digest:ok"]
+    # 下限夹取：0 也回到 1 分钟（不再是旧下限 5）
+    _set_cfg(db, updatedigest.INTERVAL_KEY, "0")
+    assert updatedigest.interval_minutes(db) == 1
 
 
 # ---------- 发送目标：可改频道 ----------
