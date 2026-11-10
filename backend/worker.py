@@ -556,6 +556,19 @@ def main() -> int:
         except Exception as e:
             logger.warning(f"启动缺集核算 worker 失败（可忽略）: {e}")
 
+        # 求片到货盯梢（求片减负）：周期把处理中的求片跟片库对表，
+        # 对上自动置已入库并入队到货通知，管理员不用再逐条点
+        # 「标记已入库」试探。间隔走 SystemConfig
+        # （media_seek_fulfill_interval_minutes，默认 5 分钟），
+        # 判定与读时联动共用同一条口径（media_seek.sync_seek_library_row）。
+        try:
+            from backend.emby_server import seek_fulfill_worker
+            if seek_fulfill_worker.start():
+                started.append("seek_fulfill_worker")
+                logger.info("✅ 求片到货盯梢 worker 已启动")
+        except Exception as e:
+            logger.warning(f"启动求片到货盯梢 worker 失败（可忽略）: {e}")
+
         try:
             from backend.emby_server import sample_hash_worker
             if sample_hash_worker.start():

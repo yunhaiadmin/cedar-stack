@@ -352,6 +352,9 @@ export interface MediaSeekRow {
   tmdb_id?: string | null
   /** 原名投下的兜底行（没绑 TMDB 候选、待人工确认）；选片行为 false */
   title_only?: boolean
+  /** 后端按「标记已入库」同一判定算出的在库状态（仅处理中行有意义）：
+   * true = 片已在库，行内直接亮徽标并给一键「标记已入库」 */
+  in_library?: boolean
   /** 已入库条目的 guid（标记入库时记下，用户端可直接去观看） */
   emby_item_id?: string | null
   user_id: number

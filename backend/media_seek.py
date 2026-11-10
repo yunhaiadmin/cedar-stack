@@ -339,6 +339,44 @@ def find_library_match(db: Session, request: models.MovieRequest):
     )
 
 
+def sync_seek_library_row(db: Session, row: models.MovieRequest) -> bool:
+    """入库联动（唯一口径）：处理中的 seek 行若 tmdb 已对上库内，
+    当场标 completed 并顺手入队到货私聊。
+
+    读列表路径（``api.store_requests._sync_row``）与到货盯梢工人
+    （``emby_server.seek_fulfill_worker``）共用本函数，不许另写第二
+    套判定。只翻状态：不建转存任务、不写 emby_item_id（guid 记录归
+    管理端「标记已入库」入口）。到货私聊走 proactive 的已推去重，
+    重复调用不重发；入队失败不影响翻转。返回是否翻了状态，提交由
+    调用方负责。
+    """
+    if row.status not in ACTIVE_STATUSES:
+        return False
+    # 补缺集行（request_kind='missing_episodes'）不许走这条联动：
+    # 它的剧本来就在库、tmdb 必然对得上，按「在库」翻完成等于
+    # 一落单就假完成。它的完成只认缺集核算工人确认补齐。
+    if (getattr(row, "request_kind", None) or "seek") == "missing_episodes":
+        return False
+    if not row.tmdb_id:
+        return False
+    # 延迟导入：api.store 会拉起 api.user（它反过来 import 本模块），
+    # 顶层导入必成环；与 library_hit 的延迟导入同一先例。
+    from backend.api.store import find_library_item
+
+    if find_library_item(db, row.tmdb_id) is None:
+        return False
+    row.status = "completed"
+    try:
+        from backend.tg_bot.proactive import note_store_request_completed
+
+        note_store_request_completed(db, row)
+    except Exception:
+        logger.warning(
+            "求片到货提醒入队失败 request=%s", getattr(row, "id", None),
+            exc_info=True)
+    return True
+
+
 # ==================== TMDB 候选搜索 ====================
 
 def _poster_url(path: Optional[str]) -> Optional[str]:
@@ -461,6 +499,13 @@ def seasons_for(tmdb_id: str) -> list[dict]:
 CONFIG_ENABLED = "media_seek_enabled"
 CONFIG_VOTE_ENABLED = "media_seek_vote_enabled"
 CONFIG_NOTIFY_VOTERS = "media_seek_notify_voters"
+# 求片减负（2026-11-10）：自动批准默认关（关时落单 pending、与现行
+# 逐字一致）；到货盯梢间隔默认 5 分钟。两键登记在运营设置
+# （admin_economy.ECONOMY_CONFIG_KEYS + config_schema.ECONOMY_CONFIG_SCHEMA
+# + Settings.vue「兑换码 · 求片」卡），脏值回默认、绝不把链路打死。
+CONFIG_AUTO_APPROVE = "media_seek_auto_approve_enabled"
+CONFIG_FULFILL_INTERVAL = "media_seek_fulfill_interval_minutes"
+DEFAULT_FULFILL_INTERVAL_MINUTES = 5
 
 
 def _get_bool(db: Session, key: str, default: bool = True) -> bool:
@@ -498,6 +543,24 @@ def vote_enabled(db: Session) -> bool:
 def notify_voters_enabled(db: Session) -> bool:
     """入库通知附议者开关：标记 completed 时是否也通知附议过的用户"""
     return _get_bool(db, CONFIG_NOTIFY_VOTERS, True)
+
+
+def auto_approve_enabled(db: Session) -> bool:
+    """自动批准开关：默认关。开启后新建单落单即 approved（状态就是
+    人工批准的 approved，不另造第三种状态）；关闭时行为与现行一致。"""
+    return _get_bool(db, CONFIG_AUTO_APPROVE, False)
+
+
+def fulfill_interval_minutes(db: Session) -> int:
+    """到货盯梢工人的轮间隔（分钟）：SystemConfig 覆盖，缺省/脏值回
+    默认 5，钳制 1~1440（与 config_schema 登记范围同口径）。"""
+    cfg = db.query(models.SystemConfig).filter(
+        models.SystemConfig.key == CONFIG_FULFILL_INTERVAL
+    ).first()
+    raw = str(cfg.value).strip() if cfg and cfg.value is not None else ""
+    if not (raw.isascii() and raw.isdigit()):
+        return DEFAULT_FULFILL_INTERVAL_MINUTES
+    return min(1440, max(1, int(raw)))
 
 
 # ==================== Step 1 加权附议 ====================

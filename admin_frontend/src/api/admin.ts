@@ -632,6 +632,22 @@ export const fetchMediaSeeks = (params: { status_filter?: string; realm_id?: num
 export const updateMediaSeek = (id: number, data: { status: string; admin_note?: string }) =>
   put<{ success: boolean }>(`/media-seek/${id}`, data)
 
+/** 批量批准结果：批上的 ids + 没批上的逐条原因（终态/不存在等） */
+export interface MediaSeekBatchApproveResult {
+  success: boolean
+  approved_ids: number[]
+  failed: { id: number; reason: string }[]
+  message: string
+}
+
+/** 批量批准：逐条走单条审核的守卫，部分失败逐条回报 */
+export const batchApproveMediaSeeks = (ids: number[]) =>
+  post<MediaSeekBatchApproveResult>('/media-seek/batch-approve', { ids })
+
+/** 一键批准当前范围内全部待审（realm_id 与列表同口径：0=全部服，不传=当前服） */
+export const approveAllPendingMediaSeeks = (realmId?: number) =>
+  post<MediaSeekBatchApproveResult>('/media-seek/approve-all-pending', { realm_id: realmId })
+
 /**
  * 入库后标记已入库：后端会先确认片真的在媒体库里（按 tmdb_id / 片名匹配），
  * 匹配不到返回 409；`force=true` 是人工兜底（片改了名入库时用）。

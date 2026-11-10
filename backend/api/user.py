@@ -843,7 +843,11 @@ def _create_media_seek_result(
         title_only=tmdb_id is None,
         season=season or None,
         note=request.note,
-        status="pending",
+        # 自动批准开关（media_seek_auto_approve_enabled，默认关）：
+        # 开着落单即 approved——就是人工批准的同一状态，后续转交/
+        # 标记/盯梢口径完全一致；关着与现行逐字一致（pending）。
+        # 去重/每日/月度额度判定都在此之前，与开关无关。
+        status="approved" if media_seek.auto_approve_enabled(db) else "pending",
         # 求片是「给哪个服求」的：用户选/单服自动带出，读不出就未标注
         realm_id=_resolve_seek_realm(db, user, request.realm_id),
     )
