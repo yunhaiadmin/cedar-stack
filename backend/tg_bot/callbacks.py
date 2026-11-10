@@ -215,14 +215,17 @@ def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,
     elif action == "server":
         text = handlers.handle_server(db, tg_user, chat_id, "")
         markup = handlers.back_markup()
-    elif action == "admin":
+    elif action in ("admin", "admin_rankpush"):
+        # admin_rankpush 是已下线的推榜子页入口（2026-11-10 砍子面板）：
+        # 历史消息上的旧按钮点到时直接落回管理面板（推今日榜/推本周榜
+        # 两个动作已并到管理面板上），不报错、不空白。
         text = handlers.handle_admin(db, tg_user, chat_id, "")
         admin_user = resolve(db, int(tg_id))
         if admin_user is not None and bool(getattr(admin_user, "is_staff", False)):
             markup = handlers.admin_markup(admin_user)
         else:
             markup = handlers.back_markup()
-    elif action in ("admin_whois", "admin_reconcile", "admin_rankpush",
+    elif action in ("admin_whois", "admin_reconcile",
                     "admin_rankpush_day", "admin_rankpush_week",
                     "admin_rain_info", "admin_botperms"):
         # 管理面板子页：每页重新验 is_staff（面板按钮裁剪不是安全边界）；
@@ -256,21 +259,6 @@ def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,
                     markup = handlers.admin_back_markup()
             else:
                 text, markup = reply, handlers.admin_back_markup()
-        elif action == "admin_rankpush":
-            text = layout.card(layout.title("推观影榜"), [
-                layout.row("📣", "推送目标", "交流群（海报＋榜单奖励）"),
-                layout.row("👇", "选择", "点下方按钮立即推送对应榜单"),
-            ])
-            markup = {"inline_keyboard": [
-                [
-                    {"text": "📅 今日榜",
-                     "callback_data": "menu:admin_rankpush_day"},
-                    {"text": "🗓️ 本周榜",
-                     "callback_data": "menu:admin_rankpush_week"},
-                ],
-                [{"text": "⬅️ 返回管理面板", "callback_data": "menu:admin"}],
-                layout.home_row(),
-            ]}
         elif action in ("admin_rankpush_day", "admin_rankpush_week"):
             text = handlers.handle_rankpush(
                 db, tg_user, chat_id,
