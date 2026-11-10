@@ -48,6 +48,7 @@
               <b>《{{ w.movie_name }}》</b>
               <div class="wmeta">
                 {{ shortDate(w.created_at) }} 投下
+                <span v-if="w.request_kind === 'missing_episodes' && w.missing_text"> · 补缺集：{{ w.missing_text }}</span>
                 <span v-if="w.title_only"> · 原名投下，待营地确认</span>
                 <span v-if="w.status === 'completed' && w.emby_item_id">
                   · 营地已上架，<button type="button" class="goto-player" @click="goOperator">去播放器看</button>
@@ -91,8 +92,10 @@
           <div v-for="w in hotWishes" :key="w.id" class="crowd">
             <div class="row1">
               <b>《{{ w.movie_name }}》</b>
+              <span v-if="w.request_kind === 'missing_episodes'" class="chip gray">求补缺集</span>
               <span class="chip blue">{{ w.vote_count > 0 ? w.vote_count + ' 人也想看 · 加权 ' + (w.weighted_vote_count ?? w.vote_count) : '还没有人附议' }}</span>
             </div>
+            <div v-if="w.request_kind === 'missing_episodes' && w.missing_text" class="want">🧩 {{ w.missing_text }}</div>
             <div class="want">{{ shortDate(w.created_at) }} 投入池中</div>
             <!-- 举报（想看页合并进来；仅公益服）：hot 榜后端只回 pending 行，
                  id 即求片行 id，与治理举报的目标 id 同域 -->
@@ -201,6 +204,28 @@
           <button type="button" class="picked-change" @click="clearPick">换一部</button>
         </div>
 
+        <!-- 缺集提示（缺集全套）：在库剧缺集时标出缺哪几集，可一键求补；
+             已有人求补时按钮变附议，求补进度以后端回读为准 -->
+        <div v-if="picked && picked.kind === 'series' && missingInfo && missingInfo.has_missing" class="missing-bar">
+          <span class="missing-text">🧩 这部剧还缺集：{{ missingInfo.missing_text }}</span>
+          <button
+            v-if="!missingInfo.request"
+            type="button"
+            class="missing-btn"
+            :disabled="missingBusy"
+            @click="doRequestMissing"
+          >{{ missingBusy ? '求补中…' : '求补这些集' }}</button>
+          <span v-else-if="missingInfo.request.mine" class="missing-done">已求补，补齐后会通知你</span>
+          <button
+            v-else-if="!missingInfo.request.voted"
+            type="button"
+            class="missing-btn"
+            :disabled="missingBusy"
+            @click="doRequestMissing"
+          >{{ missingBusy ? '附议中…' : `已有 ${missingInfo.request.vote_count + 1} 人求补，给它 +1` }}</button>
+          <span v-else class="missing-done">已附议求补，补齐后会通知你</span>
+        </div>
+
         <div v-if="picked && picked.kind === 'series' && !picked.in_library && (seasons.length > 0 || loadingSeasons || seasonsLoaded || seasonsError !== '')" class="sels-box">
           <div v-if="seasons.length > 0" class="sels-label">选季（可多选）</div>
           <div v-if="seasons.length > 0" class="sels-row">
@@ -247,7 +272,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { facilityStamp } from '@/config/game'
-import { mediaSeekApi, storeApi, type MediaSeekCandidate, type TvSeason, type MediaSeekRequest, type HotMediaSeekRequest, type StoreWantRecord, type StoreWantState } from '@/api'
+import { mediaSeekApi, storeApi, type MediaSeekCandidate, type TvSeason, type MediaSeekRequest, type HotMediaSeekRequest, type MissingInfo, type StoreWantRecord, type StoreWantState } from '@/api'
 import { governanceApi, type GovernanceReportReason } from '@/api/governance'
 import { useUserStore } from '@/stores/user'
 import { imageAuthUrl } from '@/api/emby'
@@ -603,8 +628,55 @@ function selectCandidate(c: MediaSeekCandidate): void {
   searching.value = false
   searchError.value = ''
   invalidateSeasons()
+  invalidateMissing()
   if (c.kind === 'series' && !c.in_library) {
     void loadSeasons(c.tmdb_id)
+  }
+  if (c.kind === 'series' && c.in_library) {
+    void loadMissing(c.tmdb_id)
+  }
+}
+
+// ---------- 缺集提示与一键求补（缺集全套） ----------
+// 缺集信息只读不占额度：选中在库剧时顺手查一次；查不到/失败就
+// 不显示那一条，绝不挡投愿主流程。
+const missingInfo = ref<MissingInfo | null>(null)
+const missingBusy = ref(false)
+let missingSeq = 0
+
+function invalidateMissing(): void {
+  missingSeq++
+  missingInfo.value = null
+  missingBusy.value = false
+}
+
+async function loadMissing(tmdbId: string): Promise<void> {
+  const seq = ++missingSeq
+  try {
+    const r = await mediaSeekApi.missing(tmdbId)
+    if (seq !== missingSeq) return
+    missingInfo.value = r
+  } catch {
+    if (seq !== missingSeq) return
+    missingInfo.value = null
+  }
+}
+
+/** 一键求补：落单或转附议由后端定，前端只回读最新状态展示 */
+async function doRequestMissing(): Promise<void> {
+  const p = picked.value
+  if (!p || missingBusy.value) return
+  missingBusy.value = true
+  try {
+    const r = await mediaSeekApi.requestMissing(p.tmdb_id)
+    useToast().success(r.message || '求补已提交')
+    await loadMissing(p.tmdb_id)
+    void loadMine()
+    void loadHot()
+  } catch (e) {
+    useToast().error(errDetail(e) || humanizeError(e))
+  } finally {
+    missingBusy.value = false
   }
 }
 
@@ -647,6 +719,7 @@ function clearPick(): void {
   picked.value = null
   seasons.value = []
   invalidateSeasons()
+  invalidateMissing()
   chosenSeasons.value = []
   seasonAll.value = true
   const q = wishText.value.trim()
@@ -689,6 +762,7 @@ function closeModal() {
   pickWarn.value = false
   candidates.value = []
   picked.value = null
+  invalidateMissing()
   seasons.value = []
   loadingSeasons.value = false
   seasonsLoaded.value = false
@@ -1293,6 +1367,31 @@ onMounted(() => {
   transform: translateY(-50%);
 }
 .picked-wanted { font-size: 12px; color: var(--ink2); white-space: nowrap; }
+/* 缺集提示条（缺集全套）：跟在选中卡下面，文案与按钮都走后端回读 */
+.missing-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border: 1.5px dashed var(--gold);
+  border-radius: var(--paper-r-md, 10px);
+  background: var(--paper);
+}
+.missing-text { flex: 1 1 200px; font-size: 13px; color: var(--ink); }
+.missing-btn {
+  font-size: 12px;
+  padding: 6px 12px;
+  border: 1.5px solid var(--gold);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.missing-btn:disabled { opacity: 0.6; cursor: default; }
+.missing-done { font-size: 12px; color: var(--ink2); white-space: nowrap; }
 /* 求片举报（想看页合并进来；仅公益服）：行内小链接 + 行内展开表单（老页同形态） */
 .report-line { margin-top: 6px; font-size: 11px; }
 .report-link { color: var(--ink2); text-decoration: underline; cursor: pointer; }

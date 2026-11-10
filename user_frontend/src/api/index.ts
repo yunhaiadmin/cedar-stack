@@ -671,6 +671,10 @@ export interface MediaSeekRequest {
   tmdb_id?: string | null
   /** 原名投下的兜底行（没绑 TMDB 候选、待人工确认）；选片行为 false */
   title_only?: boolean
+  /** 求片分类：seek 整片求片 / missing_episodes 补缺集求片 */
+  request_kind?: string
+  /** 补缺集行的大白话缺集文案（后端统一生成；整片求片为空） */
+  missing_text?: string
   /** 已入库的条目 guid：completed 时可直接跳详情观看 */
   emby_item_id?: string | null
   /** 这部片求给哪个服（多服运营时由用户选择 / 单服自动带出） */
@@ -784,6 +788,47 @@ export const mediaSeekApi = {
   /** v2 热门求片：所有人 pending 的求片（匿名），按附议数排序 */
   hot: () =>
     api.get<never, { requests: HotMediaSeekRequest[] }>('/api/user/media-seek/hot'),
+
+  /** 候选卡缺集信息（只读）：在库剧缺哪几集、求补到哪一步 */
+  missing: (tmdbId: string) =>
+    api.get<never, MissingInfo>('/api/user/media-seek/missing', {
+      params: { tmdb_id: tmdbId },
+    }),
+
+  /** 一键求补这些集：落补缺集求片；已有别人在求时转成附议 */
+  requestMissing: (tmdbId: string, realmId?: number) =>
+    api.post<never, {
+      success: boolean
+      request_id: number
+      message: string
+      created?: boolean
+      voted?: boolean
+      vote_count?: number
+    }>('/api/user/media-seek/missing-request', {
+      tmdb_id: tmdbId,
+      ...(realmId ? { realm_id: realmId } : {}),
+    }),
+}
+
+/** 候选卡缺集信息（后端 GET /api/user/media-seek/missing） */
+export interface MissingInfo {
+  in_library: boolean
+  series_item_id: number | null
+  series_name: string
+  has_missing: boolean
+  missing_count: number
+  /** {季号: [缺的集号]} */
+  missing_detail: Record<string, number[]>
+  /** 大白话文案，如「第 1 季缺第 2、5 集」 */
+  missing_text: string
+  /** 该剧未完结的补缺集求片（没有为 null） */
+  request: {
+    id: number
+    vote_count: number
+    voted: boolean
+    mine: boolean
+    status: string
+  } | null
 }
 
 /** v2 热门求片行（匿名展示） */
@@ -794,6 +839,10 @@ export interface HotMediaSeekRequest {
   type?: string | null
   /** 原名投下的兜底行（没绑 TMDB 候选、待人工确认） */
   title_only?: boolean
+  /** 求片分类：seek 整片求片 / missing_episodes 补缺集求片 */
+  request_kind?: string
+  /** 补缺集行的大白话缺集文案（整片求片为空） */
+  missing_text?: string
   season_label?: string
   vote_count: number
   /** Step 1 加权附议和（投票时刻等级权重快照之和） */
