@@ -478,7 +478,7 @@ def _get_register_gift_view_enabled(db):
     return str(row.value).strip().lower() in ("1", "true", "yes", "on")
 
 
-def _grant_register_gifts(db, user):
+def _grant_register_gifts(db, user, code_reward_type=None):
     """新注册冷启动赠送：资格与查看行各由自己的总开关把关，彼此独立。
 
     资格开关 register_gift_welfare_enabled、凭证开关
@@ -486,11 +486,26 @@ def _grant_register_gifts(db, user):
     默认不送资格、不送凭证，管理端可分别重开）；任一开时行为与此前
     一致，天数走 register_gift_welfare_days（0=永不过期口径不变）／
     register_gift_view_days（最小 1 口径不变）。
+
+    凭码注册例外（2026-11-10 用户拍板：注册码一律自带公益资格，不看
+    码面类型）：code_reward_type 非 None 即本次是凭码注册——福利型码
+    的资格已在核销事务里按码面发放（channel=code_redeem），这里绝不
+    再发（防码面与赠送天数叠加成双倍）；其余类型码按赠送天数口径
+    无条件发放（不受总开关限制，码本身即门槛），channel=register_code
+    与开放注册赠送（register_gift）区分来源。只带资格：本例外不新建
+    查看行，查看赠送仍只走它自己的开关（下方逻辑不变）。
     """
+    from backend import codes as _codes
     from backend import realms
     from backend.emby_server.portal import grant_welfare
 
-    if _get_register_gift_welfare_enabled(db):
+    if code_reward_type is not None and code_reward_type == _codes.REWARD_WELFARE:
+        logger.info("凭码注册（福利型码）资格已随码发放，跳过注册赠送: user=%s", user.id)
+    elif code_reward_type is not None:
+        welfare_days = _get_register_gift_days(
+            db, "register_gift_welfare_days", REGISTER_GIFT_WELFARE_DAYS, 0)
+        grant_welfare(db, user, channel="register_code", days=welfare_days)
+    elif _get_register_gift_welfare_enabled(db):
         welfare_days = _get_register_gift_days(
             db, "register_gift_welfare_days", REGISTER_GIFT_WELFARE_DAYS, 0)
         grant_welfare(db, user, channel="register_gift", days=welfare_days)
@@ -602,6 +617,7 @@ def register(request: Request, req: RegisterRequest, db: Session = Depends(get_d
                           else register_channel.OPEN),
     )
     db.add(user)
+    consume_reward_type = None
     if reg_code_check is not None:
         # 凭码注册：核销与建号同一个事务。先 flush 拿到新用户 id，再走
         # 核销主体（CAS 原子占位 + 代理销售归属 + 附带权益发放，均不
@@ -617,6 +633,9 @@ def register(request: Request, req: RegisterRequest, db: Session = Depends(get_d
             raise HTTPException(
                 status_code=400,
                 detail=consume.get("message") or "注册码无效")
+        # 核销返回值自带 reward_type（核销主体的四种分派口径），供下方
+        # 赠送段判定「资格是否已随码发放」，不另查码行、不靠猜。
+        consume_reward_type = consume.get("reward_type")
     commit_with_retry(db, label="注册落库")  # 一次提交落盘
     db.refresh(user)
 
@@ -642,8 +661,11 @@ def register(request: Request, req: RegisterRequest, db: Session = Depends(get_d
                            exc_info=True)
 
     # 公益服冷启动赠送：失败静默不阻塞注册（与邀请奖励同一容错口径）。
+    # 凭码注册把核销的 reward_type 传进去：资格一律自带（见
+    # _grant_register_gifts docstring），发放摆在建号提交之后，与赠送
+    # 同一容错段——发放异常只回滚赠送事务、记日志，已落库的号不受影响。
     try:
-        _grant_register_gifts(db, user)
+        _grant_register_gifts(db, user, code_reward_type=consume_reward_type)
     except Exception:  # noqa: BLE001 — 赠送失败不阻塞注册
         db.rollback()
         logger.warning("新注册赠送失败: user=%s", user.id, exc_info=True)
