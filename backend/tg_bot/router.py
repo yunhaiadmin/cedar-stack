@@ -400,6 +400,85 @@ def _handle_chat_member(db, cfg, cm: dict) -> None:
         logger.exception("chat_member handling failed")
 
 
+# ---------------------------------------------------------------------------
+# widget_query 分发器（Bot API 10.4，PR-2a）：按请求 data 的动作
+# 命名空间（JSON 里的 "a" 字段）把 query 分发到对应组件。
+#
+# 老虎机已用 {"a":"spin"}；新组件上线时在 _widget_query_routes 里
+# 登记自己的动作名，绝不许再把全部 widget_query 直塞给单个组件
+# ——否则两个组件会互相误答。未登记/解析不出的动作由分发器统一
+# 回 error JSON 应答，绝不静默（不应答的 query 在 widget 侧
+# 15 秒后 TIMEOUT）。
+# ---------------------------------------------------------------------------
+
+
+def _widget_query_action(widget_query: dict) -> str | None:
+    """取 widget_query 请求 data 的动作命名空间（"a" 字段）。
+
+    data 是 1–64 字节的 JSON 字符串；解析失败、不是对象、或 "a"
+    不是非空字符串时返回 None（由分发器按未知动作统一应答）。
+    """
+    import json
+
+    raw = (widget_query or {}).get("data") or ""
+    try:
+        req = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    if isinstance(req, dict):
+        action = req.get("a")
+        if isinstance(action, str) and action:
+            return action
+    return None
+
+
+def _widget_query_routes() -> dict:
+    """动作命名空间 → 处理函数（调用时懒加载，防循环导入）。
+
+    登记位：贡献池私聊面板组件（PR-2b）的动作在此加一行
+    （模块 backend.tg_bot.pool_widget、函数 handle_widget_query），
+    本单只留位、不实现 pool 本体。
+    """
+    from backend.tg_bot import slots_widget
+
+    return {
+        "spin": slots_widget.handle_widget_query,
+        # "pool_refresh": pool_widget.handle_widget_query,  # PR-2b 登记
+    }
+
+
+def _dispatch_widget_query(db, widget_query: dict) -> None:
+    """按动作命名空间分发 widget_query；未知动作统一 error 应答。
+
+    已登记动作 → 对应组件的 handle_widget_query（老虎机 spin 的
+    行为逐字不变，仍由 slots_widget 自己解析与应答）；未登记 →
+    分发器直接 answerWidgetQuery 回 {"error": "unknown_action"}
+    并记日志，绝不静默。缺 query id 时无从应答，只记日志。
+    """
+    import json
+
+    from backend.tg_bot import sender
+
+    action = _widget_query_action(widget_query)
+    handler = _widget_query_routes().get(action or "")
+    if handler is not None:
+        handler(db, widget_query)
+        return
+    qid = (widget_query or {}).get("id")
+    if not qid:
+        logger.warning(
+            "widget_query 动作未知且缺 id，无法应答: %s", widget_query)
+        return
+    data = json.dumps(
+        {"error": "unknown_action", "msg": "未知请求"},
+        ensure_ascii=False)
+    ok, err = sender.answer_widget_query(db, qid, data)
+    if not ok:
+        logger.warning(
+            "widget_query 未知动作应答失败 qid=%s action=%s err=%s",
+            qid, action, err)
+
+
 def dispatch(db, update: dict) -> None:
     """分发单个 update 到对应的处理器。
 
@@ -454,14 +533,13 @@ def dispatch(db, update: dict) -> None:
                 db, update["inline_query"] or {}, cfg)
             return
 
-        # HTML widget 请求（Bot API 10.4）：老虎机拉杆等走这里；
-        # shared_widget_query 来自转发的共享 widget，本机器人不用
-        # 共享 widget，静默忽略（不处理、不报错）。
+        # HTML widget 请求（Bot API 10.4）：走分发器按动作命名
+        # 空间分发（见 _dispatch_widget_query），老虎机 spin 仍由
+        # slots_widget 处理、行为逐字不变，未知动作统一 error
+        # 应答；shared_widget_query 来自转发的共享 widget，本机器人
+        # 不用共享 widget，静默忽略（不处理、不报错）。
         if "widget_query" in update:
-            from backend.tg_bot import slots_widget
-
-            slots_widget.handle_widget_query(
-                db, update["widget_query"] or {})
+            _dispatch_widget_query(db, update["widget_query"] or {})
             return
         if "shared_widget_query" in update:
             return
