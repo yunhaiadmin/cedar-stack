@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>我的贡献池</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:var(--tg-theme-bg-color,#fff);color:var(--tg-theme-text-color,#111);padding:12px;text-align:center}
+h1{font-size:17px;margin:2px 0 8px}
+#demo{display:none;background:#e8a13a;color:#fff;border-radius:8px;font-size:12px;padding:2px 8px;margin-left:6px}
+.row{font-size:15px;margin:7px 0}
+.row b{font-size:17px}
+#refresh{width:100%;max-width:280px;padding:11px;font-size:16px;font-weight:700;border:0;border-radius:12px;background:var(--tg-theme-button-color,#2481cc);color:var(--tg-theme-button-text-color,#fff);margin-top:10px}
+#refresh:disabled{opacity:.5}
+#msg{min-height:20px;font-size:13px;color:var(--tg-theme-hint-color,#888);margin-top:6px}
+</style>
+</head>
+<body>
+<h1>🤝 我的贡献池<span id="demo">演示模式</span></h1>
+<div class="row">在用 <b id="active">—</b> 盘<span id="extra"></span></div>
+<div class="row">今天被看了 <b id="plays">—</b> 次 · 帮了 <b id="viewers">—</b> 位朋友</div>
+<div class="row">本月累计被看 <b id="month">—</b> 次</div>
+<button id="refresh">🔄 刷新</button>
+<div id="msg">数据每天 21:00 也会发一份小结到私聊</div>
+<script>
+"use strict";
+var TW=window.TelegramWidget||null,LIVE=!!(TW&&typeof TW.request==="function");
+var d={active:1,pending:0,suspended:0,viewers:2,plays:4,month:9},busy=false,last=0;
+function $(i){return document.getElementById(i)}
+function draw(){var e="";
+if(d.pending)e+=" · 待审 "+d.pending;
+if(d.suspended)e+=" · 暂停 "+d.suspended;
+$("extra").textContent=e;
+$("active").textContent=d.active;$("plays").textContent=d.plays;
+$("viewers").textContent=d.viewers;$("month").textContent=d.month}
+function readData(){if(!TW)return;
+try{var c=JSON.parse(TW.chatData||"null");if(c){for(var k in c)if(c[k]!=null)d[k]=c[k]}}catch(e){}}
+function say(t){$("msg").textContent=t}
+if(LIVE){readData()}else{$("demo").style.display="inline-block"}
+draw();
+if(TW&&TW.onEvent)TW.onEvent("chatDataChanged",function(){readData();draw()});
+if(TW&&TW.ready)TW.ready();
+$("refresh").onclick=function(){
+var now=Date.now();
+if(busy||now-last<5000)return;
+last=now;busy=true;$("refresh").disabled=true;say("刷新中…");
+if(!LIVE){busy=false;$("refresh").disabled=false;say("演示模式：数据不会真的刷新");return}
+TW.request(JSON.stringify({a:"pool_refresh"})).then(function(ans){
+busy=false;$("refresh").disabled=false;
+if(!ans||!ans.result){say("机器人没有回结果");return}
+var r;try{r=JSON.parse(ans.result)}catch(e){say("机器人结果格式不对");return}
+if(r.error){say(r.msg||"刷新失败");return}
+for(var k in r)if(r[k]!=null)d[k]=r[k];
+draw();say("已刷新")},function(e){busy=false;$("refresh").disabled=false;say("请求失败")})};
+</script>
+</body>
+</html>

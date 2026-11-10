@@ -433,17 +433,12 @@ def _widget_query_action(widget_query: dict) -> str | None:
 
 
 def _widget_query_routes() -> dict:
-    """动作命名空间 → 处理函数（调用时懒加载，防循环导入）。
-
-    登记位：贡献池私聊面板组件（PR-2b）的动作在此加一行
-    （模块 backend.tg_bot.pool_widget、函数 handle_widget_query），
-    本单只留位、不实现 pool 本体。
-    """
-    from backend.tg_bot import slots_widget
+    """动作命名空间 → 处理函数（调用时懒加载，防循环导入）。"""
+    from backend.tg_bot import pool_widget, slots_widget
 
     return {
         "spin": slots_widget.handle_widget_query,
-        # "pool_refresh": pool_widget.handle_widget_query,  # PR-2b 登记
+        "pool_refresh": pool_widget.handle_widget_query,
     }
 
 
