@@ -432,6 +432,121 @@ def answer_callback_query(db, callback_query_id: str, text: str | None = None, s
     return _call(db, "answerCallbackQuery", payload)
 
 
+# ---------------------------------------------------------------------------
+# 临时消息（Bot API 10.2+/10.4 ephemeral）：横切只许这一套 wrapper。
+#
+# 临时消息只对指定接收人可见，官方不保证送达（接收人离线可能收不到），
+# 消失时点由客户端决定、无固定时长。标识字段以官方 API 参考为准：
+# Message.ephemeral_message_id（10.2 新增），发送结果与
+# callback_query.message 都读这个字段。
+# 限制（官方）：按钮不许带 web_app / login_url；来自临时消息的回调，
+# replace_callback_query_message 必须为 False、改用 editEphemeralMessage*；
+# editEphemeralMessageText 的 chat_id 只收 supergroup。
+# ---------------------------------------------------------------------------
+
+
+def _ephemeral_params(
+    *,
+    receiver_user_id: int | None = None,
+    callback_query_id: str | None = None,
+    replace_callback_query_message: bool = False,
+) -> dict:
+    """组装 ephemeral_message_parameters：只放非空字段，replace 仅 True 时放。"""
+    params: dict = {}
+    if receiver_user_id is not None:
+        params["receiver_user_id"] = receiver_user_id
+    if callback_query_id is not None:
+        params["callback_query_id"] = callback_query_id
+    if replace_callback_query_message:
+        params["replace_callback_query_message"] = True
+    return params
+
+
+def send_ephemeral_message(
+    db,
+    chat_id: int,
+    text: str,
+    *,
+    receiver_user_id: int | None = None,
+    callback_query_id: str | None = None,
+    replace_callback_query_message: bool = False,
+    reply_markup: dict | None = None,
+    parse_mode: str | None = "HTML",
+) -> tuple[bool, str | None, int | None]:
+    """
+    发送临时消息，返回 (是否成功, 错误信息, ephemeral_message_id)。
+
+    两种形态（二选一，官方 EphemeralMessageParameters）：
+    - 指定接收人：传 receiver_user_id，只发给该成员（与 callback_query_id
+      同给时，receiver 必须就是按按钮的人）。
+    - 回调回复：只传 callback_query_id，只给按按钮的人看；须在收到回调
+      后 15 秒内发送，且仍必须照常 answerCallbackQuery 回执。
+    两者都不给不构成临时消息，本函数本地拒绝、绝不降级成普通消息发出。
+    ephemeral_message_id 取自发送结果 Message 的同名字段；结果里没有
+    该字段时返回 None（调用方据此跳过定时删除登记）。
+    """
+    if receiver_user_id is None and callback_query_id is None:
+        return False, "临时消息缺少接收人或回调限定", None
+    payload: dict = {
+        "chat_id": chat_id,
+        "text": text,
+        "ephemeral_message_parameters": _ephemeral_params(
+            receiver_user_id=receiver_user_id,
+            callback_query_id=callback_query_id,
+            replace_callback_query_message=replace_callback_query_message),
+    }
+    if parse_mode is not None:
+        payload["parse_mode"] = parse_mode
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
+    ok, err, result = _call_ex(db, "sendMessage", payload)
+    if not ok or not result:
+        return ok, err, None
+    raw = result.get("ephemeral_message_id")
+    return True, None, int(raw) if isinstance(raw, int) else None
+
+
+def edit_ephemeral_message_text(
+    db,
+    chat_id: int,
+    receiver_user_id: int,
+    ephemeral_message_id: int,
+    text: str,
+    reply_markup: dict | None = None,
+    parse_mode: str | None = "HTML",
+) -> tuple[bool, str | None]:
+    """原地编辑一条临时消息（三元组定位：chat_id 只收 supergroup）。
+
+    来自临时消息的回调必须走本方法改内容，不许用 replace 语义。
+    官方注：不保证用户收到编辑事件。返回 (是否成功, 错误信息)。
+    """
+    payload: dict = {
+        "chat_id": chat_id,
+        "receiver_user_id": receiver_user_id,
+        "ephemeral_message_id": ephemeral_message_id,
+        "text": text,
+    }
+    if parse_mode is not None:
+        payload["parse_mode"] = parse_mode
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
+    return _call(db, "editEphemeralMessageText", payload)
+
+
+def delete_ephemeral_message(
+    db,
+    chat_id: int,
+    receiver_user_id: int,
+    ephemeral_message_id: int,
+) -> tuple[bool, str | None]:
+    """删除一条临时消息（三元组定位）。官方注：不保证用户收到删除事件。"""
+    return _call(db, "deleteEphemeralMessage", {
+        "chat_id": chat_id,
+        "receiver_user_id": receiver_user_id,
+        "ephemeral_message_id": ephemeral_message_id,
+    })
+
+
 def set_my_commands(db, commands: list[tuple[str, str]], scope: dict | None = None) -> tuple[bool, str | None]:
     """
     注册 Bot 命令菜单（客户端输入框旁的「菜单」按钮里显示）。

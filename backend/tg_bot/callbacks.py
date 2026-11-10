@@ -130,7 +130,14 @@ def _handle_whois_callback(db, callback_query: dict) -> None:
     chat = msg.get("chat") or {}
     chat_id = chat.get("id")
     message_id = msg.get("message_id")
-    if not chat_id or not message_id or not tg_id or len(parts) < 3:
+    # 临时消息面板（/kk 群卡临时化）：message 带 ephemeral_message_id
+    # 时走临时分支；两个 id 都没带时查进程内登记兜底定位。普通消息
+    # （带 message_id）永远走现行分支，登记不许劫持普通面板的点击。
+    eph_id = msg.get("ephemeral_message_id")
+    if eph_id is None and not message_id and chat_id and tg_id:
+        eph_id = ephemeral.ephemeral_message_for(chat_id, int(tg_id))
+    if (not chat_id or not tg_id or len(parts) < 3
+            or (not message_id and not eph_id)):
         return
     sender.answer_callback_query(db, cq_id)
     try:
@@ -161,6 +168,17 @@ def _handle_whois_callback(db, callback_query: dict) -> None:
     except Exception:
         logger.warning("tg whois panel render failed: %s", data, exc_info=True)
         return
+    if eph_id is not None:
+        # 临时消息面板：官方规定来自临时消息的回调必须走
+        # editEphemeralMessageText 改内容（replace 语义禁用）；编辑
+        # 成功按临时消息口径续期（deleteEphemeralMessage 定时）。
+        # 接收人就是面板接收人本人——只有他看得见、点得到这块面板。
+        ok, _err = sender.edit_ephemeral_message_text(
+            db, chat_id, int(tg_id), int(eph_id), text, markup)
+        if ok:
+            _rearm_ephemeral_panel_autodelete(
+                db, chat_id, int(tg_id), int(eph_id))
+        return
     ok, _err = sender.edit_message_text(db, chat_id, message_id, text, markup)
     if ok and chat_id != int(tg_id):
         # 群面板续命：与 menu 面板同一口径，互动后重挂自毁定时。
@@ -179,6 +197,23 @@ def _rearm_group_panel_autodelete(db, chat_id: int, message_id: int) -> None:
         logger.debug(
             "tg panel autodelete rearm failed: chat=%s message=%s",
             chat_id, message_id, exc_info=True)
+
+
+def _rearm_ephemeral_panel_autodelete(db, chat_id: int, receiver_user_id: int,
+                                      ephemeral_message_id: int) -> None:
+    """临时消息面板互动续命接线：与 _rearm_group_panel_autodelete 同纪律。
+
+    只由 _handle_whois_callback 在临时面板编辑成功后调用；旁路纪律
+    相同：重挂失败只记 debug 日志，绝不影响面板本身。
+    """
+    try:
+        ephemeral.rearm_ephemeral_delete(
+            db, chat_id, receiver_user_id, ephemeral_message_id)
+    except Exception:
+        logger.debug(
+            "tg ephemeral panel autodelete rearm failed: chat=%s "
+            "receiver=%s eph=%s",
+            chat_id, receiver_user_id, ephemeral_message_id, exc_info=True)
 
 
 def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,

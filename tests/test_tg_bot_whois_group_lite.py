@@ -195,10 +195,15 @@ def test_group_args_lookup_by_username_and_tg_id(db, sent):
 def test_handler_group_direct_call_renders_lite(db):
     _staff(db)
     _rich_target(db)
-    out, markup = handlers.handle_whois(
+    # 包1（Bot API 10.4 临时消息）：群路径定位到人返回临时消息标记
+    # 四元组（标记, 文案, 按钮, 接收人=发起管理员），由 router 只发
+    # 给管理员本人；文案/按钮内容与原精简卡逐字不变。
+    marker, out, markup, receiver = handlers.handle_whois(
         db, {"id": STAFF_TG}, GROUP_ID, "",
         in_group=True,
         reply_from={"id": TARGET_TG, "first_name": "小明"})
+    assert marker == "__ephemeral__"
+    assert receiver == STAFF_TG
     assert "lite_target" in out
     assert "小明" in out
     # 二期：直调也带管理员面板按钮（绑定详情/资格凭证入口在）

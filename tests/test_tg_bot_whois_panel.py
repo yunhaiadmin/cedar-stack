@@ -102,7 +102,11 @@ def test_whois_group_opens_panel_with_buttons(db):
     reply = handlers.handle_whois(
         db, {"id": STAFF_TG}, GROUP, "targetx", in_group=True)
     assert isinstance(reply, tuple)
-    text, markup = reply
+    # 包1（Bot API 10.4 临时消息）：群路径面板页包成临时消息标记，
+    # receiver=发起管理员；面板内容（精简卡＋按钮）不变。
+    marker, text, markup, receiver = reply
+    assert marker == "__ephemeral__"
+    assert receiver == STAFF_TG
     assert "账号速览" in text or "targetx" in text
     assert "能量余额" in text  # 精简卡字段在
     datas = _datas(markup)

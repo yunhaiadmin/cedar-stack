@@ -153,6 +153,37 @@ def _send_reply(db, chat_id, text, reply_markup=None, *, autodelete=False):
         ephemeral.schedule_delete(chat_id, message_id, delay)
 
 
+def _send_ephemeral_reply(db, chat_id, text, reply_markup, receiver_tg_id, *,
+                          in_group: bool):
+    """临时消息发送口（Bot API ephemeral，首个落点 /kk 群查人卡）。
+
+    只发给 receiver_tg_id 本人。临时消息官方不保证送达，发送失败
+    必须如实回落现行公开路径（_send_reply＋群自毁口径不变），绝不
+    静默丢卡。发送成功把 (chat, receiver) → ephemeral_message_id
+    记入进程内登记（面板回调的 message 缺该字段时兜底定位），并
+    按 bot_msg_autodelete_seconds 挂 deleteEphemeralMessage 定时
+    删除（延时 0=关时 schedule 自行不挂）。
+    """
+    from backend.tg_bot import ephemeral, sender
+
+    ok, err, eph_id = sender.send_ephemeral_message(
+        db, chat_id, text,
+        receiver_user_id=int(receiver_tg_id), reply_markup=reply_markup)
+    if not ok:
+        logger.warning(
+            "tg ephemeral send failed, fallback to public reply: "
+            "chat=%s receiver=%s err=%s", chat_id, receiver_tg_id, err)
+        _send_reply(db, chat_id, text, reply_markup=reply_markup,
+                    autodelete=in_group)
+        return
+    if eph_id:
+        ephemeral.note_ephemeral_message(
+            chat_id, int(receiver_tg_id), eph_id)
+        ephemeral.schedule_ephemeral_delete(
+            chat_id, int(receiver_tg_id), eph_id,
+            ephemeral.bot_msg_delay_seconds(db))
+
+
 def _schedule_cmd_autodelete(db, chat_id, message_id):
     """群聊里用户命令消息本体挂 3 秒自毁（bot_cmd_autodelete_seconds）。
 
@@ -662,6 +693,15 @@ def dispatch(db, update: dict) -> None:
             else:
                 logger.warning("rain panel send failed chat=%s err=%s", chat_id, err)
                 rain_svc.fail_unannounced(db, rain_id)
+            return
+        if isinstance(reply, tuple) and reply and reply[0] == "__ephemeral__":
+            # 临时消息标记（/__kk 群查人卡）：只发给标记里的接收人
+            # 本人；发送失败在 _send_ephemeral_reply 内如实回落公开
+            # 路径（群自毁口径不变），不许落到下面的普通元组发送。
+            _marker, text, markup, receiver_tg_id = reply
+            _send_ephemeral_reply(
+                db, chat_id, text, markup, receiver_tg_id,
+                in_group=in_group)
             return
         if isinstance(reply, tuple):
             text, markup = reply
