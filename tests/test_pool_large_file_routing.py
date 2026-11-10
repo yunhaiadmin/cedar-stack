@@ -65,7 +65,22 @@ def _guid():
     return uuid.uuid4().hex
 
 
+def _delete_orphan_subscriptions(db):
+    """删孤儿订阅行：user_id 不在 web_users 里的 UserSubscription。
+
+    某在先模块删用户时没删订阅会留下这种行；SQLite 的 id 是
+    max+1 复用，后建的用户撞上同一个 id 就会“继承”这份订阅，
+    has_active_subscription 误判 True（2026-11-10 #23 冒烟红：
+    CI 里 bound 用户复用 id 51，人群 subscribers 下分流误判命
+    中）。seed 建用户前（_cleanup）与回归用例里都走这一处。"""
+    db.query(models.UserSubscription).filter(
+        ~models.UserSubscription.user_id.in_(
+            db.query(models.WebUser.id))).delete(
+        synchronize_session=False)
+
+
 def _cleanup(db):
+    _delete_orphan_subscriptions(db)
     for uname in (BOUND, FREE, CONTRIB):
         old = db.query(models.WebUser).filter(
             models.WebUser.username == uname).first()
@@ -73,6 +88,11 @@ def _cleanup(db):
             cred_ids = [r[0] for r in db.query(
                 em.UserStorageBinding.credential_id)
                 .filter(em.UserStorageBinding.user_id == old.id).all()]
+            # 先删该用户的订阅行：否则删用户后订阅变孤儿行，后建
+            # 的用户复用 id 会“继承”订阅（同上）。
+            db.query(models.UserSubscription).filter(
+                models.UserSubscription.user_id == old.id).delete(
+                synchronize_session=False)
             db.query(em.PoolMember).filter(
                 em.PoolMember.user_id == old.id).delete(
                 synchronize_session=False)
@@ -485,6 +505,93 @@ def test_route_audience_blocked_not_routed(seed):
         assert decision.kind == "bound"
     finally:
         db.close()
+
+
+def test_route_orphan_subscription_not_inherited(seed):
+    """回归（2026-11-10 #23 冒烟红）：在先模块删用户未删订阅
+    留孤儿行，后建用户复用该 id 后 has_active_subscription 误
+    判 True，人群 subscribers 下分流误判命中。
+
+    按复现口径：先给下一个待分配 id 插一条孤儿 active 订阅
+    （active、end_date 未来、realm NULL），再走清理原语删净，
+    然后新建已绑用户（SQLite id 为 max+1，恰好复用该 id）断言
+    判定仍 False。清理原语坏了会让本用例同样失败（孤儿行残留
+    → 新用户继承订阅）；直接测清理原语，_cleanup 在 seed 时调
+    同一原语，CI 全量的 audience 用例覆盖整条链路。"""
+    from datetime import datetime, timedelta
+
+    db = SessionLocal()
+    tmp_user_id = None
+    tmp_cred_id = None
+    next_id = None
+    try:
+        top = db.query(models.WebUser.id).order_by(
+            models.WebUser.id.desc()).first()
+        next_id = (top[0] if top else 0) + 1
+        db.add(models.UserSubscription(
+            user_id=next_id, plan_id=1, realm_id=None,
+            start_date=datetime.now(),
+            end_date=datetime.now() + timedelta(days=30),
+            status="active"))
+        db.commit()
+        _delete_orphan_subscriptions(db)
+        db.commit()
+        assert db.query(models.UserSubscription).filter(
+            models.UserSubscription.user_id == next_id).count() == 0
+        # 新建已绑用户：id 恰好复用孤儿行的 user_id。
+        u = models.WebUser(
+            username="poolroute_orphan",
+            password_hash=hash_password(PW),
+            is_active=True, is_staff=True,
+            emby_username="poolroute_orphan",
+            emby_password=hash_password(PW))
+        db.add(u)
+        db.flush()
+        assert u.id == next_id
+        tmp_user_id = u.id
+        cred = em.MountCredential(
+            mount_id=None, scope="user", owner_user_id=u.id,
+            sealed_credential="", key_id="fernet-v1", status="active")
+        db.add(cred)
+        db.flush()
+        tmp_cred_id = cred.id
+        db.add(em.UserStorageBinding(
+            user_id=u.id, provider="drive", account_label="自家盘",
+            credential_id=cred.id, status="active"))
+        _add_pool_variant(db, seed, seed["big_id"])
+        _set_config(db, "pool_audience", "subscribers")
+        user = db.query(models.WebUser).filter(
+            models.WebUser.id == u.id).one()
+        item = db.query(em.MediaItem).filter(
+            em.MediaItem.id == seed["big_id"]).one()
+        assert pool_gate.large_file_pool_route(db, user, item) is False
+        decision = pool_gate.ensure_playback_allowed_for_item(
+            db, user, item)
+        assert decision.kind == "bound"
+    finally:
+        try:
+            if tmp_user_id is not None:
+                # 先删订阅再删用户：不给后跑的模块留孤儿行。
+                db.query(models.UserSubscription).filter(
+                    models.UserSubscription.user_id == tmp_user_id
+                    ).delete(synchronize_session=False)
+                db.query(em.UserStorageBinding).filter(
+                    em.UserStorageBinding.user_id == tmp_user_id
+                    ).delete(synchronize_session=False)
+                if tmp_cred_id is not None:
+                    db.query(em.MountCredential).filter(
+                        em.MountCredential.id == tmp_cred_id).delete(
+                        synchronize_session=False)
+                db.query(models.WebUser).filter(
+                    models.WebUser.id == tmp_user_id).delete()
+            if next_id is not None:
+                # 兜底：断言失败时孤儿行也须删净，不污染后跑的模块。
+                db.query(models.UserSubscription).filter(
+                    models.UserSubscription.user_id == next_id).delete(
+                    synchronize_session=False)
+            db.commit()
+        finally:
+            db.close()
 
 
 def test_route_pool_disabled_not_routed(seed):
