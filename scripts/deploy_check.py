@@ -19,7 +19,7 @@
 
 用法::
 
-    python3 scripts/deploy_check.py                 # 默认端口 8010（分离模式用 8011/8012）
+    python3 scripts/deploy_check.py                 # 默认动态挑空闲端口（分离模式用 port+1 与 port+2）
     python3 scripts/deploy_check.py --port 9000
     python3 scripts/deploy_check.py --keep          # 自检完不杀进程（调试用）
 
@@ -35,6 +35,7 @@ import secrets
 from pathlib import Path
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -180,27 +181,55 @@ def preflight(media_dir: str) -> tuple[int, str, str]:
 
 # ==================== 二、冷启动 ====================
 
-def start_service(script: str, port: int, timeout: float, *, label: str,
-                  extra_env: dict | None = None) -> tuple[subprocess.Popen, str, str]:
-    """启动一个服务进程，等它 /api/health 就绪；起不来就打印日志尾部并退出"""
-    log_path = os.path.join(tempfile.gettempdir(), f"deploy_check_{port}.log")
-    log_file = open(log_path, "w", encoding="utf-8")  # noqa: SIM115 — 子进程持有
-    # PORT 给 EM（serve.py），EMBY_API_PORT 给 EA（serve_emby.py），两个都设省得区分
-    env = {**os.environ, "PORT": str(port), "EMBY_API_PORT": str(port), "HOST": "0.0.0.0",
-           **(extra_env or {})}
-    proc = subprocess.Popen([sys.executable, script], cwd=ROOT, env=env,
-                            stdout=log_file, stderr=subprocess.STDOUT)
-    base = f"http://127.0.0.1:{port}"
-    started = time.time()
-    while time.time() - started < timeout:
-        if proc.poll() is not None:
-            break
-        status, text, _ = request("GET", f"{base}/api/health", timeout=3)
-        if status == 200 and as_json(text):
-            check(f"{label}在超时内就绪", True, f"{time.time() - started:.1f}s（{base}）")
-            return proc, base, log_path
-        time.sleep(1)
+def pick_free_port(exclude: tuple[int, ...] = ()) -> int:
+    """挑一个当前空闲的端口：让内核绑 0 分配。
 
+    取舍：bind(0) 只保证「绑的那一刻空闲」——关掉 socket 到 uvicorn 再绑之间
+    有竞态窗口（另一进程可能抢走同一端口）。不靠运气补这道口子：start_service
+    认得出绑定失败（子进程退出＋日志里 address already in use），会换端口重试
+    （上限 3 次）；显式 --port 的本地调试走同一重试逻辑。
+    """
+    excluded = set(exclude)
+    for _ in range(50):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+        if port not in excluded:
+            return port
+    raise RuntimeError("挑不到空闲端口（50 次均撞上排除列表）")
+
+
+def is_port_free(port: int) -> bool:
+    """指定端口当前能不能绑（只探不占；结果仅供参考，仍可能被抢）。"""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+        return True
+
+
+def resolve_port(preferred: int | None, *, exclude: tuple[int, ...] = ()) -> int:
+    """定端口：--port 显式传了就用它（本地调试固定端口）；没传（None）就动态挑。
+
+    分离模式的 +1/+2 也走本函数：首选 port+1/+2，被占时再动态挑一个空闲的。
+    """
+    if preferred is not None and preferred not in set(exclude):
+        return preferred
+    return pick_free_port(exclude=exclude)
+
+
+def _log_contains(log_path: str, marker: str) -> bool:
+    try:
+        with open(log_path, encoding="utf-8", errors="ignore") as fh:
+            return marker in fh.read()
+    except OSError:
+        return False
+
+
+def _fail_service_not_ready(proc: subprocess.Popen, base: str, log_path: str,
+                            timeout: float, *, label: str) -> None:
+    """超时未就绪的现行口径：记 FAIL、打印日志尾部、杀进程、退出 1。"""
     tail = ""
     try:
         with open(log_path, encoding="utf-8") as fh:
@@ -212,8 +241,76 @@ def start_service(script: str, port: int, timeout: float, *, label: str,
         print("---- 服务日志尾部 ----")
         print(tail)
         print("----------------------")
-    proc.terminate()
+    if proc.poll() is None:
+        proc.terminate()
     raise SystemExit(1)
+
+
+def _start_service_once(script: str, port: int, timeout: float, *, label: str,
+                        extra_env: dict | None = None
+                        ) -> tuple[subprocess.Popen, str, str, str]:
+    """起一次服务，返回 (proc, base, log_path, outcome)。
+
+    outcome：\"ready\"（本进程就绪）| \"bind_failed\"（端口被占，子进程已退出且
+    日志里有 address already in use）| \"not_ready\"（超时或其它原因未就绪）。
+    """
+    # 日志文件名随实际端口走：两轮自检各写各的文件，不互相覆盖
+    log_path = os.path.join(tempfile.gettempdir(), f"deploy_check_{port}.log")
+    log_file = open(log_path, "w", encoding="utf-8")  # noqa: SIM115 — 子进程持有
+    # PORT 给 EM（serve.py），EMBY_API_PORT 给 EA（serve_emby.py），两个都设省得区分
+    env = {**os.environ, "PORT": str(port), "EMBY_API_PORT": str(port), "HOST": "0.0.0.0",
+           **(extra_env or {})}
+    # -u：子进程输出不缓冲，uvicorn 的启动行一到就落盘，归属校验才能及时读到
+    proc = subprocess.Popen([sys.executable, "-u", script], cwd=ROOT, env=env,
+                            stdout=log_file, stderr=subprocess.STDOUT)
+    base = f"http://127.0.0.1:{port}"
+    started = time.time()
+    while time.time() - started < timeout:
+        if proc.poll() is not None:
+            if (_log_contains(log_path, "address already in use")
+                    or _log_contains(log_path, "errno 98")):
+                return proc, base, log_path, "bind_failed"
+            return proc, base, log_path, "not_ready"
+        status, text, _ = request("GET", f"{base}/api/health", timeout=3)
+        if status == 200 and as_json(text):
+            # 归属校验：光回 200 不够，必须是自己起的进程——子进程还活着，
+            # 且日志里已有 uvicorn 的 "Application startup complete"。
+            # 别人家的服务先回 200 时，本进程要么还在导包（日志无此行），
+            # 要么已因绑定失败退出（上面已处理），都不会误认。
+            if proc.poll() is None and _log_contains(
+                    log_path, "Application startup complete"):
+                check(f"{label}在超时内就绪", True, f"{time.time() - started:.1f}s（{base}）")
+                return proc, base, log_path, "ready"
+        time.sleep(1)
+    return proc, base, log_path, "not_ready"
+
+
+def start_service(script: str, port: int, timeout: float, *, label: str,
+                  extra_env: dict | None = None, max_attempts: int = 3
+                  ) -> tuple[subprocess.Popen, str, str]:
+    """启动一个服务进程，等它 /api/health 就绪；起不来就打印日志尾部并退出
+
+    防撞（2026-11-10 #19/#20 attempt 2）：同一台机器上两轮自检同时跑时，
+    旧实现只看「/api/health 回 200」就认就绪——后起的那轮会撞上先跑那家的
+    服务（就绪 0.0 秒），再拿自己的随机账号去登录别人家的库，全线 401。
+    现在认就绪必须同时满足「本进程还活着＋日志里有启动完成行」（见
+    _start_service_once），绑定失败时换一个空闲端口重试，上限 3 次。
+    """
+    attempt_port = port
+    for attempt in range(1, max_attempts + 1):
+        proc, base, log_path, outcome = _start_service_once(
+            script, attempt_port, timeout, label=label, extra_env=extra_env)
+        if outcome == "ready":
+            return proc, base, log_path
+        if outcome == "bind_failed" and attempt < max_attempts:
+            new_port = pick_free_port(exclude={port, attempt_port})
+            print(f"WARN  {label}端口 {attempt_port} 已被占用，换端口 {new_port} 重试"
+                  f"（第 {attempt}/{max_attempts} 次）")
+            attempt_port = new_port
+            continue
+        # 超时未就绪，或绑定失败且重试已用完：按现行口径退出
+        _fail_service_not_ready(proc, base, log_path, timeout, label=label)
+    raise SystemExit(1)  # _fail_service_not_ready 恒抛，防卫性兜底
 
 
 # ==================== 三、真实 HTTP 检查 ====================
@@ -518,16 +615,26 @@ def teardown(procs, base: str, user_id: int, keep: bool) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="部署自检（真实起服务 + 真实 HTTP）")
-    parser.add_argument("--port", type=int, default=8010,
-                        help="单进程模式的端口；分离模式用 port+1 与 port+2")
+    parser.add_argument("--port", type=int, default=None,
+                        help="单进程模式的端口；不传则动态挑一个空闲端口；"
+                             "分离模式用 port+1 与 port+2（被占时动态挑）")
     parser.add_argument("--timeout", type=float, default=60, help="等待就绪的秒数")
     parser.add_argument("--keep", action="store_true", help="自检完不杀进程（调试用）")
     args = parser.parse_args()
 
+    # 默认端口动态挑：同一台机器上两轮自检同时跑不再撞 8010（2026-11-10
+    # #19/#20 attempt 2）；显式 --port 仍用固定端口（本地调试）。
+    port = resolve_port(args.port)
+    # 分离模式三端口互不相同：首选 port+1/+2，被占时动态挑（不抢另外两家的端口）
+    em_split_port = resolve_port(port + 1, exclude={port, port + 2})
+    ea_port = resolve_port(port + 2, exclude={port, em_split_port})
+    ea_refused_port = resolve_port(ea_port + 1,
+                                   exclude={port, em_split_port, ea_port})
+
     media_dir = tempfile.mkdtemp(prefix="deploy_check_media_")
     user_id, username, password = preflight(media_dir)
     procs: list[subprocess.Popen] = []
-    base = f"http://127.0.0.1:{args.port}"
+    base = f"http://127.0.0.1:{port}"
     # 生产部署必须显式给 SECRET_KEY：不设时 EM 用临时随机密钥，EA 也就无法与它配对
     ambient_secret = os.getenv("SECRET_KEY", "").strip()
     secret = ambient_secret or secrets.token_urlsafe(48)
@@ -537,7 +644,7 @@ def main() -> int:
     try:
         # 阶段一：单进程（EM 自带协议面）
         print("\n=== 二、冷启动（单进程）===")
-        proc, base, _log = start_service("serve.py", args.port, args.timeout,
+        proc, base, _log = start_service("serve.py", port, args.timeout,
                                          label="EM（单进程模式）",
                                          extra_env={"SECRET_KEY": secret})
         procs.append(proc)
@@ -554,12 +661,11 @@ def main() -> int:
 
         # 阶段二：分离部署（EM 关网关 + 独立 EA），验证跨服务配对
         print("\n=== 五、分离部署冷启动 ===")
-        ea_port = args.port + 2
         expect_startup_refused(
-            "serve_emby.py", ea_port + 1, label="EA 在没有 SECRET_KEY 时拒绝启动（配对闸门）",
+            "serve_emby.py", ea_refused_port, label="EA 在没有 SECRET_KEY 时拒绝启动（配对闸门）",
             extra_env={"SECRET_KEY": ""}, expect="SECRET_KEY")
         em_split_proc, em_split_base, _ = start_service(
-            "serve.py", args.port + 1, args.timeout,
+            "serve.py", em_split_port, args.timeout,
             label="EM（分离模式，网关关闭）",
             extra_env={"ENABLE_EMBY_GATEWAY": "false", "SECRET_KEY": secret,
                        "EMBY_API_PUBLIC_URL": f"http://127.0.0.1:{ea_port}"})
