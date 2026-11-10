@@ -20,15 +20,16 @@ import { PageHeader, SectionCard, StatTile, EmptyState } from '@/components/ui'
 import {
   approvePoolMember, clearPoolMemberViolation, ejectPoolMember,
   fetchPoolCopies, fetchPoolJanitorConfig, fetchPoolMembers,
-  fetchPoolOverview,
+  fetchPoolOverview, fetchPoolRetryConfig,
   fetchPoolRewardConfig, fetchPoolRewardDetails, fetchPoolRewardPreview,
   fetchPoolRewardSettlements, grantPoolCandidate, patchPoolMember,
   rejectPoolMember, releasePoolCopy, releasePoolRewardDetail,
-  resumePoolMember, savePoolJanitorConfig, savePoolRewardConfig,
+  resumePoolMember, savePoolJanitorConfig, savePoolRetryConfig,
+  savePoolRewardConfig,
   settlePoolRewards,
   suspendPoolMember,
   type PoolCopy, type PoolJanitorConfig, type PoolMember,
-  type PoolOverview,
+  type PoolOverview, type PoolRetryConfig,
   type PoolRewardConfig, type PoolRewardDetail, type PoolRewardPreview,
   type PoolRewardSettlement,
 } from '@/api/pool'
@@ -333,6 +334,37 @@ async function doSaveJanitorCfg() {
   }
 }
 
+// ------------------------------------------------------------ 重试（copy_forbidden 换盘）
+
+const retryCfg = ref<PoolRetryConfig | null>(null)
+const retryCfgSaving = ref(false)
+
+async function loadRetryCfg() {
+  try {
+    retryCfg.value = await fetchPoolRetryConfig()
+  } catch {
+    // 重试区加载失败不拖垮成员区；request 层已弹提示
+  }
+}
+
+async function doSaveRetryCfg() {
+  if (!retryCfg.value) return
+  retryCfgSaving.value = true
+  try {
+    retryCfg.value = await savePoolRetryConfig({
+      pool_copy_forbidden_cooldown_sec:
+        retryCfg.value.pool_copy_forbidden_cooldown_sec,
+      pool_copy_forbidden_max_attempts:
+        retryCfg.value.pool_copy_forbidden_max_attempts,
+    })
+    ElMessage.success('重试配置已保存')
+  } catch {
+    // request 层已弹错误提示
+  } finally {
+    retryCfgSaving.value = false
+  }
+}
+
 // ------------------------------------------------------------ 激励结算（PR-6）
 
 const rewardCfg = ref<PoolRewardConfig | null>(null)
@@ -476,6 +508,7 @@ onMounted(() => {
   void load()
   void loadRewards()
   void loadJanitorCfg()
+  void loadRetryCfg()
 })
 </script>
 
@@ -676,6 +709,18 @@ onMounted(() => {
             <el-switch v-model="janitorCfg.pool_idle_evict_proactive_enabled" />
             <span>闲置主动清理</span>
             <el-button type="primary" :loading="janitorCfgSaving" @click="doSaveJanitorCfg">保存巡检配置</el-button>
+          </div>
+        </template>
+      </SectionCard>
+
+      <SectionCard title="转存重试" :icon="RefreshCw" description="池转存读不到源文件（copy_forbidden）时不再一刀切放弃：自动排除失败的那块盘、换其他成员盘重试，全部可用盘试完才算失败；失败冷却也不再一律 24 小时。换盘总尝试上限 0 ＝以可用成员盘试完为界。">
+        <template v-if="retryCfg">
+          <div class="pool-grant">
+            <span class="pool-cell-sub">失败冷却（秒）</span>
+            <el-input-number v-model="retryCfg.pool_copy_forbidden_cooldown_sec" :min="60" :max="86400" :controls="false" class="pool-num-input" />
+            <span class="pool-cell-sub">换盘总尝试上限（0=试完所有可用盘）</span>
+            <el-input-number v-model="retryCfg.pool_copy_forbidden_max_attempts" :min="0" :max="64" :controls="false" class="pool-num-input" />
+            <el-button type="primary" :loading="retryCfgSaving" @click="doSaveRetryCfg">保存重试配置</el-button>
           </div>
         </template>
       </SectionCard>
