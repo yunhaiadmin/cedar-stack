@@ -414,6 +414,9 @@ check("该券总用量也只记了 1", use_count == 1, f"实际 use_count={use_c
 # 同一张 max_uses=1 的卡码被两个请求同时提交时，两边都读到 use_count=0，
 # 于是各发一份会员天数（重复核销）。现在发奖前先用条件 UPDATE 原子占位
 # （`codes.claim_code`），抢不到的一边直接拒绝。
+# 2026-11-10 注册码分离定版：code_type=1 的核销入口已迁到注册页
+# （codes.consume_registration_code，登录后兑换入口只认续期/白名单码），
+# 本段改走注册核销入口验证同一套 CAS 占位口径。
 
 print("\n--- 卡码并发核销 ---")
 
@@ -449,7 +452,7 @@ def redeem_reg_code(i: int):
     db = SessionLocal()
     try:
         user = db.query(models.WebUser).filter(models.WebUser.id == uid).first()
-        result = codes.redeem_code(db, user, "CC-REG-ONE")
+        result = codes.consume_registration_code(db, user, "CC-REG-ONE")
         if result.get("success"):
             # codes 里不再自己提交：调用方提交（与 api/user.py 的核销端点同一口径）
             db.commit()
@@ -490,7 +493,7 @@ after_once = membership_days_total()
 db = SessionLocal()
 try:
     user = db.query(models.WebUser).filter(models.WebUser.id == invitee_id).first()
-    again = codes.redeem_code(db, user, "CC-REG-ONE")
+    again = codes.consume_registration_code(db, user, "CC-REG-ONE")
     db.rollback()
 finally:
     db.close()
