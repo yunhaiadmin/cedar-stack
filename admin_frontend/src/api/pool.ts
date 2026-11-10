@@ -19,6 +19,8 @@ export interface PoolConfig {
   pool_breaker_cooldown_sec: number
   pool_pick_top_k: number
   pool_member_max_bindings_per_user: number
+  pool_large_file_routing_enabled: boolean
+  pool_large_file_bytes: number
 }
 
 export type PoolConfigPayload = Partial<PoolConfig>
@@ -28,7 +30,7 @@ export const fetchPoolConfig = () => get<PoolConfig>('/pool/config')
 export const savePoolConfig = (payload: PoolConfigPayload) =>
   put<PoolConfig>('/pool/config', payload)
 
-/** 巡检配置（闲置主动清理开关；与本体 17 键分开一份端点） */
+/** 巡检配置（闲置主动清理开关；与本体 19 键分开一份端点） */
 
 export interface PoolJanitorConfig {
   pool_idle_evict_proactive_enabled: boolean

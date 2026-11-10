@@ -34,6 +34,13 @@ PR-5 保护收尾（本单）：熔断判定本体在本模块「熔断与副本
 per_day / pool_breaker_cooldown_sec）与 pool_item_max_copies
 自本单起有真实消费方。
 
+大文件分流（2026-11-10 用户亲点新口径）：已绑盘用户播大文件
+（size ≥ pool_large_file_bytes）且池有就绪副本、本人尚无副本
+时，判定入口改判 pool（pool_routed=True），直接播池副本省掉
+转存本人盘；小文件维持现行。决策点唯一实现
+``large_file_pool_route``，两层共用；分流命中的消费方在池
+没判 serve 时必须回落本人门禁——分流不许变成新门禁。
+
 硬闸：池总开关关时一切按池不存在（未绑用户仍走既有门禁原 403，
 回归测试 test_pool_foundation
 .test_redline_existing_gate_unchanged_when_pool_enabled 钉住）。
@@ -87,6 +94,12 @@ POOL_CONFIG_DEFAULTS: dict = {
     "pool_breaker_cooldown_sec": 3600,
     "pool_pick_top_k": 3,
     "pool_member_max_bindings_per_user": 10,
+    # 大文件分流（用户 2026-11-10 亲点）：已绑盘用户播大文件且
+    # 池有就绪副本时直接播池副本，省转存本人盘的等待与接口
+    # 消耗；判定唯一实现 large_file_pool_route。默认开；阈值
+    # 15GB（十进制，与本家族其他字节键同口径）。
+    "pool_large_file_routing_enabled": True,
+    "pool_large_file_bytes": 15_000_000_000,
 }
 
 #: 视为「有池候选/成员资格」的成员状态集合：这些状态下绑定上限
@@ -110,8 +123,8 @@ POOL_PLAY_DEDUP_WINDOW_MIN = 30
 
 #: 激励子家族 pool_reward_* 的代码默认值（goal-33 PR-6，
 #: design §11.3；与 config_schema.POOL_REWARD_CONFIG_SCHEMA 同口径）。
-#: 与本体 17 键分开一份字典：GET /api/admin/pool/config 的
-#: 17 键口径（PR-1 已钉、入池门槛键为用户亲批扩键）不许被激励键撑大，激励键走
+#: 与本体 19 键分开一份字典：GET /api/admin/pool/config 的
+#: 19 键口径（PR-1 已钉、入池门槛键与大文件分流两键为用户亲批扩键）不许被激励键撑大，激励键走
 #: reward-config 端点与 reward_config_payload 这一份读取。
 POOL_REWARD_CONFIG_DEFAULTS: dict = {
     "pool_reward_enabled": False,
@@ -185,7 +198,7 @@ def reward_config_payload(db: Session) -> dict:
         POOL_REWARD_CONFIG_DEFAULTS)
 
 
-#: 巡检子家族的代码默认值：本体 17 键键集已被 PR-1 测试钉死，
+#: 巡检子家族的代码默认值：本体 19 键键集已被 PR-1 测试钉死，
 #: 扩键另立家族（同 POOL_REWARD 先例）；与
 #: config_schema.POOL_JANITOR_CONFIG_SCHEMA 同口径，读取经
 #: janitor_config_payload，唯一消费方是 pool_janitor。
@@ -263,10 +276,17 @@ class PoolDecision:
     kind：not_applicable（CMS 免门禁）/ issued_sign（消费已下发
     链接）/ bound（已绑定）/ pool（池放行）。blocked 不返回
     decision——直接抛 403（与既有门禁同口径）。
+
+    pool_routed：kind=pool 且观众本身是已绑用户（大文件分流
+    命中，见 large_file_pool_route）。消费方对这类裁决多一条
+    纪律：池门禁没判 serve_pool_copy 时必须回落本人门禁现行
+    流程——分流只是省转存的捷径，绝不许变成新门禁；原生池
+    观众（未绑）pool_routed 恒 False，行为逐字不变。
     """
 
     allowed: bool
     kind: str
+    pool_routed: bool = False
 
 
 def ensure_playback_allowed_for_item(
@@ -290,11 +310,71 @@ def ensure_playback_allowed_for_item(
         return PoolDecision(allowed=True, kind="issued_sign")
     user_id = getattr(user, "id", None)
     if user_id is not None and _gate.has_active_binding(db, user_id):
+        # 大文件分流（用户 2026-11-10 亲点）：已绑用户播大文件
+        # 且池有就绪副本、本人尚无副本时，裁决改判 pool 并打
+        # pool_routed 标记——计划层据此走池播出链，池没判
+        # serve 时回落本人门禁（见 PoolDecision 注释）。
+        if large_file_pool_route(db, user, item):
+            return PoolDecision(allowed=True, kind="pool",
+                                pool_routed=True)
         return PoolDecision(allowed=True, kind="bound")
     if pool_eligible(db, user, item) == "eligible":
         return PoolDecision(allowed=True, kind="pool")
     _gate.ensure_binding_playback_allowed(db, user, request)
     return PoolDecision(allowed=True, kind="bound")
+
+
+# ---------------------------------------------------------------- 大文件分流（已绑用户）
+
+
+def large_file_pool_route(db: Session, user, item) -> bool:
+    """已绑盘用户大文件分流的唯一决策点（用户 2026-11-10 亲点）。
+
+    纯读、无副作用；计划层（PlaybackInfo）经判定入口
+    ensure_playback_allowed_for_item 消费、播出层（video_stream）
+    同函数复核——两层共用这一个实现，不许各判一套（2026-11-09
+    两层裁定死结的教训）。全部成立才 True：
+
+    1. 分流开关开（pool_large_file_routing_enabled，默认开）；
+    2. 池 eligible（pool_eligible 同口径：池总开关 + 人群
+       _audience_eligible + 条目须过绑定门禁；与未绑观众同一套
+       人群判定，不另立名单）；
+    3. 文件够大：条目 size ≥ pool_large_file_bytes（默认 15GB；
+       size 取条目行同口径字段，_score_member 同源；未知/0 按
+       小文件处理——阈值恒 ≥ 1，未知自然不达标）；
+    4. 本人尚无 ready 副本（transfer_variant._newest_ready 的
+       user 口径，与门禁 has_ready_variant 同源）——已有本人
+       副本恒优先播本人副本，分流不许抢；
+    5. 池里有可下发 ready 副本（_pick_ready_pool_variant
+       非 None：成员 active、未熔断、副本未 stale）。
+
+    条目已在用户盘里（byos:// 路径）恒 False：那是本人盘上的
+    文件，没有绕去池播的道理。任何异常 → False（回落现行
+    流程，分流判不出时按没这功能处理，绝不反向挡播放）。
+    """
+    try:
+        user_id = getattr(user, "id", None)
+        item_id = getattr(item, "id", None)
+        if user_id is None or item_id is None:
+            return False
+        if (getattr(item, "file_path", "") or "").startswith("byos://"):
+            return False
+        cfg = pool_config_payload(db)
+        if not cfg["pool_large_file_routing_enabled"]:
+            return False
+        if pool_eligible(db, user, item) != "eligible":
+            return False
+        size = _tv._to_int(getattr(item, "size", None)) or 0
+        if size < int(cfg["pool_large_file_bytes"]):
+            return False
+        if _tv._newest_ready(db, item_id, "user",
+                              str(user_id)) is not None:
+            return False
+        return _pick_ready_pool_variant(db, item_id) is not None
+    except Exception:  # noqa: BLE001 — 分流判定异常回落现行
+        logger.warning("大文件分流判定异常，按不分流处理",
+                       exc_info=True)
+        return False
 
 
 # ---------------------------------------------------------------- 成员资格
