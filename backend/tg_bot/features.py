@@ -142,6 +142,45 @@ def _achievement_summary(db, user_id: int):
     return shown, len(defs)
 
 
+#: 成就卡逐条明细上限：面板 caption 放不下太多行，超出截断去网站看全量。
+_ACHIEVEMENT_CARD_LIMIT = 10
+
+
+def achievements_card(db, user) -> str:
+    """成就卡（menu:achievements）：本人已点亮成就逐条＋未完成汇总。
+
+    数据口径与账号卡「成就进度」行同源（_achievement_summary：只认
+    enabled 定义、按 sort 排序；点亮日期取 PanelAchievementUnlock
+    同表）。未点亮的不逐条列，只给「还有 N 个」汇总行；明细超上限
+    截断并提示去网站账号页看全量（与账号卡精简口径一致）。
+    """
+    shown, total = _achievement_summary(db, user.id)
+    rows = [layout.row("🏅", "成就进度", f"已点亮 {len(shown)}／共 {total} 个")]
+    if not shown:
+        return layout.card(
+            layout.title("我的成就"),
+            rows,
+            ["还没有点亮任何成就，看片、签到、追完一整季都会慢慢点亮它们。"],
+        )
+    unlock_dates = {
+        r.ach_key: r.unlocked_at
+        for r in db.query(models.PanelAchievementUnlock)
+        .filter_by(user_id=user.id)
+        .all()
+    }
+    for d in shown[:_ACHIEVEMENT_CARD_LIMIT]:
+        when = unlock_dates.get(d.key)
+        date_text = f"{when.strftime('%Y-%m-%d')} 点亮" if when else "已点亮"
+        rows.append(layout.row(
+            d.icon or "🏅", _esc(d.name), f"{date_text} · {_esc(d.desc)}"))
+    notes = []
+    if len(shown) > _ACHIEVEMENT_CARD_LIMIT:
+        notes.append("点亮的成就有点多，这里只列前面一部分，完整的去网站账号页看。")
+    if total > len(shown):
+        notes.append(f"还有 {total - len(shown)} 个成就没点亮，边看片边解锁。")
+    return layout.card(layout.title("我的成就"), rows, notes)
+
+
 def _pet_summary(db, user_id: int):
     """馆灵：返回（累计观影小时，当前阶段 dict，下一阶段 dict 或 None）。
 

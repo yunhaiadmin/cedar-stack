@@ -446,6 +446,14 @@ def back_markup() -> dict:
     return layout.back_markup()
 
 
+def group_back_markup(group_key: str, label: str) -> dict:
+    """分组功能卡返回所属分组面板：整行按钮（menu:group_*）。"""
+    return {"inline_keyboard": [[{
+        "text": f"↩ 返回{label}",
+        "callback_data": f"menu:group_{group_key}",
+    }]]}
+
+
 def menu_main(db, tg_user: dict, is_private: bool) -> tuple[str, dict]:
     """主界面卡片（文本, 按钮），供 /start 与 menu:main 回调复用。"""
     web_user = resolve(db, int(tg_user.get("id") or 0))
@@ -869,6 +877,17 @@ def handle_lottery(db, tg_user: dict, chat_id: int, args: str, is_group: bool) -
         }
         return (text, reply_markup)
 
+    return my_lottery_card(db, user)
+
+
+def my_lottery_card(db, user) -> str:
+    """我的抽奖卡：本人参加过的轮次＋状态/中没中奖（最近 10 条）。
+
+    menu:mylottery 与 handle_lottery 私聊分支共用同一构建器、口径
+    一份：lottery_round_entries join lottery_rounds，中奖判定走
+    lottery_round_winners 按 entry 的 user 计数。调用方负责身份与
+    抽奖总开关判定（未绑定/未开启的文案在调用方）。
+    """
     from sqlalchemy import text
 
     sql = (
