@@ -87,15 +87,47 @@ def _code_usernames(db: Session, code: models.RegistrationCode) -> list:
     return [{"id": r[0], "username": r[1]} for r in rows]
 
 
+def _resolve_user_name(db: Session, user_id) -> str:
+    if not user_id:
+        return ""
+    row = db.query(models.WebUser.username).filter(
+        models.WebUser.id == user_id).first()
+    return row[0] if row else ""
+
+
+def _resolve_agent_name(db: Session, agent_id) -> str:
+    """代理展示名 = 代理账号的站内用户名（查不到回退「代理 #id」）。"""
+    if not agent_id:
+        return ""
+    agent = db.query(models.Agent).filter(models.Agent.id == agent_id).first()
+    if agent is None:
+        return f"代理 #{agent_id}"
+    return _resolve_user_name(db, agent.user_id) or f"代理 #{agent_id}"
+
+
 def code_dto(db: Session, code: models.RegistrationCode, now: Optional[datetime] = None,
              realm_names: Optional[dict] = None,
-             used_by_map: Optional[dict] = None) -> dict:
-    """used_by_map：F-P1-7 批量预取的 {code_id: used_by 用户列表}，传了就不再逐码查库。"""
+             used_by_map: Optional[dict] = None,
+             creator_names: Optional[dict] = None,
+             agent_names: Optional[dict] = None) -> dict:
+    """used_by_map：F-P1-7 批量预取的 {code_id: used_by 用户列表}，传了就不再逐码查库。
+
+    creator_names / agent_names：出品人批量预取（{user_id: 用户名} /
+    {agent_id: 展示名}），列表接口传；单码调用不传时逐码现查。
+    """
     now = now or datetime.now()
     code_type = int(code.code_type or codes.CODE_TYPE_REGISTER)
     days = code.days if code.days is not None else codes.DEFAULT_DAYS
     if realm_names is None:
         realm_names = {r.id: r.name for r in realms.list_realms(db)}
+    created_by_name = (
+        creator_names.get(code.created_by, "")
+        if creator_names is not None
+        else _resolve_user_name(db, code.created_by))
+    agent_name = (
+        agent_names.get(code.agent_id, "")
+        if agent_names is not None
+        else _resolve_agent_name(db, code.agent_id))
     return {
         "id": code.id,
         "code": code.code,
@@ -110,6 +142,12 @@ def code_dto(db: Session, code: models.RegistrationCode, now: Optional[datetime]
         "is_decoy": codes.is_honeypot(code),
         "target_username": code.target_username or "",
         "source": code.source or "admin",
+        # 出品人：管理员直发看 created_by，代理出品看 agent（注册码分区
+        # 按出品人筛选/展示用；老码两列为空时展示名为空串）
+        "created_by": code.created_by,
+        "created_by_name": created_by_name,
+        "agent_id": code.agent_id,
+        "agent_name": agent_name,
         # M1 奖励类型 + G1 资格码打包查看标记：列表里要分得出这张码送什么
         "reward_type": getattr(code, "reward_type", "subscription") or "subscription",
         "welfare_include_view": bool(getattr(code, "welfare_include_view", True)),
@@ -129,21 +167,36 @@ def list_codes(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
     code_type: Optional[int] = None,
+    exclude_code_type: Optional[int] = None,
     state: str = "",
     keyword: str = "",
+    source: str = "",
+    created_by: Optional[int] = None,
+    agent_id: Optional[int] = None,
     realm_id: Optional[int] = None,
     limit: int = 100,
     offset: int = 0,
 ):
-    """卡码列表（类型 / 状态 / 关键字 / 归属服筛选 + 分页）
+    """卡码列表（类型 / 状态 / 关键字 / 出品人 / 归属服筛选 + 分页）
 
     卡码是一个服一个的：``realm_id=0`` 看全部服，不传看当前服。
+    注册码与兑换码分离（2026-11-10）后，两个分区共用本接口：
+    注册码分区传 ``code_type=1``（可再按 source=admin/agent 分出品人），
+    兑换码分区传 ``exclude_code_type=1`` 把注册码排除在外。
     """
     scope_id = None if realm_id == 0 else (realm_id or realms.active_realm_id(db))
     query = realms.scope(db.query(models.RegistrationCode),
                          models.RegistrationCode.realm_id, scope_id)
     if code_type:
         query = query.filter(models.RegistrationCode.code_type == code_type)
+    if exclude_code_type:
+        query = query.filter(models.RegistrationCode.code_type != exclude_code_type)
+    if source:
+        query = query.filter(models.RegistrationCode.source == source)
+    if created_by:
+        query = query.filter(models.RegistrationCode.created_by == created_by)
+    if agent_id:
+        query = query.filter(models.RegistrationCode.agent_id == agent_id)
     kw = (keyword or "").strip()
     if kw:
         like = f"%{kw}%"
@@ -196,13 +249,83 @@ def list_codes(
         ]
         for c in page
     }
+    # 出品人展示名同样批量预取，避免逐码查库：管理员看 created_by，
+    # 代理出品经 Agent.user_id 落到代理账号的用户名
+    _creator_ids = {c.created_by for c in page if c.created_by}
+    creator_names = (
+        {
+            r[0]: r[1]
+            for r in db.query(models.WebUser.id, models.WebUser.username)
+            .filter(models.WebUser.id.in_(_creator_ids))
+            .all()
+        }
+        if _creator_ids
+        else {}
+    )
+    _agent_ids = {c.agent_id for c in page if c.agent_id}
+    agent_names: dict = {}
+    if _agent_ids:
+        _agents = db.query(models.Agent).filter(
+            models.Agent.id.in_(_agent_ids)).all()
+        _agent_user_names = {
+            r[0]: r[1]
+            for r in db.query(models.WebUser.id, models.WebUser.username)
+            .filter(models.WebUser.id.in_({a.user_id for a in _agents} or {-1}))
+            .all()
+        }
+        agent_names = {
+            a.id: _agent_user_names.get(a.user_id) or f"代理 #{a.id}"
+            for a in _agents
+        }
     return {
         "total": total,
         "realm_id": scope_id,
         "realm_name": realms.get_realm(db, scope_id).name if scope_id else "全部服",
         "realms": [{"id": r.id, "name": r.name} for r in realms.list_realms(db)],
-        "codes": [code_dto(db, c, now, realm_names, used_by_map) for c in page],
+        "codes": [code_dto(db, c, now, realm_names, used_by_map,
+                           creator_names, agent_names) for c in page],
     }
+
+
+@admin_ops_router.get("/registration-codes/{code_id}/redemptions")
+def list_code_redemptions(
+    code_id: int,
+    current_admin: models.WebUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """单张码的核销流水：谁在何时用它注册/兑换（核销记录表为唯一出处）。
+
+    注册码分区看「谁用它注册、何时」就走这里；兑换码的核销同样落
+    在这张表（code_kind='reg'），口径一致。
+    """
+    code = db.query(models.RegistrationCode).filter(
+        models.RegistrationCode.id == code_id
+    ).first()
+    if not code:
+        raise HTTPException(status_code=404, detail="卡码不存在")
+    rows = (
+        db.query(models.CodeRedemption)
+        .filter(models.CodeRedemption.code_kind == codes.REDEMPTION_KIND_REG,
+                models.CodeRedemption.code_id == code.id)
+        .order_by(models.CodeRedemption.created_at)
+        .all()
+    )
+    names = {
+        r[0]: r[1]
+        for r in db.query(models.WebUser.id, models.WebUser.username)
+        .filter(models.WebUser.id.in_({r.user_id for r in rows} or {-1}))
+        .all()
+    }
+    items = [
+        {
+            "user_id": r.user_id,
+            "username": names.get(r.user_id, ""),
+            "redeemed_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+    return {"code_id": code.id, "code": code.code,
+            "total": len(items), "items": items}
 
 
 @admin_ops_router.get("/registration-codes/stats")

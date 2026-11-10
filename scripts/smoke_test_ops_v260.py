@@ -199,36 +199,45 @@ check("卡码列表按类型筛选", r.status_code == 200 and listed["total"] >=
 
 # ==================== 二、用户核销 ====================
 
+# 2026-11-10 注册码分离定版：注册码（code_type=1）只用于注册页，
+# 登录后兑换入口预览/核销都明确拒绝并指路注册页，会员发放改走续期码。
 r = client.post("/api/user/membership/redeem/preview", json={"code": reg_codes[0]}, headers=a_h)
 preview = r.json()
-check("预览注册码：有效且识别类型", r.status_code == 200 and preview["valid"] is True
-      and preview["kind"] == "code" and preview["days"] == 30, str(preview))
+check("预览注册码：兑换入口指路注册页", r.status_code == 200 and preview["valid"] is False
+      and "注册页" in (preview.get("message") or ""), str(preview))
 
 r = client.post("/api/user/membership/redeem/preview", json={"code": "NOSUCHCODE"}, headers=a_h)
 check("预览不存在的卡码 → valid=false", r.status_code == 200 and r.json()["valid"] is False,
       str(r.json()))
 
 r = client.post("/api/user/membership/redeem", json={"code": reg_codes[0]}, headers=a_h)
+check("兑换入口核销注册码 → 400 并提示去注册页", r.status_code == 400
+      and "注册页" in (r.json().get("detail") or ""), r.text[:160])
+
+r = client.post("/api/user/membership/redeem", json={"code": ren_code}, headers=a_h)
 granted = r.json()
-check("核销注册码 → 开通会员", r.status_code == 200 and granted.get("success") is True,
+check("核销续期码 → 开通会员", r.status_code == 200 and granted.get("success") is True,
       r.text[:160])
 end_after_register = datetime.fromisoformat(granted["end_date"]) if granted.get("end_date") else None
-check("到期时间约 30 天后",
-      bool(end_after_register) and 28 <= (end_after_register - datetime.now()).days <= 30,
+check("到期时间约 7 天后",
+      bool(end_after_register) and 5 <= (end_after_register - datetime.now()).days <= 7,
       str(granted.get("end_date")))
 
 r = client.get("/api/user/auth/me", headers=a_h)
 check("核销后 /auth/me 为会员", r.json().get("is_vip") is True, str(r.json().get("is_vip")))
 
 r = client.post("/api/user/membership/redeem", json={"code": reg_codes[0]}, headers=a_h)
-check("同一注册码重复使用 → 400", r.status_code == 400, r.text[:120])
+check("同一注册码在兑换入口重复使用 → 400", r.status_code == 400, r.text[:120])
 
 r = client.post("/api/user/membership/redeem", json={"code": reg_codes[1]}, headers=a_h)
-check("已有会员再用注册码 → 400（提示用续期码）",
-      r.status_code == 400 and "续期" in (r.json().get("detail") or ""),
+check("已有会员在兑换入口用注册码 → 400（提示去注册页）",
+      r.status_code == 400 and "注册页" in (r.json().get("detail") or ""),
       str(r.json().get("detail")))
 
-r = client.post("/api/user/membership/redeem", json={"code": ren_code}, headers=a_h)
+r = client.post("/api/admin/registration-codes/generate",
+                json={"code_type": 2, "count": 1, "days": 7}, headers=staff_h)
+ren_code2 = r.json()["codes"][0]["code"]
+r = client.post("/api/user/membership/redeem", json={"code": ren_code2}, headers=a_h)
 renewed = r.json()
 end_after_renew = datetime.fromisoformat(renewed["end_date"]) if renewed.get("end_date") else None
 delta = (end_after_renew - end_after_register).days if (end_after_renew and end_after_register) else -1
@@ -428,10 +437,10 @@ set_config("allow_download", None)
 r = client.get(f"/emby/Items/{item_guid}/File", headers=_a_e)
 check("重新允许下载后可访问", r.status_code == 200, str(r.status_code))
 
-# ==================== 六、注册模式开关（注册码门禁已下线） ====================
-# 注册码注册门禁已于 v2.7.x 彻底删除：只剩 open（开放注册）/ closed（关闭注册），
-# DB 里残留的 "code" 值按 closed 处理（fail-closed，避免静默开放注册）。
-# 卡码体系走核销路径，不受影响。
+# ==================== 六、注册模式开关（三档：开放 / 凭码 / 关闭） ====================
+# 2026-11-10 定版：code（凭码）恢复为正式档位——第一步验码不消耗、
+# 建号时同事务核销；未知值仍旧 fail-closed 按 closed 处理。
+# 本段注册调用较多，先放宽注册限流避免互相干扰（限流本身另有专测）。
 
 set_config("registration_mode", "open")
 r = client.post("/api/user/auth/register", json={
@@ -451,19 +460,34 @@ r = client.post("/api/user/auth/register", json={
 })
 check("关闭注册时注册 → 403", r.status_code == 403, str(r.status_code))
 
-# 遗留值兼容：DB 里残留的 "code"（及任何未知值）按 closed 处理
-# （fail-closed：当初设 code 是为了不对外开放，升级后不能静默变成开放注册）
+# 凭码模式（2026-11-10 定版）：无码注册被拒；带有效注册码注册成功、
+# 渠道记为 code、码被同事务核销（第二段里被兑换入口拒绝的那张正好没被消耗）
+set_config("register_ratelimit_max", "100")
 set_config("registration_mode", "code")
 r = client.post("/api/user/auth/register", json={
     "username": f"reg_legacy{suf}", "password": "pass12345",
 })
-check("遗留 code 模式按关闭注册处理（fail-closed）", r.status_code == 403, str(r.status_code))
+check("凭码模式无码注册 → 400", r.status_code == 400, str(r.status_code))
+r = client.post("/api/user/auth/register", json={
+    "username": f"reg_code{suf}", "password": "pass12345",
+    "registration_code": reg_codes[0],
+})
+check("凭码模式带注册码注册成功", r.status_code in (200, 201), str(r.status_code))
+if r.status_code in (200, 201):
+    db = SessionLocal()
+    u = db.query(models.WebUser).filter(models.WebUser.username == f"reg_code{suf}").first()
+    check("凭码注册用户渠道记为 code", u is not None and u.register_channel == "code",
+          f"register_channel={u.register_channel if u else None}")
+    db.close()
 # 后续用例（诱饵码受害者注册）需要开放注册，切回 open
 set_config("registration_mode", "open")
 
 r = client.put("/api/admin/settings/registration", json={"mode": "code", "message": ""},
                headers=staff_h)
-check("管理接口拒绝 code 模式 → 400", r.status_code == 400, str(r.status_code))
+check("管理接口接受 code 模式 → 200", r.status_code == 200, str(r.status_code))
+r = client.put("/api/admin/settings/registration", json={"mode": "open", "message": ""},
+               headers=staff_h)
+check("管理接口切回 open → 200", r.status_code == 200, str(r.status_code))
 
 # 诱饵码仍走核销路径：注册一个普通用户，核销诱饵码 → 400 + 封号 + 风控日志
 r = client.post("/api/admin/registration-codes/generate",

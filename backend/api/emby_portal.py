@@ -65,6 +65,7 @@ class RegisterRequest(BaseModel):
     password: str = Field(..., min_length=6, max_length=64)
     email: str | None = None
     invitation_code: str | None = None  # 邀请码（选填，双向奖励+返利绑定）
+    registration_code: str | None = None  # 注册码（凭码模式必填，建号同事务核销）
     captcha_token: str | None = None  # 人机验证令牌（管理员开启保护时必填）
 
 
@@ -274,33 +275,103 @@ def captcha_config(request: Request, db: Session = Depends(get_db)):
 
 
 def _normalize_registration_mode(raw) -> str:
-    """注册模式归一：未配置 → open；open/closed 原样；其余（含已下线的 code）→ closed。"""
+    """注册模式归一：未配置 → open；open/code/closed 原样；未知值 → closed。
+
+    code（凭注册码注册）2026-11-10 用户亲定恢复为正式档位（此前
+    v2.7.x 下线过，未知值 fail-closed 的口径不变）。
+    """
     value = (raw or "").strip().lower()
     if not value:
         return "open"
-    return value if value in ("open", "closed") else "closed"
+    return value if value in ("open", "code", "closed") else "closed"
+
+
+def _registration_mode(db: Session) -> str:
+    """当前注册模式（注册端点 / 配置下发 / 验码端点共用同一读取）。"""
+    row = (
+        db.query(models.SystemConfig)
+        .filter(models.SystemConfig.key == "registration_mode")
+        .first()
+    )
+    return _normalize_registration_mode(row.value if row else None)
+
+
+#: 注册页第一步「没有注册码去哪领」的默认文案（配置键
+#: registration_code_hint_text / registration_code_hint_url 可覆盖；
+#: 链接默认空——具体渠道链接由管理员在后台填，不写死在代码里）。
+REGISTRATION_CODE_HINT_TEXT_DEFAULT = (
+    "没有注册码？可通过官方 Telegram 群或代理渠道获取，拿到后再回来注册。"
+)
+
+
+def _registration_code_hint(db: Session) -> dict:
+    rows = (
+        db.query(models.SystemConfig)
+        .filter(models.SystemConfig.key.in_([
+            "registration_code_hint_text",
+            "registration_code_hint_url",
+        ]))
+        .all()
+    )
+    values = {r.key: (r.value or "").strip() for r in rows}
+    return {
+        "text": values.get("registration_code_hint_text")
+        or REGISTRATION_CODE_HINT_TEXT_DEFAULT,
+        "url": values.get("registration_code_hint_url") or "",
+    }
 
 
 @auth_router.get("/register-config")
 def register_config(db: Session = Depends(get_db)):
     """公开：注册页需要的开关状态（未登录可调）。
 
-    前端据此决定显示/隐藏邀请码输入框、是否关闭注册：
-    - registration_mode: open=开放注册 / closed=关闭注册（code 模式已下线，历史值/未知值归一为 closed）
+    前端据此决定注册页形态：
+    - registration_mode: open=开放注册 / code=凭码注册（两步） / closed=关闭注册
+    - registration_code_required: 是否必须先验注册码（mode == code 时为 true）
+    - registration_code_hint: 「没有注册码去哪领」的提示文案与链接（走配置键）
     - invitation_enabled: 邀请码功能开关
     """
     from backend.api.invitation import get_invite_config
 
-    row = (
-        db.query(models.SystemConfig)
-        .filter(models.SystemConfig.key == "registration_mode")
-        .first()
-    )
-    mode = _normalize_registration_mode(row.value if row else None)
+    mode = _registration_mode(db)
     return {
         "registration_mode": mode,
+        "registration_code_required": mode == "code",
+        "registration_code_hint": _registration_code_hint(db),
         "invitation_enabled": get_invite_config(db)["enabled"],
     }
+
+
+class RegisterCodeVerifyRequest(BaseModel):
+    code: str
+
+
+@auth_router.post("/register-code/verify")
+def verify_register_code(request: Request, req: RegisterCodeVerifyRequest,
+                         db: Session = Depends(get_db)):
+    """公开：两步注册第一步——只校验注册码，绝不消耗。
+
+    凭码模式下注册页先调它：码有效才放出账号表单。防撞码：按 IP
+    限流（20 次 / 10 分钟），且不存在与蜜罐一律回「注册码无效」，
+    不给枚举者区分线索。提交注册时服务端会再验一次并同事务核销，
+    本端点的放行不是凭据，绕过它直接调 /register 也过不了。
+    """
+    allowed, _ = check_rate_limit(
+        f"regcode_verify:{client_ip(request)}", 20, 600)
+    if not allowed:
+        raise HTTPException(status_code=429, detail="尝试过于频繁，请稍后再试")
+    from backend import codes
+
+    result = codes.check_registration_code(db, req.code)
+    response = {"valid": result["valid"], "message": result["message"]}
+    if result["valid"]:
+        response.update({
+            "reward_type": result["reward_type"],
+            "days_text": result["days_text"],
+            "realm_name": result["realm_name"],
+            "is_named": result["is_named"],
+        })
+    return response
 
 
 def _get_register_ratelimit(db: Session) -> tuple[bool, int, int]:
@@ -472,18 +543,13 @@ def register(request: Request, req: RegisterRequest, db: Session = Depends(get_d
         )
 
     # ===== 注册模式开关（r4-auth：必须在撞名检查之前）=====
-    # open: 开放注册 / closed: 关闭注册
-    # 「code」（注册码门禁）已于 v2.7.x 下线。DB 里残留的 "code"（及任何未知值）
-    # 一律按 closed 处理（fail-closed）：管理员当初设 code 是为了「不对外开放」，
-    # 升级后不能静默变成开放注册，需管理员在后台显式改成 open。
-    # 卡码体系（钱包/个人中心核销注册码/续期码/白名单码）不受影响。
+    # open: 开放注册 / code: 凭码注册 / closed: 关闭注册
+    # 「code」曾于 v2.7.x 下线，2026-11-10 用户亲定恢复为正式档位：
+    # 注册码与兑换码分离，code_type=1 只许在注册页核销。
     # 顺序是安全语义：旧顺序先查撞名、后查模式，关闭注册时探一个已占用的
     # 名字回 409、探未占用的名字回 403，等于用注册接口枚举门户名与接线名
-    # 是否存在。先判模式，关闭时一律 403，不泄露撞名信息。
-    mode_config = db.query(models.SystemConfig).filter(
-        models.SystemConfig.key == "registration_mode"
-    ).first()
-    reg_mode = _normalize_registration_mode(mode_config.value if mode_config else None)
+    # 是否存在。先判模式（凭码模式先验码），不把撞名信息泄露给无权注册的人。
+    reg_mode = _registration_mode(db)
 
     if reg_mode == "closed":
         closed_msg_config = db.query(models.SystemConfig).filter(
@@ -494,6 +560,19 @@ def register(request: Request, req: RegisterRequest, db: Session = Depends(get_d
             detail=(closed_msg_config.value if closed_msg_config and closed_msg_config.value
                     else "当前未开放注册"),
         )
+
+    # 凭码模式：提交时二次校验（第一步验码端点的放行不是凭据，绕过
+    # 第一步直接调本接口也必须带有效注册码）。这里只校验不消耗——
+    # 消耗在建号同一事务里由核销主体的 CAS 占位完成（见下方建号段）；
+    # 先验码也免得无码者走到撞名检查去探名字是否被占用。
+    reg_code_check = None
+    if reg_mode == "code":
+        from backend import codes as _codes
+
+        reg_code_check = _codes.check_registration_code(
+            db, req.registration_code, username=username)
+        if not reg_code_check["valid"]:
+            raise HTTPException(status_code=400, detail=reg_code_check["message"])
 
     # 大小写不敏感撞名检查（门户名＋接线名都查）：只按精确大小写查会放行
     # Foo/foo 异壳账号，而转账、指名码等消费侧按不敏感匹配时会命中不确定，
@@ -517,10 +596,27 @@ def register(request: Request, req: RegisterRequest, db: Session = Depends(get_d
         password_hash=hash_password(req.password),
         email=req.email.strip() if req.email else None,
         is_active=True,
-        # 注册渠道归因（v2.44.0）：注册码门禁已下线，新用户只有开放注册/邀请两种入口
-        register_channel=register_channel.OPEN,
+        # 注册渠道归因（v2.44.0）：凭码注册记 code（卡密是进门凭据，
+        # 优先级高于邀请码，见 register_channel.resolve），其余记 open
+        register_channel=(register_channel.CODE if reg_code_check
+                          else register_channel.OPEN),
     )
     db.add(user)
+    if reg_code_check is not None:
+        # 凭码注册：核销与建号同一个事务。先 flush 拿到新用户 id，再走
+        # 核销主体（CAS 原子占位 + 代理销售归属 + 附带权益发放，均不
+        # 提交），最后连同建号一次提交；核销失败整体回滚——码不消耗、
+        # 人不落库，不会出现「码烧了号没建好」或「号建好了码还能再用」。
+        from backend import codes as _codes
+
+        db.flush()
+        consume = _codes.consume_registration_code(
+            db, user, req.registration_code)
+        if not consume.get("success"):
+            db.rollback()
+            raise HTTPException(
+                status_code=400,
+                detail=consume.get("message") or "注册码无效")
     commit_with_retry(db, label="注册落库")  # 一次提交落盘
     db.refresh(user)
 

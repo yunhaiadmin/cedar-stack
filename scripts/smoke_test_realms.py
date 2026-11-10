@@ -489,14 +489,34 @@ try:
 finally:
     db.close()
 
-r = client.post("/api/user/membership/redeem/preview", headers=SH, json={"code": code_b})
-check("卡码预检就告诉用户开的是哪个服的会员",
-      r.status_code == 200 and r.json().get("realm_name") == f"二服改名{suf}",
-      str(r.json().get("realm_name")))
+# 2026-11-10 注册码分离定版：注册码（code_type=1）的核销入口已迁到注册页
+# （codes.consume_registration_code），登录后兑换入口只认续期/白名单码；
+# 跨服会员门判定与发放仍是同一套核销主体，本段改走注册核销入口验证，
+# 验码预检（不消耗）同样能告诉用户这张码开的是哪个服的会员。
+from backend import codes as codes_lib
 
-r = client.post("/api/user/membership/redeem", headers=SH, json={"code": code_b})
+db = SessionLocal()
+try:
+    pre = codes_lib.check_registration_code(db, code_b)
+finally:
+    db.close()
+check("卡码预检就告诉用户开的是哪个服的会员",
+      pre.get("valid") is True and pre.get("realm_name") == f"二服改名{suf}",
+      str(pre.get("realm_name")))
+
+db = SessionLocal()
+try:
+    solo_user = db.query(models.WebUser).filter(
+        models.WebUser.id == solo_id).first()
+    res = codes_lib.consume_registration_code(db, solo_user, code_b)
+    if res.get("success"):
+        db.commit()
+    else:
+        db.rollback()
+finally:
+    db.close()
 check("A 服会员可以核销 B 服的注册码（不再被误判为「已有会员」）",
-      r.status_code == 200, f"HTTP {r.status_code} {(r.text or '')[:80]}")
+      res.get("success") is True, str(res.get("message")))
 
 db = SessionLocal()
 try:

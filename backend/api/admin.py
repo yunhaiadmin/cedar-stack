@@ -695,10 +695,12 @@ def gdrive_sa_rotate(
 
 
 class RegistrationModeRequest(BaseModel):
-    # 注册码门禁（"code"）已下线：只接受 open / closed。DB 里残留的 "code"
-    # 由注册接口兼容处理（按 open 走），这里直接拒绝新写入。
-    mode: str  # open / closed
+    # 注册三档：open 开放 / code 凭码（2026-11-10 恢复为正式档位）/ closed 关闭
+    mode: str  # open / code / closed
     message: str = ""
+    # 凭码注册第一步的「没有注册码去哪领」提示（可选，None 表示不修改）
+    registration_code_hint_text: Optional[str] = None
+    registration_code_hint_url: Optional[str] = None
     # 注册限流（可选，None 表示不修改）
     ratelimit_enabled: Optional[bool] = None  # 是否启用注册限流
     ratelimit_max: Optional[int] = None  # 窗口内最大注册次数
@@ -711,7 +713,7 @@ def set_registration_mode(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """设置注册模式：open 开放注册 / closed 关闭注册
+    """设置注册模式：open 开放注册 / code 凭码注册 / closed 关闭注册
 
     可选附带注册限流配置（None 表示不修改）：
     - ratelimit_enabled: 是否启用注册限流（落库 register_ratelimit_enabled；
@@ -719,8 +721,8 @@ def set_registration_mode(
     - ratelimit_max: 窗口内最大注册次数（必须 >= 1）
     - ratelimit_window: 窗口秒数（必须 >= 60）
     """
-    if request.mode not in ("open", "closed"):
-        raise HTTPException(status_code=400, detail="mode 必须是 open/closed")
+    if request.mode not in ("open", "code", "closed"):
+        raise HTTPException(status_code=400, detail="mode 必须是 open/code/closed")
     if request.ratelimit_max is not None and request.ratelimit_max < 1:
         raise HTTPException(status_code=400, detail="ratelimit_max 必须大于等于 1")
     if request.ratelimit_window is not None and request.ratelimit_window < 60:
@@ -731,6 +733,10 @@ def set_registration_mode(
         "registration_mode": request.mode,
         "registration_closed_message": request.message,
     }
+    if request.registration_code_hint_text is not None:
+        values["registration_code_hint_text"] = request.registration_code_hint_text
+    if request.registration_code_hint_url is not None:
+        values["registration_code_hint_url"] = request.registration_code_hint_url
     # A-112：ratelimit_enabled 恢复落库（与 max/window 同批写入）；
     # 2026-10-21 摘面板时漏写导致 PUT 200 却永远改不动，已反转。
     if request.ratelimit_enabled is not None:
@@ -747,6 +753,10 @@ def set_registration_mode(
     config_service.save_config(db, values, schema="registration")
     db.commit()
     audit_details = {"mode": request.mode}
+    if request.registration_code_hint_text is not None:
+        audit_details["registration_code_hint_text"] = request.registration_code_hint_text
+    if request.registration_code_hint_url is not None:
+        audit_details["registration_code_hint_url"] = request.registration_code_hint_url
     if request.ratelimit_enabled is not None:
         audit_details["ratelimit_enabled"] = request.ratelimit_enabled
     if request.ratelimit_max is not None:
@@ -778,6 +788,8 @@ def get_registration_mode(
         .filter(models.SystemConfig.key.in_([
             "registration_mode",
             "registration_closed_message",
+            "registration_code_hint_text",
+            "registration_code_hint_url",
             "register_ratelimit_enabled",
             "register_ratelimit_max",
             "register_ratelimit_window",
@@ -786,7 +798,7 @@ def get_registration_mode(
     )
     values = {r.key: r.value for r in rows}
 
-    # 与注册接口同口径：历史 code / 未知值按 closed 展示（注册接口实际也拒绝注册）
+    # 与注册接口同口径归一（code 已恢复为正式档位，未知值按 closed 展示）
     from backend.api.emby_portal import _normalize_registration_mode
     mode = _normalize_registration_mode(values.get("registration_mode"))
     message = values.get("registration_closed_message") or ""
@@ -814,6 +826,8 @@ def get_registration_mode(
     return {
         "mode": mode,
         "message": message,
+        "registration_code_hint_text": values.get("registration_code_hint_text") or "",
+        "registration_code_hint_url": values.get("registration_code_hint_url") or "",
         "ratelimit_enabled": ratelimit_enabled,
         "ratelimit_max": ratelimit_max,
         "ratelimit_window": ratelimit_window,

@@ -40,9 +40,12 @@ def _make_user(db, username="u1", tg_id=None):
     return u
 
 
-# ---------- 注册门禁：历史 code 模式不得静默变成开放注册 ----------
+# ---------- 注册门禁：code 档（2026-11-10 定版恢复为正式档位） ----------
 
-def test_register_legacy_code_mode_fails_closed(db):
+def test_register_code_mode_requires_code(db):
+    """DB 里的 "code" 不再是待归一的历史残值，而是凭码注册档：
+    没带注册码的注册必须被拒（400）、不落库；完整两步回归见
+    test_reg_code_two_step.py。未知值仍旧 fail-closed 按 closed。"""
     from starlette.requests import Request
     from backend.api import emby_portal
 
@@ -54,10 +57,11 @@ def test_register_legacy_code_mode_fails_closed(db):
     req = emby_portal.RegisterRequest(username="newbie", password="secret123")
     with pytest.raises(HTTPException) as exc:
         emby_portal.register(Request(scope), req, db)
-    assert exc.value.status_code == 403
+    assert exc.value.status_code == 400
     assert db.query(models.WebUser).filter_by(username="newbie").first() is None
     cfg = emby_portal.register_config(db)
-    assert cfg["registration_mode"] == "closed"
+    assert cfg["registration_mode"] == "code"
+    assert cfg["registration_code_required"] is True
 
 
 def test_normalize_registration_mode():
@@ -67,5 +71,5 @@ def test_normalize_registration_mode():
     assert norm("") == "open"
     assert norm("open") == "open"
     assert norm("closed") == "closed"
-    assert norm("code") == "closed"
+    assert norm("code") == "code"
     assert norm("garbage") == "closed"
