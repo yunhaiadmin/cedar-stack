@@ -440,6 +440,104 @@ def test_blocked_user_is_not_retried(db, monkeypatch):
     assert len(calls) == 1
 
 
+def _episode_item(db, suffix, series_name, ep_name, season_number=None,
+                  episode_number=None, series_name_blank=False):
+    """建 剧→季→集 三行，返回集行。series_name_blank 时剧行名字留空。"""
+    library = em.Library(guid=f"lib-ep-{suffix}", name="库")
+    db.add(library)
+    db.commit()
+    series = em.MediaItem(
+        guid=f"series-{suffix}", library_id=library.id,
+        item_type="series", name="" if series_name_blank else series_name,
+        file_path=f"/media/{suffix}/series",
+    )
+    db.add(series)
+    db.commit()
+    db.refresh(series)
+    season = em.MediaItem(
+        guid=f"season-{suffix}", library_id=library.id,
+        item_type="season", name="第 1 季", parent_id=series.id,
+        series_id=series.id, season_number=season_number,
+        file_path=f"/media/{suffix}/s1",
+    )
+    db.add(season)
+    db.commit()
+    db.refresh(season)
+    episode = em.MediaItem(
+        guid=f"ep-{suffix}", library_id=library.id,
+        item_type="episode", name=ep_name, parent_id=season.id,
+        series_id=series.id, season_number=season_number,
+        episode_number=episode_number,
+        file_path=f"/media/{suffix}/e1.mkv",
+    )
+    db.add(episode)
+    db.commit()
+    db.refresh(episode)
+    return episode
+
+
+def test_transfer_episode_title_includes_series_and_numbers(db, sent):
+    # 生产实证（2026-11-10）：通知只写「第 1 集」，收信人认不出是哪部剧。
+    _enable_transfer(db)
+    user = _user(db, "u", telegram_id=5001)
+    episode = _episode_item(db, "a", "动物管制官", "第 1 集",
+                            season_number=1, episode_number=1)
+    job = _job(db, user, episode, status="done")
+    assert proactive.note_transfer_terminal(db, job) is True
+    db.commit()
+    notices = _notices(db)
+    assert len(notices) == 1
+    assert notices[0].title == "动物管制官 第1季第1集"
+    assert proactive.flush_due(
+        db, now=datetime.now() + timedelta(seconds=120)) == 1
+    assert sent[0]["text"] == "《动物管制官 第1季第1集》可以看了"
+
+
+def test_transfer_fail_episode_title_includes_series(db, sent):
+    # 失败类与成功类共用同一处拼名（_item_title），同口径带剧名。
+    _enable_transfer(db)
+    user = _user(db, "u", telegram_id=5002)
+    episode = _episode_item(db, "b", "动物管制官", "第 2 集",
+                            season_number=1, episode_number=2)
+    job = _job(db, user, episode, status="failed", kind="no_binding",
+               detail="x")
+    assert proactive.note_transfer_terminal(db, job) is True
+    db.commit()
+    assert proactive.flush_due(
+        db, now=datetime.now() + timedelta(seconds=120)) == 1
+    assert "《动物管制官 第1季第2集》没转成" in sent[0]["text"]
+
+
+def test_transfer_episode_title_falls_back_without_numbers(db, sent):
+    # 季集号取不到：退到「剧名 · 集名」，不拼空段。
+    _enable_transfer(db)
+    user = _user(db, "u", telegram_id=5003)
+    episode = _episode_item(db, "c", "动物管制官", "第 1 集")
+    job = _job(db, user, episode, status="done")
+    assert proactive.note_transfer_terminal(db, job) is True
+    db.commit()
+    assert _notices(db)[0].title == "动物管制官 · 第 1 集"
+    assert proactive.flush_due(
+        db, now=datetime.now() + timedelta(seconds=120)) == 1
+    assert sent[0]["text"] == "《动物管制官 · 第 1 集》可以看了"
+
+
+def test_transfer_episode_title_falls_back_without_series_name(db, sent):
+    # 剧名取不到（剧行名为空）：保持原集名，不拼空段/多余标点。
+    _enable_transfer(db)
+    user = _user(db, "u", telegram_id=5004)
+    episode = _episode_item(db, "d", "动物管制官", "第 1 集",
+                            season_number=1, episode_number=1,
+                            series_name_blank=True)
+    job = _job(db, user, episode, status="done")
+    assert proactive.note_transfer_terminal(db, job) is True
+    db.commit()
+    assert _notices(db)[0].title == "第 1 集"
+    assert proactive.flush_due(
+        db, now=datetime.now() + timedelta(seconds=120)) == 1
+    assert sent[0]["text"] == "《第 1 集》可以看了"
+
+
 def test_fail_job_survives_notifier_crash(db, monkeypatch):
     _enable_transfer(db)
     user = _user(db, "u", telegram_id=4003)
