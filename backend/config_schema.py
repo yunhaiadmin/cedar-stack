@@ -256,7 +256,7 @@ WELFARE_CONFIG_SCHEMA: dict[str, tuple] = {
     # 更新入库播报（tg_bot.updatedigest 读侧宽容解析）：总开关 + 攒批间隔分钟
     # + 发送目标（空=发群，填频道 @用户名或 -100 ID 则发频道，原文直存）
     "bot_update_digest_enabled": ("bool",),
-    "bot_update_digest_interval_minutes": ("int", 5, 1440),
+    "bot_update_digest_interval_minutes": ("int", 1, 1440),
     "bot_update_digest_chat_id": ("str",),
     # 每日播放排行榜（tg_bot.playrank 读侧宽容解析）：总开关默认关；
     # 发送时间是原文（读侧校验 HH:MM、非法回落 21:30，照
@@ -550,6 +550,20 @@ POOL_REWARD_CONFIG_SCHEMA: dict[str, tuple] = {
 # .POOL_JANITOR_CONFIG_DEFAULTS，唯一消费方是 pool_janitor。
 POOL_JANITOR_CONFIG_SCHEMA: dict[str, tuple] = {
     "pool_idle_evict_proactive_enabled": ("bool",),
+}
+
+# 重试子家族（copy_forbidden 换盘重试，2026-11-10 生产定案）：
+# 本体 POOL_CONFIG_SCHEMA 键集已钉死，另立家族（同 pool_janitor
+# 先例）；默认值在 pool_gate.POOL_RETRY_CONFIG_DEFAULTS，消费方
+# 是 pool_gate 门禁/换盘与 transfer_variant 池执行器。
+POOL_RETRY_CONFIG_SCHEMA: dict[str, tuple] = {
+    # copy_forbidden 终态冷却（秒）：默认 3600（1 小时），不再
+    # 无条件 24h；下限 60 防误配成高频重试，上限 86400 不许比
+    # 旧口径更长。
+    "pool_copy_forbidden_cooldown_sec": ("int", 60, 86400),
+    # 单条目换盘总尝试上限：0 = 以可用成员盘试完为界；>0 达到
+    # 即终态。上限 64 防误配成无界重试。
+    "pool_copy_forbidden_max_attempts": ("int", 0, 64),
 }
 
 # 上游聚合拉取参数（2026-10-31 优化 O-05 起，后续 O-01/O-02/O-03

@@ -241,6 +241,34 @@ def janitor_config_payload(db: Session) -> dict:
         POOL_JANITOR_CONFIG_DEFAULTS)
 
 
+#: 重试子家族的代码默认值：copy_forbidden 换盘重试与终态冷却。
+#: 本体键集已被 PR-1 测试钉死，扩键另立家族（同
+#: POOL_JANITOR 先例）；与 config_schema.POOL_RETRY_CONFIG_SCHEMA
+#: 同口径，读取经 retry_config_payload，消费方是本模块门禁/
+#: 换盘与 transfer_variant 池执行器。
+POOL_RETRY_CONFIG_DEFAULTS: dict = {
+    # copy_forbidden 终态冷却（秒）：forbidden 多是 anyone-reader
+    # 传播未到位或单盘权限问题，不是 24h 级别的过错；原口径随
+    # 建单落 24h 冷却，观众被死单锁一整天。默认 3600（1 小时，
+    # 24h 的 1/24）：足够等权限传播/管理员处置，又不把人锁死。
+    "pool_copy_forbidden_cooldown_sec": 3600,
+    # 单条目 copy_forbidden 换盘总尝试上限（节流窗内计 failed
+    # 行数）：0 = 不设总数上限，以「每块可用成员盘最多试一次」
+    # 为界（试完所有可用盘即终态）；>0 时达到即终态，防成员
+    # 名单 churn 让同一条目无界换盘。
+    "pool_copy_forbidden_max_attempts": 0,
+}
+
+
+def retry_config_payload(db: Session) -> dict:
+    """重试子家族配置生效值（类型化）：口径与 pool_config_payload
+    同一份解析，键集是 POOL_RETRY_CONFIG_DEFAULTS。管理端
+    retry-config 端点与门禁/工人共用这一份，不许两处各解析。"""
+    return _typed_payload(
+        _raw_config_for(db, POOL_RETRY_CONFIG_DEFAULTS),
+        POOL_RETRY_CONFIG_DEFAULTS)
+
+
 def pool_enabled(db: Session) -> bool:
     return bool(pool_config_payload(db)["pool_enabled"])
 
@@ -1230,6 +1258,58 @@ def _pool_retrigger_budget_ok(db: Session, item_id) -> bool:
     return count < 2
 
 
+def _forbidden_failed_jobs(db: Session, item_id):
+    """该条目节流窗内 failed/copy_forbidden 的池单行（换盘口径）。
+
+    窗口用 _throttle_window_filter（cooldown_until 落字优先）：
+    forbidden 行的 cooldown 已按 pool_copy_forbidden_cooldown_
+    sec 缩短，窗外旧失败不再算「试过」，成员盘修好权限后可再
+    被选中——这正是缩短冷却的意义。
+    """
+    if item_id is None:
+        return []
+    now = datetime.now()
+    return (db.query(em.TransferJob)
+            .filter(em.TransferJob.item_id == item_id,
+                    em.TransferJob.owner_scope == "pool",
+                    em.TransferJob.status == "failed",
+                    em.TransferJob.error_kind == "copy_forbidden",
+                    _tv._throttle_window_filter(now))
+            .all())
+
+
+def pool_forbidden_tried_member_ids(db: Session, item_id) -> set:
+    """已对该条目 copy_forbidden 过的成员 id 集合（换盘排除集）。"""
+    tried = set()
+    for job in _forbidden_failed_jobs(db, item_id):
+        try:
+            tried.add(int((job.owner_ref or "").strip()))
+        except (TypeError, ValueError):
+            continue
+    return tried
+
+
+def try_pool_forbidden_swap(db: Session, item, *, quota_fn=None):
+    """copy_forbidden 换盘重建：排除已 forbidden 的成员盘建新单。
+
+    返回新任务行；尝试上限（pool_copy_forbidden_max_attempts，
+    0 = 以可用盘试完为界）已达时返回 None（不再建单，调用方
+    落终态）；create_pool_job 的限额命中抛 TransferError
+    （no_member = 其余盘都不可用/已排除 → 调用方落终态；
+    throttled = 全局并发满 → 调用方可继续报 preparing，那是
+    真有单在飞）。门禁与池执行器共用本口，不许两处各写一份。
+    """
+    item_id = getattr(item, "id", None)
+    cfg = retry_config_payload(db)
+    max_attempts = int(cfg["pool_copy_forbidden_max_attempts"])
+    if max_attempts > 0 and len(
+            _forbidden_failed_jobs(db, item_id)) >= max_attempts:
+        return None
+    return create_pool_job(
+        db, item, force=True, quota_fn=quota_fn,
+        exclude_member_ids=pool_forbidden_tried_member_ids(db, item_id))
+
+
 def _pool_failed_detail(db: Session, item, job) -> str:
     """池失败透传文案：带任务行上的人话原因，不只给笼统失败。
 
@@ -1441,8 +1521,10 @@ def _ensure_pool_copy_gate_impl(db: Session, item, user, request=None, *,
        PR-3 接通：PlaybackInfo / video_stream 按池副本下发，
        serve 态不再映射 failed）；
     ④ 在途池单 → preparing/job_in_flight；
-    ⑤ 最新池单失败 → retriable 预算内重触发 / 终态透传原因 /
-       未归类 preparing/throttled（沿门禁既有口径）；
+    ⑤ 最新池单失败 → retriable 预算内重触发 / copy_forbidden
+       换盘重触发（排除已试盘，试完或到上限落终态）/ 其余终态
+       一律透传原因如实 failed（未归类 kind 不再冒充 preparing，
+       2026-11-10 定案）；
     ⑥ done 单无 ready 副本 → 预算内重建 job_rebuilt；
     ⑦ 无在途/失败 → create_pool_job → preparing/job_created，
        限额命中 → preparing/throttled。
@@ -1493,6 +1575,40 @@ def _ensure_pool_copy_gate_impl(db: Session, item, user, request=None, *,
                     "job_id": failed.id,
                     "detail": _pool_failed_detail(db, item, failed),
                     "pool": True}
+        if kind == "copy_forbidden":
+            # 换盘重试（2026-11-10 生产定案）：单盘 forbidden 只
+            # 说明这块盘读不到源，不说明别的盘不行。排除已试过
+            # 的盘重建一单；无盘可换/尝试上限到顶 → 如实终态，
+            # 不许再拿死单冒充 preparing 让观众无限吃 409。
+            try:
+                new_job = try_pool_forbidden_swap(
+                    db, item, quota_fn=quota_fn)
+            except _tv.TransferError as exc:
+                if exc.kind == "throttled":
+                    return {"verdict": "preparing",
+                            "reason": "throttled",
+                            "job_id": failed.id, "pool": True,
+                            "detail": POOL_PREPARING_DETAIL}
+                if exc.kind == "no_member":
+                    return {"verdict": "failed",
+                            "reason": "copy_forbidden",
+                            "job_id": failed.id,
+                            "detail": _pool_failed_detail(
+                                db, item, failed),
+                            "pool": True}
+                return {"verdict": "failed", "reason": exc.kind,
+                        "job_id": failed.id,
+                        "detail": str(exc) or None, "pool": True}
+            if new_job is None:
+                return {"verdict": "failed",
+                        "reason": "copy_forbidden",
+                        "job_id": failed.id,
+                        "detail": _pool_failed_detail(db, item, failed),
+                        "pool": True}
+            return {"verdict": "preparing",
+                    "reason": "job_retriggered_forbidden",
+                    "job_id": new_job.id, "pool": True,
+                    "detail": POOL_PREPARING_DETAIL}
         if (kind in _tv._TERMINAL_JOB_KINDS
                 or kind in _tv._AUTH_TERMINAL_KINDS
                 or kind == "insufficient_space"):
@@ -1500,9 +1616,14 @@ def _ensure_pool_copy_gate_impl(db: Session, item, user, request=None, *,
                     "job_id": failed.id,
                     "detail": _pool_failed_detail(db, item, failed),
                     "pool": True}
-        return {"verdict": "preparing", "reason": "throttled",
-                "job_id": failed.id, "pool": True,
-                "detail": POOL_PREPARING_DETAIL}
+        # 其余未归类 kind 同为 _fail_job 落的终态（failed 行只有
+        # retriable 会被看门狗回队，其余永不复活）：如实透传
+        # failed，不许再冒充 preparing/throttled——2026-11-10
+        # copy_forbidden 正是漏在这里，让观众对着死单无限重试。
+        return {"verdict": "failed", "reason": kind or "failed",
+                "job_id": failed.id,
+                "detail": _pool_failed_detail(db, item, failed),
+                "pool": True}
     # ⑥ done 单无 ready 副本（副本已释放/变 stale）：预算内重建。
     done = _latest_pool_job(db, item_id, statuses=("done",))
     if done is not None:

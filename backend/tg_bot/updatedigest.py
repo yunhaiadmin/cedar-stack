@@ -1,8 +1,9 @@
 """TG「更新入库」播报（2026-11-03 站主按竞品「云海 emby 资源更新 bot」
 截图格式亲定）：新入库的剧集/电影攒批播报到机器人主群。
 
-消息形态（照截图）：照片＋图注（无可用横幅图时纯文字），一条消息内
-先电视剧栏后电影栏，哪栏有货出哪栏：
+消息形态（照截图）：照片＋图注（无可用横幅图时纯文字，配图只挂
+第一条），正文先电视剧栏后电影栏，哪栏有货出哪栏；整批超单条
+字数上限时分多条顺序发送：
 
     电视剧更新
     📺绝世战魂 (2024) S02E38
@@ -15,15 +16,18 @@
 - 目标：bot_update_digest_chat_id 填了频道（@用户名或 -100 开头的频道
   ID）就发频道，留空回落 bot_group_ids 第一个群（与观影榜日推 rankpush
   同一份群配置、同一解析口）；发送走 tg_bot.sender 既有通道。
-- 攒批：每 bot_update_digest_interval_minutes 分钟一批（默认 30），
-  无更新不发；不逐条刷屏。
+- 攒批：每 bot_update_digest_interval_minutes 分钟一批（默认 30，
+  可配 1~1440；设 1 分钟即近实时），无更新不发；不逐条刷屏。
 - 只报「用户真能看的」：顶层行已过身份货架判据（identity_gate
   identity_clause 同源口径）才进播报；新集按所属剧的身份判据（clause
   的子行分支本身就是跟随 series）。未认出身份的不报，等认出后再报。
 - 防重复：tg_update_digest_sent 小表记已播行 id（电影=顶层行、
-  新集=集行），同一条不播两次；发送成功才记，失败下批重试。
-- 每栏最多 10 行，超出在栏尾写「……本批共 N 部/剧」，未播的留在
-  表外顺延下一批，不丢。
+  新集=集行），同一条不播两次；逐条发送成功才记该条覆盖的行，
+  失败未发的留下批续发。
+- 全量展示（2026-11-10 站主亲令「要展示完全」）：电影与剧集组
+  全量入选、不设行数上限；正文超 Telegram 单条 4096 字上限时，
+  在行边界切成多条顺序发送（不劈行，栏目头跟随其第一行所在条），
+  逐条记已播；中途某条失败即停，未发条目不记、下轮续发——不重不漏。
 - 存量窗口：只报最近 14 天内入库（date_added）的行。
 - 上线基线（首跑种子）：功能上线时已在货架上（已绑定且 14 天内
   入库）的条目先整批记为 baseline 不播报——播报只播上线后新到的，
@@ -34,11 +38,12 @@
 
 开关（SystemConfig，管理后台「公益服经济」页可配）：
 - bot_update_digest_enabled 总开关，默认开。
-- bot_update_digest_interval_minutes 攒批间隔分钟，默认 30（5~1440）。
+- bot_update_digest_interval_minutes 攒批间隔分钟，默认 30（1~1440）。
 - bot_update_digest_chat_id 发送目标，默认空=发群；填频道则发频道。
-调度标记 bot_update_digest_last_run / _seeded 存 SystemConfig，
-只在推送成功/空批/种子完成时推进 last_run；失败下个 tick 重试
-（与 rankpush 同纪律）。
+调度标记 bot_update_digest_last_run / _seeded 存 SystemConfig：
+last_run 在推送成功（全部发完，或部分成功——至少一条已发、已播行
+已记表，剩余下轮自然续上）/空批/种子完成时推进；一条都没发出去
+时不推进，下个 tick 整批重试（与 rankpush 同纪律）。
 """
 from __future__ import annotations
 
@@ -64,7 +69,8 @@ SEEDED_KEY = "bot_update_digest_seeded"
 
 DEFAULT_INTERVAL_MINUTES = 30
 WINDOW_DAYS = 14
-MAX_LINES_PER_COLUMN = 10
+#: Telegram 单条消息正文上限（字符）：整批超此限按行边界分条发送。
+MESSAGE_LIMIT = 4096
 _EPISODE_FETCH_CAP = 20000
 
 
@@ -95,7 +101,7 @@ def interval_minutes(db) -> int:
         value = int(_cfg(db, INTERVAL_KEY, str(DEFAULT_INTERVAL_MINUTES)))
     except ValueError:
         value = DEFAULT_INTERVAL_MINUTES
-    return max(5, min(1440, value))
+    return max(1, min(1440, value))
 
 
 def _base_conditions(window_start: datetime) -> list:
@@ -136,15 +142,14 @@ def _seed_baseline(db, now: datetime) -> int:
 
 
 def _collect_movies(db, window_start: datetime):
-    """本批电影候选：返回 (总数, 前 MAX 行)。按入库先后 FIFO，
-    超额的留下批（未记已播，自然顺延）。"""
+    """本批电影候选：返回 (总数, 全部行)。全量展示口径不设行数
+    上限，按入库先后 FIFO；正文过长由发送层分条，不在此截断。"""
     conds = [em.MediaItem.item_type == "movie", *_base_conditions(window_start)]
     total = int(db.query(func.count(em.MediaItem.id)).filter(*conds).scalar() or 0)
     rows = (
         db.query(em.MediaItem)
         .filter(*conds)
         .order_by(em.MediaItem.date_added.asc(), em.MediaItem.id.asc())
-        .limit(MAX_LINES_PER_COLUMN)
         .all()
     )
     return total, rows
@@ -196,12 +201,14 @@ def _episode_season(db, ep, parents_cache: dict) -> int | None:
 
 
 def _collect_episode_groups(db, window_start: datetime):
-    """本批新集候选，按（剧，季）分组。返回 (总组数, 前 MAX 组)。
+    """本批新集候选，按（剧，季）分组。返回 (总组数, 全部组)。
 
     每组：{"series": series 行, "season": int, "episodes": [集行...],
     "first_added": 组内最早入库时间}。集号缺失/剧或季解析不出的集行
     本批跳过（不记已播，补齐后仍可入选）。identity_clause 的子行分支
-    已保证「集跟随所属剧的身份判据」。
+    已保证「集跟随所属剧的身份判据」。取数保留 _EPISODE_FETCH_CAP
+    安全帽（防极端积压一次全捞爆内存）：真命中帽时记一条 warning，
+    帽外集行未记已播、下批自然续上。
     """
     conds = [em.MediaItem.item_type == "episode", *_base_conditions(window_start)]
     rows = (
@@ -211,6 +218,11 @@ def _collect_episode_groups(db, window_start: datetime):
         .limit(_EPISODE_FETCH_CAP)
         .all()
     )
+    if len(rows) >= _EPISODE_FETCH_CAP:
+        logger.warning(
+            "updatedigest 新集取数命中安全帽 %s 行，本批之后的集顺延下批",
+            _EPISODE_FETCH_CAP,
+        )
     if not rows:
         return 0, []
     series_map = _resolve_series_map(db, rows)
@@ -249,7 +261,7 @@ def _collect_episode_groups(db, window_start: datetime):
         groups.values(),
         key=lambda g: (g["first_added"] or datetime.min, int(g["series"].id)),
     )
-    return len(ordered), ordered[:MAX_LINES_PER_COLUMN]
+    return len(ordered), ordered
 
 
 def _title_with_year(item) -> str:
@@ -290,22 +302,91 @@ def format_episode_line(group) -> str:
     )
 
 
-def build_message(tv_groups, movie_rows, tv_total: int, movie_total: int) -> str:
-    """组装播报正文：先电视剧栏、后电影栏，空栏不出。"""
+def build_message(tv_groups, movie_rows) -> str:
+    """组装整批正文（一口气形态）：先电视剧栏、后电影栏，空栏不出。
+    全量展示、无截断尾行；实际发送按 build_message_chunks 分条。"""
     sections: list[str] = []
     if tv_groups:
         lines = ["电视剧更新"]
         lines.extend(format_episode_line(g) for g in tv_groups)
-        if tv_total > len(tv_groups):
-            lines.append(f"……本批共 {tv_total} 剧")
         sections.append("\n".join(lines))
     if movie_rows:
         lines = ["电影更新"]
         lines.extend(format_movie_line(m) for m in movie_rows)
-        if movie_total > len(movie_rows):
-            lines.append(f"……本批共 {movie_total} 部")
         sections.append("\n".join(lines))
     return "\n\n".join(sections)
+
+
+def _build_units(tv_groups, movie_rows) -> list[dict]:
+    """正文行单元：每行一个不可分单元，栏目头与其第一行焊在一起。
+
+    unit: {text, section, starts_section, movies, tv_groups}；movies /
+    tv_groups 是该行覆盖的条目（记已播用）。
+    """
+    units: list[dict] = []
+    for i, group in enumerate(tv_groups):
+        prefix = "电视剧更新\n" if i == 0 else ""
+        units.append({
+            "text": prefix + format_episode_line(group),
+            "section": "tv",
+            "starts_section": i == 0,
+            "movies": [],
+            "tv_groups": [group],
+        })
+    for i, item in enumerate(movie_rows):
+        prefix = "电影更新\n" if i == 0 else ""
+        units.append({
+            "text": prefix + format_movie_line(item),
+            "section": "movie",
+            "starts_section": i == 0,
+            "movies": [item],
+            "tv_groups": [],
+        })
+    return units
+
+
+def build_message_chunks(tv_groups, movie_rows,
+                         limit: int = MESSAGE_LIMIT) -> list[dict]:
+    """整批正文按单条上限切成多条：[{text, movies, tv_groups}...]。
+
+    切分只落在行边界（不劈行）：栏目头跟随其第一行所在条；同栏续行
+    以单换行接、换栏以空行接，与 build_message 的一口气形态一致。
+    单行本身超限时自成一条（实际行长远不及上限，此为兜底）。
+    """
+    chunks: list[dict] = []
+    texts: list[str] = []
+    movies: list = []
+    groups: list = []
+    sections: set[str] = set()
+    length = 0
+
+    def flush() -> None:
+        nonlocal texts, movies, groups, sections, length
+        if texts:
+            chunks.append({
+                "text": "".join(texts), "movies": movies, "tv_groups": groups,
+            })
+        texts, movies, groups, sections, length = [], [], [], set(), 0
+
+    for unit in _build_units(tv_groups, movie_rows):
+        sep = ""
+        if texts:
+            sep = "\n\n" if (
+                unit["starts_section"] and unit["section"] not in sections
+            ) else "\n"
+        if texts and length + len(sep) + len(unit["text"]) > limit:
+            flush()
+            sep = ""
+        if sep:
+            texts.append(sep)
+            length += len(sep)
+        texts.append(unit["text"])
+        length += len(unit["text"])
+        movies.extend(unit["movies"])
+        groups.extend(unit["tv_groups"])
+        sections.add(unit["section"])
+    flush()
+    return chunks
 
 
 def _backdrop_file(item) -> str | None:
@@ -349,13 +430,20 @@ def _mark_sent(db, movie_rows, tv_groups) -> None:
 
 
 def push_digest(db, now: datetime | None = None) -> dict:
-    """攒一批并播报。返回 {pushed, reason, movies, tv_groups, text}。
+    """攒一批并播报。返回 {pushed, reason, movies, tv_groups, text,
+    chunks, chunks_sent}（movies / tv_groups 为已实际播出并记表的数）。
 
-    reason: ok / disabled / no_group / empty / seeded / send_failed。
-    发送成功才记已播；失败不记，下批原样重试。
+    reason: ok / partial / disabled / no_group / empty / seeded /
+    send_failed。整批正文按单条上限分条顺序发送、逐条记已播：
+    全部发完 → ok；中途某条失败即停，已发条记表、未发条不记
+    → partial（剩余下轮 tick 自然续上，不会卡死在同一批）；一条
+    都没发出去（首条失败）→ send_failed，整批不记、下批原样重试。
+    配图只挂第一条：有横幅图且第一条文案放得进图注上限才发图，
+    发图失败降级第一条纯文字。条间不加人为延时（sender 既有节流）。
     """
     now = now or datetime.now()
-    empty = {"pushed": False, "movies": 0, "tv_groups": 0, "text": ""}
+    empty = {"pushed": False, "movies": 0, "tv_groups": 0, "text": "",
+             "chunks": 0, "chunks_sent": 0}
     if not digest_enabled(db):
         return {**empty, "reason": "disabled"}
     if _cfg(db, SEEDED_KEY, "") != "1":
@@ -366,41 +454,65 @@ def push_digest(db, now: datetime | None = None) -> dict:
         logger.warning("updatedigest 未配置发送目标（频道未填且 bot_group_ids 为空），跳过播报")
         return {**empty, "reason": "no_group"}
     window_start = now - timedelta(days=WINDOW_DAYS)
-    movie_total, movie_rows = _collect_movies(db, window_start)
-    tv_total, tv_groups = _collect_episode_groups(db, window_start)
+    _movie_total, movie_rows = _collect_movies(db, window_start)
+    _tv_total, tv_groups = _collect_episode_groups(db, window_start)
     if not movie_rows and not tv_groups:
         return {**empty, "reason": "empty"}
-    text = build_message(tv_groups, movie_rows, tv_total, movie_total)
+    text = build_message(tv_groups, movie_rows)
+    chunks = build_message_chunks(tv_groups, movie_rows)
     photo_path = pick_photo_path(movie_rows, tv_groups)
-    ok, err = False, None
-    if photo_path and layout.caption_fits(text):
-        ok, err = sender.send_photo(
-            db, group_id, text, photo_path=photo_path, parse_mode=None
-        )
+    sent_movies = 0
+    sent_groups = 0
+    chunks_sent = 0
+    failed = False
+    for idx, chunk in enumerate(chunks):
+        ok, err = False, None
+        if idx == 0 and photo_path and layout.caption_fits(chunk["text"]):
+            ok, err = sender.send_photo(
+                db, group_id, chunk["text"], photo_path=photo_path,
+                parse_mode=None,
+            )
+            if not ok:
+                logger.warning("updatedigest 发图失败，降级纯文本：%s", err)
         if not ok:
-            logger.warning("updatedigest 发图失败，降级纯文本：%s", err)
-    if not ok:
-        ok, err = sender.send_message(db, group_id, text, parse_mode=None)
-    if not ok:
-        logger.warning("updatedigest 播报发送失败：%s", err)
+            ok, err = sender.send_message(
+                db, group_id, chunk["text"], parse_mode=None)
+        if not ok:
+            logger.warning(
+                "updatedigest 第 %s/%s 条发送失败，停发待下轮续发：%s",
+                idx + 1, len(chunks), err,
+            )
+            failed = True
+            break
+        _mark_sent(db, chunk["movies"], chunk["tv_groups"])
+        sent_movies += len(chunk["movies"])
+        sent_groups += len(chunk["tv_groups"])
+        chunks_sent += 1
+    if chunks_sent == 0:
         return {
-            **empty, "reason": "send_failed",
-            "movies": len(movie_rows), "tv_groups": len(tv_groups), "text": text,
+            **empty, "reason": "send_failed", "text": text,
+            "chunks": len(chunks),
         }
-    _mark_sent(db, movie_rows, tv_groups)
     logger.info(
-        "updatedigest 已播报 group=%s movies=%s tv_groups=%s photo=%s",
-        group_id, len(movie_rows), len(tv_groups), bool(photo_path),
+        "updatedigest 已播报 group=%s movies=%s tv_groups=%s "
+        "chunks=%s/%s photo=%s partial=%s",
+        group_id, sent_movies, sent_groups, chunks_sent, len(chunks),
+        bool(photo_path), failed,
     )
     return {
-        "pushed": True, "reason": "ok",
-        "movies": len(movie_rows), "tv_groups": len(tv_groups), "text": text,
+        "pushed": True,
+        "reason": "partial" if failed else "ok",
+        "movies": sent_movies, "tv_groups": sent_groups, "text": text,
+        "chunks": len(chunks), "chunks_sent": chunks_sent,
     }
 
 
 def run_scheduled_tick(db, now: datetime | None = None) -> list[str]:
-    """调度一拍：距上批 ≥ 间隔才攒批。last_run 只在推送成功/空批/
-    种子完成时推进；失败下个 tick 重试（与 rankpush 同纪律）。"""
+    """调度一拍：距上批 ≥ 间隔才攒批。last_run 在推送成功（ok）、
+    部分成功（partial：至少一条已发、已播行已记表，剩余下轮自然
+    续上，不会卡死在同一批）、空批、种子完成时推进；一条都没发
+    出去（send_failed）不推进，下个 tick 整批重试（与 rankpush
+    同纪律）。"""
     now = now or datetime.now()
     if not digest_enabled(db):
         return []
@@ -413,7 +525,7 @@ def run_scheduled_tick(db, now: datetime | None = None) -> list[str]:
         except ValueError:
             pass
     res = push_digest(db, now)
-    if res["reason"] in ("ok", "empty", "seeded"):
+    if res["reason"] in ("ok", "partial", "empty", "seeded"):
         store.write_values(db, {LAST_RUN_KEY: now.isoformat()})
         db.commit()
         return [f"digest:{res['reason']}"]

@@ -4545,8 +4545,16 @@ def _stamp_job_cooldown(job):
 def _note_job_terminal_cooldown(job):
     """终态落字：工人收尾时给终态行（done/failed）补/刷新
     cooldown_until——存量行建单时没落字，靠这里补上；值仍按
-    created_at 口径，与现算结果一致。非终态行不碰。"""
+    created_at 口径，与现算结果一致。非终态行不碰。
+
+    例外：池 copy_forbidden 行的 cooldown 已由执行器按
+    pool_copy_forbidden_cooldown_sec 落短冷却（_after_pool_
+    copy_forbidden），这里不许回刷成 24h——已有落字即保留。"""
     if getattr(job, "status", "") not in ("done", "failed"):
+        return
+    if ((getattr(job, "owner_scope", "") or "") == "pool"
+            and (getattr(job, "error_kind", "") or "") == "copy_forbidden"
+            and getattr(job, "cooldown_until", None) is not None):
         return
     _stamp_job_cooldown(job)
 
@@ -6567,6 +6575,56 @@ def _run_drive_user_job(db, job, item, drive_api):
     return {"job_id": job.id, "outcome": "done", "variant_id": row.id}
 
 
+def _after_pool_copy_forbidden(db, job, item):
+    """池单 copy_forbidden 终态后事：短冷却落字 + 换盘重建。
+
+    2026-11-10 生产定案：原口径「不重试 + 建单时落的 24h 冷却」
+    把观众锁死一整天（门禁还把死单冒充准备中，见 pool_gate
+    门禁 ⑤）。池路径改两点，个人盘路径不动：
+    - 本行 cooldown_until 改按 pool_retry 子家族键
+      pool_copy_forbidden_cooldown_sec（默认 3600 秒）落字；
+      _note_job_terminal_cooldown 对这类行不再回刷 24h。
+    - 立刻换盘：经 pool_gate.try_pool_forbidden_swap 排除已
+      forbidden 的盘重建一单，不等观众下次点播才触发；无盘
+      可换/限额命中是常态结果（门禁下次点播还会兜底），只记
+      日志。本函数永不抛异常——后事失败不许污染已落的终态。
+    """
+    from backend.emby_server import pool_gate as _pg
+
+    try:
+        cfg = _pg.retry_config_payload(db)
+        base = getattr(job, "created_at", None) or datetime.now()
+        job.cooldown_until = base + timedelta(
+            seconds=int(cfg["pool_copy_forbidden_cooldown_sec"]))
+        db.commit()
+    except Exception:  # noqa: BLE001 — 落字失败保留原 24h 冷却
+        logger.warning("池 copy_forbidden 短冷却落字失败 job=%s",
+                       getattr(job, "id", None), exc_info=True)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        new_job = _pg.try_pool_forbidden_swap(db, item)
+        if new_job is not None:
+            logger.info("池 copy_forbidden 换盘重建 job=%s -> %s",
+                        getattr(job, "id", None), new_job.id)
+    except TransferError as exc:
+        logger.info("池 copy_forbidden 换盘未建单 job=%s kind=%s",
+                    getattr(job, "id", None), exc.kind)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+    except Exception:  # noqa: BLE001 — 换盘失败门禁下次点播兜底
+        logger.warning("池 copy_forbidden 换盘重建异常 job=%s",
+                       getattr(job, "id", None), exc_info=True)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def _run_drive_pool_job(db, job, item, drive_api):
     """Drive 池盘任务（goal-33 PR-2）：成员令牌直拷 Path A。
 
@@ -6578,8 +6636,10 @@ def _run_drive_pool_job(db, job, item, drive_api):
     加权限失败记 orphan、不回落源文件播放）。
 
     与用户盘不同的三点（设计使然）：
-    - 不走 Path B：成员令牌看不见源（_CopyForbidden）时直接终态
-      copy_forbidden，不静默转 SA 中转、不重试死循环；
+    - 不走 Path B：成员令牌看不见源（_CopyForbidden）时本单终态
+      copy_forbidden，不静默转 SA 中转；但池路径不止这一块盘——
+      终态后由 _after_pool_copy_forbidden 换其他成员盘重建一单
+      （2026-11-10 定案，个人盘路径无此语义、逐字不动）；
     - 不腾地方：copy 中途配额不足时直接终态 insufficient_space，
       绝不调用 ensure_space_for_transfer——那会清掉贡献者自己的
       用户副本给池让路；
@@ -6626,9 +6686,11 @@ def _run_drive_pool_job(db, job, item, drive_api):
         copied = user_client.copy_file(member_drive, orig_fid, folder_id,
                                        name)
     except _CopyForbidden:
-        return _fail_job(db, job, "copy_forbidden",
-                         "成员令牌无权读取源文件（anyone-reader 未传播"
-                         "或源已撤分享），不重试")
+        result = _fail_job(db, job, "copy_forbidden",
+                           "成员令牌无权读取源文件（anyone-reader 未传播"
+                           "或源已撤分享）")
+        _after_pool_copy_forbidden(db, job, item)
+        return result
     except _CopyQuotaExceeded:
         _pg._bump_pool_usage(db, member.id, quota_hits=1)
         # PR-5 熔断：本次命中记数后顺手查阈值，达线即当场熔断

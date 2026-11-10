@@ -131,7 +131,7 @@ const digestEnabled = computed({
 })
 
 const digestFields = [
-  { key: 'bot_update_digest_interval_minutes', label: '攒批间隔', hint: '每隔这段时间把这段时间新入库的攒成一批发出，默认 30，范围 5-1440', suffix: '分钟' },
+  { key: 'bot_update_digest_interval_minutes', label: '攒批间隔', hint: '每隔这段时间把这段时间新入库的攒成一批发出，默认 30，范围 1-1440', suffix: '分钟' },
   { key: 'bot_update_digest_chat_id', label: '发送目标', hint: '填频道 @用户名或频道 ID 则发频道。机器人须先被设为该频道管理员才能发帖', suffix: '', placeholder: '留空发群里' },
 ]
 
