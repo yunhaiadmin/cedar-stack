@@ -536,6 +536,61 @@ def _task_drive_warm(db: Session) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# 8. 缺集核算（缺集全套：TMDB 集表 vs 盘内实有集对表）
+# ---------------------------------------------------------------------------
+
+def _task_missing_episodes(db: Session) -> dict:
+    from backend.emby_server import missing_episodes_worker
+    from backend.emby_server import models as em
+
+    snap = _cached_snapshot(
+        "missing_episodes_status",
+        lambda: missing_episodes_worker.status_snapshot())
+    last = snap.get("last_round") or {}
+    open_series = int(
+        db.query(em.MissingEpisodeRecord)
+        .filter(em.MissingEpisodeRecord.status == "open")
+        .count())
+    metrics = [
+        {"label": "当前缺集剧数",
+         "value": f"{open_series} 部"},
+        {"label": "上轮核算",
+         "value": f"{int(last.get('checked') or 0)} 部"},
+        {"label": "上轮新发现/仍缺",
+         "value": (f"{int(last.get('opened') or 0)} / "
+                   f"{int(last.get('kept_open') or 0)} 部")},
+        {"label": "上轮补齐",
+         "value": f"{int(last.get('resolved') or 0)} 部"},
+        {"label": "无 TMDB 号跳过",
+         "value": f"{int(last.get('skipped_no_tmdb') or 0)} 部"},
+        {"label": "上轮 TMDB 调用",
+         "value": f"{int(last.get('tmdb_calls') or 0)} 次"},
+    ]
+    if not snap.get("enabled", True):
+        status, status_text = "disabled", "已关闭"
+        summary = "缺集核算关了（环境变量），清单停在上次核算的结果上"
+    elif not last:
+        status, status_text = "idle", "没跑过"
+        summary = "缺集核算工人还没跑过第一轮"
+    elif last.get("reason") in ("busy", "load"):
+        status, status_text = "ok", "让路中"
+        summary = "上一轮检测到起播繁忙或系统负载高，主动跳过让路"
+    elif int(last.get("checked") or 0) == 0 and int(
+            last.get("tmdb_skipped") or 0) > 0:
+        status, status_text = "warning", "留意"
+        summary = "上一轮核算的剧全被 TMDB 侧跳过了，多半是 TMDB 暂时不可用"
+    else:
+        status, status_text = "ok", "正常"
+        summary = (f"当前 {open_series} 部剧缺集，清单在「媒体 → 缺集清单」"
+                   "里，补齐会自动完成对应的求补")
+    return _card(
+        "missing_episodes", "缺集核算", status, status_text, summary,
+        metrics=metrics, last_run=last.get("finished_at"),
+        last_run_label="最近一轮核算",
+    )
+
+
+# ---------------------------------------------------------------------------
 # 聚合入口
 # ---------------------------------------------------------------------------
 
@@ -547,6 +602,7 @@ _BUILDERS = (
     ("chase_new", "追新（新资源监听）", "_task_chase_new"),
     ("upstream_warm", "上游地址保鲜", "_task_upstream_warm"),
     ("drive_warm", "Drive 暖地址", "_task_drive_warm"),
+    ("missing_episodes", "缺集核算", "_task_missing_episodes"),
 )
 # 注：存函数名而不是函数对象，测试时 monkeypatch 模块属性才能生效。
 

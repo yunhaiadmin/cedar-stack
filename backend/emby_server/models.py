@@ -2169,6 +2169,57 @@ class DrivePlayAccessEvent(Base):
     detail = Column(Text)
 
 
+class MissingEpisodeRecord(Base):
+    """缺集核算台账（缺集全套，2026-11-10 用户亲点）：一行 = 一部
+    剧的最近一次核算结论，由缺集核算工人
+    （emby_server/missing_episodes_worker）周期维护。
+
+    一行同时承担两个职责：
+    - 缺集清单：``status='open'`` 且 ``missing_count > 0`` 的行就
+      是「这部剧缺集」的事实源，管理端清单与用户端求补入口都读
+      它；``missing_detail`` 是 JSON ``{"1": [2, 5]}``（季号 →
+      缺的集号），规范形态见 backend/missing_episodes。
+    - 核算节流台账：不缺集的剧也落一行（``status='resolved'``、
+      ``missing_count=0``、``first_detected_at`` 为空），靠
+      ``last_checked_at`` 实现「同一部剧最多每 7 天重算一次」，
+      不必每轮把全库剧都打一遍 TMDB。
+
+    状态流转：核算出缺集 → open（新发现时写 first_detected_at）；
+    核算补齐 → resolved + resolved_at，并由工人顺手把该剧未完结
+    的补缺集求片置 completed 走到货通知；剧被删/合并/丢了 TMDB
+    号 → open 行同样置 resolved（失效处理，不删行留痕）。
+    不加外键（照 DrivePlayAccessEvent 先例）：剧行删掉后台账行
+    留着供复盘。
+    """
+
+    __tablename__ = "emby_missing_episode_records"
+
+    __table_args__ = (
+        Index("ix_missing_ep_records_status", "status"),
+        Index("ix_missing_ep_records_tmdb", "tmdb_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    # 剧行 id（emby_items.id，item_type='series'），一部剧一行
+    series_item_id = Column(Integer, nullable=False, unique=True)
+    tmdb_id = Column(String(20), nullable=False, default="")
+    # 剧名/所属库快照（清单展示用；剧改名后下轮核算自动刷新）
+    series_name = Column(String(300), nullable=False, default="")
+    library_id = Column(Integer)
+    # 缺集明细 JSON：{"1": [2, 5]}；不缺集时为 "{}"
+    missing_detail = Column(Text)
+    missing_count = Column(Integer, nullable=False, default=0)
+    # open（正缺集）/ resolved（已补齐或剧已失效）
+    status = Column(String(20), nullable=False, default="resolved")
+    # 本轮缺集首次被发现的时刻；补齐后重新缺集会重置
+    first_detected_at = Column(DateTime)
+    last_checked_at = Column(DateTime)
+    resolved_at = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now,
+                      onupdate=datetime.now)
+
+
 class TransferContentManifest(Base):
     """内容块哈希清单（换代线「分块清单同步」地基，2026-11-01）。
 

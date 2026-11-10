@@ -1581,6 +1581,16 @@ class MovieRequest(Base):
     # 这类行只有片名、对不上号，须人工确认后才处理，管理端据此区分；
     # 选片行（带 tmdb_id）恒为 False。老库补列默认 0（见 database.py）。
     title_only = Column(Boolean, default=False, nullable=False, server_default="0")
+    # 缺集全套（2026-11-10）：求片分类——seek＝整片求片（存量与
+    # 默认）；missing_episodes＝补缺集求片（剧已在库、只缺若干集，
+    # 由许愿池「求补这些集」落单，仍走求片主口的额度/附议/完成
+    # 通知同一套）。老库补列默认 'seek'（见 database.py）。
+    request_kind = Column(String(20), default="seek", nullable=False,
+                          server_default="seek")
+    # 补缺集求片的缺集明细快照 JSON（结构见 backend/missing_episodes
+    # 的 build_request_detail）；整片求片恒为空。工人核算发现部分
+    # 补齐时只刷新这份快照、不发通知；全部补齐才置 completed。
+    request_detail = Column(Text)
 
     user = relationship("WebUser")
 
