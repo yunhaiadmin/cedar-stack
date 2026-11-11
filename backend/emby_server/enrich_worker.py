@@ -4197,8 +4197,24 @@ def _none_reschedulable_query(db, cutoff, max_rounds, longtail_cutoff=None):
     否则 NULL 行翻回后计数仍是 NULL、下轮又被视同 0、无限翻回。
     """
     from sqlalchemy import and_ as _and
+    from sqlalchemy import false as _false
     from sqlalchemy import func as _func
     from sqlalchemy import or_ as _or
+    # 长尾支须先在 Python 侧分流再拼进查询：``<= None`` 在 SQLAlchemy
+    # 构造期即抛 ArgumentError，下面的 ``longtail_cutoff is not None``
+    # 布尔守卫救不了先行求值的比较表达式。None 时整支恒假＝旧口径
+    # （达上限永不捞回）；传真实值时与原写法逐字等价。
+    if longtail_cutoff is not None:
+        _longtail_branch = _and(
+            _func.coalesce(
+                em.MediaItem.enrich_none_reschedules,
+                0) >= max_rounds,
+            longtail_cutoff is not None,
+            _or(em.MediaItem.enrich_next_retry_at.is_(None),
+                em.MediaItem.enrich_next_retry_at
+                <= longtail_cutoff))
+    else:
+        _longtail_branch = _false()
     return (db.query(em.MediaItem)
             .filter(em.MediaItem.enrich_status == "done",
                     _or(em.MediaItem.metadata_source == "none",
@@ -4231,14 +4247,7 @@ def _none_reschedulable_query(db, cutoff, max_rounds, longtail_cutoff=None):
                                 0) < max_rounds,
                             _or(em.MediaItem.enrich_next_retry_at.is_(None),
                                 em.MediaItem.enrich_next_retry_at <= cutoff)),
-                        _and(
-                            _func.coalesce(
-                                em.MediaItem.enrich_none_reschedules,
-                                0) >= max_rounds,
-                            longtail_cutoff is not None,
-                            _or(em.MediaItem.enrich_next_retry_at.is_(None),
-                                em.MediaItem.enrich_next_retry_at
-                                <= longtail_cutoff)),
+                        _longtail_branch,
                     )))
 
 

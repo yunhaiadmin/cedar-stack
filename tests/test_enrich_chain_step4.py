@@ -416,6 +416,38 @@ def test_auto_reschedule_round_cap(db):
     assert fresh.enrich_none_reschedules == 1, "翻回时计数 +1"
 
 
+def test_none_reschedulable_query_longtail_none_is_legacy_cap(db):
+    """longtail_cutoff=None 退路：签名默认 None、docstring 既定语义＝退回
+    旧口径（达上限永不捞回）。旧代码把 None 直接放进 ``<=`` 比较，
+    SQLAlchemy 在查询构造期即抛 ArgumentError（``longtail_cutoff is not
+    None`` 布尔守卫救不了先行求值的比较表达式）——本用例钉死：None 时
+    查询可构造、可执行，且达上限行（含 next_retry=NULL）一律不命中；
+    传真实长尾 cutoff 时行为不变。"""
+    cutoff = datetime.now() - timedelta(days=14)
+    fresh = _none_row(
+        db, "未达上限剧",
+        enrich_next_retry_at=datetime.now() - timedelta(days=31),
+        enrich_none_reschedules=0)
+    capped = _none_row(
+        db, "达上限剧",
+        enrich_next_retry_at=datetime.now() - timedelta(days=40),
+        enrich_none_reschedules=6)
+    capped_null = _none_row(
+        db, "达上限空戳剧", enrich_next_retry_at=None,
+        enrich_none_reschedules=6)
+    q_none = ew._none_reschedulable_query(db, cutoff, 6, longtail_cutoff=None)
+    ids_none = {it.id for it in q_none.all()}
+    assert fresh.id in ids_none, "未达上限的常规支不受 None 影响"
+    assert capped.id not in ids_none, "None 时达上限永不捞回（旧口径）"
+    assert capped_null.id not in ids_none, "None 时达上限 NULL 戳行同样不捞"
+    q_lt = ew._none_reschedulable_query(
+        db, cutoff, 6,
+        longtail_cutoff=datetime.now() - timedelta(days=30))
+    ids_lt = {it.id for it in q_lt.all()}
+    assert {fresh.id, capped.id, capped_null.id} <= ids_lt, \
+        "传真实长尾 cutoff 时达上限行照常命中（传值行为不变）"
+
+
 def test_flipped_row_is_claimable(db):
     """翻回的行必须真的能被工人认领（与 _claim_batch 认领口径同形断言）"""
     _flag_on()
