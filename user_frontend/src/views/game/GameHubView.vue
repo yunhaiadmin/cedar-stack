@@ -40,6 +40,9 @@
       <section class="game-world" aria-label="探险世界">
         <WorldMap variant="game" />
       </section>
+
+      <!-- 绑盘回跳落点：从本地图点播去绑盘、绑好被带回来时按片名重开播放器选择 -->
+      <PlayerSchemeSheet v-model:open="resumePickerOpen" :title="resumePickerTitle" />
     </div>
   </div>
 </template>
@@ -48,6 +51,8 @@
 import { computed, onMounted, ref } from 'vue'
 import CampGuide from '@/components/game/CampGuide.vue'
 import WorldMap from '@/components/panel/WorldMap/index.vue'
+import PlayerSchemeSheet from '@/components/panel/PlayerSchemeSheet.vue'
+import { useBindReturnResume } from '@/composables/useBindReturn'
 import { gameHubConfig as hub } from '@/config/game'
 import { checkinApi, vitalityApi } from '@/api/economy'
 import { useUserStore } from '@/stores/user'
@@ -110,6 +115,14 @@ function toNumberOrNull(v: unknown): number | null {
 }
 
 // ---------- 活卡片徽标已随设施清单撤掉（设施页面路由不动） ----------
+
+// ---------- 绑盘回跳落点（消费 resume_title 参数） ----------
+const resumePickerOpen = ref(false)
+const resumePickerTitle = ref('')
+useBindReturnResume((title) => {
+  resumePickerTitle.value = title
+  resumePickerOpen.value = true
+})
 
 onMounted(async () => {
   if (!userStore.isLoggedIn) return

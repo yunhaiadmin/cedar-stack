@@ -27,7 +27,7 @@
             <div class="pc-gtitle">绑定</div>
             <p class="pc-gsub">绑了自己的盘，播放走你自己的额度，不走共享池</p>
             <div class="v4-card pc-rows-card">
-              <DriveBindingsPanel ref="drivePanel" @loaded="onDriveLoaded" />
+              <DriveBindingsPanel ref="drivePanel" @loaded="onDriveLoaded" @active-binding="onActiveBinding" />
             </div>
           </section>
         </div>
@@ -148,7 +148,8 @@
  * 知（TG 私聊三类偏好开关）、账号（退出登录）。各块逻辑都在 components/profile/ 的对应组件里（自旧
  * 账号页原样抽出，行为口径不变）；本页只留上榜开关与退出登录。
  * 带 #my-drive 锚点进来（旧深链 / 播放器方案弹窗）时，等绑定组显示后
- * 自动展开谷歌盘并滚到位。
+ * 自动展开谷歌盘并滚到位。点播引导带 bind_return 参数进来时，绑好
+ * （列表出现可用绑定）自动回跳来源页并让其重开播放器选择。
  */
 import { nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -160,6 +161,12 @@ import LoginHistoryEntry from '@/components/profile/LoginHistoryEntry.vue'
 import DriveBindingsPanel from '@/components/profile/DriveBindingsPanel.vue'
 import CardPrefsEntry from '@/components/profile/CardPrefsEntry.vue'
 import { panelApi, humanizeError } from '@/composables/usePanelApi'
+import {
+  BIND_RETURN_QUERY,
+  BIND_TITLE_QUERY,
+  RESUME_TITLE_QUERY,
+  sanitizeBindReturnPath,
+} from '@/composables/useBindReturn'
 import { useUserStore } from '@/stores/user'
 import { useToast } from '@/composables/useToast'
 
@@ -181,6 +188,23 @@ function onDriveLoaded(payload: { visible: boolean }) {
       document.getElementById('my-drive')?.scrollIntoView({ block: 'start' })
     })
   }
+}
+
+// ── 绑盘回跳：点播被门禁拦下经引导进来（query 带 bind_return）时，
+// 名下出现可用绑定就自动带回来源页，并让来源页重开播放器选择 ──
+const bindReturnDone = ref(false)
+function onActiveBinding() {
+  if (bindReturnDone.value) return
+  const target = sanitizeBindReturnPath(route.query[BIND_RETURN_QUERY])
+  if (!target) return
+  bindReturnDone.value = true
+  const rawTitle = route.query[BIND_TITLE_QUERY]
+  const title = typeof rawTitle === 'string' ? rawTitle.trim() : ''
+  toast.success('绑好了，带你回到刚才的片')
+  void router.replace({
+    path: target,
+    query: title ? { [RESUME_TITLE_QUERY]: title } : {},
+  })
 }
 
 // ── 观影碑上榜开关（自旧页原样迁入） ──
