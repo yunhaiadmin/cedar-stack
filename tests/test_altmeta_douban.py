@@ -25,6 +25,7 @@ import pytest
 from backend.emby_server import altmeta
 from backend.emby_server import douban as dbn
 from backend.emby_server import enrich_worker as ew
+from backend.emby_server.metasources import breaker as provider_breaker
 from backend.integrations import store
 
 
@@ -36,9 +37,15 @@ def _env():
     ew._altmeta_cfg_cache["at"] = 0.0
     ew._altmeta_cfg_cache["cfg"] = None
     store.invalidate(dbn.DOUBAN_ENABLED_KEY)
+    # #62 第四轮：provider 熔断器是进程级共享状态（连续 3 次失败开断 60 秒），
+    # 同 worker 里更早的测试把豆瓣打坏后，本文件的 search 首测会在 urlopen
+    # 被调到之前就被 allow("douban") 拦回 None——熔断器自带测试用 reset_all，
+    # 每测清掉，不改生产阈值/冷却。
+    provider_breaker.reset_all()
     yield
     ew._douban_cfg_cache["at"] = 0.0
     ew._douban_cfg_cache["cfg"] = None
+    provider_breaker.reset_all()
 
 
 def _item(**kw):

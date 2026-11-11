@@ -74,6 +74,15 @@ def _cleanup(db: Session) -> None:
             em.UserStorageBinding.user_id == u.id).delete()
         db.query(em.MountCredential).filter(
             em.MountCredential.owner_user_id == u.id).delete()
+        # 站内信先清（与 test_pilot_entry._cleanup 同口径）：
+        # to_user_id 非空而 ORM 删用户会试图置空它；更早模块留下的
+        # 孤儿站内信（收件人已被删、其 id 被本文件用户复用）会把
+        # teardown 顶爆并回滚整个清理（2026-11-05 #1854 CI 实证，
+        # #62 xdist 并行复现）。
+        db.query(models.StationMessage).filter(
+            (models.StationMessage.to_user_id == u.id)
+            | (models.StationMessage.from_user_id == u.id)
+        ).delete(synchronize_session=False)
         db.delete(u)
     db.commit()
 

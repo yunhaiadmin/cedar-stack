@@ -429,7 +429,11 @@ class TestDrain:
             # triage 必须有调度入口：PR #416 删除 preprobe 时把它删成了死代码（只剩定义、
             # 没有任何调用点），这里钉住 start() 真的注册了整理线程。
             assert "probe_triage" in worker_registry.snapshot(), "triage 调度未注册"
-            deadline = time.monotonic() + 60
+            # xdist 并行时 4 个 worker 共抢跑道 CPU，排空变慢：串行 60 秒
+            # 够，并行放宽到 180 秒（只放宽等待预算，不断言、不减量——
+            # #62 三轮 CI 实证：并行下 60 秒整整耗尽、只剩 1 条未排空）。
+            drain_budget = 180 if os.environ.get("PYTEST_XDIST_WORKER") else 60
+            deadline = time.monotonic() + drain_budget
             while time.monotonic() < deadline:
                 left = db.query(func.count(em.MediaItem.id)).filter(
                     em.MediaItem.id.in_(healthy),

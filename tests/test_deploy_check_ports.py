@@ -78,7 +78,16 @@ def _healthy_request(method, url, **kwargs):
 
 
 def test_pick_free_port_returns_distinct_ports():
-    ports = {dc.pick_free_port() for _ in range(5)}
+    # 内核 bind(0) 刚释放的临时端口可能立刻被重新分配回来（并行负载下
+    # 更易撞上），函数本身只承诺“当下空闲”不承诺“连续调用互不相同”
+    # （见 pick_free_port docstring）；这里攒够 5 个不同端口即过，
+    # 断言意图（能拿到 5 个不同空闲端口）不变（#62 xdist 三轮实证：一次 5 连
+    # 挑只拿到 4 个不同值）。
+    ports = set()
+    for _ in range(50):
+        ports.add(dc.pick_free_port())
+        if len(ports) == 5:
+            break
     assert len(ports) == 5
     assert all(1 <= p <= 65535 for p in ports)
 

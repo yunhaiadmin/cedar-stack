@@ -6,3 +6,6 @@
 # CI 安装时与生产锁一起用 --require-hashes 装。
 zhconv
 pytest
+# pytest-xdist：冒烟套件并行（容量三期）。仅 CI 装；per-worker 隔离在
+# tests/conftest.py 顶部，缺它时 -n 参数无从谈起，版本与 pytest 同步钉版。
+pytest-xdist

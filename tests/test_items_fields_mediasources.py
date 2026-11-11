@@ -46,6 +46,13 @@ def _guid():
 
 
 def _cleanup(db):
+    # 孤儿映射先清：更早模块删条目时若没清映射（或其 teardown 回滚），
+    # 孤儿映射残留；新条目复用其 local_item_id 后会被当成自身线路
+    # 下发（#62 xdist 并行实证：多出 upstream:2 一条线）。
+    db.query(em.UpstreamItemMapping).filter(
+        ~em.UpstreamItemMapping.local_item_id.in_(
+            db.query(em.MediaItem.id))
+    ).delete(synchronize_session=False)
     for lib in db.query(em.Library).filter(
             em.Library.name == LIB_CMS).all():
         ids = [r[0] for r in db.query(em.MediaItem.id).filter(
@@ -78,6 +85,15 @@ def _cleanup(db):
         db.query(em.EmbyApiToken).filter(
             em.EmbyApiToken.user_id == u.id).delete(
             synchronize_session=False)
+        # 站内信先清（与 test_pilot_entry._cleanup 同口径）：
+        # to_user_id 非空而 ORM 删用户会试图置空它；更早模块留下的
+        # 孤儿站内信（收件人已被删、其 id 被本文件用户复用）会把
+        # teardown 顶爆并回滚整个清理（2026-11-05 #1854 CI 实证，
+        # #62 xdist 并行复现）。
+        db.query(models.StationMessage).filter(
+            (models.StationMessage.to_user_id == u.id)
+            | (models.StationMessage.from_user_id == u.id)
+        ).delete(synchronize_session=False)
         db.delete(u)
     db.commit()
 
