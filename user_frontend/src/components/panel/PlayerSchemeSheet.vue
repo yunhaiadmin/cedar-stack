@@ -21,7 +21,7 @@
           <button type="button" class="psp-x" aria-label="关闭" @click="close">✕</button>
         </div>
         <p v-if="!needsBinding" class="psp-sub">这一步只把播放器账号导入，不直接播这一集：点播放器后，还要在播放器里搜上面这个片名。</p>
-        <PlayStatusBar v-if="itemId !== null && itemId !== undefined" :item-id="itemId" />
+        <PlayStatusBar v-if="!needsBinding && itemId !== null && itemId !== undefined" :item-id="itemId" />
         <div v-if="loading" class="psp-empty">正在读取播放器…</div>
         <BindDriveGuide v-else-if="needsBinding" :title="title" @navigate="close" />
         <p v-else-if="schemes.length === 0" class="psp-empty">
