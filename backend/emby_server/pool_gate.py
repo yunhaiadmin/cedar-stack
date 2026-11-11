@@ -795,9 +795,11 @@ def _binding_quota(db: Session, binding_id, quota_fn=None):
 
     quota_fn 可注入（测试用，签名 quota_fn(db, binding)）；默认走
     quota_dashboard._default_drive_quota（UserDriveApiClient
-    .about_storage，额度驾驶舱同款路径）。读数按 binding_id
-    缓存 10 分钟。读不到/读失败回 None（未知），不抛——未知怎么
-    判由调用方定（选盘按未知放行，入池门槛按不达标拦）。
+    .about_storage，额度驾驶舱同款路径）。成功读数按 binding_id
+    缓存 10 分钟；读不到/读失败回 None（未知），不抛，且失败的
+    None 不进缓存——一次 Drive 抖动不许把读数锁死 10 分钟，
+    下一次调用立即重读。未知怎么判由调用方定（选盘按未知
+    放行，入池门槛按不达标拦）。
     """
     if binding_id is None:
         return None
@@ -819,7 +821,8 @@ def _binding_quota(db: Session, binding_id, quota_fn=None):
         logger.warning("池绑定 %s 配额读取失败，按未知处理",
                        binding_id, exc_info=True)
         quota = None
-    _POOL_QUOTA_CACHE[binding_id] = (now, quota)
+    if quota is not None:
+        _POOL_QUOTA_CACHE[binding_id] = (now, quota)
     return quota
 
 
@@ -1916,20 +1919,34 @@ def _join_capacity_block(db: Session, binding, cfg, quota_fn=None) -> str | None
     """入池容量门槛判定（用户 2026-11-10 亲批）：盘总容量
     （about 的 limit、不是剩余量）须达 pool_join_min_capacity_bytes。
 
-    门槛 0 = 关；非 drive 跳过（现网准入名单只有 drive）；
-    读不到/读失败（limit 为 None）按不达标拦（fail-closed）。
+    门槛 0 = 关；非 drive 跳过（现网准入名单只有 drive）。
+    三种读数分开判（2026-11-11 企业版误拦修复）：
+    - limit 是数字：达标放行，不达标按小盘拦（原文案）；
+    - limit 为 None 但 about 读到了（quota 是 dict）：谷歌对
+      企业版（Workspace 无限/池化）账号不返回 limit 字段，
+      about_storage 契约写明这表示无上限、按空间充足处理，
+      放行——不许再误报「容量不到」；
+    - quota 为 None（读失败）：按用户原令 fail-closed 仍拦，
+      但文案如实说读不到，不冒充小盘。
     达标返回 None，不达标返回人话原因（无句号，调用方按语境补）。
-    读数走 _binding_quota 的 10 分钟缓存，与选盘共用一份。
+    读数走 _binding_quota（成功读数缓存 10 分钟、失败不缓存），
+    与选盘共用一份；申请/批准/恢复与 contribution_status 的
+    can_apply 共用本函数一处判定，不许另起第二套。
     """
     minimum = int(cfg.get("pool_join_min_capacity_bytes") or 0)
     if minimum <= 0 or binding.provider != "drive":
         return None
     quota = _binding_quota(db, binding.id, quota_fn=quota_fn)
-    limit = quota.get("limit") if isinstance(quota, dict) else None
-    if limit is not None and int(limit) >= minimum:
-        return None
-    return (f"这个盘的总容量不到 {_min_capacity_label(minimum)}，"
-            f"不能加入公共池（加入门槛：盘总容量至少 {minimum} 字节）")
+    if isinstance(quota, dict):
+        limit = quota.get("limit")
+        if limit is None:
+            return None
+        if int(limit) >= minimum:
+            return None
+        return (f"这个盘的总容量不到 {_min_capacity_label(minimum)}，"
+                f"不能加入公共池（加入门槛：盘总容量至少 {minimum} 字节）")
+    return ("暂时读不到这个盘的容量，没法确认是否达到 "
+            f"{_min_capacity_label(minimum)} 的加入门槛，请稍后再试")
 
 
 def _check_binding_pool_ready(db: Session, binding, quota_fn=None) -> None:
