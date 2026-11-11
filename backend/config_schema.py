@@ -589,6 +589,17 @@ MP_EPISODE_FILL_CONFIG_SCHEMA: dict[str, tuple] = {
 }
 
 
+# 中继兜底计时（2026-11-11）：客户端不上报播放进度时，用 EA 中继
+# 流活动（emby_watch_stream_activity）重建观看段，结账工人
+# emby_server.watch_fallback 走同一套入账函数补记 watch_points_daily
+# 与活力。纯 SystemConfig 键，不进 env.example（同 mp_episode_fill
+# 先例）。
+WATCH_FALLBACK_CONFIG_SCHEMA: dict[str, tuple] = {
+    # 兜底结账总开关：默认开；关时结账工人整轮跳过、不消费活动段。
+    "watch_fallback_credit_enabled": ("bool",),
+}
+
+
 # 盲盒（双服通用新功能，2026-11-11 用户亲定，方案 v2）：全站总开关
 # 与两份 JSON 文档（按 realm 分开的档位/奖池、奖品积分等值估值表）。
 # JSON 结构、奖池合法性（公益专属奖限制）与期望返还率红线由
