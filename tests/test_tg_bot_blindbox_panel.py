@@ -7,7 +7,8 @@
   该服未开启时只出「暂未开启」卡，没有抽盒按钮。
 - 档位页概率全公布；抽盒走 blindbox_draw:{tier} 回调，私聊限定
   （群里点到只 toast、不抽）；同一 callback 重投递不二次开盒。
-- 抽盒成功另发结果卡；失败只 toast，引擎保证不扣分。
+- 抽盒先应答「开盒中…」停转圈，再执行抽盒（2026-11-11 卡顿修复）；
+  成功另发结果卡；失败发私聊消息说原因，引擎保证不扣分。
 """
 from __future__ import annotations
 
@@ -104,16 +105,24 @@ class _Calls:
     def __init__(self):
         self.toasts = []
         self.panels = []
+        self.messages = []
+        self.events = []
 
     def patch(self, monkeypatch):
-        monkeypatch.setattr(
-            sender, "answer_callback_query",
-            lambda db_, cb_id, text=None, show_alert=False:
-                self.toasts.append((cb_id, text, show_alert)) or (True, None))
+        def _answer(db_, cb_id, text=None, show_alert=False):
+            self.toasts.append((cb_id, text, show_alert))
+            self.events.append("answer")
+            return True, None
+
+        monkeypatch.setattr(sender, "answer_callback_query", _answer)
         monkeypatch.setattr(
             sender, "send_panel",
             lambda db_, chat_id, text, markup=None, **kw:
                 self.panels.append((chat_id, text, markup)) or (True, None))
+        monkeypatch.setattr(
+            sender, "send_message",
+            lambda db_, chat_id, text, markup=None, **kw:
+                self.messages.append((chat_id, text)) or (True, None))
 
 
 def _cb(cb_id="cb-1", tg=TG, chat_id=TG, data="blindbox_draw:t1"):
@@ -207,6 +216,35 @@ def test_draw_success_charges_and_pays(db, monkeypatch):
     assert "10 能量" in calls.panels[0][1]
 
 
+def test_draw_answers_before_drawing(db, monkeypatch):
+    """应答顺序（卡顿回归锁）：先 answer 停转圈，再执行抽盒。
+
+    旧实现 resolve＋完整抽盒之后才应答，用户端转圈要等整条链路
+    走完；连点时后面的回调排队等前一张结果卡的图片上传，回调
+    甚至过期（query too old）。钉死：answer 事件必须在 draw 之前，
+    且首个 toast 是「开盒中…」。
+    """
+    realm = _realm(db)
+    _enable(db, realm.id)
+    user = _user(db, points=1000)
+    calls = _Calls()
+    calls.patch(monkeypatch)
+    real_draw = blindbox_panel.do_draw
+
+    def recording_draw(db_, user_, tier_key):
+        calls.events.append("draw")
+        return real_draw(db_, user_, tier_key)
+
+    monkeypatch.setattr(blindbox_panel, "do_draw", recording_draw)
+    callbacks.handle_callback(db, _cb())
+    assert calls.events[0] == "answer"
+    assert calls.events.index("answer") < calls.events.index("draw")
+    assert calls.toasts[0][1] == "开盒中…"
+    assert len(calls.panels) == 1
+    db.expire_all()
+    assert db.query(models.WebUser).get(user.id).points == 990
+
+
 def test_draw_replayed_callback_does_not_double_charge(db, monkeypatch):
     realm = _realm(db)
     _enable(db, realm.id)
@@ -249,10 +287,12 @@ def test_draw_insufficient_points_no_charge(db, monkeypatch):
         models.BlindboxDraw.status == "delivered").count()
     assert delivered == 0
     assert calls.panels == []
-    assert any(t[2] for t in calls.toasts)  # show_alert 的人话原因
+    # 回调已先应答「开盒中…」(只能应答一次)，失败原因改走私聊消息
+    assert len(calls.messages) == 1 and calls.messages[0][1]
+    assert not any(t[2] for t in calls.toasts)
 
 
-def test_draw_when_disabled_toast_only(db, monkeypatch):
+def test_draw_when_disabled_message_only(db, monkeypatch):
     _realm(db)
     user = _user(db, points=1000)
     calls = _Calls()
@@ -260,6 +300,7 @@ def test_draw_when_disabled_toast_only(db, monkeypatch):
     callbacks.handle_callback(db, _cb())
     assert db.query(models.BlindboxDraw).count() == 0
     assert calls.panels == []
+    assert len(calls.messages) == 1 and calls.messages[0][1]
     db.expire_all()
     assert db.query(models.WebUser).get(user.id).points == 1000
 

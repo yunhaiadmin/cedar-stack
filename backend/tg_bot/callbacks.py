@@ -1348,8 +1348,12 @@ def _handle_blindbox_draw(db, callback_query: dict) -> None:
     抽盒是扣能量的消费动作：只认私聊（chat_id＝本人 telegram_id，
     群里点到只回 toast）；同一 callback 重投递按 callback id 去重
     （blindbox_panel.claim_draw_callback），不许二次开盒扣分。
-    成功另发一张开盒结果卡（与老虎机私聊结果卡同口径，聊天记录
-    留档）；失败只 toast 人话原因——引擎保证失败不扣分。
+    应答时机（2026-11-11 卡顿修复）：去重通过后先应答「开盒中…」
+    停掉客户端转圈，再执行抽盒——旧实现把 answerCallbackQuery 拖
+    到抽盒＋结果卡发送之后，连点时后面的回调排队等前一张结果卡，
+    甚至过期（query too old 400）。回调只能应答一次，成功另发
+    开盒结果卡（与老虎机私聊结果卡同口径，聊天记录留档）；失败
+    改发私聊消息说人话原因——引擎保证失败不扣分。
     """
     from . import blindbox_panel
 
@@ -1373,15 +1377,17 @@ def _handle_blindbox_draw(db, callback_query: dict) -> None:
     if not blindbox_panel.claim_draw_callback(cb_id):
         _answer("这盒已经开过了")
         return
+    # 先应答再干活：转圈在应答到达客户端时就停，不必等抽盒事务
+    # 与结果卡发送走完（见上方 docstring 的卡顿修复说明）。
+    _answer("开盒中…")
     user = resolve(db, int(tg_id))
     if user is None:
-        _answer("请先绑定账号后再抽盲盒", show_alert=True)
+        sender.send_message(db, chat_id, "请先绑定账号后再抽盲盒")
         return
     ok, text, markup = blindbox_panel.do_draw(db, user, tier_key)
     if not ok:
-        _answer(text, show_alert=True)
+        sender.send_message(db, chat_id, text)
         return
-    _answer("开盒啦 🎁")
     sender.send_panel(db, chat_id, text, markup)
 
 

@@ -184,9 +184,10 @@ def test_user_panel_markup_ends_with_home():
 
 def test_send_photo_uses_multipart(monkeypatch, db):
     calls = []
+    sender._PHOTO_FILE_ID_CACHE.clear()
     monkeypatch.setattr(
-        sender, "_call_multipart",
-        lambda db_, method, payload, files: calls.append((method, payload, files)) or (True, None))
+        sender, "_call_multipart_ex",
+        lambda db_, method, payload, files: calls.append((method, payload, files)) or (True, None, {"message_id": 1}))
     ok, err = sender.send_photo(db, 123, "▎标题", {"inline_keyboard": []})
     assert ok and err is None
     method, payload, files = calls[0]

@@ -241,7 +241,8 @@ def do_draw(db, user: models.WebUser, tier_key: str):
     """抽一盒：走引擎 draw（扣分+定奖+发放一抽一事务）。
 
     返回 (ok, text, markup)：成功是开盒结果卡；失败 ok=False、
-    text 是人话原因（未扣分），markup 为 None（调用方只 toast）。
+    text 是人话原因（未扣分），markup 为 None（调用方已先应答
+    回调，失败原因走私聊消息送达）。
     """
     realm_id = welfare_realm_id(db)
     if realm_id is None:

@@ -56,9 +56,10 @@ def test_panel_image_resolution():
 
 def test_send_photo_cover_upload_name_and_mime(monkeypatch, db):
     calls = []
+    sender._PHOTO_FILE_ID_CACHE.clear()
     monkeypatch.setattr(
-        sender, "_call_multipart",
-        lambda db_, method, payload, files: calls.append((method, payload, files)) or (True, None))
+        sender, "_call_multipart_ex",
+        lambda db_, method, payload, files: calls.append((method, payload, files)) or (True, None, {"message_id": 1}))
     ok, err = sender.send_photo(db, 123, "▎发红包", None, photo_path=layout.REDPACKET_IMAGE)
     assert ok and err is None
     method, _payload, files = calls[0]
@@ -69,9 +70,10 @@ def test_send_photo_cover_upload_name_and_mime(monkeypatch, db):
 
 def test_send_photo_missing_override_falls_back_to_brand(monkeypatch, db):
     calls = []
+    sender._PHOTO_FILE_ID_CACHE.clear()
     monkeypatch.setattr(
-        sender, "_call_multipart",
-        lambda db_, method, payload, files: calls.append(files) or (True, None))
+        sender, "_call_multipart_ex",
+        lambda db_, method, payload, files: calls.append(files) or (True, None, {"message_id": 1}))
     ok, err = sender.send_photo(
         db, 123, "▎发红包", None, photo_path=Path("/nonexistent/cover.jpg"))
     assert ok and err is None
@@ -96,9 +98,10 @@ def test_send_panel_passes_photo_override(monkeypatch, db):
 
 def test_edit_message_media_payload(monkeypatch, db):
     calls = []
+    sender._PHOTO_FILE_ID_CACHE.clear()
     monkeypatch.setattr(
-        sender, "_call_multipart",
-        lambda db_, method, payload, files: calls.append((method, payload, files)) or (True, None))
+        sender, "_call_multipart_ex",
+        lambda db_, method, payload, files: calls.append((method, payload, files)) or (True, None, {"message_id": 1}))
     ok, err = sender.edit_message_media(
         db, 123, 456, "▎发红包", {"inline_keyboard": []},
         photo_path=layout.REDPACKET_IMAGE)
@@ -114,9 +117,10 @@ def test_edit_message_media_payload(monkeypatch, db):
 
 def test_edit_message_media_missing_override_falls_back_to_brand(monkeypatch, db):
     calls = []
+    sender._PHOTO_FILE_ID_CACHE.clear()
     monkeypatch.setattr(
-        sender, "_call_multipart",
-        lambda db_, method, payload, files: calls.append(files) or (True, None))
+        sender, "_call_multipart_ex",
+        lambda db_, method, payload, files: calls.append(files) or (True, None, {"message_id": 1}))
     ok, _ = sender.edit_message_media(
         db, 123, 456, "▎发红包", None, photo_path=Path("/nonexistent/cover.jpg"))
     assert ok

@@ -1,5 +1,7 @@
 """Telegram 消息发送模块"""
 
+import threading
+
 import httpx
 
 from pathlib import Path
@@ -152,26 +154,12 @@ def send_message_ex(
 
 
 def _call_multipart(db, method: str, payload: dict, files: dict) -> tuple[bool, str | None]:
-    """调用需要 multipart/form-data 的 Telegram API（如 sendPhoto）。"""
-    bot_token = get_telegram_token(db)
-    if not bot_token:
-        return False, "token 未配置"
-    url = f"https://api.telegram.org/bot{bot_token}/{method}"
-    try:
-        response = httpx.post(url, data=payload, files=files, timeout=20.0)
-        response.raise_for_status()
-        data = response.json()
-        if not data.get("ok", False):
-            return False, f"Telegram API 错误: {data.get('description', '未知错误')}"
-        return True, None
-    except httpx.HTTPStatusError as exc:
-        return False, f"HTTP 状态码错误: {exc.response.status_code}"
-    except httpx.TimeoutException:
-        return False, "请求超时"
-    except httpx.RequestError as exc:
-        return False, f"网络请求失败: {exc}"
-    except ValueError:
-        return False, "响应解析失败"
+    """调用需要 multipart/form-data 的 Telegram API（如 sendPhoto）。
+
+    二元组薄包装：实现收敛到 _call_multipart_ex 一套，只丢弃 result。
+    """
+    ok, err, _result = _call_multipart_ex(db, method, payload, files)
+    return ok, err
 
 
 def _call_multipart_ex(db, method: str, payload: dict, files: dict) -> tuple[bool, str | None, dict | None]:
@@ -206,6 +194,47 @@ def _photo_upload(path) -> tuple[str, str]:
     return Path(path).name, mime
 
 
+# Telegram file_id 缓存（进程内）：同一张本地图首次整图上传后，从
+# 响应里记下 file_id，后续发送直接按 file_id 引用，不再整图重传。
+# 品牌图/面板图都是本地静态资产、内容不变，file_id 长期有效；
+# 万一失效（API 拒绝/换了 bot），本次发送自动回退重新上传并刷新
+# 缓存，用户无感。旧实现每发一张图卡都整图上传一次，是面板点击
+# 后长时间转圈的主导耗时（2026-11-11 盲盒抽盒亲报卡顿）。
+_PHOTO_FILE_ID_CACHE: dict[str, str] = {}
+_PHOTO_FILE_ID_LOCK = threading.Lock()
+
+
+def _photo_file_id_of(result) -> str | None:
+    """从 sendPhoto 类响应 result 里取最大尺寸图的 file_id。"""
+    if not isinstance(result, dict):
+        return None
+    sizes = result.get("photo")
+    if not isinstance(sizes, list) or not sizes:
+        return None
+    last = sizes[-1]
+    if not isinstance(last, dict):
+        return None
+    file_id = last.get("file_id")
+    return file_id if isinstance(file_id, str) and file_id else None
+
+
+def _cached_photo_file_id(path) -> str | None:
+    with _PHOTO_FILE_ID_LOCK:
+        return _PHOTO_FILE_ID_CACHE.get(str(path))
+
+
+def _remember_photo_file_id(path, result) -> None:
+    file_id = _photo_file_id_of(result)
+    if file_id:
+        with _PHOTO_FILE_ID_LOCK:
+            _PHOTO_FILE_ID_CACHE[str(path)] = file_id
+
+
+def _forget_photo_file_id(path) -> None:
+    with _PHOTO_FILE_ID_LOCK:
+        _PHOTO_FILE_ID_CACHE.pop(str(path), None)
+
+
 def send_photo(
     db,
     chat_id: int,
@@ -214,15 +243,31 @@ def send_photo(
     photo_path=None,
     parse_mode: str | None = "HTML",
 ) -> tuple[bool, str | None]:
-    """发送品牌图卡片；caption 必须由调用方保证在 Telegram 上限内。"""
+    """发送品牌图卡片；caption 必须由调用方保证在 Telegram 上限内。
+
+    有 file_id 缓存时直接按 file_id 发（JSON），不整图重传；缓存
+    未命中或被 API 拒绝时走整图上传并刷新缓存。
+    """
     if not caption_fits(caption):
         return False, "caption 超过 1024 字符"
     path = panel_image(photo_path)
+    file_id = _cached_photo_file_id(path)
+    if file_id:
+        payload: dict = {"chat_id": chat_id, "photo": file_id,
+                         "caption": caption}
+        if parse_mode is not None:
+            payload["parse_mode"] = parse_mode
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+        ok, _err = _call(db, "sendPhoto", payload)
+        if ok:
+            return True, None
+        _forget_photo_file_id(path)  # file_id 失效：回退整图上传
     try:
         photo_file = open(path, "rb")
     except OSError as exc:
         return False, f"品牌图不可用: {exc}"
-    payload: dict[str, str] = {"chat_id": str(chat_id), "caption": caption}
+    payload = {"chat_id": str(chat_id), "caption": caption}
     if parse_mode is not None:
         payload["parse_mode"] = parse_mode
     if reply_markup is not None:
@@ -231,9 +276,12 @@ def send_photo(
         payload["reply_markup"] = json.dumps(reply_markup, ensure_ascii=False)
     name, mime = _photo_upload(path)
     with photo_file:
-        return _call_multipart(
+        ok, err, result = _call_multipart_ex(
             db, "sendPhoto", payload, {"photo": (name, photo_file, mime)}
         )
+    if ok:
+        _remember_photo_file_id(path, result)
+    return ok, err
 
 
 def send_photo_ex(
@@ -244,15 +292,32 @@ def send_photo_ex(
     photo_path=None,
     parse_mode: str | None = "HTML",
 ) -> tuple[bool, str | None, int | None]:
-    """send_photo 的带 message_id 版本；前置校验与旧接口一致。"""
+    """send_photo 的带 message_id 版本；前置校验与旧接口一致。
+
+    file_id 复用口径与 send_photo 相同（共用一份缓存）。
+    """
     if not caption_fits(caption):
         return False, "caption 超过 1024 字符", None
     path = panel_image(photo_path)
+    file_id = _cached_photo_file_id(path)
+    if file_id:
+        payload: dict = {"chat_id": chat_id, "photo": file_id,
+                         "caption": caption}
+        if parse_mode is not None:
+            payload["parse_mode"] = parse_mode
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+        ok, err, result = _call_ex(db, "sendPhoto", payload)
+        if ok:
+            message_id = result.get("message_id") if result else None
+            return True, None, int(message_id) \
+                if isinstance(message_id, int) else None
+        _forget_photo_file_id(path)  # file_id 失效：回退整图上传
     try:
         photo_file = open(path, "rb")
     except OSError as exc:
         return False, f"品牌图不可用: {exc}", None
-    payload: dict[str, str] = {"chat_id": str(chat_id), "caption": caption}
+    payload = {"chat_id": str(chat_id), "caption": caption}
     if parse_mode is not None:
         payload["parse_mode"] = parse_mode
     if reply_markup is not None:
@@ -266,6 +331,7 @@ def send_photo_ex(
         )
     if not ok or not result:
         return ok, err, None
+    _remember_photo_file_id(path, result)
     message_id = result.get("message_id")
     return True, None, int(message_id) if isinstance(message_id, int) else None
 
@@ -306,22 +372,36 @@ def edit_message_media(
 
     caption 编辑换不了图片，面板要换专属图时走这里；photo_path
     缺失时回退品牌图（与 send_photo 同一解析口）。失败由调用方决定
-    是否回退普通 caption 编辑。
+    是否回退普通 caption 编辑。file_id 复用口径与 send_photo 相同。
     """
     if not caption_fits(caption):
         return False, "caption 超过 1024 字符"
     path = panel_image(photo_path)
+    file_id = _cached_photo_file_id(path)
+    if file_id:
+        media: dict = {"type": "photo", "media": file_id,
+                       "caption": caption}
+        if parse_mode is not None:
+            media["parse_mode"] = parse_mode
+        payload: dict = {"chat_id": chat_id, "message_id": message_id,
+                         "media": media}
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+        ok, _err = _call(db, "editMessageMedia", payload)
+        if ok:
+            return True, None
+        _forget_photo_file_id(path)  # file_id 失效：回退整图上传
     try:
         photo_file = open(path, "rb")
     except OSError as exc:
         return False, f"面板图不可用: {exc}"
     import json
 
-    media: dict[str, str] = {
+    media = {
         "type": "photo", "media": "attach://photo", "caption": caption}
     if parse_mode is not None:
         media["parse_mode"] = parse_mode
-    payload: dict[str, str] = {
+    payload = {
         "chat_id": str(chat_id),
         "message_id": str(message_id),
         "media": json.dumps(media, ensure_ascii=False),
@@ -330,9 +410,12 @@ def edit_message_media(
         payload["reply_markup"] = json.dumps(reply_markup, ensure_ascii=False)
     name, mime = _photo_upload(path)
     with photo_file:
-        return _call_multipart(
+        ok, err, result = _call_multipart_ex(
             db, "editMessageMedia", payload, {"photo": (name, photo_file, mime)}
         )
+    if ok:
+        _remember_photo_file_id(path, result)
+    return ok, err
 
 
 def edit_message_caption(
