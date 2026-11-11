@@ -91,10 +91,9 @@ def test_send_photo_ex_returns_message_id(db, monkeypatch):
     ok, err, message_id = sender.send_photo_ex(db, 555, "▎标题")
     assert (ok, err, message_id) == (True, None, 888)
 
-    # 旧 send_photo 仍走 _call_multipart、仍是二元组
-    monkeypatch.setattr(
-        sender, "_call_multipart",
-        lambda db_, method, payload, files: (True, None))
+    # send_photo 首次发送同样走 _call_multipart_ex 上传、仍是二元组
+    # （file_id 复用在 tests/test_tg_bot_sender_file_id.py 钉死）
+    sender._PHOTO_FILE_ID_CACHE.clear()
     assert sender.send_photo(db, 555, "▎标题") == (True, None)
 
 
