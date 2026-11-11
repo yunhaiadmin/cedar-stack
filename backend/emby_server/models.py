@@ -727,6 +727,51 @@ class PlayStartEvent(Base):
     warm_in_signal = Column(Boolean)
 
 
+class WatchStreamActivity(Base):
+    """中继流活动租约行（中继兜底计时，2026-11-11）。
+
+    背景：部分客户端（如 SenPlayer 某些版本）走 EA 中继拉流时全程
+    不发 Sessions/Playing、Progress、Stopped——没有 PlaybackSession
+    就没有 watch_points_daily 入账与活力观影奖励（2026-11-11 用户
+    1826 看《后会友期》第 1 集 20 余分钟零记录的实案）。
+
+    本表是兜底计时的唯一数据源：EA 中继每出一次字节（200/206，
+    302 直链不算），按 (user_id, item_id, device_key) 聚合 upsert
+    到同一行，只滚动首末活动时间——绝不按 Range 请求逐行落库。
+    相邻活动间隔超过切段阈值（watch_fallback.SEGMENT_GAP）时，旧段
+    滚入 pending_segments（JSON [[start, end], ...] ISO 字符串对）
+    等结账工人（emby_server.watch_fallback）消费；结账走与真实会话
+    同一套入账函数，本表只记活动事实、不记账目。
+
+    device_key 是 api._stream_client_identity 的产物（设备优先、
+    其次 PlaySessionId、最后用户），不含令牌明文。
+
+    不加外键：用户/条目删除后行留着由结账工人按「查无此人/此片」
+    丢弃收尾，避免级联与锁。
+    """
+
+    __tablename__ = "emby_watch_stream_activity"
+    __table_args__ = (
+        UniqueConstraint("user_id", "item_id", "device_key",
+                         name="uq_watch_stream_activity_key"),
+        Index("ix_watch_stream_activity_last", "last_activity_at"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False)
+    item_id = Column(Integer, nullable=False)
+    device_key = Column(String(128), nullable=False, default="anon")
+    # 当前开放段的首末活动时间；段已结账且无新活动时为 NULL。
+    first_activity_at = Column(DateTime)
+    last_activity_at = Column(DateTime)
+    # 已闭合未结账的段：JSON [[start_iso, end_iso], ...]
+    pending_segments = Column(Text, default="[]")
+    # 已结账水位（最后一次被结账消费的段末时间），便于事后查账。
+    credited_through = Column(DateTime)
+    updated_at = Column(DateTime, default=datetime.now,
+                        onupdate=datetime.now)
+
+
 class WorldWallPost(Base):
     """探险世界 · 到此一游留言墙"""
     __tablename__ = "world_wall_posts"

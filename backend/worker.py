@@ -569,6 +569,19 @@ def main() -> int:
         except Exception as e:
             logger.warning(f"启动缺集补集 worker 失败（可忽略）: {e}")
 
+        # 中继兜底计时结账（2026-11-11）：客户端不上报播放进度时，
+        # EA 中继流活动（watch_activity 记的租约行）重建观看段，
+        # 走同一套入账函数补记 watch_points_daily 与活力。总开关
+        # watch_fallback_credit_enabled 默认开，工人轮内现读配置，
+        # 关时整轮空转；只结已静默收尾的段，不碰播放主链路。
+        try:
+            from backend.emby_server import watch_fallback
+            if watch_fallback.start():
+                started.append("watch_fallback")
+                logger.info("✅ 中继兜底计时 worker 已启动")
+        except Exception as e:
+            logger.warning(f"启动中继兜底计时 worker 失败（可忽略）: {e}")
+
         # 求片到货盯梢（求片减负）：周期把处理中的求片跟片库对表，
         # 对上自动置已入库并入队到货通知，管理员不用再逐条点
         # 「标记已入库」试探。间隔走 SystemConfig

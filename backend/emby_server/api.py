@@ -7415,6 +7415,40 @@ async def playback_info(
     })
 
 
+def _watch_activity_key(request, user, item):
+    """中继兜底计时的活动聚合键 (user_id, item_id, device_key)。
+
+    device_key 复用 _stream_client_identity（设备优先、其次播放
+    会话、最后用户），不含令牌明文。取键失败返回 None（不打点），
+    绝不让打点影响播放本体。
+    """
+    try:
+        return (getattr(user, "id", None), getattr(item, "id", None),
+                _stream_client_identity(request, user))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _note_watch_activity(request, user, item, status_code) -> None:
+    """给兜底计时记一次流活动：只记 200/206 的实际出字节响应。
+
+    302 直链是客户端离服务器拉流，结构上没有服务端活动可记，
+    不在兜底范围（任务书口径）。打点本体在 watch_activity 里
+    （进程内节流 + 队列 + 后台写线程），此处只做口径判断。
+    """
+    if status_code not in (200, 206):
+        return
+    key = _watch_activity_key(request, user, item)
+    if not key or not key[0] or not key[1]:
+        return
+    try:
+        from backend.emby_server import watch_activity
+
+        watch_activity.note_stream_activity(key[0], key[1], key[2])
+    except Exception:  # noqa: BLE001 — 打点失败绝不影响播放
+        pass
+
+
 def _observe_traffic(response):
     """给播放响应包一层计字节（可观测用），并记一次请求
 
@@ -7426,6 +7460,10 @@ def _observe_traffic(response):
     可能直接用 sendfile），所以那种响应只记请求、不记字节。宁可少算，
     也不按 Content-Length 记账：客户端中途断开时那样会把没发出去的字节算进去，
     面板上的「出流量」就会虚高——宁可口径窄，也不能给一个偏大的数。
+
+    签名纪律：本函数只收 response 一个参数——多处测试按此签名打桩，
+    中继兜底计时的活动打点走 _note_watch_activity 在各出口单独调，
+    不许塞进本函数。
     """
     line_stats.record_request()
     if getattr(response, "status_code", None) == 302:
@@ -7919,6 +7957,9 @@ async def video_stream(
                     _pool_gate_vs.note_pool_play_served, _pool_member_id,
                     getattr(_pool_variant_row, "id", None),
                     getattr(item, "id", None), getattr(user, "id", None))
+                _note_watch_activity(
+                    request, user, item,
+                    getattr(_pool_served_resp, "status_code", None))
                 return _observe_traffic(_pool_served_resp)
             except HTTPException:
                 if not _pool_routed_stream:
@@ -8044,6 +8085,9 @@ async def video_stream(
                         request, db, item, user, _play_fid, _play_variant,
                         media_type=media_type, pt=_pt)
                     if _quota_relay_resp is not None:
+                        _note_watch_activity(
+                            request, user, item,
+                            getattr(_quota_relay_resp, "status_code", None))
                         return _observe_traffic(_quota_relay_resp)
                     _note_play_start_safe(
                         item, user_id=getattr(user, "id", None),
@@ -8196,6 +8240,9 @@ async def video_stream(
                         if _byos_drive_resp.status_code >= 400 else None),
             resolve_ms=int((time.perf_counter() - _byos_t0) * 1000),
             total_ms=_pt.elapsed_ms())
+        _note_watch_activity(
+            request, user, item,
+            getattr(_byos_drive_resp, "status_code", None))
         return _observe_traffic(_byos_drive_resp)
     # BYOS 用户令牌中继（Drive 腿，闭环 #13）：条目是 byos:// 路径且
     # drive_relay_enabled 开时，字节走该用户自己的 Drive 令牌中继，
@@ -8302,6 +8349,9 @@ async def video_stream(
                             if _byos_resp.status_code >= 400 else None),
                 resolve_ms=int((time.perf_counter() - _byos_t0) * 1000),
                 total_ms=_pt.elapsed_ms())
+            _note_watch_activity(
+                request, user, item,
+                getattr(_byos_resp, "status_code", None))
             return _observe_traffic(_byos_resp)
     if (_drive_switch_on and await run_db(_strategy.drive_relay_enabled, db)
             and (_requested_variant is None
@@ -8516,6 +8566,9 @@ async def video_stream(
                         raise HTTPException(
                             status_code=503,
                             detail="Drive 副本已失效且暂时无法重建，请稍后重试或重新绑定网盘后重试")
+                    _note_watch_activity(
+                        request, user, item,
+                        getattr(_relay_resp, "status_code", None))
                     return _observe_traffic(_relay_resp)
     # 挂载直读判定（2026-10-30 顺序修复）：原判定在 _play_target
     # 之后的尾部分支，生产 drive_direct_play_enabled=true 时
@@ -8734,15 +8787,25 @@ async def video_stream(
         if mount_lib.is_mount_path(getattr(item, "file_path", "")):
             _pt.mark("mount_relay")
             from backend.emby_server.streaming import serve_mount_relay_async
-            return _observe_traffic(
-                await serve_mount_relay_async(
-                    target.value, request, target.headers, media_type, pt=_pt))
+            _mount_relay_resp = await serve_mount_relay_async(
+                target.value, request, target.headers, media_type, pt=_pt)
+            _note_watch_activity(
+                request, user, item,
+                getattr(_mount_relay_resp, "status_code", None))
+            return _observe_traffic(_mount_relay_resp)
         raise HTTPException(status_code=410, detail="relay removed")
     # 本机文件：直接流形态，分片可被 CDN/浏览器缓存（第 2/3 层预留的另一半）
     _pt.mark("serve_file")
     _pt.done()
-    return serve_file(target.value, request, media_type,
-                      cache_control=cdn.cache_control_for(str(request.url.path)))
+    _local_resp = serve_file(
+        target.value, request, media_type,
+        cache_control=cdn.cache_control_for(str(request.url.path)))
+    # 本机文件也是服务端出字节：给兜底计时记一次活动（口径与
+    # 中继出口一致，只记 200/206；FileResponse 不走 _observe_traffic
+    # 的 body_iterator，故在此按响应真实状态码直记）。
+    _note_watch_activity(request, user, item,
+                         getattr(_local_resp, "status_code", None))
+    return _local_resp
 
 
 @emby_router.get("/emby/videos/{item_id}/stream.mkv")
