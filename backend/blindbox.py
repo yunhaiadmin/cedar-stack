@@ -639,6 +639,15 @@ def draw(db: Session, user: models.WebUser, realm_id: int,
         if isinstance(exc, BlindboxError):
             raise
         raise BlindboxError(f"抽盒失败，未扣分：{exc}") from exc
+    # 大奖群报喜（best effort：maybe_announce 自吞异常，这里再兜
+    # 一层导入失败；报喜成败绝不影响抽盒结果与落账）。
+    try:
+        from backend import blindbox_announce
+
+        blindbox_announce.maybe_announce(
+            db, user, realm_id, record.tier_name, kind, params, cfg=cfg)
+    except Exception:  # noqa: BLE001
+        logger.warning("盲盒大奖报喜调用失败（已忽略）", exc_info=True)
     balance = (db.query(models.WebUser.points)
                .filter(models.WebUser.id == user.id).scalar())
     return {
