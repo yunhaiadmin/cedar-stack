@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from backend.api.admin_core import get_current_admin
+from backend.api.admin_core import _audit, get_current_admin
 from backend.api.pagination import pagination_params
 from backend.api.user import get_current_user
 from backend.database import get_db
@@ -211,6 +211,10 @@ def create_media_set(body: MediaSetCreate,
     if not media_set.name:
         raise HTTPException(status_code=400, detail="合集名不能为空")
     db.add(media_set)
+    db.flush()
+    _audit(db, current_admin, "media_set_create", "media_set",
+           media_set.id, {"name": media_set.name,
+                          "source_type": media_set.source_type})
     db.commit()
     db.refresh(media_set)
     return ms.set_to_dict(media_set, db)
@@ -282,6 +286,9 @@ def instantiate_from_hot_leaderboard(
         db.add(member)
         members.append(member)
     ms.bump_requested(media_set)
+    _audit(db, current_admin, "media_set_create_from_hot_leaderboard",
+           "media_set", media_set.id,
+           {"period": body.period, "members": len(members)})
     db.commit()
     db.refresh(media_set)
     for member in members:
@@ -355,6 +362,9 @@ def instantiate_from_genre_theme(
         db.add(member)
         members.append(member)
     ms.bump_requested(media_set)
+    _audit(db, current_admin, "media_set_create_from_genre_theme",
+           "media_set", media_set.id,
+           {"genre": genre, "members": len(members)})
     db.commit()
     db.refresh(media_set)
     for member in members:
@@ -413,6 +423,9 @@ def instantiate_from_person(
     db.flush()
     db.add(em.EmbyMediaSetRule(set_id=media_set.id, **checked))
     ms.bump_requested(media_set)
+    _audit(db, current_admin, "media_set_create_from_person",
+           "media_set", media_set.id,
+           {"bound_person_id": body.bound_person_id})
     db.commit()
     db.refresh(media_set)
     result = ms.refresh_media_set(db, media_set)
@@ -473,6 +486,8 @@ def patch_media_set(set_id: int, body: MediaSetPatch,
         setattr(media_set, key, value)
     if membership_changed:
         ms.bump_requested(media_set)
+    _audit(db, current_admin, "media_set_update", "media_set",
+           set_id, {"fields": sorted(data.keys())})
     db.commit()
     db.refresh(media_set)
     return ms.set_to_dict(media_set, db)
@@ -487,6 +502,8 @@ def delete_media_set(set_id: int, current_admin=Depends(get_current_admin),
         em.EmbyMediaSetMember.set_id == set_id).delete()
     db.query(em.EmbyMediaSetRule).filter(
         em.EmbyMediaSetRule.set_id == set_id).delete()
+    _audit(db, current_admin, "media_set_delete", "media_set",
+           set_id, {"name": media_set.name})
     db.delete(media_set)
     db.commit()
     return {"deleted": set_id}
@@ -501,6 +518,8 @@ def order_media_sets(body: SetOrderBody,
     for entry in body.orders:
         media_set = _get_set(db, entry.id)
         media_set.sort_order = entry.sort_order
+    _audit(db, current_admin, "media_set_order", "media_set",
+           None, {"updated": len(body.orders)})
     db.commit()
     return {"updated": len(body.orders)}
 
@@ -527,6 +546,8 @@ def add_member(set_id: int, body: MemberAdd,
         ms.bump_requested(media_set)
     else:
         member.order_index = body.order_index
+    _audit(db, current_admin, "media_set_member_add", "media_set",
+           set_id, {"item_id": body.item_id})
     db.commit()
     db.refresh(member)
     return ms.member_to_dict(member)
@@ -545,6 +566,8 @@ def remove_member(set_id: int, item_id: int,
         raise HTTPException(status_code=404, detail="成员不存在")
     db.delete(member)
     ms.bump_requested(media_set)
+    _audit(db, current_admin, "media_set_member_remove", "media_set",
+           set_id, {"item_id": item_id})
     db.commit()
     return {"deleted": item_id}
 
@@ -564,6 +587,8 @@ def order_members(set_id: int, body: MemberOrderBody,
             raise HTTPException(status_code=400,
                                 detail=f"条目 {entry.item_id} 不是本合集成员")
         member.order_index = entry.order_index
+    _audit(db, current_admin, "media_set_member_order", "media_set",
+           set_id, {"updated": len(body.orders)})
     db.commit()
     return {"updated": len(body.orders)}
 
@@ -588,6 +613,8 @@ def add_rule(set_id: int, body: RuleCreate,
     rule = em.EmbyMediaSetRule(set_id=set_id, **checked)
     db.add(rule)
     ms.bump_requested(media_set)
+    _audit(db, current_admin, "media_set_rule_add", "media_set",
+           set_id, {"rule_kind": checked["rule_kind"]})
     db.commit()
     db.refresh(rule)
     return ms.rule_to_dict(rule)
@@ -606,6 +633,8 @@ def delete_rule(set_id: int, rule_id: int,
         raise HTTPException(status_code=404, detail="规则不存在")
     db.delete(rule)
     ms.bump_requested(media_set)
+    _audit(db, current_admin, "media_set_rule_delete", "media_set",
+           set_id, {"rule_id": rule_id})
     db.commit()
     return {"deleted": rule_id}
 
@@ -616,6 +645,11 @@ def refresh_set(set_id: int, current_admin=Depends(get_current_admin),
     _require_enabled()
     media_set = _get_set(db, set_id)
     result = ms.refresh_media_set(db, media_set)
+    _audit(db, current_admin, "media_set_refresh", "media_set",
+           set_id, {"status": result.get("status"),
+                    "added": result.get("added"),
+                    "removed": result.get("removed")})
+    db.commit()
     result.update({"id": set_id,
                    "requested_revision": media_set.requested_revision,
                    "completed_revision": media_set.completed_revision})
@@ -640,6 +674,10 @@ def create_template(body: TemplateCreate,
     template = em.EmbyMediaSetTemplate(name=name,
                                        rules_json=json.dumps(rules))
     db.add(template)
+    db.flush()
+    _audit(db, current_admin, "media_set_template_create",
+           "media_set_template", template.id,
+           {"name": name, "rules": len(rules)})
     db.commit()
     db.refresh(template)
     return ms.template_to_dict(template)
@@ -680,6 +718,9 @@ def instantiate_template(template_id: int, body: TemplateInstantiate,
     for checked in rules:
         db.add(em.EmbyMediaSetRule(set_id=media_set.id, **checked))
     ms.bump_requested(media_set)
+    _audit(db, current_admin, "media_set_template_instantiate",
+           "media_set_template", template_id,
+           {"media_set_id": media_set.id, "name": name})
     db.commit()
     db.refresh(media_set)
     result = ms.refresh_media_set(db, media_set)
