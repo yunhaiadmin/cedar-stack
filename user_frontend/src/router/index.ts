@@ -58,6 +58,14 @@ const router = createRouter({
             component: () => import('@/views/panel/CollectionView.vue'),
             meta: { title: '合集', requiresAuth: true },
           },
+          // 条目详情：只做信息 + 季集齐全度 + 缺集求补（播放仍走第三方
+          // 播放器，不放播放入口）；入口在我的收藏的剧集卡片
+          {
+            path: '/media/:id',
+            name: 'media-detail',
+            component: () => import('@/views/panel/MediaDetailView.vue'),
+            meta: { title: '详情', requiresAuth: true },
+          },
           {
             path: '/server',
             name: 'server',
@@ -249,9 +257,11 @@ const router = createRouter({
     },
     // ==================== 媒体详情与播放（v2.42.5：媒体库/搜索浏览页已删；
     // 2026-10-13 旧页面清理：/profile、/media/:id 两路由已删） ====================
-    // 老地址 /profile、/media/:id、/media、/library、/search、/history
+    // 老地址 /profile、/media、/library、/search、/history
     // 的书签与外部链接：媒体浏览统一走第三方客户端（Infuse 等），这些入口不再有对应页面，
     // 全部落到兜底 404 页（页面里会给「回首页」的出口）。
+    // 例外：/media/:id 已按新口径复活为条目详情页（见上 panelV4 路由：
+    // 只做信息 + 季集 + 缺集求补，不恢复浏览/播放）。
     // 注意：/profile 的承接入口是 /game/account（账号设置设施）。
     {
       path: '/:pathMatch(.*)*',
@@ -308,7 +318,9 @@ export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/collections'
 // 参数路由前缀：合集详情是 /collections/:id，afterEach 拿到的是实例路径
 // （如 /collections/123），静态集合永远匹配不上，须按前缀另判；
 // /collections/ 下目前只有详情这一条路由，前缀不会误伤非 v4 页。
-const V4_PATH_PREFIXES = ['/collections/']
+// /media/ 同理：条目详情 /media/:id 也是 v4 纸色页，必须强制 light，
+// 否则深色偏好下 --au-* 令牌是暗值，纸面页上会出现黑条/黑行。
+const V4_PATH_PREFIXES = ['/collections/', '/media/']
 // 底部坞由 App.vue 全局常驻渲染（PanelTabbar，≤768px 唯一一套，
 // 桌面 ≥769px 由 CSS 隐藏）；各视图模板不再自带 <PanelTabbar/>。
 function restoreUserTheme() {
