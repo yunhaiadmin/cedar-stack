@@ -21,6 +21,7 @@
           <button type="button" class="psp-x" aria-label="关闭" @click="close">✕</button>
         </div>
         <p class="psp-sub">这一步只把播放器账号导入，不直接播这一集：点播放器后，还要在播放器里搜上面这个片名。</p>
+        <PlayStatusBar v-if="itemId !== null && itemId !== undefined" :item-id="itemId" />
         <div v-if="loading" class="psp-empty">正在读取播放器…</div>
         <p v-else-if="needsBinding" class="psp-empty">
           请先绑定自己的网盘账号才能点播，没绑定只能浏览、不能点播。
@@ -59,6 +60,7 @@
 import { nextTick, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useToast } from '@/composables/useToast'
+import PlayStatusBar from '@/components/panel/PlayStatusBar.vue'
 import { storageBindingApi } from '@/api/economy'
 import {
   assignImportScheme,
@@ -67,7 +69,11 @@ import {
 } from '@/composables/usePlayerSchemes'
 
 const open = defineModel<boolean>('open', { default: false })
-const props = defineProps<{ title?: string }>()
+const props = defineProps<{
+  title?: string
+  /** 条目 id（可选）：给了才在播放区展示起播状态条，不给行为不变 */
+  itemId?: string | number | null
+}>()
 
 const toast = useToast()
 const schemes = ref<PlayerScheme[]>([])

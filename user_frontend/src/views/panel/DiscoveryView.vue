@@ -208,7 +208,7 @@
       <!-- 底部全宽：媒体库速览带（桌面专属） -->
       <LibraryBand v-if="isWide" />
     </div>
-    <PlayerSchemeSheet v-model:open="parcelPickerOpen" :title="parcelPickerTitle" />
+    <PlayerSchemeSheet v-model:open="parcelPickerOpen" :title="parcelPickerTitle" :item-id="parcelPickerItemId" />
     </template>
   </div>
 </template>
@@ -592,8 +592,10 @@ watch(parcelList, () => {
 const unsealingIds = ref(new Set<string>())
 const parcelPickerOpen = ref(false)
 const parcelPickerTitle = ref('')
+const parcelPickerItemId = ref<string | number | null>(null)
 function openParcelPicker(p: ParcelItem) {
   parcelPickerTitle.value = p.name || '神秘包裹'
+  parcelPickerItemId.value = p.id
   parcelPickerOpen.value = true
 }
 

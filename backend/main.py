@@ -60,6 +60,7 @@ from backend.api.smart_subtitles import router as smart_subtitles_router
 from backend.api.home_summary import router as home_summary_router
 from backend.api.homepage_sections import router as homepage_sections_router
 from backend.api.panel import router as panel_router, admin_router as panel_admin_router
+from backend.api.play_status import router as play_status_router
 from backend.api.realms import router as realms_router
 from backend.api.servers import router as servers_router
 from backend.emby_server.stream_nodes import admin_router as stream_nodes_router
@@ -840,6 +841,8 @@ app.include_router(homepage_sections_router)
 # v4 探险家日志面板（特性开关 PANEL_V4_ENABLED，只做加法）
 app.include_router(panel_router)
 app.include_router(panel_admin_router)
+# 条目起播状态（只读展示口，不改播放主链路）
+app.include_router(play_status_router)
 
 # 管理后台 API 路由
 app.include_router(admin_router)

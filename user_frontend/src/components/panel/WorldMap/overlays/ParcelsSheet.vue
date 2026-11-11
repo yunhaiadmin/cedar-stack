@@ -12,7 +12,7 @@
               @play="openPicker(p)"
             />
           </div>
-          <PlayerSchemeSheet v-model:open="pickerOpen" :title="pickerTitle" />
+          <PlayerSchemeSheet v-model:open="pickerOpen" :title="pickerTitle" :item-id="pickerItemId" />
           </div>
 </template>
 
@@ -32,9 +32,11 @@ defineProps<{
 
 const pickerOpen = ref(false)
 const pickerTitle = ref('')
+const pickerItemId = ref<string | number | null>(null)
 
 function openPicker(p: ParcelItem) {
   pickerTitle.value = p.name || '神秘包裹'
+  pickerItemId.value = p.id
   pickerOpen.value = true
 }
 </script>
