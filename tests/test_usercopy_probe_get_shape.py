@@ -449,7 +449,9 @@ def _pi(monkeypatch, db):
 
 
 def test_pi_get_interstitial_keeps_direct_manifest(db, monkeypatch):
-    """GET 腿 interstitial 信号（shape=get）：清单直链保留、不报错。"""
+    """GET 腿 interstitial 信号（shape=get）：清单保留本站
+    /stream 入口（取流时再 302 到用户副本）、不报错；副本 fid
+    与 Google 主机都不许进清单。"""
     monkeypatch.setattr(tv, "probe_user_copy_quota",
                         lambda u, f: "interstitial")
     _stub_detail(monkeypatch, "get", "scan")
@@ -458,7 +460,9 @@ def test_pi_get_interstitial_keeps_direct_manifest(db, monkeypatch):
     urls = [(src.get("DirectPlayUrl") or "")
             + (src.get("DirectStreamUrl") or "")
             for src in resp["MediaSources"]]
-    assert any(COPY_FID in u for u in urls), urls
+    assert any("/emby/Videos/guid-pi-g/stream.mkv" in u for u in urls), urls
+    assert all(COPY_FID not in u for u in urls)
+    assert all("drive.usercontent.google.com" not in u for u in urls)
     assert all(SHARED_FID not in u for u in urls)
 
 

@@ -2,11 +2,12 @@
 """公共贡献池 PR-3：池副本播出（serve）+ H1 计量钩子。
 
 钉死：
-- PlaybackInfo：未绑用户 + ready 池副本 → 下发池副本免凭证直链
-  （usercontent + 空头），响应里绝不出现共享原件 fid；授权限失败
-  → 不下发直链、保留本站 /stream（由取流端点现场裁决），响应里
-  任何位置都不许出现贡献者成员令牌（GA-030：授权失败就不播，
-  绝不把成员令牌发给观众）；未下发直链不记 H1。
+- PlaybackInfo：未绑用户 + ready 池副本 → 下发本站 /stream 入口
+  + 空头，响应里绝不出现共享原件 fid / 池副本 fid；从该入口取流
+  时才 302 到池副本 usercontent 地址；授权限失败 → 保留本站
+  /stream（由取流端点现场裁决），响应里任何位置都不许出现贡献
+  者成员令牌（GA-030：授权失败就不播，绝不把成员令牌发给观众）；
+  未下发直链不记 H1。
 - quota 改道：探测判额度页时，后路关 → 剥清单 + NoCompatibleStream
   明示；后路开 → 保留 /stream（取流时走贡献者令牌中继）。
 - 成功下发记账：pool_play_events 落一条原始事件（H1）、
@@ -35,6 +36,7 @@ os.environ.setdefault("REDIS_ENABLED", "false")
 import time
 import uuid
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
@@ -525,7 +527,8 @@ def test_list_variants_pool_copy_signal(seed):
 # ---------------------------------------------------------------- PlaybackInfo
 
 
-def test_playbackinfo_pool_serve_usercontent(client, free_token, seed):
+def test_playbackinfo_pool_serve_local_stream_then_302_usercontent(
+        client, free_token, seed):
     db = SessionLocal()
     try:
         variant_id = _add_pool_variant(db, seed)
@@ -536,8 +539,16 @@ def test_playbackinfo_pool_serve_usercontent(client, free_token, seed):
     assert ORIG_FID not in text
     assert MEMBER_TOKEN not in text
     src = body["MediaSources"][0]
-    assert "usercontent" in src["DirectPlayUrl"]
-    assert POOL_FID in src["DirectPlayUrl"]
+    url = src["DirectPlayUrl"]
+    assert src["DirectStreamUrl"] == url
+    assert POOL_FID not in url
+    assert "drive.usercontent.google.com" not in text
+    parsed = urlsplit(url)
+    assert parsed.path == f"/emby/Videos/{seed['movie']}/stream.mp4"
+    query = parse_qs(parsed.query)
+    assert query["MediaSourceId"] == [seed["movie"]]
+    assert query["uid"] == [str(seed["free_id"])]
+    assert query["exp"] and query["sign"]
     assert src["RequiredHttpHeaders"] == {}
     assert src.get("TransferStatus") in (None, "ready")
     # H1 + §5.3 记账已落
@@ -548,6 +559,20 @@ def test_playbackinfo_pool_serve_usercontent(client, free_token, seed):
         assert events[0].member_id == seed["member_id"]
         assert events[0].variant_id == variant_id
         assert events[0].viewer_user_id == seed["free_id"]
+        assert _usage_play_starts(db, seed["member_id"]) == 1
+    finally:
+        db.close()
+    # 下发的就是这条本站入口：取流时才 302 到池副本 usercontent，
+    # 且与 PlaybackInfo 记账同窗口去重，不许双计。
+    resp = client.get(f"{parsed.path}?{parsed.query}",
+                      headers=_h(free_token), follow_redirects=False)
+    assert resp.status_code == 302, resp.text
+    loc = resp.headers.get("location") or ""
+    assert "usercontent" in loc and POOL_FID in loc
+    assert ORIG_FID not in loc
+    db = SessionLocal()
+    try:
+        assert len(_play_events(db)) == 1
         assert _usage_play_starts(db, seed["member_id"]) == 1
     finally:
         db.close()
@@ -587,6 +612,32 @@ def test_playbackinfo_pool_serve_auth_fail_no_token_fallback(
         assert _play_events(db) == []
     finally:
         db.close()
+
+
+def test_apply_poolcopy_direct_success_retains_local_stream(
+        seed, monkeypatch):
+    """池副本授权限成功 → 只清头并保留本站 /stream 地址，成员
+    令牌与池副本 fid 都不许写进 source。"""
+    from backend.emby_server import api as _api
+    monkeypatch.setattr(
+        tv, "ensure_variant_copy_public",
+        lambda db_, variant, fid: True)
+    variant = SimpleNamespace(
+        id=1, owner_ref=str(seed["member_id"]),
+        variant_drive_id=f"pooldrive:{seed['member_id']}")
+    local_url = (
+        "https://emby.example.com/emby/Videos/guid-pool/stream.mp4"
+        "?static=true&MediaSourceId=guid-pool&uid=2&exp=1&sign=x")
+    source = {"DirectPlayUrl": local_url,
+              "DirectStreamUrl": local_url,
+              "RequiredHttpHeaders": {"Authorization": "Bearer old"}}
+    assert _api._apply_poolcopy_direct(
+        None, variant, source, POOL_FID) is True
+    assert source == {"DirectPlayUrl": local_url,
+                      "DirectStreamUrl": local_url,
+                      "RequiredHttpHeaders": {}}
+    assert POOL_FID not in str(source)
+    assert MEMBER_TOKEN not in str(source)
 
 
 def test_apply_poolcopy_direct_auth_fail_returns_false_no_token(
@@ -956,7 +1007,7 @@ def test_note_pool_play_served_dedup_window(seed):
 
 
 def test_playbackinfo_then_stream_counts_once(client, free_token, seed):
-    """跨端点叠加：PlaybackInfo 直链下发已记一笔，客户端再打
+    """跨端点叠加：PlaybackInfo 池播出准备已记一笔，客户端再打
     /stream 取 302 不许第二笔（GA-033）。"""
     db = SessionLocal()
     try:
@@ -964,7 +1015,10 @@ def test_playbackinfo_then_stream_counts_once(client, free_token, seed):
     finally:
         db.close()
     body = _playbackinfo(client, free_token, seed["movie"])
-    assert POOL_FID in body["MediaSources"][0]["DirectPlayUrl"]
+    _pi_url = body["MediaSources"][0]["DirectPlayUrl"]
+    assert POOL_FID not in _pi_url
+    assert urlsplit(_pi_url).path == (
+        f"/emby/Videos/{seed['movie']}/stream.mp4")
     r = _stream(client, free_token, seed["movie"])
     assert r.status_code == 302, r.text
     db = SessionLocal()

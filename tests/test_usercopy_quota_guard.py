@@ -24,6 +24,7 @@ os.environ.setdefault("REDIS_ENABLED", "false")
 
 import asyncio
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from fastapi import HTTPException
@@ -387,12 +388,42 @@ def _assert_pi_safe(resp):
         assert "Authorization" not in headers
 
 
+def _assert_pi_local_stream_for_user_copy(resp, monkeypatch):
+    """用户副本 ready 时 PlaybackInfo 只下发本站 stream 入口。
+
+    副本 fid 与 Google 主机都不进响应；Yamby 把绝对本站地址
+    拼到 /emby 后，既有畸形地址修复口必须能逐字还原这条入口。
+    入口实际取流再 302 到 COPY_FID 的链路由同文件 video_stream
+    用例钉死（test_stream_probe_ok_302_user_copy）。
+    """
+    src = resp["MediaSources"][0]
+    url = src["DirectStreamUrl"]
+    assert src["DirectPlayUrl"] == url
+    assert COPY_FID not in url
+    assert "drive.usercontent.google.com" not in str(resp)
+    parsed = urlsplit(url)
+    assert parsed.path == "/emby/Videos/guid-pi-q/stream.mkv"
+    query = parse_qs(parsed.query)
+    assert query["MediaSourceId"] == ["guid-pi-q"]
+    assert query["uid"] == ["7"]
+    assert query["exp"] and query["sign"]
+    assert src["RequiredHttpHeaders"] == {}
+    mangled_req = SimpleNamespace(
+        url=SimpleNamespace(query=parsed.query, hostname=parsed.hostname),
+        headers={})
+    monkeypatch.setattr(
+        api, "_issued_playback_hosts",
+        lambda db_, request: {parsed.hostname})
+    embedded = f"{parsed.hostname}{parsed.path}"
+    assert api._mangled_redirect_url(
+        None, mangled_req, parsed.scheme, embedded) == url
+
+
 def test_pi_probe_ok_issues_user_copy(db, monkeypatch):
     monkeypatch.setattr(tv, "probe_user_copy_quota", lambda u, f: "ok")
     resp = _pi(monkeypatch, db)
     _assert_pi_safe(resp)
-    src = resp["MediaSources"][0]
-    assert COPY_FID in src["DirectStreamUrl"]
+    _assert_pi_local_stream_for_user_copy(resp, monkeypatch)
     assert "ErrorCode" not in resp
 
 
@@ -400,7 +431,7 @@ def test_pi_probe_error_issues_user_copy(db, monkeypatch):
     monkeypatch.setattr(tv, "probe_user_copy_quota", lambda u, f: "error")
     resp = _pi(monkeypatch, db)
     _assert_pi_safe(resp)
-    assert COPY_FID in resp["MediaSources"][0]["DirectStreamUrl"]
+    _assert_pi_local_stream_for_user_copy(resp, monkeypatch)
 
 
 def test_pi_quota_no_115_errors_and_strips_urls(db, monkeypatch):

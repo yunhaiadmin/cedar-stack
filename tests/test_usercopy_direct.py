@@ -7,9 +7,11 @@
   不再记 orphan；其它非 2xx 仍抛异常。
 - 选路判定只认用户 Drive 副本行（owner_scope=user 且 variant_drive_id
   以 userdrive: 开头）；115 副本、服主副本、None 一律走旧链路。
-- _apply_usercopy_direct：授权限成功才换 usercontent 地址 + 空头；授权限
-  失败、缺 fid、非 dict 源一律返回 False 且不动源（调用方回落旧链路）；
-  内部异常永不外抛。
+- _apply_usercopy_direct：授权限成功才保留已由唯一构造点生成的
+  本站 /stream 地址 + 空头（取流时再 302 到 usercontent，避免
+  Yamby 把 Google 绝对地址当相对路径拼坏）；授权限失败、缺 fid、
+  非 dict 源、或现有地址不是同指本站 stream 的一对地址时一律
+  返回 False 且不动源；内部异常永不外抛。
 - ensure_user_copy_public：只用本人 Drive 绑定令牌；无绑定、令牌空、
   授权限失败、内部异常一律 False，绝不用于共享源文件（调用方只传
   用户副本行）。
@@ -80,28 +82,47 @@ def _user():
     return SimpleNamespace(id=410)
 
 
+LOCAL_STREAM_URL = (
+    "https://emby.example.com/emby/Videos/guid-1/stream.mkv"
+    "?static=true&MediaSourceId=guid-1&uid=410&exp=1&sign=x")
+
+
 def test_apply_usercopy_direct_success(monkeypatch):
     monkeypatch.setattr(
         tv, "ensure_user_copy_public", lambda db, uid, fid: True)
-    src = {"DirectPlayUrl": "https://old/stream",
-           "DirectStreamUrl": "https://old/stream",
+    src = {"DirectPlayUrl": LOCAL_STREAM_URL,
+           "DirectStreamUrl": LOCAL_STREAM_URL,
            "RequiredHttpHeaders": {"Authorization": "Bearer old"}}
     assert api._apply_usercopy_direct(None, _user(), src, FID) is True
-    assert src["DirectPlayUrl"] == (
+    assert src["DirectPlayUrl"] == LOCAL_STREAM_URL
+    assert src["DirectStreamUrl"] == LOCAL_STREAM_URL
+    assert "drive.usercontent.google.com" not in str(src)
+    assert src["RequiredHttpHeaders"] == {}
+
+
+def test_apply_usercopy_direct_rejects_absolute_google_url(monkeypatch):
+    monkeypatch.setattr(
+        tv, "ensure_user_copy_public", lambda db, uid, fid: True)
+    google_url = (
         "https://drive.usercontent.google.com/download?id=" + FID
         + "&export=download&confirm=t")
-    assert src["DirectStreamUrl"] == src["DirectPlayUrl"]
-    assert src["RequiredHttpHeaders"] == {}
+    src = {"DirectPlayUrl": google_url,
+           "DirectStreamUrl": google_url,
+           "RequiredHttpHeaders": {"Authorization": "Bearer old"}}
+    assert api._apply_usercopy_direct(None, _user(), src, FID) is False
+    assert src == {"DirectPlayUrl": google_url,
+                   "DirectStreamUrl": google_url,
+                   "RequiredHttpHeaders": {"Authorization": "Bearer old"}}
 
 
 def test_apply_usercopy_direct_ensure_fail_keeps_old(monkeypatch):
     monkeypatch.setattr(
         tv, "ensure_user_copy_public", lambda db, uid, fid: False)
-    src = {"DirectPlayUrl": "https://old/stream",
-           "DirectStreamUrl": "https://old/stream",
+    src = {"DirectPlayUrl": LOCAL_STREAM_URL,
+           "DirectStreamUrl": LOCAL_STREAM_URL,
            "RequiredHttpHeaders": {"Authorization": "Bearer old"}}
     assert api._apply_usercopy_direct(None, _user(), src, FID) is False
-    assert src["DirectPlayUrl"] == "https://old/stream"
+    assert src["DirectPlayUrl"] == LOCAL_STREAM_URL
     assert src["RequiredHttpHeaders"] == {"Authorization": "Bearer old"}
 
 
