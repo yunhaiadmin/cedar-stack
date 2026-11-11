@@ -242,19 +242,33 @@ def optional_emby_user(request: Request,
 _ANON_IMAGE_LIMIT_PER_MIN = 600
 
 
-def _anon_image_gate(db: Session, request: Request, image_type: str, item) -> None:
+#: 无凭据兼容放行的图片类型（2026-11-11 扩围）：条目 Primary 与
+#: Backdrop；库封面走 Primary（在 item_image 的库分支单独过门）。
+_ANON_IMAGE_TYPES = ("Primary", "Backdrop")
+
+
+def _anon_image_gate(db: Session, request: Request, image_type: str,
+                     item=None, *, library_id=None) -> None:
     """无凭据出图门禁（Reflix/Lenna/Yamby 等纯 URL 取图客户端的兼容口径）
 
-    只放行「公开库条目的 Primary 图」：类型不是 Primary、条目所在库
-    不是对全体登录用户可见（``library_scope.library_publicly_visible``，
-    拿不准按受限）→ 401，与 PA-036 凭据缺失时的对外形态一致，不泄露
-    「条目存在但受限」与「条目不存在」的区别。放行前过一道按 IP 的
-    限流（复用 ``backend.ratelimit``，与认证限流同一套桶实现）。
+    放行面（2026-11-11 扩围，Yamby 图片加载器实证：其对库封面与条目
+    Backdrop 同样不带凭据，旧口径下这两类整批 401）：公开库条目的
+    Primary / Backdrop 图、公开库的封面（Primary）。条件逐字沿用
+    2026-11-02 定版：所在库必须对全体登录用户可见
+    （``library_scope.library_publicly_visible``，拿不准按受限），
+    类型不在放行面、库不公开 → 401，与 PA-036 凭据缺失时的对外形态
+    一致，不泄露「条目存在但受限」与「条目不存在」的区别。放行前过
+    一道按 IP 的限流（复用 ``backend.ratelimit``，与认证限流同一套
+    桶实现）。
+
+    ``library_id`` 显式传时按它判定（库封面分支：被判定的对象是库
+    本身，没有条目行可借）；未传时按 ``item.library_id`` 判定。
     """
-    if image_type != "Primary":
+    if image_type not in _ANON_IMAGE_TYPES:
         raise HTTPException(status_code=401, detail="Invalid access token")
-    if not library_scope.library_publicly_visible(
-            db, getattr(item, "library_id", None)):
+    if library_id is None:
+        library_id = getattr(item, "library_id", None)
+    if not library_scope.library_publicly_visible(db, library_id):
         raise HTTPException(status_code=401, detail="Invalid access token")
     from backend.ratelimit import check_rate_limit, client_ip
 
@@ -289,6 +303,13 @@ def item_image(item_id: str, image_type: str, request: Request,
     401/403 不变；带凭据（含带了但无效 → 401，不降级匿名）维持
     PA-036 全口径。季/集回退链按最终解析出的条目所在库判定。
 
+    无凭据兼容扩围（2026-11-11）：Yamby 的图片加载器对媒体库封面与
+    条目 Backdrop 同样不带凭据，生产日志实证这两类整批 401、条目
+    Primary 正常。放行面扩到**公开库条目的 Backdrop 与公开库的封面
+    （Primary）**，条件逐字不变（库对全体登录用户可见 + 按 IP 限流，
+    见 ``_anon_image_gate``）；Art/Logo/Thumb、受限库、演员图无凭据
+    仍 401/403 不变。
+
     三处修正：
 
     1. **季/集回退**：季与集经常没有自己的图片，按「条目 → 季 → 剧集海报」回退；
@@ -307,18 +328,19 @@ def item_image(item_id: str, image_type: str, request: Request,
     if image_type == "Primary":
         lib = db.query(em.Library).filter(em.Library.guid == item_id).first()
         if lib is not None:
-            # 库封面（含虚拟库借成员海报的派生封面）不在无凭据兼容范围内：
-            # 无凭据一律 401（_library_scope 对 None 用户返回不过滤，
-            # 不挡会把封面匿名放行，必须在这里先挡）。
             if user is None:
-                raise HTTPException(status_code=401,
-                                    detail="Invalid access token")
-            # PA-036：库封面也是受限内容——库不在该用户可见范围内直接 403，
-            # 不许靠猜中 guid 绕过 _library_scope（与列表 / 浏览同一口径）。
-            _allowed_libs = _library_scope(db, user)
-            if _allowed_libs is not None and lib.id not in _allowed_libs:
-                raise HTTPException(status_code=403,
-                                    detail="Library not accessible")
+                # 无凭据兼容扩围（2026-11-11）：库封面与公开库条目
+                # Primary 同口径——过 _anon_image_gate 按库本身判定
+                # 全体可见 + 限流；不公开的库仍 401（_library_scope
+                # 对 None 用户返回不过滤，不能靠它挡，必须在这里过门）。
+                _anon_image_gate(db, request, "Primary", library_id=lib.id)
+            else:
+                # PA-036：库封面也是受限内容——库不在该用户可见范围内直接 403，
+                # 不许靠猜中 guid 绕过 _library_scope（与列表 / 浏览同一口径）。
+                _allowed_libs = _library_scope(db, user)
+                if _allowed_libs is not None and lib.id not in _allowed_libs:
+                    raise HTTPException(status_code=403,
+                                        detail="Library not accessible")
         cover_rel = getattr(lib, "cover_path", None) if lib is not None else None
         if cover_rel:
             import os as _os
@@ -375,8 +397,8 @@ def item_image(item_id: str, image_type: str, request: Request,
     # 过回退链解析出来——含虚拟库派生封面借的代表条目与虚拟季的父剧——统一
     # 在出图前挡一道，受限库的图不许凭 guid 直取）。
     # 无凭据兼容：user 为 None 时不走 _item_visible（它对匿名口径无意义），
-    # 改走 _anon_image_gate——只许公开库 Primary、其余 401；判定按此处
-    # 最终解析出的条目（回退链终点）所在库，与任务口径一致。
+    # 改走 _anon_image_gate——只许公开库 Primary / Backdrop、其余 401；
+    # 判定按此处最终解析出的条目（回退链终点）所在库，与任务口径一致。
     if user is not None:
         if not _item_visible(db, user, item):
             raise HTTPException(status_code=403, detail="Library not accessible")

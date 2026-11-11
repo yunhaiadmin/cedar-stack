@@ -340,8 +340,10 @@ def test_image_cms_svg_serves_placeholder(client, token, seed):
     assert r.content == library_covers.SVG_PLACEHOLDER_BYTES
 
 
-def test_image_cms_requires_credentials(client, seed):
-    """PA-036 口径不破：库封面不在无凭据兼容范围内，CMS 库封面无
-    凭据仍 401。"""
+def test_image_cms_allows_no_credentials_for_public_library(client, seed):
+    """2026-11-11 无凭据兼容扩围：公开库封面与公开库条目 Primary 同
+    口径放行；本库无任何用户覆盖排除 → 对全体登录用户可见，CMS 库
+    派生封面无凭据应直接出代表海报字节（旧口径为 401）。"""
     r = client.get(f"/emby/Items/{seed['cms_local']}/Images/Primary")
-    assert r.status_code == 401
+    assert r.status_code == 200, r.text[:200]
+    assert r.content == seed["png"]

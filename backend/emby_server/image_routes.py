@@ -112,8 +112,9 @@ def item_image_cached(
     maxWidth/maxHeight 透传给实现做缩略图（标准 Emby 参数，前端海报墙已在用）。
     PA-036：鉴权依赖必须在本层声明——本函数是直接调用实现函数（不是走
     FastAPI 注入），实现的 Depends 不会被执行，漏了这里就等于没鉴权。
-    无凭据兼容（2026-11-02）：依赖换 ``optional_emby_user``——无凭据
-    返回 None 交实现按公开库 Primary 口径判定，带凭据无效仍 401。
+    无凭据兼容（2026-11-02，2026-11-11 扩围）：依赖换
+    ``optional_emby_user``——无凭据返回 None 交实现按公开库口径判定
+    （条目 Primary / Backdrop、库封面 Primary），带凭据无效仍 401。
     """
     return with_conditional_get(
         media_routes.item_image(item_id, image_type, request, db, user,
