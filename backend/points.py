@@ -82,6 +82,7 @@ POINT_TYPE_SELF_EARNED: dict[str, bool] = {
     "admin_grant": False,
     "gift_all": False,
     "lottery_win": False,
+    "blindbox_prize": False,  # 盲盒中奖入账：运气来源，不算自挣（与 lottery_win/slots_win 同口径）
     "slots_win": False,
     "slots_jackpot": False,
     "slots_refund": False,
@@ -95,6 +96,7 @@ POINT_TYPE_SELF_EARNED: dict[str, bool] = {
     "transfer_out": False,
     "transfer_fee": False,
     "slots_bet": False,
+    "blindbox_spend": False,  # 盲盒抽盒扣分（支出，分类仅作登记）
     "admin_deduct": False,
     "redpacket_fee": False,
     # 骰子对决：押注是支出，赢和退回都是运气/退款，不算自挣
