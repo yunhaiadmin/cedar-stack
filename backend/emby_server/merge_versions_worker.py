@@ -37,8 +37,9 @@ MERGE_VERSIONS_ENABLED = (
 MERGE_VERSIONS_INTERVAL_SEC = env_float(
     "MERGE_VERSIONS_INTERVAL_SEC", 86400.0, 3600.0
 )
-# 单次最多合并组数
-# 候选放大系数：轻量列只做分组，取 10 倍上限保护
+# 单次最多合并组数（严格通道的单轮组数上限，见 find_duplicate_groups）
+# 候选放大系数：宽松通道轻量列只做分组，取 10 倍上限保护
+# （严格通道已改聚合下推 + 组数上限，不再用行窗口，故不再用此系数）
 MERGE_CANDIDATE_MULTIPLIER = 10
 MERGE_VERSIONS_BATCH_LIMIT = env_int(
     "MERGE_VERSIONS_BATCH_LIMIT", 1000, 10, 100000
@@ -142,18 +143,74 @@ def _provider_key(item) -> Optional[Tuple]:
     )
 
 
-def find_duplicate_groups(db) -> List[List]:
+def find_duplicate_groups(db, limit: Optional[int] = None) -> List[List]:
     """找出需要合并的组（对标 FindDuplicateSeries/ExecuteMergeMovies 的分组逻辑）。
 
     返回：每组是 [item, ...]，组内条目应合并为多版本。
     只返回尚未合并的（merged_into_id IS NULL）且组内有 2+ 条目的。
+
+    候选发现（2026-11-11 修窗口截断）：旧实现先按 id 顺序 LIMIT
+    BATCH_LIMIT*MULTIPLIER（1 万行）取候选行、再在内存分组——候选行总数
+    超过窗口时，新入库的行（id 大）整行落在窗口之外，对子被拆散或整组
+    在窗外，永远凑不齐组（生产候选 11,453 行 > 窗口 10,000，新行全瞎）。
+    改为两阶段聚合下推：
+    1) 按 (library_id, item_type, tmdb_id) 在库内 GROUP BY + HAVING
+       count>=2 找出全部重复键——分组由数据库完成（走 idx_item_lib_type
+       与 tmdb_id 索引），只有重复键回到内存，不再有固定行窗口；
+    2) 只按入选键取轻量行，仍走 _provider_key 分组（口径与旧实现一致），
+       再按 id 加载全行。
+    单轮上限改为组数上限 limit（缺省 MERGE_VERSIONS_BATCH_LIMIT）：按组内
+    最小 id 升序取组，未取到的组仍是未合并重复，下轮重复发现照常处理——
+    续跑不丢组，且单轮不会把全库历史组一次性涌进来。
     """
+    from sqlalchemy import func, tuple_
+
     from backend.emby_server import models as em
 
-    # 只查 movie/series，有 tmdb_id（N4-1 硬条件），未被合并，未软删除
-    # 注意：只查有 tmdb_id 的（无 tmdb 的不参与合并；imdb 单独不再算数）
-    # 两阶段：先只取分组所需的轻量列（id/library_id/item_type/tmdb_id/imdb_id），
-    # 找出重复组后，再按 id 加载全行做合并——避免每天拉 1 万个全量 ORM 进内存
+    if limit is None:
+        limit = MERGE_VERSIONS_BATCH_LIMIT
+    if limit <= 0:
+        return []
+
+    candidate_filters = (
+        em.MediaItem.item_type.in_(("movie", "series")),
+        em.MediaItem.deleted_at.is_(None),
+        em.MediaItem.merged_into_id.is_(None),
+        em.MediaItem.tmdb_id.isnot(None),
+        # 空串 tmdb 与无 tmdb 同义（_provider_key 也会剔除），不让它成键
+        em.MediaItem.tmdb_id != "",
+    )
+
+    # 阶段一：聚合下推找重复键（只查有 tmdb_id 的，N4-1 硬条件）
+    key_rows = (
+        db.query(
+            em.MediaItem.library_id,
+            em.MediaItem.item_type,
+            em.MediaItem.tmdb_id,
+            func.min(em.MediaItem.id).label("min_id"),
+        )
+        .filter(*candidate_filters)
+        .group_by(
+            em.MediaItem.library_id,
+            em.MediaItem.item_type,
+            em.MediaItem.tmdb_id,
+        )
+        .having(func.count(em.MediaItem.id) >= 2)
+        .order_by(
+            func.min(em.MediaItem.id).asc(),
+            em.MediaItem.library_id.asc(),
+            em.MediaItem.item_type.asc(),
+            em.MediaItem.tmdb_id.asc(),
+        )
+        .limit(limit)
+        .all()
+    )
+    if not key_rows:
+        return []
+    keys = [(r.library_id, r.item_type, r.tmdb_id) for r in key_rows]
+
+    # 阶段二：只取入选键的轻量行，按 provider key 分组（含 library_id/
+    # item_type，防跨库跨类型合并；_provider_key 做 strip 后成键）
     light_rows = (
         db.query(
             em.MediaItem.id,
@@ -163,17 +220,16 @@ def find_duplicate_groups(db) -> List[List]:
             em.MediaItem.imdb_id,
         )
         .filter(
-            em.MediaItem.item_type.in_(("movie", "series")),
-            em.MediaItem.deleted_at.is_(None),
-            em.MediaItem.merged_into_id.is_(None),
-            em.MediaItem.tmdb_id.isnot(None),
+            *candidate_filters,
+            tuple_(
+                em.MediaItem.library_id,
+                em.MediaItem.item_type,
+                em.MediaItem.tmdb_id,
+            ).in_(keys),
         )
         .order_by(em.MediaItem.id.asc())
-        .limit(MERGE_VERSIONS_BATCH_LIMIT * MERGE_CANDIDATE_MULTIPLIER)
         .all()
     )
-
-    # 按 provider key 分组（含 library_id/item_type，防跨库跨类型合并）
     groups: Dict[Tuple, List] = {}
     for row in light_rows:
         # Row 转命名空间，复用 _provider_key 的 getattr 口径
@@ -187,10 +243,11 @@ def find_duplicate_groups(db) -> List[List]:
         if key:
             groups.setdefault(key, []).append(row.id)
 
-    # 只保留 2+ 条目的组
+    # 只保留 2+ 条目的组，按组内最小 id 升序（与阶段一取组顺序一致）
     dup_id_groups = [g for g in groups.values() if len(g) >= 2]
     if not dup_id_groups:
         return []
+    dup_id_groups.sort(key=min)
 
     # 按 id 加载全行（只加载需要合并的组）
     wanted_ids = {i for g in dup_id_groups for i in g}
@@ -201,8 +258,7 @@ def find_duplicate_groups(db) -> List[List]:
     )
     item_by_id = {item.id: item for item in items}
 
-    # 按 id 加载全行（只加载需要合并的组）→ 直接返回分组
-    # （注：按 key 分组已天然保证传递性，无需 union-find）
+    # 按 key 分组已天然保证传递性，无需 union-find
     return [
         [item_by_id[i] for i in id_group if i in item_by_id]
         for id_group in dup_id_groups
