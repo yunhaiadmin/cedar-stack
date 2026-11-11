@@ -13,7 +13,7 @@
 
       <section v-else class="v4-sec">
         <div class="v4-sec-title">收藏的片子</div>
-        <div class="v4-sec-sub">在第三方播放器里标过星的片子都在这里；点卡片右上角的星可以取消收藏。播放还是去播放器里打开，本页不放播放入口。</div>
+        <div class="v4-sec-sub">在第三方播放器里标过星的片子都在这里；点卡片右上角的星可以取消收藏。剧集点卡片进详情页，可以看缺集、直接求补。播放还是去播放器里打开，本页不放播放入口。</div>
         <div v-if="loading" class="v4-skeleton" aria-hidden="true" style="height:160px"></div>
         <div v-else-if="items.length === 0" class="v4-empty">还没有收藏 —— 在播放器里给喜欢的片子标个星，就会到这里来</div>
         <div v-else class="fav-grid">
@@ -29,6 +29,12 @@
                 @error="onPosterError(m.id)"
               />
               <Clapperboard v-else :size="26" :stroke-width="1.5" class="fav-fallback" aria-hidden="true" />
+              <RouterLink
+                v-if="m.type === 'series'"
+                class="fav-link"
+                :to="{ name: 'media-detail', params: { id: m.id } }"
+                :aria-label="`查看《${m.name}》的季集与缺集`"
+              />
               <button
                 type="button"
                 class="fav-star"
@@ -41,7 +47,13 @@
               </button>
             </div>
             <div class="fav-body">
-              <div class="fav-name" :title="m.name">{{ m.name }}</div>
+              <RouterLink
+                v-if="m.type === 'series'"
+                class="fav-name fav-name-link"
+                :title="m.name"
+                :to="{ name: 'media-detail', params: { id: m.id } }"
+              >{{ m.name }}</RouterLink>
+              <div v-else class="fav-name" :title="m.name">{{ m.name }}</div>
               <div class="fav-meta">{{ metaLine(m) }}</div>
             </div>
           </article>
@@ -53,6 +65,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { Clapperboard, Star } from 'lucide-vue-next'
 import { embyApi, type PortalMediaItem } from '@/api'
 import { imageAuthUrl } from '@/api/emby'
@@ -167,8 +180,18 @@ onMounted(load)
 .fav-fallback {
   color: var(--au-text-3, #a8a29a);
 }
+.fav-link {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+.fav-name-link {
+  display: block;
+  text-decoration: none;
+}
 .fav-star {
   position: absolute;
+  z-index: 2;
   top: 6px;
   right: 6px;
   width: 30px;
