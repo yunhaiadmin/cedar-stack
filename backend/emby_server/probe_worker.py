@@ -76,9 +76,13 @@ def _env_flag(name: str, default: str = "1") -> bool:
 # ---------------------------------------------------------------- 配置
 PROBE_ENABLED = _env_flag("PROBE_ONDEMAND_ENABLED")
 # 总并发（线程池大小）
-PROBE_WORKERS = env_int("PROBE_WORKERS", 4, 1, 16)
-# 每个挂载的并发上限：远程（115/rclone/WebDAV/FUSE/直链）默认 2，本机磁盘默认 4
-PROBE_REMOTE_CONCURRENCY = env_int("PROBE_REMOTE_CONCURRENCY", 2, 1, 16)
+# 2026-11-11 提速：生产 pending 8.9 万条里 99.8% 在同一个远程挂载上，绑定约束
+# 是每挂载并发而不是总线程数（旧默认 远程 2 → 速率 ~175 条/分钟、ETA 8.5h）。
+# 默认提到 6 / 远程每挂载 4；仍可 env 覆盖、硬顶 16 不变；有播放时照旧被
+# PROBE_PLAYBACK_WORKERS 压到 1，不抢播放链路。
+PROBE_WORKERS = env_int("PROBE_WORKERS", 6, 1, 16)
+# 每个挂载的并发上限：远程（115/rclone/WebDAV/FUSE/直链）默认 4，本机磁盘默认 4
+PROBE_REMOTE_CONCURRENCY = env_int("PROBE_REMOTE_CONCURRENCY", 4, 1, 16)
 PROBE_LOCAL_CONCURRENCY = env_int("PROBE_LOCAL_CONCURRENCY", 4, 1, 16)
 # 两次提交之间的最小间隔（全局，保护网盘配额）
 PROBE_MIN_INTERVAL_SEC = env_float("PROBE_MIN_INTERVAL_SEC", 0.5, 0.0)
