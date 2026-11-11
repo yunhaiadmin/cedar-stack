@@ -363,6 +363,7 @@ USER_PANEL_GROUPS: dict[str, dict] = {
         "buttons": [
             {"text": "🔗 绑定网盘", "callback_data": "menu:bindings"},
             {"text": "📦 我的转存", "callback_data": "menu:transfers"},
+            {"text": "🤝 我的贡献池", "callback_data": "pool_widget"},
         ],
     },
     "account": {

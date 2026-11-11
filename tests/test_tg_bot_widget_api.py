@@ -104,7 +104,7 @@ def test_dispatcher_unknown_action_gets_error_answer(db, monkeypatch):
     monkeypatch.setattr(
         sender, "answer_widget_query",
         lambda db_, qid, data=None: answers.append((qid, data)) or (True, None))
-    router._dispatch_widget_query(db, _wq(data='{"a":"pool_refresh"}'))
+    router._dispatch_widget_query(db, _wq(data='{"a":"nope"}'))
     assert seen == []  # 未登记动作绝不误落进老虎机
     assert len(answers) == 1
     qid, data = answers[0]
@@ -150,7 +150,7 @@ def test_router_dispatch_unknown_widget_action(db, monkeypatch):
         lambda db_, qid, data=None: answers.append((qid, data)) or (True, None))
     router.dispatch(db, {
         "update_id": 7,
-        "widget_query": _wq(data='{"a":"pool_refresh"}')})
+        "widget_query": _wq(data='{"a":"nope"}')})
     assert len(answers) == 1
     assert json.loads(answers[0][1])["error"] == "unknown_action"
 
