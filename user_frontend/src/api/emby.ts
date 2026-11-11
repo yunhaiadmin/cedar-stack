@@ -14,7 +14,7 @@
  */
 import { shallowRef } from 'vue'
 import api from '@/api'
-import { embyApiKeyRef, getEmbyApiKey, setEmbyApiKey, withImageKey } from '@/api/imageKey'
+import { embyApiKeyRef, getEmbyApiKey, setEmbyApiKey, withImageKey, withImageWidth } from '@/api/imageKey'
 
 /**
  * 分离部署时，门户 EM 与 Emby EA 是两个地址：
@@ -478,9 +478,13 @@ export function imageUrl(itemId: string, kind: 'Primary' | 'Backdrop' | 'Thumb',
  * 给后端下发的图片地址补 api_key：门户接口给的 poster_url 是不带凭据的相对
  * 地址（/emby/Items/{guid}/Images/Primary），PA-036 后必须在渲染点补上，
  * 否则收藏 / 心愿单的海报全部 401。
+ *
+ * maxWidth > 0 时同时补尺寸档位：poster_url 是裸地址、服务端按原图出图，
+ * 列表/海报墙按卡片展示尺寸传档（见 withImageWidth），别整页拉原图。
+ * 不传（默认 0）时行为与旧版逐字一致。
  */
-export function imageAuthUrl(url: string): string {
-  return withImageKey(url)
+export function imageAuthUrl(url: string, maxWidth = 0): string {
+  return withImageWidth(withImageKey(url), maxWidth)
 }
 
 /** 进度条百分比 */

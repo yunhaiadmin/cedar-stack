@@ -40,7 +40,7 @@
             :class="{ selected: selectedFollow?.item_id === c.item_id }"
             @click="selectFollowCandidate(c)"
           >
-            <img v-if="c.poster_url" :src="c.poster_url" alt="" class="follow-poster" loading="lazy" />
+            <img v-if="c.poster_url" :src="withImageWidth(c.poster_url, 160)" alt="" class="follow-poster" loading="lazy" decoding="async" />
             <span class="follow-candidate-name">{{ c.name }}</span>
             <span v-if="c.year" class="follow-candidate-year">{{ c.year }}</span>
           </button>
@@ -74,6 +74,7 @@
 import { onMounted, ref } from 'vue'
 import { mediaSeekApi, type MediaLookupItem } from '@/api'
 import { seriesFollowApi, type SeriesFollow } from '@/api/economy'
+import { withImageWidth } from '@/api/imageKey'
 import { humanizeError } from '@/composables/usePanelApi'
 
 const emit = defineEmits<{

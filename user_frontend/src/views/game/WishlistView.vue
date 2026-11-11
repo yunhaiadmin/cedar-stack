@@ -71,7 +71,7 @@
         <div v-else-if="myWants.length === 0" class="v4-empty">还没有想看的片子，搜到已在库的片子时点「想看」试试</div>
         <div v-else>
           <div v-for="w in myWants" :key="w.job_id ?? w.tmdb_id" class="wish">
-            <img v-if="w.poster_url" :src="imageAuthUrl(w.poster_url)" :alt="w.title || w.tmdb_id" class="want-poster">
+            <img v-if="w.poster_url" :src="imageAuthUrl(w.poster_url, 160)" :alt="w.title || w.tmdb_id" class="want-poster" loading="lazy" decoding="async">
             <div class="want-main">
               <b>《{{ w.title || `TMDB ${w.tmdb_id}` }}》</b>
               <div class="wmeta">{{ w.message }}</div>
@@ -170,7 +170,7 @@
                 class="cand"
                 @click="selectCandidate(c)"
               >
-                <img v-if="c.poster_url" :src="imageAuthUrl(c.poster_url)" :alt="c.name" class="cand-poster">
+                <img v-if="c.poster_url" :src="imageAuthUrl(c.poster_url, 160)" :alt="c.name" class="cand-poster" loading="lazy" decoding="async">
                 <span v-else class="cand-ph" aria-hidden="true">🎬</span>
                 <span class="cand-main">
                   <b>{{ c.name }}</b>
@@ -186,7 +186,7 @@
         </div>
 
         <div v-if="picked" class="picked-card">
-          <img v-if="picked.poster_url" :src="imageAuthUrl(picked.poster_url)" :alt="picked.name" class="picked-poster">
+          <img v-if="picked.poster_url" :src="imageAuthUrl(picked.poster_url, 160)" :alt="picked.name" class="picked-poster" loading="lazy" decoding="async">
           <span v-else class="picked-ph" aria-hidden="true">🎬</span>
           <div class="picked-info">
             <b>{{ picked.name }}</b>
