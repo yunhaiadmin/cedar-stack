@@ -522,3 +522,130 @@ class TestStartup:
             assert probe_worker.is_paused(db) is False
         finally:
             db.close()
+
+
+# ------------------------------------------------------------ 提速：并发默认值与同挂载并发上限（2026-11-11）
+class TestProbeThroughput:
+    def test_concurrency_defaults(self):
+        """生产实测（2026-11-11）：pending 8.9 万条里 99.8% 在同一个远程挂载
+        （mount://4 paul）上，绑定约束是「每挂载远程并发 2」而不是总线程数：
+        速率 175 条/分钟 ≈ 2 并发 × 单条 ~0.69s。默认值钉为总并发 6 / 远程每
+        挂载 4（仍可 env 覆盖、硬顶 16 不变）；子进程里清掉 PROBE_* env 读真默认。
+        """
+        env = {k: v for k, v in os.environ.items() if not k.startswith("PROBE_")}
+        code = ("from backend.emby_server import probe_worker as pw;"
+                "print(pw.PROBE_WORKERS, pw.PROBE_REMOTE_CONCURRENCY)")
+        out = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                             text=True, cwd=str(_ROOT), env=env, timeout=180)
+        assert out.returncode == 0, out.stderr[-2000:]
+        workers, remote = (int(x) for x in out.stdout.split())
+        assert (workers, remote) == (6, 4)
+
+    def test_same_mount_concurrency_reaches_default_cap(self, lib, monkeypatch):
+        """6 条同挂载待探条目：在默认配置下应有 4 条同时在探（旧默认 2），
+        且绝不超过每挂载上限（第 5、6 条留在缓冲里等槽位）。
+
+         hermetic 说明（2026-11-12 #59 第三轮冒烟复现）：第二轮的修法（计数按
+        path 过滤、6 条给最高优先级 1000、启动前停 worker 清缓存）没打中 CI
+        失败形态——本地定向复现实证：12 条同优先级残留待探条目也抢不走本用例
+        的槽位（peak 仍为 4），所以「残留条目占池」不是根因。实测能把 peak
+        压到 2 的是调度器本身的状态：有播放时 eff=1（peak=1）、PROBE_WORKERS
+        =2（peak=2）、PROBE_REMOTE_CONCURRENCY=2（peak=2），以及跑在本用例
+        start() 之前的旧调度器（线程池大小与 in_flight 都是创建时快照的旧值，
+        start() 在旧线程还活着时会直接返回 True、不建新调度器）。本用例只测
+        「无播放时的默认上限 4」，所以必须把测量钉在全新调度器上：关掉播放
+        影响、确认旧调度线程真的死了、确认 start() 真建了新调度线程；否则
+        失败信息里必须带齐当时的 eff/播放/常量/线程身份，不然下一轮还是猜。
+        播放时降并发由 test_probe_chain4.py 另行钉住。
+        """
+        for k, v in {"PROBE_MIN_INTERVAL_SEC": 0.0,
+                     "PROBE_IDLE_SLEEP_SEC": 0.2}.items():
+            monkeypatch.setattr(probe_worker, k, v)
+        monkeypatch.setattr(probe_worker, "breaker", probe_worker.MountBreaker(3, 600))
+        monkeypatch.setattr(media_probe.persist_lib, "deserialize", lambda db, item: False)
+        monkeypatch.setattr(media_probe.persist_lib, "serialize", lambda db, item: False)
+        monkeypatch.setattr(probe_worker, "is_paused", lambda *a, **k: False)
+        # 只测无播放默认上限：共享库里别的测试可能残留未结束的播放会话，
+        # has_active_playback() 为真会把 eff 压到 1（peak=1），与本用例无关。
+        monkeypatch.setattr(probe_worker, "has_active_playback", lambda *a, **k: False)
+
+        release = threading.Event()
+        lock = threading.Lock()
+        state = {"started": 0, "cur": 0, "peak": 0}
+
+        def fake_resolve(db, item):
+            return ((item.file_path, {}, 1, "mkv"), None)
+
+        def fake_probe(path, headers=None, size=0, container=""):
+            # 只计数本用例自己的 6 条：残留条目也走这个 fake_probe，但不占
+            # 本用例的计数、也不在 release 上挂 30 秒（立刻返回放行池线程）。
+            if path not in paths:
+                return _ok_probe()
+            with lock:
+                state["started"] += 1
+                state["cur"] += 1
+                state["peak"] = max(state["peak"], state["cur"])
+            release.wait(timeout=30)
+            with lock:
+                state["cur"] -= 1
+            return _ok_probe()
+
+        monkeypatch.setattr(media_probe, "resolve_probe_input", fake_resolve)
+        monkeypatch.setattr(media_probe, "probe_metadata", fake_probe)
+        db = SessionLocal()
+        try:
+            # 最高优先级先被抢；启动前停掉前面用例残留的 worker 并清掉影响
+            # 准入判定的进程内缓存（挂载远近 / 播放状态），避免跑在旧调度器上。
+            # start() 在旧调度线程还活着时会直接返回 True、不建新调度器，
+            # 而旧调度器的线程池大小/in_flight 是创建时快照的旧值——必须先
+            # 确认旧线程真的死了、再确认 start() 真建了新线程，否则测量值
+            # 反映的是旧调度器的状态，不是默认上限。
+            old_dispatcher = probe_worker._dispatcher_thread
+            probe_worker.stop()
+            _stop_deadline = time.monotonic() + 10
+            while (old_dispatcher is not None and old_dispatcher.is_alive()
+                   and time.monotonic() < _stop_deadline):
+                time.sleep(0.1)
+            assert old_dispatcher is None or not old_dispatcher.is_alive(), (
+                "旧调度线程 10 秒还没停，start() 会早退、测到的是旧调度器")
+            probe_worker._remote_cache.clear()
+            probe_worker._playback_cache.update({"value": False, "at": 0.0})
+            ids = _add(db, lib, 6, file_path="mount://9/t/{g}.mkv",
+                       probe_priority=1000)
+            paths = {fp for (fp,) in db.query(em.MediaItem.file_path).filter(
+                em.MediaItem.id.in_(ids)).all()}
+            assert probe_worker.start() is True
+            new_dispatcher = probe_worker._dispatcher_thread
+            assert new_dispatcher is not None and new_dispatcher.is_alive(), (
+                "start() 后没有活着的调度线程")
+            assert new_dispatcher is not old_dispatcher, (
+                "start() 早退：仍在跑旧调度线程，新调度器没建起来")
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline and state["started"] < 4:
+                time.sleep(0.2)
+            # 再等一拍：第 5 条若要越限会在这期间启动
+            time.sleep(1.0)
+            assert state["started"] == 4, (
+                f"同挂载同时在探应为 4，实际 {state['started']}（peak={state['peak']}）; "
+                f"workers={probe_worker.PROBE_WORKERS} "
+                f"remote={probe_worker.PROBE_REMOTE_CONCURRENCY} "
+                f"dispatcher_alive={new_dispatcher.is_alive()} "
+                f"status={_status(db, ids)}")
+            assert state["peak"] == 4, (
+                f"同挂载峰值在探应为 4，实际 {state['peak']}（started={state['started']}）; "
+                f"status={_status(db, ids)}")
+            release.set()
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                st = _status(db, ids)
+                if all(s == "done" for s in st.values()):
+                    break
+                time.sleep(0.3)
+            probe_worker.stop()
+            st = _status(db, ids)
+            assert all(s == "done" for s in st.values()), st
+            assert state["peak"] == 4, "全程峰值并发不得超过每挂载上限 4"
+        finally:
+            release.set()
+            probe_worker.stop()
+            db.close()
