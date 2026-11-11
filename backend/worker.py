@@ -556,6 +556,19 @@ def main() -> int:
         except Exception as e:
             logger.warning(f"启动缺集核算 worker 失败（可忽略）: {e}")
 
+        # 缺集补集通道（2026-11-11 B 方案）：绕开 MP 订阅判存，
+        # 按缺集台账走 MP 搜索＋手动下载接口补集，下好的集由
+        # 缺集核算工人的对账自然销账。总开关默认关
+        # （mp_episode_fill_enabled，管理端缺集页可开），工人
+        # 自带让路/熔断/每日上限，只吃闲置产能。
+        try:
+            from backend.emby_server import mp_episode_fill
+            if mp_episode_fill.start():
+                started.append("mp_episode_fill")
+                logger.info("✅ 缺集补集 worker 已启动")
+        except Exception as e:
+            logger.warning(f"启动缺集补集 worker 失败（可忽略）: {e}")
+
         # 求片到货盯梢（求片减负）：周期把处理中的求片跟片库对表，
         # 对上自动置已入库并入队到货通知，管理员不用再逐条点
         # 「标记已入库」试探。间隔走 SystemConfig
