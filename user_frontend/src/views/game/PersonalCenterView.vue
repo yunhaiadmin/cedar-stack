@@ -16,6 +16,15 @@
         <span v-if="identityBadge" class="realm-pill">{{ identityBadge }}</span>
       </div>
 
+      <!-- 状态预警（活力不足/偏低、资格/会员 7 天内到期；数据复用本页已加载的
+           活力/福利/订阅状态，不触发时整块不渲染） -->
+      <StatusAlertBar
+        :is-free-realm="isFreeRealm"
+        :vitality="vitality"
+        :welfare="welfare"
+        :active-sub="activeSub"
+      />
+
       <!-- 状态总览（格子全部由现有接口数据驱动，拿不到的格子不渲染） -->
       <div class="v4-card pc-ov">
         <div class="ov-grid">
@@ -163,6 +172,7 @@ import {
 } from 'lucide-vue-next'
 import PcEntryRow from '@/components/profile/PcEntryRow.vue'
 import SeriesFollowsPanel from '@/components/profile/SeriesFollowsPanel.vue'
+import StatusAlertBar from '@/components/profile/StatusAlertBar.vue'
 import {
   embyApi, storeApi, storeRequestsApi, subscriptionApi,
   type AccountCard, type MySubscription,
