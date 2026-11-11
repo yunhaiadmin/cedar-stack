@@ -597,6 +597,10 @@ MP_EPISODE_FILL_CONFIG_SCHEMA: dict[str, tuple] = {
 BLINDBOX_CONFIG_SCHEMA: dict[str, tuple] = {
     # 全站总开关：默认关；关着时所有服一律停售（realm 级开关另在其内）。
     "blindbox_enabled": ("bool",),
+    # 中奖群报喜开关：默认开（读侧缺行/读失败按开，见
+    # backend/blindbox_announce.announce_enabled）；关了抽中奖照常
+    # 发放、只是不往正式群发庆祝消息。
+    "blindbox_announce_enabled": ("bool",),
     # 按 realm 分开的配置文档：{realm_id: {enabled, starts_at,
     # ends_at, daily_spend_cap, access_days_daily_budget,
     # whitelist_stock_total, tiers[...]}}，见 backend/blindbox.py。

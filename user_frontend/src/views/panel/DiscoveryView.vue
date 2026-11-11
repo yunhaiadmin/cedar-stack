@@ -233,6 +233,7 @@ import { embyApi, type HomeSection, type RecentAddedItem } from '@/api'
 import DiscoveryRightRail from '@/components/panel/DiscoveryRightRail.vue'
 import LibraryBand from '@/components/panel/LibraryBand.vue'
 import { useHomeViewMode } from '@/composables/useHomeViewMode'
+import { useBindReturnResume } from '@/composables/useBindReturn'
 import { RouterLink, useRouter } from 'vue-router'
 import { useServerCards } from '@/composables/useServerCards'
 import { useServerCardPrefs } from '@/composables/useServerCardPrefs'
@@ -598,6 +599,11 @@ function openParcelPicker(p: ParcelItem) {
   parcelPickerItemId.value = p.id
   parcelPickerOpen.value = true
 }
+/* 绑盘回跳落点：绑好被带回本页时，按片名重开播放器选择（参数随即清掉） */
+useBindReturnResume((title) => {
+  parcelPickerTitle.value = title
+  parcelPickerOpen.value = true
+})
 
 async function onUnseal(id: string | number) {
   const key = String(id)
