@@ -383,6 +383,7 @@ USER_PANEL_GROUPS: dict[str, dict] = {
             {"text": "🏆 我的抽奖", "callback_data": "menu:mylottery"},
             {"text": "🧧 发红包", "callback_data": "menu:redpacket"},
             {"text": "🎰 老虎机", "callback_data": "menu:slots"},
+            {"text": "🎁 盲盒", "callback_data": "menu:blindbox"},
         ],
     },
     "help": {

@@ -78,6 +78,9 @@ GROUPS = {
             {"text": "🧧 发红包", "callback_data": "menu:redpacket"},
             {"text": "🎰 老虎机", "callback_data": "menu:slots"},
         ],
+        [
+            {"text": "🎁 盲盒", "callback_data": "menu:blindbox"},
+        ],
     ]),
     "help": ("❓ 帮助中心", [
         [

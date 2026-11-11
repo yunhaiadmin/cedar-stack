@@ -262,6 +262,9 @@
         </div>
       </section>
 
+      <!-- 🎁 盲盒：未开启/未配置时组件自身不渲染（零感知）；抽中后同步页头能量 -->
+      <BlindboxSection @drawn="(bal) => { if (bal != null) points = bal }" />
+
       <!-- 🤝 带上同伴 -->
       <section v-if="loading || inviteEnabled || inviteFailed" class="shop-sec" style="padding-bottom:24px">
         <div class="v4-sec-title">带上同伴</div>
@@ -358,6 +361,7 @@ import {
   type PaymentMethod,
 } from '@/api/economy'
 import { useUserStore } from '@/stores/user'
+import BlindboxSection from '@/components/panel/BlindboxSection.vue'
 
 const toast = useToast()
 

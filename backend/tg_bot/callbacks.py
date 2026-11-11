@@ -46,6 +46,9 @@ def handle_callback(db, callback_query: dict, redpacket_enabled: bool | None = N
     if data == "pool_widget":
         _handle_pool_widget(db, callback_query)
         return
+    if data.startswith("blindbox_draw:"):
+        _handle_blindbox_draw(db, callback_query)
+        return
     if data.startswith("duel_accept:"):
         _handle_duel_accept(db, callback_query)
         return
@@ -494,6 +497,32 @@ def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,
                 text, markup = handlers.handle_slots(db, tg_user, chat_id, "")
                 if markup is None:
                     markup = handlers.back_markup()
+    elif action in ("blindbox", "blindbox_codes", "blindbox_draws") \
+            or action.startswith("blindbox_tier:"):
+        # 盲盒（PR-2）：抽盒是本人消费、卡包是凭据类——私聊限定，
+        # 与 renewcode/login 同口径；渲染与抽盒都走 blindbox_panel，
+        # 数据是 backend.blindbox 引擎同一套（公益 realm）。
+        if not is_private:
+            text = layout.card(
+                layout.title("盲盒"),
+                [layout.row("🔒", "使用方式", "盲盒请私聊机器人使用")])
+            markup = handlers.back_markup()
+        else:
+            bb_user = resolve(db, int(tg_id))
+            if bb_user is None:
+                text, markup = handlers._bind_guide_text(), handlers.back_markup()
+            else:
+                from . import blindbox_panel
+
+                if action == "blindbox":
+                    text, markup = blindbox_panel.render_home(db, bb_user)
+                elif action == "blindbox_codes":
+                    text, markup = blindbox_panel.render_codes(db, bb_user)
+                elif action == "blindbox_draws":
+                    text, markup = blindbox_panel.render_draws(db, bb_user)
+                else:
+                    text, markup = blindbox_panel.render_tier(
+                        db, bb_user, action.split(":", 1)[1])
     else:
         raise _UnknownMenuAction(action)
     return text, markup
@@ -1311,6 +1340,49 @@ def _handle_pool_widget(db, callback_query: dict) -> None:
         _answer(err or "我的贡献池发送失败", show_alert=True)
         return
     _answer("我的贡献池已发出")
+
+
+def _handle_blindbox_draw(db, callback_query: dict) -> None:
+    """处理盲盒抽盒按钮（blindbox_draw:{tier_key}），私聊限定。
+
+    抽盒是扣能量的消费动作：只认私聊（chat_id＝本人 telegram_id，
+    群里点到只回 toast）；同一 callback 重投递按 callback id 去重
+    （blindbox_panel.claim_draw_callback），不许二次开盒扣分。
+    成功另发一张开盒结果卡（与老虎机私聊结果卡同口径，聊天记录
+    留档）；失败只 toast 人话原因——引擎保证失败不扣分。
+    """
+    from . import blindbox_panel
+
+    cb_id = callback_query.get("id")
+    data = callback_query.get("data") or ""
+    from_user = callback_query.get("from") or {}
+    tg_id = from_user.get("id")
+    msg = callback_query.get("message") or {}
+    chat_id = (msg.get("chat") or {}).get("id")
+    if not cb_id or not tg_id or not chat_id:
+        return
+    tier_key = data.split(":", 1)[1] if ":" in data else ""
+
+    def _answer(text: str, show_alert: bool = False) -> None:
+        sender.answer_callback_query(db, cb_id, text=text,
+                                     show_alert=show_alert)
+
+    if int(chat_id) != int(tg_id):
+        _answer("盲盒仅支持私聊，群里抽不了", show_alert=True)
+        return
+    if not blindbox_panel.claim_draw_callback(cb_id):
+        _answer("这盒已经开过了")
+        return
+    user = resolve(db, int(tg_id))
+    if user is None:
+        _answer("请先绑定账号后再抽盲盒", show_alert=True)
+        return
+    ok, text, markup = blindbox_panel.do_draw(db, user, tier_key)
+    if not ok:
+        _answer(text, show_alert=True)
+        return
+    _answer("开盒啦 🎁")
+    sender.send_panel(db, chat_id, text, markup)
 
 
 def _handle_slots_bet(db, callback_query: dict) -> None:
