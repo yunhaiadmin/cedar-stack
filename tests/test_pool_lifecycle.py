@@ -71,6 +71,21 @@ def _stub_drive_limit(monkeypatch, limit):
     pool_gate.clear_pool_quota_cache()
 
 
+def _stub_drive_quota_error(monkeypatch):
+    """把 about 打桩成读失败（抛错）：_binding_quota 回 quota=None。
+
+    与 limit=None 是两回事：limit=None 是 about 成功但响应里没有
+    上限字段（企业版无限/池化盘，见 about_storage 契约）；读失败
+    才是「读不到」，按 fail-closed 拦。
+    """
+    def fake_about_storage(self, drive_id):
+        raise RuntimeError("about boom")
+
+    monkeypatch.setattr(
+        tv.UserDriveApiClient, "about_storage", fake_about_storage)
+    pool_gate.clear_pool_quota_cache()
+
+
 @pytest.fixture(autouse=True)
 def _big_drive_quota(monkeypatch):
     """入池容量门槛默认开：本文件的盘一律按 5T 档打桩，
@@ -602,12 +617,17 @@ def test_apply_ok_when_drive_is_5t_class(db, monkeypatch):
 
 
 def test_apply_blocked_when_drive_limit_unknown(db, monkeypatch):
-    _stub_drive_limit(monkeypatch, None)
+    # 「读不到」= about 读失败（quota=None）：fail-closed 仍拦。
+    # 注意与 limit=None 区分：那是 about 成功但无上限字段（企业版
+    # 无限/池化盘），按 about_storage 契约放行，见本节新用例。
+    _stub_drive_quota_error(monkeypatch)
     user = _user(db, "unknown-disk")
     binding = _binding(db, user.id)
     with pytest.raises(pool_gate.PoolLifecycleError) as excinfo:
         pool_gate.apply_pool_membership(db, user.id, binding.id)
     assert excinfo.value.kind == "capacity_too_small"
+    assert "暂时读不到这个盘的容量" in excinfo.value.message
+    assert "总容量不到" not in excinfo.value.message
     assert db.query(em.PoolMember).filter_by(
         binding_id=binding.id).first() is None
 
@@ -667,3 +687,66 @@ def test_contribution_status_blocks_small_disk_with_reason(db, monkeypatch):
              if b["binding_id"] == binding.id][0]
     assert entry["can_apply"] is False
     assert "总容量不到 5T" in (entry["apply_block_reason"] or "")
+
+
+# ------------------------------------------------- 企业版无上限盘回归
+# 用户 2026-11-11 亲报：谷歌企业版（Workspace 无限/池化）盘入池被
+# 误拦「总容量不到 5T」。根因：about 对这类账号不返回 limit 字段，
+# about_storage 契约写明 limit=None = 不限量/测不到上限、调用方按
+# 空间充足处理，门槛却把 limit=None 与读失败一并当不达标；且读
+# 失败的 None 被写进 10 分钟缓存，一次抖动锁死 10 分钟。
+
+def test_apply_ok_when_drive_limit_unlimited_enterprise(db, monkeypatch):
+    _stub_drive_limit(monkeypatch, None)
+    user = _user(db, "enterprise-disk")
+    binding = _binding(db, user.id)
+    member = pool_gate.apply_pool_membership(db, user.id, binding.id)
+    assert member.status == "pending"
+
+
+def test_contribution_status_allows_unlimited_drive(db, monkeypatch):
+    _stub_drive_limit(monkeypatch, None)
+    user = _user(db, "status-enterprise")
+    binding = _binding(db, user.id)
+    status = pool_gate.contribution_status(db, user)
+    entry = [b for b in status["bindings"]
+             if b["binding_id"] == binding.id][0]
+    assert entry["can_apply"] is True
+    assert entry["apply_block_reason"] is None
+
+
+def test_contribution_status_read_failure_reason_is_honest(db, monkeypatch):
+    _stub_drive_quota_error(monkeypatch)
+    user = _user(db, "status-unknown")
+    binding = _binding(db, user.id)
+    status = pool_gate.contribution_status(db, user)
+    entry = [b for b in status["bindings"]
+             if b["binding_id"] == binding.id][0]
+    assert entry["can_apply"] is False
+    assert "暂时读不到这个盘的容量" in (entry["apply_block_reason"] or "")
+    assert "总容量不到" not in (entry["apply_block_reason"] or "")
+
+
+def test_failed_quota_read_is_not_cached(db):
+    user = _user(db, "quota-cache")
+    binding = _binding(db, user.id)
+    pool_gate.clear_pool_quota_cache()
+    calls = {"n": 0}
+
+    def flaky_quota(d, b):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return None
+        return {"limit": FIVE_T_LIMIT, "usage": 0, "free": FIVE_T_LIMIT}
+
+    assert pool_gate._binding_quota(db, binding.id,
+                                    quota_fn=flaky_quota) is None
+    # 失败读数不进缓存：下一次重读立即恢复，不被锁 10 分钟。
+    quota = pool_gate._binding_quota(db, binding.id, quota_fn=flaky_quota)
+    assert quota is not None and quota["limit"] == FIVE_T_LIMIT
+    assert calls["n"] == 2
+    # 成功读数照旧进缓存：再读不打第三次。
+    again = pool_gate._binding_quota(db, binding.id, quota_fn=flaky_quota)
+    assert again["limit"] == FIVE_T_LIMIT
+    assert calls["n"] == 2
+    pool_gate.clear_pool_quota_cache()
