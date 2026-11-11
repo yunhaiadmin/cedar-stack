@@ -74,6 +74,7 @@ from backend.api.admin_services import services_router
 from backend.api.admin_tasks import tasks_router
 from backend.api.admin_audit import audit_router
 from backend.api.admin_missing_episodes import missing_router
+from backend.api.admin_blindbox import admin_blindbox_router
 from backend.api.reminders_admin import admin_reminders_router
 from backend.api.admin_alerts import admin_alerts_router
 from backend.api.admin_diagnosis import admin_diagnosis_router
@@ -852,6 +853,8 @@ app.include_router(tasks_router)
 app.include_router(audit_router)
 # 缺集清单（缺集全套）：核算工人台账的只读查询面
 app.include_router(missing_router)
+# 盲盒（双服通用）：档位/奖池配置、记录查询、统计与补发
+app.include_router(admin_blindbox_router)
 # 订阅到期提醒的面板口径与手动执行（见 backend/api/reminders_admin.py）
 app.include_router(admin_reminders_router)
 # 系统告警：规则管理 / 告警记录 / 总开关（见 backend/api/admin_alerts.py）
