@@ -588,6 +588,25 @@ MP_EPISODE_FILL_CONFIG_SCHEMA: dict[str, tuple] = {
     "mp_episode_fill_cooldown_hours": ("int", 1, 720),
 }
 
+
+# 盲盒（双服通用新功能，2026-11-11 用户亲定，方案 v2）：全站总开关
+# 与两份 JSON 文档（按 realm 分开的档位/奖池、奖品积分等值估值表）。
+# JSON 结构、奖池合法性（公益专属奖限制）与期望返还率红线由
+# backend/blindbox.py 在保存前校验后才走本家族落库（("raw",) 只负责
+# 原样存取，不做结构判断）；纯 SystemConfig 键不进 env.example。
+BLINDBOX_CONFIG_SCHEMA: dict[str, tuple] = {
+    # 全站总开关：默认关；关着时所有服一律停售（realm 级开关另在其内）。
+    "blindbox_enabled": ("bool",),
+    # 按 realm 分开的配置文档：{realm_id: {enabled, starts_at,
+    # ends_at, daily_spend_cap, access_days_daily_budget,
+    # whitelist_stock_total, tiers[...]}}，见 backend/blindbox.py。
+    "blindbox_realms": ("raw",),
+    # 奖品积分等值估值表（可配）：{vitality_per_point,
+    # access_day_values{天数:等值}, access_day_rate, whitelist}，
+    # 期望返还率与统计派奖等值都按它折算，见 backend/blindbox.py。
+    "blindbox_prize_values": ("raw",),
+}
+
 # 上游聚合拉取参数（2026-10-31 优化 O-05 起，后续 O-01/O-02/O-03
 # 的任务参数同家族登记）：读取唯一实现在 upstream_aggregate_run /
 # upstream_aggregate_jobs，范围与读取侧钳制同口径；无行时读取侧

@@ -771,6 +771,47 @@ class PointsLog(Base):
     user = relationship("WebUser")
 
 
+class BlindboxDraw(Base):
+    """盲盒抽盒记录（双服通用新功能，2026-11-11 用户亲定）
+
+    每抽必落账，是抽盒的唯一事实账：扣分/定奖/发放同事务完成，
+    发放失败整抽回滚、不留 charged 记录，只补一条 status=failed、
+    charged=False 的审计行。charged=True 且未发放（delivery_failed）
+    的记录可经 blindbox.redeliver 补发（不重复扣分、幂等）。
+
+    库存（白名单总量）、资格类奖品每日预算、每人每日消费上限的
+    计数全部从本表聚合，不另建计数表。prize_params / delivery 存
+    发放参数与结果快照（码面、到期时间等），便于对账与卡包展示。
+    """
+    __tablename__ = 'blindbox_draws'
+
+    __table_args__ = (
+        Index('idx_blindbox_user_time', 'user_id', 'created_at'),
+        Index('idx_blindbox_realm_time', 'realm_id', 'created_at'),
+        Index('idx_blindbox_status', 'status'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    draw_key = Column(String(64), nullable=False, unique=True, index=True)
+    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False, index=True)
+    realm_id = Column(Integer, index=True)  # 抽盒发生的服（server_realms.id）
+    tier_key = Column(String(64))
+    tier_name = Column(String(120))
+    price = Column(Integer, default=0)  # 本抽售价（积分）
+    prize_kind = Column(String(30))  # points/vitality/access_days/reg_code/sub_code/whitelist
+    prize_params = Column(JSON, default=dict)  # 奖品参数（amount/days 等）
+    prize_value = Column(Integer, default=0)  # 发放时按估值表折算的积分等值
+    fallback_from = Column(String(30))  # 非空=原奖品因库存/预算/无订阅改发的兜底来源
+    status = Column(String(20), default='delivered', index=True)  # delivered/delivery_failed/failed
+    charged = Column(Boolean, default=False)  # 是否已扣售价
+    delivery = Column(JSON, default=dict)  # 发放结果快照（码面/新到期/余额等）
+    error = Column(String(500))
+    created_at = Column(DateTime, default=datetime.now, index=True)
+    delivered_at = Column(DateTime)
+
+    user = relationship("WebUser")
+
+
 class PointsGiftBatch(Base):
     """全员赠送能量批次（管理端能力，2026-10-31）
 
