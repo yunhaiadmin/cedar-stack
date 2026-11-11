@@ -210,10 +210,14 @@ def test_apply_identity_policy_off_ignores_ai_markers(db):
 def test_identify_queue_unbound_terminalizes(db):
     # 标题+年份齐（has_core）→ 现行终态路径：首轮进补次要字段轮次，
     # 次轮终态化；绝不是旧行为的 pending + 300 秒延迟无限空转。
+    # #62 第四轮：终态化轮数取决于 tmdb_client 是否已配置——未配置时
+    # 走补字段路（2 轮终态）；同 worker 里别的测试先把单例配上 key 后
+    # 走 attempts 计次路（上限 5 轮，第 5 轮转 done+none）。断言只认
+    # “终态化、不空转”，轮数预算放 6 轮把两条合法路径都兜住，不钉死轮数。
     item = _make_item(db)
     db.commit()
     terminal = None
-    for _ in range(4):
+    for _ in range(6):
         current = _reload(db, item.id)
         if current.enrich_status in ("done", "failed"):
             terminal = current.enrich_status

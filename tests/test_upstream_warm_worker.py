@@ -68,13 +68,27 @@ def _clean_state(monkeypatch):
     monkeypatch.setattr(uw, "_load_ratio", lambda: 0.1)
     uw._warmed_at.clear()
     uw._last_round.clear()
-    _key = getattr(up, "cms_verified_play_key", None)
-    if _key is not None:
-        for mid in range(92001, 92060):
-            CacheManager.delete(_key(mid))
+    _clear_verified_play_cache()
     yield
     uw._warmed_at.clear()
     uw._last_round.clear()
+    _clear_verified_play_cache()
+
+
+def _clear_verified_play_cache():
+    """清掉进程级已验活地址缓存（CacheManager 内存回退，全 worker 共享）。
+
+    #62 第四轮：夹具原来只清了 92001–92059 的假映射 id（本文件 _one_target
+    用）；但别的测试文件用真实映射解析成功后，会在同一进程里留下
+    ``cmsvp:<小 id>``（内存库里映射 id 从 1 开始）；本文件真实解析的
+    test_warm_then_play_skips_probe 建的映射恰好也是 id 1，_warm_one
+    读到残留地址即判“已新鲜”整轮 fresh、warmed=0。每次扫掉全部 cmsvp:
+    前缀——键格式取自 up.cms_verified_play_key，不硬编码。
+    """
+    prefix = up.cms_verified_play_key(0)[:-1]  # "cmsvp:"
+    for _key in list(CacheManager._memory_cache):
+        if _key.startswith(prefix):
+            CacheManager.delete(_key)
 
 
 def _item(db, name, item_type="movie", *, series=None, season=None,
