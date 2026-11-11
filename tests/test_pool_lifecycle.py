@@ -491,6 +491,33 @@ def test_admin_member_lifecycle_endpoints(admin_client, db):
     assert cleared.json()["violation_cleared_by"] is not None
 
 
+def test_admin_list_and_overview_hide_terminal_members(admin_client, db):
+    """终态成员（exited/ejected/rejected）不进管理列表、
+    不计入总览成员总数：DB 行保留供审计，只改展示口径。"""
+    _member(db, _user(db, "still-in").id, status="active")
+    _member(db, _user(db, "waiting").id, status="pending")
+    gone_ids = []
+    for name, status in (("gone-exit", "exited"),
+                         ("gone-eject", "ejected"),
+                         ("gone-reject", "rejected")):
+        gone_ids.append(_member(db, _user(db, name).id, status=status).id)
+
+    listed = admin_client.get("/api/admin/pool/members")
+    assert listed.status_code == 200, listed.text
+    rows = listed.json()["members"]
+    assert sorted(r["status"] for r in rows) == ["active", "pending"]
+    assert not ({r["id"] for r in rows} & set(gone_ids))
+
+    overview = admin_client.get("/api/admin/pool/overview")
+    assert overview.status_code == 200, overview.text
+    body = overview.json()
+    assert body["members_total"] == 2
+    assert body["members_active"] == 1
+    assert body["members_pending"] == 1
+
+    assert db.query(em.PoolMember).count() == 5
+
+
 def test_admin_overview_and_copies(admin_client, db):
     user = _user(db, "overview")
     binding = _binding(db, user.id)
