@@ -208,7 +208,7 @@
       <!-- 底部全宽：媒体库速览带（桌面专属） -->
       <LibraryBand v-if="isWide" />
     </div>
-    <PlayerSchemeSheet v-model:open="parcelPickerOpen" :title="parcelPickerTitle" />
+    <PlayerSchemeSheet v-model:open="parcelPickerOpen" :title="parcelPickerTitle" :item-id="parcelPickerItemId" />
     </template>
   </div>
 </template>
@@ -593,8 +593,10 @@ watch(parcelList, () => {
 const unsealingIds = ref(new Set<string>())
 const parcelPickerOpen = ref(false)
 const parcelPickerTitle = ref('')
+const parcelPickerItemId = ref<string | number | null>(null)
 function openParcelPicker(p: ParcelItem) {
   parcelPickerTitle.value = p.name || '神秘包裹'
+  parcelPickerItemId.value = p.id
   parcelPickerOpen.value = true
 }
 /* 绑盘回跳落点：绑好被带回本页时，按片名重开播放器选择（参数随即清掉） */
