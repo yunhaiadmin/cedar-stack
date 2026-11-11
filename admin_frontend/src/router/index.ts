@@ -64,6 +64,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'member-levels', name: 'MemberLevels', component: () => import('@/views/MemberLevels.vue'), meta: { title: '会员等级' } },
       // 代理分销（2026-11-06 完整版）：等级 / 指定 / 余额 / 统计一页三标签
       { path: 'agents', name: 'Agents', component: () => import('@/views/Agents.vue'), meta: { title: '代理分销' } },
+      // 盲盒（双服通用，PR-2）：总开关 + 按服档位/奖池 + 估值表 + 统计 + 补发
+      { path: 'blindbox', name: 'Blindbox', component: () => import('@/views/BlindboxAdmin.vue'), meta: { title: '盲盒' } },
       { path: 'emby', name: 'EmbyAdmin', component: () => import('@/views/EmbyAdmin.vue'), meta: { title: '媒体库' } },
       { path: 'media-library', name: 'MediaLibraryAdmin', component: () => import('@/views/MediaLibraryAdmin.vue'), meta: { title: '图片与顺序' } },
       // 合集管理：不占导航位置（见 Layout.vue OFF_NAV_GROUP，归属“媒体”分组），入口在媒体库页
