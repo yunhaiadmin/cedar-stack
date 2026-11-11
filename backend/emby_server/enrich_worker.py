@@ -1718,8 +1718,85 @@ def _apply_tmdb_plan_result(result, item, plan, out, kind):
         result["tmdb_details"] = out["details"]
 
 
+# ---- 文件夹名并行候选（2026-11-11 刮削查因修复 1/4） ----
+# 入库解析会把发布组文件名 / 季文件夹当成条目名（生产样本：存名
+# 「Heroes.Shed.No.Tears.1986.BluRay…」实为《英雄无泪》、存名
+# 「Season 01」实为《黑色孤儿》）——存名永远搜不中，但 file_path 的
+# 标题文件夹名是对的。此前文件夹名从不参与搜索，这里把它推导成
+# 并行候选：TMDB / 豆瓣在存名未命中时用它再搜一次，仍走各自的
+# 置信闸与绑定复核门（命中来源在 result 里打标记，复核门按文件夹
+# 名/年对账，见 _enrich_fetch_tmdb_post）。
+
+_SEASON_FOLDER_RE = re.compile(
+    r"^(?:season|s)[\s._-]*\d{1,2}$|^第[0-9一二三四五六七八九十]{1,3}季$"
+    r"|^\d{1,2}$", re.IGNORECASE)
+_CJK_RE = re.compile(r"[一-鿿぀-ヿ]")
+
+
+def _folder_candidate_from_path(file_path, stored_name):
+    """从 file_path 的父目录链推导标题候选，返回 (标题, 年份|None)。
+
+    从文件父目录向上最多走 3 层：跳过季文件夹（Season 01 / 第x季 /
+    S01 等），第一个「非季文件夹且（带年份后缀 或 清洗后含中日文）」
+    的目录胜出——发布组目录（纯 ASCII、无年份）不算候选，绝不拿
+    垃圾串去搜。标题走 tmdb.strip_year_suffix 剥年份后缀（横切一套），
+    年份走 year_from_name_suffix。清洗后与存名相同（归一后相等）→
+    不是并行候选，返回 None；推导不出也返回 None。
+    """
+    if not file_path:
+        return None
+    from backend.emby_server.tmdb import (
+        _norm_text, strip_year_suffix, year_from_name_suffix)
+    parts = [p for p in str(file_path).replace("\\", "/").split("/") if p]
+    if len(parts) < 2:
+        return None
+    stored_norm = _norm_text(strip_year_suffix(stored_name or ""))
+    for folder in reversed(parts[:-1][-3:]):
+        if _SEASON_FOLDER_RE.match(folder.strip()):
+            continue
+        year = year_from_name_suffix(folder)
+        title = strip_year_suffix(folder).strip()
+        if not title or len(title) < 2:
+            continue
+        if year is None and not _CJK_RE.search(title):
+            continue
+        if _norm_text(title) == stored_norm:
+            return None
+        return title, year
+    return None
+
+
+def _folder_title_candidate(db, item):
+    """条目的文件夹名并行候选（见上）；无候选返回 None。
+
+    只给无 tmdb_id 的 series/movie 算（已有身份的不需要，episode 的
+    标题在父级 series 上）。series 行自身 file_path 恒空（文件在子集
+    上），db 可用时取任一可见子集 episode 的 file_path 推导——一条
+    索引查询，只在 IO 前的短事务里调（与 _inherit_parent_info 同段）。
+    """
+    if getattr(item, "item_type", "") not in ("series", "movie"):
+        return None
+    if getattr(item, "tmdb_id", None):
+        return None
+    path = getattr(item, "file_path", None)
+    if not path and db is not None and getattr(item, "id", None):
+        try:
+            row = (db.query(em.MediaItem.file_path)
+                   .filter(em.MediaItem.series_id == item.id,
+                           em.MediaItem.item_type == "episode",
+                           em.MediaItem.file_path.isnot(None))
+                   .first())
+            path = row[0] if row else None
+        except Exception:  # noqa: BLE001 — 推导失败 = 无候选，不挡主链路
+            path = None
+    if not path:
+        return None
+    return _folder_candidate_from_path(path, getattr(item, "name", ""))
+
+
 def _enrich_fetch_pre(item: Any, holder: Optional[dict] = None,
-                      inherit_parent: Optional[dict] = None):
+                      inherit_parent: Optional[dict] = None,
+                      folder_candidate=None):
     """IO 阶段前半：side 图片/字幕 → NFO（v2.56.0 起 TMDB 为主，豆瓣只在 TMDB 未命中时兜底）。
 
     返回 (result, tmdb_ctx)：tmdb_ctx 为 None 表示已终态（pure_inherit 或失败），
@@ -1878,6 +1955,9 @@ def _enrich_fetch_pre(item: Any, holder: Optional[dict] = None,
         "kind": kind,
         "needs_repair": needs_repair,
         "tmdb_plan": tmdb_plan,
+        # 文件夹名并行候选（标题, 年份）：存名未命中时 post 阶段用它
+        # 再搜一次（TMDB / 豆瓣同口径）；None = 无候选，行为同旧版。
+        "folder_candidate": folder_candidate,
     }
     return result, tmdb_ctx
 
@@ -1946,7 +2026,9 @@ def _douban_backfill_candidate(item: Any, kind: str) -> bool:
     return bool(on)
 
 
-def _douban_fallback_on_tmdb_miss(item: Any, kind: str, result: dict) -> object:
+def _douban_fallback_on_tmdb_miss(item: Any, kind: str, result: dict,
+                                  name_override: str = None,
+                                  year_override=None) -> object:
     """TMDB 未命中时的豆瓣 rich 兜底（v2.56.0 起：TMDB 为主、豆瓣兜底）。
 
     只对中文标题的剧/电影触发：TMDB 对中文剧集/综艺收录偏少，豆瓣能补上；
@@ -1959,6 +2041,10 @@ def _douban_fallback_on_tmdb_miss(item: Any, kind: str, result: dict) -> object:
     豆瓣反封禁机制完整保留：被封禁时返回 "banned"，调用方整条留待冷却后
     重试（不烧重试次数、不终态化）。
 
+    name_override / year_override（2026-11-11 文件夹名并行候选）：存名
+    搜不中时用 file_path 的标题文件夹名再兜底一次，与 TMDB 侧同口径；
+    缺省 None 时行为与旧版逐字一致（搜索名 = 条目存名）。
+
     返回：True=命中 / False=没命中 / "banned"=被封禁。
     """
     from backend.emby_server import douban as _dbn
@@ -1969,9 +2055,11 @@ def _douban_fallback_on_tmdb_miss(item: Any, kind: str, result: dict) -> object:
         return False
     if getattr(item, "metadata_locked", False):
         return False
-    name = (item.name or "").strip()
+    name = (name_override or item.name or "").strip()
     if not name:
         return False
+    search_year = (year_override if year_override is not None
+                   else item.production_year)
     try:
         if not _dbn.has_cjk(name):
             return False
@@ -1983,7 +2071,7 @@ def _douban_fallback_on_tmdb_miss(item: Any, kind: str, result: dict) -> object:
         if not _dbn_on:
             return False
         _dbn.client._interval = _dbn_iv
-        _dh = _dbn.client.search(name, item.production_year, kind)
+        _dh = _dbn.client.search(name, search_year, kind)
         if not (_dh and _dh.get("id")):
             return False
         result["douban_fallback_hit"] = _dh
@@ -2077,6 +2165,35 @@ def _enrich_fetch_tmdb_post(result: dict, item: Any, tmdb_ctx: dict,
                             getattr(item, "tmdb_id", None), True)
                         result["tmdb_hit"] = hit
                         result["tmdb_details"] = details
+        # 文件夹名并行候选重试（2026-11-11 刮削查因修复 1/4）：存名这一轮
+        # 没搜中（无 hit、无 tmdb_id——含批量路径）且 pre 阶段推导出文件
+        # 夹候选时，用文件夹标题再搜一次（年份优先用文件夹年份：存年可
+        # 能是解析错的，如《英雄无泪》存 1986、文件夹/TMDB 均 1984）。
+        # 命中照常往下走从严校验与绑定复核门，门口按文件夹名/年对账
+        # （见下方两处开口），不绕任何一道闸。瞬态异常与单条路径同
+        # 口径穿出到外层 except（整条重试），不吞成「搜过没有」。
+        _folder_cand = tmdb_ctx.get("folder_candidate")
+        if (_folder_cand and kind in ("series", "movie")
+                and tmdb_client.configured
+                and not result.get("douban_banned")
+                and not result.get("tmdb_hit")
+                and not result.get("tmdb_id")
+                and not getattr(item, "tmdb_id", None)):
+            _f_title, _f_year = _folder_cand
+            _f_hit, _f_details = _sc._tmdb_work(
+                True, _f_title,
+                _f_year if _f_year is not None else item.production_year,
+                kind, None, True)
+            if _f_hit:
+                result["tmdb_hit"] = _f_hit
+                result["tmdb_details"] = _f_details
+                result["tmdb_hit_folder_title"] = _f_title
+                result["tmdb_hit_folder_year"] = _f_year
+                progress.note_stage("enrich_folder_candidate_hit")
+                logger.info(
+                    "文件夹名候选命中 id=%s 存名=%r 文件夹=%r 年=%s tmdb_id=%s",
+                    getattr(item, "id", "?"), getattr(item, "name", ""),
+                    _f_title, _f_year, _f_hit.get("id"))
         # Step 0.5（链路规划）：降级期间 TMDB 命中同样从严——标题+年份都对上
         # 才算命中，不满足 → 丢弃命中，继续走下面的多源兜底（宁可 none 不乱认）。
         # 只筛 search 出来的 hit：单条/批量路径里 tmdb_hit 只在 search 分支
@@ -2094,10 +2211,19 @@ def _enrich_fetch_tmdb_post(result: dict, item: Any, tmdb_ctx: dict,
             from backend.emby_server.identify_two_stage import (
                 known_item_year as _known_item_year)
             _item_year_known = _known_item_year(item)
-            if not any(_ban_downgrade_strict_hit_ok(
-                    getattr(item, "name", ""),
-                    _item_year_known,
-                    _t, _t_year) for _t in _t_titles if _t):
+            _strict_ok = any(_ban_downgrade_strict_hit_ok(
+                getattr(item, "name", ""),
+                _item_year_known,
+                _t, _t_year) for _t in _t_titles if _t)
+            if not _strict_ok and result.get("tmdb_hit_folder_title"):
+                # 文件夹名并行候选命中：本就是按文件夹名搜的，再按
+                # 文件夹标题/年从严验一次（存名是垃圾串时只验存名
+                # 必误杀真命中；两边都不过才丢弃，严格度不变）。
+                _strict_ok = any(_ban_downgrade_strict_hit_ok(
+                    result["tmdb_hit_folder_title"],
+                    result.get("tmdb_hit_folder_year") or _item_year_known,
+                    _t, _t_year) for _t in _t_titles if _t)
+            if not _strict_ok:
                 logger.info(
                     "豆瓣封禁降级期 TMDB 命中从严丢弃：条目=%r 年=%s 命中标题=%r 年=%s",
                     getattr(item, "name", ""),
@@ -2105,6 +2231,8 @@ def _enrich_fetch_tmdb_post(result: dict, item: Any, tmdb_ctx: dict,
                     _th.get("title") or _th.get("name"), _t_year or None)
                 result.pop("tmdb_hit", None)
                 result.pop("tmdb_details", None)
+                result.pop("tmdb_hit_folder_title", None)
+                result.pop("tmdb_hit_folder_year", None)
                 result["tmdb_strict_rejected"] = True
         # 绑定复核门（2026-10-31「标 done 但不干净」治本）：本轮新绑定的
         # tmdb_id / 搜索命中在落库前必须过客观复核（tmdb.binding_reject_reason，
@@ -2164,8 +2292,22 @@ def _enrich_fetch_tmdb_post(result: dict, item: Any, tmdb_ctx: dict,
                 result["ok"] = False
                 result["error"] = "tmdb transient, retry later"
             elif _gate_evidence is not None:
-                _reason = _reject_reason_for_item(
-                    _gate_evidence, kind, item)
+                if result.get("tmdb_hit_folder_title"):
+                    # 文件夹名并行候选命中：年份按实际搜索用的文件夹
+                    # 年份判（存年可能是解析错的：《英雄无泪》存 1986、
+                    # 真年份 1984，只拿存年判必误杀）；文件夹无年份时
+                    # 回落条目已知年份口径，不降门槛。
+                    from backend.emby_server.tmdb import (
+                        binding_reject_reason as _brr)
+                    _f_year_gate = result.get("tmdb_hit_folder_year")
+                    if _f_year_gate is not None:
+                        _reason = _brr(_gate_evidence, kind, _f_year_gate)
+                    else:
+                        _reason = _reject_reason_for_item(
+                            _gate_evidence, kind, item)
+                else:
+                    _reason = _reject_reason_for_item(
+                        _gate_evidence, kind, item)
                 if _reason:
                     logger.warning(
                         "绑定复核门拒绝 id=%s name=%r tmdb_id=%s reason=%s "
@@ -2179,6 +2321,8 @@ def _enrich_fetch_tmdb_post(result: dict, item: Any, tmdb_ctx: dict,
                     result.pop("tmdb_id", None)
                     result.pop("tmdb_hit", None)
                     result.pop("tmdb_details", None)
+                    result.pop("tmdb_hit_folder_title", None)
+                    result.pop("tmdb_hit_folder_year", None)
                     result["tmdb_gate_rejected"] = _reason
                 else:
                     # search 来源标题硬门（2026-11-04 两段式错绑定案）：
@@ -2196,8 +2340,13 @@ def _enrich_fetch_tmdb_post(result: dict, item: Any, tmdb_ctx: dict,
                         from backend.emby_server.identify_two_stage import (
                             search_binding_title_reject_reason as
                             _search_title_reason)
+                        # 文件夹名命中把文件夹标题一并算作查询名对账
+                        # （存名是垃圾串时只对存名必零交集误杀）。
+                        _extra_names = ()
+                        if result.get("tmdb_hit_folder_title"):
+                            _extra_names = (result["tmdb_hit_folder_title"],)
                         _title_reason = _search_title_reason(
-                            _gate_evidence, item)
+                            _gate_evidence, item, extra_names=_extra_names)
                     if _title_reason:
                         logger.warning(
                             "绑定复核门拒绝 id=%s name=%r tmdb_id=%s "
@@ -2211,6 +2360,8 @@ def _enrich_fetch_tmdb_post(result: dict, item: Any, tmdb_ctx: dict,
                         result.pop("tmdb_id", None)
                         result.pop("tmdb_hit", None)
                         result.pop("tmdb_details", None)
+                        result.pop("tmdb_hit_folder_title", None)
+                        result.pop("tmdb_hit_folder_year", None)
                         result["tmdb_gate_rejected"] = _title_reason
                     else:
                         # 名字对账（参考日志）：归一后无任何交集时留痕
@@ -2275,6 +2426,16 @@ def _enrich_fetch_tmdb_post(result: dict, item: Any, tmdb_ctx: dict,
             else:
                 # TMDB 为主、豆瓣兜底：先试豆瓣 rich 兜底（中文标题）
                 _fb = _douban_fallback_on_tmdb_miss(item, kind, result)
+                if not _fb and tmdb_ctx.get("folder_candidate"):
+                    # 文件夹名并行候选（与 TMDB 侧同口径）：存名没搜中
+                    # 时用标题文件夹名再兜底一次；"banned" 是真值字符串
+                    # 不会进这里，封禁处理不变。
+                    _fc = tmdb_ctx["folder_candidate"]
+                    _fb = _douban_fallback_on_tmdb_miss(
+                        item, kind, result,
+                        name_override=_fc[0], year_override=_fc[1])
+                    if _fb is True:
+                        progress.note_stage("enrich_folder_candidate_hit")
             if _fb == "banned":
                 # 封禁 ≠ 没搜中：整条留待冷却后重试（不烧重试次数、不终态化）
                 result["ok"] = False
@@ -2392,12 +2553,14 @@ def _enrich_fetch_tmdb_post(result: dict, item: Any, tmdb_ctx: dict,
 
 
 def _enrich_fetch(item: Any, holder: Optional[dict] = None,
-                  inherit_parent: Optional[dict] = None) -> dict:
+                  inherit_parent: Optional[dict] = None,
+                  folder_candidate=None) -> dict:
     """IO 阶段（无 DB 写事务）：side 图片/字幕 → NFO → TMDB。单条路径（批量失败回退用）。
 
     行为与重构前逐行等价：pre → 单条 TMDB → post。
     """
-    result, tmdb_ctx = _enrich_fetch_pre(item, holder, inherit_parent)
+    result, tmdb_ctx = _enrich_fetch_pre(item, holder, inherit_parent,
+                                         folder_candidate=folder_candidate)
     if tmdb_ctx is None:
         return result
     return _enrich_fetch_tmdb_post(result, item, tmdb_ctx, batch_out=None)
@@ -4172,6 +4335,146 @@ def retry_unmatched(db) -> int:
     return n
 
 
+def _missing_metadata_top_query(db):
+    """存量重认口径（2026-11-11 刮削查因修复 4/4，计数与执行共用）。
+
+    「刮完了但没刮干净」的顶层存量：enrich_status='done' + 可见
+    （未软删、未合并）+ 未锁定 + item_type ∈ {series, movie} +
+    缺身份/海报/简介任一——身份 = tmdb_id 为空、海报 = poster_path
+    与 primary_image_url 双空、简介 = overview 为空。比 retry_unmatched
+    （只认 done+none+无 tmdb+有指纹）宽：只缺简介（TMDB 中文简介本来
+    就空）、有身份缺图、来源非 none 的行都在内——生产可见口径
+    2026-11-11 实测 1,220 部。软删/合并过滤全部显式写（只读计数走
+    func.count 时 ORM 钩子包不住，见 _none_reschedulable_query 注）。
+    """
+    from sqlalchemy import and_ as _and
+    from sqlalchemy import or_ as _or
+    no_poster = _and(
+        _or(em.MediaItem.poster_path.is_(None),
+            em.MediaItem.poster_path == ""),
+        _or(em.MediaItem.primary_image_url.is_(None),
+            em.MediaItem.primary_image_url == ""))
+    return (db.query(em.MediaItem)
+            .filter(em.MediaItem.enrich_status == "done",
+                    em.MediaItem.deleted_at.is_(None),
+                    em.MediaItem.merged_into_id.is_(None),
+                    em.MediaItem.metadata_locked.isnot(True),
+                    em.MediaItem.item_type.in_(["series", "movie"]),
+                    _or(em.MediaItem.tmdb_id.is_(None),
+                        em.MediaItem.tmdb_id == "",
+                        no_poster,
+                        _missing_overview_clause())))
+
+
+def _missing_overview_clause():
+    from sqlalchemy import or_ as _or
+    return _or(em.MediaItem.overview.is_(None),
+               em.MediaItem.overview == "")
+
+
+def _missing_metadata_layers(db) -> dict:
+    """按缺失层拆分计数（一行可同时缺多层，各层独立计、不可相加）。"""
+    from sqlalchemy import and_ as _and
+    from sqlalchemy import func as _func
+    from sqlalchemy import or_ as _or
+    base = _missing_metadata_top_query(db)
+    no_tmdb = _or(em.MediaItem.tmdb_id.is_(None),
+                  em.MediaItem.tmdb_id == "")
+    no_poster = _and(
+        _or(em.MediaItem.poster_path.is_(None),
+            em.MediaItem.poster_path == ""),
+        _or(em.MediaItem.primary_image_url.is_(None),
+            em.MediaItem.primary_image_url == ""))
+    out = {}
+    for key, clause in (("no_tmdb", no_tmdb),
+                        ("no_poster", no_poster),
+                        ("no_overview", _missing_overview_clause())):
+        out[key] = (base.filter(clause)
+                    .with_entities(_func.count(em.MediaItem.id))
+                    .scalar() or 0)
+    return out
+
+
+def count_missing_metadata_top(db) -> dict:
+    """存量重认干跑计数（只读）：{"matched": 总数, "by_layer": {...}}。"""
+    from sqlalchemy import func as _func
+    matched = (_missing_metadata_top_query(db)
+               .with_entities(_func.count(em.MediaItem.id))
+               .scalar() or 0)
+    return {"matched": int(matched),
+            "by_layer": _missing_metadata_layers(db)}
+
+
+def requeue_missing_metadata_top(db, *, limit: int = 500,
+                                 dry_run: bool = False) -> dict:
+    """存量重认通道：把口径内的 done 顶层条目分批翻回 pending 重认。
+
+    与 retry_unmatched 的分工：那个只捞「搜过无命中」的终态 none 行；
+    本通道按「缺身份/海报/简介任一」的可见口径捞（2026-11-11 查因
+    定案的 1,220 部存量），给修复上线后的一次性存量重认用。
+
+    - limit：单次最多翻多少条（id 升序分批，重复调用直到 matched=0
+      即捞完）；<=0 按 500 兜底，硬顶 5000，防一次把队列灌爆。
+    - dry_run=True：只计数、零写入（先干跑对账再真跑）。
+    - 真跑时与 retry_unmatched 同口径落账：enrich_priority=50、
+      attempts 清零、next_retry 清空；无 tmdb 的行同步清 TMDB 阴性
+      搜索缓存（否则补搜直接命中旧缓存、一个请求都不发）；翻转走
+      enrich_flip_monitor 留痕（trigger 与 retry_unmatched 同，属
+      同一类管理端手动重认，reason 区分来源）。
+    返回 {"matched": 口径内总数（真跑时为本批翻前）, "requeued": 本批
+    实际翻数, "by_layer": {...}, "dry_run": bool}。
+    """
+    counts = count_missing_metadata_top(db)
+    matched = counts["matched"]
+    if dry_run or matched == 0:
+        return {"matched": matched, "requeued": 0,
+                "by_layer": counts["by_layer"], "dry_run": bool(dry_run)}
+    limit = int(limit or 500)
+    limit = max(1, min(limit, 5000))
+    rows = (_missing_metadata_top_query(db)
+            .order_by(em.MediaItem.id.asc())
+            .limit(limit)
+            .all())
+    ids = [r.id for r in rows]
+    affected = {(r.name, r.production_year, r.item_type) for r in rows
+                if not r.tmdb_id}
+    n = (db.query(em.MediaItem)
+         .filter(em.MediaItem.id.in_(ids))
+         .update({"enrich_status": "pending",
+                  "enrich_attempts": 0,
+                  "enrich_next_retry_at": None,
+                  "enrich_priority": ENRICH_PRIORITY_RETRY_UNMATCHED},
+                 synchronize_session=False))
+    db.commit()
+    logger.info("存量重认：%d 条缺元数据顶层条目重新入队（priority=50，"
+                "口径内共 %d 条）", n, matched)
+    if affected:
+        try:
+            from backend.emby_server import tmdb_cache
+            from backend.emby_server.tmdb import preferred_language
+            lang = preferred_language()
+            purged = 0
+            for name, year, item_type in affected:
+                purged += tmdb_cache.invalidate_search(
+                    name, year, item_type, lang)
+            if purged:
+                logger.info("存量重认：已清掉 %d 份旧搜索缓存", purged)
+        except Exception as exc:  # noqa: BLE001 — 缓存清理失败不影响入队
+            logger.debug("存量重认清理 TMDB 搜索缓存失败: %s", exc)
+    if n:
+        try:
+            from backend.emby_server import enrich_flip_monitor as _fm
+            _fm.alert_flip(
+                db, flip_count=n, trigger="retry_unmatched",
+                flips=[{"item_id": None, "item_type": "series/movie",
+                        "reason": "requeue_missing_metadata"}],
+            )
+        except Exception as exc:  # noqa: BLE001 — 监控不能影响主流程
+            logger.warning("存量重认翻转告警失败: %s", exc)
+    return {"matched": matched, "requeued": int(n),
+            "by_layer": counts["by_layer"], "dry_run": False}
+
+
 def _none_reschedulable_query(db, cutoff, max_rounds, longtail_cutoff=None):
     """Step 4：超期 none 条目的查询（回捞动作与只读计数共用同一口径）。
 
@@ -4181,6 +4484,16 @@ def _none_reschedulable_query(db, cutoff, max_rounds, longtail_cutoff=None):
     （enrich_next_retry_at 为 NULL（旧存量/从未记录）或 <= cutoff
     （上次回捞/终态化已超过周期））+
     metadata_source 为 'none' 或 NULL。
+
+    指纹口径（2026-11-11 刮削查因修复 2/4）：series 是目录聚合的容器
+    条目，文件指纹在子集 episode 行上、自身恒空——旧口径「自身指纹
+    非空」把全裸剧的绝大多数（243 部里 235 部）永久挡在回捞外。改为
+    自身指纹非空，或（series 且任一可见子集 episode 有指纹）。EXISTS
+    子查询走 series_id 索引（idx_item_series），子集别名上显式带
+    deleted_at / merged_into_id 过滤——ORM 软删钩子只给主实体拼顶层
+    where，管不到别名子查询；主实体一侧同样显式写 deleted_at IS
+    NULL，只读计数走 with_entities(func.count) 时钩子会被包成子查询
+    挡住（soft_delete.py 明说），不许只靠钩子兜底。
 
     2026-10-28 漏网补口（《尸油降》/《末世行者》案）：首轮刮削后 done +
     tmdb_id 为空 + metadata_source 为 NULL（不是 'none'）+ 无海报 +
@@ -4200,6 +4513,15 @@ def _none_reschedulable_query(db, cutoff, max_rounds, longtail_cutoff=None):
     from sqlalchemy import false as _false
     from sqlalchemy import func as _func
     from sqlalchemy import or_ as _or
+    from sqlalchemy.orm import aliased as _aliased
+    _Ep = _aliased(em.MediaItem)
+    _child_fp = (db.query(_Ep.id)
+                 .filter(_Ep.series_id == em.MediaItem.id,
+                         _Ep.item_type == "episode",
+                         _Ep.deleted_at.is_(None),
+                         _Ep.merged_into_id.is_(None),
+                         _Ep.file_fingerprint.isnot(None))
+                 .exists())
     # 长尾支须先在 Python 侧分流再拼进查询：``<= None`` 在 SQLAlchemy
     # 构造期即抛 ArgumentError，下面的 ``longtail_cutoff is not None``
     # 布尔守卫救不了先行求值的比较表达式。None 时整支恒假＝旧口径
@@ -4217,6 +4539,8 @@ def _none_reschedulable_query(db, cutoff, max_rounds, longtail_cutoff=None):
         _longtail_branch = _false()
     return (db.query(em.MediaItem)
             .filter(em.MediaItem.enrich_status == "done",
+                    # 软删行显式排除（见 docstring：计数路径靠不了钩子）
+                    em.MediaItem.deleted_at.is_(None),
                     _or(em.MediaItem.metadata_source == "none",
                         em.MediaItem.metadata_source.is_(None)),
                     _or(em.MediaItem.poster_path.is_(None),
@@ -4225,7 +4549,9 @@ def _none_reschedulable_query(db, cutoff, max_rounds, longtail_cutoff=None):
                         em.MediaItem.primary_image_url == ""),
                     em.MediaItem.tmdb_id.is_(None),
                     em.MediaItem.item_type.in_(["series", "movie"]),
-                    em.MediaItem.file_fingerprint.isnot(None),
+                    _or(em.MediaItem.file_fingerprint.isnot(None),
+                        _and(em.MediaItem.item_type == "series",
+                             _child_fp)),
                     # 假数字修复（2026-10-19 系统清点 F5/T2）：合并副本按设计
                     # 永不参与补全，回捞动作与只读计数共用同一口径，一起过滤掉
                     em.MediaItem.merged_into_id.is_(None),
@@ -5506,13 +5832,20 @@ def _process_item(db, item: Any, holder: Optional[dict] = None,
 
     # 父级查询是 IO 前唯一允许的 DB 读取；查询后明确 rollback，切断事务。
     inherit_parent = _inherit_parent_info(db, snapshot)
+    # 文件夹名并行候选与父级查询同段推导（仍在短事务内）；推导失败
+    # 按无候选处理，绝不挡主链路。
+    try:
+        folder_candidate = _folder_title_candidate(db, snapshot)
+    except Exception:  # noqa: BLE001
+        folder_candidate = None
     if db.in_transaction():
         db.rollback()
 
     # ---- IO 阶段：没有 ORM 对象，也没有数据库事务 ----
     try:
         fetched = _enrich_fetch(snapshot, holder=holder,
-                                inherit_parent=inherit_parent)
+                                inherit_parent=inherit_parent,
+                                folder_candidate=folder_candidate)
     except Exception as exc:  # noqa: BLE001
         logger.warning("补全 IO 失败 id=%s: %s", item_id, exc)
         db.rollback()
@@ -5634,11 +5967,16 @@ def _process_batch(db, batch: list) -> None:
             current_group = gkey
         snapshot = item if isinstance(item, _EnrichItemSnapshot) else _snapshot_item(item)
         inherit_parent = _inherit_parent_info(db, snapshot)
+        try:
+            folder_candidate = _folder_title_candidate(db, snapshot)
+        except Exception:  # noqa: BLE001 — 推导失败按无候选，不挡主链路
+            folder_candidate = None
         if db.in_transaction():
             db.rollback()
         try:
             result, tmdb_ctx = _enrich_fetch_pre(
-                snapshot, holder=holder, inherit_parent=inherit_parent)
+                snapshot, holder=holder, inherit_parent=inherit_parent,
+                folder_candidate=folder_candidate)
         except Exception as exc:  # noqa: BLE001
             logger.warning("批量 pre 失败 id=%s: %s", snapshot.id, exc)
             db.rollback()
