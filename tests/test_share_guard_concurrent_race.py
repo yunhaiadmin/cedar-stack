@@ -31,6 +31,7 @@ from sqlalchemy.orm import sessionmaker
 
 from backend import models
 from backend import share_guard
+from backend import entitlements
 from backend.emby_server import models as em
 from backend.emby_server import compat_routes
 from backend.integrations import store
@@ -40,6 +41,13 @@ from backend.integrations import store
 def factory(tmp_path):
     store.invalidate()
     share_guard._notified_at.clear()
+    # 权益缓存也是进程级的（entitlements._USER_PLAN_CACHE /
+    # _PLAN_SNAPSHOT_CACHE，按 user_id/plan_id 建键、不分库）：进出都清一次，
+    # 否则全量套件里更早的测试留下的 user_id=1 套餐条目会在 60 秒 TTL 内
+    # 串进本测试——T1 读到陈旧限、T2 读到过期后重查的限，两路判定分叉，
+    # 事件数就从 2 抖成 1（#36/#37 同一断言两次红的根因）。
+    entitlements._USER_PLAN_CACHE.clear()
+    entitlements._PLAN_SNAPSHOT_CACHE.clear()
 
     db_path = tmp_path / "race.db"
     engine = create_engine(
@@ -55,6 +63,8 @@ def factory(tmp_path):
         engine.dispose()
         store.invalidate()
         share_guard._notified_at.clear()
+        entitlements._USER_PLAN_CACHE.clear()
+        entitlements._PLAN_SNAPSHOT_CACHE.clear()
 
 
 def _seed(mk):
