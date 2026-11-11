@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from backend import governance_report as gov
-from backend.api.admin_core import get_current_admin
+from backend.api.admin_core import _audit, get_current_admin
 from backend.api.user import get_current_user
 from backend.database import get_db
 
@@ -121,9 +121,14 @@ def admin_decide_report(
     """管理员终审：受理 accepted / 驳回 rejected。受理不自动处理求片本身；
     驳回计入举报人终审驳回计数，达标自动停权（随响应返回 auto_suspension）。"""
     try:
-        return gov.admin_decide(db, admin, report_id, body.decision, body.note)
+        result = gov.admin_decide(db, admin, report_id, body.decision,
+                                  body.note)
     except gov.GovernanceError as err:
         raise _http(err) from None
+    _audit(db, admin, "governance_report_decide", "governance_report",
+           report_id, {"decision": body.decision})
+    db.commit()
+    return result
 
 
 @admin_router.get("/suspensions")
@@ -144,9 +149,15 @@ def admin_create_suspension(
 ):
     """管理员手动停权：冻结治理特权（举报／复核），不扣经验、不降级。"""
     try:
-        return gov.admin_suspend(db, admin, body.user_id, body.days, body.note)
+        result = gov.admin_suspend(db, admin, body.user_id, body.days,
+                                   body.note)
     except gov.GovernanceError as err:
         raise _http(err) from None
+    _audit(db, admin, "governance_suspension_create", "user",
+           body.user_id, {"days": body.days,
+                          "suspension_id": result.get("id")})
+    db.commit()
+    return result
 
 
 @admin_router.post("/suspensions/{suspension_id}/revoke")
@@ -155,6 +166,11 @@ def admin_revoke_suspension(
 ):
     """管理员撤销停权（仅生效中的可撤销）。"""
     try:
-        return gov.admin_unsuspend(db, admin, suspension_id)
+        result = gov.admin_unsuspend(db, admin, suspension_id)
     except gov.GovernanceError as err:
         raise _http(err) from None
+    _audit(db, admin, "governance_suspension_revoke",
+           "governance_suspension", suspension_id,
+           {"user_id": result.get("user_id")})
+    db.commit()
+    return result

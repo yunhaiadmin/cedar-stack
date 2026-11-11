@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from backend import models
 from backend.database import get_db
 from backend.api.user import get_current_user
-from backend.api.admin_core import get_current_admin
+from backend.api.admin_core import _audit, get_current_admin
 from backend.ratelimit import check_rate_limit
 
 logger = logging.getLogger("aetrix.panel")
@@ -118,6 +118,8 @@ def admin_pet_stages_put(
     from backend.servers import set_config
     stages = _validate_pet_stages(body.stages)
     set_config(db, PET_STAGES_KEY, json.dumps(stages, ensure_ascii=False), "馆灵阶段配置（管理后台）")
+    _audit(db, current_admin, "panel_pet_stages_update", "system_config",
+           None, {"key": PET_STAGES_KEY, "stages": len(stages)})
     db.commit()
     return {"stages": stages}
 
@@ -168,6 +170,9 @@ def admin_achievements_put(
     row.icon = (body.icon or "").strip() or "🏅"
     row.sort = body.sort
     row.enabled = body.enabled
+    _audit(db, current_admin, "panel_achievement_update",
+           "panel_achievement", None,
+           {"key": key, "enabled": body.enabled})
     db.commit()
     return {"achievement": _achievement_def_to_dict(row)}
 
