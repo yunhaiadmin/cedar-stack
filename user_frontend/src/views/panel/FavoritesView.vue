@@ -77,8 +77,9 @@ function errText(err: unknown): string {
 function posterSrc(m: PortalMediaItem): string {
   if (brokenPosters.value.has(m.id)) return ''
   const url = m.poster_url
-  // PA-036：后端给的 poster_url 不带凭据，渲染前补 api_key（图片端点已鉴权）
-  return typeof url === 'string' && url.trim() !== '' ? imageAuthUrl(url) : ''
+  // PA-036：后端给的 poster_url 不带凭据，渲染前补 api_key（图片端点已鉴权）；
+  // 同时按卡片展示尺寸补 maxWidth=320，别拉原图（poster_url 是裸地址）
+  return typeof url === 'string' && url.trim() !== '' ? imageAuthUrl(url, 320) : ''
 }
 
 function onPosterError(id: string) {

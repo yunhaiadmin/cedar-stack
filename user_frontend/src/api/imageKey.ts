@@ -66,3 +66,20 @@ export function withImageKey(url: string): string {
   const sep = url.includes('?') ? '&' : '?'
   return `${url}${sep}api_key=${encodeURIComponent(key)}`
 }
+
+/**
+ * 给一条图片地址补尺寸档位 maxWidth（服务端按标准 Emby 参数出缩略图）。
+ *
+ * 只认条目图路由（路径含 `/Items/{id}/Images/`）：门户接口下发的 poster_url
+ * 是裸地址、不带尺寸，列表/海报墙按原图直出，一张几百 KB；卡片实际只显示
+ * 几十到一百多 px，按展示尺寸取档后体积差一个量级。其它地址（外链、
+ * 合集拼贴图等自有路由）语义未知，一律原样返回；地址已带 maxWidth 时
+ * 尊重既有档位不覆盖。只补尺寸参数，不碰 api_key 等鉴权口径。
+ */
+export function withImageWidth(url: string, maxWidth: number): string {
+  if (!url || !(maxWidth > 0)) return url
+  if (!url.includes('/Items/') || !url.includes('/Images/')) return url
+  if (/[?&]maxWidth=/.test(url)) return url
+  const sep = url.includes('?') ? '&' : '?'
+  return `${url}${sep}maxWidth=${Math.round(maxWidth)}`
+}
