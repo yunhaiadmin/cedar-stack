@@ -142,7 +142,11 @@ def pool_overview(
                 em.PoolMember.suspended_reason == "breaker")
         .scalar())
     return {
-        "members_total": sum(status_counts.values()),
+        # 成员总数只计非终态：退出/清退/驳回的行保留在库里供
+        # 审计，展示口径不算它们（与成员列表同一口径）。
+        "members_total": sum(
+            count for status, count in status_counts.items()
+            if status not in pool_gate.POOL_MEMBER_TERMINAL_STATUSES),
         "members_candidate": int(status_counts.get("candidate", 0)),
         "members_pending": int(status_counts.get("pending", 0)),
         "members_active": int(status_counts.get("active", 0)),
@@ -162,7 +166,13 @@ def pool_members_list(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
+    """成员列表只展示非终态成员：终态（exited/rejected/ejected）
+    行保留在库里供审计与结算判定，管理列表不再展示。按
+    member_id 的写口（清除违规标志等）不受影响；贡献者重新
+    申请时行流转回 pending/active 后自然重新出现在列表里。"""
     rows = (db.query(em.PoolMember)
+            .filter(em.PoolMember.status.notin_(
+                pool_gate.POOL_MEMBER_TERMINAL_STATUSES))
             .order_by(em.PoolMember.id.asc()).all())
     return {"members": [_member_payload(db, m) for m in rows]}
 
