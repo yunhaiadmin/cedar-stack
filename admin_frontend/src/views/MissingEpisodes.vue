@@ -16,8 +16,11 @@ import { toAdminError } from '@/utils/errorMessage'
 import {
   fetchMissingEpisodes,
   fetchMissingEpisodesSummary,
+  fetchMpFillConfig,
+  saveMpFillConfig,
   type MissingEpisodeRow,
   type MissingEpisodesSummary,
+  type MpFillConfig,
 } from '@/api/missing-episodes'
 
 const PAGE_SIZE = 50
@@ -102,9 +105,47 @@ function nextPage() {
   void load()
 }
 
+/** 自动补集（MP 手动通道）：配置卡状态。token 只收新值、从不回填。 */
+const fillCfg = ref<MpFillConfig | null>(null)
+const fillToken = ref('')
+const fillSaving = ref(false)
+
+async function loadFillConfig() {
+  try {
+    fillCfg.value = await fetchMpFillConfig()
+  } catch {
+    fillCfg.value = null
+  }
+}
+
+async function saveFill() {
+  if (!fillCfg.value) return
+  fillSaving.value = true
+  try {
+    const payload: Parameters<typeof saveMpFillConfig>[0] = {
+      mp_download_base: fillCfg.value.mp_download_base,
+      mp_episode_fill_enabled: fillCfg.value.mp_episode_fill_enabled,
+      mp_episode_fill_daily_cap: fillCfg.value.mp_episode_fill_daily_cap,
+      mp_episode_fill_cooldown_hours:
+        fillCfg.value.mp_episode_fill_cooldown_hours,
+    }
+    if (fillToken.value.trim()) {
+      payload.mp_download_token = fillToken.value.trim()
+    }
+    fillCfg.value = await saveMpFillConfig(payload)
+    fillToken.value = ''
+    ElMessage.success('补集通道配置已保存')
+  } catch (err) {
+    ElMessage.error(toAdminError(err, '补集通道配置保存失败'))
+  } finally {
+    fillSaving.value = false
+  }
+}
+
 onMounted(() => {
   void loadSummary()
   void load()
+  void loadFillConfig()
 })
 </script>
 
@@ -130,6 +171,67 @@ onMounted(() => {
         <div class="dim">部剧没绑 TMDB 号，只能等绑上后再算</div>
       </SectionCard>
     </div>
+
+    <SectionCard title="自动补集（MoviePilot 手动通道）">
+      <p class="dim fill-note">
+        开启后，系统按这张缺集清单自动去 MoviePilot 搜种、发起下载（不走订阅，
+        不受云海库存影响）。下好的集入库后会自动从清单划掉。总开关默认关着。
+      </p>
+      <div v-if="fillCfg" class="fill-grid">
+        <label class="fill-field">
+          <span>自动补集</span>
+          <el-switch v-model="fillCfg.mp_episode_fill_enabled" />
+        </label>
+        <label class="fill-field fill-wide">
+          <span>MoviePilot 地址</span>
+          <el-input
+            v-model="fillCfg.mp_download_base"
+            placeholder="http://167.17.76.115:4500"
+          />
+        </label>
+        <label class="fill-field fill-wide">
+          <span>API Token（密钥）</span>
+          <el-input
+            v-model="fillToken"
+            type="password"
+            show-password
+            :placeholder="
+              fillCfg.mp_download_token_set
+                ? '已设置，留空不修改'
+                : '未设置，请填入'
+            "
+          />
+        </label>
+        <label class="fill-field">
+          <span>每日最多发起下载</span>
+          <el-input-number
+            v-model="fillCfg.mp_episode_fill_daily_cap"
+            :min="0"
+            :max="500"
+            controls-position="right"
+          />
+        </label>
+        <label class="fill-field">
+          <span>同剧同季冷却（小时）</span>
+          <el-input-number
+            v-model="fillCfg.mp_episode_fill_cooldown_hours"
+            :min="1"
+            :max="720"
+            controls-position="right"
+          />
+        </label>
+        <div class="fill-actions">
+          <el-button
+            type="primary"
+            :loading="fillSaving"
+            @click="saveFill"
+          >
+            保存补集设置
+          </el-button>
+        </div>
+      </div>
+      <div v-else class="dim">补集通道配置加载失败，刷新页面再试。</div>
+    </SectionCard>
 
     <SectionCard title="筛选">
       <div class="filter-grid">
@@ -286,5 +388,30 @@ onMounted(() => {
   align-items: center;
   gap: 12px;
   margin-top: 12px;
+}
+
+.fill-note {
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
+.fill-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+  align-items: end;
+}
+
+.fill-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--au-text-2);
+}
+
+.fill-actions {
+  display: flex;
+  align-items: end;
 }
 </style>

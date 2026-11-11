@@ -2220,6 +2220,40 @@ class MissingEpisodeRecord(Base):
                       onupdate=datetime.now)
 
 
+class MissingEpisodeFillAttempt(Base):
+    """缺集补集尝试账（补集通道专用，2026-11-11 B 方案）。
+
+    补集工人（emby_server.mp_episode_fill）每为某剧某季做一次
+    决定就落一行：started（已向 MP 发起下载，带 download_id 与
+    种子标题/站点）/ no_match（搜过但没有合格种子）/ error
+    （MP 调用失败或身份不符）。这张账只记事实、不改缺集台账的
+    open/resolved（销账归缺集核算工人的对账）；工人靠它算
+    「每日已发起数」与「同剧同季冷却」，避免对同一缺口反复
+    发起、反复打扰 MP。
+    """
+    __tablename__ = "emby_missing_episode_fill_attempts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    #: 剧（series）条目 id，索引供按剧查最近尝试/冷却判定。
+    series_item_id = Column(Integer, nullable=False, index=True)
+    #: 补集时核对用的 TMDB 数字 id（字符串，与台账同口径）。
+    tmdb_id = Column(String(20), nullable=False, default="")
+    season_number = Column(Integer, nullable=False, default=0)
+    #: 本次针对的缺失集号 JSON 数组（如 [1, 3]）。
+    missing_eps = Column(Text, nullable=False, default="[]")
+    #: 发起时选中的种子标题（no_match/error 可为空）。
+    torrent_title = Column(String(500), nullable=False, default="")
+    site_name = Column(String(100), nullable=False, default="")
+    #: MP 返回的下载任务 id（started 才有）。
+    download_id = Column(String(80), nullable=False, default="")
+    #: started / no_match / error。
+    status = Column(String(20), nullable=False, default="",
+                    index=True)
+    #: 结果说明（如失败原因，截断存储；绝不含 token 等密钥）。
+    detail = Column(String(300), nullable=False, default="")
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+
 class TransferContentManifest(Base):
     """内容块哈希清单（换代线「分块清单同步」地基，2026-11-01）。
 

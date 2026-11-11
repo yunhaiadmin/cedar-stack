@@ -58,6 +58,8 @@ SCHEMAS: dict[str, dict[str, tuple]] = {
     # 公共池重试子家族：copy_forbidden 换盘冷却/尝试上限
     # （2026-11-10 定案，本体 25 键已钉死，扩键另立家族）
     "pool_retry": config_schema.POOL_RETRY_CONFIG_SCHEMA,
+    # 缺集补集通道（2026-11-11 B 方案）：MP 地址/token/开关/上限/冷却
+    "mp_episode_fill": config_schema.MP_EPISODE_FILL_CONFIG_SCHEMA,
     # 上游聚合拉取/任务参数（2026-10-31 优化首批）：页大小、分页
     # 重试、心跳过期、认领轮询、进度日志、任务保留天数。
     "upstream_aggregate": config_schema.UPSTREAM_AGGREGATE_CONFIG_SCHEMA,

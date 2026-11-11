@@ -570,6 +570,24 @@ POOL_RETRY_CONFIG_SCHEMA: dict[str, tuple] = {
     "pool_copy_forbidden_max_attempts": ("int", 0, 64),
 }
 
+# 缺集补集通道（2026-11-11 B 方案）：绕开 MP 订阅判存，按缺集
+# 台账走 MP 搜索＋手动下载接口补集。默认值在 mp_episode_fill
+# .MP_FILL_CONFIG_DEFAULTS，消费方是 emby_server.mp_episode_fill
+# 工人；纯 SystemConfig 键，不进 env.example（#1527 先例）。
+MP_EPISODE_FILL_CONFIG_SCHEMA: dict[str, tuple] = {
+    # MP（MoviePilot）服务地址（不带 /api/v1，客户端自拼）。
+    "mp_download_base": ("str",),
+    # MP API token（密钥：只进请求头，绝不进日志/响应明文）。
+    "mp_download_token": ("str",),
+    # 补集总开关：默认关，试点由管理员在管理端手动开。
+    "mp_episode_fill_enabled": ("bool",),
+    # 每日最多发起下载数：0 = 不发起（等同关）；上限 500 防
+    # 误配成无界打扰 MP。
+    "mp_episode_fill_daily_cap": ("int", 0, 500),
+    # 同剧同季冷却（小时）：任一结果落账后冷却期内不重复发起。
+    "mp_episode_fill_cooldown_hours": ("int", 1, 720),
+}
+
 # 上游聚合拉取参数（2026-10-31 优化 O-05 起，后续 O-01/O-02/O-03
 # 的任务参数同家族登记）：读取唯一实现在 upstream_aggregate_run /
 # upstream_aggregate_jobs，范围与读取侧钳制同口径；无行时读取侧
