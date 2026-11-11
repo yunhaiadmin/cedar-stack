@@ -1521,14 +1521,60 @@ def _is_non_drive_variant(variant) -> bool:
         drive_id.startswith("pan115:")
 
 
-def _apply_usercopy_direct(db, user, source, file_id) -> bool:
-    """用户副本直链：免凭证 usercontent 地址 + 空头。
+def _retain_local_stream_url(source: dict) -> bool:
+    """确认并保留 source 已带本站 ``/Videos/.../stream`` 地址。
 
-    SenPlayer 不发 RequiredHttpHeaders 时 alt=media 必 403，故用户
-    副本改走免凭证直链：发地址前先确保副本 anyone-reader（覆盖本
-    修复前已建的副本）；授权限失败时返回 False，调用方回落
-    alt=media+头旧链路。永不抛异常。只动用户自己的副本，不碰
-    共享文件、不碰中继、不碰门禁。
+    用户/池副本在 PlaybackInfo 里只许下发这条本站入口：把绝对
+    Google 地址当相对路径拼接的客户端（Yamby）会把本站地址拼到
+    ``/emby`` 前缀后进入既有畸形地址修复口、被 302 还原到本站
+    入口；正常客户端则直接请求入口。video_stream 对副本完成
+    门禁与存在性校验后，才 302 到免凭证 usercontent 地址——
+    SenPlayer 无须为这次 302 提供 RequiredHttpHeaders。
+
+    DirectPlayUrl / DirectStreamUrl 必须已经同指本站 stream
+    路径（PlaybackInfo 的唯一构造点保证同值）；任一不是本站
+    stream 地址就返回 False 且不改 source，绝不把第三方绝对
+    地址误判成已修复。成功时只清空 RequiredHttpHeaders。
+    """
+    if not isinstance(source, dict):
+        return False
+    urls = []
+    for key in ("DirectPlayUrl", "DirectStreamUrl"):
+        raw = str(source.get(key) or "").strip()
+        if not raw:
+            return False
+        try:
+            path = urllib.parse.urlsplit(raw).path.lower()
+        except Exception:  # noqa: BLE001 — 地址不可解析即不认
+            return False
+        marker = "/emby/videos/"
+        if marker not in path:
+            return False
+        tail = path.split(marker, 1)[1].split("/")
+        if len(tail) < 2:
+            return False
+        stream_segment = tail[1]
+        if stream_segment != "stream" \
+                and not stream_segment.startswith("stream."):
+            return False
+        urls.append(raw)
+    if urls[0] != urls[1]:
+        return False
+    source["RequiredHttpHeaders"] = {}
+    return True
+
+
+def _apply_usercopy_direct(db, user, source, file_id) -> bool:
+    """用户副本播出准备：确保公开可读，PlaybackInfo 保留本站入口。
+
+    先确保副本 anyone-reader（覆盖本修复前已建的副本），成功后
+    不再把 Google usercontent 绝对地址写进响应——Yamby 会把它
+    当相对路径拼到 ``/emby`` 后形成必 404 的畸形地址。本站
+    /stream 在取流时完成副本选路、额度裁决与存在性校验，最后
+    才 302 到免凭证 usercontent；SenPlayer 跟随该 302 不需要
+    RequiredHttpHeaders。授权限失败时返回 False，调用方保留
+    本站 /stream、绝不回落 SA alt=media+头。永不抛异常。只动
+    用户自己的副本，不碰共享文件、不碰门禁。
     """
     try:
         if not isinstance(source, dict):
@@ -1540,31 +1586,25 @@ def _apply_usercopy_direct(db, user, source, file_id) -> bool:
         if not _tv.ensure_user_copy_public(
                 db, getattr(user, "id", None), fid):
             return False
-        from backend.emby_server import drive_auth as _da
-        url = _da.drive_usercontent_download_url(fid)
-        if not url:
-            return False
-        source["DirectPlayUrl"] = url
-        source["DirectStreamUrl"] = url
-        source["RequiredHttpHeaders"] = {}
-        return True
+        return _retain_local_stream_url(source)
     except Exception:
         return False
 
 
 def _apply_poolcopy_direct(db, variant, source, file_id) -> bool:
-    """公共池副本直链下发（goal-33 PR-3，design §5.1 第 10 步）。
+    """公共池副本播出准备（goal-33 PR-3，design §5.1 第 10 步）。
 
-    唯一形态：先按变体 owner 用贡献者（成员）绑定令牌给池副本授
+    先按变体 owner 用贡献者（成员）绑定令牌给池副本授
     anyone-reader（transfer_variant.ensure_variant_copy_public），
-    授成发免凭证 usercontent 地址 + 空头（与用户副本同形态，
-    SenPlayer 不发头也能播）。授权限失败返回 False、一个字不改
-    source：调用方保留本站 /stream 地址、由 video_stream 现场
-    裁决，绝不下发直链（GA-030，用户 2026-11-08 裁定：授权失败
-    就不播）。成员令牌绝不许写进响应——旧回落（alt=media + 成员
-    令牌头）会把贡献者令牌发给未绑陌生观众、观众可冒成员读其
-    整盘，已按裁定删除；成员令牌只许服务端内部取流（中继腿）
-    使用。绝不换共享原件 fid。永不抛异常。
+    成功后 PlaybackInfo 保留本站 /stream 地址，由 video_stream
+    现场完成池门禁、存在性校验与额度裁决，最后才 302 到免凭证
+    usercontent。这样既保留 SenPlayer 无头跟随 302 的能力，也
+    避免 Yamby 把 Google 绝对地址当相对路径拼坏。授权限失败
+    返回 False、一个字不改 source：调用方保留本站 /stream
+    地址、由 video_stream 现场裁决（GA-030，用户 2026-11-08
+    裁定：授权失败就不播）。成员令牌绝不许写进响应；成员令牌
+    只许服务端内部取流（中继腿）使用。绝不换共享原件 fid。
+    永不抛异常。
     """
     try:
         if not isinstance(source, dict):
@@ -1575,14 +1615,7 @@ def _apply_poolcopy_direct(db, variant, source, file_id) -> bool:
         from backend.emby_server import transfer_variant as _tv
         if not _tv.ensure_variant_copy_public(db, variant, fid):
             return False
-        from backend.emby_server import drive_auth as _da
-        url = _da.drive_usercontent_download_url(fid)
-        if not url:
-            return False
-        source["DirectPlayUrl"] = url
-        source["DirectStreamUrl"] = url
-        source["RequiredHttpHeaders"] = {}
-        return True
+        return _retain_local_stream_url(source)
     except Exception:
         return False
 
@@ -6987,9 +7020,11 @@ async def playback_info(
     # 把第一条源的直链换成 Drive alt=media + RequiredHttpHeaders（SA 短期
     # 令牌）。实测：alt=media + Bearer 头回 206 video/x-matroska；不带头
     # 或 token 放 URL 查询参数时谷歌回 403——凭据只能走头，不能放 URL。
-    # 用户 Drive 副本例外（2026-10-28）：先确保 anyone-reader，再发免凭证
-    # usercontent 地址 + 空头（SenPlayer 不发头时 alt=media 必 403）；
-    # 授权限失败回落 alt=media+头。共享文件变体原样不动。
+    # 用户 Drive 副本例外：先确保 anyone-reader，再保留本站
+    # /stream 地址 + 空头，由 video_stream 最后 302 到免凭证
+    # usercontent（SenPlayer 不发头时 alt=media 必 403，本站 302
+    # 不要求它提供 RequiredHttpHeaders）；授权限失败同样保留
+    # 本站 /stream，绝不回落 SA alt=media+头。共享文件变体不动。
     # preparing/failed/error、115 副本、无 fid、无令牌时一律不动（保留带
     # 后缀的 /stream 地址，走 video_stream 的等流/302 旧链路）；任何异常
     # 都回落旧地址，绝不因本段失败打断 PlaybackInfo。令牌只进本次响应，
@@ -7013,11 +7048,11 @@ async def playback_info(
             _alt_on = await run_db(_ps_alt.drive_direct_play_enabled, db)
             if _alt_fid and _alt_on:
                 _alt_applied = False
-                # C1 修复：仅用户 Drive 副本尝试直链下发（免凭证
-                # usercontent，失败回落 alt=media+头）。共享原件/服主
-                # 副本一律不在此覆盖，保持指向本服务器的 /stream 地址
-                # （带 MediaSourceId/uid/variant），由 video_stream 302
-                # 到免凭证 usercontent——全权 SA 令牌绝不随清单出门。
+                # C1 修复：仅用户 Drive 副本做播出准备（确保
+                # anyone-reader 后保留本站 /stream 地址，带
+                # MediaSourceId/uid/variant），由 video_stream 302
+                # 到免凭证 usercontent。共享原件/服主副本一律不在
+                # 此覆盖——全权 SA 令牌绝不随清单出门。
                 _alt_is_user_copy = _is_user_drive_copy_variant(_alt_variant)
                 if _alt_is_user_copy:
                     # 额度探测（2026-10-29；2026-10-31 修订）：公开
@@ -7026,8 +7061,9 @@ async def playback_info(
                     # 本人令牌中继后路保留 /stream，或有本人 115
                     # 副本时清单指回本站 /stream（video_stream 走
                     # 115 现签 302）；都没有 → 明确报错。GET 腿的
-                    # scan / html 插页仍只是信号——照常下发直链、
-                    # 不清清单。绝不回落共享原件、绝不带 SA 令牌。
+                    # scan / html 插页仍只是信号——照常保留本站
+                    # /stream 入口、不清清单。绝不回落共享原件、
+                    # 绝不带 SA 令牌。
                     _pi_quota_cached = await run_db(
                         _tv_alt.usercopy_quota_probe_cached,
                         user.id, _alt_fid)
@@ -7119,16 +7155,20 @@ async def playback_info(
                             shape="get",
                             page=_pi_probe_detail["page"])
                 if _alt_is_user_copy:
-                    # 用户副本直链：免凭证 usercontent + 空头；授权限
-                    # 失败时 _alt_applied 仍为 False，下面走旧链路。
+                    # 用户副本播出准备：确保免凭证可读后保留本站
+                    # /stream + 空头；授权限失败时 _alt_applied 仍
+                    # 为 False，且下方会关掉 alt=media 旧链路。
                     _alt_applied = await run_db(
                         _apply_usercopy_direct, db, user, sources[0],
                         _alt_fid)
                     _pt.mark("copy_grant")
                     if _alt_applied:
-                        # 防外流发放可查（2026-10-28）：只记可转发即用
-                        # 的免凭证直链这一次。记账走独立短会话、永不抛
-                        # 异常，失败只记 warning，绝不影响本次响应。
+                        # 防外流发放可查（2026-10-28）：只记副本已备
+                        # 妥、将经本站 /stream 入口 302 到免凭证
+                        # usercontent 的这一次发放（via 仍记
+                        # usercontent，口径与既有台账一致）。记账走
+                        # 独立短会话、永不抛异常，失败只记 warning，
+                        # 绝不影响本次响应。
                         try:
                             _vid = getattr(_alt_variant, "id", None)
                             await run_db(
@@ -7203,10 +7243,13 @@ async def playback_info(
     # 原件）；quota 探测复用用户副本一套，缓存键按 (variant_id,
     # fid) 记（不把观众 id 写进池副本探测键）；额度页改道时后路
     # 开 → 保留本站 /stream（取流时走贡献者令牌中继），无后路 →
-    # 剥清单 + 明确报错（沿 _pi_quota_error 形态）。成功下发记
-    # §5.3 记账 + H1 事件。直链开关关时本段不下发，保留 /stream
-    # 由 video_stream 按中继主线现场裁决。令牌只进本次响应，
-    # 不进基础体缓存（缓存已在上面存完）。任何异常只保留旧地址。
+    # 剥清单 + 明确报错（沿 _pi_quota_error 形态）。未改道时只
+    # 确保池副本公开可读并保留本站 /stream 入口，取流时再由
+    # video_stream 302 到免凭证 usercontent；成功准备记 §5.3
+    # 记账 + H1 事件（与取流侧同窗口去重）。直链开关关时本段
+    # 不处理，保留 /stream 由 video_stream 按中继主线现场裁决。
+    # 令牌不进响应、不进基础体缓存（缓存已在上面存完）。任何
+    # 异常只保留旧地址。
     if sources and _pi_verdict == "serve_pool_copy":
         try:
             from backend.emby_server import playback_strategy as _ps_pool

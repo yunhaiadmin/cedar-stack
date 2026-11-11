@@ -27,6 +27,7 @@ os.environ.setdefault("REDIS_ENABLED", "false")
 # test_pool_serve 文件头注释），不许导入期写死。
 
 import uuid
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from fastapi import HTTPException
@@ -636,8 +637,9 @@ def test_route_unbound_user_decision_unchanged(seed):
 def test_playbackinfo_bound_large_serves_pool_copy(
         client, bound_token, seed):
     """计划层定 route=池：已绑用户播大文件、池有副本 → 第一条
-    源按池副本下发（免凭证直链），池播记账照常落行（观看者是
-    已绑用户、贡献者照常计次）。"""
+    源下发本站 /stream 入口（取流时才 302 到池副本 usercontent，
+    见 test_stream_bound_large_serves_pool_302），池播记账照常
+    落行（观看者是已绑用户、贡献者照常计次）。"""
     db = SessionLocal()
     try:
         variant_id = _add_pool_variant(db, seed, seed["big_id"])
@@ -648,8 +650,14 @@ def test_playbackinfo_bound_large_serves_pool_copy(
     assert ORIG_FID not in text
     assert MEMBER_TOKEN not in text
     src = body["MediaSources"][0]
-    assert "usercontent" in (src.get("DirectPlayUrl") or "")
-    assert POOL_FID in src["DirectPlayUrl"]
+    url = src.get("DirectPlayUrl") or ""
+    assert src.get("DirectStreamUrl") == url
+    assert POOL_FID not in url
+    assert "drive.usercontent.google.com" not in text
+    parsed = urlsplit(url)
+    assert parsed.path == f"/emby/Videos/{seed['big']}/stream.mp4"
+    assert parse_qs(parsed.query)["MediaSourceId"] == [seed["big"]]
+    assert src["RequiredHttpHeaders"] == {}
     assert src.get("TransferStatus") in (None, "ready")
     db = SessionLocal()
     try:
@@ -760,7 +768,24 @@ def test_playbackinfo_bound_large_own_copy_wins(
     assert POOL_FID not in text
     assert ORIG_FID not in text
     src = body["MediaSources"][0]
-    assert USER_FID in (src.get("DirectPlayUrl") or "")
+    url = src.get("DirectPlayUrl") or ""
+    assert src.get("DirectStreamUrl") == url
+    assert USER_FID not in url
+    parsed = urlsplit(url)
+    assert parsed.path == f"/emby/Videos/{seed['big']}/stream.mp4"
+    db = SessionLocal()
+    try:
+        assert _play_events(db) == []
+    finally:
+        db.close()
+    # 本人副本胜出由取流落点证明：下发的本站入口 302 到本人
+    # 副本 usercontent，池播仍不记账。
+    resp = client.get(f"{parsed.path}?{parsed.query}",
+                      headers=_h(bound_token), follow_redirects=False)
+    assert resp.status_code == 302, resp.text
+    loc = resp.headers.get("location") or ""
+    assert "usercontent" in loc and USER_FID in loc
+    assert POOL_FID not in loc
     db = SessionLocal()
     try:
         assert _play_events(db) == []
