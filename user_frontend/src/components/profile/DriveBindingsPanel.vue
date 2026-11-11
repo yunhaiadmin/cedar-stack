@@ -234,6 +234,8 @@ import { toUserMessage } from '@/utils/toUserMessage'
 
 const emit = defineEmits<{
   (e: 'loaded', payload: { visible: boolean }): void
+  /** 列表里出现可用（active）谷歌盘绑定时发：设置页据此执行绑盘回跳 */
+  (e: 'activeBinding'): void
 }>()
 
 const toast = useToast()
@@ -399,6 +401,10 @@ async function loadProviders() {
   reportVisibility()
 }
 
+function reportActiveBinding() {
+  if (driveBindings.value.some((b) => b.status === 'active')) emit('activeBinding')
+}
+
 async function loadDriveBindings() {
   driveLoading.value = true
   driveError.value = ''
@@ -408,6 +414,7 @@ async function loadDriveBindings() {
     removedBindings.value = (res.bindings || []).filter(
       (b) => b.provider === 'pan115' || b.provider === 'quark',
     )
+    reportActiveBinding()
   } catch (e) {
     // 加载失败别装成"没绑盘"，留错误态给用户重试
     driveError.value = humanizeError(e)
@@ -528,6 +535,7 @@ async function handleVerifyBinding(b: StorageBinding) {
   try {
     const updated = await storageBindingApi.verify(b.id)
     driveBindings.value = driveBindings.value.map((x) => (x.id === b.id ? updated : x))
+    reportActiveBinding()
     toast.success(updated.status === 'active' ? '验证通过，这个盘可以用了' : '验证后仍不可用，请重新绑定')
   } catch (err: any) {
     toast.error(toUserMessage(err, 'removeFailed'))
