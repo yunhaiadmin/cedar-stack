@@ -129,9 +129,11 @@ class TestWritePhaseZombieGuard:
     """R4-4：写库阶段僵尸防护"""
 
     def _patch_io(self, monkeypatch, apply_mock):
+        # 与真实 _enrich_fetch 同签名：#55 起 _process_item 会传 folder_candidate
         monkeypatch.setattr(
             enrich_worker, "_enrich_fetch",
-            lambda snapshot, holder=None, inherit_parent=None: {"ok": True},
+            lambda snapshot, holder=None, inherit_parent=None,
+            folder_candidate=None: {"ok": True},
         )
         monkeypatch.setattr(enrich_worker, "_enrich_apply", apply_mock)
 
@@ -169,9 +171,11 @@ class TestWritePhaseZombieGuard:
         item_id, snap_a = _zombie_stage(db)
         calls = []
         # Phase 1 走 pre 直出 ok、tmdb_ctx=None：跳过 Phase 2，直达 Phase 3 写库点
+        # 与真实 _enrich_fetch_pre 同签名：#55 起 _process_batch 会传 folder_candidate
         monkeypatch.setattr(
             enrich_worker, "_enrich_fetch_pre",
-            lambda snapshot, holder=None, inherit_parent=None: ({"ok": True}, None),
+            lambda snapshot, holder=None, inherit_parent=None,
+            folder_candidate=None: ({"ok": True}, None),
         )
         monkeypatch.setattr(
             enrich_worker, "_enrich_apply",

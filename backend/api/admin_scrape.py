@@ -1928,3 +1928,27 @@ def save_unified_fallback(
         enabled = enrich_worker.get_unified_fallback_config(db)["enabled"]
     cfg = enrich_worker.save_unified_fallback_config(db, enabled)
     return {"success": True, **cfg}
+
+
+class _RequeueMissingMetadataBody(BaseModel):
+    limit: int = Field(500, ge=1, le=5000, description="单批最多翻回 pending 的条数")
+    dry_run: bool = Field(True, description="True=只干跑计数不写入（默认）；确认后再传 False 真跑")
+
+
+@admin_emby_router.post("/scrape/missing-metadata/requeue")
+def requeue_missing_metadata(
+    body: _RequeueMissingMetadataBody,
+    staff: base_models.WebUser = Depends(require_staff),
+    db: Session = Depends(get_db),
+):
+    """存量重认：把「done 但缺身份/海报/简介任一」的顶层剧/电影翻回 pending。
+
+    口径与计数见 enrich_worker.requeue_missing_metadata_top（生产可见
+    口径 2026-11-11 实测约 1,220 部）。默认 dry_run=True 只回计数；
+    真跑须显式传 dry_run=False，按 limit 分批，重复调用直到
+    matched=0。翻回的条目由补全工人按 priority=50 优先重认。
+    """
+    from backend.emby_server import enrich_worker
+    out = enrich_worker.requeue_missing_metadata_top(
+        db, limit=body.limit, dry_run=body.dry_run)
+    return {"success": True, **out}

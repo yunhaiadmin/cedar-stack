@@ -240,7 +240,8 @@ def binding_reject_reason_for_item(data, kind, item) -> Optional[str]:
     return None
 
 
-def search_binding_title_reject_reason(data, item) -> Optional[str]:
+def search_binding_title_reject_reason(data, item,
+                                       extra_names=()) -> Optional[str]:
     """search 来源绑定的标题复核（2026-11-04 两段式错绑定案，全仓共用）。
 
     只判一件事：条目名与候选载荷的官方标题（name / title / 原名）
@@ -256,18 +257,25 @@ def search_binding_title_reject_reason(data, item) -> Optional[str]:
     零交集返回 "title_mismatch"；条目名为空、或载荷一个标题都没有
     （判不出）返回 None，不拿缺证据当错绑。非 search 来源（NFO /
     别名按 id 取数 / 多源桥）不归本函数管，调用方按来源决定是否调用。
+
+    extra_names（2026-11-11 文件夹名并行候选）：本次搜索实际用过的
+    其它查询名（如 file_path 的标题文件夹名——存名是发布组垃圾串时
+    命中本就是按文件夹名搜的，只拿存名对账必零交集误杀）。任一查询
+    名与候选标题有交集即放行；默认空，其余调用方行为不变。
     """
     from backend.emby_server.tmdb import _norm_text
 
-    item_name = _norm_text(str(getattr(item, "name", "") or ""))
-    if not item_name or not isinstance(data, dict):
+    item_names = [_norm_text(str(getattr(item, "name", "") or ""))]
+    item_names += [_norm_text(str(n or "")) for n in (extra_names or ())]
+    item_names = [n for n in item_names if n]
+    if not item_names or not isinstance(data, dict):
         return None
     names = [_norm_text(str(data.get(k) or "")) for k in
              ("name", "title", "original_name", "original_title")]
     names = [n for n in names if n]
     if not names:
         return None
-    if any(item_name in n or n in item_name for n in names):
+    if any(q in n or n in q for q in item_names for n in names):
         return None
     return "title_mismatch"
 

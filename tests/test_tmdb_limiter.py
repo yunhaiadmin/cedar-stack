@@ -208,7 +208,17 @@ def test_no_exact_hit_still_tries_every_candidate(monkeypatch):
     name = "进击的巨人 (2013) 中字"
 
     assert client.search(name, 2013, "series") is None
-    assert len(client.session.calls) == len(tmdb_mod._search_candidates(name, 2013))
+    candidates = tmdb_mod._search_candidates(name, 2013)
+    # 年份回退（#55 扩围）：带年有结果但被置信闸全拒，也去年份再搜一轮，
+    # 所以每个候选打两遍——带年过滤一遍 + 去年份一遍（与
+    # test_every_http_request_consumes_a_token 的 2 倍口径一致）
+    assert len(client.session.calls) == len(candidates) * 2
+    year_pass, fallback_pass = (client.session.calls[:len(candidates)],
+                                client.session.calls[len(candidates):])
+    assert [c[1]["query"] for c in year_pass] == [q for q, _ in candidates]
+    assert [c[1]["query"] for c in fallback_pass] == [q for q, _ in candidates]
+    assert all(c[1].get("first_air_date_year") == 2013 for c in year_pass)
+    assert all("first_air_date_year" not in c[1] for c in fallback_pass)
     assert client.stats()["short_circuits"] == 0
 
 

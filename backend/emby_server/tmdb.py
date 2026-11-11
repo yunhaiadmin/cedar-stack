@@ -1794,7 +1794,6 @@ class TmdbClient:
         for lang in language_fallback_chain():
             best = None  # (tier, rank, hit)：跨候选、跨结果取全局最可信
             transient: Optional[Exception] = None
-            saw_results = False
             for query, fuzzy_ok in _cands(name, year):
                 # 短路（v2.42.9）：已有 Tier 2（归一化后**精确相等**）就收手。
                 # Tier 2 永远压过 Tier 1（元组比较先看 tier），后续候选最多只能换来
@@ -1813,8 +1812,6 @@ class TmdbClient:
                     continue
                 except Exception:  # noqa: BLE001 — 缓存/磁盘等杂项异常换下一个候选
                     continue
-                if results:
-                    saw_results = True
                 for hit in results[:10]:
                     sc = _hit_score(name, query, hit, fuzzy_ok, year=year)
                     if sc is None and loose_query and query == loose_query:
@@ -1834,12 +1831,17 @@ class TmdbClient:
                         best = (sc[0], sc[1], hit)
             if best:
                 return best[2]
-            if year and not saw_results:
-                # 年份回退：带年份过滤搜出来是空的（不是没命中，是 TMDB 直接
-                # 没返回）→ 文件名里的年份可能是标题的一部分（如
-                # 《Wonder Woman 1984》实为 2020 年电影），去年份再搜一轮。
-                # 注意回退后不再做年份二次确认（年份已知不可靠），
-                # 但候选仍保留"清洗名 YYYY"（年份可能是标题的一部分）。
+            if year:
+                # 年份回退：带年份这一轮全灭（best 为 None）就去年份再搜一轮。
+                # 两种全灭都要回退（2026-11-11 刮削查因扩围）：
+                # ① 带年过滤零结果——文件名里的年份可能是标题的一部分
+                #   （如《Wonder Woman 1984》实为 2020 年电影）；
+                # ② 带年有结果但被置信闸全拒——条目年份本身就是错的
+                #   （《百鸟朝凤》存年 2013、TMDB 实为 2016：TMDB 的年份
+                #   过滤把真条目挡在结果外，回来的全是别家年份的同名物）。
+                # 回退命中仍走同一套置信闸，并把年份传给 _hit_score 做
+                # 年份二次确认：精确命中只降一级 rank（不否决），
+                # Tier 1.2 别名档仍要求年份硬相等——不许无条件直链。
                 # 缓存键年份维度不同（year or 0），不会污染带年份的缓存。
                 for query, fuzzy_ok in _cands(name, year):
                     try:
@@ -1850,7 +1852,7 @@ class TmdbClient:
                     except Exception:  # noqa: BLE001
                         continue
                     for hit in results[:10]:
-                        sc = _hit_score(name, query, hit, fuzzy_ok, year=None)
+                        sc = _hit_score(name, query, hit, fuzzy_ok, year=year)
                         if sc and (best is None or sc > best[:2]):
                             best = (sc[0], sc[1], hit)
                 if best:
