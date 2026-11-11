@@ -29,6 +29,13 @@ Primary 图」（库对全体登录用户可见才算公开，见
 （不降级匿名）。本文件相应更新：公开库 Primary 无凭据 200（Reflix
 形态 tag=1&maxHeight=600）、其余无凭据用例维持 401/403。
 
+无凭据兼容扩围（2026-11-11，Yamby 图片加载器实证）：Yamby 的图片
+加载器对媒体库封面与条目 Backdrop 同样不带凭据，生产日志里这两类
+整批 401、Primary 海报正常。定版扩围：无凭据放行面从「公开库条目
+Primary」扩到「公开库条目 Primary / Backdrop + 公开库封面 Primary」，
+条件逐字不变（库对全体登录用户可见 + 按 IP 限流）；Art / Logo /
+Thumb、受限库、演员图无凭据仍 401/403。
+
 覆盖：无凭据 401 / 坏凭据 401 / api_key 与 X-Emby-Token 两形态 200 /
 集→剧回退 / maxWidth 缩略图 / 受限库条目 403 / 库封面可见 200、受限 403 /
 虚拟库派生封面（借可见成员 200、库本身不可见 403、借受限成员 403）/
@@ -282,15 +289,36 @@ def test_restricted_library_primary_no_credentials_is_401(client, seed):
     assert r.status_code == 401, r.text
 
 
-def test_public_library_backdrop_no_credentials_is_401(client, seed):
-    # 无凭据兼容只限 Primary：公开库的 Backdrop 照旧要凭据
+def test_public_library_backdrop_allows_no_credentials(client, seed):
+    # 2026-11-11 扩围：公开库条目 Backdrop 与 Primary 同口径无凭据放行
+    # （Yamby 图片加载器对 Backdrop 不带凭据，旧口径下整批 401）
     r = client.get(f"/emby/Items/{seed['series']}/Images/Backdrop")
-    assert r.status_code == 401, r.text
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"].startswith("image/")
+    assert r.content
 
 
-def test_image_index_requires_credentials(client, seed):
+def test_backdrop_index_allows_no_credentials(client, seed):
     r = client.get(f"/emby/Items/{seed['series']}/Images/Backdrop/0")
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"].startswith("image/")
+
+
+def test_restricted_library_backdrop_no_credentials_is_401(client, seed):
+    # 扩围只限公开库：受限库 Backdrop 无凭据仍 401
+    r = client.get(f"/emby/Items/{seed['movie_b']}/Images/Backdrop")
     assert r.status_code == 401, r.text
+
+
+def test_public_library_thumb_no_credentials_is_401(client, seed):
+    # 扩围只到 Primary / Backdrop：Thumb 等其它类型无凭据仍 401
+    r = client.get(f"/emby/Items/{seed['series']}/Images/Thumb")
+    assert r.status_code == 401, r.text
+
+
+def test_unknown_item_no_credentials_is_404(client, seed):
+    r = client.get(f"/emby/Items/{_guid()}/Images/Primary")
+    assert r.status_code == 404, r.text
 
 
 def test_image_bad_token_is_401(client, seed):
@@ -304,9 +332,26 @@ def test_person_image_requires_credentials(client, seed):
     assert r.status_code == 401, r.text
 
 
-def test_library_cover_requires_credentials(client, seed):
+def test_library_cover_allows_no_credentials(client, seed):
+    # 2026-11-11 扩围：公开库封面与公开库条目 Primary 同口径无凭据
+    # 放行（Yamby 对库封面不带凭据，旧口径下全部库封面整批 401）
     r = client.get(f"/emby/Items/{seed['lib_a']}/Images/Primary")
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"].startswith("image/")
+    assert r.content
+
+
+def test_restricted_library_cover_no_credentials_is_401(client, seed):
+    # 受限库封面无凭据仍 401（与受限条目同口径，不泄露库是否存在）
+    r = client.get(f"/emby/Items/{seed['lib_b']}/Images/Primary")
     assert r.status_code == 401, r.text
+
+
+def test_virtual_library_cover_allows_no_credentials(client, seed):
+    # 公开虚拟库的派生封面（借公开库成员海报）无凭据同样放行
+    r = client.get(f"/emby/Items/{seed['vlib_in']}/Images/Primary")
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"].startswith("image/")
 
 
 # ---------- 可见范围内的正常出图 ----------
