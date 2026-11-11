@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""谷歌盘主线「暖地址」工人（goal-35 批 1，2026-11-08 用户点选开工）。
+"""谷歌盘主线「暖地址」工人（goal-35 批 1＋批 2，2026-11-08 用户点选开工）。
 
 为什么有这个工人
 ----------------
@@ -7,33 +7,51 @@
 97% 走「绑盘用户播共享条目 → 转存门禁拿到本人副本 → 额度探针
 判 quota → 改道本人 OAuth 令牌 API 中继」；PlaybackInfo 冷路径
 p50 约 6 秒、exists 现查慢尾可达数秒。本工人把点播时现做的活
-（交付计划现算、存在性现查）按信号提前做完，写进点播路径本来
-就会读的现成载体——交付计划表与 Drive 存在性正缓存。
+（交付计划现算、副本授权、额度探针、令牌刷新、存在性现查）按
+信号提前做完，写进点播路径本来就会读的现成载体——交付计划表、
+额度裁决缓存、已公开缓存与 Drive 存在性正缓存。
 
-本批范围（批 1：工人骨架＋W5＋W1，不许扩围）
+本批范围（批 1：工人骨架＋W5＋W1；批 2：W2＋W3）
 --------------------------------------------
 - W1 交付计划：按 (用户, 条目) 调 delivery_plan.build_plan 预建，
   落 playback_delivery_plans 表；新鲜计划（过期前余量 > 提前量）
   跳过。计划开关关时整步跳过。
+- W2a 副本授权：对该用户最新 ready 副本调
+  transfer_variant.ensure_user_copy_public 幂等确保
+  anyone-reader；已公开缓存新鲜（ensure 内部同一核对）时零网络
+  跳过。无生效中 Drive 绑定或无 ready 副本 → 跳过。
+- W2b 额度裁决：调判定点唯一入口
+  transfer_variant.probe_user_copy_quota_decision 提前探测，
+  裁决落现成缓存（裁决/明细缓存＋ok 复用记录）；新鲜判定逐字
+  镜像判定点的吃缓存口径——quota 裁决、ok＋明细 page=quota、
+  ok 复用记录，任一剩余 TTL > 提前量即新鲜，不再调判定点。
+  探测开关关时整步跳过。
+- W3 令牌保鲜：只调 drive_oauth.get_user_drive_access_token
+  （全站唯一令牌口）；令牌过期时刻在「刷新边距＋提前量」之外
+  时零网络跳过；每用户每轮至多处理一次。
 - W5 存在性：对条目原件 fid 与该用户最新 ready 副本 fid 各做
   一次 files.get（SA 池），200 即调 transfer_variant 既有的
   publish_drive_exists_ok 写 Redis 正缓存；404 只记 gone、不写
   墓碑；其他失败只记 failed。SA 池只用于存在性校验。
-- 不做：W2（额度探针/副本授权）、W3（令牌保鲜）、W4（首字节
-  实验）、转存预建——均在批 2/批 3，不进本批。
+- 不做：W4（首字节实验，批 3）、转存预建（D7 不做）。
 
 衔接口径（不许漂移）
 --------------------
 - 只写现成载体，不发明新缓存、不改点播路径一行判定逻辑：
-  全冷时点播行为与今天逐字一致（现建计划、现查存在性）。
+  全冷时点播行为与今天逐字一致（现建计划、现探额度、现授
+  权限、现刷令牌、现查存在性）。W2/W3 的 TTL 与边距全部复用
+  既有键（探针 TTL env、ok 复用 TTL SystemConfig、已公开缓存
+  TTL env、刷新边距常量），本工人不新造配置键。
 - 信号收集器原样复用 upstream_warm_worker 的三类收集器（追剧
   新集 / 继续观看含下一集 / 新入库热门），只新增 item→用户展开
   （D1：只暖近窗播过该条目的用户；从未被任何绑定用户播过的条
   目只做无用户维度的 W5）。
 - 身份铁律：W1 的计划按 (用户, 条目) 建，绝不把 A 用户的计划
-  写给 B 用户；W5 的存在性断言与用户无关（只断言文件在），写
-  进的正缓存键只含 fid、不含任何用户信息；SA 令牌只用于 W5
-  的 files.get，不下发、不写任何用户绑定行。
+  写给 B 用户；W2/W3 只用目标用户本人的绑定与本人副本（无
+  生效中绑定整步跳过），令牌只写回本人绑定行；W5 的存在性
+  断言与用户无关（只断言文件在），写进的正缓存键只含 fid、
+  不含任何用户信息；SA 令牌只用于 W5 的 files.get，不下发、
+  不写任何用户绑定行。
 - 存在性实查复用 api._drive_file_exists_sync（全项目唯一的
   files.get 存在性实现），本模块只包一层缝（_exists_check，
   懒导入：import 时不拉起 api 大模块）；正缓存键与
@@ -41,8 +59,9 @@ p50 约 6 秒、exists 现查慢尾可达数秒。本工人把点播时现做的
 - 资源纪律与旧工人同口径：总开关默认关、低并发、单轮双预算
   （时长 600 秒 / 出站请求 400 次硬帽）、任务间随机抖动、起播
   繁忙或系统高负载整轮让路、失败只记账不冒泡、线程异常不退出
-  循环。W1 建计划是 DB/本地探针、不计出站请求；W5 每次实查
-  计 1 次请求（正缓存新鲜命中不计）。
+  循环。请求计数：W1 建计划不计；W2a 真确保计 1、W2b 真探测
+  计 2（两腿）、W3 真刷新计 1、W5 每次实查计 1（各步新鲜命中
+  均不计）。
 """
 
 import itertools
@@ -60,6 +79,9 @@ from sqlalchemy import func
 
 from backend.emby_server import delivery_plan as dp
 from backend.emby_server import upstream_warm_worker as uw
+from backend.emby_server.drive_changes import (
+    OAUTH_TOKEN_REFRESH_MARGIN_SEC,
+)
 from backend.emby_server.env_util import env_float, env_int
 from backend.emby_server import models as em
 
@@ -400,6 +422,146 @@ def _newest_ready_user_copy_fid(db, user_id, item_id):
     return None
 
 
+def _active_drive_binding(db, user_id):
+    """该用户生效中的 Drive 绑定行（transfer_variant 既有口径）。
+
+    W2/W3 的前置：无绑定 → 整步跳过（点播门禁本就不许无绑定
+    播放，工人不给没凭据的用户烧预算）。懒导入、永不抛（读
+    失败按无绑定处理，点播侧自会按现行口径处理该用户）。
+    """
+    try:
+        from backend.emby_server import transfer_variant as tv
+
+        return tv._active_binding(db, user_id, "drive")
+    except Exception:  # noqa: BLE001 — 读不到按无绑定跳过
+        return None
+
+
+def _copy_public_valid(db, user_id, fid) -> bool:
+    """副本已公开缓存是否新鲜（ensure_user_copy_public 内部同一核对）。
+
+    True = anyone-reader 已授且回库核对通过，ensure 再调也只是
+    命中缓存零网络——工人据此记 fresh 不重复调。永不抛。
+    """
+    try:
+        from backend.emby_server import transfer_variant as tv
+
+        return bool(tv._copy_public_cache_valid(db, user_id, fid))
+    except Exception:  # noqa: BLE001 — 核对失败按不新鲜（ensure 自会兜底）
+        return False
+
+
+def _ensure_copy_public(db, user_id, fid) -> bool:
+    """W2a 执行缝：调 ensure_user_copy_public 幂等确保副本授权。
+
+    只用该用户本人绑定令牌（该函数内部口径），成功（含已授过）
+    回 True；无绑定/令牌失效/授权失败回 False。永不抛。
+    """
+    try:
+        from backend.emby_server import transfer_variant as tv
+
+        return bool(tv.ensure_user_copy_public(db, user_id, fid))
+    except Exception:  # noqa: BLE001 — ensure 本身永不抛，这里只兜底
+        return False
+
+
+def _quota_probe_enabled() -> bool:
+    """额度探测总开关（transfer_variant 既有 env 口径）。永不抛。"""
+    try:
+        from backend.emby_server import transfer_variant as tv
+
+        return bool(tv.usercopy_quota_probe_enabled())
+    except Exception:  # noqa: BLE001 — 读不到按关（点播侧也不会探）
+        return False
+
+
+def _quota_cache_state(user_id, fid) -> dict:
+    """额度裁决缓存现状（只读）：{verdict, page, verdict_ttl, reuse_ttl}。
+
+    verdict/page 走 transfer_variant 的现成读口（CacheManager，
+    Redis 故障时内存回退）；两个 TTL 走原始 Redis 键读剩余秒数
+    （裁决键带域形 rb:d:playback: 与旧无域形都试，与 CacheManager
+    的写/读布局逐字一致）。Redis 不可用时 TTL 一律 None——新鲜
+    判定退化为「证明不了新鲜」，工人会多调一次判定点，而判定点
+    读缓存本身不现探，代价只是本地读、无网络。永不抛。
+    """
+    state = {"verdict": None, "page": None,
+             "verdict_ttl": None, "reuse_ttl": None}
+    try:
+        from backend.database import CacheManager, get_redis
+        from backend.emby_server import transfer_variant as tv
+
+        verdict = CacheManager.get(
+            tv._usercopy_quota_cache_key(user_id, fid),
+            domain="playback")
+        if verdict in ("ok", "quota", "interstitial"):
+            state["verdict"] = verdict
+            detail = tv.usercopy_quota_probe_detail(user_id, fid)
+            state["page"] = detail.get("page")
+        rc = get_redis()
+        if rc is not None:
+            key = tv._usercopy_quota_cache_key(user_id, fid)
+            for cand in (f"rb:d:playback:{key}", f"rb:{key}"):
+                ttl = rc.ttl(cand)
+                if ttl is not None and int(ttl) > 0:
+                    state["verdict_ttl"] = int(ttl)
+                    break
+            rttl = rc.ttl(tv._usercopy_probe_ok_reuse_key(user_id, fid))
+            if rttl is not None and int(rttl) > 0:
+                state["reuse_ttl"] = int(rttl)
+    except Exception:  # noqa: BLE001 — 读不到按全冷（判定点自会处理）
+        pass
+    return state
+
+
+def _quota_decide(user_id, fid) -> str:
+    """W2b 执行缝：调判定点唯一入口 probe_user_copy_quota_decision。
+
+    判定点对缓存的读法（已知 quota 吃缓存、ok 落复用记录等）
+    全在该入口内收口，工人不直调 probe 本体、不复制判定逻辑。
+    返回裁决字符串（"ok"/"quota"/"interstitial"/"error"）。
+    该入口本身永不抛，这里只兜底转 "error"。
+    """
+    try:
+        from backend.emby_server import transfer_variant as tv
+
+        return tv.probe_user_copy_quota_decision(user_id, fid)
+    except Exception:  # noqa: BLE001
+        return "error"
+
+
+def _token_expires_at(db, binding):
+    """绑定行当前 access_token 的过期时刻（epoch 秒），读不到回 None。
+
+    走 drive_oauth 的凭据解封口（与刷新判定同一读法）；凭据解
+    不开（密钥轮换等）回 None，W3 按失败记账、不硬刷（点播时
+    该用户自会撞上现行失效口径）。永不抛。
+    """
+    try:
+        from backend.emby_server import drive_oauth as do
+
+        _cred, token = do._drive_credential_of(db, binding)
+        expires = int(token.get("expires_at") or 0)
+        return expires if expires > 0 else None
+    except Exception:  # noqa: BLE001 — 读不到按未知，见 docstring
+        return None
+
+
+def _token_ensure(db, user_id) -> bool:
+    """W3 执行缝：调全站唯一令牌口 get_user_drive_access_token。
+
+    未临近过期直接返回现令牌（零网络）、临近才刷新并写回本人
+    绑定行——刷新与否由该口内部边距判定，工人不复制。成功回
+    True；DriveOAuthError（无绑定/失效/限流）回 False。永不抛。
+    """
+    try:
+        from backend.emby_server import drive_oauth as do
+
+        return bool(do.get_user_drive_access_token(db, user_id))
+    except Exception:  # noqa: BLE001 — 令牌口失败只记账
+        return False
+
+
 def _load_ratio() -> float:
     """1 分钟负载 / CPU 数（取不到按 0：不许因测不准饿死工人）。"""
     try:
@@ -436,7 +598,7 @@ class _RequestCounter:
 
 
 # ---------------------------------------------------------------------------
-# 暖执行：W1 交付计划 / W5 存在性
+# 暖执行：W1 交付计划 / W2 授权＋裁决 / W3 令牌 / W5 存在性
 # ---------------------------------------------------------------------------
 
 def _warm_plan(db, target, cfg) -> str:
@@ -523,6 +685,123 @@ def _warm_exists(db, item, target, cfg, counter):
     return "failed", made
 
 
+def _warm_copy_public(db, target, copy_fid, cfg, counter):
+    """W2a：副本 anyone-reader 授权幂等确保，返回 (结果码, 请求数)。
+
+    结果码：ensured（本轮真调 ensure 且成功）/ fresh（已公开
+    缓存新鲜，零网络）/ failed（ensure 失败）/ skipped（无用户
+    维度、无 ready 副本、或无生效中绑定）/ budget（预算耗尽）。
+    副本 fid 由调用方按「最新 ready 副本」口径算好传入（与 W5
+    同一 fid）。真确保计 1 次请求。
+    """
+    user_id = target.get("user_id")
+    if user_id is None or not copy_fid:
+        return "skipped", 0
+    if _active_drive_binding(db, user_id) is None:
+        return "skipped", 0
+    if _copy_public_valid(db, user_id, copy_fid):
+        return "fresh", 0
+    if counter.count >= cfg["max_requests"]:
+        return "budget", 0
+    counter.add(1)
+    ok = _ensure_copy_public(db, user_id, copy_fid)
+    return ("ensured", 1) if ok else ("failed", 1)
+
+
+def _warm_quota(db, target, copy_fid, cfg, counter):
+    """W2b：额度探针裁决预探，返回 (结果码, 请求数)。
+
+    结果码：probed（本轮真探测，裁决已落缓存/复用记录）/
+    fresh（判定点会吃现成缓存、不会现探）/ failed（探测返回
+    error）/ skipped（无用户维度、无 ready 副本、无生效中绑定
+    或探测开关关）/ budget（预算耗尽）。
+
+    新鲜判定逐字镜像 probe_user_copy_quota_decision 的吃缓存
+    口径，三种「判定点不现探」的情形：①裁决缓存为 quota；
+    ②裁决为 ok 且明细 page=quota（GET 腿额度页信号）；③ok 复用
+    记录还在。三者任一的剩余 TTL > 提前量 → fresh；TTL 已进
+    提前量但还没到期 → 判定点仍吃缓存（到期后自然重探，与
+    现行口径一致），同样记 fresh 且不调判定点。其余情形调判
+    定点入口真探测，计 2 次请求（两腿形态）。
+    """
+    user_id = target.get("user_id")
+    if user_id is None or not copy_fid:
+        return "skipped", 0
+    if _active_drive_binding(db, user_id) is None:
+        return "skipped", 0
+    if not _quota_probe_enabled():
+        return "skipped", 0
+    state = _quota_cache_state(user_id, copy_fid)
+    lead = cfg["refresh_lead_sec"]
+    eaten = state["verdict"] == "quota" or (
+        state["verdict"] == "ok" and state["page"] == "quota")
+    reuse_alive = state["reuse_ttl"] is not None and state["reuse_ttl"] > 0
+    if eaten or reuse_alive:
+        return "fresh", 0
+    if counter.count >= cfg["max_requests"]:
+        return "budget", 0
+    counter.add(2)  # 先计后探：两腿形态，与 W5 的硬帽口径一致
+    verdict = _quota_decide(user_id, copy_fid)
+    if verdict == "error":
+        return "failed", 2
+    return "probed", 2
+
+
+class _RoundContext:
+    """一轮内的跨目标状态（当前只有 W3 的用户去重）。
+
+    W3 按用户处理：同一用户在一轮里有多个目标时只查/刷一次，
+    后续目标记 fresh。线程安全（轮内并发执行共用一个实例）。
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._token_users = set()
+
+    def claim_token_user(self, user_id) -> bool:
+        """本轮首次处理该用户回 True，重复回 False。"""
+        with self._lock:
+            if user_id in self._token_users:
+                return False
+            self._token_users.add(user_id)
+            return True
+
+
+def _warm_token(db, target, cfg, counter, round_ctx):
+    """W3：本人令牌保鲜，返回 (结果码, 请求数)。
+
+    结果码：refreshed（本轮调令牌口且成功——临近过期时该口内
+    部真刷新并写回，未临近时是零网络直读）/ fresh（令牌过期
+    时刻在刷新边距＋提前量之外，或本轮已处理过该用户）/
+    failed（凭据读不到或令牌口失败）/ skipped（无用户维度或
+    无生效中绑定）/ budget（预算耗尽）。
+
+    新鲜判据：expires_at > now + 刷新边距（300 秒既有常量）
+    + 提前量——保证点播落进边距窗之前工人已先刷过。真调令牌
+    口计 1 次请求。
+    """
+    user_id = target.get("user_id")
+    if user_id is None:
+        return "skipped", 0
+    binding = _active_drive_binding(db, user_id)
+    if binding is None:
+        return "skipped", 0
+    if round_ctx is not None and not round_ctx.claim_token_user(user_id):
+        return "fresh", 0
+    expires = _token_expires_at(db, binding)
+    if expires is None:
+        return "failed", 0
+    horizon = time.time() + OAUTH_TOKEN_REFRESH_MARGIN_SEC \
+        + cfg["refresh_lead_sec"]
+    if expires > horizon:
+        return "fresh", 0
+    if counter.count >= cfg["max_requests"]:
+        return "budget", 0
+    counter.add(1)
+    ok = _token_ensure(db, user_id)
+    return ("refreshed", 1) if ok else ("failed", 1)
+
+
 #: 进程内最近暖过时刻表：(user_id, item_id) → epoch 秒。只作
 #: 观测（最近一轮统计的补充），不决定新鲜度——新鲜度以计划
 #: 过期时间与正缓存 TTL 为准。
@@ -538,24 +817,29 @@ _stop_event = threading.Event()
 _start_lock = threading.Lock()
 
 
-def _warm_one(target, cfg, counter, session_factory, round_start) -> dict:
-    """暖一个 (用户, 条目) 目标，返回 {outcome, w1, w5, requests}。
+def _warm_one(target, cfg, counter, session_factory, round_start,
+              round_ctx=None) -> dict:
+    """暖一个 (用户, 条目) 目标，返回各步结果码与请求数。
 
-    outcome：warmed（至少一步真做了事）/ fresh（全步新鲜或无需做，
-    且无失败）/ failed（有步骤失败且无一步做成）/ budget（预算耗尽）
-    / load（负载越线停轮）。永不抛异常：任何失败都收敛成 failed
-    记账——暖是后台锦上添花，不许把异常漏进工人循环、更不许漏进
-    起播路径（起播路径根本不经过这里）。
+    步骤顺序照设计稿 §5.2：W1 计划 → W2a 授权 → W2b 裁决 →
+    W3 令牌 → W5 存在性。outcome：warmed（至少一步真做了事）/
+    fresh（全步新鲜或无需做，且无失败）/ failed（有步骤失败且
+    无一步做成）/ budget（预算耗尽）/ load（负载越线停轮）。
+    永不抛异常：任何失败都收敛成 failed 记账——暖是后台锦上
+    添花，不许把异常漏进工人循环、更不许漏进起播路径（起播
+    路径根本不经过这里）。round_ctx 为一轮内的跨目标状态
+    （W3 用户去重），直调时可省略（按单目标新上下文处理）。
     """
+    _skip = {"w1": "skipped", "w2a": "skipped", "w2b": "skipped",
+             "w3": "skipped", "w5": "skipped"}
     if time.monotonic() - round_start > cfg["round_budget_sec"]:
-        return {"outcome": "budget", "w1": "skipped", "w5": "skipped",
-                "requests": 0}
+        return {"outcome": "budget", "requests": 0, **_skip}
     if counter.count >= cfg["max_requests"]:
-        return {"outcome": "budget", "w1": "skipped", "w5": "skipped",
-                "requests": 0}
+        return {"outcome": "budget", "requests": 0, **_skip}
     if _load_ratio() > cfg["load_ratio"]:
-        return {"outcome": "load", "w1": "skipped", "w5": "skipped",
-                "requests": 0}
+        return {"outcome": "load", "requests": 0, **_skip}
+    if round_ctx is None:
+        round_ctx = _RoundContext()
     before = counter.count
     try:
         jitter = cfg["jitter_sec"]
@@ -567,30 +851,43 @@ def _warm_one(target, cfg, counter, session_factory, round_start) -> dict:
                     .filter(em.MediaItem.id == target["item_id"])
                     .one_or_none())
             if item is None:
-                return {"outcome": "failed", "w1": "failed",
-                        "w5": "failed",
-                        "requests": counter.count - before}
+                return {"outcome": "failed",
+                        "requests": counter.count - before,
+                        **{k: "failed" for k in _skip}}
             w1 = _warm_plan(db, target, cfg)
+            user_id = target.get("user_id")
+            copy_fid = None
+            if user_id is not None:
+                copy_fid = _newest_ready_user_copy_fid(
+                    db, user_id, item.id)
+            w2a, _n = _warm_copy_public(db, target, copy_fid, cfg,
+                                        counter)
+            w2b, _n = _warm_quota(db, target, copy_fid, cfg, counter)
+            w3, _n = _warm_token(db, target, cfg, counter, round_ctx)
             w5, _made = _warm_exists(db, item, target, cfg, counter)
         finally:
             db.close()
     except Exception as exc:  # noqa: BLE001 — 失败只记账，见 docstring
         logger.info("暖地址失败 user=%s item=%s: %s",
                     target.get("user_id"), target["item_id"], exc)
-        return {"outcome": "failed", "w1": "failed", "w5": "failed",
-                "requests": counter.count - before}
-    if w5 == "budget":
+        return {"outcome": "failed",
+                "requests": counter.count - before,
+                **{k: "failed" for k in _skip}}
+    if "budget" in (w2a, w2b, w3, w5):
         outcome = "budget"
-    elif w1 == "built" or w5 == "published":
+    elif w1 == "built" or w2a == "ensured" or w2b == "probed" \
+            or w3 == "refreshed" or w5 == "published":
         outcome = "warmed"
         with _warmed_lock:
             _warmed_at[(target.get("user_id"), target["item_id"])] = \
                 time.time()
-    elif w1 == "failed" or w5 in ("failed", "gone"):
+    elif w1 == "failed" or w2a == "failed" or w2b == "failed" \
+            or w3 == "failed" or w5 in ("failed", "gone"):
         outcome = "failed"
     else:
         outcome = "fresh"
-    return {"outcome": outcome, "w1": w1, "w5": w5,
+    return {"outcome": outcome, "w1": w1, "w2a": w2a, "w2b": w2b,
+            "w3": w3, "w5": w5,
             "requests": counter.count - before}
 
 
@@ -618,8 +915,8 @@ def warm_once(session_factory=None) -> dict:
     """跑一轮暖地址，返回本轮统计（任何情况下都返回，不抛）。
 
     让路顺序：总开关 → 系统负载 → 起播繁忙 → 构建目标 → 低并发
-    执行（轮中双预算与负载复查在 _warm_one 里逐条守）。W1 建
-    计划不计出站请求；W5 每次实查计 1 次。
+    执行（轮中双预算与负载复查在 _warm_one 里逐条守）。请求计
+    数口径见模块头注（W1 不计、W2a 1、W2b 2、W3 1、W5 每次 1）。
     """
     cfg = drive_warm_config()
     started = time.monotonic()
@@ -630,6 +927,9 @@ def warm_once(session_factory=None) -> dict:
         "warmed": 0, "fresh": 0, "failed": 0, "budget": 0,
         "load_skipped": 0,
         "w1": {"built": 0, "fresh": 0, "failed": 0, "skipped": 0},
+        "w2a": {"ensured": 0, "fresh": 0, "failed": 0, "skipped": 0},
+        "w2b": {"probed": 0, "fresh": 0, "failed": 0, "skipped": 0},
+        "w3": {"refreshed": 0, "fresh": 0, "failed": 0, "skipped": 0},
         "w5": {"published": 0, "fresh": 0, "gone": 0, "failed": 0,
                "skipped": 0, "budget": 0},
         "requests": 0, "elapsed_sec": 0.0,
@@ -661,6 +961,7 @@ def warm_once(session_factory=None) -> dict:
         stats["targets"] = len(targets)
         stats["w5_only"] = sig_stats.get("w5_only", 0)
         counter = _RequestCounter()
+        round_ctx = _RoundContext()
         outcomes = {"warmed": 0, "fresh": 0, "failed": 0,
                     "budget": 0, "load": 0}
         if targets:
@@ -669,23 +970,21 @@ def warm_once(session_factory=None) -> dict:
                     thread_name_prefix="drive-warm") as pool:
                 futures = [
                     pool.submit(_warm_one, target, cfg, counter,
-                                factory, started)
+                                factory, started, round_ctx)
                     for target in targets]
                 for future in futures:
                     try:
                         res = future.result()
                     except Exception:  # noqa: BLE001 — _warm_one 本应不抛
                         outcomes["failed"] += 1
-                        stats["w1"]["failed"] += 1
-                        stats["w5"]["failed"] += 1
+                        for key in ("w1", "w2a", "w2b", "w3", "w5"):
+                            stats[key]["failed"] += 1
                         continue
                     outcomes[res["outcome"]] += 1
-                    w1 = res.get("w1", "skipped")
-                    if w1 in stats["w1"]:
-                        stats["w1"][w1] += 1
-                    w5 = res.get("w5", "skipped")
-                    if w5 in stats["w5"]:
-                        stats["w5"][w5] += 1
+                    for key in ("w1", "w2a", "w2b", "w3", "w5"):
+                        code = res.get(key, "skipped")
+                        if code in stats[key]:
+                            stats[key][code] += 1
         stats["warmed"] = outcomes["warmed"]
         stats["fresh"] = outcomes["fresh"]
         stats["failed"] = outcomes["failed"]
