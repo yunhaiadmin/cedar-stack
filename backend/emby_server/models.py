@@ -2721,6 +2721,47 @@ class PoolPlayEvent(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
+class PoolItemSourceBlock(Base):
+    """公共贡献池条目级源熔断行（2026-11-12）：一行 = 一个条目
+    的源文件阻断态（item_id 唯一）。
+
+    产生：同条目池单 copy_forbidden 失败达「全员试过」或窗口
+    内阈值（pool_retry 子家族 pool_source_block_* 键），判定
+    收口在 pool_gate 的换盘/建单口。为什么要条目级：2026-11-10
+    换盘机制的「已试过」集合只活在每条失败行自己的短冷却窗
+    （默认 3600 秒）里，行一过期就掉出集合，下一轮点播把全员
+    当没试过重开整轮——《奥德赛》源分享坏死后 24h 烧出 236 个
+    失败单。本行是跨轮次的条目级记忆：
+    - ``blocked_until``：阻断到期时刻；期内任何入口不许为该
+      条目新建池单（只管 owner_scope=pool，个人盘不动）。
+    - ``probe_job_id``：冷却到期半开后放行的唯一探测单 id；
+      非空 = 探测已放行（在飞或待裁决）。裁决在 pool_gate
+      ._resolve_source_block 一处：done / 其它 kind 失败（源
+      可读）→ 删行解阻；copy_forbidden 失败 → 重新阻断一整轮。
+    - ``failure_count`` / ``tripped_at``：最近一次触发时窗口
+      内失败数与触发时刻，留痕对账用。
+    无外键（照本文件池表先例）；新表由 create_all 建出。
+    """
+
+    __tablename__ = "pool_item_source_blocks"
+
+    __table_args__ = (
+        UniqueConstraint("item_id",
+                         name="uq_pool_item_source_blocks_item"),
+        Index("ix_pool_item_source_blocks_item", "item_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    item_id = Column(Integer, nullable=False)
+    blocked_until = Column(DateTime, nullable=True)
+    probe_job_id = Column(Integer, nullable=True)
+    failure_count = Column(Integer, nullable=False, default=0)
+    tripped_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now,
+                        onupdate=datetime.now)
+
+
 class PoolRewardSettlement(Base):
     """公共贡献池激励结算批次（goal-33 PR-6，钩子 H3）。
 

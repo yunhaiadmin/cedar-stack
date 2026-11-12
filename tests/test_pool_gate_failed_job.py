@@ -195,8 +195,13 @@ def test_gate_forbidden_swaps_to_other_member(db):
 
 
 def test_gate_forbidden_all_members_tried_terminal(db):
-    """全部可用盘都 forbidden 过：门禁如实 failed，reason 带
-    copy_forbidden，detail 透传任务行原因，且不再建单。"""
+    """全部可用盘都 forbidden 过：门禁如实 failed 且不再建单。
+
+    口径升级（2026-11-12 条目级源熔断）：「全员试过」正是源
+    熔断的触发点，reason 由 copy_forbidden 升为 source_blocked、
+    detail 换源熔断文案（源文件不可读），阻断行落库；熔断全
+    套行为见 test_pool_source_breaker。本用例只钉「终态如实 +
+    不建单」这两条 2026-11-10 原意。"""
     item = _item(db)
     member_a = _member(db, 11)
     member_b = _member(db, 12)
@@ -209,14 +214,16 @@ def test_gate_forbidden_all_members_tried_terminal(db):
     gate = pool_gate.ensure_pool_copy_gate(db, item, user,
                                            quota_fn=_quota_ok)
     assert gate["verdict"] == "failed"
-    assert gate["reason"] == "copy_forbidden"
-    assert "无权读取源文件" in (gate.get("detail") or "")
+    assert gate["reason"] == "source_blocked"
+    assert "源文件暂时读不到" in (gate.get("detail") or "")
     assert len(_pool_jobs(db, item.id)) == 2
 
 
 def test_gate_forbidden_single_member_terminal(db):
     """只有一块盘且它 forbidden：无盘可换 → 如实终态失败，
-    不许再报 preparing 让观众无限重试吃 409。"""
+    不许再报 preparing 让观众无限重试吃 409。reason 同
+    all_members_tried 用例：单盘即全员，2026-11-12 起升为
+    source_blocked（源熔断）。"""
     item = _item(db)
     member_a = _member(db, 11)
     _enable_pool(db)
@@ -226,7 +233,7 @@ def test_gate_forbidden_single_member_terminal(db):
     gate = pool_gate.ensure_pool_copy_gate(db, item, user,
                                            quota_fn=_quota_ok)
     assert gate["verdict"] == "failed"
-    assert gate["reason"] == "copy_forbidden"
+    assert gate["reason"] == "source_blocked"
     assert len(_pool_jobs(db, item.id)) == 1
 
 
