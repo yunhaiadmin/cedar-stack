@@ -137,6 +137,24 @@ def test_series_guid_skips_doubled_season_folders():
     assert g1 == g2 == g3
 
 
+# ==================== 前导空格季目录（回填 dry-run 抓到的第二形态） ====================
+
+def test_series_name_skips_space_prefixed_season_folder():
+    # 生产行：series 2629076《黑色孤儿》——路径段是「 Season 01」（带前导
+    # 空格）：mount://4/video/剧集/英美剧/黑色孤儿 (2013)/ Season 01/…
+    name = _series_name_of(
+        _sf("video/剧集/英美剧/黑色孤儿 (2013)/ Season 01"),
+        {"name": "x", "year": 2013})
+    assert name == "黑色孤儿"
+
+
+def test_series_guid_space_prefixed_season_folder():
+    from backend.emby_server.scanner import _series_guid_of
+    g1 = _series_guid_of(_sf("video/剧集/英美剧/黑色孤儿 (2013)/ Season 01"))
+    g2 = _series_guid_of(_sf("video/剧集/英美剧/黑色孤儿 (2013)/Season 02"))
+    assert g1 == g2
+
+
 # ==================== 回填脚本纯函数 ====================
 
 def test_backfill_helpers():
@@ -174,6 +192,10 @@ def test_backfill_helpers():
     ) == "猫和老鼠"
     assert mod.series_name_from_child_path(
         "mount://4/video/剧集/日韩剧/某剧 (2011)/Season 01/x.mp4") == "某剧"
+    # 前导空格季目录（series 2629076《黑色孤儿》生产实证）
+    assert mod.series_name_from_child_path(
+        "mount://4/video/剧集/英美剧/黑色孤儿 (2013)/ Season 01/"
+        "黑色孤儿.Orphan.Black.S01E01.1080p.mkv") == "黑色孤儿"
 
 def test_is_season_like_name():
     for bad in ["Season 01", "Season 1", "Season 1950", "Season S01",
