@@ -19,11 +19,25 @@
 免鉴权端点必须显式登记，而且必须说清替代机制（限流 / 验签 / 验证码…），
 不能只写一句「故意的」。
 
+**一种等价写法也算**（与审计覆盖检查 v2.39.0 同一份口径）：端点把鉴权交给
+**同一模块里的函数**（如 EA 侧端点在函数体第一行调 ``_panel_auth(request)``，
+里面才是 ``require_panel_key``）——跟一层：端点直接调用的本模块函数源码里
+出现鉴权依赖名就算覆盖。只跟一层、只认本模块，不做完整调用图分析：
+隔两层以上、或干脆没调的，照旧点名。
+
+**扫哪些模块靠自动发现，不靠手名单**（GA-068）：这份检查原来有一份手维护的
+``ROUTER_MODULES`` 名单，新域模块上线时没人登记，检查就在不全的名单上跑绿——
+代理分销 / 软件授权 / 公共池 / 治理停权 / 合集等一批高敏写口全是从这个盲区
+漏出去的（GA-069~073）。现在模块集合由 AST 枚举源码自动发现（见下方
+``discover_router_modules``），手名单只许以「排除表」形式存在且逐条写理由；
+``tests/test_coverage_discovery_guard.py`` 用一份独立枚举对账，漏扫必然红。
+
 用法：python3 scripts/check_auth_coverage.py
 """
 
 from __future__ import annotations
 
+import ast
 import importlib
 import inspect
 import os
@@ -50,42 +64,86 @@ AUTH_DEPENDENCIES = (
     "require_panel_key",       # EA ↔ EM 之间用共享密钥，不是管理员 JWT
 )
 
-# 定义对外路由的模块（新增域模块要登记在这里，否则它下面的写端点不被判定）
-ROUTER_MODULES = (
-    # 用户端
-    "backend.api.user",
-    "backend.api.store",  # 想看商店骨架：POST /want 走 get_current_user
-    "backend.api.store_requests",  # 想看商店求片 R1：POST /requests 走 get_current_user
-    "backend.api.source_discovery",  # 找源：POST /confirm 走 get_current_user（#1415 漏登记，扫描不到）
-    "backend.api.emby_portal",
-    "backend.api.economy",
-    "backend.api.invitation",
-    "backend.api.assistant",
-    "backend.api.site",
-    "backend.websocket",
-    # 管理端
-    "backend.api.admin_core",
-    "backend.api.admin",
-    "backend.api.admin_ops",
-    "backend.api.admin_economy",
-    "backend.api.admin_user_grants",
-    "backend.api.admins_admin",
-    "backend.api.setup",
-    "backend.api.orders_admin",
-    "backend.api.coupons_admin",
-    "backend.api.capabilities_admin",
-    "backend.api.playback_admin",
-    "backend.api.realms",
-    "backend.api.reminders_admin",
-    "backend.api.admin_apikey",  # API Key / Service Token 管理（v2.58.0）
-    "backend.api.servers",
-    "backend.api.emby_servers",
-    "backend.emby_server.portal",
-    "backend.emby_server.portal_mount_routes",
-    # EA 侧（面板密钥鉴权；EM 不挂载它们）
-    "backend.emby_server.mount_health",
-    "backend.emby_server.nodes",
-)
+# ---------------------------------------------------------------------------
+# 覆盖范围：自动发现，不再手维护名单（GA-068，见文件头说明）
+#
+# AST 枚举 ``backend/`` 全部源码（只读语法树，不 import 业务模块）：
+#   1. ``backend/api`` 与 ``backend/emby_server`` 两个包里，凡是定义了
+#      ``APIRouter``、往某个 router 上注册了路由（装饰器）、或做了
+#      ``include_router`` 的模块，一律纳入；
+#   2. ``backend/`` 其他任何位置，只要以字面量 ``prefix=`` 定义了
+#      ``/api/admin`` / ``/api/user`` 路由的模块，一律纳入。
+# 纳入只是「候选」——真正判定仍按收集到的路由路径过滤，所以多纳不会误报，
+# 漏纳才会放走写口；发现逻辑因此宁宽勿窄。
+# ---------------------------------------------------------------------------
+
+_DISCOVERY_PACKAGE_ROOTS = ("backend/api", "backend/emby_server")
+_ROUTE_DECORATOR_ATTRS = frozenset({
+    "get", "post", "put", "patch", "delete", "api_route", "websocket",
+    "add_api_route", "add_api_websocket_route",
+})
+_BASE_PREFIXES = ("/api/admin", "/api/user")
+
+# 自动发现的排除表：模块 → 为什么不扫。判断标准与免鉴权登记相同——必须写出
+# 具体理由，不许只写一句「故意的」；守卫测试会逐条对账（理由为空、指向的
+# 模块不存在都会红）。正常情况下这里应该是空的：发现到的模块默认全扫。
+EXCLUDED_MODULES: dict[str, str] = {}
+
+
+def _module_name_of(path: Path) -> str:
+    rel = path.relative_to(ROOT).with_suffix("")
+    parts = list(rel.parts)
+    if parts[-1] == "__init__":
+        parts.pop()
+    return ".".join(parts)
+
+
+def _file_route_signals(path: Path) -> tuple[bool, set[str]]:
+    """读一个源码文件的语法树 → (是否定义/注册了路由, 字面量 APIRouter 前缀集合)"""
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (SyntaxError, UnicodeDecodeError, OSError):
+        return False, set()
+    registers = False
+    prefixes: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name) and func.id == "APIRouter":
+                registers = True
+                for keyword in node.keywords:
+                    value = keyword.value
+                    if (keyword.arg == "prefix" and isinstance(value, ast.Constant)
+                            and isinstance(value.value, str)):
+                        prefixes.add(value.value)
+            elif isinstance(func, ast.Attribute) and func.attr == "include_router":
+                registers = True
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for decorator in node.decorator_list:
+                if (isinstance(decorator, ast.Call)
+                        and isinstance(decorator.func, ast.Attribute)
+                        and decorator.func.attr in _ROUTE_DECORATOR_ATTRS):
+                    registers = True
+    return registers, prefixes
+
+
+def discover_router_modules() -> tuple[str, ...]:
+    """自动枚举要扫的路由模块（GA-068：代替原手维护的 ROUTER_MODULES 名单）。"""
+    found: set[str] = set()
+    for path in sorted((ROOT / "backend").rglob("*.py")):
+        registers, prefixes = _file_route_signals(path)
+        if not registers and not prefixes:
+            continue
+        in_package_roots = any(
+            path.is_relative_to(ROOT / root) for root in _DISCOVERY_PACKAGE_ROOTS)
+        if in_package_roots or any(p.startswith(_BASE_PREFIXES) for p in prefixes):
+            found.add(_module_name_of(path))
+    return tuple(sorted(found - set(EXCLUDED_MODULES)))
+
+
+# 定义对外路由的模块（自动发现，见上方 GA-068 说明；不许改回手维护名单——
+# 守卫测试 tests/test_coverage_discovery_guard.py 会把漏扫钉红）
+ROUTER_MODULES = discover_router_modules()
 
 # 免鉴权写端点：(方法, 路径) → 靠什么别的机制挡住。
 # 判断标准：**必须写出替代机制**（限流 / 验签 / 一次性令牌 / 验证码…），
@@ -143,6 +201,10 @@ def collect_write_endpoints() -> dict[tuple[str, str], tuple[object, bool]]:
     return found
 
 
+# 「把整段同步逻辑交给模块级函数」的下放调用（与 check_admin_audit_coverage 同一份口径）
+OFFLOAD_CALLS = frozenset({"run_in_threadpool", "to_thread", "run_in_executor", "run_sync"})
+
+
 def guarded(endpoint, router_auth: bool) -> bool:
     """这条路由是否已被鉴权（路由级依赖，或端点签名里出现鉴权依赖）"""
     if router_auth:
@@ -153,7 +215,48 @@ def guarded(endpoint, router_auth: bool) -> bool:
         source = inspect.getsource(endpoint)
     except (OSError, TypeError):
         return False
-    return any(name in source for name in AUTH_DEPENDENCIES)
+    return (any(name in source for name in AUTH_DEPENDENCIES)
+            or _guarded_in_callees(endpoint, source))
+
+
+def _guarded_in_callees(endpoint, source: str) -> bool:
+    """端点直接调用的**本模块函数**里出现鉴权依赖（只跟一层）
+
+    对应这种写法（见 ``backend/emby_server/stream_nodes.py``）：端点函数体里
+    只调 ``_panel_auth(request)``，真正的 ``require_panel_key`` 在那个
+    本模块 helper 里——鉴权语义与写在端点里完全一样，不跟这一层就会误报。
+    """
+    module = inspect.getmodule(endpoint)
+    if module is None:
+        return False
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:  # 同步源码必然可解析；解析不了就按「未覆盖」处理
+        return False
+    called: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        fname = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "")
+        if isinstance(func, ast.Name):
+            called.add(func.id)
+        # ``await run_in_threadpool(_helper, db, ...)``：下放目标是实参而不是被调用方
+        if fname in OFFLOAD_CALLS:
+            for arg in list(node.args) + [kw.value for kw in node.keywords]:
+                if isinstance(arg, ast.Name):
+                    called.add(arg.id)
+    for name in sorted(called):
+        helper = getattr(module, name, None)
+        if helper is None or helper is endpoint or not callable(helper):
+            continue
+        try:
+            helper_source = inspect.getsource(helper)
+        except (OSError, TypeError):
+            continue
+        if any(dep in helper_source for dep in AUTH_DEPENDENCIES):
+            return True
+    return False
 
 
 def scan(endpoints: dict | None = None) -> tuple[list[str], list[str], int]:

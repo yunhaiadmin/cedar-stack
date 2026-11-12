@@ -401,6 +401,16 @@ def node_scan_library(library_id: int, full: bool = False,
         start_local_scan(db, lib, force_full=bool(full))
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
+    # 机器口审计（GA-068 B 类）：面板密钥鉴权、无管理员可归属，记系统身份——
+    # admin 传 None（admin_user_id 存 NULL，不触发 admin_users 外键），
+    # details 带 actor=system；只记成功启动的扫描，失败/被拒不留行。
+    # 函数内懒导入 _audit：顶层 import 会跑 backend/api/__init__.py（→ admin_scrape → portal），
+    # portal 初始化中途导入本模块时会循环导入（#58 冒烟 job 130888407164 实锤）。
+    from backend.api.admin_core import _audit
+
+    _audit(db, None, "node_scan_library", "library", library_id,
+           {"actor": "system", "auth": "panel_key", "full": bool(full)})
+    db.commit()
     return {"success": True, "message": "扫描已在本节点启动", "library_id": library_id,
             "full": bool(full), "node": describe(db)}
 

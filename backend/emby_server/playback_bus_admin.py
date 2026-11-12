@@ -27,17 +27,38 @@ outcome=recorded 时附 note 明说“只记账 + 发事件，播放器未接命
 
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from backend import admin_roles
-from backend.api.admin_core import get_current_admin
+from backend import admin_roles, models
 from backend.database import get_db
 from backend.emby_server import playback_bus as bus
 
 router = APIRouter(prefix="/api/admin/playback-bus",
                    tags=["管理后台·播放实时总线"])
+
+
+_admin_bearer = HTTPBearer(auto_error=False)
+
+
+def get_current_admin(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_admin_bearer),
+    db: Session = Depends(get_db),
+) -> models.WebUser:
+    """与 ``backend.api.admin_core.get_current_admin`` 同一实现（只认 Authorization 头里的 JWT）。
+
+    不直接顶层 import：那会跑 backend/api/__init__.py（→ admin_scrape → portal），
+    portal 初始化中途导入本模块时会循环导入（nodes.py 同款，#58 冒烟实锤）；
+    这里照 portal._bearer_admin 的既有口径，函数内懒导入再转调。
+    """
+    from backend.api.admin_core import get_current_admin as _core_get_current_admin
+
+    return _core_get_current_admin(request, credentials, db)
 
 
 class CommandIn(BaseModel):
@@ -95,6 +116,15 @@ def send_command(body: CommandIn, request: Request,
     elif command.outcome == bus.OUTCOME_RECORDED:
         note = ("命令已记账并发布事件，但本次管理端命令未向播放器投递，"
                 "未直接作用于播放器，不是已确认执行。")
+    # C 类补记（GA-068）：命令表已落 requested_by，这里再进 AdminLog，
+    # 与 #61 其余管理写口同口径（_audit + commit）；只记成功执行的命令。
+    # 函数内懒导入 _audit：同上，避循环导入。
+    from backend.api.admin_core import _audit
+
+    _audit(db, current_admin, "playback_bus_command", "playback_session", None,
+           {"session_key": body.session_key, "command": body.command,
+            "command_id": command.command_id, "outcome": command.outcome})
+    db.commit()
     return _command_response(command, note)
 
 

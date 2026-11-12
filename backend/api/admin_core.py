@@ -108,7 +108,7 @@ def get_current_admin(
 
 def _audit(
     db: Session,
-    admin: models.WebUser | int,
+    admin: models.WebUser | int | None,
     action: str,
     target_type: str | None = None,
     target_id: int | None = None,
@@ -121,9 +121,14 @@ def _audit(
     一次提交（下放线程池的写也一样），ORM 属性就会过期，此时再读 ``admin.id`` 会在
     事件循环上触发一次隐式回查；提前把 id 取成纯值传进来就能避开这一点，
     也让审计和其它写一起在同一个线程池任务里落盘（见 docs/performance.md 二·一〇）。
+
+    ``admin`` 为 None 时记**系统身份**：面板密钥鉴权的机器口（节点扫描、流节点
+    注册/注销）没有管理员可归属，绝不编一个假 id；admin_user_id 存 NULL，
+    NULL 不触发 admin_users 外键（见 backend/lottery_governance.py 的边界说明），
+    details 里须带 ``"actor": "system"``，操作日志列表会把这类行显示为「系统」。
     """
     db.add(models.AdminLog(
-        admin_user_id=admin if isinstance(admin, int) else admin.id,
+        admin_user_id=admin if isinstance(admin, int) else (admin.id if admin is not None else None),
         action=action,
         target_type=target_type,
         target_id=target_id,
