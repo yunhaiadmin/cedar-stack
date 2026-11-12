@@ -6674,6 +6674,65 @@ def _after_pool_copy_forbidden(db, job, item):
             pass
 
 
+def _try_pool_source_heal(db, job, item, drive_api, orig_fid) -> bool:
+    """池源自愈（2026-11-12）：成员令牌读不到源时，经 SA 通道
+    给源文件补 anyone-reader，补上返回 True（调用方原地重试
+    一次 copy）。
+
+    根因实证：MP 换源文件后新文件从没带 anyone-reader（老文件
+    带过、已删），池 Path A 是成员令牌直拷、无 SA 兜底，源缺
+    分享即全员 copy_forbidden（《奥德赛》）。补分享是治本：
+    MP 再换文件也能当场自愈，不必等熔断冷却或人工处置。
+
+    边界（不许扩）：
+    - 只对池单的源 fid 调（orig_fid = item.drive_file_id，
+      drive 走 job.drive_id 源盘），只走 SA 现成方法
+      DriveApiClient.add_anyone_reader（幂等），不新造权限路径；
+    - 开关 pool_source_heal_enabled（pool_retry 子家族）关时
+      不试；每单至多调一次（调用方管）；
+    - SA 无权/源已删等异常一律回 False（调用方落
+      copy_forbidden 终态、归条目级源熔断），本函数永不抛
+      异常、不许污染已定的终态口径。
+    结果经 transfer_decisions 留痕（scope=pool_source_heal）。
+    """
+    from backend.emby_server import pool_gate as _pg
+    from backend.emby_server import transfer_decisions as _decisions
+
+    item_id = getattr(item, "id", None)
+    try:
+        cfg = _pg.retry_config_payload(db)
+        if not cfg.get("pool_source_heal_enabled", True):
+            return False
+        if drive_api is None or not orig_fid:
+            return False
+        drive_api.add_anyone_reader(job.drive_id, orig_fid)
+    except Exception:  # noqa: BLE001 — 自愈失败归熔断口径
+        logger.info("池源自愈失败 job=%s item=%s",
+                    getattr(job, "id", None), item_id)
+        try:
+            _decisions.note_decision(
+                scope="pool_source_heal",
+                resource_key=f"item:{item_id}",
+                decision="heal_failed",
+                reason=f"job={getattr(job, 'id', None)}",
+                candidates=[])
+        except Exception:  # noqa: BLE001 — 留痕失败不挡终态
+            pass
+        return False
+    logger.info("池源自愈已补 anyone-reader job=%s item=%s",
+                getattr(job, "id", None), item_id)
+    try:
+        _decisions.note_decision(
+            scope="pool_source_heal",
+            resource_key=f"item:{item_id}",
+            decision="healed",
+            reason=f"job={getattr(job, 'id', None)}",
+            candidates=[])
+    except Exception:  # noqa: BLE001 — 留痕失败不挡重试
+        pass
+    return True
+
+
 def _run_drive_pool_job(db, job, item, drive_api):
     """Drive 池盘任务（goal-33 PR-2）：成员令牌直拷 Path A。
 
@@ -6685,7 +6744,9 @@ def _run_drive_pool_job(db, job, item, drive_api):
     加权限失败记 orphan、不回落源文件播放）。
 
     与用户盘不同的三点（设计使然）：
-    - 不走 Path B：成员令牌看不见源（_CopyForbidden）时本单终态
+    - 不走 Path B：成员令牌看不见源（_CopyForbidden）时先走源
+      自愈（SA 给源文件补 anyone-reader 后原地重试一次，
+      2026-11-12，见 _try_pool_source_heal），仍被拒才本单终态
       copy_forbidden，不静默转 SA 中转；但池路径不止这一块盘——
       终态后由 _after_pool_copy_forbidden 换其他成员盘重建一单
       （2026-11-10 定案，个人盘路径无此语义、逐字不动）；
@@ -6725,38 +6786,53 @@ def _run_drive_pool_job(db, job, item, drive_api):
     orig_fid = item.drive_file_id.strip()
     name = _copy_name_for_item(item)
     _file_size = _to_int(getattr(item, "size", None))
-    try:
-        if hasattr(user_client, "ensure_folder_cached"):
-            folder_id, _ = user_client.ensure_folder_cached(
-                member_drive, transfer_dir_name())
-        else:
-            folder_id = user_client.ensure_folder(member_drive,
-                                                  transfer_dir_name())
-        copied = user_client.copy_file(member_drive, orig_fid, folder_id,
-                                       name)
-    except _CopyForbidden:
-        result = _fail_job(db, job, "copy_forbidden",
-                           "成员令牌无权读取源文件（anyone-reader 未传播"
-                           "或源已撤分享）")
-        _after_pool_copy_forbidden(db, job, item)
-        return result
-    except _CopyQuotaExceeded:
-        _pg._bump_pool_usage(db, member.id, quota_hits=1)
-        # PR-5 熔断：本次命中记数后顺手查阈值，达线即当场熔断
-        # 该成员（状态变更骑 _fail_job 的提交，不另起事务）。
-        _pg.maybe_trip_member_breaker(db, member)
-        free, shortfall = _fresh_quota_numbers(
-            user_client, member_drive, _file_size)
-        return _fail_job(db, job, "insufficient_space",
-                         f"成员盘空间不足：文件 {_file_size} 字节，"
-                         f"剩余 {free} 字节，还差 {shortfall} 字节，"
-                         "未静默回落共享")
-    except DriveOAuthError as exc:
-        return _fail_job(db, job, "no_binding",
-                         f"成员 Drive 令牌失效：{exc}")
-    except Exception as exc:
-        return {"job_id": job.id,
-                "outcome": _schedule_retry(db, job, exc)}
+    # copy 尝试（至多两轮）：首轮被拒（copy_forbidden）先走源
+    # 自愈——SA 给源文件补 anyone-reader 后原地重试一次（见
+    # _try_pool_source_heal）；补不上/重试仍拒才落终态。其余
+    # 异常口径逐字不变（quota 当场记数熔断、令牌失效 no_binding、
+    # 未知异常回队重试），两轮共用同一组 handler、不另立一套；
+    # 只有自愈分支限首轮（heal_tried 记账，至多补一次）。
+    copied = None
+    folder_id = None
+    heal_tried = False
+    while True:
+        try:
+            if hasattr(user_client, "ensure_folder_cached"):
+                folder_id, _ = user_client.ensure_folder_cached(
+                    member_drive, transfer_dir_name())
+            else:
+                folder_id = user_client.ensure_folder(member_drive,
+                                                      transfer_dir_name())
+            copied = user_client.copy_file(member_drive, orig_fid,
+                                           folder_id, name)
+            break
+        except _CopyForbidden:
+            if not heal_tried and _try_pool_source_heal(
+                    db, job, item, drive_api, orig_fid):
+                heal_tried = True
+                continue
+            result = _fail_job(db, job, "copy_forbidden",
+                               "成员令牌无权读取源文件（anyone-reader 未传播"
+                               "或源已撤分享）")
+            _after_pool_copy_forbidden(db, job, item)
+            return result
+        except _CopyQuotaExceeded:
+            _pg._bump_pool_usage(db, member.id, quota_hits=1)
+            # PR-5 熔断：本次命中记数后顺手查阈值，达线即当场熔断
+            # 该成员（状态变更骑 _fail_job 的提交，不另起事务）。
+            _pg.maybe_trip_member_breaker(db, member)
+            free, shortfall = _fresh_quota_numbers(
+                user_client, member_drive, _file_size)
+            return _fail_job(db, job, "insufficient_space",
+                             f"成员盘空间不足：文件 {_file_size} 字节，"
+                             f"剩余 {free} 字节，还差 {shortfall} 字节，"
+                             "未静默回落共享")
+        except DriveOAuthError as exc:
+            return _fail_job(db, job, "no_binding",
+                             f"成员 Drive 令牌失效：{exc}")
+        except Exception as exc:
+            return {"job_id": job.id,
+                    "outcome": _schedule_retry(db, job, exc)}
     variant_fid = (copied or {}).get("id") or ""
     if not variant_fid:
         return {"job_id": job.id,

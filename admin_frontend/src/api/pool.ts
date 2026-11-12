@@ -55,6 +55,10 @@ export const savePoolJanitorConfig = (payload: PoolJanitorConfig) =>
 export interface PoolRetryConfig {
   pool_copy_forbidden_cooldown_sec: number
   pool_copy_forbidden_max_attempts: number
+  pool_source_block_max_failures: number
+  pool_source_block_window_sec: number
+  pool_source_block_cooldown_sec: number
+  pool_source_heal_enabled: boolean
 }
 
 export const fetchPoolRetryConfig = () =>

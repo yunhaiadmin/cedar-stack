@@ -568,6 +568,18 @@ POOL_RETRY_CONFIG_SCHEMA: dict[str, tuple] = {
     # 单条目换盘总尝试上限：0 = 以可用成员盘试完为界；>0 达到
     # 即终态。上限 64 防误配成无界重试。
     "pool_copy_forbidden_max_attempts": ("int", 0, 64),
+    # 条目级源熔断（2026-11-12）：窗口内 forbidden 失败数阈值，
+    # 0 = 关阈值条件（只按全员试过触发）；上限 1000 防误配。
+    "pool_source_block_max_failures": ("int", 0, 1000),
+    # 源熔断计数窗口（秒）：下限 300 防窗口小到数不齐一轮，
+    # 上限 7 天。
+    "pool_source_block_window_sec": ("int", 300, 604800),
+    # 源熔断阻断冷却（秒）：下限 300 防误配成高频重开，上限
+    # 7 天防把条目锁死太久（到期有半开探测兜底）。
+    "pool_source_block_cooldown_sec": ("int", 300, 604800),
+    # 源自愈开关（2026-11-12）：池单 copy_forbidden 时先经 SA
+    # 给源文件补 anyone-reader 再重试一次；默认开（代码默认）。
+    "pool_source_heal_enabled": ("bool",),
 }
 
 # 缺集补集通道（2026-11-11 B 方案）：绕开 MP 订阅判存，按缺集

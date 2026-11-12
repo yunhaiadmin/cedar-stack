@@ -356,6 +356,14 @@ async function doSaveRetryCfg() {
         retryCfg.value.pool_copy_forbidden_cooldown_sec,
       pool_copy_forbidden_max_attempts:
         retryCfg.value.pool_copy_forbidden_max_attempts,
+      pool_source_block_max_failures:
+        retryCfg.value.pool_source_block_max_failures,
+      pool_source_block_window_sec:
+        retryCfg.value.pool_source_block_window_sec,
+      pool_source_block_cooldown_sec:
+        retryCfg.value.pool_source_block_cooldown_sec,
+      pool_source_heal_enabled:
+        retryCfg.value.pool_source_heal_enabled,
     })
     ElMessage.success('重试配置已保存')
   } catch {
@@ -713,13 +721,21 @@ onMounted(() => {
         </template>
       </SectionCard>
 
-      <SectionCard title="转存重试" :icon="RefreshCw" description="池转存读不到源文件（copy_forbidden）时不再一刀切放弃：自动排除失败的那块盘、换其他成员盘重试，全部可用盘试完才算失败；失败冷却也不再一律 24 小时。换盘总尝试上限 0 ＝以可用成员盘试完为界。">
+      <SectionCard title="转存重试" :icon="RefreshCw" description="池转存读不到源文件（copy_forbidden）时不再一刀切放弃：自动排除失败的那块盘、换其他成员盘重试，全部可用盘试完才算失败；失败冷却也不再一律 24 小时。换盘总尝试上限 0 ＝以可用成员盘试完为界。条目级源熔断：同一部片在计数窗口内读源失败达阈值（或全部成员盘都试过），整片暂停建单一个阻断冷却期，期满自动放一个探测单试恢复；阈值 0 ＝只按全部试过触发。">
         <template v-if="retryCfg">
           <div class="pool-grant">
             <span class="pool-cell-sub">失败冷却（秒）</span>
             <el-input-number v-model="retryCfg.pool_copy_forbidden_cooldown_sec" :min="60" :max="86400" :controls="false" class="pool-num-input" />
             <span class="pool-cell-sub">换盘总尝试上限（0=试完所有可用盘）</span>
             <el-input-number v-model="retryCfg.pool_copy_forbidden_max_attempts" :min="0" :max="64" :controls="false" class="pool-num-input" />
+            <span class="pool-cell-sub">源熔断失败阈值（窗口内，0=关）</span>
+            <el-input-number v-model="retryCfg.pool_source_block_max_failures" :min="0" :max="1000" :controls="false" class="pool-num-input" />
+            <span class="pool-cell-sub">源熔断计数窗口（秒）</span>
+            <el-input-number v-model="retryCfg.pool_source_block_window_sec" :min="300" :max="604800" :controls="false" class="pool-num-input" />
+            <span class="pool-cell-sub">源熔断阻断冷却（秒）</span>
+            <el-input-number v-model="retryCfg.pool_source_block_cooldown_sec" :min="300" :max="604800" :controls="false" class="pool-num-input" />
+            <el-switch v-model="retryCfg.pool_source_heal_enabled" />
+            <span>源自愈（读不到源时先补公开分享再重试）</span>
             <el-button type="primary" :loading="retryCfgSaving" @click="doSaveRetryCfg">保存重试配置</el-button>
           </div>
         </template>

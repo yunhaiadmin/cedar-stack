@@ -257,6 +257,25 @@ POOL_RETRY_CONFIG_DEFAULTS: dict = {
     # 为界（试完所有可用盘即终态）；>0 时达到即终态，防成员
     # 名单 churn 让同一条目无界换盘。
     "pool_copy_forbidden_max_attempts": 0,
+    # 条目级源熔断（2026-11-12）：换盘的「已试过」集合只活在
+    # 每条失败行的短冷却窗里，窗一过全员重开整轮（《奥德赛》
+    # 24h 236 单实证）。窗口内 failed/copy_forbidden 池单数达
+    # 本阈值即把条目打进阻断态；0 = 关阈值条件，只按「失败
+    # 覆盖全部 active 成员」触发。默认 20 ≈ 全员一整轮（19
+    # 块盘）多一条，churn 时兜底。
+    "pool_source_block_max_failures": 20,
+    # 源熔断计数窗口（秒）：数本窗口内的 forbidden 失败（不读
+    # 每行短冷却，与窗外旧账切割）。默认 86400（24 小时）。
+    "pool_source_block_window_sec": 86400,
+    # 源熔断阻断冷却（秒）：阻断期内不为该条目建任何池单；
+    # 到期半开只放 1 个探测单。默认 86400（24 小时）——源分享
+    # 坏死多半要源主/管理员处置，给足修复时间又不永久锁死。
+    "pool_source_block_cooldown_sec": 86400,
+    # 源自愈（2026-11-12）：池单 copy_forbidden 时先经 SA 通道
+    # 给源文件补 anyone-reader 再原地重试一次（治本，见
+    # transfer_variant._try_pool_source_heal）；补不上/重试仍
+    # 拒才落终态归源熔断。默认开；关 = 直接走熔断口径。
+    "pool_source_heal_enabled": True,
 }
 
 
@@ -1292,6 +1311,174 @@ def pool_forbidden_tried_member_ids(db: Session, item_id) -> set:
     return tried
 
 
+# ---------------------------------------------------------------- 条目级源熔断（2026-11-12）
+# 换盘机制（2026-11-10）的「已试过」集合只活在每条失败行自己
+# 的短冷却窗里（cooldown_until = created_at + 3600 秒）：一轮
+# 全员试完落终态后，最早那批行逐个过期掉出集合，下一次点播
+# 又把全员当没试过重开整轮——《奥德赛》源分享坏死 24h 烧出
+# 236 个失败单（19 成员 × 约 12 轮）。本节是跨轮次的条目级
+# 总闸：状态落 pool_item_source_blocks 行（带 blocked_until），
+# 建单总口 create_pool_job 与换盘口 try_pool_forbidden_swap
+# 双收口，门禁/工人/巡检补位无一能绕。只管池单
+# （owner_scope=pool），个人盘路径逐字不动。
+
+#: 源熔断命中时给观众的如实文案（门禁 detail 与建单错误共用
+#: 一份，不许两处各写一套说辞）。
+SOURCE_BLOCKED_DETAIL = (
+    "这部片的源文件暂时读不到（所有贡献盘都无权读取原件，"
+    "分享可能已被撤下），已暂停为它反复转存，系统会在冷却后"
+    "自动重试；可以绑定自己的网盘立刻看，或稍后再试")
+
+
+def _source_block_row(db: Session, item_id):
+    """条目源熔断行（无行回 None）。"""
+    if item_id is None:
+        return None
+    return (db.query(em.PoolItemSourceBlock)
+            .filter(em.PoolItemSourceBlock.item_id == item_id)
+            .first())
+
+
+def _resolve_source_block(db: Session, item_id, now=None):
+    """源熔断状态裁决（唯一实现）：返回 (state, row)。
+
+    state：
+    - "open"：无阻断，或探测单已落终态且源可读（行已清）；
+    - "blocked"：blocked_until 未到，期内不许建任何池单；
+    - "probing"：半开探测单已放行且仍在飞，只许这一个；
+    - "half_open"：冷却已过、尚无探测单——下一次建单即探测单。
+
+    探测单落终态的裁决只在这一处（消费方只读结论）：done →
+    源已可读，删行解阻；failed 且 copy_forbidden → 源仍不可
+    读，重新阻断一整轮冷却；failed 其它 kind → 源可读（失败
+    是成员侧问题，如盘满/绑定失效），删行解阻，后续按该 kind
+    既有口径走；探测单行已被删 → 清探测标记，按 blocked_
+    until 继续判。有写动作当场 commit（沿 _after_pool_copy_
+    forbidden 的落字纪律：状态变更不骑调用方的未知事务）。
+    """
+    if item_id is None:
+        return "open", None
+    now = now or datetime.now()
+    row = _source_block_row(db, item_id)
+    if row is None:
+        return "open", None
+    if row.probe_job_id is not None:
+        probe = (db.query(em.TransferJob)
+                 .filter(em.TransferJob.id == row.probe_job_id)
+                 .first())
+        if probe is not None and probe.status in ("pending", "running"):
+            return "probing", row
+        if probe is not None and probe.status == "done":
+            db.delete(row)
+            db.commit()
+            _decisions.note_decision(
+                scope="pool_source_breaker",
+                resource_key=f"item:{item_id}", decision="cleared",
+                reason="probe_done", candidates=[])
+            return "open", None
+        if (probe is not None and probe.status == "failed"
+                and (probe.error_kind or "") == "copy_forbidden"):
+            cfg = retry_config_payload(db)
+            row.blocked_until = now + timedelta(
+                seconds=int(cfg["pool_source_block_cooldown_sec"]))
+            row.probe_job_id = None
+            row.failure_count = int(row.failure_count or 0) + 1
+            row.tripped_at = now
+            db.commit()
+            _decisions.note_decision(
+                scope="pool_source_breaker",
+                resource_key=f"item:{item_id}", decision="retrip",
+                reason="probe_copy_forbidden", candidates=[])
+            return "blocked", row
+        if probe is not None and probe.status == "failed":
+            db.delete(row)
+            db.commit()
+            _decisions.note_decision(
+                scope="pool_source_breaker",
+                resource_key=f"item:{item_id}", decision="cleared",
+                reason=f"probe_failed:{probe.error_kind or ''}",
+                candidates=[])
+            return "open", None
+        # 探测单行已被清理：清标记，按 blocked_until 继续判。
+        row.probe_job_id = None
+        db.commit()
+    if row.blocked_until is not None and row.blocked_until > now:
+        return "blocked", row
+    return "half_open", row
+
+
+def _trip_source_block(db: Session, item_id, *, failures, now,
+                       reason) -> None:
+    """落/刷新阻断行并留痕（当场 commit，同上落字纪律）。"""
+    cfg = retry_config_payload(db)
+    cooldown = int(cfg["pool_source_block_cooldown_sec"])
+    row = _source_block_row(db, item_id)
+    if row is None:
+        row = em.PoolItemSourceBlock(item_id=item_id)
+        db.add(row)
+    row.blocked_until = now + timedelta(seconds=cooldown)
+    row.probe_job_id = None
+    row.failure_count = int(failures)
+    row.tripped_at = now
+    db.commit()
+    _decisions.note_decision(
+        scope="pool_source_breaker", resource_key=f"item:{item_id}",
+        decision="trip",
+        reason=f"{reason} failures={failures} cooldown_sec={cooldown}",
+        candidates=[])
+
+
+def _maybe_trip_source_block(db: Session, item_id, now=None) -> bool:
+    """未阻断时评估是否触发条目级源熔断（触发即落行，返回 True）。
+
+    计数口径与换盘「已试过」集合**故意不同**：数 pool_source_
+    block_window_sec 窗口内的全部 failed/copy_forbidden 池单，
+    不读每行短冷却 cooldown_until——读短冷却正是旧机制漏风的
+    地方。触发条件（任一）：
+    - 窗口内失败数 ≥ pool_source_block_max_failures（>0 时）；
+    - 失败覆盖的成员集 ⊇ 当前全部 active 成员（全员试过）。
+    失败只经工人收口累积，而每次失败后工人与门禁都必经
+    try_pool_forbidden_swap 换盘——评估放本口即覆盖全部累积。
+    """
+    if item_id is None:
+        return False
+    now = now or datetime.now()
+    cfg = retry_config_payload(db)
+    window_start = now - timedelta(
+        seconds=int(cfg["pool_source_block_window_sec"]))
+    rows = (db.query(em.TransferJob)
+            .filter(em.TransferJob.item_id == item_id,
+                    em.TransferJob.owner_scope == "pool",
+                    em.TransferJob.status == "failed",
+                    em.TransferJob.error_kind == "copy_forbidden",
+                    em.TransferJob.created_at >= window_start)
+            .all())
+    if not rows:
+        return False
+    threshold = int(cfg["pool_source_block_max_failures"])
+    reason = None
+    if threshold > 0 and len(rows) >= threshold:
+        reason = f"failures>={threshold}"
+    else:
+        active_ids = {
+            int(m.id) for m in (db.query(em.PoolMember)
+                                .filter(em.PoolMember.status == "active")
+                                .all())}
+        tried_ids = set()
+        for r in rows:
+            try:
+                tried_ids.add(int((r.owner_ref or "").strip()))
+            except (TypeError, ValueError):
+                continue
+        if active_ids and active_ids <= tried_ids:
+            reason = f"all_members_tried={len(active_ids)}"
+    if reason is None:
+        return False
+    _trip_source_block(db, item_id, failures=len(rows), now=now,
+                       reason=reason)
+    return True
+
+
 def try_pool_forbidden_swap(db: Session, item, *, quota_fn=None):
     """copy_forbidden 换盘重建：排除已 forbidden 的成员盘建新单。
 
@@ -1301,8 +1488,22 @@ def try_pool_forbidden_swap(db: Session, item, *, quota_fn=None):
     （no_member = 其余盘都不可用/已排除 → 调用方落终态；
     throttled = 全局并发满 → 调用方可继续报 preparing，那是
     真有单在飞）。门禁与池执行器共用本口，不许两处各写一份。
+
+    条目级源熔断（2026-11-12）：阻断中/探测在飞 → 抛
+    TransferError(source_blocked)，调用方如实落 failed（源
+    文件不可读），不许再冒充 preparing；未阻断时顺手评估
+    触发条件，达线当场落阻断行并同样抛 source_blocked；
+    半开时本次建单即唯一探测单（不排除旧 tried 集、不受换盘
+    尝试上限约束——探测按定义只有一单）。
     """
     item_id = getattr(item, "id", None)
+    state, _row = _resolve_source_block(db, item_id)
+    if state in ("blocked", "probing"):
+        raise _tv.TransferError("source_blocked", SOURCE_BLOCKED_DETAIL)
+    if state == "open" and _maybe_trip_source_block(db, item_id):
+        raise _tv.TransferError("source_blocked", SOURCE_BLOCKED_DETAIL)
+    if state == "half_open":
+        return create_pool_job(db, item, force=True, quota_fn=quota_fn)
     cfg = retry_config_payload(db)
     max_attempts = int(cfg["pool_copy_forbidden_max_attempts"])
     if max_attempts > 0 and len(
@@ -1339,6 +1540,7 @@ def create_pool_job(db: Session, item, *, trigger="playback",
     - Drive 条目取不到源盘 → no_drive；
     - 进行中池单数 ≥ pool_global_concurrency → throttled；
     - 池级熔断打开（PR-5）→ pool_breaker；
+    - 条目级源熔断阻断中/探测在飞（2026-11-12）→ source_blocked；
     - 条目可下发副本 + 在途池单 ≥ pool_item_max_copies
       （PR-5）→ copies_max；
     - 无可用盘 → no_member；
@@ -1370,6 +1572,15 @@ def create_pool_job(db: Session, item, *, trigger="playback",
             "pool_breaker",
             "公共池今天额度紧张，已保护性暂停接收新片，"
             "可以绑定自己的网盘立刻看，或稍后再试")
+    # 条目级源熔断（2026-11-12）：阻断期/探测在飞一律不建单
+    # （本函数是门禁⑥⑦、巡检补位与换盘的共用总口，无入口可
+    # 绕）；半开时本单即唯一探测单，落行后把 probe_job_id 记
+    # 到阻断行（与建单同事务提交）。判定口在
+    # _resolve_source_block。
+    sb_state, sb_row = _resolve_source_block(db, item.id)
+    if sb_state in ("blocked", "probing"):
+        raise _tv.TransferError("source_blocked", SOURCE_BLOCKED_DETAIL)
+    probe_mode = sb_state == "half_open"
     max_copies = max(1, int(cfg["pool_item_max_copies"]))
     if (_servable_pool_copy_count(db, item.id)
             + _pool_inflight_for_item(db, item.id)) >= max_copies:
@@ -1408,6 +1619,10 @@ def create_pool_job(db: Session, item, *, trigger="playback",
     db.add(job)
     db.flush()
     _tv._stamp_job_cooldown(job)
+    if probe_mode and sb_row is not None:
+        # 半开探测单落字：裁决（清阻断/重新阻断）等它落终态后
+        # 由 _resolve_source_block 按 probe_job_id 对账。
+        sb_row.probe_job_id = job.id
     _bump_pool_usage(db, member.id, jobs=1)
     score = next((c.get("score", 0.0) for c in candidates
                   if c.get("member_id") == int(member.id)), 0.0)

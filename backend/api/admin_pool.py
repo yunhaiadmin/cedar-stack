@@ -188,6 +188,12 @@ class PoolRetryConfigRequest(BaseModel):
     # 校验走 config_service 家族 pool_retry（与本体同一体系）。
     pool_copy_forbidden_cooldown_sec: Optional[int] = None
     pool_copy_forbidden_max_attempts: Optional[int] = None
+    # 条目级源熔断（2026-11-12）：阈值 0 = 关阈值条件。
+    pool_source_block_max_failures: Optional[int] = None
+    pool_source_block_window_sec: Optional[int] = None
+    pool_source_block_cooldown_sec: Optional[int] = None
+    # 源自愈开关（2026-11-12）：默认开。
+    pool_source_heal_enabled: Optional[bool] = None
 
 
 @admin_pool_router.get("/retry-config")
@@ -196,7 +202,8 @@ def pool_get_retry_config(
     db: Session = Depends(get_db),
 ):
     """重试配置生效值（存量行优先，缺行回代码默认：冷却 3600
-    秒、尝试上限 0=以可用成员盘试完为界）。"""
+    秒、尝试上限 0=以可用成员盘试完为界；源熔断阈值 20、
+    计数窗口与阻断冷却均 24 小时）。"""
     return pool_gate.retry_config_payload(db)
 
 
