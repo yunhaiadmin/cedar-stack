@@ -3798,6 +3798,12 @@ def _episode_parent_ready_clause():
     )
 
 
+# A2（2026-11-12 服务器减负审计）：_claim_batch 一轮取组的上限——取旧
+# 递增口径（20 → 100 → 400）的封顶值，组聚合一轮只查一次，不再逐档
+# 重复聚合整个 pending 全集。取回的组没认领完时余组留下轮，不丢任务。
+_CLAIM_GROUPS_FETCH = 400
+
+
 def _claim_batch(db, limit: int, queue: Optional[str] = None) -> list:
     """原子抢一批待补全条目（多 worker/多进程不重复）。
 
@@ -3921,51 +3927,47 @@ def _claim_batch(db, limit: int, queue: Optional[str] = None) -> list:
                 # library_id 必须显式入组（PG 要求）：组键是全局 id，
                 # 同一组恒在同一库内，(group_key, library_id) 与 group_key 等价。
                 .group_by(group_key, em.MediaItem.library_id))
-    # 轻量化 P3：组数递增取（20 → 100 → 400），直到装满批次或组耗尽。
-    # 旧实现恒 limit(20)：电影组每组只有 1 行，批次上限 200 永远装不满
-    # （生产实测约 54 行/批），认领轮次与候选 SELECT 被成倍放大。组间
-    # 排序规则逐字不变；已试过的组跳过（被别的 worker 抢空的组仍会在
-    # 重查结果里占位）。递增到 400 后仍没装满就收批——余下的组留给
-    # 下一轮 _claim_batch，不丢任务。
+    # A2（2026-11-12 服务器减负审计）：组聚合一轮只查一次，上限取旧
+    # 递增口径的封顶 400（且不小于 limit）。旧实现 20 → 100 → 400 递增
+    # 重查，每一档都把整个 pending 全集重新聚合一遍——该 GROUP BY 是
+    # 生产第一烧 CPU 的查询（pg_stat_statements 累计约 28 万次、单次约
+    # 1.2~1.6 秒），装满一批最多烧 3 遍。合并为单查不改领取语义：组间
+    # 排序逐字不变、逐组走同一个 _claim_group_atomic 原子认领（赢不到
+    # 的组等价于旧口径「已试过跳过」）；取回的组没认领完时余组与旧
+    # 实现一样留给下一轮 _claim_batch，不丢任务。配合覆盖索引补列
+    # （idx_item_enrich_claim_cover 把聚合实际读的列全纳入 INCLUDE），
+    # 该查询走 index-only scan，不再逐行回表（生产同量级复现：
+    # 1869ms → 约 58ms，Heap Fetches 归零）。
     claimed: list = []
-    tried_gids: set = set()
-    fetch_size = 20
-    while len(claimed) < limit:
-        page = _order_with_fairness(groups_q).limit(fetch_size).all()
-        fresh = [g for g in page if g[0] not in tried_gids]
-        if not fresh:
+    groups = (_order_with_fairness(groups_q)
+              .limit(max(_CLAIM_GROUPS_FETCH, limit)).all())
+    for gid, _latest, _lib in groups:
+        if len(claimed) >= limit:
             break
-        for gid, _latest, _lib in fresh:
-            tried_gids.add(gid)
-            if len(claimed) >= limit:
-                break
-            q = (db.query(em.MediaItem)
-                 .filter(em.MediaItem.enrich_status == "pending", due, unlocked,
-                         not_episode, not_merged, not_ban_backfill, queue_pred,
-                         parent_ready,
-                         # 轻量化 P1：组员谓词改索引直取，与 coalesce
-                         # (series_id, id) == gid 逐行等价（等价性已由生产
-                         # 只读断言验证，2026-11-04：series/movie 行
-                         # series_id 恒为 NULL、其余行的 series_id 恒指向
-                         # series 行）。父行走 id 主键、子行走 idx_item_series，
-                         # 不再对全部 pending 做表达式过滤扫描（旧均值
-                         # 1.2~1.6 秒/组）。其余谓词逐字不变（含 #1834 的
-                         # parent_ready：父级未终态的单集仍不进批次）。
-                         _or(em.MediaItem.series_id == gid,
-                             em.MediaItem.id == gid))
-                 .order_by(
-                     # 父级（剧/电影）先于子级：父级先落 done，子集才能纯继承
-                     _case((em.MediaItem.item_type.in_(["series", "movie"]), 0), else_=1),
-                     em.MediaItem.season_number,
-                     em.MediaItem.episode_number,
-                     em.MediaItem.date_added.desc())
-                 .limit(limit - len(claimed)))
-            # 原子认领：赢到的行才进 batch（并发下同一行只被一个 worker 赢走）
-            rows = _claim_group_atomic(db, q, now)
-            claimed.extend(rows)
-        if len(page) < fetch_size or fetch_size >= 400:
-            break
-        fetch_size = min(fetch_size * 5, 400)
+        q = (db.query(em.MediaItem)
+             .filter(em.MediaItem.enrich_status == "pending", due, unlocked,
+                     not_episode, not_merged, not_ban_backfill, queue_pred,
+                     parent_ready,
+                     # 轻量化 P1：组员谓词改索引直取，与 coalesce
+                     # (series_id, id) == gid 逐行等价（等价性已由生产
+                     # 只读断言验证，2026-11-04：series/movie 行
+                     # series_id 恒为 NULL、其余行的 series_id 恒指向
+                     # series 行）。父行走 id 主键、子行走 idx_item_series，
+                     # 不再对全部 pending 做表达式过滤扫描（旧均值
+                     # 1.2~1.6 秒/组）。其余谓词逐字不变（含 #1834 的
+                     # parent_ready：父级未终态的单集仍不进批次）。
+                     _or(em.MediaItem.series_id == gid,
+                         em.MediaItem.id == gid))
+             .order_by(
+                 # 父级（剧/电影）先于子级：父级先落 done，子集才能纯继承
+                 _case((em.MediaItem.item_type.in_(["series", "movie"]), 0), else_=1),
+                 em.MediaItem.season_number,
+                 em.MediaItem.episode_number,
+                 em.MediaItem.date_added.desc())
+             .limit(limit - len(claimed)))
+        # 原子认领：赢到的行才进 batch（并发下同一行只被一个 worker 赢走）
+        rows = _claim_group_atomic(db, q, now)
+        claimed.extend(rows)
     if claimed:
         db.commit()
         if ENRICH_LIBRARY_FAIRNESS:

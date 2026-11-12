@@ -173,8 +173,19 @@ class MediaItem(Base):
         # GROUP BY coalesce(series_id, id)，原先走单列状态索引位图扫 7.8 万行
         # （含已软删/已合并的死行）。部分索引只含活行（约 2.4 万），INCLUDE
         # 带上聚合要的三列供 index-only 扫描。非 PG 方言忽略 include/where。
+        # A2 补列（2026-11-12 减负审计）：旧 INCLUDE 只覆盖聚合的输出列，
+        # 而聚合与同批成员/EXISTS 查询的过滤列（item_type、parent_id、
+        # repair_requested_at、metadata_locked、tmdb_id、imdb_id、
+        # external_ids、enrich_priority）不在索引里——生产实测仍逐行回表
+        # （158M 索引、单次聚合约 1.2~1.6 秒）。补齐后全程 index-only
+        # （生产同量级复现 1869ms → 约 58ms、Heap Fetches 归零）。生产
+        # 存量索引须按 database.py 处注释的 DDL 重建（DROP + CREATE
+        # CONCURRENTLY），本定义只兜底新库。
         Index("idx_item_enrich_claim_cover", "enrich_status", "enrich_next_retry_at",
-              postgresql_include=["series_id", "date_added", "library_id"],
+              postgresql_include=["series_id", "date_added", "library_id", "id",
+                                  "enrich_priority", "item_type", "parent_id",
+                                  "repair_requested_at", "metadata_locked",
+                                  "tmdb_id", "imdb_id", "external_ids"],
               postgresql_where=text("deleted_at IS NULL AND merged_into_id IS NULL")),
         # 单集认领反连接：只索引仍 pending/enriching 的 series/season 主键。
         # EXISTS 按父级 id 探测这块小集合，而不是扫全部 pending 单集。
