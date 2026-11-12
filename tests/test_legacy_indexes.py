@@ -34,8 +34,13 @@ _ITEM_INDEXES = {
     # 2026-10-23：补全进度统计按 enrich_claimed_at 计数，无索引全表扫（压测实锤）
     "idx_item_enrich_claimed": ["enrich_claimed_at"],
     # 2026-10-23：抢单去重聚合部分覆盖索引；SQLite 下 INCLUDE 列并进键列
+    # A2（2026-11-12）：INCLUDE 补齐聚合/成员/EXISTS 实际读列，全程 index-only
     "idx_item_enrich_claim_cover": ["enrich_status", "enrich_next_retry_at",
-                                    "series_id", "date_added", "library_id"],
+                                    "series_id", "date_added", "library_id",
+                                    "id", "enrich_priority", "item_type",
+                                    "parent_id", "repair_requested_at",
+                                    "metadata_locked", "tmdb_id", "imdb_id",
+                                    "external_ids"],
     # 单集认领：未终态 series/season 的主键部分索引
     "idx_item_enrich_open_parent": ["id"],
 }
@@ -50,6 +55,9 @@ def _engine(tmp_path):
             "enrich_priority INTEGER, merged_into_id INTEGER, date_added TEXT, "
             "item_type TEXT, library_id INTEGER, deleted_at TEXT, drive_file_id TEXT, "
             "series_id INTEGER, enrich_claimed_at TEXT, "
+            "parent_id INTEGER, repair_requested_at TEXT, "
+            "metadata_locked BOOLEAN, tmdb_id TEXT, imdb_id TEXT, "
+            "external_ids TEXT, "
             "sort_name TEXT, is_hidden BOOLEAN, content_hash TEXT)"
         ))
         conn.execute(text("CREATE TABLE emby_people (id INTEGER PRIMARY KEY, name TEXT)"))
@@ -265,7 +273,10 @@ def test_enrich_claim_cover_spec_and_pg_render():
     assert cover[2] == "enrich_status, enrich_next_retry_at"
     assert cover[5] == "deleted_at IS NULL AND merged_into_id IS NULL"
     assert cover[6] is None
-    assert cover[7] == "series_id, date_added, library_id"
+    a2_include = ("series_id, date_added, library_id, id, enrich_priority, "
+                  "item_type, parent_id, repair_requested_at, metadata_locked, "
+                  "tmdb_id, imdb_id, external_ids")
+    assert cover[7] == a2_include
 
     model_ixs = {ix.name: ix for ix in em.MediaItem.__table__.indexes
                  if ix.name in specs}
@@ -274,9 +285,9 @@ def test_enrich_claim_cover_spec_and_pg_render():
     assert [c.name for c in ix.columns] == ["enrich_status", "enrich_next_retry_at"]
     pg = ix.dialect_options.get("postgresql", {})
     assert str(pg.get("where")).strip() == cover[5]
-    assert list(pg.get("include")) == ["series_id", "date_added", "library_id"]
+    assert list(pg.get("include")) == a2_include.split(", ")
     ddl = str(CreateIndex(ix).compile(dialect=postgresql.dialect()))
-    assert "INCLUDE (series_id, date_added, library_id)" in ddl
+    assert f"INCLUDE ({a2_include})" in ddl
     assert "WHERE deleted_at IS NULL AND merged_into_id IS NULL" in ddl
     claimed = model_ixs["idx_item_enrich_claimed"]
     assert [c.name for c in claimed.columns] == ["enrich_claimed_at"]

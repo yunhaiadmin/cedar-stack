@@ -1636,17 +1636,29 @@ _LEGACY_INDEXES: tuple[tuple[str, ...], ...] = (
      "  已迁移: emby_items.idx_item_enrich_claimed（补全进度统计索引）"),
     # 抢单去重聚合（同日实锤）：_claim_batch 子查询 GROUP BY coalesce(series_id,
     # id) 原走单列状态索引位图扫 7.8 万行（含已软删/已合并死行）。部分索引只含
-    # 活行（约 2.4 万），INCLUDE 三列供 index-only 聚合；非 PG 方言把 INCLUDE
-    # 列并进键列（覆盖语义等价）。等价 DDL：CREATE INDEX
+    # 活行（约 2.4 万），INCLUDE 列供 index-only 聚合；非 PG 方言把 INCLUDE
+    # 列并进键列（覆盖语义等价）。
+    # A2 补列（2026-11-12 减负审计）：旧 INCLUDE 只有三列，聚合与同批成员/
+    # EXISTS 查询的过滤列（item_type、parent_id、repair_requested_at、
+    # metadata_locked、tmdb_id、imdb_id、external_ids、enrich_priority）
+    # 不在索引里，生产实测仍逐行回表。补齐后全程 index-only（生产同量级
+    # 复现 1869ms → 约 58ms）。等价 DDL：CREATE INDEX
     # idx_item_enrich_claim_cover ON emby_items (enrich_status,
-    # enrich_next_retry_at) INCLUDE (series_id, date_added, library_id)
+    # enrich_next_retry_at) INCLUDE (series_id, date_added, library_id,
+    # id, enrich_priority, item_type, parent_id, repair_requested_at,
+    # metadata_locked, tmdb_id, imdb_id, external_ids)
     # WHERE deleted_at IS NULL AND merged_into_id IS NULL。
-    # 回滚：DROP INDEX idx_item_enrich_claim_cover。
+    # 已有存量索引的库（含生产）：本清单按「索引名已存在」跳过，不会自动
+    # 改列；生产须先 DROP INDEX CONCURRENTLY idx_item_enrich_claim_cover
+    # 再 CREATE INDEX CONCURRENTLY 按上式重建（由 parent 执行）。
+    # 回滚：DROP INDEX idx_item_enrich_claim_cover（或按旧三列 INCLUDE 重建）。
     ("emby_items", "idx_item_enrich_claim_cover", "enrich_status, enrich_next_retry_at",
      None,
      "  已迁移: emby_items.idx_item_enrich_claim_cover（抢单去重聚合部分覆盖索引）",
      "deleted_at IS NULL AND merged_into_id IS NULL", None,
-     "series_id, date_added, library_id"),
+     "series_id, date_added, library_id, id, enrich_priority, item_type, "
+     "parent_id, repair_requested_at, metadata_locked, tmdb_id, imdb_id, "
+     "external_ids"),
     # 单集认领：父级未终态反连接的内表。只含未终态 series/season 的主键，
     # 约两万行量级，供 EXISTS 哈希探测。老库 create_all 不回填已建表，
     # 这里补上。回滚：DROP INDEX idx_item_enrich_open_parent。只加索引，不改行。

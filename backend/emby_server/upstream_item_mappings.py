@@ -34,9 +34,12 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
+import time
 from datetime import datetime
 from typing import Optional
 
+from sqlalchemy import event as _sa_event
 from sqlalchemy.orm import Session
 
 from backend.emby_server import models as em
@@ -84,6 +87,85 @@ def _as_nonneg_int(value: object, name: str) -> int:
     if number < 0:
         raise ValueError(f"{name} 必须为非负整数")
     return number
+
+
+# ---------------------------------------------------------------------------
+# A3（2026-11-12 服务器减负审计）：空表负缓存短路
+#
+# 生产实测 upstream_item_mappings 为 0 行，但历史上有约 307 万次三元组
+# 点查打在这张表上——聚合 / 导入路径每处理一个条目都先来这里查一遍
+# 「有没有映射」。CMS / 聚合时代结束后表已空，任何旧路径再被唤起（聚合
+# 任务、导入、回填）都会重演整轮无效点查。这里按项目既有缓存口径
+# （backend/integrations/store.py 的短 TTL 进程内缓存：写时失效、跨进程
+# 靠 TTL 兜底）加一层「表空」负缓存：某连接（bind）一旦探明整表为 0 行，
+# TTL 内读路径（get_best / get_all / get_grouped / migrate）直接返回
+# 空结果，不再发查询；过期后第一笔读用一条 LIMIT 1 主键探针刷新，每
+# bind 至多每 TTL 探一次。任何 ORM 路径写入映射行（本层 record_* 或
+# 外部直接 db.add）都会经 before_flush 钩子立即作废本进程标记。
+# 写路径的存在性 SELECT / upsert 语义逐字不动——负缓存只在「整表为空」
+# 时短路读，有映射时行为与今日逐字一致。
+# ---------------------------------------------------------------------------
+
+#: 空表负缓存 TTL（秒，沿 integrations.store 的 TTL_DEFAULT=60 口径）。
+_EMPTY_TABLE_TTL_SECONDS = 60.0
+
+_empty_table_lock = threading.Lock()
+#: bind -> (monotonic 戳, 已知为空)
+_empty_table_by_bind: dict = {}
+
+
+def _note_mappings_nonempty(bind) -> None:
+    """标记某 bind 的映射表「近期非空」：写时失效，立即生效。"""
+    if bind is None:
+        return
+    with _empty_table_lock:
+        if len(_empty_table_by_bind) > 64:
+            _empty_table_by_bind.clear()
+        _empty_table_by_bind[bind] = (time.monotonic(), False)
+
+
+def _mappings_table_known_empty(db: Session) -> bool:
+    """该连接的映射表是否可判为空（命中负缓存或探针确认）。
+
+    探针只取主键一列一行（LIMIT 1）；判空结果按 bind 缓存
+    ``_EMPTY_TABLE_TTL_SECONDS`` 秒。任何异常（无 bind 等）一律回
+    False——宁可走正常查询，不许因短路误吞真映射。
+    """
+    try:
+        bind = db.get_bind()
+    except Exception:  # noqa: BLE001 - 无 bind 时不短路
+        return False
+    now = time.monotonic()
+    with _empty_table_lock:
+        stamp, known_empty = _empty_table_by_bind.get(bind, (0.0, False))
+    if stamp and (now - stamp) < _EMPTY_TABLE_TTL_SECONDS:
+        return known_empty
+    try:
+        row = db.query(em.UpstreamItemMapping.id).limit(1).first()
+    except Exception:  # noqa: BLE001 - 探针失败不短路
+        return False
+    empty = row is None
+    with _empty_table_lock:
+        if len(_empty_table_by_bind) > 64:
+            _empty_table_by_bind.clear()
+        _empty_table_by_bind[bind] = (time.monotonic(), empty)
+    return empty
+
+
+@_sa_event.listens_for(Session, "before_flush")
+def _mappings_flush_watch(session, flush_context, instances) -> None:
+    """任一 ORM 路径新增 / 改动映射行 → 本进程空表标记立即作废。
+
+    覆盖本层 record_* 与外部直接 ``db.add(UpstreamItemMapping)`` 的
+    写入（苹果 CMS 同步等旁路），不必逐个调用点登记。开销只是扫一眼
+    session.new / dirty 里的对象类型，可忽略。
+    """
+    try:
+        pending = list(session.new) + list(session.dirty)
+        if any(isinstance(obj, em.UpstreamItemMapping) for obj in pending):
+            _note_mappings_nonempty(session.get_bind())
+    except Exception:  # noqa: BLE001 - 钩子绝不许影响正常 flush
+        pass
 
 
 def record_mapping(db: Session, *, local_item_id: int, source_id: int,
@@ -270,6 +352,9 @@ def get_best_mapping(db: Session, local_item_id: int, *,
     最佳行，只许追溯类调用方显式使用。
     """
     local_id = _as_pos_int(local_item_id, "local_item_id")
+    # A3 空表短路：整表为 0 行时无映射可返（与 rows 为空走 None 等价）。
+    if _mappings_table_known_empty(db):
+        return None
     rows = (db.query(em.UpstreamItemMapping)
             .filter(em.UpstreamItemMapping.local_item_id == local_id)
             .order_by(em.UpstreamItemMapping.confidence.desc(),
@@ -308,6 +393,9 @@ def get_all_mappings(db: Session, local_item_id: int, *,
     只许追溯类调用方显式使用。
     """
     local_id = _as_pos_int(local_item_id, "local_item_id")
+    # A3 空表短路：整表为 0 行时返回空列表（与 rows 为空的现行结果一致）。
+    if _mappings_table_known_empty(db):
+        return []
     rows = (db.query(em.UpstreamItemMapping)
             .filter(em.UpstreamItemMapping.local_item_id == local_id)
             .order_by(em.UpstreamItemMapping.confidence.desc(),
@@ -421,6 +509,10 @@ def get_grouped_mappings(db: Session, local_item_id: int, *,
     兄弟行。
     """
     local_id = _as_pos_int(local_item_id, "local_item_id")
+    # A3 空表短路：整表为 0 行时自身与一切兄弟行映射恒为空（现行路径
+    # 最终也返回 []），连条目/身份组查询一并省掉。
+    if _mappings_table_known_empty(db):
+        return []
     own = get_all_mappings(db, local_id, validate=validate)
     if validate and not _local_item_live(db, local_id):
         return []
@@ -461,6 +553,9 @@ def migrate_mappings(db: Session, from_local_id: int, to_local_id: int) -> int:
     返回处理行数（改挂 + 冲突合并）。
     """
     if not from_local_id or not to_local_id or from_local_id == to_local_id:
+        return 0
+    # A3 空表短路：整表为 0 行时无映射可迁（现行路径 rows 为空返回 0）。
+    if _mappings_table_known_empty(db):
         return 0
     rows = (db.query(em.UpstreamItemMapping)
             .filter(em.UpstreamItemMapping.local_item_id == from_local_id)
