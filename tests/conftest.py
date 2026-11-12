@@ -100,6 +100,23 @@ def _reset_enrich_worker_caches():
 
 
 @pytest.fixture(autouse=True)
+def _reset_claim_groups_cache():
+    """认领候选组快照（减负 A1）是进程级缓存且键不分库：测试里每个
+    文件都新建内存库，不清会把上一文件的候选组带进下一文件。"""
+    try:
+        from backend.emby_server import enrich_worker as _ew
+        _ew.invalidate_claim_groups_cache()
+    except Exception:
+        pass
+    yield
+    try:
+        from backend.emby_server import enrich_worker as _ew
+        _ew.invalidate_claim_groups_cache()
+    except Exception:
+        pass
+
+
+@pytest.fixture(autouse=True)
 def _isolate_transfer_stage_dir(tmp_path, monkeypatch):
     """跨 provider 源字节暂存是 worker 本地盘状态：测试间必须隔离。
 
