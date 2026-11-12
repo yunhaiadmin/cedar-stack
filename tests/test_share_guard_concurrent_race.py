@@ -296,16 +296,24 @@ def test_same_key_collision_keeps_staged_guard_event(factory, monkeypatch):
 
     body = {"ItemId": guid, "PlaySessionId": "K-sp2", "PositionTicks": 0}
 
-    # 4. 线程编排。
-    # 原理：T1 先拿到用户行锁、判定出 concurrent 异常并暂存事件（commit=False），
-    # 在 note_activity 处等 T2；T2 的 top-read 在此之前完成（看到 None），
-    # 随后在 note_session 的用户行锁上阻塞；T1 继续建行并提交释放锁；
-    # T2 被唤醒后同样判定异常并暂存事件，建行时撞 T1 已提交的同键行
-    # → begin_nested 存点回滚（只丢 insert 本体）→ 复用 winner 行。
+    # 4. 线程编排（顺序由 t1_in_session 事件钉死，不是靠 start 先后碰运气）。
+    # 原理：主线程先起 T1、等 T1 拿到用户行锁、判定出 concurrent 异常并暂存
+    # 事件（commit=False）后才起 T2；T1 在 note_activity 处等 T2；T2 的
+    # top-read 在此之前完成（看到 None），随后在 note_session 的用户行锁上
+    # 阻塞；T1 继续建行并提交释放锁；T2 被唤醒后同样判定异常并暂存事件，
+    # 建行时撞 T1 已提交的同键行 → begin_nested 存点回滚（只丢 insert 本体）
+    # → 复用 winner 行。
     # 若这里用裸 db.rollback()，T2 暂存的判定事件会被一起吞掉。
     mk = factory
     outcome = {}
     t2_topread_done = threading.Event()
+    # T1 进入 note_session（已持用户行锁、判定事件已暂存）的信号：
+    # 主线程见到它才起 T2——只靠 th1.start() 在 th2.start() 之前
+    # 保证不了执行顺序，CI 高负载下 T2 可能先跑完并提交，T1 的
+    # top-read 随即看到已提交的同键行而跳过判定，事件只剩 1 条
+    # （run 43166604056 attempt 1 实证）。有了这个信号，
+    # 「T1 top-read → T2 提交」这段 happens-before 就被钉死。
+    t1_in_session = threading.Event()
 
     def run(tag):
         db = mk()
@@ -327,6 +335,12 @@ def test_same_key_collision_keeps_staged_guard_event(factory, monkeypatch):
     def gated_ns(db, user, session_key, ip, **kw):
         # _upsert_session 的 top-read 在调 note_session 之前；
         # th2 到这里时 top-read 已完成（看到 None），随后在行锁上等 T1 提交。
+        # th1 到这里时 top-read 也已完成（看到 None）：先调 orig_ns 拿锁、
+        # 暂存判定事件，再打点——此时 T1 已持锁，主线程见到信号才起 th2。
+        if threading.current_thread() is th1:
+            verdict = orig_ns(db, user, session_key, ip, **kw)
+            t1_in_session.set()
+            return verdict
         if threading.current_thread() is th2:
             t2_topread_done.set()
         return orig_ns(db, user, session_key, ip, **kw)
@@ -341,6 +355,9 @@ def test_same_key_collision_keeps_staged_guard_event(factory, monkeypatch):
     monkeypatch.setattr(share_guard, "note_activity", gated_na)
 
     th1.start()
+    # 先等 T1 进入 note_session（已持用户行锁、事件已暂存）再起 T2：
+    # 否则 T2 可能先跑完提交，T1 的 top-read 看到同键行而跳过判定。
+    assert t1_in_session.wait(timeout=15), "T1 未在 15 秒内进入 note_session"
     th2.start()
     th1.join(30)
     th2.join(30)
