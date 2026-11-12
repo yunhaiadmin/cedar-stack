@@ -3877,6 +3877,17 @@ def _install_claim_flush_watch() -> None:
       变化（父级就绪联动 parent_ready，第一晚 0 认领事故的同款联动面）；
     - repair_requested_at 由空变非空（用户修复请求要置顶）。
 
+    另注册 do_orm_execute 监听兜批量 DML：``Query.update`` /
+    ``Query.delete`` 与 ``session.execute(update(...))`` 不经过
+    before_flush 的逐对象检查，而 _reclaim_stale 与 janitor 各回捞
+    巡检恰恰全是批量口径（把 enriching/failed/none 批量打回
+    pending）——没有这道钩子，它们打回的行在快照眼里不存在：组已
+    被标 consumed 时整组被跳过、排序也还是旧相位，僵尸行回收后
+    无人能再认领（PR #79 冒烟实证）。凡命中 MediaItem 表的批量
+    更新/删除一律作废快照，唯一豁免是认领自身的那条原子 UPDATE
+    （pending→enriching 且只动 enrich_status/claimed_at/token
+    三件套）：它不产生新待办，豁免它快照才跨轮命中。
+
     监听只 bump 代际、绝不抛错：整段包在 try/except 里，宁可漏失效
     （TTL 兜底）也不许拖垮任何一次正常 flush。
     """
@@ -3944,6 +3955,36 @@ def _install_claim_flush_watch() -> None:
                 pass
 
         _sa_event.listen(_sa_session, "before_flush", _watch)
+
+        def _bulk_watch(orm_execute_state):
+            try:
+                state = orm_execute_state
+                if not (state.is_update or state.is_delete):
+                    return
+                table = getattr(state.statement, "table", None)
+                if (table is None
+                        or table.name != em.MediaItem.__tablename__):
+                    return
+                if state.is_update:
+                    values = getattr(state.statement, "_values", None)
+                    if values:
+                        keys = set()
+                        new_status = None
+                        for col, val in dict(values).items():
+                            key = getattr(col, "key", None)
+                            keys.add(key)
+                            if key == "enrich_status":
+                                new_status = getattr(val, "value", val)
+                        if (new_status == "enriching"
+                                and keys <= {"enrich_status",
+                                             "enrich_claimed_at",
+                                             "enrich_claim_token"}):
+                            return  # 认领自身：见 docstring 豁免口径
+                invalidate_claim_groups_cache()
+            except Exception:  # noqa: BLE001 — 监听绝不拖垮正常执行
+                pass
+
+        _sa_event.listen(_sa_session, "do_orm_execute", _bulk_watch)
     except Exception:  # noqa: BLE001 — 注册失败就退回纯 TTL 口径
         logger.warning("认领候选组入库监听注册失败，仅靠 TTL 失效", exc_info=True)
 

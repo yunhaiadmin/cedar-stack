@@ -133,7 +133,9 @@ _REALM_SNAPSHOT_CACHE = store.TtlSnapshotCache()
 
 
 def _realm_snapshot_dict(realm: models.ServerRealm) -> dict:
-    return {col.name: getattr(realm, col.name)
+    # getattr 带缺省：半量对象（只载部分列 / 测试替身）缺列时以 None
+    # 入快照，不许像旧写法那样 AttributeError 把整条读路径打崩。
+    return {col.name: getattr(realm, col.name, None)
             for col in models.ServerRealm.__table__.columns}
 
 
@@ -164,6 +166,46 @@ def invalidate_realm_cache(realm_id: Optional[int] = None) -> None:
         _REALM_SNAPSHOT_CACHE.invalidate()
     else:
         _REALM_SNAPSHOT_CACHE.invalidate(int(realm_id))
+
+
+_REALM_FLUSH_WATCH_INSTALLED = False
+
+
+def _install_realm_flush_watch() -> None:
+    """Session before_flush 监听：ServerRealm 的 ORM 级写即时作废快照。
+
+    显式失效只挂在 create/update/delete 三个写函数上；任何绕过它们
+    的 ORM 直写（运维脚本、其他模块顺手改 access_mode、测试直改）
+    都会让同进程快照继续读旧值——is_free_realm 是抽奖/对决/治理的
+    钱面门禁，吃旧值就是按错的服规矩放行（PR #79 冒烟实证）。
+    监听只作废缓存、整段包 try/except，宁可漏失效（TTL 兜底）也
+    不许拖垮任何一次正常 flush；写服是低频操作，全清即可。
+    """
+    global _REALM_FLUSH_WATCH_INSTALLED
+    if _REALM_FLUSH_WATCH_INSTALLED:
+        return
+    _REALM_FLUSH_WATCH_INSTALLED = True
+    try:
+        from sqlalchemy import event as _sa_event
+        from sqlalchemy.orm import Session as _sa_session
+
+        def _watch(session, flush_context, instances):
+            try:
+                for obj in (list(session.new) + list(session.dirty)
+                            + list(session.deleted)):
+                    if isinstance(obj, models.ServerRealm):
+                        invalidate_realm_cache()
+                        return
+            except Exception:  # noqa: BLE001 — 监听绝不拖垮 flush
+                pass
+
+        _sa_event.listen(_sa_session, "before_flush", _watch)
+    except Exception:  # noqa: BLE001 — 注册失败就退回纯 TTL 口径
+        logger.warning("服快照 flush 监听注册失败，仅靠 TTL 失效",
+                       exc_info=True)
+
+
+_install_realm_flush_watch()
 
 
 def realm_by_slug(db: Session, slug: str) -> Optional[models.ServerRealm]:

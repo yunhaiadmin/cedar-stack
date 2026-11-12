@@ -2251,7 +2251,10 @@ _MOUNT_SNAPSHOT_CACHE = _config_store.TtlSnapshotCache()
 
 
 def _mount_snapshot_dict(mount) -> dict:
-    return {col.name: getattr(mount, col.name)
+    # getattr 带缺省：半量对象（只载部分列 / 测试替身）缺列时以 None
+    # 入快照，不许像旧写法那样 AttributeError 把整条读路径打崩
+    # （drive_changes 的 fake DB 用例实证）。
+    return {col.name: getattr(mount, col.name, None)
             for col in em.StorageMount.__table__.columns}
 
 
