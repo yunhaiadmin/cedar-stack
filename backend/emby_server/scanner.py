@@ -1078,11 +1078,23 @@ def parse_media_filename(path: str, library_type: str, pack=None) -> dict:
     raw_name = target
     for s0, s1 in sorted(dig_spans, reverse=True):
         raw_name = f"{raw_name[:s0]} {raw_name[s1:]}".strip()
-    name_part = (
-        _tidy_name(raw_name, pack=pack)
-        or _tidy_name(folder, pack=pack)
-        or _tidy_name(stem, pack=pack)
-    )
+    # 标题回退：季文件夹名绝不能当标题（2026-11-12 Season 污染）。
+    # 旧口径 `_tidy_name(raw) or _tidy_name(folder) or _tidy_name(stem)` 会在
+    # raw 被挖空、folder 是季目录时把「Season 01」写成标题（生产实证：
+    # `.../Season 01/一吻不定情...S0101.1080p.mp4` → 「Season 01 S01」）。
+    # 顺序：raw → 父目录（季目录跳过）→ 剧集目录（父目录的父目录）
+    # → 文件名；每一步都跳过季标记，仍无可用标题时留空、不猜。
+    name_part = _tidy_name(raw_name, pack=pack)
+    if not name_part or _is_season_like_name(name_part):
+        if _SEASON_DIR_RE.match(folder or ""):
+            grandparent = os.path.basename(os.path.dirname(os.path.dirname(path)))
+            name_part = _tidy_name(grandparent, pack=pack)
+        else:
+            name_part = _tidy_name(folder, pack=pack)
+    if not name_part or _is_season_like_name(name_part):
+        name_part = _tidy_name(stem, pack=pack)
+    if _is_season_like_name(name_part):
+        name_part = ""
 
     # 年份：排除集号匹配段，避免 S01E2019 的 2019 被当成年份
     #（_extract_year 内部已处理 stem→folder 回退；exclude 只作用于 stem 坐标）
@@ -1098,8 +1110,12 @@ def parse_media_filename(path: str, library_type: str, pack=None) -> dict:
         name_part, trailing_year = _split_trailing_year(name_part)
         if trailing_year is not None:
             year = trailing_year
+    # 年份剥离后名字可能现出季标记原形（如「Season 01 (2024)」→「Season 01」）：
+    # 仍不许当标题，留空。
+    if _is_season_like_name(name_part):
+        name_part = ""
 
-    return {"name": name_part or stem, "year": year, "season": season, "episode": episode,
+    return {"name": name_part or ("" if _is_season_like_name(stem) else stem), "year": year, "season": season, "episode": episode,
             "episode_end": episode_end}
 
 
@@ -3295,10 +3311,29 @@ def _prefetch_remote_listings(ctx: "_ScanContext", prepared: list, pool) -> None
 
 
 # 季目录名（远端挂载的剧集分组用）：Season 01 / S01 / 第1季 / 第一季
+# 2026-11-12 Season 污染：年季（Season 1950 / Season 1960，如《猫和老鼠》
+# 按年份分季）与「Season S01」也必须认成季目录——旧正则只认 1–2 位数字，
+# 「Season 1960」会被当成剧名写进 series 行（生产实证 id 925121）。
 _SEASON_DIR_RE = re.compile(
-    r"^(?:season\s*\.?\s*\d{1,2}|s\d{1,2}|第\s*(?:\d{1,2}|[一二三四五六七八九十]{1,3})\s*季)$",
+    r"^(?:season\s*\.?\s*(?:s?\d{1,4})|s\d{1,4}|第\s*(?:\d{1,2}|[一二三四五六七八九十]{1,3})\s*季)$",
     re.IGNORECASE,
 )
+
+
+def _is_season_like_name(name: str) -> bool:
+    """整个名字就是一个季标记，不能当标题用。
+
+    季标记本身不是标题：扫描器把季文件夹名写成条目名，就是 2026-11-12
+    的 Season 污染（「Season 01 S01」998 条、「Season 1950 S19」68 条、
+    series 行「Season 01」「Season 1960」）。裸 1–2 位数字也算
+    （文件名只剩集号、标题已被挖空，如 `01.mkv` 剩下的 `01`）。
+    """
+    n = (name or "").strip()
+    if not n:
+        return False
+    if _SEASON_DIR_RE.match(n):
+        return True
+    return bool(re.fullmatch(r"\d{1,2}", n))
 
 
 def _series_name_of(scan_file: "ScanFile", parsed: dict, pack=None) -> str:
@@ -3307,17 +3342,30 @@ def _series_name_of(scan_file: "ScanFile", parsed: dict, pack=None) -> str:
     远端路径通常是 ``剧名/Season 1/file S01E01.mkv``；本机路径同理。
     没有 Season 目录时取文件所在目录。目录名里的年份、发布标签由同一套
     ``_tidy_name`` 清洗；若目录名异常为空，才退回解析出的文件名。
+
+    2026-11-12 Season 污染：季目录要**逐层往上跳**——双季文件夹
+    （``剧名/Season 01/Season 01/file``）只跳一层会落在外层季目录上，
+    直接写出 series 名「Season 01」（生产实证 id 2588859）；年季
+    （``Season 1950/1960``）也要认（见 _SEASON_DIR_RE）。跳完仍是
+    季标记或空时，解析出的文件名也不许顶上去（它本身可能就是污染），
+    最后只剩「未知剧集」。
     """
     if scan_file.local_dir:
         directory = scan_file.local_dir.rstrip("/\\")
-        parent = os.path.basename(os.path.dirname(directory))
         leaf = os.path.basename(directory)
-        directory_name = parent if _SEASON_DIR_RE.match(leaf) else leaf
+        parent = os.path.dirname(directory)
+        while _SEASON_DIR_RE.match(leaf or "") and parent:
+            leaf = os.path.basename(parent)
+            parent = os.path.dirname(parent)
+        directory_name = leaf
     else:
         directory = (scan_file.dir_rel or "/").rstrip("/") or "/"
         leaf = posixpath.basename(directory)
-        parent = posixpath.basename(posixpath.dirname(directory))
-        directory_name = parent if _SEASON_DIR_RE.match(leaf) else leaf
+        parent = posixpath.dirname(directory)
+        while _SEASON_DIR_RE.match(leaf or "") and parent:
+            leaf = posixpath.basename(parent)
+            parent = posixpath.dirname(parent)
+        directory_name = leaf
 
     name = _tidy_name(directory_name, pack=pack)
     year = parsed.get("year")
@@ -3331,11 +3379,12 @@ def _series_name_of(scan_file: "ScanFile", parsed: dict, pack=None) -> str:
         name, trailing_year = _split_trailing_year(name)
         if trailing_year is not None:
             parsed["year"] = trailing_year
-    return (
-        name
-        or _tidy_name(parsed.get("name") or "", pack=pack)
-        or (parsed.get("name") or "未知剧集")
-    )
+    if _is_season_like_name(name):
+        name = ""
+    parsed_name = _tidy_name(parsed.get("name") or "", pack=pack)
+    if _is_season_like_name(parsed_name):
+        parsed_name = ""
+    return name or parsed_name or "未知剧集"
 
 
 def _series_guid_of(scan_file: "ScanFile") -> str:
@@ -3345,10 +3394,17 @@ def _series_guid_of(scan_file: "ScanFile") -> str:
     - 远端：dir_rel 本身是季目录（Season 01 / S01 / 第1季）时取其父目录，
       否则取 dir_rel 本身——与本机分支同口径。旧实现对远端直接取文件目录，
       会把同一部剧的各季拆成多个剧集条目。
+
+    2026-11-12 Season 污染连带：季目录要逐层往上跳（双季文件夹
+    ``Season 01/Season 01/``、年季 ``Season 1950`` 都要认），否则
+    同一部剧会被拆成多个 series 行（与 _series_name_of 同根）。
     """
     dirpath = scan_file.local_dir
     if dirpath:
         series_dir = os.path.dirname(dirpath.rstrip("/")) if dirpath else ""
+        while series_dir and _SEASON_DIR_RE.match(
+                os.path.basename(series_dir.rstrip("/")) or ""):
+            series_dir = os.path.dirname(series_dir.rstrip("/"))
         return item_guid(series_dir or (os.path.dirname(scan_file.stored_path) or scan_file.stored_path))
     # BYOS P3：绑定扫描没有挂载 id，远端分支的 mount_path(None, d) 会产
     # 出 ``mount://None/...``——同剧在不同绑定下会撞同一个剧集 guid、跨
@@ -3357,11 +3413,11 @@ def _series_guid_of(scan_file: "ScanFile") -> str:
     stored = getattr(scan_file, "stored_path", "") or ""
     if stored.startswith("byos://"):
         d = os.path.dirname(stored.rstrip("/")) or "/"
-        if _SEASON_DIR_RE.match(os.path.basename(d)):
+        while d != "/" and _SEASON_DIR_RE.match(os.path.basename(d)):
             d = posixpath.dirname(d) or "/"
         return item_guid(d)
     d = (scan_file.dir_rel or "/").rstrip("/") or "/"
-    if _SEASON_DIR_RE.match(os.path.basename(d)):
+    while d != "/" and _SEASON_DIR_RE.match(os.path.basename(d)):
         d = posixpath.dirname(d) or "/"
     return item_guid(mount_lib.mount_path(scan_file.mount_id, d))
 
@@ -7100,8 +7156,19 @@ def _scan_library_body(db: Session, library: emby_models.Library,
                     else:
                         # 只有季号、没有集号（整季包文件）：没有集号可写
                         # 「第 N 集」，沿用旧拼接口径（片名 Sxx），不猜集号。
+                        # 2026-11-12 Season 污染：parsed["name"] 为空或仍是
+                        # 季标记时，用本轮刚推导的 series 名兜底（_pending.
+                        # series_name 是目录名，_series_name_of 已逐层跳过
+                        # 季目录），再不行用 series 行名；三者都不可用时
+                        # _episode_display_name 仍会产出「 Sxx」空底名，
+                        # 因此 _pending.series_name 恒有值（最差「未知剧集」）。
+                        _base = parsed["name"] or ""
+                        if not _base or _is_season_like_name(_base):
+                            _base = _pending.series_name or ""
+                        if not _base or _is_season_like_name(_base):
+                            _base = series.name or ""
                         item.name = _episode_display_name(
-                            parsed["name"], season_no, ep_no)
+                            _base, season_no, ep_no)
                     if ep_nfo:
                         # 单集 NFO：简介与评分（标题已用于展示名）
                         nfo_lib.apply_nfo(item, ep_nfo, "episode")
