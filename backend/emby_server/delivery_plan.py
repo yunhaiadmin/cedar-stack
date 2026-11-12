@@ -25,7 +25,10 @@
 开关四齐（config_schema 的 delivery_plan 家族校验＋本模块
 读取/payload/write＋管理端 /delivery-plan-config 端点）：
 ``delivery_plan_enabled`` 默认开，关 = 不建计划、热路径不读
-计划；``delivery_plan_ttl_sec`` 默认 120 秒（30–3600）。纯
+计划；``delivery_plan_ttl_sec`` 默认 600 秒（30–3600；2026-11-12
+由 120 改 600：暖地址工人轮周期约 280 秒，120 秒不到半个轮周期、
+计划窗大半时间过期，批 2 验收实证命中不了；600 ≈ 2 个轮周期，
+且消费时逐腿复核，拉长有效期不放松正确性）。纯
 SystemConfig 键，不进 env.example（#1527 先例）。
 
 可观测：建计划打结构化日志 ``delivery_plan outcome=built
@@ -48,7 +51,7 @@ logger = logging.getLogger(__name__)
 KEY_DELIVERY_PLAN_ENABLED = "delivery_plan_enabled"
 KEY_DELIVERY_PLAN_TTL_SEC = "delivery_plan_ttl_sec"
 
-DELIVERY_PLAN_TTL_DEFAULT = 120
+DELIVERY_PLAN_TTL_DEFAULT = 600
 DELIVERY_PLAN_TTL_MIN = 30
 DELIVERY_PLAN_TTL_MAX = 3600
 
@@ -56,7 +59,7 @@ DESCRIPTIONS = {
     KEY_DELIVERY_PLAN_ENABLED: (
         "播放交付编排器总开关（默认开；关=不预计算计划、点播热路径不读计划）"),
     KEY_DELIVERY_PLAN_TTL_SEC: (
-        "交付计划有效期（秒，30–3600，默认 120）：过期计划热路径当不存在"),
+        "交付计划有效期（秒，30–3600，默认 600）：过期计划热路径当不存在"),
 }
 
 _FALSE_WORDS = ("0", "false", "no", "off")
@@ -85,7 +88,7 @@ def delivery_plan_enabled(db=None):
 
 
 def plan_ttl_sec(db=None):
-    """计划 TTL（秒）：未配/非法回默认 120，钳制 [30, 3600]。"""
+    """计划 TTL（秒）：未配/非法回默认 600，钳制 [30, 3600]。"""
     raw = _raw_config(db, KEY_DELIVERY_PLAN_TTL_SEC).strip()
     try:
         value = int(raw)

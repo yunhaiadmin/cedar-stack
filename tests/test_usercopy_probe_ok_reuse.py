@@ -238,12 +238,14 @@ def test_decision_reuse_ttl_zero_disables(fake_redis, monkeypatch):
 
 
 def test_reuse_ttl_default_and_config(monkeypatch):
-    """TTL 读取：无 SystemConfig 行 → 默认 300；有行 → 用行值。"""
+    """TTL 读取：无 SystemConfig 行 → 默认 600（2026-11-12 由 300
+    改，暖地址轮周期约 280 秒、300 只够约一轮，见
+    test_drive_warm_hit_align）；有行 → 用行值。"""
     from backend.integrations import store as _store
 
     monkeypatch.setattr(_store, "get_value",
                         lambda db, key, default="": default)
-    assert tv._usercopy_probe_ok_reuse_ttl() == 300
+    assert tv._usercopy_probe_ok_reuse_ttl() == 600
     monkeypatch.setattr(_store, "get_value",
                         lambda db, key, default="": "120")
     assert tv._usercopy_probe_ok_reuse_ttl() == 120
@@ -252,4 +254,4 @@ def test_reuse_ttl_default_and_config(monkeypatch):
     assert tv._usercopy_probe_ok_reuse_ttl() == 0
     monkeypatch.setattr(_store, "get_value",
                         lambda db, key, default="": "abc")
-    assert tv._usercopy_probe_ok_reuse_ttl() == 300
+    assert tv._usercopy_probe_ok_reuse_ttl() == 600
