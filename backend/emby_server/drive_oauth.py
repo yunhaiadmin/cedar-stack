@@ -135,12 +135,14 @@ CLIENT2_SECRET_ENV = "DRIVE_OAUTH2_CLIENT_SECRET"
 CLIENT_PRIMARY = "primary"
 CLIENT_OAUTH2 = "oauth2"
 
-#: 第二入口的展示名与说明：走文件配置（部署者可改），入口状态
-#: 口随响应下发、用户端照原样渲染，前端不写死这份文案。
+#: 入口的展示名与说明：走文件配置（部署者可改），入口状态口随
+#: 响应下发、用户端照原样渲染，前端不写死这份文案。老入口已隐藏
+#: （2026-11-12 用户改令），用户端只呈现这一个绑定入口，默认文案
+#: 按单入口写，不带「新/第二入口」字样；资格限制说明保留。
 CLIENT2_LABEL_ENV = "DRIVE_OAUTH2_ENTRY_LABEL"
 CLIENT2_DESCRIPTION_ENV = "DRIVE_OAUTH2_ENTRY_DESCRIPTION"
-CLIENT2_LABEL_DEFAULT = "谷歌盘（新入口）"
-CLIENT2_DESCRIPTION_DEFAULT = "通过新应用授权绑定谷歌盘，仅限持有查看凭证的用户使用。"
+CLIENT2_LABEL_DEFAULT = "谷歌盘"
+CLIENT2_DESCRIPTION_DEFAULT = "绑定你的谷歌盘，仅限持有查看凭证的用户使用。"
 
 #: 第二入口门禁拒绝文案（发起与回调复核同一句，用户端原样
 #: 展示；入口状态口的 reason 也用它）。
