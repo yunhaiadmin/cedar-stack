@@ -296,6 +296,7 @@ async def check_all_mounts(staff: models.WebUser = Depends(require_staff),
             mount.last_check_ok = bool(item.get("ok"))
             mount.last_check_message = str(item.get("message") or "")[:300]
         db.commit()
+        mount_lib.invalidate_mount_cache()
 
     await run_in_threadpool(record)
     return health
@@ -380,6 +381,7 @@ def create_mount(req: MountCreate, staff: models.WebUser = Depends(require_staff
     db.add(mount)
     db.commit()
     db.refresh(mount)
+    mount_lib.invalidate_mount_cache(mount.id)
     return {"success": True, "mount": _serialize_mount(db, mount, None, _ea_server_names(db))}
 
 
@@ -429,6 +431,7 @@ def update_mount(mount_id: int, req: MountUpdate,
                 lib.realm_id = req.realm_id
     db.commit()
     db.refresh(mount)
+    mount_lib.invalidate_mount_cache(mount.id)
     # 路径/配置变更后需要重新扫描才生效（扫描任务使用固定配置快照）
     return {"success": True,
             "mount": _serialize_mount(db, mount, None, _ea_server_names(db)),
@@ -485,6 +488,7 @@ def delete_mount(mount_id: int, staff: models.WebUser = Depends(require_staff),
         unbound += 1
     db.delete(mount)
     db.commit()
+    mount_lib.invalidate_mount_cache(mount_id)
     return {"success": True, "unbound_libraries": unbound}
 
 
@@ -506,6 +510,7 @@ async def test_saved_mount(mount_id: int, staff: models.WebUser = Depends(requir
         mount.last_check_message = str(result.get("message") or "")[:300]
         db.commit()
         db.refresh(mount)
+        mount_lib.invalidate_mount_cache(mount.id)
         return _serialize_mount(db, mount)
 
     return {"success": bool(result.get("ok")), "result": result,

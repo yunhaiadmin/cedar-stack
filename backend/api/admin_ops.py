@@ -280,7 +280,7 @@ def list_codes(
     return {
         "total": total,
         "realm_id": scope_id,
-        "realm_name": realms.get_realm(db, scope_id).name if scope_id else "全部服",
+        "realm_name": realms.realm_snapshot(db, scope_id).name if scope_id else "全部服",
         "realms": [{"id": r.id, "name": r.name} for r in realms.list_realms(db)],
         "codes": [code_dto(db, c, now, realm_names, used_by_map,
                            creator_names, agent_names) for c in page],
@@ -395,7 +395,7 @@ def code_stats(
                   "triggered": int(agg.decoy_triggered or 0)},
         "days_granted": int(agg.days_granted or 0),
         "realm_id": scope_id,
-        "realm_name": realms.get_realm(db, scope_id).name if scope_id else "全部服",
+        "realm_name": realms.realm_snapshot(db, scope_id).name if scope_id else "全部服",
         "by_type": sorted(by_type, key=lambda x: x["code_type"]),
     }
 

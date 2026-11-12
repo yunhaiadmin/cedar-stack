@@ -926,7 +926,7 @@ def _grant_realm_for_key(db: Session, target_realm: int | None) -> int:
     row = db.query(models.SystemConfig).filter(
         models.SystemConfig.key == realms.CONFIG_ACTIVE_REALM).first()
     if row and str(row.value or "").strip().isdigit():
-        realm = realms.get_realm(db, int(row.value))
+        realm = realms.realm_snapshot(db, int(row.value))
         if realm is not None and getattr(realm, "is_active", True):
             return realm.id
     legacy = realms.legacy_realm_id(db)

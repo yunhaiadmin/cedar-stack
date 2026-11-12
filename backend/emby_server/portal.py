@@ -158,7 +158,7 @@ def resolve_emby_base_url_with_source(
     （换域名 / 上反代后就变了），所以界面上要写明「自动推断」。
     """
     if realm_id is not None and db is not None:
-        realm = realms.get_realm(db, realm_id)
+        realm = realms.realm_snapshot(db, realm_id)
         if realm and (realm.url or "").strip():
             return realm.url.strip().rstrip("/"), URL_SOURCE_REALM
     url = configured_emby_url(db, realm_id)
@@ -428,7 +428,7 @@ def _account_card(user: models.WebUser, db: Session, realm_id: int | None = None
     url = resolve_emby_base_url(db, realm_id, request)
     mode = emby_active_mode(db, realm_id)
     external = mode == "external"
-    realm = realms.get_realm(db, realm_id)
+    realm = realms.realm_snapshot(db, realm_id)
     granted, unlock = _realm_view_granted(db, user, realm_id)
     price_points, price_days = _view_unlock_pricing(db)
     # 未设置接线用户名时是空串，不是 null：账号卡这个字段一直是字符串。
@@ -596,7 +596,7 @@ def unlock_emby_view(
     这里的原子扣费/原地续开/PA-022 口径随购买语义一并退役。
     """
     realm_id = req.realm_id or realms.active_realm_id(db)
-    realm = realms.get_realm(db, realm_id)
+    realm = realms.realm_snapshot(db, realm_id)
     if realm is None:
         raise HTTPException(status_code=404, detail="服不存在")
     if not realms.is_free_realm(db, realm_id):
@@ -2190,7 +2190,7 @@ def admin_overview(staff: models.WebUser = Depends(require_staff), db: Session =
         db.query(em.PlaybackSession).filter(em.PlaybackSession.ended_at.is_(None)).count()
     )
     total_users = db.query(models.WebUser).count()
-    realm = realms.get_realm(db, scope_id) if scope_id else None
+    realm = realms.realm_snapshot(db, scope_id) if scope_id else None
     return {
         "total_items": total_items,
         "total_libraries": total_libraries,

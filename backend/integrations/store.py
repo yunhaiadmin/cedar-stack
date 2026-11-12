@@ -277,3 +277,51 @@ def invalidate(*keys: str) -> int:
             if _ttl_cache.pop(str(key), None) is not None:
                 n += 1
         return n
+
+
+class TtlSnapshotCache:
+    """进程内 TTL 快照缓存：配置类小表（挂载 / 服等）的统一缓存口径。
+
+    与本模块 SystemConfig 热缓存同一套纪律（``threading.Lock`` +
+    ``time.monotonic`` + 缺省 ``TTL_DEFAULT`` 秒），不另立第二套实现。
+    存的是调用方给的**纯值快照**（通常是列值 dict），绝不存 ORM 对象：
+    命中时调用方按快照现造一个脱离 session 的副本返回——跨 session
+    共享 ORM 实例会把过期/游离状态带得到处都是，这里从根上避开。
+
+    失效纪律与 ``write_values`` 相同：写路径提交后显式 ``invalidate``，
+    同进程立即生效；跨进程写入靠 TTL 兜底（最长 TTL 秒收敛）。
+    ``None`` 是合法缓存值（负缓存：不存在的行也缓存，省掉反复点查）。
+    """
+
+    def __init__(self, ttl: float = TTL_DEFAULT, max_entries: int = 4096):
+        self._ttl = float(ttl)
+        self._max_entries = int(max_entries)
+        self._lock = threading.Lock()
+        self._data: dict = {}
+
+    def lookup(self, key) -> tuple:
+        """返回 ``(hit, value)``；未命中或已过期时 hit=False。"""
+        now = time.monotonic()
+        with self._lock:
+            entry = self._data.get(key)
+            if entry is None:
+                return False, None
+            expires_at, value = entry
+            if now >= expires_at:
+                self._data.pop(key, None)
+                return False, None
+            return True, value
+
+    def put(self, key, value) -> None:
+        with self._lock:
+            if len(self._data) >= self._max_entries:
+                self._data.clear()
+            self._data[key] = (time.monotonic() + self._ttl, value)
+
+    def invalidate(self, key=None) -> None:
+        """``key=None`` 全清；否则只清该键。"""
+        with self._lock:
+            if key is None:
+                self._data.clear()
+            else:
+                self._data.pop(key, None)
