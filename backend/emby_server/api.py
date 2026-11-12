@@ -5868,6 +5868,13 @@ class _DriveFileUnavailable(Exception):
     """files.get 非 404 失败（超时/5xx/凭据问题）→ 上层转 HTTP 503"""
 
 
+class _PoolMountFallback(Exception):
+    """池分支回落挂载直读的控制流信号（不是错误）：池门禁判条目
+    不在池供给范围（pool_provider_unsupported）且挂载直读可接管
+    时，video_stream 池分支在 try 内复原选路、关掉池模式后用它
+    跳出 try 块，落到下方既有流程出流。"""
+
+
 def _enforce_stream_limit(db: Session, request, user, item: em.MediaItem,
                           item_id: str) -> None:
     """按「挂载+路径前缀」限同时播放路数（FMBY 批一 #3，stream_limits）。
@@ -7010,6 +7017,31 @@ async def playback_info(
                         "reason": ("no_binding_required"
                                    if _pool_decision.kind == "not_applicable"
                                    else "issued_sign")}
+        if ((_pi_gate or {}).get("pool")
+                and (_pi_gate or {}).get("verdict") == "failed"
+                and (_pi_gate or {}).get("reason")
+                == "pool_provider_unsupported"):
+            # 与 video_stream 池分支同口径回落（2026-11-12
+            # richotis 案）：条目不在池供给范围（rclone 挂载等）
+            # 且挂载直读能接管（engages 且文件在位）时，计划层
+            # 不把清单标 failed——取流端会经挂载直读出字节，
+            # 清单标 failed 删地址会让客户端根本不发起取流，
+            # 两层互毙。按 proceed 留清单原样（共享原件形态：
+            # 下方 alt=media 段对无变体行的原件逐字不动，地址
+            # 仍是本站 /stream）。直读不 engages / 文件缺失则
+            # 维持池门禁原判，下方 apply_transfer_status 照旧。
+            _pi_ms_path = None
+            try:
+                from backend.emby_server import (
+                    mount_serving as _mount_serving_pi)
+                _pi_ms_path = await run_db(
+                    _mount_serving_pi.resolve_local_file, db, item)
+            except Exception:  # noqa: BLE001 — 探测失败按未命中
+                _pi_ms_path = None
+            if _pi_ms_path is not None:
+                _pi_gate = {"verdict": "proceed",
+                            "reason": "pool_provider_unsupported_mount",
+                            "pool": True}
         _pi_verdict = (_pi_gate or {}).get("verdict")
         if _pi_verdict == "preparing" and not (_pi_gate or {}).get("pool"):
             # 点播当场先办（2026-10-29 用户亲点）：合格的同
@@ -7776,6 +7808,43 @@ async def video_stream(
                                 _pool_gate_result, _pool_re_gate))
                         _pool_verdict = (
                             _pool_gate_result or {}).get("verdict")
+                if (_pool_verdict == "failed"
+                        and (_pool_gate_result or {}).get("reason")
+                        == "pool_provider_unsupported"):
+                    # 池供给范围外条目回落挂载直读（2026-11-12
+                    # richotis 案定案）：条目 provider 不在池启用
+                    # 列表（如 rclone 挂载 paul）时，池门禁的
+                    # failed 不是终局——这类条目本就不归池供给，
+                    # 此前却被当终局失败抛 409，请求永远到不了
+                    # 下方的挂载直读块，paul 全库对未绑用户必
+                    # 409。挂载直读（mount_serving）能接管
+                    # （engages 且文件在位）时关掉池模式、复原
+                    # 选路，落到下方既有流程：用户转存门禁对
+                    # provider=None 条目放行
+                    # （proceed/unknown_provider），最终由挂载
+                    # 直读块出字节。直读不 engages 或文件缺失
+                    # （MountServingUnavailable）→ 维持池门禁
+                    # 原判 409，绝不放行掉到尾部谷歌 302 回落。
+                    _ms_fallback_path = None
+                    try:
+                        from backend.emby_server import (
+                            mount_serving as _mount_serving_pool)
+                        _ms_fallback_path = await run_db(
+                            _mount_serving_pool.resolve_local_file,
+                            db, item)
+                    except Exception:  # noqa: BLE001 — 探测失败按未命中
+                        _ms_fallback_path = None
+                    if _ms_fallback_path is not None:
+                        _tv.log_byos(
+                            "pool_mount_fallback",
+                            item=getattr(item, "id", None),
+                            user=getattr(user, "id", None),
+                            reason="pool_provider_unsupported",
+                            where="video_stream_pool")
+                        _play_fid, _play_variant = (
+                            _pre_pool_fid, _pre_pool_variant)
+                        _pool_stream_mode = False
+                        raise _PoolMountFallback()
                 _gate.raise_for_transfer_gate(_pool_gate_result)
                 _transfer_gate = _pool_gate_result
                 _gate_verdict = _pool_verdict
@@ -7978,6 +8047,10 @@ async def video_stream(
                     request, user, item,
                     getattr(_pool_served_resp, "status_code", None))
                 return _observe_traffic(_pool_served_resp)
+            except _PoolMountFallback:
+                # 池回落挂载直读：选路已复原、池模式已关，落到
+                # 下方既有流程出流（见 try 内回落判定处注释）。
+                pass
             except HTTPException:
                 if not _pool_routed_stream:
                     raise
