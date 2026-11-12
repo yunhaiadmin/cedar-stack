@@ -631,6 +631,33 @@ def _mark_step(key, ttl_sec) -> None:
         pass
 
 
+def _refresh_quota_mark(user_id, item_id, copy_fid, *, probed=False) -> None:
+    """quota 归因标记（W2b probed / fresh 两态共用）。
+
+    旧口径只标 probed：稳态轮次里 W2b 多为 fresh（判定点吃现成
+    裁决缓存/复用记录、零现探），标记却不续写，等 probed 时写
+    的标记过期后 warm_hits 系统性漏报 quota，暖命中组的前后对
+    比口径失真。现口径：只要判定点此刻不会现探（复用记录或裁
+    决缓存还活着），标记就该在，TTL 取载体剩余（复用优先、其
+    次裁决；剩余读不到但裁决在，按裁决 TTL 记）。本轮刚真探过
+    （probed）时裁决/复用必是刚按裁决 TTL 写下的，状态读不到
+    剩余也按裁决 TTL 兜底——与旧口径的 probed 标记逐字一致。
+    fresh 且证明不了还活着就不标。永不抛。
+    """
+    try:
+        if user_id is None or not copy_fid:
+            return
+        state = _quota_cache_state(user_id, copy_fid)
+        ttl = state.get("reuse_ttl") or state.get("verdict_ttl")
+        if ttl is None and (probed or state.get("verdict") in (
+                "ok", "quota", "interstitial")):
+            ttl = _quota_probe_ttl()
+        if ttl:
+            _mark_step(f"{_MARK_QUOTA_PREFIX}{user_id}:{item_id}", ttl)
+    except Exception:  # noqa: BLE001 — 标记失败只丢这步归因
+        pass
+
+
 def warm_attribution(user_id, item_id) -> dict:
     """起播暖归因（api 打点口唯一读口）：{warm_hits, warm_in_signal}。
 
@@ -1040,9 +1067,9 @@ def _warm_one(target, cfg, counter, session_factory, round_start,
     _iid = target["item_id"]
     if w1 == "built" and _uid is not None and plan_ttl:
         _mark_step(f"{_MARK_PLAN_PREFIX}{_uid}:{_iid}", plan_ttl)
-    if w2b == "probed" and _uid is not None:
-        _mark_step(f"{_MARK_QUOTA_PREFIX}{_uid}:{_iid}",
-                   _quota_probe_ttl())
+    if w2b in ("probed", "fresh") and _uid is not None:
+        _refresh_quota_mark(_uid, _iid, copy_fid,
+                            probed=(w2b == "probed"))
     if w5 == "published":
         _mark_step(f"{_MARK_EXISTS_PREFIX}{_iid}", _exists_ok_ttl())
     if "budget" in (w2a, w2b, w3, w5):
