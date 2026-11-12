@@ -255,6 +255,21 @@ const router = createRouter({
       path: '/calendar',
       redirect: '/game/calendar',
     },
+    // UHD 换皮批 1（营销面）：官网首页与官网定价，公开页不带 requiresAuth。
+    // 新增独立路由，不动现行 '/' 发现页；两页自带悬浮胶囊导航，
+    // App.vue 按路由名（landing/pricing）不渲染全局顶栏/底坞。
+    {
+      path: '/welcome',
+      name: 'landing',
+      component: () => import('@/views/marketing/LandingView.vue'),
+      meta: { title: '欢迎' },
+    },
+    {
+      path: '/pricing',
+      name: 'pricing',
+      component: () => import('@/views/marketing/PricingView.vue'),
+      meta: { title: '定价' },
+    },
     // UHD 换皮组件展示页（批 0 地基验收用）：隐藏路由，不进任何导航、不被现有页面引用，
     // 不带 requiresAuth，未登录可直接打开。
     {

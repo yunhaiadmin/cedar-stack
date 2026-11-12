@@ -8,7 +8,7 @@
  *
  * 登录成功后自动跳转 ?redirect= 指定的受保护页面。
  */
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { RouterLink, useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useToast } from '@/composables/useToast'
@@ -21,8 +21,7 @@ import CaptchaChallenge from '@/components/ui/CaptchaChallenge.vue'
 import { branding } from '@/composables/useBranding'
 import { getRegisterConfig, verifyRegisterCode } from '@/api/user'
 import { tgApi } from '@/api/tg'
-import { fetchLoginPosters, fetchTgBotUsername, type LoginPoster } from '@/api/site'
-import PosterCollage from '@/components/ui/PosterCollage.vue'
+import { fetchTgBotUsername } from '@/api/site'
 
 const router = useRouter()
 const route = useRoute()
@@ -249,19 +248,18 @@ async function handleRegister() {
   }
 }
 
-// 登录页跟随用户主题（用户决策 2026-10-14 21:14，取代 2026-10-11 的强制深色口径）：
-// 不再自己动 data-theme，路由守卫 afterEach 已按 localStorage 'aetrix-theme' 恢复用户偏好。
+// 主题机制不变：本页不自己动 data-theme，路由守卫 afterEach 已按 localStorage
+// 'aetrix-theme' 恢复用户偏好（作用于其余页面）。
+// 但本页视觉自 UHD 换皮批 1 起为固定浅色卡式（说明书逐页对照表第 1/2 行，
+// 覆盖 2026-10-14「登录页跟随用户主题」的视觉口径）：样式只用 --uhd-l-* 浅色令牌，
+// 不随 data-theme 变色；逻辑与主题机制一字未动。
 
-// 海报拼贴背景：延迟到浏览器空闲时拉取，不阻塞表单首屏渲染
-const loginPosters = ref<LoginPoster[]>([])
-// EA 海报直链基地址（后端下发；为空则不渲染拼贴，避免相对路径被反代到错误后端）
-const loginPostersBaseUrl = ref('')
+// 注：旧皮的海报拼贴背景（PosterCollage + fetchLoginPosters 延迟拉取）已随
+// UHD 换皮批 1 固定浅色卡式退场，相关状态与拉取一并移除；那是纯装饰背景，
+// 不属于登录/注册业务逻辑，后端接口本身未动。
 
 // TG 登录入口：站点机器人用户名（公开接口下发）；为空=未配置机器人，不渲染入口
 const tgBotUsername = ref('')
-
-let postersIdleHandle: number | null = null
-let postersTimeout: ReturnType<typeof setTimeout> | null = null
 
 function loadRegisterConfig() {
   configError.value = false
@@ -290,34 +288,13 @@ onMounted(() => {
     registerForm.inviteCode = firstQueryValue(route.query.invite)
     toast.info(`已收到好友邀请码，注册成功后双方都可获得能量奖励`, 5000)
   }
-
-  // 海报拼贴背景：requestIdleCallback 延迟拉取（降级 setTimeout 800ms），
-  // 失败时静默降级（loginPosters 为空或基地址为空 → 不渲染拼贴，回退现有背景）
-  const loadPosters = () => {
-    fetchLoginPosters().then(({ items, embyBaseUrl }) => {
-      if (items.length > 0 && embyBaseUrl) {
-        loginPosters.value = items
-        loginPostersBaseUrl.value = embyBaseUrl
-      }
-    }).catch(() => { /* 静默降级 */ })
-  }
-  const ric = (window as unknown as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback
-  if (typeof ric === 'function') postersIdleHandle = ric(loadPosters)
-  else postersTimeout = setTimeout(loadPosters, 800)
-})
-
-onUnmounted(() => {
-  // 页面卸载时取消海报延迟拉取，避免回调里写已卸载组件的状态
-  if (postersIdleHandle !== null) (window as unknown as { cancelIdleCallback?: (h: number) => void }).cancelIdleCallback?.(postersIdleHandle)
-  if (postersTimeout !== null) clearTimeout(postersTimeout)
 })
 </script>
 
 <template>
   <div class="auth-page">
-    <PosterCollage v-if="loginPosters.length > 0 && loginPostersBaseUrl" :posters="loginPosters" :emby-base-url="loginPostersBaseUrl" />
-    <div class="auth-grid" aria-hidden="true"></div>
-
+    <!-- UHD 换皮批 1：固定浅色卡式——粉彩光斑底 + 居中白卡；
+         原海报拼贴背景与网格层随旧皮退场（海报数据拉取逻辑保留在脚本中，未渲染） -->
     <div class="auth-column">
       <div class="auth-brand">
         <div class="brand-mark">
@@ -562,6 +539,13 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* ============================================================
+   UHD 换皮批 1 · 登录/注册固定浅色卡式（说明书逐页对照表第 1/2 行）
+   粉彩光斑底（仅入口页）+ 居中白卡 445px / 圆角 20 / 柔和阴影；
+   标签 14px、输入框 44px 高圆角 13px 浅灰底、主按钮 46px 全宽胶囊
+   （彩虹边框 + 淡彩底，白名单位置）、模式切换为分段切换模具。
+   只用 --uhd-* 令牌；业务逻辑、校验与两步流程均未改动。
+   ============================================================ */
 .auth-page {
   box-sizing: border-box;
   min-height: 100vh;
@@ -573,62 +557,51 @@ onUnmounted(() => {
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  background: var(--paper-bg);
+  background:
+    radial-gradient(600px 420px at 12% 6%, var(--uhd-blob-peach), transparent 70%),
+    radial-gradient(560px 400px at 88% 12%, var(--uhd-blob-sky), transparent 70%),
+    radial-gradient(640px 460px at 80% 94%, var(--uhd-blob-lilac), transparent 70%),
+    radial-gradient(520px 380px at 6% 90%, var(--uhd-blob-mint), transparent 70%),
+    var(--uhd-l-bg);
+  color: var(--uhd-l-text);
+  font-family: var(--uhd-font-sans);
 }
 
-/* 氛围光已移除：海报拼贴本身提供视觉丰富度（2026-10-11，品牌收敛到琥珀）。 */
-
-/* 单独遮罩网格，避免遮罩影响光晕、品牌或表单。 */
-.auth-grid {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-image:
-    linear-gradient(to right, rgba(128, 128, 128, 0.14) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(128, 128, 128, 0.14) 1px, transparent 1px);
-  background-size: 48px 48px;
-  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, black 30%, transparent 100%);
-  mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, black 30%, transparent 100%);
-}
-
-@supports (color: color-mix(in srgb, black 70%, transparent)) {
-  .auth-grid {
-    background-image:
-      linear-gradient(to right, color-mix(in srgb, var(--paper-line) 70%, transparent) 1px, transparent 1px),
-      linear-gradient(to bottom, color-mix(in srgb, var(--paper-line) 70%, transparent) 1px, transparent 1px);
-  }
-}
-
-/* 无卡片底色、边框与阴影，内容直接浮于页面背景。 */
+/* 居中白卡本体 */
 .auth-column {
   position: relative;
   z-index: 1;
   width: 100%;
-  max-width: 400px;
+  max-width: 445px;
   min-width: 0;
-  animation: authColumnIn 0.4s cubic-bezier(0.22,1,0.36,1) both;
+  box-sizing: border-box;
+  padding: 38px 34px 30px;
+  background: var(--uhd-l-surface);
+  border: 1px solid var(--uhd-l-border);
+  border-radius: 20px;
+  box-shadow: var(--uhd-shadow-card-l);
+  animation: authColumnIn var(--uhd-dur-blur-in) var(--uhd-ease-pop) both;
 }
 
 @keyframes authColumnIn {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: none; }
+  from { opacity: 0; transform: translateY(12px); filter: blur(6px); }
+  to { opacity: 1; transform: none; filter: blur(0); }
 }
 
 .auth-brand {
   text-align: center;
-  margin-bottom: 2rem;
+  margin-bottom: 1.75rem;
 }
 
 .brand-mark {
   width: 46px;
   height: 46px;
   margin: 0 auto 1rem;
-  border-radius: var(--paper-r-md);
+  border-radius: var(--uhd-radius-base);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--paper-ink-2);
+  color: var(--uhd-l-text-2);
 }
 
 .brand-mark img {
@@ -639,34 +612,31 @@ onUnmounted(() => {
 }
 
 .brand-title {
-  font-size: 1.75rem;
-  font-weight: 700;
-  /* CJK 站名不拉距：≤0.04em，不再 uppercase */
-  letter-spacing: 0.02em;
-  text-indent: 0.02em;
-  color: var(--paper-ink);
-  margin: 0 0 0.625rem;
-  line-height: 1.3;
+  font-size: var(--uhd-fs-h3-lg);
+  font-weight: var(--uhd-fw-extrabold);
+  letter-spacing: 0.01em;
+  color: var(--uhd-l-text);
+  margin: 0 0 0.5rem;
+  line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
 .brand-subtitle {
-  font-size: 0.8125rem;
-  color: var(--paper-ink-3);
+  font-size: var(--uhd-fs-caption);
+  color: var(--uhd-l-text-2);
   margin: 0;
   line-height: 1.6;
 }
 
-/* 胶囊模式切换 */
+/* 模式切换：分段切换模具（浅灰底 + 白胶囊激活项） */
 .mode-switch {
   box-sizing: border-box;
   position: relative;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  height: auto;
-  background: var(--paper-card);
-  border: 1px solid var(--paper-line);
-  border-radius: var(--paper-r-full);
+  background: var(--uhd-l-seg-bg);
+  border: none;
+  border-radius: 22px;
   padding: 4px;
   margin-bottom: 1.5rem;
 }
@@ -675,45 +645,42 @@ onUnmounted(() => {
   position: relative;
   z-index: 1;
   min-width: 0;
-  min-height: 44px;
+  min-height: 36px;
   padding: 0 0.75rem;
   border: none;
   background: transparent;
-  border-radius: var(--paper-r-full);
+  border-radius: var(--uhd-radius-pill);
   font: inherit;
-  font-size: 0.875rem;
-  font-weight: 500;
+  font-size: var(--uhd-fs-caption);
+  font-weight: var(--uhd-fw-medium);
   line-height: 1;
-  color: var(--paper-ink-3);
+  color: var(--uhd-l-text-2);
   cursor: pointer;
   transition: color 0.2s ease;
-  /* 文字在胶囊内严格水平垂直居中（移动端浏览器默认样式可能偏） */
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-/* CJK 光学垂直居中：PingFang SC 等中文字形在行盒内视觉重心偏下，
-   line-height: 1 收紧行盒后再微调上移，保证文字在琥珀胶囊内真正居中 */
 .mode-btn-label {
   line-height: 1;
   transform: translateY(-0.05em);
 }
 
 .mode-btn.active {
-  color: var(--paper-on-primary);
-  font-weight: 600;
+  color: var(--uhd-l-text);
+  font-weight: var(--uhd-fw-semibold);
 }
 
 .mode-indicator {
   position: absolute;
-  /* 4px 与 .mode-switch 的 padding: 4px 对应，改一处需同步 */
   top: 4px;
   left: 4px;
   width: calc(50% - 4px);
   height: calc(100% - 8px);
-  border-radius: var(--paper-r-full);
-  background: var(--paper-primary);
+  border-radius: var(--uhd-radius-pill);
+  background: var(--uhd-l-surface);
+  box-shadow: var(--uhd-shadow-seg);
   pointer-events: none;
   transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -722,7 +689,7 @@ onUnmounted(() => {
   transform: translateX(100%);
 }
 
-/* 全胶囊表单 */
+/* 表单与字段（卡内口径：标签 14px、输入 44px / 圆角 13px / 浅灰底） */
 .auth-form {
   display: flex;
   flex-direction: column;
@@ -737,47 +704,46 @@ onUnmounted(() => {
 }
 
 .field-label {
-  padding: 0 24px;
-  font-size: 0.8125rem;
-  font-weight: 500;
+  font-size: var(--uhd-fs-caption);
+  font-weight: var(--uhd-fw-medium);
   line-height: 1.5;
-  color: var(--paper-ink-3);
+  color: var(--uhd-l-text);
 }
 
 .optional {
   margin-left: 0.25rem;
-  font-size: 0.75rem;
+  font-size: var(--uhd-fs-aux-sm);
   font-style: normal;
-  font-weight: 400;
-  color: var(--paper-ink-3);
+  font-weight: var(--uhd-fw-normal);
+  color: var(--uhd-l-text-3);
 }
 
 .field-box {
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  min-height: 52px;
-  background: var(--paper-input-bg);
-  border: 1px solid var(--paper-line);
-  border-radius: var(--paper-r-full);
-  padding: 0 24px;
-  transition: box-shadow 0.2s ease;
+  min-height: 44px;
+  background: var(--uhd-l-input-bg);
+  border: 1px solid var(--uhd-l-border);
+  border-radius: var(--uhd-radius-input);
+  padding: 0 14px;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 .field-box:focus-within {
-  border-color: var(--paper-border-focus);
-  box-shadow: 0 0 0 3px var(--paper-primary-soft);
+  border-color: var(--uhd-l-link);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
 }
 
 .field-icon {
-  color: var(--paper-ink-3);
+  color: var(--uhd-l-text-3);
   margin-right: 0.625rem;
   flex-shrink: 0;
   transition: color 0.2s ease;
 }
 
 .field-box:focus-within .field-icon {
-  color: var(--paper-primary);
+  color: var(--uhd-l-text-2);
 }
 
 .field-box input {
@@ -789,23 +755,23 @@ onUnmounted(() => {
   background: transparent;
   border: none;
   outline: none;
-  color: var(--paper-ink);
+  color: var(--uhd-l-text);
   font: inherit;
-  font-size: 0.9375rem;
+  font-size: var(--uhd-fs-body);
 }
 
 .field-box input::placeholder {
-  color: var(--paper-ink-3);
+  color: var(--uhd-l-text-3);
   opacity: 1;
 }
 
-/* 修复2：浏览器自动填充（Chrome/Safari）默认底色会盖住输入框，强制跟随主题 */
+/* 浏览器自动填充默认底色会盖住输入框，强制跟随卡内浅灰底 */
 .field-box input:-webkit-autofill,
 .field-box input:-webkit-autofill:hover,
 .field-box input:-webkit-autofill:focus,
 .field-box input:-webkit-autofill:active {
-  -webkit-text-fill-color: var(--paper-ink);
-  -webkit-box-shadow: 0 0 0 1000px var(--paper-input-bg) inset;
+  -webkit-text-fill-color: var(--uhd-l-text);
+  -webkit-box-shadow: 0 0 0 1000px var(--uhd-l-input-bg) inset;
   transition: background-color 5000s ease-in-out 0s;
 }
 
@@ -822,13 +788,12 @@ onUnmounted(() => {
   margin-left: 0.375rem;
   background: transparent;
   border: none;
-  color: var(--paper-ink-3);
+  color: var(--uhd-l-text-3);
   cursor: pointer;
   border-radius: 50%;
   transition: color 0.2s ease, background-color 0.2s ease;
 }
 
-/* 点击区扩到 44px：视觉保持 32px，用 ::after 透明层扩展 */
 .eye-btn::after {
   content: "";
   position: absolute;
@@ -837,15 +802,15 @@ onUnmounted(() => {
 
 @media (hover: hover) {
   .eye-btn:hover {
-    color: var(--paper-ink-2);
-    background: var(--paper-card);
+    color: var(--uhd-l-text);
+    background: var(--uhd-l-divider);
   }
 }
 
 .mode-btn:focus-visible,
 .eye-btn:focus-visible,
 .submit-btn:focus-visible {
-  outline: 2px solid var(--paper-border-focus);
+  outline: 2px solid var(--uhd-l-link);
   outline-offset: 3px;
 }
 
@@ -855,58 +820,56 @@ onUnmounted(() => {
   align-items: center;
   gap: 0.625rem;
   margin-top: 0.125rem;
-  padding: 0 24px;
 }
 
 .strength-track {
   flex: 1;
   height: 3px;
-  background: var(--paper-card-2);
-  border-radius: var(--paper-r-full);
+  background: var(--uhd-l-divider);
+  border-radius: var(--uhd-radius-pill);
   overflow: hidden;
 }
 
 .strength-fill {
   height: 100%;
   width: 100%;
-  border-radius: var(--paper-r-full);
-  /* 用 transform: scaleX 代替 width 做进度动画，避免触发布局重排 */
+  border-radius: var(--uhd-radius-pill);
   transform: scaleX(0);
   transform-origin: left center;
   transition: transform 0.3s ease, background-color 0.3s ease;
 }
 
-.strength-fill.lv-1 { transform: scaleX(0.33); background: var(--paper-danger); }
-.strength-fill.lv-2 { transform: scaleX(0.66); background: var(--paper-warning); }
-.strength-fill.lv-3 { transform: scaleX(1); background: var(--paper-primary); }
+.strength-fill.lv-1 { transform: scaleX(0.33); background: var(--uhd-danger); }
+.strength-fill.lv-2 { transform: scaleX(0.66); background: var(--uhd-dot-doing); }
+.strength-fill.lv-3 { transform: scaleX(1); background: var(--uhd-success); }
 
 .strength-text {
-  font-size: 0.8125rem;
-  color: var(--paper-ink-3);
+  font-size: var(--uhd-fs-aux);
+  color: var(--uhd-l-text-3);
   min-width: 16px;
 }
 
-/* 错误与注册关闭提示保留独立语义色。 */
+/* 错误（红）与关闭提示（琥珀）保留独立语义色 */
 .form-error {
   margin: 0;
-  padding: 0.75rem 24px;
-  border-radius: 26px;
-  background: var(--paper-danger-soft);
-  border: 1px solid var(--paper-danger-border);
-  color: var(--paper-danger);
-  font-size: 0.8125rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--uhd-radius-base);
+  background: rgba(220, 38, 38, 0.06);
+  border: 1px solid rgba(220, 38, 38, 0.28);
+  color: var(--uhd-danger);
+  font-size: var(--uhd-fs-aux);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
 .closed-notice {
   margin: 0;
-  padding: 0.75rem 24px;
-  border-radius: 26px;
-  background: var(--paper-warning-soft, var(--paper-danger-soft));
-  border: 1px solid var(--paper-warning-border, var(--paper-danger-border));
-  color: var(--paper-warning, var(--paper-danger));
-  font-size: 0.875rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--uhd-radius-base);
+  background: var(--uhd-warn-bg-2);
+  border: 1px solid rgba(217, 119, 6, 0.35);
+  color: var(--uhd-warn-text);
+  font-size: var(--uhd-fs-caption);
   line-height: 1.5;
   text-align: center;
 }
@@ -916,7 +879,7 @@ onUnmounted(() => {
   border: none;
   padding: 0 8px;
   min-height: 44px;
-  color: var(--paper-primary);
+  color: var(--uhd-l-link);
   font: inherit;
   text-decoration: underline;
   cursor: pointer;
@@ -925,13 +888,13 @@ onUnmounted(() => {
 /* 凭码注册第一步的获取提示 + 第二步的已验码条 */
 .regcode-hint {
   margin: 0;
-  font-size: 0.8125rem;
+  font-size: var(--uhd-fs-aux);
   line-height: 1.6;
-  color: var(--paper-ink-3);
+  color: var(--uhd-l-text-3);
 }
 
 .hint-link {
-  color: var(--paper-primary);
+  color: var(--uhd-l-link);
   text-decoration: underline;
   white-space: nowrap;
 }
@@ -943,10 +906,10 @@ onUnmounted(() => {
   gap: 0.5rem;
   flex-wrap: wrap;
   padding: 0.625rem 1rem;
-  border-radius: var(--paper-r-md);
-  background: var(--paper-primary-soft, rgba(1, 106, 113, 0.08));
-  color: var(--paper-ink-2);
-  font-size: 0.8125rem;
+  border-radius: var(--uhd-radius-navitem);
+  background: var(--uhd-l-active);
+  color: var(--uhd-l-text-2);
+  font-size: var(--uhd-fs-aux);
   line-height: 1.5;
 }
 
@@ -955,7 +918,7 @@ onUnmounted(() => {
   margin-left: auto;
 }
 
-/* 渐变胶囊提交按钮 */
+/* 主按钮：46px 全宽胶囊，彩虹边框 + 淡彩底（白名单位置，同 UhdButton 主按钮口径） */
 .submit-btn {
   box-sizing: border-box;
   display: flex;
@@ -963,23 +926,26 @@ onUnmounted(() => {
   justify-content: center;
   gap: 0.5rem;
   width: 100%;
-  height: 52px;
+  height: 46px;
   flex-shrink: 0;
   margin-top: 0.25rem;
   padding: 0 24px;
-  background: var(--paper-gradient);
-  border: none;
-  border-radius: var(--paper-r-full);
-  color: var(--paper-on-primary);
+  border: var(--uhd-rainbow-border-w) solid transparent;
+  border-radius: var(--uhd-radius-pill);
+  background:
+    var(--uhd-rainbow-soft) padding-box,
+    var(--uhd-rainbow) border-box;
+  background-color: var(--uhd-l-surface);
+  color: var(--uhd-l-text);
   font: inherit;
-  font-size: 0.9375rem;
-  font-weight: 600;
+  font-size: var(--uhd-fs-body);
+  font-weight: var(--uhd-fw-semibold);
   cursor: pointer;
-  transition: transform 0.15s ease, filter 0.2s ease, color 0.2s ease;
+  transition: transform 0.15s ease, filter 0.2s ease, opacity 0.2s ease;
 }
 
 .submit-btn:hover:not(:disabled) {
-  filter: brightness(1.08);
+  filter: brightness(1.03);
 }
 
 .submit-btn:active:not(:disabled) {
@@ -987,16 +953,18 @@ onUnmounted(() => {
 }
 
 .submit-btn:disabled {
-  background: var(--paper-card-3);
-  color: var(--paper-ink-3);
+  background: var(--uhd-l-input-bg);
+  border-color: transparent;
+  color: var(--uhd-l-text-3);
+  opacity: 0.55;
   cursor: not-allowed;
 }
 
 .auth-footnote {
   margin: 1.5rem 0 0;
   text-align: center;
-  font-size: 0.8125rem;
-  color: var(--paper-ink-3);
+  font-size: var(--uhd-fs-aux);
+  color: var(--uhd-l-text-3);
   line-height: 1.6;
 }
 
@@ -1009,34 +977,33 @@ onUnmounted(() => {
 
 @media (max-width: 767px) {
   .auth-page {
-    padding-top: 32px;
-    padding-left: 24px;
-    padding-right: 24px;
-    padding-bottom: env(safe-area-inset-bottom);
+    padding: 24px 16px calc(24px + env(safe-area-inset-bottom));
   }
 
   .auth-column {
     max-width: 100%;
+    padding: 30px 22px 24px;
   }
 
   .field-box {
-    min-height: 52px;
+    min-height: 44px;
   }
 
   .submit-btn {
-    height: 52px;
+    height: 46px;
   }
 
+  /* iOS 输入框字号 <16px 会触发自动放大，保持 16px */
   .field-box input {
     font-size: 16px;
   }
 
   .auth-footnote {
-    margin-bottom: 24px;
+    margin-bottom: 8px;
   }
 }
 
-/* TG 一键登录入口（描边次级按钮风，与主提交按钮区分主次） */
+/* TG 一键登录入口（白底灰边次按钮，与彩虹主按钮区分主次） */
 .tg-login {
   margin-top: 1rem;
   display: flex;
@@ -1048,8 +1015,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  color: var(--paper-ink-3);
-  font-size: 0.8125rem;
+  color: var(--uhd-l-text-3);
+  font-size: var(--uhd-fs-aux);
 }
 
 .tg-login-divider::before,
@@ -1057,7 +1024,7 @@ onUnmounted(() => {
   content: '';
   flex: 1;
   height: 1px;
-  background: var(--paper-line);
+  background: var(--uhd-l-border);
 }
 
 .tg-login-btn {
@@ -1067,32 +1034,32 @@ onUnmounted(() => {
   justify-content: center;
   gap: 0.5rem;
   width: 100%;
-  min-height: 52px;
+  min-height: 46px;
   padding: 0 24px;
-  background: transparent;
-  border: 1.5px solid var(--paper-line-strong);
-  border-radius: var(--paper-r-full);
-  color: inherit;
-  font-size: 0.9375rem;
-  font-weight: 600;
+  background: var(--uhd-l-surface);
+  border: 1px solid var(--uhd-l-border);
+  border-radius: var(--uhd-radius-pill);
+  color: var(--uhd-l-text);
+  font-size: var(--uhd-fs-body);
+  font-weight: var(--uhd-fw-semibold);
   text-decoration: none;
   transition: filter 0.2s ease, border-color 0.2s ease;
 }
 
 .tg-login-btn:hover {
-  filter: brightness(1.06);
+  filter: brightness(0.98);
 }
 
 .tg-login-btn:focus-visible {
-  outline: 2px solid currentColor;
+  outline: 2px solid var(--uhd-l-link);
   outline-offset: 2px;
 }
 
 .tg-login-hint {
   margin: 0;
-  font-size: 0.8125rem;
+  font-size: var(--uhd-fs-aux);
   line-height: 1.5;
-  color: var(--paper-ink-3);
+  color: var(--uhd-l-text-3);
   text-align: center;
 }
 

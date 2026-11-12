@@ -48,7 +48,9 @@ const route = useRoute()
  * 页面底部留白用 --au-dock-space 跟着坞的高度走：≥769px 为 0，≤768px 给坞让位。
  */
 const showChrome = computed(
-  () => route.name !== 'login',
+  // 登录页、UHD 营销面（官网/定价，自带悬浮胶囊导航）与 404 页为独立全幅版式，
+  // 不渲染全局顶栏/底坞；其余页面照旧。
+  () => !['login', 'landing', 'pricing', 'not-found'].includes(route.name as string),
 )
 
 /**
