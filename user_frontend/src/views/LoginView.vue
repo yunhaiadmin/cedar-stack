@@ -9,7 +9,7 @@
  * 登录成功后自动跳转 ?redirect= 指定的受保护页面。
  */
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { RouterLink, useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useToast } from '@/composables/useToast'
 import { toUserMessage } from '@/utils/toUserMessage'
@@ -555,6 +555,7 @@ onUnmounted(() => {
 
       <p class="auth-footnote">
         {{ mode === 'login' ? '密码加密存储' : '密码加密存储 · 注册成功自动开通观影账号' }}
+        · <RouterLink class="auth-legal-link" to="/privacy">隐私政策</RouterLink>
       </p>
     </div>
   </div>
@@ -997,6 +998,13 @@ onUnmounted(() => {
   font-size: 0.8125rem;
   color: var(--paper-ink-3);
   line-height: 1.6;
+}
+
+/* 登录页脚注里的隐私政策链接：未登录访客挂载后落到登录页时仍能看到入口 */
+.auth-legal-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 @media (max-width: 767px) {
