@@ -98,6 +98,25 @@
         text-align: center;
         padding: 24px;
       }
+
+      /* 首屏启动画面里的隐私政策链接：写在静态 HTML 里，未登录、
+         不跑 JS 也能被看到（Google OAuth 验证要求主页挂本站隐私政策链接）。
+         Vue 挂载后会替换 #app 内容，登录页另有同款链接接住已挂载的访客。 */
+      #app-boot .boot-legal {
+        color: rgba(243, 237, 228, 0.55);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+
+      html[data-theme='light'] #app-boot .boot-legal {
+        color: rgba(28, 25, 21, 0.6);
+      }
+
+      #app-noscript a {
+        color: inherit;
+      }
     </style>
   </head>
   <body>
@@ -105,11 +124,12 @@
       <div id="app-boot">
         <span class="boot-ring" aria-hidden="true"></span>
         <span>正在载入…</span>
+        <a class="boot-legal" href="/privacy">隐私政策</a>
       </div>
     </div>
     <noscript>
       <div id="app-noscript">
-        <p>请启用 JavaScript 以使用本网站</p>
+        <p>请启用 JavaScript 以使用本网站<br><a href="/privacy">隐私政策</a></p>
       </div>
     </noscript>
     <script>
