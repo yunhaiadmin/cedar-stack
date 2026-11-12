@@ -37,7 +37,6 @@
               <span class="dev-name">{{ b.account_label }}</span>
               <span class="dev-meta">
                 谷歌盘 · {{ driveStatusText(b.status) }}
-                <template v-if="b.oauth_client === 'oauth2'"> · {{ driveOauth2?.label || '新入口' }}</template>
                 <template v-if="b.error_message"> · {{ b.error_message }}</template>
                 <template v-if="b.needs_rebind"> · 转存需要写权限，请重新授权</template>
               </span>
@@ -151,20 +150,16 @@
         </div>
         <p v-if="driveFormError" class="acct-error" role="alert">{{ driveFormError }}</p>
         <p v-if="driveAuthUrl" class="dev-tip">点这里打开 Google 授权页：<a :href="driveAuthUrl" target="_blank" rel="noopener">打开 Google 授权页</a>，同意后关掉那个窗口、回到本页，列表会自动刷新。</p>
-        <button type="button" class="acct-btn primary" :disabled="driveStarting" @click="handleBindDrive">
-          {{ driveStarting ? '正在打开授权…' : '绑定谷歌盘' }}
-        </button>
-        <p class="dev-tip">点绑定后会在新窗口打开 Google 授权页，点同意后关掉那个窗口、回到本页，列表会自动刷新，没出现再点“刷新列表”。授权页本身不是本站页面，账号密码只交给 Google。</p>
         <template v-if="driveOauth2 && driveOauth2.available">
           <div class="acct-field">
             <span class="acct-label">{{ driveOauth2.label }}</span>
             <p class="dev-tip">{{ driveOauth2.description }}</p>
           </div>
           <p v-if="!driveOauth2.eligible" class="acct-error" role="alert">{{ driveOauth2.reason }}</p>
-          <button type="button" class="acct-btn" :disabled="!driveOauth2.eligible || drive2Starting" @click="handleBindDrive2">
-            {{ drive2Starting ? '正在打开授权…' : '用这个入口绑定' }}
+          <button type="button" class="acct-btn primary" :disabled="!driveOauth2.eligible || drive2Starting" @click="handleBindDrive2">
+            {{ drive2Starting ? '正在打开授权…' : '绑定谷歌盘' }}
           </button>
-          <p class="dev-tip">用上面填的名字绑定，流程与原入口相同：新窗口去 Google 点同意，回来后列表自动刷新。</p>
+          <p class="dev-tip">用上面填的名字绑定：点绑定后会在新窗口打开 Google 授权页，点同意后关掉那个窗口、回到本页，列表会自动刷新，没出现再点“刷新列表”。授权页本身不是本站页面，账号密码只交给 Google。</p>
         </template>
       </div>
     </template>
@@ -210,7 +205,9 @@
 /**
  * 网盘绑定管理（自旧 AccountSettingsView 原样抽出，行为口径不变）：
  * 谷歌盘（行式展开：名单 / 重新验证 / 重新授权 / 两步确认解绑 / 起名
- * 绑定 / OAuth2 第二入口）＋ 115/夸克已下线存量解绑。providers 名单
+ * 绑定（单一入口：老入口已隐藏、新绑只走新应用；老绑定的重新授权
+ * 仍按建绑时的入口走，是存量维护、不受隐藏影响））＋ 115/夸克
+ * 已下线存量解绑。providers 名单
  * 门控与原页一致（名单里没有 drive 整行不渲染；名单拉取失败显示错误
  * 态不猜）。OAuth 流程：手势里同步开空窗保住手势、拿到授权地址再指
  * 过去（绝不带 noopener，iOS 实测带了后续改地址不生效）；弹窗被拦时
@@ -250,7 +247,6 @@ const driveLoading = ref(false)
 const driveError = ref('')
 const driveLabel = ref('')
 const driveFormError = ref('')
-const driveStarting = ref(false)
 const drive2Starting = ref(false)
 const rebindingId = ref<number | null>(null)
 const driveAuthUrl = ref('')
@@ -423,46 +419,9 @@ async function loadDriveBindings() {
   }
 }
 
-async function handleBindDrive() {
-  const label = driveLabel.value.trim()
-  if (!label) {
-    driveFormError.value = '先给这个盘起个名字'
-    return
-  }
-  driveFormError.value = ''
-  driveAuthUrl.value = ''
-  // iOS Safari 只认点按当下同步开的窗：先在手势里同步开空窗保住手势，
-  // 拿到授权地址后再给它指地址。不能带 noopener（iPhone 实测带了后续
-  // 改地址不生效，空窗一直停在 about:blank）。
-  const win = window.open('about:blank', '_blank')
-  driveStarting.value = true
-  try {
-    const res = await storageBindingApi.startDriveOAuth(label)
-    if (!res.authorization_url) {
-      if (win && !win.closed) win.close()
-      driveFormError.value = '服务器没有返回授权地址，请稍后重试'
-      return
-    }
-    driveAuthUrl.value = res.authorization_url
-    if (!win || win.closed) {
-      // 弹窗被浏览器拦了：不许谎报成功，留错误态 + 页面上的手动链接
-      driveFormError.value = '弹窗被浏览器拦了，点上面“打开 Google 授权页”手动打开，同意后回来，列表会自动刷新'
-      return
-    }
-    win.location.href = res.authorization_url
-    pendingOAuthReturn.value = true
-    toast.success('已打开 Google 授权页，同意后回到本页，列表会自动刷新')
-  } catch (e) {
-    if (win && !win.closed) win.close()
-    driveFormError.value = humanizeError(e)
-  } finally {
-    driveStarting.value = false
-  }
-}
-
 async function handleBindDrive2() {
-  // 第二入口绑定：与原入口同流程（共用上面的名字输入框），只是走
-  // oauth2 start 口；无凭证时按钮已置灰，这里再兜一层后端 403 原样展示
+  // 绑定（唯一入口）：共用上面的名字输入框，走新应用 oauth2
+  // start 口；无凭证时按钮已置灰，这里再兜一层后端 403 原样展示
   const label = driveLabel.value.trim()
   if (!label) {
     driveFormError.value = '先给这个盘起个名字'
