@@ -79,7 +79,15 @@ def _run_scan(monkeypatch, tmp_path, db, lib):
 
 
 def test_layered_new_file_gets_pending(tmp_path, monkeypatch, db):
-    """新文件在分层模式下仍正确标 pending（原有行为不变）。"""
+    """新文件在分层模式下仍正确标 pending（原有行为不变）。
+
+    注意：断言必须同时按 file_path 限定本轮扫到的那一行——
+    同一 xdist worker 内多个测试文件共用一个 ci-smoke-gwN.db，
+    别的测试文件可能漏下 library_id=1 的行，而本库在 libraries 表
+    为空时又会复用 id=1；只按 library_id 查会把漏下的行也数进来，
+    ``.one()`` 随即报 MultipleResultsFound（run 43166604056
+    attempt 2 实证）。file_path 是本次扫描写入的唯一标识，不受漏行影响。
+    """
     movie = tmp_path / "New Movie (2024).mp4"
     movie.write_bytes(b"\x00" * 64)
 
@@ -90,7 +98,8 @@ def test_layered_new_file_gets_pending(tmp_path, monkeypatch, db):
     try:
         _run_scan(monkeypatch, tmp_path, db, lib)
         row = db.query(em.MediaItem).filter(
-            em.MediaItem.library_id == lib.id).one()
+            em.MediaItem.library_id == lib.id,
+            em.MediaItem.file_path == str(movie)).one()
         assert row.enrich_status == "pending", \
             f"新文件应标 pending，实际 {row.enrich_status}"
     finally:
@@ -114,7 +123,8 @@ def test_layered_size_change_triggers_reenrich(tmp_path, monkeypatch, db):
     try:
         _run_scan(monkeypatch, tmp_path, db, lib)
         row = db.query(em.MediaItem).filter(
-            em.MediaItem.library_id == lib.id).one()
+            em.MediaItem.library_id == lib.id,
+            em.MediaItem.file_path == str(movie)).one()
         # 模拟 enrich 完成
         row.enrich_status = "done"
         db.commit()
@@ -128,7 +138,8 @@ def test_layered_size_change_triggers_reenrich(tmp_path, monkeypatch, db):
         _run_scan(monkeypatch, tmp_path, db, lib)
         db.expire_all()
         row = db.query(em.MediaItem).filter(
-            em.MediaItem.library_id == lib.id).one()
+            em.MediaItem.library_id == lib.id,
+            em.MediaItem.file_path == str(movie)).one()
         assert row.enrich_status == "pending", \
             f"大小变更的老条目应重新 pending，实际 {row.enrich_status}"
     finally:
@@ -154,7 +165,8 @@ def test_layered_failed_self_heals_on_size_change(tmp_path, monkeypatch, db):
     try:
         _run_scan(monkeypatch, tmp_path, db, lib)
         row = db.query(em.MediaItem).filter(
-            em.MediaItem.library_id == lib.id).one()
+            em.MediaItem.library_id == lib.id,
+            em.MediaItem.file_path == str(movie)).one()
         # 模拟 enrich 重试超限转 failed
         row.enrich_status = "failed"
         row.enrich_attempts = 5
@@ -171,7 +183,8 @@ def test_layered_failed_self_heals_on_size_change(tmp_path, monkeypatch, db):
         _run_scan(monkeypatch, tmp_path, db, lib)
         db.expire_all()
         row = db.query(em.MediaItem).filter(
-            em.MediaItem.library_id == lib.id).one()
+            em.MediaItem.library_id == lib.id,
+            em.MediaItem.file_path == str(movie)).one()
         assert row.enrich_status == "pending", \
             f"failed 条目大小变化后应自愈为 pending，实际 {row.enrich_status}"
         assert (row.enrich_attempts or 0) == 0, \
@@ -197,7 +210,8 @@ def test_layered_failed_stays_on_mtime_only(tmp_path, monkeypatch, db):
     try:
         _run_scan(monkeypatch, tmp_path, db, lib)
         row = db.query(em.MediaItem).filter(
-            em.MediaItem.library_id == lib.id).one()
+            em.MediaItem.library_id == lib.id,
+            em.MediaItem.file_path == str(movie)).one()
         row.enrich_status = "failed"
         row.enrich_attempts = 5
         row.enrich_next_retry_at = None
@@ -211,7 +225,8 @@ def test_layered_failed_stays_on_mtime_only(tmp_path, monkeypatch, db):
         _run_scan(monkeypatch, tmp_path, db, lib)
         db.expire_all()
         row = db.query(em.MediaItem).filter(
-            em.MediaItem.library_id == lib.id).one()
+            em.MediaItem.library_id == lib.id,
+            em.MediaItem.file_path == str(movie)).one()
         assert row.enrich_status == "failed", \
             f"仅 mtime 变化不应触发 failed 自愈，实际 {row.enrich_status}"
     finally:
@@ -235,7 +250,8 @@ def test_layered_mtime_change_keeps_done(tmp_path, monkeypatch, db):
         # 第一轮：入库（分层 → pending）
         _run_scan(monkeypatch, tmp_path, db, lib)
         row = db.query(em.MediaItem).filter(
-            em.MediaItem.library_id == lib.id).one()
+            em.MediaItem.library_id == lib.id,
+            em.MediaItem.file_path == str(movie)).one()
         assert row.enrich_status == "pending"
 
         # 模拟 enrich_worker 补全完成
@@ -251,7 +267,8 @@ def test_layered_mtime_change_keeps_done(tmp_path, monkeypatch, db):
         _run_scan(monkeypatch, tmp_path, db, lib)
         db.expire_all()
         row = db.query(em.MediaItem).filter(
-            em.MediaItem.library_id == lib.id).one()
+            em.MediaItem.library_id == lib.id,
+            em.MediaItem.file_path == str(movie)).one()
         assert row.enrich_status == "done", \
             f"已 done 条目仅 mtime 变化不应被重置，实际 {row.enrich_status}"
     finally:
@@ -270,7 +287,8 @@ def test_layered_existing_pending_stays_pending(tmp_path, monkeypatch, db):
     try:
         _run_scan(monkeypatch, tmp_path, db, lib)
         row = db.query(em.MediaItem).filter(
-            em.MediaItem.library_id == lib.id).one()
+            em.MediaItem.library_id == lib.id,
+            em.MediaItem.file_path == str(movie)).one()
         assert row.enrich_status == "pending"
 
         # mtime 变化再扫一次
@@ -279,7 +297,8 @@ def test_layered_existing_pending_stays_pending(tmp_path, monkeypatch, db):
         _run_scan(monkeypatch, tmp_path, db, lib)
         db.expire_all()
         row = db.query(em.MediaItem).filter(
-            em.MediaItem.library_id == lib.id).one()
+            em.MediaItem.library_id == lib.id,
+            em.MediaItem.file_path == str(movie)).one()
         assert row.enrich_status == "pending", \
             f"pending 条目应保持 pending，实际 {row.enrich_status}"
     finally:
