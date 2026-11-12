@@ -19,6 +19,8 @@ from backend.emby_server import models as em
 from backend.emby_server.auth import get_emby_user, parse_emby_authorization, resolve_token
 from backend.emby_server import facets
 from backend.emby_server import playback_bus
+from backend.emby_server import watch_settle
+from backend.emby_server.watch_settle import effective_max_position_ticks
 from backend.emby_server.facets import count_virtual_items  # 索引版（虚拟库条目数）
 from backend.emby_server.query_params import qint, qlimit, qstart
 from backend.emby_server.scanner import (
@@ -138,6 +140,9 @@ def _upsert_session(db: Session, request: Request, user: models.WebUser,
         # 复活该行并重新走一次判定。否则这次播放既不会被计入并发、也不会被
         # 同播/跨城市检查看到，还会被「已结束会话裁剪」在播放中途删掉。
         session.ended_at = None
+        # 复活即新一轮观看：上一轮的奖励结算标记必须清掉，否则新一轮
+        # 结束时会被「已结算」误挡（结算幂等只针对同一轮的重复上报）。
+        session.rewards_settled_at = None
         # 复活即新一轮播放：start_time 必须重置为现在，否则时长榜口径
         # （ended_at − start_time）会把两次播放之间的间隔也虚增进去。
         session.start_time = datetime.now()
@@ -286,17 +291,9 @@ def _get_or_create_umd(db: Session, user: models.WebUser, item: em.MediaItem) ->
     return umd
 
 
-def effective_max_position_ticks(umd: em.UserMediaData) -> int:
-    """这行「历史最远看到哪」的有效值（进度双记，FMBY 学习批一 #4）。
-
-    ``max_position_ticks`` 为 NULL = 这行还没被双记写过（升级前老数据），
-    回退 ``playback_position_ticks``——老数据在第一次新上报前，最远点就等于
-    当时的断点。不做批量回填：靠下一次真实进度上报在 _apply_play_progress
-    里以旧 position 为基线自然长出来，心跳不写库的口径不因此被打破。
-    """
-    if umd.max_position_ticks is not None:
-        return int(umd.max_position_ticks)
-    return int(umd.playback_position_ticks or 0)
+# effective_max_position_ticks 已迁到 watch_settle（结算口径的唯一
+# 实现），本模块顶部从 watch_settle 导入同名函数，_apply_play_progress
+# / _record_stopped 与既有测试的引用不变。
 
 
 def _apply_play_progress(umd: em.UserMediaData, pos: int, finished: bool) -> None:
@@ -418,7 +415,7 @@ def _record_progress(request: Request, user: models.WebUser, db: Session, body: 
 
 def _record_stopped(request: Request, user: models.WebUser, db: Session, body: dict) -> None:
     item = _require_visible_item(db, user, body.get("ItemId") or "")
-    _upsert_session(db, request, user, item, body, ended=True)
+    session, _wrote = _upsert_session(db, request, user, item, body, ended=True)
     # r50：Stopped 携带的最终进度必须落库（此前只更新会话行，最终断点与已看状态
     # 全丢——客户端最后一次 Progress 可能因网络抖动没送达，或客户端只发 Stopped）。
     # 与 _record_progress 同一落库口径（90% 自动已看）；幂等：重复 Stopped 只是把
@@ -439,27 +436,19 @@ def _record_stopped(request: Request, user: models.WebUser, db: Session, body: d
     # 看见本集播放。未播完的 Stopped 不触发（弱信号不配花成本）。
     if finished:
         _maybe_series_preheat_best_effort(item.id, user.id)
-    # 观影时长分档奖励（尽力而为）：发放走自己的锁 + 提交，失败只记日志，
-    # 绝不影响 Stopped 主流程与返回。
-    try:
-        from backend import vitality as _vitality
-        _vitality.award_watch_minutes_reward(db, user.id, watched_ticks / 600_000_000)
-    except Exception:  # noqa: BLE001 — 奖励失败不挡停播上报
-        logger.debug("观影时长奖励发放失败", exc_info=True)
-    # Step 0 公益原生经验：观影 XP（尽力而为，与活力同结算点同分档）。
-    try:
-        from backend import member_level as _ml
-        _ml.award_watch_xp(db, user.id, watched_ticks / 600_000_000, item.id)
-    except Exception:  # noqa: BLE001 — 经验发放失败不挡停播上报
-        logger.debug("观影 XP 发放失败", exc_info=True)
-    # 货币再设计第一期：观影能量（尽力而为，与活力/经验同结算点同输入；
-    # 按当日累计分钟分档发能量，幂等与封顶在 watch_points 内）。
-    try:
-        from backend import watch_points as _wp
-        _wp.award_watch_points(db, user.id, watched_ticks / 600_000_000,
-                               item.id, finished)
-    except Exception:  # noqa: BLE001 — 奖励失败不挡停播上报
-        logger.debug("观影能量发放失败", exc_info=True)
+    # 观看奖励结算（活力 / 观影 XP / 观影能量，与过期回收共用
+    # watch_settle 一处口径，各笔尽力而为、失败不挡停播上报）：
+    # 不发 Stopped 的会话可能已被回收器抢先结算并落标记——迟到的
+    # Stopped 见标记即跳过，防同一会话重复发奖；本次结算后落标记，
+    # 重复 Stopped 同理跳过（此前靠每日上限兜底，现改为显式幂等）。
+    if session is not None and getattr(session, "rewards_settled_at", None) is not None:
+        logger.debug("会话观看奖励已结算，跳过重复结算 session=%s", session.id)
+    else:
+        watch_settle.settle_session_rewards(
+            db, user.id, item.id, watched_ticks, finished)
+        if session is not None:
+            session.rewards_settled_at = datetime.now()
+            db.commit()
     # 批一 #3：尽力提前释放「挂载+路径前缀」播放路数租约（stream_limits）。
     # 只是提前量：客户端不发 Stopped 也没关系，租约靠 TTL 到期收敛；
     # release 本身永不抛，这里再套一层保险，不许影响 Stopped 主流程。

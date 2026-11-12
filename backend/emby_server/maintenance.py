@@ -175,6 +175,32 @@ def resume_interrupted_scans(db) -> int:
     return len(resumed)
 
 
+def _settle_reaped_session(db: Session, session) -> bool:
+    """回收会话时顺带结算观看奖励（尽力而为，失败不挡回收）。
+
+    奖励原本只在 Stopped 上报时结算：不发 Stopped 的客户端（异常
+    退出、部分第三方客户端）会话被回收后就永远拿不到（2026-11-12
+    LangHuan 实证：连看 13 集、每集约 46 分钟，活力 0 发放）。
+    结算与 _record_stopped 共用 watch_settle 一处口径，并落
+    rewards_settled_at 幂等标记——迟到的 Stopped 不再重复发奖。
+
+    必须在写 ended_at 之前调：结算函数内部会提交/回滚自己的事务，
+    先改会话行再结算，回滚会把 ended_at 一并冲掉、会话永远收不掉。
+    """
+    try:
+        from backend.emby_server import watch_settle
+
+        return watch_settle.settle_session_row(db, session)
+    except Exception:  # noqa: BLE001 — 结算失败不挡回收收尾
+        logger.debug("回收会话奖励结算失败 session=%s",
+                     getattr(session, "id", "?"), exc_info=True)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return False
+
+
 def reap_stale_playback_sessions(db: Session, stale_minutes: Optional[int] = None) -> int:
     """把心跳过期的播放会话标记为已结束（客户端异常断开不会上报 Stopped）"""
     minutes = STALE_SESSION_MINUTES if stale_minutes is None else stale_minutes
@@ -189,12 +215,18 @@ def reap_stale_playback_sessions(db: Session, stale_minutes: Optional[int] = Non
         )
         .all()
     )
+    settled = 0
     for session in rows:
+        # 先结算观看奖励（不发 Stopped 时唯一的补发点，随后逐条提交，
+        # 让结算标记与结束时间原子落库），再写 ended_at 并提交。
+        if _settle_reaped_session(db, session):
+            settled += 1
         # ended_at 用心跳时间更贴近事实（否则“结束时间”会是收尾那一刻）
         session.ended_at = session.last_update_at or now
-    if rows:
         commit_with_retry(db, label="回收过期播放会话")
-        logger.info("回收 %d 个心跳过期的播放会话（停在上次心跳时间）", len(rows))
+    if rows:
+        logger.info("回收 %d 个心跳过期的播放会话（停在上次心跳时间），"
+                    "其中 %d 个补结算观看奖励", len(rows), settled)
     return len(rows)
 
 
