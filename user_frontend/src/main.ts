@@ -6,6 +6,10 @@ import './styles/index.css'
 import './styles/mobile.css'
 // v4「探险家日志」面板纸色设计系统（PR-2）
 import './styles/v4-paper.css'
+// UHD 换皮令牌（批 0 地基，《Aetrix × UHDNow 设计说明书 v1》）：只定义 --uhd-* 新变量，
+// 不改现有变量的值、未被任何现有页面引用；已按 U0 冻结流程同步登记
+// scripts/check_frontend_tokens.py 的 MAIN_CSS_ALLOWLIST。
+import './styles/uhd-tokens.css'
 
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'

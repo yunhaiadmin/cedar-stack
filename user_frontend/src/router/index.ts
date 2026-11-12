@@ -255,6 +255,14 @@ const router = createRouter({
       path: '/calendar',
       redirect: '/game/calendar',
     },
+    // UHD 换皮组件展示页（批 0 地基验收用）：隐藏路由，不进任何导航、不被现有页面引用，
+    // 不带 requiresAuth，未登录可直接打开。
+    {
+      path: '/dev/uhd-showcase',
+      name: 'uhd-showcase',
+      component: () => import('@/views/dev/UhdShowcaseView.vue'),
+      meta: { title: 'UHD 组件展示' },
+    },
     // ==================== 媒体详情与播放（v2.42.5：媒体库/搜索浏览页已删；
     // 2026-10-13 旧页面清理：/profile、/media/:id 两路由已删） ====================
     // 老地址 /profile、/media、/library、/search、/history
