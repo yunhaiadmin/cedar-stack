@@ -1086,7 +1086,7 @@ def parse_media_filename(path: str, library_type: str, pack=None) -> dict:
     # → 文件名；每一步都跳过季标记，仍无可用标题时留空、不猜。
     name_part = _tidy_name(raw_name, pack=pack)
     if not name_part or _is_season_like_name(name_part):
-        if _SEASON_DIR_RE.match(folder or ""):
+        if _is_season_dir(folder):
             grandparent = os.path.basename(os.path.dirname(os.path.dirname(path)))
             name_part = _tidy_name(grandparent, pack=pack)
         else:
@@ -3336,6 +3336,16 @@ def _is_season_like_name(name: str) -> bool:
     return bool(re.fullmatch(r"\d{1,2}", n))
 
 
+def _is_season_dir(name: str) -> bool:
+    """路径段是不是季目录——先 strip 再匹配。
+
+    生产实证（series 2629076《黑色孤儿》，回填 dry-run 抓到）：路径段是
+    「 Season 01」（带前导空格），锚定的 _SEASON_DIR_RE 直接匹配会落空，
+    季目录跳不过去、剧名推导失败。所有拿路径段判季目录的地方走这里。
+    """
+    return bool(_SEASON_DIR_RE.match((name or "").strip()))
+
+
 def _series_name_of(scan_file: "ScanFile", parsed: dict, pack=None) -> str:
     """从剧集目录推导 series 名，绝不从 episode 文件名猜剧名。
 
@@ -3354,7 +3364,7 @@ def _series_name_of(scan_file: "ScanFile", parsed: dict, pack=None) -> str:
         directory = scan_file.local_dir.rstrip("/\\")
         leaf = os.path.basename(directory)
         parent = os.path.dirname(directory)
-        while _SEASON_DIR_RE.match(leaf or "") and parent:
+        while _is_season_dir(leaf) and parent:
             leaf = os.path.basename(parent)
             parent = os.path.dirname(parent)
         directory_name = leaf
@@ -3362,7 +3372,7 @@ def _series_name_of(scan_file: "ScanFile", parsed: dict, pack=None) -> str:
         directory = (scan_file.dir_rel or "/").rstrip("/") or "/"
         leaf = posixpath.basename(directory)
         parent = posixpath.dirname(directory)
-        while _SEASON_DIR_RE.match(leaf or "") and parent:
+        while _is_season_dir(leaf) and parent:
             leaf = posixpath.basename(parent)
             parent = posixpath.dirname(parent)
         directory_name = leaf
@@ -3402,8 +3412,8 @@ def _series_guid_of(scan_file: "ScanFile") -> str:
     dirpath = scan_file.local_dir
     if dirpath:
         series_dir = os.path.dirname(dirpath.rstrip("/")) if dirpath else ""
-        while series_dir and _SEASON_DIR_RE.match(
-                os.path.basename(series_dir.rstrip("/")) or ""):
+        while series_dir and _is_season_dir(
+                os.path.basename(series_dir.rstrip("/"))):
             series_dir = os.path.dirname(series_dir.rstrip("/"))
         return item_guid(series_dir or (os.path.dirname(scan_file.stored_path) or scan_file.stored_path))
     # BYOS P3：绑定扫描没有挂载 id，远端分支的 mount_path(None, d) 会产
@@ -3413,11 +3423,11 @@ def _series_guid_of(scan_file: "ScanFile") -> str:
     stored = getattr(scan_file, "stored_path", "") or ""
     if stored.startswith("byos://"):
         d = os.path.dirname(stored.rstrip("/")) or "/"
-        while d != "/" and _SEASON_DIR_RE.match(os.path.basename(d)):
+        while d != "/" and _is_season_dir(os.path.basename(d)):
             d = posixpath.dirname(d) or "/"
         return item_guid(d)
     d = (scan_file.dir_rel or "/").rstrip("/") or "/"
-    while d != "/" and _SEASON_DIR_RE.match(os.path.basename(d)):
+    while d != "/" and _is_season_dir(os.path.basename(d)):
         d = posixpath.dirname(d) or "/"
     return item_guid(mount_lib.mount_path(scan_file.mount_id, d))
 
