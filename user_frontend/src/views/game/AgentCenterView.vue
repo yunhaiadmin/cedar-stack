@@ -1,4 +1,5 @@
 <template>
+  <UhdAccountLayout>
   <div class="v4-scope">
     <div class="v4-page">
       <header class="v4-loghead">
@@ -43,7 +44,7 @@
         <section class="v4-sec" aria-label="进货">
           <div class="v4-sec-title">进货</div>
           <div class="v4-sec-sub">选套餐和数量，生成后卡码归你所有；用户核销时自动算作你的销售。</div>
-          <div v-if="!products.length" class="v4-empty">暂无可进货的套餐</div>
+          <UhdEmptyState v-if="!products.length" title="暂无可进货的套餐" />
           <div v-else class="v4-card">
             <div v-for="p in products" :key="p.plan_id" class="acct-row">
               <span class="acct-row-main">
@@ -58,7 +59,7 @@
         <!-- 我的卡码 -->
         <section class="v4-sec" aria-label="我的卡码">
           <div class="v4-sec-title">我的卡码</div>
-          <div v-if="!codes.length" class="v4-empty">还没有进过货</div>
+          <UhdEmptyState v-if="!codes.length" title="还没有进过货" />
           <div v-else class="v4-card">
             <div v-for="c in codes" :key="c.id" class="acct-row">
               <span class="acct-row-main">
@@ -73,7 +74,7 @@
         <!-- 销售统计 -->
         <section class="v4-sec" aria-label="销售统计">
           <div class="v4-sec-title">销售统计</div>
-          <div v-if="!sales.length" class="v4-empty">还没有销售记录</div>
+          <UhdEmptyState v-if="!sales.length" title="还没有销售记录" />
           <div v-else class="v4-card">
             <div v-for="s in sales" :key="s.id" class="acct-row">
               <span class="acct-row-main">
@@ -97,7 +98,7 @@
         <!-- 余额流水 -->
         <section class="v4-sec" aria-label="余额流水">
           <div class="v4-sec-title">余额流水</div>
-          <div v-if="!logs.length" class="v4-empty">还没有流水</div>
+          <UhdEmptyState v-if="!logs.length" title="还没有流水" />
           <div v-else class="v4-card">
             <div v-for="l in logs" :key="l.id" class="acct-row">
               <span class="acct-row-main">
@@ -108,7 +109,7 @@
             </div>
           </div>
         </section>
-      </template>
+</template>
 
       <!-- 进货弹窗 -->
       <div v-if="buyTarget" class="agent-modal-mask" @click.self="buyTarget = null">
@@ -156,9 +157,12 @@
       </div>
     </div>
   </div>
+  </UhdAccountLayout>
 </template>
 
 <script setup lang="ts">
+import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
+import UhdEmptyState from '@/components/uhd/UhdEmptyState.vue'
 import { computed, onMounted, ref } from 'vue'
 import { useToast } from '@/composables/useToast'
 import {
@@ -294,8 +298,23 @@ onMounted(reload)
   padding: 14px;
 }
 .agent-stat-lbl { font-size: 12px; opacity: .65; }
-.agent-stat-num { font-size: 20px; font-weight: 700; margin: 4px 0 2px; }
+/* 批 2：统计数字加大到 28px */
+.agent-stat-num { font-size: 28px; font-weight: 800; margin: 4px 0 2px; letter-spacing: -0.01em; }
 .agent-stat-sub { font-size: 12px; opacity: .65; }
+/* 批 2：行按 2.6 状态行模具——64px 行高、16px 粗标题、14px 灰副文案、行间 1px 分隔。
+   注：.acct-row 此前全站无任何样式定义（裸 div），本次一并补齐。 */
+.v4-card:has(> .acct-row) { padding: 0; overflow: hidden; }
+.acct-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 64px;
+  padding: 10px 14px;
+}
+.acct-row + .acct-row { border-top: 1px solid var(--line); }
+.acct-row-main { display: flex; flex-direction: column; min-width: 0; gap: 2px; flex: 1; }
+.acct-row-text { font-size: 16px; font-weight: 700; }
+.acct-row-meta { font-size: 14px; color: var(--ink2); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .agent-modal-mask {
   position: fixed; inset: 0; z-index: 60;

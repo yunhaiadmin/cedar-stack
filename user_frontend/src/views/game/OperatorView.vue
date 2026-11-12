@@ -1,4 +1,5 @@
 <template>
+  <UhdAccountLayout>
   <div class="v4-scope">
     <div class="v4-page">
       <!-- 日志头 -->
@@ -33,7 +34,7 @@
                 <div class="v4-skeleton" style="height:54px" role="status" aria-label="正在刷新账号信息"></div>
                 <div class="v4-skeleton" style="height:54px" aria-hidden="true"></div>
                 <div class="v4-skeleton" style="height:54px" aria-hidden="true"></div>
-              </template>
+</template>
               <template v-else>
               <div class="op-row">
                 <span class="op-label">服务器</span>
@@ -425,9 +426,11 @@
     </Teleport>
 
   </div>
+  </UhdAccountLayout>
 </template>
 
 <script setup lang="ts">
+import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { Check, CircleStop, Copy, Eye, EyeOff, MonitorSmartphone, Wifi } from 'lucide-vue-next'

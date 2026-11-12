@@ -1,4 +1,5 @@
 <template>
+  <UhdAccountLayout>
   <div class="v4-scope">
     <div class="v4-page">
       <!-- 日志头 -->
@@ -72,7 +73,7 @@
           <div class="desc">{{ o.desc }}</div>
           <span class="tick">✓</span>
         </div>
-        </template>
+</template>
         <div v-else class="v4-empty">暂时没有可换的配色，稍后再来看看</div>
       </div>
 
@@ -164,9 +165,11 @@
     </div>
 
   </div>
+  </UhdAccountLayout>
 </template>
 
 <script setup lang="ts">
+import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 import { onBeforeUnmount, onMounted, ref, watch, computed } from 'vue'
 import { useTheme } from '@/composables/useTheme'
 import { useToast } from '@/composables/useToast'

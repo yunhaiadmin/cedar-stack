@@ -533,7 +533,7 @@ onUnmounted(() => {
             :title="navCollapsed ? item.label : undefined"
             @click="closeDrawer"
           >
-            <component :is="item.icon" :size="16" class="nav-icon" />
+            <component :is="item.icon" :size="18" class="nav-icon" />
             <span class="nav-label">{{ item.label }}</span>
             <Lock v-if="item.superOnly && !isSuper" :size="12" class="nav-super" :title="SUPER_ONLY_HINT" />
           </RouterLink>

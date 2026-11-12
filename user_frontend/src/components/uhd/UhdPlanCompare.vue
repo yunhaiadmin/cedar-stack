@@ -8,7 +8,7 @@
  * - 推荐套餐（is_popular）带彩虹「推荐」角标（白名单位置：定价推荐角标）。
  * 官网版不带结算栏：底部按钮只 emit('select')，由页面决定跳转/下单动作。
  */
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import UhdButton from './UhdButton.vue'
 import type { SubscriptionPlan } from '@/api/economy'
 
@@ -18,13 +18,28 @@ const props = withDefaults(
     ctaText?: string
     /** 服名标注：多服时列头下显示套餐所属服 */
     showRealm?: boolean
+    /** 受控选中（v-model:modelValue）：不传时组件内部维护选中态（官网版口径） */
+    modelValue?: number | null
+    /** 规格行扩展（如订阅页的权益行，由调用方按后端权益表生成） */
+    extraSpecRows?: (plan: SubscriptionPlan) => string[]
   }>(),
-  { ctaText: '立即开通', showRealm: true },
+  { ctaText: '立即开通', showRealm: true, modelValue: undefined, extraSpecRows: undefined },
 )
 
-const emit = defineEmits<{ select: [plan: SubscriptionPlan] }>()
+const emit = defineEmits<{
+  select: [plan: SubscriptionPlan]
+  'update:modelValue': [id: number | null]
+}>()
 
-const selectedId = ref<number | null>(null)
+const innerSelectedId = ref<number | null>(null)
+/** 受控时以 modelValue 为准，否则用内部选中态 */
+const selectedId = computed<number | null>({
+  get: () => (props.modelValue !== undefined ? props.modelValue : innerSelectedId.value),
+  set: (v) => {
+    innerSelectedId.value = v
+    emit('update:modelValue', v)
+  },
+})
 
 function pickDefault() {
   const popular = props.plans.find((p) => p.is_popular)
@@ -35,6 +50,7 @@ watch(() => props.plans, pickDefault, { immediate: true })
 function specRows(plan: SubscriptionPlan): string[] {
   const rows: string[] = [`有效期 ${plan.duration_days} 天`]
   if (plan.points_price != null) rows.push(`积分价 ${plan.points_price} 分`)
+  if (props.extraSpecRows) rows.push(...props.extraSpecRows(plan))
   for (const f of plan.features ?? []) rows.push(f)
   return rows
 }

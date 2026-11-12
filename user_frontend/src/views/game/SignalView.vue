@@ -1,4 +1,5 @@
 <template>
+  <UhdAccountLayout>
   <div class="v4-scope">
     <div class="v4-page">
       <!-- 日志头 -->
@@ -173,7 +174,7 @@
     <Modal v-model="showCloseConfirm" size="sm" content-class="paper-confirm">
       <template #header>
         <h3 class="modal-title">🏁 关闭记录</h3>
-      </template>
+</template>
       <p class="confirm-text">确定要标记脱险并关闭这条事故记录吗？关闭后不能再回复。</p>
       <template #footer>
         <div class="confirm-row">
@@ -183,9 +184,11 @@
       </template>
     </Modal>
   </div>
+  </UhdAccountLayout>
 </template>
 
 <script setup lang="ts">
+import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 /**
  * 求救信号 = 工单支持（游戏化）
  * 遇险类型宫格 → 求救信 → 摩斯电码发送动画 → 事故记录卡跟进

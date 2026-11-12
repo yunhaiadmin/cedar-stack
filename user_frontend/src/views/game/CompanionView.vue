@@ -1,4 +1,5 @@
 <template>
+  <UhdAccountLayout>
   <div class="v4-scope">
     <div class="v4-page">
       <div class="sr-only" aria-live="polite">{{ liveMsg }}</div>
@@ -33,7 +34,7 @@
                 结伴同行当前未开启。管理员开启后，这里会显示你的专属组队暗号。
               </p>
             </div>
-          </template>
+</template>
           <template v-else>
             <div class="board">
               <div class="shout">📣 组 队 暗 号</div>
@@ -141,9 +142,11 @@
         </section>
     </div>
   </div>
+  </UhdAccountLayout>
 </template>
 
 <script setup lang="ts">
+import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
   inviteApi,

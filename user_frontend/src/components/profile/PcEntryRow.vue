@@ -1,12 +1,12 @@
 <template>
   <RouterLink v-if="to" :to="to" class="pc-row">
-    <span class="pc-row-ic" aria-hidden="true"><component :is="icon" :size="17" /></span>
+    <span class="pc-row-ic" aria-hidden="true"><component :is="icon" :size="22" /></span>
     <span class="pc-row-name">{{ name }}</span>
     <span v-if="meta" class="pc-row-meta">{{ meta }}</span>
     <ChevronRight :size="15" class="pc-chev" aria-hidden="true" />
   </RouterLink>
   <button v-else type="button" class="pc-row" :class="{ danger }" @click="emit('click')">
-    <span class="pc-row-ic" aria-hidden="true"><component :is="icon" :size="17" /></span>
+    <span class="pc-row-ic" aria-hidden="true"><component :is="icon" :size="22" /></span>
     <span class="pc-row-name">{{ name }}</span>
     <span v-if="meta" class="pc-row-meta">{{ meta }}</span>
     <ChevronDown
@@ -48,9 +48,10 @@ const emit = defineEmits<{ (e: 'click'): void }>()
 .pc-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   width: 100%;
-  padding: 12.5px 14px;
+  min-height: 64px;
+  padding: 10px 14px;
   background: none;
   border: none;
   cursor: pointer;
@@ -60,23 +61,21 @@ const emit = defineEmits<{ (e: 'click'): void }>()
   text-decoration: none;
   box-sizing: border-box;
 }
+.pc-row + .pc-row { border-top: 1px solid var(--line); }
 .pc-row:active { background: var(--paper2); }
 .pc-row-ic {
-  width: 31px;
-  height: 31px;
+  width: 22px;
+  height: 22px;
   flex: none;
-  border: 1.5px solid var(--ink);
-  border-radius: 8px;
-  background: var(--paper);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--ink);
+  color: var(--ink2);
 }
-.pc-row-name { font-size: 14.5px; font-weight: 600; white-space: nowrap; }
+.pc-row-name { font-size: 16px; font-weight: 700; white-space: nowrap; }
 .pc-row-meta {
   margin-left: auto;
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--ink2);
   white-space: nowrap;
   overflow: hidden;

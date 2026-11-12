@@ -1,4 +1,5 @@
 <template>
+  <UhdAccountLayout>
   <div class="v4-scope">
     <div class="v4-page">
       <!-- 日志头 -->
@@ -38,7 +39,7 @@
                 <div class="map" aria-hidden="true">{{ typeIcon(item.Type) }}</div>
                 <div class="info">
                   <b>{{ item.Name }}</b>
-                  <span><template v-if="item.LibraryName">{{ item.LibraryName }} · </template>{{ typeLabel(item.Type) }}</span>
+                  <span><template v-if="item.LibraryName">{{ item.LibraryName }} ·</template>{{ typeLabel(item.Type) }}</span>
                 </div>
                 <button
                   type="button"
@@ -99,9 +100,11 @@
       <div class="sr-only" role="status">{{ planLiveMsg }}</div>
     </div>
   </div>
+  </UhdAccountLayout>
 </template>
 
 <script setup lang="ts">
+import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchCalendar, StaleResponseError, type CalendarDay, type CalendarTeaser } from '@/api/calendar'

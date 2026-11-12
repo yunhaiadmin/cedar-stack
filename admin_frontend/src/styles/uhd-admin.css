@@ -1,0 +1,252 @@
+/* ============================================================
+   UHD 换皮管理后台皮肤（批 2 办事面）——《Aetrix × UHDNow 设计说明书 v1》第 2.9 节 / 对照表行 16–17
+   真源：~/workspace/reports/aetrix-uhdnow-design-spec-20261113.md
+
+   做法：只重映射 aurora.css 的 --au-* 令牌（深 / 浅两档）＋在 .admin-layout 作用域内
+   写壳与表格模具，不改任何页面标记、不改路由与业务逻辑。
+   - 暗房琥珀皮作废：主色琥珀 #e8a84a/#b9802f → UHD 链接蓝 #2563eb；衬线展示字
+     --au-font-serif → 无衬线栈（全站标题不再用宋体）；暖黑/奶油纸底 → UHD 深色
+     #050505/#0d0d0d 与浅色 #f8f8f8/#ffffff。
+   - Element Plus 主题（element-plus-theme.css）只消费 --au-*，令牌一换即跟随；
+     其硬编码的 --el-color-primary-rgb（琥珀）在此处一并覆盖为蓝。
+   - 引入顺序：main.ts 里在 uhd-tokens.css 之后引入本文件；令牌检查脚本
+     scripts/check_frontend_tokens.py 的 MAIN_CSS_ALLOWLIST 已登记本文件。
+   - 特异性：壳与组件模具一律用三类选择器（如 .admin-layout .nav .nav-item），
+     稳压 Layout/DataTable/FilterBar 的 scoped 样式（两类 + 属性）。
+   ============================================================ */
+
+/* ---------- 深色档（默认：html 无 data-theme 属性） ---------- */
+:root {
+  --au-bg: #050505;
+  --au-bg-soft: #0d0d0d;
+  --au-surface: #0d0d0d;
+  --au-surface-2: #111111;
+  --au-surface-3: #1a1a1a;
+  --au-input-bg: #111111;
+  --au-input-bg-focus: #0d0d0d;
+  --au-input-border: #222222;
+  --au-overlay: rgba(5, 5, 5, 0.86);
+  --au-overlay-soft: rgba(255, 255, 255, 0.08);
+  --au-overlay-mid: rgba(255, 255, 255, 0.16);
+  --au-overlay-strong: rgba(255, 255, 255, 0.3);
+  --au-overlay-menu: rgba(13, 13, 13, 0.98);
+  --au-chrome: rgba(5, 5, 5, 0.96);
+  --au-scrim: rgba(0, 0, 0, 0.7);
+  --au-grid-line: rgba(255, 255, 255, 0.05);
+  --au-track: rgba(255, 255, 255, 0.1);
+
+  --au-text: #ffffff;
+  --au-text-2: #9ca3af;
+  --au-text-3: #a1a1aa;
+  --au-text-4: #71717a;
+
+  --au-border: #222222;
+  --au-border-strong: #333333;
+  --au-border-focus: rgba(37, 99, 235, 0.55);
+
+  --au-primary: #2563eb;
+  --au-primary-strong: #1d4ed8;
+  --au-primary-deep: #1e40af;
+  --au-primary-soft: rgba(37, 99, 235, 0.12);
+  --au-primary-mid: rgba(37, 99, 235, 0.2);
+  --au-primary-border: rgba(37, 99, 235, 0.28);
+  --au-primary-glow: transparent;
+  --au-on-primary: #ffffff;
+  --au-gradient: linear-gradient(var(--au-primary), var(--au-primary));
+  --au-gradient-warm: linear-gradient(var(--au-primary), var(--au-primary));
+
+  --au-violet: #9ca3af;
+  --au-violet-soft: rgba(255, 255, 255, 0.06);
+  --au-pink: #2563eb;
+
+  --au-success: #22c55e;
+  --au-success-soft: rgba(34, 197, 94, 0.12);
+  --au-success-border: rgba(34, 197, 94, 0.28);
+  --au-warning: #f59e0b;
+  --au-warning-soft: rgba(245, 158, 11, 0.12);
+  --au-warning-border: rgba(245, 158, 11, 0.28);
+  --au-on-warning: #111111;
+  --au-gold-a: #3b82f6;
+  --au-gold-b: #2563eb;
+  --au-gold-edge: #1d4ed8;
+  --au-danger: #ef4444;
+  --au-danger-soft: rgba(239, 68, 68, 0.12);
+  --au-danger-border: rgba(239, 68, 68, 0.28);
+  --au-info: #60a5fa;
+  --au-info-soft: rgba(96, 165, 250, 0.12);
+  --au-info-border: rgba(96, 165, 250, 0.28);
+
+  --au-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --au-shadow-2: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --au-shadow-color: rgba(0, 0, 0, 0.45);
+  --au-shadow-text: 0 2px 12px rgba(0, 0, 0, 0.6);
+  --au-card-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --au-focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.25);
+  --au-lift-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+
+  /* 衬线展示字作废：全站标题走无衬线栈（与 UHD 一致） */
+  --au-font-serif: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
+
+  /* 左栏宽 250px（说明书 2.9；tokens.css 原 240px） */
+  --sidebar-w: 250px;
+}
+
+/* Element Plus 硬编码的琥珀 RGB 一并覆盖（element-plus-theme.css 用 html:root，须同特异性后来居上） */
+html:root {
+  --el-color-primary-rgb: 37, 99, 235;
+}
+
+/* ---------- 浅色档（管理后台主皮肤：html[data-theme='light']） ---------- */
+html[data-theme='light'] {
+  color-scheme: light;
+
+  --au-bg: #f8f8f8;
+  --au-bg-soft: #f5f5f5;
+  --au-surface: #ffffff;
+  --au-surface-2: #f5f5f5;
+  --au-surface-3: #eeeeee;
+  --au-input-bg: #ffffff;
+  --au-input-bg-focus: #ffffff;
+  --au-input-border: #e5e5e5;
+  --au-overlay: rgba(248, 248, 248, 0.9);
+  --au-overlay-soft: rgba(17, 17, 17, 0.08);
+  --au-overlay-mid: rgba(17, 17, 17, 0.16);
+  --au-overlay-strong: rgba(17, 17, 17, 0.3);
+  --au-overlay-menu: rgba(255, 255, 255, 0.98);
+  --au-chrome: rgba(248, 248, 248, 0.96);
+  --au-scrim: rgba(17, 17, 17, 0.42);
+  --au-grid-line: rgba(17, 17, 17, 0.05);
+  --au-track: rgba(17, 17, 17, 0.1);
+
+  --au-text: #111111;
+  --au-text-2: #6b7280;
+  --au-text-3: #9ca3af;
+  --au-text-4: #9ca3af;
+
+  --au-border: #e5e5e5;
+  --au-border-strong: #d4d4d4;
+  --au-border-focus: rgba(37, 99, 235, 0.35);
+
+  --au-primary: #2563eb;
+  --au-primary-strong: #1d4ed8;
+  --au-primary-deep: #1e40af;
+  --au-primary-soft: rgba(37, 99, 235, 0.08);
+  --au-primary-mid: rgba(37, 99, 235, 0.16);
+  --au-primary-border: rgba(37, 99, 235, 0.28);
+  --au-on-primary: #ffffff;
+
+  --au-violet: #6b7280;
+  --au-violet-soft: rgba(17, 17, 17, 0.05);
+
+  --au-success: #16a34a;
+  --au-success-soft: rgba(22, 163, 74, 0.08);
+  --au-success-border: rgba(22, 163, 74, 0.28);
+  --au-warning: #d97706;
+  --au-warning-soft: rgba(217, 119, 6, 0.08);
+  --au-warning-border: rgba(217, 119, 6, 0.28);
+  --au-on-warning: #ffffff;
+  --au-gold-a: #3b82f6;
+  --au-gold-b: #2563eb;
+  --au-gold-edge: #1d4ed8;
+  --au-danger: #dc2626;
+  --au-danger-soft: rgba(220, 38, 38, 0.08);
+  --au-danger-border: rgba(220, 38, 38, 0.28);
+  --au-info: #2563eb;
+  --au-info-soft: rgba(37, 99, 235, 0.08);
+  --au-info-border: rgba(37, 99, 235, 0.28);
+
+  --au-shadow-1: 0 1px 2px rgba(17, 17, 17, 0.06);
+  --au-shadow-2: 0 12px 32px rgba(17, 17, 17, 0.12);
+  --au-shadow-color: rgba(17, 17, 17, 0.14);
+  --au-shadow-text: 0 2px 12px rgba(17, 17, 17, 0.35);
+  --au-card-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  --au-focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.18);
+  --au-lift-shadow: 0 8px 24px rgba(17, 17, 17, 0.1);
+}
+
+/* ==================== 管理后台外壳模具（说明书 2.9） ==================== */
+
+/* 品牌字：无衬线 16px 粗，不再大写拉字距 */
+.admin-layout .sidebar .brand-name {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+/* 分组眉题：13px 灰 */
+.admin-layout .nav .nav-eyebrow {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--au-text-3);
+}
+
+/* 菜单项：高 44px、圆角 12px、图标 18px＋文字 15px */
+.admin-layout .nav .nav-item {
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 15px;
+}
+.admin-layout .nav .nav-item .nav-icon { color: var(--au-text-3); }
+
+/* 激活态：白底胶囊＋边框＋轻阴影（浅色）；深色档同配方走抬升面 */
+.admin-layout .nav .nav-item.active {
+  background: var(--au-surface);
+  border-color: var(--au-border);
+  box-shadow: 0 1px 4px rgba(17, 17, 17, 0.08);
+}
+.admin-layout .nav .nav-item.active .nav-icon { color: var(--au-primary); }
+
+/* 顶栏标题：无衬线 20px 超粗（壳标题，不是内容区 H1） */
+.admin-layout .topbar .topbar-title h1 {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+/* 内容区：约 1000px（说明书 2.9；原 1440px） */
+.admin-layout .main .content { max-width: 1000px; }
+
+/* ==================== 表格模具（说明书 2.9：表头 14px 灰＋行 48–64px） ==================== */
+.admin-layout .el-table {
+  --el-table-header-bg-color: transparent;
+  --el-table-header-text-color: var(--au-text-2);
+  --el-table-text-color: var(--au-text);
+  --el-table-border-color: var(--au-border);
+  --el-table-row-hover-bg-color: var(--au-bg-soft);
+}
+.admin-layout .el-table th.el-table__cell {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--au-text-2);
+}
+.admin-layout .el-table td.el-table__cell {
+  /* 14px 正文＋上下 12px 内边距 → 行高约 48px */
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+/* DataTable 手机卡片：圆角 16px、标题 16px 粗（2.6 状态行口径） */
+.admin-layout .dt-wrap .dt-card { border-radius: 16px; }
+.admin-layout .dt-wrap .dt-title { font-size: 16px; font-weight: 700; }
+
+/* ==================== 筛选栏模具（FilterBar：控件 40px 高、12px 圆角） ==================== */
+.admin-layout .au-filterbar .el-input__wrapper,
+.admin-layout .au-filterbar .el-select .el-input__wrapper {
+  min-height: 40px;
+  border-radius: 12px;
+}
+.admin-layout .au-filterbar .fb-query {
+  height: 40px;
+  border-radius: 12px;
+}
+.admin-layout .au-filterbar .fb-chip { border-radius: 12px; }
+
+/* ==================== 弹窗模具（说明书 2.7：圆角 24px） ==================== */
+.admin-layout .el-dialog { border-radius: 24px; }
+.admin-layout .el-dialog__title {
+  font-size: 17px;
+  font-weight: 700;
+}
