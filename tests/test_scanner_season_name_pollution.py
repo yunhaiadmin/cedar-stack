@@ -171,6 +171,7 @@ def test_backfill_helpers():
     assert not mod.is_polluted_series_name("一吻不定情")
     assert mod.is_polluted_episode_name("Season 01 S01")
     assert mod.is_polluted_episode_name("Season 1950 S19")
+    assert mod.is_polluted_episode_name("Season0 S00")
     assert not mod.is_polluted_episode_name("一吻不定情 S01")
     assert not mod.is_polluted_episode_name("第 1 集")
     # 文件名干净集标题
