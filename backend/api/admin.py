@@ -1854,7 +1854,11 @@ def get_admin_logs(
             "details": log.details,
             "ip_address": log.ip_address,
             "created_at": _log_out(log),
-            "admin_name": operator.username if operator else "未知",
+            # 系统身份行（admin_user_id 为 NULL 且 details.actor == "system"，
+            # 来自面板密钥鉴权的机器口）显示「系统」，不是「未知」。
+            "admin_name": operator.username if operator else (
+                "系统" if isinstance(log.details, dict)
+                and log.details.get("actor") == "system" else "未知"),
             "error_hint": error_hint,
         })
     return result

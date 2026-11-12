@@ -42,10 +42,10 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from backend import node_auth
 from backend.database import get_db
 from backend.emby_server import node_health
 from backend.emby_server.mount_health import require_panel_key
-from backend import node_auth
 
 logger = logging.getLogger(__name__)
 
@@ -229,13 +229,29 @@ def api_register(request: Request, payload: dict, db: Session = Depends(get_db))
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    # 机器口审计（GA-068 B 类）：记系统身份（见 nodes.node_scan_library 同款注释）。
+    # 函数内懒导入：顶层 import 会跑 backend/api/__init__.py（→ admin_scrape → portal），
+    # portal 初始化中途导入本模块时会循环导入（nodes.py 同款，#58 冒烟实锤）。
+    from backend.api.admin_core import _audit
+
+    _audit(db, None, "stream_node_register", "stream_node", None,
+           {"actor": "system", "auth": "panel_key", "url": node["url"]})
+    db.commit()
     return {"ok": True, "node": node, "nodes": _raw_nodes(db)}
 
 
 @admin_router.delete("")
 def api_unregister(request: Request, url: str, db: Session = Depends(get_db)):
     _panel_auth(request)
-    return {"ok": unregister_node(db, url), "nodes": _raw_nodes(db)}
+    removed = unregister_node(db, url)
+    # 机器口审计（GA-068 B 类）：记系统身份；url 是查询参数、非请求体敏感值。
+    # 函数内懒导入：同上，避循环导入。
+    from backend.api.admin_core import _audit
+
+    _audit(db, None, "stream_node_unregister", "stream_node", None,
+           {"actor": "system", "auth": "panel_key", "url": url, "removed": removed})
+    db.commit()
+    return {"ok": removed, "nodes": _raw_nodes(db)}
 
 
 @admin_router.get("/bundle")

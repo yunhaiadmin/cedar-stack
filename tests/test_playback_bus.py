@@ -26,7 +26,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.api.admin_core import get_current_admin
 from backend.database import Base, get_db
 from backend.emby_server import models as em
 from backend.emby_server import playback_bus as bus
@@ -296,7 +295,7 @@ def client(db, monkeypatch):
     def _db():
         yield db
 
-    app.dependency_overrides[get_current_admin] = _admin_super
+    app.dependency_overrides[playback_bus_admin.get_current_admin] = _admin_super
     app.dependency_overrides[get_db] = _db
     with TestClient(app) as c:
         yield c
@@ -356,7 +355,7 @@ def test_admin_post_viewer_role_forbidden_no_row(db, monkeypatch):
     def _db():
         yield db
 
-    app.dependency_overrides[get_current_admin] = _admin_viewer
+    app.dependency_overrides[playback_bus_admin.get_current_admin] = _admin_viewer
     app.dependency_overrides[get_db] = _db
     _enable_bus(monkeypatch)
     with TestClient(app) as c:

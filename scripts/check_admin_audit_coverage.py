@@ -31,6 +31,13 @@
 而且如果它哪天开始写库 / 发消息了，就应该把它从名单里删掉——名单太长就说明这条规则
 本身需要重新讨论，而不是继续加行。
 
+**扫哪些模块靠自动发现，不靠手名单**（GA-068）：这份检查原来有一份手维护的
+``ROUTER_MODULES`` 名单，新域模块上线时没人登记，检查就在不全的名单上跑绿——
+合集的 15 个写口、面板与治理停权的写口零审计（GA-073）正是从这个盲区漏出去的。
+现在模块集合由 AST 枚举源码自动发现（见下方 ``discover_router_modules``），
+手名单只许以「排除表」形式存在且逐条写理由；
+``tests/test_coverage_discovery_guard.py`` 用一份独立枚举对账，漏扫必然红。
+
 用法：python3 scripts/check_admin_audit_coverage.py
 """
 
@@ -60,29 +67,86 @@ OFFLOAD_CALLS = frozenset({"run_in_threadpool", "to_thread", "run_in_executor", 
 #（``_worker_without_audit(``）不该被当成写了审计。
 AUDIT_CALL = re.compile(r"\b_audit\(")
 
-# 管理端路由所在的模块（含拆出去的域模块；新增域模块要登记在这里）
-ROUTER_MODULES = (
-    "backend.api.admin_core",
-    "backend.api.admin",
-    "backend.api.admin_ops",
-    "backend.api.admin_economy",
-    "backend.api.admin_user_grants",
-    "backend.api.admins_admin",
-    "backend.api.setup",
-    "backend.api.orders_admin",
-    "backend.api.coupons_admin",
-    "backend.api.capabilities_admin",
-    "backend.api.playback_admin",
-    "backend.api.realms",
-    "backend.api.reminders_admin",
-    "backend.api.admin_apikey",  # API Key / Service Token 管理（v2.58.0）
-    "backend.api.servers",
-    "backend.api.emby_servers",
-    "backend.emby_server.portal",
-    "backend.emby_server.portal_mount_routes",
-    "backend.api.admin_artwork",  # PA-032：条目图覆盖与库封面策略写口
-    "backend.api.admin_services",  # PA-033：备份配置与手动备份写口
-)
+# ---------------------------------------------------------------------------
+# 覆盖范围：自动发现，不再手维护名单（GA-068，见文件头说明）
+#
+# AST 枚举 ``backend/`` 全部源码（只读语法树，不 import 业务模块）：
+#   1. ``backend/api`` 与 ``backend/emby_server`` 两个包里，凡是定义了
+#      ``APIRouter``、往某个 router 上注册了路由（装饰器）、或做了
+#      ``include_router`` 的模块，一律纳入；
+#   2. ``backend/`` 其他任何位置，只要以字面量 ``prefix=`` 定义了
+#      ``/api/admin`` 路由的模块，一律纳入。
+# 纳入只是「候选」——真正判定仍按收集到的路由路径（``/api/admin`` 前缀）过滤，
+# 所以多纳不会误报，漏纳才会放走写口；发现逻辑因此宁宽勿窄。
+# ---------------------------------------------------------------------------
+
+_DISCOVERY_PACKAGE_ROOTS = ("backend/api", "backend/emby_server")
+_ROUTE_DECORATOR_ATTRS = frozenset({
+    "get", "post", "put", "patch", "delete", "api_route", "websocket",
+    "add_api_route", "add_api_websocket_route",
+})
+_BASE_PREFIXES = ("/api/admin",)
+
+# 自动发现的排除表：模块 → 为什么不扫。判断标准与例外登记相同——必须写出
+# 具体理由，不许只写一句「故意的」；守卫测试会逐条对账（理由为空、指向的
+# 模块不存在都会红）。正常情况下这里应该是空的：发现到的模块默认全扫。
+EXCLUDED_MODULES: dict[str, str] = {}
+
+
+def _module_name_of(path: Path) -> str:
+    rel = path.relative_to(ROOT).with_suffix("")
+    parts = list(rel.parts)
+    if parts[-1] == "__init__":
+        parts.pop()
+    return ".".join(parts)
+
+
+def _file_route_signals(path: Path) -> tuple[bool, set[str]]:
+    """读一个源码文件的语法树 → (是否定义/注册了路由, 字面量 APIRouter 前缀集合)"""
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (SyntaxError, UnicodeDecodeError, OSError):
+        return False, set()
+    registers = False
+    prefixes: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name) and func.id == "APIRouter":
+                registers = True
+                for keyword in node.keywords:
+                    value = keyword.value
+                    if (keyword.arg == "prefix" and isinstance(value, ast.Constant)
+                            and isinstance(value.value, str)):
+                        prefixes.add(value.value)
+            elif isinstance(func, ast.Attribute) and func.attr == "include_router":
+                registers = True
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for decorator in node.decorator_list:
+                if (isinstance(decorator, ast.Call)
+                        and isinstance(decorator.func, ast.Attribute)
+                        and decorator.func.attr in _ROUTE_DECORATOR_ATTRS):
+                    registers = True
+    return registers, prefixes
+
+
+def discover_router_modules() -> tuple[str, ...]:
+    """自动枚举要扫的路由模块（GA-068：代替原手维护的 ROUTER_MODULES 名单）。"""
+    found: set[str] = set()
+    for path in sorted((ROOT / "backend").rglob("*.py")):
+        registers, prefixes = _file_route_signals(path)
+        if not registers and not prefixes:
+            continue
+        in_package_roots = any(
+            path.is_relative_to(ROOT / root) for root in _DISCOVERY_PACKAGE_ROOTS)
+        if in_package_roots or any(p.startswith(_BASE_PREFIXES) for p in prefixes):
+            found.add(_module_name_of(path))
+    return tuple(sorted(found - set(EXCLUDED_MODULES)))
+
+
+# 管理端路由所在的模块（自动发现，见上方 GA-068 说明；不许改回手维护名单——
+# 守卫测试 tests/test_coverage_discovery_guard.py 会把漏扫钉红）
+ROUTER_MODULES = discover_router_modules()
 
 # 由中间件统一审计的前缀（不要求端点自己写 _audit）
 MIDDLEWARE_PREFIX = "/api/admin/emby"
