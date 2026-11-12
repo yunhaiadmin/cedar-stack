@@ -1938,8 +1938,8 @@ class TmdbClient:
 
         # 外层：语言 fallback 链；内层：查询候选
         # 首选语言先走完所有候选，无命中才换语言（省请求）
-        _chain = language_fallback_chain()
-        for lang in _chain:
+        _first_lang = True
+        for lang in language_fallback_chain():
             best = None  # (tier, rank, hit)：跨候选、跨结果取全局最可信
             transient: Optional[Exception] = None
             for query, fuzzy_ok in _cands(name, year):
@@ -1961,7 +1961,7 @@ class TmdbClient:
                 except Exception:  # noqa: BLE001 — 缓存/磁盘等杂项异常换下一个候选
                     continue
                 for hit in results[:10]:
-                    _note_hit(hit, lang == _chain[0])
+                    _note_hit(hit, _first_lang)
                     sc = _hit_score(name, query, hit, fuzzy_ok, year=year)
                     if sc is None and loose_query and query == loose_query:
                         # Q3 宽松精确：仅当宽松归一化后与 hit 任一标题完全相等
@@ -2001,7 +2001,7 @@ class TmdbClient:
                     except Exception:  # noqa: BLE001
                         continue
                     for hit in results[:10]:
-                        _note_hit(hit, lang == _chain[0])
+                        _note_hit(hit, _first_lang)
                         sc = _hit_score(name, query, hit, fuzzy_ok, year=year)
                         if sc and (best is None or sc > best[:2]):
                             best = (sc[0], sc[1], hit)
@@ -2009,6 +2009,7 @@ class TmdbClient:
                     return best[2]
             if transient is not None:
                 raise transient
+            _first_lang = False
             # 本语言无命中，继续下一种语言
         # 别名补拉（2026-11-12 放宽）：走到这里 = 全部语言/候选/年份
         # 回退全灭。对候选池前至多 3 个 hit 各补一次 details（带
