@@ -168,3 +168,101 @@ def test_batch7_reads_stay_open_to_operator(path):
     """只改写口：各口 GET 读口运营仍可看（前缀判定只拦非安全方法）"""
     assert blocked_reason(_req(path, "GET"), _admin(ROLE_OPERATOR)) is None, f"operator GET {path}"
     assert blocked_reason(_req(path, "GET"), _admin(ROLE_VIEWER)) is None, f"viewer GET {path}"
+
+
+# ==================== 全局审计 GA-069~072（2026-11-12） ====================
+# 四条同族缺陷：角色名单漏收，运营 / 只读能碰凭据级与门禁级材料。
+# - GA-069 整库备份、GA-070 软件授权：整子树任何方法只给超管
+#   （SUPER_ONLY_ALL_PREFIXES）——下载与状态回显都是 GET，只拦写等于不拦。
+# - GA-072 公共池配置：只收 4 个配置口的写（读不受影响），成员审核等日常
+#   运营写口同前缀但不收（防误伤断言在下面）。
+# - GA-071 上游密钥：只收刮削页的密钥子树写口；专线 reset-secret 走后缀
+#   精确命中。重刮 / 绑 TMDB 等日常写口不收（防误伤断言在下面）。
+
+_GA_ALL_METHOD_SUPER_ONLY = [
+    # GA-069：备份整子树（下载是重灾区：viewer 凭 GET 拉走整库备份）
+    ("GET", "/api/admin/system/backup"),
+    ("PUT", "/api/admin/system/backup"),
+    ("POST", "/api/admin/system/backup/run"),
+    ("GET", "/api/admin/system/backup/files/aetrix-20261112.db.gz/info"),
+    ("GET", "/api/admin/system/backup/files/aetrix-20261112.db.gz/download"),
+    # GA-070：授权整子树（status 原样回显完整授权码，viewer 可读）
+    ("GET", "/api/admin/license/status"),
+    ("PUT", "/api/admin/license/config"),
+    ("POST", "/api/admin/license/verify"),
+    # GA-071 同类：专线入口密钥重置（后缀命中，方法无关）
+    ("POST", "/api/admin/emby/exclusive-lines/7/reset-secret"),
+]
+
+_GA_WRITE_SUPER_ONLY = [
+    # GA-072：池 4 个配置口
+    ("PUT", "/api/admin/pool/config"),
+    ("PUT", "/api/admin/pool/reward-config"),
+    ("PUT", "/api/admin/pool/janitor-config"),
+    ("PUT", "/api/admin/pool/retry-config"),
+    # GA-071：TMDB 密钥池（整池保存 / 新增 / 删除）
+    ("PUT", "/api/admin/emby/scrape/tmdb-keys"),
+    ("POST", "/api/admin/emby/scrape/tmdb-keys/add"),
+    ("DELETE", "/api/admin/emby/scrape/tmdb-keys/0"),
+    # GA-071：多源密钥增删（{source_id}/keys 段）
+    ("POST", "/api/admin/emby/scrape/meta-sources/douban/keys"),
+    ("DELETE", "/api/admin/emby/scrape/meta-sources/douban/keys/0"),
+]
+
+# 防误伤：这些日常运营写口必须仍然对 operator 放行（viewer 照旧全拦）。
+_GA_OPERATOR_STILL_ALLOWED = [
+    # 池：成员审核 / 清退 / 奖励结算 / 成员补丁（pool_admin.py，与配置同前缀）
+    ("POST", "/api/admin/pool/members/3/approve"),
+    ("POST", "/api/admin/pool/members/3/eject"),
+    ("POST", "/api/admin/pool/rewards/settle"),
+    ("PATCH", "/api/admin/pool/members/3"),
+    # 刮削：重刮 / 绑 TMDB / 锁条目 / 探活暂停 / 缺失重入队
+    ("POST", "/api/admin/emby/scrape/libraries/9/rescrape"),
+    ("POST", "/api/admin/emby/scrape/items/9/bind-tmdb"),
+    ("POST", "/api/admin/emby/scrape/items/9/lock"),
+    ("POST", "/api/admin/emby/scrape/probe/pause"),
+    ("POST", "/api/admin/emby/scrape/missing-metadata/requeue"),
+    # 刮削：密钥连通性测试只报掩码与有效性，不是密钥材料
+    ("POST", "/api/admin/emby/scrape/tmdb-test"),
+    # 刮削：PUT meta-sources 经查实不动密钥池（开关 / 顺序 / 限速）
+    ("PUT", "/api/admin/emby/scrape/meta-sources"),
+    # 专线：线路本身的增删改是运营日常活，只有 reset-secret 收紧
+    ("POST", "/api/admin/emby/exclusive-lines"),
+    ("PUT", "/api/admin/emby/exclusive-lines/7"),
+    ("DELETE", "/api/admin/emby/exclusive-lines/7"),
+    # 后缀不误伤：reset-secret 不在结尾的不受影响
+    ("POST", "/api/admin/emby/exclusive-lines/7/reset-secret-history"),
+]
+
+
+@pytest.mark.parametrize("method,path", _GA_ALL_METHOD_SUPER_ONLY)
+def test_ga069_072_all_methods_blocked_for_non_super(method, path):
+    """备份 / 授权 / 专线密钥重置：viewer 与 operator 任何方法都被拦"""
+    for role in (ROLE_OPERATOR, ROLE_VIEWER):
+        reason = blocked_reason(_req(path, method), _admin(role))
+        assert reason, f"{role} {method} {path} 应被拦"
+        assert "超级管理员" in reason
+
+
+@pytest.mark.parametrize("method,path", _GA_ALL_METHOD_SUPER_ONLY + _GA_WRITE_SUPER_ONLY)
+def test_ga069_072_super_still_allowed(method, path):
+    """超管调这些口仍放行：不能把超管自己挡在门外"""
+    assert blocked_reason(_req(path, method), _admin(ROLE_SUPER)) is None, f"super {method} {path}"
+
+
+@pytest.mark.parametrize("method,path", _GA_WRITE_SUPER_ONLY)
+def test_ga071_072_writes_blocked_for_operator_reads_open(method, path):
+    """池配置 / 上游密钥：operator 写被拦、同路径 GET 读不受影响"""
+    reason = blocked_reason(_req(path, method), _admin(ROLE_OPERATOR))
+    assert reason, f"operator {method} {path} 应被拦"
+    assert "超级管理员" in reason
+    assert blocked_reason(_req(path, method), _admin(ROLE_VIEWER)), f"viewer {method} {path} 应被拦"
+    assert blocked_reason(_req(path, "GET"), _admin(ROLE_OPERATOR)) is None, f"operator GET {path}"
+    assert blocked_reason(_req(path, "GET"), _admin(ROLE_VIEWER)) is None, f"viewer GET {path}"
+
+
+@pytest.mark.parametrize("method,path", _GA_OPERATOR_STILL_ALLOWED)
+def test_ga069_072_operator_daily_writes_not_blocked(method, path):
+    """防误伤：同前缀 / 同模块的日常运营写口 operator 仍可写，viewer 仍全拦"""
+    assert blocked_reason(_req(path, method), _admin(ROLE_OPERATOR)) is None, f"operator {method} {path}"
+    assert blocked_reason(_req(path, method), _admin(ROLE_VIEWER)), f"viewer {method} {path} 应被拦"
