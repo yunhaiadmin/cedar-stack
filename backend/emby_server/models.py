@@ -665,6 +665,11 @@ class PlaybackSession(Base):
     position_ticks = Column(BigInteger, default=0)
     is_paused = Column(Boolean, default=False)
     ended_at = Column(DateTime)
+    # 观看奖励结算标记（活力/XP/观影能量）：Stopped 结算与过期回收结算
+    # 共用 watch_settle 一处口径，谁先结算谁落标记，后到的一方跳过，
+    # 防同一会话重复发奖。NULL = 尚未结算（老行同此读法）。老库靠
+    # database 的 ORM 列对账自动补列（可空、无默认）。
+    rewards_settled_at = Column(DateTime)
 
 
 class PlayStartEvent(Base):
