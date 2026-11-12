@@ -1,4 +1,5 @@
 <template>
+  <UhdAccountLayout>
   <div class="v4-scope">
     <div class="v4-page">
       <!-- 日志头 -->
@@ -45,9 +46,11 @@
       <PlayerSchemeSheet v-model:open="resumePickerOpen" :title="resumePickerTitle" />
     </div>
   </div>
+  </UhdAccountLayout>
 </template>
 
 <script setup lang="ts">
+import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 import { computed, onMounted, ref } from 'vue'
 import CampGuide from '@/components/game/CampGuide.vue'
 import WorldMap from '@/components/panel/WorldMap/index.vue'

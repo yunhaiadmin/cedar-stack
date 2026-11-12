@@ -1,4 +1,5 @@
 <template>
+  <UhdAccountLayout>
   <div class="v4-scope">
     <div class="v4-page">
       <!-- 日志头 -->
@@ -27,7 +28,7 @@
             <template v-else>池里已有 <b>{{ totalWishes }}</b> 条心愿在漂流</template>
           </div>
         </div>
-        <button class="wish-btn" @click="openModal">🏮 投下心愿</button>
+        <UhdButton variant="primary" block @click="openModal">🏮 投下心愿</UhdButton>
       </section>
 
       <!-- 我的许愿 -->
@@ -36,7 +37,7 @@
         <div class="v4-sec-sub">漂流中的心愿，营地正在想办法捞起来</div>
         <div v-if="myLoading" class="v4-skeleton" style="height:80px"></div>
         <div v-else-if="myError" class="v4-err">许愿加载失败：{{ myError }}<br><button class="v4-retry" @click="loadMine">重试</button></div>
-        <div v-else-if="myWishes.length === 0" class="v4-empty">池子里还没有你的心愿，投一条下去吧</div>
+        <UhdEmptyState v-else-if="myWishes.length === 0" title="池子里还没有你的心愿，投一条下去吧" />
         <div v-else>
           <div
             v-for="w in myWishes"
@@ -68,7 +69,7 @@
         <div class="v4-sec-sub">想看的片子，正在往你的盘里搬</div>
         <div v-if="wantsLoading" class="v4-skeleton" style="height:80px"></div>
         <div v-else-if="wantsError" class="v4-err">想看清单加载失败：{{ wantsError }}<br><button class="v4-retry" @click="loadWants">重试</button></div>
-        <div v-else-if="myWants.length === 0" class="v4-empty">还没有想看的片子，搜到已在库的片子时点「想看」试试</div>
+        <UhdEmptyState v-else-if="myWants.length === 0" title="还没有想看的片子，搜到已在库的片子时点「想看」试试" />
         <div v-else>
           <div v-for="w in myWants" :key="w.job_id ?? w.tmdb_id" class="wish">
             <img v-if="w.poster_url" :src="imageAuthUrl(w.poster_url, 160)" :alt="w.title || w.tmdb_id" class="want-poster" loading="lazy" decoding="async">
@@ -87,7 +88,7 @@
         <div class="v4-sec-sub">附议多的心愿，优先被捞起来</div>
         <div v-if="hotLoading" class="v4-skeleton" style="height:80px"></div>
         <div v-else-if="hotError" class="v4-err">众人许愿加载失败：{{ hotError }}<br><button class="v4-retry" @click="loadHot">重试</button></div>
-        <div v-else-if="hotWishes.length === 0" class="v4-empty">大家的心愿都在漂流，暂时没有公开的</div>
+        <UhdEmptyState v-else-if="hotWishes.length === 0" title="大家的心愿都在漂流，暂时没有公开的" />
         <div v-else>
           <div v-for="w in hotWishes" :key="w.id" class="crowd">
             <div class="row1">
@@ -266,9 +267,13 @@
       </div>
     </div>
   </div>
+  </UhdAccountLayout>
 </template>
 
 <script setup lang="ts">
+import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
+import UhdButton from '@/components/uhd/UhdButton.vue'
+import UhdEmptyState from '@/components/uhd/UhdEmptyState.vue'
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { facilityStamp } from '@/config/game'
@@ -1054,25 +1059,7 @@ onMounted(() => {
 .well-note { font-size: 12px; color: var(--ink2); margin-top: 10px; }
 .well-note b { color: var(--red); }
 
-/* 大按钮：设计稿原值 */
-.wish-btn {
-  display: block;
-  width: 100%;
-  background: var(--red);
-  color: var(--paper-card);
-  border: none;
-  font-size: 16px;
-  font-weight: 800;
-  letter-spacing: 3px;
-  padding: 15px;
-  border-radius: 14px;
-  cursor: pointer;
-  box-shadow: 0 4px 0 var(--red-deep, #a33319);
-  transition: transform 0.12s;
-}
-.wish-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--red-deep, #a33319); }
-
-/* 纸船飞 + 噗通 */
+/* 许愿井装饰与纸船动画（保留） */
 .flyboat {
   position: fixed;
   font-size: 34px;
@@ -1495,7 +1482,6 @@ onMounted(() => {
 /* R27：减少动态偏好下装饰动画停掉（本地守卫） */
 @media (prefers-reduced-motion: reduce) {
   .well .boat-float { animation: none; }
-  .wish-btn:active { transform: none; }
   /* R41：新愿望 glow + 弹窗入场动画在减弱动态下关闭 */
   .wish.new, .mcard { animation: none; }
 }

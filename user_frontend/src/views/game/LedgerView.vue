@@ -1,4 +1,5 @@
 <template>
+  <UhdAccountLayout>
   <div class="v4-scope">
     <div class="v4-page">
       <!-- 日志头 -->
@@ -20,22 +21,15 @@
           <div class="fuel-num"><small aria-hidden="true">⚡</small> {{ fmtNum(balance) }}</div>
           <!-- R27：非「全部」筛选时后端 total 不可信（是未筛选总数），数字去掉，不加后端接口 -->
           <span v-if="todayIncome > 0" class="fuel-today">{{ !hasMore && filter === 'all' ? `今日 +${fmtNum(todayIncome)}` : '今日有进账' }} <span aria-hidden="true">⚡</span></span>
+          <div class="fuel-actions">
+            <UhdButton variant="secondary" size="sm" @click="router.push('/shop')">去充值</UhdButton>
+          </div>
         </div>
       </section>
 
-      <!-- 筛选 -->
+      <!-- 筛选（UhdSegmented，批 0 分段模具） -->
       <section class="v4-sec" aria-label="筛选">
-        <div class="filter" role="group" aria-label="收支筛选">
-          <button
-            v-for="f in filters"
-            :key="f.key"
-            type="button"
-            class="chip"
-            :class="{ on: filter === f.key }"
-            :aria-pressed="filter === f.key"
-            @click="filter = f.key"
-          >{{ f.label }}</button>
-        </div>
+        <UhdSegmented v-model="filter" :options="filterOptions" aria-label="收支筛选" />
       </section>
 
       <!-- 账本 -->
@@ -45,14 +39,15 @@
           账本加载失败：{{ error }}<br>
           <button class="v4-retry" @click="reload">重试</button>
         </div>
-        <div v-else-if="!filteredGroups.length" class="v4-empty">
-          <template v-if="filter === 'all'">这一栏空空的 —— 去探索片库大陆，赚点能量回来吧</template>
+        <div v-else-if="!filteredGroups.length">
+          <UhdEmptyState v-if="filter === 'all'" title="这一栏空空的 —— 去探索片库大陆，赚点能量回来吧" />
           <!-- R106-1：筛选只过滤已加载的分页；还有没翻到的记录时空态要诚实，不能让人以为真没有 -->
-          <template v-else-if="hasMore">
-            已翻到的记录里还没有，要继续往下翻吗<br>
-            <button type="button" class="v4-retry" :disabled="loadingMore" @click="loadMore">{{ loadingMore ? '加载中…' : '继续翻' }}</button>
-          </template>
-          <template v-else>当前筛选下没有记录，换个筛选看看</template>
+          <UhdEmptyState v-else-if="hasMore" title="已翻到的记录里还没有，要继续往下翻吗">
+            <template #action>
+              <button type="button" class="v4-retry" :disabled="loadingMore" @click="loadMore">{{ loadingMore ? '加载中…' : '继续翻' }}</button>
+            </template>
+          </UhdEmptyState>
+          <UhdEmptyState v-else title="当前筛选下没有记录，换个筛选看看" />
         </div>
         <template v-else>
           <div v-for="g in filteredGroups" :key="g.key" class="day-group">
@@ -94,10 +89,16 @@
       </section>
     </div>
   </div>
+  </UhdAccountLayout>
 </template>
 
 <script setup lang="ts">
+import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
+import UhdButton from '@/components/uhd/UhdButton.vue'
+import UhdEmptyState from '@/components/uhd/UhdEmptyState.vue'
+import UhdSegmented from '@/components/uhd/UhdSegmented.vue'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { facilityStamp } from '@/config/game'
 import { pointsApi, type PointsLogEntry } from '@/api/economy'
 import { humanizeError } from '@/composables/usePanelApi'
@@ -105,6 +106,7 @@ import { useToast } from '@/composables/useToast'
 import { parseServerTime } from '@/utils/serverTime'
 
 const toast = useToast()
+const router = useRouter()
 
 /**
  * 类型元数据：income 为准判断进/出账；未知 type 兜底 income=null 走中性展示
@@ -185,6 +187,10 @@ const loading = ref(true)
 const loadingMore = ref(false)
 const error = ref('')
 const filter = ref<FilterKey>('all')
+/** UhdSegmented 选项：key→value，label 原样 */
+const filterOptions = computed(() =>
+  filters.map((f) => ({ value: f.key, label: f.label })),
+)
 
 function fmtNum(n: number | null | undefined) {
   // R54-33：Math.abs(undefined) 得到 NaN 会绕过 null 兜底，非有限数一律回退
@@ -374,7 +380,8 @@ onUnmounted(() => window.clearInterval(dateTimer))
 .fuel-num {
   /* R45C-2：超大余额在小屏上按视口收缩，不再被 .fuel 的 overflow:hidden 裁掉 */
   /* R54-41：375px 下 14vw 已被 52px 上限截断、实际不收缩；降低系数并允许折行，不靠 overflow 裁切 */
-  font-size: clamp(28px, 12vw, 52px);
+  /* 批 2：按说明书 2.8，燃料数字取 40px */
+  font-size: clamp(32px, 10vw, 40px);
   font-weight: 800;
   margin: 6px 0 2px;
   position: relative;
@@ -383,6 +390,7 @@ onUnmounted(() => window.clearInterval(dateTimer))
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.fuel-actions { margin-top: 12px; position: relative; }
 .fuel-num small {
   font-size: 22px;
   font-weight: 700;
@@ -399,37 +407,6 @@ onUnmounted(() => window.clearInterval(dateTimer))
   border-radius: var(--paper-r-xl, 16px);
   margin-top: 8px;
   position: relative;
-}
-
-/* 筛选小标签：设计稿 game-ledger.html 原值，触达区 ≥44px */
-.filter {
-  display: flex;
-  gap: 10px;
-}
-.chip {
-  flex: 1;
-  text-align: center;
-  font-size: 13px;
-  font-weight: 700;
-  min-height: 44px;
-  border-radius: var(--paper-r-2xl, 20px);
-  border: 1.5px solid var(--ink2);
-  color: var(--ink2);
-  background: transparent;
-  cursor: pointer;
-  transition: background-color 0.15s, color 0.15s, border-color 0.15s, transform 0.15s;
-}
-.chip.on {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--paper, #F6F1E7);
-}
-.chip:active { transform: scale(0.95); }
-
-/* R54-39：动效敏感用户关闭过渡与按压缩放 */
-@media (prefers-reduced-motion: reduce) {
-  .chip { transition: none; }
-  .chip:active { transform: none; }
 }
 
 /* 分组 */
@@ -497,15 +474,14 @@ onUnmounted(() => window.clearInterval(dateTimer))
 
 /* 键盘可达性：按钮获得焦点时给出可见轮廓 */
 .v4-retry:focus-visible,
-.chip:focus-visible,
 .load-more:focus-visible {
   outline: 2px solid var(--red);
   outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chip, .load-more { transition: none; }
+  .load-more { transition: none; }
   /* R30：按压缩放也关掉 */
-  .chip:active, .load-more:active { transform: none; }
+  .load-more:active { transform: none; }
 }
 </style>

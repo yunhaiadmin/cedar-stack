@@ -54,6 +54,13 @@ const showChrome = computed(
 )
 
 /**
+ * UHD 换皮批 2：办事面（/game/* 与 /shop）走 UhdAccountLayout 左栏框架，
+ * 全局顶栏在这些路由下不再渲染（导航由左栏承担）；底部坞（手机）照常保留。
+ */
+const isAccountArea = computed(() => route.path === '/shop' || route.path.startsWith('/game'))
+const showHeader = computed(() => showChrome.value && !isAccountArea.value)
+
+/**
  * 桌面「探险世界」激活且在首页时，世界自带 HUD（品牌/能量/等级/头像），
  * 隐藏全局顶栏避免双层导航；其他页面顶栏照常。
  */
@@ -174,7 +181,7 @@ watch(
 
 <template>
   <div class="app-shell">
-    <AppHeader v-if="showChrome && !hideHeaderForWorld" />
+    <AppHeader v-if="showHeader && !hideHeaderForWorld" />
     <RouterView v-slot="{ Component }">
       <!-- max=12：key 按登录会话隔离，登出/换号后旧实例不再命中，攒多了自动淘汰最旧的 -->
       <KeepAlive :include="KEEP_ALIVE_VIEWS" :max="12">

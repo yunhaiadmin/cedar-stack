@@ -4,7 +4,7 @@
  * 同页并排摆深色营销面与浅色办事面两组组件样品，数据全为静态样品。
  * 不进任何导航、不被现有页面引用。
  */
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import {
   Bell,
   BookOpen,
@@ -23,16 +23,19 @@ import {
   Users,
   Wallet,
 } from 'lucide-vue-next'
+import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 import UhdButton from '@/components/uhd/UhdButton.vue'
 import UhdChip from '@/components/uhd/UhdChip.vue'
 import UhdEmptyState from '@/components/uhd/UhdEmptyState.vue'
 import UhdMemberCard from '@/components/uhd/UhdMemberCard.vue'
 import UhdModal from '@/components/uhd/UhdModal.vue'
 import UhdNavPill from '@/components/uhd/UhdNavPill.vue'
+import UhdPlanCompare from '@/components/uhd/UhdPlanCompare.vue'
 import UhdSegmented from '@/components/uhd/UhdSegmented.vue'
 import UhdSidebar from '@/components/uhd/UhdSidebar.vue'
 import UhdStatusRow from '@/components/uhd/UhdStatusRow.vue'
 import UhdTable from '@/components/uhd/UhdTable.vue'
+import type { SubscriptionPlan } from '@/api/economy'
 
 const navActive = ref('home')
 const navItems = [
@@ -106,6 +109,42 @@ const tableRows = [
 ]
 
 const modalOpen = ref(false)
+
+/* ---------- 批 2 样品（办事面，静态 mock 数据，仅供截图验收） ---------- */
+const b2Active = ref('/game/account')
+const b2Plans: SubscriptionPlan[] = [
+  { id: 1, name: '启程', description: null, price: 18, points_price: 400, duration_days: 30, features: ['全片库通行'], entitlements: { media_seek_monthly_limit: 5, concurrent_streams: 3 }, is_popular: false, realm_name: '公益服' },
+  { id: 2, name: '远行', description: null, price: 45, points_price: 1000, duration_days: 90, features: ['全片库通行'], entitlements: { media_seek_monthly_limit: 8, concurrent_streams: 3 }, is_popular: true, realm_name: '公益服' },
+  { id: 3, name: '环游', description: null, price: 150, points_price: 3200, duration_days: 365, features: ['全片库通行'], entitlements: { media_seek_monthly_limit: 10, concurrent_streams: 3 }, is_popular: false, realm_name: '公益服' },
+]
+const b2PlanId = ref<number | null>(2)
+const b2Plan = computed(() => b2Plans.find((p) => p.id === b2PlanId.value) ?? b2Plans[0])
+const b2PlanIndex = computed<number>({
+  get: () => Math.max(0, b2Plans.findIndex((p) => p.id === b2PlanId.value)),
+  set: (i) => {
+    const p = b2Plans[i]
+    if (p) b2PlanId.value = p.id
+  },
+})
+function b2DurationLabel(days: number): string {
+  if (days >= 365) return '1年'
+  if (days >= 180) return '半年'
+  if (days >= 90) return '季'
+  if (days >= 30) return '1个月'
+  return `${days}天`
+}
+function b2OnSlider(e: Event) {
+  const v = Number((e.target as HTMLInputElement).value)
+  if (Number.isFinite(v)) b2PlanIndex.value = v
+}
+function b2ExtraSpecRows(plan: SubscriptionPlan): string[] {
+  const ent = plan.entitlements || {}
+  const lines: string[] = []
+  if (ent.media_seek_monthly_limit != null) lines.push(`每月可求片 ${ent.media_seek_monthly_limit} 部`)
+  if (ent.concurrent_streams != null) lines.push(`可同时播放 ${ent.concurrent_streams} 路`)
+  return lines
+}
+const b2SettlePrice = computed(() => `¥ ${b2Plan.value.price}`)
 </script>
 
 <template>
@@ -248,6 +287,50 @@ const modalOpen = ref(false)
 
         <h2 class="showcase__h2">空态</h2>
         <UhdEmptyState title="还没有订阅记录" />
+      </div>
+    </section>
+
+    <!-- ================= 批 2 · 办事面样品 ================= -->
+    <section class="showcase__batch2" id="batch2">
+      <h2 class="showcase__h2">批 2 · 左栏框架样品（UhdAccountLayout，预览态不跳转）</h2>
+      <UhdAccountLayout title="我的" :active-key="b2Active" :navigate="false" @select="b2Active = $event">
+        <UhdMemberCard plan-name="环游" user-line="样品用户 · ID 1" status-text="生效中" note="环游 · 2027-11-01 到期" />
+        <div class="showcase__b2-rows">
+          <UhdStatusRow title="服务器地址" desc="cdn.aetrix.love · 已分配线路" status-text="在线" tone="ok" chevron clickable />
+          <UhdStatusRow title="恢复邮箱" desc="x***@gmail.com" status-text="已设置" tone="ok" :divider="false">
+            <template #action><UhdButton variant="secondary" size="sm">更换</UhdButton></template>
+          </UhdStatusRow>
+        </div>
+      </UhdAccountLayout>
+
+      <h2 class="showcase__h2">批 2 · 订阅对比表＋时长滑杆＋结算栏样品</h2>
+      <div class="b2-grid">
+        <div class="b2-plans">
+          <div class="b2-dur-row">
+            <input type="range" min="0" :max="b2Plans.length - 1" step="1" :value="b2PlanIndex" class="b2-slider" aria-label="选择时长" @input="b2OnSlider" />
+            <div class="b2-caps" role="group" aria-label="选择时长">
+              <button v-for="(p, i) in b2Plans" :key="p.id" type="button" class="b2-cap" :class="{ on: i === b2PlanIndex }" :aria-pressed="i === b2PlanIndex" @click="b2PlanIndex = i">{{ b2DurationLabel(p.duration_days) }}</button>
+            </div>
+          </div>
+          <UhdPlanCompare v-model="b2PlanId" :plans="b2Plans" :extra-spec-rows="b2ExtraSpecRows" :show-realm="false" cta-text="选择套餐" />
+        </div>
+        <aside class="b2-settle">
+          <div class="b2-settle-title">确认开通</div>
+          <div class="b2-settle-row"><span>{{ b2Plan.name }} · {{ b2Plan.duration_days }} 天</span><b>{{ b2SettlePrice }}</b></div>
+          <div class="b2-settle-amount"><span>应付</span><b>{{ b2SettlePrice }}</b></div>
+          <div class="b2-settle-pay">支付方式：支付宝</div>
+          <UhdButton variant="primary" block>领取执照</UhdButton>
+        </aside>
+      </div>
+
+      <h2 class="showcase__h2">批 2 · 账本燃料块样品（数字 40px＋充值胶囊）</h2>
+      <div class="b2-fuel">
+        <div class="b2-fuel-lbl"><span aria-hidden="true">⚡</span> 当前能量 · 燃料表</div>
+        <div class="b2-fuel-num"><small aria-hidden="true">⚡</small> 1,234</div>
+        <span class="b2-fuel-today">今日 +12 <span aria-hidden="true">⚡</span></span>
+        <div class="b2-fuel-actions">
+          <UhdButton variant="secondary" size="sm">去充值</UhdButton>
+        </div>
       </div>
     </section>
 
@@ -491,4 +574,130 @@ const modalOpen = ref(false)
   .showcase__content, .showcase__panel { padding-left: 20px; padding-right: 20px; }
   .showcase__light { padding: 36px 14px 60px; }
 }
+
+/* ---------- 批 2 样品（与 ShopView/LedgerView 同值，仅供截图验收） ---------- */
+.showcase__batch2 {
+  background: var(--uhd-l-bg);
+  color: var(--uhd-l-text);
+  padding: 36px 28px 84px;
+}
+.showcase__batch2 .showcase__h2 { max-width: var(--uhd-container-app); margin: 28px auto 16px; }
+.showcase__batch2 .showcase__h2:first-child { margin-top: 0; }
+.showcase__b2-rows { max-width: var(--uhd-container-app); margin: 16px auto 0; }
+.b2-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  max-width: var(--uhd-container-app);
+  margin: 0 auto;
+}
+@media (min-width: 1024px) {
+  .b2-grid { grid-template-columns: minmax(0, 1fr) 300px; }
+  /* 与 ShopView 同值：订阅区约 680px 宽，auto-fit 会把第三列换行，强制 3 列并排 */
+  .b2-grid .uhd-plans { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .b2-grid :deep(.uhd-plans__price-per) { white-space: nowrap; }
+}
+.b2-plans { min-width: 0; }
+.b2-dur-row { margin-bottom: 14px; }
+.b2-slider {
+  width: 100%;
+  height: 4px;
+  margin: 8px 0 12px;
+  appearance: none;
+  -webkit-appearance: none;
+  border-radius: 999px;
+  background: var(--uhd-l-border);
+  outline: none;
+  cursor: pointer;
+}
+.b2-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--uhd-l-surface);
+  border: 2px solid var(--uhd-l-text);
+  box-shadow: 0 1px 4px rgba(17, 17, 17, 0.25);
+}
+.b2-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--uhd-l-surface);
+  border: 2px solid var(--uhd-l-text);
+  box-shadow: 0 1px 4px rgba(17, 17, 17, 0.25);
+}
+.b2-caps { display: flex; flex-wrap: wrap; gap: 8px; }
+.b2-cap {
+  min-height: 32px;
+  padding: 4px 14px;
+  border: 1px solid var(--uhd-l-border);
+  border-radius: 999px;
+  background: var(--uhd-l-surface);
+  color: var(--uhd-l-text-2);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.b2-cap.on { background: var(--uhd-l-text); border-color: var(--uhd-l-text); color: var(--uhd-l-surface); }
+.b2-settle {
+  padding: 18px;
+  background: var(--uhd-l-surface);
+  border: var(--uhd-border-w) solid var(--uhd-l-border);
+  border-radius: 16px;
+  box-shadow: var(--uhd-shadow-card-l);
+}
+@media (min-width: 1024px) {
+  .b2-settle { position: sticky; top: 24px; }
+}
+.b2-settle-title { margin: 0 0 12px; font-size: 16px; font-weight: 800; }
+.b2-settle-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--uhd-l-border);
+  font-size: 14px;
+  color: var(--uhd-l-text-2);
+}
+.b2-settle-row b { color: var(--uhd-l-text); font-weight: 700; white-space: nowrap; }
+.b2-settle-amount {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--uhd-l-border);
+  font-size: 14px;
+}
+.b2-settle-amount b { font-size: 22px; font-weight: 800; }
+.b2-settle-pay { margin: 10px 0 12px; font-size: 13px; color: var(--uhd-l-text-2); }
+.b2-fuel {
+  max-width: var(--uhd-container-app);
+  margin: 0 auto;
+  background: #111111;
+  border-radius: 14px;
+  padding: 20px;
+  color: #ede6d6;
+  position: relative;
+  overflow: hidden;
+}
+.b2-fuel-lbl { font-size: 11px; letter-spacing: 3px; color: #9be08a; position: relative; }
+.b2-fuel-num { font-size: 40px; font-weight: 800; margin: 6px 0 2px; position: relative; letter-spacing: 1px; line-height: 1.1; }
+.b2-fuel-num small { font-size: 22px; font-weight: 700; color: #ffb25e; }
+.b2-fuel-today {
+  display: inline-block;
+  background: rgba(155, 224, 138, 0.15);
+  border: 1px solid rgba(155, 224, 138, 0.5);
+  color: #9be08a;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 16px;
+  margin-top: 8px;
+  position: relative;
+}
+.b2-fuel-actions { margin-top: 12px; position: relative; }
 </style>

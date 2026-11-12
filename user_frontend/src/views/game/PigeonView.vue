@@ -1,4 +1,5 @@
 <template>
+  <UhdAccountLayout>
   <div class="v4-scope">
     <div class="v4-page">
       <!-- 日志头 -->
@@ -139,7 +140,7 @@
                   {{ unsealingIds.has(msg.id) ? '拆信中' : '封' }}
                 </button>
                 <div class="seal-hint">火漆封印完好 —— 点一下拆信</div>
-              </template>
+</template>
 
               <!-- 已读：直接显示正文 -->
               <template v-else>
@@ -164,9 +165,11 @@
       </section>
     </div>
   </div>
+  </UhdAccountLayout>
 </template>
 
 <script setup lang="ts">
+import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { facilityStamp } from '@/config/game'

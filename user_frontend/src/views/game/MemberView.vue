@@ -1,13 +1,7 @@
 <template>
+  <UhdAccountLayout title="我的会员">
   <div class="v4-scope">
   <div class="v4-page member-page">
-    <header class="set-head">
-      <button type="button" class="set-back" aria-label="返回我的" @click="router.push('/game/account')">
-        <ChevronLeft :size="19" />
-      </button>
-      <span class="set-title">我的会员</span>
-    </header>
-
     <div class="member-body">
       <div v-if="subsError" class="v4-err">订阅加载失败，请稍后重试<br><button class="v4-retry" @click="loadSubs">重试</button></div>
       <!-- 在途显示骨架屏 —— 请求还没回来时别闪现"还没有会员" -->
@@ -38,7 +32,7 @@
     <Modal v-model="cancelConfirmOpen" size="sm" content-class="paper-confirm">
       <template #header>
         <h3 class="modal-title">终止订阅</h3>
-      </template>
+</template>
       <p class="confirm-text">{{ pendingCancel ? confirmCopy.cancelSubscription(pendingCancel.plan_name) : '' }}</p>
       <template #footer>
         <div class="confirm-actions">
@@ -51,9 +45,11 @@
     </Modal>
   </div>
   </div>
+  </UhdAccountLayout>
 </template>
 
 <script setup lang="ts">
+import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 /**
  * 我的会员（从个人中心「我的权益」进入的子页）：承接原账号页的全部订阅
  * 管理——展示层全在 ProfileSubscriptions（到期 / 自动续订 / 历史账单 /
@@ -62,8 +58,6 @@
  * 任何关闭路径都把焦点还给触发按钮）。
  */
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { ChevronLeft } from 'lucide-vue-next'
 import Modal from '@/components/ui/Modal.vue'
 import ProfileSubscriptions from '@/components/profile/ProfileSubscriptions.vue'
 import { subscriptionApi, embyApi, isExpiringSoon, type MySubscription, type AccountCard } from '@/api'
@@ -75,7 +69,6 @@ import { humanizeError } from '@/composables/usePanelApi'
 import { toastCopy, confirmCopy } from '@/constants/toastMessages'
 import { toUserMessage } from '@/utils/toUserMessage'
 
-const router = useRouter()
 const toast = useToast()
 const userStore = useUserStore()
 
@@ -215,26 +208,6 @@ onMounted(() => {
 
 <style scoped>
 .member-page { padding-bottom: 34px; }
-.set-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 16px 20px 4px;
-}
-.set-back {
-  width: 38px;
-  height: 38px;
-  border: 1.5px solid var(--ink);
-  border-radius: 10px;
-  background: var(--paper-card);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: var(--ink);
-  flex: none;
-}
-.set-title { font-size: 19px; font-weight: 800; }
 .member-body { padding: 14px 20px 0; }
 .modal-title { margin: 0; font-size: 17px; font-weight: 600; color: var(--ink); }
 .confirm-text { margin: 0; font-size: 14px; line-height: 1.6; color: var(--ink); }

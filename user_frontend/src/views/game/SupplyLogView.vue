@@ -1,4 +1,5 @@
 <template>
+  <UhdAccountLayout>
   <div class="v4-scope">
     <div class="v4-page">
       <!-- 日志头 -->
@@ -75,9 +76,11 @@
       </section>
     </div>
   </div>
+  </UhdAccountLayout>
 </template>
 
 <script setup lang="ts">
+import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 import { onMounted, ref } from 'vue'
 import { facilityStamp } from '@/config/game'
 import { paymentApi, type OrderRow } from '@/api/economy'

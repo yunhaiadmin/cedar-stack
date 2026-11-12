@@ -1,20 +1,15 @@
 <template>
+  <UhdAccountLayout title="我的">
   <div class="v4-scope">
   <div class="v4-page pc-page">
     <div class="pc-wrap">
-      <!-- 身份卡 -->
-      <div class="v4-card identity">
-        <span class="id-avatar" aria-hidden="true">{{ avatarInitial }}</span>
-        <div class="id-main">
-          <div class="id-name">{{ displayName }}</div>
-          <div v-if="whitelistIdentity" class="id-badges">
-            <span class="wl-chip">白名单</span>
-            <span class="wl-title">{{ whitelistIdentity.title }}</span>
-            <span class="wl-serial">{{ whitelistIdentity.label }}</span>
-          </div>
-        </div>
-        <span v-if="identityBadge" class="realm-pill">{{ identityBadge }}</span>
-      </div>
+      <!-- 身份卡（UhdMemberCard，批 0 模具；文案全部来自本页已加载的资格/订阅数据） -->
+      <UhdMemberCard
+        :plan-name="memberPlanName"
+        :user-line="memberUserLine"
+        :status-text="memberStatusText"
+        :note="memberNote"
+      />
 
       <!-- 状态预警（活力不足/偏低、资格/会员 7 天内到期；数据复用本页已加载的
            活力/福利/订阅状态，不触发时整块不渲染） -->
@@ -151,6 +146,7 @@
     </div>
   </div>
   </div>
+  </UhdAccountLayout>
 </template>
 
 <script setup lang="ts">
@@ -171,6 +167,8 @@ import {
   MonitorPlay, Mountain, Plug, Route, Search, Settings, Sparkles, Star, Trophy, Wallet,
 } from 'lucide-vue-next'
 import PcEntryRow from '@/components/profile/PcEntryRow.vue'
+import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
+import UhdMemberCard from '@/components/uhd/UhdMemberCard.vue'
 import SeriesFollowsPanel from '@/components/profile/SeriesFollowsPanel.vue'
 import StatusAlertBar from '@/components/profile/StatusAlertBar.vue'
 import {
@@ -192,15 +190,9 @@ const router = useRouter()
 const toast = useToast()
 const userStore = useUserStore()
 
-// ── 身份卡 ──
+// ── 身份卡（UhdMemberCard 文案，全部来自本页已加载的资格/订阅数据）──
 const displayName = computed(() => userStore.user?.username || '我的')
-const avatarInitial = computed(() => (userStore.user?.username || '账').slice(0, 1).toUpperCase())
 const isFreeRealm = computed(() => userStore.isFreeRealm)
-const identityBadge = computed(() => {
-  if (isFreeRealm.value) return '公益服'
-  if (userStore.isVIP) return '会员'
-  return ''
-})
 const whitelistIdentity = computed(() => userStore.user?.whitelist_identity ?? null)
 
 // ── 状态总览 ──
@@ -253,6 +245,33 @@ const memberMeta = computed(() => {
   return activeSub.value
     ? `${activeSub.value.plan_name} · 剩余 ${activeSub.value.days_left} 天`
     : '还没有会员'
+})
+/** UhdMemberCard（身份卡）文案：套餐名 / 用户名·ID / 状态胶囊 / 卡下说明 */
+const memberPlanName = computed(() => {
+  if (isFreeRealm.value) return '公益资格'
+  return activeSub.value?.plan_name ?? '未开通'
+})
+const memberUserLine = computed(
+  () => `${displayName.value} · ID ${userStore.user?.id ?? ''}`,
+)
+const memberStatusText = computed(() => {
+  if (whitelistIdentity.value) return '白名单'
+  if (isFreeRealm.value) return welfare.value?.is_welfare ? '生效中' : '未开通'
+  return activeSub.value ? '生效中' : '未开通'
+})
+const memberNote = computed(() => {
+  const parts: string[] = []
+  if (whitelistIdentity.value) {
+    parts.push(`${whitelistIdentity.value.title} · ${whitelistIdentity.value.label}`)
+  }
+  if (isFreeRealm.value) {
+    if (welfare.value?.is_welfare && welfare.value.expires_at) {
+      parts.push(`到期 ${welfare.value.expires_at.slice(0, 10)}`)
+    }
+  } else if (activeSub.value) {
+    parts.push(`${activeSub.value.plan_name} · ${activeSub.value.end_date.slice(0, 10)} 到期`)
+  }
+  return parts.join(' · ')
 })
 
 // ── 我的片子摘要 ──
@@ -390,65 +409,6 @@ onMounted(() => {
 <style scoped>
 .pc-page { padding-bottom: 34px; }
 .pc-wrap { padding: 10px 16px 0; }
-/* 身份卡 */
-.identity {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  padding: 16px;
-}
-.id-avatar {
-  width: 54px;
-  height: 54px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--ink);
-  color: var(--paper);
-  font-size: 23px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.id-main { flex: 1; min-width: 0; }
-.id-name {
-  font-size: 20px;
-  font-weight: 800;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.id-badges {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-top: 5px;
-  flex-wrap: wrap;
-}
-.wl-chip {
-  padding: 2px 8px;
-  border-radius: 5px;
-  background: var(--au-primary, #016a71);
-  color: #fff;
-  font-size: 11.5px;
-  font-weight: 700;
-}
-.wl-title { font-size: 14px; font-weight: 700; }
-.wl-serial {
-  font-size: 14px;
-  font-weight: 800;
-  color: var(--au-primary, #016a71);
-  font-variant-numeric: tabular-nums;
-}
-.realm-pill {
-  flex: none;
-  padding: 4px 11px;
-  border: 1.5px solid var(--au-primary, #016a71);
-  border-radius: var(--paper-r-full, 999px);
-  color: var(--au-primary, #016a71);
-  font-size: 12.5px;
-  font-weight: 700;
-}
 /* 状态总览 */
 .pc-ov { padding: 0; overflow: hidden; margin-top: 14px; }
 .ov-grid {

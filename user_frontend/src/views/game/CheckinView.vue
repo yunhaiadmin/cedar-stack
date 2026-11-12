@@ -1,4 +1,5 @@
 <template>
+  <UhdAccountLayout>
   <div class="v4-scope">
     <div class="v4-page">
       <!-- 日志头 -->
@@ -12,7 +13,7 @@
             <!-- 2026-10-16 用户拍板：checkin_enabled=false 时不催报到（仅加 enabled 门，enabled=true 时全部状态保持原样） -->
             <span v-if="status.enabled && !status.checked_today"> · 今天还没报到</span>
             <span v-if="status.streak >= 7"> · <span aria-hidden="true">🔥</span> 连击达成</span>
-          </template>
+</template>
           <template v-else-if="status.enabled">今天开始，连续报到第 1 天</template>
           <span v-if="statusStale" class="v4-stale">（数据可能过期）</span>
         </div>
@@ -95,9 +96,11 @@
     <!-- 盖章动画 -->
     <div ref="sealPop" class="seal-pop" aria-hidden="true">到</div>
   </div>
+  </UhdAccountLayout>
 </template>
 
 <script setup lang="ts">
+import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import StaminaBar from '@/components/game/StaminaBar.vue'
 import CaptchaChallenge from '@/components/ui/CaptchaChallenge.vue'

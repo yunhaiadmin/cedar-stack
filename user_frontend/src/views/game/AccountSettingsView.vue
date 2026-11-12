@@ -1,14 +1,8 @@
 <template>
+  <UhdAccountLayout title="账号与设置" eyebrow="账号">
   <div class="v4-scope">
   <div class="v4-page settings-page">
     <div class="set-wrap">
-      <header class="set-head">
-        <button type="button" class="set-back" aria-label="返回我的" @click="router.push('/game/account')">
-          <ChevronLeft :size="19" />
-        </button>
-        <span class="set-title">账号设置</span>
-      </header>
-
       <div class="set-cols">
         <div class="set-col">
           <!-- 安全 -->
@@ -40,7 +34,7 @@
             <div class="v4-card pc-rows-card">
               <CardPrefsEntry />
               <div class="pc-row-static">
-                <span class="pc-row-ic" aria-hidden="true"><Eye :size="17" /></span>
+                <span class="pc-row-ic" aria-hidden="true"><Eye :size="22" /></span>
                 <span class="pc-row-name">观影碑时长榜上榜</span>
                 <button
                   type="button"
@@ -64,7 +58,7 @@
             <p class="pc-gsub">只管机器人私聊这一份，站内消息照常发</p>
             <div class="v4-card pc-rows-card">
               <div class="pc-row-static">
-                <span class="pc-row-ic" aria-hidden="true"><Bell :size="17" /></span>
+                <span class="pc-row-ic" aria-hidden="true"><Bell :size="22" /></span>
                 <span class="pc-row-name">求片到货提醒</span>
                 <button
                   type="button"
@@ -78,7 +72,7 @@
                 ></button>
               </div>
               <div class="pc-row-static">
-                <span class="pc-row-ic" aria-hidden="true"><Bell :size="17" /></span>
+                <span class="pc-row-ic" aria-hidden="true"><Bell :size="22" /></span>
                 <span class="pc-row-name">到期提醒</span>
                 <button
                   type="button"
@@ -92,7 +86,7 @@
                 ></button>
               </div>
               <div class="pc-row-static">
-                <span class="pc-row-ic" aria-hidden="true"><Bell :size="17" /></span>
+                <span class="pc-row-ic" aria-hidden="true"><Bell :size="22" /></span>
                 <span class="pc-row-name">活动中奖通知</span>
                 <button
                   type="button"
@@ -106,7 +100,7 @@
                 ></button>
               </div>
               <div class="pc-row-static">
-                <span class="pc-row-ic" aria-hidden="true"><Bell :size="17" /></span>
+                <span class="pc-row-ic" aria-hidden="true"><Bell :size="22" /></span>
                 <span class="pc-row-name">贡献回响</span>
                 <button
                   type="button"
@@ -138,6 +132,7 @@
     <ChangePasswordModal v-model:open="pwdOpen" />
   </div>
   </div>
+  </UhdAccountLayout>
 </template>
 
 <script setup lang="ts">
@@ -153,7 +148,8 @@
  */
 import { nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Bell, ChevronLeft, Eye, Lock, LogOut } from 'lucide-vue-next'
+import { Bell, Eye, Lock, LogOut } from 'lucide-vue-next'
+import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 import PcEntryRow from '@/components/profile/PcEntryRow.vue'
 import ChangePasswordModal from '@/components/profile/ChangePasswordModal.vue'
 import DevicesEntry from '@/components/profile/DevicesEntry.vue'
@@ -299,26 +295,6 @@ onMounted(() => {
 <style scoped>
 .settings-page { padding-bottom: 34px; }
 .set-wrap { padding: 16px 16px 0; }
-.set-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 0 6px;
-}
-.set-back {
-  width: 38px;
-  height: 38px;
-  border: 1.5px solid var(--ink);
-  border-radius: 10px;
-  background: var(--paper-card);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: var(--ink);
-  flex: none;
-}
-.set-title { font-size: 19px; font-weight: 800; }
 .pc-group { margin-top: 22px; }
 .pc-gtitle {
   display: flex;
@@ -345,22 +321,20 @@ onMounted(() => {
 .pc-row-static {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12.5px 14px;
+  gap: 14px;
+  min-height: 64px;
+  padding: 10px 14px;
 }
 .pc-row-ic {
-  width: 31px;
-  height: 31px;
+  width: 22px;
+  height: 22px;
   flex: none;
-  border: 1.5px solid var(--ink);
-  border-radius: 8px;
-  background: var(--paper);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--ink);
+  color: var(--ink2);
 }
-.pc-row-name { font-size: 14.5px; font-weight: 600; white-space: nowrap; }
+.pc-row-name { font-size: 16px; font-weight: 700; white-space: nowrap; }
 /* 观影碑开关（自旧页 .srv-switch 原样迁入） */
 .srv-switch {
   position: relative;

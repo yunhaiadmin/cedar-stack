@@ -188,7 +188,7 @@ def check_frontend(frontend: str) -> None:
 # R40：用相对 src 的相对路径登记+比对（原来只比文件名，同名 CSS 可绕过冻结）。
 MAIN_CSS_ALLOWLIST = {
     "user_frontend": {"styles/aurora.css", "styles/neo-noir-tokens.css", "styles/index.css", "styles/mobile.css", "styles/v4-paper.css", "styles/uhd-tokens.css"},
-    "admin_frontend": {"styles/aurora.css", "styles/tokens.css", "styles/base.css", "styles/index.css", "styles/element-plus-theme.css", "styles/responsive.css", "styles/uhd-tokens.css"},
+    "admin_frontend": {"styles/aurora.css", "styles/tokens.css", "styles/base.css", "styles/index.css", "styles/element-plus-theme.css", "styles/responsive.css", "styles/uhd-tokens.css", "styles/uhd-admin.css"},
 }
 NEO_FREEZE = {
     "user_frontend": {
