@@ -125,6 +125,13 @@ def _patch_bot(monkeypatch, dice_values=(7,)):
         ephemeral, "schedule_delete",
         lambda chat_id, message_id, delay:
             state["deletes"].append((chat_id, message_id, delay)) or True)
+    # 自毁延时钉死 30 秒：延时经 store 进程级 60 秒 TTL 缓存热读，
+    # 同 worker 里先跑的 "0=关闭" 测试（如 ephemeral 的 delay_zero 用例）
+    # 会把 0 漏进本文件，生产见 delay<=0 便不调度、deletes 为空
+    # （PR #75 首轮 CI 实证）。本文件验的是调度接线，延时取值本身
+    # 由 test_tg_bot_ephemeral 覆盖。
+    monkeypatch.setattr(
+        ephemeral, "bot_msg_delay_seconds", lambda db_: 30)
     return state
 
 

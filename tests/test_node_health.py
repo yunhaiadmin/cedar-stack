@@ -165,10 +165,16 @@ def test_start_health_daemon_idempotent_under_concurrency():
     （同文件既有 test_daemon_idempotent 会先起一个同名线程，故用增量断言。）
     计数口径说明：start_health_daemon 等到循环入口就绪事件才返回，故
     返回后新线程必已在 threading.enumerate() 中可见，立即断言无观测竞态。
-    worker 异常单独断言，避免 barrier 破裂被误读成计数问题。"""
+    worker 异常单独断言，避免 barrier 破裂被误读成计数问题。
+    2026-11-12 补充：全量套件里同名守护线程不止本文件的——别的模块/
+    文件在同 worker 进程里也可能起同名线程，其生死会干扰全局总数
+    （CI 曾现 assert 1 == (1 + 1)，而新线程明明已跑出首轮日志）。
+    故断言改为“新增 ident 集合恰好一个”：只量本次调用新增的线程，
+    不再拿全局总数做减法。"""
     import threading
     nh = _load()
-    before = sum(1 for t in threading.enumerate() if t.name == "node-health")
+    before = {t.ident for t in threading.enumerate()
+              if t.name == "node-health"}
     barrier = threading.Barrier(8)
     errors = []
 
@@ -186,8 +192,12 @@ def test_start_health_daemon_idempotent_under_concurrency():
         w.join(timeout=30)
     assert not any(w.is_alive() for w in workers)
     assert not errors, f"并发调用不应抛错，实际: {errors}"
-    after = sum(1 for t in threading.enumerate() if t.name == "node-health")
-    assert after == before + 1
+    after = {t.ident for t in threading.enumerate()
+             if t.name == "node-health"}
+    new = after - before
+    assert len(new) == 1, (
+        f"并发调用应只新增一个 node-health 线程，实际新增 {len(new)} 个"
+        f"（前 {len(before)}，后 {len(after)}）")
 
 
 def test_start_health_daemon_waits_for_loop_entry():
