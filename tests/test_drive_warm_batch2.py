@@ -9,7 +9,9 @@
   probe_user_copy_quota_decision 提前探测，裁决落现成缓存
   （裁决缓存＋ok 复用记录）；点播时判定点命中缓存不再现探。
   新鲜判定逐字镜像判定点的吃缓存口径：quota 裁决 / ok＋明细
-  page=quota / ok 复用记录，任一在 TTL 提前量内即新鲜。
+  page=quota 恒新鲜（到期重探定案）；ok 复用记录须剩余 >
+  跨轮余量（提前量＋一轮间隔）才新鲜，不足先清复用逼真探测
+  续窗（2026-11-12 批 2 验收修复，见 test_drive_warm_hit_align）。
 - W3 本人令牌保鲜：只调 drive_oauth 唯一令牌口
   get_user_drive_access_token；令牌离过期还远（刷新边距＋提前量
   之外）零网络跳过；每用户每轮至多处理一次。
@@ -148,6 +150,11 @@ class Seams:
             dw, "_quota_decide",
             lambda uid, fid: self.decide_calls.append((uid, fid))
             or self.decide_result)
+        self.clear_calls = []
+        monkeypatch.setattr(
+            dw, "_quota_reuse_clear",
+            lambda uid, fid: self.clear_calls.append((uid, fid)),
+            raising=False)
         self.token_expires_at = int(time.time()) + 7200
         monkeypatch.setattr(dw, "_token_expires_at",
                             lambda db_, binding: self.token_expires_at)
@@ -268,15 +275,32 @@ def test_w2b_fresh_when_ok_with_quota_page_signal(db, factory, seams):
     assert seams.decide_calls == []  # GET 腿额度页信号同样吃缓存
 
 
-def test_w2b_fresh_when_reuse_alive(db, factory, seams):
+def test_w2b_reuse_within_round_margin_reprobes(db, factory, seams):
+    # 批 2 验收修复后的节律：复用剩余 200 ≤ 跨轮余量
+    # （refresh_lead 30 + interval 240 = 270）→ 先清复用再调判定
+    # 点逼真探测续窗（旧口径只看「还活着」记 fresh，复用在下一
+    # 轮前过期、覆盖出空窗，点播落进去现探——验收实证）。
     item = _item(db, "复用片")
     _variant(db, item, user_id=7, fid="fid-copy")
     seams.with_binding()
     seams.quota_state = {"verdict": None, "page": None,
                          "verdict_ttl": None, "reuse_ttl": 200}
     res = _warm(factory, 7, item.id)
+    assert res["w2b"] == "probed"
+    assert seams.clear_calls == [(7, "fid-copy")]
+    assert seams.decide_calls == [(7, "fid-copy")]
+
+
+def test_w2b_fresh_when_reuse_covers_next_round(db, factory, seams):
+    item = _item(db, "复用充裕片")
+    _variant(db, item, user_id=7, fid="fid-copy")
+    seams.with_binding()
+    seams.quota_state = {"verdict": None, "page": None,
+                         "verdict_ttl": None, "reuse_ttl": 400}
+    res = _warm(factory, 7, item.id)
     assert res["w2b"] == "fresh"
-    assert seams.decide_calls == []  # ok 复用记录在：判定点直接吃
+    assert seams.decide_calls == []  # 复用撑得到下下轮：判定点直接吃
+    assert seams.clear_calls == []
 
 
 def test_w2b_redecides_when_ttl_within_lead(db, factory, seams):

@@ -1042,12 +1042,17 @@ def usercopy_quota_probe_enabled() -> bool:
 
 
 def _usercopy_quota_probe_ttl() -> int:
+    # 默认 600（2026-11-12 由 300 改：暖地址工人轮周期约 280 秒，
+    # 300 只够约一个轮周期，工人隔轮才重探时覆盖出现空窗、点播
+    # 落进空窗现探，批 2 验收实证；600 ≈ 2 个轮周期，配合工人
+    # 「剩余不足跨轮余量先清复用逼真探测」的续窗逻辑不断档。
+    # 额度恢复的发现延迟仍在 ≤10 分钟量级，沿既有到期重探口径。）
     try:
-        ttl = int((os.getenv("TRANSFER_USERCOPY_QUOTA_PROBE_TTL_SEC", "300")
-                   or "300").strip())
+        ttl = int((os.getenv("TRANSFER_USERCOPY_QUOTA_PROBE_TTL_SEC", "600")
+                   or "600").strip())
     except (TypeError, ValueError):
-        ttl = 300
-    return ttl if ttl > 0 else 300
+        ttl = 600
+    return ttl if ttl > 0 else 600
 
 
 _PROBE_CLIENT = None
@@ -1244,7 +1249,7 @@ def probe_user_copy_quota(user_id, fid) -> str:
     test_rule_known_quota_* 与 test_rule_direct_first_*）。
 
     返回 "ok" / "quota" / "error"（探测本身失败）。
-    ok / quota / interstitial 按 (user, fid) 短缓存（默认 300 秒，
+    ok / quota / interstitial 按 (user, fid) 短缓存（默认 600 秒，
     可调；判定形态与插页分类同 TTL 存明细缓存），error 不缓存。
     只请求用户本人副本的 usercontent 地址：不带任何令牌、不碰共享
     原件、不碰 SA。永不抛异常。开关关时恒返回 "ok"。
@@ -1337,10 +1342,11 @@ def usercopy_quota_divert(detail) -> bool:
 
 
 #: 用户副本额度探测 ok 裁决复用 TTL 的 SystemConfig 键（秒）：
-#: 默认 300，0 = 关复用（回每次新鲜探测）。仅 SystemConfig 键
+#: 默认 600（2026-11-12 由 300 改，理由同 _usercopy_quota_probe_ttl），
+#: 0 = 关复用（回每次新鲜探测）。仅 SystemConfig 键
 #: （非 env），登记在 config_schema.TRANSFER_CONFIG_SCHEMA。
 KEY_USERCOPY_PROBE_OK_REUSE_TTL_SEC = "usercopy_probe_ok_reuse_ttl_sec"
-USERCOPY_PROBE_OK_REUSE_TTL_DEFAULT = 300
+USERCOPY_PROBE_OK_REUSE_TTL_DEFAULT = 600
 _USERCOPY_PROBE_OK_REUSE_TTL_MAX = 3600
 
 #: ok 裁决复用键前缀（Redis）：键含用户 + 副本 fid。两个判定点
@@ -1473,7 +1479,7 @@ def probe_user_copy_quota_decision(user_id, fid) -> str:
 
     2026-11-08 修订（用户亲点取舍，盘点浪费点 2）：ok 裁决加
     一层短时复用——新鲜探测判 ok 后把裁决落 Redis（键含用户
-    + fid，TTL 默认 300 秒、SystemConfig 可配，见
+    + fid，TTL 默认 600 秒、SystemConfig 可配，见
     _usercopy_probe_ok_reuse_ttl），判定先查完上面 quota 方向
     的缓存口径、未命中 quota 时再查复用：命中直接返回 ok，
     不再失效重探（PlaybackInfo 与 video_stream 两判定点同
@@ -6310,6 +6316,44 @@ def _fail_job(db, job, kind, detail):
     return {"job_id": job.id, "outcome": "failed", "error_kind": kind}
 
 
+def _spawn_quota_prewarm(user_id, fid) -> None:
+    """用户 Drive 副本登记 ready 后的额度裁决预探（守护线程）。
+
+    动机（goal-35 批 2 验收实案，2026-11-12）：点播当场办成的
+    副本在暖地址工人的轮次里还不存在（无 ready 副本，W2b 只
+    能 skipped），点播紧接着对刚生成的新 fid 现探、白付整段
+    探测耗时（实案 PlaybackInfo quota_probe 5024ms，副本登记
+    与点播只差 2 秒）。登记收口在此顺手把裁决提前探掉，与本
+    函数下方既有的「登记后预填存在性正缓存」同位：点播（多为
+    秒级之后）与后续判定点直接吃缓存。只探本人 userdrive 副
+    本（池副本走 poolvar 口径、115 的 fid 不是 Drive fid，都
+    不经这里）；探测开关关时不探（与判定点关时恒 ok 同口径）。
+    守护线程 best-effort：不阻塞登记、不进转存工人节奏，失败
+    只丢这次预探（判定点自会现探），永不抛。
+    """
+    fid = (fid or "").strip()
+    if not fid:
+        return
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        return
+    if not usercopy_quota_probe_enabled():
+        return
+
+    def _run():
+        try:
+            probe_user_copy_quota_decision(uid, fid)
+        except Exception:  # noqa: BLE001 — 预探失败只丢机会
+            pass
+
+    try:
+        threading.Thread(target=_run, daemon=True,
+                         name="quota-prewarm").start()
+    except Exception:  # noqa: BLE001 — 起线程失败不影响登记
+        pass
+
+
 def _register_ready_variant(db, job, item, variant_fid, variant_drive_id,
                             pickcode=None, size=None):
     """成功登记：先释放同归属旧 ready 行，再建新 ready 行并置任务 done。
@@ -6339,6 +6383,11 @@ def _register_ready_variant(db, job, item, variant_fid, variant_drive_id,
     # 预填失败不影响登记（publish 内部永不抛错）。
     if not (variant_drive_id or "").startswith("pan115:"):
         publish_drive_exists_ok(variant_fid)
+    # 用户 Drive 副本顺手预探额度裁决（见 _spawn_quota_prewarm）：
+    # 点播当场办成的副本赶在点播判定前把裁决落缓存。
+    if (getattr(job, "owner_scope", "") or "") == "user" \
+            and (variant_drive_id or "").startswith("userdrive:"):
+        _spawn_quota_prewarm(owner_ref, variant_fid)
     return row
 
 

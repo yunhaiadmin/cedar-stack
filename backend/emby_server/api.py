@@ -6190,6 +6190,23 @@ def _note_play_start_safe(item: em.MediaItem, **kwargs) -> None:
             provider, mount_id = "drive", None
         else:
             provider, mount_id = "local", None
+        # 暖归因回填（goal-35 批 2 验收修复）：调用方没显式给
+        # warm 两列时，按工人发布的目标集/步骤标记判定（工人
+        # 没在跑 → 未判定、两列保持 NULL）。归因单独兜底：它
+        # 炸了只丢归因，事件照常记——不许连事件一起吞掉。
+        if "warm_hits" not in kwargs and "warm_in_signal" not in kwargs \
+                and play_events.is_enabled():
+            try:
+                from backend.emby_server import drive_warm_worker as _dw
+
+                _attr = _dw.warm_attribution(
+                    kwargs.get("user_id"), getattr(item, "id", None))
+                if _attr.get("warm_hits") is not None:
+                    kwargs["warm_hits"] = _attr["warm_hits"]
+                if _attr.get("warm_in_signal") is not None:
+                    kwargs["warm_in_signal"] = _attr["warm_in_signal"]
+            except Exception:  # noqa: BLE001 — 归因失败不丢事件
+                pass
         play_events.note_play_start(
             provider=provider, mount_id=mount_id,
             item_id=getattr(item, "id", None), **kwargs)

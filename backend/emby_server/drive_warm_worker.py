@@ -23,9 +23,16 @@ p50 约 6 秒、exists 现查慢尾可达数秒。本工人把点播时现做的
 - W2b 额度裁决：调判定点唯一入口
   transfer_variant.probe_user_copy_quota_decision 提前探测，
   裁决落现成缓存（裁决/明细缓存＋ok 复用记录）；新鲜判定逐字
-  镜像判定点的吃缓存口径——quota 裁决、ok＋明细 page=quota、
-  ok 复用记录，任一剩余 TTL > 提前量即新鲜，不再调判定点。
-  探测开关关时整步跳过。
+  镜像判定点的吃缓存口径——quota 裁决、ok＋明细 page=quota
+  恒新鲜（到期重探是定案口径，工人不续窗）；ok 复用记录须剩
+  余 > 跨轮余量（提前量＋一轮间隔）才新鲜，剩余不足先清复用
+  再调判定点逼真探测续窗（批 2 验收修复：旧口径只看复用存
+  活，TTL 300≈轮周期 280 时覆盖与空窗交替、点播近半落空窗
+  现探）。探测开关关时整步跳过。
+- 归因仪器（批 2 验收修复）：每轮发布目标集、每步真做事写
+  步骤标记（见 TARGETS_CACHE_KEY 处注释），供起播事件回填
+  warm_hits / warm_in_signal 两列——验收不再靠计划表 join
+  推断命中。
 - W3 令牌保鲜：只调 drive_oauth.get_user_drive_access_token
   （全站唯一令牌口）；令牌过期时刻在「刷新边距＋提前量」之外
   时零网络跳过；每用户每轮至多处理一次。
@@ -98,6 +105,20 @@ _STATUS_TTL_SEC = 1800
 #: transfer_variant._DRIVE_EXISTS_OK_PREFIX /
 #: api._DRIVE_EXISTS_OK_PREFIX 逐字一致（api 读、工人写）。
 _DRIVE_EXISTS_OK_PREFIX = "aetrix:drive_exists:ok:"
+
+#: 暖归因仪器（批 2 验收修复，2026-11-12）：工人每轮把目标集
+#: 发布到 TARGETS_CACHE_KEY（成员 "user_id:item_id"，仅用户维度
+#: 目标），每步真做事后给 (用户, 条目) 写步骤标记（TTL 与该步
+#: 载体同寿）。起播打点口（api._note_play_start_safe）经
+#: warm_attribution 读这两处，给 emby_play_start_events 的
+#: warm_hits / warm_in_signal 两列回填真实值——批 0 落列后两列
+#: 一直恒 NULL、验收只能靠计划表 join 推断，问题定位被迫绕路。
+#: 目标集不存在（工人没在跑/从没发布过）时归因回未判定
+#: （None/None），两列保持 NULL，与未接线时逐字一致。
+TARGETS_CACHE_KEY = "aetrix:drive_warm:targets"
+_MARK_PLAN_PREFIX = "aetrix:drive_warm:mark:plan:"
+_MARK_QUOTA_PREFIX = "aetrix:drive_warm:mark:quota:"
+_MARK_EXISTS_PREFIX = "aetrix:drive_warm:mark:exists:"
 
 
 # ---------------------------------------------------------------------------
@@ -530,6 +551,122 @@ def _quota_decide(user_id, fid) -> str:
         return "error"
 
 
+def _quota_reuse_clear(user_id, fid) -> None:
+    """清掉 ok 复用记录（transfer_variant 既有清口）。
+
+    W2b 续窗用：复用剩余不足跨轮余量时先清再调判定点——判定点
+    见复用命中会直接返回 ok、不会真探测，清掉后它才走「失效
+    裁决缓存 → 新鲜两腿 → 回写复用」的完整路径把窗口续满。
+    永不抛。
+    """
+    try:
+        from backend.emby_server import transfer_variant as tv
+
+        tv._probe_ok_reuse_clear(user_id, fid)
+    except Exception:  # noqa: BLE001 — 清不掉按原样（下轮再试）
+        pass
+
+
+def _quota_probe_ttl() -> int:
+    """裁决缓存 TTL（transfer_variant 既有 env 口径，默认 600）。"""
+    try:
+        from backend.emby_server import transfer_variant as tv
+
+        return int(tv._usercopy_quota_probe_ttl())
+    except Exception:  # noqa: BLE001 — 读不到按默认
+        return 600
+
+
+def _exists_ok_ttl() -> int:
+    """存在性正缓存 TTL（与 publish_drive_exists_ok 同口径）。"""
+    try:
+        ttl = int(os.getenv("DRIVE_EXISTS_CACHE_TTL_SEC", "") or "")
+    except (TypeError, ValueError):
+        ttl = 600
+    return ttl if ttl > 0 else 600
+
+
+def _redis():
+    """原始 Redis 客户端（不可用回 None）。永不抛。"""
+    try:
+        from backend.database import get_redis
+
+        return get_redis()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _publish_targets(targets, cfg) -> None:
+    """把本轮目标集发布给起播归因（仅 (用户, 条目) 对）。
+
+    整集替换（先删后加）：上一轮的目标不再是本轮目标时，归因
+    立刻按新集判。键 TTL 取两倍最坏轮周期（间隔 + 单轮预算，
+    再与状态发布同下限 600），工人停跑后集随 TTL 自然消失、
+    归因回未判定。永不抛：发布失败只丢本轮归因。
+    """
+    rc = _redis()
+    if rc is None:
+        return
+    try:
+        members = [f"{t['user_id']}:{t['item_id']}" for t in targets
+                   if t.get("user_id") is not None]
+        rc.delete(TARGETS_CACHE_KEY)
+        if members:
+            rc.sadd(TARGETS_CACHE_KEY, *members)
+        ttl = int(max(600.0, 2.0 * (cfg["interval_sec"]
+                                    + cfg["round_budget_sec"])))
+        rc.expire(TARGETS_CACHE_KEY, ttl)
+    except Exception:  # noqa: BLE001 — 归因是观测，不许拖垮整轮
+        pass
+
+
+def _mark_step(key, ttl_sec) -> None:
+    """写一个步骤标记（值恒 "1"，TTL 由调用方按载体寿命给）。"""
+    rc = _redis()
+    if rc is None or ttl_sec is None or int(ttl_sec) <= 0:
+        return
+    try:
+        rc.set(key, "1", ex=int(ttl_sec))
+    except Exception:  # noqa: BLE001 — 标记失败只丢这步归因
+        pass
+
+
+def warm_attribution(user_id, item_id) -> dict:
+    """起播暖归因（api 打点口唯一读口）：{warm_hits, warm_in_signal}。
+
+    warm_hits：本次起播能对上的预热步（plan/quota/exists 的
+    子集，按此序）——标记在、且 TTL 与对应载体同寿，标记活着
+    即该步的暖成果在起播时仍有效；warm_in_signal：(用户, 条
+    目) 是否在工人最近一轮目标集内。目标集不存在（工人没在
+    跑）或 Redis 不可用 → 两值 None（未判定，落库保持 NULL）。
+    永不抛。
+    """
+    out = {"warm_hits": None, "warm_in_signal": None}
+    if item_id is None:
+        return out
+    rc = _redis()
+    if rc is None:
+        return out
+    try:
+        if not rc.exists(TARGETS_CACHE_KEY):
+            return out
+        hits = []
+        if user_id is not None:
+            if rc.get(f"{_MARK_PLAN_PREFIX}{user_id}:{item_id}"):
+                hits.append("plan")
+            if rc.get(f"{_MARK_QUOTA_PREFIX}{user_id}:{item_id}"):
+                hits.append("quota")
+        if rc.get(f"{_MARK_EXISTS_PREFIX}{item_id}"):
+            hits.append("exists")
+        out["warm_hits"] = hits
+        if user_id is not None:
+            out["warm_in_signal"] = bool(rc.sismember(
+                TARGETS_CACHE_KEY, f"{user_id}:{item_id}"))
+        return out
+    except Exception:  # noqa: BLE001 — 归因读失败按未判定
+        return {"warm_hits": None, "warm_in_signal": None}
+
+
 def _token_expires_at(db, binding):
     """绑定行当前 access_token 的过期时刻（epoch 秒），读不到回 None。
 
@@ -622,8 +759,13 @@ def _warm_plan(db, target, cfg) -> str:
             expires = datetime.fromisoformat(str(plan.get("expires_at")))
         except (TypeError, ValueError):
             expires = None
+        # 跨轮余量（批 2 验收修复）：剩余须撑过「提前量 + 一轮
+        # 间隔」才算新鲜——只剩提前量时下一轮还没跑计划就过期，
+        # 点播落进空窗命中不了计划腿。提前重建是纯 DB 活、不
+        # 计出站请求，代价远小于空窗。
         if expires is not None and \
-                (expires - now).total_seconds() > cfg["refresh_lead_sec"]:
+                (expires - now).total_seconds() > \
+                cfg["refresh_lead_sec"] + cfg["interval_sec"]:
             return "fresh"
     item = (db.query(em.MediaItem)
             .filter(em.MediaItem.id == item_id).one_or_none())
@@ -719,10 +861,16 @@ def _warm_quota(db, target, copy_fid, cfg, counter):
     新鲜判定逐字镜像 probe_user_copy_quota_decision 的吃缓存
     口径，三种「判定点不现探」的情形：①裁决缓存为 quota；
     ②裁决为 ok 且明细 page=quota（GET 腿额度页信号）；③ok 复用
-    记录还在。三者任一的剩余 TTL > 提前量 → fresh；TTL 已进
-    提前量但还没到期 → 判定点仍吃缓存（到期后自然重探，与
-    现行口径一致），同样记 fresh 且不调判定点。其余情形调判
-    定点入口真探测，计 2 次请求（两腿形态）。
+    记录还在。①②是 quota 方向：吃缓存到期重探是 2026-10-31
+    定案口径，判定点自己不会续 TTL，工人调判定点也只得缓存
+    裁决、无从续窗——恒记 fresh、不调判定点。③是 ok 方向（批
+    2 验收修复）：复用剩余须 > 跨轮余量（提前量 + 一轮间隔）
+    才记 fresh；剩余不足时先清复用再调判定点——判定点见复用
+    命中只返回 ok 不真探，清掉后才走完整新鲜探测把复用窗口
+    续满。旧口径只看「复用还活着」：第 N 轮探（TTL 300≈轮周
+    期 280）、N+1 轮记 fresh、N+2 轮才重探，中间约一个轮周期
+    是空窗，点播落进去就现探（验收实证）。其余情形调判定点
+    入口真探测，计 2 次请求（两腿形态）。
     """
     user_id = target.get("user_id")
     if user_id is None or not copy_fid:
@@ -732,14 +880,19 @@ def _warm_quota(db, target, copy_fid, cfg, counter):
     if not _quota_probe_enabled():
         return "skipped", 0
     state = _quota_cache_state(user_id, copy_fid)
-    lead = cfg["refresh_lead_sec"]
+    margin = cfg["refresh_lead_sec"] + cfg["interval_sec"]
     eaten = state["verdict"] == "quota" or (
         state["verdict"] == "ok" and state["page"] == "quota")
-    reuse_alive = state["reuse_ttl"] is not None and state["reuse_ttl"] > 0
-    if eaten or reuse_alive:
+    if eaten:
+        return "fresh", 0
+    reuse_ttl = state["reuse_ttl"]
+    if reuse_ttl is not None and reuse_ttl > margin:
         return "fresh", 0
     if counter.count >= cfg["max_requests"]:
         return "budget", 0
+    if reuse_ttl is not None and reuse_ttl > 0:
+        # 复用还活着但撑不到下下轮：先清，逼判定点真探测续窗。
+        _quota_reuse_clear(user_id, copy_fid)
     counter.add(2)  # 先计后探：两腿形态，与 W5 的硬帽口径一致
     verdict = _quota_decide(user_id, copy_fid)
     if verdict == "error":
@@ -841,6 +994,7 @@ def _warm_one(target, cfg, counter, session_factory, round_start,
     if round_ctx is None:
         round_ctx = _RoundContext()
     before = counter.count
+    plan_ttl = None
     try:
         jitter = cfg["jitter_sec"]
         if jitter > 0:
@@ -855,6 +1009,11 @@ def _warm_one(target, cfg, counter, session_factory, round_start,
                         "requests": counter.count - before,
                         **{k: "failed" for k in _skip}}
             w1 = _warm_plan(db, target, cfg)
+            if w1 == "built":
+                try:
+                    plan_ttl = dp.plan_ttl_sec(db)
+                except Exception:  # noqa: BLE001 — 标记 TTL 读不到就不写
+                    plan_ttl = None
             user_id = target.get("user_id")
             copy_fid = None
             if user_id is not None:
@@ -873,6 +1032,19 @@ def _warm_one(target, cfg, counter, session_factory, round_start,
         return {"outcome": "failed",
                 "requests": counter.count - before,
                 **{k: "failed" for k in _skip}}
+    # 暖归因标记（批 2 验收修复）：真做过事的步给 (用户, 条目)
+    # 留标记，TTL 与该步载体同寿——起播时标记活着即暖成果仍有
+    # 效，api 打点口据此回填 warm_hits。写标记在 DB 会话关闭后
+    # 做（只剩 Redis 写），失败自吞（_mark_step 内部）。
+    _uid = target.get("user_id")
+    _iid = target["item_id"]
+    if w1 == "built" and _uid is not None and plan_ttl:
+        _mark_step(f"{_MARK_PLAN_PREFIX}{_uid}:{_iid}", plan_ttl)
+    if w2b == "probed" and _uid is not None:
+        _mark_step(f"{_MARK_QUOTA_PREFIX}{_uid}:{_iid}",
+                   _quota_probe_ttl())
+    if w5 == "published":
+        _mark_step(f"{_MARK_EXISTS_PREFIX}{_iid}", _exists_ok_ttl())
     if "budget" in (w2a, w2b, w3, w5):
         outcome = "budget"
     elif w1 == "built" or w2a == "ensured" or w2b == "probed" \
@@ -960,6 +1132,7 @@ def warm_once(session_factory=None) -> dict:
         stats["items"] = sig_stats.get("items", 0)
         stats["targets"] = len(targets)
         stats["w5_only"] = sig_stats.get("w5_only", 0)
+        _publish_targets(targets, cfg)
         counter = _RequestCounter()
         round_ctx = _RoundContext()
         outcomes = {"warmed": 0, "fresh": 0, "failed": 0,
