@@ -10,7 +10,8 @@ FMBY 深挖的区分（报告 fmby-playback-exclusive-deepdive-20261024 §2/§3�
   会按错区间续播。
 
 我方现状（本模块不重复实现，只钉死口径与纯函数）：
-- 302 直链：drive_direct / byos115_direct —— video_stream 下发 302
+- 302 直链：drive_direct / byos115_direct / byos_drive_direct
+  —— video_stream 下发 302
   （drive_usercontent_download_url / 115 现签地址），字节不经服务器。
 - 令牌流：drive_relay / mount_relay / byos_drive_relay / local_file
   —— Range 透传与 206 对齐的唯一实现在 streaming.py：
@@ -35,6 +36,7 @@ TOKEN_STREAM = "token_stream"
 _DELIVERY_BY_VARIANT = {
     "drive_direct": DIRECT_302,
     "byos115_direct": DIRECT_302,
+    "byos_drive_direct": DIRECT_302,
     "drive_relay": TOKEN_STREAM,
     "mount_relay": TOKEN_STREAM,
     "byos_drive_relay": TOKEN_STREAM,

@@ -259,7 +259,8 @@ def is_shared_drive_start(item, requested_variant, play_variant) -> bool:
     if path.startswith("byos://"):
         return False
     if requested_variant in (
-            play_variants.BYOS_DRIVE_RELAY, play_variants.BYOS115_DIRECT):
+            play_variants.BYOS_DRIVE_RELAY, play_variants.BYOS115_DIRECT,
+            play_variants.BYOS_DRIVE_DIRECT):
         return False
     if is_personal_copy(play_variant):
         return False

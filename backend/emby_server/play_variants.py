@@ -74,6 +74,18 @@ BYOS115_DIRECT = "byos115_direct"
 #: 302 直链形态不同。只在条目是 byos:// 路径、路径绑定是该用户
 #: active 的 Drive 绑定且条目有 drive_file_id 时才进清单。
 BYOS_DRIVE_RELAY = "byos_drive_relay"
+#: BYOS Drive 直链（本人盘直链灰度，2026-11-12 用户点选）：与
+#: byos_drive_relay 同一凭据面（用户自己盘里的文件），但交付形态
+#: 是直链——取流时先凭本人绑定令牌给本人文件授 anyone-reader
+#: （transfer_variant.ensure_user_copy_public，与池副本/转存副本
+#: 同款机制），再 302 免凭证 usercontent，播放器自拉、字节不过
+#: 服务器（is_remote=True / needs_relay=False）。只在灰度开关
+#: byos_direct_gray_enabled 开、条目 byos 可用且有 drive_file_id
+#: 时才进清单且排第一，byos_drive_relay 退为第二兜底；开关关时
+#: 恒不列，清单与取流逐字现状。探针已判该文件公开链回额度页
+#: （quota 已知）时不列：公开直链必死，可用性判定在清单阶段
+#: 做，不把死链当第一线路。
+BYOS_DRIVE_DIRECT = "byos_drive_direct"
 #: 夸克二期：绑定用户自己的夸克副本中继（服务端凭该用户 Cookie
 #: 现取直链后中继出流——夸克 CDN 校验 Cookie/Referer/UA 三件套，
 #: 不能像 115 那样 302 让播放器自拉，故诚实申报为中继
@@ -117,6 +129,10 @@ _VARIANTS: dict[str, Variant] = {
     # 中继形态：字节过服务器（凭用户令牌取流），故 is_remote=False /
     # needs_relay=True——与 drive_relay 同形，只是凭据换成用户自己的。
     BYOS_DRIVE_RELAY: Variant(BYOS_DRIVE_RELAY, "我的 Drive 中继", "Http", False, True),
+    # 直链形态：授 anyone-reader 后客户端从用户自己盘自拉
+    # （免凭证公开链），is_remote=True / needs_relay=False
+    # ——与 drive_direct / pool_copy 同形。
+    BYOS_DRIVE_DIRECT: Variant(BYOS_DRIVE_DIRECT, "我的 Drive 直链", "Http", True, False),
     # 中继形态：字节过服务器（凭用户 Cookie 现取链取流），故
     # is_remote=False / needs_relay=True——与 drive 中继同形。
     BYOS_QUARK_RELAY: Variant(BYOS_QUARK_RELAY, "我的夸克中继", "Http", False, True),
@@ -136,7 +152,8 @@ def list_variants(db: Session, item, *,
                   mount_can_generate_play_target: bool | None = None,
                   user115_direct_available: bool = False,
                   user_drive_byos_available: bool = False,
-                  pool_copy_available: bool = False) -> list[Variant]:
+                  pool_copy_available: bool = False,
+                  byos_quota_known: bool = False) -> list[Variant]:
     """按条目算可用变体清单（唯一判定口），第一条恒为现行主线变体。
 
     排序即兼容：第一条就是今天 video_stream 自动判定实际会走的那条
@@ -175,6 +192,11 @@ def list_variants(db: Session, item, *,
     时在清单末尾追加 pool_copy（第一条仍是现行主线）。本函数内再
     以 drive_file_id 兜底：无 fid 的条目即使调用方误传信号也不
     追加（与 byos 双保险同纪律）。
+
+    ``byos_quota_known`` 由调用方按 quota 探针缓存算好传进来
+    （只读缓存、不触发探测）：True 表示该文件公开链已被探针判
+    回额度页。仅在灰度开关开时有意义——quota 已知时不列
+    byos_drive_direct（公开直链必死，可用性判定），中继照列。
     """
     fid = (getattr(item, "drive_file_id", "") or "").strip()
     file_path = getattr(item, "file_path", "") or ""
@@ -201,7 +223,20 @@ def list_variants(db: Session, item, *,
     # 信号也不追加，信号不得外溢（与 byos115 只在挂载分支追加同款
     # 纪律；api 侧的 _user_drive_byos_available 本就要求 byos 路径
     # + fid，这里是第二道门）。
+    # 本人盘直链灰度（2026-11-12 用户点选）：灰度开关开且非 quota
+    # 已知时例外——byos_drive_direct 升为第一线路、byos_drive_relay
+    # 退为第二兜底（主线其余变体顺延其后）；这是灰度唯一改的排序，
+    # 开关关时本段恒走下面的旧追加，清单逐字现状。开关只在 byos
+    # 信号成立时才读（其余条目零新增配置读）。
+    _byos_gray_on = False
     if user_drive_byos_available and fid:
+        try:
+            _byos_gray_on = playback_strategy.byos_direct_gray_enabled(db)
+        except Exception:  # noqa: BLE001 - 开关读不到按关（getter 已 fail-safe，这里兜底桩）
+            _byos_gray_on = False
+    if _byos_gray_on and not byos_quota_known:
+        names = [BYOS_DRIVE_DIRECT, BYOS_DRIVE_RELAY] + names
+    elif user_drive_byos_available and fid:
         names.append(BYOS_DRIVE_RELAY)
     # 公共池：排在主线与 BYOS 之后（第一条仍是现行主线）；信号由
     # 调用方按「未绑 + 池 eligible + 变体行复核」算好，这里再以

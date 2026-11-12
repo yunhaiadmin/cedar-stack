@@ -67,11 +67,12 @@ PLAY_PREFLIGHT_ENV = "PLAY_PREFLIGHT_ENABLED"
 #: play_variants，避免把 mounts/playback_strategy 拖进纯函数层）。
 KNOWN_VARIANTS = frozenset({
     "drive_relay", "drive_direct", "mount_relay", "local_file",
-    "byos115_direct", "byos_drive_relay",
+    "byos115_direct", "byos_drive_relay", "byos_drive_direct",
 })
 
-#: 直链变体（play_variants 里 is_remote=True 的两条）。
-DIRECT_VARIANTS = frozenset({"drive_direct", "byos115_direct"})
+#: 直链变体（play_variants 里 is_remote=True 的直链条）。
+DIRECT_VARIANTS = frozenset({"drive_direct", "byos115_direct",
+                             "byos_drive_direct"})
 
 #: 可流式容器白名单（与 api._DIRECT_STREAM_EXTS 同值，见模块头）。
 STREAMABLE_CONTAINERS = frozenset({
