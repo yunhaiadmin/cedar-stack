@@ -20,6 +20,9 @@ import './styles/tokens.css'
 import './styles/base.css'
 import './styles/index.css'
 import './styles/element-plus-theme.css'
+// UHD 换皮令牌（批 0 地基）：只定义 --uhd-* 新变量，不改现有变量的值；
+// 已按 U0 冻结流程同步登记 MAIN_CSS_ALLOWLIST。必须排在 responsive.css 之前。
+import './styles/uhd-tokens.css'
 // 窄屏适配层必须最后引入（它要覆盖上面几层与各页面 scoped 样式）
 import './styles/responsive.css'
 
