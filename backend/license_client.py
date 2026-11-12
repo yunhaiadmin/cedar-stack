@@ -411,15 +411,17 @@ def evaluate(db: Session, now: Optional[datetime] = None) -> dict:
     return dict(value)
 
 
-def ensure_playback_allowed(db: Session) -> None:
+def ensure_playback_allowed(db: Session,
+                            now: Optional[datetime] = None) -> None:
     """开始播放的授权闸门：无效时抛 403 + 大白话；其余一律放行。
 
     enforce 关时第一行就返回（零行为变化）；判读只用本地缓存
     令牌，不联网——授权服务抖动永远不会直接打到播放路径上。
+    ``now`` 仅供测试/诊断注入时钟，生产调用不传（走真实时间）。
     """
     if not enforced():
         return
-    state = evaluate(db)
+    state = evaluate(db, now=now)
     if state["allowed"]:
         return
     reason = state.get("reason") or ""

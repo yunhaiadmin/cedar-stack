@@ -56,6 +56,12 @@ FREE = "upline_free"
 LIB_NAME = "上游线路测试库"
 SRC_ON = "乐观服"
 SRC_OFF = "停用源"
+# 种子绑定标签必须本文件独占：共享文件库里别家种子（如
+# test_emby_views_compat）teardown 删用户不删绑定，孤儿绑定残留后
+# 新用户复用其 id 时会撞 (user_id, provider, account_label) 唯一键
+# ——与 test_mediasource_presentation 的「画质呈现种子盘」同款成因
+# （PR #75 首轮 CI 实证：seed 的 flush 把该冲突误报成 DuplicateSourceName）。
+SEED_LABEL = "上游行种子盘"
 UP_MOVIE_ID = "up-movie-1"
 SWITCH_KEY = "upstream_aggregate_detail_line_enabled"
 
@@ -79,6 +85,12 @@ def _cleanup(db: Session) -> None:
         em.UpstreamSource.name.in_([SRC_ON, SRC_OFF])).all()
     for s in srcs:
         db.delete(s)
+    # 孤儿绑定按标签清：本文件独占标签，别家碰不到；上轮残留的孤儿行
+    # （用户已被删、绑定还在）不按用户查是扫不到的，必须按标签兜底。
+    db.query(em.UserStorageBinding).filter(
+        em.UserStorageBinding.provider == "drive",
+        em.UserStorageBinding.account_label == SEED_LABEL).delete(
+            synchronize_session=False)
     db.query(em.Library).filter(em.Library.name == LIB_NAME).delete()
     for uname in (BOUND, FREE):
         u = db.query(models.WebUser).filter(
@@ -119,7 +131,7 @@ def seed():
     db.add(cred)
     db.flush()
     db.add(em.UserStorageBinding(user_id=users[BOUND], provider="drive",
-                                 account_label="种子盘", credential_id=cred.id,
+                                 account_label=SEED_LABEL, credential_id=cred.id,
                                  status="active"))
     src_on = us.create_source(db, name=SRC_ON, source_type="emby",
                               base_url="https://up.example.com",

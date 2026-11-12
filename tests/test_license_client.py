@@ -255,7 +255,10 @@ def test_grace_period_after_expiry_still_allowed(db, monkeypatch,
     state = lc.evaluate(db, now=NOW)
     assert state["state"] == "grace"
     assert state["allowed"] is True and state["in_grace"] is True
-    lc.ensure_playback_allowed(db)
+    # 必须传 now=NOW：ensure_playback_allowed 不传 now 时走真实时间，
+    # 令牌按 NOW 只过期 2 天、按真实时间已过期 7 天（2026-11-12 实证
+    # 全量红），写死 NOW 的用例不能依赖墙钟。
+    lc.ensure_playback_allowed(db, now=NOW)
 
 
 def test_past_grace_blocks_playback_only(db, monkeypatch, server_key):
@@ -268,7 +271,8 @@ def test_past_grace_blocks_playback_only(db, monkeypatch, server_key):
     state = lc.evaluate(db, now=NOW)
     assert state["state"] == "blocked" and state["reason"] == "expired"
     with pytest.raises(HTTPException) as exc:
-        lc.ensure_playback_allowed(db)
+        # 同上：403 断言按 NOW 判定，不依赖墙钟。
+        lc.ensure_playback_allowed(db, now=NOW)
     assert exc.value.status_code == 403
     # 管理面状态照常可读（不被播放拦截连坐）
     status = lc.admin_status(db)
