@@ -1297,8 +1297,7 @@ def _library_drive_prefixes(db) -> list[tuple[int, str, str]]:
                     if not parsed:
                         continue
                     mount_id, subdir = parsed
-                    m = db.query(em.StorageMount).filter(
-                        em.StorageMount.id == mount_id).first()
+                    m = mount_lib.load_mount(db, mount_id)
                     if not m:
                         continue
                     mpath = (getattr(m, "path", "") or "").strip()
@@ -1512,8 +1511,7 @@ def _library_fs_prefixes(db) -> dict[tuple[int, str], str]:
                     if not parsed:
                         continue
                     mount_id, subdir = parsed
-                    m = db.query(em.StorageMount).filter(
-                        em.StorageMount.id == mount_id).first()
+                    m = mount_lib.load_mount(db, mount_id)
                     if not m:
                         continue
                     # mount 的本机挂载点：从 path 反推（rclone 挂载一般有对应的 FUSE 点）

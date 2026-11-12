@@ -2241,10 +2241,12 @@ def check_mount_subpath(db: Session, mount_id: int, rel: str) -> None:
 
 
 # 挂载是极少变的配置小表，但按 id 点查在生产累计约 1207 万次
-# （pg_stat_statements 实证，全站第一）：每次播放目标解析、每次存在性
-# 探测都现查一遍。只读正口统一走快照缓存（integrations.store 的统一
-# TTL 口径，60 秒）。写路径在 portal_mount_routes（增删改挂载的管理端），
-# 提交后调 invalidate_mount_cache；跨进程写入最长 60 秒收敛。
+# （pg_stat_statements 实证，全站第一）。纯读轮询路径（追新快照、
+# Drive 变更派生等）统一走下面的快照缓存（integrations.store 的统一
+# TTL 口径，60 秒）；「停用必须立即生效」的路径（播放目标解析、挂载
+# 直读、存在性判断）走 load_mount_fresh 现行读，不吃快照。写路径在
+# portal_mount_routes（增删改挂载的管理端），提交后调
+# invalidate_mount_cache；跨进程写入最长 60 秒收敛。
 _MOUNT_SNAPSHOT_CACHE = _config_store.TtlSnapshotCache()
 
 
@@ -2525,7 +2527,9 @@ def media_exists(file_path: str, db: Session, library=None) -> bool:
     parsed = parse_mount_path(file_path)
     if parsed is None:
         return os.path.exists(file_path)
-    mount = load_mount(db, parsed[0])
+    # 存在性判断是扫描清理的依据：挂载停用必须立即反映为不可用，
+    # 走现行读（load_mount_fresh），不吃快照。
+    mount = load_mount_fresh(db, parsed[0])
     if mount is None or not mount.is_enabled:
         return False
     try:
