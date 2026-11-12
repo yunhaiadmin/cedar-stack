@@ -72,6 +72,25 @@ SUPER_ONLY_PREFIXES = (
     "/api/admin/login-logs/purge",  # 清空登录审计记录（删证据的操作只给超管）
     "/api/admin/items-dedup-cache-config",  # 列表去重缓存配置
     "/api/admin/transfer-config",  # 转存总开关（含跨 provider）+ 并发上限：影响全站播放路径
+    # 全局审计 GA-072（2026-11-12）：公共池配置是全站门禁级（总开关 pool_enabled
+    # 决定未绑盘用户能不能播、准入与限额决定谁能进池）。只收 4 个配置口本身，
+    # 同前缀下 pool_admin.py 的成员审核 / 暂停清退 / 奖励结算 / 副本释放是日常
+    # 运营写口，不在此列，不要顺手扩大。
+    "/api/admin/pool/config",
+    "/api/admin/pool/reward-config",
+    "/api/admin/pool/janitor-config",
+    "/api/admin/pool/retry-config",
+    # 全局审计 GA-071（2026-11-12）：上游密钥增删此前只在 /api/admin/capabilities
+    # 一处收紧，刮削页这套是漏网的第二入口，与 ROLE_HINTS「operator 改不了上游
+    # Key」自相矛盾。只收密钥子树，不收整个 /api/admin/emby/scrape——那下面还有
+    # 重刮 / 绑 TMDB / 锁条目 / 探活暂停恢复等日常运营写口，全收会误伤。
+    # - tmdb-keys 子树 = TMDB 密钥池整体（保存 / 新增 / 删除，含冷却重置）；
+    #   tmdb-test 在子树外（只报掩码与有效性），运营仍可测。
+    # - meta-sources/ 带尾斜杠：只覆盖 {source_id} 段下的 keys 增删（含 keys/reset
+    #   冷却重置）与逐源 test 探活；PUT /meta-sources 本身经查实不动密钥池
+    #   （handler 注明「不动密钥池」，只是开关 / 顺序 / 限速），不收。
+    "/api/admin/emby/scrape/tmdb-keys",
+    "/api/admin/emby/scrape/meta-sources/",
 )
 
 # 仅超级管理员可读写（不分读写方法）的路径后缀：凭据材料类端点。
@@ -82,6 +101,28 @@ SUPER_ONLY_PREFIXES = (
 # （旧 _require_super 拦的是读写、冒烟断言「读写都被拒」）——恢复成读也要拦。
 SUPER_ONLY_SUFFIXES = (
     "/rclone-conf",
+    # 全局审计 GA-071 同类项（2026-11-12）：专属线路入口密钥重置
+    # （/api/admin/emby/exclusive-lines/{line_id}/reset-secret）。全仓仅此一处
+    # 路由以 /reset-secret 结尾，后缀能精确命中这一个口，不必把线路的增删改
+    # （运营的日常活）一起收走。重置 = 换凭据，与 rclone-conf 同为凭据级，读写
+    # 不分（该口只有 POST，方法无关是顺带的一致性）。
+    "/reset-secret",
+)
+
+# 仅超级管理员可达（**任何方法**，含 GET 读）的子树：整子树都是凭据级 / 门禁级
+# 材料，连「看」都不给非超管——与 SUPER_ONLY_PREFIXES 的区别是读也拦（同
+# SUPER_ONLY_SUFFIXES 的口径，只是粒度是前缀子树而非后缀）。
+SUPER_ONLY_ALL_PREFIXES = (
+    # 全局审计 GA-069（2026-11-12）：整库备份 = 全站口令哈希 / 令牌 / 配置的
+    # 完整副本，与 rclone-conf 同为凭据级材料。此前下载口是 GET，viewer（只读
+    # 审计角色）绕过「只拦写」直接拉走整份备份；配置 PUT / 手动备份 POST 也只
+    # 给超管。整子树收：GET 配置、PUT 配置、POST run、GET files info/download。
+    "/api/admin/system/backup",
+    # 全局审计 GA-070（2026-11-12）：软件授权状态原样回显完整授权码，viewer
+    # 就能读走；config PUT 还能改码与绑定域名。授权码是凭据，整子树（status /
+    # config / verify）只给超管——超管看自己的授权码是正常需求，故不做出口
+    # 掩码，只收子树。
+    "/api/admin/license",
 )
 
 
@@ -118,7 +159,8 @@ def blocked_reason(request: Request, user) -> Optional[str]:
     """这次请求为什么被拦（None = 放行）
 
     只读角色的**所有**写操作都拦；运营角色只拦 ``SUPER_ONLY_PREFIXES`` 下的写操作；
-    ``SUPER_ONLY_SUFFIXES`` 下的路径（凭据类，含 rclone.conf）**读写一律**只限超管。
+    ``SUPER_ONLY_SUFFIXES`` 下的路径（凭据类，含 rclone.conf）与
+    ``SUPER_ONLY_ALL_PREFIXES`` 下的子树（整库备份 / 软件授权）**读写一律**只限超管。
     """
     path = getattr(getattr(request, "url", None), "path", "") or ""
     method = (getattr(request, "method", "") or "").upper()
@@ -126,6 +168,11 @@ def blocked_reason(request: Request, user) -> Optional[str]:
     if role == ROLE_VIEWER and method not in SAFE_METHODS:
         return "当前账号是「只读审计」角色：可以查看，不能修改；需要写权限请让超级管理员调整角色"
     if role != ROLE_SUPER:
+        # 凭据级子树（整库备份 / 软件授权）：任何方法都只限超管——备份下载与
+        # 授权码回显都是 GET，只拦写等于不拦（GA-069 / GA-070）。
+        for prefix in SUPER_ONLY_ALL_PREFIXES:
+            if path.startswith(prefix):
+                return "这一项需要「超级管理员」角色（当前：{}）".format(role_label(role))
         # 凭据类路径后缀（rclone.conf 含网盘凭据）：读写一律只限超管，
         # 不区分 GET / HEAD / OPTIONS（2026-10-19 补正：之前只拦写是回归）。
         for suffix in SUPER_ONLY_SUFFIXES:

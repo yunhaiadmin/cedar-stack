@@ -155,14 +155,18 @@ def test_put_janitor_config_roundtrips(client, db):
 
 
 def test_viewer_role_cannot_write_pool_config():
-    """canWrite 集中判定：viewer 对 PUT /api/admin/pool/config 被拦，
-    operator/super 放行（读不受影响）。"""
+    """canWrite 集中判定：viewer 与 operator 对 PUT /api/admin/pool/config
+    都被拦（GA-072：池总开关 / 准入 / 限额是全站门禁级配置，只给超管），
+    只有 super 放行；GET 读不受影响（前缀判定只拦非安全方法）。"""
     viewer = types.SimpleNamespace(admin_role="viewer", is_staff=True)
     operator = types.SimpleNamespace(admin_role="operator", is_staff=True)
+    super_ = types.SimpleNamespace(admin_role="super", is_staff=True)
     request = types.SimpleNamespace(
         url=types.SimpleNamespace(path=URL), method="PUT")
     assert admin_roles.blocked_reason(request, viewer) is not None
-    assert admin_roles.blocked_reason(request, operator) is None
+    assert admin_roles.blocked_reason(request, operator) is not None
+    assert admin_roles.blocked_reason(request, super_) is None
     get_request = types.SimpleNamespace(
         url=types.SimpleNamespace(path=URL), method="GET")
     assert admin_roles.blocked_reason(get_request, viewer) is None
+    assert admin_roles.blocked_reason(get_request, operator) is None
