@@ -58,7 +58,9 @@ from backend.emby_server.tmdb import (  # noqa: E402
 )
 
 # episode 名污染形态：「Season 01 S01」「Season 1950 S19」——季标记 + 季代码
-_EP_POLLUTED_RE = re.compile(r"(?i)^(season\s+\S+|s\d{1,4})\s+s\d{1,2}$")
+# 无空格变体「Season0 S00」也要认（《精灵宝可梦》Season0 文件夹，
+# 2026-11-12 回填复查时抓到的最后 4 条残留）
+_EP_POLLUTED_RE = re.compile(r"(?i)^(season\s*\S+|s\d{1,4})\s+s\d{1,2}$")
 # 无歧义 S/E：紧凑型 S0101 与 S02EP01（S1950E01 有歧义，不进这里）
 _SE_COMPACT_RE = re.compile(r"(?i)\b[Ss](\d{2})(\d{2})\b")
 _SE_EP_RE = re.compile(r"(?i)\b[Ss](\d{1,2})[Ee][Pp](\d{1,3})\b")
