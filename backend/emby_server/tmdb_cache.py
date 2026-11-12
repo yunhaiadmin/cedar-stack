@@ -128,7 +128,7 @@ def _warn_once(reason: str) -> None:
 def _key_path(endpoint: str, ident: str, year: int, lang: str = "") -> str:
     """缓存键 → 分片文件路径：sha1(endpoint|归一化查询|年份|语言)，前 2 位做目录
 
-    查询串由调用方用 ``_norm_text`` 归一化（大小写/全半角标点/空白不敏感）——
+    查询串由调用方用 ``_norm_text_base`` 归一化（大小写/全半角标点/空白不敏感）——
     这是让「跨条目/跨库去重」可靠而非碰运气的前提（§7.3③）。文件名不落原文，
     任何字符串都能安全落地。
 
@@ -332,7 +332,7 @@ def invalidate_search(name: str, year: Optional[int], kind: str, lang: str = "",
     """
     if not _cfg_enabled():
         return 0
-    from backend.emby_server.tmdb import _norm_text, _search_candidates, language_fallback_chain
+    from backend.emby_server.tmdb import _norm_text_base, _search_candidates, language_fallback_chain
 
     endpoint = "tv" if kind == "series" else "movie"
     years = {int(year or 0), 0}   # year 维度两种取值都清（键里 year or 0）
@@ -347,7 +347,8 @@ def invalidate_search(name: str, year: Optional[int], kind: str, lang: str = "",
     langs = {*(langs or []), lang or "", ""}
     removed = 0
     for query, _fuzzy in _search_candidates(name or ""):
-        norm = _norm_text(query)
+        # 与 _search_raw 的缓存键同口径（base 归一，不做繁简/数字折叠）
+        norm = _norm_text_base(query)
         if not norm:
             continue
         for y in years:

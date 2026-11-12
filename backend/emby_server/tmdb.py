@@ -30,6 +30,7 @@ from backend.emby_server import tmdb_cache
 from backend.emby_server.env_util import env_float, env_int
 from backend.emby_server.metasources import breaker as provider_breaker
 from backend.emby_server.zh_s2t import to_traditional as _to_traditional
+from backend.emby_server.zh_t2s import to_simplified as _to_simplified
 
 logger = logging.getLogger(__name__)
 
@@ -533,10 +534,111 @@ def _genres_from_details(data: dict) -> list:
     return out
 
 
-def _norm_text(s):
+def _norm_text_base(s):
+    """归一化基底口径：全角标点折半角、小写、去全部空白与标点。
+
+    搜索缓存键（``_search_raw`` 与 tmdb_cache 清键）只许用这一份：
+    它**不做**繁简/数字折叠——繁体查询候选（WS6）与简体查询在
+    TMDB 是两个索引，必须保持不同缓存键，否则繁体检索会被简体
+    缓存短路、永远发不出请求。比对口径见 ``_norm_text``。
+    """
     if not s:
         return ""
     return _NORM_STRIP_RE.sub("", _fold_punct(s).lower())
+
+
+# 全角字母/数字 → 半角（标点已由 _fold_punct 处理，这里只管字母数字）
+_FULLWIDTH_ALNUM_TABLE = str.maketrans(
+    {chr(0xFF10 + i): str(i) for i in range(10)}
+    | {chr(0xFF21 + i): chr(0x41 + i) for i in range(26)}
+    | {chr(0xFF41 + i): chr(0x61 + i) for i in range(26)}
+)
+# 罗马数字 → 阿拉伯（大小写两套码位）
+_ROMAN_DIGITS = {
+    "Ⅰ": "1", "Ⅱ": "2", "Ⅲ": "3", "Ⅳ": "4", "Ⅴ": "5", "Ⅵ": "6",
+    "Ⅶ": "7", "Ⅷ": "8", "Ⅸ": "9", "Ⅹ": "10", "Ⅺ": "11", "Ⅻ": "12",
+    "ⅰ": "1", "ⅱ": "2", "ⅲ": "3", "ⅳ": "4", "ⅴ": "5", "ⅵ": "6",
+    "ⅶ": "7", "ⅷ": "8", "ⅸ": "9", "ⅹ": "10", "ⅺ": "11", "ⅻ": "12",
+}
+_ROMAN_TABLE = str.maketrans(_ROMAN_DIGITS)
+_CN_DIGITS = {"零": 0, "〇": 0, "一": 1, "二": 2, "三": 3, "四": 4,
+              "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+_CN_NUMERAL_RUN_RE = re.compile(r"[零〇一二三四五六七八九十百]+")
+
+
+def _parse_cn_numeral(run: str):
+    """中文数字串 → 阿拉伯数字串；解析不了返回 None（原文保留）。
+
+    纯数字字串按位拼接（一九八四→1984、三→3）；带十/百的按数值
+    解析（二十三→23、一百零五→105）。「百」单独出现（百鸟朝凤、
+    百合）不是数字，返回 None 不动它；「千/万」根本不进候选集
+    （千与千寻这类实义字不许误伤）。
+    """
+    if not run:
+        return None
+    if all(ch in _CN_DIGITS for ch in run):
+        return "".join(str(_CN_DIGITS[ch]) for ch in run)
+    if "十" not in run and "百" not in run:
+        return None
+    if run == "十":
+        return "10"
+    if not any(ch in _CN_DIGITS and _CN_DIGITS[ch] > 0 for ch in run):
+        return None  # 只有十/百没有实数位（如「百」单字）：不是数字
+    val = 0
+    pending = None
+    for ch in run:
+        if ch in _CN_DIGITS:
+            pending = _CN_DIGITS[ch]
+        elif ch == "十":
+            val += (pending if pending is not None else 1) * 10
+            pending = None
+        elif ch == "百":
+            val += (pending if pending is not None else 1) * 100
+            pending = None
+        else:  # pragma: no cover - 正则保证不会走到
+            return None
+    if pending is not None:
+        val += pending
+    return str(val)
+
+
+def _fold_numerals(s: str) -> str:
+    """数字写法归一：罗马数字/中文数字 → 阿拉伯数字。
+
+    只动「写法」不动「数值」：两侧标题同表折叠，1/一/Ⅰ 从此同形。
+    """
+    s = s.translate(_ROMAN_TABLE)
+
+    def _sub(m):
+        parsed = _parse_cn_numeral(m.group(0))
+        return parsed if parsed is not None else m.group(0)
+
+    return _CN_NUMERAL_RUN_RE.sub(_sub, s)
+
+
+def _norm_text(s):
+    """标题比对归一化（全仓唯一口径，横切只许这一套）。
+
+    = 基底（全角标点折半角/小写/去空白标点）＋放宽三件（2026-11-12
+    用户亲批，只许归一化更准、不许降 Tier 阈值）：
+    ① 繁→简归一（zh_t2s 单字表，两侧同表折叠）；
+    ② 数字写法归一（全角数字/罗马数字/中文数字→阿拉伯）；
+    ③ 尾部无实义后缀剥离（篇/之，如「青云志篇」与「青云志」）。
+    搜索缓存键不许用本函数（见 ``_norm_text_base``）。
+    """
+    if not s:
+        return ""
+    s = str(s).translate(_FULLWIDTH_ALNUM_TABLE)
+    s = _norm_text_base(s)
+    s = _to_simplified(s)
+    s = _fold_numerals(s)
+    # 尾部无实义后缀：最多剥两字，且剥完至少剩 2 字（防把短名剥空）
+    for _ in range(2):
+        if len(s) > 2 and s[-1] in "篇之":
+            s = s[:-1]
+        else:
+            break
+    return s
 
 
 def _clean_query(name):
@@ -731,10 +833,32 @@ def _confirm_year(score, year, hit):
     return score
 
 
+def _hit_alias_names(hit):
+    """hit 携带的 TMDB 别名标题（details 的 alternative_titles 载荷）。
+
+    搜索结果本身不带别名；``search()`` 的别名补拉通道把 details 的
+    ``alternative_titles`` 合并进 hit 后，这里才读得到。电影在
+    ``titles``、剧在 ``results``，条目字段是 title 或 name。
+    """
+    at = (hit or {}).get("alternative_titles") or {}
+    out = []
+    if isinstance(at, dict):
+        for key in ("titles", "results"):
+            for entry in at.get(key) or []:
+                if isinstance(entry, dict):
+                    t = entry.get("title") or entry.get("name")
+                    if t:
+                        out.append(str(t))
+    return out
+
+
 def _hit_score(raw_name, query, hit, fuzzy_ok=True, year=None):
     """置信度打分：返回 (tier, rank)，tier 大者优先，同 tier 比 rank；None 表拒绝。
 
     Tier 2（精确）：任一归一化变体与任一标题字段（name/title/原名）精确相等。
+    可命中标题集含 TMDB 别名（alternative_titles，2026-11-12 放宽）：
+    各地区译名常与本地名只差在别名里（如《夺宝奇兵》的台版全称），
+    别名与原名同等对待，Tier 阈值与年份口径一律不变。
     Tier 1（模糊）：纯中日韩变体与标题有足够长的公共子串（防"虎子"→"老虎和兔子"
     类错配）；此时查询里的拉丁关键词必须在标题里出现过（防"S.H.E 安可场"配到
     "蔡依林 安可场"），同 tier 内用"全查询与标题的最长公共子串"排名消歧
@@ -749,6 +873,7 @@ def _hit_score(raw_name, query, hit, fuzzy_ok=True, year=None):
     """
     variants = _query_variants(query)
     names = [_norm_text(hit.get(k)) for k in ("name", "title", "original_name", "original_title")]
+    names += [_norm_text(t) for t in _hit_alias_names(hit)]
     names = [n for n in names if n]
     if not variants or not names:
         return None
@@ -1699,7 +1824,7 @@ class TmdbClient:
 
         L1 进程内（300 秒，同一次扫描的预热/写库复用）→ L2 磁盘
         （``tmdb_cache``，跨进程/跨重启，search 命中 7 天、阴性 24 小时）
-        → 单飞后真的发请求。缓存键用 ``_norm_text`` 归一化（年份独立维度）：
+        → 单飞后真的发请求。缓存键用 ``_norm_text_base`` 归一化（年份独立维度）：
         同一部剧的两个文件名（``Some Show`` 与 ``Some Show (2024)``）不再各打
         一遍——跨条目去重从此可靠而非碰运气（§7.3③）。
         瞬态失败直接抛 ``TmdbTransientError``（L1/L2 都不写，网络恢复后自然
@@ -1714,7 +1839,9 @@ class TmdbClient:
         if not self.session:
             return []
         endpoint = "tv" if kind == "series" else "movie"
-        norm = _norm_text(query)
+        # 缓存键只许用 base 归一：繁简/数字折叠会把繁体候选查询
+        # （WS6 的独立索引检索）短路成简体缓存命中，见 _norm_text_base。
+        norm = _norm_text_base(query)
         # 语言是缓存维度：TMDB 按 language 返回本地化标题/简介，不同语言互不命中
         lang = lang or preferred_language()
         key = ("search", endpoint, norm, year or 0, lang)
@@ -1777,6 +1904,10 @@ class TmdbClient:
 
         语言 fallback（对标 StrmAssistant）：首选语言无高置信命中时，
         按 ``language_fallback_chain()`` 逐个语言重试。
+
+        别名补拉（2026-11-12 放宽）：全部语言全灭后，对首选语言候选
+        池前至多 3 个 hit 补拉 details，把 TMDB 别名并入标题集按同一
+        套置信口径重打分——救「译名只活在别名里」的存量条目。
         """
         from backend.emby_server import dedup as _dedup_lib
 
@@ -1789,8 +1920,25 @@ class TmdbClient:
             if loose_query and all(q != loose_query for q, _ in cs):
                 cs.append((loose_query, False))
             return cs
+
+        # 别名补拉的候选池：只记首选语言见过的 hit（按 id 去重、保
+        # TMDB 返回序）。全部通道全灭时才用（见函数尾），命中路径
+        # 不付任何额外请求。
+        alias_pool: list = []
+        _pool_seen: set = set()
+
+        def _note_hit(hit, first_lang: bool):
+            if not first_lang or not isinstance(hit, dict):
+                return
+            hid = hit.get("id")
+            if hid is None or hid in _pool_seen:
+                return
+            _pool_seen.add(hid)
+            alias_pool.append(hit)
+
         # 外层：语言 fallback 链；内层：查询候选
         # 首选语言先走完所有候选，无命中才换语言（省请求）
+        _first_lang = True
         for lang in language_fallback_chain():
             best = None  # (tier, rank, hit)：跨候选、跨结果取全局最可信
             transient: Optional[Exception] = None
@@ -1813,6 +1961,7 @@ class TmdbClient:
                 except Exception:  # noqa: BLE001 — 缓存/磁盘等杂项异常换下一个候选
                     continue
                 for hit in results[:10]:
+                    _note_hit(hit, _first_lang)
                     sc = _hit_score(name, query, hit, fuzzy_ok, year=year)
                     if sc is None and loose_query and query == loose_query:
                         # Q3 宽松精确：仅当宽松归一化后与 hit 任一标题完全相等
@@ -1852,6 +2001,7 @@ class TmdbClient:
                     except Exception:  # noqa: BLE001
                         continue
                     for hit in results[:10]:
+                        _note_hit(hit, _first_lang)
                         sc = _hit_score(name, query, hit, fuzzy_ok, year=year)
                         if sc and (best is None or sc > best[:2]):
                             best = (sc[0], sc[1], hit)
@@ -1859,7 +2009,42 @@ class TmdbClient:
                     return best[2]
             if transient is not None:
                 raise transient
+            _first_lang = False
             # 本语言无命中，继续下一种语言
+        # 别名补拉（2026-11-12 放宽）：走到这里 = 全部语言/候选/年份
+        # 回退全灭。对候选池前至多 3 个 hit 各补一次 details（带
+        # alternative_titles，details 有两级缓存），把别名并进 hit
+        # 后按**同一套** Tier/年份口径重打分——译名只活在别名里的
+        # 作品（如各地区译名与 TMDB 主标题毫无字符交集的存量）靠
+        # 这条救回。不做字符级预筛：TMDB 检索（自带别名索引）能把
+        # hit 捞回来本身就是相关性证据，按字符交集预筛恰好会把
+        # 「只有别名才认得」的正例挡在门外；最终接受仍过原置信门，
+        # 补拉错了最多多花一次（多半命中缓存的）请求、不会误认。
+        if alias_pool:
+            best = None
+            fetched = 0
+            for hit in alias_pool:
+                if fetched >= 3:
+                    break
+                hid = hit.get("id")
+                if hid is None:
+                    continue
+                fetched += 1
+                try:
+                    det = self.details(str(hid), kind)
+                except Exception:  # noqa: BLE001 — 补拉失败不改变全灭结论
+                    continue
+                if not isinstance(det, dict) \
+                        or not det.get("alternative_titles"):
+                    continue
+                merged = dict(hit)
+                merged["alternative_titles"] = det["alternative_titles"]
+                for query, fuzzy_ok in _cands(name, year):
+                    sc = _hit_score(name, query, merged, fuzzy_ok, year=year)
+                    if sc and (best is None or sc > best[:2]):
+                        best = (sc[0], sc[1], merged)
+            if best:
+                return best[2]
         return None
 
     def search_candidates(self, name: str, kind: str, limit: int = 6) -> list[dict]:
