@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
+import hashlib
 import logging
 import os
 import re
+import threading
 import time
 from email.utils import formatdate
 from typing import TYPE_CHECKING, Optional
@@ -376,12 +379,241 @@ async def _follow_redirects(
     return (resp, current, hops)
 
 
-def _drive_redirect_client() -> "httpx.AsyncClient":
-    """resolve_drive_final_url 专用的独立小客户端。
+# ---------------------------------------------------------------------------
+# Drive 腿连接层（2026-11-12 起播拆账优化第 2/3 项）
+# ---------------------------------------------------------------------------
+# 拆账实测：relay 起播 resolve p50 707–866ms、首字节 gap p50 765ms，
+# direct_302 同路径只要 8ms。代码复核定性（亲验）：成本不在
+# resolve_drive_final_url（无播放调用方），在中继每请求从 Drive
+# API 地址重新跟随跳转链——API 跳转一跳全额往返 + 跳转终点主机
+# 轮换、连接池复用不住。本段只服务 Drive 腿（SA 中继 / BYOS /
+# resolve 解析），经 _DRIVE_LEG contextvar 注入 serve_mount_relay_
+# async；远程挂载腿不设该上下文，客户端与行为逐字不变（红线）。
+#
+# 三件套：
+# 1. 最终 URL 短时缓存（CacheManager playback 域，跨 api/ea 两
+#    进程共享）：同 (drive, file) 短窗口内直打上次跟随到的签名
+#    最终地址，跳过 API 跳转跳、终点主机固定下来连接才复用得住。
+#    签名 URL 自带授权，直打时不带 SA 凭据。窗口短（默认 120s，
+#    远小于签名 URL 有效期量级）：配额归属仍在此窗口内回到铸出
+#    该 URL 的凭据，与 SA 轮换的错位最多一个窗口；任何失败
+#    （传输失败 / 终点 ≥400 / 额度页）立即失效、回退现解析。
+# 2. Drive 专用连接池：与挂载池两个实例、参数独立（keepalive
+#    30s——播放器分段请求间隔常 >5s，httpx 默认 5s 到期即冷连
+#    接）；按 event loop 一份，请求路径上绝不关。
+# 3. 熔断：连续传输层失败（建连/池等待/传输异常）达阈值打开，
+#    冷却期内回退一次性冷客户端（用完关闭），避免池整体病态
+#    （如 pin 住的 IP 失效）时每个请求都在坏池里等超时；上游
+#    一旦可达（拿到任何终态响应）立即复位。
 
-    中继全删后不再用共享 relay 连接池：按次创建、用完关闭。
-    保留 DNS pinning 校验（堵 DNS rebinding TOCTOU）与
-    follow_redirects=False（跳转由本模块自己逐跳校验）。
+_FINAL_URL_CACHE_DOMAIN = "playback"
+
+
+def _drive_final_url_cache_ttl() -> int:
+    """最终 URL 缓存 TTL（秒）：env DRIVE_RELAY_FINAL_URL_CACHE_
+    TTL_SEC，默认 120，钳 [0, 600]，0 = 关缓存、非法回默认。"""
+    raw = os.getenv("DRIVE_RELAY_FINAL_URL_CACHE_TTL_SEC", "")
+    if not str(raw).strip():
+        return 120
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        logger.warning("环境变量 DRIVE_RELAY_FINAL_URL_CACHE_TTL_SEC=%r "
+                       "不是整数，使用默认值 120", raw)
+        return 120
+    return min(max(value, 0), 600)
+
+
+def _final_url_cache_key(scope: str) -> str:
+    return f"drive_final_url:{scope}"
+
+
+def drive_final_url_cache_get(scope: str) -> Optional[str]:
+    """读最终 URL 缓存；未启用/未命中/缓存不可用一律 None。永不抛。"""
+    if not scope or _drive_final_url_cache_ttl() <= 0:
+        return None
+    try:
+        from backend.database import CacheManager
+        value = CacheManager.get(_final_url_cache_key(scope),
+                                 domain=_FINAL_URL_CACHE_DOMAIN)
+    except Exception:  # noqa: BLE001 — 缓存读不到按未命中
+        return None
+    if isinstance(value, str) and value.startswith(("http://", "https://")):
+        return value
+    return None
+
+
+def drive_final_url_cache_put(scope: str, url: str) -> None:
+    """写最终 URL 缓存（只许成功跟随的终点）。失败自吞。永不抛。"""
+    ttl = _drive_final_url_cache_ttl()
+    if not scope or not url or ttl <= 0:
+        return
+    try:
+        from backend.database import CacheManager
+        CacheManager.set(_final_url_cache_key(scope), url, ttl,
+                         domain=_FINAL_URL_CACHE_DOMAIN)
+    except Exception:  # noqa: BLE001 — 写不进只丢这次复用机会
+        pass
+
+
+def drive_final_url_cache_invalidate(scope: str) -> None:
+    """失效最终 URL 缓存（终点失败时回退现解析的收口）。永不抛。"""
+    if not scope:
+        return
+    try:
+        from backend.database import CacheManager
+        CacheManager.delete(_final_url_cache_key(scope),
+                            domain=_FINAL_URL_CACHE_DOMAIN)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _resolve_cache_scope(api_url: str, headers) -> str:
+    """resolve 侧缓存键：API 地址 + 凭据指纹（不同凭据不许串用）。"""
+    auth = ""
+    for key, value in (headers or {}).items():
+        if str(key).lower() == "authorization":
+            auth = str(value or "")
+            break
+    digest = hashlib.sha256(
+        f"{api_url}\n{auth}".encode("utf-8")).hexdigest()
+    return f"resolve:{digest}"
+
+
+#: Drive 池熔断状态（进程内）：连续传输失败计数 + 打开到期时刻。
+_DRIVE_POOL_LOCK = threading.Lock()
+_DRIVE_POOL_STATE = {"failures": 0, "open_until": 0.0}
+
+
+def _drive_pool_breaker_threshold() -> int:
+    raw = os.getenv("DRIVE_RELAY_POOL_BREAKER_THRESHOLD", "")
+    try:
+        value = int(str(raw).strip()) if str(raw).strip() else 3
+    except (TypeError, ValueError):
+        value = 3
+    return max(1, value)
+
+
+def _drive_pool_breaker_cooldown() -> float:
+    raw = os.getenv("DRIVE_RELAY_POOL_BREAKER_COOLDOWN_SEC", "")
+    try:
+        value = float(str(raw).strip()) if str(raw).strip() else 15.0
+    except (TypeError, ValueError):
+        value = 15.0
+    return max(1.0, value)
+
+
+def drive_pool_breaker_open() -> bool:
+    """Drive 池熔断是否打开（冷却期内）。"""
+    with _DRIVE_POOL_LOCK:
+        return time.monotonic() < _DRIVE_POOL_STATE["open_until"]
+
+
+def _drive_pool_note_reached() -> None:
+    """上游给出终态响应（任何状态码）：连接层是通的，计数复位。"""
+    with _DRIVE_POOL_LOCK:
+        _DRIVE_POOL_STATE["failures"] = 0
+        _DRIVE_POOL_STATE["open_until"] = 0.0
+
+
+def _drive_pool_note_transport_failure() -> None:
+    """一次传输层失败：计数 +1，达阈值打开熔断（冷却期）。"""
+    with _DRIVE_POOL_LOCK:
+        _DRIVE_POOL_STATE["failures"] += 1
+        if _DRIVE_POOL_STATE["failures"] >= _drive_pool_breaker_threshold():
+            _DRIVE_POOL_STATE["open_until"] = (
+                time.monotonic() + _drive_pool_breaker_cooldown())
+            logger.warning(
+                "Drive 中继连接池熔断打开：连续传输失败 %d 次，"
+                "冷却 %.0fs 内回退冷连接",
+                _DRIVE_POOL_STATE["failures"],
+                _drive_pool_breaker_cooldown())
+
+
+#: Drive 中继客户端按 event loop 共享（与挂载池分开的独立一份）。
+_DRIVE_RELAY_CLIENTS: dict = {}
+
+
+def _drive_relay_client() -> "httpx.AsyncClient":
+    """Drive 主腿中继的共享客户端（按 event loop 一份）。
+
+    与挂载池分开：挂载腿的参数与行为一个字不许动（红线），Drive
+    腿自己的复用参数（keepalive_expiry=30s 覆盖播放器分段间隔）
+    独立演进。DNS pinning / 超时与挂载池同口径。
+    """
+    import asyncio
+
+    import httpx
+
+    from backend.emby_server.dns_pinning import PinnedAsyncHTTPTransport
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:  # 无运行中 loop：退回按次创建，调用方自负关闭
+        loop = None
+    if loop is not None:
+        for _dead in [l for l in _DRIVE_RELAY_CLIENTS if l.is_closed()]:
+            _DRIVE_RELAY_CLIENTS.pop(_dead, None)
+        client = _DRIVE_RELAY_CLIENTS.get(loop)
+        if client is not None and not client.is_closed:
+            return client
+    client = httpx.AsyncClient(
+        transport=PinnedAsyncHTTPTransport(
+            _PINNING_CACHE.lookup,
+            limits=httpx.Limits(max_connections=32,
+                                max_keepalive_connections=16,
+                                keepalive_expiry=30.0),
+        ),
+        timeout=httpx.Timeout(
+            connect=_MOUNT_RELAY_TIMEOUT_CONNECT,
+            read=_MOUNT_RELAY_TIMEOUT_READ,
+            write=30.0,
+            pool=10.0,
+        ),
+        follow_redirects=False,
+    )
+    if loop is not None:
+        _DRIVE_RELAY_CLIENTS[loop] = client
+    return client
+
+
+def _acquire_drive_client():
+    """取 Drive 腿客户端：熔断关 → (池客户端, False)；熔断开 →
+    (一次性冷客户端, True)，一次性客户端由使用方负责关闭。"""
+    if drive_pool_breaker_open():
+        return _drive_redirect_client(), True
+    return _drive_relay_client(), False
+
+
+class _DriveLegScope:
+    """一次 Drive 中继的连接层上下文（serve_drive_relay_async 设置）。
+
+    serve_mount_relay_async 读到本上下文才启用 Drive 池/最终 URL
+    缓存/熔断记账；挂载调用不设上下文，行为与从前逐字一致。
+    cache_key 为 None 时不落最终 URL 缓存（BYOS 用户令牌腿：签名
+    URL 的铸出凭据是用户本人令牌，跨请求复用会把流量钉在铸出
+    时刻的授权上下文上，该腿请求量小、维持每次现跟随）。
+    """
+
+    __slots__ = ("cache_key",)
+
+    def __init__(self, cache_key: Optional[str] = None):
+        self.cache_key = cache_key
+
+    def acquire(self):
+        return _acquire_drive_client()
+
+
+#: 当前任务的 Drive 腿上下文（无 Drive 腿在途时为 None）。
+_DRIVE_LEG: "contextvars.ContextVar[Optional[_DriveLegScope]]" = (
+    contextvars.ContextVar("aetrix_drive_leg", default=None))
+
+
+def _drive_redirect_client() -> "httpx.AsyncClient":
+    """一次性小客户端（resolve 冷路 / Drive 池熔断回退共用）。
+
+    按次创建、用完关闭。保留 DNS pinning 校验（堵 DNS rebinding
+    TOCTOU）与 follow_redirects=False（跳转由本模块自己逐跳校验）。
     """
     import httpx
 
@@ -403,12 +635,17 @@ async def resolve_drive_final_url(
 ) -> str | None:
     """解析 Drive 最终下载地址（SEAM-1：中继全删后的保守保留）。
 
-    原始 URL → drive_api_media_url 转 API 地址 → 查 P0-2 跳转缓存 →
-    未命中则手动跟随跳转 → 写缓存。
+    原始 URL → drive_api_media_url 转 API 地址 → 查最终 URL 短时
+    缓存（键含凭据指纹，不同凭据不串用）→ 未命中则手动跟随跳转
+    → 成功（200/206）写缓存。
 
     返回最终 URL；任何失败返回 None（不抛异常，调用方静默）。
-    用独立小客户端（按次建、用完关）；中间响应及时关闭。
+    客户端走 Drive 池（熔断时一次性冷客户端、用完关）；中间响
+    应及时关闭。注：播放热路径并不经本函数（中继在
+    serve_mount_relay_async 内直接跟随），本函数的缓存与池和中
+    继腿共用同一实现（见 _DRIVE_LEG 一段）。
     """
+    followed = False
     try:
         # 1. uc 直链转 Drive API 地址
         try:
@@ -419,8 +656,14 @@ async def resolve_drive_final_url(
         if not api_url:
             return None
 
-        # 2. 手动跟随跳转
-        client = _drive_redirect_client()
+        # 2. 最终 URL 短时缓存：命中直接回（零网络往返）
+        scope = _resolve_cache_scope(api_url, headers)
+        cached = drive_final_url_cache_get(scope)
+        if cached:
+            return cached
+
+        # 3. 手动跟随跳转（Drive 池客户端；熔断时冷客户端用完关）
+        client, one_shot = _acquire_drive_client()
 
         forward = {k: v for k, v in (headers or {}).items()}
         forward.pop("X-Pickcode", None)
@@ -429,6 +672,8 @@ async def resolve_drive_final_url(
         try:
             resp, current, hops = await _follow_redirects(
                 client, api_url, forward, silent=True)
+            followed = True
+            _drive_pool_note_reached()
             if resp is None:
                 return None  # 非法重定向目标 / 跳转超限：静默失败
             try:
@@ -444,13 +689,19 @@ async def resolve_drive_final_url(
                                        _drive_alt_media_file_id(current),
                                        _preason or "-", _pmsg or "-")
                     return None
+                if terminal_status in (200, 206) and current != api_url:
+                    drive_final_url_cache_put(scope, current)
                 return current
             finally:
                 await resp.aclose()
         finally:
-            await client.aclose()
+            if one_shot:
+                await client.aclose()
     except Exception:
-        # 调用方静默：任何异常都不抛
+        # 调用方静默：任何异常都不抛。跟随本身炸了算一次传输失败
+        # （已拿到终态后的收尾异常不算，followed 已置位）。
+        if not followed:
+            _drive_pool_note_transport_failure()
         return None
 
 
@@ -626,7 +877,25 @@ async def serve_mount_relay_async(
     if range_header:
         forward["Range"] = range_header
 
+    # Drive 腿上下文（只有 serve_drive_relay_async 会设）：启用
+    # Drive 专用池 + 最终 URL 缓存 + 熔断记账。挂载调用无上下文，
+    # 客户端与行为逐字不变。
+    _leg = _DRIVE_LEG.get()
     client = _mount_relay_client()
+    _one_shot = False
+    _start_url = url
+    _used_cached_final = False
+    _final_cache_key = None
+    if _leg is not None:
+        client, _one_shot = _leg.acquire()
+        _final_cache_key = _leg.cache_key
+        if _final_cache_key:
+            _cached_final = drive_final_url_cache_get(_final_cache_key)
+            if _cached_final:
+                _start_url = _cached_final
+                _used_cached_final = True
+                # 签名最终 URL 自带授权：不把 SA 凭据发去终点主机
+                forward.pop("Authorization", None)
     resp = None
     try:
         try:
@@ -634,16 +903,29 @@ async def serve_mount_relay_async(
             # 响应不关，由下面的流消费/关闭；silent=False 口径：非法重定向
             # 目标抛 403、跳转超限抛 502。
             resp, _current, _hops = await _follow_redirects(
-                client, url, forward, silent=False)
+                client, _start_url, forward, silent=False)
         except HTTPException:
             raise
         except httpx.PoolTimeout as exc:
+            if _leg is not None:
+                _drive_pool_note_transport_failure()
+                if _used_cached_final:
+                    drive_final_url_cache_invalidate(_final_cache_key)
             raise HTTPException(
                 status_code=503, detail="远程挂载代理繁忙，请稍后重试",
                 headers={"Retry-After": "2"}) from exc
         except Exception as exc:  # noqa: BLE001 — 源站不可达：给干净的 502
+            if _leg is not None:
+                _drive_pool_note_transport_failure()
+                if _used_cached_final:
+                    drive_final_url_cache_invalidate(_final_cache_key)
             logger.warning("远程挂载代理失败 %s: %s", url.split("?")[0], exc)
             raise HTTPException(status_code=502, detail="源站不可达") from exc
+        if _leg is not None:
+            _drive_pool_note_reached()
+            if _final_cache_key and not _used_cached_final \
+                    and _current != url and resp.status_code < 400:
+                drive_final_url_cache_put(_final_cache_key, _current)
         if pt is not None:
             pt.mark("ttfb")
         # 115 直链过期检测：403/404/410 时清 pickcode 缓存，客户端重试时
@@ -670,6 +952,9 @@ async def serve_mount_relay_async(
                                    _pickcode, exc)
         if resp.status_code >= 400:
             status = resp.status_code
+            if _used_cached_final:
+                # 缓存的最终地址已死：失效，调用方重试走现解析
+                drive_final_url_cache_invalidate(_final_cache_key)
             await resp.aclose()
             resp = None
             logger.warning("远程挂载源站返回 %s: %s", status, url.split("?")[0])
@@ -699,6 +984,16 @@ async def serve_mount_relay_async(
                         _first):
                     await resp.aclose()
                     resp = None
+                    if _used_cached_final:
+                        # 额度页也算最终地址失效：失效后重试走现解析
+                        drive_final_url_cache_invalidate(_final_cache_key)
+                    if _one_shot:
+                        # QuotaPageError 不走外层 HTTPException 清理，
+                        # 一次性客户端在这里就地关
+                        try:
+                            await client.aclose()
+                        except Exception:
+                            pass
                     raise _tv.QuotaPageError("上游响应为 Quota 额度页")
                 _prelude = (_aiter, _first)
             except _tv.QuotaPageError:
@@ -752,6 +1047,13 @@ async def serve_mount_relay_async(
                     await resp.aclose()
                 except Exception:
                     pass
+                if _one_shot:
+                    # 一次性冷客户端（Drive 池熔断回退）：流结束即关，
+                    # 不许留着复用——那正是熔断要隔离的病态连接层。
+                    try:
+                        await client.aclose()
+                    except Exception:
+                        pass
 
         if pt is not None:
             pt.done()
@@ -765,6 +1067,11 @@ async def serve_mount_relay_async(
         if resp is not None:
             try:
                 await resp.aclose()
+            except Exception:
+                pass
+        if _one_shot:
+            try:
+                await client.aclose()
             except Exception:
                 pass
         raise
@@ -812,6 +1119,38 @@ def _note_relay_sa_cooldown(url: str, token: str, status: int) -> None:
 
 
 async def serve_drive_relay_async(
+    request: Request,
+    drive_id: str,
+    file_id: str,
+    media_type: str = "video/mp4",
+    pt=None,
+    access_token: Optional[str] = None,
+    rotate_on_quota: bool = True,
+    max_attempts: Optional[int] = None,
+):
+    """Drive 中继入口：设置 Drive 腿连接层上下文后转内层实现。
+
+    上下文（_DRIVE_LEG）让 serve_mount_relay_async 对本次中继启用
+    Drive 专用池 / 熔断 / 最终 URL 缓存；SA 腿（access_token 为
+    None）按 (drive_id, file_id) 落最终 URL 缓存键，BYOS 用户令
+    牌腿不落缓存（见 _DriveLegScope）。failover 的多次尝试共享
+    同一上下文：缓存被某次尝试判死失效后，后续尝试自动回现解析。
+    语义与口径全在 _serve_drive_relay_async_inner 的 docstring。
+    """
+    _leg = _DriveLegScope(
+        cache_key=None if access_token is not None
+        else f"relay:{drive_id}:{file_id}")
+    _leg_token = _DRIVE_LEG.set(_leg)
+    try:
+        return await _serve_drive_relay_async_inner(
+            request, drive_id, file_id, media_type=media_type, pt=pt,
+            access_token=access_token, rotate_on_quota=rotate_on_quota,
+            max_attempts=max_attempts)
+    finally:
+        _DRIVE_LEG.reset(_leg_token)
+
+
+async def _serve_drive_relay_async_inner(
     request: Request,
     drive_id: str,
     file_id: str,
