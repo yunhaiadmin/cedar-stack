@@ -44,6 +44,11 @@
 last_run 在推送成功（全部发完，或部分成功——至少一条已发、已播行
 已记表，剩余下轮自然续上）/空批/种子完成时推进；一条都没发出去
 时不推进，下个 tick 整批重试（与 rankpush 同纪律）。
+
+已播记录保留期清理：tg_update_digest_sent 只增不减，调度 tick 上
+低频（24 小时一轮）顺手把 sent_at 超过保留期（90 天，远大于 14 天
+去重回看窗口，删界不侵入窗口内行）的行分批删掉（每批 ≤10,000
+行、单轮批数有上限），清理失败只记日志、不影响播报主流程。
 """
 from __future__ import annotations
 
@@ -66,9 +71,18 @@ INTERVAL_KEY = "bot_update_digest_interval_minutes"
 TARGET_KEY = "bot_update_digest_chat_id"
 LAST_RUN_KEY = "bot_update_digest_last_run"
 SEEDED_KEY = "bot_update_digest_seeded"
+PRUNE_LAST_RUN_KEY = "bot_update_digest_prune_last_run"
 
 DEFAULT_INTERVAL_MINUTES = 30
 WINDOW_DAYS = 14
+#: 已播记录保留天数：去重只回看近 WINDOW_DAYS 天入库的行，90 天远
+#: 大于窗口、留足余量，删界绝不侵入窗口内行。
+RETENTION_DAYS = 90
+#: 保留期清理批大小与单轮批数上限：小批删、行锁范围小，不吵主链路。
+PRUNE_BATCH_SIZE = 10000
+PRUNE_MAX_BATCHES = 10
+#: 保留期清理节律：调度 tick 上最多 24 小时跑一轮。
+PRUNE_INTERVAL_HOURS = 24
 #: Telegram 单条消息正文上限（字符）：整批超此限按行边界分条发送。
 MESSAGE_LIMIT = 4096
 _EPISODE_FETCH_CAP = 20000
@@ -507,26 +521,90 @@ def push_digest(db, now: datetime | None = None) -> dict:
     }
 
 
-def run_scheduled_tick(db, now: datetime | None = None) -> list[str]:
-    """调度一拍：距上批 ≥ 间隔才攒批。last_run 在推送成功（ok）、
-    部分成功（partial：至少一条已发、已播行已记表，剩余下轮自然
-    续上，不会卡死在同一批）、空批、种子完成时推进；一条都没发
-    出去（send_failed）不推进，下个 tick 整批重试（与 rankpush
-    同纪律）。"""
+def prune_sent_history(db, now: datetime | None = None) -> int:
+    """删 sent_at 超过保留期（RETENTION_DAYS 天）的已播记录，返回
+    删除行数。分批删：每批先取 ≤PRUNE_BATCH_SIZE 个 id 再按 id 删、
+    逐批 commit，单轮最多 PRUNE_MAX_BATCHES 批（剩余下轮继续），
+    行锁范围始终只有一批。去重回看只用近 WINDOW_DAYS 天的行，
+    删的全是窗口外老行，不影响防重复口径。"""
     now = now or datetime.now()
-    if not digest_enabled(db):
+    cutoff = now - timedelta(days=RETENTION_DAYS)
+    total = 0
+    for _ in range(PRUNE_MAX_BATCHES):
+        ids = [
+            row[0]
+            for row in db.query(models.TgUpdateDigestSent.id)
+            .filter(models.TgUpdateDigestSent.sent_at < cutoff)
+            .order_by(models.TgUpdateDigestSent.id)
+            .limit(PRUNE_BATCH_SIZE)
+            .all()
+        ]
+        if not ids:
+            break
+        deleted = (
+            db.query(models.TgUpdateDigestSent)
+            .filter(models.TgUpdateDigestSent.id.in_(ids))
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        total += int(deleted or 0)
+        if len(ids) < PRUNE_BATCH_SIZE:
+            break
+    if total:
+        logger.info(
+            "updatedigest 已播记录保留期清理：删 %s 行（保留 %s 天）",
+            total, RETENTION_DAYS,
+        )
+    return total
+
+
+def _maybe_prune_sent_history(db, now: datetime) -> list[str]:
+    """调度 tick 上的低频清理：距上轮清理 ≥PRUNE_INTERVAL_HOURS
+    才跑；失败吞掉记日志（标记不推进，下个 tick 再试），绝不把
+    异常带进播报主流程。返回动作列表（没删到行时为空）。"""
+    try:
+        last_raw = _cfg(db, PRUNE_LAST_RUN_KEY, "")
+        if last_raw:
+            try:
+                last = datetime.fromisoformat(last_raw)
+                if (now - last) < timedelta(hours=PRUNE_INTERVAL_HOURS):
+                    return []
+            except ValueError:
+                pass
+        deleted = prune_sent_history(db, now)
+        store.write_values(db, {PRUNE_LAST_RUN_KEY: now.isoformat()})
+        db.commit()
+        return [f"digest:pruned:{deleted}"] if deleted else []
+    except Exception:
+        logger.exception("updatedigest 已播记录保留期清理失败（忽略，下个 tick 再试）")
+        try:
+            db.rollback()
+        except Exception:
+            pass
         return []
+
+
+def run_scheduled_tick(db, now: datetime | None = None) -> list[str]:
+    """调度一拍：先顺手做保留期清理（低频、自吞异常），再距上批
+    ≥ 间隔才攒批。last_run 在推送成功（ok）、部分成功（partial：
+    至少一条已发、已播行已记表，剩余下轮自然续上，不会卡死在同
+    一批）、空批、种子完成时推进；一条都没发出去（send_failed）
+    不推进，下个 tick 整批重试（与 rankpush 同纪律）。"""
+    now = now or datetime.now()
+    actions = _maybe_prune_sent_history(db, now)
+    if not digest_enabled(db):
+        return actions
     last_raw = _cfg(db, LAST_RUN_KEY, "")
     if last_raw:
         try:
             last = datetime.fromisoformat(last_raw)
             if (now - last) < timedelta(minutes=interval_minutes(db)):
-                return []
+                return actions
         except ValueError:
             pass
     res = push_digest(db, now)
     if res["reason"] in ("ok", "partial", "empty", "seeded"):
         store.write_values(db, {LAST_RUN_KEY: now.isoformat()})
         db.commit()
-        return [f"digest:{res['reason']}"]
-    return []
+        return actions + [f"digest:{res['reason']}"]
+    return actions
