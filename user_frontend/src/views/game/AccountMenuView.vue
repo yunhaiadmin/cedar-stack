@@ -77,8 +77,10 @@
  * 2026-11-13 按 UHDNow 原站 1:1 返工：平面列表（分组粗标题＋发丝线，
  * 无卡片、无行图标）＋页头「网页观影」胶囊＋外观三档内嵌分段，
  * 页面跟随用户外观（浅/深两套本地变量，不再强制深色）。
- * 条目集合与返工前完全一致（订阅与财务/账户/探险设施/系统，
- * 代理中心同口径仅代理可见），一个不丢。
+ * 2026-11-13 跟进（用户定调）：功能改名（补给站→商店、能量账本→能量明细、
+ * 补给记录→商店记录、许愿池→求片、求救信号→反馈）；探险设施整组与
+ * 「每日报到」「信鸽」两行摘除（签到/站内信网页页经友站核查后定整页删除）；
+ * 代理中心同口径仅代理可见。
  */
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
@@ -141,26 +143,25 @@ const groups = computed<MenuGroup[]>(() => {
     { key: 'member', label: '我的会员', to: '/game/account/member' },
     {
       key: 'shop',
-      label: '补给站',
+      label: '商店',
       to: '/shop',
       value: pointsBalance.value == null ? undefined : `能量 ${pointsBalance.value.toLocaleString()}`,
     },
-    { key: 'ledger', label: '能量账本', to: '/game/ledger' },
-    { key: 'supply', label: '补给记录', to: '/game/supply' },
+    { key: 'ledger', label: '能量明细', to: '/game/ledger' },
+    { key: 'supply', label: '商店记录', to: '/game/supply' },
   ]
   const account: MenuItem[] = [
     { key: 'settings', label: '账号与设置', to: '/game/account/settings' },
-    { key: 'wishlist', label: '许愿池', to: '/game/wishlist' },
+    { key: 'wishlist', label: '求片', to: '/game/wishlist' },
   ]
   if (isAgent.value) {
     account.push({ key: 'agent', label: '代理中心', to: '/game/agent' })
   }
-  // 用户 2026-11-13 11:55 圈选令：探险设施整组摘除、「我的概览」行删除；
-  // 求救信号（保留并升级）、每日报到、信鸽（去留未定）先安置到「日常与帮助」组。
+  // 用户 2026-11-13 圈选令＋条件令：探险设施整组摘除、「我的概览」行删除；
+  // 「每日报到」「信鸽」两行摘除（友站核查无签到/站内消息，两页定整页删除，
+  // 页面本体由并行删除单处理）；求救信号保留并改名「反馈」，仍在「日常与帮助」组。
   const daily: MenuItem[] = [
-    { key: 'checkin', label: '每日报到', to: '/game/checkin' },
-    { key: 'pigeon', label: '信鸽', to: '/game/pigeon' },
-    { key: 'signal', label: '求救信号', to: '/game/signal' },
+    { key: 'signal', label: '反馈', to: '/game/signal' },
   ]
   const system: MenuItem[] = [{ key: 'theme', label: '外观' }]
   return [

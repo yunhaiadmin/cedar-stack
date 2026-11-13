@@ -72,7 +72,7 @@
         <template v-if="quota.hasPeriod">
           <p class="ov-quota__remain">剩余 {{ quota.remainPct }}%</p>
           <div class="ov-bar" role="img" :aria-label="`本周期已用 ${quota.usedPct}%`">
-            <div class="ov-bar__fill" :style="{ width: `${quota.usedPct}%` }"></div>
+            <div class="ov-bar__fill" :style="{ width: `${quota.remainPct}%` }"></div>
           </div>
           <div class="ov-quota__meta">
             <span>已用 {{ quota.usedDays }} / 共 {{ quota.totalDays }} 天</span>
@@ -175,10 +175,6 @@
           <span class="ov-trow__name">邀请好友</span>
           <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
         </RouterLink>
-        <RouterLink class="ov-trow" to="/game/guide">
-          <span class="ov-trow__name">使用说明</span>
-          <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
       </section>
 
       <!-- 我的片子（现有真实条目同式归段，不丢功能） -->
@@ -234,14 +230,13 @@
           <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
         </RouterLink>
         <RouterLink class="ov-trow" to="/game/ledger">
-          <span class="ov-trow__name">能量账本</span>
+          <span class="ov-trow__name">能量明细</span>
           <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
         </RouterLink>
-        <RouterLink v-if="vitality" class="ov-trow" to="/game/checkin">
+        <div v-if="vitality" class="ov-trow">
           <span class="ov-trow__name">活力 · 今日</span>
           <span class="ov-trow__value">{{ vitality.vitality }}/{{ vitality.max }}</span>
-          <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
+        </div>
       </section>
 
       <!-- 成长 -->
@@ -262,16 +257,6 @@
         <RouterLink class="ov-trow" to="/collector">
           <span class="ov-trow__name">馆灵</span>
           <span v-if="entryPetText" class="ov-trow__value">{{ entryPetText }}</span>
-          <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
-        <RouterLink class="ov-trow" to="/game/checkin">
-          <span class="ov-trow__name">连签</span>
-          <span v-if="entryStreakText" class="ov-trow__value">{{ entryStreakText }}</span>
-          <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
-        <RouterLink class="ov-trow" to="/game/pigeon">
-          <span class="ov-trow__name">信鸽</span>
-          <span class="ov-trow__value">站内消息</span>
           <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
         </RouterLink>
       </section>
@@ -339,7 +324,8 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const userStore = useUserStore()
-// 路由守卫会把本页 html[data-theme] 钉成 light；页面深浅以用户外观解析值为准（.ov-dark 回滚块）
+// 本页已从路由守卫 V4_PATHS 摘除（router/index.ts），html[data-theme] 由守卫按
+// 用户外观恢复；页面深浅以用户外观解析值为准，.ov-dark 回滚块保留作主题竞态兜底
 const { resolved: themeResolved } = useTheme()
 
 const displayName = computed(() => userStore.user?.username || '我的')
@@ -522,7 +508,6 @@ function onFollowSummary(payload: { visible: boolean; activeCount: number }) {
 const entryLevelText = ref('')
 const entryAchvText = ref('')
 const entryPetText = ref('')
-const entryStreakText = ref('')
 async function loadEntrySummaries() {
   try {
     const m = await memberApi.info()
@@ -591,7 +576,6 @@ async function loadOverview() {
   try {
     const st = await checkinApi.status()
     if (st && typeof st.points === 'number') points.value = st.points
-    if (st && st.streak > 0) entryStreakText.value = `已连报 ${st.streak} 天`
   } catch { /* 摘要拿不到就不显示 */ }
   try {
     vitality.value = await vitalityApi.status()
@@ -698,30 +682,32 @@ onMounted(() => {
   white-space: nowrap;
 }
 
-/* 会员卡：斜向粉彩渐变＋细斜纹，圆角 36 */
+/* 会员卡：斜向粉彩渐变＋细斜纹，圆角约 28、柔影极淡无描边
+   渐变停点＝UHDNow 实测像素采样串（实测清单第 1/1b 节，逐停点照抄） */
 .ov-card {
   position: relative;
   overflow: hidden;
   min-height: 218px;
-  border-radius: 36px;
+  border-radius: 28px;
   padding: 24px 26px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   background:
-    linear-gradient(115deg, #17181c 22%, rgba(196, 178, 246, 0.5) 52%, rgba(140, 180, 240, 0.52) 76%, rgba(170, 220, 245, 0.48) 100%);
-  box-shadow: 0 18px 44px rgba(31, 38, 135, 0.1);
+    linear-gradient(115deg, #2b2d2f 0%, #252629 6%, #2e2e34 12%, #35333d 18%, #3e3e45 24%, #433e4d 29%, #484255 34%, #4f4a5e 39%, #605a76 43%, #655f7d 46%, #716b8e 49%, #79769c 52%, #74759a 57%, #6d7599 62%, #697498 67%, #677598 72%, #5f7898 77%, #4e6781 82%, #445a70 86%, #3f5367 90%, #354556 93%, #313e4c 96%, #1e2328 98%, #161522 100%);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32);
 }
 html:not([data-theme='light']) .ov-card {
   background:
-    linear-gradient(115deg, #17181c 22%, rgba(124, 106, 220, 0.42) 52%, rgba(70, 130, 220, 0.4) 76%, rgba(80, 170, 220, 0.36) 100%);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+    linear-gradient(115deg, #2b2d2f 0%, #252629 6%, #2e2e34 12%, #35333d 18%, #3e3e45 24%, #433e4d 29%, #484255 34%, #4f4a5e 39%, #605a76 43%, #655f7d 46%, #716b8e 49%, #79769c 52%, #74759a 57%, #6d7599 62%, #697498 67%, #677598 72%, #5f7898 77%, #4e6781 82%, #445a70 86%, #3f5367 90%, #354556 93%, #313e4c 96%, #1e2328 98%, #161522 100%);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32);
 }
-/* 细斜线纹理层：只落在渐变区（mask 沿同角度渐入） */
+/* 细斜线纹理层：实测垂直周期约 4.2px、方向约 68°（115° 轴向）；低对比雾面
+   （采样亮度带 184–254、白区近不可见），alpha 压淡＋mask 只落在渐变区 */
 .ov-card__shine {
   position: absolute;
   inset: 0;
-  background: repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.22) 0 1px, transparent 1px 5px);
+  background: repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.1) 0 1px, transparent 1px 4.2px);
   -webkit-mask-image: linear-gradient(115deg, transparent 30%, #000 58%);
   mask-image: linear-gradient(115deg, transparent 30%, #000 58%);
   pointer-events: none;
@@ -886,7 +872,7 @@ html:not([data-theme='light']) .ov-card {
   justify-content: space-between;
   gap: 12px;
   padding-bottom: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid #26262a;
 }
 .ov-sec__title {
   margin: 0;
@@ -914,12 +900,13 @@ html:not([data-theme='light']) .ov-card {
 /* Emby 段图标两行 */
 .ov-irow {
   width: 100%;
+  min-height: 63px;
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 13px 2px;
+  padding: 7px 2px;
   border: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid #26262a;
   background: transparent;
   color: #ffffff;
   font-family: inherit;
@@ -956,7 +943,7 @@ html:not([data-theme='light']) .ov-card {
 }
 .ov-lines {
   padding: 6px 2px 4px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid #26262a;
 }
 .ov-line-row {
   display: flex;
@@ -965,7 +952,7 @@ html:not([data-theme='light']) .ov-card {
   padding: 9px 0;
 }
 .ov-line-row + .ov-line-row {
-  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+  border-top: 1px dashed #26262a;
 }
 .ov-line-main {
   flex: 1;
@@ -1009,8 +996,10 @@ html:not([data-theme='light']) .ov-card {
   display: flex;
   align-items: center;
   gap: 14px;
+  min-height: 52px;
+  box-sizing: border-box;
   padding: 13px 2px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid #26262a;
 }
 .ov-drow__icon {
   flex: 0 0 auto;
@@ -1039,13 +1028,13 @@ html:not([data-theme='light']) .ov-card {
 /* 纯文字行（常用及其余归段） */
 .ov-trow {
   width: 100%;
-  min-height: 56px;
+  min-height: 52px;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px 2px;
   border: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid #26262a;
   background: transparent;
   color: #ffffff;
   font-family: inherit;
@@ -1117,8 +1106,8 @@ html[data-theme='light'] .watch-pill {
 }
 html[data-theme='light'] .ov-card {
   background:
-    linear-gradient(115deg, #ffffff 22%, rgba(186, 164, 244, 0.62) 52%, rgba(122, 166, 238, 0.66) 76%, rgba(158, 214, 243, 0.6) 100%);
-  box-shadow: 0 18px 44px rgba(31, 38, 135, 0.1);
+    linear-gradient(115deg, #fcfcfc 0%, #f4f0fa 14%, #ede7f7 25%, #e4dbf5 34%, #d7cdf2 42%, #c9bfef 48%, #c2b9ee 54%, #bdb6ee 59%, #b7b5ef 63%, #b0b6f0 67%, #a8b9f0 70%, #a0bbf1 73%, #a6c4f4 78%, #bed7f7 84%, #d7e6fa 90%, #f2f7fd 95%, #fbfcfd 100%);
+  box-shadow: 0 8px 22px rgba(90, 94, 150, 0.08);
 }
 html[data-theme='light'] .ov-card__brand { color: #111111; }
 html[data-theme='light'] .ov-card__plan { color: #111111; }
@@ -1134,29 +1123,30 @@ html[data-theme='light'] .ov-bar__fill { background: #111111; }
 html[data-theme='light'] .ov-quota__meta { color: #9a9da3; }
 html[data-theme='light'] .ov-quota__meta-line { color: #9a9da3; }
 html[data-theme='light'] .ov-btn { background: #ffffff; border-color: #e7e7e7; color: #111111; }
-html[data-theme='light'] .ov-sec__head { border-bottom-color: #e7e7e7; }
+html[data-theme='light'] .ov-sec__head { border-bottom-color: #e5e5e7; }
 html[data-theme='light'] .ov-sec__title { color: #111111; }
 html[data-theme='light'] .ov-sec__more { color: #55575c; }
 html[data-theme='light'] .ov-row__chev { color: #9a9da3; }
-html[data-theme='light'] .ov-irow { border-bottom-color: #e7e7e7; color: #111111; }
+html[data-theme='light'] .ov-irow { border-bottom-color: #e5e5e7; color: #111111; }
 html[data-theme='light'] .ov-irow__icon { color: #111111; }
 html[data-theme='light'] .ov-irow__name { color: #111111; }
 html[data-theme='light'] .ov-irow__sub { color: #9a9da3; }
-html[data-theme='light'] .ov-lines { border-bottom-color: #e7e7e7; }
-html[data-theme='light'] .ov-line-row + .ov-line-row { border-top-color: #e7e7e7; }
+html[data-theme='light'] .ov-lines { border-bottom-color: #e5e5e7; }
+html[data-theme='light'] .ov-line-row + .ov-line-row { border-top-color: #e5e5e7; }
 html[data-theme='light'] .ov-line-url { color: #9a9da3; }
 html[data-theme='light'] .ov-copy-btn { background: #ffffff; border-color: #e7e7e7; color: #55575c; }
 html[data-theme='light'] .ov-line-note { color: #9a9da3; }
-html[data-theme='light'] .ov-drow { border-bottom-color: #e7e7e7; }
+html[data-theme='light'] .ov-drow { border-bottom-color: #e5e5e7; }
 html[data-theme='light'] .ov-drow__icon { color: #111111; }
 html[data-theme='light'] .ov-drow__name { color: #111111; }
 html[data-theme='light'] .ov-drow__status { color: #9a9da3; }
 html[data-theme='light'] .ov-drow__status--on { color: #16a34a; }
-html[data-theme='light'] .ov-trow { border-bottom-color: #e7e7e7; color: #111111; }
+html[data-theme='light'] .ov-trow { border-bottom-color: #e5e5e7; color: #111111; }
 html[data-theme='light'] .ov-trow__value { color: #9a9da3; }
 html[data-theme='light'] .ov-logout { background: #ffffff; border-color: #e7e7e7; }
 
-/* 路由守卫会把本页 html 钉成 light：用户选深色时由 .ov-dark 类以更高优先级回滚为深色 */
+/* 兜底回滚块：守卫已不再把本页钉成 light（V4_PATHS 摘除 /game/account）；
+   若主题解析与 data-theme 出现竞态不一致，用户选深色时由 .ov-dark 类回滚为深色 */
 html[data-theme='light'] .ov-page.ov-dark .watch-pill { background: linear-gradient(rgba(22, 22, 25, 0.72), rgba(22, 22, 25, 0.72)) padding-box,
     var(--uhd-rainbow) border-box; color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-card__brand { color: #ffffff; }
@@ -1189,10 +1179,10 @@ html[data-theme='light'] .ov-page.ov-dark .ov-trow__value { color: rgba(255, 255
 html[data-theme='light'] .ov-page.ov-dark :deep(.uad-pill) { background: rgba(30, 30, 33, 0.55); border-color: rgba(255, 255, 255, 0.16); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 16px 40px rgba(0, 0, 0, 0.5); }
 html[data-theme='light'] .ov-page.ov-dark :deep(.uad-tab) { color: rgba(255, 255, 255, 0.55); }
 html[data-theme='light'] .ov-page.ov-dark :deep(.uad-tab--on) { background: rgba(255, 255, 255, 0.13); color: #ffffff; }
-html[data-theme='light'] .ov-page.ov-dark .ov-card { background: linear-gradient(115deg, #17181c 22%, rgba(196, 178, 246, 0.5) 52%, rgba(140, 180, 240, 0.52) 76%, rgba(170, 220, 245, 0.48) 100%); }
+html[data-theme='light'] .ov-page.ov-dark .ov-card { background: linear-gradient(115deg, #2b2d2f 0%, #252629 6%, #2e2e34 12%, #35333d 18%, #3e3e45 24%, #433e4d 29%, #484255 34%, #4f4a5e 39%, #605a76 43%, #655f7d 46%, #716b8e 49%, #79769c 52%, #74759a 57%, #6d7599 62%, #697498 67%, #677598 72%, #5f7898 77%, #4e6781 82%, #445a70 86%, #3f5367 90%, #354556 93%, #313e4c 96%, #1e2328 98%, #161522 100%); }
 html[data-theme='light'] .ov-page.ov-dark .ov-expiry { color: rgba(255, 255, 255, 0.62); }
-html[data-theme='light'] .ov-page.ov-dark .ov-irow { border-bottom-color: rgba(255, 255, 255, 0.1); color: #ffffff; }
-html[data-theme='light'] .ov-page.ov-dark .ov-drow { border-bottom-color: rgba(255, 255, 255, 0.1); }
-html[data-theme='light'] .ov-page.ov-dark .ov-trow { border-bottom-color: rgba(255, 255, 255, 0.1); color: #ffffff; }
+html[data-theme='light'] .ov-page.ov-dark .ov-irow { border-bottom-color: #26262a; color: #ffffff; }
+html[data-theme='light'] .ov-page.ov-dark .ov-drow { border-bottom-color: #26262a; }
+html[data-theme='light'] .ov-page.ov-dark .ov-trow { border-bottom-color: #26262a; color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-logout { background: #17181c; border-color: rgba(255, 255, 255, 0.1); }
 </style>

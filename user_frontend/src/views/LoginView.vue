@@ -584,9 +584,11 @@ onMounted(() => {
 <style scoped>
 /* ============================================================
    UHD 换皮 · 登录/注册（2026-11-13 按原站 1:1 返工）
-   页头行（品牌字标＋玻璃胶囊）＋居中卡：圆角 30、内边距加大；
-   输入全胶囊 54px、标签 15px 在框上方；主按钮彩虹粉彩渐变填充
-   53px 全胶囊黑字；TG 钮同高白底描边胶囊（原站 Passkey 钮位）。
+   页头行（品牌字标＋玻璃胶囊）＋居中卡：桌面圆角约 20（实测清单第 3 节；
+   移动端未测到，保留圆角 30）；输入桌面高 46、圆角约 23（移动保留
+   54px 全胶囊），标签 15px 在框上方；主按钮实测淡彩虹渐变填充＋
+   1px 彩虹边框、高 46、圆角约 23、黑字（移动保留 53px）；
+   TG 钮同尺寸白底描边（原站 Passkey 钮位）。
    页面跟随用户外观：--a-* 变量缺省深色，data-theme='light' 换浅；
    背景顶部粉彩光晕（深色低透明同色）。认证逻辑一字未动。
    ============================================================ */
@@ -732,7 +734,7 @@ onMounted(() => {
   padding: 40px 38px 32px;
   background: #141416;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 30px;
+  border-radius: 20px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
   animation: authColumnIn var(--uhd-dur-blur-in) var(--uhd-ease-pop) both;
 }
@@ -836,10 +838,10 @@ onMounted(() => {
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  min-height: 54px;
+  min-height: 46px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
+  border-radius: 23px;
   padding: 0 18px;
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
@@ -1013,7 +1015,8 @@ onMounted(() => {
   margin-left: auto;
 }
 
-/* 主按钮：53px 全胶囊，彩虹粉彩渐变填充＋黑字（原站主钮口径） */
+/* 主按钮：高 46、圆角约 23，实测淡彩虹渐变填充＋1px 彩虹边框＋黑字
+   （渐变停点＝实测清单第 3 节登录钮中心行采样串，逐停点照抄） */
 .submit-btn {
   box-sizing: border-box;
   display: flex;
@@ -1021,17 +1024,19 @@ onMounted(() => {
   justify-content: center;
   gap: 0.5rem;
   width: 100%;
-  height: 53px;
+  height: 46px;
   flex-shrink: 0;
   margin-top: 0.25rem;
   padding: 0 24px;
-  border: none;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #f7ddc4 0%, #f9d3e0 24%, #ddd8f7 48%, #c9e6f5 72%, #d5efdb 100%);
+  border: 1px solid transparent;
+  border-radius: 23px;
+  background:
+    linear-gradient(90deg, #fcfcfb 0%, #edebe5 4%, #bc9c00 9%, #b8a207 13%, #b4a80e 17%, #b0a919 22%, #a9aa25 26%, #a0aa30 30%, #95ab3b 35%, #86ab46 39%, #72ac52 43%, #50ac5f 48%, #0fac75 52%, #00ac9b 57%, #00a3c4 61%, #6180de 65%, #b28dd9 70%, #edfafb 74%, #e1f5f7 78%, #d9f2f6 83%, #d2f0f3 87%, #c8eef1 91%, #c1eaef 96%, #b9e7ed 100%) padding-box,
+    var(--uhd-rainbow) border-box;
   color: #111111;
   font: inherit;
-  font-size: 16.5px;
-  font-weight: var(--uhd-fw-bold);
+  font-size: 15px;
+  font-weight: var(--uhd-fw-semibold);
   cursor: pointer;
   transition: transform 0.15s ease, filter 0.2s ease, opacity 0.2s ease;
 }
@@ -1071,10 +1076,24 @@ onMounted(() => {
   .auth-column {
     max-width: 100%;
     padding: 32px 24px 26px;
+    /* 移动端未测到：保留上一轮经用户截图验收的移动值，不拿桌面实测硬压 */
+    border-radius: 30px;
+  }
+  .field-box {
+    min-height: 54px;
+    border-radius: 999px;
+  }
+  .submit-btn {
+    height: 53px;
+    border-radius: 999px;
+  }
+  .tg-login-btn {
+    height: 53px;
+    border-radius: 999px;
   }
 }
 
-/* TG 一键登录入口：与主钮同高的白底描边胶囊（原站 Passkey 钮位） */
+/* TG 一键登录入口：与主钮同尺寸（高 46、圆角约 23）的白底描边钮（原站 Passkey 钮位） */
 .tg-login {
   margin-top: 1rem;
   display: flex;
@@ -1102,11 +1121,11 @@ onMounted(() => {
   justify-content: center;
   gap: 0.5rem;
   width: 100%;
-  height: 53px;
+  height: 46px;
   padding: 0 24px;
   background: #141416;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
+  border-radius: 23px;
   color: #ffffff;
   font-size: var(--uhd-fs-body);
   font-weight: var(--uhd-fw-semibold);
@@ -1173,14 +1192,15 @@ html[data-theme='light'] .mode-btn.active { color: var(--uhd-l-text); }
 html[data-theme='light'] .mode-indicator { background: var(--uhd-l-surface); }
 html[data-theme='light'] .field-label { color: var(--uhd-l-text); }
 html[data-theme='light'] .optional { color: var(--uhd-l-text-3); }
-html[data-theme='light'] .field-box { background: var(--uhd-l-input-bg); border-color: var(--uhd-l-border); }
+/* 输入框底/边按实测清单第 3 节字面值（#f4f4f5 / #e4e4e7），不用共享令牌近似值 */
+html[data-theme='light'] .field-box { background: #f4f4f5; border-color: #e4e4e7; }
 html[data-theme='light'] .field-icon { color: var(--uhd-l-text-3); }
 html[data-theme='light'] .field-box:focus-within .field-icon { color: var(--uhd-l-text-2); }
 html[data-theme='light'] .field-box input { color: var(--uhd-l-text); }
 html[data-theme='light'] .field-box input::placeholder { color: var(--uhd-l-text-3); }
 html[data-theme='light'] .field-box input:-webkit-autofill {
   -webkit-text-fill-color: var(--uhd-l-text);
-  -webkit-box-shadow: 0 0 0 1000px var(--uhd-l-input-bg) inset;
+  -webkit-box-shadow: 0 0 0 1000px #f4f4f5 inset;
 }
 html[data-theme='light'] .eye-btn { color: var(--uhd-l-text-3); }
 html[data-theme='light'] .eye-btn:hover { color: var(--uhd-l-text); background: var(--uhd-l-seg-bg); }

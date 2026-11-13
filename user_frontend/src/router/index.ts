@@ -341,7 +341,11 @@ router.beforeEach(async (to) => {
 
 // v4 面板第一版只做纸色浅色：在 v4 路由下强制 light，离开时恢复
 // （v4 视图自带 .v4-scope 纸色变量，这里只处理 html data-theme 与浏览器工具栏色）
-export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/collections', '/server', '/shop', '/want', '/store-requests', '/source-discovery', '/game/calendar', '/game/wishlist', '/game/signal', '/game/ledger', '/game/supply', '/game/operator', '/game/account', '/game/account/settings', '/game/account/member'])
+// 例外（2026-11-13 UHD 1:1 跟进）：/game/account（概览）已自带主题跟随，
+// 不再钉 light——本集合摘除该路径后守卫对它走 restoreUserTheme；
+// /game/account/menu（我的）本就不在集合内，同样跟随用户外观。
+// /game/account/settings、/game/account/member 等其余账号页仍是 v4 纸面，继续钉 light。
+export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/collections', '/server', '/shop', '/want', '/store-requests', '/source-discovery', '/game/calendar', '/game/wishlist', '/game/signal', '/game/ledger', '/game/supply', '/game/operator', '/game/account/settings', '/game/account/member'])
 // 参数路由前缀：合集详情是 /collections/:id，afterEach 拿到的是实例路径
 // （如 /collections/123），静态集合永远匹配不上，须按前缀另判；
 // /collections/ 下目前只有详情这一条路由，前缀不会误伤非 v4 页。
