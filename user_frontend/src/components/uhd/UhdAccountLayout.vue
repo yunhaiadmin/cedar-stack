@@ -51,7 +51,7 @@ let agentChecked: Promise<boolean> | null = null
 function checkAgent(): Promise<boolean> {
   if (!agentChecked) {
     agentChecked = getAgentMe()
-      .then(() => true)
+      .then((me) => me.is_agent)
       .catch(() => false)
   }
   return agentChecked

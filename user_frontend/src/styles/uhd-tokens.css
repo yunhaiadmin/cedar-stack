@@ -46,6 +46,10 @@
   --uhd-warn-bg-2: #fdf3e0;
   --uhd-success: #16a34a;
   --uhd-danger: #dc2626;
+  /* 短名别名（订阅页状态文案用）：ok 与 --uhd-success/--uhd-dot-ok 同值；
+     warn 与 --uhd-warn-text 同值（组件先例：UhdAccountLayout 的 --gold 亦取 #b45309） */
+  --uhd-ok: #16a34a;
+  --uhd-warn: #b45309;
   /* 状态点四色：灰=待处理 / 橙=处理中 / 绿=完成·在线 / 红=拒绝·异常 */
   --uhd-dot-idle: #9ca3af;
   --uhd-dot-doing: #f59e0b;
@@ -111,6 +115,8 @@
   --uhd-radius-card-sm: 18px;
   --uhd-radius-card: 24px;
   --uhd-radius-card-lg: 28px;
+  /* 大卡圆角短名（订阅页套餐卡/汇总卡、「我的」菜单卡用）：与 --uhd-radius-card-lg 同值 */
+  --uhd-r-lg: 28px;
   --uhd-radius-modal: 24px;
   --uhd-border-w: 1px;
   /* 白卡柔和阴影（原站浅色实测值换算） */
@@ -148,6 +154,10 @@
   --uhd-dur-hero: 0.74s;
   --uhd-ease-pop: cubic-bezier(0.22, 1, 0.36, 1);
   --uhd-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---------- 1.7 组件运行态（由组件内联 :style 覆盖，此处只给初始值） ---------- */
+  /* 订阅页时长滑杆的填充比例：运行时经 :style="{ '--fill': sliderFill }" 设置 */
+  --fill: 0%;
 }
 
 /* 入场：淡入 + 模糊→清晰（仅营销面 Hero 与弹窗，见说明书 1.6/第 5 节⑦） */
