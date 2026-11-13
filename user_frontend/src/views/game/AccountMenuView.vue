@@ -89,7 +89,6 @@ import { useUserStore } from '@/stores/user'
 import { useTheme } from '@/composables/useTheme'
 import { branding } from '@/composables/useBranding'
 import { getAgentMe } from '@/api/agent'
-import { pointsApi } from '@/api/economy'
 import { subscriptionApi, type MySubscription } from '@/api'
 
 interface MenuItem {
@@ -115,7 +114,6 @@ const userStore = useUserStore()
 const { preference, setPreference } = useTheme()
 
 const mySubs = ref<MySubscription[]>([])
-const pointsBalance = ref<number | null>(null)
 const isAgent = ref(false)
 
 const displayName = computed(() => userStore.user?.username || '我的')
@@ -140,14 +138,7 @@ const groups = computed<MenuGroup[]>(() => {
       value: activeSub.value?.plan_name || undefined,
     },
     { key: 'member', label: '我的会员', to: '/game/account/member' },
-    {
-      key: 'shop',
-      label: '商店',
-      to: '/shop',
-      value: pointsBalance.value == null ? undefined : `能量 ${pointsBalance.value.toLocaleString()}`,
-    },
     { key: 'ledger', label: '能量明细', to: '/game/ledger' },
-    { key: 'supply', label: '商店记录', to: '/game/supply' },
   ]
   const account: MenuItem[] = [
     { key: 'settings', label: '账号与设置', to: '/game/account/settings' },
@@ -182,12 +173,10 @@ async function handleLogout() {
 }
 
 onMounted(async () => {
-  const [subs, pts] = await Promise.allSettled([
+  const [subs] = await Promise.allSettled([
     subscriptionApi.getMine(),
-    pointsApi.log({ limit: 1 }),
   ])
   if (subs.status === 'fulfilled') mySubs.value = subs.value
-  if (pts.status === 'fulfilled') pointsBalance.value = pts.value.balance ?? null
   // 代理可见性按 api/agent 契约取 is_agent（getAgentMe 永不 reject，
   // 失败时回 { is_agent: false }，不能用「请求成功」当可见判据）
   const me = await getAgentMe()

@@ -21,9 +21,6 @@
           <div class="fuel-num"><small aria-hidden="true">⚡</small> {{ fmtNum(balance) }}</div>
           <!-- R27：非「全部」筛选时后端 total 不可信（是未筛选总数），数字去掉，不加后端接口 -->
           <span v-if="todayIncome > 0" class="fuel-today">{{ !hasMore && filter === 'all' ? `今日 +${fmtNum(todayIncome)}` : '今日有进账' }} <span aria-hidden="true">⚡</span></span>
-          <div class="fuel-actions">
-            <UhdButton variant="secondary" size="sm" @click="router.push('/shop')">去充值</UhdButton>
-          </div>
         </div>
       </section>
 
