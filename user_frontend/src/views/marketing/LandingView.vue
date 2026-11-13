@@ -6,15 +6,18 @@
  * 文案为 Aetrix 自有口径；营销数字一律不编造：片库统计位为占位待接（第 5 节④）。
  * 页面独立于应用壳（App.vue 对 landing 路由名不渲染全局顶栏/底坞），自带悬浮胶囊导航。
  */
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, type Component } from 'vue'
 import { useRouter } from 'vue-router'
-import { Monitor, Sun, Layers, ShieldCheck, Menu, X, RefreshCw, Bell, Sparkles, Home, Tag, LogIn } from 'lucide-vue-next'
+import { Monitor, Sun, Layers, ShieldCheck, Menu, X, RefreshCw, Bell, Sparkles, Home, Tag, BookOpen, ExternalLink, Users, Bot, MessageCircle, Send, Globe } from 'lucide-vue-next'
 import UhdNavPill, { type UhdNavItem } from '@/components/uhd/UhdNavPill.vue'
 import UhdButton from '@/components/uhd/UhdButton.vue'
 import UhdChip from '@/components/uhd/UhdChip.vue'
 import { branding } from '@/composables/useBranding'
+import { communityLinks } from '@/composables/useCommunityLinks'
+import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
+const userStore = useUserStore()
 
 const navItems: UhdNavItem[] = [
   { key: 'home', label: '首页' },
@@ -54,9 +57,54 @@ function onMobileNav(key: string) {
   setMenu(false)
   onNav(key)
 }
-function onMobileRegister() {
+/* 菜单面板下半（2026-11-13 用户发友站截图定版，整体 1:1）：
+   文档行与「社区渠道」卡片全部来自「官网社区渠道」能力配置（后台可配），
+   未配的项不渲染、四格全空时整个小节不出现；底部大钮「进入后台」
+   已登录进用户中心概览、未登录去登录页。 */
+/* 渠道图标种类 → 线性图标组件（与后台配置的图标选项一一对应） */
+const CHANNEL_ICONS: Record<string, Component> = {
+  bell: Bell,
+  users: Users,
+  bot: Bot,
+  message: MessageCircle,
+  send: Send,
+  globe: Globe,
+}
+function channelIcon(kind: string): Component {
+  return CHANNEL_ICONS[kind] || MessageCircle
+}
+function goConsole() {
   setMenu(false)
-  goRegister()
+  router.push(userStore.isLoggedIn ? '/game/account' : '/login')
+}
+
+/* 拖拽条下滑关闭：按住把手向下拖，面板跟手；松手过阈值（90px）关，
+   没过回弹。拖拽期间关掉过渡动画，位移直接写在面板上。 */
+const dragY = ref(0)
+const dragging = ref(false)
+let dragStartY = 0
+let dragPointerId = -1
+function onHandlePointerDown(event: PointerEvent) {
+  if (dragging.value) return
+  dragging.value = true
+  dragPointerId = event.pointerId
+  dragStartY = event.clientY
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+}
+function onHandlePointerMove(event: PointerEvent) {
+  if (!dragging.value || event.pointerId !== dragPointerId) return
+  dragY.value = Math.max(0, event.clientY - dragStartY)
+}
+function onHandlePointerUp(event: PointerEvent) {
+  if (!dragging.value || event.pointerId !== dragPointerId) return
+  dragging.value = false
+  const shouldClose = dragY.value > 90
+  dragY.value = 0
+  if (shouldClose) closeMenuAnimated()
+}
+const sheetDragStyle = () => {
+  if (menuClosing.value || !dragging.value) return undefined
+  return { transform: `translateY(${dragY.value}px)`, transition: 'none' }
 }
 
 function goRegister() {
@@ -334,11 +382,19 @@ const year = new Date().getFullYear()
       v-if="menuOpen"
       class="m-sheet"
       :class="{ 'is-out': menuClosing }"
+      :style="sheetDragStyle()"
       role="dialog"
       aria-modal="true"
       aria-label="菜单"
     >
-      <div class="m-sheet__handle" aria-hidden="true"><span /></div>
+      <div
+        class="m-sheet__handle"
+        aria-hidden="true"
+        @pointerdown="onHandlePointerDown"
+        @pointermove="onHandlePointerMove"
+        @pointerup="onHandlePointerUp"
+        @pointercancel="onHandlePointerUp"
+      ><span /></div>
       <nav class="m-sheet__links" aria-label="主导航">
         <button type="button" class="m-sheet__row" @click="onMobileNav('home')">
           <Home :size="18" aria-hidden="true" />首页
@@ -346,13 +402,44 @@ const year = new Date().getFullYear()
         <button type="button" class="m-sheet__row" @click="onMobileNav('pricing')">
           <Tag :size="18" aria-hidden="true" />定价
         </button>
-        <button type="button" class="m-sheet__row" @click="onMobileNav('login')">
-          <LogIn :size="18" aria-hidden="true" />登录
-        </button>
+        <a
+          v-if="communityLinks.docs_url"
+          class="m-sheet__row"
+          :href="communityLinks.docs_url"
+          target="_blank"
+          rel="noopener noreferrer"
+          @click="setMenu(false)"
+        >
+          <BookOpen :size="18" aria-hidden="true" />文档
+          <ExternalLink :size="15" class="m-sheet__row-ext" aria-hidden="true" />
+        </a>
       </nav>
+      <template v-if="communityLinks.channels.length">
+        <div class="m-sheet__divider" aria-hidden="true" />
+        <section class="m-sheet__channels" aria-label="社区渠道">
+          <h3 class="m-sheet__channels-title">社区渠道</h3>
+          <div class="m-sheet__grid">
+            <a
+              v-for="(channel, idx) in communityLinks.channels"
+              :key="idx"
+              class="m-card"
+              :href="channel.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              @click="setMenu(false)"
+            >
+              <span class="m-card__bubble">
+                <component :is="channelIcon(channel.icon)" :size="20" aria-hidden="true" />
+              </span>
+              <span class="m-card__title">{{ channel.title }}</span>
+              <span v-if="channel.subtitle" class="m-card__sub">{{ channel.subtitle }}</span>
+            </a>
+          </div>
+        </section>
+      </template>
       <div class="m-sheet__divider" aria-hidden="true" />
       <div class="m-sheet__cta">
-        <UhdButton variant="primary" dark block @click="onMobileRegister">立即加入</UhdButton>
+        <UhdButton variant="primary" dark block @click="goConsole">进入后台</UhdButton>
       </div>
     </div>
 
@@ -1481,6 +1568,8 @@ const year = new Date().getFullYear()
     display: flex;
     justify-content: center;
     padding: 14px 0 8px;
+    touch-action: none;
+    cursor: grab;
   }
   .m-sheet__handle span {
     width: 40px;
@@ -1512,7 +1601,61 @@ const year = new Date().getFullYear()
     flex: none;
     opacity: 0.4;
   }
+  a.m-sheet__row { text-decoration: none; }
+  .m-sheet__row .m-sheet__row-ext {
+    margin-left: auto;
+    opacity: 0.45;
+  }
   .m-sheet__row:active { background: rgba(255, 255, 255, 0.08); }
+  /* 社区渠道：小节标题 + 2×2 卡片（圆角深灰底、圆形图标气泡、标题、@副标） */
+  .m-sheet__channels {
+    padding: 16px 20px 20px;
+  }
+  .m-sheet__channels-title {
+    margin: 0 0 12px;
+    font-size: 13px;
+    font-weight: var(--uhd-fw-medium);
+    letter-spacing: 0.04em;
+    color: rgba(255, 255, 255, 0.45);
+  }
+  .m-sheet__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .m-card {
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.045);
+    color: var(--uhd-d-text);
+    text-decoration: none;
+  }
+  .m-card:active { background: rgba(255, 255, 255, 0.09); }
+  .m-card__bubble {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    margin-bottom: 10px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.85);
+  }
+  .m-card__title {
+    font-size: 15px;
+    font-weight: var(--uhd-fw-semibold);
+    line-height: 1.35;
+  }
+  .m-card__sub {
+    margin-top: 3px;
+    font-size: 12.5px;
+    color: rgba(255, 255, 255, 0.42);
+    word-break: break-all;
+  }
   .m-sheet__divider {
     height: 1px;
     margin: 0 20px;

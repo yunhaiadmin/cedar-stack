@@ -23,6 +23,7 @@ from backend.emby_server.models import MediaItem
 from backend.emby_server.portal import resolve_emby_base_url
 from backend.emby_server.public_url import client_base_url, configured_public_url
 from backend.integrations import branding as branding_capability
+from backend.integrations import community as community_capability
 from backend.tg_bind import get_bot_username
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,21 @@ site_router = APIRouter(prefix="/api/site", tags=["站点信息"])
 def get_branding(db: Session = Depends(get_db)):
     """站点名称 / Logo / 主题色 / SEO（公开）"""
     return branding_capability.public_info(db)
+
+
+@site_router.get("/community")
+def get_community(db: Session = Depends(get_db)) -> dict:
+    """官网菜单面板的文档外链与社区渠道（公开）
+
+    值来自「官网社区渠道」能力（后台「系统设置」里填）。只下发真正要显示
+    的项：未配的文档地址返回空串、关闭或没填链接的渠道格不在列表里，
+    前端据此决定渲染与否。读取异常回落全空——公开端点绝不能 500 拖垮官网。
+    """
+    try:
+        return community_capability.public_info(db)
+    except Exception:
+        logger.warning("读取官网社区渠道配置失败，菜单面板将只显示固定导航", exc_info=True)
+        return {"docs_url": "", "channels": []}
 
 
 @site_router.get("/tg-login-entry")

@@ -302,6 +302,28 @@ export const brandingApi = {
   get: () => api.get<never, Branding>('/api/site/branding'),
 }
 
+// ==================== 官网社区渠道（能力：官网社区渠道，backend/api/site.py） ====================
+
+export interface CommunityChannel {
+  title: string
+  subtitle: string
+  url: string
+  /** 图标种类：bell / users / bot / message / send / globe */
+  icon: string
+}
+
+export interface CommunityLinks {
+  /** 文档外链地址（未配置时为空串，前端不渲染文档行） */
+  docs_url: string
+  /** 要显示的社区渠道卡片（未配/关闭的格子不在列表里） */
+  channels: CommunityChannel[]
+}
+
+export const communityApi = {
+  /** 公开端点：文档外链 + 社区渠道（只含要显示的项，不含任何凭据） */
+  get: () => api.get<never, CommunityLinks>('/api/site/community'),
+}
+
 // ==================== AI 助手（能力：AI 模型设置，backend/api/assistant.py） ====================
 
 export interface AiStatus {
