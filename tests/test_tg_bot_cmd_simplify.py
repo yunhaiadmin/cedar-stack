@@ -100,7 +100,7 @@ def _dispatch(db, monkeypatch, text, chat_id, chat_type="private"):
 
 def test_menu_slimmed_to_27_with_me_kept():
     names = [n for n, _ in poller.BOT_COMMANDS]
-    assert len(names) == 25  # 原 27 条 + /playrank，批 9 摘除 duel/rain/redpacket/lottery/slots 五条后
+    assert len(names) == 24  # 原 27 条 + /playrank，批 9 摘除 duel/rain/redpacket/lottery/slots 五条、2026-11-13 摘除 checkin 后
     assert ("me", "[群/私聊] 账号中心") in poller.BOT_COMMANDS
     for gone in ("account", "renew", "chatpoints", "level"):
         assert gone not in names
@@ -248,7 +248,7 @@ def test_user_scope_menu_only_three():
     names = [n for n, _ in command_scopes.default_commands(poller.BOT_COMMANDS)]
     assert names == ["start", "help", "me"]  # 按 BOT_COMMANDS 注册顺序下发
     admin_names = [n for n, _ in command_scopes.admin_commands(poller.BOT_COMMANDS)]
-    assert len(admin_names) == 25  # 全量菜单：批 9 摘除五条玩法命令后
+    assert len(admin_names) == 24  # 全量菜单：批 9 摘五条玩法、2026-11-13 摘签到后
 
 
 # ---------- 二期：/start 私聊面板按钮覆盖全部用户功能 ----------
@@ -260,7 +260,6 @@ def test_user_scope_menu_only_three():
 PANEL_BUTTON_PATHS = {
     "用户面板/账号": "menu:user",
     "使用兑换码": "menu:renewcode",
-    "签到": "menu:checkin",
     "能量": "menu:points",
     "快捷登录/续期": "menu:login",
     "绑定账号": "menu:bind",

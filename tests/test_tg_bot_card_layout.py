@@ -164,8 +164,8 @@ def test_user_panel_markup_ends_with_home():
     rows = markup["inline_keyboard"]
     assert rows[-1] == layout.home_row()
     flat = [b["callback_data"] for r in rows for b in r]
-    # 一级只剩签到直达＋四个分组入口（按钮分组，不再平铺）
-    for action in ("menu:checkin", "menu:group_media", "menu:group_drive",
+    # 一级只剩四个分组入口（按钮分组，不再平铺）
+    for action in ("menu:group_media", "menu:group_drive",
                    "menu:group_account", "menu:group_help"):
         assert action in flat
     # 原功能按钮收进各自的二级分组面板

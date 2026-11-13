@@ -39,7 +39,6 @@ BOT_COMMANDS: list[tuple[str, str]] = [
     ("start", "[群/私聊] 欢迎与快捷入口"),
     ("help", "[群/私聊] 帮助"),
     ("bind", "[群/私聊] 绑定 Telegram"),
-    ("checkin", "[群/私聊] 每日签到"),
     ("points", "[群/私聊] 查能量"),
     ("me", "[群/私聊] 账号中心"),
     ("request", "[私聊] 求片"),

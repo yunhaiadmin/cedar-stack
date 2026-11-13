@@ -238,7 +238,7 @@ ANON_ADMIN_TEXT = (
 # 不在表内＝公开命令（/help /rank /requestboard /rules：不查
 # 发送者身份、只读全站或群级数据），匿名发照常执行。
 _IDENTITY_COMMANDS = {
-    "/start", "/bind", "/checkin", "/points", "/chatpoints",
+    "/start", "/bind", "/points", "/chatpoints",
     "/account", "/me", "/request", "/myrequests", "/login", "/renew",
     "/govlog", "/level", "/report", "/propose", "/launch",
     "/redeem",
@@ -584,7 +584,6 @@ def dispatch(db, update: dict) -> None:
             "/start": handlers.handle_start,
             "/help": handlers.handle_help,
             "/bind": handlers.handle_bind,
-            "/checkin": handlers.handle_checkin,
             "/points": handlers.handle_points,
             "/chatpoints": handlers.handle_chatpoints,
             "/account": handlers.handle_account,

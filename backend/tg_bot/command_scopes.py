@@ -60,7 +60,7 @@ ADMIN_ONLY_COMMANDS: frozenset[str] = frozenset({
 # account/level 是手输别名、不在 BOT_COMMANDS 菜单表，群菜单实际
 # 下发的只有 me（group_commands 按菜单表过滤，见下方函数）。
 GROUP_COMMANDS: frozenset[str] = frozenset({
-    "start", "help", "bind", "checkin", "points",
+    "start", "help", "bind", "points",
     "rank", "requestboard", "rules",
     "me", "account", "level",
 })

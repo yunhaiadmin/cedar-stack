@@ -1,8 +1,9 @@
 """TG Bot 用户面板按钮分组（2026-10-30 用户亲批「按钮分一下，不要全铺开」）。
 
-一级只放：签到直达＋五个分组入口＋整行主界面；原 15 颗功能按钮收进
+一级只放：四个分组入口＋整行主界面；原功能按钮收进
 二级分组面板（同一条消息编辑切换），各功能 callback 与私聊门禁不变，
 只新增分组翻页 callback（menu:group_* 与返回 menu:user）。
+（签到直达按钮已于 2026-11-13 随签到入口摘除。）
 """
 from __future__ import annotations
 
@@ -22,14 +23,11 @@ TG = 910001
 
 LEVEL1 = [
     [
-        {"text": "✅ 签到", "callback_data": "menu:checkin"},
         {"text": "🎬 求片", "callback_data": "menu:group_media"},
-    ],
-    [
         {"text": "📦 网盘转存", "callback_data": "menu:group_drive"},
-        {"text": "🎟️ 账号权益", "callback_data": "menu:group_account"},
     ],
     [
+        {"text": "🎟️ 账号权益", "callback_data": "menu:group_account"},
         {"text": "❓ 帮助中心", "callback_data": "menu:group_help"},
     ],
     [{"text": "♻️ 主界面", "callback_data": "menu:main"}],
@@ -76,14 +74,15 @@ GROUPS = {
     ]),
 }
 
-# 原面板平铺的 13 颗按钮的 callback（签到与主界面在一级，其余收进分组）
-ORIGINAL_13 = {
-    "menu:checkin", "menu:request", "menu:myrequests", "menu:transfers",
+# 原面板平铺的 12 颗按钮的 callback（主界面在一级，其余收进分组；
+# 签到原在一级，已于 2026-11-13 随签到入口摘除）
+ORIGINAL_12 = {
+    "menu:request", "menu:myrequests", "menu:transfers",
     "menu:bindings", "menu:login", "menu:points", "menu:rank",
     "menu:whyplay", "menu:wants",
     "menu:bind", "menu:help", "menu:main",
 }
-FUNCTION_CALLBACKS = ORIGINAL_13 - {"menu:checkin", "menu:main"}
+FUNCTION_CALLBACKS = ORIGINAL_12 - {"menu:main"}
 
 
 @pytest.fixture()
@@ -148,7 +147,7 @@ def test_level1_matches_approved_sample():
 def test_level1_no_flat_function_buttons():
     flat = set(_flat(handlers.user_panel_markup()))
     assert flat == {
-        "menu:checkin", "menu:group_media", "menu:group_drive",
+        "menu:group_media", "menu:group_drive",
         "menu:group_account", "menu:group_help",
         "menu:main",
     }
@@ -160,7 +159,7 @@ def test_all_original_buttons_reachable_within_two_clicks():
     reachable = set(_flat(level1))
     for key in GROUPS:
         reachable |= set(_flat(handlers.user_panel_group_markup(key)))
-    assert ORIGINAL_13 <= reachable
+    assert ORIGINAL_12 <= reachable
 
 
 # ---------- 二级分组面板（handlers 层） ----------

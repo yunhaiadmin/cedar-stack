@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""TG Bot 临时消息包1 PR-2：群菜单 checkin / points 个人结果临时回复。
+"""TG Bot 临时消息包1 PR-2：群菜单 points 个人结果临时回复。
 
 口径（计划 plan-20261110 包1 · 1c 定案）：
-- 群里点菜单的签到（menu:checkin）、能量（menu:points 与并入口
+- 群里点菜单的能量（menu:points 与并入口
   menu:chatpoints）是点击者本人的结果，改走按钮回调临时回复
   （sendMessage + ephemeral_message_parameters.callback_query_id），
   只给点击者看，不再编辑进群共享面板（人人可见）。
@@ -98,23 +98,6 @@ def wire(monkeypatch):
     return rec
 
 
-def test_group_checkin_result_goes_ephemeral(db, wire):
-    store.write_values(db, {"checkin_enabled": "true"})
-    db.commit()
-    _make_user(db)
-    callbacks.handle_callback(db, _cq("checkin"))
-    # 回执照常（官方要求与临时回复并存）
-    assert wire["answered"] == ["cq-menu-1"]
-    assert len(wire["eph"]) == 1
-    chat_id, text, kw = wire["eph"][0]
-    assert chat_id == GROUP
-    assert kw.get("callback_query_id") == "cq-menu-1"
-    assert "签到" in text
-    # 只读结果卡：不带按钮、不编辑共享面板
-    assert kw.get("reply_markup") is None
-    assert wire["edits"] == []
-
-
 def test_group_points_result_goes_ephemeral(db, wire):
     _make_user(db, points=250)
     callbacks.handle_callback(db, _cq("points"))
@@ -135,27 +118,23 @@ def test_group_chatpoints_alias_goes_ephemeral(db, wire):
 
 
 def test_group_ephemeral_failure_falls_back_to_panel_edit(db, wire, monkeypatch):
-    store.write_values(db, {"checkin_enabled": "true"})
-    db.commit()
     _make_user(db)
     monkeypatch.setattr(
         sender, "send_ephemeral_message",
         lambda db_, cid, text, **kw: (False, "api down", None))
-    callbacks.handle_callback(db, _cq("checkin"))
+    callbacks.handle_callback(db, _cq("points"))
     # 回落现行共享面板编辑：结果照常落地＋群面板续命口径不变
     assert len(wire["edits"]) == 1
-    assert "签到" in wire["edits"][0][2]
+    assert "能量余额" in wire["edits"][0][2]
     assert wire["rearmed"] == [(GROUP, 55)]
 
 
-def test_private_checkin_unchanged(db, wire):
-    store.write_values(db, {"checkin_enabled": "true"})
-    db.commit()
+def test_private_points_unchanged(db, wire):
     _make_user(db)
-    callbacks.handle_callback(db, _cq("checkin", chat_id=TG_ID))
+    callbacks.handle_callback(db, _cq("points", chat_id=TG_ID))
     assert wire["eph"] == []
     assert len(wire["edits"]) == 1
-    assert "签到" in wire["edits"][0][2]
+    assert "能量余额" in wire["edits"][0][2]
 
 
 def test_group_other_action_not_ephemeral(db, wire):

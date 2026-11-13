@@ -270,7 +270,6 @@ def _group_menu_markup(db) -> dict:
     """群聊主菜单。个人查询不进群菜单。"""
     rows: list[list[dict]] = [
         [
-            {"text": "✅ 签到", "callback_data": "menu:checkin"},
             {"text": "✨ 能量", "callback_data": "menu:points"},
         ],
         [
@@ -319,7 +318,7 @@ def private_only_markup(db) -> dict:
 
 
 # 用户面板分组（2026-10-30 用户亲批「按钮分一下，不要全铺开」）：
-# 一级只放签到直达＋四个分组入口＋整行主界面；原功能按钮按组收进二级
+# 一级只放四个分组入口＋整行主界面；原功能按钮按组收进二级
 # 分组面板。各功能按钮的 callback 与既有门禁一律不变，只新增分组翻页
 # callback（menu:group_*，不查身份、不设门禁）与返回（复用 menu:user）。
 USER_PANEL_GROUPS: dict[str, dict] = {
@@ -366,25 +365,18 @@ def _two_col(buttons: list[dict]) -> list[list[dict]]:
 
 
 def user_panel_markup() -> dict:
-    """用户面板一级按钮：签到直达＋四个分组入口两列排，末行回主界面。"""
-    rows: list[list[dict]] = [
-        [
-            {"text": "✅ 签到", "callback_data": "menu:checkin"},
-            {"text": USER_PANEL_GROUPS["media"]["label"],
-             "callback_data": "menu:group_media"},
-        ],
-        [
-            {"text": USER_PANEL_GROUPS["drive"]["label"],
-             "callback_data": "menu:group_drive"},
-            {"text": USER_PANEL_GROUPS["account"]["label"],
-             "callback_data": "menu:group_account"},
-        ],
-        [
-            {"text": USER_PANEL_GROUPS["help"]["label"],
-             "callback_data": "menu:group_help"},
-        ],
-        layout.home_row(),
-    ]
+    """用户面板一级按钮：四个分组入口两列排，末行回主界面。"""
+    rows = _two_col([
+        {"text": USER_PANEL_GROUPS["media"]["label"],
+         "callback_data": "menu:group_media"},
+        {"text": USER_PANEL_GROUPS["drive"]["label"],
+         "callback_data": "menu:group_drive"},
+        {"text": USER_PANEL_GROUPS["account"]["label"],
+         "callback_data": "menu:group_account"},
+        {"text": USER_PANEL_GROUPS["help"]["label"],
+         "callback_data": "menu:group_help"},
+    ])
+    rows.append(layout.home_row())
     return {"inline_keyboard": rows}
 
 
@@ -633,7 +625,7 @@ def handle_help(db, tg_user: dict, chat_id: int, args: str) -> str:
     return layout.card(
         layout.title("使用帮助"),
         [
-            layout.row("🤖", "主要用途", "公益服快捷操作：签到领能量、查能量，以及接收求片进度、订阅到期等通知"),
+            layout.row("🤖", "主要用途", "公益服快捷操作：查能量，以及接收求片进度、订阅到期等通知"),
             layout.row("📋", "全部命令", "点左下角的 / 菜单查看"),
             layout.row("💬", "遇到问题", "请在网页端联系客服"),
         ],
@@ -651,33 +643,6 @@ def handle_bind(db, tg_user: dict, chat_id: int, args: str) -> str:
         return _bind_guide_text()
     msg = verify_bind_code(db, int(telegram_id), chat_id, args.strip())
     return msg if msg else "绑定码无效或已过期，请在网页端重新获取绑定码"
-
-
-def handle_checkin(db, tg_user: dict, chat_id: int, args: str) -> str:
-    from backend.api.economy import _do_checkin_core
-    from fastapi import HTTPException
-
-    user = resolve(db, int(tg_user.get("id") or 0))
-    if user is None:
-        return _bind_guide_text()
-    # PA-029：停用账号经机器人签到领能量须拦（与 PA-019 博彩门同口径，
-    # 落机器人侧入口，不改 tg_bot resolve 层与网站核心）。
-    if not getattr(user, "is_active", True):
-        return "账号已被停用"
-    try:
-        award = _do_checkin_core(db, user)
-    except HTTPException as e:
-        return html.escape(str(e.detail))
-    except Exception:
-        return "签到失败，请稍后再试"
-    rows = [layout.row("📅", "连签天数", f"已连续签到 <b>{award['streak']}</b> 天")]
-    if award["points_awarded"] > 0:
-        rows.insert(0, layout.row("💰", "本次能量", f"<b>+{award['points_awarded']}</b>"))
-    else:
-        rows.append(layout.row("💡", "本次能量", "能量仅限公益服用户领取"))
-    if award.get("vitality_gained", 0) > 0:
-        rows.append(layout.row("⚡", "活力数值", f"+{award['vitality_gained']}"))
-    return layout.card(layout.title("签到成功！"), rows)
 
 
 def handle_points(db, tg_user: dict, chat_id: int, args: str) -> str:

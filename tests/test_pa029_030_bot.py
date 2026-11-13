@@ -1,8 +1,9 @@
 """PA-029（R12-B12 机器人）回归测试。
 
-PA-029：停用账号经机器人签到/兑码/群发言仍能获利（PA-019 博彩门之外的
-同根缺口）。修法落机器人侧入口：handlers.handle_checkin/handle_redeem 与
+PA-029：停用账号经机器人兑码/群发言仍能获利（PA-019 博彩门之外的
+同根缺口）。修法落机器人侧入口：handlers.handle_redeem 与
 router._award_group_chat_points 各加停用门，不改 tg_bot resolve 层与网站核心。
+（签到路径的同名用例随 2026-11-13 签到入口摘除一并删除。）
 （PA-030 抽奖按钮用例随批 9 抽奖面板下线一并删除。）
 
 全部用隔离的内存 SQLite，不碰生产库。先红后绿：本文件用例在修复前应为红。
@@ -73,28 +74,7 @@ def _chat_logs(db, user_id):
         models.PointsLog.type == "chat").all()
 
 
-# ---------- PA-029：停用账号机器人三路获利门 ----------
-
-def test_disabled_user_cannot_checkin_via_bot(db):
-    _set_config(db, "checkin_enabled", "true")
-    user = _make_user(db, "disabled_checkin", TG, points=0, is_active=False)
-    text = handlers.handle_checkin(db, _tg(), TG, "")
-    assert "账号已被停用" in text
-    assert "签到成功" not in text
-    db.refresh(user)
-    assert user.points == 0
-    assert db.query(models.CheckinRecord).filter(
-        models.CheckinRecord.user_id == user.id).count() == 0
-
-
-def test_active_user_checkin_still_works(db):
-    _set_config(db, "checkin_enabled", "true")
-    user = _make_user(db, "active_checkin", TG, points=0, is_active=True)
-    text = handlers.handle_checkin(db, _tg(), TG, "")
-    assert "签到成功" in text
-    db.refresh(user)
-    assert user.points > 0
-
+# ---------- PA-029：停用账号机器人获利门 ----------
 
 def test_disabled_user_cannot_redeem_via_bot(db):
     user = _make_user(db, "disabled_redeem", TG, points=0, is_active=False)

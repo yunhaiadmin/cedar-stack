@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # 群菜单里走按钮回调临时回复的个人结果动作（Bot API 10.4 包1 PR-2）：
 # 结果是点击者本人的，只给他看，不编辑进群共享面板。
-_EPHEMERAL_RESULT_ACTIONS = ("checkin", "points", "chatpoints")
+_EPHEMERAL_RESULT_ACTIONS = ("points", "chatpoints")
 
 
 def handle_callback(db, callback_query: dict) -> None:
@@ -65,7 +65,7 @@ def _handle_menu(db, callback_query: dict) -> None:
         text, markup = "系统繁忙，请稍后再试", handlers.back_markup()
 
     if action in _EPHEMERAL_RESULT_ACTIONS and not is_private:
-        # 群菜单个人结果临时化（Bot API 10.4 包1 PR-2）：签到/能量是
+        # 群菜单个人结果临时化（Bot API 10.4 包1 PR-2）：能量是
         # 点击者本人的结果，改走按钮回调临时回复只发给他，不再编辑
         # 进群共享面板。回执已在上方照常 answer（官方要求两者并存，
         # 且临时回复须在回调后 15 秒内发出，本函数同步发送满足）。
@@ -296,9 +296,6 @@ def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,
             markup = handlers.admin_back_markup()
     elif action == "renewcode":
         text = handlers.handle_redeem(db, tg_user, chat_id, "")
-        markup = handlers.back_markup()
-    elif action == "checkin":
-        text = handlers.handle_checkin(db, tg_user, chat_id, "")
         markup = handlers.back_markup()
     elif action == "points":
         text = handlers.handle_points(db, tg_user, chat_id, "")
