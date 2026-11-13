@@ -3,8 +3,8 @@
  * 用户管理
  *
  * v2.4.0 重构：
- * - 新增「用户 360°」详情抽屉（资料 / 会员 / 积分 / 订单 / 邀请 / 签到 / 观看）
- * - 授予会员、调整积分、重置密码、发送消息改为正规对话框（原先靠输入序号）
+ * - 新增「用户 360°」详情抽屉（资料 / 会员 / 订单 / 邀请 / 观看）
+ * - 授予会员、重置密码、发送消息改为正规对话框（原先靠输入序号）
  * - 行内操作收敛为「详情 + 更多」下拉，表格不再横向堆 6 个按钮
  *
  * v2.6.10：手机（≤640px）下表格列收窄并隐藏「注册时间」（详情抽屉里本来就有），
@@ -13,7 +13,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  CalendarCheck, CircleCheck, CircleSlash, Coins, Crown, Download, Eye, EyeOff, Film, Gift,
+  CalendarCheck, CircleCheck, CircleSlash, Crown, Download, Eye, EyeOff, Film, Gift,
   History, KeyRound, Mail, Megaphone, MonitorSmartphone, MoreHorizontal, PlayCircle, RefreshCw, Search,
   Server, ShieldCheck, Smartphone, UserX, Users as UsersIcon, Wallet, Waypoints,
 } from 'lucide-vue-next'
@@ -24,7 +24,6 @@ import {
   fetchUserGrants, grantSubscription, removeDevice, resetUserPassword, sendUserMessage, setDeviceBlocked,
   updateUser, type PlanRow,
 } from '@/api/admin'
-import { adjustUserPoints } from '@/api/economy'
 import { parseServerTime } from '@/utils/serverTime'
 import { bulkExtendWelfare, grantWelfare, revokeWelfare } from '@/api/welfare'
 import type { AdminUserRow, DeviceRow, UserDetail, UserGrantCard, UserGrants } from '@/types'
@@ -455,46 +454,6 @@ function fmtWelfareDate(s: string | null): string {
   return s.replace('T', ' ').slice(0, 16)
 }
 
-// ==================== 积分调整 ====================
-
-const pointsDialog = reactive({
-  visible: false,
-  user: null as AdminUserRow | null,
-  amount: 0,
-  reason: '',
-})
-const pointsSaving = ref(false)
-
-function openPoints(u: AdminUserRow) {
-  pointsDialog.user = u
-  pointsDialog.amount = 0
-  pointsDialog.reason = ''
-  pointsDialog.visible = true
-}
-
-async function submitPoints() {
-  const u = pointsDialog.user
-  if (!u) return
-  if (!pointsDialog.amount) {
-    ElMessage.warning('请输入不为 0 的调整数额')
-    return
-  }
-  pointsSaving.value = true
-  try {
-    const res = await adjustUserPoints(u.id, {
-      amount: pointsDialog.amount,
-      reason: pointsDialog.reason || '管理员人工调整',
-    })
-    ElMessage.success(`已调整，当前余额 ${res.balance}`)
-    pointsDialog.visible = false
-    if (detailVisible.value) await refreshDetail()
-  } catch {
-    // 拦截器已提示
-  } finally {
-    pointsSaving.value = false
-  }
-}
-
 // ==================== 其他操作 ====================
 
 async function toggleActive(u: AdminUserRow) {
@@ -616,7 +575,6 @@ function onRowCommand(cmd: string, row: AdminUserRow) {
     detail: () => openDetail(row),
     grant: () => openGrant(row),
     extend: () => openExtend(row),
-    points: () => openPoints(row),
     welfare_grant: () => openWelfareGrant(row),
     welfare_revoke: () => doWelfareRevoke(row),
     password: () => openPwd(row),
@@ -627,14 +585,6 @@ function onRowCommand(cmd: string, row: AdminUserRow) {
   map[cmd]?.()
 }
 
-const LOGIN_LIMIT = 8
-function logTypeLabel(type: string): string {
-  const map: Record<string, string> = {
-    checkin: '签到', rebate: '返利', recharge: '充值', exchange: '兑换',
-    subscribe: '订阅', admin: '人工调整', order: '订单', refund: '退款',
-  }
-  return map[type] || type
-}
 
 // ==================== 授权资源卡片（Phase 4） ====================
 
@@ -678,7 +628,7 @@ function fmtCount(n: number | null | undefined): string {
     <PageHeader
       eyebrow="用户"
       title="用户"
-      description="点用户名或「详情」打开 360° 画像：会员、积分、订单、邀请、设备与授权资源都在抽屉里处理。"
+      description="点用户名或「详情」打开 360° 画像：会员、订单、邀请、设备与授权资源都在抽屉里处理。"
     >
       <template #actions>
         <el-button @click="broadcastVisible = true">
@@ -801,7 +751,6 @@ function fmtCount(n: number | null | undefined): string {
               <el-dropdown-menu>
                 <el-dropdown-item command="grant">授予会员</el-dropdown-item>
                 <el-dropdown-item v-if="row.subscription_id" command="extend">延长会员</el-dropdown-item>
-                <el-dropdown-item command="points">调整积分</el-dropdown-item>
                 <el-dropdown-item command="welfare_grant">公益开通/续期</el-dropdown-item>
                 <el-dropdown-item v-if="row.is_welfare" command="welfare_revoke" divided>取消公益资格</el-dropdown-item>
                 <el-dropdown-item command="password" divided>重置密码</el-dropdown-item>
@@ -862,18 +811,11 @@ function fmtCount(n: number | null | undefined): string {
               :suffix="detail.subscription.active ? `剩 ${detail.subscription.active.days_left} 天` : ''"
               class="text-tile"
             />
-            <StatTile label="积分" :icon="Coins" :value="detail.points.balance" />
-            <StatTile
-              label="签到"
-              :icon="CalendarCheck"
-              :value="detail.checkin.total"
-              :suffix="`次 · 连签 ${detail.checkin.streak}`"
-            />
             <StatTile
               label="邀请"
               :icon="Gift"
               :value="detail.invitation.count"
-              :suffix="`人 · 返利 ${detail.invitation.rebate_total}`"
+              :suffix="'人'"
             />
             <StatTile label="累计付费" :icon="Wallet" :value="`¥${detail.orders.paid_total.toFixed(2)}`" />
             <StatTile
@@ -889,9 +831,6 @@ function fmtCount(n: number | null | undefined): string {
               <Crown :size="13" class="btn-ico" />授予会员
             </el-button>
             <el-button v-if="detailUser?.subscription_id" size="small" @click="detailUser && openExtend(detailUser)">延长会员</el-button>
-            <el-button size="small" @click="detailUser && openPoints(detailUser)">
-              <Coins :size="13" class="btn-ico" />调整积分
-            </el-button>
             <el-button size="small" @click="detailUser && openPwd(detailUser)">
               <KeyRound :size="13" class="btn-ico" />重置密码
             </el-button>
@@ -1054,23 +993,6 @@ function fmtCount(n: number | null | undefined): string {
               </DataTable>
             </el-tab-pane>
 
-            <el-tab-pane label="积分流水" name="points">
-              <div class="mini-summary">
-                累计获得 <strong class="ok">+{{ detail.points.income }}</strong>
-                · 累计消耗 <strong class="bad">-{{ detail.points.expense }}</strong>
-                · 当前 <strong>{{ detail.points.balance }}</strong>
-              </div>
-              <EmptyState v-if="detail.points.recent.length === 0" compact :icon="Coins" title="暂无积分流水" />
-              <div v-for="l in detail.points.recent.slice(0, LOGIN_LIMIT)" :key="l.id" class="line-row">
-                <span class="au-badge au-badge-amber line-tag">{{ logTypeLabel(l.type) }}</span>
-                <span class="line-desc">{{ l.description || '—' }}</span>
-                <span class="line-amount" :class="l.amount >= 0 ? 'ok' : 'bad'">
-                  {{ l.amount >= 0 ? '+' : '' }}{{ l.amount }}
-                </span>
-                <span class="line-date">{{ fmtDate(l.created_at) }}</span>
-              </div>
-            </el-tab-pane>
-
             <el-tab-pane label="订单" name="orders">
               <EmptyState
                 v-if="!detail.orders.recharge.length && !detail.orders.subscription.length"
@@ -1080,7 +1002,7 @@ function fmtCount(n: number | null | undefined): string {
               />
               <div v-for="o in detail.orders.recharge" :key="o.order_id" class="line-row">
                 <span class="au-badge au-badge-amber line-tag">充值</span>
-                <span class="line-desc">{{ o.item_name }} · {{ o.points }} 积分</span>
+                <span class="line-desc">{{ o.item_name }}</span>
                 <span class="line-amount">¥{{ o.amount }}</span>
                 <span class="line-date">{{ fmtDate(o.created_at) }}</span>
               </div>
@@ -1097,7 +1019,6 @@ function fmtCount(n: number | null | undefined): string {
               <div v-for="(i, idx) in detail.invitation.invitees" :key="idx" class="line-row">
                 <span class="au-badge au-badge-amber line-tag">邀请</span>
                 <span class="line-desc">{{ i.username }}</span>
-                <span class="line-amount ok">+{{ i.reward_points }}</span>
                 <span class="line-date">{{ fmtDate(i.created_at) }}</span>
               </div>
             </el-tab-pane>
@@ -1170,28 +1091,6 @@ function fmtCount(n: number | null | undefined): string {
       <template #footer>
         <el-button @click="subDialog.visible = false">取消</el-button>
         <el-button type="primary" :loading="subSaving" @click="submitSub">确认</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- ==================== 积分调整 ==================== -->
-    <el-dialog v-model="pointsDialog.visible" title="调整积分" width="min(420px, 92vw)">
-      <el-form label-width="80px">
-        <el-form-item label="用户">
-          <span class="dialog-user">{{ pointsDialog.user?.username }}</span>
-        </el-form-item>
-        <el-form-item label="调整数额">
-          <el-input-number v-model="pointsDialog.amount" :min="-1000000" :max="1000000" class="w-full" />
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="pointsDialog.reason" placeholder="例如：活动补偿 / 客服补偿" />
-        </el-form-item>
-        <el-form-item label=" ">
-          <span class="dialog-hint">正数为发放，负数为扣减；操作会写入积分台账与管理员日志</span>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="pointsDialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="pointsSaving" @click="submitPoints">确认调整</el-button>
       </template>
     </el-dialog>
 

@@ -4,7 +4,7 @@
 - 群抽奖轮次的创建、参与、开奖、发奖与结果核验；
 - 开关与群组白名单走 SystemConfig（lottery_enabled / lottery_group_ids）；
 - 开奖算法为纯函数 compute_winners：score = sha256(f"{seed}:{entry_id}") 升序分配；
-- 奖品发放复用经济系统原语 _add_points 与门户福利原语 portal.grant_welfare，
+- 奖品发放复用门户福利原语 portal.grant_welfare（能量奖品已随货币下线），
   均在函数内懒导入，避免循环依赖。
 """
 
@@ -27,7 +27,7 @@ from backend.integrations.store import switch_env_value as _switch_env_value
 
 logger = logging.getLogger(__name__)
 
-_PRIZE_TYPES = ("days", "points", "whitelist")
+_PRIZE_TYPES = ("days", "whitelist")
 
 
 def _get_str_config(db: Session, key: str, default: str) -> str:
@@ -285,7 +285,7 @@ def create_round(
 ) -> models.LotteryRound:
     """创建抽奖轮次及其奖品列表。
 
-    prizes 每项为 dict(name, type, value, quantity)，type 仅允许 days/points/whitelist；
+    prizes 每项为 dict(name, type, value, quantity)，type 仅允许 days/whitelist（能量奖品已随货币下线）；
     sort 按列表顺序从 0 递增。seed 明文入库（开奖后才公开，不展示），
     seed_hash 存其 sha256 供核验。
     lottery_type: button=按钮抽奖 / password=口令抽奖；口令抽奖必须提供 password_keyword。
@@ -552,7 +552,6 @@ def distribute_round(db: Session, round_id: int) -> dict[str, Any]:
     返回 {"round_id", "total", "distributed", "skipped", "errors"}。
     """
     # 函数内懒导入，避免循环依赖
-    from backend.api.economy import _add_points
     from backend.emby_server import portal
 
     round = db.query(models.LotteryRound).filter(models.LotteryRound.id == round_id).first()
@@ -594,11 +593,11 @@ def distribute_round(db: Session, round_id: int) -> dict[str, Any]:
         if user is None:
             errors.append({"winner_id": w.id, "error": "用户不存在"})
             continue
-        if prize.type in ("points", "days") and (prize.value or 0) <= 0:
+        if prize.type == "days" and (prize.value or 0) <= 0:
             # days=0 在 grant_welfare 语义里是永久，days 奖品不许借道发放永久资格
-            errors.append({"winner_id": w.id, "error": f"{'能量' if prize.type == 'points' else '天数'}奖品 value 非正：{prize.value}"})
+            errors.append({"winner_id": w.id, "error": f"天数奖品 value 非正：{prize.value}"})
             continue
-        if prize.type not in ("points", "days", "whitelist"):
+        if prize.type not in ("days", "whitelist"):
             errors.append({"winner_id": w.id, "error": f"未知奖品类型：{prize.type}"})
             continue
         # 原子认领：UPDATE ... WHERE distributed = false。上面的 w.distributed 是读出来的旧值，
@@ -620,9 +619,7 @@ def distribute_round(db: Session, round_id: int) -> dict[str, Any]:
             skipped += 1
             continue
         try:
-            if prize.type == "points":
-                _add_points(db, user, prize.value, "lottery_win", f"群抽奖中奖：{prize.name}", f"lottery:{round_id}")
-            elif prize.type == "days":
+            if prize.type == "days":
                 portal.grant_welfare(db, user, channel="lottery_win", days=prize.value)
             else:  # whitelist
                 # days=0 表示永不过期（已核实 grant_welfare 源码）
@@ -1053,8 +1050,6 @@ def _prize_unit_text(p) -> str:
     ptype = str(p.type or "").lower()
     if ptype == "days":
         return f"{name}：公益{p.value}天"
-    elif ptype == "points":
-        return f"{name}：{p.value}能量"
     elif ptype == "whitelist":
         return f"{name}：白名单"
     return name

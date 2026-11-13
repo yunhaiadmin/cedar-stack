@@ -49,7 +49,6 @@ watch(() => props.plans, pickDefault, { immediate: true })
 
 function specRows(plan: SubscriptionPlan): string[] {
   const rows: string[] = [`有效期 ${plan.duration_days} 天`]
-  if (plan.points_price != null) rows.push(`积分价 ${plan.points_price} 分`)
   if (props.extraSpecRows) rows.push(...props.extraSpecRows(plan))
   for (const f of plan.features ?? []) rows.push(f)
   return rows

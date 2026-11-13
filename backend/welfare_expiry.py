@@ -34,51 +34,16 @@ def _safe_get_bool(db: Session, key: str, default: bool) -> bool:
 _SCAN_BATCH = 500
 
 
-def _try_vitality_renew(db: Session, user: models.WebUser, now: datetime) -> bool:
-    """活力保号（2026-11-09 用户改定，取代连签保号）：已过期用户当前活力
-    >= 活力线，续期 N 天、不扣分。
-
-    总开关 welfare_vitality_renew_enabled（默认开）关闭时整条不跑，直接
-    返回 False，调用方照常走保留期/取消流程。活力线
-    welfare_vitality_renew_min（默认 3）；续期天数沿用既有键
-    welfare_streak_renew_days（默认 30，语义自连签保号转过来，不另造
-    天数配置），实际延期与 WelfareGrantLog.days 同走此值。
-    判定只读 user.vitality 当前值：连签不再承担保号（签到计数只作展示
-    与里程碑）。白名单用户活力不扣（豁免在 vitality 侧），天然达线属
-    预期行为，此处不特判。
-    续期后 expires_at = now + N 天 > now，下一轮 tick 不再过期、不重复续期（幂等）。
-    查看权限已随资格合并（2026-11-09）：资格续上即自动恢复查看，
-    不再单独买凭证；存量查看行（EmbyViewUnlock）不由本流程处理，
-    继续有效到期为止。
-    """
-    if not _safe_get_bool(db, "welfare_vitality_renew_enabled", True):
-        return False
-    min_vitality = _safe_get_int(db, "welfare_vitality_renew_min", 3)
-    renew_days = _safe_get_int(db, "welfare_streak_renew_days", 30)
-    if (user.vitality or 0) < min_vitality:
-        return False
-    user.welfare_expires_at = now + timedelta(days=renew_days)
-    db.add(models.WelfareGrantLog(user_id=user.id, channel="vitality_renew", days=renew_days,
-                                  granted_by=None))
-    db.commit()
-    return True
-
-
 def check_welfare_expiry(db: Session) -> dict:
     """扫描已过期的公益用户。
 
-    活力保号（在保留期/取消之前先判）：已过期且当前活力 >= 活力线
-    （welfare_vitality_renew_min，默认 3）的用户直接续期（天数沿用
-    welfare_streak_renew_days，默认 30）、不扣分，记
-    channel="vitality_renew" 的 WelfareGrantLog，不走保留期/取消路径。
-    总开关 welfare_vitality_renew_enabled 关闭时不续期，照常走保留期/取消。
+    活力保号已随活力货币下线（2026-11-13）：过期用户一律走保留期/取消。
     过期时间在保留期（welfare_grace_days）内的用户仅记录，不修改状态；
     超过保留期的用户自动取消公益身份（is_welfare=False），
     并写入 channel="auto_expire" 的 WelfareGrantLog。
     单个用户处理失败时记录错误日志并继续处理下一个用户。
     键集分页（id > last_id）而不是 offset：过期用户被置 is_welfare=False 后会从
-    结果集里消失，offset 继续往后跳就会整批漏扫后面的用户（与 vitality.daily_deduct
-    同一口径）。续期用户仍是 is_welfare=True，但 last_id 按整批末尾推进，
+    结果集里消失，offset 继续往后跳就会整批漏扫后面的用户（与日扣扫描同一口径）。续期用户仍是 is_welfare=True，但 last_id 按整批末尾推进，
     同一轮内不会重复处理。
     """
     now = datetime.now()
@@ -106,9 +71,6 @@ def check_welfare_expiry(db: Session) -> dict:
             try:
                 exp = u.welfare_expires_at
                 if exp is None or exp > now:
-                    continue
-                if _try_vitality_renew(db, u, now):
-                    renewed_ids.append(u.id)
                     continue
                 expired_days = (now - exp).days
                 if expired_days < grace:
@@ -173,8 +135,7 @@ def check_inactive_users(db: Session) -> dict:
     并写入 channel="auto_inactive" 的 WelfareGrantLog。
     单个用户处理失败时记录错误日志并继续处理下一个用户。
     键集分页（id > last_id）而不是 offset：禁用用户被置 is_welfare=False 后会从
-    结果集里消失，offset 继续往后跳就会整批漏扫后面的用户（与 vitality.daily_deduct
-    同一口径）。
+    结果集里消失，offset 继续往后跳就会整批漏扫后面的用户（与日扣扫描同一口径）。
     """
     now = datetime.now()
     inactive_days = _safe_get_int(db, "welfare_inactive_days", 30)

@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from backend import gift_all, models
+from backend import models
 from backend.member_level import ensure_member_levels_seeded
 from backend.api.admin_core import (
     _audit,
@@ -55,132 +55,10 @@ def economy_list_invitations(
             "id": r.id,
             "inviter": users.get(r.inviter_id, "未知"),
             "invitee": users.get(r.invitee_id, "未知"),
-            "reward_points": r.reward_points,
             "created_at": r.created_at.isoformat() if r.created_at else None,
         }
         for r in records
     ]}
-
-
-@admin_router.get("/economy/points-logs")
-def economy_points_logs(
-    user_id: Optional[int] = None,
-    type_filter: Optional[str] = None,
-    limit: int = 100,
-    offset: int = 0,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """全站积分流水台账"""
-    q = db.query(models.PointsLog)
-    if user_id:
-        q = q.filter(models.PointsLog.user_id == user_id)
-    if type_filter:
-        q = q.filter(models.PointsLog.type == type_filter)
-
-    total = q.count()
-    logs = q.order_by(models.PointsLog.created_at.desc()).offset(offset).limit(min(limit, 200)).all()
-
-    user_ids = {l.user_id for l in logs}
-    users = {u.id: u.username for u in db.query(models.WebUser).filter(
-        models.WebUser.id.in_(user_ids)).all()} if user_ids else {}
-
-    return {
-        "total": total,
-        "logs": [
-            {
-                "id": l.id, "user_id": l.user_id,
-                "username": users.get(l.user_id, "未知"),
-                "amount": l.amount, "balance_after": l.balance_after,
-                "type": l.type, "description": l.description,
-                "ref_id": l.ref_id,
-                "audited": l.record_hash is not None,  # C3：是否有 hash（审计开启后写入的）
-                "created_at": l.created_at.isoformat() if l.created_at else None,
-            }
-            for l in logs
-        ],
-    }
-
-
-class PointsAuditVerifyRequest(BaseModel):
-    user_id: int
-    limit: int = 20000
-
-
-@admin_router.post("/economy/points-audit/verify")
-def economy_points_audit_verify(
-    request: PointsAuditVerifyRequest,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """C3 流水审计：核验某用户的积分流水 hash 链是否完整（防篡改）"""
-    from backend.api.economy import verify_points_chain
-    user = db.query(models.WebUser).filter(models.WebUser.id == request.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    result = verify_points_chain(db, request.user_id, limit=max(1, min(request.limit, 100000)))
-    result["user_id"] = request.user_id
-    result["username"] = user.username
-    _audit(db, current_admin, "points_audit_verify", "user", request.user_id,
-           {"ok": result["ok"], "verified": result["verified"]})
-    db.commit()
-    return result
-
-
-class PointsAdjustRequest(BaseModel):
-    amount: int  # 正数发放 / 负数扣除
-    reason: str = ""
-
-
-@admin_router.post("/economy/users/{user_id}/points")
-async def economy_adjust_points(
-    user_id: int,
-    request: PointsAdjustRequest,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """管理员手动调整用户积分（记账，留审计）—— 写库整段下放线程池
-
-    同步 SQLAlchemy 跑在事件循环上时，一次提交 = 全站排队；这里只需要等通知（WebSocket）。
-    """
-    from backend.api.economy import _add_points
-
-    admin_id = current_admin.id
-    reason = request.reason
-
-    def _adjust() -> int:
-        user = db.query(models.WebUser).filter(models.WebUser.id == user_id).first()
-        if not user:
-            raise HTTPException(status_code=404, detail="用户不存在")
-        if request.amount == 0:
-            raise HTTPException(status_code=400, detail="调整数量不能为 0")
-
-        balance = _add_points(
-            db, user, request.amount,
-            "admin_grant" if request.amount > 0 else "admin_deduct",
-            reason or f"管理员调整（{request.amount:+d}）",
-            f"admin:{admin_id}",
-        )
-        db.commit()
-
-        _audit(db, admin_id, "economy_adjust_points", "user", user_id,
-               {"amount": request.amount, "reason": reason})
-        db.commit()
-        return balance
-
-    balance = await run_in_threadpool(_adjust)
-
-    # r46：主流程已两次 commit 落库，通知走 quiet 守卫——失败只记日志，
-    # 永不抛 500，避免管理员重试导致重复调账。
-    await notify_admin_event_quiet(
-        event_type="economy.admin_adjust",
-        log_ctx=f"admin_adjust_points user_id={user_id}",
-        user_id=user_id,
-        title=f"💰 积分变动 {request.amount:+d}",
-        content=f"{reason or '管理员调整'}\n当前余额：{balance} 积分",
-        from_admin_id=admin_id,
-    )
-    return {"success": True, "balance": balance}
 
 
 # ---------- 全员赠送能量（批次） ----------
@@ -188,105 +66,12 @@ async def economy_adjust_points(
 # 无入口。此处只建批＋预览＋查历史：参数（金额/范围/备注）全由管理员建批时
 # 给，发放由 worker 分块执行（backend/gift_all.py），端点不同步发分。
 
-class GiftAllCreateRequest(BaseModel):
-    amount: int = Field(..., gt=0)  # 每人赠送量：正整数，0/负数在模型层拒绝
-    scope: str = "all"  # all=全部现存用户 / welfare=当前持有有效公益资格者
-    reason: str = Field("", max_length=255)  # 进每笔台账的说明
-
-
-def _gift_batch_out(batch: models.PointsGiftBatch, creator_name: str | None = None) -> dict:
-    return {
-        "id": batch.id,
-        "amount": batch.amount,
-        "scope": batch.scope,
-        "reason": batch.reason,
-        "target_count": batch.target_count,
-        "granted_count": batch.granted_count,
-        "status": batch.status,
-        "created_by": batch.created_by,
-        "created_by_name": creator_name,
-        "last_error": batch.last_error,
-        "created_at": batch.created_at.isoformat() if batch.created_at else None,
-        "finished_at": batch.finished_at.isoformat() if batch.finished_at else None,
-    }
-
-
-def _validate_gift_scope(scope: str) -> None:
-    if scope not in gift_all.GIFT_ALL_SCOPES:
-        raise HTTPException(status_code=400, detail=f"赠送范围只能是 {'/'.join(gift_all.GIFT_ALL_SCOPES)}")
-
-
-@admin_router.get("/economy/gift-all/preview")
-def gift_all_preview(
-    amount: int,
-    scope: str = "all",
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """发放前预览：按当前人群口径数命中人数与总发放量（只读、不落库）"""
-    if amount <= 0:
-        raise HTTPException(status_code=400, detail="每人赠送量必须为正整数")
-    _validate_gift_scope(scope)
-    count = gift_all.count_eligible_users(db, scope)
-    return {"scope": scope, "amount": amount,
-            "user_count": count, "total_amount": count * amount}
-
-
-@admin_router.post("/economy/gift-all/batches")
-def gift_all_create_batch(
-    request: GiftAllCreateRequest,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """新建赠送批次（只落批次，发放由 worker 分块执行，本请求不发分）"""
-    _validate_gift_scope(request.scope)
-    batch = models.PointsGiftBatch(
-        amount=request.amount,
-        scope=request.scope,
-        reason=(request.reason or "").strip(),
-        target_count=gift_all.count_eligible_users(db, request.scope),
-        granted_count=0,
-        status="pending",
-        created_by=current_admin.id,
-    )
-    db.add(batch)
-    db.flush()
-    _audit(db, current_admin, "economy_gift_all_create", "points_gift_batch", batch.id,
-           {"amount": batch.amount, "scope": batch.scope,
-            "reason": batch.reason, "target_count": batch.target_count})
-    db.commit()
-    db.refresh(batch)
-    return _gift_batch_out(batch, current_admin.username)
-
-
-@admin_router.get("/economy/gift-all/batches")
-def gift_all_list_batches(
-    limit: int = 50,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """赠送批次历史（状态、进度、参数、操作者）"""
-    batches = db.query(models.PointsGiftBatch).order_by(
-        models.PointsGiftBatch.id.desc()).limit(min(limit, 200)).all()
-    creator_ids = {b.created_by for b in batches if b.created_by}
-    names = {u.id: u.username for u in db.query(models.WebUser).filter(
-        models.WebUser.id.in_(creator_ids)).all()} if creator_ids else {}
-    return {"batches": [_gift_batch_out(b, names.get(b.created_by)) for b in batches]}
-
 
 # ---------- 经济系统设置 ----------
 
 ECONOMY_CONFIG_KEYS = {
-    # checkin_enabled：默认关的功能开关保留面板（2026-10-21 服主口径）
-    "checkin_enabled": "bool", "checkin_streak_bonus": "int",
-    "checkin_streak_max_bonus": "int",
-    # 签到随机基础分 / 惩罚（economy._checkin_rules 读取；留空=回退默认值 5）
-    "checkin_base_min": "int", "checkin_base_max": "int",
-    "checkin_penalty_pct": "int", "checkin_penalty_min": "int", "checkin_penalty_max": "int",
-    # 签到增强（2026-11-01 货币再设计一期）：里程碑/全勤/暴击（economy._checkin_rules 读取）
-    "checkin_milestone_points": "int", "checkin_milestone_days": "str",
-    "checkin_full_attendance_points": "int", "checkin_full_attendance_min_days": "int",
-    "checkin_crit_pct": "int", "checkin_crit_cap": "int",
+    # 签到/活力/观影能量等货币配置键已随货币于 2026-11-13 下线（签到、
+    # 活力、watch_points 模块均已删除，键留库行无害、面板不再展示）。
     "media_seek_daily_limit": "int",  # 用户每日求片上限（用户端硬性校验）
     "media_seek_daily_vote_limit": "int",  # Step 1：用户每日附议上限（默认 20 次，按当日现存附议行计）
     "media_seek_auto_approve_enabled": "bool",  # 求片减负：自动批准（默认关，开后新求片落单即已批准）
@@ -294,8 +79,7 @@ ECONOMY_CONFIG_KEYS = {
     "welfare_request_monthly": "int",  # 公益服每月求片上限（2026-10-23 去重 #5 与日限同卡）
     "paid_request_monthly": "int",  # 付费服每月求片上限（此前无后台入口，本轮补登记）
     "code_default_plan_id": "int",  # r40：卡码授予天数所用默认套餐（codes._resolve_plan 读取）
-    "recharge_enabled": "bool", "subscription_purchase_enabled": "bool",
-    "subscription_points_purchase_enabled": "bool",  # 能量购买订阅通道总开关（默认开；来源限定键已于 2026-11-02 删除）
+    "subscription_purchase_enabled": "bool",
     "payment_gateway_url": "str", "payment_partner_id": "str",
     "payment_partner_key": "secret", "payment_qqpay_enabled": "bool",
     "site_url": "str",
@@ -306,34 +90,14 @@ ECONOMY_CONFIG_KEYS = {
     "device_limit_per_user": "int", "device_limit_auto_evict": "bool",
     "login_log_retention_days": "int",
     "max_pending_orders_per_user": "int",
-    # invitation_reward_points 已退役（2026-10-23 去重）：邀请人奖励由
-    # promotion_* 唯一配置、promotion.grant 唯一发放
-    "invitation_invitee_reward_points": "int", "invitation_rebate_percent": "int",
-    # 推广奖励（v2.44.0）：总开关缺省开（金额/天数为 0 时不发放），留在面板落库
+    # 推广奖励（v2.44.0）：总开关缺省开（天数为 0 时不发放），留在面板落库；
+    # 余额（积分）型奖励与金额键已随货币下线，promotion 只发会员天数。
     "promotion_reward_enabled": "bool",
     "promotion_reward_type": "str",
-    "promotion_reward_amount": "int",
     "promotion_reward_days": "int",
     # 流媒体加速（v2.49.0）：总开关缺省开，留在面板落库；域名点保存即生效
     "stream_accel_enabled": "bool",
     "stream_accel_domain": "str",
-    # 活力值（C1 竞品借鉴）：上限/每日扣减/观影阈值/积分兑换率/观影奖励/每日获取上限/归档钳制/观影时长分档，全部可配
-    "vitality_max": "int", "vitality_daily_cost": "int",
-    "vitality_limit_threshold": "int", "vitality_point_cost": "int",
-    "vitality_watch_reward": "int", "vitality_daily_gain_limit": "int",
-    "vitality_archive_clamp": "int",
-    "vitality_watch_tier1_minutes": "int", "vitality_watch_tier1_reward": "int",
-    "vitality_watch_tier2_minutes": "int", "vitality_watch_tier2_reward": "int",
-    "vitality_checkin_skip_deduct_enabled": "bool",
-    # 签到活力奖励（economy._do_checkin_core 读取；现口径签到不送活力、
-    # 代码默认 0，键保留可配，管理员填正数才恢复发放）
-    "vitality_checkin_gain": "int",
-    # 观影能量（货币再设计第一期）：当日累计观影分钟分档发能量，
-    # 首看/一档/二档奖励与分钟数＋每日封顶，watch_points 读取
-    "watch_points_first": "int", "watch_points_first_minutes": "int",
-    "watch_points_tier1": "int", "watch_points_tier1_minutes": "int",
-    "watch_points_tier2": "int", "watch_points_tier2_minutes": "int",
-    "watch_points_daily_cap": "int",
     # C3 流水审计开关（points_audit_enabled）与 Q3 同剧合并三开关
     # （series_merge_*）均已于 2026-10-21 摘面板（env 治理，缺省开）；
     # 此处只剩同剧合并的间隔/组数上限两个数值（间隔下限 3600 秒，
@@ -341,115 +105,6 @@ ECONOMY_CONFIG_KEYS = {
     # merge_versions_worker.series_merge_config。
     "series_merge_interval_sec": "int", "series_merge_batch_limit": "int",
 }
-
-
-# 签到数值配置的取值范围（含端点）；空字符串表示「未设置」，读取侧回退默认值
-_CHECKIN_INT_RANGES = {
-    "checkin_base_min": (0, 100000),
-    "checkin_base_max": (0, 100000),
-    "checkin_penalty_pct": (0, 100),
-    "checkin_penalty_min": (0, 100000),
-    "checkin_penalty_max": (0, 100000),
-    # 签到增强（2026-11-01）：里程碑/全勤/暴击的整数键；
-    # checkin_milestone_days 是逗号列表，由 config_schema 的 int_list 在落库通道校验
-    "checkin_milestone_points": (0, 100000),
-    "checkin_full_attendance_points": (0, 100000),
-    "checkin_full_attendance_min_days": (0, 366),
-    "checkin_crit_pct": (0, 100),
-    "checkin_crit_cap": (0, 100000),
-}
-
-
-def _validate_vitality_settings(db: Session, settings: dict) -> None:
-    """活力值配置校验：整数、非负、阈值不超上限（非法直接 400，此时尚未写库）"""
-    from backend import vitality as _vitality
-
-    vitality_keys = [k for k in settings if k.startswith("vitality_")]
-    if not vitality_keys:
-        return
-
-    def _final(key: str) -> str:
-        # 本次提交了非空值 → 用它；提交空值视为删除该行 → 用默认值；没提交 → 用库里现有的，没有则用默认值
-        if key in settings:
-            v = str(settings[key] if settings[key] is not None else "").strip()
-            if v:
-                return v
-            return _vitality.VITALITY_DEFAULTS.get(key, "")
-        row = db.query(models.SystemConfig).filter(models.SystemConfig.key == key).first()
-        if row and (row.value or "").strip():
-            return (row.value or "").strip()
-        return _vitality.VITALITY_DEFAULTS.get(key, "")
-
-    merged = {k: _final(k) for k in _vitality.VITALITY_DEFAULTS}
-    errors = _vitality.validate_vitality_config(merged)
-    # 注意：不能只保留本次提交的 key 再报错。跨字段错误（如 threshold > max）
-    # 会被归因到本次未提交的 key 上，过滤后 errors 为空 → 非法组合直接存库。
-    # 后果：max < threshold 存入后，所有公益服用户活力值被钳制在 max 以下，
-    # 永远达不到观影阈值 → 全员 403 无法观影，且管理员收不到任何提示。
-    # 因此合并后的全部错误都要拦截；若库里本就有非法存量值，这次也会一并暴露出来。
-    if errors:
-        first_key = next(iter(errors))
-        raise HTTPException(status_code=400, detail=errors[first_key])
-
-
-def _validate_watch_points_settings(db: Session, settings: dict) -> None:
-    """观影能量配置校验：整数、非负、分钟数不倒挂（非法直接 400，尚未写库）。
-
-    与 _validate_vitality_settings 同款合并口径：本次提交值优先、空值按
-    删除回退默认、未提交按库里现值，合并后整体校验——只校验本次提交的
-    键会让倒挂组合（改一档不改另一档）绕过检查直接存库。
-    """
-    from backend import watch_points as _wp
-
-    if not any(k.startswith("watch_points_") for k in settings):
-        return
-
-    def _final(key: str) -> str:
-        if key in settings:
-            v = str(settings[key] if settings[key] is not None else "").strip()
-            if v:
-                return v
-            return _wp.WATCH_POINTS_DEFAULTS.get(key, "")
-        row = db.query(models.SystemConfig).filter(models.SystemConfig.key == key).first()
-        if row and (row.value or "").strip():
-            return (row.value or "").strip()
-        return _wp.WATCH_POINTS_DEFAULTS.get(key, "")
-
-    merged = {k: _final(k) for k in _wp.WATCH_POINTS_DEFAULTS}
-    errors = _wp.validate_watch_points_config(merged)
-    if errors:
-        first_key = next(iter(errors))
-        raise HTTPException(status_code=400, detail=errors[first_key])
-
-
-def _validate_checkin_settings(db: Session, settings: dict) -> None:
-    """签到随机/惩罚配置校验：整数、范围内、下限不大于上限（非法直接 400，此时尚未写库）"""
-    if not any(k in settings for k in _CHECKIN_INT_RANGES):
-        return
-
-    def _final(key: str) -> str:
-        if key in settings:
-            return str(settings[key] if settings[key] is not None else "").strip()
-        row = db.query(models.SystemConfig).filter(models.SystemConfig.key == key).first()
-        return (row.value or "").strip() if row else ""
-
-    parsed: dict = {}
-    for key, (lo, hi) in _CHECKIN_INT_RANGES.items():
-        raw = _final(key)
-        if raw == "":
-            parsed[key] = None
-            continue
-        try:
-            val = int(raw)
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail=f"{key} 必须是整数")
-        if not lo <= val <= hi:
-            raise HTTPException(status_code=400, detail=f"{key} 需在 {lo}~{hi} 之间")
-        parsed[key] = val
-    for lo_key, hi_key, label in (("checkin_base_min", "checkin_base_max", "签到基础积分"),
-                                  ("checkin_penalty_min", "checkin_penalty_max", "签到惩罚")):
-        if parsed[lo_key] is not None and parsed[hi_key] is not None and parsed[lo_key] > parsed[hi_key]:
-            raise HTTPException(status_code=400, detail=f"{label}下限不能大于上限")
 
 
 class EconomySettingsRequest(BaseModel):
@@ -468,7 +123,6 @@ def economy_get_settings(
     missing_on = {
         _promo_enabled: _promo_defaults[_promo_enabled],
         "stream_accel_enabled": "true",
-        "subscription_points_purchase_enabled": "true",
     }
     result = {}
     for key, value_type in ECONOMY_CONFIG_KEYS.items():
@@ -513,9 +167,6 @@ def economy_update_settings(
                 _sa.validate_domain(_final("stream_accel_domain"))
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
-    _validate_checkin_settings(db, request.settings)
-    _validate_vitality_settings(db, request.settings)
-    _validate_watch_points_settings(db, request.settings)
     # 配置瘦身第 4 批 4-6：落库走统一写入通道 config_service.save_config
     # （校验→批量落库→写时失效）。以下口径与旧代码逐字一致：
     # - 未知键静默忽略；secret 传空/"******" = 保留原行、不进落库；
@@ -981,30 +632,15 @@ def drive_api_update_config(
 
 # ---------- 经济统计 ----------
 
-def _checkin_day_key(day_val) -> str:
-    """签到趋势图：把 checkin_date 标记值映射为上海自然日字符串。
-
-    r34：checkin_date 是「上海自然日 00:00」的 UTC-naive 标记（见
-    economy._today_start），+8h 即其代表的上海日期。防御性处理脏数据。
-    """
-    try:
-        return (day_val + timedelta(hours=8)).strftime("%Y-%m-%d")
-    except Exception:  # noqa: BLE001
-        return str(day_val)[:10]
-
 
 @admin_router.get("/economy/stats")
 def economy_stats(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """经济系统概览：用户/积分/订单/兑换/邀请"""
+    """经济系统概览：订单/兑换/邀请（积分存量已随货币下线）"""
     from sqlalchemy import func as _func
-    # r34：与签到写入帧同口径（上海自然日，UTC naive）。此前服务器本地口径，
-    # 签到帧改为上海日界后这里若不跟进会恒为 0。
-    from backend.api.economy import _today_start_utc_naive as _day_start_sh
 
-    total_points = db.query(_func.coalesce(_func.sum(models.WebUser.points), 0)).scalar() or 0
     pending_recharge = db.query(models.RechargeOrder).filter(
         models.RechargeOrder.status == "pending").count()
     paid_recharge = db.query(_func.coalesce(_func.sum(models.RechargeOrder.price), 0)).filter(
@@ -1013,9 +649,6 @@ def economy_stats(
         models.SubscriptionOrder.status == "paid").scalar() or 0
 
     return {
-        "total_points": int(total_points),
-        "checkins_today": db.query(models.CheckinRecord).filter(
-            models.CheckinRecord.checkin_date >= _day_start_sh()).count(),
         "orders": {"pending": pending_recharge,
                    "revenue": round(float(paid_recharge) + float(paid_sub), 2)},
         "exchange_codes": {
@@ -1072,21 +705,6 @@ def get_user_detail(
             "days_left": _days_left(s.end_date, now),
             "status": s.status,
         }
-
-    # ---------- 积分 ----------
-    income = db.query(func.coalesce(func.sum(models.PointsLog.amount), 0)).filter(
-        models.PointsLog.user_id == user_id, models.PointsLog.amount > 0
-    ).scalar() or 0
-    expense = db.query(func.coalesce(func.sum(models.PointsLog.amount), 0)).filter(
-        models.PointsLog.user_id == user_id, models.PointsLog.amount < 0
-    ).scalar() or 0
-    recent_logs = (
-        db.query(models.PointsLog)
-        .filter(models.PointsLog.user_id == user_id)
-        .order_by(models.PointsLog.created_at.desc())
-        .limit(10)
-        .all()
-    )
 
     # ---------- 订单 ----------
     recharge_orders = (
@@ -1145,21 +763,6 @@ def get_user_detail(
         u.id: u.username
         for u in db.query(models.WebUser).filter(models.WebUser.id.in_(invitee_ids)).all()
     } if invitee_ids else {}
-    rebate_total = db.query(func.coalesce(func.sum(models.PointsLog.amount), 0)).filter(
-        models.PointsLog.user_id == user_id, models.PointsLog.type == "rebate"
-    ).scalar() or 0
-
-    # ---------- 签到 ----------
-    checkin_count = db.query(models.CheckinRecord).filter(
-        models.CheckinRecord.user_id == user_id
-    ).count()
-    last_checkin = (
-        db.query(models.CheckinRecord)
-        .filter(models.CheckinRecord.user_id == user_id)
-        .order_by(models.CheckinRecord.checkin_date.desc())
-        .first()
-    )
-
     # ---------- 观看 ----------
     plays = db.query(em.PlaybackSession).filter(em.PlaybackSession.user_id == user_id).count()
     watched_items = db.query(em.UserMediaData).filter(
@@ -1175,29 +778,12 @@ def get_user_detail(
             "is_active": user.is_active,
             "is_staff": user.is_staff,
             "emby_username": user.emby_username,
-            "points": user.points or 0,
             "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
             "created_at": user.created_at.isoformat() if user.created_at else None,
         },
         "subscription": {
             "active": _sub_row(active_sub) if active_sub else None,
             "history": [_sub_row(s) for s in subs],
-        },
-        "points": {
-            "balance": user.points or 0,
-            "income": int(income),
-            "expense": abs(int(expense)),
-            "recent": [
-                {
-                    "id": l.id,
-                    "amount": l.amount,
-                    "balance_after": l.balance_after,
-                    "type": l.type,
-                    "description": l.description,
-                    "created_at": l.created_at.isoformat() if l.created_at else None,
-                }
-                for l in recent_logs
-            ],
         },
         "orders": {
             "paid_total": round(paid_total, 2),
@@ -1206,7 +792,6 @@ def get_user_detail(
                     "order_id": o.order_id,
                     "item_name": _package_names.get(o.package_id, f"套餐 #{o.package_id}"),
                     "amount": float(o.price),
-                    "points": o.amount,
                     "status": o.status,
                     "created_at": o.created_at.isoformat() if o.created_at else None,
                 }
@@ -1227,20 +812,13 @@ def get_user_detail(
             "count": db.query(models.InvitationRecord).filter(
                 models.InvitationRecord.inviter_id == user_id
             ).count(),
-            "rebate_total": int(rebate_total),
             "invitees": [
                 {
                     "username": invitee_names.get(r.invitee_id, "未知"),
-                    "reward_points": r.reward_points,
                     "created_at": r.created_at.isoformat() if r.created_at else None,
                 }
                 for r in invite_records
             ],
-        },
-        "checkin": {
-            "total": checkin_count,
-            "last_date": last_checkin.checkin_date.isoformat() if last_checkin else None,
-            "streak": last_checkin.streak if last_checkin else 0,
         },
         "watch": {
             "plays": plays,
@@ -1255,7 +833,7 @@ def get_stats_trend(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """趋势统计（默认近 14 天）：新增用户 / 播放次数 / 新增入库 / 营收 / 签到
+    """趋势统计（默认近 14 天）：新增用户 / 播放次数 / 新增入库 / 营收
 
     单次聚合查询后按日补零，保证折线图连续。另附 ``hourly``：最近 24 个
     上海整点桶的播放/新增入库序列（与按日同源同定义，只换分桶粒度）。
@@ -1329,20 +907,6 @@ def get_stats_trend(
         models.SubscriptionOrder.status == "paid", models.SubscriptionOrder.paid_at >= start
     ).group_by(models.SubscriptionOrder.paid_at).all()
 
-    # r34：checkin_date 是「上海自然日 00:00」的 UTC-naive 标记（见 economy._today_start），
-    # 不是事件时间——按 func.date(checkin_date) 分组会把每天的签到算到前一天。
-    # 这里按原始标记值分组，在 Python 侧 +8h 还原上海日期（方言无关，
-    # SQLite/PG 的 interval 写法不同，不在 SQL 里做）。
-    checkin_rows = db.query(
-        models.CheckinRecord.checkin_date, func.count(models.CheckinRecord.id)
-    ).filter(models.CheckinRecord.checkin_date >= start).group_by(
-        models.CheckinRecord.checkin_date
-    ).all()
-    checkin_map = {}
-    for _day_val, _cnt in checkin_rows:
-        _key = _checkin_day_key(_day_val)
-        checkin_map[_key] = checkin_map.get(_key, 0) + (_cnt or 0)
-
     users_map = _series(user_rows)
     plays_map = _series(play_rows)
     items_map = _series(item_rows)
@@ -1359,7 +923,6 @@ def get_stats_trend(
             "plays": int(plays_map.get(key, 0)),
             "new_items": int(items_map.get(key, 0)),
             "revenue": round(float(recharge_map.get(key, 0)) + float(sub_map.get(key, 0)), 2),
-            "checkins": int(checkin_map.get(key, 0)),
         })
 
     # 24 小时序列（2026-11-03 仪表盘补口径）：与按日同源同定义，只换
@@ -1419,7 +982,6 @@ def get_stats_trend(
             "plays": sum(p["plays"] for p in series),
             "new_items": sum(p["new_items"] for p in series),
             "revenue": round(sum(p["revenue"] for p in series), 2),
-            "checkins": sum(p["checkins"] for p in series),
         },
         "hourly": {
             "hours": 24,

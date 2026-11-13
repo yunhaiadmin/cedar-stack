@@ -1,4 +1,4 @@
-"""首页聚合接口：一次请求返回 HomeView 首屏的 9 项数据
+"""首页聚合接口：一次请求返回 HomeView 首屏数据
 
 背景：HomeView 原来用 Promise.all 并发 9 个请求。浏览器对同源 HTTP/1.1
 只有 6 条并发上限，9 个请求要分两波排队；加上路由守卫的 auth/me，骨架屏
@@ -7,8 +7,6 @@
 
 口径约定：**逐字段对齐原 9 个接口**，前端拿到后按原类型拆开展示，
 不改任何展示逻辑：
-- points          ← GET /api/user/economy/points/log?limit=1
-- checkin         ← GET /api/user/economy/checkin/status
 - invite          ← GET /api/user/invite/my-code（没有则自动生成，同口径）
 - subscriptions   ← GET /api/user/subscriptions（end_date 现算 active）
 - announcements   ← GET /api/user/announcements
@@ -57,39 +55,6 @@ def _safe(name: str, fn, db=None):
             except Exception:
                 pass
         return None
-
-
-def _points(db: Session, user: models.WebUser) -> dict:
-    """≈ GET /economy/points/log?limit=1（首页只读 balance，不取流水）"""
-    return {"balance": user.points or 0}
-
-
-def _checkin(db: Session, user: models.WebUser) -> dict:
-    """≈ GET /economy/checkin/status（与 economy.checkin_status 同口径）"""
-    from backend.api.economy import _today_start, _checkin_rules
-
-    today = _today_start()
-    checked = db.query(models.CheckinRecord).filter(
-        models.CheckinRecord.user_id == user.id,
-        models.CheckinRecord.checkin_date >= today,
-    ).first() is not None
-
-    anchor = today if checked else today - timedelta(days=1)
-    last = db.query(models.CheckinRecord).filter(
-        models.CheckinRecord.user_id == user.id,
-        models.CheckinRecord.checkin_date <= anchor,
-    ).order_by(models.CheckinRecord.checkin_date.desc()).first()
-
-    rules = _checkin_rules(db)
-    return {
-        "enabled": rules["enabled"],
-        "checked_today": checked,
-        "streak": last.streak if last else 0,
-        "base_points": rules["base_points"],
-        "streak_bonus": rules["streak_bonus"],
-        "streak_max_bonus": rules["streak_max_bonus"],
-        "points": user.points or 0,
-    }
 
 
 def _invite(db: Session, user: models.WebUser) -> dict:
@@ -318,8 +283,6 @@ def home_summary(
     """首页首屏聚合：9 项数据一次返回，单项失败各自为 None"""
     user = current_user
     return {
-        "points": _safe("points", lambda: _points(db, user), db),
-        "checkin": _safe("checkin", lambda: _checkin(db, user), db),
         "invite": _safe("invite", lambda: _invite(db, user), db),
         "subscriptions": _safe("subscriptions", lambda: _subscriptions(db, user), db),
         "announcements": _safe("announcements", lambda: _announcements(db), db),

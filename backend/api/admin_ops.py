@@ -430,6 +430,9 @@ def generate_codes(
     """批量生成类型化卡码"""
     if request.algorithm not in codes.RANDOM_ALGORITHMS:
         raise HTTPException(status_code=400, detail="随机算法不支持")
+    if (request.reward_type or "").strip().lower() == "points":
+        # 能量已随货币下线（2026-11-13）：能量卡码不可核销，不许再生成。
+        raise HTTPException(status_code=400, detail="能量卡码已下线，不能再生成")
 
     days = request.days if request.days is not None else codes.DEFAULT_DAYS
     if request.code_type == codes.CODE_TYPE_WHITELIST:

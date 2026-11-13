@@ -81,8 +81,7 @@ const genForm = ref({
   max_uses: 1,
   expires_days: 30,
   // M1：奖励类型（welfare=公益资格码，G1）
-  reward_type: 'subscription' as 'subscription' | 'points' | 'discount' | 'welfare',
-  points_value: 50,
+  reward_type: 'subscription' as 'subscription' | 'discount' | 'welfare',
   discount_pct: 85,
   /** G1：资格码核销时打包首张查看行，默认开 */
   welfare_include_view: true,
@@ -289,7 +288,6 @@ async function generate() {
       max_uses: genForm.value.max_uses,
       expires_days: genForm.value.expires_days,
       reward_type: genForm.value.reward_type,
-      points_value: genForm.value.points_value,
       discount_pct: genForm.value.discount_pct,
       welfare_include_view: genForm.value.welfare_include_view,
       algorithm: genForm.value.algorithm,
@@ -496,7 +494,6 @@ function usedByNames(row: RegistrationCode): string {
         <el-form-item label="奖励类型">
           <el-radio-group v-model="genForm.reward_type">
             <el-radio-button value="subscription">会员天数</el-radio-button>
-            <el-radio-button value="points">积分</el-radio-button>
             <el-radio-button value="discount">折扣券</el-radio-button>
             <el-radio-button value="welfare">公益资格</el-radio-button>
           </el-radio-group>
@@ -523,9 +520,6 @@ function usedByNames(row: RegistrationCode): string {
         <el-form-item v-if="genForm.reward_type === 'welfare'" label="打包查看凭证">
           <el-switch v-model="genForm.welfare_include_view" />
           <span class="form-hint inline-hint">开时核销同时送同天数查看凭证，新人拿到即可看片</span>
-        </el-form-item>
-        <el-form-item v-if="genForm.reward_type === 'points'" label="积分面额">
-          <el-input-number v-model="genForm.points_value" :min="1" :max="1000000" />
         </el-form-item>
         <el-form-item v-if="genForm.reward_type === 'discount'" label="折扣（实付百分比）">
           <el-input-number v-model="genForm.discount_pct" :min="1" :max="99" />

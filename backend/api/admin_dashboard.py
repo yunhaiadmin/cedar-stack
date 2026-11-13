@@ -461,7 +461,7 @@ def get_detail_tables(admin: Any, db: Session) -> dict:
         for o, uname, pkg_name in recs:
             merged.append({
                 "username": uname,
-                "item": pkg_name or "能量充值",
+                "item": pkg_name or "充值订单",
                 "kind": "充值",
                 "amount": float(o.price or 0),
                 "status": o.status or "",
@@ -524,25 +524,6 @@ def get_detail_tables(admin: Any, db: Session) -> dict:
             for r in rows
         ]
 
-    def _points_flow() -> list:
-        rows = (
-            db.query(models.PointsLog, models.WebUser.username)
-            .join(models.WebUser, models.WebUser.id == models.PointsLog.user_id)
-            .order_by(models.PointsLog.created_at.desc(), models.PointsLog.id.desc())
-            .limit(_DETAIL_ROW_LIMIT)
-            .all()
-        )
-        return [
-            {
-                "username": uname,
-                "type": log.type or "",
-                "amount": int(log.amount or 0),
-                "description": log.description or "",
-                "created_at": _iso(log.created_at),
-            }
-            for log, uname in rows
-        ]
-
     def _seek_hot() -> list:
         rows = (
             db.query(
@@ -603,7 +584,6 @@ def get_detail_tables(admin: Any, db: Session) -> dict:
     _safe("recent_orders", _recent_orders)
     _safe("library_stats", _library_stats)
     _safe("enrich_progress", _enrich_progress)
-    _safe("points_flow", _points_flow)
     _safe("seek_hot", _seek_hot)
     _safe("activity_days", _activity_days)
     return out

@@ -9,7 +9,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { toAdminError } from '@/utils/errorMessage'
 import {
-  RefreshCw, Search, CircleCheck, Wallet, Ban, Undo2, ReceiptText, Coins, CalendarCheck, Clock3,
+  RefreshCw, Search, CircleCheck, Wallet, Ban, Undo2, ReceiptText, Clock3,
   Gift, UserPlus, AlertTriangle,
 } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard, StatTile } from '@/components/ui'
@@ -511,8 +511,6 @@ onMounted(() => {
         :to="stats.orders.pending > 0 ? '/orders?status=pending' : undefined"
         :hint="stats.orders.pending > 0 ? '点开只看待支付' : '没有待处理的'"
       />
-      <StatTile label="累计充值积分" :value="stats.total_points.toLocaleString()" :icon="Coins" />
-      <StatTile label="今日签到人次" :value="stats.checkins_today" :icon="CalendarCheck" />
       <StatTile
         label="兑换码已用"
         :value="stats.exchange_codes.used"

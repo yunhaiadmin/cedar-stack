@@ -826,13 +826,12 @@ export const fetchLogs = (params: { limit?: number; action_filter?: string } = {
 
 export const fetchOverview = () => get<OverviewStats>('/stats/overview')
 
-/** 仪表盘数据明细（2026-10-23 新增 detail part：7 张表，前端集中一区页签切换） */
+/** 仪表盘数据明细（2026-10-23 新增 detail part：多张表，前端集中一区页签切换；积分流水表已随货币于 2026-11-13 下线） */
 export interface DashboardDetailTables {
   recent_users: Array<{ username: string; created_at: string; channel: string; is_welfare: boolean }>
   recent_orders: Array<{ username: string; item: string; kind: string; amount: number; status: string; created_at: string }>
   library_stats: Array<{ library: string; movies: number; shows: number; episodes: number; total: number }>
   enrich_progress: Array<{ library: string; enriched: number; pending: number }>
-  points_flow: Array<{ username: string; type: string; amount: number; description: string; created_at: string }>
   seek_hot: Array<{ title: string; media_type: string; count: number; pending: number }>
   activity_days: Array<{ date: string; active_users: number; plays: number; new_users: number }>
 }
@@ -921,12 +920,10 @@ const E = '/emby'
 export const fetchEmbyOverview = () => get<{ total_items: number; total_libraries: number; active_sessions: number; total_users: number }>(`${E}/overview`)
 
 /**
- * r40：公益服查看权限解锁价格（后端 /api/admin/emby/view-unlock，
- * view_unlock 家族：emby_view_unlock_points / emby_view_unlock_days）。
- * 此前有后端读写接口但管理后台无入口，本轮补上。
+ * 公益服查看行有效期（后端 /api/admin/emby/view-unlock，view_unlock 家族：
+ * emby_view_unlock_days；积分价格已随货币下线，接口只剩 days）。
  */
 export interface ViewUnlockSettings {
-  points: number
   days: number
 }
 

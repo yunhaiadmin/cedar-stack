@@ -309,14 +309,6 @@ def collect_system_config_defaults() -> list[tuple[str, str, str]]:
         (k, v, f"播放策略：{k}") for k, v in playback_policy.POLICY_DEFAULTS.items()
     ])
 
-    # 7.4 活力值（C1 竞品借鉴）：默认开启/上限14/每日扣1/阈值3/1点=10积分
-    from backend import vitality
-    items.extend([
-        (k, v, f"活力值：{k}") for k, v in vitality.VITALITY_DEFAULTS.items()
-    ])
-
-
-
     # 7.7 求片中心：每日额度（规则与默认值都在 backend/media_seek.py）
     from backend import media_seek
     items.append((media_seek.CONFIG_DAILY_LIMIT, str(media_seek.DEFAULT_DAILY_LIMIT),
@@ -416,7 +408,6 @@ def collect_system_config_defaults() -> list[tuple[str, str, str]]:
     # 8. 公益服查看权限价格
     from backend.emby_server import portal
     items.extend([
-        (portal.VIEW_UNLOCK_POINTS_KEY, str(portal.VIEW_UNLOCK_POINTS_DEFAULT), "公益服查看权限积分价格"),
         (portal.VIEW_UNLOCK_DAYS_KEY, str(portal.VIEW_UNLOCK_DAYS_DEFAULT), "公益服查看权限有效期（天，0=永久）"),
     ])
 

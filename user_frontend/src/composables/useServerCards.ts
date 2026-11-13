@@ -4,22 +4,21 @@
  * 数据来源（真实接口，勿改名）：
  * - `embyApi.getAccountCard()`  GET /api/user/emby/server → `{ realms?: AccountRealmCard[] }`
  *   （realms 已由后端按 sort_order 排序，前端不再排序）
- * - `homeApi.summary()`        能量 / 签到 / 订阅 / 统计
- * - `vitalityApi.status()`     能量值（失败时静默降级为 null）
+ * - `homeApi.summary()`        订阅 / 统计
  *
  * 说明：进度条按 home/summary 订阅明细的 start_date → end_date 计算已用占比；无该服 active 订阅明细时为 null，组件按 null 隐藏进度条，前端不编造数据。
  */
 import { ref } from 'vue'
 import { embyApi, isExpiringSoon } from '@/api'
 import type { AccountRealmCard, MySubscription } from '@/api'
-import { homeApi, vitalityApi } from '@/api/economy'
+import { homeApi } from '@/api/economy'
 import { subscriptionUsedPercent } from '@/utils/subscription'
 
-const ROUTES = { store: '/game/account/subscribe', ledger: '/game/ledger' } as const
+const ROUTES = { store: '/game/account/subscribe' } as const
 const COPY = {
   badgeActive: '生效中', badgeExpiring: '临期', badgeExpired: '已过期', badgeFree: '免费开放',
-  footerOpen: '立即开通', footerRenew: '续费', footerShop: '去账本',
-  descMember: '会员权益全库通用', descFree: '能量在账本里用',
+  footerOpen: '立即开通', footerRenew: '续费',
+  descMember: '会员权益全库通用', descFree: '免费开放 · 无需会员看全库',
 } as const
 
 /** 服务卡视图模型 */
@@ -39,31 +38,7 @@ export interface ServerCardItem {
   to: string
   desc: string
   expiringSoon: boolean
-  balance: string
-  vitalityText: string
-  hasVitality: boolean
-  isVitalityLow: boolean
-  checkinEnabled: boolean
-  checkedToday: boolean
-  streak: number | null
 }
-
-/** homeApi.summary() 的返回类型 */
-type HomeSummary = Awaited<ReturnType<typeof homeApi.summary>>
-/** vitalityApi.status() 的返回类型 */
-type VitalityStatus = Awaited<ReturnType<typeof vitalityApi.status>>
-
-/** 卡片公共字段（来自 homeApi.summary / vitalityApi.status） */
-type SharedFields = Pick<
-  ServerCardItem,
-  | 'balance'
-  | 'vitalityText'
-  | 'hasVitality'
-  | 'isVitalityLow'
-  | 'checkinEnabled'
-  | 'checkedToday'
-  | 'streak'
->
 
 const DAY_MS = 86_400_000
 
@@ -101,35 +76,9 @@ function parseEndOfDay(value: string | null | undefined): number | null {
   return Number.isNaN(ts) ? null : ts
 }
 
-/** 汇总 homeApi.summary / vitalityApi.status 的公共字段 */
-function buildShared(summary: HomeSummary | null, vitality: VitalityStatus | null): SharedFields {
-  const balanceValue = summary?.points?.balance
-  const vitalityValue = vitality?.vitality
-  const vitalityMax = vitality?.max
-  const vitalityLimit = vitality?.limit_threshold
-
-  return {
-    // 能量余额：points.balance?.toLocaleString() ?? '—'
-    balance: Number.isFinite(balanceValue) ? (balanceValue as number).toLocaleString() : '—',
-    // 能量：有 max 用 `${v}/${max}`，只有 vitality 用 String(v)，都没有用 '—'
-    vitalityText:
-      vitalityValue != null
-        ? vitalityMax != null
-          ? `${vitalityValue}/${vitalityMax}`
-          : String(vitalityValue)
-        : '—',
-    hasVitality: vitalityValue != null,
-    isVitalityLow: vitalityValue != null && vitalityLimit != null && vitalityValue <= vitalityLimit,
-    checkinEnabled: summary?.checkin?.enabled ?? false,
-    checkedToday: summary?.checkin?.checked_today ?? false,
-    streak: summary?.checkin?.streak ?? null,
-  }
-}
-
 /** 付费服卡片 */
 function buildPaidCard(
   realm: AccountRealmCard,
-  shared: SharedFields,
   sub: MySubscription | null,
 ): ServerCardItem {
   const endDate = realm.end_date ?? null
@@ -212,12 +161,11 @@ function buildPaidCard(
     // 有到期时间：`{planName} · {人话到期}到期`；否则用左底通用文案
     desc: endText ? (planName ? `${planName} · ${endText}到期` : `${endText}到期`) : COPY.descMember,
     expiringSoon: state === 'expiring',
-    ...shared,
   }
 }
 
 /** 公益服（免费）卡片 */
-function buildFreeCard(realm: AccountRealmCard, shared: SharedFields): ServerCardItem {
+function buildFreeCard(realm: AccountRealmCard): ServerCardItem {
   return {
     id: realm.id,
     name: realm.name,
@@ -230,24 +178,22 @@ function buildFreeCard(realm: AccountRealmCard, shared: SharedFields): ServerCar
     progress: null,
     badge: COPY.badgeFree,
     state: 'free_open',
-    footer: COPY.footerShop,
-    to: ROUTES.ledger,
+    footer: COPY.footerOpen,
+    to: ROUTES.store,
     desc: COPY.descFree,
     expiringSoon: false,
-    ...shared,
   }
 }
 
 /** 按 access_mode 分发 */
 function buildRealmCard(
   realm: AccountRealmCard,
-  shared: SharedFields,
   subs: MySubscription[],
 ): ServerCardItem {
-  if (realm.access_mode === 'free') return buildFreeCard(realm, shared)
+  if (realm.access_mode === 'free') return buildFreeCard(realm)
   // 用 home/summary 里的订阅明细按 realm_id 对上该服，拿 start_date 算进度
   const sub = subs.find((s) => s.realm_id === realm.id && s.status === 'active') ?? null
-  return buildPaidCard(realm, shared, sub)
+  return buildPaidCard(realm, sub)
 }
 
 export function useServerCards() {
@@ -261,9 +207,8 @@ export function useServerCards() {
   const hasLoaded = ref(false)
 
   /**
-   * 并发拉取服务卡 / 摘要 / 能量三个接口。
+   * 并发拉取服务卡 / 摘要两个接口。
    * - getAccountCard 失败 → servers = [] 且 loadError = true，不抛错
-   * - vitalityApi.status 失败 → 静默降级为 null
    */
   async function load(): Promise<void> {
     const myReq = ++serverCardsReqSeq
@@ -271,13 +216,11 @@ export function useServerCards() {
     loadError.value = false
 
     try {
-      const [cardRes, summaryRes, vitalityRes] = await Promise.all([
+      const [cardRes, summaryRes] = await Promise.all([
         embyApi.getAccountCard().catch((): null => null),
         homeApi.summary().catch((): null => null),
-        vitalityApi.status().catch((): null => null),
       ])
 
-      const shared = buildShared(summaryRes, vitalityRes)
       if (myReq !== serverCardsReqSeq) return
 
       if (!cardRes) {
@@ -296,7 +239,7 @@ export function useServerCards() {
       if (myReq !== serverCardsReqSeq) return
       servers.value =
         realms.length > 0
-          ? realms.map((realm) => buildRealmCard(realm, shared, subs)) // 后端已按 sort_order 排序
+          ? realms.map((realm) => buildRealmCard(realm, subs)) // 后端已按 sort_order 排序
           : []
     } finally {
       if (myReq !== serverCardsReqSeq) return

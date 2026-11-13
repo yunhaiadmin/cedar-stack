@@ -1,27 +1,24 @@
 """
-用户经济系统 API：每日签到 / 兑换码 / 支付下单 / 订单查询
+用户经济系统 API：兑换码 / 支付下单 / 订单查询（前缀 /api/user/economy）
 
-端点（前缀 /api/user/economy）：
-- GET  /checkin/status        查询今日签到状态、连签、奖励规则
-- POST /checkin               每日签到（发积分，连续签到加成）
-- GET  /points/log            积分流水（台账）
-- GET  /exchange/config       公开的积分/订阅兑换奖励规则
-- POST /exchange/redeem       兑换码核销（积分 / 订阅）
-- GET  /payment/packages      充值套餐列表（公开）
-- GET  /payment/plans         订阅套餐列表（公开）
+- GET  /exchange/config       兑换功能开关
+- POST /exchange/redeem       兑换码核销（订阅 / 折扣权益）
 - GET  /payment/methods       可用支付方式（按网关能力推导）
+- GET  /payment/plans         订阅套餐列表（公开）
 - GET  /payment/coupon/config 优惠券开关（关闭时用户端不显示优惠码输入框）
 - POST /payment/coupon/quote  优惠码试算（能不能用、省多少、实付多少）
-- POST /payment/order         创建支付订单（充值积分 / 购买订阅），返回支付跳转 URL
+- POST /payment/order         创建支付订单（购买订阅），返回支付跳转 URL
 - GET  /payment/orders        我的订单列表
+
+能量/积分/活力货币已于 2026-11-13 删除（用户亲令「只用友站口径」）：
+签到发分、积分台账/转让、能量买订阅、能量充值、活力兑换一并下线；
+订阅发放（_grant_subscription）、人民币下单与履约链原样保留。
 """
 from __future__ import annotations
 
 import hashlib
 import hmac
 import logging
-import math
-import random
 import threading
 import time
 import uuid
@@ -36,19 +33,15 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, text
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, joinedload
 
-from backend import coupons, models, realms, vitality as _vitality
-from backend.usernames import find_users_by_username_ci
+from backend import coupons, models, realms
 from backend.integrations.store import switch_env_value as _switch_env_value
-from backend.integrations import captcha as integrations_captcha
 from backend.database import get_db
 from backend.api.user import get_current_user
-from backend.ratelimit import check_rate_limit, client_ip
-from backend.security import resolve_jwt_user_id
+from backend.ratelimit import check_rate_limit
 from backend.notifications import AdminEvent, notify_admin_event_quiet
-from backend.tg_bind import require_tg_bound
 
 logger = logging.getLogger(__name__)
 
@@ -75,46 +68,6 @@ def _get_int_config(db: Session, key: str, default: int) -> int:
         return default
 
 
-def _get_int_list_config(db: Session, key: str, default: list) -> list:
-    """读逗号分隔整数列表配置（如签到里程碑天数 "7,14,21,28"）。
-
-    非法项跳过、全空/全非法回退默认；结果去重升序，下限 1。
-    """
-    raw = _get_config(db, key, "")
-    out = []
-    for part in str(raw or "").replace("，", ",").split(","):
-        part = part.strip()
-        if not part:
-            continue
-        try:
-            n = int(part)
-        except ValueError:
-            continue
-        if n >= 1 and n not in out:
-            out.append(n)
-    return sorted(out) if out else list(default)
-
-
-def _get_float_config(db: Session, key: str, default: float) -> float:
-    """读浮点配置（P2 货币体系：recharge_ratio 用）"""
-    try:
-        return float(_get_config(db, key, str(default)))
-    except (TypeError, ValueError):
-        return default
-
-
-def _get_quick_amounts(db: Session) -> list[int]:
-    """快捷充值金额（C4）：读 recharge_quick_amounts，逗号分隔；非法/空回退默认；去重、升序、最多 8 个、只保留 1~100000 的正整数。"""
-    default_amounts = [10, 30, 50, 100, 200]
-    raw = _get_config(db, "recharge_quick_amounts", "10,30,50,100,200")
-    try:
-        values = [int(part.strip()) for part in raw.split(",")]
-    except (TypeError, ValueError):
-        return default_amounts
-    amounts = sorted({v for v in values if 1 <= v <= 100000})[:8]
-    return amounts or default_amounts
-
-
 def _get_bool_config(db: Session, key: str, default: bool) -> bool:
     return _get_config(db, key, "true" if default else "false").strip().lower() == "true"
 
@@ -132,7 +85,7 @@ def _get_bool_realm_config(db: Session, base: str, realm_id, default: bool) -> b
     return str(raw).strip().lower() == "true"
 
 
-# ==================== 签到 ====================
+# ==================== 日期口径工具 ====================
 
 def _today_start() -> datetime:
     """「今日」起点：Asia/Shanghai 自然日 00:00（UTC naive 存储帧）。
@@ -177,93 +130,9 @@ def _month_start_utc_naive() -> datetime:
     return start_sh.astimezone(timezone.utc).replace(tzinfo=None)
 
 
-def _points_record_hash(
-    prev_hash: str, user_id: int, amount: int, balance_after: int,
-    type_: str, description: str | None, ref_id: str | None, created_at,
-) -> str:
-    """C3 流水审计：计算单条流水的 hash。
-
-    hash = sha256("prev_hash|user_id|amount|balance_after|type|description|ref_id|created_at_iso")。
-    每条记录链接上一条的 record_hash，形成防篡改链；任何字段被改都会导致本条及后续 hash 对不上。
-    """
-    ts = created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at)
-    payload = "|".join([
-        prev_hash or "",
-        str(user_id), str(amount), str(balance_after),
-        type_ or "", description or "", ref_id or "", ts,
-    ])
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _append_points_log(
-    db: Session, user_id: int, amount: int, balance_after: int,
-    type_: str, description: str, ref_id: str | None = None,
-) -> models.PointsLog:
-    """写一条积分流水并按 `points_audit_enabled` 开关接入 hash 链（C3）。
-
-    调用方负责余额本身的增减与 balance_after 的正确性；本函数只负责台账行。
-    开关开启时用行锁取该用户最新一条流水作为链尾，写入 prev_hash / record_hash；
-    关闭时两列留 NULL。返回 PointsLog 对象（已 add，未 commit）。
-
-    注意：刻意不在这里 flush。调用方（如 apply_invitation）依赖"所有写一次 flush、
-    冲突整体回滚"的语义，提前 flush 会把唯一约束冲突提前抛到它们的 try/except 之外。
-    created_at 在构造时显式赋值（与列默认 datetime.now 等价），hash 直接用该值计算。
-    """
-    audit_enabled = _get_bool_config(db, "points_audit_enabled", True)
-    prev_hash = ""
-    if audit_enabled:
-        # 行锁取链尾：并发写同一用户时串行化，保证 prev_hash 链接不断
-        tail = (
-            db.query(models.PointsLog)
-            .filter(models.PointsLog.user_id == user_id)
-            .order_by(models.PointsLog.id.desc())
-            .with_for_update()
-            .first()
-        )
-        prev_hash = (tail.record_hash if tail and tail.record_hash else "") or ""
-    now = datetime.now()
-    log = models.PointsLog(
-        user_id=user_id,
-        amount=amount,
-        balance_after=balance_after,
-        type=type_,
-        description=description,
-        ref_id=ref_id,
-        created_at=now,
-    )
-    if audit_enabled:
-        log.prev_hash = prev_hash
-        log.record_hash = _points_record_hash(
-            prev_hash, user_id, amount, balance_after,
-            type_, description, ref_id, now,
-        )
-    db.add(log)
-    return log
-
-
-def _add_points(
-    db: Session, user: models.WebUser, amount: int,
-    type_: str, description: str, ref_id: str | None = None,
-) -> int:
-    """加积分并写台账（amount 可为负）
-
-    用 SQL 级自增（`points = coalesce(points,0) + amount`）而不是 Python 读改写：
-    后者在并发下会丢更新（两个请求各自读到同一旧余额，后提交的覆盖前者）。
-    返回写入后的真实余额。
-    """
-    db.query(models.WebUser).filter(models.WebUser.id == user.id).update(
-        {models.WebUser.points: func.coalesce(models.WebUser.points, 0) + amount},
-        synchronize_session="fetch",
-    )
-    balance = int(
-        db.query(models.WebUser.points).filter(models.WebUser.id == user.id).scalar() or 0
-    )
-    _append_points_log(db, user.id, amount, balance, type_, description, ref_id)
-    return balance
-
-
 class InsufficientPoints(ValueError):
-    """余额不足（_spend_points 的条件扣减没扣到）"""
+    """余额不足异常（积分时代的扣减契约；积分台账已下线，保留类本身供
+    尚未拆除的旧玩法模块引用，新代码不要再抛/捕它）"""
 
 
 def lock_user_row(db: Session, user_id: int) -> None:
@@ -281,623 +150,6 @@ def lock_user_row(db: Session, user_id: int) -> None:
         db.execute(_text("SELECT id FROM web_users WHERE id = :id FOR UPDATE"), {"id": user_id})
     else:
         db.execute(_text("UPDATE web_users SET id = id WHERE id = :id"), {"id": user_id})
-
-
-def _spend_points(
-    db: Session, user: models.WebUser, cost: int,
-    type_: str, description: str, ref_id: str | None = None,
-) -> int:
-    """原子扣积分：``UPDATE ... SET points = points - cost WHERE points >= cost``。
-
-    「先读余额判断够不够、再 _add_points 扣」是读-改-写：两个并发请求都读到同一旧余额、
-    都判定够用，然后各扣一次 → 余额被扣成负数（双花）。这里把「够不够」放进 UPDATE 的
-    WHERE 里由数据库判定：并发第二个请求在行锁上等前者提交后拿到 0 行 → InsufficientPoints。
-    成功时写台账并返回扣后余额；失败时什么都没写（调用方按需回滚自己的其它改动）。
-    """
-    cost = int(cost)
-    if cost <= 0:
-        raise ValueError("扣减能量必须为正数")
-    updated = (
-        db.query(models.WebUser)
-        .filter(
-            models.WebUser.id == user.id,
-            func.coalesce(models.WebUser.points, 0) >= cost,
-        )
-        .update(
-            {models.WebUser.points: func.coalesce(models.WebUser.points, 0) - cost},
-            synchronize_session="fetch",
-        )
-    )
-    if not updated:
-        balance = int(
-            db.query(models.WebUser.points).filter(models.WebUser.id == user.id).scalar() or 0
-        )
-        raise InsufficientPoints(f"能量不足，需要 {cost} 能量，当前 {balance} 能量")
-    balance = int(
-        db.query(models.WebUser.points).filter(models.WebUser.id == user.id).scalar() or 0
-    )
-    _append_points_log(db, user.id, -cost, balance, type_, description, ref_id)
-    return balance
-
-
-def verify_points_chain(db: Session, user_id: int, limit: int = 20000) -> dict:
-    """C3 流水审计：核验某用户的积分流水 hash 链是否完整。
-
-    按 id 升序逐条重算 hash 并校验链接：
-    - record_hash 为 NULL 的是审计开启前的历史记录，跳过校验（计入 legacy_skipped），
-      且链条从其之后的第一条审计记录重新起头（prev_hash=""）；
-    - 每条审计记录校验两点：prev_hash == 上一条的 record_hash（链头为 ""），
-      且按同样算法重算的 hash == record_hash。
-
-    返回 {"ok", "total", "verified", "legacy_skipped", "broken_at", "broken_reason"}。
-
-    只核验最近 limit 条（倒序取再正序验）：用户流水可能很多，抽查最近的才有意义。
-    多取一条做锚点：窗口内第一条的 prev_hash 应等于锚点的 record_hash（无锚点=全量，
-    则第一条必须是链头 ""）。
-    """
-    rows = (
-        db.query(models.PointsLog)
-        .filter(models.PointsLog.user_id == user_id)
-        .order_by(models.PointsLog.id.desc())
-        .limit(limit + 1)
-        .all()
-    )
-    rows.reverse()  # 最老在前
-    if len(rows) == limit + 1:
-        anchor, logs = rows[0], rows[1:]
-        expected_prev = anchor.record_hash or ""  # 锚点是历史记录时链条从 "" 起头
-    else:
-        logs = rows
-        expected_prev = ""
-    verified = 0
-    legacy_skipped = 0
-    broken_at = None
-    broken_reason = ""
-    for log in logs:
-        if not log.record_hash:
-            legacy_skipped += 1
-            expected_prev = ""  # 历史缺口之后链条重新起头
-            continue
-        if (log.prev_hash or "") != expected_prev:
-            broken_at = log.id
-            broken_reason = "prev_hash 链接断裂（上一条记录可能被删除或篡改）"
-            break
-        recalc = _points_record_hash(
-            log.prev_hash or "", log.user_id, log.amount, log.balance_after,
-            log.type, log.description, log.ref_id, log.created_at,
-        )
-        if recalc != log.record_hash:
-            broken_at = log.id
-            broken_reason = "本条记录字段被篡改（重算 hash 与记录不一致）"
-            break
-        verified += 1
-        expected_prev = log.record_hash
-    return {
-        "ok": broken_at is None,
-        "total": len(logs),
-        "verified": verified,
-        "legacy_skipped": legacy_skipped,
-        "broken_at": broken_at,
-        "broken_reason": broken_reason,
-    }
-
-
-def _checkin_rules(db: Session) -> dict:
-    """签到奖励规则（管理端 SystemConfig 可调）
-
-    2026-10-09 合并公益服签到后的统一规则：
-    - 基础积分：checkin_base_min ~ checkin_base_max 随机；未配置时默认
-      5~5 = 固定 5 分（2026-10-23 去重：原 checkin_base_points 单值键退役，
-      它只在未配范围时当回退、配了范围即被架空，一值三字段只留范围一对）
-    - 连签加成：streak_bonus * (streak-1)，封顶 streak_max_bonus
-    - 惩罚：penalty_pct% 概率扣 penalty_min ~ penalty_max（默认 0 = 关闭，旧行为不变）
-    - 积分仅发放给公益服用户（is_welfare=True）；其他用户签到只记录连签
-    - 签到增强（2026-11-01 货币再设计一期）：连签里程碑（达到 milestone_days
-      各发 milestone_points，0 分 = 关闭）、全勤奖（自然月签到 ≥
-      full_attendance_min_days 发 full_attendance_points，0 分/0 天 = 关闭）、
-      签到暴击（crit_pct% 概率当日所得 ×3、封顶 crit_cap，0% = 关闭）
-    """
-    base_min = _get_int_config(db, "checkin_base_min", 5)
-    base_max = _get_int_config(db, "checkin_base_max", 5)
-    base_points = base_min
-    if base_min > base_max:
-        base_min, base_max = base_max, base_min
-    penalty_min = _get_int_config(db, "checkin_penalty_min", 1)
-    penalty_max = _get_int_config(db, "checkin_penalty_max", 3)
-    if penalty_min > penalty_max:
-        penalty_min, penalty_max = penalty_max, penalty_min
-    return {
-        "enabled": _get_bool_config(db, "checkin_enabled", False),  # 2026-10-21：用户拍板保持关，缺省=关
-        "base_points": base_points,
-        "base_min": base_min,
-        "base_max": base_max,
-        "streak_bonus": _get_int_config(db, "checkin_streak_bonus", 2),
-        "streak_max_bonus": _get_int_config(db, "checkin_streak_max_bonus", 10),
-        "penalty_pct": _get_int_config(db, "checkin_penalty_pct", 0),
-        "penalty_min": penalty_min,
-        "penalty_max": penalty_max,
-        "milestone_points": _get_int_config(db, "checkin_milestone_points", 15),
-        "milestone_days": _get_int_list_config(
-            db, "checkin_milestone_days", [7, 14, 21, 28]),
-        "full_attendance_points": _get_int_config(
-            db, "checkin_full_attendance_points", 30),
-        "full_attendance_min_days": _get_int_config(
-            db, "checkin_full_attendance_min_days", 28),
-        "crit_pct": max(0, min(100, _get_int_config(db, "checkin_crit_pct", 5))),
-        "crit_cap": _get_int_config(db, "checkin_crit_cap", 24),
-    }
-
-
-# 签到暴击倍数（设计稿定版 ×3，不做配置键）
-_CHECKIN_CRIT_MULTIPLIER = 3
-
-
-def _roll_checkin_crit(pct: int) -> bool:
-    """签到暴击掷骰：与签到惩罚同一服务端随机源（random 模块）；pct<=0 恒不中。"""
-    if pct <= 0:
-        return False
-    return random.random() * 100 < pct
-
-
-def _checkin_month_window(today: datetime):
-    """由签到日帧（上海日界的 UTC naive）推本月窗口 [start, next) 与月键 YYYYMM。
-
-    与 _month_start_utc_naive() 同口径（Asia/Shanghai 自然月），但从已定的
-    today 帧推导，保证计数窗口与 CheckinRecord.checkin_date 写入帧严格一致，
-    不另起一次 now() 采样（跨月界瞬间两次采样可能落在不同月份）。
-    """
-    sh = today + timedelta(hours=8)  # 还原为上海帧当日 00:00
-    start = datetime(sh.year, sh.month, 1) - timedelta(hours=8)
-    if sh.month == 12:
-        nxt = datetime(sh.year + 1, 1, 1) - timedelta(hours=8)
-    else:
-        nxt = datetime(sh.year, sh.month + 1, 1) - timedelta(hours=8)
-    return start, nxt, f"{sh.year:04d}{sh.month:02d}"
-
-
-def _grant_full_attendance(db: Session, user: models.WebUser,
-                           today: datetime, rules: dict, balance: int):
-    """全勤奖结算：本月签到天数达标且本月未发过时发放，返回 (发放额, 新余额)。
-
-    在签到事务内即时结算：签到没有月结批处理结构，即时发与签到记录同事务
-    原子落账、用户当场可见（次月 1 日批结还需新调度且失败面更大）。
-    幂等靠 ref_id=checkin-full:YYYYMM 先查后发：按 count >= 门槛判定，
-    配置中途调低门槛可补发；一旦发过，同月永不重发。
-    """
-    points = rules["full_attendance_points"]
-    min_days = rules["full_attendance_min_days"]
-    if points <= 0 or min_days <= 0:
-        return 0, balance
-    start, nxt, month_key = _checkin_month_window(today)
-    cnt = db.query(func.count(models.CheckinRecord.id)).filter(
-        models.CheckinRecord.user_id == user.id,
-        models.CheckinRecord.checkin_date >= start,
-        models.CheckinRecord.checkin_date < nxt,
-    ).scalar() or 0
-    if cnt < min_days:
-        return 0, balance
-    ref = f"checkin-full:{month_key}"
-    exists = db.query(models.PointsLog).filter(
-        models.PointsLog.user_id == user.id,
-        models.PointsLog.ref_id == ref,
-    ).first()
-    if exists:
-        return 0, balance
-    balance = _add_points(
-        db, user, points, "checkin_full",
-        f"全勤奖（{month_key[:4]}年{month_key[4:]}月签到 {cnt} 天）", ref)
-    return points, balance
-
-
-class CheckinStatusResponse(BaseModel):
-    enabled: bool
-    checked_today: bool
-    streak: int
-    base_points: int
-    streak_bonus: int
-    streak_max_bonus: int
-    points: int
-    # 2026-10-09 合并公益服签到后新增（带默认值，保持旧客户端兼容）
-    base_min: int = 5
-    base_max: int = 5
-    penalty_pct: int = 0
-    points_enabled: bool = True  # 当前用户是否为公益服（是否会获得积分）
-    # 2026-11-01 签到增强（带默认值，保持旧客户端兼容）
-    milestone_points: int = 15
-    milestone_days: list = []
-    full_attendance_points: int = 30
-    crit_pct: int = 5
-    # 2026-11-05 报到页动态实数：今日实得＝今日记录 points_awarded（当日基础
-    # 奖励，含暴击放大；里程碑/全勤独立台账不在内），未报到为 None。
-    today_points: Optional[int] = None
-
-
-class CheckinRequest(BaseModel):
-    # 人机验证令牌（能力：人机验证）：站点开启签到保护时必填，未开启时后端不校验。
-    # 只作用于本网站签到端点；TG 机器人签到不走这里（2026-11-06 用户亲令）。
-    captcha_token: Optional[str] = None
-
-
-@router.get("/checkin/status", response_model=CheckinStatusResponse)
-def checkin_status(
-    current_user: models.WebUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    today = _today_start()
-    today_record = db.query(models.CheckinRecord).filter(
-        models.CheckinRecord.user_id == current_user.id,
-        models.CheckinRecord.checkin_date >= today,
-    ).order_by(models.CheckinRecord.checkin_date.desc()).first()
-    checked = today_record is not None
-    today_points: Optional[int] = None
-    if today_record is not None:
-        today_points = (today_record.points_awarded
-                        if today_record.points_awarded is not None else 0)
-
-    # 连签数：今日已签按当日记录，未签则按昨天回溯。
-    # PA-016：回溯须有“昨天”下界——只认昨天或今天的记录，否则断签用户
-    # 会看到 10 天前的旧连签（与 _do_checkin_core“只认昨天才续连签”一致）。
-    anchor = today
-    if not checked:
-        anchor = today - timedelta(days=1)
-    last = db.query(models.CheckinRecord).filter(
-        models.CheckinRecord.user_id == current_user.id,
-        models.CheckinRecord.checkin_date <= anchor,
-    ).order_by(models.CheckinRecord.checkin_date.desc()).first()
-    streak = 0
-    if last is not None and last.checkin_date >= today - timedelta(days=1):
-        streak = last.streak
-
-    rules = _checkin_rules(db)
-    return CheckinStatusResponse(
-        enabled=rules["enabled"],
-        checked_today=checked,
-        streak=streak,
-        base_points=rules["base_points"],
-        streak_bonus=rules["streak_bonus"],
-        streak_max_bonus=rules["streak_max_bonus"],
-        points=current_user.points or 0,
-        base_min=rules["base_min"],
-        base_max=rules["base_max"],
-        penalty_pct=rules["penalty_pct"],
-        points_enabled=bool(getattr(current_user, "is_welfare", False)),
-        milestone_points=rules["milestone_points"],
-        milestone_days=rules["milestone_days"],
-        full_attendance_points=rules["full_attendance_points"],
-        crit_pct=rules["crit_pct"],
-        today_points=today_points,
-    )
-
-
-def _do_checkin_core(db: Session, user: models.WebUser) -> dict:
-    """签到核心逻辑（同步，在线程池中执行）
-
-    2026-10-09 合并公益服签到后的统一逻辑：
-    - 积分仅发放给公益服用户（is_welfare=True）；其他用户签到只记录连签，积分为 0
-    - 公益服用户：基础积分 base_min ~ base_max 随机 + 连签加成 - 惩罚（按概率）
-
-    唯一索引 (user_id, checkin_date) 是并发防重的最后一道门：先 flush 让冲突在提交前
-    暴露，避免「先发积分、后落库失败」或直接 500。
-
-    返回 {"points_awarded", "streak", "balance", "penalty", "crit",
-    "milestone_points", "full_attendance_points"}，失败时抛 HTTPException。
-    其中 points_awarded 只记当日基础奖励（基础+连签加成−惩罚，含暴击放大），
-    里程碑/全勤为独立台账行分开返回；balance 为全部发放后的余额。
-    供 POST /api/user/economy/checkin 路由和已废弃的 POST /api/points/signin 复用。
-    """
-    user_id = user.id
-    rules = _checkin_rules(db)
-    if not rules["enabled"]:
-        raise HTTPException(status_code=403, detail="签到功能未开启")
-
-    today = _today_start()
-    exists = db.query(models.CheckinRecord).filter(
-        models.CheckinRecord.user_id == user_id,
-        models.CheckinRecord.checkin_date >= today,
-    ).first()
-    if exists:
-        raise HTTPException(status_code=400, detail="今天已经签到过啦")
-
-    # 连签：昨天有记录则 +1，其余情况（无记录 / 漏签 ≥1 天）重置为 1。
-    # 连签只作展示与里程碑计数，不再承担保号判定（保号已改活力口径，
-    # 见 welfare_expiry._try_vitality_renew）；2026-11-09 上线的「每月
-    # 断签保护」已随之回滚，漏 1 天照旧清零。
-    last_record = db.query(models.CheckinRecord).filter(
-        models.CheckinRecord.user_id == user_id,
-        models.CheckinRecord.checkin_date < today,
-    ).order_by(models.CheckinRecord.checkin_date.desc()).first()
-    streak = 1
-    if last_record is not None and last_record.checkin_date >= today - timedelta(days=1):
-        streak = (last_record.streak or 0) + 1
-
-    # 奖励计算：仅公益服用户获得积分
-    is_welfare = bool(getattr(user, "is_welfare", False))
-    penalty = False
-    crit = False
-    if not is_welfare:
-        reward = 0
-    else:
-        base = random.randint(rules["base_min"], rules["base_max"])
-        bonus = min(rules["streak_bonus"] * (streak - 1), rules["streak_max_bonus"])
-        penalty_amount = 0
-        if rules["penalty_pct"] > 0 and random.random() * 100 < rules["penalty_pct"]:
-            penalty_amount = random.randint(rules["penalty_min"], rules["penalty_max"])
-            penalty = True
-        # 惩罚只削减当日奖励，不倒扣余额：base+bonus-penalty 可能为负（如 base=1、penalty=3），
-        # 负数会经 _add_points 直接扣用户积分（可扣成负余额），且前端/通知文案都不支持负奖励
-        reward = max(0, base + bonus - penalty_amount)
-        # 签到暴击：只放大当日签到所得（基础+连签−惩罚），里程碑/全勤是
-        # 独立奖励不参与放大；封顶 crit_cap（<=0 视为不封顶）。
-        if reward > 0 and _roll_checkin_crit(rules["crit_pct"]):
-            crit = True
-            reward = reward * _CHECKIN_CRIT_MULTIPLIER
-            if rules["crit_cap"] > 0:
-                reward = min(reward, rules["crit_cap"])
-
-    record = models.CheckinRecord(
-        user_id=user_id,
-        checkin_date=today,
-        points_awarded=reward,
-        streak=streak,
-    )
-    db.add(record)
-    try:
-        db.flush()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(status_code=400, detail="今天已经签到过啦")
-    except OperationalError:
-        # 数据库写锁竞争：没发奖也没落库，让客户端重试
-        db.rollback()
-        raise HTTPException(status_code=409, detail="签到请求冲突，请稍后重试")
-    if reward:
-        description = f"每日签到（连续 {streak} 天）"
-        if crit:
-            description += "，暴击 ×3"
-    else:
-        description = f"每日签到（连续 {streak} 天，无能量奖励）"
-    balance = _add_points(
-        db, user, reward, "checkin",
-        description, f"checkin:{today.strftime('%Y%m%d')}",
-    )
-    # 签到增强（2026-11-01）：连签里程碑——streak 在一轮连签内单调递增、
-    # 断签重置，故 streak 恰达里程碑日即「每轮只发一次」；与签到同事务落账。
-    milestone_points = 0
-    full_attendance_points = 0
-    if is_welfare:
-        if rules["milestone_points"] > 0 and streak in rules["milestone_days"]:
-            milestone_points = rules["milestone_points"]
-            balance = _add_points(
-                db, user, milestone_points, "checkin_milestone",
-                f"连签里程碑（连续 {streak} 天）",
-                f"checkin-milestone:{today.strftime('%Y%m%d')}:{streak}",
-            )
-        full_attendance_points, balance = _grant_full_attendance(
-            db, user, today, rules, balance)
-    # C1 活力值：现口径签到不送活力（2026-11-09 用户点选）——活力只靠
-    # 观影奖励与积分兑换获得，签到只发积分。键 vitality_checkin_gain
-    # 保留可配：代码默认 0，管理员显式配正数才恢复发放；恢复发放时也
-    # 不再占用每日免费获取上限（daily_gain_limit 只管观影奖励：
-    # vitality.FREE_GAIN_REASONS 已不含 checkin，本段不再按上限钳制，
-    # PA-014 的签到钳制口径就此作废）。
-    vitality_gained = 0
-    vitality_recovered = False  # 本次签到是否把活力从 0 拉起来（解封通知用）
-    if is_welfare:
-        try:
-            cfg = _vitality.get_vitality_config(db)
-            if cfg["enabled"]:
-                gain = _get_int_config(db, "vitality_checkin_gain", 0)
-                if gain > 0:
-                    # PA-015：_add_vitality 返回的是钳制后余额，不是增量；
-                    # 机器人面板按增量渲染“+N”，故用加后值减加前值。
-                    # 加前值直查库（不用 user.vitality 属性：_add_vitality 走原生
-                    # SQL，ORM 属性不会同步刷新）。不改 _add_vitality 返回语义。
-                    before = db.query(models.WebUser.vitality).filter(
-                        models.WebUser.id == user_id).scalar()
-                    before = int(before or 0)
-                    after = _vitality._add_vitality(db, user_id, gain, "checkin")
-                    vitality_gained = after - before
-                    vitality_recovered = before <= 0 and after > 0
-        except Exception:
-            logger.exception("checkin vitality restore failed for user %s", user_id)
-    # Step 0 公益原生经验：签到 +1（可刷日封顶 10 钳制；不提交，随签到事务提交）
-    xp_gained = 0
-    try:
-        from backend import member_level as _ml
-        xp_gained = _ml.award_checkin_xp(db, user)
-    except Exception:
-        logger.exception("checkin XP award failed for user %s", user_id)
-    db.commit()
-    if vitality_recovered:
-        # 活力从 0 恢复＝解封：补一条 TG 通知（best-effort，失败不影响签到）
-        _vitality.notify_vitality_change(db, user_id, "recovered")
-    return {"points_awarded": reward, "streak": streak, "balance": balance,
-            "penalty": penalty, "vitality_gained": vitality_gained, "xp_gained": xp_gained,
-            "crit": crit, "milestone_points": milestone_points,
-            "full_attendance_points": full_attendance_points}
-
-
-@router.post("/checkin")
-async def do_checkin(
-    request: Request,
-    current_user: models.WebUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    _tg: models.WebUser = Depends(require_tg_bound),
-    # 注意：可选 body 参数必须排在 Depends 参数之后。并发冒烟脚本按
-    # do_checkin(request, user, db) 位置直调端点；payload 插在第 2 位会
-    # 把 Session 错绑进 current_user、全体 500（PR #1874 冒烟实测）。
-    # FastAPI 按名解析 body，排最后不影响 HTTP 行为。
-    payload: Optional[CheckinRequest] = None,
-):
-    """每日签到：基础能量 + 连签加成（封顶）；能量仅限公益服用户"""
-    user_id = current_user.id
-
-    # 人机验证（能力中心，与登录/注册同一个守卫）：未配置/未开保护时直接放行；
-    # 失败一律 400 + 安全日志，且不落签到记录。放限流之前：没过验证的请求不占限流额度。
-    integrations_captcha.guard(
-        db, request, "checkin",
-        payload.captcha_token if payload else None,
-        username=current_user.username)
-
-    allowed, _ = check_rate_limit(f"checkin:{user_id}", 5, 60)
-    if not allowed:
-        raise HTTPException(status_code=429, detail="操作过于频繁，请稍后再试")
-
-    award = await run_in_threadpool(_do_checkin_core, db, current_user)
-
-    # 签到增强（2026-11-01）：暴击/里程碑/全勤要在返回里看得见
-    extras = []
-    if award.get("crit"):
-        extras.append("签到暴击 ×3")
-    if award.get("milestone_points"):
-        extras.append(f"连签里程碑 +{award['milestone_points']} 能量")
-    if award.get("full_attendance_points"):
-        extras.append(f"全勤奖 +{award['full_attendance_points']} 能量")
-    total_awarded = (award["points_awarded"] + award.get("milestone_points", 0)
-                     + award.get("full_attendance_points", 0))
-    if total_awarded > 0:
-        title = f"📅 签到成功 +{award['points_awarded']} 能量"
-        content = (f"已连续签到 {award['streak']} 天，当前余额 {award['balance']} 能量。"
-                   f"\n明日再来看看，连签奖励更高！")
-        message = f"签到成功，+{award['points_awarded']} 能量（连续 {award['streak']} 天）"
-        if extras:
-            content += "\n" + "；".join(extras) + "！"
-            message += "（" + "；".join(extras) + "）"
-    else:
-        title = "📅 签到成功"
-        content = (f"已连续签到 {award['streak']} 天。能量奖励仅限公益服用户。")
-        message = f"签到成功（连续 {award['streak']} 天，能量仅限公益服用户）"
-    # r46：签到积分已落库，通知走 quiet 守卫——失败只记日志不抛 500，
-    # 避免用户看到 500 重试时被"今天已经签到过啦"误导（已完成写成失败）。
-    await notify_admin_event_quiet(
-        event_type="economy.checkin",
-        log_ctx=f"checkin user_id={user_id}",
-        user_id=user_id,
-        title=title,
-        content=content,
-    )
-    return {
-        "success": True,
-        "points_awarded": award["points_awarded"],
-        "streak": award["streak"],
-        "balance": award["balance"],
-        "vitality_gained": award.get("vitality_gained", 0),
-        "xp_gained": award.get("xp_gained", 0),
-        "crit": bool(award.get("crit")),
-        "milestone_points": award.get("milestone_points", 0),
-        "full_attendance_points": award.get("full_attendance_points", 0),
-        "message": message,
-    }
-
-
-# ==================== 活力值 ====================
-
-
-@router.get("/vitality")
-def get_vitality(
-    current_user: models.WebUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """查询我的活力值状态（仅公益服用户）"""
-    if not getattr(current_user, "is_welfare", False):
-        raise HTTPException(status_code=403, detail="活力值仅限公益服用户")
-    return {"success": True, **_vitality.vitality_status(db, current_user)}
-
-
-class VitalityRechargeRequest(BaseModel):
-    points: int = Field(..., gt=0, description="要消耗的能量数")
-
-
-@router.post("/vitality/recharge")
-async def recharge_vitality(
-    request: Request,
-    payload: VitalityRechargeRequest,
-    current_user: models.WebUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """用能量续活力值：1 点活力 = vitality_point_cost 能量（可配置）"""
-    if not getattr(current_user, "is_welfare", False):
-        raise HTTPException(status_code=403, detail="活力值仅限公益服用户")
-    allowed, _ = check_rate_limit(f"vitality_recharge:{current_user.id}", 5, 60)
-    if not allowed:
-        raise HTTPException(status_code=429, detail="操作过于频繁，请稍后再试")
-    cfg = _vitality.get_vitality_config(db)
-    if not cfg["enabled"]:
-        raise HTTPException(status_code=403, detail="活力值功能未开启")
-    cost = cfg["point_cost"]
-    if payload.points % cost != 0:
-        raise HTTPException(status_code=400, detail=f"能量数必须是 {cost} 的整数倍")
-    want = payload.points // cost
-    st = _vitality.vitality_status(db, current_user)
-    room = st["max"] - st["vitality"]
-    if room <= 0:
-        raise HTTPException(status_code=400, detail="活力值已满，无需续")
-    requested = want  # 外层空间检查只用于快速失败；真正的空间在事务内锁行后重算
-
-    def _do() -> dict:
-        # 锁用户行后重读活力值算剩余空间：外层读的是旧值，并发两笔续费都按同一空间扣分，
-        # 活力被 _add_vitality 截断在上限 → 多扣的积分白花（超付）。
-        lock_user_row(db, current_user.id)
-        current_v = int(
-            db.query(models.WebUser.vitality).filter(models.WebUser.id == current_user.id).scalar() or 0
-        )
-        room_now = st["max"] - current_v
-        if room_now <= 0:
-            db.rollback()
-            raise HTTPException(status_code=400, detail="活力值已满，无需续")
-        gain = min(requested, room_now)
-        spend = gain * cost
-        try:
-            balance = _spend_points(db, current_user, spend, "vitality_recharge",
-                                    f"能量续活力 +{gain}", f"vitality:{gain}")
-        except InsufficientPoints:
-            db.rollback()
-            raise HTTPException(status_code=400, detail="能量不足")
-        new_v = _vitality._add_vitality(db, current_user.id, gain, "recharge")
-        db.commit()
-        if current_v <= 0 and new_v > 0:
-            # 积分续活把活力从 0 拉起来＝解封：补一条 TG 通知
-            _vitality.notify_vitality_change(db, current_user.id, "recovered")
-        return {"vitality_gained": gain, "points_spent": spend,
-                "vitality": new_v, "points_balance": balance}
-
-    return {"success": True, **await run_in_threadpool(_do)}
-
-
-# ==================== 积分流水 ====================
-
-@router.get("/points/log")
-def points_log(
-    limit: int = 50,
-    offset: int = 0,
-    type_filter: Optional[str] = None,
-    current_user: models.WebUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    query = db.query(models.PointsLog).filter(
-        models.PointsLog.user_id == current_user.id
-    )
-    if type_filter:
-        query = query.filter(models.PointsLog.type == type_filter)
-
-    total = query.count()
-    logs = query.order_by(models.PointsLog.created_at.desc()).offset(offset).limit(min(limit, 200)).all()
-    return {
-        "total": total,
-        "balance": current_user.points or 0,
-        "logs": [
-            {
-                "id": l.id,
-                "amount": l.amount,
-                "balance_after": l.balance_after,
-                "type": l.type,
-                "description": l.description,
-                "ref_id": l.ref_id,
-                "created_at": l.created_at.isoformat() if l.created_at else None,
-            }
-            for l in logs
-        ],
-    }
 
 
 # ==================== 兑换码 ====================
@@ -1074,91 +326,6 @@ def _exchange_discount_amount(list_price: Decimal, pct: int) -> tuple[Decimal, D
     return discount, paid
 
 
-def _points_subscription_price(db: Session, user: models.WebUser,
-                               plan: models.SubscriptionPlan,
-                               coupon_code: str = "") -> dict:
-    """积分买订阅的价格口径（r48-⑪：与人民币路径同口径）。
-
-    叠加顺序与人民币下单完全一致：先会员等级折扣得中间价，再对中间价算
-    优惠券 / 兑换码折扣权益。金额单位是**积分**（int）。
-    - 会员等级折扣：仅付费服（公益服 access_mode='free' 不打折），与人民币口径同。
-    - 优惠券：仅 ``percent`` 型可用于积分支付（百分比无单位，积分/人民币通用）；
-      ``fixed`` 型是人民币直减，单位对不上，明确 400 拒绝、不静默忽略。
-      有效性校验走 ``coupons.quote``（按套餐原价校验门槛，与人民币路径一致）。
-    - 没填优惠券时自动用最优的一张兑换码折扣权益（pct 型，无单位），与人民币
-      下单「没填码就用权益」口径一致；权益与优惠券不叠加。
-    - 百分比券的 ``max_discount`` 是人民币封顶，在积分口径下不做封顶换算
-      （单位无锚，换算会引入充值比例耦合）；用百分比券买积分价套餐时以此为准。
-    返回 dict：list_points / member_discount_pct / member_discount_points /
-    coupon_code / coupon(对象或None) / coupon_discount_points /
-    exchange_discount_pct / credit(对象或None) / exchange_discount_points /
-    paid_points。调用方负责真正的扣减与权益核销。
-    """
-    from backend import member_level as _ml
-
-    list_points = int(Decimal(str(plan.points_price)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-    member_discount_pct = 0
-    member_discount_points = 0
-    # plan.realm 在调用方处已 joinedload；realm 为空（老数据）按付费服处理
-    _realm = getattr(plan, "realm", None)
-    _is_paid_plan = not (_realm is not None
-                         and getattr(_realm, "access_mode", "paid") == "free")
-    if _is_paid_plan:
-        member_discount_pct = _ml.get_user_discount_pct(db, user)
-        if member_discount_pct > 0:
-            member_discount_points = int(
-                (Decimal(list_points) * Decimal(member_discount_pct)
-                 / Decimal(100)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-            )
-    base = list_points - member_discount_points
-
-    coupon_code = (coupon_code or "").strip()
-    coupon_obj = None
-    coupon_discount_points = 0
-    credit = None
-    exchange_discount_pct = 0
-    exchange_discount_points = 0
-    if coupon_code:
-        preview = coupons.quote(db, user=user, code=coupon_code,
-                                kind="subscription", item_id=plan.id)
-        coupon_obj = db.query(models.CouponCode).filter(
-            models.CouponCode.id == preview["coupon_id"]).first()
-        if coupon_obj is None:
-            raise HTTPException(status_code=400, detail="优惠码不存在")
-        if coupon_obj.discount_type != coupons.PERCENT:
-            raise HTTPException(
-                status_code=400,
-                detail="该优惠券为人民币直减券，不支持能量抵扣（能量抵扣仅支持百分比券）",
-            )
-        c_discount, c_paid = coupons.compute(Decimal(base), coupon_obj)
-        coupon_discount_points = int(c_discount)
-        coupon_code = preview["code"]
-    else:
-        # 兑换码折扣权益：没填优惠券时自动用最优的一张（与人民币下单同口径，
-        # 同样先会员折扣再对中间价算权益）。
-        credit = _best_discount_credit(db, user.id)
-        if credit is not None:
-            exchange_discount_pct = credit.discount_pct
-            c_discount, c_paid = _exchange_discount_amount(
-                Decimal(base), credit.discount_pct)
-            exchange_discount_points = int(c_discount)
-    paid_points = base - coupon_discount_points - exchange_discount_points
-    if paid_points < 0:
-        paid_points = 0
-    return {
-        "list_points": list_points,
-        "member_discount_pct": member_discount_pct,
-        "member_discount_points": member_discount_points,
-        "coupon_code": coupon_code,
-        "coupon": coupon_obj,
-        "coupon_discount_points": coupon_discount_points,
-        "exchange_discount_pct": exchange_discount_pct,
-        "credit": credit,
-        "exchange_discount_points": exchange_discount_points,
-        "paid_points": paid_points,
-    }
-
-
 class RedeemRequest(BaseModel):
     code: str = Field(..., min_length=4, max_length=32)
 
@@ -1228,14 +395,7 @@ def _redeem_exchange_core(db: Session, user: models.WebUser, code_str: str) -> d
     db.refresh(code)
 
     result: dict = {"success": True}
-    if code.type == "points":
-        balance = _add_points(
-            db, user, code.points_value, "exchange",
-            f"兑换码 {code_str}", f"exchange:{code_str}",
-        )
-        result.update(reward_type="points", points=code.points_value, balance=balance,
-                      message=f"兑换成功，+{code.points_value} 能量")
-    elif code.type == "subscription":
+    if code.type == "subscription":
         plan = db.query(models.SubscriptionPlan).filter(
             models.SubscriptionPlan.id == code.plan_id
         ).first() if code.plan_id else None
@@ -1274,7 +434,6 @@ def _redeem_exchange_core(db: Session, user: models.WebUser, code_str: str) -> d
     return result
 
 
-
 @router.post("/exchange/redeem")
 async def redeem_exchange_code(
     request: Request,
@@ -1282,7 +441,7 @@ async def redeem_exchange_code(
     current_user: models.WebUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """兑换码核销：points 型发能量；subscription 型发订阅；discount 型发一张订阅折扣权益
+    """兑换码核销：subscription 型发订阅；discount 型发一张订阅折扣权益（points 型已随货币下线）
 
     占位 / 发奖 / 审计整段是同步 SQLAlchemy（体内一个 await 都没有），下放线程池执行；
     通知要走 WebSocket，必须留在事件循环上 await。
@@ -1347,28 +506,6 @@ async def payment_methods(db: Session = Depends(get_db)):
     return methods
 
 
-@router.get("/payment/packages")
-def payment_packages(db: Session = Depends(get_db)):
-    """充值套餐（能量）"""
-    if not _get_bool_config(db, "recharge_enabled", True):
-        return {"enabled": False, "packages": []}
-    packages = db.query(models.RechargePackage).filter(
-        models.RechargePackage.is_active == True  # noqa: E712
-    ).order_by(models.RechargePackage.sort_order).all()
-    return {
-        "enabled": True,
-        "packages": [
-            {
-                "id": p.id, "name": p.name, "amount": p.amount,
-                "bonus": p.bonus, "price": float(p.price),
-                "is_popular": p.is_popular, "icon": p.icon,
-                "total_points": p.amount + p.bonus,
-            }
-            for p in packages
-        ],
-    }
-
-
 @router.get("/payment/plans")
 def payment_plans(realm_id: Optional[int] = None, db: Session = Depends(get_db)):
     """订阅套餐（购买订阅）
@@ -1410,7 +547,6 @@ def payment_plans(realm_id: Optional[int] = None, db: Session = Depends(get_db))
                 "entitlements": _entitlements.parse_entitlements(p.entitlements),
                 "realm_id": p.realm_id,
                 "realm_name": (p.realm.name if p.realm else ""),
-                "points_price": (float(p.points_price) if p.points_price is not None else None),
             }
             for p in plans
         ],
@@ -1423,21 +559,10 @@ def coupon_config(db: Session = Depends(get_db)):
     return {"enabled": coupons.enabled(db)}
 
 
-@router.get("/currency")
-def currency_info(db: Session = Depends(get_db)):
-    """货币体系公开信息（P2/C4）：名称、充值比例、快捷金额——用户端自定义充值换算用"""
-    return {
-        "name": "能量",
-        "recharge_ratio": _get_float_config(db, "recharge_ratio", 1.2),
-        "quick_amounts": _get_quick_amounts(db),
-    }
-
-
 class CouponQuoteRequest(BaseModel):
     code: str = Field(default="", description="用户填写的优惠码（可空；空时按「没填码自动用最优兑换码折扣权益」口径试算，与下单一致）")
-    kind: str = Field(..., description="recharge / subscription")
+    kind: str = Field(..., description="subscription")
     item_id: int = Field(..., description="充值套餐ID 或 套餐ID")
-    pay_with_points: bool = Field(default=False, description="能量支付试算；仅 kind=subscription 时有效，按能量口径（_points_subscription_price）试算，与能量下单一致")
 
 
 @router.post("/payment/coupon/quote")
@@ -1457,41 +582,6 @@ def coupon_quote(
     allowed, _ = check_rate_limit(f"coupon-quote:{current_user.id}", 30, 60)
     if not allowed:
         raise HTTPException(status_code=429, detail="操作过于频繁，请稍后再试")
-    if req.pay_with_points:
-        # r48-⑪：积分支付试算——与积分下单同一套口径（_points_subscription_price），
-        # 预览与下单必须一致。金额单位是积分。
-        if req.kind != "subscription":
-            raise HTTPException(status_code=400, detail="能量支付试算仅支持订阅")
-        plan = db.query(models.SubscriptionPlan).options(
-            joinedload(models.SubscriptionPlan.realm)
-        ).filter(
-            models.SubscriptionPlan.id == req.item_id,
-            models.SubscriptionPlan.is_active == True,  # noqa: E712
-        ).first()
-        if not plan:
-            raise HTTPException(status_code=404, detail="套餐不存在")
-        if plan.points_price is None:
-            raise HTTPException(status_code=400, detail="该套餐不支持能量购买")
-        pricing = _points_subscription_price(
-            db, current_user, plan, coupon_code=req.code)
-        return {
-            "valid": True,
-            "code": pricing["coupon_code"],
-            "coupon_id": pricing["coupon"].id if pricing["coupon"] is not None else 0,
-            "item_name": plan.name,
-            "list_price": float(pricing["list_points"]),
-            "discount_amount": float(
-                pricing["member_discount_points"]
-                + pricing["coupon_discount_points"]
-                + pricing["exchange_discount_points"]),
-            "paid_amount": float(pricing["paid_points"]),
-            "discount_type": "points",
-            "value": 0,
-            "member_discount_pct": pricing["member_discount_pct"],
-            "member_discount_amount": float(pricing["member_discount_points"]),
-            "exchange_discount_pct": pricing["exchange_discount_pct"],
-            "pay_with_points": True,
-        }
     code = (req.code or "").strip()
     if code:
         result = coupons.quote(db, user=current_user, code=code,
@@ -1557,13 +647,11 @@ def coupon_quote(
 
 
 class CreateOrderRequest(BaseModel):
-    kind: str = Field(..., description="recharge=充值能量 / subscription=购买订阅")
-    item_id: Optional[int] = Field(default=None, description="充值套餐ID 或 套餐ID；自定义金额充值时可为空")
+    kind: str = Field(..., description="subscription=购买订阅")
+    item_id: Optional[int] = Field(default=None, description="套餐ID")
     # P3 修复（审查）：payment_method 无白名单，任意字符串进网关。限定可选值。
     payment_method: str = Field(default="alipay", pattern="^(alipay|wxpay|qqpay)$")
     coupon_code: str = Field(default="", description="优惠码（可空）；下单时占额度，付款转已用，关单/退款自动还回")
-    custom_amount: Optional[float] = Field(default=None, ge=1, le=100000, description="自定义充值金额（元）；仅 kind=recharge 时有效，与 item_id 二选一")
-    pay_with_points: bool = Field(default=False, description="能量支付；仅 kind=subscription 时有效")
 
 
 def _yipay_sign(params: dict, key: str) -> str:
@@ -1622,39 +710,7 @@ def create_payment_order(
 
     order_id = f"RB{int(time.time() * 1000)}{uuid.uuid4().hex[:6].upper()}"
 
-    if req.kind == "recharge":
-        if not _get_bool_config(db, "recharge_enabled", True):
-            raise HTTPException(status_code=403, detail="充值功能未开启")
-        if req.custom_amount is not None:
-            if req.custom_amount < 1 or req.custom_amount > 100000:
-                raise HTTPException(status_code=400, detail="自定义金额需在 1~100000 元之间")
-            ratio = _get_float_config(db, "recharge_ratio", 1.2)
-            if ratio <= 0:
-                ratio = 1.2
-            points = int((Decimal(str(req.custom_amount)) * Decimal(str(ratio))).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-            if points < 1:
-                raise HTTPException(status_code=400, detail="金额过小，无法兑换能量")
-            item_name = f"能量充值 - 自定义 {req.custom_amount:.2f} 元"
-            amount = Decimal(str(req.custom_amount))
-            order = models.RechargeOrder(
-                order_id=order_id, user_id=current_user.id,
-                package_id=0, amount=points, price=amount, payment_method=req.payment_method, status="pending",
-            )
-        else:
-            package = db.query(models.RechargePackage).filter(
-                models.RechargePackage.id == req.item_id,
-                models.RechargePackage.is_active == True,  # noqa: E712
-            ).first()
-            if not package:
-                raise HTTPException(status_code=404, detail="充值套餐不存在")
-            item_name = f"能量充值 - {package.name}"
-            amount = package.price
-            order = models.RechargeOrder(
-                order_id=order_id, user_id=current_user.id,
-                package_id=package.id, amount=package.amount + package.bonus,
-                price=amount, payment_method=req.payment_method, status="pending",
-            )
-    elif req.kind == "subscription":
+    if req.kind == "subscription":
         plan = db.query(models.SubscriptionPlan).options(
             joinedload(models.SubscriptionPlan.realm)
         ).filter(
@@ -1667,91 +723,6 @@ def create_payment_order(
         # 默认服仍读原键名，与改前行为一致）。
         if not _get_bool_realm_config(db, "subscription_purchase_enabled", plan.realm_id, True):
             raise HTTPException(status_code=403, detail="订阅购买未开启")
-        if req.pay_with_points:
-            if plan.points_price is None:
-                raise HTTPException(status_code=400, detail="该套餐不支持能量购买")
-            # r48-⑪：积分路径与人民币路径同口径——先会员等级折扣得中间价，
-            # 再叠加优惠券/兑换码折扣权益（见 _points_subscription_price）。
-            pricing = _points_subscription_price(
-                db, current_user, plan, coupon_code=req.coupon_code)
-            points_cost = pricing["paid_points"]
-            if points_cost <= 0:
-                raise HTTPException(status_code=400, detail="套餐能量价配置错误")
-            # P1-5：该服的能量购买通道总开关（按服，默认开）。只拦能量
-            # 下单口；在线支付走下面的网关路径，不受影响。
-            if not _get_bool_realm_config(db, "subscription_points_purchase_enabled", plan.realm_id, True):
-                raise HTTPException(status_code=403, detail="该服未开启能量购买订阅，请使用在线支付或联系管理员")
-            # 能量不分来源（2026-11-02 删除来源限定）：赠送/中奖/转入与
-            # 自挣同权，只看总余额；够不够由下方 _spend_points 原子判定。
-            balance = db.query(models.WebUser.points).filter(models.WebUser.id == current_user.id).scalar() or 0
-            if balance < points_cost:
-                raise HTTPException(status_code=400, detail=f"能量不足（需要 {points_cost}，当前 {int(balance)}）")
-            # 原子条件扣减：上面的余额预检只用于给出友好提示，真正的够不够由 UPDATE 判定，
-            # 防并发双下单把余额扣成负数（双花）
-            try:
-                _spend_points(
-                    db, current_user, points_cost, "subscription_buy",
-                    f"能量购买订阅 - {plan.name}（原价 {pricing['list_points']}，"
-                    f"会员折扣 -{pricing['member_discount_points']}，"
-                    f"优惠 -{pricing['coupon_discount_points'] + pricing['exchange_discount_points']}，"
-                    f"实付 {points_cost}）",
-                    f"subscription_points:{order_id}")
-            except InsufficientPoints:
-                db.rollback()
-                raise HTTPException(status_code=400, detail=f"能量不足（需要 {points_cost}）")
-            sub = _grant_subscription(db, current_user, plan, plan.duration_days,
-                                      realm_id=plan.realm_id)
-            order = models.SubscriptionOrder(
-                order_id=order_id, user_id=current_user.id,
-                plan_id=plan.id, item_name=plan.name,
-                # amount 保持人民币口径（沿用既有收入统计/退款/对账口径）；
-                # 积分口径的原价/优惠/实付记在积分台账描述里，不混进人民币列。
-                amount=plan.price, payment_method="points", status="paid",
-                paid_at=datetime.now(),
-                subscription_id=sub.id, days_granted=plan.duration_days,
-            )
-            db.add(order)
-            # 优惠券：积分订单即时支付，预订后直接转已消费（与人民币回调的 consume 同语义）
-            if pricing["coupon"] is not None:
-                usage = coupons.reserve(
-                    db, coupon=pricing["coupon"], user=current_user,
-                    order_id=order_id, kind=req.kind,
-                    list_price=Decimal(pricing["list_points"] - pricing["member_discount_points"]),
-                    discount=Decimal(pricing["coupon_discount_points"]),
-                    paid=Decimal(points_cost))
-                order.coupon_usage_id = usage.id
-                coupons.consume(db, usage.id)
-            if pricing["credit"] is not None:
-                # 兑换码折扣权益：下单即核销（一张只用一次），条件 UPDATE 防并发双下单
-                claimed = (
-                    db.query(models.ExchangeDiscountCredit)
-                    .filter(
-                        models.ExchangeDiscountCredit.id == pricing["credit"].id,
-                        models.ExchangeDiscountCredit.status == "unused",
-                    )
-                    .update(
-                        {"status": "used", "used_order_id": order_id},
-                        synchronize_session=False,
-                    )
-                )
-                if not claimed:
-                    db.rollback()
-                    raise HTTPException(status_code=409, detail="折扣权益已被使用，请刷新后重试")
-            db.commit()
-            return {
-                "success": True,
-                "order_id": order_id,
-                "paid_with_points": True,
-                "points_cost": points_cost,
-                "points_list_price": pricing["list_points"],
-                "member_discount_pct": pricing["member_discount_pct"],
-                "member_discount_points": pricing["member_discount_points"],
-                "coupon_code": pricing["coupon_code"],
-                "coupon_discount_points": pricing["coupon_discount_points"],
-                "exchange_discount_pct": pricing["exchange_discount_pct"],
-                "exchange_discount_points": pricing["exchange_discount_points"],
-                "message": "能量支付成功，订阅已开通",
-            }
         item_name = f"订阅购买 - {plan.name}"
         amount = plan.price
         order = models.SubscriptionOrder(
@@ -1760,7 +731,7 @@ def create_payment_order(
             amount=amount, payment_method=req.payment_method, status="pending",
         )
     else:
-        raise HTTPException(status_code=400, detail="kind 必须是 recharge 或 subscription")
+        raise HTTPException(status_code=400, detail="kind 必须是 subscription")
 
     # 会员等级折扣：仅订阅 + 仅付费服。公益服（access_mode='free'）不打折，充值不打折。
     # 叠加顺序：先等级折扣得中间价，再对中间价算优惠券。
@@ -1787,13 +758,7 @@ def create_payment_order(
     preview = None
     coupon_code = (req.coupon_code or "").strip()
     credit = None
-    # P2：自定义金额充值暂不支持优惠券（无套餐可供优惠券校验）；积分支付已直接返回，不会到这里
-    is_custom_recharge = req.kind == "recharge" and req.custom_amount is not None
-    if is_custom_recharge and coupon_code:
-        # 自定义金额没有套餐可供优惠券校验（coupons.resolve_item 按套餐查），
-        # 静默忽略会让用户「填了码却按全价付」还无从察觉；直接拒绝，让前端藏起输入框。
-        raise HTTPException(status_code=400, detail="自定义金额充值暂不支持使用优惠券")
-    if coupon_code and not is_custom_recharge:
+    if coupon_code:
         preview = coupons.quote(db, user=current_user, code=coupon_code,
                                 kind=req.kind, item_id=req.item_id)
         coupon_obj = db.query(models.CouponCode).filter(
@@ -2054,27 +1019,15 @@ class FulfillmentError(RuntimeError):
     """
 
 
-def _lookup_inviter_id(db: Session, invitee_id: int) -> int | None:
-    """查被邀请人的邀请人 id（返利失败时通知用）。查不到/异常一律返回 None，
-    调用方只记日志、不让通知查找本身再抛异常。"""
-    try:
-        record = db.query(models.InvitationRecord).filter(
-            models.InvitationRecord.invitee_id == invitee_id
-        ).first()
-        return record.inviter_id if record else None
-    except Exception:  # noqa: BLE001
-        return None
-
-
 def _fulfill_order(db: Session, recharge_order=None, subscription_order=None) -> list:
-    """订单履约：充值发积分 / 订阅发放，幂等（重复回调不重复发货）
+    """订单履约：订阅发放，幂等（重复回调不重复发货）
 
     **同步函数**（体内一个 await 都没有）：async 路由调用它时必须用
     ``await run_in_threadpool(...)`` 下放线程池，别把一次提交压在事件循环上。
 
     **返回待发送的通知列表，不要在这里就发出去。**
 
-    履约事务（积分 / 订阅 / 订单状态）还没 ``commit`` 时，通知服务会另开一个 session 写站内信，
+    履约事务（订阅 / 订单状态）还没 ``commit`` 时，通知服务会另开一个 session 写站内信，
     在 SQLite 上这属于「读事务升级为写事务」，会被直接判为 ``database is locked``（不会等锁），
     结果是「充值成功」这类站内信被静默丢弃（只留一行日志），而钱已经收了。
     所以通知由调用方在 ``db.commit()`` 之后统一发：见 ``send_fulfill_notifications``。
@@ -2082,71 +1035,12 @@ def _fulfill_order(db: Session, recharge_order=None, subscription_order=None) ->
     # 已退款 / 已关闭的订单绝不再履约：支付回调可能晚到或重放（网关重试、管理员已经
     # 关单后又收到回调），只判 `!= "paid"` 会把退过的订单又发一遍货。
     pending: list = []
-    if recharge_order and _claim_order(db, models.RechargeOrder, recharge_order):
-        user = db.query(models.WebUser).filter(
-            models.WebUser.id == recharge_order.user_id
-        ).first()
-        if user is None:
-            # 用户被删了：订单不能就这么标成 paid 又什么都不发（见 FulfillmentError）
-            raise FulfillmentError(
-                f"充值履约缺料：订单 {recharge_order.order_id} 的用户 "
-                f"#{recharge_order.user_id} 已不存在"
-            )
-        if user:
-            _add_points(
-                db, user, recharge_order.amount, "recharge",
-                f"充值到账（订单 {recharge_order.order_id}）",
-                f"recharge:{recharge_order.order_id}",
-            )
-            # P1 会员经验：真实充值 1 元 = 1 经验（向下取整），与积分/订单在同一事务。
-            # 经验失败不阻塞充值履约（订单/积分照常提交），但绝不静默：把失败记成
-            # 一条用户可见的站内信（提交后由 send_fulfill_notifications 发出），
-            # 用户可凭此联系客服补发——「钱收了、经验没到」不能只留一行日志。
-            _xp = max(0, int(recharge_order.price or 0))
-            try:
-                from backend import member_level as _ml
-                if _xp:
-                    _ml.add_xp(db, user, _xp, "recharge",
-                               f"recharge:{recharge_order.order_id}")
-            except Exception as exc:  # noqa: BLE001
-                logger.exception("充值经验累加失败: %s", recharge_order.order_id)
-                pending.append(dict(
-                    event_type=AdminEvent.FULFILL_PARTIAL,
-                    user_id=user.id,
-                    title="⚠️ 充值成功，会员经验发放失败",
-                    content=(f"订单 {recharge_order.order_id} 的能量已到账，"
-                             f"但会员经验（约 {_xp} 点）累加失败。"
-                             "请联系客服补发。"),
-                    related_id=None,
-                ))
-            # 邀请返利：被邀请人充值 → 邀请人得返利积分
-            # 返利失败同样不静默：通知受影响的邀请人（凭站内信联系服主补发）；
-            # 邀请人查不到时只记日志，不让通知查找本身再添异常。
-            try:
-                from backend.api.invitation import apply_rebate
-                apply_rebate(db, user, float(recharge_order.price or 0),
-                             recharge_order.order_id)
-            except Exception as exc:  # noqa: BLE001
-                logger.exception("充值返利计算失败: %s", recharge_order.order_id)
-                _inviter_id = _lookup_inviter_id(db, user.id)
-                if _inviter_id:
-                    pending.append(dict(
-                        event_type=AdminEvent.FULFILL_PARTIAL,
-                        user_id=_inviter_id,
-                        title="⚠️ 邀请返利发放失败",
-                        content=(f"订单 {recharge_order.order_id} 的邀请返利"
-                                 f"发放失败。请联系服主补发。"),
-                        related_id=None,
-                    ))
-            pending.append(dict(
-                event_type="economy.recharge_success",
-                user_id=user.id,
-                title=f"💰 充值成功 +{recharge_order.amount} 能量",
-                content=f"订单 {recharge_order.order_id} 已到账，当前余额 {user.points} 能量。",
-            ))
-        # 优惠券预订 → 已消费（额度仍占用）；关单/退款时才释放
-        # （订单状态与 paid_at 已由 _claim_order 原子写入，见该函数的说明）
-        coupons.consume(db, recharge_order.coupon_usage_id)
+    if recharge_order:
+        # 能量充值已下线（2026-11-13）：历史 pending 充值单的回调不再自动发能量，
+        # 显性失败让网关/人工补单通道看见，转人工处理，不静默吞单。
+        raise FulfillmentError(
+            f"能量充值已下线：充值订单 {recharge_order.order_id} 无法自动履约，需人工处理"
+        )
 
     if subscription_order and _claim_order(db, models.SubscriptionOrder, subscription_order):
         plan = db.query(models.SubscriptionPlan).filter(
@@ -2287,159 +1181,3 @@ async def payment_return(request: Request, db: Session = Depends(get_db)):
     """同步跳转：返回前端跳转地址（前端钱包页轮询订单状态）"""
     order_id = request.query_params.get("out_trade_no", "")
     return {"success": True, "order_id": order_id, "redirect": f"/wallet?order={order_id}"}
-
-
-# ==================== 积分转账（C2） ====================
-
-def _whitelist_fee_exempt(db: Session, user) -> bool:
-    """白名单（永久）账号免手续费判定（转账/红包共用）。
-
-    口径只复用 codes 的白名单定义（codes.is_whitelist_account：核销
-    痕迹＋三处永久现算），不另立名单。函数内导入 codes 避开循环导入
-    （与 vitality 豁免同款写法）。判定失败时按不豁免处理
-    （fail-closed）并记日志，绝不凭不确定数据免单。
-    """
-    if user is None:
-        return False
-    try:
-        from backend import codes as _codes
-
-        return _codes.is_whitelist_account(db, user)
-    except Exception:
-        logger.exception("白名单免手续费判定失败，按不豁免处理 user=%s",
-                         getattr(user, "id", None))
-        return False
-
-
-def _transfer_enabled(db: Session) -> bool:
-    """积分转账总开关（points_transfer_enabled，"1"=开；兼容 true/on/yes）。"""
-    value = str(_get_config(db, "points_transfer_enabled", "1")).strip().lower()
-    return value not in ("0", "false", "no", "off")
-
-
-def transfer_points_core(db: Session, sender: models.WebUser, recipient_username: str, amount: int) -> dict:
-    """积分转账核心逻辑：校验开关、收款人、金额限制、每日转出上限、手续费与余额，并完成转出方、手续费、收款方三方记账。"""
-    if not _transfer_enabled(db):
-        raise ValueError("能量转账功能已关闭")
-
-    recipient_username = (recipient_username or "").strip()
-    if not recipient_username:
-        raise ValueError("请输入对方用户名")
-
-    if recipient_username.lower() == (sender.username or "").lower():
-        raise ValueError("不能给自己转账")
-
-    if not isinstance(amount, int) or isinstance(amount, bool) or amount <= 0:
-        raise ValueError("转账金额必须为正整数")
-
-    min_amount = _get_int_config(db, "points_transfer_min", 1)
-    max_amount = _get_int_config(db, "points_transfer_max", 0)
-    daily_cap = _get_int_config(db, "points_transfer_daily_cap", 0)
-    fee_pct = _get_int_config(db, "points_transfer_fee_pct", 5)
-
-    if amount < min_amount:
-        raise ValueError(f"单笔最少转账 {min_amount} 能量")
-
-    if max_amount > 0 and amount > max_amount:
-        raise ValueError(f"单笔最多转账 {max_amount} 能量")
-
-    # 收款人按大小写不敏感查：命中多个异壳账号时不许 .first() 任选，
-    # 明确拒绝，避免能量落到错误账号；恰好一个时行为不变。
-    recipients = find_users_by_username_ci(db, recipient_username)
-    if len(recipients) > 1:
-        raise ValueError("对方用户名不唯一，请联系管理员处理")
-    recipient = recipients[0] if recipients else None
-    if not recipient or not recipient.is_active:
-        raise ValueError("对方用户不存在")
-
-    if daily_cap > 0:
-        # 先锁转出方用户行再统计今日已转出，避免并发多笔都读到旧用量绕过上限
-        lock_user_row(db, sender.id)
-        # 日界线按北京时间（上海自然日），与 created_at 的 UTC 入库帧对齐；
-        # 服务器本地 00:00 在生产（UTC）是北京时间 08:00，会让限额晚 8 小时重置。
-        today_start = _today_start_utc_naive()
-        used_today = (
-            db.query(func.coalesce(func.sum(-models.PointsLog.amount), 0))
-            .filter(
-                models.PointsLog.user_id == sender.id,
-                models.PointsLog.type == "transfer_out",
-                models.PointsLog.amount < 0,
-                models.PointsLog.created_at >= today_start,
-            )
-            .scalar()
-        ) or 0
-        if used_today + amount > daily_cap:
-            raise ValueError(f"今日转账额度已用完（上限 {daily_cap} 能量）")
-
-    fee = math.ceil(amount * fee_pct / 100) if fee_pct > 0 else 0
-    if fee > 0 and _whitelist_fee_exempt(db, sender):
-        # 白名单（永久）账号免转账手续费（2026-11-02 独一无二体验包）：
-        # fee 归 0 后，下游记账与 fee_pct 配置为 0 时逐字一致
-        # （need 只剩本金、不写 transfer_fee 台账行、返回 fee=0）。
-        fee = 0
-    need = amount + fee
-    balance = sender.points or 0
-    if balance < need:
-        if fee > 0:
-            raise ValueError(f"能量不足，需要 {need} 能量（含手续费 {fee} 能量），当前 {balance} 能量")
-        raise ValueError(f"能量不足，需要 {need} 能量，当前 {balance} 能量")
-
-    ref_id = f"transfer:{sender.id}:{recipient.id}:{int(datetime.now().timestamp())}"
-
-    # 原子条件扣减（本金 + 手续费）：上面的余额检查读的是 ORM 里的旧值，只用于友好提示；
-    # 并发两笔转账都会通过它，真正的「够不够」必须由 UPDATE ... WHERE points >= x 判定
-    try:
-        new_balance = _spend_points(
-            db, sender, amount, "transfer_out",
-            f"转账给 {recipient.username}（{amount} 能量）", ref_id=ref_id,
-        )
-        if fee > 0:
-            new_balance = _spend_points(
-                db, sender, fee, "transfer_fee",
-                f"转账手续费 {fee} 能量（{fee_pct}%）", ref_id=ref_id,
-            )
-    except InsufficientPoints:
-        db.rollback()
-        raise ValueError(f"能量不足，需要 {need} 能量")
-    _add_points(
-        db, recipient, amount, "transfer_in",
-        f"收到 {sender.username} 的转账（{amount} 能量）", ref_id=ref_id,
-    )
-    db.commit()
-
-    return {"amount": amount, "fee": fee, "recipient": recipient.username, "balance": new_balance}
-
-
-class PointsTransferRequest(BaseModel):
-    """积分转账请求体。"""
-    recipient: str
-    amount: int
-
-
-@router.post("/points/transfer")
-def transfer_points(
-    payload: PointsTransferRequest,
-    db: Session = Depends(get_db),
-    current_user: models.WebUser = Depends(get_current_user),
-):
-    """积分转账接口：校验并执行一笔积分转账，返回转账金额、手续费、收款人与转出后余额。"""
-    try:
-        result = transfer_points_core(db, current_user, payload.recipient, payload.amount)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    return {"success": True, **result}
-
-
-@router.get("/points/transfer-config")
-def get_points_transfer_config(
-    db: Session = Depends(get_db),
-    current_user: models.WebUser = Depends(get_current_user),
-):
-    """读取积分转账开关与规则（手续费比例、单笔最小/最大、每日转出上限），供前端隐藏入口与展示提示。"""
-    return {
-        "enabled": _transfer_enabled(db),
-        "fee_pct": _get_int_config(db, "points_transfer_fee_pct", 5),
-        "min": _get_int_config(db, "points_transfer_min", 1),
-        "max": _get_int_config(db, "points_transfer_max", 0),
-        "daily_cap": _get_int_config(db, "points_transfer_daily_cap", 0),
-    }

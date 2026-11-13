@@ -1,19 +1,18 @@
 <script setup lang="ts">
 /**
- * 公益服·积分与公益配置：SystemConfig 表单
+ * 公益服·公益配置：SystemConfig 表单
  *
  * v2.55（暗房影院统一）：PageHeader + 分组 SectionCard。
- * PR #437：签到积分三项已移至「系统设置 → 每日签到」，本页移除。
- * P0 统一货币体系：新增货币体系（充值比例）配置组。
+ * 2026-11-13：货币体系/积分转账/获取与兑换/全员赠送能量已随货币下线，
+ * 本页只剩游戏榜、播放榜、播报、TG 门禁与公益服规则。
  */
 import { computed, onMounted, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeftRight, Bot, Coins, Gift, KeyRound, RefreshCw, Save, Send, Settings2, Trophy, Wallet } from 'lucide-vue-next'
+import { ElMessage } from 'element-plus'
+import { Bot, KeyRound, RefreshCw, Save, Send, Settings2, Trophy } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard } from '@/components/ui'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import { fetchWelfareConfig, saveWelfareConfig } from '@/api/welfare'
 import { fetchViewUnlockSettings, updateViewUnlockSettings } from '@/api/admin'
-import { createGiftBatch, fetchGiftBatches, previewGiftAll, type GiftAllPreview, type GiftAllScope, type GiftBatchRow } from '@/api/economy'
 
 const { isPhone } = useBreakpoint()
 /** 窄屏标签放到输入框上方，120px 的左侧标签会把输入框挤出屏幕 */
@@ -26,26 +25,6 @@ const loadError = ref('')
 const loaded = ref(false)
 const form = ref<Record<string, string>>({})
 
-const currencyFields = [
-  { key: 'recharge_ratio', label: '充值比例', hint: '1 元人民币兑换多少积分，默认 1.2', suffix: '积分/元' },
-  { key: 'recharge_quick_amounts', label: '快捷金额', hint: '自定义充值快捷金额，逗号分隔、最多 8 个，默认 10,30,50,100,200', suffix: '元' },
-]
-
-const transferFields = [
-  { key: 'points_transfer_fee_pct', label: '手续费', hint: '按转账金额比例收取，默认 5，填 0 不收', suffix: '%' },
-  { key: 'points_transfer_min', label: '单笔最小', hint: '默认 1', suffix: '积分' },
-  { key: 'points_transfer_max', label: '单笔最大', hint: '默认 0 表示不限', suffix: '积分' },
-  { key: 'points_transfer_daily_cap', label: '每日转出上限', hint: '默认 0 表示不限', suffix: '积分/天' },
-]
-
-const earnRedeemFields = [
-  { key: 'points_chat_per_msg', label: '发言每条奖励', hint: '默认 0.1，支持两位小数（如 0.1 / 0.2），小数按条累计、满 1 结算，填 0 关闭发言奖励', suffix: '积分/条', inputmode: 'decimal' },
-  { key: 'points_chat_daily_cap', label: '发言每日上限', hint: '默认 20', suffix: '积分/天', inputmode: 'numeric' },
-  { key: 'points_redeem_7d', label: '兑换 7 天', hint: '默认 100', suffix: '积分', inputmode: 'numeric' },
-  { key: 'points_redeem_30d', label: '兑换 30 天', hint: '默认 300', suffix: '积分', inputmode: 'numeric' },
-  { key: 'welfare_redeem_min_account_age_days', label: '兑换号龄门槛', hint: '自助兑换需注册满的天数，默认 3，填 0 关闭', suffix: '天', inputmode: 'numeric' },
-  { key: 'welfare_redeem_min_active_days', label: '兑换活跃门槛', hint: '自助兑换需近 7 天活跃天数（签到/播放算活跃，发言最多计 1 天），默认 2，填 0 关闭', suffix: '天', inputmode: 'numeric' },
-]
 
 const gameRankEnabled = computed({
   get: () => (form.value['bot_gamerank_enabled'] ?? 'false') === 'true',
@@ -95,12 +74,6 @@ const tgBindEnabled = computed({
   set: (v: boolean) => { form.value['welfare_require_tg_bind'] = v ? '1' : '0' },
 })
 
-// 活力保号总开关：word 风格 true/false（后端 economy._get_bool_config 只认 'true'）
-const vitalityRenewEnabled = computed({
-  get: () => (form.value['welfare_vitality_renew_enabled'] ?? 'true') === 'true',
-  set: (v: boolean) => { form.value['welfare_vitality_renew_enabled'] = v ? 'true' : 'false' },
-})
-
 const botFields = [
   { key: 'bot_group_ids', label: '启用群 ID', hint: '逗号分隔的 TG 群 id，空=所有群都启用 Bot', suffix: '' },
   { key: 'bot_rate_limit_seconds', label: '命令限流', hint: '每用户每命令最小间隔，默认 3', suffix: '秒' },
@@ -143,25 +116,24 @@ const welfareFields = [
   // 运营参数「兑换码 · 求片」卡，与每日上限、付费月限放一起
 ]
 
-// 群发言积分（chat_points_*）已于 2026-10-23 去重退役：发言积分只保留
-// 「获取与兑换」卡里的 points_chat_* 一套（points.py），机器人那套已删
+// 群发言积分两套（chat_points_* / points_chat_*）均已退役：前者 2026-10-23
+// 去重删除，后者随货币于 2026-11-13 与 points.py 一并下线。
 
 // 默认关闭的功能开关保留在面板（2026-10-21 服主口径：默认开的开关摘面板走 env，默认关的留面板）
-// r40：查看权限解锁价格（emby_view_unlock_points / emby_view_unlock_days，
+// r40：查看行有效期（emby_view_unlock_days；积分价格已随货币下线）；
 // 后端 GET/PUT /api/admin/emby/view-unlock；此前有接口无后台入口）
-const viewUnlock = ref({ points: 0, days: 0 })
+const viewUnlock = ref({ days: 0 })
 const viewUnlockLoaded = ref(false)
 const viewUnlockSaving = ref(false)
 
 async function saveViewUnlock() {
   if (!viewUnlockLoaded.value || viewUnlockSaving.value) return
-  const points = Math.max(0, Math.floor(Number(viewUnlock.value.points) || 0))
   const days = Math.max(0, Math.floor(Number(viewUnlock.value.days) || 0))
   viewUnlockSaving.value = true
   try {
-    const res = await updateViewUnlockSettings({ points, days })
-    viewUnlock.value = { points: res.points ?? points, days: res.days ?? days }
-    ElMessage.success('查看权限解锁价格已保存')
+    const res = await updateViewUnlockSettings({ days })
+    viewUnlock.value = { days: res.days ?? days }
+    ElMessage.success('查看权限有效期已保存')
   } catch {
     /* 写操作失败由请求拦截器统一弹错 */
   } finally {
@@ -185,13 +157,11 @@ async function load() {
   // 一边失败不影响另一边展示
   try {
     const vu = await fetchViewUnlockSettings()
-    viewUnlock.value = { points: vu.points ?? 0, days: vu.days ?? 0 }
+    viewUnlock.value = { days: vu.days ?? 0 }
     viewUnlockLoaded.value = true
   } catch {
     /* 查看权限加载失败时该卡片显示错误态，不影响福利表单 */
   }
-  // 全员赠送批次历史走独立 endpoint，一边失败不影响另一边
-  await loadGiftBatches()
 }
 
 async function save() {
@@ -207,90 +177,6 @@ async function save() {
   }
 }
 
-// ==================== 全员赠送能量（批次） ====================
-// 能力口径：金额/范围/备注全是建批参数，不写死；建批只落批次，发放由后端
-// worker 分块执行。提交前必须先预览（人数+总量），且预览后改了参数要重预览。
-const giftForm = ref<{ amount: number | null; scope: GiftAllScope; reason: string }>({
-  amount: null, scope: 'all', reason: '',
-})
-const giftPreview = ref<GiftAllPreview | null>(null)
-const giftPreviewKey = ref('')
-const giftPreviewing = ref(false)
-const giftCreating = ref(false)
-const giftBatches = ref<GiftBatchRow[]>([])
-const giftBatchesLoading = ref(false)
-
-const giftStatusText: Record<GiftBatchRow['status'], string> = {
-  pending: '待发放', running: '发放中', done: '已完成', failed: '失败待续跑',
-}
-
-function giftKey(amount: number | null, scope: GiftAllScope) {
-  return `${amount ?? ''}|${scope}`
-}
-
-async function loadGiftBatches() {
-  giftBatchesLoading.value = true
-  try {
-    const res = await fetchGiftBatches(50)
-    giftBatches.value = res.batches ?? []
-  } catch {
-    /* 列表加载失败不影响配置表单，历史区保持空 */
-  } finally {
-    giftBatchesLoading.value = false
-  }
-}
-
-async function doGiftPreview() {
-  const amount = Math.floor(Number(giftForm.value.amount) || 0)
-  if (amount <= 0) {
-    ElMessage.warning('每人赠送量必须为正整数')
-    return
-  }
-  giftPreviewing.value = true
-  try {
-    giftPreview.value = await previewGiftAll(amount, giftForm.value.scope)
-    giftPreviewKey.value = giftKey(amount, giftForm.value.scope)
-  } catch {
-    /* 失败由请求拦截器统一弹错 */
-  } finally {
-    giftPreviewing.value = false
-  }
-}
-
-async function doGiftCreate() {
-  const amount = Math.floor(Number(giftForm.value.amount) || 0)
-  if (amount <= 0) {
-    ElMessage.warning('每人赠送量必须为正整数')
-    return
-  }
-  if (!giftPreview.value || giftPreviewKey.value !== giftKey(amount, giftForm.value.scope)) {
-    ElMessage.warning('请先点「预览」核对命中人数与总发放量，改了参数要重新预览')
-    return
-  }
-  const p = giftPreview.value
-  try {
-    await ElMessageBox.confirm(
-      `将给 ${p.user_count} 位用户每人赠送 ${amount} 能量，共 ${p.total_amount} 能量。批次创建后由后台分批发放，确定创建？`,
-      '确认全员赠送',
-      { type: 'warning', confirmButtonText: '创建批次', cancelButtonText: '取消' },
-    )
-  } catch {
-    return
-  }
-  giftCreating.value = true
-  try {
-    await createGiftBatch({ amount, scope: giftForm.value.scope, reason: giftForm.value.reason.trim() })
-    ElMessage.success('赠送批次已创建，后台发放中，可在下方历史里看进度')
-    giftPreview.value = null
-    giftPreviewKey.value = ''
-    await loadGiftBatches()
-  } catch {
-    /* 失败由请求拦截器统一弹错 */
-  } finally {
-    giftCreating.value = false
-  }
-}
-
 onMounted(load)
 </script>
 
@@ -298,18 +184,14 @@ onMounted(load)
   <div class="admin-page">
     <PageHeader
       eyebrow="内容"
-      title="积分与公益配置"
-      description="货币体系、兑换比例与公益服到期策略"
+      title="公益配置"
+      description="游戏榜、播放榜、播报与公益服到期策略"
     >
       <template #actions>
         <el-button :icon="RefreshCw" :loading="loading" @click="load">刷新</el-button>
         <el-button type="primary" :icon="Save" :loading="saving" :disabled="!loaded" @click="save">保存</el-button>
       </template>
     </PageHeader>
-
-    <el-alert type="info" :closable="false">
-      签到积分规则已统一到「系统设置 → 每日签到」（仅公益服用户获得积分）
-    </el-alert>
 
     <SectionCard v-if="loadError && !loaded">
       <EmptyState :icon="Settings2" title="配置加载失败" :description="loadError">
@@ -320,23 +202,6 @@ onMounted(load)
     </SectionCard>
 
     <div v-else v-loading="loading" class="form-grid">
-      <SectionCard
-        title="货币体系"
-        :icon="Wallet"
-        description="人民币充值兑换积分的比例"
-      >
-        <el-form :label-position="labelPosition" label-width="120px" class="config-form">
-          <el-form-item v-for="f in currencyFields" :key="f.key" :label="f.label">
-            <el-input v-model="form[f.key]" class="field-input" />
-            <span class="field-suffix">{{ f.suffix }}</span>
-            <span class="field-hint">{{ f.hint }}</span>
-          </el-form-item>
-        </el-form>
-      </SectionCard>
-
-
-
-
 
       <SectionCard
         title="每周游戏榜"
@@ -404,23 +269,9 @@ onMounted(load)
       </SectionCard>
 
       <SectionCard
-        title="积分转账"
-        :icon="ArrowLeftRight"
-        description="用户间积分转账的手续费与限额"
-      >
-        <el-form :label-position="labelPosition" label-width="120px" class="config-form">
-          <el-form-item v-for="f in transferFields" :key="f.key" :label="f.label">
-            <el-input v-model="form[f.key]" class="field-input" />
-            <span class="field-suffix">{{ f.suffix }}</span>
-            <span class="field-hint">{{ f.hint }}</span>
-          </el-form-item>
-        </el-form>
-      </SectionCard>
-
-      <SectionCard
         title="Telegram 门禁"
         :icon="Send"
-        description="公益服能力（签到/积分/红包/抽奖）是否要求绑定 Telegram"
+        description="公益服能力（红包/抽奖）是否要求绑定 Telegram"
       >
         <el-form :label-position="labelPosition" label-width="120px" class="config-form">
           <el-form-item label="强制绑定">
@@ -461,29 +312,11 @@ onMounted(load)
       </SectionCard>
 
       <SectionCard
-        title="获取与兑换"
-        :icon="Coins"
-        description="发言积分上限与积分兑换公益天数"
-      >
-        <el-form :label-position="labelPosition" label-width="120px" class="config-form">
-          <el-form-item v-for="f in earnRedeemFields" :key="f.key" :label="f.label">
-            <el-input v-model="form[f.key]" class="field-input" :inputmode="f.inputmode" />
-            <span class="field-suffix">{{ f.suffix }}</span>
-            <span class="field-hint">{{ f.hint }}</span>
-          </el-form-item>
-        </el-form>
-      </SectionCard>
-
-      <SectionCard
         title="公益服规则"
         :icon="Settings2"
-        description="到期保留、未活跃禁用、活力保号与新注册赠送（求片额度在运营参数里统一设置）"
+        description="到期保留、未活跃禁用与新注册赠送（求片额度在运营参数里统一设置）"
       >
         <el-form :label-position="labelPosition" label-width="120px" class="config-form">
-          <el-form-item label="活力自动续期">
-            <el-switch v-model="vitalityRenewEnabled" />
-            <span class="field-hint">开启后资格到期时活力达线自动续期；关闭后到期照常走保留期／取消流程，默认开</span>
-          </el-form-item>
           <el-form-item v-for="f in welfareFields" :key="f.key" :label="f.label">
             <el-input v-model="form[f.key]" class="field-input" />
             <span class="field-suffix">{{ f.suffix }}</span>
@@ -492,26 +325,21 @@ onMounted(load)
         </el-form>
       </SectionCard>
 
-      <!-- r40：查看权限解锁价格（emby_view_unlock_points/days）。后端接口一直存在，
+      <!-- r40：查看行有效期（emby_view_unlock_days）。后端接口一直存在，
            但管理后台没有入口，只能手写 DB；本轮补上独立卡片（独立 endpoint 独立保存） -->
       <SectionCard
         title="查看权限解锁"
         :icon="KeyRound"
-        description="公益服查看权限（Emby 账号/线路）的积分价格与有效期"
+        description="公益服查看行（Emby 账号/线路）的有效期"
       >
         <el-form v-if="viewUnlockLoaded" :label-position="labelPosition" label-width="120px" class="config-form">
-          <el-form-item label="积分价格">
-            <el-input-number v-model="viewUnlock.points" :min="0" :step="10" class="field-input" />
-            <span class="field-suffix">积分</span>
-            <span class="field-hint">用户解锁查看权限需要支付的积分</span>
-          </el-form-item>
           <el-form-item label="有效期">
             <el-input-number v-model="viewUnlock.days" :min="0" :step="1" class="field-input" />
             <span class="field-suffix">天</span>
             <span class="field-hint">解锁后有效天数，0 = 永久有效</span>
           </el-form-item>
           <el-form-item>
-            <el-button type="primary" :icon="Save" :loading="viewUnlockSaving" @click="saveViewUnlock">保存解锁价格</el-button>
+            <el-button type="primary" :icon="Save" :loading="viewUnlockSaving" @click="saveViewUnlock">保存有效期</el-button>
           </el-form-item>
         </el-form>
         <el-alert v-else title="查看权限配置加载失败，请刷新重试" type="warning" :closable="false" />
@@ -519,67 +347,6 @@ onMounted(load)
 
     </div>
 
-    <!-- 全员赠送能量：独立 endpoint 独立提交（不随上方配置表单保存） -->
-    <SectionCard
-      v-if="loaded"
-      title="全员赠送能量"
-      :icon="Gift"
-      description="给全体用户（或仅公益资格用户）每人赠送能量：先预览人数与总量，确认后建批次，后台分批发放、可续跑不重发"
-      style="margin-top: 16px"
-    >
-      <el-form :label-position="labelPosition" label-width="120px" class="config-form">
-        <el-form-item label="每人赠送">
-          <el-input-number v-model="giftForm.amount" :min="1" :step="10" class="field-input" />
-          <span class="field-suffix">能量/人</span>
-          <span class="field-hint">正整数；金额与范围都是本次批次的参数，不写死在配置里</span>
-        </el-form-item>
-        <el-form-item label="赠送范围">
-          <el-select v-model="giftForm.scope" class="field-input">
-            <el-option label="全部用户" value="all" />
-            <el-option label="仅公益资格用户" value="welfare" />
-          </el-select>
-          <span class="field-hint">公益口径＝当前持有有效公益资格（未过期）者；发放时按实时资格判定</span>
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="giftForm.reason" maxlength="255" placeholder="如：系统维护补偿" class="field-input" style="width: 260px" />
-          <span class="field-hint">会写进每位用户的能量台账说明</span>
-        </el-form-item>
-        <el-form-item>
-          <el-button :loading="giftPreviewing" @click="doGiftPreview">预览</el-button>
-          <el-button type="primary" :loading="giftCreating" @click="doGiftCreate">创建赠送批次</el-button>
-          <span v-if="giftPreview" class="field-hint" style="flex-basis: auto; margin-left: 12px">
-            命中 {{ giftPreview.user_count }} 人，共发放 {{ giftPreview.total_amount }} 能量
-          </span>
-        </el-form-item>
-      </el-form>
-
-      <el-table v-loading="giftBatchesLoading" :data="giftBatches" size="small" style="margin-top: 8px">
-        <el-table-column prop="id" label="批次" width="70" />
-        <el-table-column label="每人" width="80">
-          <template #default="{ row }">{{ row.amount }} 能量</template>
-        </el-table-column>
-        <el-table-column label="范围" width="90">
-          <template #default="{ row }">{{ row.scope === 'welfare' ? '公益资格' : '全部用户' }}</template>
-        </el-table-column>
-        <el-table-column prop="reason" label="备注" min-width="140" show-overflow-tooltip />
-        <el-table-column label="进度" width="110">
-          <template #default="{ row }">{{ row.granted_count }} / {{ row.target_count }} 人</template>
-        </el-table-column>
-        <el-table-column label="状态" width="100">
-          <template #default="{ row }">
-            {{ giftStatusText[row.status as GiftBatchRow['status']] }}
-            <span v-if="row.status === 'failed' && row.last_error" class="field-hint">{{ row.last_error }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="created_by_name" label="操作者" width="110" />
-        <el-table-column label="创建时间" min-width="150">
-          <template #default="{ row }">{{ row.created_at ? row.created_at.replace('T', ' ').slice(0, 19) : '' }}</template>
-        </el-table-column>
-      </el-table>
-      <div style="margin-top: 8px">
-        <el-button text :loading="giftBatchesLoading" @click="loadGiftBatches">刷新历史</el-button>
-      </div>
-    </SectionCard>
   </div>
 </template>
 

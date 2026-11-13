@@ -138,17 +138,10 @@ def normalize(key: str, spec: tuple, value: Any, bool_style: str = "word") -> Op
 
 # 公益配置（welfare_admin.WELFARE_CONFIG_KEYS）里的数值/开关键；未列出的（群 id 列表等）按字符串保存
 WELFARE_CONFIG_SCHEMA: dict[str, tuple] = {
-    # 发言每条奖励可为小数（2026-10-31 用户亲令默认 0.1）：0~100、最多 2 位小数
-    "points_chat_per_msg": ("float", 0, 100, 2),
-    "points_chat_daily_cap": ("int", 0, _BIG),
-    "points_redeem_7d": ("int", 0, _BIG),
-    "points_redeem_30d": ("int", 0, _BIG),
+    # 发言积分/积分兑换/兑换门槛键已随货币于 2026-11-13 下线
+    # （points_chat_*、points_redeem_*、welfare_redeem_min_* 一并删除）。
     # G1 资格码月配额：0 在读侧是「不限」，故下限 0 合法
     "welfare_code_monthly_quota": ("int", 0, _BIG),
-    # 兑换资格门槛（双钥匙）：号龄上限 365 天；活跃天数窗口固定近 7 天，
-    # 故钳 0~7（来源限定键 welfare_redeem_self_earned_only 已于 2026-11-02 删除）
-    "welfare_redeem_min_account_age_days": ("int", 0, 365),
-    "welfare_redeem_min_active_days": ("int", 0, 7),
     "welfare_grace_days": ("int", 0, 3650),
     # 活力保号（vitality_renew，2026-11-09 取代连签保号）总开关＋活力线：
     # 开关 word 风格 ("bool",) 存 "true"/"false"（同 register_gift_* 口径；
@@ -194,10 +187,6 @@ WELFARE_CONFIG_SCHEMA: dict[str, tuple] = {
     "lottery_draw_interval_sec": ("int", 30, 86400),
     # chat_points_* 已于 2026-10-23 去重退役（机器人那套群发言积分，
     # 与 points_chat_* 重复），此处不再登记
-    "points_transfer_fee_pct": ("int", 0, 100),
-    "points_transfer_min": ("int", 1, _BIG),
-    "points_transfer_max": ("int", 0, _BIG),
-    "points_transfer_daily_cap": ("int", 0, _BIG),
     # 2026-10-17 第 4 批 4-2：补上 WELFARE_CONFIG_KEYS 里漏登记的 3 个
     # （读侧 lottery.py 有明确口径：bool 默认开、int max(0,·) 钳制）
     "lottery_require_group_member": ("bool", "digit"),
@@ -303,9 +292,8 @@ REGISTRATION_CONFIG_SCHEMA: dict[str, tuple] = {
     "register_ratelimit_window": ("int", 60, _BIG),
 }
 
-# 查看解锁（portal.admin_view_unlock_put；points/days≥0，days=0=永久）
+# 查看解锁（portal.admin_view_unlock_put；days≥0，0=永久；积分价格已随货币下线）
 VIEW_UNLOCK_CONFIG_SCHEMA: dict[str, tuple] = {
-    "emby_view_unlock_points": ("int", 0, _BIG),
     "emby_view_unlock_days": ("int", 0, _BIG),
 }
 
@@ -567,17 +555,6 @@ MP_EPISODE_FILL_CONFIG_SCHEMA: dict[str, tuple] = {
 }
 
 
-# 中继兜底计时（2026-11-11）：客户端不上报播放进度时，用 EA 中继
-# 流活动（emby_watch_stream_activity）重建观看段，结账工人
-# emby_server.watch_fallback 走同一套入账函数补记 watch_points_daily
-# 与活力。纯 SystemConfig 键，不进 env.example（同 mp_episode_fill
-# 先例）。
-WATCH_FALLBACK_CONFIG_SCHEMA: dict[str, tuple] = {
-    # 兜底结账总开关：默认开；关时结账工人整轮跳过、不消费活动段。
-    "watch_fallback_credit_enabled": ("bool",),
-}
-
-
 # 上游聚合拉取参数（2026-10-31 优化 O-05 起，后续 O-01/O-02/O-03
 # 的任务参数同家族登记）：读取唯一实现在 upstream_aggregate_run /
 # upstream_aggregate_jobs，范围与读取侧钳制同口径；无行时读取侧
@@ -740,18 +717,10 @@ INSTALL_APP_CONFIG_SCHEMA: dict[str, tuple] = {
 #   而不是删行）；复合校验（stream_accel 开关+域名联动、签到上下限、活力阈值）
 #   保留在端点层，注册表只表达"类型+范围"。
 ECONOMY_CONFIG_SCHEMA: dict[str, tuple] = {
-    "checkin_enabled": ("bool",),
-    "checkin_streak_bonus": ("int", 0, _BIG), "checkin_streak_max_bonus": ("int", 0, _BIG),
-    "checkin_base_min": ("int", 0, _BIG), "checkin_base_max": ("int", 0, _BIG),
-    "checkin_penalty_pct": ("int", 0, 100),
-    "checkin_penalty_min": ("int", 0, _BIG), "checkin_penalty_max": ("int", 0, _BIG),
-    # 签到增强（2026-11-01 货币再设计一期）：里程碑/全勤/暴击，economy._checkin_rules 读取
-    "checkin_milestone_points": ("int", 0, _BIG),
-    "checkin_milestone_days": ("int_list", 1, 366),
-    "checkin_full_attendance_points": ("int", 0, _BIG),
-    "checkin_full_attendance_min_days": ("int", 0, 366),
-    "checkin_crit_pct": ("int", 0, 100),
-    "checkin_crit_cap": ("int", 0, _BIG),
+    # 签到/活力/观影能量/能量购订阅/邀请返利等货币键已随货币于 2026-11-13
+    # 下线（checkin_*、vitality_*、watch_points_*、recharge_enabled、
+    # subscription_points_purchase_enabled、invitation_invitee_reward_points、
+    # invitation_rebate_percent、promotion_reward_amount 均已删除）。
     "media_seek_daily_limit": ("int", 0, _BIG),
     "media_seek_daily_vote_limit": ("int", 0, _BIG),
     # 求片减负（2026-11-10）：自动批准默认关（word 风格）；到货盯梢
@@ -766,9 +735,7 @@ ECONOMY_CONFIG_SCHEMA: dict[str, tuple] = {
     "paid_request_monthly": ("int", 0, 10000),
     # r40：卡码授予天数所用默认套餐（codes._resolve_plan 读取；无行=按服自动推导）
     "code_default_plan_id": ("int", 0, _BIG),
-    "recharge_enabled": ("bool",), "subscription_purchase_enabled": ("bool",),
-    # subscription_buy_self_earned_only 已于 2026-11-02 随来源限定删除
-    "subscription_points_purchase_enabled": ("bool",),
+    "subscription_purchase_enabled": ("bool",),
     "payment_gateway_url": ("raw",), "payment_partner_id": ("raw",),
     "payment_partner_key": ("raw",), "payment_qqpay_enabled": ("bool",),
     "site_url": ("raw",),
@@ -777,38 +744,11 @@ ECONOMY_CONFIG_SCHEMA: dict[str, tuple] = {
     "device_limit_per_user": ("int", 0, _BIG), "device_limit_auto_evict": ("bool",),
     "login_log_retention_days": ("int", 0, _BIG),
     "max_pending_orders_per_user": ("int", 0, _BIG),
-    "invitation_invitee_reward_points": ("int", 0, _BIG),
-    "invitation_rebate_percent": ("int", 0, 100),
     "promotion_reward_enabled": ("bool",),
     "promotion_reward_type": ("raw",),
-    "promotion_reward_amount": ("int", 0, _BIG),
     "promotion_reward_days": ("int", 0, _BIG),
     "stream_accel_enabled": ("bool",),
     "stream_accel_domain": ("raw",),
-    "vitality_daily_cost": ("int", 0, _BIG),
-    "vitality_max": ("int", 0, _BIG),
-    "vitality_limit_threshold": ("int", 0, _BIG),
-    "vitality_point_cost": ("int", 0, _BIG),
-    "vitality_watch_reward": ("int", 0, _BIG),
-    "vitality_daily_gain_limit": ("int", 0, _BIG),
-    "vitality_archive_clamp": ("int", 0, _BIG),
-    "vitality_watch_tier1_minutes": ("int", 0, _BIG),
-    "vitality_watch_tier1_reward": ("int", 0, _BIG),
-    "vitality_watch_tier2_minutes": ("int", 0, _BIG),
-    "vitality_watch_tier2_reward": ("int", 0, _BIG),
-    "vitality_checkin_skip_deduct_enabled": ("bool",),
-    # 签到活力奖励（economy._do_checkin_core 读取；现口径签到不送活力、
-    # 代码默认 0，键保留可配，管理员填正数才恢复发放）
-    "vitality_checkin_gain": ("int", 0, _BIG),
-    # 观影能量（货币再设计第一期；watch_points 读取：当日累计分钟分档发能量，
-    # 首看/一档/二档奖励与分钟数＋每日封顶，0 奖励=该档关闭、封顶 0=不限）
-    "watch_points_first": ("int", 0, _BIG),
-    "watch_points_first_minutes": ("int", 0, _BIG),
-    "watch_points_tier1": ("int", 0, _BIG),
-    "watch_points_tier1_minutes": ("int", 0, _BIG),
-    "watch_points_tier2": ("int", 0, _BIG),
-    "watch_points_tier2_minutes": ("int", 0, _BIG),
-    "watch_points_daily_cap": ("int", 0, _BIG),
     "series_merge_interval_sec": ("int", 3600, 604800),
     "series_merge_batch_limit": ("int", 10, 100000),
 }

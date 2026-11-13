@@ -1,15 +1,16 @@
 <script setup lang="ts">
 /**
- * 商品管理：订阅套餐 CRUD + 充值套餐 CRUD
+ * 商品管理：订阅套餐 CRUD
  *
  * v2.6.20：订阅套餐是**一个服一个**的（买哪份就开哪个服的会员），所以套餐表里显示归属服，
- * 新建 / 编辑时也能改归属（把套餐从一个服搬到另一个服）。积分充值套餐是全服共用的。
+ * 新建 / 编辑时也能改归属（把套餐从一个服搬到另一个服）。
+ * 积分充值套餐已随货币于 2026-11-13 下线（连同后端 CRUD 一并删除）。
  */
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { toAdminError } from '@/utils/errorMessage'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Coins, Crown, Plus, RefreshCw } from 'lucide-vue-next'
+import { Crown, Plus, RefreshCw } from 'lucide-vue-next'
 import { PageHeader, SectionCard } from '@/components/ui'
 import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
@@ -24,7 +25,6 @@ const planColumns: DataColumn[] = [
   { key: 'realm_name', label: '归属服', width: 130 },
   { key: 'description', label: '描述', minWidth: 170, mobile: 'hide' },
   { key: 'price', label: '价格', width: 100 },
-  { key: 'points_price', label: '积分价', width: 110 },
   { key: 'duration_days', label: '时长', width: 90 },
   { key: 'is_popular', label: '推荐', width: 80, mobile: 'hide' },
   { key: 'is_active', label: '状态', width: 90 },
@@ -32,33 +32,17 @@ const planColumns: DataColumn[] = [
   { key: 'actions', label: '操作', width: 150, fixed: 'right', align: 'right' },
 ]
 
-const pkgColumns: DataColumn[] = [
-  { key: 'name', label: '名称', width: 170, mobile: 'title' },
-  { key: 'amount', label: '积分', width: 110 },
-  { key: 'total', label: '合计', width: 100 },
-  { key: 'price', label: '价格', width: 100 },
-  { key: 'is_popular', label: '推荐', width: 80, mobile: 'hide' },
-  { key: 'is_active', label: '状态', width: 90 },
-  { key: 'sort_order', label: '排序', width: 80, mobile: 'hide' },
-  { key: 'actions', label: '操作', width: 150, fixed: 'right', align: 'right' },
-]
 import {
   fetchEconomyPlans,
   createEconomyPlan,
   updateEconomyPlan,
   deleteEconomyPlan,
-  fetchEconomyPackages,
-  createEconomyPackage,
-  updateEconomyPackage,
-  deleteEconomyPackage,
   type PlanRowFull,
-  type PackageRow,
 } from '@/api/economy'
 
 const loading = ref(false)
 const loadError = ref('')
 const plans = ref<PlanRowFull[]>([])
-const packages = ref<PackageRow[]>([])
 
 // ===== 套餐表单 =====
 const planVisible = ref(false)
@@ -67,7 +51,6 @@ const planFormRef = ref<FormInstance>()
 const planForm = ref({
   name: '', description: '', price: 19.9, duration_days: 30,
   features: '', is_active: true, is_popular: false, sort_order: 0,
-  points_price: null as number | null,
   realm_id: null as number | null,
   // 订阅分档权益（留空 = 不声明，跟随全站默认）；键与区间以后端
   // backend/entitlements.py 的注册表为准，保存时服务端 validate 是最终裁判
@@ -130,7 +113,6 @@ function openPlanCreate() {
   planForm.value = {
     name: '', description: '', price: 19.9, duration_days: 30, features: '',
     is_active: true, is_popular: false, sort_order: 0,
-    points_price: null,
     realm_id: realm.activeId,
     ent_seek: null,
     ent_concurrent: null,
@@ -144,7 +126,6 @@ function openPlanEdit(row: PlanRowFull) {
     name: row.name,
     description: row.description || '',
     price: row.price,
-    points_price: row.points_price ?? null,
     duration_days: row.duration_days,
     features: (row.features || []).join('\n'),
     is_active: row.is_active,
@@ -170,7 +151,6 @@ async function savePlan() {
     name: f.name.trim(),
     description: f.description.trim() || null,
     price: f.price,
-    points_price: f.points_price ?? null,
     duration_days: f.duration_days,
     features: f.features.split('\n').map(s => s.trim()).filter(Boolean),
     entitlements: buildPlanEntitlements(f),
@@ -210,92 +190,12 @@ async function removePlan(row: PlanRowFull) {
   }
 }
 
-// ===== 充值套餐表单 =====
-const pkgVisible = ref(false)
-const pkgEditing = ref<PackageRow | null>(null)
-const pkgFormRef = ref<FormInstance>()
-const pkgForm = ref({ name: '', amount: 500, price: 25, bonus: 50, is_active: true, is_popular: false, sort_order: 0 })
-const pkgRules: FormRules = {
-  name: [
-    { required: true, message: '请输入套餐名称', trigger: 'blur' },
-    { max: 50, message: '名称最多 50 个字', trigger: 'blur' },
-  ],
-  amount: [
-    { required: true, message: '请输入积分数', trigger: 'blur' },
-    { type: 'number', min: 1, message: '积分数至少为 1', trigger: 'blur' },
-  ],
-  bonus: [{ type: 'number', min: 0, message: '赠送积分不能为负数', trigger: 'blur' }],
-  price: [
-    { required: true, message: '请输入价格', trigger: 'blur' },
-    { type: 'number', min: 0, message: '价格不能为负数', trigger: 'blur' },
-  ],
-  sort_order: [{ type: 'number', min: 0, message: '排序不能为负数', trigger: 'blur' }],
-}
-
-function openPkgCreate() {
-  pkgEditing.value = null
-  pkgForm.value = { name: '', amount: 500, price: 25, bonus: 50, is_active: true, is_popular: false, sort_order: 0 }
-  pkgVisible.value = true
-}
-
-function openPkgEdit(row: PackageRow) {
-  pkgEditing.value = row
-  pkgForm.value = {
-    name: row.name, amount: row.amount, price: row.price, bonus: row.bonus,
-    is_active: row.is_active, is_popular: row.is_popular, sort_order: row.sort_order,
-  }
-  pkgVisible.value = true
-}
-
-async function savePkg() {
-  try {
-    await pkgFormRef.value?.validate()
-  } catch {
-    scrollToFirstError()
-    return
-  }
-  const f = pkgForm.value
-  const payload = { ...f, name: f.name.trim() }
-  try {
-    if (pkgEditing.value) {
-      await updateEconomyPackage(pkgEditing.value.id, payload)
-      ElMessage.success('充值套餐已更新')
-    } else {
-      await createEconomyPackage(payload)
-      ElMessage.success('充值套餐已创建')
-    }
-    pkgVisible.value = false
-    load()
-  } catch (e: unknown) {
-    ElMessage.error(toAdminError(e, '保存失败'))
-  }
-}
-
-async function removePkg(row: PackageRow) {
-  try {
-    await ElMessageBox.confirm(`确认删除充值套餐「${row.name}」？`, '删除', { type: 'warning' })
-  } catch {
-    return // 点了取消
-  }
-  try {
-    const res = await deleteEconomyPackage(row.id)
-    ElMessage.success(res.message || '已删除')
-    load()
-  } catch (e: unknown) {
-    ElMessage.error(toAdminError(e, '删除失败'))
-  }
-}
-
 async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    const [p, k] = await Promise.all([
-      fetchEconomyPlans(scope.value === 'all' ? 0 : undefined),
-      fetchEconomyPackages(),
-    ])
+    const p = await fetchEconomyPlans(scope.value === 'all' ? 0 : undefined)
     plans.value = p.plans
-    packages.value = k.packages
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : '加载失败'
   } finally {
@@ -311,7 +211,7 @@ onMounted(load)
     <PageHeader
       eyebrow="经营"
       title="订阅套餐"
-      description="订阅套餐一个服一份（在哪个服买就开哪个服的会员）；积分充值套餐全服共用。"
+      description="订阅套餐一个服一份（在哪个服买就开哪个服的会员）。"
     >
       <template #actions>
         <el-button :icon="RefreshCw" :loading="loading" @click="load">刷新</el-button>
@@ -377,54 +277,6 @@ onMounted(load)
       </DataTable>
     </SectionCard>
 
-    <!-- 充值套餐 -->
-    <SectionCard title="积分充值套餐" :icon="Coins" :meta="loading ? '全服共用' : `全服共用 · ${packages.length} 个`" flush>
-      <template #actions>
-        <el-button type="primary" :icon="Plus" @click="openPkgCreate">新增套餐</el-button>
-      </template>
-      <DataTable
-        :rows="packages"
-        :columns="pkgColumns"
-        :loading="loading"
-        :error="loadError"
-        empty="还没有充值套餐"
-        empty-description="用户用充值套餐购买积分，再拿积分兑换订阅或其它权益。"
-        @retry="load"
-      >
-        <template #cell-name="{ row }">
-          <span class="item-name">{{ row.name }}</span>
-        </template>
-
-        <template #cell-amount="{ row }"><span class="mono">{{ row.amount }} + {{ row.bonus }}</span></template>
-
-        <template #cell-total="{ row }">
-          <span class="price">{{ row.amount + row.bonus }}</span>
-        </template>
-
-        <template #cell-price="{ row }">
-          <span class="price">¥ {{ Number(row.price).toFixed(2) }}</span>
-        </template>
-
-        <template #cell-is_popular="{ row }">
-          <span v-if="row.is_popular" class="au-badge au-badge-amber">超值</span>
-          <span v-else class="muted">—</span>
-        </template>
-
-        <template #cell-is_active="{ row }">
-          <span class="au-badge" :class="row.is_active ? 'au-badge-green' : 'au-badge-muted'">
-            {{ row.is_active ? '上架' : '下架' }}
-          </span>
-        </template>
-
-        <template #cell-sort_order="{ row }"><span class="mono">{{ row.sort_order }}</span></template>
-
-        <template #cell-actions="{ row }">
-          <el-button size="small" @click="openPkgEdit(row)">编辑</el-button>
-          <el-button size="small" type="danger" @click="removePkg(row)">删除</el-button>
-        </template>
-      </DataTable>
-    </SectionCard>
-
     <!-- 订阅套餐对话框 -->
     <el-dialog v-model="planVisible" :title="planEditing ? '编辑订阅套餐' : '新增订阅套餐'" width="min(520px, 92vw)">
       <el-form ref="planFormRef" :model="planForm" :rules="planRules" label-position="top">
@@ -440,9 +292,6 @@ onMounted(load)
         <el-form-item label="描述" prop="description"><el-input v-model="planForm.description" maxlength="200" /></el-form-item>
         <div class="form-grid">
           <el-form-item label="价格 (¥)" prop="price"><el-input-number v-model="planForm.price" :min="0" :precision="2" class="w-full" /></el-form-item>
-          <el-form-item label="积分价" prop="points_price">
-            <el-input-number v-model="planForm.points_price" :min="0" :precision="0" placeholder="空=不支持积分购买" class="w-full" />
-          </el-form-item>
           <el-form-item label="时长 (天)" prop="duration_days"><el-input-number v-model="planForm.duration_days" :min="1" :max="3650" class="w-full" /></el-form-item>
         </div>
         <el-form-item label="特性" prop="features">
@@ -471,26 +320,6 @@ onMounted(load)
       </template>
     </el-dialog>
 
-    <!-- 充值套餐对话框 -->
-    <el-dialog v-model="pkgVisible" :title="pkgEditing ? '编辑充值套餐' : '新增充值套餐'" width="min(480px, 92vw)">
-      <el-form ref="pkgFormRef" :model="pkgForm" :rules="pkgRules" label-position="top">
-        <el-form-item label="名称" prop="name"><el-input v-model="pkgForm.name" maxlength="50" /></el-form-item>
-        <div class="form-grid">
-          <el-form-item label="积分数" prop="amount"><el-input-number v-model="pkgForm.amount" :min="1" class="w-full" /></el-form-item>
-          <el-form-item label="赠送积分" prop="bonus"><el-input-number v-model="pkgForm.bonus" :min="0" class="w-full" /></el-form-item>
-        </div>
-        <el-form-item label="价格 (¥)" prop="price"><el-input-number v-model="pkgForm.price" :min="0" :precision="2" class="w-full" /></el-form-item>
-        <el-form-item label="排序" prop="sort_order"><el-input-number v-model="pkgForm.sort_order" :min="0" class="w-full" /></el-form-item>
-        <el-form-item label="选项">
-          <el-checkbox v-model="pkgForm.is_active">上架</el-checkbox>
-          <el-checkbox v-model="pkgForm.is_popular">超值推荐</el-checkbox>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="pkgVisible = false">取消</el-button>
-        <el-button type="primary" @click="savePkg">保存</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 

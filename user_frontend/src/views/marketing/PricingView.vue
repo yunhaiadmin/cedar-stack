@@ -66,7 +66,7 @@ const faqs = [
   },
   {
     q: '公益服和付费服有什么区别？',
-    a: '公益服免费开放，凭注册码注册、靠日常活力保号；付费服按套餐订阅开通。两者是同一套服务的不同运营口径，可按自己的情况选择。',
+    a: '公益服免费开放，凭注册码注册即可使用；付费服按套餐订阅开通。两者是同一套服务的不同运营口径，可按自己的情况选择。',
   },
   {
     q: '支持哪些客户端？',
@@ -118,7 +118,7 @@ const year = new Date().getFullYear()
 
       <div v-else-if="isFree" class="pricing-note">
         <h2 class="pricing-note-title">当前为公益服，免费开放</h2>
-        <p class="pricing-note-text">{{ accessNote || '凭注册码注册即可使用，靠日常活力保号，无需购买套餐。' }}</p>
+        <p class="pricing-note-text">{{ accessNote || '凭注册码注册即可使用，无需购买套餐。' }}</p>
       </div>
 
       <div v-else-if="!plansEnabled || plans.length === 0" class="pricing-note">

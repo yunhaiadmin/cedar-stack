@@ -117,7 +117,7 @@ async function bulkDeactivate() {
 
 const rewardText = (row: ExchangeCodeRow) =>
   row.type === 'points'
-    ? `${row.points_value} 积分`
+    ? '能量（已下线）'
     : row.type === 'subscription'
       ? `${row.plan_name || '套餐'} × ${row.duration_days} 天`
       : `${row.discount_pct / 10} 折`
@@ -165,7 +165,6 @@ const filters = computed<FilterConfig[]>(() => [
     placeholder: '全部类型',
     options: [
       { label: '全部类型', value: '' },
-      { label: '积分', value: 'points' },
       { label: '订阅', value: 'subscription' },
       { label: '折扣', value: 'discount' },
     ],
@@ -185,7 +184,7 @@ const filters = computed<FilterConfig[]>(() => [
 ])
 
 function typeLabel(type: typeof typeFilter.value): string {
-  return type === 'points' ? '积分' : type === 'subscription' ? '订阅' : type === 'discount' ? '折扣' : ''
+  return type === 'points' ? '能量（已下线）' : type === 'subscription' ? '订阅' : type === 'discount' ? '折扣' : ''
 }
 
 /** chips 只读已应用值；输入防抖期间不提前展示草稿，也不触发任何请求 */
@@ -265,7 +264,7 @@ onMounted(load)
     <PageHeader
       eyebrow="经营"
       title="旧版兑换码"
-      description="老系统遗留的码：只查旧码，不再新发。用户兑换后直接生成奖励（积分 / 订阅时长 / 抵扣额度），并查看谁核销了它。新发放统一走「会员卡码」。列表为最近 200 个。"
+      description="老系统遗留的码：只查旧码，不再新发。用户兑换后直接生成奖励（订阅时长 / 抵扣额度），并查看谁核销了它。新发放统一走「会员卡码」。列表为最近 200 个。"
     >
       <template #actions>
         <el-button :loading="loading" @click="load" :icon="RefreshCw">刷新</el-button>
@@ -320,7 +319,7 @@ onMounted(load)
 
         <template #cell-type="{ row }">
           <span class="au-badge" :class="row.type === 'points' ? 'au-badge-green' : row.type === 'subscription' ? 'au-badge-amber' : 'au-badge-info'">
-            {{ row.type === 'points' ? '积分' : row.type === 'subscription' ? '订阅' : '折扣' }}
+            {{ row.type === 'points' ? '能量（已下线）' : row.type === 'subscription' ? '订阅' : '折扣' }}
           </span>
         </template>
 

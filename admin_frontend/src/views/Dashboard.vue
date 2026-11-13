@@ -12,8 +12,8 @@
  * （见 composables/useQueryFilter.ts），所以从仪表盘、待办条、命令面板点过去口径一致。
  *
  * - 顶部「待办」条：待处理工单 / 待审求片 / 待支付订单，一点直达对应页面（带筛选）
- * - 交易概览：今日营收、累计营收、积分存量、今日签到、兑换码核销、邀请人数（均可点）
- * - 趋势图：近 7/14/30 天的新增用户 / 播放 / 营收 / 签到（纯 SVG，无额外依赖）
+ * - 交易概览：今日营收、累计营收、兑换码核销、邀请人数（均可点）
+ * - 趋势图：近 7/14/30 天的新增用户 / 播放 / 营收（纯 SVG，无额外依赖）
  * - 播放榜：用户榜 + 热门内容榜
  *
  * v2.54（暗房影院）：整页改用 components/ui 的共享原语（PageHeader / SectionCard /
@@ -28,7 +28,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import {
   Film, MessageSquareDashed, Ticket, Users, Wallet,
-  Coins, CalendarCheck, TicketCheck, Gift, ArrowRight, TrendingUp,
+  TicketCheck, Gift, ArrowRight, TrendingUp,
   Server, HardDrive, ScanSearch, CloudDownload, Download, Route as RealmIcon, Trophy, Flame, Activity,
   AlertTriangle, Table2, Gauge, HeartPulse, ClipboardList, ListTodo,
 } from 'lucide-vue-next'
@@ -72,7 +72,7 @@ const trendLoading = ref(false)
 const failedParts = ref<string[]>([])
 
 const days = ref(14)
-type Metric = 'new_users' | 'plays' | 'revenue' | 'checkins'
+type Metric = 'new_users' | 'plays' | 'revenue'
 const metric = ref<Metric>('new_users')
 // 趋势图指标色（暗房影院）：走 --au-* 令牌，随深浅主题与品牌色切换。
 // SVG 的 stroke / stop-color **属性**不认 var()，所以模板里一律写进 style（CSS 属性认）。
@@ -80,7 +80,6 @@ const metricTabs: { key: Metric; label: string; color: string }[] = [
   { key: 'new_users', label: '新增用户', color: 'var(--au-primary)' },
   { key: 'plays', label: '播放次数', color: 'var(--au-info)' },
   { key: 'revenue', label: '营收 (¥)', color: 'var(--au-success)' },
-  { key: 'checkins', label: '签到次数', color: 'var(--au-danger)' },
 ]
 
 async function loadTrend() {
@@ -610,7 +609,7 @@ function serviceRoleLabel(role: string): string {
           </div>
           <div class="glance-value">{{ playback ? `${playback.today.plays} 次播放` : '—' }}</div>
           <div class="glance-hint">
-            播放用户 {{ playback?.today.users ?? '—' }} · 签到 {{ economy?.checkins_today ?? '—' }} · 当前会话 {{ overview?.emby.active_sessions ?? '—' }}
+            播放用户 {{ playback?.today.users ?? '—' }} · 当前会话 {{ overview?.emby.active_sessions ?? '—' }}
           </div>
         </div>
       </section>
@@ -796,8 +795,6 @@ function serviceRoleLabel(role: string): string {
           tone="accent"
           :hint="`${economy?.orders.pending ?? 0} 笔待支付`"
         />
-        <StatTile to="/invitations" :icon="Coins" label="积分存量" :value="economy?.total_points ?? 0" hint="全站用户持有" />
-        <StatTile to="/users" :icon="CalendarCheck" label="今日签到" :value="economy?.checkins_today ?? 0" hint="人已签到" />
         <StatTile
           to="/codes?tab=exchange"
           :icon="TicketCheck"
@@ -1026,21 +1023,6 @@ function serviceRoleLabel(role: string): string {
                   <td>{{ r.enriched }}</td>
                   <td>{{ r.pending }}</td>
                   <td>{{ r.enriched + r.pending === 0 ? '—' : `${Math.round((r.enriched / (r.enriched + r.pending)) * 100)}%` }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </el-tab-pane>
-          <el-tab-pane label="积分流水" name="points">
-            <EmptyState v-if="detail.points_flow.length === 0" compact :icon="Coins" title="暂无流水" description="" />
-            <table v-else class="detail-table">
-              <thead><tr><th>用户</th><th>类型</th><th>增减</th><th>说明</th><th>时间</th></tr></thead>
-              <tbody>
-                <tr v-for="(p, i) in detail.points_flow" :key="i">
-                  <td>{{ p.username }}</td>
-                  <td>{{ p.type }}</td>
-                  <td :class="p.amount >= 0 ? 'amt-in' : 'amt-out'">{{ p.amount >= 0 ? `+${p.amount}` : p.amount }}</td>
-                  <td class="desc-cell">{{ p.description }}</td>
-                  <td>{{ fmtTime(p.created_at) }}</td>
                 </tr>
               </tbody>
             </table>

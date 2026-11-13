@@ -5,15 +5,14 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import {
   Clapperboard, LogOut, Crown, Sparkles,
   Sun, Moon, MonitorSmartphone,
-  ChevronRight, Heart, ShieldCheck,
-  Globe, Plug, MessageSquare, Notebook, Receipt, Settings,
+  ChevronRight, ShieldCheck,
+  Globe, Plug, MessageSquare, Receipt, Settings,
 } from 'lucide-vue-next'
 import { isExpiringSoon, subscriptionApi } from '@/api'
 import type { MySubscription } from '@/api'
 import { primaryNav, resolveActiveNavPath } from '@/config/navigation'
 /** v4.1：头像菜单改为「探险设施直达」，设施清单唯一数据源 */
 import { gameFacilities } from '@/config/game'
-import { checkinApi, vitalityApi } from '@/api/economy'
 // 站名与 Logo 来自「站点与品牌」能力（没配就用默认值，不会出现空标题）
 import { branding } from '@/composables/useBranding'
 
@@ -22,45 +21,12 @@ function facilityMenuIcon(key: string) {
   switch (key) {
     case 'operator': return Plug
     case 'requests': return MessageSquare
-    case 'ledger': return Notebook
     case 'supply': return Receipt
     case 'account': return Settings
     default: return Globe
   }
 }
 
-/** 能量余额（顶栏 pill 显示，登录后加载） */
-const pointsBalance = ref<number | null>(null)
-async function loadPoints() {
-  if (!userStore.isLoggedIn) {
-    pointsBalance.value = null
-    return
-  }
-  try {
-    const st = await checkinApi.status()
-    pointsBalance.value = st.points
-  } catch {
-    /* 拿不到就不显示，不打扰 */
-  }
-}
-/** 体力（顶栏 pill 显示 x/14 格式，与报到页体力条统一，仅公益服用户，403 则不显示） */
-const vitality = ref<number | null>(null)
-const vitalityMax = ref<number | null>(null)
-async function loadVitality() {
-  if (!userStore.isLoggedIn) {
-    vitality.value = null
-    vitalityMax.value = null
-    return
-  }
-  try {
-    const st = await vitalityApi.status()
-    vitality.value = st.vitality
-    vitalityMax.value = st.max ?? null
-  } catch {
-    vitality.value = null
-    vitalityMax.value = null
-  }
-}
 // 三档外观（跟随系统 / 白日 / 黑暗），见 useTheme.ts 的口径说明
 import { useTheme } from '@/composables/useTheme'
 
@@ -275,13 +241,9 @@ async function focusActiveTab(center: boolean) {
 watch(() => userStore.isLoggedIn, (loggedIn) => {
   if (loggedIn) {
     poll()
-    loadPoints()
-    loadVitality()
   } else {
     activeSub.value = null
     userMenuOpen.value = false
-    pointsBalance.value = null
-    vitality.value = null
   }
 })
 
@@ -305,8 +267,6 @@ onMounted(() => {
   window.addEventListener('scroll', onPageScroll, { passive: true })
   onPageScroll()
   poll()
-  loadPoints()
-  loadVitality()
   pollTimer = window.setInterval(poll, 60_000)
   focusActiveTab(false)
 })
@@ -352,26 +312,6 @@ onBeforeUnmount(() => {
            外观按钮放在登录判断**之外**：未登录也能切主题。点一下直接在白日/黑暗
            之间切换，不要下拉菜单 -->
       <div class="user-section">
-        <!-- 能量徽章：登录后显示当前能量，点击进能量账本 -->
-        <RouterLink
-          v-if="userStore.isLoggedIn && pointsBalance !== null"
-          to="/game/ledger"
-          class="points-pill"
-          title="我的能量，点击查看能量明细"
-          aria-label="我的能量，点击查看能量明细"
-        >
-          <Sparkles :size="13" />
-          <span>{{ pointsBalance }}</span>
-        </RouterLink>
-        <!-- 体力徽章：显示 x/14（与体力条统一口径），纯展示、无跳转 -->
-        <span
-          v-if="userStore.isLoggedIn && vitality !== null && vitalityMax !== null"
-          class="points-pill vitality-pill"
-          :title="`我的体力 ${vitality}/${vitalityMax}`"
-        >
-          <Heart :size="13" /><!-- 体力用红心；闪电只给能量 -->
-          <span>{{ vitality }}/{{ vitalityMax }}</span>
-        </span>
         <button
           class="theme-btn round-btn wide-only"
           :class="{ auto: themePreference === 'system' }"
@@ -679,41 +619,6 @@ onBeforeUnmount(() => {
   background: var(--paper-primary-strong);
   border-color: var(--paper-primary-strong);
   color: var(--paper-on-primary);
-}
-
-/* 能量徽章：顶栏常驻小 pill，显示当前能量，点击进能量账本。
-   2026-10-15 顶栏去圈（方案 A）：去掉胶囊边框和底色，只留图标+数字裸排；
-   边框透明化而非删除，盒子尺寸与 ::after 44px 触点保持不变。 */
-.points-pill {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.375rem 0.75rem;
-  border: 1px solid transparent;
-  border-radius: var(--paper-r-full);
-  background: transparent;
-  color: var(--paper-ink-2);
-  font-size: 0.8125rem;
-  font-weight: 700;
-  text-decoration: none;
-  white-space: nowrap;
-  transition: color var(--paper-fast) var(--paper-ease);
-}
-
-/* 触点 44px：::after 透明扩展，胶囊视觉不变（R30 先例） */
-.points-pill::after { content: ""; position: absolute; top: -9px; right: 0; bottom: -9px; left: 0; }
-
-.points-pill:hover {
-  color: var(--paper-ink);
-}
-.points-pill svg {
-  color: var(--paper-primary);
-  flex-shrink: 0;
-}
-/* 体力徽章：图标用红色（红心），与能量徽章的琥珀闪电区分 */
-.vitality-pill svg {
-  color: var(--paper-danger, #ff5c6c); /* 体力=红心 ❤️；闪电的琥珀色只留给能量 */
 }
 
 /* user-dropdown 及其内部样式已移至下方全局块（Teleport 到 body 后 scoped 不生效） */
@@ -1094,6 +999,5 @@ onBeforeUnmount(() => {
   .narrow-only { display: block; }
   .logo-text { font-size: 0.9375rem; letter-spacing: 0.02em; }
   .logo-mark { width: 26px; height: 26px; }
-  .points-pill { padding: 0.3125rem 0.625rem; }
 }
 </style>

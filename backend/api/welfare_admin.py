@@ -260,17 +260,9 @@ def welfare_request_done(
 # ==================== 公益配置 ====================
 
 WELFARE_CONFIG_KEYS = {
-    "points_chat_per_msg": "0.1",
-    "points_chat_daily_cap": "20",
-    "points_redeem_7d": "100",
-    "points_redeem_30d": "300",
     # G1 资格码月配额：每位管理员每月可生成的资格码（reward_type=welfare）
     # 张数上限，默认 30（宽松值）；0=不限（读侧 codes.welfare_code_monthly_quota）
     "welfare_code_monthly_quota": "30",
-    # 兑换资格门槛（读侧 points.redeem_welfare）：号龄/活跃双钥匙；
-    # 管理员发放不受此门约束（来源限定键已于 2026-11-02 删除）
-    "welfare_redeem_min_account_age_days": "3",
-    "welfare_redeem_min_active_days": "2",
     # 新注册冷启动赠送天数（emby_portal._grant_register_gifts 读取；0=永不过期仅福利天数适用）
     "register_gift_welfare_days": "30",
     "register_gift_view_days": "30",
@@ -350,14 +342,8 @@ WELFARE_CONFIG_KEYS = {
     "bot_gamerank_enabled": "false",
     # 注册后 TG 绑定引导页总开关
     # 求片 v2：总开关 / 附议 / 附议者入库通知（默认全开）
-    # C2 积分转账：总开关默认开启，手续费/限额可配（0=不收/不限）
-    "points_transfer_fee_pct": "5",
-    "points_transfer_min": "1",
-    "points_transfer_max": "0",
-    "points_transfer_daily_cap": "0",
-    # M1 群发言积分（chat_points_*）已于 2026-10-23 去重退役：与
-    # points.award_chat_points（points_chat_*）是两套重复系统，退役
-    # 机器人这套（生产一直关着），发言积分只保留 points.py 一套。
+    # 发言积分/积分兑换/积分转账键已随货币于 2026-11-13 下线（原
+    # points_chat_*、points_redeem_*、points_transfer_* 与 points.py 一并删除）。
 }
 
 
@@ -515,13 +501,12 @@ def create_lottery_round(
     if not req.prizes:
         raise HTTPException(status_code=400, detail="至少需要配置 1 个奖品")
     for item in req.prizes:
-        if item.type not in ("days", "points", "whitelist"):
-            raise HTTPException(status_code=400, detail="奖品类型只能是 days/points/whitelist")
-        if item.type in ("points", "days"):
-            # 积分/天数奖品 value=0 发奖时必失败（distribute 记 errors），创建时直接拦截
+        if item.type not in ("days", "whitelist"):
+            raise HTTPException(status_code=400, detail="奖品类型只能是 days/whitelist")
+        if item.type == "days":
+            # 天数奖品 value=0 发奖时必失败（distribute 记 errors），创建时直接拦截
             if item.value <= 0:
-                label = "积分" if item.type == "points" else "天数"
-                raise HTTPException(status_code=400, detail=f"{label}奖品的价值必须大于 0")
+                raise HTTPException(status_code=400, detail="天数奖品的价值必须大于 0")
         elif item.value < 0:
             raise HTTPException(status_code=400, detail="奖品价值不能为负数")
         if item.quantity < 1:

@@ -12,9 +12,9 @@
   reward_points > 0``，渠道码用）优先，否则按本模块配置（余额积分
   ``promotion_reward_amount`` 或会员天数 ``promotion_reward_days``）。
 - ``invitation_reward_points`` 键退役（配置注册表/后台字段/库行一并清）。
-- 不是重复的部分不动：被邀请人奖励 ``invitation_invitee_reward_points``
-  与消费返利 ``invitation_rebate_percent`` 仍在 ``invitation.py`` 发放
-  （对象/事件都不同）；邀请关系与经验值也仍归 invitation 管。
+- 2026-11-13 货币下线后：被邀请人奖励与消费返利（均为积分）已停发，
+  本模块也只发会员天数型奖励，余额（积分）型一律跳过；邀请关系与
+  经验值仍归 invitation 管。
 - 本模块的落表（``promotion_rewards``）与明细接口保留，是邀请人奖励
   的唯一明细。
 
@@ -59,10 +59,10 @@ CONFIG_DAYS = "promotion_reward_days"
 
 TYPE_BALANCE = "balance"
 TYPE_DAYS = "days"
-REWARD_TYPES = (TYPE_BALANCE, TYPE_DAYS)
+# 积分（余额）型已随货币下线（2026-11-13）：推广奖励只剩会员天数型。
+REWARD_TYPES = (TYPE_DAYS,)
 
 TYPE_LABELS = {
-    TYPE_BALANCE: "余额（积分）",
     TYPE_DAYS: "有效期（天）",
 }
 
@@ -70,15 +70,15 @@ TYPE_LABELS = {
 #: 2026-10-21 摘面板对齐：开关缺省由关改为开，与生产现值一致）
 DEFAULTS: dict[str, str] = {
     CONFIG_ENABLED: "true",
-    CONFIG_TYPE: TYPE_BALANCE,
+    CONFIG_TYPE: TYPE_DAYS,
     CONFIG_AMOUNT: "0",
     CONFIG_DAYS: "0",
 }
 
 DESCRIPTIONS = {
-    CONFIG_ENABLED: "推广奖励总开关（关闭 = 邀请成功只发原有的双向积分，不发推广奖励）",
-    CONFIG_TYPE: "推广奖励类型（balance=余额积分 / days=会员有效期）",
-    CONFIG_AMOUNT: "推广奖励·余额数值（reward_type=balance 时生效，0 = 不发）",
+    CONFIG_ENABLED: "推广奖励总开关（关闭 = 邀请成功不发推广奖励）",
+    CONFIG_TYPE: "推广奖励类型（现只剩 days=会员有效期；balance 已随货币下线）",
+    CONFIG_AMOUNT: "推广奖励·余额数值（历史键，积分已下线、不再生效）",
     CONFIG_DAYS: "推广奖励·有效期天数（reward_type=days 时生效，0 = 不发）",
 }
 
@@ -102,7 +102,7 @@ def _int(db: Session, key: str, low: int, high: int) -> int:
 
 def reward_type(db: Session) -> str:
     value = _raw(db, CONFIG_TYPE).lower()
-    return value if value in REWARD_TYPES else TYPE_BALANCE
+    return value if value in REWARD_TYPES else TYPE_DAYS
 
 
 def config(db: Session) -> dict:
@@ -120,7 +120,7 @@ def policy_payload(db: Session) -> dict:
     """后台读一份（前端不维护默认值）"""
     cfg = config(db)
     # 当前档位**真的会发东西吗**：开关开着但值是 0，等同没开，后台要看得见
-    value = cfg["amount"] if cfg["reward_type"] == TYPE_BALANCE else cfg["days"]
+    value = cfg["days"]
     return {**cfg, "active": bool(cfg["enabled"] and value > 0)}
 
 
@@ -180,11 +180,12 @@ def grant(db: Session, inviter: models.WebUser, invitee: models.WebUser,
         # 就是邀请人奖励整体关着，不存在第二条发放路径。
         override = int(getattr(code, "reward_points", 0) or 0)
         if override > 0:
-            reward_type = TYPE_BALANCE
-            value = override
-        else:
-            reward_type = cfg["reward_type"]
-            value = cfg["amount"] if reward_type == TYPE_BALANCE else cfg["days"]
+            # 码上专属奖励恒为余额（积分）口径：积分已下线（2026-11-13），不再发放。
+            logger.info("推广奖励为积分口径，已随货币下线跳过: inviter=%s invitee=%s",
+                        inviter.id, invitee.id)
+            return None
+        reward_type = cfg["reward_type"]
+        value = cfg["days"]
         if value <= 0:
             return None
 
@@ -202,12 +203,6 @@ def grant(db: Session, inviter: models.WebUser, invitee: models.WebUser,
             # 归属服 = 当前服（realm_id 传 None）；天发到了哪一服要记进明细，
             # 否则事后看一条「+7 天」根本不知道加在哪张卡上
             realm_id = codes.grant_membership_days(db, inviter, value, None).realm_id
-        else:
-            from backend.api.economy import _add_points
-
-            _add_points(db, inviter, value, "promotion",
-                        f"推广奖励：成功邀请 {invitee.username}",
-                        f"promotion:{invitee.id}")
 
         row = models.PromotionReward(
             inviter_id=inviter.id,
