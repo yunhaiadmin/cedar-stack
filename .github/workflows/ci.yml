@@ -26,7 +26,7 @@ concurrency:
 jobs:
   frontend:
     name: 前端 · ${{ matrix.dir }}
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) && 'ubuntu-latest' || 'aetrix-insta' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -599,7 +599,7 @@ jobs:
     # 方言映射（DATETIME→TIMESTAMP、BOOLEAN DEFAULT 0→FALSE）、JSON/Boolean/
     # DateTime 读写、ilike 搜索。SQLite 门禁拦不住的方言问题由这条拦。
     name: 后端 · PG 兼容冒烟
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) && 'ubuntu-latest' || 'aetrix-insta' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
       postgres:
@@ -655,7 +655,7 @@ jobs:
   deploy-check:
     name: 后端 · 部署自检（真起服务 + 真发 HTTP）
     needs: frontend
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) && 'ubuntu-latest' || 'aetrix-insta' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
       DATABASE_TYPE: sqlite
