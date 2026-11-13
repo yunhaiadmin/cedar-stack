@@ -182,12 +182,7 @@
         <div class="ov-sec__head">
           <h2 class="ov-sec__title">我的片子</h2>
         </div>
-        <RouterLink class="ov-trow" to="/game/wishlist">
-          <span class="ov-trow__name">想看</span>
-          <span v-if="wantMeta" class="ov-trow__value">{{ wantMeta }}</span>
-          <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
-        <RouterLink class="ov-trow" to="/game/wishlist">
+        <RouterLink class="ov-trow" to="/game/requests?tab=mine">
           <span class="ov-trow__name">我的求片</span>
           <span v-if="requestMeta" class="ov-trow__value">{{ requestMeta }}</span>
           <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
@@ -271,7 +266,7 @@ import {
 import SeriesFollowsPanel from '@/components/profile/SeriesFollowsPanel.vue'
 import StatusAlertBar from '@/components/profile/StatusAlertBar.vue'
 import {
-  embyApi, storeApi, storeRequestsApi, subscriptionApi,
+  embyApi, storeRequestsApi, subscriptionApi,
   type AccountCard, type MySubscription,
 } from '@/api'
 import {
@@ -431,17 +426,7 @@ async function loadDevices() {
 }
 
 // ── 我的片子摘要 ──
-const wantMeta = ref('')
 const requestMeta = ref('')
-async function loadWantMeta() {
-  try {
-    const res = await storeApi.getWants()
-    const items = res.items || []
-    if (!items.length) return
-    const preparing = items.filter(i => ['wanted', 'resolving', 'transferring'].includes(i.state)).length
-    wantMeta.value = `${items.length} 部` + (preparing ? ` · ${preparing} 部准备中` : '')
-  } catch { /* 商店未开启/未登录会员时不显示摘要 */ }
-}
 async function loadRequestMeta() {
   try {
     const res = await storeRequestsApi.getMine()
@@ -527,7 +512,6 @@ onMounted(() => {
   }
   void loadOverview()
   void loadDevices()
-  void loadWantMeta()
   void loadRequestMeta()
   void loadDriveMeta()
   void getMyExclusiveLines().then(lines => { myLines.value = lines }).catch(() => {})

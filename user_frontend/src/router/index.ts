@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type RouteLocationNormalizedLoaded } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 // 标题里的站名来自「站点与品牌」能力（未配置时用默认值）
 import { pageTitle } from '@/composables/useBranding'
@@ -115,18 +115,24 @@ const router = createRouter({
             component: () => import('@/views/game/CalendarView.vue'),
             meta: { title: '探险预告', requiresAuth: true },
           },
+          // 求片反馈（2026-11-13 合并页）：许愿池＋求救信号合并为一页，
+          // 三页签（发起请求/我的请求/请求广场）×五类型（影片求片/电影追新/剧集追新/修正信息/其他反馈）；
+          // 新页跟随用户外观，不进 V4_PATHS。
+          {
+            path: '/game/requests',
+            name: 'game-requests',
+            component: () => import('@/views/game/RequestFeedbackView.vue'),
+            meta: { title: '求片反馈', requiresAuth: true },
+          },
+          // 旧地址重定向：/game/wishlist → 新页（透传 query；带 ?q= 时新页
+          // 接住预填搜索）；/game/signal → 新页「我的请求」页签。
           {
             path: '/game/wishlist',
-            name: 'game-wishlist',
-            component: () => import('@/views/game/WishlistView.vue'),
-            meta: { title: '许愿池', requiresAuth: true },
+            redirect: (to: RouteLocationNormalizedLoaded) => ({ path: '/game/requests', query: to.query }),
           },
-          // v4 游戏化第二批：营地设施（需要登录）
           {
             path: '/game/signal',
-            name: 'game-signal',
-            component: () => import('@/views/game/SignalView.vue'),
-            meta: { title: '求救信号', requiresAuth: true },
+            redirect: (to: RouteLocationNormalizedLoaded) => ({ path: '/game/requests', query: { ...to.query, tab: 'mine' } }),
           },
           {
             path: '/game/ledger',
@@ -222,18 +228,18 @@ const router = createRouter({
       component: () => import('@/views/TgBindGuideView.vue'),
       meta: { title: '绑定 Telegram', requiresAuth: true },
     },
-    // 想看：已合并进许愿池（/game/wishlist）——库内片「想看」动作与
-    // 「我的想看」清单都在许愿池页。旧地址/收藏带 query 跳过去，
-    // 不留重复页（许愿池页接住 ?q= 预填搜索）。
+    // 想看：已合并进求片反馈（/game/requests）——库内片「想看」动作在
+    // 求片表单的已在库候选卡上。旧地址/收藏带 query 跳过去，
+    // 不留重复页（求片反馈页接住 ?q= 预填搜索）。
     {
       path: '/want',
-      redirect: (to) => ({ path: '/game/wishlist', query: to.query }),
+      redirect: (to) => ({ path: '/game/requests', query: to.query }),
     },
-    // 求片登记旧地址：功能已并入许愿池，旧链接/收藏跳过去（带上 query），
+    // 求片登记旧地址：功能已并入求片反馈，旧链接/收藏跳过去（带上 query），
     // 不留重复旧页。
     {
       path: '/store-requests',
-      redirect: (to) => ({ path: '/game/wishlist', query: to.query }),
+      redirect: (to) => ({ path: '/game/requests', query: to.query }),
     },
     // 隐私政策：公开页（Google OAuth 验证要求挂在本站域名下），
     // 不带 requiresAuth，路由守卫只拦 requiresAuth 路由，未登录也能直接打开。
@@ -338,7 +344,7 @@ router.beforeEach(async (to) => {
 // 不再钉 light——本集合摘除该路径后守卫对它走 restoreUserTheme；
 // /game/account/menu（我的）本就不在集合内，同样跟随用户外观。
 // /game/account/settings、/game/account/member 等其余账号页仍是 v4 纸面，继续钉 light。
-export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/collections', '/server', '/shop', '/want', '/store-requests', '/game/calendar', '/game/wishlist', '/game/signal', '/game/ledger', '/game/supply', '/game/operator', '/game/account/settings', '/game/account/member'])
+export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/collections', '/server', '/shop', '/want', '/store-requests', '/game/calendar', '/game/ledger', '/game/supply', '/game/operator', '/game/account/settings', '/game/account/member'])
 // 参数路由前缀：合集详情是 /collections/:id，afterEach 拿到的是实例路径
 // （如 /collections/123），静态集合永远匹配不上，须按前缀另判；
 // /collections/ 下目前只有详情这一条路由，前缀不会误伤非 v4 页。
