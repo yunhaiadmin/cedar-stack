@@ -5,20 +5,20 @@
       <!-- 日志头 -->
       <header class="v4-loghead">
         <span class="v4-stamp">{{ facilityStamp('supply') }}</span>
-        <h1>补给记录</h1>
+        <h1>商店记录</h1>
         <p>在商店的下单记录，点一条看明细。</p>
       </header>
 
       <!-- 布告栏 -->
       <section class="v4-sec">
-        <div class="v4-sec-title">订单记录</div>
+        <div class="v4-sec-title">商店记录</div>
         <div class="v4-sec-sub">在商店买过的东西</div>
 
-        <div v-if="loading" role="status" aria-label="正在加载补给记录">
+        <div v-if="loading" role="status" aria-label="正在加载商店记录">
           <div class="v4-skeleton" aria-hidden="true" style="height:104px;margin-bottom:22px"></div>
           <div class="v4-skeleton" aria-hidden="true" style="height:104px;margin-bottom:22px"></div>
         </div>
-        <div v-else-if="error" class="v4-err">订单记录加载失败：{{ error }}<br><button class="v4-retry" @click="load">重试</button></div>
+        <div v-else-if="error" class="v4-err">商店记录加载失败：{{ error }}<br><button class="v4-retry" @click="load">重试</button></div>
         <div v-else-if="!orders.length" class="v4-empty">还没有下单记录，去商店看看</div>
 
         <div v-else class="board">
