@@ -1,35 +1,23 @@
 <script setup lang="ts">
 /**
- * 邀请与积分管理：邀请记录、积分流水、手动调整
+ * 邀请管理：邀请记录、邀请码、推广奖励（会员天数）
  *
- * 参数配置（签到 / 支付 / 返利比例）已统一收归「系统设置」页，
- * 本页负责台账与人工干预；例外是推广奖励策略（PUT /promotion/policy），
- * 在本页的「推广奖励」卡上直接展示与编辑，与系统设置写的是同一组键。
- *
- * v2.6.11：两张台账改用 DataTable（手机上变成卡片列表，不再需要横向拖），
- * 统计瓦片统一为全局 .stat-tile。
- *
- * v2.54（暗房影院）：PageHeader + StatTile + SectionCard 原语；四张台账都是 flush 表格，
- * 邀请码的筛选在左、「批量生成」在右；积分流水分页收进卡片底栏；
- * 推广奖励的配置条改成发丝线分隔的表单行；三处台账加载失败都有可重试的错误态。
+ * 推广奖励策略（PUT /promotion/policy）在本页的「推广奖励」卡上直接
+ * 展示与编辑，与系统设置写的是同一组键。
+ * 积分流水 / 手动调分 / 流水审计已随货币于 2026-11-13 下线删除。
  */
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
-  AlertTriangle, Coins, Gift, HandCoins, History, Megaphone, Plus, QrCode, RefreshCw, Save, Search, ShieldCheck, UserPlus,
+  AlertTriangle, Gift, Megaphone, Plus, QrCode, RefreshCw, Save, Search, UserPlus,
 } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard, StatTile } from '@/components/ui'
 import {
   fetchInvitations,
-  fetchPointsLogs,
   fetchEconomyStats,
-  verifyPointsAudit,
-  adjustUserPoints,
   type InvitationRow,
-  type PointsLogRow,
   type EconomyStats,
-  type PointsAuditResult,
 } from '@/api/economy'
 import {
   fetchInvitationCodes,
@@ -50,10 +38,6 @@ import { useTableSelection } from '@/composables/useTableSelection'
 import type { RowKey } from '@/composables/useTableSelection'
 
 const loading = ref(false)
-/** 积分流水单独的 loading：翻页 / 切类型只刷流水，不让邀请记录表跟着闪 */
-const logsLoading = ref(false)
-/** 积分流水加载失败（邀请记录 / 总览各自兜底，不影响主表） */
-const logsError = ref(false)
 /** 邀请记录读取失败：给出可重试的错误态，而不是假装「暂无邀请记录」 */
 const invError = ref(false)
 const stats = ref<EconomyStats | null>(null)
@@ -64,60 +48,8 @@ const invitations = ref<InvitationRow[]>([])
 const inviteColumns: DataColumn[] = [
   { key: 'inviter', label: '邀请人', width: 140, mobile: 'title' },
   { key: 'invitee', label: '被邀请人', width: 140 },
-  { key: 'reward_points', label: '奖励', width: 100 },
   { key: 'created_at', label: '时间' },
 ]
-
-// ===== 积分流水 =====
-const logs = ref<PointsLogRow[]>([])
-const logTotal = ref(0)
-const logPage = ref(1)
-const logTypeFilter = ref('')
-
-const logColumns: DataColumn[] = [
-  { key: 'username', label: '用户', width: 130, mobile: 'title' },
-  { key: 'amount', label: '变动', width: 90 },
-  { key: 'type', label: '类型', width: 100 },
-  { key: 'description', label: '说明', minWidth: 170 },
-  { key: 'balance_after', label: '余额', width: 90 },
-  { key: 'audited', label: '审计', width: 80 },
-  { key: 'created_at', label: '时间', width: 160 },
-]
-
-// ===== C3 流水审计 =====
-// 审计开关（points_audit_enabled）已于 2026-10-21 摘面板，改由服务端配置
-// 控制；本页只保留逐条核验工具。
-const verifyUserId = ref<number | undefined>(undefined)
-const verifyLoading = ref(false)
-const verifyResult = ref<PointsAuditResult | null>(null)
-
-async function handleVerify() {
-  if (!verifyUserId.value) {
-    ElMessage.warning('请先选择要核验的用户')
-    return
-  }
-  verifyLoading.value = true
-  verifyResult.value = null
-  try {
-    verifyResult.value = await verifyPointsAudit(verifyUserId.value)
-  } finally {
-    verifyLoading.value = false
-  }
-}
-
-// ===== 手动调整 =====
-const adjustVisible = ref(false)
-const adjustFormRef = ref<FormInstance>()
-const adjustForm = ref({ user_id: undefined as number | undefined, amount: 100, reason: '' })
-const adjustRules: FormRules = {
-  user_id: [{ required: true, message: '请选择用户', trigger: 'change' }],
-  amount: [
-    { required: true, message: '请输入调整数量', trigger: 'blur' },
-    { type: 'number', message: '请输入有效的数字', trigger: 'blur' },
-  ],
-  reason: [{ max: 100, message: '原因最多 100 个字', trigger: 'blur' }],
-}
-const adjustLoading = ref(false)
 
 function scrollToFirstError() {
   requestAnimationFrame(() => {
@@ -141,14 +73,7 @@ async function searchUsers(keyword: string) {
   }
 }
 
-const selectedUser = computed(() =>
-  userOptions.value.find((u) => u.id === adjustForm.value.user_id)?.username,
-)
-
 const inviteTotal = computed(() => invitations.value.length)
-const rebateTotal = computed(() =>
-  logs.value.filter((l) => l.type === 'rebate').reduce((s, l) => s + l.amount, 0),
-)
 
 /** 邀请记录 + 经济总览：与流水的翻页 / 类型筛选无关，不随翻页重复请求 */
 async function loadOverview() {
@@ -167,63 +92,8 @@ async function loadOverview() {
   }
 }
 
-/** 请求序号：连续翻页 / 切类型时只采纳最后一次请求 */
-let logsSeq = 0
-
-/** 积分流水：翻页、切类型只拉这一个接口 */
-async function loadLogs() {
-  const seq = ++logsSeq
-  logsLoading.value = true
-  logsError.value = false
-  try {
-    const log = await fetchPointsLogs({
-      limit: 30,
-      offset: (logPage.value - 1) * 30,
-      type_filter: logTypeFilter.value || undefined,
-    })
-    if (seq !== logsSeq) return
-    logs.value = log.logs
-    logTotal.value = log.total
-  } catch {
-    if (seq !== logsSeq) return
-    // 错误提示由 HTTP 拦截器统一处理；这里只记下失败，给出重试入口
-    logsError.value = true
-  } finally {
-    if (seq === logsSeq) logsLoading.value = false
-  }
-}
-
 async function load() {
-  await Promise.all([loadOverview(), loadLogs()])
-}
-
-async function openAdjust() {
-  adjustForm.value = { user_id: undefined, amount: 100, reason: '' }
-  adjustVisible.value = true
-  await searchUsers('')
-}
-
-async function handleAdjust() {
-  try {
-    await adjustFormRef.value?.validate()
-  } catch {
-    scrollToFirstError()
-    return
-  }
-  adjustLoading.value = true
-  try {
-    const res = await adjustUserPoints(adjustForm.value.user_id!, {
-      amount: adjustForm.value.amount,
-      reason: adjustForm.value.reason || undefined,
-    })
-    ElMessage.success(`调整成功，该用户当前余额 ${res.balance}`)
-    adjustVisible.value = false
-    load()
-  } catch {
-    // 错误提示由 HTTP 拦截器统一处理
-  } finally {
-    adjustLoading.value = false
-  }
+  await loadOverview()
 }
 
 function fmtTime(iso?: string | null) {
@@ -243,7 +113,6 @@ const invColumns: DataColumn[] = [
   { key: 'code', label: '邀请码', width: 130, mobile: 'title' },
   { key: 'owner_username', label: '归属', width: 120 },
   { key: 'use_count', label: '使用情况', width: 120 },
-  { key: 'reward_points', label: '奖励', width: 100 },
   { key: 'state_label', label: '状态', width: 90 },
   { key: 'expires_at', label: '有效期', width: 150 },
   { key: 'whitelist', label: '白名单', minWidth: 150 },
@@ -277,7 +146,7 @@ const usesText = (row: InvitationCodeRow) =>
 
 /**
  * 邀请码表批量作废（v2.58）
- * - 只动邀请码表这张 DataTable，邀请记录/积分流水两张表不动
+ * - 只动邀请码表这张 DataTable，邀请记录表不动
  * - 复用后端真正的批量接口 revokeInvitationCodes(ids)，一次调用，不循环
  * - isRowSelectable：已作废（is_active=false）的行不可选
  */
@@ -333,7 +202,7 @@ async function bulkRevokeCodes() {
 const genVisible = ref(false)
 const genLoading = ref(false)
 const genFormRef = ref<FormInstance>()
-const genForm = ref({ owner_user_id: null as number | null, count: 5, max_uses: 100, expires_days: 0, whitelist: '', reward_points: 0 })
+const genForm = ref({ owner_user_id: null as number | null, count: 5, max_uses: 100, expires_days: 0, whitelist: '' })
 const genRules: FormRules = {
   owner_user_id: [{ required: true, message: '请选择归属用户', trigger: 'change' }],
   count: [
@@ -342,14 +211,13 @@ const genRules: FormRules = {
   ],
   max_uses: [{ type: 'number', min: 0, max: 100000, message: '次数需在 0–100000 之间', trigger: 'blur' }],
   expires_days: [{ type: 'number', min: 0, max: 3650, message: '天数需在 0–3650 之间', trigger: 'blur' }],
-  reward_points: [{ type: 'number', min: 0, max: 1000000, message: '奖励需在 0–1000000 之间', trigger: 'blur' }],
 }
 const genOwner = computed(() =>
   userOptions.value.find((u) => u.id === genForm.value.owner_user_id)?.username,
 )
 
 async function openGen() {
-  genForm.value = { owner_user_id: null, count: 5, max_uses: 100, expires_days: 0, whitelist: '', reward_points: 0 }
+  genForm.value = { owner_user_id: null, count: 5, max_uses: 100, expires_days: 0, whitelist: '' }
   genVisible.value = true
   if (!userOptions.value.length) await searchUsers('')
 }
@@ -369,7 +237,6 @@ async function handleGen() {
       max_uses: genForm.value.max_uses,
       expires_days: genForm.value.expires_days,
       whitelist: genForm.value.whitelist,
-      reward_points: genForm.value.reward_points,
     })
     ElMessage.success(res.message)
     genVisible.value = false
@@ -385,11 +252,10 @@ async function handleGen() {
 const editVisible = ref(false)
 const editLoading = ref(false)
 const editFormRef = ref<FormInstance>()
-const editForm = ref({ id: 0, code: '', max_uses: 100, expires_days: 0, whitelist: '', is_active: true, reward_points: 0 })
+const editForm = ref({ id: 0, code: '', max_uses: 100, expires_days: 0, whitelist: '', is_active: true })
 const editRules: FormRules = {
   max_uses: [{ type: 'number', min: 0, max: 100000, message: '次数需在 0–100000 之间', trigger: 'blur' }],
   expires_days: [{ type: 'number', min: 0, max: 3650, message: '天数需在 0–3650 之间', trigger: 'blur' }],
-  reward_points: [{ type: 'number', min: 0, max: 1000000, message: '奖励需在 0–1000000 之间', trigger: 'blur' }],
 }
 
 function openEdit(row: InvitationCodeRow) {
@@ -401,7 +267,6 @@ function openEdit(row: InvitationCodeRow) {
     expires_days: row.expires_days_left ?? 0,
     whitelist: row.whitelist.join(','),
     is_active: row.is_active,
-    reward_points: row.reward_points ?? 0,
   }
   editVisible.value = true
 }
@@ -420,7 +285,6 @@ async function handleEdit() {
       expires_days: editForm.value.expires_days,
       whitelist: editForm.value.whitelist,
       is_active: editForm.value.is_active,
-      reward_points: editForm.value.reward_points,
     })
     ElMessage.success('邀请码已更新')
     editVisible.value = false
@@ -464,15 +328,13 @@ const promoSaving = ref(false)
 /** 编辑表单：加载后从服务端策略回填，前端不维护默认值 */
 const promoForm = reactive({
   enabled: false,
-  reward_type: 'balance' as PromotionPolicy['reward_type'],
-  amount: 0,
+  reward_type: 'days' as PromotionPolicy['reward_type'],
   days: 0,
 })
 
 function fillPromoForm(policy: PromotionPolicy) {
   promoForm.enabled = policy.enabled
   promoForm.reward_type = policy.reward_type
-  promoForm.amount = policy.amount
   promoForm.days = policy.days
 }
 
@@ -493,7 +355,7 @@ const promoPolicy = computed(() => promo.value?.policy ?? null)
 /** 类型标签以服务端给的为准，缺了再兜底 */
 function promoTypeLabel(type: string): string {
   return promoPolicy.value?.reward_type_labels?.[type]
-    ?? (type === 'days' ? '有效期（天）' : '余额（积分）')
+    ?? '有效期（天）'
 }
 
 /** 当前（已保存的）策略为什么不发：关着 / 当前档位数值为 0 */
@@ -501,9 +363,7 @@ const promoInactiveReason = computed(() => {
   const p = promoPolicy.value
   if (!p || p.active) return ''
   if (!p.enabled) return '推广奖励开关已关闭。'
-  return p.reward_type === 'days'
-    ? '奖励类型为「有效期」，但天数为 0。'
-    : '奖励类型为「余额」，但积分数值为 0。'
+  return '奖励类型为「有效期」，但天数为 0。'
 })
 
 /** 表单里的值是否和已保存的不同（没改就不让点保存） */
@@ -512,18 +372,15 @@ const promoDirty = computed(() => {
   if (!p) return false
   return p.enabled !== promoForm.enabled
     || p.reward_type !== promoForm.reward_type
-    || p.amount !== promoForm.amount
     || p.days !== promoForm.days
 })
 
 /** 按表单值预判保存后的效果，写进二次确认文案 */
 function promoEffectText(): string {
   if (!promoForm.enabled) return '保存后推广奖励关闭：邀请成功不再给邀请人发推广奖励（渠道码专属奖励也不发）。'
-  const value = promoForm.reward_type === 'days' ? promoForm.days : promoForm.amount
-  if (value <= 0) return '保存后当前档位数值为 0：邀请成功不会给邀请人发放任何推广奖励。'
-  return promoForm.reward_type === 'days'
-    ? `保存后每成功邀请 1 人，邀请人加 ${value} 天会员有效期（归属当前服）。`
-    : `保存后每成功邀请 1 人，邀请人加 ${value} 积分余额。`
+  const value = promoForm.days
+  if (value <= 0) return '保存后天数为 0：邀请成功不会给邀请人发放任何推广奖励。'
+  return `保存后每成功邀请 1 人，邀请人加 ${value} 天会员有效期（归属当前服）。`
 }
 
 async function savePromotionPolicy() {
@@ -542,7 +399,6 @@ async function savePromotionPolicy() {
     const res = await updatePromotionPolicy({
       promotion_reward_enabled: promoForm.enabled,
       promotion_reward_type: promoForm.reward_type,
-      promotion_reward_amount: promoForm.amount,
       promotion_reward_days: promoForm.days,
     })
     if (promo.value) promo.value = { ...promo.value, policy: res.policy }
@@ -567,11 +423,6 @@ const promoColumns: DataColumn[] = [
   { key: 'created_at', label: '时间' },
 ]
 
-const TYPE_LABELS: Record<string, string> = {
-  checkin: '签到', invite: '邀请奖励', invitee: '受邀奖励', rebate: '充值返利',
-  exchange: '兑换码', recharge: '充值', admin_grant: '管理发放', admin_deduct: '管理扣除',
-}
-
 /** 邀请码状态 → 徽章配色 */
 function codeBadge(state: string): string {
   if (state === 'active') return 'au-badge-green'
@@ -593,28 +444,23 @@ onMounted(reloadAll)
   <div class="admin-page invite-page">
     <PageHeader
       eyebrow="经营"
-      title="邀请与积分"
-      description="邀请码的生成与台账、积分流水都在这；返利规则等参数统一在「系统设置 → 邀请返利」里改。"
+      title="邀请管理"
+      description="邀请码的生成与台账、邀请记录、推广奖励（会员天数）都在这。"
     >
       <template #actions>
         <el-button :icon="RefreshCw" :loading="loading" @click="reloadAll">刷新</el-button>
-        <el-button :icon="Plus" @click="openAdjust">调整积分</el-button>
       </template>
     </PageHeader>
 
-    <section class="stat-row" aria-label="邀请与积分概况">
-      <StatTile label="全站积分存量" :value="stats?.total_points?.toLocaleString() ?? '—'" :icon="Coins" tone="accent" />
+    <section class="stat-row" aria-label="邀请概况">
       <StatTile label="累计邀请关系" :value="stats?.invitations ?? '—'" :icon="UserPlus" />
       <StatTile label="本页邀请记录" :value="inviteTotal" :icon="Gift" hint="最新 100 条" />
-      <StatTile label="本页返利合计" :value="rebateTotal" :icon="HandCoins" hint="当前积分流水页内" />
     </section>
 
     <!-- 页内锚点导航：5 个区块太长，点一下直达 -->
     <nav class="invite-anchors" aria-label="本页导航">
       <a href="#invite-codes">邀请码</a>
       <a href="#invite-records">邀请记录</a>
-      <a href="#invite-logs">积分流水</a>
-      <a href="#invite-audit">流水审计</a>
       <a href="#invite-promo">推广奖励</a>
     </nav>
 
@@ -674,10 +520,6 @@ onMounted(reloadAll)
           <span class="user-name">{{ row.owner_username }}</span>
         </template>
         <template #cell-use_count="{ row }"><span class="num">{{ usesText(row) }}</span></template>
-        <template #cell-reward_points="{ row }">
-          <span v-if="!row.reward_points" class="faint">跟随全局</span>
-          <span v-else class="amt-in">+{{ row.reward_points }}</span>
-        </template>
         <template #cell-state_label="{ row }">
           <span class="au-badge" :class="codeBadge(row.state)">{{ row.state_label }}</span>
         </template>
@@ -698,8 +540,7 @@ onMounted(reloadAll)
       </DataTable>
     </SectionCard>
 
-    <div class="ledger-grid">
-      <!-- 邀请记录 -->
+    <!-- 邀请记录 -->
       <SectionCard id="invite-records" title="邀请记录" :icon="UserPlus" :meta="`最新 ${invitations.length} 条`" flush>
         <EmptyState v-if="invError && !invitations.length" :icon="AlertTriangle" title="邀请记录加载失败" compact>
           <template #actions><el-button size="small" :loading="loading" @click="loadOverview">重试</el-button></template>
@@ -709,9 +550,6 @@ onMounted(reloadAll)
             <span class="user-name">{{ row.inviter }}</span>
           </template>
           <template #cell-invitee="{ row }">{{ row.invitee }}</template>
-          <template #cell-reward_points="{ row }">
-            <span class="amt-in">+{{ row.reward_points }}</span>
-          </template>
           <template #cell-created_at="{ row }"><span class="num">{{ fmtTime(row.created_at) }}</span></template>
           <template #empty>
             <EmptyState compact :icon="UserPlus" title="暂无邀请记录" description="用户通过邀请码注册后会记在这里。" />
@@ -719,97 +557,11 @@ onMounted(reloadAll)
         </DataTable>
       </SectionCard>
 
-      <!-- 积分流水：类型筛选放在卡片标题行右侧，分页在底栏 -->
-      <SectionCard id="invite-logs" title="积分流水" :icon="History" :meta="`共 ${logTotal} 条`" flush>
-        <template #actions>
-          <el-select
-            v-model="logTypeFilter"
-            class="f-select"
-            placeholder="全部类型"
-            clearable
-            size="small"
-            @change="logPage = 1; loadLogs()"
-          >
-            <el-option v-for="(label, key) in TYPE_LABELS" :key="key" :label="label" :value="key" />
-          </el-select>
-        </template>
-
-        <EmptyState v-if="logsError && !logs.length" :icon="AlertTriangle" title="积分流水加载失败" compact>
-          <template #actions><el-button size="small" :loading="logsLoading" @click="loadLogs">重试</el-button></template>
-        </EmptyState>
-        <DataTable v-else class="flush-table" :rows="logs" :columns="logColumns" :loading="logsLoading" empty="暂无积分流水"
-          empty-description="邀请返利、签到、消费等积分变动都会记在这里。"
-          :pagination="{ total: logTotal, page: logPage, pageSize: 30 }"
-          @page-change="(p: number) => { logPage = p; loadLogs() }">
-          <template #cell-username="{ row }">
-            <span class="user-name">{{ row.username }}</span>
-          </template>
-          <template #cell-amount="{ row }">
-            <span :class="row.amount > 0 ? 'amt-in' : 'amt-out'">
-              {{ row.amount > 0 ? '+' : '' }}{{ row.amount }}
-            </span>
-          </template>
-          <template #cell-type="{ row }">{{ TYPE_LABELS[row.type] || row.type }}</template>
-          <template #cell-description="{ row }">
-            <span v-if="!row.description" class="faint">—</span>
-            <span v-else>{{ row.description }}</span>
-          </template>
-          <template #cell-balance_after="{ row }"><span class="num">{{ row.balance_after }}</span></template>
-          <template #cell-audited="{ row }">
-            <span v-if="row.audited" class="au-badge au-badge-green" title="该笔流水已写入 hash 链">已审计</span>
-            <span v-else class="au-badge au-badge-muted" title="审计开启前的历史流水，无 hash">历史</span>
-          </template>
-          <template #cell-created_at="{ row }"><span class="num">{{ fmtTime(row.created_at) }}</span></template>
-          <template #empty>
-            <EmptyState compact :icon="History" :title="logTypeFilter ? '这个类型下还没有流水' : '暂无积分流水'" />
-          </template>
-        </DataTable>
-      </SectionCard>
-    </div>
-
-    <!-- C3 流水审计：hash 链防篡改 -->
-    <SectionCard
-      id="invite-audit"
-      title="流水审计"
-      :icon="ShieldCheck"
-      description="每笔积分流水写入时链接上一条的 hash，形成防篡改链。关闭后新流水不再写 hash（历史记录不受影响）；核验会逐条重算，发现篡改或断链即报警。"
-    >
-      <div class="audit-verify">
-        <el-select
-          v-model="verifyUserId"
-          class="f-select"
-          placeholder="输入用户名搜索要核验的用户"
-          filterable
-          remote
-          :remote-method="searchUsers"
-          :loading="userSearching"
-          clearable
-        >
-          <el-option v-for="u in userOptions" :key="u.id" :label="u.username" :value="u.id" />
-        </el-select>
-        <el-button type="primary" :icon="ShieldCheck" :loading="verifyLoading" @click="handleVerify">
-          核验链条
-        </el-button>
-      </div>
-      <div v-if="verifyResult" class="audit-result">
-        <span v-if="verifyResult.ok" class="au-badge au-badge-green">链条完整</span>
-        <span v-else class="au-badge au-badge-rose">发现异常</span>
-        <span class="audit-meta">
-          {{ verifyResult.username }}：共 {{ verifyResult.total }} 条 ·
-          已校验 {{ verifyResult.verified }} 条 ·
-          历史（无 hash）{{ verifyResult.legacy_skipped }} 条
-        </span>
-        <span v-if="!verifyResult.ok" class="audit-broken">
-          断裂于记录 #{{ verifyResult.broken_at }}：{{ verifyResult.broken_reason }}
-        </span>
-      </div>
-    </SectionCard>
-
     <!-- 推广奖励：当前策略（可编辑，PUT /promotion/policy）+ 发放记录台账 -->
     <SectionCard
       id="invite-promo"
       :icon="Megaphone"
-      description="邀请成功后给邀请人的那一笔，类型与数值全走配置。出厂开关为开、积分与天数都是 0，所以不改数值就不会发。这里与「系统设置 → 邀请返利」改的是同一份配置。"
+      description="邀请成功后给邀请人的那一笔（会员天数），全走配置。出厂开关为开、天数为 0，所以不改数值就不会发。"
       flush
     >
       <template #title>
@@ -836,8 +588,7 @@ onMounted(reloadAll)
             title="当前邀请成功不会发放任何奖励"
           >
             <template #default>
-              {{ promoInactiveReason }}这里指给邀请人的推广奖励；被邀请人奖励在「系统设置 → 邀请返利」里单独配置，
-              渠道码上设置的专属奖励在开关开着时仍按码发放。需要发奖请在下方填写数值并保存。
+              {{ promoInactiveReason }}需要发奖请在下方填写天数并保存。
             </template>
           </el-alert>
           <div v-else class="promo-active-line">
@@ -845,7 +596,7 @@ onMounted(reloadAll)
             <span>
               每成功邀请 1 人，邀请人得
               <strong class="num">
-                {{ promoPolicy.reward_type === 'days' ? `${promoPolicy.days} 天会员有效期` : `${promoPolicy.amount} 积分` }}
+                {{ `${promoPolicy.days} 天会员有效期` }}
               </strong>
             </span>
           </div>
@@ -864,17 +615,6 @@ onMounted(reloadAll)
                   {{ promoTypeLabel(type) }}
                 </el-radio-button>
               </el-radio-group>
-            </el-form-item>
-            <el-form-item label="余额数值（类型为「余额」时生效，0 = 不发）">
-              <el-input-number
-                v-model="promoForm.amount"
-                :min="0"
-                :max="1000000"
-                :step="10"
-                :precision="0"
-                aria-label="推广奖励余额数值（积分）"
-              />
-              <span class="field-suffix">积分</span>
             </el-form-item>
             <el-form-item label="有效期天数（类型为「有效期」时生效，0 = 不发）">
               <el-input-number
@@ -934,46 +674,6 @@ onMounted(reloadAll)
       </template>
     </SectionCard>
 
-    <!-- 调整积分对话框 -->
-    <el-dialog v-model="adjustVisible" title="手动调整用户积分" width="min(440px, 92vw)">
-      <el-form ref="adjustFormRef" :model="adjustForm" :rules="adjustRules" label-position="top">
-        <el-form-item label="用户" prop="user_id">
-          <el-select
-            v-model="adjustForm.user_id"
-            filterable
-            remote
-            reserve-keyword
-            :remote-method="searchUsers"
-            :loading="userSearching"
-            placeholder="搜索用户名"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="u in userOptions"
-              :key="u.id"
-              :label="u.username"
-              :value="u.id"
-            />
-          </el-select>
-          <div class="form-hint">支持按用户名模糊搜索，无需再手填数据库 ID</div>
-        </el-form-item>
-        <el-form-item label="调整数量" prop="amount">
-          <el-input-number v-model="adjustForm.amount" :step="10" style="width: 100%" />
-          <div class="form-hint">正数发放 / 负数扣除（记账留审计）</div>
-        </el-form-item>
-        <el-form-item label="原因" prop="reason">
-          <el-input v-model="adjustForm.reason" maxlength="100" placeholder="活动补偿等（选填）" />
-        </el-form-item>
-        <div v-if="selectedUser" class="adjust-preview">
-          将对「{{ selectedUser }}」发放 / 扣减 {{ adjustForm.amount }} 积分
-        </div>
-      </el-form>
-      <template #footer>
-        <el-button @click="adjustVisible = false">取消</el-button>
-        <el-button type="primary" :loading="adjustLoading" @click="handleAdjust">确认调整</el-button>
-      </template>
-    </el-dialog>
-
     <!-- 批量生成邀请码 -->
     <el-dialog v-model="genVisible" title="批量生成邀请码" width="min(460px, 92vw)">
       <el-form ref="genFormRef" :model="genForm" :rules="genRules" label-position="top">
@@ -999,10 +699,6 @@ onMounted(reloadAll)
           <el-input-number v-model="genForm.max_uses" :min="0" :max="100000" style="width: 100%" />
           <div class="form-hint">0 = 不限次数</div>
         </el-form-item>
-        <el-form-item label="每码奖励（积分）" prop="reward_points">
-          <el-input-number v-model="genForm.reward_points" :min="0" :max="1000000" style="width: 100%" />
-          <div class="form-hint">0 = 跟随全局「邀请人奖励」配置；填了就是这批码的专属奖励</div>
-        </el-form-item>
         <el-form-item label="有效天数" prop="expires_days">
           <el-input-number v-model="genForm.expires_days" :min="0" :max="3650" style="width: 100%" />
           <div class="form-hint">0 = 永不过期；从生成那一刻开始算</div>
@@ -1026,10 +722,6 @@ onMounted(reloadAll)
         <el-form-item label="每码可用次数" prop="max_uses">
           <el-input-number v-model="editForm.max_uses" :min="0" :max="100000" style="width: 100%" />
           <div class="form-hint">0 = 不限次数</div>
-        </el-form-item>
-        <el-form-item label="奖励（积分）" prop="reward_points">
-          <el-input-number v-model="editForm.reward_points" :min="0" :max="1000000" style="width: 100%" />
-          <div class="form-hint">0 = 跟随全局「邀请人奖励」配置；填了就是这张码的专属奖励</div>
         </el-form-item>
         <el-form-item label="有效天数（从现在起）" prop="expires_days">
           <el-input-number v-model="editForm.expires_days" :min="0" :max="3650" style="width: 100%" />
@@ -1111,14 +803,6 @@ onMounted(reloadAll)
 .flush-table :deep(.dt-cards) { padding: 12px 12px 8px; }
 .card-pager { display: flex; justify-content: flex-end; flex-wrap: wrap; row-gap: 8px; }
 
-/* 邀请记录 + 积分流水并排；窄屏叠起来 */
-.ledger-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
-  gap: 16px;
-  align-items: start;
-}
-
 /* ---------- 单元格 ---------- */
 .user-name { font-weight: 600; color: var(--au-text); }
 .num { font-variant-numeric: tabular-nums; }
@@ -1157,18 +841,6 @@ onMounted(reloadAll)
   border: 1px solid var(--au-primary-border);
   color: var(--au-primary);
   font-size: 12px;
-}
-
-/* ---------- C3 流水审计 ---------- */
-.audit-row { display: flex; align-items: center; gap: 12px; padding: 4px 0 12px; }
-.audit-verify { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding-bottom: 4px; }
-.audit-verify .f-select { width: 260px; }
-.audit-result { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 10px; font-size: 13px; }
-.audit-meta { color: var(--au-text-2); }
-.audit-broken { color: var(--au-danger); }
-
-@media (max-width: 1000px) {
-  .ledger-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 768px) {

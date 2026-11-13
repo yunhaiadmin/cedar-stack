@@ -5,12 +5,13 @@
 约 46 分钟，会话全被回收器收尾，活力 0 发放——奖励原本只在
 compat_routes._record_stopped 结算，回收路径只标 ended_at 不结算。
 
-钉死三条：
-1. 无 Stopped、会话被回收仍按档发奖（30 分钟 +1 / 60 分钟 +2，
+2026-11-13 货币删除收口：活力与观影能量两腿已下线，结算现只发
+观影 XP（member_level.award_watch_xp）。钉死三条（XP 口径）：
+1. 无 Stopped、会话被回收仍按档发 XP（30 分钟 +1 / 60 分钟 +2，
    watched 基线与 Stopped 同口径：max(umd 最远点, 会话最后位置)）；
 2. 先结算的一方落 rewards_settled_at 标记，后到的迟到 Stopped /
-   重复 Stopped 不再重复发；
-3. 回收路径同样受每日上限 2 兜底（两场 60 分钟只发 2 点，不是 4 点）。
+   重复 Stopped 不再重复发；同条目同日只计 1 次，复活重播也不双发；
+3. 可刷日封顶 10（观影＋签到合计），两场 65 分钟共发 4 XP，不截断。
 """
 import os
 import sys
@@ -28,18 +29,6 @@ from sqlalchemy.orm import sessionmaker
 from backend import models
 from backend.emby_server import compat_routes, maintenance
 from backend.emby_server import models as em
-from backend.integrations import store as _store
-
-_KEYS = [
-    "vitality_enabled", "vitality_daily_cost", "vitality_max",
-    "vitality_daily_gain_limit",
-    "vitality_watch_tier1_minutes", "vitality_watch_tier1_reward",
-    "vitality_watch_tier2_minutes", "vitality_watch_tier2_reward",
-    "watch_points_first", "watch_points_first_minutes",
-    "watch_points_tier1", "watch_points_tier1_minutes",
-    "watch_points_tier2", "watch_points_tier2_minutes",
-    "watch_points_daily_cap",
-]
 
 MIN = 600_000_000  # 1 分钟的 ticks
 
@@ -49,15 +38,13 @@ def db():
     engine = create_engine("sqlite://")
     models.Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine)()
-    _store.invalidate(*_KEYS)
     yield s
     s.close()
-    _store.invalidate(*_KEYS)
 
 
 def _user(db, name, welfare=True):
     u = models.WebUser(username=name, password_hash="x",
-                       is_welfare=welfare, vitality=0)
+                       is_welfare=welfare)
     db.add(u)
     db.commit()
     db.refresh(u)
@@ -93,15 +80,15 @@ def _stale_session(db, user_id, item_id, pos_minutes, key, idle_minutes=30):
     return s
 
 
-def _vitality(db, user_id):
-    return int(db.query(models.WebUser.vitality).filter(
+def _xp(db, user_id):
+    return int(db.query(models.WebUser.member_xp).filter(
         models.WebUser.id == user_id).scalar() or 0)
 
 
-def _watch_reward_rows(db, user_id):
-    return (db.query(models.VitalityLog)
-            .filter(models.VitalityLog.user_id == user_id,
-                    models.VitalityLog.reason == "watch_reward")
+def _watch_xp_rows(db, user_id):
+    return (db.query(models.MemberXpLog)
+            .filter(models.MemberXpLog.user_id == user_id,
+                    models.MemberXpLog.source == "watch")
             .count())
 
 
@@ -123,7 +110,7 @@ def _stopped(db, user, item, key, pos_minutes):
         compat_routes._require_visible_item = orig
 
 
-# ---------- 1. 回收按档发奖 ----------
+# ---------- 1. 回收按档发 XP ----------
 
 def test_reap_settles_tier1_without_stopped(db):
     u = _user(db, "reap-t1")
@@ -133,8 +120,8 @@ def test_reap_settles_tier1_without_stopped(db):
     db.refresh(s)
     assert s.ended_at is not None
     assert s.rewards_settled_at is not None
-    assert _vitality(db, u.id) == 1
-    assert _watch_reward_rows(db, u.id) == 1
+    assert _xp(db, u.id) == 1
+    assert _watch_xp_rows(db, u.id) == 1
 
 
 def test_reap_settles_tier2_without_stopped(db):
@@ -142,7 +129,7 @@ def test_reap_settles_tier2_without_stopped(db):
     it = _item(db)
     _stale_session(db, u.id, it.id, 65, "reap-t2-key")
     assert maintenance.reap_stale_playback_sessions(db, stale_minutes=10) == 1
-    assert _vitality(db, u.id) == 2
+    assert _xp(db, u.id) == 2
 
 
 def test_reap_watched_basis_uses_umd_max(db):
@@ -156,7 +143,7 @@ def test_reap_watched_basis_uses_umd_max(db):
                             max_position_ticks=int(46 * MIN)))
     db.commit()
     assert maintenance.reap_stale_playback_sessions(db, stale_minutes=10) == 1
-    assert _vitality(db, u.id) == 1
+    assert _xp(db, u.id) == 1
 
 
 def test_reap_below_tier_no_award_but_session_closed(db):
@@ -169,22 +156,22 @@ def test_reap_below_tier_no_award_but_session_closed(db):
     db.refresh(s)
     assert s.ended_at is not None
     assert s.rewards_settled_at is not None
-    assert _vitality(db, u.id) == 0
-    assert _watch_reward_rows(db, u.id) == 0
+    assert _xp(db, u.id) == 0
+    assert _watch_xp_rows(db, u.id) == 0
 
 
 # ---------- 2. 幂等：先结算者胜，后到者跳过 ----------
 
 def test_late_stopped_after_reap_no_double(db):
-    """回收先结算（+1），迟到的 Stopped 再来也不能重复发。"""
+    """回收先结算（+1 XP），迟到的 Stopped 再来也不能重复发。"""
     u = _user(db, "late-stop")
     it = _item(db)
     _stale_session(db, u.id, it.id, 46, "late-stop-key")
     assert maintenance.reap_stale_playback_sessions(db, stale_minutes=10) == 1
-    assert _vitality(db, u.id) == 1
+    assert _xp(db, u.id) == 1
     _stopped(db, u, it, "late-stop-key", 46)
-    assert _vitality(db, u.id) == 1
-    assert _watch_reward_rows(db, u.id) == 1
+    assert _xp(db, u.id) == 1
+    assert _watch_xp_rows(db, u.id) == 1
 
 
 def test_duplicate_stopped_no_double(db):
@@ -192,20 +179,20 @@ def test_duplicate_stopped_no_double(db):
     u = _user(db, "dup-stop")
     it = _item(db)
     _stopped(db, u, it, "dup-stop-key", 46)
-    assert _vitality(db, u.id) == 1
+    assert _xp(db, u.id) == 1
     _stopped(db, u, it, "dup-stop-key", 46)
-    assert _vitality(db, u.id) == 1
-    assert _watch_reward_rows(db, u.id) == 1
+    assert _xp(db, u.id) == 1
+    assert _watch_xp_rows(db, u.id) == 1
 
 
-def test_revival_allows_next_round_settle(db):
-    """同一会话键复活（新一轮播放）后，结束时仍可结算：
-    幂等只针对同一轮的重复上报，不能误挡新一轮。
-    第一轮 Stopped +1；复活再看 46 分钟 Stopped 再 +1（未撞日上限）。"""
+def test_revival_same_item_no_double_xp(db):
+    """同一会话键复活（新一轮播放）后，结算标记可重新落、会话可再收尾，
+    但 XP 按条目每日只计 1 次：同条目同日复活重播不双发（活力时代
+    的「再 +1」口径已随货币下线）。"""
     u = _user(db, "revive")
     it = _item(db)
     _stopped(db, u, it, "revive-key", 46)
-    assert _vitality(db, u.id) == 1
+    assert _xp(db, u.id) == 1
     # 复活：Progress 上报（ended=False）命中已结束行 → 清 ended 与结算标记
     body = {"ItemId": it.guid, "PlaySessionId": "revive-key",
             "PositionTicks": int(46 * MIN), "IsPaused": False,
@@ -217,18 +204,19 @@ def test_revival_allows_next_round_settle(db):
         compat_routes._record_stopped(_req(), u, db, body)
     finally:
         compat_routes._require_visible_item = orig
-    assert _vitality(db, u.id) == 2
-    assert _watch_reward_rows(db, u.id) == 2
+    assert _xp(db, u.id) == 1
+    assert _watch_xp_rows(db, u.id) == 1
 
 
-# ---------- 3. 每日上限 2 兜底（回收路径） ----------
+# ---------- 3. 两场同日各结各的（日封顶 10，不截断） ----------
 
-def test_reap_daily_cap_two_sessions(db):
-    """两场 65 分钟的回收会话同日结算，只发上限 2 点，不是 4 点。"""
+def test_reap_two_sessions_both_settle(db):
+    """两场 65 分钟的回收会话同日结算，各发 2 XP、共 4 XP（日封顶 10 未撞线）。"""
     u = _user(db, "reap-cap")
     it1 = _item(db)
     it2 = _item(db)
     _stale_session(db, u.id, it1.id, 65, "reap-cap-1")
     _stale_session(db, u.id, it2.id, 65, "reap-cap-2")
     assert maintenance.reap_stale_playback_sessions(db, stale_minutes=10) == 2
-    assert _vitality(db, u.id) == 2
+    assert _xp(db, u.id) == 4
+    assert _watch_xp_rows(db, u.id) == 2

@@ -102,7 +102,7 @@ def _lottery_payload(**over):
     p = {
         "title": "接线测试活动",
         "chat_id": 999,
-        "prizes": [{"name": "积分奖", "type": "points", "value": 100, "quantity": 1}],
+        "prizes": [{"name": "天数奖", "type": "days", "value": 30, "quantity": 1}],
         "draw_at": None,
         "max_participants": None,
         "lottery_type": "button",

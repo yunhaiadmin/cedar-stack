@@ -462,18 +462,6 @@ def main() -> int:
         except Exception as e:
             logger.warning(f"启动缺集补集 worker 失败（可忽略）: {e}")
 
-        # 中继兜底计时结账（2026-11-11）：客户端不上报播放进度时，
-        # EA 中继流活动（watch_activity 记的租约行）重建观看段，
-        # 走同一套入账函数补记 watch_points_daily 与活力。总开关
-        # watch_fallback_credit_enabled 默认开，工人轮内现读配置，
-        # 关时整轮空转；只结已静默收尾的段，不碰播放主链路。
-        try:
-            from backend.emby_server import watch_fallback
-            if watch_fallback.start():
-                started.append("watch_fallback")
-                logger.info("✅ 中继兜底计时 worker 已启动")
-        except Exception as e:
-            logger.warning(f"启动中继兜底计时 worker 失败（可忽略）: {e}")
 
         # 求片到货盯梢（求片减负）：周期把处理中的求片跟片库对表，
         # 对上自动置已入库并入队到货通知，管理员不用再逐条点
@@ -536,14 +524,6 @@ def main() -> int:
         except Exception as e:
             logger.warning(f"启动系统告警调度失败（可忽略）: {e}")
 
-        # C1 活力值：每日 00:00 扣减公益服用户活力值（daemon 线程，失败可忽略）
-        try:
-            from backend import vitality
-            if vitality.start_vitality_scheduler():
-                started.append("vitality")
-                logger.info("✅ 活力值调度已启动")
-        except Exception as e:
-            logger.warning(f"启动活力值调度失败（可忽略）: {e}")
 
         # 公益到期检查：每天一次，处理过期保留和不活跃用户（daemon 线程，失败可忽略）
         # （此前只在 main.py 以 `if not _is_api_role` 启动，生产 api 进程 AETRIX_ROLE=api
@@ -557,15 +537,6 @@ def main() -> int:
         except Exception as e:
             logger.warning(f"启动公益到期检查调度失败（可忽略）: {e}")
 
-        # 全员赠送能量：批次发放轮询（daemon 线程，失败可忽略）；没有待处理
-        # 批次时只是每 15 秒查一次空表，不产生任何发放。
-        try:
-            from backend import gift_all
-            if gift_all.start_gift_all_worker():
-                started.append("gift_all")
-                logger.info("✅ 全员赠送发放轮询已启动")
-        except Exception as e:
-            logger.warning(f"启动全员赠送发放轮询失败（可忽略）: {e}")
 
         # 群抽奖自动开奖（daemon 线程，失败可忽略）
         try:

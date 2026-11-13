@@ -60,7 +60,6 @@ export interface PetData {
 
 export interface CollectorData {
   nickname?: string
-  points?: number
   watch_hours?: number
   streak?: number
   achievement_count?: number

@@ -80,7 +80,7 @@ def _make_round_with_two_winners(db, monkeypatch):
     rnd = lottery.create_round(
         db, title="私聊分流测试", chat_id=-100333,
         prizes=[
-            {"name": "能量奖励", "type": "points", "value": 500, "quantity": 1},
+            {"name": "公益7天", "type": "days", "value": 7, "quantity": 1},
             {"name": "公益月卡", "type": "days", "value": 30, "quantity": 1},
         ],
         draw_at=None,
@@ -107,7 +107,7 @@ def _make_round_with_two_winners(db, monkeypatch):
     winners = [
         models.LotteryRoundWinner(
             round_id=rnd.id, entry_id=entries[user_a.id].id,
-            prize_id=prizes["能量奖励"].id, distributed=True),
+            prize_id=prizes["公益7天"].id, distributed=True),
         models.LotteryRoundWinner(
             round_id=rnd.id, entry_id=entries[user_b.id].id,
             prize_id=prizes["公益月卡"].id, distributed=False),
@@ -139,7 +139,7 @@ def test_lottery_disabled_account_rejected(db):
     _set_config(db, "lottery_min_account_age_days", 0)
     rnd = lottery.create_round(
         db, title="停用门测试", chat_id=-100444,
-        prizes=[{"name": "积分奖", "type": "points", "value": 100, "quantity": 1}],
+        prizes=[{"name": "公益奖", "type": "days", "value": 7, "quantity": 1}],
     )
     user = _make_user(db, "disabled_lot", is_active=False)
     res = lottery.check_eligibility(db, rnd, user)
@@ -153,6 +153,6 @@ def test_active_accounts_unaffected(db):
     user = _make_user(db, "active19")
     rnd = lottery.create_round(
         db, title="正常账号测试", chat_id=-100555,
-        prizes=[{"name": "积分奖", "type": "points", "value": 100, "quantity": 1}],
+        prizes=[{"name": "公益奖", "type": "days", "value": 7, "quantity": 1}],
     )
     assert lottery.check_eligibility(db, rnd, user)["ok"] is True

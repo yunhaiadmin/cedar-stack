@@ -23,7 +23,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
-  CalendarCheck, Coins, Globe, KeyRound, Layers, Mail, MapPin, Network, Palette, RefreshCw, Save,
+  Coins, Globe, KeyRound, Layers, Mail, MapPin, Network, Palette, RefreshCw, Save,
   ShieldCheck, Send, Sparkles, TicketCheck, UserPlus, Wallet, Lock, Zap,
   History, TriangleAlert, SlidersHorizontal, PlugZap, Rocket, HardDrive, Gauge,
   Download,
@@ -113,63 +113,6 @@ interface Group {
 
 const GROUPS: Group[] = [
   {
-    id: 'checkin',
-    title: '每日签到',
-    desc: '签到基础积分与连签加成规则（积分仅限公益服用户）',
-    icon: CalendarCheck,
-    fields: [
-      { key: 'checkin_enabled', label: '启用签到', type: 'bool', hint: '关闭后用户端签到入口隐藏，已发放的积分不受影响' },
-      { key: 'checkin_base_min', label: '基础积分下限', type: 'int', suffix: '积分/次', hint: '随机范围下限，与上限相同=固定值；都不填=固定 5 分', advanced: true },
-      { key: 'checkin_base_max', label: '基础积分上限', type: 'int', suffix: '积分/次', hint: '随机范围上限，与下限相同=固定值', advanced: true },
-      { key: 'checkin_streak_bonus', label: '连签加成', type: 'int', suffix: '积分/天', hint: '每多连签一天额外增加的积分', advanced: true },
-      { key: 'checkin_streak_max_bonus', label: '加成上限', type: 'int', suffix: '积分', hint: '连签加成的封顶值', advanced: true },
-      { key: 'checkin_penalty_pct', label: '惩罚概率', type: 'int', suffix: '%', hint: '0=关闭惩罚', advanced: true },
-      { key: 'checkin_penalty_min', label: '惩罚下限', type: 'int', suffix: '积分', hint: '单次惩罚最少扣多少积分。推荐值：1', advanced: true },
-      { key: 'checkin_penalty_max', label: '惩罚上限', type: 'int', suffix: '积分', hint: '单次惩罚最多扣多少积分。推荐值：3', advanced: true },
-      { key: 'vitality_checkin_gain', label: '签到活力奖励', type: 'int', suffix: '点/次', hint: '现口径：签到不送活力（默认 0），活力只靠观影与积分兑换；管理员如需恢复签到送活力可填正数，恢复后发放不再占用每日免费获取上限（上限只管观影），仍受活力上限钳制', advanced: true },
-      { key: 'checkin_milestone_points', label: '连签里程碑奖励', type: 'int', suffix: '积分/次', hint: '连签达到里程碑天数时额外发放，默认 15，填 0 则关闭里程碑', advanced: true },
-      { key: 'checkin_milestone_days', label: '里程碑天数', type: 'str', hint: '逗号分隔的连签天数，如 7,14,21,28；每个天数在一轮连签内只发一次，连签中断后重新累计；留空=默认 7,14,21,28', advanced: true },
-      { key: 'checkin_full_attendance_points', label: '全勤奖', type: 'int', suffix: '积分/月', hint: '自然月签到达标时发放，默认 30，填 0 则关闭全勤奖', advanced: true },
-      { key: 'checkin_full_attendance_min_days', label: '全勤达标天数', type: 'int', suffix: '天/月', hint: '自然月内签到天数达到该值发全勤奖（按月只发一次），默认 28', advanced: true },
-      { key: 'checkin_crit_pct', label: '签到暴击概率', type: 'int', suffix: '%', hint: '每次签到触发暴击的概率，默认 5，填 0 则关闭暴击', advanced: true },
-      { key: 'checkin_crit_cap', label: '暴击封顶', type: 'int', suffix: '积分', hint: '暴击（当日签到所得 ×3）后的封顶值，默认 24', advanced: true },
-    ],
-  },
-  {
-    id: 'vitality',
-    title: '活力值',
-    desc: '公益服活力值：每日 00:00 自动扣减，低于阈值限制观影，观影/积分可恢复',
-    icon: Zap,
-    fields: [
-      { key: 'vitality_max', label: '活力上限', type: 'int', suffix: '点', hint: '活力值上限，默认 14' },
-      { key: 'vitality_daily_cost', label: '每日扣减', type: 'int', suffix: '点/天', hint: '每天 00:00 自动扣除' },
-      { key: 'vitality_limit_threshold', label: '观影阈值', type: 'int', suffix: '点', hint: '低于此值限制观影' },
-      { key: 'vitality_point_cost', label: '续活兑换率', type: 'int', suffix: '积分/点', hint: '1 点活力需要的积分数' },
-      { key: 'vitality_watch_reward', label: '观影奖励', type: 'int', suffix: '点', hint: '每次有效观影奖励的活力值' },
-      { key: 'vitality_daily_gain_limit', label: '每日获取上限', type: 'int', suffix: '点/天', hint: '每日通过签到/观影免费获取的上限（0=不限）', advanced: true },
-      { key: 'vitality_archive_clamp', label: '归档钳制', type: 'int', suffix: '点', hint: '归档/退群时活力值钳制上限', advanced: true },
-      { key: 'vitality_watch_tier1_minutes', label: '观影一档分钟数', type: 'int', suffix: '分钟', hint: '单次观影达到该分钟数奖励一档活力，默认 30' },
-      { key: 'vitality_watch_tier1_reward', label: '观影一档奖励', type: 'int', suffix: '点', hint: '一档奖励的活力点数，默认 1' },
-      { key: 'vitality_watch_tier2_minutes', label: '观影二档分钟数', type: 'int', suffix: '分钟', hint: '应不小于一档分钟数，默认 60' },
-      { key: 'vitality_watch_tier2_reward', label: '观影二档奖励', type: 'int', suffix: '点', hint: '二档奖励的活力点数，不与一档叠加，默认 2' },
-    ],
-  },
-  {
-    id: 'watch-points',
-    title: '观影能量',
-    desc: '公益服观影能量：按当日累计观影分钟分档发能量（积分），与活力观影奖并行；每档每日只发一次',
-    icon: Coins,
-    fields: [
-      { key: 'watch_points_first_minutes', label: '首看分钟数', type: 'int', suffix: '分钟', hint: '当日累计观影达到该分钟数发首看奖，默认 20' },
-      { key: 'watch_points_first', label: '首看奖', type: 'int', suffix: '能量', hint: '首看奖能量，默认 4；填 0 关闭该档' },
-      { key: 'watch_points_tier1_minutes', label: '一档分钟数', type: 'int', suffix: '分钟', hint: '当日累计观影达到该分钟数发一档奖，应不小于首看分钟数，默认 45' },
-      { key: 'watch_points_tier1', label: '一档奖励', type: 'int', suffix: '能量', hint: '一档奖能量，与首看奖叠加，默认 8；填 0 关闭该档' },
-      { key: 'watch_points_tier2_minutes', label: '二档分钟数', type: 'int', suffix: '分钟', hint: '当日累计观影达到该分钟数发二档奖，应不小于一档分钟数，默认 120' },
-      { key: 'watch_points_tier2', label: '二档奖励', type: 'int', suffix: '能量', hint: '二档奖能量，与前两档叠加，默认 7；填 0 关闭该档' },
-      { key: 'watch_points_daily_cap', label: '每日封顶', type: 'int', suffix: '能量/天', hint: '观影能量每日发放上限，默认 16；0=不限' },
-    ],
-  },
-  {
     id: 'exchange',
     title: '兑换码 · 求片',
     desc: '卡码默认套餐与求片额度（日限 + 公益/付费月限都在这一张卡）',
@@ -234,9 +177,7 @@ const GROUPS: Group[] = [
     desc: '易支付兼容网关；留空的密钥项表示保持不变',
     icon: Wallet,
     fields: [
-      { key: 'recharge_enabled', label: '启用充值', type: 'bool', hint: '关闭后用户端充值入口隐藏，已有余额不受影响' },
       { key: 'subscription_purchase_enabled', label: '启用订阅购买', type: 'bool', hint: '关闭后用户买不了新订阅，已有的订阅继续有效' },
-      { key: 'subscription_points_purchase_enabled', label: '启用能量购买订阅', type: 'bool', hint: '关闭后用户不能用能量买订阅（在线支付不受影响），自动续订也会停扣' },
       { key: 'payment_gateway_url', label: '网关地址', type: 'str', hint: '例如 https://pay.example.com/' },
       { key: 'payment_partner_id', label: '商户 ID', type: 'str', hint: '易支付后台「商户信息」里的商户号' },
       { key: 'payment_partner_key', label: '商户密钥', type: 'secret', hint: '已配置时显示为 ******，留空不修改' },
@@ -267,31 +208,27 @@ const GROUPS: Group[] = [
   },
   {
     id: 'invitation',
-    title: '邀请返利',
-    desc: '邀请奖励与下级消费返利比例',
+    title: '邀请奖励',
+    desc: '邀请成功后给邀请人的推广奖励（会员天数）',
     icon: UserPlus,
     fields: [
-      // 邀请人奖励已收口到下方「推广奖励」一组（2026-10-23 去重）：同一事件
-      // 此前两处各发一笔，现只由推广奖励发放，这里的同名字段已删除
-      { key: 'invitation_invitee_reward_points', label: '被邀请人奖励', type: 'int', suffix: '积分', hint: '新人用邀请链接注册时多拿的积分。推荐值：50', advanced: true },
-      { key: 'invitation_rebate_percent', label: '消费返利', type: 'int', suffix: '%', hint: '下级充值/消费时邀请人可得的比例', advanced: true },
+      // 被邀请人积分奖励与消费返利已随货币下线（2026-11-13）；邀请只剩
+      // 推广奖励（会员天数）与邀请关系本身。
       {
         key: 'promotion_reward_enabled',
         label: '推广奖励',
         type: 'bool',
-        hint: '邀请成功后在双向积分之外「另发」一笔；默认开启。金额和天数都是 0 时即使开启也不会发',
+        hint: '邀请成功后给邀请人发一笔会员天数；默认开启。天数为 0 时即使开启也不会发',
       },
       {
         key: 'promotion_reward_type',
         label: '推广奖励类型',
         type: 'str',
         choices: [
-          { value: 'balance', label: '余额（积分）' },
           { value: 'days', label: '有效期（天）' },
         ],
         hint: '选「有效期」时给邀请人叠加会员天数，归属当前服',
       },
-      { key: 'promotion_reward_amount', label: '推广奖励·余额数值', type: 'int', suffix: '积分', hint: '类型为「余额」时生效；0 = 不发', advanced: true },
       { key: 'promotion_reward_days', label: '推广奖励·有效期天数', type: 'int', suffix: '天', hint: '类型为「有效期」时生效；0 = 不发', advanced: true },
     ],
   },
@@ -323,7 +260,7 @@ const GROUPS: Group[] = [
 ]
 
 /**
- * 分组归类：运营参数越加越多（签到 / 活力值 / 邀请 / 支付 / 预热…），平铺 9 块卡片很难找。
+ * 分组归类：运营参数越加越多（邀请 / 支付 / 预热…），平铺卡片很难找。
  * 按「管什么」分成三段，目录与正文用同一份归类；注册策略固定放在第一段开头。
  */
 interface GroupSection {
@@ -332,7 +269,7 @@ interface GroupSection {
   groups: Group[]
 }
 const SECTION_DEFS: Array<{ id: string; title: string; groups: string[] }> = [
-  { id: 'growth', title: '注册与福利', groups: ['checkin', 'vitality', 'invitation', 'exchange'] },
+  { id: 'growth', title: '注册与福利', groups: ['invitation', 'exchange'] },
   { id: 'commerce', title: '付费与支付', groups: ['payment', 'paywall'] },
   { id: 'playback', title: '播放与风控', groups: ['stream_accel'] },
   { id: 'library', title: '媒体库', groups: ['series_merge'] },
@@ -2697,7 +2634,7 @@ watch(
 
           <p class="foot-note">
             <Coins :size="13" />
-            积分、套餐与兑换码的明细请前往「订阅套餐」「兑换码」「邀请与积分」页面管理。
+            套餐与兑换码的明细请前往「订阅套餐」「兑换码」「邀请管理」页面管理。
           </p>
         </div>
       </el-tab-pane>

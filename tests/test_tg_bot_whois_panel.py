@@ -5,11 +5,12 @@
 - /kk 面板第一页 = 现行精简卡（render_whois_lite 字段一字不改），
   带按钮翻页：绑定详情页（provider＋状态＋最近验证）、资格与凭证页
   （资格到期、凭证状态）；面板只经回复/带参定位到具体用户时出现。
-- 写操作只有封禁/解封与赠送三项（能量 +50/+100/+500、资格 +7/+30 天、
+- 写操作只有封禁/解封与赠送两项（资格 +7/+30 天、
   凭证 +30 天，预设档位按钮、无自由输入），不做删号。
+  （赠能量 +50/+100/+500 三档已随积分删除摘除，2026-11-13。）
 - 封禁必须走与网站管理端同一服务 backend.user_lifecycle.set_user_active
   （停用同事务吊销 Emby 令牌＋抬 token_version，PA-002 链）；赠送分别走
-  economy._add_points（admin_grant 台账）、portal.grant_welfare、
+  portal.grant_welfare、
   codes._grant_bundled_view_unlock 现行口径，并写治理审计留痕。
 - 每个写操作二次确认：点动作只出确认页（状态不变），点确认才执行；
   每次点击都校验点击者是管理员，非管理员点击直接拒绝、不带目标数据。
@@ -200,7 +201,7 @@ def test_admin_cannot_ban_self_via_panel(db, monkeypatch):
     assert staff.is_active is True  # 不能封自己（与网站管理端口径一致）
 
 
-# ---------- 赠送三项：预设档位落账 ----------
+# ---------- 赠送两项：预设档位落账 ----------
 
 def _do_data_from_ask(db, monkeypatch, target, op):
     """走 ask 确认页取 do 回调（含一次性 nonce），贴近真实点击链路。"""
@@ -210,26 +211,6 @@ def _do_data_from_ask(db, monkeypatch, target, op):
              if d.startswith(f"whois:do:{target.id}:{op}")]
     assert datas, "确认页须带 do 回调"
     return datas[0]
-
-
-def test_gift_points_lands_with_ledger_and_audit(db, monkeypatch):
-    _staff, target = _panel(db)
-    before = int(target.points or 0)
-    edited = _click(db, monkeypatch,
-                    _do_data_from_ask(db, monkeypatch, target, "gp100"))
-    assert edited
-    db.refresh(target)
-    assert int(target.points or 0) == before + 100
-    log = (db.query(models.PointsLog)
-           .filter(models.PointsLog.user_id == target.id)
-           .order_by(models.PointsLog.id.desc()).first())
-    assert log is not None and int(log.amount) == 100
-    assert log.type == "admin_grant"
-    assert "机器人管理员赠送" in (log.description or "")
-    assert "boss" in (log.description or "")  # 注明操作人
-    from backend import governance
-    actions = [r.action for r in governance.list_audit_logs(db, limit=10)]
-    assert "whois_gift_points" in actions
 
 
 def test_gift_welfare_lands(db, monkeypatch):
@@ -371,29 +352,31 @@ def test_pa056_super_ban_super_with_two_active_allowed(db, monkeypatch):
 # ---------- PA-058：赠送确认一次性 nonce，同一 ask 双击只发一次 ----------
 
 def test_pa058_double_click_gifts_once(db, monkeypatch):
+    # 赠送档位改用资格 gw7（赠能量三档已随积分删除摘除，2026-11-13）；
+    # PA-058 一次性 nonce 幂等口径对剩余赠送档位不变。
     _staff, target = _panel(db)
-    before = int(target.points or 0)
-    do_data = _do_data_from_ask(db, monkeypatch, target, "gp100")
+    do_data = _do_data_from_ask(db, monkeypatch, target, "gw7")
     edited = _click(db, monkeypatch, do_data)
     assert edited
     db.refresh(target)
-    assert int(target.points or 0) == before + 100
-    # 同一 ask 的 do 回调第二次到达：不再落账，只回已执行提示
+    assert target.is_welfare is True
+    assert target.welfare_expires_at is not None
+    first_expiry = target.welfare_expires_at
+    # 同一 ask 的 do 回调第二次到达：不再重复发放，只回已执行提示
     edited = _click(db, monkeypatch, do_data)
     assert edited
     db.refresh(target)
-    assert int(target.points or 0) == before + 100
+    assert target.welfare_expires_at == first_expiry
     assert "已经执行过" in edited[0][0]
 
 
 def test_pa058_do_without_nonce_refused(db, monkeypatch):
     _staff, target = _panel(db)
-    before = int(target.points or 0)
     # 不经 ask、直接拼旧格式 do 回调：无有效 nonce，拒绝落账
-    edited = _click(db, monkeypatch, f"whois:do:{target.id}:gp100")
+    edited = _click(db, monkeypatch, f"whois:do:{target.id}:gw7")
     assert edited
     db.refresh(target)
-    assert int(target.points or 0) == before
+    assert not target.is_welfare
     assert "已失效" in edited[0][0]
 
 

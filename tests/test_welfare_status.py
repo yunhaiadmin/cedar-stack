@@ -11,7 +11,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend import models
-from backend import points as points_mod
+from backend.emby_server import portal as points_mod
 
 
 def _db():
@@ -33,7 +33,7 @@ def test_welfare_user_with_expiry():
     u = _user(db, "w", is_welfare=True, welfare_expires_at=exp)
     res = points_mod.get_welfare_status(db, u)
     assert res["is_welfare"] is True
-    assert res["welfare_expires_at"] == exp.isoformat()
+    assert res["expires_at"] == exp
     db.close()
 
 
@@ -42,7 +42,7 @@ def test_welfare_user_without_expiry():
     u = _user(db, "w2", is_welfare=True, welfare_expires_at=None)
     res = points_mod.get_welfare_status(db, u)
     assert res["is_welfare"] is True
-    assert res["welfare_expires_at"] is None
+    assert res["expires_at"] is None
     db.close()
 
 
@@ -51,7 +51,7 @@ def test_non_welfare_user():
     u = _user(db, "n", is_welfare=False, welfare_expires_at=None)
     res = points_mod.get_welfare_status(db, u)
     assert res["is_welfare"] is False
-    assert res["welfare_expires_at"] is None
+    assert res["expires_at"] is None
     db.close()
 
 
@@ -59,5 +59,6 @@ def test_missing_user_row():
     db = _db()
     ghost = models.WebUser(id=999999, username="ghost", password_hash="x")
     res = points_mod.get_welfare_status(db, ghost)
-    assert res == {"is_welfare": False, "welfare_expires_at": None}
+    assert res["is_welfare"] is False
+    assert res["expires_at"] is None
     db.close()

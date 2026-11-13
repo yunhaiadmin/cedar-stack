@@ -65,7 +65,7 @@ def _make_round(db, title="手动开奖失败测试", chat_id=-100115, n_users=2
         db,
         title=title,
         chat_id=chat_id,
-        prizes=[{"name": "积分奖", "type": "points", "value": 100, "quantity": 1}],
+        prizes=[{"name": "天数奖", "type": "days", "value": 7, "quantity": 1}],
         draw_at=None,
     )
     # 固定 seed，保证开奖确定性
@@ -133,7 +133,7 @@ def test_manual_draw_distribute_failure_keeps_done(db, monkeypatch):
     # WHERE status='drawing' 匹配不到行：状态保持 done，不会触发重开奖
     assert rnd.status == "done"
     assert (
-        db.query(models.PointsLog).filter(models.PointsLog.user_id.in_(user_ids)).count() == 0
+        db.query(models.WelfareGrantLog).filter(models.WelfareGrantLog.user_id.in_(user_ids)).count() == 0
     )
 
     # 恢复真实发奖后重试：走 done+pending 补发，只发一份
@@ -143,14 +143,14 @@ def test_manual_draw_distribute_failure_keeps_done(db, monkeypatch):
     assert res["distribute"]["distributed"] == 1
     db.refresh(rnd)
     assert rnd.status == "done"
-    logs = db.query(models.PointsLog).filter(models.PointsLog.user_id.in_(user_ids)).all()
+    logs = db.query(models.WelfareGrantLog).filter(models.WelfareGrantLog.user_id.in_(user_ids)).all()
     assert len(logs) == 1
 
     # 再点一次：已全部发放，400 拒绝，不会重复发奖
     with pytest.raises(HTTPException) as ei2:
         welfare_admin.draw_lottery_round(rnd.id, current_admin=admin, db=db)
     assert ei2.value.status_code == 400
-    assert db.query(models.PointsLog).filter(models.PointsLog.user_id.in_(user_ids)).count() == 1
+    assert db.query(models.WelfareGrantLog).filter(models.WelfareGrantLog.user_id.in_(user_ids)).count() == 1
 
 
 def test_manual_draw_failure_detail_matches_actual_state_draw(db, monkeypatch):

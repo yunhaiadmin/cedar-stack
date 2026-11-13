@@ -140,7 +140,9 @@ def test_economy_get_missing_on_switches_use_code_default(db):
     out = admin_economy.economy_get_settings(current_admin=None, db=db)["settings"]
     assert out["promotion_reward_enabled"] == "true"
     assert out["stream_accel_enabled"] == "true"
-    assert out["checkin_enabled"] == ""
+    # checkin_enabled 已随货币于 2026-11-13 下线；缺行回空串的口径改用存活键验证
+    assert "checkin_enabled" not in out
+    assert out["payment_gateway_url"] == ""
 
     db.add(base_models.SystemConfig(key="stream_accel_enabled", value="false"))
     db.commit()

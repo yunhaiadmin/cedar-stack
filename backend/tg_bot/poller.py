@@ -24,9 +24,9 @@ HEARTBEAT_STALE_SECONDS = 360
 
 
 # 启动时注册的 Bot 命令菜单（客户端左下角 / 菜单可见）。
-# 与 router 命令表对照：菜单只收主命令；/account、/renew、/chatpoints、
+# 与 router 命令表对照：菜单只收主命令；/account、/renew、
 # /level 是手输别名（router 照常认），刻意不进菜单——/account 是 /me
-# 的别名、/renew 是 /login 的别名、/chatpoints 已并入 /points 输出、
+# 的别名、/renew 是 /login 的别名、
 # /level 指向账号卡（等级详情已并入卡内当前等级行）。
 # 描述统一带场景标签前缀（学 embyboss 命令表）：[群/私聊] = 群里与
 # 私聊都能用（与 command_scopes.GROUP_COMMANDS 逐条一致）；[私聊] =
@@ -39,7 +39,6 @@ BOT_COMMANDS: list[tuple[str, str]] = [
     ("start", "[群/私聊] 欢迎与快捷入口"),
     ("help", "[群/私聊] 帮助"),
     ("bind", "[群/私聊] 绑定 Telegram"),
-    ("checkin", "[群/私聊] 每日签到"),
     ("points", "[群/私聊] 查能量"),
     ("me", "[群/私聊] 账号中心"),
     ("request", "[私聊] 求片"),

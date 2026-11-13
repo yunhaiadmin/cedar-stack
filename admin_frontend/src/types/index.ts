@@ -812,7 +812,6 @@ export interface UserDetailProfile {
   is_active: boolean
   is_staff: boolean
   emby_username: string | null
-  points: number
   last_login_at: string | null
   created_at: string | null
 }
@@ -829,30 +828,15 @@ export interface UserSubscriptionRow {
 export interface UserDetail {
   profile: UserDetailProfile
   subscription: { active: UserSubscriptionRow | null; history: UserSubscriptionRow[] }
-  points: {
-    balance: number
-    income: number
-    expense: number
-    recent: {
-      id: number
-      amount: number
-      balance_after: number
-      type: string
-      description: string | null
-      created_at: string | null
-    }[]
-  }
   orders: {
     paid_total: number
-    recharge: { order_id: string; item_name: string; amount: number; points: number; status: string; created_at: string | null }[]
+    recharge: { order_id: string; item_name: string; amount: number; status: string; created_at: string | null }[]
     subscription: { order_id: string; item_name: string; amount: number; status: string; created_at: string | null }[]
   }
   invitation: {
     count: number
-    rebate_total: number
-    invitees: { username: string; reward_points: number; created_at: string | null }[]
+    invitees: { username: string; created_at: string | null }[]
   }
-  checkin: { total: number; last_date: string | null; streak: number }
   watch: { plays: number; watched_items: number }
 }
 
@@ -932,13 +916,12 @@ export interface TrendPoint {
   new_users: number
   plays: number
   revenue: number
-  checkins: number
 }
 
 export interface TrendStats {
   days: number
   series: TrendPoint[]
-  totals: { new_users: number; plays: number; revenue: number; checkins: number }
+  totals: { new_users: number; plays: number; revenue: number }
 }
 
 /** 订阅总览（GET /api/admin/realms/{id}/subscriptions，`realm_id=0` = 全部服） */
@@ -971,8 +954,6 @@ export interface RealmSubscriptionsResponse extends SubscriptionOverview {
 }
 
 export interface EconomyOverview {
-  total_points: number
-  checkins_today: number
   orders: { pending: number; revenue: number }
   exchange_codes: { total: number; used: number }
   invitations: number

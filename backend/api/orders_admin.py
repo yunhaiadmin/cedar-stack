@@ -127,21 +127,16 @@ def _subscription_spend_entry(db: Session, user_id: int, order):
 
 def _reverse_points(db: Session, user: models.WebUser, amount: int, description: str,
                     ref_id: str, allow_negative: bool) -> int:
-    """从用户身上扣回 amount 积分；余额不够且不允许负数时抛 400（并把余额告诉管理员）"""
-    from backend.api.economy import _add_points
+    """积分冲正：积分已随货币下线（2026-11-13），冲正额恒为 0（不再扣回）。
 
+    历史 PointsLog 只读保留作对账；退款的订阅天数回滚腿不受影响。
+    退款口径如需重定（例如按人民币原路退），由 parent 另行拍板。
+    """
     amount = abs(int(amount or 0))
-    if amount <= 0:
-        return 0
-    balance = int(user.points or 0)
-    if not allow_negative and balance < amount:
-        raise HTTPException(
-            status_code=400,
-            detail=(f"{user.username} 当前余额 {balance} 积分，不足以冲正 {amount} 积分。"
-                    "确认要退款请勾选「允许余额为负」（会先退款后追账）。"),
-        )
-    _add_points(db, user, -amount, "refund", description, ref_id)
-    return amount
+    if amount > 0:
+        logger.info("积分冲正已随货币下线跳过: user=%s amount=%s ref=%s",
+                    user.id, amount, ref_id)
+    return 0
 
 
 def _rollback_subscription(db: Session, order: models.SubscriptionOrder,
@@ -243,7 +238,6 @@ async def refund_order(
     查单 / 原子占位 / 冲正 / 审计整段是同步 SQLAlchemy，下放线程池执行；
     通知要走 WebSocket，必须留在事件循环上 await。
     """
-    from backend.api.economy import _add_points  # noqa: F401 — 保持与履约同一套账本写入
     from backend.notifications import AdminEvent, notify_admin_event_quiet
 
     admin_id = current_admin.id
@@ -322,11 +316,10 @@ async def refund_order(
                 spent = _subscription_spend_entry(db, user.id, order)
                 refund_pts = abs(int(spent.amount)) if spent else 0
                 if refund_pts > 0:
-                    from backend.api.economy import _add_points
-                    _add_points(db, user, refund_pts, "refund",
-                                f"订阅退款退回积分（订单 {order_id}）",
-                                f"refund:{order_id}")
-                    result["revoked_points"] = -refund_pts
+                    # 积分已随货币下线（2026-11-13）：历史积分购订阅退款
+                    # 只回滚天数，不再退回积分（口径待 parent 重定）。
+                    logger.info("订阅退款退积分已随货币下线跳过: order=%s pts=%s",
+                                order_id, refund_pts)
 
             # 履约时按实付发的会员经验也要撤回（两种 kind 都发），否则「买→退」
             # 可以刷经验升等级。revoke_entitlement=False（只退钱不撤权益）时不撤。

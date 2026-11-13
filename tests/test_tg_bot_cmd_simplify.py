@@ -16,6 +16,8 @@
   redeem）在群里仍回私聊提示形态。
 - /points 输出并入群发言能量段（今日已得/累计能量/发言规则），
   /chatpoints 手输仍出原群发言能量卡。
+  （2026-11-13 货币删除收口：群发言计分随 backend.points 模块删除
+  整条摘除——/points 不再并入发言段、/chatpoints 入口删除走未知命令。）
 """
 from __future__ import annotations
 
@@ -100,7 +102,7 @@ def _dispatch(db, monkeypatch, text, chat_id, chat_type="private"):
 
 def test_menu_slimmed_to_27_with_me_kept():
     names = [n for n, _ in poller.BOT_COMMANDS]
-    assert len(names) == 25  # 原 27 条 + /playrank，批 9 摘除 duel/rain/redpacket/lottery/slots 五条后
+    assert len(names) == 24  # 原 27 条 + /playrank，批 9 摘除 duel/rain/redpacket/lottery/slots 五条、2026-11-13 摘除 checkin 后
     assert ("me", "[群/私聊] 账号中心") in poller.BOT_COMMANDS
     for gone in ("account", "renew", "chatpoints", "level"):
         assert gone not in names
@@ -144,6 +146,9 @@ def test_account_card_single_builder_10_rows(db):
 
 def test_me_and_account_alias_show_same_card_private(db, monkeypatch):
     _user(db)
+    # 清掉 router 用户级限流的进程内状态：与 test_tg_bot_account_display.py
+    # 共用同一 TG 号，先跑的文件留下的 /me 时间戳会让本例第一跳被「操作太快」挡下
+    monkeypatch.setattr("backend.tg_bot.router._user_cmd_limits", {})
     me = _dispatch(db, monkeypatch, "/me", TG)
     account = _dispatch(db, monkeypatch, "/account", TG)
     assert me and account
@@ -153,6 +158,7 @@ def test_me_and_account_alias_show_same_card_private(db, monkeypatch):
 
 def test_level_alias_points_to_account_card_private(db, monkeypatch):
     _user(db)
+    monkeypatch.setattr("backend.tg_bot.router._user_cmd_limits", {})
     sent = _dispatch(db, monkeypatch, "/level", TG)
     assert sent
     assert "账号名称" in sent[0][0]
@@ -223,23 +229,26 @@ def test_start_private_bound_is_welcome_card(db):
     assert "用户编号" not in text
 
 
-# ---------- /points 并入发言能量段；/chatpoints 别名不变 ----------
+# ---------- 发言能量段与 /chatpoints 入口已随货币删除摘除 ----------
 
-def test_points_include_chatpoints_section(db):
+def test_points_card_has_no_chatpoints_section(db):
     _user(db)
     text = handlers.handle_points(db, _tg(), TG, "")
     assert "能量余额" in text
-    assert "今日已得" in text
-    assert "累计能量" in text
-    assert "发言规则" in text
+    assert "今日已得" not in text
+    assert "累计能量" not in text
+    assert "发言规则" not in text
 
 
-def test_chatpoints_alias_keeps_own_card(db, monkeypatch):
+def test_chatpoints_entry_removed(db, monkeypatch):
+    """发言能量入口摘除回归钉（2026-11-13）：handler 不存在、
+    /chatpoints 走未知命令路径，不再有群发言能量卡。"""
     _user(db)
+    assert not hasattr(handlers, "handle_chatpoints")
     sent = _dispatch(db, monkeypatch, "/chatpoints", TG)
     assert sent
-    assert "群发言能量" in sent[0][0]
-    assert "今日已得" in sent[0][0]
+    assert any("未知命令" in t for t, _m in sent)
+    assert not any("群发言能量" in t for t, _m in sent)
 
 
 # ---------- 二期：私聊用户菜单只留三条 ----------
@@ -248,7 +257,7 @@ def test_user_scope_menu_only_three():
     names = [n for n, _ in command_scopes.default_commands(poller.BOT_COMMANDS)]
     assert names == ["start", "help", "me"]  # 按 BOT_COMMANDS 注册顺序下发
     admin_names = [n for n, _ in command_scopes.admin_commands(poller.BOT_COMMANDS)]
-    assert len(admin_names) == 25  # 全量菜单：批 9 摘除五条玩法命令后
+    assert len(admin_names) == 24  # 全量菜单：批 9 摘五条玩法、2026-11-13 摘签到后
 
 
 # ---------- 二期：/start 私聊面板按钮覆盖全部用户功能 ----------
@@ -260,7 +269,6 @@ def test_user_scope_menu_only_three():
 PANEL_BUTTON_PATHS = {
     "用户面板/账号": "menu:user",
     "使用兑换码": "menu:renewcode",
-    "签到": "menu:checkin",
     "能量": "menu:points",
     "快捷登录/续期": "menu:login",
     "绑定账号": "menu:bind",

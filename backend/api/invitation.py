@@ -2,11 +2,10 @@
 邀请返利 API（统一后端）
 
 端点（前缀 /api/user/invite）：
-- GET  /config          邀请规则（开关/奖励点数）——公开
+- GET  /config          邀请规则（开关）——公开
 - GET  /my-code         我的邀请码（自动生成），含统计
 - GET  /records         我邀请的记录
-- GET  /rebates         我的返利台账（被邀请人充值产生的返利）
-- apply_invitation      供注册流程调用的内部函数
+- apply_invitation      供注册流程调用的内部函数（只落关系，不再发积分）
 """
 from __future__ import annotations
 
@@ -25,7 +24,6 @@ from backend import models
 from backend.integrations.store import switch_env_value as _switch_env_value
 from backend.database import get_db
 from backend.api.user import get_current_user
-from backend.api.economy import _add_points
 
 logger = logging.getLogger(__name__)
 
@@ -81,24 +79,13 @@ def _get_bool_config(db: Session, key: str, default: bool) -> bool:
 
 
 def get_invite_config(db: Session) -> dict:
-    """邀请配置（管理端 SystemConfig 可调）
+    """邀请配置：能量/积分奖励已随货币下线（2026-11-13），只剩总开关。
 
-    ``reward_points`` 只是展示口径（用户端「邀请一人得多少」）：2026-10-23
-    去重后邀请人奖励由 promotion 唯一发放，这里回显它的余额数值
-    （类型为会员天数或开关关着时回 0）；实际发放见 promotion.grant，
-    码上专属奖励优先于全局配置。``invitation_reward_points`` 键已退役。
+    邀请关系本身保留（注册归因、邀请记录）；邀请人推广奖励若配置为
+    会员天数仍由 promotion 发放，余额（积分）型奖励不再发放。
     """
-    from backend import promotion as _promotion
-
-    promo = _promotion.config(db)
-    reward_points = promo["amount"] if (
-        promo["enabled"] and promo["reward_type"] == _promotion.TYPE_BALANCE
-    ) else 0
     return {
         "enabled": _get_bool_config(db, "invitation_enabled", True),
-        "reward_points": reward_points,
-        "invitee_reward_points": _get_int_config(db, "invitation_invitee_reward_points", 50),
-        "rebate_percent": _get_int_config(db, "invitation_rebate_percent", 10),
     }
 
 
@@ -204,12 +191,6 @@ def apply_invitation(db: Session, user: models.WebUser, invite_code: str) -> dic
     )
     db.add(record)
 
-    # 被邀请者奖励（邀请人奖励在下面由 promotion 唯一发放，见其 grant）
-    invitee_balance = _add_points(
-        db, user, config["invitee_reward_points"], "invitee",
-        f"使用邀请码 {code_str} 注册", f"invited_by:{inviter.id}",
-    )
-
     # P1 会员经验：有效邀请，邀请人 +10 经验（与双向积分在同一事务，一起落盘）。
     # 经验失败不阻塞邀请发奖（只记日志）。
     try:
@@ -249,51 +230,13 @@ def apply_invitation(db: Session, user: models.WebUser, invite_code: str) -> dic
         "applied": True,
         "inviter_id": inviter.id,
         "inviter_reward": inviter_reward,
-        "invitee_reward": config["invitee_reward_points"],
-        "inviter_balance": inviter_balance,
-        "invitee_balance": invitee_balance,
     }
-
-
-def apply_rebate(db: Session, user: models.WebUser, amount: float, order_ref: str) -> int:
-    """充值返利：被邀请人充值成功后，给邀请人发放返利积分（供支付履约调用）
-
-    返回返利积分数量（无邀请关系或返利未开启时返回 0）
-    """
-    record = db.query(models.InvitationRecord).filter(
-        models.InvitationRecord.invitee_id == user.id
-    ).first()
-    if not record:
-        return 0
-
-    inviter = db.query(models.WebUser).filter(
-        models.WebUser.id == record.inviter_id
-    ).first()
-    if not inviter:
-        return 0
-
-    config = get_invite_config(db)
-    if not config["enabled"] or config["rebate_percent"] <= 0:
-        return 0
-
-    rebate = max(1, int(amount * config["rebate_percent"] / 100))
-    _add_points(
-        db, inviter, rebate, "rebate",
-        f"下级充值返利 {config['rebate_percent']}%（+{rebate} 能量）",
-        f"rebate:{order_ref}",
-    )
-    logger.info("充值返利: inviter=%s invitee=%s order=%s rebate=%s",
-                inviter.id, user.id, order_ref, rebate)
-    return rebate
 
 
 # ==================== Endpoints ====================
 
 class InviteConfigResponse(BaseModel):
     enabled: bool
-    reward_points: int
-    invitee_reward_points: int
-    rebate_percent: int
 
 
 @router.get("/config", response_model=InviteConfigResponse)
@@ -429,30 +372,3 @@ def my_promotions(
         "rewards": items,
     }
 
-
-@router.get("/rebates")
-def my_rebates(
-    limit: int = 50,
-    current_user: models.WebUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """我的返利台账：被邀请人充值/购买产生的积分返利流水"""
-    logs = db.query(models.PointsLog).filter(
-        models.PointsLog.user_id == current_user.id,
-        models.PointsLog.type == "rebate",
-    ).order_by(models.PointsLog.created_at.desc()).limit(min(limit, 200)).all()
-
-    total_rebate = sum(l.amount for l in logs if l.amount > 0)
-    return {
-        "total_rebate": total_rebate,
-        "rebates": [
-            {
-                "id": l.id,
-                "amount": l.amount,
-                "description": l.description,
-                "ref_id": l.ref_id,
-                "created_at": l.created_at.isoformat() if l.created_at else None,
-            }
-            for l in logs
-        ],
-    }

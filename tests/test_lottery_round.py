@@ -33,7 +33,7 @@ def db():
 
 
 DEFAULT_PRIZES = [
-    {"name": "积分奖", "type": "points", "value": 100, "quantity": 1},
+    {"name": "天数大奖", "type": "days", "value": 100, "quantity": 1},
     {"name": "天数奖", "type": "days", "value": 30, "quantity": 1},
 ]
 
@@ -74,7 +74,7 @@ def test_create_round(db):
         .order_by(models.LotteryRoundPrize.sort)
         .all()
     )
-    assert [p.name for p in rows] == ["积分奖", "天数奖"]
+    assert [p.name for p in rows] == ["天数大奖", "天数奖"]
     assert [p.sort for p in rows] == [0, 1]
 
     with pytest.raises(ValueError):
@@ -185,7 +185,7 @@ def _join_five(db, rnd):
 
 def test_draw_deterministic(db):
     prizes = [
-        {"name": "一等奖", "type": "points", "value": 50, "quantity": 2},
+        {"name": "一等奖", "type": "days", "value": 50, "quantity": 2},
         {"name": "二等奖", "type": "days", "value": 7, "quantity": 1},
     ]
     rnd = _make_round(db, prizes=prizes)
@@ -258,16 +258,13 @@ def _winner_user_ids_by_prize_type(db, rnd, prize_type):
     return out
 
 
-def test_distribute_points_and_days(db):
+def test_distribute_days_prizes(db):
     from datetime import datetime, timedelta
 
     rnd = _make_round(db)
     _fix_seed(db, rnd)
     users = _join_five(db, rnd)
     # 预置已过期的公益资格，覆盖"续期从当前时间起算"路径
-    # （注：grant_welfare 对从未开通的用户发放 days>0 时 expires_at 保持 None，
-    #  与其 docstring"从未开通时从当前时间开始计算"不符，疑似现有原语 bug，已上报，
-    #  G1 不动该文件，这里用过期资格避开该分支）
     for u in users:
         u.welfare_expires_at = datetime.now() - timedelta(days=1)
         u.is_welfare = True
@@ -280,30 +277,25 @@ def test_distribute_points_and_days(db):
     assert result["skipped"] == 0
     assert result["errors"] == []
 
-    by_type = _winner_user_ids_by_prize_type(db, rnd, None)
-    points_uid = by_type["points"][0]
-    days_uid = by_type["days"][0]
-
-    u_points = db.query(models.WebUser).filter_by(id=points_uid).first()
-    assert u_points.points == 100
-    log = (
-        db.query(models.PointsLog)
-        .filter_by(user_id=points_uid, type="lottery_win")
-        .first()
-    )
-    assert log is not None and log.amount == 100
-    assert log.ref_id == f"lottery:{rnd.id}"
-
-    u_days = db.query(models.WebUser).filter_by(id=days_uid).first()
-    assert u_days.is_welfare is True
-    assert u_days.welfare_expires_at is not None
-
+    # 两名中奖者按各自奖品天数（100 / 30）续期，误差一天内
+    prize_by_id = {p.id: p for p in db.query(models.LotteryRoundPrize).filter_by(round_id=rnd.id)}
+    entry_user = {e.id: e.user_id for e in db.query(models.LotteryRoundEntry).filter_by(round_id=rnd.id)}
     winners = db.query(models.LotteryRoundWinner).filter_by(round_id=rnd.id).all()
     assert all(w.distributed is True and w.distributed_at is not None for w in winners)
-    # 没中奖的人积分不动
+    now = datetime.now()
+    winner_ids = set()
+    for w in winners:
+        uid = entry_user[w.entry_id]
+        winner_ids.add(uid)
+        u = db.query(models.WebUser).filter_by(id=uid).first()
+        assert u.is_welfare is True
+        got_days = (u.welfare_expires_at - now).days
+        assert abs(got_days - prize_by_id[w.prize_id].value) <= 1, (got_days, prize_by_id[w.prize_id].value)
+    # 没中奖的人资格不动（仍是过期状态）
     for u in users:
-        if u.id not in (points_uid, days_uid):
-            assert db.query(models.WebUser).filter_by(id=u.id).first().points == 0
+        if u.id not in winner_ids:
+            fresh = db.query(models.WebUser).filter_by(id=u.id).first()
+            assert fresh.welfare_expires_at < now
 
 
 def test_distribute_whitelist(db):

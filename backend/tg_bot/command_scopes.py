@@ -53,14 +53,13 @@ ADMIN_ONLY_COMMANDS: frozenset[str] = frozenset({
 # 排除项（16)：private_only 11 (request/myrequests/login/renew/govlog/
 # report/propose/launch/reconcile/rankpush/playrank) + P1 私人查询 4 (bindings/
 # transfers/whyplay/wants) + redeem（群内拒执行：删原消息并回私聊
-# 提示）。/chatpoints 是 /points 的手输别名（不在菜单），群内随
-# /points 口径执行合并输出，不单独登记。
+# 提示）。
 # me/account/level（账号展示一家，指向同一张账号卡）在群里放行
 # （2026-10-28 用户亲定、2026-11-02 重申），在下面集合里；其中
 # account/level 是手输别名、不在 BOT_COMMANDS 菜单表，群菜单实际
 # 下发的只有 me（group_commands 按菜单表过滤，见下方函数）。
 GROUP_COMMANDS: frozenset[str] = frozenset({
-    "start", "help", "bind", "checkin", "points",
+    "start", "help", "bind", "points",
     "rank", "requestboard", "rules",
     "me", "account", "level",
 })

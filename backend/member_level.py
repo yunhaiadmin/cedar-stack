@@ -8,6 +8,7 @@ from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from backend import models
+from backend.integrations import store as _store
 
 logger = logging.getLogger(__name__)
 
@@ -345,19 +346,25 @@ def _today_farmable_xp(db: Session, user_id: int) -> int:
 
 
 def _watch_tier_amount(db: Session, watched_minutes) -> int:
-    """观影 XP 档位：与活力观影奖励同分档（读同一组活力配置键；活力总开关不影响 XP）。
-    满二档取二档奖，满一档取一档奖，不叠加；不足一档／奖励<=0 返回 0。"""
-    from backend import vitality as _vitality
+    """观影 XP 档位：满二档取二档奖，满一档取一档奖，不叠加；不足一档／奖励<=0 返回 0。
 
-    cfg = _vitality.get_vitality_config(db)
+    档位键沿用历史的 vitality_watch_tier* 配置键（活力货币 2026-11-13 下线后
+    由本模块直读同一组键，默认值与原口径一致）。"""
     try:
         minutes = float(watched_minutes or 0)
     except (TypeError, ValueError):
         return 0
-    t1_min = int(cfg.get("watch_tier1_minutes", 30) or 0)
-    t1_rw = int(cfg.get("watch_tier1_reward", 1) or 0)
-    t2_min = int(cfg.get("watch_tier2_minutes", 60) or 0)
-    t2_rw = int(cfg.get("watch_tier2_reward", 2) or 0)
+
+    def _int(key, default):
+        try:
+            return int(float(_store.get_value(db, key, str(default)) or default))
+        except (TypeError, ValueError):
+            return default
+
+    t1_min = _int("vitality_watch_tier1_minutes", 30)
+    t1_rw = _int("vitality_watch_tier1_reward", 1)
+    t2_min = _int("vitality_watch_tier2_minutes", 60)
+    t2_rw = _int("vitality_watch_tier2_reward", 2)
     if minutes >= t2_min:
         return t2_rw
     if minutes >= t1_min:
@@ -375,11 +382,10 @@ def award_watch_xp(db: Session, user_id: int, watched_minutes, item_id) -> int:
     if amount <= 0:
         return 0
     try:
-        from backend import vitality as _vitality
-        from backend.api.economy import _today_start_utc_naive
+        from backend.api.economy import _today_start_utc_naive, lock_user_row
 
-        # 锁用户行，查用量-判上限-写同一事务串行化（与活力 _grant_free_vitality 同款）
-        _vitality._lock_user_row(db, user_id)
+        # 锁用户行，查用量-判上限-写同一事务串行化
+        lock_user_row(db, user_id)
         today_start = _today_start_utc_naive()
         ref_id = f"watch:{item_id}"
         already = (

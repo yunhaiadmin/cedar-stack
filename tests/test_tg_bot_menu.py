@@ -89,18 +89,13 @@ def test_menu_main_unbound_shows_bind(db, monkeypatch):
     assert "绑定" in text
 
 
-def test_menu_checkin_flow(db, monkeypatch):
-    from backend.integrations import store
-    store.write_values(db, {"checkin_enabled": "true"})
-    db.commit()
+def test_menu_checkin_action_removed_ignored(db, monkeypatch):
+    # 签到入口摘除（2026-11-13）：历史消息上的旧签到按钮点到时
+    # 按未知菜单动作静默忽略，不渲染、不报错。
     _make_user(db)
     answered, edits = _patch_sender(monkeypatch)
     callbacks.handle_callback(db, _cq("checkin"))
-    assert len(edits) == 1
-    text, markup = edits[0][2], edits[0][3]
-    assert "签到" in text
-    # 有返回主菜单按钮
-    assert markup["inline_keyboard"][0][0]["callback_data"] == "menu:main"
+    assert edits == []
 
 
 def test_menu_points_shows_card(db, monkeypatch):

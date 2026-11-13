@@ -933,25 +933,24 @@ def handle_report(db, tg_user: dict, chat_id: int, args: str) -> str:
 
 
 _PRIZE_TYPE_ALIASES = {
-    "points": "points", "能量": "points",
     "days": "days", "天数": "days",
     "whitelist": "whitelist", "白名单": "whitelist",
 }
 
 
 def _parse_prize_spec(spec: str) -> list[dict]:
-    """奖品段：逗号分隔，每项 类型:价值[x数量]，如 能量:100x2,天数:30x1。"""
+    """奖品段：逗号分隔，每项 类型:价值[x数量]，如 天数:30x1,白名单:1x1。"""
     prizes = []
     for chunk in spec.split(","):
         chunk = chunk.strip()
         if not chunk:
             continue
         if ":" not in chunk:
-            raise ValueError("奖品格式应为 类型:价值[x数量]，如 能量:100x2")
+            raise ValueError("奖品格式应为 类型:价值[x数量]，如 天数:30x1")
         ptype_raw, rest = chunk.split(":", 1)
         ptype = _PRIZE_TYPE_ALIASES.get(ptype_raw.strip())
         if ptype is None:
-            raise ValueError("奖品类型只能是 能量／天数／白名单")
+            raise ValueError("奖品类型只能是 天数／白名单")
         if "x" in rest:
             value_raw, qty_raw = rest.split("x", 1)
         else:
@@ -1012,9 +1011,9 @@ def _propose_help(direct: bool) -> str:
         [
             layout.row("🎲", "开放范围", f"仅公益服、{level}"),
             layout.row("📝", "提交方式", f"私聊发送 <code>{cmd} 标题 | 奖品 | 群组ID | 开奖时间 | 人数上限 | 口令</code>"),
-            layout.row("🎁", "奖品格式", "逗号分隔，类型:价值[x数量]，类型为 能量／天数／白名单，如 <code>能量:100x2,天数:30x1</code>"),
+            layout.row("🎁", "奖品格式", "逗号分隔，类型:价值[x数量]，类型为 天数／白名单，如 <code>天数:30x1,白名单:1x1</code>"),
             layout.row("💡", "填写说明", "群组ID 可空（仅当允许群恰好一个时自动取）；开奖时间如 2026-11-01 20:00，为空则待定；人数上限为空则不限；口令给出时为口令抽奖，否则为按钮抽奖"),
-            layout.row("💡", "示例", "<code>/propose 周末观影趴 | 能量:100x2 | -1001234567890</code>"),
+            layout.row("💡", "示例", "<code>/propose 周末观影趴 | 天数:30x2 | -1001234567890</code>"),
         ],
     )
 

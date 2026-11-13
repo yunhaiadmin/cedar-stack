@@ -1,17 +1,16 @@
-"""观影榜海报日推（embyboss 借鉴清单第 5 项）：聚合 → 海报 → 推群 → （可选）发分。
+"""观影榜海报日推（embyboss 借鉴清单第 5 项）：聚合 → 海报 → 推群。
 
 数据源：tg_bot.queries.watch_duration_rank（emby_playback_sessions +
 panel_achievements.playback_seconds，与账号面板「已观影 X 小时」同源同口径）。
-推送目标：机器人现有交流群配置 bot_group_ids（chatpoints / 发言能量
-同一份配置）的第一个群，不新造配置。
+推送目标：机器人现有交流群配置 bot_group_ids（与发言能量同一份
+配置）的第一个群，不新造配置。
 
-开关与发分（SystemConfig，管理后台「公益服经济」页可配）：
+开关（SystemConfig）：
 - bot_rankpush_enabled 总开关，默认开；关了手动/定时都不推。
-- bot_rankpush_reward_enabled 发分开关，**默认关**；开后才按名次发能量。
-- bot_rankpush_reward_table 名次发分表（逗号分隔），默认 10,8,6,5,4,3,2,1,1,1；
-  表外名次不发。发分走 economy._add_points（台账 type=rankpush），
-  ref_id=rankpush:{period}:{日期键}:{名次} 幂等，重复推送不重复发。
-  日期键：日榜＝榜日日期、周榜＝当周周一日期（均为上海日历）。
+- 按名次发能量已随积分删除摘除（2026-11-13）：原 grant_rank_rewards
+  依赖的 economy._add_points 已删，发分路径整条移除；bot_rankpush_
+  reward_enabled / bot_rankpush_reward_table 两个旧配置键不再被读，
+  结果里的 rewards 恒为空列表（形状保留）。
 
 调度（时间先写常量，如需可配化由 parent 另定）：
 - 日榜每日 20:30（Asia/Shanghai）、周榜周日 21:00 推送；
@@ -30,13 +29,8 @@ from backend.tg_bot import layout, policy, queries, rank_poster, sender
 logger = logging.getLogger(__name__)
 
 ENABLED_KEY = "bot_rankpush_enabled"
-REWARD_ENABLED_KEY = "bot_rankpush_reward_enabled"
-REWARD_TABLE_KEY = "bot_rankpush_reward_table"
 LAST_DAILY_KEY = "bot_rankpush_last_daily"
 LAST_WEEKLY_KEY = "bot_rankpush_last_weekly"
-
-DEFAULT_REWARD_TABLE = "10,8,6,5,4,3,2,1,1,1"
-REWARD_TYPE = "rankpush"
 
 # 推送时间（Asia/Shanghai，先写常量）
 DAILY_PUSH_HOUR, DAILY_PUSH_MINUTE = 20, 30
@@ -58,24 +52,6 @@ def rankpush_enabled(db) -> bool:
     return _cfg(db, ENABLED_KEY, "true").lower() not in ("0", "false", "off", "no")
 
 
-def reward_enabled(db) -> bool:
-    return _cfg(db, REWARD_ENABLED_KEY, "false").lower() in ("1", "true", "on", "yes")
-
-
-def reward_table(db) -> list[int]:
-    raw = _cfg(db, REWARD_TABLE_KEY, DEFAULT_REWARD_TABLE) or DEFAULT_REWARD_TABLE
-    out: list[int] = []
-    for part in str(raw).replace("，", ",").split(","):
-        part = part.strip()
-        if not part:
-            continue
-        try:
-            out.append(max(0, int(part)))
-        except ValueError:
-            continue
-    return out or [10, 8, 6, 5, 4, 3, 2, 1, 1, 1]
-
-
 def target_group_id(db) -> int | None:
     """推送目标＝bot_group_ids（发言能量/chatpoints 同一份群配置）的第一个群。"""
     groups = policy.parse_group_ids(_cfg(db, "bot_group_ids", ""))
@@ -95,47 +71,6 @@ def period_key(period: str) -> str:
     return _window_start_sh(period).date().isoformat()
 
 
-def grant_rank_rewards(db, period: str, rows: list[dict]) -> list[dict]:
-    """按名次表发能量（发分开关关时直接返回空）。
-
-    台账 type=rankpush、ref_id 带期次与名次：同一期同一名次只发一次，
-    海报重推不会重复发分。返回实际发放明细 [{rank, user_id, amount}]。
-    """
-    if not rows or not reward_enabled(db):
-        return []
-    from backend.api.economy import _add_points
-    from backend.models import PointsLog, WebUser
-
-    table = reward_table(db)
-    key = period_key(period)
-    label = "本周观影榜" if period == "week" else "今日观影榜"
-    granted: list[dict] = []
-    for idx, row in enumerate(rows):
-        rank = idx + 1
-        amount = table[idx] if idx < len(table) else 0
-        if amount <= 0:
-            continue
-        ref_id = f"{REWARD_TYPE}:{period}:{key}:{rank}"
-        exists = (
-            db.query(PointsLog.id)
-            .filter(PointsLog.type == REWARD_TYPE, PointsLog.ref_id == ref_id)
-            .first()
-        )
-        if exists:
-            continue
-        user = db.query(WebUser).filter(WebUser.id == int(row["user_id"])).first()
-        if user is None:
-            continue
-        _add_points(
-            db, user, int(amount), REWARD_TYPE,
-            f"{label}第 {rank} 名奖励", ref_id,
-        )
-        granted.append({"rank": rank, "user_id": int(user.id), "amount": int(amount)})
-    if granted:
-        db.commit()
-    return granted
-
-
 def _caption(period: str, rows: list[dict]) -> str:
     start_sh = _window_start_sh(period)
     if period == "week":
@@ -152,7 +87,8 @@ def push_rank_board(db, period: str) -> dict:
     """生成并推送一期榜单。返回 {pushed, reason, rows, rewards}。
 
     reason: ok / disabled / empty / no_group / send_failed。
-    发分只在海报推送成功后进行（未发布的榜不发分）。
+    rewards 恒为空列表：名次发分已随积分删除摘除（2026-11-13），
+    键保留只为结果形状不变。
     """
     period = "week" if period == "week" else "day"
     if not rankpush_enabled(db):
@@ -165,7 +101,6 @@ def push_rank_board(db, period: str) -> dict:
     if group_id is None:
         logger.warning("rankpush 未配置交流群（bot_group_ids），跳过推送")
         return {"pushed": False, "reason": "no_group", "rows": rows, "rewards": []}
-    granted: list[dict] = []
     poster_path = None
     try:
         poster_path = rank_poster.render_rank_poster(period, rows, _window_start_sh(period))
@@ -184,16 +119,11 @@ def push_rank_board(db, period: str) -> dict:
     if not ok:
         logger.warning("rankpush 推送失败 period=%s err=%s", period, err)
         return {"pushed": False, "reason": "send_failed", "rows": rows, "rewards": []}
-    try:
-        granted = grant_rank_rewards(db, period, rows)
-    except Exception:
-        logger.exception("rankpush 发分失败 period=%s（海报已推送）", period)
-        db.rollback()
     logger.info(
-        "rankpush 已推送 period=%s group=%s rows=%s rewards=%s",
-        period, group_id, len(rows), len(granted),
+        "rankpush 已推送 period=%s group=%s rows=%s",
+        period, group_id, len(rows),
     )
-    return {"pushed": True, "reason": "ok", "rows": rows, "rewards": granted}
+    return {"pushed": True, "reason": "ok", "rows": rows, "rewards": []}
 
 
 def _now_shanghai() -> datetime:

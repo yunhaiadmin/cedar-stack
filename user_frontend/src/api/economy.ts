@@ -17,8 +17,6 @@ import type {
  * 任一项失败只把该字段置 null，其余照常，前端各归各的降级。
  */
 export interface HomeSummary {
-  points: { balance: number } | null
-  checkin: CheckinStatus | null
   invite: MyInviteInfo | null
   subscriptions: MySubscription[] | null
   announcements: Announcement[] | null
@@ -108,7 +106,6 @@ export interface SubscriptionPlan {
   name: string
   description: string | null
   price: number
-  points_price: number | null
   duration_days: number
   features: string[] | null
   /** 订阅分档权益（后端经 parse 归一下发，未声明为 {}）；商店权益文案行据此自动生成 */
@@ -268,31 +265,11 @@ export const welfareApi = {
     api.get<never, WelfareStatusResponse>('/api/points/welfare-status'),
 }
 
-// ==================== 能量 ====================
+// ==================== 能量（历史只读，端点已随后端货币下线） ====================
 
-export interface TransferConfig {
-  enabled: boolean
-  fee_pct: number
-  min: number
-  max: number
-  daily_cap: number
-}
-export interface TransferResult {
-  success: boolean
-  amount: number
-  fee: number
-  recipient: string
-  balance: number
-}
 export const pointsApi = {
   log: (params?: { limit?: number; offset?: number; type_filter?: string }) =>
     api.get<never, PointsLogResponse>('/api/user/economy/points/log', { params }),
-  /** 能量转账开关与规则（关闭时用户端隐藏转账入口） */
-  transferConfig: () =>
-    api.get<never, TransferConfig>('/api/user/economy/points/transfer-config'),
-  /** 能量转账：recipient 对方用户名，amount 为转账数量（能量，正整数） */
-  transfer: (recipient: string, amount: number) =>
-    api.post<never, TransferResult>('/api/user/economy/points/transfer', { recipient, amount }),
 }
 
 // ==================== 兑换码 ====================
@@ -587,8 +564,6 @@ export interface CouponQuote {
   member_discount_amount?: number
   /** 兑换码折扣权益（没填优惠码时自动用最优一张），已含在 discount_amount 内 */
   exchange_discount_pct?: number
-  /** 能量支付试算时为 true，此时金额字段单位为能量 */
-  pay_with_points?: boolean
 }
 
 export const couponApi = {
@@ -596,7 +571,7 @@ export const couponApi = {
   config: () =>
     api.get<never, { enabled: boolean }>('/api/user/economy/payment/coupon/config'),
   /** 试算：POST 以免优惠码进访问日志/浏览器历史；code 可空＝按自动权益口径试算 */
-  quote: (data: { code: string; kind: 'recharge' | 'subscription'; item_id: number; pay_with_points?: boolean }) =>
+  quote: (data: { code: string; kind: 'recharge' | 'subscription'; item_id: number }) =>
     api.post<never, CouponQuote>('/api/user/economy/payment/coupon/quote', data),
 }
 

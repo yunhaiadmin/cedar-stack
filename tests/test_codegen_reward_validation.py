@@ -79,9 +79,13 @@ def test_bad_reward_value_rejected(db, admin, overrides):
 
 
 def test_points_code_created(db, admin):
+    """能量型码已随货币于 2026-11-13 下线：生成直接 400，不入库。"""
     before = _count_codes(db, "points")
-    ops.generate_codes(_request(reward_type="points", points_value=100), admin, db)
-    assert _count_codes(db, "points") == before + 1
+    with pytest.raises(HTTPException) as exc:
+        ops.generate_codes(_request(reward_type="points", points_value=100), admin, db)
+    assert exc.value.status_code == 400
+    assert "能量卡码已下线" in str(exc.value.detail)
+    assert _count_codes(db, "points") == before
 
 
 def test_discount_code_created(db, admin):

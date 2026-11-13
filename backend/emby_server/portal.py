@@ -264,10 +264,9 @@ admin_emby_router = APIRouter(prefix="/api/admin/emby", tags=["管理后台-自�
 
 # ==================== 用户端 ====================
 
-# 公益服查看权限的积分价格与有效期键名及出厂默认值。
+# 公益服查看权限有效期键名及出厂默认值（积分价格已随货币下线，
+# 查看购买写口早于 2026-11-09 资格合并时退役，见 unlock_emby_view）。
 # 配置自愈（backend/config_self_heal.py）引用这里 —— 默认值只许在这里定义一次。
-VIEW_UNLOCK_POINTS_KEY = "emby_view_unlock_points"
-VIEW_UNLOCK_POINTS_DEFAULT = 50
 VIEW_UNLOCK_DAYS_KEY = "emby_view_unlock_days"
 VIEW_UNLOCK_DAYS_DEFAULT = 365  # 0=永久
 
@@ -280,39 +279,35 @@ def _get_int_config(db: Session, key: str, default: int) -> int:
         return default
 
 
-def _view_unlock_pricing(db: Session) -> tuple[int, int]:
-    """公益服查看权限的积分价格与有效期（天，0=永久），后台 SystemConfig 可调。"""
-    points = _get_int_config(db, VIEW_UNLOCK_POINTS_KEY, VIEW_UNLOCK_POINTS_DEFAULT)
-    days = _get_int_config(db, VIEW_UNLOCK_DAYS_KEY, VIEW_UNLOCK_DAYS_DEFAULT)
-    return max(points, 0), max(days, 0)
+def _view_unlock_days(db: Session) -> int:
+    """公益服查看行有效期（天，0=永久），后台 SystemConfig 可调。"""
+    return max(_get_int_config(db, VIEW_UNLOCK_DAYS_KEY, VIEW_UNLOCK_DAYS_DEFAULT), 0)
 
 
 class ViewUnlockSettingsIn(BaseModel):
-    points: int
     days: int
 
 
 @admin_emby_router.get("/view-unlock")
 def admin_view_unlock_get(db: Session = Depends(get_db)):
-    """管理后台：读公益服查看权限的积分价格与有效期。"""
-    points, days = _view_unlock_pricing(db)
-    return {"points": points, "days": days}
+    """管理后台：读公益服查看行有效期。"""
+    return {"days": _view_unlock_days(db)}
 
 
 @admin_emby_router.put("/view-unlock")
 def admin_view_unlock_put(body: ViewUnlockSettingsIn, db: Session = Depends(get_db)):
-    """管理后台：改公益服查看权限的积分价格与有效期（days=0 为永久）。"""
-    if body.points < 0 or body.days < 0:
-        raise HTTPException(status_code=400, detail="points/days 不能为负")
+    """管理后台：改公益服查看行有效期（days=0 为永久）。"""
+    if body.days < 0:
+        raise HTTPException(status_code=400, detail="days 不能为负")
     # 配置瘦身第 4 批 4-4：走统一写入通道（校验→落库→写时失效）；
     # store.write_values 内部已按 store 纪律失效，4-1 的失效覆盖由正统通道承接。
     config_service.save_config(
         db,
-        {VIEW_UNLOCK_POINTS_KEY: body.points, VIEW_UNLOCK_DAYS_KEY: body.days},
+        {VIEW_UNLOCK_DAYS_KEY: body.days},
         schema="view_unlock",
     )
     db.commit()
-    return {"points": body.points, "days": body.days}
+    return {"days": body.days}
 
 
 def _realm_view_granted(db: Session, user: models.WebUser, realm_id: int | None
@@ -430,7 +425,7 @@ def _account_card(user: models.WebUser, db: Session, realm_id: int | None = None
     external = mode == "external"
     realm = realms.realm_snapshot(db, realm_id)
     granted, unlock = _realm_view_granted(db, user, realm_id)
-    price_points, price_days = _view_unlock_pricing(db)
+    price_days = _view_unlock_days(db)
     # 未设置接线用户名时是空串，不是 null：账号卡这个字段一直是字符串。
     emby_username = (user.emby_username or "") if granted else ""
     card = {
@@ -463,9 +458,7 @@ def _account_card(user: models.WebUser, db: Session, realm_id: int | None = None
         "view_permission": {
             "granted": granted,
             "realm_free": realms.is_free_realm(db, realm_id),
-            "unlock_points": price_points,
             "unlock_days": price_days,
-            "points_balance": int(user.points or 0),
             "expires_at": unlock.expires_at.isoformat() if unlock and unlock.expires_at else None,
             # 放行来源（资格与凭证合并后前端按它展示状态，不再有购买动作）：
             # welfare＝公益资格在期自动带；unlock＝存量查看行在效；

@@ -379,11 +379,12 @@ def _member_meter(db: Session, member, start: datetime,
 
 
 def _grant_detail(db: Session, batch, detail) -> str:
-    """按明细应发量真发积分＋经验（同一事务、调用方提交）。
+    """按明细应发量真发经验（同一事务、调用方提交）。
 
-    幂等第二道锚：points_logs.ref_id = pool_reward:{detail_id}
-    已存在即已发过，只补标 paid 不重复发；经验同理查
-    member_xp_log 的 (source, ref_id)。返回最终状态。
+    积分已随货币于 2026-11-13 下线：只发经验，明细 points 数值
+    保留作影子对账。幂等锚：经验查 member_xp_log 的
+    (source, ref_id)，已存在即已发过，只补标 paid 不重复发；
+    返回最终状态。
     """
     user = (db.query(base_models.WebUser)
             .filter(base_models.WebUser.id == detail.user_id).first())
@@ -391,23 +392,13 @@ def _grant_detail(db: Session, batch, detail) -> str:
         detail.status = "skipped"
         detail.reason = "user_missing"
         return "skipped"
-    points_ref = f"pool_reward:{detail.id}"
     if int(detail.points or 0) > 0:
-        log = (db.query(base_models.PointsLog)
-               .filter(base_models.PointsLog.ref_id == points_ref)
-               .first())
-        if log is None:
-            from backend.api.economy import _add_points
-
-            _add_points(
-                db, user, int(detail.points), "pool_reward",
-                f"公共池贡献激励（{batch.period_key}）",
-                ref_id=points_ref)
-            log = (db.query(base_models.PointsLog)
-                   .filter(base_models.PointsLog.ref_id == points_ref)
-                   .first())
-        if log is not None:
-            detail.points_log_id = log.id
+        # 积分已随货币下线（2026-11-13）：池激励的积分部分不再发放
+        # （economy._add_points 已删除）；明细 points 数值保留作影子对账
+        # 历史，经验部分照常发放。池激励口径重定归贡献池批次。
+        logger.warning(
+            "pool_reward 积分发放已下线，跳过: detail=%s points=%s",
+            detail.id, detail.points)
     if int(detail.xp or 0) > 0:
         xp_log = (db.query(base_models.MemberXpLog)
                   .filter(

@@ -98,7 +98,7 @@ def _payload(**over):
     p = {
         "title": "用户提案活动",
         "chat_id": 999,
-        "prizes": [{"name": "积分奖", "type": "points", "value": 100, "quantity": 1}],
+        "prizes": [{"name": "天数奖", "type": "days", "value": 30, "quantity": 1}],
         "draw_at": None,
         "max_participants": None,
         "lottery_type": "button",
@@ -245,14 +245,15 @@ def test_submit_payload_validation_messages(db):
         (_payload(title="  "), "活动标题不能为空"),
         (_payload(prizes=[]), "至少需要配置 1 个奖品"),
         (_payload(prizes=[{"name": "x", "type": "gold", "value": 1, "quantity": 1}]),
-         "奖品类型只能是 days/points/whitelist"),
-        (_payload(prizes=[{"name": "x", "type": "points", "value": 0, "quantity": 1}]),
-         "能量奖品的价值必须大于 0"),
+         "奖品类型只能是 days/whitelist"),
+        # 能量（points）奖品已随货币删除下线：类型校验直接拒绝（2026-11-13）
+        (_payload(prizes=[{"name": "x", "type": "points", "value": 100, "quantity": 1}]),
+         "奖品类型只能是 days/whitelist"),
         (_payload(prizes=[{"name": "x", "type": "days", "value": 0, "quantity": 1}]),
          "天数奖品的价值必须大于 0"),
         (_payload(prizes=[{"name": "x", "type": "whitelist", "value": -1, "quantity": 1}]),
          "奖品价值不能为负数"),
-        (_payload(prizes=[{"name": "x", "type": "points", "value": 1, "quantity": 0}]),
+        (_payload(prizes=[{"name": "x", "type": "days", "value": 1, "quantity": 0}]),
          "奖品数量至少为 1"),
         (_payload(lottery_type="password", password_keyword=None), "口令抽奖需要设置口令"),
         (_payload(max_participants=0), "最大参与人数至少为 1"),
@@ -282,7 +283,7 @@ def test_approve_creates_round_and_audit(db):
     assert round_obj.created_by == user.id  # 轮次归属提案人，不是审批人
     assert round_obj.chat_id == 999
     prizes = db.query(models.LotteryRoundPrize).filter_by(round_id=round_obj.id).all()
-    assert len(prizes) == 1 and prizes[0].type == "points" and prizes[0].value == 100
+    assert len(prizes) == 1 and prizes[0].type == "days" and prizes[0].value == 30
     # AdminLog 审计行
     logs = db.query(models.AdminLog).filter_by(action="lottery_proposal_approve").all()
     assert len(logs) == 1

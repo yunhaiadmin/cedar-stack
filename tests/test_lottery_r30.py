@@ -109,7 +109,7 @@ def test_notify_draw_results_honest_on_errors(db, monkeypatch):
     db.commit()
     rnd = lottery.create_round(
         db, title="诚实测试", chat_id=-100321,
-        prizes=[{"name": "积分奖", "type": "points", "value": 10, "quantity": 1}],
+        prizes=[{"name": "天数奖", "type": "days", "value": 7, "quantity": 1}],
     )
     texts = []
     monkeypatch.setattr(
@@ -130,7 +130,7 @@ def test_notify_draw_results_all_ok_keeps_old_text(db, monkeypatch):
 
     rnd = lottery.create_round(
         db, title="全发测试", chat_id=-100322,
-        prizes=[{"name": "积分奖", "type": "points", "value": 10, "quantity": 1}],
+        prizes=[{"name": "天数奖", "type": "days", "value": 7, "quantity": 1}],
     )
     texts = []
     monkeypatch.setattr(
@@ -143,16 +143,22 @@ def test_notify_draw_results_all_ok_keeps_old_text(db, monkeypatch):
 
 # ---------- L3 ----------
 
-def test_create_rejects_zero_value_points_days(db, client):
-    """points/days 的 value=0 创建时直接 400（开奖时必失败，不能建出来）。"""
+def test_create_rejects_zero_value_days_and_points_type(db, client):
+    """days 的 value=0 创建时直接 400（开奖时必失败，不能建出来）；
+    points 型奖品已随货币下线，创建时直接 400（类型错误）。"""
     _set_group_ids(db, "-100777")
-    for ptype in ("points", "days"):
-        r = client.post("/api/admin/welfare/lottery/rounds", json={
-            "title": f"零值{ptype}", "chat_id": -100777,
-            "prizes": [{"name": "零奖", "type": ptype, "value": 0, "quantity": 1}],
-        })
-        assert r.status_code == 400, (ptype, r.text)
-        assert "必须大于 0" in r.json()["detail"]
+    r = client.post("/api/admin/welfare/lottery/rounds", json={
+        "title": "零值days", "chat_id": -100777,
+        "prizes": [{"name": "零奖", "type": "days", "value": 0, "quantity": 1}],
+    })
+    assert r.status_code == 400, r.text
+    assert "必须大于 0" in r.json()["detail"]
+    r = client.post("/api/admin/welfare/lottery/rounds", json={
+        "title": "积分奖品", "chat_id": -100777,
+        "prizes": [{"name": "积分奖", "type": "points", "value": 100, "quantity": 1}],
+    })
+    assert r.status_code == 400, r.text
+    assert "奖品类型只能是 days/whitelist" in r.json()["detail"]
     # whitelist 的 0 是合法语义（永久），保持可建
     r = client.post("/api/admin/welfare/lottery/rounds", json={
         "title": "白名单零值", "chat_id": -100777,
@@ -186,7 +192,7 @@ def test_verify_round_uses_module_mask(db):
     db.commit()
     rnd = lottery.create_round(
         db, title="打码测试", chat_id=-100323,
-        prizes=[{"name": "积分奖", "type": "points", "value": 10, "quantity": 1}],
+        prizes=[{"name": "天数奖", "type": "days", "value": 7, "quantity": 1}],
     )
     db.add(models.LotteryRoundEntry(round_id=rnd.id, user_id=user.id,
                                    telegram_id=user.telegram_id))

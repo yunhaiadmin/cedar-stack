@@ -92,7 +92,7 @@ def test_points_panel_labels(db):
     text = handlers.handle_points(db, {"id": TG}, TG, "")
     labels = _labels(text)
     assert "能量余额" in labels
-    assert "活力数值" in labels
+    assert "活力数值" not in labels  # 活力已随货币删除下线（2026-11-13）
     for label in labels:
         assert CJK4.match(label), label
 

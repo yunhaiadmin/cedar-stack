@@ -1993,7 +1993,6 @@ class PlanUpsertRequest(BaseModel):
     sort_order: int = 0
     # 套餐一个服一个：留空时归到面板当前服
     realm_id: Optional[int] = None
-    points_price: Optional[float] = Field(default=None, ge=0, description="积分价；为空表示不支持积分购买")
     # 订阅分档权益表 {权益键: 整数值}；键与合法区间以 backend/entitlements.py
     # 的注册表为准（写路径 validate 校验）。None / 空对象 = 不声明任何权益，
     # 该套餐用户全部回退现行全站默认，落库存 NULL 不存空对象。
@@ -2025,7 +2024,6 @@ def economy_list_plans(
             "is_popular": p.is_popular, "sort_order": p.sort_order,
             "realm_id": p.realm_id,
             "realm_name": (p.realm.name if p.realm else ""),
-            "points_price": (float(p.points_price) if p.points_price is not None else None),
         }
         for p in plans
     ],
@@ -2057,7 +2055,6 @@ def economy_create_plan(
         features=request.features, is_active=request.is_active,
         is_popular=request.is_popular, sort_order=request.sort_order,
         realm_id=realm_id,
-        points_price=(Decimal(str(request.points_price)) if request.points_price is not None else None),
         # 全空权益存 NULL 不存空对象（与「未声明」存量口径一致）
         entitlements=plan_entitlements or None,
     )
@@ -2069,7 +2066,6 @@ def economy_create_plan(
     _entitlements.invalidate()
     _audit(db, current_admin, "economy_create_plan", "plan", plan.id,
            {"name": plan.name, "price": float(plan.price), "realm_id": realm_id,
-            "points_price": (float(plan.points_price) if plan.points_price is not None else None),
             "entitlements": plan_entitlements or None})
     db.commit()
     return {"success": True, "id": plan.id}
@@ -2099,7 +2095,6 @@ def economy_update_plan(
     plan.name = request.name
     plan.description = request.description
     plan.price = Decimal(str(request.price))
-    plan.points_price = Decimal(str(request.points_price)) if request.points_price is not None else None
     plan.duration_days = request.duration_days
     plan.features = request.features
     # JSON 列必须整对象重新赋值（原地改键不触发脏标记）；全空存 NULL
@@ -2162,118 +2157,11 @@ def economy_delete_plan(
     return {"success": True}
 
 
-# ---------- 充值套餐 CRUD ----------
-
-class PackageUpsertRequest(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
-    amount: int = Field(..., ge=1, description="积分数量")
-    price: float = Field(..., ge=0)
-    bonus: int = Field(default=0, ge=0)
-    is_active: bool = True
-    is_popular: bool = False
-    sort_order: int = 0
-
-
-@admin_router.get("/economy/packages")
-def economy_list_packages(
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    packages = db.query(models.RechargePackage).order_by(
-        models.RechargePackage.sort_order, models.RechargePackage.id
-    ).all()
-    return {"packages": [
-        {
-            "id": p.id, "name": p.name, "amount": p.amount,
-            "price": float(p.price), "bonus": p.bonus,
-            "is_active": p.is_active, "is_popular": p.is_popular,
-            "sort_order": p.sort_order,
-        }
-        for p in packages
-    ]}
-
-
-@admin_router.post("/economy/packages")
-def economy_create_package(
-    request: PackageUpsertRequest,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    package = models.RechargePackage(
-        name=request.name, amount=request.amount,
-        price=Decimal(str(request.price)), bonus=request.bonus,
-        is_active=request.is_active, is_popular=request.is_popular,
-        sort_order=request.sort_order,
-    )
-    db.add(package)
-    db.commit()
-    db.refresh(package)
-    _audit(db, current_admin, "economy_create_package", "package", package.id,
-           {"name": package.name})
-    db.commit()
-    return {"success": True, "id": package.id}
-
-
-@admin_router.put("/economy/packages/{package_id}")
-def economy_update_package(
-    package_id: int,
-    request: PackageUpsertRequest,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    package = db.query(models.RechargePackage).filter(
-        models.RechargePackage.id == package_id
-    ).first()
-    if not package:
-        raise HTTPException(status_code=404, detail="充值套餐不存在")
-
-    package.name = request.name
-    package.amount = request.amount
-    package.price = Decimal(str(request.price))
-    package.bonus = request.bonus
-    package.is_active = request.is_active
-    package.is_popular = request.is_popular
-    package.sort_order = request.sort_order
-    db.commit()
-    _audit(db, current_admin, "economy_update_package", "package", package.id)
-    db.commit()
-    return {"success": True}
-
-
-@admin_router.delete("/economy/packages/{package_id}")
-def economy_delete_package(
-    package_id: int,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    package = db.query(models.RechargePackage).filter(
-        models.RechargePackage.id == package_id
-    ).first()
-    if not package:
-        raise HTTPException(status_code=404, detail="充值套餐不存在")
-
-    in_use = db.query(models.RechargeOrder).filter(
-        models.RechargeOrder.package_id == package_id
-    ).first()
-    if in_use:
-        package.is_active = False
-        db.commit()
-        return {"success": True, "soft_deleted": True,
-                "message": "套餐已有订单引用，已停用而非删除"}
-
-    db.delete(package)
-    db.commit()
-    _audit(db, current_admin, "economy_delete_package", "package", package_id)
-    db.commit()
-    return {"success": True}
-
-
 # ---------- 兑换码管理 ----------
 
 class ExchangeCodeBatchRequest(BaseModel):
     count: int = Field(default=1, ge=1, le=100)
-    type: str = Field(default="points")  # points / subscription / discount
-    points_value: int = Field(default=0, ge=0)
+    type: str = Field(default="subscription")  # subscription / discount（points 能量型已下线）
     plan_id: Optional[int] = None
     duration_days: int = Field(default=0, ge=0)
     discount_pct: int = Field(default=0, ge=0, le=99)  # discount 型：实付百分比，85=八五折
@@ -2305,7 +2193,6 @@ def economy_list_exchange_codes(
             used_by = [{"id": u.id, "username": u.username} for u in users]
         items.append({
             "id": c.id, "code": c.code, "type": c.type,
-            "points_value": c.points_value,
             "discount_pct": c.discount_pct,
             "plan_name": plans.get(c.plan_id),
             "duration_days": c.duration_days,
@@ -2324,11 +2211,9 @@ def economy_create_exchange_codes(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """批量生成兑换码（积分型 / 订阅型 / 折扣型）"""
-    if request.type not in ("points", "subscription", "discount"):
-        raise HTTPException(status_code=400, detail="type 必须是 points、subscription 或 discount")
-    if request.type == "points" and request.points_value <= 0:
-        raise HTTPException(status_code=400, detail="积分型兑换码必须设置 points_value")
+    """批量生成兑换码（订阅型 / 折扣型；积分型已随货币下线）"""
+    if request.type not in ("subscription", "discount"):
+        raise HTTPException(status_code=400, detail="type 必须是 subscription 或 discount（能量型已下线）")
     if request.type == "discount" and not (1 <= request.discount_pct <= 99):
         raise HTTPException(status_code=400, detail="折扣型兑换码的 discount_pct 必须在 1-99 之间（85=八五折）")
     if request.type == "subscription":
@@ -2343,7 +2228,6 @@ def economy_create_exchange_codes(
         code = models.ExchangeCode(
             code=_generate_code(),
             type=request.type,
-            points_value=request.points_value if request.type == "points" else 0,
             plan_id=request.plan_id if request.type == "subscription" else None,
             duration_days=request.duration_days if request.type == "subscription" else 0,
             discount_pct=request.discount_pct if request.type == "discount" else 0,

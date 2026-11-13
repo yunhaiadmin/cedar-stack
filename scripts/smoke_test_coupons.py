@@ -13,12 +13,16 @@
    不会出现「预览 8 折、实付全价」；
 4. **金额不落浮点**：一律 Decimal、保留两位；订单快照 `list_price` /
    `discount_amount`，套餐改价后历史订单仍能解释；
-5. **订单金额 = 实付**：对账、邀请返利比例、退款都以用户真付的钱为准；
+5. **订单金额 = 实付**：对账、退款都以用户真付的钱为准；
 6. **超时未支付自动收尾**：预订不能被一张永远不付款的订单白占着——
    到期后自动关单并还额度；已支付却还挂着的脏数据补记为已用；
 7. **运营面**：建券（可批量随机码）、改券（总次数不能改到已占用之下）、
    停用、删券（有核销记录只能停用）、核销记录、总开关与预订时限、审计；
 8. **鉴权**：普通用户碰不到管理端券接口；未登录碰不到试算与下单。
+
+2026-11-13 货币下线改版：充值（kind=recharge）下单/试算已删，本冒烟的
+试算与下单场景改走订阅口径（百元套餐顶替原积分包的价格位）；券引擎本身
+的额度预订/消费/释放语义不变。
 
 用法：python scripts/smoke_test_coupons.py
 """
@@ -92,7 +96,8 @@ with SessionLocal() as db:
     ):
         db.add(models.SystemConfig(key=key, value=value))
 
-    pkg = models.RechargePackage(name="100 积分包", amount=100, price=100, bonus=0, is_active=True)
+    pkg = models.SubscriptionPlan(name="百元季卡", price=100, duration_days=30,
+                                  realm_id=realm.id, is_active=True)
     plan = models.SubscriptionPlan(name="月卡", price=30, duration_days=30,
                                    realm_id=realm.id, is_active=True)
     db.add_all([pkg, plan])
@@ -126,10 +131,12 @@ def order_row(order_id: str):
             models.SubscriptionOrder.order_id == order_id).first()
 
 
-def points_of(user_id: int) -> int:
+def sub_days_of(user_id: int) -> int:
     with SessionLocal() as db:
-        return int(db.query(models.WebUser.points).filter(
-            models.WebUser.id == user_id).scalar() or 0)
+        rows = db.query(models.UserSubscription).filter(
+            models.UserSubscription.user_id == user_id).all()
+        return sum(int((r.end_date - r.start_date).days) for r in rows
+                   if r.end_date and r.start_date)
 
 
 r = client.post("/api/user/auth/login", json={"username": "coupon_staff", "password": "staffpass123"})
@@ -161,13 +168,13 @@ check("券落库：折扣与限用正确",
       f"{SAVE10.discount_type if SAVE10 else None}/{SAVE10.value if SAVE10 else None}")
 
 r = client.post("/api/admin/economy/coupons", headers=ADMIN_H, json={
-    "code": "CUT5", "kind": "recharge", "discount_type": "fixed", "value": 5,
+    "code": "CUT5", "kind": "subscription", "discount_type": "fixed", "value": 5,
     "max_uses": 0, "per_user_limit": 0, "note": "立减 5 元",
 })
 check("创建固定减免券（不限次数）", r.status_code == 200, f"status={r.status_code} {r.text[:120]}")
 
 r = client.post("/api/admin/economy/coupons", headers=ADMIN_H, json={
-    "code": "CAP30", "kind": "recharge", "discount_type": "percent", "value": 50,
+    "code": "CAP30", "kind": "subscription", "discount_type": "percent", "value": 50,
     "max_discount": 30, "max_uses": 1, "per_user_limit": 1, "note": "五折但最多省 30",
 })
 check("创建带封顶的百分比券", r.status_code == 200, f"status={r.status_code} {r.text[:120]}")
@@ -218,7 +225,7 @@ r = client.get("/api/user/economy/payment/coupon/config", headers=USER_H)
 check("开关默认开启", r.status_code == 200 and r.json()["enabled"] is True, f"status={r.status_code}")
 
 r = client.post("/api/user/economy/payment/coupon/quote", headers=USER_H,
-                json={"code": "save10", "kind": "recharge", "item_id": pkg_id})
+                json={"code": "save10", "kind": "subscription", "item_id": pkg_id})
 q = r.json() if r.status_code == 200 else {}
 check("九折券试算：原价 100 / 省 10 / 实付 90",
       r.status_code == 200 and q.get("list_price") == 100.0
@@ -227,25 +234,20 @@ check("九折券试算：原价 100 / 省 10 / 实付 90",
 check("小写输入也能识别（码统一大写）", q.get("code") == "SAVE10", str(q.get("code")))
 
 r = client.post("/api/user/economy/payment/coupon/quote", headers=USER_H,
-                json={"code": "CUT5", "kind": "recharge", "item_id": pkg_id})
+                json={"code": "CUT5", "kind": "subscription", "item_id": pkg_id})
 check("固定减免：省 5 元、实付 95",
       r.status_code == 200 and r.json()["discount_amount"] == 5.0
       and r.json()["paid_amount"] == 95.0, r.text[:160])
 
 r = client.post("/api/user/economy/payment/coupon/quote", headers=USER_H,
-                json={"code": "CAP30", "kind": "recharge", "item_id": pkg_id})
+                json={"code": "CAP30", "kind": "subscription", "item_id": pkg_id})
 check("封顶生效：五折本该省 50，封顶后只省 30",
       r.status_code == 200 and r.json()["discount_amount"] == 30.0
       and r.json()["paid_amount"] == 70.0, r.text[:160])
 
 r = client.post("/api/user/economy/payment/coupon/quote", headers=USER_H,
-                json={"code": "NOPE", "kind": "recharge", "item_id": pkg_id})
+                json={"code": "NOPE", "kind": "subscription", "item_id": pkg_id})
 check("不存在的码被拒", r.status_code == 400 and "不存在" in r.text, f"{r.status_code} {r.text[:80]}")
-
-r = client.post("/api/user/economy/payment/coupon/quote", headers=USER_H,
-                json={"code": "ONLYTWO", "kind": "recharge", "item_id": pkg_id})
-check("充值不能使用订阅专用券", r.status_code == 400 and "不适用" in r.text,
-      f"{r.status_code} {r.text[:80]}")
 
 r = client.post("/api/user/economy/payment/coupon/quote", headers=USER_H,
                 json={"code": "ONLYTWO", "kind": "subscription", "item_id": plan_id})
@@ -254,12 +256,12 @@ check("定向二服的券不能用于当前服的会员",
 
 # 门槛券：满 200 才能用，套餐价 100 应该被拒
 r = client.post("/api/admin/economy/coupons", headers=ADMIN_H, json={
-    "code": "MIN200", "kind": "recharge", "discount_type": "fixed", "value": 20,
+    "code": "MIN200", "kind": "subscription", "discount_type": "fixed", "value": 20,
     "min_amount": 200, "per_user_limit": 1,
 })
 check("创建门槛券（满 200 减 20）", r.status_code == 200, f"status={r.status_code}")
 r = client.post("/api/user/economy/payment/coupon/quote", headers=USER_H,
-                json={"code": "MIN200", "kind": "recharge", "item_id": pkg_id})
+                json={"code": "MIN200", "kind": "subscription", "item_id": pkg_id})
 check("未达门槛被拒且说明金额", r.status_code == 400 and "满" in r.text,
       f"{r.status_code} {r.text[:80]}")
 
@@ -270,7 +272,7 @@ with SessionLocal() as db:
                              valid_until=datetime.now() - timedelta(days=1)))
     db.commit()
 r = client.post("/api/user/economy/payment/coupon/quote", headers=USER_H,
-                json={"code": "EXPIRED1", "kind": "recharge", "item_id": pkg_id})
+                json={"code": "EXPIRED1", "kind": "subscription", "item_id": pkg_id})
 check("过期券被拒", r.status_code == 400 and "过期" in r.text, f"{r.status_code} {r.text[:80]}")
 
 # 停用券
@@ -278,7 +280,7 @@ r = client.put(f"/api/admin/economy/coupons/{SAVE10.id}", headers=ADMIN_H, json=
 check("停用券成功", r.status_code == 200 and r.json()["coupon"]["is_active"] is False,
       f"status={r.status_code} {r.text[:120]}")
 r = client.post("/api/user/economy/payment/coupon/quote", headers=USER_H,
-                json={"code": "SAVE10", "kind": "recharge", "item_id": pkg_id})
+                json={"code": "SAVE10", "kind": "subscription", "item_id": pkg_id})
 check("停用券被拒", r.status_code == 400 and "停用" in r.text, f"{r.status_code} {r.text[:80]}")
 r = client.put(f"/api/admin/economy/coupons/{SAVE10.id}", headers=ADMIN_H, json={"is_active": True})
 check("重新启用成功", r.status_code == 200 and r.json()["coupon"]["is_active"] is True)
@@ -288,7 +290,7 @@ check("重新启用成功", r.status_code == 200 and r.json()["coupon"]["is_acti
 print("\n--- 下单：金额按实付、额度被预订 ---")
 
 r = client.post("/api/user/economy/payment/order", headers=USER_H, json={
-    "kind": "recharge", "item_id": pkg_id, "payment_method": "alipay", "coupon_code": "SAVE10",
+    "kind": "subscription", "item_id": pkg_id, "payment_method": "alipay", "coupon_code": "SAVE10",
 })
 body = r.json() if r.status_code == 200 else {}
 check("用券下单成功", r.status_code == 200, f"status={r.status_code} {r.text[:160]}")
@@ -300,9 +302,9 @@ check("支付链接金额是实付（易支付 money=90.00）",
       "money=90.00" in body.get("pay_url", ""), body.get("pay_url", "")[:120])
 
 row = order_row(ORDER_A)
-check("订单落库：price=实付 90、list_price=100、discount=10",
-      row is not None and float(row.price) == 90.0 and float(row.list_price) == 100.0
-      and float(row.discount_amount) == 10.0, str(row.price if row else None))
+check("订单落库：amount=实付 90、list_price=100、discount=10",
+      row is not None and float(row.amount) == 90.0 and float(row.list_price) == 100.0
+      and float(row.discount_amount) == 10.0, str(row.amount if row else None))
 check("订单关联核销记录", row is not None and row.coupon_usage_id is not None)
 
 usage = usage_of(ORDER_A)
@@ -313,7 +315,7 @@ check("券的占用数 +1", int(coupon_row("SAVE10").use_count) == 1,
       str(coupon_row("SAVE10").use_count))
 
 r = client.post("/api/user/economy/payment/coupon/quote", headers=USER_H,
-                json={"code": "SAVE10", "kind": "recharge", "item_id": pkg_id})
+                json={"code": "SAVE10", "kind": "subscription", "item_id": pkg_id})
 check("同一张券每人限用 1 次：预订中的额度也算",
       r.status_code == 400 and "限用" in r.text, f"{r.status_code} {r.text[:80]}")
 
@@ -329,11 +331,11 @@ check("用户端订单列表能看到优惠与码",
 
 # ==================== 4. 付款履约：预订 → 已消费 ====================
 
-print("\n--- 付款：预订转已用，积分按套餐实发 ---")
+print("\n--- 付款：预订转已用，会员按套餐实发 ---")
 
 r = client.post(f"/api/admin/economy/orders/{ORDER_A}/mark-paid", headers=ADMIN_H)
 check("补单发货成功", r.status_code == 200, f"status={r.status_code} {r.text[:120]}")
-check("到账积分按套餐发放（与优惠无关）", points_of(buyer_id) == 100, str(points_of(buyer_id)))
+check("会员按套餐发放（30 天，与优惠无关）", sub_days_of(buyer_id) == 30, str(sub_days_of(buyer_id)))
 usage = usage_of(ORDER_A)
 check("核销记录转为「已消费」", usage is not None and usage.status == coupons.CONSUMED,
       f"{usage.status if usage else None}")
@@ -342,7 +344,7 @@ check("已消费后占用数仍为 1（额度不还）", int(coupon_row("SAVE10"
 
 # 真实回调路径也要能消费掉预订
 r = client.post("/api/user/economy/payment/order", headers=USER2_H, json={
-    "kind": "recharge", "item_id": pkg_id, "payment_method": "alipay", "coupon_code": "CUT5",
+    "kind": "subscription", "item_id": pkg_id, "payment_method": "alipay", "coupon_code": "CUT5",
 })
 ORDER_B = r.json().get("order_id", "")
 from backend.api.economy import _yipay_sign  # noqa: E402
@@ -357,22 +359,22 @@ check("支付回调验签通过并确认", r.status_code == 200 and r.text == "s
 usage = usage_of(ORDER_B)
 check("回调履约后核销记录也是「已消费」",
       usage is not None and usage.status == coupons.CONSUMED, f"{usage.status if usage else None}")
-check("回调履约：买家 2 到账 100 积分", points_of(buyer2_id) == 100, str(points_of(buyer2_id)))
+check("回调履约：买家 2 会员到账 30 天", sub_days_of(buyer2_id) == 30, str(sub_days_of(buyer2_id)))
 
 # 重放回调不会重复消费 / 重复发货
 r = client.get("/api/user/economy/payment/notify", params=params)
 check("重放回调仍返回 success", r.status_code == 200 and r.text == "success")
-check("重放回调不重复发积分", points_of(buyer2_id) == 100, str(points_of(buyer2_id)))
+check("重放回调不重复发会员", sub_days_of(buyer2_id) == 30, str(sub_days_of(buyer2_id)))
 
 # ==================== 5. 关单 / 退款：额度还回去 ====================
 
 print("\n--- 关单与退款：释放额度 ---")
 
-# 充值专用券不能拿来买会员（反向也要成立）
+# 定向二服的券不能拿来买当前服的会员（下单口也要拦）
 r = client.post("/api/user/economy/payment/order", headers=USER_H, json={
-    "kind": "subscription", "item_id": plan_id, "payment_method": "alipay", "coupon_code": "CUT5",
+    "kind": "subscription", "item_id": plan_id, "payment_method": "alipay", "coupon_code": "ONLYTWO",
 })
-check("充值券不能用于买会员", r.status_code == 400 and "不适用" in r.text,
+check("定向二服的券不能下单买当前服会员", r.status_code == 400 and "指定服" in r.text,
       f"{r.status_code} {r.text[:100]}")
 
 r = client.post("/api/admin/economy/coupons", headers=ADMIN_H, json={
@@ -406,7 +408,7 @@ check("释放后同一张券可以再用", r.status_code == 200, f"{r.status_cod
 
 # 退款释放
 r = client.post("/api/user/economy/payment/order", headers=USER2_H, json={
-    "kind": "recharge", "item_id": pkg_id, "payment_method": "alipay", "coupon_code": "CAP30",
+    "kind": "subscription", "item_id": pkg_id, "payment_method": "alipay", "coupon_code": "CAP30",
 })
 ORDER_D = r.json().get("order_id", "")
 check("用封顶券下单：实付 70", r.status_code == 200 and r.json().get("amount") == 70.0, r.text[:160])
@@ -454,21 +456,21 @@ with SessionLocal() as db:
 print("\n--- 总次数：抢占式额度 ---")
 
 r = client.post("/api/admin/economy/coupons", headers=ADMIN_H, json={
-    "code": "ONLYONE", "kind": "recharge", "discount_type": "percent", "value": 50,
+    "code": "ONLYONE", "kind": "subscription", "discount_type": "percent", "value": 50,
     "max_uses": 1, "per_user_limit": 0, "note": "只有一张",
 })
 check("创建总数 1 的券", r.status_code == 200, f"status={r.status_code}")
 
 r = client.post("/api/user/economy/payment/order", headers=USER2_H, json={
-    "kind": "recharge", "item_id": pkg_id, "payment_method": "alipay", "coupon_code": "ONLYONE",
+    "kind": "subscription", "item_id": pkg_id, "payment_method": "alipay", "coupon_code": "ONLYONE",
 })
 check("第一个人抢到（下了单）", r.status_code == 200, f"{r.status_code} {r.text[:120]}")
 r = client.post("/api/user/economy/payment/coupon/quote", headers=USER_H,
-                json={"code": "ONLYONE", "kind": "recharge", "item_id": pkg_id})
+                json={"code": "ONLYONE", "kind": "subscription", "item_id": pkg_id})
 check("额度被预订后第二个人不能再试算",
       r.status_code == 400 and "用完" in r.text, f"{r.status_code} {r.text[:80]}")
 r = client.post("/api/user/economy/payment/order", headers=USER_H, json={
-    "kind": "recharge", "item_id": pkg_id, "payment_method": "alipay", "coupon_code": "ONLYONE",
+    "kind": "subscription", "item_id": pkg_id, "payment_method": "alipay", "coupon_code": "ONLYONE",
 })
 check("第二个人也不能下单", r.status_code == 400, f"{r.status_code} {r.text[:100]}")
 
@@ -478,7 +480,7 @@ with SessionLocal() as db:
         user = db2.query(models.WebUser).filter(models.WebUser.id == buyer_id).first()
         try:
             coupons.reserve(db, coupon=coupon, user=user, order_id="FORCED",
-                            kind="recharge", list_price=Decimal("100"),
+                            kind="subscription", list_price=Decimal("100"),
                             discount=Decimal("50"), paid=Decimal("50"))
             raised = False
         except Exception as exc:  # noqa: BLE001
@@ -490,18 +492,18 @@ with SessionLocal() as db:
 print("\n--- 超时预订：自动关单并还额度 ---")
 
 with SessionLocal() as db:
-    db.add(models.CouponCode(code="STALE1", kind="recharge", discount_type="fixed",
+    db.add(models.CouponCode(code="STALE1", kind="subscription", discount_type="fixed",
                              value=3, max_uses=5, per_user_limit=1, is_active=True))
     db.commit()
     coupon = db.query(models.CouponCode).filter(models.CouponCode.code == "STALE1").first()
     for order_id, age_hours, status in (("STALE-PENDING", 30, "pending"),
                                         ("STALE-PAID", 30, "paid"),
                                         ("STALE-FRESH", 1, "pending")):
-        db.add(models.RechargeOrder(order_id=order_id, user_id=buyer_id, package_id=pkg_id,
-                                    amount=100, price=97, payment_method="alipay",
-                                    status=status))
+        db.add(models.SubscriptionOrder(order_id=order_id, user_id=buyer_id, plan_id=pkg_id,
+                                        item_name="百元季卡", amount=Decimal("97"),
+                                        payment_method="alipay", status=status))
         db.add(models.CouponUsage(coupon_id=coupon.id, user_id=buyer_id, order_id=order_id,
-                                  kind="recharge", status=coupons.RESERVED,
+                                  kind="subscription", status=coupons.RESERVED,
                                   list_price=Decimal("100"), discount_amount=Decimal("3"),
                                   paid_amount=Decimal("97"),
                                   created_at=datetime.now() - timedelta(hours=age_hours)))
@@ -517,8 +519,8 @@ with SessionLocal() as db:
           summary["closed_orders"] == 1 and summary["released"] == 1, str(summary))
     check("已支付却还挂着的预订补记为已用", summary["consumed"] == 1, str(summary))
 
-    pending = db.query(models.RechargeOrder).filter(
-        models.RechargeOrder.order_id == "STALE-PENDING").first()
+    pending = db.query(models.SubscriptionOrder).filter(
+        models.SubscriptionOrder.order_id == "STALE-PENDING").first()
     check("超时订单状态 closed 且带关单时间",
           pending.status == "closed" and pending.closed_at is not None,
           f"{pending.status} / {pending.closed_at}")
@@ -593,11 +595,11 @@ check("env 关闭总开关 + 面板设置预订时限",
 r = client.get("/api/user/economy/payment/coupon/config", headers=USER_H)
 check("用户端看到开关已关闭", r.json()["enabled"] is False, r.text[:80])
 r = client.post("/api/user/economy/payment/coupon/quote", headers=USER_H,
-                json={"code": "CUT5", "kind": "recharge", "item_id": pkg_id})
+                json={"code": "CUT5", "kind": "subscription", "item_id": pkg_id})
 check("关闭后试算被拒且说明原因", r.status_code == 400 and "未开启" in r.text,
       f"{r.status_code} {r.text[:80]}")
 r = client.post("/api/user/economy/payment/order", headers=USER_H, json={
-    "kind": "recharge", "item_id": pkg_id, "payment_method": "alipay", "coupon_code": "CUT5",
+    "kind": "subscription", "item_id": pkg_id, "payment_method": "alipay", "coupon_code": "CUT5",
 })
 check("关闭后带券下单也被拒", r.status_code == 400, f"{r.status_code} {r.text[:100]}")
 os.environ.pop("COUPON_ENABLED", None)  # 恢复缺省（开）
@@ -628,8 +630,8 @@ print("\n--- 统一核销入口：一个输入框认四种码 ---")
 with SessionLocal() as db:
     db.add(models.CouponCode(code="STOPPED10", kind="all", discount_type="percent",
                              value=90, is_active=False))
-    db.add(models.ExchangeCode(code="EXCH100", type="points", points_value=100,
-                               max_uses=1, is_active=True))
+    db.add(models.ExchangeCode(code="EXCH100", type="subscription", plan_id=pkg_id,
+                               duration_days=30, max_uses=1, is_active=True))
     db.add(models.RegistrationCode(code="REG-SMOKE1", code_type=1, days=30,
                                    max_uses=1, is_active=True))
     db.commit()
@@ -690,7 +692,7 @@ check("普通用户不能看核销记录",
       client.get("/api/admin/economy/coupons/usages", headers=USER_H).status_code in (401, 403))
 check("未登录不能试算",
       client.post("/api/user/economy/payment/coupon/quote",
-                  json={"code": "CUT5", "kind": "recharge", "item_id": pkg_id}
+                  json={"code": "CUT5", "kind": "subscription", "item_id": pkg_id}
                   ).status_code in (401, 403))
 
 # ==================== 收尾 ====================

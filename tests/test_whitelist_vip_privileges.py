@@ -10,8 +10,8 @@ whitelist_account_ids：核销痕迹＋三处永久现算），不另立名单�
 3. 转存 VIP：claim_due_jobs / _pick_candidates 里白名单 owner 最高
    优先级（同轮先行），普通 owner 仍按原公平序（在途数→最老等待→键）
    推进、不饿死；vip_owners=None 时排序逐字不变。
-4. 红包/转让免手续费：白名单发送方 fee=0（与 fee_pct 配置为 0 时
-   逐字一致：不写 fee 台账行、返回 fee=0），普通用户仍 5%。
+（原第 4 项「红包/转让免手续费」已随积分转账功能于 2026-11-13
+随货币一并下线：transfer_points_core 已删除，无手续费可免。）
 造数一律走真实核销路径（codes.redeem_code），与 #1668/#1670 同批同结果。
 """
 import os
@@ -287,30 +287,6 @@ def test_claim_due_jobs_claims_whitelist_first(db):
 
 # ==================== 4. 红包 / 转让免手续费 ====================
 
-def _fee_logs(db, user_id, log_type):
-    return db.query(models.PointsLog).filter(
-        models.PointsLog.user_id == user_id,
-        models.PointsLog.type == log_type).all()
-
-
-def test_transfer_fee_zero_for_whitelist(db):
-    vip = _whitelist_user(db, "vip_send", points=1000)
-    recv = _user(db, "recv_a")
-    db.commit()
-    result = economy_api.transfer_points_core(db, vip, "recv_a", 100)
-    assert result["fee"] == 0
-    db.refresh(vip)
-    assert vip.points == 900  # 只扣本金，无手续费
-    assert _fee_logs(db, vip.id, "transfer_fee") == []
-
-
-def test_transfer_fee_normal_user_still_charged(db):
-    plain = _user(db, "plain_send", points=1000)
-    _user(db, "recv_b")
-    db.commit()
-    result = economy_api.transfer_points_core(db, plain, "recv_b", 100)
-    assert result["fee"] == 5  # 100 × 5%
-    db.refresh(plain)
-    assert plain.points == 895
-    fees = _fee_logs(db, plain.id, "transfer_fee")
-    assert len(fees) == 1 and fees[0].amount == -5
+# ---------- 转让免手续费一组已随积分转账于 2026-11-13 下线 ----------
+# transfer_points_core 已随货币删除，fee 口径无载体：两用例整段删除，
+# 不另立替代（白名单其余三项特权仍在本文件覆盖）。

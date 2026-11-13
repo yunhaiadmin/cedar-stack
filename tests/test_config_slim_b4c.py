@@ -108,10 +108,11 @@ def test_welfare_digit_bool_style(db):
 
 def test_welfare_word_bool_style(db):
     # 2026-10-21 A 类摘面板：welfare 家族的 word 风格 bool 键已全数摘除，
-    # word 风格向量改到 economy 家族的保留键 recharge_enabled（B 类）
-    config_service.save_config(db, {"recharge_enabled": True}, schema="economy")
+    # word 风格向量改到 economy 家族的保留键 subscription_purchase_enabled
+    #（recharge_enabled 已随货币于 2026-11-13 下线）
+    config_service.save_config(db, {"subscription_purchase_enabled": True}, schema="economy")
     db.commit()
-    assert _row(db, "recharge_enabled").value == "true"
+    assert _row(db, "subscription_purchase_enabled").value == "true"
 
 
 def test_welfare_group_ids_raw(db):
@@ -150,13 +151,13 @@ def test_registration_mode_enum_rejects(db):
 # ---------- view_unlock：int 键 ----------
 
 def test_view_unlock_roundtrip(db):
+    # emby_view_unlock_points 已随货币于 2026-11-13 下线，查看解锁只剩天数
     config_service.save_config(
         db,
-        {"emby_view_unlock_points": 10, "emby_view_unlock_days": 0},
+        {"emby_view_unlock_days": 0},
         schema="view_unlock",
     )
     db.commit()
-    assert store.get_value(db, "emby_view_unlock_points", "nope") == "10"
     assert _row(db, "emby_view_unlock_days").value == "0"
 
 
@@ -164,11 +165,11 @@ def test_view_unlock_rejects_negative_atomic(db):
     with pytest.raises(config_schema.ConfigValueError):
         config_service.save_config(
             db,
-            {"emby_view_unlock_points": 5, "emby_view_unlock_days": -1},
+            {"emby_view_unlock_days": -1},
             schema="view_unlock",
         )
     db.rollback()
-    assert _row(db, "emby_view_unlock_points") is None
+    assert _row(db, "emby_view_unlock_days") is None
 
 
 # ---------- 未知键一律拒绝（防笔误造脏键） ----------

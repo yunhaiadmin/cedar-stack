@@ -200,8 +200,9 @@ def test_view_unlock_invalidate(db, admin_user):
 
     app.dependency_overrides[portal.get_db] = _gd
     app.dependency_overrides[portal.require_staff] = lambda: admin_user
-    _prime(db, portal.VIEW_UNLOCK_POINTS_KEY, "50")
-    r = TestClient(app).put("/api/admin/emby/view-unlock", json={"points": 80, "days": 30})
+    # emby_view_unlock_points 已随货币于 2026-11-13 下线，查看解锁只剩天数
+    assert not hasattr(portal, "VIEW_UNLOCK_POINTS_KEY")
+    _prime(db, portal.VIEW_UNLOCK_DAYS_KEY, "365")
+    r = TestClient(app).put("/api/admin/emby/view-unlock", json={"days": 30})
     assert r.status_code == 200
-    assert store.get_value(db, portal.VIEW_UNLOCK_POINTS_KEY, "50") == "80"
     assert store.get_value(db, portal.VIEW_UNLOCK_DAYS_KEY, "365") == "30"

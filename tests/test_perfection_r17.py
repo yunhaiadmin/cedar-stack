@@ -193,56 +193,7 @@ def test_b_p2_3_bulk_extend_keyset_pagination(db):
     assert u.welfare_expires_at > datetime.now()
 
 
-# ==================== B-P2-4/B-P2-5：发言积分 ===============================
-
-def _chat_user(db):
-    return _make_user(db, username="chatter", points=0)
-
-
-def test_b_p2_4_cap_branch_rolls_back_and_releases_lock(db):
-    from backend import points
-
-    u = _chat_user(db)
-    _set_config(db, "points_chat_daily_cap", 5)
-    _set_config(db, "points_chat_per_msg", 1)
-    # 今日已拿满 5 分 → 走上限分支
-    db.add(models.PointsLog(user_id=u.id, amount=5, balance_after=5,
-                            type="chat", description="t",
-                            created_at=datetime.now()))
-    db.commit()
-    assert points.award_chat_points(db, u.id) == 0
-    # 上限分支已结束事务（之前行锁持有到请求结束）
-    assert not db.in_transaction()
-
-
-def test_b_p2_5_negative_per_msg_falls_back_no_deduction(db):
-    from backend import points
-
-    u = _chat_user(db)
-    _set_config(db, "points_chat_daily_cap", 100)
-    _set_config(db, "points_chat_per_msg", -3)
-    got = points.award_chat_points(db, u.id)
-    # 非法负配置回落默认（2026-10-31 起默认 0.1）：首条只累计小数、结算 0，
-    # 绝不扣分；累计 10 条后按默认 0.1 结算 1 分
-    assert got == 0
-    db.refresh(u)
-    assert u.points == 0
-    for _ in range(9):
-        points.award_chat_points(db, u.id)
-    db.refresh(u)
-    assert u.points == 1
-
-
-def test_b_p2_5_zero_per_msg_disables_reward(db):
-    from backend import points
-
-    u = _chat_user(db)
-    _set_config(db, "points_chat_daily_cap", 100)
-    _set_config(db, "points_chat_per_msg", 0)
-    assert points.award_chat_points(db, u.id) == 0
-    db.refresh(u)
-    assert u.points == 0
-
+# ==================== B-P2-4/B-P2-5：发言积分（已随积分货币于 2026-11-13 下线删除） ===============================
 
 # ==================== B-P2-6：券预订清理时限 ================================
 

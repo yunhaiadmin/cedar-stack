@@ -5,6 +5,10 @@ F1: _fulfill_order 里会员经验累加 / 邀请返利失败原来只记一行�
     一条 economy.fulfill_partial 站内信（提交后由 send_fulfill_notifications
     发出），受影响的用户凭此联系客服/服主补发。
 
+能量充值已随货币于 2026-11-13 下线：充值单履约不再自动发能量，
+直接抛 FulfillmentError 转人工处理（见下三处充值测试），
+订阅履约的经验失败通知机制仍在。
+
 全部用隔离的内存 SQLite，不碰生产库。
 """
 import os
@@ -63,7 +67,11 @@ def _partial_items(pending):
 
 
 def test_recharge_xp_failure_not_silent(db, monkeypatch):
-    """经验累加抛异常：订单照常履约（积分到账），但 payer 必须收到补发提示。"""
+    """能量充值已下线：充值单履约直接显性失败，不再自动发能量。
+
+    经验累加/返利路径根本走不到——订单保持 pending、不发任何通知，
+    由人工补单通道处理，不静默吞单。
+    """
     u = _make_user(db, "r39xp")
     o = _make_recharge_order(db, u)
 
@@ -72,22 +80,22 @@ def test_recharge_xp_failure_not_silent(db, monkeypatch):
 
     monkeypatch.setattr(ml, "add_xp", _boom)
 
-    pending = economy._fulfill_order(db, recharge_order=o)
-    db.commit()
+    with pytest.raises(economy.FulfillmentError, match="能量充值已下线"):
+        economy._fulfill_order(db, recharge_order=o)
 
     db.refresh(o)
     db.refresh(u)
-    assert o.status == "paid"          # 主体履约不被阻塞
-    assert u.points == 100             # 积分照常到账
-    partials = _partial_items(pending)
-    assert len(partials) == 1
-    assert partials[0]["user_id"] == u.id
-    assert "经验" in partials[0]["title"]
-    assert o.order_id in partials[0]["content"]
+    assert o.status == "pending"   # 未履约，不标 paid
+    assert u.points == 0           # 能量不发
+    assert u.member_xp == 0
 
 
 def test_recharge_rebate_failure_notifies_inviter(db, monkeypatch):
-    """返利抛异常：邀请人（受影响方）必须收到补发提示，而不是只有一行日志。"""
+    """能量充值已下线：充值单履约在返利之前就显性失败。
+
+    邀请返利入口（apply_rebate）已随货币删除移除，返利根本不会被
+    触发；订单保持 pending 转人工处理。
+    """
     inviter = _make_user(db, "r39inviter")
     invitee = _make_user(db, "r39invitee")
     code = models.InvitationCode(code="R39CODE", user_id=inviter.id,
@@ -100,40 +108,34 @@ def test_recharge_rebate_failure_notifies_inviter(db, monkeypatch):
     db.commit()
     o = _make_recharge_order(db, invitee, order_id="R39T2")
 
-    import backend.api.invitation as inv_mod
-
-    def _boom(*a, **k):
-        raise RuntimeError("rebate boom")
-
-    monkeypatch.setattr(inv_mod, "apply_rebate", _boom)
-
-    pending = economy._fulfill_order(db, recharge_order=o)
-    db.commit()
+    with pytest.raises(economy.FulfillmentError,
+                       match="能量充值已下线"):
+        economy._fulfill_order(db, recharge_order=o)
 
     db.refresh(o)
-    assert o.status == "paid"
-    partials = _partial_items(pending)
-    assert len(partials) == 1
-    assert partials[0]["user_id"] == inviter.id
-    assert "返利" in partials[0]["title"]
+    assert o.status == "pending"
+    db.refresh(inviter)
+    assert inviter.points == 0  # 返利未发
 
 
 def test_recharge_happy_path_no_partial_message(db):
-    """正常履约：没有任何 fulfill_partial 噪音，行为与旧版一致。"""
+    """能量充值已下线：即使「正常」充值单也不再自动履约。
+
+    报错文案须点名订单号，方便人工补单通道定位；订单保持 pending，
+    不发能量、不产生任何通知（无 fulfill_partial 噪音）。
+    """
     u = _make_user(db, "r39ok")
     o = _make_recharge_order(db, u, order_id="R39T3")
 
-    pending = economy._fulfill_order(db, recharge_order=o)
-    db.commit()
+    with pytest.raises(economy.FulfillmentError) as excinfo:
+        economy._fulfill_order(db, recharge_order=o)
+    assert "R39T3" in str(excinfo.value)
 
     db.refresh(o)
     db.refresh(u)
-    assert o.status == "paid"
-    assert u.points == 100
-    assert _partial_items(pending) == []
-    # 成功通知仍在
-    assert any(p.get("event_type") == "economy.recharge_success"
-               for p in pending)
+    assert o.status == "pending"
+    assert u.points == 0
+    assert u.member_xp == 0
 
 
 def test_subscription_xp_failure_not_silent(db, monkeypatch):

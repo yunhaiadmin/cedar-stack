@@ -23,7 +23,7 @@ from starlette.requests import Request
 from backend import codes, models
 from backend.admin_accounts import AdminAccountError, upsert_admin
 from backend.api import admin_ops as ops
-from backend.api import economy, emby_portal
+from backend.api import emby_portal
 from backend.emby_server.portal import SetPasswordRequest, set_emby_password
 
 
@@ -152,49 +152,10 @@ def test_upsert_admin_exact_existing_user_still_upgrades(db):
     assert user.is_staff is True
 
 
-# ==================== 转账：不敏感命中多个必须拒绝 ====================
-
-@pytest.fixture()
-def transfer_db():
-    engine = create_engine("sqlite:///:memory:")
-    models.WebUser.__table__.create(engine, checkfirst=True)
-    models.SystemConfig.__table__.create(engine, checkfirst=True)
-    models.PointsLog.__table__.create(engine, checkfirst=True)
-    session = sessionmaker(bind=engine)()
-    try:
-        yield session
-    finally:
-        session.close()
-        engine.dispose()
-
-
-def _transfer_user(db, username, points=0, is_active=True):
-    u = models.WebUser(username=username, password_hash="", points=points,
-                       is_active=is_active)
-    db.add(u)
-    db.commit()
-    db.refresh(u)
-    return u
-
-
-def test_transfer_ambiguous_case_match_rejected(transfer_db):
-    sender = _transfer_user(transfer_db, "sender", points=1000)
-    _transfer_user(transfer_db, "Foo", points=0)
-    _transfer_user(transfer_db, "foo", points=0)
-    with pytest.raises(ValueError, match="不唯一"):
-        economy.transfer_points_core(transfer_db, sender, "FOO", 100)
-    transfer_db.refresh(sender)
-    assert sender.points == 1000
-    assert transfer_db.query(models.PointsLog).count() == 0
-
-
-def test_transfer_unique_case_match_still_works(transfer_db):
-    sender = _transfer_user(transfer_db, "sender", points=1000)
-    only = _transfer_user(transfer_db, "OnlyOne", points=0)
-    res = economy.transfer_points_core(transfer_db, sender, "onlyone", 100)
-    assert res["recipient"] == "OnlyOne"
-    transfer_db.refresh(only)
-    assert only.points == 100
+# ==================== 转账：已随货币删除 ====================
+# transfer_points_core 在 #127（19b9507a“删除能量/积分/活力货币体系”）中删除，
+# 用户间转积分入口已不存在、无载体可测，本节两用例整段删除；
+# 大小写不敏感歧义防护仍由注册/接线名/指名码三路测试覆盖。
 
 
 # ==================== 指名码：生成与核销同口径 ====================

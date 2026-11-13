@@ -114,7 +114,7 @@ def test_promotion_defaults_are_off(db):
     assert cfg["days"] == 0
     # 开关关着 → 后台必须显示「没在发」，不能看起来像已开启
     assert promotion.policy_payload(db)["active"] is False
-    assert promotion.reward_type(db) == promotion.TYPE_BALANCE
+    assert promotion.reward_type(db) == promotion.TYPE_DAYS
 
 
 def test_grant_is_noop_when_disabled(db):
@@ -132,8 +132,7 @@ def test_grant_is_noop_when_disabled(db):
 
 def test_apply_invitation_without_promotion_pays_inviter_nothing(db):
     """2026-10-23 去重后：推广是邀请人奖励的唯一发放方——它没配数值时
-    邀请人得 0（不再有第二条按 invitation_reward_points 发放的路径）；
-    被邀请人奖励不受影响，仍按 invitation_invitee_reward_points 发。"""
+    邀请人得 0；2026-11-13 货币下线后被邀请人积分奖励一并取消（恒 0）。"""
     inviter = _user(db, "boss")
     invitee = _user(db, "newbie")
     _code(db, inviter)
@@ -144,7 +143,7 @@ def test_apply_invitation_without_promotion_pays_inviter_nothing(db):
     assert result["applied"] is True
     assert result["inviter_reward"] == 0
     assert _balance(db, inviter.id) == 0
-    assert _balance(db, invitee.id) == 50
+    assert _balance(db, invitee.id) == 0   # 被邀请人积分奖励已随货币下线
     assert _rewards(db) == []          # 推广奖励没开 → 一行都不写
     assert _points_logs(db, inviter.id, "invite") == []
     assert len(_points_logs(db, inviter.id, "promotion")) == 0
@@ -185,35 +184,15 @@ def test_write_policy_ignores_unknown_and_invalid(db):
     db.commit()
     cfg = promotion.config(db)
     assert cfg["amount"] == 30                    # 原值完好，没存进半个坏配置
-    assert cfg["reward_type"] == promotion.TYPE_BALANCE
+    assert cfg["reward_type"] == promotion.TYPE_DAYS
     # 其它 SystemConfig 键不会被这个入口碰到
     assert not db.query(models.SystemConfig).filter(
         models.SystemConfig.key == "promotion_reward_tpye").first()
 
 
 # ===========================================================================
-# 3. 发奖：余额 / 有效期两种类型
+# 3. 发奖：有效期类型（余额/积分型已随货币于 2026-11-13 下线）
 # ===========================================================================
-
-def test_grant_balance_credits_points_and_writes_row(db):
-    inviter = _user(db, "boss")
-    invitee = _user(db, "newbie")
-    _policy(db, **{promotion.CONFIG_ENABLED: "true", promotion.CONFIG_AMOUNT: "50"})
-
-    row = promotion.grant(db, inviter, invitee, _code(db, inviter))
-    db.commit()
-
-    assert row is not None
-    saved = db.query(models.PromotionReward).filter_by(id=row.id).one()
-    assert saved.reward_type == promotion.TYPE_BALANCE
-    assert saved.reward_value == 50
-    assert saved.inviter_id == inviter.id and saved.invitee_id == invitee.id
-    assert '"amount": 50' in saved.config_snapshot  # 发了多少要留痕
-    assert _balance(db, inviter.id) == 50
-    logs = _points_logs(db, inviter.id, "promotion")
-    assert len(logs) == 1 and logs[0].amount == 50
-    assert logs[0].ref_id == f"promotion:{invitee.id}"
-
 
 def test_grant_days_extends_membership_and_records_realm(db, realm):
     inviter = _user(db, "boss")
@@ -250,10 +229,11 @@ def test_grant_skips_when_value_is_zero(db):
     assert promotion.policy_payload(db)["active"] is False
 
 
-def test_grant_is_idempotent_per_invitee(db):
+def test_grant_is_idempotent_per_invitee(db, realm):
     inviter = _user(db, "boss")
     invitee = _user(db, "newbie")
-    _policy(db, **{promotion.CONFIG_ENABLED: "true", promotion.CONFIG_AMOUNT: "50"})
+    _policy(db, **{promotion.CONFIG_ENABLED: "true", promotion.CONFIG_TYPE: "days",
+                   promotion.CONFIG_DAYS: "50"})
     code = _code(db, inviter)
 
     assert promotion.grant(db, inviter, invitee, code) is not None
@@ -263,37 +243,40 @@ def test_grant_is_idempotent_per_invitee(db):
     db.commit()
 
     assert len(_rewards(db)) == 1
-    assert _balance(db, inviter.id) == 50       # 没发第二次
-    assert len(_points_logs(db, inviter.id, "promotion")) == 1
+    assert _rewards(db)[0].reward_value == 50   # 没发第二次
+    assert _balance(db, inviter.id) == 0        # 天数型不动积分
+    assert len(_points_logs(db, inviter.id, "promotion")) == 0
 
 
-def test_grant_failure_never_breaks_the_invitation(db):
+def test_grant_failure_never_breaks_the_invitation(db, realm):
     """发奖是附加项：它自己炸了也不能把邀请关系带崩"""
     inviter = _user(db, "boss")
     invitee = _user(db, "newbie")
     _code(db, inviter)
-    _policy(db, **{promotion.CONFIG_ENABLED: "true", promotion.CONFIG_AMOUNT: "50"})
+    _policy(db, **{promotion.CONFIG_ENABLED: "true", promotion.CONFIG_TYPE: "days",
+                   promotion.CONFIG_DAYS: "50"})
 
     def boom(*_a, **_k):
-        raise RuntimeError("积分服务炸了")
+        raise RuntimeError("会员发放服务炸了")
 
-    import backend.api.economy as economy
-    original = economy._add_points
-    economy._add_points = boom
+    from backend import codes as _codes
+    original = _codes.grant_membership_days
+    _codes.grant_membership_days = boom
     try:
         assert promotion.grant(db, inviter, invitee, None) is None
     finally:
-        economy._add_points = original
+        _codes.grant_membership_days = original
     db.rollback()
     # 发奖失败不留下半截：没写明细、没写台账
     assert _rewards(db) == []
     assert _points_logs(db, inviter.id, "promotion") == []
 
-    # 邀请关系照常建立（邀请人只得推广那 50，去重后没有第二笔）
+    # 邀请关系照常建立（邀请人只得推广那 50 天，去重后没有第二笔）
     result = apply_invitation(db, invitee, "INVITE001")
     db.commit()
     assert result["applied"] is True
-    assert _balance(db, inviter.id) == 50
+    assert _rewards(db, inviter.id)[0].reward_value == 50
+    assert _balance(db, inviter.id) == 0
     assert len(_rewards(db)) == 1
 
 
@@ -323,9 +306,9 @@ def test_apply_invitation_whitelist_hit_is_case_insensitive(db):
     assert apply_invitation(db, bob, "INVITE001")["applied"] is True
     db.commit()
     # 白名单命中即建立关系；邀请人奖励只走推广（本例未配 → 0），
-    # 被邀请人奖励照常（去重口径见 test_apply_invitation_without_promotion_*）
+    # 被邀请人积分奖励已随货币下线（恒 0）
     assert _balance(db, inviter.id) == 0
-    assert _balance(db, bob.id) == 50
+    assert _balance(db, bob.id) == 0
 
 
 def test_apply_invitation_empty_whitelist_means_unlimited(db):
@@ -367,18 +350,19 @@ def test_apply_invitation_is_idempotent(db):
         == first_uses
 
 
-def test_apply_invitation_still_works_when_promotion_enabled(db):
+def test_apply_invitation_still_works_when_promotion_enabled(db, realm):
     inviter = _user(db, "boss")
     invitee = _user(db, "newbie")
     _code(db, inviter)
-    _policy(db, **{promotion.CONFIG_ENABLED: "true", promotion.CONFIG_AMOUNT: "30"})
+    _policy(db, **{promotion.CONFIG_ENABLED: "true", promotion.CONFIG_TYPE: "days",
+                   promotion.CONFIG_DAYS: "30"})
 
     result = apply_invitation(db, invitee, "INVITE001")
     db.commit()
 
     assert result["applied"] is True
-    assert _balance(db, inviter.id) == 30         # 只有推广一笔（去重后）
-    assert _balance(db, invitee.id) == 50
+    assert _balance(db, inviter.id) == 0          # 天数型不动积分
+    assert _balance(db, invitee.id) == 0          # 被邀请人积分奖励已下线
     rewards = _rewards(db, inviter.id)
     assert len(rewards) == 1 and rewards[0].reward_value == 30
     assert rewards[0].code_id is not None
@@ -587,13 +571,14 @@ def test_admin_promotion_endpoints_round_trip(db):
     admin = _user(db, "root", is_staff=True)
     inviter = _user(db, "boss")
     _code(db, inviter)
-    _policy(db, **{promotion.CONFIG_ENABLED: "true", promotion.CONFIG_AMOUNT: "40"})
+    _policy(db, **{promotion.CONFIG_ENABLED: "true", promotion.CONFIG_TYPE: "days",
+                   promotion.CONFIG_DAYS: "7"})
     promotion.grant(db, inviter, _user(db, "newbie"), None)
     db.commit()
 
     got = admin_ops.get_promotion(current_admin=admin, db=db, limit=100, offset=0)
     assert got["policy"]["active"] is True
-    assert got["policy"]["amount"] == 40
+    assert got["policy"]["days"] == 7
     assert got["summary"]["total"] == 1
     assert got["summary"]["reward_24h"] == 1
     assert got["rewards"][0]["inviter_username"] == "boss"
@@ -601,12 +586,12 @@ def test_admin_promotion_endpoints_round_trip(db):
 
     saved = admin_ops.update_promotion_policy(
         payload=admin_ops.PromotionPolicyRequest(
-            policy={promotion.CONFIG_ENABLED: "false", promotion.CONFIG_AMOUNT: "99999999"}),
+            policy={promotion.CONFIG_ENABLED: "false", promotion.CONFIG_DAYS: "99999999"}),
         current_admin=admin, db=db,
     )
     assert saved["policy"]["enabled"] is False
     # 非法值被夹住，不是原样写库
-    assert saved["policy"]["amount"] == promotion.AMOUNT_MAX
+    assert saved["policy"]["days"] == promotion.DAYS_MAX
     assert saved["policy"]["active"] is False
     assert db.query(models.AdminLog).filter(
         models.AdminLog.action == "promotion_policy_update").first() is not None
@@ -615,7 +600,8 @@ def test_admin_promotion_endpoints_round_trip(db):
 def test_promotion_rewards_for_own_user_only(db):
     inviter = _user(db, "boss")
     other = _user(db, "rival")
-    _policy(db, **{promotion.CONFIG_ENABLED: "true", promotion.CONFIG_AMOUNT: "10"})
+    _policy(db, **{promotion.CONFIG_ENABLED: "true", promotion.CONFIG_TYPE: "days",
+                   promotion.CONFIG_DAYS: "10"})
     promotion.grant(db, inviter, _user(db, "newbie"), None)
     promotion.grant(db, other, _user(db, "other_newbie"), None)
     db.commit()
@@ -623,7 +609,7 @@ def test_promotion_rewards_for_own_user_only(db):
     mine = promotion.rewards_for(db, inviter.id, 50)
     assert len(mine) == 1
     assert mine[0]["invitee_username"] == "newbie"
-    assert mine[0]["reward_type_label"] == promotion.TYPE_LABELS[promotion.TYPE_BALANCE]
+    assert mine[0]["reward_type_label"] == promotion.TYPE_LABELS[promotion.TYPE_DAYS]
     assert promotion.rewards_for(db, inviter.id, 50)[0]["created_at"]
 
 

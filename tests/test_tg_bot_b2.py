@@ -1,4 +1,4 @@
-"""B2 测试：TG Bot 业务命令（/checkin /points /redeem）。"""
+"""B2 测试：TG Bot 业务命令（/points /redeem；/checkin 已于 2026-11-13 摘除）。"""
 from __future__ import annotations
 
 import sys
@@ -54,11 +54,6 @@ def _make_user(db, username="u1", tg_id=None, is_welfare=False):
     db.commit()
     return u
 
-def test_checkin_unbound(db):
-    text = handlers.handle_checkin(db, {"id": 910001}, 910001, "")
-    assert "/bind" in text
-
-
 def test_points_unbound(db):
     text = handlers.handle_points(db, {"id": 910002}, 910002, "")
     assert "/bind" in text
@@ -67,74 +62,6 @@ def test_points_unbound(db):
 def test_redeem_unbound(db):
     text = handlers.handle_redeem(db, {"id": 910003}, 910003, "ANYCODE")
     assert "/bind" in text
-
-
-def test_checkin_success(db):
-    # 签到开关 2026-10-21 起缺省关（用户拍板保持关），成功路径显式种开
-    db.add(models.SystemConfig(key="checkin_enabled", value="true"))
-    db.commit()
-    user = _make_user(db, username="u4", tg_id=910004, is_welfare=True)
-    text = handlers.handle_checkin(db, {"id": 910004}, 910004, "")
-    assert "签到成功" in text
-    assert "+" in text
-    db.refresh(user)
-    assert user.points > 0
-
-
-def test_checkin_vitality_gained(db):
-    # 签到开关 2026-10-21 起缺省关（用户拍板保持关），成功路径显式种开
-    db.add(models.SystemConfig(key="checkin_enabled", value="true"))
-    db.commit()
-    user = _make_user(db, username="u5", tg_id=910005, is_welfare=True)
-    user.vitality = 13
-    db.commit()
-    # 新政（2026-11-09 签到不送活力）：默认签到不发活力——即便活力未满
-    # 也不出现「活力数值 +N」增量行，活力保持 13。
-    text = handlers.handle_checkin(db, {"id": 910005}, 910005, "")
-    assert "签到成功" in text
-    assert "活力数值</b> | +" not in text
-    db.refresh(user)
-    assert user.vitality == 13
-    # 管理员显式配回 vitality_checkin_gain=1 时恢复发放，卡片按 PA-015
-    # 增量语义整行展示 +1（不是余额）。
-    db.add(models.SystemConfig(key="vitality_checkin_gain", value="1"))
-    db.commit()
-    from backend.integrations import store as _store
-    _store.invalidate("vitality_checkin_gain")
-    user2 = _make_user(db, username="u5g", tg_id=910025, is_welfare=True)
-    user2.vitality = 13
-    db.commit()
-    text = handlers.handle_checkin(db, {"id": 910025}, 910025, "")
-    assert "· ⚡ <b>活力数值</b> | +1" in text.split("\n")
-
-
-def test_checkin_vitality_full_no_row(db):
-    # PA-015 语义：活力已满时签到增量为 0，成功消息里不出现活力行（不是 "+14"）。
-    db.add(models.SystemConfig(key="checkin_enabled", value="true"))
-    db.commit()
-    user = _make_user(db, username="u5f", tg_id=910015, is_welfare=True)
-    assert user.vitality == 14
-    text = handlers.handle_checkin(db, {"id": 910015}, 910015, "")
-    assert "签到成功" in text
-    assert "活力数值" not in text
-
-
-def test_checkin_duplicate(db):
-    # 签到开关 2026-10-21 起缺省关（用户拍板保持关），成功路径显式种开
-    db.add(models.SystemConfig(key="checkin_enabled", value="true"))
-    db.commit()
-    user = _make_user(db, username="u6", tg_id=910006, is_welfare=True)
-    handlers.handle_checkin(db, {"id": 910006}, 910006, "")
-    text = handlers.handle_checkin(db, {"id": 910006}, 910006, "")
-    assert "今天已经签到过啦" in text
-
-
-def test_checkin_disabled(db):
-    db.add(models.SystemConfig(key="checkin_enabled", value="false"))
-    db.commit()
-    user = _make_user(db, username="u7", tg_id=910007)
-    text = handlers.handle_checkin(db, {"id": 910007}, 910007, "")
-    assert "签到功能未开启" in text
 
 
 def test_points_bound(db):
@@ -146,11 +73,13 @@ def test_points_bound(db):
     assert "✨ <b>能量余额</b> | 250" in text
 
 
-def test_points_vitality_row(db):
+def test_points_card_has_no_vitality_row(db):
+    """活力已随货币删除下线（2026-11-13）：能量卡只剩余额行，
+    不再有活力数值行（其配置模块 backend.vitality 已删）。"""
     user = _make_user(db, username="u9", tg_id=910009, is_welfare=True)
     text = handlers.handle_points(db, {"id": 910009}, 910009, "")
     assert "✨ <b>能量余额</b>" in text
-    assert "活力数值" in text
+    assert "活力数值" not in text
 
 
 def test_redeem_no_args(db):
@@ -165,24 +94,25 @@ def test_redeem_invalid_code(db):
     assert "兑换码无效或已过期" in text
 
 
-def test_redeem_points_success(db):
+def test_redeem_points_code_rejected(db):
+    """积分型兑换码已随货币删除下线（2026-11-13）：兑码核心按类型
+    拒绝，机器人原样回错误文案，不发分。"""
     user = _make_user(db, username="u12", tg_id=910012, is_welfare=True)
     code = models.ExchangeCode(code="TEST100", type="points", points_value=100, is_active=True, max_uses=1)
     db.add(code)
     db.commit()
     text = handlers.handle_redeem(db, {"id": 910012}, 910012, "test100")
-    assert "🎁" in text
-    assert "兑换成功" in text
-    assert "+100 能量" in text
+    assert "兑换码类型不支持" in text
     db.refresh(user)
-    assert user.points == 100
+    assert user.points == 0
 
 
-def test_router_dispatch_checkin(db):
-    """router.commands 注册了 /checkin：走 dispatch 全链路可签到。"""
-    from backend.tg_bot import sender
-    db.add(models.SystemConfig(key="checkin_enabled", value="true"))
-    db.commit()
+def test_checkin_entry_removed(db):
+    """签到入口摘除回归钉（2026-11-13 用户亲点）：handler 不存在、
+    /checkin 走未知命令路径，不再有任何签到应答。"""
+    from backend.tg_bot import poller, sender
+    assert not hasattr(handlers, "handle_checkin")
+    assert "checkin" not in {name for name, _ in poller.BOT_COMMANDS}
     _make_user(db, username="u13", tg_id=910013, is_welfare=True)
     update = {
         "update_id": 13,
@@ -200,14 +130,15 @@ def test_router_dispatch_checkin(db):
         router.dispatch(db, update)
     finally:
         sender.send_message = orig
-    assert any("签到成功" in t for t in sent)
+    assert any("未知命令" in t for t in sent)
+    assert not any("签到" in t for t in sent)
 
 
 def test_router_dispatch_points_and_redeem_registered(db):
-    """router.commands 包含三个新命令（自动享受可配置限流）。"""
+    """router.commands 包含业务命令（自动享受可配置限流）。"""
     from backend.tg_bot.router import _user_cmd_allow
-    # 间接验证：_user_cmd_allow 对新命令生效且互不干扰
-    assert _user_cmd_allow(920001, "/checkin", 3.0) is True
-    assert _user_cmd_allow(920001, "/checkin", 3.0) is False  # 3 秒内重复被限
-    assert _user_cmd_allow(920001, "/points", 3.0) is True    # 不同命令独立计数
-    assert _user_cmd_allow(920001, "/redeem", 3.0) is True
+    # 间接验证：_user_cmd_allow 对命令生效且互不干扰
+    assert _user_cmd_allow(920001, "/points", 3.0) is True
+    assert _user_cmd_allow(920001, "/points", 3.0) is False  # 3 秒内重复被限
+    assert _user_cmd_allow(920001, "/redeem", 3.0) is True    # 不同命令独立计数
+    assert _user_cmd_allow(920001, "/chatpoints", 3.0) is True

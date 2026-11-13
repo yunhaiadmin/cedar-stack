@@ -97,11 +97,11 @@ def test_viewer_gift_via_execute_refused_zero_effect(db):
     from backend.tg_bot import whois_panel
 
     viewer, _op, target = _staff(db)
-    before = int(target.points or 0)
-    note = whois_panel.execute(db, viewer, target, "gp100")
+    # 赠送档位用 gw7（赠能量档位已随积分删除摘除，2026-11-13）
+    note = whois_panel.execute(db, viewer, target, "gw7")
     assert READONLY_MARK in note
     db.refresh(target)
-    assert int(target.points or 0) == before
+    assert not target.is_welfare
     assert db.query(models.PointsLog).count() == 0
 
 
@@ -129,16 +129,17 @@ def test_operator_ban_and_gift_via_execute_allowed(db):
     assert "已封禁" in note
     db.refresh(target)
     assert target.is_active is False
-    # 赠送走 ask 确认页拿一次性 nonce 后执行（PA-058 口径不变）
-    _text, markup = whois_panel.confirm_page(db, target, "gp100")
+    # 赠送走 ask 确认页拿一次性 nonce 后执行（PA-058 口径不变）；
+    # 档位用资格 gw7（赠能量档位已随积分删除摘除，2026-11-13）
+    _text, markup = whois_panel.confirm_page(db, target, "gw7")
     do_data = [d for d in _datas(markup)
-               if d.startswith(f"whois:do:{target.id}:gp100")][0]
+               if d.startswith(f"whois:do:{target.id}:gw7")][0]
     nonce = do_data.split(":")[-1]
-    before = int(target.points or 0)
-    note = whois_panel.execute(db, operator, target, "gp100", nonce=nonce)
-    assert "已给" in note or "赠送 100" in note
+    note = whois_panel.execute(db, operator, target, "gw7", nonce=nonce)
+    assert "赠送公益资格 7 天" in note
     db.refresh(target)
-    assert int(target.points or 0) == before + 100
+    assert target.is_welfare is True
+    assert target.welfare_expires_at is not None
 
 
 def test_operator_cannot_ban_other_admin_guard_kept(db):

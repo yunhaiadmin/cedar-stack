@@ -563,9 +563,6 @@ def preview_code(db: Session, raw: str, username: Optional[str] = None) -> dict:
             preview["welfare_include_view"] = bool(getattr(code, 'welfare_include_view', True))
             bundle_text = "（含查看凭证）" if preview["welfare_include_view"] else ""
             preview["message"] = error or (f"公益资格卡码（{preview['days_text']}）{bundle_text}" if named_ok else "该卡码限指定账号使用")
-        elif reward_type == 'points':
-            preview["points_value"] = getattr(code, 'points_value', 0) or 0
-            preview["message"] = error or (f"能量卡码（{preview['points_value']} 能量）" if named_ok else "该卡码限指定账号使用")
         elif reward_type == 'discount':
             preview["discount_pct"] = getattr(code, 'discount_pct', 0) or 0
             preview["message"] = error or (f"折扣卡码（{discount_pct_text(preview['discount_pct'])}）" if named_ok else "该卡码限指定账号使用")
@@ -626,8 +623,9 @@ def preview_code(db: Session, raw: str, username: Optional[str] = None) -> dict:
 def redeem_code(db: Session, user: models.WebUser, raw: str) -> dict:
     """核销卡码（已登录兑换入口）：续期码 / 白名单码
 
-    - 奖励类型（reward_type）：subscription 会员天数 / points 能量 /
-      discount 折扣权益 / welfare 公益资格（可打包同天数查看行）
+    - 奖励类型（reward_type）：subscription 会员天数 /
+      discount 折扣权益 / welfare 公益资格（可打包同天数查看行）；
+      points 能量型已随货币下线，占位前直接拒绝、不烧码
     - 注册码（code_type=1）：2026-11-10 定版起与兑换分离——本入口
       明确拒绝并提示去注册页，核销只发生在凭码注册（见
       consume_registration_code）
@@ -778,6 +776,10 @@ def _redeem_found_code(db: Session, user: models.WebUser,
     # 下面的会员门与后面的发奖分派共用同一个判定，不许各算各的）
     reward_type = getattr(code, 'reward_type', 'subscription') or 'subscription'
 
+    if reward_type == 'points':
+        # 能量已随货币下线（2026-11-13）：能量卡码不再核销，占位前直接拒绝、不烧码。
+        return {"success": False, "message": "能量卡码已下线，无法核销，请联系管理员"}
+
     days = grant_days_for(code)
     # 这张卡码属于哪个服，就判定/开通哪个服的会员（甲服的会员不算乙服的）
     target = code_realm_id(db, code)
@@ -886,20 +888,6 @@ def _redeem_found_code(db: Session, user: models.WebUser,
             "view_bundled": include_view,
             "realm_id": target,
             "realm_name": target_name,
-        }
-    if reward_type == 'points':
-        points = getattr(code, 'points_value', 0) or 0
-        if points <= 0:
-            return {"success": False, "message": "该码的能量面额无效"}
-        from backend.api.economy import _add_points
-        _add_points(db, user, points, "code_redeem", f"卡码核销 {code.code}")
-        type_name = CODE_TYPE_NAMES.get(code.code_type, "卡码")
-        return {
-            "success": True,
-            "message": f"{type_name}核销成功，获得 {points} 能量",
-            "code_type": code.code_type,
-            "reward_type": "points",
-            "points": points,
         }
     if reward_type == 'discount':
         pct = getattr(code, 'discount_pct', 0) or 0

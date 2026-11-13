@@ -4,8 +4,6 @@ import { get, post, put, del } from '@/utils/request'
 // ==================== 类型 ====================
 
 export interface EconomyStats {
-  total_points: number
-  checkins_today: number
   orders: { pending: number; revenue: number }
   exchange_codes: { total: number; used: number }
   invitations: number
@@ -16,7 +14,6 @@ export interface PlanRowFull {
   name: string
   description: string | null
   price: number
-  points_price: number | null
   duration_days: number
   features: string[] | null
   /** 订阅分档权益表 {权益键: 值}；null/缺键 = 该项跟随全站默认（键与区间见后端 backend/entitlements.py） */
@@ -29,22 +26,11 @@ export interface PlanRowFull {
   realm_name?: string
 }
 
-export interface PackageRow {
-  id: number
-  name: string
-  amount: number
-  price: number
-  bonus: number
-  is_active: boolean
-  is_popular: boolean
-  sort_order: number
-}
-
 export interface ExchangeCodeRow {
   id: number
   code: string
-  type: 'points' | 'subscription' | 'discount'
-  points_value: number
+  // 'points' 为历史行类型（能量已下线、不可再生成/核销），列表仍须能显示
+  type: 'subscription' | 'discount' | 'points'
   plan_name: string | null
   duration_days: number
   discount_pct: number
@@ -74,32 +60,7 @@ export interface InvitationRow {
   id: number
   inviter: string
   invitee: string
-  reward_points: number
   created_at: string | null
-}
-
-export interface PointsLogRow {
-  id: number
-  user_id: number
-  username: string
-  amount: number
-  balance_after: number
-  type: string
-  description: string | null
-  ref_id: string | null
-  audited: boolean // C3：是否有 hash（审计开启后写入的流水）
-  created_at: string | null
-}
-
-export interface PointsAuditResult {
-  ok: boolean
-  user_id: number
-  username: string
-  total: number
-  verified: number
-  legacy_skipped: number
-  broken_at: number | null
-  broken_reason: string
 }
 
 export interface EconomySettings {
@@ -148,19 +109,6 @@ export const updateEconomyPlan = (id: number, data: Omit<PlanRowFull, 'id'>) =>
   put<{ success: boolean }>(`/economy/plans/${id}`, data)
 
 export const deleteEconomyPlan = (id: number) => del<{ success: boolean; message?: string }>(`/economy/plans/${id}`)
-
-// ==================== 充值套餐 ====================
-
-export const fetchEconomyPackages = () => get<{ packages: PackageRow[] }>('/economy/packages')
-
-export const createEconomyPackage = (data: Omit<PackageRow, 'id'>) =>
-  post<{ success: boolean }>('/economy/packages', data)
-
-export const updateEconomyPackage = (id: number, data: Omit<PackageRow, 'id'>) =>
-  put<{ success: boolean }>(`/economy/packages/${id}`, data)
-
-export const deleteEconomyPackage = (id: number) =>
-  del<{ success: boolean; message?: string }>(`/economy/packages/${id}`)
 
 // ==================== 兑换码 ====================
 
@@ -343,21 +291,10 @@ export const fetchCouponSettings = () => get<CouponSettings>('/economy/coupons/s
 export const updateCouponSettings = (data: { reserve_hours?: number }) =>
   put<{ success: boolean; enabled: boolean; reserve_hours: number }>('/economy/coupons/settings', data)
 
-// ==================== 邀请与积分 ====================
+// ==================== 邀请 ====================
 
 export const fetchInvitations = (params: { limit?: number } = {}) =>
   get<{ records: InvitationRow[] }>('/economy/invitations', params)
-
-export const fetchPointsLogs = (params: { user_id?: number; type_filter?: string; limit?: number; offset?: number } = {}) =>
-  get<{ total: number; logs: PointsLogRow[] }>('/economy/points-logs', params)
-
-export const adjustUserPoints = (userId: number, data: { amount: number; reason?: string }) =>
-  post<{ success: boolean; balance: number }>(`/economy/users/${userId}/points`, data)
-
-// ==================== C3 流水审计 ====================
-
-export const verifyPointsAudit = (user_id: number) =>
-  post<PointsAuditResult>('/economy/points-audit/verify', { user_id })
 
 // ==================== 经济设置 ====================
 
@@ -583,40 +520,3 @@ export const toggleMemberLevel = (id: number) =>
 
 export const deleteMemberLevel = (id: number) =>
   del<{ deleted: boolean }>(`/member-levels/${id}`)
-
-// ==================== 全员赠送能量（批次） ====================
-
-export type GiftAllScope = 'all' | 'welfare'
-
-export interface GiftAllPreview {
-  scope: GiftAllScope
-  amount: number
-  user_count: number
-  total_amount: number
-}
-
-export interface GiftBatchRow {
-  id: number
-  amount: number
-  scope: GiftAllScope
-  reason: string
-  target_count: number
-  granted_count: number
-  status: 'pending' | 'running' | 'done' | 'failed'
-  created_by: number | null
-  created_by_name: string | null
-  last_error: string | null
-  created_at: string | null
-  finished_at: string | null
-}
-
-/** 发放前预览：命中人数与总发放量（只读） */
-export const previewGiftAll = (amount: number, scope: GiftAllScope) =>
-  get<GiftAllPreview>(`/economy/gift-all/preview?amount=${amount}&scope=${scope}`)
-
-/** 新建赠送批次（只落批次，发放由 worker 分块执行） */
-export const createGiftBatch = (data: { amount: number; scope: GiftAllScope; reason: string }) =>
-  post<GiftBatchRow>('/economy/gift-all/batches', data)
-
-export const fetchGiftBatches = (limit = 50) =>
-  get<{ batches: GiftBatchRow[] }>(`/economy/gift-all/batches?limit=${limit}`)

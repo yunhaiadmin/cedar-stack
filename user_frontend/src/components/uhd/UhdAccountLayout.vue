@@ -16,7 +16,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Briefcase, CreditCard, Crown, Gauge,
-  Megaphone, Plug, Settings, Sun, Moon, User, Wallet,
+  Megaphone, Plug, Settings, Sun, Moon, User,
 } from 'lucide-vue-next'
 import UhdSidebar, { type UhdSidebarGroup } from './UhdSidebar.vue'
 import { getAgentMe } from '@/api/agent'
@@ -70,12 +70,6 @@ const groups = computed<UhdSidebarGroup[]>(() => {
         { key: '/game/account/member', label: '我的会员', icon: Crown },
         { key: '/game/account/subscribe', label: '订阅服务', icon: CreditCard },
         { key: '/game/account/settings', label: '账号与设置', icon: Settings },
-      ],
-    },
-    {
-      title: '资产',
-      items: [
-        { key: '/game/ledger', label: '能量明细', icon: Wallet },
       ],
     },
     {

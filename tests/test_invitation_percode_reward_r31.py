@@ -1,31 +1,15 @@
 # tests/test_invitation_percode_reward_r31.py
 """r31：邀请码「每码专属奖励」接通 + 撞号重试回归测试。
 
-背景（r31 审查发现）：
-1. ``InvitationCode.reward_points`` 是只写不读的死字段——``apply_invitation``
-   永远按全局 ``invitation_reward_points`` 配置发奖；后台 DTO 却把它展示为
-   「奖励」，批量码恒为 0 误导管理员。自助码（/my-code）还往里面写生成时的
-   配置快照，实际从未生效。
-   修法：``apply_invitation`` 以 ``code.reward_points > 0`` 优先于全局配置；
-   0/空 = 跟随全局（存量行为不变）；批量生成/单码编辑接口接受可选
-   ``reward_points``，管理后台对话框配上输入框。
-2. ``_generate_invite_code`` 的「查库不撞号」是读-改-写 TOCTOU：两个并发请求
-   同时生成同码时，唯一索引在 commit 时拦下 → ``IntegrityError`` 500。
-   修法：/my-code 与批量生成在 IntegrityError 时回滚并重生成一次再试。
-
-覆盖：
-- test_percode_reward_overrides_global：码 reward_points=300、全局=100 →
-  邀请人实得 300、InvitationRecord 记 300、返回值 inviter_reward=300。
-- test_zero_reward_falls_back_to_global：码 reward_points=0 → 跟随全局 100。
-
-2026-10-23 去重更新：邀请人奖励的发放方由 apply_invitation 自发改为
-promotion.grant 唯一发放（``invitation_reward_points`` 键退役），「全局」
-即推广配置 promotion_reward_amount；码专属奖励语义不变（>0 优先、
-恒为余额积分）。下面两条发奖用例已按新口径改种推广配置，并额外断言
-邀请人只收到一笔（台账只有 promotion 一条、没有第二条 invite）。
+2026-11-13 货币下线后口径：码上的 reward_points（积分专属奖励）不再
+发放——promotion.grant 遇到积分口径直接跳过；邀请人奖励只剩推广配置
+的会员天数型。原两条发奖用例（码积分覆盖全局 / 0 跟随全局）已被
+test_percode_points_reward_no_longer_granted 取代：钉住「积分不发、
+天数照发、台账无 points 行」。
 - test_mycode_collision_retry：_generate_invite_code 首次返回已存在的码 →
   IntegrityError 触发重试 → 最终拿到新码、200 不抛。
-- test_update_endpoint_accepts_reward_points：PUT 更新 reward_points 落库。
+- test_update_request_schema_accepts_reward_points：更新/生成请求模型仍
+  接受 reward_points 字段（存量码兼容，发放侧忽略）。
 """
 
 from __future__ import annotations
@@ -95,18 +79,18 @@ def db():
         store.invalidate()
 
 
-def _seed_promotion_global(db, amount="100"):
-    """去重后的「全局邀请人奖励」= 推广配置（余额积分）"""
+def _seed_promotion_days(db, days="5"):
+    """现行「全局邀请人奖励」= 推广配置（会员天数）"""
     db.add(models.SystemConfig(key="promotion_reward_enabled", value="true"))
-    db.add(models.SystemConfig(key="promotion_reward_type", value="balance"))
-    db.add(models.SystemConfig(key="promotion_reward_amount", value=amount))
-    db.add(models.SystemConfig(key="promotion_reward_days", value="0"))
+    db.add(models.SystemConfig(key="promotion_reward_type", value="days"))
+    db.add(models.SystemConfig(key="promotion_reward_days", value=days))
 
 
-def test_percode_reward_overrides_global(db):
-    """码 reward_points=300、全局=100 → 邀请人实得 300（且只发这一笔）"""
-    _seed_promotion_global(db)
-    db.add(models.SystemConfig(key="invitation_invitee_reward_points", value="50"))
+def test_percode_points_reward_no_longer_granted(db):
+    """码 reward_points=300（积分口径）整笔跳过：不发积分、也不叠加全局
+    天数（override 优先语义不变，只是积分奖励已不存在）；码 reward_points=0
+    时跟随全局天数照常发放。"""
+    _seed_promotion_days(db)
     db.add(models.SystemConfig(key="invitation_enabled", value="true"))
     db.commit()
 
@@ -119,35 +103,22 @@ def test_percode_reward_overrides_global(db):
     db.commit()
 
     assert res["applied"] is True
-    assert res["inviter_reward"] == 300
+    assert res["inviter_reward"] == 0
     rec = db.query(models.InvitationRecord).filter_by(invitee_id=invitee.id).one()
-    assert rec.reward_points == 300
-    log = db.query(models.PointsLog).filter_by(
-        user_id=inviter.id, type="promotion").one()
-    assert log.amount == 300
-    # 去重钉子：不存在第二条邀请人奖励台账
-    assert db.query(models.PointsLog).filter_by(
-        user_id=inviter.id, type="invite").count() == 0
+    assert rec.reward_points == 0
+    assert db.query(models.PointsLog).filter_by(user_id=inviter.id).count() == 0
+    assert db.query(models.PromotionReward).filter_by(invitee_id=invitee.id).count() == 0
+    db.refresh(inviter)
+    assert int(inviter.points or 0) == 0
 
-
-def test_zero_reward_falls_back_to_global(db):
-    """码 reward_points=0 → 跟随全局（推广配置）100"""
-    _seed_promotion_global(db)
-    db.add(models.SystemConfig(key="invitation_enabled", value="true"))
+    # 对照：无专属奖励的码 → 全局天数 5 天照常发
+    invitee2 = _user(db, f"per-invitee2-{tag}")
+    code2 = _make_code(db, inviter.id, f"FRE{tag.upper()}", reward_points=0)
+    res2 = apply_invitation(db, invitee2, code2.code)
     db.commit()
-
-    tag = uuid.uuid4().hex[:8]
-    inviter = _user(db, f"zero-inviter-{tag}")
-    invitee = _user(db, f"zero-invitee-{tag}")
-    code = _make_code(db, inviter.id, f"ZERO{tag.upper()}", reward_points=0)
-
-    res = apply_invitation(db, invitee, code.code)
-    db.commit()
-
-    assert res["applied"] is True
-    assert res["inviter_reward"] == 100
-    rec = db.query(models.InvitationRecord).filter_by(invitee_id=invitee.id).one()
-    assert rec.reward_points == 100
+    assert res2["inviter_reward"] == 5
+    reward = db.query(models.PromotionReward).filter_by(invitee_id=invitee2.id).one()
+    assert reward.reward_type == "days" and reward.reward_value == 5
 
 
 def test_mycode_collision_retry(db, monkeypatch):

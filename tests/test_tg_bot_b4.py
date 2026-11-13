@@ -89,7 +89,7 @@ def test_policy_defaults_empty_db(db):
     assert policy.is_group_allowed(cfg, None) is False
     assert policy.rate_limit_seconds(cfg) == 3.0
     assert policy.group_rate_limit(cfg) == 20
-    assert policy.is_command_enabled(cfg, "/checkin") is True
+    assert policy.is_command_enabled(cfg, "/points") is True
     assert policy.is_command_enabled(cfg, "/start") is True  # 不在开关表=常开
 
 
@@ -113,10 +113,10 @@ def test_policy_invalid_values_fall_back(db):
 
 def test_policy_bool_tolerant(db):
     _set_cfg(db, "bot_enabled", " True ")
-    _set_cfg(db, "bot_cmd_checkin", "FALSE")
+    _set_cfg(db, "bot_cmd_points", "FALSE")
     cfg = policy.read_bot_config(db)
     assert policy.is_enabled(cfg) is True
-    assert policy.is_command_enabled(cfg, "/checkin") is False
+    assert policy.is_command_enabled(cfg, "/points") is False
 
 
 def test_policy_decimal_rate_limit(db):
@@ -192,14 +192,14 @@ def test_master_switch_off_callback(db, monkeypatch):
 # ---------- 单命令开关 ----------
 
 def test_command_switch_off(db, sent):
-    _set_cfg(db, "bot_cmd_checkin", "false")
+    _set_cfg(db, "bot_cmd_points", "false")
     _make_user(db, "c1", 630001)
-    router.dispatch(db, _msg(630001, 630001, "/checkin"))
+    router.dispatch(db, _msg(630001, 630001, "/points"))
     assert sent == ["该功能已关闭"]
 
 
 def test_command_switch_start_always_on(db, sent):
-    _set_cfg(db, "bot_cmd_checkin", "false")
+    _set_cfg(db, "bot_cmd_points", "false")
     _set_cfg(db, "bot_cmd_bind", "false")
     router.dispatch(db, _msg(630002, 630002, "/start"))
     assert len(sent) == 1 and "想看的片，喊一声就来" in sent[0]
@@ -221,7 +221,7 @@ def test_user_rate_limit_configurable(db):
     assert router._user_cmd_allow(640011, "/points", policy.rate_limit_seconds(policy.read_bot_config(db))) is True
     assert router._user_cmd_allow(640011, "/points", policy.rate_limit_seconds(policy.read_bot_config(db))) is False
     # 不同命令互不影响
-    assert router._user_cmd_allow(640011, "/checkin", 100.0) is True
+    assert router._user_cmd_allow(640011, "/redeem", 100.0) is True
 
 
 def test_user_rate_limit_window_expires():

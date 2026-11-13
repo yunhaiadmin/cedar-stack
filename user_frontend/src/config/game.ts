@@ -71,17 +71,6 @@ export const gameFacilities: GameFacility[] = [
     enabled: true,
   },
   {
-    key: 'ledger',
-    name: '能量明细',
-    path: '/game/ledger',
-    icon: '📒',
-    desc: '每一笔能量的来龙去脉，都记在这本账上。',
-    stamp: '账本 · 笔笔有数',
-    group: 'asset',
-    order: 6,
-    enabled: true,
-  },
-  {
     key: 'account',
     name: '账号设置',
     path: '/game/account',

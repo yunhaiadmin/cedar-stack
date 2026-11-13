@@ -107,17 +107,6 @@ def test_anon_request_gets_anon_notice_not_bind_guide(db, sent, monkeypatch):
     assert "如何绑定" not in sent[0]
 
 
-def test_anon_checkin_gets_anon_notice(db, sent, monkeypatch):
-    called = []
-    monkeypatch.setattr(handlers, "handle_checkin",
-                        lambda *a, **kw: called.append(a) or "不应到达")
-    router.dispatch(db, _anon_update("/checkin"))
-    assert called == []
-    assert len(sent) == 1
-    assert "匿名" in sent[0]
-    assert "如何绑定" not in sent[0]
-
-
 def test_sender_chat_with_personal_from_also_anon(db, sent, monkeypatch):
     # 以群/频道身份发言时 from 也可能带着个人号，但消息带 sender_chat
     # 就没有个人身份：哪怕这个人绑过，也不能按他本人执行身份命令。

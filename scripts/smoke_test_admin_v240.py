@@ -113,12 +113,14 @@ try:
     # days_left 与用户端一致：截断取整（27 天有效期可能显示 26）
     active_days = (data.get("subscription", {}).get("active") or {}).get("days_left")
     check("详情含生效订阅", active_days is not None and 25 <= active_days <= 27, str(active_days))
-    check("详情含积分收支", data["points"]["income"] == 350 and data["points"]["expense"] == 30,
-          f"income={data['points']['income']} expense={data['points']['expense']}")
+    # 2026-11-13 货币下线：详情不再返回积分节（种子里仍有历史 PointsLog，
+    # 钉住「有历史行也不回积分节」）
+    check("详情已无积分节", "points" not in data)
     check("详情含订单金额", data["orders"]["paid_total"] == 50.0, str(data["orders"]["paid_total"]))
-    check("详情含邀请统计", data["invitation"]["count"] == 1 and data["invitation"]["rebate_total"] == 150,
-          f"count={data['invitation']['count']} rebate={data['invitation']['rebate_total']}")
-    check("详情含签到统计", data["checkin"]["total"] == 1 and data["checkin"]["streak"] == 4)
+    check("详情含邀请统计", data["invitation"]["count"] == 1 and "rebate_total" not in data["invitation"],
+          f"count={data['invitation']['count']}")
+    # 货币下线同批：签到节也不再返回（CheckinRecord 种子行只作历史数据）
+    check("详情已无签到节", "checkin" not in data)
     check("详情含观看统计", "plays" in data["watch"] and "watched_items" in data["watch"])
 
     # 不存在的用户 → 404
@@ -133,7 +135,7 @@ try:
     today_row = trend["series"][-1]
     check("趋势今日新增用户", today_row["new_users"] >= 3, str(today_row["new_users"]))
     check("趋势今日营收", today_row["revenue"] >= 50.0, str(today_row["revenue"]))
-    check("趋势今日签到", today_row["checkins"] >= 1, str(today_row["checkins"]))
+    check("趋势已无签到列", "checkins" not in today_row)
     check("趋势汇总一致", trend["totals"]["new_users"] >= 3)
 
     # ---------- 订阅总览 ----------

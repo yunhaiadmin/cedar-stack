@@ -4,7 +4,7 @@
 背景（2026-10-18 面板体检）：面板前端在 AWS 悉尼、后端在美国 VPS，
 每次 API 调用固定多约 1 秒跨洋耗时；仪表盘首屏一次扇出多个接口，
 最慢一路决定首屏就绪。本接口把各路数据一次返回，前端只跑一趟。
-（2026-10-23 新增第 9 路 detail：数据明细 7 表，见 get_detail_tables。）
+（2026-10-23 新增第 9 路 detail：数据明细 7 表，2026-11-13 货币删除后 6 表，见 get_detail_tables。）
 
 设计口径（与 #1073 同手法）：
 - 内部 ThreadPoolExecutor 并行采集，每个采集器持独立 SessionLocal
@@ -383,7 +383,7 @@ def dashboard_overview(
 
 # ==================== 数据明细（2026-10-23 用户要求补表） ====================
 # 仪表盘原先只有播放排行/热门内容两张表，用户反馈「数据表有点少」。
-# 这里一次给齐 7 张明细表，前端集中在一个「数据明细」区页签切换，
+# 这里一次给齐 6 张明细表（2026-11-13 起；此前 7 张，points_flow 已随货币下线），前端集中在一个「数据明细」区页签切换，
 # 不往页面各处铺。全部走既有数据的有界查询（每表 ≤ 14 行），
 # 作为聚合接口的第 9 个 part（detail）随 overview 一次返回。
 
@@ -395,7 +395,7 @@ def _iso(dt: Any) -> str:
 
 
 def get_detail_tables(admin: Any, db: Session) -> dict:
-    """7 张仪表盘明细表（见上）。单表查询失败不拖垮其余表：调用方
+    """6 张仪表盘明细表（见上；points_flow 已随货币于 2026-11-13 下线）。单表查询失败不拖垮其余表：调用方
     (_call_one) 已有整 part 降级；这里对每张表再兜一层，坏表返回空列表。"""
     from datetime import timedelta
 
@@ -461,7 +461,7 @@ def get_detail_tables(admin: Any, db: Session) -> dict:
         for o, uname, pkg_name in recs:
             merged.append({
                 "username": uname,
-                "item": pkg_name or "能量充值",
+                "item": pkg_name or "充值订单",
                 "kind": "充值",
                 "amount": float(o.price or 0),
                 "status": o.status or "",
@@ -524,25 +524,6 @@ def get_detail_tables(admin: Any, db: Session) -> dict:
             for r in rows
         ]
 
-    def _points_flow() -> list:
-        rows = (
-            db.query(models.PointsLog, models.WebUser.username)
-            .join(models.WebUser, models.WebUser.id == models.PointsLog.user_id)
-            .order_by(models.PointsLog.created_at.desc(), models.PointsLog.id.desc())
-            .limit(_DETAIL_ROW_LIMIT)
-            .all()
-        )
-        return [
-            {
-                "username": uname,
-                "type": log.type or "",
-                "amount": int(log.amount or 0),
-                "description": log.description or "",
-                "created_at": _iso(log.created_at),
-            }
-            for log, uname in rows
-        ]
-
     def _seek_hot() -> list:
         rows = (
             db.query(
@@ -603,7 +584,6 @@ def get_detail_tables(admin: Any, db: Session) -> dict:
     _safe("recent_orders", _recent_orders)
     _safe("library_stats", _library_stats)
     _safe("enrich_progress", _enrich_progress)
-    _safe("points_flow", _points_flow)
     _safe("seek_hot", _seek_hot)
     _safe("activity_days", _activity_days)
     return out

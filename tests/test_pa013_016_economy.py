@@ -1,12 +1,9 @@
-"""完美审计 R8（B8 经济）PA-013/014/015/016 回归测试。
+"""完美审计 R8（B8 经济）PA-013 回归测试。
 
 - PA-013：不活跃扫描须把签到与播放计为活跃信号，不能只认网站登录。
-- PA-014：签到活力恢复须按每日免费上限剩余量钳制——此口径已于
-  2026-11-09 被「签到不送活力」新政取代：签到默认不发活力，管理员
-  显式配回时也不再受每日上限钳制、不占观影的上限额度（见下方改写
-  后的 PA-014 用例，编号保留、断言按新政）。
-- PA-015：签到返回的 vitality_gained 须是增量而非加后余额。
-- PA-016：签到状态接口的连签须有“昨天”下界，断签旧记录不算当前连签。
+
+（PA-014/015/016 是签到发活力/签到状态口径，已随签到与活力货币于
+2026-11-13 下线删除，本文件只保留 PA-013。）
 """
 import os
 import sys
@@ -20,8 +17,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from backend import models, vitality, welfare_expiry
-from backend.api import economy
+from backend import models, welfare_expiry
 from backend.emby_server import models as em_models
 from backend.integrations import store as _store
 
@@ -35,21 +31,7 @@ def db():
     # 活力配置走进程内 TTL 热缓存（按 key 全局共享、不区分数据库）：
     # 全量跑时前序测试文件在本库外写过的值会串进来，故每个用例前失效，
     # 与 test_welfare_admin_config.py 的 fixture 同口径。
-    _store.invalidate(
-        vitality.CONFIG_ENABLED,
-        vitality.CONFIG_MAX,
-        vitality.CONFIG_DAILY_COST,
-        vitality.CONFIG_LIMIT_THRESHOLD,
-        vitality.CONFIG_POINT_COST,
-        vitality.CONFIG_WATCH_REWARD,
-        vitality.CONFIG_DAILY_GAIN_LIMIT,
-        vitality.CONFIG_ARCHIVE_CLAMP,
-        vitality.CONFIG_WATCH_TIER1_MINUTES,
-        vitality.CONFIG_WATCH_TIER1_REWARD,
-        vitality.CONFIG_WATCH_TIER2_MINUTES,
-        vitality.CONFIG_WATCH_TIER2_REWARD,
-        vitality.CONFIG_CHECKIN_SKIP_DEDUCT_ENABLED,
-        vitality.CONFIG_LAST_DEDUCT_DATE)
+    _store.invalidate("welfare_inactive_days")
     yield s
     s.close()
 
@@ -121,107 +103,3 @@ def test_pa013_truly_inactive_still_disabled(db):
     res = welfare_expiry.check_inactive_users(db)
     assert res["disabled"] == [u.id]
     assert db.query(models.WebUser).filter_by(id=u.id).one().is_welfare is False
-
-
-# ---------------- PA-014 / PA-015 ----------------
-
-def _checkin_user(db, name, vitality):
-    u = _user(db, name, points=0, vitality=vitality)
-    return u
-
-
-def test_pa014_checkin_vitality_not_clamped_and_not_counted(db):
-    """新政（2026-11-09，取代原 PA-014 钳制口径）：每日上限 3、今日已
-    观影得 1、签到 gain 显式配 5 → 签到全额发 5（不再按剩余量钳制），
-    且签到发放不计入每日免费计数——随后观影仍可拿满剩余额度 2。"""
-    _seed_checkin_cfg(db, {"vitality_daily_gain_limit": "3",
-                           "vitality_checkin_gain": "5"})
-    u = _checkin_user(db, "clamp_user", vitality=1)
-    today_start = economy._today_start()
-    db.add(models.VitalityLog(user_id=u.id, delta=1, balance_after=1,
-                              reason="watch_reward", created_at=today_start))
-    db.commit()
-    award = economy._do_checkin_core(db, u)
-    final = db.query(models.WebUser).filter_by(id=u.id).one().vitality
-    assert final == 6
-    assert award["vitality_gained"] == 5
-    # 签到不占每日观影回活力上限：免费计数仍只有观影那 1 点
-    assert vitality.get_today_free_gain(db, u.id) == 1
-    granted = vitality._grant_free_vitality(db, u.id, 99, "test_watch")
-    assert granted == 2  # 上限 3 − 观影已得 1，签到的 5 点不占额度
-    final = db.query(models.WebUser).filter_by(id=u.id).one().vitality
-    assert final == 8
-
-
-def test_checkin_default_grants_no_vitality(db):
-    """新政默认口径：未配 vitality_checkin_gain（代码默认 0）→ 签到只
-    发积分，活力一点不动，返回 vitality_gained=0。"""
-    _seed_checkin_cfg(db, {"vitality_daily_gain_limit": "2"})
-    u = _checkin_user(db, "no_gain_user", vitality=5)
-    award = economy._do_checkin_core(db, u)
-    final = db.query(models.WebUser).filter_by(id=u.id).one().vitality
-    assert award["points_awarded"] == 3
-    assert final == 5
-    assert award["vitality_gained"] == 0
-    assert vitality.get_today_free_gain(db, u.id) == 0
-
-
-def test_pa015_checkin_vitality_gained_is_increment(db):
-    """活力 10、gain 1、上限未满 → 返回增量 1 而非余额 11。"""
-    _seed_checkin_cfg(db, {"vitality_daily_gain_limit": "10",
-                           "vitality_checkin_gain": "1"})
-    u = _checkin_user(db, "increment_user", vitality=10)
-    award = economy._do_checkin_core(db, u)
-    final = db.query(models.WebUser).filter_by(id=u.id).one().vitality
-    assert final == 11
-    assert award["vitality_gained"] == 1
-
-
-def test_pa015_checkin_vitality_full_returns_zero(db):
-    """活力已满 14、gain 1 → 增量为 0（面板靠 >0 隐藏该行）。"""
-    _seed_checkin_cfg(db, {"vitality_daily_gain_limit": "10",
-                           "vitality_checkin_gain": "1"})
-    u = _checkin_user(db, "full_user", vitality=14)
-    award = economy._do_checkin_core(db, u)
-    final = db.query(models.WebUser).filter_by(id=u.id).one().vitality
-    assert final == 14
-    assert award["vitality_gained"] == 0
-
-
-def test_pa014_default_gain_unchanged(db):
-    """显式配 gain=1（管理员恢复签到送活力）、上限 2、今日未得 →
-    签到补 1 点。（代码默认已改 0，默认不发由
-    test_checkin_default_grants_no_vitality 覆盖。）"""
-    _seed_checkin_cfg(db, {"vitality_daily_gain_limit": "2",
-                           "vitality_checkin_gain": "1"})
-    u = _checkin_user(db, "default_user", vitality=5)
-    award = economy._do_checkin_core(db, u)
-    final = db.query(models.WebUser).filter_by(id=u.id).one().vitality
-    assert final == 6
-    assert award["vitality_gained"] == 1
-
-
-# ---------------- PA-016 ----------------
-
-def test_pa016_stale_streak_not_shown(db):
-    """10 天前 streak=20 的旧记录 → 状态连签返回 0。"""
-    u = _user(db, "stale_user")
-    today = economy._today_start()
-    db.add(models.CheckinRecord(user_id=u.id,
-                                checkin_date=today - timedelta(days=10),
-                                points_awarded=0, streak=20))
-    db.commit()
-    resp = economy.checkin_status(current_user=u, db=db)
-    assert resp.streak == 0
-
-
-def test_pa016_yesterday_streak_shown(db):
-    """昨天 streak=6 的记录 → 状态连签返回 6。"""
-    u = _user(db, "yesterday_user")
-    today = economy._today_start()
-    db.add(models.CheckinRecord(user_id=u.id,
-                                checkin_date=today - timedelta(days=1),
-                                points_awarded=0, streak=6))
-    db.commit()
-    resp = economy.checkin_status(current_user=u, db=db)
-    assert resp.streak == 6

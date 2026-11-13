@@ -128,12 +128,6 @@ const router = createRouter({
             path: '/game/signal',
             redirect: (to: RouteLocationNormalizedLoaded) => ({ path: '/game/requests', query: { ...to.query, tab: 'mine' } }),
           },
-          {
-            path: '/game/ledger',
-            name: 'game-ledger',
-            component: () => import('@/views/game/LedgerView.vue'),
-            meta: { title: '能量明细', requiresAuth: true },
-          },
           // 代理中心（2026-11-06 代理分销）：入口只在账号设置里、且仅代理可见，不占导航
           {
             path: '/game/agent',
@@ -372,7 +366,8 @@ router.beforeEach(async (to) => {
 // 一并摘除——/server 页内自带三态主题跟随；/game/operator 在 UhdAccountLayout
 // 办事面壳内（壳为浅色办事面，与同壳的订阅页未钉 light 先例一致），不再由守卫钉 light。
 // 批 1+2 删除后：'/collections'（合集）路由已删，一并摘除。
-export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/want', '/store-requests', '/game/ledger', '/game/account/settings', '/game/account/member'])
+// #127 能量删除：'/game/ledger'（能量明细）路由已删，一并摘除。
+export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/want', '/store-requests', '/game/account/settings', '/game/account/member'])
 // 参数路由前缀：条目详情是 /media/:id，afterEach 拿到的是实例路径
 // （如 /media/123），静态集合永远匹配不上，须按前缀另判；
 // /media/ 页是 v4 纸色页，必须强制 light，

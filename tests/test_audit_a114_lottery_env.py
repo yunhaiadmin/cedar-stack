@@ -123,7 +123,7 @@ def _create_payload():
     return {
         "title": "A-114 测试抽奖",
         "chat_id": 999,
-        "prizes": [{"name": "积分奖", "type": "points", "value": 100, "quantity": 1}],
+        "prizes": [{"name": "天数奖", "type": "days", "value": 7, "quantity": 1}],
         "lottery_type": "button",
     }
 

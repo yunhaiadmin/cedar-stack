@@ -251,7 +251,7 @@ def test_generate_quota_only_applies_to_welfare(db, admin):
     assert ops.generate_codes(_gen_request(), admin, db)["success"] is True
     # 其他类型不受配额影响
     res = ops.generate_codes(
-        _gen_request(reward_type="points", points_value=50, count=3), admin, db)
+        _gen_request(reward_type="subscription", count=3), admin, db)
     assert res["success"] is True
 
 
@@ -278,13 +278,15 @@ def test_subscription_code_still_grants_membership(db):
     assert not user.is_welfare
 
 
-def test_points_code_still_grants_points(db):
+def test_points_code_rejected_without_burning(db):
+    """能量卡码已下线：核销直接拒绝、不烧码（use_count 不动）。"""
     user = _make_user(db, "alice", points=0)
-    _make_code(db, "PTS-AAAA", reward_type="points", points_value=50)
+    code = _make_code(db, "PTS-AAAA", reward_type="points", points_value=50)
     result = codes.redeem_code(db, user, "PTS-AAAA")
     db.commit()
-    assert result["success"] is True
-    assert result["reward_type"] == "points"
+    assert result["success"] is False
+    assert "下线" in result["message"]
     db.refresh(user)
-    assert (user.points or 0) == 50
-    assert not user.is_welfare
+    assert (user.points or 0) == 0
+    db.refresh(code)
+    assert (code.use_count or 0) == 0

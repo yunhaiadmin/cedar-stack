@@ -21,11 +21,11 @@ def test_concurrent_distribute_pays_once(tmp_path):
     Session = sessionmaker(bind=engine)
     a, b = Session(), Session()
 
-    user = models.WebUser(username="w", password_hash="", telegram_id=1, points=0)
+    user = models.WebUser(username="w", password_hash="", telegram_id=1)
     a.add(user)
     a.commit()
     rnd = lottery.create_round(a, title="t", chat_id=1,
-                               prizes=[{"name": "积分", "type": "points", "value": 100, "quantity": 1}])
+                               prizes=[{"name": "天数奖", "type": "days", "value": 7, "quantity": 1}])
     rnd.seed = "s"
     rnd.seed_hash = hashlib.sha256(b"s").hexdigest()
     a.commit()
@@ -43,7 +43,14 @@ def test_concurrent_distribute_pays_once(tmp_path):
     assert res["distributed"] == 0
 
     b.expire_all()
-    assert b.query(models.WebUser.points).filter_by(id=uid).scalar() == 100
-    assert b.query(models.PointsLog).filter_by(user_id=uid, type="lottery_win").count() == 1
+    # 只发一次：公益资格续 7 天、留痕一条（积分已下线，改查 WelfareGrantLog）
+    refreshed = b.query(models.WebUser).filter_by(id=uid).one()
+    assert refreshed.is_welfare is True
+    assert refreshed.welfare_expires_at is not None
+    from datetime import datetime as _dt, timedelta as _td
+    assert abs((refreshed.welfare_expires_at - _dt.now()).total_seconds() - 7 * 86400) < 120
+    logs = b.query(models.WelfareGrantLog).filter_by(user_id=uid).all()
+    assert len(logs) == 1
+    assert logs[0].channel == "lottery_win" and logs[0].days == 7
     a.close()
     b.close()

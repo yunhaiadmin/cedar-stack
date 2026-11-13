@@ -216,25 +216,26 @@ def _gateway_cfg(db):
 
 
 def test_custom_recharge_with_coupon_400(db):
+    # 能量充值已随货币下线（2026-11-13）：下单端点只接受 subscription，
+    # recharge 不再建单（带不带优惠券都一样）。
     u = _make_user(db)
     _gateway_cfg(db)
     resp = _user_app(db, u).post(
         "/api/user/economy/payment/order",
         json={"kind": "recharge", "custom_amount": 10.0, "coupon_code": "ABC123"})
     assert resp.status_code == 400, resp.text
-    assert "暂不支持使用优惠券" in resp.json()["detail"]
+    assert "kind 必须是 subscription" in resp.json()["detail"]
 
 
 def test_custom_recharge_without_coupon_ok(db):
+    # 同上：不带优惠券的自定义充值同样被拒，不再出支付链接。
     u = _make_user(db)
     _gateway_cfg(db)
     resp = _user_app(db, u).post(
         "/api/user/economy/payment/order",
         json={"kind": "recharge", "custom_amount": 10.0})
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["success"] is True
-    assert body["pay_url"].startswith("https://pay.example.com/submit.php?")
+    assert resp.status_code == 400, resp.text
+    assert "kind 必须是 subscription" in resp.json()["detail"]
 
 
 # ---------------- F3: 上海口径日界线 ----------------

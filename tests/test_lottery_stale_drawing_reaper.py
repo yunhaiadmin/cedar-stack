@@ -64,7 +64,7 @@ def _make_round(db, title="僵尸回收测试", chat_id=-100121, n_users=2, draw
         db,
         title=title,
         chat_id=chat_id,
-        prizes=[{"name": "积分奖", "type": "points", "value": 100, "quantity": 1}],
+        prizes=[{"name": "天数奖", "type": "days", "value": 7, "quantity": 1}],
         draw_at=draw_at,
     )
     rnd.seed = f"fixed-seed-stale-{chat_id}"
@@ -146,8 +146,8 @@ def test_run_due_draws_recovers_crashed_auto_round(db, monkeypatch):
     assert len(winners) == 1
     assert all(w.distributed for w in winners)
     assert (
-        db.query(models.PointsLog)
-        .filter(models.PointsLog.type == "lottery_win")
+        db.query(models.WelfareGrantLog)
+        .filter(models.WelfareGrantLog.channel == "lottery_win")
         .count()
         == 1
     )

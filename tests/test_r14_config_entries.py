@@ -87,26 +87,28 @@ def _make_portal_app(db, admin_user):
     return app
 
 
+# view-unlock 接口已随 #127 改为只剩 days（积分价格随货币下线，
+# 见 backend/emby_server/portal.py ViewUnlockSettingsIn 与前端 admin.ts 注释）。
 def test_portal_view_unlock_get_default(db, admin_user):
     app = _make_portal_app(db, admin_user)
     client = TestClient(app)
     r = client.get("/api/admin/emby/view-unlock")
     assert r.status_code == 200
-    assert r.json() == {"points": 50, "days": 365}
+    assert r.json() == {"days": 365}
 
 
 def test_portal_view_unlock_put_roundtrip(db, admin_user):
     app = _make_portal_app(db, admin_user)
     client = TestClient(app)
 
-    r = client.put("/api/admin/emby/view-unlock", json={"points": 80, "days": 30})
+    r = client.put("/api/admin/emby/view-unlock", json={"days": 30})
     assert r.status_code == 200
 
     r = client.get("/api/admin/emby/view-unlock")
     assert r.status_code == 200
-    assert r.json() == {"points": 80, "days": 30}
+    assert r.json() == {"days": 30}
 
-    r = client.put("/api/admin/emby/view-unlock", json={"points": -1, "days": 30})
+    r = client.put("/api/admin/emby/view-unlock", json={"days": -1})
     assert r.status_code == 400
 
 

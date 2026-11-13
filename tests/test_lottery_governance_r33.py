@@ -94,7 +94,7 @@ def _payload(**over):
     p = {
         "title": "治理活动",
         "chat_id": 999,
-        "prizes": [{"name": "积分奖", "type": "points", "value": 100, "quantity": 1}],
+        "prizes": [{"name": "天数奖", "type": "days", "value": 30, "quantity": 1}],
         "draw_at": None,
         "max_participants": None,
         "lottery_type": "button",
@@ -106,12 +106,12 @@ def _payload(**over):
 
 # ---------------- A-101：奖品上限 ----------------
 
-def test_direct_points_value_over_default_cap_rejected(db):
+def test_direct_points_prize_type_rejected(db):
+    # 积分奖品已随货币下线：治理发起遇到 points 类型直接 400（类型不受支持）
     _setup(db)
     user = _make_user(db, "lv5", xp=5000)
-    with pytest.raises(gov.LotteryGovernanceError) as ei:
-        gov.direct_launch(db, user.id, _payload(prizes=[{"name": "x", "type": "points", "value": 10**9, "quantity": 1}]))
-    assert ei.value.status_code == 400
+    with pytest.raises(Exception):
+        gov.direct_launch(db, user.id, _payload(prizes=[{"name": "x", "type": "points", "value": 100, "quantity": 1}]))
     assert db.query(models.LotteryRound).count() == 0
 
 
@@ -133,19 +133,19 @@ def test_direct_days_value_over_default_cap_rejected(db):
 
 
 def test_direct_total_value_over_default_cap_rejected(db):
-    # 单奖 1000 未超单奖上限，但 1000*6=6000 超每轮总价值上限 5000。
+    # 单奖 30 天未超单奖上限，但 30*167=5010 超每轮总价值上限 5000。
     _setup(db)
     user = _make_user(db, "lv5", xp=5000)
     with pytest.raises(gov.LotteryGovernanceError) as ei:
-        gov.direct_launch(db, user.id, _payload(prizes=[{"name": "x", "type": "points", "value": 1000, "quantity": 6}]))
+        gov.direct_launch(db, user.id, _payload(prizes=[{"name": "x", "type": "days", "value": 30, "quantity": 167}]))
     assert ei.value.status_code == 400
 
 
 def test_direct_at_caps_allowed(db):
-    # 边界：单奖 == 上限、总量 == 上限时放行（上限是 <= 语义）。
+    # 边界：单奖 == 天数上限（30）时放行（上限是 <= 语义）。
     _setup(db)
     user = _make_user(db, "lv5", xp=5000)
-    round_obj, _rec = gov.direct_launch(db, user.id, _payload(prizes=[{"name": "x", "type": "points", "value": 1000, "quantity": 5}]))
+    round_obj, _rec = gov.direct_launch(db, user.id, _payload(prizes=[{"name": "x", "type": "days", "value": 30, "quantity": 5}]))
     assert round_obj.status == "open"
 
 
@@ -154,7 +154,7 @@ def test_proposal_over_cap_rejected(db):
     _setup(db)
     user = _make_user(db, "lv5", xp=5000)
     with pytest.raises(gov.LotteryGovernanceError) as ei:
-        gov.submit_proposal(db, user.id, _payload(prizes=[{"name": "x", "type": "points", "value": 10**9, "quantity": 1}]))
+        gov.submit_proposal(db, user.id, _payload(prizes=[{"name": "x", "type": "days", "value": 10**9, "quantity": 1}]))
     assert ei.value.status_code == 400
 
 
@@ -165,7 +165,7 @@ def test_creator_cannot_join_own_round(db):
     creator = _make_user(db, "creator", xp=5000)
     other = _make_user(db, "other", xp=0)
     round_obj = lottery.create_round(db, title="t", chat_id=999,
-                                     prizes=[{"name": "x", "type": "points", "value": 100, "quantity": 1}],
+                                     prizes=[{"name": "x", "type": "days", "value": 30, "quantity": 1}],
                                      created_by=creator.id)
     res = lottery.join_round(db, round_obj, creator, creator.telegram_id)
     assert res == {"ok": False, "reason": "creator"}
@@ -178,7 +178,7 @@ def test_single_seat_round_empty_after_creator_excluded(db):
     _setup(db)
     creator = _make_user(db, "creator", xp=5000)
     round_obj = lottery.create_round(db, title="t", chat_id=999,
-                                     prizes=[{"name": "x", "type": "points", "value": 100, "quantity": 3}],
+                                     prizes=[{"name": "x", "type": "days", "value": 30, "quantity": 3}],
                                      max_participants=1, created_by=creator.id)
     res = lottery.join_round(db, round_obj, creator, creator.telegram_id)
     assert res["reason"] == "creator"
@@ -197,7 +197,7 @@ def test_admin_created_round_unaffected(db):
     admin = _make_user(db, "admin", xp=0)
     player = _make_user(db, "player", xp=0)
     round_obj = lottery.create_round(db, title="t", chat_id=999,
-                                     prizes=[{"name": "x", "type": "points", "value": 10**9, "quantity": 1}],
+                                     prizes=[{"name": "x", "type": "days", "value": 10**9, "quantity": 1}],
                                      created_by=admin.id)
     assert round_obj.status == "open"
     res = lottery.join_round(db, round_obj, player, player.telegram_id)

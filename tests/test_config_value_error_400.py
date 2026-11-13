@@ -110,10 +110,12 @@ def test_welfare_valid_value_still_saves(client, db):
 
 
 def test_economy_invalid_value_returns_400_not_500(client):
-    """economy 家族（曾各自 try/except 的端点）改走统一 handler 后仍是 400。"""
+    """economy 家族（曾各自 try/except 的端点）改走统一 handler 后仍是 400。
+    invitation_rebate_percent 已随货币于 2026-11-13 下线，改用存活的
+    series_merge_interval_sec（下限 3600）做越界向量。"""
     r = client.put(
         "/api/admin/economy/settings",
-        json={"settings": {"invitation_rebate_percent": 101}},  # schema ("int", 0, 100)
+        json={"settings": {"series_merge_interval_sec": 100}},  # schema ("int", 3600, 604800)
     )
     assert r.status_code == 400, r.text
-    assert "invitation_rebate_percent" in r.json()["detail"]
+    assert "series_merge_interval_sec" in r.json()["detail"]

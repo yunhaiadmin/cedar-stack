@@ -12,7 +12,7 @@
 
 硬线（设计稿 + 任务书）：
 - 提案/发起/批准/拒绝全程不产生经验（本模块不调任何 add_xp）。
-- 奖品仍走现有抽奖口径（days/points/whitelist），不新设货币。
+- 奖品仍走现有抽奖口径（days/whitelist），不新设货币。
 - 仅 free realm 生效；想看商店会员锁不碰、不绕过。
 - 不动 lottery.py 的开奖/发放路径、不改管理端现有创建端点：
   批准与直接发起都复用 lottery.create_round 建轮次，建好后走现有开奖机制
@@ -31,7 +31,7 @@
   lottery_governance_direct_cap_lv6（默认 2）。
   奖品上限键（A-101，治理层独立上限，不复用管理端无上限口径；直接发起与
   提案批准共用；管理端创建端点不走本模块校验，不受影响）：
-  lottery_governance_prize_points_max（默认 1000，单奖能量价值上限）、
+
   lottery_governance_prize_days_max（默认 30，单奖天数价值上限）、
   lottery_governance_round_total_value_max（默认 5000，每轮奖品总价值上限，
   按 sum(value*quantity) 计）。管理端字段是后续跟进项（见 PR body），
@@ -78,10 +78,8 @@ DEFAULT_DIRECT_CAP_LV5 = 1
 DEFAULT_DIRECT_CAP_LV6 = 2
 
 # ---- SystemConfig 奖品上限键与默认值（A-101） ----
-KEY_PRIZE_POINTS_MAX = "lottery_governance_prize_points_max"
 KEY_PRIZE_DAYS_MAX = "lottery_governance_prize_days_max"
 KEY_ROUND_TOTAL_VALUE_MAX = "lottery_governance_round_total_value_max"
-DEFAULT_PRIZE_POINTS_MAX = 1000
 DEFAULT_PRIZE_DAYS_MAX = 30
 DEFAULT_ROUND_TOTAL_VALUE_MAX = 5000
 
@@ -207,7 +205,7 @@ def validate_round_payload(
     报错文案与管理端逐字一致，测试钉死；管理端校验若改，这里须同步改。
     db 给定时奖品上限读 SystemConfig 配置键，未给时用默认值。
     allow_whitelist=False 时禁用 whitelist 奖品（直接发起路径：永久资格只许管理员
-    创建/批准）。奖品上限：单奖 points/days 价值上限 + 每轮总价值上限
+    创建/批准）。奖品上限：单奖天数价值上限 + 每轮总价值上限
     （sum(value*quantity)，A-101）。
     返回规范化后的载荷：title / chat_id / prizes / draw_at（上海 naive datetime 或 None）
     / max_participants（None -> 0）/ lottery_type / password_keyword。
@@ -221,20 +219,18 @@ def validate_round_payload(
     norm_prizes = []
     for p in prizes:
         ptype = p.get("type") if isinstance(p, dict) else None
-        if ptype not in ("days", "points", "whitelist"):
-            raise LotteryGovernanceError(400, "奖品类型只能是 days/points/whitelist")
+        if ptype not in ("days", "whitelist"):
+            raise LotteryGovernanceError(400, "奖品类型只能是 days/whitelist")
         try:
             value = int(p.get("value"))
         except (TypeError, ValueError):
             raise LotteryGovernanceError(400, "奖品价值必须是整数")
-        if ptype in ("days", "points") and value <= 0:
-            raise LotteryGovernanceError(
-                400, f"{'能量' if ptype == 'points' else '天数'}奖品的价值必须大于 0"
-            )
+        if ptype == "days" and value <= 0:
+            raise LotteryGovernanceError(400, "天数奖品的价值必须大于 0")
         if ptype == "whitelist" and value < 0:
             raise LotteryGovernanceError(400, "奖品价值不能为负数")
         if ptype == "whitelist" and not allow_whitelist:
-            raise LotteryGovernanceError(400, "直接发起不能设置永久资格奖品，请改用能量或天数奖品")
+            raise LotteryGovernanceError(400, "直接发起不能设置永久资格奖品，请改用天数奖品")
         try:
             quantity = int(p.get("quantity"))
         except (TypeError, ValueError):
@@ -251,16 +247,12 @@ def validate_round_payload(
         )
     # A-101 治理层奖品上限（直接发起与提案批准共用；管理端创建端点不走本函数）
     if db is not None:
-        points_max = _config_int(db, KEY_PRIZE_POINTS_MAX, DEFAULT_PRIZE_POINTS_MAX)
         days_max = _config_int(db, KEY_PRIZE_DAYS_MAX, DEFAULT_PRIZE_DAYS_MAX)
         total_max = _config_int(db, KEY_ROUND_TOTAL_VALUE_MAX, DEFAULT_ROUND_TOTAL_VALUE_MAX)
     else:
-        points_max, days_max, total_max = (
-            DEFAULT_PRIZE_POINTS_MAX, DEFAULT_PRIZE_DAYS_MAX, DEFAULT_ROUND_TOTAL_VALUE_MAX)
+        days_max, total_max = (DEFAULT_PRIZE_DAYS_MAX, DEFAULT_ROUND_TOTAL_VALUE_MAX)
     total_value = 0
     for p in norm_prizes:
-        if p["type"] == "points" and p["value"] > points_max:
-            raise LotteryGovernanceError(400, f"能量奖品单奖价值不得超过 {points_max}")
         if p["type"] == "days" and p["value"] > days_max:
             raise LotteryGovernanceError(400, f"天数奖品单奖价值不得超过 {days_max}")
         total_value += p["value"] * p["quantity"]

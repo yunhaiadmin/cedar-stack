@@ -117,27 +117,9 @@
           </div>
         </section>
 
-        <!-- 支付口径：人民币 / 能量双轨（现有业务，不改规则） -->
+        <!-- 支付方式：人民币单轨（能量支付已随货币下线） -->
         <section class="sub-pay" aria-label="支付方式">
-          <div class="sub-seg sub-seg--pay" role="tablist" aria-label="支付口径">
-            <button
-              type="button"
-              role="tab"
-              class="sub-seg__item"
-              :class="{ 'sub-seg__item--on': currency === 'y' }"
-              :aria-selected="currency === 'y'"
-              @click="currency = 'y'"
-            >人民币</button>
-            <button
-              type="button"
-              role="tab"
-              class="sub-seg__item"
-              :class="{ 'sub-seg__item--on': currency === 'e' }"
-              :aria-selected="currency === 'e'"
-              @click="currency = 'e'"
-            >能量</button>
-          </div>
-          <div v-if="currency === 'y'" class="sub-methods">
+          <div class="sub-methods">
             <template v-if="methods.length > 1">
               <button
                 v-for="m in methods"
@@ -153,10 +135,6 @@
             <span v-if="methodsFailed" class="sub-pay__warn">支付方式加载失败，请检查网络后<button type="button" class="sub-inline-retry" @click="loadAll">重试</button></span>
             <span v-else-if="!methodsReady" class="sub-pay__warn">暂无可用支付方式，请联系服主</span>
           </div>
-          <p v-else class="sub-points">
-            <template v-if="selectedPlan && selectedPlan.points_price == null">该套餐不支持能量抵扣，请切换人民币</template>
-            <template v-else>能量余额 <b>{{ pointsBalance == null ? '–' : fmtNum(pointsBalance) }}</b><span v-if="pointsShort" class="sub-pay__warn"> · 能量不足</span></template>
-          </p>
         </section>
 
         <!-- 优惠码：接现有 coupon 试算口（与下单同一套口径） -->
@@ -240,7 +218,7 @@
  * 订阅服务（/game/account/subscribe）——按 UHDNow 订阅页逻辑重做（用户 2026-11-13 08:39 令）：
  * 深色 app 式单列流：页头（返回＋标题＋我的会员胶囊）→ 服分段 → 套餐单选卡
  * （选中提亮/未选压暗＋当前标记＋真实 entitlements 规格行）→ 时长滑杆＋胶囊
- * → 人民币/能量双轨 → 优惠码 → 价格明细 → 吸底结算条。
+ * → 支付方式（人民币） → 优惠码 → 价格明细 → 吸底结算条。
  * 套餐/价格/时长/规格全部接口数据驱动；价格一律走 coupon 试算口
  * （与下单同一套口径：先等级折扣，再优惠券/折扣权益），下单仍走
  * paymentApi.createOrder，支付与资格发放规则不动。
@@ -256,7 +234,6 @@ import {
   couponApi,
   memberApi,
   paymentApi,
-  pointsApi,
   type CouponQuote,
   type MyMemberInfo,
   type PaymentMethod,
@@ -279,17 +256,11 @@ const methodsFailed = ref(false)
 const payMethod = ref('alipay')
 const member = ref<MyMemberInfo | null>(null)
 const mySubs = ref<MySubscription[]>([])
-const pointsBalance = ref<number | null>(null)
 const couponEnabled = ref(true)
 
-const currency = ref<'y' | 'e'>('y')
 const orderBusy = ref(false)
 
 /* ---------- 展示工具 ---------- */
-function fmtNum(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return '–'
-  return n.toLocaleString()
-}
 /** 金额：整数不带小数，有分币时两位小数 */
 function fmtPrice(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return '–'
@@ -297,7 +268,7 @@ function fmtPrice(n: number | null | undefined): string {
 }
 function moneyText(v: number | null | undefined): string {
   if (v == null) return '–'
-  return currency.value === 'e' ? `${fmtNum(Math.round(v))} 能量` : `¥ ${fmtPrice(v)}`
+  return `¥ ${fmtPrice(v)}`
 }
 /** 胶囊文案（与原站四档同形：1 个月/3 个月/6 个月/年付）；非整月天数如实写天数 */
 function durShort(days: number): string {
@@ -418,7 +389,6 @@ async function refreshQuote() {
       code: appliedCoupon.value,
       kind: 'subscription',
       item_id: plan.id,
-      pay_with_points: currency.value === 'e',
     })
     if (token !== quoteToken) return
     quote.value = q
@@ -429,8 +399,6 @@ async function refreshQuote() {
     if (appliedCoupon.value) {
       appliedCoupon.value = ''
       couponError.value = '这张券不适用于当前选择，已移除'
-    } else if (currency.value === 'e' && plan.points_price == null) {
-      // 能量口径下不支持能量购买的套餐试算会 400，属预期：价格区按原价展示
     } else {
       couponError.value = ''
       void err
@@ -449,7 +417,6 @@ async function applyCoupon() {
       code,
       kind: 'subscription',
       item_id: plan.id,
-      pay_with_points: currency.value === 'e',
     })
     if (!q.valid) {
       couponError.value = '这张券用不上，换一张试试'
@@ -472,7 +439,7 @@ function clearCoupon() {
   void refreshQuote()
 }
 
-watch([selectedPlanId, currency], () => {
+watch(selectedPlanId, () => {
   couponError.value = ''
   void refreshQuote()
 })
@@ -481,7 +448,7 @@ const listTotal = computed<number | null>(() => {
   const plan = selectedPlan.value
   if (!plan) return null
   if (quote.value) return quote.value.list_price
-  return currency.value === 'e' ? plan.points_price : plan.price
+  return plan.price
 })
 const paidTotal = computed<number | null>(() => {
   if (quote.value) return quote.value.paid_amount
@@ -502,18 +469,10 @@ const savedTotal = computed(() =>
     : 0,
 )
 const memberLevelName = computed(() => member.value?.level_name || '')
-const pointsShort = computed(() =>
-  currency.value === 'e' &&
-  selectedPlan.value?.points_price != null &&
-  pointsBalance.value != null &&
-  paidTotal.value != null &&
-  pointsBalance.value < paidTotal.value,
-)
 
 /* ---------- 下单（口径与补给站原结算栏一致，规则不动） ---------- */
 const buyDisabled = computed(() => {
   if (orderBusy.value || !selectedPlan.value) return true
-  if (currency.value === 'e') return selectedPlan.value.points_price == null
   return !methodsReady.value
 })
 
@@ -526,14 +485,9 @@ async function buy() {
       kind: 'subscription',
       item_id: plan.id,
       payment_method: payMethod.value,
-      pay_with_points: currency.value === 'e',
       coupon_code: appliedCoupon.value ? appliedCoupon.value : undefined,
     })
-    if (res.paid_with_points) {
-      toast.success(res.message || '开通成功，订阅已生效')
-      appliedCoupon.value = ''
-      await loadAll()
-    } else if (res.pay_url) {
+    if (res.pay_url) {
       toast.success('正在跳转支付')
       window.location.href = res.pay_url
     } else {
@@ -555,12 +509,11 @@ function goBack() {
 async function loadAll() {
   loading.value = true
   loadError.value = false
-  const [pls, mth, mem, subs, pts, cpCfg] = await Promise.allSettled([
+  const [pls, mth, mem, subs, cpCfg] = await Promise.allSettled([
     paymentApi.plans(),
     paymentApi.methods(),
     memberApi.info(),
     subscriptionApi.getMine(),
-    pointsApi.log({ limit: 1 }),
     couponApi.config(),
   ])
   if (pls.status === 'fulfilled') {
@@ -583,7 +536,6 @@ async function loadAll() {
   }
   if (mem.status === 'fulfilled') member.value = mem.value
   if (subs.status === 'fulfilled') mySubs.value = subs.value
-  if (pts.status === 'fulfilled') pointsBalance.value = pts.value.balance ?? null
   if (cpCfg.status === 'fulfilled') couponEnabled.value = cpCfg.value.enabled !== false
   loading.value = false
   void refreshQuote()
@@ -998,15 +950,6 @@ onMounted(() => {
   cursor: pointer;
   padding: 0 2px;
 }
-.sub-points {
-  margin: 0;
-  color: var(--uhd-d-text-2);
-  font-size: var(--uhd-fs-caption);
-}
-.sub-points b {
-  color: var(--uhd-d-text);
-}
-
 /* 优惠码：胶囊输入＋应用钮同行同高 */
 .sub-coupon__row {
   display: flex;
