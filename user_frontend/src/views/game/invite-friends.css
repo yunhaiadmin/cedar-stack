@@ -1,0 +1,231 @@
+/* 邀请好友页本地主题变量（--iv-*）：缺省深色，html[data-theme='light'] 时
+   整套换浅（与「我的」页/团队页同口径）。定义放在独立样式表供设计令牌
+   契约核查，由 InviteFriendsView.vue 引入。 */
+
+.iv-page {
+  --iv-line: rgba(255, 255, 255, 0.1);
+  --iv-card: #17181c;
+  --iv-chip: rgba(255, 255, 255, 0.08);
+  --iv-text-2: rgba(255, 255, 255, 0.62);
+  --iv-text-3: rgba(255, 255, 255, 0.42);
+
+  min-height: 100dvh;
+  background: #050505;
+  color: #ffffff;
+  font-family: var(--uhd-font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+html[data-theme='light'] .iv-page {
+  --iv-line: #e7e7e7;
+  --iv-card: #ffffff;
+  --iv-chip: #f0f0f2;
+  --iv-text-2: #55575c;
+  --iv-text-3: #9a9da3;
+
+  background: #f8f8f8;
+  color: #111111;
+}
+
+.iv-topbar {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: calc(14px + env(safe-area-inset-top)) 20px 4px;
+}
+
+.iv-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: inherit;
+  font-size: 17px;
+  font-weight: var(--uhd-fw-semibold);
+  text-decoration: none;
+}
+
+.iv-body {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 18px 20px 120px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.iv-card {
+  padding: 18px;
+  background: var(--iv-card);
+  border: 1px solid var(--iv-line);
+  border-radius: 20px;
+}
+
+.iv-card__title {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: var(--uhd-fw-bold);
+}
+
+.iv-card__title--sub {
+  margin-top: 20px;
+}
+
+.iv-code-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.iv-code {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 26px;
+  font-weight: var(--uhd-fw-extrabold);
+  letter-spacing: 0.12em;
+}
+
+.iv-link-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.iv-link {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--iv-text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.iv-copy {
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 8px 18px;
+  /* 招牌彩虹描边：深色深底、浅色彩虹粉彩底（与主按钮同写法） */
+  background:
+    linear-gradient(#2e2e33, #2e2e33) padding-box,
+    var(--uhd-rainbow) border-box;
+  color: inherit;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: var(--uhd-fw-semibold);
+  cursor: pointer;
+}
+
+html[data-theme='light'] .iv-copy {
+  background:
+    var(--uhd-rainbow-soft) padding-box,
+    var(--uhd-rainbow) border-box;
+}
+
+.iv-copy:active {
+  opacity: 0.75;
+}
+
+.iv-stats {
+  margin: 18px 0 0;
+  font-size: 14px;
+  color: var(--iv-text-2);
+}
+
+.iv-rule {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.75;
+  color: var(--iv-text-2);
+}
+
+.iv-none {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.7;
+  color: var(--iv-text-2);
+}
+
+.iv-thead,
+.iv-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.iv-thead {
+  padding-bottom: 8px;
+  font-size: 13px;
+  color: var(--iv-text-3);
+}
+
+.iv-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.iv-row {
+  padding: 11px 0;
+  border-top: 1px solid var(--iv-line);
+  font-size: 14.5px;
+}
+
+.iv-col {
+  flex: 0 0 92px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.iv-col--name {
+  flex: 1 1 auto;
+  font-weight: var(--uhd-fw-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.iv-col--num {
+  flex-basis: 70px;
+  text-align: right;
+  font-weight: var(--uhd-fw-semibold);
+}
+
+.iv-empty {
+  margin: 24px 0 0;
+  padding: 28px 20px;
+  background: var(--iv-card);
+  border: 1px solid var(--iv-line);
+  border-radius: 20px;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--iv-text-2);
+  text-align: center;
+}
+
+.iv-err {
+  padding: 16px 18px;
+  background: var(--iv-card);
+  border: 1px solid var(--iv-line);
+  border-radius: 16px;
+  font-size: 14.5px;
+  color: var(--iv-text-2);
+}
+
+.iv-retry {
+  margin-left: 10px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: var(--uhd-fw-semibold);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.iv-skeleton {
+  height: 260px;
+  border-radius: 20px;
+  background: var(--iv-card);
+  border: 1px solid var(--iv-line);
+  opacity: 0.6;
+}

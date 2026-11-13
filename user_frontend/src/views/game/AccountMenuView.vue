@@ -27,7 +27,18 @@
       <span class="am-avatar" aria-hidden="true">{{ avatarInitial }}</span>
       <div class="am-identity__text">
         <p class="am-username">{{ displayName }}</p>
-        <p class="am-status">{{ statusLine }}</p>
+        <div class="am-idrow">
+          <p class="am-status">{{ statusLine }}</p>
+          <button
+            v-if="userId"
+            type="button"
+            class="am-copy"
+            aria-label="复制用户 ID"
+            @click="copyUserId"
+          >
+            <Copy :size="14" aria-hidden="true" />
+          </button>
+        </div>
       </div>
     </div>
 
@@ -55,6 +66,16 @@
             <span v-if="item.value" class="am-row__value">{{ item.value }}</span>
             <ChevronRight :size="16" class="am-row__chev" aria-hidden="true" />
           </RouterLink>
+          <a
+            v-else-if="item.href"
+            :href="item.href"
+            target="_blank"
+            rel="noopener"
+            class="am-row"
+          >
+            <span class="am-row__name">{{ item.label }}</span>
+            <ChevronRight :size="16" class="am-row__chev" aria-hidden="true" />
+          </a>
           <button v-else type="button" class="am-row" @click="item.action?.()">
             <span class="am-row__name">{{ item.label }}</span>
             <span v-if="item.value" class="am-row__value">{{ item.value }}</span>
@@ -64,7 +85,7 @@
       </section>
 
       <!-- 退出登录：列表下方独立整宽胶囊按钮（原站形态），行为保持现有登出逻辑 -->
-      <!-- 安装应用入口已进「日常与帮助」组（整页 /game/install，2026-11-13）：
+      <!-- 安装应用入口已进「帮助」组（整页 /game/install，2026-11-13）：
            原先这里的 PWA 行随之摘除，PWA 安装动作在整页内保留 -->
       <button type="button" class="am-logout" @click="handleLogout">退出登录</button>
     </main>
@@ -84,10 +105,12 @@
  */
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { ChevronRight } from 'lucide-vue-next'
+import { ChevronRight, Copy } from 'lucide-vue-next'
 import { useUserStore } from '@/stores/user'
 import { useTheme } from '@/composables/useTheme'
+import { useToast } from '@/composables/useToast'
 import { branding } from '@/composables/useBranding'
+import { communityLinks, initCommunityLinks } from '@/composables/useCommunityLinks'
 import { getAgentMe } from '@/api/agent'
 import { subscriptionApi, type MySubscription } from '@/api'
 
@@ -95,6 +118,8 @@ interface MenuItem {
   key: string
   label: string
   to?: string
+  /** 外部链接（使用说明→官网文档地址，后台可配；未配不渲染该行） */
+  href?: string
   value?: string
   action?: () => void
 }
@@ -111,6 +136,7 @@ const THEME_OPTIONS = [
 
 const router = useRouter()
 const userStore = useUserStore()
+const toast = useToast()
 const { preference, setPreference } = useTheme()
 
 const mySubs = ref<MySubscription[]>([])
@@ -122,14 +148,33 @@ const avatarInitial = computed(() => (displayName.value.trim().charAt(0) || '我
 const activeSub = computed(
   () => mySubs.value.find((s) => s.status === 'active' && s.days_left > 0) ?? null,
 )
+const userId = computed(() => userStore.user?.id ?? null)
+// 身份副行照友站形态：订阅档名 · 用户 ID（复制钮在模板里）；剩余天数在概览页看
 const statusLine = computed(() => {
   const s = activeSub.value
-  if (s) return `${s.plan_name} · 剩 ${s.days_left} 天`
-  if (userStore.user?.is_welfare) return '公益服用户'
-  return '普通用户'
+  const base = s
+    ? s.plan_name
+    : userStore.user?.is_welfare
+      ? '公益服用户'
+      : '普通用户'
+  return userId.value ? `${base} · ${userId.value}` : base
 })
 
+async function copyUserId() {
+  if (!userId.value) return
+  try {
+    await navigator.clipboard.writeText(String(userId.value))
+    toast.success('用户 ID 已复制')
+  } catch {
+    toast.error('复制失败，请手动复制')
+  }
+}
+
 const groups = computed<MenuGroup[]>(() => {
+  // 2026-11-13 细节对齐（用户圈图亲点）：分组与条目顺序照友站「我的」——
+  // 订阅与财务（订阅服务/订阅记录/钱包）、账户（账号安全/邀请好友/团队管理）、
+  // 帮助（求片反馈/安装应用/线路测速/使用说明）。钱包条目随钱包本体一起上，
+  // 本单不摆空入口；我的会员（订阅详情页）保留在财务组末尾。
   const finance: MenuItem[] = [
     {
       key: 'subscribe',
@@ -137,10 +182,12 @@ const groups = computed<MenuGroup[]>(() => {
       to: '/game/account/subscribe',
       value: activeSub.value?.plan_name || undefined,
     },
+    { key: 'records', label: '订阅记录', to: '/game/account/subscription-records' },
     { key: 'member', label: '我的会员', to: '/game/account/member' },
   ]
   const account: MenuItem[] = [
-    { key: 'settings', label: '账号与设置', to: '/game/account/settings' },
+    { key: 'settings', label: '账号安全', to: '/game/account/settings' },
+    { key: 'invite', label: '邀请好友', to: '/game/account/invite' },
     { key: 'team', label: '团队管理', to: '/game/account/team' },
   ]
   if (isAgent.value) {
@@ -148,21 +195,25 @@ const groups = computed<MenuGroup[]>(() => {
   }
   // 用户 2026-11-13 圈选令＋条件令：探险设施整组摘除、「我的概览」行删除；
   // 「每日报到」「信鸽」两行摘除（友站核查无签到/站内消息，两页定整页删除，
-  // 页面本体由并行删除单处理）；求救信号保留并改名「反馈」，仍在「日常与帮助」组。
+  // 页面本体由并行删除单处理）；求救信号保留并改名「反馈」。
   // 2026-11-13 求片反馈合并页：「求片」行摘除、「反馈」行改名「求片反馈」
   // 并指向新页 /game/requests（入口由这一行覆盖，不留两个指向同页的行）。
-  const daily: MenuItem[] = [
+  const help: MenuItem[] = [
     { key: 'requests', label: '求片反馈', to: '/game/requests' },
     // 安装应用（2026-11-13）：原先列表下方的 PWA 行改为进入整页
     // （服务器地址＋客户端下载＋教程），PWA 安装动作在整页内保留
     { key: 'install', label: '安装应用', to: '/game/install' },
     { key: 'speedtest', label: '线路测速', to: '/game/speedtest' },
   ]
+  // 使用说明：指向官网文档外链（后台「官网社区渠道」可配），未配不渲染
+  if (communityLinks.docs_url) {
+    help.push({ key: 'guide', label: '使用说明', href: communityLinks.docs_url })
+  }
   const system: MenuItem[] = [{ key: 'theme', label: '外观' }]
   return [
     { title: '订阅与财务', items: finance },
     { title: '账户', items: account },
-    { title: '日常与帮助', items: daily },
+    { title: '帮助', items: help },
     { title: '系统', items: system },
   ]
 })
@@ -173,6 +224,7 @@ async function handleLogout() {
 }
 
 onMounted(async () => {
+  void initCommunityLinks()
   const [subs] = await Promise.allSettled([
     subscriptionApi.getMine(),
   ])
@@ -229,17 +281,20 @@ onMounted(async () => {
   font-weight: var(--uhd-fw-extrabold);
   color: #ffffff;
 }
-/* 「网页观影」胶囊：与概览页同款——实测大颗软胶囊，浅色近白底带粉色
-   水洗（中心 #f9f3f3）、深色 #312d2e，无彩虹描边 */
+/* 「网页观影」胶囊：实测大颗软胶囊＋彩虹描边（2026-11-13 用户圈图对齐）：
+   填充浅色近白底带粉色水洗（中心 #f9f3f3）、深色 #312d2e，描边走全站
+   --uhd-rainbow 渐变（padding-box 填充＋border-box 描边的双背景写法） */
 .watch-pill {
   display: inline-flex;
   align-items: center;
   gap: 9px;
   height: 54px;
   padding: 0 24px;
-  border: none;
+  border: 1.5px solid transparent;
   border-radius: 999px;
-  background: #312d2e;
+  background:
+    linear-gradient(#312d2e, #312d2e) padding-box,
+    var(--uhd-rainbow) border-box;
   color: #ffffff;
   font-size: 15px;
   font-weight: var(--uhd-fw-semibold);
@@ -283,9 +338,35 @@ onMounted(async () => {
   text-overflow: ellipsis;
 }
 .am-status {
-  margin: 4px 0 0;
+  margin: 0;
   font-size: 14.5px;
   color: rgba(255, 255, 255, 0.62);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.am-idrow {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.am-copy {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.62);
+  cursor: pointer;
+}
+.am-copy:active {
+  opacity: 0.7;
 }
 
 /* 平面分组列表：粗标题＋发丝线行，无卡片无行图标 */
@@ -399,12 +480,15 @@ html[data-theme='light'] .am-page { background: #f8f8f8; color: #111111; }
 html[data-theme='light'] .am-brand__mark { color: #111111; }
 html[data-theme='light'] .am-brand__title { color: #111111; }
 html[data-theme='light'] .watch-pill {
-  background: linear-gradient(180deg, #fdf8f8 0%, #f9f1f1 100%);
+  background:
+    linear-gradient(180deg, #fdf8f8 0%, #f9f1f1 100%) padding-box,
+    var(--uhd-rainbow) border-box;
   color: #111111;
 }
 html[data-theme='light'] .am-avatar { background: #e9e9ec; color: #111111; }
 html[data-theme='light'] .am-username { color: #111111; }
 html[data-theme='light'] .am-status { color: #55575c; }
+html[data-theme='light'] .am-copy { color: #55575c; }
 html[data-theme='light'] .am-group__title { color: #111111; }
 html[data-theme='light'] .am-row { border-bottom-color: #e7e7e7; color: #111111; }
 html[data-theme='light'] .am-row__value { color: #9a9da3; }

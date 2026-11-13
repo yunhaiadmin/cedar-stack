@@ -349,16 +349,52 @@ def my_code(
     }
 
 
+def _rebate_totals_by_invitee(
+    db: Session, inviter_id: int, invitee_ids: list[int]
+) -> dict[int, int]:
+    """按被邀请人归集累计返利（只记账口径，读现行台账，不发生发放）。
+
+    返利流水（PointsLog type=rebate）的 ``ref_id`` 是 ``rebate:{充值订单号}``，
+    订单归属人就是被邀请人，据此把邀请人的返利台账拆回每个人头上。
+    归不上（订单已删/老流水无此格式）的返利不硬塞，宁可少算不许错算。
+    """
+    if not invitee_ids:
+        return {}
+    order_owner = {
+        oid: uid for oid, uid in db.query(
+            models.RechargeOrder.order_id, models.RechargeOrder.user_id
+        ).filter(models.RechargeOrder.user_id.in_(invitee_ids)).all()
+    }
+    if not order_owner:
+        return {}
+    totals: dict[int, int] = {}
+    logs = db.query(models.PointsLog).filter(
+        models.PointsLog.user_id == inviter_id,
+        models.PointsLog.type == "rebate",
+        models.PointsLog.amount > 0,
+        models.PointsLog.ref_id.like("rebate:%"),
+    ).all()
+    for log in logs:
+        owner = order_owner.get((log.ref_id or "")[len("rebate:"):])
+        if owner is not None:
+            totals[owner] = totals.get(owner, 0) + int(log.amount or 0)
+    return totals
+
+
 @router.get("/records")
 def my_invitation_records(
     limit: int = 50,
     current_user: models.WebUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """我邀请的用户列表"""
+    """我邀请的用户列表（含每人累计返利：从返利台账按充值订单归属拆算）"""
     records = db.query(models.InvitationRecord).filter(
         models.InvitationRecord.inviter_id == current_user.id
     ).order_by(models.InvitationRecord.created_at.desc()).limit(min(limit, 200)).all()
+
+    rebate_totals = _rebate_totals_by_invitee(
+        db, current_user.id, [r.invitee_id for r in records]
+    )
 
     items = []
     for r in records:
@@ -367,6 +403,7 @@ def my_invitation_records(
             "id": r.id,
             "invitee_username": invitee.username if invitee else "已注销",
             "reward_points": r.reward_points,
+            "rebate_total": rebate_totals.get(r.invitee_id, 0),
             "created_at": r.created_at.isoformat() if r.created_at else None,
         })
     return {"total": len(items), "records": items}

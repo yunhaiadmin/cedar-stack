@@ -167,6 +167,22 @@ const router = createRouter({
             component: () => import('@/views/game/SubscriptionPlansView.vue'),
             meta: { title: '订阅服务', requiresAuth: true },
           },
+          // 订阅记录（2026-11-13 对齐友站「我的 · 订阅与财务」）：购买订单＋
+          // 无订单发放的合并时间线，订单行展示 item_name 快照原文
+          {
+            path: '/game/account/subscription-records',
+            name: 'game-account-subscription-records',
+            component: () => import('@/views/game/SubscriptionRecordsView.vue'),
+            meta: { title: '订阅记录', requiresAuth: true },
+          },
+          // 邀请好友（2026-11-13 对齐友站「我的 · 账户」）：邀请码/链接＋
+          // 返利规则（比例读后端配置）＋邀请记录（累计返利为台账口径）
+          {
+            path: '/game/account/invite',
+            name: 'game-account-invite',
+            component: () => import('@/views/game/InviteFriendsView.vue'),
+            meta: { title: '邀请好友', requiresAuth: true },
+          },
           // 「我的」菜单页：用户中心底坞双页签之一（全部功能列表行，一个不丢）
           {
             path: '/game/account/menu',

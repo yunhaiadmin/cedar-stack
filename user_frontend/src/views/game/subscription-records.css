@@ -1,0 +1,136 @@
+/* 订阅记录页本地主题变量（--sr-*）：缺省深色，html[data-theme='light'] 时
+   整套换浅（与「我的」页/团队页同口径）。定义放在独立样式表供设计令牌
+   契约核查，由 SubscriptionRecordsView.vue 引入。 */
+
+.sr-page {
+  --sr-line: rgba(255, 255, 255, 0.1);
+  --sr-card: #17181c;
+  --sr-text-2: rgba(255, 255, 255, 0.62);
+  --sr-text-3: rgba(255, 255, 255, 0.42);
+
+  min-height: 100dvh;
+  background: #050505;
+  color: #ffffff;
+  font-family: var(--uhd-font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+html[data-theme='light'] .sr-page {
+  --sr-line: #e7e7e7;
+  --sr-card: #ffffff;
+  --sr-text-2: #55575c;
+  --sr-text-3: #9a9da3;
+
+  background: #f8f8f8;
+  color: #111111;
+}
+
+.sr-topbar {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: calc(14px + env(safe-area-inset-top)) 20px 4px;
+}
+
+.sr-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: inherit;
+  font-size: 17px;
+  font-weight: var(--uhd-fw-semibold);
+  text-decoration: none;
+}
+
+.sr-body {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 18px 20px 120px;
+  box-sizing: border-box;
+}
+
+.sr-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px 18px;
+  background: var(--sr-card);
+  border: 1px solid var(--sr-line);
+  border-radius: 20px;
+}
+
+.sr-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--sr-line);
+}
+
+.sr-row:last-child {
+  border-bottom: none;
+}
+
+.sr-row__main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sr-name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: var(--uhd-fw-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sr-meta {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  color: var(--sr-text-2);
+}
+
+.sr-amount {
+  flex: 0 0 auto;
+  font-size: 16px;
+  font-weight: var(--uhd-fw-semibold);
+}
+
+.sr-empty {
+  margin: 24px 0 0;
+  padding: 28px 20px;
+  background: var(--sr-card);
+  border: 1px solid var(--sr-line);
+  border-radius: 20px;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--sr-text-2);
+  text-align: center;
+}
+
+.sr-err {
+  padding: 16px 18px;
+  background: var(--sr-card);
+  border: 1px solid var(--sr-line);
+  border-radius: 16px;
+  font-size: 14.5px;
+  color: var(--sr-text-2);
+}
+
+.sr-retry {
+  margin-left: 10px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: var(--uhd-fw-semibold);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.sr-skeleton {
+  height: 220px;
+  border-radius: 20px;
+  background: var(--sr-card);
+  border: 1px solid var(--sr-line);
+  opacity: 0.6;
+}

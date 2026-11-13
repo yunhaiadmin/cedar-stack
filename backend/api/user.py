@@ -1479,6 +1479,72 @@ def get_my_subscriptions(
     return result
 
 
+@user_router.get("/subscriptions/records")
+def get_my_subscription_records(
+    current_user: models.WebUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """我的订阅记录：购买订单 + 无订单的订阅发放（兑换码/管理员授予等）合并时间线。
+
+    订单行用下单时写下的 ``item_name`` 快照原样展示——套餐后来改名，
+    历史记录不跟着变（对账口径）。发放行没有订单、也没有快照，只能用
+    套餐现名；金额只有订单行有，发放行回 None，前端显示「—」。
+    已被订单履约的订阅行不重复出现（订单行已覆盖它）。
+    """
+    records: list[dict] = []
+
+    orders = db.query(models.SubscriptionOrder).filter(
+        models.SubscriptionOrder.user_id == current_user.id
+    ).order_by(models.SubscriptionOrder.created_at.desc()).limit(100).all()
+    ordered_sub_ids = {o.subscription_id for o in orders if o.subscription_id}
+    for o in orders:
+        records.append({
+            "kind": "order",
+            "time": o.created_at.isoformat() if o.created_at else None,
+            # 快照原样：不加「订阅 - 」前缀、不回查套餐现名
+            "name": o.item_name or "订阅",
+            "days": int(o.days_granted or 0) or None,
+            "amount": float(o.amount) if o.amount is not None else None,
+            # pending / paid / refunded / closed（订单状态，前端映射人话）
+            "status": o.status,
+        })
+
+    subs = db.query(models.UserSubscription).filter(
+        models.UserSubscription.user_id == current_user.id
+    ).order_by(models.UserSubscription.created_at.desc()).limit(100).all()
+    now = datetime.now()
+    plans = {
+        p.id: p for p in db.query(models.SubscriptionPlan).filter(
+            models.SubscriptionPlan.id.in_([s.plan_id for s in subs if s.plan_id])
+        ).all()
+    } if subs else {}
+    for sub in subs:
+        if sub.id in ordered_sub_ids:
+            continue
+        plan = plans.get(sub.plan_id)
+        days = None
+        if sub.start_date and sub.end_date:
+            days = (sub.end_date - sub.start_date).days
+        # 生效口径与 GET /subscriptions 一致：status 字段不随时间翻转，按 end_date 现算
+        if sub.status == "cancelled":
+            status = "cancelled"
+        elif sub.status == "active" and sub.end_date and sub.end_date > now:
+            status = "active"
+        else:
+            status = "expired"
+        records.append({
+            "kind": "grant",
+            "time": sub.created_at.isoformat() if sub.created_at else None,
+            "name": plan.name if plan else "未知套餐",
+            "days": days,
+            "amount": None,
+            "status": status,
+        })
+
+    records.sort(key=lambda r: r["time"] or "", reverse=True)
+    return {"records": records[:100]}
+
+
 @user_router.post("/subscriptions/{subscription_id}/cancel")
 def cancel_my_subscription(
     subscription_id: int,

@@ -939,6 +939,17 @@ export interface MySubscription {
   days_left: number
 }
 
+/** 订阅记录一行：订单行用下单时的 item_name 快照；发放行（兑换/授予）金额为 null */
+export interface SubscriptionRecordRow {
+  kind: 'order' | 'grant'
+  time: string | null
+  name: string
+  days: number | null
+  amount: number | null
+  /** order: pending/paid/refunded/closed；grant: active/expired/cancelled */
+  status: string
+}
+
 /**
  * 临期阈值（天）：与后台「到期前提醒」同一口径（backend/reminders.py 默认 7/3/1）。
  * 用户端不自己写 7：改了后端档位后，界面上的提醒也该跟着换。
@@ -953,6 +964,8 @@ export function isExpiringSoon(sub: MySubscription | null | undefined): boolean 
 export const subscriptionApi = {
   // 我的订阅列表（含剩余天数）
   getMine: () => api.get<never, MySubscription[]>('/api/user/subscriptions'),
+  // 我的订阅记录（购买订单＋无订单发放的合并时间线）
+  getRecords: () => api.get<never, { records: SubscriptionRecordRow[] }>('/api/user/subscriptions/records'),
   // 终止订阅（立即失效）
   cancel: (id: number) => api.post<never, { success: boolean; message: string }>(`/api/user/subscriptions/${id}/cancel`),
   // 自动续订开关：到期前 24 小时用能量自动续订，余额不足则不续
