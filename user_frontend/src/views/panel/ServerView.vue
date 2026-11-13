@@ -171,6 +171,7 @@ import { storeToRefs } from 'pinia'
 import { Activity, ChevronRight, HeartPulse, LibraryBig, ListTodo, MonitorPlay, Tag } from 'lucide-vue-next'
 import { usePanelStore } from '@/stores/panel'
 import type { ServerData } from '@/composables/usePanelApi'
+import './server-view.css'
 
 const panel = usePanelStore()
 const { server } = storeToRefs(panel)
@@ -278,15 +279,9 @@ const growthFoot = computed(() => {
 
 <style scoped>
 /* 服务器页（UHD 办事面）：平面分组＋发丝线＋状态行组＋会员卡式服务器卡。
-   本地主题变量跟随用户外观：缺省深色（实测清单 §1b），
-   html[data-theme='light'] 换浅色（实测清单 §1），与概览页同一口径。 */
+   本地主题令牌（--sv-*）定义在同目录 server-view.css（由本文件引入）：
+   契约检查只认被引入的样式表，scoped 样式里的定义不作数。 */
 .sv-page {
-  --sv-text: #ffffff;
-  --sv-text-2: #9ca3af;
-  --sv-divider: #26262a;
-  --sv-surface: #17181c;
-  --sv-ok: #4e8d69;
-  --sv-chip-bg: rgba(255, 255, 255, 0.14);
   min-height: 100dvh;
   background: linear-gradient(180deg, #111213 0%, #09090b 100%);
   color: var(--sv-text);
@@ -515,11 +510,6 @@ const growthFoot = computed(() => {
 
 /* 浅色覆盖：跟随用户外观（html[data-theme='light']，实测清单 §1） */
 html[data-theme='light'] .sv-page {
-  --sv-text: #111111;
-  --sv-text-2: #6b7280;
-  --sv-divider: #e5e5e7;
-  --sv-surface: #ffffff;
-  --sv-chip-bg: rgba(17, 17, 17, 0.07);
   background: linear-gradient(180deg, #f8f8f9 0%, #f1f2f3 100%);
 }
 html[data-theme='light'] .sv-card {
