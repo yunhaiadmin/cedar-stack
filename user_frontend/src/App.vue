@@ -51,7 +51,11 @@ const route = useRoute()
 const showChrome = computed(
   // 登录页、UHD 营销面（官网/定价，自带悬浮胶囊导航）与 404 页为独立全幅版式，
   // 不渲染全局顶栏/底坞；其余页面照旧。
-  () => !['login', 'landing', 'pricing', 'not-found'].includes(route.name as string),
+  // 根路径未登录渲染官网（RootView 分发，自带导航）同样不叠全局壳；
+  // 已登录根路径是发现页，照旧渲染。
+  () =>
+    !['login', 'landing', 'pricing', 'not-found'].includes(route.name as string) &&
+    !(route.path === '/' && !userStore.isLoggedIn),
 )
 
 /**
@@ -117,7 +121,8 @@ const hideHeaderForWorld = computed(
  * 2026-11-06：/game/account 改为个人中心 PersonalCenterView，缓存对象随之更换；
  * 账号设置（/game/account/settings）与我的会员（/game/account/member）是子页，不进缓存。
  */
-const KEEP_ALIVE_VIEWS = ['DiscoveryView', 'ShopView', 'PersonalCenterView']
+// RootView 是根路径分发组件（内含发现页），一并常驻缓存以保住发现页的切 tab 复用
+const KEEP_ALIVE_VIEWS = ['RootView', 'DiscoveryView', 'ShopView', 'PersonalCenterView']
 const viewCacheKey = computed(
   () => `${route.path}:${userStore.user?.id ?? 'guest'}#${userStore.sessionSeq}`,
 )

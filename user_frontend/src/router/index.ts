@@ -25,8 +25,9 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      // 首页即发现页（旧 HomeView 已删除，不再回退）
-      component: () => import('@/views/panel/DiscoveryView.vue'),
+      // 根路径由 RootView 按登录态分发：未登录＝官网 LandingView（URL 保持 '/'），
+      // 已登录＝发现页 DiscoveryView（旧 HomeView 已删除，不再回退）
+      component: () => import('@/views/RootView.vue'),
       meta: { title: '发现' },
     },
     // v4 面板：收藏家 / 服务器（需要登录，panel 接口全部要鉴权）
@@ -248,14 +249,13 @@ const router = createRouter({
       path: '/calendar',
       redirect: '/game/calendar',
     },
-    // UHD 换皮批 1（营销面）：官网首页与官网定价，公开页不带 requiresAuth。
-    // 新增独立路由，不动现行 '/' 发现页；两页自带悬浮胶囊导航，
-    // App.vue 按路由名（landing/pricing）不渲染全局顶栏/底坞。
+    // UHD 换皮批 1（营销面）：官网定价，公开页不带 requiresAuth，自带悬浮胶囊导航，
+    // App.vue 按路由名（pricing）不渲染全局顶栏/底坞。
+    // 官网首页已按 2026-11-13 定版绑到根路径 '/'（RootView 未登录分支渲染
+    // LandingView），/welcome 只留旧链接/书签重定向，不再单独渲染。
     {
       path: '/welcome',
-      name: 'landing',
-      component: () => import('@/views/marketing/LandingView.vue'),
-      meta: { title: '欢迎' },
+      redirect: '/',
     },
     {
       path: '/pricing',
@@ -302,8 +302,10 @@ router.beforeEach(async (to) => {
   }
 
   // 分段页标题由 LibraryHomeView 按 ?tab= 覆写（媒体库 / 收藏 / 观看记录）
-  if (to.meta.title) {
-    document.title = pageTitle(to.meta.title as string | undefined)
+  // 根路径双面：未登录是官网（标题沿用 /welcome 时代的「欢迎」）、已登录是发现页
+  const metaTitle = to.name === 'home' ? (userStore.isLoggedIn ? '发现' : '欢迎') : to.meta.title
+  if (metaTitle) {
+    document.title = pageTitle(metaTitle as string | undefined)
   }
 
   // 未登录访问受保护页面 → 跳转登录页并记录回跳地址
@@ -369,7 +371,10 @@ router.afterEach((to) => {
   if (!panelV4) return
   // 尾斜杠规范化：/game/ 与 /game 是同一页；根路径 '/' 去掉斜杠会变空串，要兜回 '/'
   const v4Path = to.path.replace(/\/+$/, '') || '/'
-  if (V4_PATHS.has(v4Path) || V4_PATH_PREFIXES.some((p) => v4Path.startsWith(p))) {
+  // 根路径未登录渲染的是官网，跟随用户主题（与 /welcome 时代一致），不钉纸色；
+  // 只有已登录的发现页才走 v4 强制 light。
+  const rootIsLanding = v4Path === '/' && !useUserStore().isLoggedIn
+  if ((V4_PATHS.has(v4Path) && !rootIsLanding) || V4_PATH_PREFIXES.some((p) => v4Path.startsWith(p))) {
     document.documentElement.setAttribute('data-theme', 'light')
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#f5f1ea')
   } else {
