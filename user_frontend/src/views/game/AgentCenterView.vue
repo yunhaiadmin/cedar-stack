@@ -348,5 +348,28 @@ onMounted(reload)
   border: 1px dashed rgba(128, 128, 128, .5); background: transparent;
   color: inherit; cursor: pointer;
 }
-.v4-mini-btn.primary { font-weight: 700; }
+/* 本页 .v4-mini-btn 无 base 定义（其他页面的 base 是各自 scoped 副本，不覆盖本页），
+   .primary 直接落全套 UHD 口径（2026-11-13 补齐七彩＋玻璃）：彩虹边框 + 淡彩粉彩底 + 玻璃栈。
+   本页在 .v4-scope 内（恒浅色纸面），只需浅色配方 */
+.v4-mini-btn.primary {
+  font-weight: 700;
+  border: 1.5px solid transparent;
+  background:
+    var(--uhd-rainbow-soft) padding-box,
+    var(--uhd-rainbow) border-box;
+  color: #111111;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    var(--uhd-shadow-card-l);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
+}
+/* 禁用：彩虹退场、中性灰 */
+.v4-mini-btn.primary:disabled {
+  background: var(--paper2, #efe7d6);
+  color: var(--ink2, #6b6257);
+  box-shadow: inset 0 0 0 1px var(--line, #d8cdb8);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
 </style>

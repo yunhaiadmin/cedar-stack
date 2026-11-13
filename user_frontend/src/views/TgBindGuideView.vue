@@ -516,6 +516,21 @@ onUnmounted(() => {
   background:
     linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
     var(--uhd-rainbow) border-box;
+  /* 玻璃栈补齐（2026-11-13 主要按钮统一单）：内高光 + 柔影 + backdrop 毛玻璃 */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 12px 28px -12px rgba(0, 0, 0, 0.55);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
+}
+
+/* 禁用：彩虹退场、中性灰 */
+.btn-primary:disabled {
+  background: var(--bg-surface-2);
+  color: var(--text-muted);
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .btn-secondary {
@@ -683,6 +698,17 @@ html[data-theme='light'] .btn-primary {
   background:
     var(--uhd-rainbow-soft) padding-box,
     var(--uhd-rainbow) border-box;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    var(--uhd-shadow-card-l);
+}
+
+html[data-theme='light'] .btn-primary:disabled {
+  background: var(--bg-surface-2);
+  color: var(--text-muted);
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 html[data-theme='light'] .btn-secondary {

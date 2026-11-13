@@ -299,11 +299,53 @@ body:has(.watch-view)::after {
   color: var(--au-text-3);
   box-shadow: inset 0 0 0 1px var(--au-border);
   filter: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
+/* 主按钮 —— UHD 口径（2026-11-13 用户亲点补齐七彩＋玻璃，与 .btn-primary 同一套外观）：
+   彩虹渐变边框 + 玻璃栈（backdrop blur+saturate + 内高光 + 柔影）。
+   默认（深色面）：深色毛玻璃底 + 白字；浅色面（html[data-theme='light']）：淡彩粉彩底 + 黑字。 */
 .au-btn-primary {
-  background: var(--au-primary);
-  color: var(--au-on-primary);
+  border: 1.5px solid transparent;
+  background:
+    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
+    var(--uhd-rainbow) border-box;
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 12px 28px -12px rgba(0, 0, 0, 0.55);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
+}
+
+html[data-theme='light'] .au-btn-primary {
+  background:
+    var(--uhd-rainbow-soft) padding-box,
+    var(--uhd-rainbow) border-box;
+  color: #111111;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    var(--uhd-shadow-card-l);
+}
+
+/* v4 纸面页（.v4-scope 恒浅色纸面、不依赖 html 主题）：一律浅色配方，同 .btn-primary */
+.v4-scope .au-btn-primary {
+  background:
+    var(--uhd-rainbow-soft) padding-box,
+    var(--uhd-rainbow) border-box;
+  color: #111111;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    var(--uhd-shadow-card-l);
+}
+/* v4 内禁用仍须压过上面的浅色配方（同特异性靠顺序，这里再钉一遍中性灰） */
+.v4-scope .au-btn-primary:disabled {
+  background: var(--au-surface-2);
+  color: var(--au-text-3);
+  box-shadow: inset 0 0 0 1px var(--au-border);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 .au-btn-primary:hover:not(:disabled) {
   filter: brightness(1.08);

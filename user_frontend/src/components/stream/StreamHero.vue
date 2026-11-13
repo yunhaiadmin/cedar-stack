@@ -172,10 +172,16 @@ onBeforeUnmount(() => window.clearInterval(timer))
   height: 45px;
   border-radius: 22px;
   border: 2px solid transparent;
+  /* 浅色版（2026-11-13 补齐七彩＋玻璃）：淡彩粉彩底 + 玻璃栈（内高光 + 柔影 + backdrop，压在 Hero 图上验透感） */
   background:
-    linear-gradient(var(--uhd-s-pill-active-bg), var(--uhd-s-pill-active-bg)) padding-box,
+    var(--uhd-rainbow-soft) padding-box,
     var(--uhd-rainbow) border-box;
   color: var(--uhd-s-pill-active-text);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    var(--uhd-s-shadow-pill);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
   font-size: 15px;
   font-weight: var(--uhd-fw-bold);
   font-family: inherit;
@@ -184,11 +190,14 @@ onBeforeUnmount(() => window.clearInterval(timer))
 .sh-play__tri {
   font-size: 11px;
 }
-/* 深色版：黑底毛玻璃 + 同一彩虹边框 + 白字（尺寸不变） */
+/* 深色版：黑底毛玻璃 + 同一彩虹边框 + 白字 + 玻璃栈（内高光 + 柔影，尺寸不变） */
 .stream-scope[data-stream-theme="dark"] .sh-play {
   background:
     linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
     var(--uhd-rainbow) border-box;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    var(--uhd-s-shadow-pill);
   backdrop-filter: var(--uhd-glass-filter);
   -webkit-backdrop-filter: var(--uhd-glass-filter);
 }

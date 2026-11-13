@@ -595,20 +595,33 @@ watch(itemId, () => {
   font-weight: var(--uhd-fw-semibold);
   font-family: inherit;
 }
-/* 播放主胶囊：高 52/圆角 26 + 彩虹渐变边框（做法同 Hero 播放胶囊：
-   浅色白底黑字、深色黑毛玻璃白字，由 --uhd-s-play-* 令牌切换） */
+/* 播放主胶囊：高 52/圆角 26 + 彩虹渐变边框 + 玻璃栈（2026-11-13 补齐七彩＋玻璃，
+   做法同 Hero 播放胶囊：浅色淡彩粉彩底黑字、深色黑毛玻璃白字） */
 .md-btn--play {
   position: relative;
   border: 2px solid transparent;
   background:
-    linear-gradient(var(--uhd-s-play-bg), var(--uhd-s-play-bg)) padding-box,
+    var(--uhd-rainbow-soft) padding-box,
     var(--uhd-rainbow-border) border-box;
-  color: var(--uhd-s-play-text);
+  color: #111111;
   cursor: pointer;
   min-width: 135px;
   padding: 0 22px;
-  backdrop-filter: blur(var(--uhd-s-play-blur));
-  -webkit-backdrop-filter: blur(var(--uhd-s-play-blur));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    var(--uhd-s-shadow-pill);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
+}
+/* 深色版：黑毛玻璃底 + 白字（同 StreamHero .sh-play 深色口径） */
+.stream-scope[data-stream-theme="dark"] .md-btn--play {
+  background:
+    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
+    var(--uhd-rainbow-border) border-box;
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    var(--uhd-s-shadow-pill);
 }
 .md-btn--fav {
   border: 1px solid var(--uhd-s-border);
@@ -983,20 +996,34 @@ watch(itemId, () => {
     backdrop-filter: blur(18px) saturate(160%);
     -webkit-backdrop-filter: blur(18px) saturate(160%);
   }
-  /* 全宽彩虹边框播放钮（D2-02：录屏形态为彩虹边框胶囊）+ 右侧圆形收藏钮 */
+  /* 全宽彩虹边框播放钮（D2-02：录屏形态为彩虹边框胶囊）+ 右侧圆形收藏钮；
+     2026-11-13 补齐玻璃：淡彩粉彩底 + 玻璃栈，不再关 backdrop */
   .md-actions .md-btn--play {
     flex: 1 1 auto;
     min-width: 0;
     border: 2px solid transparent;
     background:
-      linear-gradient(var(--uhd-s-pill-active-bg), var(--uhd-s-pill-active-bg)) padding-box,
+      var(--uhd-rainbow-soft) padding-box,
       var(--uhd-rainbow) border-box;
     color: var(--uhd-s-pill-active-text);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.65),
+      var(--uhd-s-shadow-pill);
+    backdrop-filter: var(--uhd-glass-filter);
+    -webkit-backdrop-filter: var(--uhd-glass-filter);
     white-space: normal;
     line-height: 1.25;
     text-align: center;
+  }
+  /* 手机深色版：黑毛玻璃底 + 白字 */
+  .stream-scope[data-stream-theme="dark"] .md-actions .md-btn--play {
+    background:
+      linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
+      var(--uhd-rainbow) border-box;
+    color: #ffffff;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.22),
+      var(--uhd-s-shadow-pill);
   }
   .md-btn--fav {
     flex: 0 0 52px;

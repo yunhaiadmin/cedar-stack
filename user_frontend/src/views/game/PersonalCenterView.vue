@@ -783,14 +783,19 @@ html:not([data-theme='light']) .ov-card {
   text-decoration: none;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
 }
-/* 主钮：实测深色面＝#171c21 深底＋彩虹渐变边框；浅色面＝白底＋彩虹边框（见浅色覆盖） */
+/* 主钮：深色面＝深色毛玻璃底＋彩虹渐变边框＋玻璃栈（内高光＋柔影＋backdrop，2026-11-13 补齐玻璃）；
+   浅色面＝淡彩粉彩底＋彩虹边框（见浅色覆盖） */
 .ov-btn--primary {
   border: 1.5px solid transparent;
   background:
-    #171c21 padding-box,
+    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
     var(--uhd-rainbow) border-box;
   color: #ffffff;
-  box-shadow: 0 8px 20px rgba(190, 140, 190, 0.16);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 12px 28px -12px rgba(0, 0, 0, 0.5);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
 }
 .ov-btn:active {
   opacity: 0.8;
@@ -1057,7 +1062,7 @@ html[data-theme='light'] .ov-bar__fill { background: #111111; }
 html[data-theme='light'] .ov-quota__meta { color: #9a9da3; }
 html[data-theme='light'] .ov-quota__meta-line { color: #9a9da3; }
 html[data-theme='light'] .ov-btn { background: #ffffff; border-color: #e7e7e7; color: #111111; }
-html[data-theme='light'] .ov-btn--primary { background: #ffffff padding-box, var(--uhd-rainbow) border-box; border-color: transparent; color: #111111; }
+html[data-theme='light'] .ov-btn--primary { background: var(--uhd-rainbow-soft) padding-box, var(--uhd-rainbow) border-box; border-color: transparent; color: #111111; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--uhd-shadow-card-l); backdrop-filter: var(--uhd-glass-filter); -webkit-backdrop-filter: var(--uhd-glass-filter); }
 html[data-theme='light'] .ov-sec__head { border-bottom-color: #e5e5e7; }
 html[data-theme='light'] .ov-sec__title { color: #111111; }
 html[data-theme='light'] .ov-sec__more { color: #55575c; }
@@ -1096,7 +1101,7 @@ html[data-theme='light'] .ov-page.ov-dark .ov-bar__fill { background: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-quota__meta { color: rgba(255, 255, 255, 0.42); }
 html[data-theme='light'] .ov-page.ov-dark .ov-quota__meta-line { color: rgba(255, 255, 255, 0.42); }
 html[data-theme='light'] .ov-page.ov-dark .ov-btn { background: #17181c; color: #ffffff; }
-html[data-theme='light'] .ov-page.ov-dark .ov-btn--primary { background: #171c21 padding-box, var(--uhd-rainbow) border-box; color: #ffffff; }
+html[data-theme='light'] .ov-page.ov-dark .ov-btn--primary { background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box, var(--uhd-rainbow) border-box; color: #ffffff; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 12px 28px -12px rgba(0, 0, 0, 0.5); backdrop-filter: var(--uhd-glass-filter); -webkit-backdrop-filter: var(--uhd-glass-filter); }
 html[data-theme='light'] .ov-page.ov-dark .ov-sec__title { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-sec__more { color: rgba(255, 255, 255, 0.62); }
 html[data-theme='light'] .ov-page.ov-dark .ov-row__chev { color: rgba(255, 255, 255, 0.42); }
