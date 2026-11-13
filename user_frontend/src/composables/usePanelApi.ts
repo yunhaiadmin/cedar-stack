@@ -26,66 +26,6 @@ function unwrap<T>(res: unknown): T {
   return r as T
 }
 
-export interface TodayData {
-  greeting?: string
-  date_label?: string
-  parcel_count?: number
-  unsealed_count?: number
-  streak_days?: number
-  letter_readable?: boolean
-  [k: string]: unknown
-}
-
-/** 服主告示牌（/api/panel/home 的 board 区块） */
-export interface BoardData {
-  text?: string
-  signature?: string
-  visible?: boolean
-  [k: string]: unknown
-}
-
-export interface ParcelItem {
-  id: string | number
-  title?: string
-  name?: string
-  media_type?: string
-  item_type?: string
-  type?: string
-  episode_count?: number
-  resolution?: string
-  video_resolution?: string
-  production_year?: number
-  arrived_at?: string
-  added_at?: string
-  unsealed?: boolean
-  /** 历史字段。后端固定空串，前端不得当作播放地址。 */
-  deep_link?: string
-  [k: string]: unknown
-}
-
-export interface ParcelsData {
-  parcels: ParcelItem[]
-}
-
-/** 实时动态流（GET /api/panel/feed，C档第3批；realm_id 不传=面板当前服，跟随当前服） */
-export interface FeedItem {
-  /** ISO 时间串；后端为空时为 null */
-  at: string | null
-  /** scan / enrich / play / system */
-  type: string
-  /** 展示文案（播放事件已脱敏为「一位影迷」） */
-  text: string
-  /** 库名标签；系统事件可为 null */
-  library: string | null
-  [k: string]: unknown
-}
-
-export interface FeedData {
-  items: FeedItem[]
-  realm_id: number | null
-  limit: number
-}
-
 /** 收藏家：口味护照 / 成就星图 / 馆灵 */
 export interface TasteStamp {
   name: string
@@ -188,26 +128,6 @@ async function put<T>(url: string, body?: unknown): Promise<T> {
 }
 
 export const panelApi = {
-  /** 问候 / 今日封存件数 / 连签 */
-  today: () => get<TodayData>('/api/panel/today'),
-  /** 今日封存列表（后端返回 {parcels: [...]} 包裹） */
-  parcels: () => get<ParcelsData>('/api/panel/parcels'),
-  /** 拆封（幂等） */
-  unseal: (itemId: string | number) => post(`/api/panel/parcels/${itemId}/unseal`),
-  /** 服务器脉搏 */
-  pulse: () => get<Record<string, unknown>>('/api/panel/pulse'),
-  /** 实时动态流（C档第3批）：不传 realm_id，后端按面板当前服（active_realm_id）解析，跟随当前服 */
-  feed: () => get<FeedData>('/api/panel/feed'),
-  /** 每日一封 */
-  letter: () => get<Record<string, unknown>>('/api/panel/letter'),
-  /** 首页合并（perf 2026-10-13）：一次返回 today/parcels/pulse/letter；单区块失败时该字段为 null */
-  home: () => get<{
-    today: TodayData | null
-    parcels: ParcelsData | null
-    pulse: Record<string, unknown> | null
-    letter: Record<string, unknown> | null
-    board: BoardData | null
-  }>('/api/panel/home'),
   /** 收藏家数据 */
   collector: () => get<CollectorData>('/api/panel/collector'),
   /** 观影碑榜单：board=hot/duration，period=day/week */
@@ -219,14 +139,6 @@ export const panelApi = {
       items: Array<Record<string, unknown>>
       my_rank: number | null
     }>(`/api/user/emby/leaderboard?board=${board}&period=${period}`),
-  /** 留言墙：最新 20 条 */
-  wallList: () => get<{ posts: Array<Record<string, unknown>> }>('/api/panel/wall'),
-  /** 留言墙：发布 */
-  wallPost: (content: string) => post<{ id: number }>('/api/panel/wall', { content }),
-  /** 抽一签：今日结果 */
-  fortuneToday: () => get<Record<string, unknown>>('/api/panel/fortune'),
-  /** 抽一签：抽取（每天一次，幂等） */
-  fortuneDraw: () => post<Record<string, unknown>>('/api/panel/fortune'),
   /** 隐私：是否允许上榜 */
   privacyGet: () => get<{ show_on_leaderboard: boolean }>('/api/panel/privacy'),
   /** 隐私：设置是否允许上榜 */

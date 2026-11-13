@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import random
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -21,14 +20,12 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend import models
 from backend.database import get_db
 from backend.api.user import get_current_user
 from backend.api.admin_core import _audit, get_current_admin
-from backend.ratelimit import check_rate_limit
 
 logger = logging.getLogger("aetrix.panel")
 
@@ -243,58 +240,6 @@ def _today_start_utc_naive() -> datetime:
     return start_sh.astimezone(timezone.utc).replace(tzinfo=None)
 
 
-def _today_parcel_items(db: Session, limit: int = 5) -> list:
-    """今日封存候选（/parcels 与 /today 的 parcel_count 同口径）。
-
-    口径：今日整部新入库的 movie/series ＋ 今日有新 episode 入库的 series
-    （同一部剧只出现一次）；按"今日最新动态时间"倒序；上限 limit。
-    合并副本（merged_into_id 非空）不计入；软删除行由 ORM 全局钩子过滤。
-    """
-    from backend.emby_server import models as em
-
-    start = _today_start_utc_naive()
-    try:
-        whole = db.query(em.MediaItem).filter(
-            em.MediaItem.date_added >= start,
-            em.MediaItem.item_type.in_(["movie", "series"]),
-            em.MediaItem.merged_into_id.is_(None),
-        ).all()
-        ep_rows = (
-            db.query(em.MediaItem.series_id, func.max(em.MediaItem.date_added))
-            .filter(
-                em.MediaItem.date_added >= start,
-                em.MediaItem.item_type == "episode",
-                em.MediaItem.series_id.isnot(None),
-            )
-            .group_by(em.MediaItem.series_id)
-            .all()
-        )
-    except Exception:  # noqa: BLE001
-        logger.exception("parcels 候选查询失败")
-        return []
-    ep_latest = {sid: mx for sid, mx in ep_rows if sid is not None}
-    series_by_id: dict = {}
-    if ep_latest:
-        try:
-            for s in db.query(em.MediaItem).filter(
-                em.MediaItem.id.in_(list(ep_latest.keys())),
-                em.MediaItem.merged_into_id.is_(None),
-            ).all():
-                series_by_id[s.id] = s
-        except Exception:  # noqa: BLE001
-            logger.exception("parcels 剧集回查失败")
-    merged: dict = {}
-    for it in whole:
-        merged[it.id] = (it.date_added or start, it)
-    for sid, s in series_by_id.items():
-        key = ep_latest.get(sid) or start
-        prev = merged.get(sid)
-        if prev is None or key > prev[0]:
-            merged[sid] = (key, s)
-    ordered = sorted(merged.values(), key=lambda t: t[0], reverse=True)
-    return [it for _, it in ordered[:limit]]
-
-
 def _streak(db: Session, user_id: int) -> int:
     rec = db.query(models.CheckinRecord).filter_by(user_id=user_id).order_by(
         models.CheckinRecord.checkin_date.desc()).first()
@@ -318,20 +263,6 @@ def panel_today(
 
     from backend.emby_server import models as em
 
-    # 今日封存候选（与 /parcels 同口径：整部新入库 + 今日有新集的剧）
-    try:
-        parcel_items = _today_parcel_items(db, limit=5)
-        parcel_ids = [it.id for it in parcel_items]
-    except Exception:  # noqa: BLE001
-        logger.warning("today 封存候选查询失败", exc_info=True)
-        parcel_ids = []
-    unsealed = 0
-    if parcel_ids:
-        unsealed = db.query(func.count(models.PanelUnseal.id)).filter(
-            models.PanelUnseal.user_id == user.id,
-            models.PanelUnseal.item_id.in_(parcel_ids),
-        ).scalar() or 0
-
     streak_days = _streak(db, user.id)
 
     # 今日观影人数（P-6 社交证明：只报聚合数，不露个人）
@@ -349,133 +280,13 @@ def panel_today(
         logger.warning("panel_today today_viewers failed", exc_info=True)
         today_viewers = 0
 
-    # 连签里程碑临界（P-2：里程碑与提醒窗口均走后台配置）
-    try:
-        from backend.integrations import world_streak
-
-        _scfg = world_streak.read(db)
-        _nm = world_streak.next_milestone(
-            streak_days, world_streak.parse_milestones(_scfg.get("streak_milestones", ""))
-        )
-        streak_milestone = (
-            {
-                "next": _nm[0],
-                "remaining": _nm[1],
-                "warn_within": int(_scfg.get("streak_warn_within") or 1),
-            }
-            if _nm
-            else None
-        )
-    except Exception:  # noqa: BLE001
-        logger.warning("panel_today streak_milestone failed", exc_info=True)
-        streak_milestone = None
-
-    # 今日一句话（P-7：时段文案池按日轮换，同日稳定）
-    try:
-        from backend.integrations import world_copy
-
-        _h = now.hour
-        _daypart = (
-            "dawn" if 5 <= _h < 9 else "day" if 9 <= _h < 17 else "dusk" if 17 <= _h < 19 else "night"
-        )
-        daypart_line = world_copy.pick_line(
-            world_copy.read(db).get("daypart_lines", ""), _daypart, now.toordinal()
-        )
-    except Exception:  # noqa: BLE001
-        logger.warning("panel_today daypart_line failed", exc_info=True)
-        daypart_line = None
-
     return _ok({
         "greeting": _greeting(),
         "date_label": now.strftime("%Y-%m-%d"),
         "weekday": ["一", "二", "三", "四", "五", "六", "日"][now.weekday()],
-        "parcel_count": len(parcel_ids),
-        "unsealed_count": unsealed,
         "streak_days": streak_days,
-        "letter_readable": True,  # 每日一封每天都可读
         "nickname": getattr(user, "nickname", None) or user.username,
         "today_viewers": today_viewers,
-        "streak_milestone": streak_milestone,
-        "daypart_line": daypart_line,
-    })
-
-
-# ==================== 2. GET /api/panel/parcels ====================
-
-@router.get("/parcels")
-def panel_parcels(
-    db: Session = Depends(get_db),
-    user: models.WebUser = Depends(get_current_user),
-):
-    _guard()
-    items = _today_parcel_items(db, limit=5)
-
-    parcel_id_list = [it.id for it in items]
-    unsealed_ids = {r[0] for r in db.query(models.PanelUnseal.item_id).filter(
-        models.PanelUnseal.user_id == user.id,
-        models.PanelUnseal.item_id.in_(parcel_id_list)).all()} if parcel_id_list else set()
-
-    parcels = []
-    for it in items:
-        parcels.append({
-            "id": it.id,
-            "name": it.name,
-            "item_type": it.item_type,
-            "production_year": it.production_year,
-            "video_resolution": getattr(it, "video_resolution", None),
-            "added_at": it.date_added.isoformat() if it.date_added else None,
-            "unsealed": it.id in unsealed_ids,
-            # 播放改走账号卡 import_schemes。不再下发 Emby 网页地址，避免地址栏泄露。
-            "deep_link": "",
-        })
-    return _ok({"parcels": parcels})
-
-
-# ==================== 3. POST /api/panel/parcels/{item_id}/unseal ====================
-
-@router.post("/parcels/{item_id}/unseal")
-def panel_unseal(
-    item_id: int,
-    db: Session = Depends(get_db),
-    user: models.WebUser = Depends(get_current_user),
-):
-    _guard()
-    # 幂等：已拆直接返回
-    exists = db.query(models.PanelUnseal).filter_by(
-        user_id=user.id, item_id=item_id).first()
-    if exists:
-        return _ok({"unsealed": True, "already": True})
-
-    from backend.emby_server import models as em
-    item = db.query(em.MediaItem).filter_by(id=item_id).first()
-    if not item:
-        raise HTTPException(status_code=404, detail="条目不存在")
-    # r45：业务校验——只能拆"今日封存"里的条目。原来只查条目存在，
-    # 枚举 id 可往 panel_unseals 灌任意行（表膨胀）；与 panel_parcels 同口径。
-    parcel_ids = {it.id for it in _today_parcel_items(db)}
-    if item_id not in parcel_ids:
-        raise HTTPException(status_code=400, detail="该条目不在今日封存中")
-    try:
-        db.add(models.PanelUnseal(user_id=user.id, item_id=item_id))
-        db.commit()
-        already = False
-    except IntegrityError:  # 并发重复拆：UNIQUE 冲突，重查确认后返回 already=True
-        db.rollback()
-        already = db.query(models.PanelUnseal).filter_by(
-            user_id=user.id, item_id=item_id).first() is not None
-    except Exception:  # noqa: BLE001
-        db.rollback()
-        raise  # 非冲突异常不再吞成假成功
-    return _ok({
-        "unsealed": True,
-        "already": already,
-        "item": {
-            "id": item.id,
-            "name": item.name,
-            "item_type": item.item_type,
-            "production_year": item.production_year,
-            "deep_link": "",
-        },
     })
 
 
@@ -599,75 +410,6 @@ def panel_pulse(
     })
 
 
-# ==================== 5. GET /api/panel/letter ====================
-
-@router.get("/letter")
-def panel_letter(
-    db: Session = Depends(get_db),
-    user: models.WebUser = Depends(get_current_user),
-):
-    _guard()
-    now = _now_local_naive()
-    yesterday_start = (now - timedelta(days=1)).replace(
-        hour=0, minute=0, second=0, microsecond=0)
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-
-    # 数据源：emby_playback_sessions（真实播放会话；旧 emby_sessions
-    # 全仓无写入路径、生产恒 0 行，2026-10-19 换源）
-    from backend.emby_server import models as em
-    from backend.panel_achievements import playback_seconds
-    rows = (
-        db.query(em.PlaybackSession, em.MediaItem)
-        .join(em.MediaItem, em.MediaItem.id == em.PlaybackSession.item_id)
-        .filter(
-            em.PlaybackSession.user_id == user.id,
-            em.PlaybackSession.start_time >= yesterday_start,
-            em.PlaybackSession.start_time < today_start,
-            # PA-037：联结查询的 FROM 是 Join 对象，软删钩子看不见，
-            # 必须自己带 deleted_at 条件，否则已下架条目会进昨日信。
-            em.MediaItem.deleted_at.is_(None),
-        )
-        .all()
-    )
-    total_secs = sum(playback_seconds(s, i) for s, i in rows)
-    # 看完的条目（去重，播放超 1 分钟）
-    watched = sorted({i.name for s, i in rows
-                      if i.name and playback_seconds(s, i) > 60})
-    # 口味偏移：昨日最多的 genre（尽力而为）
-    taste_shift = ""
-    try:
-        from backend.panel_achievements import user_tastes
-        tastes = user_tastes(db, user.id)
-        top = sorted(tastes.items(), key=lambda kv: kv[1]["count"], reverse=True)
-        if top and top[0][1]["count"] > 0:
-            taste_shift = f"最近偏爱「{top[0][1]['name']}」"
-    except Exception:  # noqa: BLE001
-        pass
-
-    hours = total_secs // 3600
-    minutes = (total_secs % 3600) // 60
-    payload = {
-        "date": (now - timedelta(days=1)).strftime("%Y-%m-%d"),
-        "watch_duration": f"{hours}小时{minutes}分" if hours else f"{minutes}分",
-        "watch_count": len(watched),
-        "watched": watched[:5],
-        "taste_shift": taste_shift,
-        "streak": _streak(db, user.id),
-    }
-    # 附言 / 今日推荐走能力中心 world_letter。个人统计只来自上面的播放查询。
-    # 读配置失败时回落改前硬编码附言，推荐留空，避免整封信 500。
-    from backend.integrations import world_letter
-    try:
-        letter_copy = world_letter.public_info(db)
-        payload["teaser"] = letter_copy["teaser"]
-        payload["recommendation"] = letter_copy["recommendation"]
-    except Exception:  # noqa: BLE001
-        logger.warning("panel_letter 来信文案读取失败", exc_info=True)
-        payload["teaser"] = world_letter.FALLBACK_TEASER
-        payload["recommendation"] = ""
-    return _ok(payload)
-
-
 # ==================== 5.6 GET /api/panel/feed ====================
 # 发现页「实时动态流」：按时间倒序的事件数组，语义=跟随当前服。
 # realm_id 不传时用面板当前服（realms.active_realm_id）；传了则只返回该服可见
@@ -693,8 +435,8 @@ def panel_feed(
 
 
 # ==================== 5.7 GET /api/panel/home（perf 优化 2026-10-13） ====================
-# 首页合并接口：一次返回 today/parcels/pulse/letter，把 4 次跨洋 RTT 并成 1 次。
-# 直接调用上方已定义的 4 个函数，不复制逻辑；单个失败隔离为 None，不拖垮其他区块。
+# 首页合并接口：一次返回 today/pulse，把 2 次跨洋 RTT 并成 1 次。
+# 直接调用上方已定义的 2 个函数，不复制逻辑；单个失败隔离为 None，不拖垮其他区块。
 
 
 def _section_or_none(fn, db, user):
@@ -723,10 +465,7 @@ def panel_home(
     _guard()
     return _ok({
         "today": _section_or_none(panel_today, db, user),
-        "parcels": _section_or_none(panel_parcels, db, user),
         "pulse": _section_or_none(panel_pulse, db, user),
-        "letter": _section_or_none(panel_letter, db, user),
-        "board": _section_or_none(panel_board, db, user),
     })
 
 
@@ -860,149 +599,7 @@ def set_worn_badge(
     return _ok({"worn_badge": {"key": d.key, "name": d.name, "icon": d.icon}})
 
 
-# ==================== 6.6 探险世界：告示牌 / 留言墙 / 抽一签 / 隐私 ====================
-
-def panel_board(db, user):
-    """世界入口告示牌：服主留言（后台可配），异常隔离为 None 不拖垮 /home。"""
-    _guard()
-    from backend.integrations import world_board
-    return _ok(world_board.public_info(db))
-
-
-class WallPostIn(BaseModel):
-    content: str
-
-
-@router.get("/wall")
-def wall_list(
-    db: Session = Depends(get_db),
-    user: models.WebUser = Depends(get_current_user),
-):
-    """留言墙：最新 20 条未隐藏留言"""
-    _guard()
-    from backend.emby_server import models as em
-    rows = (
-        db.query(em.WorldWallPost)
-        .filter(em.WorldWallPost.is_hidden == False)  # noqa: E712
-        .order_by(em.WorldWallPost.created_at.desc())
-        .limit(20)
-        .all()
-    )
-    return _ok({
-        "posts": [
-            {
-                "id": r.id,
-                "nickname": r.nickname,
-                "content": r.content,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-                "mine": r.user_id == user.id,
-            }
-            for r in rows
-        ]
-    })
-
-
-@router.post("/wall")
-def wall_post(
-    payload: WallPostIn,
-    db: Session = Depends(get_db),
-    user: models.WebUser = Depends(get_current_user),
-):
-    """发布留言：限 60 字，10 分钟 1 条"""
-    _guard()
-    from backend.emby_server import models as em
-    content = (payload.content or "").strip()
-    if not content:
-        raise HTTPException(status_code=400, detail="留言内容不能为空")
-    if len(content) > 60:
-        raise HTTPException(status_code=400, detail="留言最多 60 字")
-    allowed, _ = check_rate_limit(f"wall:{user.id}", 1, 600)
-    if not allowed:
-        raise HTTPException(status_code=429, detail="留言太频繁，10 分钟后再试")
-    post = em.WorldWallPost(user_id=user.id, nickname=user.username, content=content)
-    db.add(post)
-    db.commit()
-    db.refresh(post)
-    return _ok({"id": post.id})
-
-
-def _fortune_today():
-    """抽签自然日（Asia/Shanghai）"""
-    from zoneinfo import ZoneInfo
-    return datetime.now(ZoneInfo("Asia/Shanghai")).date()
-
-
-@router.get("/fortune")
-def fortune_today(
-    db: Session = Depends(get_db),
-    user: models.WebUser = Depends(get_current_user),
-):
-    """今日抽签结果（未抽返回 drew=False）"""
-    _guard()
-    from backend.emby_server import models as em
-    rec = (
-        db.query(em.WorldFortuneDraw)
-        .filter(
-            em.WorldFortuneDraw.user_id == user.id,
-            em.WorldFortuneDraw.draw_date == _fortune_today(),
-        )
-        .first()
-    )
-    if not rec:
-        return _ok({"drew": False})
-    return _ok({"drew": True, "level": rec.level, "text": rec.text,
-                "yi": rec.yi, "ji": rec.ji})
-
-
-@router.post("/fortune")
-def fortune_draw(
-    db: Session = Depends(get_db),
-    user: models.WebUser = Depends(get_current_user),
-):
-    """抽一签：每天一次。当日首次随机抽一条落库；并发冲突走唯一索引兜底重查。不挂积分。"""
-    _guard()
-    from backend.emby_server import models as em
-    from backend.integrations import world_fortune
-    today = _fortune_today()
-    rec = (
-        db.query(em.WorldFortuneDraw)
-        .filter(
-            em.WorldFortuneDraw.user_id == user.id,
-            em.WorldFortuneDraw.draw_date == today,
-        )
-        .first()
-    )
-    if rec:
-        return _ok({"drew": True, "level": rec.level, "text": rec.text,
-                    "yi": rec.yi, "ji": rec.ji})
-    pool = world_fortune.parse_pool(world_fortune.read(db).get("fortune_pool", ""))
-    if not pool:
-        raise HTTPException(status_code=500, detail="签文池未配置，请联系管理员")
-    pick = random.choice(pool)
-    rec = em.WorldFortuneDraw(
-        user_id=user.id, draw_date=today,
-        level=pick["level"], text=pick["text"], yi=pick["yi"], ji=pick["ji"],
-    )
-    db.add(rec)
-    try:
-        db.commit()
-    except IntegrityError:
-        # 并发同时抽：唯一索引兜底，重查已落库的那条
-        db.rollback()
-        rec = (
-            db.query(em.WorldFortuneDraw)
-            .filter(
-                em.WorldFortuneDraw.user_id == user.id,
-                em.WorldFortuneDraw.draw_date == today,
-            )
-            .first()
-        )
-        if not rec:
-            raise
-    db.refresh(rec)
-    return _ok({"drew": True, "level": rec.level, "text": rec.text,
-                "yi": rec.yi, "ji": rec.ji})
-
+# ==================== 6.6 隐私 / 通知偏好 ====================
 
 class PrivacyIn(BaseModel):
     show_on_leaderboard: bool

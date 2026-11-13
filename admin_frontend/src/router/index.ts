@@ -44,8 +44,6 @@ const routes: RouteRecordRaw[] = [
       // 访问拦截：UA 关键词 + IP 归属地。全站级开关，默认全关，仅超管可改。
       { path: 'access-guard', name: 'AccessGuard', component: () => import('@/views/AccessGuard.vue'), meta: { title: '访问拦截' } },
       { path: 'announcements', name: 'Announcements', component: () => import('@/views/Announcements.vue'), meta: { title: '公告管理' } },
-      // 探险世界 · 到此一游留言墙管理
-      { path: 'wall-posts', name: 'WallPosts', component: () => import('@/views/WallPosts.vue'), meta: { title: '留言墙管理' } },
       { path: 'tickets', name: 'Tickets', component: () => import('@/views/Tickets.vue'), meta: { title: '工单' } },
       // 等级治理 Step 2：举报终审队列 + 治理停权（一页两标签，?tab=suspensions 落到停权）
       { path: 'governance', name: 'Governance', component: () => import('@/views/Governance.vue'), meta: { title: '举报与停权' } },

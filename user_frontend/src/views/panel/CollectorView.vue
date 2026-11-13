@@ -38,22 +38,6 @@
         </div>
       </div>
 
-      <!-- 口味护照 -->
-      <section v-if="!collector.error" class="v4-sec">
-        <div class="v4-sec-title">类型收集</div>
-        <div class="v4-sec-sub">每个类型看够数量就点亮一枚，集满 12 枚有奖励</div>
-        <!-- loading 契约直通子组件，父级不再用 v-else 抢占骨架分支 -->
-        <TastePassport :raw="tastesRaw" :loading="collector.loading" @retry="retryCollector" />
-      </section>
-
-      <!-- 馆灵养成 -->
-      <section v-if="!collector.error" class="v4-sec" style="padding-bottom:20px">
-        <div class="v4-sec-title">观影成长</div>
-        <div class="v4-sec-sub">累计观影时长会提升等级</div>
-        <div v-if="collector.loading" class="v4-skeleton" style="height:220px"></div>
-        <PetCard v-else-if="pet" :pet="pet" />
-        <div v-else class="v4-empty">还没有观影成长数据</div>
-      </section>
     </div>
   </div>
 </template>
@@ -63,9 +47,7 @@ import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { usePanelStore } from '@/stores/panel'
 import { useUserStore } from '@/stores/user'
-import TastePassport from '@/components/panel/TastePassport.vue'
-import PetCard from '@/components/panel/PetCard.vue'
-import type { Achievement, CollectorData, PetData, TasteStamp } from '@/composables/usePanelApi'
+import type { Achievement, CollectorData, TasteStamp } from '@/composables/usePanelApi'
 
 const panel = usePanelStore()
 const user = useUserStore()
@@ -177,12 +159,6 @@ function dismissUnlockBanner() {
   try { sessionStorage.setItem(UNLOCK_BANNER_KEY, '1') } catch { /* 记不住就下次还弹，不打扰 */ }
 }
 
-/* ---------- 馆灵 ---------- */
-const pet = computed((): PetData | null => {
-  const p = data.value.pet as PetData | undefined
-  if (!p || typeof p !== 'object' || !Array.isArray(p.stages) || p.stages.length === 0) return null
-  return p
-})
 </script>
 
 <style scoped>

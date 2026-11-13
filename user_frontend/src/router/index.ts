@@ -77,19 +77,6 @@ const router = createRouter({
             component: () => import('@/views/panel/SearchView.vue'),
             meta: { title: '搜索', requiresAuth: true },
           },
-          // 合集：货架页 + 详情页（只读用户口；不在底栏占位，入口在发现页合集区段）
-          {
-            path: '/collections',
-            name: 'collections',
-            component: () => import('@/views/panel/CollectionShelfView.vue'),
-            meta: { title: '合集', requiresAuth: true },
-          },
-          {
-            path: '/collections/:id',
-            name: 'collection-detail',
-            component: () => import('@/views/panel/CollectionView.vue'),
-            meta: { title: '合集', requiresAuth: true },
-          },
           // 条目详情：只做信息 + 季集齐全度 + 缺集求补（播放仍走第三方
           // 播放器，不放播放入口）；入口在我的收藏的剧集卡片
           {
@@ -359,14 +346,14 @@ router.beforeEach(async (to) => {
 // 例外（2026-11-13 二级页重做组 A）：/server 与 /game/operator 已换 UHD 布局，
 // 一并摘除——/server 页内自带三态主题跟随；/game/operator 在 UhdAccountLayout
 // 办事面壳内（壳为浅色办事面，与同壳的订阅页未钉 light 先例一致），不再由守卫钉 light。
-export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/collections', '/want', '/store-requests', '/game/ledger', '/game/account/settings', '/game/account/member'])
-// 参数路由前缀：合集详情是 /collections/:id，afterEach 拿到的是实例路径
-// （如 /collections/123），静态集合永远匹配不上，须按前缀另判；
-// /collections/ 下目前只有详情这一条路由，前缀不会误伤非 v4 页。
-// /media/ 同理：条目详情 /media/:id 也是 v4 纸色页，必须强制 light，
+// 批 1+2 删除后：'/collections'（合集）路由已删，一并摘除。
+export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/want', '/store-requests', '/game/ledger', '/game/account/settings', '/game/account/member'])
+// 参数路由前缀：条目详情是 /media/:id，afterEach 拿到的是实例路径
+// （如 /media/123），静态集合永远匹配不上，须按前缀另判；
+// /media/ 页是 v4 纸色页，必须强制 light，
 // 否则深色偏好下 --au-* 令牌是暗值，纸面页上会出现黑条/黑行。
 // /person/ 同理：演职人员页 /person/:key 与详情、收藏同属纸面页。
-const V4_PATH_PREFIXES = ['/collections/', '/media/', '/person/']
+const V4_PATH_PREFIXES = ['/media/', '/person/']
 // 底部坞由 App.vue 全局常驻渲染（PanelTabbar，≤768px 唯一一套，
 // 桌面 ≥769px 由 CSS 隐藏）；各视图模板不再自带 <PanelTabbar/>。
 function restoreUserTheme() {
