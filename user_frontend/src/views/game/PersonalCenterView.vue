@@ -152,7 +152,7 @@
             {{ devicesData.count }} / {{ devicesData.limit }} 台 · 管理
           </RouterLink>
         </div>
-        <div v-for="d in devicesData.devices" :key="d.device_id" class="ov-drow">
+        <div v-for="d in previewDevices" :key="d.device_id" class="ov-drow">
           <component :is="deviceIcon(d)" :size="24" class="ov-drow__icon" aria-hidden="true" />
           <span class="ov-drow__name">{{ deviceLabel(d) }}</span>
           <span class="ov-drow__status" :class="{ 'ov-drow__status--on': d.is_online_recent }">
@@ -450,6 +450,8 @@ const serverAddressSub = computed(() => {
 
 // ── 设备段（deviceApi.mine：用户侧设备接口） ──
 const devicesData = ref<MyDevicesResponse | null>(null)
+/** 概览只预览最近 3 台（接口已按最后活跃倒序）；全量在账号设置页管理 */
+const previewDevices = computed(() => (devicesData.value?.devices ?? []).slice(0, 3))
 function deviceIcon(d: MyDevice): LucideIcon {
   const tag = `${d.client ?? ''} ${d.name ?? ''}`.toLowerCase()
   if (/tv|television/.test(tag)) return Tv
