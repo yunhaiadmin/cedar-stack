@@ -239,10 +239,23 @@ def serve_file(path: str, request: Request, media_type: str = "video/mp4",
         raise HTTPException(status_code=503, detail="Server busy, retry later")
 
     def _guarded_iter():
+        # 流量计量（本机文件腿）：数迭代器真正 yield 的字节，迭代
+        # 结束（含中途断开/读失败截断）后按归属用户记账一次；计数
+        # 失败绝不影响出流。口径与中继腿一致：只数真发出去的字节。
+        total = 0
         try:
-            yield from iter_file()
+            for chunk in iter_file():
+                total += len(chunk)
+                yield chunk
         finally:
             RANGE_LIMITER.release(path, lease)
+            if total > 0 and _traffic_uid:
+                try:
+                    from backend.emby_server import traffic_meter
+                    traffic_meter.note_bytes(
+                        total, "local", user_id=_traffic_uid)
+                except Exception:  # noqa: BLE001 — 计量不拖垮播放
+                    pass
 
     def iter_file():
         with open(path, "rb") as f:
@@ -281,6 +294,13 @@ def serve_file(path: str, request: Request, media_type: str = "video/mp4",
         # FUSE 路径的 Range 响应不声明 Content-Length，走 chunked，避免中途
         # 读失败时声明长度与实际字节对不上。Content-Range 保留（206 必需）。
         range_headers.pop("Content-Length", None)
+    # 流量计量归属在此（同步调用点）先取出闭包带走：迭代器之后在
+    # 线程池里消费，ContextVar 不保证跟得过去；取不到就整笔不计。
+    try:
+        from backend.emby_server import traffic_meter as _traffic_meter
+        _traffic_uid = _traffic_meter.current_user_id()
+    except Exception:  # noqa: BLE001 — 计量不拖垮播放
+        _traffic_uid = None
     return StreamingResponse(
         _guarded_iter(),
         status_code=206,

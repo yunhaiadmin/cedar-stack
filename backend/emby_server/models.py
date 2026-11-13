@@ -788,6 +788,77 @@ class WatchStreamActivity(Base):
                         onupdate=datetime.now)
 
 
+class TrafficUsageDaily(Base):
+    """流量计量日账（流量额度一期，2026-11-13）。
+
+    EA 播放字节出口的按人按日累计（计量侧在 emby_server.traffic_meter：
+    进程内聚合＋后台批量 upsert，热路径不写库）。按「日」落账而不是
+    按订阅周期落账：周期锚点（订阅起始日）会随续订/顺延漂移，日账与
+    周期解耦，任意周期窗口的已用＝窗口内日行求和（消费方
+    backend/traffic_quota.py），换周期口径不用迁数据。
+
+    两条腿分开记，口径不许混：
+    - ``relay_bytes``：中继腿真实出字节（_observe_traffic 包
+      body_iterator 数的实际 yield 字节）；
+    - ``local_bytes``：本机文件腿 serve_file 的 Range 迭代器实际
+      yield 字节（FileResponse 全文件直发不走迭代器，不计——与
+      line_stats 现行口径一致，宁可少算不虚报）；
+    - ``direct_plays``：302 直链**只记起播次数、不记字节**——直链
+      字节在客户端与网盘之间走，服务端结构上看不见，任何按文件
+      大小/码率的估算都不许写进本表冒充计量。
+
+    不加外键（照 WatchStreamActivity 先例）：用户删号后行留着，
+    消费方查无此人自然不展示。
+    """
+
+    __tablename__ = "user_traffic_usage_daily"
+    __table_args__ = (
+        UniqueConstraint("user_id", "day", name="uq_traffic_usage_daily_user_day"),
+        Index("ix_traffic_usage_daily_day", "day"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False)
+    day = Column(Date, nullable=False)
+    relay_bytes = Column(BigInteger, nullable=False, default=0)
+    local_bytes = Column(BigInteger, nullable=False, default=0)
+    direct_plays = Column(Integer, nullable=False, default=0)
+    updated_at = Column(DateTime, default=datetime.now,
+                        onupdate=datetime.now)
+
+
+class TrafficExchangeLog(Base):
+    """购流量·时间换流量留痕（流量额度一期，2026-11-13）。
+
+    一行＝一次「扣订阅天数换流量抵扣额度」：扣了哪份订阅的几天、
+    扣前扣后到期时间、换到多少字节、落在哪个流量周期（period_start/
+    period_end 是成交时的周期快照，消费方按当前周期与快照对齐求和）。
+    ``idempotency_key`` 唯一：客户端同一次确认重试/双击只许成交一次，
+    服务层先查后扣、唯一约束兜底。
+
+    抵扣额度不另立余额表：某周期可用抵扣＝该周期内本表 bytes_credited
+    之和（低频写、按周期求和足够便宜），不搞第二套账。
+    """
+
+    __tablename__ = "user_traffic_exchange_logs"
+    __table_args__ = (
+        Index("ix_traffic_exchange_user_period", "user_id", "period_start"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    kind = Column(String(30), nullable=False, default="time_exchange")
+    days_deducted = Column(Integer, nullable=False)
+    bytes_credited = Column(BigInteger, nullable=False)
+    subscription_id = Column(Integer)
+    sub_end_before = Column(DateTime)
+    sub_end_after = Column(DateTime)
+    period_start = Column(Date)
+    period_end = Column(Date)
+    idempotency_key = Column(String(64), unique=True, index=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+
 class WorldWallPost(Base):
     """探险世界 · 到此一游留言墙"""
     __tablename__ = "world_wall_posts"

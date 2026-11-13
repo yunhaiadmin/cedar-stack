@@ -7546,9 +7546,16 @@ def _observe_traffic(response):
     不许塞进本函数。
     """
     line_stats.record_request()
+    # 流量计量归属在包装点（与 video_stream 同一上下文）先取出，
+    # 迭代消费阶段直接用，不依赖 ContextVar 在消费侧的传播。
+    from backend.emby_server import traffic_meter
+    _traffic_uid = traffic_meter.current_user_id()
     if getattr(response, "status_code", None) == 302:
         from backend.emby_server import playback_risk
         playback_risk.bump("redirect_302")
+        # 302 直链只记起播次数、永不记字节（字节不过本机，
+        # 见 traffic_meter 模块 docstring 的口径）。
+        traffic_meter.note_direct_play(user_id=_traffic_uid)
     iterator = getattr(response, "body_iterator", None)
     if iterator is None:
         return response
@@ -7561,6 +7568,8 @@ def _observe_traffic(response):
                 yield chunk
         finally:
             line_stats.record_bytes(total)
+            # 流量计量：同一笔真实出字节按归属用户记账（中继腿）。
+            traffic_meter.note_bytes(total, "relay", user_id=_traffic_uid)
 
     response.body_iterator = _counting()
     return response
@@ -7612,6 +7621,11 @@ async def video_stream(
     # 开关：PLAY_TIMING_LOG=0 关闭。只加日志，不改逻辑。
     from backend.emby_server.play_timing import new_timer
     _pt = new_timer(f"stream item={item_id}")
+    # 流量计量归属：本次流的字节出口（_observe_traffic 计数包装 /
+    # serve_file 的 Range 迭代器）经 ContextVar 把字节归到这个
+    # 用户；本端点之外的响应取不到归属、整笔不计（见 traffic_meter）。
+    from backend.emby_server import traffic_meter as _traffic_meter
+    _traffic_meter.set_current_user(getattr(user, "id", None))
     # P0（2026-09-29）：async 路由里直接调同步 DB 会卡住单 worker 的事件循环。
     from backend.emby_server.async_db import run_db
     # 安全修复（P0 / H1）：条目必须在用户可见的库范围内（统一 helper）
