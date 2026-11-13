@@ -364,3 +364,35 @@
     font-size: var(--neo-badge-font-size, 13px);
   }
 }
+
+/* ==================== 移动端字号阶梯 · 写死字号收紧层（≤768px） ====================
+   2026-11-13 用户亲点「移动端字体全局偏大」。走令牌的字号已在
+   uhd-tokens.css 的移动阶梯块收紧；这里收各页写死、未走令牌的
+   标题/展示字号，口径与令牌阶梯一致（页题 28 / 分组 20 / 行题 15）。
+   用 !important 是因为这些类多在 scoped 组件样式里（特异性高于
+   全局单类选择器），全局移动层必须终局生效；只限移动端断点内，
+   桌面一字不动。下半段（正文/行副/辅助/坞 12）已对齐友站，不收。 */
+@media (max-width: 768px) {
+  /* 账户框架页题与分组题（UhdAccountLayout 全局样式写死 34/24） */
+  .v4-loghead h1 { font-size: 28px !important; }
+  .v4-sec-title, .pc-gtitle { font-size: 20px !important; }
+  /* 概览：会员卡套餐名 40→32（友站会员卡口径）、流量主数字 58→40、标签 19→15、分组 26→20 */
+  .ov-card__plan { font-size: 32px !important; }
+  .ov-quota__big { font-size: 40px !important; }
+  .ov-quota__label { font-size: 15px !important; }
+  .ov-sec__title { font-size: 20px !important; }
+  /* 我的（移动菜单）：组题 20→16、行 17→15（友站菜单项 15）、用户名 24→22、页题 20→18 */
+  .am-brand__title { font-size: 18px !important; }
+  .am-username { font-size: 22px !important; }
+  .am-group__title { font-size: 16px !important; }
+  .am-row, .am-logout { font-size: 15px !important; }
+  /* 团队：页题 30→26、分组 22→20、团队名 26→22 */
+  .tm-title { font-size: 26px !important; }
+  .tm-sec__title { font-size: 20px !important; }
+  .tm-teamhead__name { font-size: 22px !important; }
+  /* 片库 Hero 标题：clamp 下限 40 在手机上顶满 → 30 */
+  .sh-title { font-size: 30px !important; }
+  /* 订阅结算条：总价 24→20、主按钮 16→15（友站按钮约 15） */
+  .sub-settle__price b { font-size: 20px !important; }
+  .sub-settle__btn { font-size: 15px !important; }
+}
