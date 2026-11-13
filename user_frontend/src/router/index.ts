@@ -181,6 +181,20 @@ const router = createRouter({
             component: () => import('@/views/game/MemberView.vue'),
             meta: { title: '我的会员', requiresAuth: true },
           },
+          // 订阅服务：按 UHDNow 订阅逻辑重做的购买页（深色 app 单列流＋吸底结算条）
+          {
+            path: '/game/account/subscribe',
+            name: 'game-account-subscribe',
+            component: () => import('@/views/game/SubscriptionPlansView.vue'),
+            meta: { title: '订阅服务', requiresAuth: true },
+          },
+          // 「我的」菜单页：用户中心底坞双页签之一（全部功能列表行，一个不丢）
+          {
+            path: '/game/account/menu',
+            name: 'game-account-menu',
+            component: () => import('@/views/game/AccountMenuView.vue'),
+            meta: { title: '我的', requiresAuth: true },
+          },
         ]
       : []),
     {

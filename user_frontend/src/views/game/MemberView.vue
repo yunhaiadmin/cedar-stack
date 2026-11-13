@@ -3,6 +3,15 @@
   <div class="v4-scope">
   <div class="v4-page member-page">
     <div class="member-body">
+      <!-- 订阅购买入口：购买流程在订阅页（单选卡＋时长＋优惠码＋吸底结算）；
+           公益服不卖套餐，不显示入口 -->
+      <RouterLink v-if="!isFreeRealm" class="member-sub-entry" to="/game/account/subscribe">
+        <span class="member-sub-entry__text">
+          <b>{{ activeSub ? '续费订阅' : '开通订阅' }}</b>
+          <span>{{ activeSub ? '当前订阅到期前续费，天数顺延' : '选套餐、选时长，人民币 / 能量都能付' }}</span>
+        </span>
+        <span class="member-sub-entry__btn">{{ activeSub ? '去续费' : '去开通' }}</span>
+      </RouterLink>
       <div v-if="subsError" class="v4-err">订阅加载失败，请稍后重试<br><button class="v4-retry" @click="loadSubs">重试</button></div>
       <!-- 在途显示骨架屏 —— 请求还没回来时别闪现"还没有会员" -->
       <div v-else-if="subsLoading" class="v4-skeleton" style="height:180px"></div>
@@ -58,6 +67,7 @@ import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
  * 任何关闭路径都把焦点还给触发按钮）。
  */
 import { computed, onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import Modal from '@/components/ui/Modal.vue'
 import ProfileSubscriptions from '@/components/profile/ProfileSubscriptions.vue'
 import { subscriptionApi, embyApi, isExpiringSoon, type MySubscription, type AccountCard } from '@/api'
@@ -209,6 +219,44 @@ onMounted(() => {
 <style scoped>
 .member-page { padding-bottom: 34px; }
 .member-body { padding: 14px 20px 0; }
+/* 订阅购买入口卡：彩虹主按钮引到订阅页（购买流程在那边一页完成） */
+.member-sub-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--paper-r-xl, 20px);
+  background: var(--paper-card);
+  text-decoration: none;
+}
+.member-sub-entry__text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.member-sub-entry__text b {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.member-sub-entry__text span {
+  font-size: 13px;
+  color: var(--ink2);
+}
+.member-sub-entry__btn {
+  flex: 0 0 auto;
+  padding: 10px 20px;
+  border-radius: 999px;
+  background: var(--uhd-rainbow);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
 .modal-title { margin: 0; font-size: 17px; font-weight: 600; color: var(--ink); }
 .confirm-text { margin: 0; font-size: 14px; line-height: 1.6; color: var(--ink); }
 .confirm-actions {

@@ -15,7 +15,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  Bird, Briefcase, Calendar, CalendarCheck, Compass, Crown, Globe, Heart,
+  Bird, Briefcase, Calendar, CalendarCheck, Compass, CreditCard, Crown, Globe, Heart,
   Megaphone, Plug, Receipt, Settings, Shirt, ShoppingBag, Sun, Moon, User, Users, Wallet,
 } from 'lucide-vue-next'
 import UhdSidebar, { type UhdSidebarGroup } from './UhdSidebar.vue'
@@ -51,7 +51,7 @@ let agentChecked: Promise<boolean> | null = null
 function checkAgent(): Promise<boolean> {
   if (!agentChecked) {
     agentChecked = getAgentMe()
-      .then(() => true)
+      .then((me) => me.is_agent)
       .catch(() => false)
   }
   return agentChecked
@@ -68,6 +68,7 @@ const groups = computed<UhdSidebarGroup[]>(() => {
       items: [
         { key: '/game/account', label: '我的概览', icon: User },
         { key: '/game/account/member', label: '我的会员', icon: Crown },
+        { key: '/game/account/subscribe', label: '订阅服务', icon: CreditCard },
         { key: '/game/account/settings', label: '账号与设置', icon: Settings },
       ],
     },
@@ -204,6 +205,10 @@ const accountSub = computed(() => {
 }
 .uhd-account__title {
   margin: 0;
+  /* D1-09：标题一律无衬线特粗。全局 aurora.css 有 h1/h2/h3 衬线规则
+     （--au-font-serif 宋体）直命中元素，这里用类声明 UHD 无衬线令牌压过它；
+     全局规则本身的修订归批 3/首页单，本文件只管用户中心作用域。 */
+  font-family: var(--uhd-font-sans);
   font-size: var(--uhd-fs-h1-app);
   font-weight: var(--uhd-fw-extrabold);
   line-height: var(--uhd-lh-tight);
@@ -329,24 +334,26 @@ const accountSub = computed(() => {
   .uhd-account .v4-page.pc-page,
   .uhd-account .v4-page.settings-page { max-width: 1000px; }
 }
-/* 补给站自定义头：H1 32–36px/800（与 .v4-loghead 同口径） */
-.uhd-account .shop-head h1 { font-size: 34px; font-weight: 800; letter-spacing: -0.01em; }
+/* 补给站自定义头：H1 32–36px/800（与 .v4-loghead 同口径）；
+   font-family 同 D1-09：压过 aurora.css 的全局衬线标题规则 */
+.uhd-account .shop-head h1 { font-family: var(--uhd-font-sans); font-size: 34px; font-weight: 800; letter-spacing: -0.01em; }
 /* 日志头：H1 32–36px/800、1px 分隔线（原 24px/500、2px 墨线） */
 .uhd-account .v4-loghead {
   padding: 26px 4px 14px;
   border-bottom: 1px solid var(--line);
 }
 .uhd-account .v4-loghead h1 {
+  font-family: var(--uhd-font-sans);
   font-size: 34px;
   font-weight: 800;
   letter-spacing: -0.01em;
 }
 .uhd-account .v4-loghead p { font-size: 14px; }
 /* 分区标题：H2 24–28px/800（原 17–18px 级） */
-.uhd-account .v4-sec-title { font-size: 24px; font-weight: 800; letter-spacing: -0.01em; }
+.uhd-account .v4-sec-title { font-family: var(--uhd-font-sans); font-size: 24px; font-weight: 800; letter-spacing: -0.01em; }
 .uhd-account .v4-sec-sub { font-size: 14px; color: var(--ink2); }
 /* 个人中心 / 账号设置分组标题：同 H2 口径 */
-.uhd-account .pc-gtitle { font-size: 24px; font-weight: 800; letter-spacing: -0.01em; }
+.uhd-account .pc-gtitle { font-family: var(--uhd-font-sans); font-size: 24px; font-weight: 800; letter-spacing: -0.01em; }
 /* 空态虚线卡：210px 高、16px 圆角、15px 灰字（说明书 2.7） */
 .uhd-account .v4-empty {
   min-height: 210px;

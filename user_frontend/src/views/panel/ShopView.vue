@@ -151,93 +151,16 @@
         <div v-else-if="isFreeRealm" class="v4-empty">当前为公益服，全片库免费开放，无需领取执照<br v-if="realmNote" /><span v-if="realmNote" style="font-size:11px">{{ realmNote }}</span></div>
         <div v-else-if="!plansEnabled" class="v4-empty empty-compact"><span class="lbl">执照领取暂未开启，稍后再来看看</span><button class="v4-retry" @click="loadAll">刷新看看</button></div>
         <div v-else-if="plans.length === 0" class="v4-empty empty-compact"><span class="lbl">执照暂未上架，稍后再来看看</span><button class="v4-retry" @click="loadAll">刷新看看</button></div>
+        <!-- 购买流程已按 UHDNow 订阅逻辑拆到独立订阅页（/game/account/subscribe，
+             用户 2026-11-13 08:39 令：单选卡＋时长滑杆＋优惠码＋吸底结算条）；
+             本区只留入口卡，选购与下单都在订阅页完成，支付规则不变 -->
         <template v-else>
-          <div class="cur-toggle">
-            <button :class="{ on: currency === 'y' }" :aria-pressed="currency === 'y'" @click="currency = 'y'">¥ 人民币</button>
-            <button :class="{ on: currency === 'e' }" :aria-pressed="currency === 'e'" @click="currency = 'e'"><span aria-hidden="true">⚡</span> 能量抵扣</button>
-          </div>
-          <!-- 服型分段切换：多服时出现（按套餐 realm_name 分组） -->
-          <UhdSegmented
-            v-if="realmOptions.length > 1"
-            v-model="selectedRealm"
-            :options="realmOptions"
-            class="member-realm"
-          />
-          <div class="member-grid">
-            <div class="member-plans">
-              <!-- 时长滑杆 + 时长胶囊（与对比表选中态联动） -->
-              <div class="dur-row">
-                <input
-                  type="range"
-                  min="0"
-                  :max="realmPlans.length - 1"
-                  step="1"
-                  :value="selectedPlanIndex"
-                  class="dur-slider"
-                  aria-label="选择时长"
-                  @input="onDurationSlider"
-                />
-                <div class="dur-caps" role="group" aria-label="选择时长">
-                  <button
-                    v-for="(p, i) in realmPlans"
-                    :key="p.id"
-                    type="button"
-                    class="dur-cap"
-                    :class="{ on: i === selectedPlanIndex }"
-                    :aria-pressed="i === selectedPlanIndex"
-                    @click="selectedPlanIndex = i"
-                  >{{ durationLabel(p.duration_days) }}</button>
-                </div>
-              </div>
-              <!-- 单选对比表（说明书 2.11）：选中列白卡＋彩虹角标；规格行含权益行 -->
-              <UhdPlanCompare
-                v-model="selectedPlanId"
-                :plans="realmPlans"
-                :extra-spec-rows="entitlementLines"
-                :show-realm="false"
-                cta-text="选择套餐"
-                @select="onPlanPicked"
-              />
+          <div class="member-entry">
+            <div class="member-entry__text">
+              <b>选套餐、选时长、用优惠码，都在订阅页一页完成</b>
+              <span>{{ memberEntryHint }}</span>
             </div>
-            <!-- 结算栏：桌面 sticky 右栏约 300px，手机堆叠在表下方 -->
-            <aside class="settle" ref="settleRef">
-              <div class="settle-title">确认开通</div>
-              <div class="settle-row">
-                <span>{{ selectedPlan ? `${selectedPlan.name} · ${selectedPlan.duration_days} 天` : '未选套餐' }}</span>
-                <b>{{ settlePriceText }}</b>
-              </div>
-              <div v-if="memberDiscountPct > 0" class="settle-row">
-                <span>{{ memberLevelName }}折扣</span>
-                <b>已享 {{ (100 - memberDiscountPct) / 10 }} 折</b>
-              </div>
-              <div v-if="settleQuote && currency === 'y'" class="settle-row">
-                <span>优惠券 {{ couponApplied }}</span>
-                <b>−¥ {{ fmtNum(settleQuote.list_price - settleQuote.paid_amount) }}</b>
-              </div>
-              <div class="settle-amount">
-                <span>应付</span>
-                <b>{{ settlePriceText }}</b>
-              </div>
-              <div v-if="currency === 'y'" class="settle-coupon">
-                <input v-model="settleCouponCode" placeholder="优惠码" class="settle-coupon-input" aria-label="优惠码" />
-                <button type="button" class="settle-coupon-btn" :disabled="!settleCouponCode.trim() || couponApplying" @click="applySettleCoupon">应用</button>
-              </div>
-              <div v-if="couponApplied" class="settle-coupon-ok">
-                <span><span aria-hidden="true">🎫</span> 优惠券 <b>{{ couponApplied }}</b> 已应用</span>
-                <button type="button" class="redeem-clear" aria-label="移除优惠券" @click="clearCoupon">✕</button>
-              </div>
-              <div v-if="payMethodName" class="settle-pay">支付方式：{{ payMethodName }}</div>
-              <UhdButton
-                variant="primary"
-                block
-                :disabled="orderBusy || !methodsReady || !selectedPlan"
-                :aria-busy="orderBusy && orderBusyTag === 'buy'"
-                @click="buySelectedPlan"
-              >{{ orderBusy && orderBusyTag === 'buy' ? '领取中…' : '领取执照' }}</UhdButton>
-              <!-- R85：支付通道没准备好时按钮静默禁用，给一行人话说明（口径与能量区 methods-note 对齐） -->
-              <div v-if="!methodsReady" class="methods-note" role="status" style="margin:8px 0 0"><template v-if="methodsFailed">支付方式加载失败，通道恢复后可领<button class="v4-retry" @click="loadAll">重试</button></template><template v-else>支付通道准备中，稍后就能领<button class="v4-retry" @click="loadAll">刷新看看</button></template></div>
-              <p class="settle-note">人民币 / 能量二选一，价格以页面显示为准；到期后自动失效，可在「我的会员」开启能量自动续订</p>
-            </aside>
+            <RouterLink class="member-entry__btn" to="/game/account/subscribe">去订阅服务</RouterLink>
           </div>
         </template>
       </section>
@@ -407,9 +330,6 @@ import {
 import { useUserStore } from '@/stores/user'
 import BlindboxSection from '@/components/panel/BlindboxSection.vue'
 import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
-import UhdButton from '@/components/uhd/UhdButton.vue'
-import UhdPlanCompare from '@/components/uhd/UhdPlanCompare.vue'
-import UhdSegmented from '@/components/uhd/UhdSegmented.vue'
 
 const toast = useToast()
 
@@ -420,6 +340,12 @@ const methodsFailed = ref(false)
 const packages = ref<RechargePackage[]>([])
 const plans = ref<SubscriptionPlan[]>([])
 const plansEnabled = ref(true)
+/** 「会员」区订阅页入口卡的副文案：套餐数与最低价都来自真实套餐数据 */
+const memberEntryHint = computed(() => {
+  if (plans.value.length === 0) return ''
+  const min = Math.min(...plans.value.map((p) => p.price))
+  return `共 ${plans.value.length} 个套餐在售 · ¥ ${fmtNum(min)} 起`
+})
 const isFreeRealm = ref(false)
 const realmNote = ref('')
 const rechargeEnabled = ref(true)
@@ -467,7 +393,6 @@ const payMethod = ref('alipay')
 const methodsReady = ref(false)
 
 const selectedPkg = ref<RechargePackage | null>(null)
-const currency = ref<'y' | 'e'>('y')
 const openCampLevel = ref<number | null>(null)
 const orderBusy = ref(false)
 /** R38 P3-3：orderBusy 被三个下单动作共用 —— 用 tag 区分当前是哪一个在忙，
@@ -901,7 +826,6 @@ function fmtNum(n: number | null | undefined): string {
 const pointsText = computed(() => (points.value == null ? '–' : fmtNum(points.value)))
 const memberLevelText = computed(() => (member.value?.level != null ? `Lv.${member.value.level}` : '–'))
 const memberLevelName = computed(() => member.value?.level_name || '–')
-const memberDiscountPct = computed(() => member.value?.discount_pct ?? 0)
 const ratioText = computed(() =>
   // R41：rechargeRatio 为 null 时不显示"充值比例加载中"假加载态——与 custom-note 的"比例待确认"口径一致
   rechargeRatio.value == null ? '比例待确认' : `1 元 = ${rechargeRatio.value} 能量`,
@@ -920,104 +844,6 @@ const meterText = computed(() => {
   if (!p) return '选一罐能量'
   return `已选 ${fmtNum(p.total_points)} 能量 · ¥ ${fmtNum(p.price)}`
 })
-
-/* 权益文案行：由套餐权益表自动生成（模板全站只此一份，与后端
-   backend/entitlements.py 注册表对应）——声明了才出现、数值与权益表
-   逐字一致；未声明任何权益的套餐不生成行，页面与无权益时完全相同 */
-function entitlementLines(plan: SubscriptionPlan): string[] {
-  const ent = plan.entitlements || {}
-  const lines: string[] = []
-  if (ent.media_seek_monthly_limit != null) lines.push(`每月可求片 ${ent.media_seek_monthly_limit} 部`)
-  if (ent.concurrent_streams != null) lines.push(`可同时播放 ${ent.concurrent_streams} 路`)
-  return lines
-}
-function planPriceText(plan: SubscriptionPlan): string {
-  if (currency.value === 'e') {
-    return plan.points_price != null ? `${fmtNum(plan.points_price)} ⚡` : '不支持能量'
-  }
-  return `¥ ${fmtNum(plan.price)}`
-}
-
-/* ---------- 订阅对比表 + 结算栏（说明书 2.11，批 2） ---------- */
-/** 服型选项：按套餐 realm_name 分组；单服时不显示分段切换 */
-const realmOptions = computed(() => {
-  const names = [...new Set(plans.value.map((p) => p.realm_name || '默认'))]
-  return names.map((n) => ({ value: n, label: n }))
-})
-const selectedRealm = ref('')
-watch(realmOptions, (opts) => {
-  if (!opts.some((o) => o.value === selectedRealm.value)) {
-    selectedRealm.value = opts[0]?.value ?? ''
-  }
-}, { immediate: true })
-/** 当前服的套餐：按天数升序（月→季→年） */
-const realmPlans = computed(() => {
-  const realm = selectedRealm.value || realmOptions.value[0]?.value || '默认'
-  return [...plans.value]
-    .filter((p) => (p.realm_name || '默认') === realm)
-    .sort((a, b) => a.duration_days - b.duration_days)
-})
-const selectedPlanId = ref<number | null>(null)
-const selectedPlan = computed(() => realmPlans.value.find((p) => p.id === selectedPlanId.value) ?? null)
-/** 滑杆下标 ↔ 选中套餐双向联动 */
-const selectedPlanIndex = computed<number>({
-  get: () => Math.max(0, realmPlans.value.findIndex((p) => p.id === selectedPlanId.value)),
-  set: (i) => {
-    const p = realmPlans.value[i]
-    if (p) selectedPlanId.value = p.id
-  },
-})
-/** 当前服套餐变化时默认选中推荐档（或首档）；已有选中且仍在列表内不重置 */
-watch(realmPlans, (list) => {
-  if (!list.some((p) => p.id === selectedPlanId.value)) {
-    const popular = list.find((p) => p.is_popular)
-    selectedPlanId.value = popular?.id ?? list[0]?.id ?? null
-  }
-}, { immediate: true })
-/** 时长胶囊文案：按天数推断 */
-function durationLabel(days: number): string {
-  if (days >= 365) return '1年'
-  if (days >= 180) return '半年'
-  if (days >= 90) return '季'
-  if (days >= 30) return '1个月'
-  return `${days}天`
-}
-function onDurationSlider(e: Event) {
-  const v = Number((e.target as HTMLInputElement).value)
-  if (Number.isFinite(v)) selectedPlanIndex.value = v
-}
-/** 对比表 CTA：选定套餐；手机上把结算栏滚进视野 */
-const settleRef = ref<HTMLElement | null>(null)
-function onPlanPicked() {
-  if (window.matchMedia('(max-width: 1023px)').matches) {
-    settleRef.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  }
-}
-/** 结算价：券后价优先（人民币才有券），否则套餐价 */
-const settleQuote = computed(() =>
-  selectedPlan.value ? quoteOf('subscription', selectedPlan.value.id) : null,
-)
-const settlePriceText = computed(() => {
-  const plan = selectedPlan.value
-  if (!plan) return '–'
-  if (settleQuote.value && currency.value === 'y') return `¥ ${fmtNum(settleQuote.value.paid_amount)}`
-  return planPriceText(plan)
-})
-/** 结算栏优惠码：复用核销中心同一条 applyCoupon（券后价走 quoteOf） */
-const settleCouponCode = ref('')
-async function applySettleCoupon() {
-  const code = settleCouponCode.value.trim()
-  if (!code) return
-  await applyCoupon(code)
-  if (couponApplied.value) settleCouponCode.value = ''
-}
-function buySelectedPlan() {
-  if (selectedPlan.value) void doBuyPlan(selectedPlan.value)
-}
-/** 结算栏支付方式名：取已选支付方式的展示名（与能量区同一份 methods） */
-const payMethodName = computed(
-  () => methods.value.find((m) => m.id === payMethod.value)?.name || '',
-)
 
 /* 登山路线：等级从低到高（Lv.1 → Lv.6 往上爬） */
 const trailLevels = computed(() => {
@@ -1077,43 +903,6 @@ async function doRecharge() {
       coupon_code: quote ? quote.code : undefined,
     })
     if (res.pay_url) {
-      toast.success('正在跳转支付')
-      window.location.href = res.pay_url
-    } else {
-      toast.error('支付链接获取失败，请稍后再试')
-    }
-  } catch (err: unknown) {
-    toast.error(humanizeError(err))
-  } finally {
-    orderBusy.value = false
-    orderBusyTag.value = null
-  }
-}
-
-async function doBuyPlan(plan: SubscriptionPlan) {
-  if (orderBusy.value || !methodsReady.value) return
-  if (currency.value === 'e' && plan.points_price == null) {
-    toast.error('该执照不支持能量抵扣，请切换人民币')
-    return
-  }
-  orderBusy.value = true
-  orderBusyTag.value = 'buy'
-  try {
-    const quote = quoteOf('subscription', plan.id)
-    const res = await paymentApi.createOrder({
-      kind: 'subscription',
-      item_id: plan.id,
-      payment_method: payMethod.value,
-      pay_with_points: currency.value === 'e',
-      coupon_code: quote ? quote.code : undefined,
-    })
-    if (res.paid_with_points) {
-      // R101-1：静默刷新——刚领完执照不闪全页骨架（与 confirmExchangeRedeem 的 loadAll(true) 口径对齐）；
-      // 能量抵扣即时消费优惠券（后端 coupons.consume），过期的「已应用」展示一并清掉
-      clearCoupon()
-      toast.success('执照领取成功，出发吧！')
-      void loadAll(true)
-    } else if (res.pay_url) {
       toast.success('正在跳转支付')
       window.location.href = res.pay_url
     } else {
@@ -1327,187 +1116,42 @@ async function copyInviteCode() {
   text-align: center;
   margin-top: 8px;
 }
-.cur-toggle {
-  display: flex;
-  background: var(--paper2);
-  border: 1.5px solid var(--line);
-  border-radius: var(--paper-r-2xl, 20px);
-  padding: 3px;
-  margin-bottom: 12px;
-}
-.cur-toggle button {
-  flex: 1;
-  border: none;
-  background: none;
-  font-size: 13px;
-  font-weight: 700;
-  padding: 8px;
-  min-height: 44px;
-  border-radius: var(--paper-r-xl, 16px);
-  color: var(--ink2);
-  cursor: pointer;
-}
-.cur-toggle button.on {
-  background: var(--ink);
-  color: var(--paper); /* R27：原 #f6f1e7 = --paper */
-}
-/* ---------- 订阅对比表 + 结算栏（说明书 2.11，批 2） ---------- */
-.member-realm { margin-bottom: 14px; }
-.member-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 20px;
-  align-items: start;
-}
-@media (min-width: 1024px) {
-  .member-grid { grid-template-columns: minmax(0, 1fr) 300px; }
-  /* 订阅区只剩约 680px 宽，组件默认 auto-fit minmax(230px,1fr) 只能排 2 列、
-     第三列会换行（截图实证 2+1）。桌面端在此强制 3 列并排；手机仍走 auto-fit 单列。 */
-  .member-grid .uhd-plans { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  /* 窄列里「/ 365 天」会被从中间断行，强制整段不换行
-     （price-per 是子组件深层元素，scoped 须用 :deep() 才能命中） */
-  .member-grid :deep(.uhd-plans__price-per) { white-space: nowrap; }
-}
-.member-plans { min-width: 0; }
-/* 时长滑杆 + 胶囊组 */
-.dur-row { margin-bottom: 14px; }
-.dur-slider {
-  width: 100%;
-  height: 4px;
-  margin: 8px 0 12px;
-  appearance: none;
-  -webkit-appearance: none;
-  border-radius: 999px;
-  background: var(--line);
-  outline: none;
-  cursor: pointer;
-}
-.dur-slider::-webkit-slider-thumb {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--uhd-l-surface);
-  border: 2px solid var(--uhd-l-text);
-  box-shadow: 0 1px 4px rgba(17, 17, 17, 0.25);
-}
-.dur-slider::-moz-range-thumb {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--uhd-l-surface);
-  border: 2px solid var(--uhd-l-text);
-  box-shadow: 0 1px 4px rgba(17, 17, 17, 0.25);
-}
-.dur-caps {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.dur-cap {
-  min-height: 32px;
-  padding: 4px 14px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--paper-card);
-  color: var(--ink2);
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.dur-cap.on {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--paper);
-}
-/* 结算栏：白卡 16px 圆角；桌面 sticky 跟随滚动 */
-.settle {
-  padding: 18px;
-  background: var(--paper-card);
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  box-shadow: var(--uhd-shadow-card-l);
-}
-@media (min-width: 1024px) {
-  .settle {
-    position: sticky;
-    top: 24px;
-  }
-}
-.settle-title {
-  margin: 0 0 12px;
-  font-size: 16px;
-  font-weight: 800;
-}
-.settle-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 0;
-  border-top: 1px solid var(--line);
-  font-size: 14px;
-  color: var(--ink2);
-}
-.settle-row b { color: var(--ink); font-weight: 700; white-space: nowrap; }
-.settle-amount {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 12px;
-  padding: 12px 0 4px;
-  border-top: 1px solid var(--line);
-  font-size: 14px;
-}
-.settle-amount b { font-size: 22px; font-weight: 800; }
-.settle-coupon {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
-}
-.settle-coupon-input {
-  flex: 1;
-  min-width: 0;
-  height: 40px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--paper2);
-  color: var(--ink);
-  font-size: 14px;
-}
-.settle-coupon-btn {
-  flex: none;
-  height: 40px;
-  padding: 0 16px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--paper-card);
-  color: var(--ink);
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.settle-coupon-btn:disabled { opacity: 0.55; cursor: default; }
-.settle-coupon-ok {
+/* 「会员」区订阅入口卡（购买流程已拆到订阅页，这里只引路） */
+.member-entry {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-top: 10px;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--paper-r-xl, 20px);
+  background: var(--paper-card);
+}
+.member-entry__text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.member-entry__text b {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.member-entry__text span {
   font-size: 13px;
   color: var(--ink2);
 }
-.settle-pay {
-  margin: 10px 0 12px;
-  font-size: 13px;
-  color: var(--ink2);
-}
-.settle-note {
-  margin: 10px 0 0;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--ink2);
+.member-entry__btn {
+  flex: 0 0 auto;
+  padding: 11px 22px;
+  border-radius: 999px;
+  background: var(--uhd-rainbow, linear-gradient(90deg, #2563eb, #2563eb));
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
 }
 .gov-current {
   padding: 12px 14px;
