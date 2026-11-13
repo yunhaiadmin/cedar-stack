@@ -6,9 +6,10 @@
      D3-05 裁定：不自创「播放方式」下拉；Aetrix 无独立线路数据，
      原站的「播放线路」段整段省略（理由见批 3 对照清单）。
      口径：未绑盘先出绑盘引导（门禁不变）；第三方播放器走现行导入
-     scheme（pick）；网页播放走衔接口路由名 watch（播放器单对接，
-     参数：params.id=起播目标 id（剧集为集 id）、query.src=选定
-     MediaSource Id），路由未落地时点按给诚实提示、不假装能播。 -->
+     scheme（pick）；网页播放走播放器单契约（PR #85）：路由名
+     web-player（/play/:id），params.id=起播目标 id（剧集为集 id）、
+     query.ms=选定 MediaSource Id（可选）、query.at=起始秒（可选，
+     本弹层不传、播放器用续看位置），路由未落地时点按给诚实提示。 -->
 <template>
   <Teleport to="body">
     <div v-if="open" class="psp" @keydown.esc.prevent="close">
@@ -92,7 +93,7 @@
             </div>
             <p v-else class="psp-note">这个条目的版本信息没拉到，开始播放会用默认版本。</p>
 
-            <!-- 开始播放：彩虹边框全宽钮（网页播放器主入口，衔接口 watch） -->
+            <!-- 开始播放：彩虹边框全宽钮（网页播放器主入口，契约 web-player） -->
             <div class="psp-start-sec">
               <span class="psp-start-label">开始播放</span>
               <button type="button" class="psp-start" @click="start">
@@ -177,7 +178,7 @@ let jumpTimer = 0
 const itemDetail = ref<EmbyItem | null>(null)
 /** 版本来源：电影/单集 = 条目本身；剧集 = 续看集（无续看取第一集）的详情 */
 const versionSource = ref<EmbyItem | null>(null)
-/** 实际起播目标 id（剧集时为集 id），watch 衔接口用它 */
+/** 实际起播目标 id（剧集时为集 id），web-player 契约用它 */
 const playTargetId = ref('')
 const epInfo = ref<{ season?: number | null; episode?: number | null; name?: string } | null>(null)
 
@@ -355,10 +356,10 @@ async function pick(s: PlayerScheme) {
 }
 
 /**
- * 开始播放（网页播放器主入口）：走衔接口 —— 路由名 watch、
- * params.id=起播目标 id（剧集为集 id）、query.src=选定版本
- * MediaSource Id（播放器单对接落地）。watch 路由尚未落地时
- * 不假装能播，给诚实提示。第三方播放器走下方播放器行 pick。
+ * 开始播放（网页播放器主入口）：走播放器单契约 —— 路由名
+ * web-player、params.id=起播目标 id（剧集为集 id）、query.ms=
+ * 选定版本 MediaSource Id（PR #85）。路由未落地时不假装能播，
+ * 给诚实提示。第三方播放器走下方播放器行 pick。
  */
 async function start() {
   const id = playTargetId.value || props.itemId
@@ -366,12 +367,12 @@ async function start() {
     toast.info('这个入口没有带条目，暂时只能用播放器打开')
     return
   }
-  if (router.hasRoute('watch')) {
+  if (router.hasRoute('web-player')) {
     close()
     void router.push({
-      name: 'watch',
+      name: 'web-player',
       params: { id: String(id) },
-      query: selectedVersionId.value ? { src: selectedVersionId.value } : {},
+      query: selectedVersionId.value ? { ms: selectedVersionId.value } : {},
     })
   } else {
     toast.info('网页播放器马上就来；先用下面的播放器打开')
