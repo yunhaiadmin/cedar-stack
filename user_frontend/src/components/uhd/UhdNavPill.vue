@@ -26,8 +26,10 @@ const props = withDefaults(
     brand?: string
     brandSub?: string
     ctaText?: string
+    /** 跟随用户主题：浅色主题下整条转浅色玻璃（定价页用）；缺省锁深色玻璃（落地页/片库面） */
+    themeFollow?: boolean
   }>(),
-  { activeKey: '', brand: 'Aetrix', brandSub: 'SERVICE', ctaText: '' },
+  { activeKey: '', brand: 'Aetrix', brandSub: 'SERVICE', ctaText: '', themeFollow: false },
 )
 
 const emit = defineEmits<{ select: [key: string]; cta: [] }>()
@@ -44,7 +46,7 @@ function onItem(item: UhdNavItem) {
 </script>
 
 <template>
-  <div class="uhd-nav">
+  <div class="uhd-nav" :class="{ 'uhd-nav--follow': props.themeFollow }">
     <span class="uhd-nav__brand">
       <span class="uhd-nav__logo" aria-hidden="true" />
       <span class="uhd-nav__brand-text">
@@ -228,4 +230,28 @@ function onItem(item: UhdNavItem) {
   .uhd-nav__brand-sub { display: none; }
   .uhd-nav__item { padding: 0 10px; font-size: var(--uhd-fs-caption); }
 }
+
+/* 跟随主题的浅色形态（themeFollow 时，浅色主题下生效；CTA 主按钮保持深底，
+   与原站浅色主题下主按钮口径一致） */
+:root[data-theme='light'] .uhd-nav--follow .uhd-nav__brand { color: var(--uhd-l-text); }
+:root[data-theme='light'] .uhd-nav--follow .uhd-nav__brand-sub { color: var(--uhd-l-text-2); }
+:root[data-theme='light'] .uhd-nav--follow .uhd-nav__pill {
+  background: var(--uhd-glass-l);
+  border-color: var(--uhd-glass-border-l);
+}
+:root[data-theme='light'] .uhd-nav--follow .uhd-nav__item { color: var(--uhd-l-text-2); }
+:root[data-theme='light'] .uhd-nav--follow .uhd-nav__item:hover {
+  background: rgba(17, 17, 17, 0.06);
+  color: var(--uhd-l-text);
+}
+:root[data-theme='light'] .uhd-nav--follow .uhd-nav__item--active { color: var(--uhd-l-text); }
+:root[data-theme='light'] .uhd-nav--follow .uhd-nav__dropdown {
+  background: var(--uhd-glass-l);
+  border-color: var(--uhd-glass-border-l);
+}
+:root[data-theme='light'] .uhd-nav--follow .uhd-nav__drop-row { color: var(--uhd-l-text); }
+:root[data-theme='light'] .uhd-nav--follow .uhd-nav__drop-row:hover { background: rgba(17, 17, 17, 0.06); }
+:root[data-theme='light'] .uhd-nav--follow .uhd-nav__drop-icon { background: rgba(17, 17, 17, 0.07); }
+:root[data-theme='light'] .uhd-nav--follow .uhd-nav__drop-desc,
+:root[data-theme='light'] .uhd-nav--follow .uhd-nav__drop-arrow { color: var(--uhd-l-text-2); }
 </style>

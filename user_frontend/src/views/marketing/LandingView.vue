@@ -8,7 +8,7 @@
  */
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Monitor, Sun, Layers, ShieldCheck } from 'lucide-vue-next'
+import { Monitor, Sun, Layers, ShieldCheck, Menu, X, RefreshCw, Bell, Sparkles, Home, Tag, LogIn } from 'lucide-vue-next'
 import UhdNavPill, { type UhdNavItem } from '@/components/uhd/UhdNavPill.vue'
 import UhdButton from '@/components/uhd/UhdButton.vue'
 import UhdChip from '@/components/uhd/UhdChip.vue'
@@ -27,6 +27,38 @@ function onNav(key: string) {
   else if (key === 'login') router.push('/login')
   else window.scrollTo({ top: 0, behavior: 'smooth' })
 }
+/* 移动端菜单＝底部抽屉（原站 _public 头部组件源码形态）：遮罩＋上滑面板，
+   开合带动画；顶栏滚动 >40px 时整条玻璃浮起、汉堡 chip 变平（原站 pub-nav-pill 形态） */
+const menuOpen = ref(false)
+const menuClosing = ref(false)
+const navScrolled = ref(false)
+function onScrollNav() {
+  navScrolled.value = window.scrollY > 40
+}
+function setMenu(open: boolean) {
+  menuOpen.value = open
+  menuClosing.value = false
+  document.documentElement.style.overflow = open ? 'hidden' : ''
+}
+function closeMenuAnimated() {
+  if (!menuOpen.value || menuClosing.value) return
+  menuClosing.value = true
+  document.documentElement.style.overflow = ''
+  window.setTimeout(() => setMenu(false), 300)
+}
+function toggleMenu() {
+  if (menuOpen.value) closeMenuAnimated()
+  else setMenu(true)
+}
+function onMobileNav(key: string) {
+  setMenu(false)
+  onNav(key)
+}
+function onMobileRegister() {
+  setMenu(false)
+  goRegister()
+}
+
 function goRegister() {
   router.push({ path: '/login', query: { mode: 'register' } })
 }
@@ -64,6 +96,8 @@ function onScroll() {
 
 const reduceMotion = ref(false)
 onMounted(() => {
+  window.addEventListener('scroll', onScrollNav, { passive: true })
+  onScrollNav()
   reduceMotion.value = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   if (!reduceMotion.value) {
     heroTimer = setInterval(() => {
@@ -76,6 +110,8 @@ onMounted(() => {
 onUnmounted(() => {
   if (heroTimer) clearInterval(heroTimer)
   window.removeEventListener('scroll', onScroll)
+  window.removeEventListener('scroll', onScrollNav)
+  document.documentElement.style.overflow = ''
 })
 
 /* 跑马灯内容：Aetrix 自有口径——支持的客户端与规格字标，纯文字白标（第 5 节②） */
@@ -99,9 +135,114 @@ const year = new Date().getFullYear()
       />
     </div>
 
+    <!-- 移动端顶栏（≤900px）：照原站头部组件源码——左 logo、右玻璃 chip 内汉堡；
+         未滚动时整条透明、滚动 >40px 玻璃 pill 浮起且 chip 变平；菜单为底部抽屉 -->
+    <div class="m-nav" :class="{ 'is-on': navScrolled }">
+      <span class="m-nav__brand">
+        <span class="m-nav__logo" aria-hidden="true" />
+        <span class="m-nav__brand-text">
+          <span class="m-nav__brand-name">{{ branding.site_name }}</span>
+          <span class="m-nav__brand-sub">SERVICE</span>
+        </span>
+      </span>
+      <span class="m-nav__chip" :class="{ 'is-flat': navScrolled }">
+        <button
+          type="button"
+          class="m-nav__burger"
+          :aria-label="menuOpen ? '关闭菜单' : '打开菜单'"
+          @click="toggleMenu"
+        >
+          <X v-if="menuOpen" :size="16" aria-hidden="true" />
+          <Menu v-else :size="16" aria-hidden="true" />
+        </button>
+      </span>
+    </div>
+    <div v-if="menuOpen" class="m-scrim" :class="{ 'is-out': menuClosing }" @click="closeMenuAnimated" />
+    <div
+      v-if="menuOpen"
+      class="m-sheet"
+      :class="{ 'is-out': menuClosing }"
+      role="dialog"
+      aria-modal="true"
+      aria-label="菜单"
+    >
+      <div class="m-sheet__handle" aria-hidden="true"><span /></div>
+      <nav class="m-sheet__links" aria-label="主导航">
+        <button type="button" class="m-sheet__row" @click="onMobileNav('home')">
+          <Home :size="18" aria-hidden="true" />首页
+        </button>
+        <button type="button" class="m-sheet__row" @click="onMobileNav('pricing')">
+          <Tag :size="18" aria-hidden="true" />定价
+        </button>
+        <button type="button" class="m-sheet__row" @click="onMobileNav('login')">
+          <LogIn :size="18" aria-hidden="true" />登录
+        </button>
+      </nav>
+      <div class="m-sheet__divider" aria-hidden="true" />
+      <div class="m-sheet__cta">
+        <UhdButton variant="primary" dark block @click="onMobileRegister">立即加入</UhdButton>
+      </div>
+    </div>
+
     <!-- ① Hero -->
     <header class="hero">
       <div class="hero-beam" aria-hidden="true" />
+      <!-- 移动端主视觉（返工单③）：自绘 SVG 棱镜＋彩虹光束＋星点，不用对方素材；桌面不显示 -->
+      <div class="hero-visual" aria-hidden="true">
+        <svg viewBox="0 0 390 236" preserveAspectRatio="xMidYMid meet" focusable="false">
+          <defs>
+            <linearGradient id="hv-prism" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#ffffff" stop-opacity="0.30" />
+              <stop offset="0.5" stop-color="#9fd8ff" stop-opacity="0.10" />
+              <stop offset="1" stop-color="#ffffff" stop-opacity="0.20" />
+            </linearGradient>
+            <linearGradient id="hv-inbeam" x1="0" y1="1" x2="0" y2="0">
+              <stop offset="0" stop-color="#ffffff" stop-opacity="0" />
+              <stop offset="1" stop-color="#ffffff" stop-opacity="0.85" />
+            </linearGradient>
+            <radialGradient id="hv-glow" cx="0.5" cy="0.5" r="0.5">
+              <stop offset="0" stop-color="#bcd9ff" stop-opacity="0.35" />
+              <stop offset="1" stop-color="#bcd9ff" stop-opacity="0" />
+            </radialGradient>
+          </defs>
+          <ellipse cx="195" cy="158" rx="150" ry="92" fill="url(#hv-glow)" />
+          <g fill="#ffffff">
+            <circle cx="28" cy="52" r="1.3" opacity="0.65" />
+            <circle cx="64" cy="22" r="1" opacity="0.45" />
+            <circle cx="102" cy="66" r="1.6" opacity="0.8" />
+            <circle cx="140" cy="30" r="1" opacity="0.5" />
+            <circle cx="176" cy="84" r="1.2" opacity="0.6" />
+            <circle cx="214" cy="38" r="1.5" opacity="0.75" />
+            <circle cx="248" cy="92" r="1" opacity="0.45" />
+            <circle cx="282" cy="26" r="1.3" opacity="0.65" />
+            <circle cx="318" cy="70" r="1.6" opacity="0.8" />
+            <circle cx="356" cy="34" r="1.1" opacity="0.5" />
+            <circle cx="44" cy="120" r="1" opacity="0.4" />
+            <circle cx="344" cy="128" r="1.2" opacity="0.5" />
+            <circle cx="88" cy="150" r="1.1" opacity="0.35" />
+            <circle cx="300" cy="158" r="1" opacity="0.35" />
+            <circle cx="160" cy="128" r="0.9" opacity="0.4" />
+            <circle cx="232" cy="140" r="0.9" opacity="0.4" />
+          </g>
+          <g class="hv-fan" opacity="0.85">
+            <polygon points="195,150 4,0 42,0" fill="#2f8fe0" />
+            <polygon points="195,150 50,0 90,0" fill="#6f7ad8" />
+            <polygon points="195,150 98,0 138,0" fill="#c46c90" />
+            <polygon points="195,150 146,0 186,0" fill="#e8766f" />
+            <polygon points="195,150 194,0 234,0" fill="#f2a45a" />
+            <polygon points="195,150 242,0 282,0" fill="#ecd04f" />
+            <polygon points="195,150 290,0 330,0" fill="#95c77d" />
+            <polygon points="195,150 338,0 386,0" fill="#39b3ec" />
+          </g>
+          <polygon points="187,236 203,236 199,212 191,212" fill="url(#hv-inbeam)" />
+          <polygon
+            points="195,140 148,208 242,208"
+            fill="url(#hv-prism)"
+            stroke="rgba(255, 255, 255, 0.55)"
+            stroke-width="1.2"
+          />
+        </svg>
+      </div>
       <div class="hero-inner">
         <p class="eyebrow">{{ branding.site_name }} SERVICE</p>
         <h1 class="hero-title">你的私人影院<br />随时随地开场</h1>
@@ -139,7 +280,7 @@ const year = new Date().getFullYear()
     <!-- ② 跑马灯 -->
     <section class="marquee-sec">
       <p class="eyebrow eyebrow--center">CLIENTS &amp; SPECS</p>
-      <h2 class="sec-title">在你顺手的设备上，<br />以它最好的规格播放</h2>
+      <h2 class="sec-title sec-title--platforms">在你顺手的设备上，<br />以它最好的规格播放</h2>
       <p class="sec-sub">播放交给专业客户端，服务器只做整理与供给——手机、电视、电脑，打开就能看。</p>
       <div class="marquee" aria-hidden="true">
         <div class="marquee-track marquee-track--a">
@@ -200,6 +341,16 @@ const year = new Date().getFullYear()
             <div class="dev dev--phone"><span class="dev-play dev-play--sm" /></div>
             <p class="dev-note">上次同步 · 刚刚</p>
           </div>
+          <!-- 移动端设备示意（返工单④①）：四台设备线框＋播放键＋进度条，仅 ≤900px 显示 -->
+          <div class="ess-devices-m" aria-hidden="true">
+            <div class="dm-row">
+              <span class="dm dm--tv"><span class="dm-play" /><span class="dm-bar"><i style="width: 60%" /></span></span>
+              <span class="dm dm--laptop"><span class="dm-play" /><span class="dm-bar"><i style="width: 60%" /></span></span>
+              <span class="dm dm--tablet"><span class="dm-play dm-play--sm" /></span>
+              <span class="dm dm--phone"><span class="dm-play dm-play--sm" /></span>
+            </div>
+            <p class="dm-note">SYNCED · 上次同步 刚刚</p>
+          </div>
         </article>
 
         <article class="ess-card">
@@ -207,8 +358,13 @@ const year = new Date().getFullYear()
           <h3 class="ess-h3">没有广告，<br />只有电影</h3>
           <p class="ess-desc">从按下播放到片尾字幕，全程无插播、无贴片，沉浸感不被打断。</p>
           <div class="ess-timeline" aria-hidden="true">
-            <div class="ess-timeline-meta"><span>00:00</span><span>全程无广告</span><span>02:15</span></div>
+            <div class="ess-timeline-meta"><span>00:00</span><span class="ess-timeline-mid">100% 主内容</span><span>02:15</span></div>
             <div class="ess-timeline-bar"><i /></div>
+            <div class="ess-timeline-marks">
+              <span>前贴片 <b>0:00</b></span>
+              <span>中插 <b>0:00</b></span>
+              <span>后贴片 <b>0:00</b></span>
+            </div>
           </div>
         </article>
 
@@ -219,12 +375,21 @@ const year = new Date().getFullYear()
           <p class="eyebrow">EVER-GROWING LIBRARY</p>
           <h3 class="ess-h3">片库自己长大</h3>
           <p class="ess-desc">新片自动扫描入库、刮削补齐海报与资料；追的剧更新了，自动出现在你的片库里。</p>
-          <!-- 数字一律数据驱动：公开统计接口接入前只占位，不编造（说明书第 5 节④） -->
-          <div class="ess-stats">
-            <div class="ess-stat"><p class="ess-stat-num">—</p><p class="ess-stat-label">片库条目 · 数据接入中</p></div>
-            <div class="ess-stat"><p class="ess-stat-num">—</p><p class="ess-stat-label">本周新增 · 数据接入中</p></div>
-            <div class="ess-stat"><p class="ess-stat-num">—</p><p class="ess-stat-label">持续更新 · 数据接入中</p></div>
-          </div>
+          <!-- 无公开统计接口可读：不编造数字、不留占位行，改用不依赖数字的功能版式（返工单④③） -->
+          <ul class="ess-points">
+            <li>
+              <RefreshCw :size="18" aria-hidden="true" />
+              <span><b>自动入库</b>新片到盘，自动扫描进片库</span>
+            </li>
+            <li>
+              <Sparkles :size="18" aria-hidden="true" />
+              <span><b>资料补齐</b>海报、简介与评分自动刮削归位</span>
+            </li>
+            <li>
+              <Bell :size="18" aria-hidden="true" />
+              <span><b>追剧更新</b>追的剧一出新集，自动跟上</span>
+            </li>
+          </ul>
         </article>
       </div>
     </section>
@@ -257,6 +422,94 @@ const year = new Date().getFullYear()
   z-index: 50;
 }
 
+/* ---------- 移动端顶栏与底部抽屉（仅 ≤900px 启用，桌面走 UhdNavPill）
+   数值照原站头部组件源码：logo 图标 24px、站名 15px/字距 .18em、SERVICE 10px/字距 .34em；
+   玻璃 pill 层滚动 >40px 才浮起（opacity .5s ease-sheet），汉堡 chip 同步变平 ---------- */
+.m-nav,
+.m-scrim,
+.m-sheet {
+  display: none;
+}
+.m-nav__brand {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--uhd-d-text);
+}
+.m-nav__logo {
+  width: 24px;
+  height: 22px;
+  background: var(--uhd-rainbow-conic);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.m-nav__brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1;
+}
+.m-nav__brand-name {
+  font-family: var(--uhd-font-display);
+  font-size: 15px;
+  font-weight: var(--uhd-fw-semibold);
+  letter-spacing: 0.18em;
+}
+.m-nav__brand-sub {
+  margin-top: 4px;
+  font-size: 10px;
+  letter-spacing: 0.34em;
+  color: var(--uhd-d-text-2);
+}
+.m-nav__chip {
+  position: relative;
+  display: inline-flex;
+  padding: 4px;
+  border: var(--uhd-border-w) solid var(--uhd-glass-border);
+  border-radius: 9999px;
+  background: var(--uhd-glass-d);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
+  transition:
+    background-color 0.5s cubic-bezier(0.32, 0.72, 0, 1),
+    border-color 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.m-nav__chip.is-flat {
+  background: transparent;
+  border-color: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.m-nav__burger {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--uhd-d-text);
+  cursor: pointer;
+}
+@keyframes m-sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes m-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+/* 原站 Hero 入场 hero-fade：淡入＋上移 16px、.74s ease-out（无模糊，桌面移动一致） */
+@keyframes landing-hero-fade {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .eyebrow {
   margin: 0 0 18px;
   font-size: var(--uhd-fs-aux);
@@ -269,9 +522,15 @@ const year = new Date().getFullYear()
 .sec-title {
   margin: 0 0 16px;
   text-align: center;
-  font-size: clamp(36px, 4.6vw, 56px);
+  font-family: var(--uhd-font-display);
+  /* 原站 --text-landing-service-hero: clamp(2rem, 4.4vw, 4.4rem) */
+  font-size: clamp(32px, 4.4vw, 70.4px);
   font-weight: var(--uhd-fw-extrabold);
   line-height: 1.15;
+}
+.sec-title--platforms {
+  /* 原站 --text-landing-platforms-title: clamp(1.8rem, 3.4vw, 2.8rem) */
+  font-size: clamp(28.8px, 3.4vw, 44.8px);
 }
 .sec-sub {
   margin: 0 auto;
@@ -302,17 +561,40 @@ const year = new Date().getFullYear()
   transform: rotate(18deg);
   pointer-events: none;
 }
+/* 棱镜主视觉（D1-03）：桌面居右上、移动端全幅居顶（见文末断点） */
+.hero-visual {
+  position: absolute;
+  top: 84px;
+  right: 1.5%;
+  width: min(620px, 46vw);
+  aspect-ratio: 390 / 236;
+  pointer-events: none;
+  /* 桌面：四边径向柔化，扇面融进底色不留矩形硬边（移动端全幅出血不套此罩） */
+  -webkit-mask-image: radial-gradient(ellipse 92% 90% at 50% 46%, #000 52%, transparent 97%);
+  mask-image: radial-gradient(ellipse 92% 90% at 50% 46%, #000 52%, transparent 97%);
+}
+.hero-visual svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.hero-visual .hv-fan {
+  filter: blur(5px);
+  mix-blend-mode: screen;
+}
 .hero-inner {
   position: relative;
   width: 100%;
   max-width: var(--uhd-container-marketing);
   margin: 0 auto;
   padding: 130px 28px 120px;
-  animation: uhd-blur-in var(--uhd-dur-hero) var(--uhd-ease-pop);
+  animation: landing-hero-fade 0.74s ease-out both;
 }
 .hero-title {
   margin: 0 0 22px;
-  font-size: clamp(44px, 6vw, var(--uhd-fs-h1));
+  font-family: var(--uhd-font-display);
+  /* 原站 --text-landing-hero: clamp(2.1rem, 4.1vw, 3.9rem) */
+  font-size: clamp(33.6px, 4.1vw, 62.4px);
   font-weight: var(--uhd-fw-black);
   line-height: var(--uhd-lh-tight);
 }
@@ -341,9 +623,11 @@ const year = new Date().getFullYear()
 }
 .hero-scroll-hint {
   position: absolute;
-  right: 30px;
+  left: 50%;
+  transform: translateX(-50%);
   bottom: 26px;
   margin: 0;
+  white-space: nowrap;
   font-size: var(--uhd-fs-caption);
   color: var(--uhd-d-text-2);
 }
@@ -427,7 +711,9 @@ const year = new Date().getFullYear()
 }
 .pin-title {
   margin: 0 0 14px;
-  font-size: clamp(48px, 6.4vw, 76px);
+  font-family: var(--uhd-font-display);
+  /* 原站 --text-landing-immersive-title: clamp(2.25rem, 4.8vw, 5.4rem) */
+  font-size: clamp(36px, 4.8vw, 86.4px);
   font-weight: var(--uhd-fw-black);
   line-height: 1.1;
 }
@@ -469,9 +755,15 @@ const year = new Date().getFullYear()
 }
 .ess-h3 {
   margin: 0 0 12px;
-  font-size: clamp(28px, 3vw, 38px);
+  font-family: var(--uhd-font-display);
+  /* 原站 --text-landing-service-title: clamp(1.6rem, 2.4vw, 2.4rem) */
+  font-size: clamp(25.6px, 2.4vw, 38.4px);
   font-weight: var(--uhd-fw-extrabold);
   line-height: 1.2;
+}
+.ess-card--wide .ess-h3 {
+  /* 原站 --text-landing-service-title-lg: clamp(1.6rem, 2.6vw, 2.6rem) */
+  font-size: clamp(25.6px, 2.6vw, 41.6px);
 }
 .ess-desc {
   margin: 0;
@@ -544,6 +836,70 @@ const year = new Date().getFullYear()
   font-size: var(--uhd-fs-aux-sm);
   color: var(--uhd-d-text-2);
 }
+/* 移动端设备示意条：桌面不显示，仅 ≤900px（见文末断点） */
+.ess-devices-m {
+  display: none;
+}
+.dm-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 14px;
+}
+.dm {
+  position: relative;
+  flex: none;
+  border: 1.5px solid var(--uhd-d-chip-border);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dm--tv { width: 104px; height: 62px; }
+.dm--laptop { width: 84px; height: 56px; }
+.dm--tablet { width: 46px; height: 62px; }
+.dm--phone { width: 28px; height: 56px; }
+.dm-play {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--uhd-d-text-2);
+  position: relative;
+}
+.dm-play::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 55%;
+  transform: translate(-50%, -50%);
+  border-style: solid;
+  border-width: 3.5px 0 3.5px 6px;
+  border-color: transparent transparent transparent var(--uhd-d-text);
+}
+.dm-play--sm { width: 15px; height: 15px; }
+.dm-play--sm::after { border-width: 2.5px 0 2.5px 4px; }
+.dm-bar {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 7px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.18);
+}
+.dm-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--uhd-d-text);
+}
+.dm-note {
+  margin: 14px 0 0;
+  text-align: center;
+  font-size: var(--uhd-fs-aux-sm);
+  letter-spacing: 0.14em;
+  color: var(--uhd-d-text-2);
+}
 /* 左窄卡时间轴 */
 .ess-timeline { margin-top: 34px; }
 .ess-timeline-meta {
@@ -565,6 +921,23 @@ const year = new Date().getFullYear()
   border-radius: 2px;
   background: var(--uhd-d-text);
 }
+.ess-timeline-mid {
+  font-weight: var(--uhd-fw-semibold);
+  color: var(--uhd-d-text);
+}
+.ess-timeline-marks {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: var(--uhd-fs-aux-sm);
+  color: var(--uhd-d-text-2);
+  white-space: nowrap;
+}
+.ess-timeline-marks b {
+  color: var(--uhd-d-text);
+  font-weight: var(--uhd-fw-semibold);
+}
 /* 右宽卡海报砖墙占位 */
 .ess-card--library { padding-top: 0; }
 .ess-wall {
@@ -582,23 +955,31 @@ const year = new Date().getFullYear()
 .ess-tile--2 { background: #151515; }
 .ess-tile--3 { background: #101010; }
 .ess-tile--4 { background: #131313; }
-.ess-stats {
+/* 片库卡功能行（无数字版式） */
+.ess-points {
+  list-style: none;
+  margin: 28px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 15px;
+}
+.ess-points li {
   display: flex;
-  gap: 40px;
-  flex-wrap: wrap;
-  margin-top: 30px;
-}
-.ess-stat-num {
-  margin: 0 0 4px;
-  font-family: var(--uhd-font-display);
-  font-size: var(--uhd-fs-display);
-  font-weight: var(--uhd-fw-black);
-  line-height: 1;
-}
-.ess-stat-label {
-  margin: 0;
-  font-size: var(--uhd-fs-caption);
+  align-items: flex-start;
+  gap: 12px;
+  font-size: var(--uhd-fs-body);
+  line-height: var(--uhd-lh-body);
   color: var(--uhd-d-text-2);
+}
+.ess-points li svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--uhd-d-text-2);
+}
+.ess-points b {
+  margin-right: 10px;
+  color: var(--uhd-d-text);
+  font-weight: var(--uhd-fw-semibold);
 }
 
 /* ---------- 页脚 ---------- */
@@ -625,14 +1006,221 @@ const year = new Date().getFullYear()
 .landing-foot-links a:hover { color: var(--uhd-d-text); }
 
 @media (max-width: 900px) {
+  /* ---- 顶栏：原站形态——未滚动整条透明、滚动后玻璃 pill 浮起；菜单为底部抽屉 ---- */
+  .landing-nav { display: none; }
+  .m-nav {
+    position: fixed;
+    top: 16px;
+    left: 12px;
+    right: 12px;
+    z-index: 70;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 8px;
+  }
+  .m-nav::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: var(--uhd-border-w) solid var(--uhd-glass-border);
+    border-radius: 9999px;
+    background: var(--uhd-glass-d);
+    backdrop-filter: var(--uhd-glass-filter);
+    -webkit-backdrop-filter: var(--uhd-glass-filter);
+    opacity: 0;
+    transition: opacity 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+    pointer-events: none;
+  }
+  .m-nav.is-on::before { opacity: 1; }
+  .m-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 65;
+    display: block;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    animation: m-fade-in 0.3s ease-out;
+  }
+  .m-scrim.is-out {
+    opacity: 0;
+    transition: opacity 0.3s ease-out;
+  }
+  .m-sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 66;
+    display: block;
+    border-top: var(--uhd-border-w) solid var(--uhd-glass-border);
+    border-radius: 28px 28px 0 0;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 32%, rgba(255, 255, 255, 0) 62%),
+      rgba(20, 21, 25, 0.88);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    box-shadow: 0 -18px 50px rgba(0, 0, 0, 0.45);
+    animation: m-sheet-in 0.38s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .m-sheet.is-out {
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .m-sheet__handle {
+    display: flex;
+    justify-content: center;
+    padding: 14px 0 8px;
+  }
+  .m-sheet__handle span {
+    width: 40px;
+    height: 3px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.2);
+  }
+  .m-sheet__links {
+    display: flex;
+    flex-direction: column;
+    padding: 4px 12px 12px;
+  }
+  .m-sheet__row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    padding: 14px 16px;
+    border: none;
+    border-radius: 16px;
+    background: transparent;
+    color: var(--uhd-d-text);
+    font-size: 15px;
+    font-weight: var(--uhd-fw-medium);
+    text-align: left;
+    cursor: pointer;
+  }
+  .m-sheet__row svg {
+    flex: none;
+    opacity: 0.4;
+  }
+  .m-sheet__row:active { background: rgba(255, 255, 255, 0.08); }
+  .m-sheet__divider {
+    height: 1px;
+    margin: 0 20px;
+    background: rgba(255, 255, 255, 0.07);
+  }
+  .m-sheet__cta {
+    padding: 16px 16px max(20px, env(safe-area-inset-bottom));
+  }
+  .m-sheet__cta :deep(.uhd-btn) {
+    padding-top: 20px;
+    padding-bottom: 20px;
+    font-size: 15px;
+  }
+
+  /* ---- Hero：入场用原站 hero-fade（单层淡入上移，无模糊无叠影）；糊光光斑让位棱镜主视觉（返工单①③） ---- */
+  .hero {
+    min-height: 100vh;
+    min-height: 100svh;
+    align-items: flex-start;
+  }
+  .hero-beam { display: none; }
+  .hero-visual {
+    display: block;
+    position: absolute;
+    top: 60px;
+    left: 0;
+    right: 0;
+    width: auto;
+    height: 236px;
+    pointer-events: none;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .hero-visual svg {
+    width: 100%;
+    height: 100%;
+  }
+  .hero-inner {
+    padding: 308px 22px 92px;
+  }
+  .hero-specs {
+    gap: 18px 24px;
+    margin-top: 40px;
+  }
+  .hero-scroll-hint {
+    left: 0;
+    right: 0;
+    bottom: 18px;
+    transform: none;
+    text-align: center;
+  }
+
+  /* ---- 跑马灯：收紧字距行距与区块留白（返工单⑥） ---- */
+  .marquee-sec { padding: 84px 0 76px; }
+  .marquee {
+    gap: 30px;
+    margin-top: 44px;
+  }
+  .marquee-track {
+    gap: 72px;
+    padding-right: 72px;
+  }
+  .marquee-word { font-size: 19px; }
+
+  /* ---- 彩虹色带：钉住改普通流式（重影根因之二），两态上下排布、各自全不透明；
+         色带提亮＋上下柔边过渡，文案压在各自区块下半区居中（返工单①⑤） ---- */
+  .pin-sec { height: auto; }
+  .pin-stage {
+    position: relative;
+    height: auto;
+    display: block;
+  }
+  .pin-stripes {
+    opacity: 0.62;
+    -webkit-mask-image: linear-gradient(180deg, transparent, black 10%, black 90%, transparent);
+    mask-image: linear-gradient(180deg, transparent, black 10%, black 90%, transparent);
+  }
+  .pin-stripes::after {
+    background: radial-gradient(ellipse 90% 70% at 50% 55%, transparent 34%, rgba(0, 0, 0, 0.5) 100%);
+  }
+  .pin-copy {
+    position: relative;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    min-height: 68vh;
+    min-height: 68svh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0 24px 10vh;
+    opacity: 1 !important;
+  }
+
+  /* ---- 一份订阅：卡片区收紧留白、补移动设备示意、片库砖墙换彩谱渐变（返工单④） ---- */
+  .essentials { padding: 84px 20px 76px; }
   .ess-grid { grid-template-columns: 1fr; }
   .ess-card--wide { grid-template-columns: 1fr; }
   .ess-devices { display: none; }
-  .hero-specs { gap: 20px; }
+  .ess-devices-m {
+    display: block;
+    margin-top: 28px;
+  }
+  .ess-tile {
+    background: linear-gradient(160deg, #233447, #12161d);
+  }
+  .ess-tile--2 { background: linear-gradient(160deg, #3a2b45, #17121d); }
+  .ess-tile--3 { background: linear-gradient(160deg, #453026, #1d1410); }
+  .ess-tile--4 { background: linear-gradient(160deg, #274435, #101a14); }
+  .ess-points b { display: block; margin: 0 0 2px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .hero-inner { animation: none; }
   .marquee-track { animation: none; }
+  .m-sheet,
+  .m-scrim { animation: none; }
   .hero-sub-fade-enter-active,
   .hero-sub-fade-leave-active { transition: none; }
 }
