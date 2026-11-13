@@ -308,6 +308,7 @@
  * 流量计量与在线支付本站未接入，申请表单里如实标注、不假装已接通。
  * 页面跟随用户外观（浅/深两套本地变量，与概览页同口径）。
  */
+import './team-view.css'
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import Modal from '@/components/ui/Modal.vue'
 import { teamApi, type MyTeam, type TeamApplication, type TeamConfig, type TeamMemberRow } from '@/api/team'
@@ -533,11 +534,6 @@ onMounted(load)
 /* 团队管理：跟随用户外观的平面结构。本地主题变量：缺省深色，
    html[data-theme='light'] 时整套换浅（与概览页同口径）。 */
 .tm-page {
-  --tm-line: rgba(255, 255, 255, 0.1);
-  --tm-card: #17181c;
-  --tm-input-bg: rgba(255, 255, 255, 0.06);
-  --tm-text-2: rgba(255, 255, 255, 0.62);
-  --tm-text-3: rgba(255, 255, 255, 0.42);
   min-height: 100dvh;
   background: #050505;
   color: #ffffff;
@@ -795,11 +791,6 @@ onMounted(load)
 html[data-theme='light'] .tm-page {
   background: #f8f8f8;
   color: #111111;
-  --tm-line: #e7e7e7;
-  --tm-card: #ffffff;
-  --tm-input-bg: #f5f5f5;
-  --tm-text-2: #55575c;
-  --tm-text-3: #9a9da3;
 }
 html[data-theme='light'] .tm-btn--danger { color: #dc2626; }
 html[data-theme='light'] .tm-btn--primary {
