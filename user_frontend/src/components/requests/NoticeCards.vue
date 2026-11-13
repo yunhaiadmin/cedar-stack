@@ -13,7 +13,13 @@
       class="rf-notice__row"
       :class="'rf-notice__row--' + card.tone"
     >
-      <p class="rf-notice__row-title">{{ card.title }}</p>
+      <p class="rf-notice__row-title">
+        <svg class="rf-notice__shield" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z" />
+          <path d="M12 8v4" />
+          <path d="M12 15.5h.01" />
+        </svg>{{ card.title }}
+      </p>
       <p v-if="card.body" class="rf-notice__row-body">{{ card.body }}</p>
     </div>
     <div v-if="cellCards.length" class="rf-notice__grid">
@@ -205,7 +211,10 @@ const cellCards = computed(() => group.value.cards.filter((c) => !c.wide))
 }
 .rf-notice__row--gray { background: #323335; }
 .rf-notice__row--red { background: rgba(252, 242, 243, 0.08); }
-.rf-notice__row-title { margin: 0 0 4px; font-size: 13px; font-weight: 700; color: #fbfcfd; }
+.rf-notice__row-title { margin: 0 0 4px; font-size: 13px; font-weight: 700; color: #fbfcfd; display: flex; align-items: center; gap: 6px; }
+/* 宽行标题前的小盾牌（照友站）：灰盒中性色、红盒红色 */
+.rf-notice__shield { flex: none; color: #d4d4d8; }
+.rf-notice__row--red .rf-notice__shield { color: #f87171; }
 .rf-notice__row--red .rf-notice__row-title { color: #fca5a5; }
 .rf-notice__row-body { margin: 0; font-size: 13px; line-height: 1.6; color: #9ca3af; }
 .rf-notice__row--red .rf-notice__row-body { color: #d4d4d8; }
@@ -237,6 +246,8 @@ html[data-theme='light'] .rf-notice__info { border-color: #d4d4d8; color: #55575
 html[data-theme='light'] .rf-notice__row--gray { background: #ededed; }
 html[data-theme='light'] .rf-notice__row--red { background: #fcf2f3; }
 html[data-theme='light'] .rf-notice__row--red .rf-notice__row-title { color: #b91c1c; }
+html[data-theme='light'] .rf-notice__shield { color: #55575c; }
+html[data-theme='light'] .rf-notice__row--red .rf-notice__shield { color: #dc2626; }
 html[data-theme='light'] .rf-notice__row-title { color: #111111; }
 html[data-theme='light'] .rf-notice__row-body { color: #6b7280; }
 html[data-theme='light'] .rf-notice__row--red .rf-notice__row-body { color: #55575c; }

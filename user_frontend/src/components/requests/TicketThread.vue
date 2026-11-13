@@ -11,12 +11,21 @@
     </div>
     <div v-else ref="messagesEl" class="rf-messages" tabindex="0" role="log" aria-label="对话记录">
       <p v-if="!messages.length" class="rf-messages__empty">还没有对话内容，我们会尽快回复</p>
-      <div v-for="msg in messages" :key="msg.id" class="rf-msg" :class="{ 'rf-msg--admin': msg.is_admin }">
-        <div class="rf-msg__body">
-          <span v-if="msg.is_admin" class="rf-msg__author">管理员回复{{ msg.admin_name ? ` · ${msg.admin_name}` : '' }}</span>
-          <span v-else class="rf-msg__author rf-msg__author--me">我的消息</span>
-          <span class="rf-msg__text">{{ msg.message }}</span>
-          <span class="rf-msg__time">{{ formatDate(msg.created_at) }}</span>
+      <!-- 时间线形态（照友站态3）：圆形头像（提交者＝人形／管理员＝盾牌）＋
+           名字＋角色标签＋时间＋灰气泡正文。本人线程是私密面，名字不打码；
+           状态迁移条目无事件源（后端无状态流水），不假造，只在卡头显当前状态。 -->
+      <div v-for="msg in messages" :key="msg.id" class="rf-tl">
+        <span class="rf-tl__avatar" :class="{ 'rf-tl__avatar--admin': msg.is_admin }" aria-hidden="true">
+          <Shield v-if="msg.is_admin" :size="16" />
+          <User v-else :size="16" />
+        </span>
+        <div class="rf-tl__main">
+          <div class="rf-tl__head">
+            <span class="rf-tl__name">{{ msg.is_admin ? (msg.admin_name || '管理员') : '我' }}</span>
+            <span class="rf-tl__role">{{ msg.is_admin ? '片库管理' : '提交者' }}</span>
+            <span class="rf-tl__time">{{ formatDate(msg.created_at) }}</span>
+          </div>
+          <p class="rf-tl__bubble">{{ msg.message }}</p>
         </div>
       </div>
     </div>
@@ -60,6 +69,7 @@
 
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { Shield, User } from 'lucide-vue-next'
 import Modal from '@/components/ui/Modal.vue'
 import { ticketApi, type Ticket, type TicketMessage } from '@/api'
 import { useToast } from '@/composables/useToast'
@@ -167,15 +177,29 @@ onUnmounted(() => { alive = false })
 @keyframes rf-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 .rf-err { font-size: 13px; color: #fca5a5; line-height: 1.6; }
 .rf-retry { margin-top: 6px; padding: 3px 12px; font-size: 12px; color: #fbfcfd; background: transparent; border: 1px solid currentColor; border-radius: 999px; cursor: pointer; opacity: 0.8; }
-.rf-messages { display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; }
+.rf-messages { display: flex; flex-direction: column; gap: 12px; max-height: 320px; overflow-y: auto; }
 .rf-messages__empty { margin: 0; padding: 1.5rem 0; text-align: center; font-size: 12px; color: #9ca3af; }
-.rf-msg { padding: 10px 12px; border-radius: 10px; background: #1e1f21; }
-.rf-msg--admin { background: rgba(47, 143, 224, 0.14); }
-.rf-msg__body { display: flex; flex-direction: column; gap: 4px; }
-.rf-msg__author { font-size: 12px; font-weight: 700; color: #6ea8fe; }
-.rf-msg__author--me { color: #9ca3af; }
-.rf-msg__text { color: #fbfcfd; font-size: 13px; line-height: 1.7; word-break: break-word; white-space: pre-wrap; }
-.rf-msg__time { font-size: 11px; color: #9ca3af; }
+/* 时间线条目：头像列＋主列（头行＋灰气泡） */
+.rf-tl { display: flex; gap: 10px; }
+.rf-tl__avatar {
+  flex: none; width: 32px; height: 32px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #26262a; color: #d4d4d8;
+}
+.rf-tl__avatar--admin { background: rgba(47, 143, 224, 0.18); color: #6ea8fe; }
+.rf-tl__main { flex: 1; min-width: 0; }
+.rf-tl__head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rf-tl__name { font-size: 12px; font-weight: 700; color: #fbfcfd; }
+.rf-tl__role {
+  font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 6px;
+  background: #26262a; color: #9ca3af;
+}
+.rf-tl__time { margin-left: auto; font-size: 11px; color: #9ca3af; white-space: nowrap; }
+.rf-tl__bubble {
+  margin: 6px 0 0; padding: 10px 12px; border-radius: 10px;
+  background: #1e1f21; color: #fbfcfd;
+  font-size: 13px; line-height: 1.7; word-break: break-word; white-space: pre-wrap;
+}
 .rf-thread__actions { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
 .rf-reply { display: flex; gap: 8px; }
 .rf-reply input {
@@ -198,12 +222,12 @@ html[data-theme='light'] .rf-skeleton { background: #f0f0f1; }
 html[data-theme='light'] .rf-err { color: #dc2626; }
 html[data-theme='light'] .rf-retry { color: #111111; }
 html[data-theme='light'] .rf-messages__empty { color: #6b7280; }
-html[data-theme='light'] .rf-msg { background: #f9f9f9; }
-html[data-theme='light'] .rf-msg--admin { background: #e3ecf8; }
-html[data-theme='light'] .rf-msg__author { color: #2563eb; }
-html[data-theme='light'] .rf-msg__author--me { color: #6b7280; }
-html[data-theme='light'] .rf-msg__text { color: #111111; }
-html[data-theme='light'] .rf-msg__time { color: #6b7280; }
+html[data-theme='light'] .rf-tl__avatar { background: #f0f0f1; color: #55575c; }
+html[data-theme='light'] .rf-tl__avatar--admin { background: #e3ecf8; color: #2563eb; }
+html[data-theme='light'] .rf-tl__name { color: #111111; }
+html[data-theme='light'] .rf-tl__role { background: #f0f0f1; color: #6b7280; }
+html[data-theme='light'] .rf-tl__time { color: #6b7280; }
+html[data-theme='light'] .rf-tl__bubble { background: #f5f5f5; color: #111111; }
 html[data-theme='light'] .rf-reply input { background: #ffffff; border-color: #e5e5e5; color: #111111; }
 html[data-theme='light'] .rf-reply input:focus { border-color: #9ca3af; }
 html[data-theme='light'] .rf-reply__send { background: #111111; color: #ffffff; }
