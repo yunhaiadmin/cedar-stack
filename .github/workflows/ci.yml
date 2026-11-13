@@ -89,7 +89,11 @@ jobs:
 
   smoke:
     name: 后端 · 冒烟测试
-    runs-on: ubuntu-latest
+    # 钉死 24.04：2026-11-13 ubuntu-latest 已解析到 26.04（resolute），
+    # 其 apt 索引查不到 libvips42t64/libvips42，安装步 4 次重试全 exit 100；
+    # packages.ubuntu.com 上 26.04 确有该包，是 runner 镜像索引问题。
+    # 只钉冒烟 job，其余 job 仍走 ubuntu-latest。
+    runs-on: ubuntu-24.04
     # job 级 55 分钟是后备上限：pytest 步骤 45 分钟（2026-10-30 容量一期，
     # 见 pytest 步注释）+ 其余步骤实测约 5 分钟，55 分钟留有余量；
     # 单步仍各有超时，卡死仍会失败报错，不会静默转圈。
@@ -445,6 +449,9 @@ jobs:
             echo "ERROR: apt-get update failed after 4 attempts; libvips cannot be installed, failing loudly (vips thumbnail tests need libvips)"
             exit 1
           }
+          # 诊断：装之前先看索引里有没有这个包——26.04 runner 曾出现
+          # apt 索引查不到 libvips42t64 致安装 4 次重试全失败，policy 输出可定性。
+          apt-cache policy libvips42t64 || true
           apt_retry install_libvips || {
             echo "ERROR: libvips install failed after 4 attempts; failing loudly (vips thumbnail tests need libvips)"
             exit 1
