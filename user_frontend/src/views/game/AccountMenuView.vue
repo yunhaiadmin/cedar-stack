@@ -1,34 +1,72 @@
 <template>
   <div class="am-page">
-    <!-- 身份头：头像圆＋用户名＋订阅状态行（原站「我的」页形态） -->
-    <header class="am-identity">
+    <!-- 页头行：品牌标＋「我的」标题，右端「网页观影」彩虹边框胶囊（→片库面） -->
+    <header class="am-topbar">
+      <div class="am-brand">
+        <img v-if="branding.logo_url" class="am-brand__logo" :src="branding.logo_url" :alt="branding.site_name" />
+        <span v-else class="am-brand__mark" aria-hidden="true">{{ brandInitial }}</span>
+        <h1 class="am-brand__title">我的</h1>
+      </div>
+      <RouterLink to="/library" class="watch-pill">
+        <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+          <defs>
+            <linearGradient id="wp-g-menu" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#2f8fe0" />
+              <stop offset="0.5" stop-color="#e8766f" />
+              <stop offset="1" stop-color="#ecd04f" />
+            </linearGradient>
+          </defs>
+          <path d="M7 4.2v15.6c0 .8.9 1.3 1.6.9l11.6-7.8c.6-.4.6-1.3 0-1.7L8.6 3.3C7.9 2.9 7 3.4 7 4.2Z" fill="url(#wp-g-menu)" />
+        </svg>
+        网页观影
+      </RouterLink>
+    </header>
+
+    <!-- 身份区：头像 64 圆＋名 24/800＋状态副行（真实文案） -->
+    <div class="am-identity">
       <span class="am-avatar" aria-hidden="true">{{ avatarInitial }}</span>
       <div class="am-identity__text">
-        <h1 class="am-username">{{ displayName }}</h1>
+        <p class="am-username">{{ displayName }}</p>
         <p class="am-status">{{ statusLine }}</p>
       </div>
-    </header>
+    </div>
 
     <main class="am-body">
       <section v-for="group in groups" :key="group.title" class="am-group" :aria-label="group.title">
         <h2 class="am-group__title">{{ group.title }}</h2>
-        <div class="am-card">
-          <template v-for="item in group.items" :key="item.key">
-            <RouterLink v-if="item.to" :to="item.to" class="am-row">
-              <component :is="item.icon" :size="20" class="am-row__icon" aria-hidden="true" />
-              <span class="am-row__name">{{ item.label }}</span>
-              <span v-if="item.value" class="am-row__value">{{ item.value }}</span>
-              <ChevronRight :size="17" class="am-row__chev" aria-hidden="true" />
-            </RouterLink>
-            <button v-else type="button" class="am-row" :class="{ 'am-row--danger': item.danger }" @click="item.action?.()">
-              <component :is="item.icon" :size="20" class="am-row__icon" aria-hidden="true" />
-              <span class="am-row__name">{{ item.label }}</span>
-              <span v-if="item.value" class="am-row__value">{{ item.value }}</span>
-              <ChevronRight :size="17" class="am-row__chev" aria-hidden="true" />
-            </button>
-          </template>
-        </div>
+        <template v-for="item in group.items" :key="item.key">
+          <!-- 外观行：右端内嵌三档分段控件（系统/浅色/深色），接现行外观机制 -->
+          <div v-if="item.key === 'theme'" class="am-row am-row--static">
+            <span class="am-row__name">{{ item.label }}</span>
+            <div class="am-seg" role="group" aria-label="外观">
+              <button
+                v-for="opt in THEME_OPTIONS"
+                :key="opt.value"
+                type="button"
+                class="am-seg__btn"
+                :class="{ 'am-seg__btn--on': preference === opt.value }"
+                :aria-pressed="preference === opt.value"
+                @click="setPreference(opt.value)"
+              >{{ opt.label }}</button>
+            </div>
+          </div>
+          <RouterLink v-else-if="item.to" :to="item.to" class="am-row">
+            <span class="am-row__name">{{ item.label }}</span>
+            <span v-if="item.value" class="am-row__value">{{ item.value }}</span>
+            <ChevronRight :size="16" class="am-row__chev" aria-hidden="true" />
+          </RouterLink>
+          <button v-else type="button" class="am-row" @click="item.action?.()">
+            <span class="am-row__name">{{ item.label }}</span>
+            <span v-if="item.value" class="am-row__value">{{ item.value }}</span>
+            <ChevronRight :size="16" class="am-row__chev" aria-hidden="true" />
+          </button>
+        </template>
       </section>
+
+      <!-- 退出登录：列表下方独立整宽胶囊按钮（原站形态），行为保持现有登出逻辑 -->
+      <!-- 安装应用入口：组件由 PWA 单提供（随其 PR 先行落地），已安装时自隐藏 -->
+      <UhdInstallRow />
+      <button type="button" class="am-logout" @click="handleLogout">退出登录</button>
     </main>
   </div>
 </template>
@@ -36,22 +74,19 @@
 <script setup lang="ts">
 /**
  * 「我的」（/game/account/menu）——用户中心移动端底坞的第二个页签页。
- * 形态照原站用户中心「我的」页：身份头＋分组菜单列表行（右值＋右箭头）。
- * 条目与 UhdAccountLayout 侧栏分组一一对应（我的/资产/补给站/探险设施
- * 的全部真实功能一个不丢，代理中心同口径仅代理可见），另加外观切换与
- * 退出登录两个动作行。深色 app 形态与订阅页同一套 UHD 语言；
- * 桌面为同结构居中单列。
+ * 2026-11-13 按 UHDNow 原站 1:1 返工：平面列表（分组粗标题＋发丝线，
+ * 无卡片、无行图标）＋页头「网页观影」胶囊＋外观三档内嵌分段，
+ * 页面跟随用户外观（浅/深两套本地变量，不再强制深色）。
+ * 条目集合与返工前完全一致（订阅与财务/账户/探险设施/系统，
+ * 代理中心同口径仅代理可见），一个不丢。
  */
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import {
-  Bird, Briefcase, CalendarCheck, CalendarDays, ChevronRight, Compass,
-  CreditCard, Crown, Home, List, LogOut, Moon, Mountain, Package, Plug,
-  Radio, Settings, Shirt, Sparkles, Users, Wallet,
-  type LucideIcon,
-} from 'lucide-vue-next'
+import { RouterLink, useRouter } from 'vue-router'
+import { ChevronRight } from 'lucide-vue-next'
 import { useUserStore } from '@/stores/user'
 import { useTheme } from '@/composables/useTheme'
+import { branding } from '@/composables/useBranding'
+import UhdInstallRow from '@/components/uhd/UhdInstallRow.vue'
 import { getAgentMe } from '@/api/agent'
 import { pointsApi } from '@/api/economy'
 import { subscriptionApi, type MySubscription } from '@/api'
@@ -59,10 +94,8 @@ import { subscriptionApi, type MySubscription } from '@/api'
 interface MenuItem {
   key: string
   label: string
-  icon: LucideIcon
   to?: string
   value?: string
-  danger?: boolean
   action?: () => void
 }
 interface MenuGroup {
@@ -70,15 +103,22 @@ interface MenuGroup {
   items: MenuItem[]
 }
 
+const THEME_OPTIONS = [
+  { value: 'system', label: '系统' },
+  { value: 'light', label: '浅色' },
+  { value: 'dark', label: '深色' },
+] as const
+
 const router = useRouter()
 const userStore = useUserStore()
-const { resolved, setPreference } = useTheme()
+const { preference, setPreference } = useTheme()
 
 const mySubs = ref<MySubscription[]>([])
 const pointsBalance = ref<number | null>(null)
 const isAgent = ref(false)
 
 const displayName = computed(() => userStore.user?.username || '我的')
+const brandInitial = computed(() => (branding.site_name.trim().charAt(0) || 'A').toUpperCase())
 const avatarInitial = computed(() => (displayName.value.trim().charAt(0) || '我').toUpperCase())
 const activeSub = computed(
   () => mySubs.value.find((s) => s.status === 'active' && s.days_left > 0) ?? null,
@@ -95,60 +135,38 @@ const groups = computed<MenuGroup[]>(() => {
     {
       key: 'subscribe',
       label: '订阅服务',
-      icon: CreditCard,
       to: '/game/account/subscribe',
       value: activeSub.value?.plan_name || undefined,
     },
-    { key: 'member', label: '我的会员', icon: Crown, to: '/game/account/member' },
+    { key: 'member', label: '我的会员', to: '/game/account/member' },
     {
       key: 'shop',
       label: '补给站',
-      icon: Wallet,
       to: '/shop',
       value: pointsBalance.value == null ? undefined : `能量 ${pointsBalance.value.toLocaleString()}`,
     },
-    { key: 'ledger', label: '能量账本', icon: List, to: '/game/ledger' },
-    { key: 'supply', label: '补给记录', icon: Package, to: '/game/supply' },
+    { key: 'ledger', label: '能量账本', to: '/game/ledger' },
+    { key: 'supply', label: '补给记录', to: '/game/supply' },
   ]
   const account: MenuItem[] = [
-    { key: 'overview', label: '我的概览', icon: Home, to: '/game/account' },
-    { key: 'settings', label: '账号与设置', icon: Settings, to: '/game/account/settings' },
-    { key: 'wishlist', label: '许愿池', icon: Sparkles, to: '/game/wishlist' },
+    { key: 'settings', label: '账号与设置', to: '/game/account/settings' },
+    { key: 'wishlist', label: '许愿池', to: '/game/wishlist' },
   ]
   if (isAgent.value) {
-    account.push({ key: 'agent', label: '代理中心', icon: Briefcase, to: '/game/agent' })
+    account.push({ key: 'agent', label: '代理中心', to: '/game/agent' })
   }
-  const explore: MenuItem[] = [
-    { key: 'explore', label: '探险日志', icon: Mountain, to: '/game' },
-    { key: 'checkin', label: '每日报到', icon: CalendarCheck, to: '/game/checkin' },
-    { key: 'calendar', label: '探险预告', icon: CalendarDays, to: '/game/calendar' },
-    { key: 'signal', label: '求救信号', icon: Radio, to: '/game/signal' },
-    { key: 'pigeon', label: '信鸽', icon: Bird, to: '/game/pigeon' },
-    { key: 'companion', label: '结伴同行', icon: Users, to: '/game/companion' },
-    { key: 'guide', label: '向导', icon: Compass, to: '/game/guide' },
-    { key: 'outfit', label: '换装', icon: Shirt, to: '/game/outfit' },
-    { key: 'operator', label: '接线员', icon: Plug, to: '/game/operator' },
+  // 用户 2026-11-13 11:55 圈选令：探险设施整组摘除、「我的概览」行删除；
+  // 求救信号（保留并升级）、每日报到、信鸽（去留未定）先安置到「日常与帮助」组。
+  const daily: MenuItem[] = [
+    { key: 'checkin', label: '每日报到', to: '/game/checkin' },
+    { key: 'pigeon', label: '信鸽', to: '/game/pigeon' },
+    { key: 'signal', label: '求救信号', to: '/game/signal' },
   ]
-  const system: MenuItem[] = [
-    {
-      key: 'theme',
-      label: '外观',
-      icon: Moon,
-      value: resolved.value === 'dark' ? '深色' : '浅色',
-      action: () => setPreference(resolved.value === 'dark' ? 'light' : 'dark'),
-    },
-    {
-      key: 'logout',
-      label: '退出登录',
-      icon: LogOut,
-      danger: true,
-      action: () => void handleLogout(),
-    },
-  ]
+  const system: MenuItem[] = [{ key: 'theme', label: '外观' }]
   return [
     { title: '订阅与财务', items: finance },
     { title: '账户', items: account },
-    { title: '探险设施', items: explore },
+    { title: '日常与帮助', items: daily },
     { title: '系统', items: system },
   ]
 })
@@ -173,34 +191,91 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-/* 「我的」：深色 app 形态，与订阅页同一套 UHD 语言 */
+/* 「我的」：跟随用户外观的平面列表。本地主题变量：缺省深色，
+   html[data-theme='light'] 时整套换浅（与 useTheme 的 data-theme 口径一致）。 */
 .am-page {
   min-height: 100dvh;
-  background: var(--uhd-d-bg);
-  color: var(--uhd-d-text);
+  background: #050505;
+  color: #ffffff;
   font-family: var(--uhd-font-sans);
   -webkit-font-smoothing: antialiased;
 }
+
+/* 页头行 */
+.am-topbar {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: calc(14px + env(safe-area-inset-top)) 20px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.am-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.am-brand__logo {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+.am-brand__mark {
+  font-size: 24px;
+  font-weight: var(--uhd-fw-black);
+  line-height: 1;
+  color: #ffffff;
+}
+.am-brand__title {
+  margin: 0;
+  font-family: var(--uhd-font-sans);
+  font-size: 20px;
+  font-weight: var(--uhd-fw-extrabold);
+  color: #ffffff;
+}
+/* 「网页观影」胶囊：彩虹边框＋浅底（深色为深毛玻璃），与概览页同款 */
+.watch-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 16px;
+  border: 1.5px solid transparent;
+  border-radius: 999px;
+  background:
+    linear-gradient(rgba(22, 22, 25, 0.72), rgba(22, 22, 25, 0.72)) padding-box,
+    var(--uhd-rainbow) border-box;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: var(--uhd-fw-semibold);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+/* 身份区 */
 .am-identity {
   max-width: 760px;
   margin: 0 auto;
-  padding: calc(22px + env(safe-area-inset-top)) 20px 4px;
+  padding: 20px 20px 2px;
   display: flex;
   align-items: center;
   gap: 14px;
 }
 .am-avatar {
   flex: 0 0 auto;
-  width: 54px;
-  height: 54px;
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--uhd-d-surface-raised);
-  border: 1px solid var(--uhd-d-border);
-  color: var(--uhd-d-text);
-  font-size: 22px;
+  background: #232329;
+  color: #ffffff;
+  font-size: 26px;
   font-weight: var(--uhd-fw-extrabold);
 }
 .am-identity__text {
@@ -208,87 +283,145 @@ onMounted(async () => {
 }
 .am-username {
   margin: 0;
-  font-family: var(--uhd-font-sans);
-  font-size: 21px;
+  font-size: 24px;
   font-weight: var(--uhd-fw-extrabold);
   letter-spacing: -0.01em;
-  color: var(--uhd-d-text);
+  color: #ffffff;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .am-status {
-  margin: 3px 0 0;
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-d-text-3);
+  margin: 4px 0 0;
+  font-size: 14.5px;
+  color: rgba(255, 255, 255, 0.62);
 }
+
+/* 平面分组列表：粗标题＋发丝线行，无卡片无行图标 */
 .am-body {
   max-width: 760px;
   margin: 0 auto;
-  padding: 18px 16px 128px;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
+  padding: 4px 20px 150px;
+  box-sizing: border-box;
 }
 .am-group__title {
-  margin: 0 0 10px 4px;
+  margin: 30px 0 6px;
   font-family: var(--uhd-font-sans);
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-semibold);
-  color: var(--uhd-d-text-3);
-}
-.am-card {
-  border-radius: var(--uhd-r-lg);
-  background: var(--uhd-d-surface);
-  border: 1px solid var(--uhd-d-border);
-  overflow: hidden;
+  font-size: 20px;
+  font-weight: var(--uhd-fw-extrabold);
+  color: #ffffff;
 }
 .am-row {
   width: 100%;
+  min-height: 57px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 15px 16px;
+  gap: 10px;
+  padding: 8px 2px;
   border: none;
-  border-top: 1px solid #1e1e21;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   background: transparent;
-  color: var(--uhd-d-text);
+  color: #ffffff;
   font-family: inherit;
-  font-size: var(--uhd-fs-body);
+  font-size: 17px;
   text-align: left;
   text-decoration: none;
   cursor: pointer;
   box-sizing: border-box;
 }
-.am-row:first-child {
-  border-top: none;
+.am-row--static {
+  cursor: default;
 }
 .am-row:active {
-  background: rgba(255, 255, 255, 0.05);
-}
-.am-row__icon {
-  flex: 0 0 auto;
-  color: var(--uhd-d-text-2);
+  opacity: 0.72;
 }
 .am-row__name {
   flex: 1 1 auto;
   font-weight: var(--uhd-fw-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .am-row__value {
   flex: 0 1 auto;
   min-width: 0;
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-d-text-3);
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.42);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .am-row__chev {
   flex: 0 0 auto;
-  color: var(--uhd-d-text-3);
+  color: rgba(255, 255, 255, 0.42);
 }
-.am-row--danger .am-row__name,
-.am-row--danger .am-row__icon {
+
+/* 外观三档分段：选中＝填充＋轻阴影 */
+.am-seg {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
+}
+.am-seg__btn {
+  border: none;
+  background: transparent;
+  padding: 6px 13px;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.62);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: var(--uhd-fw-medium);
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.am-seg__btn--on {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  font-weight: var(--uhd-fw-semibold);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+}
+
+/* 退出登录：独立整宽胶囊 */
+.am-logout {
+  width: 100%;
+  height: 54px;
+  margin-top: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: #17181c;
   color: var(--uhd-danger);
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: var(--uhd-fw-semibold);
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
 }
+.am-logout:active {
+  opacity: 0.78;
+}
+
+/* 浅色覆盖：跟随用户外观（html[data-theme='light']） */
+html[data-theme='light'] .am-page { background: #f8f8f8; color: #111111; }
+html[data-theme='light'] .am-brand__mark { color: #111111; }
+html[data-theme='light'] .am-brand__title { color: #111111; }
+html[data-theme='light'] .watch-pill {
+  background:
+    linear-gradient(#ffffff, #ffffff) padding-box,
+    var(--uhd-rainbow) border-box;
+  color: #111111;
+}
+html[data-theme='light'] .am-avatar { background: #e9e9ec; color: #111111; }
+html[data-theme='light'] .am-username { color: #111111; }
+html[data-theme='light'] .am-status { color: #55575c; }
+html[data-theme='light'] .am-group__title { color: #111111; }
+html[data-theme='light'] .am-row { border-bottom-color: #e7e7e7; color: #111111; }
+html[data-theme='light'] .am-row__value { color: #9a9da3; }
+html[data-theme='light'] .am-row__chev { color: #9a9da3; }
+html[data-theme='light'] .am-seg { background: #ececee; }
+html[data-theme='light'] .am-seg__btn { color: #55575c; }
+html[data-theme='light'] .am-seg__btn--on { background: #ffffff; color: #111111; }
+html[data-theme='light'] .am-logout { background: #ffffff; border-color: #e7e7e7; }
 </style>
