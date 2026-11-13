@@ -740,8 +740,11 @@ onMounted(() => {
   animation: authColumnIn var(--uhd-dur-blur-in) var(--uhd-ease-pop) both;
 }
 @keyframes authColumnIn {
-  from { opacity: 0; transform: translateY(12px); filter: blur(6px); }
-  to { opacity: 1; transform: none; filter: blur(0); }
+  /* 入场只做淡入＋上浮，不对整卡做 blur：卡里全是文字与输入框，blur 动画期间
+     每个字都被涂抹成重影（2026-11-13 用户录屏实证，手机上读作「文字双份」），
+     落定才恢复。原站的 blur 揭示用在大标题展示字上，不整卡套用。 */
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
 }
 .auth-title {
   margin: 0 0 1.6rem;
