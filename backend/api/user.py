@@ -1497,7 +1497,14 @@ def get_my_subscription_records(
         models.SubscriptionOrder.user_id == current_user.id
     ).order_by(models.SubscriptionOrder.created_at.desc()).limit(100).all()
     ordered_sub_ids = {o.subscription_id for o in orders if o.subscription_id}
+    # 订单行的「到期」= 它履约出的那份订阅的结束时间（待支付/已关单还没履约 → 无）
+    ordered_sub_ends = {
+        s.id: s.end_date for s in db.query(models.UserSubscription).filter(
+            models.UserSubscription.id.in_(ordered_sub_ids)
+        ).all()
+    } if ordered_sub_ids else {}
     for o in orders:
+        end = ordered_sub_ends.get(o.subscription_id) if o.subscription_id else None
         records.append({
             "kind": "order",
             "time": o.created_at.isoformat() if o.created_at else None,
@@ -1507,6 +1514,7 @@ def get_my_subscription_records(
             "amount": float(o.amount) if o.amount is not None else None,
             # pending / paid / refunded / closed（订单状态，前端映射人话）
             "status": o.status,
+            "expires_at": end.isoformat() if end else None,
         })
 
     subs = db.query(models.UserSubscription).filter(
@@ -1539,6 +1547,7 @@ def get_my_subscription_records(
             "days": days,
             "amount": None,
             "status": status,
+            "expires_at": sub.end_date.isoformat() if sub.end_date else None,
         })
 
     records.sort(key=lambda r: r["time"] or "", reverse=True)

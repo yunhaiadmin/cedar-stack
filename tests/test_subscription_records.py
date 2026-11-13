@@ -121,15 +121,23 @@ def test_records_merge_orders_and_grants(db):
     assert records[0]["status"] == "active"
     assert records[0]["days"] == 30
     assert records[0]["amount"] is None
+    # 发放行的到期 = 订阅本身的 end_date
+    assert records[0]["expires_at"].startswith(
+        (now + timedelta(days=29)).date().isoformat())
     # 订单行用快照原名，不回查套餐现名
     paid = next(r for r in records if r["status"] == "paid")
     assert paid["kind"] == "order"
     assert paid["name"] == "远行执照"
     assert paid["days"] == 30
     assert paid["amount"] == 88.0
+    # 订单行的到期 = 它履约出的订阅的 end_date
+    assert paid["expires_at"].startswith(
+        (now + timedelta(days=28)).date().isoformat())
     # 待支付订单 days_granted=0 → None（还没发放，不许编时长）
     pend = next(r for r in records if r["status"] == "pending")
     assert pend["days"] is None
+    # 待支付还没履约 → 没有到期时间
+    assert pend["expires_at"] is None
 
 
 def test_records_empty_for_new_user(db):

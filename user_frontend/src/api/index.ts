@@ -948,6 +948,8 @@ export interface SubscriptionRecordRow {
   amount: number | null
   /** order: pending/paid/refunded/closed；grant: active/expired/cancelled */
   status: string
+  /** 到期时间：订单行取其履约订阅的结束时间，未履约/无订阅为 null */
+  expires_at: string | null
 }
 
 /**

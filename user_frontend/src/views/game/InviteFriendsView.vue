@@ -2,8 +2,12 @@
   <div class="iv-page">
     <header class="iv-topbar">
       <RouterLink to="/game/account/menu" class="iv-back" aria-label="返回我的">
-        <ChevronLeft :size="20" aria-hidden="true" />
+        <ChevronLeft :size="22" aria-hidden="true" />
         <span>邀请好友</span>
+      </RouterLink>
+      <RouterLink to="/library" class="iv-watch">
+        <Play :size="15" class="iv-watch__icon" aria-hidden="true" />
+        <span>网页观影</span>
       </RouterLink>
     </header>
 
@@ -32,16 +36,25 @@
             <p class="iv-stats">已邀请 {{ records.length }} 人 · 累计返利 {{ totalRebate }}</p>
           </section>
 
-          <!-- 规则说明：比例读后端配置（invitation_rebate_percent），不写死数字；
-               返利去向按已定版口径——进余额钱包；钱包未上线前只记账不发放 -->
+          <!-- 规则说明：两段照友站结构（普通邀请/福利邀请），数字全读后端
+               配置（invitation_rebate_percent / invitation_invitee_reward_points），
+               不写死；返利去向按已定版口径——进余额钱包，钱包未上线前只记账 -->
           <section class="iv-card">
             <h2 class="iv-card__title">邀请规则</h2>
+            <h3 class="iv-rule-sub">普通邀请</h3>
             <p class="iv-rule">
               好友通过你的邀请码或邀请链接注册成功，就是你的邀请好友。好友充值时，
               <template v-if="rebatePercent > 0">系统按其充值金额的 {{ rebatePercent }}% 记一笔返利到你的返利台账。</template>
               <template v-else>系统会把返利记入你的返利台账。</template>
               余额钱包上线后，返利会直接发放到钱包；在此之前先记账，一笔都不会丢。
             </p>
+            <template v-if="inviteeReward > 0">
+              <h3 class="iv-rule-sub">福利邀请</h3>
+              <p class="iv-rule">
+                好友通过你的邀请注册成功，好友立刻得 {{ inviteeReward }} 积分见面礼，
+                不用等充值——把链接发给还没注册的朋友，先帮对方把礼领了。
+              </p>
+            </template>
           </section>
 
           <!-- 邀请记录 -->
@@ -80,7 +93,7 @@
  */
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { ChevronLeft } from 'lucide-vue-next'
+import { ChevronLeft, Play } from 'lucide-vue-next'
 import { inviteApi, type InvitationRecordRow, type MyInviteInfo } from '@/api/economy'
 import { useToast } from '@/composables/useToast'
 import './invite-friends.css'
@@ -95,6 +108,7 @@ const records = ref<InvitationRecordRow[]>([])
 const inviteEnabled = computed(() => info.value?.config?.enabled !== false)
 const myCode = computed(() => info.value?.code || '')
 const rebatePercent = computed(() => info.value?.config?.rebate_percent ?? 0)
+const inviteeReward = computed(() => info.value?.config?.invitee_reward_points ?? 0)
 const inviteLink = computed(() =>
   myCode.value ? `${window.location.origin}/login?invite=${myCode.value}` : '',
 )
