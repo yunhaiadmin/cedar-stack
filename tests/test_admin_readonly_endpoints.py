@@ -1,7 +1,7 @@
 """管理后台只读观测口（专线 B 第一阶段：补口）。
 
-覆盖 5 个新建 GET 口：绑定列表、采样进度、sidecar 状态、映射列表、
-139 池列表。全部在隔离临时 SQLite 里跑，不连生产库；sidecar 成功
+覆盖 3 个 GET 口：绑定列表、sidecar 状态、139 池列表
+（采样进度口已随批 3 sample_hash 删除、映射列表口已在主线移除）。全部在隔离临时 SQLite 里跑，不连生产库；sidecar 成功
 路径用本地假 UDS 服务端，不碰真实侧车。
 
 总线两口（/api/admin/playback-bus/snapshot 与 /commands）已在
@@ -112,14 +112,13 @@ def authed(client, admin):
 
 READ_PATHS = [
     "/api/admin/storage-bindings",
-    "/api/admin/sample-hash/progress",
     "/api/admin/providers/sidecar",
     "/api/admin/yun139/pools",
 ]
 
 
 def test_read_paths_require_auth(client):
-    """4 口无鉴权头 → 401/403（与 playback_admin 同口径）。"""
+    """3 口无鉴权头 → 401/403（与 playback_admin 同口径）。"""
     for path in READ_PATHS:
         r = client.get(path)
         assert r.status_code in (401, 403), path
@@ -154,35 +153,6 @@ def test_bindings_list_filters_and_no_credential_leak(db, authed):
                    params={"limit": 999, "offset": -5})
     assert r.json()["limit"] == 200
     assert r.json()["offset"] == 0
-
-
-def _lib(db):
-    row = em.Library(guid="g-readonly", name="电影库",
-                     collection_type="movies", paths="", storage_backends="")
-    db.add(row)
-    db.commit()
-    db.refresh(row)
-    return row
-
-
-def test_sample_hash_progress_counts_only_no_write(db, authed):
-    lib = _lib(db)
-    pending = em.MediaItem(guid="p1", library_id=lib.id, item_type="movie",
-                           name="p1", file_path="/data/a.mkv")
-    sampled = em.MediaItem(guid="s1", library_id=lib.id, item_type="movie",
-                           name="s1", file_path="/data/b.mkv",
-                           content_hash="ab" * 16,
-                           content_hash_algo="sample-sha256")
-    db.add_all([pending, sampled])
-    db.commit()
-    r = authed.get("/api/admin/sample-hash/progress")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["pending"] == 1
-    assert body["sampled"] == 1
-    # 只读：调用后待补行仍为空，没被触发补填
-    db.refresh(pending)
-    assert pending.content_hash in (None, "")
 
 
 def test_sidecar_unavailable_is_error_not_500(authed, monkeypatch):

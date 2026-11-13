@@ -118,11 +118,10 @@ class TestPosterLanguageApi:
         assert "TMDB_POSTER_LANGUAGE_CONFIG_KEY" in content
 
 
-class TestIntroMarkerApi:
-    """#3 片头标记：API 入口存在。"""
+class TestEpisodeGroupsApi:
+    """剧集分组：API 入口存在（片头标记 IntroMarkers 已随批 3 删除）。"""
 
     def test_media_routes_endpoints_exist(self):
         with open(os.path.join(BASE, "media_routes.py")) as f:
             content = f.read()
-        assert "IntroMarkers" in content
         assert "EpisodeGroups" in content
