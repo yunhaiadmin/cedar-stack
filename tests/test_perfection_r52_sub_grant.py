@@ -52,7 +52,7 @@ def _make_user(db, username="u1"):
 
 
 def _make_plan(db, days=30):
-    p = models.SubscriptionPlan(name="远行执照", price=100,
+    p = models.SubscriptionPlan(name="远行", price=100,
                                 duration_days=days, is_active=True)
     db.add(p)
     db.commit()

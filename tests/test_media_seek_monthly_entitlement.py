@@ -64,7 +64,7 @@ def _make_user(db, username="u1", **kw):
     return u
 
 
-def _make_plan(db, name="远行执照", entitlements_value=None, **kw):
+def _make_plan(db, name="远行", entitlements_value=None, **kw):
     p = models.SubscriptionPlan(
         name=name, price=100, duration_days=30, is_active=True,
         entitlements=entitlements_value, **kw)

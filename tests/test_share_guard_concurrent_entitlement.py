@@ -81,7 +81,7 @@ def _policy(db, **overrides):
     return values
 
 
-def _plan(db, name="环游执照", entitlements_value=None):
+def _plan(db, name="环游", entitlements_value=None):
     row = models.SubscriptionPlan(
         name=name, price=100, duration_days=30, is_active=True,
         entitlements=entitlements_value)
@@ -268,7 +268,7 @@ def test_effective_limit_fallback_chain(db):
     entitled = _user(db, username="rich")
     _subscribe(db, entitled, _plan(db, entitlements_value={KEY: 5}))
     expired = _user(db, username="old")
-    _subscribe(db, expired, _plan(db, name="启程执照",
+    _subscribe(db, expired, _plan(db, name="启程",
                                    entitlements_value={KEY: 5}), days=-1)
     _policy(db, share_concurrent_limit="2")
     assert share_guard._effective_concurrent_limit(db, plain) == 2
