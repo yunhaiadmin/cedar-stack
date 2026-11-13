@@ -49,7 +49,7 @@ const showChrome = computed(
   // 登录页、UHD 营销面（官网/定价，自带悬浮胶囊导航）与 404 页为独立全幅版式，
   // 不渲染全局顶栏/底坞；其余页面照旧。
   // 根路径未登录渲染官网（RootView 分发，自带导航）同样不叠全局壳；
-  // 已登录根路径会被守卫送去 /library（片库面自带壳），不会停在这里。
+  // 已登录根路径会被守卫送去概览 /game/account（自带壳），不会停在这里。
   () =>
     !['login', 'landing', 'pricing', 'not-found'].includes(route.name as string) &&
     !(route.path === '/' && !userStore.isLoggedIn),
