@@ -757,9 +757,9 @@ function goCollector() {
 }
 
 function goGame() {
-  // 探险日志 Hub（/game）已整页删除（2026-11-13 页面删减）：大本营针改开签到页
-  //（沿用原「在 /game 页内点大本营开签到页」的落点，用户拍板 2026-10-16），不留死链。
-  void router.push('/game/checkin')
+  // 探险日志 Hub（/game）与签到页均已整页删除（2026-11-13 页面删减）：大本营针改落首页
+  //（与 /game 的 redirect 落点一致），不留死链。
+  void router.push('/')
 }
 
 function openCinema() {

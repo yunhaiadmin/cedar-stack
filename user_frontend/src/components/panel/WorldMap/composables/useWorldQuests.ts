@@ -1,9 +1,9 @@
 import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { checkinApi } from '@/api/economy'
 
 /**
- * 探险任务：今日 3 任务（签到 / 拆包裹 / 读信）的状态与跳转。
+ * 探险任务：今日任务（拆包裹 / 读信）的状态与跳转；签到状态只作数据
+ * 回退（能量 / 连签展示），签到页已删除、无跳转。
  * 从 WorldMap.vue 拆出（原内联逻辑，行为不变）。
  *
  * 包裹与信件的数据归属调用方（index.vue 持有 parcel/letter 状态）：
@@ -32,7 +32,6 @@ export function useWorldQuests(params: {
   openParcels: () => void
   openLetter: () => void
 }) {
-  const router = useRouter()
   const checkin = ref<CheckinStatus | null>(null)
 
   async function loadCheckin() {
@@ -46,17 +45,9 @@ export function useWorldQuests(params: {
   const checkinDone = computed(() => checkin.value?.checked_today === true)
 
   const quests = computed<WorldQuest[]>(() => {
-    const ck = checkin.value
-    const bp = ck?.base_points
     const parcelsDone = params.parcelCount() > 0 && params.unsealedCount() >= 1
     const read = params.letterRead()
     return [
-      {
-        key: 'checkin',
-        label: '每日签到',
-        done: checkinDone.value,
-        rw: checkinDone.value ? '已完成' : typeof bp === 'number' && bp > 0 ? `+${bp} 能量` : '',
-      },
       {
         key: 'parcels',
         label: '拆一个封存包裹',
@@ -74,16 +65,12 @@ export function useWorldQuests(params: {
 
   const questPercent = computed(() => {
     const done = quests.value.filter((q) => q.done).length
-    return (done / 3) * 100
+    return quests.value.length ? (done / quests.value.length) * 100 : 0
   })
   const questDoneCount = computed(() => quests.value.filter((q) => q.done).length)
   const questNextLabel = computed(() => quests.value.find((q) => !q.done)?.label ?? '')
 
   function onQuest(key: string) {
-    if (key === 'checkin') {
-      void router.push('/game/checkin')
-      return
-    }
     if (key === 'parcels') {
       params.openParcels()
       return

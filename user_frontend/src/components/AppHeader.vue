@@ -3,15 +3,12 @@ import { RouterLink, useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import {
-  Clapperboard, LogOut, Ticket, Inbox, Crown, Sparkles,
-  Gift, Megaphone, AlertCircle, Clock, Sun, Moon, MonitorSmartphone, Bell,
+  Clapperboard, LogOut, Crown, Sparkles,
+  Sun, Moon, MonitorSmartphone,
   ChevronRight, Heart, ShieldCheck,
-  Globe, Plug, ClipboardList, Map as MapIcon, Radio, Bird, Notebook, Receipt, Users, Compass, Shirt, Settings,
+  Globe, Plug, Map as MapIcon, Radio, Notebook, Receipt, Settings,
 } from 'lucide-vue-next'
-import api, {
-  messageApi, announcementApi, isExpiringSoon, subscriptionApi,
-  type StationMessage, type Announcement,
-} from '@/api'
+import { isExpiringSoon, subscriptionApi } from '@/api'
 import type { MySubscription } from '@/api'
 import { primaryNav, resolveActiveNavPath } from '@/config/navigation'
 /** v4.1：头像菜单改为「探险设施直达」，设施清单唯一数据源 */
@@ -24,16 +21,11 @@ import { branding } from '@/composables/useBranding'
 function facilityMenuIcon(key: string) {
   switch (key) {
     case 'operator': return Plug
-    case 'checkin': return ClipboardList
     case 'calendar': return MapIcon
     case 'wishlist': return Sparkles
     case 'signal': return Radio
-    case 'pigeon': return Bird
     case 'ledger': return Notebook
     case 'supply': return Receipt
-    case 'companion': return Users
-    case 'guide': return Compass
-    case 'outfit': return Shirt
     case 'account': return Settings
     default: return Globe
   }
@@ -111,7 +103,6 @@ const userMenuRef = ref<HTMLElement | null>(null)
 /** 头像按钮：Esc 关闭用户菜单后把焦点还给它，键盘用户不迷路 */
 const userBtnRef = ref<HTMLElement | null>(null)
 const navRef = ref<HTMLElement | null>(null)
-const unreadCount = ref(0)
 
 /**
  * 会员状态（v2.42.8 起只留在头像菜单里）：顶栏那两颗常驻 pill（能量 / 会员生效中）
@@ -159,147 +150,8 @@ const userIdLabel = computed(() => (userStore.user?.id ? `@${userStore.user.id}`
  *  头像菜单里的管理后台行仅管理员渲染，普通用户看不见。 */
 const isStaff = computed(() => !!userStore.user?.is_staff)
 
-// 顶栏消息入口（v2.10.3 起是全站唯一的消息入口）：既显示「几条未读」，
-// 点开还能先看预览再决定要不要进信鸽
-const msgMenuOpen = ref(false)
-const msgMenuRef = ref<HTMLElement | null>(null)
-const msgPreview = ref<MsgPreviewItem[]>([])
-const msgLoading = ref(false)
-
-interface MsgPreviewItem {
-  key: string
-  title: string
-  meta: string
-  to: string
-  icon: unknown
-  unread: boolean
-  /** 同名未读合并后的条数（1 = 真的只有一条） */
-  count?: number
-  /** 条数是否精确（拉取窗口被占满时，最旧那一组可能还没数完，显示成 N+） */
-  countExact?: boolean
-  /** 这条消息对应哪条公告（公告广播自带 related_id），用于避开同一公告列两遍 */
-  announcementId?: number | null
-}
-
-/** 未读预览一次拉多少条：要够把「同名通知有几条」数准（消息很小，50 条约几十 KB） */
-const UNREAD_WINDOW = 50
-
-// 消息类型 → 图标（与信鸽的分类保持一致；只取预览需要的几种）
-const MSG_ICONS: Record<string, unknown> = {
-  system: AlertCircle,
-  ticket: Ticket,
-  announcement: Megaphone,
-  subscription: Gift,
-  media_seek: Clock,
-  exchange_code: Gift,
-}
-
-const MSG_LABELS: Record<string, string> = {
-  system: '系统',
-  ticket: '求救信号',
-  announcement: '公告',
-  subscription: '会员',
-  media_seek: '许愿池',
-  exchange_code: '兑换码',
-}
-
-function relTime(iso?: string): string {
-  if (!iso) return ''
-  const t = new Date(iso).getTime()
-  if (Number.isNaN(t)) return ''
-  const mins = Math.floor((Date.now() - t) / 60_000)
-  if (mins < 1) return '刚刚'
-  if (mins < 60) return `${mins} 分钟前`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours} 小时前`
-  const days = Math.floor(hours / 24)
-  if (days < 30) return `${days} 天前`
-  return iso.slice(0, 10)
-}
-
-/** meta 拼装：时间非法时不留悬空分隔符 */
-function msgMeta(label: string, iso?: string): string {
-  const rt = relTime(iso)
-  return rt ? `${label} · ${rt}` : label
-}
-
 /**
- * 铃铛预览：未读优先（同名合并成一条 + 条数），再接置顶公告。
- *
- * v2.10.3：铃铛是站内消息唯一的入口——首页底部那张消息卡已去掉（它和这里列的是
- * 同一批未读）。所以这一份预览就是全站的消息预览。
- */
-async function loadMsgPreview() {
-  msgLoading.value = true
-  try {
-    // 只拉未读：预览要回答的是「有什么在等我」，而不是「最近收到了什么」
-    const [msgs, notices] = await Promise.all([
-      messageApi.getMessages({ unread_only: true, limit: UNREAD_WINDOW }).catch((): StationMessage[] => []),
-      announcementApi.getAnnouncements().catch((): Announcement[] => []),
-    ])
-    const unreadAll = (msgs || []).filter((x) => !x.is_read)
-
-    const unreadRows: MsgPreviewItem[] = []
-    const byTitle = new Map<string, MsgPreviewItem>()
-    let last: MsgPreviewItem | null = null
-    for (const m of unreadAll) {
-      const groupKey = `${m.message_type}:${m.title}`
-      const hit = byTitle.get(groupKey)
-      if (hit) {
-        hit.count = (hit.count || 1) + 1
-        last = hit
-        continue
-      }
-      const row: MsgPreviewItem = {
-        key: `m${m.id}`,
-        title: m.title,
-        meta: msgMeta(MSG_LABELS[m.message_type] || '通知', m.created_at),
-        to: '/game/pigeon',
-        icon: MSG_ICONS[m.message_type] || Bell,
-        unread: true,
-        count: 1,
-        countExact: true,
-        // related_id 只有公告广播那条才指回公告（许愿池/求救信号的 related_id 是各自的业务 id，
-        // 拿来跟公告 id 比会误伤）
-        announcementId: m.message_type === 'announcement' ? (m.related_id ?? null) : null,
-      }
-      byTitle.set(groupKey, row)
-      unreadRows.push(row)
-      last = row
-    }
-    // 窗口被未读占满时，最旧那一组可能还有下一批没拉到，标成 N+ 而不是报一个偏小的数
-    if (last && unreadAll.length >= UNREAD_WINDOW) last.countExact = false
-
-    const unread = unreadRows.slice(0, 3)
-    const listedAnnouncementIds = new Set(
-      unread
-        .filter((r) => r.announcementId != null)
-        .map((r) => Number(r.announcementId)),
-    )
-    const pinned = [...(notices || [])]
-      .filter((a) => !listedAnnouncementIds.has(a.id))
-      .sort((a, b) => Number(b.is_pinned) - Number(a.is_pinned))
-      .slice(0, 2)
-
-    msgPreview.value = [
-      ...unread,
-      ...pinned.map((a) => ({
-        key: `a${a.id}`,
-        title: a.title,
-        meta: msgMeta('公告', a.created_at),
-        // 消息中心已迁到信鸽 /game/pigeon（PigeonView 暂不支持 tab 参数，进首页即可）
-        to: '/game/pigeon',
-        icon: Megaphone,
-        unread: false,
-      })),
-    ]
-  } finally {
-    msgLoading.value = false
-  }
-}
-
-/**
- * 下拉锚点（≥769px）：两个下拉 Teleport 到 body 之后，原来的 `position:absolute; top:100%`
+ * 下拉锚点（≥769px）：下拉 Teleport 到 body 之后，原来的 `position:absolute; top:100%`
  * 相对的是整页（初始包含块）而不是按钮——桌面上菜单落在首屏之外（y≈视口高度），点了像没反应。
  * 打开时按按钮位置算一次 fixed 坐标；≤768px 仍由 CSS 锚在底部坞之上，不加内联样式。
  */
@@ -318,7 +170,6 @@ function anchorDropdown(el: HTMLElement | null) {
 }
 
 function toggleUserMenu() {
-  msgMenuOpen.value = false
   userMenuOpen.value = !userMenuOpen.value
   if (userMenuOpen.value) {
     anchorDropdown(userMenuRef.value)
@@ -326,17 +177,8 @@ function toggleUserMenu() {
 }
 
 /** 佩戴中的徽章（后端存账号，随登录出参进 store；换账号天然不串、
- *  换设备也在。旧版只存浏览器本地的写法已废弃，见 OutfitView 的一次性迁移） */
+ *  换设备也在。旧版只存浏览器本地的写法已废弃，见原换装页的一次性迁移） */
 const wornBadge = computed(() => userStore.user?.worn_badge ?? null)
-
-function toggleMsgMenu() {
-  userMenuOpen.value = false
-  msgMenuOpen.value = !msgMenuOpen.value
-  if (msgMenuOpen.value) {
-    anchorDropdown(msgMenuRef.value)
-    loadMsgPreview()
-  }
-}
 
 /**
  * 导航分工（v2.6.30，v4.1 更新）：全站只有一份导航定义，见 src/config/navigation.ts。
@@ -352,7 +194,6 @@ function isActive(path: string) {
 
 function closeMenus() {
   userMenuOpen.value = false
-  msgMenuOpen.value = false
 }
 
 /** Esc 关闭用户菜单：焦点被困在菜单里时，一键出来并回到头像按钮 */
@@ -365,7 +206,7 @@ function onDocKeydown(e: KeyboardEvent) {
 
 /** 跨断点 resize / 转屏：开着菜单时锚点会错乱，直接关掉最稳 */
 function onViewportChange() {
-  if (userMenuOpen.value || msgMenuOpen.value) closeMenus()
+  if (userMenuOpen.value) closeMenus()
 }
 
 async function handleLogout() {
@@ -386,13 +227,6 @@ function onDocClick(e: MouseEvent) {
   ) {
     userMenuOpen.value = false
   }
-  if (
-    msgMenuRef.value &&
-    !msgMenuRef.value.contains(target) &&
-    !el?.closest('.msg-dropdown')
-  ) {
-    msgMenuOpen.value = false
-  }
 }
 
 async function refreshSubscription() {
@@ -409,12 +243,6 @@ async function refreshSubscription() {
 
 async function poll() {
   if (!userStore.isLoggedIn) return
-  try {
-    const res = await api.get<never, { unread_count: number }>('/api/user/messages/unread-count')
-    unreadCount.value = res?.unread_count || 0
-  } catch {
-    /* 静默失败 */
-  }
   refreshSubscription()
 }
 
@@ -447,10 +275,9 @@ async function focusActiveTab(center: boolean) {
 }
 
 // 补给站操作后回到任意页面时，头像菜单里的会员状态、顶栏能量即时刷新
-//（2026-10-13：/wallet 旧页面已删；/game/checkin 报到后能量/体力变化，
-// 回 /game 时也需要刷新顶栏体力值 —— R27 加入 economyPaths）
+//（2026-10-13：/wallet 旧页面已删 —— R27 加入 economyPaths）
 watch(() => route.path, (p, old) => {
-  const economyPaths = ['/shop', '/game/checkin']
+  const economyPaths = ['/shop']
   if (userStore.isLoggedIn && (economyPaths.includes(old || '') || economyPaths.includes(p))) {
     refreshSubscription()
     loadPoints()
@@ -464,10 +291,7 @@ watch(() => userStore.isLoggedIn, (loggedIn) => {
     loadPoints()
     loadVitality()
   } else {
-    unreadCount.value = 0
     activeSub.value = null
-    msgPreview.value = []
-    msgMenuOpen.value = false
     userMenuOpen.value = false
     pointsBalance.value = null
     vitality.value = null
@@ -552,17 +376,15 @@ onBeforeUnmount(() => {
           <Sparkles :size="13" />
           <span>{{ pointsBalance }}</span>
         </RouterLink>
-        <!-- 体力徽章：显示 x/14（与报到页体力条统一口径），点击进报到页 -->
-        <RouterLink
+        <!-- 体力徽章：显示 x/14（与体力条统一口径），纯展示、无跳转 -->
+        <span
           v-if="userStore.isLoggedIn && vitality !== null && vitalityMax !== null"
-          to="/game/checkin"
           class="points-pill vitality-pill"
-          :title="`我的体力 ${vitality}/${vitalityMax}，点击去报到`"
-          :aria-label="`我的体力 ${vitality}/${vitalityMax}，点击去报到`"
+          :title="`我的体力 ${vitality}/${vitalityMax}`"
         >
-          <Heart :size="13" /><!-- 体力用红心（与报到页 StaminaBar 的 ❤️ 统一）；闪电只给能量 -->
+          <Heart :size="13" /><!-- 体力用红心；闪电只给能量 -->
           <span>{{ vitality }}/{{ vitalityMax }}</span>
-        </RouterLink>
+        </span>
         <button
           class="theme-btn round-btn wide-only"
           :class="{ auto: themePreference === 'system' }"
@@ -574,80 +396,17 @@ onBeforeUnmount(() => {
         </button>
 
         <template v-if="userStore.isLoggedIn">
-          <!-- 消息：保持一个安静的音铃（不在顶栏抢文案），点开先给预览 -->
-          <div ref="msgMenuRef" class="msg-menu wide-only" :class="{ 'has-unread': unreadCount > 0 }">
-            <button
-              class="msg-btn round-btn"
-              :class="{ alert: unreadCount > 0, open: msgMenuOpen }"
-              :title="unreadCount > 0 ? `${unreadCount} 条未读消息` : '信鸽'"
-              :aria-label="unreadCount > 0 ? `${unreadCount} 条未读消息` : '信鸽'"
-              @click="toggleMsgMenu"
-            >
-              <Inbox :size="18" />
-              <span v-if="unreadCount > 0" class="msg-badge">
-                {{ unreadCount > 99 ? '99+' : unreadCount }}
-              </span>
-            </button>
-
-            <!-- 下拉用 Teleport 挂到 body：header 的 backdrop-filter 会把它变成
-                 fixed 后代的包含块，fixed 定位会相对 header 而非视口（真机自测抓到过） -->
-            <Teleport to="body">
-            <Transition name="dd">
-              <div v-if="msgMenuOpen" class="msg-dropdown" :style="dropStyle">
-                <div class="msg-drop-head">
-                  <span class="msg-drop-title">信鸽</span>
-                  <span v-if="unreadCount > 0" class="msg-drop-unread">{{ unreadCount > 99 ? '99+' : unreadCount }} 条未读</span>
-                  <span v-else class="msg-drop-clear">已全部读完</span>
-                </div>
-
-                <div v-if="msgLoading" class="msg-drop-loading" role="status" aria-label="正在拉取最新消息">
-                  <div class="au-skeleton"></div>
-                  <div class="au-skeleton"></div>
-                </div>
-                <template v-else-if="msgPreview.length">
-                  <RouterLink
-                    v-for="p in msgPreview"
-                    :key="p.key"
-                    :to="p.to"
-                    class="msg-drop-item"
-                    @click="closeMenus"
-                  >
-                    <span class="msg-drop-ic" :class="{ hot: p.unread }">
-                      <component :is="p.icon" :size="14" />
-                    </span>
-                    <span class="msg-drop-body">
-                      <span class="msg-drop-item-title">{{ p.title }}</span>
-                      <span class="msg-drop-meta">
-                        {{ p.meta }}<template v-if="(p.count || 1) > 1"> · 同名 {{ p.count }}{{ p.countExact === false ? '+' : '' }} 条</template>
-                      </span>
-                    </span>
-                    <span v-if="p.unread" class="msg-drop-dot" aria-hidden="true"></span>
-                  </RouterLink>
-                </template>
-                <p v-else class="msg-drop-hint">暂时没有新消息</p>
-
-                <RouterLink to="/game/pigeon" class="msg-drop-foot" @click="closeMenus">
-                  查看全部消息
-                  <ChevronRight :size="13" />
-                </RouterLink>
-              </div>
-            </Transition>
-            </Teleport>
-          </div>
-
           <div ref="userMenuRef" class="user-menu">
             <button
               ref="userBtnRef"
               class="user-btn round-btn"
               :aria-expanded="userMenuOpen"
               aria-haspopup="menu"
-              :aria-label="unreadCount > 0 ? `${displayName} · 账号菜单 · ${unreadCount} 条未读消息` : `${displayName} · 账号菜单`"
+              :aria-label="`${displayName} · 账号菜单`"
               :title="displayName"
               @click="toggleUserMenu"
             >
               <span class="avatar">{{ displayName.charAt(0).toUpperCase() }}</span>
-              <!-- ≤420px 消息铃铛隐藏：有未读时头像右上角点一颗小圆点提示 -->
-              <span v-if="unreadCount > 0" class="avatar-dot narrow-only" aria-hidden="true"></span>
             </button>
 
             <Teleport to="body">
@@ -967,49 +726,10 @@ onBeforeUnmount(() => {
 }
 /* 体力徽章：图标用红色（红心），与能量徽章的琥珀闪电区分 */
 .vitality-pill svg {
-  color: var(--paper-danger, #ff5c6c); /* 体力=红心（与报到页 ❤️ 体力条统一）；闪电的琥珀色只留给能量 */
+  color: var(--paper-danger, #ff5c6c); /* 体力=红心 ❤️；闪电的琥珀色只留给能量 */
 }
 
-/* 消息入口：2026-10-15 顶栏去圈（方案 A）——去掉圆形边框和底色，只留图标；
-   44px 盒子、点击区域与 .msg-badge 角标位置不变。打开态/未读态只用图标颜色表达，
-   不再引入背景色或边框（.round-btn 基类与 .theme-btn 不动）。 */
-.msg-menu { position: relative; }
-
-.msg-btn {
-  border-color: transparent;
-  background: transparent;
-}
-.msg-btn:hover {
-  border-color: transparent;
-  background: transparent;
-}
-.msg-btn.open {
-  color: var(--paper-ink);
-  background: transparent;
-  border-color: transparent;
-}
-.msg-btn.alert { color: var(--paper-warning); border-color: transparent; background: transparent; }
-
-.msg-badge {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--paper-warning);
-  color: var(--paper-on-warning);
-  font-size: 0.8125rem;
-  font-weight: 800;
-  border-radius: var(--paper-r-full);
-  /* 与页面底色同色的描边环，把徽章从任何背景上“抠”出来 */
-  box-shadow: 0 0 0 2px var(--paper-overlay);
-}
-
-/* msg-dropdown / user-dropdown 及其内部样式已移至下方全局块（Teleport 到 body 后 scoped 不生效） */
+/* user-dropdown 及其内部样式已移至下方全局块（Teleport 到 body 后 scoped 不生效） */
 
 .user-menu { position: relative; }
 
@@ -1029,21 +749,10 @@ onBeforeUnmount(() => {
   border-radius: 10px;
 }
 
-/* 头像右上角的未读点（只在 ≤420px 消息铃铛隐藏时出现） */
-.avatar-dot {
-  position: absolute;
-  top: 1px;
-  right: 1px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--paper-warning);
-  box-shadow: 0 0 0 2px var(--paper-bg);
-}
 
 .narrow-only { display: none; }
 
-/* 佩戴中的徽章：昵称下方小红章，读 OutfitView 徽章墙写入的 localStorage */
+/* 佩戴中的徽章：昵称下方小红章，读原换装页徽章墙写入的 localStorage */
 .dropdown-worn {
   display: inline-block;
   font-size: 10px;
@@ -1150,26 +859,13 @@ onBeforeUnmount(() => {
     font-size: 0.8125rem;
   }
 
-  .msg-dropdown { width: min(292px, calc(100vw - 1.5rem)); }
 }
 
 </style>
 
-<!-- 下拉已 Teleport 到 body，scoped 样式不跨树：两个下拉的完整样式放全局块。
-     data-v- 剔除后由类名本身保证作用域（user-dropdown / msg-dropdown 只在这一处渲染） -->
+<!-- 下拉已 Teleport 到 body，scoped 样式不跨树：用户菜单下拉的完整样式放全局块。
+     data-v- 剔除后由类名本身保证作用域（user-dropdown 只在这一处渲染） -->
 <style>
-.msg-dropdown {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 8px);
-  width: 292px;
-  background: var(--paper-overlay-menu);
-  border: 1px solid var(--paper-line-strong);
-  border-radius: var(--paper-radius-lg);
-  box-shadow: var(--paper-shadow-2);
-  overflow: hidden;
-  z-index: 60;
-}
 
 .user-dropdown {
   position: absolute;
@@ -1189,13 +885,12 @@ onBeforeUnmount(() => {
 
 @media (max-width: 768px) {
   /* 下拉菜单不超出屏幕 */
-  .theme-dropdown, .msg-dropdown, .user-dropdown {
+  .theme-dropdown, .user-dropdown {
     max-width: calc(100vw - 32px);
   }
   /* 挂到 body 后 fixed 终于是真视口定位：底边锚在拇指区之上（--paper-dock-space
      由 aurora.css 按断点定义），宽度留 12px 呼吸边，高过视口时内部滚 */
-  .user-dropdown,
-  .msg-dropdown {
+  .user-dropdown {
     position: fixed;
     top: auto;
     right: 12px;
@@ -1206,99 +901,6 @@ onBeforeUnmount(() => {
   }
 }
 
-/* msg-dropdown 内部（原 scoped 规则原样搬来） */
-.msg-drop-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.8125rem 1rem;
-  border-bottom: 1px solid var(--paper-line);
-}
-.msg-drop-title { font-size: 0.875rem; font-weight: 700; color: var(--paper-ink); }
-.msg-drop-unread {
-  padding: 0.125rem 0.5rem;
-  background: var(--paper-warning-soft);
-  border-radius: var(--paper-r-full);
-  color: var(--paper-warning);
-  font-size: 0.8125rem;
-  font-weight: 700;
-}
-.msg-drop-clear { font-size: 0.8125rem; color: var(--paper-ink-3); }
-.msg-drop-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.625rem;
-  padding: 0.6875rem 1rem;
-  text-decoration: none;
-  border-bottom: 1px solid var(--paper-line);
-  transition: background var(--paper-fast) var(--paper-ease);
-}
-.msg-drop-item:hover { background: var(--paper-card-2); }
-.msg-drop-ic {
-  width: 26px;
-  height: 26px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  background: var(--paper-card-2);
-  color: var(--paper-ink-3);
-}
-.msg-drop-ic.hot { background: var(--paper-warning-soft); color: var(--paper-warning); }
-.msg-drop-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
-  min-width: 0;
-  flex: 1;
-}
-.msg-drop-item-title {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--paper-ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.msg-drop-meta { font-size: 0.8125rem; color: var(--paper-ink-3); }
-.msg-drop-dot {
-  width: 6px;
-  height: 6px;
-  margin-top: 0.5rem;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--paper-warning);
-}
-.msg-drop-hint {
-  margin: 0;
-  padding: 1.125rem 1rem;
-  text-align: center;
-  font-size: 0.8125rem;
-  color: var(--paper-ink-3);
-  border-bottom: 1px solid var(--paper-line);
-}
-.msg-drop-loading {
-  padding: 0.75rem 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.625rem;
-  border-bottom: 1px solid var(--paper-line);
-}
-.msg-drop-loading .au-skeleton { height: 44px; }
-.msg-drop-foot {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.1875rem;
-  padding: 0.875rem 1rem;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--paper-primary);
-  text-decoration: none;
-  transition: background var(--paper-fast) var(--paper-ease);
-}
-.msg-drop-foot:hover { background: var(--paper-card-2); }
 
 /* user-dropdown 内部 */
 .dropdown-head {
@@ -1499,12 +1101,9 @@ onBeforeUnmount(() => {
 }
 
 /* ≤420px（iPhone 竖屏）：顶栏只留「品牌 · 能量 · 头像」三件事。
-   外观切换按钮与消息铃铛带 .wide-only，在窄屏隐藏
-   （头像菜单里的外观/信鸽行已按用户铁律删除，不再补位） */
+   外观切换按钮带 .wide-only，在窄屏隐藏 */
 @media (max-width: 420px) {
   .wide-only { display: none; }
-  /* 有未读消息时窄屏也显示信鸽铃铛（权重 0,3,0 压过 .wide-only 0,1,0） */
-  .msg-menu.wide-only.has-unread { display: block; }
   .narrow-only { display: block; }
   .logo-text { font-size: 0.9375rem; letter-spacing: 0.02em; }
   .logo-mark { width: 26px; height: 26px; }

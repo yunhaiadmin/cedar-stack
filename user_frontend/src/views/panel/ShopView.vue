@@ -193,7 +193,6 @@
             </div>
           </div>
           <div class="gov-note">各等级均有等级徽章；Lv.6 另有专属徽章＋专属活动邀请，可只读查看治理审计日志。提案与发起不产生经验。</div>
-          <RouterLink to="/activities" class="v4-retry">去提案 →</RouterLink>
         </template>
         <div v-else class="trail">
           <div
@@ -369,7 +368,7 @@ const ratioFailed = ref(false)
 // 拿不到时按非公益服处理，付费区保持原样（fail-closed，不误藏）。
 const userStore = useUserStore()
 const welfareRealm = computed(() => userStore.isFreeRealm)
-/** 活力值：null = 拿不到状态（非公益服用户 403 或失败），整块入口隐藏，不留空位（与 StaminaBar 同款口径） */
+/** 活力值：null = 拿不到状态（非公益服用户 403 或失败），整块入口隐藏，不留空位（与体力条同款口径） */
 const vitality = ref<number | null>(null)
 const vitalityMax = ref(0)
 const vitalityBusy = ref(false)
@@ -798,10 +797,10 @@ async function doLoadAll(silent = false) {
     vitality.value = vit.value.vitality
     vitalityMax.value = Number(vit.value.max) || 0
   } else {
-    // 非公益服用户（403）或拿不到就不显示入口，不打扰（与 StaminaBar 同款口径）
+    // 非公益服用户（403）或拿不到就不显示入口，不打扰（与体力条同款口径）
     vitality.value = null
   }
-  // 信鸽兑换通知跳进来：自动展开核销区（R28：锚点与 PigeonView 深链统一为 #shop-redeem）
+  // 信鸽兑换通知跳进来：自动展开核销区（R28：锚点与站内信深链统一为 #shop-redeem）
   if (typeof window !== 'undefined' && window.location.hash === '#shop-redeem') {
     const el = document.getElementById('shop-redeem')
     if (el) {

@@ -7,7 +7,7 @@
  */
 
 /** 营地地图分组 key（大本营各分区共用；头像菜单排序也用 order） */
-export type GameFacilityGroup = 'daily' | 'social' | 'asset' | 'style' | 'account'
+export type GameFacilityGroup = 'daily' | 'social' | 'asset' | 'account'
 
 export interface GameFacility {
   /** 唯一 key */
@@ -22,7 +22,7 @@ export interface GameFacility {
   desc: string
   /** 印章文字（v4-stamp 风格） */
   stamp: string
-  /** 营地地图分组：daily 每日必做 / social 社交 / asset 资产 / style 形象 / account 账号 */
+  /** 营地地图分组：daily 每日必做 / social 社交 / asset 资产 / account 账号 */
   group: GameFacilityGroup
   /** 组内排序（按现有数组顺序从 0 排起，头像菜单与大本营都按它排） */
   order: number
@@ -42,7 +42,6 @@ export const gameFacilityGroups: {
   { key: 'daily', icon: '⛺', title: '营地门口', sub: '每日必做' },
   { key: 'social', icon: '📡', title: '传讯高地', sub: '社交' },
   { key: 'asset', icon: '📒', title: '账房小屋', sub: '资产' },
-  { key: 'style', icon: '🎪', title: '生活营区', sub: '形象' },
   { key: 'account', icon: '⚙️', title: '账号小屋', sub: '账号' },
 ]
 
@@ -59,18 +58,6 @@ export const gameFacilities: GameFacility[] = [
     order: 0,
     enabled: true,
     guideTip: '刚买完会员？先来这儿拿账号密码，再去播放器里登录。',
-  },
-  {
-    key: 'checkin',
-    name: '每日报到',
-    path: '/game/checkin',
-    icon: '📋',
-    desc: '每天到营地报到盖章，领能量，连报有加成。',
-    stamp: '营地 · 报到处',
-    group: 'daily',
-    order: 1,
-    enabled: true,
-    guideTip: '每天来盖个章，顺手把今天的体力领了。',
   },
   {
     key: 'calendar',
@@ -106,18 +93,6 @@ export const gameFacilities: GameFacility[] = [
     enabled: true,
   },
   {
-    key: 'pigeon',
-    name: '信鸽',
-    path: '/game/pigeon',
-    icon: '🕊️',
-    desc: '信鸽替你送信，看看有没有回音。',
-    stamp: '信鸽 · 传书中',
-    group: 'social',
-    order: 5,
-    enabled: true,
-    guideTip: '信鸽带回来的信都在这儿，记得查收。',
-  },
-  {
     key: 'ledger',
     name: '能量账本',
     path: '/game/ledger',
@@ -137,39 +112,6 @@ export const gameFacilities: GameFacility[] = [
     stamp: '小票 · 张张在册',
     group: 'asset',
     order: 7,
-    enabled: true,
-  },
-  {
-    key: 'companion',
-    name: '结伴同行',
-    path: '/game/companion',
-    icon: '🤝',
-    desc: '一个人探险太孤单，找个搭子一起走。',
-    stamp: '营地门口 · 组队处',
-    group: 'social',
-    order: 8,
-    enabled: true,
-  },
-  {
-    key: 'guide',
-    name: '向导',
-    path: '/game/guide',
-    icon: '🧭',
-    desc: '营地一角的老向导，有事就问他。',
-    stamp: '营地一角 · 老向导',
-    group: 'style',
-    order: 9,
-    enabled: true,
-  },
-  {
-    key: 'outfit',
-    name: '换装',
-    path: '/game/outfit',
-    icon: '👕',
-    desc: '换套行头，以全新的面貌出发。',
-    stamp: '衣帽间 · 试衣中',
-    group: 'style',
-    order: 10,
     enabled: true,
   },
   {

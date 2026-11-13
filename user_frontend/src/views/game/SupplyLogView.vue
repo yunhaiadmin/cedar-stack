@@ -127,7 +127,7 @@ function fmtMoney(n: number | null | undefined): string {
 
 function fmtTime(iso?: string | null): string {
   if (!iso) return '—'
-  // R41：不再硬切片 ISO —— new Date 解析 + NaN 回退原串（照抄 CompanionView R38 P3-10）
+  // R41：不再硬切片 ISO —— new Date 解析 + NaN 回退原串（照抄 结伴页 R38 P3-10）
   const d = new Date(iso)
   if (isNaN(d.getTime())) return iso
   const pad = (n: number) => (n < 10 ? '0' + n : String(n))
