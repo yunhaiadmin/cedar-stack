@@ -493,16 +493,33 @@ export function imageUrl(itemId: string, kind: 'Primary' | 'Backdrop' | 'Thumb',
 }
 
 /**
- * 给后端下发的图片地址补 api_key：门户接口给的 poster_url 是不带凭据的相对
- * 地址（/emby/Items/{guid}/Images/Primary），PA-036 后必须在渲染点补上，
- * 否则收藏 / 心愿单的海报全部 401。
+ * 给后端下发的图片地址补 EA 前缀 + api_key：门户接口给的 poster_url 是
+ * 不带凭据的相对地址（/emby/Items/{guid}/Images/Primary），渲染前要过
+ * 三道：①补 EA 前缀（见 withEmbyBase）；②PA-036 后图片端点已鉴权，
+ * 必须补 api_key，否则收藏 / 心愿单的海报全部 401。
  *
  * maxWidth > 0 时同时补尺寸档位：poster_url 是裸地址、服务端按原图出图，
  * 列表/海报墙按卡片展示尺寸传档（见 withImageWidth），别整页拉原图。
  * 不传（默认 0）时行为与旧版逐字一致。
  */
 export function imageAuthUrl(url: string, maxWidth = 0): string {
-  return withImageWidth(withImageKey(url), maxWidth)
+  return withImageWidth(withImageKey(withEmbyBase(url)), maxWidth)
+}
+
+/**
+ * 门户 poster_url 是站内相对地址：分离部署下 www 域名的 /emby/* 由
+ * EM 面板直接回 404（「本地址不提供 Emby 协议面」），相对地址拼出来
+ * 必然裂图——2026-11-13 片库首页继续观看卡整排裂图就是这条。必须与
+ * imageUrl() 同口径补 EA 前缀（embyBaseRef，响应式：地址解析到位后
+ * 模板自动重算）。绝对地址（TMDB 图床等外链）与非 Emby 路径原样返回；
+ * EA 地址还没拉到时先按相对地址出（与 base 未就绪时 imageUrl 的
+ * 既有形态一致），到位后自动换绝对地址。
+ */
+function withEmbyBase(url: string): string {
+  if (!url || !url.startsWith('/')) return url
+  if (!url.startsWith('/emby/') && !url.startsWith('/Items/')) return url
+  const base = embyBaseRef.value
+  return base ? `${base}${url}` : url
 }
 
 /** 进度条百分比 */

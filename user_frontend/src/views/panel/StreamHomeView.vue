@@ -12,7 +12,7 @@
  */
 import { onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { Trash2 } from 'lucide-vue-next'
+import { Clapperboard, Trash2 } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import StreamShell from '@/components/stream/StreamShell.vue'
 import StreamHero, { type StreamHeroItem } from '@/components/stream/StreamHero.vue'
@@ -103,6 +103,8 @@ async function hideResume(m: PortalResumeItem) {
 function resumeImage(m: PortalResumeItem): string {
   return m.poster_url ? imageAuthUrl(m.poster_url, 640) : ''
 }
+/** 缩略图加载失败（个别条目图 404 等）的卡：撤下 img 换占位，不留浏览器裂图图标 */
+const brokenResumeThumbs = ref(new Set<string>())
 
 function onHeroPlay(item: StreamHeroItem) {
   pickerTitle.value = item.title
@@ -248,7 +250,20 @@ onMounted(() => {
             :to="{ name: 'media-detail', params: { id: m.id } }"
           >
             <span class="sl-ccard__thumb">
-              <img v-if="resumeImage(m)" :src="resumeImage(m)" alt="" loading="lazy" />
+              <img
+                v-if="resumeImage(m) && !brokenResumeThumbs.has(m.id)"
+                :src="resumeImage(m)"
+                alt=""
+                loading="lazy"
+                @error="brokenResumeThumbs.add(m.id)"
+              />
+              <Clapperboard
+                v-else
+                :size="30"
+                :stroke-width="1.5"
+                class="sl-ccard__fallback"
+                aria-hidden="true"
+              />
               <button
                 type="button"
                 class="sl-ccard__trash"
@@ -437,6 +452,13 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+/* 无图 / 加载失败占位（与详情页、海报卡同款 Clapperboard，居中落在底色上） */
+.sl-ccard__fallback {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  color: var(--uhd-s-text-2);
 }
 .sl-ccard__title {
   display: block;

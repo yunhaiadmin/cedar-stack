@@ -72,7 +72,7 @@
         <UhdEmptyState v-else-if="myWants.length === 0" title="还没有想看的片子，搜到已在库的片子时点「想看」试试" />
         <div v-else>
           <div v-for="w in myWants" :key="w.job_id ?? w.tmdb_id" class="wish">
-            <img v-if="w.poster_url" :src="imageAuthUrl(w.poster_url, 160)" :alt="w.title || w.tmdb_id" class="want-poster" loading="lazy" decoding="async">
+            <img v-if="w.poster_url && !brokenWantPosters.has(w.job_id ?? w.tmdb_id)" :src="imageAuthUrl(w.poster_url, 160)" :alt="w.title || w.tmdb_id" class="want-poster" loading="lazy" decoding="async" @error="brokenWantPosters.add(w.job_id ?? w.tmdb_id)">
             <div class="want-main">
               <b>《{{ w.title || `TMDB ${w.tmdb_id}` }}》</b>
               <div class="wmeta">{{ w.message }}</div>
@@ -314,6 +314,8 @@ function goOperator() {
 // 想看口挂商店闸（登录/会员/总闸）：闸没过时整区隐藏，许愿池照常；
 // 其余失败亮错误态可重试，不静默吞。
 const myWants = ref<StoreWantRecord[]>([])
+/** 想看海报加载失败时撤下 img（与无海报同形态），不留浏览器裂图图标 */
+const brokenWantPosters = ref(new Set<string | number>())
 const wantsLoading = ref(true)
 const wantsError = ref('')
 const wantsHidden = ref(false)
