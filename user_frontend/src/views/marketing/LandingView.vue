@@ -8,7 +8,7 @@
  */
 import { onMounted, onUnmounted, ref, type Component } from 'vue'
 import { useRouter } from 'vue-router'
-import { Monitor, Sun, Layers, ShieldCheck, Menu, X, RefreshCw, Bell, Sparkles, Home, Tag, BookOpen, ExternalLink, Users, Bot, MessageCircle, Send, Globe, ArrowRight } from 'lucide-vue-next'
+import { Monitor, Sparkles, Film, Ban, Menu, X, RefreshCw, Bell, Home, Tag, BookOpen, ExternalLink, Users, Bot, MessageCircle, Send, Globe, ArrowRight } from 'lucide-vue-next'
 import UhdNavPill, { type UhdNavItem } from '@/components/uhd/UhdNavPill.vue'
 import UhdButton from '@/components/uhd/UhdButton.vue'
 import UhdChip from '@/components/uhd/UhdChip.vue'
@@ -348,10 +348,10 @@ const year = new Date().getFullYear()
         active-key="home"
         :brand="branding.site_name"
         brand-sub="SERVICE"
-        cta-text="立即加入"
+        cta-text="进入后台"
         shrink-on-scroll
         @select="onNav"
-        @cta="goRegister"
+        @cta="goConsole"
       />
     </div>
 
@@ -372,8 +372,8 @@ const year = new Date().getFullYear()
           :aria-label="menuOpen ? '关闭菜单' : '打开菜单'"
           @click="toggleMenu"
         >
-          <X v-if="menuOpen" :size="16" aria-hidden="true" />
-          <Menu v-else :size="16" aria-hidden="true" />
+          <X v-if="menuOpen" :size="19" aria-hidden="true" />
+          <Menu v-else :size="19" aria-hidden="true" />
         </button>
       </span>
     </div>
@@ -445,8 +445,104 @@ const year = new Date().getFullYear()
 
     <!-- ① Hero -->
     <header class="hero">
+      <!-- 移动端全幅背景（照友站真机截图构图自绘，不用对方素材）：深色星空作底、
+           棱镜在左下、光谱扇自棱镜向右上展开、文字压在左上暗部、卖点压在下部；
+           仅 ≤900px 显示，桌面仍走 hero-visual 棱镜图层 -->
+      <div class="hero-bg" aria-hidden="true">
+        <svg viewBox="0 0 390 844" preserveAspectRatio="xMidYMid slice" focusable="false">
+          <defs>
+            <linearGradient id="hbg-sky" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#05050d" />
+              <stop offset="0.45" stop-color="#08081a" />
+              <stop offset="0.75" stop-color="#030309" />
+              <stop offset="1" stop-color="#010102" />
+            </linearGradient>
+            <radialGradient id="hbg-neb-v" cx="0.5" cy="0.5" r="0.5">
+              <stop offset="0" stop-color="#7a4fd8" stop-opacity="0.5" />
+              <stop offset="1" stop-color="#7a4fd8" stop-opacity="0" />
+            </radialGradient>
+            <radialGradient id="hbg-neb-b" cx="0.5" cy="0.5" r="0.5">
+              <stop offset="0" stop-color="#2a5fd7" stop-opacity="0.38" />
+              <stop offset="1" stop-color="#2a5fd7" stop-opacity="0" />
+            </radialGradient>
+            <radialGradient id="hbg-glow-w" cx="0.5" cy="0.5" r="0.5">
+              <stop offset="0" stop-color="#e6f1ff" stop-opacity="0.9" />
+              <stop offset="0.45" stop-color="#a8c8ff" stop-opacity="0.28" />
+              <stop offset="1" stop-color="#a8c8ff" stop-opacity="0" />
+            </radialGradient>
+            <linearGradient id="hbg-prism" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#ffffff" stop-opacity="0.30" />
+              <stop offset="0.5" stop-color="#9fd8ff" stop-opacity="0.10" />
+              <stop offset="1" stop-color="#ffffff" stop-opacity="0.20" />
+            </linearGradient>
+            <linearGradient id="hbg-floor" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#010102" stop-opacity="0" />
+              <stop offset="0.45" stop-color="#010102" stop-opacity="0.55" />
+              <stop offset="1" stop-color="#010102" stop-opacity="0.88" />
+            </linearGradient>
+          </defs>
+          <rect width="390" height="844" fill="url(#hbg-sky)" />
+          <ellipse cx="332" cy="238" rx="196" ry="180" fill="url(#hbg-neb-v)" opacity="0.6" />
+          <ellipse cx="252" cy="472" rx="205" ry="170" fill="url(#hbg-neb-b)" opacity="0.55" />
+          <g fill="#ffffff">
+            <circle cx="22" cy="96" r="1.1" opacity="0.5" /><circle cx="58" cy="150" r="0.8" opacity="0.35" />
+            <circle cx="96" cy="70" r="1.3" opacity="0.6" /><circle cx="132" cy="128" r="0.8" opacity="0.4" />
+            <circle cx="168" cy="52" r="1" opacity="0.5" /><circle cx="204" cy="110" r="1.4" opacity="0.65" />
+            <circle cx="238" cy="66" r="0.8" opacity="0.4" /><circle cx="272" cy="140" r="1.1" opacity="0.55" />
+            <circle cx="306" cy="88" r="0.9" opacity="0.45" /><circle cx="342" cy="150" r="1.3" opacity="0.6" />
+            <circle cx="368" cy="60" r="0.8" opacity="0.4" /><circle cx="44" cy="238" r="0.9" opacity="0.35" />
+            <circle cx="84" cy="300" r="1.1" opacity="0.45" /><circle cx="150" cy="252" r="0.8" opacity="0.35" />
+            <circle cx="196" cy="300" r="1" opacity="0.4" /><circle cx="330" cy="262" r="0.9" opacity="0.4" />
+            <circle cx="362" cy="330" r="1.1" opacity="0.45" /><circle cx="28" cy="360" r="0.8" opacity="0.3" />
+            <circle cx="118" cy="392" r="0.9" opacity="0.35" /><circle cx="238" cy="392" r="0.8" opacity="0.3" />
+            <circle cx="300" cy="430" r="1" opacity="0.35" /><circle cx="52" cy="470" r="0.9" opacity="0.3" />
+            <circle cx="352" cy="486" r="0.8" opacity="0.3" /><circle cx="180" cy="486" r="0.8" opacity="0.28" />
+            <circle cx="96" cy="540" r="0.8" opacity="0.25" /><circle cx="262" cy="548" r="0.9" opacity="0.3" />
+          </g>
+          <g class="hbg-fan hbg-fan--halo" opacity="0.3">
+            <polygon points="71,593 390,230 390,608" fill="#8a7cff" />
+            <polygon points="71,593 390,376 390,546" fill="#3fa8e0" />
+            <polygon points="71,593 390,506 390,608" fill="#f28c3c" />
+          </g>
+          <g class="hbg-fan hbg-fan--glow" opacity="0.42">
+            <polygon points="71,593 390,230 390,270" fill="#7b5cff" />
+            <polygon points="71,593 390,280 390,320" fill="#5a6cff" />
+            <polygon points="71,593 390,328 390,374" fill="#2f8fe0" />
+            <polygon points="71,593 390,376 390,426" fill="#22b8e6" />
+            <polygon points="71,593 390,430 390,470" fill="#2fd48c" />
+            <polygon points="71,593 390,472 390,508" fill="#a8d44d" />
+            <polygon points="71,593 390,506 390,546" fill="#f2c94c" />
+            <polygon points="71,593 390,536 390,586" fill="#f28c3c" />
+            <polygon points="71,593 390,570 390,608" fill="#e85d3c" />
+          </g>
+          <g class="hbg-fan" opacity="0.6">
+            <polygon points="71,593 390,149 390,157" fill="#cfc4ff" />
+            <polygon points="71,593 390,203 390,210" fill="#e8e2ff" />
+            <polygon points="71,593 390,243 390,259" fill="#9d86ff" />
+            <polygon points="71,593 390,293 390,309" fill="#7f96ff" />
+            <polygon points="71,593 390,341 390,363" fill="#57b6f2" />
+            <polygon points="71,593 390,389 390,413" fill="#4fd2f2" />
+            <polygon points="71,593 390,390 390,405" fill="#ffffff" opacity="0.55" />
+            <polygon points="71,593 390,441 390,459" fill="#5fe3ae" />
+            <polygon points="71,593 390,481 390,499" fill="#c4e06a" />
+            <polygon points="71,593 390,515 390,537" fill="#ffd968" />
+            <polygon points="71,593 390,547 390,573" fill="#ffab52" />
+            <polygon points="71,593 390,579 390,599" fill="#ff7a4d" />
+          </g>
+          <polygon points="-4,458 64,584 79,591 -4,486" fill="#ffffff" opacity="0.13" class="hbg-inbeam" />
+          <rect y="636" width="390" height="208" fill="url(#hbg-floor)" />
+          <ellipse cx="62" cy="692" rx="96" ry="13" fill="#bcd9ff" opacity="0.07" class="hbg-inbeam" />
+          <polygon points="130,676 390,706 390,766 150,712" fill="#f28c3c" opacity="0.05" class="hbg-inbeam" />
+          <circle cx="71" cy="593" r="37" fill="url(#hbg-glow-w)" />
+          <polygon points="4,656 110,661 72,530" fill="url(#hbg-prism)" stroke="rgba(255, 255, 255, 0.22)" stroke-width="1.2" />
+          <polyline points="72,530 71,593 8,652" fill="none" stroke="rgba(255, 255, 255, 0.14)" stroke-width="1" />
+          <polyline points="71,593 106,657" fill="none" stroke="rgba(255, 255, 255, 0.10)" stroke-width="1" />
+          <circle cx="71" cy="593" r="3" fill="#ffffff" opacity="0.9" />
+        </svg>
+      </div>
       <div class="hero-beam" aria-hidden="true" />
-      <!-- 移动端主视觉（返工单③）：自绘 SVG 棱镜＋彩虹光束＋星点，不用对方素材；桌面不显示 -->
+      <!-- 桌面棱镜主视觉：自绘 SVG 棱镜＋彩虹光束＋星点，不用对方素材；
+           移动端不显示（改走 .hero-bg 全幅背景，照友站真机截图构图） -->
       <div class="hero-visual" aria-hidden="true">
         <svg viewBox="0 0 390 236" preserveAspectRatio="xMidYMid meet" focusable="false">
           <defs>
@@ -510,15 +606,16 @@ const year = new Date().getFullYear()
             <span :key="heroSubIdx">{{ heroSubs[heroSubIdx] }}</span>
           </Transition>
         </p>
-        <div class="hero-actions">
+        <div class="hero-actions" :class="{ 'hero-actions--solo': userStore.isLoggedIn }">
           <!-- Hero 主钮分态（2026-11-13 照友站已登录宣传页定版）：已登录进站停
                宣传页，首屏主钮即「进入后台」（彩虹边＋玻璃底，与菜单面板大钮
-               同一去向 goConsole → 概览）；未登录保持「免费注册」原样。 -->
+               同一去向 goConsole → 概览）；未登录保持「免费注册」原样。
+               移动端已登录态照友站真机截图只摆这一颗主钮（--solo 隐藏定价钮）。 -->
           <UhdButton v-if="userStore.isLoggedIn" variant="primary" dark @click="goConsole">
             进入后台 <ArrowRight :size="18" aria-hidden="true" />
           </UhdButton>
           <UhdButton v-else variant="primary" dark @click="goRegister">免费注册</UhdButton>
-          <UhdButton variant="secondary" dark @click="goPricing">查看定价</UhdButton>
+          <UhdButton variant="secondary" dark class="hero-btn-pricing" @click="goPricing">查看定价</UhdButton>
         </div>
         <div class="hero-specs">
           <UhdChip variant="spec" sub="超高清">
@@ -526,15 +623,15 @@ const year = new Date().getFullYear()
             4K
           </UhdChip>
           <UhdChip variant="spec" sub="高动态范围">
-            <template #icon><Sun :size="20" aria-hidden="true" /></template>
+            <template #icon><Sparkles :size="20" aria-hidden="true" /></template>
             HDR10+
           </UhdChip>
           <UhdChip variant="spec" sub="杜比视界">
-            <template #icon><Layers :size="20" aria-hidden="true" /></template>
+            <template #icon><Film :size="20" aria-hidden="true" /></template>
             Dolby Vision
           </UhdChip>
           <UhdChip variant="spec" sub="沉浸体验">
-            <template #icon><ShieldCheck :size="20" aria-hidden="true" /></template>
+            <template #icon><Ban :size="20" aria-hidden="true" /></template>
             无广告干扰
           </UhdChip>
         </div>
@@ -706,7 +803,7 @@ const year = new Date().getFullYear()
 }
 
 /* ---------- 移动端顶栏与底部抽屉（仅 ≤900px 启用，桌面走 UhdNavPill）
-   数值照原站头部组件源码：logo 图标 24px、站名 15px/字距 .18em、SERVICE 10px/字距 .34em；
+   字标尺寸照友站真机截图（2026-11-14）：站名约 21px/800 字距 .05em、SERVICE 11px 字距 .38em；
    玻璃 pill 层滚动 >40px 才浮起（opacity .5s ease-sheet），汉堡 chip 同步变平 ---------- */
 .m-nav,
 .m-scrim,
@@ -721,8 +818,8 @@ const year = new Date().getFullYear()
   color: var(--uhd-d-text);
 }
 .m-nav__logo {
-  width: 24px;
-  height: 22px;
+  width: 26px;
+  height: 24px;
   background: var(--uhd-rainbow-conic);
   clip-path: polygon(50% 0, 100% 100%, 0 100%);
 }
@@ -733,14 +830,14 @@ const year = new Date().getFullYear()
 }
 .m-nav__brand-name {
   font-family: var(--uhd-font-display);
-  font-size: 15px;
-  font-weight: var(--uhd-fw-semibold);
-  letter-spacing: 0.18em;
+  font-size: 21px;
+  font-weight: var(--uhd-fw-extrabold);
+  letter-spacing: 0.05em;
 }
 .m-nav__brand-sub {
-  margin-top: 4px;
-  font-size: 10px;
-  letter-spacing: 0.34em;
+  margin-top: 5px;
+  font-size: 11px;
+  letter-spacing: 0.38em;
   color: var(--uhd-d-text-2);
 }
 .m-nav__chip {
@@ -843,6 +940,49 @@ const year = new Date().getFullYear()
   filter: blur(70px);
   transform: rotate(18deg);
   pointer-events: none;
+}
+/* 移动端全幅背景层：默认隐藏（桌面走 .hero-visual），仅 ≤900px 启用（见文末断点）。
+   ::before 压暗左上文字区、::after 压暗底部卖点区，保证文字压在暗部上 */
+.hero-bg {
+  display: none;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.hero-bg svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.hero-bg .hbg-fan {
+  mix-blend-mode: screen;
+}
+.hero-bg .hbg-fan--halo {
+  filter: blur(16px);
+}
+.hero-bg .hbg-fan--glow {
+  filter: blur(7px);
+}
+.hero-bg .hbg-fan:not(.hbg-fan--glow):not(.hbg-fan--halo) {
+  filter: blur(2.2px);
+}
+.hero-bg .hbg-inbeam {
+  filter: blur(2px);
+}
+.hero-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(2, 2, 10, 0.42), transparent 34%),
+    linear-gradient(97deg, rgba(2, 2, 10, 0.55) 0%, rgba(2, 2, 10, 0.18) 46%, transparent 72%),
+    linear-gradient(90deg, transparent 58%, rgba(1, 1, 4, 0.32));
+}
+.hero-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, rgba(1, 1, 4, 0.38), transparent 30%);
 }
 /* 棱镜主视觉（D1-03）：桌面居右上、移动端全幅居顶（见文末断点） */
 .hero-visual {
@@ -1676,55 +1816,75 @@ const year = new Date().getFullYear()
     font-size: 15px;
   }
 
-  /* ---- Hero：入场用原站 hero-fade（单层淡入上移，无模糊无叠影）；糊光光斑让位棱镜主视觉（返工单①③） ---- */
+  /* ---- Hero：照友站真机截图整屏构图（2026-11-14 用户发图亲点）——全幅星空棱镜
+     背景作底（.hero-bg），文案压在左上暗部（眉题约在屏高 1/4 处），卖点 2×2
+     压在背景图下部；旧「顶部视觉带＋文案在下」的分带构图作废 ---- */
   .hero {
     min-height: 100vh;
     min-height: 100svh;
-    align-items: flex-start;
+    flex-direction: column;
+    align-items: stretch;
   }
   .hero-beam { display: none; }
-  .hero-visual {
-    display: block;
-    position: absolute;
-    top: 60px;
-    left: 0;
-    right: 0;
-    width: auto;
-    height: 236px;
-    pointer-events: none;
-    -webkit-mask-image: none;
-    mask-image: none;
-  }
-  .hero-visual svg {
-    width: 100%;
-    height: 100%;
-  }
+  .hero-bg { display: block; }
+  .hero-visual { display: none; }
   .hero-inner {
-    padding: 308px 22px 92px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 24svh 14px 13svh;
   }
-  /* 首屏卖点改友站 2×2 网格（用户 2026-11-13 23:56 发图亲点）：格内图标＋标题
-     一行、说明小字换行到标题下方（左缘与标题对齐＝图标 20px＋chip 间距 7px）；
-     仅移动端，桌面横排不变 */
+  .hero-inner .eyebrow {
+    margin-bottom: 20px;
+  }
+  .hero-title {
+    font-size: 32px;
+    line-height: 1.3;
+    margin-bottom: 16px;
+  }
+  .hero-sub {
+    font-size: 17px;
+    line-height: 1.75;
+    min-height: 3.5em;
+    margin-bottom: 30px;
+  }
+  /* 主钮照截图：高约 54px、字 17px 的彩虹玻璃胶囊（配方在 UhdButton 主钮） */
+  .hero-actions :deep(.uhd-btn--primary) {
+    height: 54px;
+    padding: 0 28px;
+    font-size: 17px;
+  }
+  /* 已登录态首屏只摆主钮一颗（照截图），定价钮移动端隐藏（导航/页脚仍可达） */
+  .hero-actions--solo .hero-btn-pricing {
+    display: none;
+  }
+  /* 首屏卖点 2×2 网格（#151 排法不变，尺寸照友站真机截图放大）：格内图标＋标题
+     一行、说明小字换行到标题下方（左缘与标题对齐＝图标 24px＋chip 间距 13px）；
+     整组以 margin-top:auto 压到 Hero 下部、叠在背景图上；仅移动端，桌面横排不变 */
   .hero-specs {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 22px 24px;
-    margin-top: 40px;
+    gap: 18px 24px;
+    margin-top: auto;
   }
   .hero-specs :deep(.uhd-chip--spec) {
     flex-wrap: wrap;
-    row-gap: 5px;
+    gap: 13px;
+    row-gap: 6px;
+    font-size: 21px;
+  }
+  .hero-specs :deep(.uhd-chip__icon svg) {
+    width: 24px;
+    height: 24px;
   }
   .hero-specs :deep(.uhd-chip__sub) {
     flex-basis: 100%;
-    padding-left: 27px;
+    padding-left: 37px;
+    font-size: 15px;
   }
+  /* 友站首屏底部无滚动提示（卖点之下只有背景地板），移动端隐藏 */
   .hero-scroll-hint {
-    left: 0;
-    right: 0;
-    bottom: 18px;
-    transform: none;
-    text-align: center;
+    display: none;
   }
 
   /* ---- 跑马灯：收紧字距行距与区块留白（返工单⑥） ---- */
