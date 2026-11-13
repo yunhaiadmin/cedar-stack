@@ -10,6 +10,57 @@
         <button type="button" class="fv-tab" :class="{ 'fv-tab--on': tab === 'people' }" @click="pickTab('people')">演职人员 {{ peopleCount }}</button>
       </div>
 
+      <!-- 演职人员页签：数据走人员收藏接口（快照），与媒体收藏各走各的链 -->
+      <template v-if="tab === 'people'">
+        <div v-if="peopleError" class="fv-error" role="alert">
+          演职人员收藏没加载出来：{{ peopleError }}<br />
+          <button type="button" class="fv-retry" :disabled="peopleLoading" @click="loadPeople">{{ peopleLoading ? '正在重试…' : '重试' }}</button>
+        </div>
+        <div v-else-if="peopleLoading" class="fv-skel" role="status" aria-label="正在加载">
+          <div v-for="i in 7" :key="i" class="fv-skel__poster"><span class="fv-skel__logo">A</span></div>
+        </div>
+        <div v-else-if="peopleItems.length === 0" class="fv-empty">
+          还没有收藏的演职人员 —— 在片子详情页点任意一位演职人员，进人员页就能收藏
+        </div>
+        <div v-else class="fv-grid">
+          <article v-for="p in peopleItems" :key="p.key" class="fv-card">
+            <div class="fv-poster fv-poster--person">
+              <span class="fv-avatar">
+                <img
+                  v-if="p.image && !brokenAvatars.has(p.key)"
+                  :src="p.image"
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  @error="onAvatarError(p.key)"
+                />
+                <template v-else>{{ p.name.charAt(0) }}</template>
+              </span>
+              <RouterLink
+                class="fv-link"
+                :to="{ name: 'person-detail', params: { key: p.key } }"
+                :aria-label="`查看演职人员 ${p.name}`"
+              />
+              <button
+                type="button"
+                class="fv-star"
+                :disabled="pendingPersonKey === p.key"
+                :aria-label="`取消收藏 ${p.name}`"
+                title="取消收藏"
+                @click="togglePerson(p)"
+              >
+                <Star :size="16" :stroke-width="2" fill="currentColor" />
+              </button>
+            </div>
+            <div class="fv-body">
+              <RouterLink class="fv-name" :title="p.name" :to="{ name: 'person-detail', params: { key: p.key } }">{{ p.name }}</RouterLink>
+              <div class="fv-meta">演职人员</div>
+            </div>
+          </article>
+        </div>
+      </template>
+
+      <template v-else>
       <div v-if="error" class="fv-error" role="alert">
         收藏没加载出来：{{ error }}<br />
         <button type="button" class="fv-retry" :disabled="loading" @click="load">{{ loading ? '正在重试…' : '重试' }}</button>
@@ -18,10 +69,7 @@
       <div v-else-if="loading" class="fv-skel" role="status" aria-label="正在加载">
         <div v-for="i in 7" :key="i" class="fv-skel__poster"><span class="fv-skel__logo">A</span></div>
       </div>
-      <!-- 空态虚线框：高约 230（存档第 11 节） -->
-      <div v-else-if="tab === 'people'" class="fv-empty">
-        还没有收藏的演职人员
-      </div>
+      <!-- 空态虚线框：高约 230（存档第 11 节）；演职人员页签走上方独立模板块，本分支不会命中 -->
       <div v-else-if="items.length === 0" class="fv-empty">
         还没有收藏的{{ tab === 'movie' ? '电影' : '剧集' }} —— 在播放器里给喜欢的片子标个星，就会到这里来
       </div>
@@ -63,6 +111,7 @@
           </div>
         </article>
       </div>
+      </template>
     </div>
   </StreamShell>
 </template>
@@ -71,7 +120,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Clapperboard, Star } from 'lucide-vue-next'
-import { embyApi, type PortalMediaItem } from '@/api'
+import { embyApi, type PortalMediaItem, type PortalPerson } from '@/api'
 import { imageAuthUrl } from '@/api/emby'
 import { embyApiKeyRef } from '@/api/imageKey'
 import { useToast } from '@/composables/useToast'
@@ -136,6 +185,48 @@ async function load() {
   }
 }
 
+/* 演职人员收藏：独立一条链，加载失败只影响演职页签、不挡媒体收藏 */
+const peopleItems = ref<PortalPerson[]>([])
+const peopleLoading = ref(false)
+const peopleError = ref('')
+const pendingPersonKey = ref<string | null>(null)
+const brokenAvatars = ref<Set<string>>(new Set())
+
+async function loadPeople() {
+  peopleLoading.value = true
+  peopleError.value = ''
+  try {
+    const data = await embyApi.getPersonFavorites()
+    peopleItems.value = data.items || []
+  } catch (err) {
+    peopleError.value = errText(err)
+  } finally {
+    peopleLoading.value = false
+  }
+}
+
+function onAvatarError(key: string) {
+  brokenAvatars.value = new Set(brokenAvatars.value).add(key)
+}
+
+async function togglePerson(p: PortalPerson) {
+  if (pendingPersonKey.value) return
+  pendingPersonKey.value = p.key
+  try {
+    const res = await embyApi.togglePersonFavorite(p.key)
+    if (res.is_favorite) {
+      toast.info(`${p.name} 已在收藏里`)
+    } else {
+      peopleItems.value = peopleItems.value.filter((x) => x.key !== p.key)
+      toast.success(`已取消收藏 ${p.name}`)
+    }
+  } catch (err) {
+    toast.error(`取消收藏失败：${errText(err)}`)
+  } finally {
+    pendingPersonKey.value = null
+  }
+}
+
 async function toggle(m: PortalMediaItem) {
   if (pendingId.value) return
   pendingId.value = m.id
@@ -158,8 +249,8 @@ async function toggle(m: PortalMediaItem) {
 
 /* 片库面页签：剧集 / 电影 / 演职人员（存档第 11 节，计数嵌页签、激活白胶囊，无「全部」）。
    剧集/电影计数随收藏数据走，客户端过滤，不动接口；
-   演职人员收藏的数据通路（人员收藏能力）由在飞的 favorites-people-tab 单建设，
-   本页先立页签结构与空态，计数恒 0、暂无数据接线，待其落地后接。 */
+   演职人员页签结构由 #132 先立，本单（favorites-people-tab）把数据通路接上：
+   人员收藏走独立接口（上方 loadPeople 一链），计数＝人员收藏条数，不与媒体收藏混过滤。 */
 type FavTab = 'series' | 'movie' | 'people'
 const tab = ref<FavTab>('series')
 const tabPicked = ref(false)
@@ -169,12 +260,15 @@ function pickTab(t: FavTab) {
 }
 const seriesCount = computed(() => items.value.filter((x) => x.type === 'series').length)
 const movieCount = computed(() => items.value.filter((x) => x.type === 'movie').length)
-const peopleCount = computed(() => 0)
+const peopleCount = computed(() => peopleItems.value.length)
 const filteredItems = computed(() =>
   tab.value === 'people' ? [] : items.value.filter((x) => x.type === tab.value),
 )
 
-onMounted(load)
+onMounted(() => {
+  void load()
+  void loadPeople()
+})
 </script>
 <style scoped>
 .fv-wrap {
@@ -297,6 +391,28 @@ onMounted(load)
 .fv-img {
   position: absolute;
   inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* 演职人员卡：格子同海报节奏，头像居中大圆（无海报底色块） */
+.fv-poster--person {
+  background: transparent;
+}
+.fv-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 72%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--uhd-s-card-soft);
+  color: var(--uhd-s-text-2);
+  font-size: 30px;
+  font-weight: var(--uhd-fw-bold);
+}
+.fv-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;

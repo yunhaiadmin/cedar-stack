@@ -1205,6 +1205,188 @@ def toggle_favorite(item_id: str, request_user: models.WebUser = Depends(get_adm
     return {"success": True, "is_favorite": umd.is_favorite}
 
 
+# ==================== 演职人员收藏 ====================
+# 人员没有实体表（emby_people 是按条目落的 credits 行），收藏按「人员键」
+# 落 emby_user_person_favorites。键规则（模型 docstring 同口径）：
+# 优先 tmdb:<person_tmdb_id>，无 TMDB id 时 name:<归一化姓名>。
+# 详情/切换接口负责把姓名键解析并升级为规范键，收藏状态按候选键集合
+# （tmdb 键 + 姓名键）判定——刮削后来补上 TMDB id，旧姓名键收藏仍算数。
+
+def normalize_person_name(name: str | None) -> str:
+    """姓名归一化：strip + 折叠连续空白 + casefold。是人员键的唯一口径，
+    前端拼姓名键时按同一规则（JS 侧 trim/折叠空白/toLowerCase）。"""
+    return " ".join((name or "").split()).casefold()
+
+
+def person_key_of(tmdb_id: str | None, name: str | None) -> str:
+    if tmdb_id and str(tmdb_id).isdigit():
+        return f"tmdb:{tmdb_id}"
+    return f"name:{normalize_person_name(name)}"
+
+
+def _parse_person_key(key: str) -> tuple[str, str]:
+    """人员键 → (kind, value)；格式不对 400。name 键的 value 是归一化姓名。"""
+    text = (key or "").strip()
+    if text.startswith("tmdb:") and text[5:].isdigit():
+        return "tmdb", text[5:]
+    if text.startswith("name:"):
+        norm = normalize_person_name(text[5:])
+        if norm:
+            return "name", norm
+    raise HTTPException(status_code=400, detail="人员键格式不对")
+
+
+def _person_credit_rows(db: Session, kind: str, value: str) -> list:
+    """按人员键反查 credits 行。name 键先用 SQL 粗筛（去全部空格后小写
+    相等，兜住多空格写法），再按归一化口径在 Python 侧精确核对。"""
+    if kind == "tmdb":
+        return (db.query(em.EmbyPerson)
+                .filter(em.EmbyPerson.person_tmdb_id == value)
+                .order_by(em.EmbyPerson.id)
+                .all())
+    squashed = func.replace(func.lower(func.trim(em.EmbyPerson.name)), " ", "")
+    rows = (db.query(em.EmbyPerson)
+            .filter(squashed == value.replace(" ", ""))
+            .order_by(em.EmbyPerson.id)
+            .all())
+    return [r for r in rows if normalize_person_name(r.name) == value]
+
+
+def _resolve_person(db: Session, key: str) -> dict | None:
+    """人员键 → 人员信息（规范键/姓名/头像/TMDB id/候选键集合/credits 行）。
+
+    credits 一行都没有返回 None。候选键集合 = {规范键, 姓名键, tmdb 键}，
+    收藏判定与切换都按集合走，键升级（姓名→tmdb）不丢收藏。
+    """
+    kind, value = _parse_person_key(key)
+    rows = _person_credit_rows(db, kind, value)
+    if not rows:
+        return None
+    tmdb_id = next((r.person_tmdb_id for r in rows
+                    if (r.person_tmdb_id or "").isdigit()), None)
+    with_image = next((r for r in rows if r.image), None)
+    name = (with_image or rows[0]).name
+    canonical = person_key_of(tmdb_id, name)
+    candidates = {canonical, f"name:{normalize_person_name(name)}"}
+    if tmdb_id:
+        candidates.add(f"tmdb:{tmdb_id}")
+    return {"key": canonical, "name": name,
+            "image": (with_image.image if with_image else None),
+            "tmdb_id": tmdb_id, "candidates": candidates, "rows": rows}
+
+
+def _person_favorite_rows(db: Session, user_id: int, candidates: set) -> list:
+    if not candidates:
+        return []
+    return (db.query(em.UserPersonFavorite)
+            .filter(em.UserPersonFavorite.user_id == user_id,
+                    em.UserPersonFavorite.person_key.in_(candidates))
+            .all())
+
+
+def _person_works(db: Session, rows: list) -> list[dict]:
+    """credits 行 → 参演作品（货架口径）：集/季收口到所属剧，软删与被合并
+    副本不出，身份门二期开时挂 identity_clause（与门户收藏列表同口径）。"""
+    role_by_item: dict[int, str | None] = {}
+    for r in rows:
+        role_by_item.setdefault(r.item_id, r.role)
+    if not role_by_item:
+        return []
+
+    def _visible(q):
+        q = q.filter(em.MediaItem.merged_into_id.is_(None),
+                     em.MediaItem.is_hidden == False)  # noqa: E712
+        if identity_gate.phase2_enabled():
+            q = q.filter(identity_gate.identity_clause())
+        return q
+
+    items = {i.id: i for i in _visible(
+        db.query(em.MediaItem).filter(em.MediaItem.id.in_(role_by_item))).all()}
+    # 集/季的 credits 收口到剧：剧本身不在 credits 里时单独补查（同口径）
+    series_ids = {it.series_id for it in items.values()
+                  if it.item_type in ("season", "episode") and it.series_id}
+    missing = series_ids - set(items)
+    if missing:
+        items.update({i.id: i for i in _visible(
+            db.query(em.MediaItem).filter(em.MediaItem.id.in_(missing))).all()})
+
+    works: dict[int, dict] = {}
+    for item_id, role in role_by_item.items():
+        it = items.get(item_id)
+        if it is None:
+            continue
+        top = it
+        if it.item_type in ("season", "episode"):
+            top = items.get(it.series_id) if it.series_id else None
+            if top is None:
+                continue
+        if top.id in works:
+            continue
+        works[top.id] = {
+            "id": top.guid, "name": top.name, "type": top.item_type,
+            "year": top.production_year, "rating": top.community_rating,
+            "poster_url": season_poster_url(top, db), "role": role,
+        }
+    return sorted(works.values(),
+                  key=lambda w: (-(w["year"] or 0), w["name"] or ""))
+
+
+class PersonFavoriteToggle(BaseModel):
+    key: str
+
+
+@user_emby_router.get("/people/favorites")
+def get_person_favorite_list(request_user: models.WebUser = Depends(get_admin_or_emby_user),
+                             db: Session = Depends(get_db)):
+    rows = (db.query(em.UserPersonFavorite)
+            .filter(em.UserPersonFavorite.user_id == request_user.id)
+            .order_by(em.UserPersonFavorite.created_at.desc(),
+                      em.UserPersonFavorite.id.desc())
+            .all())
+    return {"items": [
+        {"key": r.person_key, "name": r.name, "image": r.image,
+         "tmdb_id": r.person_tmdb_id}
+        for r in rows
+    ]}
+
+
+@user_emby_router.post("/people/favorites")
+def toggle_person_favorite(body: PersonFavoriteToggle,
+                           request_user: models.WebUser = Depends(get_admin_or_emby_user),
+                           db: Session = Depends(get_db)):
+    kind, value = _parse_person_key(body.key)
+    given_key = f"tmdb:{value}" if kind == "tmdb" else f"name:{value}"
+    info = _resolve_person(db, body.key)
+    candidates = info["candidates"] if info else {given_key}
+    existing = _person_favorite_rows(db, request_user.id, candidates)
+    if existing:
+        for row in existing:
+            db.delete(row)
+        db.commit()
+        return {"success": True, "is_favorite": False,
+                "key": info["key"] if info else given_key}
+    if info is None:
+        raise HTTPException(status_code=404, detail="演职人员不存在")
+    db.add(em.UserPersonFavorite(
+        user_id=request_user.id, person_key=info["key"],
+        person_tmdb_id=info["tmdb_id"], name=info["name"], image=info["image"]))
+    db.commit()
+    return {"success": True, "is_favorite": True, "key": info["key"]}
+
+
+@user_emby_router.get("/people/detail")
+def get_person_detail(key: str,
+                      request_user: models.WebUser = Depends(get_admin_or_emby_user),
+                      db: Session = Depends(get_db)):
+    info = _resolve_person(db, key)
+    if info is None:
+        raise HTTPException(status_code=404, detail="演职人员不存在")
+    favs = _person_favorite_rows(db, request_user.id, info["candidates"])
+    return {"key": info["key"], "name": info["name"], "image": info["image"],
+            "tmdb_id": info["tmdb_id"], "is_favorite": bool(favs),
+            "works": _person_works(db, info["rows"])}
+
+
 # ==================== 追新日历 ====================
 
 #: 一次最多查多少天。日历按月翻页，给到「一个季度」已经远超翻页粒度；

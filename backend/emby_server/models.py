@@ -497,6 +497,39 @@ class EmbyPerson(Base):
     person_tmdb_id = Column(String(32), index=True)
 
 
+class UserPersonFavorite(Base):
+    """用户-演职人员收藏（门户 2026-11-13 整套新功能）。
+
+    人员没有实体表（``emby_people`` 是按条目落的 credits 行），收藏只能按
+    「人员键」落行。键规则（唯一事实来源是 ``portal.normalize_person_name``
+    与 ``portal.person_key_of``）：
+    - 有 TMDB person id 时：``tmdb:<person_tmdb_id>``；
+    - 没有时：``name:<归一化姓名>``，归一化 = strip + 折叠连续空白 + casefold。
+
+    已知局限：无 TMDB id 时同名不同人会被并成同一键（与 EA ``/emby/Persons``
+    按名字分组聚合的现行口径一致）；刮削后来给同一人补上 TMDB id 后，详情
+    接口按候选键集合（tmdb 键 + 姓名键）判定收藏状态，旧姓名键收藏仍算数。
+
+    ``name`` / ``image`` 是收藏当刻的展示快照：credits 行被删后，我的收藏
+    人员列表仍能展示（详情页则按 credits 不存在返回 404）。
+    新表由 ``create_all`` 自动建表，老库无需 ALTER（同 EmbyPerson 先例）。
+    """
+
+    __tablename__ = "emby_user_person_favorites"
+    __table_args__ = (
+        UniqueConstraint("user_id", "person_key", name="uq_upersonfav_user_key"),
+        Index("idx_upersonfav_user", "user_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("web_users.id"), nullable=False)
+    person_key = Column(String(220), nullable=False, index=True)
+    person_tmdb_id = Column(String(32))
+    name = Column(String(200), nullable=False)
+    image = Column(String(1024))
+    created_at = Column(DateTime, default=datetime.now)
+
+
 class MediaStream(Base):
     """媒体流轨道（视频/音频/字幕）"""
 

@@ -98,6 +98,14 @@ const router = createRouter({
             component: () => import('@/views/panel/MediaDetailView.vue'),
             meta: { title: '详情', requiresAuth: true },
           },
+          // 演职人员页：详情页演职横排与收藏页「演职人员」页签的去向；
+          // :key 是人员键（tmdb:<id> 或 name:<归一化姓名>，后端负责解析升级）
+          {
+            path: '/person/:key',
+            name: 'person-detail',
+            component: () => import('@/views/panel/PersonView.vue'),
+            meta: { title: '演职人员', requiresAuth: true },
+          },
           {
             path: '/server',
             name: 'server',
@@ -367,7 +375,8 @@ export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/collections'
 // /collections/ 下目前只有详情这一条路由，前缀不会误伤非 v4 页。
 // /media/ 同理：条目详情 /media/:id 也是 v4 纸色页，必须强制 light，
 // 否则深色偏好下 --au-* 令牌是暗值，纸面页上会出现黑条/黑行。
-const V4_PATH_PREFIXES = ['/collections/', '/media/']
+// /person/ 同理：演职人员页 /person/:key 与详情、收藏同属纸面页。
+const V4_PATH_PREFIXES = ['/collections/', '/media/', '/person/']
 // 底部坞由 App.vue 全局常驻渲染（PanelTabbar，≤768px 唯一一套，
 // 桌面 ≥769px 由 CSS 隐藏）；各视图模板不再自带 <PanelTabbar/>。
 function restoreUserTheme() {
