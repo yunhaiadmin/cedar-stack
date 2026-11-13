@@ -73,7 +73,7 @@ export type ToastFallbackKey = keyof typeof toastFallback
 /** 删除 / 关闭类确认弹窗文案：标题 + 后果说明（是否可恢复） */
 export const confirmCopy = {
   /** 关闭求救信号：可重新打开 */
-  closeTicket: '关闭这条求救信号？\n关闭后如有需要可以重新打开。',
+  closeTicket: '关闭这条反馈？\n关闭后如有需要可以重新打开。',
   /** 终止订阅：不可恢复（ProfileView 已有等效文案，此处统一收口） */
   cancelSubscription: (planName: string) =>
     `确定要终止「${planName}」订阅吗？终止后立即失效，不可恢复。`,

@@ -93,7 +93,7 @@ const welfareExpiresDate = computed(() => {
           <div class="sub-end">{{ activeSub.end_date.slice(0, 10) }} 到期 · 剩余 {{ activeSub.days_left }} 天</div>
           <p v-if="expiringSoon" class="sub-warn">
             <TriangleAlert :size="13" />
-            即将到期，去补给站续费后可无缝接续
+            即将到期，去商店续费后可无缝接续
           </p>
         </div>
         <span class="badge" :class="expiringSoon ? 'warn' : 'ok'">

@@ -369,8 +369,8 @@ onBeforeUnmount(() => {
           v-if="userStore.isLoggedIn && pointsBalance !== null"
           to="/game/ledger"
           class="points-pill"
-          title="我的能量，点击查看能量账本"
-          aria-label="我的能量，点击查看能量账本"
+          title="我的能量，点击查看能量明细"
+          aria-label="我的能量，点击查看能量明细"
         >
           <Sparkles :size="13" />
           <span>{{ pointsBalance }}</span>

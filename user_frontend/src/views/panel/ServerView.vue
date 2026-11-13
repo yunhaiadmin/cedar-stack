@@ -11,7 +11,7 @@
       <section class="v4-sec">
         <RouterLink class="op-entry" to="/game/operator">
           <span class="op-entry-main">
-            <span class="op-entry-title">接线员 · 我的播放账号</span>
+            <span class="op-entry-title">播放账号</span>
             <span class="op-entry-sub">服务器地址、用户名、播放密码和一键导入都在这里</span>
           </span>
           <span class="op-entry-go" aria-hidden="true">›</span>

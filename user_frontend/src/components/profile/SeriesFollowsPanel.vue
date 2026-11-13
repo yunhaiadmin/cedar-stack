@@ -47,7 +47,7 @@
         </li>
       </ul>
       <p v-else-if="followSearched && !selectedFollow" class="follow-hint">
-        片库里还没找到这部剧。可以先去许愿池求片，等它入库了再回来订阅。
+        片库里还没找到这部剧。可以先去求片，等它入库了再回来订阅。
       </p>
       <p v-if="selectedFollow" class="follow-selected">
         已选中：《{{ selectedFollow.name }}》<span v-if="selectedFollow.year">（{{ selectedFollow.year }}）</span>

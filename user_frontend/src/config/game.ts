@@ -49,7 +49,7 @@ export const gameFacilityGroups: {
 export const gameFacilities: GameFacility[] = [
   {
     key: 'operator',
-    name: '接线员',
+    name: '播放账号',
     path: '/game/operator',
     icon: '🔌',
     desc: '买完会员来这儿接线 —— 拿账号密码，去播放器里连上就能看。',
@@ -58,17 +58,6 @@ export const gameFacilities: GameFacility[] = [
     order: 0,
     enabled: true,
     guideTip: '刚买完会员？先来这儿拿账号密码，再去播放器里登录。',
-  },
-  {
-    key: 'calendar',
-    name: '探险预告',
-    path: '/game/calendar',
-    icon: '🗺️',
-    desc: '看看接下来有什么探险活动，别错过。',
-    stamp: '营地 · 探险地图',
-    group: 'daily',
-    order: 2,
-    enabled: true,
   },
   {
     key: 'requests',
@@ -83,7 +72,7 @@ export const gameFacilities: GameFacility[] = [
   },
   {
     key: 'ledger',
-    name: '能量账本',
+    name: '能量明细',
     path: '/game/ledger',
     icon: '📒',
     desc: '每一笔能量的来龙去脉，都记在这本账上。',
@@ -94,10 +83,10 @@ export const gameFacilities: GameFacility[] = [
   },
   {
     key: 'supply',
-    name: '补给记录',
+    name: '商店记录',
     path: '/game/supply',
     icon: '🧾',
-    desc: '在补给站拿过的东西，这里都有小票。',
+    desc: '在商店拿过的东西，这里都有小票。',
     stamp: '小票 · 张张在册',
     group: 'asset',
     order: 7,

@@ -49,7 +49,7 @@ export function withImportPassword(url: string, password: string): string {
  */
 export function embyImportTip(hasUsername: boolean, playPwdLoaded: boolean): string {
   if (!hasUsername) {
-    return '还没有接线账号。先在上面设好用户名和播放密码。设好后这里会出现导入按钮，点的时候会带上播放密码。'
+    return '还没有播放账号。先在上面设好用户名和播放密码。设好后这里会出现导入按钮，点的时候会带上播放密码。'
   }
   if (!playPwdLoaded) {
     return '点导入时会先问一次播放密码，填上就一起带过去。本页开着不用再填，离开或点清除就清掉。'
