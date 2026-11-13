@@ -12,7 +12,7 @@
  * Aetrix 无片名 Logo 字标图，剧集标题用文字 H1（数据驱动）。
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, BellPlus, BookmarkPlus, Clapperboard, Heart, Play, Trash2 } from 'lucide-vue-next'
 import Modal from '@/components/ui/Modal.vue'
 import {
@@ -162,6 +162,12 @@ interface VersionCard {
   sub: string
   size: string
 }
+/** 人员键（与后端 portal.normalize_person_name 同口径）：姓名归一化后拼
+ * name: 前缀；人员详情接口会把姓名键升级解析为 tmdb 规范键。 */
+function personKey(name: string): string {
+  return `name:${(name || '').trim().replace(/\s+/g, ' ').toLowerCase()}`
+}
+
 function fmtSize(bytes?: number | null): string {
   if (!bytes) return ''
   const gb = bytes / 1_000_000_000
@@ -514,14 +520,20 @@ watch(itemId, () => {
         <section v-if="item.People?.length" class="md-cast">
           <h2 class="md-sec-title">演职人员</h2>
           <div class="md-cast__track">
-            <div v-for="(p, i) in item.People.slice(0, 20)" :key="`${p.Name}-${i}`" class="md-cast__person">
+            <RouterLink
+              v-for="(p, i) in item.People.slice(0, 20)"
+              :key="`${p.Name}-${i}`"
+              class="md-cast__person"
+              :to="{ name: 'person-detail', params: { key: personKey(p.Name) } }"
+              :aria-label="`查看演职人员 ${p.Name}`"
+            >
               <span class="md-cast__avatar">
                 <img v-if="p.Id && p.PrimaryImageTag" :src="imageUrl(p.Id, 'Primary', 96)" alt="" loading="lazy" />
                 <template v-else>{{ p.Name.charAt(0) }}</template>
               </span>
               <span class="md-cast__name">{{ p.Name }}</span>
               <span v-if="p.Role" class="md-cast__role">{{ p.Role }}</span>
-            </div>
+            </RouterLink>
           </div>
         </section>
 
@@ -1053,6 +1065,8 @@ watch(itemId, () => {
   flex-direction: column;
   align-items: flex-start;
   gap: 3px;
+  text-decoration: none;
+  cursor: pointer;
 }
 .md-cast__avatar {
   display: inline-flex;

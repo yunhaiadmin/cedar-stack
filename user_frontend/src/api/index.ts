@@ -486,6 +486,35 @@ export interface HiddenResumeItem {
   last_played_at?: string | null
 }
 
+/** 演职人员（收藏列表项；key 是人员键，name/image 是收藏当刻快照） */
+export interface PortalPerson {
+  key: string
+  name: string
+  image?: string | null
+  tmdb_id?: string | null
+}
+
+/** 参演作品（人员详情页作品网格） */
+export interface PortalPersonWork {
+  id: string
+  name: string
+  type: string
+  year?: number | null
+  rating?: number | null
+  poster_url?: string | null
+  role?: string | null
+}
+
+/** 人员详情 */
+export interface PortalPersonDetail {
+  key: string
+  name: string
+  image?: string | null
+  tmdb_id?: string | null
+  is_favorite: boolean
+  works: PortalPersonWork[]
+}
+
 /** 观看历史条目 */
 export interface WatchHistoryItem {
   id: string
@@ -586,6 +615,16 @@ export const embyApi = {
 
   // 收藏/取消收藏
   toggleFavorite: (itemId: string) => api.post<never, { is_favorite: boolean }>(`/api/user/emby/favorites/${itemId}`),
+
+  // 演职人员收藏（人员键：tmdb:<id> 优先，无 TMDB id 时 name:<归一化姓名>）
+  getPersonFavorites: () => api.get<never, { items: PortalPerson[] }>('/api/user/emby/people/favorites'),
+
+  // 收藏/取消收藏某位演职人员（传任意形式的人员键，后端解析/升级为规范键）
+  togglePersonFavorite: (key: string) =>
+    api.post<never, { success: boolean; is_favorite: boolean; key: string }>('/api/user/emby/people/favorites', { key }),
+
+  // 人员详情（基本信息 + 参演作品 + 当前用户收藏状态）
+  getPersonDetail: (key: string) => api.get<never, PortalPersonDetail>('/api/user/emby/people/detail', { params: { key } }),
 
   // 观看统计
   getStats: () => api.get<never, WatchStats>('/api/user/emby/stats'),
