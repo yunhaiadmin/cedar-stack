@@ -70,6 +70,8 @@ SCHEMAS: dict[str, dict[str, tuple]] = {
     "cms_graft": config_schema.CMS_GRAFT_CONFIG_SCHEMA,
     # 播放器登录黑名单（2026-10-30）：规则数组 JSON 校验
     "player_blacklist": config_schema.PLAYER_BLACKLIST_CONFIG_SCHEMA,
+    # 安装应用页（2026-11-13）：6 平台官方客户端下载链接
+    "install_app": config_schema.INSTALL_APP_CONFIG_SCHEMA,
     "welfare": config_schema.WELFARE_CONFIG_SCHEMA,
     # 4-6：economy 家族（设计报告说的 44 键，实查 49 键；校验语义与迁移前
     # economy_spec 的历史行为逐字一致，str/secret 用 ("raw",) 原样存库；

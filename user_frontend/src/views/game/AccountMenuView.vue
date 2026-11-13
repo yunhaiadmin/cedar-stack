@@ -64,8 +64,8 @@
       </section>
 
       <!-- 退出登录：列表下方独立整宽胶囊按钮（原站形态），行为保持现有登出逻辑 -->
-      <!-- 安装应用入口：组件由 PWA 单提供（随其 PR 先行落地），已安装时自隐藏 -->
-      <UhdInstallRow />
+      <!-- 安装应用入口已进「日常与帮助」组（整页 /game/install，2026-11-13）：
+           原先这里的 PWA 行随之摘除，PWA 安装动作在整页内保留 -->
       <button type="button" class="am-logout" @click="handleLogout">退出登录</button>
     </main>
   </div>
@@ -88,7 +88,6 @@ import { ChevronRight } from 'lucide-vue-next'
 import { useUserStore } from '@/stores/user'
 import { useTheme } from '@/composables/useTheme'
 import { branding } from '@/composables/useBranding'
-import UhdInstallRow from '@/components/uhd/UhdInstallRow.vue'
 import { getAgentMe } from '@/api/agent'
 import { pointsApi } from '@/api/economy'
 import { subscriptionApi, type MySubscription } from '@/api'
@@ -163,6 +162,9 @@ const groups = computed<MenuGroup[]>(() => {
   // 并指向新页 /game/requests（入口由这一行覆盖，不留两个指向同页的行）。
   const daily: MenuItem[] = [
     { key: 'requests', label: '求片反馈', to: '/game/requests' },
+    // 安装应用（2026-11-13）：原先列表下方的 PWA 行改为进入整页
+    // （服务器地址＋客户端下载＋教程），PWA 安装动作在整页内保留
+    { key: 'install', label: '安装应用', to: '/game/install' },
   ]
   const system: MenuItem[] = [{ key: 'theme', label: '外观' }]
   return [

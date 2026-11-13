@@ -187,6 +187,14 @@ const router = createRouter({
             component: () => import('@/views/game/AccountMenuView.vue'),
             meta: { title: '我的', requiresAuth: true },
           },
+          // 安装应用整页（2026-11-13）：服务器地址卡＋6 平台客户端下载＋
+          // 分步教程；入口在「我的 · 日常与帮助」组，PWA 安装动作在页内保留
+          {
+            path: '/game/install',
+            name: 'game-install',
+            component: () => import('@/views/game/InstallAppView.vue'),
+            meta: { title: '安装应用', requiresAuth: true },
+          },
         ]
       : []),
     {

@@ -26,6 +26,7 @@ import {
   CalendarCheck, Coins, Globe, KeyRound, Layers, Mail, MapPin, Network, Palette, RefreshCw, Save,
   ShieldCheck, Send, Sparkles, TicketCheck, UserPlus, Wallet, Lock, Zap,
   DatabaseBackup, History, TriangleAlert, SlidersHorizontal, PlugZap, Rocket, HardDrive, Gauge,
+  Download,
 } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard } from '@/components/ui'
 import { useBreakpoint } from '@/composables/useBreakpoint'
@@ -57,6 +58,10 @@ import {
 import {
   fetchPoolConfig, savePoolConfig, type PoolConfig,
 } from '@/api/pool'
+import {
+  fetchInstallAppConfig, updateInstallAppConfig,
+  type InstallAppConfigResponse, type InstallAppPlatformConfig,
+} from '@/api/installApp'
 import NoticePanel from '@/components/NoticePanel.vue'
 
 const route = useRoute()
@@ -627,7 +632,7 @@ async function load() {
 onMounted(async () => {
   // 深链 /settings?tab=danger 进来时 tab 在挂载前就已是 danger，下面的 watch(tab) 不会触发
   if (tab.value === 'danger') loadDanger()
-  await Promise.all([load(), loadCapabilities(), loadHotlink(), loadItemsDedupCache(), loadTransfer(), loadMountServing(), loadDriveApi(), loadLicense(), loadPool()])
+  await Promise.all([load(), loadCapabilities(), loadHotlink(), loadInstallApp(), loadItemsDedupCache(), loadTransfer(), loadMountServing(), loadDriveApi(), loadLicense(), loadPool()])
   // Batch D 入口收敛：邀请页 / 客户端策略等用 hash 深链跳进来（如 #group-invitation）
   // R40：querySelector 直接塞 hash 会在畸形值时抛 SyntaxError；改用 getElementById
   if (route.hash) {
@@ -682,6 +687,63 @@ async function saveHotlinkCore(): Promise<boolean> {
   }
   try {
     applyHotlink(await updateHotlinkConfig(payload))
+    return true
+  } catch {
+    // 拦截器已提示
+    return false
+  }
+}
+
+/** ==================== 安装应用卡片（独立 endpoint，非通用分组） ==================== */
+/** 用户端「安装应用」页的 6 平台客户端下载链接：页面只读后端下发的生效值
+ * 渲染，链接不在前端写死、也没有代码级默认。某行清空保存 = 删行取消
+ * 配置，未配的平台用户端整行不显示。 */
+const installAppPlatforms = ref<InstallAppPlatformConfig[]>([])
+const installAppUrls = ref<Record<string, string>>({})
+const installAppUrlsOriginal = ref<Record<string, string>>({})
+const installAppLoading = ref(false)
+
+function applyInstallApp(data: InstallAppConfigResponse) {
+  installAppPlatforms.value = data.platforms
+  const urls = Object.fromEntries(data.platforms.map((p) => [p.key, p.url]))
+  installAppUrls.value = urls
+  installAppUrlsOriginal.value = { ...urls }
+}
+
+async function loadInstallApp() {
+  installAppLoading.value = true
+  try {
+    applyInstallApp(await fetchInstallAppConfig())
+  } catch {
+    // 错误提示由 HTTP 拦截器统一处理
+  } finally {
+    installAppLoading.value = false
+  }
+}
+
+const installAppDirty = computed(() =>
+  installAppPlatforms.value.some(
+    (p) => (installAppUrls.value[p.key] ?? '') !== (installAppUrlsOriginal.value[p.key] ?? ''),
+  ),
+)
+
+/** 安装应用保存核心：只提交改过的平台；返回是否成功。 */
+async function saveInstallAppCore(): Promise<boolean> {
+  const changed: Record<string, string> = {}
+  for (const p of installAppPlatforms.value) {
+    const v = (installAppUrls.value[p.key] ?? '').trim()
+    if (v !== (installAppUrlsOriginal.value[p.key] ?? '')) {
+      // 前端先行校验，与后端端点层的 http(s) 形状校验保持一致
+      if (v && !/^https?:\/\/.+/.test(v)) {
+        ElMessage.error(`「${p.label}」的下载链接必须是 http(s) 链接`)
+        return false
+      }
+      changed[p.key] = v
+    }
+  }
+  if (!Object.keys(changed).length) return true
+  try {
+    applyInstallApp(await updateInstallAppConfig(changed))
     return true
   } catch {
     // 拦截器已提示
@@ -1186,6 +1248,7 @@ async function reloadAll() {
   loadCapabilities()
   load()
   loadHotlink()
+  loadInstallApp()
   loadItemsDedupCache()
   loadMountServing()
   loadDriveApi()
@@ -1217,7 +1280,7 @@ const dirtyGroups = computed(() => GROUPS.filter((g) => isDirty(g)))
 const dirtyCount = computed(() =>
   dirtyGroups.value.length + (regDirty.value ? 1 : 0) + (hotlinkDirty.value ? 1 : 0)
   + (itemsDedupCacheDirty.value ? 1 : 0) + (transferDirty.value ? 1 : 0) + (mountServingDirty.value ? 1 : 0)
-  + (driveApiDirty.value ? 1 : 0),
+  + (driveApiDirty.value ? 1 : 0) + (installAppDirty.value ? 1 : 0),
 )
 const anyDirty = computed(() => dirtyCount.value > 0)
 const savingAll = ref(false)
@@ -1309,6 +1372,10 @@ async function saveAll() {
       if (await saveHotlinkCore()) saved += 1
       else failed.push('防盗链')
     }
+    if (installAppDirty.value) {
+      if (await saveInstallAppCore()) saved += 1
+      else failed.push('安装应用')
+    }
     if (itemsDedupCacheDirty.value) {
       if (await saveItemsDedupCacheCore()) saved += 1
       else failed.push('列表去重缓存')
@@ -1353,6 +1420,7 @@ async function discardAll() {
   }
   load()
   loadHotlink()
+  loadInstallApp()
   loadItemsDedupCache()
   loadTransfer()
   loadMountServing()
@@ -1561,6 +1629,16 @@ watch(
               >
                 <ShieldCheck :size="13" />防盗链
                 <span v-if="hotlinkDirty" class="chip-dot" aria-label="有未保存的改动" />
+              </button>
+              <button
+                v-if="sec.id === 'playback'"
+                type="button"
+                class="group-chip"
+                :class="{ 'is-dirty': installAppDirty }"
+                @click="scrollToGroup('install-app')"
+              >
+                <Download :size="13" />安装应用
+                <span v-if="installAppDirty" class="chip-dot" aria-label="有未保存的改动" />
               </button>
               <button
                 v-if="sec.id === 'playback'"
@@ -1938,6 +2016,44 @@ watch(
                     />
                   </div>
                   <span class="field-hint">逗号分隔的域名；只有带 Referer 且主机不在名单里才会被 403。留空 = 不检查（放行所有）</span>
+                </div>
+              </el-form-item>
+            </el-form>
+          </SectionCard>
+
+          <!-- 安装应用：独立卡片（下载链接走独立 endpoint），归「播放与风控」段 -->
+          <SectionCard
+            v-if="sec.id === 'playback'"
+            id="group-install-app"
+            title="安装应用"
+            :icon="Download"
+            description="用户端「安装应用」页里 6 个平台的官方客户端下载链接，改完保存即生效。没有默认链接：留空的平台用户端整行不显示，填上官方链接保存后才出现下载入口。"
+            :tone="installAppDirty ? 'accent' : 'default'"
+            class="group-card"
+          >
+            <template v-if="installAppDirty" #actions>
+              <span class="au-badge au-badge-amber">未保存</span>
+            </template>
+
+            <el-form v-loading="installAppLoading" label-position="top" class="field-form field-grid">
+              <el-form-item
+                v-for="p in installAppPlatforms"
+                :key="p.key"
+                :label="`${p.label}（${p.devices}）`"
+              >
+                <div class="field-stack">
+                  <div class="field-control">
+                    <el-input
+                      v-model="installAppUrls[p.key]"
+                      placeholder="https://…"
+                      style="max-width: 420px"
+                      clearable
+                    />
+                  </div>
+                  <span class="field-hint">
+                    <template v-if="p.configured">已配置，用户端显示该行；清空保存 = 取消配置，用户端整行消失</template>
+                    <template v-else>未配置，用户端不显示该行；填上官方链接保存后即出现下载入口</template>
+                  </span>
                 </div>
               </el-form-item>
             </el-form>
