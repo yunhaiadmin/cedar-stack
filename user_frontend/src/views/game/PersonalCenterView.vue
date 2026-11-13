@@ -177,38 +177,6 @@
         </RouterLink>
       </section>
 
-      <!-- 我的片子（现有真实条目同式归段，不丢功能） -->
-      <section class="ov-sec">
-        <div class="ov-sec__head">
-          <h2 class="ov-sec__title">我的片子</h2>
-        </div>
-        <RouterLink class="ov-trow" to="/game/requests?tab=mine">
-          <span class="ov-trow__name">我的求片</span>
-          <span v-if="requestMeta" class="ov-trow__value">{{ requestMeta }}</span>
-          <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
-        <RouterLink class="ov-trow" to="/favorites">
-          <span class="ov-trow__name">我的收藏</span>
-          <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
-        <button
-          v-if="followVisible"
-          type="button"
-          class="ov-trow ov-trow--btn"
-          :aria-expanded="followOpen"
-          @click="followOpen = !followOpen"
-        >
-          <span class="ov-trow__name">追剧订阅</span>
-          <span v-if="followMeta" class="ov-trow__value">{{ followMeta }}</span>
-          <ChevronRight :size="16" class="ov-row__chev" :class="{ 'ov-row__chev--open': followOpen }" aria-hidden="true" />
-        </button>
-        <!-- 面板常驻挂载（v-show 只控显隐）：挂载即加载并回报 summary，
-             接口 404 时父级把整行藏掉 -->
-        <div v-show="followVisible && followOpen" class="ov-follow-panel">
-          <SeriesFollowsPanel @summary="onFollowSummary" />
-        </div>
-      </section>
-
       <!-- 我的权益 -->
       <section class="ov-sec">
         <div class="ov-sec__head">
@@ -248,8 +216,11 @@
  * 概览（/game/account）：2026-11-13 按 UHDNow 原站用户中心首页 1:1 返工——
  * 页头（品牌＋网页观影胶囊）＋会员卡（斜向粉彩渐变＋细斜纹）＋有效期行
  * ＋大数字区（剩余天数映射）＋双按钮＋Emby/设备/常用平面段；
- * 原页其余真实入口（片子/权益/账号）按同一行式归段；权益段只留「我的会员」、
- * 「成长」整段（等级/成就/馆灵）已按用户 2026-11-13 圈删令摘除。
+ * 权益段只留「我的会员」、「成长」整段（等级/成就/馆灵）已按用户
+ * 2026-11-13 圈删令摘除；自创的「我的片子」归组（想看/我的求片/我的
+ * 收藏/追剧订阅）同日按用户令摘除——友站概览无此组：我的收藏归底坞
+ * 收藏页签、求片归求片页、想看与追剧订阅归条目详情页动作区，追剧订阅
+ * 管理面板归账号设置页。
  * 页面跟随用户外观（浅/深本地变量切换，不再经纸色布局强制浅色）。
  * 所有数字/条目只用现有接口数据：订阅（subscriptionApi）、福利
  * （welfareApi）、账号卡（embyApi.getAccountCard）、设备
@@ -263,10 +234,9 @@ import {
   ChevronRight, HardDrive, Monitor, MonitorPlay, Route, Smartphone, Tv,
   type LucideIcon,
 } from 'lucide-vue-next'
-import SeriesFollowsPanel from '@/components/profile/SeriesFollowsPanel.vue'
 import StatusAlertBar from '@/components/profile/StatusAlertBar.vue'
 import {
-  embyApi, storeRequestsApi, subscriptionApi,
+  embyApi, subscriptionApi,
   type AccountCard, type MySubscription,
 } from '@/api'
 import {
@@ -425,24 +395,6 @@ async function loadDevices() {
   } catch { /* 设备接口失败整段不渲染，不假造设备行 */ }
 }
 
-// ── 我的片子摘要 ──
-const requestMeta = ref('')
-async function loadRequestMeta() {
-  try {
-    const res = await storeRequestsApi.getMine()
-    const active = (res.items || []).filter(i => i.state === 'registered' || i.state === 'seeking').length
-    if (active) requestMeta.value = `${active} 条进行中`
-  } catch { /* 拿不到就不显示 */ }
-}
-
-// ── 追剧订阅（面板回报可见性与订阅数） ──
-const followVisible = ref(false)
-const followMeta = ref('')
-const followOpen = ref(false)
-function onFollowSummary(payload: { visible: boolean; activeCount: number }) {
-  followVisible.value = payload.visible
-  followMeta.value = payload.activeCount > 0 ? `订阅 ${payload.activeCount} 部` : ''
-}
 
 // ── 我的服务 ──
 const myLines = ref<MyExclusiveLine[]>([])
@@ -512,7 +464,7 @@ onMounted(() => {
   }
   void loadOverview()
   void loadDevices()
-  void loadRequestMeta()
+
   void loadDriveMeta()
   void getMyExclusiveLines().then(lines => { myLines.value = lines }).catch(() => {})
   void getAgentMe().then(me => { agentProfile.value = me.is_agent ? me.agent : null }).catch(() => {})
@@ -988,10 +940,6 @@ html:not([data-theme='light']) .ov-card {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ov-follow-panel {
-  padding-top: 10px;
-}
-
 /* 退出登录：独立整宽胶囊（与「我的」页同款） */
 .ov-logout {
   width: 100%;

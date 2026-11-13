@@ -22,6 +22,16 @@
       </div>
     </section>
 
+    <!-- 追剧订阅：管理面板原家在此；概览「我的片子」组摘除后归位回来。
+         门控同绑定组：面板常驻挂载先加载，summary 回报不可见（开关关 404）时整组不显示 -->
+    <section v-show="followGroupVisible" class="set-group">
+      <h2 class="set-gtitle">追剧订阅</h2>
+      <p class="set-gsub">订阅的剧有新集到货，自动转存到你绑定的盘里</p>
+      <div class="set-rows">
+        <SeriesFollowsPanel @summary="onFollowSummary" />
+      </div>
+    </section>
+
     <!-- 展示与隐私 -->
     <section class="set-group">
       <h2 class="set-gtitle">展示与隐私</h2>
@@ -136,8 +146,9 @@
 <script setup lang="ts">
 /**
  * 账号设置页（/game/account/settings）：个人中心重做后设置类功能的家。
- * 五组——安全（改密码 / 我的设备 / 登录记录）、绑定（谷歌盘管理 + 已
- * 下线绑定解绑）、展示与隐私（发现页卡片展示 / 观影碑上榜开关）、通
+ * 六组——安全（改密码 / 我的设备 / 登录记录）、绑定（谷歌盘管理 + 已
+ * 下线绑定解绑）、追剧订阅（订阅列表 / 搜片名订阅 / 分集转存状态，
+ * 面板原家；概览归组摘除后归位）、展示与隐私（发现页卡片展示 / 观影碑上榜开关）、通
  * 知（TG 私聊三类偏好开关）、账号（退出登录）。各块逻辑都在 components/profile/ 的对应组件里（自旧
  * 账号页原样抽出，行为口径不变）；本页只留上榜开关与退出登录。
  * 带 #my-drive 锚点进来（旧深链 / 播放器方案弹窗）时，等绑定组显示后
@@ -153,6 +164,7 @@ import ChangePasswordModal from '@/components/profile/ChangePasswordModal.vue'
 import DevicesEntry from '@/components/profile/DevicesEntry.vue'
 import LoginHistoryEntry from '@/components/profile/LoginHistoryEntry.vue'
 import DriveBindingsPanel from '@/components/profile/DriveBindingsPanel.vue'
+import SeriesFollowsPanel from '@/components/profile/SeriesFollowsPanel.vue'
 import CardPrefsEntry from '@/components/profile/CardPrefsEntry.vue'
 import { panelApi, humanizeError } from '@/composables/usePanelApi'
 import {
@@ -182,6 +194,12 @@ function onDriveLoaded(payload: { visible: boolean }) {
       document.getElementById('my-drive')?.scrollIntoView({ block: 'start' })
     })
   }
+}
+
+// ── 追剧订阅组门控（面板 summary 回报：接口 404＝未启用，整组隐藏） ──
+const followGroupVisible = ref(false)
+function onFollowSummary(payload: { visible: boolean }) {
+  followGroupVisible.value = payload.visible
 }
 
 // ── 绑盘回跳：点播被门禁拦下经引导进来（query 带 bind_return）时，
