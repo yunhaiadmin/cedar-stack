@@ -10,7 +10,13 @@
     <meta name="color-scheme" content="dark">
     <meta name="description" content="Aetrix —— 自建影音媒体服务平台：在线播放、多服订阅与客户端接入。">
     <link rel="icon" href="/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="manifest" href="/manifest.webmanifest">
+    <!-- 保存到桌面（PWA / iOS 主屏幕）：图标与独立窗口形态 -->
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Aetrix">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <!-- 标题衬线字：perf 优化（2026-10-13）移除了 Google Fonts 外链。
          原因：<link rel="stylesheet"> 是渲染阻塞的，fonts.googleapis.com
          在国内访问不稳定，会导致整页白屏等它。

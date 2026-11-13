@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Aetrix">
+  <defs>
+    <linearGradient id="aetrix-rainbow" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#2f8fe0"/>
+      <stop offset="0.14" stop-color="#6f7ad8"/>
+      <stop offset="0.28" stop-color="#c46c90"/>
+      <stop offset="0.42" stop-color="#e8766f"/>
+      <stop offset="0.57" stop-color="#f2a45a"/>
+      <stop offset="0.71" stop-color="#ecd04f"/>
+      <stop offset="0.85" stop-color="#95c77d"/>
+      <stop offset="1" stop-color="#39b3ec"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#101014"/>
+  <g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M84 396 L168 148 L252 396" stroke-width="56"/>
+    <path d="M114 308 L222 308" stroke-width="40"/>
+  </g>
+  <path d="M318 132 L318 224 L404 178 Z" fill="url(#aetrix-rainbow)" stroke="url(#aetrix-rainbow)" stroke-width="16" stroke-linejoin="round"/>
+</svg>
