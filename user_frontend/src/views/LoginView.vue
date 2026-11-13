@@ -1256,10 +1256,10 @@ onMounted(() => {
   margin-left: auto;
 }
 
-/* 主按钮：高 46、圆角约 23，淡彩虹渐变填充＋1px 彩虹边框＋黑字
-   渐变底层＝实测清单第 3 节登录钮中心行采样串（逐停点照抄，色序/位置不变）；
-   采样串是原色光谱，满版平铺会成饱和色带（用户录屏打回的「糖果条纹」），
-   原站定性为「淡」彩虹——上覆白色雾面层把渲染拉回粉彩，修后中心行采样另附对照。 */
+/* 主按钮：高 46、圆角约 23，走全站统一配方（UHD 口径，与 .btn-primary/UhdButton 同一套）：
+   彩虹细边（--uhd-rainbow）+ 玻璃栈（backdrop blur+saturate + 内高光 + 柔影）；
+   缺省（深色面）＝深色毛玻璃底 + 白字，浅色面＝淡彩粉彩底（--uhd-rainbow-soft）+ 黑字（见浅色覆盖）。
+   旧版自带的光谱采样填充（满饱和色带、无玻璃栈）已于 2026-11-13 用户真机对比图打回后废弃。 */
 .submit-btn {
   box-sizing: border-box;
   display: flex;
@@ -1271,13 +1271,17 @@ onMounted(() => {
   flex-shrink: 0;
   margin-top: 0.25rem;
   padding: 0 24px;
-  border: 1px solid transparent;
+  border: 1.5px solid transparent;
   border-radius: 23px;
   background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0.52)) padding-box,
-    linear-gradient(90deg, #fcfcfb 0%, #edebe5 4%, #bc9c00 9%, #b8a207 13%, #b4a80e 17%, #b0a919 22%, #a9aa25 26%, #a0aa30 30%, #95ab3b 35%, #86ab46 39%, #72ac52 43%, #50ac5f 48%, #0fac75 52%, #00ac9b 57%, #00a3c4 61%, #6180de 65%, #b28dd9 70%, #edfafb 74%, #e1f5f7 78%, #d9f2f6 83%, #d2f0f3 87%, #c8eef1 91%, #c1eaef 96%, #b9e7ed 100%) padding-box,
+    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
     var(--uhd-rainbow) border-box;
-  color: #111111;
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 12px 28px -12px rgba(0, 0, 0, 0.55);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
   font: inherit;
   font-size: 15px;
   font-weight: var(--uhd-fw-semibold);
@@ -1293,6 +1297,9 @@ onMounted(() => {
 .submit-btn:disabled {
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.4);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -1502,7 +1509,16 @@ html[data-theme='light'] .strength-track { background: var(--uhd-l-divider); }
 html[data-theme='light'] .strength-text { color: var(--uhd-l-text-3); }
 html[data-theme='light'] .regcode-hint { color: var(--uhd-l-text-3); }
 html[data-theme='light'] .verified-code { background: var(--uhd-l-active); color: var(--uhd-l-text-2); }
-html[data-theme='light'] .submit-btn:disabled { background: var(--uhd-l-input-bg); color: var(--uhd-l-text-3); }
+html[data-theme='light'] .submit-btn {
+  background:
+    var(--uhd-rainbow-soft) padding-box,
+    var(--uhd-rainbow) border-box;
+  color: #111111;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    var(--uhd-shadow-card-l);
+}
+html[data-theme='light'] .submit-btn:disabled { background: var(--uhd-l-input-bg); color: var(--uhd-l-text-3); box-shadow: none; }
 html[data-theme='light'] .forgot-box { background: var(--uhd-l-seg-bg); border-color: var(--uhd-l-border); }
 html[data-theme='light'] .forgot-ok { color: #15803d; }
 html[data-theme='light'] .forgot-hint,
