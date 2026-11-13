@@ -65,6 +65,53 @@ def _xdist_worker_isolation() -> None:
 _xdist_worker_isolation()
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _reset_worker_db_leaks():
+    """worker 级 DB 泄漏复位（#96 冒烟 8 failed 根因：跨文件状态串扰）。
+
+    前序测试文件 teardown 删用户未删绑定、或把池总开关写开不复位时，
+    残留行留在共享 DB 文件里被后跑文件继承：sqlite id 复用会让新建
+    用户撞上孤儿绑定的 user_id（has_active_binding 误判已绑盘）；
+    pool_enabled=True 残留让未绑盘用户被判 kind=pool 放行。
+    每个测试文件开始前与结束后各清一次：
+    ① user_id 无对应 WebUser 的孤儿 UserStorageBinding 行；
+    ② key 以 pool_ 开头的 SystemConfig 行（删行即回代码默认，
+       pool_enabled=False 等，见 pool_gate.POOL_CONFIG_DEFAULTS），
+       并清 integrations.store 的 60s 热缓存。
+    只清这两类泄漏行，不动用户表与其他配置；DB 未建表时静默跳过。
+    """
+    _reset_leaked_worker_state()
+    yield
+    _reset_leaked_worker_state()
+
+
+def _reset_leaked_worker_state() -> None:
+    try:
+        from backend import models
+        from backend.database import SessionLocal
+        from backend.emby_server import models as em
+    except Exception:
+        return
+    db = SessionLocal()
+    try:
+        db.query(em.UserStorageBinding).filter(
+            ~em.UserStorageBinding.user_id.in_(db.query(models.WebUser.id))
+        ).delete(synchronize_session=False)
+        db.query(models.SystemConfig).filter(
+            models.SystemConfig.key.startswith("pool_")
+        ).delete(synchronize_session=False)
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+    try:
+        from backend.integrations import store
+        store.invalidate()
+    except Exception:
+        pass
+
+
 @pytest.fixture()
 def uds_sock_dir():
     """AF_UNIX socket 路径上限约 107 字节：本地门 TMPDIR 很长时，
