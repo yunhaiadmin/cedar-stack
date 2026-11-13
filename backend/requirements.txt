@@ -25,6 +25,9 @@ redis>=5.0.0,<6
 python-jose[cryptography]>=3.3.0,<4
 # 密码哈希直接用 bcrypt（backend/security.py），不经 passlib
 bcrypt>=4.0.0,<5
+# 账号安全三件套（backend/account_security.py）：TOTP 动态验证码 + WebAuthn Passkey
+pyotp>=2.9.0,<3
+webauthn>=2.6.0,<4
 
 # 配置与工具
 pydantic>=2.0.0,<3

@@ -261,7 +261,7 @@ export interface LoginHistoryResponse {
 }
 
 export const authApi = {
-  login: (data: { username: string; password: string; captcha_token?: string }) =>
+  login: (data: { username: string; password: string; captcha_token?: string; totp_code?: string }) =>
     api.post<never, AuthResponse>('/api/user/auth/login', data),
 
   register: (data: { username: string; password: string; email?: string; invitation_code?: string; registration_code?: string; captcha_token?: string }) =>

@@ -14,13 +14,15 @@ import { useUserStore } from '@/stores/user'
 import { useToast } from '@/composables/useToast'
 import { toUserMessage } from '@/utils/toUserMessage'
 import { toastFallback } from '@/constants/toastMessages'
-import { User, Lock, Mail, Eye, EyeOff, Clapperboard, Gift, Send, KeyRound, BadgeCheck, Menu, Sun, Moon } from 'lucide-vue-next'
+import { User, Lock, Mail, Eye, EyeOff, Clapperboard, Gift, Send, KeyRound, BadgeCheck, Menu, Sun, Moon, Fingerprint, ShieldCheck } from 'lucide-vue-next'
 import { useTheme } from '@/composables/useTheme'
 // 人机验证挂件（能力：人机验证）：管理员未开启时该组件自己什么都不渲染
 import CaptchaChallenge from '@/components/ui/CaptchaChallenge.vue'
 // 站名来自「站点与品牌」能力（未配置时用默认值）
 import { branding } from '@/composables/useBranding'
 import { getRegisterConfig, verifyRegisterCode, requestPasswordReset, confirmPasswordReset } from '@/api/user'
+import { loginSecurityApi, type LoginFactors } from '@/api/security'
+import { passkeySupported } from '@/utils/webauthn'
 import { tgApi } from '@/api/tg'
 import { fetchTgBotUsername } from '@/api/site'
 
@@ -59,7 +61,49 @@ const verifyBenefit = ref('')
 
 const mode = ref<'login' | 'register'>('login')
 
-const loginForm = reactive({ username: '', password: '' })
+const loginForm = reactive({ username: '', password: '', totpCode: '' })
+
+// 登录因素探测（账号安全三件套）：用户名失焦时问后端该账号启用了什么——
+// 动态验证码字段仅在已启用时出现、Passkey 按钮仅在已绑定时出现（照 UHDNow 口径）。
+// 探测失败静默（字段不出现，用户输完密码提交后后端会以明确文案提示补码）。
+const loginFactors = ref<LoginFactors>({ totp_required: false, passkey_available: false })
+const passkeyLoginLoading = ref(false)
+const passkeyUsable = computed(() => loginFactors.value.passkey_available && passkeySupported())
+
+async function probeLoginFactors() {
+  const username = loginForm.username.trim()
+  if (!username) {
+    loginFactors.value = { totp_required: false, passkey_available: false }
+    return
+  }
+  try {
+    loginFactors.value = await loginSecurityApi.factors(username)
+  } catch {
+    /* 静默：不因探测失败打扰登录 */
+  }
+}
+
+async function handlePasskeyLogin() {
+  if (passkeyLoginLoading.value) return
+  const username = loginForm.username.trim()
+  if (!username) {
+    error.value = '请先输入用户名，再使用 Passkey 登录'
+    return
+  }
+  error.value = ''
+  passkeyLoginLoading.value = true
+  try {
+    await userStore.loginWithPasskey(username)
+    toast.success('登录成功')
+    router.push(safeRedirect(route.query.redirect))
+  } catch (err: any) {
+    error.value = err?.name === 'NotAllowedError'
+      ? '已取消 Passkey 登录，或设备验证超时'
+      : friendlyError(err, 'Passkey 登录失败，请稍后重试')
+  } finally {
+    passkeyLoginLoading.value = false
+  }
+}
 // 邀请码：此前只有从带参链接进来（?invite=）才拿得到，表单里根本没有输入框，
 // 现在能手填，链接进来自动预填。
 const registerForm = reactive({
@@ -164,11 +208,18 @@ async function handleLogin() {
   error.value = ''
   loginLoading.value = true
   try {
-    await userStore.login(loginForm.username.trim(), loginForm.password, captchaToken.value)
+    await userStore.login(
+      loginForm.username.trim(), loginForm.password, captchaToken.value,
+      loginFactors.value.totp_required ? loginForm.totpCode.trim() : undefined,
+    )
     toast.success('登录成功')
     router.push(safeRedirect(route.query.redirect))
-  } catch (err) {
+  } catch (err: any) {
     error.value = friendlyError(err, '登录失败，请稍后重试')
+    // 没来得及失焦探测就提交、后端说要码时，把验证码字段补出来让他重试
+    if (String(err?.response?.data?.detail || '').includes('动态验证码')) {
+      loginFactors.value.totp_required = true
+    }
     // 令牌是一次性的：失败后换一个新的，否则第二次点击会因「已使用」而失败
     captchaRef.value?.reset()
   } finally {
@@ -517,6 +568,7 @@ onMounted(() => {
               placeholder="输入用户名"
               :aria-invalid="!!error"
               aria-describedby="login-form-error"
+              @blur="probeLoginFactors"
             />
           </div>
         </label>
@@ -538,6 +590,25 @@ onMounted(() => {
               <EyeOff v-if="showLoginPassword" :size="15" aria-hidden="true" />
               <Eye v-else :size="15" aria-hidden="true" />
             </button>
+          </div>
+        </label>
+
+        <!-- 动态验证码：仅在该账号已启用时出现（失焦探测或提交被后端要求时补出） -->
+        <label v-if="loginFactors.totp_required" class="field">
+          <span class="field-label">动态验证码</span>
+          <div class="field-box">
+            <ShieldCheck :size="16" class="field-icon" aria-hidden="true" />
+            <input
+              v-model="loginForm.totpCode"
+              type="text"
+              name="totp-code"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              maxlength="6"
+              placeholder="验证器 App 里的 6 位码"
+              :aria-invalid="!!error"
+              aria-describedby="login-form-error"
+            />
           </div>
         </label>
 
@@ -577,6 +648,15 @@ onMounted(() => {
         <button type="submit" class="submit-btn" :disabled="loginLoading || !loginForm.username.trim() || !loginForm.password">
           {{ loginLoading ? '登录中…' : '登 录' }}
         </button>
+
+        <!-- Passkey 登录：仅在该账号已绑定且浏览器支持时出现 -->
+        <div v-if="passkeyUsable" class="tg-login">
+          <div class="tg-login-divider" aria-hidden="true"><span>或</span></div>
+          <button type="button" class="tg-login-btn" :disabled="passkeyLoginLoading" @click="handlePasskeyLogin">
+            <Fingerprint :size="16" aria-hidden="true" /> {{ passkeyLoginLoading ? '等待设备验证…' : '使用 Passkey 登录' }}
+          </button>
+          <p class="tg-login-hint">用设备指纹 / 面容或安全密钥免密登录</p>
+        </div>
 
         <!-- TG 一键登录入口：跳到站点机器人私聊，菜单首项即免密登录（后端未配置机器人时不渲染） -->
         <div v-if="tgBotUsername" class="tg-login">
