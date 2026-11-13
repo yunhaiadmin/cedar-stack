@@ -445,7 +445,7 @@ import {
 } from '@/api'
 const router = useRouter()
 const toast = useToast()
-// R41：复制走全站唯一切口（照抄 CompanionView 同一模式）
+// R41：复制走全站唯一切口（照抄 结伴页 同一模式）
 const { copy } = useClipboard()
 
 const loading = ref(true)
@@ -562,7 +562,7 @@ async function refreshAccount(quiet = false): Promise<boolean> {
 
 /** R41：裸调 navigator.clipboard?.writeText 在 HTTP 自建部署下是 undefined，
  *  点复制毫无反应还不告诉用户 —— 改用 useClipboard（Clipboard API + execCommand 兜底，
- *  成功失败都给人话反馈；照抄 CompanionView 同一切口） */
+ *  成功失败都给人话反馈；照抄 结伴页 同一切口） */
 let copyTimer: number | undefined
 async function copyText(text: string, field: string) {
   if (!text || text === EMPTY_DASH) {
@@ -937,7 +937,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   window.removeEventListener('keydown', onEsc)
-  // R41：清掉复制提示的定时器（照抄 CompanionView 模式）
+  // R41：清掉复制提示的定时器（照抄 结伴页 模式）
   window.clearTimeout(copyTimer)
   // R41：卸载时释放 body 滚动锁，避免锁死
   document.body.style.overflow = savedBodyOverflow
@@ -1252,7 +1252,7 @@ watch(viewGranted, (granted) => {
 }
 .op-stop-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .op-stop-btn:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
-/* 正在播放标题旁刷新按钮（复用 PigeonView 样式，44px 触摸目标） */
+/* 正在播放标题旁刷新按钮（复用信鸽页样式，44px 触摸目标） */
 .refresh-btn {
   width: 76px; height: 44px; padding: 0 14px; flex-shrink: 0; border-radius: var(--paper-r-lg, 12px);
   border: 1.5px solid var(--line); background: var(--paper-card);

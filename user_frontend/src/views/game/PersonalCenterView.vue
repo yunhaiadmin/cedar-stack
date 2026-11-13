@@ -35,10 +35,10 @@
             <span class="ov-v">{{ points }}</span>
             <span class="ov-l">能量</span>
           </button>
-          <button v-if="vitality" type="button" class="ov-cell" @click="router.push('/game/checkin')">
+          <div v-if="vitality" class="ov-cell">
             <span class="ov-v">{{ vitality.vitality }}/{{ vitality.max }}</span>
             <span class="ov-l">活力 · 今日</span>
-          </button>
+          </div>
         </div>
       </div>
 
@@ -87,8 +87,6 @@
               <PcEntryRow :icon="Mountain" name="等级" :meta="entryLevelText" to="/shop" />
               <PcEntryRow :icon="Trophy" name="成就" :meta="entryAchvText" to="/collector" />
               <PcEntryRow :icon="Sparkles" name="馆灵" :meta="entryPetText" to="/collector" />
-              <PcEntryRow :icon="CalendarCheck" name="连签" :meta="entryStreakText" to="/game/checkin" />
-              <PcEntryRow :icon="Bird" name="信鸽" meta="站内消息都在这里" to="/game/pigeon" />
             </div>
           </section>
 
@@ -163,7 +161,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  Bird, Briefcase, CalendarCheck, Crown, HardDrive, Heart, List, LogOut,
+  Briefcase, Crown, HardDrive, Heart, List, LogOut,
   MonitorPlay, Mountain, Plug, Route, Search, Settings, Sparkles, Star, Trophy, Wallet,
 } from 'lucide-vue-next'
 import PcEntryRow from '@/components/profile/PcEntryRow.vue'
@@ -307,7 +305,6 @@ function onFollowSummary(payload: { visible: boolean; activeCount: number }) {
 const entryLevelText = ref('')
 const entryAchvText = ref('')
 const entryPetText = ref('')
-const entryStreakText = ref('')
 async function loadEntrySummaries() {
   try {
     const m = await memberApi.info()
@@ -377,7 +374,6 @@ async function loadOverview() {
   try {
     const st = await checkinApi.status()
     if (st && typeof st.points === 'number') points.value = st.points
-    if (st && st.streak > 0) entryStreakText.value = `已连报 ${st.streak} 天`
   } catch { /* 摘要拿不到就不显示 */ }
   try {
     vitality.value = await vitalityApi.status()

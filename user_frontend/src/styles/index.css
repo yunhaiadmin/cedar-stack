@@ -242,7 +242,7 @@ body.theme-transition *::after {
    动画
    ======================================== */
 
-/* 动画（脉冲 / 抖动 / 骨架屏扫光：CheckinView、SignalView、骨架屏在用，保留） */
+/* 动画（脉冲 / 抖动 / 骨架屏扫光：SignalView、骨架屏在用，保留） */
 @keyframes pulse {
   0%, 100% {
     opacity: 1;

@@ -109,12 +109,6 @@ const router = createRouter({
           },
           // v4 游戏化第一批：营地设施（需要登录）
           {
-            path: '/game/checkin',
-            name: 'game-checkin',
-            component: () => import('@/views/game/CheckinView.vue'),
-            meta: { title: '每日报到', requiresAuth: true },
-          },
-          {
             path: '/game/calendar',
             name: 'game-calendar',
             component: () => import('@/views/game/CalendarView.vue'),
@@ -134,12 +128,6 @@ const router = createRouter({
             meta: { title: '求救信号', requiresAuth: true },
           },
           {
-            path: '/game/pigeon',
-            name: 'game-pigeon',
-            component: () => import('@/views/game/PigeonView.vue'),
-            meta: { title: '信鸽', requiresAuth: true },
-          },
-          {
             path: '/game/ledger',
             name: 'game-ledger',
             component: () => import('@/views/game/LedgerView.vue'),
@@ -157,25 +145,6 @@ const router = createRouter({
             name: 'game-supply',
             component: () => import('@/views/game/SupplyLogView.vue'),
             meta: { title: '补给记录', requiresAuth: true },
-          },
-          // v4 游戏化第三批：营地设施（需要登录）
-          {
-            path: '/game/companion',
-            name: 'game-companion',
-            component: () => import('@/views/game/CompanionView.vue'),
-            meta: { title: '结伴同行', requiresAuth: true },
-          },
-          {
-            path: '/game/guide',
-            name: 'game-guide',
-            component: () => import('@/views/game/GuideView.vue'),
-            meta: { title: '向导', requiresAuth: true },
-          },
-          {
-            path: '/game/outfit',
-            name: 'game-outfit',
-            component: () => import('@/views/game/OutfitView.vue'),
-            meta: { title: '换装', requiresAuth: true },
           },
           {
             path: '/game/operator',
@@ -240,7 +209,7 @@ const router = createRouter({
       redirect: '/shop',
     },
     // 探险日志 Hub（/game）整页已删（2026-11-13 页面删减）：旧书签/外链落首页，
-    // 不留死链；各设施子页（/game/checkin 等）保留不动，入口走头像菜单/左栏/地图针。
+    // 不留死链；各设施子页保留不动，入口走头像菜单/左栏/地图针。
     {
       path: '/game',
       redirect: '/',
@@ -264,15 +233,6 @@ const router = createRouter({
     {
       path: '/store-requests',
       redirect: (to) => ({ path: '/game/wishlist', query: to.query }),
-    },
-    // 活动提案：独立页 /activities（等级治理用户端补完批）。
-    // 仅公益服开放，页内按等级给门槛提示（Lv.2+ 提案、Lv.5+ 直接发起），低等级不画饼。
-    // 不挂首页/发现页、不占底栏；入口在补给站公益服等级区治理权表。
-    {
-      path: '/activities',
-      name: 'activities',
-      component: () => import('@/views/panel/ActivityProposalView.vue'),
-      meta: { title: '活动提案', requiresAuth: true },
     },
     // 找源：独立页 /source-discovery（找源前端挂接批）。
     // 搜索与确认两个口都要登录，路由守卫先拦未登录；总闸关时页内明示未开启。
@@ -381,7 +341,7 @@ router.beforeEach(async (to) => {
 
 // v4 面板第一版只做纸色浅色：在 v4 路由下强制 light，离开时恢复
 // （v4 视图自带 .v4-scope 纸色变量，这里只处理 html data-theme 与浏览器工具栏色）
-export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/collections', '/server', '/shop', '/want', '/store-requests', '/activities', '/source-discovery', '/game/checkin', '/game/calendar', '/game/wishlist', '/game/signal', '/game/pigeon', '/game/ledger', '/game/supply', '/game/companion', '/game/guide', '/game/outfit', '/game/operator', '/game/account', '/game/account/settings', '/game/account/member'])
+export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/collections', '/server', '/shop', '/want', '/store-requests', '/source-discovery', '/game/calendar', '/game/wishlist', '/game/signal', '/game/ledger', '/game/supply', '/game/operator', '/game/account', '/game/account/settings', '/game/account/member'])
 // 参数路由前缀：合集详情是 /collections/:id，afterEach 拿到的是实例路径
 // （如 /collections/123），静态集合永远匹配不上，须按前缀另判；
 // /collections/ 下目前只有详情这一条路由，前缀不会误伤非 v4 页。
