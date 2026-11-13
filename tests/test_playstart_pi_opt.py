@@ -500,6 +500,15 @@ def _pi_env(monkeypatch):
     monkeypatch.setattr(
         "backend.emby_server.delivery_plan.spawn_ensure_plan",
         lambda *a, **k: None)
+    # 决策留痕（goal-38 审计）走独立会话插 transfer_decision_rounds：
+    # 池门禁建单后请求主会话的写事务未提交，独立会话的插行在
+    # sqlite 下要等满一整个 busy timeout（30 秒）才静默放弃——
+    # 实测定格 copy_gate≈33.5 秒（30 秒锁等＋3 秒短等）。留痕
+    # 不是本文件的被测对象（自有审计用例覆盖），且生产 PG 无
+    # 此文件锁问题，故在本文件里关掉留痕落库。
+    monkeypatch.setattr(
+        "backend.emby_server.transfer_decisions.note_decision",
+        lambda *a, **k: None)
     yield
 
 
