@@ -3,11 +3,11 @@
     <div class="fv-wrap">
       <p class="fv-eyebrow">♥ 我的收藏</p>
       <h1 class="fv-h1">收藏</h1>
-      <!-- 页签：剧集 / 电影（激活白胶囊；深色转深灰 + 白字，随令牌走） -->
+      <!-- 页签：剧集 / 电影 / 演职人员（存档第 11 节；激活白胶囊；深色转深灰 + 白字，随令牌走） -->
       <div class="fv-tabs" role="group" aria-label="收藏类型">
-        <button type="button" class="fv-tab" :class="{ 'fv-tab--on': tab === 'all' }" @click="tab = 'all'">全部 {{ items.length }}</button>
-        <button type="button" class="fv-tab" :class="{ 'fv-tab--on': tab === 'series' }" @click="tab = 'series'">剧集 {{ seriesCount }}</button>
-        <button type="button" class="fv-tab" :class="{ 'fv-tab--on': tab === 'movie' }" @click="tab = 'movie'">电影 {{ movieCount }}</button>
+        <button type="button" class="fv-tab" :class="{ 'fv-tab--on': tab === 'series' }" @click="pickTab('series')">剧集 {{ seriesCount }}</button>
+        <button type="button" class="fv-tab" :class="{ 'fv-tab--on': tab === 'movie' }" @click="pickTab('movie')">电影 {{ movieCount }}</button>
+        <button type="button" class="fv-tab" :class="{ 'fv-tab--on': tab === 'people' }" @click="pickTab('people')">演职人员 {{ peopleCount }}</button>
       </div>
 
       <div v-if="error" class="fv-error" role="alert">
@@ -19,8 +19,11 @@
         <div v-for="i in 7" :key="i" class="fv-skel__poster"><span class="fv-skel__logo">A</span></div>
       </div>
       <!-- 空态虚线框：高约 230（存档第 11 节） -->
+      <div v-else-if="tab === 'people'" class="fv-empty">
+        还没有收藏的演职人员
+      </div>
       <div v-else-if="items.length === 0" class="fv-empty">
-        还没有收藏的{{ tab === 'movie' ? '电影' : tab === 'series' ? '剧集' : '片子' }} —— 在播放器里给喜欢的片子标个星，就会到这里来
+        还没有收藏的{{ tab === 'movie' ? '电影' : '剧集' }} —— 在播放器里给喜欢的片子标个星，就会到这里来
       </div>
       <div v-else-if="filteredItems.length === 0" class="fv-empty">
         这个分类下还没有收藏
@@ -112,7 +115,7 @@ function metaLine(m: PortalMediaItem): string {
   const parts: string[] = []
   parts.push(m.type === 'movie' ? '电影' : m.type === 'series' ? '剧集' : m.type === 'season' ? '季' : m.type === 'episode' ? '集' : m.type)
   if (m.year) parts.push(String(m.year))
-  if (m.rating) parts.push(`★ ${m.rating.toFixed(1)}`)
+  if (m.rating) parts.push(m.rating.toFixed(1))
   return parts.join(' · ')
 }
 
@@ -122,6 +125,10 @@ async function load() {
   try {
     const data = await embyApi.getFavorites()
     items.value = data.items || []
+    // 默认落在剧集页签；用户未手动切过且只有电影收藏时落到电影，避免先见空态
+    if (!tabPicked.value && seriesCount.value === 0 && movieCount.value > 0) {
+      tab.value = 'movie'
+    }
   } catch (err) {
     error.value = errText(err)
   } finally {
@@ -149,12 +156,22 @@ async function toggle(m: PortalMediaItem) {
   }
 }
 
-/* 批 3 片库面页签：全部 / 剧集 / 电影（计数随收藏数据走，客户端过滤，不动接口） */
-const tab = ref<'all' | 'series' | 'movie'>('all')
+/* 片库面页签：剧集 / 电影 / 演职人员（存档第 11 节，计数嵌页签、激活白胶囊，无「全部」）。
+   剧集/电影计数随收藏数据走，客户端过滤，不动接口；
+   演职人员收藏的数据通路（人员收藏能力）由在飞的 favorites-people-tab 单建设，
+   本页先立页签结构与空态，计数恒 0、暂无数据接线，待其落地后接。 */
+type FavTab = 'series' | 'movie' | 'people'
+const tab = ref<FavTab>('series')
+const tabPicked = ref(false)
+function pickTab(t: FavTab) {
+  tabPicked.value = true
+  tab.value = t
+}
 const seriesCount = computed(() => items.value.filter((x) => x.type === 'series').length)
 const movieCount = computed(() => items.value.filter((x) => x.type === 'movie').length)
+const peopleCount = computed(() => 0)
 const filteredItems = computed(() =>
-  tab.value === 'all' ? items.value : items.value.filter((x) => x.type === tab.value),
+  tab.value === 'people' ? [] : items.value.filter((x) => x.type === tab.value),
 )
 
 onMounted(load)

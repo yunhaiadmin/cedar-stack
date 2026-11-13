@@ -42,8 +42,8 @@ watch(
     </span>
     <span class="sp-title" :title="title">{{ title }}</span>
     <span class="sp-meta">
-      <template v-if="meta">{{ meta }}</template>
-      <b v-if="rating" class="sp-rating">{{ meta ? ' · ' : '' }}★ {{ rating.toFixed(1) }}</b>
+      <span v-if="meta" class="sp-meta__text">{{ meta }}</span>
+      <b v-if="rating" class="sp-rating">{{ meta ? ' · ' : '' }}{{ rating.toFixed(1) }}</b>
     </span>
   </RouterLink>
 </template>
@@ -90,13 +90,22 @@ watch(
   text-overflow: ellipsis;
 }
 .sp-meta {
-  display: block;
+  display: flex;
+  align-items: baseline;
   margin-top: 4px;
   font-size: 14px;
   color: var(--uhd-s-text-2);
   white-space: nowrap;
   overflow: hidden;
+}
+/* 左段（年份·类型·时长）可截断，评分段永不截断——窄卡上评分必须在场（友站手机卡口径） */
+.sp-meta__text {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
+}
+.sp-rating {
+  flex: none;
 }
 .sp-rating {
   color: var(--uhd-s-text);

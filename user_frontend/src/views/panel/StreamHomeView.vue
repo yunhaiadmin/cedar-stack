@@ -133,6 +133,7 @@ async function load() {
           meta: metaOf(it),
           rating: it.CommunityRating ?? null,
           backdrop: backdropUrl(it, 1600) || posterUrl(it, 1080),
+          poster: posterUrl(it, 1080),
           overview: it.Overview || '',
         }))
     }
@@ -400,6 +401,9 @@ onMounted(() => {
   padding: 0 clamp(16px, 5vw, 96px) 8px;
   overflow-x: auto;
   scrollbar-width: none;
+  /* 两端渐隐：与海报横滑行同口径（mask 淡出到页面底色） */
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 36px, #000 calc(100% - 36px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 36px, #000 calc(100% - 36px), transparent 100%);
 }
 .sl-continue__track::-webkit-scrollbar {
   display: none;

@@ -103,6 +103,10 @@ function nextGroup() {
   overscroll-behavior-x: contain;
   scroll-snap-type: x proximity;
   scrollbar-width: none;
+  /* 两端渐隐（友站观感）：内容滑到行两端淡出到页面底色，不是硬切。
+     用 mask 淡出到透明——底色随主题走，浅色淡到白、深色淡到近黑，不留白边 */
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 36px, #000 calc(100% - 36px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 36px, #000 calc(100% - 36px), transparent 100%);
 }
 .sr-track::-webkit-scrollbar {
   display: none;
@@ -116,6 +120,8 @@ function nextGroup() {
   }
   .sr-track {
     gap: 14px;
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 22px, #000 calc(100% - 22px), transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0, #000 22px, #000 calc(100% - 22px), transparent 100%);
   }
   .sr-next {
     display: none;

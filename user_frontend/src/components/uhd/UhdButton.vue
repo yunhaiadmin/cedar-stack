@@ -3,7 +3,7 @@
  * UhdButton —— 胶囊按钮（说明书 2.2）
  * 主按钮：彩虹渐变边框（白名单位置）+ 淡彩渐变底（浅色面）/ 深色毛玻璃底（深色面）；
  * 次按钮：白底 + 1px 灰边框（深色面为透明底 + 深色边框 + 白字）；
- * 危险：红色文字按钮，不做填充；播放：白胶囊 + ▶。
+ * 危险：红色文字按钮，不做填充；播放：白胶囊 + 实心三角 SVG 图标。
  * 只依赖 --uhd-* 令牌。
  */
 withDefaults(
@@ -27,7 +27,10 @@ withDefaults(
     :class="[`uhd-btn--${variant}`, `uhd-btn--${size}`, { 'uhd-btn--dark': dark, 'uhd-btn--block': block }]"
     :disabled="disabled"
   >
-    <span v-if="variant === 'play'" class="uhd-btn__play-icon" aria-hidden="true">▶</span>
+    <!-- 实心三角 SVG（currentColor）：▶ 字符在移动端会被渲染成蓝色 emoji 方块，已换掉 -->
+    <svg v-if="variant === 'play'" class="uhd-btn__play-icon" width="11" height="12" viewBox="0 0 12 12" aria-hidden="true">
+      <path d="M2 1.3v9.4c0 .8.9 1.3 1.6.9l7.2-4.7c.6-.4.6-1.4 0-1.8L3.6.4C2.9-.1 2 .5 2 1.3Z" fill="currentColor" />
+    </svg>
     <slot />
   </button>
 </template>
@@ -107,8 +110,8 @@ withDefaults(
   background: var(--uhd-d-text);
 }
 .uhd-btn__play-icon {
-  font-size: 11px;
-  line-height: 1;
+  display: block;
+  flex: none;
 }
 /* 禁用：灰字 + 低透明度、无悬停反馈（彩虹退场） */
 .uhd-btn:disabled {
