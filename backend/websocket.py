@@ -292,6 +292,19 @@ def authenticate_ws_token_with_snapshot(raw: Optional[str]):
     return _authenticate_ws(raw)
 
 
+async def _watch_together_disconnect(websocket: WebSocket, user_id: int):
+    """一起看断开清理：连接没了人就离房（房主转让/房间回收在 hub 内）。
+
+    懒导入防循环；清理本身失败只记日志，不许反噬断开主流程。
+    """
+    try:
+        from backend.watch_together import watch_together_hub
+
+        await watch_together_hub.handle_disconnect(websocket, user_id)
+    except Exception:  # noqa: BLE001
+        logger.debug("一起看断开清理失败", exc_info=True)
+
+
 @websocket_router.websocket("/ws/{user_id}")
 async def websocket_endpoint(
     websocket: WebSocket,
@@ -331,7 +344,15 @@ async def websocket_endpoint(
             data = await websocket.receive_json()
             action = data.get("action")
 
-            if action == "subscribe":
+            if isinstance(action, str) and action.startswith("wt."):
+                # 一起看：会话/同步逻辑在 backend/watch_together.py，
+                # 复用本连接与鉴权，不新开第二套 WS。处理函数内部
+                # 吞掉业务错误回 wt.error，不会把通知长连拖断。
+                from backend.watch_together import watch_together_hub
+
+                await watch_together_hub.handle_message(websocket, user_id, data)
+
+            elif action == "subscribe":
                 # 订阅频道
                 channels = data.get("channels", [])
                 await manager.subscribe(user_id, channels)
@@ -360,9 +381,11 @@ async def websocket_endpoint(
 
     except WebSocketDisconnect:
         manager.disconnect(websocket, user_id)
+        await _watch_together_disconnect(websocket, user_id)
     except Exception as e:
         logger.error(f"WebSocket 错误: {e}")
         manager.disconnect(websocket, user_id)
+        await _watch_together_disconnect(websocket, user_id)
 
 
 # ==================== REST API 用于发送通知 ====================

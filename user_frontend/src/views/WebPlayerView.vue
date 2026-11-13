@@ -29,9 +29,15 @@
         </button>
         <span class="wp-top-title">{{ displayTitle }}</span>
       </div>
-      <button type="button" class="wp-together" @click="onTogether">
+      <button
+        type="button"
+        class="wp-together"
+        :class="{ on: wtInRoom }"
+        @click="onTogether"
+      >
         <Users :size="15" />
         <span>一起看</span>
+        <span v-if="wtInRoom" class="wp-together-count">{{ wtMembers.length }} 人</span>
       </button>
     </header>
 
@@ -193,6 +199,23 @@
       @update:delay-ms="onSubtitleDelay"
       @update:font-size="subtitleFontSize = $event"
     />
+    <PlayerTogetherSheet
+      :open="togetherOpen"
+      :in-room="wtInRoom"
+      :is-host="wtIsHost"
+      :code="wtCode"
+      :invite-link="wtInviteLink"
+      :members="wtMembers"
+      :self-id="selfUserId"
+      :busy="wtBusy"
+      :error="wtError"
+      :join-code="wtJoinCode"
+      @update:open="togetherOpen = $event"
+      @create="wt.createRoom(itemId)"
+      @join="wt.joinRoom(wtJoinCode)"
+      @leave="onWtLeave"
+      @dissolve="onWtDissolve"
+    />
     <PlayerSettingsSheet
       :open="settingsOpen"
       :sources="sourceOptions"
@@ -254,6 +277,12 @@ import PlayerSettingsSheet, {
   type InfoLine,
   type SourceOption,
 } from '@/components/player/PlayerSettingsSheet.vue'
+import PlayerTogetherSheet from '@/components/player/PlayerTogetherSheet.vue'
+import {
+  useWatchTogether,
+  type WtSnapshot,
+} from '@/composables/useWatchTogether'
+import { useUserStore } from '@/stores/user'
 
 type Phase = 'loading' | 'idle' | 'preparing' | 'playing' | 'unsupported' | 'error'
 
@@ -309,6 +338,7 @@ const seekPreview = ref(0)
 const danmakuOpen = ref(false)
 const subtitleOpen = ref(false)
 const settingsOpen = ref(false)
+const togetherOpen = ref(false)
 const primarySub = ref<number | null>(null)
 const secondarySub = ref<number | null>(null)
 const subtitleDelayMs = ref(0)
@@ -324,6 +354,147 @@ let lastOpenAt = 0
 let startedFromResume = false
 let reportedPlayingFor = ''
 let lastVideoErrorAt = 0
+
+// ---------- 一起看 ----------
+// 通道只传控制事件与进度，取流仍走本页自己的 PlaybackInfo（各自
+// 账号的签名链路），见 composables/useWatchTogether.ts 的红线说明。
+const userStore = useUserStore()
+const selfUserId = computed(() => userStore.user?.id ?? 0)
+const wtJoinCode = computed(() =>
+  String(route.query.wt || '').trim().toUpperCase(),
+)
+let wtSuppressUntil = 0
+let wtPendingAlign: { position: number; playing: boolean; at: number } | null =
+  null
+let wtStateTimer: number | undefined
+
+const wt = useWatchTogether({
+  onCreated: () => {
+    showToast('一起看已创建，把链接发给朋友')
+  },
+  onJoined: (snap: WtSnapshot) => {
+    wtPendingAlign = {
+      position: snap.state.position,
+      playing: snap.state.playing,
+      at: Date.now(),
+    }
+    togetherOpen.value = false
+    showToast('已加入一起看，正在对齐进度')
+    if (phase.value === 'idle') void start(false)
+    else if (phase.value === 'playing') wtConsumeAlign()
+  },
+  onEvent: (e) => {
+    if (phase.value !== 'playing' && phase.value !== 'preparing') return
+    const v = videoEl.value
+    if (!v) return
+    wtSuppressUntil = Date.now() + 900
+    const who = e.from_username || '同伴'
+    if (e.event === 'seek') {
+      wtSafeSeek(e.position)
+      showToast(`${who} 跳到了 ${formatClock(e.position)}`)
+    } else if (e.event === 'play') {
+      if (Math.abs((v.currentTime || 0) - e.position) > 2.5) {
+        wtSafeSeek(e.position)
+      }
+      void v.play().catch(() => {})
+      showToast(`${who} 继续播放`)
+    } else if (e.event === 'pause') {
+      v.pause()
+      showToast(`${who} 暂停了`)
+    }
+  },
+  onSync: (s) => {
+    if (phase.value !== 'playing') return
+    const v = videoEl.value
+    if (!v) return
+    if (Math.abs((v.currentTime || 0) - s.position) > 2.5) {
+      wtSuppressUntil = Date.now() + 900
+      wtSafeSeek(s.position)
+    }
+    if (s.playing && v.paused) {
+      wtSuppressUntil = Date.now() + 900
+      void v.play().catch(() => {})
+    } else if (!s.playing && !v.paused) {
+      wtSuppressUntil = Date.now() + 900
+      v.pause()
+    }
+  },
+  onMemberJoined: (m) => {
+    showToast(`${m.username || '朋友'} 加入了一起看`)
+  },
+  onMemberLeft: () => {
+    showToast('有成员退出了一起看')
+  },
+  onHostChanged: (hostId) => {
+    if (hostId === selfUserId.value) showToast('房主转给了你')
+  },
+  onEnded: (reason) => {
+    wtPendingAlign = null
+    showToast(reason === 'disconnected' ? '一起看连接断了' : '一起看已结束')
+  },
+  onError: (message) => {
+    showToast(message)
+  },
+})
+const {
+  inRoom: wtInRoom,
+  isHost: wtIsHost,
+  code: wtCode,
+  members: wtMembers,
+  busy: wtBusy,
+  lastError: wtError,
+} = wt
+
+const wtInviteLink = computed(() =>
+  wtCode.value
+    ? `${window.location.origin}/play/${itemId.value}?wt=${wtCode.value}`
+    : '',
+)
+
+function wtSafeSeek(pos: number): void {
+  const v = videoEl.value
+  if (!v || !Number.isFinite(pos)) return
+  try {
+    v.currentTime = Math.max(0, pos)
+  } catch {
+    /* 不支持定位的流忽略 */
+  }
+}
+
+function wtConsumeAlign(): void {
+  const pending = wtPendingAlign
+  if (!pending) return
+  wtPendingAlign = null
+  const v = videoEl.value
+  if (!v) return
+  const elapsed = pending.playing ? (Date.now() - pending.at) / 1000 : 0
+  wtSuppressUntil = Date.now() + 900
+  wtSafeSeek(pending.position + elapsed)
+  if (!pending.playing) v.pause()
+}
+
+/** 本地控制动作往房间广播；刚应用完远端事件的抑制窗内不回声 */
+function wtBroadcast(kind: 'play' | 'pause' | 'seek'): void {
+  if (!wtInRoom.value) return
+  if (Date.now() < wtSuppressUntil) return
+  const v = videoEl.value
+  wt.sendEvent(
+    kind,
+    v?.currentTime || currentTime.value,
+    kind === 'seek' ? !isPaused.value : undefined,
+  )
+}
+
+function onWtLeave(): void {
+  wt.leave()
+  togetherOpen.value = false
+}
+
+function onWtDissolve(): void {
+  wt.dissolve()
+  togetherOpen.value = false
+  showToast('一起看已结束')
+}
 
 // ---------- 基础派生 ----------
 
@@ -620,7 +791,17 @@ async function start(restart: boolean): Promise<void> {
     }
     currentSource.value = source
     prepStepIndex.value = 1
-    await openSource(source, startedFromResume ? resumeSeconds.value : 0)
+    // 一起看晚入者优先对齐房间进度（按快照时间戳外推），盖过本地续播点
+    const wtStartAt = wtPendingAlign
+      ? wtPendingAlign.position +
+        (wtPendingAlign.playing
+          ? (Date.now() - wtPendingAlign.at) / 1000
+          : 0)
+      : null
+    await openSource(
+      source,
+      wtStartAt ?? (startedFromResume ? resumeSeconds.value : 0),
+    )
   } catch (e) {
     noticeText.value = errorText(e, '取播放地址失败，稍后再试。')
     phase.value = 'error'
@@ -709,6 +890,7 @@ function onCanPlay(): void {
     phase.value = 'playing'
     pokeControls()
   }
+  wtConsumeAlign()
 }
 function onTimeUpdate(): void {
   const v = videoEl.value
@@ -718,10 +900,12 @@ function onTimeUpdate(): void {
 function onPlayEvent(): void {
   isPaused.value = false
   reportStartIfNeeded()
+  wtBroadcast('play')
 }
 function onPauseEvent(): void {
   isPaused.value = true
   sendProgress(true)
+  wtBroadcast('pause')
 }
 function onEnded(): void {
   sendStopped()
@@ -818,6 +1002,7 @@ function onSeekCommit(e: Event): void {
   currentTime.value = target
   sendProgress(isPaused.value)
   pokeControls()
+  wtBroadcast('seek')
 }
 function toggleLock(): void {
   locked.value = !locked.value
@@ -841,7 +1026,7 @@ function persistDanmaku(): void {
   }
 }
 function onTogether(): void {
-  showToast('一起看还没上线，这个按钮先占个位')
+  togetherOpen.value = true
 }
 function goBack(): void {
   sendStopped()
@@ -1027,8 +1212,10 @@ function onKeydown(e: KeyboardEvent): void {
     togglePlay()
   } else if (e.key === 'ArrowRight') {
     v.currentTime = Math.min((v.duration || 0), v.currentTime + 10)
+    wtBroadcast('seek')
   } else if (e.key === 'ArrowLeft') {
     v.currentTime = Math.max(0, v.currentTime - 10)
+    wtBroadcast('seek')
   }
 }
 function onVisibility(): void {
@@ -1039,6 +1226,10 @@ watch(
   () => route.params.id,
   (id) => {
     if (id) {
+      if (wtInRoom.value) {
+        wt.leave()
+        showToast('已切换条目，退出了一起看')
+      }
       reportedPlayingFor = ''
       window.clearInterval(progressTimer)
       void loadItem(String(id))
@@ -1054,7 +1245,16 @@ onMounted(() => {
   void loadItem(itemId.value).then(() => {
     const dft = item.value?.MediaSources?.[0]?.DefaultSubtitleStreamIndex
     if (dft != null && primarySub.value === null) primarySub.value = dft
+    // 邀请链接带 ?wt=房间码 打开时自动入房（服务端逐人过播放门禁）
+    if (wtJoinCode.value) wt.joinRoom(wtJoinCode.value)
   })
+  // 房主锚点：每 10 秒把当前进度/播放态对齐给全房，成员据此纠偏
+  wtStateTimer = window.setInterval(() => {
+    const v = videoEl.value
+    if (wtInRoom.value && wtIsHost.value && phase.value === 'playing' && v) {
+      wt.sendState(v.currentTime || 0, !v.paused, v.playbackRate || 1)
+    }
+  }, 10000)
 })
 onUnmounted(() => {
   document.body.style.overflow = ''
@@ -1064,6 +1264,8 @@ onUnmounted(() => {
   window.clearTimeout(probeTimer)
   window.clearTimeout(probeTimer2)
   window.clearInterval(progressTimer)
+  window.clearInterval(wtStateTimer)
+  wt.dispose()
   sendStopped()
   subBlobUrls.forEach((u) => URL.revokeObjectURL(u))
 })
@@ -1160,6 +1362,13 @@ onUnmounted(() => {
   color: #fff;
   font-size: 14px;
   cursor: pointer;
+}
+.wp-together.on {
+  border-color: rgba(125, 211, 252, 0.55);
+}
+.wp-together-count {
+  font-size: 12px;
+  color: #7dd3fc;
 }
 
 .wp-center {
