@@ -221,162 +221,16 @@ def test_user_tastes_reads_playback_sessions(db, user):
     assert tastes["taste_doc"]["count"] == 5
 
 
-def test_letter_and_collector_read_playback_sessions(db, user):
-    """换源回归：/letter 昨日观影时长与条目、/collector 累计小时，
-    都从 emby_playback_sessions 的 position_ticks 来。"""
+def test_collector_reads_playback_sessions(db, user):
+    """换源回归：/collector 累计小时从 emby_playback_sessions 的
+    position_ticks 来。"""
     pa.seed_achievement_defs(db)
-    # /letter 用北京时间划"昨日"窗口（panel.py::_now_local_naive），夹具必须同
-    # 口径：昨日 12:00（北京）→ 存储帧。之前用 datetime.now()（UTC naive），
-    # CI 落在 16:00–24:00 UTC 时必红。
     start = _bj_to_storage(12, 0, days_ago=1)
     _mk_session(db, user, "昨日电影", start, 7200)
     app = _make_app(db, user)
     client = TestClient(app)
-    letter = client.get("/api/panel/letter").json()["data"]
-    assert letter["watch_count"] == 1
-    assert letter["watched"] == ["昨日电影"]
-    assert letter["watch_duration"] == "2小时0分"
     coll = client.get("/api/panel/collector").json()["data"]
     assert coll["watch_hours"] == 2.0
-
-
-_LETTER_STAT_KEYS = (
-    "date", "watch_duration", "watch_count", "watched", "taste_shift", "streak",
-)
-
-
-def test_letter_copy_from_world_letter(db, user):
-    """昨日来信附言 / 今日推荐走 world_letter；个人统计不随文案配置消失。
-
-    空配置回落改前硬编码附言，推荐为空串。关掉 letter_enabled 后统计仍在，
-    两段文案强制为空（不回落默认附言）。/home 的 letter 区块同一口径。
-    """
-    from backend import integrations
-    from backend.integrations import store, world_letter
-
-    start = _bj_to_storage(12, 0, days_ago=1)
-    _mk_session(db, user, "昨日电影", start, 7200)
-    app = _make_app(db, user)
-    client = TestClient(app)
-
-    letter = client.get("/api/panel/letter").json()["data"]
-    assert letter["teaser"] == world_letter.FALLBACK_TEASER
-    assert letter["recommendation"] == ""
-    for key in _LETTER_STAT_KEYS:
-        assert key in letter
-    assert letter["watch_count"] == 1
-    assert letter["watched"] == ["昨日电影"]
-    assert "enabled" not in letter
-    # 未填配置时卡片默认开着：无必填字段，letter_enabled 缺省 true
-    cards = {c["slug"]: c for c in integrations.list_capabilities(db)}
-    card = cards["world_letter"]
-    assert card["group"] == "探险世界"
-    assert card["enabled"] is True and card["configured"] is True
-    assert card["fields"]["letter_enabled"] == "true"
-    assert card["fields"]["letter_teaser"] == ""
-    assert card["fields"]["letter_recommendation"] == ""
-
-    integrations.save_capability(db, "world_letter", {
-        "letter_enabled": True,
-        "letter_teaser": "  附言已配置  ",
-        "letter_recommendation": "  今日看《测试片》  ",
-    })
-    letter = client.get("/api/panel/letter").json()["data"]
-    assert letter["teaser"] == "附言已配置"
-    assert letter["recommendation"] == "今日看《测试片》"
-    assert letter["watch_duration"] == "2小时0分"
-    assert "streak" in letter and "taste_shift" in letter and "date" in letter
-    home = client.get("/api/panel/home").json()["data"]["letter"]
-    assert home["teaser"] == "附言已配置"
-    assert home["recommendation"] == "今日看《测试片》"
-    assert home["watched"] == ["昨日电影"]
-
-    integrations.save_capability(db, "world_letter", {
-        "letter_teaser": "附" * (world_letter.MAX_TEASER_LEN + 50),
-        "letter_recommendation": "荐" * (world_letter.MAX_RECOMMENDATION_LEN + 100),
-    })
-    letter = client.get("/api/panel/letter").json()["data"]
-    assert letter["teaser"] == "附" * world_letter.MAX_TEASER_LEN
-    assert len(letter["teaser"]) == 200
-    assert letter["recommendation"] == "荐" * world_letter.MAX_RECOMMENDATION_LEN
-    assert len(letter["recommendation"]) == 500
-    assert letter["watch_count"] == 1
-
-    # 空白附言 / 空白推荐：附言回落，推荐隐藏
-    store.write_values(db, {
-        "letter_enabled": "true",
-        "letter_teaser": "   ",
-        "letter_recommendation": " \n ",
-    })
-    db.commit()
-    info = world_letter.public_info(db)
-    assert info["enabled"] is True
-    assert info["teaser"] == world_letter.FALLBACK_TEASER
-    assert info["recommendation"] == ""
-    letter = client.get("/api/panel/letter").json()["data"]
-    assert letter["teaser"] == world_letter.FALLBACK_TEASER
-    assert letter["recommendation"] == ""
-
-    # 关闭开关：统计照旧，文案强制空，不回落默认附言
-    saved = integrations.save_capability(db, "world_letter", {
-        "letter_enabled": False,
-        "letter_teaser": "不该出现的附言",
-        "letter_recommendation": "不该出现的推荐",
-    })
-    assert saved["values"]["letter_enabled"] == "false"
-    info = world_letter.public_info(db)
-    assert info == {"teaser": "", "recommendation": "", "enabled": False}
-    letter = client.get("/api/panel/letter").json()["data"]
-    assert letter["teaser"] == ""
-    assert letter["recommendation"] == ""
-    assert letter["watch_count"] == 1
-    assert letter["watched"] == ["昨日电影"]
-    assert letter["watch_duration"] == "2小时0分"
-    for key in _LETTER_STAT_KEYS:
-        assert key in letter
-    home = client.get("/api/panel/home").json()["data"]["letter"]
-    assert home is not None
-    assert home["teaser"] == ""
-    assert home["recommendation"] == ""
-    assert home["watch_count"] == 1
-    assert home["watched"] == ["昨日电影"]
-
-
-# ==================== 3. 盲盒拆封幂等 ====================
-
-def test_unseal_idempotent(db, user):
-    pa.seed_achievement_defs(db)
-    # 造一个 emby 条目
-    try:
-        from backend.emby_server import models as em
-        item = em.MediaItem(
-            guid="test-guid-1", library_id=1, item_type="movie",
-            name="测试电影", date_added=datetime.now(),
-        )
-        db.add(item)
-        db.commit()
-        db.refresh(item)
-        item_id = item.id
-    except Exception:
-        pytest.skip("EmbyItem 模型不可用")
-
-    app = _make_app(db, user)
-    client = TestClient(app)
-    r1 = client.post(f"/api/panel/parcels/{item_id}/unseal")
-    assert r1.status_code == 200
-    d1 = r1.json()
-    assert d1["code"] == 0
-    assert d1["data"]["unsealed"] is True
-    assert d1["data"]["already"] is False
-    assert d1["data"]["item"]["deep_link"] == ""
-    assert "index.html" not in d1["data"]["item"]["deep_link"]
-
-    r2 = client.post(f"/api/panel/parcels/{item_id}/unseal")
-    assert r2.json()["data"]["already"] is True
-
-    # 404
-    r3 = client.post("/api/panel/parcels/99999999/unseal")
-    assert r3.status_code == 404
 
 
 # ==================== 5. 特性开关 ====================
@@ -396,8 +250,7 @@ def test_envelope_format(db, user):
     pa.seed_achievement_defs(db)
     app = _make_app(db, user)
     client = TestClient(app)
-    for path in ["/api/panel/today", "/api/panel/parcels", "/api/panel/pulse",
-                 "/api/panel/letter", "/api/panel/home",
+    for path in ["/api/panel/today", "/api/panel/pulse", "/api/panel/home",
                  "/api/panel/collector", "/api/panel/server"]:
         r = client.get(path)
         assert r.status_code == 200, path
@@ -407,8 +260,8 @@ def test_envelope_format(db, user):
         assert "data" in body, path
 
 
-def test_home_returns_all_four_sections(db, user):
-    """GET /api/panel/home 一次返回 today/parcels/pulse/letter 四个区块（perf 2026-10-13）。"""
+def test_home_returns_all_sections(db, user):
+    """GET /api/panel/home 一次返回 today/pulse 两个区块（perf 2026-10-13）。"""
     pa.seed_achievement_defs(db)
     app = _make_app(db, user)
     client = TestClient(app)
@@ -417,8 +270,7 @@ def test_home_returns_all_four_sections(db, user):
     body = r.json()
     assert body["code"] == 0
     data = body["data"]
-    for key in ["today", "parcels", "pulse", "letter"]:
-        assert key in data, key
+    assert set(data.keys()) == {"today", "pulse"}
     # 与逐个接口的数据一致（剔除易变时间字段后比较）
     def _strip_volatile(section, key):
         # pulse 的 timestamp / activities[].at 是微秒级时间戳，
@@ -433,9 +285,7 @@ def test_home_returns_all_four_sections(db, user):
         return section
 
     for path, key in [("/api/panel/today", "today"),
-                      ("/api/panel/parcels", "parcels"),
-                      ("/api/panel/pulse", "pulse"),
-                      ("/api/panel/letter", "letter")]:
+                      ("/api/panel/pulse", "pulse")]:
         r2 = client.get(path)
         assert r2.status_code == 200, path
         got = _strip_volatile(r2.json()["data"], key)
@@ -464,13 +314,12 @@ def test_push_activity_ring_buffer_per_realm(db):
     assert c2 == 3  # 另一服的分区不受影响
 
 
-# ==================== 7. today/parcels 字段契约（r20 P1 修复锁定）===
+# ==================== 7. today 字段契约（r20 P1 修复锁定）===
 
 def test_today_field_contract(db, user):
     """GET /api/panel/today 返回前端命名契约：字段集合精确锁定。
 
-    后端已改向前段命名（date_label/parcel_count/streak_days/letter_readable），
-    前端 usePanelApi.TodayData + DiscoveryView 按此消费。字段增减必须同步改前端。
+    后端已改向前段命名（date_label/streak_days），字段增减必须同步改前端。
     """
     app = _make_app(db, user)
     client = TestClient(app)
@@ -478,62 +327,12 @@ def test_today_field_contract(db, user):
     assert r.status_code == 200
     data = r.json()["data"]
     assert set(data.keys()) == {
-        "greeting", "date_label", "weekday", "parcel_count",
-        "unsealed_count", "streak_days", "letter_readable", "nickname",
-        # 心理学批（2026-10-16）：今日观影人数 / 连签里程碑临界 / 今日一句话
-        "today_viewers", "streak_milestone", "daypart_line",
+        "greeting", "date_label", "weekday", "streak_days", "nickname",
+        # 心理学批（2026-10-16）：今日观影人数
+        "today_viewers",
     }
 
 
-def test_parcels_envelope_contract(db, user):
-    """GET /api/panel/parcels 的 data 为 {parcels: [...]} 信封，非裸数组。
-
-    前端 usePanelApi.parcels 类型为 { parcels: ParcelItem[] }，与此对齐。
-    """
-    app = _make_app(db, user)
-    client = TestClient(app)
-    r = client.get("/api/panel/parcels")
-    assert r.status_code == 200
-    data = r.json()["data"]
-    assert set(data.keys()) == {"parcels"}
-    assert isinstance(data["parcels"], list)
-    for p in data["parcels"]:
-        assert "unsealed" in p and "deep_link" in p
-        # 网页深链已撤：字段留着给旧客户端，值必须是空串
-        assert p["deep_link"] == ""
-        assert "index.html" not in p["deep_link"]
-
-
-def test_today_unsealed_count_contract(db, user):
-    """today 的 parcel_count/unsealed_count 随拆封联动（r20 命名锁定）。"""
-    try:
-        from backend.emby_server import models as em
-    except Exception:
-        pytest.skip("EmbyItem 模型不可用")
-    item = em.MediaItem(
-        guid="contract-today-1", library_id=1, item_type="movie",
-        name="契约电影", date_added=datetime.now(ZoneInfo("Asia/Shanghai")).replace(tzinfo=None),
-    )
-    db.add(item)
-    db.commit()
-    db.refresh(item)
-
-    app = _make_app(db, user)
-    client = TestClient(app)
-    r = client.post(f"/api/panel/parcels/{item.id}/unseal")
-    assert r.json()["data"]["already"] is False
-
-    d = client.get("/api/panel/today").json()["data"]
-    assert d["parcel_count"] >= 1
-    assert d["unsealed_count"] == 1
-    assert d["streak_days"] == 0
-    assert d["letter_readable"] is True
-
-
-# ---------- 问候语时区回归（2026-10-15 生产验收） ----------
-#
-# 根因：生产服务器本地时间为 UTC，_greeting() 用 naive datetime.now().hour，
-# 北京时间 19 点（= UTC 11 点）会显示"上午好"。修复：按 Asia/Shanghai 取小时。
 def _fixed_datetime_at(utc_dt):
     from datetime import timezone
 
@@ -566,10 +365,6 @@ def test_greeting_morning_boundary_shanghai(monkeypatch):
 # ② 帧错位：date_added 由 scanner 以容器本地时间（UTC）naive 写入，
 #    而 panel 用 Shanghai-naive 的 00:00 去比较——每天 00:00–08:00（CST）
 #    入库的条目被算成"昨天"（如 2026-10-16 02:06 CST 入库的《明天》）。
-# 修复口径：今日整部新入库 movie/series ＋ 今日有新 episode 入库的 series
-# （同一部剧只出现一次），按今日最新动态时间倒序，上限 5；
-# /today 的 parcel_count 与 /parcels 同口径。
-
 def _mk_media(db, item_type, name, date_added, **kw):
     from backend.emby_server import models as em
     kw.setdefault("guid", f"guid-{name}-{item_type}")
@@ -581,93 +376,7 @@ def _mk_media(db, item_type, name, date_added, **kw):
     return item
 
 
-def _parcel_ids(client):
-    r = client.get("/api/panel/parcels")
-    assert r.status_code == 200
-    return [p["id"] for p in r.json()["data"]["parcels"]]
-
-
-def test_parcels_includes_series_with_new_episodes_today(db, user):
-    """老剧今日有新单集 → 该剧作为一件封存出现。"""
-    from backend.emby_server import models as em  # noqa: F401
-    start_utc = panel_api._today_start_utc_naive()
-    series = _mk_media(db, "series", "老剧", start_utc - timedelta(days=30))
-    _mk_media(db, "episode", "老剧 E99", start_utc + timedelta(hours=10),
-              series_id=series.id, season_number=1, episode_number=99)
-    app = _make_app(db, user)
-    assert series.id in _parcel_ids(TestClient(app))
-
-
-def test_parcels_dedupe_whole_and_episode_series(db, user):
-    """同一部剧今日既是整部新入库、又有新单集 → 只出现一次。"""
-    from backend.emby_server import models as em  # noqa: F401
-    start_utc = panel_api._today_start_utc_naive()
-    series = _mk_media(db, "series", "新剧", start_utc + timedelta(hours=9))
-    _mk_media(db, "episode", "新剧 E01", start_utc + timedelta(hours=10),
-              series_id=series.id, season_number=1, episode_number=1)
-    app = _make_app(db, user)
-    ids = _parcel_ids(TestClient(app))
-    assert ids.count(series.id) == 1
-
-
-def test_parcels_limit_five_ordered_by_latest_activity(db, user):
-    """候选超 5 件 → 只取 5，按今日最新动态时间倒序。"""
-    from backend.emby_server import models as em  # noqa: F401
-    start_utc = panel_api._today_start_utc_naive()
-    made = []
-    for i in range(7):
-        s = _mk_media(db, "series", f"剧{i}", start_utc - timedelta(days=30))
-        _mk_media(db, "episode", f"剧{i} E1", start_utc + timedelta(hours=9 + i),
-                  series_id=s.id, season_number=1, episode_number=1)
-        made.append(s.id)
-    app = _make_app(db, user)
-    ids = _parcel_ids(TestClient(app))
-    assert len(ids) == 5
-    # 最新动态的是剧6（+15h），应排第一
-    assert ids[0] == made[6]
-
-
-def test_parcels_utc_frame_includes_early_morning_items(db, user):
-    """帧回归：CST 凌晨 2 点入库（存为 UTC 前一天 18:00）必须算"今日"。
-
-    旧代码用 Shanghai-naive 00:00 比较，会把它排除（2026-10-16 生产实证）。
-    """
-    from backend.emby_server import models as em  # noqa: F401
-    start_utc = panel_api._today_start_utc_naive()
-    movie = _mk_media(db, "movie", "凌晨电影", start_utc + timedelta(hours=2))
-    app = _make_app(db, user)
-    assert movie.id in _parcel_ids(TestClient(app))
-
-
-def test_parcels_excludes_merged_copies(db, user):
-    """合并副本不单独占一件封存（与 #920 列表口径一致）。"""
-    from backend.emby_server import models as em  # noqa: F401
-    start_utc = panel_api._today_start_utc_naive()
-    canon = _mk_media(db, "movie", "正片", start_utc + timedelta(hours=9))
-    dup = _mk_media(db, "movie", "正片副本", start_utc + timedelta(hours=10),
-                    merged_into_id=canon.id)
-    app = _make_app(db, user)
-    ids = _parcel_ids(TestClient(app))
-    assert canon.id in ids
-    assert dup.id not in ids
-
-
-def test_today_parcel_count_same_caliber_as_parcels(db, user):
-    """/today 的 parcel_count 与 /parcels 同口径（含单集驱动的剧）。"""
-    from backend.emby_server import models as em  # noqa: F401
-    start_utc = panel_api._today_start_utc_naive()
-    series = _mk_media(db, "series", "追更剧", start_utc - timedelta(days=30))
-    _mk_media(db, "episode", "追更剧 E50", start_utc + timedelta(hours=10),
-              series_id=series.id, season_number=1, episode_number=50)
-    app = _make_app(db, user)
-    client = TestClient(app)
-    parcels = client.get("/api/panel/parcels").json()["data"]["parcels"]
-    today = client.get("/api/panel/today").json()["data"]
-    assert today["parcel_count"] == len(parcels) >= 1
-    assert {p["id"] for p in parcels} == {series.id}
-
-
-# ==================== 8. GET /api/panel/feed（发现页实时动态流）====================
+# ==================== 8. GET /api/panel/feed（实时动态流）====================
 
 def _push_feed(db, text, event_type="system", realm_id=None, library_name=None):
     from backend.panel_feed import note_feed

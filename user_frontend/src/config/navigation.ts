@@ -38,7 +38,7 @@
 
 import type { Component } from 'vue'
 import {
-  Clapperboard, Server, User,
+  Server, User,
 } from 'lucide-vue-next'
 
 export interface NavItem {
@@ -50,25 +50,23 @@ export interface NavItem {
 }
 
 /** 主导航：全断点共用同一份（桌面顶栏横排、手机底部坞）。
- *  五项定稿（2026-10-17 用户拍板，DESIGN.md v1.1）：
- *  发现（/） / 世界（/game，含全部 /game/** 设施） / 服务器（/server） /
+ *  定稿（2026-10-17 用户拍板，DESIGN.md v1.1）：服务器（/server） /
  *  补给站（/shop） / 我的（/game/account 账号设置）。
  *  2026-11-13 页面删减：探险日志 Hub（/game）整页删除，「世界」项随之撤出
- *  主导航；同日商店整店删除，「补给站」项撤出（余三项）；
+ *  主导航；同日商店整店删除，「补给站」项撤出；同日发现页退役，
+ *  「发现」项一并撤出（余两项）。
  *  /game/** 设施子页保留，入口走头像菜单/办事面左栏/地图针。
- *  叫法统一「发现」（废「首页」）；收藏家（/collector）页面保留，
- *  但退出主导航、入口收进发现页。
+ *  收藏家（/collector）页面保留，但退出主导航、入口收进发现页。
  *  媒体库与搜索仍可从头像菜单 / 首页帮助区 / 顶栏资产 pill 上下文进入，
  *  不在主导航占位 */
 export const primaryNav: NavItem[] = [
-  { name: '发现', path: '/', icon: Clapperboard },
   { name: '服务器', path: '/server', icon: Server },
   { name: '我的', path: '/game/account', icon: User },
 ]
 
 /**
  * 判定当前路由命中的主导航项（最长前缀匹配）：
- * '/' 只精确命中；其余项 path 相等或 routePath 以 "path/" 开头即命中，
+ * path 相等或 routePath 以 "path/" 开头即命中，
  * 取命中项中 path 最长的 —— 如 /game/account 命中「我的」（/game/account）。
  * 无命中返回 ''（如 /tg-bind、404 等非导航路由）。
  */
@@ -76,8 +74,7 @@ export function resolveActiveNavPath(routePath: string): string {
   let best = ''
   for (const item of primaryNav) {
     const p = item.path
-    const matched =
-      p === '/' ? routePath === '/' : routePath === p || routePath.startsWith(`${p}/`)
+    const matched = routePath === p || routePath.startsWith(`${p}/`)
     if (matched && p.length > best.length) best = p
   }
   return best

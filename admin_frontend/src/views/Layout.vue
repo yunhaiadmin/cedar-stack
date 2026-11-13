@@ -30,7 +30,7 @@ import {
   TriangleAlert, ScrollText, Smartphone, MonitorCog, ShieldAlert, Ban, Library, Eye,
   Image as ImageIcon, Layers,
   Database, Megaphone, Receipt, Trophy, TicketPercent, UserPlus, KeySquare,
-  UserCog, Activity, Medal, MessageSquareText, HandCoins, Gift,
+  UserCog, Activity, Medal, HandCoins, Gift,
   Sun, Moon, MonitorSmartphone, ListChecks, Flag,
   PanelLeftClose, PanelLeftOpen,
 } from 'lucide-vue-next'
@@ -191,7 +191,6 @@ const navGroups: NavGroup[] = [
       { path: '/media-seek', label: '求片管理', icon: MessageSquareDashed },
       { path: '/panel-achievements', label: '成就与馆灵', icon: Medal },
       { path: '/announcements', label: '公告管理', icon: Megaphone },
-      { path: '/wall-posts', label: '留言墙管理', icon: MessageSquareText },
       { path: '/tickets', label: '工单', icon: Ticket },
       // 等级治理：举报终审队列 + 治理停权（复核达标的举报在这里受理 / 驳回）
       { path: '/governance', label: '举报与停权', icon: Flag },
