@@ -5,7 +5,7 @@
 pool_digest.collect_digest_stats（每日小结同一口径），不新增采集；
 面板是小结的「随时可查」版，不替代每晚 21:00 的小结推送。
 
-协议（技术骨架复用 slots_widget 已验证的协议层）：
+协议：
 - 入口回调 pool_widget（callbacks._handle_pool_widget）：私聊限定、
   未绑定 toast、非池成员 toast；发 widget 时发送口核对
   chat_id＝本人 telegram_id，不符不发。

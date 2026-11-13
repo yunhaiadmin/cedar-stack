@@ -394,7 +394,7 @@ def test_menu_contains_new_buttons(db, monkeypatch):
     # 分组后：四个查询入口收进二级分组面板，一级＋分组仍全可达
     grouped_flat = [
         b["callback_data"]
-        for key in ("media", "drive", "account", "welfare", "help")
+        for key in ("media", "drive", "account", "help")
         for row in handlers.user_panel_group_markup(key)["inline_keyboard"]
         for b in row if "callback_data" in b]
     for action in ("menu:bindings", "menu:transfers", "menu:whyplay", "menu:wants"):

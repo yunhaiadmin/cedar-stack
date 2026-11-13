@@ -34,7 +34,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend import models
-from backend.tg_bot import gifts, router, sender, slots_widget
+from backend.tg_bot import pool_widget, router, sender
 
 
 @pytest.fixture()
@@ -49,7 +49,7 @@ def db():
         engine.dispose()
 
 
-def _wq(query_id="wq-1", data='{"a":"spin","bet":10}'):
+def _wq(query_id="wq-1", data='{"a":"pool_refresh"}'):
     return {
         "id": query_id,
         "from": {"id": 920001, "first_name": "Alice"},
@@ -81,31 +81,17 @@ class _SendCapture:
 
 # ---------- 分发器：widget_query 按动作命名空间分发 ----------
 
-def test_dispatcher_spin_goes_to_slots(db, monkeypatch):
-    seen = []
-    monkeypatch.setattr(
-        slots_widget, "handle_widget_query",
-        lambda db_, q: seen.append(q))
-    answers = []
-    monkeypatch.setattr(
-        sender, "answer_widget_query",
-        lambda db_, qid, data=None: answers.append((qid, data)) or (True, None))
-    router._dispatch_widget_query(db, _wq())
-    assert len(seen) == 1 and seen[0]["id"] == "wq-1"
-    assert answers == []  # spin 由老虎机自己应答，分发器不插手
-
-
 def test_dispatcher_unknown_action_gets_error_answer(db, monkeypatch):
     seen = []
     monkeypatch.setattr(
-        slots_widget, "handle_widget_query",
+        pool_widget, "handle_widget_query",
         lambda db_, q: seen.append(q))
     answers = []
     monkeypatch.setattr(
         sender, "answer_widget_query",
         lambda db_, qid, data=None: answers.append((qid, data)) or (True, None))
     router._dispatch_widget_query(db, _wq(data='{"a":"nope"}'))
-    assert seen == []  # 未登记动作绝不误落进老虎机
+    assert seen == []  # 未登记动作绝不误落进任何组件
     assert len(answers) == 1
     qid, data = answers[0]
     assert qid == "wq-1"
@@ -118,7 +104,7 @@ def test_dispatcher_unknown_action_gets_error_answer(db, monkeypatch):
 def test_dispatcher_malformed_data_gets_error_answer(db, monkeypatch):
     seen = []
     monkeypatch.setattr(
-        slots_widget, "handle_widget_query",
+        pool_widget, "handle_widget_query",
         lambda db_, q: seen.append(q))
     answers = []
     monkeypatch.setattr(
@@ -332,59 +318,3 @@ def test_get_unique_gift_empty_name_local_reject(monkeypatch):
     ok, err, got = sender.get_unique_gift(None, "")
     assert not ok and err and got is None
     assert cap.calls == []
-
-
-# ---------- 包5：gifts 进程内 TTL 缓存层 ----------
-
-@pytest.fixture()
-def gift_counter(monkeypatch):
-    calls = []
-    state = {"fail": False}
-
-    def fake_sender_get(db_, name):
-        calls.append(name)
-        if state["fail"]:
-            return False, "gift 不存在", None
-        return True, None, {"name": name}
-
-    monkeypatch.setattr(sender, "get_unique_gift", fake_sender_get)
-    gifts._cache.clear()
-    yield calls, state
-    gifts._cache.clear()
-
-
-def test_gifts_cache_hit(gift_counter):
-    calls, _state = gift_counter
-    ok1, _e1, g1 = gifts.get_unique_gift(None, "Pepe")
-    ok2, _e2, g2 = gifts.get_unique_gift(None, "Pepe")
-    assert ok1 and ok2 and g1 == g2 == {"name": "Pepe"}
-    assert calls == ["Pepe"]  # 第二次命中缓存，没再打 sender
-
-
-def test_gifts_negative_cache(gift_counter):
-    calls, state = gift_counter
-    state["fail"] = True
-    ok1, err1, g1 = gifts.get_unique_gift(None, "Nope")
-    ok2, err2, g2 = gifts.get_unique_gift(None, "Nope")
-    assert not ok1 and not ok2 and g1 is None and g2 is None
-    assert calls == ["Nope"]  # 负缓存防刷：失败结果也缓存
-
-
-def test_gifts_cache_per_name(gift_counter):
-    calls, _state = gift_counter
-    gifts.get_unique_gift(None, "A")
-    gifts.get_unique_gift(None, "B")
-    assert calls == ["A", "B"]
-
-
-def test_gifts_cache_expiry(monkeypatch, gift_counter):
-    calls, _state = gift_counter
-    clock = {"t": 1000.0}
-    monkeypatch.setattr(gifts, "_now", lambda: clock["t"])
-    gifts.get_unique_gift(None, "Pepe")
-    clock["t"] += 3599  # 命中 TTL 3600 内
-    gifts.get_unique_gift(None, "Pepe")
-    assert calls == ["Pepe"]
-    clock["t"] += 2  # 超过 3600 秒 → 回源
-    gifts.get_unique_gift(None, "Pepe")
-    assert calls == ["Pepe", "Pepe"]

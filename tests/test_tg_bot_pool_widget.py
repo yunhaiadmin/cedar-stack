@@ -31,7 +31,7 @@ from sqlalchemy.pool import StaticPool
 from backend import models
 from backend.emby_server import models as em
 from backend.integrations import store
-from backend.tg_bot import callbacks, handlers, pool_digest, pool_widget, router, sender, slots_widget
+from backend.tg_bot import callbacks, handlers, pool_digest, pool_widget, router, sender
 
 SH = ZoneInfo("Asia/Shanghai")
 NOW_SH = datetime(2026, 11, 10, 21, 0, tzinfo=SH)
@@ -285,7 +285,7 @@ def test_refresh_bad_action(db, monkeypatch):
     calls = _Calls()
     calls.patch(monkeypatch)
     pool_widget.handle_widget_query(
-        db, _wq(data='{"a":"spin","bet":10}'))
+        db, _wq(data='{"a":"bogus"}'))
     assert len(calls.answers) == 1
     assert json.loads(calls.answers[0][1])["error"] == "bad_request"
 
@@ -319,33 +319,13 @@ def test_dispatcher_pool_refresh_goes_to_pool(db, monkeypatch):
     monkeypatch.setattr(
         pool_widget, "handle_widget_query",
         lambda db_, q: seen.append(q))
-    slots_seen = []
-    monkeypatch.setattr(
-        slots_widget, "handle_widget_query",
-        lambda db_, q: slots_seen.append(q))
     answers = []
     monkeypatch.setattr(
         sender, "answer_widget_query",
         lambda db_, qid, data=None: answers.append((qid, data)) or (True, None))
     router._dispatch_widget_query(db, _wq(data='{"a":"pool_refresh"}'))
     assert len(seen) == 1 and seen[0]["id"] == "wq-1"
-    assert slots_seen == []  # 池刷新绝不误落进老虎机
     assert answers == []  # pool 由组件自己应答，分发器不插手
-
-
-def test_dispatcher_spin_still_goes_to_slots(db, monkeypatch):
-    seen = []
-    monkeypatch.setattr(
-        pool_widget, "handle_widget_query",
-        lambda db_, q: seen.append(q))
-    slots_seen = []
-    monkeypatch.setattr(
-        slots_widget, "handle_widget_query",
-        lambda db_, q: slots_seen.append(q))
-    router._dispatch_widget_query(
-        db, _wq(data='{"a":"spin","bet":10}'))
-    assert len(slots_seen) == 1
-    assert seen == []
 
 
 def _cb(cb_id="cb-1", tg=TG, chat_id=TG, data="pool_widget"):

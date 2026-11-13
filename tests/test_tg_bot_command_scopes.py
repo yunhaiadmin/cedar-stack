@@ -108,8 +108,8 @@ def test_group_scope_only_group_executable():
     # /redeem 群里拒执行（删消息+提示私聊），不进群菜单
     assert "redeem" not in group_set
     # 群内确实可执行的要在群菜单里（chatpoints 已并入 points，不单列）
-    for name in ("checkin", "redpacket", "lottery", "rank", "requestboard",
-                 "rules", "slots", "points"):
+    for name in ("checkin", "rank", "requestboard",
+                 "rules", "points"):
         assert name in group_set
     # 群菜单是全量的子集
     assert group_set <= set(_names(poller.BOT_COMMANDS))

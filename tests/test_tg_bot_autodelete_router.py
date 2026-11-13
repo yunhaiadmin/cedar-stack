@@ -4,8 +4,6 @@
 - 群里机器人命令回复走 ex 通道拿 message_id，按 bot_msg_autodelete_seconds
   （默认 30）挂自毁；用户命令消息本体按 bot_cmd_autodelete_seconds
   （默认 3）挂自毁；
-- /redpacket 成功发出的红包本体（handler 返回 (text, claim_markup) 元组）
-  永不挂自毁；红包用法卡（参数错误、返回 str）照常自毁；
 - 私聊发送点一律不挂自毁；
 - 延时配置为 0 时全不挂；
 - 群内 /redeem 原命令消息走既有即时删除，不再重复挂定时自毁；
@@ -149,28 +147,6 @@ def test_group_private_only_notice_autodelete(db, wires):
 
 # ---------- ② 红包本体豁免 / 用法卡照常自毁 ----------
 
-def test_group_redpacket_success_body_exempt(db, wires):
-    _make_user(db, "g4", 710004, points=1000)
-    router.dispatch(db, _msg(710004, GROUP_CHAT, "/redpacket 100 10",
-                             message_id=4245))
-    # 红包确实发出（落库）且本体走封面照片消息（不走 ex、不挂自毁）
-    packet = db.query(models.RedPacket).first()
-    assert packet is not None
-    assert wires["ex"] == []
-    assert wires["plain"] == []
-    assert any("总额 100 能量" in cap for (_c, cap, _m, _p) in wires["photo"])
-    # 唯一被挂的只有用户命令消息的 3 秒自毁
-    assert wires["scheduled"] == [(GROUP_CHAT, 4245, 3)]
-
-
-def test_group_redpacket_usage_card_autodelete(db, wires):
-    _make_user(db, "g5", 710005, points=1000)
-    router.dispatch(db, _msg(710005, GROUP_CHAT, "/redpacket", message_id=4246))
-    assert len(wires["ex"]) == 1 and "使用方法" in wires["ex"][0][1]
-    assert _delays_for(wires, GROUP_CHAT, BOT_MSG_ID) == [30]
-    assert db.query(models.RedPacket).count() == 0
-
-
 # ---------- 私聊一律不挂 ----------
 
 def test_private_command_no_autodelete(db, wires):
@@ -217,9 +193,8 @@ def test_zero_delay_disables_all(db, wires):
     reason="基线未含 #1516 匿名拦截发送点，变基到含 #1516 的 main 后自动激活",
 )
 def test_group_anon_admin_notice_autodelete(db, wires):
-    update = _msg(1087968824, GROUP_CHAT, "/redpacket 50 5", message_id=4250)
+    update = _msg(1087968824, GROUP_CHAT, "/request 某部电影", message_id=4250)
     update["message"]["sender_chat"] = {"id": GROUP_CHAT, "type": "supergroup"}
     router.dispatch(db, update)
     assert len(wires["ex"]) == 1 and "匿名" in wires["ex"][0][1]
     assert _delays_for(wires, GROUP_CHAT, BOT_MSG_ID) == [30]
-    assert db.query(models.RedPacket).count() == 0

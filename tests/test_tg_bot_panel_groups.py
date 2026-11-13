@@ -30,7 +30,6 @@ LEVEL1 = [
         {"text": "🎟️ 账号权益", "callback_data": "menu:group_account"},
     ],
     [
-        {"text": "🎁 福利活动", "callback_data": "menu:group_welfare"},
         {"text": "❓ 帮助中心", "callback_data": "menu:group_help"},
     ],
     [{"text": "♻️ 主界面", "callback_data": "menu:main"}],
@@ -69,19 +68,6 @@ GROUPS = {
         ],
         [{"text": "🏅 成就", "callback_data": "menu:achievements"}],
     ]),
-    "welfare": ("🎁 福利活动", [
-        [
-            {"text": "🎲 抽奖", "callback_data": "menu:lottery"},
-            {"text": "🏆 我的抽奖", "callback_data": "menu:mylottery"},
-        ],
-        [
-            {"text": "🧧 发红包", "callback_data": "menu:redpacket"},
-            {"text": "🎰 老虎机", "callback_data": "menu:slots"},
-        ],
-        [
-            {"text": "🎁 盲盒", "callback_data": "menu:blindbox"},
-        ],
-    ]),
     "help": ("❓ 帮助中心", [
         [
             {"text": "❓ 为什么播不了", "callback_data": "menu:whyplay"},
@@ -90,14 +76,14 @@ GROUPS = {
     ]),
 }
 
-# 原面板平铺的 15 颗按钮的 callback（签到与主界面在一级，其余收进分组）
-ORIGINAL_15 = {
+# 原面板平铺的 13 颗按钮的 callback（签到与主界面在一级，其余收进分组）
+ORIGINAL_13 = {
     "menu:checkin", "menu:request", "menu:myrequests", "menu:transfers",
     "menu:bindings", "menu:login", "menu:points", "menu:rank",
-    "menu:lottery", "menu:redpacket", "menu:whyplay", "menu:wants",
+    "menu:whyplay", "menu:wants",
     "menu:bind", "menu:help", "menu:main",
 }
-FUNCTION_CALLBACKS = ORIGINAL_15 - {"menu:checkin", "menu:main"}
+FUNCTION_CALLBACKS = ORIGINAL_13 - {"menu:checkin", "menu:main"}
 
 
 @pytest.fixture()
@@ -163,7 +149,7 @@ def test_level1_no_flat_function_buttons():
     flat = set(_flat(handlers.user_panel_markup()))
     assert flat == {
         "menu:checkin", "menu:group_media", "menu:group_drive",
-        "menu:group_account", "menu:group_welfare", "menu:group_help",
+        "menu:group_account", "menu:group_help",
         "menu:main",
     }
     assert not (flat & FUNCTION_CALLBACKS)
@@ -174,7 +160,7 @@ def test_all_original_buttons_reachable_within_two_clicks():
     reachable = set(_flat(level1))
     for key in GROUPS:
         reachable |= set(_flat(handlers.user_panel_group_markup(key)))
-    assert ORIGINAL_15 <= reachable
+    assert ORIGINAL_13 <= reachable
 
 
 # ---------- 二级分组面板（handlers 层） ----------

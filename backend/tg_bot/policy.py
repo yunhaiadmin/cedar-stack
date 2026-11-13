@@ -42,8 +42,6 @@ DEFAULTS: dict[str, str] = {
     "bot_cmd_reconcile": "true",
     # 管理员查人开关（借鉴第 2 项：私聊审计全卡 / 群内精简卡，均 is_staff）
     "bot_cmd_whois": "true",
-    # 红包功能开关（/redpacket 发红包 + 抢红包按钮）
-    "bot_redpacket_enabled": "true",
     # 内联搜片开关（@bot 片名，InlineQuery；默认开）
     "bot_inline_search_enabled": "true",
     # 频道马甲治理（2026-10-30 借鉴 embyboss 第 1 项）：群里以外部频道
@@ -150,11 +148,6 @@ def is_inline_search_enabled(cfg: dict[str, str]) -> bool:
     """内联搜片开关是否开启（@bot 片名）。"""
     return _is_true(cfg.get("bot_inline_search_enabled",
                             DEFAULTS["bot_inline_search_enabled"]))
-
-
-def is_redpacket_enabled(cfg: dict[str, str]) -> bool:
-    """红包功能开关是否开启（发红包/抢红包）。"""
-    return _is_true(cfg.get("bot_redpacket_enabled", DEFAULTS["bot_redpacket_enabled"]))
 
 
 def _to_float(value: str | None, default: float) -> float:

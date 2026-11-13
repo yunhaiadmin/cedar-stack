@@ -59,8 +59,8 @@ caption；文字超 Telegram caption 上限（1024 字符）时退回图、文
   海报固定取电影/剧集前 5，与 bot_playrank_top_n 无关。
 调度标记 bot_playrank_last_run 存 SystemConfig，只在推送成功或
 空榜时写入；发送失败/未配群不写，下个 tick 重试（与 rankpush
-同纪律）。定时搭 tg-rankpush 调度线程的分钟巡检（与 gamerank
-同路），不新起进程。手动触发：管理员私聊机器人发 /playrank。
+同纪律）。定时搭 tg-rankpush 调度线程的分钟巡检，不新起进程。
+手动触发：管理员私聊机器人发 /playrank。
 """
 from __future__ import annotations
 

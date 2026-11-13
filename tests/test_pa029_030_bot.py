@@ -1,11 +1,9 @@
-"""PA-029/PA-030（R12-B12 机器人）回归测试。
+"""PA-029（R12-B12 机器人）回归测试。
 
 PA-029：停用账号经机器人签到/兑码/群发言仍能获利（PA-019 博彩门之外的
 同根缺口）。修法落机器人侧入口：handlers.handle_checkin/handle_redeem 与
 router._award_group_chat_points 各加停用门，不改 tg_bot resolve 层与网站核心。
-PA-030：群菜单「抽奖」按钮走私聊分支，点击者个人抽奖记录被编辑进群共享
-消息。修法：callbacks._render_menu 的 lottery 分支按 is_private 分流，群里走
-群轮次卡（is_group=True），私聊保持个人记录分支。
+（PA-030 抽奖按钮用例随批 9 抽奖面板下线一并删除。）
 
 全部用隔离的内存 SQLite，不碰生产库。先红后绿：本文件用例在修复前应为红。
 """
@@ -21,7 +19,6 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from backend import lottery as lottery_mod
 from backend import models
 from backend.integrations import store
 from backend.tg_bot import callbacks, handlers, router
@@ -141,55 +138,3 @@ def test_active_user_group_chat_still_earns(db):
     db.refresh(user)
     assert user.points == 1
     assert len(_chat_logs(db, user.id)) >= 1
-
-
-# ---------- PA-030：群菜单抽奖按钮不得泄露个人记录 ----------
-
-def _make_past_entry(db, user):
-    past = lottery_mod.create_round(
-        db, title="私密往期抽奖", chat_id=-100999,
-        prizes=[{"name": "能量奖励", "type": "points", "value": 10,
-                 "quantity": 1}],
-        draw_at=None)
-    past.status = "done"
-    db.add(models.LotteryRoundEntry(
-        round_id=past.id, user_id=user.id, telegram_id=TG))
-    db.commit()
-    return past
-
-
-def test_group_lottery_button_shows_group_card_not_personal_records(db):
-    user = _make_user(db, "lottery_user", TG, points=0, is_active=True)
-    _make_past_entry(db, user)
-    lottery_mod.create_round(
-        db, title="群公开抽奖", chat_id=GROUP,
-        prizes=[{"name": "能量奖励", "type": "points", "value": 10,
-                 "quantity": 1}],
-        draw_at=None)
-    text, markup = callbacks._render_menu(db, _tg(), TG, GROUP, False,
-                                          "lottery")
-    assert "群公开抽奖" in text
-    assert "私密往期抽奖" not in text
-    assert "我的抽奖记录" not in text
-    datas = [b.get("callback_data")
-             for row in (markup or {}).get("inline_keyboard", [])
-             for b in row]
-    assert any((d or "").startswith("lottery_join:") for d in datas)
-
-
-def test_group_lottery_button_without_active_round_says_none(db):
-    user = _make_user(db, "lottery_user2", TG, points=0, is_active=True)
-    _make_past_entry(db, user)
-    text, markup = callbacks._render_menu(db, _tg(), TG, GROUP, False,
-                                          "lottery")
-    assert "本群暂无进行中的抽奖" in text
-    assert "私密往期抽奖" not in text
-    assert "我的抽奖记录" not in text
-
-
-def test_private_lottery_button_still_shows_personal_records(db):
-    user = _make_user(db, "lottery_user3", TG, points=0, is_active=True)
-    _make_past_entry(db, user)
-    text, markup = callbacks._render_menu(db, _tg(), TG, TG, True, "lottery")
-    assert "我的抽奖记录" in text
-    assert "私密往期抽奖" in text

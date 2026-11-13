@@ -102,14 +102,6 @@ def test_daily_cap_stops_at_20(db):
     assert len(_chat_rows(db, u.id)) == 20
 
 
-def test_lottery_hit_no_double_award(db, monkeypatch):
-    u = _make_user(db, "chat3", 4244)
-    monkeypatch.setattr(callbacks, "handle_lottery_password", lambda *a, **k: True)
-    router.dispatch(db, _update("supergroup", -100123, 4244, "口令"))
-    assert _balance(db, u.id) == 0
-    assert _chat_rows(db, u.id) == []
-
-
 def test_command_message_no_award(db):
     u = _make_user(db, "chat4", 4245)
     router.dispatch(db, _update("supergroup", -100123, 4245, "/help"))
