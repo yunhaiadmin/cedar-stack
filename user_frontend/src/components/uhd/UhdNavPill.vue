@@ -6,7 +6,7 @@
  * （约 280px 宽、圆角 16–20px，行内左 icon + 右外链箭头）。
  * 片库面变体：brand + 分类项 + 右侧可放搜索胶囊（search 插槽，替代 CTA）。
  */
-import { ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import UhdButton from './UhdButton.vue'
 
 export interface UhdNavChild {
@@ -28,11 +28,26 @@ const props = withDefaults(
     ctaText?: string
     /** 跟随用户主题：浅色主题下整条转浅色玻璃（定价页用）；缺省锁深色玻璃（落地页/片库面） */
     themeFollow?: boolean
+    /** 滚动收窄（D1-11，原站实测）：开启后整条容器 max-width 1360，滚动 >40px 收窄到 760（.5s ease-sheet）；缺省关，现有消费者零影响 */
+    shrinkOnScroll?: boolean
   }>(),
-  { activeKey: '', brand: 'Aetrix', brandSub: 'SERVICE', ctaText: '', themeFollow: false },
+  { activeKey: '', brand: 'Aetrix', brandSub: 'SERVICE', ctaText: '', themeFollow: false, shrinkOnScroll: false },
 )
 
 const emit = defineEmits<{ select: [key: string]; cta: [] }>()
+
+const scrolled = ref(false)
+function onScrollShrink() {
+  scrolled.value = window.scrollY > 40
+}
+onMounted(() => {
+  if (!props.shrinkOnScroll) return
+  window.addEventListener('scroll', onScrollShrink, { passive: true })
+  onScrollShrink()
+})
+onUnmounted(() => {
+  window.removeEventListener('scroll', onScrollShrink)
+})
 
 const openKey = ref('')
 function onItem(item: UhdNavItem) {
@@ -46,7 +61,14 @@ function onItem(item: UhdNavItem) {
 </script>
 
 <template>
-  <div class="uhd-nav" :class="{ 'uhd-nav--follow': props.themeFollow }">
+  <div
+    class="uhd-nav"
+    :class="{
+      'uhd-nav--follow': props.themeFollow,
+      'uhd-nav--shrink': props.shrinkOnScroll,
+      'is-shrunk': props.shrinkOnScroll && scrolled,
+    }"
+  >
     <span class="uhd-nav__brand">
       <span class="uhd-nav__logo" aria-hidden="true" />
       <span class="uhd-nav__brand-text">
@@ -225,6 +247,16 @@ function onItem(item: UhdNavItem) {
   display: inline-flex;
   align-items: center;
   z-index: 2;
+}
+/* 滚动收窄（D1-11，仅 shrinkOnScroll 启用时）：容器居中限宽，滚动后 1360→760 */
+.uhd-nav--shrink {
+  max-width: 1360px;
+  margin-left: auto;
+  margin-right: auto;
+  transition: max-width 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.uhd-nav--shrink.is-shrunk {
+  max-width: 760px;
 }
 @media (max-width: 720px) {
   .uhd-nav__brand-sub { display: none; }

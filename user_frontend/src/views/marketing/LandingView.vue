@@ -75,18 +75,34 @@ const heroSubs = [
 const heroSubIdx = ref(0)
 let heroTimer: ReturnType<typeof setInterval> | null = null
 
-/* 钉住滚动展示：滚动进度驱动两态交叉淡入（约 2 个视口切换一态） */
+/* 钉住滚动展示：滚动进度驱动两态模糊交叉淡入（动态返工，原站 GSAP 时间线逐项实测，
+   见 dynamics-spec.md ②：钉住行程 140% 视口、影院块 .32–.50 模糊退出、音频三件 .50–.82 依次模糊入场） */
 const pinSection = ref<HTMLElement | null>(null)
 const pinProgress = ref(0)
+/* Hero 离场进度：首个视口行程 0→1，驱动 mask --reveal 等值（原站公式，见 spec ①） */
+const heroProgress = ref(0)
+/* 钉住退场视差进度：钉住结束后 stage 离场的一个视口行程 0→1 */
+const pinExit = ref(0)
+/* 光柱是否在屏（离屏暂停自主动画） */
+const pinInView = ref(false)
 let rafPending = false
+function clamp01(v: number) {
+  return Math.min(1, Math.max(0, v))
+}
+/* 归一化时间线分段进度 */
+function seg(t: number, start: number, dur: number) {
+  return clamp01((t - start) / dur)
+}
 function updatePin() {
   rafPending = false
+  heroProgress.value = clamp01(window.scrollY / window.innerHeight)
   const el = pinSection.value
   if (!el) return
   const rect = el.getBoundingClientRect()
   const total = rect.height - window.innerHeight
   if (total <= 0) return
-  pinProgress.value = Math.min(1, Math.max(0, -rect.top / total))
+  pinProgress.value = clamp01(-rect.top / total)
+  pinExit.value = clamp01((-rect.top - total) / window.innerHeight)
 }
 function onScroll() {
   if (rafPending) return
@@ -94,23 +110,178 @@ function onScroll() {
   requestAnimationFrame(updatePin)
 }
 
+/* 两态样式（reduced-motion 时退回纯 opacity 交叉：无 blur/位移/缩放） */
 const reduceMotion = ref(false)
+function blurPx(v: number) {
+  return reduceMotion.value ? 'blur(0px)' : `blur(${v.toFixed(1)}px)`
+}
+const cinemaCopyStyle = () => {
+  const t = pinProgress.value
+  const k = seg(t, 0.32, 0.18)
+  const rm = reduceMotion.value
+  return {
+    opacity: String(1 - k),
+    filter: blurPx(14 * k),
+    transform: rm ? 'none' : `translateY(${(-50 * k).toFixed(1)}px)`,
+    visibility: k >= 1 ? ('hidden' as const) : ('visible' as const),
+  }
+}
+/* 音频三件：idx 0=眉题 1=标题 2=副文案，参数照原站 fromTo（spec ② 表） */
+const AUDIO_PARTS = [
+  { start: 0.5, dur: 0.18, y: 60, blur: 14, scaleFrom: 1 },
+  { start: 0.54, dur: 0.22, y: 110, blur: 22, scaleFrom: 0.92 },
+  { start: 0.62, dur: 0.2, y: 60, blur: 12, scaleFrom: 1 },
+]
+function audioPartStyle(idx: number) {
+  const p = AUDIO_PARTS[idx]
+  const k = seg(pinProgress.value, p.start, p.dur)
+  const rm = reduceMotion.value
+  const style: Record<string, string> = {
+    opacity: String(k),
+    filter: blurPx(p.blur * (1 - k)),
+    visibility: k <= 0 ? 'hidden' : 'visible',
+  }
+  if (!rm) {
+    style.transform =
+      `translateY(${(p.y * (1 - k)).toFixed(1)}px)` +
+      (p.scaleFrom !== 1 ? ` scale(${(p.scaleFrom + (1 - p.scaleFrom) * k).toFixed(3)})` : '')
+    if (idx === 0) style.letterSpacing = `${(0.7 - 0.26 * k).toFixed(3)}em`
+  }
+  return style
+}
+const vignetteStyle = () => ({ opacity: String(seg(pinProgress.value, 0.3, 0.22)) })
+const pinVisualStyle = () => {
+  const t = pinProgress.value
+  const rm = reduceMotion.value
+  const scale = rm ? 1 : 1 + 0.06 * seg(t, 0.3, 0.6)
+  const y = rm ? 0 : pinExit.value * 60
+  return { transform: `scale(${scale.toFixed(3)}) translateY(${y.toFixed(1)}px)` }
+}
+const pinDriftStyle = () => {
+  const rm = reduceMotion.value
+  return { transform: rm ? 'none' : `translateX(${(-16 * pinProgress.value).toFixed(1)}px)` }
+}
+/* 声场圆环：三环依次扩散（原站 .42/.49/.56 起，入 .18、出 .28） */
+function ringStyle(i: number) {
+  const t = pinProgress.value
+  const start = 0.42 + i * 0.07
+  const kin = seg(t, start, 0.18)
+  const kout = seg(t, start + 0.18, 0.28)
+  const rm = reduceMotion.value
+  const scale = rm ? 1 : 0.55 + 0.5 * kin + 0.6 * kout
+  return {
+    opacity: String(0.6 * kin * (1 - kout)),
+    transform: `translate(-50%, -50%) scale(${scale.toFixed(3)})`,
+    visibility: kin <= 0 ? ('hidden' as const) : ('visible' as const),
+  }
+}
+/* Hero 文字层离场 mask（原站公式逐字采用：--reveal 取 heroProgress） */
+const heroInnerStyle = () => {
+  const r = heroProgress.value
+  if (reduceMotion.value || r <= 0) return {}
+  const mask = `linear-gradient(to top, transparent ${(r * 100 - 20).toFixed(1)}%, black ${(r * 120).toFixed(1)}%, black 100%)`
+  return { maskImage: mask, WebkitMaskImage: mask }
+}
+const heroHintStyle = () => ({ opacity: String(1 - clamp01(heroProgress.value * 2.5)) })
+
+/* ---------- 区块 reveal（原站 GSAP 模式的等价实现，见 spec ④） ----------
+   [data-reveal] 元素初始为 from 态（CSS .rv* 类），IO 在元素 top 到达视口约 75% 时加 .is-in 播放入场；
+   reverse：滚出后移除 .is-in（与原站 toggleActions play/reverse 同口径）。 */
+const landingRoot = ref<HTMLElement | null>(null)
+const platformsTitle = ref<HTMLElement | null>(null)
+let revealIO: IntersectionObserver | null = null
+let pinRevealIO: IntersectionObserver | null = null
+let pinIO: IntersectionObserver | null = null
+function splitTitleChars() {
+  const el = platformsTitle.value
+  if (!el || el.dataset.splitDone) return
+  el.dataset.splitDone = '1'
+  const nodes = [...el.childNodes]
+  el.textContent = ''
+  let idx = 0
+  for (const node of nodes) {
+    if (node.nodeName === 'BR') {
+      el.appendChild(document.createElement('br'))
+      continue
+    }
+    for (const ch of node.textContent ?? '') {
+      const wrap = document.createElement('span')
+      wrap.className = 'pt-char-wrap'
+      const inner = document.createElement('span')
+      inner.className = 'pt-char'
+      inner.style.transitionDelay = `${(0.1 + idx * 0.035).toFixed(3)}s`
+      inner.textContent = ch === ' ' ? ' ' : ch
+      wrap.appendChild(inner)
+      el.appendChild(wrap)
+      idx++
+    }
+  }
+}
+function setupReveal() {
+  const root = landingRoot.value
+  if (!root) return
+  const els = root.querySelectorAll('[data-reveal]')
+  const pinEls = root.querySelectorAll('[data-reveal-pin]')
+  if (reduceMotion.value || !('IntersectionObserver' in window)) {
+    els.forEach((e) => e.classList.add('is-in'))
+    pinEls.forEach((e) => e.classList.add('is-in'))
+    root.querySelectorAll('.pt-char').forEach((e) => e.classList.add('is-in'))
+    return
+  }
+  revealIO = new IntersectionObserver(
+    (entries) => {
+      for (const en of entries) {
+        if (en.target === platformsTitle.value) {
+          en.target.querySelectorAll('.pt-char').forEach((c) => c.classList.toggle('is-in', en.isIntersecting))
+        } else {
+          en.target.classList.toggle('is-in', en.isIntersecting)
+        }
+      }
+    },
+    { rootMargin: '0px 0px -25% 0px', threshold: 0 },
+  )
+  els.forEach((e) => revealIO?.observe(e))
+  if (platformsTitle.value) revealIO.observe(platformsTitle.value)
+  /* 影院文案入场照原站：以 section top 到达视口 70% 为触发（rootMargin 底 −30%），
+     不能按子元素自身位置触发——子元素钉在 stage 下半区、top 永远到不了 75% 线 */
+  if (pinSection.value) {
+    pinRevealIO = new IntersectionObserver(
+      (entries) => {
+        for (const en of entries) pinEls.forEach((e) => e.classList.toggle('is-in', en.isIntersecting))
+      },
+      { rootMargin: '0px 0px -30% 0px', threshold: 0 },
+    )
+    pinRevealIO.observe(pinSection.value)
+  }
+}
+
 onMounted(() => {
   window.addEventListener('scroll', onScrollNav, { passive: true })
   onScrollNav()
   reduceMotion.value = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  splitTitleChars()
+  setupReveal()
+  if (pinSection.value && 'IntersectionObserver' in window) {
+    pinIO = new IntersectionObserver((es) => es.forEach((e) => (pinInView.value = e.isIntersecting)), {
+      threshold: 0,
+    })
+    pinIO.observe(pinSection.value)
+  }
   if (!reduceMotion.value) {
     heroTimer = setInterval(() => {
       heroSubIdx.value = (heroSubIdx.value + 1) % heroSubs.length
     }, 4200)
-    window.addEventListener('scroll', onScroll, { passive: true })
-    updatePin()
   }
+  window.addEventListener('scroll', onScroll, { passive: true })
+  updatePin()
 })
 onUnmounted(() => {
   if (heroTimer) clearInterval(heroTimer)
   window.removeEventListener('scroll', onScroll)
   window.removeEventListener('scroll', onScrollNav)
+  revealIO?.disconnect()
+  pinRevealIO?.disconnect()
+  pinIO?.disconnect()
   document.documentElement.style.overflow = ''
 })
 
@@ -122,7 +293,7 @@ const year = new Date().getFullYear()
 </script>
 
 <template>
-  <div class="landing">
+  <div ref="landingRoot" class="landing">
     <div class="landing-nav">
       <UhdNavPill
         :items="navItems"
@@ -130,6 +301,7 @@ const year = new Date().getFullYear()
         :brand="branding.site_name"
         brand-sub="SERVICE"
         cta-text="立即加入"
+        shrink-on-scroll
         @select="onNav"
         @cta="goRegister"
       />
@@ -243,7 +415,7 @@ const year = new Date().getFullYear()
           />
         </svg>
       </div>
-      <div class="hero-inner">
+      <div class="hero-inner" :style="heroInnerStyle()">
         <p class="eyebrow">{{ branding.site_name }} SERVICE</p>
         <h1 class="hero-title">你的私人影院<br />随时随地开场</h1>
         <p class="hero-sub" aria-live="polite">
@@ -274,15 +446,15 @@ const year = new Date().getFullYear()
           </UhdChip>
         </div>
       </div>
-      <p class="hero-scroll-hint" aria-hidden="true">↓ 向下探索更多精彩</p>
+      <p class="hero-scroll-hint" :style="heroHintStyle()" aria-hidden="true">↓ 向下探索更多精彩</p>
     </header>
 
     <!-- ② 跑马灯 -->
     <section class="marquee-sec">
-      <p class="eyebrow eyebrow--center">CLIENTS &amp; SPECS</p>
-      <h2 class="sec-title sec-title--platforms">在你顺手的设备上，<br />以它最好的规格播放</h2>
-      <p class="sec-sub">播放交给专业客户端，服务器只做整理与供给——手机、电视、电脑，打开就能看。</p>
-      <div class="marquee" aria-hidden="true">
+      <p class="eyebrow eyebrow--center rv" data-reveal>CLIENTS &amp; SPECS</p>
+      <h2 ref="platformsTitle" class="sec-title sec-title--platforms">在你顺手的设备上，<br />以它最好的规格播放</h2>
+      <p class="sec-sub rv rv--lede" data-reveal>播放交给专业客户端，服务器只做整理与供给——手机、电视、电脑，打开就能看。</p>
+      <div class="marquee rv rv--marquee" data-reveal aria-hidden="true">
         <div class="marquee-track marquee-track--a">
           <span v-for="(w, i) in [...marqueeClients, ...marqueeClients]" :key="`a-${i}`" class="marquee-word">{{ w }}</span>
         </div>
@@ -292,37 +464,45 @@ const year = new Date().getFullYear()
       </div>
     </section>
 
-    <!-- ③ 钉住滚动展示（仅此一处） -->
+    <!-- ③ 钉住滚动展示（仅此一处）：240vh 行程（stage 100svh＋钉住 140%），
+         光柱自绘＋滚动驱动模糊交叉（参数见 dynamics-spec.md ②/③） -->
     <section ref="pinSection" class="pin-sec">
       <div class="pin-stage">
-        <div class="pin-stripes" aria-hidden="true" />
-        <div
-          class="pin-copy"
-          :style="{ opacity: String(1 - Math.min(1, Math.max(0, (pinProgress - 0.45) / 0.3))) }"
-        >
-          <p class="eyebrow eyebrow--center">CINEMA EXPERIENCE</p>
-          <h2 class="pin-title">影院级画面</h2>
-          <p class="pin-sub">4K Ultra HD · HDR10+ · Dolby Vision</p>
+        <div class="pin-visual" :style="pinVisualStyle()" aria-hidden="true">
+          <div class="pin-drift" :style="pinDriftStyle()">
+            <div class="pin-beams" :class="{ 'is-paused': !pinInView }">
+              <span v-for="n in 10" :key="n" class="pin-col" :class="`pin-col--${n}`" />
+            </div>
+            <div class="pin-beams pin-beams--glow" :class="{ 'is-paused': !pinInView }">
+              <span v-for="n in 10" :key="n" class="pin-col" :class="`pin-col--${n}`" />
+            </div>
+          </div>
+          <div class="pin-vignette" :style="vignetteStyle()" />
         </div>
-        <div
-          class="pin-copy"
-          :style="{ opacity: String(Math.min(1, Math.max(0, (pinProgress - 0.55) / 0.3))) }"
-        >
-          <p class="eyebrow eyebrow--center">AUDIO EXPERIENCE</p>
-          <h2 class="pin-title">影院级声音</h2>
-          <p class="pin-sub">Dolby Atmos · Hi-Res Audio · 空间音频 · DTS:X 全兼容</p>
+        <div class="pin-rings" aria-hidden="true">
+          <span v-for="i in 3" :key="i" class="pin-ring" :class="`pin-ring--${i}`" :style="ringStyle(i - 1)" />
+        </div>
+        <div class="pin-copy" :style="cinemaCopyStyle()">
+          <p class="eyebrow eyebrow--center rv rv--pin-eyebrow" data-reveal-pin>CINEMA EXPERIENCE</p>
+          <h2 class="pin-title rv rv--pin-title" data-reveal-pin>影院级画面</h2>
+          <p class="pin-sub rv rv--pin-lede" data-reveal-pin>4K Ultra HD · HDR10+ · Dolby Vision</p>
+        </div>
+        <div class="pin-copy pin-copy--audio">
+          <p class="eyebrow eyebrow--center" :style="audioPartStyle(0)">AUDIO EXPERIENCE</p>
+          <h2 class="pin-title" :style="audioPartStyle(1)">影院级声音</h2>
+          <p class="pin-sub" :style="audioPartStyle(2)">Dolby Atmos · Hi-Res Audio · 空间音频 · DTS:X 全兼容</p>
         </div>
       </div>
     </section>
 
     <!-- ④ 一份订阅 -->
     <section class="essentials">
-      <p class="eyebrow eyebrow--center">SERVICE ESSENTIALS</p>
-      <h2 class="sec-title">一份订阅，全部搞定</h2>
-      <p class="sec-sub">一个账号打通所有设备与服务，不用为每块屏幕单独折腾。</p>
+      <p class="eyebrow eyebrow--center rv" data-reveal>SERVICE ESSENTIALS</p>
+      <h2 class="sec-title rv rv--sectitle" data-reveal>一份订阅，全部搞定</h2>
+      <p class="sec-sub rv rv--lede2" data-reveal>一个账号打通所有设备与服务，不用为每块屏幕单独折腾。</p>
 
       <div class="ess-grid">
-        <article class="ess-card ess-card--wide">
+        <article class="ess-card ess-card--wide rv rv--card" data-reveal>
           <div class="ess-card-text">
             <p class="eyebrow">MULTI-DEVICE SYNC</p>
             <h3 class="ess-h3">一部片子，<br />所有屏幕接着看</h3>
@@ -335,10 +515,10 @@ const year = new Date().getFullYear()
             </div>
           </div>
           <div class="ess-devices" aria-hidden="true">
-            <div class="dev dev--tv"><span class="dev-play" /><span class="dev-bar"><i style="width: 60%" /></span></div>
-            <div class="dev dev--laptop"><span class="dev-play" /><span class="dev-bar"><i style="width: 60%" /></span></div>
-            <div class="dev dev--tablet"><span class="dev-play" /></div>
-            <div class="dev dev--phone"><span class="dev-play dev-play--sm" /></div>
+            <div class="dev dev--tv rv rv--dev" data-reveal><span class="dev-play" /><span class="dev-bar"><i style="width: 60%" /></span></div>
+            <div class="dev dev--laptop rv rv--dev rv--dev-d1" data-reveal><span class="dev-play" /><span class="dev-bar"><i style="width: 60%" /></span></div>
+            <div class="dev dev--tablet rv rv--dev rv--dev-d2" data-reveal><span class="dev-play" /></div>
+            <div class="dev dev--phone rv rv--dev rv--dev-d3" data-reveal><span class="dev-play dev-play--sm" /></div>
             <p class="dev-note">上次同步 · 刚刚</p>
           </div>
           <!-- 移动端设备示意（返工单④①）：四台设备线框＋播放键＋进度条，仅 ≤900px 显示 -->
@@ -353,7 +533,7 @@ const year = new Date().getFullYear()
           </div>
         </article>
 
-        <article class="ess-card">
+        <article class="ess-card rv rv--card rv--d1" data-reveal>
           <p class="eyebrow">ZERO INTERRUPTION</p>
           <h3 class="ess-h3">没有广告，<br />只有电影</h3>
           <p class="ess-desc">从按下播放到片尾字幕，全程无插播、无贴片，沉浸感不被打断。</p>
@@ -368,9 +548,16 @@ const year = new Date().getFullYear()
           </div>
         </article>
 
-        <article class="ess-card ess-card--library">
+        <article class="ess-card ess-card--library rv rv--card rv--d2" data-reveal>
           <div class="ess-wall" aria-hidden="true">
-            <span v-for="n in 12" :key="n" class="ess-tile" :class="`ess-tile--${(n % 4) + 1}`" />
+            <span
+              v-for="n in 12"
+              :key="n"
+              class="ess-tile rv rv--tile"
+              :class="`ess-tile--${(n % 4) + 1}`"
+              :style="{ transitionDelay: `${((n - 1) * 0.025).toFixed(3)}s` }"
+              data-reveal
+            />
           </div>
           <p class="eyebrow">EVER-GROWING LIBRARY</p>
           <h3 class="ess-h3">片库自己长大</h3>
@@ -412,7 +599,10 @@ const year = new Date().getFullYear()
   background: var(--uhd-d-bg);
   color: var(--uhd-d-text);
   font-family: var(--uhd-font-sans);
+  /* 必须用 clip 不能用 hidden：hidden 会把本元素变成滚动容器、令 .pin-stage 的 sticky 失效
+     （动态返工实测：hidden 下 stage 随页面滚走、钉住从未生效） */
   overflow-x: hidden;
+  overflow-x: clip;
 }
 .landing-nav {
   position: fixed;
@@ -670,44 +860,231 @@ const year = new Date().getFullYear()
   to { transform: translateX(-50%); }
 }
 
-/* ---------- 钉住滚动展示 ---------- */
+/* ---------- 钉住滚动展示（动态返工：240vh＝stage 100vh＋钉住行程 140%，移动桌面同套） ---------- */
 .pin-sec {
-  height: 220vh;
+  height: 240vh;
+  height: 240svh;
 }
 .pin-stage {
   position: sticky;
   top: 0;
   height: 100vh;
+  height: 100svh;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #000;
 }
-.pin-stripes {
+/* 光柱视觉层：滚动 scale/退场视差由 pinVisualStyle 驱动 transform */
+.pin-visual {
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg,
-    #123a6b 0%, #123a6b 12.5%, #0e7d8c 12.5%, #0e7d8c 25%,
-    #d8d8d8 25%, #d8d8d8 37.5%, #d9a03c 37.5%, #d9a03c 50%,
-    #d97b3f 50%, #d97b3f 62.5%, #c95d7d 62.5%, #c95d7d 75%,
-    #7a5fc0 75%, #7a5fc0 87.5%, #3f6fd9 87.5%, #3f6fd9 100%);
-  opacity: 0.34;
+  will-change: transform;
 }
-.pin-stripes::after {
+.pin-drift {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+}
+/* 光柱本体：10 根竖向渐变光柱（彩虹 8 停点＋2 混合），柱顶圆头＋向上渐隐，
+   两层羽化（本体 blur 8px、辉光层 blur 26px）代替原站视频的柔边光柱 */
+.pin-beams {
+  position: absolute;
+  inset: -4% -7%;
+  filter: blur(6px) saturate(1.35);
+  animation: pin-breathe 26s ease-in-out infinite alternate;
+  will-change: transform, filter;
+}
+.pin-beams--glow {
+  filter: blur(26px) saturate(1.5);
+  opacity: 0.55;
+  animation-duration: 32s;
+  animation-delay: -14s;
+}
+.pin-beams.is-paused {
+  animation-play-state: paused;
+}
+@keyframes pin-breathe {
+  from {
+    transform: translateX(-10px);
+    filter: blur(6px) saturate(1.3) brightness(0.96);
+  }
+  to {
+    transform: translateX(12px);
+    filter: blur(6px) saturate(1.45) brightness(1.13);
+  }
+}
+.pin-beams--glow {
+  animation-name: pin-breathe-glow;
+}
+@keyframes pin-breathe-glow {
+  from {
+    transform: translateX(10px) scale(1.03);
+    filter: blur(26px) saturate(1.45) brightness(1.05);
+  }
+  to {
+    transform: translateX(-12px) scale(1.07);
+    filter: blur(26px) saturate(1.6) brightness(1.2);
+  }
+}
+.pin-col {
+  position: absolute;
+  bottom: -2%;
+  width: 13.5%;
+  border-radius: 999px 999px 0 0;
+}
+.pin-col--1 { left: -1%; height: 82%; background: linear-gradient(to top, #2f8fe0 52%, rgba(47, 143, 224, 0) 97%); }
+.pin-col--2 { left: 9.5%; height: 90%; background: linear-gradient(to top, #4a7fdd 52%, rgba(74, 127, 221, 0) 97%); }
+.pin-col--3 { left: 20%; height: 78%; background: linear-gradient(to top, #6f7ad8 52%, rgba(111, 122, 216, 0) 97%); }
+.pin-col--4 { left: 30.5%; height: 93%; background: linear-gradient(to top, #c46c90 52%, rgba(196, 108, 144, 0) 97%); }
+.pin-col--5 { left: 41%; height: 85%; background: linear-gradient(to top, #e8766f 52%, rgba(232, 118, 111, 0) 97%); }
+.pin-col--6 { left: 51.5%; height: 95%; background: linear-gradient(to top, #f2a45a 52%, rgba(242, 164, 90, 0) 97%); }
+.pin-col--7 { left: 62%; height: 80%; background: linear-gradient(to top, #ecd04f 52%, rgba(236, 208, 79, 0) 97%); }
+.pin-col--8 { left: 72.5%; height: 91%; background: linear-gradient(to top, #b5cc62 52%, rgba(181, 204, 98, 0) 97%); }
+.pin-col--9 { left: 83%; height: 84%; background: linear-gradient(to top, #95c77d 52%, rgba(149, 199, 125, 0) 97%); }
+.pin-col--10 { left: 93.5%; height: 88%; background: linear-gradient(to top, #39b3ec 52%, rgba(57, 179, 236, 0) 97%); }
+/* 文案区恒常柔影（保证两态文字在亮柱上可读） */
+.pin-visual::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse 90% 70% at 50% 55%, transparent 30%, rgba(0, 0, 0, 0.72) 100%);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.5), transparent 46%),
+    radial-gradient(ellipse 90% 70% at 50% 55%, transparent 34%, rgba(0, 0, 0, 0.5) 100%);
 }
+/* 过渡暗角（原站 cinema-vignette：径向暗角＋紫辉，进度 .30–.52 渐显） */
+.pin-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 26%, rgba(0, 0, 0, 0.78) 78%),
+    radial-gradient(circle at center, rgba(120, 110, 255, 0.22) 0%, transparent 55%);
+  opacity: 0;
+}
+/* 声场圆环（原站三环 42/70/98vmin，边框透明度递减） */
+.pin-rings {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.pin-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 50%;
+  opacity: 0;
+}
+.pin-ring--1 { width: 42vmin; height: 42vmin; border: 1px solid rgba(255, 255, 255, 0.3); }
+.pin-ring--2 { width: 70vmin; height: 70vmin; border: 1px solid rgba(255, 255, 255, 0.2); }
+.pin-ring--3 { width: 98vmin; height: 98vmin; border: 1px solid rgba(255, 255, 255, 0.12); }
 .pin-copy {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 16vh;
+  bottom: 16svh;
+  z-index: 2;
   text-align: center;
   padding: 0 24px;
   transition: none;
+  will-change: opacity, filter, transform;
+}
+.pin-copy .eyebrow,
+.pin-copy .pin-title,
+.pin-copy .pin-sub {
+  text-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
+}
+
+/* ---------- 区块 reveal（原站 GSAP from 态的 CSS 等价，参数见 spec ④） ---------- */
+.rv {
+  opacity: 0;
+  transform: translateY(30px);
+  transition:
+    opacity 0.7s cubic-bezier(0.215, 0.61, 0.355, 1),
+    transform 0.7s cubic-bezier(0.215, 0.61, 0.355, 1),
+    filter 0.7s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+.rv.is-in {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  filter: blur(0px);
+}
+.rv--lede { transition-delay: 0.3s; }
+.rv--marquee {
+  transform: translateY(50px);
+  transition-duration: 0.9s;
+  transition-delay: 0.45s;
+}
+.rv--sectitle {
+  transform: translateY(50px) scale(0.97);
+  filter: blur(14px);
+  transition-duration: 0.95s;
+  transition-delay: 0.12s;
+}
+.rv--lede2 {
+  transform: translateY(26px);
+  filter: blur(10px);
+  transition-duration: 0.75s;
+  transition-delay: 0.32s;
+}
+.essentials .rv.eyebrow {
+  transform: translateY(24px);
+  filter: blur(10px);
+  transition-duration: 0.8s;
+}
+.rv--card {
+  transform: translateY(60px);
+  filter: blur(12px);
+  transition-duration: 0.9s;
+}
+.rv--d1 { transition-delay: 0.12s; }
+.rv--d2 { transition-delay: 0.24s; }
+.rv--dev {
+  transform: translateY(24px);
+  transition-duration: 0.7s;
+}
+.rv--dev-d1 { transition-delay: 0.08s; }
+.rv--dev-d2 { transition-delay: 0.16s; }
+.rv--dev-d3 { transition-delay: 0.24s; }
+.rv--tile {
+  transform: translateY(12px);
+  transition-duration: 0.6s;
+}
+.rv--pin-eyebrow {
+  transform: translateY(24px);
+  filter: blur(10px);
+  transition-duration: 0.8s;
+}
+.rv--pin-title {
+  transform: translateY(58px) scale(0.96);
+  filter: blur(18px);
+  transition-duration: 1s;
+  transition-delay: 0.12s;
+}
+.rv--pin-lede {
+  transform: translateY(30px);
+  filter: blur(12px);
+  transition-duration: 0.8s;
+  transition-delay: 0.38s;
+}
+/* 跑马灯标题逐字（原站 yPercent:120＋stagger .035） */
+.pt-char-wrap {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+  padding-bottom: 0.12em;
+  margin-bottom: -0.12em;
+}
+.pt-char {
+  display: inline-block;
+  transform: translateY(120%);
+  opacity: 0;
+  transition:
+    transform 0.8s cubic-bezier(0.215, 0.61, 0.355, 1),
+    opacity 0.8s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+.pt-char.is-in {
+  transform: translateY(0);
+  opacity: 1;
 }
 .pin-title {
   margin: 0 0 14px;
@@ -1168,35 +1545,23 @@ const year = new Date().getFullYear()
   }
   .marquee-word { font-size: 19px; }
 
-  /* ---- 彩虹色带：钉住改普通流式（重影根因之二），两态上下排布、各自全不透明；
-         色带提亮＋上下柔边过渡，文案压在各自区块下半区居中（返工单①⑤） ---- */
-  .pin-sec { height: auto; }
+  /* ---- 钉住区：移动端与桌面共用同一套钉住＋模糊交叉（动态返工，恢复 240svh 行程）；
+         光柱层上下柔边融入黑底（柱体羽化见 .pin-beams），文案绝对居下半区 ---- */
+  .pin-sec { height: 240vh; height: 240svh; }
   .pin-stage {
-    position: relative;
-    height: auto;
-    display: block;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    height: 100svh;
   }
-  .pin-stripes {
-    opacity: 0.62;
-    -webkit-mask-image: linear-gradient(180deg, transparent, black 10%, black 90%, transparent);
-    mask-image: linear-gradient(180deg, transparent, black 10%, black 90%, transparent);
-  }
-  .pin-stripes::after {
-    background: radial-gradient(ellipse 90% 70% at 50% 55%, transparent 34%, rgba(0, 0, 0, 0.5) 100%);
+  .pin-visual {
+    -webkit-mask-image: linear-gradient(180deg, transparent, black 7%, black 93%, transparent);
+    mask-image: linear-gradient(180deg, transparent, black 7%, black 93%, transparent);
   }
   .pin-copy {
-    position: relative;
-    left: auto;
-    right: auto;
-    bottom: auto;
-    min-height: 68vh;
-    min-height: 68svh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-end;
-    padding: 0 24px 10vh;
-    opacity: 1 !important;
+    bottom: 14vh;
+    bottom: 14svh;
+    padding: 0 24px;
   }
 
   /* ---- 一份订阅：卡片区收紧留白、补移动设备示意、片库砖墙换彩谱渐变（返工单④） ---- */
@@ -1219,6 +1584,14 @@ const year = new Date().getFullYear()
 @media (prefers-reduced-motion: reduce) {
   .hero-inner { animation: none; }
   .marquee-track { animation: none; }
+  .pin-beams { animation: none; }
+  .rv,
+  .pt-char {
+    opacity: 1;
+    transform: none;
+    filter: none;
+    transition: none;
+  }
   .m-sheet,
   .m-scrim { animation: none; }
   .hero-sub-fade-enter-active,
