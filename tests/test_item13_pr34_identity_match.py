@@ -37,11 +37,8 @@ from backend.emby_server import mounts as mnt
 from backend.emby_server import scanner as scanner_mod
 from backend.emby_server import transfer115
 from backend.emby_server.mounts import Pan115Mount
-from backend.emby_server.sample_hash_worker import (
-    SAMPLE_ALGO,
-    compute_sample_hash,
-    run_once,
-)
+# 采样哈希工人已随批 3 删除；扫描侧哈希层仍认 sample-sha256 这个 algo 标签（存量数据口径）
+SAMPLE_ALGO = "sample-sha256"
 
 
 @pytest.fixture()
@@ -336,79 +333,3 @@ def test_transfer115_fid_never_falls_back_to_cid(monkeypatch):
     by_name = {e["name"]: e for e in entries}
     assert by_name["a.mkv"]["fid"] == "", "无 fid 时为空串，绝不拿父 cid 冒充"
     assert by_name["b.mkv"]["fid"] == "fid-b"
-
-
-# ---------------- PR-4：采样哈希 ----------------
-
-def test_sample_hash_same_content_same_digest_different_differs(tmp_path):
-    a = tmp_path / "a.bin"
-    b = tmp_path / "b.bin"
-    c = tmp_path / "c.bin"
-    data = os.urandom(3 * 1024 * 1024 + 123)
-    a.write_bytes(data)
-    b.write_bytes(data)
-    c.write_bytes(data[:-1] + bytes([data[-1] ^ 0xFF]))
-    ha, hb, hc = (compute_sample_hash(str(p)) for p in (a, b, c))
-    assert ha is not None and len(ha) == 32
-    assert ha == hb
-    assert ha != hc
-    assert compute_sample_hash(str(tmp_path / "missing.bin")) is None
-
-
-def test_sample_worker_fills_only_empty_local_rows(db, tmp_path):
-    session, lib = db
-    local = tmp_path / "movie.mkv"
-    local.write_bytes(b"x" * 100000)
-    row_empty = _row(session, lib,
-                     guid=scanner_mod.item_guid(str(local)),
-                     file_path=str(local), size=100000)
-    row_md5 = _row(session, lib,
-                   guid=scanner_mod.item_guid("/movies/HasMd5 (2020).mkv"),
-                   file_path=str(tmp_path / "hasmd5.mkv"), size=100000,
-                   content_hash="md5keep", content_hash_algo="md5")
-    (tmp_path / "hasmd5.mkv").write_bytes(b"y" * 100000)
-    row_mount = _row(session, lib,
-                     guid=scanner_mod.item_guid("mount://1/a.mkv"),
-                     file_path="mount://1/a.mkv", size=100000)
-    row_strm = _row(session, lib,
-                    guid=scanner_mod.item_guid(str(tmp_path / "s.strm")),
-                    file_path=str(tmp_path / "s.strm"), size=10,
-                    container="strm")
-    row_missing = _row(session, lib,
-                       guid=scanner_mod.item_guid(str(tmp_path / "gone.mkv")),
-                       file_path=str(tmp_path / "gone.mkv"), size=100000)
-    stats = run_once(session, max_files=50, delay_sec=0)
-    assert stats["filled"] == 1
-    session.refresh(row_empty)
-    assert row_empty.content_hash is not None
-    assert row_empty.content_hash_algo == SAMPLE_ALGO
-    assert len(row_empty.content_hash) == 32
-    assert "sample-sha256" in (row_empty.identity_json or "")
-    session.refresh(row_md5)
-    assert row_md5.content_hash == "md5keep", "已有 md5 绝不被采样覆盖"
-    assert row_md5.content_hash_algo == "md5"
-    session.refresh(row_mount)
-    assert row_mount.content_hash is None, "mount:// 行不采样"
-    session.refresh(row_strm)
-    assert row_strm.content_hash is None, ".strm 行不采样"
-    session.refresh(row_missing)
-    assert row_missing.content_hash is None
-
-
-def test_sample_worker_respects_max_files_and_merges_json(db, tmp_path):
-    session, lib = db
-    rows = []
-    for i in range(3):
-        p = tmp_path / f"m{i}.mkv"
-        p.write_bytes(bytes([i + 1]) * 50000)
-        rows.append(_row(session, lib,
-                         guid=scanner_mod.item_guid(str(p)),
-                         file_path=str(p), size=50000,
-                         identity_json='{"etag": "e1"}'))
-    stats = run_once(session, max_files=1, delay_sec=0)
-    assert stats["filled"] == 1
-    session.refresh(rows[0])
-    assert rows[0].content_hash_algo == SAMPLE_ALGO
-    assert '"etag": "e1"' in (rows[0].identity_json or ""), "旧证据键保留"
-    session.refresh(rows[1])
-    assert rows[1].content_hash is None, "上限 1 时只填一行"

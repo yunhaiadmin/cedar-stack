@@ -7,8 +7,6 @@
 本单不重复建、不改现有路由行为）：
 
 - ``GET /api/admin/storage-bindings``：全站绑定列表（按用户 / 状态查）。
-- ``GET /api/admin/sample-hash/progress``：采样哈希队列进度（只计数，
-  不触发轮次、不写库）。
 - ``GET /api/admin/providers/sidecar``：sidecar 运行时状态（p115 / yun139）。
 - ``GET /api/admin/yun139/pools``：139 账号池只读列表（含成员）。
 
@@ -20,7 +18,6 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from backend.api.admin_core import get_current_admin
@@ -28,9 +25,7 @@ from backend.api.pagination import pagination_params
 from backend.database import get_db
 from backend.emby_server import models as em
 from backend.emby_server import provider_runtime as prt
-from backend.emby_server import sample_hash_worker as shw
 from backend.emby_server import user_bindings
-from backend.emby_server import worker_registry
 
 router = APIRouter(prefix="/api/admin", tags=["管理后台·只读观测口"])
 
@@ -76,52 +71,6 @@ def list_storage_bindings(
         payload["user_id"] = row.user_id
         items.append(payload)
     return {"items": items, "total": total, "limit": limit, "offset": offset}
-
-
-@router.get("/sample-hash/progress")
-def sample_hash_progress(
-    current_admin=Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """采样哈希队列进度（只计数，不触发轮次、不写库）。
-
-    - ``pending``：run_once 取数口径的待补行数（movie / episode、
-      有 file_path、非 .strm、非 mount://、content_hash 为空）；
-      本机可读判断（``os.path.isfile``）只在真正跑轮次时做，
-      本口不做文件系统探测。
-    - ``sampled``：已落采样哈希（algo = sample-sha256）的行数。
-    - ``worker``：worker_registry 里的 sample_hash 条目（跨进程时经
-      Redis 心跳；无条目回 None，不编状态）。
-    """
-    pending = (
-        db.query(em.MediaItem)
-        .filter(
-            em.MediaItem.item_type.in_(("movie", "episode")),
-            em.MediaItem.file_path.isnot(None),
-            (em.MediaItem.container.is_(None))
-            | (em.MediaItem.container != "strm"),
-            ~em.MediaItem.file_path.like("mount://%"),
-            (em.MediaItem.content_hash.is_(None))
-            | (em.MediaItem.content_hash == ""),
-        )
-        # PA-035：不用 Query.count()（子查询包装会绕过软删钩子）。
-        .with_entities(func.count()).scalar() or 0
-    )
-    sampled = (
-        db.query(em.MediaItem)
-        .filter(em.MediaItem.content_hash_algo == shw.SAMPLE_ALGO)
-        # PA-035：不用 Query.count()（子查询包装会绕过软删钩子）。
-        .with_entities(func.count()).scalar() or 0
-    )
-    worker = worker_registry.snapshot().get("sample_hash")
-    return {
-        "enabled": shw.SAMPLE_HASH_ENABLED,
-        "max_files_per_round": shw.SAMPLE_HASH_MAX_FILES,
-        "interval_sec": shw.SAMPLE_HASH_INTERVAL_SEC,
-        "pending": pending,
-        "sampled": sampled,
-        "worker": worker,
-    }
 
 
 def _sidecar_status(provider: str) -> dict:

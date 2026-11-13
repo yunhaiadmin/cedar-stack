@@ -73,25 +73,6 @@ def test_chat_payload_carries_guard(monkeypatch):
     assert ai.IDENTITY_GUARD in system["content"]
 
 
-def test_user_ask_response_has_no_model_field(monkeypatch):
-    """用户端响应不带 model（气泡里不显示，接口里也不该有）"""
-    from backend.api import assistant as assistant_api
-
-    monkeypatch.setattr(ai, "available", lambda db: True)
-    monkeypatch.setattr(ai, "daily_limit", lambda db: 20)
-    monkeypatch.setattr(ai, "safe_consume", lambda db, uid, limit, request_id=None: (True, 1, True))
-    monkeypatch.setattr(
-        ai, "ask",
-        lambda db, q, h=None: {"ok": True, "answer": "我是本站的 AI 客服助手",
-                               "model": "stealth/space-bunny-alpha"})
-
-    payload = assistant_api.assistant_ask(
-        assistant_api.AskRequest(question="你是什么模型？"),
-        SimpleNamespace(id=1), object())
-    assert payload["answer"] == "我是本站的 AI 客服助手"
-    assert "model" not in payload
-
-
 # ---------- r30 F1：_today() 按 Asia/Shanghai 划分自然日 ----------
 
 def test_today_uses_shanghai_day(monkeypatch):

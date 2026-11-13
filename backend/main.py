@@ -52,10 +52,8 @@ from backend.api.governance_report import router as governance_report_router
 from backend.api.library_cover import router as library_cover_router
 from backend.api.media_library import mirror_router as cover_mirror_router
 from backend.api.media_library import router as media_library_router
-from backend.api.nl_search import router as nl_search_router
 from backend.api.admin_artwork import router as admin_artwork_router
 from backend.api.library_order import router as library_order_router
-from backend.api.smart_subtitles import router as smart_subtitles_router
 from backend.api.home_summary import router as home_summary_router
 from backend.api.homepage_sections import router as homepage_sections_router
 from backend.api.panel import router as panel_router, admin_router as panel_admin_router
@@ -77,7 +75,6 @@ from backend.api.admin_missing_episodes import missing_router
 from backend.api.admin_blindbox import admin_blindbox_router
 from backend.api.reminders_admin import admin_reminders_router
 from backend.api.admin_alerts import admin_alerts_router
-from backend.api.admin_diagnosis import admin_diagnosis_router
 from backend.api.tg_bot_admin import tg_bot_admin_router
 from backend.api.admin_apikey import router as admin_apikey_router
 from backend.api.orders_admin import admin_orders_router
@@ -93,7 +90,6 @@ from backend.api.pool_admin import pool_admin_router
 # v2.19.0：外部服务能力中心（代理 / 人机验证 / 邮件 / Telegram / AI / IP 归属地）。
 # 只提供能力，密钥一律由管理员自己填。
 from backend.api.capabilities_admin import capabilities_router
-from backend.api.assistant import assistant_router
 # 站点品牌公开端点（前端启动时读一次，决定站名 / 主题色 / 标题）
 from backend.api.site import site_router
 from backend import integrations
@@ -299,13 +295,6 @@ async def lifespan(app: FastAPI):
             auto_scan.start_auto_scan_scheduler()
         except Exception as e:  # noqa: BLE001
             logger.warning(f"启动定时扫描调度失败（可忽略）: {e}")
-        # 数据库定时备份：默认开启（每天 03:00，保留 7 天），后台可改；失败不影响启动。
-    if not _is_api_role:
-        try:
-            from backend.emby_server import db_backup
-            db_backup.start_backup_scheduler()
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"启动数据库备份调度失败（可忽略）: {e}")
         # 公益服到期检查：每天一次，处理过期保留和不活跃用户；失败不影响启动。
     if not _is_api_role:
         try:
@@ -837,8 +826,6 @@ app.include_router(notification_router)
 # 用户端 API 路由
 app.include_router(user_router)
 app.include_router(series_follow_router)
-# 智能字幕（第三批第一单，默认关；只挂用户端路由，不碰首页）
-app.include_router(smart_subtitles_router)
 # 首页聚合：9 项首屏数据一次取回（HomeView 骨架屏优化，见 backend/api/home_summary.py）
 app.include_router(home_summary_router)
 app.include_router(homepage_sections_router)
@@ -866,8 +853,6 @@ app.include_router(admin_blindbox_router)
 app.include_router(admin_reminders_router)
 # 系统告警：规则管理 / 告警记录 / 总开关（见 backend/api/admin_alerts.py）
 app.include_router(admin_alerts_router)
-# 一键体检：只读诊断报告（见 backend/api/admin_diagnosis.py）
-app.include_router(admin_diagnosis_router)
 app.include_router(tg_bot_admin_router)
 # API Key / Service Token：创建/列表/吊销 + 连通性测试（见 backend/api/admin_apikey.py）
 app.include_router(admin_apikey_router)
@@ -889,8 +874,6 @@ app.include_router(admin_pool_router)
 app.include_router(pool_admin_router)
 # 外部服务能力中心（v2.19.0）：能力总览 / 配置 / 测试，见 backend/api/capabilities_admin.py
 app.include_router(capabilities_router)
-# 用户端 AI 助手（v2.19.0）：能力「AI 模型设置」的消费点，见 backend/api/assistant.py
-app.include_router(assistant_router)
 # 站点信息（v2.20.0）：能力「站点与品牌」的消费点，公开无需鉴权，见 backend/api/site.py
 app.include_router(site_router)
 # 管理员与权限（v2.26.0）：角色清单 / 授权 / 改角色 / 撤销，见 backend/api/admins_admin.py
@@ -928,8 +911,6 @@ app.include_router(library_cover_router)
 # 媒体库学习（封面/排序/货架）：门户端游标分页 / 分区 / 藏 / 封面五件套
 # 与管理端覆盖 / 库设序，见 backend/api/media_library.py 等
 app.include_router(media_library_router)
-# 自然语言搜片（第三批第二单，默认关；只挂用户端搜索路由，不碰首页）
-app.include_router(nl_search_router)
 # 图床镜像出图（批一）：无前缀，即 /cdn/covers/{hash}，公开出图
 app.include_router(cover_mirror_router)
 app.include_router(admin_artwork_router)

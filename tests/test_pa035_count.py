@@ -151,23 +151,6 @@ def test_admin_search_total_matches_list(db):
     assert len(out["items"]) == 1
 
 
-def test_sample_hash_progress_excludes_soft_deleted(db):
-    """采样诊断 pending/sampled 不含已下架行。"""
-    from backend.api import admin_readonly as ro
-    from backend.emby_server import sample_hash_worker as shw
-
-    _item(db, "pa035-pend-vis", file_path="/x/a.mkv", content_hash=None)
-    _item(db, "pa035-pend-dead", file_path="/x/b.mkv", content_hash=None,
-          deleted=True)
-    _item(db, "pa035-samp-vis", file_path="/x/c.mkv",
-          content_hash="abc", content_hash_algo=shw.SAMPLE_ALGO)
-    _item(db, "pa035-samp-dead", file_path="/x/d.mkv",
-          content_hash="def", content_hash_algo=shw.SAMPLE_ALGO, deleted=True)
-    out = ro.sample_hash_progress(None, db)
-    assert out["pending"] == 1
-    assert out["sampled"] == 1
-
-
 def test_new_media_summary_total_excludes_soft_deleted(db):
     """本轮新增汇总 total 不含本轮内又被下架的行。"""
     from backend.emby_server import new_media_notify as nmn
@@ -212,7 +195,6 @@ def test_no_query_count_in_fixed_functions():
         emby_api.get_favorites,
         emby_api.get_played_items,
         portal_mod.admin_search_items,
-        ro.sample_hash_progress,
         nmn._summarize_new_items,
         scanner_mod.count_virtual_items,
     ]

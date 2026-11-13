@@ -384,7 +384,7 @@ def _two_libs(db):
 
 
 def test_h1_strmassistant_item_routes_enforce_visibility(db, monkeypatch):
-    """main 新增的按条目 id 路由（多版本 / 片头标记 / 剧集组 / 缩略图 / 缺失集）同样要校验可见库"""
+    """main 新增的按条目 id 路由（多版本 / 剧集组 / 缺失集）同样要校验可见库"""
     from backend.emby_server import api, media_routes
 
     lib_ok, _ = _two_libs(db)
@@ -393,22 +393,19 @@ def test_h1_strmassistant_item_routes_enforce_visibility(db, monkeypatch):
     req = _request("/Items/secret/AlternateVersions")
     calls = [
         lambda: media_routes.item_alternate_versions("secret", req, user, db),
-        lambda: media_routes.item_intro_markers("secret", user, db),
         lambda: media_routes.item_episode_groups("secret", user, db),
-        lambda: media_routes.item_thumbnails("secret", req, user, db),
-        lambda: media_routes.item_thumbnail("secret", 0, req, user, db),
         lambda: api.get_missing_episodes("secret", user, db),
     ]
     for call in calls:
         with pytest.raises(HTTPException) as exc:
             call()
         assert exc.value.status_code == 403
-    # 可见库里的条目照常
-    assert media_routes.item_intro_markers("visible", user, db)["Markers"] == []
+    # 可见库里的条目照常（不抛 403）
+    media_routes.item_alternate_versions("visible", req, user, db)
 
 
 def test_h1_shared_writes_need_writable_admin(db, monkeypatch):
-    """片头标记 / 剧集组选择是全站共享数据：普通用户与只读管理员都不能改"""
+    """剧集组选择是全站共享数据：普通用户与只读管理员都不能改"""
     from backend.emby_server import api, media_routes
 
     lib_ok, _ = _two_libs(db)
@@ -417,8 +414,6 @@ def test_h1_shared_writes_need_writable_admin(db, monkeypatch):
     viewer = _user(db, "viewer", is_staff=True, role=admin_roles.ROLE_VIEWER)
     for u in (alice, viewer):
         for method, call in (
-            ("POST", lambda r: media_routes.item_intro_marker_set("visible", r, "intro", 0, 1000, u, db)),
-            ("DELETE", lambda r: media_routes.item_intro_marker_delete("visible", "intro", r, u, db)),
             ("PUT", lambda r: media_routes.item_episode_group_select("visible", r, "g1", u, db)),
         ):
             with pytest.raises(HTTPException) as exc:

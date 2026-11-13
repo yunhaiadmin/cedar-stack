@@ -507,47 +507,6 @@ def _serve_person_image(name: str, db: Session, ew=None, eh=None):
     raise HTTPException(status_code=404, detail="Image not found")
 
 
-# ---------------------------------------------------------------------------
-# 视频缩略图（对标 StrmAssistant #2 章节缩略图）
-# ---------------------------------------------------------------------------
-
-@emby_router.get("/emby/Items/{item_id}/Thumbnails/{index}")
-@emby_router.get("/Items/{item_id}/Thumbnails/{index}")
-@release_db_before_response
-def item_thumbnail(item_id: str, index: int, request: Request,
-                   user: models.WebUser = Depends(get_emby_user),
-                   db: Session = Depends(get_db)):
-    """视频预览缩略图：thumbnail_worker 按时长均分抽帧生成的 JPG。
-
-    index 从 0 开始。没有缩略图时 404（worker 后台生成中）。
-    """
-    import os as _os
-
-    from backend.emby_server import thumbnail_worker as _tw
-
-    item = _require_visible_item(db, user, item_id)
-    thumbs = _tw.list_thumbnails(item.guid)
-    if not thumbs or index < 0 or index >= len(thumbs):
-        raise HTTPException(status_code=404, detail="Thumbnail not found")
-    path = thumbs[index]
-    if not _os.path.isfile(path):
-        raise HTTPException(status_code=404, detail="Thumbnail not found")
-    return serve_file(path, request)
-
-
-@emby_router.get("/emby/Items/{item_id}/Thumbnails")
-@emby_router.get("/Items/{item_id}/Thumbnails")
-def item_thumbnails(item_id: str, request: Request,
-                    user: models.WebUser = Depends(get_emby_user),
-                    db: Session = Depends(get_db)):
-    """返回某条目的缩略图数量（供客户端判断是否有预览图）。"""
-    from backend.emby_server import thumbnail_worker as _tw
-
-    item = _require_visible_item(db, user, item_id)
-    thumbs = _tw.list_thumbnails(item.guid)
-    return {"TotalRecordCount": len(thumbs)}
-
-
 @emby_router.get("/emby/Items/{item_id}/ThumbnailSet")
 @emby_router.get("/Items/{item_id}/ThumbnailSet")
 def item_thumbnail_set(item_id: str,
@@ -556,8 +515,8 @@ def item_thumbnail_set(item_id: str,
     """进度条预览图集（trickplay 的 ThumbnailSet 形态）。
 
     Hills 等客户端拖动进度条时调这个端点，此前 404（2026-10-22 晚实测 3 次）。
-    我方的预览图是 thumbnail_worker 的独立 JPG 序列（走 /Thumbnails/{index}），
-    没有 ThumbnailSet 形态的图集数据 —— 这里返回合法空集（与全站列表端点
+    视频预览缩略图已于 2026-11-13 随批 3 删除下线，本站没有
+    ThumbnailSet 形态的图集数据 —— 这里返回合法空集（与全站列表端点
     同构的 QueryResult 形状），让客户端按「无预览图」降级，而不是报错。
     不编造图集条目：造假数据会让客户端去拉不存在的图片，变成新的 404。
     """
@@ -662,90 +621,6 @@ def _require_writer(request: Request, user) -> None:
     if not getattr(user, "is_staff", False):
         raise HTTPException(status_code=403, detail="需要管理员权限")
     admin_roles.ensure_admin_allowed(request, user)
-
-
-# ==================== 片头片尾标记（StrmAssistant #3）====================
-
-@emby_router.get("/emby/Items/{item_id}/IntroMarkers")
-@emby_router.get("/Items/{item_id}/IntroMarkers")
-def item_intro_markers(item_id: str,
-                       user: models.WebUser = Depends(get_emby_user),
-                       db: Session = Depends(get_db)):
-    """返回某条目的片头片尾标记（含 Emby Chapter 格式，供播放器显示跳过按钮）。"""
-    from backend.emby_server import intro_marker as _im
-
-    item = _require_visible_item(db, user, item_id)
-    markers = _im.get_markers(db, item.id)
-    return {"Markers": markers, "Chapters": _im.to_chapters(markers)}
-
-
-# Emby 4.8 的片段接口：支持「跳过片头」的客户端不读 IntroMarkers，
-# 只认 /MediaSegments/{item_id}（2026-10-22 晚实测 404×2）。数据是同一份
-# （intro_marker 表），这里只做结构映射；没有标记就返回空集，不报错。
-_MEDIA_SEGMENT_TYPES = {"intro": "Intro", "outro": "Outro", "credits": "Credits"}
-
-
-@emby_router.get("/emby/MediaSegments/{item_id}")
-@emby_router.get("/MediaSegments/{item_id}")
-def item_media_segments(item_id: str,
-                        user: models.WebUser = Depends(get_emby_user),
-                        db: Session = Depends(get_db)):
-    """片头片尾片段（MediaSegments 结构）：由 IntroMarkers 数据映射而来。"""
-    from backend.emby_server import intro_marker as _im
-    from backend.emby_server.api import _guid_of
-
-    item = _require_visible_item(db, user, item_id)
-    segments = []
-    for m in _im.get_markers(db, item.id):
-        seg_type = _MEDIA_SEGMENT_TYPES.get(m["marker_type"])
-        if seg_type is None:
-            continue
-        segments.append({
-            "Id": _guid_of("MediaSegment", f"{item.guid}:{m['marker_type']}"),
-            "ItemId": item.guid,
-            "Type": seg_type,
-            "StartTicks": m["start_ms"] * 10000,  # ms → ticks
-            "EndTicks": m["end_ms"] * 10000,
-        })
-    return {"Items": segments, "TotalRecordCount": len(segments), "StartIndex": 0}
-
-
-@emby_router.post("/emby/Items/{item_id}/IntroMarkers")
-@emby_router.post("/Items/{item_id}/IntroMarkers")
-def item_intro_marker_set(
-    item_id: str,
-    request: Request,
-    marker_type: str = Body(...),
-    start_ms: int = Body(...),
-    end_ms: int = Body(...),
-    user: models.WebUser = Depends(get_emby_user),
-    db: Session = Depends(get_db),
-):
-    """设置/更新片头片尾标记（同类型只保留一条，幂等）。"""
-    from backend.emby_server import intro_marker as _im
-
-    # 标记 / 剧集组选择是全站共享数据：只有可写角色的管理员能改（只读审计角色同样拦）
-    _require_writer(request, user)
-    item = _require_visible_item(db, user, item_id)
-    try:
-        return _im.set_marker(db, item.id, marker_type, start_ms, end_ms)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-
-@emby_router.delete("/emby/Items/{item_id}/IntroMarkers/{marker_type}")
-@emby_router.delete("/Items/{item_id}/IntroMarkers/{marker_type}")
-def item_intro_marker_delete(item_id: str, marker_type: str, request: Request,
-                             user: models.WebUser = Depends(get_emby_user),
-                             db: Session = Depends(get_db)):
-    """删除片头片尾标记。"""
-    from backend.emby_server import intro_marker as _im
-
-    # 标记 / 剧集组选择是全站共享数据：只有可写角色的管理员能改（只读审计角色同样拦）
-    _require_writer(request, user)
-    item = _require_visible_item(db, user, item_id)
-    deleted = _im.delete_marker(db, item.id, marker_type)
-    return {"deleted": deleted}
 
 
 # ==================== TMDB 剧集组（StrmAssistant #15）====================

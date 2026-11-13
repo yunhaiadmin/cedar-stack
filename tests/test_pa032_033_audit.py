@@ -107,34 +107,3 @@ def test_cover_mirror_retry_audited(db):
     assert len(rows) == 1
     assert rows[0].admin_user_id == admin.id
     assert rows[0].details["source_hash"] == "hash-pa032"
-
-
-# ==================== PA-033：备份 2 写口 ====================
-
-def test_backup_config_audited(db):
-    admin = _admin(db)
-    admin_services.update_backup_config(
-        admin_services.BackupConfigIn(enabled=True, time="03:00",
-                                      keep_days=7),
-        admin=admin, db=db)
-    rows = _logs(db, "backup_config_update")
-    assert len(rows) == 1
-    assert rows[0].admin_user_id == admin.id
-    assert rows[0].details["keep_days"] == 7
-
-
-def test_backup_run_audited(db, monkeypatch):
-    from backend.emby_server import db_backup
-    monkeypatch.setattr(db_backup, "get_config",
-                        lambda db: {"keep_days": 7})
-    monkeypatch.setattr(db_backup, "run_backup_now",
-                        lambda reason: {"name": "x.dump.gz", "size": 1})
-    monkeypatch.setattr(db_backup, "prune_old_backups", lambda n: 3)
-    monkeypatch.setattr(db_backup, "list_backups", lambda: [])
-    admin = _admin(db)
-    admin_services.run_backup_now(admin=admin, db=db)
-    rows = _logs(db, "backup_run_manual")
-    assert len(rows) == 1
-    assert rows[0].admin_user_id == admin.id
-    assert rows[0].details["name"] == "x.dump.gz"
-    assert rows[0].details["pruned"] == 3

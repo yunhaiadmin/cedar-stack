@@ -536,23 +536,3 @@ def test_batch1_reconcile_never_touches_batch2_rows(seed):
 
 
 # ---------------------------------------------------------------- 同步轮挂接
-
-def test_sync_round_tail_runs_rotation(seed, monkeypatch):
-    item_id, mapping_id = _hide_dead(seed, "dlh_同步轮解藏")
-    try:
-        _set_stamp_ago(10 * 3600)  # 节流已过
-        # 轮转默认探针走模块全局 probe_mapping，替成假探针
-        monkeypatch.setattr(
-            nlh, "probe_mapping",
-            lambda db, local_item_id, mapping_id=None: "live")
-        from backend.emby_server import applecms_library_sync as als
-        monkeypatch.setenv("APPLECMS_LIBRARY_SYNC_ENABLED", "1")
-        monkeypatch.setattr(als, "sync_library",
-                            lambda db, library, **kw: {"blocked": "stub"})
-        results = als.run_library_sync_round(session_factory=SessionLocal)
-        assert results
-        assert _fresh(item_id) is False  # 同步轮收尾轮转把它解藏了
-    finally:
-        db = SessionLocal()
-        _purge(db, ["dlh_同步轮解藏"])
-        db.close()

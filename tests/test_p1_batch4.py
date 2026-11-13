@@ -10,7 +10,6 @@
 - F-P1-21：同步保存接口按 lib_id 加锁
 - F-P1-25：换类型时先对旧 kind deactivate_legacy
 - C-P1-2：record_flip_event 用独立 Session
-- E-P1-4：db_backup PG 分支
 - G2-P1-1：notifications 会话显式关闭
 """
 
@@ -155,35 +154,6 @@ class TestC_P1_2_IndependentSession:
         assert '_default_session_factory' in src or 'SessionLocal' in src
         # 不应再直接用传入的 db 做 commit
         # （db 参数保留仅为兼容性）
-
-
-class TestE_P1_4_PgBackup:
-    """E-P1-4：db_backup PG 分支"""
-
-    def test_is_postgres_helper(self):
-        from backend.emby_server import db_backup
-        assert hasattr(db_backup, '_is_postgres')
-        assert hasattr(db_backup, '_run_pg_backup_locked')
-        assert hasattr(db_backup, '_get_pg_backup_dir')
-
-    def test_pg_dispatch_in_locked(self):
-        import inspect
-        from backend.emby_server import db_backup
-        src = inspect.getsource(db_backup._run_backup_locked)
-        assert '_is_postgres()' in src
-        assert '_run_pg_backup_locked' in src
-
-    def test_pg_uses_pg_dump(self):
-        import inspect
-        from backend.emby_server import db_backup
-        src = inspect.getsource(db_backup._run_pg_backup_locked)
-        assert 'pg_dump' in src
-
-    def test_config_supports_pg(self):
-        import inspect
-        from backend.emby_server import db_backup
-        src = inspect.getsource(db_backup.get_config)
-        assert '_is_postgres()' in src
 
 
 class TestG2_P1_1_SessionClose:

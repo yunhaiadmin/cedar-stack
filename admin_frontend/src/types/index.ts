@@ -1508,25 +1508,6 @@ export interface StorageBindingsResponse {
   offset: number
 }
 
-/** 采样哈希工人快照（worker_registry；无条目时 worker 为 null） */
-export interface SampleHashWorker {
-  alive: boolean
-  status: string
-  uptime_sec: number
-  idle_sec: number
-  restarts: number
-}
-
-/** 采样哈希进度（GET /api/admin/sample-hash/progress；只计数，不触发轮次） */
-export interface SampleHashProgress {
-  enabled: boolean
-  max_files_per_round: number
-  interval_sec: number
-  pending: number
-  sampled: number
-  worker: SampleHashWorker | null
-}
-
 /** sidecar 单端状态（GET /api/admin/providers/sidecar；manifest / health 为对端原样对象） */
 export interface SidecarError {
   code: string

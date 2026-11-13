@@ -511,36 +511,6 @@ def test_range_limiter_acquire_timeout():
     assert time.monotonic() - t0 < 1.0
 
 
-# ---------- F-P1-15 / F-P1-16 ----------
-
-def test_assistant_history_limits():
-    """F-P1-15：history 限 20 条、单条 4000 字符。"""
-    import inspect
-    from backend.api import assistant as asst
-    src = inspect.getsource(asst.assistant_ask)
-    assert "MAX_HISTORY_ITEMS" in src
-    assert "MAX_HISTORY_ITEM_CHARS" in src
-    assert asst.MAX_HISTORY_ITEMS == 20
-
-
-def test_assistant_ask_semaphore():
-    """F-P1-16：并发超限直接 429；信号量最终归还。"""
-    import inspect
-    from backend.api import assistant as asst
-    src = inspect.getsource(asst.assistant_ask)
-    assert "_ai_ask_semaphore.acquire(blocking=False)" in src
-    # 占满 4 个，第 5 个拿不到
-    held = []
-    for _ in range(asst.AI_ASK_MAX_CONCURRENT):
-        assert asst._ai_ask_semaphore.acquire(blocking=False) is True
-        held.append(1)
-    assert asst._ai_ask_semaphore.acquire(blocking=False) is False
-    for _ in held:
-        asst._ai_ask_semaphore.release()
-    assert asst._ai_ask_semaphore.acquire(blocking=False) is True
-    asst._ai_ask_semaphore.release()
-
-
 # ---------- query_params 模块 ----------
 
 def test_emby_query_params_module():
@@ -586,20 +556,6 @@ def test_code_state_sql_null_is_active_invitation(tmp_path):
         assert '(models.InvitationCode.is_active.isnot(True), "revoked")' in list_src
     finally:
         db.close()
-
-
-def test_assistant_ask_semaphore_before_quota():
-    """F-P1-16 r13：先抢信号量再扣配额；配额超限时先 release 信号量再 429。"""
-    import inspect
-    from backend.api import assistant as asst
-    src = inspect.getsource(asst.assistant_ask)
-    acq = src.index("_ai_ask_semaphore.acquire(blocking=False)")
-    con = src.index("ai_capability.safe_consume")
-    assert acq < con, "信号量 acquire 必须在配额 safe_consume 之前（否则撞忙会白扣配额）"
-    # 配额超限分支（safe_consume 之后、try: ask 之前）必须先 release 再抛 429
-    quota_branch = src[con:src.index("try:", con)]
-    assert "_ai_ask_semaphore.release()" in quota_branch
-    assert "今日提问次数已用完" in quota_branch
 
 
 def test_enrich_episode_night_tz_restored():

@@ -30,7 +30,7 @@ import {
   Film, MessageSquareDashed, Ticket, Users, Wallet,
   Coins, CalendarCheck, TicketCheck, Gift, ArrowRight, TrendingUp,
   Server, HardDrive, ScanSearch, CloudDownload, Download, Route as RealmIcon, Trophy, Flame, Activity,
-  AlertTriangle, Table2, Gauge, HeartPulse, ClipboardList, Stethoscope, ListTodo,
+  AlertTriangle, Table2, Gauge, HeartPulse, ClipboardList, ListTodo,
 } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard, StatTile } from '@/components/ui'
 import {
@@ -297,7 +297,6 @@ const quickActions = [
   { label: '任务总览', to: '/tasks', icon: ClipboardList },
   { label: '服务器与线路', to: '/servers', icon: Server },
   { label: '系统健康', to: '/health', icon: Activity },
-  { label: '一键体检', to: '/diagnosis', icon: Stethoscope },
 ]
 
 // ==================== 服务器接入（信息展示）====================

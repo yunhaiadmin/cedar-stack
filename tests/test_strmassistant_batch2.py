@@ -87,25 +87,6 @@ class TestMergeVersions:
         assert self.mod._provider_key(FakeA()) != self.mod._provider_key(FakeB())
 
 
-class TestThumbnailWorker:
-    def setup_method(self):
-        self.mod = _load(
-            "thumbnail_worker",
-            os.path.join(BASE, "thumbnail_worker.py"),
-        )
-
-    def test_thumbnail_dir(self):
-        d = self.mod.thumbnail_dir("abcdef123456")
-        assert d.endswith(os.path.join("ab", "abcdef123456"))
-
-    def test_has_thumbnails_empty(self):
-        # 不存在的 guid 返回 False
-        assert self.mod.has_thumbnails("nonexistent_guid_12345") is False
-
-    def test_list_thumbnails_empty(self):
-        assert self.mod.list_thumbnails("nonexistent_guid_12345") == []
-
-
 class TestSubtitleScanWorker:
     def setup_method(self):
         self.mod = _load(

@@ -60,20 +60,6 @@ def test_intro_marker_model_and_table(mem_db):
     assert "emby_intro_markers" in inspect(engine).get_table_names()
 
 
-def test_intro_marker_roundtrip(mem_db):
-    from backend.emby_server import intro_marker as im
-
-    db, _engine, item = mem_db
-    im.set_marker(db, item.id, "intro", 1000, 90000)
-    im.set_marker(db, item.id, "intro", 2000, 91000)  # 同类型幂等覆盖
-    markers = im.get_markers(db, item.id)
-    assert len(markers) == 1
-    assert markers[0]["start_ms"] == 2000 and markers[0]["end_ms"] == 91000
-    assert im.to_chapters(markers)[0]["MarkerType"] == "intro"
-    assert im.delete_marker(db, item.id, "intro")
-    assert im.get_markers(db, item.id) == []
-
-
 # ---------- #9 演员增强：person_tmdb_id ----------
 
 def test_person_tmdb_id_column_and_migration():
@@ -199,8 +185,7 @@ def test_health_report_flags_dead_workers():
 
 
 def test_workers_register_heartbeat():
-    for rel in ("backend/emby_server/thumbnail_worker.py",
-                "backend/emby_server/subtitle_scan_worker.py",
+    for rel in ("backend/emby_server/subtitle_scan_worker.py",
                 "backend/emby_server/merge_versions_worker.py"):
         src = _read(rel)
         assert "_wr.register(" in src and "_wr.heartbeat(" in src, rel
@@ -219,15 +204,6 @@ def test_purge_items_deletes_mediainfo_json(mem_db, monkeypatch):
 
 
 # ---------- 缩略图 / 字幕 worker 打磨 ----------
-
-def test_thumbnail_dir_sanitizes_guid():
-    from backend.emby_server import thumbnail_worker as tw
-
-    d = tw.thumbnail_dir("../../etc/passwd")
-    assert ".." not in d
-    assert hasattr(tw, "THUMBNAIL_PER_VIDEO_TIMEOUT")
-    assert "THUMBNAIL_PER_VIDEO_TIMEOUT" in _read("backend/emby_server/thumbnail_worker.py") \
-        .split("def extract_thumbnails", 1)[1]
 
 
 def test_subtitle_detect_unknown_dir_is_none():

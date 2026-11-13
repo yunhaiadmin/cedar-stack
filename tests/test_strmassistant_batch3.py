@@ -25,29 +25,6 @@ def _load(name, path):
     return mod
 
 
-class TestIntroMarker:
-    """#3 片头片尾标记（纯函数）"""
-
-    def setup_method(self):
-        self.mod = _load("intro_test", os.path.join(BASE, "intro_marker.py"))
-
-    def test_marker_types(self):
-        assert "intro" in self.mod.MARKER_TYPES
-        assert "outro" in self.mod.MARKER_TYPES
-        assert "credits" in self.mod.MARKER_TYPES
-
-    def test_to_chapters(self):
-        markers = [
-            {"id": 1, "marker_type": "intro", "start_ms": 0,
-             "end_ms": 90000, "source": "manual"},
-        ]
-        chapters = self.mod.to_chapters(markers)
-        assert len(chapters) == 1
-        assert chapters[0]["StartPositionTicks"] == 0
-        assert chapters[0]["EndPositionTicks"] == 90000 * 10000
-        assert chapters[0]["MarkerType"] == "intro"
-
-
 class TestFallbackLanguagesConstant:
     """#7 备选语言常量（不调用需 DB 的函数）"""
 

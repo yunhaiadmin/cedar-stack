@@ -25,7 +25,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import {
   CalendarCheck, Coins, Globe, KeyRound, Layers, Mail, MapPin, Network, Palette, RefreshCw, Save,
   ShieldCheck, Send, Sparkles, TicketCheck, UserPlus, Wallet, Lock, Zap,
-  DatabaseBackup, History, TriangleAlert, SlidersHorizontal, PlugZap, Rocket, HardDrive, Gauge,
+  History, TriangleAlert, SlidersHorizontal, PlugZap, Rocket, HardDrive, Gauge,
   Download,
 } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard } from '@/components/ui'
@@ -630,8 +630,6 @@ async function load() {
 }
 
 onMounted(async () => {
-  // 深链 /settings?tab=danger 进来时 tab 在挂载前就已是 danger，下面的 watch(tab) 不会触发
-  if (tab.value === 'danger') loadDanger()
   await Promise.all([load(), loadCapabilities(), loadHotlink(), loadInstallApp(), loadItemsDedupCache(), loadTransfer(), loadMountServing(), loadDriveApi(), loadLicense(), loadPool()])
   // Batch D 入口收敛：邀请页 / 客户端策略等用 hash 深链跳进来（如 #group-invitation）
   // R40：querySelector 直接塞 hash 会在畸形值时抛 SyntaxError；改用 getElementById
@@ -1252,7 +1250,6 @@ async function reloadAll() {
   loadItemsDedupCache()
   loadMountServing()
   loadDriveApi()
-  if (tab.value === 'danger') loadDanger()
 }
 
 function isDirty(group: Group): boolean {
@@ -1436,13 +1433,7 @@ const WRITE_HINT = '当前账号是只读审计角色：可以看，不能执行
 /** 逻辑与确认文案都在 useDangerOps 里（仪表盘 / 客户端策略 / 登录日志共用同一份） */
 const dangerOps = useDangerOps()
 const {
-  backup: backupInfo,
   busy: dangerBusy,
-  loadState: loadDanger,
-  loading: dangerLoading,
-} = dangerOps
-const {
-  backupNow: doBackup,
   purgeLogs: doPurgeLogs,
 } = dangerOps
 
@@ -1451,11 +1442,6 @@ const purgeDays = ref(90)
 /** 从别的页面深链过来时高亮对应卡片（?op=logs） */
 const TAB_OPS = ['logs']
 const target = ref('')
-
-// 切到危险操作页签时才拉数据
-watch(tab, (value) => {
-  if (value === 'danger') loadDanger()
-})
 
 /** 深链定位：?op=xxx → 高亮对应卡片并滚过去（其它页面「去危险操作」的落点） */
 function scrollToTarget(key: string) {
@@ -2722,31 +2708,7 @@ watch(
           <span class="tab-label"><TriangleAlert :size="13" />危险操作</span>
         </template>
 
-        <div v-loading="dangerLoading" class="settings-body">
-          <!-- 先备份：不可撤销的操作之前，总得有个能回退的地方 -->
-          <SectionCard title="动手之前，先备份一次" :icon="DatabaseBackup" class="danger-guard">
-            <template #actions>
-              <el-button
-                type="primary"
-                :loading="dangerBusy === 'backup'"
-                :disabled="!canWrite"
-                :title="canWrite ? '' : WRITE_HINT"
-                @click="doBackup"
-              >
-                <DatabaseBackup :size="14" class="btn-ico" />立即备份
-              </el-button>
-            </template>
-            <p class="danger-effect">
-              下面的操作都会立刻改变线上数据，大多不可恢复。
-              定时备份是每天一次，不等于「刚才那一刻的状态」。
-            </p>
-            <p class="danger-guard-meta">
-              定时备份 {{ backupInfo?.enabled ? `已开启 · 每天 ${backupInfo.time} · 保留 ${backupInfo.keep_days} 天` : '未开启' }}
-              · 上次执行 {{ backupInfo?.last_run || '—' }}
-              · 已有 {{ backupInfo?.backups.length ?? 0 }} 份备份
-            </p>
-          </SectionCard>
-
+        <div class="settings-body">
           <el-alert
             v-if="!canWrite"
             type="warning"

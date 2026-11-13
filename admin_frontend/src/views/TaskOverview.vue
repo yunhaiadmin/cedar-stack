@@ -21,8 +21,6 @@ import {
 } from 'lucide-vue-next'
 import { EmptyState, PageHeader } from '@/components/ui'
 import { parseServerTime } from '@/utils/serverTime'
-/** 重新布局批 3：采样哈希进度降为本页「进度」区（旧 /sample-hash-progress 跳到本页） */
-import SampleHashProgress from './SampleHashProgress.vue'
 import {
   cancelTransferJob,
   fetchTasksOverview,
@@ -401,9 +399,6 @@ onMounted(() => {
         description="转存门禁裁决与上游聚合开轮后会显示在这里。"
       />
     </section>
-
-    <!-- 重新布局批 3：采样哈希进度降为本页「进度」区（子页自带 PageHeader 作区标题） -->
-    <SampleHashProgress />
   </div>
 </template>
 

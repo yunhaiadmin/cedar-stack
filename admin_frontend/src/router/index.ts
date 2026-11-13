@@ -108,7 +108,6 @@ const routes: RouteRecordRaw[] = [
       // Batch E（健康体系合并）：旧「健康总览」地址保留为跳转，收藏与外部链接不会落到 404
       { path: 'health-board', redirect: '/health' },
       // v2.57.0 一键体检：只读诊断规则引擎，大白话结论 + 检查步骤
-      { path: 'diagnosis', name: 'Diagnosis', component: () => import('@/views/Diagnosis.vue'), meta: { title: '一键体检' } },
       // v2.58.0 API Key 管理：第三方 Service Token（创建/列表/吊销）
       { path: 'api-keys', name: 'ApiKeys', component: () => import('@/views/ApiKeys.vue'), meta: { title: 'API Key' } },
       // 服管理以绝对路径声明：跳转契约检查要求跳转目标与声明的 path 完全一致

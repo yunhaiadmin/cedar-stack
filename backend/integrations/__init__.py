@@ -33,7 +33,7 @@ FIELD_TYPES = ("str", "secret", "int", "bool", "select")
 
 # 能力清单：顺序即后台展示顺序；模块里再声明 title / desc / group
 CAPABILITY_MODULES: tuple[str, ...] = (
-    "proxy", "captcha", "mail", "telegram", "ai", "smart_subtitles", "geoip", "branding", "community",
+    "proxy", "captcha", "mail", "telegram", "ai", "geoip", "branding", "community",
     "world_board", "world_fortune", "world_streak", "world_copy", "world_letter",
 )
 

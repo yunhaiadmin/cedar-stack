@@ -328,29 +328,6 @@ def test_share_redirect_loop_gives_up(monkeypatch):
 # ---------------------------------------------------------------- media playlist 时长
 
 
-def test_media_playlist_duration_backfilled(monkeypatch, cms_source):
-    """直链 .m3u8 是 media playlist → resolve 全链路只回填时长。"""
-    _env_on(monkeypatch)
-    calls = []
-
-    def http_get_text(url, headers, timeout):
-        calls.append(url)
-        return 200, _MEDIA_TEXT
-
-    url = up.resolve_upstream_stream(
-        None, 7, "207", quality_mapping_id=978006,
-        http_get=_detail_get(MEDIA_DETAIL), http_probe=_probe_ok(),
-        http_get_text=http_get_text)
-    assert url == MEDIA_URL
-    # 回填已后台化：先等时长落袋再断言抓取次数与缓存内容，
-    # 不许按旧同步契约立即读（与后台线程竞速必偶红）
-    cached = _wait_quality(978006, "duration_sec")
-    assert calls == [MEDIA_URL]
-    assert cached["duration_sec"] == _MEDIA_DURATION
-    # media playlist 没有分辨率/带宽信号，不许编
-    assert not cached.get("width") and not cached.get("bandwidth")
-
-
 def test_media_playlist_duration_via_share_redirect(monkeypatch):
     """share 跳转落到 media playlist → 同样回填 duration_sec。"""
 

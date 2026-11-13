@@ -7,7 +7,7 @@
 2. 计数行为：连续失败达阈值（默认 5）置 paused_until；成功清零；
    暂停到期即半开（再失败立即重新暂停）；scope 之间分账。
 3. 非阻断：计数读写异常一律吞掉，绝不外泄到主流程。
-4. 消费方接线：applecms_fetcher.fetch_page /
+4. 消费方接线：upstream_health.probe_source /
    upstream_health.probe_source / upstream_aggregate_run 三处在
    暂停期跳过、按口径喂数（凭据类/单资源类失败不计数）。
 
@@ -25,7 +25,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.emby_server import applecms_fetcher as acf
 from backend.emby_server import external_failure_counts as efc
 from backend.emby_server import upstream_aggregate_run as uar
 from backend.emby_server import upstream_health as uh
@@ -244,68 +243,6 @@ def _scripted_get(script):
         return script[min(calls["n"] - 1, len(script) - 1)]
 
     return _get, calls
-
-
-# --- applecms_fetcher.fetch_page -------------------------------------------
-
-def test_cms_fetch_pauses_after_five_network_failures(fake_breaker):
-    get, calls = _scripted_get([(None, None)])
-    for _ in range(5):
-        with pytest.raises(acf.AppleCMSError) as ei:
-            acf.fetch_page("https://cms.example.com", http_get=get)
-        assert ei.value.kind == "network"
-    with pytest.raises(acf.AppleCMSError) as ei:
-        acf.fetch_page("https://cms.example.com", http_get=get)
-    assert ei.value.kind == "failure_paused"
-    assert calls["n"] == 5  # 暂停期内不再发请求
-
-
-def test_cms_fetch_success_resets_count(fake_breaker):
-    get, calls = _scripted_get(
-        [(None, None)] * 4 + [(200, {"code": 1, "list": []})]
-        + [(None, None)] * 4)
-    for _ in range(4):
-        with pytest.raises(acf.AppleCMSError):
-            acf.fetch_page("https://cms.example.com", http_get=get)
-    payload = acf.fetch_page("https://cms.example.com", http_get=get)
-    assert payload["code"] == 1
-    for _ in range(4):
-        with pytest.raises(acf.AppleCMSError) as ei:
-            acf.fetch_page("https://cms.example.com", http_get=get)
-        assert ei.value.kind == "network"  # 没被暂停，请求照发
-    assert calls["n"] == 9
-
-
-def test_cms_fetch_unauthorized_and_not_found_not_counted(fake_breaker):
-    get401, calls401 = _scripted_get([(401, None)])
-    for _ in range(7):
-        with pytest.raises(acf.AppleCMSError) as ei:
-            acf.fetch_page("https://cms.example.com", http_get=get401)
-        assert ei.value.kind == "unauthorized"
-    assert calls401["n"] == 7
-    get404, calls404 = _scripted_get([(404, None)])
-    for _ in range(7):
-        with pytest.raises(acf.AppleCMSError) as ei:
-            acf.fetch_page("https://cms.example.com", http_get=get404)
-        assert ei.value.kind == "not_found"
-    assert calls404["n"] == 7
-    assert not any(c[0] == "record_failure" for c in fake_breaker.calls)
-
-
-def test_cms_fetch_bad_code_not_counted(fake_breaker):
-    """应用层结论（code != 1）不参与计数：连打多次不暂停、照常发请求。
-
-    应用层失败由健康状态机自己的连续失败计数负责；本层只管
-    传输层。此口径的回归意义：既有探活场景会对同一源反复打出
-    bad_code，若它计入传输层计数，正常探活会被误暂停。
-    """
-    get, calls = _scripted_get([(200, {"code": 0, "list": []})])
-    for _ in range(7):
-        with pytest.raises(acf.AppleCMSError) as ei:
-            acf.fetch_page("https://cms.example.com", http_get=get)
-        assert ei.value.kind == "bad_code"
-    assert calls["n"] == 7
-    assert not any(c[0] == "record_failure" for c in fake_breaker.calls)
 
 
 # --- upstream_health.probe_source ------------------------------------------

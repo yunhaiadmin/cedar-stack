@@ -1,11 +1,6 @@
 import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import {
-  fetchBackupConfig,
-  purgeLoginLogs,
-  runBackupNow,
-  type BackupConfig,
-} from '@/api/admin'
+import { purgeLoginLogs } from '@/api/admin'
 
 /**
  * 危险操作（Phase 5）：**不可撤销 / 跨对象**的那几项操作，收在一处实现
@@ -15,7 +10,7 @@ import {
  * 同一个删除动作有两份确认文案，就等于迟早有一份漏掉「会发生什么」这句话。
  * 现在逻辑只在这里一份：
  *
- * - 「系统设置 → 危险操作」页签用它（完整卡片 + 备份护栏 + 角色置灰）；
+ * - 「系统设置 → 危险操作」页签用它（完整卡片 + 角色置灰）；
  * - 三个页面原来的按钮也调它（就地快捷方式，不再各自实现一遍）。
  *
  * **纯前端**：全部复用既有 `/api/admin/*` 写端点，没有新接口，也就没有新鉴权面。
@@ -51,36 +46,8 @@ export async function confirmIrreversible(message: string, word: string, title: 
 }
 
 export function useDangerOps() {
-  const backup = ref<BackupConfig | null>(null)
-  const loading = ref(false)
   /** 当前正在执行的动作（'' = 无）：按钮据此显示 loading，避免重复点击 */
   const busy = ref('')
-
-  async function loadState() {
-    loading.value = true
-    try {
-      backup.value = await fetchBackupConfig().catch(() => null)
-    } finally {
-      loading.value = false
-    }
-  }
-
-
-  /** 立即备份一次（不是危险操作，但它是危险操作的前置动作，所以放在同一个地方） */
-  async function backupNow(): Promise<boolean> {
-    busy.value = 'backup'
-    try {
-      const res = await runBackupNow()
-      backup.value = res
-      ElMessage.success(`备份完成：${res.backup.name}`)
-      return true
-    } catch {
-      return false   // 拦截器已提示
-    } finally {
-      busy.value = ''
-    }
-  }
-
 
   /** 清理登录与安全日志：days=0 表示清空全部。删掉就查不到了，手打「清理」确认。 */
   async function purgeLogs(days: number): Promise<boolean> {
@@ -105,11 +72,7 @@ export function useDangerOps() {
   }
 
   return {
-    backup,
     busy,
-    loadState,
-    loading,
     purgeLogs,
-    backupNow,
   }
 }

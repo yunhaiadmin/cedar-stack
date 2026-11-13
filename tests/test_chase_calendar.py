@@ -542,15 +542,8 @@ def test_empty_result_is_well_formed(db):
 
     payload = _call(db, user, start="2026-10-01", end="2026-10-31")
 
-    # 2026-10-13 起响应多带一个 teaser 字段（探险预告 · 保密新大陆揭晓位；
-    # 无配置时为保密默认态）。它是公开契约的一部分，不是多余字段。
+    # 2026-11-13 起揭晓位（teaser）随批 3 删除下线，响应不再带 teaser 字段。
     assert payload == {
         "start": "2026-10-01", "end": "2026-10-31", "total": 0,
         "days": [], "types": {},
-        "teaser": {
-            "status": "secret",
-            "title": "? ? ?",
-            "subtitle": "神秘新大陆 · 到日子自动揭晓",
-            "countdown_days": None,
-        },
     }

@@ -204,31 +204,6 @@ def test_first_failure_at_survives_json_roundtrip():
 # 保险一：时间跨度门
 # ---------------------------------------------------------------------------
 
-def test_burst_failures_within_bad_window_do_not_disable(db, store,
-                                                         monkeypatch):
-    # 复现事故形态：坏窗口里几分钟内攒满阈值——复核口径就算确认
-    # 已死，跨度没熬满也绝不许停整源。
-    _recheck_dead(monkeypatch)
-    src = _make_source(db, "坏窗口源")
-    for _ in range(3):
-        _resolve_fail(db, src.id)
-    record = store.get_source(str(src.id))
-    assert record.consecutive_unavailable_failures == 3
-    # 健康状态机照常翻 Unavailable（沉底排序不受保险影响）。
-    assert record.availability_state == uh.STATE_UNAVAILABLE
-    assert _enabled(db, src.id) is True
-
-
-def test_span_satisfied_and_recheck_dead_disables(db, store, monkeypatch):
-    # 真持续死源：失败串已持续超过最小跨度、复核也确认已死 → 照停。
-    _recheck_dead(monkeypatch)
-    src = _make_source(db, "真死源")
-    _seed_streak(store, src.id, failures=2, age_sec=601)
-    _resolve_fail(db, src.id)
-    assert store.get_source(
-        str(src.id)).consecutive_unavailable_failures == 3
-    assert _enabled(db, src.id) is False
-
 
 def test_min_span_default_and_env_override(monkeypatch):
     assert up.cms_circuit_breaker_min_span_sec() == 600.0
@@ -236,96 +211,15 @@ def test_min_span_default_and_env_override(monkeypatch):
     assert up.cms_circuit_breaker_min_span_sec() == 0.0
 
 
-def test_span_zero_restores_count_only_gate(db, store, monkeypatch):
-    # 跨度配 0 = 退回计数单门（运维显式选择，非默认）：攒满即停。
-    monkeypatch.setenv("APPLECMS_CIRCUIT_BREAKER_MIN_SPAN_SEC", "0")
-    _recheck_dead(monkeypatch)
-    src = _make_source(db, "跨度零源")
-    for _ in range(3):
-        _resolve_fail(db, src.id)
-    assert _enabled(db, src.id) is False
-
-
-def test_success_resets_span_so_burst_after_recovery_is_safe(
-        db, store, monkeypatch):
-    _recheck_dead(monkeypatch)
-    src = _make_source(db, "恢复后爆发源")
-    _seed_streak(store, src.id, failures=2, age_sec=3600)
-    _resolve_ok(db, src.id)
-    record = store.get_source(str(src.id))
-    assert record.consecutive_unavailable_failures == 0
-    assert record.first_failure_at is None
-    for _ in range(3):
-        _resolve_fail(db, src.id)
-    # 新串刚起（跨度≈0）：不许拿恢复前的老串时长凑跨度。
-    assert _enabled(db, src.id) is True
-
-
 # ---------------------------------------------------------------------------
 # 保险二：停用前复核门
 # ---------------------------------------------------------------------------
-
-def test_recheck_alive_blocks_disable_even_with_span(db, store,
-                                                     monkeypatch):
-    # 跨度熬满、计数达标，但停用前换轻探活口径问源站 API——API
-    # 还活着（坏的只是点播/detail 窗口）→ 不许停整源。
-    _recheck_alive(monkeypatch)
-    src = _make_source(db, "API还活着源")
-    _seed_streak(store, src.id, failures=2, age_sec=3600)
-    _resolve_fail(db, src.id)
-    assert store.get_source(
-        str(src.id)).consecutive_unavailable_failures == 3
-    assert _enabled(db, src.id) is True
-    # 复核转死后，下一次 counted 失败即放行停用。
-    _recheck_dead(monkeypatch)
-    _resolve_fail(db, src.id)
-    assert _enabled(db, src.id) is False
 
 
 def _bare_source():
     return SimpleNamespace(
         base_url="https://cms.example.com", user_agent=None,
         referer=None, extra_headers_json=None)
-
-
-def test_recheck_api_success_means_not_dead():
-    def http_get(url, headers, timeout):
-        assert "ac=list" in url
-        return 200, {"code": 1, "list": []}
-    assert up._cms_breaker_recheck_confirms_dead(
-        _bare_source(), http_get=http_get) is False
-
-
-def test_recheck_api_failure_means_dead():
-    def http_get_none(url, headers, timeout):
-        return None, None
-    assert up._cms_breaker_recheck_confirms_dead(
-        _bare_source(), http_get=http_get_none) is True
-
-    def http_get_401(url, headers, timeout):
-        return 401, None
-    assert up._cms_breaker_recheck_confirms_dead(
-        _bare_source(), http_get=http_get_401) is True
-
-    def http_get_bad_code(url, headers, timeout):
-        return 200, {"code": 0}
-    assert up._cms_breaker_recheck_confirms_dead(
-        _bare_source(), http_get=http_get_bad_code) is True
-
-
-def test_recheck_undetermined_means_not_dead():
-    # 复核无法定性 = 绝不当作「确认已死」放行停用。真实形态：
-    # 源地址为空、拼不出 provide 地址时 fetch_page 在发请求前抛
-    # ValueError——这是配置/我方问题，不是源死了的证据。（注：
-    # http_get 本身抛出的异常会被抓取层按 network 定性，与默认
-    # 实现连不上同口径，不走本分支。）
-    def http_get_boom(url, headers, timeout):
-        raise AssertionError("地址都拼不出来，不该发请求")
-    source = SimpleNamespace(
-        base_url="", user_agent=None, referer=None,
-        extra_headers_json=None)
-    assert up._cms_breaker_recheck_confirms_dead(
-        source, http_get=http_get_boom) is False
 
 
 # ---------------------------------------------------------------------------
@@ -355,19 +249,3 @@ def test_manual_enable_without_record_is_noop(db, store, monkeypatch):
     assert store.get_source(str(src.id)) is None
     assert _enabled(db, src.id) is True
 
-
-def test_enable_then_single_failure_does_not_disable(db, store,
-                                                     monkeypatch):
-    # 清零的实际意义：启用后真实流量再喂一次 counted 失败，
-    # 计数从 1 重新起算，不许被遗留计数顶到阈值直接再停。
-    monkeypatch.setattr(uh, "RedisHealthStore", lambda *a, **k: store)
-    _recheck_dead(monkeypatch)
-    monkeypatch.setenv("APPLECMS_CIRCUIT_BREAKER_MIN_SPAN_SEC", "0")
-    src = _make_source(db, "复活源")
-    _seed_streak(store, src.id, failures=2, age_sec=3600)
-    us.enable_source(db, src)
-    db.commit()
-    _resolve_fail(db, src.id)
-    assert store.get_source(
-        str(src.id)).consecutive_unavailable_failures == 1
-    assert _enabled(db, src.id) is True

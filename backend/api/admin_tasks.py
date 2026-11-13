@@ -477,81 +477,6 @@ def _task_upstream_warm(db: Session) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# 7. Drive 暖地址（goal-35 批 1：W5＋W1；批 2：W2＋W3）
-# ---------------------------------------------------------------------------
-
-def _task_drive_warm(db: Session) -> dict:
-    from backend.emby_server import drive_warm_worker
-
-    snap = _cached_snapshot(
-        "drive_warm_status",
-        lambda: drive_warm_worker.status_snapshot())
-    last = snap.get("last_round") or {}
-    signals = last.get("signals") or {}
-    w1 = last.get("w1") or {}
-    w2a = last.get("w2a") or {}
-    w2b = last.get("w2b") or {}
-    w3 = last.get("w3") or {}
-    w5 = last.get("w5") or {}
-    metrics = [
-        {"label": "上轮信号条目",
-         "value": f"{int(last.get('items') or 0)} 条"},
-        {"label": "展开目标",
-         "value": (f"{int(last.get('targets') or 0)} 个"
-                   f"（仅存在性 {int(last.get('w5_only') or 0)} 个）")},
-        {"label": "交付计划",
-         "value": (f"新建 {int(w1.get('built') or 0)} / "
-                   f"新鲜 {int(w1.get('fresh') or 0)} / "
-                   f"失败 {int(w1.get('failed') or 0)}")},
-        {"label": "副本授权",
-         "value": (f"新授 {int(w2a.get('ensured') or 0)} / "
-                   f"新鲜 {int(w2a.get('fresh') or 0)} / "
-                   f"失败 {int(w2a.get('failed') or 0)}")},
-        {"label": "额度裁决",
-         "value": (f"预探 {int(w2b.get('probed') or 0)} / "
-                   f"新鲜 {int(w2b.get('fresh') or 0)} / "
-                   f"失败 {int(w2b.get('failed') or 0)}")},
-        {"label": "令牌保鲜",
-         "value": (f"刷新 {int(w3.get('refreshed') or 0)} / "
-                   f"新鲜 {int(w3.get('fresh') or 0)} / "
-                   f"失败 {int(w3.get('failed') or 0)}")},
-        {"label": "存在性",
-         "value": (f"已发布 {int(w5.get('published') or 0)} / "
-                   f"新鲜 {int(w5.get('fresh') or 0)} / "
-                   f"已删 {int(w5.get('gone') or 0)} / "
-                   f"失败 {int(w5.get('failed') or 0)}")},
-        {"label": "信号构成",
-         "value": (f"追剧 {int(signals.get('follow') or 0)} / "
-                   f"续看 {int(signals.get('resume') or 0)} / "
-                   f"热门 {int(signals.get('hot') or 0)}")},
-        {"label": "上轮耗时",
-         "value": f"{float(last.get('elapsed_sec') or 0):.1f} 秒"},
-    ]
-    if not snap.get("enabled", True):
-        status, status_text = "disabled", "已关闭"
-        summary = "Drive 暖地址关了（环境变量），点播仍走现算现查"
-    elif not last:
-        status, status_text = "idle", "没跑过"
-        summary = "Drive 暖地址工人还没跑过第一轮"
-    elif last.get("reason") in ("busy", "load"):
-        status, status_text = "ok", "让路中"
-        summary = "上一轮检测到起播繁忙或系统负载高，主动跳过让路"
-    elif int(last.get("failed") or 0) and not int(last.get("warmed") or 0):
-        status, status_text = "warning", "留意"
-        summary = "上一轮暖地址全军覆没，多半是上游或计划侧集体不健康"
-    else:
-        status, status_text = "ok", "正常"
-        summary = (f"上一轮提前暖好 {int(last.get('warmed') or 0)} 个目标，"
-                   "信号集里的片点开可直接命中现成计划、副本授权、"
-                   "额度裁决与存在性缓存")
-    return _card(
-        "drive_warm", "Drive 暖地址", status, status_text, summary,
-        metrics=metrics, last_run=last.get("finished_at"),
-        last_run_label="最近一轮暖地址",
-    )
-
-
-# ---------------------------------------------------------------------------
 # 8. 缺集核算（缺集全套：TMDB 集表 vs 盘内实有集对表）
 # ---------------------------------------------------------------------------
 
@@ -617,7 +542,6 @@ _BUILDERS = (
     ("thumbnail", "缩略图补生成", "_task_thumbnail"),
     ("chase_new", "追新（新资源监听）", "_task_chase_new"),
     ("upstream_warm", "上游地址保鲜", "_task_upstream_warm"),
-    ("drive_warm", "Drive 暖地址", "_task_drive_warm"),
     ("missing_episodes", "缺集核算", "_task_missing_episodes"),
 )
 # 注：存函数名而不是函数对象，测试时 monkeypatch 模块属性才能生效。

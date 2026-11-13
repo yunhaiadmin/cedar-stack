@@ -16,6 +16,8 @@
    把 r44 扫描器补上 _capped_workers 模式属于 r44 测试文件（非 D 批
    范围），本批不碰；补模式后应把这两行改回标准键=值行，届时本测试
    （子串口径）仍通过，r44 三项亦全绿。
+   2026-11-13 批 3：THUMBNAIL_WORKERS 随 thumbnail_worker 一并删除、
+   不再有读取点，钉住键改为 SCAN_WORKERS。
 """
 from __future__ import annotations
 
@@ -37,7 +39,7 @@ def test_cpu_budget_alias_keys_documented():
         found.update(pat.findall(path.read_text(encoding="utf-8", errors="ignore")))
     assert found, "后端未扫到任何 cpu_budget 别名读取的 env 键，扫描模式可能已失效"
     # 本批实锤的两键必须在内（防测试本身被悄悄放水）
-    assert {"SCAN_WALK_WORKERS", "THUMBNAIL_WORKERS"} <= found
+    assert {"SCAN_WALK_WORKERS", "SCAN_WORKERS"} <= found
     text = ENV_EXAMPLE.read_text(encoding="utf-8")
     missing = sorted(k for k in found if k not in text)
     assert not missing, f"以下 cpu_budget 键在代码里被读但 env.example 未收录：{missing}"

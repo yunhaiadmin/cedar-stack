@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Activity, AlertTriangle, Bell, Bot, Cpu, Database, Download, Film, HardDrive, KeyRound, Radar, RefreshCw, Radio, ScanLine, ShieldCheck, Sparkles, Users, Zap } from 'lucide-vue-next'
+import { Activity, AlertTriangle, Bell, Bot, Cpu, Database, Film, HardDrive, KeyRound, Radar, RefreshCw, Radio, ScanLine, Sparkles, Users, Zap } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard, StatTile } from '@/components/ui'
 /** 重新布局批 3：播放总线降为本页「总线」区（旧 /playback-bus 跳到本页） */
 import PlaybackBus from './PlaybackBus.vue'
 import { fetchEmbyOverview, fetchMounts, fetchPanelHealth, fetchSessions, fetchTgBotStatus } from '@/api/admin'
-import { fetchBackupConfig, saveBackupConfig, runBackupNow, fetchBackupFileInfo, downloadBackupFile } from '@/api/admin'
 import {
   fetchAlertRules,
   updateAlertRule,
@@ -19,7 +18,7 @@ import {
 import type { EmbySessionRow, StorageMount } from '@/types'
 import { parseServerTime } from '@/utils/serverTime'
 import type { PanelHealth } from '@/api/admin'
-import type { BackupConfig, BackupFileInfo, TgBotStatus } from '@/api/admin'
+import type { TgBotStatus } from '@/api/admin'
 import type {
   AlertChannel,
   AlertRecord,
@@ -38,45 +37,6 @@ const lastChecked = ref('')
 /** 面板健康接口失败（其余子查询各自兜底，不算失败） */
 const loadError = ref('')
 
-const backup = ref<BackupConfig | null>(null)
-const backupSaving = ref(false)
-const backupRunning = ref(false)
-
-// ---------- 备份下载 / 校验（只做下载 + 校验展示，不做一键覆盖恢复） ----------
-const backupInfo = ref<BackupFileInfo | null>(null)
-const backupInfoVisible = ref(false)
-const backupInfoLoading = ref('')
-const downloadingBackup = ref('')
-
-async function onDownloadBackup(name: string) {
-  downloadingBackup.value = name
-  try {
-    const blob = await downloadBackupFile(name)
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = name
-    a.click()
-    URL.revokeObjectURL(url)
-    ElMessage.success(`开始下载 ${name}`)
-  } catch {
-    ElMessage.error('下载失败，备份可能已被轮转删除，刷新列表再试')
-  } finally {
-    downloadingBackup.value = ''
-  }
-}
-
-async function onCheckBackup(name: string) {
-  backupInfoLoading.value = name
-  try {
-    backupInfo.value = await fetchBackupFileInfo(name)
-    backupInfoVisible.value = true
-  } catch {
-    ElMessage.error('校验信息读取失败')
-  } finally {
-    backupInfoLoading.value = ''
-  }
-}
 
 // ---------- Telegram 机器人状态（现成只读接口 GET /tg-bot/status） ----------
 const tgBot = ref<TgBotStatus | null>(null)
@@ -285,15 +245,6 @@ function alertTimeLabel(v: string | null | undefined): string {
 }
 const alertEnabled = computed(() => !!alertSettings.value?.enabled)
 
-function fmtSize(bytes: number): string {
-  // 非数字/无穷大（比如后端没返回）直接给占位，避免 "NaN MB"
-  if (!Number.isFinite(bytes)) return '—'
-  if (bytes <= 0) return '0 B'
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-}
-
 const panelOk = computed(() => health.value?.status === 'healthy' || health.value?.status === 'degraded')
 const panelDetail = computed(() => {
   if (health.value?.status === 'healthy') return 'API 正常响应'
@@ -320,19 +271,17 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    const [h, o, s, m, b, tgb] = await Promise.all([
+    const [h, o, s, m, tgb] = await Promise.all([
       fetchPanelHealth(),
       fetchEmbyOverview().catch(() => null),
       fetchSessions().catch(() => ({ sessions: [] as EmbySessionRow[] })),
       fetchMounts().catch(() => ({ mounts: [], mount_types: [] })),
-      fetchBackupConfig().catch(() => null),
       fetchTgBotStatus().catch(() => null),
     ])
     health.value = h
     overview.value = o
     sessions.value = s.sessions
     mounts.value = m.mounts
-    backup.value = b
     if (tgb) tgBot.value = tgb
     lastChecked.value = new Date().toLocaleTimeString()
   } catch (e) {
@@ -340,39 +289,6 @@ async function load() {
     ElMessage.error('健康检查失败，请确认 EM 服务仍在运行')
   } finally {
     loading.value = false
-  }
-}
-
-async function saveBackup() {
-  if (!backup.value) return
-  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(backup.value.time.trim())) {
-    ElMessage.error('时间格式应为 HH:MM（24 小时制）')
-    return
-  }
-  backupSaving.value = true
-  try {
-    backup.value = await saveBackupConfig(
-      backup.value.time.trim(),
-      Math.max(1, Math.min(30, Math.round(backup.value.keep_days) || 7)),
-    )
-    ElMessage.success('备份配置已保存，立即生效')
-  } catch {
-    ElMessage.error('保存失败，请检查时间格式与保留天数')
-  } finally {
-    backupSaving.value = false
-  }
-}
-
-async function manualBackup() {
-  backupRunning.value = true
-  try {
-    const res = await runBackupNow()
-    backup.value = res
-    ElMessage.success(`备份完成：${res.backup.name}`)
-  } catch {
-    ElMessage.error('备份失败，请稍后重试')
-  } finally {
-    backupRunning.value = false
   }
 }
 
@@ -581,9 +497,8 @@ onUnmounted(() => {
               <span class="lamp-metric-value">{{ lampMetricValue(card.key, m.field, m.suffix) }}</span>
             </div>
           </div>
-          <!-- 黄/红灯深链：去体检找原因、看任务看进度、看告警看记录 -->
+          <!-- 黄/红灯深链：看任务看进度、看告警看记录 -->
           <div v-if="card.status !== 'ok'" class="lamp-links">
-            <router-link :to="{ name: 'Diagnosis' }" class="lamp-link">去体检</router-link>
             <router-link :to="{ name: 'TaskOverview' }" class="lamp-link">看任务</router-link>
             <button type="button" class="lamp-link is-btn" @click="scrollToAlerts">看告警</button>
           </div>
@@ -682,85 +597,10 @@ onUnmounted(() => {
         <EmptyState v-else compact :icon="Bot" title="机器人状态加载失败" description="不影响页面其他内容，可点「重新检查」再试。" />
       </SectionCard>
 
-      <SectionCard title="数据库备份" :icon="Database" :meta="`上次执行 ${backup?.last_run || '—'}`">
-        <div v-if="backup" class="backup-form">
-          <div class="backup-row">
-            <span class="au-badge" :class="backup.enabled ? 'au-badge-green' : 'au-badge-muted'">{{ backup.enabled ? '定时备份已开启' : '定时备份已关闭' }}</span>
-            <el-time-picker
-              v-model="backup.time"
-              format="HH:mm"
-              value-format="HH:mm"
-              placeholder="执行时间"
-              class="w-time"
-              :clearable="false"
-            />
-            <span class="keep">
-              <span class="muted">保留</span>
-              <el-input-number v-model="backup.keep_days" :min="1" :max="30" :controls="false" class="w-days" />
-              <span class="muted">天</span>
-            </span>
-          </div>
-          <div class="backup-row backup-actions">
-            <el-button :loading="backupRunning" @click="manualBackup">立即备份</el-button>
-            <el-button type="primary" :loading="backupSaving" @click="saveBackup">保存配置</el-button>
-          </div>
-          <ul v-if="backup.backups.length" class="status-list backup-list">
-            <li v-for="f in backup.backups.slice(0, 7)" :key="f.name" class="status-row">
-              <span class="status-main mono">{{ f.name }}</span>
-              <span class="muted">{{ fmtSize(f.size) }} · {{ f.created_at }}</span>
-              <span class="backup-file-actions">
-                <el-button size="small" text :icon="Download" :loading="downloadingBackup === f.name" @click="onDownloadBackup(f.name)">下载</el-button>
-                <el-button size="small" text :icon="ShieldCheck" :loading="backupInfoLoading === f.name" @click="onCheckBackup(f.name)">校验</el-button>
-              </span>
-            </li>
-          </ul>
-          <p v-if="backup.backups.length" class="muted">下载拿走异地保存；「校验」看完整性、哈希与恢复说明。本页只做下载与校验，不做一键恢复。</p>
-          <EmptyState v-else compact title="暂无备份文件" description="开启定时备份，或点「立即备份」生成第一份。" />
-        </div>
-        <div v-else-if="loading" class="backup-skeleton">
-          <span class="au-skeleton" /><span class="au-skeleton" /><span class="au-skeleton is-short" />
-        </div>
-        <EmptyState v-else compact :icon="AlertTriangle" title="备份信息加载失败" description="不影响页面其他内容，可点「重新检查」再试。" />
-      </SectionCard>
+
     </div>
 
-    <!-- 备份校验信息弹窗（只读展示） -->
-    <el-dialog v-model="backupInfoVisible" title="备份校验信息" width="min(560px, 92vw)">
-      <div v-if="backupInfo">
-        <ul class="status-list">
-          <li class="status-row">
-            <span class="status-main">文件名</span>
-            <span class="mono">{{ backupInfo.name }}</span>
-          </li>
-          <li class="status-row">
-            <span class="status-main">格式</span>
-            <span>{{ backupInfo.format_text }}</span>
-          </li>
-          <li class="status-row">
-            <span class="status-main">文件头</span>
-            <span>{{ backupInfo.header_ok ? '对得上' : '对不上 / 无法判定' }}</span>
-          </li>
-          <li class="status-row">
-            <span class="status-main">gzip 完整性</span>
-            <span>{{ backupInfo.gzip_ok ? '完整（可全量解压）' : `损坏：${backupInfo.gzip_error}` }}</span>
-          </li>
-          <li class="status-row">
-            <span class="status-main">压缩大小</span>
-            <span>{{ fmtSize(backupInfo.size) }}</span>
-          </li>
-          <li class="status-row">
-            <span class="status-main">解压后大小</span>
-            <span>{{ backupInfo.uncompressed_size !== null ? fmtSize(backupInfo.uncompressed_size) : '—' }}</span>
-          </li>
-          <li class="status-row">
-            <span class="status-main">SHA-256</span>
-            <span class="mono sha-text">{{ backupInfo.sha256 }}</span>
-          </li>
-        </ul>
-        <p class="muted">{{ backupInfo.restore_hint }}</p>
-        <p class="muted">本页只提供下载与校验，不提供一键恢复：覆盖恢复是停服人工操作，照上面的说明来。</p>
-      </div>
-    </el-dialog>
+
 
     <!-- 告警通知 -->
     <SectionCard id="alerts" title="告警通知" :icon="Bell" :meta="alertEnabled ? '已启用' : '已关闭'" class="alert-card">
@@ -968,16 +808,9 @@ onUnmounted(() => {
 
 .backup-form { display: flex; flex-direction: column; gap: 12px; }
 .backup-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.backup-actions { justify-content: flex-end; }
 .keep { display: inline-flex; align-items: center; gap: 6px; }
 .w-time { width: 130px; }
 .w-days { width: 70px; }
-.backup-list { max-height: 220px; overflow-y: auto; border-top: 1px solid var(--au-border); }
-.backup-file-actions { display: inline-flex; gap: 2px; flex-shrink: 0; }
-.sha-text { word-break: break-all; font-size: 11px; max-width: 320px; text-align: right; }
-.backup-skeleton { display: flex; flex-direction: column; gap: 10px; }
-.backup-skeleton .au-skeleton { display: block; height: 14px; border-radius: var(--au-r-sm); }
-.backup-skeleton .is-short { width: 60%; }
 
 @media (max-width: 1024px) {
   .health-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -989,8 +822,6 @@ onUnmounted(() => {
   .health-grid { grid-template-columns: 1fr; gap: 10px; }
   .runtime-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .status-row { flex-direction: column; gap: 2px; }
-  .backup-actions { justify-content: stretch; }
-  .backup-actions :deep(.el-button) { flex: 1; margin-left: 0; }
 }
 
 /* ---------- 健康灯（原「健康总览」页并入，Batch E） ---------- */
@@ -1120,7 +951,7 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-/** 黄/红灯深链：去体检找原因、看任务看进度、看告警看记录 */
+/** 黄/红灯深链：看任务看进度、看告警看记录 */
 .lamp-links {
   display: flex;
   gap: 8px;
