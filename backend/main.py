@@ -117,6 +117,7 @@ from backend.emby_server.portal import user_emby_router, admin_emby_router, conf
 # admin_emby_router 上，因此必须放在 app.include_router(admin_emby_router) 之前。
 from backend.emby_server import portal_mount_routes  # noqa: F401
 from backend.api.emby_portal import auth_router, password_reset_router
+from backend.api.account_security import platform_router, security_router
 from backend.api.economy import router as economy_router
 from backend.api.invitation import router as invitation_router
 from backend.api.points import router as welfare_points_router
@@ -1000,6 +1001,10 @@ app.include_router(auth_router)
 
 # 邮箱找回密码（/api/auth/password-reset/*）
 app.include_router(password_reset_router)
+
+# 账号安全三件套（TOTP / Passkey / 平台 API Key）
+app.include_router(security_router)
+app.include_router(platform_router)
 
 # 用户经济系统（签到/兑换码/支付/订单）与邀请返利
 app.include_router(economy_router)

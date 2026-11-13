@@ -86,6 +86,7 @@ class LoginRequest(BaseModel):
     username: str
     password: str
     captcha_token: str | None = None  # 人机验证令牌（管理员开启保护时必填）
+    totp_code: str | None = None  # 动态验证码（账号已启用 TOTP 时必填）
 
 
 class RefreshRequest(BaseModel):
@@ -726,6 +727,30 @@ def login(request: Request, req: LoginRequest, db: Session = Depends(get_db)):
         )
         raise HTTPException(status_code=403, detail="账户已被禁用")
 
+    # 动态验证码（TOTP）：密码对了才走到这一步。已启用的账号必须带码，
+    # 缺码/错码与密码错误同走 401 + 安全日志（detail 区分），防第二因子被绕过。
+    from backend import account_security as _acct_sec
+
+    if _acct_sec.totp_enabled_for(db, user.id):
+        code = (req.totp_code or "").strip()
+        if not code:
+            record_event(
+                db, username=user.username, user_id=user.id, ip=log_ip(request),
+                agent=user_agent(request), success=False,
+                reason="portal_login_failed", detail="已启用动态验证码但未提供",
+            )
+            raise HTTPException(
+                status_code=401,
+                detail="该账号已启用动态验证码，请输入 6 位动态验证码",
+            )
+        if not _acct_sec.verify_login_totp(db, user.id, code):
+            record_event(
+                db, username=user.username, user_id=user.id, ip=log_ip(request),
+                agent=user_agent(request), success=False,
+                reason="portal_login_failed", detail="动态验证码不正确",
+            )
+            raise HTTPException(status_code=401, detail="动态验证码不正确，请重试")
+
     user.last_login_at = datetime.now()
     db.commit()
     record_event(
@@ -896,6 +921,122 @@ def tg_login(request: Request, req: TgLoginRequest, db: Session = Depends(get_db
     record_event(
         db, username=user.username, user_id=user.id, ip=log_ip(request),
         agent=user_agent(request), success=True, reason="tg_login",
+    )
+    verdict = share_guard.note_activity(db, user, log_ip(request))
+    if verdict and verdict.get("blocked"):
+        raise HTTPException(
+            status_code=403,
+            detail="检测到该账号在短时间内于多个城市登录，已被暂停使用，请联系管理员",
+        )
+    return _issue_auth_response(user, db)
+
+
+# ==================== 账号安全三件套：登录侧接入 ====================
+# 管理侧（启用 TOTP / 绑 Passkey / 建平台 Key）在 backend/api/account_security.py；
+# 这里只有登录链需要的三个公开端点：因素探测、Passkey 断言选项、Passkey 登录。
+# 核心逻辑在 backend/account_security.py，本处不另写一套校验。
+
+class PasskeyLoginOptionsRequest(BaseModel):
+    username: str
+
+
+class PasskeyLoginVerifyRequest(BaseModel):
+    username: str
+    credential: dict
+    challenge_token: str
+
+
+@auth_router.get("/login-factors")
+def login_factors(request: Request, username: str, db: Session = Depends(get_db)):
+    """登录页因素探测：该用户名是否要显示动态验证码字段 / Passkey 登录按钮。
+
+    与 UHDNow 同口径（字段仅在已启用时出现）。按 IP 限流防批量探测；
+    用户名不存在时返回全 false，与「存在但未启用」不可区分的只有时序——
+    本端点不查密码、无 bcrypt，时序差不构成枚举面（用户名本身可由注册接口探测）。
+    """
+    allowed, _retry = check_rate_limit(f"loginfactors:{client_ip(request)}", 20, 60)
+    if not allowed:
+        raise HTTPException(status_code=429, detail="尝试过于频繁，请稍后再试")
+    from backend import account_security as _acct_sec
+
+    user = (
+        db.query(models.WebUser)
+        .filter(models.WebUser.username == (username or "").strip())
+        .first()
+    )
+    if user is None:
+        return {"totp_required": False, "passkey_available": False}
+    return {
+        "totp_required": _acct_sec.totp_enabled_for(db, user.id),
+        "passkey_available": len(_acct_sec.list_passkeys(db, user.id)) > 0,
+    }
+
+
+@auth_router.post("/passkey/login/options")
+def passkey_login_options(
+    request: Request, req: PasskeyLoginOptionsRequest, db: Session = Depends(get_db)
+):
+    """Passkey 登录第一步：按用户名下发断言选项（allow 列表只含本人凭据）。"""
+    allowed, _retry = check_rate_limit(f"passkeyopts:{client_ip(request)}", 10, 60)
+    if not allowed:
+        raise HTTPException(status_code=429, detail="尝试过于频繁，请稍后再试")
+    from backend import account_security as _acct_sec
+
+    user = (
+        db.query(models.WebUser)
+        .filter(models.WebUser.username == req.username.strip())
+        .first()
+    )
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=400, detail="该账号尚未绑定 Passkey")
+    rp_id, _origin = _acct_sec.rp_context(request)
+    try:
+        options, token = _acct_sec.authentication_options(db, user, rp_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"options": options, "challenge_token": token}
+
+
+@auth_router.post("/passkey/login/verify", response_model=AuthResponse)
+def passkey_login_verify(
+    request: Request, req: PasskeyLoginVerifyRequest, db: Session = Depends(get_db)
+):
+    """Passkey 登录第二步：验断言 → 与密码登录同一套发令牌 + 日志 + 防共享判定。"""
+    allowed, _retry = check_rate_limit(f"passkeyverify:{client_ip(request)}", 10, 60)
+    if not allowed:
+        raise HTTPException(status_code=429, detail="尝试过于频繁，请稍后再试")
+    from backend import account_security as _acct_sec
+
+    user = (
+        db.query(models.WebUser)
+        .filter(models.WebUser.username == req.username.strip())
+        .first()
+    )
+    if user is None or not user.is_active:
+        record_event(
+            db, username=req.username.strip(), user_id=user.id if user else None,
+            ip=log_ip(request), agent=user_agent(request), success=False,
+            reason="portal_login_failed", detail="Passkey 登录：用户不存在或已禁用",
+        )
+        raise HTTPException(status_code=401, detail="Passkey 登录失败，请重试")
+    rp_id, origin = _acct_sec.rp_context(request)
+    try:
+        _acct_sec.verify_login_assertion(
+            db, user, req.credential, req.challenge_token, rp_id, origin
+        )
+    except ValueError as exc:
+        record_event(
+            db, username=user.username, user_id=user.id, ip=log_ip(request),
+            agent=user_agent(request), success=False,
+            reason="portal_login_failed", detail="Passkey 登录校验未通过",
+        )
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    user.last_login_at = datetime.now()
+    db.commit()
+    record_event(
+        db, username=user.username, user_id=user.id, ip=log_ip(request),
+        agent=user_agent(request), success=True, reason="portal_login",
+        detail="Passkey 登录",
     )
     verdict = share_guard.note_activity(db, user, log_ip(request))
     if verdict and verdict.get("blocked"):

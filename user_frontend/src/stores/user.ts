@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authApi, tokenStore, type AuthUser } from '@/api'
+import { loginSecurityApi } from '@/api/security'
+import { getPasskeyAssertion } from '@/utils/webauthn'
 import { resetEmbyBaseUrl, refreshEmbyBaseUrl } from '@/api/emby'
 
 export type { AuthUser as User }
@@ -54,11 +56,32 @@ export const useUserStore = defineStore('user', () => {
     refreshEmbyBaseUrl()
   }
 
-  async function login(username: string, password: string, captchaToken?: string) {
+  async function login(username: string, password: string, captchaToken?: string, totpCode?: string) {
     loading.value = true
     try {
       // captcha_token：站点开启人机验证时由挂件生成（未开启时后端不校验）
-      const response = await authApi.login({ username, password, captcha_token: captchaToken || undefined })
+      // totp_code：账号启用了动态验证码时必填（后端对未启用账号忽略此字段）
+      const response = await authApi.login({
+        username, password,
+        captcha_token: captchaToken || undefined,
+        totp_code: totpCode || undefined,
+      })
+      _persist(response)
+      return true
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /** Passkey 免密登录：向后端要断言选项 → 调起设备验证 → 回传凭据换登录态 */
+  async function loginWithPasskey(username: string) {
+    loading.value = true
+    try {
+      const { options, challenge_token } = await loginSecurityApi.passkeyOptions(username)
+      const credential = await getPasskeyAssertion(options)
+      const response = await loginSecurityApi.passkeyVerify({
+        username, credential, challenge_token,
+      })
       _persist(response)
       return true
     } finally {
@@ -162,6 +185,7 @@ export const useUserStore = defineStore('user', () => {
     realmNote,
     init,
     login,
+    loginWithPasskey,
     loginWithTgToken,
     register,
     fetchUser,

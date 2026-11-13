@@ -2520,6 +2520,73 @@ class ApiKey(Base):
     created_at = Column(DateTime, default=datetime.now, nullable=False)
 
 
+# ==================== 账号安全三件套（TOTP / Passkey / 平台 API Key） ====================
+# 逻辑在 backend/account_security.py，端点在 backend/api/account_security.py。
+# 三张都是新表（create_all 建），不给 web_users 加列、不动服务间 api_keys 表。
+
+class UserTotp(Base):
+    """用户 TOTP 动态验证码（每人至多一行）。
+
+    - ``secret_sealed`` 只存 Fernet 密封值（密钥派生自 SECRET_KEY），明文密钥永不落库；
+    - ``enabled=False`` = 已生成待确认（setup 已发密钥、用户还没输对一次码），
+      登录校验只认 enabled=True 的行；
+    - ``last_used_counter`` 记最近一次登录成功用掉的计数器步，防同一码在
+      有效窗口内被重放。
+    """
+    __tablename__ = 'user_totp'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('web_users.id'), unique=True, nullable=False, index=True)
+    secret_sealed = Column(Text, nullable=False)
+    enabled = Column(Boolean, default=False, nullable=False)
+    last_used_counter = Column(BigInteger, nullable=True)
+    confirmed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class UserPasskey(Base):
+    """用户 Passkey（WebAuthn 凭据，每人多枚，上限走配置 passkey_max_per_user）。
+
+    - ``credential_id`` 为 base64url 文本（公开标识，唯一索引）；
+    - ``public_key`` 为 COSE 公钥字节的 base64url 文本（公钥非机密，可明文存）；
+    - ``sign_count`` 每次断言校验后回写，防凭据克隆。
+    """
+    __tablename__ = 'user_passkeys'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False, index=True)
+    credential_id = Column(String(512), unique=True, nullable=False, index=True)
+    public_key = Column(Text, nullable=False)
+    sign_count = Column(BigInteger, default=0, nullable=False)
+    transports = Column(String(255), nullable=True)  # 逗号分隔，如 internal,hybrid
+    device_name = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    last_used_at = Column(DateTime, nullable=True)
+
+
+class UserPlatformApiKey(Base):
+    """用户平台 API Key（用户在账号安全页自助创建，与服务间 api_keys 分域）。
+
+    - 明文格式 ``pak_`` + 随机串，只在创建时返回一次，库里只存带 pepper 的
+      SHA256（见 backend/account_security.py，与 api_key.py 同派生口径、不同域标签）；
+    - ``key_id`` 是明文前 12 字符的公开标识；
+    - 创建前置：账号已启用 TOTP 或已绑 Passkey（端点硬校验）；
+    - 到期固定按配置 platform_api_key_validity_days（默认 365 天）。
+    """
+    __tablename__ = 'user_platform_api_keys'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False, index=True)
+    key_id = Column(String(32), unique=True, nullable=False, index=True)
+    key_hash = Column(String(64), unique=True, nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+
 # ==================== v4 探险家日志面板 ====================
 
 class PanelUnseal(Base):

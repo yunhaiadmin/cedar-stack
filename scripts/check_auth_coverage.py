@@ -163,6 +163,14 @@ PRE_AUTH: dict[tuple[str, str], str] = {
         "Bot 一键免密登录：登录本身就是取得身份前的动作；凭 32 字节随机一次性 token"
         "（10 分钟过期、一次消费、每用户每小时最多 10 个），且 token 内 user_id 与"
         " telegram_id 必须与 WebUser 记录一致，不一致即 401",
+    ("POST", "/api/user/auth/passkey/login/options"):
+        "Passkey 登录第一步：登录前动作，只按用户名下发断言选项（allow 列表仅含本人已注册"
+        "凭据 id，不含任何密钥材料）；靠 IP 限流（10 次/分钟）；challenge 经 HMAC 无状态"
+        "令牌绑定用户 + 5 分钟过期，下一步校验不符即拒",
+    ("POST", "/api/user/auth/passkey/login/verify"):
+        "Passkey 登录第二步：取得身份前的动作；靠 WebAuthn 断言验签（凭据私钥签名 + "
+        "challenge 令牌绑定用户/用途/时效 + origin/rpId 校验 + 签名计数防克隆）+ IP 限流"
+        "（10 次/分钟）+ 登录日志（成功与失败都记，reason 沿用 portal_login 口径）",
     ("POST", "/api/user/economy/payment/notify"):
         "支付网关回调：拿不到管理员身份（是网关在调），靠 HMAC 验签 + 金额与订单实付核对 + 订单幂等",
     ("POST", "/api/admin/auth/login"):

@@ -10,6 +10,7 @@
         <PcEntryRow :icon="Lock" name="修改登录密码" @click="pwdOpen = true" />
         <DevicesEntry />
         <LoginHistoryEntry />
+        <SecurityTrioPanel />
       </div>
     </section>
 
@@ -152,6 +153,7 @@ import PcEntryRow from '@/components/profile/PcEntryRow.vue'
 import ChangePasswordModal from '@/components/profile/ChangePasswordModal.vue'
 import DevicesEntry from '@/components/profile/DevicesEntry.vue'
 import LoginHistoryEntry from '@/components/profile/LoginHistoryEntry.vue'
+import SecurityTrioPanel from '@/components/profile/SecurityTrioPanel.vue'
 import DriveBindingsPanel from '@/components/profile/DriveBindingsPanel.vue'
 import CardPrefsEntry from '@/components/profile/CardPrefsEntry.vue'
 import { panelApi, humanizeError } from '@/composables/usePanelApi'
