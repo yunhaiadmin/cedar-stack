@@ -109,12 +109,6 @@ const router = createRouter({
             meta: { title: '补给站', requiresAuth: true },
           },
           // v4 游戏化第一批：营地设施（需要登录）
-          {
-            path: '/game/calendar',
-            name: 'game-calendar',
-            component: () => import('@/views/game/CalendarView.vue'),
-            meta: { title: '探险预告', requiresAuth: true },
-          },
           // 求片反馈（2026-11-13 合并页）：许愿池＋求救信号合并为一页，
           // 三页签（发起请求/我的请求/请求广场）×五类型（影片求片/电影追新/剧集追新/修正信息/其他反馈）；
           // 新页跟随用户外观，不进 V4_PATHS。
@@ -249,12 +243,6 @@ const router = createRouter({
       component: () => import('@/views/PrivacyView.vue'),
       meta: { title: '隐私政策' },
     },
-    // 追新日历（2026-10-13 旧页面清理：已删，走 /game/calendar 探险预告）
-    // R28：旧 /calendar 书签重定向到新地址，避免落 404
-    {
-      path: '/calendar',
-      redirect: '/game/calendar',
-    },
     // UHD 换皮批 1（营销面）：官网定价，公开页不带 requiresAuth，自带悬浮胶囊导航，
     // App.vue 按路由名（pricing）不渲染全局顶栏/底坞。
     // 官网首页已按 2026-11-13 定版绑到根路径 '/'（RootView 未登录分支渲染
@@ -344,7 +332,7 @@ router.beforeEach(async (to) => {
 // 不再钉 light——本集合摘除该路径后守卫对它走 restoreUserTheme；
 // /game/account/menu（我的）本就不在集合内，同样跟随用户外观。
 // /game/account/settings、/game/account/member 等其余账号页仍是 v4 纸面，继续钉 light。
-export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/collections', '/server', '/shop', '/want', '/store-requests', '/game/calendar', '/game/ledger', '/game/supply', '/game/operator', '/game/account/settings', '/game/account/member'])
+export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/collections', '/server', '/shop', '/want', '/store-requests', '/game/ledger', '/game/supply', '/game/operator', '/game/account/settings', '/game/account/member'])
 // 参数路由前缀：合集详情是 /collections/:id，afterEach 拿到的是实例路径
 // （如 /collections/123），静态集合永远匹配不上，须按前缀另判；
 // /collections/ 下目前只有详情这一条路由，前缀不会误伤非 v4 页。
