@@ -7,11 +7,17 @@
  * 搜索：点放大镜向左展开宽约 560、高 46 的搜索条；下拉面板 480×490、
  * 圆角 20、结果行高 72（缩略图 40×60）。数据走现行 Emby 协议搜索口，
  * 与搜索结果页同一口径，不新造接口。
+ * 空输入时面板换「猜你想看」（友站口径 5 条）：信号全部取现行只读口——
+ * 门户续看（在播优先，与片库首页同一口）→ 协议口 Latest（最近添加）→
+ * 协议口 Items 按 CommunityRating 降序（高分补齐），按序去重取满 5 条；
+ * 某一路拉不到就用其余路补，不新建行为追踪、不造假数据。
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { Clapperboard, MonitorSmartphone, Moon, Search, Sun, X } from 'lucide-vue-next'
 import { embyApi as embyProtocol, imageUrl, type EmbyItem } from '@/api/emby'
+import StreamGuessRow from './StreamGuessRow.vue'
+import { useGuessRecommendations } from '@/composables/useGuessRecommendations'
 import { useUserStore } from '@/stores/user'
 import { branding } from '@/composables/useBranding'
 
@@ -59,6 +65,7 @@ let seq = 0
 
 function openSearch() {
   searchOpen.value = true
+  void loadGuess()
 }
 function closeSearch() {
   searchOpen.value = false
@@ -97,6 +104,9 @@ async function runSearch(term: string) {
     if (my === seq) searching.value = false
   }
 }
+
+/* ---------- 猜你想看（空输入浮层）：数据/排序在 composable，与手机层共用 ---------- */
+const { guessItems, loadGuess } = useGuessRecommendations()
 
 function goResults() {
   const term = query.value.trim()
@@ -193,6 +203,10 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
             </RouterLink>
             <p v-if="!searching && results.length === 0" class="st-panel__empty">没有找到相关结果</p>
           </div>
+        </div>
+        <!-- 空输入：猜你想看（海报卡横排，点卡进详情） -->
+        <div v-if="!query.trim() && guessItems.length" class="st-panel st-panel--guess">
+          <StreamGuessRow :items="guessItems" @select="closeSearch" />
         </div>
       </div>
 
@@ -468,6 +482,10 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   font-size: 14px;
   color: var(--uhd-s-text-2);
   text-align: center;
+}
+/* 猜你想看面板：只留面板内边距，卡片样式在 StreamGuessRow 内 */
+.st-panel--guess {
+  padding: 12px 10px;
 }
 @media (max-width: 767px) {
   .stream-topbar {

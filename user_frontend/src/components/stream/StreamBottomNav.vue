@@ -5,13 +5,17 @@
  * 两个液态玻璃块（blur 24px、radius 28）：
  * ①主胶囊 4 页签（首页/电影/剧集/收藏），图标 22px 在上、文字在下，
  *   激活 = 文字转强色 + 图标 strokeWidth 2.2（未激活 1.8）+ 背后白 10% 滑块跟随；
- * ②独立搜索块 56×56，点开全屏搜索层（bg/80 + backdrop-blur-xl，仅手机版）。
+ * ②独立搜索块 56×56，点开全屏搜索层（bg/80 + backdrop-blur-xl，仅手机版）；
+ *   搜索层空输入时同样有「猜你想看」（与桌面顶栏共用 useGuessRecommendations
+ *   的同一份 5 条，点卡进详情）。
  * 页签集合是片库面自己的导航（与全局 PanelTabbar 的五项主导航不是同一套，
  * 片库面路由下 App.vue 不再渲染 PanelTabbar，避免双坞并存）。
  */
 import { computed, defineComponent, h, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { Clapperboard, Film, Heart, Search, Tv, X } from 'lucide-vue-next'
+import StreamGuessRow from './StreamGuessRow.vue'
+import { useGuessRecommendations } from '@/composables/useGuessRecommendations'
 
 const route = useRoute()
 const router = useRouter()
@@ -66,6 +70,11 @@ const activeIndex = computed(() => {
 /* ---------- 全屏搜索层（仅手机版） ---------- */
 const searchOpen = ref(false)
 const q = ref('')
+const { guessItems, loadGuess } = useGuessRecommendations()
+function openSearch() {
+  searchOpen.value = true
+  void loadGuess()
+}
 function submitSearch() {
   const term = q.value.trim()
   if (!term) return
@@ -95,7 +104,7 @@ function submitSearch() {
       </RouterLink>
     </div>
     <div class="sbn-search-block">
-      <button type="button" class="sbn-search-btn" aria-label="搜索" @click="searchOpen = true">
+      <button type="button" class="sbn-search-btn" aria-label="搜索" @click="openSearch">
         <Search :size="22" />
       </button>
     </div>
@@ -116,6 +125,10 @@ function submitSearch() {
         <button type="button" class="sbn-overlay__x" aria-label="关闭搜索" @click="searchOpen = false">
           <X :size="20" />
         </button>
+      </div>
+      <!-- 空输入：猜你想看（与桌面顶栏同一份 5 条，点卡进详情并收层） -->
+      <div v-if="!q.trim() && guessItems.length" class="sbn-overlay__guess">
+        <StreamGuessRow :items="guessItems" @select="searchOpen = false" />
       </div>
       <p class="sbn-overlay__hint">输入片名后按回车查看全部结果</p>
       <p class="sbn-overlay__brand"><Clapperboard :size="16" aria-hidden="true" /> 片库搜索</p>
@@ -247,6 +260,9 @@ function submitSearch() {
   background: transparent;
   color: var(--uhd-s-text);
   cursor: pointer;
+}
+.sbn-overlay__guess {
+  margin-top: 20px;
 }
 .sbn-overlay__hint {
   margin: 16px 4px 0;
