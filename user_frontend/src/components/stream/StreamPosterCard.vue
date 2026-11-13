@@ -6,10 +6,11 @@
  * 本组件不渲染角标、不做悬停浮层（收藏星钮是收藏页的业务控件，
  * 由收藏页自己叠加，不在本组件内）。
  */
+import { ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Clapperboard } from 'lucide-vue-next'
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     title: string
     /** 元信息左段（年份 · 类型…），评分单独走 rating 以便粗体 */
@@ -22,12 +23,21 @@ withDefaults(
   }>(),
   { meta: '', rating: null, image: '', size: 'row' },
 )
+
+/** 图片加载失败（个别条目图 404 等）：撤下 img 换占位，不留浏览器裂图图标 */
+const broken = ref(false)
+watch(
+  () => props.image,
+  () => {
+    broken.value = false
+  },
+)
 </script>
 
 <template>
   <RouterLink class="sp-card" :class="`sp-card--${size}`" :to="to">
     <span class="sp-poster">
-      <img v-if="image" :src="image" alt="" loading="lazy" decoding="async" class="sp-img" />
+      <img v-if="image && !broken" :src="image" alt="" loading="lazy" decoding="async" class="sp-img" @error="broken = true" />
       <Clapperboard v-else :size="30" :stroke-width="1.5" class="sp-fallback" aria-hidden="true" />
     </span>
     <span class="sp-title" :title="title">{{ title }}</span>
