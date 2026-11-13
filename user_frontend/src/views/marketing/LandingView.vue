@@ -522,6 +522,7 @@ const year = new Date().getFullYear()
 .sec-title {
   margin: 0 0 16px;
   text-align: center;
+  font-family: var(--uhd-font-display);
   /* 原站 --text-landing-service-hero: clamp(2rem, 4.4vw, 4.4rem) */
   font-size: clamp(32px, 4.4vw, 70.4px);
   font-weight: var(--uhd-fw-extrabold);
@@ -560,9 +561,22 @@ const year = new Date().getFullYear()
   transform: rotate(18deg);
   pointer-events: none;
 }
-/* 棱镜主视觉：桌面不显示，仅移动端（见文末断点） */
+/* 棱镜主视觉（D1-03）：桌面居右上、移动端全幅居顶（见文末断点） */
 .hero-visual {
-  display: none;
+  position: absolute;
+  top: 84px;
+  right: 1.5%;
+  width: min(620px, 46vw);
+  aspect-ratio: 390 / 236;
+  pointer-events: none;
+  /* 桌面：四边径向柔化，扇面融进底色不留矩形硬边（移动端全幅出血不套此罩） */
+  -webkit-mask-image: radial-gradient(ellipse 92% 90% at 50% 46%, #000 52%, transparent 97%);
+  mask-image: radial-gradient(ellipse 92% 90% at 50% 46%, #000 52%, transparent 97%);
+}
+.hero-visual svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 .hero-visual .hv-fan {
   filter: blur(5px);
@@ -578,6 +592,7 @@ const year = new Date().getFullYear()
 }
 .hero-title {
   margin: 0 0 22px;
+  font-family: var(--uhd-font-display);
   /* 原站 --text-landing-hero: clamp(2.1rem, 4.1vw, 3.9rem) */
   font-size: clamp(33.6px, 4.1vw, 62.4px);
   font-weight: var(--uhd-fw-black);
@@ -608,9 +623,11 @@ const year = new Date().getFullYear()
 }
 .hero-scroll-hint {
   position: absolute;
-  right: 30px;
+  left: 50%;
+  transform: translateX(-50%);
   bottom: 26px;
   margin: 0;
+  white-space: nowrap;
   font-size: var(--uhd-fs-caption);
   color: var(--uhd-d-text-2);
 }
@@ -694,6 +711,7 @@ const year = new Date().getFullYear()
 }
 .pin-title {
   margin: 0 0 14px;
+  font-family: var(--uhd-font-display);
   /* 原站 --text-landing-immersive-title: clamp(2.25rem, 4.8vw, 5.4rem) */
   font-size: clamp(36px, 4.8vw, 86.4px);
   font-weight: var(--uhd-fw-black);
@@ -737,6 +755,7 @@ const year = new Date().getFullYear()
 }
 .ess-h3 {
   margin: 0 0 12px;
+  font-family: var(--uhd-font-display);
   /* 原站 --text-landing-service-title: clamp(1.6rem, 2.4vw, 2.4rem) */
   font-size: clamp(25.6px, 2.4vw, 38.4px);
   font-weight: var(--uhd-fw-extrabold);
@@ -1112,8 +1131,11 @@ const year = new Date().getFullYear()
     top: 60px;
     left: 0;
     right: 0;
+    width: auto;
     height: 236px;
     pointer-events: none;
+    -webkit-mask-image: none;
+    mask-image: none;
   }
   .hero-visual svg {
     width: 100%;
@@ -1130,6 +1152,7 @@ const year = new Date().getFullYear()
     left: 0;
     right: 0;
     bottom: 18px;
+    transform: none;
     text-align: center;
   }
 

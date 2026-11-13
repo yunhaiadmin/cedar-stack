@@ -93,6 +93,7 @@ const year = new Date().getFullYear()
         :brand="branding.site_name"
         brand-sub="SERVICE"
         cta-text="立即加入"
+        theme-follow
         @select="onNav"
         @cta="goRegister"
       />
@@ -165,11 +166,26 @@ const year = new Date().getFullYear()
 </template>
 
 <style scoped>
+/* 全页跟随用户主题（D5-01 核销）：原站定价页不强制深色，根用 bg-canvas 主题令牌，
+   只有落地页 data-force-dark。此前写死「上深下浅」与原站不符，改主题翻转变量。 */
 .pricing {
+  --p-surface: var(--uhd-d-surface);
+  --p-border: var(--uhd-d-border);
+  --p-text: var(--uhd-d-text);
+  --p-text-2: var(--uhd-d-text-2);
+  --p-warn: #f59e0b;
   min-height: 100vh;
   background: var(--uhd-d-bg);
-  color: var(--uhd-d-text);
+  color: var(--p-text);
   font-family: var(--uhd-font-sans);
+}
+:root[data-theme='light'] .pricing {
+  --p-surface: var(--uhd-l-surface);
+  --p-border: var(--uhd-l-border);
+  --p-text: var(--uhd-l-text);
+  --p-text-2: var(--uhd-l-text-2);
+  --p-warn: var(--uhd-warn-text);
+  background: var(--uhd-l-bg);
 }
 .pricing-nav {
   position: fixed;
@@ -184,7 +200,7 @@ const year = new Date().getFullYear()
   font-weight: var(--uhd-fw-semibold);
   letter-spacing: var(--uhd-ls-eyebrow);
   text-transform: uppercase;
-  color: var(--uhd-d-text-2);
+  color: var(--p-text-2);
 }
 .eyebrow--center { text-align: center; }
 
@@ -195,6 +211,7 @@ const year = new Date().getFullYear()
 }
 .pricing-title {
   margin: 0 0 16px;
+  font-family: var(--uhd-font-display);
   font-size: clamp(40px, 5.6vw, 68px);
   font-weight: var(--uhd-fw-black);
   line-height: 1.1;
@@ -204,13 +221,12 @@ const year = new Date().getFullYear()
   max-width: 560px;
   font-size: var(--uhd-fs-lead);
   line-height: var(--uhd-lh-body);
-  color: var(--uhd-d-text-2);
+  color: var(--p-text-2);
 }
 
-/* 定价主体：浅色办事面（对照表第 19 行：深色外壳 + 单选表组件） */
+/* 定价主体：与 Hero 同一画布（跟随主题），卡片走主题表面色 */
 .pricing-main {
-  background: var(--uhd-l-bg);
-  color: var(--uhd-l-text);
+  color: var(--p-text);
   padding: 56px 28px 84px;
 }
 .pricing-state {
@@ -220,23 +236,23 @@ const year = new Date().getFullYear()
   gap: 12px;
   min-height: 210px;
   font-size: var(--uhd-fs-body);
-  color: var(--uhd-l-text-2);
+  color: var(--p-text-2);
 }
 .spinner {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  border: 2px solid var(--uhd-l-border);
-  border-top-color: var(--uhd-l-text-2);
+  border: 2px solid var(--p-border);
+  border-top-color: var(--p-text-2);
   animation: uhd-spin 0.8s linear infinite;
 }
 .retry-btn {
   height: 38px;
   padding: 0 18px;
-  border: var(--uhd-border-w) solid var(--uhd-l-border);
+  border: var(--uhd-border-w) solid var(--p-border);
   border-radius: var(--uhd-radius-pill);
-  background: var(--uhd-l-surface);
-  color: var(--uhd-l-text);
+  background: var(--p-surface);
+  color: var(--p-text);
   font: inherit;
   font-size: var(--uhd-fs-caption);
   font-weight: var(--uhd-fw-semibold);
@@ -247,26 +263,33 @@ const year = new Date().getFullYear()
   margin: 0 auto;
   padding: 34px 32px;
   text-align: center;
-  background: var(--uhd-warn-bg-2);
-  border: var(--uhd-border-w) solid var(--uhd-warn-bg);
+  /* 深色主题下改琥珀暗玻璃（原浅黄实块在深底上成贴片）；浅色主题恢复浅黄块 */
+  background: rgba(245, 158, 11, 0.1);
+  border: var(--uhd-border-w) solid rgba(245, 158, 11, 0.35);
   border-radius: var(--uhd-radius-card-sm);
+}
+:root[data-theme='light'] .pricing-note {
+  background: var(--uhd-warn-bg-2);
+  border-color: var(--uhd-warn-bg);
 }
 .pricing-note-title {
   margin: 0 0 10px;
+  font-family: var(--uhd-font-display);
   font-size: var(--uhd-fs-h3);
   font-weight: var(--uhd-fw-extrabold);
-  color: var(--uhd-warn-text);
+  color: var(--p-warn);
 }
 .pricing-note-text {
   margin: 0;
   font-size: var(--uhd-fs-body);
   line-height: var(--uhd-lh-body);
-  color: var(--uhd-warn-text);
+  color: var(--p-warn);
 }
 
 .pricing-includes-title {
   margin: 54px 0 18px;
   text-align: center;
+  font-family: var(--uhd-font-display);
   font-size: var(--uhd-fs-title);
   font-weight: var(--uhd-fw-bold);
 }
@@ -296,18 +319,20 @@ const year = new Date().getFullYear()
 .faq-title {
   margin: 0 0 26px;
   text-align: center;
+  font-family: var(--uhd-font-display);
   font-size: var(--uhd-fs-h2);
   font-weight: var(--uhd-fw-extrabold);
 }
 .faq-card {
-  background: var(--uhd-l-surface);
-  border: var(--uhd-border-w) solid var(--uhd-l-border);
+  background: var(--p-surface);
+  border: var(--uhd-border-w) solid var(--p-border);
   border-radius: var(--uhd-radius-card-sm);
   padding: 28px;
   margin-bottom: 16px;
 }
 .faq-q {
   margin: 0 0 8px;
+  font-family: var(--uhd-font-display);
   font-size: 17px;
   font-weight: var(--uhd-fw-bold);
 }
@@ -315,7 +340,7 @@ const year = new Date().getFullYear()
   margin: 0;
   font-size: var(--uhd-fs-body);
   line-height: 1.7;
-  color: var(--uhd-l-text-2);
+  color: var(--p-text-2);
 }
 
 /* 团体横条 */
@@ -328,29 +353,30 @@ const year = new Date().getFullYear()
   max-width: var(--uhd-container-pricing);
   margin: 56px auto 0;
   padding: 28px 30px;
-  background: var(--uhd-l-surface);
-  border: var(--uhd-border-w) solid var(--uhd-l-border);
+  background: var(--p-surface);
+  border: var(--uhd-border-w) solid var(--p-border);
   border-radius: var(--uhd-radius-card);
 }
 .team-title {
   margin: 0 0 6px;
+  font-family: var(--uhd-font-display);
   font-size: 20px;
   font-weight: var(--uhd-fw-bold);
 }
 .team-text {
   margin: 0;
   font-size: var(--uhd-fs-body);
-  color: var(--uhd-l-text-2);
+  color: var(--p-text-2);
 }
 .team-btn {
   display: inline-flex;
   align-items: center;
   height: 44px;
   padding: 0 24px;
-  border: var(--uhd-border-w) solid var(--uhd-l-border);
+  border: var(--uhd-border-w) solid var(--p-border);
   border-radius: var(--uhd-radius-pill);
-  background: var(--uhd-l-surface);
-  color: var(--uhd-l-text);
+  background: var(--p-surface);
+  color: var(--p-text);
   font-size: var(--uhd-fs-body);
   font-weight: var(--uhd-fw-semibold);
   text-decoration: none;
@@ -366,17 +392,17 @@ const year = new Date().getFullYear()
   margin: 0 auto;
   padding: 22px 28px 30px;
   font-size: var(--uhd-fs-aux);
-  color: var(--uhd-d-text-2);
+  color: var(--p-text-2);
 }
 .pricing-foot-links {
   display: inline-flex;
   gap: 22px;
 }
 .pricing-foot-links a {
-  color: var(--uhd-d-text-2);
+  color: var(--p-text-2);
   text-decoration: none;
 }
-.pricing-foot-links a:hover { color: var(--uhd-d-text); }
+.pricing-foot-links a:hover { color: var(--p-text); }
 
 @media (prefers-reduced-motion: reduce) {
   .pricing-hero { animation: none; }
