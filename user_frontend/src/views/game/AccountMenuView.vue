@@ -165,6 +165,7 @@ const groups = computed<MenuGroup[]>(() => {
     // 安装应用（2026-11-13）：原先列表下方的 PWA 行改为进入整页
     // （服务器地址＋客户端下载＋教程），PWA 安装动作在整页内保留
     { key: 'install', label: '安装应用', to: '/game/install' },
+    { key: 'speedtest', label: '线路测速', to: '/game/speedtest' },
   ]
   const system: MenuItem[] = [{ key: 'theme', label: '外观' }]
   return [

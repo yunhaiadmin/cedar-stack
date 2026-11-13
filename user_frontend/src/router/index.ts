@@ -195,6 +195,15 @@ const router = createRouter({
             component: () => import('@/views/game/InstallAppView.vue'),
             meta: { title: '安装应用', requiresAuth: true },
           },
+          // 线路测速（用户中心 · 帮助组）：线路清单只读现行配置下发
+          // （账号卡 realms 地址＋专属线路），浏览器直连各入口计时。
+          // 不进 V4_PATHS——新页跟随用户外观三态，不钉浅色。
+          {
+            path: '/game/speedtest',
+            name: 'game-speedtest',
+            component: () => import('@/views/game/LineSpeedtestView.vue'),
+            meta: { title: '线路测速', requiresAuth: true },
+          },
         ]
       : []),
     {
