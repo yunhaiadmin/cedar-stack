@@ -49,7 +49,7 @@ def _make_user(db, username, tg_id, created_at=None):
 def _make_round(db, title="三重门测试", chat_id=999):
     return lottery.create_round(
         db, title=title, chat_id=chat_id,
-        prizes=[{"name": "积分奖", "type": "points", "value": 100, "quantity": 1}],
+        prizes=[{"name": "天数奖", "type": "days", "value": 7, "quantity": 1}],
     )
 
 

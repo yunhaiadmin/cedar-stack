@@ -8,6 +8,7 @@ from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from backend import models
+from backend.integrations import store as _store
 
 logger = logging.getLogger(__name__)
 

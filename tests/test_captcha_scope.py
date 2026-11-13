@@ -1,8 +1,9 @@
-"""人机验证作用域围栏（2026-11-06 用户亲令）：只许网站登录/注册/签到与后台登录。
+"""人机验证作用域围栏（2026-11-06 用户亲令）：只许网站登录/注册与后台登录。
 
 播放器 / Emby 程序化登录做不了人机验证：谁把 captcha 守卫接进 EA / Emby
 协议路径，播放器就会被 400 挡死、直接断播。这个测试把接线点钉死在允许
 清单里——新增接线点必须先改这份清单（等于强制人工复核作用域），不许静默扩大。
+（网站签到已随货币于 2026-11-13 下线，economy.py 的签到守卫调用随之删除。）
 """
 import os
 import re
@@ -15,11 +16,12 @@ sys.path.insert(0, ".")
 
 REPO = Path(__file__).resolve().parent.parent
 
-# 允许调用守卫的文件（相对仓库根）：门户登录/注册、网站签到、管理后台登录，
+# 允许调用守卫的文件（相对仓库根）：门户登录/注册、管理后台登录，
 # 以及守卫本体（captcha.py 内部 guard 调 verify_request 不算外部接线）。
+# backend/api/economy.py 曾因网站签到端点在列，签到已随货币于 2026-11-13
+# 下线，该文件不再调用守卫，已移出清单。
 ALLOWED_GUARD_FILES = {
     "backend/api/emby_portal.py",
-    "backend/api/economy.py",
     "backend/api/admin_auth.py",
     "backend/integrations/captcha.py",
 }
@@ -47,7 +49,7 @@ def test_captcha_guard_wired_only_at_allowed_sites():
         f"{offenders}；确需新增点位先改 tests/test_captcha_scope.py 的清单并复核作用域"
     )
     # 允许清单里的业务接线点必须真的还在（防守卫被整体摘掉后测试假绿）
-    for rel in ("backend/api/emby_portal.py", "backend/api/economy.py",
+    for rel in ("backend/api/emby_portal.py",
                 "backend/api/admin_auth.py"):
         text = (REPO / rel).read_text(encoding="utf-8")
         assert _GUARD_CALL.search(text), f"{rel} 的 captcha 守卫接线丢了"

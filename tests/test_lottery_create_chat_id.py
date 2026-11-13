@@ -82,7 +82,7 @@ def _set_group_ids(db, value):
 def _payload(**kw):
     body = {
         "title": "测试抽奖",
-        "prizes": [{"name": "积分奖", "type": "points", "value": 100, "quantity": 1}],
+        "prizes": [{"name": "天数奖", "type": "days", "value": 7, "quantity": 1}],
     }
     body.update(kw)
     return body

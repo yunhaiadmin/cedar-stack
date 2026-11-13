@@ -27,7 +27,7 @@ const route = useRoute()
 const router = useRouter()
 
 /**
- * 当前标签与 ?tab= 同步：旧地址 /welfare-points 跳过来能落到积分配置标签，刷新也不丢。
+ * 当前标签与 ?tab= 同步：旧地址 /welfare-points 跳过来能落到公益配置标签，刷新也不丢。
  */
 const activeTab = computed<WelfareTab>({
   get: () => (TABS.includes(route.query.tab as WelfareTab) ? (route.query.tab as WelfareTab) : 'lottery'),

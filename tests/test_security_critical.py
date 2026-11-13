@@ -574,10 +574,11 @@ def economy_client(db, monkeypatch):
 
 
 def test_h5_exchange_code_once_per_user(db, economy_client):
+    # points 型兑换码已随货币下线：改用 discount 型（每人限一次的核销守卫与类型无关）
     client, state = economy_client
-    db.add(models.ExchangeCode(code="PROMO100", type="points", points_value=10,
+    db.add(models.ExchangeCode(code="PROMO100", type="discount", discount_pct=85,
                                max_uses=100, is_active=True))
-    db.add(models.ExchangeCode(code="UNLIMITED", type="points", points_value=5,
+    db.add(models.ExchangeCode(code="UNLIMITED", type="discount", discount_pct=90,
                                is_active=True))
     db.commit()
     db.query(models.ExchangeCode).filter_by(code="UNLIMITED").update({"max_uses": None})
@@ -590,8 +591,9 @@ def test_h5_exchange_code_once_per_user(db, economy_client):
         assert r.status_code == 400 and "兑换过" in r.json()["detail"]
         state["user"] = bob
         assert client.post("/api/user/economy/exchange/redeem", json={"code": code}).status_code == 200
-    db.refresh(alice)
-    assert alice.points == 15
+    # 每人各领一张折扣权益（alice 两码各一张，bob 同样两张）
+    assert db.query(models.ExchangeDiscountCredit).filter_by(user_id=alice.id).count() == 2
+    assert db.query(models.ExchangeDiscountCredit).filter_by(user_id=bob.id).count() == 2
     row = db.query(models.ExchangeCode).filter_by(code="PROMO100").one()
     assert row.use_count == 2
 

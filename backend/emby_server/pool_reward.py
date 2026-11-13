@@ -379,11 +379,12 @@ def _member_meter(db: Session, member, start: datetime,
 
 
 def _grant_detail(db: Session, batch, detail) -> str:
-    """按明细应发量真发积分＋经验（同一事务、调用方提交）。
+    """按明细应发量真发经验（同一事务、调用方提交）。
 
-    幂等第二道锚：points_logs.ref_id = pool_reward:{detail_id}
-    已存在即已发过，只补标 paid 不重复发；经验同理查
-    member_xp_log 的 (source, ref_id)。返回最终状态。
+    积分已随货币于 2026-11-13 下线：只发经验，明细 points 数值
+    保留作影子对账。幂等锚：经验查 member_xp_log 的
+    (source, ref_id)，已存在即已发过，只补标 paid 不重复发；
+    返回最终状态。
     """
     user = (db.query(base_models.WebUser)
             .filter(base_models.WebUser.id == detail.user_id).first())

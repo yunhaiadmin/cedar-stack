@@ -367,6 +367,16 @@ def test_session_keeps_env_proxy_support(monkeypatch):
     """
     monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
     monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+    # urllib.getproxies() 以小写变量为准：本机外壳的小写 http_proxy /
+    # ALL_PROXY 指向 egress 代理，会盖掉上面两行，必须一并处理。
+    monkeypatch.setenv("http_proxy", "http://127.0.0.1:9")
+    monkeypatch.setenv("https_proxy", "http://127.0.0.1:9")
+    monkeypatch.delenv("all_proxy", raising=False)
+    monkeypatch.delenv("ALL_PROXY", raising=False)
+    # 本机外壳的 no_proxy 含 "[::1]"，httpx 解析 trust_env 时直接崩
+    # （与被测行为无关的环境差；CI 机器上没有这些变量）。
+    monkeypatch.delenv("no_proxy", raising=False)
+    monkeypatch.delenv("NO_PROXY", raising=False)
     monkeypatch.delenv("TMDB_API_KEYS", raising=False)
     monkeypatch.delenv("TMDB_API_KEY", raising=False)
     monkeypatch.setattr(tmdb_mod, "_read_config_value", lambda db: "")

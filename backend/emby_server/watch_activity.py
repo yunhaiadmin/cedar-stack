@@ -12,8 +12,8 @@ Sessions/Playing|Progress|Stopped，遇到全程不上报的客户端（如
 本模块在 EA 中继的字节出口（200/206；302 直链客户端离服务器拉
 流、结构上记不了，不在本模块范围）记活动：按 (user, item, device)
 聚合到 emby_watch_stream_activity 的一行租约记录上，只滚动首末时
-间；相邻活动间隔超过 SEGMENT_GAP 时旧段滚入 pending_segments 等
-结账（结账在 watch_fallback.py）。
+间；相邻活动间隔超过 SEGMENT_GAP 时旧段滚入 pending_segments
+（2026-11-13 货币下线：结账工人已删，段只留存、不再被消费）。
 
 铁律（照 play_events 同口径）：打点不许拖慢播放。
 - 热路径只做一次进程内节流判断 + ``queue.put_nowait``（微秒级）；
@@ -39,8 +39,8 @@ from backend.emby_server import models as em
 logger = logging.getLogger(__name__)
 
 # import 时读一次（与 play_events 同口径）：热路径不查 env。
-# 这是紧急止血开关；功能开关是 SystemConfig 的
-# watch_fallback_credit_enabled（管结账工人口径，见 watch_fallback）。
+# 这是紧急止血开关（2026-11-13 货币下线：原结账工人与
+# watch_fallback_credit_enabled 配置键已删）。
 _ENABLED = os.getenv("WATCH_ACTIVITY_ENABLED", "1") not in (
     "0", "false", "False", "")
 

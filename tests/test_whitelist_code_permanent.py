@@ -115,13 +115,23 @@ def test_whitelist_welfare_flavor_grants_all_three(db):
 
 
 def test_whitelist_points_flavor_still_means_permanent(db):
+    """能量型白名单码已随货币下线：核销直接拒绝、不烧码、不给白名单。
+
+    旧口径（points 型码核销即永久白名单）随能量删除作废；welfare 型
+    码的永久白名单语义见同文件其余测试，不受影响。
+    """
     u = _user(db, "wl_points")
     _code(db, "VIP-PTS000000001", reward_type="points", points_value=50)
     db.commit()
     result = codes.redeem_code(db, u, "VIP-PTS000000001")
     db.commit()
-    assert result["success"] is True
-    _assert_all_permanent(db, u)
+    assert result["success"] is False
+    assert "能量卡码已下线" in result["message"]
+    code = db.query(models.RegistrationCode).filter_by(
+        code="VIP-PTS000000001").first()
+    assert code.use_count == 0  # 不烧码
+    db.refresh(u)
+    assert not u.is_welfare
 
 
 def test_whitelist_redeem_stacks_on_existing_finite_rights(db):

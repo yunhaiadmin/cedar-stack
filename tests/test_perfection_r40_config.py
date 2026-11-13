@@ -138,7 +138,8 @@ def test_code_default_plan_id_empty_means_unset(db):
 
 def test_view_unlock_family_registered(db):
     assert "view_unlock" in config_service.SCHEMAS
-    assert "emby_view_unlock_points" in config_schema.VIEW_UNLOCK_CONFIG_SCHEMA
+    # emby_view_unlock_points 已随货币于 2026-11-13 下线
+    assert "emby_view_unlock_points" not in config_schema.VIEW_UNLOCK_CONFIG_SCHEMA
     assert "emby_view_unlock_days" in config_schema.VIEW_UNLOCK_CONFIG_SCHEMA
 
 

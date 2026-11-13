@@ -271,7 +271,7 @@ onMounted(load)
       <SectionCard
         title="Telegram 门禁"
         :icon="Send"
-        description="公益服能力（红包/抽奖）是否要求绑定 Telegram"
+        description="公益服能力（抽奖）是否要求绑定 Telegram"
       >
         <el-form :label-position="labelPosition" label-width="120px" class="config-form">
           <el-form-item label="强制绑定">
@@ -298,7 +298,7 @@ onMounted(load)
           </el-form-item>
           <el-form-item label="退群取消资格">
             <el-switch v-model="leaveCancelEnabled" />
-            <span class="field-hint">开启后已绑定用户退群／被踢自动只取消公益资格（账号、能量、查看凭证不动）；关闭则退群不做处理，默认开</span>
+            <span class="field-hint">开启后已绑定用户退群／被踢自动只取消公益资格（账号、查看凭证不动）；关闭则退群不做处理，默认开</span>
           </el-form-item>
           <el-form-item label="求片到货提醒">
             <el-switch v-model="storeArrivalNotify" />

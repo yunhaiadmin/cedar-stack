@@ -781,22 +781,21 @@ class WatchStreamActivity(Base):
 
     背景：部分客户端（如 SenPlayer 某些版本）走 EA 中继拉流时全程
     不发 Sessions/Playing、Progress、Stopped——没有 PlaybackSession
-    就没有 watch_points_daily 入账与活力观影奖励（2026-11-11 用户
+    就没有 watch_points_daily 入账（2026-11-11 用户
     1826 看《后会友期》第 1 集 20 余分钟零记录的实案）。
+    2026-11-13 货币下线：结账工人与活力观影奖励已删，本表只记活动
+    事实、不再产生账目；pending_segments 只留存、不再被消费。
 
     本表是兜底计时的唯一数据源：EA 中继每出一次字节（200/206，
     302 直链不算），按 (user_id, item_id, device_key) 聚合 upsert
     到同一行，只滚动首末活动时间——绝不按 Range 请求逐行落库。
-    相邻活动间隔超过切段阈值（watch_fallback.SEGMENT_GAP）时，旧段
-    滚入 pending_segments（JSON [[start, end], ...] ISO 字符串对）
-    等结账工人（emby_server.watch_fallback）消费；结账走与真实会话
-    同一套入账函数，本表只记活动事实、不记账目。
+    相邻活动间隔超过切段阈值（本模块 SEGMENT_GAP）时，旧段
+    滚入 pending_segments（JSON [[start, end], ...] ISO 字符串对）。
 
     device_key 是 api._stream_client_identity 的产物（设备优先、
     其次 PlaySessionId、最后用户），不含令牌明文。
 
-    不加外键：用户/条目删除后行留着由结账工人按「查无此人/此片」
-    丢弃收尾，避免级联与锁。
+    不加外键：用户/条目删除后行留着，避免级联与锁。
     """
 
     __tablename__ = "emby_watch_stream_activity"

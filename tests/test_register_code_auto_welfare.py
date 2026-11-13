@@ -7,6 +7,7 @@
 - 非福利型码走赠送天数口径（register_gift_welfare_days，默认 30），
   但不受 register_gift_welfare_enabled 总开关限制，发放日志
   channel=register_code（与 register_gift / code_redeem 区分来源）；
+- 能量型码已随货币于 2026-11-13 下线：注册核销直接 400 拒绝、不建号、不烧码。
 - 开放注册路径不变：仍由总开关把关、channel=register_gift。
 
 测试风格与 test_reg_code_two_step 一致：直调端点函数。
@@ -129,18 +130,18 @@ def test_subscription_code_register_grants_welfare_no_view_row(db):
     assert logs[0].days == 30
 
 
-def test_points_code_register_grants_welfare(db):
-    """能量型码注册 → 有资格（码面能量照旧到账）。"""
+def test_points_code_register_rejected_after_currency_removal(db):
+    """能量型码注册已下线（2026-11-13 货币删除）：核销直接 400 拒绝，
+    不建号、不烧码。"""
     _set_mode(db, "code")
     _make_code(db, reward_type="points", points_value=50)
-    before = datetime.now()
-    _register(db, "points_user", code="REG-AUTO-0001")
-    after = datetime.now()
-
-    user = _user(db, "points_user")
-    _assert_expires_about(user, 30, before, after)
-    assert user.welfare_grant_channel == "register_code"
-    assert user.points == 50
+    with pytest.raises(Exception) as exc:
+        _register(db, "points_user", code="REG-AUTO-0001")
+    assert getattr(exc.value, "status_code", None) == 400
+    assert "能量卡码已下线" in str(getattr(exc.value, "detail", ""))
+    assert _user(db, "points_user") is None
+    code = db.query(models.RegistrationCode).filter_by(code="REG-AUTO-0001").first()
+    assert code.use_count == 0
 
 
 def test_discount_code_register_grants_welfare(db):

@@ -2,7 +2,7 @@
 
 - 9 个首屏 part 一次返回：overview / playback / economy / libraries /
   servers / realms / backend_services / trend / detail（2026-10-23 新增，
-  数据明细 7 表，builder 在 admin_dashboard 本模块）。
+  数据明细 6 表（2026-11-13 起；此前 7 表，points_flow 已随货币下线），builder 在 admin_dashboard 本模块）。
 - 口径断言：每个 part 与直接调用原 handler 的结果逐字段相等
   （失败时同样为 None——与前端原 soft() 兜底一致）。
 - 降级：单个采集抛异常时，该 part 为 None，其余不受影响。
@@ -265,7 +265,8 @@ def test_stats_overview_total_items_excludes_merged_copies(admin, db):
 
 
 def test_detail_tables_content(admin, db):
-    """detail part（2026-10-23 数据明细 7 表）：口径逐表钉住。
+    """detail part（2026-10-23 数据明细 7 表，2026-11-13 货币删除后 6 表：
+    points_flow 表已随 PointsLog 下线）：口径逐表钉住。
 
     - library_stats / enrich_progress：合并副本不计、软删不计；
       enriched 只数 movie/series 且 tmdb_id 非空。
@@ -278,7 +279,7 @@ def test_detail_tables_content(admin, db):
     from backend.emby_server import models as em
 
     for tbl in (em.MediaItem, em.Library, em.PlaybackSession,
-                m.PointsLog, m.MovieRequest, m.SubscriptionOrder):
+                m.MovieRequest, m.SubscriptionOrder):
         db.query(tbl).delete()
     db.commit()
 
@@ -307,8 +308,6 @@ def test_detail_tables_content(admin, db):
     db.add(u2)
     db.commit()
     db.refresh(u2)
-    db.add(m.PointsLog(user_id=u2.id, amount=5, type="checkin",
-                       description="每日签到"))
     db.add(m.MovieRequest(user_id=u2.id, movie_name="热门片", type="movie",
                           status="pending"))
     db.add(m.MovieRequest(user_id=u2.id, movie_name="热门片", type="movie",
@@ -334,7 +333,8 @@ def test_detail_tables_content(admin, db):
     assert out["recent_users"][0]["username"] == "detailuser"
     assert out["recent_orders"][0]["item"] == "远行执照"
     assert out["recent_orders"][0]["kind"] == "订阅"
-    assert out["points_flow"][0]["amount"] == 5
+    # points_flow 表已随货币于 2026-11-13 下线，不再返回
+    assert "points_flow" not in out
     assert out["seek_hot"][0] == {
         "title": "热门片", "media_type": "movie", "count": 2, "pending": 1,
     }

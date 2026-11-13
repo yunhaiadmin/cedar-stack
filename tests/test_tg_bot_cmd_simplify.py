@@ -146,6 +146,9 @@ def test_account_card_single_builder_10_rows(db):
 
 def test_me_and_account_alias_show_same_card_private(db, monkeypatch):
     _user(db)
+    # 清掉 router 用户级限流的进程内状态：与 test_tg_bot_account_display.py
+    # 共用同一 TG 号，先跑的文件留下的 /me 时间戳会让本例第一跳被「操作太快」挡下
+    monkeypatch.setattr("backend.tg_bot.router._user_cmd_limits", {})
     me = _dispatch(db, monkeypatch, "/me", TG)
     account = _dispatch(db, monkeypatch, "/account", TG)
     assert me and account
@@ -155,6 +158,7 @@ def test_me_and_account_alias_show_same_card_private(db, monkeypatch):
 
 def test_level_alias_points_to_account_card_private(db, monkeypatch):
     _user(db)
+    monkeypatch.setattr("backend.tg_bot.router._user_cmd_limits", {})
     sent = _dispatch(db, monkeypatch, "/level", TG)
     assert sent
     assert "账号名称" in sent[0][0]

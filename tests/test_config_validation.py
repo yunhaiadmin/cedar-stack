@@ -34,11 +34,13 @@ def _cfg(s, key):
 
 
 @pytest.mark.parametrize("key,value", [
-    ("points_transfer_fee_pct", -5),
-    ("points_transfer_fee_pct", "101"),
-    ("points_transfer_daily_cap", "abc"),
-    ("points_transfer_min", 0),
-    ("points_transfer_fee_pct", 1.5),
+    # points_transfer_* 已随货币于 2026-11-13 下线：未知键静默忽略、无校验可测；
+    # 以下改用现存同类校验键（范围/类型/枚举口径与原用例一一对应）。
+    ("welfare_vitality_renew_min", -1),
+    ("welfare_vitality_renew_min", 1001),
+    ("welfare_streak_renew_days", "abc"),
+    ("welfare_streak_renew_days", 0),
+    ("welfare_vitality_renew_min", 1.5),
     ("recharge_ratio", "-1"),
     ("recharge_quick_amounts", "10,abc"),
     ("lottery_draw_interval_sec", "5"),
@@ -55,26 +57,26 @@ def test_welfare_config_invalid_writes_nothing(db):
     s, admin = db
     with pytest.raises(config_schema.ConfigValueError):
         welfare_admin.welfare_config_set(
-            {"points_transfer_daily_cap": "100", "points_transfer_fee_pct": "-1"}, current_admin=admin, db=s)
-    assert _cfg(s, "points_transfer_daily_cap") is None
+            {"welfare_vitality_renew_min": "100", "welfare_streak_renew_days": "-1"}, current_admin=admin, db=s)
+    assert _cfg(s, "welfare_vitality_renew_min") is None
 
 
 def test_welfare_config_accepts_valid_and_empty_unsets(db):
     s, admin = db
     welfare_admin.welfare_config_set(
-        {"points_transfer_fee_pct": 3, "welfare_require_tg_bind": True,
+        {"welfare_vitality_renew_min": 3, "welfare_require_tg_bind": True,
          "lottery_require_group_member": False,
          "recharge_ratio": "1.5"},
         current_admin=admin, db=s)
-    assert _cfg(s, "points_transfer_fee_pct") == "3"
+    assert _cfg(s, "welfare_vitality_renew_min") == "3"
     # 2026-10-21：原 chat_points_enabled / lottery_enabled 已摘面板，
     # 换保留的 digit 风格 bool 键（存 "1"/"0"）
     assert _cfg(s, "welfare_require_tg_bind") == "1"
     assert _cfg(s, "lottery_require_group_member") == "0"
     assert _cfg(s, "recharge_ratio") == "1.5"
-    welfare_admin.welfare_config_set({"points_transfer_fee_pct": ""}, current_admin=admin, db=s)
-    assert _cfg(s, "points_transfer_fee_pct") is None
-    assert welfare_admin.welfare_config_get(current_admin=admin, db=s)["points_transfer_fee_pct"] == "5"
+    welfare_admin.welfare_config_set({"welfare_vitality_renew_min": ""}, current_admin=admin, db=s)
+    assert _cfg(s, "welfare_vitality_renew_min") is None
+    assert welfare_admin.welfare_config_get(current_admin=admin, db=s)["welfare_vitality_renew_min"] == "3"
 
 
 def _save_econ(s, admin, settings):
@@ -83,10 +85,12 @@ def _save_econ(s, admin, settings):
 
 
 @pytest.mark.parametrize("key,value", [
-    ("vitality_max", -1),
-    ("invitation_rebate_percent", 150),
+    # vitality_max / invitation_rebate_percent / recharge_enabled 已随货币下线；
+    # 改用现存同类校验键（下限/上限/bool 非法值口径与原用例一一对应）。
+    ("series_merge_interval_sec", 3599),
+    ("media_seek_fulfill_interval_minutes", 0),
     ("device_limit_per_user", "x"),
-    ("recharge_enabled", "perhaps"),
+    ("subscription_purchase_enabled", "perhaps"),
 ])
 def test_economy_settings_rejects_invalid(db, key, value):
     s, admin = db
@@ -106,7 +110,7 @@ def test_economy_settings_rejects_invalid(db, key, value):
 
 def test_economy_settings_empty_unsets(db):
     s, admin = db
-    _save_econ(s, admin, {"vitality_max": "200"})
-    assert _cfg(s, "vitality_max") == "200"
-    _save_econ(s, admin, {"vitality_max": ""})
-    assert _cfg(s, "vitality_max") is None
+    _save_econ(s, admin, {"series_merge_interval_sec": "7200"})
+    assert _cfg(s, "series_merge_interval_sec") == "7200"
+    _save_econ(s, admin, {"series_merge_interval_sec": ""})
+    assert _cfg(s, "series_merge_interval_sec") is None

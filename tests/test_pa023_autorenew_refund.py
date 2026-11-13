@@ -86,7 +86,12 @@ def _refund(db, admin, order_id):
 
 
 def test_auto_renew_order_refund_returns_points(db):
-    """自动续订单退款：天数回滚 30 天 + 实付 900 能量全额退回。"""
+    """自动续订单退款：天数回滚 30 天；积分腿已随货币下线不再退回。
+
+    桩行为（orders_admin._reverse_points 恒返 0）：实付 900 能量不退回、
+    不写 refund 台账。退款口径如需重定（例如按人民币原路退），由 parent
+    另行拍板——本测试只钉住当前桩行为，不把未定口径锁死。
+    """
     admin = _admin(db)
     user, plan, sub, now = _user_with_sub(db, "pa023-renew", points=100)
     order = models.SubscriptionOrder(
@@ -104,10 +109,10 @@ def test_auto_renew_order_refund_returns_points(db):
     result = _refund(db, admin, "AR-PA023-1")
 
     assert result["revoked_days"] == 30
-    assert result["revoked_points"] == -900
+    assert result["revoked_points"] == 0  # 积分腿已下线，不退回
     db.expire_all()
     user2 = db.query(models.WebUser).filter_by(id=user.id).first()
-    assert user2.points == 1000
+    assert user2.points == 100  # 余额不动
     sub2 = db.query(models.UserSubscription).filter_by(id=sub.id).first()
     assert sub2.end_date <= now + timedelta(seconds=5)
     assert sub2.status == "cancelled"
@@ -118,15 +123,18 @@ def test_auto_renew_order_refund_returns_points(db):
                 models.PointsLog.ref_id == "refund:AR-PA023-1")
         .first()
     )
-    assert refund_log is not None
-    assert refund_log.amount == 900
+    assert refund_log is None  # 不写退积分台账
     order2 = db.query(models.SubscriptionOrder).filter_by(
         order_id="AR-PA023-1").first()
     assert order2.status == "refunded"
 
 
 def test_manual_points_order_refund_unchanged(db):
-    """手动积分单退款行为不变：天数回滚 30 天 + 实付 500 能量退回。"""
+    """手动积分单退款：天数回滚 30 天；积分腿已随货币下线不再退回。
+
+    与自动续订单同桩：实付 500 能量不退回、余额不动。口径重定前，
+    本测试只钉住当前桩行为。
+    """
     admin = _admin(db)
     user, plan, sub, now = _user_with_sub(db, "pa023-manual", points=500)
     order = models.SubscriptionOrder(
@@ -143,10 +151,10 @@ def test_manual_points_order_refund_unchanged(db):
     result = _refund(db, admin, "PT-PA023-1")
 
     assert result["revoked_days"] == 30
-    assert result["revoked_points"] == -500
+    assert result["revoked_points"] == 0  # 积分腿已下线，不退回
     db.expire_all()
     user2 = db.query(models.WebUser).filter_by(id=user.id).first()
-    assert user2.points == 1000
+    assert user2.points == 500  # 余额不动
 
 
 def test_auto_renew_refund_without_ledger_returns_no_points(db):

@@ -54,7 +54,7 @@ def _make_round(db, title="自动开奖测试", chat_id=-100111, draw_at=None, n
         db,
         title=title,
         chat_id=chat_id,
-        prizes=[{"name": "积分奖", "type": "points", "value": 100, "quantity": 1}],
+        prizes=[{"name": "天数奖", "type": "days", "value": 7, "quantity": 1}],
         draw_at=draw_at,
     )
     # 固定 seed，保证开奖确定性
@@ -223,7 +223,7 @@ def test_notify_shows_username_when_tg_name_unavailable(db, monkeypatch):
     entry = db.query(models.LotteryRoundEntry).filter(models.LotteryRoundEntry.round_id == rnd.id).first()
     user = db.query(models.WebUser).filter(models.WebUser.id == entry.user_id).first()
     assert user.username in group_text
-    assert "积分奖：100能量" in group_text
+    assert "天数奖：公益7天" in group_text
     assert "****" not in group_text
     assert str(entry.telegram_id) not in group_text
 
@@ -288,13 +288,14 @@ def test_run_due_draws_retries_undistributed_after_partial_failure(db, monkeypat
     winners = db.query(models.LotteryRoundWinner).filter(models.LotteryRoundWinner.round_id == rnd.id).all()
     assert all(w.distributed for w in winners)
     user_ids = [db.get(models.LotteryRoundEntry, w.entry_id).user_id for w in winners]
-    logs = db.query(models.PointsLog).filter(models.PointsLog.user_id.in_(user_ids)).all()
+    # 发奖走 portal.grant_welfare，留痕在 WelfareGrantLog（积分已下线，不再写 PointsLog）
+    logs = db.query(models.WelfareGrantLog).filter(models.WelfareGrantLog.user_id.in_(user_ids)).all()
     assert len(logs) == len(winners)  # 每人只发一次
 
     # 再跑一次：无待补发，不会重复发奖
     third = lottery.run_due_draws(db)
     assert third.get("redistributed", []) == []
-    assert db.query(models.PointsLog).filter(models.PointsLog.user_id.in_(user_ids)).count() == len(winners)
+    assert db.query(models.WelfareGrantLog).filter(models.WelfareGrantLog.user_id.in_(user_ids)).count() == len(winners)
 
 
 def test_admin_draw_endpoint_redistributes_done_round(db, monkeypatch):

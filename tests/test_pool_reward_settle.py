@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """公共贡献池 PR-6（goal-33）：激励结算执行器 + 管理端结算口。
 
-口径（design §11 + 任务书定版）：
+口径（design §11 + 任务书定版，2026-11-13 货币删除收口）：
 - 结算先影子跑：真发开关 pool_reward_payout_enabled 默认关——
-  只算账落结算行（status=shadow）、不发积分/经验；开关开后
-  重跑才真发，且连跑不双发（明细唯一键 + points ref_id 双锚）；
+  只算账落结算行（status=shadow）、不发经验；开关开后
+  重跑才真发，且连跑不双发（明细唯一键 + XP ref_id 双锚）；
+  积分部分已随货币下线不再发放，明细 points 数值只保留作影子对账；
 - 门槛双条件（在线 ≥7 天且 counted ≥10）不达 → skipped 不结；
 - 单期积分上限 900 封顶；单日 counted 达冻结线 → frozen 待审，
   管理员放行后按 capped 数发放；
@@ -110,6 +111,11 @@ def _points(db, user_id):
                .filter(base_models.WebUser.id == user_id).scalar() or 0)
 
 
+def _xp(db, user_id):
+    return int(db.query(base_models.WebUser.member_xp)
+               .filter(base_models.WebUser.id == user_id).scalar() or 0)
+
+
 def _points_logs(db, user_id):
     return (db.query(base_models.PointsLog)
             .filter(base_models.PointsLog.user_id == user_id,
@@ -164,19 +170,21 @@ def test_payout_idempotent_across_reruns(db):
     _set_cfg(db, pool_reward_enabled=True,
              pool_reward_payout_enabled=True)
     pool_reward.run_settlement(db, PERIOD, created_by=1)
-    assert _points(db, user.id) == 160
-    assert _points_logs(db, user.id) == 1
+    # 积分已随货币于 2026-11-13 下线：不再发积分、不写 points 台账，
+    # 明细 points 数值（160）只留影子对账；经验照常发。
+    assert _points(db, user.id) == 0
+    assert _points_logs(db, user.id) == 0
     detail = _detail(db, member.id)
     assert detail.status == "paid"
-    assert detail.points_log_id is not None
-    xp = int(db.query(base_models.WebUser.member_xp)
-             .filter(base_models.WebUser.id == user.id).scalar() or 0)
-    assert xp == 10  # 10 counted * xp_per_play 1
+    assert detail.points == 160
+    assert detail.points_log_id is None
+    assert _xp(db, user.id) == 10  # 10 counted * xp_per_play 1
     # 连跑两次：不双发。
     pool_reward.run_settlement(db, PERIOD, created_by=1)
     pool_reward.run_settlement(db, PERIOD, created_by=1)
-    assert _points(db, user.id) == 160
-    assert _points_logs(db, user.id) == 1
+    assert _points(db, user.id) == 0
+    assert _points_logs(db, user.id) == 0
+    assert _xp(db, user.id) == 10
     assert (db.query(em.PoolRewardDetail)
             .filter(em.PoolRewardDetail.member_id == member.id)
             .count()) == 1
@@ -192,8 +200,9 @@ def test_shadow_then_payout_enabled_rerun_pays_once(db):
     _set_cfg(db, pool_reward_payout_enabled=True)
     pool_reward.run_settlement(db, PERIOD, created_by=1)
     assert _detail(db, member.id).status == "paid"
-    assert _points(db, user.id) == 160
-    assert _points_logs(db, user.id) == 1
+    assert _points(db, user.id) == 0  # 积分已下线，只发经验
+    assert _points_logs(db, user.id) == 0
+    assert _xp(db, user.id) == 10
 
 
 # ------------------------------------------------------------ 门槛/上限/冻结/违规
@@ -249,8 +258,8 @@ def test_points_cap_900(db):
              pool_reward_min_active_days=0)
     pool_reward.run_settlement(db, PERIOD, created_by=1)
     detail = _detail(db, member.id)
-    assert detail.points == 900  # 10*100=1000 → 封顶 900
-    assert _points(db, user.id) == 900
+    assert detail.points == 900  # 10*100=1000 → 封顶 900（影子数）
+    assert _points(db, user.id) == 0  # 积分已下线，不发
 
 
 def test_daily_freeze_then_release_pays_capped(db):
@@ -268,12 +277,13 @@ def test_daily_freeze_then_release_pays_capped(db):
     assert detail.status == "frozen"
     assert detail.counted_plays == 3
     assert _points(db, user.id) == 0
-    # 管理员放行 → 按 capped 数（3 播）发放。
+    # 管理员放行 → 按 capped 数（3 播）发经验，积分不发。
     released = pool_reward.release_frozen_detail(
         db, detail.id, actor_id=1)
     assert released.status == "paid"
-    assert _points(db, user.id) == 3
-    assert _points_logs(db, user.id) == 1
+    assert _points(db, user.id) == 0
+    assert _points_logs(db, user.id) == 0
+    assert _xp(db, user.id) == 3
 
 
 def test_violation_ejected_skipped_until_flag_cleared(db):
@@ -298,12 +308,13 @@ def test_violation_ejected_skipped_until_flag_cleared(db):
     assert detail.status == "skipped"
     assert detail.reason == "ejected_violation"
     assert _points(db, user.id) == 0
-    # 清除违规标志后重跑 → 可结。
+    # 清除违规标志后重跑 → 可结（只发经验）。
     pool_gate.clear_member_violation(db, member.id, actor_id=1)
     pool_reward.run_settlement(db, PERIOD, created_by=1)
     detail = _detail(db, member.id)
     assert detail.status == "paid"
-    assert _points(db, user.id) == 160
+    assert _points(db, user.id) == 0
+    assert _xp(db, user.id) == 10
 
 
 def test_reward_disabled_refuses_to_build_batch(db):
@@ -395,12 +406,13 @@ def test_reward_endpoints_preview_settle_release(db, client):
         f"/api/admin/pool/rewards/settlements/{batches[0]['id']}/details")
     assert resp.status_code == 200
     assert resp.json()["details"][0]["status"] == "frozen"
-    # 放行 → 发 capped 积分。
+    # 放行 → 状态 paid，积分不发、经验按 capped 数发。
     resp = client.post(
         f"/api/admin/pool/rewards/details/{detail.id}/release")
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "paid"
-    assert _points(db, user.id) == 3
+    assert _points(db, user.id) == 0
+    assert _xp(db, user.id) == 3
 
 
 def test_reward_settle_endpoint_rejected_when_disabled(db, client):

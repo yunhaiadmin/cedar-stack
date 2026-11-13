@@ -51,13 +51,6 @@ def create_review(
     db.commit()
     db.refresh(review)
 
-    # 发表影评奖励积分（复用发言奖励的日额度）
-    try:
-        from backend import points as points_mod
-        points_mod.award_chat_points(db, user.id)
-    except Exception as e:
-        logger.debug("影评积分奖励失败: %s", e)
-
     logger.info("影评发表: user=%s guid=%s rating=%s", user.id, item_guid, rating)
     return review
 
