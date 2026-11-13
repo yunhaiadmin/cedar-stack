@@ -26,11 +26,6 @@ const loaded = ref(false)
 const form = ref<Record<string, string>>({})
 
 
-const gameRankEnabled = computed({
-  get: () => (form.value['bot_gamerank_enabled'] ?? 'false') === 'true',
-  set: (v: boolean) => { form.value['bot_gamerank_enabled'] = v ? 'true' : 'false' },
-})
-
 // 每日播放排行榜：word 风格 true/false，总开关默认关、三榜分开关默认开
 const playrankEnabled = computed({
   get: () => (form.value['bot_playrank_enabled'] ?? 'false') === 'true',
@@ -202,19 +197,6 @@ onMounted(load)
     </SectionCard>
 
     <div v-else v-loading="loading" class="form-grid">
-
-      <SectionCard
-        title="每周游戏榜"
-        :icon="Trophy"
-        description="周日晚上和观影周榜同一时间，把本周游戏净赢前十发到主群"
-      >
-        <el-form :label-position="labelPosition" label-width="120px" class="config-form">
-          <el-form-item label="总开关">
-            <el-switch v-model="gameRankEnabled" />
-            <span class="field-hint">统计红包、老虎机、骰子对决、红包雨的净赢能量。只发海报，不发能量，也不加称号（现有称号不能设一周有效期）。默认关。主群用「启用群 ID」里的第一个群</span>
-          </el-form-item>
-        </el-form>
-      </SectionCard>
 
       <SectionCard
         title="每日播放排行榜"

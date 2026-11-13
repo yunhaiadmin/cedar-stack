@@ -337,9 +337,6 @@ WELFARE_CONFIG_KEYS = {
     "lottery_reminder_step": "25",
     "lottery_final_call_minutes": "30",
     "lottery_announce_edit_min_interval_sec": "20",
-    # 每周游戏榜（默认关）：周日 21:00 和观影周榜同时发主群海报。
-    # 只统计净赢，不发能量、不加称号。
-    "bot_gamerank_enabled": "false",
     # 注册后 TG 绑定引导页总开关
     # 求片 v2：总开关 / 附议 / 附议者入库通知（默认全开）
     # 发言积分/积分兑换/积分转账键已随货币于 2026-11-13 下线（原
