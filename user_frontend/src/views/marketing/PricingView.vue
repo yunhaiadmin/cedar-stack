@@ -168,23 +168,14 @@ const year = new Date().getFullYear()
 <style scoped>
 /* 全页跟随用户主题（D5-01 核销）：原站定价页不强制深色，根用 bg-canvas 主题令牌，
    只有落地页 data-force-dark。此前写死「上深下浅」与原站不符，改主题翻转变量。 */
+/* --p-* 主题别名定义在 styles/uhd-tokens.css（令牌契约只认被引入样式表里的定义）。 */
 .pricing {
-  --p-surface: var(--uhd-d-surface);
-  --p-border: var(--uhd-d-border);
-  --p-text: var(--uhd-d-text);
-  --p-text-2: var(--uhd-d-text-2);
-  --p-warn: #f59e0b;
   min-height: 100vh;
   background: var(--uhd-d-bg);
   color: var(--p-text);
   font-family: var(--uhd-font-sans);
 }
 :root[data-theme='light'] .pricing {
-  --p-surface: var(--uhd-l-surface);
-  --p-border: var(--uhd-l-border);
-  --p-text: var(--uhd-l-text);
-  --p-text-2: var(--uhd-l-text-2);
-  --p-warn: var(--uhd-warn-text);
   background: var(--uhd-l-bg);
 }
 .pricing-nav {
