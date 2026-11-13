@@ -48,11 +48,12 @@ const route = useRoute()
 const showChrome = computed(
   // 登录页、UHD 营销面（官网/定价，自带悬浮胶囊导航）与 404 页为独立全幅版式，
   // 不渲染全局顶栏/底坞；其余页面照旧。
-  // 根路径未登录渲染官网（RootView 分发，自带导航）同样不叠全局壳；
-  // 已登录根路径会被守卫送去概览 /game/account（自带壳），不会停在这里。
+  // 根路径恒为官网宣传页（RootView 分发，自带导航）：未登录与已登录
+  // 进站都停这里（分场景定版），一律不叠全局壳，否则宣传页会出现
+  // 双导航。
   () =>
     !['login', 'landing', 'pricing', 'not-found'].includes(route.name as string) &&
-    !(route.path === '/' && !userStore.isLoggedIn),
+    route.path !== '/',
 )
 
 /**

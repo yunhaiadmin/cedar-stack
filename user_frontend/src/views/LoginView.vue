@@ -25,6 +25,7 @@ import { loginSecurityApi, type LoginFactors } from '@/api/security'
 import { passkeySupported } from '@/utils/webauthn'
 import { tgApi } from '@/api/tg'
 import { fetchTgBotUsername } from '@/api/site'
+import { isPanelV4Enabled } from '@/composables/usePanelApi'
 
 const router = useRouter()
 const route = useRoute()
@@ -95,7 +96,7 @@ async function handlePasskeyLogin() {
   try {
     await userStore.loginWithPasskey(username)
     toast.success('登录成功')
-    router.push(safeRedirect(route.query.redirect))
+    router.push(postAuthTarget(route.query.redirect))
   } catch (err: any) {
     error.value = err?.name === 'NotAllowedError'
       ? '已取消 Passkey 登录，或设备验证超时'
@@ -198,6 +199,19 @@ function safeRedirect(v: unknown): string {
   return '/'
 }
 
+/**
+ * 登录/注册成功后的落点（2026-11-13 分场景定版）：
+ * 带合法 ?redirect= 时以 redirect 为准（深链 honor）；否则落用户中心
+ * 概览 /game/account——「登录动作落概览」只在本页提交成功这一刻生效，
+ * 已登录直接打开站点根路径是另一场景（停官网宣传页，守卫不跳转）。
+ * panelV4 关闭时 /game/account 路由不存在，回退 '/'，不落 404。
+ */
+function postAuthTarget(v: unknown): string {
+  const s = firstQueryValue(v)
+  if (s.startsWith('/') && !s.startsWith('//') && !s.includes('://')) return s
+  return isPanelV4Enabled() ? '/game/account' : '/'
+}
+
 async function handleLogin() {
   // 回车双提交防护：表单 @submit 与输入框回车各触发一次，此处用 loading 状态做守卫兜底
   if (loginLoading.value) return
@@ -213,7 +227,7 @@ async function handleLogin() {
       loginFactors.value.totp_required ? loginForm.totpCode.trim() : undefined,
     )
     toast.success('登录成功')
-    router.push(safeRedirect(route.query.redirect))
+    router.push(postAuthTarget(route.query.redirect))
   } catch (err: any) {
     error.value = friendlyError(err, '登录失败，请稍后重试')
     // 没来得及失焦探测就提交、后端说要码时，把验证码字段补出来让他重试
@@ -363,7 +377,7 @@ async function handleRegister() {
     toast.success('注册成功，已自动开通观影账号')
     // 注册后 TG 绑定引导：仅注册流程触发，普通登录不动。
     // 状态接口失败时按默认放行进首页，绝不锁死用户。
-    const redirect = safeRedirect(route.query.redirect)
+    const redirect = postAuthTarget(route.query.redirect)
     try {
       const st = await tgApi.status()
       if (st.required && !st.bound && st.guide_enabled) {

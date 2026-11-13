@@ -8,7 +8,7 @@
  */
 import { onMounted, onUnmounted, ref, type Component } from 'vue'
 import { useRouter } from 'vue-router'
-import { Monitor, Sun, Layers, ShieldCheck, Menu, X, RefreshCw, Bell, Sparkles, Home, Tag, BookOpen, ExternalLink, Users, Bot, MessageCircle, Send, Globe } from 'lucide-vue-next'
+import { Monitor, Sun, Layers, ShieldCheck, Menu, X, RefreshCw, Bell, Sparkles, Home, Tag, BookOpen, ExternalLink, Users, Bot, MessageCircle, Send, Globe, ArrowRight } from 'lucide-vue-next'
 import UhdNavPill, { type UhdNavItem } from '@/components/uhd/UhdNavPill.vue'
 import UhdButton from '@/components/uhd/UhdButton.vue'
 import UhdChip from '@/components/uhd/UhdChip.vue'
@@ -511,7 +511,13 @@ const year = new Date().getFullYear()
           </Transition>
         </p>
         <div class="hero-actions">
-          <UhdButton variant="primary" dark @click="goRegister">免费注册</UhdButton>
+          <!-- Hero 主钮分态（2026-11-13 照友站已登录宣传页定版）：已登录进站停
+               宣传页，首屏主钮即「进入后台」（彩虹边＋玻璃底，与菜单面板大钮
+               同一去向 goConsole → 概览）；未登录保持「免费注册」原样。 -->
+          <UhdButton v-if="userStore.isLoggedIn" variant="primary" dark @click="goConsole">
+            进入后台 <ArrowRight :size="18" aria-hidden="true" />
+          </UhdButton>
+          <UhdButton v-else variant="primary" dark @click="goRegister">免费注册</UhdButton>
           <UhdButton variant="secondary" dark @click="goPricing">查看定价</UhdButton>
         </div>
         <div class="hero-specs">
