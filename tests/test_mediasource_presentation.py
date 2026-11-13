@@ -639,6 +639,13 @@ _DETAILS = {
                   "vod_play_url": "正片$https://cdn-b.example/master.m3u8"},
 }
 
+
+def _stub_detail_get(url, headers=None, timeout=None):
+    import urllib.parse
+    host = urllib.parse.urlparse(url).netloc
+    return 200, {"code": 1, "list": [_DETAILS[host]]}
+
+
 def test_directed_resolve_hard_errors_no_fallback(stub_db):
     item, map_a, map_b, map_other = _stub_seed(stub_db)
     # 映射属于别的条目 → 404，绝不换线
