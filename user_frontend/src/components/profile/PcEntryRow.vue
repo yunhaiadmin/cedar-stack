@@ -3,7 +3,7 @@
     <span class="pc-row-ic" aria-hidden="true"><component :is="icon" :size="22" /></span>
     <span class="pc-row-name">{{ name }}</span>
     <span v-if="meta" class="pc-row-meta">{{ meta }}</span>
-    <ChevronRight :size="15" class="pc-chev" aria-hidden="true" />
+    <ChevronRight :size="18" class="pc-chev" aria-hidden="true" />
   </RouterLink>
   <button v-else type="button" class="pc-row" :class="{ danger }" @click="emit('click')">
     <span class="pc-row-ic" aria-hidden="true"><component :is="icon" :size="22" /></span>
@@ -11,19 +11,20 @@
     <span v-if="meta" class="pc-row-meta">{{ meta }}</span>
     <ChevronDown
       v-if="expandable"
-      :size="15"
+      :size="18"
       class="pc-chev pc-chev-down"
       :class="{ open: expanded }"
       aria-hidden="true"
     />
-    <ChevronRight v-else :size="15" class="pc-chev" aria-hidden="true" />
+    <ChevronRight v-else :size="18" class="pc-chev" aria-hidden="true" />
   </button>
 </template>
 
 <script setup lang="ts">
 /**
- * 个人中心 / 账号设置共用的入口行（照已批准效果图的 .row 口径）：
- * 图标盒（墨边纸底）+ 名称 + 右侧状态小字 + 箭头。
+ * 个人中心 / 账号设置共用的入口行（说明书 2.6 状态行模具）：
+ * 左图标 22px + 名称 16px/600 + 右侧状态小字（14px 灰）+ 箭头，
+ * 行高 68px，行间分隔由父级分组的 1px --uhd-l-divider 承担。
  * to 有值渲染 RouterLink（整行跳转），否则渲染 button（点击/展开由父级处理）。
  * meta 只传现有接口拿得到的真实摘要，拿不到就别传（不编造）。
  */
@@ -50,19 +51,19 @@ const emit = defineEmits<{ (e: 'click'): void }>()
   align-items: center;
   gap: 14px;
   width: 100%;
-  min-height: 64px;
-  padding: 10px 14px;
+  min-height: 68px;
+  padding: 10px 2px;
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--ink);
+  color: var(--uhd-l-text);
   font: inherit;
+  font-family: var(--uhd-font-sans);
   text-align: left;
   text-decoration: none;
   box-sizing: border-box;
 }
-.pc-row + .pc-row { border-top: 1px solid var(--line); }
-.pc-row:active { background: var(--paper2); }
+.pc-row:active { background: var(--uhd-l-input-bg); }
 .pc-row-ic {
   width: 22px;
   height: 22px;
@@ -70,22 +71,22 @@ const emit = defineEmits<{ (e: 'click'): void }>()
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--ink2);
+  color: var(--uhd-l-text);
 }
-.pc-row-name { font-size: 16px; font-weight: 700; white-space: nowrap; }
+.pc-row-name { font-size: var(--uhd-fs-lead); font-weight: var(--uhd-fw-semibold); white-space: nowrap; }
 .pc-row-meta {
   margin-left: auto;
-  font-size: 14px;
-  color: var(--ink2);
+  font-size: var(--uhd-fs-caption);
+  color: var(--uhd-l-text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   font-variant-numeric: tabular-nums;
 }
-.pc-chev { margin-left: auto; color: var(--ink2); flex: none; }
+.pc-chev { margin-left: auto; color: var(--uhd-l-text-3); flex: none; }
 .pc-row:has(.pc-row-meta) .pc-chev { margin-left: 0; }
-.pc-chev-down { transition: transform 0.15s ease; }
+.pc-chev-down { transition: transform var(--uhd-dur-ui) var(--uhd-ease-standard); }
 .pc-chev-down.open { transform: rotate(180deg); }
-.pc-row.danger .pc-row-name { color: var(--red); }
-.pc-row.danger .pc-row-ic { color: var(--red); }
+.pc-row.danger .pc-row-name { color: var(--uhd-danger); }
+.pc-row.danger .pc-row-ic { color: var(--uhd-danger); }
 </style>

@@ -14,13 +14,13 @@
           {{ deviceInfo.active_count ?? 0 }} / {{ deviceInfo.limit }} 台
         </span>
         <span v-else class="dev-count"></span>
-        <button type="button" class="v4-mini-btn" title="刷新" :disabled="deviceLoading" :aria-busy="deviceLoading" @click="loadDevices">
-          <RefreshCw :size="13" /> {{ deviceLoading ? '刷新中' : '刷新' }}
+        <button type="button" class="sx-mini-btn" title="刷新" :disabled="deviceLoading" :aria-busy="deviceLoading" @click="loadDevices">
+          <RefreshCw :size="14" /> {{ deviceLoading ? '刷新中' : '刷新' }}
         </button>
       </div>
-      <div v-if="deviceLoading && !devices.length" class="v4-skeleton" style="height:120px"></div>
-      <div v-else-if="deviceError" class="v4-err">设备列表加载失败，请稍后重试<br><button class="v4-retry" @click="loadDevices">重试</button></div>
-      <div v-else-if="!devices.length" class="v4-empty">
+      <div v-if="deviceLoading && !devices.length" class="sx-loading"><span class="sx-spin" aria-hidden="true"></span>正在加载…</div>
+      <div v-else-if="deviceError" class="sx-err">设备列表加载失败，请稍后重试<button type="button" class="sx-mini-btn" @click="loadDevices">重试</button></div>
+      <div v-else-if="!devices.length" class="sx-empty">
         还没有设备记录 —— 用 Emby 客户端（Infuse / Forward 等）登录后会出现在这里
       </div>
       <template v-else>
@@ -34,9 +34,9 @@
               <template v-if="d.ip"> · {{ d.ip }}</template>
             </span>
           </div>
-          <span v-if="d.is_blocked" class="dev-badge off">已禁用</span>
-          <span v-else-if="!d.is_online_recent" class="dev-badge idle">已闲置</span>
-          <span v-else class="dev-badge ok">活跃</span>
+          <span v-if="d.is_blocked" class="sx-status sx-status--bad"><span class="sx-dot" aria-hidden="true"></span>已禁用</span>
+          <span v-else-if="!d.is_online_recent" class="sx-status sx-status--idle"><span class="sx-dot" aria-hidden="true"></span>已闲置</span>
+          <span v-else class="sx-status sx-status--ok"><span class="sx-dot" aria-hidden="true"></span>活跃</span>
           <button
             type="button"
             class="dev-remove"
@@ -146,9 +146,12 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 展开面板与行：状态行模具（说明书 2.6）——1px --uhd-l-divider 分隔、
+   状态=圆点+文字、操作=白底灰边小胶囊；加载态=旋转圈+灰字（1.6）、空态=虚线卡（2.7） */
 .pc-expand {
-  border-top: 1px dashed var(--line);
-  padding: 12px 14px 14px;
+  border-top: var(--uhd-border-w) solid var(--uhd-l-divider);
+  padding: 14px 2px 18px;
+  font-family: var(--uhd-font-sans);
 }
 .dev-head {
   display: flex;
@@ -157,30 +160,72 @@ onMounted(() => {
   margin-bottom: 6px;
 }
 .dev-count {
-  font-size: 12px;
-  color: var(--ink2);
+  font-size: var(--uhd-fs-aux);
+  color: var(--uhd-l-text-2);
   font-variant-numeric: tabular-nums;
 }
-.v4-mini-btn {
+.sx-mini-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 15px 10px;
-  margin: -8px 0;
-  background: var(--paper2);
-  border: 1px solid var(--line);
-  border-radius: var(--paper-r-full, 999px);
-  color: var(--ink2);
-  font-size: 12px;
+  gap: 6px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 16px;
+  background: var(--uhd-l-surface);
+  border: var(--uhd-border-w) solid var(--uhd-l-border);
+  border-radius: var(--uhd-radius-pill);
+  color: var(--uhd-l-text);
+  font-size: var(--uhd-fs-caption);
+  font-weight: var(--uhd-fw-medium);
   cursor: pointer;
+}
+.sx-mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.sx-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 0;
+  font-size: var(--uhd-fs-caption);
+  color: var(--uhd-l-text-2);
+}
+.sx-spin {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--uhd-l-divider);
+  border-top-color: var(--uhd-l-text-2);
+  animation: uhd-spin 0.8s linear infinite;
+}
+.sx-err {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border: 1px dashed #d4d4d8;
+  border-radius: 16px;
+  font-size: var(--uhd-fs-caption);
+  line-height: 1.6;
+  color: var(--uhd-l-text-2);
+}
+.sx-empty {
+  padding: 26px 20px;
+  border: 1px dashed #d4d4d8;
+  border-radius: 16px;
+  text-align: center;
+  font-size: var(--uhd-fs-body);
+  line-height: 1.6;
+  color: var(--uhd-l-text-2);
 }
 .dev-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 0;
+  gap: 10px;
+  min-height: 64px;
+  padding: 10px 0;
 }
-.dev-row + .dev-row { border-top: 1px solid var(--line); }
+.dev-row + .dev-row { border-top: var(--uhd-border-w) solid var(--uhd-l-divider); }
 .dev-main {
   display: flex;
   flex-direction: column;
@@ -189,53 +234,58 @@ onMounted(() => {
   flex: 1;
 }
 .dev-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--ink);
+  font-size: var(--uhd-fs-body);
+  font-weight: var(--uhd-fw-semibold);
+  color: var(--uhd-l-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .dev-meta {
-  font-size: 12px;
-  color: var(--ink2);
+  font-size: var(--uhd-fs-aux);
+  color: var(--uhd-l-text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-.dev-badge {
-  flex-shrink: 0;
-  padding: 2px 8px;
-  border-radius: var(--paper-r-full, 999px);
-  font-size: 12px;
+.sx-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  font-size: var(--uhd-fs-caption);
   white-space: nowrap;
-  background: var(--paper2);
-  color: var(--ink2);
 }
-.dev-badge.ok { background: var(--au-success-soft); color: var(--green); }
-.dev-badge.off { background: var(--au-danger-soft); color: var(--red); }
+.sx-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.sx-status--ok { color: var(--uhd-success); }
+.sx-status--ok .sx-dot { background: var(--uhd-dot-ok); }
+.sx-status--idle { color: var(--uhd-l-text-2); }
+.sx-status--idle .sx-dot { background: var(--uhd-dot-idle); }
+.sx-status--bad { color: var(--uhd-danger); }
+.sx-status--bad .sx-dot { background: var(--uhd-dot-bad); }
 .dev-remove {
-  flex-shrink: 0;
-  padding: 15px 10px;
-  margin: -7px 0;
-  background: transparent;
-  border: none;
-  border-radius: var(--paper-r-sm, 8px);
-  color: var(--ink2);
-  font-size: 13px;
+  flex: none;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 16px;
+  background: var(--uhd-l-surface);
+  border: var(--uhd-border-w) solid var(--uhd-l-border);
+  border-radius: var(--uhd-radius-pill);
+  color: var(--uhd-l-text);
+  font-size: var(--uhd-fs-caption);
+  font-weight: var(--uhd-fw-medium);
   white-space: nowrap;
   cursor: pointer;
 }
-.dev-remove:active:not(:disabled) { background: var(--paper2); }
 .dev-remove:disabled { opacity: 0.5; cursor: not-allowed; }
-.dev-remove.confirming { color: var(--red); font-weight: 600; }
+.dev-remove.confirming { color: var(--uhd-danger); border-color: var(--uhd-danger); font-weight: var(--uhd-fw-semibold); }
 .dev-tip {
-  margin: 10px 0 0;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-  font-size: 12px;
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: var(--uhd-border-w) solid var(--uhd-l-divider);
+  font-size: var(--uhd-fs-aux);
   line-height: 1.6;
-  color: var(--ink2);
+  color: var(--uhd-l-text-2);
 }
 </style>

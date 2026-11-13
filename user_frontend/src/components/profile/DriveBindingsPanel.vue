@@ -1,9 +1,9 @@
 <template>
   <div class="pc-entry">
     <!-- providers 拉取失败：不装成"没开"，整段错误态 + 重试 -->
-    <div v-if="providersError" class="v4-err prov-err">
-      {{ providersError }}<br>
-      <button class="v4-retry" @click="loadProviders">重试</button>
+    <div v-if="providersError" class="sx-err">
+      <span>{{ providersError }}</span>
+      <button type="button" class="sx-mini-btn" @click="loadProviders">重试</button>
     </div>
 
     <!-- 谷歌盘（后端 providers 名单驱动；名单里没有整行不渲染） -->
@@ -19,13 +19,13 @@
       <div v-if="driveExpanded" class="pc-expand">
         <div class="prov-tools">
           <p class="prov-desc">绑了自己的谷歌盘，播放就走你自己的额度，不走共享池；没绑定只能浏览、不能点播</p>
-          <button type="button" class="v4-mini-btn" title="刷新" :disabled="driveLoading" :aria-busy="driveLoading" @click="loadDriveBindings">
-            <RefreshCw :size="13" /> {{ driveLoading ? '刷新中' : '刷新列表' }}
+          <button type="button" class="sx-mini-btn" title="刷新" :disabled="driveLoading" :aria-busy="driveLoading" @click="loadDriveBindings">
+            <RefreshCw :size="14" /> {{ driveLoading ? '刷新中' : '刷新列表' }}
           </button>
         </div>
-        <div v-if="driveLoading && !driveBindings.length" class="v4-skeleton" style="height:120px"></div>
-        <div v-else-if="driveError" class="v4-err">{{ driveError }}<br><button class="v4-retry" @click="loadDriveBindings">重试</button></div>
-        <div v-else-if="!driveBindings.length" class="v4-empty">
+        <div v-if="driveLoading && !driveBindings.length" class="sx-loading"><span class="sx-spin" aria-hidden="true"></span>正在加载…</div>
+        <div v-else-if="driveError" class="sx-err"><span>{{ driveError }}</span><button type="button" class="sx-mini-btn" @click="loadDriveBindings">重试</button></div>
+        <div v-else-if="!driveBindings.length" class="sx-empty sx-empty--left">
           <p>① 这是什么：绑了自己的谷歌盘，播放就走你自己的额度，不走共享池；没绑定只能浏览、不能点播。</p>
           <p>② 怎么做：起个名字点“绑定谷歌盘”→新窗口去 Google 点同意→回来后列表会自动刷新，没出现再点“刷新列表”。</p>
           <p>③ 绑完怎么验：去播一集，看是不是走你自己的盘。</p>
@@ -41,8 +41,8 @@
                 <template v-if="b.needs_rebind"> · 转存需要写权限，请重新授权</template>
               </span>
             </div>
-            <span v-if="b.status === 'active'" class="dev-badge ok">可用</span>
-            <span v-else class="dev-badge off">不可用</span>
+            <span v-if="b.status === 'active'" class="sx-status sx-status--ok"><span class="sx-dot" aria-hidden="true"></span>可用</span>
+            <span v-else class="sx-status sx-status--bad"><span class="sx-dot" aria-hidden="true"></span>不可用</span>
             <button
               v-if="b.status !== 'active'"
               type="button"
@@ -79,7 +79,7 @@
                 <button
                   v-if="poolEntryFor(b.id)!.can_apply"
                   type="button"
-                  class="v4-mini-btn"
+                  class="sx-mini-btn"
                   :disabled="poolActing === b.id"
                   @click="handlePoolApply(b.id)"
                 >
@@ -95,11 +95,11 @@
               </div>
             </template>
             <div v-else-if="poolEntryFor(b.id)!.member!.status === 'pending'" class="pool-line">
-              <span class="dev-badge warn">审核中</span>
+              <span class="sx-status sx-status--warn"><span class="sx-dot" aria-hidden="true"></span>审核中</span>
               <span class="pool-text">入池申请已提交，等管理员通过。</span>
             </div>
             <div v-else-if="poolEntryFor(b.id)!.member!.status === 'active'" class="pool-line">
-              <span class="dev-badge ok">已加入公共池</span>
+              <span class="sx-status sx-status--ok"><span class="sx-dot" aria-hidden="true"></span>已加入公共池</span>
               <span class="pool-text">
                 池占用 {{ fmtPoolBytes(poolEntryFor(b.id)!.member!.copies_bytes) }} · 副本 {{ poolEntryFor(b.id)!.member!.copies_count }} 份 · 今日被起播 {{ poolEntryFor(b.id)!.member!.today_play_starts }} 次
               </span>
@@ -114,7 +114,7 @@
               </button>
             </div>
             <div v-else-if="poolEntryFor(b.id)!.member!.status === 'suspended'" class="pool-line">
-              <span class="dev-badge off">已暂停</span>
+              <span class="sx-status sx-status--bad"><span class="sx-dot" aria-hidden="true"></span>已暂停</span>
               <span class="pool-text">{{ poolEntryFor(b.id)!.member!.suspended_reason === 'binding_invalid' ? '绑定失效连带暂停，恢复绑定后联系管理员恢复。' : '这个盘已被暂停，副本暂停下发。' }}</span>
               <button
                 type="button"
@@ -131,7 +131,7 @@
               <button
                 v-if="poolEntryFor(b.id)!.can_apply"
                 type="button"
-                class="v4-mini-btn"
+                class="sx-mini-btn"
                 :disabled="poolActing === b.id"
                 @click="handlePoolApply(b.id)"
               >
@@ -156,9 +156,9 @@
             <p class="dev-tip">{{ driveOauth2.description }}</p>
           </div>
           <p v-if="!driveOauth2.eligible" class="acct-error" role="alert">{{ driveOauth2.reason }}</p>
-          <button type="button" class="acct-btn primary" :disabled="!driveOauth2.eligible || drive2Starting" @click="handleBindDrive2">
+          <UhdButton variant="primary" :disabled="!driveOauth2.eligible || drive2Starting" @click="handleBindDrive2">
             {{ drive2Starting ? '正在打开授权…' : '绑定谷歌盘' }}
-          </button>
+          </UhdButton>
           <p class="dev-tip">用上面填的名字绑定：点绑定后会在新窗口打开 Google 授权页，点同意后关掉那个窗口、回到本页，列表会自动刷新，没出现再点“刷新列表”。授权页本身不是本站页面，账号密码只交给 Google。</p>
         </template>
       </div>
@@ -167,6 +167,7 @@
     <!-- 115 / 夸克：绑定线已下线，存量只给看 + 解绑 -->
     <template v-if="removedBindings.length">
       <PcEntryRow
+        class="bind-sep"
         :icon="Layers"
         name="已下线绑定"
         :meta="`${removedBindings.length} 条`"
@@ -184,7 +185,7 @@
               <template v-if="b.error_message"> · {{ b.error_message }}</template>
             </span>
           </div>
-          <span class="dev-badge off">已下线</span>
+          <span class="sx-status sx-status--idle"><span class="sx-dot" aria-hidden="true"></span>已下线</span>
           <button
             type="button"
             class="dev-remove"
@@ -217,6 +218,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { HardDrive, Layers, RefreshCw } from 'lucide-vue-next'
 import PcEntryRow from './PcEntryRow.vue'
+import UhdButton from '@/components/uhd/UhdButton.vue'
 import {
   poolContributionApi,
   storageBindingApi,
@@ -561,11 +563,15 @@ defineExpose({
 </script>
 
 <style scoped>
+/* 展开面板与行：状态行模具（说明书 2.6）——1px --uhd-l-divider 分隔、
+   状态=圆点+文字、操作=白底灰边小胶囊、主按钮=UhdButton 彩虹边框胶囊；
+   加载态=旋转圈+灰字（1.6）、空态=虚线卡（2.7） */
 .pc-expand {
-  border-top: 1px dashed var(--line);
-  padding: 12px 14px 14px;
+  border-top: var(--uhd-border-w) solid var(--uhd-l-divider);
+  padding: 14px 2px 18px;
+  font-family: var(--uhd-font-sans);
 }
-.prov-err { margin: 12px 14px; }
+.bind-sep { border-top: var(--uhd-border-w) solid var(--uhd-l-divider); }
 .prov-tools {
   display: flex;
   align-items: flex-start;
@@ -575,31 +581,78 @@ defineExpose({
 }
 .prov-desc {
   margin: 0;
-  font-size: 12.5px;
-  line-height: 1.55;
-  color: var(--ink2);
+  font-size: var(--uhd-fs-caption);
+  line-height: 1.6;
+  color: var(--uhd-l-text-2);
 }
-.v4-mini-btn {
+.sx-mini-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex: none;
-  padding: 15px 10px;
-  margin: -8px 0;
-  background: var(--paper2);
-  border: 1px solid var(--line);
-  border-radius: var(--paper-r-full, 999px);
-  color: var(--ink2);
-  font-size: 12px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 16px;
+  background: var(--uhd-l-surface);
+  border: var(--uhd-border-w) solid var(--uhd-l-border);
+  border-radius: var(--uhd-radius-pill);
+  color: var(--uhd-l-text);
+  font-size: var(--uhd-fs-caption);
+  font-weight: var(--uhd-fw-medium);
   cursor: pointer;
 }
+.sx-mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.sx-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 0;
+  font-size: var(--uhd-fs-caption);
+  color: var(--uhd-l-text-2);
+}
+.sx-spin {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--uhd-l-divider);
+  border-top-color: var(--uhd-l-text-2);
+  animation: uhd-spin 0.8s linear infinite;
+}
+.sx-err {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+  padding: 14px 16px;
+  border: 1px dashed #d4d4d8;
+  border-radius: 16px;
+  font-size: var(--uhd-fs-caption);
+  line-height: 1.6;
+  color: var(--uhd-l-text-2);
+  font-family: var(--uhd-font-sans);
+}
+.sx-empty {
+  padding: 26px 20px;
+  border: 1px dashed #d4d4d8;
+  border-radius: 16px;
+  text-align: center;
+  font-size: var(--uhd-fs-body);
+  line-height: 1.6;
+  color: var(--uhd-l-text-2);
+}
+.sx-empty--left { text-align: left; }
+.sx-empty p { margin: 0 0 8px; }
+.sx-empty p:last-child { margin-bottom: 0; }
 .dev-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 0;
+  gap: 10px;
+  min-height: 64px;
+  padding: 10px 0;
 }
-.dev-row + .dev-row { border-top: 1px solid var(--line); }
+.dev-row + .dev-row { border-top: var(--uhd-border-w) solid var(--uhd-l-divider); }
 .dev-main {
   display: flex;
   flex-direction: column;
@@ -608,112 +661,99 @@ defineExpose({
   flex: 1;
 }
 .dev-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--ink);
+  font-size: var(--uhd-fs-body);
+  font-weight: var(--uhd-fw-semibold);
+  color: var(--uhd-l-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .dev-meta {
-  font-size: 12px;
-  color: var(--ink2);
+  font-size: var(--uhd-fs-aux);
+  color: var(--uhd-l-text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-.dev-badge {
-  flex-shrink: 0;
-  padding: 2px 8px;
-  border-radius: var(--paper-r-full, 999px);
-  font-size: 12px;
+.sx-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  font-size: var(--uhd-fs-caption);
   white-space: nowrap;
-  background: var(--paper2);
-  color: var(--ink2);
 }
-.dev-badge.ok { background: var(--au-success-soft); color: var(--green); }
-.dev-badge.off { background: var(--au-danger-soft); color: var(--red); }
+.sx-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.sx-status--ok { color: var(--uhd-success); }
+.sx-status--ok .sx-dot { background: var(--uhd-dot-ok); }
+.sx-status--idle { color: var(--uhd-l-text-2); }
+.sx-status--idle .sx-dot { background: var(--uhd-dot-idle); }
+.sx-status--warn { color: var(--uhd-warn-text-2); }
+.sx-status--warn .sx-dot { background: var(--uhd-dot-doing); }
+.sx-status--bad { color: var(--uhd-danger); }
+.sx-status--bad .sx-dot { background: var(--uhd-dot-bad); }
 .dev-remove {
-  flex-shrink: 0;
-  padding: 15px 10px;
-  margin: -7px 0;
-  background: transparent;
-  border: none;
-  border-radius: var(--paper-r-sm, 8px);
-  color: var(--ink2);
-  font-size: 13px;
+  flex: none;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 16px;
+  background: var(--uhd-l-surface);
+  border: var(--uhd-border-w) solid var(--uhd-l-border);
+  border-radius: var(--uhd-radius-pill);
+  color: var(--uhd-l-text);
+  font-size: var(--uhd-fs-caption);
+  font-weight: var(--uhd-fw-medium);
   white-space: nowrap;
   cursor: pointer;
 }
-.dev-remove:active:not(:disabled) { background: var(--paper2); }
 .dev-remove:disabled { opacity: 0.5; cursor: not-allowed; }
-.dev-remove.confirming { color: var(--red); font-weight: 600; }
+.dev-remove.confirming { color: var(--uhd-danger); border-color: var(--uhd-danger); font-weight: var(--uhd-fw-semibold); }
 .dev-tip {
-  margin: 10px 0 0;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-  font-size: 12px;
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: var(--uhd-border-w) solid var(--uhd-l-divider);
+  font-size: var(--uhd-fs-aux);
   line-height: 1.6;
-  color: var(--ink2);
+  color: var(--uhd-l-text-2);
 }
-.dev-tip a { color: var(--au-primary, #016a71); }
-.acct-field { margin-top: 14px; }
+.dev-tip a { color: var(--uhd-l-link); }
+.acct-field { margin-top: 16px; }
 .acct-label {
   display: block;
-  margin-bottom: 6px;
-  font-size: 12px;
-  color: var(--ink2);
+  margin-bottom: 8px;
+  font-size: var(--uhd-fs-caption);
+  color: var(--uhd-l-text-2);
 }
 .acct-field input {
   width: 100%;
-  height: 44px;
-  padding: 0 12px;
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: var(--paper-r-sm, 8px);
-  color: var(--ink);
+  height: 46px;
+  padding: 0 14px;
+  background: var(--uhd-l-input-bg);
+  border: var(--uhd-border-w) solid var(--uhd-l-border);
+  border-radius: var(--uhd-radius-input);
+  color: var(--uhd-l-text);
   font-size: 16px;
   outline: none;
   box-sizing: border-box;
 }
-.acct-field input:focus { border-color: var(--ink); }
+.acct-field input:focus { border-color: var(--uhd-l-text-3); }
 .acct-error {
-  margin: 10px 0 0;
-  padding: 8px 12px;
-  background: var(--au-danger-soft);
-  border-radius: var(--paper-r-sm, 8px);
-  color: var(--red);
-  font-size: 13px;
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  background: rgba(220, 38, 38, 0.07);
+  border-radius: 12px;
+  color: var(--uhd-danger);
+  font-size: var(--uhd-fs-aux);
+  line-height: 1.6;
 }
-.acct-btn {
-  height: 44px;
-  padding: 0 16px;
-  margin-top: 12px;
-  border-radius: var(--paper-r-md, 10px);
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  background: var(--paper2);
-  border: 1px solid var(--line);
-  color: var(--ink);
-}
-.acct-btn.primary {
-  background: var(--ink);
-  border: 1px solid var(--ink);
-  color: var(--on-dark);
-  font-weight: 600;
-}
-.acct-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.v4-empty p { margin: 0 0 8px; text-align: left; }
-.v4-empty p:last-child { margin-bottom: 0; }
-.dev-badge.warn { background: var(--au-warning-soft, #fdf3d7); color: var(--paper-warning, #9a6b0f); }
+.pc-expand :deep(.uhd-btn) { margin-top: 14px; }
 /* 公共贡献池块（PR-4）：挂在每个绑定行下方 */
 .pool-block {
-  margin: 2px 0 10px;
-  padding: 10px 12px;
-  border: 1px dashed var(--line);
-  border-radius: 10px;
+  margin: 4px 0 12px;
+  padding: 14px 16px;
+  border: 1px dashed #d4d4d8;
+  border-radius: 16px;
 }
 .pool-line {
   display: flex;
@@ -721,17 +761,17 @@ defineExpose({
   gap: 10px;
   flex-wrap: wrap;
 }
-.pool-text { flex: 1; min-width: 200px; font-size: 13px; color: var(--paper-ink-2); line-height: 1.5; }
-.pool-note { font-size: 12.5px; color: var(--paper-ink-3); }
+.pool-text { flex: 1; min-width: 200px; font-size: var(--uhd-fs-aux); color: var(--uhd-l-text-2); line-height: 1.6; }
+.pool-note { font-size: var(--uhd-fs-aux); color: var(--uhd-l-text-3); }
 .pool-faq-toggle {
-  margin-top: 6px;
+  margin-top: 8px;
   padding: 0;
   background: none;
   border: none;
-  font-size: 12.5px;
-  color: var(--paper-primary);
+  font-size: var(--uhd-fs-aux);
+  color: var(--uhd-l-link);
   cursor: pointer;
 }
-.pool-faq { margin-top: 6px; font-size: 12.5px; color: var(--paper-ink-3); line-height: 1.6; }
+.pool-faq { margin-top: 6px; font-size: var(--uhd-fs-aux); color: var(--uhd-l-text-3); line-height: 1.6; }
 .pool-faq p { margin: 0; }
 </style>
