@@ -313,14 +313,9 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* 内容淡入（骨架屏替换时不跳） */
-.sl-content {
-  animation: sl-in 0.45s ease both;
-}
-@keyframes sl-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
+/* 内容不做整块入场淡入：0.45s 的半透明中间帧会被看成封面重影
+   （2026-11-13 录屏逐帧实证），骨架→内容直接切换。
+   契约 scripts/check_no_ghost_entrance.py 守住，不许加回。 */
 /* 骨架屏：灰块尺寸与真实卡一致（Hero 占位 + 海报行占位） */
 .sl-skel {
   padding: 76px clamp(16px, 5vw, 96px) 40px;
