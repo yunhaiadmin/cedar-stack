@@ -19,6 +19,8 @@ export interface StreamHeroItem {
   meta: string
   rating?: number | null
   backdrop: string
+  /** 海报地址：背景图请求失败时的二段兜底（展示层容错，不改数据口径） */
+  poster?: string
   overview?: string
 }
 
@@ -46,30 +48,87 @@ function restart() {
 watch(() => props.items.length, restart)
 onMounted(restart)
 onBeforeUnmount(() => window.clearInterval(timer))
+
+/* ---------- 触摸左右滑切换（友站口径） ----------
+ * 只认横滑：横向位移 ≥48px 且 ≥纵向位移 1.6 倍（角度判定），
+ * 竖滑翻页不误切；监听 passive、不拦截纵向滚动。
+ * 切换走 go()：序号/标题/信息行/分段进度随 index 同步，自动轮播计时重置。
+ * （友站滑动后是否续播未实测到，按重置计时处理，已在 PR 回报标注。） */
+let touchX = 0
+let touchY = 0
+let touching = false
+function onTouchStart(e: TouchEvent) {
+  const t = e.changedTouches[0]
+  if (!t) return
+  touchX = t.clientX
+  touchY = t.clientY
+  touching = true
+}
+function onTouchEnd(e: TouchEvent) {
+  if (!touching) return
+  touching = false
+  const t = e.changedTouches[0]
+  if (!t) return
+  const dx = t.clientX - touchX
+  const dy = t.clientY - touchY
+  if (Math.abs(dx) >= 48 && Math.abs(dx) >= Math.abs(dy) * 1.6) {
+    go(dx < 0 ? index.value + 1 : index.value - 1)
+  }
+}
+
+/* ---------- 背景图二段兜底 ----------
+ * 背景图请求失败（个别条目图源 404 等）先换海报，海报再失败才落空态，
+ * 不留「大片空白」无声失败；切张自动复位。 */
+const imgStage = ref(0)
+watch(index, () => {
+  imgStage.value = 0
+})
+const bgSrc = computed(() => {
+  const c = current.value
+  if (!c) return ''
+  if (imgStage.value === 0) return c.backdrop
+  if (imgStage.value === 1) return c.poster && c.poster !== c.backdrop ? c.poster : ''
+  return ''
+})
+function onBgError() {
+  imgStage.value += 1
+}
 </script>
 
 <template>
-  <section v-if="current" class="sh-hero" aria-label="首页推荐">
+  <section
+    v-if="current"
+    class="sh-hero"
+    aria-label="首页推荐"
+    @touchstart.passive="onTouchStart"
+    @touchend.passive="onTouchEnd"
+  >
     <Transition name="sh-fade" mode="out-in">
       <img
-        v-if="current.backdrop"
+        v-if="bgSrc"
         :key="current.id"
-        :src="current.backdrop"
+        :src="bgSrc"
         alt=""
         class="sh-bg"
+        @error="onBgError"
       />
-      <div v-else :key="current.id" class="sh-bg sh-bg--empty"></div>
+      <div v-else :key="`${current.id}-empty`" class="sh-bg sh-bg--empty"></div>
     </Transition>
     <div class="sh-fade-bottom" aria-hidden="true"></div>
     <div class="sh-content">
       <p class="sh-eyebrow">首页推荐 · {{ String(index + 1).padStart(2, '0') }}/{{ String(items.length).padStart(2, '0') }}</p>
       <h1 class="sh-title">{{ current.title }}</h1>
       <p class="sh-meta">
-        {{ current.meta }}<b v-if="current.rating" class="sh-rating"> · ★ {{ current.rating.toFixed(1) }}</b>
+        {{ current.meta }}<b v-if="current.rating" class="sh-rating"> · {{ current.rating.toFixed(1) }}</b>
       </p>
       <p v-if="current.overview" class="sh-overview">{{ current.overview }}</p>
       <button type="button" class="sh-play" @click="emit('play', current)">
-        <span class="sh-play__tri" aria-hidden="true">▶</span> 立即播放
+        <!-- 纯色实心三角 SVG（currentColor 随按钮字色：浅色黑/深色白）。
+             原先用 ▶ 字符，移动端被系统当 emoji 渲染成蓝色圆角方块，已换掉 -->
+        <svg class="sh-play__tri" width="11" height="12" viewBox="0 0 12 12" aria-hidden="true">
+          <path d="M2 1.3v9.4c0 .8.9 1.3 1.6.9l7.2-4.7c.6-.4.6-1.4 0-1.8L3.6.4C2.9-.1 2 .5 2 1.3Z" fill="currentColor" />
+        </svg>
+        立即播放
       </button>
     </div>
     <div v-if="items.length > 1" class="sh-controls">
@@ -87,7 +146,10 @@ onBeforeUnmount(() => window.clearInterval(timer))
           :key="item.id"
           class="sh-dot"
           :class="{ 'sh-dot--on': i === index }"
-        ></span>
+        >
+          <!-- 激活段带进度填充（用户真机截图实证），6s 与轮播间隔同步，切张重播 -->
+          <span v-if="i === index" :key="index" class="sh-dot__fill"></span>
+        </span>
       </div>
     </div>
   </section>
@@ -188,7 +250,8 @@ onBeforeUnmount(() => window.clearInterval(timer))
   cursor: pointer;
 }
 .sh-play__tri {
-  font-size: 11px;
+  display: block;
+  flex: none;
 }
 /* 深色版：黑底毛玻璃 + 同一彩虹边框 + 白字 + 玻璃栈（内高光 + 柔影，尺寸不变） */
 .stream-scope[data-stream-theme="dark"] .sh-play {
@@ -234,15 +297,34 @@ onBeforeUnmount(() => window.clearInterval(timer))
   gap: 8px;
 }
 .sh-dot {
+  position: relative;
+  overflow: hidden;
   width: 28px;
   height: 4px;
   border-radius: 2px;
   background: var(--uhd-s-text-2);
   opacity: 0.35;
 }
+/* 激活段：底色作轨道，填充自左向右 6s（与自动轮播间隔一致） */
 .sh-dot--on {
-  background: var(--uhd-s-text);
   opacity: 1;
+}
+.sh-dot__fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 2px;
+  background: var(--uhd-s-text);
+  transform-origin: left center;
+  animation: sh-fill 6s linear forwards;
+}
+@keyframes sh-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sh-dot__fill {
+    animation: none;
+  }
 }
 .sh-fade-enter-active,
 .sh-fade-leave-active {

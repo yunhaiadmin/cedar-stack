@@ -552,6 +552,9 @@ watch(
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
+  /* 两端渐隐：与片库面其他横滑容器同口径（mask 淡出到页面底色） */
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
 }
 .ep-strip__nums::-webkit-scrollbar {
   display: none;

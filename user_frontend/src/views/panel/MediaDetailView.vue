@@ -96,12 +96,12 @@ const resumeText = computed(() => {
   const e = resumeEntry.value
   if (e && e.type === 'series' && e.season_number != null && e.episode_number != null) {
     const pct = typeof e.progress === 'number' ? ` · 已看 ${Math.round(e.progress)}%` : ''
-    return `▶ 续看 S${e.season_number}：E${e.episode_number}${e.episode_name ? `《${e.episode_name}》` : ''}${pct}`
+    return `续看 S${e.season_number}：E${e.episode_number}${e.episode_name ? `《${e.episode_name}》` : ''}${pct}`
   }
   const pos = item.value?.UserData?.PlaybackPositionTicks || 0
   if (!pos || !item.value?.RunTimeTicks) return ''
   const pct = Math.min(99, Math.round((pos / item.value.RunTimeTicks) * 100))
-  return `▶ 上次看到 ${pct}% · ${formatDuration(ticksToSeconds(pos))} 处`
+  return `上次看到 ${pct}% · ${formatDuration(ticksToSeconds(pos))} 处`
 })
 
 const specChips = computed(() => {
@@ -278,7 +278,13 @@ watch(itemId, () => {
             <div v-if="specChips.length" class="md-chips">
               <span v-for="c in specChips" :key="c" class="md-chip">{{ c }}</span>
             </div>
-            <p v-if="resumeText" class="md-resume">{{ resumeText }}</p>
+            <p v-if="resumeText" class="md-resume">
+              <!-- 实心三角 SVG：原 ▶ 字符在移动端渲染成蓝色 emoji 方块，已换掉 -->
+              <svg class="md-resume__tri" width="9" height="10" viewBox="0 0 12 12" aria-hidden="true">
+                <path d="M2 1.3v9.4c0 .8.9 1.3 1.6.9l7.2-4.7c.6-.4.6-1.4 0-1.8L3.6.4C2.9-.1 2 .5 2 1.3Z" fill="currentColor" />
+              </svg>
+              {{ resumeText }}
+            </p>
 
             <!-- 按钮行高 52：「立即播放」主胶囊 + 收藏 + 状态。
                  2026-11-13 用户新口径：页面组织/交互可按 UHDNow 打破重排，
@@ -556,7 +562,9 @@ watch(itemId, () => {
 }
 /* 续看提示胶囊：高 36/圆角 18/边框 */
 .md-resume {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   margin: 16px 0 0;
   max-width: 100%;
   padding: 8px 16px;
@@ -567,6 +575,10 @@ watch(itemId, () => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.md-resume__tri {
+  display: block;
+  flex: none;
 }
 .md-actions {
   display: flex;
@@ -794,6 +806,9 @@ watch(itemId, () => {
   overflow-x: auto;
   scrollbar-width: none;
   padding-bottom: 4px;
+  /* 两端渐隐：与首页横滑行同口径（mask 淡出到页面底色）；卡窄，渐隐带也窄 */
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 20px, #000 calc(100% - 20px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 20px, #000 calc(100% - 20px), transparent 100%);
 }
 .md-cast__track::-webkit-scrollbar {
   display: none;
