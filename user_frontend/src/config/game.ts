@@ -60,17 +60,6 @@ export const gameFacilities: GameFacility[] = [
     guideTip: '刚买完会员？先来这儿拿账号密码，再去播放器里登录。',
   },
   {
-    key: 'calendar',
-    name: '探险预告',
-    path: '/game/calendar',
-    icon: '🗺️',
-    desc: '看看接下来有什么探险活动，别错过。',
-    stamp: '营地 · 探险地图',
-    group: 'daily',
-    order: 2,
-    enabled: true,
-  },
-  {
     key: 'requests',
     name: '求片反馈',
     path: '/game/requests',

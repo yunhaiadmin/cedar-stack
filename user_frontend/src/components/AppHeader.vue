@@ -6,7 +6,7 @@ import {
   Clapperboard, LogOut, Crown, Sparkles,
   Sun, Moon, MonitorSmartphone,
   ChevronRight, Heart, ShieldCheck,
-  Globe, Plug, Map as MapIcon, MessageSquare, Notebook, Receipt, Settings,
+  Globe, Plug, MessageSquare, Notebook, Receipt, Settings,
 } from 'lucide-vue-next'
 import { isExpiringSoon, subscriptionApi } from '@/api'
 import type { MySubscription } from '@/api'
@@ -21,7 +21,6 @@ import { branding } from '@/composables/useBranding'
 function facilityMenuIcon(key: string) {
   switch (key) {
     case 'operator': return Plug
-    case 'calendar': return MapIcon
     case 'requests': return MessageSquare
     case 'ledger': return Notebook
     case 'supply': return Receipt
