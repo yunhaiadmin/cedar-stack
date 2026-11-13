@@ -46,20 +46,6 @@ export const gameFacilityGroups: {
   { key: 'account', icon: '⚙️', title: '账号小屋', sub: '账号' },
 ]
 
-/** 探险日志 Hub 页本身的文案（也可配） */
-export const gameHubConfig = {
-  /** Hub 路由 */
-  path: '/game',
-  /** 导航入口显示名 */
-  navName: '探险日志',
-  /** Hub 页印章 */
-  stamp: '探险家 · 大本营',
-  /** Hub 页标题 */
-  title: '世界',
-  /** Hub 页副标题（/game 已换成世界地图本体） */
-  subtitle: '地图上的建筑都可以点开。',
-} as const
-
 /** 全部游戏设施（营地设施）—— order 即数组顺序，0 起 */
 export const gameFacilities: GameFacility[] = [
   {

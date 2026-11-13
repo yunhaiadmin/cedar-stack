@@ -15,7 +15,7 @@ import api, {
 import type { MySubscription } from '@/api'
 import { primaryNav, resolveActiveNavPath } from '@/config/navigation'
 /** v4.1：头像菜单改为「探险设施直达」，设施清单唯一数据源 */
-import { gameFacilities, gameHubConfig } from '@/config/game'
+import { gameFacilities } from '@/config/game'
 import { checkinApi, vitalityApi } from '@/api/economy'
 // 站名与 Logo 来自「站点与品牌」能力（没配就用默认值，不会出现空标题）
 import { branding } from '@/composables/useBranding'
@@ -682,19 +682,6 @@ onBeforeUnmount(() => {
                      管理后台例外：2026-10-13 用户拍板恢复，仅管理员可见（见下面 ②.6） -->
                 <template v-if="menuFacilities.length > 0">
                 <div class="dropdown-sec-title">营地设施 · 点卡片直接进</div>
-                <RouterLink
-                  to="/game"
-                  class="dropdown-facility"
-                  role="menuitem"
-                  @click="closeMenus"
-                >
-                  <span class="facility-icon" aria-hidden="true"><Globe :size="18" :stroke-width="1.75" /></span>
-                  <span class="facility-body">
-                    <span class="facility-name">{{ gameHubConfig.navName }} · 大本营</span>
-                    <span class="facility-desc">{{ gameHubConfig.subtitle }}</span>
-                  </span>
-                  <span class="facility-go" aria-hidden="true">›</span>
-                </RouterLink>
                 <RouterLink
                   v-for="f in menuFacilities"
                   :key="f.key"

@@ -107,13 +107,6 @@ const router = createRouter({
             component: () => import('@/views/panel/ShopView.vue'),
             meta: { title: '补给站', requiresAuth: true },
           },
-          // v4 游戏化 Hub：探险日志统一入口（需要登录）
-          {
-            path: '/game',
-            name: 'game-hub',
-            component: () => import('@/views/game/GameHubView.vue'),
-            meta: { title: '探险日志', requiresAuth: true },
-          },
           // v4 游戏化第一批：营地设施（需要登录）
           {
             path: '/game/checkin',
@@ -246,6 +239,12 @@ const router = createRouter({
       path: '/store',
       redirect: '/shop',
     },
+    // 探险日志 Hub（/game）整页已删（2026-11-13 页面删减）：旧书签/外链落首页，
+    // 不留死链；各设施子页（/game/checkin 等）保留不动，入口走头像菜单/左栏/地图针。
+    {
+      path: '/game',
+      redirect: '/',
+    },
     // 注册后 TG 绑定引导页：仅注册流程进入，未绑定且管理员开启时展示
     {
       path: '/tg-bind',
@@ -312,14 +311,6 @@ const router = createRouter({
       name: 'pricing',
       component: () => import('@/views/marketing/PricingView.vue'),
       meta: { title: '定价' },
-    },
-    // UHD 换皮组件展示页（批 0 地基验收用）：隐藏路由，不进任何导航、不被现有页面引用，
-    // 不带 requiresAuth，未登录可直接打开。
-    {
-      path: '/dev/uhd-showcase',
-      name: 'uhd-showcase',
-      component: () => import('@/views/dev/UhdShowcaseView.vue'),
-      meta: { title: 'UHD 组件展示' },
     },
     // ==================== 媒体详情与播放（v2.42.5：媒体库/搜索浏览页已删；
     // 2026-10-13 旧页面清理：/profile、/media/:id 两路由已删） ====================
@@ -390,7 +381,7 @@ router.beforeEach(async (to) => {
 
 // v4 面板第一版只做纸色浅色：在 v4 路由下强制 light，离开时恢复
 // （v4 视图自带 .v4-scope 纸色变量，这里只处理 html data-theme 与浏览器工具栏色）
-export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/collections', '/server', '/shop', '/want', '/store-requests', '/activities', '/source-discovery', '/game', '/game/checkin', '/game/calendar', '/game/wishlist', '/game/signal', '/game/pigeon', '/game/ledger', '/game/supply', '/game/companion', '/game/guide', '/game/outfit', '/game/operator', '/game/account', '/game/account/settings', '/game/account/member'])
+export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/collections', '/server', '/shop', '/want', '/store-requests', '/activities', '/source-discovery', '/game/checkin', '/game/calendar', '/game/wishlist', '/game/signal', '/game/pigeon', '/game/ledger', '/game/supply', '/game/companion', '/game/guide', '/game/outfit', '/game/operator', '/game/account', '/game/account/settings', '/game/account/member'])
 // 参数路由前缀：合集详情是 /collections/:id，afterEach 拿到的是实例路径
 // （如 /collections/123），静态集合永远匹配不上，须按前缀另判；
 // /collections/ 下目前只有详情这一条路由，前缀不会误伤非 v4 页。
