@@ -26,8 +26,10 @@ const router = createRouter({
       path: '/',
       name: 'home',
       // 根路径由 RootView 渲染官网 LandingView（URL 保持 '/'）；
-      // 已登录用户不落这里——守卫在进入前重定向到片库首页 /library
-      // （UHD 式新首页）。旧发现页 DiscoveryView 已于 2026-11-13 连根删除。
+      // 已登录用户直接打开根路径同样停在这里（友站既定设计，
+      // 2026-11-13 分场景定版：进站停宣传页、不跳转；「落概览」只对
+      // 登录动作与已登录访问 /login 生效，见下方守卫与 LoginView）。
+      // 旧发现页 DiscoveryView 已于 2026-11-13 连根删除。
       component: () => import('@/views/RootView.vue'),
       meta: { title: '欢迎' },
     },
@@ -48,9 +50,9 @@ const router = createRouter({
             meta: { title: '我的收藏', requiresAuth: true },
           },
           // UHD 换皮批 3（片库面）：/library 片库首页 + 电影/剧集分类页 + 搜索结果页。
-          // 2026-11-13 登录落点修复：旧 '/' 发现页（DiscoveryView）已删除，
-          // 本页即已登录用户的默认落点（守卫把已登录的 '/' 导航送来这里）；
-          // 页面自带双胶囊顶栏与手机玻璃底坞，
+          // 2026-11-13 登录落点修复：旧 '/' 发现页（DiscoveryView）已删除；
+          // 登录默认落点为用户中心概览 /game/account（同日用户改定），
+          // 本页经底坞/顶栏「首页」进入。页面自带双胶囊顶栏与手机玻璃底坞，
           // App.vue 在这些路由下不渲染全局顶栏/PanelTabbar。数据全走现行
           // Emby 协议口与门户口径，不新造接口；海报卡只进详情、不挂播放入口。
           {
@@ -299,15 +301,13 @@ router.beforeEach(async (to) => {
     initialized = true
   }
 
-  // 已登录落点（2026-11-13 修复）：'/' 只承接未登录官网；已登录一律去片库
-  // 首页 /library（UHD 式新首页）。登录成功默认回跳 '/'、已登录访问 /login
-  // 的「回首页」都经这里落到新首页，不再落旧发现页（已删除）。
-  // panelV4 关闭时 /library 路由不存在，不跳（回退开关的降级面另行处理）。
-  if (to.name === 'home' && userStore.isLoggedIn && panelV4) {
-    return { path: '/library', replace: true }
-  }
-
-  // 根路径只剩官网一面（已登录已被上面的守卫送去 /library），标题恒为「欢迎」
+  // 落点分场景（2026-11-13 21:22 用户亲定最终版，照友站 UHDNow）：
+  // ① 登录动作成功 → 概览 /game/account（由 LoginView 的 postAuthTarget
+  //    在提交成功时直落，不经本守卫转发）；
+  // ② 已登录直接打开 '/'（含冷启动）→ 停官网宣传页，本守卫不跳转
+  //    （RootView 无条件渲染 LandingView，页内「进入后台」钮进概览）；
+  // ③ 已登录访问 /login → 下方守卫直落概览。
+  // 根路径只剩官网一面，标题恒为「欢迎」
   const metaTitle = to.name === 'home' ? '欢迎' : to.meta.title
   if (metaTitle) {
     document.title = pageTitle(metaTitle as string | undefined)
@@ -329,9 +329,11 @@ router.beforeEach(async (to) => {
     }
   }
 
-  // 已登录访问登录页 → 回首页
+  // 已登录访问登录页 → 直落概览 /game/account（不绕根路径转发：
+  // 根路径已按分场景口径停宣传页，不再承接落点中转）。
+  // panelV4 关闭时 /game/account 路由不存在，回退 home 降级。
   if (to.name === 'login' && userStore.isLoggedIn) {
-    return { name: 'home' }
+    return panelV4 ? { path: '/game/account', replace: true } : { name: 'home' }
   }
 
   return true
@@ -380,9 +382,9 @@ router.afterEach((to) => {
   if (!panelV4) return
   // 尾斜杠规范化：/game/ 与 /game 是同一页；根路径 '/' 去掉斜杠会变空串，要兜回 '/'
   const v4Path = to.path.replace(/\/+$/, '') || '/'
-  // 根路径完成导航的只会是未登录官网（已登录已被守卫送去 /library），
-  // 跟随用户主题（与 /welcome 时代一致），不钉纸色。
-  const rootIsLanding = v4Path === '/' && !useUserStore().isLoggedIn
+  // 根路径完成导航的恒为官网宣传页（未登录与已登录进站都停这里，
+  // 分场景定版后不再有「已登录被送走」的前提），跟随用户主题，不钉纸色。
+  const rootIsLanding = v4Path === '/'
   if ((V4_PATHS.has(v4Path) && !rootIsLanding) || V4_PATH_PREFIXES.some((p) => v4Path.startsWith(p))) {
     document.documentElement.setAttribute('data-theme', 'light')
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#f5f1ea')
