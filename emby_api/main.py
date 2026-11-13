@@ -45,7 +45,7 @@ try:  # Starlette ≥ 0.47 提供默认排除表（老版本没有该常量，�
     from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES as _GZIP_DEFAULTS
 except ImportError:  # pragma: no cover
     _GZIP_DEFAULTS = ()
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from prometheus_client import make_asgi_app
 
 from backend.metrics_guard import MetricsGuard
@@ -491,6 +491,46 @@ async def health_check():
     from starlette.concurrency import run_in_threadpool
 
     return await run_in_threadpool(_health_payload)
+
+
+# ==================== 线路测速字节流 ====================
+# 用户端「线路测速」页（/game/speedtest）从浏览器向所选线路入口真下载
+# 本端点的字节计量速度：线路入口跑的就是 EA，所以字节端点落在这里，
+# 测到的才是「用户 → 该线路」的真实下行。档位与前端胶囊一一对应，
+# 不在档位内一律 400，不许任意大小（防把测速口当免费带宽滥用；
+# 全局 EaRateLimitMiddleware 另有请求级限流）。
+SPEEDTEST_SIZES_MB = (32, 64, 100)
+# 1 MiB 不可压缩随机块循环发出：gzip 对它无可压（octet-stream 本就在
+# GZip 排除名单里），服务端 CPU 也只剩内存拷贝。
+_SPEEDTEST_BLOCK = os.urandom(1024 * 1024)
+
+
+@app.get("/speedtest/bin")
+async def speedtest_bin(mb: int = 32):
+    """测速文件：返回恰好 mb MiB 字节（mb 只许 32/64/100）。"""
+    if mb not in SPEEDTEST_SIZES_MB:
+        raise HTTPException(
+            status_code=400,
+            detail=f"mb 只许 {'/'.join(str(s) for s in SPEEDTEST_SIZES_MB)}",
+        )
+    total = mb * 1024 * 1024
+
+    async def _gen():
+        remaining = total
+        while remaining > 0:
+            n = min(len(_SPEEDTEST_BLOCK), remaining)
+            yield _SPEEDTEST_BLOCK[:n]
+            remaining -= n
+
+    return StreamingResponse(
+        _gen(),
+        media_type="application/octet-stream",
+        headers={
+            "Content-Length": str(total),
+            "Cache-Control": "no-store",
+            "X-Speedtest-Bytes": str(total),
+        },
+    )
 
 
 def _runtime_report() -> dict:
