@@ -1232,6 +1232,13 @@ def _auto_migrate():
             ("violation_cleared_at", "DATETIME", "NULL"),
             ("violation_cleared_by", "INTEGER", "NULL"),
         ]),
+        # 流量额度一期（2026-11-13）：时间换流量按比例口径留痕两列。
+        # 本表由 create_all 随本期新建，老库（若已建表）补列后为 NULL
+        # （无对账基数），与新列缺省一致；新成交一律由服务层写入。
+        ("user_traffic_exchange_logs", [
+            ("quota_base_bytes", "BIGINT", "NULL"),
+            ("quota_pct", "INTEGER", "NULL"),
+        ]),
     ]
 
     _newly_added_columns: list[tuple[str, str]] = []

@@ -3,6 +3,7 @@ API 路由包
 包含用户端和管理后台的所有路由
 """
 from backend.api.user import user_router
+from backend.api.traffic import traffic_router
 # 管理后台按域拆成多个模块，共用 admin_core 里的同一个 admin_router：
 # 导入顺序 = 拆分前的端点定义顺序（认证 → 业务 → 经济/统计），保持一致以免路由顺序变化。
 from backend.api import admin_auth  # noqa: F401 — 导入即注册
@@ -17,4 +18,4 @@ from backend.api import welfare_admin  # noqa: F401 — 导入即注册（公益
 from backend.api import governance_admin  # noqa: F401 — 导入即注册（等级治理 Step 4：停权＋审计日志）
 from backend.api import admin_dashboard  # noqa: F401 — 导入即注册（仪表盘聚合）
 
-__all__ = ["user_router", "admin_router"]
+__all__ = ["user_router", "admin_router", "traffic_router"]

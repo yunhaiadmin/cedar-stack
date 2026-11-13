@@ -48,7 +48,7 @@ from backend import subscriptions
 
 logger = logging.getLogger(__name__)
 
-#: 权益键注册表（一期两键）。区间是**安全栏**不是业务数值——与既有先例
+#: 权益键注册表。区间是**安全栏**不是业务数值——与既有先例
 #: 同性质：share_guard 的 LIMIT_MIN/LIMIT_MAX=1/20、PlanUpsertRequest 的
 #: duration_days le=3650。代码里不许出现「某套餐=某数值」的业务数据，
 #: 档位与数值只存在于 subscription_plans.entitlements 数据里。
@@ -63,6 +63,14 @@ ENTITLEMENT_SPECS: dict[str, dict] = {
     # 可同时播放的路数；上限与 share_guard.LIMIT_MAX 对齐
     "concurrent_streams": {
         "min": 1, "max": 20, "fallback": "share_concurrent_limit",
+    },
+    # 每月流量额度（字节）：订阅「时间＋流量」双额度的流量半边；
+    # 消费方 backend/traffic_quota.py（概览流量区/购流量）。上限是
+    # 安全栏（1 PiB），不是业务档位。缺键时消费方回退 SystemConfig
+    # traffic_default_monthly_bytes，未配默认则该用户不启用流量区。
+    "monthly_traffic_bytes": {
+        "min": 1, "max": 1_125_899_906_842_624,
+        "fallback": "traffic_default_monthly_bytes",
     },
 }
 

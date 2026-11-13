@@ -87,6 +87,37 @@
         <p class="ov-quota__meta-line">{{ isFreeRealm ? '开通公益资格后即可观影' : '开通订阅后即可观影' }}</p>
       </section>
 
+      <!-- 流量区加载骨架：数据回来前先占位（app 口径，不许空白干等、
+           不许内容闪入顶动布局）；未启用时骨架消失、整段不渲染 -->
+      <section v-if="trafficLoading" class="ov-quota" aria-hidden="true">
+        <div class="ov-skel ov-skel--label"></div>
+        <div class="ov-skel ov-skel--big"></div>
+        <div class="ov-skel ov-skel--remain"></div>
+        <div class="ov-skel ov-skel--bar"></div>
+        <div class="ov-skel ov-skel--meta"></div>
+      </section>
+
+      <!-- 流量区：套餐含每月流量额度时才有（后端 enabled=false 或
+           接口拿不到数据，整段不渲染，绝不拿 0 额度吓人） -->
+      <section v-else-if="traffic?.enabled" class="ov-quota">
+        <p class="ov-quota__label">本月剩余流量</p>
+        <p class="ov-quota__big">{{ trafficRemainGb }}<span class="ov-quota__unit">GB</span></p>
+        <p class="ov-quota__remain">剩余 {{ trafficRemainPct }}%</p>
+        <div class="ov-bar" role="img" :aria-label="`本月流量已用 ${traffic.used_pct}%`">
+          <div class="ov-bar__fill" :style="{ width: `${trafficRemainPct}%` }"></div>
+        </div>
+        <div class="ov-quota__meta">
+          <span>已用 {{ trafficUsedText }} / 共 {{ trafficQuotaText }}</span>
+          <span>{{ trafficResetText }}</span>
+        </div>
+        <p v-if="traffic.exhausted" class="ov-quota__meta-line">
+          本月流量已用完，可以购买流量继续用（本期不影响播放）。
+        </p>
+        <div class="ov-actions ov-actions--traffic">
+          <button type="button" class="ov-btn" @click="trafficModalOpen = true">购买流量</button>
+        </div>
+      </section>
+
       <!-- 双按钮：主钮彩虹边框粉彩胶囊，次钮白胶囊描边 -->
       <div class="ov-actions">
         <RouterLink class="ov-btn ov-btn--primary" to="/game/account/subscribe">续费订阅</RouterLink>
@@ -174,6 +205,14 @@
       </section>
 
     </div>
+
+    <!-- 购流量弹窗（时间换流量真成交；余额购买页签等钱包上线） -->
+    <TrafficPurchaseModal
+      v-model:open="trafficModalOpen"
+      :traffic="traffic"
+      :options="traffic?.exchange_options ?? []"
+      @exchanged="onTrafficExchanged"
+    />
   </div>
 </template>
 
@@ -194,7 +233,9 @@
  * 所有数字/条目只用现有接口数据：订阅（subscriptionApi）、福利
  * （welfareApi）、账号卡（embyApi.getAccountCard）、设备
  * （deviceApi.mine，用户侧设备接口，含在线状态与最后活跃时间）。
- * 原站有而本站没有的（自动续费开关、流量额度、弹幕 API）整项省略。
+ * 流量额度（2026-11-13 一期）：套餐声明月额度时才出现流量区＋
+ * 购流量弹窗（trafficApi）；没声明整段不渲染。原站有而本站没有
+ * 的（自动续费开关、弹幕 API）整项省略。
  * 旧深链 #my-drive 仍直达设置页绑定组。
  */
 import { computed, onMounted, ref } from 'vue'
@@ -204,6 +245,15 @@ import {
   type LucideIcon,
 } from 'lucide-vue-next'
 import StatusAlertBar from '@/components/profile/StatusAlertBar.vue'
+import TrafficPurchaseModal from '@/components/profile/TrafficPurchaseModal.vue'
+import {
+  formatBytes as formatTrafficBytes,
+  formatGbValue,
+  formatResetDate,
+  getTraffic,
+  type TrafficOverview,
+  type TrafficSummary,
+} from '@/api/traffic'
 import {
   embyApi, subscriptionApi,
   type AccountCard, type MySubscription,
@@ -325,6 +375,35 @@ const serverAddressSub = computed(() => {
   return n > 0 ? `${n} 条线路 · 点开查看与复制地址` : '点开查看与复制地址'
 })
 
+// ── 流量段（trafficApi：套餐声明月额度才 enabled；拿不到整段不渲染） ──
+const traffic = ref<TrafficOverview | null>(null)
+/** 首屏加载态：骨架占位用，请求落定（成功/失败/未启用）即收 */
+const trafficLoading = ref(true)
+const trafficModalOpen = ref(false)
+const trafficRemainGb = computed(() => formatGbValue(traffic.value?.remaining_bytes))
+const trafficRemainPct = computed(() => {
+  const pct = 100 - (traffic.value?.used_pct ?? 0)
+  return Math.min(100, Math.max(0, Math.round(pct)))
+})
+const trafficUsedText = computed(() => formatTrafficBytes(traffic.value?.used_bytes))
+const trafficQuotaText = computed(() => formatTrafficBytes(traffic.value?.quota_bytes))
+const trafficResetText = computed(() =>
+  traffic.value ? formatResetDate(traffic.value.reset_date) : '',
+)
+async function loadTraffic() {
+  try {
+    const res = await getTraffic()
+    if (res) traffic.value = res
+  } finally {
+    trafficLoading.value = false
+  }
+}
+function onTrafficExchanged(summary: TrafficSummary) {
+  // 成交后后端回了最新汇总：就地合并（保留 options 等概览字段）
+  if (traffic.value) traffic.value = { ...traffic.value, ...summary }
+  else void loadTraffic()
+}
+
 // ── 设备段（deviceApi.mine：用户侧设备接口） ──
 const devicesData = ref<MyDevicesResponse | null>(null)
 /** 概览只预览最近 3 台（接口已按最后活跃倒序）；全量在账号设置页管理 */
@@ -406,6 +485,7 @@ onMounted(() => {
     return
   }
   void loadOverview()
+  void loadTraffic()
   void loadDevices()
 
   void loadDriveMeta()
@@ -644,6 +724,55 @@ html:not([data-theme='light']) .ov-card {
   display: flex;
   gap: 12px;
   padding-top: 26px;
+}
+.ov-actions--traffic {
+  padding-top: 16px;
+}
+/* 购买流量钮按压反馈（app 口径：点下去要有明确反馈态） */
+.ov-actions--traffic .ov-btn:active {
+  transform: scale(0.96);
+  opacity: 0.85;
+}
+.ov-actions--traffic .ov-btn {
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+/* 流量区骨架：与真实区同版式占位，微光扫过表示加载中 */
+.ov-skel {
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  position: relative;
+  overflow: hidden;
+}
+.ov-skel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg, transparent 30%, rgba(255, 255, 255, 0.14) 50%, transparent 70%);
+  animation: ov-skel-sweep 1.3s ease-in-out infinite;
+}
+@keyframes ov-skel-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+.ov-skel--label { width: 96px; height: 15px; }
+.ov-skel--big { width: 150px; height: 52px; margin-top: 12px; border-radius: 10px; }
+.ov-skel--remain { width: 72px; height: 19px; margin-top: 12px; }
+.ov-skel--bar { width: 100%; height: 6px; margin-top: 14px; border-radius: 999px; }
+.ov-skel--meta { width: 62%; height: 13px; margin-top: 12px; }
+html[data-theme='light'] .ov-skel { background: #e8e8ea; }
+html[data-theme='light'] .ov-skel::after {
+  background: linear-gradient(
+    100deg, transparent 30%, rgba(255, 255, 255, 0.55) 50%, transparent 70%);
+}
+html[data-theme='light'] .ov-page.ov-dark .ov-skel { background: rgba(255, 255, 255, 0.12); }
+html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
+  background: linear-gradient(
+    100deg, transparent 30%, rgba(255, 255, 255, 0.14) 50%, transparent 70%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ov-skel::after { animation: none; }
+  .ov-actions--traffic .ov-btn { transition: none; }
 }
 .ov-btn {
   display: inline-flex;
