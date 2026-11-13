@@ -217,9 +217,8 @@ check(set(tick) == {"sessions_reaped", "sessions_pruned",
                     "query_plans_optimized",
                     # perf/server-resource：空闲 GC 是否执行（布尔标记，非计数，同样不参与全零断言）
                     "idle_gc_done",
-                    # WS4a（r48 遗留⑬）：janitor 自动续订计数（干净时全 0，参与全零断言）
-                    "auto_renew_renewed", "auto_renew_failed",
-                    "auto_renew_skipped", "auto_renew_errors",
+                    # 自动续订计数（auto_renew_*）已随积分自动续订于
+                    # 2026-11-13 货币下线时删除，不再出现在 tick 汇总里。
                     # O-09：上游映射抽样巡检两键（sampled 是计数、干净时 0，
                     # 参与全零断言；alert 是布尔、干净时 False，而 False==0
                     # 仍过下面的全零断言，故不进排除名单）
