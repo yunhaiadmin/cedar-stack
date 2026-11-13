@@ -159,7 +159,7 @@ const router = createRouter({
             path: '/game/account/member',
             name: 'game-account-member',
             component: () => import('@/views/game/MemberView.vue'),
-            meta: { title: '我的会员', requiresAuth: true },
+            meta: { title: '我的订阅', requiresAuth: true },
           },
           // 订阅服务：按 UHDNow 订阅逻辑重做的购买页（深色 app 单列流＋吸底结算条）
           {

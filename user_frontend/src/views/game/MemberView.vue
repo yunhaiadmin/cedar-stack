@@ -1,5 +1,5 @@
 <template>
-  <UhdAccountLayout title="我的会员">
+  <UhdAccountLayout title="我的订阅">
   <div class="v4-scope">
   <div class="v4-page member-page">
     <div class="member-body">
@@ -60,7 +60,7 @@
 <script setup lang="ts">
 import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 /**
- * 我的会员（从个人中心「我的权益」进入的子页）：承接原账号页的全部订阅
+ * 我的订阅（从个人中心「我的权益」进入的子页）：承接原账号页的全部订阅
  * 管理——展示层全在 ProfileSubscriptions（到期 / 自动续订 / 历史账单 /
  * 终止、公益资格续期、查看凭证续费，长规则文字随组件在本页呈现）。
  * 逻辑自旧 AccountSettingsView 原样迁入，口径不变（含焦点归还：确认弹窗

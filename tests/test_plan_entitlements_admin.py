@@ -74,7 +74,7 @@ def admin(db):
 
 
 def _req(**kw):
-    base = {"name": "远行执照", "price": 45, "duration_days": 90}
+    base = {"name": "远行", "price": 45, "duration_days": 90}
     base.update(kw)
     return PlanUpsertRequest(**base)
 
@@ -148,10 +148,10 @@ def test_create_plan_audit_details_carry_entitlements(db, admin):
 
 def test_list_plans_echoes_entitlements_as_stored(db, admin):
     economy_create_plan(_req(entitlements={KEY_SEEK: 25}), admin, db)
-    economy_create_plan(_req(name="启程执照", entitlements=None), admin, db)
+    economy_create_plan(_req(name="启程", entitlements=None), admin, db)
     by_name = {p["name"]: p for p in economy_list_plans(db=db, current_admin=admin)["plans"]}
-    assert by_name["远行执照"]["entitlements"] == {KEY_SEEK: 25}
-    assert by_name["启程执照"]["entitlements"] is None
+    assert by_name["远行"]["entitlements"] == {KEY_SEEK: 25}
+    assert by_name["启程"]["entitlements"] is None
 
 
 # ==================== update：校验 / 落库 / 清空 ====================
@@ -167,7 +167,7 @@ def test_update_plan_rejects_invalid_and_leaves_plan_untouched(db, admin):
     assert ei.value.status_code == 400
     db.expire_all()
     plan = _only_plan(db)
-    assert plan.name == "远行执照"          # 连名字都没被改动
+    assert plan.name == "远行"          # 连名字都没被改动
     assert plan.entitlements == {KEY_SEEK: 25}
 
 
@@ -227,12 +227,12 @@ def test_create_via_api_invalidates_snapshot_cache(db, admin):
 
 def test_payment_plans_delivers_parsed_entitlements(db, admin):
     economy_create_plan(_req(entitlements={KEY_SEEK: 25, KEY_CONC: 3}), admin, db)
-    economy_create_plan(_req(name="启程执照", entitlements=None), admin, db)
+    economy_create_plan(_req(name="启程", entitlements=None), admin, db)
     out = payment_plans(db=db)
     by_name = {p["name"]: p for p in out["plans"]}
-    assert by_name["远行执照"]["entitlements"] == {KEY_SEEK: 25, KEY_CONC: 3}
+    assert by_name["远行"]["entitlements"] == {KEY_SEEK: 25, KEY_CONC: 3}
     # 未声明的套餐下发空对象（不是 None），前端据此不生成权益行
-    assert by_name["启程执照"]["entitlements"] == {}
+    assert by_name["启程"]["entitlements"] == {}
 
 
 def test_payment_plans_filters_dirty_stored_values(db, admin):

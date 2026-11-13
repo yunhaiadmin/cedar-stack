@@ -66,7 +66,7 @@ def _make_level(db, level=3, discount_pct=5):
 
 
 def _make_plan(db, price=100, days=30):
-    p = models.SubscriptionPlan(name="远行执照", price=price,
+    p = models.SubscriptionPlan(name="远行", price=price,
                                 duration_days=days, is_active=True)
     db.add(p)
     db.commit()
