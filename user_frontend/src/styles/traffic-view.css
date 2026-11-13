@@ -1,0 +1,8 @@
+/* 购流量弹窗令牌（TrafficPurchaseModal.vue 引用）。
+ * --tq-bg 是弹窗面底色：弹窗通体浅色、文字在组件内写死深色，
+ * 故深浅主题下都取纸白，与旧兜底值 #ffffff 一致。
+ * 由 TrafficPurchaseModal.vue 直接 import；令牌契约要求定义必须
+ * 落在被引入的独立样式表里，scoped 样式里的定义不算数。 */
+:root {
+  --tq-bg: #ffffff;
+}

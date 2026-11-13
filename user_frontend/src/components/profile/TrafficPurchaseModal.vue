@@ -97,6 +97,7 @@ import {
   type TrafficSummary,
 } from '@/api/traffic'
 import { useToast } from '@/composables/useToast'
+import '../../styles/traffic-view.css'
 import { toUserMessage } from '@/utils/toUserMessage'
 
 const props = defineProps<{
