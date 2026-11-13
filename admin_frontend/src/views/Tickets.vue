@@ -10,6 +10,20 @@ import { useQueryFilter } from '@/composables/useQueryFilter'
 import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
 
+/** 工单分类中文名：后端 category 原值（emby/account/subscription/payment/other/chase）→ 展示名；
+ * 未知值原样显示，不吞数据。 */
+const CATEGORY_LABELS: Record<string, string> = {
+  emby: '播放卡住',
+  account: '账号问题',
+  subscription: '订阅问题',
+  payment: '支付问题',
+  other: '其他问题',
+  chase: '追新',
+}
+function categoryLabel(category: string): string {
+  return CATEGORY_LABELS[category] ?? category
+}
+
 const columns: DataColumn[] = [
   { key: 'title', label: '工单', minWidth: 240, mobile: 'title' },
   { key: 'user_name', label: '用户', width: 120 },
@@ -183,7 +197,7 @@ function statusBadge(status: string): string {
 
         <template #cell-user_name="{ row }">{{ row.user_name }}</template>
 
-        <template #cell-category="{ row }">{{ row.category }}</template>
+        <template #cell-category="{ row }">{{ categoryLabel(row.category) }}</template>
 
         <template #cell-priority="{ row }">
           <span class="prio" :class="row.priority">{{ PRIORITY_LABELS[row.priority] || row.priority }}</span>
@@ -211,7 +225,7 @@ function statusBadge(status: string): string {
       <div v-if="current" class="ticket-meta">
         <dl class="meta-line">
           <div><dt>提交人</dt><dd>{{ current.user_name }}</dd></div>
-          <div><dt>分类</dt><dd>{{ current.category }}</dd></div>
+          <div><dt>分类</dt><dd>{{ categoryLabel(current.category) }}</dd></div>
           <div><dt>创建</dt><dd class="mono">{{ fmtDate(current.created_at) }}</dd></div>
         </dl>
         <div class="meta-controls">

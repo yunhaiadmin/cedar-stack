@@ -152,7 +152,6 @@ const groups = computed<MenuGroup[]>(() => {
   ]
   const account: MenuItem[] = [
     { key: 'settings', label: '账号与设置', to: '/game/account/settings' },
-    { key: 'wishlist', label: '求片', to: '/game/wishlist' },
   ]
   if (isAgent.value) {
     account.push({ key: 'agent', label: '代理中心', to: '/game/agent' })
@@ -160,8 +159,10 @@ const groups = computed<MenuGroup[]>(() => {
   // 用户 2026-11-13 圈选令＋条件令：探险设施整组摘除、「我的概览」行删除；
   // 「每日报到」「信鸽」两行摘除（友站核查无签到/站内消息，两页定整页删除，
   // 页面本体由并行删除单处理）；求救信号保留并改名「反馈」，仍在「日常与帮助」组。
+  // 2026-11-13 求片反馈合并页：「求片」行摘除、「反馈」行改名「求片反馈」
+  // 并指向新页 /game/requests（入口由这一行覆盖，不留两个指向同页的行）。
   const daily: MenuItem[] = [
-    { key: 'signal', label: '反馈', to: '/game/signal' },
+    { key: 'requests', label: '求片反馈', to: '/game/requests' },
   ]
   const system: MenuItem[] = [{ key: 'theme', label: '外观' }]
   return [
