@@ -2655,3 +2655,86 @@ class PanelActivity(Base):
     library = Column(String(200))
     # 归属服（NULL = 全局事件，所有服可见）
     realm_id = Column(Integer)
+
+
+class Team(Base):
+    """团队（照 UHDNow 团队形态：团长建团、邀请码拉人、成员共享团队套餐）。
+
+    套餐不在建团时生效：走 TeamApplication 申请→管理端审核开通，
+    通过后把 plan_* 写到团队行（plan_status='active'）。
+    plan_traffic_bytes 只是套餐登记值——本站没有流量额度模型，
+    流量计量/扣减未接入，登记值供页面展示与后续计量接入时读取。
+    """
+    __tablename__ = 'teams'
+
+    __table_args__ = (
+        Index('idx_team_owner', 'owner_id'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    owner_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
+    invite_code = Column(String(20), unique=True, nullable=False, index=True)
+    status = Column(String(20), default='active', nullable=False)  # active / dissolved
+    # 团队套餐（审核通过后写入；none=未开通 pending=审核中 active=已开通）
+    plan_status = Column(String(20), default='none', nullable=False)
+    plan_line = Column(String(100), nullable=True)
+    plan_traffic_bytes = Column(BigInteger, nullable=True)
+    plan_member_limit = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    owner = relationship("WebUser", foreign_keys=[owner_id])
+
+
+class TeamMember(Base):
+    """团队成员（一人同时只能在一个团队：user_id 唯一索引兜底）"""
+    __tablename__ = 'team_members'
+
+    __table_args__ = (
+        Index('idx_team_member_user', 'user_id', unique=True),
+        Index('idx_team_member_team', 'team_id'),
+        UniqueConstraint('team_id', 'user_id', name='uq_team_member_pair'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    team_id = Column(Integer, ForeignKey('teams.id'), nullable=False)
+    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
+    role = Column(String(20), default='member', nullable=False)  # owner / member
+    joined_at = Column(DateTime, default=datetime.now)
+
+    team = relationship("Team")
+    user = relationship("WebUser")
+
+
+class TeamApplication(Base):
+    """团队套餐申请意向单（用户提交 → 管理端审核 → 通过即开通）。
+
+    team_id 为空 = 申请人还没有团队，通过时按 team_name 新建团队并设其为团长；
+    非空 = 给已有团队开通/变更套餐。总流量与子账号数在提交时按 SystemConfig
+    （team 家族）校验起订与上限，审核通过后原样落到团队 plan_* 字段。
+    本单不接支付：approved 只代表套餐开通登记，付款走客服人工流程
+    （与友站「下单前联系客服审核、买后联系客服开通」的人工形态一致）。
+    """
+    __tablename__ = 'team_applications'
+
+    __table_args__ = (
+        Index('idx_team_app_user', 'user_id'),
+        Index('idx_team_app_status', 'status'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
+    team_id = Column(Integer, ForeignKey('teams.id'), nullable=True)
+    team_name = Column(String(100), nullable=True)
+    line = Column(String(100), nullable=True)
+    traffic_bytes = Column(BigInteger, nullable=False)
+    member_limit = Column(Integer, nullable=False)
+    note = Column(Text, default="")
+    status = Column(String(20), default='pending', nullable=False)  # pending / approved / rejected
+    reviewer_id = Column(Integer, ForeignKey('web_users.id'), nullable=True)
+    review_note = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.now)
+    reviewed_at = Column(DateTime, nullable=True)
+
+    applicant = relationship("WebUser", foreign_keys=[user_id])

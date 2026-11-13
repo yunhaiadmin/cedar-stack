@@ -214,6 +214,13 @@ const router = createRouter({
             component: () => import('@/views/game/LineSpeedtestView.vue'),
             meta: { title: '线路测速', requiresAuth: true },
           },
+          // 团队管理（2026-11-13 照 UHDNow 团队页）：账户组入口
+          {
+            path: '/game/account/team',
+            name: 'game-account-team',
+            component: () => import('@/views/game/TeamView.vue'),
+            meta: { title: '团队管理', requiresAuth: true },
+          },
         ]
       : []),
     {

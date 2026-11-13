@@ -77,6 +77,8 @@ SCHEMAS: dict[str, dict[str, tuple]] = {
     # economy_spec 的历史行为逐字一致，str/secret 用 ("raw",) 原样存库；
     # 复合校验保留在端点层）
     "economy": config_schema.ECONOMY_CONFIG_SCHEMA,
+    # 团队（2026-11-13）：套餐起订流量 / 子账号上限 / 未开通套餐成员上限
+    "team": config_schema.TEAM_CONFIG_SCHEMA,
 }
 
 
