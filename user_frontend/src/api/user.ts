@@ -31,6 +31,22 @@ export async function getMyExclusiveLines(): Promise<MyExclusiveLine[]> {
   }
 }
 
+/** 测速页网络信息（GET /api/user/network-info）：IP 已在服务端打码，
+ * 地区/运营商推导不到时为 null（页面显示 --）。失败同样按 null 处理。 */
+export interface MyNetworkInfo {
+  ip_masked: string | null
+  region: string | null
+  operator: string | null
+}
+
+export async function getMyNetworkInfo(): Promise<MyNetworkInfo | null> {
+  try {
+    return await api.get<never, MyNetworkInfo>('/api/user/network-info')
+  } catch {
+    return null
+  }
+}
+
 /** 注册页开关状态（公开接口，未登录可调） */
 export interface RegisterConfig {
   registration_mode: 'open' | 'code' | 'closed'

@@ -2,7 +2,7 @@
 用户端 API 路由
 与管理后台联动，用户可接收管理员操作的通知
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -1780,6 +1780,32 @@ def my_exclusive_lines(
     return {"lines": [
         {"name": line["name"], "entry_url": line["entry_url"]}
         for line in lines]}
+
+
+# ==================== 测速页 · 网络信息 ====================
+
+@user_router.get("/network-info")
+def my_network_info(
+    request: Request,
+    current_user: models.WebUser = Depends(get_current_user),
+):
+    """当前请求的网络信息（测速页卡三）：来源 IP 打码回显 + 地区。
+
+    - IP 按 ratelimit.client_ip 的可信代理口径取，只下发打码串，
+      原始 IP 不出服务端；
+    - 地区只认链路自带的 CF-IPCountry 头（经 Cloudflare 回源时
+      才有），没有就回 None（前端显示 --），不接外部 IP 库；
+    - 运营商没有可信离线来源，恒回 None（前端 --，与友站一致）。
+    推导细节见 backend/network_info.py。
+    """
+    from backend import network_info as _ni
+    from backend.ratelimit import client_ip as _client_ip
+
+    return {
+        "ip_masked": _ni.mask_ip(_client_ip(request)),
+        "region": _ni.region_label(request.headers.get("cf-ipcountry")),
+        "operator": None,
+    }
 
 
 # ==================== 导出 ====================
