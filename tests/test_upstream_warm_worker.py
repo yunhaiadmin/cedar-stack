@@ -369,53 +369,6 @@ def test_warm_once_fastpath_off_skips(factory, db, monkeypatch):
     assert calls == []
 
 
-def test_warm_once_warms_then_second_round_fresh(factory, db, monkeypatch):
-    movie = _item(db, "保鲜片", "movie")
-    _one_target(monkeypatch, movie.id)
-    calls = []
-
-    def fake_resolve(db_, item_id, mapping_id, http):
-        calls.append(mapping_id)
-        # 与真实解析同口径：成功下发即经 #1856 写入点落已验活缓存
-        up.store_verified_play_address(mapping_id,
-                                       "https://cdn.example.com/a.m3u8")
-        return "https://cdn.example.com/a.m3u8"
-
-    monkeypatch.setattr(uw, "_resolve_for_warm", fake_resolve)
-    first = uw.warm_once(factory)
-    assert first["ran"] is True
-    assert first["warmed"] == 1
-    assert up.read_verified_play_address(92001) == \
-        "https://cdn.example.com/a.m3u8"
-    second = uw.warm_once(factory)
-    assert second["warmed"] == 0
-    assert second["fresh"] == 1
-    assert calls == [92001]  # 第二轮没再验
-
-
-def test_warm_once_failure_isolated(factory, db, monkeypatch):
-    a = _item(db, "会失败的片", "movie")
-    b = _item(db, "会成功的片", "movie")
-    monkeypatch.setattr(uw, "build_targets", lambda db_, cfg, now=None: (
-        [{"item_id": a.id, "mapping_id": 92011, "source_id": 21},
-         {"item_id": b.id, "mapping_id": 92012, "source_id": 21}],
-        {"follow_items": 0, "resume_items": 2, "hot_items": 0,
-         "skipped_not_cms": 0, "skipped_source_unavailable": 0}))
-
-    def fake_resolve(db_, item_id, mapping_id, http):
-        if mapping_id == 92011:
-            raise up.UpstreamPlaybackError(
-                502, "upstream_unavailable", "上游不可用", source_id=21)
-        up.store_verified_play_address(mapping_id,
-                                       "https://cdn.example.com/b.m3u8")
-        return "https://cdn.example.com/b.m3u8"
-
-    monkeypatch.setattr(uw, "_resolve_for_warm", fake_resolve)
-    stats = uw.warm_once(factory)
-    assert stats["warmed"] == 1
-    assert stats["failed"] == 1
-
-
 def test_warm_once_request_budget(factory, db, monkeypatch):
     a = _item(db, "预算甲", "movie")
     b = _item(db, "预算乙", "movie")
@@ -443,17 +396,6 @@ def test_warm_once_request_budget(factory, db, monkeypatch):
     assert stats["budget"] == 1
 
 
-def test_status_snapshot_after_round(factory, db, monkeypatch):
-    movie = _item(db, "状态片", "movie")
-    _one_target(monkeypatch, movie.id, mapping_id=92031)
-    monkeypatch.setattr(uw, "_resolve_for_warm",
-                        lambda *a, **k: "https://cdn.example.com/s.m3u8")
-    uw.warm_once(factory)
-    snap = uw.status_snapshot()
-    assert snap["last_round"]["warmed"] == 1
-    assert snap["last_round"]["targets"] == 1
-
-
 # ---------------------------------------------------------------------------
 # 集成：保鲜走真实解析 → 点播命中快路免探活（依赖 PR #1856 已合入）
 # ---------------------------------------------------------------------------
@@ -465,60 +407,3 @@ DETAIL = {"code": 1, "page": 1, "pagecount": 1, "list": [{
     "vod_id": 4242, "vod_play_from": "组一",
     "vod_play_url": f"第01集${ADDR1}"}]}
 
-
-def test_warm_then_play_skips_probe(factory, db, monkeypatch):
-    monkeypatch.setenv("UPSTREAM_PLAYBACK_ENABLED", "1")
-    monkeypatch.setenv("APPLECMS_ENABLED", "1")
-    monkeypatch.setenv("APPLECMS_DETAIL_CACHE_ENABLED", "1")
-    monkeypatch.delenv("APPLECMS_TIER_GATE", raising=False)
-    monkeypatch.setattr(up, "_capture_cms_quality_async",
-                        lambda *a, **k: None)
-    monkeypatch.setattr(uw, "_source_unavailable", lambda sid: False)
-
-    source = em.UpstreamSource(
-        name="warm-it-src", source_type="applecms", base_url=BASE,
-        enabled=True)
-    db.add(source)
-    db.commit()
-    movie = _item(db, "集成片", "movie", added=datetime.now())
-    mapping = em.UpstreamItemMapping(
-        local_item_id=movie.id, source_id=source.id,
-        upstream_item_id="4242", episode_index=None,
-        confidence=1.0, evidence="tmdb")
-    db.add(mapping)
-    db.commit()
-    # 信号：新入库热门（48 小时内 3 次成功起播）
-    for i in range(3):
-        _play(db, movie, datetime.now() - timedelta(hours=1 + i))
-
-    get_calls, probe_calls = [], []
-
-    def http_get(url, headers, timeout):
-        get_calls.append(url)
-        return 200, DETAIL
-
-    def http_probe(url, headers, timeout):
-        probe_calls.append(url)
-        return 206, None
-
-    monkeypatch.setattr(uw, "_make_http", lambda counter: SimpleNamespace(
-        get=http_get, probe=http_probe,
-        get_text=lambda *a: (200, "")))
-
-    stats = uw.warm_once(factory)
-    assert stats["warmed"] == 1
-    assert probe_calls == [ADDR1]  # 保鲜验了一次
-    assert up.read_verified_play_address(mapping.id) == ADDR1
-
-    # 模拟点播：同映射解析应命中快路、不再探活
-    play_probe_calls = []
-
-    def play_probe(url, headers, timeout):
-        play_probe_calls.append(url)
-        return 206, None
-
-    url = up.resolve_mapped_upstream_stream(
-        db, movie.id, mapping_id=mapping.id,
-        http_get=http_get, http_probe=play_probe)
-    assert url == ADDR1
-    assert play_probe_calls == []

@@ -305,42 +305,6 @@ def start_playback_bus_consumer(stop_event=None) -> bool:
     return True
 
 
-def _applecms_probe_sources():
-    """苹果 CMS 轻探活的 sources_fn（生产接线，FMBY #25 下一批）。
-
-    每轮重新取已启用源，适配成探活模块的 AppleCMSSource。只接线，
-    不改守护本体、不改判定语义：
-    - 只含 applecms 型：Emby/Jellyfin 型走 25-3 守护（其 sources_fn
-      跳过 CMS 型），本块只补 CMS 型，两边不重复探。
-    - 键与 Emby 侧同口径 str(row.id)，结论写同一份 Redis 健康存储，
-      健康落库同步守护自动翻译进 PG（同步另有自己的开关）。
-    - 请求头走探活模块的 source_headers（源上配的 UA / Referer /
-      附加头），密封凭据绝不走这里；取源列表失败则本轮返回空列表，
-      不抛异常。
-    """
-    from backend.database import SessionLocal
-    from backend.emby_server import applecms_probe as _acp
-    from backend.emby_server import upstream_sources as _ups
-
-    db = SessionLocal()
-    try:
-        rows = _ups.enabled_sources(db)
-        out = []
-        for row in rows:
-            if row.source_type != "applecms":
-                continue
-            out.append(_acp.AppleCMSSource(
-                key=str(row.id),
-                base_url=row.base_url,
-                enabled=True,
-                headers=_acp.source_headers(row),
-            ))
-        return out
-    except Exception:
-        logger.warning("苹果 CMS 探活：取源列表失败，本轮跳过", exc_info=True)
-        return []
-    finally:
-        db.close()
 
 
 def main() -> int:
@@ -473,18 +437,6 @@ def main() -> int:
             logger.warning(f"启动多版本合并 worker 失败（可忽略）: {e}")
 
 
-        # 谷歌盘主线暖地址（goal-35 批 1）：按信号集（追剧新集/继续观看/
-        # 新入库热门）提前把交付计划与存在性写进现成缓存，点播路径零
-        # 改动。总开关默认关（DRIVE_WARM_ENABLED），关时 start() 直接
-        # 回 False、不启动线程，线上零变化。
-        try:
-            from backend.emby_server import drive_warm_worker
-            if drive_warm_worker.start():
-                started.append("drive_warm_worker")
-                logger.info("✅ Drive 暖地址 worker 已启动")
-        except Exception as e:
-            logger.warning(f"启动 Drive 暖地址 worker 失败（可忽略）: {e}")
-
         # 缺集核算（缺集全套）：周期拿 TMDB 集表与盘内实有集对表，
         # 缺集落台账供管理端清单与许愿池求补共用；补齐后自动完成
         # 补缺集求片并通知。总开关默认开（MISSING_EPISODES_ENABLED），
@@ -537,14 +489,6 @@ def main() -> int:
             logger.warning(f"启动求片到货盯梢 worker 失败（可忽略）: {e}")
 
         try:
-            from backend.emby_server import sample_hash_worker
-            if sample_hash_worker.start():
-                started.append("sample_hash_worker")
-                logger.info("✅ 采样哈希 worker 已启动")
-        except Exception as e:
-            logger.warning(f"启动采样哈希 worker 失败（可忽略）: {e}")
-
-        try:
             from backend.emby_server import transfer_sediment
             if transfer_sediment.start():
                 started.append("transfer_sediment")
@@ -563,14 +507,6 @@ def main() -> int:
                 logger.info("✅ 公共池巡检 janitor 已启动")
         except Exception as e:
             logger.warning(f"启动公共池巡检 janitor 失败（可忽略）: {e}")
-
-        try:
-            from backend.emby_server import thumbnail_worker
-            if thumbnail_worker.start():
-                started.append("thumbnail_worker")
-                logger.info("✅ 视频缩略图 worker 已启动")
-        except Exception as e:
-            logger.warning(f"启动缩略图 worker 失败（可忽略）: {e}")
 
         try:
             from backend.emby_server import refresh_person_worker
@@ -656,14 +592,6 @@ def main() -> int:
                 logger.info("✅ 定时扫描已启动")
         except Exception as e:
             logger.warning(f"启动定时扫描失败（可忽略）: {e}")
-
-        try:
-            from backend.emby_server import db_backup
-            if db_backup.start_backup_scheduler():
-                started.append("db_backup")
-                logger.info("✅ 数据库定时备份已启动")
-        except Exception as e:
-            logger.warning(f"启动数据库备份调度失败（可忽略）: {e}")
 
         try:
             from backend.tg_bot import scheduler as tg_bot_scheduler
@@ -794,65 +722,6 @@ def main() -> int:
         except Exception as e:
             logger.warning(f"启动 Drive 凭据维护工人失败（可忽略）: {e}")
 
-        # 苹果 CMS 定时同步（后续四件之 ①）：仅两闸同开时启动；
-        # 关时不启动、不发任何上游请求，全站行为逐字不变。本块只
-        # 加自己的启动行，不动变体探活 / 健康同步的接线行。
-        try:
-            from backend.emby_server import applecms_scheduler
-
-            if applecms_scheduler.start_applecms_scheduler(_shutdown_event):
-                started.append("applecms_scheduler")
-                logger.info("✅ 苹果 CMS 定时同步已启动")
-            else:
-                logger.info("苹果 CMS 同步未开启，定时同步不启动")
-        except Exception as e:
-            logger.warning(f"启动苹果 CMS 定时同步失败（可忽略）: {e}")
-        # 苹果 CMS 媒体库同步（新库类型一期）：仅
-        # APPLECMS_LIBRARY_SYNC_ENABLED=1 时启动；关时不启动、不发
-        # 任何上游请求。本块只加自己的启动行，不动上面的接线行。
-        try:
-            from backend.emby_server import applecms_library_sync
-
-            if applecms_library_sync.start_library_sync_scheduler(
-                    _shutdown_event):
-                started.append("applecms_library_sync")
-                logger.info("✅ 苹果 CMS 媒体库同步已启动")
-            else:
-                logger.info("苹果 CMS 媒体库同步未开启，调度不启动")
-        except Exception as e:
-            logger.warning(f"启动苹果 CMS 媒体库同步失败（可忽略）: {e}")
-        # 苹果 CMS 月度全量对账（新库类型一期）：独立开关
-        # APPLECMS_LIBRARY_RECONCILE_ENABLED，与增量同步分开两道
-        # 闸；关时不启动。本块只加自己的启动行。
-        try:
-            from backend.emby_server import applecms_reconcile
-
-            if applecms_reconcile.start_reconcile_scheduler(
-                    _shutdown_event):
-                started.append("applecms_library_reconcile")
-                logger.info("✅ 苹果 CMS 月度对账已启动")
-            else:
-                logger.info("苹果 CMS 月度对账未开启，调度不启动")
-        except Exception as e:
-            logger.warning(f"启动苹果 CMS 月度对账失败（可忽略）: {e}")
-
-        # 苹果 CMS 轻探活（FMBY #25 下一批唯一施工项）：仅
-        # APPLECMS_PROBE_ENABLED=1 时启动；关时线程空转、不发任何请求、
-        # 不读写任何状态，全站行为逐字不变。只探 applecms 型已启用源
-        # （Emby/Jellyfin 守护跳过 CMS 型，本块只补 CMS 型，不改其行为）；
-        # 结论写与 Emby 探活同一份 Redis 健康存储（键 str(source.id)），
-        # 健康落库同步守护自动翻译进 PG。本块只加自己的启动行，不动
-        # 上面两守护的接线行。
-        try:
-            from backend.emby_server import applecms_probe as _acp
-            from backend.emby_server import upstream_health as _uh2
-
-            _acp.start_applecms_probe_daemon(
-                _applecms_probe_sources, _uh2.RedisHealthStore())
-            started.append("applecms_probe")
-            logger.info("✅ 苹果 CMS 轻探活守护已启动（总开关关时空转不发请求）")
-        except Exception as e:
-            logger.warning(f"启动苹果 CMS 轻探活守护失败（可忽略）: {e}")
 
         # 图床镜像工人（批一：库封面 + 合集封面，自有服务器静态托管）：
         # 仅 COVER_MIRROR_ENABLED=1 时工作；关时线程空转、不发请求、

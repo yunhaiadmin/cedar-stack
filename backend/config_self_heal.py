@@ -249,14 +249,6 @@ def collect_system_config_defaults() -> list[tuple[str, str, str]]:
         (auto_scan.CONFIG_TIME, auto_scan.DEFAULT_TIME, "定时扫描每天执行时间（HH:MM）"),
     ])
 
-    # 3. 数据库定时备份
-    from backend.emby_server import db_backup
-    items.extend([
-        (db_backup.CONFIG_ENABLED, "1" if db_backup.DEFAULT_ENABLED else "0", "数据库定时备份开关"),
-        (db_backup.CONFIG_TIME, db_backup.DEFAULT_TIME, "数据库备份每天执行时间（HH:MM）"),
-        (db_backup.CONFIG_KEEP_DAYS, str(db_backup.DEFAULT_KEEP_DAYS), "数据库备份保留天数"),
-    ])
-
     # 4. 新片入库通知
     from backend.emby_server import new_media_notify
     items.extend([

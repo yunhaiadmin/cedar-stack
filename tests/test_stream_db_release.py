@@ -157,7 +157,8 @@ def test_video_stream_closes_session_before_body(monkeypatch, tmp_path):
 def test_streaming_endpoints_are_decorated():
     from backend.emby_server import api, media_routes, mount_routes, stream_routes
 
+    # item_thumbnail 已随批 3（thumbnail 删除）下线，不再列入
     for fn in (api.video_stream, api.video_hls, media_routes.download_item,
-               media_routes.item_thumbnail, stream_routes.item_file,
+               stream_routes.item_file,
                mount_routes.mounted_item_file):
         assert getattr(fn, "__wrapped__", None) is not None, fn

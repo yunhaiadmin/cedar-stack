@@ -58,7 +58,6 @@ import type {
   UsersResponse,
   PlaybackBusCommand,
   PlaybackBusSnapshot,
-  SampleHashProgress,
   SidecarStatusResponse,
   StorageBindingsResponse,
   Yun139PoolsResponse,
@@ -605,28 +604,6 @@ export const fetchWallPosts = (limit = 50) =>
 export const deleteWallPost = (id: number) =>
   del<{ success: boolean; message: string }>(`/wall-posts/${id}`)
 
-// ==================== 探险预告 · 保密新大陆（揭晓位配置） =============
-/** 揭晓位配置（后端 GET/PUT /api/admin/teaser-config；字段见 backend/emby_server/teaser.py） */
-export interface TeaserConfig {
-  enabled: boolean
-  /** 揭晓时间 ISO（服务器本地）；空串 = 一直保密 */
-  reveal_at: string
-  pre_title: string
-  pre_subtitle: string
-  post_title: string
-  post_desc: string
-  post_link: string
-  /** 派生状态：off=已关闭 secret=保密中 revealed=已揭晓 */
-  status: 'off' | 'secret' | 'revealed'
-  countdown_days: number | null
-}
-
-export const fetchTeaserConfig = () =>
-  get<TeaserConfig>('/teaser-config')
-
-export const saveTeaserConfig = (values: Record<string, string | boolean>) =>
-  put<TeaserConfig>('/teaser-config', { values })
-
 // ==================== 工单 =============
 export const fetchTickets = (params: { status_filter?: string } = {}) =>
   get<TicketRow[]>('/tickets', params)
@@ -923,55 +900,6 @@ export interface PanelHealth {
  *  `'/../health'` —— 那是靠浏览器归一化“能用”的写法，换个反代就断。
  */
 export const fetchPanelHealth = () => getPublic<PanelHealth>('/api/health')
-
-/** 一键体检（v2.57.0 只读诊断；阶段二加自动修复）：诊断报告与规则清单 */
-export interface DiagnosisFinding {
-  rule_id: string
-  name: string
-  level: 'info' | 'warn' | 'critical'
-  level_cn: string
-  title: string
-  description: string
-  steps: string[]
-  evidence: Record<string, any>
-  fixable?: boolean
-}
-
-export interface DiagnosisFixInfo {
-  name: string
-  description: string
-  confirm_text: string
-}
-
-export interface DiagnosisReport {
-  ran_at: string
-  summary: { total: number; info: number; warn: number; critical: number }
-  findings: DiagnosisFinding[]
-  note: string
-}
-
-export interface DiagnosisRules {
-  rules: Array<{ rule_id: string; name: string }>
-  thresholds: Record<string, number>
-  levels: string[]
-  fixes: Record<string, DiagnosisFixInfo>
-  fix_thresholds: Record<string, number>
-  manual_only: Record<string, string>
-}
-
-export interface DiagnosisFixResult {
-  ok: boolean
-  rule_id: string
-  name: string
-  result?: Record<string, any>
-  error?: string
-  message?: string
-}
-
-export const runDiagnosis = () => get<DiagnosisReport>('/diagnosis/run')
-export const fetchDiagnosisRules = () => get<DiagnosisRules>('/diagnosis/rules')
-export const fixDiagnosisRule = (rule_id: string) =>
-  post<DiagnosisFixResult>('/diagnosis/fix', { rule_id, confirm: true })
 
 // ==================== API Key / Service Token（/api/admin/api-keys/*） =============
 export interface ApiKeyRow {
@@ -2304,52 +2232,7 @@ export const saveChaseNew = (enabled: boolean, interval: number, excluded: strin
 export const saveAutoScan = (enabled: boolean, time: string) =>
   put<{ success: boolean } & AutoScanConfig>(`${E}/scrape/auto-scan`, { enabled, time })
 
-export interface BackupFile { name: string; size: number; created_at: string }
-export interface BackupConfig {
-  enabled: boolean
-  /** 每天执行时间，"HH:MM"（服务器本地时间） */
-  time: string
-  /** 保留最近 N 天 */
-  keep_days: number
-  /** 上次执行日期 "YYYY-MM-DD"，没跑过为空 */
-  last_run: string
-  backups: BackupFile[]
-}
 
-/** 数据库备份配置 + 备份文件列表 */
-export const fetchBackupConfig = () =>
-  get<{ success: boolean } & BackupConfig>(`/system/backup`)
-
-/** 保存数据库备份配置：立即生效，无需重启；非法时后端 400 */
-export const saveBackupConfig = (time: string, keep_days: number) =>
-  put<{ success: boolean } & BackupConfig>(`/system/backup`, { time, keep_days })
-
-/** 立即手动备份一次 */
-export const runBackupNow = () =>
-  post<{ success: boolean; backup: { name: string; size: number } } & BackupConfig>(`/system/backup/run`, {})
-
-/** 备份校验信息（只读展示）：完整性/格式/SHA-256/人工恢复说明，不做一键恢复 */
-export interface BackupFileInfo {
-  name: string
-  size: number
-  created_at: string
-  /** sqlite / pg_dump / unknown */
-  format: string
-  format_text: string
-  header_ok: boolean
-  gzip_ok: boolean
-  gzip_error: string
-  uncompressed_size: number | null
-  sha256: string
-  restore_hint: string
-}
-
-export const fetchBackupFileInfo = (name: string) =>
-  get<{ success: boolean } & BackupFileInfo>(`/system/backup/files/${encodeURIComponent(name)}/info`)
-
-/** 下载一份备份文件（后端带审计） */
-export const downloadBackupFile = (name: string) =>
-  getBlob(`/system/backup/files/${encodeURIComponent(name)}/download`)
 
 /**
  * 播放可达性报告（v2.28.0）：出流方式 + 逐库判定 + 用户端地址一致性
@@ -2756,9 +2639,6 @@ export const fetchStorageBindings = (params: {
   limit?: number
   offset?: number
 } = {}) => get<StorageBindingsResponse>('/storage-bindings', params)
-
-/** 采样哈希进度：只计数，不触发轮次、不写库 */
-export const fetchSampleHashProgress = () => get<SampleHashProgress>('/sample-hash/progress')
 
 /** sidecar 状态：不传 provider 查 p115 + yun139 两个，传了只查该个 */
 export const fetchSidecarStatus = (provider?: string) =>

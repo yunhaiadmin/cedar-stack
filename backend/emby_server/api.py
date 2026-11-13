@@ -1387,23 +1387,13 @@ def _default_audio_stream_index(media_streams: list) -> int | None:
 
 
 def _chapters_for_item(db, item) -> list:
-    """片头片尾标记 → Chapters（r50 抽取；_item_dto 详情与 _media_source 共用一套）。
+    """片头片尾标记 → Chapters（_item_dto 详情与 _media_source 共用一套）。
 
-    对标 StrmAssistant #3：播放器显示"跳过片头"按钮。IntroDB 自动分段
-    （2026-10-17 学 raisemby）：按需拉取+缓存后汇入现成 to_chapters 管道，
-    手动标记优先；introdb 模块全程 fail-safe，上游故障时这里只剩手动标记，
-    播放信息照常返回。
+    片头识别已于 2026-11-13 随批 3 删除下线（intro_marker/introdb 模块
+    已删、标记数据留表）：恒返回空集，播放器不再收到片头跳过段；
+    调用方签名与返回形态不变。
     """
-    try:
-        from backend.emby_server import intro_marker as _im
-        from backend.emby_server import introdb as _idb
-        manual = _im.get_markers(db, item.id)
-        extra = _idb.get_segments_for_item(db, item)
-        return _im.to_chapters(
-            _idb.merge_segments(manual, extra, getattr(item, "item_type", None)))
-    except Exception as exc:
-        logger.debug("Chapters 加载失败 item=%s: %s", getattr(item, "id", "?"), exc)
-        return []
+    return []
 
 
 # 文件扩展名 -> 容器格式的安全映射（只做 container 回退，不猜测编码）。
@@ -6220,23 +6210,6 @@ def _note_play_start_safe(item: em.MediaItem, **kwargs) -> None:
             provider, mount_id = "drive", None
         else:
             provider, mount_id = "local", None
-        # 暖归因回填（goal-35 批 2 验收修复）：调用方没显式给
-        # warm 两列时，按工人发布的目标集/步骤标记判定（工人
-        # 没在跑 → 未判定、两列保持 NULL）。归因单独兜底：它
-        # 炸了只丢归因，事件照常记——不许连事件一起吞掉。
-        if "warm_hits" not in kwargs and "warm_in_signal" not in kwargs \
-                and play_events.is_enabled():
-            try:
-                from backend.emby_server import drive_warm_worker as _dw
-
-                _attr = _dw.warm_attribution(
-                    kwargs.get("user_id"), getattr(item, "id", None))
-                if _attr.get("warm_hits") is not None:
-                    kwargs["warm_hits"] = _attr["warm_hits"]
-                if _attr.get("warm_in_signal") is not None:
-                    kwargs["warm_in_signal"] = _attr["warm_in_signal"]
-            except Exception:  # noqa: BLE001 — 归因失败不丢事件
-                pass
         play_events.note_play_start(
             provider=provider, mount_id=mount_id,
             item_id=getattr(item, "id", None), **kwargs)
@@ -9216,16 +9189,9 @@ async def upstream_item_stream(
             mapping_id=_mapping_id)
     except _up.UpstreamPlaybackError as exc:
         return JSONResponse(status_code=exc.status, content=exc.to_body())
-    # 清单代理去广告（C 件）：有过滤规则的源改走清单代理下发
-    # （只代理清单、分段直连原 CDN）；代理任何一步失败回落到
-    # 下面的 302 直发，宁可带广告也不许播不了。
-    _proxy_resp = await _maybe_cms_playlist_proxy(
-        db, item, _mapping_id, _url, request, user)
     _note_mapped_upstream_play_start_safe(
         getattr(user, "id", None), item.id,
         int((time.perf_counter() - _t0) * 1000))
-    if _proxy_resp is not None:
-        return _proxy_resp
     return RedirectResponse(_url, status_code=302)
 
 
@@ -9463,255 +9429,6 @@ async def mangled_playback_url_repair(
     if target is None:
         raise HTTPException(status_code=404, detail="Not Found")
     return RedirectResponse(target, status_code=302)
-
-
-async def _maybe_cms_playlist_proxy(db, item, mapping_id, url, request, user):
-    """取流口清单代理 engage 判定 + 一级清单组装；不 engage/失败回 None。"""
-    from backend.emby_server import cms_playlist_proxy as _proxy
-    from backend.emby_server import upstream_playback as _up
-    from backend.emby_server.async_db import run_db
-
-    if not _proxy.playlist_proxy_enabled():
-        return None
-    source_id = await run_db(
-        _proxy.source_id_for_mapping, db, item.id, mapping_id)
-    if source_id is None:
-        return None
-    # 片头印制广告剪除（cms_ad_skip 试点）：有高置信记录时即使
-    # 该源没有清单过滤标记也 engage 代理（剪除复用同一通道）；
-    # 无记录时顺手排一次后台检测——不阻塞本次播放，本次仍按原
-    # 行为播未剪版。
-    from backend.emby_server import cms_ad_skip as _adskip
-
-    _skip = None
-    if _adskip.source_enabled(source_id):
-        _skip, _skip_known = await run_db(
-            _adskip.lookup_trim, db, item.id, mapping_id, source_id)
-        if not _skip_known:
-            _adskip.schedule_detection(item.id, mapping_id, source_id)
-    # 借帧修复（cms_graft）：有 verified 修复时同样 engage（清单层
-    # 换头部分段）；与剪除互斥——本轮要摘段就不查修复（摘段移位
-    # 分段序号，代理层亦有同口径防护）。
-    _graft = None
-    if _skip is None:
-        from backend.emby_server import cms_graft as _graft_mod
-
-        _graft = await run_db(
-            _graft_mod.lookup_for_playback, db, item.id, mapping_id,
-            source_id)
-    if _skip is None and _graft is None and not _proxy.engages(
-            source_id, url):
-        return None
-    source = await run_db(_up.get_source_row, db, source_id)
-    headers = _up._source_headers(source) if source is not None else {}
-    base = _base_url(request)
-    q = request.query_params
-    uid_s, exp_s, sign_s = q.get("uid"), q.get("exp"), q.get("sign")
-    if not (uid_s and exp_s and sign_s):
-        # 无签名轨（Emby 令牌轨）时借唯一构造点现签一份，保证二级
-        # 端点始终走 play_sign 验签，不裸奔。
-        _b_url, exp_s, sign_s = _signed_local_stream_url(
-            item, base, user.id, db, None, with_sign=True)
-        uid_s = str(user.id)
-    msid = q.get("MediaSourceId") or ""
-    key_part = f"&api_key={q.get('api_key')}" if q.get("api_key") else ""
-
-    def _variant_url(absolute_variant: str) -> str:
-        locator = _proxy.make_locator(uid_s, item.guid, exp_s, absolute_variant)
-        return (
-            f"{base}/emby/Videos/{item.guid}/upstream/playlist"
-            f"?MediaSourceId={msid}{key_part}"
-            f"&uid={uid_s}&exp={exp_s}&sign={sign_s}"
-            f"&src={source_id}&u={locator}")
-
-    _graft_url = None
-    _graft_segments = None
-    if _graft is not None:
-        _graft_mid, _graft_segments = _graft
-
-        def _graft_url(idx: int) -> str:
-            locator = _proxy.make_locator(
-                uid_s, item.guid, exp_s, f"graft://{_graft_mid}/{idx}")
-            return (
-                f"{base}/emby/Videos/{item.guid}/upstream/graftseg"
-                f"?MediaSourceId={msid}{key_part}"
-                f"&uid={uid_s}&exp={exp_s}&sign={sign_s}"
-                f"&src={source_id}&u={locator}")
-
-    text = await run_in_threadpool(
-        _proxy.build_master_response_text, url, headers, _variant_url,
-        source_id=source_id, item_id=item.id,
-        skip_seconds=_skip or 0.0,
-        graft_segments=_graft_segments, make_graft_url=_graft_url)
-    if text is None:
-        return None
-    return Response(
-        content=text, media_type="application/vnd.apple.mpegurl",
-        headers={"Cache-Control": "no-store"})
-
-
-@emby_router.get("/emby/Videos/{item_id}/upstream/playlist")
-@emby_router.get("/Videos/{item_id}/upstream/playlist")
-@release_db_before_response
-async def upstream_playlist_media(
-    item_id: str, request: Request,
-    user: models.WebUser = Depends(get_play_user),
-    db: Session = Depends(get_db),
-):
-    """CMS 清单代理二级端点：下发过滤后的 variant 媒体清单。
-
-    路由注册在 video_hls 通配之前；路径含 item_id，get_play_user
-    的 play_sign 验签分支照常触发。付费墙、绑定门禁、条目可见性
-    与取流口逐项同款复用。定位参数 u 经 HMAC 绑定 (uid, item,
-    exp, 目标地址)，对不上回 403；抓清单/处理失败回落 302 直发
-    目标原地址（带广告可播，不许播不了）。分段地址在清单里已
-    改写为原 CDN 绝对地址，播放器直连取段，本端点不碰分段字节。
-    """
-    from backend.emby_server import cms_playlist_proxy as _proxy
-    from backend.emby_server import upstream_playback as _up
-    from backend.emby_server.async_db import run_db
-
-    await run_db(ensure_playback_allowed, db, user)
-    item = await run_db(_require_visible_item, db, user, item_id)
-    # 绑定门禁与取流口同口径（2026-11-03 改定：无界库条目免绑定，
-    # 判定走 playback_gate 单一入口；先拿条目再判定）。
-    from backend.emby_server import playback_gate as _gate
-    await run_db(_gate.ensure_binding_playback_allowed_for_item,
-                 db, user, item)
-    q = request.query_params
-    target = _proxy.read_locator(
-        q.get("u") or "", user.id, item_id, q.get("exp") or "")
-    if not target or not _proxy.is_m3u8_url(target):
-        return JSONResponse(status_code=403, content={
-            "code": "cms_playlist_locator_invalid",
-            "message": "清单定位参数无效"})
-    src_raw = q.get("src") or ""
-    source_id = int(src_raw) if src_raw.isdigit() else None
-    source = None
-    if source_id is not None:
-        source = await run_db(_up.get_source_row, db, source_id)
-        if source is not None and not source.enabled:
-            return JSONResponse(status_code=409, content={
-                "code": "upstream_source_disabled",
-                "message": "所选线路已不可用"})
-    headers = _up._source_headers(source) if source is not None else {}
-    # MediaSourceId 形如 {guid}:upstream:{mapping_id}，无 id 后缀
-    # 时为最佳映射口径（剪除/借帧查账共用这一个解析结果）。
-    _msid = (q.get("MediaSourceId") or "").strip()
-    _prefix = f"{item_id}:upstream:"
-    _mid = None
-    if _msid.startswith(_prefix) and _msid[len(_prefix):].isdigit():
-        _mid = int(_msid[len(_prefix):])
-    # 片头印制广告剪除：与取流口同口径查高置信记录。
-    _skip = 0.0
-    if source_id is not None:
-        from backend.emby_server import cms_ad_skip as _adskip
-
-        if _adskip.source_enabled(source_id):
-            _found, _known = await run_db(
-                _adskip.lookup_trim, db, item.id, _mid, source_id)
-            if _found:
-                _skip = _found
-    # 借帧修复：与取流口同口径查 verified 修复（摘段时互斥不查）。
-    _graft_url = None
-    _graft_segments = None
-    if source_id is not None and not _skip:
-        from backend.emby_server import cms_graft as _graft_mod
-
-        _graft = await run_db(
-            _graft_mod.lookup_for_playback, db, item.id, _mid, source_id)
-        if _graft is not None:
-            _graft_mid, _graft_segments = _graft
-            _base = _base_url(request)
-
-            def _graft_url(idx: int) -> str:
-                locator = _proxy.make_locator(
-                    user.id, item_id, q.get("exp") or "",
-                    f"graft://{_graft_mid}/{idx}")
-                return (
-                    f"{_base}/emby/Videos/{item.guid}/upstream/graftseg"
-                    f"?MediaSourceId={_msid}"
-                    f"&uid={user.id}&exp={q.get('exp') or ''}"
-                    f"&sign={q.get('sign') or ''}"
-                    f"&src={source_id}&u={locator}")
-
-    text = await run_in_threadpool(
-        _proxy.build_media_response_text, target, headers,
-        source_id=source_id, item_id=item.id, skip_seconds=_skip,
-        graft_segments=_graft_segments, make_graft_url=_graft_url)
-    if text is None:
-        return RedirectResponse(target, status_code=302)
-    return Response(
-        content=text, media_type="application/vnd.apple.mpegurl",
-        headers={"Cache-Control": "no-store"})
-
-
-@emby_router.get("/emby/Videos/{item_id}/upstream/graftseg")
-@emby_router.get("/Videos/{item_id}/upstream/graftseg")
-@release_db_before_response
-async def upstream_graft_segment(
-    item_id: str, request: Request,
-    user: models.WebUser = Depends(get_play_user),
-    db: Session = Depends(get_db),
-):
-    """借帧修复段端点：下发我方修复好的片头分段字节（数据卷文件）。
-
-    只有清单层换进来的段会走到这里：定位参数 u 经 HMAC 绑定
-    (uid, item, exp, graft://<mapping_id>/<idx>)，篡改即 403；
-    付费墙/绑定门禁/可见性与清单二级端点逐项同款。落库行必须
-    仍是 verified 且属于本条目，段文件缺失回 404（播放器可回落
-    其它线路，不许拿别段冒充）。其余分段仍由播放器直连源站，
-    本端点只递修复窗这几段。
-    """
-    from backend.emby_server import cms_graft as _graft_mod
-    from backend.emby_server import cms_playlist_proxy as _proxy
-    from backend.emby_server.async_db import run_db
-
-    await run_db(ensure_playback_allowed, db, user)
-    item = await run_db(_require_visible_item, db, user, item_id)
-    from backend.emby_server import playback_gate as _gate
-    await run_db(_gate.ensure_binding_playback_allowed_for_item,
-                 db, user, item)
-    q = request.query_params
-    target = _proxy.read_locator(
-        q.get("u") or "", user.id, item_id, q.get("exp") or "")
-    mid = idx = None
-    if target and target.startswith("graft://"):
-        parts = target[len("graft://"):].split("/")
-        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
-            mid, idx = int(parts[0]), int(parts[1])
-    if mid is None:
-        return JSONResponse(status_code=403, content={
-            "code": "cms_graft_locator_invalid",
-            "message": "修复段定位参数无效"})
-    row = await run_db(_graft_mod.get_repair, db, mid)
-    seg = None
-    if row is not None and row.status == "verified" \
-            and int(row.local_item_id) == int(item.id):
-        for cand in _graft_mod.repair_segments(row):
-            if int(cand.get("idx", -1)) == idx:
-                seg = cand
-                break
-    if seg is None:
-        return JSONResponse(status_code=404, content={
-            "code": "cms_graft_segment_not_found",
-            "message": "修复段不可用"})
-    path = _graft_mod.segment_abspath(mid, seg.get("file") or "")
-
-    def _read():
-        try:
-            return path.read_bytes()
-        except OSError:
-            return None
-
-    data = await run_in_threadpool(_read)
-    if data is None:
-        return JSONResponse(status_code=404, content={
-            "code": "cms_graft_segment_not_found",
-            "message": "修复段不可用"})
-    return Response(
-        content=data, media_type="video/MP2T",
-        headers={"Cache-Control": "no-store"})
 
 
 @emby_router.get("/emby/videos/{item_id}/{transcode_path:path}")

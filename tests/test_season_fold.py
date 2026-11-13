@@ -1,7 +1,7 @@
 """同步后自动按季折叠（season_fold）回归测试。
 
 判定口径照 parent 2026-11-05 手工折叠验证版、自动化从严：
-- 分组键 = 同库 + 底名（applecms_backfill.season_suffix_parts 剥尾部
+- 分组键 = 同库 + 底名（season_fold.season_suffix_parts 剥尾部
   季号/动画版后缀与全部空白后，再走 dedup.normalize_name）；
 - 只折明确标记行（第X季/第X部/Season N/Sxx），纯尾数不折；
 - 逐行对正主判：TMDB 冲突 / 年份差 ≥2 / 集季号混装 → 跳过该行；
@@ -19,7 +19,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend.database import Base
-from backend.emby_server import applecms_backfill as bf
 from backend.emby_server import merge_versions_worker as mvw
 from backend.emby_server import models as em
 from backend.emby_server import season_fold as sf
@@ -96,47 +95,47 @@ def _vis_eps(db, series_id):
             .all())
 
 
-# ---------------- 解析器（applecms_backfill 唯一实现） ----------------
+# ---------------- 解析器（season_fold 本地实现） ----------------
 
 def test_parser_buliangren_s4():
-    base, season, marker = bf.season_suffix_parts("画江湖之不良人第四季 动画版")
+    base, season, marker = sf.season_suffix_parts("画江湖之不良人第四季 动画版")
     assert (base, season, marker) == ("画江湖之不良人", 4, "explicit")
 
 
 def test_parser_space_variants():
     for name in ("画江湖之不良人 第四季", "画江湖之不良人　第四季",
                  "画江湖之不良人第四季", "画江湖之不良人 第 四 季"):
-        base, season, marker = bf.season_suffix_parts(name)
+        base, season, marker = sf.season_suffix_parts(name)
         assert (base, season, marker) == ("画江湖之不良人", 4, "explicit"), name
 
 
 def test_parser_digit_tail_not_explicit():
-    base, season, marker = bf.season_suffix_parts("不良人7")
+    base, season, marker = sf.season_suffix_parts("不良人7")
     assert season == 7 and marker == "digit"
     # 纯尾数不剥进底名：不许混进「不良人」组
     assert base == "不良人7"
 
 
 def test_parser_bu_and_season_en():
-    assert bf.season_suffix_parts("某剧第二部") == ("某剧", 2, "explicit")
-    assert bf.season_suffix_parts("Some Show Season 3") == ("SomeShow", 3, "explicit")
-    assert bf.season_suffix_parts("海贼王 S2") == ("海贼王", 2, "explicit")
+    assert sf.season_suffix_parts("某剧第二部") == ("某剧", 2, "explicit")
+    assert sf.season_suffix_parts("Some Show Season 3") == ("SomeShow", 3, "explicit")
+    assert sf.season_suffix_parts("海贼王 S2") == ("海贼王", 2, "explicit")
 
 
 def test_parser_no_marker_and_mid_name():
-    assert bf.season_suffix_parts("普通剧名") == ("普通剧名", None, None)
+    assert sf.season_suffix_parts("普通剧名") == ("普通剧名", None, None)
     # 季号字样在名中部（非尾部）不动
-    assert bf.season_suffix_parts("第一季的秘密") == ("第一季的秘密", None, None)
+    assert sf.season_suffix_parts("第一季的秘密") == ("第一季的秘密", None, None)
     # 整名就是后缀：不产出空底名
-    base, season, marker = bf.season_suffix_parts("第三季")
+    base, season, marker = sf.season_suffix_parts("第三季")
     assert base and season is None
 
 
 def test_parser_shared_impl_extended_bu():
     # 同一套实现：season_number_of / strip_season 同步认「第X部」
-    assert bf.season_number_of("某剧第二部") == 2
-    assert bf.strip_season("某剧第二部") == "某剧"
-    assert bf.season_number_of("某剧第二季") == 2
+    assert sf.season_number_of("某剧第二部") == 2
+    assert sf.strip_season("某剧第二部") == "某剧"
+    assert sf.season_number_of("某剧第二季") == 2
 
 
 # ---------------- 不良人形状：力学 + 安全阀 ----------------

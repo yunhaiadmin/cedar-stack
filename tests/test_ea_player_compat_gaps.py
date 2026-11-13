@@ -304,28 +304,6 @@ def test_special_features_user_prefixed_paths(client, token, seed):
         assert r.json()["Items"] == []
 
 
-# ---------- G5：MediaSegments ----------
-
-def test_media_segments_maps_intro_markers(client, token, seed):
-    r = client.get(f"/emby/MediaSegments/{seed['ep']}", headers=_h(token))
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["TotalRecordCount"] == 1
-    seg = body["Items"][0]
-    assert seg["ItemId"] == seed["ep"]
-    assert seg["Type"] == "Intro"
-    assert seg["StartTicks"] == 1000 * 10000
-    assert seg["EndTicks"] == 61000 * 10000
-
-
-def test_media_segments_empty_when_no_markers(client, token, seed):
-    r = client.get(f"/emby/MediaSegments/{seed['movie_new']}",
-                   headers=_h(token))
-    assert r.status_code == 200, r.text
-    assert r.json()["Items"] == []
-    assert r.json()["TotalRecordCount"] == 0
-
-
 # ---------- G6：ThumbnailSet 空集 ----------
 
 def test_thumbnail_set_returns_empty_set(client, token, seed):

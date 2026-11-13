@@ -323,29 +323,6 @@ export const communityApi = {
   /** 公开端点：文档外链 + 社区渠道（只含要显示的项，不含任何凭据） */
   get: () => api.get<never, CommunityLinks>('/api/site/community'),
 }
-
-// ==================== AI 助手（能力：AI 模型设置，backend/api/assistant.py） ====================
-
-export interface AiStatus {
-  /** 管理员是否已配置并启用（未配置时前端不显示入口） */
-  enabled: boolean
-  reason: string
-  /** 每用户每日上限；0 表示不限 */
-  daily_limit: number
-  remaining: number | null
-}
-
-export interface AiAnswer extends AiStatus {
-  answer: string
-  // 不回传模型名：用户不需要看到具体模型（服务端也不下发）
-}
-
-export const aiApi = {
-  status: () => api.get<never, AiStatus>('/api/user/ai/status'),
-  ask: (question: string, history?: { role: 'user' | 'assistant'; content: string }[]) =>
-    api.post<never, AiAnswer>('/api/user/ai/ask', { question, history }),
-}
-
 // ==================== 自建 Emby 门户 API（backend/emby_server/portal.py） ====================
 
 /** 一个「服」的连接信息与会员状态（多服运营：同一个面板下可以有几个独立的服） */

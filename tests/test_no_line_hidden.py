@@ -357,26 +357,3 @@ def test_played_exclude_hidden(client, seed, token):
     assert seed["guids"]["alive"] in got
     assert seed["guids"]["dead"] not in got
     assert r.json()["TotalRecordCount"] == 1
-
-
-def test_sync_round_end_runs_reconcile(seed, monkeypatch):
-    # 先把死线片解藏成可见态，验证同步轮收尾对账会重新藏掉
-    db = SessionLocal()
-    try:
-        row = db.get(em.MediaItem, seed["ids"]["dead"])
-        row.is_hidden = False
-        db.query(em.ItemHiddenLedger).filter(
-            em.ItemHiddenLedger.item_id == row.id,
-            em.ItemHiddenLedger.restored_at.is_(None),
-        ).update({em.ItemHiddenLedger.restored_at: datetime.now()},
-                 synchronize_session=False)
-        db.commit()
-    finally:
-        db.close()
-    from backend.emby_server import applecms_library_sync as als
-    monkeypatch.setenv("APPLECMS_LIBRARY_SYNC_ENABLED", "1")
-    monkeypatch.setattr(als, "sync_library",
-                        lambda db, library, **kw: {"blocked": "stub"})
-    results = als.run_library_sync_round(session_factory=SessionLocal)
-    assert results  # 至少跑了种子里的无界库
-    assert _fresh(seed["ids"]["dead"]) is True

@@ -12,14 +12,14 @@
   版本合并（merge_group 按 (季,集) 配对成副本），不改季号、不建
   季行——季拆行的集全标 Season 1，塞进去只会把第四季的集错并进
   正主第一季。故新建本模块而不是扩宽松通道：分组键、逐行守卫、
-  折叠力学三者都不同；复用零件：标题季号解析（applecms_backfill，
+  折叠力学三者都不同；复用零件：标题季号解析（本模块内，
   全仓一套）、映射迁移（upstream_item_mappings.migrate_mappings）、
   托管季行 guid 锚（upstream_import.hosted_season_guid）、合并工人
   的配置与一程挂接。
 
 判定口径（照 2026-11-05 手工折叠验证版，自动化从严）：
 - 分组键 = 同库 + dedup.normalize_name(底名)，底名由
-  applecms_backfill.season_suffix_parts 剥尾部季号/动画版后缀得到；
+  本模块 season_suffix_parts 剥尾部季号/动画版后缀得到；
 - 只折明确标记行（第X季/第X部/Season N/Sxx）；纯尾数行只报不折；
 - 正主唯一：无标记总剧行优先成池，否则明确季行成池；池内按
   （是否全组众数 tmdb、可见集数）排名，榜首并列 → 整组不折；
@@ -35,6 +35,7 @@
 """
 import hashlib
 import logging
+import re
 from collections import Counter
 from typing import Dict, List, Optional, Tuple
 
@@ -42,6 +43,124 @@ logger = logging.getLogger(__name__)
 
 #: 候选轻量列扫描倍数（与宽松通道 MERGE_CANDIDATE_MULTIPLIER 同口径）。
 _CANDIDATE_MULTIPLIER = 10
+
+
+# ---------------------------------------------------------------------------
+# 标题季号解析（全仓只许这一套实现；原在 applecms_backfill，2026-11-13
+# 随苹果 CMS 删除迁入本模块——按季折叠是其唯一保留消费方）
+# ---------------------------------------------------------------------------
+
+_SEASON_CN_RE = re.compile(r"第\s*([0-9一二三四五六七八九十百]+)\s*[季部]")
+_SEASON_EN_RE = re.compile(r"[Ss]eason\s*([0-9]+)")
+_SEASON_SXX_RE = re.compile(r"\bS([0-9]{1,2})\b")
+_CN_DIGITS = {"零": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+              "六": 6, "七": 7, "八": 8, "九": 9, "十": 10, "百": 100}
+
+
+def _cn_number(text: str) -> Optional[int]:
+    """中文数字（≤99）转 int；解析不了返回 None（不猜）。"""
+    if not text:
+        return None
+    if text.isdigit():
+        return int(text)
+    if len(text) == 1:
+        return _CN_DIGITS.get(text)
+    if "十" in text:
+        left, _, right = text.partition("十")
+        tens = _CN_DIGITS.get(left, 1) if left else 1
+        ones = _CN_DIGITS.get(right, 0) if right else 0
+        if tens is None or ones is None:
+            return None
+        return tens * 10 + ones
+    return None
+
+
+def season_number_of(name: str) -> Optional[int]:
+    """从片名解析季号（第X季 / Season N / Sxx）；没有返回 None。"""
+    text = name or ""
+    match = _SEASON_CN_RE.search(text)
+    if match:
+        return _cn_number(match.group(1))
+    match = _SEASON_EN_RE.search(text) or _SEASON_SXX_RE.search(text)
+    if match:
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
+    return None
+
+
+def strip_season(name: str) -> str:
+    """去掉季号标记（第X季/Season N/Sxx）与尾部语言变体括号。
+
+    只用于生成搜索钥匙与打分时的季号无关比对；原名保留在别处，
+    季号是否一致另有显式校验（见 score 的 season 否决）。
+    """
+    text = name or ""
+    text = _SEASON_CN_RE.sub("", text)
+    text = _SEASON_EN_RE.sub("", text)
+    text = _SEASON_SXX_RE.sub("", text)
+    return text.strip(" ·-—_（(）)")
+
+
+_SEASON_CN_SUFFIX_RE = re.compile(r"第\s*([0-9一二三四五六七八九十百]+)\s*[季部]$")
+_SEASON_EN_SUFFIX_RE = re.compile(r"[Ss]eason\s*([0-9]+)$")
+_SEASON_SXX_SUFFIX_RE = re.compile(r"(?<![A-Za-z0-9])S([0-9]{1,2})$")
+_TRAILING_NUMBER_RE = re.compile(r"([0-9]{1,2})$")
+_ANIM_SUFFIXES = ("动画版", "动画")
+
+
+def season_suffix_parts(name: str):
+    """片名尾部季号后缀解析（按季折叠通道专用，与 season_number_of 同源）。
+
+    全仓标题季号解析只许这一套实现：本函数复用本模块的季号正则与
+    中文数字口径，专供「同剧按季拆行」治理使用。
+
+    返回 (底名, 季号|None, 标记类)：
+    - 标记类 "explicit"：第X季/第X部、Season N、Sxx 明确标记；
+    - "digit"：纯尾数（如「不良人7」）——只报数、不许自动折，且底名
+      保留尾数（自成一组，不混进无尾数的底名组）；
+    - None：无季号后缀。
+    底名 = 去全部空白后反复剥尾部季号后缀与「动画版/动画」后缀的
+    剩余原文（不做归一化，归一在调用方）。只认尾部，季号字样在
+    名中部的不动；整名就是后缀时返回原名、无季号。
+    """
+    text = re.sub(r"\s+", "", name or "")
+    if not text:
+        return "", None, None
+    season = None
+    marker = None
+    while True:
+        m = _SEASON_CN_SUFFIX_RE.search(text)
+        if m:
+            num = _cn_number(m.group(1))
+            if num is None:
+                break
+            if season is None:
+                season, marker = num, "explicit"
+            text = text[:m.start()]
+            continue
+        m = (_SEASON_EN_SUFFIX_RE.search(text)
+             or _SEASON_SXX_SUFFIX_RE.search(text))
+        if m:
+            if season is None:
+                season, marker = int(m.group(1)), "explicit"
+            text = text[:m.start()]
+            continue
+        for suf in _ANIM_SUFFIXES:
+            if text.endswith(suf) and len(text) > len(suf):
+                text = text[:-len(suf)]
+                break
+        else:
+            break
+    if not text:
+        return re.sub(r"\s+", "", name or ""), None, None
+    if season is None:
+        m = _TRAILING_NUMBER_RE.search(text)
+        if m and len(text) > len(m.group(1)):
+            return text, int(m.group(1)), "digit"
+        return text, None, None
+    return text, season, marker
 
 
 def _episode_counts(db, series_ids: List[int]) -> Dict[int, int]:
@@ -141,7 +260,6 @@ def find_season_fold_plan(db, cfg) -> Tuple[List[dict], Dict[str, int]]:
 
     plan = {"primary_id", "folds": [(row_id, 目标季号)], "group_ids"}。
     """
-    from backend.emby_server import applecms_backfill as _bf
     from backend.emby_server import dedup as dedup_lib
     from backend.emby_server import models as em
 
@@ -170,7 +288,7 @@ def find_season_fold_plan(db, cfg) -> Tuple[List[dict], Dict[str, int]]:
     parts: Dict[int, Tuple[Optional[int], Optional[str]]] = {}
     groups: Dict[Tuple[int, str], list] = {}
     for row in light_rows:
-        base, season, marker = _bf.season_suffix_parts(row.name)
+        base, season, marker = season_suffix_parts(row.name)
         key_name = dedup_lib.normalize_name(base)
         if not key_name:
             continue

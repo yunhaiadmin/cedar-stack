@@ -30,7 +30,6 @@ GA068_MODULES = (
     "backend.api.admin_alerts",
     "backend.api.admin_tasks",
     "backend.api.admin_player_blacklist",
-    "backend.api.admin_diagnosis",
     "backend.api.media_sets_api",
     "backend.api.panel",
     "backend.api.governance_report",

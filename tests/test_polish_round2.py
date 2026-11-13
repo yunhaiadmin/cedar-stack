@@ -32,20 +32,6 @@ class TestProbeWorker:
         assert "qsize()" in content or "_work_queue" in content
 
 
-class TestThumbnailWorker:
-    """超时收紧；单视频总上限；SQL 层过滤 mount://。"""
-
-    def test_timeout_defaults(self):
-        mod = _load("polish_thumb2", os.path.join(BASE, "thumbnail_worker.py"))
-        assert mod.THUMBNAIL_FFMPEG_TIMEOUT <= 120
-        assert hasattr(mod, "THUMBNAIL_PER_VIDEO_TIMEOUT")
-
-    def test_mount_filtered_in_sql(self):
-        with open(os.path.join(BASE, "thumbnail_worker.py")) as f:
-            content = f.read()
-        assert 'mount://%' in content
-
-
 class TestSubtitleWorker:
     """路径先行；流式；批量提交。"""
 

@@ -31,7 +31,7 @@ import {
   Image as ImageIcon, Layers,
   Database, Megaphone, Receipt, Trophy, TicketPercent, UserPlus, KeySquare,
   UserCog, Activity, Medal, MessageSquareText, HandCoins, Gift,
-  Sun, Moon, MonitorSmartphone, Stethoscope, ListChecks, Flag,
+  Sun, Moon, MonitorSmartphone, ListChecks, Flag,
   PanelLeftClose, PanelLeftOpen,
 } from 'lucide-vue-next'
 import { changePassword } from '@/api/admin'
@@ -233,8 +233,6 @@ const navGroups: NavGroup[] = [
       { path: '/health', label: '系统健康', icon: Activity },
       // v2.56.0：任务总览——所有后台任务一页看完（状态/进度/开关）
       { path: '/tasks', label: '任务总览', icon: ListChecks },
-      // 专线 B 第二阶段 · 只读观测口（GET，仅展示；批 3 起降级为任务总览 / 系统健康页内区）
-      { path: '/diagnosis', label: '一键体检', icon: Stethoscope },
       { path: '/api-keys', label: 'API Key', icon: KeyRound, superOnly: true },
     ],
   },

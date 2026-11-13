@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 from backend import models as base_models
 from backend.api import admin_economy, admin_scrape
-from backend.emby_server import auto_scan, change_watcher, db_backup, enrich_worker
+from backend.emby_server import auto_scan, change_watcher, enrich_worker
 from backend.emby_server.metasources import config as ms_config
 from backend.integrations import store
 from backend.lottery import is_enabled
@@ -151,7 +151,6 @@ def test_economy_get_missing_on_switches_use_code_default(db):
 def test_true_row_is_on_at_remaining_read_sites(db, monkeypatch):
     store.write_values(db, {
         change_watcher.CONFIG_ENABLED: "true",
-        db_backup.CONFIG_ENABLED: "true",
         enrich_worker.CFG_DOUBAN_BAN_DOWNGRADE: "true",
         enrich_worker.CFG_EPISODE_TITLE: "true",
     })
@@ -160,10 +159,6 @@ def test_true_row_is_on_at_remaining_read_sites(db, monkeypatch):
 
     change_watcher._check_once()
     assert _value(db, change_watcher.CONFIG_LAST_CHECK)
-
-    monkeypatch.setattr(db_backup, "list_backups", lambda: [])
-    monkeypatch.setattr(db_backup, "get_db_file_path", lambda: db_backup.Path("/tmp/aetrix.db"))
-    assert db_backup.get_config(db)["enabled"] is True
 
     assert enrich_worker.get_douban_ban_downgrade_config(db)["enabled"] is True
     assert enrich_worker._douban_ban_downgrade_flag_on() is True
