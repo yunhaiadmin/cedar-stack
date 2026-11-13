@@ -25,13 +25,20 @@ export interface PlaybackInfoResult {
   PlaySessionId: string
 }
 
-async function embyBase(): Promise<string> {
+async function embyBase(override?: string): Promise<string> {
+  const raw = (override || '').trim()
+  if (raw) return raw.replace(/\/+$/, '')
   return (await ensureEmbyBase()).replace(/\/+$/, '')
 }
 
-/** 取版本/线路清单（会过服务端播放门禁，未就绪/无权限时按服务端错误抛出） */
-export async function fetchPlaybackInfo(itemId: string): Promise<PlaybackInfoResult> {
-  const base = await embyBase()
+/**
+ * 取版本/线路清单（会过服务端播放门禁，未就绪/无权限时按服务端错误抛出）。
+ * overrideBase：弹层选定的播放线路入口（已经过账号下发清单校验）——
+ * 给了就本次播放的 EA 请求都走该入口；不给走账号默认入口。
+ * 流地址仍由服务端在 PlaybackInfo 里按现行策略下发，前端不改。
+ */
+export async function fetchPlaybackInfo(itemId: string, overrideBase?: string): Promise<PlaybackInfoResult> {
+  const base = await embyBase(overrideBase)
   return api.post<never, PlaybackInfoResult>(
     `${base}/emby/Items/${encodeURIComponent(itemId)}/PlaybackInfo`,
     {},
@@ -58,25 +65,25 @@ function reportBody(r: SessionReport, paused?: boolean): Record<string, unknown>
   return body
 }
 
-export async function reportPlaying(r: SessionReport): Promise<void> {
-  const base = await embyBase()
+export async function reportPlaying(r: SessionReport, overrideBase?: string): Promise<void> {
+  const base = await embyBase(overrideBase)
   await api.post(`${base}/emby/Sessions/Playing`, reportBody(r))
 }
 
-export async function reportProgress(r: SessionReport, paused: boolean): Promise<void> {
-  const base = await embyBase()
+export async function reportProgress(r: SessionReport, paused: boolean, overrideBase?: string): Promise<void> {
+  const base = await embyBase(overrideBase)
   await api.post(`${base}/emby/Sessions/Playing/Progress`, reportBody(r, paused))
 }
 
-export async function reportStopped(r: SessionReport): Promise<void> {
-  const base = await embyBase()
+export async function reportStopped(r: SessionReport, overrideBase?: string): Promise<void> {
+  const base = await embyBase(overrideBase)
   await api.post(`${base}/emby/Sessions/Playing/Stopped`, reportBody(r))
 }
 
 /** 退出页面时尽力上报停止（页面卸载场景用 sendBeacon 兜底，失败不抛） */
-export function reportStoppedBeacon(r: SessionReport): void {
+export function reportStoppedBeacon(r: SessionReport, overrideBase?: string): void {
   try {
-    const raw = localStorage.getItem('emby_base_url') || ''
+    const raw = (overrideBase || '').trim() || localStorage.getItem('emby_base_url') || ''
     const base = raw.startsWith('{')
       ? (JSON.parse(raw) as { u?: string }).u || ''
       : raw
