@@ -138,7 +138,6 @@ const groups = computed<MenuGroup[]>(() => {
       value: activeSub.value?.plan_name || undefined,
     },
     { key: 'member', label: '我的会员', to: '/game/account/member' },
-    { key: 'ledger', label: '能量明细', to: '/game/ledger' },
   ]
   const account: MenuItem[] = [
     { key: 'settings', label: '账号与设置', to: '/game/account/settings' },

@@ -33,34 +33,6 @@
       </div>
     </section>
 
-    <!-- 展示与隐私 -->
-    <section class="set-group">
-      <h2 class="set-gtitle">展示与隐私</h2>
-      <p class="set-gsub">发现页和榜单怎么展示，你说了算</p>
-      <div class="set-rows">
-        <CardPrefsEntry />
-        <div class="set-row">
-          <span class="set-row-ic" aria-hidden="true"><Eye :size="22" /></span>
-          <span class="set-row-name">观影碑时长榜上榜</span>
-          <button
-            type="button"
-            class="set-switch"
-            :class="{ 'is-on': showOnLeaderboard }"
-            :disabled="privacyLoading"
-            role="switch"
-            :aria-checked="showOnLeaderboard"
-            aria-label="观影碑时长榜上榜"
-            @click="toggleLeaderboard"
-          ></button>
-        </div>
-      </div>
-      <p class="set-note">打开后，你的观影时长会出现在世界观影碑的时长榜上（只显示昵称）；关掉则不上榜，但你自己仍能看到自己的排名。</p>
-      <p v-if="privacyError" class="set-errline">
-        <span>{{ privacyError }}</span>
-        <button type="button" class="set-retry" @click="loadPrivacy">重试</button>
-      </p>
-    </section>
-
     <!-- 通知：TG 私聊偏好（站内信不受影响） -->
     <section class="set-group">
       <h2 class="set-gtitle">通知</h2>
@@ -147,18 +119,20 @@
 <script setup lang="ts">
 /**
  * 账号设置页（/game/account/settings）：个人中心重做后设置类功能的家。
- * 六组——安全（改密码 / 我的设备 / 登录记录）、绑定（谷歌盘管理 + 已
+ * 五组——安全（改密码 / 我的设备 / 登录记录）、绑定（谷歌盘管理 + 已
  * 下线绑定解绑）、追剧订阅（订阅列表 / 搜片名订阅 / 分集转存状态，
- * 面板原家；概览归组摘除后归位）、展示与隐私（发现页卡片展示 / 观影碑上榜开关）、通
+ * 面板原家；概览归组摘除后归位）、通
  * 知（TG 私聊三类偏好开关）、账号（退出登录）。各块逻辑都在 components/profile/ 的对应组件里（自旧
- * 账号页原样抽出，行为口径不变）；本页只留上榜开关与退出登录。
+ * 账号页原样抽出，行为口径不变）；本页只留退出登录。原「展示与隐私」组
+ * （发现页卡片展示 / 观影碑上榜开关）已随发现页删除与榜单下架定版整组
+ * 摘除（2026-11-13 残留入口清理单）。
  * 带 #my-drive 锚点进来（旧深链 / 播放器方案弹窗）时，等绑定组显示后
  * 自动展开谷歌盘并滚到位。点播引导带 bind_return 参数进来时，绑好
  * （列表出现可用绑定）自动回跳来源页并让其重开播放器选择。
  */
 import { nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Bell, Eye, Lock, LogOut } from 'lucide-vue-next'
+import { Bell, Lock, LogOut } from 'lucide-vue-next'
 import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 import PcEntryRow from '@/components/profile/PcEntryRow.vue'
 import ChangePasswordModal from '@/components/profile/ChangePasswordModal.vue'
@@ -167,7 +141,6 @@ import LoginHistoryEntry from '@/components/profile/LoginHistoryEntry.vue'
 import SecurityTrioPanel from '@/components/profile/SecurityTrioPanel.vue'
 import DriveBindingsPanel from '@/components/profile/DriveBindingsPanel.vue'
 import SeriesFollowsPanel from '@/components/profile/SeriesFollowsPanel.vue'
-import CardPrefsEntry from '@/components/profile/CardPrefsEntry.vue'
 import { panelApi, humanizeError } from '@/composables/usePanelApi'
 import {
   BIND_RETURN_QUERY,
@@ -219,38 +192,6 @@ function onActiveBinding() {
     path: target,
     query: title ? { [RESUME_TITLE_QUERY]: title } : {},
   })
-}
-
-// ── 观影碑上榜开关（自旧页原样迁入） ──
-const showOnLeaderboard = ref(true)
-const privacyLoading = ref(false)
-const privacyError = ref('')
-
-async function loadPrivacy() {
-  privacyLoading.value = true
-  privacyError.value = ''
-  try {
-    const d = await panelApi.privacyGet()
-    showOnLeaderboard.value = d.show_on_leaderboard !== false
-  } catch (e) {
-    privacyError.value = humanizeError(e)
-  } finally {
-    privacyLoading.value = false
-  }
-}
-async function toggleLeaderboard() {
-  if (privacyLoading.value) return
-  const next = !showOnLeaderboard.value
-  privacyLoading.value = true
-  try {
-    const d = await panelApi.privacySet(next)
-    showOnLeaderboard.value = d.show_on_leaderboard !== false
-    toast.success(next ? '已允许上榜' : '已关掉上榜')
-  } catch (e) {
-    toast.error(humanizeError(e))
-  } finally {
-    privacyLoading.value = false
-  }
 }
 
 // ── TG 私聊通知偏好（只管机器人私聊，站内信不受影响） ──
@@ -305,7 +246,6 @@ async function handleLogout() {
 }
 
 onMounted(() => {
-  void loadPrivacy()
   void loadNotifyPrefs()
 })
 </script>
