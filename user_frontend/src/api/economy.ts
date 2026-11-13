@@ -578,16 +578,23 @@ export interface CouponQuote {
   list_price: number
   discount_amount: number
   paid_amount: number
-  discount_type: 'percent' | 'fixed'
+  discount_type: 'percent' | 'fixed' | 'points'
   value: number
+  /** 后端同口径附带下发：会员等级折扣（订阅+付费服才有），已含在 discount_amount 内 */
+  member_discount_pct?: number
+  member_discount_amount?: number
+  /** 兑换码折扣权益（没填优惠码时自动用最优一张），已含在 discount_amount 内 */
+  exchange_discount_pct?: number
+  /** 能量支付试算时为 true，此时金额字段单位为能量 */
+  pay_with_points?: boolean
 }
 
 export const couponApi = {
   /** 功能开关：关闭时钱包页不展示优惠码输入框（不让用户白填） */
   config: () =>
     api.get<never, { enabled: boolean }>('/api/user/economy/payment/coupon/config'),
-  /** 试算：POST 以免优惠码进访问日志/浏览器历史 */
-  quote: (data: { code: string; kind: 'recharge' | 'subscription'; item_id: number }) =>
+  /** 试算：POST 以免优惠码进访问日志/浏览器历史；code 可空＝按自动权益口径试算 */
+  quote: (data: { code: string; kind: 'recharge' | 'subscription'; item_id: number; pay_with_points?: boolean }) =>
     api.post<never, CouponQuote>('/api/user/economy/payment/coupon/quote', data),
 }
 

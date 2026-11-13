@@ -4,6 +4,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import Toast from '@/components/Toast.vue'
 import AppHeader from '@/components/AppHeader.vue'
 import PanelTabbar from '@/components/panel/PanelTabbar.vue'
+import UhdAccountDock from '@/components/uhd/UhdAccountDock.vue'
 import TgBindModal from '@/components/TgBindModal.vue'
 import { useToast } from '@/composables/useToast'
 import { useUserStore } from '@/stores/user'
@@ -55,10 +56,18 @@ const showChrome = computed(
 
 /**
  * UHD 换皮批 2：办事面（/game/* 与 /shop）走 UhdAccountLayout 左栏框架，
- * 全局顶栏在这些路由下不再渲染（导航由左栏承担）；底部坞（手机）照常保留。
+ * 全局顶栏在这些路由下不再渲染（导航由左栏承担）。
+ *
+ * UHD 订阅/用户中心单（2026-11-13）：手机底部坞按路由区域分两套——
+ * 用户中心区域渲染玻璃双页签 UhdAccountDock（概览/我的），不再渲染
+ * PanelTabbar；片库区域（批 3 的 isStreamArea）渲染它自己的双玻璃块，
+ * 两区域路径不重叠、条件互斥，不会并存。订阅页自身有吸底结算条占底，
+ * 双页签在该页隐藏（isSubscribePage）。
+ * 变基对齐批 3 后，PanelTabbar 的条件应为 showChrome && !isAccountArea && !isStreamArea。
  */
 const isAccountArea = computed(() => route.path === '/shop' || route.path.startsWith('/game'))
 const showHeader = computed(() => showChrome.value && !isAccountArea.value)
+const isSubscribePage = computed(() => route.name === 'game-account-subscribe')
 
 /**
  * 桌面「探险世界」激活且在首页时，世界自带 HUD（品牌/能量/等级/头像），
@@ -190,7 +199,8 @@ watch(
         </Transition>
       </KeepAlive>
     </RouterView>
-    <PanelTabbar v-if="showChrome" />
+    <PanelTabbar v-if="showChrome && !isAccountArea" />
+    <UhdAccountDock v-if="showChrome && isAccountArea && !isSubscribePage" />
     <Toast :messages="messages" @remove="remove" />
     <!-- 全局 TG 绑定自动弹窗：新用户注册后自动弹出，已绑定不弹 -->
     <TgBindModal v-model="showGlobalTgBind" @bound="handleGlobalTgBound" />
