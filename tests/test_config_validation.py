@@ -38,7 +38,7 @@ def _cfg(s, key):
     ("points_transfer_fee_pct", "101"),
     ("points_transfer_daily_cap", "abc"),
     ("points_transfer_min", 0),
-    ("redpacket_fee_pct", 1.5),
+    ("points_transfer_fee_pct", 1.5),
     ("recharge_ratio", "-1"),
     ("recharge_quick_amounts", "10,abc"),
     ("lottery_draw_interval_sec", "5"),

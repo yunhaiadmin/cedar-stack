@@ -42,39 +42,3 @@ def test_redeem_welfare_atomic_spend():
         assert int(user.points) == 50, "扣款失败时余额不应变化"
     finally:
         db.close()
-
-
-def test_redpacket_replay_idempotent():
-    """同一 idempotency_key 重放只建一个包、只扣一次款。"""
-    from backend import welfare_redpacket
-    user, db = _make_user("review_rp_u", 10000)
-    uid = user.id
-    try:
-        # 关掉频率限制干扰：直接调 send_packet
-        p1 = welfare_redpacket.send_packet(db, user, 100, 5,
-                                           idempotency_key="tg:999999")
-        bal_after_first = db.query(models.WebUser.points).filter(
-            models.WebUser.id == uid).scalar()
-        # 重放同一 key
-        p2 = welfare_redpacket.send_packet(db, user, 100, 5,
-                                           idempotency_key="tg:999999")
-        bal_after_replay = db.query(models.WebUser.points).filter(
-            models.WebUser.id == uid).scalar()
-        assert p1.id == p2.id, "重放应返回同一个包"
-        assert bal_after_first == bal_after_replay, (
-            f"重放不应重复扣款：{bal_after_first} vs {bal_after_replay}")
-        # 包总数应为 1
-        n = db.query(models.RedPacket).filter(
-            models.RedPacket.idempotency_key == "tg:999999").count()
-        assert n == 1
-    finally:
-        db.query(models.RedPacket).filter(
-            models.RedPacket.sender_id == uid).delete()
-        db.query(models.PointsLog).filter(
-            models.PointsLog.user_id == uid).delete(synchronize_session=False)
-        db.commit()
-        db.close()
-        db3 = SessionLocal()
-        db3.query(models.WebUser).filter(models.WebUser.id == uid).delete()
-        db3.commit()
-        db3.close()
