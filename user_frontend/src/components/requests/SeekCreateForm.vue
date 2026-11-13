@@ -8,13 +8,25 @@
         v-model="wishText"
         class="rf-search__input"
         type="text"
-        placeholder="输入片名，比如：《深海之间》"
+        placeholder="输入电影或剧集名称"
         maxlength="30"
         aria-label="片名"
         @keyup.enter="submitSeek"
         @input="onWishInput"
       />
-      <button type="button" class="rf-search__btn" :disabled="searching" @click="runSearchNow">搜索</button>
+      <button
+        type="button"
+        class="rf-search__btn"
+        :disabled="searching"
+        aria-label="搜索"
+        title="搜索"
+        @click="runSearchNow"
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="10.5" cy="10.5" r="6.5" />
+          <path d="M15.5 15.5 21 21" />
+        </svg>
+      </button>
     </div>
     <div v-if="emptyWarn" class="rf-hint rf-hint--err">先输入片名，再提交</div>
 
@@ -416,7 +428,8 @@ watch(
 
 <style scoped>
 /* 求片表单：缺省深色（§6.4），html[data-theme='light'] 时换浅（§6.1）。
-   搜索框约 50 高圆角约 25；搜索钮约 85×50 圆角约 25 白底＋淡彩虹渐变边框。 */
+   搜索框约 50 高圆角约 25；搜索钮为圆形彩虹钮（原站发起请求搜索框形态，
+   2026-11-13 六图）：50×50 圆、白底＋淡彩虹渐变边框＋放大镜图标。 */
 .rf-seek { display: flex; flex-direction: column; gap: 12px; }
 .rf-search { display: flex; gap: 10px; }
 .rf-search__input {
@@ -427,8 +440,9 @@ watch(
 .rf-search__input::placeholder { color: #9ca3af; }
 .rf-search__input:focus { border-color: #6b7280; }
 .rf-search__btn {
-  flex: none; width: 85px; height: 50px; border-radius: 25px;
-  font-size: 14px; font-weight: 700; color: #111111; cursor: pointer;
+  flex: none; width: 50px; height: 50px; border-radius: 50%;
+  color: #111111; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
   border: 1.5px solid transparent;
   background: linear-gradient(#ffffff, #ffffff) padding-box, var(--uhd-rainbow-border) border-box;
 }

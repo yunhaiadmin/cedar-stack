@@ -789,6 +789,12 @@ export const mediaSeekApi = {
   hot: () =>
     api.get<never, { requests: HotMediaSeekRequest[] }>('/api/user/media-seek/hot'),
 
+  /** 请求广场：全站求片按媒体身份聚合（一部片一张卡，后端真聚合）。
+   *  status 用统一状态名（pending/doing/done/rejected），kind 用 seek/chase，
+   *  q 按片名搜话题；反馈工单不进广场，故 feedback_count 恒为 0（后端数据口径）。 */
+  plaza: (params?: { status?: string; kind?: string; q?: string }) =>
+    api.get<never, { groups: PlazaGroup[] }>('/api/user/media-seek/plaza', { params }),
+
   /** 候选卡缺集信息（只读）：在库剧缺哪几集、求补到哪一步 */
   missing: (tmdbId: string) =>
     api.get<never, MissingInfo>('/api/user/media-seek/missing', {
@@ -850,6 +856,34 @@ export interface HotMediaSeekRequest {
   voted: boolean
   mine: boolean
   created_at: string
+}
+
+/** 请求广场的一张媒体聚合卡（后端 GET /api/user/media-seek/plaza 的 groups 项） */
+export interface PlazaGroup {
+  /** 媒体身份键：tmdb:{id} 或 title:{归一化片名}|{年份}|{类型} */
+  key: string
+  tmdb_id?: string | null
+  movie_name: string
+  year?: string | null
+  /** movie / series */
+  type?: string | null
+  /** 库内海报（命中库内条目才有；外链或 EA Images 路由，渲染走 imageAuthUrl） */
+  poster_url?: string | null
+  /** 库内已有这部片（完成行 / 条目命中任一成立） */
+  in_library: boolean
+  /** 库内条目 id（「去看这部」跳转用；没有为 null） */
+  emby_item_id?: string | null
+  /** 处理中（pending+approved）条数 */
+  processing_count: number
+  seek_count: number
+  /** 追新＝补缺集行数（本站的追新形态） */
+  chase_count: number
+  /** 工单不进广场：恒为 0（后端数据口径，不是估算） */
+  feedback_count: number
+  total_count: number
+  latest_at: string
+  /** 可附议的 pending 明细行（形态同 HotMediaSeekRequest，最多 10 条） */
+  requests: HotMediaSeekRequest[]
 }
 
 // ==================== 订阅 API（backend/api/user.py，管理员在后台授予） ====================
