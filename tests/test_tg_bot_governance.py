@@ -273,7 +273,8 @@ def test_propose_points_prize_rejected(db):
 def test_propose_level_gate_and_bad_prize(db):
     _free_realm(db)
     _user(db, xp=0)
-    gated = features.handle_propose(db, _tg(), TG, "周末趴 | 能量:100x1 | -100123")
+    # 等级门用例须用合法奖品（天数）：能量奖品已下线，会先被奖品解析拒掉、到不了等级门
+    gated = features.handle_propose(db, _tg(), TG, "周末趴 | 天数:30x1 | -100123")
     assert "Lv.2" in gated
     bad = features.handle_propose(db, _tg(), TG, "周末趴 | 金币:100x1 | -100123")
     assert "奖品类型只能是" in bad
