@@ -60,6 +60,8 @@ const imdbId = computed<string | null>(() => {
 })
 
 const poster = computed(() => (item.value ? posterUrl(item.value, 440) : ''))
+/** 海报缺失/加载失败时的占位：片名首字（数据驱动，不写死） */
+const posterInitial = computed(() => (item.value?.Name || '').trim().charAt(0) || 'A')
 const backdrop = computed(() => (item.value ? backdropUrl(item.value, 1600) : ''))
 const isSeries = computed(() => item.value?.Type === 'Series')
 const typeLabel = computed(() => (isSeries.value ? '剧集' : item.value?.Type === 'Movie' ? '电影' : item.value?.Type || ''))
@@ -395,8 +397,8 @@ watch(itemId, () => {
         <p class="md-type">{{ typeLabel }}</p>
         <div class="md-main">
           <div class="md-poster">
-            <img v-if="poster && !posterBroken" :src="poster" alt="" class="md-poster__img" @error="posterBroken = true" />
-            <Clapperboard v-else :size="36" :stroke-width="1.5" class="md-poster__fallback" aria-hidden="true" />
+            <img v-if="poster && !posterBroken" :src="poster" :alt="item.Name" class="md-poster__img" @error="posterBroken = true" />
+            <span v-else class="md-poster__fallback" aria-hidden="true">{{ posterInitial }}</span>
           </div>
 
           <div class="md-info">
@@ -711,8 +713,12 @@ watch(itemId, () => {
   height: 100%;
   object-fit: cover;
 }
+/* 无海报/加载失败占位：片名首字大字 */
 .md-poster__fallback {
   color: var(--uhd-s-text-2);
+  font-size: 76px;
+  font-weight: var(--uhd-fw-black);
+  line-height: 1;
 }
 .md-info {
   flex: 1 1 auto;
@@ -1174,9 +1180,10 @@ watch(itemId, () => {
   50% { opacity: 0.55; }
 }
 
-/* 手机详情 = 录屏的 app 形态：无剧照带/无海报，顺序为
-   返回 → 类型小字 → 大标题 → 元信息 → 全宽播放行（吸顶）→ 简介
-   → 演职员 → 集数 → 信息表 → 推荐 */
+/* 手机详情 = 录屏的 app 形态：无剧照带，顺序为
+   返回 → 海报 → 类型小字 → 大标题 → 元信息 → 全宽播放行（吸顶）→ 简介
+   → 演职员 → 集数 → 信息表 → 推荐
+   （海报原被整块隐藏，2026-11-13 用户亲报「详情页没有显示海报」后补回） */
 @media (max-width: 767px) {
   .md-hero {
     height: auto;
@@ -1207,8 +1214,15 @@ watch(itemId, () => {
   .md-main {
     display: contents;
   }
+  /* 海报在内容首位真显示：132 宽、2:3，不被任何装饰层覆盖 */
   .md-poster {
-    display: none;
+    order: -1;
+    flex: none;
+    width: 132px;
+    margin-top: 12px;
+  }
+  .md-poster__fallback {
+    font-size: 44px;
   }
   .md-type {
     order: 0;
