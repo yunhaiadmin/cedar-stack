@@ -218,19 +218,18 @@ onMounted(() => {
 
 <style scoped>
 .member-page { padding-bottom: 34px; }
-.member-body { padding: 14px 20px 0; }
-/* 订阅购买入口卡：彩虹主按钮引到订阅页（购买流程在那边一页完成） */
+/* 横向不再自加内边距：与布局 H1 左缘对齐（布局 main 已给 16/32px） */
+.member-body { padding-top: 4px; }
+/* 订阅购买入口：平面行（发丝线收尾），彩虹主按钮引到订阅页（购买流程在那边一页完成） */
 .member-sub-entry {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
   flex-wrap: wrap;
-  margin-bottom: 14px;
-  padding: 16px 18px;
-  border: 1px solid var(--line);
-  border-radius: var(--paper-r-xl, 20px);
-  background: var(--paper-card);
+  margin-bottom: 6px;
+  padding: 10px 0 18px;
+  border-bottom: 1px solid var(--line);
   text-decoration: none;
 }
 .member-sub-entry__text {
@@ -284,7 +283,5 @@ onMounted(() => {
   font-weight: 600;
 }
 .m-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-@media (min-width: 1024px) {
-  .v4-page.member-page { max-width: min(720px, 94vw); }
-}
+/* 桌面宽随 UhdAccountLayout 办事面口径（.uhd-account .v4-page 1000px），本页不再自收 720 */
 </style>
