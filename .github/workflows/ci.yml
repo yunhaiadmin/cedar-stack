@@ -66,6 +66,12 @@ jobs:
       - name: 头像菜单防复发检查（已删条目不许加回）
         run: python3 scripts/check_avatar_menu_guards.py
 
+      # 纯文本契约检查：chunk 加载失败恢复的判定样本与三处接线不许被删/改坏。
+      # 2026-11-13 用户 iPhone 实锤：部署后旧页正文空白、兜底没触发——iOS Safari
+      # 的模块 MIME 错误信息不在原判定正则内（复发机制见脚本头部事故史）。
+      - name: chunk 恢复契约检查（部署后空白页兜底不许失效）
+        run: python3 scripts/check_chunk_recovery.py
+
       - name: 类型检查（vue-tsc）
         working-directory: ${{ matrix.dir }}
         run: npm run type-check

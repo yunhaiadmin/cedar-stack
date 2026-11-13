@@ -11,11 +11,27 @@ import { computed, defineAsyncComponent, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { isPanelV4Enabled } from '@/composables/usePanelApi'
+import LandingSkeleton from '@/components/ui/LandingSkeleton.vue'
+import { handleChunkLoadError } from '@/utils/chunkRecovery'
 
 defineOptions({ name: 'RootView' })
 
-// 懒加载口径与原路由分片一致：官网仍自成 chunk，不进首包
-const LandingView = defineAsyncComponent(() => import('@/views/marketing/LandingView.vue'))
+// 懒加载口径与原路由分片一致：官网仍自成 chunk，不进首包。
+// 加载中先出纸面骨架不许白屏；加载失败先自重试一次，仍失败交给
+// chunk 统一恢复（部署换包时 chunk 被删是最常见形态，见 utils/chunkRecovery）。
+const LandingView = defineAsyncComponent({
+  loader: () => import('@/views/marketing/LandingView.vue'),
+  loadingComponent: LandingSkeleton,
+  delay: 150,
+  onError(error, retry, fail, attempts) {
+    if (attempts <= 1) {
+      retry()
+      return
+    }
+    handleChunkLoadError(error)
+    fail()
+  },
+})
 
 const userStore = useUserStore()
 const router = useRouter()

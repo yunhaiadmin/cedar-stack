@@ -23,12 +23,24 @@ import { initBranding } from './composables/useBranding'
 import { initCommunityLinks } from './composables/useCommunityLinks'
 // 「保存到桌面＝一个 app」：beforeinstallprompt 可能赶在挂载前触发，入口处先注册暂存
 import { captureInstallPrompt } from './composables/useInstallPrompt'
+// chunk 加载失败恢复（与 router.onError 共用唯一实现 utils/chunkRecovery）
+import { handleChunkLoadError } from './utils/chunkRecovery'
 
 // iOS Safari 要求页面有 touchstart 监听器才会触发 :active 伪类
 // 空函数即可，passive 避免滚动性能问题
 document.addEventListener('touchstart', () => {}, { passive: true })
 
 captureInstallPrompt()
+
+// 路由组件的子 chunk 预加载失败不走 router.onError，只走 vite:preloadError：
+// 在这里 preventDefault 后交给同一套恢复（计数/闩锁在 chunkRecovery 内统一，
+// 与 router.onError 先后到达不会双计预算）。
+window.addEventListener('vite:preloadError', (event: Event) => {
+  // vite 把失败原因挂在事件的 payload 扩展属性上（非标准类型，源码实锤）；
+  // preventDefault 不做的话 vite 会把原错误再抛出来。
+  event.preventDefault()
+  handleChunkLoadError((event as Event & { payload?: unknown }).payload)
+})
 
 const app = createApp(App)
 const pinia = createPinia()

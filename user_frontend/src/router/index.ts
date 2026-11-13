@@ -4,9 +4,9 @@ import { useUserStore } from '@/stores/user'
 import { pageTitle } from '@/composables/useBranding'
 // v4 面板特性开关（VITE_PANEL_V4_ENABLED=0 时回退老首页）
 import { isPanelV4Enabled } from '@/composables/usePanelApi'
-// chunk 加载失败兜底的提示：useToast 不支持 action/点击回调，
-// 重试按钮用原生 DOM 挂一个小横条（只用 --au-* 现有 token）
-import { useToast } from '@/composables/useToast'
+// chunk 加载失败恢复：判定 / 计数 / 重试横条的唯一实现在 utils/chunkRecovery，
+// 路由错误、vite 预加载事件（main.ts）、视图内异步组件（RootView）三处共用。
+import { handleChunkLoadError, resetChunkRecoveryState } from '@/utils/chunkRecovery'
 
 const panelV4 = isPanelV4Enabled()
 
@@ -421,74 +421,17 @@ router.afterEach((to) => {
   }
 })
 
-// SPA 部署竞态兜底（2026-10-13 实锤：#788 部署把全部 chunk 换了新哈希，
-// 用户旧构建点 /game 时懒加载 GameHubView 旧 chunk → 404 → 页面打不开）。
-// 动态 import 失败（chunk 已被新部署替换）时自动刷新拿新版 index.html 后恢复。
-// 计数放 sessionStorage（跨 reload 持久）：连续失败最多刷新 2 次就停，
-// 杜绝 index.html 被缓存时的死循环；每次导航成功清零，下次部署有新预算。
-const CHUNK_RELOAD_KEY = 'spa-chunk-reload-count'
-// chunk 加载失败：预算耗尽后用户停在旧页/空白页，挂一个可点的重试横条。
-// 点「重试」清掉重载计数后 location.reload()；toast 负责文案提示。
-const CHUNK_RETRY_BAR_ID = 'spa-chunk-retry'
-function showChunkRetryBar() {
-  if (typeof document === 'undefined' || document.getElementById(CHUNK_RETRY_BAR_ID)) return
-  const bar = document.createElement('div')
-  bar.id = CHUNK_RETRY_BAR_ID
-  bar.setAttribute('role', 'alert')
-  bar.style.cssText = [
-    'position:fixed', 'top:12px', 'left:50%', 'transform:translateX(-50%)',
-    'z-index:99999', 'display:flex', 'align-items:center', 'gap:12px',
-    'padding:10px 14px', 'border-radius:12px',
-    'background:var(--au-bg-soft,#11100e)',
-    'border:1px solid var(--au-danger-border,rgba(217,119,107,.28))',
-    'color:var(--au-text,#f3ede4)', 'font-size:13px',
-    'box-shadow:0 8px 32px rgba(0,0,0,.6)',
-  ].join(';')
-  const tip = document.createElement('span')
-  tip.textContent = '页面没加载出来'
-  const btn = document.createElement('button')
-  btn.type = 'button'
-  btn.textContent = '重试'
-  btn.style.cssText = [
-    'padding:6px 16px', 'border-radius:8px', 'cursor:pointer',
-    'font-size:13px', 'font-weight:700',
-    'border:1px solid var(--au-danger,#d9776b)',
-    'background:var(--au-danger,#d9776b)', 'color:#fff',
-  ].join(';')
-  btn.addEventListener('click', () => {
-    try { sessionStorage.removeItem(CHUNK_RELOAD_KEY) } catch { /* 隐私模式忽略 */ }
-    window.location.reload()
-  })
-  bar.append(tip, btn)
-  document.body.appendChild(bar)
-}
+// SPA 部署竞态兜底：动态 import 失败（chunk 已被新部署替换）时交给
+// utils/chunkRecovery 统一恢复（预算内自动刷新、超预算出重试横条）；
+// 同一轮失败可能与 main.ts 的 vite:preloadError 重复到达，防重复计数
+// 在恢复实现内用闩锁统一处理，这里不另写判定与计数。
 router.onError((err: unknown) => {
-  const msg = String((err as Error)?.message ?? err ?? '')
-  if (
-    /Failed to fetch dynamically imported module|Importing a module script failed|Loading chunk [\w-]+ failed|ChunkLoadError/i.test(msg)
-  ) {
-    let n = 0
-    try {
-      n = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) ?? 0) || 0
-    } catch { /* 隐私模式忽略 */ }
-    if (n < 2) {
-      try {
-        sessionStorage.setItem(CHUNK_RELOAD_KEY, String(n + 1))
-      } catch { /* 隐私模式忽略 */ }
-      window.location.reload()
-    } else {
-      // 预算耗尽：不再静默停留，给用户一个手动重试的出口
-      useToast().error('页面没加载出来，点重试重新加载', 10000)
-      showChunkRetryBar()
-    }
-  }
+  handleChunkLoadError(err)
 })
-router.afterEach(() => {
-  try {
-    sessionStorage.removeItem(CHUNK_RELOAD_KEY)
-  } catch { /* 隐私模式忽略 */ }
-  // 导航成功：收掉重试横条
-  document.getElementById(CHUNK_RETRY_BAR_ID)?.remove()
+router.afterEach((_to, _from, failure) => {
+  // 只认成功导航：vue-router 对失败导航同样触发 afterEach，失败时清计数
+  // 会把刚累积的刷新预算误清掉（见 utils/chunkRecovery 文件头）。
+  if (!failure) resetChunkRecoveryState()
 })
 
 // 关键路由预取：用户登录后大概率会去补给站（v4 /shop）/ 我的（/game/account），空闲时预加载对应 chunk
