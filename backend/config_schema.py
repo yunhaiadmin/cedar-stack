@@ -886,3 +886,16 @@ ECONOMY_CONFIG_SCHEMA: dict[str, tuple] = {
     "series_merge_interval_sec": ("int", 3600, 604800),
     "series_merge_batch_limit": ("int", 10, 100000),
 }
+
+
+# 团队（2026-11-13，照 UHDNow 团队形态）：套餐起订与成员上限全部走配置，
+# 代码里只有默认值（读侧 backend/api/teams.py 的 TEAM_CONFIG_DEFAULTS），
+# 判断逻辑不许写死数值。
+TEAM_CONFIG_SCHEMA: dict[str, tuple] = {
+    # 团队套餐起订总流量（字节，十进制口径）：申请低于此值直接拒绝
+    "team_plan_min_traffic_bytes": ("int", 1, _BIG),
+    # 团队套餐子账号（成员）数上限：申请填报与入团都不得越过
+    "team_plan_max_members": ("int", 1, _BIG),
+    # 未开通套餐的团队成员上限（建团即可用；套餐审核通过后改按套餐值）
+    "team_default_member_limit": ("int", 1, _BIG),
+}

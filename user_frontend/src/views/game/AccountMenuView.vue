@@ -151,6 +151,7 @@ const groups = computed<MenuGroup[]>(() => {
   ]
   const account: MenuItem[] = [
     { key: 'settings', label: '账号与设置', to: '/game/account/settings' },
+    { key: 'team', label: '团队管理', to: '/game/account/team' },
   ]
   if (isAgent.value) {
     account.push({ key: 'agent', label: '代理中心', to: '/game/agent' })

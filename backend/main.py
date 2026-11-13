@@ -89,6 +89,7 @@ from backend.api.install_app import (
 )
 from backend.api.admin_license import admin_license_router
 from backend.api.admin_pool import admin_pool_router
+from backend.api.admin_teams import admin_teams_router
 from backend.api.pool_admin import pool_admin_router
 # v2.19.0：外部服务能力中心（代理 / 人机验证 / 邮件 / Telegram / AI / IP 归属地）。
 # 只提供能力，密钥一律由管理员自己填。
@@ -124,6 +125,7 @@ from backend.api.emby_portal import auth_router, password_reset_router
 from backend.api.account_security import platform_router, security_router
 from backend.api.economy import router as economy_router
 from backend.api.invitation import router as invitation_router
+from backend.api.teams import router as teams_router
 from backend.api.points import router as welfare_points_router
 from backend.api.welfare_reviews import router as welfare_reviews_router
 from backend.api.tg_bind import router as tg_bind_router
@@ -885,6 +887,7 @@ app.include_router(admin_install_app_router)
 app.include_router(admin_license_router)
 # 公共贡献池（goal-33 PR-1 地基）：配置读写，见 backend/api/admin_pool.py
 app.include_router(admin_pool_router)
+app.include_router(admin_teams_router)
 # 公共贡献池（goal-33 PR-4）：成员管理与副本面，见 backend/api/pool_admin.py
 app.include_router(pool_admin_router)
 # 外部服务能力中心（v2.19.0）：能力总览 / 配置 / 测试，见 backend/api/capabilities_admin.py
@@ -1017,6 +1020,7 @@ app.include_router(platform_router)
 # 用户经济系统（签到/兑换码/支付/订单）与邀请返利
 app.include_router(economy_router)
 app.include_router(invitation_router)
+app.include_router(teams_router)
 app.include_router(welfare_points_router)
 app.include_router(welfare_reviews_router)
 app.include_router(tg_bind_router)
