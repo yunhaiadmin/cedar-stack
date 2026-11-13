@@ -69,13 +69,17 @@ class TestPlaybackInfoCache:
 
     def test_cache_key_contains_user_and_profile(self):
         src = self._src()
-        # key = pi:{guid}:{user_id}:{profile_fp}:{bitrate}
-        assert 'f"pi:{item.guid}:{user.id}:{profile_fp}:{max_bitrate // 1000}"' in src
+        # 2026-11-12 起播拆账第 5 项扩围：缓存体只由条目 + 用户决定，
+        # key = pi:{guid}:{user_id}（设备 profile / 码率不再进键，
+        # 码率门限与 DeliveryUrl 凭据都在命中后按当次请求重算/重拼）
+        assert 'f"pi:{item.guid}:{user.id}"' in src
+        assert "profile_fp" not in src
 
     def test_ttl_configurable_via_env(self):
         src = self._src()
         # r42：统一走 env_util（非法值回落默认，不再裸 os.getenv）
-        assert 'env_int("PLAYBACKINFO_CACHE_TTL", 300)' in src
+        # 默认 600（2026-11-12 拆账第 5 项：静态基础体窗口翻倍）
+        assert 'env_int("PLAYBACKINFO_CACHE_TTL", 600)' in src
 
     def test_cache_disabled_when_ttl_zero(self):
         src = self._src()
