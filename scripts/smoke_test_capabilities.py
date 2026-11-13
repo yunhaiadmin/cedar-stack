@@ -234,21 +234,17 @@ check("普通用户访问能力中心被拒", r.status_code in (401, 403), f"HTT
 r = client.get("/api/admin/capabilities", headers=ADMIN_H)
 check("管理员可读能力总览", r.status_code == 200, f"HTTP {r.status_code}")
 caps = {c["slug"]: c for c in r.json().get("capabilities", [])}
-expected = {"proxy", "captcha", "mail", "telegram", "ai", "geoip", "branding",
-            "world_board", "world_fortune", "world_streak", "world_copy", "world_letter", "community"}
-check("十三个能力都在总览里", expected == set(caps), f"实际 {sorted(caps)}")
+expected = {"proxy", "captcha", "mail", "telegram", "ai", "geoip", "branding", "community"}
+check("八个能力都在总览里", expected == set(caps), f"实际 {sorted(caps)}")
 check("总览带标题/说明/分组", all(c.get("title") and c.get("desc") and c.get("group")
                                   for c in caps.values()))
 check("总览带测试按钮文案", all(c.get("test_label") for c in caps.values()))
-# 纯本地设置卡（站点与品牌 / 服主告示牌 / 签文池）有内置默认值，所以未配置时始终
-# 「已配置且生效」：branding 回落站名「Aetrix」；告示牌的显示语义由
-# world_board.public_info 的 visible 控制（留言留空则世界地图上不显示），与能力
-# 开关无关；签文池自带 30 条默认签文，默认即可抽。它们是纯本地设置，没有外部
-# 凭据、没有出站请求，语义不同于需要外部凭据的六个外部服务能力。
-# 昨日来信同样是纯本地设置：无必填字段，letter_enabled 默认开，所以未配置时
-# 卡片也是「已配置且生效」。附言留空时接口另回落内置文案，与这张卡片的开关无关。
-_ALWAYS_ON = {"branding", "world_board", "world_fortune", "world_streak", "world_copy",
-              "world_letter"}
+# 纯本地设置卡只剩「站点与品牌」：它有内置默认值（未配置时回落站名「Aetrix」），
+# 所以未配置时始终「已配置且生效」。它没有外部凭据、没有出站请求，语义不同于
+# 需要外部凭据的其余七个外部服务能力。
+# （原同属纯本地卡的服主告示牌 / 签文池 / 连签里程碑 / 世界文案池 / 昨日来信五个
+# world_* 能力已随发现页退役删除，见 backend/integrations 的 CAPABILITY_MODULES。）
+_ALWAYS_ON = {"branding"}
 check("未配置时外部服务能力都是「未启用 / 未配置」",
       all(not c["configured"] and not c["enabled"]
           for s, c in caps.items() if s not in _ALWAYS_ON),
@@ -257,7 +253,7 @@ check("纯本地设置卡未配置时默认「已配置且生效」",
       all(c["configured"] and c["enabled"]
           for s, c in caps.items() if s in _ALWAYS_ON),
       str({s: (caps[s]["enabled"], caps[s]["configured"]) for s in caps}))
-check("共有十三个能力卡片（含站点与品牌、服主告示牌、签文池、连签里程碑、世界文案池、昨日来信、官网社区渠道）", len(caps) == 13, str(sorted(caps)))
+check("共有八个能力卡片（站点与品牌为唯一纯本地设置卡，其余七个为外部服务能力）", len(caps) == 8, str(sorted(caps)))
 
 r = client.get("/api/admin/capabilities/not-a-capability", headers=ADMIN_H)
 check("未知能力返回 404", r.status_code == 404, f"HTTP {r.status_code}")
