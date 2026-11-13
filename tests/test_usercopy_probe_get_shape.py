@@ -37,6 +37,7 @@ os.environ.setdefault("DATABASE_TYPE", "sqlite")
 os.environ.setdefault("REDIS_ENABLED", "false")
 
 import asyncio
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -169,6 +170,17 @@ def _stub_legs(monkeypatch, range_resp, get_resp):
     return calls
 
 
+def _wait_calls(calls, expected, timeout=5.0):
+    """等后台 GET 腿落定再断言计数：GET 与 Range 并行提交，后台
+    线程可能晚于主线程返回；轮询等计数到位，超时后照常用 ==
+    断言（会红、不是静默放过）。"""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if all(calls[k] >= v for k, v in expected.items()):
+            return
+        time.sleep(0.005)
+
+
 def test_probe_range206_get_quota_is_ok_with_get_signal(monkeypatch):
     """事故形态：Range 206 视频、整拉回额度页 → probe 返 ok
     （probe 自身口径不变），GET 信号进 detail（shape=get、
@@ -181,6 +193,7 @@ def test_probe_range206_get_quota_is_ok_with_get_signal(monkeypatch):
     assert tv.usercopy_quota_probe_detail(7, COPY_FID) == {
         "shape": "get", "page": "quota"}
     assert tv.probe_user_copy_quota(7, COPY_FID) == "ok"
+    _wait_calls(calls, {"range": 1, "get": 1})
     assert calls == {"range": 1, "get": 1}
     assert tv.usercopy_quota_probe_cached(7, COPY_FID)
 
@@ -210,17 +223,22 @@ def test_probe_range206_get_video_is_ok_and_cached(monkeypatch):
                        (200, "video/mp4", VIDEO_HEAD))
     assert tv.probe_user_copy_quota(7, COPY_FID) == "ok"
     assert tv.probe_user_copy_quota(7, COPY_FID) == "ok"
+    _wait_calls(calls, {"range": 1, "get": 1})
     assert calls == {"range": 1, "get": 1}
 
 
-def test_probe_range_quota_short_circuits_get_leg(monkeypatch):
+def test_probe_range_quota_discards_parallel_get_leg(monkeypatch):
+    """2026-11-12 并行化后：GET 腿与 Range 腿并行提交、照常跑，
+    Range 判 quota 时其结果直接丢弃（不取、不等、不改道）。
+    GET 桩故意回视频：若实现错采 GET 结果，裁决会变 ok。"""
     calls = _stub_legs(monkeypatch,
                        (200, "text/html", QUOTA_HTML),
-                       AssertionError("Range 已判 quota 不许跑第二腿"))
+                       (200, "video/mp4", VIDEO_HEAD))
     assert tv.probe_user_copy_quota(7, COPY_FID) == "quota"
     assert tv.usercopy_quota_probe_detail(7, COPY_FID) == {
         "shape": "range", "page": "quota"}
-    assert calls["get"] == 0
+    _wait_calls(calls, {"range": 1, "get": 1})
+    assert calls["get"] == 1
 
 
 def test_probe_get_leg_failure_keeps_range_ok(monkeypatch):
@@ -564,11 +582,13 @@ def test_rule_direct_first_relay_second_stream_range_quota_diverts(
     """规矩的另一半：Range 腿本身判 quota（shape=range）才轮到中继。
 
     本人令牌中继成功 → 出中继流（206）；日志 verdict=quota、
-    shape=range；GET 腿不许被跑（Range 已判死，短路）。
+    shape=range。2026-11-12 并行化后：GET 腿与 Range 腿并行提交、
+    照常跑，但 Range 已判死时其结果直接丢弃——GET 桩故意回视频，
+    若实现错采 GET 结果就不会走到中继。
     """
     calls = _stub_legs(monkeypatch,
                        (200, "text/html; charset=utf-8", QUOTA_HTML),
-                       AssertionError("Range 已判 quota 不许跑第二腿"))
+                       (200, "video/mp4", VIDEO_HEAD))
     _token_ok(monkeypatch)
     record = {}
 
@@ -585,7 +605,8 @@ def test_rule_direct_first_relay_second_stream_range_quota_diverts(
     assert resp.status_code == 206
     assert record["file_id"] == COPY_FID
     assert record["kwargs"]["access_token"] == USER_TOKEN
-    assert calls["get"] == 0
+    _wait_calls(calls, {"range": 1, "get": 1})
+    assert calls["get"] == 1
     sig = [kw for ev, kw in events if ev == "byos_usercopy_quota"]
     assert sig and sig[0]["verdict"] == "quota"
     assert sig[0]["shape"] == "range"
@@ -664,6 +685,7 @@ def test_rule_decision_reprobes_once_after_cache_expiry(monkeypatch):
                        (206, "video/mp4", VIDEO_HEAD),
                        (200, "video/mp4", VIDEO_HEAD))
     assert tv.probe_user_copy_quota_decision(7, COPY_FID) == "ok"
+    _wait_calls(calls, {"range": 1, "get": 1})
     assert calls == {"range": 1, "get": 1}
     assert tv.probe_user_copy_quota(7, COPY_FID) == "ok"
     assert calls == {"range": 1, "get": 1}
@@ -672,16 +694,19 @@ def test_rule_decision_reprobes_once_after_cache_expiry(monkeypatch):
 def test_rule_decision_fresh_probe_range_quota_still_diverts(monkeypatch):
     """新鲜 Range 回额度页 → fresh 判定才返回 quota（改道成立）。
 
-    缓存里预置 ok 也盖不过去：判定当场 Range 判 quota、短路不跑
-    第二腿、detail 同步刷新为 range/quota，判定点据此改道。
+    缓存里预置 ok 也盖不过去：判定当场 Range 判 quota、detail
+    同步刷新为 range/quota，判定点据此改道。2026-11-12 并行化
+    后第二腿照常并行跑、结果丢弃——GET 桩故意回视频，若实现
+    错采 GET 结果就不会返回 quota。
     """
     _seed_verdict_cache("ok", "get:")
     calls = _stub_legs(
         monkeypatch,
         (200, "text/html; charset=utf-8", QUOTA_HTML),
-        AssertionError("Range 已判 quota 不许跑第二腿"))
+        (200, "video/mp4", VIDEO_HEAD))
     assert tv.probe_user_copy_quota_decision(7, COPY_FID) == "quota"
-    assert calls == {"range": 1, "get": 0}
+    _wait_calls(calls, {"range": 1, "get": 1})
+    assert calls == {"range": 1, "get": 1}
     assert tv.usercopy_quota_probe_detail(7, COPY_FID) == {
         "shape": "range", "page": "quota"}
 

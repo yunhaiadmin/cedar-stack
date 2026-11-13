@@ -19,6 +19,7 @@ quota 裁决保持现口径。
 全部离线。
 """
 import os
+import time
 
 os.environ.setdefault("DATABASE_TYPE", "sqlite")
 os.environ.setdefault("REDIS_ENABLED", "false")
@@ -120,6 +121,17 @@ def _stub_legs(monkeypatch, range_resp, get_resp):
     return calls
 
 
+def _wait_calls(calls, expected, timeout=5.0):
+    """等后台 GET 腿落定再断言计数：GET 与 Range 并行提交，后台
+    线程可能晚于主线程返回；轮询等计数到位，超时后照常用 ==
+    断言（会红、不是静默放过）。"""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if all(calls[k] >= v for k, v in expected.items()):
+            return
+        time.sleep(0.005)
+
+
 def _ok_legs(monkeypatch):
     return _stub_legs(monkeypatch,
                       (206, "video/mp4", VIDEO_HEAD),
@@ -140,6 +152,7 @@ def test_decision_reuses_ok_within_ttl(fake_redis, monkeypatch):
     """同一副本两次判定只探一次：第二判定吃 Redis 复用、零外呼。"""
     calls = _ok_legs(monkeypatch)
     assert tv.probe_user_copy_quota_decision(7, COPY_FID) == "ok"
+    _wait_calls(calls, {"range": 1, "get": 1})
     assert calls == {"range": 1, "get": 1}
     # 复用记录已落 Redis，键含用户 + 副本文件标识。
     key = tv._usercopy_probe_ok_reuse_key(7, COPY_FID)
@@ -156,6 +169,7 @@ def test_decision_reuse_survives_verdict_cache_clear(fake_redis,
     assert tv.probe_user_copy_quota_decision(7, COPY_FID) == "ok"
     _clear_verdict_cache()
     assert tv.probe_user_copy_quota_decision(7, COPY_FID) == "ok"
+    _wait_calls(calls, {"range": 1, "get": 1})
     assert calls == {"range": 1, "get": 1}
 
 
@@ -163,54 +177,74 @@ def test_decision_reuse_survives_verdict_cache_clear(fake_redis,
 
 def test_decision_quota_never_reused(fake_redis, monkeypatch):
     """quota 裁决：判定缓存内吃缓存（2026-10-31 定案不变）；
-    缓存到期后当场重探——复用层绝不给 quota 留记录。"""
+    缓存到期后当场重探——复用层绝不给 quota 留记录。
+
+    2026-11-12 并行化后：GET 腿与 Range 腿并行提交、每次新鲜
+    探测都照跑，Range 判 quota 时其结果直接丢弃。GET 桩故意回
+    视频（ok 信号）：若实现错采 GET 结果，裁决会变 ok 而不是
+    quota——这正是"GET 腿不单独定案"的钉死点。"""
     calls = _stub_legs(
         monkeypatch,
         (200, "text/html; charset=utf-8", QUOTA_HTML),
-        AssertionError("Range 已判 quota 不许跑第二腿"))
+        (200, "video/mp4", VIDEO_HEAD))
     assert tv.probe_user_copy_quota_decision(7, COPY_FID) == "quota"
-    assert calls == {"range": 1, "get": 0}
+    _wait_calls(calls, {"range": 1, "get": 1})
+    assert calls == {"range": 1, "get": 1}
     assert fake_redis.store == {}
     # 判定缓存仍在：零重探（现口径逐字不变）。
     assert tv.probe_user_copy_quota_decision(7, COPY_FID) == "quota"
-    assert calls == {"range": 1, "get": 0}
+    assert calls == {"range": 1, "get": 1}
     # 判定缓存到期：必须当场重探，不许吃任何复用。
     _clear_verdict_cache()
     assert tv.probe_user_copy_quota_decision(7, COPY_FID) == "quota"
-    assert calls == {"range": 2, "get": 0}
+    _wait_calls(calls, {"range": 2, "get": 2})
+    assert calls == {"range": 2, "get": 2}
 
 
 def test_decision_error_never_reused(fake_redis, monkeypatch):
-    """探测本身失败（error）不写复用：下一次判定照常重探。"""
+    """探测本身失败（error）不写复用：下一次判定照常重探。
+
+    2026-11-12 并行化后：GET 腿照常并行提交（Range 抛错时其
+    结果直接丢弃），故每次新鲜探测两腿计数各 +1。"""
     calls = _stub_legs(monkeypatch,
                        RuntimeError("网络抖动"),
-                       AssertionError("第一腿已失败不许跑第二腿"))
+                       (200, "video/mp4", VIDEO_HEAD))
     assert tv.probe_user_copy_quota_decision(7, COPY_FID) == "error"
     assert fake_redis.store == {}
     assert tv.probe_user_copy_quota_decision(7, COPY_FID) == "error"
-    assert calls == {"range": 2, "get": 0}
+    _wait_calls(calls, {"range": 2, "get": 2})
+    assert calls == {"range": 2, "get": 2}
 
 
 # ---------- Redis 不可用：行为等于现状 ----------
 
 def test_decision_redis_none_falls_back_to_fresh_probe(monkeypatch):
-    """get_redis 返回 None（未启用/熔断）：两次判定各探一次，
-    与复用上线前逐字一致，且不抛错。"""
+    """get_redis 返回 None（未启用/熔断）：不读/不写 Redis 复用，
+    且不抛错。第一次判定新鲜探一轮；第二次判定由秒级短缓存兜
+    住（2026-11-12 第 4 项，CacheManager 层、与 Redis 无关），
+    故只探一轮——"每次新鲜探"须另关短缓存，见
+    test_decision_burst_cache_disabled_by_zero_ttl。"""
     monkeypatch.setattr("backend.database.get_redis", lambda: None)
     calls = _ok_legs(monkeypatch)
     assert tv.probe_user_copy_quota_decision(7, COPY_FID) == "ok"
     assert tv.probe_user_copy_quota_decision(7, COPY_FID) == "ok"
-    assert calls == {"range": 2, "get": 2}
+    _wait_calls(calls, {"range": 1, "get": 1})
+    assert calls == {"range": 1, "get": 1}
 
 
 def test_decision_redis_raising_falls_back_to_fresh_probe(monkeypatch):
-    """Redis 调用抛错：吞掉异常照常探测，绝不挡播放。"""
+    """Redis 调用抛错：吞掉异常照常探测，绝不挡播放。第一次判定
+    新鲜探一轮；第二次判定由秒级短缓存兜住（2026-11-12 第 4
+    项，CacheManager 层、与 Redis 无关），故只探一轮——"每次新
+    鲜探"须另关短缓存，见
+    test_decision_burst_cache_disabled_by_zero_ttl。"""
     monkeypatch.setattr("backend.database.get_redis",
                         lambda: _RaisingRedis())
     calls = _ok_legs(monkeypatch)
     assert tv.probe_user_copy_quota_decision(7, COPY_FID) == "ok"
     assert tv.probe_user_copy_quota_decision(7, COPY_FID) == "ok"
-    assert calls == {"range": 2, "get": 2}
+    _wait_calls(calls, {"range": 1, "get": 1})
+    assert calls == {"range": 1, "get": 1}
 
 
 # ---------- 边界：池路径与开关 ----------
@@ -223,17 +257,22 @@ def test_decision_poolvar_never_reused(fake_redis, monkeypatch):
         "poolvar:9", COPY_FID) == "ok"
     assert tv.probe_user_copy_quota_decision(
         "poolvar:9", COPY_FID) == "ok"
+    _wait_calls(calls, {"range": 2, "get": 2})
     assert calls == {"range": 2, "get": 2}
     assert fake_redis.store == {}
 
 
 def test_decision_reuse_ttl_zero_disables(fake_redis, monkeypatch):
-    """SystemConfig 把复用 TTL 设 0 = 关：两次判定各探一次。"""
+    """SystemConfig 把复用 TTL 设 0 = 关 Redis ok 复用：不写复用
+    记录。第二次判定由秒级短缓存兜住（独立 env 开关，默认 5
+    秒、不跟复用 TTL 走），故只探一轮——"每次新鲜探"须另关短
+    缓存，见 test_decision_burst_cache_disabled_by_zero_ttl。"""
     monkeypatch.setattr(tv, "_usercopy_probe_ok_reuse_ttl", lambda: 0)
     calls = _ok_legs(monkeypatch)
     assert tv.probe_user_copy_quota_decision(7, COPY_FID) == "ok"
     assert tv.probe_user_copy_quota_decision(7, COPY_FID) == "ok"
-    assert calls == {"range": 2, "get": 2}
+    _wait_calls(calls, {"range": 1, "get": 1})
+    assert calls == {"range": 1, "get": 1}
     assert fake_redis.store == {}
 
 
