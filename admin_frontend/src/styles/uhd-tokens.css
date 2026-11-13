@@ -150,10 +150,12 @@
   --uhd-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* 入场：淡入 + 模糊→清晰（仅营销面 Hero 与弹窗，见说明书 1.6/第 5 节⑦） */
+/* 入场：只做淡入（与 user 端 #144 同口径，名字留档、效果已改）。
+   原 blur(10px)→0 揭示已摘除：动画期间整段文字/封面被涂抹成重影，
+   入场只许淡入/位移；admin 端当前无组件引用此关键帧，属预防性对齐。 */
 @keyframes uhd-blur-in {
-  from { opacity: 0; filter: blur(10px); }
-  to { opacity: 1; filter: blur(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 @keyframes uhd-fade-in {
   from { opacity: 0; }

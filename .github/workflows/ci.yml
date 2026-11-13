@@ -79,6 +79,12 @@ jobs:
       - name: 入场动画防重影检查（整块淡入/blur 入场不许复发）
         run: python3 scripts/check_no_ghost_entrance.py
 
+      # 纯文本契约检查：移动端字号阶梯不许被删/改坏、桌面阶梯不许被顺手动。
+      # 2026-11-13 用户真机实锤「移动端字体全局偏大」：全站此前没有移动字号层，
+      # 桌面阶梯原样落到手机（复发机制见脚本头部事故史）。
+      - name: 移动端字号阶梯契约检查（桌面字号不许动）
+        run: python3 scripts/check_mobile_type_scale.py
+
       - name: 类型检查（vue-tsc）
         working-directory: ${{ matrix.dir }}
         run: npm run type-check
