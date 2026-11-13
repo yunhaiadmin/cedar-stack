@@ -698,11 +698,28 @@ defineExpose({
   border: 1px solid var(--line);
   color: var(--ink);
 }
+/* 主钮 UHD 口径（2026-11-13 补齐七彩＋玻璃）：彩虹边框 + 淡彩粉彩底 + 玻璃栈。
+   本面板只挂账号设置页（.v4-scope 恒浅色纸面），只需浅色配方 */
 .acct-btn.primary {
-  background: var(--ink);
-  border: 1px solid var(--ink);
-  color: var(--on-dark);
+  border: 1.5px solid transparent;
+  background:
+    var(--uhd-rainbow-soft) padding-box,
+    var(--uhd-rainbow) border-box;
+  color: #111111;
   font-weight: 600;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    var(--uhd-shadow-card-l);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
+}
+/* 禁用：彩虹退场、中性灰 */
+.acct-btn.primary:disabled {
+  background: var(--paper2);
+  color: var(--ink2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 .acct-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .v4-empty p { margin: 0 0 8px; text-align: left; }

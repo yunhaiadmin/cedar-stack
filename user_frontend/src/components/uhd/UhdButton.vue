@@ -63,7 +63,7 @@ withDefaults(
   outline-offset: 2px;
 }
 
-/* 主按钮（浅色面）：彩虹边框 + 淡彩底 */
+/* 主按钮（浅色面）：彩虹边框 + 淡彩底 + 玻璃栈（内高光 + 柔影 + backdrop，2026-11-13 补齐） */
 .uhd-btn--primary {
   color: var(--uhd-l-text);
   border: var(--uhd-rainbow-border-w) solid transparent;
@@ -71,13 +71,21 @@ withDefaults(
     var(--uhd-rainbow-soft) padding-box,
     var(--uhd-rainbow) border-box;
   background-color: var(--uhd-l-surface);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    var(--uhd-shadow-card-l);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
 }
-/* 主按钮（深色面）：彩虹边框 + 深色毛玻璃底 + 白字 */
+/* 主按钮（深色面）：彩虹边框 + 深色毛玻璃底 + 白字 + 玻璃栈（内高光 + 柔影） */
 .uhd-btn--primary.uhd-btn--dark {
   color: var(--uhd-d-text);
   background:
     linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
     var(--uhd-rainbow) border-box;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 12px 28px -12px rgba(0, 0, 0, 0.55);
   backdrop-filter: var(--uhd-glass-filter);
   -webkit-backdrop-filter: var(--uhd-glass-filter);
 }
@@ -115,6 +123,7 @@ withDefaults(
   color: var(--uhd-l-text-3);
   border-color: var(--uhd-l-border);
   background: var(--uhd-l-input-bg);
+  box-shadow: none;
   opacity: 0.55;
   cursor: not-allowed;
   backdrop-filter: none;

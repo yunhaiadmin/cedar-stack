@@ -248,14 +248,24 @@ onMounted(() => {
   font-size: 13px;
   color: var(--ink2);
 }
+/* 入口主钮 UHD 口径（2026-11-13 补齐七彩＋玻璃）：由满面彩虹填充改彩虹边框 +
+   淡彩粉彩底 + 玻璃栈，与全站主钮统一（本页 .v4-scope 恒浅色纸面） */
 .member-sub-entry__btn {
   flex: 0 0 auto;
   padding: 10px 20px;
+  border: 1.5px solid transparent;
   border-radius: 999px;
-  background: var(--uhd-rainbow);
-  color: #fff;
+  background:
+    var(--uhd-rainbow-soft) padding-box,
+    var(--uhd-rainbow) border-box;
+  color: #111111;
   font-size: 14px;
   font-weight: 700;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    var(--uhd-shadow-card-l);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
 }
 .modal-title { margin: 0; font-size: 17px; font-weight: 600; color: var(--ink); }
 .confirm-text { margin: 0; font-size: 14px; line-height: 1.6; color: var(--ink); }
@@ -277,11 +287,28 @@ onMounted(() => {
   border: 1px solid var(--line);
   color: var(--ink2);
 }
+/* 主钮 UHD 口径（2026-11-13 补齐七彩＋玻璃）：彩虹边框 + 淡彩粉彩底 + 玻璃栈
+   （本页在 V4_PATHS 内被守卫钉浅色，只需浅色配方） */
 .m-btn.primary {
-  background: var(--ink);
-  border: 1px solid var(--ink);
-  color: var(--on-dark);
+  border: 1.5px solid transparent;
+  background:
+    var(--uhd-rainbow-soft) padding-box,
+    var(--uhd-rainbow) border-box;
+  color: #111111;
   font-weight: 600;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    var(--uhd-shadow-card-l);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
+}
+/* 禁用：彩虹退场、中性灰 */
+.m-btn.primary:disabled {
+  background: var(--paper2);
+  color: var(--ink2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 .m-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 @media (min-width: 1024px) {

@@ -281,11 +281,41 @@ onMounted(() => {
   white-space: nowrap;
 }
 .follow-card .acct-btn { margin-top: 0; }
+/* 主钮 UHD 口径（2026-11-13 补齐七彩＋玻璃）：彩虹边框 + 玻璃栈；
+   浅色面＝淡彩粉彩底 + 黑字，深色面＝深色毛玻璃底 + 白字（下方 .ov-dark 覆盖）。
+   本面板挂在概览页（跟随用户外观），两态都会真实出现。 */
 .acct-btn.primary {
-  background: var(--ink);
-  border: 1px solid var(--ink);
-  color: var(--on-dark);
+  border: 1.5px solid transparent;
+  background:
+    var(--uhd-rainbow-soft) padding-box,
+    var(--uhd-rainbow) border-box;
+  color: #111111;
   font-weight: 600;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    var(--uhd-shadow-card-l);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
+}
+/* 深色配方：以概览页自带的解析结果类 .ov-dark 为信号（页面 themeResolved，
+   不单靠 html[data-theme]——守卫在该页走 restoreUserTheme，属性口径与解析结果可能不一致） */
+.ov-page.ov-dark .acct-btn.primary {
+  background:
+    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
+    var(--uhd-rainbow) border-box;
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 12px 28px -12px rgba(0, 0, 0, 0.55);
+}
+/* 禁用：彩虹退场、中性灰 */
+.acct-btn.primary:disabled,
+.ov-page.ov-dark .acct-btn.primary:disabled {
+  background: var(--paper2);
+  color: var(--ink2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 .acct-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .follow-note {

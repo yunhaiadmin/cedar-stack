@@ -441,10 +441,38 @@ onUnmounted(() => {
   outline-offset: 2px;
 }
 
+/* 主钮 UHD 口径（2026-11-13 补齐七彩＋玻璃）：彩虹边框 + 玻璃栈；
+   默认（深色面）＝深色毛玻璃底 + 白字，浅色面（html[data-theme='light']）＝淡彩粉彩底 + 黑字 */
 .btn-primary {
   width: 100%;
-  background: var(--paper-primary);
-  color: var(--paper-on-primary);
+  border: 1.5px solid transparent;
+  background:
+    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
+    var(--uhd-rainbow) border-box;
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 12px 28px -12px rgba(0, 0, 0, 0.55);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
+}
+html[data-theme='light'] .btn-primary {
+  background:
+    var(--uhd-rainbow-soft) padding-box,
+    var(--uhd-rainbow) border-box;
+  color: #111111;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    var(--uhd-shadow-card-l);
+}
+/* 禁用：彩虹退场、中性灰 */
+.btn-primary:disabled,
+html[data-theme='light'] .btn-primary:disabled {
+  background: var(--bg-surface-2);
+  color: var(--text-muted);
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .btn-ghost {

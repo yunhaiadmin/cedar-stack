@@ -639,7 +639,8 @@ onMounted(() => {
   letter-spacing: -0.01em;
   color: var(--uhd-d-text);
 }
-/* 彩虹边框胶囊：1px 彩虹渐变边＋深色底（原站「网页观影」位，改为真实入口） */
+/* 彩虹边框胶囊：彩虹渐变边＋深色毛玻璃底＋玻璃栈（原站「网页观影」位，改为真实入口；
+   2026-11-13 补齐玻璃：内高光 + 柔影 + backdrop） */
 .sub-head-link {
   flex: 0 0 auto;
   padding: 7px 14px;
@@ -648,9 +649,14 @@ onMounted(() => {
   font-weight: var(--uhd-fw-semibold);
   color: var(--uhd-d-text);
   text-decoration: none;
-  background: linear-gradient(var(--uhd-d-bg), var(--uhd-d-bg)) padding-box,
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
     var(--uhd-rainbow) border-box;
   border: 1.5px solid transparent;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 12px 28px -12px rgba(0, 0, 0, 0.5);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
 }
 
 .sub-body {
@@ -1141,28 +1147,41 @@ onMounted(() => {
   font-size: var(--uhd-fs-caption);
   color: var(--uhd-d-text-3);
 }
+/* 结算主钮 UHD 口径（2026-11-13 补齐七彩＋玻璃）：由满面彩虹填充改彩虹边框 +
+   深色毛玻璃底 + 玻璃栈（内高光 + 柔影 + backdrop），与全站主钮统一 */
 .sub-settle__btn {
   flex: 0 0 auto;
   min-width: 132px;
   padding: 14px 30px;
-  border: none;
+  border: 1.5px solid transparent;
   border-radius: 999px;
-  background: var(--uhd-rainbow);
+  background:
+    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
+    var(--uhd-rainbow) border-box;
   color: #fff;
   font-family: inherit;
   font-size: 16px;
   font-weight: var(--uhd-fw-bold);
   cursor: pointer;
-  box-shadow: 0 8px 24px -8px rgba(255, 70, 85, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 12px 28px -10px rgba(0, 0, 0, 0.5);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
   transition: transform var(--uhd-dur-ui) ease, opacity var(--uhd-dur-ui) ease;
 }
 .sub-settle__btn:active {
   transform: scale(0.97);
 }
+/* 禁用：彩虹退场、中性灰 */
 .sub-settle__btn:disabled {
-  opacity: 0.45;
+  background: var(--uhd-d-surface-raised);
+  border-color: var(--uhd-d-border-2);
+  color: var(--uhd-d-text-2);
   cursor: not-allowed;
   box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 @media (min-width: 1024px) {
