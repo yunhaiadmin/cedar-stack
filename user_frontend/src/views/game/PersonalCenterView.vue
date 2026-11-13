@@ -177,68 +177,6 @@
         </RouterLink>
       </section>
 
-      <!-- 我的片子（现有真实条目同式归段，不丢功能） -->
-      <section class="ov-sec">
-        <div class="ov-sec__head">
-          <h2 class="ov-sec__title">我的片子</h2>
-        </div>
-        <RouterLink class="ov-trow" to="/game/requests?tab=mine">
-          <span class="ov-trow__name">我的求片</span>
-          <span v-if="requestMeta" class="ov-trow__value">{{ requestMeta }}</span>
-          <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
-        <RouterLink class="ov-trow" to="/favorites">
-          <span class="ov-trow__name">我的收藏</span>
-          <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
-        <button
-          v-if="followVisible"
-          type="button"
-          class="ov-trow ov-trow--btn"
-          :aria-expanded="followOpen"
-          @click="followOpen = !followOpen"
-        >
-          <span class="ov-trow__name">追剧订阅</span>
-          <span v-if="followMeta" class="ov-trow__value">{{ followMeta }}</span>
-          <ChevronRight :size="16" class="ov-row__chev" :class="{ 'ov-row__chev--open': followOpen }" aria-hidden="true" />
-        </button>
-        <!-- 面板常驻挂载（v-show 只控显隐）：挂载即加载并回报 summary，
-             接口 404 时父级把整行藏掉 -->
-        <div v-show="followVisible && followOpen" class="ov-follow-panel">
-          <SeriesFollowsPanel @summary="onFollowSummary" />
-        </div>
-      </section>
-
-      <!-- 我的权益 -->
-      <section class="ov-sec">
-        <div class="ov-sec__head">
-          <h2 class="ov-sec__title">我的权益</h2>
-        </div>
-        <RouterLink class="ov-trow" to="/game/account/member">
-          <span class="ov-trow__name">我的会员</span>
-          <span v-if="memberMeta" class="ov-trow__value">{{ memberMeta }}</span>
-          <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
-      </section>
-
-      <!-- 账号 -->
-      <section class="ov-sec">
-        <div class="ov-sec__head">
-          <h2 class="ov-sec__title">账号</h2>
-        </div>
-        <RouterLink class="ov-trow" to="/game/account/settings">
-          <span class="ov-trow__name">账号设置</span>
-          <span class="ov-trow__value">密码 · 设备 · 绑定</span>
-          <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
-        <RouterLink v-if="agentProfile" class="ov-trow" to="/game/agent">
-          <span class="ov-trow__name">代理中心</span>
-          <span class="ov-trow__value">进货余额 ¥{{ agentProfile.balance.toFixed(2) }}</span>
-          <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
-      </section>
-
-      <button type="button" class="ov-logout" @click="handleLogout">退出登录</button>
     </div>
   </div>
 </template>
@@ -247,9 +185,15 @@
 /**
  * 概览（/game/account）：2026-11-13 按 UHDNow 原站用户中心首页 1:1 返工——
  * 页头（品牌＋网页观影胶囊）＋会员卡（斜向粉彩渐变＋细斜纹）＋有效期行
- * ＋大数字区（剩余天数映射）＋双按钮＋Emby/设备/常用平面段；
- * 原页其余真实入口（片子/权益/账号）按同一行式归段；权益段只留「我的会员」、
- * 「成长」整段（等级/成就/馆灵）已按用户 2026-11-13 圈删令摘除。
+ * ＋大数字区（剩余天数映射）＋双按钮＋Emby/设备/常用平面段，页面到
+ * 常用段结束；「我的权益」「账号」两段与退出登录按钮已按用户
+ * 2026-11-13 令摘除（友站概览没有这三段）——我的会员/账号设置/代理
+ * 中心入口在「我的」页与桌面侧栏，退出登录在「我的」页、顶栏账户
+ * 菜单与账号设置页均有；「成长」整段（等级/成就/馆灵）已按用户
+ * 2026-11-13 圈删令摘除；自创的「我的片子」归组（想看/我的求片/我的
+ * 收藏/追剧订阅）同日按用户令摘除——友站概览无此组：我的收藏归底坞
+ * 收藏页签、求片归求片页、想看与追剧订阅归条目详情页动作区，追剧订阅
+ * 管理面板归账号设置页。
  * 页面跟随用户外观（浅/深本地变量切换，不再经纸色布局强制浅色）。
  * 所有数字/条目只用现有接口数据：订阅（subscriptionApi）、福利
  * （welfareApi）、账号卡（embyApi.getAccountCard）、设备
@@ -263,10 +207,9 @@ import {
   ChevronRight, HardDrive, Monitor, MonitorPlay, Route, Smartphone, Tv,
   type LucideIcon,
 } from 'lucide-vue-next'
-import SeriesFollowsPanel from '@/components/profile/SeriesFollowsPanel.vue'
 import StatusAlertBar from '@/components/profile/StatusAlertBar.vue'
 import {
-  embyApi, storeRequestsApi, subscriptionApi,
+  embyApi, subscriptionApi,
   type AccountCard, type MySubscription,
 } from '@/api'
 import {
@@ -274,7 +217,6 @@ import {
   type MyDevice, type MyDevicesResponse, type VitalityStatus,
 } from '@/api/economy'
 import { getMyExclusiveLines, type MyExclusiveLine } from '@/api/user'
-import { getAgentMe, type AgentProfile } from '@/api/agent'
 import { useUserStore } from '@/stores/user'
 import { branding } from '@/composables/useBranding'
 import { useTheme } from '@/composables/useTheme'
@@ -295,7 +237,6 @@ const whitelistIdentity = computed(() => userStore.user?.whitelist_identity ?? n
 
 // ── 总览数据 ──
 const subscriptions = ref<MySubscription[]>([])
-const subsLoaded = ref(false)
 const welfare = ref<{ is_welfare: boolean; expires_at: string | null } | null>(null)
 const accountCard = ref<AccountCard | null>(null)
 const points = ref<number | null>(null)
@@ -304,13 +245,6 @@ const vitality = ref<VitalityStatus | null>(null)
 const activeSub = computed(
   () => subscriptions.value.find(s => s.status === 'active' && s.days_left > 0) || null,
 )
-const memberMeta = computed(() => {
-  if (isFreeRealm.value) return '公益服 · 免费开放'
-  if (!subsLoaded.value) return ''
-  return activeSub.value
-    ? `${activeSub.value.plan_name} · 剩余 ${activeSub.value.days_left} 天`
-    : '还没有会员'
-})
 /** 会员卡文案：套餐名 / 用户名·ID / 状态（全部真实数据） */
 const memberPlanName = computed(() => {
   if (isFreeRealm.value) return '公益资格'
@@ -425,24 +359,6 @@ async function loadDevices() {
   } catch { /* 设备接口失败整段不渲染，不假造设备行 */ }
 }
 
-// ── 我的片子摘要 ──
-const requestMeta = ref('')
-async function loadRequestMeta() {
-  try {
-    const res = await storeRequestsApi.getMine()
-    const active = (res.items || []).filter(i => i.state === 'registered' || i.state === 'seeking').length
-    if (active) requestMeta.value = `${active} 条进行中`
-  } catch { /* 拿不到就不显示 */ }
-}
-
-// ── 追剧订阅（面板回报可见性与订阅数） ──
-const followVisible = ref(false)
-const followMeta = ref('')
-const followOpen = ref(false)
-function onFollowSummary(payload: { visible: boolean; activeCount: number }) {
-  followVisible.value = payload.visible
-  followMeta.value = payload.activeCount > 0 ? `订阅 ${payload.activeCount} 部` : ''
-}
 
 // ── 我的服务 ──
 const myLines = ref<MyExclusiveLine[]>([])
@@ -455,7 +371,6 @@ async function copyLineUrl(url: string) {
     toast.error('复制失败，请长按地址手动复制')
   }
 }
-const agentProfile = ref<AgentProfile | null>(null)
 const driveRowVisible = ref(false)
 const driveMeta = ref('')
 async function loadDriveMeta() {
@@ -475,7 +390,6 @@ async function loadDriveMeta() {
 async function loadOverview() {
   try {
     subscriptions.value = await subscriptionApi.getMine()
-    subsLoaded.value = true
   } catch { /* 摘要拿不到就留空 */ }
   try {
     const st = await welfareApi.status()
@@ -498,12 +412,6 @@ async function loadOverview() {
   } catch { /* 非公益服用户注定失败，格子不渲染 */ }
 }
 
-/** 退出登录：与设置页同款动作 */
-async function handleLogout() {
-  await userStore.logout()
-  router.push('/login')
-}
-
 onMounted(() => {
   // 旧深链（播放器方案弹窗的「去绑盘」）直达设置页绑定组
   if (route.hash === '#my-drive') {
@@ -512,10 +420,9 @@ onMounted(() => {
   }
   void loadOverview()
   void loadDevices()
-  void loadRequestMeta()
+
   void loadDriveMeta()
   void getMyExclusiveLines().then(lines => { myLines.value = lines }).catch(() => {})
-  void getAgentMe().then(me => { agentProfile.value = me.is_agent ? me.agent : null }).catch(() => {})
 })
 </script>
 
@@ -988,29 +895,6 @@ html:not([data-theme='light']) .ov-card {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ov-follow-panel {
-  padding-top: 10px;
-}
-
-/* 退出登录：独立整宽胶囊（与「我的」页同款） */
-.ov-logout {
-  width: 100%;
-  height: 54px;
-  margin-top: 40px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
-  background: #17181c;
-  color: var(--uhd-danger);
-  font-family: inherit;
-  font-size: 17px;
-  font-weight: var(--uhd-fw-semibold);
-  cursor: pointer;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-}
-.ov-logout:active {
-  opacity: 0.78;
-}
-
 /* 浅色覆盖：跟随用户外观（html[data-theme='light']） */
 html[data-theme='light'] .ov-page {
   background: #f8f8f8;
@@ -1067,7 +951,6 @@ html[data-theme='light'] .ov-drow__status { color: #9a9da3; }
 html[data-theme='light'] .ov-drow__status--on { color: #16a34a; }
 html[data-theme='light'] .ov-trow { border-bottom-color: #e5e5e7; color: #111111; }
 html[data-theme='light'] .ov-trow__value { color: #9a9da3; }
-html[data-theme='light'] .ov-logout { background: #ffffff; border-color: #e7e7e7; }
 
 /* 兜底回滚块：守卫已不再把本页钉成 light（V4_PATHS 摘除 /game/account）；
    若主题解析与 data-theme 出现竞态不一致，用户选深色时由 .ov-dark 类回滚为深色 */
@@ -1108,5 +991,4 @@ html[data-theme='light'] .ov-page.ov-dark .ov-expiry { color: rgba(255, 255, 255
 html[data-theme='light'] .ov-page.ov-dark .ov-irow { border-bottom-color: #26262a; color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-drow { border-bottom-color: #26262a; }
 html[data-theme='light'] .ov-page.ov-dark .ov-trow { border-bottom-color: #26262a; color: #ffffff; }
-html[data-theme='light'] .ov-page.ov-dark .ov-logout { background: #17181c; border-color: rgba(255, 255, 255, 0.1); }
 </style>

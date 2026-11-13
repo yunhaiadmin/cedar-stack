@@ -13,7 +13,7 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Clapperboard, Heart, Play } from 'lucide-vue-next'
+import { ArrowLeft, BellPlus, BookmarkPlus, Clapperboard, Heart, Play } from 'lucide-vue-next'
 import {
   embyApi as embyProtocol,
   backdropUrl,
@@ -23,7 +23,8 @@ import {
   ticksToSeconds,
   type EmbyItem,
 } from '@/api/emby'
-import { embyApi, type PortalResumeItem } from '@/api'
+import { embyApi, mediaSeekApi, storeApi, type PortalResumeItem } from '@/api'
+import { seriesFollowApi } from '@/api/economy'
 import SeriesEpisodeList from '@/components/panel/SeriesEpisodeList.vue'
 import PlayerSchemeSheet from '@/components/panel/PlayerSchemeSheet.vue'
 import StreamShell from '@/components/stream/StreamShell.vue'
@@ -187,6 +188,8 @@ async function load() {
     item.value = await embyProtocol.getItem(itemId.value)
     void loadRecommendations(item.value)
     void loadResume()
+    void loadWantState()
+    void loadFollowState()
   } catch (err) {
     item.value = null
     error.value = `详情没加载出来：${errText(err)}`
@@ -208,6 +211,93 @@ async function toggleFavorite() {
     toast.error(`收藏操作失败：${errText(err)}`)
   } finally {
     favBusy.value = false
+  }
+}
+
+/** 想看（概览「我的片子」组摘除后归位到详情页动作区）：与求片页同一个
+ * postWant 口，按 tmdb 匹配本人想看清单；商店闸未开/非会员时 getWants
+ * 失败，整钮不显示（与求片页想看区同口径）。 */
+const wantVisible = ref(false)
+const wanted = ref(false)
+const wantBusy = ref(false)
+async function loadWantState() {
+  wantVisible.value = false
+  wanted.value = false
+  const tid = tmdbId.value
+  if (!tid) return
+  try {
+    const res = await storeApi.getWants()
+    wantVisible.value = true
+    wanted.value = (res.items || []).some(
+      i => i.tmdb_id === tid && i.state !== 'failed' && i.state !== 'missing_source',
+    )
+  } catch { /* 拿不到就不显示 */ }
+}
+async function handleWant() {
+  const tid = tmdbId.value
+  if (!tid || wantBusy.value || wanted.value) return
+  wantBusy.value = true
+  try {
+    const r = await storeApi.postWant(tid)
+    toast.success(r.message || '已加入想看')
+    if (r.state !== 'failed' && r.state !== 'missing_source') wanted.value = true
+  } catch (err) {
+    toast.error(`想看没加上：${errText(err)}`)
+  } finally {
+    wantBusy.value = false
+  }
+}
+
+/** 追剧订阅（同上归位；管理面板在账号设置页）：仅剧集。订阅口只认数字
+ * 主键，走站内查库口按条目 GUID 对位取 item_id（与订阅面板同口径）；
+ * 接口 404（未启用）或对不上主键时整钮不显示。 */
+const followVisible = ref(false)
+const followBusy = ref(false)
+const followSubscribed = ref(false)
+const followSeriesId = ref<number | null>(null)
+async function loadFollowState() {
+  followVisible.value = false
+  followSubscribed.value = false
+  followSeriesId.value = null
+  const it = item.value
+  if (!it || it.Type !== 'Series') return
+  let follows
+  try {
+    const res = await seriesFollowApi.list()
+    follows = res.follows || []
+  } catch { return /* 未启用/失败：整钮不显示 */ }
+  try {
+    const res = await mediaSeekApi.lookup(it.Name)
+    const cands = (res.items || []).filter(
+      i => i.type === 'series' && typeof i.item_id === 'number',
+    )
+    const hit = cands.find(i => i.id === it.Id) || (cands.length === 1 ? cands[0] : undefined)
+    if (!hit || typeof hit.item_id !== 'number') return
+    followSeriesId.value = hit.item_id
+  } catch { return }
+  followSubscribed.value = follows.some(
+    f => f.series_item_id === followSeriesId.value && f.status === 'active',
+  )
+  followVisible.value = true
+}
+async function toggleFollow() {
+  const sid = followSeriesId.value
+  if (sid == null || followBusy.value) return
+  followBusy.value = true
+  try {
+    if (followSubscribed.value) {
+      await seriesFollowApi.unsubscribe(sid)
+      followSubscribed.value = false
+      toast.success('已取消追剧订阅')
+    } else {
+      await seriesFollowApi.subscribe(sid)
+      followSubscribed.value = true
+      toast.success('已订阅追剧，新集到货会自动转存到你的盘')
+    }
+  } catch (err) {
+    toast.error(`追剧订阅操作失败：${errText(err)}`)
+  } finally {
+    followBusy.value = false
   }
 }
 
@@ -286,7 +376,10 @@ watch(itemId, () => {
               {{ resumeText }}
             </p>
 
-            <!-- 按钮行高 52：「立即播放」主胶囊 + 收藏 + 状态。
+            <!-- 按钮行高 52：「立即播放」主胶囊 + 收藏 + 想看 + 追剧订阅 + 状态。
+                 想看/追剧订阅原在概览「我的片子」组，2026-11-13 按用户令
+                 摘组后归位到详情页动作区（显隐口径见脚本 loadWantState /
+                 loadFollowState：拿不到数据整钮不显示）。
                  2026-11-13 用户新口径：页面组织/交互可按 UHDNow 打破重排，
                  详情页恢复播放主入口；播放走现行 PlayerSchemeSheet，
                  选播放器/起播状态/未绑盘引导都在弹层内，门禁口径不变。 -->
@@ -304,6 +397,28 @@ watch(itemId, () => {
               >
                 <Heart :size="17" :fill="item.UserData?.IsFavorite ? 'currentColor' : 'none'" />
                 {{ item.UserData?.IsFavorite ? '已收藏' : '加入收藏' }}
+              </button>
+              <button
+                v-if="wantVisible"
+                type="button"
+                class="md-btn md-btn--fav"
+                :class="{ 'md-btn--fav-on': wanted }"
+                :disabled="wantBusy || wanted"
+                @click="handleWant"
+              >
+                <BookmarkPlus :size="17" :fill="wanted ? 'currentColor' : 'none'" />
+                {{ wanted ? '已想看' : '想看' }}
+              </button>
+              <button
+                v-if="followVisible"
+                type="button"
+                class="md-btn md-btn--fav"
+                :class="{ 'md-btn--fav-on': followSubscribed }"
+                :disabled="followBusy"
+                @click="toggleFollow"
+              >
+                <BellPlus :size="17" :fill="followSubscribed ? 'currentColor' : 'none'" />
+                {{ followSubscribed ? '已追剧订阅' : '追剧订阅' }}
               </button>
               <span v-if="item.UserData?.Played" class="md-btn md-btn--state">已看完</span>
               <span v-else-if="resumeText" class="md-btn md-btn--state">正在观看</span>
@@ -582,7 +697,8 @@ watch(itemId, () => {
 }
 .md-actions {
   display: flex;
-  flex-wrap: nowrap;
+  /* 动作钮增至四颗（播放/收藏/想看/追剧订阅），窄屏允许换行不挤压 */
+  flex-wrap: wrap;
   gap: 12px;
   margin-top: 20px;
 }
