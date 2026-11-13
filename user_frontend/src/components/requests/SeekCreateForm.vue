@@ -3,6 +3,12 @@
        弹窗同口径（在库校验/额度/季选/重名改附议），缺集提示条与举报口不平移。 -->
   <div class="rf-seek">
     <div class="rf-search">
+      <span class="rf-search__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+          <circle cx="10.5" cy="10.5" r="6.5" />
+          <path d="M15.5 15.5 21 21" />
+        </svg>
+      </span>
       <input
         ref="seekInput"
         v-model="wishText"
@@ -40,24 +46,37 @@
         <div v-if="searchDegraded" class="rf-cands__degraded">搜索结果可能不全</div>
         <div v-if="!candidates.length" class="rf-cands__empty">没找到，换个片名试试</div>
         <div class="rf-cand-list">
-          <button
+          <div
             v-for="c in candidates"
             :key="c.kind + ':' + c.tmdb_id"
-            type="button"
             class="rf-cand"
-            @click="selectCandidate(c)"
           >
-            <img v-if="c.poster_url" :src="imageAuthUrl(c.poster_url, 160)" :alt="c.name" class="rf-cand__poster" loading="lazy" decoding="async" />
-            <span v-else class="rf-cand__ph" aria-hidden="true">🎬</span>
-            <span class="rf-cand__main">
-              <b>{{ c.name }}</b>
-              <span class="rf-cand__meta">{{ c.year }} · {{ c.kind === 'movie' ? '电影' : '剧集' }}</span>
-            </span>
-            <span class="rf-cand__badges">
-              <span v-if="c.rating" class="rf-chip rf-chip--gray">★ {{ c.rating }}</span>
-              <span v-if="c.in_library" class="rf-chip rf-chip--green">已在库</span>
-            </span>
-          </button>
+            <button type="button" class="rf-cand__pick" @click="selectCandidate(c)">
+              <img v-if="c.poster_url" :src="imageAuthUrl(c.poster_url, 160)" :alt="c.name" class="rf-cand__poster" loading="lazy" decoding="async" />
+              <span v-else class="rf-cand__ph" aria-hidden="true">🎬</span>
+              <span class="rf-cand__main">
+                <span class="rf-cand__titlerow">
+                  <b>{{ c.name }}</b>
+                  <span class="rf-cand__kind">{{ c.kind === 'movie' ? '电影' : '剧集' }}</span>
+                  <span class="rf-chip" :class="c.in_library ? 'rf-chip--green' : 'rf-chip--gray'">{{ c.in_library ? '✓ 库内已有' : '库内暂无' }}</span>
+                </span>
+                <span class="rf-cand__meta">{{ c.name }} / {{ c.year || '年份未知' }}</span>
+              </span>
+            </button>
+            <button
+              v-if="candState(c) === 'existing'"
+              type="button"
+              class="rf-cand__view"
+              @click="goExisting(c)"
+            >查看已有请求 ›</button>
+            <button
+              v-else-if="candState(c) === 'go'"
+              type="button"
+              class="rf-cand__go"
+              @click="selectCandidate(c)"
+            >发起求片</button>
+            <span v-else class="rf-cand__have">媒体库已有</span>
+          </div>
         </div>
       </template>
     </div>
@@ -181,6 +200,31 @@ const fallbackAllowed = computed(() => {
 })
 function normTitle(s: string): string {
   return s.toLowerCase().replace(/[《》\s·•:：,，.。!！?？;；'"“”‘’()（）\-—]/g, '')
+}
+/* 候选卡三态动作（照友站）：已有请求（我或他人在这片有处理中求片）→查看已有请求；
+   库内暂无且无请求→发起求片；库内已有且无请求→纯文字「媒体库已有」。
+   已有请求判定与 nameDup 同口径：tmdb_id 对上或归一化片名对上（我的限处理中）。 */
+function existingRowFor(c: MediaSeekCandidate): boolean {
+  const key = normTitle(c.name)
+  const tmdb = (c.tmdb_id || '').trim()
+  const hit = (rowTmdb: string | null | undefined, rowName: string) =>
+    (!!tmdb && (rowTmdb || '').trim() === tmdb) || (!!key && normTitle(rowName) === key)
+  if (props.myRequests.some(
+    (w) => (w.status === 'pending' || w.status === 'approved') && hit(w.tmdb_id, w.movie_name),
+  )) return true
+  return props.hotRequests.some(
+    (w) => hit((w as HotMediaSeekRequest & { tmdb_id?: string | null }).tmdb_id, w.movie_name),
+  )
+}
+function candState(c: MediaSeekCandidate): 'existing' | 'go' | 'have' {
+  if (existingRowFor(c)) return 'existing'
+  return c.in_library ? 'have' : 'go'
+}
+function goExisting(c: MediaSeekCandidate): void {
+  void router.push({
+    path: '/game/requests/media',
+    query: { tmdb: c.tmdb_id, name: c.name, year: c.year, type: c.kind },
+  })
 }
 const nameDup = computed<{ kind: 'mine' | 'hot'; row: MediaSeekRequest | HotMediaSeekRequest } | null>(() => {
   if (picked.value) return null
@@ -431,9 +475,15 @@ watch(
    搜索框约 50 高圆角约 25；搜索钮为圆形彩虹钮（原站发起请求搜索框形态，
    2026-11-13 六图）：50×50 圆、白底＋淡彩虹渐变边框＋放大镜图标。 */
 .rf-seek { display: flex; flex-direction: column; gap: 12px; }
-.rf-search { display: flex; gap: 10px; }
+.rf-search { display: flex; gap: 10px; position: relative; }
+/* 输入框内左侧放大镜（照友站）：图标随输入框同行居中，输入左内边距让位 */
+.rf-search__icon {
+  position: absolute; left: 16px; top: 0; height: 50px;
+  display: inline-flex; align-items: center; pointer-events: none;
+  color: #9ca3af;
+}
 .rf-search__input {
-  flex: 1; min-width: 0; height: 50px; padding: 0 18px;
+  flex: 1; min-width: 0; height: 50px; padding: 0 18px 0 42px;
   font-size: 15px; color: #fbfcfd;
   background: #242526; border: 1px solid #232426; border-radius: 25px; outline: none;
 }
@@ -454,21 +504,47 @@ watch(
 .rf-cands__error { font-size: 13px; color: #fca5a5; display: flex; gap: 8px; align-items: center; }
 .rf-link { background: none; border: none; color: #6ea8fe; font-size: 13px; cursor: pointer; text-decoration: underline; }
 .rf-cand-list { display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; }
+/* 候选卡（照友站搜索结果态）：海报＋标题行（类型标签＋库内 pill）＋「标题 / 年份」行，
+   右侧三态动作（查看已有请求描边胶囊／发起求片彩虹钮／媒体库已有纯文字） */
 .rf-cand {
-  display: flex; align-items: center; gap: 10px; text-align: left;
+  display: flex; align-items: center; gap: 10px;
   background: #17181a; border: 1px solid #26262a; border-radius: 12px;
-  padding: 8px 10px; cursor: pointer; width: 100%; color: #fbfcfd;
+  padding: 8px 10px; width: 100%; color: #fbfcfd;
 }
-.rf-cand:active { transform: scale(0.98); }
+.rf-cand__pick {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; text-align: left;
+  background: none; border: none; padding: 0; cursor: pointer; color: inherit; font-family: inherit;
+}
+.rf-cand__pick:active { transform: scale(0.98); }
 .rf-cand__poster { width: 40px; height: 56px; object-fit: cover; border-radius: 8px; flex-shrink: 0; border: 1px solid #26262a; }
 .rf-cand__ph { width: 40px; height: 56px; display: flex; align-items: center; justify-content: center; font-size: 20px; background: #1e1f21; border-radius: 8px; flex-shrink: 0; border: 1px solid #26262a; }
 .rf-cand__main { flex: 1; min-width: 0; }
-.rf-cand__main b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rf-cand__meta { font-size: 11px; color: #9ca3af; margin-top: 2px; display: block; }
-.rf-cand__badges { display: flex; gap: 4px; flex-shrink: 0; }
+.rf-cand__titlerow { display: flex; align-items: center; gap: 6px; }
+.rf-cand__titlerow b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rf-cand__kind {
+  flex: none; font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 6px;
+  background: #26262a; color: #9ca3af;
+}
+.rf-cand__titlerow .rf-chip { flex: none; }
+.rf-cand__meta { font-size: 11px; color: #9ca3af; margin-top: 4px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rf-chip { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px; white-space: nowrap; }
 .rf-chip--gray { background: #26262a; color: #9ca3af; border: 1px solid #333336; }
 .rf-chip--green { background: rgba(22, 163, 74, 0.15); color: #4ade80; border: 1px solid rgba(22, 163, 74, 0.5); }
+.rf-cand__view {
+  flex: none; height: 36px; padding: 0 14px; border-radius: 999px; cursor: pointer;
+  background: transparent; border: 1.5px solid #3a3b3f; color: #fbfcfd;
+  font-size: 12px; font-weight: 700; font-family: inherit; white-space: nowrap;
+}
+.rf-cand__go {
+  flex: none; height: 36px; padding: 0 14px; border-radius: 999px; cursor: pointer;
+  border: 1.5px solid transparent;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box, var(--uhd-rainbow) border-box;
+  color: #ffffff; font-size: 12px; font-weight: 800; font-family: inherit; white-space: nowrap;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 8px 20px -10px rgba(0, 0, 0, 0.55);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
+}
+.rf-cand__have { flex: none; font-size: 12px; color: #9ca3af; white-space: nowrap; }
 .rf-picked {
   display: flex; align-items: center; gap: 10px;
   background: #1e1f21; border: 1.5px solid #3a3b3f; border-radius: 12px; padding: 8px 10px;
@@ -498,9 +574,15 @@ watch(
   border: 1px dashed #333336; border-radius: 10px; padding: 8px 10px;
 }
 .rf-fallback { font-size: 12px; color: #9ca3af; }
+/* 主按钮：招牌配方（彩虹边＋玻璃栈，同 .btn-primary 浅深两态），替代旧实色底 */
 .rf-submit {
-  width: 100%; height: 50px; border-radius: 25px; border: none; cursor: pointer;
-  font-size: 15px; font-weight: 800; background: #fbfcfd; color: #111111;
+  width: 100%; height: 50px; border-radius: 25px; cursor: pointer;
+  font-size: 15px; font-weight: 800; color: #ffffff;
+  border: 1.5px solid transparent;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box, var(--uhd-rainbow) border-box;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 12px 28px -12px rgba(0, 0, 0, 0.55);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
 }
 .rf-submit:disabled { opacity: 0.5; cursor: default; }
 html[data-theme='light'] .rf-search__input { background: #f0f0f1; border-color: #e5e5e5; color: #111111; }
@@ -509,6 +591,14 @@ html[data-theme='light'] .rf-hint--err, html[data-theme='light'] .rf-cands__erro
 html[data-theme='light'] .rf-cands__status, html[data-theme='light'] .rf-cands__empty, html[data-theme='light'] .rf-cands__degraded, html[data-theme='light'] .rf-cand__meta, html[data-theme='light'] .rf-picked__meta, html[data-theme='light'] .rf-seasons__loading, html[data-theme='light'] .rf-seasons__empty, html[data-theme='light'] .rf-fallback { color: #6b7280; }
 html[data-theme='light'] .rf-link { color: #2563eb; }
 html[data-theme='light'] .rf-cand { background: #ffffff; border-color: #e5e5e5; color: #111111; }
+html[data-theme='light'] .rf-cand__kind { background: #f0f0f1; color: #6b7280; }
+html[data-theme='light'] .rf-cand__view { border-color: #d4d4d8; color: #111111; }
+html[data-theme='light'] .rf-cand__go {
+  background: var(--uhd-rainbow-soft) padding-box, var(--uhd-rainbow) border-box;
+  color: #111111;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--uhd-shadow-card-l);
+}
+html[data-theme='light'] .rf-cand__have { color: #6b7280; }
 html[data-theme='light'] .rf-cand__poster, html[data-theme='light'] .rf-picked__poster { border-color: #e5e5e5; }
 html[data-theme='light'] .rf-cand__ph, html[data-theme='light'] .rf-picked__ph { background: #f5f5f5; border-color: #e5e5e5; }
 html[data-theme='light'] .rf-chip--gray { background: #f5f5f5; color: #6b7280; border-color: #e5e5e5; }
@@ -521,5 +611,9 @@ html[data-theme='light'] .rf-seasons__label { color: #111111; }
 html[data-theme='light'] .rf-chipbtn { background: #f5f5f5; color: #55575c; border-color: #e5e5e5; }
 html[data-theme='light'] .rf-chipbtn.on { background: #111111; color: #ffffff; border-color: #111111; }
 html[data-theme='light'] .rf-dup { background: #f9f9f9; border-color: #d4d4d8; color: #111111; }
-html[data-theme='light'] .rf-submit { background: #111111; color: #ffffff; }
+html[data-theme='light'] .rf-submit {
+  background: var(--uhd-rainbow-soft) padding-box, var(--uhd-rainbow) border-box;
+  color: #111111;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--uhd-shadow-card-l);
+}
 </style>

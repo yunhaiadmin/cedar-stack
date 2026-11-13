@@ -6,15 +6,18 @@
          修正信息、其他反馈，映射见脚本 segGroups 注释）＋每档一套须知卡组；
          请求广场是后端真聚合的媒体卡（海报/库内已有/处理中/计数行）；
          视觉照 UHDNow 原站求片反馈页 1:1（实测清单 §10＋用户六张真机截图）；
-         页面跟随用户外观。 -->
+         页面跟随用户外观。
+         2026-11-14 细节对齐（用户真机双截图亲点）：补顶栏（返回＋标题＋
+         「网页观影」彩虹玻璃胶囊）、类型分段补容器描边、提交钮换招牌主按钮
+         配方（收 #138 尾巴）；搜索框内放大镜与必看盒盾牌图标在子组件内。 -->
     <div class="rf-page">
       <div class="rf-inner">
-      <header class="rf-head">
-        <div class="rf-head__text">
-          <h1>求片反馈</h1>
-          <p>{{ tabSubtitle }}</p>
-        </div>
-        <!-- 「网页观影」胶囊：与「我的」页同款（彩虹三角＋胶囊），跳现行网页播放入口（片库面） -->
+      <!-- 顶栏（照友站：返回＋小标题＋右上「网页观影」彩虹玻璃胶囊） -->
+      <div class="rf-topbar">
+        <button type="button" class="rf-back" aria-label="返回" @click="goBack">
+          <ChevronLeft :size="24" aria-hidden="true" />
+        </button>
+        <span class="rf-topbar__title">求片反馈</span>
         <RouterLink to="/library" class="rf-watch">
           <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
             <defs>
@@ -28,6 +31,13 @@
           </svg>
           网页观影
         </RouterLink>
+      </div>
+
+      <header class="rf-head">
+        <div class="rf-head__text">
+          <h1>求片反馈</h1>
+          <p>{{ tabSubtitle }}</p>
+        </div>
       </header>
 
       <nav class="rf-tabs" aria-label="求片反馈页签">
@@ -194,15 +204,15 @@
           >
             <button class="rf-row__head" :aria-expanded="expandedKey === row.source + ':' + row.id" @click="toggleDetail(row)">
               <span class="rf-row__main">
-                <span class="rf-row__title">
-                  <span class="rf-dot" :class="'rf-dot--' + row.state" aria-hidden="true"></span>
-                  {{ row.title }}
+                <span class="rf-row__pills">
+                  <span class="rf-pill rf-pill--type">{{ typeLabel(row.type) }}</span>
+                  <span class="rf-pill" :class="'rf-pill--' + row.state">{{ stateLabel(row.state) }}</span>
+                  <span class="rf-row__time">{{ formatDate(row.updated_at) }}</span>
                 </span>
-                <span class="rf-row__meta">
-                  {{ typeLabel(row.type) }}<span v-if="row.type === 'feedback' && row.categoryLabel"> · {{ row.categoryLabel }}</span>
-                  · {{ stateLabel(row.state) }}
-                  · {{ formatDate(row.updated_at) }}
-                  <span v-if="row.source === 'seek' && row.voteCount"> · {{ row.voteCount }} 人附议</span>
+                <span class="rf-row__title">{{ row.title }}</span>
+                <span v-if="(row.type === 'feedback' && row.categoryLabel) || (row.source === 'seek' && row.voteCount)" class="rf-row__meta">
+                  <template v-if="row.type === 'feedback' && row.categoryLabel">{{ row.categoryLabel }}</template>
+                  <template v-else-if="row.source === 'seek' && row.voteCount">{{ row.voteCount }} 人附议</template>
                 </span>
               </span>
               <span class="rf-row__chev" :class="{ 'rf-row__chev--open': expandedKey === row.source + ':' + row.id }" aria-hidden="true">›</span>
@@ -296,35 +306,8 @@
               <button
                 type="button"
                 class="rf-topic__view"
-                :aria-expanded="expandedPlaza === g.key"
-                @click="togglePlaza(g.key)"
-              >查看 <span class="rf-topic__chev" :class="{ 'rf-topic__chev--open': expandedPlaza === g.key }" aria-hidden="true">›</span></button>
-            </div>
-            <div v-if="expandedPlaza === g.key" class="rf-topic__detail">
-              <div v-for="r in g.requests" :key="r.id" class="rf-topic__req">
-                <div class="rf-topic__reqmain">
-                  <span class="rf-topic__reqtitle">
-                    {{ r.request_kind === 'missing_episodes' ? '补缺集' : '求片' }}<template v-if="r.season_label"> · {{ r.season_label }}</template>
-                  </span>
-                  <span class="rf-topic__reqmeta">
-                    {{ r.vote_count > 0 ? r.vote_count + ' 人想看' : '还没有人附议' }} · {{ formatDate(r.created_at) }}
-                  </span>
-                  <p v-if="r.missing_text" class="rf-topic__missing">{{ r.missing_text }}</p>
-                </div>
-                <button
-                  class="rf-vote rf-vote--sm"
-                  :class="{ 'rf-vote--done': r.voted }"
-                  :disabled="r.voted || voting !== null"
-                  @click="upvote(r)"
-                >{{ r.voted ? '✓ 已附议' : voting === r.id ? '附议中' : '+1 附议' }}</button>
-              </div>
-              <p v-if="g.requests.length === 0" class="rf-topic__noreq">这个话题下暂时没有处理中的求片</p>
-              <button
-                v-if="g.in_library && g.emby_item_id"
-                type="button"
-                class="rf-link"
-                @click="goDetail(g.emby_item_id)"
-              >去看这部</button>
+                @click="goMediaDetail(g)"
+              >查看 <span class="rf-topic__chev" aria-hidden="true">›</span></button>
             </div>
           </article>
         </div>
@@ -337,6 +320,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ChevronLeft } from 'lucide-vue-next'
 import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 import NoticeCards from '@/components/requests/NoticeCards.vue'
 import SeekCreateForm from '@/components/requests/SeekCreateForm.vue'
@@ -414,6 +398,13 @@ const router = useRouter()
 const route = useRoute()
 const toast = useToast()
 
+/* 顶栏返回：与站内其他二级页同口径（订阅页 goBack）——有历史后退，
+   无历史回「我的」菜单（本页入口所在） */
+function goBack(): void {
+  if (window.history.length > 1) router.back()
+  else void router.push('/game/account/menu')
+}
+
 const tab = ref<TabKey>('create')
 const reqType = ref<ReqType>('seek')
 const prefillQ = computed(() => (typeof route.query.q === 'string' ? route.query.q : ''))
@@ -442,7 +433,6 @@ const mineLoading = ref(true)
 const mineError = ref('')
 const hotLoading = ref(true)
 const hotError = ref('')
-const voting = ref<number | null>(null)
 const expandedKey = ref<string | null>(null)
 const justAddedKey = ref<string | null>(null)
 const stateFilter = ref<'all' | UnifiedState>('all')
@@ -456,7 +446,6 @@ const plazaLoading = ref(true)
 const plazaError = ref('')
 const plazaQuery = ref('')
 const plazaQ = ref('')
-const expandedPlaza = ref<string | null>(null)
 
 const chaseTitle = ref('')
 const chaseMessage = ref('')
@@ -684,14 +673,22 @@ async function loadPlaza(): Promise<void> {
 }
 function applyPlazaSearch(): void {
   plazaQ.value = plazaQuery.value.trim()
-  expandedPlaza.value = null
   void loadPlaza()
 }
-function togglePlaza(key: string): void {
-  expandedPlaza.value = expandedPlaza.value === key ? null : key
+/* 广场卡「查看」跳标题详情页（2026-11-14）：组内请求与附议都在详情页，
+   不再内联展开（与友站广场→详情的流程一致） */
+function goMediaDetail(g: PlazaGroup): void {
+  void router.push({
+    path: '/game/requests/media',
+    query: {
+      ...(g.tmdb_id ? { tmdb: g.tmdb_id } : {}),
+      name: g.movie_name,
+      ...(g.year ? { year: g.year } : {}),
+      ...(g.type ? { type: g.type } : {}),
+    },
+  })
 }
 watch([plazaStateFilter, plazaTypeFilter], () => {
-  expandedPlaza.value = null
   void loadPlaza()
 })
 /* 已想看集合（只为已在库候选卡的「想看/已想看」状态服务，不渲染想看列表） */
@@ -762,20 +759,6 @@ async function submitFeedback(): Promise<void> {
   }
 }
 
-async function upvote(w: HotMediaSeekRequest): Promise<void> {
-  if (w.voted || voting.value) return
-  voting.value = w.id
-  try {
-    const r = await mediaSeekApi.vote(w.id)
-    w.voted = r.voted
-    w.vote_count = r.vote_count
-    w.weighted_vote_count = r.weighted_vote_count
-  } catch {
-    toast.error('附议失败，再试一次')
-  } finally {
-    voting.value = null
-  }
-}
 function toggleDetail(row: UnifiedRow): void {
   const key = row.source + ':' + row.id
   expandedKey.value = expandedKey.value === key ? null : key
@@ -811,12 +794,27 @@ onMounted(() => {
 .rf-head__text { min-width: 0; }
 .rf-head h1 { margin: 0 0 6px; font-size: 31px; font-weight: 800; color: #fbfcfd; line-height: 1.2; }
 .rf-head p { margin: 0; font-size: 14px; color: #9ca3af; line-height: 1.6; }
-/* 「网页观影」胶囊：与「我的」页 .watch-pill 同款形态（深色 #312d2e／浅色近白
-   粉水洗底＋彩虹三角），尺寸按本页页头收一号（高 44） */
+/* 顶栏（照友站）：返回＋小标题＋右上观影钮，透明底与页面同面 */
+.rf-topbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.rf-back {
+  flex: none; width: 38px; height: 38px; margin-left: -8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: 999px; background: transparent;
+  color: #fbfcfd; cursor: pointer; font-family: inherit;
+}
+.rf-back:active { background: rgba(255, 255, 255, 0.08); }
+.rf-topbar__title { flex: 1; min-width: 0; font-size: 17px; font-weight: 800; color: #fbfcfd; }
+/* 「网页观影」胶囊：彩虹描边＋玻璃底（照友站同钮，配方同订阅页 .sub-head-link／
+   .btn-primary 的浅深两态）：深色＝深玻璃底＋白字，浅色＝粉彩底＋黑字 */
 .rf-watch {
   flex: none; display: inline-flex; align-items: center; gap: 8px;
-  height: 44px; padding: 0 20px; border-radius: 999px;
-  background: #312d2e; color: #ffffff;
+  height: 40px; padding: 0 16px; border-radius: 999px;
+  border: 1.5px solid transparent;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box, var(--uhd-rainbow) border-box;
+  color: #ffffff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 12px 28px -12px rgba(0, 0, 0, 0.5);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
   font-size: 14px; font-weight: 700; text-decoration: none; white-space: nowrap;
 }
 .rf-tabs { display: flex; gap: 28px; border-bottom: 1px solid #26262a; margin-bottom: 20px; }
@@ -832,7 +830,7 @@ onMounted(() => {
 .rf-create { display: flex; flex-direction: column; gap: 16px; }
 .rf-seg {
   display: flex; width: fit-content; min-width: 211px; height: 38px; padding: 3px;
-  background: #1b1c1e; border-radius: 19px;
+  background: #1b1c1e; border: 1px solid #2c2d30; border-radius: 19px;
 }
 .rf-seg__btn {
   flex: 1; border: none; background: transparent; cursor: pointer;
@@ -861,9 +859,15 @@ onMounted(() => {
   font-size: 13px; font-weight: 700; color: #fbfcfd; font-family: inherit;
 }
 .rf-type.on { border-color: #fbfcfd; background: #1e1f21; }
+/* 主按钮：招牌配方（彩虹边＋玻璃栈，同 .btn-primary 浅深两态），替代旧实色底 */
 .rf-submit {
-  width: 100%; height: 50px; border-radius: 25px; border: none; cursor: pointer;
-  font-size: 15px; font-weight: 800; background: #fbfcfd; color: #111111;
+  width: 100%; height: 50px; border-radius: 25px; cursor: pointer;
+  font-size: 15px; font-weight: 800; color: #ffffff;
+  border: 1.5px solid transparent;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box, var(--uhd-rainbow) border-box;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 12px 28px -12px rgba(0, 0, 0, 0.55);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
 }
 .rf-submit:disabled { opacity: 0.5; cursor: default; }
 
@@ -915,6 +919,20 @@ onMounted(() => {
 }
 .rf-row__head--static { cursor: default; }
 .rf-row__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+/* 请求卡头（照友站态3）：类型 pill＋状态 pill（描边带色）＋右侧时间 */
+.rf-row__pills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rf-row__time { margin-left: auto; font-size: 12px; font-weight: 400; color: #9ca3af; white-space: nowrap; }
+.rf-pill {
+  flex: none; display: inline-flex; align-items: center; height: 22px; padding: 0 8px;
+  border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap;
+  border: 1px solid #333336; color: #9ca3af;
+}
+.rf-pill--type { background: #26262a; color: #d4d4d8; border-color: #26262a; }
+.rf-pill--pending { color: #9ca3af; border-color: #3a3b3f; }
+.rf-pill--doing { color: #f59e0b; border-color: #f59e0b; }
+.rf-pill--done { color: #4ade80; border-color: #16a34a; }
+.rf-pill--rejected { color: #f87171; border-color: #ef4444; }
+.rf-pill--withdrawn { color: #9ca3af; border-color: #3a3b3f; }
 .rf-row__title { font-size: 14px; font-weight: 700; word-break: break-word; display: flex; align-items: center; gap: 8px; }
 .rf-row__meta { font-size: 12px; color: #9ca3af; }
 .rf-row__chev { font-size: 20px; color: #9ca3af; line-height: 1; transition: transform 0.15s ease; }
@@ -959,20 +977,6 @@ onMounted(() => {
 }
 .rf-topic__chev { font-size: 18px; color: #9ca3af; line-height: 1; transition: transform 0.15s ease; }
 .rf-topic__chev--open { transform: rotate(90deg); }
-.rf-topic__detail { margin-top: 12px; border-top: 1px dotted #333336; padding-top: 12px; display: flex; flex-direction: column; gap: 10px; }
-.rf-topic__req { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.rf-topic__reqmain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.rf-topic__reqtitle { font-size: 13px; font-weight: 700; color: #fbfcfd; }
-.rf-topic__reqmeta { font-size: 12px; color: #9ca3af; }
-.rf-topic__missing { margin: 2px 0 0; font-size: 12px; color: #9ca3af; line-height: 1.6; }
-.rf-topic__noreq { margin: 0; font-size: 13px; color: #9ca3af; }
-.rf-vote {
-  width: 100%; margin-top: 10px; min-height: 44px; border-radius: 10px; border: none; cursor: pointer;
-  font-size: 13px; font-weight: 700; background: #fbfcfd; color: #111111;
-}
-.rf-vote--sm { flex: none; width: auto; margin-top: 0; min-height: 36px; padding: 0 14px; border-radius: 999px; }
-.rf-vote--done { background: #16a34a; color: #ffffff; }
-.rf-vote:disabled { cursor: default; }
 .rf-empty {
   display: flex; align-items: center; justify-content: center; text-align: center;
   min-height: 210px; border: 1px dashed #3a3b3f; border-radius: 16px;
@@ -997,7 +1001,10 @@ html[data-theme='light'] .rf-tabs { border-bottom-color: #e5e5e5; }
 html[data-theme='light'] .rf-tabs__btn { color: #6b7280; }
 html[data-theme='light'] .rf-tabs__btn--on { color: #06070a; }
 html[data-theme='light'] .rf-tabs__btn--on::after { background: #06070a; }
-html[data-theme='light'] .rf-seg { background: #f5f5f6; }
+html[data-theme='light'] .rf-topbar__title { color: #111111; }
+html[data-theme='light'] .rf-back { color: #111111; }
+html[data-theme='light'] .rf-back:active { background: rgba(0, 0, 0, 0.05); }
+html[data-theme='light'] .rf-seg { background: #f5f5f6; border-color: #e3e3e6; }
 html[data-theme='light'] .rf-seg__btn { color: #6b7280; }
 html[data-theme='light'] .rf-seg__btn--on { background: #ffffff; color: #111111; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); }
 html[data-theme='light'] .rf-form__label { color: #111111; }
@@ -1006,8 +1013,16 @@ html[data-theme='light'] .rf-form__input::placeholder, html[data-theme='light'] 
 html[data-theme='light'] .rf-form__input:focus, html[data-theme='light'] .rf-form__area:focus { border-color: #9ca3af; }
 html[data-theme='light'] .rf-type { background: #ffffff; border-color: #e5e5e5; color: #111111; }
 html[data-theme='light'] .rf-type.on { border-color: #111111; background: #f9f9f9; }
-html[data-theme='light'] .rf-submit { background: #111111; color: #ffffff; }
-html[data-theme='light'] .rf-watch { background: linear-gradient(180deg, #fdf8f8 0%, #f9f1f1 100%); color: #111111; }
+html[data-theme='light'] .rf-submit {
+  background: var(--uhd-rainbow-soft) padding-box, var(--uhd-rainbow) border-box;
+  color: #111111;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--uhd-shadow-card-l);
+}
+html[data-theme='light'] .rf-watch {
+  background: var(--uhd-rainbow-soft) padding-box, var(--uhd-rainbow) border-box;
+  color: #111111;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--uhd-shadow-card-l);
+}
 html[data-theme='light'] .rf-quota { color: #6b7280; }
 html[data-theme='light'] .rf-searchbar__input { background: #f0f0f1; border-color: #e8e8ea; color: #111111; }
 html[data-theme='light'] .rf-searchbar__input::placeholder { color: #9ca3af; }
@@ -1023,10 +1038,13 @@ html[data-theme='light'] .rf-badge--gray { background: #f0f0f1; color: #6b7280; 
 html[data-theme='light'] .rf-topic__counts { color: #6b7280; }
 html[data-theme='light'] .rf-topic__view { color: #111111; }
 html[data-theme='light'] .rf-topic__chev { color: #9ca3af; }
-html[data-theme='light'] .rf-topic__detail { border-top-color: #e5e5e5; }
-html[data-theme='light'] .rf-topic__reqtitle { color: #111111; }
-html[data-theme='light'] .rf-topic__reqmeta, html[data-theme='light'] .rf-topic__missing, html[data-theme='light'] .rf-topic__noreq { color: #6b7280; }
 html[data-theme='light'] .rf-filter__select { background: #f6f8fa; border-color: #e5e5e5; color: #111111; }
+html[data-theme='light'] .rf-row__time { color: #6b7280; }
+html[data-theme='light'] .rf-pill { border-color: #e5e5e5; color: #6b7280; }
+html[data-theme='light'] .rf-pill--type { background: #f0f0f1; color: #55575c; border-color: #f0f0f1; }
+html[data-theme='light'] .rf-pill--doing { color: #d97706; border-color: #f59e0b; }
+html[data-theme='light'] .rf-pill--done { color: #16a34a; border-color: #16a34a; }
+html[data-theme='light'] .rf-pill--rejected { color: #dc2626; border-color: #ef4444; }
 html[data-theme='light'] .rf-row { background: #ffffff; border-color: #e5e5e5; }
 html[data-theme='light'] .rf-row__head { color: #111111; }
 html[data-theme='light'] .rf-row__meta { color: #6b7280; }
@@ -1034,8 +1052,6 @@ html[data-theme='light'] .rf-row__chev { color: #9ca3af; }
 html[data-theme='light'] .rf-row__detail { border-top-color: #e5e5e5; }
 html[data-theme='light'] .rf-detail__line { color: #55575c; }
 html[data-theme='light'] .rf-link { color: #2563eb; }
-html[data-theme='light'] .rf-vote { background: #111111; color: #ffffff; }
-html[data-theme='light'] .rf-vote--done { background: #16a34a; color: #ffffff; }
 html[data-theme='light'] .rf-empty { border-color: #d4d4d8; color: #8a8f96; }
 html[data-theme='light'] .rf-err { color: #dc2626; }
 html[data-theme='light'] .rf-retry { color: #111111; }

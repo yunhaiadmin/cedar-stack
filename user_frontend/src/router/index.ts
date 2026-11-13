@@ -111,6 +111,13 @@ const router = createRouter({
             component: () => import('@/views/game/RequestFeedbackView.vue'),
             meta: { title: '求片反馈', requiresAuth: true },
           },
+          // 标题详情（2026-11-14）：单片媒体卡＋该片全部请求，从搜索结果/广场进入
+          {
+            path: '/game/requests/media',
+            name: 'game-request-media',
+            component: () => import('@/views/game/RequestMediaDetailView.vue'),
+            meta: { title: '求片反馈', requiresAuth: true },
+          },
           // 旧地址重定向：/game/wishlist → 新页（透传 query；带 ?q= 时新页
           // 接住预填搜索）；/game/signal → 新页「我的请求」页签。
           {
