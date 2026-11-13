@@ -32,6 +32,10 @@
           <span>截图保存</span>
           <Camera :size="17" class="wp-dim" />
         </button>
+        <button v-if="pipSupported" type="button" class="wp-row" @click="emit('pip')">
+          <span>小窗播放</span>
+          <PictureInPicture2 :size="17" class="wp-dim" />
+        </button>
         <button type="button" class="wp-row" @click="view = 'info'">
           <span>播放信息</span>
           <ChevronRight :size="17" class="wp-dim" />
@@ -121,7 +125,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Camera, Check, ChevronRight } from 'lucide-vue-next'
+import { Camera, Check, ChevronRight, PictureInPicture2 } from 'lucide-vue-next'
 import PlayerSheet from './PlayerSheet.vue'
 
 export interface SourceOption {
@@ -147,6 +151,8 @@ const props = defineProps<{
   currentEpisodeId: string
   rate: number
   infoLines: InfoLine[]
+  /** 浏览器支持标准 PiP（requestPictureInPicture）时才渲染小窗行，不支持不许留假钮 */
+  pipSupported: boolean
 }>()
 const emit = defineEmits<{
   'update:open': [boolean]
@@ -154,6 +160,7 @@ const emit = defineEmits<{
   'select-source': [string]
   'select-episode': [string]
   'screenshot': []
+  'pip': []
 }>()
 
 const view = ref<'main' | 'versions' | 'episodes' | 'speed' | 'info'>('main')

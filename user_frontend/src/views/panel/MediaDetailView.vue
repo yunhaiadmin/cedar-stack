@@ -13,7 +13,8 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, BellPlus, BookmarkPlus, Clapperboard, Heart, Play } from 'lucide-vue-next'
+import { ArrowLeft, BellPlus, BookmarkPlus, Clapperboard, Heart, Play, Trash2 } from 'lucide-vue-next'
+import Modal from '@/components/ui/Modal.vue'
 import {
   embyApi as embyProtocol,
   backdropUrl,
@@ -41,6 +42,8 @@ const error = ref('')
 const item = ref<EmbyItem | null>(null)
 const posterBroken = ref(false)
 const favBusy = ref(false)
+const removeOpen = ref(false)
+const removeBusy = ref(false)
 const overviewExpanded = ref(false)
 const sheetOpen = ref(false)
 const recommendations = ref<EmbyItem[]>([])
@@ -104,6 +107,40 @@ const resumeText = computed(() => {
   const pct = Math.min(99, Math.round((pos / item.value.RunTimeTicks) * 100))
   return `上次看到 ${pct}% · ${formatDuration(ticksToSeconds(pos))} 处`
 })
+
+/**
+ * 「移除观看记录」只对电影开放：现行口径里真接口是 Emby 的
+ * DELETE /Users/{uid}/PlayedItems/{id}（后端 mark_unplayed 清已看标记、
+ * 播放次数与断点，条目随之离开继续观看）——电影上它就是整部口径。
+ * 剧集不开放：观看记录逐集存，后端该接口不级联到各集，门户口只有
+ * hide/unhide（藏起来、记录还在），语义不同，不许拿来冒充整部移除。
+ */
+const canRemoveRecord = computed(() => {
+  if (isSeries.value) return false
+  const ud = item.value?.UserData
+  return !!(ud?.Played || (ud?.PlaybackPositionTicks || 0) > 0 || resumeEntry.value)
+})
+
+async function removeWatchRecord() {
+  const it = item.value
+  if (!it || removeBusy.value) return
+  removeBusy.value = true
+  try {
+    const ud = await embyProtocol.setPlayed(it.Id, false)
+    item.value = {
+      ...it,
+      UserData: { ...it.UserData, ...ud, Played: false, PlaybackPositionTicks: 0 },
+    }
+    resumeEntry.value = null
+    removeOpen.value = false
+    toast.success('观看记录已移除')
+    void loadResume()
+  } catch (err) {
+    toast.error(`移除失败：${errText(err)}`)
+  } finally {
+    removeBusy.value = false
+  }
+}
 
 const specChips = computed(() => {
   const it = item.value
@@ -422,6 +459,16 @@ watch(itemId, () => {
               </button>
               <span v-if="item.UserData?.Played" class="md-btn md-btn--state">已看完</span>
               <span v-else-if="resumeText" class="md-btn md-btn--state">正在观看</span>
+              <button
+                v-if="canRemoveRecord"
+                type="button"
+                class="md-btn md-btn--remove"
+                aria-label="移除观看记录"
+                @click="removeOpen = true"
+              >
+                <Trash2 :size="17" />
+                <span class="md-btn--remove-txt">移除观看记录</span>
+              </button>
             </div>
 
             <div v-if="item.Overview" class="md-overview-box">
@@ -521,6 +568,29 @@ watch(itemId, () => {
         :title="item.Name"
         :item-id="item.Id"
       />
+
+      <!-- 移除观看记录二次确认（真接口：DELETE PlayedItems，见脚本注释） -->
+      <Modal v-model="removeOpen" size="sm">
+        <template #header>
+          <h3 class="modal-title">移除观看记录</h3>
+        </template>
+        <p class="md-confirm-text">
+          把《{{ item.Name }}》的观看记录清掉？播放进度和「已看完」标记都会清除，这部片也会从「继续观看」里消失。
+        </p>
+        <template #footer>
+          <div class="md-confirm-actions">
+            <button type="button" class="md-confirm-btn" @click="removeOpen = false">再想想</button>
+            <button
+              type="button"
+              class="md-confirm-btn md-confirm-btn--danger"
+              :disabled="removeBusy"
+              @click="removeWatchRecord"
+            >
+              {{ removeBusy ? '移除中…' : '确定移除' }}
+            </button>
+          </div>
+        </template>
+      </Modal>
     </template>
   </StreamShell>
 </template>
@@ -769,6 +839,53 @@ watch(itemId, () => {
   background: var(--uhd-s-card-soft);
   color: var(--uhd-s-text-2);
   border: 1px solid transparent;
+  flex: none;
+  white-space: nowrap;
+}
+/* 移除观看记录：幽灵钮 + 危险色字，不与播放/收藏抢视觉 */
+.md-btn--remove {
+  border: 1px solid var(--uhd-s-border);
+  background: transparent;
+  color: var(--uhd-danger);
+  cursor: pointer;
+  flex: none;
+  white-space: nowrap;
+}
+.md-btn--remove:hover {
+  border-color: var(--uhd-danger);
+}
+/* 移除确认弹窗（ui/Modal 槽内） */
+.md-confirm-text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--uhd-s-text);
+}
+.md-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.md-confirm-btn {
+  height: 42px;
+  padding: 0 20px;
+  border-radius: 21px;
+  border: 1px solid var(--uhd-s-border);
+  background: transparent;
+  color: var(--uhd-s-text);
+  font-size: 14.5px;
+  font-weight: var(--uhd-fw-semibold);
+  font-family: inherit;
+  cursor: pointer;
+}
+.md-confirm-btn--danger {
+  background: var(--uhd-danger);
+  border-color: var(--uhd-danger);
+  color: #fff;
+}
+.md-confirm-btn--danger:disabled {
+  opacity: 0.55;
+  cursor: wait;
 }
 /* 简介：16px/行高 28/3 行截断 */
 .md-overview-box {
@@ -1164,6 +1281,18 @@ watch(itemId, () => {
     border-radius: 50%;
     font-size: 0;
     gap: 0;
+  }
+  /* 移除钮在吸顶条里与收藏钮同形：圆形图标钮（设施与桌面一致，只变排版） */
+  .md-btn--remove {
+    flex: 0 0 52px;
+    width: 52px;
+    min-width: 52px;
+    padding: 0;
+    border-radius: 50%;
+    gap: 0;
+  }
+  .md-btn--remove-txt {
+    display: none;
   }
   .md-btn--state {
     display: none;
