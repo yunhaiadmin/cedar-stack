@@ -35,27 +35,88 @@
           <span v-else-if="fillState === 'voted'" class="fill-done">已附议</span>
         </template>
       </div>
+
+      <!-- 集数条（录屏形态）：高 50/圆角 25 浅灰底、数字圆 36（白圆）、
+           当前集黑底白字（深色反之）；条右端内嵌「正序/倒序」分段切换；
+           滚动时吸顶（sticky，顶栏之下） -->
+      <div v-if="sec.rows.length" class="ep-strip" role="group" :aria-label="`${sec.title} 集数`">
+        <div class="ep-strip__nums">
+          <button
+            v-for="row in sec.rows"
+            :key="`strip-${row.key}`"
+            type="button"
+            class="ep-strip__num"
+            :class="{ 'ep-strip__num--on': activeNum(sec) === row.num }"
+            @click="jumpToEpisode(sec, row.num)"
+          >{{ row.num !== null ? String(row.num).padStart(2, '0') : '·' }}</button>
+        </div>
+        <div class="ep-seg" role="group" aria-label="集数排序">
+          <button type="button" :class="{ on: !orderDesc }" @click="orderDesc = false">正序</button>
+          <button type="button" :class="{ on: orderDesc }" @click="orderDesc = true">倒序</button>
+        </div>
+      </div>
+
       <ol class="ep-list">
-        <li v-for="row in sec.rows" :key="row.key" class="ep-row" :class="{ missing: row.kind === 'missing' }">
-          <span class="ep-num">{{ row.num !== null ? `第${row.num}集` : '集' }}</span>
+        <li
+          v-for="row in orderedRows(sec)"
+          :id="`ep-${sec.key}-${row.num}`"
+          :key="row.key"
+          class="ep-row"
+          :class="{ missing: row.kind === 'missing' }"
+        >
           <template v-if="row.kind === 'have'">
-            <span class="ep-name">{{ row.name }}</span>
-            <span v-if="row.duration" class="ep-dur">{{ row.duration }}</span>
-            <span v-if="row.played" class="ep-played">已看</span>
+            <!-- 手机列表形态（录屏）：大号两位数序号圆（桌面隐藏，桌面走缩略图卡） -->
+            <span class="ep-bignum" aria-hidden="true">{{ row.num !== null ? String(row.num).padStart(2, '0') : '·' }}</span>
+            <span class="ep-thumb">
+              <img v-if="rowThumb(row)" :src="rowThumb(row)" alt="" loading="lazy" />
+              <Clapperboard v-else :size="22" :stroke-width="1.5" class="ep-thumb__fallback" aria-hidden="true" />
+              <!-- 全片库唯一角标：集数缩略图右上「N版本」黑半透明胶囊 52×22/圆角 11 -->
+              <span v-if="rowVersions(row) > 1" class="ep-ver-badge">{{ rowVersions(row) }}版本</span>
+            </span>
+            <span class="ep-body">
+              <span class="ep-line1">
+                <span class="ep-num">{{ row.num !== null ? `${row.num}.` : '' }}</span>
+                <span class="ep-name">{{ row.name }}</span>
+                <span v-if="row.duration" class="ep-dur">{{ row.duration }}</span>
+                <span v-if="row.played" class="ep-played">已看</span>
+              </span>
+              <span v-if="rowDate(row)" class="ep-date">{{ rowDate(row) }}</span>
+              <span v-if="row.item?.Overview" class="ep-overview">{{ row.item.Overview }}</span>
+            </span>
+            <!-- 圆形眼睛钮（录屏形态）：已看标记开关，走现行 setPlayed 口径 -->
+            <button
+              type="button"
+              class="ep-eye"
+              :class="{ 'ep-eye--on': row.played }"
+              :aria-label="row.played ? '标为未看' : '标为已看'"
+              :title="row.played ? '标为未看' : '标为已看'"
+              @click="togglePlayed(row)"
+            >
+              <Eye v-if="row.played" :size="17" />
+              <EyeOff v-else :size="17" />
+            </button>
           </template>
           <template v-else>
-            <span class="ep-missing-label"><span class="miss-badge">缺</span>这一集还没入库</span>
-            <template v-if="missingInfo?.has_missing">
-              <button
-                v-if="fillState === 'open' || fillState === 'others'"
-                type="button"
-                class="fill-btn"
-                :disabled="fillBusy"
-                @click="doFill"
-              >{{ fillBusy ? '求补中…' : '求补这集' }}</button>
-              <span v-else-if="fillState === 'mine'" class="fill-done">已求补</span>
-              <span v-else-if="fillState === 'voted'" class="fill-done">已附议</span>
-            </template>
+            <span class="ep-thumb ep-thumb--missing">
+              <span class="miss-badge">缺</span>
+            </span>
+            <span class="ep-body">
+              <span class="ep-line1">
+                <span class="ep-num">{{ row.num !== null ? `${row.num}.` : '' }}</span>
+                <span class="ep-missing-label">这一集还没入库</span>
+              </span>
+              <span v-if="missingInfo?.has_missing" class="ep-missing-action">
+                <button
+                  v-if="fillState === 'open' || fillState === 'others'"
+                  type="button"
+                  class="fill-btn"
+                  :disabled="fillBusy"
+                  @click="doFill"
+                >{{ fillBusy ? '求补中…' : '求补这集' }}</button>
+                <span v-else-if="fillState === 'mine'" class="fill-done">已求补</span>
+                <span v-else-if="fillState === 'voted'" class="fill-done">已附议</span>
+              </span>
+            </span>
           </template>
         </li>
       </ol>
@@ -78,9 +139,11 @@
  *   提交后全页按钮一起变「已求补 / 已附议」，状态一律回读后端为准。
  */
 import { computed, onMounted, ref, watch } from 'vue'
+import { Clapperboard, Eye, EyeOff } from 'lucide-vue-next'
 import {
   embyApi as embyProtocol,
   formatDuration,
+  imageUrl,
   ticksToSeconds,
   type EmbyItem,
 } from '@/api/emby'
@@ -104,6 +167,8 @@ interface EpRow {
   name?: string
   duration?: string
   played?: boolean
+  /** 原始集条目（批 3 片库面卡片用：缩略图/日期/简介/版本数） */
+  item?: EmbyItem
 }
 
 interface SeasonSection {
@@ -151,6 +216,57 @@ const fillState = computed<'none' | 'open' | 'mine' | 'voted' | 'others'>(() => 
 const sections = computed<SeasonSection[]>(() =>
   buildSections(seasons.value, episodes.value, missingInfo.value),
 )
+
+/* ---------- 批 3 片库面：正序/倒序 + 集数条（纯展示，不动数据与求补口径） ---------- */
+const orderDesc = ref(false)
+const activeNums = ref<Record<string, number | null>>({})
+
+function orderedRows(sec: SeasonSection): EpRow[] {
+  return orderDesc.value ? [...sec.rows].reverse() : sec.rows
+}
+/** 当前集：用户点选优先；默认第一集未看完的已有集，再退到第一行 */
+function activeNum(sec: SeasonSection): number | null {
+  const picked = activeNums.value[sec.key]
+  if (picked !== undefined) return picked
+  const firstUnplayed = sec.rows.find((r) => r.kind === 'have' && !r.played)
+  return (firstUnplayed ?? sec.rows[0])?.num ?? null
+}
+function jumpToEpisode(sec: SeasonSection, num: number | null) {
+  activeNums.value = { ...activeNums.value, [sec.key]: num }
+  if (num === null) return
+  document
+    .getElementById(`ep-${sec.key}-${num}`)
+    ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+}
+function rowThumb(row: EpRow): string {
+  const it = row.item
+  if (!it) return ''
+  if (it.ImageTags?.Primary) return imageUrl(it.Id, 'Primary', 416)
+  if (it.BackdropImageTags?.length) return imageUrl(it.Id, 'Thumb', 416)
+  return ''
+}
+function rowVersions(row: EpRow): number {
+  return row.item?.MediaSources?.length || 0
+}
+function rowDate(row: EpRow): string {
+  return row.item?.PremiereDate ? row.item.PremiereDate.slice(0, 10) : ''
+}
+/** 已看标记开关（现行 setPlayed 口；失败静默回滚状态由服务端下次拉取校正） */
+const playedBusy = ref(false)
+async function togglePlayed(row: EpRow) {
+  if (!row.item || playedBusy.value) return
+  playedBusy.value = true
+  const next = !row.played
+  try {
+    await embyProtocol.setPlayed(row.item.Id, next)
+    row.played = next
+    if (row.item.UserData) row.item.UserData = { ...row.item.UserData, Played: next }
+  } catch {
+    /* 标记失败不打断浏览；状态保持原样 */
+  } finally {
+    playedBusy.value = false
+  }
+}
 
 function seasonTitle(sn: number | null, fallbackName?: string): string {
   if (fallbackName && fallbackName.trim()) return fallbackName
@@ -215,6 +331,7 @@ function buildSections(
         name: ep.Name || '',
         duration: ep.RunTimeTicks ? formatDuration(ticksToSeconds(ep.RunTimeTicks)) : '',
         played: !!ep.UserData?.Played,
+        item: ep,
       })
     }
     for (const n of missingNums) {
@@ -357,6 +474,8 @@ watch(
 </script>
 
 <style scoped>
+/* 批 3 片库面皮：颜色/底走 --uhd-s-* 令牌（详情页在 StreamShell 内渲染）；
+   在非片库面语境（如旧引用）下令牌有字面兜底，不破版。 */
 .sel-wrap {
   margin-top: 12px;
 }
@@ -366,23 +485,23 @@ watch(
   align-items: center;
   gap: 6px 10px;
   padding: 10px 12px;
-  border: 1px dashed var(--au-primary, #016a71);
-  border-radius: 10px;
-  background: var(--au-bg-soft, #f4f3f0);
+  border: 1px dashed var(--uhd-s-border, #e5e5e5);
+  border-radius: 12px;
+  background: var(--uhd-s-card-soft, #f5f5f5);
   margin-bottom: 14px;
 }
 .miss-text {
   font-size: 13px;
   line-height: 1.5;
-  color: var(--ink, #27251e);
+  color: var(--uhd-s-text, #27251e);
 }
 .miss-done {
   font-size: 12.5px;
-  color: var(--au-primary, #016a71);
+  color: var(--uhd-s-text, #016a71);
   font-weight: 600;
 }
 .season-sec {
-  margin-top: 18px;
+  margin-top: 26px;
 }
 .season-sec:first-of-type {
   margin-top: 4px;
@@ -392,104 +511,267 @@ watch(
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 10px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 .season-title {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 700;
-  color: var(--ink, #27251e);
+  color: var(--uhd-s-text, #27251e);
   margin: 0;
 }
 .season-count {
-  font-size: 12px;
-  color: var(--ink2, #6f6a5e);
+  font-size: 13px;
+  color: var(--uhd-s-text-2, #6f6a5e);
 }
 .season-head .fill-btn,
 .season-head .fill-done {
   margin-left: auto;
 }
+.season-head .fill-btn {
+  margin-left: 0;
+}
+/* 集数条：高 50/圆角 25/浅灰底；数字圆 36；滚动吸顶（顶栏之下） */
+.ep-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 50px;
+  padding: 0 8px 0 10px;
+  border-radius: 25px;
+  background: var(--uhd-s-strip-bg, #f0f0f0);
+  margin-bottom: 16px;
+  position: sticky;
+  top: 76px;
+  z-index: 6;
+}
+.ep-strip__nums {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ep-strip__nums::-webkit-scrollbar {
+  display: none;
+}
+/* 条内「正序/倒序」分段切换（录屏形态）：激活 = 白胶囊 + 阴影 */
+.ep-seg {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  margin-left: 4px;
+}
+.ep-seg button {
+  height: 36px;
+  padding: 0 15px;
+  border: none;
+  border-radius: 18px;
+  background: transparent;
+  color: var(--uhd-s-text-2, #6f6a5e);
+  font-size: 13.5px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.ep-seg button.on {
+  background: var(--uhd-s-pill-active-bg, #ffffff);
+  color: var(--uhd-s-text, #111111);
+  font-weight: 600;
+  box-shadow: var(--uhd-shadow-seg, 0 1px 4px rgba(0, 0, 0, 0.12));
+}
+.ep-strip__num {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: var(--uhd-s-strip-num-bg, transparent);
+  color: var(--uhd-s-strip-num-text, #111111);
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.ep-strip__num--on {
+  background: var(--uhd-s-strip-current-bg, #111111);
+  color: var(--uhd-s-strip-current-text, #ffffff);
+  font-weight: 700;
+}
+/* 集数卡 2 列：行高约 145、缩略图 208×117/圆角 12 */
 .ep-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 28px;
 }
 .ep-row {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  border: 1px solid var(--paper2, #e3e3e2);
-  border-radius: 10px;
+  gap: 16px;
+  padding: 14px 4px;
   min-width: 0;
+  border-bottom: 1px solid var(--uhd-s-divider, #eeeeee);
+  scroll-margin-top: 140px;
+  animation: ep-in 0.4s ease both;
+}
+@keyframes ep-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ep-row { animation: none; }
+}
+/* 大号序号圆与眼睛钮：录屏的手机列表形态专用，桌面默认隐藏 */
+.ep-bignum {
+  display: none;
+}
+.ep-eye {
+  display: none;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--uhd-s-border, #e5e5e5);
+  background: transparent;
+  color: var(--uhd-s-text-2, #6f6a5e);
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-family: inherit;
+  align-self: center;
+}
+.ep-eye--on {
+  color: var(--uhd-s-text, #111111);
+  border-color: var(--uhd-s-text, #111111);
 }
 .ep-row.missing {
-  border-style: dashed;
-  background: var(--au-bg-soft, #f4f3f0);
   opacity: 0.85;
+}
+.ep-thumb {
+  position: relative;
+  flex: 0 0 208px;
+  width: 208px;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--uhd-s-card-soft, #f5f5f5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ep-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ep-thumb__fallback {
+  color: var(--uhd-s-text-2, #a8a29a);
+}
+.ep-thumb--missing {
+  border: 1px dashed var(--uhd-s-border, #e5e5e5);
+  background: transparent;
+}
+/* 「N版本」角标：52×22/圆角 11/黑半透明/白字 12px（两模式无差异） */
+.ep-ver-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  min-width: 52px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 11px;
+  background: var(--uhd-s-badge-bg, rgba(0, 0, 0, 0.55));
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 22px;
+  text-align: center;
+}
+.ep-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 2px;
+}
+.ep-line1 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
 }
 .ep-num {
   flex: 0 0 auto;
-  font-size: 12.5px;
+  font-size: 15px;
   font-weight: 600;
-  color: var(--ink2, #6f6a5e);
-  min-width: 44px;
-}
-.ep-row.missing .ep-num {
-  color: var(--au-text-3, #a8a29a);
+  color: var(--uhd-s-text-2, #6f6a5e);
 }
 .ep-name {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 13.5px;
-  color: var(--ink, #27251e);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--uhd-s-text, #27251e);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .ep-dur {
   flex: 0 0 auto;
-  font-size: 12px;
-  color: var(--ink2, #6f6a5e);
+  font-size: 14px;
+  color: var(--uhd-s-text-2, #6f6a5e);
 }
 .ep-played {
   flex: 0 0 auto;
   font-size: 11px;
-  color: var(--au-primary, #016a71);
+  color: var(--uhd-s-text-2, #6f6a5e);
   border: 1px solid currentColor;
   border-radius: 999px;
   padding: 1px 7px;
 }
+.ep-date {
+  font-size: 14px;
+  color: var(--uhd-s-text-2, #6f6a5e);
+}
+.ep-overview {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--uhd-s-text-2, #6f6a5e);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .ep-missing-label {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 13px;
-  color: var(--ink2, #6f6a5e);
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  font-size: 15px;
+  color: var(--uhd-s-text-2, #6f6a5e);
+}
+.ep-missing-action {
+  margin-top: 6px;
 }
 .miss-badge {
   flex: 0 0 auto;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: #fff;
-  background: var(--au-text-3, #a8a29a);
+  background: var(--uhd-s-text-2, #a8a29a);
   border-radius: 6px;
-  padding: 1px 6px;
+  padding: 2px 8px;
 }
 .fill-btn {
   flex: 0 0 auto;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
-  color: #fff;
-  background: var(--au-primary, #016a71);
-  border: 1px solid var(--au-primary, #016a71);
+  color: var(--uhd-s-text, #111111);
+  background: var(--uhd-s-pill-active-bg, #ffffff);
+  border: 1px solid var(--uhd-s-border, #e5e5e5);
   border-radius: 999px;
-  padding: 5px 13px;
+  padding: 6px 14px;
   cursor: pointer;
+  font-family: inherit;
 }
 .fill-btn:disabled {
   opacity: 0.55;
@@ -497,8 +779,59 @@ watch(
 }
 .fill-done {
   flex: 0 0 auto;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--au-primary, #016a71);
+  color: var(--uhd-s-text, #016a71);
+}
+@media (max-width: 900px) {
+  .ep-list {
+    grid-template-columns: 1fr;
+  }
+}
+/* 手机列表形态（录屏）：无缩略图、大序号圆 + 标题/时长 + 日期/简介一行 + 眼睛钮 */
+@media (max-width: 767px) {
+  /* 吸顶时叠在详情页播放行（top 8 + 高约 68）之下 */
+  .ep-strip {
+    top: 80px;
+  }
+  .ep-thumb {
+    display: none;
+  }
+  .ep-bignum {
+    display: inline-flex;
+    flex: none;
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: var(--uhd-s-card-soft, #f5f5f5);
+    color: var(--uhd-s-text-2, #6f6a5e);
+    font-size: 17px;
+    font-weight: 700;
+    align-items: center;
+    justify-content: center;
+    align-self: flex-start;
+  }
+  .ep-eye {
+    display: inline-flex;
+  }
+  .ep-row .ep-num {
+    display: none;
+  }
+  .ep-overview {
+    -webkit-line-clamp: 1;
+  }
+  .ep-row {
+    gap: 12px;
+    padding: 13px 2px;
+  }
+}
+@media (max-width: 560px) {
+  .ep-thumb {
+    flex-basis: 148px;
+    width: 148px;
+  }
+  .ep-name {
+    font-size: 15px;
+  }
 }
 </style>

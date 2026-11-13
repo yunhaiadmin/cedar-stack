@@ -45,6 +45,35 @@ const router = createRouter({
             component: () => import('@/views/panel/FavoritesView.vue'),
             meta: { title: '我的收藏', requiresAuth: true },
           },
+          // UHD 换皮批 3（片库面）：/library 片库首页 + 电影/剧集分类页 + 搜索结果页。
+          // 全新路由，不动现行 '/' 发现页（首页服务器卡等定版内容保留，
+          // 同批 1 新增 /welcome 的先例）；页面自带双胶囊顶栏与手机玻璃底坞，
+          // App.vue 在这些路由下不渲染全局顶栏/PanelTabbar。数据全走现行
+          // Emby 协议口与门户口径，不新造接口；海报卡只进详情、不挂播放入口。
+          {
+            path: '/library',
+            name: 'library',
+            component: () => import('@/views/panel/StreamHomeView.vue'),
+            meta: { title: '片库', requiresAuth: true },
+          },
+          {
+            path: '/library/movies',
+            name: 'library-movies',
+            component: () => import('@/views/panel/LibraryBrowseView.vue'),
+            meta: { title: '电影', requiresAuth: true },
+          },
+          {
+            path: '/library/series',
+            name: 'library-series',
+            component: () => import('@/views/panel/LibraryBrowseView.vue'),
+            meta: { title: '剧集', requiresAuth: true },
+          },
+          {
+            path: '/search',
+            name: 'search',
+            component: () => import('@/views/panel/SearchView.vue'),
+            meta: { title: '搜索', requiresAuth: true },
+          },
           // 合集：货架页 + 详情页（只读用户口；不在底栏占位，入口在发现页合集区段）
           {
             path: '/collections',
@@ -294,11 +323,12 @@ const router = createRouter({
     },
     // ==================== 媒体详情与播放（v2.42.5：媒体库/搜索浏览页已删；
     // 2026-10-13 旧页面清理：/profile、/media/:id 两路由已删） ====================
-    // 老地址 /profile、/media、/library、/search、/history
-    // 的书签与外部链接：媒体浏览统一走第三方客户端（Infuse 等），这些入口不再有对应页面，
-    // 全部落到兜底 404 页（页面里会给「回首页」的出口）。
+    // 老地址 /profile、/media、/history 的书签与外部链接：
+    // 这些入口不再有对应页面，全部落到兜底 404 页（页面里会给「回首页」的出口）。
     // 例外：/media/:id 已按新口径复活为条目详情页（见上 panelV4 路由：
-    // 只做信息 + 季集 + 缺集求补，不恢复浏览/播放）。
+    // 只做信息 + 季集 + 缺集求补，不恢复浏览/播放）；
+    // /library 与 /search 已由 UHD 换皮批 3 按片库面口径复活为真实页面
+    // （见上 panelV4 路由：海报墙 + 顶栏搜索，只浏览、不做网页播放）。
     // 注意：/profile 的承接入口是 /game/account（账号设置设施）。
     // 网页播放器（2026-11-13 用户改规矩立项）：全屏播放页，自带覆盖层，
     // 不挂 panel 布局。契约：/play/:id?ms=<MediaSourceId>&at=<起始秒数>，

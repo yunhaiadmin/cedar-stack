@@ -74,6 +74,8 @@
   --uhd-rainbow-band: linear-gradient(115deg, transparent 0%, transparent 30%, rgba(47, 143, 224, 0.5) 46%, rgba(122, 116, 214, 0.5) 56%, rgba(196, 108, 144, 0.42) 66%, transparent 82%);
   /* 渐变边框的实现宽度（配合 padding hack / border-image 由组件层使用） */
   --uhd-rainbow-border-w: 1.5px;
+  /* 渐变边框层本体（组件以 background 的 border-box 层引用；与 --uhd-rainbow 同值） */
+  --uhd-rainbow-border: linear-gradient(90deg, #2f8fe0 0%, #6f7ad8 14%, #c46c90 22%, #e8766f 28%, #f2a45a 36%, #ecd04f 46%, #95c77d 57%, #39b3ec 75%, #2f8fe0 100%);
 
   /* ---------- 1.3 字号梯度与字重（字体栈为原站实测值） ---------- */
   --uhd-font-sans: "Inter Tight Variable", "Inter Tight", "SF Pro Display", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
@@ -95,6 +97,7 @@
   --uhd-fs-h1: 72px;
   --uhd-fs-404: 180px;
   --uhd-fw-normal: 400;
+  --uhd-fw-regular: 400; /* normal 的别名（组件层两种叫法并存） */
   --uhd-fw-medium: 500;
   --uhd-fw-semibold: 600;
   --uhd-fw-bold: 700;
@@ -189,4 +192,83 @@
   --p-text: var(--uhd-l-text);
   --p-text-2: var(--uhd-l-text-2);
   --p-warn: var(--uhd-warn-text);
+}
+
+/* ============================================================
+   片库面色板 C（批 3，《Aetrix × UHDNow 设计说明书 v1》第 1.1 节 C）
+   真源：~/workspace/reports/uhdnow-stream-reverse-20261113.md
+   （2026-11-13 /stream 浅色＋深色实机补拆；尺寸两模式一致、只变颜色）
+   用法：片库面根节点挂 .stream-scope；外观由 data-stream-theme
+   （light / dark，StreamShell 按「跟随系统→浅色→深色」三态解析）切换。
+   色值除实测约值外均为按存档目视描述落的施工值，逐项标注来源。
+   ============================================================ */
+.stream-scope {
+  --uhd-s-bg: #ffffff; /* 浅色近白底（存档：白色级） */
+  --uhd-s-text: #111111;
+  --uhd-s-text-2: #6b7280;
+  --uhd-s-halo: radial-gradient(1100px 480px at 18% -120px, rgba(242, 164, 90, 0.16), transparent 62%),
+    radial-gradient(1000px 520px at 55% -160px, rgba(149, 199, 125, 0.15), transparent 62%),
+    radial-gradient(1100px 520px at 88% -140px, rgba(57, 179, 236, 0.15), transparent 62%);
+  --uhd-s-pill-bg: rgba(255, 255, 255, 0.72); /* 双胶囊白毛玻璃 */
+  --uhd-s-pill-border: rgba(17, 17, 17, 0.08);
+  --uhd-s-pill-active-bg: #ffffff;
+  --uhd-s-pill-active-text: #111111;
+  --uhd-s-shadow-pill: 0 6px 24px -10px rgba(17, 17, 17, 0.22);
+  --uhd-s-strip-bg: #f0f0f0; /* 集数条浅灰底 */
+  --uhd-s-strip-num-bg: #ffffff; /* 录屏实证：浅色条上数字圆为白圆 */
+  --uhd-s-strip-num-text: #111111;
+  --uhd-s-strip-current-bg: #111111; /* 当前集：浅色黑底白字 */
+  --uhd-s-strip-current-text: #ffffff;
+  --uhd-s-card-soft: #f5f5f5; /* 可播放版本卡浅灰底（实测约 #f5f5f5） */
+  --uhd-s-border: #e5e5e5;
+  --uhd-s-divider: #eeeeee;
+  --uhd-s-panel-bg: #ffffff; /* 搜索下拉面板 */
+  --uhd-s-highlight: #eeeeee; /* 搜索命中词灰底高亮 */
+  --uhd-s-modal-bg: #ffffff; /* 版本弹窗 */
+  --uhd-s-modal-row-bg: #ffffff;
+  --uhd-s-modal-row-selected-border: #111111;
+  --uhd-s-glass: rgba(255, 255, 255, 0.72); /* 手机底部导航液态玻璃 */
+  --uhd-s-glass-border: rgba(17, 17, 17, 0.08);
+  --uhd-s-slider-bg: rgba(17, 17, 17, 0.08);
+  --uhd-s-hero-fade: #ffffff; /* Hero 底部渐隐终点＝页面底 */
+  --uhd-s-badge-bg: rgba(0, 0, 0, 0.55); /* 「N版本」黑半透明角标（两模式无差异） */
+  /* 详情页播放主胶囊（浅色）：实心白底＋近黑字，实心不需要模糊 */
+  --uhd-s-play-bg: #ffffff;
+  --uhd-s-play-text: #111111;
+  --uhd-s-play-blur: 0px;
+}
+.stream-scope[data-stream-theme="dark"] {
+  --uhd-s-bg: #121214; /* 目视约 #101012–#141416 取中 */
+  --uhd-s-text: #ffffff;
+  --uhd-s-text-2: #9ca3af;
+  --uhd-s-halo: radial-gradient(1100px 480px at 18% -120px, rgba(232, 118, 111, 0.14), transparent 62%),
+    radial-gradient(1000px 520px at 55% -160px, rgba(149, 199, 125, 0.12), transparent 62%),
+    radial-gradient(1100px 520px at 88% -140px, rgba(57, 179, 236, 0.13), transparent 62%);
+  --uhd-s-pill-bg: rgba(30, 30, 30, 0.72); /* 目视约 #1e1e1e 炭灰毛玻璃 */
+  --uhd-s-pill-border: rgba(255, 255, 255, 0.14);
+  --uhd-s-pill-active-bg: #2b2b2b; /* 目视约 #2b2b2b */
+  --uhd-s-pill-active-text: #ffffff;
+  --uhd-s-shadow-pill: 0 6px 24px -10px rgba(0, 0, 0, 0.6);
+  --uhd-s-strip-bg: #1a1a1a; /* 目视约 #1a1a1a */
+  --uhd-s-strip-num-bg: #262626; /* 目视约 #262626 */
+  --uhd-s-strip-num-text: #e5e5e5;
+  --uhd-s-strip-current-bg: #ffffff; /* 当前集反转：白底黑字 */
+  --uhd-s-strip-current-text: #111111;
+  --uhd-s-card-soft: #1f1f1f; /* 目视约 #1f1f1f */
+  --uhd-s-border: rgba(255, 255, 255, 0.14);
+  --uhd-s-divider: rgba(255, 255, 255, 0.08);
+  --uhd-s-panel-bg: #1a1a1a; /* 目视约 #1a1a1a */
+  --uhd-s-highlight: #2b2b2b; /* 命中高亮转深灰底 */
+  --uhd-s-modal-bg: #1c1c1c; /* 目视约 #1c1c1c */
+  --uhd-s-modal-row-bg: #222222; /* 目视约 #222 */
+  --uhd-s-modal-row-selected-border: #ffffff;
+  --uhd-s-glass: rgba(30, 30, 30, 0.66);
+  --uhd-s-glass-border: rgba(255, 255, 255, 0.14);
+  --uhd-s-slider-bg: rgba(255, 255, 255, 0.1); /* 页签滑块：白 10%（源码实证 bg-wash/[0.1]） */
+  --uhd-s-hero-fade: #121214;
+  /* 详情页播放主胶囊（深色）：黑毛玻璃＋白字；底色取 --uhd-glass-btn-d 同口径近不透明，
+     否则彩虹边框层会透成满面；模糊取站内毛玻璃 12px 档（--uhd-glass-filter） */
+  --uhd-s-play-bg: rgba(18, 18, 20, 0.88);
+  --uhd-s-play-text: #ffffff;
+  --uhd-s-play-blur: 12px;
 }

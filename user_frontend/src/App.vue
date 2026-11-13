@@ -66,8 +66,26 @@ const showChrome = computed(
  * 变基对齐批 3 后，PanelTabbar 的条件应为 showChrome && !isAccountArea && !isStreamArea。
  */
 const isAccountArea = computed(() => route.path === '/shop' || route.path.startsWith('/game'))
-const showHeader = computed(() => showChrome.value && !isAccountArea.value)
 const isSubscribePage = computed(() => route.name === 'game-account-subscribe')
+
+/**
+ * UHD 换皮批 3：片库面（/library*、/search、/media/*、/favorites）自带
+ * 双胶囊顶栏与手机液态玻璃底部导航（StreamShell），全局顶栏与
+ * PanelTabbar 在这些路由下都不再渲染，避免双导航并存。
+ * 变基 2026-11-13：/play 也计入片库面（播放页隐藏全局顶栏/底坞，
+ * 与 #85 web-player 全屏覆盖一致）。
+ */
+const isStreamArea = computed(
+  () =>
+    route.path === '/library' ||
+    route.path.startsWith('/library/') ||
+    route.path === '/search' ||
+    route.path.startsWith('/media/') ||
+    route.path === '/favorites' ||
+    route.path === '/play' ||
+    route.path.startsWith('/play/'),
+)
+const showHeader = computed(() => showChrome.value && !isAccountArea.value && !isStreamArea.value)
 
 /**
  * 桌面「探险世界」激活且在首页时，世界自带 HUD（品牌/能量/等级/头像），
@@ -199,7 +217,7 @@ watch(
         </Transition>
       </KeepAlive>
     </RouterView>
-    <PanelTabbar v-if="showChrome && !isAccountArea" />
+    <PanelTabbar v-if="showChrome && !isAccountArea && !isStreamArea" />
     <UhdAccountDock v-if="showChrome && isAccountArea && !isSubscribePage" />
     <Toast :messages="messages" @remove="remove" />
     <!-- 全局 TG 绑定自动弹窗：新用户注册后自动弹出，已绑定不弹 -->
