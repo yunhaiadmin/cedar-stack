@@ -4,11 +4,11 @@
 口径（用户 2026-11-07 亲点「按推荐全做」）：
 - 网站管理员三级定义在 backend/admin_roles.py：viewer 只读（can_write
   为假）。机器人此前所有管理入口只查 is_staff，viewer 绑 TG 即可绕过
-  网站只读限制去封号/赠送/取消资格/发红包雨/推榜——本单在执行层堵死：
-  whois_panel.execute、reconcile 对账处置、handle_rain、handle_rankpush
+  网站只读限制去封号/赠送/取消资格/推榜——本单在执行层堵死：
+  whois_panel.execute、reconcile 对账处置、handle_rankpush
   全部加角色门，手输命令与旧回调都拦得住；读口对 viewer 不变。
 - operator 日常写全放行；whois 既有超管守卫（PA-056）不回归。
-- 命令菜单按角色下发：viewer 只拿只读子集（不含 rankpush/rain）；
+- 命令菜单按角色下发：viewer 只拿只读子集（不含 rankpush）；
   绑定成功当场补发管理员菜单，不等 poller 重启。
 - 管理面板显示真实角色名，按钮按角色裁剪；新增机器人群权限自检卡。
 """
@@ -216,34 +216,7 @@ def test_viewer_reconcile_do_callback_refused(db, monkeypatch):
     assert target.is_welfare is True
 
 
-# ---------- 一、红包雨 / 推榜：viewer 被拒、operator 放行 ----------
-
-def test_viewer_rain_refused(db, monkeypatch):
-    from backend import rain as rain_svc
-
-    viewer, _op, _t = _staff(db)
-    _cfg(db, "bot_rain_enabled", "true")
-    called = []
-    monkeypatch.setattr(rain_svc, "start_rain",
-                        lambda *a, **kw: called.append(1) or {"ok": False})
-    reply = handlers.handle_rain(
-        db, {"id": VIEWER_TG}, GROUP, "", in_group=True)
-    assert isinstance(reply, str) and READONLY_MARK in reply
-    assert called == []
-    assert db.query(models.RedPacketRain).count() == 0
-
-
-def test_operator_rain_reaches_service(db, monkeypatch):
-    from backend import rain as rain_svc
-
-    _viewer, operator, _t = _staff(db)
-    _cfg(db, "bot_rain_enabled", "true")
-    monkeypatch.setattr(rain_svc, "start_rain",
-                        lambda *a, **kw: {"ok": False, "reason": "busy"})
-    reply = handlers.handle_rain(
-        db, {"id": OPERATOR_TG}, GROUP, "", in_group=True)
-    assert reply == rain_svc.reason_message("busy")
-
+# ---------- 一、推榜：viewer 被拒、operator 放行 ----------
 
 def test_viewer_rankpush_refused_push_not_called(db, monkeypatch):
     from backend.tg_bot import rankpush
@@ -360,13 +333,11 @@ def test_admin_markup_by_role(db):
     assert "menu:admin_rankpush" not in v_datas
     assert "menu:admin_rankpush_day" not in v_datas
     assert "menu:admin_rankpush_week" not in v_datas
-    assert "menu:admin_rain_info" not in v_datas
     o_datas = _datas(handlers.admin_markup(operator))
     # 推榜子页已砍：今日/本周两个推送动作直接挂管理面板，无中间入口。
     assert "menu:admin_rankpush" not in o_datas
     assert "menu:admin_rankpush_day" in o_datas
     assert "menu:admin_rankpush_week" in o_datas
-    assert "menu:admin_rain_info" in o_datas
     assert "menu:admin_botperms" in o_datas
 
 

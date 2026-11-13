@@ -235,14 +235,13 @@ ANON_ADMIN_TEXT = (
 
 # 需要发送者身份的命令全集：handler 内走 resolve / _bound_user /
 # _p1_user，匿名发在 router 层统一拦下回 ANON_ADMIN_TEXT。
-# 不在表内＝公开命令（/help /rank /requestboard /rules /slots：不查
-# 发送者身份、只读全站或群级数据；/slots 群面板不带个人数据、绑定
-# 在点注时才判），匿名发照常执行。
+# 不在表内＝公开命令（/help /rank /requestboard /rules：不查
+# 发送者身份、只读全站或群级数据），匿名发照常执行。
 _IDENTITY_COMMANDS = {
     "/start", "/bind", "/checkin", "/points", "/chatpoints",
     "/account", "/me", "/request", "/myrequests", "/login", "/renew",
     "/govlog", "/level", "/report", "/propose", "/launch",
-    "/redeem", "/lottery", "/redpacket", "/duel", "/rain",
+    "/redeem",
     "/bindings", "/transfers", "/whyplay", "/wants", "/reconcile",
     "/rankpush", "/playrank",
     "/kk",
@@ -404,7 +403,7 @@ def _handle_chat_member(db, cfg, cm: dict) -> None:
 # widget_query 分发器（Bot API 10.4，PR-2a）：按请求 data 的动作
 # 命名空间（JSON 里的 "a" 字段）把 query 分发到对应组件。
 #
-# 老虎机已用 {"a":"spin"}；新组件上线时在 _widget_query_routes 里
+# 新组件上线时在 _widget_query_routes 里
 # 登记自己的动作名，绝不许再把全部 widget_query 直塞给单个组件
 # ——否则两个组件会互相误答。未登记/解析不出的动作由分发器统一
 # 回 error JSON 应答，绝不静默（不应答的 query 在 widget 侧
@@ -434,10 +433,9 @@ def _widget_query_action(widget_query: dict) -> str | None:
 
 def _widget_query_routes() -> dict:
     """动作命名空间 → 处理函数（调用时懒加载，防循环导入）。"""
-    from backend.tg_bot import pool_widget, slots_widget
+    from backend.tg_bot import pool_widget
 
     return {
-        "spin": slots_widget.handle_widget_query,
         "pool_refresh": pool_widget.handle_widget_query,
     }
 
@@ -445,8 +443,7 @@ def _widget_query_routes() -> dict:
 def _dispatch_widget_query(db, widget_query: dict) -> None:
     """按动作命名空间分发 widget_query；未知动作统一 error 应答。
 
-    已登记动作 → 对应组件的 handle_widget_query（老虎机 spin 的
-    行为逐字不变，仍由 slots_widget 自己解析与应答）；未登记 →
+    已登记动作 → 对应组件的 handle_widget_query；未登记 →
     分发器直接 answerWidgetQuery 回 {"error": "unknown_action"}
     并记日志，绝不静默。缺 query id 时无从应答，只记日志。
     """
@@ -480,7 +477,7 @@ def dispatch(db, update: dict) -> None:
     P0：处理器抛异常时不再只记日志——尽力给用户回一句看得见的失败提示
     （2026-10-21 教训：失败只记日志、用户端看着像成功）。
     """
-    from backend.tg_bot import handlers, redpacket_common, sender
+    from backend.tg_bot import handlers, sender
 
     # 先取 chat_id：异常发生在任何一步时失败提示都有地方发
     if "callback_query" in update:
@@ -515,9 +512,7 @@ def dispatch(db, update: dict) -> None:
             if _is_group_chat(chat) and not policy.is_group_allowed(cfg, chat.get("id")):
                 return
             from backend.tg_bot import callbacks
-            callbacks.handle_callback(
-                db, cq, redpacket_enabled=policy.is_redpacket_enabled(cfg)
-            )
+            callbacks.handle_callback(db, cq)
             return
 
         # 内联搜片（@bot 片名）：没有 chat 上下文，结果走 answerInlineQuery
@@ -529,8 +524,7 @@ def dispatch(db, update: dict) -> None:
             return
 
         # HTML widget 请求（Bot API 10.4）：走分发器按动作命名
-        # 空间分发（见 _dispatch_widget_query），老虎机 spin 仍由
-        # slots_widget 处理、行为逐字不变，未知动作统一 error
+        # 空间分发（见 _dispatch_widget_query），未知动作统一 error
         # 应答；shared_widget_query 来自转发的共享 widget，本机器人
         # 不用共享 widget，静默忽略（不处理、不报错）。
         if "widget_query" in update:
@@ -570,21 +564,10 @@ def dispatch(db, update: dict) -> None:
             _verify_bind_code(db, update)
             return
 
-        # 口令抽奖：群内非命令文本先尝试匹配口令关键词
-        # 注意：此处不消耗群级限流预算（普通聊天不计入），防刷由 handler 内部的
-        # 幂等逻辑保证（重复口令只算一次；参加/重复反馈走自毁消息，不常驻刷屏）。
-        # （2026-10-28 接回群发言奖励：口令未命中后按发言计分，见 _award_group_chat_points；
+        # 群发言奖励：群内非命令文本按发言计分，见 _award_group_chat_points。
         # 群白名单已在上方 is_group_allowed 处拦截，未放行群到不了这里；
-        # 普通聊天不消耗 _group_allow 群级限流预算，保持原有口径。）
+        # 普通聊天不消耗 _group_allow 群级限流预算，保持原有口径。
         if in_group and not text.startswith("/"):
-            from backend.tg_bot import callbacks
-
-            try:
-                if callbacks.handle_lottery_password(db, chat_id, tg_user, text):
-                    return
-            except Exception:
-                logger.exception("lottery password dispatch failed")
-                return
             _award_group_chat_points(db, tg_user)
             return
 
@@ -619,11 +602,6 @@ def dispatch(db, update: dict) -> None:
             "/login": handlers.handle_login,
             "/renew": handlers.handle_login,
             "/redeem": handlers.handle_redeem,
-            "/lottery": handlers.handle_lottery,
-            "/redpacket": handlers.handle_redpacket,
-            "/slots": handlers.handle_slots_command,
-            "/duel": handlers.handle_duel,
-            "/rain": handlers.handle_rain,
             "/bindings": handlers.handle_bindings,
             "/transfers": handlers.handle_transfers,
             "/whyplay": handlers.handle_whyplay,
@@ -691,11 +669,6 @@ def dispatch(db, update: dict) -> None:
         if in_group:
             _schedule_cmd_autodelete(db, chat_id, msg.get("message_id"))
 
-        # 红包开关：关闭后发红包提示已关闭（与 B3 文案一致）
-        if cmd == "/redpacket" and not policy.is_redpacket_enabled(cfg):
-            _send_reply(db, chat_id, "🧧 红包功能已关闭", autodelete=in_group)
-            return
-
         # 各命令开关：关闭后统一回复"该功能已关闭"（/start /help 常开）
         if not policy.is_command_enabled(cfg, cmd):
             _send_reply(db, chat_id, "该功能已关闭", autodelete=in_group)
@@ -707,32 +680,10 @@ def dispatch(db, update: dict) -> None:
             _send_reply(db, chat_id, "操作太快了，稍后再试", autodelete=in_group)
             return
 
-        if cmd == "/lottery":
-            # /lottery 需要群聊/私聊上下文（chat.type），单独分发
-            chat_type = (chat.get("type") or "")
-            reply = handlers.handle_lottery(
-                db, tg_user, chat_id, args, chat_type in ("group", "supergroup"))
-        elif cmd == "/redpacket":
-            # P1 修复：把 update_id 传给 handler 做发红包幂等（防 poller 重放双花）
-            reply = handlers.handle_redpacket(
-                db, tg_user, chat_id, args, update_id=update.get("update_id"))
-        elif cmd == "/slots":
-            # /slots 需要群聊/私聊上下文（群公共面板 vs 私聊本人面板，
-            # 开关口径与 menu:slots 面板入口一致），单独分发
-            reply = handlers.handle_slots_command(
-                db, tg_user, chat_id, args, in_group=in_group)
-        elif cmd == "/duel":
-            reply = handlers.handle_duel(
-                db, tg_user, chat_id, args,
-                update_id=update.get("update_id"), in_group=in_group)
-        elif cmd == "/rain":
-            reply = handlers.handle_rain(
-                db, tg_user, chat_id, args,
-                update_id=update.get("update_id"), in_group=in_group)
-        elif cmd == "/kk":
+        if cmd == "/kk":
             # /kk 需要群聊上下文（私聊全卡 vs 群内管理员精简卡）
             # 与被回复消息的发送者（群内回复定位），通用签名拿不到，
-            # 与 /slots 同款单独分发；handler 默认参数保证私聊与
+            # 故单独分发；handler 默认参数保证私聊与
             # 直调行为逐字不变。
             reply_from = (msg.get("reply_to_message") or {}).get("from")
             reply = handlers.handle_whois(
@@ -741,31 +692,8 @@ def dispatch(db, update: dict) -> None:
         else:
             reply = fn(db, tg_user, chat_id, args)
         # handler 可返回 str 或 (text, reply_markup) 元组（一键登录按钮）。
-        # 对决面板由这里发出并记下消息编号，进行中不自毁；静默标记表示
-        # 重放已经发过，不再刷第二条。
+        # 静默标记表示重放已经发过，不再刷第二条。
         if isinstance(reply, tuple) and reply and reply[0] == "__silent__":
-            return
-        if isinstance(reply, tuple) and reply and reply[0] == "__duel_panel__":
-            from backend import duel as duel_svc
-
-            _marker, text, markup, duel_id = reply
-            ok, err, mid = sender.send_message_ex(db, chat_id, text, markup)
-            if ok and mid:
-                duel_svc.attach_panel(db, duel_id, mid)
-            else:
-                logger.warning("duel panel send failed chat=%s err=%s", chat_id, err)
-                duel_svc.fail_unannounced(db, duel_id)
-            return
-        if isinstance(reply, tuple) and reply and reply[0] == "__rain_panel__":
-            from backend import rain as rain_svc
-
-            _marker, text, markup, rain_id = reply
-            ok, err, mid = sender.send_message_ex(db, chat_id, text, markup)
-            if ok and mid:
-                rain_svc.attach_panel(db, rain_id, mid)
-            else:
-                logger.warning("rain panel send failed chat=%s err=%s", chat_id, err)
-                rain_svc.fail_unannounced(db, rain_id)
             return
         if isinstance(reply, tuple) and reply and reply[0] == "__ephemeral__":
             # 临时消息标记（/__kk 群查人卡）：只发给标记里的接收人
@@ -785,14 +713,6 @@ def dispatch(db, update: dict) -> None:
             # 注：router 内 send_panel 仅此私聊一处，群聊没有图卡发送点，
             # 故本期无需为图卡另走 send_photo_ex（sender 未动）。
             sender.send_panel(db, chat_id, text, reply_markup=markup)
-        elif cmd == "/redpacket" and isinstance(reply, tuple):
-            # 红包本体豁免（按分发路径判定，不看文本）：handle_redpacket
-            # 仅在发送成功时返回 (packet_text, claim_markup) 元组，这条
-            # 带抢按钮的消息按用户口径永不自毁；参数错误/失败等 str
-            # 回复走下面分支照常自毁。本体形态走封面照片消息
-            # （send_packet_message 内部发不出时回落纯文本）。
-            redpacket_common.send_packet_message(
-                db, chat_id, text, reply_markup=markup)
         else:
             _send_reply(db, chat_id, text, reply_markup=markup,
                         autodelete=in_group)

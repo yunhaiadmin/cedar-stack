@@ -1,12 +1,14 @@
-"""callback_query 处理：主菜单按钮（menu:*）+ 抢红包按钮（redpacket_claim:{id}）+ 抽奖参加按钮（lottery_join:{round_id}）+ 老虎机下注按钮（slots_bet:{tier}）。"""
+"""callback_query 处理：主菜单按钮（menu:*）+ 查人面板（whois:*）+ 对账确认（reconcile:*）+ 贡献池 widget（pool_widget）。
+
+玩法类回调（红包/抽奖/老虎机/盲盒/对决/红包雨）已随批 9 断入口下线：
+历史消息上的旧按钮点到时无分支命中、静默忽略。
+"""
 from __future__ import annotations
 
-import html
 import logging
-from datetime import datetime
 
 from backend import models
-from . import ephemeral, layout, policy, redpacket_common, sender
+from . import ephemeral, layout, sender
 from .identity import resolve
 
 logger = logging.getLogger(__name__)
@@ -16,12 +18,8 @@ logger = logging.getLogger(__name__)
 _EPHEMERAL_RESULT_ACTIONS = ("checkin", "points", "chatpoints")
 
 
-def handle_callback(db, callback_query: dict, redpacket_enabled: bool | None = None) -> None:
-    """处理 callback_query：菜单按钮（menu:*）+ 抢红包按钮 + 抽奖参加按钮。
-
-    redpacket_enabled：调用方（router.dispatch）已批量读到的红包开关值；
-    传 None 时回退为自行读取（兼容直接调用）。
-    """
+def handle_callback(db, callback_query: dict) -> None:
+    """处理 callback_query：菜单按钮（menu:*）+ 查人/对账/widget 回调。"""
     data = (callback_query.get("data") or "")
     if data.startswith("menu:"):
         _handle_menu(db, callback_query)
@@ -29,31 +27,11 @@ def handle_callback(db, callback_query: dict, redpacket_enabled: bool | None = N
     if data.startswith("whois:"):
         _handle_whois_callback(db, callback_query)
         return
-    if data.startswith("redpacket_claim:"):
-        _handle_redpacket_claim(db, callback_query, redpacket_enabled)
-        return
-    if data.startswith("lottery_join:"):
-        _handle_lottery_join(db, callback_query)
-        return
     if data.startswith("reconcile:"):
         _handle_reconcile_callback(db, callback_query)
-    if data.startswith("slots_bet:"):
-        _handle_slots_bet(db, callback_query)
-        return
-    if data == "slots_widget":
-        _handle_slots_widget(db, callback_query)
         return
     if data == "pool_widget":
         _handle_pool_widget(db, callback_query)
-        return
-    if data.startswith("blindbox_draw:"):
-        _handle_blindbox_draw(db, callback_query)
-        return
-    if data.startswith("duel_accept:"):
-        _handle_duel_accept(db, callback_query)
-        return
-    if data.startswith("rain_grab:"):
-        _handle_rain_grab(db, callback_query)
         return
 
 
@@ -103,22 +81,8 @@ def _handle_menu(db, callback_query: dict) -> None:
             "action=%s err=%s", action, err)
 
     has_photo = bool(msg.get("photo"))
-    fallback_photo = None
-    if action == "redpacket" and has_photo:
-        # 发红包发起面板用专属封面图：caption 编辑换不了图，走
-        # editMessageMedia 换图；失败（图不可用/API 拒绝）回退普通
-        # caption 编辑，面板照常打开（仍是品牌图）。
-        fallback_photo = layout.REDPACKET_IMAGE
-        ok, err = sender.edit_message_media(
-            db, chat_id, message_id, text, markup,
-            photo_path=layout.REDPACKET_IMAGE)
-        if not ok:
-            logger.debug("tg redpacket media edit failed: err=%s", err)
-            ok, err = sender.edit_panel(
-                db, chat_id, message_id, text, markup, has_photo=True)
-    else:
-        ok, err = sender.edit_panel(
-            db, chat_id, message_id, text, markup, has_photo=has_photo)
+    ok, err = sender.edit_panel(
+        db, chat_id, message_id, text, markup, has_photo=has_photo)
     if not ok:
         logger.debug("tg menu edit failed: action=%s err=%s", action, err)
         # 导航回落：原地编辑被 TG 拒绝（消息不可编辑/内容未变/消息
@@ -129,7 +93,7 @@ def _handle_menu(db, callback_query: dict) -> None:
         sender.delete_message(db, chat_id, message_id)
         sender.send_panel(
             db, chat_id, text, markup,
-            prefer_photo=has_photo, photo_path=fallback_photo)
+            prefer_photo=has_photo, photo_path=None)
     elif not is_private:
         # 群面板滑动自毁（PR-2）：编辑成功落地＝一次互动，把自毁
         # 重挂为「最后互动＋bot_msg 延时」，正点着不会准点消失。
@@ -288,7 +252,7 @@ def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,
             markup = handlers.back_markup()
     elif action in ("admin_whois", "admin_reconcile",
                     "admin_rankpush_day", "admin_rankpush_week",
-                    "admin_rain_info", "admin_botperms"):
+                    "admin_botperms"):
         # 管理面板子页：每页重新验 is_staff（面板按钮裁剪不是安全边界）；
         # 写动作的角色门在各 handler/执行层（viewer 旧按钮点到也会被拒）。
         admin_user = resolve(db, int(tg_id))
@@ -324,14 +288,6 @@ def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,
             text = handlers.handle_rankpush(
                 db, tg_user, chat_id,
                 "week" if action == "admin_rankpush_week" else "")
-            markup = handlers.admin_back_markup()
-        elif action == "admin_rain_info":
-            text = layout.card(layout.title("红包雨"), [
-                layout.row("🌧️", "玩法", "系统出钱，群里人人可抢，金额份数读后台配置"),
-                layout.row("🚀", "发起方式",
-                           "去交流群发送 /rain，或在群里游戏菜单点红包雨（仅管理员）"),
-                layout.row("🔒", "私聊限制", "红包雨只能在群里发起，私聊面板不能直接发"),
-            ])
             markup = handlers.admin_back_markup()
         else:  # admin_botperms
             from . import bot_perms
@@ -380,14 +336,6 @@ def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,
                 text, markup = reply
             else:
                 text, markup = reply, handlers.back_markup()
-    elif action == "lottery":
-        # PA-030：群/私聊分流。群里走群轮次卡（is_group=True），绝不把
-        # 点击者个人抽奖记录编辑进群共享消息；私聊保持个人记录分支。
-        reply = handlers.handle_lottery(db, tg_user, chat_id, "", not is_private)
-        if isinstance(reply, tuple):
-            text, markup = reply
-        else:
-            text, markup = reply, handlers.back_markup()
     elif action in ("bindings", "transfers", "whyplay", "wants"):
         # 个人查询私聊限定（与命令层口径一致）：群里点到只回私聊卡，
         # 绝不把点击者本人的绑定/转存/想看数据编辑进群共享消息。
@@ -403,10 +351,10 @@ def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,
             }[action]
             text = fn(db, tg_user, chat_id, "")
             markup = handlers.back_markup()
-    elif action in ("achievements", "mylottery"):
-        # 成就与我的抽奖都是个人数据卡：私聊限定（与 bindings 等私人
-        # 查询同口径），群里点到只回私聊提示卡，绝不把点击者本人的
-        # 成就/抽奖记录编辑进群共享消息。未绑定按现行口径回绑定指引。
+    elif action == "achievements":
+        # 成就是个人数据卡：私聊限定（与 bindings 等私人查询同口径），
+        # 群里点到只回私聊提示卡，绝不把点击者本人的成就记录编辑进
+        # 群共享消息。未绑定按现行口径回绑定指引。
         if not is_private:
             text = handlers.private_only_card()
             markup = handlers.private_only_markup(db)
@@ -414,21 +362,11 @@ def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,
             user = resolve(db, int(tg_id))
             if user is None:
                 text, markup = handlers._bind_guide_text(), handlers.back_markup()
-            elif action == "achievements":
+            else:
                 from . import features
 
                 text = features.achievements_card(db, user)
                 markup = handlers.group_back_markup("account", "账号组")
-            else:
-                lot = handlers._lottery()
-                try:
-                    lottery_on = bool(lot.is_enabled(db)) if lot is not None else False
-                except Exception:
-                    logger.warning("lottery.is_enabled failed", exc_info=True)
-                    lottery_on = False
-                text = (handlers.my_lottery_card(db, user) if lottery_on
-                        else "🎲 抽奖功能暂未开启")
-                markup = handlers.group_back_markup("welfare", "福利组")
     elif action == "bind":
         user = resolve(db, int(tg_id))
         if user is not None:
@@ -441,88 +379,6 @@ def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,
     elif action == "help":
         text = handlers.handle_help(db, tg_user, chat_id, "")
         markup = handlers.back_markup()
-    elif action == "games":
-        from backend.tg_bot import games_menu
-
-        text, markup = games_menu.render(db)
-    elif action == "duel":
-        text = layout.card(
-            layout.title("在群里发送 /duel 和押注"),
-            [
-                layout.row("🎲", "玩法说明", "两人各掷一次骰子，大的赢，平局各退"),
-                layout.row("💡", "对决示例", f"{handlers._cmd('/duel 50')}，30 秒内点应战"),
-            ],
-        )
-        markup = handlers.back_markup()
-    elif action == "rain":
-        text = layout.card(
-            layout.title("红包雨由管理员开场"),
-            [
-                layout.row("🌧", "玩法说明", "系统出钱，落下后点「抢」领一份"),
-                layout.row("👮", "谁能发起", "管理员在群里发送 /rain"),
-            ],
-        )
-        markup = handlers.back_markup()
-    elif action == "redpacket":
-        text = layout.card(
-            layout.title("发红包"),
-            [
-                layout.row("🧧", "使用方法", f"{handlers._cmd('/redpacket')} <i>总能量 个数</i>"),
-                layout.row("💡", "红包示例", f"{handlers._cmd('/redpacket 100 10')}（100 能量分成 10 个）"),
-            ],
-            ["💡 请直接发送命令发红包（按钮不支持输入参数）"],
-        )
-        markup = handlers.back_markup()
-    elif action == "slots":
-        if not is_private:
-            # 群里可玩（2026-10-30 用户亲令推翻仅私聊口径）：渲染公共
-            # 面板，注额按钮谁点谁下注；总开关或群开关关闭时回落私聊
-            # 提示卡（与私聊限定功能同口径）。
-            from backend import slots as slots_svc
-
-            if slots_svc.is_enabled(db) and slots_svc.group_enabled(db):
-                text, markup = handlers.handle_slots_group(db, tg_user, chat_id, "")
-                if markup is None:
-                    markup = handlers.back_markup()
-            else:
-                text = layout.card(
-                    layout.title("老虎机"),
-                    [layout.row("🔒", "使用方式", "老虎机请私聊机器人使用")])
-                markup = handlers.back_markup()
-        else:
-            slots_user = resolve(db, int(tg_id))
-            if slots_user is None:
-                text, markup = handlers._bind_guide_text(), handlers.back_markup()
-            else:
-                text, markup = handlers.handle_slots(db, tg_user, chat_id, "")
-                if markup is None:
-                    markup = handlers.back_markup()
-    elif action in ("blindbox", "blindbox_codes", "blindbox_draws") \
-            or action.startswith("blindbox_tier:"):
-        # 盲盒（PR-2）：抽盒是本人消费、卡包是凭据类——私聊限定，
-        # 与 renewcode/login 同口径；渲染与抽盒都走 blindbox_panel，
-        # 数据是 backend.blindbox 引擎同一套（公益 realm）。
-        if not is_private:
-            text = layout.card(
-                layout.title("盲盒"),
-                [layout.row("🔒", "使用方式", "盲盒请私聊机器人使用")])
-            markup = handlers.back_markup()
-        else:
-            bb_user = resolve(db, int(tg_id))
-            if bb_user is None:
-                text, markup = handlers._bind_guide_text(), handlers.back_markup()
-            else:
-                from . import blindbox_panel
-
-                if action == "blindbox":
-                    text, markup = blindbox_panel.render_home(db, bb_user)
-                elif action == "blindbox_codes":
-                    text, markup = blindbox_panel.render_codes(db, bb_user)
-                elif action == "blindbox_draws":
-                    text, markup = blindbox_panel.render_draws(db, bb_user)
-                else:
-                    text, markup = blindbox_panel.render_tier(
-                        db, bb_user, action.split(":", 1)[1])
     else:
         raise _UnknownMenuAction(action)
     return text, markup
@@ -530,506 +386,6 @@ def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,
 
 class _UnknownMenuAction(Exception):
     """未知菜单 action：调用方静默忽略。"""
-def _answer_callback(db, callback_id, text: str, show_alert: bool = False) -> None:
-    """调用 answerCallbackQuery 给用户 toast 提示（幂等、可重复调用）。"""
-    if not callback_id:
-        return
-    try:
-        from backend.integrations.telegram import token as get_token
-
-        token = get_token(db)
-    except Exception:
-        logger.exception("get telegram token failed")
-        return
-    if not token:
-        logger.debug("telegram token empty, skip answerCallbackQuery")
-        return
-    try:
-        import httpx
-
-        httpx.post(
-            f"https://api.telegram.org/bot{token}/answerCallbackQuery",
-            json={
-                "callback_query_id": callback_id,
-                "text": text[:180],
-                "show_alert": show_alert,
-            },
-            timeout=10.0,
-        )
-    except Exception:
-        logger.exception("answerCallbackQuery failed")
-
-
-def _lottery():
-    """惰性导入 lottery 模块（G1 契约），不可用时返回 None。"""
-    try:
-        from backend import lottery
-
-        return lottery
-    except ImportError:
-        return None
-
-
-def _send_lottery_feedback(db, chat_id: int, text: str) -> None:
-    """抽奖群内反馈（旁路：失败只记日志，绝不影响参加结果）。
-
-    与红包领取反馈同口径：send_message_ex 拿 message_id 后按
-    bot_msg_autodelete_seconds（默认 30 秒）自毁，不新起无自毁的刷屏源。
-    """
-    try:
-        ok, err, feedback_id = sender.send_message_ex(db, chat_id, text)
-        if not ok:
-            logger.warning("tg lottery feedback send failed: chat=%s err=%s", chat_id, err)
-            return
-        if feedback_id:
-            delay = ephemeral.bot_msg_delay_seconds(db)
-            if delay > 0:
-                ephemeral.schedule_delete(chat_id, feedback_id, delay)
-    except Exception:
-        logger.warning("tg lottery feedback failed: chat=%s", chat_id, exc_info=True)
-
-
-def _refresh_lottery_announce(db, lot, round_id: int) -> None:
-    """参加成功后节流编辑公告卡人数（旁路，旧版 lottery 无此函数时跳过）。"""
-    refresh = getattr(lot, "refresh_announce_card", None)
-    if refresh is None:
-        return
-    try:
-        refresh(db, round_id)
-    except Exception:
-        logger.warning("tg lottery announce refresh failed: round=%s", round_id, exc_info=True)
-
-
-def _handle_lottery_join(db, callback_query: dict) -> None:
-    """处理抽奖参加按钮点击（幂等）。"""
-    cb_id = callback_query.get("id")
-    try:
-        data = callback_query.get("data") or ""
-        from_user = callback_query.get("from") or {}
-        telegram_id = from_user.get("id")
-        msg = callback_query.get("message") or {}
-        chat_id = (msg.get("chat") or {}).get("id")
-
-        # 1. 解析 round_id
-        try:
-            round_id = int(data.split(":", 1)[1])
-        except (ValueError, IndexError):
-            _answer_callback(db, cb_id, "请求无效，请重新点击")
-            return
-        if not cb_id:
-            return
-
-        # 2. 功能开关
-        lot = _lottery()
-        if lot is None:
-            _answer_callback(db, cb_id, "🎲 抽奖功能暂未开启")
-            return
-        try:
-            enabled = bool(lot.is_enabled(db))
-        except Exception:
-            logger.exception("lottery.is_enabled failed")
-            enabled = False
-        if not enabled:
-            _answer_callback(db, cb_id, "🎲 抽奖功能暂未开启")
-            return
-
-        # 3. 取 round（兜底链）
-        round_obj = None
-        if hasattr(lot, "get_round"):
-            try:
-                round_obj = lot.get_round(db, round_id)
-            except Exception:
-                logger.exception("lottery.get_round failed")
-                round_obj = None
-        if round_obj is None and chat_id is not None:
-            try:
-                active = lot.get_active_round(db, chat_id)
-            except Exception:
-                logger.exception("lottery.get_active_round failed")
-                active = None
-            if active is not None and getattr(active, "id", None) == round_id:
-                round_obj = active
-        if round_obj is None:
-            _answer_callback(db, cb_id, "本轮抽奖已结束")
-            return
-
-        # 4. 状态与开奖时间校验
-        status = str(getattr(round_obj, "status", "open") or "open")
-        if status != "open":
-            _answer_callback(db, cb_id, "本轮抽奖已结束")
-            return
-        draw_at = getattr(round_obj, "draw_at", None)
-        if draw_at is not None:
-            from datetime import datetime
-
-            # draw_at 按上海 naive 入库，比较用同一口径
-            if isinstance(draw_at, datetime) and draw_at <= lot.shanghai_now_naive():
-                _answer_callback(db, cb_id, "本轮抽奖已结束")
-                return
-
-        # 5. 群组 allowlist
-        allowed = None
-        if hasattr(lot, "allowed_group_ids"):
-            try:
-                allowed = lot.allowed_group_ids(db)
-            except Exception:
-                logger.exception("lottery.allowed_group_ids failed")
-                allowed = None
-        if allowed is None:
-            from backend.integrations import store
-
-            raw = store.get_value(db, "lottery_group_ids", "") or ""
-            allowed = {int(p) for p in raw.split(",") if p.strip().isdigit()}
-        if allowed and chat_id not in allowed:
-            _answer_callback(db, cb_id, "本群暂未开放抽奖")
-            return
-
-        # 6. 用户身份
-        user = resolve(db, int(telegram_id)) if telegram_id else None
-        if user is None:
-            _answer_callback(
-                db,
-                cb_id,
-                "请先绑定账号后再参加（发送 /bind 查看指引）",
-                show_alert=True,
-            )
-            return
-
-        # 6.5 三重门·身份门：参赛者必须在 TG 群里（防群外薅奖）。
-        # fail-open：API 失败时放行（记日志），可用性优先，不因 TG 抖动误伤用户。
-        require_member = True
-        if hasattr(lot, "require_group_member"):
-            try:
-                require_member = bool(lot.require_group_member(db))
-            except Exception:
-                logger.exception("lottery.require_group_member failed")
-                require_member = True
-        if require_member:
-            try:
-                is_member, _status = sender.get_chat_member(db, chat_id, int(telegram_id))
-            except Exception:
-                logger.exception("getChatMember failed, fail-open")
-                is_member = None
-            if is_member is False:
-                _answer_callback(
-                    db,
-                    cb_id,
-                    "请先加入本群后再参加抽奖",
-                    show_alert=True,
-                )
-                return
-
-        # 7. 参加（幂等核心）
-        try:
-            result = lot.join_round(db, round_obj, user, int(telegram_id))
-        except Exception:
-            logger.exception("lottery_join failed")
-            _answer_callback(db, cb_id, "参加失败，请稍后再试")
-            return
-        ok = bool(result.get("ok")) if isinstance(result, dict) else bool(result)
-        reason = result.get("reason") if isinstance(result, dict) else ""
-        if ok:
-            _answer_callback(db, cb_id, "🎉 参加成功，祝你好运！")
-            _refresh_lottery_announce(db, lot, round_id)
-        elif reason == "already":
-            _answer_callback(db, cb_id, "你已参加过本轮抽奖")
-        elif reason == "full":
-            _answer_callback(db, cb_id, "名额已满，下次再来")
-        elif reason == "creator":
-            _answer_callback(db, cb_id, "发起人不能参加自己发起的活动", show_alert=True)
-        elif reason in ("closed", "disabled"):
-            _answer_callback(db, cb_id, "本轮抽奖已结束")
-        elif reason == "account_disabled":
-            _answer_callback(db, cb_id, "账号已被停用，无法参加抽奖", show_alert=True)
-        elif reason == "blacklisted":
-            _answer_callback(db, cb_id, "你暂无抽奖资格", show_alert=True)
-        elif reason == "too_new":
-            _answer_callback(
-                db, cb_id,
-                f"账号注册满 {result.get('min_days', 0)} 天后才能参加",
-                show_alert=True,
-            )
-        elif reason == "rate_limited":
-            _answer_callback(db, cb_id, "今日参加次数已用完，明天再来")
-        else:
-            _answer_callback(db, cb_id, "参加失败，请稍后再试")
-    except Exception:
-        logger.exception("handle lottery_join callback failed")
-        _answer_callback(db, cb_id, "系统繁忙，请稍后再试")
-
-
-def handle_lottery_password(db, chat_id: int, tg_user: dict, text: str) -> bool:
-    """口令抽奖：群消息命中口令关键词时自动登记参加。
-
-    返回 True 表示本消息被口令抽奖消费（调用方不再继续分发）；
-    返回 False 表示无匹配的口令活动，调用方继续原有分发逻辑。
-
-    三重门校验与按钮参加一致：身份门（getChatMember，fail-open）+
-    资格门（join_round 内集中检查：黑名单/新号/限流/已参加/名额）。
-    同一用户重复发送口令只算一次；参加成功与重复参加都发一条带人数的
-    自毁反馈（2026-10-31 根治：旧版重复静默、成功反馈无人数且发送失败
-    被吞，用户亲报「发了口令群里没反馈」）。
-    """
-    lot = _lottery()
-    if lot is None:
-        return False
-    try:
-        enabled = bool(lot.is_enabled(db))
-    except Exception:
-        logger.exception("lottery.is_enabled failed")
-        return False
-    if not enabled:
-        return False
-
-    keyword = (text or "").strip()
-    if not keyword:
-        return False
-    try:
-        round_obj = lot.get_password_round(db, chat_id, keyword)
-    except Exception:
-        logger.exception("lottery.get_password_round failed")
-        return False
-    if round_obj is None:
-        return False
-
-    telegram_id = tg_user.get("id")
-    if not telegram_id:
-        return True  # 消费掉，避免继续分发
-
-    # 用户身份：必须已绑定账号
-    user = resolve(db, int(telegram_id))
-    if user is None:
-        return True  # 未绑定则静默消费，不在群里刷屏提示
-
-    # 三重门·身份门：参赛者必须在 TG 群里（fail-open）
-    require_member = True
-    if hasattr(lot, "require_group_member"):
-        try:
-            require_member = bool(lot.require_group_member(db))
-        except Exception:
-            logger.exception("lottery.require_group_member failed")
-            require_member = True
-    if require_member:
-        try:
-            is_member, _status = sender.get_chat_member(db, chat_id, int(telegram_id))
-        except Exception:
-            logger.exception("getChatMember failed, fail-open")
-            is_member = None
-        if is_member is False:
-            return True  # 非群成员静默消费，不刷屏
-
-    # 参加（幂等：重复发送口令只算一次）
-    try:
-        result = lot.join_round(db, round_obj, user, int(telegram_id))
-    except Exception:
-        logger.exception("lottery password join failed")
-        return True
-    ok = bool(result.get("ok")) if isinstance(result, dict) else bool(result)
-    reason = result.get("reason") if isinstance(result, dict) else ""
-
-    display_name = html.escape(str(tg_user.get("first_name") or tg_user.get("username") or telegram_id))
-    if ok:
-        # 参加反馈（2026-10-31 根治）：带当前总人数 + 公告卡节流刷新；
-        # 反馈消息走自毁，不留刷屏。旧行为「发了口令群里没反应」是用户亲报缺陷。
-        count = None
-        counter = getattr(lot, "participant_count", None)
-        if counter is not None:
-            try:
-                count = counter(db, round_obj.id)
-            except Exception:
-                logger.exception("lottery participant_count failed")
-        count_text = f"，当前共 {count} 人参与" if count is not None else ""
-        _send_lottery_feedback(db, chat_id, f"🎉 {display_name} 参加成功{count_text}，祝你好运！")
-        _refresh_lottery_announce(db, lot, round_obj.id)
-    elif reason == "already":
-        # 重复发口令也要有反馈（用户亲定），同样带人数、同样自毁
-        count = None
-        counter = getattr(lot, "participant_count", None)
-        if counter is not None:
-            try:
-                count = counter(db, round_obj.id)
-            except Exception:
-                logger.exception("lottery participant_count failed")
-        count_text = f"，当前共 {count} 人参与" if count is not None else ""
-        _send_lottery_feedback(db, chat_id, f"🎲 {display_name} 已参加过本轮抽奖{count_text}，请等开奖啦")
-    elif reason == "full":
-        _send_lottery_feedback(db, chat_id, f"名额已满，{display_name} 下次再来")
-    elif reason in ("closed", "disabled"):
-        pass  # 活动已结束：静默
-    elif reason in ("blacklisted", "too_new", "rate_limited", "creator"):
-        pass  # 资格不符：静默，不打草惊蛇
-    else:
-        logger.warning("lottery password join unexpected reason=%s", reason)
-    return True
-
-
-def _send_claim_feedback(db, chat_id, user, amount: int, remaining_count: int) -> None:
-    """抢红包成功后的群内反馈（旁路：失败只记日志，绝不影响领取结果）。
-
-    反馈消息按 bot_msg_autodelete_seconds（默认 30 秒）自毁；
-    红包消息本体永不在此调度自毁。
-    """
-    try:
-        claimer_name = html.escape(str(user.username or "朋友"))
-        text = redpacket_common.claim_feedback_text(claimer_name, amount, remaining_count)
-        ok, err, feedback_id = sender.send_message_ex(db, chat_id, text)
-        if not ok:
-            logger.warning("tg redpacket claim feedback send failed: chat=%s err=%s", chat_id, err)
-            return
-        if feedback_id:
-            delay = ephemeral.bot_msg_delay_seconds(db)
-            if delay > 0:
-                ephemeral.schedule_delete(chat_id, feedback_id, delay)
-    except Exception:
-        logger.warning("tg redpacket claim feedback failed: chat=%s", chat_id, exc_info=True)
-
-
-def _handle_redpacket_claim(db, callback_query: dict, redpacket_enabled: bool | None = None) -> None:
-    """处理抢红包按钮点击（B3）。
-
-    redpacket_enabled：调用方已批量读到的开关值；None 时自行读取。
-    """
-    packet_id = redpacket_common.parse_claim_data(callback_query.get("data"))
-    if packet_id is None:
-        logger.debug("tg unknown callback data: %s", callback_query.get("data"))
-        return
-
-    cq_id = callback_query.get("id")
-    message = callback_query.get("message") or {}
-    chat = message.get("chat") or {}
-    chat_id = chat.get("id")
-    message_id = message.get("message_id")
-
-    def _answer(text: str, show_alert: bool = False) -> None:
-        if not cq_id:
-            return
-        sender.answer_callback_query(db, cq_id, text, show_alert)
-
-    if redpacket_enabled is None:
-        redpacket_enabled = redpacket_common.enabled(db)
-    if not redpacket_enabled:
-        _answer("🧧 红包功能已关闭")
-        return
-
-    user = resolve(db, int((callback_query.get("from") or {}).get("id") or 0))
-    if user is None:
-        _answer("请先绑定 Telegram 后再抢红包（发送 /bind 获取绑定码）", show_alert=True)
-        return
-
-    packet = db.query(models.RedPacket).filter(models.RedPacket.id == packet_id).first()
-    if packet is None:
-        _answer("红包不存在")
-        return
-
-    sender_user = db.query(models.WebUser).filter(models.WebUser.id == packet.sender_id).first()
-    sender_name = html.escape(str(sender_user.username)) if sender_user and sender_user.username else "未知"
-
-    def _top_claim():
-        row = (
-            db.query(models.RedPacketClaim, models.WebUser)
-            .join(models.WebUser, models.WebUser.id == models.RedPacketClaim.user_id)
-            .filter(models.RedPacketClaim.packet_id == packet.id)
-            .order_by(models.RedPacketClaim.amount.desc(), models.RedPacketClaim.id.asc())
-            .first()
-        )
-        if row is None:
-            return None, None
-        claim, claimer = row
-        name = html.escape(str(claimer.username or "朋友"))
-        return name, int(claim.amount)
-
-    def _finish(reason: str) -> None:
-        top_name, top_amount = (None, None)
-        if reason == "empty":
-            top_name, top_amount = _top_claim()
-        _update_message(
-            redpacket_common.finished_text(
-                packet, sender_name, reason, top_name, top_amount),
-            {"inline_keyboard": []},
-        )
-        if chat.get("type") in ("group", "supergroup") and chat_id and message_id:
-            delay = ephemeral.bot_msg_delay_seconds(db)
-            if delay > 0:
-                ephemeral.schedule_delete(int(chat_id), int(message_id), delay)
-
-    def _update_message(text: str, reply_markup: dict) -> None:
-        if not chat_id or not message_id:
-            logger.warning("tg redpacket message update skipped: chat_id=%s message_id=%s", chat_id, message_id)
-            return
-        # 本体形态分发（按回调消息形态判定，不落库记形态）：新本体是
-        # 封面照片消息（message 带 photo）→ editMessageCaption；存量
-        # 纯文本本体 → editMessageText 原路不变。照片路失败时回落
-        # 文本编辑兜底，剩余/抢完/过期等状态更新绝不因形态问题丢失。
-        if message.get("photo"):
-            ok, err = sender.edit_message_caption(db, chat_id, message_id, text, reply_markup)
-            if not ok:
-                logger.warning("tg redpacket caption update failed, falling back to text edit: chat_id=%s message_id=%s err=%s", chat_id, message_id, err)
-                ok, err = sender.edit_message_text(db, chat_id, message_id, text, reply_markup)
-        else:
-            ok, err = sender.edit_message_text(db, chat_id, message_id, text, reply_markup)
-        if not ok:
-            logger.warning("tg redpacket message update failed: chat_id=%s message_id=%s err=%s", chat_id, message_id, err)
-
-    now = datetime.now()
-    if packet.expires_at and packet.expires_at < now:
-        _answer("🧧 红包已过期")
-        _finish("expired")
-        return
-
-    if packet.remaining_count <= 0:
-        _answer("🧧 红包已被抢完")
-        _finish("empty")
-        return
-
-    from backend import welfare_redpacket
-
-    try:
-        result = welfare_redpacket.claim_packet(db, user, packet_id)
-    except ValueError as e:
-        err = str(e)
-        logger.warning("tg redpacket claim rejected: packet=%s user=%s err=%s", packet_id, user.id, err)
-        _answer(f"🧧 {err}")
-        if "已被抢完" in err:
-            _finish("empty")
-        elif "已过期" in err:
-            _finish("expired")
-        return
-    except Exception:
-        logger.exception("tg redpacket claim failed: packet=%s user=%s", packet_id, user.id)
-        _answer("🧧 抢红包失败，请稍后再试")
-        return
-
-    amount = result["amount"]
-    _answer(f"🧧 恭喜抢到 {amount} 能量！")
-    if getattr(packet, "funding", "user") == "system":
-        # 红包雨的包走普通 claim 按钮领时同样补群反馈（用户口径：
-        # 抢了有反馈），再改原面板收尾。
-        if chat.get("type") in ("group", "supergroup"):
-            _send_claim_feedback(db, chat_id, user, amount, packet.remaining_count)
-        from backend.tg_bot import rain_ui
-
-        rain_ui.after_claim(db, getattr(packet, "rain_id", None))
-        return
-    if chat.get("type") in ("group", "supergroup"):
-        _send_claim_feedback(db, chat_id, user, amount, packet.remaining_count)
-    logger.info(
-        "tg redpacket claimed: packet=%s user=%s amount=%s remaining=%s",
-        packet_id,
-        user.id,
-        amount,
-        packet.remaining_count,
-    )
-    fresh = db.query(models.RedPacket).filter(models.RedPacket.id == packet_id).first()
-    if fresh is not None and fresh.remaining_count <= 0:
-        packet.remaining_count = 0
-        _finish("empty")
-    else:
-        if fresh is not None:
-            packet.remaining_count = fresh.remaining_count
-            packet.remaining_amount = fresh.remaining_amount
-        _update_message(redpacket_common.packet_text(packet, sender_name), redpacket_common.claim_markup(packet_id))
-
-
 def _handle_reconcile_callback(db, callback_query: dict) -> None:
     """对账处置二次确认（reconcile:ask / reconcile:do / reconcile:abort）。
 
@@ -1080,235 +436,6 @@ def _handle_reconcile_callback(db, callback_query: dict) -> None:
     sender.edit_panel(db, chat_id, message_id, text, markup,
                       has_photo=bool(msg.get("photo")))
 
-def _send_slots_group_result(db, chat_id, player_name: str, spin, dice_message_id) -> None:
-    """群老虎机结算反馈：每局一行群结果，骰子与结果都按自毁口径删除。
-
-    公共面板是大家一起用的入口，不改面板。每局结算后另发一行公开
-    结果（点注人/注额/开出结果/输赢），不能只靠 answerCallbackQuery
-    的 toast：toast 紧跟 sendDice 触发，骰子动画还没停就消失了，
-    动画结束什么反馈都不留（2026-11-06 用户真机报障「玩老虎机没
-    反馈」：两局均已结算扣注，群里却看不到任何结果）。结果消息同
-    样自毁（默认 30 秒），看得见又不长期刷屏。
-    """
-    try:
-        delay = ephemeral.bot_msg_delay_seconds(db)
-        if dice_message_id and delay > 0:
-            ephemeral.schedule_delete(chat_id, dice_message_id, delay)
-        from backend import slots as slots_svc
-
-        total = int(spin.base_payout or 0) + int(spin.pool_payout or 0)
-        name = html.escape(str(player_name))
-        reels = ""
-        if getattr(spin, "dice_value", None):
-            reels = slots_svc.reels_text(
-                slots_svc.decode_dice(int(spin.dice_value)))
-        elif getattr(spin, "reels", None):
-            reels = slots_svc.reels_text(tuple(spin.reels.split(",")))
-        opened = f"，开出 {reels}" if reels else ""
-        if int(getattr(spin, "pool_payout", 0) or 0) > 0:
-            text = f"🎉 {name} 中了头奖，一共 +{total} 能量"
-        elif total > 0:
-            text = f"🎰 {name} 押 {int(spin.bet)} 能量{opened}，中奖 +{total} 能量"
-        else:
-            text = f"🎰 {name} 押 {int(spin.bet)} 能量{opened}，未中奖"
-        ok, err, result_id = sender.send_message_ex(db, chat_id, text)
-        if not ok:
-            logger.warning(
-                "tg slots group result send failed: chat=%s err=%s", chat_id, err)
-            return
-        if result_id and delay > 0:
-            ephemeral.schedule_delete(chat_id, result_id, delay)
-    except Exception:
-        logger.warning("tg slots group result failed: chat=%s", chat_id, exc_info=True)
-
-
-def _handle_rain_grab(db, callback_query: dict) -> None:
-    """红包雨「抢」。抢成功：toast + 群反馈消息（30 秒自毁）＋原地改面板。"""
-    from backend import rain as rain_svc
-    from backend import welfare_redpacket
-    from backend.tg_bot import rain_ui
-
-    cb_id = callback_query.get("id")
-    data = callback_query.get("data") or ""
-    from_user = callback_query.get("from") or {}
-    tg_id = from_user.get("id")
-    msg = callback_query.get("message") or {}
-    chat = msg.get("chat") or {}
-
-    def _answer(text: str, show_alert: bool = False) -> None:
-        if cb_id:
-            sender.answer_callback_query(db, cb_id, text=text, show_alert=show_alert)
-
-    if not cb_id or not tg_id:
-        _answer("请求无效，请重新点击")
-        return
-    try:
-        rain_id = int(data.split(":", 1)[1])
-    except (IndexError, ValueError):
-        _answer("这场面已失效")
-        return
-    from backend.tg_bot import router as bot_router
-
-    if int(tg_id) == bot_router.GROUP_ANONYMOUS_BOT_ID:
-        _answer(bot_router.ANON_ADMIN_TEXT, show_alert=True)
-        return
-    user = resolve(db, int(tg_id))
-    if user is None:
-        _answer(rain_svc.reason_message("unbound"), show_alert=True)
-        return
-    rain = db.query(models.RedPacketRain).filter(models.RedPacketRain.id == rain_id).first()
-    if rain is None or rain.status != "running":
-        _answer(rain_svc.reason_message("closed"))
-        if rain is not None:
-            rain_ui.publish_terminal(db, rain)
-        return
-    if not rain_svc.is_enabled(db):
-        # 已经开着的这场仍允许抢完，避免系统的钱卡在面板上。
-        pass
-    try:
-        result = welfare_redpacket.claim_packet(db, user, int(rain.packet_id))
-    except ValueError as exc:
-        _answer(str(exc), show_alert=True)
-        return
-    except Exception:
-        logger.exception("rain grab failed id=%s", rain_id)
-        db.rollback()
-        _answer("系统繁忙，请稍后再试", show_alert=True)
-        return
-    _answer(f"抢到 {int(result['amount'])} 能量")
-    # 抢成功补一条群反馈（用户口径：抢了有反馈），与普通红包同款、
-    # 同自毁口径；失败只记日志，绝不影响领取与面板刷新。
-    if chat.get("type") in ("group", "supergroup") and chat.get("id"):
-        _send_claim_feedback(db, int(chat["id"]), user, int(result["amount"]), int(result["remaining_count"]))
-    rain_ui.after_claim(db, rain_id)
-
-
-def _handle_duel_accept(db, callback_query: dict) -> None:
-    """应战按钮。个人结果只弹 toast；终态把原面板收成一行。"""
-    from backend import duel as duel_svc
-    from backend.tg_bot import duel_ui
-
-    cb_id = callback_query.get("id")
-    data = callback_query.get("data") or ""
-    from_user = callback_query.get("from") or {}
-    tg_id = from_user.get("id")
-    msg = callback_query.get("message") or {}
-    chat_id = (msg.get("chat") or {}).get("id")
-
-    def _answer(text: str, show_alert: bool = False) -> None:
-        if cb_id:
-            sender.answer_callback_query(db, cb_id, text=text, show_alert=show_alert)
-
-    if not cb_id or not tg_id or not chat_id:
-        _answer("请求无效，请重新点击")
-        return
-    try:
-        duel_id = int(data.split(":", 1)[1])
-    except (IndexError, ValueError):
-        _answer("这局面板已失效")
-        return
-    from backend.tg_bot import router as bot_router
-
-    if int(tg_id) == bot_router.GROUP_ANONYMOUS_BOT_ID:
-        _answer(bot_router.ANON_ADMIN_TEXT, show_alert=True)
-        return
-    user = resolve(db, int(tg_id))
-    if user is None:
-        _answer("请先绑定账号后再应战", show_alert=True)
-        return
-    try:
-        result = duel_svc.accept_duel(db, user, duel_id, f"tgcq:{cb_id}")
-    except Exception:
-        logger.exception("duel accept failed id=%s", duel_id)
-        db.rollback()
-        _answer("系统繁忙，请稍后再试", show_alert=True)
-        return
-    if not result.get("ok"):
-        extra = {k: v for k, v in result.items() if k not in ("ok", "reason", "duel")}
-        _answer(duel_svc.reason_message(result.get("reason") or "", **extra), show_alert=True)
-        expired = result.get("duel")
-        if result.get("reason") == "expired" and expired is not None:
-            duel_ui.publish_terminal(db, expired)
-        return
-    row = result["duel"]
-    if result.get("duplicate"):
-        if row.status == "rolling":
-            _answer(duel_svc.reason_message("rolling"))
-        else:
-            _answer(duel_svc.reason_message("settled"))
-        return
-
-    ok1, _err1, dice1, mid1 = sender.send_dice(db, int(chat_id), "🎲")
-    ok2, _err2, dice2, mid2 = (False, None, None, None)
-    if ok1 and isinstance(dice1, int):
-        ok2, _err2, dice2, mid2 = sender.send_dice(db, int(chat_id), "🎲")
-    if not (ok1 and ok2 and isinstance(dice1, int) and isinstance(dice2, int)):
-        aborted = duel_svc.abort_roll(db, row.id, reason="dice_failed")
-        _answer("掷骰失败，押注已退回", show_alert=True)
-        if aborted is not None:
-            duel_ui.publish_terminal(db, aborted)
-        return
-    try:
-        settled = duel_svc.settle_duel(db, row.id, int(dice1), int(dice2))
-    except Exception:
-        logger.exception("duel settle failed id=%s", row.id)
-        db.rollback()
-        _answer("结算异常，请联系管理员", show_alert=True)
-        return
-    if not settled.get("ok"):
-        aborted = duel_svc.abort_roll(db, row.id, reason="bad_dice")
-        _answer(duel_svc.reason_message(settled.get("reason") or "bad_dice"), show_alert=True)
-        if aborted is not None:
-            duel_ui.publish_terminal(db, aborted)
-        return
-    final = settled["duel"]
-    delay = ephemeral.bot_msg_delay_seconds(db)
-    if delay > 0:
-        for mid in (mid1, mid2):
-            if mid:
-                ephemeral.schedule_delete(int(chat_id), int(mid), delay)
-    if final.status == "settled":
-        _answer(f"🎉 你这局{('赢了' if final.winner_id == user.id else '输了')}，结果见面板")
-    elif final.status == "tie":
-        _answer("平局，押注已退回")
-    else:
-        _answer("本局已退回")
-    duel_ui.publish_terminal(db, final)
-
-
-def _handle_slots_widget(db, callback_query: dict) -> None:
-    """发 HTML 版老虎机 widget（Bot API 10.4 sendWidget，私聊限定）。
-
-    生产环境 widget 仅限私聊、自动 protected content、不可转发：
-    群里点到（旧面板残留等）只回 toast、不发。群聊继续走 sendDice 版。
-    """
-    from backend.tg_bot import slots_widget as slots_widget_mod
-
-    cb_id = callback_query.get("id")
-    from_user = callback_query.get("from") or {}
-    tg_id = from_user.get("id")
-    msg = callback_query.get("message") or {}
-    chat_id = (msg.get("chat") or {}).get("id")
-    if not cb_id or not tg_id or not chat_id:
-        return
-
-    def _answer(text: str, show_alert: bool = False) -> None:
-        sender.answer_callback_query(db, cb_id, text=text, show_alert=show_alert)
-
-    if int(chat_id) != int(tg_id):
-        _answer("HTML 版老虎机仅支持私聊，群里请用普通版", show_alert=True)
-        return
-    user = resolve(db, int(tg_id))
-    if user is None:
-        _answer("请先绑定账号后再玩老虎机", show_alert=True)
-        return
-    ok, err, _mid = slots_widget_mod.send_slots_widget(db, chat_id, user)
-    if not ok:
-        _answer(err or "HTML 版老虎机发送失败", show_alert=True)
-        return
-    _answer("HTML 版老虎机已发出")
-
-
 def _handle_pool_widget(db, callback_query: dict) -> None:
     """发贡献池私聊面板 widget（Bot API 10.4 sendWidget，私聊限定）。
 
@@ -1341,185 +468,3 @@ def _handle_pool_widget(db, callback_query: dict) -> None:
         return
     _answer("我的贡献池已发出")
 
-
-def _handle_blindbox_draw(db, callback_query: dict) -> None:
-    """处理盲盒抽盒按钮（blindbox_draw:{tier_key}），私聊限定。
-
-    抽盒是扣能量的消费动作：只认私聊（chat_id＝本人 telegram_id，
-    群里点到只回 toast）；同一 callback 重投递按 callback id 去重
-    （blindbox_panel.claim_draw_callback），不许二次开盒扣分。
-    应答时机（2026-11-11 卡顿修复）：去重通过后先应答「开盒中…」
-    停掉客户端转圈，再执行抽盒——旧实现把 answerCallbackQuery 拖
-    到抽盒＋结果卡发送之后，连点时后面的回调排队等前一张结果卡，
-    甚至过期（query too old 400）。回调只能应答一次，成功另发
-    开盒结果卡（与老虎机私聊结果卡同口径，聊天记录留档）；失败
-    改发私聊消息说人话原因——引擎保证失败不扣分。
-    """
-    from . import blindbox_panel
-
-    cb_id = callback_query.get("id")
-    data = callback_query.get("data") or ""
-    from_user = callback_query.get("from") or {}
-    tg_id = from_user.get("id")
-    msg = callback_query.get("message") or {}
-    chat_id = (msg.get("chat") or {}).get("id")
-    if not cb_id or not tg_id or not chat_id:
-        return
-    tier_key = data.split(":", 1)[1] if ":" in data else ""
-
-    def _answer(text: str, show_alert: bool = False) -> None:
-        sender.answer_callback_query(db, cb_id, text=text,
-                                     show_alert=show_alert)
-
-    if int(chat_id) != int(tg_id):
-        _answer("盲盒仅支持私聊，群里抽不了", show_alert=True)
-        return
-    if not blindbox_panel.claim_draw_callback(cb_id):
-        _answer("这盒已经开过了")
-        return
-    # 先应答再干活：转圈在应答到达客户端时就停，不必等抽盒事务
-    # 与结果卡发送走完（见上方 docstring 的卡顿修复说明）。
-    _answer("开盒中…")
-    user = resolve(db, int(tg_id))
-    if user is None:
-        sender.send_message(db, chat_id, "请先绑定账号后再抽盲盒")
-        return
-    ok, text, markup = blindbox_panel.do_draw(db, user, tier_key)
-    if not ok:
-        sender.send_message(db, chat_id, text)
-        return
-    sender.send_panel(db, chat_id, text, markup)
-
-
-def _handle_slots_bet(db, callback_query: dict) -> None:
-    """处理老虎机下注按钮（slots_bet:{tier}）。
-
-    私聊：begin_spin（幂等扣注）→ sender.send_dice（TG 原生老虎机，
-    结果只认返回的 dice.value）→ settle_spin，结果走 send_panel
-    结果卡（原流程不变）。
-    群聊（名单群；非名单群的 callback 在 router 已静默忽略）：公共
-    面板谁点谁下注——扣点击者本人的能量、赢归点击者、封顶按点击者
-    计，spin_key 仍是该次 callback id。骰子发到群里，结算后另发一条
-    公开结果消息（点注人/注额/结果/赢额/头奖池），结果消息与骰子
-    消息都按机器人消息自毁口径调度删除，绝不编辑公共面板，多人
-    同点互不打架。骰子发送失败走 fail_spin 全额退注；同一 callback
-    重放时 begin 返回既有局：私聊重发结果卡、群里只回 toast 摘要，
-    绝不重摇、不重复扣款/赔付、不刷第二条公开消息。
-    """
-    from backend import slots as slots_svc
-    from . import handlers
-
-    cb_id = callback_query.get("id")
-    data = callback_query.get("data") or ""
-    from_user = callback_query.get("from") or {}
-    tg_id = from_user.get("id")
-    msg = callback_query.get("message") or {}
-    chat_id = (msg.get("chat") or {}).get("id")
-    if not cb_id or not tg_id or not chat_id:
-        return
-
-    def _answer(text: str, show_alert: bool = False) -> None:
-        sender.answer_callback_query(db, cb_id, text=text, show_alert=show_alert)
-
-    in_group = int(chat_id) != int(tg_id)
-    origin = "group" if in_group else "private"
-
-    if in_group:
-        from backend.tg_bot import router as bot_router
-
-        # 匿名管理员点按钮：callback 的 from 是 GroupAnonymousBot 固定
-        # id（同 router 消息路径 _is_anonymous_admin 的 from 判据），
-        # 认不出本人是谁——不扣钱、不发骰子，回匿名说明。
-        if int(tg_id) == bot_router.GROUP_ANONYMOUS_BOT_ID:
-            _answer(bot_router.ANON_ADMIN_TEXT, show_alert=True)
-            return
-        if not slots_svc.group_enabled(db):
-            _answer("🎰 群里老虎机已关闭，可以私聊我玩", show_alert=True)
-            return
-        # 限流：复用 router 的用户级命令限流口径，按点击者计（防连点刷注）
-        cfg = policy.read_bot_config(db)
-        if not bot_router._user_cmd_allow(
-                int(tg_id), "slots_bet", policy.rate_limit_seconds(cfg)):
-            _answer("操作太快了，稍后再试", show_alert=True)
-            return
-
-    try:
-        tier = int(data.split(":", 1)[1])
-    except (IndexError, ValueError):
-        _answer("注额档位无效", show_alert=True)
-        return
-
-    user = resolve(db, int(tg_id))
-    if user is None:
-        if in_group:
-            _answer("请先私聊机器人绑定账号后再玩老虎机", show_alert=True)
-        else:
-            _answer("请先绑定账号后再玩老虎机", show_alert=True)
-        return
-
-    spin_key = f"tgcq:{cb_id}"
-    try:
-        begin = slots_svc.begin_spin(db, user, tier, spin_key, origin=origin)
-    except Exception:
-        logger.exception("slots begin failed: user=%s tier=%s", user.id, tier)
-        db.rollback()
-        _answer("系统繁忙，请稍后再试", show_alert=True)
-        return
-    if not begin.get("ok"):
-        extra = {k: v for k, v in begin.items() if k not in ("ok", "reason")}
-        _answer(
-            slots_svc.reason_message(begin.get("reason") or "", **extra),
-            show_alert=True)
-        return
-
-    spin = begin["spin"]
-    if begin.get("duplicate"):
-        if spin.status != "settled":
-            _answer("上一局结算中，请稍候", show_alert=True)
-            return
-        if in_group:
-            total = int(spin.base_payout or 0) + int(spin.pool_payout or 0)
-            summary = f"+{total} 能量" if total > 0 else "未中奖"
-            _answer(f"本局已结算（{summary}）")
-        else:
-            # 私聊重放只回 toast，绝不再发结果卡：结果卡在首轮处理时
-            # 已经发过，重投递整批时再发一份，用户看到的就是「点主
-            # 界面又来一张一模一样的老虎机卡」的死循环假象
-            # （2026-10-30 真机实证：一局 spin、两张同卡）。
-            _answer("本局已结算")
-        return
-
-    ok, err, dice_value, dice_mid = sender.send_dice(db, chat_id, "🎰")
-    if not ok or dice_value is None:
-        logger.warning("slots sendDice failed: spin=%s err=%s", spin.id, err)
-        try:
-            slots_svc.fail_spin(db, spin, "dice_failed", origin=origin)
-        except Exception:
-            logger.exception("slots fail_spin failed: spin=%s", spin.id)
-            db.rollback()
-        _answer("老虎机发送失败，注额已退回", show_alert=True)
-        return
-
-    try:
-        result = slots_svc.settle_spin(db, spin, dice_value, origin=origin)
-    except Exception:
-        logger.exception("slots settle failed: spin=%s", spin.id)
-        db.rollback()
-        _answer("结算异常，请联系管理员", show_alert=True)
-        return
-    spin = result["spin"]
-    total = int(result["base_payout"]) + int(result["pool_payout"])
-    if result["pool_payout"] > 0:
-        _answer(f"🎉 777 头奖！+{total} 能量")
-    elif total > 0:
-        _answer(f"🎉 中奖 +{total} 能量")
-    else:
-        _answer("未中奖，再接再厉")
-    if in_group:
-        player_name = str(
-            from_user.get("first_name") or from_user.get("username") or tg_id)
-        _send_slots_group_result(db, chat_id, player_name, spin, dice_mid)
-    else:
-        sender.send_panel(
-            db, chat_id, handlers.slots_result_text(db, spin),
-            handlers.slots_markup(db))

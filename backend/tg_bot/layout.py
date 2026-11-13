@@ -17,7 +17,6 @@ from pathlib import Path
 
 CAPTION_LIMIT = 1024
 BRAND_IMAGE = Path(__file__).with_name("assets") / "aetrix-card.png"
-REDPACKET_IMAGE = Path(__file__).with_name("assets") / "redpacket-cover.jpg"
 
 
 def panel_image(override=None):

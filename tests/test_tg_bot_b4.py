@@ -91,7 +91,6 @@ def test_policy_defaults_empty_db(db):
     assert policy.group_rate_limit(cfg) == 20
     assert policy.is_command_enabled(cfg, "/checkin") is True
     assert policy.is_command_enabled(cfg, "/start") is True  # 不在开关表=常开
-    assert policy.is_redpacket_enabled(cfg) is True
 
 
 def test_policy_parse_group_ids():
@@ -162,7 +161,7 @@ def test_callback_in_blocked_group_ignored(db, monkeypatch):
         sender, "answer_callback_query",
         lambda db_, cq_id, text=None, show_alert=False: answers.append(text) or (True, None),
     )
-    cq = {"id": "cq-b4", "from": {"id": 610005}, "data": "redpacket_claim:1",
+    cq = {"id": "cq-b4", "from": {"id": 610005}, "data": "menu:main",
           "message": {"message_id": 7, "chat": {"id": -100222, "type": "group"}}}
     router.dispatch(db, {"update_id": 2, "callback_query": cq})
     assert answers == []
@@ -184,7 +183,7 @@ def test_master_switch_off_callback(db, monkeypatch):
         sender, "answer_callback_query",
         lambda db_, cq_id, text=None, show_alert=False: answers.append(text) or (True, None),
     )
-    cq = {"id": "cq-b4m", "from": {"id": 620002}, "data": "redpacket_claim:1",
+    cq = {"id": "cq-b4m", "from": {"id": 620002}, "data": "menu:main",
           "message": {"message_id": 7, "chat": {"id": 620002, "type": "private"}}}
     router.dispatch(db, {"update_id": 3, "callback_query": cq})
     assert answers == []
@@ -204,27 +203,6 @@ def test_command_switch_start_always_on(db, sent):
     _set_cfg(db, "bot_cmd_bind", "false")
     router.dispatch(db, _msg(630002, 630002, "/start"))
     assert len(sent) == 1 and "想看的片，喊一声就来" in sent[0]
-
-
-def test_redpacket_switch_off_dispatch(db, sent):
-    _set_cfg(db, "bot_redpacket_enabled", "false")
-    _make_user(db, "r1", 630003)
-    router.dispatch(db, _msg(630003, 630003, "/redpacket 100 5"))
-    assert sent == ["🧧 红包功能已关闭"]
-
-
-def test_callback_redpacket_switch_off(db, monkeypatch):
-    _set_cfg(db, "bot_redpacket_enabled", "false")
-    answers = []
-    monkeypatch.setattr(
-        sender, "answer_callback_query",
-        lambda db_, cq_id, text=None, show_alert=False: answers.append(text) or (True, None),
-    )
-    _make_user(db, "r2", 630004)
-    cq = {"id": "cq-b4r", "from": {"id": 630004}, "data": "redpacket_claim:1",
-          "message": {"message_id": 7, "chat": {"id": 630004, "type": "private"}}}
-    router.dispatch(db, {"update_id": 4, "callback_query": cq})
-    assert answers == ["🧧 红包功能已关闭"]
 
 
 # ---------- 限流 ----------

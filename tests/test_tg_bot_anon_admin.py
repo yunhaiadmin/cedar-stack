@@ -95,17 +95,16 @@ def _user_update(text, tg_id=700001, chat_id=GROUP_ID):
 
 # ---------- ① 匿名身份命令：回匿名说明，不进 handler、不回绑定指引 ----------
 
-def test_anon_redpacket_gets_anon_notice_not_bind_guide(db, sent, monkeypatch):
+def test_anon_request_gets_anon_notice_not_bind_guide(db, sent, monkeypatch):
     called = []
-    monkeypatch.setattr(handlers, "handle_redpacket",
+    monkeypatch.setattr(handlers, "handle_request",
                         lambda *a, **kw: called.append(a) or "不应到达")
-    router.dispatch(db, _anon_update("/redpacket 50 5"))
+    router.dispatch(db, _anon_update("/request 某部电影"))
     assert called == []
     assert len(sent) == 1
     assert "匿名" in sent[0]
     assert "不用重新绑定" in sent[0]
     assert "如何绑定" not in sent[0]
-    assert db.query(models.RedPacket).count() == 0
 
 
 def test_anon_checkin_gets_anon_notice(db, sent, monkeypatch):
@@ -142,14 +141,6 @@ def test_anon_public_command_rules_still_works(db, sent):
 
 
 # ---------- ④ 实名用户红包流程不变 ----------
-
-def test_real_user_redpacket_flow_unchanged(db, sent):
-    _make_user(db)
-    router.dispatch(db, _user_update("/redpacket 50 5"))
-    assert len(sent) == 1
-    assert "总额 50 能量" in sent[0]
-    assert db.query(models.RedPacket).count() == 1
-
 
 # ---------- ⑤ 匿名非命令发言：无回复、不计分 ----------
 

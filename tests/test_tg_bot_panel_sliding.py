@@ -257,12 +257,12 @@ def test_group_menu_interaction_rearms_panel(db, rig, monkeypatch):
     assert rig == [(GROUP_CHAT, PANEL_MID)]
 
 
-def test_group_slots_panel_interaction_rearms(db, rig, monkeypatch):
+def test_group_subpanel_interaction_rearms(db, rig, monkeypatch):
     _user(db)
     state = _patch_menu_sender(monkeypatch)
     ephemeral.schedule_delete(GROUP_CHAT, PANEL_MID, 30)
     first = _timers_for(GROUP_CHAT, PANEL_MID)
-    callbacks.handle_callback(db, _cq("menu:slots", "cq-slide-2"))
+    callbacks.handle_callback(db, _cq("menu:group_media", "cq-slide-2"))
     assert state["edits"] == [(GROUP_CHAT, PANEL_MID)]
     assert first.cancelled is True
     assert _timers_for(GROUP_CHAT, PANEL_MID) is not first

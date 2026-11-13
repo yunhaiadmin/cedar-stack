@@ -34,7 +34,7 @@ HEARTBEAT_STALE_SECONDS = 360
 # 这类命令群内只回私聊提示）。
 # 标签只改说明文案、不改任何命令行为；改 router 拦截口径时必须同步
 # 改这里的标签与 GROUP_COMMANDS，有双向断言在
-# tests/test_tg_bot_slots_command.py 防漂移。
+# tests/test_tg_bot_command_scopes.py 防漂移。
 BOT_COMMANDS: list[tuple[str, str]] = [
     ("start", "[群/私聊] 欢迎与快捷入口"),
     ("help", "[群/私聊] 帮助"),
@@ -52,11 +52,6 @@ BOT_COMMANDS: list[tuple[str, str]] = [
     ("requestboard", "[群/私聊] 求片榜"),
     ("rules", "[群/私聊] 群规"),
     ("login", "[私聊] 快捷登录"),
-    ("redpacket", "[群/私聊] 发红包"),
-    ("lottery", "[群/私聊] 抽奖"),
-    ("slots", "[群/私聊] 老虎机"),
-    ("duel", "[群/私聊] 骰子对决"),
-    ("rain", "[群/私聊] 红包雨（管理员）"),
     ("redeem", "[私聊] 兑换码兑换"),
     ("bindings", "[私聊] 查网盘绑定"),
     ("transfers", "[私聊] 查转存进度"),
@@ -194,7 +189,7 @@ def _process_updates(updates: list, offset: int, save) -> int:
     以前入队即推进 offset：进程崩溃或队列满（put_nowait 直接丢弃）都会永久丢 update。
     现在队列满就阻塞等待；全部 handler 跑完才 save。崩溃会重放这一批：
     抢红包（uq_rpc_packet_user）、兑换码（uq_code_redemption_user）、群发言能量
-    （uq_chat_points_msg）、绑定码（used_at）有库级幂等；发红包 /redpacket 重放可能重复（待补）。
+    （uq_chat_points_msg）、绑定码（used_at）有库级幂等。
     """
     max_id = offset
     skipped = 0

@@ -19,8 +19,8 @@
 菜单里看不见的命令手动输入照样会被现行门禁拦下。
 
 角色分级（2026-11-07 对齐网站三级）：管理员 scope 按 admin_role 再分
-两档下发——viewer（只读审计）只拿只读子集（不含 rankpush/playrank/
-rain 三个写命令），operator/super 拿全量。下发时机除 poller 启动外，管理员
+两档下发——viewer（只读审计）只拿只读子集（不含 rankpush/playrank
+两个写命令），operator/super 拿全量。下发时机除 poller 启动外，管理员
 绑定成功时也当场补发（handlers.verify_bind_code 调
 deliver_staff_scope），不再等重启。
 """
@@ -46,7 +46,6 @@ ADMIN_ONLY_COMMANDS: frozenset[str] = frozenset({
     "reconcile",
     "rankpush",
     "playrank",
-    "rain",
 })
 
 # 群内可执行命令（不带斜杠）：逐条对 router.dispatch 的现行群内拦截口径——
@@ -60,12 +59,9 @@ ADMIN_ONLY_COMMANDS: frozenset[str] = frozenset({
 # （2026-10-28 用户亲定、2026-11-02 重申），在下面集合里；其中
 # account/level 是手输别名、不在 BOT_COMMANDS 菜单表，群菜单实际
 # 下发的只有 me（group_commands 按菜单表过滤，见下方函数）。
-# slots：/slots 命令群里出公共面板（不带个人数据，绑定点注时才判），
-# 与 menu:slots 面板入口同口径，属群内可执行。
 GROUP_COMMANDS: frozenset[str] = frozenset({
     "start", "help", "bind", "checkin", "points",
     "rank", "requestboard", "rules",
-    "redpacket", "lottery", "slots", "duel",
     "me", "account", "level",
 })
 
@@ -88,8 +84,8 @@ def admin_commands(commands: list[tuple[str, str]]) -> list[tuple[str, str]]:
 
 
 #: 管理员级命令里的写命令（不带斜杠）：只读审计（viewer）菜单不下发。
-#: rankpush 推送含榜单奖励发放、playrank 是往群里发榜、rain 是发起
-#: 红包雨，都是写操作；其执行层另有角色门拦截（菜单可见性不是
+#: rankpush 推送含榜单奖励发放、playrank 是往群里发榜，都是写操作；
+#: 其执行层另有角色门拦截（菜单可见性不是
 #: 安全边界，见头注）。
 WRITE_ONLY_ADMIN_COMMANDS: frozenset[str] = frozenset({
     "rankpush",

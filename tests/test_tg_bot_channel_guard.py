@@ -166,14 +166,14 @@ def test_whitelisted_channel_passes(db, sent, deleted):
 
 def test_anon_admin_not_touched_by_guard(db, sent, deleted, monkeypatch):
     called = []
-    monkeypatch.setattr(handlers, "handle_redpacket",
+    monkeypatch.setattr(handlers, "handle_request",
                         lambda *a, **kw: called.append(a) or "不应到达")
     upd = {"update_id": 13, "message": {
         "message_id": 7,
         "from": {"id": ANON_ID, "first_name": "Group", "is_bot": True},
         "sender_chat": {"id": GROUP_ID, "type": "supergroup", "title": "交流群"},
         "chat": {"id": GROUP_ID, "type": "supergroup"},
-        "text": "/redpacket 50 5",
+        "text": "/request 某部电影",
     }}
     router.dispatch(db, upd)
     assert deleted == []

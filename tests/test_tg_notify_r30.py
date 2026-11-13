@@ -88,29 +88,3 @@ def _db_minimal():
     models.SystemConfig.__table__.create(engine, checkfirst=True)
     return sessionmaker(bind=engine)()
 
-
-def test_dispatch_group_text_after_lottery_miss_returns_quietly(monkeypatch):
-    """群内非命令文本、口令未命中 → dispatch 安静返回（不抛错）。
-
-    原 r30 N2 的「未命中接群发言积分」已于 2026-10-23 去重退役
-    （tg_bot.chat_points 与 points.award_chat_points 重复，只留后者），
-    这里只钉退役后的行为：口令未命中不再有后续动作。
-    """
-    from unittest import mock
-    from backend.tg_bot import router, callbacks
-
-    db = mock.MagicMock()
-    monkeypatch.setattr(callbacks, "handle_lottery_password",
-                        lambda *a, **k: False)
-    router.dispatch(db, _group_text_update())  # 不抛错即通过
-
-
-def test_dispatch_lottery_consumed_returns(monkeypatch):
-    """口令命中消费后直接返回。"""
-    from unittest import mock
-    from backend.tg_bot import router, callbacks
-
-    db = mock.MagicMock()
-    monkeypatch.setattr(callbacks, "handle_lottery_password",
-                        lambda *a, **k: True)
-    router.dispatch(db, _group_text_update())  # 不抛错即通过
