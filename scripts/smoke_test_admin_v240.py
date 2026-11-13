@@ -135,7 +135,7 @@ try:
     today_row = trend["series"][-1]
     check("趋势今日新增用户", today_row["new_users"] >= 3, str(today_row["new_users"]))
     check("趋势今日营收", today_row["revenue"] >= 50.0, str(today_row["revenue"]))
-    check("趋势今日签到", today_row["checkins"] >= 1, str(today_row["checkins"]))
+    check("趋势已无签到列", "checkins" not in today_row)
     check("趋势汇总一致", trend["totals"]["new_users"] >= 3)
 
     # ---------- 订阅总览 ----------
