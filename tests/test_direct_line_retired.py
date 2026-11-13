@@ -122,6 +122,15 @@ def test_video_stream_source_has_no_google_direct_call():
     条目时，按该绑定自己的凭据现签现发 302（``_byos_url``）。它不在
     Drive 禁区内：URL 不是谷歌地址、不带 URL token、不走公开下载池；
     且分支位于签名验签 / 来路检查 / 限流闸门之后，凭据绝不跨用户复用。
+    ④本人盘直链灰度（2026-11-13，用户 2026-11-12 亲点「本人盘先直链
+    试」灰度口径）：BYOS Drive 条目的 ``byos_drive_direct`` 显式变体
+    分支——判定门是专用灰度开关 ``byos_direct_gray_enabled``（默认关、
+    fail-safe 回关），且绑定归属校验 + ``ensure_user_copy_public``
+    （anyone-reader 授权）成功后才发 302；URL 仍走统一入口
+    ``drive_usercontent_download_url``，fid 为条目自身的
+    ``drive_file_id``（与 ``byos_drive_relay`` 中继分支同口径的
+    ``_fid``，不经转存选路），故来源表达式单列
+    ``drive_usercontent_download_url(_fid)`` 一项。
     用 AST 取**真实代码**（注释里可以继续解释）。
     A-P3-4（2026-10-18）：不再纯计数——**每处** 302 的 URL 来源表达式必须
     ∈ 白名单集合，第 4 处出现时若来源不在白名单即红。
@@ -141,6 +150,13 @@ def test_video_stream_source_has_no_google_direct_call():
         # 本行是本次审批新增的白名单项，后续新增仍须同样审批。
         "_byos_url",  # BYOS P1：用户自己绑定的 115 直链（← user_bindings）
         "_url115",  # 转存 115 副本直链（#1346）：用户自己绑定的 115 副本 pickcode 现签现发，非谷歌地址，不在 Drive 禁区内；与 _byos_url 同口径
+        # 注 2026-11-13（本人盘直链灰度，用户 2026-11-12 亲点）：
+        # byos_drive_direct 分支的 302——门＝byos_direct_gray_enabled
+        # 灰度开关（默认关）+ 绑定归属 + anyone-reader 授权成功；
+        # 与 _play_fid 项同为统一入口 drive_usercontent_download_url，
+        # 只是 fid 取条目自身 drive_file_id（_fid），详见 docstring ④。
+        # 本行是本次审批新增的白名单项，后续新增仍须同样审批。
+        "drive_usercontent_download_url(_fid)",  # 本人盘直链灰度：BYOS Drive 条目直链（byos_drive_direct 分支）
     }
     sources = []
     for node in ast.walk(tree):
