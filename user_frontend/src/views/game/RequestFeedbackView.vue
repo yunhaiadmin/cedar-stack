@@ -1,13 +1,14 @@
 <template>
   <UhdAccountLayout>
     <!-- 求片反馈（2026-11-13 合并页）：许愿池＋求救信号合并为一页。
-         三页签（发起请求/我的请求/请求广场）×三类型（求片/追新/资源反馈），
+         三页签（发起请求/我的请求/请求广场）×五类型（影片求片/电影追新/剧集追新/修正信息/其他反馈，
+         2026-11-13 用户亲定改友站 5 种），
          视觉照 UHDNow 原站求片反馈页 1:1（实测清单 §10）；页面跟随用户外观。 -->
     <div class="rf-page">
       <div class="rf-inner">
       <header class="rf-head">
         <h1>求片反馈</h1>
-        <p>想看的片、想追的新集、资源有问题，都在这里提交和查看进度</p>
+        <p>想看的片、想追的更新、资料有误、其他问题，都在这里提交和查看进度</p>
       </header>
 
       <nav class="rf-tabs" aria-label="求片反馈页签">
@@ -48,28 +49,52 @@
           <NoticeCards kind="seek" :monthly-remaining="monthlyRemaining" />
         </div>
 
-        <div v-else-if="reqType === 'chase'" class="rf-create__body">
+        <div v-else-if="isChase" class="rf-create__body">
           <div class="rf-form">
-            <label class="rf-form__label" for="rf-chase-title">剧名</label>
+            <label class="rf-form__label" for="rf-chase-title">{{ chaseCopy.titleLabel }}</label>
             <input
               id="rf-chase-title"
               v-model="chaseTitle"
               class="rf-form__input"
               type="text"
-              placeholder="比如：《一念永恒》"
+              :placeholder="chaseCopy.titlePh"
               maxlength="100"
             />
-            <label class="rf-form__label" for="rf-chase-msg">想追的季 / 集</label>
+            <label class="rf-form__label" for="rf-chase-msg">{{ chaseCopy.msgLabel }}</label>
             <textarea
               id="rf-chase-msg"
               v-model="chaseMessage"
               class="rf-form__area"
-              placeholder="比如：第 3 季第 5 集，什么时候更新？"
+              :placeholder="chaseCopy.msgPh"
               maxlength="1000"
             ></textarea>
             <button class="rf-submit" :disabled="chaseSending" @click="submitChase">{{ chaseSending ? '提交中…' : '提交追新' }}</button>
           </div>
-          <NoticeCards kind="chase" />
+          <NoticeCards kind="chase" :media="chaseMedia" />
+        </div>
+
+        <div v-else-if="reqType === 'correction'" class="rf-create__body">
+          <div class="rf-form">
+            <label class="rf-form__label" for="rf-fix-title">一句话标题</label>
+            <input
+              id="rf-fix-title"
+              v-model="fixTitle"
+              class="rf-form__input"
+              type="text"
+              placeholder="比如：《一念永恒》年份标错了"
+              maxlength="100"
+            />
+            <label class="rf-form__label" for="rf-fix-msg">修正说明</label>
+            <textarea
+              id="rf-fix-msg"
+              v-model="fixMessage"
+              class="rf-form__area"
+              placeholder="比如：第 2 季标的是 12 集，实际有 16 集…"
+              maxlength="1000"
+            ></textarea>
+            <button class="rf-submit" :disabled="fixSending" @click="submitCorrection">{{ fixSending ? '提交中…' : '提交修正' }}</button>
+          </div>
+          <NoticeCards kind="correction" />
         </div>
 
         <div v-else class="rf-create__body">
@@ -126,9 +151,11 @@
           </div>
           <select v-model="typeFilter" class="rf-filter__select" aria-label="按类型筛选">
             <option value="all">全部类型</option>
-            <option value="seek">求片</option>
-            <option value="chase">追新</option>
-            <option value="feedback">资源反馈</option>
+            <option value="seek">影片求片</option>
+            <option value="chase_movie">电影追新</option>
+            <option value="chase_series">剧集追新</option>
+            <option value="correction">修正信息</option>
+            <option value="feedback">其他反馈</option>
           </select>
         </div>
 
@@ -198,9 +225,11 @@
           </div>
           <select v-model="plazaTypeFilter" class="rf-filter__select" aria-label="按类型筛选">
             <option value="all">全部类型</option>
-            <option value="seek">求片</option>
-            <option value="chase">追新</option>
-            <option value="feedback">资源反馈</option>
+            <option value="seek">影片求片</option>
+            <option value="chase_movie">电影追新</option>
+            <option value="chase_series">剧集追新</option>
+            <option value="correction">修正信息</option>
+            <option value="feedback">其他反馈</option>
           </select>
         </div>
 
@@ -211,8 +240,7 @@
           广场加载失败：{{ hotError }}<br />
           <button class="rf-retry" @click="loadHot">重试</button>
         </div>
-        <div v-else-if="plazaTypeFilter === 'chase'" class="rf-empty">追新请求仅自己可见，不在这里公开显示</div>
-        <div v-else-if="plazaTypeFilter === 'feedback'" class="rf-empty">资源反馈仅自己可见，不在这里公开显示</div>
+        <div v-else-if="plazaEmptyText" class="rf-empty">{{ plazaEmptyText }}</div>
         <div v-else-if="filteredPlaza.length === 0" class="rf-empty">暂时没有公开的求片</div>
         <div v-else class="rf-rows">
           <div v-for="w in filteredPlaza" :key="w.id" class="rf-row">
@@ -258,13 +286,17 @@ import { useToast } from '@/composables/useToast'
 import { humanizeError } from '@/composables/usePanelApi'
 
 type TabKey = 'create' | 'mine' | 'plaza'
-type ReqType = 'seek' | 'chase' | 'feedback'
+/* 五类型（2026-11-13 用户亲定，照 UHDNow）：影片求片=seek 走 mediaSeek；
+   电影/剧集追新、修正信息、其他反馈走工单 category（chase_movie/chase_series/correction/问题类型值） */
+type ReqType = 'seek' | 'chase_movie' | 'chase_series' | 'correction' | 'feedback'
+/* 列表行类型比提交类型多一个存量值：旧追新工单 category='chase' 未区分电影/剧集 */
+type RowType = ReqType | 'chase'
 type UnifiedState = 'pending' | 'doing' | 'done' | 'rejected' | 'withdrawn'
 
 interface UnifiedRow {
   source: 'seek' | 'ticket'
   id: number
-  type: ReqType
+  type: RowType
   title: string
   created_at: string
   updated_at: string
@@ -285,9 +317,11 @@ const tabs: { key: TabKey; label: string }[] = [
   { key: 'plaza', label: '请求广场' },
 ]
 const reqTypes: { key: ReqType; label: string }[] = [
-  { key: 'seek', label: '求片' },
-  { key: 'chase', label: '追新' },
-  { key: 'feedback', label: '资源反馈' },
+  { key: 'seek', label: '影片求片' },
+  { key: 'chase_movie', label: '电影追新' },
+  { key: 'chase_series', label: '剧集追新' },
+  { key: 'correction', label: '修正信息' },
+  { key: 'feedback', label: '其他反馈' },
 ]
 const feedbackCategories = [
   { value: 'emby', label: '播放卡住' },
@@ -329,13 +363,16 @@ const voting = ref<number | null>(null)
 const expandedKey = ref<string | null>(null)
 const justAddedKey = ref<string | null>(null)
 const stateFilter = ref<'all' | UnifiedState>('all')
-const typeFilter = ref<'all' | ReqType>('all')
+const typeFilter = ref<'all' | RowType>('all')
 const plazaStateFilter = ref<'all' | UnifiedState>('all')
-const plazaTypeFilter = ref<'all' | ReqType>('all')
+const plazaTypeFilter = ref<'all' | RowType>('all')
 
 const chaseTitle = ref('')
 const chaseMessage = ref('')
 const chaseSending = ref(false)
+const fixTitle = ref('')
+const fixMessage = ref('')
+const fixSending = ref(false)
 const fbCategory = ref('other')
 const fbTitle = ref('')
 const fbMessage = ref('')
@@ -344,8 +381,24 @@ const fbSending = ref(false)
 function stateLabel(s: UnifiedState): string {
   return { pending: '待处理', doing: '处理中', done: '已完成', rejected: '已拒绝', withdrawn: '已撤回' }[s]
 }
-function typeLabel(t: ReqType): string {
-  return t === 'seek' ? '求片' : t === 'chase' ? '追新' : '资源反馈'
+function typeLabel(t: RowType): string {
+  return {
+    seek: '影片求片',
+    chase_movie: '电影追新',
+    chase_series: '剧集追新',
+    chase: '追新',
+    correction: '修正信息',
+    feedback: '其他反馈',
+  }[t]
+}
+/* 工单 category → 列表行类型：新值一一对应；存量 'chase' 未分电影/剧集，单列 legacy；
+   其余（emby/account/subscription/payment/other 及未知值）都是其他反馈的问题类型 */
+function ticketRowType(category: string): RowType {
+  if (category === 'chase_movie') return 'chase_movie'
+  if (category === 'chase_series') return 'chase_series'
+  if (category === 'chase') return 'chase'
+  if (category === 'correction') return 'correction'
+  return 'feedback'
 }
 function feedbackCategoryLabel(category: string): string {
   return feedbackCategories.find((c) => c.value === category)?.label ?? category
@@ -374,11 +427,11 @@ const unifiedMine = computed<UnifiedRow[]>(() => {
     })
   }
   for (const t of tickets.value) {
-    const isChase = t.category === 'chase'
+    const rowType = ticketRowType(t.category)
     rows.push({
-      source: 'ticket', id: t.id, type: isChase ? 'chase' : 'feedback', title: t.title,
+      source: 'ticket', id: t.id, type: rowType, title: t.title,
       created_at: t.created_at, updated_at: t.updated_at, state: ticketState(t.status),
-      categoryLabel: isChase ? undefined : feedbackCategoryLabel(t.category),
+      categoryLabel: rowType === 'feedback' ? feedbackCategoryLabel(t.category) : undefined,
       rawTicket: t,
     })
   }
@@ -387,21 +440,38 @@ const unifiedMine = computed<UnifiedRow[]>(() => {
 })
 const filteredMine = computed(() => unifiedMine.value.filter((r) => {
   if (stateFilter.value !== 'all' && r.state !== stateFilter.value) return false
-  if (typeFilter.value !== 'all' && r.type !== typeFilter.value) return false
+  if (typeFilter.value !== 'all') {
+    if (r.type === typeFilter.value) return true
+    /* 存量旧追新未分电影/剧集，两个追新筛选都带上它，不让老单在筛选下消失 */
+    if (r.type === 'chase' && (typeFilter.value === 'chase_movie' || typeFilter.value === 'chase_series')) return true
+    return false
+  }
   return true
 }))
-/* 广场只有求片有数据源（mediaSeekApi.hot）；追新/反馈因工单私密显示空态 */
+/* 广场只有求片有数据源（mediaSeekApi.hot）；工单类（追新/修正/反馈）因私密显示空态 */
 const filteredPlaza = computed(() => hotRequests.value.filter((w) => {
   if (plazaStateFilter.value !== 'all' && plazaStateFilter.value !== 'pending') return false
   if (plazaTypeFilter.value !== 'all' && plazaTypeFilter.value !== 'seek') return false
   return true
 }))
+const plazaEmptyText = computed(() => {
+  const f = plazaTypeFilter.value
+  if (f === 'all' || f === 'seek') return ''
+  return `${typeLabel(f)}仅自己可见，不在这里公开显示`
+})
+const isChase = computed(() => reqType.value === 'chase_movie' || reqType.value === 'chase_series')
+const chaseMedia = computed<'movie' | 'series'>(() => (reqType.value === 'chase_movie' ? 'movie' : 'series'))
+const chaseCopy = computed(() => (chaseMedia.value === 'movie'
+  ? { titleLabel: '片名', titlePh: '比如：《长安的荔枝》', msgLabel: '想追的内容', msgPh: '比如：续集什么时候上映？' }
+  : { titleLabel: '剧名', titlePh: '比如：《一念永恒》', msgLabel: '想追的季 / 集', msgPh: '比如：第 3 季第 5 集，什么时候更新？' }))
 
 function syncFromQuery(): void {
   const t = route.query.tab
   if (t === 'mine' || t === 'plaza' || t === 'create') tab.value = t
   const ty = route.query.type
-  if (ty === 'seek' || ty === 'chase' || ty === 'feedback') reqType.value = ty
+  if (ty === 'seek' || ty === 'chase_movie' || ty === 'chase_series' || ty === 'correction' || ty === 'feedback') reqType.value = ty
+  /* 旧链接兼容：?type=chase 是五类型之前的写法，旧追新以剧集为主，落剧集追新 */
+  else if (ty === 'chase') reqType.value = 'chase_series'
 }
 function setTab(t: TabKey): void {
   tab.value = t
@@ -497,11 +567,11 @@ function onSeekSubmitted(payload: { created: boolean; requestId?: number; messag
 async function submitChase(): Promise<void> {
   const title = chaseTitle.value.trim()
   const message = chaseMessage.value.trim()
-  if (!title || !message) { toast.error('先写清楚剧名和想追的季 / 集，再提交'); return }
+  if (!title || !message) { toast.error(`先写清楚${chaseCopy.value.titleLabel}和想追的内容，再提交`); return }
   if (chaseSending.value) return
   chaseSending.value = true
   try {
-    const r = await ticketApi.create({ category: 'chase', title, message })
+    const r = await ticketApi.create({ category: chaseMedia.value === 'movie' ? 'chase_movie' : 'chase_series', title, message })
     toast.success(r.message || '追新已提交')
     chaseTitle.value = ''
     chaseMessage.value = ''
@@ -512,6 +582,26 @@ async function submitChase(): Promise<void> {
     toast.error(humanizeError(e))
   } finally {
     chaseSending.value = false
+  }
+}
+async function submitCorrection(): Promise<void> {
+  const title = fixTitle.value.trim()
+  const message = fixMessage.value.trim()
+  if (!title || !message) { toast.error('先写清楚标题和修正说明，再提交'); return }
+  if (fixSending.value) return
+  fixSending.value = true
+  try {
+    const r = await ticketApi.create({ category: 'correction', title, message })
+    toast.success(r.message || '修正信息已提交')
+    fixTitle.value = ''
+    fixMessage.value = ''
+    await loadMine(true)
+    setTab('mine')
+    highlight(`ticket:${r.ticket_id}`)
+  } catch (e) {
+    toast.error(humanizeError(e))
+  } finally {
+    fixSending.value = false
   }
 }
 async function submitFeedback(): Promise<void> {
@@ -687,6 +777,8 @@ onMounted(() => {
   .rf-page { margin: -20px -16px -120px; padding: 20px 16px 120px; }
   .rf-types { grid-template-columns: repeat(3, 1fr); }
   .rf-filter__select { width: 120px; }
+  /* 五类型分段在窄屏收紧内边距，保证一排排得下 */
+  .rf-seg__btn { padding: 0 8px; }
 }
 
 html[data-theme='light'] .rf-page { background: #f8f8f8; }

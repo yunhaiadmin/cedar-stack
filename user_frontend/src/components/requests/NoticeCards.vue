@@ -1,5 +1,5 @@
 <template>
-  <!-- 须知卡：三类型同构（原站求片必看 / 反馈须知结构；追新卡按反馈须知同构，推定）。
+  <!-- 须知卡：各类型同构（原站求片必看 / 反馈须知结构；追新、修正卡按反馈须知同构，推定）。
        内容只取现行真实规则改写成功能文案，不搬原站文案原文。 -->
   <section class="rf-notice" aria-label="须知">
     <h2 class="rf-notice__title">{{ title }}</h2>
@@ -42,16 +42,30 @@
 import { computed } from 'vue'
 
 const props = defineProps<{
-  kind: 'seek' | 'chase' | 'feedback'
+  kind: 'seek' | 'chase' | 'correction' | 'feedback'
+  /** 追新分电影/剧集（kind='chase' 时用），缺省按剧集 */
+  media?: 'movie' | 'series'
   /** 本月求片剩余额度（getMyRequests 的 monthly_remaining；拿不到为 null） */
   monthlyRemaining?: number | null
 }>()
 
 const title = computed(() =>
-  props.kind === 'seek' ? '求片必看' : props.kind === 'chase' ? '追新须知' : '反馈须知',
+  props.kind === 'seek'
+    ? '求片必看'
+    : props.kind === 'chase'
+      ? '追新须知'
+      : props.kind === 'correction'
+        ? '修正须知'
+        : '反馈须知',
 )
 const grayTitle = computed(() =>
-  props.kind === 'seek' ? '额度说明' : props.kind === 'chase' ? '追新是什么' : '提交前先确认',
+  props.kind === 'seek'
+    ? '额度说明'
+    : props.kind === 'chase'
+      ? '追新是什么'
+      : props.kind === 'correction'
+        ? '什么算修正'
+        : '提交前先确认',
 )
 const grayBody = computed(() => {
   if (props.kind === 'seek') {
@@ -59,14 +73,35 @@ const grayBody = computed(() => {
       ? '每月有固定求片次数，额度用完请下月再提交。'
       : `每月有固定求片次数，本月还剩 ${props.monthlyRemaining} 次，额度用完请下月再提交。`
   }
-  if (props.kind === 'chase') return '追新针对已在库的剧集；想看还没上架的片，请走求片提交。'
+  if (props.kind === 'chase') {
+    return props.media === 'movie'
+      ? '电影追新针对已上映影片的续集、加长版等新版本；想看还没上架的片，请走求片提交。'
+      : '追新针对已在库的剧集；想看还没上架的片，请走求片提交。'
+  }
+  if (props.kind === 'correction') return '片名、年份、季集、海报、简介这些资料标错了，用修正信息；播放不了、账号订阅有问题，请走其他反馈。'
   return '提交前先选对问题类型，描述写清片名、集数和具体情况，处理更快。'
 })
 const tallCells = computed(() => {
   if (props.kind === 'chase') {
+    if (props.media === 'movie') {
+      return [
+        { title: '写清片名', body: '一句话标题写片名，方便快速找到这部片。' },
+        { title: '写清想追什么', body: '续集、加长版、导演剪辑版，想要哪个写清楚。' },
+        { title: '管理员会回复', body: '处理进度和回复都在「我的请求」里查看。' },
+        { title: '关闭后不能再回复', body: '确认问题解决后再关闭记录。' },
+      ]
+    }
     return [
       { title: '写清剧名', body: '一句话标题写剧名，方便快速找到这部剧。' },
       { title: '写清季与集', body: '想追第几季第几集，在说明里写清楚。' },
+      { title: '管理员会回复', body: '处理进度和回复都在「我的请求」里查看。' },
+      { title: '关闭后不能再回复', body: '确认问题解决后再关闭记录。' },
+    ]
+  }
+  if (props.kind === 'correction') {
+    return [
+      { title: '写清是哪部片', body: '片名、年份、第几季第几集，方便快速定位。' },
+      { title: '写清错在哪', body: '现在标的是什么、正确的应该是什么，写在说明里。' },
       { title: '管理员会回复', body: '处理进度和回复都在「我的请求」里查看。' },
       { title: '关闭后不能再回复', body: '确认问题解决后再关闭记录。' },
     ]

@@ -10,8 +10,10 @@ import { useQueryFilter } from '@/composables/useQueryFilter'
 import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
 
-/** 工单分类中文名：后端 category 原值（emby/account/subscription/payment/other/chase）→ 展示名；
- * 未知值原样显示，不吞数据。 */
+/** 工单分类中文名：后端 category 原值 → 展示名；
+ * emby/account/subscription/payment/other 是「其他反馈」的问题类型，
+ * chase 是五类型之前的存量追新，chase_movie/chase_series 是电影/剧集追新，
+ * correction 是修正信息；未知值原样显示，不吞数据。 */
 const CATEGORY_LABELS: Record<string, string> = {
   emby: '播放卡住',
   account: '账号问题',
@@ -19,6 +21,9 @@ const CATEGORY_LABELS: Record<string, string> = {
   payment: '支付问题',
   other: '其他问题',
   chase: '追新',
+  chase_movie: '电影追新',
+  chase_series: '剧集追新',
+  correction: '修正信息',
 }
 function categoryLabel(category: string): string {
   return CATEGORY_LABELS[category] ?? category
