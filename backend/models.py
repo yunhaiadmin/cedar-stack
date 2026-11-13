@@ -1306,6 +1306,29 @@ class LoginLog(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
+class PasswordResetToken(Base):
+    """邮箱找回密码令牌（2026-11-13 用户亲点补邮箱找回流程）
+
+    原始令牌只出现在发给用户的邮件链接里，库里只存 SHA256 十六进制
+    （与 emby_api_tokens 同口径）；30 分钟过期、单次使用，用户重新申请时
+    旧的未用令牌一律作废（used_at 置为作废时刻）。
+    """
+    __tablename__ = 'password_reset_tokens'
+
+    __table_args__ = (
+        Index('idx_pwreset_user', 'user_id'),
+        Index('idx_pwreset_hash', 'token_hash'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
+    token_hash = Column(String(64), nullable=False)  # SHA256 hex，非明文
+    created_at = Column(DateTime, default=datetime.now)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)  # 已消费或被新申请作废时落值
+    request_ip = Column(String(64))
+
+
 class ShareGuardEvent(Base):
     """防共享事件（v2.43.0）：跨城市轨迹 + 同播检测的判定结果
 

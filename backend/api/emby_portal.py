@@ -7,11 +7,17 @@
 - GET  /me                当前用户信息（JWT 鉴权）
 - POST /logout            登出（无状态 JWT：客户端清除 token 即可）
 - POST /change-password   修改密码（JWT 鉴权，需验证旧密码）
+
+邮箱找回密码在独立前缀的 password_reset_router（同文件）：
+- POST /api/auth/password-reset/request   申请重置邮件（防枚举统一响应）
+- POST /api/auth/password-reset/confirm   凭邮件令牌设置新密码
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
+import secrets
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -21,6 +27,7 @@ from sqlalchemy.orm import Session
 
 from backend import models, register_channel
 from backend.usernames import find_users_by_username_ci, username_conflict
+from backend.integrations.store import read_value as _store_read_value
 from backend.integrations.store import switch_env_value as _switch_env_value
 from backend.db_retry import commit_with_retry
 from backend.authlog import REASONS as AUTHLOG_REASONS, client_ip as log_ip, record_event, user_agent
@@ -38,6 +45,8 @@ from backend.subscriptions import (
 from backend.ratelimit import check_rate_limit, client_ip, reset_rate_limit
 # 人机验证（能力中心）：用户端登录/注册与后台登录共用同一个守卫（含安全日志）
 from backend.integrations import captcha
+# 邮件（能力中心）：找回密码走与站内通知同一个 EmailChannel，不另造发信实现
+from backend.integrations import mail as integrations_mail
 from backend.security import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     create_access_token,
@@ -52,6 +61,10 @@ from backend.security import (
 logger = logging.getLogger(__name__)
 
 auth_router = APIRouter(prefix="/api/user/auth", tags=["用户端-认证"])
+
+# 邮箱找回密码（前端契约路径 /api/auth/password-reset/*，与门户 auth 前缀不同，
+# 是 2026-11-13 立项时定死的对接路径，不要随手并进上面的前缀）
+password_reset_router = APIRouter(prefix="/api/auth", tags=["用户端-认证"])
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -893,6 +906,26 @@ def tg_login(request: Request, req: TgLoginRequest, db: Session = Depends(get_db
     return _issue_auth_response(user, db)
 
 
+def _apply_password_change(db: Session, user: models.WebUser, new_password: str) -> None:
+    """改密落地：change_password 与邮箱找回重置共用同一套副作用，只改字段不提交。
+
+    1. 门户密码哈希换新；
+    2. 同步自建 Emby 播放密码（bcrypt 哈希存储），保持两端一致；
+    3. token_version +1，旧门户 JWT 全部作废（P3 修复：防盗号后持续登录）；
+    4. 吊销该用户全部 Emby 客户端令牌（A-085，360° 审计第二遍 R25-01）——
+       只 bump 门户 JWT 的话，被盗的播放器令牌（历史令牌 expires_at 为空、
+       永不过期）改密后仍可播放。复用 share_guard._disable_user 的现成写法。
+    提交时机由调用方负责（与上面的 JWT bump 同一事务）。
+    """
+    user.password_hash = hash_password(new_password)
+    user.emby_password = hash_password(new_password)
+    user.token_version = int(user.token_version or 0) + 1
+    from backend.emby_server import models as emby_models
+    db.query(emby_models.EmbyApiToken).filter(
+        emby_models.EmbyApiToken.user_id == user.id
+    ).update({emby_models.EmbyApiToken.is_revoked: True}, synchronize_session=False)
+
+
 @auth_router.post("/change-password")
 def change_password(
     request: Request,
@@ -920,20 +953,204 @@ def change_password(
     if req.old_password == req.new_password:
         raise HTTPException(status_code=400, detail="新密码不能与旧密码相同")
 
-    current_user.password_hash = hash_password(req.new_password)
-    # 同步自建 Emby 播放密码（bcrypt 哈希存储），保持两端一致
-    current_user.emby_password = hash_password(req.new_password)
-    # P3 修复（审查）：改密码后旧 token 全部作废（防盗号后持续登录）
-    current_user.token_version = int(current_user.token_version or 0) + 1
-    # A-085（360° 审计第二遍 R25-01）：改密/重置必须同时吊销该用户全部 Emby 客户端令牌——
-    # 只 bump 门户 JWT 的话，被盗的播放器令牌（历史令牌 expires_at 为空、永不过期）
-    # 改密后仍可播放。复用 share_guard._disable_user 的现成写法，与 JWT bump 同一事务提交。
-    from backend.emby_server import models as emby_models
-    db.query(emby_models.EmbyApiToken).filter(
-        emby_models.EmbyApiToken.user_id == current_user.id
-    ).update({emby_models.EmbyApiToken.is_revoked: True}, synchronize_session=False)
+    _apply_password_change(db, current_user, req.new_password)
     db.commit()
     return {"success": True, "message": "密码已更新"}
+
+
+class PasswordResetRequestIn(BaseModel):
+    identifier: str = Field(..., min_length=1, max_length=255)  # 用户名或邮箱
+    captcha_token: str | None = None  # 人机验证令牌（与登录同口径，开启保护时必填）
+
+
+class PasswordResetConfirmIn(BaseModel):
+    token: str = Field(..., min_length=1, max_length=255)
+    new_password: str = Field(..., min_length=6, max_length=64)
+
+
+#: 找回密码申请的统一对外文案：查无此人 / 无邮箱 / 已发送三种情况一字不差，
+#: 防止外部按响应差异枚举账号与邮箱绑定情况。
+PASSWORD_RESET_GENERIC_RESPONSE = {
+    "success": True,
+    "message": "如果该账号存在且绑定了邮箱，重置邮件已发送，请查收",
+}
+
+PASSWORD_RESET_TOKEN_TTL = timedelta(minutes=30)
+
+
+def _find_user_for_reset(db: Session, identifier: str) -> models.WebUser | None:
+    """按用户名（精确 → 大小写不敏感）或邮箱（大小写不敏感）找找回密码的目标用户。"""
+    user = (
+        db.query(models.WebUser)
+        .filter(models.WebUser.username == identifier)
+        .first()
+    )
+    if user is not None:
+        return user
+    ci_users = find_users_by_username_ci(db, identifier)
+    if ci_users:
+        return ci_users[0]
+    if "@" in identifier:
+        return (
+            db.query(models.WebUser)
+            .filter(models.WebUser.email.isnot(None))
+            .filter(models.WebUser.email != "")
+            .filter(models.WebUser.email.ilike(identifier))
+            .order_by(models.WebUser.id.asc())
+            .first()
+        )
+    return None
+
+
+def _invalidate_reset_tokens(db: Session, user_id: int, now: datetime) -> None:
+    """作废某用户全部未用重置令牌（used_at 落值即视为失效，不单独设作废标记）。"""
+    db.query(models.PasswordResetToken).filter(
+        models.PasswordResetToken.user_id == user_id,
+        models.PasswordResetToken.used_at.is_(None),
+    ).update({models.PasswordResetToken.used_at: now}, synchronize_session=False)
+
+
+def _send_reset_email(db: Session, user: models.WebUser, raw_token: str) -> None:
+    """经现行 EmailChannel 发重置邮件；任何失败只记日志（含 user_id 与原因、
+    绝不记令牌原文），不改变对外响应。"""
+    base = (
+        _store_read_value(db, "site_url", "")
+        or _store_read_value(db, "site_base_url", "")
+        or ""
+    ).rstrip("/")
+    if not base:
+        # 与 tg 免密登录链接同口径：站点地址未配置时链接拼不出来，留告警痕迹。
+        logger.warning(
+            "找回密码邮件未发送：站点地址 site_url 未配置 user_id=%s", user.id)
+        return
+    channel = integrations_mail.build_channel(db)
+    if channel is None:
+        logger.warning(
+            "找回密码邮件未发送：邮件渠道未启用或未配置 user_id=%s", user.id)
+        return
+    link = f"{base}/login?reset={raw_token}"
+    content = (
+        f"你正在重置 Aetrix 账号（{user.username}）的密码。\n\n"
+        f"请在 30 分钟内打开下面的链接设置新密码：\n{link}\n\n"
+        "如果不是你本人操作，请忽略这封邮件，你的密码不会有任何变化。"
+    )
+    try:
+        # 与后台「邮件与模板」测试发信走同一段投递代码（EmailChannel._deliver）。
+        ok, error = channel._deliver(user.email, "重置你的 Aetrix 密码", content)
+    except Exception as exc:  # noqa: BLE001 — 发信异常不许影响统一响应
+        logger.error(
+            "找回密码邮件发送失败 user_id=%s: %s: %s",
+            user.id, type(exc).__name__, exc)
+        return
+    if not ok:
+        logger.error("找回密码邮件发送失败 user_id=%s: %s", user.id, error)
+
+
+@password_reset_router.post("/password-reset/request")
+def password_reset_request(
+    request: Request,
+    req: PasswordResetRequestIn,
+    db: Session = Depends(get_db),
+):
+    """申请邮箱找回密码：命中且有邮箱才真发信，三种情况对外响应完全一致。"""
+    ip = client_ip(request)
+    allowed, _retry = check_rate_limit(f"password-reset-request:ip:{ip}", 5, 3600)
+    if not allowed:
+        raise HTTPException(status_code=429, detail="尝试过于频繁，请稍后再试")
+    identifier = (req.identifier or "").strip()
+    # 人机验证与登录共用同一道闸（action=login 的保护开关与校验函数），不另写一套。
+    captcha.guard(db, request, "login", req.captcha_token, username=identifier or None)
+
+    user = _find_user_for_reset(db, identifier) if identifier else None
+    if user is None or not (user.email or "").strip():
+        record_event(
+            db, username=identifier or None, user_id=user.id if user else None,
+            ip=log_ip(request), agent=user_agent(request), success=False,
+            reason="password_reset_request", detail="账号不存在或未绑定邮箱",
+        )
+        return PASSWORD_RESET_GENERIC_RESPONSE
+
+    allowed, _retry = check_rate_limit(
+        f"password-reset-request:user:{user.id}", 3, 3600)
+    if not allowed:
+        logger.warning("找回密码申请触发账号维度限流 user_id=%s", user.id)
+        record_event(
+            db, username=user.username, user_id=user.id,
+            ip=log_ip(request), agent=user_agent(request), success=False,
+            reason="password_reset_request", detail="账号维度限流，未发送",
+        )
+        return PASSWORD_RESET_GENERIC_RESPONSE
+
+    now = datetime.now()
+    _invalidate_reset_tokens(db, user.id, now)
+    raw_token = secrets.token_urlsafe(32)  # 原始令牌只进邮件链接，库里只存哈希
+    db.add(models.PasswordResetToken(
+        user_id=user.id,
+        token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
+        created_at=now,
+        expires_at=now + PASSWORD_RESET_TOKEN_TTL,
+        request_ip=ip,
+    ))
+    db.commit()
+    record_event(
+        db, username=user.username, user_id=user.id,
+        ip=log_ip(request), agent=user_agent(request), success=True,
+        reason="password_reset_request", detail="重置邮件已申请",
+    )
+    _send_reset_email(db, user, raw_token)
+    return PASSWORD_RESET_GENERIC_RESPONSE
+
+
+@password_reset_router.post("/password-reset/confirm")
+def password_reset_confirm(
+    request: Request,
+    req: PasswordResetConfirmIn,
+    db: Session = Depends(get_db),
+):
+    """凭邮件链接令牌设置新密码：改密副作用与 change_password 完全一致
+    （共用 _apply_password_change），只跳过「验旧密码」一步。"""
+    ip = client_ip(request)
+    allowed, _retry = check_rate_limit(f"password-reset-confirm:ip:{ip}", 10, 3600)
+    if not allowed:
+        raise HTTPException(status_code=429, detail="尝试过于频繁，请稍后再试")
+
+    token_hash = hashlib.sha256((req.token or "").strip().encode("utf-8")).hexdigest()
+    row = (
+        db.query(models.PasswordResetToken)
+        .filter(models.PasswordResetToken.token_hash == token_hash)
+        .first()
+    )
+    now = datetime.now()
+    user = None
+    if row is not None:
+        user = db.query(models.WebUser).filter(models.WebUser.id == row.user_id).first()
+    if row is None or row.used_at is not None or row.expires_at < now or user is None:
+        # 不存在 / 已用 / 已过期一律同一句，不给外部区分原因的机会。
+        record_event(
+            db, username=user.username if user else None,
+            user_id=user.id if user else None,
+            ip=log_ip(request), agent=user_agent(request), success=False,
+            reason="password_reset_failed", detail="重置令牌无效或已过期",
+        )
+        raise HTTPException(status_code=400, detail="重置链接无效或已过期，请重新申请")
+    if verify_password(req.new_password, user.password_hash):
+        record_event(
+            db, username=user.username, user_id=user.id,
+            ip=log_ip(request), agent=user_agent(request), success=False,
+            reason="password_reset_failed", detail="新密码与旧密码相同",
+        )
+        raise HTTPException(status_code=400, detail="新密码不能与旧密码相同")
+
+    _apply_password_change(db, user, req.new_password)
+    row.used_at = now
+    _invalidate_reset_tokens(db, user.id, now)
+    db.commit()
+    record_event(
+        db, username=user.username, user_id=user.id,
+        ip=log_ip(request), agent=user_agent(request), success=True,
+        reason="password_reset", detail="经邮箱令牌重置",
+    )
+    return {"success": True, "message": "密码已重置，请使用新密码登录"}
 
 
 @auth_router.get("/login-history")

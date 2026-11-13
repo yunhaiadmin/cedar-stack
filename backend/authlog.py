@@ -26,6 +26,9 @@ REASONS = {
     "captcha_failed": "人机验证失败",
     "password_change": "修改密码",
     "password_change_failed": "修改密码失败",
+    "password_reset_request": "找回密码申请",
+    "password_reset": "找回密码重置成功",
+    "password_reset_failed": "找回密码失败",
     "admin_password_change_failed": "管理员修改密码失败",
     # 防共享命中后停用账号（backend/share_guard.py）：这是「为什么这个号突然登不上」的答案
     "share_guard": "防共享停用",
