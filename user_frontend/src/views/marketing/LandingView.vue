@@ -8,7 +8,7 @@
  */
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Monitor, Sun, Layers, ShieldCheck, Menu, X, RefreshCw, Bell, Sparkles } from 'lucide-vue-next'
+import { Monitor, Sun, Layers, ShieldCheck, Menu, X, RefreshCw, Bell, Sparkles, Home, Tag, LogIn } from 'lucide-vue-next'
 import UhdNavPill, { type UhdNavItem } from '@/components/uhd/UhdNavPill.vue'
 import UhdButton from '@/components/uhd/UhdButton.vue'
 import UhdChip from '@/components/uhd/UhdChip.vue'
@@ -27,11 +27,28 @@ function onNav(key: string) {
   else if (key === 'login') router.push('/login')
   else window.scrollTo({ top: 0, behavior: 'smooth' })
 }
-/* 移动端全屏菜单（≤900px 顶栏只剩 logo＋汉堡，见移动端返工单②） */
+/* 移动端菜单＝底部抽屉（原站 _public 头部组件源码形态）：遮罩＋上滑面板，
+   开合带动画；顶栏滚动 >40px 时整条玻璃浮起、汉堡 chip 变平（原站 pub-nav-pill 形态） */
 const menuOpen = ref(false)
+const menuClosing = ref(false)
+const navScrolled = ref(false)
+function onScrollNav() {
+  navScrolled.value = window.scrollY > 40
+}
 function setMenu(open: boolean) {
   menuOpen.value = open
+  menuClosing.value = false
   document.documentElement.style.overflow = open ? 'hidden' : ''
+}
+function closeMenuAnimated() {
+  if (!menuOpen.value || menuClosing.value) return
+  menuClosing.value = true
+  document.documentElement.style.overflow = ''
+  window.setTimeout(() => setMenu(false), 300)
+}
+function toggleMenu() {
+  if (menuOpen.value) closeMenuAnimated()
+  else setMenu(true)
 }
 function onMobileNav(key: string) {
   setMenu(false)
@@ -79,6 +96,8 @@ function onScroll() {
 
 const reduceMotion = ref(false)
 onMounted(() => {
+  window.addEventListener('scroll', onScrollNav, { passive: true })
+  onScrollNav()
   reduceMotion.value = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   if (!reduceMotion.value) {
     heroTimer = setInterval(() => {
@@ -91,6 +110,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (heroTimer) clearInterval(heroTimer)
   window.removeEventListener('scroll', onScroll)
+  window.removeEventListener('scroll', onScrollNav)
   document.documentElement.style.overflow = ''
 })
 
@@ -115,8 +135,9 @@ const year = new Date().getFullYear()
       />
     </div>
 
-    <!-- 移动端顶栏（≤900px）：悬浮胶囊——左 logo、右汉堡；点开全屏菜单层（返工单②） -->
-    <div class="m-nav">
+    <!-- 移动端顶栏（≤900px）：照原站头部组件源码——左 logo、右玻璃 chip 内汉堡；
+         未滚动时整条透明、滚动 >40px 玻璃 pill 浮起且 chip 变平；菜单为底部抽屉 -->
+    <div class="m-nav" :class="{ 'is-on': navScrolled }">
       <span class="m-nav__brand">
         <span class="m-nav__logo" aria-hidden="true" />
         <span class="m-nav__brand-text">
@@ -124,31 +145,42 @@ const year = new Date().getFullYear()
           <span class="m-nav__brand-sub">SERVICE</span>
         </span>
       </span>
-      <button type="button" class="m-nav__burger" aria-label="打开菜单" @click="setMenu(true)">
-        <Menu :size="20" aria-hidden="true" />
-      </button>
-    </div>
-    <div v-if="menuOpen" class="m-menu" role="dialog" aria-modal="true" aria-label="菜单">
-      <div class="m-menu__top">
-        <span class="m-nav__brand">
-          <span class="m-nav__logo" aria-hidden="true" />
-          <span class="m-nav__brand-text">
-            <span class="m-nav__brand-name">{{ branding.site_name }}</span>
-            <span class="m-nav__brand-sub">SERVICE</span>
-          </span>
-        </span>
-        <button type="button" class="m-nav__burger" aria-label="关闭菜单" @click="setMenu(false)">
-          <X :size="20" aria-hidden="true" />
+      <span class="m-nav__chip" :class="{ 'is-flat': navScrolled }">
+        <button
+          type="button"
+          class="m-nav__burger"
+          :aria-label="menuOpen ? '关闭菜单' : '打开菜单'"
+          @click="toggleMenu"
+        >
+          <X v-if="menuOpen" :size="16" aria-hidden="true" />
+          <Menu v-else :size="16" aria-hidden="true" />
         </button>
-      </div>
-      <nav class="m-menu__links" aria-label="主导航">
-        <button type="button" class="m-menu__link" @click="onMobileNav('home')">首页<span aria-hidden="true">→</span></button>
-        <button type="button" class="m-menu__link" @click="onMobileNav('pricing')">定价<span aria-hidden="true">→</span></button>
-        <button type="button" class="m-menu__link" @click="onMobileNav('login')">登录<span aria-hidden="true">→</span></button>
+      </span>
+    </div>
+    <div v-if="menuOpen" class="m-scrim" :class="{ 'is-out': menuClosing }" @click="closeMenuAnimated" />
+    <div
+      v-if="menuOpen"
+      class="m-sheet"
+      :class="{ 'is-out': menuClosing }"
+      role="dialog"
+      aria-modal="true"
+      aria-label="菜单"
+    >
+      <div class="m-sheet__handle" aria-hidden="true"><span /></div>
+      <nav class="m-sheet__links" aria-label="主导航">
+        <button type="button" class="m-sheet__row" @click="onMobileNav('home')">
+          <Home :size="18" aria-hidden="true" />首页
+        </button>
+        <button type="button" class="m-sheet__row" @click="onMobileNav('pricing')">
+          <Tag :size="18" aria-hidden="true" />定价
+        </button>
+        <button type="button" class="m-sheet__row" @click="onMobileNav('login')">
+          <LogIn :size="18" aria-hidden="true" />登录
+        </button>
       </nav>
-      <div class="m-menu__cta">
+      <div class="m-sheet__divider" aria-hidden="true" />
+      <div class="m-sheet__cta">
         <UhdButton variant="primary" dark block @click="onMobileRegister">立即加入</UhdButton>
-        <p class="m-menu__note">自建 Emby 影视服务平台</p>
       </div>
     </div>
 
@@ -248,7 +280,7 @@ const year = new Date().getFullYear()
     <!-- ② 跑马灯 -->
     <section class="marquee-sec">
       <p class="eyebrow eyebrow--center">CLIENTS &amp; SPECS</p>
-      <h2 class="sec-title">在你顺手的设备上，<br />以它最好的规格播放</h2>
+      <h2 class="sec-title sec-title--platforms">在你顺手的设备上，<br />以它最好的规格播放</h2>
       <p class="sec-sub">播放交给专业客户端，服务器只做整理与供给——手机、电视、电脑，打开就能看。</p>
       <div class="marquee" aria-hidden="true">
         <div class="marquee-track marquee-track--a">
@@ -390,49 +422,92 @@ const year = new Date().getFullYear()
   z-index: 50;
 }
 
-/* ---------- 移动端顶栏与全屏菜单（仅 ≤900px 启用，桌面走 UhdNavPill） ---------- */
+/* ---------- 移动端顶栏与底部抽屉（仅 ≤900px 启用，桌面走 UhdNavPill）
+   数值照原站头部组件源码：logo 图标 24px、站名 15px/字距 .18em、SERVICE 10px/字距 .34em；
+   玻璃 pill 层滚动 >40px 才浮起（opacity .5s ease-sheet），汉堡 chip 同步变平 ---------- */
 .m-nav,
-.m-menu {
+.m-scrim,
+.m-sheet {
   display: none;
 }
 .m-nav__brand {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   color: var(--uhd-d-text);
 }
 .m-nav__logo {
-  width: 22px;
-  height: 20px;
+  width: 24px;
+  height: 22px;
   background: var(--uhd-rainbow-conic);
   clip-path: polygon(50% 0, 100% 100%, 0 100%);
 }
 .m-nav__brand-text {
   display: flex;
   flex-direction: column;
-  line-height: 1.15;
+  line-height: 1;
 }
 .m-nav__brand-name {
   font-family: var(--uhd-font-display);
-  font-size: 16px;
-  font-weight: var(--uhd-fw-extrabold);
-  letter-spacing: 0.05em;
+  font-size: 15px;
+  font-weight: var(--uhd-fw-semibold);
+  letter-spacing: 0.18em;
 }
 .m-nav__brand-sub {
-  font-size: var(--uhd-fs-micro);
-  letter-spacing: var(--uhd-ls-eyebrow);
+  margin-top: 4px;
+  font-size: 10px;
+  letter-spacing: 0.34em;
   color: var(--uhd-d-text-2);
+}
+.m-nav__chip {
+  position: relative;
+  display: inline-flex;
+  padding: 4px;
+  border: var(--uhd-border-w) solid var(--uhd-glass-border);
+  border-radius: 9999px;
+  background: var(--uhd-glass-d);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
+  transition:
+    background-color 0.5s cubic-bezier(0.32, 0.72, 0, 1),
+    border-color 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.m-nav__chip.is-flat {
+  background: transparent;
+  border-color: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 .m-nav__burger {
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border: none;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
+  background: transparent;
   color: var(--uhd-d-text);
   cursor: pointer;
+}
+@keyframes m-sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes m-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+/* 原站 Hero 入场 hero-fade：淡入＋上移 16px、.74s ease-out（无模糊，桌面移动一致） */
+@keyframes landing-hero-fade {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .eyebrow {
@@ -447,9 +522,14 @@ const year = new Date().getFullYear()
 .sec-title {
   margin: 0 0 16px;
   text-align: center;
-  font-size: clamp(36px, 4.6vw, 56px);
+  /* 原站 --text-landing-service-hero: clamp(2rem, 4.4vw, 4.4rem) */
+  font-size: clamp(32px, 4.4vw, 70.4px);
   font-weight: var(--uhd-fw-extrabold);
   line-height: 1.15;
+}
+.sec-title--platforms {
+  /* 原站 --text-landing-platforms-title: clamp(1.8rem, 3.4vw, 2.8rem) */
+  font-size: clamp(28.8px, 3.4vw, 44.8px);
 }
 .sec-sub {
   margin: 0 auto;
@@ -494,11 +574,12 @@ const year = new Date().getFullYear()
   max-width: var(--uhd-container-marketing);
   margin: 0 auto;
   padding: 130px 28px 120px;
-  animation: uhd-blur-in var(--uhd-dur-hero) var(--uhd-ease-pop);
+  animation: landing-hero-fade 0.74s ease-out both;
 }
 .hero-title {
   margin: 0 0 22px;
-  font-size: clamp(44px, 6vw, var(--uhd-fs-h1));
+  /* 原站 --text-landing-hero: clamp(2.1rem, 4.1vw, 3.9rem) */
+  font-size: clamp(33.6px, 4.1vw, 62.4px);
   font-weight: var(--uhd-fw-black);
   line-height: var(--uhd-lh-tight);
 }
@@ -613,7 +694,8 @@ const year = new Date().getFullYear()
 }
 .pin-title {
   margin: 0 0 14px;
-  font-size: clamp(48px, 6.4vw, 76px);
+  /* 原站 --text-landing-immersive-title: clamp(2.25rem, 4.8vw, 5.4rem) */
+  font-size: clamp(36px, 4.8vw, 86.4px);
   font-weight: var(--uhd-fw-black);
   line-height: 1.1;
 }
@@ -655,9 +737,14 @@ const year = new Date().getFullYear()
 }
 .ess-h3 {
   margin: 0 0 12px;
-  font-size: clamp(28px, 3vw, 38px);
+  /* 原站 --text-landing-service-title: clamp(1.6rem, 2.4vw, 2.4rem) */
+  font-size: clamp(25.6px, 2.4vw, 38.4px);
   font-weight: var(--uhd-fw-extrabold);
   line-height: 1.2;
+}
+.ess-card--wide .ess-h3 {
+  /* 原站 --text-landing-service-title-lg: clamp(1.6rem, 2.6vw, 2.6rem) */
+  font-size: clamp(25.6px, 2.6vw, 41.6px);
 }
 .ess-desc {
   margin: 0;
@@ -900,77 +987,119 @@ const year = new Date().getFullYear()
 .landing-foot-links a:hover { color: var(--uhd-d-text); }
 
 @media (max-width: 900px) {
-  /* ---- 顶栏：桌面胶囊导航让位给移动悬浮胶囊＋全屏菜单（返工单②） ---- */
+  /* ---- 顶栏：原站形态——未滚动整条透明、滚动后玻璃 pill 浮起；菜单为底部抽屉 ---- */
   .landing-nav { display: none; }
   .m-nav {
     position: fixed;
-    top: 10px;
+    top: 16px;
     left: 12px;
     right: 12px;
-    z-index: 60;
+    z-index: 70;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 52px;
-    padding: 0 6px 0 16px;
+    padding: 6px 8px;
+  }
+  .m-nav::before {
+    content: '';
+    position: absolute;
+    inset: 0;
     border: var(--uhd-border-w) solid var(--uhd-glass-border);
-    border-radius: 26px;
+    border-radius: 9999px;
     background: var(--uhd-glass-d);
     backdrop-filter: var(--uhd-glass-filter);
     -webkit-backdrop-filter: var(--uhd-glass-filter);
+    opacity: 0;
+    transition: opacity 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+    pointer-events: none;
   }
-  .m-menu {
+  .m-nav.is-on::before { opacity: 1; }
+  .m-scrim {
     position: fixed;
     inset: 0;
-    z-index: 70;
+    z-index: 65;
+    display: block;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    animation: m-fade-in 0.3s ease-out;
+  }
+  .m-scrim.is-out {
+    opacity: 0;
+    transition: opacity 0.3s ease-out;
+  }
+  .m-sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 66;
+    display: block;
+    border-top: var(--uhd-border-w) solid var(--uhd-glass-border);
+    border-radius: 28px 28px 0 0;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 32%, rgba(255, 255, 255, 0) 62%),
+      rgba(20, 21, 25, 0.88);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    box-shadow: 0 -18px 50px rgba(0, 0, 0, 0.45);
+    animation: m-sheet-in 0.38s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .m-sheet.is-out {
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .m-sheet__handle {
+    display: flex;
+    justify-content: center;
+    padding: 14px 0 8px;
+  }
+  .m-sheet__handle span {
+    width: 40px;
+    height: 3px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.2);
+  }
+  .m-sheet__links {
     display: flex;
     flex-direction: column;
-    padding: 10px 12px 36px;
-    background: rgba(5, 5, 6, 0.94);
-    backdrop-filter: blur(18px) saturate(160%);
-    -webkit-backdrop-filter: blur(18px) saturate(160%);
-    animation: uhd-fade-in 0.3s var(--uhd-ease-standard);
+    padding: 4px 12px 12px;
   }
-  .m-menu__top {
+  .m-sheet__row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    height: 52px;
-    padding: 0 6px 0 16px;
-  }
-  .m-menu__links {
-    display: flex;
-    flex-direction: column;
-    margin-top: 44px;
-    padding: 0 10px;
-  }
-  .m-menu__link {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 19px 4px;
+    gap: 14px;
+    width: 100%;
+    padding: 14px 16px;
     border: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
     background: transparent;
     color: var(--uhd-d-text);
-    font-size: 29px;
-    font-weight: var(--uhd-fw-extrabold);
+    font-size: 15px;
+    font-weight: var(--uhd-fw-medium);
     text-align: left;
     cursor: pointer;
   }
-  .m-menu__link span {
-    font-size: 20px;
-    color: var(--uhd-d-text-2);
+  .m-sheet__row svg {
+    flex: none;
+    opacity: 0.4;
   }
-  .m-menu__cta { margin-top: auto; }
-  .m-menu__note {
-    margin: 16px 0 0;
-    text-align: center;
-    font-size: var(--uhd-fs-aux);
-    color: var(--uhd-d-text-2);
+  .m-sheet__row:active { background: rgba(255, 255, 255, 0.08); }
+  .m-sheet__divider {
+    height: 1px;
+    margin: 0 20px;
+    background: rgba(255, 255, 255, 0.07);
+  }
+  .m-sheet__cta {
+    padding: 16px 16px max(20px, env(safe-area-inset-bottom));
+  }
+  .m-sheet__cta :deep(.uhd-btn) {
+    padding-top: 20px;
+    padding-bottom: 20px;
+    font-size: 15px;
   }
 
-  /* ---- Hero：关入场模糊动画（重影根因之一）、糊光光斑让位棱镜主视觉（返工单①③） ---- */
+  /* ---- Hero：入场用原站 hero-fade（单层淡入上移，无模糊无叠影）；糊光光斑让位棱镜主视觉（返工单①③） ---- */
   .hero {
     min-height: 100vh;
     min-height: 100svh;
@@ -991,7 +1120,6 @@ const year = new Date().getFullYear()
     height: 100%;
   }
   .hero-inner {
-    animation: none;
     padding: 308px 22px 92px;
   }
   .hero-specs {
@@ -1068,6 +1196,8 @@ const year = new Date().getFullYear()
 @media (prefers-reduced-motion: reduce) {
   .hero-inner { animation: none; }
   .marquee-track { animation: none; }
+  .m-sheet,
+  .m-scrim { animation: none; }
   .hero-sub-fade-enter-active,
   .hero-sub-fade-leave-active { transition: none; }
 }
