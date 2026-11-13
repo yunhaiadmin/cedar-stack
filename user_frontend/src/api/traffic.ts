@@ -29,6 +29,9 @@ export interface TrafficSummary {
 
 export interface TrafficExchangeOption {
   days: number
+  /** 抵扣当月额度的百分比（按比例口径，照 UHDNow：15 天 50%、30 天 100%） */
+  quota_pct: number
+  /** 后端按当前用户当月额度 × quota_pct 现折算的抵扣字节 */
   bytes: number
 }
 

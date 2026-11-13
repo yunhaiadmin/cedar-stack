@@ -41,7 +41,9 @@ def get_traffic(current_user: models.WebUser = Depends(get_current_user),
     summary = traffic_quota.usage_summary(db, current_user.id)
     return {
         **summary,
-        "exchange_options": traffic_quota.exchange_options(db),
+        # 选项带比例口径 + 按本用户当月额度现折算的抵扣字节
+        "exchange_options": traffic_quota.exchange_options_view(
+            db, current_user.id),
         # 余额购买依赖钱包（未建）：只给状态，不给端点。
         "balance_purchase_available": False,
     }

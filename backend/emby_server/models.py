@@ -836,6 +836,10 @@ class TrafficExchangeLog(Base):
     ``idempotency_key`` 唯一：客户端同一次确认重试/双击只许成交一次，
     服务层先查后扣、唯一约束兜底。
 
+    抵扣量按比例口径（2026-11-13 定版）：bytes_credited = 成交时
+    月额度（quota_base_bytes）× 比例（quota_pct）向下取整——基数
+    与比例同行留痕，事后可复算对账。
+
     抵扣额度不另立余额表：某周期可用抵扣＝该周期内本表 bytes_credited
     之和（低频写、按周期求和足够便宜），不搞第二套账。
     """
@@ -850,6 +854,10 @@ class TrafficExchangeLog(Base):
     kind = Column(String(30), nullable=False, default="time_exchange")
     days_deducted = Column(Integer, nullable=False)
     bytes_credited = Column(BigInteger, nullable=False)
+    # 按比例口径的对账依据（成交时月额度基数 × 比例，向下取整）；
+    # 比例制之前的行（若有）为 NULL。
+    quota_base_bytes = Column(BigInteger)
+    quota_pct = Column(Integer)
     subscription_id = Column(Integer)
     sub_end_before = Column(DateTime)
     sub_end_after = Column(DateTime)

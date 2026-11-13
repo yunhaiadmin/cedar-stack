@@ -46,7 +46,7 @@
             @click="selectOption(opt.days)"
           >
             <span class="tq-opt__main">−{{ opt.days }} 天</span>
-            <span class="tq-opt__sub">付费时长减少 {{ opt.days }} 天，抵扣 {{ formatBytes(opt.bytes) }} 已用流量</span>
+            <span class="tq-opt__sub">付费时长减少 {{ opt.days }} 天，抵扣当月额度的 {{ opt.quota_pct }}%（约 {{ formatBytes(opt.bytes) }}）已用流量</span>
           </button>
         </div>
         <p class="tq-warn">
@@ -170,7 +170,7 @@ async function onConfirmClick() {
     toast.success(
       res.replayed
         ? '这次兑换已经生效过了，没有重复扣天数'
-        : `已兑换：扣除 ${selected.value.days} 天，抵扣 ${formatBytes(selected.value.bytes)} 流量`,
+        : `已兑换：扣除 ${selected.value.days} 天，抵扣当月额度的 ${selected.value.quota_pct}%（约 ${formatBytes(selected.value.bytes)}）流量`,
     )
     emit('exchanged', res.traffic)
     emit('update:open', false)

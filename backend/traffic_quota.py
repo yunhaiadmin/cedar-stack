@@ -5,7 +5,10 @@
 （如 500GB），按订阅周期重置；概览页展示剩余/已用/重置日；流量
 不够用时可以「购流量」：花余额抵扣已用（钱包未建，本期不做）或
 扣订阅天数换抵扣额度。购流量不扩套餐总额度、不延到期日（时间换
-流量反而是**缩短**到期日换额度）。
+流量反而是**缩短**到期日换额度）。时间换流量的量按**比例**
+（2026-11-13 23:26 定版，照 UHDNow 实测）：扣 15 天抵当月额度的
+50%、扣 30 天抵 100%——成交时按该用户当月额度×比例现算，不是
+固定字节数；留痕记额度基数与比例，事后可对账。
 
 数据分工（不许另起一套）：
 - 额度声明：套餐权益键 ``monthly_traffic_bytes``（backend/
@@ -50,14 +53,17 @@ logger = logging.getLogger(__name__)
 CONFIG_DEFAULT_QUOTA = "traffic_default_monthly_bytes"
 
 #: 时间换流量选项（SystemConfig，JSON 数组 [{"days":15,
-#: "bytes":107374182400}, ...]）；未配/坏值回退内置默认。
+#: "quota_pct":50}, ...]，quota_pct = 抵扣当月额度的百分比）；
+#: 未配/坏值回退内置默认。旧固定字节形态（{"bytes": ...}）在
+#: 按比例口径下不算合法项——生产从未启用本功能、无存量配置，
+#: 混入旧形态的配置整体回退默认，不许拿旧固定值继续成交。
 CONFIG_EXCHANGE_OPTIONS = "traffic_time_exchange_options"
 
-#: 内置默认选项（照 UHDNow 实查形态：−15 天换 100GB、−30 天换
-#: 300GB；字节按 GiB 计，与全站 format_bytes 的 1024 口径一致）。
+#: 内置默认选项（照 UHDNow 实测口径：−15 天抵当月额度 50%、
+#: −30 天抵 100%）。
 DEFAULT_EXCHANGE_OPTIONS = [
-    {"days": 15, "bytes": 100 * 1024 ** 3},
-    {"days": 30, "bytes": 300 * 1024 ** 3},
+    {"days": 15, "quota_pct": 50},
+    {"days": 30, "quota_pct": 100},
 ]
 
 ENTITLEMENT_KEY = "monthly_traffic_bytes"
@@ -89,7 +95,12 @@ def _config_int(db: Session, key: str) -> Optional[int]:
 
 
 def exchange_options(db: Session) -> list[dict]:
-    """时间换流量选项（配置优先，坏配置回退默认并打 warning）。"""
+    """时间换流量选项（配置优先，坏配置回退默认并打 warning）。
+
+    每项 {"days": 扣减天数, "quota_pct": 抵扣当月额度的百分比}，
+    按 days 升序。百分比须为 1–100 的整数；不合此形态的项（含旧
+    固定字节 {"bytes": ...} 形态）整项作废，无合法项则回退默认。
+    """
     try:
         raw = store.get_value(db, CONFIG_EXCHANGE_OPTIONS, "")
     except Exception:  # noqa: BLE001
@@ -100,9 +111,9 @@ def exchange_options(db: Session) -> list[dict]:
             out = []
             for item in data:
                 days = int(item["days"])
-                nbytes = int(item["bytes"])
-                if 1 <= days <= 365 and nbytes > 0:
-                    out.append({"days": days, "bytes": nbytes})
+                pct = int(item["quota_pct"])
+                if 1 <= days <= 365 and 1 <= pct <= 100:
+                    out.append({"days": days, "quota_pct": pct})
             if out:
                 return sorted(out, key=lambda x: x["days"])
             logger.warning("traffic_time_exchange_options 无合法项，回退默认")
@@ -110,6 +121,25 @@ def exchange_options(db: Session) -> list[dict]:
             logger.warning("traffic_time_exchange_options 解析失败，回退默认",
                            exc_info=True)
     return [dict(o) for o in DEFAULT_EXCHANGE_OPTIONS]
+
+
+def exchange_credit_bytes(quota: int, quota_pct: int) -> int:
+    """按比例折算抵扣字节：月额度 × 百分比，整数乘除天然向下
+    取整到整字节，不许四舍五入多给。"""
+    return quota * quota_pct // 100
+
+
+def exchange_options_view(db: Session, user_id: int) -> list[dict]:
+    """给前端的选项视图：比例（配置口径）＋按该用户当月额度
+    现折算的抵扣字节。未启用用户 quota 为 None、bytes 给 0——
+    前端整段不渲染，成交端点也会以 quota_not_enabled 拒绝。"""
+    quota = quota_bytes_for(db, user_id)
+    return [{
+        "days": o["days"],
+        "quota_pct": o["quota_pct"],
+        "bytes": (exchange_credit_bytes(quota, o["quota_pct"])
+                  if quota else 0),
+    } for o in exchange_options(db)]
 
 
 def quota_bytes_for(db: Session, user_id: int) -> Optional[int]:
@@ -220,7 +250,11 @@ def usage_summary(db: Session, user_id: int,
 def exchange_time_for_traffic(db: Session, user_id: int, days: int,
                               idempotency_key: str,
                               now: Optional[datetime] = None) -> dict:
-    """扣订阅 ``days`` 天，换本周期等额抵扣额度。全程留痕。
+    """扣订阅 ``days`` 天，换本周期按比例抵扣额度。全程留痕。
+
+    抵扣量 = 成交时该用户月额度 × 选项比例（向下取整到整字节）；
+    留痕同时记额度基数（quota_base_bytes）与比例（quota_pct），
+    与实际抵扣字节三者可互相复算对账。
 
     - 幂等：同 idempotency_key 已成交 → 原样返回那笔（replayed
       =True），不重复扣天数；键被别人占用 → 拒绝。
@@ -244,13 +278,15 @@ def exchange_time_for_traffic(db: Session, user_id: int, days: int,
                                "bad_idempotency_key")
         return {"log": _log_dict(existing), "replayed": True,
                 "summary": usage_summary(db, user_id, now)}
-    if quota_bytes_for(db, user_id) is None:
+    quota = quota_bytes_for(db, user_id)
+    if quota is None:
         raise TrafficError("当前套餐没有流量额度，暂不能购买流量",
                            "quota_not_enabled")
     option = next((o for o in exchange_options(db)
                    if o["days"] == days), None)
     if option is None:
         raise TrafficError("没有这个兑换选项", "bad_option")
+    credited = exchange_credit_bytes(quota, option["quota_pct"])
     sub = subscriptions.active_subscription(db, user_id)
     if sub is None:
         raise TrafficError("没有生效中的订阅，无法用时长兑换",
@@ -271,7 +307,8 @@ def exchange_time_for_traffic(db: Session, user_id: int, days: int,
     locked.end_date = after
     log = em.TrafficExchangeLog(
         user_id=user_id, kind="time_exchange",
-        days_deducted=option["days"], bytes_credited=option["bytes"],
+        days_deducted=option["days"], bytes_credited=credited,
+        quota_base_bytes=quota, quota_pct=option["quota_pct"],
         subscription_id=locked.id, sub_end_before=before,
         sub_end_after=after, period_start=start, period_end=end,
         idempotency_key=key)
@@ -299,6 +336,8 @@ def _log_dict(log: em.TrafficExchangeLog) -> dict:
         "kind": log.kind,
         "days_deducted": log.days_deducted,
         "bytes_credited": log.bytes_credited,
+        "quota_base_bytes": log.quota_base_bytes,
+        "quota_pct": log.quota_pct,
         "subscription_id": log.subscription_id,
         "sub_end_before": (log.sub_end_before.isoformat()
                            if log.sub_end_before else None),
