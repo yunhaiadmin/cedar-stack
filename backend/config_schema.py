@@ -789,6 +789,19 @@ PLAYER_BLACKLIST_CONFIG_SCHEMA: dict[str, tuple] = {
     "player_login_blacklist": ("json_rules",),
 }
 
+# 安装应用页（2026-11-13）：6 个平台的官方客户端下载链接，全部 ("str",)。
+# 没有代码级默认链接：空串/None = 删行取消配置，未配的平台用户端整行
+# 不显示。链接的 http(s) 形状校验在端点层（保存侧纵深防御只管类型，
+# 与其它 str 家族口径一致）。
+INSTALL_APP_CONFIG_SCHEMA: dict[str, tuple] = {
+    "install_app_ios_url": ("str",),
+    "install_app_android_url": ("str",),
+    "install_app_android_tv_url": ("str",),
+    "install_app_apple_tv_url": ("str",),
+    "install_app_windows_url": ("str",),
+    "install_app_macos_url": ("str",),
+}
+
 # （原 ECONOMY_INT_RANGES / economy_spec 已并入下面的 ECONOMY_CONFIG_SCHEMA，
 # 4-6 迁移后不再有任何调用方，此处删除。）
 
