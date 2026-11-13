@@ -24,6 +24,7 @@ os.environ.setdefault("DATABASE_TYPE", "sqlite")
 os.environ.setdefault("REDIS_ENABLED", "false")
 
 import asyncio
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -145,6 +146,12 @@ def test_switch_off_single_source_legacy_shape(db, monkeypatch):
 
 
 def test_switch_off_cache_hit_same_and_users_isolated(db, monkeypatch):
+    # 播放签名是每次现签的（exp = int(time.time()) + ttl，秒粒度；
+    # 基础体缓存明确不带凭据、每次请求重签）。两次调用若跨过整秒
+    # 边界，exp/sign 必然不同——2026-11-13 #149 冒烟即因此红
+    # （exp 1794588429 vs 1794588430，其余 28 项全同）。冻住时间，
+    # 断言才测得到「同输入同输出」，而不是测两次调用落在同一秒里。
+    monkeypatch.setattr(time, "time", lambda: 1794588400.0)
     item = _drive_item("guid-off-2")
     r1 = _call_pi(monkeypatch, db, _user(101), item, variants_on=False)
     r2 = _call_pi(monkeypatch, db, _user(101), item, variants_on=False)

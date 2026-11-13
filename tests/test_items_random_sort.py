@@ -145,11 +145,18 @@ def test_random_sort_no_unbounded_id_materialization(seeded, fake_backend):
     s = seeded
     orig_all = Query.all
     max_rows = [0]
+    worst_stmt = [""]
 
     def spy_all(self):
         res = orig_all(self)
-        if len(res) > max_rows[0]:
+        # 只统计被测会话上的查询：Query.all 是类级补丁，会数到同进程
+        # 其它线程/会话的 .all()（如前序测试泄漏的后台线程在共享库上
+        # 的全量查询）。2026-11-13 #147 冒烟：一次 .all() 返回 66 行——
+        # 被测内存库只有 60 个条目，66 行必定来自外线程/外库，与被测
+        # 代码无关；不限会话会把这类串扰误判成本分支的无界物化。
+        if getattr(self, "session", None) is s.db and len(res) > max_rows[0]:
             max_rows[0] = len(res)
+            worst_stmt[0] = str(self)
         return res
 
     Query.all = spy_all
@@ -158,7 +165,9 @@ def test_random_sort_no_unbounded_id_materialization(seeded, fake_backend):
     finally:
         Query.all = orig_all
     assert len(res["Items"]) == 5
-    assert max_rows[0] <= 5, f"仍有单次 .all() 返回 {max_rows[0]} 行，超过 Limit=5"
+    assert max_rows[0] <= 5, (
+        f"仍有单次 .all() 返回 {max_rows[0]} 行，超过 Limit=5：{worst_stmt[0]}"
+    )
 
 
 def test_random_sort_want_total_false(seeded, fake_backend):

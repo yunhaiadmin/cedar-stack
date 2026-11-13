@@ -77,8 +77,11 @@ def _reset_worker_db_leaks():
     ① user_id 无对应 WebUser 的孤儿 UserStorageBinding 行；
     ② key 以 pool_ 开头的 SystemConfig 行（删行即回代码默认，
        pool_enabled=False 等，见 pool_gate.POOL_CONFIG_DEFAULTS），
-       并清 integrations.store 的 60s 热缓存。
-    只清这两类泄漏行，不动用户表与其他配置；DB 未建表时静默跳过。
+       并清 integrations.store 的 60s 热缓存；
+    ③ user_id 或 item_id 无对应行的孤儿 UserMediaData 行（2026-11-13
+       #147/#153 冒烟：残留 (2, 8) 占着唯一约束，sqlite id 复用让后跑
+       文件的种子新建同一对 id 即撞约束）。
+    只清这三类泄漏行，不动用户表与其他配置；DB 未建表时静默跳过。
     """
     _reset_leaked_worker_state()
     yield
@@ -96,6 +99,16 @@ def _reset_leaked_worker_state() -> None:
     try:
         db.query(em.UserStorageBinding).filter(
             ~em.UserStorageBinding.user_id.in_(db.query(models.WebUser.id))
+        ).delete(synchronize_session=False)
+        # 孤儿 UserMediaData 行：前序文件批量删用户/条目时漏删用户数据行，
+        # 残留 (user_id, item_id) 仍占着唯一约束；sqlite 无 AUTOINCREMENT、
+        # id 按 max+1 复用，后跑文件的种子新建同一对 id 就撞约束——
+        # 2026-11-13 #147/#153 冒烟：test_no_line_hidden 种子插 (2, 8)
+        # 连报 6 个 setup error。只删 user/item 任一已不存在的行（真孤儿），
+        # 与上方孤儿绑定同一口径；模块内断言不受影响（清理只在模块边界跑）。
+        db.query(em.UserMediaData).filter(
+            ~em.UserMediaData.user_id.in_(db.query(models.WebUser.id))
+            | ~em.UserMediaData.item_id.in_(db.query(em.MediaItem.id))
         ).delete(synchronize_session=False)
         db.query(models.SystemConfig).filter(
             models.SystemConfig.key.startswith("pool_")

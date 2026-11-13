@@ -92,7 +92,21 @@ def seed(db):
     s.session(e2, 5, "Infuse", "iPhone")           # 最近一次会话
     s.session(movie, 60, "SenPlayer", "Apple TV")
     db.commit()
-    return {"s": s, "series": series, "e1": e1, "e2": e2, "movie": movie}
+    data = {"s": s, "series": series, "e1": e1, "e2": e2, "movie": movie}
+    yield data
+    # teardown：删掉本用例的种子行（2026-11-13 #147/#153 冒烟根因：
+    # 旧实现无 teardown，种子用户/条目/进度行全漏进共享库；后跑文件
+    # 批量删用户/条目时漏删进度行，孤儿 UMD(2, 8) 占着唯一约束，
+    # sqlite id 复用让 test_no_line_hidden 的种子撞键 6 个 setup error）。
+    db.query(em.UserMediaData).filter(
+        em.UserMediaData.user_id == s.u.id).delete(synchronize_session=False)
+    db.query(em.PlaybackSession).filter(
+        em.PlaybackSession.user_id == s.u.id).delete(synchronize_session=False)
+    db.query(em.MediaItem).filter(
+        em.MediaItem.library_id == s.lib.id).delete(synchronize_session=False)
+    db.query(em.Library).filter(em.Library.id == s.lib.id).delete()
+    db.query(WebUser).filter(WebUser.id == s.u.id).delete()
+    db.commit()
 
 
 def _resume(db, seed, limit=12):
