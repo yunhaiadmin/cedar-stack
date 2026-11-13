@@ -469,7 +469,7 @@ def handle_rankpush(db, tg_user: dict, chat_id: int, args: str) -> str:
     身份门照 /admin 口径：TG 绑定的站账号且 is_staff；未绑定或非管理员
     一律回同一张拒绝卡、不推送、不生成海报。默认推今日榜，args=week 推周榜。
     实际推送走 tg_bot.rankpush.push_rank_board（与定时推送同一条路，
-    含总开关/空榜/未配群判定与发分幂等）。
+    含总开关/空榜/未配群判定）。
     """
     user = resolve(db, int(tg_user.get("id") or 0))
     if user is None or not bool(getattr(user, "is_staff", False)):
@@ -477,7 +477,7 @@ def handle_rankpush(db, tg_user: dict, chat_id: int, args: str) -> str:
             layout.title("观影榜推送"),
             [layout.row("🔒", "访问状态", "仅管理员可用")],
         )
-    # 角色门：推榜含榜单奖励发放，是写操作，只读审计角色拒绝。
+    # 角色门：推榜是写操作，只读审计角色拒绝。
     refusal = role_gate.readonly_refusal(user)
     if refusal:
         return layout.card(
@@ -495,9 +495,6 @@ def handle_rankpush(db, tg_user: dict, chat_id: int, args: str) -> str:
             layout.row("✅", "推送", f"{label}已推送到交流群"),
             layout.row("👥", "上榜", f"{len(res.get('rows') or [])} 人"),
         ]
-        if res.get("rewards"):
-            total = sum(g["amount"] for g in res["rewards"])
-            rows.append(layout.row("🎁", "榜单奖励", f"已发放 {total} 能量"))
         return layout.card(layout.title("观影榜推送", user.username), rows)
     hint = {
         "disabled": "海报推送已关闭（bot_rankpush_enabled），先在管理后台打开",
@@ -651,65 +648,10 @@ def handle_points(db, tg_user: dict, chat_id: int, args: str) -> str:
         return _bind_guide_text()
     points = int(user.points or 0)
     rows = [layout.row("✨", "能量余额", points)]
-    try:
-        from backend import vitality as _vitality
-
-        cfg = _vitality.get_vitality_config(db)
-        if cfg.get("enabled") and getattr(user, "is_welfare", False):
-            v = int(getattr(user, "vitality", None) or 0)
-            vmax = int(cfg.get("max", 14) or 14)
-            filled = round(v / vmax * 10) if vmax > 0 else 0
-            bar = "▓" * filled + "░" * (10 - filled)
-            rows.append(layout.row("⚡", "活力数值", f"{v}/{vmax} <code>{bar}</code>"))
-    except Exception:
-        pass
-    # 群发言能量已并入 /points 输出（菜单简化）：同一段行与 /chatpoints
-    # 独立卡共用 _chatpoints_section，计分口径一字不改。读状态失败时
-    # 只略过该段（与上方活力块同一容错口径），不拖垮能量主卡。
-    try:
-        chat_rows, chat_notes = _chatpoints_section(db, user)
-        rows.extend(chat_rows)
-    except Exception:
-        chat_notes = []
-    return layout.card(layout.title("我的能量"), rows, chat_notes)
-
-
-def _chatpoints_section(db, user) -> tuple[list[str], list[str]]:
-    """群发言能量段（信息行＋备注）：/points 合并展示与 /chatpoints 共用。
-
-    口径全部取自 points.get_chat_points_status（与发分侧同一只读口），
-    本段只负责渲染，不改任何计分语义。
-    """
-    from backend import points as points_mod
-
-    status = points_mod.get_chat_points_status(db, user.id)
-    earned = status["earned_today"]
-    cap = status["daily_cap"]
-    per_msg = status["per_msg"]
-    if per_msg == 0:
-        return ([
-            layout.row("💬", "发言奖励", "当前已关闭，在群里发言暂不发放能量"),
-            layout.row("🏆", "累计能量", f"<b>{status['total_earned']}</b> 能量"),
-        ], [])
-    filled = round(earned / cap * 10) if cap > 0 else 0
-    bar = "▓" * filled + "░" * (10 - filled)
-    rows = [
-        layout.row("📅", "今日已得", f"<b>{earned:g}</b> / {cap} 能量 <code>{bar}</code>"),
-        layout.row("🏆", "累计能量", f"<b>{status['total_earned']}</b> 能量"),
-        layout.row("📏", "发言规则", f"在公益群里发言每条 +{per_msg:g} 能量，每天最多 {cap} 能量"),
-    ]
-    notes = []
-    if earned >= cap:
-        notes.append("✅ 今日发言能量已达上限，明天再继续。")
-    return rows, notes
-
-
-def handle_chatpoints(db, tg_user: dict, chat_id: int, args: str) -> str:
-    user = resolve(db, int(tg_user.get("id") or 0))
-    if user is None:
-        return _bind_guide_text()
-    rows, notes = _chatpoints_section(db, user)
-    return layout.card(layout.title("群发言能量"), rows, notes)
+    # 活力行与群发言能量段已随货币删除摘除（2026-11-13）：二者分别
+    # 依赖的 backend.vitality / backend.points 模块已删，原先的容错
+    # 吞异常只会让死代码常驻、/chatpoints 入口恒回系统繁忙，一并清掉。
+    return layout.card(layout.title("我的能量"), rows)
 
 
 def handle_redeem(db, tg_user: dict, chat_id: int, args: str) -> str:

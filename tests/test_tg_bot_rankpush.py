@@ -284,42 +284,9 @@ def test_reward_off_by_default_no_grants(db, monkeypatch):
     assert db.query(models.WebUser).filter_by(id=a.id).first().points == 0
 
 
-def test_reward_on_grants_by_table_and_idempotent(db, monkeypatch):
-    _set_group(db)
-    _set_cfg(db, "bot_rankpush_reward_enabled", "true")
-    item = _make_item(db)
-    start = _today_start_utc()
-    a = _make_user(db, "alice")
-    b = _make_user(db, "bob")
-    c = _make_user(db, "carol")
-    _watch(db, a, item, start + timedelta(hours=1), 3 * 3600)
-    _watch(db, b, item, start + timedelta(hours=1), 2 * 3600)
-    _watch(db, c, item, start + timedelta(hours=1), 3600)
-    _stub_send_ok(monkeypatch)
-    res = rankpush.push_rank_board(db, "day")
-    assert res["pushed"] is True
-    got = {
-        u.username: u.points
-        for u in db.query(models.WebUser).all()
-    }
-    assert got == {"alice": 10, "bob": 8, "carol": 6}
-    logs = db.query(models.PointsLog).filter_by(type="rankpush").all()
-    assert len(logs) == 3
-    assert {lg.ref_id for lg in logs} == {
-        f"rankpush:day:{_today_key()}:1",
-        f"rankpush:day:{_today_key()}:2",
-        f"rankpush:day:{_today_key()}:3",
-    }
-    assert {lg.amount for lg in logs} == {10, 8, 6}
-    # 幂等：再推一次不重复发分
-    res2 = rankpush.push_rank_board(db, "day")
-    assert res2["pushed"] is True
-    assert db.query(models.PointsLog).filter_by(type="rankpush").count() == 3
-    got2 = {u.username: u.points for u in db.query(models.WebUser).all()}
-    assert got2 == got
-
-
-def test_reward_custom_table(db, monkeypatch):
+def test_reward_config_no_longer_grants(db, monkeypatch):
+    """名次发分已随积分删除摘除（2026-11-13）：旧发分开关/发分表
+    配置键即使还在库里也不再被读，推榜照常、零发分、零台账。"""
     _set_group(db)
     _set_cfg(db, "bot_rankpush_reward_enabled", "true")
     _set_cfg(db, "bot_rankpush_reward_table", "100,50")
@@ -332,10 +299,16 @@ def test_reward_custom_table(db, monkeypatch):
     _watch(db, b, item, start + timedelta(hours=1), 2 * 3600)
     _watch(db, c, item, start + timedelta(hours=1), 3600)
     _stub_send_ok(monkeypatch)
-    rankpush.push_rank_board(db, "day")
+    res = rankpush.push_rank_board(db, "day")
+    assert res["pushed"] is True
+    assert res["rewards"] == []
     got = {u.username: u.points for u in db.query(models.WebUser).all()}
-    # 表只有两档：第 3 名不在表内，不发
-    assert got == {"alice": 100, "bob": 50, "carol": 0}
+    assert got == {"alice": 0, "bob": 0, "carol": 0}
+    assert db.query(models.PointsLog).count() == 0
+    # 再推一次同样零发分
+    res2 = rankpush.push_rank_board(db, "day")
+    assert res2["pushed"] is True
+    assert db.query(models.PointsLog).count() == 0
 
 
 # ---------------- /rankpush 管理员命令 ----------------

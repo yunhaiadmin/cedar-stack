@@ -283,19 +283,19 @@ def test_bot_commands_cover_router_commands():
     # 其后加过 /duel、/rain、/playrank；批 9 摘除五条玩法命令
     # （lottery/redpacket/slots/duel/rain）后 25 条；2026-11-13 摘除
     # 签到入口后现为 24 条。router 另含
-    # 4 条手输别名（account/renew/chatpoints/level），别名不在菜单
-    # 但 router 照常认。
+    # 3 条手输别名（account/renew/level），别名不在菜单
+    # 但 router 照常认（chatpoints 已随货币删除摘除，2026-11-13）。
     registered = {cmd for cmd, _desc in poller.BOT_COMMANDS}
     assert len(registered) == 24
     router_commands = {
         "start", "help", "bind", "points", "account", "me",
         "request", "myrequests", "rank", "requestboard", "rules",
         "login", "renew", "redeem",
-        "bindings", "transfers", "whyplay", "wants", "chatpoints",
+        "bindings", "transfers", "whyplay", "wants",
         "level", "report", "propose", "launch", "govlog",
         "reconcile", "rankpush", "playrank", "kk",
     }
-    aliases = {"account", "renew", "chatpoints", "level"}
+    aliases = {"account", "renew", "level"}
     assert aliases <= router_commands
     assert registered | aliases == router_commands
     assert aliases.isdisjoint(registered)

@@ -102,32 +102,6 @@ def _verify_bind_code(db, update: dict) -> None:
     # reply 为 None → 不是有效的绑定码，静默忽略
 
 
-def _award_group_chat_points(db, tg_user: dict) -> None:
-    """群发言奖励：已绑定账号的发送者按发言计分。
-
-    直接进程内调用 points.award_chat_points（与发表影评同款），
-    走 points_chat_* 默认口径（0.1 能量/条小数累计、每天 20 能量封顶）。
-    未绑定发送者静默跳过；发分失败只记日志，绝不中断消息处理。
-    PA-029：停用账号静默跳过（不计分、不写台账行），停用处罚在
-    机器人群发言侧同样生效。
-    """
-    tg_user_id = (tg_user or {}).get("id")
-    if not tg_user_id:
-        return
-    try:
-        from backend import points as points_mod
-        from backend.tg_bot.identity import resolve
-
-        user = resolve(db, int(tg_user_id))
-        if user is None:
-            return
-        if not getattr(user, "is_active", True):
-            return
-        points_mod.award_chat_points(db, user.id)
-    except Exception:
-        logger.exception("group chat points award failed")
-
-
 def _send_reply(db, chat_id, text, reply_markup=None, *, autodelete=False):
     """机器人回复统一发送口（二期自毁接线）。
 
@@ -238,7 +212,7 @@ ANON_ADMIN_TEXT = (
 # 不在表内＝公开命令（/help /rank /requestboard /rules：不查
 # 发送者身份、只读全站或群级数据），匿名发照常执行。
 _IDENTITY_COMMANDS = {
-    "/start", "/bind", "/points", "/chatpoints",
+    "/start", "/bind", "/points",
     "/account", "/me", "/request", "/myrequests", "/login", "/renew",
     "/govlog", "/level", "/report", "/propose", "/launch",
     "/redeem",
@@ -564,11 +538,9 @@ def dispatch(db, update: dict) -> None:
             _verify_bind_code(db, update)
             return
 
-        # 群发言奖励：群内非命令文本按发言计分，见 _award_group_chat_points。
-        # 群白名单已在上方 is_group_allowed 处拦截，未放行群到不了这里；
-        # 普通聊天不消耗 _group_allow 群级限流预算，保持原有口径。
+        # 群发言计分已随积分模块删除摘除（2026-11-13）：群内非命令
+        # 文本不再有任何计分钩子，直接落到下方忽略分支。
         if in_group and not text.startswith("/"):
-            _award_group_chat_points(db, tg_user)
             return
 
         # 非命令文本忽略
@@ -585,7 +557,6 @@ def dispatch(db, update: dict) -> None:
             "/help": handlers.handle_help,
             "/bind": handlers.handle_bind,
             "/points": handlers.handle_points,
-            "/chatpoints": handlers.handle_chatpoints,
             "/account": handlers.handle_account,
             "/me": handlers.handle_account,
             "/request": handlers.handle_request,

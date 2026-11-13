@@ -2,8 +2,9 @@
 """TG Bot 临时消息包1 PR-2：群菜单 points 个人结果临时回复。
 
 口径（计划 plan-20261110 包1 · 1c 定案）：
-- 群里点菜单的能量（menu:points 与并入口
-  menu:chatpoints）是点击者本人的结果，改走按钮回调临时回复
+- 群里点菜单的能量（menu:points；并入口 menu:chatpoints 已随
+  货币删除摘除，2026-11-13，其用例一并删除）是点击者本人的结果，
+  改走按钮回调临时回复
   （sendMessage + ephemeral_message_parameters.callback_query_id），
   只给点击者看，不再编辑进群共享面板（人人可见）。
 - 官方要求：临时回复仍必须照常 answerCallbackQuery 回执（现行
@@ -106,14 +107,6 @@ def test_group_points_result_goes_ephemeral(db, wire):
     _chat_id, text, kw = wire["eph"][0]
     assert kw.get("callback_query_id") == "cq-menu-1"
     assert "✨ <b>能量余额</b> | 250" in text
-    assert wire["edits"] == []
-
-
-def test_group_chatpoints_alias_goes_ephemeral(db, wire):
-    _make_user(db, points=250)
-    callbacks.handle_callback(db, _cq("chatpoints"))
-    assert len(wire["eph"]) == 1
-    assert "能量余额" in wire["eph"][0][1]
     assert wire["edits"] == []
 
 

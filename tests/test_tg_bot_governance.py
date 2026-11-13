@@ -254,10 +254,20 @@ def test_report_frozen(db):
 def test_propose_success_and_cap(db):
     _free_realm(db)
     row = _user(db, xp=100)
-    text = features.handle_propose(db, _tg(), TG, "周末观影趴 | 能量:100x2 | -100123")
+    text = features.handle_propose(db, _tg(), TG, "周末观影趴 | 天数:30x2 | -100123")
     assert "活动提案已提交" in text
-    capped = features.handle_propose(db, _tg(), TG, "第二场 | 能量:50x1 | -100123")
+    capped = features.handle_propose(db, _tg(), TG, "第二场 | 天数:7x1 | -100123")
     assert "本月活动提案已达上限" in capped
+
+
+def test_propose_points_prize_rejected(db):
+    """积分（能量）奖品已随货币删除下线（2026-11-13）：提案在
+    治理核心处被拒，只收 days/whitelist。"""
+    _free_realm(db)
+    _user(db, xp=100)
+    text = features.handle_propose(db, _tg(), TG, "周末观影趴 | 能量:100x2 | -100123")
+    assert "奖品类型只能是" in text
+    assert "活动提案已提交" not in text
 
 
 def test_propose_level_gate_and_bad_prize(db):
@@ -272,10 +282,10 @@ def test_propose_level_gate_and_bad_prize(db):
 def test_launch_success_and_gate(db):
     _free_realm(db)
     row = _user(db, xp=5000)
-    text = features.handle_direct_launch(db, _tg(), TG, "周末观影趴 | 能量:100x2 | -100123")
+    text = features.handle_direct_launch(db, _tg(), TG, "周末观影趴 | 天数:30x2 | -100123")
     assert "活动已直接发起" in text
     low = _user(db, tg=TG + 1, name="low", xp=100)
-    gated = features.handle_direct_launch(db, _tg(TG + 1), TG + 1, "周末趴 | 能量:100x1 | -100123")
+    gated = features.handle_direct_launch(db, _tg(TG + 1), TG + 1, "周末趴 | 天数:30x1 | -100123")
     assert "Lv.5" in gated
 
 

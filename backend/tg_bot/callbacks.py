@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # 群菜单里走按钮回调临时回复的个人结果动作（Bot API 10.4 包1 PR-2）：
 # 结果是点击者本人的，只给他看，不编辑进群共享面板。
-_EPHEMERAL_RESULT_ACTIONS = ("points", "chatpoints")
+_EPHEMERAL_RESULT_ACTIONS = ("points",)
 
 
 def handle_callback(db, callback_query: dict) -> None:
@@ -298,10 +298,6 @@ def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,
         text = handlers.handle_redeem(db, tg_user, chat_id, "")
         markup = handlers.back_markup()
     elif action == "points":
-        text = handlers.handle_points(db, tg_user, chat_id, "")
-        markup = handlers.back_markup()
-    elif action == "chatpoints":
-        # 发言能量已并入 /points 输出：按钮入口一律指向合并后面板。
         text = handlers.handle_points(db, tg_user, chat_id, "")
         markup = handlers.back_markup()
     elif action in ("account", "request", "myrequests", "rank", "requestboard", "rules", "login", "govlog", "level", "report", "propose", "launch"):

@@ -16,6 +16,8 @@
   redeem）在群里仍回私聊提示形态。
 - /points 输出并入群发言能量段（今日已得/累计能量/发言规则），
   /chatpoints 手输仍出原群发言能量卡。
+  （2026-11-13 货币删除收口：群发言计分随 backend.points 模块删除
+  整条摘除——/points 不再并入发言段、/chatpoints 入口删除走未知命令。）
 """
 from __future__ import annotations
 
@@ -223,23 +225,26 @@ def test_start_private_bound_is_welcome_card(db):
     assert "用户编号" not in text
 
 
-# ---------- /points 并入发言能量段；/chatpoints 别名不变 ----------
+# ---------- 发言能量段与 /chatpoints 入口已随货币删除摘除 ----------
 
-def test_points_include_chatpoints_section(db):
+def test_points_card_has_no_chatpoints_section(db):
     _user(db)
     text = handlers.handle_points(db, _tg(), TG, "")
     assert "能量余额" in text
-    assert "今日已得" in text
-    assert "累计能量" in text
-    assert "发言规则" in text
+    assert "今日已得" not in text
+    assert "累计能量" not in text
+    assert "发言规则" not in text
 
 
-def test_chatpoints_alias_keeps_own_card(db, monkeypatch):
+def test_chatpoints_entry_removed(db, monkeypatch):
+    """发言能量入口摘除回归钉（2026-11-13）：handler 不存在、
+    /chatpoints 走未知命令路径，不再有群发言能量卡。"""
     _user(db)
+    assert not hasattr(handlers, "handle_chatpoints")
     sent = _dispatch(db, monkeypatch, "/chatpoints", TG)
     assert sent
-    assert "群发言能量" in sent[0][0]
-    assert "今日已得" in sent[0][0]
+    assert any("未知命令" in t for t, _m in sent)
+    assert not any("群发言能量" in t for t, _m in sent)
 
 
 # ---------- 二期：私聊用户菜单只留三条 ----------

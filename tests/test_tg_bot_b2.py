@@ -73,11 +73,13 @@ def test_points_bound(db):
     assert "✨ <b>能量余额</b> | 250" in text
 
 
-def test_points_vitality_row(db):
+def test_points_card_has_no_vitality_row(db):
+    """活力已随货币删除下线（2026-11-13）：能量卡只剩余额行，
+    不再有活力数值行（其配置模块 backend.vitality 已删）。"""
     user = _make_user(db, username="u9", tg_id=910009, is_welfare=True)
     text = handlers.handle_points(db, {"id": 910009}, 910009, "")
     assert "✨ <b>能量余额</b>" in text
-    assert "活力数值" in text
+    assert "活力数值" not in text
 
 
 def test_redeem_no_args(db):
@@ -92,17 +94,17 @@ def test_redeem_invalid_code(db):
     assert "兑换码无效或已过期" in text
 
 
-def test_redeem_points_success(db):
+def test_redeem_points_code_rejected(db):
+    """积分型兑换码已随货币删除下线（2026-11-13）：兑码核心按类型
+    拒绝，机器人原样回错误文案，不发分。"""
     user = _make_user(db, username="u12", tg_id=910012, is_welfare=True)
     code = models.ExchangeCode(code="TEST100", type="points", points_value=100, is_active=True, max_uses=1)
     db.add(code)
     db.commit()
     text = handlers.handle_redeem(db, {"id": 910012}, 910012, "test100")
-    assert "🎁" in text
-    assert "兑换成功" in text
-    assert "+100 能量" in text
+    assert "兑换码类型不支持" in text
     db.refresh(user)
-    assert user.points == 100
+    assert user.points == 0
 
 
 def test_checkin_entry_removed(db):

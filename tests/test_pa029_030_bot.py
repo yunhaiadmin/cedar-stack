@@ -5,6 +5,9 @@ PA-029：停用账号经机器人兑码/群发言仍能获利（PA-019 博彩门
 router._award_group_chat_points 各加停用门，不改 tg_bot resolve 层与网站核心。
 （签到路径的同名用例随 2026-11-13 签到入口摘除一并删除。）
 （PA-030 抽奖按钮用例随批 9 抽奖面板下线一并删除。）
+（2026-11-13 货币删除收口：群发言计分随 backend.points 模块删除
+整条摘除，两条群发言用例随之删除；积分型兑换码已被兑码核心下线，
+正常账号用例改断言「兑换码类型不支持」。）
 
 全部用隔离的内存 SQLite，不碰生产库。先红后绿：本文件用例在修复前应为红。
 """
@@ -22,7 +25,7 @@ from sqlalchemy.orm import sessionmaker
 
 from backend import models
 from backend.integrations import store
-from backend.tg_bot import callbacks, handlers, router
+from backend.tg_bot import handlers
 
 GROUP = -1001234567
 TG = 900001
@@ -68,12 +71,6 @@ def _tg(tg=TG):
     return {"id": tg, "first_name": "Alice"}
 
 
-def _chat_logs(db, user_id):
-    return db.query(models.PointsLog).filter(
-        models.PointsLog.user_id == user_id,
-        models.PointsLog.type == "chat").all()
-
-
 # ---------- PA-029：停用账号机器人获利门 ----------
 
 def test_disabled_user_cannot_redeem_via_bot(db):
@@ -90,31 +87,17 @@ def test_disabled_user_cannot_redeem_via_bot(db):
         models.CodeRedemption.user_id == user.id).count() == 0
 
 
-def test_active_user_redeem_still_works(db):
+def test_active_user_redeem_points_code_rejected(db):
+    """积分型兑换码已随货币删除下线：正常账号照常走到兑码核心，
+    由核心按类型拒绝（兑换码类型不支持），不发分、不记核销。"""
     user = _make_user(db, "active_redeem", TG, points=0, is_active=True)
     code = models.ExchangeCode(code="TEST101", type="points", points_value=100,
                                is_active=True, max_uses=1)
     db.add(code)
     db.commit()
     text = handlers.handle_redeem(db, _tg(), TG, "TEST101")
-    assert "兑换成功" in text
-    db.refresh(user)
-    assert user.points == 100
-
-
-def test_disabled_user_group_chat_earns_nothing(db):
-    user = _make_user(db, "disabled_chat", TG, points=0, is_active=False)
-    for _ in range(12):
-        router._award_group_chat_points(db, _tg())
+    assert "兑换码类型不支持" in text
     db.refresh(user)
     assert user.points == 0
-    assert _chat_logs(db, user.id) == []
-
-
-def test_active_user_group_chat_still_earns(db):
-    user = _make_user(db, "active_chat", TG, points=0, is_active=True)
-    for _ in range(12):
-        router._award_group_chat_points(db, _tg())
-    db.refresh(user)
-    assert user.points == 1
-    assert len(_chat_logs(db, user.id)) >= 1
+    assert db.query(models.CodeRedemption).filter(
+        models.CodeRedemption.user_id == user.id).count() == 0

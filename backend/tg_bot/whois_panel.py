@@ -21,10 +21,11 @@ callbacks 的 whois:* 回调，每次点击都重新校验点击者 is_staff。
 写操作只许三类（用户 2026-11-02 点选），全部复用现行服务、不另
 写一套：封禁/解封走 backend.user_lifecycle.set_user_active（与网站
 管理端同一实现，停用同事务吊销 Emby 令牌＋抬 token_version）；
-赠能量走 backend.api.economy._add_points（admin_grant 台账，说明
-注明机器人管理员赠送＋操作人）；赠资格走
+赠资格走
 backend.emby_server.portal.grant_welfare；赠凭证走
 backend.codes._grant_bundled_view_unlock（points_spent=0 赠送口径）。
+（赠能量三档已随积分删除摘除，2026-11-13：其依赖的
+economy._add_points 已删，留着只会点一次崩一次。）
 每次写操作另写一条治理审计（governance.record_governance_audit）。
 不做删号。
 """
@@ -44,15 +45,12 @@ logger = logging.getLogger(__name__)
 OPS: dict[str, tuple[str, str]] = {
     "ban": ("封禁账号", "停用账号并吊销其全部 Emby 令牌"),
     "unban": ("解封账号", "恢复账号启用状态"),
-    "gp50": ("赠送能量", "+50 能量"),
-    "gp100": ("赠送能量", "+100 能量"),
-    "gp500": ("赠送能量", "+500 能量"),
     "gw7": ("赠送公益资格", "+7 天"),
     "gw30": ("赠送公益资格", "+30 天"),
     "gv30": ("赠送查看权", "+30 天"),
 }
 
-_GIFT_OPS = ("gp50", "gp100", "gp500", "gw7", "gw30", "gv30")
+_GIFT_OPS = ("gw7", "gw30", "gv30")
 
 #: 赠送确认一次性 nonce（PA-058）：ask 生成、do 执行后失效。
 #: 进程内存放（poller 单进程；进程重启后旧确认页失效，须重新打开
@@ -175,7 +173,7 @@ def cred_page(db, user) -> tuple[str, dict]:
 
 
 def gift_page(db, user) -> tuple[str, dict]:
-    """赠送菜单页：三类赠送的预设档位按钮（点档位先进确认页）。"""
+    """赠送菜单页：两类赠送的预设档位按钮（点档位先进确认页）。"""
     uid = user.id
     text = layout.card(
         layout.title("赠送", f"{user.username}（#{user.id}）"),
@@ -185,11 +183,6 @@ def gift_page(db, user) -> tuple[str, dict]:
         ],
     )
     markup = {"inline_keyboard": [
-        [
-            {"text": "✨ +50", "callback_data": f"whois:ask:{uid}:gp50"},
-            {"text": "✨ +100", "callback_data": f"whois:ask:{uid}:gp100"},
-            {"text": "✨ +500", "callback_data": f"whois:ask:{uid}:gp500"},
-        ],
         [
             {"text": "📊 资格 +7 天", "callback_data": f"whois:ask:{uid}:gw7"},
             {"text": "📊 资格 +30 天", "callback_data": f"whois:ask:{uid}:gw30"},
@@ -304,18 +297,6 @@ def execute(db, admin, target, op: str, nonce: str | None = None) -> str:
             db.commit()
             return f"✅ 已解封 <b>{name}</b>：账号恢复启用（旧令牌不自动恢复）。"
         return f"ℹ️ <b>{name}</b> 已经是启用状态，未做变更。"
-    if op in ("gp50", "gp100", "gp500"):
-        from backend.api.economy import _add_points
-
-        amount = int(op[2:])
-        balance = _add_points(
-            db, target, amount, "admin_grant",
-            f"机器人管理员赠送（操作人 {admin.username}）",
-            f"tg_whois:{admin.id}")
-        _audit(db, "whois_gift_points", admin, target,
-               {"amount": amount, "balance": balance})
-        db.commit()
-        return f"✅ 已给 <b>{name}</b> 赠送 {amount} 能量，当前余额 {balance}。"
     if op in ("gw7", "gw30"):
         from backend.emby_server.portal import grant_welfare
 
