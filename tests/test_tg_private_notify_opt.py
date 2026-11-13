@@ -37,7 +37,7 @@ from backend.api import panel as panel_api
 from backend.api import pool_admin
 from backend.api import welfare_admin
 from backend import governance_report as gov
-from backend import lottery, vitality
+from backend import lottery
 from backend.emby_server import models as em
 from backend.emby_server import new_media_notify as nmn
 from backend.tg_bot import features, proactive
@@ -426,29 +426,6 @@ def test_subscription_reminder_pref_drops_telegram(db, reminder_calls):
             if str(c["event_type"]).startswith("subscription.")]
     assert subs and subs[0]["channels"] == ["in_app"]
 
-
-def test_vitality_zero_and_recovery_notify(db, sent):
-    user = _user(db, "v1", telegram_id=5001, is_welfare=True, vitality=1)
-    result = vitality.daily_deduct(db)
-    assert result["suspended"] == 1
-    assert len(sent) == 1
-    assert "活力" in sent[0]["text"]
-    # 签到/观影恢复路径把活力从 0 拉起来 → 解封通知
-    gained = vitality.award_watch_reward(db, user.id)
-    assert gained >= 1
-    assert len(sent) == 2
-    assert "恢复" in sent[1]["text"]
-
-
-def test_vitality_notify_respects_expiry_pref(db, sent):
-    user = _user(db, "v2", telegram_id=5002, is_welfare=True, vitality=1)
-    user.tg_notify_expiry = False
-    db.commit()
-    vitality.daily_deduct(db)
-    assert sent == []
-
-
-# ---------- 2. 承诺落点：抽奖补发 / 池审核 / 举报 ----------
 
 def _lottery_round_with_winner(db, user, distributed=False):
     rnd = models.LotteryRound(

@@ -24,7 +24,7 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from backend import config_schema, models, vitality
+from backend import config_schema, models
 from backend.api import admin_economy, welfare_admin
 from backend.config_service import save_config
 from backend.integrations import store as _store
@@ -45,20 +45,10 @@ def db():
     # 每个用例开始前把 get_vitality_config 读到的全部 store 键失效，
     # 本库缺行时走代码缺省（enabled 默认开），不再继承别库的缓存值。
     _store.invalidate(
-        vitality.CONFIG_ENABLED,
-        vitality.CONFIG_MAX,
-        vitality.CONFIG_DAILY_COST,
-        vitality.CONFIG_LIMIT_THRESHOLD,
-        vitality.CONFIG_POINT_COST,
-        vitality.CONFIG_WATCH_REWARD,
-        vitality.CONFIG_DAILY_GAIN_LIMIT,
-        vitality.CONFIG_ARCHIVE_CLAMP,
-        vitality.CONFIG_WATCH_TIER1_MINUTES,
-        vitality.CONFIG_WATCH_TIER1_REWARD,
-        vitality.CONFIG_WATCH_TIER2_MINUTES,
-        vitality.CONFIG_WATCH_TIER2_REWARD,
-        vitality.CONFIG_CHECKIN_SKIP_DEDUCT_ENABLED,
-        vitality.CONFIG_LAST_DEDUCT_DATE)
+        "welfare_vitality_renew_min", "register_gift_welfare_days",
+        "register_gift_view_days", "register_gift_welfare_enabled",
+        "register_gift_view_enabled", "promotion_reward_days",
+        "media_seek_daily_limit")
     yield session
     session.close()
 
@@ -89,9 +79,6 @@ def test_new_keys_registered_with_current_defaults():
         "int", 0, config_schema._BIG)
     assert config_schema.WELFARE_CONFIG_SCHEMA["register_gift_view_days"] == (
         "int", 1, config_schema._BIG)
-    assert admin_economy.ECONOMY_CONFIG_KEYS["vitality_checkin_gain"] == "int"
-    assert config_schema.ECONOMY_CONFIG_SCHEMA["vitality_checkin_gain"] == (
-        "int", 0, config_schema._BIG)
 
 
 def test_preexisting_keys_for_ui_only_fields_untouched():
@@ -99,11 +86,6 @@ def test_preexisting_keys_for_ui_only_fields_untouched():
     assert welfare_admin.WELFARE_CONFIG_KEYS["welfare_vitality_renew_min"] == "3"
     assert config_schema.WELFARE_CONFIG_SCHEMA["welfare_vitality_renew_min"] == (
         "int", 0, 1000)
-    for key in ("vitality_watch_tier1_minutes", "vitality_watch_tier1_reward",
-                "vitality_watch_tier2_minutes", "vitality_watch_tier2_reward"):
-        assert admin_economy.ECONOMY_CONFIG_KEYS[key] == "int"
-        assert config_schema.ECONOMY_CONFIG_SCHEMA[key] == (
-            "int", 0, config_schema._BIG)
     # 经济键集与注册表仍逐键对齐（config_slim_b4e 的契约）
     assert set(config_schema.ECONOMY_CONFIG_SCHEMA) == set(admin_economy.ECONOMY_CONFIG_KEYS)
 
@@ -121,12 +103,6 @@ def test_new_keys_normalize_valid_values():
     assert config_schema.normalize(
         "register_gift_view_days",
         config_schema.WELFARE_CONFIG_SCHEMA["register_gift_view_days"], 15) == "15"
-    assert config_schema.normalize(
-        "vitality_checkin_gain",
-        config_schema.ECONOMY_CONFIG_SCHEMA["vitality_checkin_gain"], 3) == "3"
-    assert config_schema.normalize(
-        "vitality_checkin_gain",
-        config_schema.ECONOMY_CONFIG_SCHEMA["vitality_checkin_gain"], 0) == "0"
 
 
 def test_new_keys_normalize_rejects_invalid():
@@ -139,25 +115,7 @@ def test_new_keys_normalize_rejects_invalid():
     for bad in (0, -1, "abc"):
         with pytest.raises(config_schema.ConfigValueError):
             config_schema.normalize("register_gift_view_days", view_spec, bad)
-    gain_spec = config_schema.ECONOMY_CONFIG_SCHEMA["vitality_checkin_gain"]
-    for bad in (-1, "abc"):
-        with pytest.raises(config_schema.ConfigValueError):
-            config_schema.normalize("vitality_checkin_gain", gain_spec, bad)
 
-
-def test_tier_order_cross_validation_still_applies(db):
-    # 二档分钟数小于一档：端点层复合校验直接 400（vitality.validate_vitality_config 口径）
-    with pytest.raises(HTTPException):
-        admin_economy._validate_vitality_settings(
-            db, {"vitality_watch_tier1_minutes": "30",
-                 "vitality_watch_tier2_minutes": "20"})
-    # 合法组合不报错（未提交的键走库里现值／默认值合并校验）
-    admin_economy._validate_vitality_settings(
-        db, {"vitality_watch_tier1_minutes": "30",
-             "vitality_watch_tier2_minutes": "60"})
-
-
-# ==================== 3. 保存后读数生效 ====================
 
 def test_welfare_keys_save_and_read_back(db):
     save_config(db, {"welfare_vitality_renew_min": "5",
@@ -173,54 +131,15 @@ def test_welfare_keys_save_and_read_back(db):
 
 
 def test_economy_keys_save_and_read_back(db):
-    save_config(db, {"vitality_checkin_gain": "3",
-                     "vitality_watch_tier1_minutes": "45"}, schema="economy")
+    save_config(db, {"promotion_reward_days": "3",
+                     "media_seek_daily_limit": "45"}, schema="economy")
     db.commit()
-    for key, want in (("vitality_checkin_gain", "3"),
-                      ("vitality_watch_tier1_minutes", "45")):
+    for key, want in (("promotion_reward_days", "3"),
+                      ("media_seek_daily_limit", "45")):
         row = db.query(models.SystemConfig).filter(models.SystemConfig.key == key).first()
         assert row is not None and row.value == want
     with pytest.raises(config_schema.ConfigValueError):
-        save_config(db, {"vitality_checkin_gain": "-1"}, schema="economy")
-
-
-# ==================== 4. 签到活力奖励走新键 ====================
-
-def _checkin_welfare_user(db, username, vitality=5):
-    _set_config(db, "checkin_enabled", "true")
-    return _make_user(db, username, is_welfare=True, vitality=vitality, points=0)
-
-
-def test_checkin_gain_default_is_0(db):
-    """新政默认（2026-11-09 签到不送活力）：未配键 → 签到后活力不变。"""
-    from backend.api.economy import _do_checkin_core
-
-    u = _checkin_welfare_user(db, "welf1", vitality=5)
-    _do_checkin_core(db, u)
-    db.refresh(u)
-    assert u.vitality == 5
-
-
-def test_checkin_gain_custom_and_zero(db):
-    from backend.api.economy import _do_checkin_core
-
-    # 本用例测的是“自定义 gain 值生效”（管理员显式配正数恢复签到送
-    # 活力）；签到发放已不再受每日免费上限钳制（上限只管观影，见
-    # test_pa013_016_economy.py 改写后的 PA-014 用例），此处抬上限到
-    # 10 只是隔离旧变量、保持断言只测 gain 本身。
-    _set_config(db, "vitality_daily_gain_limit", "10")
-    _set_config(db, "vitality_checkin_gain", "3")
-    u = _checkin_welfare_user(db, "welf2", vitality=5)
-    _do_checkin_core(db, u)
-    db.refresh(u)
-    assert u.vitality == 8
-
-    _set_config(db, "vitality_checkin_gain", "0")
-    u2 = _checkin_welfare_user(db, "welf3", vitality=5)
-    # 同一 DB 里换用户签到：第二人同样走新键
-    _do_checkin_core(db, u2)
-    db.refresh(u2)
-    assert u2.vitality == 5
+        save_config(db, {"promotion_reward_days": "-1"}, schema="economy")
 
 
 # ==================== 5. 新注册赠送走新键 ====================
