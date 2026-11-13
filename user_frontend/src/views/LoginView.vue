@@ -14,7 +14,8 @@ import { useUserStore } from '@/stores/user'
 import { useToast } from '@/composables/useToast'
 import { toUserMessage } from '@/utils/toUserMessage'
 import { toastFallback } from '@/constants/toastMessages'
-import { User, Lock, Mail, Eye, EyeOff, Clapperboard, Gift, Send, KeyRound, BadgeCheck } from 'lucide-vue-next'
+import { User, Lock, Mail, Eye, EyeOff, Clapperboard, Gift, Send, KeyRound, BadgeCheck, Menu, Sun, Moon } from 'lucide-vue-next'
+import { useTheme } from '@/composables/useTheme'
 // 人机验证挂件（能力：人机验证）：管理员未开启时该组件自己什么都不渲染
 import CaptchaChallenge from '@/components/ui/CaptchaChallenge.vue'
 // 站名来自「站点与品牌」能力（未配置时用默认值）
@@ -27,6 +28,15 @@ const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 const toast = useToast()
+
+// 页头玻璃胶囊（2026-11-13 1:1 返工）：外观切换＋营销菜单收进一颗胶囊。
+// 外观走现行 useTheme 机制（本页视觉跟随用户外观，见文件下方注释），
+// 菜单内容＝现有营销导航（首页 /welcome、定价 /pricing），行为照现有。
+const { resolved, setPreference } = useTheme()
+const menuOpen = ref(false)
+function toggleTheme() {
+  setPreference(resolved.value === 'dark' ? 'light' : 'dark')
+}
 
 // 注册页开关（管理端可配）：注册模式 + 邀请码开关
 // registration_mode: open=开放注册 / code=凭码注册（两步） / closed=关闭注册
@@ -250,9 +260,9 @@ async function handleRegister() {
 
 // 主题机制不变：本页不自己动 data-theme，路由守卫 afterEach 已按 localStorage
 // 'aetrix-theme' 恢复用户偏好（作用于其余页面）。
-// 但本页视觉自 UHD 换皮批 1 起为固定浅色卡式（说明书逐页对照表第 1/2 行，
-// 覆盖 2026-10-14「登录页跟随用户主题」的视觉口径）：样式只用 --uhd-l-* 浅色令牌，
-// 不随 data-theme 变色；逻辑与主题机制一字未动。
+// 视觉口径（2026-11-13 1:1 返工，覆盖批 1 的固定浅色）：本页跟随用户外观——
+// 样式走组件内 --a-* 变量，html[data-theme='light'] 时为浅色面（原站截图口径），
+// 缺省深色面用同色系低透明粉彩光晕；认证逻辑与主题机制一字未动。
 
 // 注：旧皮的海报拼贴背景（PosterCollage + fetchLoginPosters 延迟拉取）已随
 // UHD 换皮批 1 固定浅色卡式退场，相关状态与拉取一并移除；那是纯装饰背景，
@@ -295,15 +305,46 @@ onMounted(() => {
   <div class="auth-page">
     <!-- UHD 换皮批 1：固定浅色卡式——粉彩光斑底 + 居中白卡；
          原海报拼贴背景与网格层随旧皮退场（海报数据拉取逻辑保留在脚本中，未渲染） -->
-    <div class="auth-column">
-      <div class="auth-brand">
-        <div class="brand-mark">
-          <img decoding="async" loading="lazy" v-if="branding.logo_url" :src="branding.logo_url" :alt="branding.site_name" />
-          <Clapperboard v-else :size="22" aria-hidden="true" />
-        </div>
-        <h1 class="brand-title">{{ branding.site_name }}</h1>
-        <p class="brand-subtitle">自建 Emby 影视服务 · 一个账号，手机/电视/电脑都能看</p>
+    <!-- 页头行（原站形态）：左品牌字标，右外观＋菜单一颗玻璃胶囊 -->
+    <header class="auth-top">
+      <div class="auth-top__brand">
+        <img v-if="branding.logo_url" class="auth-top__logo" :src="branding.logo_url" :alt="branding.site_name" />
+        <Clapperboard v-else :size="25" aria-hidden="true" />
+        <span class="auth-top__word">
+          <span class="auth-top__name">{{ branding.site_name }}</span>
+          <span class="auth-top__sub">SERVICE</span>
+        </span>
       </div>
+      <div class="auth-top__glass">
+        <button
+          type="button"
+          class="auth-top__iconbtn"
+          :aria-label="resolved === 'dark' ? '切换到浅色外观' : '切换到深色外观'"
+          @click="toggleTheme"
+        >
+          <Sun v-if="resolved === 'dark'" :size="18" aria-hidden="true" />
+          <Moon v-else :size="18" aria-hidden="true" />
+        </button>
+        <span class="auth-top__divider" aria-hidden="true"></span>
+        <button
+          type="button"
+          class="auth-top__iconbtn"
+          aria-label="菜单"
+          :aria-expanded="menuOpen"
+          @click="menuOpen = !menuOpen"
+        >
+          <Menu :size="18" aria-hidden="true" />
+        </button>
+        <div v-if="menuOpen" class="auth-menu">
+          <RouterLink to="/welcome" @click="menuOpen = false">首页</RouterLink>
+          <RouterLink to="/pricing" @click="menuOpen = false">定价</RouterLink>
+        </div>
+      </div>
+    </header>
+
+    <div class="auth-main">
+    <div class="auth-column">
+      <h1 class="auth-title">{{ mode === 'login' ? '登录' : '注册' }} {{ branding.site_name }}</h1>
 
       <!-- 模式切换 -->
       <div class="mode-switch" role="tablist" aria-label="登录或注册">
@@ -535,117 +576,200 @@ onMounted(() => {
         · <RouterLink class="auth-legal-link" to="/privacy">隐私政策</RouterLink>
       </p>
     </div>
+    </div>
   </div>
 </template>
 
+
 <style scoped>
 /* ============================================================
-   UHD 换皮批 1 · 登录/注册固定浅色卡式（说明书逐页对照表第 1/2 行）
-   粉彩光斑底（仅入口页）+ 居中白卡 445px / 圆角 20 / 柔和阴影；
-   标签 14px、输入框 44px 高圆角 13px 浅灰底、主按钮 46px 全宽胶囊
-   （彩虹边框 + 淡彩底，白名单位置）、模式切换为分段切换模具。
-   只用 --uhd-* 令牌；业务逻辑、校验与两步流程均未改动。
+   UHD 换皮 · 登录/注册（2026-11-13 按原站 1:1 返工）
+   页头行（品牌字标＋玻璃胶囊）＋居中卡：桌面圆角约 20（实测清单第 3 节；
+   移动端未测到，保留圆角 30）；输入桌面高 46、圆角约 23（移动保留
+   54px 全胶囊），标签 15px 在框上方；主按钮实测淡彩虹渐变填充＋
+   1px 彩虹边框、高 46、圆角约 23、黑字（移动保留 53px）；
+   TG 钮同尺寸白底描边（原站 Passkey 钮位）。
+   页面跟随用户外观：--a-* 变量缺省深色，data-theme='light' 换浅；
+   背景顶部粉彩光晕（深色低透明同色）。认证逻辑一字未动。
    ============================================================ */
 .auth-page {
   box-sizing: border-box;
   min-height: 100vh;
   min-height: 100svh;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 48px 24px;
+  flex-direction: column;
+  padding: 0 24px 40px;
   position: relative;
   isolation: isolate;
   overflow: hidden;
   background:
-    radial-gradient(600px 420px at 12% 6%, var(--uhd-blob-peach), transparent 70%),
-    radial-gradient(560px 400px at 88% 12%, var(--uhd-blob-sky), transparent 70%),
-    radial-gradient(640px 460px at 80% 94%, var(--uhd-blob-lilac), transparent 70%),
-    radial-gradient(520px 380px at 6% 90%, var(--uhd-blob-mint), transparent 70%),
-    var(--uhd-l-bg);
-  color: var(--uhd-l-text);
+    radial-gradient(600px 420px at 12% 4%, rgba(246, 205, 190, 0.13), transparent 70%),
+    radial-gradient(560px 400px at 88% 10%, rgba(160, 195, 245, 0.13), transparent 70%),
+    radial-gradient(640px 460px at 80% 96%, rgba(205, 190, 245, 0.11), transparent 70%),
+    radial-gradient(520px 380px at 6% 92%, rgba(175, 230, 205, 0.1), transparent 70%),
+    #070708;
+  color: #ffffff;
   font-family: var(--uhd-font-sans);
 }
 
-/* 居中白卡本体 */
+/* 页头行 */
+.auth-top {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 20px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.auth-top__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #ffffff;
+  min-width: 0;
+}
+.auth-top__logo {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+.auth-top__word {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+.auth-top__name {
+  font-size: 17px;
+  font-weight: var(--uhd-fw-extrabold);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.auth-top__sub {
+  font-size: 9px;
+  font-weight: var(--uhd-fw-semibold);
+  letter-spacing: 0.32em;
+  color: rgba(255, 255, 255, 0.4);
+}
+/* 玻璃胶囊（底坞配方缩小版：半透＋blur＋边缘光＋顶部高光＋柔影） */
+.auth-top__glass {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(28, 28, 31, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 10px 28px rgba(0, 0, 0, 0.16);
+}
+.auth-top__iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #ffffff;
+  cursor: pointer;
+}
+.auth-top__iconbtn:hover {
+  background: rgba(140, 140, 150, 0.16);
+}
+.auth-top__divider {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.1);
+}
+.auth-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 148px;
+  padding: 6px;
+  border-radius: 16px;
+  background: #141416;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+}
+.auth-menu a {
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: var(--uhd-fw-medium);
+  text-decoration: none;
+}
+.auth-menu a:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* 卡片居中区 */
+.auth-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding-top: 28px;
+}
 .auth-column {
   position: relative;
   z-index: 1;
   width: 100%;
-  max-width: 445px;
+  max-width: 460px;
   min-width: 0;
   box-sizing: border-box;
-  padding: 38px 34px 30px;
-  background: var(--uhd-l-surface);
-  border: 1px solid var(--uhd-l-border);
+  padding: 40px 38px 32px;
+  background: #141416;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 20px;
-  box-shadow: var(--uhd-shadow-card-l);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
   animation: authColumnIn var(--uhd-dur-blur-in) var(--uhd-ease-pop) both;
 }
-
 @keyframes authColumnIn {
   from { opacity: 0; transform: translateY(12px); filter: blur(6px); }
   to { opacity: 1; transform: none; filter: blur(0); }
 }
-
-.auth-brand {
-  text-align: center;
-  margin-bottom: 1.75rem;
-}
-
-.brand-mark {
-  width: 46px;
-  height: 46px;
-  margin: 0 auto 1rem;
-  border-radius: var(--uhd-radius-base);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--uhd-l-text-2);
-}
-
-.brand-mark img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  border-radius: inherit;
-}
-
-.brand-title {
-  font-size: var(--uhd-fs-h3-lg);
+.auth-title {
+  margin: 0 0 1.6rem;
+  font-family: var(--uhd-font-sans);
+  font-size: 30px;
   font-weight: var(--uhd-fw-extrabold);
-  letter-spacing: 0.01em;
-  color: var(--uhd-l-text);
-  margin: 0 0 0.5rem;
-  line-height: 1.25;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: #ffffff;
   overflow-wrap: anywhere;
 }
 
-.brand-subtitle {
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-l-text-2);
-  margin: 0;
-  line-height: 1.6;
-}
-
-/* 模式切换：分段切换模具（浅灰底 + 白胶囊激活项） */
+/* 模式切换：分段切换（底槽＋填充胶囊激活项） */
 .mode-switch {
   box-sizing: border-box;
   position: relative;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  background: var(--uhd-l-seg-bg);
+  background: rgba(255, 255, 255, 0.08);
   border: none;
-  border-radius: 22px;
+  border-radius: 999px;
   padding: 4px;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.6rem;
 }
-
 .mode-btn {
   position: relative;
   z-index: 1;
   min-width: 0;
-  min-height: 36px;
+  min-height: 38px;
   padding: 0 0.75rem;
   border: none;
   background: transparent;
@@ -654,24 +778,21 @@ onMounted(() => {
   font-size: var(--uhd-fs-caption);
   font-weight: var(--uhd-fw-medium);
   line-height: 1;
-  color: var(--uhd-l-text-2);
+  color: rgba(255, 255, 255, 0.62);
   cursor: pointer;
   transition: color 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-
 .mode-btn-label {
   line-height: 1;
   transform: translateY(-0.05em);
 }
-
 .mode-btn.active {
-  color: var(--uhd-l-text);
+  color: #ffffff;
   font-weight: var(--uhd-fw-semibold);
 }
-
 .mode-indicator {
   position: absolute;
   top: 4px;
@@ -679,73 +800,64 @@ onMounted(() => {
   width: calc(50% - 4px);
   height: calc(100% - 8px);
   border-radius: var(--uhd-radius-pill);
-  background: var(--uhd-l-surface);
+  background: #141416;
   box-shadow: var(--uhd-shadow-seg);
   pointer-events: none;
   transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
-
 .mode-indicator.right {
   transform: translateX(100%);
 }
 
-/* 表单与字段（卡内口径：标签 14px、输入 44px / 圆角 13px / 浅灰底） */
+/* 表单与字段：标签 15px 在框上方，输入全胶囊 54px */
 .auth-form {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.05rem;
 }
-
 .field {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   min-width: 0;
 }
-
 .field-label {
-  font-size: var(--uhd-fs-caption);
+  font-size: 15px;
   font-weight: var(--uhd-fw-medium);
   line-height: 1.5;
-  color: var(--uhd-l-text);
+  color: #ffffff;
 }
-
 .optional {
   margin-left: 0.25rem;
   font-size: var(--uhd-fs-aux-sm);
   font-style: normal;
   font-weight: var(--uhd-fw-normal);
-  color: var(--uhd-l-text-3);
+  color: rgba(255, 255, 255, 0.4);
 }
-
 .field-box {
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  min-height: 44px;
-  background: var(--uhd-l-input-bg);
-  border: 1px solid var(--uhd-l-border);
-  border-radius: var(--uhd-radius-input);
-  padding: 0 14px;
+  min-height: 46px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 23px;
+  padding: 0 18px;
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
-
 .field-box:focus-within {
   border-color: var(--uhd-l-link);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
 }
-
 .field-icon {
-  color: var(--uhd-l-text-3);
+  color: rgba(255, 255, 255, 0.4);
   margin-right: 0.625rem;
   flex-shrink: 0;
   transition: color 0.2s ease;
 }
-
 .field-box:focus-within .field-icon {
-  color: var(--uhd-l-text-2);
+  color: rgba(255, 255, 255, 0.62);
 }
-
 .field-box input {
   box-sizing: border-box;
   flex: 1;
@@ -755,26 +867,22 @@ onMounted(() => {
   background: transparent;
   border: none;
   outline: none;
-  color: var(--uhd-l-text);
+  color: #ffffff;
   font: inherit;
-  font-size: var(--uhd-fs-body);
+  font-size: 16px;
 }
-
 .field-box input::placeholder {
-  color: var(--uhd-l-text-3);
+  color: rgba(255, 255, 255, 0.4);
   opacity: 1;
 }
-
-/* 浏览器自动填充默认底色会盖住输入框，强制跟随卡内浅灰底 */
 .field-box input:-webkit-autofill,
 .field-box input:-webkit-autofill:hover,
 .field-box input:-webkit-autofill:focus,
 .field-box input:-webkit-autofill:active {
-  -webkit-text-fill-color: var(--uhd-l-text);
-  -webkit-box-shadow: 0 0 0 1000px var(--uhd-l-input-bg) inset;
+  -webkit-text-fill-color: #ffffff;
+  -webkit-box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.06) inset;
   transition: background-color 5000s ease-in-out 0s;
 }
-
 .eye-btn {
   position: relative;
   box-sizing: border-box;
@@ -788,28 +896,26 @@ onMounted(() => {
   margin-left: 0.375rem;
   background: transparent;
   border: none;
-  color: var(--uhd-l-text-3);
+  color: rgba(255, 255, 255, 0.4);
   cursor: pointer;
   border-radius: 50%;
   transition: color 0.2s ease, background-color 0.2s ease;
 }
-
 .eye-btn::after {
   content: "";
   position: absolute;
   inset: -6px;
 }
-
 @media (hover: hover) {
   .eye-btn:hover {
-    color: var(--uhd-l-text);
-    background: var(--uhd-l-divider);
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.08);
   }
 }
-
 .mode-btn:focus-visible,
 .eye-btn:focus-visible,
-.submit-btn:focus-visible {
+.submit-btn:focus-visible,
+.auth-top__iconbtn:focus-visible {
   outline: 2px solid var(--uhd-l-link);
   outline-offset: 3px;
 }
@@ -821,15 +927,13 @@ onMounted(() => {
   gap: 0.625rem;
   margin-top: 0.125rem;
 }
-
 .strength-track {
   flex: 1;
   height: 3px;
-  background: var(--uhd-l-divider);
+  background: rgba(255, 255, 255, 0.08);
   border-radius: var(--uhd-radius-pill);
   overflow: hidden;
 }
-
 .strength-fill {
   height: 100%;
   width: 100%;
@@ -838,14 +942,12 @@ onMounted(() => {
   transform-origin: left center;
   transition: transform 0.3s ease, background-color 0.3s ease;
 }
-
 .strength-fill.lv-1 { transform: scaleX(0.33); background: var(--uhd-danger); }
 .strength-fill.lv-2 { transform: scaleX(0.66); background: var(--uhd-dot-doing); }
 .strength-fill.lv-3 { transform: scaleX(1); background: var(--uhd-success); }
-
 .strength-text {
   font-size: var(--uhd-fs-aux);
-  color: var(--uhd-l-text-3);
+  color: rgba(255, 255, 255, 0.4);
   min-width: 16px;
 }
 
@@ -861,7 +963,6 @@ onMounted(() => {
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
-
 .closed-notice {
   margin: 0;
   padding: 0.75rem 1rem;
@@ -873,7 +974,6 @@ onMounted(() => {
   line-height: 1.5;
   text-align: center;
 }
-
 .retry-link {
   background: none;
   border: none;
@@ -890,15 +990,13 @@ onMounted(() => {
   margin: 0;
   font-size: var(--uhd-fs-aux);
   line-height: 1.6;
-  color: var(--uhd-l-text-3);
+  color: rgba(255, 255, 255, 0.4);
 }
-
 .hint-link {
   color: var(--uhd-l-link);
   text-decoration: underline;
   white-space: nowrap;
 }
-
 .verified-code {
   margin: 0;
   display: flex;
@@ -907,18 +1005,18 @@ onMounted(() => {
   flex-wrap: wrap;
   padding: 0.625rem 1rem;
   border-radius: var(--uhd-radius-navitem);
-  background: var(--uhd-l-active);
-  color: var(--uhd-l-text-2);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.62);
   font-size: var(--uhd-fs-aux);
   line-height: 1.5;
 }
-
 .verified-code .retry-link {
   min-height: 32px;
   margin-left: auto;
 }
 
-/* 主按钮：46px 全宽胶囊，彩虹边框 + 淡彩底（白名单位置，同 UhdButton 主按钮口径） */
+/* 主按钮：高 46、圆角约 23，实测淡彩虹渐变填充＋1px 彩虹边框＋黑字
+   （渐变停点＝实测清单第 3 节登录钮中心行采样串，逐停点照抄） */
 .submit-btn {
   box-sizing: border-box;
   display: flex;
@@ -930,32 +1028,27 @@ onMounted(() => {
   flex-shrink: 0;
   margin-top: 0.25rem;
   padding: 0 24px;
-  border: var(--uhd-rainbow-border-w) solid transparent;
-  border-radius: var(--uhd-radius-pill);
+  border: 1px solid transparent;
+  border-radius: 23px;
   background:
-    var(--uhd-rainbow-soft) padding-box,
+    linear-gradient(90deg, #fcfcfb 0%, #edebe5 4%, #bc9c00 9%, #b8a207 13%, #b4a80e 17%, #b0a919 22%, #a9aa25 26%, #a0aa30 30%, #95ab3b 35%, #86ab46 39%, #72ac52 43%, #50ac5f 48%, #0fac75 52%, #00ac9b 57%, #00a3c4 61%, #6180de 65%, #b28dd9 70%, #edfafb 74%, #e1f5f7 78%, #d9f2f6 83%, #d2f0f3 87%, #c8eef1 91%, #c1eaef 96%, #b9e7ed 100%) padding-box,
     var(--uhd-rainbow) border-box;
-  background-color: var(--uhd-l-surface);
-  color: var(--uhd-l-text);
+  color: #111111;
   font: inherit;
-  font-size: var(--uhd-fs-body);
+  font-size: 15px;
   font-weight: var(--uhd-fw-semibold);
   cursor: pointer;
   transition: transform 0.15s ease, filter 0.2s ease, opacity 0.2s ease;
 }
-
 .submit-btn:hover:not(:disabled) {
   filter: brightness(1.03);
 }
-
 .submit-btn:active:not(:disabled) {
   transform: scale(0.98);
 }
-
 .submit-btn:disabled {
-  background: var(--uhd-l-input-bg);
-  border-color: transparent;
-  color: var(--uhd-l-text-3);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.4);
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -964,11 +1057,9 @@ onMounted(() => {
   margin: 1.5rem 0 0;
   text-align: center;
   font-size: var(--uhd-fs-aux);
-  color: var(--uhd-l-text-3);
+  color: rgba(255, 255, 255, 0.4);
   line-height: 1.6;
 }
-
-/* 登录页脚注里的隐私政策链接：未登录访客挂载后落到登录页时仍能看到入口 */
 .auth-legal-link {
   color: inherit;
   text-decoration: underline;
@@ -977,56 +1068,52 @@ onMounted(() => {
 
 @media (max-width: 767px) {
   .auth-page {
-    padding: 24px 16px calc(24px + env(safe-area-inset-bottom));
+    padding: 0 16px calc(24px + env(safe-area-inset-bottom));
   }
-
+  .auth-top {
+    padding-top: 14px;
+  }
   .auth-column {
     max-width: 100%;
-    padding: 30px 22px 24px;
+    padding: 32px 24px 26px;
+    /* 移动端未测到：保留上一轮经用户截图验收的移动值，不拿桌面实测硬压 */
+    border-radius: 30px;
   }
-
   .field-box {
-    min-height: 44px;
+    min-height: 54px;
+    border-radius: 999px;
   }
-
   .submit-btn {
-    height: 46px;
+    height: 53px;
+    border-radius: 999px;
   }
-
-  /* iOS 输入框字号 <16px 会触发自动放大，保持 16px */
-  .field-box input {
-    font-size: 16px;
-  }
-
-  .auth-footnote {
-    margin-bottom: 8px;
+  .tg-login-btn {
+    height: 53px;
+    border-radius: 999px;
   }
 }
 
-/* TG 一键登录入口（白底灰边次按钮，与彩虹主按钮区分主次） */
+/* TG 一键登录入口：与主钮同尺寸（高 46、圆角约 23）的白底描边钮（原站 Passkey 钮位） */
 .tg-login {
   margin-top: 1rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
-
 .tg-login-divider {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  color: var(--uhd-l-text-3);
+  color: rgba(255, 255, 255, 0.4);
   font-size: var(--uhd-fs-aux);
 }
-
 .tg-login-divider::before,
 .tg-login-divider::after {
   content: '';
   flex: 1;
   height: 1px;
-  background: var(--uhd-l-border);
+  background: rgba(255, 255, 255, 0.1);
 }
-
 .tg-login-btn {
   box-sizing: border-box;
   display: flex;
@@ -1034,32 +1121,29 @@ onMounted(() => {
   justify-content: center;
   gap: 0.5rem;
   width: 100%;
-  min-height: 46px;
+  height: 46px;
   padding: 0 24px;
-  background: var(--uhd-l-surface);
-  border: 1px solid var(--uhd-l-border);
-  border-radius: var(--uhd-radius-pill);
-  color: var(--uhd-l-text);
+  background: #141416;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 23px;
+  color: #ffffff;
   font-size: var(--uhd-fs-body);
   font-weight: var(--uhd-fw-semibold);
   text-decoration: none;
   transition: filter 0.2s ease, border-color 0.2s ease;
 }
-
 .tg-login-btn:hover {
   filter: brightness(0.98);
 }
-
 .tg-login-btn:focus-visible {
   outline: 2px solid var(--uhd-l-link);
   outline-offset: 2px;
 }
-
 .tg-login-hint {
   margin: 0;
   font-size: var(--uhd-fs-aux);
   line-height: 1.5;
-  color: var(--uhd-l-text-3);
+  color: rgba(255, 255, 255, 0.4);
   text-align: center;
 }
 
@@ -1070,4 +1154,69 @@ onMounted(() => {
     transition: none !important;
   }
 }
+
+/* 浅色覆盖：跟随用户外观（html[data-theme='light']） */
+html[data-theme='light'] .auth-page {
+  background:
+    radial-gradient(600px 420px at 12% 4%, var(--uhd-blob-peach), transparent 70%),
+    radial-gradient(560px 400px at 88% 10%, var(--uhd-blob-sky), transparent 70%),
+    radial-gradient(640px 460px at 80% 96%, var(--uhd-blob-lilac), transparent 70%),
+    radial-gradient(520px 380px at 6% 92%, var(--uhd-blob-mint), transparent 70%),
+    var(--uhd-l-bg);
+  color: var(--uhd-l-text);
+}
+html[data-theme='light'] .auth-top__brand { color: var(--uhd-l-text); }
+html[data-theme='light'] .auth-top__sub { color: var(--uhd-l-text-3); }
+html[data-theme='light'] .auth-top__glass {
+  background: rgba(255, 255, 255, 0.6);
+  border-color: rgba(255, 255, 255, 0.65);
+}
+html[data-theme='light'] .auth-top__iconbtn { color: var(--uhd-l-text); }
+html[data-theme='light'] .auth-top__divider { background: var(--uhd-l-border); }
+html[data-theme='light'] .auth-menu {
+  background: var(--uhd-l-surface);
+  border-color: var(--uhd-l-border);
+  box-shadow: var(--uhd-shadow-card-l);
+}
+html[data-theme='light'] .auth-menu a { color: var(--uhd-l-text); }
+html[data-theme='light'] .auth-menu a:hover { background: var(--uhd-l-seg-bg); }
+html[data-theme='light'] .auth-column {
+  background: var(--uhd-l-surface);
+  border-color: var(--uhd-l-border);
+  box-shadow: var(--uhd-shadow-card-l);
+}
+html[data-theme='light'] .auth-title { color: var(--uhd-l-text); }
+html[data-theme='light'] .mode-switch { background: var(--uhd-l-seg-bg); }
+html[data-theme='light'] .mode-btn { color: var(--uhd-l-text-2); }
+html[data-theme='light'] .mode-btn.active { color: var(--uhd-l-text); }
+html[data-theme='light'] .mode-indicator { background: var(--uhd-l-surface); }
+html[data-theme='light'] .field-label { color: var(--uhd-l-text); }
+html[data-theme='light'] .optional { color: var(--uhd-l-text-3); }
+/* 输入框底/边按实测清单第 3 节字面值（#f4f4f5 / #e4e4e7），不用共享令牌近似值 */
+html[data-theme='light'] .field-box { background: #f4f4f5; border-color: #e4e4e7; }
+html[data-theme='light'] .field-icon { color: var(--uhd-l-text-3); }
+html[data-theme='light'] .field-box:focus-within .field-icon { color: var(--uhd-l-text-2); }
+html[data-theme='light'] .field-box input { color: var(--uhd-l-text); }
+html[data-theme='light'] .field-box input::placeholder { color: var(--uhd-l-text-3); }
+html[data-theme='light'] .field-box input:-webkit-autofill {
+  -webkit-text-fill-color: var(--uhd-l-text);
+  -webkit-box-shadow: 0 0 0 1000px #f4f4f5 inset;
+}
+html[data-theme='light'] .eye-btn { color: var(--uhd-l-text-3); }
+html[data-theme='light'] .eye-btn:hover { color: var(--uhd-l-text); background: var(--uhd-l-seg-bg); }
+html[data-theme='light'] .strength-track { background: var(--uhd-l-divider); }
+html[data-theme='light'] .strength-text { color: var(--uhd-l-text-3); }
+html[data-theme='light'] .regcode-hint { color: var(--uhd-l-text-3); }
+html[data-theme='light'] .verified-code { background: var(--uhd-l-active); color: var(--uhd-l-text-2); }
+html[data-theme='light'] .submit-btn:disabled { background: var(--uhd-l-input-bg); color: var(--uhd-l-text-3); }
+html[data-theme='light'] .auth-footnote { color: var(--uhd-l-text-3); }
+html[data-theme='light'] .tg-login-divider { color: var(--uhd-l-text-3); }
+html[data-theme='light'] .tg-login-divider::before,
+html[data-theme='light'] .tg-login-divider::after { background: var(--uhd-l-border); }
+html[data-theme='light'] .tg-login-btn {
+  background: var(--uhd-l-surface);
+  border-color: var(--uhd-l-border);
+  color: var(--uhd-l-text);
+}
+html[data-theme='light'] .tg-login-hint { color: var(--uhd-l-text-3); }
 </style>
