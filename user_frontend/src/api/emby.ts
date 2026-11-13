@@ -155,6 +155,8 @@ export interface EmbyUserData {
   PlayCount: number
   Played: boolean
   IsFavorite: boolean
+  /** 已看百分比（0-100，详情 DTO 口径） */
+  PlayedPercentage?: number | null
   LastPlayedDate?: string | null
   /** 剧集未看集数（后端批量计算，电影/单集不看这个值） */
   UnplayedItemCount?: number | null
@@ -198,6 +200,14 @@ export interface EmbyItem {
   IsHD?: boolean
   /** 多版本（后端 _item_dto 下发；同目录同名 movie 才有） */
   Versions?: EmbyItemVersion[]
+  /** 演职人员（详情口若下发才有；片库面详情页演职员行用，无则不渲染） */
+  People?: Array<{
+    Id?: string
+    Name: string
+    Role?: string | null
+    Type?: string | null
+    PrimaryImageTag?: string | null
+  }>
 }
 
 /** 电影多版本条目 */
@@ -217,6 +227,9 @@ export interface EmbyMediaSource {
   Name?: string
   Container?: string | null
   Size?: number | null
+  /** 码率（bps）与时长：选版本弹层的规格行用，服务端给了才有 */
+  Bitrate?: number | null
+  RunTimeTicks?: number | null
   SupportsDirectPlay?: boolean
   SupportsDirectStream?: boolean
   SupportsTranscoding?: boolean
@@ -228,6 +241,9 @@ export interface EmbyMediaSource {
     Codec?: string
     Language?: string
     DisplayTitle?: string
+    Width?: number | null
+    Height?: number | null
+    VideoRange?: string | null
     IsExternal?: boolean
     IsTextSubtitleStream?: boolean
     IsDefault?: boolean
@@ -424,6 +440,8 @@ export const embyApi = {
   // 2026-10-13 旧页面清理：getPlaybackInfo / reportPlaying / reportProgress / reportStopped
   // 是 WatchView 专用 wrapper（全仓唯一调用者），随页面删除一并移除。
   // 保留 setPlayed / getItem 等（仍有其他调用者）。
+  // 2026-11-13：网页播放器另有专人单（不在批 3），PlaybackInfo/上报 wrapper
+  // 由该单在 emby.ts 补回，批 3 不动这块，避免两路撞文件。
 }
 
 function positionTicks() {
