@@ -108,71 +108,128 @@
 </template>
 
 <style scoped>
+/* 文档面排版（说明书 §2.12 文章卡：最大宽 740、内边距 48、正文 15–16/1.8、H2 约 28）：
+   正文文字一字未动，只换版式。缺省深色面、html[data-theme='light'] 换浅，
+   跟随用户外观三态（与 LoginView / AccountMenuView 同口径）。只引用 --uhd-* 令牌。 */
 .privacy-page {
   min-height: 100vh;
   min-height: 100dvh;
   display: flex;
   justify-content: center;
-  padding: 5rem 1rem calc(3rem + var(--au-dock-space));
+  align-items: flex-start;
+  padding: 64px 16px calc(48px + var(--au-dock-space));
+  background: var(--uhd-d-bg);
+  color: var(--uhd-d-text);
+  font-family: var(--uhd-font-sans);
 }
 
 .privacy-inner {
   width: 100%;
-  max-width: 44rem;
-  animation: au-fade-up var(--au-fade-in) var(--au-ease) both;
+  max-width: var(--uhd-doc-article-w);
+  background: var(--uhd-d-surface);
+  border: 1px solid var(--uhd-d-border);
+  border-radius: var(--uhd-radius-doc);
+  padding: 48px;
 }
 
 .privacy-eyebrow {
-  margin: 0 0 0.75rem;
+  margin: 0 0 16px;
+  font-size: var(--uhd-fs-aux-sm);
+  font-weight: var(--uhd-fw-semibold);
+  letter-spacing: var(--uhd-ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--uhd-d-text-2);
 }
 
 .privacy-title {
-  margin: 0 0 0.75rem;
-  font-size: 1.375rem;
-  font-weight: 700;
-  color: var(--au-text);
+  margin: 0 0 16px;
+  font-size: var(--uhd-fs-h2);
+  font-weight: var(--uhd-fw-extrabold);
+  line-height: 1.2;
 }
 
 .privacy-note {
-  margin: 0 0 2rem;
-  font-size: 0.875rem;
-  color: var(--au-text-3);
+  margin: 0 0 28px;
+  font-size: var(--uhd-fs-lead);
+  line-height: var(--uhd-lh-doc);
+  color: var(--uhd-d-text-2);
 }
 
 .privacy-list {
   margin: 0;
-  padding-left: 1.5rem;
+  padding-left: 24px;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  font-size: 0.9375rem;
-  line-height: 1.8;
-  color: var(--au-text);
+  gap: 20px;
+  font-size: var(--uhd-fs-body);
+  line-height: var(--uhd-lh-doc);
+}
+
+.privacy-list li::marker {
+  color: var(--uhd-d-text-3);
 }
 
 .privacy-list strong {
-  font-weight: 700;
+  font-weight: var(--uhd-fw-bold);
 }
 
 .privacy-subtitle {
-  margin: 2.5rem 0 0.75rem;
-  font-size: 1.125rem;
-  font-weight: 700;
-  color: var(--au-text);
+  margin: 44px 0 14px;
+  font-size: 28px;
+  font-weight: var(--uhd-fw-extrabold);
+  line-height: 1.3;
 }
 
 .privacy-section-note {
-  margin-bottom: 1.25rem;
+  margin-bottom: 20px;
 }
 
 .privacy-en-lead {
-  margin: 0 0 1.25rem;
-  font-size: 0.9375rem;
-  line-height: 1.8;
-  color: var(--au-text);
+  margin: 0 0 20px;
+  font-size: var(--uhd-fs-body);
+  line-height: var(--uhd-lh-doc);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .privacy-inner { animation: none; }
+/* 浅色文档面：跟随用户外观（html[data-theme='light']） */
+html[data-theme='light'] .privacy-page {
+  background: var(--uhd-l-bg);
+  color: var(--uhd-l-text);
+}
+
+html[data-theme='light'] .privacy-inner {
+  background: var(--uhd-l-surface);
+  border-color: var(--uhd-l-border);
+  box-shadow: var(--uhd-shadow-card-l);
+}
+
+html[data-theme='light'] .privacy-eyebrow {
+  color: var(--uhd-l-text-2);
+}
+
+html[data-theme='light'] .privacy-note {
+  color: var(--uhd-l-text-2);
+}
+
+html[data-theme='light'] .privacy-list li::marker {
+  color: var(--uhd-l-text-3);
+}
+
+@media (max-width: 640px) {
+  .privacy-page {
+    padding: 24px 12px calc(32px + var(--au-dock-space));
+  }
+
+  .privacy-inner {
+    padding: 28px 20px;
+  }
+
+  .privacy-title {
+    font-size: 32px;
+  }
+
+  .privacy-subtitle {
+    font-size: 24px;
+    margin-top: 36px;
+  }
 }
 </style>

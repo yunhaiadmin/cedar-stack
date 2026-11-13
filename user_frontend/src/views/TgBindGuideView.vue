@@ -222,7 +222,6 @@ onUnmounted(() => {
 })
 </script>
 
-
 <template>
   <div class="tg-guide-page">
     <div class="tg-guide-card">
@@ -235,8 +234,8 @@ onUnmounted(() => {
       </header>
 
       <div v-if="loading" class="loading-box" role="status" aria-label="正在加载绑定指引">
-        <div class="au-skeleton" style="height:14px;"></div>
-        <div class="au-skeleton" style="height:14px;width:70%;margin:12px auto 0;"></div>
+        <span class="loading-spinner" aria-hidden="true"></span>
+        <span class="loading-text">正在加载…</span>
       </div>
 
       <div v-else-if="loadError" class="warn-box" role="alert">
@@ -246,31 +245,35 @@ onUnmounted(() => {
 
       <div v-else-if="notConfigured" class="warn-box" role="alert">
         <p>Telegram 绑定功能还没开启，请联系服主开启后再试</p>
-        <button class="btn btn-ghost" @click="init">重新检查</button>
+        <button class="btn btn-secondary" @click="init">重新检查</button>
       </div>
 
       <template v-else>
-        <section class="step">
-          <div class="step-num">1</div>
-          <div class="step-body">
-            <h2 class="step-title">打开 Telegram Bot</h2>
-            <p class="step-desc">
-              <span class="at">@</span>
-              <span class="mono-ellipsis">{{ botUsername }}</span>
-            </p>
-            <button class="btn btn-primary" @click="openBot">打开 Telegram Bot</button>
-          </div>
-        </section>
+        <ol class="steps">
+          <li class="step-row">
+            <span class="step-num" aria-hidden="true">1</span>
+            <div class="step-main">
+              <h2 class="step-title">打开 Telegram Bot</h2>
+              <p class="step-desc">
+                <span class="at">@</span>
+                <span class="mono-ellipsis">{{ botUsername }}</span>
+              </p>
+              <button class="btn btn-primary" @click="openBot">打开 Telegram Bot</button>
+            </div>
+          </li>
 
-        <section class="step">
-          <div class="step-num">2</div>
-          <div class="step-body">
-            <h2 class="step-title">发送绑定指令</h2>
-            <div class="command-box">{{ commandText }}</div>
-            <button class="btn btn-ghost" :disabled="codeExpired" @click="copyCommand">复制指令</button>
-            <p v-if="copyHint" class="copy-hint" aria-live="polite">{{ copyHint }}</p>
-          </div>
-        </section>
+          <li class="step-row">
+            <span class="step-num" aria-hidden="true">2</span>
+            <div class="step-main">
+              <h2 class="step-title">发送绑定指令</h2>
+              <div class="command-box">{{ commandText }}</div>
+              <div class="step-actions">
+                <button class="btn btn-secondary btn-sm" :disabled="codeExpired" @click="copyCommand">复制指令</button>
+                <p v-if="copyHint" class="copy-hint" aria-live="polite">{{ copyHint }}</p>
+              </div>
+            </div>
+          </li>
+        </ol>
 
         <section class="code-panel">
           <span class="code-label">绑定码</span>
@@ -279,7 +282,7 @@ onUnmounted(() => {
             <span v-if="!codeExpired" class="countdown-text">{{ countdownText }} 后过期</span>
             <span v-else class="expired-text">绑定码已过期，请刷新</span>
           </div>
-          <button class="link-btn refresh-btn" :disabled="refreshing" @click="refreshCode">{{ refreshing ? '刷新中…' : '重新获取' }}</button>
+          <button class="btn btn-secondary btn-sm" :disabled="refreshing" @click="refreshCode">{{ refreshing ? '刷新中…' : '重新获取' }}</button>
         </section>
 
         <div class="auto-hint">
@@ -289,35 +292,39 @@ onUnmounted(() => {
       </template>
 
       <div class="logout-row">
-        <button class="link-btn" :disabled="loggingOut" @click="logout">{{ loggingOut ? '退出中…' : '退出登录' }}</button>
+        <button class="link-btn logout-btn" :disabled="loggingOut" @click="logout">{{ loggingOut ? '退出中…' : '退出登录' }}</button>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+/* UHD 办事面重排（说明书 §2.6 步骤行变体 56px）：浅色办事面令牌为本面口径，
+   缺省深色面、html[data-theme='light'] 换浅，跟随用户外观三态
+   （与 LoginView / AccountMenuView 同口径）。只引用 --uhd-* 令牌。 */
 .tg-guide-page {
   min-height: 100vh;
-  min-height: 100dvh; /* R27：移动端地址栏收放高度不跳 */
+  min-height: 100dvh; /* 移动端地址栏收放高度不跳 */
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
-  padding-bottom: calc(24px + env(safe-area-inset-bottom)); /* R108-6：iOS 底部安全区 */
-  background: var(--bg-canvas);
-  color: var(--text-main);
+  padding-bottom: calc(24px + env(safe-area-inset-bottom)); /* iOS 底部安全区 */
+  background: var(--uhd-d-bg);
+  color: var(--uhd-d-text);
+  font-family: var(--uhd-font-sans);
 }
 
 .tg-guide-card {
-  max-width: 560px;
   width: 100%;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--paper-radius-lg);
-  padding: 32px;
+  max-width: 560px;
   display: flex;
   flex-direction: column;
   gap: 24px;
+  padding: 32px;
+  background: var(--uhd-d-surface);
+  border: 1px solid var(--uhd-d-border);
+  border-radius: var(--uhd-radius-card);
 }
 
 .guide-header {
@@ -332,125 +339,169 @@ onUnmounted(() => {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: rgba(232, 168, 74, 0.12);
-  color: var(--accent-primary);
+  background: var(--uhd-d-surface-2);
+  color: var(--uhd-d-text);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .guide-header h1 {
-  font-family: var(--paper-font-serif);
-  font-size: 24px;
   margin: 0;
+  font-size: var(--uhd-fs-h3);
+  font-weight: var(--uhd-fw-extrabold);
+  line-height: 1.25;
 }
 
 .header-sub {
-  font-size: 14px;
-  color: var(--text-muted);
   margin: 0;
-  line-height: 1.6;
+  font-size: var(--uhd-fs-caption);
+  line-height: var(--uhd-lh-body);
+  color: var(--uhd-d-text-2);
 }
 
+/* 加载态：说明书 1.6 统一口径——旋转圈＋「正在加载…」灰字（禁骨架屏占位） */
 .loading-box {
-  text-align: center;
-  color: var(--text-muted);
-  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 0;
+}
+
+.loading-spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--uhd-d-border-2);
+  border-top-color: var(--uhd-d-text-2);
+  animation: uhd-spin 0.8s linear infinite;
+}
+
+.loading-text {
+  font-size: var(--uhd-fs-caption);
+  color: var(--uhd-d-text-2);
 }
 
 .warn-box {
-  background: var(--paper-danger-soft);
-  border: 1px solid var(--paper-danger);
-  border-radius: var(--paper-r-md);
   padding: 16px;
-  color: var(--paper-danger);
-  font-size: 14px;
+  border-radius: var(--uhd-radius-card-sm);
+  background: rgba(220, 38, 38, 0.07);
+  border: 1px solid rgba(220, 38, 38, 0.32);
+  color: #fca5a5;
+  font-size: var(--uhd-fs-caption);
 }
 
 .warn-box p {
   margin: 0 0 12px;
+  line-height: var(--uhd-lh-body);
 }
 
 .warn-box .btn {
   width: 100%;
 }
 
-.step {
+/* 步骤行（§2.6 变体）：序号圆＋标题 16 粗＋副文 14 灰，行间 1px 分隔 */
+.steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
   display: flex;
-  gap: 16px;
+  flex-direction: column;
+}
+
+.step-row {
+  display: flex;
+  gap: 14px;
+  padding: 18px 0;
+}
+
+.step-row:first-child {
+  padding-top: 2px;
+}
+
+.step-row:last-child {
+  padding-bottom: 2px;
+}
+
+.step-row + .step-row {
+  border-top: 1px solid var(--uhd-d-border);
 }
 
 .step-num {
-  width: 28px;
-  height: 28px;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  background: var(--paper-primary);
-  color: var(--paper-on-primary);
-  font-weight: 700;
-  font-size: 14px;
+  background: var(--uhd-d-surface-raised);
+  color: var(--uhd-d-text);
+  font-size: 13px;
+  font-weight: var(--uhd-fw-bold);
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
+  margin-top: 1px;
 }
 
-.step-body {
+.step-main {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .step-title {
-  font-size: 16px;
-  font-weight: 700;
   margin: 0;
+  font-size: var(--uhd-fs-lead);
+  font-weight: var(--uhd-fw-bold);
+  line-height: 1.4;
 }
 
 .step-desc {
   margin: 0;
-  font-size: 14px;
-  color: var(--text-muted);
+  font-size: var(--uhd-fs-caption);
+  color: var(--uhd-d-text-2);
   display: flex;
   align-items: center;
 }
 
 .mono-ellipsis {
   min-width: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--uhd-font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* 胶囊按钮（§2.2）：主＝彩虹边框＋深色毛玻璃底（浅色面换淡彩底）；次＝描边胶囊；小胶囊 38px */
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
   min-height: 44px;
-  border-radius: var(--paper-r-md);
-  font-size: 14px;
-  font-weight: 700;
+  padding: 0 26px;
+  border-radius: var(--uhd-radius-pill);
+  font-family: var(--uhd-font-sans);
+  font-size: var(--uhd-fs-body);
+  font-weight: var(--uhd-fw-semibold);
+  white-space: nowrap;
   cursor: pointer;
-  padding: 0 16px;
-  border: none;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--uhd-dur-ui) var(--uhd-ease-standard);
+}
+
+.btn-sm {
+  height: 38px;
+  min-height: 38px;
+  padding: 0 18px;
+  font-size: var(--uhd-fs-caption);
 }
 
 .btn:focus-visible,
 .link-btn:focus-visible {
-  outline: 2px solid var(--accent-primary);
+  outline: 2px solid var(--uhd-l-link);
   outline-offset: 2px;
-}
-
-.btn-primary {
-  width: 100%;
-  background: var(--paper-primary);
-  color: var(--paper-on-primary);
-}
-
-.btn-ghost {
-  background: transparent;
-  border: 1px solid var(--accent-primary);
-  color: var(--accent-primary);
 }
 
 .btn:disabled {
@@ -458,21 +509,44 @@ onUnmounted(() => {
   cursor: not-allowed;
 }
 
+.btn-primary {
+  width: 100%;
+  color: var(--uhd-d-text);
+  border: var(--uhd-rainbow-border-w) solid transparent;
+  background:
+    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
+    var(--uhd-rainbow) border-box;
+}
+
+.btn-secondary {
+  color: var(--uhd-d-text);
+  border: 1px solid var(--uhd-d-border-2);
+  background: transparent;
+}
+
 .command-box {
-  background: var(--bg-surface-2);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 18px;
+  background: var(--uhd-d-surface-2);
+  border: 1px solid var(--uhd-d-border);
+  border-radius: var(--uhd-radius-input);
+  font-family: var(--uhd-font-mono);
+  font-size: var(--uhd-fs-lead);
   padding: 12px 16px;
-  border-radius: var(--paper-r-md);
   /* 长指令允许横向滚动看全，不截断 */
   overflow-x: auto;
   white-space: nowrap;
 }
 
+.step-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .copy-hint {
   margin: 0;
-  font-size: 13px;
-  color: var(--paper-success);
+  font-size: var(--uhd-fs-aux);
+  color: var(--uhd-success);
 }
 
 .code-panel {
@@ -481,61 +555,38 @@ onUnmounted(() => {
   align-items: center;
   gap: 12px;
   padding: 24px;
-  background: var(--bg-surface-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--paper-r-md);
-}
-
-@media (max-width: 480px) {
-  .code-panel {
-    padding: 16px;
-  }
+  background: var(--uhd-d-surface-2);
+  border: 1px solid var(--uhd-d-border);
+  border-radius: var(--uhd-radius-card-sm);
 }
 
 .code-label {
-  font-size: 13px;
-  color: var(--text-muted);
+  font-size: var(--uhd-fs-aux);
+  color: var(--uhd-d-text-2);
 }
 
 .code-big {
-  font-family: var(--paper-font-serif);
+  font-family: var(--uhd-font-mono);
   font-size: 40px;
-  letter-spacing: 12px;
-  padding-left: 12px;
+  font-weight: var(--uhd-fw-bold);
+  letter-spacing: 10px;
+  padding-left: 10px;
   text-align: center;
   white-space: nowrap;
   max-width: 100%;
   overflow-x: auto;
+  line-height: 1.2;
 }
 
 .countdown-row {
-  font-size: 14px;
-  color: var(--text-muted);
+  font-size: var(--uhd-fs-caption);
+  color: var(--uhd-d-text-2);
   white-space: nowrap;
 }
 
 .expired-text {
-  color: var(--paper-danger);
+  color: var(--uhd-danger);
   white-space: nowrap;
-}
-
-.link-btn {
-  min-height: 44px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  font-size: 14px;
-  padding: 0 12px;
-}
-
-.refresh-btn {
-  color: var(--accent-primary);
-  font-weight: 700;
-}
-
-.refresh-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .auto-hint {
@@ -543,12 +594,12 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  font-size: 14px;
-  color: var(--text-muted);
+  font-size: var(--uhd-fs-caption);
+  color: var(--uhd-d-text-2);
 }
 
 .check-icon {
-  color: var(--paper-success);
+  color: var(--uhd-success);
   flex-shrink: 0;
 }
 
@@ -556,36 +607,140 @@ onUnmounted(() => {
   text-align: center;
 }
 
-.logout-row .link-btn {
-  color: var(--text-muted);
+.link-btn {
+  min-height: 44px;
+  padding: 0 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: var(--uhd-font-sans);
+  font-size: var(--uhd-fs-caption);
 }
 
-.logout-row .link-btn:hover {
-  text-decoration: underline;
+/* 退出＝红色文字按钮，不做填充（§2.2） */
+.logout-btn {
+  color: var(--uhd-danger);
+  font-weight: var(--uhd-fw-medium);
+}
+
+.logout-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 浅色办事面：跟随用户外观（html[data-theme='light']） */
+html[data-theme='light'] .tg-guide-page {
+  background: var(--uhd-l-bg);
+  color: var(--uhd-l-text);
+}
+
+html[data-theme='light'] .tg-guide-card {
+  background: var(--uhd-l-surface);
+  border-color: var(--uhd-l-border);
+  box-shadow: var(--uhd-shadow-card-l);
+}
+
+html[data-theme='light'] .header-icon {
+  background: var(--uhd-l-input-bg);
+  color: var(--uhd-l-text);
+}
+
+html[data-theme='light'] .header-sub {
+  color: var(--uhd-l-text-2);
+}
+
+html[data-theme='light'] .loading-spinner {
+  border-color: var(--uhd-l-border);
+  border-top-color: var(--uhd-l-text-2);
+}
+
+html[data-theme='light'] .loading-text {
+  color: var(--uhd-l-text-2);
 }
 
 html[data-theme='light'] .warn-box {
-  /* 浅色下加深文字色使对比度达到 4.9:1（≥4.5），不动 token */
-  color: #B93A22;
+  background: rgba(220, 38, 38, 0.05);
+  border-color: rgba(220, 38, 38, 0.25);
+  /* 浅色下加深文字色使对比度达标（沿用旧面实测值） */
+  color: #b93a22;
+}
+
+html[data-theme='light'] .step-row + .step-row {
+  border-top-color: var(--uhd-l-divider);
+}
+
+html[data-theme='light'] .step-num {
+  background: var(--uhd-l-text);
+  color: var(--uhd-l-surface);
+}
+
+html[data-theme='light'] .step-desc {
+  color: var(--uhd-l-text-2);
+}
+
+html[data-theme='light'] .btn-primary {
+  color: var(--uhd-l-text);
+  background:
+    var(--uhd-rainbow-soft) padding-box,
+    var(--uhd-rainbow) border-box;
+}
+
+html[data-theme='light'] .btn-secondary {
+  color: var(--uhd-l-text);
+  border-color: var(--uhd-l-border);
+  background: var(--uhd-l-surface);
+}
+
+html[data-theme='light'] .command-box {
+  background: var(--uhd-l-input-bg);
+  border-color: var(--uhd-l-border);
+}
+
+html[data-theme='light'] .code-panel {
+  background: var(--uhd-l-input-bg);
+  border-color: var(--uhd-l-border);
+}
+
+html[data-theme='light'] .code-label {
+  color: var(--uhd-l-text-2);
+}
+
+html[data-theme='light'] .countdown-row {
+  color: var(--uhd-l-text-2);
+}
+
+html[data-theme='light'] .auto-hint {
+  color: var(--uhd-l-text-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-spinner {
+    animation-duration: 1.6s;
+  }
 }
 
 @media (max-width: 768px) {
   .tg-guide-page {
     padding: 16px;
-    padding-bottom: calc(16px + env(safe-area-inset-bottom)); /* R108-6：iOS 底部安全区 */
+    padding-bottom: calc(16px + env(safe-area-inset-bottom)); /* iOS 底部安全区 */
   }
 
   .tg-guide-card {
-    padding: 16px;
+    padding: 24px 20px;
   }
 
   .guide-header h1 {
     font-size: 20px;
   }
 
+  .code-panel {
+    padding: 16px;
+  }
+
   .code-big {
     font-size: 32px;
+    letter-spacing: 8px;
+    padding-left: 8px;
   }
 }
 </style>
-
