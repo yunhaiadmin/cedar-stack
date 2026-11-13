@@ -43,7 +43,7 @@ const nickname = computed(() => {
   const n = todayData.value.nickname as string | undefined
   if (n) return n
   const u = user.user as Record<string, unknown> | null
-  return (u?.nickname as string) || (u?.username as string) || '探险家'
+  return (u?.nickname as string) || (u?.username as string) || '访客'
 })
 const dateLine = computed(() => {
   const raw = todayData.value.date_label as string | undefined

@@ -4,20 +4,20 @@
     <div class="v4-page">
       <!-- 日志头 -->
       <header class="v4-loghead">
-        <span class="v4-stamp">营地 · 接线处</span>
-        <h1>接线员</h1>
-        <p>买完会员来这儿接线 —— 拿上账号密码，去播放器里连上就能看。</p>
+        <span class="v4-stamp">播放账号</span>
+        <h1>播放账号</h1>
+        <p>开通会员后在这里拿到播放器登录用的账号密码。</p>
       </header>
 
       <!-- 加载中 -->
       <div v-if="loading && !account" class="v4-sec">
-        <div class="v4-skeleton" style="height:180px" role="status" aria-label="正在加载接线信息"></div>
+        <div class="v4-skeleton" style="height:180px" role="status" aria-label="正在加载播放账号信息"></div>
       </div>
 
       <!-- 加载失败 -->
       <div v-else-if="accountError && !account" class="v4-sec">
         <div class="v4-err">
-          接线员没接上：{{ accountError }}<br>
+          播放账号信息加载失败：{{ accountError }}<br>
           <button class="v4-retry" @click="refreshAccount()">重试</button>
         </div>
       </div>
@@ -26,7 +26,7 @@
         <!-- 有查看权限：账号密码卡（已设置用户首屏第一块就是它，公益说明移到卡后） -->
         <template v-if="viewGranted">
           <section class="v4-sec">
-            <div class="v4-sec-title">你的接线账号</div>
+            <div class="v4-sec-title">你的播放账号</div>
             <div class="v4-sec-sub">{{ hasEmbyUsername ? '拿着这三样，去播放器里登录' : '自己设用户名和播放密码。用户名设好后不能改。' }}</div>
 
             <div class="op-rows" :class="{ loading: loading && !accountReloading }">
@@ -44,7 +44,7 @@
                   <Copy v-else :size="14" />
                 </button>
               </div>
-              <form v-if="!hasEmbyUsername" class="cred-form" aria-label="设置接线账号" @submit.prevent="confirmSetCredentials">
+              <form v-if="!hasEmbyUsername" class="cred-form" aria-label="设置播放账号" @submit.prevent="confirmSetCredentials">
                 <div class="op-row">
                   <label class="op-label" for="emby-cred-username">用户名</label>
                   <input
@@ -85,7 +85,7 @@
                   <p id="emby-cred-hint" class="op-tip cred-hint">{{ credHint }}</p>
                   <p v-if="credError" class="modal-error" role="alert">{{ credError }}</p>
                   <button type="submit" class="op-btn primary" :disabled="settingPwd">
-                    {{ settingPwd ? '保存中' : '保存接线账号' }}
+                    {{ settingPwd ? '保存中' : '保存播放账号' }}
                   </button>
                 </div>
               </form>
@@ -147,7 +147,7 @@
           <!-- 一键导入。没有用户名时方案列表是空的，仍留说明，避免只看 has_password 就当成已经能导入。 -->
           <section v-if="showImportSection" class="v4-sec">
             <div class="v4-sec-title">一键导入到客户端</div>
-            <div class="v4-sec-sub">{{ hasEmbyUsername ? '点一下，直接跳到播放器里填好' : '设好接线账号之后才能导入' }}</div>
+            <div class="v4-sec-sub">{{ hasEmbyUsername ? '点一下，直接跳到播放器里填好' : '设好播放账号之后才能导入' }}</div>
             <div v-if="hasSchemes" class="scheme-btns">
               <button
                 v-for="(url, name) in importSchemes"
@@ -274,7 +274,7 @@
               <div class="guide-step">
                 <span class="step-num">1</span>
                 <div>
-                  <b>{{ hasEmbyUsername ? '复制上面三样' : '先设好接线账号' }}</b>
+                  <b>{{ hasEmbyUsername ? '复制上面三样' : '先设好播放账号' }}</b>
                   <p v-if="hasEmbyUsername">服务器地址、用户名、播放密码，点右边按钮复制。</p>
                   <p v-else>填一个用户名和播放密码。用户名设好就不能改，密码以后可以再改。</p>
                 </div>
@@ -316,14 +316,14 @@
             </p>
           </template>
           <template v-else>
-            <p class="unlock-desc">服务器地址和账号只向会员开放，开通后回来这儿接线。</p>
+            <p class="unlock-desc">服务器地址和账号只向会员开放，开通后回来这里查看。</p>
             <button class="op-btn primary" @click="router.push('/shop')">去开通会员</button>
           </template>
         </div>
 
         <div v-else class="v4-sec">
           <div class="v4-err">
-            接线员没接上，再试一次<br>
+            播放账号信息加载失败，再试一次<br>
             <button class="v4-retry" @click="refreshAccount()">重试</button>
           </div>
         </div>
@@ -520,7 +520,7 @@ const hasEmbyUsername = computed(() => embyUsername.value.length > 0)
 const importTip = computed(() => embyImportTip(hasEmbyUsername.value, playPwdLoaded.value))
 const credHint = computed(() => (
   hasPlayPassword.value
-    ? '接线用户名还没有。填一个用户名，并设播放密码。用户名设好后不能改。密码长度 3-64 位。'
+    ? '播放用户名还没有。填一个用户名，并设播放密码。用户名设好后不能改。密码长度 3-64 位。'
     : '用户名只能包含字母、数字、下划线，长度 3-32 位，设好后不能改。密码长度 3-64 位，和网站登录密码无关。'
 ))
 const importPwdDesc = computed(() => (
@@ -630,7 +630,7 @@ async function confirmSetCredentials() {
     if (saved && saved !== username) {
       toast.info('服务器保存的用户名和你填的不一样，设好后不能再改')
     } else if (refreshed) {
-      toast.success('接线账号已设好')
+      toast.success('播放账号已设好')
     } else {
       toast.info('账号已保存，页面没刷新成功，重新进入本页就能看到')
     }

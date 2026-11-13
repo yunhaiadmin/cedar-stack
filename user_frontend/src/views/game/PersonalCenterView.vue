@@ -50,7 +50,7 @@
             <div class="v4-card pc-rows-card">
               <PcEntryRow :icon="Crown" name="我的会员" :meta="memberMeta" to="/game/account/member" />
               <PcEntryRow :icon="Wallet" name="我的钱包" :meta="points != null ? `能量 ${points}` : ''" to="/shop" />
-              <PcEntryRow :icon="List" name="能量账本" to="/game/ledger" />
+              <PcEntryRow :icon="List" name="能量明细" to="/game/ledger" />
             </div>
           </section>
 
@@ -82,11 +82,11 @@
         <div class="pc-col">
           <!-- 成长 -->
           <section class="pc-group">
-            <div class="pc-gtitle">成长</div>
+            <div class="pc-gtitle">观影成长</div>
             <div class="v4-card pc-rows-card">
               <PcEntryRow :icon="Mountain" name="等级" :meta="entryLevelText" to="/shop" />
               <PcEntryRow :icon="Trophy" name="成就" :meta="entryAchvText" to="/collector" />
-              <PcEntryRow :icon="Sparkles" name="馆灵" :meta="entryPetText" to="/collector" />
+              <PcEntryRow :icon="Sparkles" name="观影成长进度" :meta="entryPetText" to="/collector" />
             </div>
           </section>
 
@@ -94,7 +94,7 @@
           <section class="pc-group">
             <div class="pc-gtitle">我的服务</div>
             <div class="v4-card pc-rows-card">
-              <PcEntryRow :icon="Plug" name="接线员" meta="我的播放账号" to="/game/operator" />
+              <PcEntryRow :icon="Plug" name="播放账号" meta="我的播放账号" to="/game/operator" />
               <PcEntryRow
                 v-if="driveRowVisible"
                 :icon="HardDrive"

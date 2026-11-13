@@ -4,10 +4,10 @@
     <h3>{{ statusLine }}</h3>
     <div class="cond">
       <template v-if="backlog > 0">
-        刚吃下 <b>{{ backlog }}</b> 条待消化，正在慢慢消化<br>{{ condLine }}
+        有 <b>{{ backlog }}</b> 条待处理<br>{{ condLine }}
       </template>
       <template v-else>
-        肠胃清空，一身轻松<br>心跳正常 · 体温正常 · 随时待命
+        暂无待处理任务<br>运行正常
       </template>
     </div>
     <div class="vitals">
@@ -50,22 +50,22 @@ const orbMood = computed(() => {
 
 /** 拟人化状态行：全部来自真实数据，不许造假 */
 const statusLine = computed(() => {
-  if (level.value === 'down' || status.value === 'down') return '状态：趴窝了 😴'
-  if (backlog.value > 0) return '状态：消化中 😋'
-  return '状态：吃饱了，晒太阳 😌'
+  if (level.value === 'down' || status.value === 'down') return '状态：异常'
+  if (backlog.value > 0) return '状态：处理中'
+  return '状态：正常'
 })
 
 /** cond 第二行文案：按真实状态，不编造健康——down 时诚实，不再说"心跳正常" */
 const condLine = computed(() => {
-  if (level.value === 'down' || status.value === 'down') return '心跳微弱 · 正在攒劲恢复'
-  return '心跳正常 · 胃口很好'
+  if (level.value === 'down' || status.value === 'down') return '服务异常 · 正在恢复'
+  return '运行正常 · 正在处理'
 })
 
 /** 健康等级人话：后端英文 → 中文，未知兜底原文 */
 const levelText = computed(() => {
   const lv = String(props.vitals.level ?? '').toLowerCase()
-  if (lv === 'healthy') return '健康'
-  if (lv === 'degraded') return '亚健康'
+  if (lv === 'healthy') return '正常'
+  if (lv === 'degraded') return '降级'
   if (lv === 'down') return '故障'
   return '—'
 })
@@ -74,11 +74,11 @@ const vitalCells = computed(() => {
   const st = status.value || level.value || '—'
   const stText =
     st === 'healthy' || st === 'up' ? '在线' :
-    st === 'degraded' ? '有点累' :
-    st === 'down' ? '趴窝' : '—'
+    st === 'degraded' ? '部分异常' :
+    st === 'down' ? '异常' : '—'
   return [
     { value: stText, label: '状态' },
-    { value: backlog.value > 0 ? `${backlog.value}` : '0', label: '待消化' },
+    { value: backlog.value > 0 ? `${backlog.value}` : '0', label: '待处理' },
     { value: levelText.value, label: '健康等级' },
     { value: String(props.vitals.version || '—'), label: '版本' },
   ]

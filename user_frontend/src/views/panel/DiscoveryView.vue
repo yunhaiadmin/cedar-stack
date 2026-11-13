@@ -18,12 +18,12 @@
           <div class="v4-loghead-main" :class="{ 'm-only': showWorldSwitch }">
             <span class="v4-stamp">{{ dateLabel }}</span>
             <h1>{{ greeting }}，{{ nickname }}</h1>
-            <p v-if="today.data && parcelTotal !== null && parcelTotal > 0">今天片库里有 {{ parcelTotal }} 件新封存，等你拆。</p>
-            <p v-else-if="today.data && parcelTotal === 0">今天暂时没有新封存，明天再来看看。</p>
+            <p v-if="today.data && parcelTotal !== null && parcelTotal > 0">今天片库里有 {{ parcelTotal }} 部新入库片子，点开看看。</p>
+            <p v-else-if="today.data && parcelTotal === 0">今天暂时没有新入库，明天再来看看。</p>
             <div v-else-if="today.loading" class="v4-skeleton" aria-hidden="true" style="height:28px;width:70%;margin-top:10px"></div>
             <div v-else-if="today.error" class="v4-err" style="margin-top:10px">今日概览加载失败：{{ today.error }}<br><button type="button" class="v4-retry" @click="() => panel.loadToday(true)">重试</button></div>
-            <p v-else-if="today.data">今天的新封存数还没算出来 —— 看看下面的货架上有啥。</p>
-            <p v-else>今天片库有更新，看看下面的货架上有啥。</p>
+            <p v-else-if="today.data">今天的新入库数还没算出来 —— 看看下面有什么新片。</p>
+            <p v-else>今天片库有更新，看看下面有什么新片。</p>
           </div>
           <div v-if="streak > 0 || showWorldSwitch" class="v4-loghead-actions">
             <div v-if="streak > 0" class="v4-fire" :class="{ 'm-only': showWorldSwitch }">连签 <b>{{ streak }}</b> 天</div>
@@ -33,7 +33,7 @@
               type="button"
               class="v4-world-switch"
               @click="goWorld"
-            >探险世界</button>
+            >全部功能</button>
           </div>
         </header>
 
@@ -71,10 +71,10 @@
 
         <!-- 接线员入口：原收藏家入口位置换主，接线员页在 /game/operator；收藏家页保留在 /collector，由「我的」页成就行与世界地图小屋到达。
              类名沿用历史的 collector 命名：v4-paper.css 的排序（.d3-ord-collector）与宽屏边距（.v4-collector-entry）规则按此名挂钩，改名须同步改那边 -->
-        <RouterLink to="/game/operator" class="v4-collector-entry d3-ord-collector" aria-label="接线员">
+        <RouterLink to="/game/operator" class="v4-collector-entry d3-ord-collector" aria-label="播放账号">
           <span class="v4-collector-body">
-            <span class="v4-collector-title">接线员</span>
-            <span class="v4-collector-sub">我的播放账号</span>
+            <span class="v4-collector-title">播放账号</span>
+            <span class="v4-collector-sub">服务器地址与账号信息</span>
           </span>
           <span class="v4-collector-go" aria-hidden="true">›</span>
         </RouterLink>
@@ -85,16 +85,16 @@
         <!-- 每日一封 -->
         <section class="v4-sec v4-sec-letter d3-ord-letter" id="disc-letter">
           <div class="m-only">
-            <div class="v4-sec-title">每日一封</div>
-            <div class="v4-sec-sub">昨天的你，留了一封信 —— 点开看看</div>
+            <div class="v4-sec-title">昨日回顾</div>
+            <div class="v4-sec-sub">昨天的观影回顾，点开看看</div>
           </div>
           <div class="d3-sec-head d-only" style="margin-bottom:10px">
-            <div><div class="d3-sec-title">每日一封</div><div class="d3-sec-sub">昨天的你，留了一封信 —— 点开看看</div></div>
+            <div><div class="d3-sec-title">昨日回顾</div><div class="d3-sec-sub">昨天的观影回顾，点开看看</div></div>
           </div>
           <div v-if="letter.loading" class="v4-skeleton" aria-hidden="true" style="height:120px"></div>
-          <div v-else-if="letter.error" class="v4-err">信件加载失败：{{ letter.error }}<br><button type="button" class="v4-retry" @click="() => panel.loadLetter(true)">重试</button></div>
+          <div v-else-if="letter.error" class="v4-err">昨日回顾加载失败：{{ letter.error }}<br><button type="button" class="v4-retry" @click="() => panel.loadLetter(true)">重试</button></div>
           <WaxLetter v-else-if="hasLetterData" :letter="letterData" />
-          <div v-else class="v4-empty">还没有昨日来信</div>
+          <div v-else class="v4-empty">还没有昨日回顾</div>
         </section>
       </div>
 
@@ -103,18 +103,18 @@
         <!-- 今日封存：盲盒 -->
         <section class="v4-sec d3-ord-shelf" id="disc-shelf">
           <div class="m-only">
-            <div class="v4-sec-title">今日封存</div>
-            <div class="v4-sec-sub">新入库的片子，点一下开封看看</div>
+            <div class="v4-sec-title">今日新入库</div>
+            <div class="v4-sec-sub">今天新入库的片子，点开看看</div>
           </div>
           <div class="d3-sec-head d-only">
-            <div><div class="d3-sec-title">今日封存</div><div class="d3-sec-sub">新入库的片子，点一下开封看看</div></div>
+            <div><div class="d3-sec-title">今日新入库</div><div class="d3-sec-sub">今天新入库的片子，点开看看</div></div>
           </div>
           <div v-if="parcels.loading" class="v4-skel-row">
             <div class="v4-skeleton" aria-hidden="true" style="width:132px;height:216px;flex:0 0 auto"></div>
             <div class="v4-skeleton" aria-hidden="true" style="width:132px;height:216px;flex:0 0 auto"></div>
             <div class="v4-skeleton" aria-hidden="true" style="width:132px;height:216px;flex:0 0 auto"></div>
           </div>
-          <div v-else-if="parcels.error" class="v4-err">封存加载失败：{{ parcels.error }}<br><button type="button" class="v4-retry" @click="() => panel.loadParcels(true)">重试</button></div>
+          <div v-else-if="parcels.error" class="v4-err">新入库加载失败：{{ parcels.error }}<br><button type="button" class="v4-retry" @click="() => panel.loadParcels(true)">重试</button></div>
           <div v-else-if="parcelList.length === 0" class="v4-empty">今天没有新入库</div>
           <div v-else class="d3-shelf-wrap">
             <button v-if="isWide && shelfHasOverflow" type="button" class="d3-arrow l" aria-label="货架向左滚动" @click="scrollShelf(-1)">‹</button>
@@ -184,13 +184,13 @@
 
         <!-- 服务器脉搏（移动端专属；桌面由左栏脉搏摘要 + 服务器页接管） -->
         <section class="v4-sec m-only d3-ord-pulse">
-          <div class="v4-sec-title">服务器脉搏</div>
+          <div class="v4-sec-title">服务器状态</div>
           <div class="v4-sec-sub">服务器实时动态</div>
         </section>
         <!-- pulse.error 时整盒不渲染，避免留黑色空矩形（错误态在下面统一渲染） -->
         <div v-if="!pulse.error" class="v4-pulse-box m-only d3-ord-pulse">
           <div class="v4-pulse-row">
-            <span class="v4-pulse-tag">● 近况 · 服务器在忙什么</span>
+            <span class="v4-pulse-tag">● 近况 · 服务器动态</span>
             <span class="v4-pulse-dot"></span>
           </div>
           <!-- R38 P3-13：骨架 112px 与真实内容（EcgCanvas 64px + PulseActivity min-height:40px + margin-top:8px）同高，避免切屏跳动 -->
@@ -200,7 +200,7 @@
             <PulseActivity :items="activityTexts" />
           </template>
         </div>
-        <div v-if="pulse.error" class="v4-sec m-only d3-ord-pulse"><div class="v4-err">脉搏加载失败：{{ pulse.error }}<br><button type="button" class="v4-retry" @click="() => panel.loadPulse(true)">重试</button></div></div>
+        <div v-if="pulse.error" class="v4-sec m-only d3-ord-pulse"><div class="v4-err">服务器状态加载失败：{{ pulse.error }}<br><button type="button" class="v4-retry" @click="() => panel.loadPulse(true)">重试</button></div></div>
       </div>
 
       <!-- 右栏：世界入口 / 观影碑 / 告示牌 / 抽签 / 留言墙（桌面专属） -->
@@ -333,11 +333,11 @@ function syncWide() {
 // document.getElementById 重建（disc-libs 只在有库时渲染，
 // 固定列全量会在这些情况下指向不存在的区段）。
 const anchors = [
-  { id: 'disc-shelf', label: '今日封存' },
-  { id: 'disc-letter', label: '每日一封' },
+  { id: 'disc-shelf', label: '今日新入库' },
+  { id: 'disc-letter', label: '昨日回顾' },
   { id: 'feed', label: '实时动态' },
   { id: 'disc-libs', label: '媒体库' },
-  { id: 'disc-world', label: '世界' },
+  { id: 'disc-world', label: '全部功能' },
 ]
 const visibleAnchors = ref(anchors)
 const activeAnchor = ref('disc-shelf')
@@ -534,7 +534,7 @@ const nickname = computed(() => {
   const n = todayData.value.nickname as string | undefined
   if (n) return n
   const u = user.user as Record<string, unknown> | null
-  return (u?.nickname as string) || (u?.username as string) || '探险家'
+  return (u?.nickname as string) || (u?.username as string) || '访客'
 })
 const parcelTotal = computed(() => {
   const v = todayData.value.parcel_count
@@ -590,7 +590,7 @@ const parcelPickerOpen = ref(false)
 const parcelPickerTitle = ref('')
 const parcelPickerItemId = ref<string | number | null>(null)
 function openParcelPicker(p: ParcelItem) {
-  parcelPickerTitle.value = p.name || '神秘包裹'
+  parcelPickerTitle.value = p.name || '未命名片子'
   parcelPickerItemId.value = p.id
   parcelPickerOpen.value = true
 }
@@ -608,7 +608,7 @@ async function onUnseal(id: string | number) {
     await panel.unseal(id)
   } catch (e) {
     // 失败不再静默，也不再 3 秒自动消失：带“重试”的报错一直留着，直到用户点重试或关闭
-    useToast().errorWithRetry(`拆封失败：${humanizeError(e)}`, () => void onUnseal(id))
+    useToast().errorWithRetry(`打开失败：${humanizeError(e)}`, () => void onUnseal(id))
   } finally {
     unsealingIds.value.delete(key)
   }

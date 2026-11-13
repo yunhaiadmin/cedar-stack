@@ -5,8 +5,8 @@
       <!-- 日志头 -->
       <header class="v4-loghead">
         <span class="v4-stamp">{{ facilityStamp('signal') }}</span>
-        <h1>求救信号</h1>
-        <p>探险途中遇险？摇响信号机，营地马上派救援队。</p>
+        <h1>反馈</h1>
+        <p>遇到问题在这里提交，我们会尽快处理并回复你。</p>
       </header>
 
       <!-- 信号机 -->
@@ -14,18 +14,18 @@
         <div class="signal-machine">
           <div class="tower">📡</div>
           <div class="waves"><span></span><span></span><span></span></div>
-          <div class="morse-deco">· · · − − − · · ·<small>SOS · 国际求救信号</small></div>
+          <div class="morse-deco">· · · − − − · · ·<small>SOS</small></div>
         </div>
       </section>
 
       <!-- 发信号 -->
       <section class="v4-sec">
-        <div class="v4-sec-title">遇险类型</div>
-        <div class="v4-sec-sub">先选一种，救援队好带对工具</div>
+        <div class="v4-sec-title">问题类型</div>
+        <div class="v4-sec-sub">先选一种，方便我们分类处理</div>
         <div
           class="types"
           role="radiogroup"
-          aria-label="遇险类型"
+          aria-label="问题类型"
           @keydown="(e) => {
             const keys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
             if (!keys.includes(e.key)) return;
@@ -53,33 +53,33 @@
           </button>
         </div>
 
-        <div class="v4-sec-title">一句话说清险情</div>
-        <div class="v4-sec-sub">让救援队一眼看懂哪里遇了险</div>
+        <div class="v4-sec-title">一句话标题</div>
+        <div class="v4-sec-sub">用一句话概括问题</div>
         <input
           v-model="form.title"
           class="field"
           type="text"
           placeholder="比如：《一念永恒》第 3 集播放卡住"
-          aria-label="一句话说清险情"
+          aria-label="一句话标题"
           maxlength="100"
         />
 
-        <div class="v4-sec-title">求救信</div>
-        <div class="v4-sec-sub">写清楚在哪儿遇的险，发生了什么</div>
+        <div class="v4-sec-title">问题描述</div>
+        <div class="v4-sec-sub">写清楚问题发生的位置和具体情况</div>
         <textarea
           v-model="form.message"
           placeholder="比如：《一念永恒》看到第 3 集，转圈半天出不来…"
-          aria-label="求救信"
+          aria-label="问题描述"
           maxlength="1000"
         ></textarea>
 
         <button class="send-btn" :disabled="sending" @click="sendSOS">
-          <span v-if="!sending" aria-hidden="true">📡</span>{{ sending ? '信号发出中' : ' 发出求救信号' }}
+          <span v-if="!sending" aria-hidden="true">📡</span>{{ sending ? '提交中…' : ' 提交反馈' }}
         </button>
 
         <!-- 摩斯电码发送动画 -->
         <div v-if="morseShow" class="morse-panel" role="status" aria-live="polite">
-          <div class="morse-title">正在发送摩斯电码…</div>
+          <div class="morse-title">提交中…</div>
           <div class="morse-code">
             <div
               v-for="(s, i) in morseSyms"
@@ -94,18 +94,18 @@
 
       <!-- 事故记录 -->
       <section class="v4-sec">
-        <div class="v4-sec-title">探险事故记录</div>
-        <div class="v4-sec-sub">你发过的求救信号，点开看救援进度</div>
+        <div class="v4-sec-title">我的反馈</div>
+        <div class="v4-sec-sub">点开查看处理进度和回复</div>
 
         <div v-if="loading">
           <div v-for="i in 3" :key="i" class="v4-skeleton" style="height:76px;margin-bottom:10px"></div>
         </div>
         <div v-else-if="loadError" class="v4-err">
-          事故记录读取失败：{{ loadError }}<br>
+          反馈记录读取失败：{{ loadError }}<br>
           <button class="v4-retry" @click="fetchTickets()">重试</button>
         </div>
         <div v-else-if="tickets.length === 0" class="v4-empty">
-          营地一切安好，还没有发过求救信号
+          还没有提交过反馈
         </div>
 
         <div v-else class="cards">
@@ -125,9 +125,9 @@
               <div v-if="messagesLoading">
                 <div v-for="i in 3" :key="i" class="v4-skeleton" style="height:56px;margin-bottom:8px"></div>
               </div>
-              <div v-else-if="messagesError" class="v4-err">对话加载失败：{{ /network|failed to fetch|fetch failed|offline|断网/i.test(String(messagesError)) ? '网络好像断了，检查一下再重试' : /timeout|timed out|超时/i.test(String(messagesError)) ? '营地那边没回应，稍后再试' : '营地那边出了点状况，稍后再试' }}<br><button class="v4-retry" @click="() => selectedTicket && fetchMessages(selectedTicket.id)">重试</button></div>
+              <div v-else-if="messagesError" class="v4-err">对话加载失败：{{ /network|failed to fetch|fetch failed|offline|断网/i.test(String(messagesError)) ? '网络好像断了，检查一下再重试' : /timeout|timed out|超时/i.test(String(messagesError)) ? '暂时没有回应，稍后再试' : '服务暂时异常，稍后再试' }}<br><button class="v4-retry" @click="() => selectedTicket && fetchMessages(selectedTicket.id)">重试</button></div>
               <div v-else ref="messagesEl" class="messages-list" tabindex="0" role="log" aria-label="对话记录">
-                <p v-if="!messages.length" class="messages-empty">还没有对话内容，营地马上就来认领</p>
+                <p v-if="!messages.length" class="messages-empty">还没有对话内容，我们会尽快回复</p>
                 <div
                   v-for="msg in messages"
                   :key="msg.id"
@@ -135,8 +135,8 @@
                   :class="{ 'message-camp': msg.is_admin }"
                 >
                   <div class="message-content">
-                    <span v-if="msg.is_admin" class="message-author"><span aria-hidden="true">🏕️</span> 营地回复{{ msg.admin_name ? ` · ${msg.admin_name}` : '' }}</span>
-                    <span v-else class="message-author me"><span aria-hidden="true">🧭</span> 我的求救信</span>
+                    <span v-if="msg.is_admin" class="message-author"><span aria-hidden="true">🏕️</span> 管理员回复{{ msg.admin_name ? ` · ${msg.admin_name}` : '' }}</span>
+                    <span v-else class="message-author me"><span aria-hidden="true">🧭</span> 我的消息</span>
                     <span class="message-text">{{ msg.message }}</span>
                     <span class="message-time">{{ formatDate(msg.created_at) }}</span>
                   </div>
@@ -149,8 +149,8 @@
                     v-model="replyMessage"
                     type="text"
                     maxlength="2000"
-                    placeholder="给营地回句话…"
-                    aria-label="回复营地"
+                    placeholder="输入回复…"
+                    aria-label="输入回复"
                     @keyup.enter="(e) => !e.isComposing && replyTicket()"
                   />
                   <button
@@ -163,7 +163,7 @@
                 </div>
                 <button class="close-record" @click="closeTicket"><span aria-hidden="true">🏁</span> 关闭记录</button>
               </div>
-              <p v-else class="closed-hint">这条记录已关闭 · 感谢你的信任，继续探险吧 <span aria-hidden="true">🧭</span></p>
+              <p v-else class="closed-hint">这条记录已关闭，不能再回复 <span aria-hidden="true">🧭</span></p>
             </div>
           </div>
         </div>
@@ -175,7 +175,7 @@
       <template #header>
         <h3 class="modal-title">🏁 关闭记录</h3>
 </template>
-      <p class="confirm-text">确定要标记脱险并关闭这条事故记录吗？关闭后不能再回复。</p>
+      <p class="confirm-text">确定要关闭这条反馈记录吗？关闭后不能再回复。</p>
       <template #footer>
         <div class="confirm-row">
           <button class="cbtn ghost" @click="showCloseConfirm = false">再想想</button>
@@ -206,15 +206,15 @@ const toast = useToast()
 const categoryOptions = [
   { value: 'emby', icon: '🎬', label: '播放卡住' },
   { value: 'account', icon: '👤', label: '账号问题' },
-  { value: 'subscription', icon: '📜', label: '执照问题' },
+  { value: 'subscription', icon: '📜', label: '订阅问题' },
   { value: 'payment', icon: '💰', label: '支付问题' },
-  { value: 'other', icon: '❓', label: '其他险情' },
+  { value: 'other', icon: '❓', label: '其他问题' },
 ]
 
 const statusConfig: Record<string, { chip: string; icon: string; label: string }> = {
-  open: { chip: 'blue', icon: '📡', label: '已发出' },
-  pending: { chip: 'gold', icon: '🛟', label: '救援中' },
-  resolved: { chip: 'green', icon: '✅', label: '已脱险' },
+  open: { chip: 'blue', icon: '📡', label: '已提交' },
+  pending: { chip: 'gold', icon: '🛟', label: '处理中' },
+  resolved: { chip: 'green', icon: '✅', label: '已解决' },
   closed: { chip: 'gray', icon: '', label: '已关闭' },
 }
 function statusIcon(status: string) {
@@ -268,7 +268,7 @@ function categoryIcon(category: string) {
   return categoryOptions.find(c => c.value === category)?.icon ?? '❓'
 }
 function categoryLabel(category: string) {
-  return categoryOptions.find(c => c.value === category)?.label ?? '其他险情'
+  return categoryOptions.find(c => c.value === category)?.label ?? '其他问题'
 }
 function statusChip(status: string) {
   return statusConfig[status]?.chip ?? 'gray'
@@ -317,7 +317,7 @@ function runMorseAnim(): Promise<void> {
       gap: ch === 'gap',
       lit: false,
     }))
-    morseStatus.value = '滴滴滴… 信号发出中'
+    morseStatus.value = '提交中…'
     let i = 0
     const step = () => {
       if (i > 0) morseSyms.value[i - 1].lit = false
@@ -336,7 +336,7 @@ async function sendSOS() {
   const title = form.value.title.trim()
   const message = form.value.message.trim()
   if (!title || !message) {
-    toast.error('先写清楚险情标题和求救信，再摇信号机')
+    toast.error('先写清楚标题和问题描述，再提交')
     return
   }
   if (sending.value) return
@@ -357,7 +357,7 @@ async function sendSOS() {
   try {
     if (!reduce) await runMorseAnim()
     await createP
-    toast.success('求救信号已发出，营地马上派救援队')
+    toast.success('反馈已提交，我们会尽快处理')
     form.value = { title: '', category: 'other', message: '' }
     await fetchTickets(true)
     if (!reduce) {
@@ -451,7 +451,7 @@ async function doCloseTicket() {
   closing.value = true
   try {
     await ticketApi.close(selectedTicket.value.id)
-    toast.success('已标记脱险，记录关闭')
+    toast.success('记录已关闭')
     expandedId.value = null
     selectedTicket.value = null
     await fetchTickets(true)

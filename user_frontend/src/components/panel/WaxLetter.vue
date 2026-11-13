@@ -4,14 +4,14 @@
     :class="{ open: isOpen }"
     role="button"
     tabindex="0"
-    :aria-label="isOpen ? '昨日回顾信件，点击合上' : '每日一封，点击拆信'"
+    :aria-label="isOpen ? '昨日回顾，点击收起' : '昨日回顾，点击展开'"
     :aria-expanded="isOpen"
     @click="toggle"
     @keydown="onKey"
   >
     <div v-if="!isOpen" class="v4-letter-env">
       <div class="v4-letter-wax">封</div>
-      <p>来自昨日 {{ letterTime }} 的你<br /><span class="v4-letter-hint">点一下，拆信</span></p>
+      <p>昨日（{{ letterTime }}）的观影记录<br /><span class="v4-letter-hint">点一下，展开看</span></p>
     </div>
     <div v-else class="v4-letter-content">
       <div class="v4-kv"><span>昨日观影</span><b>{{ watchDurationText }}</b></div>

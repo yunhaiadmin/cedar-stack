@@ -8,7 +8,7 @@
         <div class="nm">{{ p.name }}</div>
       </div>
     </div>
-    <p class="eco-foot">🌧️ 片库是活的，每天都在长</p>
+    <p class="eco-foot">片库每天都在新增</p>
   </div>
 </template>
 

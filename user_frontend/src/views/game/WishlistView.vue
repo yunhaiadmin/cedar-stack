@@ -5,8 +5,8 @@
       <!-- 日志头 -->
       <header class="v4-loghead">
         <span class="v4-stamp">{{ facilityStamp('wishlist') }}</span>
-        <h1>许愿池</h1>
-        <p>营地中央的古井 —— 把心愿写在纸上，折成小船，投进去。</p>
+        <h1>求片</h1>
+        <p>想看的片库里还没有？提交求片，处理进度在这里看。</p>
       </header>
 
       <!-- 古井 -->
@@ -23,21 +23,21 @@
           <div class="well-note">
             <!-- R43：加载中不写"0 条"（列表还没回来，0 是假的），等数出来了再报数 -->
             <!-- R102-5：双列表都失败时也不写"0 条"，说人话 -->
-            <template v-if="myLoading || hotLoading">池里有几条心愿在漂流，正在数…</template>
-            <template v-else-if="myError && hotError">池子里的心愿暂时数不出来，看看下面的列表吧</template>
-            <template v-else>池里已有 <b>{{ totalWishes }}</b> 条心愿在漂流</template>
+            <template v-if="myLoading || hotLoading">正在统计求片数量…</template>
+            <template v-else-if="myError && hotError">暂时无法统计求片数量，请看下面的列表</template>
+            <template v-else>已有 <b>{{ totalWishes }}</b> 条求片</template>
           </div>
         </div>
-        <UhdButton variant="primary" block @click="openModal">🏮 投下心愿</UhdButton>
+        <UhdButton variant="primary" block @click="openModal">＋ 提交求片</UhdButton>
       </section>
 
       <!-- 我的许愿 -->
       <section class="v4-sec">
-        <div class="v4-sec-title">我的许愿</div>
-        <div class="v4-sec-sub">漂流中的心愿，营地正在想办法捞起来</div>
+        <div class="v4-sec-title">我的求片</div>
+        <div class="v4-sec-sub">你提交的求片正在处理中</div>
         <div v-if="myLoading" class="v4-skeleton" style="height:80px"></div>
-        <div v-else-if="myError" class="v4-err">许愿加载失败：{{ myError }}<br><button class="v4-retry" @click="loadMine">重试</button></div>
-        <UhdEmptyState v-else-if="myWishes.length === 0" title="池子里还没有你的心愿，投一条下去吧" />
+        <div v-else-if="myError" class="v4-err">求片加载失败：{{ myError }}<br><button class="v4-retry" @click="loadMine">重试</button></div>
+        <UhdEmptyState v-else-if="myWishes.length === 0" title="你还没有提交过求片" />
         <div v-else>
           <div
             v-for="w in myWishes"
@@ -48,11 +48,11 @@
             <div>
               <b>《{{ w.movie_name }}》</b>
               <div class="wmeta">
-                {{ shortDate(w.created_at) }} 投下
+                {{ shortDate(w.created_at) }} 提交
                 <span v-if="w.request_kind === 'missing_episodes' && w.missing_text"> · 补缺集：{{ w.missing_text }}</span>
-                <span v-if="w.title_only"> · 原名投下，待营地确认</span>
+                <span v-if="w.title_only"> · 按原名提交，待确认</span>
                 <span v-if="w.status === 'completed' && w.emby_item_id">
-                  · 营地已上架，<button type="button" class="goto-player" @click="goOperator">去播放器看</button>
+                  · 已上架，<button type="button" class="goto-player" @click="goOperator">去播放器看</button>
                 </span>
                 <span v-else-if="w.vote_count"> · 已有 {{ w.vote_count }} 人附议（加权 {{ w.weighted_vote_count ?? w.vote_count }}）</span>
               </div>
@@ -84,11 +84,11 @@
 
       <!-- 众人许愿 -->
       <section class="v4-sec" style="padding-bottom:20px">
-        <div class="v4-sec-title">众人许愿</div>
-        <div class="v4-sec-sub">附议多的心愿，优先被捞起来</div>
+        <div class="v4-sec-title">大家都在求</div>
+        <div class="v4-sec-sub">附议越多，处理优先级越高</div>
         <div v-if="hotLoading" class="v4-skeleton" style="height:80px"></div>
-        <div v-else-if="hotError" class="v4-err">众人许愿加载失败：{{ hotError }}<br><button class="v4-retry" @click="loadHot">重试</button></div>
-        <UhdEmptyState v-else-if="hotWishes.length === 0" title="大家的心愿都在漂流，暂时没有公开的" />
+        <div v-else-if="hotError" class="v4-err">大家的求片加载失败：{{ hotError }}<br><button class="v4-retry" @click="loadHot">重试</button></div>
+        <UhdEmptyState v-else-if="hotWishes.length === 0" title="暂时没有公开的求片" />
         <div v-else>
           <div v-for="w in hotWishes" :key="w.id" class="crowd">
             <div class="row1">
@@ -97,7 +97,7 @@
               <span class="chip blue">{{ w.vote_count > 0 ? w.vote_count + ' 人也想看 · 加权 ' + (w.weighted_vote_count ?? w.vote_count) : '还没有人附议' }}</span>
             </div>
             <div v-if="w.request_kind === 'missing_episodes' && w.missing_text" class="want">🧩 {{ w.missing_text }}</div>
-            <div class="want">{{ shortDate(w.created_at) }} 投入池中</div>
+            <div class="want">{{ shortDate(w.created_at) }} 提交</div>
             <!-- 举报（想看页合并进来；仅公益服）：hot 榜后端只回 pending 行，
                  id 即求片行 id，与治理举报的目标 id 同域 -->
             <div v-if="welfareRealm" class="report-line">
@@ -115,7 +115,7 @@
               :disabled="w.voted || voting !== null"
               @click="upvote(w)"
             >
-              <span class="lbl">{{ w.voted ? '✓ 已附议，坐等打捞' : voting === w.id ? '附议中' : '+1 附议' }}</span>
+              <span class="lbl">{{ w.voted ? '✓ 已附议' : voting === w.id ? '附议中' : '+1 附议' }}</span>
             </button>
             <div v-if="reportingId === w.id" class="report-form">
               <select v-model="reportReason" class="report-input" aria-label="举报原因">
@@ -140,10 +140,10 @@
     </div>
 
     <!-- 许愿弹窗 -->
-    <div class="modal" :class="{ show: modalOpen }" role="dialog" aria-modal="true" aria-label="许愿" tabindex="-1" @click.self="closeModal" @keydown="onModalKeydown">
+    <div class="modal" :class="{ show: modalOpen }" role="dialog" aria-modal="true" aria-label="求片" tabindex="-1" @click.self="closeModal" @keydown="onModalKeydown">
       <div class="mcard">
-        <h3>写下你的心愿</h3>
-        <p>写下片名，纸条会折成小船，噗通一声投进池子</p>
+        <h3>提交求片</h3>
+        <p>输入片名，选对版本后提交</p>
         <input
           ref="wishInput"
           v-model="wishText"
@@ -152,10 +152,10 @@
           @keyup.enter="throwWish"
           @input="onWishInput"
         >
-        <div v-if="emptyWarn" class="wish-warn">先写下心愿，再投进池子吧 <span aria-hidden="true">✍️</span></div>
+        <div v-if="emptyWarn" class="wish-warn">先输入片名，再提交 <span aria-hidden="true">✍️</span></div>
 
         <div v-if="showCandidates" class="seek-cands">
-          <div v-if="searching" class="seek-status">正在池子里捞片名…<span aria-hidden="true">🎣</span></div>
+          <div v-if="searching" class="seek-status">正在搜索片名…<span aria-hidden="true">🎣</span></div>
           <div v-else-if="searchError" class="seek-error">
             <span>{{ searchError }}</span>
             <button type="button" class="seek-retry" @click="retrySearch">重试搜索</button>
@@ -245,20 +245,20 @@
               @click="toggleSeason(s.season_number)"
             >第{{ s.season_number }}季（共{{ s.episode_count }}集）</button>
           </div>
-          <div v-if="loadingSeasons" class="sels-loading">正在数有几季…</div>
+          <div v-if="loadingSeasons" class="sels-loading">正在加载季列表…</div>
           <div v-else-if="seasonsError !== ''" class="sels-error">
             <span>季列表没取到：{{ seasonsError }}</span>
             <button type="button" class="sels-chip" @click="retrySeasons">重试</button>
           </div>
-          <div v-else-if="seasons.length === 0" class="sels-empty">这部剧没有季数据，将按全季投放</div>
+          <div v-else-if="seasons.length === 0" class="sels-empty">这部剧没有季数据，将按全季提交</div>
         </div>
 
         <div v-if="nameDup" class="seek-dup">
-          <template v-if="nameDup.kind === 'mine'">你已经投过《{{ nameDup.row.movie_name }}》啦，还在池子里漂着</template>
-          <template v-else>池里已有《{{ nameDup.row.movie_name }}》在漂流（{{ (nameDup.row.vote_count || 0) + 1 }} 人许愿），不用重复投，给它 +1 就好</template>
+          <template v-if="nameDup.kind === 'mine'">你已经提交过《{{ nameDup.row.movie_name }}》，正在处理中</template>
+          <template v-else>已有《{{ nameDup.row.movie_name }}》的求片（{{ (nameDup.row.vote_count || 0) + 1 }} 人求片），不用重复提交，给它 +1 就好</template>
         </div>
-        <div v-else-if="fallbackAllowed" class="seek-fallback">没找到对应的片？就按「{{ wishText.trim() }}」这个名字投下，营地会人工确认</div>
-        <div v-if="pickWarn" class="wish-warn">点上面任意一部就能投下；没有你要的，换个片名再搜搜</div>
+        <div v-else-if="fallbackAllowed" class="seek-fallback">没找到对应的片？就按「{{ wishText.trim() }}」这个名字提交，会人工确认</div>
+        <div v-if="pickWarn" class="wish-warn">点上面任意一部就能提交；没有你要的，换个片名再搜</div>
 
         <div class="mrow">
           <button class="mbtn cancel" @click="closeModal">再想想</button>
@@ -440,10 +440,10 @@ const totalWishes = computed(() => {
 })
 
 function statusText(s: string): string {
-  if (s === 'completed') return '已捞起'
-  if (s === 'approved') return '打捞中'
+  if (s === 'completed') return '已完成'
+  if (s === 'approved') return '处理中'
   if (s === 'rejected') return '已退回'
-  return '漂流中'
+  return '待处理'
 }
 function statusChip(s: string): string {
   if (s === 'completed') return 'green'
@@ -548,11 +548,11 @@ const nameDup = computed<{ kind: 'mine' | 'hot'; row: MediaSeekRequest | HotMedi
 })
 
 const primaryBtnText = computed<string>(() => {
-  if (throwing.value) return '投放中'
+  if (throwing.value) return '提交中'
   // R53A-39：装饰 emoji 不进按钮可访问名，避免读屏念成「电影摄影机／帆船」
   if (picked.value && picked.value.in_library) return '已在库，去播放器看'
   if (nameDup.value?.kind === 'hot') return '给它 +1 附议'
-  return '投进池子'
+  return '提交求片'
 })
 
 const seasonParam = computed<string | undefined>(() => {
@@ -846,7 +846,7 @@ async function throwWish() {
       await upvote(row)
       if (row.voted) {
         closeModal()
-        useToast().success('已附议，坐等打捞')
+        useToast().success('已附议')
       }
     } finally {
       throwing.value = false
@@ -854,7 +854,7 @@ async function throwWish() {
     return
   }
   if (!picked.value && nameDup.value?.kind === 'mine') {
-    useToast().error('这条心愿你已经投过啦')
+    useToast().error('这条求片你已经提交过了')
     return
   }
   const name = picked.value ? picked.value.name : wishText.value.trim()
@@ -928,7 +928,7 @@ function flyBoat(done: () => void) {
     boat.style.opacity = '0'
     const sp = document.createElement('div')
     sp.className = 'splash'
-    sp.textContent = '噗通！'
+    sp.textContent = '已提交'
     sp.setAttribute('aria-hidden', 'true')
     sp.style.left = `${wr.left + wr.width / 2 - 22}px`
     sp.style.top = `${wr.top + wr.height / 2 - 40}px`
