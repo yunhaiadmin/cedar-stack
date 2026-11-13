@@ -149,7 +149,7 @@ export async function ensureEmbyBase(): Promise<string> {
  * 手里没 key 时原样发（行为与旧版一致，交给服务端 401 兜底）。
  * 走请求头不走 URL：不扩大 token 进日志/历史的暴露面（H2 口径）。
  */
-function embyAuthConfig(config?: object): object {
+export function embyAuthConfig(config?: object): object {
   const key = getEmbyApiKey()
   if (!key) return config ?? {}
   const c = (config ?? {}) as { headers?: Record<string, string> }

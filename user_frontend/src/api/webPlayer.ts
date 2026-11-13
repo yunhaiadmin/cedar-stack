@@ -2,6 +2,10 @@
  * 网页播放器专用接口（UHD 批 3 · 网页播放器单）。
  *
  * 取流口径与已下线的 EA /watch 轻量播放器、旧 WatchView 逐字一致，不新造一套：
+ * - 鉴权：EA 只认 Emby token（门户 JWT 回退已删），本模块每个 EA 请求
+ *   都必须经 emby.ts 的 embyAuthConfig() 带上账号卡下发的网页端专用
+ *   token（X-Emby-Token）；漏带必 401「Invalid access token」
+ *   （2026-11-13 网页播放全坏事故，契约 scripts/check_web_player_emby_auth.py 钉住）。
  * - 版本/线路：POST {EA}/emby/Items/{id}/PlaybackInfo（body {}）
  *   → { MediaSources, PlaySessionId }。每个 MediaSource 即一个版本/线路，
  *   DirectStreamUrl 是本站唯一构造点下发的带签名地址
@@ -18,7 +22,7 @@
  *   端点），本模块不提供弹幕数据，播放器面板只做设置与缺口提示。
  */
 import api from '@/api'
-import { ensureEmbyBase, secondsToTicks, type EmbyMediaSource } from '@/api/emby'
+import { embyAuthConfig, ensureEmbyBase, secondsToTicks, type EmbyMediaSource } from '@/api/emby'
 
 export interface PlaybackInfoResult {
   MediaSources: EmbyMediaSource[]
@@ -42,6 +46,7 @@ export async function fetchPlaybackInfo(itemId: string, overrideBase?: string): 
   return api.post<never, PlaybackInfoResult>(
     `${base}/emby/Items/${encodeURIComponent(itemId)}/PlaybackInfo`,
     {},
+    embyAuthConfig(),
   )
 }
 
@@ -67,17 +72,17 @@ function reportBody(r: SessionReport, paused?: boolean): Record<string, unknown>
 
 export async function reportPlaying(r: SessionReport, overrideBase?: string): Promise<void> {
   const base = await embyBase(overrideBase)
-  await api.post(`${base}/emby/Sessions/Playing`, reportBody(r))
+  await api.post(`${base}/emby/Sessions/Playing`, reportBody(r), embyAuthConfig())
 }
 
 export async function reportProgress(r: SessionReport, paused: boolean, overrideBase?: string): Promise<void> {
   const base = await embyBase(overrideBase)
-  await api.post(`${base}/emby/Sessions/Playing/Progress`, reportBody(r, paused))
+  await api.post(`${base}/emby/Sessions/Playing/Progress`, reportBody(r, paused), embyAuthConfig())
 }
 
 export async function reportStopped(r: SessionReport, overrideBase?: string): Promise<void> {
   const base = await embyBase(overrideBase)
-  await api.post(`${base}/emby/Sessions/Playing/Stopped`, reportBody(r))
+  await api.post(`${base}/emby/Sessions/Playing/Stopped`, reportBody(r), embyAuthConfig())
 }
 
 /** 退出页面时尽力上报停止（页面卸载场景用 sendBeacon 兜底，失败不抛） */
