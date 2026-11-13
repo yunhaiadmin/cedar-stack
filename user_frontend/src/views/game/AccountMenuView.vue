@@ -174,7 +174,7 @@ const groups = computed<MenuGroup[]>(() => {
   // 2026-11-13 细节对齐（用户圈图亲点）：分组与条目顺序照友站「我的」——
   // 订阅与财务（订阅服务/订阅记录/钱包）、账户（账号安全/邀请好友/团队管理）、
   // 帮助（求片反馈/安装应用/线路测速/使用说明）。钱包条目随钱包本体一起上，
-  // 本单不摆空入口；我的会员（订阅详情页）保留在财务组末尾。
+  // 本单不摆空入口；我的订阅（订阅详情页）保留在财务组末尾。
   const finance: MenuItem[] = [
     {
       key: 'subscribe',
@@ -183,7 +183,7 @@ const groups = computed<MenuGroup[]>(() => {
       value: activeSub.value?.plan_name || undefined,
     },
     { key: 'records', label: '订阅记录', to: '/game/account/subscription-records' },
-    { key: 'member', label: '我的会员', to: '/game/account/member' },
+    { key: 'member', label: '我的订阅', to: '/game/account/member' },
   ]
   const account: MenuItem[] = [
     { key: 'settings', label: '账号安全', to: '/game/account/settings' },

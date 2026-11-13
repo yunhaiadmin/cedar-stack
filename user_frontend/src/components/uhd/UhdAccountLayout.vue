@@ -3,7 +3,7 @@
  * UhdAccountLayout —— 用户中心左栏框架（说明书 2.10，批 2 办事面）
  *
  * 用法：办事面页面（/game/* 与 /shop）的根模板包一层即可：
- *   <UhdAccountLayout title="我的会员" eyebrow="订阅与资格">…原内容…</UhdAccountLayout>
+ *   <UhdAccountLayout title="我的订阅" eyebrow="订阅与资格">…原内容…</UhdAccountLayout>
  * - 左栏 250px 白底（UhdSidebar，批 0 组件），分组导航与主导航同源；
  * - 内容区约 1000px、H1 32–36px；≤768px 左栏隐藏、走底部坞（App.vue 常驻）。
  * - 皮肤：非 scoped 样式块把 .v4-scope 的纸色令牌在 .uhd-account 作用域内
@@ -67,7 +67,7 @@ const groups = computed<UhdSidebarGroup[]>(() => {
       title: '我的',
       items: [
         { key: '/game/account', label: '我的概览', icon: User },
-        { key: '/game/account/member', label: '我的会员', icon: Crown },
+        { key: '/game/account/member', label: '我的订阅', icon: Crown },
         { key: '/game/account/subscribe', label: '订阅服务', icon: CreditCard },
         { key: '/game/account/settings', label: '账号与设置', icon: Settings },
       ],

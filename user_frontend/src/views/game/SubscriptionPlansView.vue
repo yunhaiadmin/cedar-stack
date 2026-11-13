@@ -1,12 +1,12 @@
 <template>
   <div class="sub-page">
-    <!-- 页头：左返回＋标题，右上真实入口（我的会员）彩虹边框胶囊 -->
+    <!-- 页头：左返回＋标题，右上真实入口（我的订阅）彩虹边框胶囊 -->
     <header class="sub-head">
       <button type="button" class="sub-back" aria-label="返回" @click="goBack">
         <ChevronLeft :size="24" aria-hidden="true" />
       </button>
       <h1 class="sub-title">订阅服务</h1>
-      <RouterLink class="sub-head-link" to="/game/account/member">我的会员</RouterLink>
+      <RouterLink class="sub-head-link" to="/game/account/member">我的订阅</RouterLink>
     </header>
 
     <main class="sub-body">
@@ -216,14 +216,14 @@
 <script setup lang="ts">
 /**
  * 订阅服务（/game/account/subscribe）——按 UHDNow 订阅页逻辑重做（用户 2026-11-13 08:39 令）：
- * 深色 app 式单列流：页头（返回＋标题＋我的会员胶囊）→ 服分段 → 套餐单选卡
+ * 深色 app 式单列流：页头（返回＋标题＋我的订阅胶囊）→ 服分段 → 套餐单选卡
  * （选中提亮/未选压暗＋当前标记＋真实 entitlements 规格行）→ 时长滑杆＋胶囊
  * → 支付方式（人民币） → 优惠码 → 价格明细 → 吸底结算条。
  * 套餐/价格/时长/规格全部接口数据驱动；价格一律走 coupon 试算口
  * （与下单同一套口径：先等级折扣，再优惠券/折扣权益），下单仍走
  * paymentApi.createOrder，支付与资格发放规则不动。
  * Aetrix 没有的维度不硬造：原站「线路」分段以真实维度「服（realm）」替代；
- * 团体方案段无对应业务，整段省略；页头右上不放播放入口，放真实入口「我的会员」。
+ * 团体方案段无对应业务，整段省略；页头右上不放播放入口，放真实入口「我的订阅」。
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'

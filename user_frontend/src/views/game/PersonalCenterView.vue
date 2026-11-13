@@ -121,7 +121,7 @@
       <!-- 双按钮：主钮彩虹边框粉彩胶囊，次钮白胶囊描边 -->
       <div class="ov-actions">
         <RouterLink class="ov-btn ov-btn--primary" to="/game/account/subscribe">续费订阅</RouterLink>
-        <RouterLink class="ov-btn" to="/game/account/member">我的会员</RouterLink>
+        <RouterLink class="ov-btn" to="/game/account/member">我的订阅</RouterLink>
       </div>
 
       <!-- Emby 段：图标＋两行＋chevron（弹幕 API 本站无此业务，整项省略） -->
@@ -230,7 +230,7 @@
  * 页头（品牌＋网页观影胶囊）＋会员卡（斜向粉彩渐变＋细斜纹）＋有效期行
  * ＋大数字区（剩余天数映射）＋双按钮＋Emby/设备/常用平面段，页面到
  * 常用段结束；「我的权益」「账号」两段与退出登录按钮已按用户
- * 2026-11-13 令摘除（友站概览没有这三段）——我的会员/账号设置/代理
+ * 2026-11-13 令摘除（友站概览没有这三段）——我的订阅/账号设置/代理
  * 中心入口在「我的」页与桌面侧栏，退出登录在「我的」页、顶栏账户
  * 菜单与账号设置页均有；「成长」整段（等级/成就/馆灵）已按用户
  * 2026-11-13 圈删令摘除；自创的「我的片子」归组（想看/我的求片/我的

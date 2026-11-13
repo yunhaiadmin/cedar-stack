@@ -108,7 +108,7 @@ const showHeader = computed(() => showChrome.value && !isAccountArea.value && !i
  * ProfileView（/profile 已删）→ AccountSettingsView（/game/account）。
  * 2026-11-13：商店整店删除，ShopView 移出缓存。
  * 2026-11-06：/game/account 改为个人中心 PersonalCenterView，缓存对象随之更换；
- * 账号设置（/game/account/settings）与我的会员（/game/account/member）是子页，不进缓存。
+ * 账号设置（/game/account/settings）与我的订阅（/game/account/member）是子页，不进缓存。
  */
 // RootView 是根路径分发组件（官网面），一并常驻缓存
 const KEEP_ALIVE_VIEWS = ['RootView', 'PersonalCenterView']
