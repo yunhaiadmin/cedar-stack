@@ -160,6 +160,8 @@ export interface InvitationRecordRow {
   id: number
   invitee_username: string
   reward_points: number
+  /** 累计返利（台账口径）：后端按充值订单归属从返利流水拆算，只记账不发放 */
+  rebate_total: number
   created_at: string | null
 }
 
