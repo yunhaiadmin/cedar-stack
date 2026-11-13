@@ -662,19 +662,18 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 网页观影入口：实测大颗软胶囊（221×62、圆角 31＝半高全胶囊）；
+   浅色近白底带粉色水洗（中心 #f9f3f3）、深色 #312d2e，无彩虹描边。
+   本端顶栏比例下按同形态缩放高度，底色/胶囊/无描边逐项对齐实测。 */
 .watch-pill {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 40px;
-  padding: 0 16px;
-  border: 1.5px solid transparent;
+  gap: 9px;
+  height: 54px;
+  padding: 0 24px;
+  border: none;
   border-radius: 999px;
-  background:
-    linear-gradient(rgba(22, 22, 25, 0.72), rgba(22, 22, 25, 0.72)) padding-box,
-    var(--uhd-rainbow) border-box;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: #312d2e;
   color: #ffffff;
   font-size: 15px;
   font-weight: var(--uhd-fw-semibold);
@@ -779,8 +778,9 @@ html:not([data-theme='light']) .ov-card {
 }
 .ov-quota__big {
   margin: 10px 0 0;
-  font-size: 62px;
-  font-weight: var(--uhd-fw-black);
+  /* 实测大数字 56–60px/800 */
+  font-size: 58px;
+  font-weight: var(--uhd-fw-extrabold);
   letter-spacing: -0.02em;
   line-height: 1.02;
   color: #ffffff;
@@ -791,7 +791,8 @@ html:not([data-theme='light']) .ov-card {
 }
 .ov-quota__unit {
   margin-left: 10px;
-  font-size: 30px;
+  /* 实测单位字约 24px（原站为 GB，本站单位为「天」，只对齐字号档） */
+  font-size: 24px;
   font-weight: var(--uhd-fw-extrabold);
   color: rgba(255, 255, 255, 0.62);
 }
@@ -803,7 +804,8 @@ html:not([data-theme='light']) .ov-card {
 }
 .ov-bar {
   margin-top: 14px;
-  height: 7px;
+  /* 实测进度条高 6 */
+  height: 6px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.14);
   overflow: hidden;
@@ -839,30 +841,32 @@ html:not([data-theme='light']) .ov-card {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 50px;
-  padding: 0 28px;
-  border-radius: 999px;
+  /* 实测钮高约 43、圆角约 21、字 14–15px */
+  height: 43px;
+  padding: 0 24px;
+  border-radius: 21px;
   background: #17181c;
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #ffffff;
-  font-size: 16.5px;
+  font-size: 14.5px;
   font-weight: var(--uhd-fw-semibold);
   text-decoration: none;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
 }
+/* 主钮：实测深色面＝#171c21 深底＋彩虹渐变边框；浅色面＝白底＋彩虹边框（见浅色覆盖） */
 .ov-btn--primary {
   border: 1.5px solid transparent;
   background:
-    var(--uhd-rainbow-soft) padding-box,
+    #171c21 padding-box,
     var(--uhd-rainbow) border-box;
-  color: #111111;
+  color: #ffffff;
   box-shadow: 0 8px 20px rgba(190, 140, 190, 0.16);
 }
 .ov-btn:active {
   opacity: 0.8;
 }
 
-/* 平面段：标题 28/800＋发丝线 */
+/* 平面段：标题 26/700＋发丝线 */
 .ov-sec {
   margin-top: 42px;
 }
@@ -877,8 +881,9 @@ html:not([data-theme='light']) .ov-card {
 .ov-sec__title {
   margin: 0;
   font-family: var(--uhd-font-sans);
-  font-size: 28px;
-  font-weight: var(--uhd-fw-extrabold);
+  /* 实测区块标题 24–28px/700 */
+  font-size: 26px;
+  font-weight: var(--uhd-fw-bold);
   letter-spacing: -0.01em;
   color: #ffffff;
 }
@@ -930,12 +935,13 @@ html:not([data-theme='light']) .ov-card {
   gap: 2px;
 }
 .ov-irow__name {
-  font-size: 18px;
+  /* 实测行标题 15–16px、副标题 13px */
+  font-size: 16px;
   font-weight: var(--uhd-fw-semibold);
   color: #ffffff;
 }
 .ov-irow__sub {
-  font-size: 14.5px;
+  font-size: 13px;
   color: rgba(255, 255, 255, 0.42);
   white-space: nowrap;
   overflow: hidden;
@@ -1008,7 +1014,7 @@ html:not([data-theme='light']) .ov-card {
 .ov-drow__name {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 17.5px;
+  font-size: 16px;
   font-weight: var(--uhd-fw-semibold);
   color: #ffffff;
   white-space: nowrap;
@@ -1048,7 +1054,7 @@ html:not([data-theme='light']) .ov-card {
 }
 .ov-trow__name {
   flex: 1 1 auto;
-  font-size: 17.5px;
+  font-size: 16px;
   font-weight: var(--uhd-fw-medium);
   white-space: nowrap;
   overflow: hidden;
@@ -1099,14 +1105,12 @@ html[data-theme='light'] .ov-page {
 }
 html[data-theme='light'] .ov-brand__name { color: #111111; }
 html[data-theme='light'] .watch-pill {
-  background:
-    linear-gradient(#ffffff, #ffffff) padding-box,
-    var(--uhd-rainbow) border-box;
+  background: linear-gradient(180deg, #fdf8f8 0%, #f9f1f1 100%);
   color: #111111;
 }
 html[data-theme='light'] .ov-card {
   background:
-    linear-gradient(115deg, #fcfcfc 0%, #f4f0fa 14%, #ede7f7 25%, #e4dbf5 34%, #d7cdf2 42%, #c9bfef 48%, #c2b9ee 54%, #bdb6ee 59%, #b7b5ef 63%, #b0b6f0 67%, #a8b9f0 70%, #a0bbf1 73%, #a6c4f4 78%, #bed7f7 84%, #d7e6fa 90%, #f2f7fd 95%, #fbfcfd 100%);
+    linear-gradient(115deg, #fcfcfc 0%, #f4f0fa 14%, #ede7f7 25%, #e4dbf5 34%, #d7cdf2 42%, #c9bfef 48%, #c2b9ee 54%, #bdb6ee 59%, #b7b5ef 63%, #b0b6f0 67%, #a8b9f0 70%, #a0bbf1 73%, #d0dff9 76%, #a6c4f4 79%, #d7e6fa 82%, #b7d1f6 85%, #bed7f7 88%, #e1edfb 91%, #ccdff9 94%, #dae8fa 96%, #f2f7fd 98%, #fbfcfd 100%);
   box-shadow: 0 8px 22px rgba(90, 94, 150, 0.08);
 }
 html[data-theme='light'] .ov-card__brand { color: #111111; }
@@ -1123,6 +1127,7 @@ html[data-theme='light'] .ov-bar__fill { background: #111111; }
 html[data-theme='light'] .ov-quota__meta { color: #9a9da3; }
 html[data-theme='light'] .ov-quota__meta-line { color: #9a9da3; }
 html[data-theme='light'] .ov-btn { background: #ffffff; border-color: #e7e7e7; color: #111111; }
+html[data-theme='light'] .ov-btn--primary { background: #ffffff padding-box, var(--uhd-rainbow) border-box; border-color: transparent; color: #111111; }
 html[data-theme='light'] .ov-sec__head { border-bottom-color: #e5e5e7; }
 html[data-theme='light'] .ov-sec__title { color: #111111; }
 html[data-theme='light'] .ov-sec__more { color: #55575c; }
@@ -1147,8 +1152,7 @@ html[data-theme='light'] .ov-logout { background: #ffffff; border-color: #e7e7e7
 
 /* 兜底回滚块：守卫已不再把本页钉成 light（V4_PATHS 摘除 /game/account）；
    若主题解析与 data-theme 出现竞态不一致，用户选深色时由 .ov-dark 类回滚为深色 */
-html[data-theme='light'] .ov-page.ov-dark .watch-pill { background: linear-gradient(rgba(22, 22, 25, 0.72), rgba(22, 22, 25, 0.72)) padding-box,
-    var(--uhd-rainbow) border-box; color: #ffffff; }
+html[data-theme='light'] .ov-page.ov-dark .watch-pill { background: #312d2e; color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-card__brand { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-card__plan { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-card__user { color: rgba(255, 255, 255, 0.55); }
@@ -1162,6 +1166,7 @@ html[data-theme='light'] .ov-page.ov-dark .ov-bar__fill { background: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-quota__meta { color: rgba(255, 255, 255, 0.42); }
 html[data-theme='light'] .ov-page.ov-dark .ov-quota__meta-line { color: rgba(255, 255, 255, 0.42); }
 html[data-theme='light'] .ov-page.ov-dark .ov-btn { background: #17181c; color: #ffffff; }
+html[data-theme='light'] .ov-page.ov-dark .ov-btn--primary { background: #171c21 padding-box, var(--uhd-rainbow) border-box; color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-sec__title { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-sec__more { color: rgba(255, 255, 255, 0.62); }
 html[data-theme='light'] .ov-page.ov-dark .ov-row__chev { color: rgba(255, 255, 255, 0.42); }
