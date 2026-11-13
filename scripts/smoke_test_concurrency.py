@@ -3,10 +3,13 @@
 这些场景都是「读-判断-写」型逻辑，单线程跑永远是对的，只有真并发才暴露：
 
 1. 单次兑换码被多个请求同时核销 → 只能成功一次（不能发两份奖励）
-2. 同一用户同时签到 → 只能成功一次（不能发两份积分，也不能 500）
-3. `_add_points` 并发累加 → 不能丢更新（最终余额 = 初始 + 各次之和）
-4. 同一被邀请人被重复应用邀请码 → 只建立一次关系、只发一次双向奖励
-5. `client_ip` 不再采信攻击者可控的 `X-Forwarded-For` 首值（限流桶不可伪造）
+2. 同一被邀请人被重复应用邀请码 → 只建立一次关系、邀请人天数奖励只发一次
+3. `client_ip` 不再采信攻击者可控的 `X-Forwarded-For` 首值（限流桶不可伪造）
+4. 优惠券单人限领、卡码核销、订单退款的并发占位（见下文各节）
+
+2026-11-13 货币下线：原「并发签到」「_add_points 并发累加」两节随签到与
+积分台账一并删除；邀请奖励改按推广天数口径断言；退款节改按「积分不再
+扣回、只冲正一次状态推进」断言。
 
 用临时 SQLite 文件库 + 真线程 + 真会话，不碰开发库。
 """
@@ -34,8 +37,7 @@ from backend.database import SessionLocal, init_db  # noqa: E402
 
 init_db()
 
-from backend.api.economy import _add_points, do_checkin, redeem_exchange_code  # noqa: E402
-from backend.api.economy import _today_start  # noqa: E402
+from backend.api.economy import redeem_exchange_code  # noqa: E402
 from backend.api.invitation import apply_invitation  # noqa: E402
 from backend.ratelimit import client_ip  # noqa: E402
 
@@ -117,24 +119,19 @@ with SessionLocal() as db:
         db.refresh(u)
     alice, bob, inviter, invitee = users
     alice_id, bob_id, inviter_id, invitee_id = alice.id, bob.id, inviter.id, invitee.id
-    # 2026-10-09 签到合并后积分仅限公益服用户：bob 用于签到测试，设为公益服
-    db.query(models.WebUser).filter(models.WebUser.id == bob_id).update({"is_welfare": True})
-    # 2026-10-21：签到缺省改为关（服主保持关），开关仍在面板/DB——本冒烟按 DB 行打开
-    db.add(models.SystemConfig(key="checkin_enabled", value="true"))
-    # 签到暴击（#1672）缺省 5%、命中当日所得 ×3：第 2 节断言「只发了一份奖励
-    # （余额恰为 5）」必须把暴击播种为 0，否则每轮约 5% 概率掷出 15 假红
-    # （PR #1680 第三轮 CI 实测中招：余额=15，run 41335462768）
-    db.add(models.SystemConfig(key="checkin_crit_pct", value="0"))
-    # 2026-10-23 去重 #3：邀请人奖励只由推广发放——冒烟按推广口径种配置
-    # （开、余额型、100 分），下方邀请幂等节的「邀请者 +100」期望由此而来
+    # 邀请人奖励只由推广发放——冒烟按推广口径种配置（开、天数型、30 天），
+    # 下方邀请幂等节的「邀请者 +30 天」期望由此而来（积分型已随货币下线）
     db.add(models.SystemConfig(key="promotion_reward_enabled", value="true"))
-    db.add(models.SystemConfig(key="promotion_reward_type", value="balance"))
-    db.add(models.SystemConfig(key="promotion_reward_amount", value="100"))
-    db.add(models.SystemConfig(key="promotion_reward_days", value="0"))
+    db.add(models.SystemConfig(key="promotion_reward_type", value="days"))
+    db.add(models.SystemConfig(key="promotion_reward_amount", value="0"))
+    db.add(models.SystemConfig(key="promotion_reward_days", value="30"))
     db.commit()
 
+    plan = models.SubscriptionPlan(name="并发冒烟套餐", price=10, duration_days=30, is_active=True)
+    db.add(plan)
+    db.flush()
     db.add(models.ExchangeCode(
-        code="CC-SINGLE-USE", type="points", points_value=100,
+        code="CC-SINGLE-USE", type="subscription", plan_id=plan.id, duration_days=30,
         max_uses=1, use_count=0, is_active=True,
     ))
     inv = models.InvitationCode(code="CCINVITE", user_id=inviter_id, is_active=True, use_count=0)
@@ -178,96 +175,21 @@ bad = [
     if not (isinstance(exc, HTTPException) and exc.status_code in (400, 409))
 ]
 check("单次码并发核销：失败方返回 400/409（可重试语义），不是 500", not bad, f"异常状态码={bad}")
-check("单次码并发核销：只发了一份积分", balance(alice_id) == 100, f"余额={balance(alice_id)}")
+def _membership_days(uid: int) -> int:
+    with SessionLocal() as db:
+        rows = db.query(models.UserSubscription).filter(
+            models.UserSubscription.user_id == uid).all()
+        return sum(int((r.end_date - r.start_date).days) for r in rows if r.end_date and r.start_date)
+
+
+check("单次码并发核销：只发了一份会员（30 天）", _membership_days(alice_id) == 30,
+      f"天数={_membership_days(alice_id)}")
 check("单次码并发核销：use_count 恰好为 1", use_count == 1, f"use_count={use_count}")
 check("单次码并发核销：用满后自动停用", is_active is False, f"is_active={is_active}")
 
-# ==================== 2. 同一用户并发签到 ====================
-
-def checkin_once(i: int):
-    db = SessionLocal()
-    try:
-        user = db.query(models.WebUser).filter(models.WebUser.id == bob_id).first()
-        return run_async_endpoint(do_checkin, FakeRequest(), user, db)
-    finally:
-        db.close()
-
-
-results = run_parallel(checkin_once, 4)
-oks = [r for r in results if r and r[0]]
-fails = [r for r in results if r and not r[0]]
-
-with SessionLocal() as db:
-    records = db.query(models.CheckinRecord).filter(
-        models.CheckinRecord.user_id == bob_id,
-        models.CheckinRecord.checkin_date >= _today_start(),
-    ).count()
-
-check("并发签到：只有 1 个请求成功", len(oks) == 1, f"成功 {len(oks)} / 失败 {len(fails)}")
-bad = [
-    getattr(exc, "status_code", 500)
-    for _, exc in fails
-    if not (isinstance(exc, HTTPException) and exc.status_code in (400, 409))
-]
-check("并发签到：失败方返回 400/409，不是 500", not bad, f"异常状态码={bad}")
-check("并发签到：当日只有 1 条记录", records == 1, f"记录数={records}")
-check("并发签到：只发了一份奖励", balance(bob_id) == 5, f"余额={balance(bob_id)}")
-
-# ==================== 2b. 非公益服用户签到不加分 ====================
-
-def checkin_nonwelfare():
-    db = SessionLocal()
-    try:
-        user = db.query(models.WebUser).filter(models.WebUser.id == alice_id).first()
-        return run_async_endpoint(do_checkin, FakeRequest(), user, db)
-    finally:
-        db.close()
-
-ok_nw, res_nw = checkin_nonwelfare()
-check("非公益服签到：请求成功", ok_nw, f"结果={res_nw}")
-if ok_nw:
-    check("非公益服签到：积分为 0", res_nw.get("points_awarded") == 0, f"奖励={res_nw.get('points_awarded')}")
-    # alice 在第 1 节通过兑换码获得 100 分，签到不应增加
-    check("非公益服签到：余额不变", balance(alice_id) == 100, f"余额={balance(alice_id)}")
-
-# ==================== 3. _add_points 并发累加不丢更新 ====================
-
-with SessionLocal() as db:
-    db.query(models.WebUser).filter(models.WebUser.id == alice_id).update(
-        {models.WebUser.points: 1000}, synchronize_session=False
-    )
-    db.commit()
-
-def add_points_once(i: int):
-    db = SessionLocal()
-    try:
-        user = db.query(models.WebUser).filter(models.WebUser.id == alice_id).first()
-        balance_after = _add_points(db, user, 7, "test", f"并发自增 {i}", f"cc:{i}")
-        db.commit()
-        return True, balance_after
-    except HTTPException as exc:
-        return False, exc
-    except Exception as exc:  # noqa: BLE001
-        db.rollback()
-        return False, exc
-    finally:
-        db.close()
-
-
-results = run_parallel(add_points_once, 6)
-oks = [r for r in results if r and r[0]]
-check("并发 _add_points：6 次全部成功", len(oks) == 6, f"成功 {len(oks)}")
-final = balance(alice_id)
-check("并发 _add_points：无丢更新（1000 + 6×7）", final == 1042, f"余额={final}")
-
-with SessionLocal() as db:
-    logs = db.query(models.PointsLog).filter(models.PointsLog.ref_id.like("cc:%")).count()
-check("并发 _add_points：台账逐笔落库", logs == 6, f"台账条数={logs}")
-
 # ==================== 4. 邀请关系幂等 ====================
 
-before_inviter = balance(inviter_id)
-before_invitee = balance(invitee_id)
+before_inviter_days = _membership_days(inviter_id)
 
 applied = []
 with SessionLocal() as db:
@@ -285,9 +207,10 @@ with SessionLocal() as db:
     ).count()
 check("邀请幂等：只有 1 条关系记录", rec == 1, f"记录数={rec}")
 check(
-    "邀请幂等：双向奖励各只发一次",
-    balance(inviter_id) - before_inviter == 100 and balance(invitee_id) - before_invitee == 50,
-    f"邀请者 +{balance(inviter_id) - before_inviter} / 被邀请者 +{balance(invitee_id) - before_invitee}",
+    "邀请幂等：邀请人天数奖励只发一次（30 天）、双方积分恒 0",
+    _membership_days(inviter_id) - before_inviter_days == 30
+    and balance(inviter_id) == 0 and balance(invitee_id) == 0,
+    f"邀请者 +{_membership_days(inviter_id) - before_inviter_days} 天",
 )
 
 # 并发重复应用
@@ -503,10 +426,11 @@ check("卡码并发核销：拒绝时没有再发会员", membership_days_total(
       f"{membership_days_total()} vs {after_once}")
 
 # ==================== 8. 订单退款并发：只能冲正一次 ====================
-# 旧实现是「读状态 → 判断是不是 paid → 冲正积分 → 写回 refunded」：
-# 同一笔已支付订单被并发退两次时，两边都读到 paid，于是各扣一次积分
-# （`_reverse_points` 不是幂等的）→ 双重回滚。现在先做条件 UPDATE
-# 把 paid 原子推进到 refunded（rowcount=0 的那一边直接返回「已处理」）。
+# 旧实现是「读状态 → 判断是不是 paid → 冲正 → 写回 refunded」：
+# 同一笔已支付订单被并发退两次时，两边都读到 paid → 双重回滚。现在先做
+# 条件 UPDATE 把 paid 原子推进到 refunded（rowcount=0 的那一边直接返回
+# 「已处理」）。2026-11-13 货币下线后积分冲正腿已中和：本节断言改为
+# 「状态只推进一次、积分不再扣回、无冲正流水」。
 
 print("\n--- 订单退款并发 ---")
 
@@ -585,8 +509,8 @@ check("并发退款：只有 1 个请求真正执行了冲正", len(real_refunds
 check("并发退款：其余请求返回「已处理」或被拒（不是 500）",
       not bad_rejected and len(already) + len(rejected) == 3,
       f"已处理 {len(already)} / 被拒状态码 {[getattr(e, 'status_code', None) for _, e in rejected]}")
-check("并发退款：积分只扣回一次（没有双重回滚）", points == 0, f"余额={points}")
-check("并发退款：冲正流水只记一笔", refund_logs == 1, f"台账条数={refund_logs}")
+check("并发退款：积分不再扣回（货币已下线）", points == REFUND_POINTS, f"余额={points}")
+check("并发退款：无冲正流水（积分腿已中和）", refund_logs == 0, f"台账条数={refund_logs}")
 check("并发退款：订单落成已退款并留时间", order_status == "refunded" and refunded_at is not None,
       f"status={order_status} refunded_at={refunded_at}")
 
