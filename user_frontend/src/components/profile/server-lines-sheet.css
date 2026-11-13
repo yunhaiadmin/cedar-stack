@@ -1,0 +1,28 @@
+/* 线路弹层本地主题变量（--sls-*）：缺省浅色（用户中心办事面），
+   .sls--dark 时换概览页深色令牌同值（父页按主题解析值加类）。
+   定义放在独立样式表供设计令牌契约核查，由 ServerLinesSheet.vue
+   引入；组件 scoped 样式只引用不定义（契约只认被引入的 .css 定义）。 */
+
+.sls-overlay {
+  --sls-card: #ffffff;
+  --sls-text: #111111;
+  --sls-sub: #9a9da3;
+  --sls-divider: #e5e5e7;
+  --sls-copy-bg: #111111;
+  --sls-copy-text: #ffffff;
+  --sls-badge-border: #e5e5e5;
+  --sls-badge-text: #6b7280;
+  --sls-link-hover: #f5f5f5;
+}
+
+.sls-overlay.sls--dark {
+  --sls-card: #17181c;
+  --sls-text: #ffffff;
+  --sls-sub: rgba(255, 255, 255, 0.42);
+  --sls-divider: #26262a;
+  --sls-copy-bg: #ffffff;
+  --sls-copy-text: #111111;
+  --sls-badge-border: rgba(255, 255, 255, 0.16);
+  --sls-badge-text: rgba(255, 255, 255, 0.62);
+  --sls-link-hover: rgba(255, 255, 255, 0.05);
+}

@@ -129,14 +129,14 @@
         <div class="ov-sec__head">
           <h2 class="ov-sec__title">Emby</h2>
         </div>
-        <RouterLink class="ov-irow" to="/game/operator">
+        <button type="button" class="ov-irow" @click="linesSheetOpen = true">
           <MonitorPlay :size="25" class="ov-irow__icon" aria-hidden="true" />
           <span class="ov-irow__main">
             <span class="ov-irow__name">服务器地址</span>
             <span class="ov-irow__sub">{{ serverAddressSub }}</span>
           </span>
           <ChevronRight :size="18" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
+        </button>
         <RouterLink
           v-if="driveRowVisible"
           class="ov-irow"
@@ -213,6 +213,14 @@
       :options="traffic?.exchange_options ?? []"
       @exchanged="onTrafficExchanged"
     />
+
+    <!-- Emby 服务线路弹层：服务器地址行点开（2026-11-13 形态对齐，不再跳播放账号页） -->
+    <ServerLinesSheet
+      :open="linesSheetOpen"
+      :card="accountCard"
+      :dark="themeResolved === 'dark'"
+      @close="linesSheetOpen = false"
+    />
   </div>
 </template>
 
@@ -236,6 +244,9 @@
  * 流量额度（2026-11-13 一期）：套餐声明月额度时才出现流量区＋
  * 购流量弹窗（trafficApi）；没声明整段不渲染。原站有而本站没有
  * 的（自动续费开关、弹幕 API）整项省略。
+ * 「服务器地址」行 2026-11-13 起改开线路弹层（ServerLinesSheet，友站
+ * 同行点开即弹层；用户 23:15 亲点），不再跳 /game/operator 整页——
+ * 播放账号页本体与菜单/侧栏入口不变。
  * 旧深链 #my-drive 仍直达设置页绑定组。
  */
 import { computed, onMounted, ref } from 'vue'
@@ -254,6 +265,7 @@ import {
   type TrafficOverview,
   type TrafficSummary,
 } from '@/api/traffic'
+import ServerLinesSheet from '@/components/profile/ServerLinesSheet.vue'
 import {
   embyApi, subscriptionApi,
   type AccountCard, type MySubscription,
@@ -437,6 +449,7 @@ async function loadDevices() {
 // ── 我的服务 ──
 const myLines = ref<MyExclusiveLine[]>([])
 const linesOpen = ref(false)
+const linesSheetOpen = ref(false)
 async function copyLineUrl(url: string) {
   try {
     await navigator.clipboard.writeText(url)
