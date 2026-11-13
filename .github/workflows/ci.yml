@@ -85,6 +85,13 @@ jobs:
       - name: 移动端字号阶梯契约检查（桌面字号不许动）
         run: python3 scripts/check_mobile_type_scale.py
 
+      # 纯文本契约检查：网页播放器的每个 EA 请求必须经 embyAuthConfig 带
+      # 账号卡下发的 Emby 专用 token。2026-11-13 网页播放全坏实证：
+      # webPlayer.ts 漏带 X-Emby-Token、只带门户 JWT，EA 一律 401
+      # Invalid access token（复发机制见脚本头部事故史）。
+      - name: 网页播放器 EA 鉴权契约检查（漏带 Emby token 必 401）
+        run: python3 scripts/check_web_player_emby_auth.py
+
       - name: 类型检查（vue-tsc）
         working-directory: ${{ matrix.dir }}
         run: npm run type-check
