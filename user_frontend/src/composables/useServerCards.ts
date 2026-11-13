@@ -15,11 +15,11 @@ import type { AccountRealmCard, MySubscription } from '@/api'
 import { homeApi, vitalityApi } from '@/api/economy'
 import { subscriptionUsedPercent } from '@/utils/subscription'
 
-const ROUTES = { store: '/store', shop: '/shop' } as const
+const ROUTES = { store: '/game/account/subscribe', ledger: '/game/ledger' } as const
 const COPY = {
   badgeActive: '生效中', badgeExpiring: '临期', badgeExpired: '已过期', badgeFree: '免费开放',
-  footerOpen: '立即开通', footerRenew: '续费', footerShop: '去商店',
-  descMember: '会员权益全库通用', descFree: '能量在商店和能量明细里用',
+  footerOpen: '立即开通', footerRenew: '续费', footerShop: '去账本',
+  descMember: '会员权益全库通用', descFree: '能量在账本里用',
 } as const
 
 /** 服务卡视图模型 */
@@ -231,7 +231,7 @@ function buildFreeCard(realm: AccountRealmCard, shared: SharedFields): ServerCar
     badge: COPY.badgeFree,
     state: 'free_open',
     footer: COPY.footerShop,
-    to: ROUTES.shop,
+    to: ROUTES.ledger,
     desc: COPY.descFree,
     expiringSoon: false,
     ...shared,

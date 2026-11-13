@@ -82,17 +82,6 @@ export const gameFacilities: GameFacility[] = [
     enabled: true,
   },
   {
-    key: 'supply',
-    name: '商店记录',
-    path: '/game/supply',
-    icon: '🧾',
-    desc: '在商店拿过的东西，这里都有小票。',
-    stamp: '小票 · 张张在册',
-    group: 'asset',
-    order: 7,
-    enabled: true,
-  },
-  {
     key: 'account',
     name: '账号设置',
     path: '/game/account',

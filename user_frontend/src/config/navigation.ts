@@ -38,7 +38,7 @@
 
 import type { Component } from 'vue'
 import {
-  Clapperboard, Server, ShoppingBag, User,
+  Clapperboard, Server, User,
 } from 'lucide-vue-next'
 
 export interface NavItem {
@@ -54,7 +54,8 @@ export interface NavItem {
  *  发现（/） / 世界（/game，含全部 /game/** 设施） / 服务器（/server） /
  *  补给站（/shop） / 我的（/game/account 账号设置）。
  *  2026-11-13 页面删减：探险日志 Hub（/game）整页删除，「世界」项随之撤出
- *  主导航（余四项）；/game/** 设施子页保留，入口走头像菜单/办事面左栏/地图针。
+ *  主导航；同日商店整店删除，「补给站」项撤出（余三项）；
+ *  /game/** 设施子页保留，入口走头像菜单/办事面左栏/地图针。
  *  叫法统一「发现」（废「首页」）；收藏家（/collector）页面保留，
  *  但退出主导航、入口收进发现页。
  *  媒体库与搜索仍可从头像菜单 / 首页帮助区 / 顶栏资产 pill 上下文进入，
@@ -62,7 +63,6 @@ export interface NavItem {
 export const primaryNav: NavItem[] = [
   { name: '发现', path: '/', icon: Clapperboard },
   { name: '服务器', path: '/server', icon: Server },
-  { name: '商店', path: '/shop', icon: ShoppingBag },
   { name: '我的', path: '/game/account', icon: User },
 ]
 

@@ -272,17 +272,6 @@ async function focusActiveTab(center: boolean) {
   }
 }
 
-// 补给站操作后回到任意页面时，头像菜单里的会员状态、顶栏能量即时刷新
-//（2026-10-13：/wallet 旧页面已删 —— R27 加入 economyPaths）
-watch(() => route.path, (p, old) => {
-  const economyPaths = ['/shop']
-  if (userStore.isLoggedIn && (economyPaths.includes(old || '') || economyPaths.includes(p))) {
-    refreshSubscription()
-    loadPoints()
-    loadVitality()
-  }
-})
-
 watch(() => userStore.isLoggedIn, (loggedIn) => {
   if (loggedIn) {
     poll()

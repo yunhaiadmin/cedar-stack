@@ -16,7 +16,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Briefcase, CreditCard, Crown, Gauge,
-  Megaphone, Plug, Receipt, Settings, ShoppingBag, Sun, Moon, User, Wallet,
+  Megaphone, Plug, Settings, Sun, Moon, User, Wallet,
 } from 'lucide-vue-next'
 import UhdSidebar, { type UhdSidebarGroup } from './UhdSidebar.vue'
 import { getAgentMe } from '@/api/agent'
@@ -76,13 +76,11 @@ const groups = computed<UhdSidebarGroup[]>(() => {
       title: '资产',
       items: [
         { key: '/game/ledger', label: '能量明细', icon: Wallet },
-        { key: '/game/supply', label: '商店记录', icon: Receipt },
       ],
     },
     {
-      title: '商店',
+      title: '服务',
       items: [
-        { key: '/shop', label: '商店', icon: ShoppingBag },
         { key: '/game/requests', label: '求片反馈', icon: Megaphone },
         ...(showAgent.value
           ? [{ key: '/game/agent', label: '代理中心', icon: Briefcase }]
@@ -332,9 +330,6 @@ const accountSub = computed(() => {
   .uhd-account .v4-page.pc-page,
   .uhd-account .v4-page.settings-page { max-width: 1000px; }
 }
-/* 补给站自定义头：H1 32–36px/800（与 .v4-loghead 同口径）；
-   font-family 同 D1-09：压过 aurora.css 的全局衬线标题规则 */
-.uhd-account .shop-head h1 { font-family: var(--uhd-font-sans); font-size: 34px; font-weight: 800; letter-spacing: -0.01em; }
 /* 日志头：H1 32–36px/800、1px 分隔线（原 24px/500、2px 墨线） */
 .uhd-account .v4-loghead {
   padding: 26px 4px 14px;

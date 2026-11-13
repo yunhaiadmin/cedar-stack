@@ -93,7 +93,7 @@ const welfareExpiresDate = computed(() => {
           <div class="sub-end">{{ activeSub.end_date.slice(0, 10) }} 到期 · 剩余 {{ activeSub.days_left }} 天</div>
           <p v-if="expiringSoon" class="sub-warn">
             <TriangleAlert :size="13" />
-            即将到期，去商店续费后可无缝接续
+            即将到期，去订阅页续费后可无缝接续
           </p>
         </div>
         <span class="badge" :class="expiringSoon ? 'warn' : 'ok'">
@@ -163,7 +163,7 @@ const welfareExpiresDate = computed(() => {
       <template #action>
         <!-- P1-2：改用全局 .btn-primary（styles/index.css:160，琥珀实心 + --paper-on-primary 文，
              与旧 ProfileView .btn.primary 语义一致；.btn 基类自带 font-weight:600） -->
-        <button class="btn btn-primary" @click="router.push('/shop')">查看会员方案</button>
+        <button class="btn btn-primary" @click="router.push('/game/account/subscribe')">查看会员方案</button>
       </template>
     </EmptyState>
 

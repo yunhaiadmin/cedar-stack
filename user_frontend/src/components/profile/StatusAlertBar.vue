@@ -18,8 +18,7 @@
  * 「我的」页状态预警条：只吃父页（PersonalCenterView）已经加载好的账号
  * 数据，不自己发请求。触发口径：
  * - 活力低于可播下限（服务端 limit_threshold，缺省 3）：红色预警，
- *   写清暂时看不了片，并给两条恢复路（今天看片自动回 1 点／去补给站
- *   10 能量换 1 点，兑换入口在补给站页）。
+ *   写清暂时看不了片，并给恢复路（今天看片自动回 1 点）。
  * - 活力刚过下限 1 点内（默认 3–4）：黄色提醒，趁早补。
  * - 公益资格／付费会员 7 天内到期：黄色提醒到期日与续期入口（会员页
  *   现行续期／续费口径，不在这里新造逻辑）。
@@ -70,16 +69,14 @@ const alerts = computed<AlertItem[]>(() => {
         key: 'vitality-danger',
         level: 'danger',
         title: '活力不足，暂时看不了片',
-        text: `当前活力 ${vit.vitality} 点，低于 ${limit} 点就播不了。今天看片能自动回 1 点，也可以去商店用能量补（10 能量＝1 活力）。`,
-        action: { to: '/shop', label: '去商店补活力' },
+        text: `当前活力 ${vit.vitality} 点，低于 ${limit} 点就播不了。今天看片能自动回 1 点。`,
       })
     } else if (vit.vitality <= limit + 1) {
       out.push({
         key: 'vitality-warn',
         level: 'warn',
         title: '活力偏低',
-        text: `当前活力 ${vit.vitality} 点，再掉就看不了片了。今天记得看片回 1 点，或提前用能量补一点。`,
-        action: { to: '/shop', label: '去补活力' },
+        text: `当前活力 ${vit.vitality} 点，再掉就看不了片了。今天记得看片回 1 点。`,
       })
     }
   }

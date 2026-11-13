@@ -166,15 +166,11 @@
         <div class="ov-sec__head">
           <h2 class="ov-sec__title">常用</h2>
         </div>
-        <RouterLink class="ov-trow" to="/shop">
-          <span class="ov-trow__name">能量余额</span>
-          <span v-if="points != null" class="ov-trow__value">{{ points.toLocaleString() }}</span>
-          <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
-        <RouterLink class="ov-trow" to="/shop">
+        <!-- 能量余额行已随商店删除＋能量货币下线摘除；邀请行先占位：
+             邀请页未建（等钱包落地），暂不挂任何链接，落地后再接 -->
+        <div class="ov-trow">
           <span class="ov-trow__name">邀请好友</span>
-          <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
+        </div>
       </section>
 
     </div>
@@ -213,7 +209,7 @@ import {
   type AccountCard, type MySubscription,
 } from '@/api'
 import {
-  checkinApi, deviceApi, storageBindingApi, vitalityApi, welfareApi,
+  deviceApi, storageBindingApi, vitalityApi, welfareApi,
   type MyDevice, type MyDevicesResponse, type VitalityStatus,
 } from '@/api/economy'
 import { getMyExclusiveLines, type MyExclusiveLine } from '@/api/user'
@@ -239,7 +235,6 @@ const whitelistIdentity = computed(() => userStore.user?.whitelist_identity ?? n
 const subscriptions = ref<MySubscription[]>([])
 const welfare = ref<{ is_welfare: boolean; expires_at: string | null } | null>(null)
 const accountCard = ref<AccountCard | null>(null)
-const points = ref<number | null>(null)
 const vitality = ref<VitalityStatus | null>(null)
 
 const activeSub = computed(
@@ -398,15 +393,7 @@ async function loadOverview() {
   } catch { /* 状态口失败不阻断页面 */ }
   try {
     accountCard.value = await embyApi.getAccountCard()
-    if (points.value == null) {
-      const bal = accountCard.value?.view_permission?.points_balance
-      if (typeof bal === 'number') points.value = bal
-    }
   } catch { /* 账号卡失败不阻断页面 */ }
-  try {
-    const st = await checkinApi.status()
-    if (st && typeof st.points === 'number') points.value = st.points
-  } catch { /* 摘要拿不到就不显示 */ }
   try {
     vitality.value = await vitalityApi.status()
   } catch { /* 非公益服用户注定失败，格子不渲染 */ }

@@ -12,7 +12,7 @@ const panelV4 = isPanelV4Enabled()
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
-  // R28：处理站内 hash 跳转（如信鸽兑换通知 → /shop#shop-redeem 的核销区滚动）
+  // R28：处理站内 hash 跳转（锚点滚动）
   scrollBehavior(to, _from, savedPosition) {
     if (savedPosition) return savedPosition
     if (to.hash) {
@@ -112,12 +112,6 @@ const router = createRouter({
             component: () => import('@/views/panel/ServerView.vue'),
             meta: { title: '服务器', requiresAuth: true },
           },
-          {
-            path: '/shop',
-            name: 'shop',
-            component: () => import('@/views/panel/ShopView.vue'),
-            meta: { title: '商店', requiresAuth: true },
-          },
           // v4 游戏化第一批：营地设施（需要登录）
           // 求片反馈（2026-11-13 合并页）：许愿池＋求救信号合并为一页，
           // 三页签（发起请求/我的请求/请求广场）×五类型（影片求片/电影追新/剧集追新/修正信息/其他反馈）；
@@ -150,12 +144,6 @@ const router = createRouter({
             name: 'game-agent',
             component: () => import('@/views/game/AgentCenterView.vue'),
             meta: { title: '代理中心', requiresAuth: true },
-          },
-          {
-            path: '/game/supply',
-            name: 'game-supply',
-            component: () => import('@/views/game/SupplyLogView.vue'),
-            meta: { title: '商店记录', requiresAuth: true },
           },
           {
             path: '/game/operator',
@@ -238,11 +226,6 @@ const router = createRouter({
       meta: { title: 'Telegram 快捷登录' },
     },
 
-    // ==================== 经济系统（v2.3.0；v2.11.0 商店/钱包拆分；2026-10-13 商店统一：/store 301 到 /shop 补给站） ====================
-    {
-      path: '/store',
-      redirect: '/shop',
-    },
     // 探险日志 Hub（/game）整页已删（2026-11-13 页面删减）：旧书签/外链落首页，
     // 不留死链；各设施子页保留不动，入口走头像菜单/左栏/地图针。
     {
@@ -376,7 +359,7 @@ router.beforeEach(async (to) => {
 // 例外（2026-11-13 二级页重做组 A）：/server 与 /game/operator 已换 UHD 布局，
 // 一并摘除——/server 页内自带三态主题跟随；/game/operator 在 UhdAccountLayout
 // 办事面壳内（壳为浅色办事面，与同壳的订阅页未钉 light 先例一致），不再由守卫钉 light。
-export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/collections', '/shop', '/want', '/store-requests', '/game/ledger', '/game/supply', '/game/account/settings', '/game/account/member'])
+export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/collections', '/want', '/store-requests', '/game/ledger', '/game/account/settings', '/game/account/member'])
 // 参数路由前缀：合集详情是 /collections/:id，afterEach 拿到的是实例路径
 // （如 /collections/123），静态集合永远匹配不上，须按前缀另判；
 // /collections/ 下目前只有详情这一条路由，前缀不会误伤非 v4 页。
@@ -491,11 +474,10 @@ router.afterEach(() => {
   document.getElementById(CHUNK_RETRY_BAR_ID)?.remove()
 })
 
-// 关键路由预取：用户登录后大概率会去补给站（v4 /shop）/ 我的（/game/account），空闲时预加载对应 chunk
+// 关键路由预取：用户登录后大概率会去我的（/game/account），空闲时预加载对应 chunk
 //（2026-10-13 旧页面清理：ProfileView 已删；2026-11-06 个人中心重做：/game/account 改指 PersonalCenterView）
 if (typeof requestIdleCallback !== 'undefined') {
   requestIdleCallback(() => {
-    import('@/views/panel/ShopView.vue')
     import('@/views/game/PersonalCenterView.vue')
   }, { timeout: 3000 })
 }

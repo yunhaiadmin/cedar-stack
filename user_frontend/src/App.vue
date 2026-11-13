@@ -66,7 +66,7 @@ const showChrome = computed(
  * 双页签在该页隐藏（isSubscribePage）。
  * 变基对齐批 3 后，PanelTabbar 的条件应为 showChrome && !isAccountArea && !isStreamArea。
  */
-const isAccountArea = computed(() => route.path === '/shop' || route.path.startsWith('/game'))
+const isAccountArea = computed(() => route.path.startsWith('/game'))
 const isSubscribePage = computed(() => route.name === 'game-account-subscribe')
 
 /**
@@ -95,7 +95,7 @@ const showHeader = computed(() => showChrome.value && !isAccountArea.value && !i
  */
 
 /**
- * 常驻缓存视图（补给站 ShopView / 个人中心 PersonalCenterView 等）常驻缓存：切 tab 不再销毁重建，
+ * 常驻缓存视图（个人中心 PersonalCenterView 等）常驻缓存：切 tab 不再销毁重建，
  * 回来秒出上次的数据，各视图在 onActivated 里做静默刷新（不闪骨架屏）。
  *
  * 缓存 key = 路由 path + 用户 id + 登录会话序列：
@@ -104,13 +104,13 @@ const showHeader = computed(() => showChrome.value && !isAccountArea.value && !i
  * - 未列入 include 的页面（登录等）不受影响，照常每次重建。
  *
  * 2026-10-13：钱包页已删，WalletView 移出缓存；旧页面清理，
- * StoreView（/store 301 到 /shop 补给站）→ ShopView，
  * ProfileView（/profile 已删）→ AccountSettingsView（/game/account）。
+ * 2026-11-13：商店整店删除，ShopView 移出缓存。
  * 2026-11-06：/game/account 改为个人中心 PersonalCenterView，缓存对象随之更换；
  * 账号设置（/game/account/settings）与我的会员（/game/account/member）是子页，不进缓存。
  */
 // RootView 是根路径分发组件（官网面），一并常驻缓存
-const KEEP_ALIVE_VIEWS = ['RootView', 'ShopView', 'PersonalCenterView']
+const KEEP_ALIVE_VIEWS = ['RootView', 'PersonalCenterView']
 const viewCacheKey = computed(
   () => `${route.path}:${userStore.user?.id ?? 'guest'}#${userStore.sessionSeq}`,
 )
