@@ -72,6 +72,13 @@ jobs:
       - name: chunk 恢复契约检查（部署后空白页兜底不许失效）
         run: python3 scripts/check_chunk_recovery.py
 
+      # 纯文本契约检查：入场动画不许再引入「重影」——片库首页 .sl-content 的
+      # 整块淡入中间帧被用户录屏抓成封面重影；共享关键帧 uhd-blur-in 的
+      # blur 揭示与登录页 #101 重影同机制。落定帧看着没事、中间帧才是事故，
+      # 人工审查看不见，只有逐帧断言能拦（复发机制见脚本头部事故史）。
+      - name: 入场动画防重影检查（整块淡入/blur 入场不许复发）
+        run: python3 scripts/check_no_ghost_entrance.py
+
       - name: 类型检查（vue-tsc）
         working-directory: ${{ matrix.dir }}
         run: npm run type-check
