@@ -10,9 +10,11 @@
  * 分类 = 现行 getViews 按 CollectionType 过滤（movies / tvshows），
  * 计数 = 各库 getItems 的 TotalRecordCount，全部数据驱动、不写死分类名与数字。
  * 条目数据调用仍走现行 getItems 口径（仅加既有 parentId 参数，与首页逐库行同口径）。
- * 排序键暂用现行 3 键；在飞排序单（player-pip-detail-sort）的 5 键清单
- * （最近添加/上映日期/名称/评分/资源更新）变基时换入下方 SORTS 与 sortParams 即可，
- * 下拉壳与升降序切换结构兼容。热度无全站数据源，不冒充、不提供。
+ * 排序（友站口径）：单胶囊下拉 5 键——最近添加 / 上映日期 / 名称 / 评分 /
+ * 资源更新 + 升降序切换。五键全部后端 Items 真支持（DateCreated /
+ * PremiereDate / SortName / CommunityRating / DateLastContentAdded，
+ * 映射见 emby_server _query_items）。热度无全站数据源
+ * （后端 PlayCount 是当前用户自己的播放次数），不冒充、不提供。
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -103,8 +105,10 @@ interface SortDef {
 }
 const SORTS: SortDef[] = [
   { key: 'recent', label: '最近添加', sortBy: 'DateCreated', order: 'Descending' },
+  { key: 'premiere', label: '上映日期', sortBy: 'PremiereDate,SortName', order: 'Descending' },
   { key: 'name', label: '名称', sortBy: 'SortName', order: 'Ascending' },
-  { key: 'year', label: '年份', sortBy: 'ProductionYear,SortName', order: 'Descending' },
+  { key: 'rating', label: '评分', sortBy: 'CommunityRating,SortName', order: 'Descending' },
+  { key: 'updated', label: '资源更新', sortBy: 'DateLastContentAdded,SortName', order: 'Descending' },
 ]
 const sort = ref('recent')
 const sortOrder = ref<SortOrder>('Descending')

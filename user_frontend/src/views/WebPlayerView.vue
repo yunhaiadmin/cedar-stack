@@ -225,11 +225,13 @@
       :current-episode-id="item?.Id || ''"
       :rate="rate"
       :info-lines="infoLines"
+      :pip-supported="pipSupported"
       @update:open="settingsOpen = $event"
       @update:rate="onRate"
       @select-source="onSelectSource"
       @select-episode="onSelectEpisode"
       @screenshot="onScreenshot"
+      @pip="onPip"
     />
   </div>
 </template>
@@ -1199,6 +1201,31 @@ function onScreenshot(): void {
     showToast('这条线路不允许截图（跨域限制）')
   }
   settingsOpen.value = false
+}
+
+// 小窗（画中画）：只用标准 requestPictureInPicture；浏览器不支持时
+// 设置弹层根本不渲染这一行（pipSupported 为假），不留假钮。
+// Safari 的 webkitSetPresentationMode 非标准口径，不在本单范围内。
+const pipSupported =
+  typeof document !== 'undefined' &&
+  'pictureInPictureEnabled' in document &&
+  document.pictureInPictureEnabled &&
+  typeof HTMLVideoElement !== 'undefined' &&
+  'requestPictureInPicture' in HTMLVideoElement.prototype
+
+async function onPip(): Promise<void> {
+  const v = videoEl.value
+  if (!v || !pipSupported) return
+  try {
+    if (document.pictureInPictureElement) {
+      await document.exitPictureInPicture()
+    } else {
+      await v.requestPictureInPicture()
+    }
+    settingsOpen.value = false
+  } catch {
+    showToast('小窗没打开，可能被浏览器拦了')
+  }
 }
 
 // ---------- 生命周期 ----------
