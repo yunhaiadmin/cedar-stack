@@ -15,7 +15,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  Bird, Briefcase, Calendar, CalendarCheck, Compass, CreditCard, Crown, Globe, Heart,
+  Bird, Briefcase, Calendar, CalendarCheck, Compass, CreditCard, Crown, Heart,
   Megaphone, Plug, Receipt, Settings, Shirt, ShoppingBag, Sun, Moon, User, Users, Wallet,
 } from 'lucide-vue-next'
 import UhdSidebar, { type UhdSidebarGroup } from './UhdSidebar.vue'
@@ -92,7 +92,6 @@ const groups = computed<UhdSidebarGroup[]>(() => {
     {
       title: '探险设施',
       items: [
-        { key: '/game', label: '探险日志', icon: Globe },
         { key: '/game/checkin', label: '每日报到', icon: CalendarCheck },
         { key: '/game/calendar', label: '探险预告', icon: Calendar },
         { key: '/game/signal', label: '求救信号', icon: Megaphone },

@@ -757,12 +757,9 @@ function goCollector() {
 }
 
 function goGame() {
-  // 已在 /game 页内时再 push('/game') 等于死按钮，改开签到页（用户拍板 2026-10-16）
-  if (router.currentRoute.value.path === '/game') {
-    void router.push('/game/checkin')
-    return
-  }
-  void router.push('/game')
+  // 探险日志 Hub（/game）已整页删除（2026-11-13 页面删减）：大本营针改开签到页
+  //（沿用原「在 /game 页内点大本营开签到页」的落点，用户拍板 2026-10-16），不留死链。
+  void router.push('/game/checkin')
 }
 
 function openCinema() {

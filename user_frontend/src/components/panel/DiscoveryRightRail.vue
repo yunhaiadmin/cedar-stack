@@ -44,9 +44,6 @@
           <span>热度 {{ Number(r.count ?? 0).toLocaleString('zh-CN') }}</span>
         </div>
       </div>
-      <div style="margin-top:8px">
-        <RouterLink to="/game" class="d3-sec-link">查看完整榜单 <span aria-hidden="true">→</span></RouterLink>
-      </div>
     </section>
 
     <!-- 服主告示牌：与世界地图同源（panel store board） -->
@@ -94,7 +91,6 @@
           <div class="d3-sec-title">到此一游</div>
           <div class="d3-sec-sub">世界留言墙 · 最新两条</div>
         </div>
-        <RouterLink to="/game" class="d3-sec-link">写留言 <span aria-hidden="true">→</span></RouterLink>
       </div>
       <div v-if="wallLoading && wallPosts.length === 0" class="d3-empty">正在加载留言</div>
       <div v-else-if="wallPosts.length === 0" class="d3-empty">墙上还空着，来留下第一句话吧</div>
@@ -111,7 +107,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { RouterLink } from 'vue-router'
 import { usePanelStore } from '@/stores/panel'
 import { useUserStore } from '@/stores/user'
 import { panelApi, humanizeError } from '@/composables/usePanelApi'
