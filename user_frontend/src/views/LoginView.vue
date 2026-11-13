@@ -20,7 +20,7 @@ import { useTheme } from '@/composables/useTheme'
 import CaptchaChallenge from '@/components/ui/CaptchaChallenge.vue'
 // 站名来自「站点与品牌」能力（未配置时用默认值）
 import { branding } from '@/composables/useBranding'
-import { getRegisterConfig, verifyRegisterCode } from '@/api/user'
+import { getRegisterConfig, verifyRegisterCode, requestPasswordReset, confirmPasswordReset } from '@/api/user'
 import { tgApi } from '@/api/tg'
 import { fetchTgBotUsername } from '@/api/site'
 
@@ -76,6 +76,21 @@ const error = ref('')
 // 人机验证令牌：由挂件回调写入；未开启保护时一直是空串（后端也不校验）
 const captchaToken = ref('')
 const captchaRef = ref<InstanceType<typeof CaptchaChallenge> | null>(null)
+
+// 找回密码（后端 #94 已上线，本单补前端入口）：
+// - 登录表单内「忘记密码？」展开小表单，填用户名或邮箱申请重置邮件；
+//   后端防枚举统一响应，前端原样展示后端 message，不做区分账号是否存在的提示。
+// - 邮件链接落点 /login?reset=<token>：登录页叠加新密码表单，走 confirm 端点。
+const forgotOpen = ref(false)
+const forgotIdentifier = ref('')
+const forgotLoading = ref(false)
+const forgotMessage = ref('')
+const forgotError = ref('')
+const resetToken = ref('')
+const resetForm = reactive({ password: '', confirmPassword: '' })
+const showResetPassword = ref(false)
+const resetLoading = ref(false)
+const resetError = ref('')
 
 // 强度文案映射 ['弱','弱','中','强'][score]：score=0（1–5 位密码）时旧写法 ['弱','中','强'][score-1] 会取到 undefined 显示空文案
 const passwordStrength = computed(() => {
@@ -159,6 +174,64 @@ async function handleLogin() {
   } finally {
     loginLoading.value = false
   }
+}
+
+/** 找回密码第一步：申请重置邮件（防枚举，前端只展示后端回的统一文案） */
+async function handleForgot() {
+  if (forgotLoading.value) return
+  const identifier = forgotIdentifier.value.trim()
+  if (!identifier) {
+    forgotError.value = '请输入用户名或邮箱'
+    return
+  }
+  forgotError.value = ''
+  forgotMessage.value = ''
+  forgotLoading.value = true
+  try {
+    // 人机验证与登录共用同一道闸（后端 action=login），复用当前令牌
+    const res = await requestPasswordReset(identifier, captchaToken.value)
+    forgotMessage.value = res.message
+  } catch (err) {
+    forgotError.value = friendlyError(err, '申请失败，请稍后重试')
+    // 令牌是一次性的：失败后换一个新的（同 handleLogin 口径）
+    captchaRef.value?.reset()
+  } finally {
+    forgotLoading.value = false
+  }
+}
+
+/** 找回密码第二步：凭邮件链接令牌设置新密码，成功后清掉 URL 中的令牌回登录 */
+async function handleReset() {
+  if (resetLoading.value) return
+  if (resetForm.password.length < 6 || resetForm.password.length > 64) {
+    resetError.value = '新密码需 6-64 位'
+    return
+  }
+  if (resetForm.password !== resetForm.confirmPassword) {
+    resetError.value = '两次输入的密码不一致'
+    return
+  }
+  resetError.value = ''
+  resetLoading.value = true
+  try {
+    const res = await confirmPasswordReset(resetToken.value, resetForm.password)
+    toast.success(res.message || '密码已重置，请使用新密码登录')
+    resetToken.value = ''
+    resetForm.password = ''
+    resetForm.confirmPassword = ''
+    router.replace({ path: '/login' })
+  } catch (err) {
+    resetError.value = friendlyError(err, '重置失败，请重新申请')
+  } finally {
+    resetLoading.value = false
+  }
+}
+
+/** 放弃重置、返回登录（同时清掉 URL 中的令牌） */
+function cancelReset() {
+  resetToken.value = ''
+  resetError.value = ''
+  router.replace({ path: '/login' })
 }
 
 /** 两步注册第一步：验注册码（只校验不消耗）；通过才进入账号表单 */
@@ -291,6 +364,13 @@ onMounted(() => {
   loadRegisterConfig()
   // TG 登录入口与注册配置并行拉取，失败保持空串（不渲染入口、不阻塞页面）
   fetchTgBotUsername().then(name => { tgBotUsername.value = name }).catch(() => { tgBotUsername.value = '' })
+  // 找回密码邮件链接落点 ?reset=<token>：叠加新密码表单（优先于 mode/invite 处理）
+  const resetParam = firstQueryValue(route.query.reset)
+  if (resetParam) {
+    resetToken.value = resetParam
+    mode.value = 'login'
+    return
+  }
   if (route.query.mode === 'register') mode.value = 'register'
   // 邀请链接 ?invite=CODE（多值 query 取第一个）：自动切到注册页、预填邀请码并提示
   if (route.query.invite) {
@@ -344,10 +424,10 @@ onMounted(() => {
 
     <div class="auth-main">
     <div class="auth-column">
-      <h1 class="auth-title">{{ mode === 'login' ? '登录' : '注册' }} {{ branding.site_name }}</h1>
+      <h1 class="auth-title">{{ resetToken ? '重置密码' : mode === 'login' ? '登录' : '注册' }} {{ branding.site_name }}</h1>
 
-      <!-- 模式切换 -->
-      <div class="mode-switch" role="tablist" aria-label="登录或注册">
+      <!-- 模式切换（重置密码叠加态不显示） -->
+      <div v-if="!resetToken" class="mode-switch" role="tablist" aria-label="登录或注册">
         <button
           id="tab-login"
           class="mode-btn"
@@ -375,8 +455,56 @@ onMounted(() => {
         <div class="mode-indicator" :class="{ right: mode === 'register' }" aria-hidden="true"></div>
       </div>
 
+      <!-- 找回密码第二步：邮件链接 ?reset=<token> 落点的新密码表单（叠加在登录页上） -->
+      <form v-if="resetToken" class="auth-form" @submit.prevent="handleReset">
+        <p class="reset-note">你正在通过邮件链接重置密码，链接 30 分钟内有效。设置新密码后，用新密码登录。</p>
+
+        <label class="field">
+          <span class="field-label">新密码</span>
+          <div class="field-box">
+            <Lock :size="16" class="field-icon" aria-hidden="true" />
+            <input
+              v-model="resetForm.password"
+              :type="showResetPassword ? 'text' : 'password'"
+              name="new-password"
+              autocomplete="new-password"
+              placeholder="6-64 位"
+              :aria-invalid="!!resetError"
+              aria-describedby="reset-form-error"
+            />
+            <button type="button" class="eye-btn" :aria-label="showResetPassword ? '隐藏密码' : '显示密码'" :aria-pressed="showResetPassword" @click="showResetPassword = !showResetPassword">
+              <EyeOff v-if="showResetPassword" :size="15" aria-hidden="true" />
+              <Eye v-else :size="15" aria-hidden="true" />
+            </button>
+          </div>
+        </label>
+
+        <label class="field">
+          <span class="field-label">确认新密码</span>
+          <div class="field-box">
+            <Lock :size="16" class="field-icon" aria-hidden="true" />
+            <input
+              v-model="resetForm.confirmPassword"
+              type="password"
+              name="confirm-new-password"
+              autocomplete="new-password"
+              placeholder="再次输入新密码"
+              :aria-invalid="!!resetError"
+              aria-describedby="reset-form-error"
+            />
+          </div>
+        </label>
+
+        <p v-if="resetError" id="reset-form-error" class="form-error" role="alert">{{ resetError }}</p>
+
+        <button type="submit" class="submit-btn" :disabled="resetLoading || !resetForm.password || !resetForm.confirmPassword">
+          {{ resetLoading ? '提交中…' : '设置新密码' }}
+        </button>
+        <button type="button" class="forgot-link forgot-link--center" @click="cancelReset">返回登录</button>
+      </form>
+
       <!-- 登录表单 -->
-      <form v-if="mode === 'login'" id="panel-login" class="auth-form" role="tabpanel" aria-labelledby="tab-login" tabindex="0" @submit.prevent="handleLogin">
+      <form v-if="!resetToken && mode === 'login'" id="panel-login" class="auth-form" role="tabpanel" aria-labelledby="tab-login" tabindex="0" @submit.prevent="handleLogin">
         <label class="field">
           <span class="field-label">用户名</span>
           <div class="field-box">
@@ -413,6 +541,35 @@ onMounted(() => {
           </div>
         </label>
 
+        <!-- 找回密码入口：展开小表单，填用户名或邮箱申请重置邮件 -->
+        <div class="forgot-row">
+          <button type="button" class="forgot-link" :aria-expanded="forgotOpen" @click="forgotOpen = !forgotOpen">忘记密码？</button>
+        </div>
+        <div v-if="forgotOpen" class="forgot-box">
+          <label class="field">
+            <span class="field-label">用户名或邮箱</span>
+            <div class="field-box">
+              <Mail :size="16" class="field-icon" aria-hidden="true" />
+              <input
+                v-model="forgotIdentifier"
+                type="text"
+                name="reset-identifier"
+                autocomplete="username"
+                placeholder="输入用户名或绑定的邮箱"
+                :aria-invalid="!!forgotError"
+                aria-describedby="forgot-form-error"
+                @keydown.enter.prevent="handleForgot"
+              />
+            </div>
+          </label>
+          <p v-if="forgotMessage" class="forgot-ok" role="status">{{ forgotMessage }}</p>
+          <p v-if="forgotError" id="forgot-form-error" class="form-error" role="alert">{{ forgotError }}</p>
+          <button type="button" class="submit-btn" :disabled="forgotLoading || !forgotIdentifier.trim()" @click="handleForgot">
+            {{ forgotLoading ? '提交中…' : '发送重置邮件' }}
+          </button>
+          <p class="forgot-hint">重置链接会发到账号绑定的邮箱，30 分钟内有效。</p>
+        </div>
+
         <p v-if="error" id="login-form-error" class="form-error" role="alert">{{ error }}</p>
 
         <CaptchaChallenge ref="captchaRef" action="login" @update:token="captchaToken = $event" />
@@ -432,7 +589,7 @@ onMounted(() => {
       </form>
 
       <!-- 凭码注册第一步：只有注册码输入框，不与账号表单同屏（2026-11-10 定版两步流程） -->
-      <form v-else-if="registrationCodeRequired && registerStep === 1" id="panel-register" class="auth-form" role="tabpanel" aria-labelledby="tab-register" tabindex="0" @submit.prevent="handleVerifyRegCode">
+      <form v-else-if="!resetToken && registrationCodeRequired && registerStep === 1" id="panel-register" class="auth-form" role="tabpanel" aria-labelledby="tab-register" tabindex="0" @submit.prevent="handleVerifyRegCode">
         <label class="field">
           <span class="field-label">注册码</span>
           <div class="field-box">
@@ -462,7 +619,7 @@ onMounted(() => {
       </form>
 
       <!-- 注册表单（凭码模式下是第二步：验码通过才渲染） -->
-      <form v-else id="panel-register" class="auth-form" role="tabpanel" aria-labelledby="tab-register" tabindex="0" @submit.prevent="handleRegister">
+      <form v-else-if="!resetToken" id="panel-register" class="auth-form" role="tabpanel" aria-labelledby="tab-register" tabindex="0" @submit.prevent="handleRegister">
         <p v-if="registrationCodeRequired" class="verified-code">
           <BadgeCheck :size="15" aria-hidden="true" />
           <span>注册码 {{ verifiedRegCode }} 已验证<template v-if="verifyBenefit"> · {{ verifyBenefit }}</template></span>
@@ -1060,6 +1217,55 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
+/* 找回密码：入口链 + 展开小表单 + 重置说明（跟随页面深浅两套变量口径） */
+.forgot-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -0.55rem;
+}
+.forgot-link {
+  background: none;
+  border: none;
+  padding: 4px 2px;
+  min-height: 32px;
+  color: var(--uhd-l-link);
+  font: inherit;
+  font-size: var(--uhd-fs-aux);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.forgot-link--center {
+  align-self: center;
+}
+.forgot-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.forgot-ok {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-radius: var(--uhd-radius-base);
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.32);
+  color: #4ade80;
+  font-size: var(--uhd-fs-aux);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.forgot-hint,
+.reset-note {
+  margin: 0;
+  font-size: var(--uhd-fs-aux);
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.4);
+}
+
 .auth-footnote {
   margin: 1.5rem 0 0;
   text-align: center;
@@ -1217,6 +1423,10 @@ html[data-theme='light'] .strength-text { color: var(--uhd-l-text-3); }
 html[data-theme='light'] .regcode-hint { color: var(--uhd-l-text-3); }
 html[data-theme='light'] .verified-code { background: var(--uhd-l-active); color: var(--uhd-l-text-2); }
 html[data-theme='light'] .submit-btn:disabled { background: var(--uhd-l-input-bg); color: var(--uhd-l-text-3); }
+html[data-theme='light'] .forgot-box { background: var(--uhd-l-seg-bg); border-color: var(--uhd-l-border); }
+html[data-theme='light'] .forgot-ok { color: #15803d; }
+html[data-theme='light'] .forgot-hint,
+html[data-theme='light'] .reset-note { color: var(--uhd-l-text-3); }
 html[data-theme='light'] .auth-footnote { color: var(--uhd-l-text-3); }
 html[data-theme='light'] .tg-login-divider { color: var(--uhd-l-text-3); }
 html[data-theme='light'] .tg-login-divider::before,
