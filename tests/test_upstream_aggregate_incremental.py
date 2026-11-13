@@ -35,7 +35,6 @@ from backend import models as base_models
 from backend.emby_server import models as em
 from backend.emby_server import upstream_aggregate_jobs as jobs
 from backend.emby_server import upstream_aggregate_run as uar
-from backend.emby_server import upstream_aggregate_scheduler as uas
 from backend.emby_server import upstream_import as uimp
 from backend.emby_server import upstream_item_mappings as uim
 from backend.emby_server import upstream_sources as ups
@@ -447,59 +446,3 @@ def test_execute_task_passes_kind_and_result_records_it(db, monkeypatch):
 # 调度启动新鲜度门
 # ---------------------------------------------------------------------------
 
-class _FakeSource:
-    def __init__(self, source_id, *, enabled=True, source_type="emby"):
-        self.id = source_id
-        self.enabled = enabled
-        self.source_type = source_type
-
-
-def _enqueue_recorder(calls):
-    def _enqueue(source):
-        calls.append(source.id)
-        return {"task_id": f"t-{source.id}", "status": "queued",
-                "created": True,
-                "view": {"task_id": f"t-{source.id}", "status": "queued",
-                         "trigger": "scheduled"}}
-    return _enqueue
-
-
-def test_startup_gate_skips_enqueue_when_fresh(monkeypatch):
-    monkeypatch.setenv("UPSTREAM_AGGREGATE_STARTUP_FRESH_SEC", "10800")
-    calls = []
-    results = uas.run_startup_aggregation(
-        enqueue_fn=_enqueue_recorder(calls),
-        list_sources_fn=lambda: [_FakeSource(1)],
-        last_success_fn=lambda src: datetime.now() - timedelta(seconds=60))
-    assert calls == []
-    assert results[0]["status"] == "skipped"
-    assert results[0]["reason"] == "startup_fresh"
-
-
-def test_startup_gate_enqueues_when_stale_or_never(monkeypatch):
-    monkeypatch.setenv("UPSTREAM_AGGREGATE_STARTUP_FRESH_SEC", "10800")
-    calls = []
-    results = uas.run_startup_aggregation(
-        enqueue_fn=_enqueue_recorder(calls),
-        list_sources_fn=lambda: [_FakeSource(1)],
-        last_success_fn=lambda src: datetime.now() - timedelta(hours=4))
-    assert calls == [1]
-    assert results[0]["status"] == "queued"
-    calls2 = []
-    results2 = uas.run_startup_aggregation(
-        enqueue_fn=_enqueue_recorder(calls2),
-        list_sources_fn=lambda: [_FakeSource(1)],
-        last_success_fn=lambda src: None)
-    assert calls2 == [1]
-    assert results2[0]["status"] == "queued"
-
-
-def test_startup_gate_disabled_by_zero(monkeypatch):
-    monkeypatch.setenv("UPSTREAM_AGGREGATE_STARTUP_FRESH_SEC", "0")
-    calls = []
-    results = uas.run_startup_aggregation(
-        enqueue_fn=_enqueue_recorder(calls),
-        list_sources_fn=lambda: [_FakeSource(1)],
-        last_success_fn=lambda src: datetime.now())
-    assert calls == [1]
-    assert results[0]["status"] == "queued"

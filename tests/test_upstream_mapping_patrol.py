@@ -362,6 +362,9 @@ def test_maybe_run_disabled(db):
 # ---------------------------------------------------------------------------
 
 def test_janitor_runs_due_patrol(db_factory, monkeypatch):
+    # 批 4a（#97）已摘除 janitor 里的映射抽样巡检钩子（上游聚合停转）：
+    # janitor_tick 不再触发巡检，键只保留 0/False 占位默认值。
+    # 本用例钉死新语义——即使映射行已到周期，janitor 也不采样。
     from backend import database as _database
     from backend.emby_server import maintenance as maint
     from backend.emby_server import upstream_aggregate_run as uar
@@ -378,7 +381,7 @@ def test_janitor_runs_due_patrol(db_factory, monkeypatch):
         "up-1": (200, {"ProviderIds": {"Tmdb": "278"}}),
     }))
     result = maint.janitor_tick()
-    assert result["upstream_mapping_patrol_sampled"] == 1
+    assert result["upstream_mapping_patrol_sampled"] == 0
     assert result["upstream_mapping_patrol_alert"] is False
 
 

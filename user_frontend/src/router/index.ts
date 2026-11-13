@@ -234,15 +234,6 @@ const router = createRouter({
       path: '/store-requests',
       redirect: (to) => ({ path: '/game/wishlist', query: to.query }),
     },
-    // 找源：独立页 /source-discovery（找源前端挂接批）。
-    // 搜索与确认两个口都要登录，路由守卫先拦未登录；总闸关时页内明示未开启。
-    // 不挂首页/发现页、不占底栏；候选绝不挂播放入口（playable_now 恒 false）。
-    {
-      path: '/source-discovery',
-      name: 'source-discovery',
-      component: () => import('@/views/panel/SourceDiscoveryView.vue'),
-      meta: { title: '找源', requiresAuth: true },
-    },
     // 隐私政策：公开页（Google OAuth 验证要求挂在本站域名下），
     // 不带 requiresAuth，路由守卫只拦 requiresAuth 路由，未登录也能直接打开。
     {
@@ -345,7 +336,7 @@ router.beforeEach(async (to) => {
 // 不再钉 light——本集合摘除该路径后守卫对它走 restoreUserTheme；
 // /game/account/menu（我的）本就不在集合内，同样跟随用户外观。
 // /game/account/settings、/game/account/member 等其余账号页仍是 v4 纸面，继续钉 light。
-export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/collections', '/server', '/shop', '/want', '/store-requests', '/source-discovery', '/game/calendar', '/game/wishlist', '/game/signal', '/game/ledger', '/game/supply', '/game/operator', '/game/account/settings', '/game/account/member'])
+export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/collections', '/server', '/shop', '/want', '/store-requests', '/game/calendar', '/game/wishlist', '/game/signal', '/game/ledger', '/game/supply', '/game/operator', '/game/account/settings', '/game/account/member'])
 // 参数路由前缀：合集详情是 /collections/:id，afterEach 拿到的是实例路径
 // （如 /collections/123），静态集合永远匹配不上，须按前缀另判；
 // /collections/ 下目前只有详情这一条路由，前缀不会误伤非 v4 页。

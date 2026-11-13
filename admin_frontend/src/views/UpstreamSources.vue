@@ -44,17 +44,16 @@ import type {
 import { EmptyState, PageHeader, SectionCard } from '@/components/ui'
 
 /**
- * 重新布局批 3：存储绑定 / 上游映射 / 115 账号池 / sidecar 四个只读观测页
+ * 重新布局批 3：存储绑定 / 115 账号池 / sidecar 三个只读观测页
  * 降为本页标签（沿用 Codes.vue 的 ?tab= 同步 + KeepAlive 模式）。
  * 源列表面板用 v-show：来回切标签不卸载表单与列表状态；观测面板按需加载、
  * 进过一次后 KeepAlive 缓存，不重拉数据。
  */
 const StorageBindings = defineAsyncComponent(() => import('./StorageBindings.vue'))
-const UpstreamMappings = defineAsyncComponent(() => import('./UpstreamMappings.vue'))
 const Yun139Pools = defineAsyncComponent(() => import('./Yun139Pools.vue'))
 const ProviderSidecar = defineAsyncComponent(() => import('./ProviderSidecar.vue'))
 
-type UpstreamTab = 'sources' | 'bindings' | 'mappings' | 'pools' | 'sidecar'
+type UpstreamTab = 'sources' | 'bindings' | 'pools' | 'sidecar'
 
 const route = useRoute()
 const router = useRouter()
@@ -62,7 +61,7 @@ const router = useRouter()
 const activeTab = computed<UpstreamTab>({
   get: () => {
     const t = route.query.tab
-    return t === 'bindings' || t === 'mappings' || t === 'pools' || t === 'sidecar' ? t : 'sources'
+    return t === 'bindings' || t === 'pools' || t === 'sidecar' ? t : 'sources'
   },
   set: (tab) => {
     if (tab === activeTab.value) return
@@ -658,19 +657,6 @@ onUnmounted(() => {
         <span class="tab-hint">存储绑定</span>
       </button>
       <button
-        id="upstream-tab-mappings"
-        type="button"
-        role="tab"
-        class="tab-btn"
-        :class="{ active: activeTab === 'mappings' }"
-        :aria-selected="activeTab === 'mappings'"
-        aria-controls="upstream-panel"
-        @click="activeTab = 'mappings'"
-      >
-        观测·映射
-        <span class="tab-hint">上游映射</span>
-      </button>
-      <button
         id="upstream-tab-pools"
         type="button"
         role="tab"
@@ -958,7 +944,6 @@ onUnmounted(() => {
           拉取 {{ aggregateResult.result.fetched }} 条，聚合 {{ aggregateResult.result.aggregates }} 条，
           配对 {{ aggregateResult.result.paired }} 条，写入 {{ aggregateResult.result.written }} 条，
           写路径开关：{{ aggregateResult.result.mapping_enabled ? '开' : '关' }}。
-          写进的映射去「映射」标签查看。
         </p>
         <ul>
           <li v-for="lib in aggregateResult.result.libraries" :key="lib.library_id">
@@ -1053,7 +1038,6 @@ onUnmounted(() => {
     >
       <KeepAlive>
         <StorageBindings v-if="activeTab === 'bindings'" />
-        <UpstreamMappings v-else-if="activeTab === 'mappings'" />
         <Yun139Pools v-else-if="activeTab === 'pools'" />
         <ProviderSidecar v-else-if="activeTab === 'sidecar'" />
       </KeepAlive>

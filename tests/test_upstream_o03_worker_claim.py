@@ -32,7 +32,6 @@ from backend.api import admin_upstream_sources as admin_ups
 from backend.emby_server import models as em
 from backend.emby_server import upstream_aggregate_jobs as jobs
 from backend.emby_server import upstream_aggregate_run as uar
-from backend.emby_server import upstream_aggregate_scheduler as uas
 
 
 @pytest.fixture()
@@ -215,79 +214,3 @@ def test_claim_serializes_two_queued_tasks_for_same_source(
     assert state["calls"] == 2
     assert state["peak"] == 1
 
-
-def test_scheduler_skips_when_manual_task_running_a120a(
-        db, db_factory, monkeypatch):
-    """A-120a：手动任务 running 时调度轮不启动第二路执行。"""
-    source = _source(db)
-    entered = threading.Event()
-    release = threading.Event()
-    calls = {"n": 0}
-
-    def slow(db_session, src, page_size=100, **kwargs):
-        calls["n"] += 1
-        entered.set()
-        assert release.wait(5)
-        return _summary(src)
-
-    monkeypatch.setattr(jobs, "_aggregate_fn", slow)
-    view = jobs.enqueue(source.id, 100)
-    thread = threading.Thread(
-        target=jobs.execute_task, args=(view["task_id"],), daemon=True)
-    thread.start()
-    assert entered.wait(2)
-    _wait_status(source.id, view["task_id"], "running")
-
-    results = uas.run_scheduled_aggregation(session_factory=db_factory)
-    by_id = {r["source_id"]: r for r in results}
-    assert by_id[source.id]["status"] == "skipped"
-    assert by_id[source.id]["reason"] == "task_active"
-    assert by_id[source.id]["task_id"] == view["task_id"]
-    rows = (db.query(em.UpstreamAggregateTask)
-            .filter(em.UpstreamAggregateTask.source_id == source.id)
-            .all())
-    assert len(rows) == 1
-    assert calls["n"] == 1
-
-    release.set()
-    thread.join(3)
-    assert not thread.is_alive()
-
-
-def test_scheduled_failure_visible_and_resumable_a120b(
-        db, db_factory, staff, monkeypatch):
-    """A-120b：调度轮任务失败后管理端可见任务行并可续跑。"""
-    source = _source(db)
-
-    def boom(db_session, src, page_size=100, **kwargs):
-        raise uar.UpstreamAggregateRunError(
-            409, "upstream_credential_invalid",
-            "上游凭据失效，请管理员重录该源凭据")
-
-    monkeypatch.setattr(jobs, "_aggregate_fn", boom)
-    results = uas.run_scheduled_aggregation(session_factory=db_factory)
-    assert len(results) == 1
-    assert results[0]["status"] == "queued"
-    task_id = results[0]["task_id"]
-    assert results[0]["trigger"] == "scheduled"
-
-    # worker 认领执行（测试里同步跑同一入口）→ 失败落任务行。
-    jobs.execute_task(task_id)
-    snap = admin_ups.get_upstream_aggregate_task(
-        source.id, task_id, staff=staff)
-    assert snap["status"] == "failed"
-    assert snap["error"]["code"] == "upstream_credential_invalid"
-
-    resumed = admin_ups.resume_upstream_aggregate_task(
-        source.id, task_id, staff=staff, db=db)
-    assert resumed["task_id"] != task_id
-    assert resumed["status"] == "queued"
-
-
-def test_worker_wiring_starts_aggregate_claim_worker():
-    """worker.py 里认领工人接线真实存在（只接线，不改调度接线）。"""
-    import backend.worker as worker_mod
-
-    src = inspect.getsource(worker_mod)
-    assert "start_aggregate_worker" in src
-    assert "upstream_aggregate_worker" in src

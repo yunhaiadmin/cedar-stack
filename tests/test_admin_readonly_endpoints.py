@@ -114,13 +114,12 @@ READ_PATHS = [
     "/api/admin/storage-bindings",
     "/api/admin/sample-hash/progress",
     "/api/admin/providers/sidecar",
-    "/api/admin/upstream-mappings",
     "/api/admin/yun139/pools",
 ]
 
 
 def test_read_paths_require_auth(client):
-    """5 口无鉴权头 → 401/403（与 playback_admin 同口径）。"""
+    """4 口无鉴权头 → 401/403（与 playback_admin 同口径）。"""
     for path in READ_PATHS:
         r = client.get(path)
         assert r.status_code in (401, 403), path
@@ -275,26 +274,6 @@ def test_sidecar_available_via_fake_uds(authed, monkeypatch, uds_sock_dir):
         assert item["error"] is None
     finally:
         server.stop()
-
-
-def test_mappings_list_filters(db, authed):
-    for local_id, source_id, upstream_id in (
-            (10, 1, "emby-1"), (10, 2, "emby-2"), (11, 1, "emby-3")):
-        db.add(em.UpstreamItemMapping(local_item_id=local_id,
-                                      source_id=source_id,
-                                      upstream_item_id=upstream_id,
-                                      confidence=0.9, evidence="tmdb"))
-    db.commit()
-    r = authed.get("/api/admin/upstream-mappings")
-    assert r.json()["total"] == 3
-    r = authed.get("/api/admin/upstream-mappings",
-                   params={"local_item_id": 10})
-    assert r.json()["total"] == 2
-    r = authed.get("/api/admin/upstream-mappings", params={"source_id": 1})
-    assert r.json()["total"] == 2
-    item = r.json()["items"][0]
-    assert item["confidence"] == 0.9
-    assert item["evidence"] == "tmdb"
 
 
 def test_yun139_pools_members_no_credential_id(db, authed):
