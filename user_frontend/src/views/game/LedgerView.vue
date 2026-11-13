@@ -5,19 +5,19 @@
       <!-- 日志头 -->
       <header class="v4-loghead">
         <span class="v4-stamp">{{ facilityStamp('ledger') }}</span>
-        <h1>能量账本</h1>
-        <p>探险家的随身账本 —— 能量从哪来，到哪去。</p>
+        <h1>能量明细</h1>
+        <p>你的能量收入和支出记录。</p>
       </header>
 
       <!-- 燃料表 -->
-      <section class="v4-sec" aria-label="燃料表">
+      <section class="v4-sec" aria-label="当前能量">
         <div v-if="loading && !balanceLoaded" class="v4-skeleton" style="height:150px;border-radius:14px"></div>
         <div v-else-if="error && !balanceLoaded" class="v4-err">
-          燃料表加载失败：{{ error }}<br>
+          能量余额加载失败：{{ error }}<br>
           <button class="v4-retry" @click="reload">重试</button>
         </div>
         <div v-else class="fuel">
-          <div class="fuel-lbl"><span aria-hidden="true">⚡</span> 当前能量 · 燃料表</div>
+          <div class="fuel-lbl"><span aria-hidden="true">⚡</span> 当前能量</div>
           <div class="fuel-num"><small aria-hidden="true">⚡</small> {{ fmtNum(balance) }}</div>
           <!-- R27：非「全部」筛选时后端 total 不可信（是未筛选总数），数字去掉，不加后端接口 -->
           <span v-if="todayIncome > 0" class="fuel-today">{{ !hasMore && filter === 'all' ? `今日 +${fmtNum(todayIncome)}` : '今日有进账' }} <span aria-hidden="true">⚡</span></span>
@@ -33,14 +33,14 @@
       </section>
 
       <!-- 账本 -->
-      <section class="v4-sec" aria-label="账本流水">
+      <section class="v4-sec" aria-label="能量流水">
         <div v-if="loading && !logs.length" class="v4-skeleton" style="height:220px"></div>
         <div v-else-if="error && !logs.length" class="v4-err">
-          账本加载失败：{{ error }}<br>
+          能量明细加载失败：{{ error }}<br>
           <button class="v4-retry" @click="reload">重试</button>
         </div>
         <div v-else-if="!filteredGroups.length">
-          <UhdEmptyState v-if="filter === 'all'" title="这一栏空空的 —— 去探索片库大陆，赚点能量回来吧" />
+          <UhdEmptyState v-if="filter === 'all'" title="暂无能量记录" />
           <!-- R106-1：筛选只过滤已加载的分页；还有没翻到的记录时空态要诚实，不能让人以为真没有 -->
           <UhdEmptyState v-else-if="hasMore" title="已翻到的记录里还没有，要继续往下翻吗">
             <template #action>
@@ -83,7 +83,7 @@
             {{ loadingMore ? '加载中…' : (filter === 'all' && Number.isFinite(total) ? `加载更多（还剩 ${total - logs.length} 笔）` : '加载更多') }}
           </button>
           <div v-else-if="logs.length" class="v4-sec-sub" style="text-align:center;margin-top:14px">
-            —— 账本到这里就记满了 ——
+            —— 已显示全部记录 ——
           </div>
         </template>
       </section>
@@ -133,13 +133,13 @@ function typeMeta(t: string) {
 /** 世界观映射：游戏化标签（值按任务约定） */
 const GAME_META: Record<string, { icon: string; title: string }> = {
   checkin: { icon: '📋', title: '每日报到' },
-  invite: { icon: '🤝', title: '结伴同行奖励' },
-  invitee: { icon: '🎁', title: '受邀见面礼' },
+  invite: { icon: '🤝', title: '邀请奖励' },
+  invitee: { icon: '🎁', title: '受邀奖励' },
   rebate: { icon: '💰', title: '充值返利' },
   exchange: { icon: '🎟️', title: '兑换码' },
   recharge: { icon: '⚡', title: '能量充值' },
-  admin_grant: { icon: '📢', title: '营地发放' },
-  admin_deduct: { icon: '📢', title: '营地扣除' },
+  admin_grant: { icon: '📢', title: '管理员发放' },
+  admin_deduct: { icon: '📢', title: '管理员扣除' },
   transfer_out: { icon: '💸', title: '转账转出' },
   transfer_in: { icon: '💰', title: '转账转入' },
   transfer_fee: { icon: '🧾', title: '转账手续费' },
@@ -318,14 +318,14 @@ const filteredGroups = computed<DayGroup[]>(() => {
       const k = dayKey(d)
       const md = `${d.getMonth() + 1}.${d.getDate()}`
       if (k === todayK) {
-        key = 'today'; title = `今天 · ${md}`; sub = '账本上还热乎的墨迹'
+        key = 'today'; title = `今天 · ${md}`; sub = '最近流水'
       } else if (k === yesK) {
-        key = 'yesterday'; title = `昨天 · ${md}`; sub = '昨天走过的路'
+        key = 'yesterday'; title = `昨天 · ${md}`; sub = '昨天的流水'
       } else {
-        key = 'older'; title = '更早'; sub = '更早的足迹'
+        key = 'older'; title = '更早'; sub = '更早的流水'
       }
     } else {
-      key = 'older'; title = '更早'; sub = '更早的足迹'
+      key = 'older'; title = '更早'; sub = '更早的流水'
     }
     if (!groups.has(key)) groups.set(key, { key, title, sub, rows: [] })
     groups.get(key)!.rows.push(l)

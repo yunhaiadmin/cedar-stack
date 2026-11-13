@@ -16,63 +16,63 @@
     </svg>
     <!-- 锚点盒不设 transform / z-index。建筑与标签是兄弟层：标签 z-index 更高，才能盖过后面的房子。 -->
     <div class="spot s-cinema" style="left: 28.83%; top: 65.46%;">
-      <button type="button" class="mark pin-hit" @click="on.cinema" aria-label="梦幻影院">
+      <button type="button" class="mark pin-hit" @click="on.cinema" aria-label="片库">
         <AnchorArt art="cinema" class="pin art-cinema" />
-        <span class="lab-spacer" aria-hidden="true"><span class="name">梦幻影院</span><span class="sub">{{ subs.cinema }}</span></span>
+        <span class="lab-spacer" aria-hidden="true"><span class="name">片库</span><span class="sub">{{ subs.cinema }}</span></span>
       </button>
       <div class="mark lab-hit" aria-hidden="true" @click="on.cinema">
-        <span class="name">梦幻影院</span>
+        <span class="name">片库</span>
         <span class="sub">{{ subs.cinema }}</span>
       </div>
     </div>
     <div class="spot s-parcels" style="left: 44.64%; top: 68.63%;">
-      <button type="button" class="mark pin-hit" @click="on.parcels" aria-label="封存驿站">
+      <button type="button" class="mark pin-hit" @click="on.parcels" aria-label="新入库">
         <span class="dot" v-if="remaining > 0">{{ remaining }}</span>
         <AnchorArt art="parcels" class="pin art-parcels" />
-        <span class="lab-spacer" aria-hidden="true"><span class="name">封存驿站</span><span class="sub">{{ subs.parcels }}</span></span>
+        <span class="lab-spacer" aria-hidden="true"><span class="name">新入库</span><span class="sub">{{ subs.parcels }}</span></span>
       </button>
       <div class="mark lab-hit" aria-hidden="true" @click="on.parcels">
-        <span class="name">封存驿站</span>
+        <span class="name">新入库</span>
         <span class="sub">{{ subs.parcels }}</span>
       </div>
     </div>
     <div class="spot s-lighthouse" style="left: 82.3%; top: 62.5%;">
-      <button type="button" class="mark pin-hit lighthouse" @click="on.lighthouse" aria-label="传送灯塔">
+      <button type="button" class="mark pin-hit lighthouse" @click="on.lighthouse" aria-label="服务器">
         <AnchorArt art="lighthouse" class="pin art-lighthouse" />
-        <span class="lab-spacer" aria-hidden="true"><span class="name">传送灯塔</span><span class="sub">{{ subs.lighthouse }}</span></span>
+        <span class="lab-spacer" aria-hidden="true"><span class="name">服务器</span><span class="sub">{{ subs.lighthouse }}</span></span>
       </button>
       <div class="mark lab-hit" aria-hidden="true" @click="on.lighthouse">
-        <span class="name">传送灯塔</span>
+        <span class="name">服务器</span>
         <span class="sub">{{ subs.lighthouse }}</span>
       </div>
     </div>
     <div class="spot s-shop" style="left: 36.10%; top: 83.14%;">
-      <button type="button" class="mark pin-hit" @click="on.shop" aria-label="补给站">
+      <button type="button" class="mark pin-hit" @click="on.shop" aria-label="商店">
         <AnchorArt art="shop" class="pin art-shop" />
-        <span class="lab-spacer" aria-hidden="true"><span class="name">补给站</span></span>
+        <span class="lab-spacer" aria-hidden="true"><span class="name">商店</span></span>
       </button>
       <div class="mark lab-hit" aria-hidden="true" @click="on.shop">
-        <span class="name">补给站</span>
+        <span class="name">商店</span>
       </div>
     </div>
     <div class="spot s-collector" style="left: 12.50%; top: 68.63%;">
-      <button type="button" class="mark pin-hit" @click="on.collector" aria-label="收藏家小屋">
+      <button type="button" class="mark pin-hit" @click="on.collector" aria-label="成就">
         <AnchorArt art="collector" class="pin art-collector" />
-        <span class="lab-spacer" aria-hidden="true"><span class="name">收藏家小屋</span><span class="sub">{{ subs.collector }}</span></span>
+        <span class="lab-spacer" aria-hidden="true"><span class="name">成就</span><span class="sub">{{ subs.collector }}</span></span>
       </button>
       <div class="mark lab-hit" aria-hidden="true" @click="on.collector">
-        <span class="name">收藏家小屋</span>
+        <span class="name">成就</span>
         <span class="sub">{{ subs.collector }}</span>
       </div>
     </div>
     <div class="spot s-post" style="left: 17.35%; top: 47.54%;">
-      <button type="button" class="mark pin-hit" @click="on.post" aria-label="邮局">
+      <button type="button" class="mark pin-hit" @click="on.post" aria-label="昨日回顾">
         <span class="dot" v-if="hasLetter && !letterRead">1</span>
         <AnchorArt art="post" class="pin art-post" />
-        <span class="lab-spacer" aria-hidden="true"><span class="name">邮局</span><span class="sub">{{ subs.post }}</span></span>
+        <span class="lab-spacer" aria-hidden="true"><span class="name">昨日回顾</span><span class="sub">{{ subs.post }}</span></span>
       </button>
       <div class="mark lab-hit" aria-hidden="true" @click="on.post">
-        <span class="name">邮局</span>
+        <span class="name">昨日回顾</span>
         <span class="sub">{{ subs.post }}</span>
       </div>
     </div>
@@ -86,12 +86,12 @@
       </div>
     </div>
     <div class="spot s-stele" style="left: 51.40%; top: 41.42%;">
-      <button type="button" class="mark pin-hit" @click="on.stele" aria-label="观影碑">
+      <button type="button" class="mark pin-hit" @click="on.stele" aria-label="观影排行">
         <AnchorArt art="stele" class="pin art-stele" />
-        <span class="lab-spacer" aria-hidden="true"><span class="name">观影碑</span><span class="sub">{{ subs.stele }}</span></span>
+        <span class="lab-spacer" aria-hidden="true"><span class="name">观影排行</span><span class="sub">{{ subs.stele }}</span></span>
       </button>
       <div class="mark lab-hit" aria-hidden="true" @click="on.stele">
-        <span class="name">观影碑</span>
+        <span class="name">观影排行</span>
         <span class="sub">{{ subs.stele }}</span>
       </div>
     </div>
@@ -116,12 +116,12 @@
       </div>
     </div>
     <div class="spot s-fortune" style="left: 67.09%; top: 66.36%;">
-      <button type="button" class="mark pin-hit" :class="{ 'fortune-pending': !fortuneDrew }" @click="on.fortune" aria-label="抽签亭">
+      <button type="button" class="mark pin-hit" :class="{ 'fortune-pending': !fortuneDrew }" @click="on.fortune" aria-label="每日抽签">
         <AnchorArt art="fortune" class="pin art-fortune" />
-        <span class="lab-spacer" aria-hidden="true"><span class="name">抽签亭</span><span class="sub">{{ subs.fortune }}</span></span>
+        <span class="lab-spacer" aria-hidden="true"><span class="name">每日抽签</span><span class="sub">{{ subs.fortune }}</span></span>
       </button>
       <div class="mark lab-hit" aria-hidden="true" @click="on.fortune">
-        <span class="name">抽签亭</span>
+        <span class="name">每日抽签</span>
         <span class="sub">{{ subs.fortune }}</span>
       </div>
     </div>

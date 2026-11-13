@@ -3,31 +3,31 @@
      弹层同源（panelApi leaderboard/wall/fortune、panel store board），
      只搬入新版式，不增减设施、不改逻辑。 -->
 <template>
-  <aside class="d3-right" aria-label="世界与动态">
+  <aside class="d3-right" aria-label="功能与动态">
     <!-- 世界入口卡：地图缩略 + 进入世界（与日志头「探险世界」按钮同行为） -->
     <section id="disc-world">
       <div class="d3-sec-head">
         <div>
-          <div class="d3-sec-title">世界</div>
+          <div class="d3-sec-title">全部功能</div>
           <div class="d3-sec-sub">地图、榜单、留言都在这</div>
         </div>
       </div>
       <div class="d3-world-map">
         <div class="d3-world-card">
           <div style="min-width:0">
-            <div class="t">探险世界</div>
+            <div class="t">全部功能</div>
             <div class="s">全屏地图</div>
           </div>
-          <button type="button" class="d3-btn-ghost" @click="enterWorld">进入世界</button>
+          <button type="button" class="d3-btn-ghost" @click="enterWorld">进入</button>
         </div>
       </div>
     </section>
 
     <!-- 观影碑：热播榜 · 日/周榜页签 · 前五 -->
-    <section class="d3-card" aria-label="观影碑">
+    <section class="d3-card" aria-label="观影排行">
       <div class="d3-sec-head">
         <div>
-          <div class="d3-sec-title">观影碑</div>
+          <div class="d3-sec-title">观影排行</div>
           <div class="d3-sec-sub">热播榜 · {{ period === 'day' ? '日榜' : '周榜' }}</div>
         </div>
         <div class="d3-tabs" role="tablist" aria-label="榜单周期">
@@ -61,10 +61,10 @@
     </section>
 
     <!-- 每日抽一签：与世界地图同源（fortuneToday/fortuneDraw） -->
-    <section class="d3-card" aria-label="每日抽一签">
+    <section class="d3-card" aria-label="每日抽签">
       <div class="d3-sec-head" style="margin-bottom:6px">
         <div>
-          <div class="d3-sec-title">每日抽一签</div>
+          <div class="d3-sec-title">每日抽签</div>
         </div>
       </div>
       <div class="d3-fortune">
@@ -74,7 +74,7 @@
           <p>{{ String(fortune?.text ?? '') }}<br>宜{{ String(fortune?.yi ?? '') }} · 忌{{ String(fortune?.ji ?? '') }}</p>
         </template>
         <template v-else>
-          <p>每日一签，试试手气</p>
+          <p>抽一张今日签，每天可抽一次</p>
           <div style="margin-top:10px">
             <button type="button" class="d3-btn-ghost" :disabled="fortuneDrawing" @click="drawFortune">
               {{ fortuneDrawing ? '抽取中…' : '抽一签' }}
@@ -85,11 +85,11 @@
     </section>
 
     <!-- 到此一游留言墙：与世界地图同源（wallList）；最新两条，写留言去世界 -->
-    <section class="d3-card" aria-label="到此一游留言墙">
+    <section class="d3-card" aria-label="留言墙">
       <div class="d3-sec-head">
         <div>
-          <div class="d3-sec-title">到此一游</div>
-          <div class="d3-sec-sub">世界留言墙 · 最新两条</div>
+          <div class="d3-sec-title">留言墙</div>
+          <div class="d3-sec-sub">最新两条留言</div>
         </div>
       </div>
       <div v-if="wallLoading && wallPosts.length === 0" class="d3-empty">正在加载留言</div>

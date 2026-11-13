@@ -4,8 +4,8 @@
     <div class="v4-page">
       <!-- 日志头 -->
       <div class="shop-head">
-        <span class="shop-stamp">补给站 · 今日开张</span>
-        <h1>补给站</h1>
+        <span class="shop-stamp">商店</span>
+        <h1>商店</h1>
         <p>能量用来兑换和续费，会员用来看全片库。</p>
         <div v-if="loading" class="v4-skeleton" style="height:64px;margin-top:12px"></div>
         <div v-else class="purse">
@@ -25,7 +25,7 @@
       <!-- ❤️ 活力值兑换：仅公益服用户可见（状态拿不到就整块隐藏，不留空位） -->
       <section v-if="vitality !== null" class="shop-sec shop-sec-tight">
         <div class="v4-sec-title">活力值</div>
-        <div class="v4-sec-sub">10 能量＝1 活力 · 用能量给活力续命</div>
+        <div class="v4-sec-sub">10 能量＝1 活力 · 用能量补充活力</div>
         <div class="vitality-row">
           <span class="vitality-stat">❤️ 活力 <b>{{ vitality }}/{{ vitalityMax }}</b></span>
           <span class="vitality-stat">⚡ 能量 <b>{{ pointsText }}</b></span>
@@ -47,13 +47,13 @@
         <div class="v4-sec-title">能量</div>
         <!-- R37 P3-1：比例接口失败时副标题诚实兜底，不再假装「加载中」 -->
         <div class="v4-sec-sub">
-          <template v-if="ratioFailed">充能量 = 补充能量 —— 点一罐看看</template>
-          <template v-else>充能量 = 补充能量 · {{ ratioText }} —— 点一罐看看</template>
+          <template v-if="ratioFailed">充值能量</template>
+          <template v-else>充值能量 · {{ ratioText }}</template>
         </div>
         <div v-if="loading" class="v4-skeleton" style="height:220px"></div>
-        <div v-else-if="pkgsFailed" class="v4-err">能量罐加载失败，稍后再试<br><button class="v4-retry" @click="loadAll">重试</button></div>
+        <div v-else-if="pkgsFailed" class="v4-err">充值套餐加载失败，稍后再试<br><button class="v4-retry" @click="loadAll">重试</button></div>
         <div v-else-if="!rechargeEnabled" class="v4-empty empty-compact"><span class="lbl">能量充值暂未开启，稍后再来看看</span><button class="v4-retry" @click="loadAll">刷新看看</button></div>
-        <div v-else-if="packages.length === 0" class="v4-empty empty-compact"><span class="lbl">能量罐暂未上架，稍后再来看看</span><button class="v4-retry" @click="loadAll">刷新看看</button></div>
+        <div v-else-if="packages.length === 0" class="v4-empty empty-compact"><span class="lbl">充值套餐暂未上架，稍后再来看看</span><button class="v4-retry" @click="loadAll">刷新看看</button></div>
         <template v-else>
           <!-- R82A-1：支付方式未就绪不再整体替换空态，改为货架上方一条瘦横幅提示；浏览照常，充能类按钮靠已有 !methodsReady 禁用 -->
           <!-- 口径：错误态给"重试"，配置态给"刷新看看"（页面被 KeepAlive 缓存，配置态也需要站内刷新入口） -->
@@ -138,19 +138,19 @@
             <span class="payways-label">支付方式</span>
             <span class="payway on" aria-current="true"><!-- R85：同上，内部 id 不暴露 --><span class="lbl">{{ methods[0].name || '在线支付' }}</span></span>
           </div>
-          <div class="fineprint">能量可用于续命体力、兑换会员、发红包 —— 不过期</div>
+          <div class="fineprint">能量可用于补充活力、兑换会员、发红包 —— 不过期</div>
         </template>
       </section>
 
       <!-- 📜 探险执照：公益服下整块隐藏（付费区不在公益服出现） -->
       <section v-if="!welfareRealm" class="shop-sec">
         <div class="v4-sec-title">会员</div>
-        <div class="v4-sec-sub">买会员 = 领取执照 —— 凭执照解锁全片库，点开看细则</div>
+        <div class="v4-sec-sub">购买会员后可观看全片库，点开看套餐细则</div>
         <div v-if="loading" class="v4-skeleton" style="height:280px"></div>
-        <div v-else-if="plansFailed" class="v4-err">执照加载失败，稍后再试<br><button class="v4-retry" @click="loadAll">重试</button></div>
-        <div v-else-if="isFreeRealm" class="v4-empty">当前为公益服，全片库免费开放，无需领取执照<br v-if="realmNote" /><span v-if="realmNote" style="font-size:11px">{{ realmNote }}</span></div>
-        <div v-else-if="!plansEnabled" class="v4-empty empty-compact"><span class="lbl">执照领取暂未开启，稍后再来看看</span><button class="v4-retry" @click="loadAll">刷新看看</button></div>
-        <div v-else-if="plans.length === 0" class="v4-empty empty-compact"><span class="lbl">执照暂未上架，稍后再来看看</span><button class="v4-retry" @click="loadAll">刷新看看</button></div>
+        <div v-else-if="plansFailed" class="v4-err">会员套餐加载失败，稍后再试<br><button class="v4-retry" @click="loadAll">重试</button></div>
+        <div v-else-if="isFreeRealm" class="v4-empty">当前为公益服，全片库免费开放，无需购买订阅<br v-if="realmNote" /><span v-if="realmNote" style="font-size:11px">{{ realmNote }}</span></div>
+        <div v-else-if="!plansEnabled" class="v4-empty empty-compact"><span class="lbl">会员购买暂未开启，稍后再来看看</span><button class="v4-retry" @click="loadAll">刷新看看</button></div>
+        <div v-else-if="plans.length === 0" class="v4-empty empty-compact"><span class="lbl">会员套餐暂未上架，稍后再来看看</span><button class="v4-retry" @click="loadAll">刷新看看</button></div>
         <!-- 购买流程已按 UHDNow 订阅逻辑拆到独立订阅页（/game/account/subscribe，
              用户 2026-11-13 08:39 令：单选卡＋时长滑杆＋优惠码＋吸底结算条）；
              本区只留入口卡，选购与下单都在订阅页完成，支付规则不变 -->
@@ -168,14 +168,14 @@
       <!-- ⛰️ 等级：付费服走登山路线（执照折扣），公益服走治理权表（折扣不生效） -->
       <section class="shop-sec">
         <div class="v4-sec-title">等级</div>
-        <div v-if="!welfareRealm" class="v4-sec-sub">Lv.1 → Lv.6 登山路线 —— 等级越高，执照越便宜，点开看特权</div>
+        <div v-if="!welfareRealm" class="v4-sec-sub">Lv.1 → Lv.6 —— 等级越高，会员价格越低，点开看特权</div>
         <div v-else class="v4-sec-sub">等级越高，能为社区做的事越多 —— 不换钱、不卡权益，月限与权重以服务端为准</div>
         <div v-if="loading" class="v4-skeleton" style="height:260px"></div>
         <div v-else-if="memberFailed" class="v4-err">等级数据加载失败<br><button class="v4-retry" @click="loadAll">重试</button></div>
         <div v-else-if="!member" class="v4-empty">暂无等级记录，默认从 Lv.1 开始</div>
         <!-- 「暂未开启/暂未上架」是配置态（非故障），不挂"重试"按钮（重试只给加载失败类错误态）；
              但页面被 KeepAlive 缓存、无其他站内刷新入口，所以配置态给一个叫"刷新看看"的按钮，与错误态区分 -->
-        <div v-else-if="!trailLevels.length" class="v4-empty empty-compact"><span class="lbl">等级路线暂未开启，稍后再来看看</span><button class="v4-retry" @click="loadAll">刷新看看</button></div>
+        <div v-else-if="!trailLevels.length" class="v4-empty empty-compact"><span class="lbl">等级暂未开启，稍后再来看看</span><button class="v4-retry" @click="loadAll">刷新看看</button></div>
         <!-- 公益服治理权表：与设计稿 §三逐字对齐；折扣只在付费服生效，这里不显示任何折扣 -->
         <template v-else-if="welfareRealm">
           <div class="gov-current">
@@ -212,7 +212,7 @@
             <span class="flag" aria-hidden="true">{{ campFlag(lv) }}</span>
             <div class="card">
               <div class="lv">Lv.{{ lv.level }} <small>{{ lv.name }}</small></div>
-              <div v-if="lv.discount_pct > 0" class="off">执照 {{ (100 - lv.discount_pct) / 10 }} 折</div>
+              <div v-if="lv.discount_pct > 0" class="off">会员 {{ (100 - lv.discount_pct) / 10 }} 折</div>
               <div v-else class="xp">经验 {{ lv.xp_threshold }}</div>
             </div>
             <!-- R85：展开面板移出点击冒泡区（点文本不再误收起），并与 camp 的 aria-controls 配对 -->
@@ -232,19 +232,19 @@
 
       <!-- 🤝 带上同伴 -->
       <section v-if="loading || inviteEnabled || inviteFailed" class="shop-sec" style="padding-bottom:24px">
-        <div class="v4-sec-title">带上同伴</div>
-        <div class="v4-sec-sub">邀请一位探险家，双方都得能量</div>
+        <div class="v4-sec-title">邀请好友</div>
+        <div class="v4-sec-sub">邀请一位好友，双方都得能量</div>
         <div v-if="loading" class="v4-skeleton" style="height:120px"></div>
-        <div v-else-if="inviteFailed" class="v4-err">组队暗号加载失败{{ inviteErrMsg ? '：' + inviteErrMsg : '' }}<br><button class="v4-retry" @click="loadAll">重试</button></div>
+        <div v-else-if="inviteFailed" class="v4-err">邀请码加载失败{{ inviteErrMsg ? '：' + inviteErrMsg : '' }}<br><button class="v4-retry" @click="loadAll">重试</button></div>
         <div v-else-if="inviteEnabled" class="invite">
-          <h3>结伴远行，都有能量拿</h3>
-          <p v-if="inviteReward > 0 || inviteeReward > 0">同伴用你的组队暗号注册并领取执照，你得 {{ inviteReward }} 能量，他得 {{ inviteeReward }} 能量 —— 上不封顶。</p>
+          <h3>邀请好友，都有能量拿</h3>
+          <p v-if="inviteReward > 0 || inviteeReward > 0">好友用你的邀请码注册并开通会员，你得 {{ inviteReward }} 能量，他得 {{ inviteeReward }} 能量 —— 上不封顶。</p>
           <!-- R30：奖励为 0 时"上不封顶"自相矛盾，改诚实文案 -->
           <p v-else>当前邀请奖励未开启。</p>
           <div class="code">
             <!-- R27：code 为空不再显示占位 '----'，给生成中态 + 重试 -->
             <div v-if="inviteCode" class="c">{{ inviteCode }}</div>
-            <div v-else class="c generating">组队暗号生成中</div>
+            <div v-else class="c generating">邀请码生成中</div>
             <button @click="copyInviteCode" :disabled="!inviteCode">复制</button>
           </div>
           <button v-if="!inviteCode" class="v4-retry" style="margin-top:10px" @click="loadAll">重试</button>
@@ -840,7 +840,7 @@ const meterScale = computed(() => {
 })
 const meterText = computed(() => {
   const p = selectedPkg.value
-  if (!p) return '选一罐能量'
+  if (!p) return '选择充值套餐'
   return `已选 ${fmtNum(p.total_points)} 能量 · ¥ ${fmtNum(p.price)}`
 })
 
@@ -919,14 +919,14 @@ async function doRecharge() {
 async function copyInviteCode() {
   const code = inviteCode.value
   if (!code) {
-    toast.error('组队暗号加载中，稍后再试')
+    toast.error('邀请码加载中，稍后再试')
     return
   }
   try {
     await navigator.clipboard.writeText(code)
-    toast.success('组队暗号已复制：' + code)
+    toast.success('邀请码已复制：' + code)
   } catch {
-    toast.info('组队暗号：' + code + '（请手动复制）')
+    toast.info('邀请码：' + code + '（请手动复制）')
   }
 }
 </script>

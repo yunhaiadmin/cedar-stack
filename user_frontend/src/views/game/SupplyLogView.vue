@@ -5,21 +5,21 @@
       <!-- 日志头 -->
       <header class="v4-loghead">
         <span class="v4-stamp">{{ facilityStamp('supply') }}</span>
-        <h1>补给记录</h1>
-        <p>补给站的采购小票，一张张钉在布告栏上 —— 点小票看明细。</p>
+        <h1>商店记录</h1>
+        <p>在商店的下单记录，点一条看明细。</p>
       </header>
 
       <!-- 布告栏 -->
       <section class="v4-sec">
-        <div class="v4-sec-title">布告栏</div>
-        <div class="v4-sec-sub">在补给站买过的东西</div>
+        <div class="v4-sec-title">商店记录</div>
+        <div class="v4-sec-sub">在商店买过的东西</div>
 
-        <div v-if="loading" role="status" aria-label="正在加载补给记录">
+        <div v-if="loading" role="status" aria-label="正在加载商店记录">
           <div class="v4-skeleton" aria-hidden="true" style="height:104px;margin-bottom:22px"></div>
           <div class="v4-skeleton" aria-hidden="true" style="height:104px;margin-bottom:22px"></div>
         </div>
-        <div v-else-if="error" class="v4-err">布告栏的小票拿不到：{{ error }}<br><button class="v4-retry" @click="load">重试</button></div>
-        <div v-else-if="!orders.length" class="v4-empty">布告栏空空的 —— 去补给站备点干粮吧</div>
+        <div v-else-if="error" class="v4-err">商店记录加载失败：{{ error }}<br><button class="v4-retry" @click="load">重试</button></div>
+        <div v-else-if="!orders.length" class="v4-empty">还没有下单记录，去商店看看</div>
 
         <div v-else class="board">
           <article
@@ -30,7 +30,7 @@
             role="button"
             tabindex="0"
             :aria-expanded="openId === o.order_id"
-            :aria-label="`补给小票：${kindText(o.kind)} ${o.item_name}，实付${fmtMoney(o.amount)}，${plainText(seal(o.status).label)}。点击${openId === o.order_id ? '收起' : '展开'}明细`"
+            :aria-label="`订单：${kindText(o.kind)} ${o.item_name}，实付${fmtMoney(o.amount)}，${plainText(seal(o.status).label)}。点击${openId === o.order_id ? '收起' : '展开'}明细`"
             @click="toggle(o.order_id)"
             @keydown.enter="toggle(o.order_id)"
             @keydown.space.prevent="toggle(o.order_id)"
@@ -46,7 +46,7 @@
               </div>
               <div class="rc-status">
                 <span class="seal" :class="seal(o.status).cls">{{ seal(o.status).label }}</span>
-                <span class="rc-hint">{{ openId === o.order_id ? '点小票收起 ▴' : '点小票展开明细 ▾' }}</span>
+                <span class="rc-hint">{{ openId === o.order_id ? '点击收起 ▴' : '点击展开明细 ▾' }}</span>
               </div>
               <div v-if="o.status === 'refunded' && o.refund_reason" class="rc-refund-reason">
                 ↩️ 原因：{{ o.refund_reason }}
@@ -56,7 +56,7 @@
               </div>
               <div class="rc-detail">
                 <div class="kv"><span>小票编号</span><b class="mono">{{ o.order_id }}</b></div>
-                <div class="kv"><span>补给内容</span><b>{{ kindIcon(o.kind) }} {{ o.item_name }}</b></div>
+                <div class="kv"><span>内容</span><b>{{ kindIcon(o.kind) }} {{ o.item_name }}</b></div>
                 <div class="kv"><span>实付</span><b>{{ fmtMoney(o.amount) }}</b></div>
                 <div v-if="(o.discount_amount || 0) > 0" class="kv">
                   <span>原价 / 已减</span>
@@ -101,9 +101,9 @@ function kindIcon(kind: OrderRow['kind']): string {
 
 /** R110-3：aria-label 用的品类文字（kindIcon 的 emoji 版只给视觉，读屏走这里） */
 function kindText(kind: OrderRow['kind']): string {
-  if (kind === 'recharge') return '能量补给'
-  if (kind === 'subscription') return '远征执照'
-  return '补给'
+  if (kind === 'recharge') return '能量充值'
+  if (kind === 'subscription') return '会员订阅'
+  return '其他'
 }
 
 /**

@@ -12,15 +12,15 @@
   >
     <div class="d3-cover" :class="coverTone">
       <div class="d3-cov-k">{{ coverKicker }}</div>
-      <div class="d3-cov-t">{{ parcel.name || '神秘包裹' }}</div>
+      <div class="d3-cov-t">{{ parcel.name || '未命名片子' }}</div>
     </div>
     <div class="d3-parcel-body">
       <div style="min-width:0">
-        <div class="d3-parcel-name">{{ parcel.name || '神秘包裹' }}</div>
+        <div class="d3-parcel-name">{{ parcel.name || '未命名片子' }}</div>
         <div class="d3-parcel-meta">{{ coverMeta }}</div>
-        <div v-if="busy" class="d3-parcel-meta">拆封中，请稍等…</div>
+        <div v-if="busy" class="d3-parcel-meta">打开中，请稍等…</div>
       </div>
-      <span class="d3-tag-sealed" :class="{ 'is-open': isOpen }">{{ isOpen ? '已拆封' : '待拆' }}</span>
+      <span class="d3-tag-sealed" :class="{ 'is-open': isOpen }">{{ isOpen ? '已打开' : '待打开' }}</span>
     </div>
   </div>
   <div
@@ -29,7 +29,7 @@
     :class="{ opened: isOpen, 'is-busy': busy, 'just-opened': justOpened }"
     :role="isOpen ? undefined : 'button'"
     :tabindex="isOpen ? undefined : '0'"
-    :aria-label="isOpen ? undefined : '待拆封存，点击开封'"
+    :aria-label="isOpen ? undefined : '待打开，点击打开'"
     @click="onTap"
     @keydown="onKey"
   >
@@ -38,12 +38,12 @@
     <div class="v4-parcel-waybill">
       <template v-if="!isOpen">
         <div class="v4-parcel-seal">✦</div>
-        <div class="v4-parcel-lbl">待拆</div>
+        <div class="v4-parcel-lbl">待打开</div>
         <div class="v4-parcel-meta">{{ metaLine }}</div>
       </template>
       <template v-else>
         <!-- R37 P3-C2：名缺省说人话「神秘包裹」，不甩「未知」 -->
-        <b class="v4-parcel-name">{{ parcel.name || '神秘包裹' }}</b>
+        <b class="v4-parcel-name">{{ parcel.name || '未命名片子' }}</b>
         <div class="v4-parcel-divider" aria-hidden="true"></div>
         <span class="v4-parcel-sub">{{ bodySub }}</span>
         <!-- R37 P3-C3：时间缺省直接隐藏时间行，不甩「时间未知」 -->
@@ -51,7 +51,7 @@
       </template>
     </div>
     <div class="v4-parcel-foot">
-      <span v-if="!isOpen" class="v4-parcel-hint">{{ busy ? '拆封中，请稍等…' : '点一下开封' }}</span>
+      <span v-if="!isOpen" class="v4-parcel-hint">{{ busy ? '打开中，请稍等…' : '点一下打开' }}</span>
       <button
         v-else
         type="button"
@@ -80,8 +80,8 @@ const isOpen = computed(() => !!props.parcel.unsealed)
 /** 封面变体没有单独的「去看」按钮，整卡就是按钮；面单变体开封后由脚上的按钮承接。 */
 const cardIsButton = computed(() => props.variant === 'cover')
 const coverLabel = computed(() => {
-  if (!isOpen.value) return '待拆封存，点击开封'
-  return `用播放器打开${props.parcel.name || '神秘包裹'}`
+  if (!isOpen.value) return '待打开，点击打开'
+  return `用播放器打开${props.parcel.name || '未命名片子'}`
 })
 /* P-3 拆封仪式感：开封瞬间给印章一个「盖下去」的动效（一次性，动画结束自清） */
 const justOpened = ref(false)
@@ -157,11 +157,11 @@ const arrivedText = computed(() => {
   const pad = (n: number) => String(n).padStart(2, '0')
   const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`
   const sameDay = d.toDateString() === now.toDateString()
-  if (sameDay) return `今天 ${hm} 到货`
+  if (sameDay) return `今天 ${hm} 入库`
   const yd = new Date(now)
   yd.setDate(yd.getDate() - 1)
-  if (d.toDateString() === yd.toDateString()) return `昨天 ${hm} 到货`
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${hm} 到货`
+  if (d.toDateString() === yd.toDateString()) return `昨天 ${hm} 入库`
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${hm} 入库`
 })
 
 function openPicker() {

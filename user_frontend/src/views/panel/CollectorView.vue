@@ -40,19 +40,19 @@
 
       <!-- 口味护照 -->
       <section v-if="!collector.error" class="v4-sec">
-        <div class="v4-sec-title">口味护照</div>
-        <div class="v4-sec-sub">看够一个类型，就盖一个章 —— 集满 12 枚有惊喜</div>
+        <div class="v4-sec-title">类型收集</div>
+        <div class="v4-sec-sub">每个类型看够数量就点亮一枚，集满 12 枚有奖励</div>
         <!-- loading 契约直通子组件，父级不再用 v-else 抢占骨架分支 -->
         <TastePassport :raw="tastesRaw" :loading="collector.loading" @retry="retryCollector" />
       </section>
 
       <!-- 馆灵养成 -->
       <section v-if="!collector.error" class="v4-sec" style="padding-bottom:20px">
-        <div class="v4-sec-title">馆灵养成</div>
-        <div class="v4-sec-sub">你看的每一分钟，都在喂养它</div>
+        <div class="v4-sec-title">观影成长</div>
+        <div class="v4-sec-sub">累计观影时长会提升等级</div>
         <div v-if="collector.loading" class="v4-skeleton" style="height:220px"></div>
         <PetCard v-else-if="pet" :pet="pet" />
-        <div v-else class="v4-empty">还没有馆灵数据</div>
+        <div v-else class="v4-empty">还没有观影成长数据</div>
       </section>
     </div>
   </div>
@@ -142,10 +142,10 @@ const tastesRaw = computed((): Record<string, TasteStamp> | undefined => {
 })
 const tasteTitle = computed(() => {
   const t = tastesRaw.value
-  if (!t) return '口味数据没拿到'
+  if (!t) return '类型数据没拿到'
   const got = Object.values(t).filter((s) => s?.stamped).map((s) => s.name)
-  if (got.length === 0) return '还没有集到口味章，去看片吧'
-  return `口味：${got.slice(0, 2).join(' / ')}${got.length > 2 ? ` 等 ${got.length} 种` : ''}`
+  if (got.length === 0) return '还没有点亮任何类型，去看片吧'
+  return `类型：${got.slice(0, 2).join(' / ')}${got.length > 2 ? ` 等 ${got.length} 种` : ''}`
 })
 
 /* ---------- 成就 ---------- */

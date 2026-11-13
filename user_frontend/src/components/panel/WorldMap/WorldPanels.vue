@@ -1,10 +1,10 @@
 <template>
   <div class="world-panels">
     <div class="feed">
-      <h4><i>●</i> 世界动态 · 服务器在忙什么</h4>
+      <h4><i>●</i> 服务器动态</h4>
       <ul>
-        <li v-if="feedState === 'loading'">正在接收世界动态…</li>
-        <li v-else-if="feedState === 'error'">动态没加载出来，点上面的建筑照样能玩</li>
+        <li v-if="feedState === 'loading'">正在加载服务器动态…</li>
+        <li v-else-if="feedState === 'error'">动态没加载出来，点上面的入口照样能用</li>
         <template v-else>
           <li v-for="(it, idx) in feedItems" :key="idx"><b v-if="it.time">{{ it.time }}</b> {{ it.text }}</li>
           <li v-if="feedItems.length === 0">暂无动态</li>
@@ -14,7 +14,7 @@
 
     <div class="quest">
       <h4>📋 今日任务</h4>
-      <span class="stamp-done" v-if="questPercent >= 100">今日探险完成 ✓</span>
+      <span class="stamp-done" v-if="questPercent >= 100">今日任务完成 ✓</span>
       <button type="button" class="q" :class="{ done: q.done }" v-for="q in quests" :key="q.key" @click="onQuest(q.key)">
         <span class="box">{{ q.done ? '✓' : '' }}</span>{{ q.label }}<span class="rw" v-if="q.rw">{{ q.rw }}</span>
       </button>

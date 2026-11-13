@@ -1,5 +1,5 @@
 <template>
-  <div class="region-rail" role="group" aria-label="营地分区">
+  <div class="region-rail" role="group" aria-label="功能分区">
     <button
       v-for="z in zones"
       :key="z.key"
@@ -41,11 +41,11 @@ interface Zone {
 }
 
 const ZONE_EN: Record<string, string> = {
-  daily: 'CAMP GATE',
-  account: 'ACCOUNT HUT',
-  social: 'SIGNAL HILL',
-  asset: 'LEDGER HUT',
-  style: 'LIFE CAMP',
+  daily: 'DAILY',
+  account: 'ACCOUNT',
+  social: 'SOCIAL',
+  asset: 'ASSETS',
+  style: 'STYLE',
 }
 
 const zones = computed<Zone[]>(() =>

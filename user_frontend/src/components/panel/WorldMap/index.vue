@@ -1,7 +1,7 @@
 <template>
   <div class="world-root" :class="[`dp-${daypart}`, { 'is-game': variant === 'game' }]">
     <div class="game-goalbar" v-if="variant === 'game'">
-      <div class="m-goal-text">今日探险 <b>{{ questDoneCount }}/{{ quests.length }}</b><template v-if="questNextLabel"> · 还差：{{ questNextLabel }}</template><template v-else> · 全部完成 ✓</template></div>
+      <div class="m-goal-text">今日任务 <b>{{ questDoneCount }}/{{ quests.length }}</b><template v-if="questNextLabel"> · 还差：{{ questNextLabel }}</template><template v-else> · 全部完成 ✓</template></div>
       <div class="m-goal-bar"><i :style="{ width: questPercent + '%' }"></i></div>
     </div>
 
@@ -9,7 +9,7 @@
       <div class="map-frame">
       <div class="hud">
         <span class="brand">Aetrix<b>.</b></span>
-        <span class="worldname">探险世界</span>
+        <span class="worldname">全部功能</span>
         <div class="right">
           <span class="pill" v-if="streak > 0">连签 {{ streak }} 天<template v-if="streakHint"> · {{ streakHint }}</template></span>
           <button type="button" class="pill amber" v-if="pointsText" @click="goLedger">{{ pointsText }} 能量</button>
@@ -21,15 +21,15 @@
       <div class="hello" v-if="variant !== 'game'">
         <div class="d">{{ dateLine }}</div>
         <h2>{{ greetingText }}，{{ nickname }}</h2>
-        <p v-if="remaining > 0">世界里有 <b>{{ remaining }} 个包裹</b> 等你拆<template v-if="hasLetter">，邮局里有一封昨天的信。</template><template v-else>。</template></p>
-        <p v-else-if="hasLetter">邮局里有一封昨天的信，点邮局拆开看看。</p>
-        <p v-else>今天片库有更新，去影院看看新到的片子。</p>
+        <p v-if="remaining > 0">今天有 <b>{{ remaining }} 部新入库片子</b> 待查看<template v-if="hasLetter">，还有一份昨日回顾。</template><template v-else>。</template></p>
+        <p v-else-if="hasLetter">有一份昨日回顾，点开看看。</p>
+        <p v-else>今天片库有更新，看看新到的片子。</p>
         <p class="hello-line" v-if="daypartLine">{{ daypartLine }}</p>
       </div>
 
       <button type="button" class="classic" v-if="variant === 'home'" @click="toClassic">经典视图 ⇄</button>
 
-      <div class="world-scroll" ref="worldScrollEl" role="region" aria-label="探险地图，可左右滑动">
+      <div class="world-scroll" ref="worldScrollEl" role="region" aria-label="功能地图，可左右滑动">
       <div class="world">
       <WorldCanvas
         :subs="anchorSubs"
@@ -43,7 +43,7 @@
       />
       </div>
       </div>
-      <p class="map-scroll-hint">左右滑动，看完整营地</p>
+      <p class="map-scroll-hint">左右滑动，看完整地图</p>
       </div>
       <WorldMarks :open-region-key="openRegionKey" :open-region="onRegionClick" />
       <WorldPanels
@@ -59,7 +59,7 @@
       <div class="w-sheet" :class="{ 'is-stele': overlay === 'stele', 'is-region': overlay === 'region' }" role="dialog" aria-modal="true" tabindex="-1" ref="sheetEl"
            :id="overlay === 'region' ? 'region-sheet' : undefined"
            :aria-labelledby="overlay !== 'stele' ? 'w-sheet-title' : undefined"
-           :aria-label="overlay === 'stele' ? '观影碑' : undefined"
+           :aria-label="overlay === 'stele' ? '观影排行' : undefined"
            @touchstart="onSheetTouchStart" @touchend="onSheetTouchEnd">
         <div class="w-grip" aria-hidden="true"></div>
         <div class="w-sheet-head" v-if="overlay !== 'stele'">
@@ -176,10 +176,10 @@ const nickname = computed(() => {
   if (typeof un === 'string' && un.trim()) return un
   const name = u?.username
   if (typeof name === 'string' && name.trim()) return name
-  return '探险家'
+  return '访客'
 })
 
-const avatarChar = computed(() => Array.from(nickname.value)[0] ?? '探')
+const avatarChar = computed(() => Array.from(nickname.value)[0] ?? '访')
 
 const greetingText = computed(() => {
   const g = todayD.value.greeting
@@ -212,7 +212,7 @@ const memberInfo = computed<{ level: number; level_name: string } | null>(() => 
   if (!m) return null
   const lvl = m.level
   if (typeof lvl !== 'number') return null
-  return { level: lvl, level_name: String(m.level_name || '探险家') }
+  return { level: lvl, level_name: String(m.level_name || '普通用户') }
 })
 
 const streak = computed(() => {
@@ -263,9 +263,9 @@ const parcelCount = computed(() => {
 const unsealedCount = computed(() => parcelList.value.filter((p) => p.opened).length)
 const remaining = computed(() => parcelCount.value - unsealedCount.value)
 const parcelsSub = computed(() => {
-  if (parcels.value.data === null && !parcels.value.error) return '封存驿站'
-  if (remaining.value <= 0) return '今日包裹已拆完'
-  return `今日待拆 ${remaining.value} 个`
+  if (parcels.value.data === null && !parcels.value.error) return '新入库'
+  if (remaining.value <= 0) return '今日新片已全部打开'
+  return `今日待打开 ${remaining.value} 部`
 })
 
 /* ---------- 信件 ---------- */
@@ -301,7 +301,7 @@ function markLetterRead() {
 
 /* ---------- 建筑锚点动态副标题（与旧版一字不差） ---------- */
 const cinemaSub = computed(() => {
-  if (parcelCount.value <= 0) return '片库 · 随时开场'
+  if (parcelCount.value <= 0) return '片库 · 随时可看'
   let base = `片库 · 今日新到 ${parcelCount.value} 部`
   const first = parcelList.value[0]
   const raw = String(first?.title || first?.name || '').trim()
@@ -313,20 +313,20 @@ const cinemaSub = computed(() => {
 })
 
 const postSub = computed(() => {
-  if (letter.value.data === null && !letter.value.error) return '邮局'
-  if (!hasLetter.value) return '暂无新信'
-  if (letterRead.value) return '昨天的信到了'
+  if (letter.value.data === null && !letter.value.error) return '昨日回顾'
+  if (!hasLetter.value) return '暂无新回顾'
+  if (letterRead.value) return '昨日回顾已到'
   const teaser = typeof letterData.value.teaser === 'string' ? letterData.value.teaser.trim() : ''
   if (teaser) {
     const t = teaser.length > 12 ? `${teaser.slice(0, 12)}…` : teaser
-    return `信里说：『${t}』`
+    return `附言：『${t}』`
   }
   const rec = typeof letterData.value.recommendation === 'string' ? letterData.value.recommendation.trim() : ''
   if (rec) {
     const r = rec.length > 12 ? `${rec.slice(0, 12)}…` : rec
     return `今日推荐：『${r}』`
   }
-  return '昨天的信到了'
+  return '昨日回顾已到'
 })
 
 const lighthouseSub = computed(() => {
@@ -499,7 +499,7 @@ const wallSub = computed(() => {
   if (!wallLoaded.value) return '留言墙'
   const posts = wallPosts.value
   if (posts.length === 0) return '来留下第一句话吧'
-  let sub = `已有 ${posts.length} 条足迹`
+  let sub = `已有 ${posts.length} 条留言`
   let latest = -Infinity
   for (const p of posts) {
     const t = parseWallTime(p?.created_at)
@@ -566,8 +566,8 @@ async function drawFortune() {
 const fortuneDrew = computed(() => fortune.value?.drew === true)
 
 const fortuneSub = computed(() => {
-  if (fortune.value === null) return '抽签亭'
-  return fortuneDrew.value ? `今日：${String(fortune.value?.level ?? '')}` : '每日一签，试试手气'
+  if (fortune.value === null) return '每日抽签'
+  return fortuneDrew.value ? `今日：${String(fortune.value?.level ?? '')}` : '每天可抽一次'
 })
 
 function openFortune() {
@@ -695,13 +695,13 @@ function closeOverlay() {
 
 const sheetTitle = computed(() => {
   switch (overlay.value) {
-    case 'parcels': return '今日封存'
-    case 'letter': return '每日一封'
-    case 'stele': return '观影碑'
+    case 'parcels': return '今日新入库'
+    case 'letter': return '昨日回顾'
+    case 'stele': return '观影排行'
     case 'board': return '服主告示牌'
-    case 'wall': return '到此一游'
-    case 'fortune': return '每日一签'
-    case 'region': return regionGroup.value ? regionGroup.value.title : '营地分区'
+    case 'wall': return '留言墙'
+    case 'fortune': return '每日抽签'
+    case 'region': return regionGroup.value ? regionGroup.value.title : '功能分区'
     default: return ''
   }
 })

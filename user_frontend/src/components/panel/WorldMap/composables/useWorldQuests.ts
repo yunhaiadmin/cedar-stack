@@ -50,15 +50,15 @@ export function useWorldQuests(params: {
     return [
       {
         key: 'parcels',
-        label: '拆一个封存包裹',
+        label: '打开一部新入库片子',
         done: parcelsDone,
-        rw: params.parcelCount() > 0 ? `${params.unsealedCount()}/${params.parcelCount()}` : '今日无新包裹',
+        rw: params.parcelCount() > 0 ? `${params.unsealedCount()}/${params.parcelCount()}` : '今日无新入库',
       },
       {
         key: 'letter',
-        label: '读昨天的信',
+        label: '看昨日回顾',
         done: read,
-        rw: !params.hasLetter() ? '暂无信件' : read ? '已读' : '0/1',
+        rw: !params.hasLetter() ? '暂无回顾' : read ? '已读' : '0/1',
       },
     ]
   })
