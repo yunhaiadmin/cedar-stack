@@ -72,6 +72,14 @@ KEY_DRIVE_RELAY_SA_FAILOVER_MAX_ATTEMPTS = \
 DEFAULT_DRIVE_RELAY_SA_FAILOVER_MAX_ATTEMPTS = 3
 MIN_DRIVE_RELAY_SA_FAILOVER_MAX_ATTEMPTS = 1
 MAX_DRIVE_RELAY_SA_FAILOVER_MAX_ATTEMPTS = 10
+#: 本人盘直链灰度（2026-11-12 用户点选）：开启时 byos:// 条目
+#: （用户绑定盘直挂）的清单把新增变体 byos_drive_direct 升为第一
+#: 线路（凭本人令牌给本人文件授 anyone-reader 后 302 免凭证
+#: usercontent），byos_drive_relay 保留同变体第二线路兜底不删；
+#: 池副本与挂载/paul/远程文件不读本开关、维持中继。默认关，
+#: 关时行为与现行逐字一致（灰度可回滚的根本）。仅 SystemConfig
+#: 键（非 env），读法与 drive_relay_enabled 同款。
+KEY_BYOS_DIRECT_GRAY = "byos_direct_gray_enabled"
 #: 用户副本额度后路（2026-10-29 用户亲令）：本人 Drive 副本的公开
 #: usercontent 直链被谷歌额度页挡住（probe 判 quota）时，video_stream
 #: 先用用户本人绑定令牌走 API 中继取同一份副本（API 额度与公开下载
@@ -171,6 +179,23 @@ def drive_relay_enabled(db: Session) -> bool:
         raw = (store.get_value(db, KEY_DRIVE_RELAY, "false") or "").strip().lower()
     except Exception:  # noqa: BLE001 - 测试桩/异常 DB 场景下保默认
         logger.warning("drive_relay_enabled 读取失败，回默认关", exc_info=True)
+        return False
+    return raw not in ("0", "false", "no", "off", "")
+
+
+def byos_direct_gray_enabled(db: Session) -> bool:
+    """本人盘直链灰度开关（默认关）。
+
+    读法与 drive_relay_enabled 同款（store 热读 + fail-safe）：开启
+    时 play_variants.list_variants 对 byos 可用条目把
+    byos_drive_direct 排第一、byos_drive_relay 排第二；关时清单与
+    取流逐字现状。读失败 fail-safe 回默认关——灰度是新路，开关
+    读不到时不贸然改道。
+    """
+    try:
+        raw = (store.get_value(db, KEY_BYOS_DIRECT_GRAY, "false") or "").strip().lower()
+    except Exception:  # noqa: BLE001 - 测试桩/异常 DB 场景下保默认
+        logger.warning("byos_direct_gray_enabled 读取失败，回默认关", exc_info=True)
         return False
     return raw not in ("0", "false", "no", "off", "")
 

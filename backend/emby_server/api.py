@@ -6041,6 +6041,29 @@ def _user_drive_byos_available(db: Session, item: em.MediaItem,
     return getattr(row, "status", "") == "active"
 
 
+def _user_drive_byos_quota_known(db: Session, item: em.MediaItem,
+                                 user) -> bool:
+    """BYOS 文件 quota 已知信号（清单阶段只读探针缓存，不触发探测）。
+
+    quota 探针明细里 page == "quota"（Range 腿判死或 GET 腿整拉
+    回额度页，写入时两腿同口径）即公开链已被证明会回额度页：
+    byos_drive_direct 的免凭证 usercontent 必死，清单阶段据此
+    不列直链（可用性判定，见 play_variants.list_variants 的
+    byos_quota_known）。无 fid / 无缓存记录 / 读失败一律 False
+    （按未知处理，照常列直链，取流时还有探针与明示错误兜底）。
+    """
+    fid = (getattr(item, "drive_file_id", "") or "").strip()
+    if not fid:
+        return False
+    try:
+        from backend.emby_server import transfer_variant as _tv_qk
+        detail = _tv_qk.usercopy_quota_probe_detail(
+            getattr(user, "id", None), fid)
+    except Exception:  # noqa: BLE001 — 信号读不到按未知
+        return False
+    return detail.get("page") == "quota"
+
+
 def _pool_copy_available(db: Session, item: em.MediaItem,
                          user) -> bool:
     """公共池变体可用性信号（goal-33 PR-3，design §5.1）。
@@ -6915,6 +6938,13 @@ async def playback_info(
         # 清单追加 byos_drive_relay（用户令牌中继，走用户自己额度）。
         _user_drive_byos_ok = await run_db(
             _user_drive_byos_available, db, item, user)
+        # 本人盘直链灰度：quota 已知信号（只读探针缓存）——仅
+        # byos 信号成立时才算，公开链已被探针判回额度页的文件
+        # 清单不列 byos_drive_direct（必死直链不作第一线路）。
+        _user_drive_byos_quota = False
+        if _user_drive_byos_ok:
+            _user_drive_byos_quota = await run_db(
+                _user_drive_byos_quota_known, db, item, user)
         # 公共池（goal-33 PR-3）：未绑 + 池 eligible + 有 ready
         # 池副本行时，清单追加 pool_copy 变体。
         _pool_copy_ok = await run_db(
@@ -6925,7 +6955,8 @@ async def playback_info(
             mount_can_generate_play_target=_mount_can_generate,
             user115_direct_available=_user115_ok,
             user_drive_byos_available=_user_drive_byos_ok,
-            pool_copy_available=_pool_copy_ok)
+            pool_copy_available=_pool_copy_ok,
+            byos_quota_known=_user_drive_byos_quota)
         # 挂载第 5 步播放过滤（变体层）：源已隐藏时变体清单清零，
         # 且不静默回落单源——下发空 MediaSources，客户端无可播变体。
         # 只新增本调用，不改上面任何变体判定行。
@@ -7550,13 +7581,17 @@ def _available_variant_names(db: Session, item: em.MediaItem,
     locatable = False
     if (getattr(item, "drive_file_id", "") or "").strip():
         locatable = _drive_mount_id_for_item(db, item) is not None
+    _byos_ok_vs = _user_drive_byos_available(db, item, user)
     names = [v.name for v in play_variants.list_variants(
         db, item, drive_mount_locatable=locatable,
         mount_can_generate_play_target=_mount_can_generate_play_target(
             db, item),
         user115_direct_available=_user115_direct_available(db, item, user),
-        user_drive_byos_available=_user_drive_byos_available(db, item, user),
-        pool_copy_available=_pool_copy_available(db, item, user))]
+        user_drive_byos_available=_byos_ok_vs,
+        pool_copy_available=_pool_copy_available(db, item, user),
+        byos_quota_known=(
+            _user_drive_byos_quota_known(db, item, user)
+            if _byos_ok_vs else False))]
     # 挂载第 5 步播放过滤（变体层）：源已隐藏时可用变体为空，
     # 已选变体按 resolve_requested_variant 现成语义报 409。
     from backend.emby_server import playback_source_health as _psh
@@ -7766,7 +7801,8 @@ async def video_stream(
             and _vs_decision.kind == "bound"
             and _requested_variant not in (
                 play_variants.BYOS_DRIVE_RELAY,
-                play_variants.BYOS115_DIRECT)
+                play_variants.BYOS115_DIRECT,
+                play_variants.BYOS_DRIVE_DIRECT)
             and await run_db(
                 _pool_gate_vs.large_file_pool_route, db, user, item)):
         _pool_pre_gate = await run_db(
@@ -7775,7 +7811,8 @@ async def video_stream(
             _pool_routed_stream = True
             _pool_stream_mode = True
     if _requested_variant not in (play_variants.BYOS_DRIVE_RELAY,
-                                  play_variants.BYOS115_DIRECT):
+                                  play_variants.BYOS115_DIRECT,
+                                  play_variants.BYOS_DRIVE_DIRECT):
         if _pool_stream_mode:
             # 池门禁替换转存门禁段（design §5.2）：preparing 先
             # 等流（wait_for_transfer_ready 同形态；池单不在请求
@@ -8238,6 +8275,82 @@ async def video_stream(
     # 路线不受换线影响。
     from backend.emby_server import variant_switch as _variant_switch
     _switch_attempted = False
+    # BYOS Drive 直链显式变体（本人盘直链灰度，2026-11-12 用户
+    # 点选）：客户端在 PlaybackInfo 清单里选了 byos_drive_direct
+    # 时走这里——先凭本人绑定令牌给本人文件授 anyone-reader
+    # （ensure_user_copy_public，与转存副本/池副本同款机制），
+    # 再 302 免凭证 usercontent，播放器自拉、字节不过服务器。
+    # 凭据口径与 byos_drive_relay 分支同源：钉住路径绑定行，
+    # 令牌只用于授公开这一步，绝不下发客户端、绝不碰 SA 池。
+    # ensure 失败 → 503 明示，绝不静默改走中继（客户端可改选
+    # 清单第二条 byos_drive_relay）；灰度开关关着时本变体不在
+    # 清单里、resolve 阶段已 409，这里再钉一道同口径 409。
+    # 显式变体请求不受阶段 6 换线影响（客户端选了就是选了）。
+    if _requested_variant == play_variants.BYOS_DRIVE_DIRECT:
+        _byos_direct_t0 = time.perf_counter()
+        if not await run_db(_strategy.byos_direct_gray_enabled, db):
+            raise HTTPException(
+                status_code=409,
+                detail="播放变体当前不可用：byos_drive_direct（灰度开关关着）")
+        _byos_id, _byos_row = await run_db(
+            _byos_binding_row, db, item)
+        if _byos_id is None:
+            raise HTTPException(
+                status_code=409,
+                detail="BYOS 路径无法解析绑定：byos://<绑定 id> 格式错误")
+        if _byos_row is None:
+            raise HTTPException(
+                status_code=409,
+                detail="BYOS Drive 绑定不存在，无法下发直链")
+        if getattr(_byos_row, "user_id", None) != getattr(user, "id", None):
+            raise HTTPException(
+                status_code=403,
+                detail="BYOS 绑定不属于当前用户，无法下发直链")
+        if getattr(_byos_row, "provider", "") != "drive":
+            raise HTTPException(
+                status_code=409,
+                detail="BYOS 直链只支持 Drive 绑定，其他 provider "
+                       "暂不支持")
+        if getattr(_byos_row, "status", "") != "active":
+            raise HTTPException(
+                status_code=409,
+                detail="BYOS Drive 绑定当前不可用"
+                       f"（状态：{getattr(_byos_row, 'status', '')}），"
+                       "请重新绑定后再播")
+        if not _fid:
+            raise HTTPException(
+                status_code=409,
+                detail="BYOS Drive 条目缺少 drive_file_id，无法下发直链")
+        _byos_public_ok = await run_db(
+            _tv.ensure_user_copy_public,
+            db, getattr(user, "id", None), _fid)
+        if not _byos_public_ok:
+            _note_play_start_safe(
+                item, user_id=getattr(user, "id", None),
+                method="direct_302",
+                variant=play_variants.BYOS_DRIVE_DIRECT,
+                result="error", error_kind="byos_direct_ensure_failed",
+                resolve_ms=int(
+                    (time.perf_counter() - _byos_direct_t0) * 1000),
+                total_ms=_pt.elapsed_ms())
+            raise HTTPException(
+                status_code=503,
+                detail="BYOS Drive 直链准备失败：文件公开授权未完成，"
+                       "请改选「我的 Drive 中继」或稍后重试")
+        _note_play_start_safe(
+            item, user_id=getattr(user, "id", None),
+            method="direct_302",
+            variant=play_variants.BYOS_DRIVE_DIRECT, result="ok",
+            resolve_ms=int(
+                (time.perf_counter() - _byos_direct_t0) * 1000),
+            total_ms=_pt.elapsed_ms())
+        from backend.emby_server.drive_auth import (
+            drive_usercontent_download_url)
+        return _observe_traffic(
+            RedirectResponse(
+                drive_usercontent_download_url(_fid),
+                status_code=302,
+                headers=_strategy.DIRECT_REDIRECT_HEADERS))
     # BYOS Drive 显式变体（本 PR）：客户端在 PlaybackInfo 清单里选了
     # byos_drive_relay 时走这里——字节凭路径绑定行那个用户的 Drive
     # 令牌中继，走该用户自己的额度。任何一步失败都明文报错，绝不
