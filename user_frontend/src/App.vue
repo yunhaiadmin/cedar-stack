@@ -11,7 +11,6 @@ import { useUserStore } from '@/stores/user'
 import { usePanelStore } from '@/stores/panel'
 import { refreshEmbyBaseUrl } from '@/api/emby'
 import { tgApi } from '@/api/tg'
-import { useHomeViewMode } from '@/composables/useHomeViewMode'
 
 const { messages, remove, warning } = useToast()
 const userStore = useUserStore()
@@ -29,12 +28,10 @@ watch(
       void panelStore.loadCollector(true)
     } else if (route.path.startsWith('/server')) {
       void panelStore.loadServer(true)
-    } else {
-      void panelStore.loadHome(true)
-      if (route.path.startsWith('/game')) {
-        void panelStore.loadCollector(true)
-      }
+    } else if (route.path.startsWith('/game')) {
+      void panelStore.loadCollector(true)
     }
+    // 旧发现页（loadHome 的今日/包裹/脉搏/信件面）已删除，不再预载。
   },
 )
 const route = useRoute()
@@ -52,7 +49,7 @@ const showChrome = computed(
   // 登录页、UHD 营销面（官网/定价，自带悬浮胶囊导航）与 404 页为独立全幅版式，
   // 不渲染全局顶栏/底坞；其余页面照旧。
   // 根路径未登录渲染官网（RootView 分发，自带导航）同样不叠全局壳；
-  // 已登录根路径是发现页，照旧渲染。
+  // 已登录根路径会被守卫送去 /library（片库面自带壳），不会停在这里。
   () =>
     !['login', 'landing', 'pricing', 'not-found'].includes(route.name as string) &&
     !(route.path === '/' && !userStore.isLoggedIn),
@@ -92,22 +89,13 @@ const isStreamArea = computed(
 const showHeader = computed(() => showChrome.value && !isAccountArea.value && !isStreamArea.value)
 
 /**
- * 桌面「探险世界」激活且在首页时，世界自带 HUD（品牌/能量/等级/头像），
- * 隐藏全局顶栏避免双层导航；其他页面顶栏照常。
- */
-const { worldActive: homeWorldActive } = useHomeViewMode()
-const hideHeaderForWorld = computed(
-  () => homeWorldActive.value && (route.path.replace(/\/+$/, '') || '/') === '/',
-)
-
-/**
  * 底部坞改走 App.vue 全局常驻（PanelTabbar，≤768px 唯一一套）：
  * 各视图不再自带 <PanelTabbar/>，非 v4 路由（/tg-bind 等）也认同一套，
  * 桌面 ≥769px 由 CSS 隐藏（DESIGN.md v1.1：桌面导航只留顶栏）。
  */
 
 /**
- * 三个常驻缓存视图（发现页 DiscoveryView / 补给站 ShopView / 个人中心 PersonalCenterView）常驻缓存：切 tab 不再销毁重建，
+ * 常驻缓存视图（补给站 ShopView / 个人中心 PersonalCenterView 等）常驻缓存：切 tab 不再销毁重建，
  * 回来秒出上次的数据，各视图在 onActivated 里做静默刷新（不闪骨架屏）。
  *
  * 缓存 key = 路由 path + 用户 id + 登录会话序列：
@@ -121,8 +109,8 @@ const hideHeaderForWorld = computed(
  * 2026-11-06：/game/account 改为个人中心 PersonalCenterView，缓存对象随之更换；
  * 账号设置（/game/account/settings）与我的会员（/game/account/member）是子页，不进缓存。
  */
-// RootView 是根路径分发组件（内含发现页），一并常驻缓存以保住发现页的切 tab 复用
-const KEEP_ALIVE_VIEWS = ['RootView', 'DiscoveryView', 'ShopView', 'PersonalCenterView']
+// RootView 是根路径分发组件（官网面），一并常驻缓存
+const KEEP_ALIVE_VIEWS = ['RootView', 'ShopView', 'PersonalCenterView']
 const viewCacheKey = computed(
   () => `${route.path}:${userStore.user?.id ?? 'guest'}#${userStore.sessionSeq}`,
 )
@@ -213,7 +201,7 @@ watch(
 
 <template>
   <div class="app-shell">
-    <AppHeader v-if="showHeader && !hideHeaderForWorld" />
+    <AppHeader v-if="showHeader" />
     <RouterView v-slot="{ Component }">
       <!-- max=12：key 按登录会话隔离，登出/换号后旧实例不再命中，攒多了自动淘汰最旧的 -->
       <KeepAlive :include="KEEP_ALIVE_VIEWS" :max="12">

@@ -9,7 +9,7 @@
  *
  * 说明：进度条按 home/summary 订阅明细的 start_date → end_date 计算已用占比；无该服 active 订阅明细时为 null，组件按 null 隐藏进度条，前端不编造数据。
  */
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { embyApi, isExpiringSoon } from '@/api'
 import type { AccountRealmCard, MySubscription } from '@/api'
 import { homeApi, vitalityApi } from '@/api/economy'
@@ -250,13 +250,6 @@ function buildRealmCard(
   return buildPaidCard(realm, shared, sub)
 }
 
-/** 观影数据小条（沿用 useTicketCard 的口径） */
-export interface ServerWatchStrip {
-  watchTime: string
-  totalPlays: string
-  watchedItems: string
-}
-
 export function useServerCards() {
   /** 服务卡列表 */
   const servers = ref<ServerCardItem[]>([])
@@ -266,22 +259,6 @@ export function useServerCards() {
   const loadError = ref(false)
   /** 是否已完成过一次加载 */
   const hasLoaded = ref(false)
-  /** 观影统计（homeApi.summary().stats） */
-  const stats = ref<{ total_seconds: number; total_plays: number; watched_items: number } | null>(null)
-
-  const watchStrip = computed((): ServerWatchStrip => {
-    const st = stats.value
-    let watchTime = '—'
-    if (st && st.total_seconds > 0) {
-      const hours = Math.floor(st.total_seconds / 3600)
-      watchTime = hours >= 1 ? `${hours}小时` : `${Math.max(1, Math.round(st.total_seconds / 60))}分钟`
-    }
-    return {
-      watchTime,
-      totalPlays: st && Number.isFinite(st.total_plays) ? String(st.total_plays) : '—',
-      watchedItems: st && Number.isFinite(st.watched_items) ? String(st.watched_items) : '—',
-    }
-  })
 
   /**
    * 并发拉取服务卡 / 摘要 / 能量三个接口。
@@ -302,7 +279,6 @@ export function useServerCards() {
 
       const shared = buildShared(summaryRes, vitalityRes)
       if (myReq !== serverCardsReqSeq) return
-      stats.value = summaryRes?.stats ?? null
 
       if (!cardRes) {
         if (myReq !== serverCardsReqSeq) return
@@ -329,5 +305,5 @@ export function useServerCards() {
     }
   }
 
-  return { servers, load, loading, loadError, hasLoaded, watchStrip }
+  return { servers, load, loading, loadError, hasLoaded }
 }
