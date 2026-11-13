@@ -120,6 +120,15 @@ ENRICH_EPISODE_INHERIT_PARENT = (os.getenv("ENRICH_EPISODE_INHERIT_PARENT", "1")
 # 0 = 回到「父级未终态也照抢」的旧抢单。
 ENRICH_CLAIM_EPISODE_PARENT_READY = env_int(
     "ENRICH_CLAIM_EPISODE_PARENT_READY", 1, 0, 1)
+# 认领候选组快照 TTL（秒，默认 30，下限 0；减负 A1）：_claim_batch 的
+# coalesce(series_id,id) GROUP BY 聚合是全站第一烧 CPU 的查询（生产
+# pg_stat_statements 实证四变体合计约 29 万次、单次 1.2~1.6 秒），而
+# 积压集合分钟级才有变化。TTL 内同进程复用有序候选组快照（只决定
+# 「先看哪些组」，组员仍走实时谓词 + 原子认领，正确性不靠快照新鲜度）；
+# 入库事件经 Session before_flush 监听同进程即时失效（见
+# _install_claim_flush_watch），跨进程入库最长 TTL 秒收敛。
+# 0 = 关闭缓存，认领逐字走旧路径。
+ENRICH_CLAIM_GROUPS_TTL_SEC = env_int("ENRICH_CLAIM_GROUPS_TTL_SEC", 30, 0)
 # 等父级打回（默认开）：打回时不把 enrich_priority 抬到 0（积压是 -10，抬到 0
 # 会插到全队最前被立刻重抢），且等待次数不计入「超 20 次转 none」的上限
 # （父级还没做完就标 none 是误杀）。0 = 旧行为（抬到 0，超 20 次放行走 none）。
@@ -3802,6 +3811,185 @@ def _episode_parent_ready_clause():
 # 递增口径（20 → 100 → 400）的封顶值，组聚合一轮只查一次，不再逐档
 # 重复聚合整个 pending 全集。取回的组没认领完时余组留下轮，不丢任务。
 _CLAIM_GROUPS_FETCH = 400
+# ---------------------------------------------------------------------------
+# 认领候选组快照（减负 A1）
+#
+# 一致性口径：快照只决定「按什么顺序先看哪些组」，不决定「能不能抢」——
+# 组员查询带全部实时谓词、认领是带 pending 谓词的原子 UPDATE，所以快照
+# 过期最多让调度新鲜度滞后 ≤TTL（新组晚 ≤30 秒被看到、已抽干的组被多试
+# 一次组员查询），绝不抢重、抢丢、抢到不该抢的行。快照里的排序在生成
+# 时刻冻结（含库轮转游标 _library_turn 的当时相位），TTL 内轮转相位不
+# 推进，公平性延迟同为 ≤TTL。
+#
+# 失效：同进程入库走下面的 before_flush 监听即时 bump 代际；跨进程
+# （扫描在别的进程入库）靠 TTL 兜底。组被「认领行数 < 当时剩余批次」
+# 证明已抽干后标 consumed，TTL 内不再重试它的组员查询；恰好装满批次
+# 的组不标（可能还有余量），下轮先重试它。
+_CLAIM_GROUPS_SNAPSHOT_SIZE = 400  # 与旧递增分页的累计上限对齐
+_CLAIM_GROUPS_CACHE: dict = {}
+_CLAIM_GROUPS_LOCK = threading.Lock()
+_CLAIM_GROUPS_GEN = {"gen": 0}
+
+
+def invalidate_claim_groups_cache() -> None:
+    """作废全部候选组快照（代际 +1 并清空）。"""
+    with _CLAIM_GROUPS_LOCK:
+        _CLAIM_GROUPS_GEN["gen"] += 1
+        _CLAIM_GROUPS_CACHE.clear()
+
+
+def _claim_groups_snapshot(key, fetch_groups):
+    """取（或生成）一份候选组快照。
+
+    ``key`` = (queue, skip_episode, ban_hold)：决定组集合与排序口径的
+    运行时输入只有这三样（其余都是进程级常量）。``fetch_groups()`` 只在
+    未命中时执行那条聚合查询，返回 [(gid, latest, lib), ...]。
+    """
+    now_mono = time.monotonic()
+    with _CLAIM_GROUPS_LOCK:
+        entry = _CLAIM_GROUPS_CACHE.get(key)
+        if (entry is not None
+                and entry["gen"] == _CLAIM_GROUPS_GEN["gen"]
+                and entry["expires"] > now_mono):
+            return entry
+    groups = fetch_groups()
+    entry = {
+        "gen": _CLAIM_GROUPS_GEN["gen"],
+        "expires": time.monotonic() + ENRICH_CLAIM_GROUPS_TTL_SEC,
+        "groups": list(groups),
+        "consumed": set(),
+    }
+    with _CLAIM_GROUPS_LOCK:
+        _CLAIM_GROUPS_CACHE[key] = entry
+    return entry
+
+
+_CLAIM_FLUSH_WATCH_INSTALLED = False
+
+
+def _install_claim_flush_watch() -> None:
+    """注册 Session before_flush 监听：入库事件即时作废候选组快照。
+
+    触发条件（只看 MediaItem）：
+    - 新条目以 enrich_status='pending' 插入；
+    - 任意条目 enrich_status 变为 'pending'（打回重认领）；
+    - series/season 行的 enrich_status / merged_into_id / deleted_at
+      变化（父级就绪联动 parent_ready，第一晚 0 认领事故的同款联动面）；
+    - repair_requested_at 由空变非空（用户修复请求要置顶）。
+
+    另注册 do_orm_execute 监听兜批量 DML：``Query.update`` /
+    ``Query.delete`` 与 ``session.execute(update(...))`` 不经过
+    before_flush 的逐对象检查，而 _reclaim_stale 与 janitor 各回捞
+    巡检恰恰全是批量口径（把 enriching/failed/none 批量打回
+    pending）——没有这道钩子，它们打回的行在快照眼里不存在：组已
+    被标 consumed 时整组被跳过、排序也还是旧相位，僵尸行回收后
+    无人能再认领（PR #79 冒烟实证）。凡命中 MediaItem 表的批量
+    更新/删除一律作废快照，唯一豁免是认领自身的那条原子 UPDATE
+    （pending→enriching 且只动 enrich_status/claimed_at/token
+    三件套）：它不产生新待办，豁免它快照才跨轮命中。
+
+    监听只 bump 代际、绝不抛错：整段包在 try/except 里，宁可漏失效
+    （TTL 兜底）也不许拖垮任何一次正常 flush。
+    """
+    global _CLAIM_FLUSH_WATCH_INSTALLED
+    if _CLAIM_FLUSH_WATCH_INSTALLED:
+        return
+    _CLAIM_FLUSH_WATCH_INSTALLED = True
+    try:
+        from sqlalchemy import event as _sa_event
+        from sqlalchemy import inspect as _sa_inspect
+        from sqlalchemy.orm import Session as _sa_session
+
+        def _history(obj, attr):
+            """只读内存里的属性历史（InstanceState 记录），绝不触发懒加载。
+
+            flush 过程中在同一连接上再发 SELECT 会污染执行上下文，所以
+            这里只看已加载的历史：没加载过的属性本来也不可能在本 session
+            里被改脏（改脏必然先加载），读不到就当没变（TTL 兜底）。
+            """
+            try:
+                return _sa_inspect(obj).attrs[attr].history
+            except Exception:  # noqa: BLE001
+                return None
+
+        def _history_changed(obj, attr):
+            hist = _history(obj, attr)
+            return bool(hist is not None and hist.has_changes())
+
+        def _watch(session, flush_context, instances):
+            try:
+                bump = False
+                for obj in session.new:
+                    if (isinstance(obj, em.MediaItem)
+                            and obj.__dict__.get("enrich_status") == "pending"):
+                        bump = True
+                        break
+                if not bump:
+                    for obj in session.dirty:
+                        if not isinstance(obj, em.MediaItem):
+                            continue
+                        item_type = obj.__dict__.get("item_type")
+                        if _history_changed(obj, "enrich_status"):
+                            hist = _history(obj, "enrich_status")
+                            new_status = (hist.added[0] if hist is not None
+                                          and hist.added else None)
+                            if new_status == "pending":
+                                bump = True
+                            elif item_type in ("series", "season"):
+                                bump = True
+                        if not bump and item_type in ("series", "season"):
+                            if (_history_changed(obj, "merged_into_id")
+                                    or _history_changed(obj, "deleted_at")):
+                                bump = True
+                        if not bump and _history_changed(
+                                obj, "repair_requested_at"):
+                            hist = _history(obj, "repair_requested_at")
+                            if (hist is not None and hist.added
+                                    and hist.added[0] is not None):
+                                bump = True
+                        if bump:
+                            break
+                if bump:
+                    invalidate_claim_groups_cache()
+            except Exception:  # noqa: BLE001 — 监听绝不拖垮 flush
+                pass
+
+        _sa_event.listen(_sa_session, "before_flush", _watch)
+
+        def _bulk_watch(orm_execute_state):
+            try:
+                state = orm_execute_state
+                if not (state.is_update or state.is_delete):
+                    return
+                table = getattr(state.statement, "table", None)
+                if (table is None
+                        or table.name != em.MediaItem.__tablename__):
+                    return
+                if state.is_update:
+                    values = getattr(state.statement, "_values", None)
+                    if values:
+                        keys = set()
+                        new_status = None
+                        for col, val in dict(values).items():
+                            key = getattr(col, "key", None)
+                            keys.add(key)
+                            if key == "enrich_status":
+                                new_status = getattr(val, "value", val)
+                        if (new_status == "enriching"
+                                and keys <= {"enrich_status",
+                                             "enrich_claimed_at",
+                                             "enrich_claim_token"}):
+                            return  # 认领自身：见 docstring 豁免口径
+                invalidate_claim_groups_cache()
+            except Exception:  # noqa: BLE001 — 监听绝不拖垮正常执行
+                pass
+
+        _sa_event.listen(_sa_session, "do_orm_execute", _bulk_watch)
+    except Exception:  # noqa: BLE001 — 注册失败就退回纯 TTL 口径
+        logger.warning("认领候选组入库监听注册失败，仅靠 TTL 失效", exc_info=True)
+
+
+_install_claim_flush_watch()
 
 
 def _claim_batch(db, limit: int, queue: Optional[str] = None) -> list:
@@ -3938,12 +4126,10 @@ def _claim_batch(db, limit: int, queue: Optional[str] = None) -> list:
     # （idx_item_enrich_claim_cover 把聚合实际读的列全纳入 INCLUDE），
     # 该查询走 index-only scan，不再逐行回表（生产同量级复现：
     # 1869ms → 约 58ms，Heap Fetches 归零）。
-    claimed: list = []
-    groups = (_order_with_fairness(groups_q)
-              .limit(max(_CLAIM_GROUPS_FETCH, limit)).all())
-    for gid, _latest, _lib in groups:
-        if len(claimed) >= limit:
-            break
+    # A1 快照（减负 A1）：TTL>0 时聚合只在快照未命中时打一次，TTL 内
+    # 各轮按快照顺序逐组走实时组员认领；TTL<=0 时直接走 A2 单查。
+    def _claim_group_members(gid, remaining: int) -> list:
+        """认领一个组的组员（谓词逐字实时，不吃任何缓存）。"""
         q = (db.query(em.MediaItem)
              .filter(em.MediaItem.enrich_status == "pending", due, unlocked,
                      not_episode, not_merged, not_ban_backfill, queue_pred,
@@ -3964,10 +4150,44 @@ def _claim_batch(db, limit: int, queue: Optional[str] = None) -> list:
                  em.MediaItem.season_number,
                  em.MediaItem.episode_number,
                  em.MediaItem.date_added.desc())
-             .limit(limit - len(claimed)))
+             .limit(remaining))
         # 原子认领：赢到的行才进 batch（并发下同一行只被一个 worker 赢走）
-        rows = _claim_group_atomic(db, q, now)
-        claimed.extend(rows)
+        return _claim_group_atomic(db, q, now)
+
+    claimed: list = []
+    if ENRICH_CLAIM_GROUPS_TTL_SEC > 0:
+        # 减负 A1：候选组快照路径。聚合只在快照未命中时打一次（上限
+        # 取 A2 的 max(_CLAIM_GROUPS_FETCH, limit)，与旧递增分页的
+        # 累计上限一致）；TTL 内各轮按快照顺序逐组走实时组员认领。
+        # 一致性口径见 _CLAIM_GROUPS_CACHE 注释。
+        entry = _claim_groups_snapshot(
+            (queue, bool(_skip_episode), bool(_ban_backfill_hold)),
+            lambda: _order_with_fairness(groups_q).limit(
+                max(_CLAIM_GROUPS_FETCH, limit)).all())
+        tried = 0
+        for gid, _latest, _lib in entry["groups"]:
+            if (len(claimed) >= limit
+                    or tried >= max(_CLAIM_GROUPS_SNAPSHOT_SIZE, limit)):
+                break
+            if gid in entry["consumed"]:
+                continue
+            tried += 1
+            remaining = limit - len(claimed)
+            rows = _claim_group_members(gid, remaining)
+            claimed.extend(rows)
+            if len(rows) < remaining:
+                # 认领数 < 当时余量 = 这组当前可抢的行已抽干，TTL 内
+                # 不再重试；恰好装满（==）不标，可能还有余量。
+                entry["consumed"].add(gid)
+    else:
+        # A2 单查：快照关掉时直接聚合一次取组（上限
+        # max(_CLAIM_GROUPS_FETCH, limit)），不再递增重查。
+        groups = (_order_with_fairness(groups_q)
+                  .limit(max(_CLAIM_GROUPS_FETCH, limit)).all())
+        for gid, _latest, _lib in groups:
+            if len(claimed) >= limit:
+                break
+            claimed.extend(_claim_group_members(gid, limit - len(claimed)))
     if claimed:
         db.commit()
         if ENRICH_LIBRARY_FAIRNESS:

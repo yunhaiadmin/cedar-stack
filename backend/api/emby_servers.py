@@ -183,7 +183,7 @@ def get_servers(_: models.WebUser = Depends(get_current_admin), db: Session = De
     入口是**一个服一个**的：多服部署下每个服各自填自己的地址，默认服沿用历史配置键。
     """
     scope_id = realm_id or realms.active_realm_id(db)
-    realm = realms.get_realm(db, scope_id)
+    realm = realms.realm_snapshot(db, scope_id)
     health = mount_health.read_ea_health(db, scope_id)
     mounts = health.get("mounts") or []
     return {

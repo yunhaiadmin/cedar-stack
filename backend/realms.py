@@ -64,7 +64,7 @@ def normalize_access_mode(mode: Optional[str]) -> str:
 
 def access_mode_of(db: Session, realm_id: Optional[int]) -> str:
     """某个服的接入方式（查不到这个服时按 paid 处理，即升级前的行为）"""
-    realm = get_realm(db, realm_id)
+    realm = realm_snapshot(db, realm_id)
     return normalize_access_mode(realm.access_mode if realm else None)
 
 
@@ -75,7 +75,7 @@ def is_free_realm(db: Session, realm_id: Optional[int]) -> bool:
 
 def access_note_of(db: Session, realm_id: Optional[int]) -> str:
     """该服的规则文案：公益服没写时给一条缺省提示，付费服返回空串"""
-    realm = get_realm(db, realm_id)
+    realm = realm_snapshot(db, realm_id)
     if realm is None:
         return ""
     note = (realm.access_note or "").strip()
@@ -86,7 +86,7 @@ def access_note_of(db: Session, realm_id: Optional[int]) -> str:
 
 def download_policy_of(db: Session, realm_id: Optional[int]) -> Optional[bool]:
     """该服的下载策略：None=跟随全局（公益服默认禁止）/ True=允许 / False=禁止"""
-    realm = get_realm(db, realm_id)
+    realm = realm_snapshot(db, realm_id)
     return None if realm is None else realm.allow_download
 
 # 这些配置键是「一个服一个」的：默认服用原键名，其它服加 __r<id> 后缀
@@ -125,6 +125,89 @@ def get_realm(db: Session, realm_id: Optional[int]) -> Optional[models.ServerRea
     return db.query(models.ServerRealm).filter(models.ServerRealm.id == int(realm_id)).first()
 
 
+# 服是极少变的配置小表，但 ``get_realm`` 按 id 点查在生产累计约 52 万次
+# （pg_stat_statements 实证），外加全表形状约 36 万次。只读热路径统一走
+# 下面的快照缓存（integrations.store 的统一 TTL 口径，60 秒）：
+# 写流程（update_realm / delete_realm 需要活的 ORM 对象）仍走 get_realm。
+_REALM_SNAPSHOT_CACHE = store.TtlSnapshotCache()
+
+
+def _realm_snapshot_dict(realm: models.ServerRealm) -> dict:
+    # getattr 带缺省：半量对象（只载部分列 / 测试替身）缺列时以 None
+    # 入快照，不许像旧写法那样 AttributeError 把整条读路径打崩。
+    return {col.name: getattr(realm, col.name, None)
+            for col in models.ServerRealm.__table__.columns}
+
+
+def realm_snapshot(db: Session, realm_id: Optional[int]) -> Optional[models.ServerRealm]:
+    """服的只读快照（脱离 session 的副本，命中缓存时不再查库）
+
+    返回的对象**不在任何 session 里**：只许读字段，不许改了提交落库，
+    更不许传给 ``update_realm`` / ``delete_realm``（它们要活对象，走
+    ``get_realm``）。不存在的 id 同样缓存（负缓存）。写路径
+    （create/update/delete）提交后显式失效，同进程立即读到新值；
+    跨进程写入最长 60 秒（TTL）收敛。
+    """
+    if realm_id is None:
+        return None
+    key = int(realm_id)
+    hit, snap = _REALM_SNAPSHOT_CACHE.lookup(key)
+    if hit:
+        return None if snap is None else models.ServerRealm(**snap)
+    realm = get_realm(db, key)
+    snap = None if realm is None else _realm_snapshot_dict(realm)
+    _REALM_SNAPSHOT_CACHE.put(key, snap)
+    return None if snap is None else models.ServerRealm(**snap)
+
+
+def invalidate_realm_cache(realm_id: Optional[int] = None) -> None:
+    """服写路径提交后调用：给了 id 只清该服，不给全清。"""
+    if realm_id is None:
+        _REALM_SNAPSHOT_CACHE.invalidate()
+    else:
+        _REALM_SNAPSHOT_CACHE.invalidate(int(realm_id))
+
+
+_REALM_FLUSH_WATCH_INSTALLED = False
+
+
+def _install_realm_flush_watch() -> None:
+    """Session before_flush 监听：ServerRealm 的 ORM 级写即时作废快照。
+
+    显式失效只挂在 create/update/delete 三个写函数上；任何绕过它们
+    的 ORM 直写（运维脚本、其他模块顺手改 access_mode、测试直改）
+    都会让同进程快照继续读旧值——is_free_realm 是抽奖/对决/治理的
+    钱面门禁，吃旧值就是按错的服规矩放行（PR #79 冒烟实证）。
+    监听只作废缓存、整段包 try/except，宁可漏失效（TTL 兜底）也
+    不许拖垮任何一次正常 flush；写服是低频操作，全清即可。
+    """
+    global _REALM_FLUSH_WATCH_INSTALLED
+    if _REALM_FLUSH_WATCH_INSTALLED:
+        return
+    _REALM_FLUSH_WATCH_INSTALLED = True
+    try:
+        from sqlalchemy import event as _sa_event
+        from sqlalchemy.orm import Session as _sa_session
+
+        def _watch(session, flush_context, instances):
+            try:
+                for obj in (list(session.new) + list(session.dirty)
+                            + list(session.deleted)):
+                    if isinstance(obj, models.ServerRealm):
+                        invalidate_realm_cache()
+                        return
+            except Exception:  # noqa: BLE001 — 监听绝不拖垮 flush
+                pass
+
+        _sa_event.listen(_sa_session, "before_flush", _watch)
+    except Exception:  # noqa: BLE001 — 注册失败就退回纯 TTL 口径
+        logger.warning("服快照 flush 监听注册失败，仅靠 TTL 失效",
+                       exc_info=True)
+
+
+_install_realm_flush_watch()
+
+
 def realm_by_slug(db: Session, slug: str) -> Optional[models.ServerRealm]:
     slug = (slug or "").strip().lower()
     if not slug:
@@ -157,6 +240,7 @@ def ensure_default_realm(db: Session) -> models.ServerRealm:
     db.add(realm)
     db.commit()
     db.refresh(realm)
+    invalidate_realm_cache(realm.id)
     logger.info("已创建默认服：%s（id=%s，slug=%s）", realm.name, realm.id, realm.slug)
     return realm
 
@@ -476,6 +560,7 @@ def create_realm(db: Session, *, name: str, slug: str = "", url: str = "",
     db.add(realm)
     db.commit()
     db.refresh(realm)
+    invalidate_realm_cache(realm.id)
     logger.info("已创建服：%s（id=%s，slug=%s）", realm.name, realm.id, realm.slug)
     return realm
 
@@ -536,6 +621,7 @@ def update_realm(db: Session, realm: models.ServerRealm, *, name: Optional[str] 
         realm.allow_download = bool(allow_download)
     db.commit()
     db.refresh(realm)
+    invalidate_realm_cache(realm.id)
     return realm
 
 
@@ -545,6 +631,7 @@ def delete_realm(db: Session, realm: models.ServerRealm, *, move_to: Optional[in
     默认**拒绝**删除还有数据的服（订阅/套餐/媒体库/服务器…），除非 ``move_to`` 指定了
     另一个服把数据整体移交过去。默认服永远不能删：历史配置键挂在它身上。
     """
+    deleted_id = realm.id
     if realm.id == legacy_realm_id(db):
         raise ValueError("默认服不能删除（历史配置挂在它上面）；可以改名，或把数据移走后新建另一套")
     if move_to is not None and int(move_to) == realm.id:
@@ -581,7 +668,10 @@ def delete_realm(db: Session, realm: models.ServerRealm, *, move_to: Optional[in
             db.query(models.SystemConfig).filter(models.SystemConfig.key == key).delete()
     db.delete(realm)
     db.commit()
-    if active_realm_id(db) == realm.id:
+    invalidate_realm_cache(deleted_id)
+    if target is not None:
+        invalidate_realm_cache(target.id)
+    if active_realm_id(db) == deleted_id:
         set_active_realm(db, target.id if target else legacy_realm_id(db))
     logger.info("已删除服 #%s（数据移交给 %s）", realm.id, target.id if target else "无")
     return {"deleted": realm.id, "moved_to": target.id if target else None, **payload}

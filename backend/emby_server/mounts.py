@@ -69,6 +69,7 @@ from backend.emby_server.playback_security import (
 )
 from backend.emby_server.env_util import env_float, env_int
 from backend.emby_server import subtitles, transfer115
+from backend.integrations import store as _config_store
 
 logger = logging.getLogger(__name__)
 
@@ -2239,8 +2240,66 @@ def check_mount_subpath(db: Session, mount_id: int, rel: str) -> None:
         provider.list_dir(rel)  # 子目录不存在/不可读时抛 MountError
 
 
+# 挂载是极少变的配置小表，但按 id 点查在生产累计约 1207 万次
+# （pg_stat_statements 实证，全站第一）。纯读轮询路径（追新快照、
+# Drive 变更派生等）统一走下面的快照缓存（integrations.store 的统一
+# TTL 口径，60 秒）；「停用必须立即生效」的路径（播放目标解析、挂载
+# 直读、存在性判断）走 load_mount_fresh 现行读，不吃快照。写路径在
+# portal_mount_routes（增删改挂载的管理端），提交后调
+# invalidate_mount_cache；跨进程写入最长 60 秒收敛。
+_MOUNT_SNAPSHOT_CACHE = _config_store.TtlSnapshotCache()
+
+
+def _mount_snapshot_dict(mount) -> dict:
+    # getattr 带缺省：半量对象（只载部分列 / 测试替身）缺列时以 None
+    # 入快照，不许像旧写法那样 AttributeError 把整条读路径打崩
+    # （drive_changes 的 fake DB 用例实证）。
+    return {col.name: getattr(mount, col.name, None)
+            for col in em.StorageMount.__table__.columns}
+
+
 def load_mount(db: Session, mount_id: int):
-    return db.query(em.StorageMount).filter(em.StorageMount.id == mount_id).first()
+    """按 id 取挂载（只读快照，命中缓存时不再查库）
+
+    返回的对象**不在任何 session 里**：只许读字段，不许改了提交落库。
+    要改挂载走管理端（portal_mount_routes 的 ``_load_mount`` 取活对象）。
+    不存在的 id 同样缓存（负缓存）。
+    """
+    if mount_id is None:
+        return None
+    key = int(mount_id)
+    hit, snap = _MOUNT_SNAPSHOT_CACHE.lookup(key)
+    if hit:
+        return None if snap is None else em.StorageMount(**snap)
+    mount = db.query(em.StorageMount).filter(em.StorageMount.id == key).first()
+    snap = None if mount is None else _mount_snapshot_dict(mount)
+    _MOUNT_SNAPSHOT_CACHE.put(key, snap)
+    return None if snap is None else em.StorageMount(**snap)
+
+
+def invalidate_mount_cache(mount_id=None) -> None:
+    """挂载写路径提交后调用：给了 id 只清该挂载，不给全清。"""
+    if mount_id is None:
+        _MOUNT_SNAPSHOT_CACHE.invalidate()
+    else:
+        _MOUNT_SNAPSHOT_CACHE.invalidate(int(mount_id))
+
+
+def load_mount_fresh(db: Session, mount_id: int):
+    """按 id 取挂载的**现行**行（不走快照缓存，并顺手刷新快照）。
+
+    只给「停用必须立即生效」语义的路径用：``resolve_play_target`` 查解析
+    缓存前先现读挂载判 ``is_enabled`` 与配置指纹（测试钉 5/6），挂载直读
+    同理——这两处若吃快照，停用/改配置在别的进程生效后本进程最长 60 秒
+    还在出流。其余只读路径走 ``load_mount`` 快照即可。
+    """
+    if mount_id is None:
+        return None
+    key = int(mount_id)
+    mount = db.query(em.StorageMount).filter(em.StorageMount.id == key).first()
+    _MOUNT_SNAPSHOT_CACHE.put(
+        key, None if mount is None else _mount_snapshot_dict(mount))
+    return mount
 
 
 # ==================== 解析结果缓存（FMBY 批一 #1）====================
@@ -2431,7 +2490,7 @@ def resolve_play_target(file_path: Optional[str], db: Session, library=None, *,
             and getattr(anchor_mount, "is_enabled", False)):
         mount = anchor_mount
     if mount is None:
-        mount = load_mount(db, mount_id)
+        mount = load_mount_fresh(db, mount_id)
     if mount is None:
         raise MountError(f"挂载 #{mount_id} 不存在（该条目来自已删除的挂载）")
     if not mount.is_enabled:
@@ -2471,7 +2530,9 @@ def media_exists(file_path: str, db: Session, library=None) -> bool:
     parsed = parse_mount_path(file_path)
     if parsed is None:
         return os.path.exists(file_path)
-    mount = load_mount(db, parsed[0])
+    # 存在性判断是扫描清理的依据：挂载停用必须立即反映为不可用，
+    # 走现行读（load_mount_fresh），不吃快照。
+    mount = load_mount_fresh(db, parsed[0])
     if mount is None or not mount.is_enabled:
         return False
     try:

@@ -165,7 +165,7 @@ def realm_label(db: Session, realm_id: Optional[int]) -> str:
     """服名（给提示文案用；查不到时给个能指认的写法）"""
     from backend import realms
 
-    realm = realms.get_realm(db, realm_id)
+    realm = realms.realm_snapshot(db, realm_id)
     return realm.name if realm else f"#{realm_id}"
 
 

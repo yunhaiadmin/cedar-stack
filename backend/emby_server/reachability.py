@@ -478,7 +478,7 @@ def _is_local_only(url: str) -> bool:
 def summary(db: Session, realm_id: Optional[int] = None) -> dict:
     """完整检查结果：出流方式 + 逐库判定 + 用户端地址一致性（后台一个接口拿全）"""
     ctx = build_context(db, realm_id)
-    realm = realms.get_realm(db, ctx.realm_id) if ctx.realm_id else None
+    realm = realms.realm_snapshot(db, ctx.realm_id) if ctx.realm_id else None
     libraries = unreachable_libraries(db, ctx.realm_id, include_ok=True)
     client = client_endpoint_check(db, ctx.realm_id, ctx)
     counts = {LEVEL_OK: 0, LEVEL_WARN: 0, LEVEL_BAD: 0}

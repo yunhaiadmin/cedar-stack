@@ -166,7 +166,7 @@ def resolve_local_file(db: Session, item) -> Optional[str]:
         return None
     mount = None
     try:
-        mount = mount_lib.load_mount(db, mount_id)
+        mount = mount_lib.load_mount_fresh(db, mount_id)
     except Exception:  # noqa: BLE001 — 查不到挂载按未接入处理
         mount = None
     if mount is None or not getattr(mount, "is_enabled", False):

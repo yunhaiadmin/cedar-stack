@@ -368,7 +368,7 @@ def node_me(db: Session = Depends(get_db)):
         "node": describe(db),
         "claimed": node_id is not None,
         "realm_id": realm_id,
-        "realm_slug": (realms.get_realm(db, realm_id).slug if realm_id else ""),
+        "realm_slug": (realms.realm_snapshot(db, realm_id).slug if realm_id else ""),
         "node_key": configured_key(),
         "libraries": _node_libraries(db, realm_id, node_id),
     }

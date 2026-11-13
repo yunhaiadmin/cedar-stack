@@ -216,7 +216,7 @@ def mounts_health(db: Session, service: str, realm_id: Optional[int] = None) -> 
                 kind = lsh.FAILURE_KIND_AUTH if m.get("auth_error") else lsh.FAILURE_KIND_PROBE
             lsh.sync_mount_probe_to_source_health(db, m["id"], bool(m["ok"]), kind)
     node = playback_node(db, realm_id)
-    realm = realms.get_realm(db, realm_id) if realm_id is not None else None
+    realm = realms.realm_snapshot(db, realm_id) if realm_id is not None else None
     return {
         "service": service,
         "checked_at": datetime.now().isoformat(),

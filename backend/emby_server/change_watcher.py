@@ -559,7 +559,7 @@ def _find_new_videos_remote(db: Session, library_id: int, mount_id: int,
     if _drive_changes_active():
         logger.debug("[chase-new] drive_changes 在跑，远程源 %s 本轮跳过快照列举", skey)
         return [], 0
-    mount = db.query(em.StorageMount).filter(em.StorageMount.id == mount_id).first()
+    mount = mount_lib.load_mount(db, mount_id)
     if mount is None:
         return [], 0
     provider = _chase_provider(mount, db)
