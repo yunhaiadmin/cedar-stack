@@ -470,11 +470,11 @@ const year = new Date().getFullYear()
       <div class="pin-stage">
         <div class="pin-visual" :style="pinVisualStyle()" aria-hidden="true">
           <div class="pin-drift" :style="pinDriftStyle()">
-            <div class="pin-beams" :class="{ 'is-paused': !pinInView }">
-              <span v-for="n in 10" :key="n" class="pin-col" :class="`pin-col--${n}`" />
-            </div>
             <div class="pin-beams pin-beams--glow" :class="{ 'is-paused': !pinInView }">
-              <span v-for="n in 10" :key="n" class="pin-col" :class="`pin-col--${n}`" />
+              <span v-for="n in 8" :key="n" class="pin-bar" :class="`pin-bar--${n}`" />
+            </div>
+            <div class="pin-beams" :class="{ 'is-paused': !pinInView }">
+              <span v-for="n in 8" :key="n" class="pin-bar" :class="`pin-bar--${n}`" />
             </div>
           </div>
           <div class="pin-vignette" :style="vignetteStyle()" />
@@ -887,18 +887,22 @@ const year = new Date().getFullYear()
   inset: 0;
   will-change: transform;
 }
-/* 光柱本体：10 根竖向渐变光柱（彩虹 8 停点＋2 混合），柱顶圆头＋向上渐隐，
-   两层羽化（本体 blur 8px、辉光层 blur 26px）代替原站视频的柔边光柱 */
+/* 光柱本体（按实测清单 §7 重做，代原 10 根等距彩虹幕）：黑底舞台上的 8 条疏密竖条。
+   每条两层同构：柔晕层（--glow，整条宽、层 blur 28px）垫底＋锐核层（居中窄条、宽约整条 26%，
+   背景取整条渐变的中央切片、层 blur 2px 得约 2px 锐边）；纵向明暗由 mask 给出
+   （黑→约 1/3 高亮峰→黑），宽条经 clip-path 中部最宽、向顶部收窄。
+   位置/主色逐条引 §7（x 以 1920 宽换算 %）；原站该区是视频、自带缓慢漂移/呼吸，
+   自发运动保留图层级 26s/32s 呼吸作等价自绘，不引用原站素材 */
 .pin-beams {
   position: absolute;
-  inset: -4% -7%;
-  filter: blur(6px) saturate(1.35);
+  inset: 0;
+  filter: blur(2px) saturate(1.3);
   animation: pin-breathe 26s ease-in-out infinite alternate;
   will-change: transform, filter;
 }
 .pin-beams--glow {
-  filter: blur(26px) saturate(1.5);
-  opacity: 0.55;
+  filter: blur(28px) saturate(1.45);
+  opacity: 0.6;
   animation-duration: 32s;
   animation-delay: -14s;
 }
@@ -907,12 +911,12 @@ const year = new Date().getFullYear()
 }
 @keyframes pin-breathe {
   from {
-    transform: translateX(-10px);
-    filter: blur(6px) saturate(1.3) brightness(0.96);
+    transform: translateX(-8px);
+    filter: blur(2px) saturate(1.26) brightness(0.96);
   }
   to {
-    transform: translateX(12px);
-    filter: blur(6px) saturate(1.45) brightness(1.13);
+    transform: translateX(10px);
+    filter: blur(2px) saturate(1.38) brightness(1.1);
   }
 }
 .pin-beams--glow {
@@ -920,30 +924,58 @@ const year = new Date().getFullYear()
 }
 @keyframes pin-breathe-glow {
   from {
-    transform: translateX(10px) scale(1.03);
-    filter: blur(26px) saturate(1.45) brightness(1.05);
+    transform: translateX(8px) scale(1.02);
+    filter: blur(28px) saturate(1.4) brightness(1.04);
   }
   to {
-    transform: translateX(-12px) scale(1.07);
-    filter: blur(26px) saturate(1.6) brightness(1.2);
+    transform: translateX(-10px) scale(1.05);
+    filter: blur(28px) saturate(1.55) brightness(1.16);
   }
 }
-.pin-col {
+.pin-bar {
   position: absolute;
-  bottom: -2%;
-  width: 13.5%;
-  border-radius: 999px 999px 0 0;
+  top: 0;
+  bottom: 0;
+  -webkit-mask-image: linear-gradient(to top, transparent 0%, #000 17%, #000 27%, rgba(0, 0, 0, 0.5) 55%, transparent 92%);
+  mask-image: linear-gradient(to top, transparent 0%, #000 17%, #000 27%, rgba(0, 0, 0, 0.5) 55%, transparent 92%);
 }
-.pin-col--1 { left: -1%; height: 82%; background: linear-gradient(to top, #2f8fe0 52%, rgba(47, 143, 224, 0) 97%); }
-.pin-col--2 { left: 9.5%; height: 90%; background: linear-gradient(to top, #4a7fdd 52%, rgba(74, 127, 221, 0) 97%); }
-.pin-col--3 { left: 20%; height: 78%; background: linear-gradient(to top, #6f7ad8 52%, rgba(111, 122, 216, 0) 97%); }
-.pin-col--4 { left: 30.5%; height: 93%; background: linear-gradient(to top, #c46c90 52%, rgba(196, 108, 144, 0) 97%); }
-.pin-col--5 { left: 41%; height: 85%; background: linear-gradient(to top, #e8766f 52%, rgba(232, 118, 111, 0) 97%); }
-.pin-col--6 { left: 51.5%; height: 95%; background: linear-gradient(to top, #f2a45a 52%, rgba(242, 164, 90, 0) 97%); }
-.pin-col--7 { left: 62%; height: 80%; background: linear-gradient(to top, #ecd04f 52%, rgba(236, 208, 79, 0) 97%); }
-.pin-col--8 { left: 72.5%; height: 91%; background: linear-gradient(to top, #b5cc62 52%, rgba(181, 204, 98, 0) 97%); }
-.pin-col--9 { left: 83%; height: 84%; background: linear-gradient(to top, #95c77d 52%, rgba(149, 199, 125, 0) 97%); }
-.pin-col--10 { left: 93.5%; height: 88%; background: linear-gradient(to top, #39b3ec 52%, rgba(57, 179, 236, 0) 97%); }
+/* 宽条向顶部收窄（中部最宽）；两条细线（--1/--8）不收窄 */
+.pin-bar--2,
+.pin-bar--3,
+.pin-bar--4,
+.pin-bar--5,
+.pin-bar--6,
+.pin-bar--7 {
+  clip-path: polygon(12% 100%, 0% 58%, 10% 26%, 28% 0%, 72% 0%, 90% 26%, 100% 58%, 88% 100%);
+}
+/* 逐条落位（§7，x/1920 换算 %）：left＝条左缘、width＝条宽，此为柔晕层整条 */
+.pin-bar--1 { left: 18.96%; width: 0.42%; background: linear-gradient(to right, transparent, #001b8b 50%, transparent); }
+.pin-bar--2 { left: 25.52%; width: 6.25%; background: linear-gradient(to right, #013bc2, #000003); }
+.pin-bar--3 { left: 31.67%; width: 5.83%; background: linear-gradient(to right, rgba(0, 96, 194, 0) 0%, #0060c2 30%, #00b1e5 50%, #0060c2 70%, rgba(0, 96, 194, 0) 100%); }
+.pin-bar--4 { left: 37.92%; width: 3.75%; background: linear-gradient(to right, #77f0ee, #02eeef, #f4f4d8, #b0ece0); }
+.pin-bar--5 { left: 50%; width: 4.17%; background: linear-gradient(to right, #fff08a, #ffeda3); }
+.pin-bar--6 { left: 56.04%; width: 6.04%; background: linear-gradient(to right, #df7db1, #f492ae, #ffa189, #ffb17e, #ffc873, #ffd56d, #fff59f); }
+.pin-bar--7 { left: 62.29%; width: 6.04%; background: linear-gradient(to right, #010105, #070026, #200653, #4c147c, #691e8f, #952e95, #b9409c, #e66aa5, #f9aeb0); }
+.pin-bar--8 { left: 73.96%; width: 0.42%; background: linear-gradient(to right, transparent, #2a1b6e 50%, transparent); }
+/* 锐核层：居中窄条（整条宽的 26%），横向渐变背景放大到整条全幅、只露中央切片，
+   切片边缘即约 2px 锐边（青条 §7 注明核心色纵向变化，单独给纵向渐变、不走切片） */
+.pin-beams:not(.pin-beams--glow) .pin-bar {
+  background-size: 384.6% 100%;
+  background-position: 50% 50%;
+  background-repeat: no-repeat;
+}
+.pin-beams:not(.pin-beams--glow) .pin-bar--1 { left: 19.12%; width: 0.11%; }
+.pin-beams:not(.pin-beams--glow) .pin-bar--2 { left: 27.83%; width: 1.63%; }
+.pin-beams:not(.pin-beams--glow) .pin-bar--3 {
+  left: 33.83%;
+  width: 1.52%;
+  background: linear-gradient(to top, #0060c2 0%, #00b1e5 33%, #0060c2 90%);
+}
+.pin-beams:not(.pin-beams--glow) .pin-bar--4 { left: 39.31%; width: 0.98%; }
+.pin-beams:not(.pin-beams--glow) .pin-bar--5 { left: 51.54%; width: 1.08%; }
+.pin-beams:not(.pin-beams--glow) .pin-bar--6 { left: 58.27%; width: 1.57%; }
+.pin-beams:not(.pin-beams--glow) .pin-bar--7 { left: 64.52%; width: 1.57%; }
+.pin-beams:not(.pin-beams--glow) .pin-bar--8 { left: 74.12%; width: 0.11%; }
 /* 文案区恒常柔影（保证两态文字在亮柱上可读） */
 .pin-visual::after {
   content: '';
