@@ -8,12 +8,12 @@
       @click="toggle"
     />
     <div v-if="open" class="pc-expand">
-      <div v-if="lhError" class="v4-err">登录记录加载失败，请稍后重试<br><button class="v4-retry" @click="loadLoginHistory(true)">重试</button></div>
-      <div v-else-if="lhLoading && lhItems.length === 0" class="v4-skeleton" style="height:96px"></div>
-      <div v-else-if="lhItems.length === 0" class="lh-empty">还没有登录记录</div>
+      <div v-if="lhError" class="sx-err">登录记录加载失败，请稍后重试<button type="button" class="sx-mini-btn" @click="loadLoginHistory(true)">重试</button></div>
+      <div v-else-if="lhLoading && lhItems.length === 0" class="sx-loading"><span class="sx-spin" aria-hidden="true"></span>正在加载…</div>
+      <div v-else-if="lhItems.length === 0" class="sx-empty">还没有登录记录</div>
       <ul v-else class="lh-list">
         <li v-for="(it, i) in lhItems" :key="i" class="lh-row">
-          <span class="lh-badge" :class="it.success ? 'ok' : 'bad'">{{ it.success ? '成功' : '失败' }}</span>
+          <span class="sx-status" :class="it.success ? 'sx-status--ok' : 'sx-status--bad'"><span class="sx-dot" aria-hidden="true"></span>{{ it.success ? '成功' : '失败' }}</span>
           <span class="lh-main">
             <span class="lh-line1">{{ it.reason_label }} · {{ fmtTime(it.created_at) }}</span>
             <span class="lh-line2">{{ it.ip || '未知 IP' }}<span v-if="it.region"> · {{ it.region }}</span></span>
@@ -22,7 +22,7 @@
         </li>
       </ul>
       <div v-if="!lhError && lhItems.length < lhTotal" class="lh-more">
-        <button type="button" class="v4-retry" :disabled="lhLoading" @click="loadLoginHistory(false)">{{ lhLoading ? '正在加载…' : '加载更多' }}</button>
+        <button type="button" class="sx-mini-btn" :disabled="lhLoading" @click="loadLoginHistory(false)">{{ lhLoading ? '正在加载…' : '加载更多' }}</button>
       </div>
     </div>
   </div>
@@ -83,29 +83,94 @@ async function loadLoginHistory(reset: boolean) {
 </script>
 
 <style scoped>
+/* 展开面板与记录行：状态行模具（说明书 2.6）——状态=圆点+文字、
+   行间 1px --uhd-l-divider；加载态=旋转圈+灰字（1.6）、空态=虚线卡（2.7） */
 .pc-expand {
-  border-top: 1px dashed var(--line);
-  padding: 12px 14px 14px;
+  border-top: var(--uhd-border-w) solid var(--uhd-l-divider);
+  padding: 14px 2px 18px;
+  font-family: var(--uhd-font-sans);
 }
-.lh-empty { font-size: 13px; color: var(--ink2); padding: 10px 2px; }
+.sx-mini-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 16px;
+  background: var(--uhd-l-surface);
+  border: var(--uhd-border-w) solid var(--uhd-l-border);
+  border-radius: var(--uhd-radius-pill);
+  color: var(--uhd-l-text);
+  font-size: var(--uhd-fs-caption);
+  font-weight: var(--uhd-fw-medium);
+  cursor: pointer;
+}
+.sx-mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.sx-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 0;
+  font-size: var(--uhd-fs-caption);
+  color: var(--uhd-l-text-2);
+}
+.sx-spin {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--uhd-l-divider);
+  border-top-color: var(--uhd-l-text-2);
+  animation: uhd-spin 0.8s linear infinite;
+}
+.sx-err {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border: 1px dashed #d4d4d8;
+  border-radius: 16px;
+  font-size: var(--uhd-fs-caption);
+  line-height: 1.6;
+  color: var(--uhd-l-text-2);
+}
+.sx-empty {
+  padding: 26px 20px;
+  border: 1px dashed #d4d4d8;
+  border-radius: 16px;
+  text-align: center;
+  font-size: var(--uhd-fs-body);
+  line-height: 1.6;
+  color: var(--uhd-l-text-2);
+}
+.sx-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  width: 58px;
+  padding-top: 3px;
+  font-size: var(--uhd-fs-caption);
+  white-space: nowrap;
+}
+.sx-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.sx-status--ok { color: var(--uhd-success); }
+.sx-status--ok .sx-dot { background: var(--uhd-dot-ok); }
+.sx-status--bad { color: var(--uhd-danger); }
+.sx-status--bad .sx-dot { background: var(--uhd-dot-bad); }
 .lh-list { list-style: none; margin: 0; padding: 0; }
 .lh-row {
-  display: flex; gap: 10px; align-items: flex-start;
-  padding: 9px 2px; border-top: 1px solid var(--paper2);
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 11px 0; border-top: var(--uhd-border-w) solid var(--uhd-l-divider);
 }
-.lh-row:first-child { border-top: none; }
-.lh-badge {
-  flex-shrink: 0; font-size: 11px; line-height: 1;
-  padding: 4px 7px; border-radius: 999px; margin-top: 1px;
-  border: 1px solid var(--au-border, #e3e3e2); color: var(--ink2);
-}
-.lh-badge.ok { color: var(--au-primary, #016a71); border-color: var(--au-primary, #016a71); }
+.lh-row:first-child { border-top: none; padding-top: 2px; }
 .lh-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.lh-line1 { font-size: 13px; color: var(--ink); }
-.lh-line2 { font-size: 12px; color: var(--ink2); }
+.lh-line1 { font-size: var(--uhd-fs-caption); color: var(--uhd-l-text); }
+.lh-line2 { font-size: var(--uhd-fs-aux); color: var(--uhd-l-text-2); }
 .lh-ua {
-  font-size: 11px; color: var(--ink2);
+  font-size: var(--uhd-fs-aux-sm); color: var(--uhd-l-text-3);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
 }
-.lh-more { text-align: center; margin-top: 10px; }
+.lh-more { text-align: center; margin-top: 12px; }
 </style>
