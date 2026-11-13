@@ -192,6 +192,7 @@
   --p-text: var(--uhd-l-text);
   --p-text-2: var(--uhd-l-text-2);
   --p-warn: var(--uhd-warn-text);
+}
 
 /* ============================================================
    片库面色板 C（批 3，《Aetrix × UHDNow 设计说明书 v1》第 1.1 节 C）
