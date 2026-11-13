@@ -286,6 +286,15 @@ const router = createRouter({
     // 例外：/media/:id 已按新口径复活为条目详情页（见上 panelV4 路由：
     // 只做信息 + 季集 + 缺集求补，不恢复浏览/播放）。
     // 注意：/profile 的承接入口是 /game/account（账号设置设施）。
+    // 网页播放器（2026-11-13 用户改规矩立项）：全屏播放页，自带覆盖层，
+    // 不挂 panel 布局。契约：/play/:id?ms=<MediaSourceId>&at=<起始秒数>，
+    // ms/at 均可选，批 3 播放前弹层的「开始播放」按此契约跳转。
+    {
+      path: '/play/:id',
+      name: 'web-player',
+      component: () => import('@/views/WebPlayerView.vue'),
+      meta: { title: '播放', requiresAuth: true },
+    },
     {
       path: '/:pathMatch(.*)*',
       name: 'not-found',
