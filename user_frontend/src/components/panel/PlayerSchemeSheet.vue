@@ -127,7 +127,7 @@
             </p>
             <p v-if="schemes.length === 0" class="psp-note">
               还没有导入第三方播放器；要导入去
-              <RouterLink to="/game/operator" @click="close">接线员页</RouterLink>。
+              <RouterLink to="/game/operator" @click="close">播放账号页</RouterLink>。
             </p>
           </template>
         </div>
@@ -346,13 +346,13 @@ async function copyTitle() {
 
 async function pick(s: PlayerScheme) {
   // 跳转前先把提示留在页面上：没装 App 时 scheme 不会离开本页
-  toast.info(`正在打开${s.name}。没装的话去接线员页导入`)
+  toast.info(`正在打开${s.name}。没装的话去播放账号页导入`)
   await nextTick()
   await new Promise<void>((resolve) => {
     jumpTimer = window.setTimeout(resolve, 600)
   })
   if (!open.value) return
-  if (!assignImportScheme(s.url)) toast.info('没装的话去接线员页导入')
+  if (!assignImportScheme(s.url)) toast.info('没装的话去播放账号页导入')
 }
 
 /**

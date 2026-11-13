@@ -70,8 +70,8 @@ const alerts = computed<AlertItem[]>(() => {
         key: 'vitality-danger',
         level: 'danger',
         title: '活力不足，暂时看不了片',
-        text: `当前活力 ${vit.vitality} 点，低于 ${limit} 点就播不了。今天看片能自动回 1 点，也可以去补给站用能量补（10 能量＝1 活力）。`,
-        action: { to: '/shop', label: '去补给站补活力' },
+        text: `当前活力 ${vit.vitality} 点，低于 ${limit} 点就播不了。今天看片能自动回 1 点，也可以去商店用能量补（10 能量＝1 活力）。`,
+        action: { to: '/shop', label: '去商店补活力' },
       })
     } else if (vit.vitality <= limit + 1) {
       out.push({

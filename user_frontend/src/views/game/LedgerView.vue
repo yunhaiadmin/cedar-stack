@@ -132,7 +132,7 @@ function typeMeta(t: string) {
 
 /** 世界观映射：游戏化标签（值按任务约定） */
 const GAME_META: Record<string, { icon: string; title: string }> = {
-  checkin: { icon: '📋', title: '每日报到' },
+  checkin: { icon: '📋', title: '签到' },
   invite: { icon: '🤝', title: '邀请奖励' },
   invitee: { icon: '🎁', title: '受邀奖励' },
   rebate: { icon: '💰', title: '充值返利' },

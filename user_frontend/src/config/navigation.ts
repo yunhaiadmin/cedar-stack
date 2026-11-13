@@ -62,7 +62,7 @@ export interface NavItem {
 export const primaryNav: NavItem[] = [
   { name: '发现', path: '/', icon: Clapperboard },
   { name: '服务器', path: '/server', icon: Server },
-  { name: '补给站', path: '/shop', icon: ShoppingBag },
+  { name: '商店', path: '/shop', icon: ShoppingBag },
   { name: '我的', path: '/game/account', icon: User },
 ]
 

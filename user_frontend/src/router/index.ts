@@ -106,7 +106,7 @@ const router = createRouter({
             path: '/shop',
             name: 'shop',
             component: () => import('@/views/panel/ShopView.vue'),
-            meta: { title: '补给站', requiresAuth: true },
+            meta: { title: '商店', requiresAuth: true },
           },
           // v4 游戏化第一批：营地设施（需要登录）
           // 求片反馈（2026-11-13 合并页）：许愿池＋求救信号合并为一页，
@@ -132,7 +132,7 @@ const router = createRouter({
             path: '/game/ledger',
             name: 'game-ledger',
             component: () => import('@/views/game/LedgerView.vue'),
-            meta: { title: '能量账本', requiresAuth: true },
+            meta: { title: '能量明细', requiresAuth: true },
           },
           // 代理中心（2026-11-06 代理分销）：入口只在账号设置里、且仅代理可见，不占导航
           {
@@ -145,13 +145,13 @@ const router = createRouter({
             path: '/game/supply',
             name: 'game-supply',
             component: () => import('@/views/game/SupplyLogView.vue'),
-            meta: { title: '补给记录', requiresAuth: true },
+            meta: { title: '商店记录', requiresAuth: true },
           },
           {
             path: '/game/operator',
             name: 'game-operator',
             component: () => import('@/views/game/OperatorView.vue'),
-            meta: { title: '接线员', requiresAuth: true },
+            meta: { title: '播放账号', requiresAuth: true },
           },
           // v4 游戏化：「我的」个人中心（身份卡 / 状态总览 / 分组入口行）；
           // 设置类功能在子页 /game/account/settings，会员管理在 /game/account/member

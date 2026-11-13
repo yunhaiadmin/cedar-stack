@@ -18,8 +18,8 @@ import { subscriptionUsedPercent } from '@/utils/subscription'
 const ROUTES = { store: '/store', shop: '/shop' } as const
 const COPY = {
   badgeActive: '生效中', badgeExpiring: '临期', badgeExpired: '已过期', badgeFree: '免费开放',
-  footerOpen: '立即开通', footerRenew: '续费', footerShop: '去补给站',
-  descMember: '会员权益全库通用', descFree: '能量在补给站和账本里用',
+  footerOpen: '立即开通', footerRenew: '续费', footerShop: '去商店',
+  descMember: '会员权益全库通用', descFree: '能量在商店和能量明细里用',
 } as const
 
 /** 服务卡视图模型 */

@@ -50,7 +50,7 @@ const FAIL_COPY: Record<PlayFailReason, { title: string; sub: string }> = {
   },
   source_dead: {
     title: '这部片的源文件已经失效了',
-    sub: '可以去许愿池求一下，或者先看看别的片。',
+    sub: '可以去求片那边求一下，或者先看看别的片。',
   },
   no_binding: {
     title: '你还没有绑定网盘',
