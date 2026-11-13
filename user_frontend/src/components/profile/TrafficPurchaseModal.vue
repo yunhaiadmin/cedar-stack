@@ -57,8 +57,10 @@
           type="button"
           class="tq-confirm"
           :disabled="!selected || submitting"
+          :aria-busy="submitting"
           @click="onConfirmClick"
         >
+          <span v-if="submitting" class="tq-spinner" aria-hidden="true"></span>
           {{ submitting ? '提交中…' : confirming ? `确认扣除 ${selected?.days} 天兑换？` : '确认兑换' }}
         </button>
       </div>
@@ -190,6 +192,11 @@ async function onConfirmClick() {
   display: flex;
   align-items: flex-end;
   justify-content: center;
+  animation: tq-fade-in 0.22s ease both;
+}
+@keyframes tq-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 .tq-modal {
   width: 100%;
@@ -201,6 +208,16 @@ async function onConfirmClick() {
   border-radius: 22px 22px 0 0;
   padding: 20px 20px 28px;
   box-shadow: 0 -12px 44px rgba(0, 0, 0, 0.28);
+  /* app 式底部弹层：自下而上滑入 */
+  animation: tq-sheet-up 0.3s cubic-bezier(0.32, 0.72, 0.28, 1) both;
+}
+@keyframes tq-sheet-up {
+  from { transform: translateY(48px); opacity: 0.4; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tq-mask, .tq-modal { animation: none; }
+  .tq-spinner { animation-duration: 1.6s; }
 }
 @media (min-width: 640px) {
   .tq-mask { align-items: center; }
@@ -285,6 +302,32 @@ async function onConfirmClick() {
   color: #ffffff;
   cursor: pointer;
   background: linear-gradient(100deg, #2f8fe0, #c46c90 55%, #f2a45a);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform 0.12s ease, opacity 0.12s ease;
 }
 .tq-confirm:disabled { opacity: 0.45; cursor: not-allowed; }
+/* 按压反馈态（app 口径：点下去立刻有反应） */
+.tq-confirm:active:not(:disabled),
+.tq-opt:active:not(:disabled),
+.tq-tab:active,
+.tq-close:active {
+  transform: scale(0.97);
+  opacity: 0.88;
+}
+.tq-opt, .tq-tab, .tq-close { transition: transform 0.12s ease, opacity 0.12s ease; }
+.tq-spinner {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #ffffff;
+  animation: tq-spin 0.7s linear infinite;
+  flex: none;
+}
+@keyframes tq-spin {
+  to { transform: rotate(360deg); }
+}
 </style>

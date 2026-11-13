@@ -87,9 +87,19 @@
         <p class="ov-quota__meta-line">{{ isFreeRealm ? '开通公益资格后即可观影' : '开通订阅后即可观影' }}</p>
       </section>
 
+      <!-- 流量区加载骨架：数据回来前先占位（app 口径，不许空白干等、
+           不许内容闪入顶动布局）；未启用时骨架消失、整段不渲染 -->
+      <section v-if="trafficLoading" class="ov-quota" aria-hidden="true">
+        <div class="ov-skel ov-skel--label"></div>
+        <div class="ov-skel ov-skel--big"></div>
+        <div class="ov-skel ov-skel--remain"></div>
+        <div class="ov-skel ov-skel--bar"></div>
+        <div class="ov-skel ov-skel--meta"></div>
+      </section>
+
       <!-- 流量区：套餐含每月流量额度时才有（后端 enabled=false 或
            接口拿不到数据，整段不渲染，绝不拿 0 额度吓人） -->
-      <section v-if="traffic?.enabled" class="ov-quota">
+      <section v-else-if="traffic?.enabled" class="ov-quota">
         <p class="ov-quota__label">本月剩余流量</p>
         <p class="ov-quota__big">{{ trafficRemainGb }}<span class="ov-quota__unit">GB</span></p>
         <p class="ov-quota__remain">剩余 {{ trafficRemainPct }}%</p>
@@ -490,6 +500,8 @@ const serverAddressSub = computed(() => {
 
 // ── 流量段（trafficApi：套餐声明月额度才 enabled；拿不到整段不渲染） ──
 const traffic = ref<TrafficOverview | null>(null)
+/** 首屏加载态：骨架占位用，请求落定（成功/失败/未启用）即收 */
+const trafficLoading = ref(true)
 const trafficModalOpen = ref(false)
 const trafficRemainGb = computed(() => formatGbValue(traffic.value?.remaining_bytes))
 const trafficRemainPct = computed(() => {
@@ -502,8 +514,12 @@ const trafficResetText = computed(() =>
   traffic.value ? formatResetDate(traffic.value.reset_date) : '',
 )
 async function loadTraffic() {
-  const res = await getTraffic()
-  if (res) traffic.value = res
+  try {
+    const res = await getTraffic()
+    if (res) traffic.value = res
+  } finally {
+    trafficLoading.value = false
+  }
 }
 function onTrafficExchanged(summary: TrafficSummary) {
   // 成交后后端回了最新汇总：就地合并（保留 options 等概览字段）
@@ -903,6 +919,52 @@ html:not([data-theme='light']) .ov-card {
 }
 .ov-actions--traffic {
   padding-top: 16px;
+}
+/* 购买流量钮按压反馈（app 口径：点下去要有明确反馈态） */
+.ov-actions--traffic .ov-btn:active {
+  transform: scale(0.96);
+  opacity: 0.85;
+}
+.ov-actions--traffic .ov-btn {
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+/* 流量区骨架：与真实区同版式占位，微光扫过表示加载中 */
+.ov-skel {
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  position: relative;
+  overflow: hidden;
+}
+.ov-skel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg, transparent 30%, rgba(255, 255, 255, 0.14) 50%, transparent 70%);
+  animation: ov-skel-sweep 1.3s ease-in-out infinite;
+}
+@keyframes ov-skel-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+.ov-skel--label { width: 96px; height: 15px; }
+.ov-skel--big { width: 150px; height: 52px; margin-top: 12px; border-radius: 10px; }
+.ov-skel--remain { width: 72px; height: 19px; margin-top: 12px; }
+.ov-skel--bar { width: 100%; height: 6px; margin-top: 14px; border-radius: 999px; }
+.ov-skel--meta { width: 62%; height: 13px; margin-top: 12px; }
+html[data-theme='light'] .ov-skel { background: #e8e8ea; }
+html[data-theme='light'] .ov-skel::after {
+  background: linear-gradient(
+    100deg, transparent 30%, rgba(255, 255, 255, 0.55) 50%, transparent 70%);
+}
+html[data-theme='light'] .ov-page.ov-dark .ov-skel { background: rgba(255, 255, 255, 0.12); }
+html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
+  background: linear-gradient(
+    100deg, transparent 30%, rgba(255, 255, 255, 0.14) 50%, transparent 70%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ov-skel::after { animation: none; }
+  .ov-actions--traffic .ov-btn { transition: none; }
 }
 .ov-btn {
   display: inline-flex;
