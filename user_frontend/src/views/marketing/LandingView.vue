@@ -1702,9 +1702,22 @@ const year = new Date().getFullYear()
   .hero-inner {
     padding: 308px 22px 92px;
   }
+  /* 首屏卖点改友站 2×2 网格（用户 2026-11-13 23:56 发图亲点）：格内图标＋标题
+     一行、说明小字换行到标题下方（左缘与标题对齐＝图标 20px＋chip 间距 7px）；
+     仅移动端，桌面横排不变 */
   .hero-specs {
-    gap: 18px 24px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 22px 24px;
     margin-top: 40px;
+  }
+  .hero-specs :deep(.uhd-chip--spec) {
+    flex-wrap: wrap;
+    row-gap: 5px;
+  }
+  .hero-specs :deep(.uhd-chip__sub) {
+    flex-basis: 100%;
+    padding-left: 27px;
   }
   .hero-scroll-hint {
     left: 0;
