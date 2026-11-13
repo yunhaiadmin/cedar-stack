@@ -267,6 +267,7 @@ import {
   reportStoppedBeacon,
   type PlaybackInfoResult,
 } from '@/api/webPlayer'
+import { validatePlayLine } from '@/composables/usePlayLines'
 import PlayerDanmakuSheet, { type DanmakuSettings } from '@/components/player/PlayerDanmakuSheet.vue'
 import PlayerSubtitleSheet, {
   type SubtitleFontSize,
@@ -769,6 +770,46 @@ function pickSource(info: PlaybackInfoResult, wantedId?: string): EmbyMediaSourc
   return list.find((s) => s.DirectStreamUrl) || list[0] || null
 }
 
+// ---------- 弹层选线 / 选字幕（路由 query 契约，见 PlayerSchemeSheet） ----------
+
+/** 已校验的选定线路入口（空串 = 账号默认入口）。本次播放的 EA 请求
+    （PlaybackInfo + 会话上报）都走它；流地址仍由服务端下发不改。 */
+const lineBase = ref('')
+let lineResolvedFor: string | null = null
+
+/** 认弹层带来的 line 参数：必须命中账号下发清单才生效，手改不认 */
+async function ensureLineBase(): Promise<void> {
+  const raw = String(route.query.line || '')
+  if (lineResolvedFor === raw) return
+  lineResolvedFor = raw
+  lineBase.value = raw ? await validatePlayLine(raw) : ''
+}
+
+/** 认弹层带来的 sub 参数：off = 本次不挂字幕；数字 = 字幕流 Index
+    （须是本条目某源的文本字幕轨才认，最终挂哪条由 rebuild 时按源过滤）。
+    没带 sub 时保持服务端默认轨口径。 */
+function applyRouteSub(): void {
+  const raw = String(route.query.sub || '')
+  if (raw === 'off') {
+    primarySub.value = null
+    return
+  }
+  const idx = raw ? Number(raw) : NaN
+  if (Number.isFinite(idx)) {
+    const ok = (item.value?.MediaSources || []).some((ms) =>
+      streamsOf(ms).some(
+        (s) => s.Type === 'Subtitle' && s.IsTextSubtitleStream && s.DeliveryUrl && s.Index === idx,
+      ),
+    )
+    if (ok) {
+      primarySub.value = idx
+      return
+    }
+  }
+  const dft = item.value?.MediaSources?.[0]?.DefaultSubtitleStreamIndex
+  if (dft != null && primarySub.value === null) primarySub.value = dft
+}
+
 // ---------- 起播 ----------
 
 async function start(restart: boolean): Promise<void> {
@@ -778,8 +819,9 @@ async function start(restart: boolean): Promise<void> {
   phase.value = 'preparing'
   prepStepIndex.value = 0
   try {
+    await ensureLineBase()
     if (!playbackInfo.value) {
-      playbackInfo.value = await fetchPlaybackInfo(item.value.Id)
+      playbackInfo.value = await fetchPlaybackInfo(item.value.Id, lineBase.value || undefined)
     }
     const info = playbackInfo.value
     const wanted = String(route.query.ms || '') || undefined
@@ -952,18 +994,20 @@ function reportStartIfNeeded(): void {
   const key = `${item.value?.Id}:${currentSource.value?.Id}`
   if (reportedPlayingFor === key) return
   reportedPlayingFor = key
-  reportPlaying(reportPayload()).catch(() => {})
+  reportPlaying(reportPayload(), lineBase.value || undefined).catch(() => {})
   window.clearInterval(progressTimer)
   progressTimer = window.setInterval(() => sendProgress(false), 15000)
 }
 function sendProgress(paused: boolean): void {
   if (!item.value || phase.value !== 'playing') return
-  reportProgress(reportPayload(), paused).catch(() => {})
+  reportProgress(reportPayload(), paused, lineBase.value || undefined).catch(() => {})
 }
 function sendStopped(): void {
   if (!item.value) return
   const payload = reportPayload()
-  reportStopped(payload).catch(() => reportStoppedBeacon(payload))
+  reportStopped(payload, lineBase.value || undefined).catch(() =>
+    reportStoppedBeacon(payload, lineBase.value || undefined),
+  )
 }
 
 // ---------- 控制 ----------
@@ -1167,7 +1211,12 @@ function onSelectEpisode(id: string): void {
 function goEpisode(ep: EmbyItem | undefined): void {
   if (!ep) return
   sendStopped()
-  void router.push({ name: 'web-player', params: { id: ep.Id } })
+  // 选线是会话级选择、切集保留；字幕 Index 是每集自己的轨，切集丢弃回默认
+  void router.push({
+    name: 'web-player',
+    params: { id: ep.Id },
+    query: lineBase.value ? { line: lineBase.value } : {},
+  })
 }
 
 function onScreenshot(): void {
@@ -1232,7 +1281,10 @@ watch(
       }
       reportedPlayingFor = ''
       window.clearInterval(progressTimer)
-      void loadItem(String(id))
+      // 切集：字幕选择是每集自己的，复位后按新集的 query/默认轨重新定
+      primarySub.value = null
+      secondarySub.value = null
+      void loadItem(String(id)).then(() => applyRouteSub())
     }
   },
 )
@@ -1241,10 +1293,9 @@ onMounted(() => {
   document.body.style.overflow = 'hidden'
   document.addEventListener('keydown', onKeydown)
   document.addEventListener('visibilitychange', onVisibility)
-  // 默认字幕：跟服务端 DefaultSubtitleStreamIndex
+  // 字幕预选：弹层带了 sub 就按它，没带跟服务端 DefaultSubtitleStreamIndex（在 applyRouteSub 内兜底）
   void loadItem(itemId.value).then(() => {
-    const dft = item.value?.MediaSources?.[0]?.DefaultSubtitleStreamIndex
-    if (dft != null && primarySub.value === null) primarySub.value = dft
+    applyRouteSub()
     // 邀请链接带 ?wt=房间码 打开时自动入房（服务端逐人过播放门禁）
     if (wtJoinCode.value) wt.joinRoom(wtJoinCode.value)
   })
