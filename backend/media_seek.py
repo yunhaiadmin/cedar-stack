@@ -783,6 +783,207 @@ def voted_ids(db: Session, user_id: int, request_ids: list) -> set:
     return {row[0] for row in rows}
 
 
+# ==================== 请求广场（按媒体聚合） ====================
+
+#: 广场状态过滤口径（用户端统一状态名 → movie_requests.status 集合）。
+#: 撤回（withdrawn）是用户自己的取消，不进广场聚合（下方查询恒排除）。
+PLAZA_STATUS_MAP = {
+    "pending": ("pending",),
+    "doing": ("approved",),
+    "done": ("completed",),
+    "rejected": ("rejected",),
+}
+#: 广场一次最多返回的媒体组数与每组附带的可附议明细行数（防数据量无界增长）
+PLAZA_GROUP_LIMIT = 60
+PLAZA_DETAIL_LIMIT = 10
+#: 聚合前最多读取的求片行数（按创建时间倒序，超出部分是老话题，不进广场）
+_PLAZA_ROW_LIMIT = 2000
+
+_TITLE_KEY_STRIP = re.compile(r"[《》\s·•:：,，.。!！?？;；'\"“”‘’()（）\-—]")
+
+
+def _plaza_title_key(name: Optional[str]) -> str:
+    """原名兜底行（无 tmdb_id）的媒体身份键：与前端 normTitle 同字符集的归一化片名。"""
+    return _TITLE_KEY_STRIP.sub("", (name or "").lower())
+
+
+def _plaza_group_key(row) -> str:
+    """媒体身份：有 tmdb_id 按 tmdb_id（管理端入库匹配同一口径），
+    没有退回「归一化片名|年份|类型」（原名兜底行只能这样认亲）。"""
+    tmdb_id = (getattr(row, "tmdb_id", None) or "").strip()
+    if tmdb_id:
+        return f"tmdb:{tmdb_id}"
+    return "title:{}|{}|{}".format(
+        _plaza_title_key(row.movie_name), row.year or "", row.type or "")
+
+
+def _plaza_poster_url(item) -> Optional[str]:
+    """库内条目海报 URL：与 emby_server.library_covers._item_poster_url 同口径
+    （本地缓存图在盘 → 走 Images 路由；否则远程图直给；都没有 → None）。"""
+    import os
+
+    from backend.emby_server import image_store
+
+    poster_path = (getattr(item, "poster_path", None) or "").strip()
+    remote = (getattr(item, "primary_image_url", None) or "").strip()
+    if poster_path and image_store.is_cached_path(poster_path) and os.path.isfile(poster_path):
+        return f"/emby/Items/{item.guid}/Images/Primary"
+    return remote or None
+
+
+def _plaza_missing_text(row) -> str:
+    """补缺集行的缺集文案：与 api/user.py 的 _request_missing_text 同口径。"""
+    from backend import missing_episodes as _me
+
+    if (getattr(row, "request_kind", None) or "seek") != _me.KIND_MISSING:
+        return ""
+    return _me.missing_text(_me.request_detail_missing(row.request_detail))
+
+
+def plaza_groups(db: Session, user_id: int, *, status: Optional[str] = None,
+                 kind: Optional[str] = None, q: Optional[str] = None) -> list[dict]:
+    """请求广场：把全站求片按媒体身份聚合（一部片一张卡）。
+
+    口径（与「广场只放求片数据、工单不进广场」的既定规则一致）：
+    - 数据源只有 movie_requests；反馈工单没有媒体身份、也不公开，恒不进广场，
+      故每组的 feedback_count 恒为 0——这是数据口径的结果，不是估算；
+    - 计数三分：seek＝整片求片行，chase＝补缺集行（request_kind=missing_episodes，
+      本站的追新形态），total＝组内全部行；
+    - status / kind / q 都先作用在行上再聚合（筛选后计数自洽）；
+      status 取 PLAZA_STATUS_MAP 的键，kind 取 seek / chase，未知值忽略（按全部）；
+    - 「库内已有」：组内有 completed 行 / 任一行带 emby_item_id / tmdb 命中库内
+      可见条目（library_hit 的可见性口径：未删除、未隐藏、类型相符）任一成立；
+    - 明细只带 pending 行（可附议的那些），按加权附议和排序。
+    """
+    query = db.query(models.MovieRequest).filter(
+        models.MovieRequest.status != WITHDRAWN_STATUS)
+    wanted = PLAZA_STATUS_MAP.get(status or "")
+    if wanted:
+        query = query.filter(models.MovieRequest.status.in_(wanted))
+    if kind == "seek":
+        query = query.filter(
+            or_(models.MovieRequest.request_kind.is_(None),
+                models.MovieRequest.request_kind == "seek"))
+    elif kind == "chase":
+        query = query.filter(models.MovieRequest.request_kind == "missing_episodes")
+    keyword = (q or "").strip()
+    if keyword:
+        query = query.filter(
+            models.MovieRequest.movie_name.ilike(
+                f"%{_escape_like(keyword)}%", escape="\\"))
+    rows = (query.order_by(models.MovieRequest.created_at.desc())
+            .limit(_PLAZA_ROW_LIMIT).all())
+
+    groups: dict[str, dict] = {}
+    order: list[str] = []
+    for row in rows:
+        key = _plaza_group_key(row)
+        g = groups.get(key)
+        if g is None:
+            g = groups[key] = {
+                "key": key,
+                "tmdb_id": (getattr(row, "tmdb_id", None) or "").strip() or None,
+                "movie_name": row.movie_name,
+                "year": row.year,
+                "type": row.type,
+                "in_library": False,
+                "emby_item_id": None,
+                "poster_url": None,
+                "processing_count": 0,
+                "seek_count": 0,
+                "chase_count": 0,
+                "feedback_count": 0,
+                "total_count": 0,
+                "vote_total": 0,
+                "latest_at": row.created_at,
+                "_pending": [],
+            }
+            order.append(key)
+        g["total_count"] += 1
+        if (getattr(row, "request_kind", None) or "seek") == "missing_episodes":
+            g["chase_count"] += 1
+        else:
+            g["seek_count"] += 1
+        if row.status in ACTIVE_STATUSES:
+            g["processing_count"] += 1
+        if row.status == "completed" or getattr(row, "emby_item_id", None):
+            g["in_library"] = True
+        if g["emby_item_id"] is None and getattr(row, "emby_item_id", None):
+            g["emby_item_id"] = row.emby_item_id
+        g["vote_total"] += row.vote_count or 0
+        if row.created_at and (g["latest_at"] is None or row.created_at > g["latest_at"]):
+            g["latest_at"] = row.created_at
+        if row.status == "pending":
+            g["_pending"].append(row)
+
+    # tmdb 命中库内条目（批量一次查完）：补 in_library / 海报 / 条目 id
+    tmdb_ids = [g["tmdb_id"] for g in groups.values() if g["tmdb_id"]]
+    if tmdb_ids:
+        from backend.emby_server import models as em
+
+        items = (
+            db.query(em.MediaItem)
+            .filter(em.MediaItem.tmdb_id.in_(tmdb_ids))
+            .filter(em.MediaItem.deleted_at.is_(None))
+            .filter(em.MediaItem.is_hidden == False)  # noqa: E712
+            .order_by(em.MediaItem.date_added.desc())
+            .all()
+        )
+        by_tmdb: dict[str, list] = {}
+        for item in items:
+            by_tmdb.setdefault(str(item.tmdb_id), []).append(item)
+        for g in groups.values():
+            if not g["tmdb_id"]:
+                continue
+            candidates = by_tmdb.get(g["tmdb_id"]) or []
+            allowed = _TYPE_MATCH.get(str(g["type"] or ""))
+            hit = None
+            for item in candidates:
+                if not allowed or item.item_type in allowed:
+                    hit = item
+                    break
+            if hit is None:
+                continue
+            g["in_library"] = True
+            if g["emby_item_id"] is None:
+                g["emby_item_id"] = hit.guid
+            g["poster_url"] = _plaza_poster_url(hit)
+
+    pending_ids = [r.id for g in groups.values() for r in g["_pending"]]
+    weighted_map = weighted_votes_for(db, pending_ids)
+    voted = voted_ids(db, user_id, pending_ids)
+
+    result: list[dict] = []
+    for key in order:
+        g = groups[key]
+        pending = sorted(
+            g.pop("_pending"),
+            key=lambda r: weighted_map.get(r.id, 0), reverse=True,
+        )[:PLAZA_DETAIL_LIMIT]
+        g["requests"] = [
+            {
+                "id": r.id,
+                "movie_name": r.movie_name,
+                "year": r.year,
+                "type": r.type,
+                "season_label": season_label(r.season),
+                "title_only": bool(getattr(r, "title_only", False)),
+                "request_kind": getattr(r, "request_kind", None) or "seek",
+                "missing_text": _plaza_missing_text(r),
+                "vote_count": r.vote_count or 0,
+                "weighted_vote_count": weighted_map.get(r.id, 0),
+                "voted": r.id in voted,
+                "mine": r.user_id == user_id,
+                "created_at": r.created_at.isoformat() if r.created_at else "",
+            }
+            for r in pending
+        ]
+        g["latest_at"] = g["latest_at"].isoformat() if g["latest_at"] else ""
+        result.append(g)
+    result.sort(key=lambda g: (g["vote_total"], g["latest_at"]), reverse=True)
+    return result[:PLAZA_GROUP_LIMIT]
+
+
 __all__ = [
     "ACTIVE_STATUSES",
     "CONFIG_DAILY_LIMIT",
@@ -801,6 +1002,7 @@ __all__ = [
     "normalize_season",
     "normalize_tmdb_id",
     "notify_voters_enabled",
+    "plaza_groups",
     "quota",
     "search_candidates",
     "season_label",

@@ -1334,6 +1334,28 @@ def hot_media_seeks(
     }
 
 
+@user_router.get("/media-seek/plaza")
+def plaza_media_seeks(
+    status: Optional[str] = None,
+    kind: Optional[str] = None,
+    q: Optional[str] = None,
+    current_user: models.WebUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """请求广场：全站求片按媒体身份聚合（一部片一张卡），口径在
+    media_seek.plaza_groups（只聚合求片、工单不进广场、撤回不计）。
+
+    status：pending/doing/done/rejected（统一状态名）；kind：seek/chase；
+    q：按片名搜话题。求片总开关关闭时返回空列表（前端显示空态）。
+    """
+    if not media_seek.seek_enabled(db):
+        return {"groups": []}
+    return {
+        "groups": media_seek.plaza_groups(
+            db, current_user.id, status=status, kind=kind, q=q)
+    }
+
+
 @user_router.post("/media-seek/{request_id}/vote")
 def vote_media_seek(
     request_id: int,
