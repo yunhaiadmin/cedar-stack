@@ -305,54 +305,6 @@ def start_playback_bus_consumer(stop_event=None) -> bool:
     return True
 
 
-def _upstream_probe_sources():
-    """上游探活守护的 sources_fn（生产接线，FMBY #25 25-3）。
-
-    每轮重新取已启用源，适配成探活模块的 UpstreamSource。只接线，
-    不改守护本体、不改判定语义：
-    - 只含 Emby/Jellyfin 型：探活首批只做这两型，CMS 型后置（跳过）。
-    - 凭据只走 upstream_sources.load_credential 唯一入口：api_key 型
-      源的 token 只进请求头（守护的 _auth_headers）；password 型源
-      没有 token，只做公开握手，不把密码当 token 用。
-    - 凭据解不开的行直接跳过（绝不降级成匿名探活，见 load_credential
-      约定）；取源列表失败则本轮返回空列表，不抛异常。
-    """
-    from backend.database import SessionLocal
-    from backend.emby_server import upstream_health as _uh
-    from backend.emby_server import upstream_sources as _ups
-
-    db = SessionLocal()
-    try:
-        rows = _ups.enabled_sources(db)
-        out = []
-        for row in rows:
-            if row.source_type not in ("emby", "jellyfin"):
-                continue
-            api_key = None
-            if row.auth_method == "api_key":
-                try:
-                    cred = _ups.load_credential(row)
-                except Exception:
-                    logger.warning("上游探活：源 id=%s 凭据解不开，已跳过",
-                                   row.id)
-                    continue
-                if cred:
-                    api_key = cred.get("secret")
-            out.append(_uh.UpstreamSource(
-                key=str(row.id),
-                kind=row.source_type,
-                base_url=row.base_url,
-                enabled=True,
-                api_key=api_key,
-            ))
-        return out
-    except Exception:
-        logger.warning("上游探活：取源列表失败，本轮跳过", exc_info=True)
-        return []
-    finally:
-        db.close()
-
-
 def _applecms_probe_sources():
     """苹果 CMS 轻探活的 sources_fn（生产接线，FMBY #25 下一批）。
 
@@ -520,17 +472,6 @@ def main() -> int:
         except Exception as e:
             logger.warning(f"启动多版本合并 worker 失败（可忽略）: {e}")
 
-        # 无界起播暖地址保鲜：按信号集（追剧新集/继续观看/新入库
-        # 热门）在后台提前解析+探活，把地址喂进已验活快路缓存，
-        # 用户首播直接命中。只吃闲置产能（负载/起播繁忙自动让
-        # 路），见 emby_server/upstream_warm_worker 模块头。
-        try:
-            from backend.emby_server import upstream_warm_worker
-            if upstream_warm_worker.start():
-                started.append("upstream_warm_worker")
-                logger.info("✅ 上游地址保鲜 worker 已启动")
-        except Exception as e:
-            logger.warning(f"启动上游地址保鲜 worker 失败（可忽略）: {e}")
 
         # 谷歌盘主线暖地址（goal-35 批 1）：按信号集（追剧新集/继续观看/
         # 新入库热门）提前把交付计划与存在性写进现成缓存，点播路径零
@@ -894,62 +835,6 @@ def main() -> int:
                 logger.info("苹果 CMS 月度对账未开启，调度不启动")
         except Exception as e:
             logger.warning(f"启动苹果 CMS 月度对账失败（可忽略）: {e}")
-        # 上游聚合定时调度（准备线，开关默认关）：仅
-        # UPSTREAM_AGGREGATE_SCHEDULE_ENABLED=1 时启动；关时不启动、
-        # 不发任何上游请求，全站行为逐字不变。本块只加自己的启动行，
-        # 不动苹果 CMS 调度 / 探活工人的接线行。调度本体走任务表入队
-        # （O-03/A-120，见 upstream_aggregate_scheduler.py），执行
-        # 由下面的认领工人认领。
-        try:
-            from backend.emby_server import upstream_aggregate_scheduler
-
-            if upstream_aggregate_scheduler.start_upstream_aggregate_scheduler(
-                    _shutdown_event):
-                started.append("upstream_aggregate_scheduler")
-                logger.info("✅ 上游聚合定时调度已启动")
-            else:
-                logger.info("上游聚合定时调度未开启，不启动")
-        except Exception as e:
-            logger.warning(f"启动上游聚合定时调度失败（可忽略）: {e}")
-        # 上游聚合认领工人（O-03）：无开关门——worker 进程跑起来它就
-        # 必须在，否则 api/调度入队的任务无人执行。本块只加自己的
-        # 启动行，不动调度 / 探活工人的接线行。认领循环每轮按 FIFO
-        # 提交 queued 任务到 worker 进程内执行（见
-        # backend/emby_server/upstream_aggregate_jobs.py）。
-        try:
-            from backend.emby_server import upstream_aggregate_jobs
-
-            if upstream_aggregate_jobs.start_aggregate_worker(_shutdown_event):
-                started.append("upstream_aggregate_worker")
-                logger.info("✅ 上游聚合认领工人已启动")
-            else:
-                logger.info("上游聚合认领工人未启动")
-        except Exception as e:
-            logger.warning(f"启动上游聚合认领工人失败（可忽略）: {e}")
-        # 上游探活守护 + 健康落库同步（FMBY #25 25-3/25-14，生产接线）：
-        # 只接线，不改守护本体、不碰投影工人、不碰扫描/播放逻辑。
-        # 两守护各有总开关（默认关），关时线程空转、不发请求、不读写；
-        # 开关开后：探活每轮每源最多一次请求（默认 60 秒），结果写 Redis；
-        # 同步每轮把 Redis 状态翻译后写 PG（#1245 已修提交缺失）。
-        # 两守护共用一个 RedisHealthStore：探活写、同步读，同一份状态。
-        # 友服当前被对方 nginx 挡（公开口亦 403）：探活按守护自身逻辑
-        # 记 failure/unauthorized，3 次后翻 Unavailable、同步落 unhealthy，
-        # 属实记录，不多刷（本处不做任何手动探活）。
-        try:
-            from backend.emby_server import upstream_health as _uh
-            from backend.emby_server import upstream_health_persist as _uhp
-
-            _health_store = _uh.RedisHealthStore()
-            _uh.start_probe_daemon(
-                _upstream_probe_sources, _health_store)
-            started.append("upstream_probe")
-            logger.info("✅ 上游探活守护已启动（总开关关时空转不发请求）")
-            _uhp.start_health_sync_daemon(store=_health_store,
-                                          stop_event=_shutdown_event)
-            started.append("upstream_health_sync")
-            logger.info("✅ 上游健康落库同步守护已启动（总开关关时空转不读写）")
-        except Exception as e:
-            logger.warning(f"启动上游探活/健康同步守护失败（可忽略）: {e}")
 
         # 苹果 CMS 轻探活（FMBY #25 下一批唯一施工项）：仅
         # APPLECMS_PROBE_ENABLED=1 时启动；关时线程空转、不发任何请求、

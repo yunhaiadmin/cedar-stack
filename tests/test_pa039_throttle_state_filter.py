@@ -10,13 +10,11 @@
   异方案 failed 单仍是换绑 waiver 证据（与
   test_transfer_rebind_waiver 同口径，终态不改变落点事实）；
 - 真正在途 pending / 已成 done 单 → 节流口径不变（不许把节流修没）；
-- 「死单不挡重建」由确认层兑现：_throttled_confirm_response
-  识别最新单已 failed → force 重建；端到端：failed 单后重确认
-  回 queued（不回 already_queued 指死单），在途 pending + 更新
-  failed 共存时仍回 already_queued 指着在途单。
+- 「死单不挡重建」原由找源确认层兑现（_throttled_confirm_response）；
+  找源已随全删除批 4 整套删除，确认层端到端用例随之移除，本文件
+  只保留状态层口径（节流判定本体在 transfer_variant，未动）。
 
-不连生产库。查询层用内存 SQLite 单表；确认层复用
-test_pa039_throttle_failed_rebuild.py 同款夹具形态。
+不连生产库。查询层用内存 SQLite 单表。
 """
 
 import os
@@ -27,16 +25,9 @@ os.environ.setdefault("REDIS_ENABLED", "false")
 from datetime import datetime, timedelta
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from backend import models
-from backend.api.source_discovery import router
-from backend.api.user import get_current_user
-from backend.database import get_db
 from backend.emby_server import models as em
 from backend.emby_server import transfer_variant as tv
 
@@ -60,10 +51,9 @@ def _add(db, item_id, status, hours_ago=1, dest="userdrive:7"):
 def test_failed_only_same_scheme_throttle_state_stays_blocked():
     # 状态层口径：同方案 failed 单仍构成节流（与换绑豁免套件
     # test_mixed_recent_jobs_throttle_without_waiver 同口径）。
-    # PA-039 的「死单不挡重建」不在状态层藏行，而在找源确认层
-    # 兑现：_throttled_confirm_response 识别最新单已 failed 后走
-    # force 重建——端到端由本文件确认用例与
-    # test_pa039_throttle_failed_rebuild.py 钉住。
+    # PA-039 的「死单不挡重建」不在状态层藏行，原在找源确认层
+    # 兑现（_throttled_confirm_response）；找源已随全删除批 4 删除，
+    # 确认层端到端用例随之移除，状态层口径仍由本文件钉住。
     db = _tiny_db()
     _add(db, 42, "failed")
     state, from_scheme = tv._user_throttle_state(db, 42, 7, "userdrive:7")
@@ -122,168 +112,3 @@ def test_failed_only_other_scheme_is_rebind_waiver():
     use_waiver, _ = tv._raise_if_user_throttled(db, 42, 7, "userdrive:7")
     assert use_waiver is True
 
-
-# ---------------- 确认端到端（复用已验证夹具形态） ----------------
-
-
-@pytest.fixture()
-def engine():
-    eng = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    models.Base.metadata.create_all(eng)
-    yield eng
-    eng.dispose()
-
-
-@pytest.fixture()
-def db(engine):
-    session = sessionmaker(bind=engine)()
-    try:
-        yield session
-    finally:
-        session.close()
-
-
-@pytest.fixture()
-def client(engine):
-    application = FastAPI()
-    application.include_router(router)
-    sessions = sessionmaker(bind=engine)
-
-    def _override_get_db():
-        session = sessions()
-        try:
-            yield session
-        finally:
-            session.close()
-
-    application.dependency_overrides[get_db] = _override_get_db
-    with TestClient(application) as test_client:
-        yield test_client
-    application.dependency_overrides.clear()
-
-
-def _user(db, username):
-    user = models.WebUser(
-        username=username, password_hash="x", is_active=True, is_staff=False,
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
-
-
-def _bind(db, user, provider):
-    cred = em.MountCredential(scope="user", owner_user_id=user.id,
-                              sealed_credential="x", key_id="k")
-    db.add(cred)
-    db.commit()
-    db.add(em.UserStorageBinding(
-        user_id=user.id, provider=provider, account_label="盘",
-        credential_id=cred.id, status="active",
-    ))
-    db.commit()
-
-
-def _drive_item(db, tmdb_id):
-    mount = em.StorageMount(name=f"pa039f-mount-{tmdb_id}", mount_type="drive",
-                            path="drive:shared-drive-id")
-    db.add(mount)
-    db.commit()
-    library = em.Library(guid=f"lib-pa039f-{tmdb_id}", name="找源库")
-    db.add(library)
-    db.commit()
-    item = em.MediaItem(
-        guid=f"item-pa039f-{tmdb_id}",
-        library_id=library.id,
-        item_type="movie",
-        name="已在库",
-        tmdb_id=tmdb_id,
-        file_path=f"mount://{mount.id}/x.mp4",
-        video_resolution="1080p",
-        container="mkv",
-        size=123456789,
-        subtitle_languages="zh",
-    )
-    db.add(item)
-    db.commit()
-    return item
-
-
-def _source(db, name):
-    src = em.UpstreamSource(
-        name=name, source_type="emby",
-        base_url="https://example.invalid",
-        auth_method="api_key", enabled=True,
-    )
-    db.add(src)
-    db.commit()
-    db.refresh(src)
-    return src
-
-
-def _mapping(db, item, source, upstream_id):
-    row = em.UpstreamItemMapping(
-        local_item_id=item.id, source_id=source.id,
-        upstream_item_id=upstream_id, confidence=0.9, evidence="tmdb",
-    )
-    db.add(row)
-    db.commit()
-    return row
-
-
-def _setup(client, db, monkeypatch, username, tmdb_id):
-    monkeypatch.setenv("SOURCE_DISCOVERY_ENABLED", "1")
-    monkeypatch.setenv("TRANSFER_VARIANT_ENABLED", "1")
-    user = _user(db, username)
-    _bind(db, user, "drive")
-    item = _drive_item(db, tmdb_id)
-    src = _source(db, "云海服")
-    _mapping(db, item, src, f"up-{tmdb_id}")
-    client.app.dependency_overrides[get_current_user] = lambda: user
-    payload = {"local_item_id": item.id, "source_id": src.id,
-               "upstream_item_id": f"up-{tmdb_id}"}
-    return user, item, client, payload
-
-
-def _set_status(db, job_id, status):
-    job = db.query(em.TransferJob).filter(em.TransferJob.id == job_id).first()
-    job.status = status
-    if status == "failed":
-        job.error_kind = "dead"
-    db.commit()
-
-
-def test_confirm_failed_only_returns_queued_never_already_queued(
-        client, db, engine, monkeypatch):
-    _user, _item, c, payload = _setup(
-        client, db, monkeypatch, "u-pa039f-a", "301")
-    first = c.post("/api/user/source-discovery/confirm", json=payload)
-    assert first.json()["state"] == "queued"
-    first_id = first.json()["job_id"]
-    _set_status(db, first_id, "failed")
-    # 死单后重确认：必须新建一单，绝不能 already_queued 指着死单
-    body = c.post("/api/user/source-discovery/confirm", json=payload).json()
-    assert body["state"] == "queued"
-    assert body["job_id"] != first_id
-
-
-def test_confirm_live_pending_plus_failed_still_queued_live(
-        client, db, engine, monkeypatch):
-    _user, _item, c, payload = _setup(
-        client, db, monkeypatch, "u-pa039f-b", "302")
-    first = c.post("/api/user/source-discovery/confirm", json=payload)
-    assert first.json()["state"] == "queued"
-    first_id = first.json()["job_id"]
-    db.add(em.TransferJob(
-        item_id=_item.id, trigger="playback", provider="drive",
-        owner_scope="user", owner_ref=str(_user.id),
-        dest_drive_id="userdrive:7", status="failed",
-        error_kind="dead", created_at=datetime.now()))
-    db.commit()
-    body = c.post("/api/user/source-discovery/confirm", json=payload).json()
-    assert body["state"] == "already_queued"
-    assert body["job_id"] == first_id

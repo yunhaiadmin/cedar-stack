@@ -10,7 +10,6 @@
 - ``GET /api/admin/sample-hash/progress``：采样哈希队列进度（只计数，
   不触发轮次、不写库）。
 - ``GET /api/admin/providers/sidecar``：sidecar 运行时状态（p115 / yun139）。
-- ``GET /api/admin/upstream-mappings``：本地→上游映射只读列表。
 - ``GET /api/admin/yun139/pools``：139 账号池只读列表（含成员）。
 
 全部纯只读：无 POST / PUT / DELETE；凭据类字段只出 ``has_credential``
@@ -176,42 +175,6 @@ def sidecar_status(
         )
     names = (provider,) if provider is not None else KNOWN_SIDECAR_PROVIDERS
     return {"providers": [_sidecar_status(name) for name in names]}
-
-
-@router.get("/upstream-mappings")
-def list_upstream_mappings(
-    local_item_id: int | None = None,
-    source_id: int | None = None,
-    limit: int = 50,
-    offset: int = 0,
-    current_admin=Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """本地→上游映射只读列表（按本地条目 / 源过滤，id 倒序）。"""
-    limit, offset = pagination_params(limit, offset)
-    q = db.query(em.UpstreamItemMapping)
-    if local_item_id is not None:
-        q = q.filter(em.UpstreamItemMapping.local_item_id == local_item_id)
-    if source_id is not None:
-        q = q.filter(em.UpstreamItemMapping.source_id == source_id)
-    total = q.count()
-    rows = (
-        q.order_by(em.UpstreamItemMapping.id.desc())
-        .limit(limit)
-        .offset(offset)
-        .all()
-    )
-    items = [{
-        "id": row.id,
-        "local_item_id": row.local_item_id,
-        "source_id": row.source_id,
-        "upstream_item_id": row.upstream_item_id,
-        "confidence": row.confidence,
-        "evidence": row.evidence,
-        "created_at": _iso(row.created_at),
-        "updated_at": _iso(row.updated_at),
-    } for row in rows]
-    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/yun139/pools")

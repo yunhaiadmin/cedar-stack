@@ -1547,25 +1547,6 @@ export interface SidecarStatusResponse {
   providers: SidecarProviderStatus[]
 }
 
-/** 上游映射行（GET /api/admin/upstream-mappings） */
-export interface UpstreamMappingRow {
-  id: number
-  local_item_id: number
-  source_id: number
-  upstream_item_id: string
-  confidence: number | null
-  evidence: unknown
-  created_at: string | null
-  updated_at: string | null
-}
-
-export interface UpstreamMappingsResponse {
-  items: UpstreamMappingRow[]
-  total: number
-  limit: number
-  offset: number
-}
-
 /** 139 账号池成员（只出 has_credential，绝不含凭据） */
 export interface Yun139PoolMember {
   id: number

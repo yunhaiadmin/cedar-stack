@@ -85,7 +85,6 @@ const routes: RouteRecordRaw[] = [
       { path: 'audit', redirect: { path: '/logs', query: { tab: 'audit' } } },
       // 专线 B 第二阶段 · 只读观测口（GET，仅展示）
       { path: 'storage-bindings', redirect: { path: '/upstream-sources', query: { tab: 'bindings' } } },
-      { path: 'upstream-mappings', redirect: { path: '/upstream-sources', query: { tab: 'mappings' } } },
       { path: 'yun139-pools', redirect: { path: '/upstream-sources', query: { tab: 'pools' } } },
       { path: 'provider-sidecar', redirect: { path: '/upstream-sources', query: { tab: 'sidecar' } } },
       // 「存储来源」独立页已于 v2.42.15 撒销：挂载建在「添加服务器」弹窗里（按服务器配置），

@@ -354,14 +354,3 @@ def test_get_unknown_task_is_404_and_inflight_is_reused(db_factory, staff, monke
     assert nxt["task_id"] != first["task_id"]
     assert nxt["status"] == "queued"
 
-
-def test_scheduler_goes_through_enqueue_o03():
-    """O-03/A-120：调度改走任务表入队，不再直接调聚合入口。"""
-    import inspect
-
-    from backend.emby_server import upstream_aggregate_scheduler as sched
-
-    src = inspect.getsource(sched.run_scheduled_aggregation)
-    assert "run_manual_aggregation" not in src
-    assert "enqueue_scheduled" in src
-    assert "upstream_aggregate_jobs" in src

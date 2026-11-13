@@ -61,7 +61,6 @@ import type {
   SampleHashProgress,
   SidecarStatusResponse,
   StorageBindingsResponse,
-  UpstreamMappingsResponse,
   Yun139PoolsResponse,
 } from '@/types'
 
@@ -2764,14 +2763,6 @@ export const fetchSampleHashProgress = () => get<SampleHashProgress>('/sample-ha
 /** sidecar 状态：不传 provider 查 p115 + yun139 两个，传了只查该个 */
 export const fetchSidecarStatus = (provider?: string) =>
   get<SidecarStatusResponse>('/providers/sidecar', provider ? { provider } : undefined)
-
-/** 上游映射列表：按本地条目 / 源过滤，limit/offset 分页（id 倒序） */
-export const fetchUpstreamMappings = (params: {
-  local_item_id?: number
-  source_id?: number
-  limit?: number
-  offset?: number
-} = {}) => get<UpstreamMappingsResponse>('/upstream-mappings', params)
 
 /** 139 账号池列表（含成员；成员只出 has_credential），limit/offset 分页 */
 export const fetchYun139Pools = (params: { limit?: number; offset?: number } = {}) =>
