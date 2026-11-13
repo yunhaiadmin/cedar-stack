@@ -728,10 +728,11 @@ onMounted(() => {
   position: relative;
   z-index: 1;
   width: 100%;
-  max-width: 460px;
+  /* 实测：卡宽约 422、内边距约 33 → 内容宽 362（输入框/主钮与之同宽） */
+  max-width: 428px;
   min-width: 0;
   box-sizing: border-box;
-  padding: 40px 38px 32px;
+  padding: 36px 33px 32px;
   background: #141416;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 20px;
@@ -1015,8 +1016,10 @@ onMounted(() => {
   margin-left: auto;
 }
 
-/* 主按钮：高 46、圆角约 23，实测淡彩虹渐变填充＋1px 彩虹边框＋黑字
-   （渐变停点＝实测清单第 3 节登录钮中心行采样串，逐停点照抄） */
+/* 主按钮：高 46、圆角约 23，淡彩虹渐变填充＋1px 彩虹边框＋黑字
+   渐变底层＝实测清单第 3 节登录钮中心行采样串（逐停点照抄，色序/位置不变）；
+   采样串是原色光谱，满版平铺会成饱和色带（用户录屏打回的「糖果条纹」），
+   原站定性为「淡」彩虹——上覆白色雾面层把渲染拉回粉彩，修后中心行采样另附对照。 */
 .submit-btn {
   box-sizing: border-box;
   display: flex;
@@ -1031,6 +1034,7 @@ onMounted(() => {
   border: 1px solid transparent;
   border-radius: 23px;
   background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0.52)) padding-box,
     linear-gradient(90deg, #fcfcfb 0%, #edebe5 4%, #bc9c00 9%, #b8a207 13%, #b4a80e 17%, #b0a919 22%, #a9aa25 26%, #a0aa30 30%, #95ab3b 35%, #86ab46 39%, #72ac52 43%, #50ac5f 48%, #0fac75 52%, #00ac9b 57%, #00a3c4 61%, #6180de 65%, #b28dd9 70%, #edfafb 74%, #e1f5f7 78%, #d9f2f6 83%, #d2f0f3 87%, #c8eef1 91%, #c1eaef 96%, #b9e7ed 100%) padding-box,
     var(--uhd-rainbow) border-box;
   color: #111111;
@@ -1076,20 +1080,21 @@ onMounted(() => {
   .auth-column {
     max-width: 100%;
     padding: 32px 24px 26px;
-    /* 移动端未测到：保留上一轮经用户截图验收的移动值，不拿桌面实测硬压 */
-    border-radius: 30px;
+    /* 2026-11-13 录屏打回后改令：移动端同样对齐实测（卡圆角约 20、
+       输入/主钮 44–46 高、圆角约 23），不再保留上一轮的放大移动值 */
+    border-radius: 20px;
   }
   .field-box {
-    min-height: 54px;
-    border-radius: 999px;
+    min-height: 46px;
+    border-radius: 23px;
   }
   .submit-btn {
-    height: 53px;
-    border-radius: 999px;
+    height: 46px;
+    border-radius: 23px;
   }
   .tg-login-btn {
-    height: 53px;
-    border-radius: 999px;
+    height: 46px;
+    border-radius: 23px;
   }
 }
 

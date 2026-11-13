@@ -236,20 +236,17 @@ onMounted(async () => {
   font-weight: var(--uhd-fw-extrabold);
   color: #ffffff;
 }
-/* 「网页观影」胶囊：彩虹边框＋浅底（深色为深毛玻璃），与概览页同款 */
+/* 「网页观影」胶囊：与概览页同款——实测大颗软胶囊，浅色近白底带粉色
+   水洗（中心 #f9f3f3）、深色 #312d2e，无彩虹描边 */
 .watch-pill {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 40px;
-  padding: 0 16px;
-  border: 1.5px solid transparent;
+  gap: 9px;
+  height: 54px;
+  padding: 0 24px;
+  border: none;
   border-radius: 999px;
-  background:
-    linear-gradient(rgba(22, 22, 25, 0.72), rgba(22, 22, 25, 0.72)) padding-box,
-    var(--uhd-rainbow) border-box;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: #312d2e;
   color: #ffffff;
   font-size: 15px;
   font-weight: var(--uhd-fw-semibold);
@@ -409,9 +406,7 @@ html[data-theme='light'] .am-page { background: #f8f8f8; color: #111111; }
 html[data-theme='light'] .am-brand__mark { color: #111111; }
 html[data-theme='light'] .am-brand__title { color: #111111; }
 html[data-theme='light'] .watch-pill {
-  background:
-    linear-gradient(#ffffff, #ffffff) padding-box,
-    var(--uhd-rainbow) border-box;
+  background: linear-gradient(180deg, #fdf8f8 0%, #f9f1f1 100%);
   color: #111111;
 }
 html[data-theme='light'] .am-avatar { background: #e9e9ec; color: #111111; }
