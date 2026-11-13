@@ -151,7 +151,8 @@ def test_panel_letter_tastes_evaluate_exclude_deleted(db):
     from backend.api import panel
     from backend import panel_achievements
     user, _vis, _dele = _vis_del(db)
-    # 昨日信：会话落进昨日窗口——用生产同款时钟（北京时间帧）算窗口内时间
+    # 会话落进昨日窗口（下方成就评估的深夜档要用）——用生产同款时钟
+    # （北京时间帧）算窗口内时间
     from backend.api.panel import _now_local_naive
     yesterday_start = (_now_local_naive() - timedelta(days=1)).replace(
         hour=0, minute=0, second=0, microsecond=0)
@@ -160,8 +161,9 @@ def test_panel_letter_tastes_evaluate_exclude_deleted(db):
             em.PlaybackSession.user_id == user.id).all():
         s.start_time = yesterday_noon
     db.commit()
-    letter = panel.panel_letter(db=db, user=user)
-    assert "pa037-del" not in _dump(letter)
+    # 每日一封（panel_letter）已随发现页删除批次下线：钉住删除语义——
+    # 该属性不得存在，将来有人误加回本用例即红。
+    assert not hasattr(panel, "panel_letter")
     # 口味：已下架条目的 genre 不计入
     db.query(em.MediaItem).filter(em.MediaItem.id == _dele).update(
         {"genres": '["动画"]'}, synchronize_session=False)
@@ -356,7 +358,6 @@ FIXED_FUNCTIONS = [
     ("backend.api.home_summary", "_stats"),
     ("backend.api.home_summary", "_sessions"),
     ("backend.api.media_library", "_recently_updated_items"),
-    ("backend.api.panel", "panel_letter"),
     ("backend.api.panel", "panel_collector"),
     ("backend.api.admin", "get_playback_stats"),
     ("backend.emby_server.api", "_prefetch_list_data"),
