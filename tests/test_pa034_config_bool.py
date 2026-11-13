@@ -1,7 +1,7 @@
 """PA-034：布尔归一化必须按 spec 风格转换 int/字符串输入。
 
 旧行为：int 0/1 直接 str()、字符串 "1"/"yes"/"on" 原样返回；
-word 风格键（如 slots_enabled）落库 "1" 后，严格读口径
+word 风格键（如 welfare_vitality_renew_enabled）落库 "1" 后，严格读口径
 （economy._get_bool_config 只认 "true"）会把"开"读成"关"，且保存接口不报错。
 """
 import pytest
@@ -32,11 +32,12 @@ class TestPa034WordStyle:
     def test_word_registered_key_follows_spec(self):
         from backend import config_schema
 
-        assert config_schema.WELFARE_CONFIG_SCHEMA["slots_enabled"] == ("bool",)
+        # 代表键原为 slots_enabled，老虎机随批 11 删除后改用同风格的现存键
+        assert config_schema.WELFARE_CONFIG_SCHEMA["welfare_vitality_renew_enabled"] == ("bool",)
         assert (
             normalize(
-                "slots_enabled",
-                config_schema.WELFARE_CONFIG_SCHEMA["slots_enabled"],
+                "welfare_vitality_renew_enabled",
+                config_schema.WELFARE_CONFIG_SCHEMA["welfare_vitality_renew_enabled"],
                 1,
             )
             == "true"

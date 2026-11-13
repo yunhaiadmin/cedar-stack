@@ -34,7 +34,7 @@ from backend import database as _dbmod  # noqa: E402
 import pytest  # noqa: E402
 from fastapi import HTTPException  # noqa: E402
 
-from backend import codes, media_seek, models, welfare_redpacket  # noqa: E402
+from backend import codes, media_seek, models  # noqa: E402
 from backend.api import admin as admin_api  # noqa: E402
 from backend.api import economy as economy_api  # noqa: E402
 from backend.api import user as user_api  # noqa: E402
@@ -313,23 +313,4 @@ def test_transfer_fee_normal_user_still_charged(db):
     db.refresh(plain)
     assert plain.points == 895
     fees = _fee_logs(db, plain.id, "transfer_fee")
-    assert len(fees) == 1 and fees[0].amount == -5
-
-
-def test_redpacket_fee_zero_for_whitelist(db):
-    vip = _whitelist_user(db, "vip_packet", points=1000)
-    db.commit()
-    welfare_redpacket.send_packet(db, vip, 100, 5)
-    db.refresh(vip)
-    assert vip.points == 900  # 只扣红包本体
-    assert _fee_logs(db, vip.id, "redpacket_fee") == []
-
-
-def test_redpacket_fee_normal_user_still_charged(db):
-    plain = _user(db, "plain_packet", points=1000)
-    db.commit()
-    welfare_redpacket.send_packet(db, plain, 100, 5)
-    db.refresh(plain)
-    assert plain.points == 895
-    fees = _fee_logs(db, plain.id, "redpacket_fee")
     assert len(fees) == 1 and fees[0].amount == -5

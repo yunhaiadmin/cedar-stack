@@ -5,7 +5,7 @@
  * 群抽奖活动 + 积分配置通过标签页切换，统一入口管理公益服。
  * 两个标签页各自是一整页：按需加载，只看群抽奖时不用把积分配置页也打进首屏。
  * 配置写入口随入口统一：两页写的键集合不重叠（抽奖页只写 lottery_*，积分页写
- * 货币/红包/转账/发言/机器人/解锁配置），并页本身就是写入口唯一化，不再各占导航。
+ * 货币/转账/发言/机器人/解锁配置），并页本身就是写入口唯一化，不再各占导航。
  *
  * 另有「活动提案」（等级治理 Step 3 用户提案审批）与「抽奖黑名单」两个标签，
  * 同样按需加载、?tab=proposals / ?tab=blacklist 可直达。
@@ -65,7 +65,7 @@ const activeTab = computed<WelfareTab>({
         @click="activeTab = 'points'"
       >
         积分配置
-        <span class="tab-hint">货币 / 红包 / 转账 / 机器人</span>
+        <span class="tab-hint">货币 / 转账 / 机器人</span>
       </button>
       <button
         id="welfare-tab-proposals"

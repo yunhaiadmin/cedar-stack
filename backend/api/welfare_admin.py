@@ -289,11 +289,11 @@ WELFARE_CONFIG_KEYS = {
     "welfare_streak_renew_days": "30",
     "welfare_inactive_days": "30",
     "welfare_request_monthly": "3",
-    # P0 统一货币体系：充值比例与红包规则
+    # P0 统一货币体系：充值比例
     "recharge_ratio": "1.2",
     # C4 商店改造：快捷金额
     "recharge_quick_amounts": "10,30,50,100,200",
-    # B4 TG Bot 总控：总开关、群白名单、限流、各命令开关、红包开关
+    # B4 TG Bot 总控：总开关、群白名单、限流、各命令开关
     "bot_group_ids": "",
     "bot_rate_limit_seconds": "3",
     "bot_group_rate_limit": "20",
@@ -329,11 +329,6 @@ WELFARE_CONFIG_KEYS = {
     "bot_channel_guard_enabled": "true",
     "bot_channel_whitelist": "",
     "bot_leave_action": "cancel_welfare",
-    "redpacket_fee_pct": "5",
-    "redpacket_send_limit_7d": "20",
-    "redpacket_recv_limit_7d": "10",
-    # 红包过期自动退款：总开关 + 扫描间隔（秒，最小 60）
-    "redpacket_refund_interval_sec": "300",
     # TG 门禁：公益服能力（签到/积分/红包/抽奖）是否要求绑定 Telegram
     "welfare_require_tg_bind": "1",
     # 群抽奖：总开关默认开（关闭后不可新建活动），允许群逗号分隔、空=不限制
@@ -350,37 +345,6 @@ WELFARE_CONFIG_KEYS = {
     "lottery_reminder_step": "25",
     "lottery_final_call_minutes": "30",
     "lottery_announce_edit_min_interval_sec": "20",
-    # 能量老虎机（2026-10-30 用户亲批）：总开关默认开；注额三档；赔付倍数；
-    # 头奖池抽水 5%＋种子 100（池余额存 slots_pool 表，不在此处）；
-    # 每日下注封顶 200 / 每日赢分封顶 1000（基础赔付计，池奖不计）
-    "slots_enabled": "true",
-    # 群里可玩（2026-10-30 用户亲令）：名单群的老虎机入口与注额按钮
-    # 在群内直接可用、扣点击者本人；关掉则群里回落「请私聊」提示。
-    "slots_group_enabled": "true",
-    "slots_bet_tiers": "5,10,20",
-    "slots_pay_777": "20",
-    "slots_pay_bar": "10",
-    "slots_pay_fruit": "5",
-    "slots_pay_two7": "1",
-    "slots_pool_rake_pct": "5",
-    "slots_pool_seed": "100",
-    "slots_daily_bet_cap": "200",
-    "slots_daily_win_cap": "1000",
-    # 骰子对决（默认关）：单注上下限、奖池抽成、每日赢取上限。
-    # 超时固定 30 秒，不在这里配。读侧 backend.duel。
-    "bot_duel_enabled": "false",
-    "bot_duel_min": "10",
-    "bot_duel_max": "200",
-    "bot_duel_rake_pct": "5",
-    "bot_duel_daily_win_cap": "500",
-    # 红包雨（默认关）：系统出资，不扣管理员。定时为空表示不定时，
-    # 只能由管理员在群里发 /rain。钟点按上海时间，如 21:05。
-    "bot_rain_enabled": "false",
-    "bot_rain_total": "100",
-    "bot_rain_count": "10",
-    "bot_rain_interval_sec": "3",
-    "bot_rain_daily_win_cap": "200",
-    "bot_rain_schedule": "",
     # 每周游戏榜（默认关）：周日 21:00 和观影周榜同时发主群海报。
     # 只统计净赢，不发能量、不加称号。
     "bot_gamerank_enabled": "false",

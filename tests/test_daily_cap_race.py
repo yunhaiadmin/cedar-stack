@@ -78,22 +78,3 @@ def test_transfer_daily_cap_not_bypassed_by_concurrent_requests(file_engine, mon
     db.close()
     assert out == 1, results
     assert sorted(results.values())[0] == "ok"
-
-
-
-
-
-def test_redpacket_send_and_claim_lock_user_before_counting(monkeypatch):
-    from backend import welfare_redpacket
-    calls = []
-    monkeypatch.setattr(economy, "lock_user_row", lambda db, uid: calls.append(uid))
-    engine = create_engine("sqlite:///:memory:")
-    for t in (models.WebUser, models.SystemConfig, models.PointsLog, models.RedPacket, models.RedPacketClaim):
-        t.__table__.create(engine, checkfirst=True)
-    db = sessionmaker(bind=engine)()
-    a = models.WebUser(username="rp_a", password_hash="", points=1000)
-    b = models.WebUser(username="rp_b", password_hash="", points=0)
-    db.add_all([a, b]); db.commit()
-    p = welfare_redpacket.send_packet(db, a, 10, 2)
-    welfare_redpacket.claim_packet(db, b, p.id)
-    assert calls == [a.id, b.id]

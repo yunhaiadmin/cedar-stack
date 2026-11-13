@@ -127,18 +127,3 @@ def test_transfer_fee_shortfall_rolls_back_principal(env):
     assert _balance(db, sender.id) >= 0
     assert db.query(models.PointsLog).count() == 0
     assert _balance(db, db.query(models.WebUser.id).filter_by(username="bob").scalar()) == 0
-
-
-# ---------- 发红包 ----------
-
-def test_send_redpacket_no_double_spend(env):
-    from backend import welfare_redpacket as rp
-
-    engine, db = env
-    _cfg(db, "redpacket_fee_pct", 0)
-    sender = _user(db, "carol", 100)
-    _drain_before_first_points_update(engine, sender.id)
-    with pytest.raises(ValueError):
-        rp.send_packet(db, sender, 100, 5)
-    assert _balance(db, sender.id) >= 0
-    assert db.query(models.RedPacket).count() == 0

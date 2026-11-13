@@ -186,10 +186,6 @@ WELFARE_CONFIG_SCHEMA: dict[str, tuple] = {
     "bot_channel_guard_enabled": ("bool",),
     "bot_channel_whitelist": ("str",),
     "bot_leave_action": ("enum", ("cancel_welfare", "none")),
-    "redpacket_fee_pct": ("int", 0, 100),
-    "redpacket_send_limit_7d": ("int", 0, 100000),
-    "redpacket_recv_limit_7d": ("int", 0, 100000),
-    "redpacket_refund_interval_sec": ("int", 60, 86400),
     # 2026-10-17 第 4 批 4-4：以下 9 键在 WELFARE_CONFIG_KEYS 里的默认值是 "1"/"0"，
     # 端点现行的 normalize 按 ("bool", "digit") 存 "1"/"0"。风格必须跟键走，
     # 注册为 digit 才能与今天逐字一致（读侧 lottery.py 等是宽容口径，本应无感，
@@ -213,36 +209,6 @@ WELFARE_CONFIG_SCHEMA: dict[str, tuple] = {
     "lottery_reminder_step": ("int", 0, _BIG),
     "lottery_final_call_minutes": ("int", 0, _BIG),
     "lottery_announce_edit_min_interval_sec": ("int", 0, 3600),
-    # 能量老虎机（backend/slots.py 读取，2026-10-30 用户亲批默认值）：
-    # 总开关 word 风格 ("bool",)（同 register_gift_* 口径，读侧
-    # economy._get_bool_config 只认 "true"）；注额档位逗号列表走 int_list
-    # 校验；赔付倍数/种子/封顶为非负整数；抽水百分比 0-100。
-    "slots_enabled": ("bool",),
-    "slots_group_enabled": ("bool",),
-    "slots_bet_tiers": ("int_list", 1, 100000),
-    "slots_pay_777": ("int", 0, _BIG),
-    "slots_pay_bar": ("int", 0, _BIG),
-    "slots_pay_fruit": ("int", 0, _BIG),
-    "slots_pay_two7": ("int", 0, _BIG),
-    "slots_pool_rake_pct": ("int", 0, 100),
-    "slots_pool_seed": ("int", 0, _BIG),
-    "slots_daily_bet_cap": ("int", 0, _BIG),
-    "slots_daily_win_cap": ("int", 0, _BIG),
-    # 骰子对决：总开关默认关（word 风格，读侧 economy._get_bool_config
-    # 只认 "true"）；单注上下限至少 1；抽成 0-100；每日赢取上限 0=不限。
-    "bot_duel_enabled": ("bool",),
-    "bot_duel_min": ("int", 1, _BIG),
-    "bot_duel_max": ("int", 1, _BIG),
-    "bot_duel_rake_pct": ("int", 0, 100),
-    "bot_duel_daily_win_cap": ("int", 0, _BIG),
-    # 红包雨：总开关默认关；总额至少 1；份数 1-100（与用户红包个数上限一致）；
-    # 间隔 0 表示一开始全部落下；每日上限 0=不限；定时是原文，读侧校验钟点。
-    "bot_rain_enabled": ("bool",),
-    "bot_rain_total": ("int", 1, _BIG),
-    "bot_rain_count": ("int", 1, 100),
-    "bot_rain_interval_sec": ("int", 0, 3600),
-    "bot_rain_daily_win_cap": ("int", 0, _BIG),
-    "bot_rain_schedule": ("str",),
     # 每周游戏榜总开关，默认关。word 风格，读侧只认 "true"。
     "bot_gamerank_enabled": ("bool",),
     # 2026-10-17 第 4 批 4-4：白名单里但此前无 spec 的群 id 列表键（端点现行按原文
@@ -611,28 +577,6 @@ WATCH_FALLBACK_CONFIG_SCHEMA: dict[str, tuple] = {
     "watch_fallback_credit_enabled": ("bool",),
 }
 
-
-# 盲盒（双服通用新功能，2026-11-11 用户亲定，方案 v2）：全站总开关
-# 与两份 JSON 文档（按 realm 分开的档位/奖池、奖品积分等值估值表）。
-# JSON 结构、奖池合法性（公益专属奖限制）与期望返还率红线由
-# backend/blindbox.py 在保存前校验后才走本家族落库（("raw",) 只负责
-# 原样存取，不做结构判断）；纯 SystemConfig 键不进 env.example。
-BLINDBOX_CONFIG_SCHEMA: dict[str, tuple] = {
-    # 全站总开关：默认关；关着时所有服一律停售（realm 级开关另在其内）。
-    "blindbox_enabled": ("bool",),
-    # 中奖群报喜开关：默认开（读侧缺行/读失败按开，见
-    # backend/blindbox_announce.announce_enabled）；关了抽中奖照常
-    # 发放、只是不往正式群发庆祝消息。
-    "blindbox_announce_enabled": ("bool",),
-    # 按 realm 分开的配置文档：{realm_id: {enabled, starts_at,
-    # ends_at, daily_spend_cap, access_days_daily_budget,
-    # whitelist_stock_total, tiers[...]}}，见 backend/blindbox.py。
-    "blindbox_realms": ("raw",),
-    # 奖品积分等值估值表（可配）：{vitality_per_point,
-    # access_day_values{天数:等值}, access_day_rate, whitelist}，
-    # 期望返还率与统计派奖等值都按它折算，见 backend/blindbox.py。
-    "blindbox_prize_values": ("raw",),
-}
 
 # 上游聚合拉取参数（2026-10-31 优化 O-05 起，后续 O-01/O-02/O-03
 # 的任务参数同家族登记）：读取唯一实现在 upstream_aggregate_run /

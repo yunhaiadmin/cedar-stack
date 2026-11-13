@@ -1,4 +1,4 @@
-"""PA-017/018/019（R9-B9 博彩小游戏）回归测试。
+"""PA-018/019（R9-B9 博彩小游戏）回归测试（PA-017 红包已随批 11 删除）。
 
 全部用隔离的内存 SQLite，不碰生产库。先红后绿：本文件用例在修复前
 应为红（缺陷签名），修复后全绿。
@@ -17,8 +17,6 @@ from sqlalchemy.orm import sessionmaker
 
 from backend import lottery
 from backend import models
-from backend import slots as slots_svc
-from backend import welfare_redpacket as rp
 
 
 @pytest.fixture()
@@ -60,29 +58,6 @@ def _make_free_realm(db):
     db.refresh(realm)
     _set_config(db, "active_realm_id", realm.id)
     return realm
-
-
-# ---------- PA-017：发送者不能抢自己的红包 ----------
-
-def test_sender_cannot_claim_own_packet(db):
-    """发送者自抢必须被拒，且红包剩余不受影响。"""
-    sender = _make_user(db, "sender17")
-    packet = rp.send_packet(db, sender, 100, 2)
-    with pytest.raises(ValueError, match="不能抢自己发的红包"):
-        rp.claim_packet(db, sender, packet.id)
-    db.refresh(packet)
-    assert packet.remaining_count == 2
-    assert packet.remaining_amount == 100
-
-
-def test_other_user_can_claim(db):
-    """他人正常抢不受影响。"""
-    sender = _make_user(db, "sender17b")
-    other = _make_user(db, "other17")
-    packet = rp.send_packet(db, sender, 100, 2)
-    result = rp.claim_packet(db, other, packet.id)
-    assert 1 <= result["amount"] <= 99
-    assert result["remaining_count"] == 1
 
 
 # ---------- PA-018：开奖私聊须分发奖成败 ----------
@@ -157,7 +132,7 @@ def test_notify_dm_split_by_distributed(db, monkeypatch):
     assert "自动补发" in dms_b[0]
 
 
-# ---------- PA-019：停用账号不得经机器人玩博彩 ----------
+# ---------- PA-019：停用账号不得参加抽奖 ----------
 
 def test_lottery_disabled_account_rejected(db):
     """停用账号参加抽奖被拒。"""
@@ -172,41 +147,12 @@ def test_lottery_disabled_account_rejected(db):
     assert res["reason"] == "account_disabled"
 
 
-def test_slots_disabled_account_rejected(db):
-    """停用账号玩老虎机被拒。"""
-    _make_free_realm(db)
-    user = _make_user(db, "disabled_slots", is_active=False)
-    res = slots_svc.check_eligibility(db, user)
-    assert res["ok"] is False
-    assert res["reason"] == "account_disabled"
-
-
-def test_redpacket_send_disabled_rejected(db):
-    """停用账号发红包被拒。"""
-    user = _make_user(db, "disabled_send", is_active=False)
-    with pytest.raises(ValueError, match="已被停用"):
-        rp.send_packet(db, user, 100, 2)
-
-
-def test_redpacket_claim_disabled_rejected(db):
-    """停用账号抢红包被拒。"""
-    sender = _make_user(db, "sender19")
-    packet = rp.send_packet(db, sender, 100, 2)
-    user = _make_user(db, "disabled_claim", is_active=False)
-    with pytest.raises(ValueError, match="已被停用"):
-        rp.claim_packet(db, user, packet.id)
-
-
 def test_active_accounts_unaffected(db):
-    """正常账号三条路径均不受影响。"""
+    """正常账号抽奖路径不受影响。"""
     _set_config(db, "lottery_min_account_age_days", 0)
-    _make_free_realm(db)
     user = _make_user(db, "active19")
     rnd = lottery.create_round(
         db, title="正常账号测试", chat_id=-100555,
         prizes=[{"name": "积分奖", "type": "points", "value": 100, "quantity": 1}],
     )
     assert lottery.check_eligibility(db, rnd, user)["ok"] is True
-    assert slots_svc.check_eligibility(db, user)["ok"] is True
-    packet = rp.send_packet(db, user, 100, 2)
-    assert packet.remaining_count == 2

@@ -4,11 +4,11 @@
  *
  * v2.55（暗房影院统一）：PageHeader + 分组 SectionCard。
  * PR #437：签到积分三项已移至「系统设置 → 每日签到」，本页移除。
- * P0 统一货币体系：新增货币体系（充值比例）与红包规则配置组。
+ * P0 统一货币体系：新增货币体系（充值比例）配置组。
  */
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeftRight, Bot, CloudRain, Coins, Dices, Gift, KeyRound, RefreshCw, Save, Send, Settings2, Swords, Trophy, Wallet } from 'lucide-vue-next'
+import { ArrowLeftRight, Bot, Coins, Gift, KeyRound, RefreshCw, Save, Send, Settings2, Trophy, Wallet } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard } from '@/components/ui'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import { fetchWelfareConfig, saveWelfareConfig } from '@/api/welfare'
@@ -31,13 +31,6 @@ const currencyFields = [
   { key: 'recharge_quick_amounts', label: '快捷金额', hint: '自定义充值快捷金额，逗号分隔、最多 8 个，默认 10,30,50,100,200', suffix: '元' },
 ]
 
-const redpacketFields = [
-  { key: 'redpacket_fee_pct', label: '红包手续费', hint: '按发送金额比例收取，默认 5，填 0 不收', suffix: '%' },
-  { key: 'redpacket_send_limit_7d', label: '发送频率限制', hint: '7 天内最多发送次数，默认 20，填 0 不限', suffix: '次' },
-  { key: 'redpacket_recv_limit_7d', label: '领取频率限制', hint: '7 天内最多领取次数，默认 10，填 0 不限（管理员发的不计）', suffix: '次' },
-  { key: 'redpacket_refund_interval_sec', label: '退款扫描间隔', hint: '每隔多少秒扫描一次过期红包，默认 300，最小 60', suffix: '秒' },
-]
-
 const transferFields = [
   { key: 'points_transfer_fee_pct', label: '手续费', hint: '按转账金额比例收取，默认 5，填 0 不收', suffix: '%' },
   { key: 'points_transfer_min', label: '单笔最小', hint: '默认 1', suffix: '积分' },
@@ -52,44 +45,6 @@ const earnRedeemFields = [
   { key: 'points_redeem_30d', label: '兑换 30 天', hint: '默认 300', suffix: '积分', inputmode: 'numeric' },
   { key: 'welfare_redeem_min_account_age_days', label: '兑换号龄门槛', hint: '自助兑换需注册满的天数，默认 3，填 0 关闭', suffix: '天', inputmode: 'numeric' },
   { key: 'welfare_redeem_min_active_days', label: '兑换活跃门槛', hint: '自助兑换需近 7 天活跃天数（签到/播放算活跃，发言最多计 1 天），默认 2，填 0 关闭', suffix: '天', inputmode: 'numeric' },
-]
-
-// 能量老虎机总开关：word 风格 true/false（后端 economy._get_bool_config 只认 'true'）
-const slotsEnabled = computed({
-  get: () => (form.value['slots_enabled'] ?? 'true') === 'true',
-  set: (v: boolean) => { form.value['slots_enabled'] = v ? 'true' : 'false' },
-})
-
-// 老虎机群里可玩开关：word 风格 true/false（同总开关口径），默认开
-const slotsGroupEnabled = computed({
-  get: () => (form.value['slots_group_enabled'] ?? 'true') === 'true',
-  set: (v: boolean) => { form.value['slots_group_enabled'] = v ? 'true' : 'false' },
-})
-
-// 骰子对决总开关：word 风格 true/false，默认关
-const duelEnabled = computed({
-  get: () => (form.value['bot_duel_enabled'] ?? 'false') === 'true',
-  set: (v: boolean) => { form.value['bot_duel_enabled'] = v ? 'true' : 'false' },
-})
-
-const duelFields = [
-  { key: 'bot_duel_min', label: '单注下限', hint: '发起时最少押多少能量，默认 10', suffix: '能量' },
-  { key: 'bot_duel_max', label: '单注上限', hint: '发起时最多押多少能量，默认 200', suffix: '能量' },
-  { key: 'bot_duel_rake_pct', label: '系统抽成', hint: '从双方奖池里抽走的比例，默认 5，填 0 不抽。零头留给胜者', suffix: '%' },
-  { key: 'bot_duel_daily_win_cap', label: '每日赢取上限', hint: '每人每天从对决拿到的奖金上限，默认 500，填 0 不限', suffix: '能量/天' },
-]
-
-const rainEnabled = computed({
-  get: () => (form.value['bot_rain_enabled'] ?? 'false') === 'true',
-  set: (v: boolean) => { form.value['bot_rain_enabled'] = v ? 'true' : 'false' },
-})
-
-const rainFields = [
-  { key: 'bot_rain_total', label: '总额', hint: '一场红包雨一共多少能量，默认 100。由系统出，不扣管理员', suffix: '能量' },
-  { key: 'bot_rain_count', label: '份数', hint: '拆成几份，默认 10，最多 100。总额不能小于份数', suffix: '份' },
-  { key: 'bot_rain_interval_sec', label: '落下间隔', hint: '开场先落 1 份，之后每隔这么多秒再落 1 份。默认 3，填 0 表示一开始全部落下', suffix: '秒' },
-  { key: 'bot_rain_daily_win_cap', label: '每日赢取上限', hint: '每人每天从红包雨拿到的能量上限，默认 200，填 0 不限', suffix: '能量/天' },
-  { key: 'bot_rain_schedule', label: '每天开场', hint: '上海时间，如 21:05。留空则不定时，只能由管理员在群里发 /rain', suffix: '' },
 ]
 
 const gameRankEnabled = computed({
@@ -133,18 +88,6 @@ const digestEnabled = computed({
 const digestFields = [
   { key: 'bot_update_digest_interval_minutes', label: '攒批间隔', hint: '每隔这段时间把这段时间新入库的攒成一批发出，默认 30，范围 1-1440', suffix: '分钟' },
   { key: 'bot_update_digest_chat_id', label: '发送目标', hint: '填频道 @用户名或频道 ID 则发频道。机器人须先被设为该频道管理员才能发帖', suffix: '', placeholder: '留空发群里' },
-]
-
-const slotsFields = [
-  { key: 'slots_bet_tiers', label: '注额档位', hint: '逗号分隔的能量数，默认 5,10,20', suffix: '能量' },
-  { key: 'slots_pay_777', label: '777 倍数', hint: '777 三连赔付倍数，默认 20（另加抱走头奖池）', suffix: '倍' },
-  { key: 'slots_pay_bar', label: 'BAR 三连倍数', hint: '默认 10', suffix: '倍' },
-  { key: 'slots_pay_fruit', label: '水果三连倍数', hint: '葡萄/柠檬三连赔付倍数，默认 5', suffix: '倍' },
-  { key: 'slots_pay_two7', label: '双 7 倍数', hint: '恰好两个 7 的赔付倍数，默认 1（返注）', suffix: '倍' },
-  { key: 'slots_pool_rake_pct', label: '头奖池抽水', hint: '每注抽入头奖池的比例，默认 5', suffix: '%' },
-  { key: 'slots_pool_seed', label: '头奖池种子', hint: '池首次创建与 777 抱池后的重置额，默认 100', suffix: '能量' },
-  { key: 'slots_daily_bet_cap', label: '每日下注封顶', hint: '每人每日下注总额上限，默认 200，填 0 不限', suffix: '能量/天' },
-  { key: 'slots_daily_win_cap', label: '每日赢分封顶', hint: '只计基础赔付（头奖池部分不计），默认 1000，填 0 不限', suffix: '能量/天' },
 ]
 
 const tgBindEnabled = computed({
@@ -356,7 +299,7 @@ onMounted(load)
     <PageHeader
       eyebrow="内容"
       title="积分与公益配置"
-      description="货币体系、红包规则、兑换比例与公益服到期策略"
+      description="货币体系、兑换比例与公益服到期策略"
     >
       <template #actions>
         <el-button :icon="RefreshCw" :loading="loading" @click="load">刷新</el-button>
@@ -391,77 +334,9 @@ onMounted(load)
         </el-form>
       </SectionCard>
 
-      <SectionCard
-        title="红包规则"
-        :icon="Gift"
-        description="红包手续费与 7 天频率限制"
-      >
-        <el-form :label-position="labelPosition" label-width="120px" class="config-form">
-          <el-form-item v-for="f in redpacketFields" :key="f.key" :label="f.label">
-            <el-input v-model="form[f.key]" class="field-input" />
-            <span class="field-suffix">{{ f.suffix }}</span>
-            <span class="field-hint">{{ f.hint }}</span>
-          </el-form-item>
-        </el-form>
-      </SectionCard>
 
-      <SectionCard
-        title="能量老虎机"
-        :icon="Dices"
-        description="TG 机器人老虎机的注额、赔付与头奖池（结果由 Telegram 原生老虎机决定）"
-      >
-        <el-form :label-position="labelPosition" label-width="120px" class="config-form">
-          <el-form-item label="总开关">
-            <el-switch v-model="slotsEnabled" />
-            <span class="field-hint">关闭后机器人老虎机入口与下注全部停用，默认开</span>
-          </el-form-item>
-          <el-form-item label="群里可玩">
-            <el-switch v-model="slotsGroupEnabled" />
-            <span class="field-hint">名单群内的老虎机面板与注额按钮在群里直接可用：点按钮的人用自己的能量下注、中奖归他，公开结果按机器人消息自毁时间自动删除；关闭后群里只提示去私聊，私聊玩法不受影响。默认开</span>
-          </el-form-item>
-          <el-form-item v-for="f in slotsFields" :key="f.key" :label="f.label">
-            <el-input v-model="form[f.key]" class="field-input" />
-            <span class="field-suffix">{{ f.suffix }}</span>
-            <span class="field-hint">{{ f.hint }}</span>
-          </el-form-item>
-        </el-form>
-      </SectionCard>
 
-      <SectionCard
-        title="骰子对决"
-        :icon="Swords"
-        description="群里 /duel 押能量掷骰子。默认关。30 秒无人应战会退回，一个群同时只开一局"
-      >
-        <el-form :label-position="labelPosition" label-width="120px" class="config-form">
-          <el-form-item label="总开关">
-            <el-switch v-model="duelEnabled" />
-            <span class="field-hint">关闭后群里不能新开对决；已经押上的一局仍会结算或退回。默认关</span>
-          </el-form-item>
-          <el-form-item v-for="f in duelFields" :key="f.key" :label="f.label">
-            <el-input v-model="form[f.key]" class="field-input" />
-            <span class="field-suffix">{{ f.suffix }}</span>
-            <span class="field-hint">{{ f.hint }}</span>
-          </el-form-item>
-        </el-form>
-      </SectionCard>
 
-      <SectionCard
-        title="红包雨"
-        :icon="CloudRain"
-        description="管理员在群里下一场系统出钱的红包。默认关。一个群同时只一场"
-      >
-        <el-form :label-position="labelPosition" label-width="120px" class="config-form">
-          <el-form-item label="总开关">
-            <el-switch v-model="rainEnabled" />
-            <span class="field-hint">关闭后不能新开红包雨。已经落下的那场仍可以抢完。默认关</span>
-          </el-form-item>
-          <el-form-item v-for="f in rainFields" :key="f.key" :label="f.label">
-            <el-input v-model="form[f.key]" class="field-input" />
-            <span class="field-suffix">{{ f.suffix }}</span>
-            <span class="field-hint">{{ f.hint }}</span>
-          </el-form-item>
-        </el-form>
-      </SectionCard>
 
       <SectionCard
         title="每周游戏榜"
