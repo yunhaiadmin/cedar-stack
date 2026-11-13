@@ -353,6 +353,36 @@ def play_inline_concurrency(db=None):
 
 
 # ---------------------------------------------------------------------------
+# PlaybackInfo 内等转存就绪的短等上限（2026-11-12 起播拆账第 1 项）
+#
+# 拆账实测：PlaybackInfo 的 copy-wait 子集占 PI 请求 28%，增量
+# p90 约 12 秒、max 约 21 秒——池路径等流（wait_for_transfer_ready，
+# 上限 15 秒）与本人路径当场先办（maybe_run_play_inline，预算
+# 20 秒）都把整个 PlaybackInfo 堵到各自上限才回。改分级短等：
+# PlaybackInfo 只短等本键秒数（默认 3，钳 [1, 10]），等不到就按
+# preparing 形态返回（变体清单呈准备中、客户端可感知可重试），
+# 转存本身不取消——当场执行在后台线程续跑到完、池/本人的后续
+# 由工人队列接手，video_stream 侧的等待口径逐字不变。走
+# SystemConfig（与 play_inline 三键同族，管理端热改）。
+# ---------------------------------------------------------------------------
+
+#: PlaybackInfo 内等转存就绪短等上限（秒）SystemConfig 键。
+KEY_PLAYBACKINFO_COPY_WAIT_SEC = "playbackinfo_copy_wait_sec"
+
+#: 短等上限缺省（秒）：与拆账目标「copy-wait 的 PI p90 ≤3 秒
+#: 量级」对齐——3 秒内办完的当场给可播，办不完的先回准备中。
+PLAYBACKINFO_COPY_WAIT_DEFAULT = 3
+
+
+def playbackinfo_copy_wait_sec(db=None) -> int:
+    """PlaybackInfo 短等上限（秒）：SystemConfig > 默认 3，钳 [1, 10]。"""
+    configured = _system_config_int(db, KEY_PLAYBACKINFO_COPY_WAIT_SEC)
+    if configured is not None:
+        return max(1, min(10, configured))
+    return PLAYBACKINFO_COPY_WAIT_DEFAULT
+
+
+# ---------------------------------------------------------------------------
 # 跨 provider 转存配置（2026-10-30 用户亲点重开，推翻 2026-10-29
 # #1487 关停；恢复 2026-10-26 20:54 定版“绑哪播哪”）
 #
@@ -1084,6 +1114,15 @@ def _shared_probe_client():
     return client
 
 
+#: 整拉第二腿的后台执行器（2026-11-12 起播拆账第 4 项并行化）：
+#: GET 腿与 Range 腿同 URL、无凭据、只读前段字节，提交到后台
+#: 线程与 Range 腿同时跑；Range 腿定案（quota / 非 2xx / 抛错）
+#: 时结果直接丢弃不等它。共享客户端连接池（8/4）容得下两腿
+#: 并发，执行器 4 线程封顶防探测突发把线程开爆。
+_PROBE_GET_EXECUTOR = ThreadPoolExecutor(
+    max_workers=4, thread_name_prefix="usercopy-probe-get")
+
+
 def _probe_read_head(resp, limit):
     """读响应前段字节（上限 limit），读满即停——绝不整段下载。
 
@@ -1276,6 +1315,16 @@ def probe_user_copy_quota(user_id, fid) -> str:
     try:
         from backend.emby_server.drive_auth import drive_usercontent_download_url
         url = drive_usercontent_download_url(fid)
+        # 两腿并行（2026-11-12 起播拆账第 4 项）：旧口径 Range 腿
+        # 回来才发整拉第二腿，两次谷歌往返串行叠加（拆账实测
+        # 增量 p90 2,088ms）。第二腿的结果只在 Range 放行时才
+        # 被采用，故先把它提交到后台线程与 Range 腿同时跑，
+        # 定案口径逐字不变：Range 判 quota / 非 2xx / 抛错时
+        # 第二腿结果直接丢弃（并行化的全部代价是多发这一次
+        # ≤4KB 无凭据只读请求，异常留在 future 里不外泄）；
+        # Range 放行时才等第二腿结果做插页分类。
+        get_future = _PROBE_GET_EXECUTOR.submit(
+            _usercopy_probe_http_get, url)
         status, ctype, head = _usercopy_probe_http(url)
     except Exception:  # noqa: BLE001 — 探测失败不阻断播放
         logger.info("用户副本额度探测失败 user=%s fid=%s，照常下发",
@@ -1292,8 +1341,9 @@ def probe_user_copy_quota(user_id, fid) -> str:
     if verdict is None:
         # 第二腿（整拉形态）：Range 放行只证明分段可拉，播放器起播
         # 的整拉 / HEAD 形态可能撞插页，必须按播放器口径再判一次。
+        # 结果取自与 Range 腿并行提交的 future（见上）。
         try:
-            g_status, g_ctype, g_head = _usercopy_probe_http_get(url)
+            g_status, g_ctype, g_head = get_future.result()
         except Exception:  # noqa: BLE001 — 第二腿失败不推翻第一腿
             logger.info("用户副本整拉探测失败 user=%s fid=%s，"
                         "按 Range 形态放行", user_id, fid, exc_info=True)
@@ -1457,6 +1507,88 @@ def _probe_ok_reuse_clear(user_id, fid) -> None:
         pass
 
 
+# ---------------------------------------------------------------------------
+# 新鲜裁决秒级短缓存（2026-11-12 起播拆账第 4 项）
+#
+# decision 的现行口径对非 quota 裁决是「每判定先失效、再新鲜
+# 两腿」：同一次点播里 PlaybackInfo 与 video_stream 两判定点
+# 相隔不到一秒、各付一轮两腿（拆账实测 quota_probe 增量 p90
+# 2,088ms，串行两腿是大头，已另行并行化）。本层只兜「秒级
+# 突发」：新鲜探测刚得出的裁决在极短 TTL 内被同 (用户, fid)
+# 的后续判定直接复用，不再失效重探。
+#
+# TTL 取 5 秒（env TRANSFER_USERCOPY_PROBE_BURST_TTL_SEC 可调，
+# 钳 [0, 30]，0 = 关）：只覆盖同一次起播尝试内 PI → stream →
+# 客户端秒级重试这一簇判定，比 600 秒裁决缓存 / ok 复用短两个
+# 数量级。不会放行超额的论证：只缓存 ok / interstitial——这两
+# 类裁决在 5 秒前刚由新鲜两腿探明，额度状态在 5 秒内的陈旧
+# 窗口远小于已被批准的 600 秒 ok 复用风险面；error 永不缓存
+# （失败必须每次新鲜探，防把瞬时抖动冻成结论）；quota 不经
+# 本层（已被 600 秒主裁决缓存吃住且本层检查排在其后，新
+# quota 永远盖得住）。池路径（poolvar: 前缀）与 ok 复用同口
+# 径排除：熔断恢复要当场探、不许吃任何复用。缓存走既有
+# CacheManager（domain="playback"），不另造第二套。
+# ---------------------------------------------------------------------------
+
+def _usercopy_probe_burst_ttl() -> int:
+    """新鲜裁决秒级短缓存 TTL（秒）：env > 默认 5，钳 [0, 30]。
+
+    不套本文件 _env_int：它把 0 也回落默认，而本键 0 = 明确关。
+    """
+    try:
+        value = int(os.getenv(
+            "TRANSFER_USERCOPY_PROBE_BURST_TTL_SEC", "") or "")
+    except (TypeError, ValueError):
+        return 5
+    return max(0, min(30, value))
+
+
+def _usercopy_probe_burst_key(user_id, fid) -> str:
+    return f"usercopy_quota_burst:{user_id}:{fid}"
+
+
+def _probe_burst_hit(user_id, fid):
+    """短缓存命中回裁决原文（ok / interstitial），未命中回 None。
+
+    池路径 / TTL 关 / 缓存异常一律按未命中。永不抛异常。
+    """
+    if not _probe_ok_reuse_applies(user_id):
+        return None
+    if _usercopy_probe_burst_ttl() <= 0:
+        return None
+    try:
+        from backend.database import CacheManager
+        cached = CacheManager.get(
+            _usercopy_probe_burst_key(user_id, fid),
+            domain="playback")
+    except Exception:  # noqa: BLE001 — 缓存读不到按未命中
+        return None
+    if cached in ("ok", "interstitial"):
+        return cached
+    return None
+
+
+def _probe_burst_store(user_id, fid, verdict) -> None:
+    """新鲜探测后落短缓存：只存 ok / interstitial。
+
+    error / quota 永不经这里（quota 由主裁决缓存负责、error
+    必须每次新鲜探）。写失败只丢这次复用机会。永不抛异常。
+    """
+    if verdict not in ("ok", "interstitial"):
+        return
+    if not _probe_ok_reuse_applies(user_id):
+        return
+    ttl = _usercopy_probe_burst_ttl()
+    if ttl <= 0:
+        return
+    try:
+        from backend.database import CacheManager
+        CacheManager.set(_usercopy_probe_burst_key(user_id, fid),
+                         verdict, ttl, domain="playback")
+    except Exception:  # noqa: BLE001 — 写不进不影响本次裁决
+        pass
+
+
 def probe_user_copy_quota_decision(user_id, fid) -> str:
     """改道判定专用入口（PlaybackInfo / video_stream 两判定点）。
 
@@ -1495,6 +1627,13 @@ def probe_user_copy_quota_decision(user_id, fid) -> str:
     probe 对缓存异常本就按未命中处理。永不抛异常的口径与
     probe 一致（probe 本身永不抛）。探测开关关时不吃缓存：
     直接走 probe（恒返回 ok，回到探测前发直链行为）。
+
+    2026-11-12 起播拆账第 4 项再加一层秒级短缓存：新鲜探测
+    的 ok / interstitial 裁决落 5 秒短缓存（env
+    TRANSFER_USERCOPY_PROBE_BURST_TTL_SEC，见 _probe_burst_*
+    口径注释），排在 quota 主缓存与 ok 复用之后查——只省同
+    一次起播内两判定点相隔数秒的重复两腿，不改变任何方向的
+    新鲜度定案。
     """
     fid = (fid or "").strip()
     if fid and usercopy_quota_probe_enabled():
@@ -1519,6 +1658,15 @@ def probe_user_copy_quota_decision(user_id, fid) -> str:
         # 内一律按未命中，行为回现行口径。
         if _probe_ok_reuse_hit(user_id, fid):
             return "ok"
+        # 新鲜裁决秒级短缓存（2026-11-12 起播拆账第 4 项）：
+        # 同一 (用户, fid) 刚在数秒内新鲜探明过 ok /
+        # interstitial 时直接复用，不再失效重探——只兜同一次
+        # 起播内 PI 与 stream 两判定点的秒级突发；quota 不经
+        # 本层（上方主缓存口径已收口）、error 永不入缓存、池
+        # 路径排除，详见 _probe_burst_hit 的口径注释。
+        _burst = _probe_burst_hit(user_id, fid)
+        if _burst is not None:
+            return _burst
     if fid:
         try:
             from backend.database import CacheManager
@@ -1529,6 +1677,11 @@ def probe_user_copy_quota_decision(user_id, fid) -> str:
         except Exception:  # noqa: BLE001 — 失效失败不阻断判定
             pass
     verdict = probe_user_copy_quota(user_id, fid)
+    if usercopy_quota_probe_enabled():
+        # 新鲜裁决落秒级短缓存（只 ok / interstitial，见
+        # _probe_burst_store）；探测关时 probe 的是合成裁决，
+        # 与 ok 复用同口径不落。
+        _probe_burst_store(user_id, fid, verdict)
     if verdict == "ok" and usercopy_quota_probe_enabled():
         # 只缓存 ok 裁决：供两判定点（跨进程）短时复用。探测
         # 开关关时 probe 的 ok 是「不探直放」的合成裁决，不落
@@ -4395,7 +4548,8 @@ def _play_inline_config():
 
 async def maybe_run_play_inline(initial_gate, gate_callable, *,
                                 session_factory=None,
-                                drive_api_factory=None):
+                                drive_api_factory=None,
+                                wait_budget_sec=None):
     """点播当场先办（请求路径入口，形状与 wait_for_transfer_ready 同款）。
 
     initial_gate 为 preparing 且带 job_id 时尝试当场执行，办完用
@@ -4415,6 +4569,12 @@ async def maybe_run_play_inline(initial_gate, gate_callable, *,
 
     gate_callable 抛异常时返回 initial_gate（与等流同口径，
     不把重查异常读成播放失败）。
+
+    ``wait_budget_sec``（2026-11-12 起播拆账第 1 项）：调用方
+    给了值时只收窄「本请求等多久」这一个口径（PlaybackInfo
+    传短等上限，默认 3 秒），执行预算本身（cfg budget_sec）
+    不变——等不到回初始 preparing，执行照旧在后台跑到完、
+    不取消。video_stream 不传，逐字旧行为。
     """
     gate = initial_gate or {}
     if gate.get("verdict") != "preparing":
@@ -4440,12 +4600,14 @@ async def maybe_run_play_inline(initial_gate, gate_callable, *,
             _inline_release()
 
     task = asyncio.ensure_future(_run())
+    wait_sec = (cfg["budget_sec"] if wait_budget_sec is None
+                else float(wait_budget_sec))
     try:
         outcome = await asyncio.wait_for(
-            asyncio.shield(task), timeout=cfg["budget_sec"])
+            asyncio.shield(task), timeout=wait_sec)
     except (asyncio.TimeoutError, TimeoutError):
-        logger.info("[byos] play_inline_timeout job=%s budget_sec=%s",
-                    job_id, cfg["budget_sec"])
+        logger.info("[byos] play_inline_timeout job=%s budget_sec=%s "
+                    "wait_sec=%s", job_id, cfg["budget_sec"], wait_sec)
         return gate
     except Exception:
         logger.warning("点播当场转存异常 job=%s", job_id, exc_info=True)

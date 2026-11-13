@@ -6831,18 +6831,25 @@ async def playback_info(
     # 转码删除（2026-10-24）：服务端不再转码，PlaybackInfo 不再下发
     # TranscodingUrl，SupportsTranscoding 恒 False。
 
-    # PlaybackInfo 短期缓存（5 分钟）：同一部片子短时间内重复请求直接走 Redis，
-    # 省掉 _media_source 的 DB 查询。PlaySessionId 和 api_key 每次重新生成，不进缓存。
-    # 缓存 key 包含 user_id（权限不同）+ 设备 profile 指纹 + 码率上限。
-    cache_ttl = env_int("PLAYBACKINFO_CACHE_TTL", 300)
+    # PlaybackInfo 基础体缓存（默认 10 分钟）：同一部片子短时间内重复
+    # 请求直接走 Redis，省掉 _media_source 的 DB 查询。PlaySessionId
+    # 和 api_key 每次重新生成，不进缓存。
+    # 缓存键只含条目 + 用户（2026-11-12 起播拆账第 5 项扩围）：
+    # 缓存体是 _media_source 的静态产物，只由条目与用户决定，
+    # 与设备 profile / 码率上限无关——旧键把这两者揉进键里，
+    # 同一用户同一条目换个客户端或码率就碎片化重算（拆账实测
+    # 命中率只有 66%、miss p50 498ms）。转存/变体状态永不进
+    # 缓存体：门禁裁决每请求新鲜算、变体清单每请求现算，
+    # preparing/failed 只覆盖在响应副本上（apply_transfer_status），
+    # 缓存永不把「准备中」冻成「可播」；TTL 延长到 10 分钟只
+    # 影响这份静态基础体的复用面。条目流信息变更靠 TTL 自然
+    # 过期（与旧 5 分钟口径同性质，只是窗口翻倍）。
+    cache_ttl = env_int("PLAYBACKINFO_CACHE_TTL", 600)
     cache_key = None
     cached_source = None
     if cache_ttl > 0:
         try:
-            profile_fp = hashlib.md5(
-                json.dumps(device_profile, sort_keys=True, ensure_ascii=False).encode("utf-8")
-            ).hexdigest()[:12]
-            cache_key = f"pi:{item.guid}:{user.id}:{profile_fp}:{max_bitrate // 1000}"
+            cache_key = f"pi:{item.guid}:{user.id}"
             from backend.database import CacheManager
             # S4：redis-py 是同步客户端，Redis 故障时一次 get 最长卡 socket 超时——放线程池
             hit = await run_db(CacheManager.get, cache_key)
@@ -6990,7 +6997,7 @@ async def playback_info(
             _play_session_id = secrets.token_hex(8)
     # 转存准备中态（2026-10-26 用户亲定“先转存再播”）：清单保留该条
     # 但点不了。状态每请求新鲜算（门禁内部读任务表），不污染上面的
-    # 5 分钟基础体缓存；只有 preparing/failed 才覆盖，error 与
+    # 基础体缓存；只有 preparing/failed 才覆盖，error 与
     # serve_115_copy 不动清单（error 由取流时 503 明示，115 副本由
     # video_stream 的 serve_115_copy 分支 302，不用改清单 URL）。
     # sources 为空（源不可用）时不算门禁。注意：PlaybackInfo 取到
@@ -7001,6 +7008,14 @@ async def playback_info(
     if sources:
         from backend.emby_server import pool_gate as _pool_gate_pi
         from backend.emby_server import transfer_variant as _tv_pi
+        # 起播拆账第 1 项（2026-11-12）：PI 内等转存就绪改短等
+        # 分级——最多等 playbackinfo_copy_wait_sec（默认 3 秒），
+        # 等不到就按 preparing 形态回（清单呈准备中、客户端可
+        # 感知可重试），不再把整个 PlaybackInfo 堵到等流 15 秒 /
+        # 当场先办 20 秒的上限；转存本身不取消（当场执行后台
+        # 续跑、工人队列兜底），门禁与不回落共享的口径不变。
+        _pi_copy_wait = await run_db(
+            _tv_pi.playbackinfo_copy_wait_sec, db)
         # 播放门禁分流（goal-33 PR-2）：裁决在函数头已算过
         # （_pi_decision，含池分流），这里复用、不重复算。已绑用户
         # 恒走原链（ensure_user_copy_gate 逐字不动）；未绑用户且池
@@ -7023,7 +7038,8 @@ async def playback_info(
                         _pool_gate_pi.ensure_pool_copy_gate,
                         db, item, user)
                 _pi_gate = await _tv_pi.wait_for_transfer_ready(
-                    _pi_gate, _pi_pool_regate)
+                    _pi_gate, _pi_pool_regate,
+                    max_sec=float(_pi_copy_wait))
             if (_pool_decision.pool_routed
                     and (_pi_gate or {}).get("verdict")
                     != "serve_pool_copy"):
@@ -7083,7 +7099,8 @@ async def playback_info(
                 return await run_db(
                     _tv_pi.ensure_user_copy_gate, db, item, user)
             _pi_gate = await _tv_pi.maybe_run_play_inline(
-                _pi_gate, _pi_regate)
+                _pi_gate, _pi_regate,
+                wait_budget_sec=float(_pi_copy_wait))
             _pi_verdict = (_pi_gate or {}).get("verdict")
         if _pi_verdict in ("preparing", "failed"):
             play_variants.apply_transfer_status(sources, _pi_verdict)

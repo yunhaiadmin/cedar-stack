@@ -180,6 +180,17 @@ def _warm(factory, user_id, item_id):
         _cfg(), dw._RequestCounter(), factory, time.monotonic())
 
 
+def _wait_http_calls(http_calls, count=2, timeout=5.0):
+    """等后台 GET 腿落定再断言：GET 与 Range 并行提交，追加顺序
+    不定；轮询等条数到位，超时后照常用 sorted 断言（会红、不
+    是静默放过）。"""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if len(http_calls) >= count:
+            return
+        time.sleep(0.005)
+
+
 # ---------------------------------------------------------------------------
 # W2a：副本 anyone-reader 授权幂等确保
 # ---------------------------------------------------------------------------
@@ -341,6 +352,7 @@ def test_w2b_warm_hit_means_playback_skips_probe_http(
 
     不打桩工人的 W2 缝（走 transfer_variant 真实现），只打桩
     探针的两条 HTTP 腿：第一腿回额度页 → 裁决 quota 落缓存。
+    2026-11-12 并行化后两腿同时提交，计数按集合比（顺序不定）。
     批 1 代码没有 W2：工人跑完后判定点仍要现探（HTTP 计数
     增加）→ 红；批 2 暖完后判定点吃缓存 → 计数不动 → 绿。
     """
@@ -367,11 +379,12 @@ def test_w2b_warm_hit_means_playback_skips_probe_http(
     monkeypatch.setattr(tv, "_usercopy_probe_http_get", fake_get)
     res = _warm(factory, 7, item.id)
     assert res["w2b"] == "probed"
-    assert http_calls == ["range"]  # 预探第一腿判 quota 即落缓存
+    _wait_http_calls(http_calls, 2)
+    assert sorted(http_calls) == ["get", "range"]  # 预探两腿并行，Range 判 quota 即落缓存
     # 点播判定点（PlaybackInfo / video_stream 共用入口）：
     verdict = tv.probe_user_copy_quota_decision(7, "fid-e2e")
     assert verdict == "quota"
-    assert http_calls == ["range"]  # 命中工人预探的裁决，零现探
+    assert sorted(http_calls) == ["get", "range"]  # 命中工人预探的裁决，零现探
 
 
 def test_playback_decision_cold_still_probes(db, monkeypatch):
@@ -387,7 +400,7 @@ def test_playback_decision_cold_still_probes(db, monkeypatch):
                         lambda url: (200, "video/mp4", b""))
     verdict = tv.probe_user_copy_quota_decision(7, "fid-cold")
     assert verdict == "quota"
-    assert http_calls == ["range"]
+    assert http_calls == ["range"]  # GET 桩不记数，只看 Range 腿现探一次
 
 
 # ---------------------------------------------------------------------------
