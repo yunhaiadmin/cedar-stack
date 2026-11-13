@@ -9,8 +9,10 @@
  * 2026-10-13 旧页面清理：播放相关 wrapper（getPlaybackInfo / reportPlaying /
  * reportProgress / reportStopped）随 WatchView 删除；网页播放走第三方客户端。
  *
- * 鉴权：全部携带门户 JWT（后端 /emby/* 已支持 JWT 回退）。
- * 复用 api/index.ts 的 axios 实例：自动附 Authorization 头 + 401 自动刷新。
+ * 鉴权：EA 已删门户 JWT 回退（2026-10-25），只认 Emby token；本模块的
+ * 每个请求都带账号卡下发的网页端专用 token（X-Emby-Token 头，与图片
+ * api_key 同一把，见 embyAuthConfig）。axios 实例附的门户 JWT 对 EA
+ * 无效，只对同源 /api/* 有意义，别再以为 JWT 能过 EA。
  */
 import { shallowRef } from 'vue'
 import api from '@/api'
@@ -136,16 +138,34 @@ export async function ensureEmbyBase(): Promise<string> {
   }
 }
 
+/**
+ * 给 EA 请求补 Emby token 头。EA 的 get_emby_user 只认 Emby token
+ * （api_key / X-Emby-Token / X-Emby-Authorization），门户 JWT 回退已删：
+ * 只带 JWT 的请求一律 401「Invalid access token」——片库分类页
+ * （/library/movies、/library/series）列表整体加载失败就是这条，
+ * 海报更无从谈起（数据根本没到前端）。token 是账号卡下发的网页端
+ * 专用 token：embyBaseUrl() 拉卡时已由 fetchEmbyBase 落地到
+ * embyApiKeyRef（与图片 URL 的 api_key 同一把），这里只读现值；
+ * 手里没 key 时原样发（行为与旧版一致，交给服务端 401 兜底）。
+ * 走请求头不走 URL：不扩大 token 进日志/历史的暴露面（H2 口径）。
+ */
+function embyAuthConfig(config?: object): object {
+  const key = getEmbyApiKey()
+  if (!key) return config ?? {}
+  const c = (config ?? {}) as { headers?: Record<string, string> }
+  return { ...c, headers: { ...(c.headers || {}), 'X-Emby-Token': key } }
+}
+
 async function embyGet<T>(path: string, config?: object): Promise<T> {
-  return api.get<never, T>(`${await embyBaseUrl()}${path}`, config)
+  return api.get<never, T>(`${await embyBaseUrl()}${path}`, embyAuthConfig(config))
 }
 
-async function embyPost<T>(path: string, data?: unknown): Promise<T> {
-  return api.post<never, T>(`${await embyBaseUrl()}${path}`, data)
+async function embyPost<T>(path: string, data?: unknown, config?: object): Promise<T> {
+  return api.post<never, T>(`${await embyBaseUrl()}${path}`, data, embyAuthConfig(config))
 }
 
-async function embyDelete<T>(path: string): Promise<T> {
-  return api.delete<never, T>(`${await embyBaseUrl()}${path}`)
+async function embyDelete<T>(path: string, config?: object): Promise<T> {
+  return api.delete<never, T>(`${await embyBaseUrl()}${path}`, embyAuthConfig(config))
 }
 
 // ==================== 类型 ====================

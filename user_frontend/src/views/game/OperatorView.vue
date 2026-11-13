@@ -306,8 +306,9 @@
           </div>
         </div>
 
-        <!-- 没查看权限：解锁入口 -->
-        <div v-else-if="viewPermission" class="v4-sec">
+        <!-- 没查看权限：解锁入口（view_permission 后端恒下发，显隐必须以 granted 为准，
+             只判对象存在会让已授权用户也看到本区块） -->
+        <div v-else-if="viewPermission && !viewGranted" class="v4-sec">
           <div class="v4-sec-title">还没有查看权限</div>
           <template v-if="viewPermission.realm_free">
             <p class="unlock-desc">
@@ -317,11 +318,11 @@
           </template>
           <template v-else>
             <p class="unlock-desc">服务器地址和账号只向会员开放，开通后回来这里查看。</p>
-            <button class="op-btn primary" @click="router.push('/shop')">去开通会员</button>
+            <button class="op-btn primary" @click="router.push('/game/account/subscribe')">去开通会员</button>
           </template>
         </div>
 
-        <div v-else class="v4-sec">
+        <div v-else-if="!viewGranted" class="v4-sec">
           <div class="v4-err">
             播放账号信息加载失败，再试一次<br>
             <button class="v4-retry" @click="refreshAccount()">重试</button>

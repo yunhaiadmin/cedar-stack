@@ -152,7 +152,7 @@
             {{ devicesData.count }} / {{ devicesData.limit }} 台 · 管理
           </RouterLink>
         </div>
-        <div v-for="d in devicesData.devices" :key="d.device_id" class="ov-drow">
+        <div v-for="d in previewDevices" :key="d.device_id" class="ov-drow">
           <component :is="deviceIcon(d)" :size="24" class="ov-drow__icon" aria-hidden="true" />
           <span class="ov-drow__name">{{ deviceLabel(d) }}</span>
           <span class="ov-drow__status" :class="{ 'ov-drow__status--on': d.is_online_recent }">
@@ -224,41 +224,6 @@
           <span v-if="memberMeta" class="ov-trow__value">{{ memberMeta }}</span>
           <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
         </RouterLink>
-        <RouterLink v-if="viewCell" class="ov-trow" to="/game/account/member">
-          <span class="ov-trow__name">观看权限</span>
-          <span class="ov-trow__value">{{ viewCell.value }} · {{ viewCell.label }}</span>
-          <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
-        <RouterLink class="ov-trow" to="/game/ledger">
-          <span class="ov-trow__name">能量明细</span>
-          <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
-        <div v-if="vitality" class="ov-trow">
-          <span class="ov-trow__name">活力 · 今日</span>
-          <span class="ov-trow__value">{{ vitality.vitality }}/{{ vitality.max }}</span>
-        </div>
-      </section>
-
-      <!-- 成长 -->
-      <section class="ov-sec">
-        <div class="ov-sec__head">
-          <h2 class="ov-sec__title">成长</h2>
-        </div>
-        <RouterLink class="ov-trow" to="/shop">
-          <span class="ov-trow__name">等级</span>
-          <span v-if="entryLevelText" class="ov-trow__value">{{ entryLevelText }}</span>
-          <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
-        <RouterLink class="ov-trow" to="/collector">
-          <span class="ov-trow__name">成就</span>
-          <span v-if="entryAchvText" class="ov-trow__value">{{ entryAchvText }}</span>
-          <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
-        <RouterLink class="ov-trow" to="/collector">
-          <span class="ov-trow__name">馆灵</span>
-          <span v-if="entryPetText" class="ov-trow__value">{{ entryPetText }}</span>
-          <ChevronRight :size="16" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
       </section>
 
       <!-- 账号 -->
@@ -288,7 +253,8 @@
  * 概览（/game/account）：2026-11-13 按 UHDNow 原站用户中心首页 1:1 返工——
  * 页头（品牌＋网页观影胶囊）＋会员卡（斜向粉彩渐变＋细斜纹）＋有效期行
  * ＋大数字区（剩余天数映射）＋双按钮＋Emby/设备/常用平面段；
- * 原页其余真实入口（片子/权益/成长/账号）按同一行式归段，一个不丢。
+ * 原页其余真实入口（片子/权益/账号）按同一行式归段；权益段只留「我的会员」、
+ * 「成长」整段（等级/成就/馆灵）已按用户 2026-11-13 圈删令摘除。
  * 页面跟随用户外观（浅/深本地变量切换，不再经纸色布局强制浅色）。
  * 所有数字/条目只用现有接口数据：订阅（subscriptionApi）、福利
  * （welfareApi）、账号卡（embyApi.getAccountCard）、设备
@@ -309,10 +275,9 @@ import {
   type AccountCard, type MySubscription,
 } from '@/api'
 import {
-  checkinApi, deviceApi, memberApi, storageBindingApi, vitalityApi, welfareApi,
+  checkinApi, deviceApi, storageBindingApi, vitalityApi, welfareApi,
   type MyDevice, type MyDevicesResponse, type VitalityStatus,
 } from '@/api/economy'
-import { panelApi } from '@/composables/usePanelApi'
 import { getMyExclusiveLines, type MyExclusiveLine } from '@/api/user'
 import { getAgentMe, type AgentProfile } from '@/api/agent'
 import { useUserStore } from '@/stores/user'
@@ -344,18 +309,6 @@ const vitality = ref<VitalityStatus | null>(null)
 const activeSub = computed(
   () => subscriptions.value.find(s => s.status === 'active' && s.days_left > 0) || null,
 )
-const viewCell = computed(() => {
-  const vp = accountCard.value?.view_permission
-  if (!vp) return null
-  if (vp.source === 'welfare') return { value: '已开通', label: '随资格开通' }
-  if (!vp.granted) return { value: '未开通', label: '续上公益资格即可看' }
-  if (!vp.expires_at) return { value: '已解锁', label: '永久' }
-  const expired = new Date(vp.expires_at).getTime() <= Date.now()
-  return {
-    value: expired ? '已到期' : '已解锁',
-    label: `到期 ${vp.expires_at.slice(0, 10)}`,
-  }
-})
 const memberMeta = computed(() => {
   if (isFreeRealm.value) return '公益服 · 免费开放'
   if (!subsLoaded.value) return ''
@@ -450,6 +403,8 @@ const serverAddressSub = computed(() => {
 
 // ── 设备段（deviceApi.mine：用户侧设备接口） ──
 const devicesData = ref<MyDevicesResponse | null>(null)
+/** 概览只预览最近 3 台（接口已按最后活跃倒序）；全量在账号设置页管理 */
+const previewDevices = computed(() => (devicesData.value?.devices ?? []).slice(0, 3))
 function deviceIcon(d: MyDevice): LucideIcon {
   const tag = `${d.client ?? ''} ${d.name ?? ''}`.toLowerCase()
   if (/tv|television/.test(tag)) return Tv
@@ -502,30 +457,6 @@ const followOpen = ref(false)
 function onFollowSummary(payload: { visible: boolean; activeCount: number }) {
   followVisible.value = payload.visible
   followMeta.value = payload.activeCount > 0 ? `订阅 ${payload.activeCount} 部` : ''
-}
-
-// ── 成长摘要（与旧页 loadEntrySummaries 同源同口径） ──
-const entryLevelText = ref('')
-const entryAchvText = ref('')
-const entryPetText = ref('')
-async function loadEntrySummaries() {
-  try {
-    const m = await memberApi.info()
-    if (m && typeof m.level === 'number') {
-      entryLevelText.value = `Lv.${m.level}${m.level_name ? ` · ${m.level_name}` : ''}`
-    }
-  } catch { /* 摘要拿不到就不显示 */ }
-  try {
-    const c = await panelApi.collector()
-    if (typeof c?.achievement_count === 'number') {
-      entryAchvText.value = `已点亮 ${c.achievement_count} 枚`
-    }
-    const p = c?.pet
-    if (p && Array.isArray(p.stages) && p.stages.length) {
-      const stageName = p.stages[p.stage]?.name
-      entryPetText.value = stageName ? `${p.name} · ${stageName}` : p.name
-    }
-  } catch { /* 摘要拿不到就不显示 */ }
 }
 
 // ── 我的服务 ──
@@ -596,7 +527,6 @@ onMounted(() => {
   }
   void loadOverview()
   void loadDevices()
-  void loadEntrySummaries()
   void loadWantMeta()
   void loadRequestMeta()
   void loadDriveMeta()

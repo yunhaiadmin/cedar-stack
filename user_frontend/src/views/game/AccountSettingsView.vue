@@ -1,133 +1,131 @@
 <template>
   <UhdAccountLayout title="账号与设置" eyebrow="账号">
   <div class="v4-scope">
-  <div class="v4-page settings-page">
-    <div class="set-wrap">
-      <div class="set-cols">
-        <div class="set-col">
-          <!-- 安全 -->
-          <section class="pc-group">
-            <div class="pc-gtitle">安全</div>
-            <p class="pc-gsub">发现不是自己登的，先改密码再清设备</p>
-            <div class="v4-card pc-rows-card">
-              <PcEntryRow :icon="Lock" name="修改登录密码" @click="pwdOpen = true" />
-              <DevicesEntry />
-              <LoginHistoryEntry />
-            </div>
-          </section>
+  <div class="settings-page">
+    <!-- 安全 -->
+    <section class="set-group">
+      <h2 class="set-gtitle">安全</h2>
+      <p class="set-gsub">发现不是自己登的，先改密码再清设备</p>
+      <div class="set-rows">
+        <PcEntryRow :icon="Lock" name="修改登录密码" @click="pwdOpen = true" />
+        <DevicesEntry />
+        <LoginHistoryEntry />
+      </div>
+    </section>
 
-          <!-- 绑定：providers 门控结论由面板回报，未确认前整组不显示（v-show 保挂载，面板要先加载才能回报） -->
-          <section v-show="driveGroupVisible" id="my-drive" class="pc-group">
-            <div class="pc-gtitle">绑定</div>
-            <p class="pc-gsub">绑了自己的盘，播放走你自己的额度，不走共享池</p>
-            <div class="v4-card pc-rows-card">
-              <DriveBindingsPanel ref="drivePanel" @loaded="onDriveLoaded" @active-binding="onActiveBinding" />
-            </div>
-          </section>
-        </div>
+    <!-- 绑定：providers 门控结论由面板回报，未确认前整组不显示（v-show 保挂载，面板要先加载才能回报） -->
+    <section v-show="driveGroupVisible" id="my-drive" class="set-group">
+      <h2 class="set-gtitle">绑定</h2>
+      <p class="set-gsub">绑了自己的盘，播放走你自己的额度，不走共享池</p>
+      <div class="set-rows">
+        <DriveBindingsPanel ref="drivePanel" @loaded="onDriveLoaded" @active-binding="onActiveBinding" />
+      </div>
+    </section>
 
-        <div class="set-col">
-          <!-- 展示与隐私 -->
-          <section class="pc-group">
-            <div class="pc-gtitle">展示与隐私</div>
-            <p class="pc-gsub">发现页和榜单怎么展示，你说了算</p>
-            <div class="v4-card pc-rows-card">
-              <CardPrefsEntry />
-              <div class="pc-row-static">
-                <span class="pc-row-ic" aria-hidden="true"><Eye :size="22" /></span>
-                <span class="pc-row-name">观影碑时长榜上榜</span>
-                <button
-                  type="button"
-                  class="srv-switch"
-                  :class="{ 'is-on': showOnLeaderboard }"
-                  :disabled="privacyLoading"
-                  role="switch"
-                  :aria-checked="showOnLeaderboard"
-                  aria-label="观影碑时长榜上榜"
-                  @click="toggleLeaderboard"
-                ></button>
-              </div>
-              <p class="pref-note">打开后，你的观影时长会出现在世界观影碑的时长榜上（只显示昵称）；关掉则不上榜，但你自己仍能看到自己的排名。</p>
-              <p v-if="privacyError" class="pref-err">{{ privacyError }}<button class="v4-retry" @click="loadPrivacy">重试</button></p>
-            </div>
-          </section>
-
-          <!-- 通知：TG 私聊偏好（站内信不受影响） -->
-          <section class="pc-group">
-            <div class="pc-gtitle">通知</div>
-            <p class="pc-gsub">只管机器人私聊这一份，站内消息照常发</p>
-            <div class="v4-card pc-rows-card">
-              <div class="pc-row-static">
-                <span class="pc-row-ic" aria-hidden="true"><Bell :size="22" /></span>
-                <span class="pc-row-name">求片到货提醒</span>
-                <button
-                  type="button"
-                  class="srv-switch"
-                  :class="{ 'is-on': notifyPrefs.seek }"
-                  :disabled="notifyLoading"
-                  role="switch"
-                  :aria-checked="notifyPrefs.seek"
-                  aria-label="求片到货提醒"
-                  @click="toggleNotifyPref('seek')"
-                ></button>
-              </div>
-              <div class="pc-row-static">
-                <span class="pc-row-ic" aria-hidden="true"><Bell :size="22" /></span>
-                <span class="pc-row-name">到期提醒</span>
-                <button
-                  type="button"
-                  class="srv-switch"
-                  :class="{ 'is-on': notifyPrefs.expiry }"
-                  :disabled="notifyLoading"
-                  role="switch"
-                  :aria-checked="notifyPrefs.expiry"
-                  aria-label="到期提醒"
-                  @click="toggleNotifyPref('expiry')"
-                ></button>
-              </div>
-              <div class="pc-row-static">
-                <span class="pc-row-ic" aria-hidden="true"><Bell :size="22" /></span>
-                <span class="pc-row-name">活动中奖通知</span>
-                <button
-                  type="button"
-                  class="srv-switch"
-                  :class="{ 'is-on': notifyPrefs.lottery }"
-                  :disabled="notifyLoading"
-                  role="switch"
-                  :aria-checked="notifyPrefs.lottery"
-                  aria-label="活动中奖通知"
-                  @click="toggleNotifyPref('lottery')"
-                ></button>
-              </div>
-              <div class="pc-row-static">
-                <span class="pc-row-ic" aria-hidden="true"><Bell :size="22" /></span>
-                <span class="pc-row-name">贡献回响</span>
-                <button
-                  type="button"
-                  class="srv-switch"
-                  :class="{ 'is-on': notifyPrefs.pool_digest }"
-                  :disabled="notifyLoading"
-                  role="switch"
-                  :aria-checked="notifyPrefs.pool_digest"
-                  aria-label="贡献回响"
-                  @click="toggleNotifyPref('pool_digest')"
-                ></button>
-              </div>
-              <p class="pref-note">求片到货、会员/公益资格到期、抽奖中奖、公共池每日小结这四类机器人私聊，可以分别关掉；关掉后站内消息仍会发。</p>
-              <p v-if="notifyError" class="pref-err">{{ notifyError }}<button class="v4-retry" @click="loadNotifyPrefs">重试</button></p>
-            </div>
-          </section>
-
-          <!-- 账号 -->
-          <section class="pc-group">
-            <div class="pc-gtitle">账号</div>
-            <div class="v4-card pc-rows-card">
-              <PcEntryRow :icon="LogOut" name="退出登录" danger @click="handleLogout" />
-            </div>
-          </section>
+    <!-- 展示与隐私 -->
+    <section class="set-group">
+      <h2 class="set-gtitle">展示与隐私</h2>
+      <p class="set-gsub">发现页和榜单怎么展示，你说了算</p>
+      <div class="set-rows">
+        <CardPrefsEntry />
+        <div class="set-row">
+          <span class="set-row-ic" aria-hidden="true"><Eye :size="22" /></span>
+          <span class="set-row-name">观影碑时长榜上榜</span>
+          <button
+            type="button"
+            class="set-switch"
+            :class="{ 'is-on': showOnLeaderboard }"
+            :disabled="privacyLoading"
+            role="switch"
+            :aria-checked="showOnLeaderboard"
+            aria-label="观影碑时长榜上榜"
+            @click="toggleLeaderboard"
+          ></button>
         </div>
       </div>
-    </div>
+      <p class="set-note">打开后，你的观影时长会出现在世界观影碑的时长榜上（只显示昵称）；关掉则不上榜，但你自己仍能看到自己的排名。</p>
+      <p v-if="privacyError" class="set-errline">
+        <span>{{ privacyError }}</span>
+        <button type="button" class="set-retry" @click="loadPrivacy">重试</button>
+      </p>
+    </section>
+
+    <!-- 通知：TG 私聊偏好（站内信不受影响） -->
+    <section class="set-group">
+      <h2 class="set-gtitle">通知</h2>
+      <p class="set-gsub">只管机器人私聊这一份，站内消息照常发</p>
+      <div class="set-rows">
+        <div class="set-row">
+          <span class="set-row-ic" aria-hidden="true"><Bell :size="22" /></span>
+          <span class="set-row-name">求片到货提醒</span>
+          <button
+            type="button"
+            class="set-switch"
+            :class="{ 'is-on': notifyPrefs.seek }"
+            :disabled="notifyLoading"
+            role="switch"
+            :aria-checked="notifyPrefs.seek"
+            aria-label="求片到货提醒"
+            @click="toggleNotifyPref('seek')"
+          ></button>
+        </div>
+        <div class="set-row">
+          <span class="set-row-ic" aria-hidden="true"><Bell :size="22" /></span>
+          <span class="set-row-name">到期提醒</span>
+          <button
+            type="button"
+            class="set-switch"
+            :class="{ 'is-on': notifyPrefs.expiry }"
+            :disabled="notifyLoading"
+            role="switch"
+            :aria-checked="notifyPrefs.expiry"
+            aria-label="到期提醒"
+            @click="toggleNotifyPref('expiry')"
+          ></button>
+        </div>
+        <div class="set-row">
+          <span class="set-row-ic" aria-hidden="true"><Bell :size="22" /></span>
+          <span class="set-row-name">活动中奖通知</span>
+          <button
+            type="button"
+            class="set-switch"
+            :class="{ 'is-on': notifyPrefs.lottery }"
+            :disabled="notifyLoading"
+            role="switch"
+            :aria-checked="notifyPrefs.lottery"
+            aria-label="活动中奖通知"
+            @click="toggleNotifyPref('lottery')"
+          ></button>
+        </div>
+        <div class="set-row">
+          <span class="set-row-ic" aria-hidden="true"><Bell :size="22" /></span>
+          <span class="set-row-name">贡献回响</span>
+          <button
+            type="button"
+            class="set-switch"
+            :class="{ 'is-on': notifyPrefs.pool_digest }"
+            :disabled="notifyLoading"
+            role="switch"
+            :aria-checked="notifyPrefs.pool_digest"
+            aria-label="贡献回响"
+            @click="toggleNotifyPref('pool_digest')"
+          ></button>
+        </div>
+      </div>
+      <p class="set-note">求片到货、会员/公益资格到期、抽奖中奖、公共池每日小结这四类机器人私聊，可以分别关掉；关掉后站内消息仍会发。</p>
+      <p v-if="notifyError" class="set-errline">
+        <span>{{ notifyError }}</span>
+        <button type="button" class="set-retry" @click="loadNotifyPrefs">重试</button>
+      </p>
+    </section>
+
+    <!-- 账号 -->
+    <section class="set-group">
+      <h2 class="set-gtitle">账号</h2>
+      <div class="set-rows">
+        <PcEntryRow :icon="LogOut" name="退出登录" danger @click="handleLogout" />
+      </div>
+    </section>
 
     <ChangePasswordModal v-model:open="pwdOpen" />
   </div>
@@ -293,114 +291,123 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.settings-page { padding-bottom: 34px; }
-.set-wrap { padding: 16px 16px 0; }
-.pc-group { margin-top: 22px; }
-.pc-gtitle {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 2px 10px;
-  font-size: 14.5px;
-  font-weight: 700;
-  color: var(--ink);
+/* 状态行模具（说明书 2.6 / §3 行 8 友站 /user/security）：
+   分组 H2 24px/800 领起 + 平面状态行（图标 22 + 标题 16/600 + 右侧状态/开关），
+   行间 1px --uhd-l-divider，不再套卡片容器。单列堆叠（与友站同构），
+   分组与行序与旧版一致（旧桌面两栏在单列下即此顺序）。 */
+.settings-page {
+  max-width: var(--uhd-container-app);
+  margin: 0 auto;
+  padding-bottom: 34px;
+  font-family: var(--uhd-font-sans);
 }
-.pc-gtitle::after {
-  content: '';
-  flex: 1;
-  border-top: 1px solid var(--line-deep);
+.set-group { margin-top: 36px; }
+.set-group:first-child { margin-top: 4px; }
+.set-gtitle {
+  margin: 0 0 6px;
+  font-family: var(--uhd-font-sans);
+  font-size: var(--uhd-fs-h3);
+  font-weight: var(--uhd-fw-extrabold);
+  letter-spacing: -0.01em;
+  color: var(--uhd-l-text);
 }
-.pc-gsub {
-  margin: -4px 2px 10px;
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: var(--ink2);
+.set-gsub {
+  margin: 0 0 6px;
+  font-size: var(--uhd-fs-caption);
+  line-height: 1.55;
+  color: var(--uhd-l-text-2);
 }
-.pc-rows-card { padding: 0; overflow: hidden; }
-.pc-rows-card > * + * { border-top: 1px solid var(--line); }
-.pc-row-static {
+.set-rows > :not(:last-child) { border-bottom: var(--uhd-border-w) solid var(--uhd-l-divider); }
+.set-row {
   display: flex;
   align-items: center;
   gap: 14px;
-  min-height: 64px;
-  padding: 10px 14px;
+  min-height: 68px;
+  padding: 10px 2px;
 }
-.pc-row-ic {
+.set-row-ic {
   width: 22px;
   height: 22px;
   flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--ink2);
+  color: var(--uhd-l-text);
 }
-.pc-row-name { font-size: 16px; font-weight: 700; white-space: nowrap; }
-/* 观影碑开关（自旧页 .srv-switch 原样迁入） */
-.srv-switch {
+.set-row-name {
+  font-size: var(--uhd-fs-lead);
+  font-weight: var(--uhd-fw-semibold);
+  color: var(--uhd-l-text);
+  white-space: nowrap;
+}
+/* 开关模具：44×24 黑体轨道 + 20px 白钮（友站开关形态），
+   按钮本体 52×44 命中区（类内写死高度，压过 mobile.css 的全局 button 规则） */
+.set-switch {
   position: relative;
   flex: none;
-  width: 48px;
+  width: 52px;
   height: 44px;
+  min-height: 44px;
   padding: 0;
   margin-left: auto;
-  border-radius: 999px;
   border: 0;
   background: none;
   cursor: pointer;
 }
-.srv-switch:disabled { opacity: 0.5; cursor: not-allowed; }
-.srv-switch::before {
+.set-switch::before {
   content: '';
   position: absolute;
-  left: 6px;
+  left: 4px;
+  top: 10px;
+  width: 44px;
+  height: 24px;
+  border-radius: var(--uhd-radius-pill);
+  background: var(--uhd-l-border);
+  transition: background var(--uhd-dur-ui) var(--uhd-ease-standard);
+}
+.set-switch::after {
+  content: '';
+  position: absolute;
   top: 12px;
-  width: 36px;
+  left: 6px;
+  width: 20px;
   height: 20px;
-  border-radius: 999px;
-  border: 1.5px solid var(--paper-ink);
-  background: var(--paper-card);
-}
-.srv-switch.is-on::before { background: var(--paper-primary); }
-.srv-switch::after {
-  content: '';
-  position: absolute;
-  top: 14px;
-  left: 8px;
-  width: 14px;
-  height: 14px;
   border-radius: 50%;
-  background: var(--paper-card);
-  border: 1.5px solid var(--paper-ink);
+  background: var(--uhd-l-surface);
+  box-shadow: var(--uhd-shadow-seg);
+  transition: left var(--uhd-dur-ui) var(--uhd-ease-standard);
 }
-.srv-switch.is-on::after {
-  left: auto;
-  right: 8px;
-  background: var(--paper-ink);
-}
-.pref-note {
+.set-switch.is-on::before { background: var(--uhd-l-text); }
+.set-switch.is-on::after { left: 26px; }
+.set-switch:disabled { opacity: 0.5; cursor: not-allowed; }
+.set-note {
   margin: 0;
-  padding: 0 14px 12px;
-  font-size: 12px;
+  padding: 12px 2px 0;
+  font-size: var(--uhd-fs-aux);
   line-height: 1.6;
-  color: var(--ink2);
+  color: var(--uhd-l-text-2);
 }
-.pref-err {
+.set-errline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin: 0;
-  padding: 10px 14px;
-  border-top: 1px solid var(--line);
-  font-size: 12px;
+  padding: 12px 2px 0;
+  font-size: var(--uhd-fs-aux);
   line-height: 1.6;
-  color: var(--paper-ink-2);
+  color: var(--uhd-danger);
 }
-@media (min-width: 1024px) {
-  .v4-page.settings-page { max-width: min(1120px, 94vw); }
-  .set-wrap { padding: 26px 32px 48px; }
-  /* 桌面两栏（照效果图）：左安全+绑定，右展示与隐私+账号；手机单列同序 */
-  .set-cols {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0 26px;
-    align-items: start;
-  }
+.set-retry {
+  flex: none;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 16px;
+  border-radius: var(--uhd-radius-pill);
+  border: var(--uhd-border-w) solid var(--uhd-l-border);
+  background: var(--uhd-l-surface);
+  color: var(--uhd-l-text);
+  font-size: var(--uhd-fs-caption);
+  font-weight: var(--uhd-fw-medium);
+  cursor: pointer;
 }
 </style>
