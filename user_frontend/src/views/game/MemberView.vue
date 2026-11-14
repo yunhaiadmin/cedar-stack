@@ -8,7 +8,7 @@
       <RouterLink v-if="!isFreeRealm" class="member-sub-entry" to="/game/account/subscribe">
         <span class="member-sub-entry__text">
           <b>{{ activeSub ? '续费订阅' : '开通订阅' }}</b>
-          <span>{{ activeSub ? '当前订阅到期前续费，天数顺延' : '选套餐、选时长，人民币 / 能量都能付' }}</span>
+          <span>{{ activeSub ? '当前订阅到期前续费，天数顺延' : '选套餐、选时长，在线支付' }}</span>
         </span>
         <span class="member-sub-entry__btn">{{ activeSub ? '去续费' : '去开通' }}</span>
       </RouterLink>
@@ -174,7 +174,7 @@ async function renewWelfare(days: 7 | 30) {
     welfareExpiresAt.value = res.expires_at
     welfareStatusLoaded.value = true
     if (userStore.user) userStore.user.is_welfare = true
-    toast.success(`续期成功，已延至 ${res.expires_at ? res.expires_at.slice(0, 10) : `${days} 天后`}（花费 ${res.cost} 能量，余额 ${res.balance}）`)
+    toast.success(`续期成功，已延至 ${res.expires_at ? res.expires_at.slice(0, 10) : `${days} 天后`}`)
     await loadRenewal()
   } catch (err: any) {
     toast.error(toUserMessage(err, 'renewFailed'))

@@ -441,7 +441,7 @@ onMounted(() => {
   if (route.query.invite) {
     mode.value = 'register'
     registerForm.inviteCode = firstQueryValue(route.query.invite)
-    toast.info(`已收到好友邀请码，注册成功后双方都可获得能量奖励`, 5000)
+    toast.info(`已收到好友邀请码，注册成功后双方都可获得奖励`, 5000)
   }
 })
 </script>
@@ -797,7 +797,7 @@ onMounted(() => {
         </label>
 
         <label v-if="invitationEnabled" class="field">
-          <span class="field-label">邀请码 <em class="optional">选填，双方得能量</em></span>
+          <span class="field-label">邀请码 <em class="optional">选填，双方得奖励</em></span>
           <div class="field-box">
             <Gift :size="16" class="field-icon" aria-hidden="true" />
             <input

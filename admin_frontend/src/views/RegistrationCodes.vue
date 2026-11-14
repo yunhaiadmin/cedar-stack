@@ -80,9 +80,11 @@ const genForm = ref({
   days: 30,
   max_uses: 1,
   expires_days: 30,
-  // M1：奖励类型（welfare=公益资格码，G1）
-  reward_type: 'subscription' as 'subscription' | 'discount' | 'welfare',
+  // M1：奖励类型（welfare=公益资格码，G1；balance=钱包余额码，钱包批 1）
+  reward_type: 'subscription' as 'subscription' | 'discount' | 'welfare' | 'balance',
   discount_pct: 85,
+  /** 余额码面额（元，字符串避免 float 丢精度） */
+  balance_value: '50',
   /** G1：资格码核销时打包首张查看行，默认开 */
   welfare_include_view: true,
   algorithm: 'base32-20',
@@ -289,6 +291,7 @@ async function generate() {
       expires_days: genForm.value.expires_days,
       reward_type: genForm.value.reward_type,
       discount_pct: genForm.value.discount_pct,
+      balance_value: genForm.value.reward_type === 'balance' ? genForm.value.balance_value : undefined,
       welfare_include_view: genForm.value.welfare_include_view,
       algorithm: genForm.value.algorithm,
       is_decoy: genForm.value.is_decoy,
@@ -496,6 +499,7 @@ function usedByNames(row: RegistrationCode): string {
             <el-radio-button value="subscription">会员天数</el-radio-button>
             <el-radio-button value="discount">折扣券</el-radio-button>
             <el-radio-button value="welfare">公益资格</el-radio-button>
+            <el-radio-button value="balance">钱包余额</el-radio-button>
           </el-radio-group>
           <div class="form-hint">这批码送出去，对方能拿到什么</div>
         </el-form-item>
@@ -524,6 +528,10 @@ function usedByNames(row: RegistrationCode): string {
         <el-form-item v-if="genForm.reward_type === 'discount'" label="折扣（实付百分比）">
           <el-input-number v-model="genForm.discount_pct" :min="1" :max="99" />
           <span class="form-hint inline-hint">如 85 = 八五折</span>
+        </el-form-item>
+        <el-form-item v-if="genForm.reward_type === 'balance'" label="余额面额（元）">
+          <el-input v-model="genForm.balance_value" placeholder="如 50" style="width: 160px" />
+          <span class="form-hint inline-hint">核销后钱包到账这个金额；不能与白名单码组合</span>
         </el-form-item>
         <el-form-item label="数量">
           <el-input-number v-model="genForm.count" :min="1" :max="200" />

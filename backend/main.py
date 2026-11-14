@@ -33,6 +33,7 @@ from backend.emby_server.audit import AdminWriteAuditMiddleware
 from backend.emby_server import observability as _observability
 from backend.websocket import websocket_router, notification_router, manager
 from backend.api import user_router, admin_router, traffic_router
+from backend.api.wallet import wallet_router
 from backend.api.emby_servers import router as emby_servers_router
 from backend.api.admins_admin import router as admins_router
 # 首次运行向导（setup_mode）：建第一个管理员，完成后入口永久关闭
@@ -818,6 +819,7 @@ app.include_router(notification_router)
 # 用户端 API 路由
 app.include_router(user_router)
 app.include_router(traffic_router)
+app.include_router(wallet_router)
 app.include_router(series_follow_router)
 # 首页聚合：9 项首屏数据一次取回（HomeView 骨架屏优化，见 backend/api/home_summary.py）
 app.include_router(home_summary_router)

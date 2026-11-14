@@ -178,6 +178,7 @@ const navGroups: NavGroup[] = [
       { path: '/invitations', label: '邀请与积分', icon: UserPlus },
       { path: '/member-levels', label: '会员等级', icon: Medal },
       { path: '/agents', label: '代理分销', icon: HandCoins },
+      { path: '/wallet', label: '钱包管理', icon: Wallet },
       { path: '/team-applications', label: '团队申请', icon: Users },
       { path: '/codes', label: '码管理', icon: KeySquare },
     ],
