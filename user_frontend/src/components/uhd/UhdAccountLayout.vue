@@ -4,10 +4,11 @@
  *
  * 用法：办事面页面（/game/* 与 /shop）的根模板包一层即可：
  *   <UhdAccountLayout title="我的订阅" eyebrow="订阅与资格">…原内容…</UhdAccountLayout>
- * - 左栏 250px 白底（UhdSidebar，批 0 组件），分组导航与主导航同源；
+ * - 左栏 250px（UhdSidebar，批 0 组件），分组导航与主导航同源；
  * - 内容区约 1000px、H1 32–36px；≤768px 左栏隐藏、走底部坞（App.vue 常驻）。
- * - 皮肤：非 scoped 样式块把 .v4-scope 的纸色令牌在 .uhd-account 作用域内
- *   覆盖为 UHD 浅色令牌（#f8f8f8 底 / 白卡 / #e5e5e5 边 / 蓝主色），
+ * - 皮肤：壳面令牌在 .uhd-account 作用域内双态化，跟随用户外观：
+ *   默认深色、html[data-theme='light'] 时浅色；非 scoped 样式块再把
+ *   .v4-scope / .uhd-shell-scope 的纸色令牌映射到同一套壳面令牌，
  *   各页原有结构与业务逻辑一字不动，卡片/行/按钮随令牌自动换皮。
  * - 代理中心只对代理可见：getAgentMe 成功才显示入口（失败静默隐藏，
  *   与 PersonalCenterView 同口径；模块级缓存，一次会话只查一次）。
@@ -164,6 +165,32 @@ const accountSub = computed(() => {
   min-height: 100dvh;
   background: var(--uhd-l-bg);
   font-family: var(--uhd-font-sans);
+  /* 壳面令牌双态（IA-5）：默认（html 无 data-theme）为深色。
+     数值真源为友站实测：页底 #09090b、侧栏 #111214、当前项 #2d2d2f、
+     分段底 #1b1c1e、输入面 #242526、行分隔 #26262a、正文 #fbfcfd。 */
+  --uhd-l-bg: #09090b;
+  --uhd-l-surface: #111214;
+  --uhd-l-border: #26262a;
+  --uhd-l-divider: #26262a;
+  --uhd-l-text: #fbfcfd;
+  --uhd-l-text-2: var(--uhd-d-text-2);
+  --uhd-l-text-3: var(--uhd-d-text-3);
+  --uhd-l-seg-bg: #1b1c1e;
+  --uhd-l-input-bg: #242526;
+  --uhd-l-active: #2d2d2f;
+}
+/* 浅色：恢复本单之前的壳面值，浅色主题观感不变 */
+html[data-theme='light'] .uhd-account {
+  --uhd-l-bg: #f8f8f8;
+  --uhd-l-surface: #ffffff;
+  --uhd-l-border: #e5e5e5;
+  --uhd-l-divider: #eeeeee;
+  --uhd-l-text: #111111;
+  --uhd-l-text-2: #6b7280;
+  --uhd-l-text-3: #9ca3af;
+  --uhd-l-seg-bg: #eeeeee;
+  --uhd-l-input-bg: #f5f5f5;
+  --uhd-l-active: #eef2ff;
 }
 /* 左栏吸顶满高：账户区上方有 App.vue 常驻的统一顶栏（sticky，
    高 --utb-h），侧栏吸顶位置与高度须让出这一条，滚动时不钻到
@@ -274,7 +301,8 @@ const accountSub = computed(() => {
 
 <!--
   皮肤覆盖（非 scoped）：.v4-scope 自己重定义了纸色令牌，祖先继承赢不了它，
-  须用更高特异性的 .uhd-account .v4-scope 在办事面作用域内逐项覆盖为 UHD 浅色值。
+  须用更高特异性的 .uhd-account .v4-scope 在办事面作用域内逐项覆盖。
+  壳面令牌已双态化：默认深色，html[data-theme='light'] 时恢复原浅色值。
   只动令牌与版式，不动任何业务标记与行为。
   2026-11-14 统一壳单：账号页（我的订阅/账号设置/代理中心）已摘掉
   .v4-scope 纸面嵌套，页根改挂 .uhd-shell-scope 承接同一套壳内令牌值，
@@ -283,18 +311,18 @@ const accountSub = computed(() => {
 <style>
 .uhd-account .v4-scope,
 .uhd-account .uhd-shell-scope {
-  --paper: #f8f8f8;
-  --paper2: #f5f5f5;
-  --ink: #111111;
-  --ink2: #6b7280;
-  --line: #e5e5e5;
-  --paper-card: #ffffff;
-  --blue: #2563eb;
-  --green: #16a34a;
-  --red: #dc2626;
-  --gold: #b45309;
-  --gold-tint: #fef3c7;
-  --line-deep: #9ca3af;
+  --paper: var(--uhd-l-bg);
+  --paper2: var(--uhd-l-input-bg);
+  --ink: var(--uhd-l-text);
+  --ink2: var(--uhd-l-text-2);
+  --line: var(--uhd-l-border);
+  --paper-card: #17181a;
+  --blue: var(--uhd-l-link);
+  --green: var(--uhd-success);
+  --red: var(--uhd-danger);
+  --gold: #e8a84a;
+  --gold-tint: rgba(232, 168, 74, 0.12);
+  --line-deep: var(--uhd-l-text-3);
   --paper-r-sm: 8px;
   --paper-r-md: 10px;
   --paper-r-lg: 16px;
@@ -302,6 +330,13 @@ const accountSub = computed(() => {
   --paper-r-2xl: 24px;
   background: var(--uhd-l-bg);
   background-image: none;
+}
+/* 浅色：壳内纸色令牌恢复原浅色值（其余令牌经 --uhd-l-* 映射自动回浅） */
+html[data-theme='light'] .uhd-account .v4-scope,
+html[data-theme='light'] .uhd-account .uhd-shell-scope {
+  --paper-card: #ffffff;
+  --gold: #b45309;
+  --gold-tint: #fef3c7;
 }
 /* .uhd-shell-scope 页根自承文字色：原 .v4-scope 的 color 由 v4-paper.css
    提供，摘嵌套后按壳内 --ink 值在此补齐，免继承全局主题文字色漂移 */
@@ -326,6 +361,11 @@ const accountSub = computed(() => {
   --paper-primary-border: rgba(37, 99, 235, 0.28);
   --paper-border-focus: rgba(37, 99, 235, 0.35);
   --paper-gradient: linear-gradient(#2563eb, #2563eb);
+}
+/* 侧栏当前项：默认深色用友站实测 #2d2d2f；浅色保持原白底胶囊 */
+.uhd-account .uhd-side .uhd-side__item--active { background: #2d2d2f; }
+html[data-theme='light'] .uhd-account .uhd-side .uhd-side__item--active {
+  background: var(--uhd-l-surface);
 }
 /* 页面容器：桌面放宽到办事面 1000px（原 430px 手机容器）；手机保持原口径 */
 @media (min-width: 1024px) {
