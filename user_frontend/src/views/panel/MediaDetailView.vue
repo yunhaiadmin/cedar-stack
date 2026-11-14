@@ -1279,9 +1279,9 @@ watch(itemId, () => {
    海报卡仍在内容首位兜底（2026-11-13「详情页没有显示海报」教训）。 */
 @media (max-width: 767px) {
   .md-hero {
-    height: 40vh;
-    min-height: 300px;
-    max-height: 370px;
+    height: 36vh;
+    min-height: 272px;
+    max-height: 330px;
     margin-top: 0;
     padding-top: 0;
   }
@@ -1291,8 +1291,8 @@ watch(itemId, () => {
     top: 50%;
     left: 16px;
     transform: translateY(-50%);
-    width: 46px;
-    height: 46px;
+    width: 44px;
+    height: 44px;
     margin-left: 0;
   }
   .md-wrap {
@@ -1325,8 +1325,8 @@ watch(itemId, () => {
     order: 0;
     position: relative;
     z-index: 2;
-    margin-top: -72px;
-    font-size: 15px;
+    margin-top: -64px;
+    font-size: 13.5px;
   }
   /* info 也打散：让播放行以整页（.md-wrap）为吸顶容器，全程常驻 */
   .md-info {
@@ -1345,7 +1345,7 @@ watch(itemId, () => {
     border-left: none;
     border-top: 1px solid var(--uhd-s-divider);
     padding-left: 0;
-    margin-top: 36px;
+    margin-top: 28px;
     width: auto;
   }
   .md-rail--series {
@@ -1361,15 +1361,28 @@ watch(itemId, () => {
     order: 6;
   }
   .md-title {
-    font-size: 32px;
+    font-size: 26px;
+    line-height: 1.15;
   }
   .md-title--movie {
-    font-size: 33px;
+    font-size: 27px;
+  }
+  /* 信息行（年份/时长/评分）收小到友站量级 */
+  .md-meta {
+    margin-top: 10px;
+    font-size: 14px;
+  }
+  .md-sec-title {
+    font-size: 21px;
+    line-height: 1.3;
+  }
+  .md-sec-sub {
+    font-size: 13.5px;
   }
   /* 规格胶囊（截图形态）：实心深底（浅色为浅灰底）粗字小方角胶囊 */
   .md-chips--spec {
     gap: 7px;
-    margin-top: 14px;
+    margin-top: 12px;
   }
   .md-chips--spec .md-chip {
     min-width: 0;
@@ -1383,22 +1396,76 @@ watch(itemId, () => {
     font-weight: var(--uhd-fw-bold);
     letter-spacing: 0.02em;
   }
-  /* 简介行高收紧到截图口径（16px/26px，仍 3 行截断） */
+  /* 简介收小到友站量级（14.5px/23px，仍 3 行截断） */
+  .md-overview-box {
+    margin-top: 16px;
+  }
   .md-overview {
-    line-height: 26px;
+    font-size: 14.5px;
+    line-height: 23px;
   }
   /* 友站移动端简介下无说明段，段落直接接演职人员 */
   .md-note {
     display: none;
   }
-  /* 演职人员：大头像横滑（截图采样约 88px） */
+  /* 演职人员：头像横滑收小（88→72），段距同步收紧 */
+  .md-cast {
+    margin-top: 32px;
+  }
   .md-cast__track {
-    gap: 16px;
+    gap: 14px;
+    margin-top: 14px;
+  }
+  .md-cast__person {
+    flex-basis: 92px;
+    width: 92px;
   }
   .md-cast__avatar {
-    width: 88px;
-    height: 88px;
-    font-size: 26px;
+    width: 72px;
+    height: 72px;
+    font-size: 22px;
+  }
+  .md-cast__name {
+    font-size: 14px;
+  }
+  .md-cast__role {
+    font-size: 12.5px;
+  }
+  /* 影片信息栏：行高/字号收小，段距收紧 */
+  .md-rail__title {
+    font-size: 14px;
+  }
+  .md-rail__row {
+    padding: 4px 0;
+    font-size: 14px;
+    line-height: 24px;
+  }
+  .md-rail__row dt {
+    font-size: 13px;
+  }
+  /* 版本/剧集段距收紧；详情页版本卡同步收小 */
+  .md-versions,
+  .md-episodes {
+    margin-top: 32px;
+  }
+  .md-version-list {
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .md-version {
+    min-height: 60px;
+    padding: 10px 16px;
+    border-radius: 16px;
+  }
+  .md-version__label {
+    font-size: 14px;
+  }
+  .md-version__size {
+    font-size: 13px;
+  }
+  .md-resume {
+    padding: 7px 14px;
+    font-size: 13.5px;
   }
   /* 底部留白避开全站玻璃坞 */
   .md-tail {
@@ -1409,6 +1476,8 @@ watch(itemId, () => {
     position: sticky;
     top: 8px;
     z-index: 8;
+    gap: 10px;
+    margin-top: 14px;
     margin-left: -20px;
     margin-right: -20px;
     padding: 8px 20px;
@@ -1446,10 +1515,10 @@ watch(itemId, () => {
       var(--uhd-s-shadow-pill);
   }
   .md-btn--fav {
-    flex: 0 0 50px;
-    width: 50px;
-    min-width: 50px;
-    height: 50px;
+    flex: 0 0 48px;
+    width: 48px;
+    min-width: 48px;
+    height: 48px;
     padding: 0;
     border-radius: 50%;
     font-size: 0;
@@ -1457,13 +1526,18 @@ watch(itemId, () => {
   }
   /* 移除钮在吸顶条里与收藏钮同形：圆形图标钮（设施与桌面一致，只变排版） */
   .md-btn--remove {
-    flex: 0 0 50px;
-    width: 50px;
-    min-width: 50px;
-    height: 50px;
+    flex: 0 0 48px;
+    width: 48px;
+    min-width: 48px;
+    height: 48px;
     padding: 0;
     border-radius: 50%;
     gap: 0;
+  }
+  /* 播放钮高度/字号收小（52→50、16→15） */
+  .md-actions .md-btn--play {
+    height: 50px;
+    font-size: 15px;
   }
   .md-btn--remove-txt {
     display: none;

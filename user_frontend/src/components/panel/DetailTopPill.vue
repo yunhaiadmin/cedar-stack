@@ -12,12 +12,12 @@
       aria-label="切换深浅外观"
       @click="theme.cycleTheme()"
     >
-      <Moon v-if="isDark" :size="18" />
-      <Sun v-else :size="18" />
+      <Moon v-if="isDark" :size="16" />
+      <Sun v-else :size="16" />
     </button>
     <span v-if="theme" class="dtp__sep" aria-hidden="true"></span>
     <button type="button" class="dtp__btn" aria-label="关闭详情" @click="emit('close')">
-      <X :size="18" />
+      <X :size="16" />
     </button>
   </div>
 </template>
@@ -49,7 +49,7 @@ const isDark = computed(() => theme?.resolved.value === 'dark')
   display: none;
   align-items: center;
   gap: 2px;
-  padding: 4px;
+  padding: 3px;
   border-radius: 999px;
   border: 1px solid var(--uhd-s-pill-border);
   background: var(--uhd-s-pill-bg);
@@ -68,8 +68,8 @@ const isDark = computed(() => theme?.resolved.value === 'dark')
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: none;
   border-radius: 50%;
@@ -82,7 +82,7 @@ const isDark = computed(() => theme?.resolved.value === 'dark')
 }
 .dtp__sep {
   width: 1px;
-  height: 18px;
+  height: 16px;
   background: currentColor;
   opacity: 0.16;
 }
