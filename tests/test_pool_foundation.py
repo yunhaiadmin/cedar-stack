@@ -223,15 +223,17 @@ def test_pool_config_invalid_values(db, key, bad):
 # ---------------------------------------------------------------- 判定纯函数
 
 
-def test_eligible_cms_item_is_off(db):
+def test_eligible_former_cms_item_treated_as_local(db):
+    # CMS 下线（2026-11-14）后，旧 CMS 库形态的条目与本地条目同口径：
+    # 池开时同样进池判定，不再有「免门禁 not_applicable」。
     _set_pool(db, pool_enabled=True)
-    lib = _library(db, "cms库", upstream_source_ids="7")
+    lib = _library(db, "旧cms库", upstream_source_ids="7")
     item = _item(db, lib.id)
     user = _user(db, "u1")
-    assert pool_gate.pool_eligible(db, user, item) == "off"
+    assert pool_gate.pool_eligible(db, user, item) == "eligible"
     decision = pool_gate.ensure_playback_allowed_for_item(db, user, item)
     assert decision.allowed is True
-    assert decision.kind == "not_applicable"
+    assert decision.kind == "pool"
 
 
 def test_eligible_pool_off_local_blocked_original_message(db):

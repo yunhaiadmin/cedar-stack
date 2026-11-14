@@ -147,11 +147,13 @@ def test_create_room_unbound_user_gate_denied(db, hub):
     assert excinfo.value.error == "gate_denied"
 
 
-def test_create_room_cms_item_unbound_ok(db, hub):
+def test_create_room_former_cms_item_unbound_gate_denied(db, hub):
+    # CMS 下线（2026-11-14）后旧 CMS 条目不再免门禁：未绑盘建房照样拦。
     guest = _user(db, "guest2")
     item = _cms_item(db)
-    snap = run(hub.create_room(FakeWS(), guest.id, item.guid))
-    assert snap["host_id"] == guest.id
+    with pytest.raises(wt.WatchError) as excinfo:
+        run(hub.create_room(FakeWS(), guest.id, item.guid))
+    assert excinfo.value.error == "gate_denied"
 
 
 def test_create_room_missing_item(db, hub):

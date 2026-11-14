@@ -3,13 +3,11 @@
 规矩：用户只有绑定了自己的网盘账号才能点播；没绑定的用户只能浏览
 片库、不能点播。管理员与普通用户一视同仁，不设豁免。
 
-2026-11-03 用户改定（「无界片库免绑定，本地库门禁照旧」）：无界
-（CMS 上游供源）片库的播放走上游线路直发，不过用户网盘、不耗共享
-盘配额，门禁的防风控理由不成立——条目所属库为 CMS 库时免绑定；
-本地/挂载库原样不变。判定只许走本模块的
-``binding_required_for_item`` / ``binding_required_for_upstream``
-单一入口，调用点不许各写一份；CMS 库的定义与媒体库体检同一份
-（``upstream_source_ids`` 经 ``applecms_library`` 解析后非空）。
+2026-11-14 CMS 无界片库下线（全删除令）：2026-11-03 的「无界片库
+免绑定」改定随之撤销——CMS 来源已删，不再有免绑定的条目人群，
+全部条目一律过绑定门禁（回到 2026-10-26 硬规矩「无豁免」）。
+判定只许走本模块的 ``binding_required_for_item`` /
+``binding_required_for_upstream`` 单一入口，调用点不许各写一份。
 
 执行口径：
 - 只拦播放，不拦浏览：片库浏览、搜索、详情页一律不调本模块；本模块
@@ -85,39 +83,14 @@ def has_removed_provider_binding(db: Session, user_id: int) -> bool:
     )
 
 
-def _library_is_cms(db: Session, library_id) -> bool:
-    """条目所属库是否为 CMS（无界）库。
-
-    定义与媒体库体检（reachability）同一份：库行 ``upstream_source_ids``
-    经 ``applecms_library.parse_upstream_source_ids`` 解析后非空。
-    库 id 为空 / 查不到库行一律 False（归非 CMS，门禁照旧，fail-closed）。
-    """
-    if library_id is None:
-        return False
-    library = (
-        db.query(em.Library)
-        .filter(em.Library.id == library_id)
-        .first()
-    )
-    if library is None:
-        return False
-    from backend.emby_server import applecms_library as _cms_lib
-
-    return bool(_cms_lib.parse_upstream_source_ids(library))
-
-
 def binding_required_for_item(db: Session, item) -> bool:
     """该条目的播放是否需要过绑定门禁（按条目判定的单一入口）。
 
-    CMS 库条目 → False（免绑定）；其余 → True。条目为空、没挂库、
-    查不到库一律 True（fail-closed，照旧过门禁）。
+    CMS 下线后不再有免绑定人群：恒 True（保留函数与 fail-closed
+    语义，调用点口径不变）。池放行等下游判定仍以本函数为「是否
+    免门禁」的单一入口，免门禁人群恒为空集。
     """
-    if item is None:
-        return True
-    library_id = getattr(item, "library_id", None)
-    if library_id is None:
-        return True
-    return not _library_is_cms(db, library_id)
+    return True
 
 
 def binding_required_for_upstream(
@@ -126,9 +99,9 @@ def binding_required_for_upstream(
     """上游兜底口（按源 id + 上游条目 id 寻址）是否需要过绑定门禁。
 
     兜底口没有本地条目 id 入参，经映射表反查本地条目再走
-    ``binding_required_for_item`` 同一判定：映射到的本地条目全部
-    属 CMS 库才免；查不到映射、映射条目已不存在、或任一映射条目
-    属本地库 → True（fail-closed）。
+    ``binding_required_for_item`` 同一判定。CMS 下线后免绑定人群
+    为空集，恒 True（查不到映射、映射条目已不存在同样 True，
+    fail-closed）。
     """
     rows = (
         db.query(em.UpstreamItemMapping.local_item_id)
@@ -234,11 +207,11 @@ def ensure_binding_playback_allowed_for_item(
     item,
     request: Request | None = None,
 ) -> None:
-    """按条目口径的播放门禁：CMS 库条目免绑定，其余与
+    """按条目口径的播放门禁：与
     ``ensure_binding_playback_allowed`` 逐字同口径（403 文案不变、
     已下发签名消费不追溯）。"""
-    # 软件授权是整机口径、不分条目：CMS 免绑定也免不了授权校验，
-    # 必须在免绑定早退之前先过（enforce 关时为空操作）。
+    # 软件授权是整机口径、不分条目，必须在门禁早退之前先过
+    # （enforce 关时为空操作）。
     _ensure_license_playback_allowed(db)
     if not binding_required_for_item(db, item):
         return
@@ -248,10 +221,10 @@ def ensure_binding_playback_allowed_for_item(
 def ensure_binding_playback_allowed_for_upstream(
     db: Session, user: models.WebUser, source_id, upstream_item_id
 ) -> None:
-    """上游兜底口的播放门禁：映射全属 CMS 库条目时免绑定，其余与
+    """上游兜底口的播放门禁：与
     ``ensure_binding_playback_allowed`` 同口径（兜底口无已下发链接
     消费一说，不传 request）。"""
-    # 同 _for_item：软件授权整机口径，先于免绑定早退。
+    # 同 _for_item：软件授权整机口径，先于门禁早退。
     _ensure_license_playback_allowed(db)
     if not binding_required_for_upstream(db, source_id, upstream_item_id):
         return
@@ -262,8 +235,7 @@ def sign_allowed_for_item(db: Session, user_id, item) -> bool:
     """详情/清单面给该条目下发 play_sign 签名轨的判定（单一入口）。
 
     播放签名是「已过门禁才下发」的凭证：已绑定用户恒可签；未绑定
-    用户只有条目免门禁（CMS 库）时可签——免门禁等价于已过门禁，
-    不签则直放详情源的客户端拿不到可用地址。user_id 为空恒 False
+    用户只剩池放行一条签发路径（见下）。user_id 为空恒 False
     （与既有 ``bool(user_id)`` 前置同口径）。
 
     goal-33 PR-3（design §4.1）新增池分支：未绑定用户池

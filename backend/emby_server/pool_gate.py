@@ -52,8 +52,9 @@ per_day / pool_breaker_cooldown_sec）与 pool_item_max_copies
 .test_redline_existing_gate_unchanged_when_pool_enabled 钉住）。
 
 判定顺序（design §4.1，新入口内部）：
-① CMS 免门禁 → not_applicable；② 已下发 play_sign 消费不追溯；
-③ 已绑定 → bound；④ 池 eligible → pool；⑤ 都不满足 → 抛原 403
+① 条目免门禁 → not_applicable（CMS 下线后不再命中）；② 已下发
+play_sign 消费不追溯；③ 已绑定 → bound；④ 池 eligible → pool；
+⑤ 都不满足 → 抛原 403
 （文案选择与 playback_gate 逐字一致，含下线 provider 专用文案）。
 软件授权前置：本入口在判定之首查（#1883 前置不动，已绑路径内层
 ensure_* 会再查一次，纯读无副作用）；池转存门禁
@@ -318,8 +319,8 @@ def pool_eligible(db: Session, user, item) -> str:
     """池资格判定（纯函数）：返回 "off" 或 "eligible"。
 
     off 的三种情形（design §4.1）：池总开关关、条目免门禁（CMS
-    库——池不介入）、人群外（含未登录/取不到用户 id）。异常同样
-    回 off（fail-closed）。
+    下线后免门禁人群为空集，此情形不再命中）、人群外（含未登录/
+    取不到用户 id）。异常同样回 off（fail-closed）。
     """
     user_id = getattr(user, "id", None)
     if user_id is None:
@@ -341,7 +342,8 @@ def pool_eligible(db: Session, user, item) -> str:
 class PoolDecision:
     """新判定入口的裁决结果（PR-3 接线时消费）。
 
-    kind：not_applicable（CMS 免门禁）/ issued_sign（消费已下发
+    kind：not_applicable（条目免门禁；CMS 下线后不再命中）/
+    issued_sign（消费已下发
     链接）/ bound（已绑定）/ pool（池放行）。blocked 不返回
     decision——直接抛 403（与既有门禁同口径）。
 
@@ -366,7 +368,7 @@ def ensure_playback_allowed_for_item(
     回落既有门禁本体 ``playback_gate.ensure_binding_playback_allowed``
     裁决（403 文案与执法点全站只此一份，不在此复制第二套）：它抛
     403 即本入口抛 403；它放行时（仅判定间隙边角）按已过门禁处理。
-    软件授权前置在判定之首查（#1883 前置不动：CMS 免门禁条目
+    软件授权前置在判定之首查（#1883 前置不动：任何条目
     同样先过授权；已绑路径内层 ensure_* 会再查一次，纯读无副
     作用）。
     """
