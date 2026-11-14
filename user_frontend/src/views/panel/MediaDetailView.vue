@@ -73,6 +73,7 @@ const metaParts = computed(() => {
   const parts: string[] = []
   if (it.ProductionYear) parts.push(String(it.ProductionYear))
   if (isSeries.value && it.ChildCount) parts.push(`${it.ChildCount}季`)
+  if (it.CommunityRating) parts.push(`★ ${it.CommunityRating.toFixed(1)}`)
   if (it.RunTimeTicks) parts.push(formatDuration(ticksToSeconds(it.RunTimeTicks)))
   return parts
 })
@@ -475,8 +476,8 @@ watch(itemId, () => {
 
           <div class="md-info">
             <h1 class="md-title" :class="{ 'md-title--movie': !isSeries }">{{ item.Name }}</h1>
-            <!-- 信息行（友站形态）：年份 + 时长纯文字，其后接类型描边
-                 胶囊同行；评分挪去右侧信息栏，不再混在信息行里 -->
+            <!-- 信息行（友站形态）：年份 · 季数 · ★评分 · 时长纯文字，
+                 其后接类型描边胶囊同行；右侧信息栏不再重复摆评分 -->
             <p class="md-meta">
               <template v-for="(p, i) in metaParts" :key="i">{{ i ? ' · ' : '' }}{{ p }}</template>
               <span v-for="g in (item.Genres || []).slice(0, 4)" :key="`g-${g}`" class="md-chip md-chip--genre">{{ g }}</span>
@@ -565,9 +566,6 @@ watch(itemId, () => {
             <dl class="md-rail__list">
               <div v-if="leadActors.length" class="md-rail__row">
                 <dt>主演</dt><dd>{{ leadActors.join(' / ') }}</dd>
-              </div>
-              <div v-if="item.CommunityRating" class="md-rail__row">
-                <dt>评分</dt><dd>★ {{ item.CommunityRating.toFixed(1) }}</dd>
               </div>
               <div v-if="item.ProductionYear" class="md-rail__row">
                 <dt>年份</dt><dd>{{ item.ProductionYear }}</dd>

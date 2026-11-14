@@ -161,6 +161,17 @@
 
           <!-- 固定区（不随版本区滚动）：字幕行 / 线路行 / 开始播放 -->
           <div v-if="!loading && !needsBinding" class="psp-fixed">
+            <!-- 内嵌字幕（只展示：内嵌轨随流内嵌，弹层不选轨、不改取流
+                 逻辑；图片类字幕后端回 415 的事不在本单内，行上不做可播
+                 承诺。没有内嵌轨整行不渲染） -->
+            <div v-if="embeddedSubs.length" class="psp-subrow">
+              <span class="psp-subrow__label">内嵌字幕</span>
+              <span class="psp-subrow__pill psp-subrow__pill--static">
+                <span class="psp-subrow__name">{{ embeddedSubs.map((s) => s.label).join(' / ') }}</span>
+                <span class="psp-subrow__count">{{ embeddedSubs.length }} 个</span>
+              </span>
+            </div>
+
             <!-- 外挂字幕（#134 能力保留，压成一行）：胶囊显示当前选择，
                  点开向上弹清单选轨；选中带进网页播放器，再选「不挂
                  字幕」= 本次不挂。没有外挂字幕整行不渲染 -->
@@ -583,6 +594,36 @@ const externalSubs = computed<SubCard[]>(() => {
         file,
       }
     })
+})
+
+/** 内嵌字幕标签：DisplayTitle 优先；后端 DisplayTitle 缺 display_title
+    时回填了语言码（chi/eng…），先翻译回中文名再显示；都没有才用
+    Title / 语言兜底，仍为空时只写「字幕」 */
+function embeddedSubLabel(s: { DisplayTitle?: string; Title?: string | null; Language?: string }): string {
+  const title = (s.DisplayTitle || '').trim()
+  if (title) {
+    const code = title.toLowerCase()
+    if (code === 'chi' || code === 'zho' || code === 'zh' || SUB_LANG_LABELS[code]) {
+      return subLangLabel(title, s.Title || '')
+    }
+    return title
+  }
+  const t = (s.Title || '').trim()
+  if (t) return t
+  const lang = (s.Language || '').trim()
+  if (!lang) return '字幕'
+  return subLangLabel(lang, '')
+}
+
+/** 内嵌字幕（所选版本的内嵌字幕轨）：与 externalSubs 同源
+    （subsSource 的 MediaStreams），只取 Type=Subtitle 且 !IsExternal
+    的轨；只渲染、不选轨、不改取流逻辑 */
+const embeddedSubs = computed<SubCard[]>(() => {
+  const src = subsSource.value
+  if (!src) return []
+  return (src.MediaStreams || [])
+    .filter((s) => s.Type === 'Subtitle' && !s.IsExternal)
+    .map((s) => ({ index: s.Index, label: embeddedSubLabel(s), file: '' }))
 })
 
 /** 选中的外挂字幕流 Index；null = 本次不挂外挂字幕 */
@@ -1333,6 +1374,10 @@ async function start() {
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
+}
+/* 内嵌字幕行复用同一胶囊样式，只展示不点按：去掉手形指针 */
+.psp-subrow__pill--static {
+  cursor: default;
 }
 .psp-subrow__name {
   white-space: nowrap;
