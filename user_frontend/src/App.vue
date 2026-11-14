@@ -3,6 +3,7 @@ import { RouterView, useRoute, useRouter } from 'vue-router'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import Toast from '@/components/Toast.vue'
 import AppHeader from '@/components/AppHeader.vue'
+import UhdTopBar from '@/components/uhd/UhdTopBar.vue'
 import PanelTabbar from '@/components/panel/PanelTabbar.vue'
 import UhdAccountDock from '@/components/uhd/UhdAccountDock.vue'
 import TgBindModal from '@/components/TgBindModal.vue'
@@ -90,6 +91,17 @@ const isStreamArea = computed(
 const showHeader = computed(() => showChrome.value && !isAccountArea.value && !isStreamArea.value)
 
 /**
+ * 统一顶栏（2026-11-14 用户亲点「没固定，没统一」）：账户区在此一处
+ * 挂 UhdTopBar（sticky 玻璃条 + 右上「网页观影」常驻胶囊），各页不再
+ * 自带页头品牌行——概览/我的原先各写一份（一处有彩虹边框、一处没有、
+ * 都不固定）已删。标题口径照友站两页：概览用站名、「我的」页用
+ * 「我的」，其余账户页一律站名（页内自有 H1，不在顶栏重复）。
+ * 片库面由 StreamShell 内挂同一组件（手机端），AppHeader 区由
+ * AppHeader 在右侧复用同一颗胶囊，三区同形态。
+ */
+const accountBarTitle = computed(() => (route.name === 'game-account-menu' ? '我的' : ''))
+
+/**
  * 底部坞改走 App.vue 全局常驻（PanelTabbar，≤768px 唯一一套）：
  * 各视图不再自带 <PanelTabbar/>，非 v4 路由（/tg-bind 等）也认同一套，
  * 桌面 ≥769px 由 CSS 隐藏（DESIGN.md v1.1：桌面导航只留顶栏）。
@@ -111,7 +123,18 @@ const showHeader = computed(() => showChrome.value && !isAccountArea.value && !i
  * 账号设置（/game/account/settings）与我的订阅（/game/account/member）是子页，不进缓存。
  */
 // RootView 是根路径分发组件（官网面），一并常驻缓存
-const KEEP_ALIVE_VIEWS = ['RootView', 'PersonalCenterView']
+// 2026-11-14：片库四页签（首页 StreamHomeView、电影/剧集 LibraryBrowseView、
+// 收藏 FavoritesView）加入保活——此前切个页签就销毁重建、全量重拉再看一遍
+// 骨架。三视图均显式 defineOptions name 与 include 对齐（不靠文件名推断）；
+// 电影/剧集同组件不同 path，viewCacheKey 已含 route.path，各占一份缓存。
+// 各视图在 onActivated 里按 5 分钟 TTL 静默刷新（不闪骨架）。
+const KEEP_ALIVE_VIEWS = [
+  'RootView',
+  'PersonalCenterView',
+  'StreamHomeView',
+  'LibraryBrowseView',
+  'FavoritesView',
+]
 const viewCacheKey = computed(
   () => `${route.path}:${userStore.user?.id ?? 'guest'}#${userStore.sessionSeq}`,
 )
@@ -203,13 +226,19 @@ watch(
 <template>
   <div class="app-shell">
     <AppHeader v-if="showHeader" />
+    <UhdTopBar v-if="showChrome && isAccountArea" :title="accountBarTitle" />
     <RouterView v-slot="{ Component }">
       <!-- max=12：key 按登录会话隔离，登出/换号后旧实例不再命中，攒多了自动淘汰最旧的 -->
-      <KeepAlive :include="KEEP_ALIVE_VIEWS" :max="12">
-        <Transition name="page">
+      <!-- 嵌套顺序必须是 Transition 在外、KeepAlive 在内（Vue 官方组合形态）：
+           反过来 KeepAlive 的直接子级是 Transition，include 只会拿去比
+           "Transition" 这个名字，名单永远命不中——此前 RootView /
+           PersonalCenterView 名义上保活、实际从未缓存（2026-11-14 亲验：
+           首页切走再切回 DOM 探针丢失、整页重挂载重拉）。 -->
+      <Transition name="page">
+        <KeepAlive :include="KEEP_ALIVE_VIEWS" :max="12">
           <component :is="Component" :key="viewCacheKey" />
-        </Transition>
-      </KeepAlive>
+        </KeepAlive>
+      </Transition>
     </RouterView>
     <PanelTabbar v-if="showChrome && !isAccountArea && !isStreamArea" />
     <UhdAccountDock v-if="showChrome && isAccountArea && !isSubscribePage" />

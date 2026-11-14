@@ -1,16 +1,18 @@
 # tests/test_invitation_records_rebate.py
 """邀请记录「累计返利」归集回归测试（GET /api/user/invite/records）。
 
-口径：返利流水（PointsLog type=rebate）的 ref_id 是 ``rebate:{充值订单号}``，
-订单归属人就是被邀请人——按此把邀请人的返利台账拆回每个人头上。
-归不上的（订单不存在/格式不对/负数冲正行）不计，宁可少算不许错算。
-本接口只读台账，不发生任何发放。
+口径（2026-11-14 钱包时代起）：返利读计提台账 invite_rebate_accruals
+（被邀请人付费时按 (inviter, invitee) 逐笔落行，pending+credited 合计，
+单位元）。旧口径（PointsLog type=rebate 按充值订单号拆算）已随积分
+货币下线作废——台账里再有旧流水也不许混进这个数字。
+另：被邀请人用户名在记录里必须脱敏（只露首尾），并带「是否已付费」。
 """
 
 from __future__ import annotations
 
 import sys
 import uuid
+from decimal import Decimal
 
 sys.path.insert(0, ".")
 
@@ -56,12 +58,10 @@ def _user(db, username: str) -> models.WebUser:
     return u
 
 
-def test_rebate_total_attributed_per_invitee(db):
-    tag = uuid.uuid4().hex[:8]
-    inviter = _user(db, f"rb-inviter-{tag}")
-    invitee1 = _user(db, f"rb-invitee1-{tag}")
-    invitee2 = _user(db, f"rb-invitee2-{tag}")
-
+def _setup(db, tag):
+    inviter = _user(db, f"alice{tag}")
+    invitee1 = _user(db, f"bob{tag}")
+    invitee2 = _user(db, f"carol{tag}")
     code = models.InvitationCode(
         code=f"RB{tag.upper()}", user_id=inviter.id,
         is_active=True, max_uses=0, use_count=2, reward_points=0,
@@ -79,33 +79,71 @@ def test_rebate_total_attributed_per_invitee(db):
             code_id=code.id, reward_points=0,
         ),
     ])
-    pkg = models.RechargePackage(name="p", amount=100, price=10)
-    db.add(pkg)
     db.commit()
-    db.refresh(pkg)
-    # invitee1 的充值订单（返利流水按它的订单号归集）
-    db.add(models.RechargeOrder(
-        order_id=f"RO-{tag}", user_id=invitee1.id, package_id=pkg.id,
-        amount=1000, price=100, status="paid",
+    return inviter, invitee1, invitee2
+
+
+def _accrual(db, inviter, invitee, paid, rebate, status="pending", ref="SO-1"):
+    row = models.InviteRebateAccrual(
+        inviter_id=inviter.id, invitee_id=invitee.id,
+        source="subscription_order", source_ref=ref,
+        paid_amount=Decimal(paid), rebate_amount=Decimal(rebate),
+        percent=5, status=status,
+    )
+    db.add(row)
+    db.commit()
+    return row
+
+
+def test_rebate_total_from_accruals_per_invitee(db):
+    tag = uuid.uuid4().hex[:6]
+    inviter, invitee1, invitee2 = _setup(db, tag)
+    _accrual(db, inviter, invitee1, "45.00", "2.25", ref="SO-A")
+    _accrual(db, inviter, invitee1, "100.00", "5.00", status="credited", ref="SO-B")
+    # 别人的计提行不许串进来
+    _accrual(db, invitee2, invitee1, "999.00", "49.95", ref="SO-C")
+
+    out = my_invitation_records(50, inviter, db)
+    assert len(out["records"]) == 2
+    totals = sorted(r["rebate_total"] for r in out["records"])
+    assert totals == [0.0, 7.25]
+    # 脱敏：完整用户名不许出现在记录里，只露首尾
+    for r in out["records"]:
+        assert tag not in r["invitee_username"]
+        assert "***" in r["invitee_username"]
+
+
+def test_paid_flag_from_subscription_orders(db):
+    tag = uuid.uuid4().hex[:6]
+    inviter, invitee1, invitee2 = _setup(db, tag)
+    plan = models.SubscriptionPlan(name="p", price=Decimal("45"), duration_days=30)
+    db.add(plan)
+    db.commit()
+    db.refresh(plan)
+    db.add(models.SubscriptionOrder(
+        order_id=f"SO-{tag}", user_id=invitee1.id, plan_id=plan.id,
+        amount=Decimal("45.00"), status="paid",
+    ))
+    db.add(models.SubscriptionOrder(
+        order_id=f"SO2-{tag}", user_id=invitee2.id, plan_id=plan.id,
+        amount=Decimal("45.00"), status="pending",
     ))
     db.commit()
 
-    def _log(amount, type_, ref):
-        return models.PointsLog(
-            user_id=inviter.id, amount=amount, balance_after=0,
-            type=type_, description="t", ref_id=ref,
-        )
+    out = my_invitation_records(50, inviter, db)
+    paid_flags = sorted(r["paid"] for r in out["records"])
+    assert paid_flags == [False, True]
 
-    db.add_all([
-        _log(10, "rebate", f"rebate:RO-{tag}"),
-        _log(5, "rebate", f"rebate:RO-{tag}"),
-        _log(7, "rebate", "rebate:RO-NOT-MINE"),   # 订单不存在 → 不归集
-        _log(-3, "rebate", f"rebate:RO-{tag}"),     # 冲正负数行 → 不计入累计
-        _log(99, "invite", f"rebate:RO-{tag}"),     # 非返利类型 → 不计
-    ])
+
+def test_legacy_pointslog_rebate_not_counted(db):
+    """旧积分返利流水（PointsLog）不得混进新口径的累计返利。"""
+    tag = uuid.uuid4().hex[:6]
+    inviter, invitee1, _ = _setup(db, tag)
+    db.add(models.PointsLog(
+        user_id=inviter.id, amount=500, balance_after=0,
+        type="rebate", description="旧返利", ref_id="rebate:RO-OLD",
+    ))
     db.commit()
 
     out = my_invitation_records(50, inviter, db)
-    by_name = {r["invitee_username"]: r for r in out["records"]}
-    assert by_name[invitee1.username]["rebate_total"] == 15
-    assert by_name[invitee2.username]["rebate_total"] == 0
+    assert all(r["rebate_total"] == 0 for r in out["records"])

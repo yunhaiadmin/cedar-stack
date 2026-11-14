@@ -10,6 +10,10 @@ import './styles/v4-paper.css'
 // 不改现有变量的值、未被任何现有页面引用；已按 U0 冻结流程同步登记
 // scripts/check_frontend_tokens.py 的 MAIN_CSS_ALLOWLIST。
 import './styles/uhd-tokens.css'
+// UHD 统一顶栏令牌（2026-11-14）：只定义 --utb-* 新变量（顶栏/观影胶囊作用域），
+// 不改现有变量的值；已按 U0 冻结流程同步登记
+// scripts/check_frontend_tokens.py 的 MAIN_CSS_ALLOWLIST。
+import './styles/uhd-topbar.css'
 
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'

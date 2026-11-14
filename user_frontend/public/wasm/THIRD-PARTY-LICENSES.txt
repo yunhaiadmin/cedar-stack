@@ -1,0 +1,54 @@
+Third-party licenses — WebAssembly software decoders served from /wasm/
+========================================================================
+
+The .wasm files in this directory tree are software decoders used by the
+web player when the browser cannot decode a codec natively. They were
+built by this project from open-source components, as listed below.
+Build scripts, build configuration summaries and the audit tooling live
+in the project repository under tools/softdecode/.
+
+1. FFmpeg (libavcodec, libavutil, libswresample)
+   Files: decode/*.wasm, resample/resample-simd.wasm
+   Version: FFmpeg 7.1 (release/7.1, commit
+   f9db090b14c255a8f1c5f8f41a4c92b723228763)
+   License: GNU Lesser General Public License, version 3 or later
+   (LGPL-3.0-or-later). These builds were configured WITHOUT --enable-gpl
+   and without any GPL or nonfree component; the FFmpeg configure summary
+   of every build reports "License: LGPL version 3 or later"
+   (CONFIG_GPL 0, CONFIG_NONFREE 0). Only FFmpeg's native decoders for
+   HEVC, H.264, AAC, AC-3, E-AC-3 and DTS are included; no external codec
+   library (such as dav1d, libvpx or libspeex) is part of these files.
+   Source: https://ffmpeg.org/download.html and
+   https://github.com/FFmpeg/FFmpeg (branch release/7.1)
+   Full license text: see COPYING.LGPLv3 in this directory.
+
+2. libmedia (decoder glue code linking the FFmpeg libraries)
+   Files: decode/*.wasm, resample/resample-simd.wasm,
+   stretchpitch/stretchpitch-simd.wasm (glue portions)
+   Version: 1.3.1
+   License: LGPL-3.0-or-later
+   Source: https://github.com/zhaohappy/libmedia (tag v1.3.1)
+   Full license text: see COPYING.LGPLv3 in this directory.
+
+3. @libmedia/cheap (WebAssembly runtime support used by the glue code)
+   Version: 1.3.1
+   License: MIT
+   Source: https://github.com/zhaohappy/cheap
+
+4. SoundTouch (audio tempo/pitch processing inside
+   stretchpitch/stretchpitch-simd.wasm)
+   License: GNU Lesser General Public License, version 2.1 or later
+   (LGPL-2.1-or-later)
+   Source: https://www.surina.net/soundtouch/
+   (source copy as vendored in libmedia 1.3.1,
+   packages/audiostretchpitch/src/clib/soundtouch)
+
+Relicensing / replacement note (LGPL): the components above are loaded
+as separate, self-contained .wasm files and are not linked into a single
+combined work with the site's own code; you may replace any of them with
+a modified version built from the corresponding source code under the
+terms of the LGPL. Corresponding source code for the exact builds
+shipped here is available from the upstream locations listed above,
+together with this project's build scripts in tools/softdecode/ (the
+only modifications to the upstream libmedia build scripts are recorded
+in the headers of the patched files there).

@@ -14,7 +14,7 @@
       <template v-if="tab === 'people'">
         <div v-if="peopleError" class="fv-error" role="alert">
           演职人员收藏没加载出来：{{ peopleError }}<br />
-          <button type="button" class="fv-retry" :disabled="peopleLoading" @click="loadPeople">{{ peopleLoading ? '正在重试…' : '重试' }}</button>
+          <button type="button" class="fv-retry" :disabled="peopleLoading" @click="() => loadPeople()">{{ peopleLoading ? '正在重试…' : '重试' }}</button>
         </div>
         <div v-else-if="peopleLoading" class="fv-skel" role="status" aria-label="正在加载">
           <div v-for="i in 7" :key="i" class="fv-skel__poster"><span class="fv-skel__logo">A</span></div>
@@ -63,7 +63,7 @@
       <template v-else>
       <div v-if="error" class="fv-error" role="alert">
         收藏没加载出来：{{ error }}<br />
-        <button type="button" class="fv-retry" :disabled="loading" @click="load">{{ loading ? '正在重试…' : '重试' }}</button>
+        <button type="button" class="fv-retry" :disabled="loading" @click="() => load()">{{ loading ? '正在重试…' : '重试' }}</button>
       </div>
       <!-- 骨架屏（录屏形态）：海报灰块 + 居中站标 -->
       <div v-else-if="loading" class="fv-skel" role="status" aria-label="正在加载">
@@ -117,7 +117,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Clapperboard, Star } from 'lucide-vue-next'
 import { embyApi, type PortalMediaItem, type PortalPerson } from '@/api'
@@ -125,6 +125,9 @@ import { imageAuthUrl } from '@/api/emby'
 import { embyApiKeyRef } from '@/api/imageKey'
 import { useToast } from '@/composables/useToast'
 import StreamShell from '@/components/stream/StreamShell.vue'
+
+/* KeepAlive include 按组件 name 匹配：显式声明，保活命中不靠文件名推断 */
+defineOptions({ name: 'FavoritesView' })
 
 const toast = useToast()
 
@@ -168,20 +171,28 @@ function metaLine(m: PortalMediaItem): string {
   return parts.join(' · ')
 }
 
-async function load() {
-  loading.value = true
-  error.value = ''
+/** 保活切回静默刷新阈值：与首页同口径 5 分钟 */
+const VIEW_REFRESH_TTL_MS = 5 * 60 * 1000
+let lastLoadedAt = 0
+/** silent = 保活切回的后台刷新：不亮骨架、失败保留已有数据、不动用户页签 */
+async function load(silent = false) {
+  if (!silent) {
+    loading.value = true
+    error.value = ''
+  }
   try {
     const data = await embyApi.getFavorites()
     items.value = data.items || []
+    lastLoadedAt = Date.now()
     // 默认落在剧集页签；用户未手动切过且只有电影收藏时落到电影，避免先见空态
-    if (!tabPicked.value && seriesCount.value === 0 && movieCount.value > 0) {
+    // （静默刷新不走这条：不许在用户背后换页签）
+    if (!silent && !tabPicked.value && seriesCount.value === 0 && movieCount.value > 0) {
       tab.value = 'movie'
     }
   } catch (err) {
-    error.value = errText(err)
+    if (!silent) error.value = errText(err)
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
 }
 
@@ -192,18 +203,28 @@ const peopleError = ref('')
 const pendingPersonKey = ref<string | null>(null)
 const brokenAvatars = ref<Set<string>>(new Set())
 
-async function loadPeople() {
-  peopleLoading.value = true
-  peopleError.value = ''
+async function loadPeople(silent = false) {
+  if (!silent) {
+    peopleLoading.value = true
+    peopleError.value = ''
+  }
   try {
     const data = await embyApi.getPersonFavorites()
     peopleItems.value = data.items || []
   } catch (err) {
-    peopleError.value = errText(err)
+    if (!silent) peopleError.value = errText(err)
   } finally {
-    peopleLoading.value = false
+    if (!silent) peopleLoading.value = false
   }
 }
+
+/* 保活切回：数据还新鲜（< 5 分钟）不重拉；过期才静默刷新，不闪骨架 */
+onActivated(() => {
+  if (lastLoadedAt && Date.now() - lastLoadedAt > VIEW_REFRESH_TTL_MS) {
+    void load(true)
+    void loadPeople(true)
+  }
+})
 
 function onAvatarError(key: string) {
   brokenAvatars.value = new Set(brokenAvatars.value).add(key)

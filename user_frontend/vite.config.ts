@@ -70,6 +70,11 @@ export default defineConfig({
             if (id.includes('hls.js') || id.includes('hls.js/dist')) {
               return 'hls'
             }
+            // 软解播放器（@libmedia/*，只在软解时动态 import，独立分包
+            // 避免 600KB+ 进首屏 vendor；同 hls.js 口径）
+            if (id.includes('@libmedia/')) {
+              return 'softdecode'
+            }
             // 工具库
             if (id.includes('axios') || id.includes('lodash-es')) {
               return 'utils'

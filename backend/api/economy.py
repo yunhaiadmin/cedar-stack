@@ -1096,6 +1096,39 @@ def _fulfill_order(db: Session, recharge_order=None, subscription_order=None) ->
                          f"到期时间 {subscription.end_date.strftime('%Y-%m-%d')}。"),
                 related_id=subscription.id,
             ))
+            # 邀请返利计提（2026-11-14 钱包时代）：付款人是被邀请人时，
+            # 按 invite_rebate 的配置口径（默认分档）给邀请人计提返利；
+            # 钱包就绪则同事务入账并给邀请人排一条到账站内信。保存点
+            # 隔离：返利侧失败绝不拖垮订阅履约；但绝不静默——按 r39
+            # 口径给付款人追加一条 partial 通知，请其联系客服补发。
+            try:
+                with db.begin_nested():
+                    from backend import invite_rebate as _invite_rebate
+
+                    _accrual = _invite_rebate.record_payment_rebate(
+                        db, user,
+                        source=_invite_rebate.SOURCE_SUBSCRIPTION_ORDER,
+                        source_ref=subscription_order.order_id,
+                        paid_amount=subscription_order.amount)
+                if _accrual is not None and _accrual.status == _invite_rebate.STATUS_CREDITED:
+                    pending.append(dict(
+                        event_type="economy.invite_rebate",
+                        user_id=_accrual.inviter_id,
+                        title="💰 邀请返利到账",
+                        content=(f"好友付费 ¥{subscription_order.amount}，"
+                                 f"返利 ¥{_accrual.rebate_amount:.2f} 已存入你的钱包余额。"),
+                        related_id=None,
+                    ))
+            except Exception:  # noqa: BLE001
+                logger.exception("邀请返利计提失败: %s", subscription_order.order_id)
+                pending.append(dict(
+                    event_type=AdminEvent.FULFILL_PARTIAL,
+                    user_id=user.id,
+                    title="⚠️ 订阅成功，邀请返利计提失败",
+                    content=(f"订单 {subscription_order.order_id} 的订阅已开通，"
+                             "但邀请返利计提失败，请联系客服补发。"),
+                    related_id=None,
+                ))
         coupons.consume(db, subscription_order.coupon_usage_id)
 
     return pending

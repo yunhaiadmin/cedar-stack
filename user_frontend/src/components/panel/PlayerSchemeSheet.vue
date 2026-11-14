@@ -1,11 +1,21 @@
 <!-- 播放前弹层（批 3 录屏形态）：底部升起的大圆角弹层——
      顶部剧照头图 + 选集播放小字 + 标题（仅手机；桌面存档弹窗无标题头）；
-     影片版本单选卡（单选圆点 + 规格 chip + 码率·大小·时长 + 复制/展开
-     圆钮）；外挂字幕卡（语言·格式 + 文件名，点播前可选，选中带进网页
-     播放器）；播放线路行（账号卡 realms + 专属线路，选哪条本次播放的
-     EA 请求就走哪条入口）；玻璃粉彩填充「开始播放 · 版本大标题」
-     （网页播放器主入口，线路未就绪时钮内显示「正在准备线路」）；
-     第三方播放器以「用播放器打开」行列保留（既有业务入口，点行即打开）。
+     影片版本单选卡（标题行在最上、第二行单选圆点 + 规格 chip、第三行
+     码率·大小·时长，右侧复制/展开圆钮垂直居中）；外挂字幕卡（语言·
+     格式 + 文件名，点播前可选，选中带进网页播放器）；播放线路行
+     （账号卡 realms + 专属线路，选哪条本次播放的 EA 请求就走哪条
+     入口）；玻璃粉彩填充「开始播放 · 版本大标题」（网页播放器主
+     入口，线路未就绪时钮内显示「正在准备线路」；文案双色：「开始
+     播放」粗体 + 版本名细体灰）。
+     2026-11-14 用户亲点友站弹层形态追加对齐：弹层固定一屏不滚动——
+     只有版本区内部滚动，字幕/线路/开始播放三行固定在底部；
+     字幕压成一行胶囊 + 向上弹选单（#134 能力不删）；版本卡复制钮改
+     复制该版本播放链接；展开态改两列信息网格 + 音轨行（音轨只展示：
+     网页播放器无选音轨能力，不做假选择），展开时版本区自动滚动把
+     展开内容带进视口；头图右下加眼睛钮（标记已看，PlayedItems 真
+     接口）；开始播放下的说明文案按 58 条总账 7-10/7-12「多余」裁定
+     撤除。「用播放器打开」第三方播放器行已按 2026-11-14 09:39 用户
+     亲点删除（友站弹层没有这一行；该能力在详情页的入口保持不动）。
      D3-05 旧裁定（省略播放线路段）已被 2026-11-13 用户亲点推翻：
      线路数据与测速页同源（账号卡 realms + 专属线路），选线真生效
      只限网页播放路径；第三方导入 scheme 的服务器地址由后端账号卡
@@ -31,120 +41,230 @@
         <button type="button" class="psp-x" aria-label="关闭" @click="close">
           <X :size="17" />
         </button>
-        <!-- 头图区（仅手机显示） -->
-        <div class="psp-hero">
-          <img v-if="heroImg" :src="heroImg" alt="" class="psp-hero__img" />
-          <div class="psp-hero__fade" aria-hidden="true"></div>
-          <div class="psp-hero__meta">
-            <span class="psp-hero__label">{{ heroLabel }}</span>
-            <div id="psp-title" class="psp-hero__title">{{ heroTitle }}</div>
-            <div v-if="heroSub" class="psp-hero__sub">{{ heroSub }}</div>
+        <!-- 头图区（仅手机显示）：右下眼睛钮 = 标记已看/取消（Emby
+             PlayedItems 真接口，与详情页移除记录同一口径；剧集时标记
+             的是本次起播的那一集，与起播目标一致） -->
+        <div class="psp-hero-wrap">
+          <div class="psp-hero">
+            <img v-if="heroImg" :src="heroImg" alt="" class="psp-hero__img" />
+            <div class="psp-hero__fade" aria-hidden="true"></div>
+            <div class="psp-hero__meta">
+              <span class="psp-hero__label">{{ heroLabel }}</span>
+              <div id="psp-title" class="psp-hero__title">{{ heroTitle }}</div>
+              <div v-if="heroSub" class="psp-hero__sub">{{ heroSub }}</div>
+            </div>
           </div>
+          <button
+            v-if="canMarkPlayed"
+            type="button"
+            class="psp-eye"
+            :class="{ 'psp-eye--on': playedState }"
+            :aria-pressed="playedState"
+            :aria-label="playedState ? '取消已看标记' : '标记为已看'"
+            :disabled="playedBusy"
+            @click="togglePlayed"
+          >
+            <EyeOff v-if="playedState" :size="19" />
+            <Eye v-else :size="19" />
+          </button>
         </div>
 
         <div class="psp-body">
-          <PlayStatusBar v-if="!needsBinding && itemId !== null && itemId !== undefined" :item-id="itemId" />
+          <!-- 滚动区：状态条 + 版本卡（版本多/展开时只许这里内部滚动，
+               弹层本体与底部固定区不动——2026-11-14 用户亲点「固定的」） -->
+          <div ref="scrollEl" class="psp-scroll">
+            <PlayStatusBar v-if="!needsBinding && itemId !== null && itemId !== undefined" :item-id="itemId" />
 
-          <div v-if="loading" class="psp-loading" role="status">
-            <span class="psp-spinner" aria-hidden="true"></span> 正在获取资源和线路…
-          </div>
-
-          <BindDriveGuide v-else-if="needsBinding" :title="title" @navigate="close" />
-
-          <template v-else>
-            <!-- 影片版本（单选） -->
-            <div class="psp-sec-head">
-              <span>影片版本</span>
-              <span v-if="versions.length" class="psp-sec-count">{{ versions.length }} 个可选版本</span>
+            <div v-if="loading" class="psp-loading" role="status">
+              <span class="psp-spinner" aria-hidden="true"></span> 正在获取资源和线路…
             </div>
-            <div v-if="versions.length" class="psp-vers">
-              <div
-                v-for="v in versions"
-                :key="v.id"
-                class="psp-ver"
-                :class="{ 'psp-ver--on': v.id === selectedVersionId }"
-                role="radio"
-                :aria-checked="v.id === selectedVersionId"
-                tabindex="0"
-                @click="selectedVersionId = v.id"
-                @keydown.enter.prevent="selectedVersionId = v.id"
-              >
-                <span class="psp-ver__radio" aria-hidden="true"></span>
-                <div class="psp-ver__main">
+
+            <BindDriveGuide v-else-if="needsBinding" :title="title" @bound="onDriveBound" />
+
+            <template v-else>
+              <!-- 影片版本（单选） -->
+              <div class="psp-sec-head">
+                <span>影片版本</span>
+                <span v-if="versions.length" class="psp-sec-count">{{ versions.length }} 个可选版本</span>
+              </div>
+              <div v-if="versions.length" class="psp-vers">
+                <div
+                  v-for="v in versions"
+                  :key="v.id"
+                  class="psp-ver"
+                  :class="{ 'psp-ver--on': v.id === selectedVersionId }"
+                  role="radio"
+                  :aria-checked="v.id === selectedVersionId"
+                  tabindex="0"
+                  @click="selectedVersionId = v.id"
+                  @keydown.enter.prevent="selectedVersionId = v.id"
+                >
+                  <!-- 卡内三行（友站顺序）：第一行标题独占（左缘与胶囊列
+                       对齐）、第二行单选圆点 + 胶囊、第三行码率信息；
+                       右侧工具列跨三行垂直居中（网格定位见样式） -->
                   <div class="psp-ver__name">{{ v.title }}</div>
+                  <span class="psp-ver__radio" aria-hidden="true"></span>
                   <div v-if="v.chips.length" class="psp-ver__chips">
                     <span v-for="c in v.chips" :key="c" class="psp-ver__chip">{{ c }}</span>
                   </div>
-                  <div v-if="v.meta" class="psp-ver__meta">{{ v.meta }}</div>
-                  <div v-if="expandedId === v.id && v.streams.length" class="psp-ver__streams">
-                    <div v-for="(s, i) in v.streams" :key="i">{{ s }}</div>
+                  <div v-if="v.metaParts.length" class="psp-ver__meta"><span v-for="(mp, mi) in v.metaParts" :key="mi" class="psp-ver__metapart">{{ mp }}</span></div>
+                  <div class="psp-ver__tools">
+                    <button type="button" class="psp-tool" aria-label="复制该版本的播放链接" title="复制播放链接" @click.stop="copyVersionLink(v)">
+                      <Copy :size="16" />
+                    </button>
+                    <button
+                      v-if="v.details.length || v.audios.length || v.subs.length"
+                      type="button"
+                      class="psp-tool"
+                      :aria-label="expandedId === v.id ? '收起版本详情' : '展开版本详情'"
+                      @click.stop="toggleExpand(v, $event)"
+                    >
+                      <ChevronDown :size="16" :style="{ transform: expandedId === v.id ? 'rotate(180deg)' : '' }" />
+                    </button>
                   </div>
-                </div>
-                <div class="psp-ver__tools">
-                  <button type="button" class="psp-tool" aria-label="复制片名去播放器搜" title="复制片名" @click.stop="copyTitle">
-                    <Copy :size="15" />
-                  </button>
-                  <button
-                    v-if="v.streams.length"
-                    type="button"
-                    class="psp-tool"
-                    :aria-label="expandedId === v.id ? '收起轨道详情' : '展开轨道详情'"
-                    @click.stop="expandedId = expandedId === v.id ? '' : v.id"
-                  >
-                    <ChevronDown :size="15" :style="{ transform: expandedId === v.id ? 'rotate(180deg)' : '' }" />
-                  </button>
+                  <!-- 展开态：两列信息网格（真实探测字段）+ 音轨行 +
+                       内嵌字幕行（友站形态：都在展开网格内）。
+                       音轨只展示清单与默认标记、不做选择：网页播放器
+                       没有选音轨能力，做成可选就是假造（详情见脚本注）。
+                       内嵌字幕行可展开选轨：文本轨点选后经 query.sub
+                       带进播放器（播放器已认任意文本字幕轨 Index）；
+                       图片轨播放器挂不了，列出但置灰不可点 -->
+                  <div v-if="expandedId === v.id && (v.details.length || v.audios.length || v.subs.length)" class="psp-ver__detail">
+                      <div v-if="v.details.length" class="psp-grid">
+                        <div v-for="d in v.details" :key="d.label" class="psp-grid__cell">
+                          <span class="psp-grid__label">{{ d.label }}</span>
+                          <span class="psp-grid__value">{{ d.value }}</span>
+                        </div>
+                      </div>
+                      <div v-if="v.audios.length" class="psp-audio">
+                        <button
+                          type="button"
+                          class="psp-audio__head"
+                          :aria-expanded="audioOpenId === v.id"
+                          @click.stop="toggleAudio(v, $event)"
+                        >
+                          <span class="psp-audio__name">音轨</span>
+                          <span class="psp-audio__lang">{{ v.audioLang }}</span>
+                          <span class="psp-audio__count">共 {{ v.audios.length }} 条</span>
+                          <ChevronDown :size="15" :style="{ transform: audioOpenId === v.id ? 'rotate(180deg)' : '' }" />
+                        </button>
+                        <div v-if="audioOpenId === v.id" class="psp-audio__list">
+                          <div v-for="(a, ai) in v.audios" :key="ai" class="psp-audio__row">
+                            <span>{{ a.label }}</span>
+                            <span v-if="a.detail" class="psp-audio__rowmeta">{{ a.detail }}</span>
+                            <span v-if="a.isDefault" class="psp-audio__badge">默认</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div v-if="v.subs.length" class="psp-emb">
+                        <button
+                          type="button"
+                          class="psp-emb__head"
+                          :aria-expanded="embSubOpenId === v.id"
+                          @click.stop="toggleEmbSub(v, $event)"
+                        >
+                          <span class="psp-emb__name">内嵌字幕</span>
+                          <span class="psp-emb__lang">{{ v.subLang }}</span>
+                          <span class="psp-emb__count">共 {{ v.subs.length }} 条</span>
+                          <ChevronDown :size="15" :style="{ transform: embSubOpenId === v.id ? 'rotate(180deg)' : '' }" />
+                        </button>
+                        <div v-if="embSubOpenId === v.id" class="psp-emb__list">
+                          <button
+                            v-for="s in v.subs"
+                            :key="s.index"
+                            type="button"
+                            class="psp-emb__row"
+                            :class="{ 'psp-emb__row--on': selectedSubIndex === s.index }"
+                            :disabled="!s.isText"
+                            @click.stop="chooseEmbSub(v, s)"
+                          >
+                            <span v-if="s.isText" class="psp-emb__radio" aria-hidden="true"></span>
+                            <span>{{ s.label }}</span>
+                            <span v-if="!s.isText" class="psp-emb__rowmeta">图片字幕 · 网页暂不支持</span>
+                            <span v-if="s.isDefault" class="psp-emb__badge">默认</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                 </div>
               </div>
-            </div>
-            <p v-else class="psp-note">这个条目的版本信息没拉到，开始播放会用默认版本。</p>
+              <p v-else class="psp-note">这个条目的版本信息没拉到，开始播放会用默认版本。</p>
+            </template>
+          </div>
 
-            <!-- 外挂字幕（所选版本的外挂字幕轨；点选后带进网页播放器，
-                 再点一次已选卡 = 本次不挂字幕。没有外挂字幕整段不渲染） -->
-            <template v-if="externalSubs.length">
-              <div class="psp-sec-head">
-                <span>外挂字幕</span>
-                <span class="psp-sec-count">{{ externalSubs.length }} 个字幕</span>
-              </div>
-              <div class="psp-subs">
+          <!-- 固定区（不随版本区滚动）：字幕行 / 线路行 / 开始播放 -->
+          <div v-if="!loading && !needsBinding" class="psp-fixed">
+            <!-- 外挂字幕（#134 能力保留，压成一行）：胶囊显示当前选择，
+                 点开向上弹清单选轨；选中带进网页播放器，再选「不挂
+                 字幕」= 本次不挂。没有外挂字幕整行不渲染 -->
+            <div v-if="externalSubs.length" class="psp-subrow">
+              <span class="psp-subrow__label">外挂字幕</span>
+              <button
+                type="button"
+                class="psp-subrow__pill"
+                :aria-expanded="subPickerOpen"
+                @click="subPickerOpen = !subPickerOpen"
+              >
+                <span class="psp-subrow__name">{{ selectedSubLabel || '不挂字幕' }}</span>
+                <span class="psp-subrow__count">{{ externalSubs.length }} 个</span>
+                <ChevronDown :size="15" :style="{ transform: subPickerOpen ? 'rotate(180deg)' : '' }" />
+              </button>
+              <div v-if="subPickerOpen" class="psp-pop">
+                <button
+                  type="button"
+                  class="psp-pop__opt"
+                  :class="{ 'psp-pop__opt--on': selectedSubIndex === null }"
+                  @click="chooseSub(null)"
+                >
+                  <span class="psp-pop__radio" aria-hidden="true"></span>
+                  <span>不挂字幕</span>
+                </button>
                 <button
                   v-for="s in externalSubs"
                   :key="s.index"
                   type="button"
-                  class="psp-sub"
-                  :class="{ 'psp-sub--on': selectedSubIndex === s.index }"
-                  :aria-pressed="selectedSubIndex === s.index"
-                  @click="toggleSub(s.index)"
+                  class="psp-pop__opt"
+                  :class="{ 'psp-pop__opt--on': selectedSubIndex === s.index }"
+                  @click="chooseSub(s.index)"
                 >
-                  <span class="psp-sub__name">{{ s.label }}</span>
-                  <span v-if="s.file" class="psp-sub__file">{{ s.file }}</span>
+                  <span class="psp-pop__radio" aria-hidden="true"></span>
+                  <span class="psp-pop__main">
+                    <span>{{ s.label }}</span>
+                    <span v-if="s.file" class="psp-pop__file">{{ s.file }}</span>
+                  </span>
                 </button>
               </div>
-            </template>
+            </div>
 
             <!-- 播放线路（与测速页同源：账号卡 realms + 专属线路。
-                 选哪条，本次网页播放的 EA 请求就走哪条入口；只有一条时
-                 只展示不给选。清单加载中先占位显示「准备中」药丸；
-                 加载完为空整段不渲染，播放走默认入口） -->
+                 选哪条，本次网页播放的 EA 请求就走哪条入口。胶囊文案
+                 = 线路名 · 已就绪 + 下拉箭头（友站形态，一条线路时点开
+                 选单里只有那一条）；清单本身就是账号下发的可选线路
+                 （无权限的在上游已被滤掉），加载中显示「准备中」；
+                 清单为空整行不渲染，播放走默认入口。选单向上弹层
+                 展开，不撑动固定一屏布局） -->
             <div v-if="lines.length || linesLoading" class="psp-line-sec">
               <div class="psp-line-row">
                 <span class="psp-line-label">播放线路</span>
+                <!-- 胶囊恒为可点钮带下拉箭头（友站形态：名 · 已就绪 ∨）；
+                     只有一条线路时点开选单里就那一条，口径与多条一致 -->
                 <button
-                  v-if="lines.length > 1"
+                  v-if="lines.length"
                   type="button"
                   class="psp-line-pill"
                   :aria-expanded="linePickerOpen"
                   @click="linePickerOpen = !linePickerOpen"
                 >
-                  <span class="psp-line-pill__name">{{ selectedLine?.name || '默认线路' }}<template v-if="linesLoading"> · 准备中</template></span>
+                  <span class="psp-line-pill__name">{{ selectedLine?.name || '默认线路' }}<template v-if="linesLoading"> · 准备中</template><template v-else-if="selectedLine"> · 已就绪</template></span>
                   <span v-if="linesLoading" class="psp-spinner psp-spinner--sm" aria-hidden="true"></span>
                   <ChevronDown v-else :size="15" :style="{ transform: linePickerOpen ? 'rotate(180deg)' : '' }" />
                 </button>
                 <span v-else class="psp-line-pill psp-line-pill--static">
-                  <span class="psp-line-pill__name"><template v-if="linesLoading && !selectedLine">准备中</template><template v-else>{{ selectedLine?.name || '默认线路' }}<template v-if="linesLoading"> · 准备中</template></template></span>
+                  <span class="psp-line-pill__name"><template v-if="linesLoading && !selectedLine">准备中</template><template v-else>{{ selectedLine?.name || '默认线路' }}<template v-if="linesLoading"> · 准备中</template><template v-else-if="selectedLine"> · 已就绪</template></template></span>
                   <span v-if="linesLoading" class="psp-spinner psp-spinner--sm" aria-hidden="true"></span>
                 </span>
               </div>
-              <div v-if="linePickerOpen && lines.length > 1" class="psp-line-list">
+              <div v-if="linePickerOpen && lines.length" class="psp-pop psp-pop--line">
                 <button
                   v-for="l in lines"
                   :key="l.key"
@@ -162,43 +282,18 @@
               </div>
             </div>
 
-            <!-- 开始播放：玻璃粉彩填充全宽钮（网页播放器主入口，契约 web-player） -->
+            <!-- 开始播放：玻璃粉彩填充全宽钮（网页播放器主入口，契约 web-player）；
+                 说明文案段已按 58 条总账 7-10/7-12「多余」裁定撤掉。
+                 文案双色（友站形态）：「开始播放」粗体 +「· 版本名」细体灰 -->
             <div class="psp-start-sec">
               <span class="psp-start-label">开始播放</span>
               <button type="button" class="psp-start" :class="{ 'psp-start--prep': startPreparing }" @click="start">
                 <Play :size="17" fill="currentColor" />
-                <template v-if="startPreparing">正在准备线路</template><template v-else>开始播放</template><template v-if="selectedVersion"> · {{ selectedVersion.title }}</template>
-              </button>
-              <p class="psp-tip">
-                在网页里直接播放；个别版本浏览器播不了时，播放页会提示你换个版本或改用下面的播放器打开。
-              </p>
-            </div>
-
-            <!-- 第三方播放器（既有业务入口）：点行即按现行 scheme 打开 -->
-            <div v-if="schemes.length" class="psp-sec-head">
-              <span>用播放器打开</span>
-            </div>
-            <div v-if="schemes.length" class="psp-players">
-              <button
-                v-for="s in schemes"
-                :key="s.name"
-                type="button"
-                class="psp-player"
-                @click="pick(s)"
-              >
-                <span class="psp-player__name">{{ s.name }}</span>
-                <ChevronRight :size="16" />
+                <span class="psp-start__main">{{ startPreparing ? '正在准备线路' : '开始播放' }}</span>
+                <span v-if="!startPreparing && selectedVersion" class="psp-start__ver"> · {{ selectedVersion.title }}</span>
               </button>
             </div>
-            <p v-if="schemes.length" class="psp-tip">
-              首播说明：没转存过的片子，用播放器首播会先转存到你自己的盘，不走共享池。
-              播放器里转圈、报 409（转存还没完成）或 503（转存失败）时，关掉播放器回到这里再点一次就是重试，不用重绑。
-            </p>
-            <p v-if="schemes.length === 0" class="psp-note">
-              还没有导入第三方播放器；要导入去
-              <RouterLink to="/game/operator" @click="close">播放账号页</RouterLink>。
-            </p>
-          </template>
+          </div>
         </div>
       </div>
     </div>
@@ -207,8 +302,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
-import { ChevronDown, ChevronRight, Copy, Play, X } from 'lucide-vue-next'
+import { useRouter } from 'vue-router'
+import { ChevronDown, Copy, Eye, EyeOff, Play, X } from 'lucide-vue-next'
 import BindDriveGuide from '@/components/panel/BindDriveGuide.vue'
 import { useToast } from '@/composables/useToast'
 import PlayStatusBar from '@/components/panel/PlayStatusBar.vue'
@@ -220,11 +315,6 @@ import {
   ticksToSeconds,
   type EmbyItem,
 } from '@/api/emby'
-import {
-  assignImportScheme,
-  loadImportSchemes,
-  type PlayerScheme,
-} from '@/composables/usePlayerSchemes'
 import {
   loadPlayLines,
   type PlayLine,
@@ -239,13 +329,13 @@ const props = defineProps<{
 
 const toast = useToast()
 const router = useRouter()
-const schemes = ref<PlayerScheme[]>([])
 const loading = ref(false)
 // 播放门禁引导：名下无 active 绑定时为 true，弹层只展示绑定引导，
 // 不直接播放（播也会被服务端门禁拦下）。
 const needsBinding = ref(false)
 const panelEl = ref<HTMLElement | null>(null)
-let jumpTimer = 0
+/** 版本区滚动容器：展开版本卡/音轨时自动滚动，把展开内容带进视口 */
+const scrollEl = ref<HTMLElement | null>(null)
 
 /* ---------- 条目与版本（详情 DTO 口径，不新造接口） ---------- */
 const itemDetail = ref<EmbyItem | null>(null)
@@ -255,6 +345,27 @@ const versionSource = ref<EmbyItem | null>(null)
 const playTargetId = ref('')
 const epInfo = ref<{ season?: number | null; episode?: number | null; name?: string } | null>(null)
 
+interface VersionDetail {
+  label: string
+  value: string
+}
+interface VersionAudio {
+  /** 语言标注（轨本身没标语言时为「未标注语言」） */
+  label: string
+  /** 编码 · 声道布局等真实字段拼成的小字 */
+  detail: string
+  isDefault: boolean
+}
+interface VersionSub {
+  /** 字幕轨流 Index（与播放器 query.sub 同口径） */
+  index: number
+  /** 显示标签（DisplayTitle 优先、语言码译回中文名） */
+  label: string
+  /** 是否文本轨：只有文本轨播放器才能挂（后端给 DeliveryUrl）；
+      图片轨（PGS/DVD）列出但不可选 */
+  isText: boolean
+  isDefault: boolean
+}
 interface VersionCard {
   id: string
   name: string
@@ -262,8 +373,28 @@ interface VersionCard {
       版本卡标题与开始播放钮的版本名都用它，与友站同形态 */
   title: string
   chips: string[]
-  meta: string
-  streams: string[]
+  /** 码率 · 大小 · 时长（逐段渲染、段内不折行，折行只落在段与段之间） */
+  metaParts: string[]
+  /** 展开态两列网格：真实探测字段，缺的格不出现 */
+  details: VersionDetail[]
+  /** 展开态音轨行清单；空则不渲染音轨行 */
+  audios: VersionAudio[]
+  /** 音轨行摘要：默认音轨的语言标注 */
+  audioLang: string
+  /** 展开态内嵌字幕行清单；空则不渲染内嵌字幕行 */
+  subs: VersionSub[]
+  /** 内嵌字幕行摘要：默认轨的标签 */
+  subLang: string
+  /** 复制链接形态：source = MediaSource（/play/目标?ms=源id）；
+      version = 独立条目行（/play/版本id） */
+  kind: 'source' | 'version'
+}
+
+/** 帧率文案：整数不带小数，23.976 这类保留有效小数 */
+function fmtFps(v?: number | null): string {
+  if (!v || v <= 0) return ''
+  const s = Number.isInteger(v) ? String(v) : v.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
+  return `${s} fps`
 }
 
 /** 动态范围标签：VideoRange 原值优先，判不出再从 DisplayTitle 里认，
@@ -286,24 +417,28 @@ function rangeLabel(video?: { VideoRange?: string | null; DisplayTitle?: string 
 }
 
 function versionTitle(
-  video: { Height?: number | null; VideoRange?: string | null; DisplayTitle?: string; Codec?: string } | undefined,
+  video: { Width?: number | null; Height?: number | null; VideoRange?: string | null; DisplayTitle?: string; Codec?: string } | undefined,
   fallback: string,
 ): string {
   if (!video) return fallback
   const parts = [
-    resChip(video.Height ?? null),
+    resChip(video.Height ?? null, video.Width ?? null),
     rangeLabel(video),
     video.Codec ? video.Codec.toUpperCase() : '',
   ].filter(Boolean)
   return parts.length ? parts.join(' ') : fallback
 }
 
-function resChip(height?: number | null): string {
-  if (!height) return ''
-  if (height >= 2000) return '4K'
-  if (height >= 1000) return '1080p'
-  if (height >= 700) return '720p'
-  return `${height}p`
+/** 分辨率档（与网页播放器 resolutionLabel 同口径：宽或高任一达标即算，
+    3840×1608 这类宽银幕 4K 不能只看高判成 1080p） */
+function resChip(height?: number | null, width?: number | null): string {
+  const h = height ?? 0
+  const w = width ?? 0
+  if (!h && !w) return ''
+  if (h >= 2000 || w >= 3800) return '4K'
+  if (h >= 1000 || w >= 1900) return '1080p'
+  if (h >= 700 || w >= 1200) return '720p'
+  return h ? `${h}p` : `${w}p`
 }
 function sizeText(bytes?: number | null): string {
   if (!bytes) return ''
@@ -315,22 +450,37 @@ const versions = computed<VersionCard[]>(() => {
   const it = versionSource.value || itemDetail.value
   if (!it) return []
   if (it.Versions?.length) {
-    return it.Versions.map((v): VersionCard => ({
-      id: v.Id,
-      name: v.VersionLabel || v.Name || '默认版本',
-      title: v.VersionLabel || v.Name || '默认版本',
-      chips: [resChip(v.Height), v.Container ? v.Container.toUpperCase() : ''].filter(Boolean),
-      meta: sizeText(v.SizeBytes),
-      streams: [],
-    }))
+    // 多版本形态：版本是独立条目行，只有宽高/容器/大小是真字段，
+    // 展开网格就只给这几格，不拿主源的轨道冒充它的。
+    return it.Versions.map((v): VersionCard => {
+      const details: VersionDetail[] = []
+      if (v.Width && v.Height) details.push({ label: '分辨率', value: `${v.Width} × ${v.Height}` })
+      if (v.Container) details.push({ label: '容器', value: v.Container.toUpperCase() })
+      if (v.SizeBytes) details.push({ label: '文件大小', value: sizeText(v.SizeBytes) })
+      return {
+        id: v.Id,
+        name: v.VersionLabel || v.Name || '默认版本',
+        title: v.VersionLabel || v.Name || '默认版本',
+        chips: [resChip(v.Height, v.Width).toUpperCase()].filter(Boolean),
+        metaParts: [sizeText(v.SizeBytes)].filter(Boolean),
+        details,
+        audios: [],
+        audioLang: '',
+        subs: [],
+        subLang: '',
+        kind: 'version',
+      }
+    })
   }
   return (it.MediaSources || []).map((s, i) => {
-    const video = (s.MediaStreams || []).find((x) => x.Type === 'Video')
+    const streams = s.MediaStreams || []
+    const video = streams.find((x) => x.Type === 'Video')
+    // 规格小胶囊（友站口径）：分辨率 / 动态范围 / 编码，不含容器
+    // （容器只进展开网格）——与详情页规格胶囊同一套字段口径
     const chips = [
-      resChip(video?.Height ?? null),
-      video?.VideoRange || '',
+      resChip(video?.Height ?? null, video?.Width ?? null).toUpperCase(),
+      rangeLabel(video),
       video?.Codec ? video.Codec.toUpperCase() : '',
-      s.Container ? s.Container.toUpperCase() : '',
     ].filter(Boolean)
     const metaParts: string[] = []
     if (s.Bitrate) metaParts.push(`${(s.Bitrate / 1_000_000).toFixed(1)} Mbps`)
@@ -338,13 +488,51 @@ const versions = computed<VersionCard[]>(() => {
     const ticks = s.RunTimeTicks || it.RunTimeTicks
     if (ticks) metaParts.push(formatDuration(ticksToSeconds(ticks)))
     const name = s.Name || video?.DisplayTitle || `版本 ${i + 1}`
+    // 展开网格（截图序：分辨率/动态范围、编码/容器、帧率/文件大小、
+    // 时长/位深），全部真实探测字段，缺的格不出现
+    const details: VersionDetail[] = []
+    if (video?.Width && video?.Height) details.push({ label: '分辨率', value: `${video.Width} × ${video.Height}` })
+    details.push({ label: '动态范围', value: rangeLabel(video) })
+    if (video?.Codec) details.push({ label: '编码', value: video.Codec.toUpperCase() })
+    if (s.Container) details.push({ label: '容器', value: s.Container.toUpperCase() })
+    const fps = fmtFps(video?.FrameRate)
+    if (fps) details.push({ label: '帧率', value: fps })
+    if (s.Size) details.push({ label: '文件大小', value: sizeText(s.Size) })
+    if (ticks) details.push({ label: '时长', value: formatDuration(ticksToSeconds(ticks)) })
+    if (video?.BitDepth) details.push({ label: '位深', value: `${video.BitDepth}-bit` })
+    const audioStreams = streams.filter((x) => x.Type === 'Audio')
+    const audios: VersionAudio[] = audioStreams.map((a) => ({
+      label: audioLangLabel(a.Language),
+      detail: [
+        a.Codec ? a.Codec.toUpperCase() : '',
+        a.ChannelLayout || (a.Channels ? `${a.Channels} 声道` : ''),
+      ].filter(Boolean).join(' · '),
+      isDefault: !!a.IsDefault,
+    }))
+    const dftAudio = audioStreams.find((a) => a.IsDefault) || audioStreams[0]
+    // 展开网格内嵌字幕行：该源的内嵌字幕轨（Type=Subtitle 且 !IsExternal），
+    // 与外挂字幕同源（subsSource 的 MediaStreams）；文本轨可点选，
+    // 图片轨（IsTextSubtitleStream=false）列出但不可选
+    const subStreams = streams.filter((x) => x.Type === 'Subtitle' && !x.IsExternal)
+    const subs: VersionSub[] = subStreams.map((s) => ({
+      index: s.Index,
+      label: embeddedSubLabel(s),
+      isText: !!s.IsTextSubtitleStream,
+      isDefault: !!s.IsDefault,
+    }))
+    const dftSub = subStreams.find((s) => s.IsDefault) || subStreams[0]
     return {
       id: s.Id,
       name,
       title: versionTitle(video, name),
       chips: [...new Set(chips)],
-      meta: metaParts.join(' · '),
-      streams: (s.MediaStreams || []).map((x) => x.DisplayTitle || `${x.Type} ${x.Codec || ''}`).filter(Boolean),
+      metaParts,
+      details,
+      audios,
+      audioLang: audios.length ? audioLangLabel(dftAudio?.Language) : '',
+      subs,
+      subLang: dftSub ? embeddedSubLabel(dftSub) : '',
+      kind: 'source',
     }
   })
 })
@@ -352,6 +540,48 @@ const versions = computed<VersionCard[]>(() => {
 const selectedVersionId = ref('')
 const selectedVersion = computed(() => versions.value.find((v) => v.id === selectedVersionId.value) || null)
 const expandedId = ref('')
+/** 版本卡内音轨清单展开的是哪张卡 */
+const audioOpenId = ref('')
+/** 版本卡内内嵌字幕清单展开的是哪张卡 */
+const embSubOpenId = ref('')
+
+/** 展开后把目标元素底部滚进版本区视口（固定一屏下展开内容容易落在
+    折叠线之下、看起来像被裁掉——2026-11-14 09:39 用户实报缺陷）。
+    元素比视口还高时只滚到其底部恰好可见，顶部让用户自己上滑。 */
+async function revealBottom(el: HTMLElement | null) {
+  if (!el) return
+  await nextTick()
+  const scroller = scrollEl.value
+  if (!scroller) return
+  const sRect = scroller.getBoundingClientRect()
+  const eRect = el.getBoundingClientRect()
+  const delta = eRect.bottom - sRect.bottom
+  if (delta > 0) scroller.scrollBy({ top: delta + 16, behavior: 'smooth' })
+}
+
+/** 展开/收起版本详情：展开后自动滚动让网格与音轨行完整可见 */
+function toggleExpand(v: VersionCard, ev: MouseEvent) {
+  const card = (ev.currentTarget as HTMLElement | null)?.closest('.psp-ver') as HTMLElement | null
+  const opening = expandedId.value !== v.id
+  expandedId.value = opening ? v.id : ''
+  if (opening) void revealBottom(card)
+}
+
+/** 展开/收起音轨清单：展开后同样把清单底部带进视口 */
+function toggleAudio(v: VersionCard, ev: MouseEvent) {
+  const block = (ev.currentTarget as HTMLElement | null)?.closest('.psp-audio') as HTMLElement | null
+  const opening = audioOpenId.value !== v.id
+  audioOpenId.value = opening ? v.id : ''
+  if (opening) void revealBottom(block)
+}
+
+/** 展开/收起内嵌字幕清单：展开后同样把清单底部带进视口 */
+function toggleEmbSub(v: VersionCard, ev: MouseEvent) {
+  const block = (ev.currentTarget as HTMLElement | null)?.closest('.psp-emb') as HTMLElement | null
+  const opening = embSubOpenId.value !== v.id
+  embSubOpenId.value = opening ? v.id : ''
+  if (opening) void revealBottom(block)
+}
 
 /* ---------- 外挂字幕（所选版本的外挂字幕轨，数据来自条目详情 DTO
    的 MediaStreams：扫描器把外挂字幕登记为 IsExternal 字幕轨，
@@ -390,6 +620,14 @@ function subLangLabel(lang?: string | null, file = ''): string {
   return code ? code.toUpperCase() : '外挂'
 }
 
+/** 音轨语言标注：与字幕共用语言表；轨没标语言就直说未标注，不猜 */
+function audioLangLabel(lang?: string | null): string {
+  const code = (lang || '').trim().toLowerCase()
+  if (!code) return '未标注语言'
+  if (code === 'chi' || code === 'zho' || code === 'zh') return '中文'
+  return SUB_LANG_LABELS[code] || code.toUpperCase()
+}
+
 /** 当前所选版本对应的 MediaSource（字幕挂在源上）。
     多版本（Versions）形态下版本是独立条目行，只有选中版本恰是本条目
     主源时才拿得到它的字幕，拿不到就不渲染字幕区，不拿别人的凑数。 */
@@ -419,35 +657,97 @@ const externalSubs = computed<SubCard[]>(() => {
     })
 })
 
-/** 选中的外挂字幕流 Index；null = 本次不挂外挂字幕 */
+/** 内嵌字幕标签：DisplayTitle 优先；后端 DisplayTitle 缺 display_title
+    时回填了语言码（chi/eng…），先翻译回中文名再显示；都没有才用
+    Title / 语言兜底，仍为空时只写「字幕」 */
+function embeddedSubLabel(s: { DisplayTitle?: string; Title?: string | null; Language?: string }): string {
+  const title = (s.DisplayTitle || '').trim()
+  if (title) {
+    const code = title.toLowerCase()
+    if (code === 'chi' || code === 'zho' || code === 'zh' || SUB_LANG_LABELS[code]) {
+      return subLangLabel(title, s.Title || '')
+    }
+    return title
+  }
+  const t = (s.Title || '').trim()
+  if (t) return t
+  const lang = (s.Language || '').trim()
+  if (!lang) return '字幕'
+  return subLangLabel(lang, '')
+}
+
+/** 选中的字幕流 Index；null = 本次不挂字幕。外挂/内嵌共用一个
+    （流 Index 在源内唯一）：播放器 query.sub 认任意文本字幕轨
+    Index，见 start() */
 const selectedSubIndex = ref<number | null>(null)
+/** 字幕行当前选择（胶囊文案用） */
+const selectedSub = computed(() => externalSubs.value.find((s) => s.index === selectedSubIndex.value) || null)
+/** 当前选中版本里被选中的内嵌字幕轨；没选内嵌轨时为 null */
+const selectedEmbeddedSub = computed(
+  () => selectedVersion.value?.subs.find((s) => s.index === selectedSubIndex.value) || null,
+)
+/** 外挂字幕胶囊文案：当前选中的字幕轨标签（外挂/内嵌同一口径），
+    没选则 null（胶囊显示「不挂字幕」） */
+const selectedSubLabel = computed(
+  () => selectedSub.value?.label || selectedEmbeddedSub.value?.label || null,
+)
+/** 字幕选单（固定一屏：向上弹层，不撑布局）开合 */
+const subPickerOpen = ref(false)
+
+function chooseSub(index: number | null) {
+  selectedSubIndex.value = index
+  subPickerOpen.value = false
+}
+
+/** 换版本时 watch 跑 syncSubSelection 会把刚点的选择重置回默认；
+    从展开网格点选内嵌轨时先置位跳过一次同步（只跳过这一次） */
+const suppressSyncOnce = ref(false)
+
+/** 点选展开网格里的内嵌字幕轨（只对文本轨有效）：
+    选轨即认该版本起播（选轨只对该版本有意义），同时把选择带过去；
+    换卡触发的 watch 同步由 suppressSyncOnce 跳过一次，不覆盖本次选择 */
+function chooseEmbSub(v: VersionCard, s: VersionSub) {
+  if (!s.isText) return
+  suppressSyncOnce.value = true
+  selectedVersionId.value = v.id
+  selectedSubIndex.value = s.index
+}
 
 function syncSubSelection() {
+  const src = subsSource.value
   const subs = externalSubs.value
-  if (!subs.length) {
+  const emb = selectedVersion.value?.subs.filter((s) => s.isText) || []
+  if (!subs.length && !emb.length) {
     selectedSubIndex.value = null
     return
   }
-  // 默认选中：源的默认字幕轨（DefaultSubtitleStreamIndex）若是外挂轨，
-  // 否则第一条外挂轨里被标 IsDefault 的；都没有就不预选（保持现状：
-  // 播放器仍会按服务端默认轨起播，弹层不强加选择）
-  const src = subsSource.value
+  // 默认选中：服务端默认字幕轨（DefaultSubtitleStreamIndex），不论
+  // 外挂/内嵌——它是播放器没带 sub 参数时也会用的那条；
+  // 否则第一条被标 IsDefault 的文本轨；都没有就不预选（播放器仍按
+  // 服务端默认轨起播，弹层不强加选择）
   const dft = src?.DefaultSubtitleStreamIndex
-  if (dft != null && subs.some((s) => s.index === dft)) {
+  if (dft != null && (subs.some((s) => s.index === dft) || emb.some((s) => s.index === dft))) {
     selectedSubIndex.value = dft
     return
   }
-  const marked = (src?.MediaStreams || []).find(
+  const markedExt = (src?.MediaStreams || []).find(
     (s) => s.Type === 'Subtitle' && s.IsExternal && s.IsDefault,
   )
-  selectedSubIndex.value = marked ? marked.Index : null
+  if (markedExt) {
+    selectedSubIndex.value = markedExt.Index
+    return
+  }
+  const markedEmb = emb.find((s) => s.isDefault)
+  selectedSubIndex.value = markedEmb ? markedEmb.index : null
 }
 
-function toggleSub(index: number) {
-  selectedSubIndex.value = selectedSubIndex.value === index ? null : index
-}
-
-watch(selectedVersionId, () => syncSubSelection())
+watch(selectedVersionId, () => {
+  if (suppressSyncOnce.value) {
+    suppressSyncOnce.value = false
+    return
+  }
+  syncSubSelection()
+})
 
 /* ---------- 播放线路（与测速页同源；选线只影响网页播放路径：
    起播时把所选入口带给播放器，播放器校验后本次 EA 请求全走该入口） ---------- */
@@ -499,7 +799,7 @@ const heroImg = computed(() => (itemDetail.value ? backdropUrl(itemDetail.value,
 const heroTitle = computed(() => props.title || itemDetail.value?.Name || '播放')
 const heroLabel = computed(() => {
   const t = itemDetail.value?.Type
-  return t === 'Episode' || t === 'Series' ? '选集播放' : '播放'
+  return t === 'Episode' || t === 'Series' ? '选集播放' : '立即播放'
 })
 const heroSub = computed(() => {
   const it = itemDetail.value
@@ -514,6 +814,12 @@ const heroSub = computed(() => {
     const { season: s, episode: e, name } = epInfo.value
     return [s != null && e != null ? `第 ${s} 季第 ${e} 集` : '', name || ''].filter(Boolean).join(' · ')
   }
+  // 电影头图副行 = 原名（总账 7-1：友站片名下有一行原名；后端
+  // _item_dto 有 original_title 才下发 OriginalTitle，无值/与片名相同则不渲染）
+  if (it.Type === 'Movie') {
+    const orig = (it.OriginalTitle || '').trim()
+    return orig && orig !== it.Name ? orig : ''
+  }
   const parts: string[] = []
   if (it.ProductionYear) parts.push(String(it.ProductionYear))
   if (it.Type === 'Series' && it.ChildCount) parts.push(`${it.ChildCount} 季`)
@@ -521,9 +827,44 @@ const heroSub = computed(() => {
   return parts.join(' · ')
 })
 
+/* ---------- 头图眼睛钮：标记已看（Emby PlayedItems 真接口，与详情页
+   「移除观看记录」同一口径的反向）。标记对象 = 本次起播目标（电影是
+   本条目、剧集是续看/首集那一集），不整剧乱标。 ---------- */
+const playedState = ref(false)
+const playedBusy = ref(false)
+const playedTargetId = computed(() =>
+  playTargetId.value || (props.itemId !== null && props.itemId !== undefined ? String(props.itemId) : ''),
+)
+const canMarkPlayed = computed(() => !!playedTargetId.value && !!itemDetail.value && !loading.value)
+
+async function togglePlayed() {
+  const id = playedTargetId.value
+  if (!id || playedBusy.value) return
+  playedBusy.value = true
+  const next = !playedState.value
+  try {
+    await embyProtocol.setPlayed(id, next)
+    playedState.value = next
+    if (versionSource.value && String(versionSource.value.Id) === id) {
+      versionSource.value = {
+        ...versionSource.value,
+        UserData: { ...versionSource.value.UserData, Played: next },
+      }
+    }
+    toast.success(next ? '已标记为看过' : '已取消看过标记')
+  } catch {
+    toast.info('标记没改成，请稍后再试')
+  } finally {
+    playedBusy.value = false
+  }
+}
+
 watch(open, (now) => {
   if (!now) return
   expandedId.value = ''
+  audioOpenId.value = ''
+  subPickerOpen.value = false
+  linePickerOpen.value = false
   void refresh()
   void nextTick(() => panelEl.value?.focus())
 })
@@ -534,14 +875,12 @@ async function refresh() {
   void loadLines()
   try {
     const id = props.itemId
-    const [schemesResult, bindingsResult, itemResult] = await Promise.allSettled([
-      loadImportSchemes(),
+    const [bindingsResult, itemResult] = await Promise.allSettled([
       storageBindingApi.list(),
       id !== null && id !== undefined && String(id) !== ''
         ? embyProtocol.getItem(String(id))
         : Promise.resolve(null),
     ])
-    if (schemesResult.status === 'fulfilled') schemes.value = schemesResult.value
     // 绑定列表拉取失败时保持旧行为（服务端门禁仍会拦截），引导只是尽力而为。
     if (bindingsResult.status === 'fulfilled') {
       const bindings = bindingsResult.value?.bindings ?? []
@@ -577,6 +916,7 @@ async function refresh() {
     const primary = versionSource.value?.Versions?.find((v) => v.IsPrimary)
     selectedVersionId.value =
       primary?.Id || versions.value[0]?.id || ''
+    playedState.value = !!(versionSource.value?.UserData?.Played ?? itemDetail.value?.UserData?.Played)
     syncSubSelection()
   } finally {
     loading.value = false
@@ -584,30 +924,36 @@ async function refresh() {
 }
 
 function close() {
-  window.clearTimeout(jumpTimer)
   open.value = false
 }
 
-async function copyTitle() {
-  const t = (props.title || itemDetail.value?.Name || '').trim()
-  if (!t) return
-  try {
-    await navigator.clipboard.writeText(t)
-    toast.success('片名已复制，去播放器里粘贴搜索')
-  } catch {
-    toast.info('复制失败，请手动复制上面的片名')
-  }
+/** 绑盘弹层里绑成后回到选播放器流程：就地重查绑定与条目
+ *  （refresh 内 needsBinding 按最新绑定列表落定），不再跳设置页 */
+function onDriveBound() {
+  void refresh()
 }
 
-async function pick(s: PlayerScheme) {
-  // 跳转前先把提示留在页面上：没装 App 时 scheme 不会离开本页
-  toast.info(`正在打开${s.name}。没装的话去播放账号页导入`)
-  await nextTick()
-  await new Promise<void>((resolve) => {
-    jumpTimer = window.setTimeout(resolve, 600)
-  })
-  if (!open.value) return
-  if (!assignImportScheme(s.url)) toast.info('没装的话去播放账号页导入')
+/** 版本卡复制钮（友站形态 = 复制链接）：复制该版本的网页播放链接
+    （站内 /play 路由 + 版本参数）。链接不带任何凭据，打开仍走登录与
+    绑盘门禁，不外泄流地址/令牌。 */
+async function copyVersionLink(v: VersionCard) {
+  const target = playedTargetId.value
+  const path =
+    v.kind === 'version'
+      ? `/play/${v.id}`
+      : target
+        ? `/play/${target}?ms=${encodeURIComponent(v.id)}`
+        : ''
+  if (!path) {
+    toast.info('这个版本暂时没有可复制的播放链接')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(`${window.location.origin}${path}`)
+    toast.success('已复制该版本的播放链接')
+  } catch {
+    toast.info('复制失败，请稍后再试')
+  }
 }
 
 /**
@@ -615,16 +961,17 @@ async function pick(s: PlayerScheme) {
  * web-player、params.id=起播目标 id（剧集为集 id）、query.ms=
  * 选定版本 MediaSource Id（PR #85）；query.line=弹层选定的播放
  * 线路入口（与默认线路相同则不带，播放器侧会再按账号下发清单
- * 校验，手改不认）；query.sub=选定的外挂字幕流 Index（取消
- * 字幕时为 off；该版本没有外挂字幕时不带，播放器保持默认轨
- * 口径）。路由未落地时不假装能播，给诚实提示。第三方播放器
- * 走下方播放器行 pick（导入 scheme 的服务器地址由后端按账号
- * 当前服生成，弹层选线带不过去，保持现行口径）。
+ * 校验，手改不认）；query.sub=选定的字幕流 Index（外挂/内嵌同一
+ * 口径：播放器 applyRouteSub 认任意文本字幕轨 Index；外挂行选
+ * 「不挂字幕」时为 off；只有内嵌轨且未点选时不带，播放器保持
+ * 默认轨口径——带 'off' 会把默认内嵌轨也关掉）。路由未落地时
+ * 不假装能播，给诚实提示。第三方播放器入口不在本弹层
+ * （2026-11-14 已删该行），走详情页的播放器入口。
  */
 async function start() {
   const id = playTargetId.value || props.itemId
   if (id === null || id === undefined || String(id) === '') {
-    toast.info('这个入口没有带条目，暂时只能用播放器打开')
+    toast.info('这个入口没有带条目，暂时打不开')
     return
   }
   if (linesLoading.value) {
@@ -639,6 +986,11 @@ async function start() {
     }
     if (externalSubs.value.length) {
       query.sub = selectedSubIndex.value != null ? String(selectedSubIndex.value) : 'off'
+    } else if (selectedEmbeddedSub.value) {
+      // 只有内嵌轨且用户点选了某条：把该轨 Index 带给播放器；
+      // 没点选时不带（播放器保持服务端默认轨口径），绝不能顺手
+      // 带 'off'——那会把默认内嵌轨也关掉
+      query.sub = String(selectedSubIndex.value)
     }
     close()
     void router.push({
@@ -647,7 +999,7 @@ async function start() {
       query,
     })
   } else {
-    toast.info('网页播放器马上就来；先用下面的播放器打开')
+    toast.info('网页播放器马上就来')
   }
 }
 </script>
@@ -655,7 +1007,7 @@ async function start() {
 <style scoped>
 /* 批 3 播放前弹层（录屏形态）：手机 = 悬浮大卡（左右/底部留 12、圆角 28）；
    桌面 = 居中 610 宽、圆角 24（存档第 7 节）。头图 + 版本单选卡 +
-   外挂字幕卡 + 播放线路行 + 玻璃粉彩开始播放钮 + 第三方播放器行列。
+   外挂字幕卡 + 播放线路行 + 玻璃粉彩开始播放钮（双色文案）。
    Teleport 到 body：浅色走 --uhd-l-* :root 令牌；片库面深色态由
    StreamShell 在 body 打 .uhd-stream-dark 标记桥接深色值。 */
 .psp {
@@ -683,19 +1035,27 @@ async function start() {
   position: absolute;
   left: 12px;
   right: 12px;
+  /* 固定一屏（2026-11-14 用户亲点）：上留约一截呼吸位、下贴边，
+     弹层本体不滚动，只有版本区内部滚动 */
+  top: calc(env(safe-area-inset-top, 0px) + 44px);
   bottom: calc(env(safe-area-inset-bottom) + 12px);
+  display: flex;
+  flex-direction: column;
   background: var(--uhd-l-surface, #ffffff);
   color: var(--uhd-l-text, #111111);
   border-radius: 28px;
-  max-height: 88dvh;
-  overflow: auto;
+  overflow: hidden;
   font-family: var(--uhd-font-sans, sans-serif);
   box-shadow: var(--uhd-shadow-modal, 0 24px 64px -24px rgba(0, 0, 0, 0.35));
 }
 /* 头图区 */
+.psp-hero-wrap {
+  position: relative;
+  flex: none;
+}
 .psp-hero {
   position: relative;
-  height: 196px;
+  height: 208px;
   background: linear-gradient(120deg, #3a3f4a, #191b20);
   overflow: hidden;
 }
@@ -749,11 +1109,53 @@ async function start() {
 }
 .psp-hero__sub {
   margin-top: 4px;
-  font-size: 13.5px;
+  font-size: 13px;
   color: rgba(255, 255, 255, 0.78);
 }
+/* 头图右下眼睛钮（标记已看）：深色毛玻璃圆钮，压在图内右下角 */
+.psp-eye {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  z-index: 2;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(20, 20, 22, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+.psp-eye:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+/* 弹层主体：滚动区（版本） + 固定区（字幕/线路/播放器/开始播放） */
 .psp-body {
-  padding: 18px 20px 22px;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.psp-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px 20px 8px;
+}
+.psp-fixed {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 6px 20px 16px;
 }
 /* 加载态：正在获取资源和线路 */
 .psp-loading {
@@ -761,7 +1163,7 @@ async function start() {
   align-items: center;
   gap: 10px;
   padding: 26px 0;
-  font-size: 14.5px;
+  font-size: 14px;
   color: var(--uhd-l-text-2, #6b7280);
 }
 .psp-spinner {
@@ -772,14 +1174,15 @@ async function start() {
   border-top-color: var(--uhd-l-text, #111111);
   animation: uhd-spin 0.8s linear infinite;
 }
-/* 版本区 */
+/* 版本区：段头为灰字（友站形态），计数同色 */
 .psp-sec-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  font-size: 15px;
-  font-weight: 700;
-  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--uhd-l-text-2, #6b7280);
+  margin-top: 4px;
 }
 .psp-sec-count {
   font-size: 13px;
@@ -789,15 +1192,21 @@ async function start() {
 .psp-vers {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-top: 12px;
+  gap: 9px;
+  margin-top: 10px;
 }
+/* 卡内三行网格（友站顺序，2026-11-14 09:39 用户亲点改）：
+   第一行标题（第 2 列，左缘与胶囊列齐）、第二行圆点（第 1 列）+
+   胶囊（第 2 列）、第三行码率（第 2 列）；工具列第 3 列跨三行
+   垂直居中；展开详情整行全宽落在第四行 */
 .psp-ver {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  padding: 14px 16px;
-  border-radius: 16px;
+  display: grid;
+  grid-template-columns: 19px minmax(0, 1fr) auto;
+  column-gap: 10px;
+  row-gap: 5px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 18px;
   border: 1.5px solid var(--uhd-l-border, #e5e5e5);
   background: var(--uhd-l-input-bg, #f5f5f5);
   cursor: pointer;
@@ -807,10 +1216,10 @@ async function start() {
   background: var(--uhd-l-surface, #ffffff);
 }
 .psp-ver__radio {
-  flex: none;
-  width: 20px;
-  height: 20px;
-  margin-top: 2px;
+  grid-column: 1;
+  grid-row: 2;
+  width: 19px;
+  height: 19px;
   border-radius: 50%;
   border: 2px solid #b6bcc4;
   position: relative;
@@ -825,47 +1234,57 @@ async function start() {
   border-radius: 50%;
   background: var(--uhd-l-text, #111111);
 }
-.psp-ver__main {
-  flex: 1 1 auto;
-  min-width: 0;
-}
 .psp-ver__name {
-  font-size: 15.5px;
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  font-size: 17px;
   font-weight: 700;
+  line-height: 1.3;
 }
 .psp-ver__chips {
+  grid-column: 2;
+  grid-row: 2;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 7px;
 }
+/* 规格小胶囊：描边 + 微底、粗字（友站卡内形态） */
 .psp-ver__chip {
-  font-size: 11.5px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   line-height: 1;
-  padding: 4px 8px;
+  padding: 3px 8px;
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.07);
+  border: 1px solid var(--uhd-l-border, #e5e5e5);
+  background: rgba(0, 0, 0, 0.04);
   color: var(--uhd-l-text, #111111);
 }
 .psp-ver__meta {
-  margin-top: 7px;
+  grid-column: 2;
+  grid-row: 3;
   font-size: 13px;
+  line-height: 1.5;
   color: var(--uhd-l-text-2, #6b7280);
 }
-.psp-ver__streams {
-  margin-top: 8px;
-  font-size: 12.5px;
-  line-height: 1.7;
-  color: var(--uhd-l-text-2, #6b7280);
+/* 码率/大小/时长逐段成粒：段内不折行，换行只落在段间分隔点上 */
+.psp-ver__metapart {
+  white-space: nowrap;
+}
+.psp-ver__metapart + .psp-ver__metapart::before {
+  content: ' · ';
 }
 .psp-ver__tools {
-  flex: none;
+  grid-column: 3;
+  grid-row: 1 / 4;
+  align-self: center;
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 .psp-tool {
-  width: 34px;
-  height: 34px;
+  width: 35px;
+  height: 35px;
   border-radius: 50%;
   border: 1px solid var(--uhd-l-border, #e5e5e5);
   background: var(--uhd-l-surface, #ffffff);
@@ -876,9 +1295,181 @@ async function start() {
   cursor: pointer;
   padding: 0;
 }
+/* 展开态：分隔线 + 两列信息网格 + 音轨行（整卡全宽，与友站展开卡同形态） */
+.psp-ver__detail {
+  grid-column: 1 / -1;
+  grid-row: 4;
+  min-width: 0;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--uhd-l-border, #e5e5e5);
+}
+.psp-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 18px;
+  row-gap: 12px;
+}
+.psp-grid__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.psp-grid__label {
+  font-size: 12.5px;
+  color: var(--uhd-l-text-2, #6b7280);
+}
+.psp-grid__value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--uhd-l-text, #111111);
+}
+.psp-audio {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--uhd-l-border, #e5e5e5);
+}
+.psp-audio__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--uhd-l-text, #111111);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.psp-audio__name {
+  font-size: 14px;
+  font-weight: 700;
+}
+.psp-audio__lang {
+  font-size: 13px;
+  color: var(--uhd-l-text-2, #6b7280);
+}
+.psp-audio__count {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--uhd-l-text-2, #6b7280);
+}
+.psp-audio__list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+}
+.psp-audio__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  font-size: 13.5px;
+  color: var(--uhd-l-text, #111111);
+}
+.psp-audio__rowmeta {
+  font-size: 12.5px;
+  color: var(--uhd-l-text-2, #6b7280);
+}
+.psp-audio__badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.07);
+  color: var(--uhd-l-text-2, #6b7280);
+}
+/* 展开网格内嵌字幕行（友站形态：音轨行下方、可展开选轨）——与
+   .psp-audio 同款式，行是按钮：文本轨可点选，图片轨置灰禁用 */
+.psp-emb {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--uhd-l-border, #e5e5e5);
+}
+.psp-emb__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--uhd-l-text, #111111);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.psp-emb__name {
+  font-size: 14px;
+  font-weight: 700;
+}
+.psp-emb__lang {
+  font-size: 13px;
+  color: var(--uhd-l-text-2, #6b7280);
+}
+.psp-emb__count {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--uhd-l-text-2, #6b7280);
+}
+.psp-emb__list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+}
+.psp-emb__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 0;
+  border: none;
+  background: none;
+  color: var(--uhd-l-text, #111111);
+  font-size: 13.5px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.psp-emb__row:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.psp-emb__radio {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #b6bcc4;
+  position: relative;
+}
+.psp-emb__row--on .psp-emb__radio {
+  border-color: var(--uhd-l-text, #111111);
+}
+.psp-emb__row--on .psp-emb__radio::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  background: var(--uhd-l-text, #111111);
+}
+.psp-emb__rowmeta {
+  font-size: 12.5px;
+  color: var(--uhd-l-text-2, #6b7280);
+}
+.psp-emb__badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.07);
+  color: var(--uhd-l-text-2, #6b7280);
+}
 .psp-note {
   margin: 12px 0 0;
-  font-size: 13px;
+  font-size: 12.5px;
   line-height: 1.6;
   color: var(--uhd-l-text-2, #6b7280);
 }
@@ -888,44 +1479,16 @@ async function start() {
 }
 .psp-tip {
   margin: 14px 0 0;
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1.65;
   color: var(--uhd-l-text-2, #6b7280);
 }
-/* 第三方播放器行列（既有业务入口，点行即打开） */
-.psp-players {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 12px;
-}
-.psp-player {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  min-height: 52px;
-  padding: 10px 16px;
-  border-radius: 16px;
-  border: 1.5px solid var(--uhd-l-border, #e5e5e5);
-  background: var(--uhd-l-surface, #ffffff);
-  color: var(--uhd-l-text, #111111);
-  font-size: 15px;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-  text-align: left;
-}
-.psp-player:active {
-  transform: scale(0.99);
-}
 /* 开始播放 */
 .psp-start-sec {
-  margin-top: 20px;
+  margin-top: 0;
 }
 .psp-start-label {
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--uhd-l-text-2, #6b7280);
 }
 .psp-start {
@@ -934,7 +1497,7 @@ async function start() {
   justify-content: center;
   gap: 8px;
   width: 100%;
-  height: 52px;
+  height: 56px;
   margin-top: 8px;
   /* 友站形态（2026-11-13 用户亲点）：玻璃粉彩填充＋弱化彩虹边——
      与全站主按钮 .btn-primary 浅色配方同一套（粉彩底 padding-box +
@@ -958,49 +1521,126 @@ async function start() {
 .psp-start:active {
   transform: scale(0.99);
 }
+/* 钮内版本名段：细体灰（与「开始播放」粗体成双色，友站形态） */
+.psp-start__ver {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--uhd-l-text-2, #6b7280);
+}
 /* 准备态（线路未落定）：形态不变，只换钮内文案，指针示意等待 */
 .psp-start--prep {
   cursor: progress;
 }
-/* 外挂字幕卡 */
-.psp-subs {
+/* 外挂字幕一行：左标签 + 右选择胶囊；选单向上弹层 */
+.psp-subrow {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
-.psp-sub {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  width: 100%;
-  padding: 12px 16px;
+.psp-subrow__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--uhd-l-text-2, #6b7280);
+}
+.psp-subrow__pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 46%;
+  max-width: 68%;
+  min-height: 38px;
+  padding: 7px 13px;
   border: 1.5px solid var(--uhd-l-border, #e5e5e5);
-  border-radius: 16px;
-  background: var(--uhd-l-surface, #ffffff);
+  border-radius: 12px;
+  background: var(--uhd-l-input-bg, #f5f5f5);
   color: var(--uhd-l-text, #111111);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.psp-subrow__name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.psp-subrow__count {
+  flex: none;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--uhd-l-text-2, #6b7280);
+}
+/* 向上弹出的选单（字幕/线路共用）：浮在固定区上方，不撑动布局 */
+.psp-pop {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 30;
+  width: min(330px, 84vw);
+  max-height: 38dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  border-radius: 16px;
+  border: 1px solid var(--uhd-l-border, #e5e5e5);
+  background: var(--uhd-l-surface, #ffffff);
+  box-shadow: var(--uhd-shadow-modal, 0 24px 64px -24px rgba(0, 0, 0, 0.35));
+}
+.psp-pop__opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 11px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--uhd-l-text, #111111);
+  font-size: 14px;
   font-family: inherit;
   cursor: pointer;
   text-align: left;
 }
-.psp-sub--on {
+.psp-pop__opt:hover {
+  background: var(--uhd-l-input-bg, #f5f5f5);
+}
+.psp-pop__radio {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid #b6bcc4;
+  position: relative;
+}
+.psp-pop__opt--on .psp-pop__radio {
   border-color: var(--uhd-l-text, #111111);
 }
-.psp-sub__name {
-  font-size: 15px;
-  font-weight: 700;
+.psp-pop__opt--on .psp-pop__radio::after {
+  content: '';
+  position: absolute;
+  inset: 2.5px;
+  border-radius: 50%;
+  background: var(--uhd-l-text, #111111);
 }
-.psp-sub__file {
-  max-width: 100%;
-  font-size: 12.5px;
+.psp-pop__main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.psp-pop__file {
+  font-size: 12px;
   color: var(--uhd-l-text-2, #6b7280);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* 播放线路 */
+/* 播放线路（选单向上弹层，容器作定位锚） */
 .psp-line-sec {
-  margin-top: 20px;
+  position: relative;
 }
 .psp-line-row {
   display: flex;
@@ -1009,7 +1649,7 @@ async function start() {
   gap: 12px;
 }
 .psp-line-label {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--uhd-l-text-2, #6b7280);
 }
@@ -1020,12 +1660,13 @@ async function start() {
   gap: 7px;
   min-width: 46%;
   max-width: 68%;
-  padding: 10px 16px;
+  min-height: 38px;
+  padding: 7px 13px;
   border: 1.5px solid var(--uhd-l-border, #e5e5e5);
-  border-radius: 999px;
+  border-radius: 12px;
   background: var(--uhd-l-input-bg, #f5f5f5);
   color: var(--uhd-l-text, #111111);
-  font-size: 14.5px;
+  font-size: 14px;
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
@@ -1044,20 +1685,24 @@ async function start() {
   border-width: 2px;
   flex: none;
 }
-.psp-line-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
+/* 线路选项在弹层里降为无边框行（弹层自带边框与阴影） */
+.psp-pop--line .psp-line-opt {
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  padding: 9px 11px;
+}
+.psp-pop--line .psp-line-opt:hover {
+  background: var(--uhd-l-input-bg, #f5f5f5);
 }
 .psp-line-opt {
   display: flex;
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 12px 16px;
+  padding: 10px 14px;
   border: 1.5px solid var(--uhd-l-border, #e5e5e5);
-  border-radius: 16px;
+  border-radius: 14px;
   background: var(--uhd-l-surface, #ffffff);
   color: var(--uhd-l-text, #111111);
   font-family: inherit;
@@ -1092,18 +1737,22 @@ async function start() {
   min-width: 0;
 }
 .psp-line-opt__name {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
 }
 .psp-line-opt__host {
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--uhd-l-text-2, #6b7280);
 }
 .psp-sheet:focus-visible,
 .psp-x:focus-visible,
+.psp-eye:focus-visible,
 .psp-tool:focus-visible,
-.psp-player:focus-visible,
-.psp-sub:focus-visible,
+.psp-subrow__pill:focus-visible,
+.psp-pop__opt:focus-visible,
+.psp-audio__head:focus-visible,
+.psp-emb__head:focus-visible,
+.psp-emb__row:focus-visible,
 .psp-line-pill:focus-visible,
 .psp-line-opt:focus-visible,
 .psp-start:focus-visible {
@@ -1118,19 +1767,23 @@ async function start() {
     top: 50%;
     transform: translate(-50%, -50%);
     width: min(610px, calc(100vw - 48px));
+    max-height: 88dvh;
     border-radius: 24px;
   }
   /* D3-05：原站桌面弹窗无标题头（存档 610 弹窗只有版本/线路/开始播放），
      剧照头图只保留在手机底部弹层（录屏形态） */
-  .psp-hero {
+  .psp-hero-wrap {
     display: none;
   }
   /* 关闭钮浮在弹层右上，版块头右侧计数给它让位 */
   .psp-sec-head {
     padding-right: 44px;
   }
-  .psp-body {
-    padding: 24px 28px 26px;
+  .psp-scroll {
+    padding: 24px 28px 10px;
+  }
+  .psp-fixed {
+    padding: 8px 28px 26px;
   }
 }
 </style>
@@ -1141,13 +1794,23 @@ body.uhd-stream-dark .psp-sheet {
   background: #1c1c1c;
   color: #ffffff;
 }
+body.uhd-stream-dark .psp-sec-head,
 body.uhd-stream-dark .psp-sec-count,
 body.uhd-stream-dark .psp-ver__meta,
-body.uhd-stream-dark .psp-ver__streams,
 body.uhd-stream-dark .psp-note,
-body.uhd-stream-dark .psp-tip,
 body.uhd-stream-dark .psp-loading,
-body.uhd-stream-dark .psp-start-label {
+body.uhd-stream-dark .psp-start-label,
+body.uhd-stream-dark .psp-grid__label,
+body.uhd-stream-dark .psp-audio__lang,
+body.uhd-stream-dark .psp-audio__count,
+body.uhd-stream-dark .psp-audio__rowmeta,
+body.uhd-stream-dark .psp-emb__lang,
+body.uhd-stream-dark .psp-emb__count,
+body.uhd-stream-dark .psp-emb__rowmeta,
+body.uhd-stream-dark .psp-subrow__label,
+body.uhd-stream-dark .psp-subrow__count,
+body.uhd-stream-dark .psp-start__ver,
+body.uhd-stream-dark .psp-pop__file {
   color: #9ca3af;
 }
 body.uhd-stream-dark .psp-ver {
@@ -1168,7 +1831,8 @@ body.uhd-stream-dark .psp-ver--on .psp-ver__radio::after {
   background: #ffffff;
 }
 body.uhd-stream-dark .psp-ver__chip {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
   color: #ffffff;
 }
 body.uhd-stream-dark .psp-tool {
@@ -1176,10 +1840,33 @@ body.uhd-stream-dark .psp-tool {
   border-color: rgba(255, 255, 255, 0.14);
   color: #ffffff;
 }
-body.uhd-stream-dark .psp-player {
-  background: #222222;
-  border-color: rgba(255, 255, 255, 0.14);
+body.uhd-stream-dark .psp-ver__detail,
+body.uhd-stream-dark .psp-audio,
+body.uhd-stream-dark .psp-emb {
+  border-top-color: rgba(255, 255, 255, 0.12);
+}
+body.uhd-stream-dark .psp-grid__value {
   color: #ffffff;
+}
+body.uhd-stream-dark .psp-audio__head,
+body.uhd-stream-dark .psp-audio__row,
+body.uhd-stream-dark .psp-emb__head,
+body.uhd-stream-dark .psp-emb__row {
+  color: #ffffff;
+}
+body.uhd-stream-dark .psp-audio__badge,
+body.uhd-stream-dark .psp-emb__badge {
+  background: rgba(255, 255, 255, 0.12);
+  color: #9ca3af;
+}
+body.uhd-stream-dark .psp-emb__radio {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+body.uhd-stream-dark .psp-emb__row--on .psp-emb__radio {
+  border-color: #ffffff;
+}
+body.uhd-stream-dark .psp-emb__row--on .psp-emb__radio::after {
+  background: #ffffff;
 }
 /* 深色开始播放：深色玻璃填充＋弱化彩虹边（与 .btn-primary 深色配方同口径） */
 body.uhd-stream-dark .psp-start {
@@ -1191,25 +1878,52 @@ body.uhd-stream-dark .psp-start {
     0 12px 28px -12px rgba(0, 0, 0, 0.55);
   color: #ffffff;
 }
-body.uhd-stream-dark .psp-sub,
+body.uhd-stream-dark .psp-subrow__pill,
+body.uhd-stream-dark .psp-line-pill {
+  background: #262626;
+  border-color: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+body.uhd-stream-dark .psp-pop {
+  background: #26262b;
+  border-color: rgba(255, 255, 255, 0.14);
+}
+body.uhd-stream-dark .psp-pop__opt {
+  color: #ffffff;
+}
+body.uhd-stream-dark .psp-pop__opt:hover,
+body.uhd-stream-dark .psp-pop--line .psp-line-opt:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+body.uhd-stream-dark .psp-pop__radio {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+body.uhd-stream-dark .psp-pop__opt--on .psp-pop__radio {
+  border-color: #ffffff;
+}
+body.uhd-stream-dark .psp-pop__opt--on .psp-pop__radio::after {
+  background: #ffffff;
+}
 body.uhd-stream-dark .psp-line-opt {
   background: #222222;
   border-color: rgba(255, 255, 255, 0.14);
   color: #ffffff;
 }
-body.uhd-stream-dark .psp-sub--on,
+body.uhd-stream-dark .psp-pop--line .psp-line-opt {
+  background: transparent;
+  border-color: transparent;
+}
 body.uhd-stream-dark .psp-line-opt--on {
   border-color: #ffffff;
 }
-body.uhd-stream-dark .psp-sub__file,
-body.uhd-stream-dark .psp-line-opt__host,
-body.uhd-stream-dark .psp-line-label {
+body.uhd-stream-dark .psp-pop--line .psp-line-opt--on {
+  border-color: transparent;
+}
+body.uhd-stream-dark .psp-line-opt__host {
   color: #9ca3af;
 }
-body.uhd-stream-dark .psp-line-pill {
-  background: #262626;
-  border-color: rgba(255, 255, 255, 0.14);
-  color: #ffffff;
+body.uhd-stream-dark .psp-line-label {
+  color: #9ca3af;
 }
 body.uhd-stream-dark .psp-line-opt__radio {
   border-color: rgba(255, 255, 255, 0.4);

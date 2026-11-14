@@ -1,6 +1,9 @@
 <!-- 未绑盘点播引导（全站统一一套）：播放门禁拦下点播时展示。
-     一句话说清绑上自己的盘就能看这部片，主按钮「去绑盘」直达设置页
-     绑定组，并带回跳参数——绑完自动回到来源页重开播放器选择。
+     一句话说清绑上自己的盘就能看这部片，主按钮「去绑盘」就地打开
+     绑盘弹层（BindDriveSheet，2026-11-14 用户亲点改弹层、不再跳
+     设置页）；绑成后 emit 'bound' 冒泡，父级（PlayerSchemeSheet）
+     据此重查绑定状态、回到选播放器流程。设置页绑定组仍在（管理
+     绑定/深链 #my-drive 走它），本组件不再产生回跳参数。
      所有点播入口共用本组件，不许各入口再自写一份提示文案。 -->
 <template>
   <div class="bdg">
@@ -8,25 +11,32 @@
       <template v-if="title">绑上你自己的网盘，就能看《{{ title }}》了。</template>
       <template v-else>绑上你自己的网盘，就能点播了。</template>
     </p>
-    <p class="bdg-sub">没绑定只能浏览、不能点播。绑好后自动带你回来，接着选播放器就能看。</p>
+    <p class="bdg-sub">没绑定只能浏览、不能点播。绑好后接着选播放器就能看。</p>
     <button type="button" class="bdg-btn" @click="goBind">去绑盘</button>
+    <BindDriveSheet
+      :open="sheetOpen"
+      :dark="sheetDark"
+      @close="sheetOpen = false"
+      @bound="emit('bound')"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { useRoute, useRouter } from 'vue-router'
-import { bindDriveLocation } from '@/composables/useBindReturn'
+import { ref } from 'vue'
+import BindDriveSheet from '@/components/profile/BindDriveSheet.vue'
 
-const props = defineProps<{ title?: string }>()
-const emit = defineEmits<{ (e: 'navigate'): void }>()
+defineProps<{ title?: string }>()
+const emit = defineEmits<{ (e: 'bound'): void }>()
 
-const route = useRoute()
-const router = useRouter()
+const sheetOpen = ref(false)
+// 片库面深浅由 StreamShell 在 body 打的 .uhd-stream-dark 标记桥接
+// （浮层既有口径）；打开弹层时取一次，给弹层内主按钮定深浅面
+const sheetDark = ref(false)
 
 function goBind() {
-  // 回跳来源 = 当前页路径（发现页 / 或探险日志页），绑完原路返回
-  void router.push(bindDriveLocation(route.path, props.title))
-  emit('navigate')
+  sheetDark.value = document.body.classList.contains('uhd-stream-dark')
+  sheetOpen.value = true
 }
 </script>
 

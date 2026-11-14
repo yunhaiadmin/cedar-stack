@@ -1,13 +1,19 @@
 /* 邀请好友页本地主题变量（--iv-*）：缺省深色，html[data-theme='light'] 时
    整套换浅（与「我的」页/团队页同口径）。定义放在独立样式表供设计令牌
-   契约核查，由 InviteFriendsView.vue 引入。 */
+   契约核查，由 InviteFriendsView.vue 引入。
+   版式照 UHDNow 邀请页截图（2026-11-14 定版）：扁平排布、无卡片，
+   大标题＋换码钮、双页签分段、码面大字、彩虹玻璃双钮、统计大数字、
+   规则段、记录双子页签。 */
 
 .iv-page {
   --iv-line: rgba(255, 255, 255, 0.1);
   --iv-card: #17181c;
   --iv-chip: rgba(255, 255, 255, 0.08);
+  --iv-chip-on: rgba(255, 255, 255, 0.16);
   --iv-text-2: rgba(255, 255, 255, 0.62);
   --iv-text-3: rgba(255, 255, 255, 0.42);
+  --iv-glass-bg: rgba(255, 255, 255, 0.06);
+  --iv-glass-line: rgba(255, 255, 255, 0.16);
 
   min-height: 100dvh;
   background: #050505;
@@ -19,9 +25,12 @@
 html[data-theme='light'] .iv-page {
   --iv-line: #e7e7e7;
   --iv-card: #ffffff;
-  --iv-chip: #f0f0f2;
+  --iv-chip: rgba(17, 17, 17, 0.05);
+  --iv-chip-on: #ffffff;
   --iv-text-2: #55575c;
   --iv-text-3: #9a9da3;
+  --iv-glass-bg: rgba(255, 255, 255, 0.65);
+  --iv-glass-line: rgba(17, 17, 17, 0.1);
 
   background: #f8f8f8;
   color: #111111;
@@ -37,47 +46,6 @@ html[data-theme='light'] .iv-page {
   gap: 12px;
 }
 
-/* 网页观影胶囊：与「我的」页同款彩虹描边（padding-box 填充＋border-box 描边） */
-.iv-watch {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 42px;
-  padding: 0 18px;
-  border: 1.5px solid transparent;
-  border-radius: 999px;
-  background:
-    linear-gradient(#312d2e, #312d2e) padding-box,
-    var(--uhd-rainbow) border-box;
-  color: #ffffff;
-  font-size: 15px;
-  font-weight: var(--uhd-fw-semibold);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-html[data-theme='light'] .iv-watch {
-  background:
-    linear-gradient(180deg, #fdf8f8 0%, #f9f1f1 100%) padding-box,
-    var(--uhd-rainbow) border-box;
-  color: #111111;
-}
-
-.iv-watch__icon {
-  color: #e8766f;
-  fill: #e8766f;
-}
-
-.iv-rule-sub {
-  margin: 14px 0 6px;
-  font-size: 14.5px;
-  font-weight: var(--uhd-fw-bold);
-}
-
-.iv-card__title + .iv-rule-sub {
-  margin-top: 0;
-}
-
 .iv-back {
   display: inline-flex;
   align-items: center;
@@ -91,149 +59,373 @@ html[data-theme='light'] .iv-watch {
 .iv-body {
   max-width: 760px;
   margin: 0 auto;
-  padding: 18px 20px 120px;
+  padding: 22px 20px 120px;
   box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
 }
 
-.iv-card {
-  padding: 18px;
-  background: var(--iv-card);
-  border: 1px solid var(--iv-line);
-  border-radius: 20px;
-}
+/* ---------- 标题行 ---------- */
 
-.iv-card__title {
-  margin: 0 0 12px;
-  font-size: 16px;
-  font-weight: var(--uhd-fw-bold);
-}
-
-.iv-card__title--sub {
-  margin-top: 20px;
-}
-
-.iv-code-row {
+.iv-title-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
-.iv-code {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: 26px;
+.iv-title {
+  margin: 0;
+  font-size: 34px;
+  line-height: 1.15;
   font-weight: var(--uhd-fw-extrabold);
-  letter-spacing: 0.12em;
+  letter-spacing: 0.01em;
 }
 
-.iv-link-row {
-  display: flex;
+.iv-icon-btn {
+  display: inline-flex;
   align-items: center;
-  gap: 12px;
-}
-
-.iv-link {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: 14px;
-  color: var(--iv-text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.iv-copy {
-  flex: 0 0 auto;
-  border: 1px solid transparent;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: none;
   border-radius: 999px;
-  padding: 8px 18px;
-  /* 招牌彩虹描边：深色深底、浅色彩虹粉彩底（与主按钮同写法） */
-  background:
-    linear-gradient(#2e2e33, #2e2e33) padding-box,
-    var(--uhd-rainbow) border-box;
-  color: inherit;
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: var(--uhd-fw-semibold);
+  background: transparent;
+  color: var(--iv-text-2);
   cursor: pointer;
 }
 
-html[data-theme='light'] .iv-copy {
+.iv-icon-btn:active {
+  opacity: 0.6;
+}
+
+.iv-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.iv-icon-btn--sm {
+  width: 30px;
+  height: 30px;
+}
+
+/* ---------- 分段页签 ---------- */
+
+.iv-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 20px;
+  padding: 4px;
+  border: 1px solid var(--iv-line);
+  border-radius: 999px;
+  background: var(--iv-chip);
+}
+
+.iv-seg__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  border-radius: 999px;
+  padding: 9px 20px;
+  background: transparent;
+  color: var(--iv-text-2);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: var(--uhd-fw-medium);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.iv-seg__item--on {
+  background: var(--iv-chip-on);
+  color: inherit;
+  font-weight: var(--uhd-fw-semibold);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
+}
+
+.iv-seg--small {
+  margin-top: 0;
+}
+
+.iv-seg--small .iv-seg__item {
+  padding: 7px 16px;
+  font-size: 14px;
+}
+
+/* ---------- 码面 ---------- */
+
+.iv-code-label {
+  margin: 30px 0 0;
+  font-size: 14.5px;
+  color: var(--iv-text-2);
+}
+
+.iv-code-big {
+  margin: 10px 0 0;
+  font-size: 52px;
+  line-height: 1.1;
+  font-weight: var(--uhd-fw-extrabold);
+  letter-spacing: 0.14em;
+  word-break: break-all;
+}
+
+.iv-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+
+/* 双钮：彩虹玻璃（主）＋玻璃（次）。玻璃栈照招牌口径：
+   blur+saturate＋半透底＋内高光＋边缘光＋大柔影，缺一不算。 */
+.iv-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 0 24px;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: var(--uhd-fw-semibold);
+  color: inherit;
+  cursor: pointer;
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
+}
+
+.iv-btn:active {
+  transform: scale(0.98);
+}
+
+.iv-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.iv-btn--rainbow {
+  border: 1.5px solid transparent;
+  background:
+    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
+    var(--uhd-rainbow) border-box;
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 10px 28px rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme='light'] .iv-btn--rainbow {
   background:
     var(--uhd-rainbow-soft) padding-box,
     var(--uhd-rainbow) border-box;
+  color: #111111;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    0 10px 28px rgba(17, 17, 17, 0.12);
 }
 
-.iv-copy:active {
-  opacity: 0.75;
+.iv-btn--glass {
+  border: 1px solid var(--iv-glass-line);
+  background: var(--iv-glass-bg);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 10px 28px rgba(0, 0, 0, 0.22);
 }
+
+html[data-theme='light'] .iv-btn--glass {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 10px 28px rgba(17, 17, 17, 0.08);
+}
+
+/* ---------- 统计与规则 ---------- */
 
 .iv-stats {
-  margin: 18px 0 0;
+  display: flex;
+  gap: 56px;
+  margin-top: 34px;
+}
+
+.iv-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.iv-stat__label {
+  font-size: 14.5px;
+  color: var(--iv-text-2);
+}
+
+.iv-stat__value {
+  font-size: 34px;
+  line-height: 1.1;
+  font-weight: var(--uhd-fw-extrabold);
+}
+
+.iv-stat__value small {
+  font-size: 17px;
+  font-weight: var(--uhd-fw-semibold);
+}
+
+.iv-note {
+  margin: 14px 0 0;
   font-size: 14px;
   color: var(--iv-text-2);
 }
 
+.iv-note--ok {
+  color: #4caf7d;
+}
+
 .iv-rule {
+  margin: 16px 0 0;
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--iv-text-2);
+}
+
+.iv-divider {
+  margin: 36px 0 0;
+  border: none;
+  border-top: 1px solid var(--iv-line);
+}
+
+/* ---------- 记录 ---------- */
+
+.iv-rec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 28px;
+  flex-wrap: wrap;
+}
+
+.iv-rec-title {
   margin: 0;
-  font-size: 14.5px;
-  line-height: 1.75;
+  font-size: 26px;
+  font-weight: var(--uhd-fw-extrabold);
+}
+
+.iv-rec-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  font-size: 15px;
   color: var(--iv-text-2);
 }
 
 .iv-none {
-  margin: 0;
-  font-size: 14.5px;
-  line-height: 1.7;
-  color: var(--iv-text-2);
-}
-
-.iv-thead,
-.iv-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.iv-thead {
-  padding-bottom: 8px;
-  font-size: 13px;
+  margin: 26px 0 0;
+  font-size: 15px;
   color: var(--iv-text-3);
 }
 
 .iv-rows {
   list-style: none;
-  margin: 0;
+  margin: 8px 0 0;
   padding: 0;
 }
 
 .iv-row {
-  padding: 11px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 0;
   border-top: 1px solid var(--iv-line);
-  font-size: 14.5px;
+  font-size: 15px;
 }
 
-.iv-col {
-  flex: 0 0 92px;
-  min-width: 0;
-  white-space: nowrap;
-}
-
-.iv-col--name {
+.iv-row__name {
   flex: 1 1 auto;
+  min-width: 0;
   font-weight: var(--uhd-fw-medium);
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.iv-col--num {
-  flex-basis: 70px;
-  text-align: right;
-  font-weight: var(--uhd-fw-semibold);
+.iv-badge {
+  flex: 0 0 auto;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--iv-chip);
+  font-size: 12px;
+  color: var(--iv-text-2);
 }
+
+.iv-badge--pending {
+  color: #e8a13a;
+}
+
+.iv-row__date {
+  flex: 0 0 auto;
+  font-size: 13.5px;
+  color: var(--iv-text-3);
+  white-space: nowrap;
+}
+
+.iv-row__amt {
+  flex: 0 0 auto;
+  font-weight: var(--uhd-fw-semibold);
+  white-space: nowrap;
+}
+
+/* ---------- 换码确认弹窗 ---------- */
+
+.iv-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.iv-modal {
+  width: 100%;
+  max-width: 380px;
+  padding: 24px;
+  border-radius: 22px;
+  background: var(--iv-card);
+  border: 1px solid var(--iv-line);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.iv-modal__title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: var(--uhd-fw-bold);
+}
+
+.iv-modal__text {
+  margin: 12px 0 0;
+  font-size: 14.5px;
+  line-height: 1.75;
+  color: var(--iv-text-2);
+}
+
+.iv-modal__actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.iv-modal__actions .iv-btn {
+  flex: 1 1 0;
+  min-height: 46px;
+  font-size: 15px;
+  padding: 0 12px;
+}
+
+/* ---------- 状态 ---------- */
 
 .iv-empty {
   margin: 24px 0 0;
@@ -268,7 +460,7 @@ html[data-theme='light'] .iv-copy {
 }
 
 .iv-skeleton {
-  height: 260px;
+  height: 420px;
   border-radius: 20px;
   background: var(--iv-card);
   border: 1px solid var(--iv-line);

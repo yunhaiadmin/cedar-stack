@@ -1,4 +1,4 @@
-import axios from 'axios'
+import axios, { type AxiosRequestConfig } from 'axios'
 import { toUserMessage } from '@/utils/toUserMessage'
 import { getEmbyApiKey, setEmbyApiKey } from '@/api/imageKey'
 
@@ -577,10 +577,13 @@ export const embyApi = {
   },
 
   // 续看列表（首页「继续观看」：单集按剧聚合，带上次播放的客户端 / 设备）
-  getResume: (limit = 12) => api.get<never, { items: PortalResumeItem[] }>('/api/user/emby/resume', { params: { limit } }),
+  // config 只作单请求覆盖（如首页分级超时）；不传时走全局默认，不改全局口径
+  getResume: (limit = 12, config?: AxiosRequestConfig) =>
+    api.get<never, { items: PortalResumeItem[] }>('/api/user/emby/resume', { ...config, params: { limit } }),
 
   // 首页分区（媒体库学习 L6：注册表驱动；开关关时 404，调用方回落旧布局）
-  getHomeSections: () => api.get<never, { sections: HomeSection[] }>('/api/user/media-library/home/sections'),
+  getHomeSections: (config?: AxiosRequestConfig) =>
+    api.get<never, { sections: HomeSection[] }>('/api/user/media-library/home/sections', config),
 
   // 继续观看藏 / 取消藏 / 已藏清单（媒体库学习 L9：剧集卡传单集 guid）
   hideResumeItem: (itemGuid: string) => api.post<never, { ok: boolean }>(`/api/user/media-library/resume/${itemGuid}/hide`),

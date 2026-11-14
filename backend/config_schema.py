@@ -690,6 +690,14 @@ PLAYER_BLACKLIST_CONFIG_SCHEMA: dict[str, tuple] = {
     "player_login_blacklist": ("json_rules",),
 }
 
+# 网页软解开关（2026-11-14 批 2）：浏览器硬解失败时是否用站内自编
+# LGPL wasm 解码器兜底。默认关（无行 = 关），纯 SystemConfig 键，
+# 不进 env.example（#1527 先例）。开关只影响网页播放路径。
+WEB_SOFTDECODE_CONFIG_SCHEMA: dict[str, tuple] = {
+    # word 风格 ("bool",) 存 "true"/"false"（同 welfare 口径）。
+    "web_softdecode_enabled": ("bool",),
+}
+
 # 安装应用页（2026-11-13）：6 个平台的官方客户端下载链接，全部 ("str",)。
 # 没有代码级默认链接：空串/None = 删行取消配置，未配的平台用户端整行
 # 不显示。链接的 http(s) 形状校验在端点层（保存侧纵深防御只管类型，

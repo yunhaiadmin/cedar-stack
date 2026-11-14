@@ -110,6 +110,9 @@ const sheetDragStyle = () => {
 function goRegister() {
   router.push({ path: '/login', query: { mode: 'register' } })
 }
+function goStream() {
+  router.push('/library')
+}
 function goPricing() {
   router.push('/pricing')
 }
@@ -445,100 +448,11 @@ const year = new Date().getFullYear()
 
     <!-- ① Hero -->
     <header class="hero">
-      <!-- 移动端全幅背景（照友站真机截图构图自绘，不用对方素材）：深色星空作底、
+      <!-- 移动端全幅背景（自有生成图，照友站真机截图构图：深色星空作底、
            棱镜在左下、光谱扇自棱镜向右上展开、文字压在左上暗部、卖点压在下部；
            仅 ≤900px 显示，桌面仍走 hero-visual 棱镜图层 -->
       <div class="hero-bg" aria-hidden="true">
-        <svg viewBox="0 0 390 844" preserveAspectRatio="xMidYMid slice" focusable="false">
-          <defs>
-            <linearGradient id="hbg-sky" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="#05050d" />
-              <stop offset="0.45" stop-color="#08081a" />
-              <stop offset="0.75" stop-color="#030309" />
-              <stop offset="1" stop-color="#010102" />
-            </linearGradient>
-            <radialGradient id="hbg-neb-v" cx="0.5" cy="0.5" r="0.5">
-              <stop offset="0" stop-color="#7a4fd8" stop-opacity="0.5" />
-              <stop offset="1" stop-color="#7a4fd8" stop-opacity="0" />
-            </radialGradient>
-            <radialGradient id="hbg-neb-b" cx="0.5" cy="0.5" r="0.5">
-              <stop offset="0" stop-color="#2a5fd7" stop-opacity="0.38" />
-              <stop offset="1" stop-color="#2a5fd7" stop-opacity="0" />
-            </radialGradient>
-            <radialGradient id="hbg-glow-w" cx="0.5" cy="0.5" r="0.5">
-              <stop offset="0" stop-color="#e6f1ff" stop-opacity="0.9" />
-              <stop offset="0.45" stop-color="#a8c8ff" stop-opacity="0.28" />
-              <stop offset="1" stop-color="#a8c8ff" stop-opacity="0" />
-            </radialGradient>
-            <linearGradient id="hbg-prism" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stop-color="#ffffff" stop-opacity="0.30" />
-              <stop offset="0.5" stop-color="#9fd8ff" stop-opacity="0.10" />
-              <stop offset="1" stop-color="#ffffff" stop-opacity="0.20" />
-            </linearGradient>
-            <linearGradient id="hbg-floor" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="#010102" stop-opacity="0" />
-              <stop offset="0.45" stop-color="#010102" stop-opacity="0.55" />
-              <stop offset="1" stop-color="#010102" stop-opacity="0.88" />
-            </linearGradient>
-          </defs>
-          <rect width="390" height="844" fill="url(#hbg-sky)" />
-          <ellipse cx="332" cy="238" rx="196" ry="180" fill="url(#hbg-neb-v)" opacity="0.6" />
-          <ellipse cx="252" cy="472" rx="205" ry="170" fill="url(#hbg-neb-b)" opacity="0.55" />
-          <g fill="#ffffff">
-            <circle cx="22" cy="96" r="1.1" opacity="0.5" /><circle cx="58" cy="150" r="0.8" opacity="0.35" />
-            <circle cx="96" cy="70" r="1.3" opacity="0.6" /><circle cx="132" cy="128" r="0.8" opacity="0.4" />
-            <circle cx="168" cy="52" r="1" opacity="0.5" /><circle cx="204" cy="110" r="1.4" opacity="0.65" />
-            <circle cx="238" cy="66" r="0.8" opacity="0.4" /><circle cx="272" cy="140" r="1.1" opacity="0.55" />
-            <circle cx="306" cy="88" r="0.9" opacity="0.45" /><circle cx="342" cy="150" r="1.3" opacity="0.6" />
-            <circle cx="368" cy="60" r="0.8" opacity="0.4" /><circle cx="44" cy="238" r="0.9" opacity="0.35" />
-            <circle cx="84" cy="300" r="1.1" opacity="0.45" /><circle cx="150" cy="252" r="0.8" opacity="0.35" />
-            <circle cx="196" cy="300" r="1" opacity="0.4" /><circle cx="330" cy="262" r="0.9" opacity="0.4" />
-            <circle cx="362" cy="330" r="1.1" opacity="0.45" /><circle cx="28" cy="360" r="0.8" opacity="0.3" />
-            <circle cx="118" cy="392" r="0.9" opacity="0.35" /><circle cx="238" cy="392" r="0.8" opacity="0.3" />
-            <circle cx="300" cy="430" r="1" opacity="0.35" /><circle cx="52" cy="470" r="0.9" opacity="0.3" />
-            <circle cx="352" cy="486" r="0.8" opacity="0.3" /><circle cx="180" cy="486" r="0.8" opacity="0.28" />
-            <circle cx="96" cy="540" r="0.8" opacity="0.25" /><circle cx="262" cy="548" r="0.9" opacity="0.3" />
-          </g>
-          <g class="hbg-fan hbg-fan--halo" opacity="0.3">
-            <polygon points="71,593 390,230 390,608" fill="#8a7cff" />
-            <polygon points="71,593 390,376 390,546" fill="#3fa8e0" />
-            <polygon points="71,593 390,506 390,608" fill="#f28c3c" />
-          </g>
-          <g class="hbg-fan hbg-fan--glow" opacity="0.42">
-            <polygon points="71,593 390,230 390,270" fill="#7b5cff" />
-            <polygon points="71,593 390,280 390,320" fill="#5a6cff" />
-            <polygon points="71,593 390,328 390,374" fill="#2f8fe0" />
-            <polygon points="71,593 390,376 390,426" fill="#22b8e6" />
-            <polygon points="71,593 390,430 390,470" fill="#2fd48c" />
-            <polygon points="71,593 390,472 390,508" fill="#a8d44d" />
-            <polygon points="71,593 390,506 390,546" fill="#f2c94c" />
-            <polygon points="71,593 390,536 390,586" fill="#f28c3c" />
-            <polygon points="71,593 390,570 390,608" fill="#e85d3c" />
-          </g>
-          <g class="hbg-fan" opacity="0.6">
-            <polygon points="71,593 390,149 390,157" fill="#cfc4ff" />
-            <polygon points="71,593 390,203 390,210" fill="#e8e2ff" />
-            <polygon points="71,593 390,243 390,259" fill="#9d86ff" />
-            <polygon points="71,593 390,293 390,309" fill="#7f96ff" />
-            <polygon points="71,593 390,341 390,363" fill="#57b6f2" />
-            <polygon points="71,593 390,389 390,413" fill="#4fd2f2" />
-            <polygon points="71,593 390,390 390,405" fill="#ffffff" opacity="0.55" />
-            <polygon points="71,593 390,441 390,459" fill="#5fe3ae" />
-            <polygon points="71,593 390,481 390,499" fill="#c4e06a" />
-            <polygon points="71,593 390,515 390,537" fill="#ffd968" />
-            <polygon points="71,593 390,547 390,573" fill="#ffab52" />
-            <polygon points="71,593 390,579 390,599" fill="#ff7a4d" />
-          </g>
-          <polygon points="-4,458 64,584 79,591 -4,486" fill="#ffffff" opacity="0.13" class="hbg-inbeam" />
-          <rect y="636" width="390" height="208" fill="url(#hbg-floor)" />
-          <ellipse cx="62" cy="692" rx="96" ry="13" fill="#bcd9ff" opacity="0.07" class="hbg-inbeam" />
-          <polygon points="130,676 390,706 390,766 150,712" fill="#f28c3c" opacity="0.05" class="hbg-inbeam" />
-          <circle cx="71" cy="593" r="37" fill="url(#hbg-glow-w)" />
-          <polygon points="4,656 110,661 72,530" fill="url(#hbg-prism)" stroke="rgba(255, 255, 255, 0.22)" stroke-width="1.2" />
-          <polyline points="72,530 71,593 8,652" fill="none" stroke="rgba(255, 255, 255, 0.14)" stroke-width="1" />
-          <polyline points="71,593 106,657" fill="none" stroke="rgba(255, 255, 255, 0.10)" stroke-width="1" />
-          <circle cx="71" cy="593" r="3" fill="#ffffff" opacity="0.9" />
-        </svg>
+        <img class="hero-bg-img" src="/images/hero-prism.webp" alt="" width="1184" height="2096" fetchpriority="high" />
       </div>
       <div class="hero-beam" aria-hidden="true" />
       <!-- 桌面棱镜主视觉：自绘 SVG 棱镜＋彩虹光束＋星点，不用对方素材；
@@ -559,6 +473,18 @@ const year = new Date().getFullYear()
               <stop offset="0" stop-color="#bcd9ff" stop-opacity="0.35" />
               <stop offset="1" stop-color="#bcd9ff" stop-opacity="0" />
             </radialGradient>
+            <!-- 光谱平滑渐变（2026-11-14 背景优化，同移动端口径）：整幅扇面
+                 一条多段色标渐变连续过渡，取代原先 8 格平色多边形硬色带 -->
+            <linearGradient id="hv-spectrum" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="390" y2="0">
+              <stop offset="0" stop-color="#2f8fe0" />
+              <stop offset="0.14" stop-color="#6f7ad8" />
+              <stop offset="0.28" stop-color="#c46c90" />
+              <stop offset="0.4" stop-color="#e8766f" />
+              <stop offset="0.52" stop-color="#f2a45a" />
+              <stop offset="0.64" stop-color="#ecd04f" />
+              <stop offset="0.78" stop-color="#95c77d" />
+              <stop offset="1" stop-color="#39b3ec" />
+            </linearGradient>
           </defs>
           <ellipse cx="195" cy="158" rx="150" ry="92" fill="url(#hv-glow)" />
           <g fill="#ffffff">
@@ -579,15 +505,11 @@ const year = new Date().getFullYear()
             <circle cx="160" cy="128" r="0.9" opacity="0.4" />
             <circle cx="232" cy="140" r="0.9" opacity="0.4" />
           </g>
+          <g class="hv-fan" opacity="0.45" style="filter: blur(13px)">
+            <polygon points="195,150 -30,0 420,0" fill="url(#hv-spectrum)" />
+          </g>
           <g class="hv-fan" opacity="0.85">
-            <polygon points="195,150 4,0 42,0" fill="#2f8fe0" />
-            <polygon points="195,150 50,0 90,0" fill="#6f7ad8" />
-            <polygon points="195,150 98,0 138,0" fill="#c46c90" />
-            <polygon points="195,150 146,0 186,0" fill="#e8766f" />
-            <polygon points="195,150 194,0 234,0" fill="#f2a45a" />
-            <polygon points="195,150 242,0 282,0" fill="#ecd04f" />
-            <polygon points="195,150 290,0 330,0" fill="#95c77d" />
-            <polygon points="195,150 338,0 386,0" fill="#39b3ec" />
+            <polygon points="195,150 6,0 384,0" fill="url(#hv-spectrum)" />
           </g>
           <polygon points="187,236 203,236 199,212 191,212" fill="url(#hv-inbeam)" />
           <polygon
@@ -606,16 +528,19 @@ const year = new Date().getFullYear()
             <span :key="heroSubIdx">{{ heroSubs[heroSubIdx] }}</span>
           </Transition>
         </p>
-        <div class="hero-actions" :class="{ 'hero-actions--solo': userStore.isLoggedIn }">
-          <!-- Hero 主钮分态（2026-11-13 照友站已登录宣传页定版）：已登录进站停
-               宣传页，首屏主钮即「进入后台」（彩虹边＋玻璃底，与菜单面板大钮
-               同一去向 goConsole → 概览）；未登录保持「免费注册」原样。
-               移动端已登录态照友站真机截图只摆这一颗主钮（--solo 隐藏定价钮）。 -->
+        <div class="hero-actions">
+          <!-- Hero 双钮分态（2026-11-14 照友站真机截图复核）：已登录＝彩虹
+               「进入后台」（goConsole → 概览）＋玻璃「前往流媒体」（本站流
+               媒体入口 /library），移动端两颗并排都显示；未登录保持
+               「免费注册」＋「查看定价」原样。 -->
           <UhdButton v-if="userStore.isLoggedIn" variant="primary" dark @click="goConsole">
             进入后台 <ArrowRight :size="18" aria-hidden="true" />
           </UhdButton>
           <UhdButton v-else variant="primary" dark @click="goRegister">免费注册</UhdButton>
-          <UhdButton variant="secondary" dark class="hero-btn-pricing" @click="goPricing">查看定价</UhdButton>
+          <UhdButton v-if="userStore.isLoggedIn" variant="secondary" dark class="hero-btn-stream" @click="goStream">
+            前往流媒体 <ArrowRight :size="18" aria-hidden="true" />
+          </UhdButton>
+          <UhdButton v-else variant="secondary" dark class="hero-btn-pricing" @click="goPricing">查看定价</UhdButton>
         </div>
         <div class="hero-specs">
           <UhdChip variant="spec" sub="超高清">
@@ -949,25 +874,12 @@ const year = new Date().getFullYear()
   inset: 0;
   pointer-events: none;
 }
-.hero-bg svg {
+.hero-bg-img {
   display: block;
   width: 100%;
   height: 100%;
-}
-.hero-bg .hbg-fan {
-  mix-blend-mode: screen;
-}
-.hero-bg .hbg-fan--halo {
-  filter: blur(16px);
-}
-.hero-bg .hbg-fan--glow {
-  filter: blur(7px);
-}
-.hero-bg .hbg-fan:not(.hbg-fan--glow):not(.hbg-fan--halo) {
-  filter: blur(2.2px);
-}
-.hero-bg .hbg-inbeam {
-  filter: blur(2px);
+  object-fit: cover;
+  object-position: 50% 50%;
 }
 .hero-bg::before {
   content: '';
@@ -982,7 +894,7 @@ const year = new Date().getFullYear()
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(0deg, rgba(1, 1, 4, 0.38), transparent 30%);
+  background: linear-gradient(0deg, rgba(1, 1, 4, 0.52), rgba(1, 1, 4, 0.2) 34%, transparent 58%);
 }
 /* 棱镜主视觉（D1-03）：桌面居右上、移动端全幅居顶（见文末断点） */
 .hero-visual {
@@ -1035,8 +947,23 @@ const year = new Date().getFullYear()
 .hero-sub-fade-leave-to { opacity: 0; }
 .hero-actions {
   display: flex;
-  gap: 14px;
+  gap: 16px;
   flex-wrap: wrap;
+}
+/* 「前往流媒体」改深色玻璃（2026-11-14 用户双站对图亲点）：UhdButton 的
+   secondary+dark 基础配方是 transparent 底、无 backdrop-filter——空心描边，
+   钮内直接透出背景条纹原色。本页用专属钩子 .hero-btn-stream 覆盖成深色
+   玻璃（压暗＋模糊＋白亮边＋内高光＋柔影），不动共享组件，同 variant 的
+   「查看定价」等他处次钮不受影响。字重走 .uhd-btn 基础 semibold，与左钮同级。 */
+.hero-actions :deep(.uhd-btn--secondary.hero-btn-stream) {
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  background: rgba(10, 13, 26, 0.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 12px 32px -12px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
 }
 .hero-specs {
   display: flex;
@@ -1731,21 +1658,27 @@ const year = new Date().getFullYear()
   .m-sheet__row {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 16px;
     width: 100%;
-    padding: 14px 16px;
+    padding: 17px 18px;
     border: none;
     border-radius: 16px;
     background: transparent;
     color: var(--uhd-d-text);
-    font-size: 15px;
+    font-size: 18px;
     font-weight: var(--uhd-fw-medium);
     text-align: left;
     cursor: pointer;
   }
   .m-sheet__row svg {
     flex: none;
+    width: 22px;
+    height: 22px;
     opacity: 0.4;
+  }
+  .m-sheet__row .m-sheet__row-ext {
+    width: 17px;
+    height: 17px;
   }
   a.m-sheet__row { text-decoration: none; }
   .m-sheet__row .m-sheet__row-ext {
@@ -1772,7 +1705,7 @@ const year = new Date().getFullYear()
   .m-card {
     display: flex;
     flex-direction: column;
-    padding: 16px;
+    padding: 18px;
     border: 1px solid rgba(255, 255, 255, 0.07);
     border-radius: 20px;
     background: rgba(255, 255, 255, 0.045);
@@ -1784,21 +1717,21 @@ const year = new Date().getFullYear()
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
-    margin-bottom: 10px;
+    width: 44px;
+    height: 44px;
+    margin-bottom: 12px;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.08);
     color: rgba(255, 255, 255, 0.85);
   }
   .m-card__title {
-    font-size: 15px;
+    font-size: 16px;
     font-weight: var(--uhd-fw-semibold);
     line-height: 1.35;
   }
   .m-card__sub {
     margin-top: 3px;
-    font-size: 12.5px;
+    font-size: 13px;
     color: rgba(255, 255, 255, 0.42);
     word-break: break-all;
   }
@@ -1832,13 +1765,13 @@ const year = new Date().getFullYear()
     flex: 1;
     display: flex;
     flex-direction: column;
-    padding: 24svh 14px 13svh;
+    padding: 24svh 14px 10svh;
   }
   .hero-inner .eyebrow {
     margin-bottom: 20px;
   }
   .hero-title {
-    font-size: 32px;
+    font-size: 34px;
     line-height: 1.3;
     margin-bottom: 16px;
   }
@@ -1848,15 +1781,14 @@ const year = new Date().getFullYear()
     min-height: 3.5em;
     margin-bottom: 30px;
   }
-  /* 主钮照截图：高约 54px、字 17px 的彩虹玻璃胶囊（配方在 UhdButton 主钮） */
-  .hero-actions :deep(.uhd-btn--primary) {
-    height: 54px;
-    padding: 0 28px;
-    font-size: 17px;
-  }
-  /* 已登录态首屏只摆主钮一颗（照截图），定价钮移动端隐藏（导航/页脚仍可达） */
-  .hero-actions--solo .hero-btn-pricing {
-    display: none;
+  /* 双钮照截图量值：高 52px、字 16px、左右垫 20px、间距 14px 并排
+     （主钮配方在 UhdButton，玻璃次钮等高对齐；2026-11-14 截图复核后已登录态两颗都显示） */
+  .hero-actions { gap: 14px; }
+  .hero-actions :deep(.uhd-btn--primary),
+  .hero-actions :deep(.uhd-btn--secondary) {
+    height: 52px;
+    padding: 0 20px;
+    font-size: 16px;
   }
   /* 首屏卖点 2×2 网格（#151 排法不变，尺寸照友站真机截图放大）：格内图标＋标题
      一行、说明小字换行到标题下方（左缘与标题对齐＝图标 24px＋chip 间距 13px）；
@@ -1880,7 +1812,7 @@ const year = new Date().getFullYear()
   .hero-specs :deep(.uhd-chip__sub) {
     flex-basis: 100%;
     padding-left: 37px;
-    font-size: 15px;
+    font-size: 13.5px;
   }
   /* 友站首屏底部无滚动提示（卖点之下只有背景地板），移动端隐藏 */
   .hero-scroll-hint {

@@ -10,16 +10,17 @@
  * 选版本 + 选线路，开始播放默认进网页播放器 /watch、第三方播放器保留），
  * 海报卡只进详情页、不挂播放入口。
  */
-import { onMounted, ref } from 'vue'
+import { computed, onActivated, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Clapperboard, Trash2 } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
+import { useUserStore } from '@/stores/user'
 import StreamShell from '@/components/stream/StreamShell.vue'
 import StreamHero, { type StreamHeroItem } from '@/components/stream/StreamHero.vue'
 import StreamRow from '@/components/stream/StreamRow.vue'
 import StreamPosterCard from '@/components/stream/StreamPosterCard.vue'
 import PlayerSchemeSheet from '@/components/panel/PlayerSchemeSheet.vue'
-import { embyApi, type PortalResumeItem } from '@/api'
+import { embyApi, type HomeSection, type PortalResumeItem } from '@/api'
 import {
   embyApi as embyProtocol,
   backdropUrl,
@@ -38,13 +39,157 @@ interface PosterRowData {
   items: Array<{ id: string; title: string; meta: string; rating: number | null; image: string }>
 }
 
+/* KeepAlive include 按组件 name 匹配：显式声明，保活命中不靠文件名推断 */
+defineOptions({ name: 'StreamHomeView' })
+
 const toast = useToast()
+const userStore = useUserStore()
+
+/* ---------- 渐进渲染状态：四条腿各自 pending → ready / error，先到先画 ----------
+   旧版 load() 两段瀑布全 settle 才撤骨架：任一条腿慢（全局超时 30s）整页
+   骨架最长挂约 60s，数据到手也不先画（2026-11-14 用户真机截图实锤）。
+   现每条腿独立落画：hero / 继续观看 / 分区 / 逐库行各有自己的小骨架，
+   整页大骨架只在「什么都还没到」时出现；部分失败给行级重试，只有全部
+   为空 / 全失败才出整页错误态。 */
+type LegStatus = 'pending' | 'ready' | 'error'
+
+interface RowEntry {
+  key: string
+  status: LegStatus
+  /** ready 且有内容时的行数据；ready 但该库没条目为 null，不渲染 */
+  row: PosterRowData | null
+  /** view 行重试所需的视图对象（section 行不用） */
+  view?: EmbyItem
+  title?: string
+}
 
 const heroItems = ref<StreamHeroItem[]>([])
+const heroStatus = ref<LegStatus>('pending')
 const resumeItems = ref<PortalResumeItem[]>([])
-const rows = ref<PosterRowData[]>([])
-const loading = ref(true)
-const loadError = ref('')
+const resumeStatus = ref<LegStatus>('pending')
+const sectionRows = ref<RowEntry[]>([])
+const sectionsStatus = ref<LegStatus>('pending')
+const viewRows = ref<RowEntry[]>([])
+/** views 腿口径：列表请求 + 逐库 items 全 settle 才离开 pending；
+    列表本身失败才置 error（单库失败是 entry 级 error，不算整腿失败） */
+const viewsStatus = ref<LegStatus>('pending')
+
+/** 整页大骨架只在四条腿全 pending（什么都还没到）时出现 */
+const showFullSkeleton = computed(
+  () =>
+    heroStatus.value === 'pending' &&
+    resumeStatus.value === 'pending' &&
+    sectionsStatus.value === 'pending' &&
+    viewsStatus.value === 'pending',
+)
+const allSettled = computed(
+  () =>
+    heroStatus.value !== 'pending' &&
+    resumeStatus.value !== 'pending' &&
+    sectionsStatus.value !== 'pending' &&
+    viewsStatus.value !== 'pending',
+)
+const hasContent = computed(
+  () =>
+    heroItems.value.length > 0 ||
+    resumeItems.value.length > 0 ||
+    sectionRows.value.some((r) => r.row) ||
+    viewRows.value.some((r) => r.row),
+)
+/** 全部为空 / 全失败才出整页错误态（带重试） */
+const showFatalError = computed(() => allSettled.value && !hasContent.value)
+
+/** 首页读请求分级超时（毫秒）：全局 axios 默认 30s 不动，只在本页调用点覆盖 */
+const HOME_TIMEOUT_MS = 10_000
+/** 保活页签静默刷新阈值：切回首页超过这个时长才后台刷新（不闪骨架） */
+const HOME_REFRESH_TTL_MS = 5 * 60 * 1000
+/** 首页 SWR 缓存有效期：超过即丢弃走冷加载 */
+const HOME_CACHE_TTL_MS = 10 * 60 * 1000
+const HOME_CACHE_VERSION = 1
+
+/** 只对超时 / 网络失败重试一次（HTTP 错误是服务端明确答复，不重试） */
+function isTimeoutOrNetwork(err: unknown): boolean {
+  const e = err as { code?: string; response?: unknown; message?: string } | null
+  if (!e || e.response) return false
+  return (
+    e.code === 'ECONNABORTED' ||
+    e.code === 'ERR_NETWORK' ||
+    /timeout/i.test(e.message || '') ||
+    e.message === 'Network Error'
+  )
+}
+async function fetchHome<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn()
+  } catch (e) {
+    if (isTimeoutOrNetwork(e)) return fn()
+    throw e
+  }
+}
+
+/* ---------- 首页 SWR 缓存（sessionStorage，按 user id + 会话序列隔离） ----------
+   只存四条腿的原始 DTO 响应，不存拼好的图片地址（地址里带图片凭据，
+   凭据不许进缓存）。冷启动 / 重进首页先用缓存秒画，再后台静默刷新替换。 */
+interface HomeRawData {
+  latest?: EmbyItem[]
+  resume?: { items: PortalResumeItem[] }
+  sections?: { sections: HomeSection[] }
+  views?: EmbyItem[]
+  viewItems?: Record<string, { Items: EmbyItem[]; TotalRecordCount: number }>
+}
+interface HomeCachePayload {
+  v: number
+  ts: number
+  userId: number | string
+  seq: number
+  data: HomeRawData
+}
+/** 与 App.vue viewCacheKey 同口径（user id + sessionSeq）：登出 / 换号 /
+    重新登录后 seq 递增，旧键不再命中 */
+function homeCacheKey(): string {
+  return `aetrix:stream-home:v${HOME_CACHE_VERSION}:${userStore.user?.id ?? 'guest'}#${userStore.sessionSeq}`
+}
+function readHomeCache(): HomeCachePayload | null {
+  try {
+    const key = homeCacheKey()
+    const rawText = sessionStorage.getItem(key)
+    if (!rawText) return null
+    const parsed = JSON.parse(rawText) as HomeCachePayload
+    if (
+      parsed?.v !== HOME_CACHE_VERSION ||
+      parsed.userId !== (userStore.user?.id ?? 'guest') ||
+      parsed.seq !== userStore.sessionSeq ||
+      typeof parsed.ts !== 'number' ||
+      Date.now() - parsed.ts > HOME_CACHE_TTL_MS ||
+      !parsed.data
+    ) {
+      sessionStorage.removeItem(key)
+      return null
+    }
+    return parsed
+  } catch {
+    return null
+  }
+}
+function writeHomeCache(data: HomeRawData) {
+  try {
+    const payload: HomeCachePayload = {
+      v: HOME_CACHE_VERSION,
+      ts: Date.now(),
+      userId: userStore.user?.id ?? 'guest',
+      seq: userStore.sessionSeq,
+      data,
+    }
+    sessionStorage.setItem(homeCacheKey(), JSON.stringify(payload))
+  } catch {
+    /* 配额满 / 隐私模式：缓存写不进不影响页面 */
+  }
+}
+/** 单条腿重试成功后把新数据并回缓存，避免下次冷启动又画旧的 */
+function patchHomeCache(patch: Partial<HomeRawData>) {
+  const cur = readHomeCache()
+  writeHomeCache({ ...(cur?.data || {}), ...patch })
+}
 
 const pickerOpen = ref(false)
 const pickerTitle = ref('')
@@ -93,6 +238,13 @@ async function hideResume(m: PortalResumeItem) {
   try {
     await embyApi.hideResumeItem(m.id)
     resumeItems.value = resumeItems.value.filter((x) => x.id !== m.id)
+    /* 缓存里的续看列表同步摘掉，否则下次冷启动秒画会先把这条画回来 */
+    const cached = readHomeCache()
+    if (cached?.data.resume) {
+      patchHomeCache({
+        resume: { items: (cached.data.resume.items || []).filter((x) => x.id !== m.id) },
+      })
+    }
     toast.success('已从继续观看里移除')
   } catch {
     toast.error('移除失败，请稍后再试')
@@ -112,104 +264,392 @@ function onHeroPlay(item: StreamHeroItem) {
   pickerOpen.value = true
 }
 
-async function load() {
-  loading.value = true
-  loadError.value = ''
-  try {
-    const [latest, resume, sections, views] = await Promise.allSettled([
-      embyProtocol.getLatest(12),
-      embyApi.getResume(12),
-      embyApi.getHomeSections(),
-      embyProtocol.getViews(),
-    ])
-
-    if (latest.status === 'fulfilled') {
-      heroItems.value = (latest.value || [])
-        .filter((it) => it.BackdropImageTags?.length || it.ImageTags?.Primary)
-        .slice(0, 5)
-        .map((it) => ({
-          id: it.Id,
-          title: it.Name,
-          meta: metaOf(it),
-          rating: it.CommunityRating ?? null,
-          backdrop: backdropUrl(it, 1600) || posterUrl(it, 1080),
-          poster: posterUrl(it, 1080),
-          overview: it.Overview || '',
-        }))
-    }
-    if (resume.status === 'fulfilled') {
-      resumeItems.value = resume.value?.items || []
-    }
-
-    const out: PosterRowData[] = []
-    if (sections.status === 'fulfilled') {
-      for (const sec of sections.value?.sections || []) {
-        if (sec.key === 'continue_watching') continue
-        const items = (sec.items || []) as Array<{
-          guid?: string
-          id?: number | string
-          name: string
-          production_year?: number | null
-          poster_url?: string | null
-        }>
-        if (!items.length) continue
-        out.push({
-          key: `sec-${sec.key}`,
-          title: sec.title,
-          count: null,
-          items: items.slice(0, 14).map((it): PosterRowData['items'][number] => ({
-            id: String(it.guid || it.id || ''),
-            title: it.name,
-            meta: it.production_year ? String(it.production_year) : '',
-            rating: null,
-            image: it.poster_url ? imageAuthUrl(it.poster_url, 520) : '',
-          })).filter((it) => it.id),
-        })
-      }
-    }
-    if (views.status === 'fulfilled') {
-      const viewList = (views.value || []).slice(0, 8)
-      const viewRows = await Promise.allSettled(
-        viewList.map(async (view) => {
-          const res = await embyProtocol.getItems({
-            parentId: view.Id,
-            includeTypes: ['Movie', 'Series'],
-            sortBy: 'DateCreated',
-            sortOrder: 'Descending',
-            limit: 14,
-          })
-          return { view, res }
-        }),
-      )
-      for (const r of viewRows) {
-        if (r.status !== 'fulfilled') continue
-        const items = (r.value.res.Items || []).map(toPoster)
-        if (!items.length) continue
-        out.push({
-          key: `view-${r.value.view.Id}`,
-          title: r.value.view.Name,
-          count: r.value.res.TotalRecordCount || null,
-          moreTo:
-            r.value.view.CollectionType === 'movies'
-              ? '/library/movies'
-              : r.value.view.CollectionType === 'tvshows'
-                ? '/library/series'
-                : undefined,
-          items,
-        })
-      }
-    }
-    rows.value = out
-    if (!heroItems.value.length && !rows.value.length && !resumeItems.value.length) {
-      loadError.value = '片库暂时没有拉到内容'
-    }
-  } finally {
-    loading.value = false
+/* ---------- 原始响应 → 视图数据（网络与缓存共用同一套映射） ---------- */
+function applyLatest(items: EmbyItem[] | undefined) {
+  heroItems.value = (items || [])
+    .filter((it) => it.BackdropImageTags?.length || it.ImageTags?.Primary)
+    .slice(0, 5)
+    .map((it) => ({
+      id: it.Id,
+      title: it.Name,
+      meta: metaOf(it),
+      rating: it.CommunityRating ?? null,
+      backdrop: backdropUrl(it, 1600) || posterUrl(it, 1080),
+      poster: posterUrl(it, 1080),
+      overview: it.Overview || '',
+    }))
+}
+function applyResume(res: { items: PortalResumeItem[] } | undefined) {
+  resumeItems.value = res?.items || []
+}
+function applySections(res: { sections: HomeSection[] } | undefined) {
+  const out: RowEntry[] = []
+  for (const sec of res?.sections || []) {
+    if (sec.key === 'continue_watching') continue
+    const items = (sec.items || []) as Array<{
+      guid?: string
+      id?: number | string
+      name: string
+      production_year?: number | null
+      poster_url?: string | null
+    }>
+    if (!items.length) continue
+    out.push({
+      key: `sec-${sec.key}`,
+      status: 'ready',
+      row: {
+        key: `sec-${sec.key}`,
+        title: sec.title,
+        count: null,
+        items: items.slice(0, 14).map((it): PosterRowData['items'][number] => ({
+          id: String(it.guid || it.id || ''),
+          title: it.name,
+          meta: it.production_year ? String(it.production_year) : '',
+          rating: null,
+          image: it.poster_url ? imageAuthUrl(it.poster_url, 520) : '',
+        })).filter((it) => it.id),
+      },
+    })
+  }
+  sectionRows.value = out
+}
+function buildViewRow(
+  view: EmbyItem,
+  res: { Items: EmbyItem[]; TotalRecordCount: number },
+): PosterRowData | null {
+  const items = (res.Items || []).map(toPoster)
+  if (!items.length) return null
+  return {
+    key: `view-${view.Id}`,
+    title: view.Name,
+    count: res.TotalRecordCount || null,
+    moreTo:
+      view.CollectionType === 'movies'
+        ? '/library/movies'
+        : view.CollectionType === 'tvshows'
+          ? '/library/series'
+          : undefined,
+    items,
+  }
+}
+function applyViewRow(view: EmbyItem, res: { Items: EmbyItem[]; TotalRecordCount: number }) {
+  const key = `view-${view.Id}`
+  const entry = viewRows.value.find((r) => r.key === key)
+  const row = buildViewRow(view, res)
+  if (entry) {
+    entry.row = row
+    entry.status = 'ready'
+    entry.view = view
+    entry.title = view.Name
+  } else {
+    /* 静默刷新 / 缓存画完后的新库：直接以 ready 落位，不闪骨架 */
+    viewRows.value.push({ key, status: 'ready', row, view, title: view.Name })
   }
 }
 
-onMounted(() => {
+/* ---------- 分腿加载：每条腿独立 settle、独立落画 ----------
+   silent = 保活切回 / 缓存秒画后的后台刷新：不重置状态、不闪骨架，
+   失败保留已有数据（状态已是 ready 时不降级成 error）。 */
+let loadSeq = 0
+let loadInFlight = false
+let lastLoadedAt = 0
+
+async function load(opts?: { silent?: boolean }) {
+  if (loadInFlight) return
+  loadInFlight = true
+  const silent = !!opts?.silent
+  const my = ++loadSeq
+  if (!silent) {
+    heroStatus.value = 'pending'
+    resumeStatus.value = 'pending'
+    sectionsStatus.value = 'pending'
+    viewsStatus.value = 'pending'
+    sectionRows.value = []
+    viewRows.value = []
+  }
+  const raw: HomeRawData = {}
+  let settledLegs = 0
+  const legDone = () => {
+    settledLegs += 1
+    if (settledLegs === 4 && my === loadSeq) {
+      loadInFlight = false
+      lastLoadedAt = Date.now()
+      writeHomeCache(raw)
+    }
+  }
+
+  // Hero（Latest）
+  void (async () => {
+    try {
+      const items = await fetchHome(() => embyProtocol.getLatest(12, { timeout: HOME_TIMEOUT_MS }))
+      if (my !== loadSeq) return
+      raw.latest = items
+      applyLatest(items)
+      heroStatus.value = 'ready'
+    } catch {
+      if (my === loadSeq && heroStatus.value !== 'ready') heroStatus.value = 'error'
+    } finally {
+      if (my === loadSeq) legDone()
+    }
+  })()
+
+  // 继续观看
+  void (async () => {
+    try {
+      const res = await fetchHome(() => embyApi.getResume(12, { timeout: HOME_TIMEOUT_MS }))
+      if (my !== loadSeq) return
+      raw.resume = res
+      applyResume(res)
+      resumeStatus.value = 'ready'
+    } catch {
+      if (my === loadSeq && resumeStatus.value !== 'ready') resumeStatus.value = 'error'
+    } finally {
+      if (my === loadSeq) legDone()
+    }
+  })()
+
+  // 首页分区
+  void (async () => {
+    try {
+      const res = await fetchHome(() => embyApi.getHomeSections({ timeout: HOME_TIMEOUT_MS }))
+      if (my !== loadSeq) return
+      raw.sections = res
+      applySections(res)
+      sectionsStatus.value = 'ready'
+    } catch {
+      if (my === loadSeq && sectionsStatus.value !== 'ready') sectionsStatus.value = 'error'
+    } finally {
+      if (my === loadSeq) legDone()
+    }
+  })()
+
+  // 逐库行：先拿 Views，再逐库拉 items（每库独立 settle、独立落画 / 独立重试）
+  void (async () => {
+    try {
+      const views = await fetchHome(() => embyProtocol.getViews({ timeout: HOME_TIMEOUT_MS }))
+      if (my !== loadSeq) return
+      raw.views = views
+      raw.viewItems = {}
+      const viewList = (views || []).slice(0, 8)
+      if (!silent) {
+        viewRows.value = viewList.map(
+          (view): RowEntry => ({
+            key: `view-${view.Id}`,
+            status: 'pending',
+            row: null,
+            view,
+            title: view.Name,
+          }),
+        )
+      }
+      await Promise.allSettled(
+        viewList.map(async (view) => {
+          try {
+            const res = await fetchHome(() =>
+              embyProtocol.getItems({
+                parentId: view.Id,
+                includeTypes: ['Movie', 'Series'],
+                sortBy: 'DateCreated',
+                sortOrder: 'Descending',
+                limit: 14,
+                timeout: HOME_TIMEOUT_MS,
+              }),
+            )
+            if (my !== loadSeq) return
+            if (raw.viewItems) raw.viewItems[view.Id] = res
+            applyViewRow(view, res)
+          } catch {
+            if (my !== loadSeq) return
+            const entry = viewRows.value.find((r) => r.key === `view-${view.Id}`)
+            if (entry && entry.status !== 'ready') entry.status = 'error'
+          }
+        }),
+      )
+      if (my !== loadSeq) return
+      if (silent) {
+        /* 静默刷新收尾：已下线的库行撤掉，顺序按最新 Views 对齐 */
+        const order = new Map<string, number>(viewList.map((v, i) => [`view-${v.Id}`, i] as const))
+        viewRows.value = viewRows.value
+          .filter((r) => order.has(r.key))
+          .sort((a, b) => (order.get(a.key) ?? 0) - (order.get(b.key) ?? 0))
+      }
+      viewsStatus.value = 'ready'
+    } catch {
+      if (my === loadSeq && viewsStatus.value !== 'ready') viewsStatus.value = 'error'
+    } finally {
+      if (my === loadSeq) legDone()
+    }
+  })()
+}
+
+function reloadAll() {
   void load()
+}
+
+/* ---------- 行级重试（只重跑失败的那条腿 / 那一行） ---------- */
+async function retryHero() {
+  heroStatus.value = 'pending'
+  try {
+    const items = await fetchHome(() => embyProtocol.getLatest(12, { timeout: HOME_TIMEOUT_MS }))
+    applyLatest(items)
+    heroStatus.value = 'ready'
+    patchHomeCache({ latest: items })
+  } catch {
+    heroStatus.value = 'error'
+  }
+}
+async function retryResume() {
+  resumeStatus.value = 'pending'
+  try {
+    const res = await fetchHome(() => embyApi.getResume(12, { timeout: HOME_TIMEOUT_MS }))
+    applyResume(res)
+    resumeStatus.value = 'ready'
+    patchHomeCache({ resume: res })
+  } catch {
+    resumeStatus.value = 'error'
+  }
+}
+async function retrySections() {
+  sectionsStatus.value = 'pending'
+  try {
+    const res = await fetchHome(() => embyApi.getHomeSections({ timeout: HOME_TIMEOUT_MS }))
+    applySections(res)
+    sectionsStatus.value = 'ready'
+    patchHomeCache({ sections: res })
+  } catch {
+    sectionsStatus.value = 'error'
+  }
+}
+async function retryViews() {
+  /* 列表腿整体重跑：走一次非静默 load（其余腿已 ready 的数据会被重新
+     拉取并覆盖为最新，行为与整页重试一致但不撤已有画面） */
+  viewsStatus.value = 'pending'
+  viewRows.value = viewRows.value.filter((r) => r.status === 'ready')
+  try {
+    const views = await fetchHome(() => embyProtocol.getViews({ timeout: HOME_TIMEOUT_MS }))
+    const viewList = (views || []).slice(0, 8)
+    const pending = viewList.filter(
+      (v) => !viewRows.value.some((r) => r.key === `view-${v.Id}` && r.status === 'ready'),
+    )
+    for (const view of pending) {
+      viewRows.value.push({
+        key: `view-${view.Id}`,
+        status: 'pending',
+        row: null,
+        view,
+        title: view.Name,
+      })
+    }
+    const viewItems: Record<string, { Items: EmbyItem[]; TotalRecordCount: number }> = {}
+    await Promise.allSettled(
+      pending.map(async (view) => {
+        try {
+          const res = await fetchHome(() =>
+            embyProtocol.getItems({
+              parentId: view.Id,
+              includeTypes: ['Movie', 'Series'],
+              sortBy: 'DateCreated',
+              sortOrder: 'Descending',
+              limit: 14,
+              timeout: HOME_TIMEOUT_MS,
+            }),
+          )
+          viewItems[view.Id] = res
+          applyViewRow(view, res)
+        } catch {
+          const entry = viewRows.value.find((r) => r.key === `view-${view.Id}`)
+          if (entry && entry.status !== 'ready') entry.status = 'error'
+        }
+      }),
+    )
+    viewsStatus.value = 'ready'
+    patchHomeCache({ views, viewItems })
+  } catch {
+    viewsStatus.value = 'error'
+  }
+}
+async function retryViewRow(entry: RowEntry) {
+  if (!entry.view) return
+  const view = entry.view
+  entry.status = 'pending'
+  try {
+    const res = await fetchHome(() =>
+      embyProtocol.getItems({
+        parentId: view.Id,
+        includeTypes: ['Movie', 'Series'],
+        sortBy: 'DateCreated',
+        sortOrder: 'Descending',
+        limit: 14,
+        timeout: HOME_TIMEOUT_MS,
+      }),
+    )
+    entry.row = buildViewRow(view, res)
+    entry.status = 'ready'
+    const cur = readHomeCache()
+    if (cur) {
+      patchHomeCache({ viewItems: { ...(cur.data.viewItems || {}), [view.Id]: res } })
+    }
+  } catch {
+    entry.status = 'error'
+  }
+}
+
+/* ---------- 缓存秒画：先把缓存 DTO 按同一套映射落画 ---------- */
+function paintFromCache(payload: HomeCachePayload) {
+  const d = payload.data
+  if (d.latest) {
+    applyLatest(d.latest)
+    heroStatus.value = 'ready'
+  }
+  if (d.resume) {
+    applyResume(d.resume)
+    resumeStatus.value = 'ready'
+  }
+  if (d.sections) {
+    applySections(d.sections)
+    sectionsStatus.value = 'ready'
+  }
+  if (d.views) {
+    viewRows.value = d.views.slice(0, 8).map((view) => {
+      const res = d.viewItems?.[view.Id]
+      return res
+        ? {
+            key: `view-${view.Id}`,
+            status: 'ready' as LegStatus,
+            row: buildViewRow(view, res),
+            view,
+            title: view.Name,
+          }
+        : {
+            key: `view-${view.Id}`,
+            status: 'pending' as LegStatus,
+            row: null,
+            view,
+            title: view.Name,
+          }
+    })
+    viewsStatus.value = viewRows.value.every((r) => r.status !== 'pending') ? 'ready' : 'pending'
+  }
+  lastLoadedAt = payload.ts
+}
+
+onMounted(() => {
+  const cached = readHomeCache()
+  if (cached) {
+    /* SWR：缓存先秒画，后台静默刷新替换 */
+    paintFromCache(cached)
+    void load({ silent: true })
+  } else {
+    void load()
+  }
+})
+
+/* 保活切回：数据还新鲜（< 5 分钟）就不重拉；过期才静默刷新，不闪骨架 */
+onActivated(() => {
+  if (loadInFlight) return
+  if (lastLoadedAt && Date.now() - lastLoadedAt > HOME_REFRESH_TTL_MS) {
+    void load({ silent: true })
+  }
 })
 </script>
 
@@ -217,7 +657,7 @@ onMounted(() => {
   <StreamShell>
     <!-- 骨架屏（录屏形态）：灰色圆角块 + 居中站标占位，尺寸与真实卡一致，
          内容到位后整体淡入替换，不白屏不跳动 -->
-    <div v-if="loading" class="sl-skel" role="status" aria-label="正在加载">
+    <div v-if="showFullSkeleton" class="sl-skel" role="status" aria-label="正在加载">
       <div class="sl-skel__hero"><span class="sl-skel__logo">A</span></div>
       <div class="sl-skel__rowhead"><span class="sl-skel__bar" style="width: 120px"></span></div>
       <div class="sl-skel__track">
@@ -233,11 +673,33 @@ onMounted(() => {
       </div>
     </div>
     <div v-else class="sl-content">
-      <StreamHero :items="heroItems" @play="onHeroPlay" />
+      <!-- Hero：pending 显示同尺寸骨架块；失败给行级重试（不挡其他行） -->
+      <div
+        v-if="heroStatus === 'pending'"
+        class="sl-skel sl-skel--heroonly"
+        role="status"
+        aria-label="正在加载"
+      >
+        <div class="sl-skel__hero"><span class="sl-skel__logo">A</span></div>
+      </div>
+      <StreamHero v-else-if="heroItems.length" :items="heroItems" @play="onHeroPlay" />
+      <div v-else-if="heroStatus === 'error' && !showFatalError" class="sl-rowerror">
+        <span>推荐内容加载失败</span>
+        <button type="button" class="sl-retry" @click="retryHero">重试</button>
+      </div>
 
+      <!-- 继续观看：pending 显示 16:9 行骨架；失败给行级重试 -->
+      <div v-if="resumeStatus === 'pending'" class="sl-rowskel" role="status" aria-label="正在加载">
+        <div class="sl-skel__rowhead"><span class="sl-skel__bar" style="width: 120px"></span></div>
+        <div class="sl-rowskel__track">
+          <div v-for="i in 3" :key="`c${i}`" class="sl-skel__ccard">
+            <span class="sl-skel__logo">A</span>
+          </div>
+        </div>
+      </div>
       <!-- 继续观看：16:9 卡约 340×191、圆角 12、无进度条（存档第 3 节）；
            录屏补充：标题带总数、卡面右上垃圾桶（隐藏）、进度文字行 -->
-      <section v-if="resumeItems.length" class="sl-continue">
+      <section v-else-if="resumeItems.length" class="sl-continue">
         <div class="sl-continue__head">
           <h2 class="sl-continue__title">
             继续观看 <span class="sl-continue__count">{{ resumeItems.length }} 部</span>
@@ -282,28 +744,98 @@ onMounted(() => {
           </RouterLink>
         </div>
       </section>
+      <div v-if="resumeStatus === 'error' && !showFatalError" class="sl-rowerror">
+        <span>继续观看加载失败</span>
+        <button type="button" class="sl-retry" @click="retryResume">重试</button>
+      </div>
 
-      <StreamRow
-        v-for="row in rows"
-        :key="row.key"
-        :title="row.title"
-        :count="row.count"
-        :more-to="row.moreTo"
+      <!-- 分区行：pending 显示一行海报骨架；失败给行级重试 -->
+      <div v-if="sectionsStatus === 'pending'" class="sl-rowskel" role="status" aria-label="正在加载">
+        <div class="sl-skel__rowhead"><span class="sl-skel__bar" style="width: 120px"></span></div>
+        <div class="sl-skel__track">
+          <div v-for="i in 5" :key="`s${i}`" class="sl-skel__poster">
+            <span class="sl-skel__logo">A</span>
+          </div>
+        </div>
+      </div>
+      <template v-else-if="sectionsStatus === 'ready'">
+        <template v-for="entry in sectionRows" :key="entry.key">
+          <StreamRow
+            v-if="entry.row"
+            :title="entry.row.title"
+            :count="entry.row.count"
+            :more-to="entry.row.moreTo"
+          >
+            <StreamPosterCard
+              v-for="item in entry.row.items"
+              :key="item.id"
+              :title="item.title"
+              :meta="item.meta"
+              :rating="item.rating"
+              :image="item.image"
+              :to="`/media/${item.id}`"
+            />
+          </StreamRow>
+        </template>
+      </template>
+      <div v-else-if="sectionsStatus === 'error' && !showFatalError" class="sl-rowerror">
+        <span>分区内容加载失败</span>
+        <button type="button" class="sl-retry" @click="retrySections">重试</button>
+      </div>
+
+      <!-- 逐库行：Views 未到先一行骨架占位；到后每库一行，各自骨架 / 内容 / 重试 -->
+      <div
+        v-if="viewsStatus === 'pending' && !viewRows.length"
+        class="sl-rowskel"
+        role="status"
+        aria-label="正在加载"
       >
-        <StreamPosterCard
-          v-for="item in row.items"
-          :key="item.id"
-          :title="item.title"
-          :meta="item.meta"
-          :rating="item.rating"
-          :image="item.image"
-          :to="`/media/${item.id}`"
-        />
-      </StreamRow>
+        <div class="sl-skel__rowhead"><span class="sl-skel__bar" style="width: 88px"></span></div>
+        <div class="sl-skel__track">
+          <div v-for="i in 5" :key="`p${i}`" class="sl-skel__poster">
+            <span class="sl-skel__logo">A</span>
+          </div>
+        </div>
+      </div>
+      <template v-for="entry in viewRows" :key="entry.key">
+        <div v-if="entry.status === 'pending'" class="sl-rowskel" role="status" aria-label="正在加载">
+          <div class="sl-skel__rowhead"><span class="sl-skel__bar" style="width: 88px"></span></div>
+          <div class="sl-skel__track">
+            <div v-for="i in 5" :key="`v${i}`" class="sl-skel__poster">
+              <span class="sl-skel__logo">A</span>
+            </div>
+          </div>
+        </div>
+        <StreamRow
+          v-else-if="entry.status === 'ready' && entry.row"
+          :title="entry.row.title"
+          :count="entry.row.count"
+          :more-to="entry.row.moreTo"
+        >
+          <StreamPosterCard
+            v-for="item in entry.row.items"
+            :key="item.id"
+            :title="item.title"
+            :meta="item.meta"
+            :rating="item.rating"
+            :image="item.image"
+            :to="`/media/${item.id}`"
+          />
+        </StreamRow>
+        <div v-else-if="entry.status === 'error' && !showFatalError" class="sl-rowerror">
+          <span>「{{ entry.title }}」加载失败</span>
+          <button type="button" class="sl-retry" @click="retryViewRow(entry)">重试</button>
+        </div>
+      </template>
+      <div v-if="viewsStatus === 'error' && !showFatalError" class="sl-rowerror">
+        <span>片库列表加载失败</span>
+        <button type="button" class="sl-retry" @click="retryViews">重试</button>
+      </div>
 
-      <div v-if="loadError && !rows.length" class="sl-error">
-        {{ loadError }}<br />
-        <button type="button" class="sl-retry" @click="load">重试</button>
+      <!-- 全部为空 / 全失败才出整页错误态 -->
+      <div v-if="showFatalError" class="sl-error">
+        片库暂时没有拉到内容<br />
+        <button type="button" class="sl-retry" @click="reloadAll">重试</button>
       </div>
       <div style="height: 40px"></div>
     </div>
@@ -370,6 +902,10 @@ onMounted(() => {
   50% { opacity: 0.55; }
 }
 @media (max-width: 767px) {
+  .sl-skel {
+    /* 手机端首页已无整条顶栏（浮动胶囊不占流），骨架不再让 76px */
+    padding-top: 20px;
+  }
   .sl-skel__poster {
     flex-basis: 152px;
   }
@@ -391,7 +927,8 @@ onMounted(() => {
 }
 .sl-continue__track {
   display: flex;
-  gap: 20px;
+  /* 卡间距：友站真机截图实测约 12（初版 20 偏空） */
+  gap: 12px;
   margin-top: 18px;
   padding: 0 clamp(16px, 5vw, 96px) 8px;
   overflow-x: auto;
@@ -493,7 +1030,63 @@ onMounted(() => {
   font-size: 14px;
   cursor: pointer;
 }
+/* 渐进渲染：行级骨架与行级错误（单条腿 pending / 失败时只占自己那一行，
+   不再整页遮挡） */
+.sl-skel--heroonly {
+  padding-bottom: 0;
+}
+.sl-rowskel {
+  padding: 0 clamp(16px, 5vw, 96px);
+}
+.sl-rowskel .sl-skel__rowhead {
+  margin: 26px 0 14px;
+}
+.sl-rowskel__track {
+  display: flex;
+  gap: 12px;
+  overflow: hidden;
+}
+.sl-skel__ccard {
+  flex: 0 0 340px;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  background: var(--uhd-s-card-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: sl-pulse 1.4s ease-in-out infinite;
+}
+.sl-rowerror {
+  margin: 26px clamp(16px, 5vw, 96px) 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--uhd-s-text-2);
+}
+.sl-rowerror .sl-retry {
+  margin-top: 0;
+}
 @media (max-width: 767px) {
+  .sl-rowskel {
+    padding: 0 16px;
+  }
+  .sl-skel__ccard {
+    flex-basis: 220px;
+  }
+  .sl-rowerror {
+    margin-left: 16px;
+    margin-right: 16px;
+  }
+}
+@media (max-width: 767px) {
+  /* 内容左右内距：友站实测 16（clamp 在 390 宽下给 19.5，偏大） */
+  .sl-continue__head {
+    padding: 0 16px;
+  }
+  .sl-continue__track {
+    padding: 0 16px 8px;
+  }
   .sl-continue__title {
     font-size: 22px;
   }

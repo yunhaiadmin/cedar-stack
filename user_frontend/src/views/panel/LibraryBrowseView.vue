@@ -16,8 +16,9 @@
  * 映射见 emby_server _query_items）。热度无全站数据源
  * （后端 PlayCount 是当前用户自己的播放次数），不冒充、不提供。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useUserStore } from '@/stores/user'
 import { ArrowDown, ArrowUp, ArrowUpDown, Check } from 'lucide-vue-next'
 import StreamShell from '@/components/stream/StreamShell.vue'
 import StreamPosterCard from '@/components/stream/StreamPosterCard.vue'
@@ -27,7 +28,11 @@ import {
   type EmbyItem,
 } from '@/api/emby'
 
+/* KeepAlive include 按组件 name 匹配：显式声明，保活命中不靠文件名推断 */
+defineOptions({ name: 'LibraryBrowseView' })
+
 const route = useRoute()
+const userStore = useUserStore()
 const kind = computed<'movie' | 'series'>(() =>
   route.path.endsWith('/series') ? 'series' : 'movie',
 )
@@ -57,9 +62,132 @@ const activeCatName = computed(
   () => categories.value.find((c) => c.id === activeCat.value)?.name || '全部',
 )
 
-async function loadCategories() {
+/** 本页读请求分级超时（毫秒）：全局 axios 默认 30s 不动，只在本页调用点覆盖 */
+const BROWSE_TIMEOUT_MS = 10_000
+/** 分类页 SWR 缓存有效期：与首页同口径 10 分钟 */
+const BROWSE_CACHE_TTL_MS = 10 * 60 * 1000
+const BROWSE_CACHE_VERSION = 1
+
+/** 只对超时 / 网络失败重试一次（HTTP 错误是服务端明确答复，不重试）——与首页 fetchHome 同口径 */
+function isTimeoutOrNetwork(err: unknown): boolean {
+  const e = err as { code?: string; response?: unknown; message?: string } | null
+  if (!e || e.response) return false
+  return (
+    e.code === 'ECONNABORTED' ||
+    e.code === 'ERR_NETWORK' ||
+    /timeout/i.test(e.message || '') ||
+    e.message === 'Network Error'
+  )
+}
+async function fetchBrowse<T>(fn: () => Promise<T>): Promise<T> {
   try {
-    const views = await embyProtocol.getViews()
+    return await fn()
+  } catch (e) {
+    if (isTimeoutOrNetwork(e)) return fn()
+    throw e
+  }
+}
+
+/* ---------- 分类页 SWR 缓存（sessionStorage，按 user id + 会话序列 + kind 隔离） ----------
+   只存第一页 DTO 与分类列表，不存拼好的图片地址（地址里带图片凭据，
+   凭据不许进缓存）。冷启动先画缓存，再后台静默刷新替换；与首页
+   aetrix:stream-home 缓存同口径（版本 + userId + sessionSeq 校验 + 10 分钟 TTL）。 */
+interface BrowseCacheData {
+  kind: 'movie' | 'series'
+  cat: string
+  sort: string
+  order: SortOrder
+  categories: Category[]
+  items: EmbyItem[]
+  total: number
+  hasMore: boolean
+}
+interface BrowseCachePayload {
+  v: number
+  ts: number
+  userId: number | string
+  seq: number
+  data: BrowseCacheData
+}
+function browseCacheKey(): string {
+  return `aetrix:library-browse:v${BROWSE_CACHE_VERSION}:${userStore.user?.id ?? 'guest'}#${userStore.sessionSeq}:${kind.value}`
+}
+function readBrowseCache(): BrowseCachePayload | null {
+  try {
+    const rawText = sessionStorage.getItem(browseCacheKey())
+    if (!rawText) return null
+    const parsed = JSON.parse(rawText) as BrowseCachePayload
+    if (
+      parsed?.v !== BROWSE_CACHE_VERSION ||
+      parsed.userId !== (userStore.user?.id ?? 'guest') ||
+      parsed.seq !== userStore.sessionSeq ||
+      typeof parsed.ts !== 'number' ||
+      Date.now() - parsed.ts > BROWSE_CACHE_TTL_MS ||
+      !parsed.data ||
+      parsed.data.kind !== kind.value ||
+      typeof parsed.data.cat !== 'string' ||
+      typeof parsed.data.sort !== 'string' ||
+      !Array.isArray(parsed.data.items) ||
+      !Array.isArray(parsed.data.categories)
+    ) {
+      sessionStorage.removeItem(browseCacheKey())
+      return null
+    }
+    return parsed
+  } catch {
+    return null
+  }
+}
+function maybeWriteBrowseCache() {
+  try {
+    if (!categories.value.length || !items.value.length || !lastLoadedAt) return
+    const payload: BrowseCachePayload = {
+      v: BROWSE_CACHE_VERSION,
+      ts: Date.now(),
+      userId: userStore.user?.id ?? 'guest',
+      seq: userStore.sessionSeq,
+      data: {
+        kind: kind.value,
+        cat: activeCat.value,
+        sort: sort.value,
+        order: sortOrder.value,
+        categories: categories.value,
+        items: items.value.slice(0, PAGE),
+        total: total.value,
+        hasMore: hasMore.value,
+      },
+    }
+    sessionStorage.setItem(browseCacheKey(), JSON.stringify(payload))
+  } catch {
+    /* 配额满 / 隐私模式：缓存写不进不影响页面 */
+  }
+}
+function applyBrowseCache(payload: BrowseCachePayload) {
+  const data = payload.data
+  sort.value = data.sort
+  sortOrder.value = data.order
+  activeCat.value = data.cat
+  categories.value = data.categories
+  items.value = data.items
+  total.value = data.total
+  hasMore.value = data.hasMore
+  loading.value = false
+  error.value = ''
+  // 缓存数据的拉取时刻：onActivated 按 5 分钟口径判断是否需要再刷
+  lastLoadedAt = payload.ts
+}
+
+/** 分类加载失败时置真（仅当尚无分类可显示时）：分类行出重试钮，正文不受影响 */
+const catError = ref(false)
+
+async function loadCategories() {
+  const myKind = kind.value
+  catError.value = false
+  try {
+    // 正文只等 views 这一条腿：getViews 带 5 分钟内存缓存（api/emby.ts），
+    // 首页已拉过；真正挡路的 N 条计数腿已拆到后台，不再等。
+    const views = await fetchBrowse(() => embyProtocol.getViews({ timeout: BROWSE_TIMEOUT_MS }))
+    if (myKind !== kind.value) return
     const list = (views || []).filter(
       (v) => (v.CollectionType || '') === collectionType.value,
     )
@@ -67,25 +195,41 @@ async function loadCategories() {
     if (list.length && !list.some((v) => v.Id === activeCat.value)) {
       activeCat.value = list[0].Id
     }
-    // 计数逐库取 TotalRecordCount（limit 1 只读计数，不拉数据）
-    await Promise.allSettled(
-      list.map(async (v) => {
-        try {
-          const res = await embyProtocol.getItems({
+    // 计数逐库取 TotalRecordCount（limit 1 只读计数，不拉数据）：后台并行，
+    // 各库回来即补胶囊数字；失败只留空、不挡页面。
+    void refreshCounts(list, myKind)
+  } catch {
+    if (myKind !== kind.value) return
+    // 已有分类在屏时静默刷新失败不清空、不打扰；只有冷启动无分类时才出重试
+    if (!categories.value.length) {
+      categories.value = []
+      catError.value = true
+    }
+  }
+}
+
+/** 计数腿：每库一个 limit=1 请求，回来即补该胶囊的数字；全部 settle 后把计数写回缓存 */
+async function refreshCounts(list: EmbyItem[], myKind: string) {
+  await Promise.allSettled(
+    list.map(async (v) => {
+      try {
+        const res = await fetchBrowse(() =>
+          embyProtocol.getItems({
             parentId: v.Id,
             includeTypes: includeTypes.value,
             limit: 1,
-          })
-          const cat = categories.value.find((c) => c.id === v.Id)
-          if (cat) cat.count = res.TotalRecordCount ?? null
-        } catch {
-          /* 计数拿不到就只显示分类名，不阻塞页面 */
-        }
-      }),
-    )
-  } catch {
-    categories.value = []
-  }
+            timeout: BROWSE_TIMEOUT_MS,
+          }),
+        )
+        if (myKind !== kind.value) return
+        const cat = categories.value.find((c) => c.id === v.Id)
+        if (cat) cat.count = res.TotalRecordCount ?? null
+      } catch {
+        /* 计数拿不到就只显示分类名，不阻塞页面 */
+      }
+    }),
+  )
+  if (myKind === kind.value) maybeWriteBrowseCache()
 }
 
 function pickCategory(id: string) {
@@ -137,31 +281,44 @@ function toggleSortOrder() {
 
 /* ---------- 条目加载（现行 getItems 口径） ---------- */
 let seq = 0
-async function load(reset = true) {
+/** 保活切回静默刷新阈值：与首页同口径 5 分钟 */
+const VIEW_REFRESH_TTL_MS = 5 * 60 * 1000
+let lastLoadedAt = 0
+/** silent = 保活切回的后台刷新：不亮骨架、失败保留已有数据不清空 */
+async function load(reset = true, silent = false) {
   const my = ++seq
   if (reset) {
-    loading.value = true
-    error.value = ''
+    if (!silent) {
+      loading.value = true
+      error.value = ''
+    }
   } else {
     loadingMore.value = true
   }
   try {
-    const res = await embyProtocol.getItems({
-      parentId: activeCat.value || undefined,
-      includeTypes: includeTypes.value,
-      startIndex: reset ? 0 : items.value.length,
-      limit: PAGE,
-      ...sortParams(),
-    })
+    const res = await fetchBrowse(() =>
+      embyProtocol.getItems({
+        parentId: activeCat.value || undefined,
+        includeTypes: includeTypes.value,
+        startIndex: reset ? 0 : items.value.length,
+        limit: PAGE,
+        ...sortParams(),
+        timeout: BROWSE_TIMEOUT_MS,
+      }),
+    )
     if (my !== seq) return
     const page = res.Items || []
     items.value = reset ? page : [...items.value, ...page]
     total.value = res.TotalRecordCount || items.value.length
     hasMore.value =
       res.HasMore !== undefined ? !!res.HasMore : items.value.length < total.value
+    if (reset) {
+      lastLoadedAt = Date.now()
+      maybeWriteBrowseCache()
+    }
   } catch (err) {
     if (my !== seq) return
-    if (reset) {
+    if (reset && !silent) {
       items.value = []
       error.value = err instanceof Error ? err.message : '加载失败'
     }
@@ -172,6 +329,16 @@ async function load(reset = true) {
     }
   }
 }
+
+/* 保活切回：数据还新鲜（< 5 分钟）不重拉；过期才静默刷新，不闪骨架 */
+onActivated(() => {
+  if (lastLoadedAt && Date.now() - lastLoadedAt > VIEW_REFRESH_TTL_MS) {
+    void (async () => {
+      await loadCategories()
+      await load(true, true)
+    })()
+  }
+})
 
 function scrollTop() {
   window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -191,17 +358,35 @@ function metaOf(item: EmbyItem): string {
 watch(kind, () => {
   activeCat.value = ''
   sortOpen.value = false
-  void (async () => {
-    await loadCategories()
-    void load(true)
-  })()
+  void reloadAll()
 })
 onMounted(() => {
-  void (async () => {
-    await loadCategories()
-    void load(true)
-  })()
+  const cached = readBrowseCache()
+  if (cached) {
+    applyBrowseCache(cached)
+    // 静默刷新：分类与正文后台并行补，不闪骨架、不清已有内容
+    void (async () => {
+      await loadCategories()
+      await load(true, true)
+    })()
+    return
+  }
+  void reloadAll()
 })
+
+/** 强制重拉（冷启动无缓存、分类重试）：views → 正文，正文不等计数 */
+async function reloadAll() {
+  loading.value = true
+  error.value = ''
+  await loadCategories()
+  await load(true)
+}
+
+/** 分类行级重试：只重拉分类 + 正文，不动其它状态 */
+function retryCategories() {
+  catError.value = false
+  void reloadAll()
+}
 </script>
 
 <template>
@@ -226,6 +411,14 @@ onMounted(() => {
             {{ c.name }}<span v-if="c.count !== null" class="lb-pill__count">{{ c.count }}</span>
           </button>
           <span v-if="!categories.length" class="lb-pill lb-pill--on">全部</span>
+          <button
+            v-if="catError && !categories.length"
+            type="button"
+            class="lb-pill lb-pill--warn"
+            @click="retryCategories"
+          >
+            分类失败 · 重试
+          </button>
         </div>
         <div class="lb-sortwrap">
           <button
@@ -371,6 +564,12 @@ onMounted(() => {
 }
 .lb-pill--on .lb-pill__count {
   color: inherit;
+  font-weight: var(--uhd-fw-semibold);
+}
+/* 分类加载失败时的行级重试（只影响分类行，不挡正文） */
+.lb-pill--warn {
+  border-color: var(--uhd-s-border);
+  color: var(--uhd-s-text);
   font-weight: var(--uhd-fw-semibold);
 }
 /* 排序单胶囊 + 下拉（约 135×40/圆角 20 口径，宽度随当前排序名） */

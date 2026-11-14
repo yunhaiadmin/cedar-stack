@@ -1,27 +1,9 @@
 <template>
   <div class="ov-page" :class="{ 'ov-dark': themeResolved === 'dark' }">
     <div class="ov-inner">
-      <!-- 页头行：品牌字标＋站名，右「网页观影」彩虹边框胶囊（→片库面 /library） -->
-      <header class="ov-topbar">
-        <div class="ov-brand">
-          <img v-if="branding.logo_url" class="ov-brand__logo" :src="branding.logo_url" :alt="branding.site_name" />
-          <span v-else class="ov-brand__mark" aria-hidden="true">{{ brandInitial }}</span>
-          <span class="ov-brand__name">{{ branding.site_name }}</span>
-        </div>
-        <RouterLink to="/library" class="watch-pill">
-          <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
-            <defs>
-              <linearGradient id="wp-g-ov" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stop-color="#2f8fe0" />
-                <stop offset="0.5" stop-color="#e8766f" />
-                <stop offset="1" stop-color="#ecd04f" />
-              </linearGradient>
-            </defs>
-            <path d="M7 4.2v15.6c0 .8.9 1.3 1.6.9l11.6-7.8c.6-.4.6-1.3 0-1.7L8.6 3.3C7.9 2.9 7 3.4 7 4.2Z" fill="url(#wp-g-ov)" />
-          </svg>
-          网页观影
-        </RouterLink>
-      </header>
+      <!-- 页头品牌行已删（2026-11-14 顶栏统一单）：顶栏由 App.vue 的
+           UhdTopBar 全区统一承接（sticky 玻璃条＋「网页观影」胶囊），
+           本页不再自带一份（原实现无彩虹边框、且不固定） -->
 
       <!-- 会员卡：白底（深色深炭）＋右上斜向粉彩渐变与细斜纹（纯 CSS 自绘） -->
       <section class="ov-card" aria-label="会员卡">
@@ -137,8 +119,23 @@
           </span>
           <ChevronRight :size="18" class="ov-row__chev" aria-hidden="true" />
         </button>
+        <!-- 我的网盘行：未绑定时点开绑盘弹层就地绑（2026-11-14 用户
+             亲点，与线路弹层同形态）；已绑定/不可用维持进设置页管理 -->
+        <button
+          v-if="driveRowVisible && driveState === 'unbound'"
+          type="button"
+          class="ov-irow"
+          @click="bindSheetOpen = true"
+        >
+          <HardDrive :size="25" class="ov-irow__icon" aria-hidden="true" />
+          <span class="ov-irow__main">
+            <span class="ov-irow__name">我的网盘</span>
+            <span class="ov-irow__sub">{{ driveMeta }}</span>
+          </span>
+          <ChevronRight :size="18" class="ov-row__chev" aria-hidden="true" />
+        </button>
         <RouterLink
-          v-if="driveRowVisible"
+          v-else-if="driveRowVisible"
           class="ov-irow"
           :to="{ path: '/game/account/settings', hash: '#my-drive' }"
         >
@@ -221,6 +218,15 @@
       :dark="themeResolved === 'dark'"
       @close="linesSheetOpen = false"
     />
+
+    <!-- 绑定谷歌盘弹层：我的网盘行未绑定时点开（2026-11-14 用户亲点，
+         与线路弹层同形态）；绑成后刷新本行状态 -->
+    <BindDriveSheet
+      :open="bindSheetOpen"
+      :dark="themeResolved === 'dark'"
+      @close="bindSheetOpen = false"
+      @bound="onDriveBound"
+    />
   </div>
 </template>
 
@@ -266,6 +272,7 @@ import {
   type TrafficSummary,
 } from '@/api/traffic'
 import ServerLinesSheet from '@/components/profile/ServerLinesSheet.vue'
+import BindDriveSheet from '@/components/profile/BindDriveSheet.vue'
 import {
   embyApi, subscriptionApi,
   type AccountCard, type MySubscription,
@@ -289,7 +296,6 @@ const userStore = useUserStore()
 const { resolved: themeResolved } = useTheme()
 
 const displayName = computed(() => userStore.user?.username || '我的')
-const brandInitial = computed(() => (branding.site_name.trim().charAt(0) || 'A').toUpperCase())
 const isFreeRealm = computed(() => userStore.isFreeRealm)
 const whitelistIdentity = computed(() => userStore.user?.whitelist_identity ?? null)
 
@@ -460,6 +466,8 @@ async function copyLineUrl(url: string) {
 }
 const driveRowVisible = ref(false)
 const driveMeta = ref('')
+const driveState = ref<'unbound' | 'bound' | 'unavailable'>('unbound')
+const bindSheetOpen = ref(false)
 async function loadDriveMeta() {
   try {
     const res = await storageBindingApi.providers()
@@ -467,10 +475,21 @@ async function loadDriveMeta() {
     driveRowVisible.value = true
     const list = await storageBindingApi.list()
     const drive = (list.bindings || []).filter(b => b.provider === 'drive')
-    if (!drive.length) driveMeta.value = '谷歌盘 · 未绑定'
-    else if (drive.some(b => b.status === 'active')) driveMeta.value = '谷歌盘 · 已绑定'
-    else driveMeta.value = '谷歌盘 · 不可用'
+    if (!drive.length) {
+      driveMeta.value = '谷歌盘 · 未绑定'
+      driveState.value = 'unbound'
+    } else if (drive.some(b => b.status === 'active')) {
+      driveMeta.value = '谷歌盘 · 已绑定'
+      driveState.value = 'bound'
+    } else {
+      driveMeta.value = '谷歌盘 · 不可用'
+      driveState.value = 'unavailable'
+    }
   } catch { /* 名单拿不到整行不渲染（与设置页门控一致） */ }
+}
+function onDriveBound() {
+  // 弹层里绑成：刷新本行状态（未绑定 → 已绑定，行随之变回进设置页管理）
+  void loadDriveMeta()
 }
 
 // ── 总览数据 ──
@@ -492,7 +511,8 @@ async function loadOverview() {
 }
 
 onMounted(() => {
-  // 旧深链（播放器方案弹窗的「去绑盘」）直达设置页绑定组
+  // 旧深链 #my-drive 仍直达设置页绑定组（行为保留；站内绑盘入口
+  // 已改弹层，这里只兜历史链接）
   if (route.hash === '#my-drive') {
     void router.replace({ path: '/game/account/settings', hash: '#my-drive' })
     return
@@ -527,59 +547,9 @@ onMounted(() => {
 .ov-inner {
   max-width: 760px;
   margin: 0 auto;
-  padding: calc(14px + env(safe-area-inset-top)) 20px 150px;
+  /* 顶部安全区已由统一顶栏（App.vue UhdTopBar）垫付，这里只留常规间距 */
+  padding: 14px 20px 150px;
   box-sizing: border-box;
-}
-
-/* 页头行 */
-.ov-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 18px;
-}
-.ov-brand {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-width: 0;
-}
-.ov-brand__logo {
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
-}
-.ov-brand__mark {
-  font-size: 26px;
-  font-weight: var(--uhd-fw-black);
-  line-height: 1;
-}
-.ov-brand__name {
-  font-size: 21px;
-  font-weight: var(--uhd-fw-extrabold);
-  letter-spacing: -0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* 网页观影入口：实测大颗软胶囊（221×62、圆角 31＝半高全胶囊）；
-   浅色近白底带粉色水洗（中心 #f9f3f3）、深色 #312d2e，无彩虹描边。
-   本端顶栏比例下按同形态缩放高度，底色/胶囊/无描边逐项对齐实测。 */
-.watch-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  height: 54px;
-  padding: 0 24px;
-  border: none;
-  border-radius: 999px;
-  background: #312d2e;
-  color: #ffffff;
-  font-size: 15px;
-  font-weight: var(--uhd-fw-semibold);
-  text-decoration: none;
-  white-space: nowrap;
 }
 
 /* 会员卡：斜向粉彩渐变＋细斜纹，圆角约 28、柔影极淡无描边
@@ -1035,11 +1005,6 @@ html[data-theme='light'] .ov-page {
   --paper-warning-soft: rgba(217, 119, 6, 0.09);
   --paper-warning: #d97706;
 }
-html[data-theme='light'] .ov-brand__name { color: #111111; }
-html[data-theme='light'] .watch-pill {
-  background: linear-gradient(180deg, #fdf8f8 0%, #f9f1f1 100%);
-  color: #111111;
-}
 html[data-theme='light'] .ov-card {
   background:
     linear-gradient(115deg, #fcfcfc 0%, #f4f0fa 14%, #ede7f7 25%, #e4dbf5 34%, #d7cdf2 42%, #c9bfef 48%, #c2b9ee 54%, #bdb6ee 59%, #b7b5ef 63%, #b0b6f0 67%, #a8b9f0 70%, #a0bbf1 73%, #d0dff9 76%, #a6c4f4 79%, #d7e6fa 82%, #b7d1f6 85%, #bed7f7 88%, #e1edfb 91%, #ccdff9 94%, #dae8fa 96%, #f2f7fd 98%, #fbfcfd 100%);
@@ -1083,7 +1048,6 @@ html[data-theme='light'] .ov-trow__value { color: #9a9da3; }
 
 /* 兜底回滚块：守卫已不再把本页钉成 light（V4_PATHS 摘除 /game/account）；
    若主题解析与 data-theme 出现竞态不一致，用户选深色时由 .ov-dark 类回滚为深色 */
-html[data-theme='light'] .ov-page.ov-dark .watch-pill { background: #312d2e; color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-card__brand { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-card__plan { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-card__user { color: rgba(255, 255, 255, 0.55); }

@@ -1,0 +1,33 @@
+/* 绑盘弹层本地主题变量（--bds-*）：缺省浅色（用户中心办事面），
+   .bds--dark 时换概览页深色令牌同值（父页按主题解析值加类）；
+   片库面（播放器弹层内）由 body.uhd-stream-dark 标记桥接深色值，
+   与 StreamShell 浮层同口径。定义放在独立样式表供设计令牌契约
+   核查，由 BindDriveSheet.vue 引入；组件 scoped 样式只引用不定义
+   （契约只认被引入的 .css）。数值与 server-lines-sheet.css 同源。 */
+
+.bds-overlay {
+  --bds-card: #ffffff;
+  --bds-text: #111111;
+  --bds-sub: #9a9da3;
+  --bds-divider: #e5e5e7;
+  --bds-link-hover: #f5f5f5;
+  --bds-input-bg: #f5f5f5;
+  --bds-input-border: #e5e5e7;
+  --bds-error-bg: rgba(220, 38, 38, 0.07);
+  --bds-error-text: #dc2626;
+  --bds-ok: #16a34a;
+}
+
+.bds-overlay.bds--dark,
+body.uhd-stream-dark .bds-overlay {
+  --bds-card: #17181c;
+  --bds-text: #ffffff;
+  --bds-sub: rgba(255, 255, 255, 0.42);
+  --bds-divider: #26262a;
+  --bds-link-hover: rgba(255, 255, 255, 0.05);
+  --bds-input-bg: rgba(255, 255, 255, 0.06);
+  --bds-input-border: rgba(255, 255, 255, 0.16);
+  --bds-error-bg: rgba(248, 113, 113, 0.12);
+  --bds-error-text: #f87171;
+  --bds-ok: #4ade80;
+}

@@ -80,6 +80,7 @@ from backend.api.admin_apikey import router as admin_apikey_router
 from backend.api.orders_admin import admin_orders_router
 from backend.api.coupons_admin import admin_coupons_router
 from backend.api.admin_player_blacklist import admin_player_blacklist_router
+from backend.api.admin_softdecode import admin_softdecode_router
 from backend.api.install_app import (
     admin_install_app_router,
     user_install_app_router,
@@ -121,6 +122,7 @@ from backend.api.emby_portal import auth_router, password_reset_router
 from backend.api.account_security import platform_router, security_router
 from backend.api.economy import router as economy_router
 from backend.api.invitation import router as invitation_router
+from backend.api.admin_invitation import router as admin_invitation_router
 from backend.api.teams import router as teams_router
 from backend.api.welfare_reviews import router as welfare_reviews_router
 from backend.api.tg_bind import router as tg_bind_router
@@ -855,6 +857,8 @@ app.include_router(admin_orders_router)
 app.include_router(admin_coupons_router)
 # 播放器登录黑名单（2026-10-30）：规则读写，见 backend/api/admin_player_blacklist.py
 app.include_router(admin_player_blacklist_router)
+# 网页软解开关（2026-11-14 批 2）：开关读写，见 backend/api/admin_softdecode.py
+app.include_router(admin_softdecode_router)
 # 安装应用页（2026-11-13）：用户端页面数据 + 管理端下载链接配置，
 # 见 backend/api/install_app.py
 app.include_router(user_install_app_router)
@@ -992,6 +996,7 @@ app.include_router(platform_router)
 # 用户经济系统（签到/兑换码/支付/订单）与邀请返利
 app.include_router(economy_router)
 app.include_router(invitation_router)
+app.include_router(admin_invitation_router)
 app.include_router(teams_router)
 app.include_router(welfare_reviews_router)
 app.include_router(tg_bind_router)

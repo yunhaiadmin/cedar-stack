@@ -140,34 +140,71 @@ export interface OrderRow {
   coupon_code?: string
 }
 
+/** 返利口径（钱包配置键现读）：mode=tiered 时按每位好友累计付费分档 */
+export interface InviteRebateConfig {
+  mode: 'flat' | 'tiered'
+  percent: number
+  cap_fen: number
+  tier_threshold_fen: number
+  tier_percent: number
+}
+
+/** 福利邀请（送好友试用）口径：天数 0 / 次数 0 = 不实际发放 */
+export interface InviteTrialConfig {
+  enabled: boolean
+  days: number
+  monthly_limit: number
+  min_paid_fen: number
+}
+
+export interface InviteConfig {
+  enabled: boolean
+  rebate: InviteRebateConfig
+  trial: InviteTrialConfig
+}
+
+export interface InviteWelfareStatus extends InviteTrialConfig {
+  used_this_month: number
+  inviter_paid_fen: number
+  eligible: boolean
+}
+
 export interface MyInviteInfo {
   code: string
   use_count: number
   max_uses: number
   invited_count: number
-  config: {
-    enabled: boolean
-    reward_points: number
-    invitee_reward_points: number
-    rebate_percent: number
-  }
+  username: string
+  config: InviteConfig
+  /** 累计返利汇总（元，字符串保精度）：已入账 + 待入账 */
+  rebate_totals: { credited: string; pending: string; count: number }
+  welfare: InviteWelfareStatus
 }
 
 export interface InvitationRecordRow {
   id: number
+  /** 脱敏后的好友名（后端打码，只露首尾） */
   invitee_username: string
   reward_points: number
-  /** 累计返利（台账口径）：后端按充值订单归属从返利流水拆算，只记账不发放 */
+  /** 是否已付费（有已支付订阅订单） */
+  paid: boolean
+  /** 该好友累计产生的返利（元，计提台账口径） */
   rebate_total: number
   created_at: string | null
 }
 
+/** 返利明细一笔（计提台账）：金额为元的字符串 */
 export interface RebateRow {
   id: number
-  amount: number
-  description: string | null
-  ref_id: string | null
+  invitee_username: string
+  source: string
+  source_ref: string
+  paid_amount: string
+  rebate_amount: string
+  percent: number
+  status: 'pending' | 'credited'
   created_at: string | null
+  credited_at: string | null
 }
 
 /** 推广奖励一笔（v2.44.0）：邀请成功后另发的，类型余额/有效期，数值全在服务端配置里 */
@@ -610,12 +647,14 @@ export const paymentApi = {
 // ==================== 邀请返利 ====================
 
 export const inviteApi = {
-  config: () => api.get<never, MyInviteInfo['config']>('/api/user/invite/config'),
+  config: () => api.get<never, InviteConfig>('/api/user/invite/config'),
   myCode: () => api.get<never, MyInviteInfo>('/api/user/invite/my-code'),
+  /** 换一个邀请码：旧码即刻失效（已建关系不受影响），返回新码全量信息 */
+  regenerate: () => api.post<never, MyInviteInfo>('/api/user/invite/my-code/regenerate'),
   records: (params?: { limit?: number }) =>
     api.get<never, { total: number; records: InvitationRecordRow[] }>('/api/user/invite/records', { params }),
   rebates: (params?: { limit?: number }) =>
-    api.get<never, { total_rebate: number; rebates: RebateRow[] }>('/api/user/invite/rebates', { params }),
+    api.get<never, { total_rebate: number; credited: string; pending: string; rebates: RebateRow[] }>('/api/user/invite/rebates', { params }),
   /** 我的推广奖励明细（邀请即发的一次性奖励，与充值返利分开两张表） */
   promotions: (params?: { limit?: number }) =>
     api.get<never, MyPromotions>('/api/user/invite/promotions', { params }),
