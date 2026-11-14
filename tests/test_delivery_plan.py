@@ -116,16 +116,13 @@ def test_plan_preparing_leg_with_progress(db):
     assert leg["progress_pct"] == 40
 
 
-def test_plan_mount_and_upstream_legs(db, monkeypatch):
+def test_plan_mount_leg(db, monkeypatch):
     item = _item(db)
     monkeypatch.setattr(
         "backend.emby_server.mount_serving.resolve_local_file",
         lambda db_, it: "/mnt/x/a.mkv")
-    monkeypatch.setattr(
-        "backend.emby_server.upstream_item_mappings.get_best_mapping",
-        lambda db_, iid, validate=True: SimpleNamespace(id=5))
     plan = dp.build_plan(db, 7, item)
-    assert _legs(plan) == ["mount_direct", "upstream", "legacy"]
+    assert _legs(plan) == ["mount_direct", "legacy"]
 
 
 def test_plan_probe_failure_isolated(db, monkeypatch):

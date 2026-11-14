@@ -52,12 +52,8 @@ from backend.emby_server import models as em
 
 logger = logging.getLogger(__name__)
 
-#: scope 取值：转存门禁 / 上游聚合开轮
+#: scope 取值：转存门禁
 SCOPE_TRANSFER_GATE = "transfer_gate"
-SCOPE_UPSTREAM_AGGREGATE = "upstream_aggregate"
-
-#: 聚合开轮的裁决常量（门禁侧直接用 verdict 原文）
-DECISION_ROUND_OPENED = "round_opened"
 
 #: 保留期配置键与默认值（天）
 RETENTION_KEY = "transfer_decision_rounds_retention_days"

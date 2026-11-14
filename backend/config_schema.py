@@ -532,60 +532,6 @@ MP_EPISODE_FILL_CONFIG_SCHEMA: dict[str, tuple] = {
 }
 
 
-# 上游线路播放配置家族：拉取/聚合任务参数已随上游聚合整族删除，
-# 本家族只剩 upstream_playback 读取的线路配置键（详情线路开关、
-# 降权名单、专属线路与 pilot 入口）。纯 SystemConfig 键，不进
-# env.example（#1527 先例）。
-UPSTREAM_AGGREGATE_CONFIG_SCHEMA: dict[str, tuple] = {
-    # U-02 详情页上游线路：开时有映射的条目在详情/PlaybackInfo 来源
-    # 列表多一条「上游 · <源名>」线路（点它走上游取流口现查映射起播）；
-    # 关时列表不出现、取流口 404。无行＝开（读取方默认 True，
-    # 见 upstream_playback.detail_line_enabled）。
-    "upstream_aggregate_detail_line_enabled": ("bool",),
-    # CMS 线路档位降权（2026-11-03 印制广告摸底处置，用户亲点）：
-    # 名单内的源在详情/PlaybackInfo 线路排序里沉到同健康层最后、
-    # 只作兜底（线不删、仍可播）。无行＝代码默认名单（红牛/光速/
-    # IKUN/虎牙/鲸鱼/爱蛋/茅台/速博，见 upstream_playback
-    # .DEFAULT_DEMOTED_SOURCE_IDS），空串删行回默认；读取唯一实现
-    # upstream_playback.demoted_source_ids（store 热读）。纯
-    # SystemConfig 键，不进 env.example。
-    "upstream_aggregate_demoted_source_ids": ("int_list", 1, 1000000),
-    # 白名单专属线路（2026-11-04）：名单内的源，白名单用户播无界片
-    # 时多一条经飞牛家宽回源的「专属线路」，普通用户不可见。无默认：
-    # 无行/空行＝空集＝功能惰性；种子（飞牛试点已验的暴风/如意）经
-    # 配置落，不进代码。读取唯一实现 upstream_playback
-    # .exclusive_source_ids（store 热读）。管理入口在管理后台
-    # 「上游源」页（/upstream-exclusive-line-config）。纯 SystemConfig
-    # 键，不进 env.example。
-    "upstream_aggregate_exclusive_source_ids": ("int_list", 1, 1000000),
-    # 飞牛试点基址：形如 https://pilot.example.com/p/<TOKEN>，路径
-    # token 只许经配置注入（从飞牛本地 token.txt 读出后写入），不许
-    # 进代码与仓库。空串/无行＝未配，专属线路整体惰性。读取唯一实现
-    # upstream_playback.feiniu_pilot_base_url。纯 SystemConfig 键。
-    "feiniu_pilot_base_url": ("str",),
-    # pilot 独立入口（2026-11-05 形态改定）：pilot 域名经飞牛反代
-    # 成为独立入口，飞牛注入标记头 X-Aetrix-Pilot-Entry，其值须与
-    # pilot_entry_secret 完全一致且 pilot_entry_enabled 为开，后端
-    # 才认定 pilot 入口（值不对/未配一律普通入口）。密钥只回已配
-    # 状态、原文不回浏览器（管理口在 upstream-exclusive-line-config
-    # 扩展）。读取唯一实现 upstream_playback.pilot_entry_enabled /
-    # pilot_entry_secret（store 热读）。纯 SystemConfig 键，不进
-    # env.example。
-    "pilot_entry_enabled": ("bool",),
-    "pilot_entry_secret": ("str",),
-    # 专属线路通用能力（2026-11-05）：线路记录集（JSON 数组文本），
-    # 一条线路＝名称/入口地址/取流基址/入口密钥/准入人群/适用范围/
-    # 启用开关/存量旧地址名单。上面四个旧键（exclusive_source_ids /
-    # feiniu_pilot_base_url / pilot_entry_enabled /
-    # pilot_entry_secret）只在新键缺失时被一次性迁移读取，新键落库
-    # 后不再是运行时判定来源。读写唯一实现在 upstream_playback
-    # .exclusive_lines / save_exclusive_lines（store 热读）。取流
-    # 基址与入口密钥含口令/密钥，只回已配状态、原文不回浏览器。
-    # 纯 SystemConfig 键，不进 env.example。
-    "exclusive_lines": ("str",),
-}
-
-
 
 
 def coerce_player_blacklist_rules(value: Any, *, strict: bool) -> list[dict]:

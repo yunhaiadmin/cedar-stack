@@ -212,11 +212,13 @@ const navGroups: NavGroup[] = [
       { path: '/identify-review', label: '识别审查', icon: ListChecks },
       // 缺集清单：哪部剧缺哪几集、缺了多久、几个人在求补
       { path: '/missing-episodes', label: '缺集清单', icon: ListChecks },
-      // 上游源：别人的媒体服当作源接进来（#25 25-1 只做源管理）
-      { path: '/upstream-sources', label: '上游源', icon: Server },
+      // 存储绑定 / 139 账号池 / sidecar 观测：原「上游源」页的三个标签页，
+      // 上游源随上游全清删除后恢复独立入口（批 3 合并入上游源页的布局随之撤销）
+      { path: '/storage-bindings', label: '存储绑定', icon: Database },
+      { path: '/yun139-pools', label: '139 账号池', icon: Users },
+      { path: '/provider-sidecar', label: '观测·sidecar', icon: Activity },
       // 贡献池：用户贡献盘组成的公共缓存池，成员生命周期管理（goal-33 PR-4）
       { path: '/pool', label: '贡献池', icon: Users },
-      // 重新布局批 3：四观测页降为上游源页标签，导航不再单列（旧路由跳到对应标签）
       // 重新布局批 5：115/GDrive 账号降为服务器与线路页「存储账号」标签，导航不再单列（旧路由跳到对应子标签）
     ],
   },

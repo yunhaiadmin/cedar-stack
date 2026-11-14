@@ -66,7 +66,7 @@ from backend.emby_server import reachability
 from backend.emby_server import scan_queue
 from backend.emby_server import soft_delete
 from backend.emby_server import transfer115
-from backend.emby_server.upstream_sources import SealedSecretError, seal_secret
+from backend.emby_server.secret_sealing import SealedSecretError, seal_secret
 
 logger = logging.getLogger(__name__)
 

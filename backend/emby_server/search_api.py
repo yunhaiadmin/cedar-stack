@@ -116,13 +116,11 @@ def search_hints(request: Request, user: models.WebUser = Depends(get_emby_user)
 @search_router.get("/UnifiedSearch")
 def unified_search(request: Request, user: models.WebUser = Depends(get_emby_user),
                    db: Session = Depends(get_db)):
-    """跨服统一搜索（第二批第 1 单）：一个入口搜本站库 + 已启用上游源。
+    """统一搜索（第二批第 1 单）：本站库的聚合搜索口。
 
     只读：本站侧走与 /Search/Hints 同一套预筛（_search_clauses）与
-    精排（rank_items）；上游侧逐源只读现查（unified_search.
-    search_upstream_source），绝不触发聚合、不写库、不建映射。
+    精排（rank_items），经 unified_search 的聚合层成形响应。
     开关 UNIFIED_SEARCH_ENABLED 默认关，关时 404，全站逐字不变。
-    上游源 id 过滤：?source=1,2（也接受 upstream:1 写法）。
     前端注意：独立搜索页调用本口；发现页（首页）不挂本口（首页冻结令）。
     """
     if not unified.unified_search_enabled():
@@ -135,8 +133,6 @@ def unified_search(request: Request, user: models.WebUser = Depends(get_emby_use
         limit = max(1, min(int(q.get("Limit") or 20), 100))
     except ValueError:
         limit = 20
-    source_filter = unified.normalize_source_filter(
-        [t for t in (q.get("source") or "").split(",") if t.strip()] or None)
     include = [t.strip().lower() for t in (q.get("IncludeItemTypes") or "").split(",") if t.strip()]
 
     query = db.query(em.MediaItem).filter(em.MediaItem.is_hidden == False)  # noqa: E712
@@ -168,27 +164,5 @@ def unified_search(request: Request, user: models.WebUser = Depends(get_emby_use
             name=it.name, item_type=it.item_type or "",
             production_year=it.production_year))
 
-    per_source = {}
-    enabled_sources = (db.query(em.UpstreamSource)
-                       .filter(em.UpstreamSource.enabled == True)  # noqa: E712
-                       .order_by(em.UpstreamSource.id).all())
-    for source in enabled_sources:
-        source_id = str(source.id)
-        if source_filter is not None and source_id not in source_filter:
-            # 被滤掉的源仍须进 per_source：merge 层靠“键在场 + 未被请求”
-            # 才标 not_requested；直接 continue 会让该源在 sources 里消失，
-            # 与统一搜索“被滤源标 not_requested、不冒充已查”的约定相悖。
-            # 值置 None（不发 HTTP、不查源），merge 在 not_requested 分支
-            # 直接返回，不 inspect 该值。
-            per_source[source_id] = None
-            continue
-        if (source.source_type or "") == "applecms":
-            per_source[source_id] = (
-                "applecms 型源不走 Emby 搜索口（走苹果 CMS 同步口，另议）")
-            continue
-        records, error = unified.search_upstream_source(source, term)
-        per_source[source_id] = error if error else records
-
-    merged = unified.merge_search_results(
-        local_entries, per_source, term, source_filter=source_filter)
+    merged = unified.merge_search_results(local_entries, term)
     return unified.to_response_body(merged, limit=limit)

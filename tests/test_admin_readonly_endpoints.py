@@ -63,7 +63,7 @@ def _hygiene_module_engine():
 def db():
     s = SessionLocal()
     try:
-        for table in (em.UserStorageBinding, em.UpstreamItemMapping,
+        for table in (em.UserStorageBinding,
                       em.Yun139AccountPoolMember, em.Yun139AccountPool,
                       em.MediaItem, base_models.WebUser):
             s.query(table).delete()

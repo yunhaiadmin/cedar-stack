@@ -26,7 +26,7 @@ from backend.emby_server import models as em
 from backend.emby_server import drive_oauth as do
 from backend.emby_server import transfer_variant as tv
 from backend.emby_server import user_bindings as ub
-from backend.emby_server.upstream_sources import seal_secret, unseal_secret
+from backend.emby_server.secret_sealing import seal_secret, unseal_secret
 
 
 @pytest.fixture()

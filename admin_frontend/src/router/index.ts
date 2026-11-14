@@ -75,15 +75,14 @@ const routes: RouteRecordRaw[] = [
       { path: 'identify-review', name: 'IdentifyReview', component: () => import('@/views/IdentifyReview.vue'), meta: { title: '识别审查' } },
       // 缺集清单（缺集全套）：核算工人台账的只读面，管理员对着清单补源
       { path: 'missing-episodes', name: 'MissingEpisodes', component: () => import('@/views/MissingEpisodes.vue'), meta: { title: '缺集清单' } },
-      // 上游源（FMBY #25 25-1）：只做源管理，聚合/探活/播放接入是后续步骤
-      { path: 'upstream-sources', name: 'UpstreamSources', component: () => import('@/views/UpstreamSources.vue'), meta: { title: '上游源' } },
       { path: 'pool', name: 'PoolAdmin', component: () => import('@/views/PoolAdmin.vue'), meta: { title: '贡献池' } },
       // 双盘审计台账已并入「操作日志」页的双盘审计标签（Logs.vue ?tab=audit）：旧地址跳到对应标签，收藏不会 404
       { path: 'audit', redirect: { path: '/logs', query: { tab: 'audit' } } },
-      // 专线 B 第二阶段 · 只读观测口（GET，仅展示）
-      { path: 'storage-bindings', redirect: { path: '/upstream-sources', query: { tab: 'bindings' } } },
-      { path: 'yun139-pools', redirect: { path: '/upstream-sources', query: { tab: 'pools' } } },
-      { path: 'provider-sidecar', redirect: { path: '/upstream-sources', query: { tab: 'sidecar' } } },
+      // 原「上游源」页的三个观测标签（存储绑定 / 139 账号池 / sidecar）：
+      // 上游源页已随上游全清删除，三页恢复独立路由（地址不变）。
+      { path: 'storage-bindings', name: 'StorageBindings', component: () => import('@/views/StorageBindings.vue'), meta: { title: '存储绑定' } },
+      { path: 'yun139-pools', name: 'Yun139Pools', component: () => import('@/views/Yun139Pools.vue'), meta: { title: '139 账号池' } },
+      { path: 'provider-sidecar', name: 'ProviderSidecar', component: () => import('@/views/ProviderSidecar.vue'), meta: { title: '观测·sidecar' } },
       // 「存储来源」独立页已于 v2.42.15 撒销：挂载建在「添加服务器」弹窗里（按服务器配置），
       // 目录浏览 / 体检 / 编辑都已搬过去。旧地址跳到服务器页，别人的书签不至于 404。
       { path: 'mounts', redirect: '/servers' },

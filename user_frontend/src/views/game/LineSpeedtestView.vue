@@ -22,8 +22,7 @@
  *   单次测速最长 180 秒，超时中止并如实标注。
  *
  * 线路清单只来自现行配置下发，不写死任何线路名/地址：
- *   - 播放线路：账号卡 GET /api/user/emby/server 的 realms[].base_url；
- *   - 专属线路：GET /api/user/exclusive-lines（够格才下发）。
+ *   - 播放线路：账号卡 GET /api/user/emby/server 的 realms[].base_url。
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
@@ -34,7 +33,7 @@ import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 import UhdButton from '@/components/uhd/UhdButton.vue'
 import UhdEmptyState from '@/components/uhd/UhdEmptyState.vue'
 import { embyApi } from '@/api'
-import { getMyExclusiveLines, getMyNetworkInfo, type MyNetworkInfo } from '@/api/user'
+import { getMyNetworkInfo, type MyNetworkInfo } from '@/api/user'
 import {
   SPEEDTEST_SIZES_MB, buildDirectRules, buildProxyRules, formatBytes,
   lineKindOf, proxyHintFor, type LineKind, type SpeedtestSizeMb,
@@ -174,14 +173,7 @@ async function loadLines() {
       seen.add(top)
       rows.push(makeOption(card.realm_name || card.server_name || '主线路', top))
     }
-  } catch { /* 账号卡失败：专属线路还能单独成页；两边都空才算加载失败 */ }
-  const mine = await getMyExclusiveLines()
-  for (const l of mine) {
-    const url = (l.entry_url ?? '').trim()
-    if (!url || seen.has(url)) continue
-    seen.add(url)
-    rows.push(makeOption(l.name, url))
-  }
+  } catch { /* 账号卡失败：清单为空即加载失败 */ }
   lines.value = rows
   if (rows.length && !rows.some(r => r.key === selectedKey.value)) {
     selectedKey.value = rows[0].key
@@ -337,7 +329,7 @@ onBeforeUnmount(() => {
         v-else-if="!lines.length"
         variant="icon"
         title="暂无可用线路"
-        desc="你的账号下暂无服务器地址与专属线路，绑定或开通后这里会列出可测的线路。"
+        desc="你的账号下暂无服务器地址，绑定或开通后这里会列出可测的线路。"
       >
         <template #icon><Gauge :size="24" /></template>
       </UhdEmptyState>

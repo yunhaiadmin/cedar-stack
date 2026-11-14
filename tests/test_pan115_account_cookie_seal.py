@@ -19,7 +19,7 @@ from backend import models as base_models
 from backend.emby_server import models as em
 from backend.emby_server import portal as portal_mod
 from backend.emby_server import transfer115 as t115
-from backend.emby_server.upstream_sources import seal_secret
+from backend.emby_server.secret_sealing import seal_secret
 
 PLAINTEXT = "fake-uid-12345_fake-cookie-value-abcdef"
 

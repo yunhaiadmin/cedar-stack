@@ -18,7 +18,7 @@ from backend import models as base_models
 from backend.emby_server import models as em
 from backend.emby_server import mount_source_credentials as msc
 from backend.emby_server import mounts as mounts_mod
-from backend.emby_server import upstream_sources as ups
+from backend.emby_server import secret_sealing as ups
 
 
 @pytest.fixture()

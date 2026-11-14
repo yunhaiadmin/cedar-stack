@@ -3,20 +3,17 @@
  *   - 播放线路：账号卡 GET /api/user/emby/server 的 realms[]（每项
  *     name/base_url；没查看权限的服 base_url 为空，自动滤掉）；
  *     顶层 base_url 是当前服（默认线路），realms 没带时用它补一行。
- *   - 专属线路：GET /api/user/exclusive-lines（只有够格用户才下发，
- *     无资格回空列表）。
  * 两组按规范化 URL 去重（去尾斜杠）。线路只是「入口地址」：选线后
  * 本次播放的 EA 请求（PlaybackInfo / 会话上报）改走该入口，流地址
  * 仍由服务端按现行策略下发，前端不拼、不改签名。
  */
 import { embyApi } from '@/api'
-import { getMyExclusiveLines } from '@/api/user'
 
 export interface PlayLine {
   key: string
   name: string
   url: string
-  kind: 'realm' | 'exclusive'
+  kind: 'realm'
 }
 
 export interface PlayLinesResult {
@@ -61,11 +58,7 @@ export function loadPlayLines(): Promise<PlayLinesResult> {
       if (defaultUrl && !seen.has(defaultUrl)) {
         push('realm', card.realm_name || card.server_name || '主线路', defaultUrl)
       }
-    } catch { /* 账号卡失败：专属线路还能单独成列；都空则调用方隐藏选线 */ }
-    const mine = await getMyExclusiveLines()
-    for (const l of mine) {
-      push('exclusive', l.name, l.entry_url ?? '')
-    }
+    } catch { /* 账号卡失败：清单为空，调用方据此隐藏选线 */ }
     return { lines, defaultUrl }
   })().finally(() => {
     inflight = null

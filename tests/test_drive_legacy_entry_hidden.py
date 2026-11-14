@@ -29,7 +29,7 @@ from backend import realms
 from backend.emby_server import models as em
 from backend.emby_server import drive_oauth as do
 from backend.emby_server import portal
-from backend.emby_server.upstream_sources import seal_secret
+from backend.emby_server.secret_sealing import seal_secret
 from backend.integrations import store
 
 

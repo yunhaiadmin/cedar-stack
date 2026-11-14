@@ -10,7 +10,7 @@
 4. 凭据密封：复用 25-1 ``seal_secret``；KEK 目录只从配置读。
    KEK 文件信封与源级凭据迁移是清单第 4 步，已落地
    ``mount_source_credentials``（25-1 旧密封行由新模块经
-   ``upstream_sources.unseal_secret`` 读；行级 KEK 分发只走新模块，
+   ``secret_sealing.unseal_secret`` 读；行级 KEK 分发只走新模块，
    不许两处各写一套）。
 
 **权威切换（清单第 2 项）**：来源解析的权威从旧列切到新表——扫描、

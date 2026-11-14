@@ -182,10 +182,9 @@ def compute_play_status(db: Session, user, item) -> dict:
         out.update(state="ready", source="pool")
         return out
 
-    # 3) 条目本身可直读（挂载直读 / 上游映射）——仅单条目口径。
+    # 3) 条目本身可直读（挂载直读）——仅单条目口径。
     if not is_series:
-        for probe in (delivery_plan._probe_mount_direct,
-                      delivery_plan._probe_upstream):
+        for probe in (delivery_plan._probe_mount_direct,):
             try:
                 leg = probe(db, item)
             except Exception:  # noqa: BLE001

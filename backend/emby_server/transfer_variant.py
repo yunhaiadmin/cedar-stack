@@ -1894,7 +1894,7 @@ def _active_binding(db, user_id, provider):
 
     只取本人行，绝不跨用户；绑定行本身不携带凭据原文，凭据由
     各执行器按绑定行另行解封（Drive 走 drive_oauth、115 走
-    upstream_sources.unseal_secret），本函数不碰凭据。
+    secret_sealing.unseal_secret），本函数不碰凭据。
     已下线 provider（pan115/quark，2026-11-02 删除单）恒回
     None：存量绑定行视为不存在——门禁 counterpart 只剩 Drive、
     建单前置校验按无绑定拒绝、预热/想看等消费方同口径。

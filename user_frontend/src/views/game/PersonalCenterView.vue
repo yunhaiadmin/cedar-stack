@@ -208,30 +208,6 @@
           </span>
           <ChevronRight :size="18" class="ov-row__chev" aria-hidden="true" />
         </RouterLink>
-        <button
-          v-if="myLines.length"
-          type="button"
-          class="ov-irow ov-irow--btn"
-          :aria-expanded="linesOpen"
-          @click="linesOpen = !linesOpen"
-        >
-          <Route :size="25" class="ov-irow__icon" aria-hidden="true" />
-          <span class="ov-irow__main">
-            <span class="ov-irow__name">我的专属线路</span>
-            <span class="ov-irow__sub">{{ myLines.length }} 条可用 · 点开查看与复制地址</span>
-          </span>
-          <ChevronRight :size="18" class="ov-row__chev" :class="{ 'ov-row__chev--open': linesOpen }" aria-hidden="true" />
-        </button>
-        <div v-if="myLines.length && linesOpen" class="ov-lines">
-          <div v-for="line in myLines" :key="line.entry_url" class="ov-line-row">
-            <span class="ov-line-main">
-              <span class="ov-line-name">{{ line.name }}</span>
-              <span class="ov-line-url">{{ line.entry_url }}</span>
-            </span>
-            <button type="button" class="ov-copy-btn" @click="copyLineUrl(line.entry_url)">复制地址</button>
-          </div>
-          <p class="ov-line-note">在播放器里添加服务器时填这些地址，就走你的专属线路进服。</p>
-        </div>
       </section>
 
       <!-- 登录设备卡：数据源＝用户侧设备接口（deviceApi.mine），拿不到整段不渲染 -->
@@ -347,7 +323,6 @@ import {
   deviceApi, storageBindingApi,
   type MyDevice, type MyDevicesResponse,
 } from '@/api/economy'
-import { getMyExclusiveLines, type MyExclusiveLine } from '@/api/user'
 import { useUserStore } from '@/stores/user'
 import { branding } from '@/composables/useBranding'
 import { useTheme } from '@/composables/useTheme'
@@ -576,17 +551,7 @@ async function loadDevices() {
 
 
 // ── 我的服务 ──
-const myLines = ref<MyExclusiveLine[]>([])
-const linesOpen = ref(false)
 const linesSheetOpen = ref(false)
-async function copyLineUrl(url: string) {
-  try {
-    await navigator.clipboard.writeText(url)
-    toast.success('线路地址已复制，去播放器里添加服务器时粘贴它')
-  } catch {
-    toast.error('复制失败，请长按地址手动复制')
-  }
-}
 const driveRowVisible = ref(false)
 const driveMeta = ref('')
 const driveState = ref<'unbound' | 'bound' | 'unavailable'>('unbound')
@@ -639,7 +604,6 @@ onMounted(() => {
   void loadRecords()
 
   void loadDriveMeta()
-  void getMyExclusiveLines().then(lines => { myLines.value = lines }).catch(() => {})
 })
 </script>
 
@@ -989,55 +953,6 @@ html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ov-lines {
-  padding: 6px 2px 4px;
-  border-bottom: 1px solid #26262a;
-}
-.ov-line-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 0;
-}
-.ov-line-row + .ov-line-row {
-  border-top: 1px dashed #26262a;
-}
-.ov-line-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.ov-line-name {
-  font-size: 14.5px;
-  font-weight: var(--uhd-fw-semibold);
-}
-.ov-line-url {
-  font-size: 12.5px;
-  color: rgba(255, 255, 255, 0.42);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.ov-copy-btn {
-  flex: 0 0 auto;
-  padding: 8px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
-  background: #17181c;
-  color: rgba(255, 255, 255, 0.62);
-  font-family: inherit;
-  font-size: 12.5px;
-  cursor: pointer;
-}
-.ov-line-note {
-  margin: 0;
-  padding: 8px 0 10px;
-  font-size: 12.5px;
-  line-height: 1.6;
-  color: rgba(255, 255, 255, 0.42);
-}
 
 /* 设备行 */
 .ov-drow {
@@ -1332,11 +1247,7 @@ html[data-theme='light'] .ov-irow { border-bottom-color: #e5e5e7; color: #111111
 html[data-theme='light'] .ov-irow__icon { color: #111111; }
 html[data-theme='light'] .ov-irow__name { color: #111111; }
 html[data-theme='light'] .ov-irow__sub { color: #9a9da3; }
-html[data-theme='light'] .ov-lines { border-bottom-color: #e5e5e7; }
-html[data-theme='light'] .ov-line-row + .ov-line-row { border-top-color: #e5e5e7; }
-html[data-theme='light'] .ov-line-url { color: #9a9da3; }
 html[data-theme='light'] .ov-copy-btn { background: #ffffff; border-color: #e7e7e7; color: #55575c; }
-html[data-theme='light'] .ov-line-note { color: #9a9da3; }
 html[data-theme='light'] .ov-drow { border-bottom-color: #e5e5e7; }
 html[data-theme='light'] .ov-drow__icon { color: #111111; }
 html[data-theme='light'] .ov-drow__name { color: #111111; }
@@ -1391,9 +1302,7 @@ html[data-theme='light'] .ov-page.ov-dark .ov-row__chev { color: rgba(255, 255, 
 html[data-theme='light'] .ov-page.ov-dark .ov-irow__icon { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-irow__name { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-irow__sub { color: rgba(255, 255, 255, 0.42); }
-html[data-theme='light'] .ov-page.ov-dark .ov-line-url { color: rgba(255, 255, 255, 0.42); }
 html[data-theme='light'] .ov-page.ov-dark .ov-copy-btn { background: #17181c; color: rgba(255, 255, 255, 0.62); }
-html[data-theme='light'] .ov-page.ov-dark .ov-line-note { color: rgba(255, 255, 255, 0.42); }
 html[data-theme='light'] .ov-page.ov-dark .ov-drow__icon { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-drow__name { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-drow__status { color: rgba(255, 255, 255, 0.42); }

@@ -7,12 +7,11 @@
 
 - 计划＝(用户, 条目) → 有序腿清单，落 ``playback_delivery_plans``
   一行：本人 ready 副本直出 → 本人副本制备中（带交付进度）→
-  挂载直读 → 上游 302 → 现行兜底序（legacy 终局腿恒在）。
+  挂载直读 → 现行兜底序（legacy 终局腿恒在）。
 - 腿的可用性由探针在**平时**算（PlaybackInfo 顺手刷新、用户
   转存单完成时刷新）：副本状态走 transfer_variant 的同一查询
   口径、制备进度读 transfer_deliveries 落盘、挂载腿问
-  mount_serving.resolve_local_file、上游腿问
-  upstream_item_mappings.get_best_mapping。每个探针独立
+  mount_serving.resolve_local_file。每个探针独立
   fail-open：探针炸了只是这条腿缺席，绝不打挂建计划。
 - 点播热路径（video_stream）只读未过期计划：顶腿是本人
   ready 副本时，按 PK 复核变体行（status/归属/条目全对）才
@@ -186,21 +185,10 @@ def _probe_mount_direct(db, item):
     return {"leg": "mount_direct", "state": "ready"}
 
 
-def _probe_upstream(db, item):
-    """上游腿：有最佳映射即成立（302 目标在消费时现算）。"""
-    from backend.emby_server import upstream_item_mappings
-    mapping = upstream_item_mappings.get_best_mapping(db, item.id)
-    if mapping is None:
-        return None
-    return {"leg": "upstream", "state": "ready",
-            "mapping_id": getattr(mapping, "id", None)}
-
-
 _PROBES = (
     ("user_copy_ready", _probe_user_copy_ready, True),
     ("user_copy_preparing", _probe_user_copy_preparing, True),
     ("mount_direct", _probe_mount_direct, False),
-    ("upstream", _probe_upstream, False),
 )
 
 

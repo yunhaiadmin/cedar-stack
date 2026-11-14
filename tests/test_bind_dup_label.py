@@ -21,7 +21,7 @@ from sqlalchemy.pool import StaticPool
 from backend import models as base_models
 from backend.emby_server import models as em
 from backend.emby_server import user_bindings as ub
-from backend.emby_server.upstream_sources import unseal_secret
+from backend.emby_server.secret_sealing import unseal_secret
 from backend.integrations import store
 
 

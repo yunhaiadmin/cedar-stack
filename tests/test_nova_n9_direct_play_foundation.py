@@ -235,7 +235,7 @@ def test_resolver_not_wired_into_playback_paths():
     import re
 
     backend_dir = Path(__file__).resolve().parent.parent / "backend"
-    for rel in ("emby_server/api.py", "emby_server/upstream_playback.py",
+    for rel in ("emby_server/api.py",
                 "emby_server/streaming.py", "emby_server/mounts.py"):
         src = (backend_dir / rel).read_text(encoding="utf-8")
         assert "library_direct_play_enabled" not in src, rel
