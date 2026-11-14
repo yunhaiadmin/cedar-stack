@@ -257,8 +257,8 @@ class WebUser(Base):
     # 会员等级（P1 统一货币体系）：经验值只来自真实充值/有效邀请，等级由阈值推导并缓存
     member_xp = Column(Integer, default=0, nullable=False, server_default="0")  # 会员经验值
     member_level = Column(Integer, default=1, nullable=False, server_default="1")  # 缓存的当前等级（1-6）
-    # 佩戴中的成就徽章 key（panel_achievement_defs.key）；空 = 没戴。
-    # 佩戴状态属于账号不属于浏览器：换设备跟着账号走，换账号不串号。
+    # 历史遗留列：原成就徽章佩戴 key。成就系统已于 2026-11-14 删除，
+    # 代码不再读写此列，列本体随后续删列收口另行处理。
     worn_badge_key = Column(String(64), nullable=True)
     # 活力值（C1 竞品借鉴）：公益服用户每日 00:00 扣 1，上限/阈值/兑换率全部可配；
     # 低于阈值限制观影，耗尽（0）即休眠，签到/续活力后自动恢复。老库补列默认满值。
@@ -726,26 +726,7 @@ class ThemeActivityProgress(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
-# ==================== 经济系统（签到/积分/兑换码） ====================
-
-class CheckinRecord(Base):
-    """每日签到记录表"""
-    __tablename__ = 'checkin_records'
-
-    __table_args__ = (
-        Index('idx_checkin_user_date', 'user_id', 'checkin_date', unique=True),
-        Index('idx_checkin_date', 'checkin_date'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False, index=True)
-    checkin_date = Column(DateTime, nullable=False)  # 签到日期（零点）
-    points_awarded = Column(Integer, default=0)
-    streak = Column(Integer, default=1)  # 连续签到天数
-    created_at = Column(DateTime, default=datetime.now)
-
-    user = relationship("WebUser")
-
+# ==================== 经济系统（积分/兑换码） ====================
 
 class PointsLog(Base):
     """积分流水表（收入/支出台账）"""
@@ -1807,7 +1788,7 @@ __all__ = [
     # 公告和活动
     "Announcement", "ThemeActivity", "ThemeActivityProgress",
     # 经济系统
-    "CheckinRecord", "PointsLog", "ExchangeCode",
+    "PointsLog", "ExchangeCode",
     # 邀请
     "InvitationCode", "InvitationRecord",
     # 优惠券
@@ -2292,33 +2273,6 @@ class UserPlatformApiKey(Base):
 
 
 # ==================== v4 探险家日志面板 ====================
-
-class PanelAchievementDef(Base):
-    """成就定义（启动时 seed，规则文本不写死在代码里）"""
-    __tablename__ = 'panel_achievement_defs'
-
-    key = Column(String(50), primary_key=True)  # 如 'first_night'
-    name = Column(String(50), nullable=False)
-    desc = Column(String(200), nullable=False)
-    icon = Column(String(20), nullable=False, default='🏅')
-    sort = Column(Integer, default=0, nullable=False)
-    enabled = Column(Boolean, default=True, nullable=False)  # 可配置开关
-
-
-class PanelAchievementUnlock(Base):
-    """用户成就解锁记录（幂等，UNIQUE 约束）"""
-    __tablename__ = 'panel_achievement_unlocks'
-
-    __table_args__ = (
-        UniqueConstraint('user_id', 'ach_key', name='uq_panel_ach_user_key'),
-        Index('idx_panel_ach_user', 'user_id'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
-    ach_key = Column(String(50), nullable=False)
-    unlocked_at = Column(DateTime, default=datetime.now, nullable=False)
-
 
 class PanelActivity(Base):
     """后台活动 feed（供面板脉搏文案 + 发现页实时动态流）。

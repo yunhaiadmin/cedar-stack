@@ -28,7 +28,6 @@ from backend.api import media_sets_api as ms_api
 from backend.api import panel as panel_api
 from backend.emby_server import media_sets as ms
 from backend.emby_server import models as em
-from backend.panel_achievements import seed_achievement_defs
 
 
 @pytest.fixture()
@@ -279,17 +278,6 @@ def test_panel_pet_stages_put_audits(db, admin):
                           "system_config", None)
     assert row.details["key"] == "panel_pet_stages"
     assert row.details["stages"] == 2
-
-
-def test_panel_achievement_put_audits(db, admin):
-    seed_achievement_defs(db)
-    body = panel_api.AchievementDefIn(
-        name="回头客", desc="隔月再看", icon="🌀", sort=5, enabled=False)
-    panel_api.admin_achievements_put("revisit", body, admin, db)
-    row = _assert_one_log(db, admin, "panel_achievement_update",
-                          "panel_achievement", None)
-    assert row.details["key"] == "revisit"
-    assert row.details["enabled"] is False
 
 
 # ---------------------------------------------------------------- governance

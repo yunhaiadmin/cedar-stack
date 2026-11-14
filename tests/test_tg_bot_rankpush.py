@@ -1,7 +1,7 @@
 """观影榜海报日推（embyboss 借鉴清单第 5 项）测试。
 
 覆盖：
-- 聚合口径：数据源 emby_playback_sessions + panel_achievements.playback_seconds
+- 聚合口径：数据源 emby_playback_sessions + panel_stats.playback_seconds
   （账号面板「已观影 X 小时」同源同口径）；窗口复用 portal.leaderboard_window
   （Asia/Shanghai 自然日 / ISO 周），会话按 start_time（UTC 入库帧）落窗，
   跨日会话不进当日榜；show_on_leaderboard=False 不上榜；0 秒不上榜；

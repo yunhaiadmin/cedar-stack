@@ -98,12 +98,6 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(..., min_length=6, max_length=64)
 
 
-class WornBadgeOut(BaseModel):
-    key: str
-    name: str
-    icon: str
-
-
 class WhitelistIdentityOut(BaseModel):
     # 白名单专属身份：创世编号（按成为白名单的先后，永不变更/复用）
     # + 固定专属称号 + 展示标签（No.N）；非白名单为 None，整个元素不渲染
@@ -141,8 +135,6 @@ class UserOut(BaseModel):
     is_free_realm: bool = False
     # 公益服规则文案（用户端展示；付费服为空串）
     realm_access_note: str = ""
-    # 佩戴中的成就徽章（存账号：换设备也在、换账号不串）；没戴为 None
-    worn_badge: WornBadgeOut | None = None
     # 白名单专属身份（创世编号+专属称号）；判定走 codes 唯一口径，
     # 非生效白名单为 None，用户端不渲染任何相关元素
     whitelist_identity: WhitelistIdentityOut | None = None
@@ -172,14 +164,6 @@ def _user_out(user: models.WebUser, db: Session | None = None) -> UserOut:
     is_vip = has_active_subscription(db, user.id) if db is not None else bool(user.is_vip)
     requires_sub = realm_requires_subscription(db) if db is not None else False
     free_realm = is_free_realm(db) if db is not None else False
-    # 佩戴徽章是纯展示信息：查不到/异常一律 None，绝不拖垮登录出参
-    worn_badge = None
-    if db is not None:
-        try:
-            from backend.panel_achievements import worn_badge_payload
-            worn_badge = worn_badge_payload(db, user.id)
-        except Exception:
-            worn_badge = None
     # 白名单专属身份同为纯展示：判定/编号走 codes 唯一口径，异常一律 None
     whitelist_identity = None
     if db is not None:
@@ -218,7 +202,6 @@ def _user_out(user: models.WebUser, db: Session | None = None) -> UserOut:
         realm_access_mode="free" if free_realm else "paid",
         is_free_realm=free_realm,
         realm_access_note=realm_access_note(db) if db is not None else "",
-        worn_badge=worn_badge,
         whitelist_identity=whitelist_identity,
         pool_identity=pool_identity,
         created_at=user.created_at.isoformat() if user.created_at else None,

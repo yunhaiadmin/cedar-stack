@@ -188,7 +188,7 @@ const navGroups: NavGroup[] = [
     icon: MessageSquareDashed,
     items: [
       { path: '/media-seek', label: '求片管理', icon: MessageSquareDashed },
-      { path: '/panel-achievements', label: '成就与馆灵', icon: Medal },
+      { path: '/panel-achievements', label: '馆灵阶段', icon: Medal },
       { path: '/announcements', label: '公告管理', icon: Megaphone },
       { path: '/tickets', label: '工单', icon: Ticket },
       // 等级治理：举报终审队列 + 治理停权（复核达标的举报在这里受理 / 驳回）

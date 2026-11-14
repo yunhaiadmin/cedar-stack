@@ -4,12 +4,12 @@
 隔离：内存 SQLite + 最小 FastAPI 应用，不碰开发库/生产库，不 import backend.main。
 
 覆盖：
-1. 成就定义 seed：12 条，幂等（重复 seed 不翻倍）
-2. 成就评估器：12 条规则逐条验证 + 幂等（重复评估不重复解锁）
-3. 盲盒拆封：幂等（重复拆返回 already）
-4. 机关拨杆：普通用户 403，管理员可写，未知 key 400
-5. 特性开关：PANEL_V4_ENABLED=0 时接口 403
-6. envelope 格式：{code, msg, data}
+1. 盲盒拆封：幂等（重复拆返回 already）
+2. 机关拨杆：普通用户 403，管理员可写，未知 key 400
+3. 特性开关：PANEL_V4_ENABLED=0 时接口 403
+4. envelope 格式：{code, msg, data}
+5. 收藏家口味/馆灵统计（panel_stats）
+（成就定义 seed 与评估器用例已于 2026-11-14 随成就系统删除摘除。）
 """
 import os
 
@@ -28,7 +28,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend import models
-from backend import panel_achievements as pa
+from backend import panel_stats as pa
 from backend.api import panel as panel_api
 
 
@@ -88,32 +88,10 @@ def _make_app(db_session, current_user):
     return app
 
 
-# ==================== 1. 成就定义 seed ====================
-
-def test_seed_achievement_defs_13_and_idempotent(db):
-    added = pa.seed_achievement_defs(db)
-    assert added == 13
-    # 重复 seed 不翻倍
-    added2 = pa.seed_achievement_defs(db)
-    assert added2 == 0
-    count = db.query(models.PanelAchievementDef).count()
-    assert count == 13
-
-
-def test_seed_does_not_override_disabled(db):
-    pa.seed_achievement_defs(db)
-    row = db.query(models.PanelAchievementDef).filter_by(key="streak7").first()
-    row.enabled = False
-    db.commit()
-    pa.seed_achievement_defs(db)  # 重复 seed 不覆盖用户改过的开关
-    row2 = db.query(models.PanelAchievementDef).filter_by(key="streak7").first()
-    assert row2.enabled is False
-
-
-# ==================== 2. 成就评估器 ====================
+# ==================== 2. 口味与收藏家 ====================
 
 # 真实播放会话数据源（emby_playback_sessions）：每 (user, item) 一行，
-# 观看秒数 = position_ticks/1e7（与 backend.panel_achievements.playback_seconds 同口径）。
+# 观看秒数 = position_ticks/1e7（与 backend.panel_stats.playback_seconds 同口径）。
 _session_seq = [0]
 
 
@@ -143,69 +121,12 @@ def _mk_session(db, user, name, start, duration, genres=""):
 
 
 def _bj_to_storage(bj_hour, bj_minute=0, days_ago=0):
-    """北京时间墙钟 → 入库存储帧（UTC naive）：成就会话时间按此换算构造。"""
+    """北京时间墙钟 → 入库存储帧（UTC naive）：播放会话时间按此换算构造。"""
     bj = datetime.now() + timedelta(hours=8)
     t = bj.replace(hour=bj_hour, minute=bj_minute, second=0, microsecond=0)
     if days_ago:
         t -= timedelta(days=days_ago)
     return t - timedelta(hours=8)
-
-
-def test_evaluate_first_night_and_early_bird(db, user):
-    pa.seed_achievement_defs(db)
-    # 深夜 23:30（北京时间）开始
-    _mk_session(db, user, "深夜电影", _bj_to_storage(23, 30), 3600)
-    # 清晨 6:30（北京时间）开始
-    _mk_session(db, user, "清晨电影", _bj_to_storage(6, 30), 3600)
-    new = pa.evaluate(user.id, db)
-    assert "first_night" in new
-    assert "early_bird" in new
-    # 幂等：重复评估不重复解锁
-    new2 = pa.evaluate(user.id, db)
-    assert new2 == []
-    assert db.query(models.PanelAchievementUnlock).filter_by(user_id=user.id).count() == 2
-
-
-def test_evaluate_night_owl(db, user):
-    pa.seed_achievement_defs(db)
-    # 北京时间 14:00 与 18:00（同北京时间自然日）
-    _mk_session(db, user, "马拉松1", _bj_to_storage(14, 0), 3 * 3600 + 100)
-    _mk_session(db, user, "马拉松2", _bj_to_storage(18, 0), 3 * 3600 + 100)
-    new = pa.evaluate(user.id, db)
-    assert "night_owl" in new  # 单日超 6h
-
-
-def test_evaluate_streak7(db, user):
-    pa.seed_achievement_defs(db)
-    db.add(models.CheckinRecord(
-        user_id=user.id,
-        checkin_date=datetime.now().replace(hour=0, minute=0, second=0, microsecond=0),
-        streak=7,
-    ))
-    db.commit()
-    new = pa.evaluate(user.id, db)
-    assert "streak7" in new
-
-
-def test_evaluate_sharer(db, user):
-    pa.seed_achievement_defs(db)
-    code = models.InvitationCode(code="TEST123", user_id=user.id)
-    db.add(code)
-    db.commit()
-    db.add(models.InvitationRecord(inviter_id=user.id, invitee_id=99999, code_id=code.id))
-    db.commit()
-    new = pa.evaluate(user.id, db)
-    assert "sharer" in new
-
-
-def test_evaluate_disabled_rule_not_granted(db, user):
-    pa.seed_achievement_defs(db)
-    row = db.query(models.PanelAchievementDef).filter_by(key="first_night").first()
-    row.enabled = False
-    db.commit()
-    _mk_session(db, user, "深夜电影", _bj_to_storage(23, 30), 3600)
-    new = pa.evaluate(user.id, db)
-    assert "first_night" not in new
 
 
 def test_user_tastes_reads_playback_sessions(db, user):
@@ -224,7 +145,6 @@ def test_user_tastes_reads_playback_sessions(db, user):
 def test_collector_reads_playback_sessions(db, user):
     """换源回归：/collector 累计小时从 emby_playback_sessions 的
     position_ticks 来。"""
-    pa.seed_achievement_defs(db)
     start = _bj_to_storage(12, 0, days_ago=1)
     _mk_session(db, user, "昨日电影", start, 7200)
     app = _make_app(db, user)
@@ -247,7 +167,6 @@ def test_panel_disabled_returns_403(db, user, monkeypatch):
 # ==================== 6. envelope 格式 ====================
 
 def test_envelope_format(db, user):
-    pa.seed_achievement_defs(db)
     app = _make_app(db, user)
     client = TestClient(app)
     for path in ["/api/panel/today", "/api/panel/pulse", "/api/panel/home",
@@ -262,7 +181,6 @@ def test_envelope_format(db, user):
 
 def test_home_returns_all_sections(db, user):
     """GET /api/panel/home 一次返回 today/pulse 两个区块（perf 2026-10-13）。"""
-    pa.seed_achievement_defs(db)
     app = _make_app(db, user)
     client = TestClient(app)
     r = client.get("/api/panel/home")
@@ -319,7 +237,7 @@ def test_push_activity_ring_buffer_per_realm(db):
 def test_today_field_contract(db, user):
     """GET /api/panel/today 返回前端命名契约：字段集合精确锁定。
 
-    后端已改向前段命名（date_label/streak_days），字段增减必须同步改前端。
+    后端已改向前段命名（date_label），字段增减必须同步改前端。
     """
     app = _make_app(db, user)
     client = TestClient(app)
@@ -327,7 +245,7 @@ def test_today_field_contract(db, user):
     assert r.status_code == 200
     data = r.json()["data"]
     assert set(data.keys()) == {
-        "greeting", "date_label", "weekday", "streak_days", "nickname",
+        "greeting", "date_label", "weekday", "nickname",
         # 心理学批（2026-10-16）：今日观影人数
         "today_viewers",
     }

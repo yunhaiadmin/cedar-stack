@@ -1,7 +1,7 @@
 /**
  * 业务错误 → 人话文案（装修第二期 U4；Batch G 起为两端唯一错误呈现入口）
  *
- * 用法：`toast.error(toUserMessage(err, 'checkinFailed'))`
+ * 用法：`toast.error(toUserMessage(err, 'saveFailed'))`
  *
  * 解析优先级：
  * 1. 无响应（断网 / 超时）→ "网络暂时连不上，请检查连接后重试"

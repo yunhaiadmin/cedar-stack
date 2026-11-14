@@ -121,66 +121,6 @@ def _whitelist_rows(identity) -> list[str]:
     return rows
 
 
-def _achievement_summary(db, user_id: int):
-    """账号成就：返回（已解锁定义行（按 sort 排序，仅 enabled 定义），enabled 定义总数）。
-
-    口径与 GET /api/panel/collector 一致：只展示 enabled 定义。
-    """
-    defs = (
-        db.query(models.PanelAchievementDef)
-        .filter_by(enabled=True)
-        .order_by(models.PanelAchievementDef.sort)
-        .all()
-    )
-    unlocked_keys = {
-        r[0]
-        for r in db.query(models.PanelAchievementUnlock.ach_key)
-        .filter_by(user_id=user_id)
-        .all()
-    }
-    shown = [d for d in defs if d.key in unlocked_keys]
-    return shown, len(defs)
-
-
-#: 成就卡逐条明细上限：面板 caption 放不下太多行，超出截断去网站看全量。
-_ACHIEVEMENT_CARD_LIMIT = 10
-
-
-def achievements_card(db, user) -> str:
-    """成就卡（menu:achievements）：本人已点亮成就逐条＋未完成汇总。
-
-    数据口径与账号卡「成就进度」行同源（_achievement_summary：只认
-    enabled 定义、按 sort 排序；点亮日期取 PanelAchievementUnlock
-    同表）。未点亮的不逐条列，只给「还有 N 个」汇总行；明细超上限
-    截断并提示去网站账号页看全量（与账号卡精简口径一致）。
-    """
-    shown, total = _achievement_summary(db, user.id)
-    rows = [layout.row("🏅", "成就进度", f"已点亮 {len(shown)}／共 {total} 个")]
-    if not shown:
-        return layout.card(
-            layout.title("我的成就"),
-            rows,
-            ["还没有点亮任何成就，看片、签到、追完一整季都会慢慢点亮它们。"],
-        )
-    unlock_dates = {
-        r.ach_key: r.unlocked_at
-        for r in db.query(models.PanelAchievementUnlock)
-        .filter_by(user_id=user.id)
-        .all()
-    }
-    for d in shown[:_ACHIEVEMENT_CARD_LIMIT]:
-        when = unlock_dates.get(d.key)
-        date_text = f"{when.strftime('%Y-%m-%d')} 点亮" if when else "已点亮"
-        rows.append(layout.row(
-            d.icon or "🏅", _esc(d.name), f"{date_text} · {_esc(d.desc)}"))
-    notes = []
-    if len(shown) > _ACHIEVEMENT_CARD_LIMIT:
-        notes.append("点亮的成就有点多，这里只列前面一部分，完整的去网站账号页看。")
-    if total > len(shown):
-        notes.append(f"还有 {total - len(shown)} 个成就没点亮，边看片边解锁。")
-    return layout.card(layout.title("我的成就"), rows, notes)
-
-
 def _pet_summary(db, user_id: int):
     """馆灵：返回（累计观影小时，当前阶段 dict，下一阶段 dict 或 None）。
 
@@ -190,7 +130,7 @@ def _pet_summary(db, user_id: int):
     """
     from backend.api.panel import _read_pet_stages
     from backend.emby_server import models as em
-    from backend.panel_achievements import playback_seconds
+    from backend.panel_stats import playback_seconds
 
     rows = (
         db.query(
@@ -298,24 +238,6 @@ def _vitality_renew_enabled(db) -> bool:
         return str(row.value).strip().lower() == "true"
     except Exception:
         return True
-
-
-def _streak_line(db, user_id: int) -> str:
-    """连签：取最近一条签到记录的 streak 列，无记录为 0 天。
-
-    保号已改活力口径（2026-11-09）：括注宣称的是活力保号——资格到期时
-    活力达到活力线即自动续，与连签天数无关；连签此处只作计数展示。
-    """
-    row = (
-        db.query(models.CheckinRecord)
-        .filter(models.CheckinRecord.user_id == user_id)
-        .order_by(models.CheckinRecord.checkin_date.desc())
-        .first()
-    )
-    streak = int(row.streak) if row is not None and row.streak is not None else 0
-    if not _vitality_renew_enabled(db):
-        return f"📋 连签：{streak} 天"
-    return f"📋 连签：{streak} 天（活力 ≥{_vitality_renew_min(db)} 到期自动续公益资格）"
 
 
 def _bar(frac: float, width: int) -> str:
@@ -442,13 +364,12 @@ def _subscription_summary(db, user) -> str:
 def account_card(db, user, display_name: str | None = None) -> str:
     """账号卡（唯一构建器）：/me、/account 与用户面板共用同一张精简卡。
 
-    固定 10 行汇总——用户编号/账号名称/当前等级（带经验进度，/level
+    固定 9 行汇总——用户编号/账号名称/当前等级（带经验进度，/level
     详情并入此行）/能量余额/公益资格/活力数值/网盘绑定/
-    当前馆灵（下一阶段差距并进同一行）/成就进度（一行汇总）/订阅状态
-    （一行汇总）；成就/订阅/设备不逐条铺、连签行砍掉（签到卡里有）。
+    当前馆灵（下一阶段差距并进同一行）/订阅状态（一行汇总）；
+    订阅/设备不逐条铺。
     白名单专属版式保留：专属问候标题＋称号/编号行紧跟账号名称行。
     """
-    shown_ach, total_ach = _achievement_summary(db, user.id)
     total_hours, pet_cur, pet_nxt = _pet_summary(db, user.id)
     cap, threshold = _vitality_config(db)
     greet = display_name or getattr(user, "username", "") or "朋友"
@@ -485,7 +406,6 @@ def account_card(db, user, display_name: str | None = None) -> str:
         layout.row("⚡", "活力数值", vitality_text),
         layout.row("🔗", "网盘绑定", _after_colon(_bindings_line(db, user.id))),
         layout.row("🐉", "当前馆灵", pet_text),
-        layout.row("🏅", "成就进度", f"已解锁 {len(shown_ach)}／共 {total_ach} 个"),
         layout.row("📦", "订阅状态", _subscription_summary(db, user)),
     ]
     identity = _whitelist_identity(db, user)
@@ -509,8 +429,8 @@ def compact_dashboard(db, user, display_name: str | None = None) -> str:
 def handle_account(db, tg_user: dict, chat_id: int, args: str) -> str:
     """账号中心：/me 与别名 /account 的实现，与用户面板共用 account_card。
 
-    账号卡已精简为固定汇总行（见 account_card），全量展开版（成就/
-    订阅/设备逐条）就此下线，明细去网站账号页看。
+    账号卡已精简为固定汇总行（见 account_card），全量展开版（订阅/
+    设备逐条）就此下线，明细去网站账号页看。
     """
     user = _bound_user(db, tg_user)
     if user is None:

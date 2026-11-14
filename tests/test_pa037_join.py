@@ -145,22 +145,12 @@ def test_home_stats_and_sessions_exclude_deleted(db):
     assert "pa037-vis" in _dump(sessions["sessions"])
 
 
-# ---------------- panel：昨日信与口味/成就 ----------------
+# ---------------- panel：昨日信与口味 ----------------
 
-def test_panel_letter_tastes_evaluate_exclude_deleted(db):
+def test_panel_letter_tastes_exclude_deleted(db):
     from backend.api import panel
-    from backend import panel_achievements
+    from backend import panel_stats
     user, _vis, _dele = _vis_del(db)
-    # 会话落进昨日窗口（下方成就评估的深夜档要用）——用生产同款时钟
-    # （北京时间帧）算窗口内时间
-    from backend.api.panel import _now_local_naive
-    yesterday_start = (_now_local_naive() - timedelta(days=1)).replace(
-        hour=0, minute=0, second=0, microsecond=0)
-    yesterday_noon = yesterday_start + timedelta(hours=12)
-    for s in db.query(em.PlaybackSession).filter(
-            em.PlaybackSession.user_id == user.id).all():
-        s.start_time = yesterday_noon
-    db.commit()
     # 每日一封（panel_letter）已随发现页删除批次下线：钉住删除语义——
     # 该属性不得存在，将来有人误加回本用例即红。
     assert not hasattr(panel, "panel_letter")
@@ -170,23 +160,8 @@ def test_panel_letter_tastes_evaluate_exclude_deleted(db):
     db.query(em.MediaItem).filter(em.MediaItem.id == _vis).update(
         {"genres": '["动画"]'}, synchronize_session=False)
     db.commit()
-    tastes = panel_achievements.user_tastes(db, user.id)
+    tastes = panel_stats.user_tastes(db, user.id)
     assert tastes["taste_anime"]["count"] == 1
-    # 成就：只有已下架条目的深夜会话不许解锁 first_night
-    db.add(base_models.PanelAchievementDef(
-        key="first_night", name="深夜", desc="深夜", enabled=True))
-    db.commit()
-    night = yesterday_noon.replace(hour=23, minute=30)  # 北京时间 23:30，深夜档
-    for s in db.query(em.PlaybackSession).filter(
-            em.PlaybackSession.user_id == user.id).all():
-        s.start_time = night
-    db.commit()
-    # 只留已下架条目的会话有效：可见条目会话的 position 清零（<=60 秒不算）
-    db.query(em.PlaybackSession).filter(
-        em.PlaybackSession.item_id == _vis).update(
-        {"position_ticks": 0}, synchronize_session=False)
-    db.commit()
-    assert panel_achievements.evaluate(user.id, db) == []
 
 
 # ---------------- portal：续看/收藏/统计/会话/历史/管理会话 ----------------
@@ -373,8 +348,7 @@ FIXED_FUNCTIONS = [
     ("backend.emby_server.portal", "get_watch_history"),
     ("backend.emby_server.portal", "admin_sessions"),
     ("backend.emby_server.transfer_variant", "_series_preheat_strong_signal"),
-    ("backend.panel_achievements", "user_tastes"),
-    ("backend.panel_achievements", "evaluate"),
+    ("backend.panel_stats", "user_tastes"),
     ("backend.tg_bot.features", "_pet_summary"),
     ("backend.tg_bot.queries", "watch_duration_rank"),
 ]

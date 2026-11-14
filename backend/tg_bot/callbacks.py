@@ -344,22 +344,6 @@ def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,
             }[action]
             text = fn(db, tg_user, chat_id, "")
             markup = handlers.back_markup()
-    elif action == "achievements":
-        # 成就是个人数据卡：私聊限定（与 bindings 等私人查询同口径），
-        # 群里点到只回私聊提示卡，绝不把点击者本人的成就记录编辑进
-        # 群共享消息。未绑定按现行口径回绑定指引。
-        if not is_private:
-            text = handlers.private_only_card()
-            markup = handlers.private_only_markup(db)
-        else:
-            user = resolve(db, int(tg_id))
-            if user is None:
-                text, markup = handlers._bind_guide_text(), handlers.back_markup()
-            else:
-                from . import features
-
-                text = features.achievements_card(db, user)
-                markup = handlers.group_back_markup("account", "账号组")
     elif action == "bind":
         user = resolve(db, int(tg_id))
         if user is not None:

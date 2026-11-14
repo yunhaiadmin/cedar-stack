@@ -1,34 +1,17 @@
 /**
- * 面板 v4 · 成就定义与馆灵阶段管理（r48 遗留 ⑨）
+ * 面板 v4 · 馆灵阶段管理（r48 遗留 ⑨）
  *
- * 后端：`/api/admin/panel/achievements*`（成就定义表）、`/api/admin/panel/pet-stages`
- * （system_configs 键 panel_pet_stages）。管理 axios 实例 baseURL 是 `/api/admin`。
+ * 后端：`/api/admin/panel/pet-stages`（system_configs 键 panel_pet_stages）。
+ * 管理 axios 实例 baseURL 是 `/api/admin`。
+ * （成就定义管理已于 2026-11-14 随成就系统删除一并摘除。）
  */
 import { get, put } from '@/utils/request'
-
-export interface AchievementDef {
-  key: string
-  name: string
-  desc: string
-  icon: string
-  sort: number
-  enabled: boolean
-}
 
 export interface PetStage {
   name: string
   icon: string
   hours: number
 }
-
-export const fetchAchievements = async (): Promise<AchievementDef[]> =>
-  (await get<{ achievements: AchievementDef[] }>('/panel/achievements')).achievements
-
-export const updateAchievement = async (
-  key: string,
-  body: Omit<AchievementDef, 'key'>,
-): Promise<AchievementDef> =>
-  (await put<{ achievement: AchievementDef }>(`/panel/achievements/${key}`, body)).achievement
 
 export const fetchPetStages = async (): Promise<PetStage[]> =>
   (await get<{ stages: PetStage[] }>('/panel/pet-stages')).stages

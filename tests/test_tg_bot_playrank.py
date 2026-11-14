@@ -14,7 +14,7 @@ Emby」实际发布追加图文合一＋置顶）：
 数据口径（不新造采集，与站内既有榜单同源）：
 - 表 emby_playback_sessions（窗口按 start_time 落入上海自然日，
   比较帧走 portal.leaderboard_window 的 UTC 换算）；
-- 时长 = panel_achievements.playback_seconds（末次上报进度近似，
+- 时长 = panel_stats.playback_seconds（末次上报进度近似，
   min(position, duration)），与账号面板/观影榜日推同口径；
 - 播放次数 = 窗口内会话行数（与站内热播榜 hot_leaderboard_items
   同口径）；集按 series_id 汇总到剧，聚合实体若已折叠跟随

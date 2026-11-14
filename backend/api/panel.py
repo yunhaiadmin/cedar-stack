@@ -12,13 +12,11 @@ from __future__ import annotations
 import json
 import logging
 import os
-import threading
-import time
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -121,59 +119,6 @@ def admin_pet_stages_put(
     return {"stages": stages}
 
 
-class AchievementDefIn(BaseModel):
-    """成就定义编辑体（r48 遗留 ⑨）
-
-    只允许改已有 key 的展示字段：name/desc/icon/sort/enabled。
-    不允许新增/删除 key——判定逻辑在 panel_achievements.evaluate() 按 key 硬编码，
-    新增的 key 没有判定会永远拿不到，删除的 key 会让已解锁记录悬空。
-    """
-    name: str = Field(min_length=1, max_length=50)
-    desc: str = Field(min_length=1, max_length=200)
-    icon: str = Field(default="🏅", max_length=20)
-    sort: int = 0
-    enabled: bool = True
-
-
-def _achievement_def_to_dict(row) -> dict:
-    return {"key": row.key, "name": row.name, "desc": row.desc,
-            "icon": row.icon, "sort": row.sort, "enabled": row.enabled}
-
-
-@admin_router.get("/achievements")
-def admin_achievements_get(
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """管理后台：读全部成就定义（按 sort 排序；r48 遗留 ⑨补的管理入口）。"""
-    rows = (db.query(models.PanelAchievementDef)
-              .order_by(models.PanelAchievementDef.sort).all())
-    return {"achievements": [_achievement_def_to_dict(r) for r in rows]}
-
-
-@admin_router.put("/achievements/{key}")
-def admin_achievements_put(
-    key: str,
-    body: AchievementDefIn,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """管理后台：改一条成就定义（仅 name/desc/icon/sort/enabled；key 不可改）。"""
-    row = db.query(models.PanelAchievementDef).filter_by(key=key).first()
-    if not row:
-        raise HTTPException(status_code=404, detail="成就定义不存在")
-    row.name = body.name.strip()
-    row.desc = body.desc.strip()
-    row.icon = (body.icon or "").strip() or "🏅"
-    row.sort = body.sort
-    row.enabled = body.enabled
-    _audit(db, current_admin, "panel_achievement_update",
-           "panel_achievement", None,
-           {"key": key, "enabled": body.enabled})
-    db.commit()
-    return {"achievement": _achievement_def_to_dict(row)}
-
-
 def _panel_enabled() -> bool:
     return os.getenv("PANEL_V4_ENABLED", "1") != "0"
 
@@ -240,12 +185,6 @@ def _today_start_utc_naive() -> datetime:
     return start_sh.astimezone(timezone.utc).replace(tzinfo=None)
 
 
-def _streak(db: Session, user_id: int) -> int:
-    rec = db.query(models.CheckinRecord).filter_by(user_id=user_id).order_by(
-        models.CheckinRecord.checkin_date.desc()).first()
-    return rec.streak if rec and rec.streak else 0
-
-
 # ==================== 1. GET /api/panel/today ====================
 
 @router.get("/today")
@@ -262,8 +201,6 @@ def panel_today(
     today_start = _today_start_utc_naive()
 
     from backend.emby_server import models as em
-
-    streak_days = _streak(db, user.id)
 
     # 今日观影人数（P-6 社交证明：只报聚合数，不露个人）
     try:
@@ -284,56 +221,12 @@ def panel_today(
         "greeting": _greeting(),
         "date_label": now.strftime("%Y-%m-%d"),
         "weekday": ["一", "二", "三", "四", "五", "六", "日"][now.weekday()],
-        "streak_days": streak_days,
         "nickname": getattr(user, "nickname", None) or user.username,
         "today_viewers": today_viewers,
     })
 
 
 # ==================== 4. GET /api/panel/pulse ====================
-
-def _evaluate_achievements_async(user_id: int) -> None:
-    """后台线程跑成就评估（幂等）。
-
-    GET /collector 本身不再写库：评估在请求外异步执行，解锁结果通过
-    achievements[].unlocked 在下次请求可见（最终一致）。
-    """
-    try:
-        from backend.database import SessionLocal
-        db2 = SessionLocal()
-        try:
-            from backend.panel_achievements import evaluate
-            evaluate(user_id, db2)
-        finally:
-            db2.close()
-    except Exception:  # noqa: BLE001
-        logger.exception("成就后台评估失败")
-
-
-# r45：成就评估线程防抖——原来每个 GET /collector 都起一个无界线程，
-# 每个线程 checkout 1 个 DB 连接（池共 20，主链路共用）；多用户并发/高频刷新时
-# 线程与连接占用随"请求速率 × 评估耗时"线性增长，DB 稍慢就会拖垮主链路。
-# 评估幂等，高频重评无意义：同一用户 60 秒内只起一个评估线程。
-_EVAL_DEBOUNCE_SEC = 60
-_eval_last: dict = {}
-_eval_lock = threading.Lock()
-
-
-def _spawn_evaluate_debounced(user_id: int) -> bool:
-    """按用户防抖起成就评估线程；60 秒内重复请求返回 False（跳过）。"""
-    now = time.monotonic()
-    with _eval_lock:
-        if now - _eval_last.get(user_id, 0.0) < _EVAL_DEBOUNCE_SEC:
-            return False
-        _eval_last[user_id] = now
-        if len(_eval_last) > 10000:  # 偶发清理，防止 key 无限增长
-            cutoff = now - _EVAL_DEBOUNCE_SEC
-            for uid in [u for u, t in _eval_last.items() if t < cutoff]:
-                del _eval_last[uid]
-    threading.Thread(
-        target=_evaluate_achievements_async, args=(user_id,), daemon=True).start()
-    return True
-
 
 def _derive_activity(db: Session, health: dict | None = None) -> list:
     """推导版后台活动文案（worker 埋点补上后无缝替换为读 panel_activity 表）
@@ -477,13 +370,7 @@ def panel_collector(
     user: models.WebUser = Depends(get_current_user),
 ):
     _guard()
-    from backend.panel_achievements import user_tastes
-
-    # r20: 成就评估移出请求热路径——后台线程异步跑（幂等），GET 本身不再写库。
-    # r45：加 60 秒防抖（_spawn_evaluate_debounced），防高频刷新无界起线程抢 DB 连接。
-    # 本轮 new_unlocks 恒为空；解锁状态通过 achievements[].unlocked 下次可见。
-    _spawn_evaluate_debounced(user.id)
-    new_unlocks: list = []
+    from backend.panel_stats import user_tastes
 
     tastes = {}
     try:
@@ -491,24 +378,11 @@ def panel_collector(
     except Exception:  # noqa: BLE001
         logger.exception("口味聚合失败")
 
-    # 成就列表（定义 + 解锁状态）
-    defs = db.query(models.PanelAchievementDef).filter_by(
-        enabled=True).order_by(models.PanelAchievementDef.sort).all()
-    unlocked = {r[0] for r in db.query(
-        models.PanelAchievementUnlock.ach_key).filter_by(user_id=user.id).all()}
-    achievements = [{
-        "key": d.key,
-        "name": d.name,
-        "desc": d.desc,
-        "icon": d.icon,
-        "unlocked": d.key in unlocked,
-    } for d in defs]
-
     # 馆灵：累计观影小时推导（阈值走 SystemConfig，可配置）
     # 数据源：emby_playback_sessions（旧 emby_sessions 无写入、恒 0 行，
     # 2026-10-19 换源；每 (user, item) 一行、两列窄查询后 Python 累加）
     from backend.emby_server import models as em
-    from backend.panel_achievements import playback_seconds
+    from backend.panel_stats import playback_seconds
     _sess_rows = db.query(
         em.PlaybackSession.position_ticks,
         em.MediaItem.duration_ticks,
@@ -535,24 +409,12 @@ def panel_collector(
     else:
         progress = 1.0
 
-    # 佩戴中的徽章（存账号，见 POST /worn-badge）；纯展示，异常兜底 None
-    try:
-        from backend.panel_achievements import worn_badge_payload
-        worn_badge = worn_badge_payload(db, user.id)
-    except Exception:  # noqa: BLE001
-        worn_badge = None
-
     points = getattr(user, "points", 0) or 0
     return _ok({
         "nickname": getattr(user, "nickname", None) or user.username,
         "points": points,
         "watch_hours": round(total_hours, 1),
-        "streak": _streak(db, user.id),
-        "achievement_count": len(unlocked),
         "tastes": tastes,
-        "achievements": achievements,
-        "worn_badge": worn_badge,
-        "new_unlocks": new_unlocks,
         "pet": {
             "stage": cur_idx,
             "name": cur["name"],
@@ -565,38 +427,6 @@ def panel_collector(
             "stages": [{"name": s["name"], "icon": s["icon"]} for s in stages],
         },
     })
-
-
-# ==================== 6.5 POST /api/panel/worn-badge ====================
-
-class WornBadgeIn(BaseModel):
-    key: str | None = None
-
-
-@router.post("/worn-badge")
-def set_worn_badge(
-    req: WornBadgeIn,
-    db: Session = Depends(get_db),
-    user: models.WebUser = Depends(get_current_user),
-):
-    """佩戴/摘下成就徽章。佩戴状态存账号（web_users.worn_badge_key），
-    不再存浏览器本地——换账号不串号、换设备跟着走。"""
-    _guard()
-    key = (req.key or "").strip()
-    if not key:
-        user.worn_badge_key = None
-        db.commit()
-        return _ok({"worn_badge": None})
-    d = db.query(models.PanelAchievementDef).filter_by(key=key, enabled=True).first()
-    if not d:
-        raise HTTPException(status_code=400, detail="这枚徽章不存在或已下架")
-    unlocked = db.query(models.PanelAchievementUnlock).filter_by(
-        user_id=user.id, ach_key=key).first()
-    if not unlocked:
-        raise HTTPException(status_code=400, detail="你还没有解锁这枚徽章")
-    user.worn_badge_key = key
-    db.commit()
-    return _ok({"worn_badge": {"key": d.key, "name": d.name, "icon": d.icon}})
 
 
 # ==================== 6.6 隐私 / 通知偏好 ====================

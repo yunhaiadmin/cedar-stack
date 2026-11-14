@@ -28,14 +28,11 @@ def db():
     # 绑定成功消息需要查订阅与套餐
     models.UserSubscription.__table__.create(engine, checkfirst=True)
     models.SubscriptionPlan.__table__.create(engine, checkfirst=True)
-    # /start 已绑定 dashboard 需要查成就与馆灵
-    models.PanelAchievementDef.__table__.create(engine, checkfirst=True)
-    models.PanelAchievementUnlock.__table__.create(engine, checkfirst=True)
+    # /start 已绑定 dashboard 需要查馆灵
     em.PlaybackSession.__table__.create(engine, checkfirst=True)
     em.MediaItem.__table__.create(engine, checkfirst=True)
-    # /start 详细版 dashboard 新增：连签、网盘绑定
+    # /start 详细版 dashboard：网盘绑定
     models.EmbyViewUnlock.__table__.create(engine, checkfirst=True)
-    models.CheckinRecord.__table__.create(engine, checkfirst=True)
     em.UserStorageBinding.__table__.create(engine, checkfirst=True)
     Session = sessionmaker(bind=engine)
     session = Session()

@@ -90,10 +90,9 @@ def _get_bool_realm_config(db: Session, base: str, realm_id, default: bool) -> b
 def _today_start() -> datetime:
     """「今日」起点：Asia/Shanghai 自然日 00:00（UTC naive 存储帧）。
 
-    r34 口径收口：此前是服务器本地 00:00，生产容器为 UTC，签到/连签的
+    r34 口径收口：此前是服务器本地 00:00，生产容器为 UTC，各类按日口径的
     「今日」实际在北京时间 08:00 才翻天（r18 F1、r30 L1、r33 F3 同类）。
-    直接委托给 _today_start_utc_naive()，与 CheckinRecord.checkin_date 的
-    写入帧保持一致（写入点唯一：_do_checkin_core）。
+    直接委托给 _today_start_utc_naive()，与各入库时间列的存储帧保持一致。
     """
     return _today_start_utc_naive()
 

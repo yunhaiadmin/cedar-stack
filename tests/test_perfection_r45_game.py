@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-"""r45 游戏化域修复回归测试：成就引擎 + panel 端点。
+"""r45 游戏化域修复回归测试：panel 端点（馆灵阶段/口味）。
 
 隔离：内存 SQLite，不碰开发库/生产库，不 import backend.main。
-覆盖 r45 的 7 项修复（F2–F9，F1 死表证据见轮报告、revisit 语义待用户拍板未动）。
+成就引擎已于 2026-11-14 删除，F2/F3/F5 三项成就相关用例随之摘除；
+本文件只保留 F6 馆灵阶段形状校验、F7 section 回滚、F4 口味有界。
 """
 import os
 
@@ -13,12 +14,11 @@ from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend import models
-from backend import panel_achievements as pa
+from backend import panel_stats as pa
 from backend.api import panel as panel_api
 
 
@@ -53,7 +53,7 @@ def user(db):
 
 
 # 真实播放会话数据源（emby_playback_sessions）：每 (user, item) 一行，
-# 观看秒数 = position_ticks/1e7（与 backend.panel_achievements.playback_seconds 同口径）。
+# 观看秒数 = position_ticks/1e7（与 backend.panel_stats.playback_seconds 同口径）。
 _session_seq = [0]
 
 
@@ -80,44 +80,6 @@ def _mk_session(db, user, name, minutes_ago=10, duration=300, genres=""):
     db.add(s)
     db.commit()
     return s
-
-
-# ---------- F5: /collector 评估线程 60 秒防抖 ----------
-
-def test_spawn_evaluate_debounced(monkeypatch):
-    started = []
-
-    class FakeThread:
-        def __init__(self, target=None, args=(), daemon=None):
-            self._target = target
-            self._args = args
-
-        def start(self):
-            started.append(self._args)
-
-        def is_alive(self):
-            # 补齐 Thread 接口面（卫生类别 2/4）。
-            return False
-
-    monkeypatch.setattr(panel_api.threading, "Thread", FakeThread)
-    now = [1000.0]
-    monkeypatch.setattr(panel_api.time, "monotonic", lambda: now[0])
-    panel_api._eval_last.clear()
-
-    assert panel_api._spawn_evaluate_debounced(7) is True
-    assert len(started) == 1
-    # 60 秒内重复请求：跳过，不起新线程
-    now[0] += 10
-    assert panel_api._spawn_evaluate_debounced(7) is False
-    assert len(started) == 1
-    # 另一个用户不受影响
-    assert panel_api._spawn_evaluate_debounced(8) is True
-    assert len(started) == 2
-    # 60 秒后：重新起
-    now[0] += 61
-    assert panel_api._spawn_evaluate_debounced(7) is True
-    assert len(started) == 3
-    panel_api._eval_last.clear()
 
 
 # ---------- F6: 馆灵阶段配置形状校验 ----------
@@ -153,75 +115,6 @@ def test_section_or_none_rolls_back_session(db, user):
     assert panel_api._section_or_none(bad_block, db, user) is None
     # 同一 session 后续查询必须可用（原来会连带 PendingRollbackError）
     assert db.execute(text("select 1")).scalar() == 1
-
-
-# ---------- F3: seed 并发 IntegrityError 不刷误导 warning ----------
-
-def test_seed_race_integrity_error_silent(db, monkeypatch):
-    pa.seed_achievement_defs(db)
-    assert db.query(models.PanelAchievementDef).count() == 13
-
-    # 模拟并发：删掉一条制造"本进程查无、commit 时他进程已写入"的竞态
-    db.query(models.PanelAchievementDef).filter_by(key="first_night").delete()
-    db.commit()
-    assert db.query(models.PanelAchievementDef).count() == 12
-
-    real_commit = db.commit
-
-    def boom():
-        raise IntegrityError("insert", None, Exception("UNIQUE constraint failed"))
-
-    # commit 撞主键：不抛、不刷误导性 warning，返回 0
-    monkeypatch.setattr(db, "commit", boom)
-    assert pa.seed_achievement_defs(db) == 0
-    monkeypatch.setattr(db, "commit", real_commit)
-    # 终态自愈：下次正常 seed 把缺的补回来
-    assert pa.seed_achievement_defs(db) == 1
-    assert db.query(models.PanelAchievementDef).count() == 13
-
-
-# ---------- F2: evaluate 写库异常分类 ----------
-
-def _grant_sharer_setup(db, user):
-    code = models.InvitationCode(code="R45TEST", user_id=user.id)
-    db.add(code)
-    db.commit()
-    db.add(models.InvitationRecord(inviter_id=user.id, invitee_id=99999, code_id=code.id))
-    db.commit()
-
-
-def test_evaluate_write_integrity_error_ignored(db, user, monkeypatch):
-    pa.seed_achievement_defs(db)
-    _grant_sharer_setup(db, user)
-    real_commit = db.commit
-    calls = []
-
-    def boom_once():
-        calls.append(1)
-        if len(calls) == 1:
-            raise IntegrityError("insert", None, Exception("UNIQUE constraint failed"))
-        return real_commit()
-
-    monkeypatch.setattr(db, "commit", boom_once)
-    # 并发重复解锁：吞掉，不抛
-    assert pa.evaluate(user.id, db) == ["sharer"]
-    monkeypatch.setattr(db, "commit", real_commit)
-
-
-def test_evaluate_write_unexpected_error_reraises(db, user, monkeypatch):
-    pa.seed_achievement_defs(db)
-    _grant_sharer_setup(db, user)
-
-    def boom():
-        raise RuntimeError("connection lost")
-
-    monkeypatch.setattr(db, "commit", boom)
-    # 非冲突异常：不能吞成假成功，必须抛出去（后台线程会打日志）
-    with pytest.raises(RuntimeError):
-        pa.evaluate(user.id, db)
-    # 且没写进去
-    assert db.query(models.PanelAchievementUnlock).filter_by(
-        user_id=user.id).count() == 0
 
 
 # ---------- F4: user_tastes 有界（5000） ----------
