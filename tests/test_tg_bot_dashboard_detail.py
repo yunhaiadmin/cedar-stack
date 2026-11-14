@@ -158,7 +158,7 @@ def test_pet_next_and_max(db):
     assert "已满级" in pet_line
 
 
-# ---------- 卡片版式整版：标题＋9 行汇总行（明细不铺） ----------
+# ---------- 卡片版式整版：标题＋8 行汇总行（明细不铺） ----------
 
 def test_slim_layout_full(db):
     row = _user(db, tg=TG, name="alice", points=16, vitality=14)
@@ -184,7 +184,7 @@ def test_slim_layout_full(db):
     assert "最近设备" not in reply
 
 
-# ---------- 瘦身边界：固定 10 行，活力行不带进度条 ----------
+# ---------- 瘦身边界：固定 9 行，活力行不带进度条 ----------
 
 def test_no_bar_chars_full_vitality(db):
     row = _user(db, tg=TG, name="full", vitality=14)
@@ -192,4 +192,4 @@ def test_no_bar_chars_full_vitality(db):
     text = features.compact_dashboard(db, row)
     assert "活力数值</b> | 14/14" in text
     assert "──" not in text
-    assert len(text.split("\n")) == 10  # 标题＋9 行汇总行（查看行、公益资格行已删）
+    assert len(text.split("\n")) == 9  # 标题＋8 行汇总行（查看行、公益资格行、成就行已删）

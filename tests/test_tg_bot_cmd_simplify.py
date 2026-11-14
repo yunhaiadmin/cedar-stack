@@ -125,16 +125,16 @@ def test_group_scope_drops_private_and_merged_commands():
     assert "start" in group_names
 
 
-# ---------- 账号卡：唯一构建器＋9 行汇总 ----------
+# ---------- 账号卡：唯一构建器＋8 行汇总 ----------
 
-def test_account_card_single_builder_9_rows(db):
+def test_account_card_single_builder_8_rows(db):
     user = _user(db)
     via_panel = features.user_panel(db, user)
     via_dashboard = features.compact_dashboard(db, user)
     via_account = features.handle_account(db, _tg(), TG, "")
     assert via_panel == via_dashboard == via_account
     rows = [ln for ln in via_account.split("\n") if ln.startswith("· ")]
-    assert len(rows) == 9
+    assert len(rows) == 8
     for label in ACCOUNT_LABELS:
         assert f"<b>{label}</b>" in via_account
     # 精简：不逐条铺订阅/设备、无连签行
