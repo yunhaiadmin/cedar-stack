@@ -124,7 +124,6 @@ from backend.api.economy import router as economy_router
 from backend.api.invitation import router as invitation_router
 from backend.api.admin_invitation import router as admin_invitation_router
 from backend.api.teams import router as teams_router
-from backend.api.welfare_reviews import router as welfare_reviews_router
 from backend.api.tg_bind import router as tg_bind_router
 from backend.api.lottery import router as lottery_router
 from backend.emby_server.env_util import env_float
@@ -298,13 +297,6 @@ async def lifespan(app: FastAPI):
             auto_scan.start_auto_scan_scheduler()
         except Exception as e:  # noqa: BLE001
             logger.warning(f"启动定时扫描调度失败（可忽略）: {e}")
-        # 公益服到期检查：每天一次，处理过期保留和不活跃用户；失败不影响启动。
-    if not _is_api_role:
-        try:
-            from backend import welfare_expiry
-            welfare_expiry.start_welfare_expiry_scheduler()
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"启动公益到期检查调度失败（可忽略）: {e}")
         # 追新：默认关闭，不打扰任何现有行为。失败不影响启动。
     if not _is_api_role:
         try:
@@ -998,7 +990,6 @@ app.include_router(economy_router)
 app.include_router(invitation_router)
 app.include_router(admin_invitation_router)
 app.include_router(teams_router)
-app.include_router(welfare_reviews_router)
 app.include_router(tg_bind_router)
 
 # 群抽奖公开核验（无需登录，纯只读）

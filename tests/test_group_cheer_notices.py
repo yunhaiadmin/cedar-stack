@@ -5,8 +5,9 @@
   与私聊到货同批触发；新开关 tg_notify_group_arrival_enabled 默认开，
   关了只发私聊不发群。同一心愿行只报一次，多人附议合并成一条
   （点许愿人本人＋「还有 N 位朋友」）。
-- 升级祝贺只挂在 member_level.add_xp 唯一收口：跨级才发、同级
-  只报一次、降级不发；钩子抛错不影响发经验主流程。
+- 升级祝贺：原挂在 member_level.add_xp 收口，等级体系已于 2026-11-14
+  删除、自动触发点不复存在；本文件改直接钉 queue/send 两入口的语义：
+  跨级才发、同一新等级只报一次（锚）、降级不发。
 - 群消息只发 bot_group_ids 的第一个群，纯文本，不贴链接。
 """
 
@@ -20,7 +21,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend import member_level as ml
 from backend import models
 from backend.emby_server import models as em
 from backend.tg_bot import group_cheer, proactive
@@ -45,7 +45,6 @@ def db():
     )
     models.Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
-    ml.ensure_member_levels_seeded(session)
     try:
         yield session
     finally:
@@ -238,8 +237,7 @@ def test_arrival_no_group_configured_skips_quietly(db, sent):
 def test_level_up_cheer_once_per_level(db, sent):
     _cfg(db, "bot_group_ids", str(GROUP_ID))
     user = _user(db, "升级君")
-    result = ml.add_xp(db, user, 100, "recharge")
-    assert result["leveled_up"] is True
+    assert group_cheer.queue_level_up_cheer(db, user.id, 1, 2) is True
     db.commit()
     group = _group_calls(sent)
     assert len(group) == 1
@@ -248,45 +246,26 @@ def test_level_up_cheer_once_per_level(db, sent):
     assert "Lv.1" in text and "Lv.2" in text
     assert "影迷" in text
 
-    # 同级内继续加经验：不发
-    ml.add_xp(db, user, 10, "recharge")
-    db.commit()
+    # 同一新等级重复直调：被幂等锚挡住，不再发
+    assert group_cheer.send_level_up_cheer(db, user.id, 1, 2) is False
     assert len(_group_calls(sent)) == 1
 
-    # 再跨一级：再发一条，且同级重复直调被幂等锚挡住
-    ml.add_xp(db, user, 400, "recharge")
+    # 再跨一级：再发一条
+    assert group_cheer.queue_level_up_cheer(db, user.id, 2, 3) is True
     db.commit()
     group = _group_calls(sent)
     assert len(group) == 2
     assert "Lv.3" in group[1]["text"] and "鉴赏家" in group[1]["text"]
-    assert group_cheer.send_level_up_cheer(
-        db, user.id, 2, 3) is False
-    assert len(_group_calls(sent)) == 2
 
 
 def test_level_down_no_cheer(db, sent):
     _cfg(db, "bot_group_ids", str(GROUP_ID))
     user = _user(db, "起伏君")
-    ml.add_xp(db, user, 150, "recharge")
+    assert group_cheer.queue_level_up_cheer(db, user.id, 1, 2) is True
     db.commit()
     assert len(_group_calls(sent)) == 1
-    result = ml.add_xp(db, user, -100, "refund")
-    assert result["leveled_down"] is True
+    # 降级不报：排队与直调都拒绝
+    assert group_cheer.queue_level_up_cheer(db, user.id, 2, 1) is False
+    assert group_cheer.send_level_up_cheer(db, user.id, 2, 1) is False
     db.commit()
     assert len(_group_calls(sent)) == 1
-
-
-def test_level_up_hook_failure_does_not_break_add_xp(db, monkeypatch):
-    _cfg(db, "bot_group_ids", str(GROUP_ID))
-    user = _user(db, "稳住君")
-
-    def _explode(*args, **kwargs):
-        raise RuntimeError("报喜钩子坏了")
-
-    monkeypatch.setattr(group_cheer, "queue_level_up_cheer", _explode)
-    result = ml.add_xp(db, user, 100, "recharge")
-    db.commit()
-    assert result["leveled_up"] is True
-    db.refresh(user)
-    assert user.member_level == 2
-    assert int(user.member_xp or 0) == 100

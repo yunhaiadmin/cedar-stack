@@ -32,25 +32,12 @@ const props = defineProps<{
   realmNote?: string
   cancellingSub?: number | string | null
   togglingRenew?: number | string | null
-  /** 公益资格是否生效（取自登录态 is_welfare） */
-  welfareIsWelfare?: boolean
-  /** 公益资格到期日（ISO；由福利状态口返回，续期成功后以服务端返回为准） */
-  welfareExpiresAt?: string | null
-  /** 福利状态口是否已成功返回（未返回时不显示到期／不过期后缀，避免闪现） */
-  welfareStatusLoaded?: boolean
-  /** 当前能量（取自账号卡 view_permission.points_balance，未取到为 null） */
-  pointsBalance?: number | null
-  /** 是否已绑 TG（null = 未知，按钮不拦、以服务端为准） */
-  tgBound?: boolean | null
   viewUnlock?: ViewUnlockInfo | null
-  /** 正在续期的公益天数档（7 或 30），无则 null */
-  renewingWelfare?: number | null
 }>()
 
 const emit = defineEmits<{
   (e: 'cancel', sub: any): void
   (e: 'toggle-renew', sub: any): void
-  (e: 'renew-welfare', days: 7 | 30): void
 }>()
 
 const router = useRouter()
@@ -70,11 +57,6 @@ const viewExpiresDate = computed(() => {
   const v = props.viewUnlock
   if (!v || v.expiresAt === null) return null
   return v.expiresAt.slice(0, 10)
-})
-/** 公益到期日（yyyy-mm-dd）：状态口未成功返回时为 null，不展示 */
-const welfareExpiresDate = computed(() => {
-  if (!props.welfareStatusLoaded || !props.welfareExpiresAt) return null
-  return props.welfareExpiresAt.slice(0, 10)
 })
 </script>
 
@@ -124,34 +106,14 @@ const welfareExpiresDate = computed(() => {
     <div v-else-if="isFreeRealm" class="sub-free">
       <span class="badge free">公益服 · 免费开放</span>
       <p class="pane-empty">{{ realmNote }}</p>
-      <!-- 自助续期：公益天数走 /redeem；查看已随资格合并，只展示状态 -->
-      <div class="renew-block">
-        <div class="renew-block-title">公益资格</div>
-        <p class="renew-line">{{ welfareIsWelfare ? '生效中' : '未开通' }}<template v-if="welfareExpiresDate"> · 到期 {{ welfareExpiresDate }}</template><template v-else-if="welfareStatusLoaded && welfareIsWelfare"> · 不过期</template><template v-if="pointsBalance != null"> · 当前余额 {{ pointsBalance }}</template></p>
-        <p v-if="tgBound === false" class="renew-hint">续期需先绑定 Telegram，绑定后回来续期</p>
-        <div class="renew-btns">
-          <button
-            v-for="days in ([7, 30] as const)"
-            :key="days"
-            type="button"
-            class="btn btn-primary renew-btn"
-            :disabled="renewingWelfare != null || tgBound === false"
-            @click="emit('renew-welfare', days)"
-          >{{ renewingWelfare === days ? '续期中…' : `续期 ${days} 天` }}</button>
-          <button
-            v-if="tgBound === false"
-            type="button"
-            class="btn renew-btn"
-            @click="router.push('/tg-bind')"
-          >去绑定 Telegram</button>
-        </div>
-      </div>
+      <!-- 公益资格自助续期块已随公益资格整族于 2026-11-14 删除；
+           查看凭证只展示状态 -->
       <div v-if="viewUnlock" class="renew-block">
         <div class="renew-block-title">查看凭证</div>
         <p v-if="viewState === 'welfare'" class="renew-line">已随资格开通</p>
         <p v-else-if="viewState === 'permanent'" class="renew-line">已永久解锁（存量凭证）</p>
         <p v-else-if="viewState === 'valid'" class="renew-line">已解锁至 {{ viewExpiresDate }}（存量凭证）</p>
-        <p v-else class="renew-line">{{ viewState === 'expired' ? '存量凭证已到期' : '未开通' }} · 续上公益资格即可看</p>
+        <p v-else class="renew-line">{{ viewState === 'expired' ? '存量凭证已到期' : '未开通' }}</p>
       </div>
     </div>
     <EmptyState
@@ -301,9 +263,6 @@ const welfareExpiresDate = computed(() => {
 }
 .renew-block-title { font-size: 0.875rem; font-weight: 600; color: var(--ink); }
 .renew-line { margin: 4px 0 0; font-size: 0.8125rem; color: var(--ink2); font-variant-numeric: tabular-nums; }
-.renew-hint { margin: 6px 0 0; font-size: 12px; color: var(--paper-warning); }
-.renew-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-.renew-btn:disabled { opacity: 0.6; cursor: wait; }
 .pane-empty {
   margin: 0;
   font-size: 0.8125rem;

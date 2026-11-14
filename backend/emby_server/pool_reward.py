@@ -379,11 +379,11 @@ def _member_meter(db: Session, member, start: datetime,
 
 
 def _grant_detail(db: Session, batch, detail) -> str:
-    """按明细应发量真发经验（同一事务、调用方提交）。
+    """明细结算标记（同一事务、调用方提交）。
 
-    积分已随货币于 2026-11-13 下线：只发经验，明细 points 数值
-    保留作影子对账。幂等锚：经验查 member_xp_log 的
-    (source, ref_id)，已存在即已发过，只补标 paid 不重复发；
+    积分已随货币于 2026-11-13 下线、经验已随等级体系于 2026-11-14
+    删除：两部分都不再真发，明细 points/xp 数值保留作影子对账，
+    本函数只把明细标为 paid。池激励口径重定归贡献池批次。
     返回最终状态。
     """
     user = (db.query(base_models.WebUser)
@@ -395,22 +395,16 @@ def _grant_detail(db: Session, batch, detail) -> str:
     if int(detail.points or 0) > 0:
         # 积分已随货币下线（2026-11-13）：池激励的积分部分不再发放
         # （economy._add_points 已删除）；明细 points 数值保留作影子对账
-        # 历史，经验部分照常发放。池激励口径重定归贡献池批次。
+        # 历史。池激励口径重定归贡献池批次。
         logger.warning(
             "pool_reward 积分发放已下线，跳过: detail=%s points=%s",
             detail.id, detail.points)
     if int(detail.xp or 0) > 0:
-        xp_log = (db.query(base_models.MemberXpLog)
-                  .filter(
-                      base_models.MemberXpLog.user_id == user.id,
-                      base_models.MemberXpLog.source == "pool_reward",
-                      base_models.MemberXpLog.ref_id == str(detail.id))
-                  .first())
-        if xp_log is None:
-            from backend.member_level import add_xp
-
-            add_xp(db, user, int(detail.xp), source="pool_reward",
-                   ref_id=str(detail.id))
+        # 经验已随等级体系下线（2026-11-14，member_level.add_xp 已删除）：
+        # 池激励的经验部分不再发放；明细 xp 数值保留作影子对账历史。
+        logger.warning(
+            "pool_reward 经验发放已下线，跳过: detail=%s xp=%s",
+            detail.id, detail.xp)
     detail.status = "paid"
     detail.granted_at = datetime.now()
     return "paid"

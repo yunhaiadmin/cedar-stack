@@ -1,17 +1,15 @@
-"""观看奖励回收结算：不发 Stopped 的会话被过期回收时按档补发，
-且与 Stopped 结算互斥（同一会话只发一次）。
+"""观看奖励回收结算：不发 Stopped 的会话被过期回收时照常收尾落标记。
 
 病例：2026-11-12 用户 789（LangHuan 客户端）连看 13 集、每集位置
-约 46 分钟，会话全被回收器收尾，活力 0 发放——奖励原本只在
-compat_routes._record_stopped 结算，回收路径只标 ended_at 不结算。
+约 46 分钟，会话全被回收器收尾——奖励结算原本只在
+compat_routes._record_stopped，回收路径只标 ended_at 不结算。
 
-2026-11-13 货币删除收口：活力与观影能量两腿已下线，结算现只发
-观影 XP（member_level.award_watch_xp）。钉死三条（XP 口径）：
-1. 无 Stopped、会话被回收仍按档发 XP（30 分钟 +1 / 60 分钟 +2，
-   watched 基线与 Stopped 同口径：max(umd 最远点, 会话最后位置)）；
-2. 先结算的一方落 rewards_settled_at 标记，后到的迟到 Stopped /
-   重复 Stopped 不再重复发；同条目同日只计 1 次，复活重播也不双发；
-3. 可刷日封顶 10（观影＋签到合计），两场 65 分钟共发 4 XP，不截断。
+2026-11-14 等级体系删除收口：观影 XP 已下线（活力/能量更早随货币
+下线），结算函数现为空转。本文件钉死剩余口径：
+1. 无 Stopped、会话被回收仍照常收尾：ended_at 落、rewards_settled_at
+   幂等标记落；不发任何经验（member_xp 不动、无 MemberXpLog 行）。
+2. 先结算的一方落标记，后到的迟到 Stopped / 重复 Stopped / 复活重播
+   都不再重复结算、不报错。
 """
 import os
 import sys
@@ -110,48 +108,12 @@ def _stopped(db, user, item, key, pos_minutes):
         compat_routes._require_visible_item = orig
 
 
-# ---------- 1. 回收按档发 XP ----------
+# ---------- 1. 回收照常收尾落标记，不发经验 ----------
 
-def test_reap_settles_tier1_without_stopped(db):
+def test_reap_closes_and_marks_without_stopped(db):
     u = _user(db, "reap-t1")
     it = _item(db)
     s = _stale_session(db, u.id, it.id, 46, "reap-t1-key")
-    assert maintenance.reap_stale_playback_sessions(db, stale_minutes=10) == 1
-    db.refresh(s)
-    assert s.ended_at is not None
-    assert s.rewards_settled_at is not None
-    assert _xp(db, u.id) == 1
-    assert _watch_xp_rows(db, u.id) == 1
-
-
-def test_reap_settles_tier2_without_stopped(db):
-    u = _user(db, "reap-t2")
-    it = _item(db)
-    _stale_session(db, u.id, it.id, 65, "reap-t2-key")
-    assert maintenance.reap_stale_playback_sessions(db, stale_minutes=10) == 1
-    assert _xp(db, u.id) == 2
-
-
-def test_reap_watched_basis_uses_umd_max(db):
-    """watched 基线与 Stopped 同口径：会话最后位置只有 20 分钟，
-    但 umd 本轮最远点 46 分钟 → 按 46 分钟发一档。"""
-    u = _user(db, "reap-umd")
-    it = _item(db)
-    _stale_session(db, u.id, it.id, 20, "reap-umd-key")
-    db.add(em.UserMediaData(user_id=u.id, item_id=it.id,
-                            playback_position_ticks=int(20 * MIN),
-                            max_position_ticks=int(46 * MIN)))
-    db.commit()
-    assert maintenance.reap_stale_playback_sessions(db, stale_minutes=10) == 1
-    assert _xp(db, u.id) == 1
-
-
-def test_reap_below_tier_no_award_but_session_closed(db):
-    """不足一档不发奖，但回收收尾照常（ended_at 落、结算标记落，
-    结算失败/无奖绝不能把会话留在未结束状态）。"""
-    u = _user(db, "reap-low")
-    it = _item(db)
-    s = _stale_session(db, u.id, it.id, 10, "reap-low-key")
     assert maintenance.reap_stale_playback_sessions(db, stale_minutes=10) == 1
     db.refresh(s)
     assert s.ended_at is not None
@@ -160,40 +122,55 @@ def test_reap_below_tier_no_award_but_session_closed(db):
     assert _watch_xp_rows(db, u.id) == 0
 
 
+def test_reap_long_session_still_no_xp(db):
+    u = _user(db, "reap-t2")
+    it = _item(db)
+    _stale_session(db, u.id, it.id, 65, "reap-t2-key")
+    assert maintenance.reap_stale_playback_sessions(db, stale_minutes=10) == 1
+    assert _xp(db, u.id) == 0
+    assert _watch_xp_rows(db, u.id) == 0
+
+
+def test_reap_below_tier_session_closed(db):
+    """短会话回收收尾照常（ended_at 落、结算标记落），无奖可发。"""
+    u = _user(db, "reap-low")
+    it = _item(db)
+    s = _stale_session(db, u.id, it.id, 10, "reap-low-key")
+    assert maintenance.reap_stale_playback_sessions(db, stale_minutes=10) == 1
+    db.refresh(s)
+    assert s.ended_at is not None
+    assert s.rewards_settled_at is not None
+    assert _xp(db, u.id) == 0
+
+
 # ---------- 2. 幂等：先结算者胜，后到者跳过 ----------
 
 def test_late_stopped_after_reap_no_double(db):
-    """回收先结算（+1 XP），迟到的 Stopped 再来也不能重复发。"""
+    """回收先落标记，迟到的 Stopped 再来也不重复结算、不报错。"""
     u = _user(db, "late-stop")
     it = _item(db)
     _stale_session(db, u.id, it.id, 46, "late-stop-key")
     assert maintenance.reap_stale_playback_sessions(db, stale_minutes=10) == 1
-    assert _xp(db, u.id) == 1
     _stopped(db, u, it, "late-stop-key", 46)
-    assert _xp(db, u.id) == 1
-    assert _watch_xp_rows(db, u.id) == 1
+    assert _xp(db, u.id) == 0
+    assert _watch_xp_rows(db, u.id) == 0
 
 
 def test_duplicate_stopped_no_double(db):
-    """正常 Stopped 结算后，同一会话的重复 Stopped 不再重复发。"""
+    """正常 Stopped 后，同一会话的重复 Stopped 不重复结算。"""
     u = _user(db, "dup-stop")
     it = _item(db)
     _stopped(db, u, it, "dup-stop-key", 46)
-    assert _xp(db, u.id) == 1
     _stopped(db, u, it, "dup-stop-key", 46)
-    assert _xp(db, u.id) == 1
-    assert _watch_xp_rows(db, u.id) == 1
+    assert _xp(db, u.id) == 0
+    assert _watch_xp_rows(db, u.id) == 0
 
 
-def test_revival_same_item_no_double_xp(db):
-    """同一会话键复活（新一轮播放）后，结算标记可重新落、会话可再收尾，
-    但 XP 按条目每日只计 1 次：同条目同日复活重播不双发（活力时代
-    的「再 +1」口径已随货币下线）。"""
+def test_revival_same_item_no_double(db):
+    """同一会话键复活（新一轮播放）后可再收尾，全程不发经验。"""
     u = _user(db, "revive")
     it = _item(db)
     _stopped(db, u, it, "revive-key", 46)
-    assert _xp(db, u.id) == 1
-    # 复活：Progress 上报（ended=False）命中已结束行 → 清 ended 与结算标记
     body = {"ItemId": it.guid, "PlaySessionId": "revive-key",
             "PositionTicks": int(46 * MIN), "IsPaused": False,
             "PlayMethod": "DirectStream"}
@@ -204,19 +181,19 @@ def test_revival_same_item_no_double_xp(db):
         compat_routes._record_stopped(_req(), u, db, body)
     finally:
         compat_routes._require_visible_item = orig
-    assert _xp(db, u.id) == 1
-    assert _watch_xp_rows(db, u.id) == 1
+    assert _xp(db, u.id) == 0
+    assert _watch_xp_rows(db, u.id) == 0
 
 
-# ---------- 3. 两场同日各结各的（日封顶 10，不截断） ----------
+# ---------- 3. 两场同日各结各的 ----------
 
 def test_reap_two_sessions_both_settle(db):
-    """两场 65 分钟的回收会话同日结算，各发 2 XP、共 4 XP（日封顶 10 未撞线）。"""
+    """两场 65 分钟的回收会话同日收尾，各落标记、不发经验。"""
     u = _user(db, "reap-cap")
     it1 = _item(db)
     it2 = _item(db)
     _stale_session(db, u.id, it1.id, 65, "reap-cap-1")
     _stale_session(db, u.id, it2.id, 65, "reap-cap-2")
     assert maintenance.reap_stale_playback_sessions(db, stale_minutes=10) == 2
-    assert _xp(db, u.id) == 4
-    assert _watch_xp_rows(db, u.id) == 2
+    assert _xp(db, u.id) == 0
+    assert _watch_xp_rows(db, u.id) == 0

@@ -438,18 +438,13 @@ def _get_register_ratelimit(db: Session) -> tuple[bool, int, int]:
     return enabled, max_events, window_seconds
 
 
-# 公益服冷启动赠送（2026-10-28）：新注册默认送 30 天公益资格 + 30 天查看行，
-# 均不扣积分。资格复用 grant_welfare（channel=register_gift）；查看行复用
-# EmbyViewUnlock（points_spent=0 标记赠送）。只给新用户，不动现有用户行。
-# 2026-10-29 用户拍板：公益资格改由总开关 register_gift_welfare_enabled
-# 控制、默认关（开放注册但不送资格，管理端可重开）。
-# 2026-10-29 用户再拍板：查看凭证改由总开关 register_gift_view_enabled
-# 控制、默认关（新注册不送凭证、可以送资格）；两个开关彼此独立。
-# 天数走 SystemConfig（管理端公益配置里改；未配行／非法行回退下面默认值）：
-# register_gift_welfare_days（0=永不过期，grant_welfare 口径），
+# 新注册冷启动赠送（2026-10-28）：新注册可送查看行（EmbyViewUnlock，
+# points_spent=0 标记赠送），只给新用户，不动现有用户行。原先一并送的
+# 公益资格已随公益资格整族于 2026-11-14 删除，注册不再送任何资格。
+# 查看凭证由总开关 register_gift_view_enabled 控制、默认关
+# （2026-10-29 用户拍板：新注册不送凭证，管理端可重开）。
+# 天数走 SystemConfig（未配行／非法行回退下面默认值）：
 # register_gift_view_days（最小 1；0 天按 timedelta 算是“立即过期”，不是永久）。
-# 注意：关资格只能用上面的布尔开关，天数 0 是“永不过期”，不是关闭。
-REGISTER_GIFT_WELFARE_DAYS = 30
 REGISTER_GIFT_VIEW_DAYS = 30
 
 
@@ -465,25 +460,11 @@ def _get_register_gift_days(db, key, default, min_value):
     return value if value >= min_value else default
 
 
-def _get_register_gift_welfare_enabled(db):
-    """读新注册送公益资格总开关：直查 SystemConfig，无进程缓存，保存即生效。
-
-    默认 False（2026-10-29 用户拍板不送）；行缺失／空值／非法值一律按关。
-    真值口径与 config_schema 的布尔真值集对齐（"1"/"true"/"yes"/"on"）。
-    """
-    row = db.query(models.SystemConfig).filter(
-        models.SystemConfig.key == "register_gift_welfare_enabled").first()
-    if row is None or row.value is None:
-        return False
-    return str(row.value).strip().lower() in ("1", "true", "yes", "on")
-
-
 def _get_register_gift_view_enabled(db):
     """读新注册送查看凭证总开关：直查 SystemConfig，无进程缓存，保存即生效。
 
     默认 False（2026-10-29 用户拍板不送）；行缺失／空值／非法值一律按关。
     真值口径与 config_schema 的布尔真值集对齐（"1"/"true"/"yes"/"on"）。
-    与资格开关 register_gift_welfare_enabled 彼此独立（那把归那把读）。
     """
     row = db.query(models.SystemConfig).filter(
         models.SystemConfig.key == "register_gift_view_enabled").first()
@@ -493,38 +474,16 @@ def _get_register_gift_view_enabled(db):
 
 
 def _grant_register_gifts(db, user, code_reward_type=None):
-    """新注册冷启动赠送：资格与查看行各由自己的总开关把关，彼此独立。
+    """新注册冷启动赠送：只送查看凭证（公益资格赠送已于 2026-11-14 删除）。
 
-    资格开关 register_gift_welfare_enabled、凭证开关
-    register_gift_view_enabled 均默认关（2026-10-29 用户拍板：开放注册
-    默认不送资格、不送凭证，管理端可分别重开）；任一开时行为与此前
-    一致，天数走 register_gift_welfare_days（0=永不过期口径不变）／
-    register_gift_view_days（最小 1 口径不变）。
-
-    凭码注册例外（2026-11-10 用户拍板：注册码一律自带公益资格，不看
-    码面类型）：code_reward_type 非 None 即本次是凭码注册——福利型码
-    的资格已在核销事务里按码面发放（channel=code_redeem），这里绝不
-    再发（防码面与赠送天数叠加成双倍）；其余类型码按赠送天数口径
-    无条件发放（不受总开关限制，码本身即门槛），channel=register_code
-    与开放注册赠送（register_gift）区分来源。只带资格：本例外不新建
-    查看行，查看赠送仍只走它自己的开关（下方逻辑不变）。
+    凭证开关 register_gift_view_enabled 默认关（2026-10-29 用户拍板：
+    开放注册默认不送凭证，管理端可重开）；开时天数走
+    register_gift_view_days（最小 1 口径不变）。code_reward_type 参数
+    已不再参与任何分支（凭码注册曾据此自带资格，该口径随资格族删除），
+    保留形参只为调用点兼容。
     """
-    from backend import codes as _codes
     from backend import realms
-    from backend.emby_server.portal import grant_welfare
 
-    if code_reward_type is not None and code_reward_type == _codes.REWARD_WELFARE:
-        logger.info("凭码注册（福利型码）资格已随码发放，跳过注册赠送: user=%s", user.id)
-    elif code_reward_type is not None:
-        welfare_days = _get_register_gift_days(
-            db, "register_gift_welfare_days", REGISTER_GIFT_WELFARE_DAYS, 0)
-        grant_welfare(db, user, channel="register_code", days=welfare_days)
-    elif _get_register_gift_welfare_enabled(db):
-        welfare_days = _get_register_gift_days(
-            db, "register_gift_welfare_days", REGISTER_GIFT_WELFARE_DAYS, 0)
-        grant_welfare(db, user, channel="register_gift", days=welfare_days)
-    else:
-        logger.info("新注册送公益资格开关关闭，跳过资格赠送: user=%s", user.id)
     if not _get_register_gift_view_enabled(db):
         logger.info("新注册送查看凭证开关关闭，跳过凭证赠送: user=%s", user.id)
         return
@@ -674,10 +633,9 @@ def register(request: Request, req: RegisterRequest, db: Session = Depends(get_d
                            _mask_invite_code(req.invitation_code),
                            exc_info=True)
 
-    # 公益服冷启动赠送：失败静默不阻塞注册（与邀请奖励同一容错口径）。
-    # 凭码注册把核销的 reward_type 传进去：资格一律自带（见
-    # _grant_register_gifts docstring），发放摆在建号提交之后，与赠送
-    # 同一容错段——发放异常只回滚赠送事务、记日志，已落库的号不受影响。
+    # 新注册冷启动赠送（只剩查看凭证）：失败静默不阻塞注册（与邀请
+    # 奖励同一容错口径）。发放摆在建号提交之后，异常只回滚赠送事务、
+    # 记日志，已落库的号不受影响。
     try:
         _grant_register_gifts(db, user, code_reward_type=consume_reward_type)
     except Exception:  # noqa: BLE001 — 赠送失败不阻塞注册

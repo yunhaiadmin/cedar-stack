@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
-"""公益服管理后台 API
+"""群抽奖与机器人配置管理后台 API（历史文件名 welfare_admin）
 
-- GET  /welfare/users              公益用户列表
-- POST /welfare/grant              开通/续期公益
-- POST /welfare/revoke             取消公益资格
-- POST /welfare/bulk-extend        批量延期
-- GET/PUT /welfare/config          公益配置读写
+- GET/PUT /welfare/config          配置读写（抽奖/机器人键）
+- GET/POST /welfare/lottery/*      群抽奖轮次/提案/黑名单管理
+
+公益用户/资格发放端点已随公益资格整族于 2026-11-14 删除。
 """
 
 from __future__ import annotations
@@ -27,145 +26,118 @@ from backend.api.admin_core import admin_router, get_current_admin, _audit
 from backend.database import get_db
 
 
-# ==================== 公益用户管理 ====================
+# ==================== 配置（抽奖/机器人/查看赠送） ====================
 
-@admin_router.get("/welfare/users")
-def welfare_users(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    keyword: str = Query(""),
-    only_welfare: bool = Query(True),
+WELFARE_CONFIG_KEYS = {
+    # 公益资格族键（资格码配额/注册送资格/到期保留/活力保号/福利申请）
+    # 已随公益资格整族于 2026-11-14 删除，本字典只剩抽奖/机器人/查看
+    # 赠送等在用键（字典名与端点路径为历史名，不动以免断现行调用）。
+    # 新注册送查看凭证天数（emby_portal._grant_register_gifts 读取）
+    "register_gift_view_days": "30",
+    # 新注册送查看凭证总开关（2026-10-29 默认关：新注册不送凭证；
+    # 服主在管理端改成 true 即可重开，天数仍走 register_gift_view_days）
+    "register_gift_view_enabled": "false",
+    # P0 统一货币体系：充值比例
+    "recharge_ratio": "1.2",
+    # C4 商店改造：快捷金额
+    "recharge_quick_amounts": "10,30,50,100,200",
+    # B4 TG Bot 总控：总开关、群白名单、限流、各命令开关
+    "bot_group_ids": "",
+    "bot_rate_limit_seconds": "3",
+    "bot_group_rate_limit": "20",
+    # 观影榜海报日推：总开关默认开 / 发分开关默认关 / 名次发分表（逗号分隔）
+    "bot_rankpush_enabled": "true",
+    "bot_rankpush_reward_enabled": "false",
+    "bot_rankpush_reward_table": "10,8,6,5,4,3,2,1,1,1",
+    # 更新入库播报：总开关默认开 / 攒批间隔默认 30 分钟 / 发送目标默认空（发群）
+    "bot_update_digest_enabled": "true",
+    "bot_update_digest_interval_minutes": "30",
+    "bot_update_digest_chat_id": "",
+    # 每日播放排行榜：总开关默认关 / 发送时间默认 21:30 /
+    # 每榜默认 5 条 / 三榜分开关默认开 / 海报图默认开
+    "bot_playrank_enabled": "false",
+    "bot_playrank_time": "21:30",
+    "bot_playrank_top_n": "5",
+    "bot_playrank_users_enabled": "true",
+    "bot_playrank_series_enabled": "true",
+    "bot_playrank_movies_enabled": "true",
+    "bot_playrank_poster_enabled": "true",
+    # 主动私聊提醒：求片到货 / 转存终态，默认开（2026-11-08 私聊通报
+    # 优化批）；同一人合并窗口默认 60 秒。新求片提醒管理员默认开。
+    "tg_notify_store_arrival_enabled": "true",
+    "tg_notify_transfer_done_enabled": "true",
+    "tg_notify_new_request_enabled": "true",
+    "tg_notify_merge_window_sec": "60",
+    # 许愿到货群报喜（tg_bot.group_cheer）：默认开，关了只发私聊不发群。
+    "tg_notify_group_arrival_enabled": "true",
+    # 新贡献者群欢迎（tg_bot.group_cheer）：审核通过时发，默认开。
+    "tg_notify_group_pool_welcome_enabled": "true",
+    # 频道马甲治理＋退群处置（2026-10-30 借鉴 embyboss 第 1 项；读侧
+    # tg_bot.policy，缺省与 policy.DEFAULTS 逐字对齐）
+    "bot_channel_guard_enabled": "true",
+    "bot_channel_whitelist": "",
+    "bot_leave_action": "cancel_welfare",
+    # TG 门禁：公益服能力（签到/积分/红包/抽奖）是否要求绑定 Telegram
+    "welfare_require_tg_bind": "1",
+    # 群抽奖：总开关默认开（关闭后不可新建活动），允许群逗号分隔、空=不限制
+    "lottery_group_ids": "",
+    # 群抽奖自动开奖：总开关默认开，扫描间隔默认 60 秒（最小 30），开奖通知默认开
+    "lottery_draw_interval_sec": "60",
+    # 三重门：身份门（参赛者必须在 TG 群里，默认开）/ 资格门（新号限制天数、每日参加上限，默认 0=不限制）
+    "lottery_require_group_member": "1",
+    "lottery_min_account_age_days": "0",
+    "lottery_max_joins_per_day": "0",
+    # 公告根治（2026-10-31）：公告自动置顶默认开；人数提醒台阶默认 25 人一条，
+    # 开奖前 30 分钟最后一叫；公告卡人数编辑节流 20 秒（0=关/不节流走读侧口径）
+    "lottery_announce_pin_enabled": "1",
+    "lottery_reminder_step": "25",
+    "lottery_final_call_minutes": "30",
+    "lottery_announce_edit_min_interval_sec": "20",
+    # 注册后 TG 绑定引导页总开关
+    # 求片 v2：总开关 / 附议 / 附议者入库通知（默认全开）
+    # 发言积分/积分兑换/积分转账键已随货币于 2026-11-13 下线（原
+    # points_chat_*、points_redeem_*、points_transfer_* 与 points.py 一并删除）。
+}
+
+
+@admin_router.get("/welfare/config")
+def welfare_config_get(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """公益用户列表"""
-    q = db.query(models.WebUser)
-    if only_welfare:
-        q = q.filter(models.WebUser.is_welfare == True)  # noqa: E712
-    if keyword:
-        q = q.filter(models.WebUser.username.like(f"%{keyword}%"))
-    total = q.count()
-    users = q.order_by(models.WebUser.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    from backend.emby_server import portal
-    items = []
-    for u in users:
-        st = portal.get_welfare_status(db, u)
-        items.append({
-            "id": u.id,
-            "username": u.username,
-            "is_welfare": bool(getattr(u, "is_welfare", False)),
-            "welfare_expires_at": u.welfare_expires_at.isoformat() if getattr(u, "welfare_expires_at", None) else None,
-            "days_left": st["days_left"],
-            "welfare_grant_channel": getattr(u, "welfare_grant_channel", None),
-        })
-    return {"total": total, "items": items}
+    """读取配置（抽奖/机器人/查看赠送键）"""
+    result = {}
+    for key, default in WELFARE_CONFIG_KEYS.items():
+        cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == key).first()
+        result[key] = cfg.value if cfg else default
+    return result
 
 
-class GrantRequest(BaseModel):
-    user_id: int
-    # P2 修复（完美审查 B-P2-1）：负天数会穿透成"永不过期"，必须 ge=0。
-    days: int = Field(30, ge=0, description="天数，0=永不过期")
-    channel: str = "admin"
-
-
-@admin_router.post("/welfare/grant")
-def welfare_grant(
-    req: GrantRequest,
+@admin_router.put("/welfare/config")
+def welfare_config_set(
+    data: dict,
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """开通/续期公益资格"""
-    user = db.query(models.WebUser).filter(models.WebUser.id == req.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    from backend.emby_server import portal
-    expires = portal.grant_welfare(db, user, req.channel, req.days, granted_by=current_admin.id)
-    _audit(db, current_admin.id, "welfare_grant", "user", user.id, {"days": req.days, "channel": req.channel})
+    """保存配置（数值/开关键按 config_schema 校验，非法 400；空字符串=未设置，回退默认值）"""
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="配置必须是对象")
+    # 配置瘦身第 4 批 4-4：白名单过滤保留在端点层（未知键静默忽略，行为不变），
+    # 校验→落库→写时失效收敛到 config_service。bool 风格（digit/word）已登记
+    # 进 WELFARE_CONFIG_SCHEMA 的 spec，normalize 口径与今天逐字一致。
+    values = {key: value for key, value in data.items() if key in WELFARE_CONFIG_KEYS}
+    if values:
+        # 校验失败抛 ConfigValueError，由 main.py 的统一 handler 转 400
+        config_service.save_config(db, values, schema="welfare")
+    updated = list(values)
+    _audit(db, current_admin.id, "welfare_config_update", "system", None, {"updated": updated})
     db.commit()
-    return {"success": True, "expires_at": expires.isoformat() if expires else None}
-
-
-class RevokeRequest(BaseModel):
-    user_id: int
-
-
-@admin_router.post("/welfare/revoke")
-def welfare_revoke(
-    req: RevokeRequest,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """取消公益资格"""
-    user = db.query(models.WebUser).filter(models.WebUser.id == req.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    user.is_welfare = False
-    db.add(models.WelfareGrantLog(user_id=user.id, channel="admin_revoke", days=0, granted_by=current_admin.id))
-    _audit(db, current_admin.id, "welfare_revoke", "user", user.id, {})
-    db.commit()
-    return {"success": True}
-
-
-class BulkExtendRequest(BaseModel):
-    min_expired_days: int = Field(0, description="过期天数下限")
-    max_expired_days: int = Field(30, description="过期天数上限")
-    # P2 修复（完美审查 B-P2-1）：负天数会穿透成"永不过期"，必须 ge=0。
-    add_days: int = Field(30, ge=0, description="增加天数")
-
-
-@admin_router.post("/welfare/bulk-extend")
-def welfare_bulk_extend(
-    req: BulkExtendRequest,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """按过期天数范围批量延期"""
-    now = datetime.now()
-    from backend.emby_server import portal
-    affected = 0
-    failed: list[dict] = []
-    # P2 修复（完美审查 B-P2-3）：键集分页（id > last_id，每批 500），
-    # 与 welfare_expiry.check_welfare_expiry 同一口径——之前全表 .all()
-    # 无界加载进内存。
-    last_id = 0
-    while True:
-        users = (
-            db.query(models.WebUser)
-            .filter(models.WebUser.is_welfare == True, models.WebUser.id > last_id)  # noqa: E712
-            .order_by(models.WebUser.id)
-            .limit(500)
-            .all()
-        )
-        if not users:
-            break
-        for u in users:
-            last_id = u.id
-            exp = getattr(u, "welfare_expires_at", None)
-            if exp is None:
-                continue  # 永不过期跳过
-            expired_days = (now - exp).days
-            if expired_days < 0:
-                continue  # 未过期跳过
-            if req.min_expired_days <= expired_days <= req.max_expired_days:
-                try:
-                    portal.grant_welfare(db, u, "bulk_extend", req.add_days, granted_by=current_admin.id)
-                    affected += 1
-                except Exception as e:
-                    # 批量里单个失败不许掀翻整批：grant_welfare 每用户独立提交，
-                    # 已延期的不回滚；失败记清单并 rollback 清会话，最后汇总审计
-                    # 如实返回，前端能看到谁没延上（此前中途抛错=前面白做、
-                    # 汇总审计也没落盘、前端只拿到 500 猜谜）。
-                    db.rollback()
-                    failed.append({"user_id": u.id, "username": u.username,
-                                   "error": str(e)[:200]})
-                    logger.warning("公益批量延期用户 %s 失败：%s", u.id, e)
-    _audit(db, current_admin.id, "welfare_bulk_extend", "system", None,
-           {"affected": affected, "failed": len(failed), "add_days": req.add_days})
-    db.commit()
-    return {"success": True, "affected": affected, "failed": failed}
+    return {"success": True, "updated": updated}
 
 
 # ==================== 求片审核 ====================
+# 注：求片（MediaRequest）是保留域，不随福利族删除；本段端点路径
+# 历史上挂在 /welfare/ 下，保持不变。
 
 def _request_to_dict(r):
     return {
@@ -255,128 +227,6 @@ def welfare_request_done(
     _audit(db, current_admin.id, "welfare_request_done", "media_request", r.id, {"title": r.title})
     db.commit()
     return {"success": True}
-
-
-# ==================== 公益配置 ====================
-
-WELFARE_CONFIG_KEYS = {
-    # G1 资格码月配额：每位管理员每月可生成的资格码（reward_type=welfare）
-    # 张数上限，默认 30（宽松值）；0=不限（读侧 codes.welfare_code_monthly_quota）
-    "welfare_code_monthly_quota": "30",
-    # 新注册冷启动赠送天数（emby_portal._grant_register_gifts 读取；0=永不过期仅福利天数适用）
-    "register_gift_welfare_days": "30",
-    "register_gift_view_days": "30",
-    # 新注册送公益资格总开关（2026-10-29 默认关：开放注册但不送资格；
-    # 服主在管理端改成 true 即可重开，天数仍走上面两个键）
-    "register_gift_welfare_enabled": "false",
-    # 新注册送查看凭证总开关（2026-10-29 默认关：新注册不送凭证、可以送资格；
-    # 服主在管理端改成 true 即可重开，天数仍走 register_gift_view_days）
-    "register_gift_view_enabled": "false",
-    "welfare_grace_days": "7",
-    # 活力保号（vitality_renew，2026-11-09 取代连签保号）总开关（默认开）
-    # ＋活力线（默认 3）；读侧 welfare_expiry._try_vitality_renew
-    "welfare_vitality_renew_enabled": "true",
-    "welfare_vitality_renew_min": "3",
-    # 保号续期天数（默认 30）：沿用连签保号时代的既有键，语义已转活力保号
-    "welfare_streak_renew_days": "30",
-    "welfare_inactive_days": "30",
-    "welfare_request_monthly": "3",
-    # P0 统一货币体系：充值比例
-    "recharge_ratio": "1.2",
-    # C4 商店改造：快捷金额
-    "recharge_quick_amounts": "10,30,50,100,200",
-    # B4 TG Bot 总控：总开关、群白名单、限流、各命令开关
-    "bot_group_ids": "",
-    "bot_rate_limit_seconds": "3",
-    "bot_group_rate_limit": "20",
-    # 观影榜海报日推：总开关默认开 / 发分开关默认关 / 名次发分表（逗号分隔）
-    "bot_rankpush_enabled": "true",
-    "bot_rankpush_reward_enabled": "false",
-    "bot_rankpush_reward_table": "10,8,6,5,4,3,2,1,1,1",
-    # 更新入库播报：总开关默认开 / 攒批间隔默认 30 分钟 / 发送目标默认空（发群）
-    "bot_update_digest_enabled": "true",
-    "bot_update_digest_interval_minutes": "30",
-    "bot_update_digest_chat_id": "",
-    # 每日播放排行榜：总开关默认关 / 发送时间默认 21:30 /
-    # 每榜默认 5 条 / 三榜分开关默认开 / 海报图默认开
-    "bot_playrank_enabled": "false",
-    "bot_playrank_time": "21:30",
-    "bot_playrank_top_n": "5",
-    "bot_playrank_users_enabled": "true",
-    "bot_playrank_series_enabled": "true",
-    "bot_playrank_movies_enabled": "true",
-    "bot_playrank_poster_enabled": "true",
-    # 主动私聊提醒：求片到货 / 转存终态，默认开（2026-11-08 私聊通报
-    # 优化批）；同一人合并窗口默认 60 秒。新求片提醒管理员默认开。
-    "tg_notify_store_arrival_enabled": "true",
-    "tg_notify_transfer_done_enabled": "true",
-    "tg_notify_new_request_enabled": "true",
-    "tg_notify_merge_window_sec": "60",
-    # 许愿到货群报喜（tg_bot.group_cheer）：默认开，关了只发私聊不发群。
-    "tg_notify_group_arrival_enabled": "true",
-    # 新贡献者群欢迎（tg_bot.group_cheer）：审核通过时发，默认开。
-    "tg_notify_group_pool_welcome_enabled": "true",
-    # 频道马甲治理＋退群处置（2026-10-30 借鉴 embyboss 第 1 项；读侧
-    # tg_bot.policy，缺省与 policy.DEFAULTS 逐字对齐）
-    "bot_channel_guard_enabled": "true",
-    "bot_channel_whitelist": "",
-    "bot_leave_action": "cancel_welfare",
-    # TG 门禁：公益服能力（签到/积分/红包/抽奖）是否要求绑定 Telegram
-    "welfare_require_tg_bind": "1",
-    # 群抽奖：总开关默认开（关闭后不可新建活动），允许群逗号分隔、空=不限制
-    "lottery_group_ids": "",
-    # 群抽奖自动开奖：总开关默认开，扫描间隔默认 60 秒（最小 30），开奖通知默认开
-    "lottery_draw_interval_sec": "60",
-    # 三重门：身份门（参赛者必须在 TG 群里，默认开）/ 资格门（新号限制天数、每日参加上限，默认 0=不限制）
-    "lottery_require_group_member": "1",
-    "lottery_min_account_age_days": "0",
-    "lottery_max_joins_per_day": "0",
-    # 公告根治（2026-10-31）：公告自动置顶默认开；人数提醒台阶默认 25 人一条，
-    # 开奖前 30 分钟最后一叫；公告卡人数编辑节流 20 秒（0=关/不节流走读侧口径）
-    "lottery_announce_pin_enabled": "1",
-    "lottery_reminder_step": "25",
-    "lottery_final_call_minutes": "30",
-    "lottery_announce_edit_min_interval_sec": "20",
-    # 注册后 TG 绑定引导页总开关
-    # 求片 v2：总开关 / 附议 / 附议者入库通知（默认全开）
-    # 发言积分/积分兑换/积分转账键已随货币于 2026-11-13 下线（原
-    # points_chat_*、points_redeem_*、points_transfer_* 与 points.py 一并删除）。
-}
-
-
-@admin_router.get("/welfare/config")
-def welfare_config_get(
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """读取公益配置"""
-    result = {}
-    for key, default in WELFARE_CONFIG_KEYS.items():
-        cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == key).first()
-        result[key] = cfg.value if cfg else default
-    return result
-
-
-@admin_router.put("/welfare/config")
-def welfare_config_set(
-    data: dict,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """保存公益配置（数值/开关键按 config_schema 校验，非法 400；空字符串=未设置，回退默认值）"""
-    if not isinstance(data, dict):
-        raise HTTPException(status_code=400, detail="配置必须是对象")
-    # 配置瘦身第 4 批 4-4：白名单过滤保留在端点层（未知键静默忽略，行为不变），
-    # 校验→落库→写时失效收敛到 config_service。bool 风格（digit/word）已登记
-    # 进 WELFARE_CONFIG_SCHEMA 的 spec，normalize 口径与今天逐字一致。
-    values = {key: value for key, value in data.items() if key in WELFARE_CONFIG_KEYS}
-    if values:
-        # 校验失败抛 ConfigValueError，由 main.py 的统一 handler 转 400
-        config_service.save_config(db, values, schema="welfare")
-    updated = list(values)
-    _audit(db, current_admin.id, "welfare_config_update", "system", None, {"updated": updated})
-    db.commit()
-    return {"success": True, "updated": updated}
 
 
 # ==================== 群抽奖活动管理（G2） ====================

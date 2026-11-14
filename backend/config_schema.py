@@ -136,36 +136,15 @@ def normalize(key: str, spec: tuple, value: Any, bool_style: str = "word") -> Op
     raise ConfigValueError(f"{key} 类型未知")
 
 
-# 公益配置（welfare_admin.WELFARE_CONFIG_KEYS）里的数值/开关键；未列出的（群 id 列表等）按字符串保存
+# 配置（welfare_admin.WELFARE_CONFIG_KEYS，历史名）里的数值/开关键；未列出的（群 id 列表等）按字符串保存
 WELFARE_CONFIG_SCHEMA: dict[str, tuple] = {
-    # 发言积分/积分兑换/兑换门槛键已随货币于 2026-11-13 下线
-    # （points_chat_*、points_redeem_*、welfare_redeem_min_* 一并删除）。
-    # G1 资格码月配额：0 在读侧是「不限」，故下限 0 合法
-    "welfare_code_monthly_quota": ("int", 0, _BIG),
-    "welfare_grace_days": ("int", 0, 3650),
-    # 活力保号（vitality_renew，2026-11-09 取代连签保号）总开关＋活力线：
-    # 开关 word 风格 ("bool",) 存 "true"/"false"（同 register_gift_* 口径；
-    # 读侧 economy._get_bool_config 只认 "true"）。活力线默认 3，
-    # 上限 1000（活力上限量级远在其内，留足余量）。
-    "welfare_vitality_renew_enabled": ("bool",),
-    "welfare_vitality_renew_min": ("int", 0, 1000),
-    # 保号续期天数：沿用连签保号时代的既有键（默认 30，1-365），语义已
-    # 转到活力保号——实际延期与 WelfareGrantLog.days 同走此值，不另造键。
-    # （旧键 welfare_streak_renew_min / welfare_streak_renew_enabled /
-    # welfare_streak_forgive_per_month 已随连签保号与断签保护撤除摘掉。）
-    "welfare_streak_renew_days": ("int", 1, 365),
-    "welfare_inactive_days": ("int", 0, 3650),
-    "welfare_request_monthly": ("int", 0, 10000),
-    # 新注册冷启动赠送：福利天数 0=永不过期（grant_welfare 口径）；查看天数最小 1
-    #（0 天按 timedelta 算是“立即过期”，不是永久，管理端直接禁掉）
-    "register_gift_welfare_days": ("int", 0, _BIG),
+    # 公益资格族键（资格码配额/到期保留/活力保号/福利申请/注册送资格）
+    # 已随公益资格整族于 2026-11-14 删除，本表只剩抽奖/机器人/查看赠送键。
+    # 新注册送查看凭证天数：最小 1（0 天按 timedelta 算是“立即过期”，
+    # 不是永久，管理端直接禁掉）
     "register_gift_view_days": ("int", 1, _BIG),
-    # 新注册送公益资格总开关（2026-10-29 用户拍板默认关）：word 风格
-    # ("bool",) 存 "true"/"false"（同 ECONOMY 家族口径）。关≠天数 0——
-    # 0 在 grant_welfare 口径是"永不过期"，必须独立布尔键，不能复用天数键。
-    "register_gift_welfare_enabled": ("bool",),
-    # 新注册送查看凭证总开关（2026-10-29 用户拍板默认关）：与资格开关对称的
-    # 独立布尔键，同为 word 风格 ("bool",)。关≠天数 0——查看天数 schema
+    # 新注册送查看凭证总开关（2026-10-29 用户拍板默认关）：word 风格
+    # ("bool",) 存 "true"/"false"。关≠天数 0——查看天数 schema
     # 下限是 1，0 天只会“立即过期”，不是关闭，不能复用天数键。
     "register_gift_view_enabled": ("bool",),
     "recharge_ratio": ("float", 0.0001, 1000000),
@@ -735,8 +714,7 @@ ECONOMY_CONFIG_SCHEMA: dict[str, tuple] = {
     "media_seek_auto_approve_enabled": ("bool",),
     "media_seek_fulfill_interval_minutes": ("int", 1, 1440),
     # 2026-10-23 去重 #5：两个月限与日限同卡（运营参数）后需在此登记才可
-    # 从该页保存；welfare_request_monthly 同时保留在 WELFARE_CONFIG_SCHEMA
-    # （公益配置端点的历史口径），paid_request_monthly 此前无任何登记
+    # 从该页保存；paid_request_monthly 此前无任何登记
     "welfare_request_monthly": ("int", 0, 10000),
     "paid_request_monthly": ("int", 0, 10000),
     # r40：卡码授予天数所用默认套餐（codes._resolve_plan 读取；无行=按服自动推导）

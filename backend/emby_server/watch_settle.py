@@ -8,9 +8,9 @@
 并以 PlaybackSession.rewards_settled_at 做幂等标记：谁先结算谁落
 标记，后到的一方（迟到的 Stopped / 重复 Stopped）跳过，防重复发奖。
 
-现只结观影 XP（member_level.award_watch_xp，按条目每日一次幂等）：
-活力与观影能量两腿已随货币于 2026-11-13 下线。结算失败只记日志，
-绝不影响调用方主流程；幂等标记口径与历史一致。
+三条奖励腿均已下线：活力与观影能量随货币于 2026-11-13 下线，观影
+XP 随等级体系于 2026-11-14 删除。本模块现只保留幂等标记口径
+（settle_session_row），结算函数本身为空转，绝不影响调用方主流程。
 """
 
 import logging
@@ -41,18 +41,13 @@ def effective_max_position_ticks(umd: em.UserMediaData) -> int:
 
 def settle_session_rewards(db, user_id: int, item_id: int,
                            watched_ticks, finished: bool) -> None:
-    """结算一轮观看的奖励（观影 XP）。
+    """结算一轮观看的奖励（现为空转）。
 
-    活力与观影能量已随货币下线（2026-11-13），此处只剩观影 XP 一腿；
-    发放走自己的锁 + 提交，失败只记日志、不挡主流程。
+    观影 XP 已随等级体系于 2026-11-14 删除，活力/能量更早随货币下线；
+    本函数保留签名与调用点（Stopped 与回收两路共用），只做幂等标记
+    语义的占位，不再发放任何奖励。
     """
-    minutes = (watched_ticks or 0) / TICKS_PER_MINUTE
-    try:
-        from backend import member_level as _ml
-
-        _ml.award_watch_xp(db, user_id, minutes, item_id)
-    except Exception:  # noqa: BLE001 — 经验发放失败不挡主流程
-        logger.debug("观影 XP 发放失败", exc_info=True)
+    return None
 
 
 def session_watched_ticks(db, session) -> tuple:

@@ -10,8 +10,9 @@
   www.aetrix.love，不贴任何链接、不 @ TG 账号、不出隐私信息。
   开关 ``tg_notify_group_arrival_enabled`` 默认开；关了只发私聊、
   不发群。
-- 会员升级祝贺：经验唯一收口 member_level.add_xp 检测到跨级时，
-  往同一个群发一条：用户名 + Lv.旧 → Lv.新 + 新等级名。只报升级，
+- 会员升级祝贺：原由 member_level.add_xp 跨级时排队（等级体系已于
+  2026-11-14 删除，现无自动触发点，queue/send 入口保留）：往同一个
+  群发一条：用户名 + Lv.旧 → Lv.新 + 新等级名。只报升级，
   同级/降级不报；多级连跳只发一条（旧 → 最终）。
 - 新贡献者欢迎：池成员审核通过时（pool_admin 审核收口，与站内信
   同一触发点、业务事务已提交后同步发），往同一个群发一条：站内
@@ -311,11 +312,18 @@ def send_store_arrival_cheer(db: Session, request_id: int) -> bool:
 
 def queue_level_up_cheer(db: Session, user_id: int, old_level: int,
                          new_level: int) -> bool:
-    """升级收口排队（member_level.add_xp 跨级时调用）。只报升级。"""
+    """升级收口排队（原由 member_level.add_xp 跨级时调用；等级体系已于
+    2026-11-14 删除，现无自动调用方，函数保留供手动触发）。只报升级。"""
     if int(new_level) <= int(old_level):
         return False
     _enqueue(db, ("level_up", int(user_id), int(old_level), int(new_level)))
     return True
+
+
+# 等级名兜底（原 member_level.DEFAULT_LEVELS 的名称部分，等级体系于
+# 2026-11-14 删除后就地保留为只读展示常量）
+_DEFAULT_LEVEL_NAMES = {1: "初幕", 2: "影迷", 3: "鉴赏家",
+                        4: "放映师", 5: "造梦者", 6: "传奇"}
 
 
 def _level_name(db: Session, level: int) -> str:
@@ -324,11 +332,7 @@ def _level_name(db: Session, level: int) -> str:
     name = (getattr(row, "name", None) or "").strip() if row is not None else ""
     if name:
         return name
-    from backend import member_level as _ml
-    for entry in _ml.DEFAULT_LEVELS:
-        if entry["level"] == int(level):
-            return entry["name"]
-    return ""
+    return _DEFAULT_LEVEL_NAMES.get(int(level), "")
 
 
 def send_level_up_cheer(db: Session, user_id: int, old_level: int,

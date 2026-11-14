@@ -26,7 +26,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from starlette.requests import Request
 
-from backend import invite_rebate, invite_trial, member_level as ml, models, wallet
+from backend import invite_rebate, invite_trial, models, wallet
 from backend.api import economy, emby_portal
 from backend.api import invitation as invitation_api
 from backend.api import admin_invitation as admin_invitation_api
@@ -44,7 +44,7 @@ def db():
     session = sessionmaker(bind=engine)()
     session.add(models.ServerRealm(id=1, name="默认服", slug="main", is_active=True))
     session.commit()
-    ml.ensure_member_levels_seeded(session)
+
     # 钱包默认开着会让返利即时入账；本文件锚定「无钱包时计提挂 pending」
     # 的路径，统一先把总开关关掉（即时入账另由
     # test_record_rebate_credited_with_wallet 覆盖）。

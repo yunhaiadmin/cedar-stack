@@ -113,25 +113,6 @@ def test_a_p2_3_x_real_ip_valid_still_trusted():
 
 # ==================== B-P2-1：公益负天数 ==================================
 
-def test_b_p2_1_grant_request_rejects_negative_days():
-    from backend.api.welfare_admin import BulkExtendRequest, GrantRequest
-
-    with pytest.raises(ValidationError):
-        GrantRequest(user_id=1, days=-1)
-    with pytest.raises(ValidationError):
-        BulkExtendRequest(add_days=-30)
-    # 0（永不过期）与正数仍合法
-    assert GrantRequest(user_id=1, days=0).days == 0
-    assert BulkExtendRequest(add_days=7).add_days == 7
-
-
-def test_b_p2_1_grant_welfare_rejects_negative_days_depth():
-    from backend.emby_server import portal
-
-    with pytest.raises(ValueError):
-        portal.grant_welfare(None, SimpleNamespace(id=1), "t", -5)
-
-
 # ==================== B-P2-2：取消抽奖原子性 ===============================
 
 def _lottery_db(db):
@@ -174,24 +155,7 @@ def test_b_p2_2_cancel_missing_round_404(db):
     assert ei.value.status_code == 404
 
 
-# ==================== B-P2-3：批量延期键集分页 =============================
-
-def test_b_p2_3_bulk_extend_keyset_pagination(db):
-    from backend.api.welfare_admin import BulkExtendRequest, welfare_bulk_extend
-
-    # 520 个过期用户（> 单批 500），验证键集分页不丢人
-    expired = datetime.now() - timedelta(days=5)
-    for i in range(520):
-        db.add(models.WebUser(username=f"w{i}", password_hash="x",
-                               is_welfare=True, welfare_expires_at=expired))
-    db.commit()
-    req = BulkExtendRequest(min_expired_days=0, max_expired_days=30, add_days=7)
-    out = welfare_bulk_extend(req, SimpleNamespace(id=9), db)
-    assert out["affected"] == 520
-    # 抽查：确实延期了 7 天
-    u = db.query(models.WebUser).filter(models.WebUser.username == "w0").one()
-    assert u.welfare_expires_at > datetime.now()
-
+# ==================== B-P2-3：批量延期（已随福利族于 2026-11-14 删除） ===============================
 
 # ==================== B-P2-4/B-P2-5：发言积分（已随积分货币于 2026-11-13 下线删除） ===============================
 

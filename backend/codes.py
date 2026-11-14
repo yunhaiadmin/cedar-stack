@@ -384,67 +384,27 @@ def grant_days_for(code: models.RegistrationCode) -> int:
     return normalize_days(code.days)
 
 
-# ==================== 资格码（reward_type=welfare） ====================
+# ==================== 资格码（reward_type=welfare，已下线） ====================
 
+# 公益资格已随福利整族于 2026-11-14 删除：存量资格码核销时直接拒绝
+# （不烧码，见 _redeem_found_code），生成端同步关闭。常量保留仅用于
+# 识别存量码的 reward_type 值。
 REWARD_WELFARE = "welfare"
 
 # 余额码（reward_type=balance，钱包批 1，2026-11-14）：核销即钱包入账，
 # 面额在 balance_value（元），发放走 backend/wallet.py 的账本服务。
 REWARD_BALANCE = "balance"
 
-# 管理员资格码月配额：每位管理员每月可生成的资格码张数上限。
-# 语义（写清）：<=0 表示不限（与能量转账上限 points_transfer_max 的
-# 「0=不限」同惯例）；行缺失 / 空值 / 非法值回退默认值 30（宽松默认，
-# 防的是某个管理员账号被盗或失控时批量造码，不是卡正常发放）。
-# 只卡 reward_type=welfare 这一种码，其余三类不计入也不受限。
-WELFARE_CODE_QUOTA_KEY = "welfare_code_monthly_quota"
-WELFARE_CODE_QUOTA_DEFAULT = 30
-
-
-def welfare_code_monthly_quota(db: Session) -> int:
-    """读资格码月配额：直查 SystemConfig（无进程缓存，管理端保存即生效）"""
-    row = db.query(models.SystemConfig).filter(
-        models.SystemConfig.key == WELFARE_CODE_QUOTA_KEY).first()
-    if row is None or row.value is None or str(row.value).strip() == "":
-        return WELFARE_CODE_QUOTA_DEFAULT
-    try:
-        return int(str(row.value).strip())
-    except (TypeError, ValueError):
-        return WELFARE_CODE_QUOTA_DEFAULT
-
-
-def welfare_codes_created_this_month(db: Session, admin_id: int) -> int:
-    """某管理员本自然月已生成的资格码张数（配额计数口径）
-
-    月界按 Asia/Shanghai 自然月，与全站口径统一（r34 收口）：复用
-    economy._month_start_utc_naive——把上海月界换算成 UTC-naive，
-    与 RegistrationCode.created_at 的入库帧对齐（default=datetime.now，
-    生产容器时钟 UTC）。此前用服务器本地月界，生产 UTC 下每月 1 日
-    08:00（北京时间）才重置，晚 8 小时。懒导入与本文件既有
-    _add_points 导入、media_seek 的复用方式一致（避循环导入）。
-    """
-    from backend.api.economy import _month_start_utc_naive
-    month_start = _month_start_utc_naive()
-    return (
-        db.query(models.RegistrationCode)
-        .filter(
-            models.RegistrationCode.created_by == admin_id,
-            models.RegistrationCode.reward_type == REWARD_WELFARE,
-            models.RegistrationCode.created_at >= month_start,
-        )
-        .count()
-    )
-
 
 def _grant_bundled_view_unlock(db: Session, user: models.WebUser,
                                realm_id: int, days: int) -> None:
-    """资格码打包查看行：给该用户在该服写/续一条 EmbyViewUnlock（不提交）。
+    """打包查看行：给该用户在该服写/续一条 EmbyViewUnlock（不提交）。
 
     口径与全站查看行写入一致：同一 (user_id, realm_id) 只保留一条——
     已有未过期行在原到期上叠加天数，过期行从现在重算，无行新建；
     ``points_spent=0`` 标记赠送（同注册赠送 ``_grant_register_gifts`` 口径）。
-    ``days<=0`` 按永久处理（expires_at=None），与资格侧 grant_welfare 的
-    「0=永不过期」对齐。提交由调用方与资格发放一起完成（同一事务）。
+    ``days<=0`` 按永久处理（expires_at=None）。提交由调用方完成
+    （同一事务）。
     """
     now = datetime.now()
     row = (
@@ -765,8 +725,8 @@ def _redeem_found_code(db: Session, user: models.WebUser,
 
     redeem_code（已登录兑换）与 consume_registration_code（注册页核销）
     共用这一份：占位 CAS、代理落账与四种奖励的分派口径只许一套，
-    两条入口只在「认哪种 code_type」上分工。本函数不提交（资格 /
-    白名单分支里 grant_welfare 的自提交除外），提交由入口调用方负责。
+    两条入口只在「认哪种 code_type」上分工。本函数不提交，
+    提交由入口调用方负责。
     """
     error = reg_code_error(code)
     if error:
@@ -791,6 +751,12 @@ def _redeem_found_code(db: Session, user: models.WebUser,
         # 能量已随货币下线（2026-11-13）：能量卡码不再核销，占位前直接拒绝、不烧码。
         return {"success": False, "message": "能量卡码已下线，无法核销，请联系管理员"}
 
+    if reward_type == REWARD_WELFARE and code.code_type != CODE_TYPE_WHITELIST:
+        # 公益资格已随福利整族下线（2026-11-14）：资格卡码不再核销，
+        # 占位前直接拒绝、不烧码（与能量码同口径）。白名单码与
+        # reward_type 无关（长期有效语义走 code_type 分支），不在此拦。
+        return {"success": False, "message": "资格卡码已下线，无法核销，请联系管理员"}
+
     if reward_type == REWARD_BALANCE:
         # 余额码面额预检：坏码（无面额）在占位前拒绝、不烧码；面额在
         # 生成阶段已校验 >0，这里是纵深防御（存量坏数据/手工改库）。
@@ -803,11 +769,9 @@ def _redeem_found_code(db: Session, user: models.WebUser,
     # 这张卡码属于哪个服，就判定/开通哪个服的会员（甲服的会员不算乙服的）
     target = code_realm_id(db, code)
     target_name = realm_label(db, target)
-    # 「已有会员请用续期码」的门只管会员订阅口径：资格码发的是公益资格
-    # （与订阅两套口径），已持资格时由 grant_welfare 在原到期上叠加，
-    # 不许被会员门误拦；余额码发的是钱包入账，同样与会员无关，一并排除；
-    # 其余奖励类型行为与此前逐字一致。
-    if reward_type not in (REWARD_WELFARE, REWARD_BALANCE) \
+    # 「已有会员请用续期码」的门只管会员订阅口径：余额码发的是钱包
+    # 入账，与会员无关，排除；其余奖励类型行为与此前逐字一致。
+    if reward_type != REWARD_BALANCE \
             and code.code_type == CODE_TYPE_REGISTER \
             and has_active_membership(db, user, target):
         return {"success": False,
@@ -837,22 +801,12 @@ def _redeem_found_code(db: Session, user: models.WebUser,
         # reward_type 无关。此前按 reward_type 分派只永久化其中一处——
         # subscription 型只有订阅（资格照旧到期、查看行根本不发）、
         # welfare 型没有订阅、points/discount 型白名单语义全丢——
-        # 用户实测没生效。三处一起落：该服订阅长期（days=-1 →
-        # PERMANENT_DAYS）＋查看行永久＋公益资格永久。
-        # 事务口径照资格码分支：不提交的两步先 flush，grant_welfare
-        # （全站唯一自提交的发放口）放最后一步、一次提交全部；它耗尽
-        # CAS 重试抛 RuntimeError 时整事务已回滚（占位一并撤销）。
+        # 用户实测没生效。两处一起落：该服订阅长期（days=-1 →
+        # PERMANENT_DAYS）＋查看行永久。（公益资格永久一处已随公益
+        # 资格整族于 2026-11-14 删除，白名单语义不再含资格。）
         grant_membership_days(db, user, days, target)
         _grant_bundled_view_unlock(db, user, target, 0)
         db.flush()
-        from backend.emby_server.portal import grant_welfare
-
-        try:
-            grant_welfare(
-                db, user, channel="code_redeem", days=0,
-                granted_by=code.created_by)
-        except RuntimeError:
-            return {"success": False, "message": "发放繁忙，请稍后重试"}
         # 创世编号：成为白名单即按先后落号（存量未落号的一并按痕迹
         # 顺序补齐，见 ensure_whitelist_serials）。编号是展示向加分项，
         # 落号失败不许拖垮已到账的核销——异常只记日志，个人页读时再补。
@@ -864,49 +818,10 @@ def _redeem_found_code(db: Session, user: models.WebUser,
         type_name = CODE_TYPE_NAMES.get(code.code_type, "卡码")
         return {
             "success": True,
-            "message": f"{type_name}核销成功，账号已置为长期有效（公益资格、查看凭证与会员均长期有效）",
+            "message": f"{type_name}核销成功，账号已置为长期有效（查看凭证与会员均长期有效）",
             "code_type": code.code_type,
             "reward_type": reward_type,
             "days": days,
-            "realm_id": target,
-            "realm_name": target_name,
-        }
-    if reward_type == REWARD_WELFARE:
-        # 资格码：发公益资格（grant_welfare 全站单一发放入口）＋可选打包查看行。
-        # 天数口径换算：码面 -1（永久）→ grant_welfare 的 0（永不过期）。
-        welfare_days = 0 if days < 0 else days
-        include_view = bool(getattr(code, 'welfare_include_view', True))
-        if include_view:
-            # 先把查看行挂进当前事务（只 flush 不提交），再由 grant_welfare
-            # 内部的提交把「占位＋查看行＋资格＋发放日志」一次性提交：
-            # 四者同事务，中间崩溃一起回滚，不会出现码烧了、资格/查看行
-            # 只到一半。grant_welfare 是全站唯一会自己 commit 的发放口，
-            # 所以它必须是本分支最后一步，其后只许拼返回值。
-            _grant_bundled_view_unlock(db, user, target, welfare_days)
-            db.flush()
-        from backend.emby_server.portal import grant_welfare
-
-        try:
-            expires = grant_welfare(
-                db, user, channel="code_redeem", days=welfare_days,
-                granted_by=code.created_by)
-        except RuntimeError:
-            # grant_welfare 耗尽 CAS 重试时已回滚整个事务（占位一并撤销、
-            # 码未消耗），如实让用户重试，不许带着半开事务往下走
-            return {"success": False, "message": "发放繁忙，请稍后重试"}
-        type_name = CODE_TYPE_NAMES.get(code.code_type, "卡码")
-        expires_text = "永不过期" if expires is None else expires.strftime('%Y-%m-%d %H:%M')
-        message = f"{type_name}核销成功，公益资格有效期至 {expires_text}"
-        if include_view:
-            message += "，查看凭证已一并开通"
-        return {
-            "success": True,
-            "message": message,
-            "code_type": code.code_type,
-            "reward_type": "welfare",
-            "days": days,
-            "welfare_expires_at": expires.isoformat() if expires else None,
-            "view_bundled": include_view,
             "realm_id": target,
             "realm_name": target_name,
         }
@@ -980,7 +895,13 @@ LONGTERM_SUB_MIN_DAYS = 18250
 
 
 def _whitelist_status(db: Session, user: models.WebUser, now: datetime) -> dict:
-    """某账号当前三处「永久」状态（判定与全站各口径一致，只读组装）。"""
+    """某账号当前「永久」状态（判定与全站各口径一致，只读组装）。
+
+    历史上是三处（公益资格/查看行/订阅）；公益资格已随福利整族于
+    2026-11-14 删除、白名单核销不再发放资格，故 is_permanent_active
+    只看剩余两处（查看行永久＋订阅长期）。welfare_permanent 字段保留
+    输出（存量数据只读展示），不再参与生效判定。
+    """
     view_permanent = (
         db.query(models.EmbyViewUnlock.id)
         .filter(models.EmbyViewUnlock.user_id == user.id,
@@ -1000,7 +921,7 @@ def _whitelist_status(db: Session, user: models.WebUser, now: datetime) -> dict:
         "welfare_permanent": welfare_permanent,
         "view_permanent": view_permanent,
         "subscription_longterm": sub_longterm,
-        "is_permanent_active": welfare_permanent and view_permanent and sub_longterm,
+        "is_permanent_active": view_permanent and sub_longterm,
     }
 
 
@@ -1040,9 +961,10 @@ def is_whitelist_account(db: Session, user: models.WebUser) -> bool:
     """该账号当前是否为生效中的白名单（永久）账号。
 
     与 whitelist_accounts 名单同一口径：有白名单码核销痕迹（_whitelist_traces），
-    且 _whitelist_status 现算三处永久仍全在位（is_permanent_active）。
-    管理端回收后三处永久被置到期，本判定随即为 False。「谁是永久账号」
-    全站只此一份定义，其他机制（如活力豁免）只许复用本函数，不许另立名单。
+    且 _whitelist_status 现算永久仍在位（is_permanent_active，现为查看行
+    永久＋订阅长期两处，公益资格一处于 2026-11-14 删除）。
+    管理端回收后永久被置到期，本判定随即为 False。「谁是永久账号」
+    全站只此一份定义，其他机制只许复用本函数，不许另立名单。
     """
     if user is None:
         return False
@@ -1155,7 +1077,7 @@ def ensure_whitelist_serials(db: Session) -> dict:
     顺序 = 成为白名单的先后：以每人最早一次核销时间（CodeRedemption）
     为准；只有 used_by 老痕迹（无核销记录行）的按码创建时间排；同刻以
     user_id 定序。已分配的编号永不变更、永不复用（回收不放号，本函数
-    只增不改）。本函数自提交（与 grant_welfare 的自提交口径一致）；
+    只增不改）。本函数自提交；
     并发下靠 whitelist_serials 的 user_id / serial 双唯一约束兜底，
     撞约束整体回滚后按最新状态重算，最多三轮；三轮未成则返回当前
     已落库状态，剩余的下次调用再补，不抛错拖垮主流程。

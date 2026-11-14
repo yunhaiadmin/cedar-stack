@@ -4,7 +4,8 @@
 - 群抽奖轮次的创建、参与、开奖、发奖与结果核验；
 - 开关与群组白名单走 SystemConfig（lottery_enabled / lottery_group_ids）；
 - 开奖算法为纯函数 compute_winners：score = sha256(f"{seed}:{entry_id}") 升序分配；
-- 奖品发放复用门户福利原语 portal.grant_welfare（能量奖品已随货币下线），
+- 奖品发放走订阅系统 codes.grant_membership_days（天数奖品加订阅天数、
+  白名单奖品置长期；原公益资格发放已随福利整族于 2026-11-14 删除），
   均在函数内懒导入，避免循环依赖。
 """
 
@@ -552,7 +553,7 @@ def distribute_round(db: Session, round_id: int) -> dict[str, Any]:
     返回 {"round_id", "total", "distributed", "skipped", "errors"}。
     """
     # 函数内懒导入，避免循环依赖
-    from backend.emby_server import portal
+    from backend import codes
 
     round = db.query(models.LotteryRound).filter(models.LotteryRound.id == round_id).first()
     if not round:
@@ -594,7 +595,7 @@ def distribute_round(db: Session, round_id: int) -> dict[str, Any]:
             errors.append({"winner_id": w.id, "error": "用户不存在"})
             continue
         if prize.type == "days" and (prize.value or 0) <= 0:
-            # days=0 在 grant_welfare 语义里是永久，days 奖品不许借道发放永久资格
+            # 天数奖品必须是正数天数（永久只许 whitelist 奖品走 days=-1 口径）
             errors.append({"winner_id": w.id, "error": f"天数奖品 value 非正：{prize.value}"})
             continue
         if prize.type not in ("days", "whitelist"):
@@ -620,10 +621,12 @@ def distribute_round(db: Session, round_id: int) -> dict[str, Any]:
             continue
         try:
             if prize.type == "days":
-                portal.grant_welfare(db, user, channel="lottery_win", days=prize.value)
+                # 天数奖品：直接给当前服订阅加天数（2026-11-14 起，公益
+                # 资格已删除，抽奖奖品改走订阅系统 grant_membership_days）
+                codes.grant_membership_days(db, user, days=prize.value)
             else:  # whitelist
-                # days=0 表示永不过期（已核实 grant_welfare 源码）
-                portal.grant_welfare(db, user, channel="lottery_win", days=0)
+                # 白名单奖品：订阅置为长期有效（days=-1 → PERMANENT_DAYS）
+                codes.grant_membership_days(db, user, days=-1)
         except Exception as exc:
             # 单个失败不中断整轮（回滚同时撤销上面的认领）
             db.rollback()

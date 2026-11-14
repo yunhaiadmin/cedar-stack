@@ -2565,16 +2565,6 @@ def init_db():
         Base.metadata.create_all(bind=engine)
         _auto_migrate()
         _ensure_admin_roles()
-        # P1 统一货币体系：幂等播种默认 6 个会员等级（表空才插）
-        try:
-            from backend import member_level as _ml
-            _s = SessionLocal()
-            try:
-                _ml.ensure_member_levels_seeded(_s)
-            finally:
-                _s.close()
-        except Exception as e:  # noqa: BLE001 — 播种失败不阻止启动，用户端懒播种兜底
-            logger.warning(f"⚠️ 会员等级种子写入失败（可忽略）: {e}")
         # v4 探险家日志面板：幂等播种 12 个成就定义（已存在的跳过）
         try:
             from backend import panel_achievements as _pa

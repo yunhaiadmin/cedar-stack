@@ -100,10 +100,10 @@ def welfare_qualification_active(user: models.WebUser) -> bool:
     """公益资格是否在期（全站既有口径，收口在此）
 
     口径 = ``is_welfare`` 且 ``welfare_expires_at`` 为空（永久资格，
-    白名单等）或未到期。与既有两处判定逐字一致：``media_seek`` 的
-    ``_is_welfare_active`` 与 ``emby_server/portal`` 的 ``is_welfare_user``
-    ——那两处是模块内私有判定，subscriptions 不能反向 import 它们，
-    故在此收口一份并注明，谁改口径必须三处同改。
+    白名单等）或未到期。与 ``media_seek`` 的 ``_is_welfare_active``
+    判定逐字一致——那处是模块内私有判定，subscriptions 不能反向
+    import 它，故在此收口一份并注明，谁改口径必须两处同改。
+    （portal 的同名判定已随公益资格发放于 2026-11-14 删除。）
 
     **保留期不算在期**：``welfare_expires_at`` 一过即不在期；保留期
     （grace）只是过期处置的宽限，不给任何权益。
