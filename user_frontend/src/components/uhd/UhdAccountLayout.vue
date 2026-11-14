@@ -13,10 +13,10 @@
  * - 代理中心只对代理可见：getAgentMe 成功才显示入口（失败静默隐藏，
  *   与 PersonalCenterView 同口径；模块级缓存，一次会话只查一次）。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  Briefcase, CreditCard, Gauge,
+  Briefcase, CreditCard, Gauge, Menu,
   Megaphone, Plug, Settings, Sun, Moon, User, Wallet,
 } from 'lucide-vue-next'
 import UhdSidebar, { type UhdSidebarGroup } from './UhdSidebar.vue'
@@ -98,15 +98,90 @@ const groups = computed<UhdSidebarGroup[]>(() => {
   return list
 })
 
-function onSelect(key: string) {
-  if (props.navigate) void router.push(key)
-  else emit('select', key)
-}
-
 function goAccount() {
+  if (navOpen.value) closeNav(false)
   if (props.navigate) void router.push('/game/account')
   else emit('select', '/game/account')
 }
+
+/* 窄屏覆盖导航：按钮在主栏里，侧栏不占文档流。桌面不打开这层。 */
+const navOpen = ref(false)
+const openerBtn = ref<HTMLButtonElement | null>(null)
+const drawerEl = ref<HTMLElement | null>(null)
+let savedOverflow = ''
+const FOCUSABLE = 'button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+
+function focusableInDrawer(): HTMLElement[] {
+  const root = drawerEl.value
+  if (!root) return []
+  return [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => {
+    if (el.hasAttribute('disabled')) return false
+    return getComputedStyle(el).display !== 'none'
+  })
+}
+function openNav() {
+  if (navOpen.value) return
+  savedOverflow = document.documentElement.style.overflow
+  navOpen.value = true
+  document.documentElement.style.overflow = 'hidden'
+  nextTick(() => focusableInDrawer()[0]?.focus())
+}
+function closeNav(restoreFocus = true) {
+  if (!navOpen.value) return
+  navOpen.value = false
+  document.documentElement.style.overflow = savedOverflow
+  if (restoreFocus) nextTick(() => openerBtn.value?.focus())
+}
+function toggleNav() {
+  if (navOpen.value) closeNav()
+  else openNav()
+}
+function onNavKey(event: KeyboardEvent) {
+  if (!navOpen.value) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeNav()
+    return
+  }
+  if (event.key !== 'Tab') return
+  const items = focusableInDrawer()
+  if (!items.length) return
+  const first = items[0]
+  const last = items[items.length - 1]
+  const active = document.activeElement
+  if (!(active instanceof Node) || !drawerEl.value?.contains(active)) {
+    event.preventDefault()
+    first.focus()
+    return
+  }
+  if (event.shiftKey && active === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+function onSelect(key: string) {
+  if (navOpen.value) closeNav(false)
+  if (props.navigate) void router.push(key)
+  else emit('select', key)
+}
+watch(() => route.path, () => closeNav(false))
+let narrowMedia: MediaQueryList | null = null
+function onNarrowChange() {
+  if (narrowMedia && !narrowMedia.matches) closeNav(false)
+}
+onMounted(() => {
+  window.addEventListener('keydown', onNavKey)
+  narrowMedia = window.matchMedia('(max-width: 768px)')
+  narrowMedia.addEventListener('change', onNarrowChange)
+})
+onUnmounted(() => {
+  narrowMedia?.removeEventListener('change', onNarrowChange)
+  window.removeEventListener('keydown', onNavKey)
+  if (navOpen.value) document.documentElement.style.overflow = savedOverflow
+})
 
 /* 外观切换：与 AppHeader 同口径（system → 按当前解析值切到另一档） */
 function cycleTheme() {
@@ -128,20 +203,54 @@ const accountSub = computed(() => {
 </script>
 
 <template>
-  <div class="uhd-account">
-    <UhdSidebar :groups="groups" :active-key="active" @select="onSelect">
-      <template #account>
-        <button type="button" class="uhd-account__who" @click="goAccount">
-          <span class="uhd-account__avatar" aria-hidden="true">{{ avatarInitial }}</span>
-          <span class="uhd-account__who-text">
-            <span class="uhd-account__who-name">{{ displayName }}</span>
-            <span class="uhd-account__who-sub">{{ accountSub }}</span>
-          </span>
-        </button>
-      </template>
-    </UhdSidebar>
+  <div class="uhd-account" :class="{ 'is-nav-open': navOpen }">
+    <button
+      v-if="navOpen"
+      type="button"
+      class="uhd-account__scrim"
+      aria-label="关闭导航"
+      tabindex="-1"
+      @click="closeNav()"
+    />
+    <div
+      id="uhd-account-nav"
+      ref="drawerEl"
+      class="uhd-account__drawer"
+      :role="navOpen ? 'dialog' : undefined"
+      :aria-modal="navOpen ? true : undefined"
+      aria-label="账户导航"
+    >
+      <UhdSidebar
+        :groups="groups"
+        :active-key="active"
+        :dismissible="navOpen"
+        @select="onSelect"
+        @dismiss="closeNav()"
+      >
+        <template #account>
+          <button type="button" class="uhd-account__who" @click="goAccount">
+            <span class="uhd-account__avatar" aria-hidden="true">{{ avatarInitial }}</span>
+            <span class="uhd-account__who-text">
+              <span class="uhd-account__who-name">{{ displayName }}</span>
+              <span class="uhd-account__who-sub">{{ accountSub }}</span>
+            </span>
+          </button>
+        </template>
+      </UhdSidebar>
+    </div>
 
     <main class="uhd-account__main">
+      <button
+        ref="openerBtn"
+        type="button"
+        class="uhd-account__navbtn"
+        aria-controls="uhd-account-nav"
+        :aria-expanded="navOpen"
+        @click="toggleNav"
+      >
+        <Menu :size="18" aria-hidden="true" />
+        导航
+      </button>
       <header v-if="title" class="uhd-account__head">
         <div>
           <p v-if="eyebrow" class="uhd-account__eyebrow">{{ eyebrow }}</p>
@@ -200,6 +309,31 @@ html[data-theme='light'] .uhd-account {
   top: var(--utb-h);
   height: calc(100vh - var(--utb-h));
   height: calc(100dvh - var(--utb-h));
+}
+.uhd-account__drawer {
+  display: contents;
+}
+.uhd-account__navbtn,
+.uhd-account__scrim {
+  display: none;
+}
+.uhd-account__navbtn {
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin: 0 0 12px;
+  padding: 0 14px;
+  border: var(--uhd-border-w) solid var(--uhd-l-border);
+  border-radius: 999px;
+  background: var(--uhd-l-surface);
+  color: var(--uhd-l-text);
+  font: inherit;
+  font-size: var(--uhd-fs-body);
+  cursor: pointer;
+}
+.uhd-account__navbtn:focus-visible {
+  outline: 2px solid var(--uhd-l-text);
+  outline-offset: 2px;
 }
 .uhd-account__main {
   flex: 1;
@@ -294,17 +428,38 @@ html[data-theme='light'] .uhd-account {
   color: var(--uhd-l-text-3);
 }
 @media (max-width: 768px) {
-  /* 手机侧栏退出文档流后折叠。即使用户再展开，也是贴边覆盖，不许用 250px 实宽去挤主栏。 */
+  /* 手机侧栏默认不占流。打开后固定在左侧盖住正文，主栏宽度不减。 */
   .uhd-account { display: block; min-width: 0; }
-  .uhd-account :deep(.uhd-side) {
-    display: none;
+  .uhd-account__navbtn { display: inline-flex; }
+  .uhd-account__drawer { display: none; }
+  .uhd-account.is-nav-open .uhd-account__scrim {
+    display: block;
     position: fixed;
-    z-index: 45;
-    top: var(--utb-h);
+    inset: 0;
+    z-index: 90;
+    border: 0;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.48);
+    cursor: pointer;
+  }
+  .uhd-account.is-nav-open .uhd-account__drawer {
+    display: block;
+    position: fixed;
+    z-index: 91;
+    top: 0;
     left: 0;
     bottom: 0;
     width: min(var(--uhd-sidebar-w), 86vw);
-    height: auto;
+  }
+  .uhd-account.is-nav-open :deep(.uhd-side) {
+    position: relative;
+    top: auto;
+    width: 100%;
+    height: 100%;
+  }
+  .uhd-account.is-nav-open :deep(.uhd-side__collapse) {
+    width: 44px;
+    height: 44px;
   }
   .uhd-account__main {
     width: 100%;

@@ -17,14 +17,21 @@ export interface UhdSidebarGroup {
   items: UhdSidebarItem[]
 }
 
-defineProps<{
+const props = defineProps<{
   groups: UhdSidebarGroup[]
   activeKey: string
   brand?: string
+  /** 窄屏覆盖层打开时，顶上的钮只负责关闭，不把栏宽收成图标条 */
+  dismissible?: boolean
 }>()
 
-const emit = defineEmits<{ select: [key: string] }>()
+const emit = defineEmits<{ select: [key: string]; dismiss: [] }>()
 const collapsed = ref(false)
+
+function onCollapse() {
+  if (props.dismissible) emit('dismiss')
+  else collapsed.value = !collapsed.value
+}
 </script>
 
 <template>
@@ -34,8 +41,13 @@ const collapsed = ref(false)
         <span class="uhd-side__logo" aria-hidden="true" />
         <span v-if="!collapsed" class="uhd-side__brand-name">{{ brand ?? 'Aetrix' }}</span>
       </span>
-      <button type="button" class="uhd-side__collapse" :aria-label="collapsed ? '展开侧栏' : '收起侧栏'" @click="collapsed = !collapsed">
-        {{ collapsed ? '›' : '‹' }}
+      <button
+        type="button"
+        class="uhd-side__collapse"
+        :aria-label="dismissible ? '关闭导航' : collapsed ? '展开侧栏' : '收起侧栏'"
+        @click="onCollapse"
+      >
+        {{ dismissible ? '×' : collapsed ? '›' : '‹' }}
       </button>
     </div>
 

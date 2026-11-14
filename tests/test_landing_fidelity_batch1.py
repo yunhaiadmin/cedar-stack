@@ -95,12 +95,17 @@ def test_mobile_menu_keeps_keyboard_and_overlay():
     assert ".m-sheet" in css
 
 
-def test_account_sidebar_does_not_squeeze_at_mobile():
+def test_account_sidebar_mobile_control_is_real():
+    """源码契约：窄屏有可达的打开钮、遮罩和 Esc。不是浏览器回归。"""
+    src = ACCOUNT.read_text(encoding="utf-8")
     css = _css(ACCOUNT)
     narrow = _media(css, "@media (max-width: 768px)")
-    assert "display: none" in narrow
+    assert "uhd-account__navbtn" in src
+    assert "Escape" in src
+    assert "uhd-account__scrim" in src
+    assert "is-nav-open" in narrow
     assert "position: fixed" in narrow
-    assert "display: block" in narrow
+    assert "display: none" in narrow
 
 
 def test_shared_nav_escape_and_focus():
