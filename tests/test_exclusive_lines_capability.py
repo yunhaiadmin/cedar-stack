@@ -141,6 +141,12 @@ def _cleanup(db: Session) -> None:
         u = db.query(models.WebUser).filter(
             models.WebUser.username == uname).first()
         if u is not None:
+            db.query(em.UserStorageBinding).filter(
+                em.UserStorageBinding.user_id == u.id
+            ).delete(synchronize_session=False)
+            db.query(em.MountCredential).filter(
+                em.MountCredential.owner_user_id == u.id
+            ).delete(synchronize_session=False)
             db.query(models.StationMessage).filter(
                 (models.StationMessage.to_user_id == u.id)
                 | (models.StationMessage.from_user_id == u.id)
@@ -167,6 +173,18 @@ def seed():
         db.add(u)
         db.flush()
         users[uname] = u
+    # CMS 下线后门禁无豁免（2026-11-14）：种子用户先绑盘再验线路，
+    # 否则 PlaybackInfo 先被绑定门禁 403，测不到线路本身。
+    for u in users.values():
+        cred = em.MountCredential(
+            mount_id=None, scope="user", owner_user_id=u.id,
+            sealed_credential="", key_id="fernet-v1", status="active")
+        db.add(cred)
+        db.flush()
+        db.add(em.UserStorageBinding(
+            user_id=u.id, provider="drive", account_label="种子盘",
+            credential_id=cred.id, status="active"))
+    db.flush()
     code = models.RegistrationCode(
         code=WL_CODE, max_uses=1, use_count=0, is_active=True,
         code_type=codes.CODE_TYPE_WHITELIST, days=-1,
