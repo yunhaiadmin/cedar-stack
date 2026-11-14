@@ -349,7 +349,17 @@ function onBgError() {
   }
   .sh-content {
     bottom: 84px;
+    left: 16px;
     right: 16px;
+  }
+  /* 主标题：桌面 clamp 大字是字标位口径；手机端友站实测片名文字仅约
+     16px（其视觉主角是片名图），我方无片名图数据、文字标题兼字标位，
+     40px 大一号过头（2026-11-14 用户亲斥），收至 20px 保标题位存在感。
+     须带 !important：mobile.css 收紧层有同名保底规则 30px !important
+     （字号阶梯契约钉值），本组件移动口径靠 scoped 特异性压过它终局 */
+  .sh-title {
+    font-size: 20px !important;
+    line-height: 1.2;
   }
   .sh-overview {
     display: none;
