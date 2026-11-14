@@ -9,7 +9,10 @@
       <div class="am-identity__text">
         <p class="am-username">{{ displayName }}</p>
         <div class="am-idrow">
-          <p class="am-status">{{ statusLine }}</p>
+          <!-- 订阅未落定前只给中性占位条，不许先渲染「普通用户」结论
+               （2026-11-15 假空态根治：与概览同一单一数据源同口径） -->
+          <span v-if="!subsLoaded" class="am-status-skel" aria-hidden="true"></span>
+          <p v-else class="am-status">{{ statusLine }}</p>
           <button
             v-if="userId"
             type="button"
@@ -88,11 +91,12 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { ChevronRight, Copy } from 'lucide-vue-next'
 import { useUserStore } from '@/stores/user'
+import { useSubscriptionStore } from '@/stores/subscription'
 import { useTheme } from '@/composables/useTheme'
 import { useToast } from '@/composables/useToast'
 import { communityLinks, initCommunityLinks } from '@/composables/useCommunityLinks'
 import { getAgentMe } from '@/api/agent'
-import { subscriptionApi, type MySubscription } from '@/api'
+import { walletApi } from '@/api/wallet'
 
 interface MenuItem {
   key: string
@@ -119,14 +123,18 @@ const userStore = useUserStore()
 const toast = useToast()
 const { preference, setPreference } = useTheme()
 
-const mySubs = ref<MySubscription[]>([])
+// 订阅改走单一数据源 useSubscriptionStore（2026-11-15）：与概览同源
+// 同拍；此前本页自拉一份 getMine 且未落定先渲染「普通用户」、数据回来
+// 再跳「环游」，即录屏里的身份闪变。loaded 前身份副行只给中性占位。
+const subStore = useSubscriptionStore()
+const subsLoaded = computed(() => subStore.loaded)
+const activeSub = computed(() => subStore.activeSub)
 const isAgent = ref(false)
+/** 钱包余额（现有钱包接口；拿不到钱包行就不显金额，不假造） */
+const walletBalance = ref<string | null>(null)
 
 const displayName = computed(() => userStore.user?.username || '我的')
 const avatarInitial = computed(() => (displayName.value.trim().charAt(0) || '我').toUpperCase())
-const activeSub = computed(
-  () => mySubs.value.find((s) => s.status === 'active' && s.days_left > 0) ?? null,
-)
 const userId = computed(() => userStore.user?.id ?? null)
 // 身份副行照友站形态：订阅档名 · 用户 ID（复制钮在模板里）；剩余天数在概览页看
 const statusLine = computed(() => {
@@ -158,7 +166,13 @@ const groups = computed<MenuGroup[]>(() => {
       value: activeSub.value?.plan_name || undefined,
     },
     { key: 'records', label: '订阅记录', to: '/game/account/subscription-records' },
-    { key: 'wallet', label: '我的钱包', to: '/wallet' },
+    // 钱包行尾显当前余额（照友站「我的」钱包行形态，数据走现有钱包接口）
+    {
+      key: 'wallet',
+      label: '我的钱包',
+      to: '/wallet',
+      value: walletBalance.value != null ? `¥ ${walletBalance.value}` : undefined,
+    },
   ]
   const account: MenuItem[] = [
     { key: 'settings', label: '账号安全', to: '/game/account/settings' },
@@ -200,10 +214,12 @@ async function handleLogout() {
 
 onMounted(async () => {
   void initCommunityLinks()
-  const [subs] = await Promise.allSettled([
-    subscriptionApi.getMine(),
-  ])
-  if (subs.status === 'fulfilled') mySubs.value = subs.value
+  void subStore.ensureLoaded()
+  // 钱包余额：与概览「常用」行同一钱包接口；失败/未启用就不显金额
+  try {
+    const w = await walletApi.get()
+    if (w && w.wallet_enabled !== false) walletBalance.value = w.balance
+  } catch { /* 钱包拿不到不显金额 */ }
   // 代理可见性按 api/agent 契约取 is_agent（getAgentMe 永不 reject，
   // 失败时回 { is_agent: false }，不能用「请求成功」当可见判据）
   const me = await getAgentMe()
@@ -259,7 +275,8 @@ onMounted(async () => {
 }
 .am-status {
   margin: 0;
-  font-size: 14.5px;
+  /* 2026-11-15 对照友站身份副行收小：14.5px → 13.5px */
+  font-size: 13.5px;
   color: rgba(255, 255, 255, 0.62);
   white-space: nowrap;
   overflow: hidden;
@@ -272,6 +289,15 @@ onMounted(async () => {
   gap: 6px;
   min-width: 0;
 }
+/* 身份副行中性占位（订阅未落定时）：只占位、不写任何结论文字 */
+.am-status-skel {
+  display: inline-block;
+  width: 96px;
+  height: 13px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.14);
+}
+html[data-theme='light'] .am-status-skel { background: #e4e4e7; }
 .am-copy {
   flex: 0 0 auto;
   display: inline-flex;
@@ -299,13 +325,15 @@ onMounted(async () => {
 .am-group__title {
   margin: 30px 0 6px;
   font-family: var(--uhd-font-sans);
-  font-size: 20px;
+  /* 2026-11-15 对照友站分组标题收小一个量级：20px → 17px */
+  font-size: 17px;
   font-weight: var(--uhd-fw-extrabold);
   color: #ffffff;
 }
 .am-row {
   width: 100%;
-  min-height: 57px;
+  /* 2026-11-15 行高与行字号对照友站收小：57px → 52px、17px → 15px */
+  min-height: 52px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -315,7 +343,7 @@ onMounted(async () => {
   background: transparent;
   color: #ffffff;
   font-family: inherit;
-  font-size: 17px;
+  font-size: 15px;
   text-align: left;
   text-decoration: none;
   cursor: pointer;
@@ -337,7 +365,8 @@ onMounted(async () => {
 .am-row__value {
   flex: 0 1 auto;
   min-width: 0;
-  font-size: 15px;
+  /* 2026-11-15 右侧说明文字收小：15px → 14px */
+  font-size: 14px;
   color: rgba(255, 255, 255, 0.42);
   white-space: nowrap;
   overflow: hidden;
