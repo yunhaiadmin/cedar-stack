@@ -163,6 +163,17 @@ export const updateRegistrationSettings = (data: {
   ratelimit_window?: number
 }) => put<{ success: boolean }>('/settings/registration', data)
 
+/** 网页软解开关（2026-11-14 批 2）：后端 /api/admin/softdecode/config */
+export interface SoftdecodeConfig {
+  /** 浏览器硬解失败时是否用站内自编 LGPL wasm 软解兜底，默认关 */
+  enabled: boolean
+}
+
+export const fetchSoftdecodeConfig = () => get<SoftdecodeConfig>('/softdecode/config')
+
+export const updateSoftdecodeConfig = (data: { enabled: boolean }) =>
+  put<SoftdecodeConfig>('/softdecode/config', data)
+
 /** 类型化会员卡码生成（注册码 / 续期码 / 白名单码 / 诱饵码 / 指名码） */
 export const generateCodes = (data: {
   code_type: number

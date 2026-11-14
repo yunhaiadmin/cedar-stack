@@ -26,12 +26,13 @@ import {
   Coins, Globe, KeyRound, Layers, Mail, MapPin, Network, Palette, RefreshCw, Save,
   ShieldCheck, Send, Sparkles, TicketCheck, UserPlus, Wallet, Lock, Zap,
   History, TriangleAlert, SlidersHorizontal, PlugZap, Rocket, HardDrive, Gauge,
-  Download,
+  Download, Cpu,
 } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard } from '@/components/ui'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import {
   fetchRegistrationSettings, updateRegistrationSettings,
+  fetchSoftdecodeConfig, updateSoftdecodeConfig, type SoftdecodeConfig,
 } from '@/api/admin'
 import { useAuthStore } from '@/stores/auth'
 import { useQueryFilter } from '@/composables/useQueryFilter'
@@ -567,7 +568,7 @@ async function load() {
 }
 
 onMounted(async () => {
-  await Promise.all([load(), loadCapabilities(), loadHotlink(), loadInstallApp(), loadItemsDedupCache(), loadTransfer(), loadMountServing(), loadDriveApi(), loadLicense(), loadPool()])
+  await Promise.all([load(), loadCapabilities(), loadHotlink(), loadInstallApp(), loadItemsDedupCache(), loadTransfer(), loadMountServing(), loadDriveApi(), loadSoftdecode(), loadLicense(), loadPool()])
   // Batch D 入口收敛：邀请页 / 客户端策略等用 hash 深链跳进来（如 #group-invitation）
   // R40：querySelector 直接塞 hash 会在畸形值时抛 SyntaxError；改用 getElementById
   if (route.hash) {
@@ -1016,6 +1017,44 @@ async function saveDriveApiCore(): Promise<boolean> {
   }
 }
 
+/** ==================== 网页软解卡片（独立 endpoint，非通用分组） ====================
+ * 浏览器硬解失败时的站内软解兜底：只在网页播放路径生效，解码器是站内自编
+ * 的 LGPL wasm（/wasm/decode/）。默认关：关时保持现状出解码提示卡。 */
+const softdecode = reactive({ enabled: false })
+const softdecodeOriginal = reactive({ enabled: false })
+const softdecodeLoading = ref(false)
+
+function applySoftdecode(data: SoftdecodeConfig) {
+  softdecode.enabled = data.enabled === true
+  Object.assign(softdecodeOriginal, softdecode)
+}
+
+async function loadSoftdecode() {
+  softdecodeLoading.value = true
+  try {
+    applySoftdecode(await fetchSoftdecodeConfig())
+  } catch {
+    // 错误提示由 HTTP 拦截器统一处理
+  } finally {
+    softdecodeLoading.value = false
+  }
+}
+
+const softdecodeDirty = computed(
+  () => softdecode.enabled !== softdecodeOriginal.enabled,
+)
+
+/** 网页软解保存核心：返回是否成功，失败时拦截器已提示。 */
+async function saveSoftdecodeCore(): Promise<boolean> {
+  try {
+    applySoftdecode(await updateSoftdecodeConfig({ enabled: softdecode.enabled }))
+    return true
+  } catch {
+    // 拦截器已提示
+    return false
+  }
+}
+
 /** ==================== 软件授权卡片（独立 endpoint，非通用分组） ====================
  * 发行版授权校验的运营面：看状态（档位/到期/绑定/宽限/到期提醒）、
  * 填授权码与绑定域名、立即校验。总开关 AETRIX_LICENSE_ENFORCE 走
@@ -1187,6 +1226,7 @@ async function reloadAll() {
   loadItemsDedupCache()
   loadMountServing()
   loadDriveApi()
+  loadSoftdecode()
 }
 
 function isDirty(group: Group): boolean {
@@ -1214,7 +1254,7 @@ const dirtyGroups = computed(() => GROUPS.filter((g) => isDirty(g)))
 const dirtyCount = computed(() =>
   dirtyGroups.value.length + (regDirty.value ? 1 : 0) + (hotlinkDirty.value ? 1 : 0)
   + (itemsDedupCacheDirty.value ? 1 : 0) + (transferDirty.value ? 1 : 0) + (mountServingDirty.value ? 1 : 0)
-  + (driveApiDirty.value ? 1 : 0) + (installAppDirty.value ? 1 : 0),
+  + (driveApiDirty.value ? 1 : 0) + (softdecodeDirty.value ? 1 : 0) + (installAppDirty.value ? 1 : 0),
 )
 const anyDirty = computed(() => dirtyCount.value > 0)
 const savingAll = ref(false)
@@ -1326,6 +1366,10 @@ async function saveAll() {
       if (await saveDriveApiCore()) saved += 1
       else failed.push('Drive API 限速')
     }
+    if (softdecodeDirty.value) {
+      if (await saveSoftdecodeCore()) saved += 1
+      else failed.push('网页软解')
+    }
   } finally {
     savingAll.value = false
   }
@@ -1359,6 +1403,7 @@ async function discardAll() {
   loadTransfer()
   loadMountServing()
   loadDriveApi()
+  loadSoftdecode()
 }
 
 // ==================== 危险操作（Phase 5） ====================
@@ -1610,6 +1655,16 @@ watch(
               >
                 <Gauge :size="13" />Drive 限速
                 <span v-if="driveApiDirty" class="chip-dot" aria-label="有未保存的改动" />
+              </button>
+              <button
+                v-if="sec.id === 'playback'"
+                type="button"
+                class="group-chip"
+                :class="{ 'is-dirty': softdecodeDirty }"
+                @click="scrollToGroup('softdecode')"
+              >
+                <Cpu :size="13" />网页软解
+                <span v-if="softdecodeDirty" class="chip-dot" aria-label="有未保存的改动" />
               </button>
             </div>
           </nav>
@@ -2630,6 +2685,38 @@ watch(
               </el-form-item>
             </el-form>
           </SectionCard>
+          <!-- 网页软解：独立卡片，归「播放与风控」段 -->
+          <SectionCard
+            v-if="sec.id === 'playback'"
+            id="group-softdecode"
+            title="网页软解"
+            :icon="Cpu"
+            description="浏览器硬解失败时的站内软解兜底：只在网页播放路径生效，解码器是站内自编的 LGPL wasm（/wasm/decode/），不走第三方。默认关：关时浏览器解不了就出解码提示卡；开时先试软解，软解失败仍回提示卡，不黑屏。仅支持 HEVC / H.264 画面与 AAC / AC3 / EAC3 / DTS 声音，4K / HDR 不承诺。"
+            :tone="softdecodeDirty ? 'accent' : 'default'"
+            class="group-card"
+          >
+            <template v-if="softdecodeDirty" #actions>
+              <span class="au-badge au-badge-amber">未保存</span>
+            </template>
+
+            <el-form label-position="top" class="field-form field-grid">
+              <el-form-item label="网页软解开关">
+                <div class="field-stack">
+                  <div class="field-control">
+                    <el-switch v-model="softdecode.enabled" />
+                    <span class="field-suffix">{{ softdecode.enabled ? '已开启' : '已关闭' }}</span>
+                  </div>
+                  <span class="field-hint">开：浏览器解不了的版本改走站内软解；关：保持现状，出解码提示卡。默认关</span>
+                </div>
+              </el-form-item>
+              <el-form-item label="开源许可">
+                <div class="field-stack">
+                  <a class="license-link" href="/licenses" target="_blank" rel="noopener">在本站查看开源许可页</a>
+                  <span class="field-hint">软解用的自编 LGPL 解码器与第三方组件的许可说明。</span>
+                </div>
+              </el-form-item>
+            </el-form>
+          </SectionCard>
           </template>
 
           <p class="foot-note">
@@ -2881,6 +2968,7 @@ watch(
 .field-control { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .field-suffix { font-size: 12px; color: var(--au-text-3); white-space: nowrap; }
 .field-hint { font-size: 12px; color: var(--au-text-3); line-height: 1.6; }
+.license-link { font-size: 13px; color: var(--au-primary); text-decoration: underline; text-underline-offset: 3px; }
 .num-input { width: 160px; }
 
 .card-footer {
