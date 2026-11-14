@@ -16,7 +16,8 @@
         <p class="ov-loading__text">正在加载概览...</p>
       </div>
       <template v-else>
-      <h1 class="ov-title">概览</h1>
+      <!-- 页头大标题已删（2026-11-15 照友站 t90 帧）：友站概览顶栏下直接是
+           会员卡、没有「概览」大标题，本页 H1 一并摘除（仅本页） -->
       <!-- 桌面双栏：左会员卡（有效期＋自动续费），右本月流量。
            窄屏改成上下排，不把右栏裁出视口。没有月流量额度时右栏用真实剩余天数，不写假的 GB。 -->
       <div class="ov-hero">
@@ -26,10 +27,8 @@
         <div class="ov-card__shine" aria-hidden="true"></div>
         <div class="ov-card__head">
           <span class="ov-card__brand">{{ branding.site_name }}</span>
-          <button type="button" class="ov-card__lines" @click="linesSheetOpen = true">
-            切换线路
-            <ChevronRight :size="15" aria-hidden="true" />
-          </button>
+          <!-- 卡上「切换线路」文字入口已删（2026-11-15 照友站 t90 帧）：友站卡面
+               右上只有小三角标；线路切换走下方 Emby「服务器地址」行开弹层 -->
           <svg class="ov-card__play" width="31" height="31" viewBox="0 0 24 24" aria-hidden="true">
             <defs>
               <linearGradient id="card-play-g" x1="0" y1="0" x2="1" y2="1">
@@ -51,7 +50,9 @@
         </div>
       </section>
 
-      <!-- 卡下：左有效期，右自动续费。身份说明另起一行，避免和开关挤出窄屏。 -->
+      <!-- 卡下：左有效期，右自动续费。照友站 t90 帧，本行之下直接是
+           「本月剩余流量」——徽章行（创世元老 · No.1）与扣款说明行已于
+           2026-11-15 摘除（仅摘概览展示；身份数据与「我的」页不动） -->
       <div class="ov-expiry">
         <span v-if="expiryText">有效期至 {{ expiryText }}</span>
         <span v-else>{{ memberStatusText }}</span>
@@ -71,9 +72,6 @@
           </button>
         </span>
       </div>
-      <p v-if="whitelistIdentity" class="ov-expiry__note ov-expiry__note--block">{{ whitelistIdentity.title }} · {{ whitelistIdentity.label }}</p>
-      <p v-else-if="memberNote" class="ov-expiry__note ov-expiry__note--block">{{ memberNote }}</p>
-      <p v-if="activeSub" class="ov-renew__desc">到期前自动从余额扣款续费，请保持余额充足。</p>
       </div>
 
       <div class="ov-hero__meter">
@@ -345,17 +343,6 @@ const memberStatusText = computed(() => {
   if (isFreeRealm.value) return '生效中'
   return activeSub.value ? '生效中' : '未开通'
 })
-const memberNote = computed(() => {
-  const parts: string[] = []
-  if (whitelistIdentity.value) {
-    parts.push(`${whitelistIdentity.value.title} · ${whitelistIdentity.value.label}`)
-  }
-  if (!isFreeRealm.value && activeSub.value) {
-    parts.push(`${activeSub.value.plan_name} · ${activeSub.value.end_date.slice(0, 10)} 到期`)
-  }
-  return parts.join(' · ')
-})
-
 /** 有效期文案（YYYY.MM.DD）：付费取订阅到期；公益服免费开放无到期 */
 const expiryText = computed(() => {
   if (isFreeRealm.value) return ''
@@ -559,13 +546,6 @@ onMounted(() => {
   padding: 14px 20px 150px;
   box-sizing: border-box;
 }
-.ov-title {
-  margin: 2px 0 18px;
-  font-size: 34px;
-  font-weight: var(--uhd-fw-extrabold);
-  letter-spacing: -0.03em;
-  line-height: 1.1;
-}
 /* 整页中性加载态（照友站）：居中转圈＋一句加载文案，无任何结论性内容 */
 .ov-loading {
   min-height: 52dvh;
@@ -697,16 +677,6 @@ html:not([data-theme='light']) .ov-card {
   align-items: center;
   gap: 8px;
   margin-left: auto;
-}
-.ov-expiry__note {
-  color: rgba(255, 255, 255, 0.42);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.ov-expiry__note--block {
-  margin: 8px 2px 0;
-  white-space: normal;
 }
 
 /* 大数字区 */
@@ -1023,22 +993,6 @@ html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
   text-overflow: ellipsis;
 }
 
-/* 套餐卡「切换线路>」（2026-11-14）：卡头右侧文字钮，开线路弹层 */
-.ov-card__lines {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  border: none;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 13px;
-  font-weight: var(--uhd-fw-medium);
-  cursor: pointer;
-  padding: 4px 2px;
-  font-family: inherit;
-}
-.ov-card__lines:active { opacity: 0.72; }
 .ov-card__head .ov-card__play { margin-left: 6px; }
 
 /* 流量圆环卡 */
@@ -1106,15 +1060,16 @@ html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
   font-weight: var(--uhd-fw-medium);
   color: #ffffff;
 }
-.ov-renew__desc {
-  margin: 3px 0 0;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.5);
-}
+/* 自动续费开关（2026-11-15 照友站 t90 帧收小）：36×22 小胶囊；
+   开态轨道深色系（深色面用浅灰白、浅色面近黑，见覆盖区），关态浅灰，
+   白圆钮，全程不发绿（旧 50×30 亮绿 #30d158 已废） */
 .ov-switch {
   flex: 0 0 auto;
-  width: 50px;
-  height: 30px;
+  width: 36px;
+  height: 22px;
+  /* 中和 mobile.css 全局 button{min-height:44px}：不中和视觉高会被撑到 44
+     （旧 30px 开关在真机渲染成 ≈44–49pt 大钮的根因），同 DetailTopPill 惯例 */
+  min-height: 22px;
   border-radius: 999px;
   border: none;
   background: rgba(255, 255, 255, 0.18);
@@ -1125,16 +1080,17 @@ html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
 }
 .ov-switch__knob {
   position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 24px;
-  height: 24px;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   transition: transform 0.2s ease;
 }
-.ov-switch--on { background: #30d158; }
-.ov-switch--on .ov-switch__knob { transform: translateX(20px); }
+.ov-switch--on { background: #e8e8ec; }
+.ov-switch--on .ov-switch__knob { transform: translateX(14px); }
 .ov-switch:disabled { opacity: 0.5; cursor: wait; }
 
 /* 账户余额卡 */
@@ -1205,7 +1161,6 @@ html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
 .ov-invite__title { font-size: 16px; font-weight: var(--uhd-fw-bold); }
 .ov-invite__sub { font-size: 13px; color: rgba(255, 255, 255, 0.65); }
 /* 浅色覆盖：跟随用户外观（html[data-theme='light']） */
-html[data-theme='light'] .ov-title { color: #111111; }
 html[data-theme='light'] .ov-page {
   background: #f8f8f8;
   color: #111111;
@@ -1225,7 +1180,6 @@ html[data-theme='light'] .ov-card__brand { color: #111111; }
 html[data-theme='light'] .ov-card__plan { color: #111111; }
 html[data-theme='light'] .ov-card__user { color: #55575c; }
 html[data-theme='light'] .ov-expiry { color: #55575c; }
-html[data-theme='light'] .ov-expiry__note { color: #9a9da3; }
 html[data-theme='light'] .ov-quota__label { color: #111111; }
 html[data-theme='light'] .ov-quota__big { color: #111111; }
 html[data-theme='light'] .ov-quota__unit { color: #55575c; }
@@ -1252,7 +1206,6 @@ html[data-theme='light'] .ov-drow__status { color: #9a9da3; }
 html[data-theme='light'] .ov-drow__status--on { color: #16a34a; }
 html[data-theme='light'] .ov-trow { border-bottom-color: #e5e5e7; color: #111111; }
 html[data-theme='light'] .ov-trow__value { color: #9a9da3; }
-html[data-theme='light'] .ov-card__lines { color: #55575c; }
 html[data-theme='light'] .ov-ring__track { stroke: #e8e8ea; }
 html[data-theme='light'] .ov-ring__fill { stroke: #111111; }
 html[data-theme='light'] .ov-ring__center b { color: #111111; }
@@ -1261,9 +1214,8 @@ html[data-theme='light'] .ov-ring-meta__big { color: #111111; }
 html[data-theme='light'] .ov-ring-meta__line { color: #9a9da3; }
 html[data-theme='light'] .ov-renew { border-bottom-color: #e5e5e7; }
 html[data-theme='light'] .ov-renew__title { color: #111111; }
-html[data-theme='light'] .ov-renew__desc { color: #9a9da3; }
 html[data-theme='light'] .ov-switch { background: rgba(17, 17, 17, 0.16); }
-html[data-theme='light'] .ov-switch--on { background: #30d158; }
+html[data-theme='light'] .ov-switch--on { background: #111111; }
 html[data-theme='light'] .ov-balance { color: #111111; }
 html[data-theme='light'] .ov-rrow { border-bottom-color: #e5e5e7; }
 html[data-theme='light'] .ov-rrow__name { color: #111111; }
@@ -1282,7 +1234,8 @@ html[data-theme='light'] .ov-invite__sub { color: #55575c; }
 html[data-theme='light'] .ov-page.ov-dark .ov-card__brand { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-card__plan { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-card__user { color: rgba(255, 255, 255, 0.55); }
-html[data-theme='light'] .ov-page.ov-dark .ov-expiry__note { color: rgba(255, 255, 255, 0.42); }
+html[data-theme='light'] .ov-page.ov-dark .ov-switch { background: rgba(255, 255, 255, 0.18); }
+html[data-theme='light'] .ov-page.ov-dark .ov-switch--on { background: #e8e8ec; }
 html[data-theme='light'] .ov-page.ov-dark .ov-quota__label { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-quota__big { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-quota__unit { color: rgba(255, 255, 255, 0.62); }
@@ -1313,7 +1266,6 @@ html[data-theme='light'] .ov-page.ov-dark .ov-expiry { color: rgba(255, 255, 255
 html[data-theme='light'] .ov-page.ov-dark .ov-irow { border-bottom-color: #26262a; color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-drow { border-bottom-color: #26262a; }
 html[data-theme='light'] .ov-page.ov-dark .ov-trow { border-bottom-color: #26262a; color: #ffffff; }
-html[data-theme='light'] .ov-page.ov-dark .ov-card__lines { color: rgba(255, 255, 255, 0.85); }
 html[data-theme='light'] .ov-page.ov-dark .ov-ring__track { stroke: rgba(255, 255, 255, 0.12); }
 html[data-theme='light'] .ov-page.ov-dark .ov-ring__fill { stroke: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-ring__center b { color: #ffffff; }
