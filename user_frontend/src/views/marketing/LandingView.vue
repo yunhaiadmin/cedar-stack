@@ -483,6 +483,33 @@ const year = new Date().getFullYear()
               <stop offset="0.45" stop-color="#010102" stop-opacity="0.55" />
               <stop offset="1" stop-color="#010102" stop-opacity="0.88" />
             </linearGradient>
+            <!-- 光谱平滑渐变（2026-11-14 背景优化）：取代原先一格一格的平色
+                 色带扇——整幅扇面只用这一条多段色标渐变填充，颜色沿扇面
+                 纵向连续过渡（紫→蓝→青→绿→黄→橙→红），无硬分界 -->
+            <linearGradient id="hbg-spectrum" gradientUnits="userSpaceOnUse" x1="0" y1="185" x2="0" y2="615">
+              <stop offset="0" stop-color="#7b5cff" />
+              <stop offset="0.16" stop-color="#5a6cff" />
+              <stop offset="0.32" stop-color="#2f8fe0" />
+              <stop offset="0.46" stop-color="#22b8e6" />
+              <stop offset="0.58" stop-color="#2fd48c" />
+              <stop offset="0.68" stop-color="#a8d44d" />
+              <stop offset="0.78" stop-color="#f2c94c" />
+              <stop offset="0.89" stop-color="#f28c3c" />
+              <stop offset="1" stop-color="#e85d3c" />
+            </linearGradient>
+            <linearGradient id="hbg-corefade" gradientUnits="userSpaceOnUse" x1="71" y1="593" x2="390" y2="400">
+              <stop offset="0" stop-color="#ffffff" stop-opacity="0.95" />
+              <stop offset="0.5" stop-color="#cfe4ff" stop-opacity="0.45" />
+              <stop offset="1" stop-color="#cfe4ff" stop-opacity="0" />
+            </linearGradient>
+            <linearGradient id="hbg-beamfade" gradientUnits="userSpaceOnUse" x1="71" y1="0" x2="390" y2="0">
+              <stop offset="0" stop-color="#ffffff" />
+              <stop offset="0.6" stop-color="#ffffff" stop-opacity="0.88" />
+              <stop offset="1" stop-color="#ffffff" stop-opacity="0.45" />
+            </linearGradient>
+            <mask id="hbg-beammask" maskUnits="userSpaceOnUse" x="0" y="0" width="390" height="844">
+              <rect width="390" height="844" fill="url(#hbg-beamfade)" />
+            </mask>
           </defs>
           <rect width="390" height="844" fill="url(#hbg-sky)" />
           <ellipse cx="332" cy="238" rx="196" ry="180" fill="url(#hbg-neb-v)" opacity="0.6" />
@@ -502,35 +529,17 @@ const year = new Date().getFullYear()
             <circle cx="352" cy="486" r="0.8" opacity="0.3" /><circle cx="180" cy="486" r="0.8" opacity="0.28" />
             <circle cx="96" cy="540" r="0.8" opacity="0.25" /><circle cx="262" cy="548" r="0.9" opacity="0.3" />
           </g>
-          <g class="hbg-fan hbg-fan--halo" opacity="0.3">
-            <polygon points="71,593 390,230 390,608" fill="#8a7cff" />
-            <polygon points="71,593 390,376 390,546" fill="#3fa8e0" />
-            <polygon points="71,593 390,506 390,608" fill="#f28c3c" />
-          </g>
-          <g class="hbg-fan hbg-fan--glow" opacity="0.42">
-            <polygon points="71,593 390,230 390,270" fill="#7b5cff" />
-            <polygon points="71,593 390,280 390,320" fill="#5a6cff" />
-            <polygon points="71,593 390,328 390,374" fill="#2f8fe0" />
-            <polygon points="71,593 390,376 390,426" fill="#22b8e6" />
-            <polygon points="71,593 390,430 390,470" fill="#2fd48c" />
-            <polygon points="71,593 390,472 390,508" fill="#a8d44d" />
-            <polygon points="71,593 390,506 390,546" fill="#f2c94c" />
-            <polygon points="71,593 390,536 390,586" fill="#f28c3c" />
-            <polygon points="71,593 390,570 390,608" fill="#e85d3c" />
-          </g>
-          <g class="hbg-fan" opacity="0.6">
-            <polygon points="71,593 390,149 390,157" fill="#cfc4ff" />
-            <polygon points="71,593 390,203 390,210" fill="#e8e2ff" />
-            <polygon points="71,593 390,243 390,259" fill="#9d86ff" />
-            <polygon points="71,593 390,293 390,309" fill="#7f96ff" />
-            <polygon points="71,593 390,341 390,363" fill="#57b6f2" />
-            <polygon points="71,593 390,389 390,413" fill="#4fd2f2" />
-            <polygon points="71,593 390,390 390,405" fill="#ffffff" opacity="0.55" />
-            <polygon points="71,593 390,441 390,459" fill="#5fe3ae" />
-            <polygon points="71,593 390,481 390,499" fill="#c4e06a" />
-            <polygon points="71,593 390,515 390,537" fill="#ffd968" />
-            <polygon points="71,593 390,547 390,573" fill="#ffab52" />
-            <polygon points="71,593 390,579 390,599" fill="#ff7a4d" />
+          <g mask="url(#hbg-beammask)">
+            <g class="hbg-fan hbg-fan--halo" opacity="0.3">
+              <polygon points="71,593 390,150 390,624" fill="url(#hbg-spectrum)" />
+            </g>
+            <g class="hbg-fan hbg-fan--glow" opacity="0.42">
+              <polygon points="71,593 390,214 390,602" fill="url(#hbg-spectrum)" />
+            </g>
+            <g class="hbg-fan" opacity="0.6">
+              <polygon points="71,593 390,252 390,586" fill="url(#hbg-spectrum)" />
+              <polygon points="71,593 390,362 390,430" fill="url(#hbg-corefade)" />
+            </g>
           </g>
           <polygon points="-4,458 64,584 79,591 -4,486" fill="#ffffff" opacity="0.13" class="hbg-inbeam" />
           <rect y="636" width="390" height="208" fill="url(#hbg-floor)" />
@@ -562,6 +571,18 @@ const year = new Date().getFullYear()
               <stop offset="0" stop-color="#bcd9ff" stop-opacity="0.35" />
               <stop offset="1" stop-color="#bcd9ff" stop-opacity="0" />
             </radialGradient>
+            <!-- 光谱平滑渐变（2026-11-14 背景优化，同移动端口径）：整幅扇面
+                 一条多段色标渐变连续过渡，取代原先 8 格平色多边形硬色带 -->
+            <linearGradient id="hv-spectrum" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="390" y2="0">
+              <stop offset="0" stop-color="#2f8fe0" />
+              <stop offset="0.14" stop-color="#6f7ad8" />
+              <stop offset="0.28" stop-color="#c46c90" />
+              <stop offset="0.4" stop-color="#e8766f" />
+              <stop offset="0.52" stop-color="#f2a45a" />
+              <stop offset="0.64" stop-color="#ecd04f" />
+              <stop offset="0.78" stop-color="#95c77d" />
+              <stop offset="1" stop-color="#39b3ec" />
+            </linearGradient>
           </defs>
           <ellipse cx="195" cy="158" rx="150" ry="92" fill="url(#hv-glow)" />
           <g fill="#ffffff">
@@ -582,15 +603,11 @@ const year = new Date().getFullYear()
             <circle cx="160" cy="128" r="0.9" opacity="0.4" />
             <circle cx="232" cy="140" r="0.9" opacity="0.4" />
           </g>
+          <g class="hv-fan" opacity="0.45" style="filter: blur(13px)">
+            <polygon points="195,150 -30,0 420,0" fill="url(#hv-spectrum)" />
+          </g>
           <g class="hv-fan" opacity="0.85">
-            <polygon points="195,150 4,0 42,0" fill="#2f8fe0" />
-            <polygon points="195,150 50,0 90,0" fill="#6f7ad8" />
-            <polygon points="195,150 98,0 138,0" fill="#c46c90" />
-            <polygon points="195,150 146,0 186,0" fill="#e8766f" />
-            <polygon points="195,150 194,0 234,0" fill="#f2a45a" />
-            <polygon points="195,150 242,0 282,0" fill="#ecd04f" />
-            <polygon points="195,150 290,0 330,0" fill="#95c77d" />
-            <polygon points="195,150 338,0 386,0" fill="#39b3ec" />
+            <polygon points="195,150 6,0 384,0" fill="url(#hv-spectrum)" />
           </g>
           <polygon points="187,236 203,236 199,212 191,212" fill="url(#hv-inbeam)" />
           <polygon
@@ -1041,8 +1058,23 @@ const year = new Date().getFullYear()
 .hero-sub-fade-leave-to { opacity: 0; }
 .hero-actions {
   display: flex;
-  gap: 14px;
+  gap: 16px;
   flex-wrap: wrap;
+}
+/* 「前往流媒体」改深色玻璃（2026-11-14 用户双站对图亲点）：UhdButton 的
+   secondary+dark 基础配方是 transparent 底、无 backdrop-filter——空心描边，
+   钮内直接透出背景条纹原色。本页用专属钩子 .hero-btn-stream 覆盖成深色
+   玻璃（压暗＋模糊＋白亮边＋内高光＋柔影），不动共享组件，同 variant 的
+   「查看定价」等他处次钮不受影响。字重走 .uhd-btn 基础 semibold，与左钮同级。 */
+.hero-actions :deep(.uhd-btn--secondary.hero-btn-stream) {
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  background: rgba(10, 13, 26, 0.38);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 12px 32px -12px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
 }
 .hero-specs {
   display: flex;
