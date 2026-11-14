@@ -79,7 +79,7 @@
               <span class="psp-spinner" aria-hidden="true"></span> 正在获取资源和线路…
             </div>
 
-            <BindDriveGuide v-else-if="needsBinding" :title="title" @navigate="close" />
+            <BindDriveGuide v-else-if="needsBinding" :title="title" @bound="onDriveBound" />
 
             <template v-else>
               <!-- 影片版本（单选） -->
@@ -796,6 +796,12 @@ async function refresh() {
 
 function close() {
   open.value = false
+}
+
+/** 绑盘弹层里绑成后回到选播放器流程：就地重查绑定与条目
+ *  （refresh 内 needsBinding 按最新绑定列表落定），不再跳设置页 */
+function onDriveBound() {
+  void refresh()
 }
 
 /** 版本卡复制钮（友站形态 = 复制链接）：复制该版本的网页播放链接
