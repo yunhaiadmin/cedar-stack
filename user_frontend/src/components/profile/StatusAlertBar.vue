@@ -17,7 +17,7 @@
 /**
  * 「我的」页状态预警条：只吃父页（PersonalCenterView）已经加载好的账号
  * 数据，不自己发请求。触发口径：
- * - 付费会员 7 天内到期：黄色提醒到期日与续费入口（会员页现行续费
+ * - 付费会员 7 天内到期：黄色提醒到期日与续费入口（订阅服务页现行续费
  *   口径，不在这里新造逻辑）。
  * 活力预警与公益资格到期提醒已随活力/公益资格整族于 2026-11-14 删除。
  * 数据拿不到就不出条，不触发时整块不渲染。
@@ -51,7 +51,7 @@ const alerts = computed<AlertItem[]>(() => {
       level: 'warn',
       title: `会员还有 ${sub.days_left} 天到期`,
       text: `${sub.plan_name} 到 ${sub.end_date.slice(0, 10)} 为止，续上可无缝接续。`,
-      action: { to: '/game/account/member', label: '去续费' },
+      action: { to: '/game/account/subscribe', label: '去续费' },
     })
   }
   return out

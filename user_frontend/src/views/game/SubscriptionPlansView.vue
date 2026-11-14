@@ -3,13 +3,12 @@
        壳内贴合（摘返回钮、结算条让侧栏）由布局全局样式处理；手机原样 -->
   <UhdAccountShellGate>
   <div class="sub-page">
-    <!-- 页头：左返回＋标题，右上真实入口（我的订阅）彩虹边框胶囊 -->
+    <!-- 页头：左返回＋标题（「我的订阅」页已删除，右上胶囊入口一并摘除） -->
     <header class="sub-head">
       <button type="button" class="sub-back" aria-label="返回" @click="goBack">
         <ChevronLeft :size="24" aria-hidden="true" />
       </button>
       <h1 class="sub-title">订阅服务</h1>
-      <RouterLink class="sub-head-link" to="/game/account/member">我的订阅</RouterLink>
     </header>
 
     <main class="sub-body">
@@ -24,7 +23,6 @@
       <div v-else-if="isFreeRealm" class="sub-state">
         <p>当前为公益服，全片库免费开放，无需购买订阅</p>
         <p v-if="realmNote" class="sub-state__note">{{ realmNote }}</p>
-        <RouterLink class="sub-retry" to="/game/account/member">查看我的资格</RouterLink>
       </div>
 
       <div v-else-if="!plansEnabled && !walletEnabled" class="sub-state">
@@ -231,7 +229,7 @@
  * 团体方案段无对应业务，整段省略；页头右上不放播放入口，放真实入口「我的订阅」。
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { Check, ChevronLeft, Tag } from 'lucide-vue-next'
 import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
 import { useToast } from '@/composables/useToast'
@@ -508,7 +506,7 @@ async function buy() {
   orderBusy.value = true
   try {
     // 钱包余额支付（钱包批 2）：同一事务扣款＋发订阅，成功直接去
-    // 「我的订阅」看结果，不走网关跳转。
+    // 订阅记录页看结果，不走网关跳转。
     if (payMethod.value === 'wallet') {
       const res = await walletApi.paySubscription({
         plan_id: plan.id,
@@ -520,7 +518,7 @@ async function buy() {
           ? '这次购买已经生效过了，没有重复扣款'
           : `已开通「${res.plan_name}」，到期 ${res.end_date ? res.end_date.slice(0, 10) : ''}`,
       )
-      await router.push('/game/account/member')
+      await router.push('/game/account/subscription-records')
       return
     }
     const res = await paymentApi.createOrder({
@@ -544,7 +542,7 @@ async function buy() {
 
 function goBack() {
   if (window.history.length > 1) router.back()
-  else void router.push('/game/account/member')
+  else void router.push('/game/account/subscription-records')
 }
 
 /* ---------- 加载 ---------- */
@@ -647,26 +645,6 @@ onMounted(() => {
   letter-spacing: -0.01em;
   color: var(--uhd-d-text);
 }
-/* 彩虹边框胶囊：彩虹渐变边＋深色毛玻璃底＋玻璃栈（原站「网页观影」位，改为真实入口；
-   2026-11-13 补齐玻璃：内高光 + 柔影 + backdrop） */
-.sub-head-link {
-  flex: 0 0 auto;
-  padding: 7px 14px;
-  border-radius: 999px;
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-semibold);
-  color: var(--uhd-d-text);
-  text-decoration: none;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
-    var(--uhd-rainbow) border-box;
-  border: 1.5px solid transparent;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 12px 28px -12px rgba(0, 0, 0, 0.5);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
-}
-
 .sub-body {
   max-width: 760px;
   margin: 0 auto;

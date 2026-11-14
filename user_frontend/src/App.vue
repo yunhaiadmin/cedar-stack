@@ -120,7 +120,7 @@ const accountBarTitle = computed(() => (route.name === 'game-account-menu' ? '�
  * ProfileView（/profile 已删）→ AccountSettingsView（/game/account）。
  * 2026-11-13：商店整店删除，ShopView 移出缓存。
  * 2026-11-06：/game/account 改为个人中心 PersonalCenterView，缓存对象随之更换；
- * 账号设置（/game/account/settings）与我的订阅（/game/account/member）是子页，不进缓存。
+ * 账号设置（/game/account/settings）是子页，不进缓存（「我的订阅」页已删除）。
  */
 // RootView 是根路径分发组件（官网面），一并常驻缓存
 // 2026-11-14：片库四页签（首页 StreamHomeView、电影/剧集 LibraryBrowseView、
