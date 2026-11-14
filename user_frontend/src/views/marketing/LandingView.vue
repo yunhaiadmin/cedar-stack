@@ -457,77 +457,35 @@ const year = new Date().getFullYear()
 
     <!-- ① Hero -->
     <header class="hero">
-      <!-- 移动端全幅背景（自有生成图，照友站真机截图构图：深色星空作底、
-           棱镜在左下、光谱扇自棱镜向右上展开、文字压在左上暗部、卖点压在下部；
-           仅 ≤900px 显示，桌面仍走 hero-visual 棱镜图层 -->
+      <!-- 移动端全幅背景（L-02 照片级棱镜图，2026-11-14）：自有生成图，
+           构图照友站实测（纯黑底、棱镜居下中、细光束自左缘水平入射、
+           光谱扇自出射星芒向右上展开、左上留暗给文案）；图与脉冲叠层同装
+           .hero-bg-canvas（与图同比例画布 cover 撑满，叠层恒对位）；
+           仅 ≤900px 显示，桌面走 hero-visual 同构图图层 -->
       <div class="hero-bg" aria-hidden="true">
-        <img class="hero-bg-img" src="/images/hero-prism.webp" alt="" width="1184" height="2096" fetchpriority="high" />
+        <div class="hero-bg-canvas">
+          <img class="hero-bg-img" src="/images/hero-prism-mobile.webp" alt="" width="1080" height="2160" fetchpriority="high" />
+          <div class="hp">
+            <span class="hp-beamglow" />
+            <span class="hp-dot" />
+            <span class="hp-flash hp-flash--entry" />
+            <span class="hp-flash hp-flash--prism" />
+            <span class="hp-refl" />
+          </div>
+        </div>
       </div>
       <div class="hero-beam" aria-hidden="true" />
-      <!-- 桌面棱镜主视觉：自绘 SVG 棱镜＋彩虹光束＋星点，不用对方素材；
-           移动端不显示（改走 .hero-bg 全幅背景，照友站真机截图构图） -->
+      <!-- 桌面棱镜主视觉（L-02）：与移动端同一构图的照片级图层＋脉冲叠层，
+           取代原自绘 SVG 棱镜扇面；移动端不显示（走 .hero-bg 全幅背景） -->
       <div class="hero-visual" aria-hidden="true">
-        <svg viewBox="0 0 390 236" preserveAspectRatio="xMidYMid meet" focusable="false">
-          <defs>
-            <linearGradient id="hv-prism" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stop-color="#ffffff" stop-opacity="0.30" />
-              <stop offset="0.5" stop-color="#9fd8ff" stop-opacity="0.10" />
-              <stop offset="1" stop-color="#ffffff" stop-opacity="0.20" />
-            </linearGradient>
-            <linearGradient id="hv-inbeam" x1="0" y1="1" x2="0" y2="0">
-              <stop offset="0" stop-color="#ffffff" stop-opacity="0" />
-              <stop offset="1" stop-color="#ffffff" stop-opacity="0.85" />
-            </linearGradient>
-            <radialGradient id="hv-glow" cx="0.5" cy="0.5" r="0.5">
-              <stop offset="0" stop-color="#bcd9ff" stop-opacity="0.35" />
-              <stop offset="1" stop-color="#bcd9ff" stop-opacity="0" />
-            </radialGradient>
-            <!-- 光谱平滑渐变（2026-11-14 背景优化，同移动端口径）：整幅扇面
-                 一条多段色标渐变连续过渡，取代原先 8 格平色多边形硬色带 -->
-            <linearGradient id="hv-spectrum" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="390" y2="0">
-              <stop offset="0" stop-color="#2f8fe0" />
-              <stop offset="0.14" stop-color="#6f7ad8" />
-              <stop offset="0.28" stop-color="#c46c90" />
-              <stop offset="0.4" stop-color="#e8766f" />
-              <stop offset="0.52" stop-color="#f2a45a" />
-              <stop offset="0.64" stop-color="#ecd04f" />
-              <stop offset="0.78" stop-color="#95c77d" />
-              <stop offset="1" stop-color="#39b3ec" />
-            </linearGradient>
-          </defs>
-          <ellipse cx="195" cy="158" rx="150" ry="92" fill="url(#hv-glow)" />
-          <g fill="#ffffff">
-            <circle cx="28" cy="52" r="1.3" opacity="0.65" />
-            <circle cx="64" cy="22" r="1" opacity="0.45" />
-            <circle cx="102" cy="66" r="1.6" opacity="0.8" />
-            <circle cx="140" cy="30" r="1" opacity="0.5" />
-            <circle cx="176" cy="84" r="1.2" opacity="0.6" />
-            <circle cx="214" cy="38" r="1.5" opacity="0.75" />
-            <circle cx="248" cy="92" r="1" opacity="0.45" />
-            <circle cx="282" cy="26" r="1.3" opacity="0.65" />
-            <circle cx="318" cy="70" r="1.6" opacity="0.8" />
-            <circle cx="356" cy="34" r="1.1" opacity="0.5" />
-            <circle cx="44" cy="120" r="1" opacity="0.4" />
-            <circle cx="344" cy="128" r="1.2" opacity="0.5" />
-            <circle cx="88" cy="150" r="1.1" opacity="0.35" />
-            <circle cx="300" cy="158" r="1" opacity="0.35" />
-            <circle cx="160" cy="128" r="0.9" opacity="0.4" />
-            <circle cx="232" cy="140" r="0.9" opacity="0.4" />
-          </g>
-          <g class="hv-fan" opacity="0.45" style="filter: blur(13px)">
-            <polygon points="195,150 -30,0 420,0" fill="url(#hv-spectrum)" />
-          </g>
-          <g class="hv-fan" opacity="0.85">
-            <polygon points="195,150 6,0 384,0" fill="url(#hv-spectrum)" />
-          </g>
-          <polygon points="187,236 203,236 199,212 191,212" fill="url(#hv-inbeam)" />
-          <polygon
-            points="195,140 148,208 242,208"
-            fill="url(#hv-prism)"
-            stroke="rgba(255, 255, 255, 0.55)"
-            stroke-width="1.2"
-          />
-        </svg>
+        <img class="hero-visual-img" src="/images/hero-prism-desktop.webp" alt="" width="1600" height="1067" />
+        <div class="hp">
+          <span class="hp-beamglow" />
+          <span class="hp-dot" />
+          <span class="hp-flash hp-flash--entry" />
+          <span class="hp-flash hp-flash--prism" />
+          <span class="hp-refl" />
+        </div>
       </div>
       <div class="hero-inner" :style="heroInnerStyle()">
         <p class="eyebrow hero-el hero-el--eyebrow">{{ branding.site_name }} SERVICE</p>
@@ -868,23 +826,42 @@ const year = new Date().getFullYear()
   pointer-events: none;
 }
 /* 移动端全幅背景层：默认隐藏（桌面走 .hero-visual），仅 ≤900px 启用（见文末断点）。
-   ::before 压暗左上文字区、::after 压暗底部卖点区，保证文字压在暗部上 */
+   .hero-bg 作尺寸容器，内层画布 .hero-bg-canvas 与底图同比例（1080:2160）
+   按 cover 撑满（宽 = max(容器宽, 容器高一半)）：图与脉冲叠层同画布，
+   任意视口下叠层坐标恒与图对位。::before 压暗左上文字区、::after 压暗
+   底部卖点区（z-index 抬到画布之上），保证文字压在暗部上 */
 .hero-bg {
   display: none;
   position: absolute;
   inset: 0;
   pointer-events: none;
+  container-type: size;
+}
+.hero-bg-canvas {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  aspect-ratio: 1080 / 2160;
+  width: max(100%, 50svh);
+  width: max(100%, 50cqh);
+  /* 脉冲几何覆盖值（对自有移动图 1080×2160 像素实测，图内 % 坐标）：
+     光束线 y=59.2、入射星芒 x=37.5、棱镜中心 (48.9, 68.1)、倒影心 y=87 */
+  --hp-beam-y: 59.2%;
+  --hp-entry-x: 37.5%;
+  --hp-prism-x: 48.9%;
+  --hp-prism-y: 68.1%;
+  --hp-refl-y: 87%;
 }
 .hero-bg-img {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  object-position: 50% 50%;
 }
 .hero-bg::before {
   content: '';
   position: absolute;
+  z-index: 2;
   inset: 0;
   background:
     linear-gradient(180deg, rgba(2, 2, 10, 0.42), transparent 34%),
@@ -894,29 +871,126 @@ const year = new Date().getFullYear()
 .hero-bg::after {
   content: '';
   position: absolute;
+  z-index: 2;
   inset: 0;
   background: linear-gradient(0deg, rgba(1, 1, 4, 0.52), rgba(1, 1, 4, 0.2) 34%, transparent 58%);
 }
-/* 棱镜主视觉（D1-03）：桌面居右上、移动端全幅居顶（见文末断点） */
+/* 棱镜主视觉（L-02）：桌面居右上、与底图同比例（1600×1067）；四边径向
+   柔化，图层融进底色不留矩形硬边（移动端全幅出血不套此罩，走 .hero-bg） */
 .hero-visual {
   position: absolute;
   top: 84px;
   right: 1.5%;
   width: min(620px, 46vw);
-  aspect-ratio: 390 / 236;
+  aspect-ratio: 1600 / 1067;
   pointer-events: none;
-  /* 桌面：四边径向柔化，扇面融进底色不留矩形硬边（移动端全幅出血不套此罩） */
   -webkit-mask-image: radial-gradient(ellipse 92% 90% at 50% 46%, #000 52%, transparent 97%);
   mask-image: radial-gradient(ellipse 92% 90% at 50% 46%, #000 52%, transparent 97%);
 }
-.hero-visual svg {
+.hero-visual-img {
   display: block;
   width: 100%;
   height: 100%;
 }
-.hero-visual .hv-fan {
-  filter: blur(5px);
+
+/* ---------- Hero 棱镜脉冲（L-02 唯一动效，2026-11-14 友站实测） ----------
+   一轮 5s：亮点沿入射光束自左向右跑 1.3s（0–26%）→ 抵达入射点时入射
+   星芒大亮、棱镜本体闪亮、地板倒影同步微亮 → 约 2.5s（50%）衰尽，
+   后半程全静默。光谱扇／出射星芒／行星光晕／画面本体零动画（实测
+   90s+ 恒定，不加）。周期 5s 字面值照本文件环境动画先例（uhd-marquee
+   46s linear、pin-breathe 26s）；相位 % 由实测秒数换算；几何坐标走
+   --hp-* 令牌（uhd-tokens.css §1.7 给桌面图实测值，移动画布覆盖）。 */
+.hp {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.hp-dot,
+.hp-beamglow,
+.hp-flash,
+.hp-refl {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.hp-beamglow {
+  left: 0;
+  top: var(--hp-beam-y);
+  width: var(--hp-entry-x);
+  height: 4%;
+  transform: translateY(-50%);
+  background: linear-gradient(90deg, transparent 30%, rgba(255, 255, 255, 0.75));
+  filter: blur(3px);
+  animation: hp-beamglow 5s linear infinite;
+}
+.hp-dot {
+  left: 0;
+  top: var(--hp-beam-y);
+  width: 15%;
+  height: 8%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.95), rgba(190, 215, 255, 0.4) 48%, transparent 72%);
+  filter: blur(1px);
+  animation: hp-travel 5s linear infinite;
+}
+.hp-flash {
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
   mix-blend-mode: screen;
+}
+.hp-flash--entry {
+  left: var(--hp-entry-x);
+  top: var(--hp-beam-y);
+  width: 24%;
+  height: 24%;
+  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.95), rgba(200, 220, 255, 0.35) 46%, transparent 70%);
+  animation: hp-flash-entry 5s linear infinite;
+}
+.hp-flash--prism {
+  left: var(--hp-prism-x);
+  top: var(--hp-prism-y);
+  width: 58%;
+  height: 58%;
+  background: radial-gradient(closest-side, rgba(235, 242, 255, 0.55), rgba(170, 200, 255, 0.18) 52%, transparent 72%);
+  animation: hp-flash-prism 5s linear infinite;
+}
+.hp-refl {
+  left: var(--hp-prism-x);
+  top: var(--hp-refl-y);
+  width: 46%;
+  height: 20%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(220, 232, 255, 0.4), transparent 70%);
+  filter: blur(4px);
+  animation: hp-refl 5s linear infinite;
+}
+@keyframes hp-travel {
+  0% { left: -6%; opacity: 0; }
+  5% { opacity: 1; }
+  26% { left: var(--hp-entry-x); opacity: 1; }
+  31%, 100% { left: var(--hp-entry-x); opacity: 0; }
+}
+@keyframes hp-beamglow {
+  0%, 8% { opacity: 0; }
+  26% { opacity: 0.5; }
+  50%, 100% { opacity: 0; }
+}
+@keyframes hp-flash-entry {
+  0%, 23% { opacity: 0; transform: translate(-50%, -50%) scale(0.72); }
+  30% { opacity: 0.95; transform: translate(-50%, -50%) scale(1); }
+  50%, 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.15); }
+}
+@keyframes hp-flash-prism {
+  0%, 24% { opacity: 0; transform: translate(-50%, -50%) scale(0.92); }
+  32% { opacity: 0.6; transform: translate(-50%, -50%) scale(1); }
+  52%, 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.04); }
+}
+@keyframes hp-refl {
+  0%, 25% { opacity: 0; }
+  34% { opacity: 0.4; }
+  54%, 100% { opacity: 0; }
 }
 .hero-inner {
   position: relative;
@@ -1944,6 +2018,11 @@ const year = new Date().getFullYear()
 }
 @media (prefers-reduced-motion: reduce) {
   .hero-el { animation: none; }
+  /* 棱镜脉冲（L-02）：减动效时全关，只留静态照片图 */
+  .hp-dot,
+  .hp-beamglow,
+  .hp-flash,
+  .hp-refl { animation: none; }
   .marquee-track { animation: none; }
   .pin-beams { animation: none; }
   .rv,
