@@ -14,7 +14,7 @@ from types import SimpleNamespace
 import pytest
 
 from backend.emby_server import image_store
-from backend.emby_server.upstream_http import OutboundBlockedError
+from backend.emby_server.outbound_http import OutboundBlockedError
 
 PRIVATE_URLS = [
     "http://169.254.169.254/latest/meta-data/",

@@ -7,14 +7,8 @@
 
 1. MediaSource.Name 一律条目名（Emby 默认形态；画质标签已
    随删除令下线，不再按探测/文件名拼标签），不带源名/服务器名。
-   唯一例外：CMS 线路的存量画质缓存带 label 时沿用它作线路名
-   （标签不再生产，缓存过期后自然回落条目名）。
 2. 本地条目 Size/Bitrate/MediaStreams 从真实探测数据下发；
    无探测时留空（补探测走既有按需入队）。
-3. CMS 托管条目：每条可展示映射一条 MediaSource（Id 带映射
-   id），宽高/范围取自取流路径回填的缓存（m3u8 主清单解析）；
-   取流口按 MediaSourceId 定向解析所选映射，选错硬报错 404，
-   绝不偷偷换线；旧形态（只到 :upstream）保持最佳映射口径。
 """
 
 from __future__ import annotations
@@ -36,7 +30,6 @@ from sqlalchemy.orm import sessionmaker
 from backend import models
 from backend.database import CacheManager, SessionLocal, init_db
 from backend.emby_server import models as em
-from backend.emby_server import upstream_playback as up
 from backend.security import hash_password
 
 init_db()
@@ -45,52 +38,19 @@ TICKS = 10_000_000
 PW = "MsPres#2026"
 BOUND = "mspres_bound"
 LIB_LOCAL = "画质呈现测试库"
-LIB_CMS = "画质测试在线库"
-SRC_A = "画质源甲"
-SRC_B = "画质源乙"
-CMS_MOVIE = "画质托管片"
 
-
-# ---------------------------------------------------------------------------
-# 纯函数：m3u8 主清单解析（解析器已迁入 upstream_playback）
-# ---------------------------------------------------------------------------
-
-def test_parse_m3u8_master_picks_top_bandwidth():
-    text = (
-        "#EXTM3U\n"
-        '#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720,'
-        'CODECS="avc1.64001f,mp4a.40.2"\n'
-        "720.m3u8\n"
-        '#EXT-X-STREAM-INF:BANDWIDTH=18500000,RESOLUTION=3840x2160,'
-        'CODECS="dvhe.08.06,mp4a.40.2"\n'
-        "2160.m3u8\n"
-    )
-    master = up.parse_m3u8_master(text)
-    assert master == {"width": 3840, "height": 2160,
-                      "bandwidth": 18500000, "video_range": "DolbyVision"}
-    # 单码率清单没有变体行 → 判不出，不猜
-    assert up.parse_m3u8_master("#EXTM3U\n#EXTINF:10,\nseg.ts\n") is None
-    assert up.parse_m3u8_master("") is None
-
-
-# ---------------------------------------------------------------------------
-# TestClient 种子（本地条目 + CMS 托管条目同库盘）
-# ---------------------------------------------------------------------------
 
 def _guid():
     return uuid.uuid4().hex
 
 
 def _cleanup(db):
-    for lib_name in (LIB_LOCAL, LIB_CMS):
+    for lib_name in (LIB_LOCAL,):
         for lib in db.query(em.Library).filter(
                 em.Library.name == lib_name).all():
             ids = [r[0] for r in db.query(em.MediaItem.id).filter(
                 em.MediaItem.library_id == lib.id).all()]
             if ids:
-                db.query(em.UpstreamItemMapping).filter(
-                    em.UpstreamItemMapping.local_item_id.in_(ids)).delete(
-                    synchronize_session=False)
                 db.query(em.MediaStream).filter(
                     em.MediaStream.item_id.in_(ids)).delete(
                     synchronize_session=False)
@@ -99,9 +59,6 @@ def _cleanup(db):
                     synchronize_session=False)
             db.query(em.Library).filter(
                 em.Library.id == lib.id).delete(synchronize_session=False)
-    for src in db.query(em.UpstreamSource).filter(
-            em.UpstreamSource.name.in_([SRC_A, SRC_B])).all():
-        db.delete(src)
     u = db.query(models.WebUser).filter(
         models.WebUser.username == BOUND).first()
     if u is not None:
@@ -117,7 +74,7 @@ def _cleanup(db):
         db.query(em.EmbyApiToken).filter(
             em.EmbyApiToken.user_id == u.id).delete(
             synchronize_session=False)
-        # 站内信先清（与 test_pilot_entry._cleanup 同口径）：
+        # 站内信先清：
         # to_user_id 非空而 ORM 删用户会试图置空它；更早模块留下的
         # 孤儿站内信（收件人已被删、其 id 被本文件用户复用）会把
         # teardown 顶爆并回滚整个清理（2026-11-05 #1854 CI 实证，
@@ -185,49 +142,13 @@ def seed():
         container="mkv", size=1_000_000_000, duration_ticks=0,
         probe_status="failed", probe_attempts=99)
     db.add(plain)
-    # CMS 托管行：两个源各一条映射，甲源预置画质缓存（模拟已点播过
-    # 一次、取流路径回填），乙源无缓存。
-    cms_lib = em.Library(guid=_guid(), name=LIB_CMS,
-                         collection_type="movies", is_enabled=True,
-                         kind="applecms")
-    db.add(cms_lib)
-    db.flush()
-    src_a = em.UpstreamSource(name=SRC_A, source_type="applecms",
-                              base_url="http://cms-a.example", enabled=True)
-    src_b = em.UpstreamSource(name=SRC_B, source_type="applecms",
-                              base_url="http://cms-b.example", enabled=True)
-    db.add_all([src_a, src_b])
-    db.flush()
-    cms_item = em.MediaItem(guid=_guid(), library_id=cms_lib.id,
-                            item_type="movie", name=CMS_MOVIE,
-                            production_year=2024,
-                            upstream_source_id=src_a.id,
-                            probe_status="done")
-    db.add(cms_item)
-    db.flush()
-    map_a = em.UpstreamItemMapping(local_item_id=cms_item.id,
-                                   source_id=src_a.id,
-                                   upstream_item_id="101",
-                                   confidence=0.9, evidence="title+year")
-    map_b = em.UpstreamItemMapping(local_item_id=cms_item.id,
-                                   source_id=src_b.id,
-                                   upstream_item_id="55",
-                                   confidence=0.8, evidence="title+year")
-    db.add_all([map_a, map_b])
     db.commit()
-    up.store_cms_quality(map_a.id, {
-        "width": 3840, "height": 2160, "bandwidth": 18_500_000,
-        "video_range": "DolbyVision", "label": "4K Dolby"})
     data = {"probed": probed.guid, "dv_named": dv_named.guid,
-            "plain": plain.guid, "cms": cms_item.guid,
-            "cms_id": cms_item.id,
-            "map_a": map_a.id, "map_b": map_b.id}
+            "plain": plain.guid}
     db.close()
     yield data
     db = SessionLocal()
     try:
-        for mid in (data["map_a"], data["map_b"]):
-            CacheManager.delete(up.cms_quality_cache_key(mid))
         _cleanup(db)
     finally:
         db.close()
@@ -281,485 +202,3 @@ def test_local_unprobed_movie_name_is_item_name(client, token, seed):
 def test_local_unknown_quality_falls_back_to_item_name(client, token, seed):
     src = _playback_sources(client, token, seed["plain"])[0]
     assert src["Name"] == "画质无标记片"
-
-
-def test_cms_item_one_source_per_mapping_with_quality(client, token, seed):
-    sources = _playback_sources(client, token, seed["cms"])
-    assert len(sources) == 2
-    line_a, line_b = sources
-    # 偏好序：置信度高的甲源在前；Id/地址都带各自映射 id
-    assert line_a["Id"] == f"{seed['cms']}:upstream:{seed['map_a']}"
-    assert line_b["Id"] == f"{seed['cms']}:upstream:{seed['map_b']}"
-    for line, mid in ((line_a, seed["map_a"]), (line_b, seed["map_b"])):
-        q = parse_qs(urlsplit(line["DirectStreamUrl"]).query)
-        assert q["MediaSourceId"][0] == f"{seed['cms']}:upstream:{mid}"
-        # 名字里绝不出现源名
-        assert SRC_A not in line["Name"] and SRC_B not in line["Name"]
-    # 甲源有存量画质缓存：label 仍作线路名 + 宽高/范围摘要；
-    # 清单 BANDWIDTH 只是上游模板声明，不能当真实码率下发。
-    assert line_a["Name"] == "4K Dolby"
-    assert "Bitrate" not in line_a
-    video = [s for s in line_a["MediaStreams"] if s["Type"] == "Video"][0]
-    assert video["Width"] == 3840 and video["Height"] == 2160
-    assert video["VideoRange"] == "DolbyVision"
-    assert "BitRate" not in video
-    # Size 推不出就不报实数（0/缺失都是未知口径），不编造
-    assert not line_a.get("Size")
-    # 乙源无缓存：回落 Emby 默认形态（条目名），不拿源名凑数
-    assert line_b["Name"] == CMS_MOVIE
-
-
-def test_cms_line_without_quality_cache_still_has_video_stream(
-        client, token, seed):
-    """无画质缓存的 CMS 线路也必须带一条视频轨（2026-11-03 回归）。
-
-    Reflix 类按媒体规格选源的客户端把零轨道 MediaSource 判为
-    不可用、直接报「没有可用的源」；占位视频轨只报结构事实，
-    codec/宽高/码率一律不许编造（真值走取流回填的缓存分支）。
-    """
-    sources = _playback_sources(client, token, seed["cms"])
-    line_b = [s for s in sources
-              if s["Id"] == f"{seed['cms']}:upstream:{seed['map_b']}"][0]
-    videos = [s for s in line_b["MediaStreams"] if s["Type"] == "Video"]
-    assert len(videos) == 1
-    video = videos[0]
-    assert video["IsDefault"] is True
-    assert "Width" not in video and "Height" not in video
-    assert "Codec" not in video and "BitRate" not in video
-    # 有缓存的线路仍走真实参数，不被占位覆盖
-    line_a = [s for s in sources
-              if s["Id"] == f"{seed['cms']}:upstream:{seed['map_a']}"][0]
-    real = [s for s in line_a["MediaStreams"] if s["Type"] == "Video"][0]
-    assert real["Width"] == 3840 and real["Height"] == 2160
-
-
-def _assert_no_null_values(node, path="$"):
-    """MediaSources 内任何层级都不许出现 JSON null（严格客户端口径）。"""
-    if isinstance(node, dict):
-        for key, value in node.items():
-            assert value is not None, f"{path}.{key} 下发了 null"
-            _assert_no_null_values(value, f"{path}.{key}")
-    elif isinstance(node, list):
-        for idx, value in enumerate(node):
-            _assert_no_null_values(value, f"{path}[{idx}]")
-
-
-def test_cms_sources_json_has_no_null_fields(client, token, seed):
-    """2026-11-04 实拍回归：Yamby 严格序列化被详情 JSON 的
-    "DefaultAudioStreamIndex":null 噎死（SerializationException:
-    Unexpected symbol 'n' in numeric literal）。
-
-    触发条件＝CMS 线路画质缓存带宽高（取流回填过）而条目无音频轨：
-    合成源在 _strip_nulls 之后赋值、线路组装又在 strip 之后塞
-    "Path": None，null 一路漏到详情面（PlaybackInfo 面有路由末尾
-    strip 兜底、详情面没有）。钉死口径：详情与 PlaybackInfo 两面
-    的 MediaSources 内零 null；默认轨道数值字段出现时必为整数
-    （与真 Emby 省略 null 字段的行为对齐）。
-    """
-    headers = {"X-Emby-Token": token}
-    # —— PlaybackInfo 面 ——
-    r = client.post(f"/emby/Items/{seed['cms']}/PlaybackInfo",
-                    headers=headers, json={})
-    assert r.status_code == 200, r.text
-    assert '"DefaultAudioStreamIndex":null' not in r.text
-    _assert_no_null_values(r.json()["MediaSources"], "$.MediaSources")
-    # —— 详情面（本次漏出点） ——
-    db = SessionLocal()
-    try:
-        uid = db.query(models.WebUser.id).filter(
-            models.WebUser.username == BOUND).scalar()
-    finally:
-        db.close()
-    r = client.get(f"/emby/Users/{uid}/Items/{seed['cms']}",
-                   headers=headers)
-    assert r.status_code == 200, r.text
-    assert '"DefaultAudioStreamIndex":null' not in r.text
-    sources = r.json()["MediaSources"]
-    assert sources, "详情面应带线路"
-    _assert_no_null_values(sources, "$.MediaSources")
-    for source in sources:
-        for key in ("DefaultAudioStreamIndex",
-                    "DefaultSubtitleStreamIndex"):
-            if key in source:
-                assert isinstance(source[key], int)
-
-
-# ---------------------------------------------------------------------------
-# 身份组聚合（2026-11-03 回归）：同片重复行线路互通
-# ---------------------------------------------------------------------------
-
-LIB_GRP = "身份组在线库"
-SRC_GA = "身份组源甲"
-SRC_GB = "身份组源乙"
-GRP_TMDB = "1518076"
-
-
-def _grp_cleanup(db):
-    for lib in db.query(em.Library).filter(
-            em.Library.name == LIB_GRP).all():
-        ids = [r[0] for r in db.query(em.MediaItem.id).filter(
-            em.MediaItem.library_id == lib.id).all()]
-        if ids:
-            db.query(em.UpstreamItemMapping).filter(
-                em.UpstreamItemMapping.local_item_id.in_(ids)).delete(
-                synchronize_session=False)
-            db.query(em.MediaItem).filter(
-                em.MediaItem.id.in_(ids)).delete(
-                synchronize_session=False)
-        db.query(em.Library).filter(
-            em.Library.id == lib.id).delete(synchronize_session=False)
-    for src in db.query(em.UpstreamSource).filter(
-            em.UpstreamSource.name.in_([SRC_GA, SRC_GB])).all():
-        db.delete(src)
-    db.commit()
-
-
-@pytest.fixture()
-def grp_seed():
-    """同 tmdb 身份的两行重复：一行一条线路；另置一行异身份对照。"""
-    db = SessionLocal()
-    _grp_cleanup(db)
-    lib = em.Library(guid=_guid(), name=LIB_GRP,
-                     collection_type="movies", is_enabled=True,
-                     kind="applecms")
-    db.add(lib)
-    db.flush()
-    src_a = em.UpstreamSource(name=SRC_GA, source_type="applecms",
-                              base_url="http://grp-a.example",
-                              enabled=True)
-    src_b = em.UpstreamSource(name=SRC_GB, source_type="applecms",
-                              base_url="http://grp-b.example",
-                              enabled=True)
-    db.add_all([src_a, src_b])
-    db.flush()
-    row1 = em.MediaItem(guid=_guid(), library_id=lib.id,
-                        item_type="movie", name="身份组片",
-                        tmdb_id=GRP_TMDB, production_year=2025,
-                        upstream_source_id=src_a.id, probe_status="done")
-    row2 = em.MediaItem(guid=_guid(), library_id=lib.id,
-                        item_type="movie", name="身份组片",
-                        tmdb_id=GRP_TMDB, production_year=2025,
-                        upstream_source_id=src_b.id, probe_status="done")
-    other = em.MediaItem(guid=_guid(), library_id=lib.id,
-                         item_type="movie", name="异身份片",
-                         tmdb_id="999999", production_year=2025,
-                         upstream_source_id=src_a.id, probe_status="done")
-    db.add_all([row1, row2, other])
-    db.flush()
-    map1 = em.UpstreamItemMapping(local_item_id=row1.id,
-                                  source_id=src_a.id,
-                                  upstream_item_id="201",
-                                  confidence=0.9, evidence="tmdb")
-    map2 = em.UpstreamItemMapping(local_item_id=row2.id,
-                                  source_id=src_b.id,
-                                  upstream_item_id="202",
-                                  confidence=0.8, evidence="tmdb")
-    map3 = em.UpstreamItemMapping(local_item_id=other.id,
-                                  source_id=src_a.id,
-                                  upstream_item_id="203",
-                                  confidence=0.9, evidence="tmdb")
-    db.add_all([map1, map2, map3])
-    db.commit()
-    data = {"row1": row1.guid, "row2": row2.guid, "other": other.guid,
-            "map1": map1.id, "map2": map2.id, "map3": map3.id}
-    db.close()
-    yield data
-    db = SessionLocal()
-    try:
-        _grp_cleanup(db)
-    finally:
-        db.close()
-
-
-def test_playbackinfo_aggregates_identity_sibling_lines(
-        client, token, grp_seed):
-    """打开任一重复行，PlaybackInfo 都带全身份组的线路。
-
-    2026-11-03《丛林猎凶》实证：代表行自身 2 线全死、活线在兄弟
-    行上，只读自身映射时客户端报「没有可用的源」。
-    """
-    for guid in (grp_seed["row1"], grp_seed["row2"]):
-        sources = _playback_sources(client, token, guid)
-        ids = {s["Id"] for s in sources}
-        assert f"{guid}:upstream:{grp_seed['map1']}" in ids
-        assert f"{guid}:upstream:{grp_seed['map2']}" in ids
-        # 异身份条目的线路绝不并入
-        assert f"{guid}:upstream:{grp_seed['map3']}" not in ids
-        # 每条线（含兄弟行的）都带视频轨，形态与自身线路一致
-        for s in sources:
-            assert any(st["Type"] == "Video"
-                       for st in s["MediaStreams"])
-    # 异身份条目自身只见自己的线路
-    sources = _playback_sources(client, token, grp_seed["other"])
-    assert {s["Id"] for s in sources} == {
-        f"{grp_seed['other']}:upstream:{grp_seed['map3']}"}
-
-
-def test_upstream_stream_endpoint_directed_and_hard_errors(
-        client, token, seed, monkeypatch):
-    calls = {}
-
-    def fake_resolve(db, local_item_id, *, mapping_id=None, **kwargs):
-        calls["mapping_id"] = mapping_id
-        return "https://cdn.example.com/picked.m3u8"
-
-    monkeypatch.setattr(up, "resolve_mapped_upstream_stream", fake_resolve)
-    headers = {"X-Emby-Token": token}
-    guid = seed["cms"]
-    r = client.get(
-        f"/emby/Videos/{guid}/upstream/stream",
-        params={"MediaSourceId": f"{guid}:upstream:{seed['map_b']}"},
-        headers=headers, follow_redirects=False)
-    assert r.status_code == 302, r.text
-    assert r.headers["location"] == "https://cdn.example.com/picked.m3u8"
-    assert calls["mapping_id"] == seed["map_b"]
-    # 旧形态（只到 :upstream）→ 最佳映射口径（mapping_id=None）
-    calls.clear()
-    r = client.get(
-        f"/emby/Videos/{guid}/upstream/stream",
-        params={"MediaSourceId": f"{guid}:upstream"},
-        headers=headers, follow_redirects=False)
-    assert r.status_code == 302, r.text
-    assert calls["mapping_id"] is None
-    # 形态错误（别条目的 id / id 段非数字）→ 硬 404，绝不进解析
-    calls.clear()
-    for bad in (f"deadbeef:upstream:{seed['map_b']}",
-                f"{guid}:upstream:abc", f"{guid}:local"):
-        r = client.get(
-            f"/emby/Videos/{guid}/upstream/stream",
-            params={"MediaSourceId": bad},
-            headers=headers, follow_redirects=False)
-        assert r.status_code == 404, (bad, r.text)
-        assert r.json()["code"] == "upstream_mapping_not_found"
-    assert calls == {}
-
-
-# ---------------------------------------------------------------------------
-# 函数级桩链：定向解析 + m3u8 画质回填（内存库，无网络）
-# ---------------------------------------------------------------------------
-
-@pytest.fixture()
-def stub_db(monkeypatch):
-    monkeypatch.setenv("UPSTREAM_ITEM_MAPPING_ENABLED", "1")
-    monkeypatch.setenv("UPSTREAM_PLAYBACK_ENABLED", "1")
-    monkeypatch.setenv("APPLECMS_ENABLED", "1")
-    monkeypatch.delenv("APPLECMS_TIER_GATE", raising=False)
-    from backend import models as base_models
-    engine = create_engine("sqlite:///:memory:")
-    base_models.Base.metadata.create_all(engine)
-    em.Base.metadata.create_all(engine)
-    session = sessionmaker(bind=engine)()
-    try:
-        yield session
-    finally:
-        session.close()
-
-
-def _stub_seed(db):
-    for sid, host in ((7, "a.example"), (8, "b.example")):
-        db.add(em.UpstreamSource(
-            id=sid, name=f"桩源{sid}", source_type="applecms",
-            base_url=f"http://{host}", enabled=True,
-            user_agent="Mozilla/5.0 (test)"))
-    lib = em.Library(guid="lib-stub", name="桩库", collection_type="movies",
-                     is_enabled=True, kind="applecms",
-                     upstream_source_ids="7,8")
-    db.add(lib)
-    db.flush()
-    item = em.MediaItem(guid="stub-item", library_id=lib.id,
-                        item_type="movie", name="桩片",
-                        upstream_source_id=7, probe_status="done")
-    db.add(item)
-    db.flush()
-    map_a = em.UpstreamItemMapping(local_item_id=item.id, source_id=7,
-                                   upstream_item_id="101", confidence=0.9,
-                                   evidence="title+year")
-    map_b = em.UpstreamItemMapping(local_item_id=item.id, source_id=8,
-                                   upstream_item_id="55", confidence=0.8,
-                                   evidence="title+year")
-    other = em.MediaItem(guid="stub-other", library_id=lib.id,
-                         item_type="movie", name="桩片二",
-                         upstream_source_id=7, probe_status="done")
-    db.add_all([map_a, map_b, other])
-    db.flush()
-    map_other = em.UpstreamItemMapping(local_item_id=other.id, source_id=7,
-                                       upstream_item_id="999",
-                                       confidence=0.9, evidence="title+year")
-    db.add(map_other)
-    db.commit()
-    # 隔离：内存库的映射 id 会与 module 级 seed 夹具（文件库）撞号，
-    # 而画质缓存按映射 id 存进程级 CacheManager——不清掉 seed 预置的
-    # 完整缓存，PA-073 新鲜度门禁会让本夹具的取流回填被旧缓存挡住。
-    for mid in (map_a.id, map_b.id, map_other.id):
-        CacheManager.delete(up.cms_quality_cache_key(mid))
-    return item, map_a, map_b, map_other
-
-
-_DETAILS = {
-    "a.example": {"vod_id": 101, "vod_name": "桩片",
-                  "vod_remarks": "1080P",
-                  "vod_play_from": "线路A",
-                  "vod_play_url": "正片$https://cdn-a.example/movie.mp4"},
-    "b.example": {"vod_id": 55, "vod_name": "桩片",
-                  "vod_play_from": "线路B",
-                  "vod_play_url": "正片$https://cdn-b.example/master.m3u8"},
-}
-
-
-def _stub_detail_get(url, headers=None, timeout=None):
-    import urllib.parse
-    host = urllib.parse.urlparse(url).netloc
-    return 200, {"code": 1, "list": [_DETAILS[host]]}
-
-
-def test_directed_resolve_hard_errors_no_fallback(stub_db):
-    item, map_a, map_b, map_other = _stub_seed(stub_db)
-    # 映射属于别的条目 → 404，绝不换线
-    with pytest.raises(up.UpstreamPlaybackError) as ei:
-        up.resolve_mapped_upstream_stream(
-            stub_db, item.id, mapping_id=map_other.id,
-            http_get=_stub_detail_get, http_probe=lambda *a: (200, None))
-    assert ei.value.status == 404
-    assert ei.value.code == "upstream_mapping_not_found"
-    # 不存在的映射 id → 404
-    with pytest.raises(up.UpstreamPlaybackError) as ei:
-        up.resolve_mapped_upstream_stream(
-            stub_db, item.id, mapping_id=424242,
-            http_get=_stub_detail_get, http_probe=lambda *a: (200, None))
-    assert ei.value.status == 404
-    # 所选映射的源被停用 → 按读契约不可见，同 404 硬报错
-    src = stub_db.query(em.UpstreamSource).filter(
-        em.UpstreamSource.id == 8).one()
-    src.enabled = False
-    stub_db.commit()
-    with pytest.raises(up.UpstreamPlaybackError) as ei:
-        up.resolve_mapped_upstream_stream(
-            stub_db, item.id, mapping_id=map_b.id,
-            http_get=_stub_detail_get, http_probe=lambda *a: (200, None))
-    assert ei.value.status == 404
-    assert ei.value.code == "upstream_mapping_not_found"
-
-
-# ---------------------------------------------------------------------------
-# 身份组聚合（函数级）：组内定向/最佳解析 + 边界
-# ---------------------------------------------------------------------------
-
-def _grp_stub_seed(db):
-    """同 tmdb 身份三行：行一/行二各挂线路（且有一条同源同 vod 的
-    重复映射验去重）、行三无线路；外加同名无 tmdb 行作对照。"""
-    for sid, host in ((7, "a.example"), (8, "b.example")):
-        db.add(em.UpstreamSource(
-            id=sid, name=f"组桩源{sid}", source_type="applecms",
-            base_url=f"http://{host}", enabled=True,
-            user_agent="Mozilla/5.0 (test)"))
-    lib = em.Library(guid="lib-grp", name="组桩库",
-                     collection_type="movies", is_enabled=True,
-                     kind="applecms", upstream_source_ids="7,8")
-    db.add(lib)
-    db.flush()
-
-    def _movie(guid, tmdb):
-        row = em.MediaItem(guid=guid, library_id=lib.id,
-                           item_type="movie", name="组片",
-                           tmdb_id=tmdb, upstream_source_id=7,
-                           probe_status="done")
-        db.add(row)
-        db.flush()
-        return row
-
-    row1 = _movie("grp-1", "4242")
-    row2 = _movie("grp-2", "4242")
-    row3 = _movie("grp-3", "4242")
-    noname = _movie("grp-noname", None)
-    map1 = em.UpstreamItemMapping(local_item_id=row1.id, source_id=7,
-                                  upstream_item_id="101",
-                                  confidence=0.9, evidence="tmdb")
-    map2 = em.UpstreamItemMapping(local_item_id=row2.id, source_id=8,
-                                  upstream_item_id="55",
-                                  confidence=0.8, evidence="tmdb")
-    # 与 map1 同 (源, vod) 的重复映射：组内去重后只许出现一次
-    map_dup = em.UpstreamItemMapping(local_item_id=row2.id, source_id=7,
-                                     upstream_item_id="101",
-                                     confidence=0.7, evidence="tmdb")
-    map_noname = em.UpstreamItemMapping(
-        local_item_id=noname.id, source_id=7, upstream_item_id="101",
-        confidence=0.95, evidence="title+year")
-    db.add_all([map1, map2, map_dup, map_noname])
-    db.commit()
-    for mid in (map1.id, map2.id, map_dup.id, map_noname.id):
-        CacheManager.delete(up.cms_quality_cache_key(mid))
-    return row1, row2, row3, noname, map1, map2, map_dup, map_noname
-
-
-def test_grouped_mappings_merge_dedupe_and_boundaries(stub_db):
-    from backend.emby_server import upstream_item_mappings as uim
-    row1, row2, row3, noname, map1, map2, map_dup, map_noname = \
-        _grp_stub_seed(stub_db)
-    # 自身在前、兄弟续后、同（源, vod）去重
-    grouped = uim.get_grouped_mappings(stub_db, row1.id)
-    assert [m.id for m in grouped] == [map1.id, map2.id]
-    # 无自身线路的行也能看到全组线路
-    grouped3 = uim.get_grouped_mappings(stub_db, row3.id)
-    assert [m.id for m in grouped3] == [map1.id, map2.id]
-    # 同名但无 tmdb 身份：不进任何组（名字是启发式，播放不并线）
-    assert [m.id for m in uim.get_grouped_mappings(
-        stub_db, noname.id)] == [map_noname.id]
-    assert map_noname.id not in [m.id for m in grouped]
-    # 命中行已软删 → 整组不可见，不许靠兄弟行救活（软删走批量
-    # 更新：全局软删钩子会把已删行从 ORM 查询里藏掉，提交后过期
-    # 实例再读属性会 ObjectDeletedError，故先存 id、不再碰实例）
-    import datetime as _dt
-    row1_id = row1.id
-    stub_db.query(em.MediaItem).filter(
-        em.MediaItem.id == row1_id).update(
-        {"deleted_at": _dt.datetime.now()}, synchronize_session=False)
-    stub_db.commit()
-    assert uim.get_grouped_mappings(stub_db, row1_id) == []
-
-
-def test_grouped_mappings_episode_via_series_identity(stub_db):
-    """集的聚合经所属 series 的 tmdb 身份成组，季集号必须相同。"""
-    from backend.emby_server import upstream_item_mappings as uim
-    db = stub_db
-    db.add(em.UpstreamSource(
-        id=7, name="集桩源", source_type="applecms",
-        base_url="http://a.example", enabled=True,
-        user_agent="Mozilla/5.0 (test)"))
-    lib = em.Library(guid="lib-ep", name="集桩库",
-                     collection_type="tvshows", is_enabled=True,
-                     kind="applecms", upstream_source_ids="7")
-    db.add(lib)
-    db.flush()
-
-    def _series(guid):
-        row = em.MediaItem(guid=guid, library_id=lib.id,
-                           item_type="series", name="组剧",
-                           tmdb_id="777", probe_status="done")
-        db.add(row)
-        db.flush()
-        return row
-
-    def _episode(guid, series, ep_no):
-        row = em.MediaItem(guid=guid, library_id=lib.id,
-                           item_type="episode", name=f"第{ep_no}集",
-                           series_id=series.id, season_number=1,
-                           episode_number=ep_no, probe_status="done")
-        db.add(row)
-        db.flush()
-        return row
-
-    s1, s2 = _series("eps-s1"), _series("eps-s2")
-    ep1 = _episode("eps-1", s1, 1)
-    ep1_dup = _episode("eps-1d", s2, 1)
-    ep2_dup = _episode("eps-2d", s2, 2)
-    map_ep = em.UpstreamItemMapping(
-        local_item_id=ep1.id, source_id=7, upstream_item_id="e101",
-        confidence=0.9, evidence="tmdb", episode_index=1)
-    db.add(map_ep)
-    db.commit()
-    CacheManager.delete(up.cms_quality_cache_key(map_ep.id))
-    # 兄弟 series 下的同季同集行能看到这条线路
-    assert [m.id for m in uim.get_grouped_mappings(
-        db, ep1_dup.id)] == [map_ep.id]
-    # 集号不同不并
-    assert uim.get_grouped_mappings(db, ep2_dup.id) == []

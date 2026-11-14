@@ -13,9 +13,8 @@
   季行——季拆行的集全标 Season 1，塞进去只会把第四季的集错并进
   正主第一季。故新建本模块而不是扩宽松通道：分组键、逐行守卫、
   折叠力学三者都不同；复用零件：标题季号解析（本模块内，
-  全仓一套）、映射迁移（upstream_item_mappings.migrate_mappings）、
-  托管季行 guid 锚（本模块 hosted_season_guid）、合并工人
-  的配置与一程挂接。
+  全仓一套）、托管季行 guid 锚（本模块 hosted_season_guid）、
+  合并工人的配置与一程挂接。
 
 判定口径（照 2026-11-05 手工折叠验证版，自动化从严）：
 - 分组键 = 同库 + dedup.normalize_name(底名)，底名由
@@ -440,7 +439,6 @@ def _fold_row(db, primary, row, season_no: int, stats: Dict[str, int],
               ep_index: Dict[Tuple, int]) -> bool:
     """把一行季拆行折进正主。返回是否完成折叠。"""
     from backend.emby_server import models as em
-    from backend.emby_server import upstream_item_mappings as _uim
 
     MI = em.MediaItem
     season_rows = (
@@ -472,7 +470,6 @@ def _fold_row(db, primary, row, season_no: int, stats: Dict[str, int],
         for sr in season_rows:
             if sr.merged_into_id is None:
                 sr.merged_into_id = target_season.id
-                _uim.migrate_mappings(db, sr.id, target_season.id)
                 stats["seasons_merged"] += 1
             else:
                 tgt = db.query(MI).filter(MI.id == sr.merged_into_id).first()
@@ -489,7 +486,6 @@ def _fold_row(db, primary, row, season_no: int, stats: Dict[str, int],
                 winner = ep_index.get((season_no, ep.episode_number))
             if winner is not None and winner != ep.id:
                 ep.merged_into_id = winner
-                _uim.migrate_mappings(db, ep.id, winner)
                 moved[ep.id] = winner
                 stats["episodes_copied"] += 1
             else:
@@ -530,7 +526,6 @@ def _fold_row(db, primary, row, season_no: int, stats: Dict[str, int],
         stats["children_repointed"] += 1
     row.merged_into_id = primary.id
     row.enrich_status = "done"
-    _uim.migrate_mappings(db, row.id, primary.id)
     stats["folded"] += 1
     return True
 

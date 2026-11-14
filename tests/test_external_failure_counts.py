@@ -7,9 +7,7 @@
 2. 计数行为：连续失败达阈值（默认 5）置 paused_until；成功清零；
    暂停到期即半开（再失败立即重新暂停）；scope 之间分账。
 3. 非阻断：计数读写异常一律吞掉，绝不外泄到主流程。
-4. 消费方接线：upstream_health.probe_source 在暂停期跳过、
-   按口径喂数（凭据类/单资源类失败不计数）。聚合拉取侧的接线
-   已随上游聚合整族删除。
+4. 消费方接线已随上游聚合整族删除，本文件只守计数本体（1–3）。
 
 DB 口径：计数单测用注入 session（本地内存 sqlite，只建本表），
 不碰全局 engine/SessionLocal；接线单测用内存假熔断替换模块函数。
@@ -26,7 +24,6 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.emby_server import external_failure_counts as efc
-from backend.emby_server import upstream_health as uh
 
 
 # ---------------------------------------------------------------------------
@@ -188,135 +185,3 @@ def test_broken_session_never_raises():
     efc.record_success("cms_fetch", "https://x.example.com", session=boom)
     state = efc.pause_states_for_key("https://x.example.com", session=boom)
     assert state["paused"] is False
-
-
-# ---------------------------------------------------------------------------
-# 消费方接线（内存假熔断替换模块函数，只验接线口径）
-# ---------------------------------------------------------------------------
-
-class _FakeBreaker:
-    """内存假熔断：与真实实现同语义（计数/阈值/暂停集合）。"""
-
-    def __init__(self, threshold=5):
-        self.threshold = threshold
-        self.counts = {}
-        self.paused = set()
-        self.calls = []
-
-    def is_paused(self, scope, key, **kwargs):
-        self.calls.append(("is_paused", scope, key))
-        return (scope, key) in self.paused
-
-    def record_failure(self, scope, key, **kwargs):
-        self.calls.append(("record_failure", scope, key))
-        n = self.counts.get((scope, key), 0) + 1
-        self.counts[(scope, key)] = n
-        if n >= self.threshold:
-            self.paused.add((scope, key))
-
-    def record_success(self, scope, key, **kwargs):
-        self.calls.append(("record_success", scope, key))
-        self.counts[(scope, key)] = 0
-        self.paused.discard((scope, key))
-
-    def pause_states_for_key(self, key, **kwargs):
-        return {"paused": False, "paused_until": None, "scopes": {}}
-
-
-@pytest.fixture()
-def fake_breaker(monkeypatch):
-    fake = _FakeBreaker()
-    monkeypatch.setattr(efc, "is_paused", fake.is_paused)
-    monkeypatch.setattr(efc, "record_failure", fake.record_failure)
-    monkeypatch.setattr(efc, "record_success", fake.record_success)
-    monkeypatch.setattr(efc, "pause_states_for_key",
-                        fake.pause_states_for_key)
-    return fake
-
-
-def _scripted_get(script):
-    calls = {"n": 0}
-
-    def _get(url, headers, timeout):
-        calls["n"] += 1
-        return script[min(calls["n"] - 1, len(script) - 1)]
-
-    return _get, calls
-
-
-# --- upstream_health.probe_source ------------------------------------------
-
-def _probe_source():
-    return uh.UpstreamSource(key="src-1", kind="emby",
-                             base_url="https://up.example.com",
-                             enabled=True)
-
-
-def test_probe_skips_when_failure_paused(monkeypatch, fake_breaker):
-    monkeypatch.setenv("UPSTREAM_HEALTH_PROBE_ENABLED", "1")
-    key = efc.normalize_target_key("https://up.example.com")
-    fake_breaker.paused.add((efc.SCOPE_UPSTREAM_PROBE, key))
-    get, calls = _scripted_get([(200, {"Id": "srv"})])
-    result = uh.probe_source(_probe_source(), uh.InMemoryHealthStore(),
-                             http_get=get)
-    assert result["outcome"] == "skipped"
-    assert result["skipped_reason"] == "failure_paused"
-    assert calls["n"] == 0
-
-
-def test_probe_feeds_failure_and_success(monkeypatch, fake_breaker):
-    monkeypatch.setenv("UPSTREAM_HEALTH_PROBE_ENABLED", "1")
-    store = uh.InMemoryHealthStore()
-
-    def _dead(url, headers, timeout):
-        return None, None
-
-    key = efc.normalize_target_key("https://up.example.com")
-    result = uh.probe_source(_probe_source(), store, http_get=_dead)
-    assert result["outcome"] == "failure"
-    assert ("record_failure", efc.SCOPE_UPSTREAM_PROBE,
-            key) in fake_breaker.calls
-
-    def _alive(url, headers, timeout):
-        return 200, {"Id": "srv"}
-
-    result = uh.probe_source(_probe_source(), store, http_get=_alive,
-                             now=time.time() + 7200)
-    assert result["outcome"] == "success"
-    assert ("record_success", efc.SCOPE_UPSTREAM_PROBE,
-            key) in fake_breaker.calls
-
-
-def test_probe_feeds_real_counter(monkeypatch):
-    """probe 喂数走真实计数模块（非假替身）：失败 +1、成功清零。
-
-    守签名/口径漂移：真实 record_success 必须接受 probe 传入的
-    now kwarg 并真的清零——假替身的 **kwargs 会把这类漂移藏住
-    （本测试正是为一次实际发生的签名漂移补的回归）。
-    """
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False},
-        poolclass=StaticPool)
-    efc.ExternalFailureCount.__table__.create(engine)
-    monkeypatch.setattr(efc, "SessionLocal", sessionmaker(bind=engine))
-    monkeypatch.setenv("UPSTREAM_HEALTH_PROBE_ENABLED", "1")
-    store = uh.InMemoryHealthStore()
-    key = efc.normalize_target_key("https://up.example.com")
-
-    def _dead(url, headers, timeout):
-        return None, None
-
-    result = uh.probe_source(_probe_source(), store, http_get=_dead)
-    assert result["outcome"] == "failure"
-    state = efc.pause_states_for_key(key)
-    assert state["scopes"][efc.SCOPE_UPSTREAM_PROBE]["fail_count"] == 1
-
-    def _alive(url, headers, timeout):
-        return 200, {"Id": "srv"}
-
-    result = uh.probe_source(_probe_source(), store, http_get=_alive,
-                             now=time.time() + 7200)
-    assert result["outcome"] == "success"
-    state = efc.pause_states_for_key(key)
-    assert state["scopes"][efc.SCOPE_UPSTREAM_PROBE]["fail_count"] == 0
-    engine.dispose()

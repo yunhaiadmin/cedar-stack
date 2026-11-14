@@ -6,7 +6,7 @@
 断言校验、平台 Key 的生成/哈希/校验。
 
 安全口径：
-- TOTP 密钥只以 Fernet 密封值落库（复用 upstream_sources 的 seal_secret，
+- TOTP 密钥只以 Fernet 密封值落库（复用 secret_sealing 的 seal_secret，
   密钥派生自 SECRET_KEY），明文永不落库、永不进日志；
 - 平台 API Key 明文只在创建时返回一次，库里只存带 pepper 的 SHA256
   （与 backend/api_key.py 同派生口径、不同域标签，两套 Key 分域不混表）；
@@ -83,13 +83,13 @@ def platform_api_key_validity_days(db: Session) -> int:
 
 def _seal(plaintext: str) -> str:
     """密封 TOTP 密钥：复用全仓唯一的 Fernet 密封实现（懒导入防循环）。"""
-    from backend.emby_server.upstream_sources import seal_secret
+    from backend.emby_server.secret_sealing import seal_secret
 
     return seal_secret(plaintext)
 
 
 def _unseal(sealed: str) -> str:
-    from backend.emby_server.upstream_sources import unseal_secret
+    from backend.emby_server.secret_sealing import unseal_secret
 
     return unseal_secret(sealed)
 

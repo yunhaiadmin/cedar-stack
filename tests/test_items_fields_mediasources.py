@@ -10,7 +10,8 @@ Fields 明确要求 MediaSources 时会把来源带进列表 DTO。
 
 钉死口径：
 - 只有 Fields 明确含 MediaSources/MediaStreams 时才补齐，补齐内容
-  与详情面（_item_dto full=True）逐字同源（托管行只放上游线路）；
+  与详情面（_item_dto full=True）逐字同源（本地文件行放主来源，
+  无本地文件的行来源为空）；
 - 未请求时列表行为逐字不变（MediaSources 恒 []，不给列表加成本）；
 - 只处理 movie/episode，容器类（series/season）不碰。
 """
@@ -36,7 +37,6 @@ init_db()
 PW = "FieldsMs#2026"
 BOUND = "fieldsms_bound"
 LIB_CMS = "Fields补齐测试库"
-SRC_NAME = "Fields补齐源"
 CMS_MOVIE = "Fields补齐托管片"
 CMS_SERIES = "Fields补齐托管剧"
 
@@ -46,29 +46,16 @@ def _guid():
 
 
 def _cleanup(db):
-    # 孤儿映射先清：更早模块删条目时若没清映射（或其 teardown 回滚），
-    # 孤儿映射残留；新条目复用其 local_item_id 后会被当成自身线路
-    # 下发（#62 xdist 并行实证：多出 upstream:2 一条线）。
-    db.query(em.UpstreamItemMapping).filter(
-        ~em.UpstreamItemMapping.local_item_id.in_(
-            db.query(em.MediaItem.id))
-    ).delete(synchronize_session=False)
     for lib in db.query(em.Library).filter(
             em.Library.name == LIB_CMS).all():
         ids = [r[0] for r in db.query(em.MediaItem.id).filter(
             em.MediaItem.library_id == lib.id).all()]
         if ids:
-            db.query(em.UpstreamItemMapping).filter(
-                em.UpstreamItemMapping.local_item_id.in_(ids)).delete(
-                synchronize_session=False)
             db.query(em.MediaItem).filter(
                 em.MediaItem.id.in_(ids)).delete(
                 synchronize_session=False)
         db.query(em.Library).filter(
             em.Library.id == lib.id).delete(synchronize_session=False)
-    for src in db.query(em.UpstreamSource).filter(
-            em.UpstreamSource.name == SRC_NAME).all():
-        db.delete(src)
     u = db.query(models.WebUser).filter(
         models.WebUser.username == BOUND).first()
     if u is not None:
@@ -120,33 +107,19 @@ def seed():
                      kind="applecms")
     db.add(lib)
     db.flush()
-    src = em.UpstreamSource(name=SRC_NAME, source_type="applecms",
-                            base_url="http://cms-fields.example",
-                            enabled=True)
-    db.add(src)
-    db.flush()
     movie = em.MediaItem(guid=_guid(), library_id=lib.id,
                          item_type="movie", name=CMS_MOVIE,
                          production_year=2024, tmdb_id="1518076",
-                         upstream_source_id=src.id, probe_status="done")
+                         file_path="/media/fields-movie.mkv",
+                         size=123456789, probe_status="done")
     db.add(movie)
     db.flush()
-    map_a = em.UpstreamItemMapping(local_item_id=movie.id,
-                                   source_id=src.id,
-                                   upstream_item_id="160002",
-                                   confidence=0.9, evidence="title+year")
-    map_b = em.UpstreamItemMapping(local_item_id=movie.id,
-                                   source_id=src.id,
-                                   upstream_item_id="75072",
-                                   confidence=0.8, evidence="title+year")
-    db.add_all([map_a, map_b])
     series = em.MediaItem(guid=_guid(), library_id=lib.id,
                           item_type="series", name=CMS_SERIES,
                           tmdb_id="999001", probe_status="done")
     db.add(series)
     db.commit()
-    data = {"uid": user.id, "movie": movie.guid, "series": series.guid,
-            "map_a": map_a.id, "map_b": map_b.id}
+    data = {"uid": user.id, "movie": movie.guid, "series": series.guid}
     db.close()
     yield data
     db = SessionLocal()
@@ -175,14 +148,6 @@ def token(client, seed):
     return r.json()["AccessToken"]
 
 
-@pytest.fixture(autouse=True)
-def _gates(monkeypatch):
-    monkeypatch.setenv("UPSTREAM_ITEM_MAPPING_ENABLED", "1")
-    monkeypatch.setenv("UPSTREAM_PLAYBACK_ENABLED", "1")
-    monkeypatch.setenv("APPLECMS_ENABLED", "1")
-    monkeypatch.delenv("APPLECMS_TIER_GATE", raising=False)
-
-
 def _items(client, token, seed, guid, fields=None):
     params = {"Ids": guid}
     if fields is not None:
@@ -195,19 +160,16 @@ def _items(client, token, seed, guid, fields=None):
     return items[0]
 
 
-def test_list_fields_mediasources_filled_for_hosted_movie(
+def test_list_fields_mediasources_filled_for_local_movie(
         client, token, seed):
     dto = _items(client, token, seed, seed["movie"],
                  fields="ProviderIds,MediaSources,MediaStreams")
     sources = dto["MediaSources"]
-    assert len(sources) == 2
-    ids = {s["Id"] for s in sources}
-    assert ids == {f"{seed['movie']}:upstream:{seed['map_a']}",
-                   f"{seed['movie']}:upstream:{seed['map_b']}"}
-    for s in sources:
-        assert s["DirectStreamUrl"]
-        video = [st for st in s["MediaStreams"] if st["Type"] == "Video"]
-        assert video, s
+    assert len(sources) == 1
+    assert sources[0]["Id"] == seed["movie"]
+    # 路径默认不下发（EMBY_HIDE_MEDIA_PATH 默认开）：Path 被整键去掉。
+    assert "Path" not in sources[0]
+    assert sources[0]["DirectStreamUrl"]
 
 
 def test_list_without_fields_keeps_empty_sources(client, token, seed):

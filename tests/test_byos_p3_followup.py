@@ -26,7 +26,7 @@ from backend.emby_server import mounts as mount_lib
 from backend.emby_server import scanner
 from backend.emby_server import soft_delete as _soft_delete
 from backend.emby_server import models as em
-from backend.emby_server.upstream_sources import seal_secret
+from backend.emby_server.secret_sealing import seal_secret
 
 
 @pytest.fixture()

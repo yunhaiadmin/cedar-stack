@@ -101,12 +101,6 @@ SUPER_ONLY_PREFIXES = (
 # （旧 _require_super 拦的是读写、冒烟断言「读写都被拒」）——恢复成读也要拦。
 SUPER_ONLY_SUFFIXES = (
     "/rclone-conf",
-    # 全局审计 GA-071 同类项（2026-11-12）：专属线路入口密钥重置
-    # （/api/admin/emby/exclusive-lines/{line_id}/reset-secret）。全仓仅此一处
-    # 路由以 /reset-secret 结尾，后缀能精确命中这一个口，不必把线路的增删改
-    # （运营的日常活）一起收走。重置 = 换凭据，与 rclone-conf 同为凭据级，读写
-    # 不分（该口只有 POST，方法无关是顺带的一致性）。
-    "/reset-secret",
 )
 
 # 仅超级管理员可达（**任何方法**，含 GET 读）的子树：整子树都是凭据级 / 门禁级

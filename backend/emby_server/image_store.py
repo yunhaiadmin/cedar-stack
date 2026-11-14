@@ -43,7 +43,7 @@ from typing import Optional
 
 from backend.emby_server import scan_progress as progress
 from backend.emby_server.env_util import env_int
-from backend.emby_server.upstream_http import (
+from backend.emby_server.outbound_http import (
     OutboundBlockedError,
     verify_outbound_url,
 )

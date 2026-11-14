@@ -6,8 +6,8 @@
 2026-11-14 CMS 无界片库下线（全删除令）：2026-11-03 的「无界片库
 免绑定」改定随之撤销——CMS 来源已删，不再有免绑定的条目人群，
 全部条目一律过绑定门禁（回到 2026-10-26 硬规矩「无豁免」）。
-判定只许走本模块的 ``binding_required_for_item`` /
-``binding_required_for_upstream`` 单一入口，调用点不许各写一份。
+判定只许走本模块的 ``binding_required_for_item`` 单一入口，
+调用点不许各写一份。
 
 执行口径：
 - 只拦播放，不拦浏览：片库浏览、搜索、详情页一律不调本模块；本模块
@@ -91,37 +91,6 @@ def binding_required_for_item(db: Session, item) -> bool:
     免门禁」的单一入口，免门禁人群恒为空集。
     """
     return True
-
-
-def binding_required_for_upstream(
-    db: Session, source_id, upstream_item_id
-) -> bool:
-    """上游兜底口（按源 id + 上游条目 id 寻址）是否需要过绑定门禁。
-
-    兜底口没有本地条目 id 入参，经映射表反查本地条目再走
-    ``binding_required_for_item`` 同一判定。CMS 下线后免绑定人群
-    为空集，恒 True（查不到映射、映射条目已不存在同样 True，
-    fail-closed）。
-    """
-    rows = (
-        db.query(em.UpstreamItemMapping.local_item_id)
-        .filter(
-            em.UpstreamItemMapping.source_id == source_id,
-            em.UpstreamItemMapping.upstream_item_id == upstream_item_id,
-        )
-        .all()
-    )
-    if not rows:
-        return True
-    item_ids = {row[0] for row in rows}
-    items = (
-        db.query(em.MediaItem)
-        .filter(em.MediaItem.id.in_(item_ids))
-        .all()
-    )
-    if len(items) != len(item_ids):
-        return True
-    return any(binding_required_for_item(db, it) for it in items)
 
 
 def _request_uses_issued_play_sign(request: Request, db: Session) -> bool:
@@ -216,19 +185,6 @@ def ensure_binding_playback_allowed_for_item(
     if not binding_required_for_item(db, item):
         return
     ensure_binding_playback_allowed(db, user, request)
-
-
-def ensure_binding_playback_allowed_for_upstream(
-    db: Session, user: models.WebUser, source_id, upstream_item_id
-) -> None:
-    """上游兜底口的播放门禁：与
-    ``ensure_binding_playback_allowed`` 同口径（兜底口无已下发链接
-    消费一说，不传 request）。"""
-    # 同 _for_item：软件授权整机口径，先于门禁早退。
-    _ensure_license_playback_allowed(db)
-    if not binding_required_for_upstream(db, source_id, upstream_item_id):
-        return
-    ensure_binding_playback_allowed(db, user)
 
 
 def sign_allowed_for_item(db: Session, user_id, item) -> bool:

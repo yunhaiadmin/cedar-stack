@@ -18,7 +18,7 @@ from backend.database import SessionLocal, get_db
 from backend.emby_server import image_store
 from backend.emby_server import models as em
 from backend.emby_server.auth import bearer_scheme, get_emby_user, get_play_user, parse_emby_authorization, resolve_token
-from backend.emby_server.upstream_http import (
+from backend.emby_server.outbound_http import (
     OutboundBlockedError,
     verify_outbound_url,
 )

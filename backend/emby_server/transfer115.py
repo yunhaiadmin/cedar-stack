@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 
 from backend.emby_server import models as em
 from backend.emby_server.env_util import env_float
-from backend.emby_server.upstream_sources import SealedSecretError, seal_secret, unseal_secret
+from backend.emby_server.secret_sealing import SealedSecretError, seal_secret, unseal_secret
 
 logger = logging.getLogger(__name__)
 

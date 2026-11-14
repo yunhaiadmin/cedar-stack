@@ -176,8 +176,8 @@ def test_batch7_reads_stay_open_to_operator(path):
 #   （SUPER_ONLY_ALL_PREFIXES）——下载与状态回显都是 GET，只拦写等于不拦。
 # - GA-072 公共池配置：只收 4 个配置口的写（读不受影响），成员审核等日常
 #   运营写口同前缀但不收（防误伤断言在下面）。
-# - GA-071 上游密钥：只收刮削页的密钥子树写口；专线 reset-secret 走后缀
-#   精确命中。重刮 / 绑 TMDB 等日常写口不收（防误伤断言在下面）。
+# - GA-071 上游密钥：只收刮削页的密钥子树写口。重刮 / 绑 TMDB 等
+#   日常写口不收（防误伤断言在下面）。
 
 _GA_ALL_METHOD_SUPER_ONLY = [
     # GA-069：备份整子树（下载是重灾区：viewer 凭 GET 拉走整库备份）
@@ -190,8 +190,6 @@ _GA_ALL_METHOD_SUPER_ONLY = [
     ("GET", "/api/admin/license/status"),
     ("PUT", "/api/admin/license/config"),
     ("POST", "/api/admin/license/verify"),
-    # GA-071 同类：专线入口密钥重置（后缀命中，方法无关）
-    ("POST", "/api/admin/emby/exclusive-lines/7/reset-secret"),
 ]
 
 _GA_WRITE_SUPER_ONLY = [
@@ -226,18 +224,12 @@ _GA_OPERATOR_STILL_ALLOWED = [
     ("POST", "/api/admin/emby/scrape/tmdb-test"),
     # 刮削：PUT meta-sources 经查实不动密钥池（开关 / 顺序 / 限速）
     ("PUT", "/api/admin/emby/scrape/meta-sources"),
-    # 专线：线路本身的增删改是运营日常活，只有 reset-secret 收紧
-    ("POST", "/api/admin/emby/exclusive-lines"),
-    ("PUT", "/api/admin/emby/exclusive-lines/7"),
-    ("DELETE", "/api/admin/emby/exclusive-lines/7"),
-    # 后缀不误伤：reset-secret 不在结尾的不受影响
-    ("POST", "/api/admin/emby/exclusive-lines/7/reset-secret-history"),
 ]
 
 
 @pytest.mark.parametrize("method,path", _GA_ALL_METHOD_SUPER_ONLY)
 def test_ga069_072_all_methods_blocked_for_non_super(method, path):
-    """备份 / 授权 / 专线密钥重置：viewer 与 operator 任何方法都被拦"""
+    """备份 / 授权：viewer 与 operator 任何方法都被拦"""
     for role in (ROLE_OPERATOR, ROLE_VIEWER):
         reason = blocked_reason(_req(path, method), _admin(role))
         assert reason, f"{role} {method} {path} 应被拦"

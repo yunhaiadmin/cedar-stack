@@ -30,7 +30,7 @@ from backend.emby_server import scanner
 from backend.emby_server import transfer115
 from backend.emby_server import user_bindings as ub
 from backend.emby_server import models as em
-from backend.emby_server.upstream_sources import seal_secret
+from backend.emby_server.secret_sealing import seal_secret
 
 
 @pytest.fixture()

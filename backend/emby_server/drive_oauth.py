@@ -67,7 +67,7 @@ from backend.emby_server.drive_changes import (
 )
 from backend.emby_server.env_util import env_int
 from backend.emby_server.public_url import configured_public_url
-from backend.emby_server.upstream_sources import (
+from backend.emby_server.secret_sealing import (
     SealedSecretError,
     seal_secret,
     unseal_secret,

@@ -250,9 +250,9 @@ const queueGlance = computed(() => {
 const PLAY_PROVIDER_LABEL: Record<string, string> = {
   drive: 'Google Drive',
   local: '本机文件',
-  upstream: '上游线路',
   mount: '挂载',
   unknown: '未知来源',
+  upstream: '上游线路',
 }
 function playSourceName(row: PlayStartStats['by_provider'][number]): string {
   if (row.mount_name) return row.mount_name

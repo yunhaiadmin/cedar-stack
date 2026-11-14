@@ -50,7 +50,7 @@ import stat
 from pathlib import Path
 
 from backend.emby_server import models as em
-from backend.emby_server import upstream_sources as ups
+from backend.emby_server import secret_sealing as ups
 from backend.emby_server.env_util import env_int
 from backend.emby_server.mount_sources import resolve_kek_dir
 

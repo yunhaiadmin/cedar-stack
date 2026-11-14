@@ -1242,7 +1242,7 @@ def _table_source_cookie(provider) -> str | None:
     if provider.db is None:
         return None
     from backend.emby_server import mount_source_credentials as msc
-    from backend.emby_server import upstream_sources as ups
+    from backend.emby_server import secret_sealing as ups
 
     if not msc.source_credentials_enabled():
         return None
