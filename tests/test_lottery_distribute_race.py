@@ -14,9 +14,11 @@ from backend import lottery
 
 def test_concurrent_distribute_pays_once(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'lot.db'}")
+    # 发奖改走 codes.grant_membership_days（2026-11-14）：需服/套餐/订阅三表
     for t in (models.WebUser, models.SystemConfig, models.LotteryRound, models.LotteryRoundPrize,
               models.LotteryRoundEntry, models.LotteryRoundWinner, models.LotteryBlacklist,
-              models.PointsLog, models.WelfareGrantLog):
+              models.PointsLog, models.WelfareGrantLog,
+              models.ServerRealm, models.SubscriptionPlan, models.UserSubscription):
         t.__table__.create(engine, checkfirst=True)
     Session = sessionmaker(bind=engine)
     a, b = Session(), Session()
@@ -43,14 +45,15 @@ def test_concurrent_distribute_pays_once(tmp_path):
     assert res["distributed"] == 0
 
     b.expire_all()
-    # 只发一次：公益资格续 7 天、留痕一条（积分已下线，改查 WelfareGrantLog）
-    refreshed = b.query(models.WebUser).filter_by(id=uid).one()
-    assert refreshed.is_welfare is True
-    assert refreshed.welfare_expires_at is not None
+    # 只发一次：订阅加 7 天（公益资格已随福利整族于 2026-11-14 删除，
+    # 发奖改走 codes.grant_membership_days，落 UserSubscription 行）
+    sub = (b.query(models.UserSubscription)
+           .filter_by(user_id=uid, status="active")
+           .order_by(models.UserSubscription.id.desc()).first())
+    assert sub is not None
     from datetime import datetime as _dt, timedelta as _td
-    assert abs((refreshed.welfare_expires_at - _dt.now()).total_seconds() - 7 * 86400) < 120
-    logs = b.query(models.WelfareGrantLog).filter_by(user_id=uid).all()
-    assert len(logs) == 1
-    assert logs[0].channel == "lottery_win" and logs[0].days == 7
+    assert abs((sub.end_date - _dt.now()).total_seconds() - 7 * 86400) < 120
+    assert (b.query(models.UserSubscription)
+            .filter_by(user_id=uid, status="active").count()) == 1
     a.close()
     b.close()

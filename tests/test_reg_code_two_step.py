@@ -270,15 +270,18 @@ def test_code_mode_named_code_binds_username(db):
     assert _user(db, "future_user") is not None
 
 
-def test_code_mode_welfare_code_grants_welfare_and_view(db):
+def test_code_mode_welfare_code_refused_not_redeemed(db):
+    # 资格卡码已随福利整族于 2026-11-14 下线：凭码注册直接 400 拒绝，
+    # 不建号、不烧码（与能量码同口径，见 codes.consume_registration_code）。
     _set_mode(db, "code")
     _make_code(db, reward_type="welfare", days=30, welfare_include_view=True)
-    _register(db, "newbie", code="REG-TEST-0001")
-    user = _user(db, "newbie")
-    assert user is not None
-    assert user.is_welfare
-    assert user.welfare_expires_at is not None
-    assert db.query(models.EmbyViewUnlock).filter_by(user_id=user.id).count() == 1
+    with pytest.raises(HTTPException) as exc:
+        _register(db, "newbie", code="REG-TEST-0001")
+    assert exc.value.status_code == 400
+    assert "资格卡码已下线" in exc.value.detail
+    assert _user(db, "newbie") is None
+    code = db.query(models.RegistrationCode).filter_by(code="REG-TEST-0001").first()
+    assert (code.use_count or 0) == 0
 
 
 def test_code_consumed_between_verify_and_submit_blocks_second(db):

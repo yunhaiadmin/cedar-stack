@@ -213,14 +213,6 @@ def apply_invitation(db: Session, user: models.WebUser, invite_code: str) -> dic
     )
     db.add(record)
 
-    # P1 会员经验：有效邀请，邀请人 +10 经验（与双向积分在同一事务，一起落盘）。
-    # 经验失败不阻塞邀请发奖（只记日志）。
-    try:
-        from backend import member_level as _ml
-        _ml.add_xp(db, inviter, 10, "invite", f"invite:{user.id}")
-    except Exception:  # noqa: BLE001
-        logger.exception("邀请经验累加失败: inviter=%s", inviter.id)
-
     # 邀请人奖励（2026-10-23 去重后由 promotion 唯一发放）：数值 = 码上
     # 专属奖励优先、否则推广配置（余额积分或会员天数）。它不 flush：
     # 下面这一次 flush 会把邀请关系、被邀请人奖励、邀请人奖励一起落盘，

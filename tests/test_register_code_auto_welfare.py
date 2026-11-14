@@ -1,14 +1,13 @@
-"""注册码一律自带公益资格（2026-11-10 用户拍板）回归。
+"""注册赠送口径回归（2026-11-14 福利整族删除后定版）。
 
 口径：
-- 凭码注册（code_type=1）成功的新用户一律持有公益资格，不看码面
-  reward_type；只带资格，不另发查看行，码自身权益照旧；
-- 福利型码本次核销已按码面发过资格的，不另发、不叠加；
-- 非福利型码走赠送天数口径（register_gift_welfare_days，默认 30），
-  但不受 register_gift_welfare_enabled 总开关限制，发放日志
-  channel=register_code（与 register_gift / code_redeem 区分来源）；
-- 能量型码已随货币于 2026-11-13 下线：注册核销直接 400 拒绝、不建号、不烧码。
-- 开放注册路径不变：仍由总开关把关、channel=register_gift。
+- 凭码/开放注册一律不再发公益资格（is_welfare 恒 False、无
+  WelfareGrantLog）；2026-11-10「注册码一律自带公益资格」已作废；
+- 只剩查看凭证赠送：register_gift_view_enabled 开时按
+  register_gift_view_days 发一张 EmbyViewUnlock 行（默认 30 天），
+  开关默认关；
+- 资格型码（reward_type=welfare）注册核销直接 400 拒绝、不建号、
+  不烧码；能量型码已随货币于 2026-11-13 下线，同口径拒绝。
 
 测试风格与 test_reg_code_two_step 一致：直调端点函数。
 """
@@ -103,31 +102,40 @@ def _view_rows(db, user_id):
     return db.query(models.EmbyViewUnlock).filter_by(user_id=user_id).all()
 
 
-def _assert_expires_about(user, days, before, after):
-    assert user.is_welfare is True
-    assert user.welfare_expires_at is not None
-    assert before + timedelta(days=days) - timedelta(seconds=10) <= user.welfare_expires_at
-    assert user.welfare_expires_at <= after + timedelta(days=days) + timedelta(seconds=10)
+def _assert_no_welfare(user):
+    """新口径：注册一律不发公益资格。"""
+    assert user.is_welfare is False
+    assert user.welfare_expires_at is None
 
 
-# ==================== 非福利型码：无条件自带资格 ====================
+def _assert_view_about(db, user, days, before, after):
+    """查看凭证行恰一张、到期约 days 天后（误差 10 秒）。"""
+    rows = _view_rows(db, user.id)
+    assert len(rows) == 1
+    exp = rows[0].expires_at
+    assert exp is not None
+    assert before + timedelta(days=days) - timedelta(seconds=10) <= exp
+    assert exp <= after + timedelta(days=days) + timedelta(seconds=10)
 
-def test_subscription_code_register_grants_welfare_no_view_row(db):
-    """订阅型码注册（总开关默认关）→ 有资格 30 天、无新增查看行。"""
+
+# ==================== 订阅/折扣型码：只开会员，不发资格 ====================
+
+def test_subscription_code_register_no_welfare_but_subscription(db):
+    """订阅型码注册（查看开关默认关）→ 无资格、无查看行、无发放日志；
+    码自身权益照旧：开 30 天订阅。"""
     _set_mode(db, "code")
     _make_code(db)
-    before = datetime.now()
     _register(db, "sub_user", code="REG-AUTO-0001")
-    after = datetime.now()
 
     user = _user(db, "sub_user")
-    _assert_expires_about(user, 30, before, after)
-    assert user.welfare_grant_channel == "register_code"
+    assert user is not None
+    _assert_no_welfare(user)
     assert _view_rows(db, user.id) == []
-    logs = _grant_logs(db, user.id)
-    assert len(logs) == 1
-    assert logs[0].channel == "register_code"
-    assert logs[0].days == 30
+    assert _grant_logs(db, user.id) == []
+    sub = db.query(models.UserSubscription).filter_by(
+        user_id=user.id, status="active").first()
+    assert sub is not None
+    assert (sub.end_date - sub.start_date).days >= 29
 
 
 def test_points_code_register_rejected_after_currency_removal(db):
@@ -144,86 +152,79 @@ def test_points_code_register_rejected_after_currency_removal(db):
     assert code.use_count == 0
 
 
-def test_discount_code_register_grants_welfare(db):
-    """折扣型码注册 → 有资格。"""
+def test_discount_code_register_no_welfare(db):
+    """折扣型码注册 → 建号成功、无资格、无发放日志。"""
     _set_mode(db, "code")
     _make_code(db, reward_type="discount", discount_pct=10)
-    before = datetime.now()
     _register(db, "discount_user", code="REG-AUTO-0001")
-    after = datetime.now()
 
     user = _user(db, "discount_user")
-    _assert_expires_about(user, 30, before, after)
-    assert user.welfare_grant_channel == "register_code"
+    assert user is not None
+    _assert_no_welfare(user)
+    assert _grant_logs(db, user.id) == []
 
 
-def test_code_register_uses_configured_gift_days(db):
-    """register_gift_welfare_days=10 → 码注册发 10 天（走同一天数口径）。"""
+def test_code_register_uses_configured_view_days(db):
+    """register_gift_view_days=10＋查看开关开 → 码注册发一张 10 天查看行，
+    不发资格（旧 register_gift_welfare_days 键已随福利族删除）。"""
     _set_mode(db, "code")
-    _set_config(db, "register_gift_welfare_days", "10")
+    _set_config(db, "register_gift_view_enabled", "true")
+    _set_config(db, "register_gift_view_days", "10")
     _make_code(db)
     before = datetime.now()
     _register(db, "days_user", code="REG-AUTO-0001")
     after = datetime.now()
 
     user = _user(db, "days_user")
-    _assert_expires_about(user, 10, before, after)
-    logs = _grant_logs(db, user.id)
-    assert len(logs) == 1
-    assert logs[0].days == 10
+    _assert_no_welfare(user)
+    _assert_view_about(db, user, 10, before, after)
+    assert _grant_logs(db, user.id) == []
 
 
-# ==================== 福利型码：按码面、不叠加 ====================
+# ==================== 资格型码：拒绝核销 ====================
 
-def test_welfare_code_register_uses_code_days_only(db):
-    """福利型码 7 天注册 → 到期只按码面 7 天，不叠加赠送 30 天。"""
+def test_welfare_code_register_refused(db):
+    """资格型码注册 → 直接 400 拒绝，不建号、不烧码。"""
     _set_mode(db, "code")
     _make_code(db, reward_type="welfare", days=7)
-    before = datetime.now()
-    _register(db, "welfare_user", code="REG-AUTO-0001")
-    after = datetime.now()
-
-    user = _user(db, "welfare_user")
-    _assert_expires_about(user, 7, before, after)
-    assert user.welfare_grant_channel == "code_redeem"
-    logs = _grant_logs(db, user.id)
-    assert len(logs) == 1
-    assert logs[0].channel == "code_redeem"
-    assert logs[0].days == 7
+    with pytest.raises(Exception) as exc:
+        _register(db, "welfare_user", code="REG-AUTO-0001")
+    assert getattr(exc.value, "status_code", None) == 400
+    assert "资格卡码已下线" in str(getattr(exc.value, "detail", ""))
+    assert _user(db, "welfare_user") is None
+    code = db.query(models.RegistrationCode).filter_by(code="REG-AUTO-0001").first()
+    assert code.use_count == 0
 
 
-def test_welfare_code_with_gift_switch_on_still_code_days_only(db):
-    """福利型码＋总开关开 → 仍只发码面天数一次，不走赠送路径叠加。"""
+def test_welfare_code_refused_even_with_view_switch_on(db):
+    """资格型码＋查看开关开 → 仍 400 拒绝（查看赠送不替资格码放行）。"""
     _set_mode(db, "code")
-    _set_config(db, "register_gift_welfare_enabled", "true")
+    _set_config(db, "register_gift_view_enabled", "true")
     _make_code(db, reward_type="welfare", days=7)
-    before = datetime.now()
-    _register(db, "welfare_on_user", code="REG-AUTO-0001")
-    after = datetime.now()
-
-    user = _user(db, "welfare_on_user")
-    _assert_expires_about(user, 7, before, after)
-    logs = _grant_logs(db, user.id)
-    assert len(logs) == 1
-    assert logs[0].channel == "code_redeem"
+    with pytest.raises(Exception) as exc:
+        _register(db, "welfare_on_user", code="REG-AUTO-0001")
+    assert getattr(exc.value, "status_code", None) == 400
+    assert "资格卡码已下线" in str(getattr(exc.value, "detail", ""))
+    assert _user(db, "welfare_on_user") is None
+    code = db.query(models.RegistrationCode).filter_by(code="REG-AUTO-0001").first()
+    assert code.use_count == 0
 
 
-# ==================== 防叠加：非福利型码＋总开关开 ====================
+# ==================== 查看开关开：只发凭证一次 ====================
 
-def test_subscription_code_with_gift_switch_on_grants_once(db):
-    """订阅型码＋总开关开 → 只发一次 30 天（不是 60 天）。"""
+def test_subscription_code_with_view_switch_on_grants_view_once(db):
+    """订阅型码＋查看开关开 → 只发一张 30 天查看行（默认天数），不发资格。"""
     _set_mode(db, "code")
-    _set_config(db, "register_gift_welfare_enabled", "true")
+    _set_config(db, "register_gift_view_enabled", "true")
     _make_code(db)
     before = datetime.now()
     _register(db, "sub_on_user", code="REG-AUTO-0001")
     after = datetime.now()
 
     user = _user(db, "sub_on_user")
-    _assert_expires_about(user, 30, before, after)
-    logs = _grant_logs(db, user.id)
-    assert len(logs) == 1
-    assert logs[0].channel == "register_code"
+    _assert_no_welfare(user)
+    _assert_view_about(db, user, 30, before, after)
+    assert _grant_logs(db, user.id) == []
 
 
 # ==================== 开放注册：行为不变 ====================
@@ -238,17 +239,15 @@ def test_open_register_gift_switch_off_no_welfare(db):
     assert _grant_logs(db, user.id) == []
 
 
-def test_open_register_gift_switch_on_grants_once_as_before(db):
-    """开放注册＋总开关开 → 赠送照旧一次，channel=register_gift。"""
+def test_open_register_view_switch_on_grants_view_once(db):
+    """开放注册＋查看开关开 → 发一张 30 天查看行，不发资格。"""
     _set_mode(db, "open")
-    _set_config(db, "register_gift_welfare_enabled", "true")
+    _set_config(db, "register_gift_view_enabled", "true")
     before = datetime.now()
     _register(db, "open_on_user")
     after = datetime.now()
 
     user = _user(db, "open_on_user")
-    _assert_expires_about(user, 30, before, after)
-    assert user.welfare_grant_channel == "register_gift"
-    logs = _grant_logs(db, user.id)
-    assert len(logs) == 1
-    assert logs[0].channel == "register_gift"
+    _assert_no_welfare(user)
+    _assert_view_about(db, user, 30, before, after)
+    assert _grant_logs(db, user.id) == []

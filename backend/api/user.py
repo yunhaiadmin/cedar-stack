@@ -1746,20 +1746,7 @@ async def remove_my_device(
 #   - GET /api/user/emby-account
 
 
-# ==================== 会员等级（P1 统一货币体系） ====================
-
-@user_router.get("/member")
-async def my_member_info(
-    current_user: models.WebUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """当前用户的会员等级 / 经验 / 进度 / 全等级列表（含公开权益）"""
-    from backend import member_level as _ml
-
-    def _info() -> dict:
-        return _ml.get_member_info(db, current_user)
-
-    return await run_in_threadpool(_info)
+# 会员等级端点（GET /member）已随等级体系于 2026-11-14 删除。
 
 
 # ==================== 我的专属线路 ====================

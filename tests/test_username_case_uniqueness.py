@@ -161,7 +161,9 @@ def test_upsert_admin_exact_existing_user_still_upgrades(db):
 # ==================== 指名码：生成与核销同口径 ====================
 
 def _gen_request(**overrides):
-    payload = {"count": 1, "code_type": 2, "reward_type": "welfare", "days": 30}
+    # 资格型码已随福利整族于 2026-11-14 下线（生成即 400）：指名校验
+    # 用现存的订阅型码覆盖，生成路径本身不变。
+    payload = {"count": 1, "code_type": 2, "reward_type": "subscription", "days": 30}
     payload.update(overrides)
     return ops.CodeGenerateRequest(**payload)
 
@@ -216,10 +218,17 @@ def test_redeem_named_code_ambiguous_target_rejected_for_both(db):
 
 
 def test_redeem_named_code_unique_target_still_works(db):
+    # 资格型码已下线：改用订阅型续期码覆盖「指名唯一仍可核销」。
     user = _make_user(db, "Solo")
-    _make_welfare_code(db, "WEL-A002-ONE", target_username="solo")
-    result = codes.redeem_code(db, user, "WEL-A002-ONE")
+    _make_welfare_code(db, "SUB-A002-ONE", target_username="solo",
+                       reward_type="subscription")
+    result = codes.redeem_code(db, user, "SUB-A002-ONE")
     db.commit()
     assert result["success"] is True
     db.refresh(user)
-    assert user.is_welfare is True
+    assert user.is_welfare is False
+    sub = db.query(models.UserSubscription).filter_by(
+        user_id=user.id, status="active").first()
+    assert sub is not None
+    code = db.query(models.RegistrationCode).filter_by(code="SUB-A002-ONE").first()
+    assert (code.use_count or 0) == 1

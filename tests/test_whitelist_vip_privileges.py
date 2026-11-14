@@ -136,8 +136,9 @@ def test_monthly_quota_exempt_for_whitelist(db):
     for i in range(3):
         _seek_row(db, vip, f"已求片{i}")
     snap = media_seek.monthly_quota(db, vip)
-    # 公益口径月度上限仍是 3（快照如实），但白名单豁免：剩余不被用满卡死
-    assert snap["monthly_limit"] == media_seek.DEFAULT_MONTHLY_WELFARE
+    # 白名单码不再发公益资格（2026-11-14 福利族删除）：白名单用户现为
+    # 付费口径月度上限 10（快照如实），豁免本身不变：剩余不被用满卡死
+    assert snap["monthly_limit"] == media_seek.DEFAULT_MONTHLY_PAID
     assert snap["monthly_used"] == 3
     assert snap["monthly_exempt"] is True
     assert snap["monthly_remaining"] > 0

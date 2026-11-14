@@ -34,13 +34,14 @@ def _cfg(s, key):
 
 
 @pytest.mark.parametrize("key,value", [
-    # points_transfer_* 已随货币于 2026-11-13 下线：未知键静默忽略、无校验可测；
-    # 以下改用现存同类校验键（范围/类型/枚举口径与原用例一一对应）。
-    ("welfare_vitality_renew_min", -1),
-    ("welfare_vitality_renew_min", 1001),
-    ("welfare_streak_renew_days", "abc"),
-    ("welfare_streak_renew_days", 0),
-    ("welfare_vitality_renew_min", 1.5),
+    # 福利族键（welfare_vitality_renew_min / welfare_streak_renew_days）
+    # 已随福利整族于 2026-11-14 删除：改用福利配置端点现存同类校验键
+    #（范围/类型口径与原用例一一对应）。
+    ("register_gift_view_days", 0),
+    ("lottery_draw_interval_sec", 90000),
+    ("register_gift_view_days", "abc"),
+    ("recharge_ratio", "0"),
+    ("register_gift_view_days", 1.5),
     ("recharge_ratio", "-1"),
     ("recharge_quick_amounts", "10,abc"),
     ("lottery_draw_interval_sec", "5"),
@@ -57,26 +58,26 @@ def test_welfare_config_invalid_writes_nothing(db):
     s, admin = db
     with pytest.raises(config_schema.ConfigValueError):
         welfare_admin.welfare_config_set(
-            {"welfare_vitality_renew_min": "100", "welfare_streak_renew_days": "-1"}, current_admin=admin, db=s)
-    assert _cfg(s, "welfare_vitality_renew_min") is None
+            {"register_gift_view_days": "30", "lottery_draw_interval_sec": "5"}, current_admin=admin, db=s)
+    assert _cfg(s, "register_gift_view_days") is None
 
 
 def test_welfare_config_accepts_valid_and_empty_unsets(db):
     s, admin = db
     welfare_admin.welfare_config_set(
-        {"welfare_vitality_renew_min": 3, "welfare_require_tg_bind": True,
+        {"register_gift_view_days": 30, "welfare_require_tg_bind": True,
          "lottery_require_group_member": False,
          "recharge_ratio": "1.5"},
         current_admin=admin, db=s)
-    assert _cfg(s, "welfare_vitality_renew_min") == "3"
+    assert _cfg(s, "register_gift_view_days") == "30"
     # 2026-10-21：原 chat_points_enabled / lottery_enabled 已摘面板，
     # 换保留的 digit 风格 bool 键（存 "1"/"0"）
     assert _cfg(s, "welfare_require_tg_bind") == "1"
     assert _cfg(s, "lottery_require_group_member") == "0"
     assert _cfg(s, "recharge_ratio") == "1.5"
-    welfare_admin.welfare_config_set({"welfare_vitality_renew_min": ""}, current_admin=admin, db=s)
-    assert _cfg(s, "welfare_vitality_renew_min") is None
-    assert welfare_admin.welfare_config_get(current_admin=admin, db=s)["welfare_vitality_renew_min"] == "3"
+    welfare_admin.welfare_config_set({"register_gift_view_days": ""}, current_admin=admin, db=s)
+    assert _cfg(s, "register_gift_view_days") is None
+    assert welfare_admin.welfare_config_get(current_admin=admin, db=s)["register_gift_view_days"] == "30"
 
 
 def _save_econ(s, admin, settings):

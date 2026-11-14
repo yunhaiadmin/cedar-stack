@@ -329,14 +329,19 @@ def _bar(frac: float, width: int) -> str:
     return "█" * filled + "░" * (width - filled)
 
 
+# 等级名/阈值兜底（原 member_level.DEFAULT_LEVELS，等级体系于
+# 2026-11-14 删除后就地保留为只读展示常量）：member_levels 表还有
+# active 行时按表读，表空时用这组。
+_DEFAULT_LEVEL_ROWS = [(1, "初幕", 0), (2, "影迷", 100), (3, "鉴赏家", 500),
+                       (4, "放映师", 1500), (5, "造梦者", 5000), (6, "传奇", 15000)]
+
+
 def _level_info(db, user) -> dict:
     """会员等级只读快照：等级名／经验／下一级阈值与差值；不写库。
 
-    等级数按 member_xp 纯算（复用 lottery_governance.user_level，不触发
-    get_member_info 的种子／迁移写副作用）；等级名与阈值取 member_levels
-    active 行，表空时回落 DEFAULT_LEVELS。
+    等级数按 member_xp 纯算（复用 lottery_governance.user_level）；等级名
+    与阈值取 member_levels active 行，表空时回落 _DEFAULT_LEVEL_ROWS。
     """
-    from backend import member_level as _ml
     from backend.lottery_governance import user_level as _user_level
 
     try:
@@ -357,7 +362,7 @@ def _level_info(db, user) -> dict:
     levels = (
         [(r.level, r.name, r.xp_threshold or 0) for r in rows]
         if rows
-        else [(d["level"], d["name"], d["xp_threshold"]) for d in _ml.DEFAULT_LEVELS]
+        else list(_DEFAULT_LEVEL_ROWS)
     )
     xp = int(getattr(user, "member_xp", 0) or 0)
     if level is None:

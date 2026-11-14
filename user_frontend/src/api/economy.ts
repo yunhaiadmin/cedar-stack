@@ -32,64 +32,6 @@ export const homeApi = {
 
 // ==================== 类型 ====================
 
-export interface CheckinStatus {
-  enabled: boolean
-  checked_today: boolean
-  streak: number
-  base_points: number
-  streak_bonus: number
-  streak_max_bonus: number
-  points: number
-  /** R103-1：当前用户是否为公益服（是否会获得能量），后端 CheckinStatusResponse.points_enabled（2026-10-09 已上线） */
-  points_enabled: boolean
-  /** 基础奖励范围（后端 base_min/base_max，固定值时两数相等；旧后端缺省时以 base_points 兜底） */
-  base_min?: number
-  base_max?: number
-  /** 今日实得：今日记录 points_awarded（当日基础奖励含暴击放大），未报到为 null（后端 2026-11-05 新增） */
-  today_points?: number | null
-}
-
-/** 连签加成：报到后连签达 streakAfter 天时的加成，min(每天加成×(天数-1), 封顶)，与后端 _do_checkin_core 同口径 */
-export function checkinStreakBonus(streakAfter: number, streakBonus: number, streakMaxBonus: number): number {
-  if (streakAfter <= 1) return 0
-  return Math.min(streakBonus * (streakAfter - 1), streakMaxBonus)
-}
-
-export interface CheckinRewardEstimate { min: number; max: number }
-
-/**
- * 「可得」预估：只算基础＋连签加成，不含暴击/惩罚/里程碑（随机或独立台账项，
- * 不许算进预估向用户承诺）。基础是范围时返回范围，固定值时 min=max。
- */
-export function estimateCheckinReward(
-  baseMin: number, baseMax: number, streakAfter: number,
-  streakBonus: number, streakMaxBonus: number,
-): CheckinRewardEstimate {
-  const bonus = checkinStreakBonus(streakAfter, streakBonus, streakMaxBonus)
-  return { min: Math.min(baseMin, baseMax) + bonus, max: Math.max(baseMin, baseMax) + bonus }
-}
-
-/** 预估展示文案：固定值 "+8"，范围 "+7~12" */
-export function formatCheckinEstimate(e: CheckinRewardEstimate): string {
-  return e.min === e.max ? `+${e.min}` : `+${e.min}~${e.max}`
-}
-
-export interface PointsLogEntry {
-  id: number
-  amount: number
-  balance_after: number
-  type: string
-  description: string | null
-  ref_id: string | null
-  created_at: string | null
-}
-
-export interface PointsLogResponse {
-  total: number
-  balance: number
-  logs: PointsLogEntry[]
-}
-
 export interface RechargePackage {
   id: number
   name: string
@@ -230,83 +172,6 @@ export interface MyPromotions {
     reward_type_labels: Record<string, string>
   }
   rewards: PromotionRewardRow[]
-}
-
-// ==================== 签到 ====================
-
-export const checkinApi = {
-  status: () => api.get<never, CheckinStatus>('/api/user/economy/checkin/status'),
-  doCheckin: (captchaToken?: string) => api.post<never, { success: boolean; points_awarded: number; streak: number; balance: number; message: string }>('/api/user/economy/checkin', captchaToken ? { captcha_token: captchaToken } : {}),
-}
-
-// ==================== 活力值 ====================
-
-export interface VitalityStatus {
-  success: boolean
-  vitality: number
-  max: number
-  limit_threshold: number
-  can_play: boolean
-  suspended: boolean
-}
-
-/** 本地登录态里缓存的用户信息是否明确标记为公益服用户：
- * true = 是；false = 明确不是；null = 没标记（老登录态），以服务端为准。 */
-function cachedUserIsWelfare(): boolean | null {
-  try {
-    const raw = localStorage.getItem('user')
-    if (!raw) return null
-    const u = JSON.parse(raw) as { is_welfare?: unknown }
-    return typeof u.is_welfare === 'boolean' ? u.is_welfare : null
-  } catch {
-    return null
-  }
-}
-
-export const vitalityApi = {
-  status: () => {
-    // 活力值仅限公益服用户：本地已明确知道不是时直接跳过网络请求——
-    // 所有调用点本来就把失败当「不适用」隐藏，省掉这次注定 403 的往返
-    //（开服当晚该接口在服务端刷了 111 条 403）。标记缺失时不拦，照常问服务端。
-    if (cachedUserIsWelfare() === false) {
-      return Promise.reject(new Error('vitality: not applicable for this user'))
-    }
-    return api.get<never, VitalityStatus>('/api/user/economy/vitality')
-  },
-  recharge: (points: number) =>
-    api.post<never, { success: boolean; vitality_gained: number; points_spent: number; vitality: number; points_balance: number }>('/api/user/economy/vitality/recharge', { points }),
-}
-
-// ==================== 公益服自助续期 ====================
-
-export interface WelfareRedeemResponse {
-  days: number
-  /** 本次实际扣费（服务端定价，前端不写死价格） */
-  cost: number
-  balance: number
-  expires_at: string | null
-}
-
-export interface WelfareStatusResponse {
-  is_welfare: boolean
-  /** 公益资格到期日（ISO；null = 公益用户不过期、非公益用户未开通） */
-  welfare_expires_at: string | null
-}
-
-export const welfareApi = {
-  /** 能量兑换公益天数（仅支持 7 或 30；要求登录 + 绑 TG，未绑会被服务端拦） */
-  redeem: (daysOption: 7 | 30) =>
-    api.post<never, WelfareRedeemResponse>('/api/points/redeem', { days_option: daysOption }),
-  /** 当前登录用户的公益资格状态（含到期日；失败时调用方容错，不阻断页面） */
-  status: () =>
-    api.get<never, WelfareStatusResponse>('/api/points/welfare-status'),
-}
-
-// ==================== 能量（历史只读，端点已随后端货币下线） ====================
-
-export const pointsApi = {
-  log: (params?: { limit?: number; offset?: number; type_filter?: string }) =>
-    api.get<never, PointsLogResponse>('/api/user/economy/points/log', { params }),
 }
 
 // ==================== 兑换码 ====================
@@ -658,35 +523,4 @@ export const inviteApi = {
   /** 我的推广奖励明细（邀请即发的一次性奖励，与充值返利分开两张表） */
   promotions: (params?: { limit?: number }) =>
     api.get<never, MyPromotions>('/api/user/invite/promotions', { params }),
-}
-
-// ==================== 会员等级（P1 统一货币体系） ====================
-
-export interface MemberLevelInfo {
-  level: number
-  name: string
-  xp_threshold: number
-  discount_pct: number
-  benefits: string[]
-  badge_icon: string
-  badge_color: string
-}
-
-export interface MyMemberInfo {
-  level: number
-  level_name: string
-  xp: number
-  badge_icon: string
-  badge_color: string
-  discount_pct: number
-  next_level: number | null
-  next_threshold: number | null
-  xp_to_next: number | null
-  progress_pct: number
-  levels: MemberLevelInfo[]
-}
-
-export const memberApi = {
-  /** 当前会员等级 / 经验 / 进度 / 全等级列表（含公开权益） */
-  info: () => api.get<never, MyMemberInfo>('/api/user/member'),
 }

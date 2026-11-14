@@ -32,12 +32,14 @@ class TestPa034WordStyle:
     def test_word_registered_key_follows_spec(self):
         from backend import config_schema
 
-        # 代表键原为 slots_enabled，老虎机随批 11 删除后改用同风格的现存键
-        assert config_schema.WELFARE_CONFIG_SCHEMA["welfare_vitality_renew_enabled"] == ("bool",)
+        # 代表键原为 slots_enabled，老虎机随批 11 删除后改用同风格的现存键；
+        # welfare_vitality_renew_enabled 已随福利整族于 2026-11-14 删除，
+        # 改用同为 word 风格 ("bool",) 的现存键 register_gift_view_enabled
+        assert config_schema.WELFARE_CONFIG_SCHEMA["register_gift_view_enabled"] == ("bool",)
         assert (
             normalize(
-                "welfare_vitality_renew_enabled",
-                config_schema.WELFARE_CONFIG_SCHEMA["welfare_vitality_renew_enabled"],
+                "register_gift_view_enabled",
+                config_schema.WELFARE_CONFIG_SCHEMA["register_gift_view_enabled"],
                 1,
             )
             == "true"

@@ -1,33 +1,27 @@
 <script setup lang="ts">
 /**
- * 公益服（重新布局批 2）：两页并一页
+ * 群抽奖（历史文件名 Welfare.vue）：抽奖相关标签页的壳
  *
- * 群抽奖活动 + 公益配置通过标签页切换，统一入口管理公益服。
- * 两个标签页各自是一整页：按需加载，只看群抽奖时不用把公益配置页也打进首屏。
- * 配置写入口随入口统一：两页写的键集合不重叠（抽奖页只写 lottery_*，配置页写
- * 红包/玩法/机器人/公益规则/查看有效期），并页本身就是写入口唯一化，不再各占导航。
- * （原「积分配置」标签已随货币下线改名公益配置，?tab=points 键名保留兼容旧链接。）
- *
- * 另有「活动提案」（等级治理 Step 3 用户提案审批）与「抽奖黑名单」两个标签，
- * 同样按需加载、?tab=proposals / ?tab=blacklist 可直达。
+ * 群抽奖活动 + 活动提案 + 抽奖黑名单通过标签页切换，统一入口管理。
+ * 各标签页各自是一整页：按需加载。原「公益配置」标签（WelfarePoints.vue）
+ * 已随公益资格整族于 2026-11-14 删除。
  */
 import { computed, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-// 两个标签页各自是一整页：按需加载
+// 各标签页各自是一整页：按需加载
 const WelfareLotteryRounds = defineAsyncComponent(() => import('./WelfareLotteryRounds.vue'))
-const WelfarePoints = defineAsyncComponent(() => import('./WelfarePoints.vue'))
 const WelfareLotteryProposals = defineAsyncComponent(() => import('./WelfareLotteryProposals.vue'))
 const WelfareLotteryBlacklist = defineAsyncComponent(() => import('./WelfareLotteryBlacklist.vue'))
 
-type WelfareTab = 'lottery' | 'points' | 'proposals' | 'blacklist'
-const TABS: WelfareTab[] = ['lottery', 'points', 'proposals', 'blacklist']
+type WelfareTab = 'lottery' | 'proposals' | 'blacklist'
+const TABS: WelfareTab[] = ['lottery', 'proposals', 'blacklist']
 
 const route = useRoute()
 const router = useRouter()
 
 /**
- * 当前标签与 ?tab= 同步：旧地址 /welfare-points 跳过来能落到公益配置标签，刷新也不丢。
+ * 当前标签与 ?tab= 同步：?tab=proposals / ?tab=blacklist 可直达，刷新不丢。
  */
 const activeTab = computed<WelfareTab>({
   get: () => (TABS.includes(route.query.tab as WelfareTab) ? (route.query.tab as WelfareTab) : 'lottery'),
@@ -41,7 +35,7 @@ const activeTab = computed<WelfareTab>({
 <template>
   <!-- 两个子页各自带 PageHeader（眉题「内容」），这里只放标签条，不再叠第二个页头 -->
   <div class="admin-page welfare-page">
-    <div class="tab-bar" role="tablist" aria-label="公益服">
+    <div class="tab-bar" role="tablist" aria-label="群抽奖">
       <button
         id="welfare-tab-lottery"
         type="button"
@@ -54,19 +48,6 @@ const activeTab = computed<WelfareTab>({
       >
         群抽奖
         <span class="tab-hint">活动创建 / 开奖 / 发放</span>
-      </button>
-      <button
-        id="welfare-tab-points"
-        type="button"
-        role="tab"
-        class="tab-btn"
-        :class="{ active: activeTab === 'points' }"
-        :aria-selected="activeTab === 'points'"
-        aria-controls="welfare-panel"
-        @click="activeTab = 'points'"
-      >
-        公益配置
-        <span class="tab-hint">红包 / 玩法 / 机器人</span>
       </button>
       <button
         id="welfare-tab-proposals"
@@ -105,7 +86,6 @@ const activeTab = computed<WelfareTab>({
       <!-- KeepAlive：来回切标签不重拉数据、不丢筛选 -->
       <KeepAlive>
         <WelfareLotteryRounds v-if="activeTab === 'lottery'" />
-        <WelfarePoints v-else-if="activeTab === 'points'" />
         <WelfareLotteryProposals v-else-if="activeTab === 'proposals'" />
         <WelfareLotteryBlacklist v-else />
       </KeepAlive>

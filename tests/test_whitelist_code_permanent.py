@@ -8,9 +8,10 @@
 - reward_type=welfare → 资格＋打包查看行永久，但订阅不发；
 - reward_type=points/discount → 白名单语义完全丢失（只发能量/折扣）。
 
-修复口径：白名单码核销 = 账号置为长期有效，三处一起落：
-公益资格永久（grant_welfare days=0）＋查看行永久（expires_at=None）＋
-该服订阅长期（grant_membership_days days=-1 → PERMANENT_DAYS）。
+修复口径：白名单码核销 = 账号置为长期有效，两处一起落：
+查看行永久（expires_at=None）＋该服订阅长期
+（grant_membership_days days=-1 → PERMANENT_DAYS）。
+（第三处「公益资格永久」已随公益资格整族于 2026-11-14 删除。）
 非白名单码行为逐字不变。本文件同时覆盖管理端「白名单账号」名单/回收。
 """
 import os
@@ -30,7 +31,6 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 import pytest  # noqa: E402
 
 from backend import codes, models, subscriptions  # noqa: E402
-from backend.emby_server import portal  # noqa: E402
 
 
 @pytest.fixture()
@@ -71,18 +71,14 @@ def _code(db, code_str, **kw):
 
 def _assert_all_permanent(db, user):
     db.refresh(user)
-    # ① 公益资格永久
-    assert user.is_welfare is True
-    assert user.welfare_expires_at is None
-    assert portal.is_welfare_user(db, user) is True
-    # ② 查看凭证永久（直接查查看行：view_grant 在付费服口径下以订阅
+    # ① 查看凭证永久（直接查查看行：view_grant 在付费服口径下以订阅
     # 授予、row 返回 None，裸测试库未给 realm 1 标公益服，故不断言 row）
     unlock = (db.query(models.EmbyViewUnlock)
               .filter(models.EmbyViewUnlock.user_id == user.id).first())
     assert unlock is not None and unlock.expires_at is None
     granted, _row = subscriptions.view_grant(db, user)
     assert granted is True
-    # ③ 订阅长期有效（PERMANENT_DAYS=36500 的既有「永久近似」口径）
+    # ② 订阅长期有效（PERMANENT_DAYS=36500 的既有「永久近似」口径）
     assert subscriptions.has_active_subscription(db, user.id) is True
     sub = (db.query(models.UserSubscription)
            .filter(models.UserSubscription.user_id == user.id,
@@ -92,9 +88,9 @@ def _assert_all_permanent(db, user):
     assert sub.end_date > datetime.now() + timedelta(days=36000)
 
 
-# ---------- 1. 三种 reward_type 的白名单码都必须三处永久 ----------
+# ---------- 1. 白名单码（subscription/welfare 型）都必须两处永久 ----------
 
-def test_whitelist_subscription_flavor_grants_all_three(db):
+def test_whitelist_subscription_flavor_grants_permanent_pair(db):
     u = _user(db, "wl_sub")
     _code(db, "VIP-SUB000000001")
     db.commit()
@@ -102,9 +98,11 @@ def test_whitelist_subscription_flavor_grants_all_three(db):
     db.commit()
     assert result["success"] is True
     _assert_all_permanent(db, u)
+    db.refresh(u)
+    assert not u.is_welfare  # 公益资格不再发放（2026-11-14 删除）
 
 
-def test_whitelist_welfare_flavor_grants_all_three(db):
+def test_whitelist_welfare_flavor_grants_permanent_pair(db):
     u = _user(db, "wl_welfare")
     _code(db, "VIP-WEL000000001", reward_type="welfare")
     db.commit()
@@ -112,6 +110,8 @@ def test_whitelist_welfare_flavor_grants_all_three(db):
     db.commit()
     assert result["success"] is True
     _assert_all_permanent(db, u)
+    db.refresh(u)
+    assert not u.is_welfare  # 公益资格不再发放（2026-11-14 删除）
 
 
 def test_whitelist_points_flavor_still_means_permanent(db):
@@ -135,10 +135,12 @@ def test_whitelist_points_flavor_still_means_permanent(db):
 
 
 def test_whitelist_redeem_stacks_on_existing_finite_rights(db):
-    """已有有限期资格/订阅/查看行时核销白名单码 → 全部升为永久，不报错。"""
+    """已有有限期订阅/查看行时核销白名单码 → 两处升为永久，不报错。
+    已有有限期公益资格原样不动（资格发放已删除，核销不碰资格字段）。"""
     u = _user(db, "wl_stack")
     u.is_welfare = True
-    u.welfare_expires_at = datetime.now() + timedelta(days=10)
+    welfare_expiry = datetime.now() + timedelta(days=10)
+    u.welfare_expires_at = welfare_expiry
     db.add(models.EmbyViewUnlock(
         user_id=u.id, realm_id=1, unlocked_at=datetime.now(),
         expires_at=datetime.now() + timedelta(days=5), points_spent=50))
@@ -148,6 +150,9 @@ def test_whitelist_redeem_stacks_on_existing_finite_rights(db):
     db.commit()
     assert result["success"] is True
     _assert_all_permanent(db, u)
+    db.refresh(u)
+    assert u.is_welfare is True
+    assert u.welfare_expires_at == welfare_expiry
 
 
 # ---------- 2. 非白名单码行为不变 ----------
@@ -170,25 +175,22 @@ def test_renew_code_unchanged(db):
     assert sub.end_date < datetime.now() + timedelta(days=31)
 
 
-def test_welfare_code_unchanged_no_subscription(db):
-    """普通资格码（code_type=注册码 + reward_type=welfare）仍只发资格+查看，
-    不发订阅——白名单三处全包只属于 code_type=3。
-
-    2026-11-10 注册码分离定版：该码改走注册页核销入口
-    （consume_registration_code），发放语义与原兑换入口一致。
-    """
+def test_welfare_code_rejected_no_subscription(db):
+    """普通资格码（code_type=注册码 + reward_type=welfare）已下线：
+    注册页核销入口直接拒绝，不发资格、不发订阅、不建查看行。"""
     u = _user(db, "plain_welfare")
     _code(db, "REG-WEL000000001", code_type=codes.CODE_TYPE_REGISTER,
           days=30, reward_type="welfare")
     db.commit()
     result = codes.consume_registration_code(db, u, "REG-WEL000000001")
     db.commit()
-    assert result["success"] is True
+    assert result["success"] is False
     db.refresh(u)
-    assert u.is_welfare is True
-    assert u.welfare_expires_at is not None  # 有限期，不是永久
+    assert not u.is_welfare
     assert db.query(models.UserSubscription).filter(
         models.UserSubscription.user_id == u.id).count() == 0
+    assert db.query(models.EmbyViewUnlock).filter(
+        models.EmbyViewUnlock.user_id == u.id).count() == 0
 
 
 # ---------- 3. 管理端名单 / 回收 ----------
@@ -230,7 +232,7 @@ def test_admin_whitelist_accounts_list_and_revoke(db, admin_client):
     mine = [x for x in rows if x["user_id"] == u.id]
     assert len(mine) == 1
     assert mine[0]["username"] == "wl_listed"
-    assert mine[0]["welfare_permanent"] is True
+    assert mine[0]["welfare_permanent"] is False  # 资格不再发放（2026-11-14）
     assert mine[0]["view_permanent"] is True
     assert mine[0]["subscription_longterm"] is True
     assert mine[0]["is_permanent_active"] is True
@@ -240,7 +242,7 @@ def test_admin_whitelist_accounts_list_and_revoke(db, admin_client):
     assert r.status_code == 200
     db.expire_all()
     db.refresh(u)
-    assert portal.is_welfare_user(db, u) is False
+    assert subscriptions.welfare_qualification_active(u) is False
     granted, _row = subscriptions.view_grant(db, u)
     assert granted is False
     assert subscriptions.has_active_subscription(db, u.id) is False

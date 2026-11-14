@@ -73,7 +73,11 @@ def test_govlog_lv6_reads_recent_entries(db):
     governance.freeze_governance(db, user_id=target.id, reason="刷榜", days=None, admin_id=admin.id)
     db.commit()
     victim = user(db, 900003, "victim", level=3, xp=600)
-    governance.governance_downgrade(db, user_id=victim.id, xp=200, reason="恶意举报", admin_id=admin.id)
+    # 降级动作已随等级体系删除（2026-11-14）；审计日志读取面是通用的，
+    # 直接落一条 downgrade 历史动作行验渲染与倒序。
+    governance.record_governance_audit(
+        db, action="downgrade", actor_user_id=admin.id,
+        target_user_id=victim.id, detail=json.dumps({"reason": "恶意举报"}))
     db.commit()
     text = features.handle_govlog(db, {"id": lv6.telegram_id}, lv6.telegram_id, "")
     assert "停权" in text and "降级" in text
@@ -122,29 +126,6 @@ def test_freeze_release_expiry_and_validation(db):
     assert governance.is_governance_frozen(db, target.id) is False
 
 
-def test_downgrade_clamps_and_audits_without_touching_points(db):
-    seed_levels(db)
-    admin = user(db, 900000, "admin")
-    victim = user(db, 900001, "victim", points=777, level=3, xp=600)
-    result = governance.governance_downgrade(db, user_id=victim.id, xp=200, reason="恶意举报", admin_id=admin.id)
-    db.commit()
-    assert result == {"xp_before": 600, "xp_after": 400, "level_before": 3, "level_after": 2}
-    row = db.query(models.WebUser).filter(models.WebUser.id == victim.id).one()
-    assert row.points == 777  # 积分不动
-    log = db.query(models.GovernanceAuditLog).filter_by(action="downgrade").one()
-    detail = json.loads(log.detail)
-    assert detail["reason"] == "恶意举报" and detail["level_before"] == 3 and detail["level_after"] == 2
-    # 扣到 0 钳制，不扣成负数
-    result = governance.governance_downgrade(db, user_id=victim.id, xp=9999, reason="清零", admin_id=admin.id)
-    assert result["xp_after"] == 0 and result["level_after"] == 1
-    with pytest.raises(ValueError):
-        governance.governance_downgrade(db, user_id=victim.id, xp=0, reason="x", admin_id=admin.id)
-    with pytest.raises(ValueError):
-        governance.governance_downgrade(db, user_id=victim.id, xp=10, reason="  ", admin_id=admin.id)
-    with pytest.raises(ValueError):
-        governance.governance_downgrade(db, user_id=123456, xp=10, reason="x", admin_id=admin.id)
-
-
 def test_audit_log_filtered_read_and_stable_across_reads(db):
     admin = user(db, 900000, "admin")
     target = user(db, 900001, "target")
@@ -175,7 +156,8 @@ def test_admin_endpoints_and_route_registration(db):
     assert ("/api/admin/governance/audit-logs", ("GET",)) in paths
     assert ("/api/admin/governance/freeze", ("POST",)) in paths
     assert ("/api/admin/governance/freeze/release", ("POST",)) in paths
-    assert ("/api/admin/governance/downgrade", ("POST",)) in paths
+    # 降级端点已随等级体系删除（2026-11-14）
+    assert ("/api/admin/governance/downgrade", ("POST",)) not in paths
     assert not any(p.startswith("/api/admin/governance/audit-logs") and "DELETE" in m for p, m in paths)
     assert not any(p.startswith("/api/admin/governance/audit-logs") and "PUT" in m for p, m in paths)
 
@@ -199,10 +181,6 @@ def test_admin_endpoints_and_route_registration(db):
 
     logs = ga.governance_audit_logs(limit=50, current_admin=admin, db=db)
     assert any(item["action"] == "freeze" for item in logs["items"])
-
-    out = ga.governance_downgrade(ga.DowngradeRequest(user_id=target.id, xp=200, reason="恶意举报"),
-                                  current_admin=admin, db=db)
-    assert out["success"] is True and out["level_after"] == 2
 
     out = ga.governance_freeze_release(ga.FreezeReleaseRequest(user_id=target.id),
                                        current_admin=admin, db=db)

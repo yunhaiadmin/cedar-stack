@@ -3,8 +3,9 @@
 背景（2026-10-28 公益服货币系统设计）：
 - 购买开关关了，GET /payment/methods 仍硬编码 alipay/wxpay enabled=True，
   前端显示“可用”、用户点单才 503——列表必须跟开关走。
-- 新注册默认送 30 天公益资格（channel=register_gift）＋ 30 天查看行
-  （points_spent=0 标记赠送），均不扣积分；只改注册成功路径。
+- 新注册冷启动赠送：原送 30 天公益资格＋30 天查看行；公益资格已随
+  福利整族于 2026-11-14 删除，现只剩查看行赠送（points_spent=0
+  标记赠送，不扣积分），资格类配置键即使开着也绝不发放资格。
 
 只测本单两处改动：不碰购买流程、不碰现有用户行、不碰积分扣减逻辑。
 本地 Python 3.12 + pyshim 口径，全量以 GitHub CI 为准。
@@ -101,8 +102,9 @@ def test_payment_methods_purchase_on_qqpay_enabled(db):
 
 # ==================== 新注册冷启动赠送 ====================
 
-def test_grant_register_gifts_creates_both_rows_no_points_spent(db):
-    """开关开（新用户 0 分）：赠送后资格＋查看行齐全，积分一分没扣。"""
+def test_grant_register_gifts_creates_view_row_only_no_points_spent(db):
+    """凭证开关开（新用户 0 分）：只建查看行，资格绝不发放（资格赠送
+    已删除，register_gift_welfare_enabled 即使开着也无效），积分一分没扣。"""
     _set_config(db, "register_gift_welfare_enabled", "true")
     _set_config(db, "register_gift_view_enabled", "true")
     user = _make_user(db)
@@ -111,10 +113,8 @@ def test_grant_register_gifts_creates_both_rows_no_points_spent(db):
     after = datetime.now()
 
     db.refresh(user)
-    assert user.is_welfare is True
-    assert user.welfare_grant_channel == "register_gift"
-    assert before + timedelta(days=30) - timedelta(seconds=5) <= user.welfare_expires_at
-    assert user.welfare_expires_at <= after + timedelta(days=30) + timedelta(seconds=5)
+    assert not user.is_welfare
+    assert user.welfare_grant_channel != "register_gift"
     assert user.points == 0
 
     rows = (
@@ -129,14 +129,11 @@ def test_grant_register_gifts_creates_both_rows_no_points_spent(db):
 
 
 def test_grant_register_gifts_view_row_not_duplicated(db):
-    """开关开时重复赠送：查看行不重复建（唯一约束 user+realm），资格按
-    grant_welfare 语义在未过期到期日上累加，不缩短。"""
-    _set_config(db, "register_gift_welfare_enabled", "true")
+    """开关开时重复赠送：查看行不重复建（唯一约束 user+realm），
+    到期日不缩短；资格始终不发放。"""
     _set_config(db, "register_gift_view_enabled", "true")
     user = _make_user(db)
     _grant_register_gifts(db, user)
-    db.refresh(user)
-    first_expiry = user.welfare_expires_at
     first_view = (
         db.query(models.EmbyViewUnlock)
         .filter(models.EmbyViewUnlock.user_id == user.id)
@@ -153,7 +150,7 @@ def test_grant_register_gifts_view_row_not_duplicated(db):
     )
     assert len(rows) == 1
     assert rows[0].expires_at == first_view_expires
-    assert user.welfare_expires_at > first_expiry
+    assert not user.is_welfare
 
 
 def test_grant_register_gifts_existing_view_row_untouched(db):
@@ -181,7 +178,7 @@ def test_grant_register_gifts_existing_view_row_untouched(db):
     assert rows[0].points_spent == 50
 
 
-# ==================== 送资格总开关（2026-10-29 默认关） ====================
+# ==================== 资格赠送已删除（2026-11-14） ====================
 
 def _view_rows(db, user):
     return (
@@ -191,9 +188,11 @@ def _view_rows(db, user):
     )
 
 
-def test_grant_register_gifts_welfare_off_by_default(db):
-    """资格开关未配（默认关）：不送公益资格；凭证开关单独打开时
-    查看行照常建（points_spent=0）——两开关独立。"""
+def test_grant_register_gifts_welfare_never_granted(db):
+    """资格赠送已删除：资格开关/天数键无论怎么配都不送资格；
+    凭证开关单独打开时查看行照常建（points_spent=0）。"""
+    _set_config(db, "register_gift_welfare_enabled", "true")
+    _set_config(db, "register_gift_welfare_days", "30")
     _set_config(db, "register_gift_view_enabled", "true")
     user = _make_user(db)
     _grant_register_gifts(db, user)
@@ -206,35 +205,6 @@ def test_grant_register_gifts_welfare_off_by_default(db):
     rows = _view_rows(db, user)
     assert len(rows) == 1
     assert rows[0].points_spent == 0
-
-
-def test_grant_register_gifts_welfare_off_explicit_false(db):
-    """资格开关显式 false：资格不送；凭证开关打开时查看行照建。"""
-    _set_config(db, "register_gift_welfare_enabled", "false")
-    _set_config(db, "register_gift_view_enabled", "true")
-    user = _make_user(db)
-    _grant_register_gifts(db, user)
-
-    db.refresh(user)
-    assert not user.is_welfare
-    assert user.welfare_grant_channel != "register_gift"
-    assert len(_view_rows(db, user)) == 1
-
-
-def test_grant_register_gifts_days_zero_means_never_expires_when_on(db):
-    """天数 0 是“永不过期”不是关闭：开关开＋天数 0 时送的是永不过期
-    资格（到期日为空），查看行照建。关闭只能靠开关本身（见上面两测）。"""
-    _set_config(db, "register_gift_welfare_enabled", "true")
-    _set_config(db, "register_gift_view_enabled", "true")
-    _set_config(db, "register_gift_welfare_days", "0")
-    user = _make_user(db)
-    _grant_register_gifts(db, user)
-
-    db.refresh(user)
-    assert user.is_welfare is True
-    assert user.welfare_grant_channel == "register_gift"
-    assert user.welfare_expires_at is None
-    assert len(_view_rows(db, user)) == 1
 
 
 # ==================== 送凭证总开关（2026-10-29 默认关） ====================
@@ -260,15 +230,15 @@ def test_grant_register_gifts_view_off_explicit_false(db):
 
 
 def test_grant_register_gifts_welfare_on_view_off(db):
-    """新默认组合：资格开＋凭证关——资格照送（channel=register_gift），
-    查看行不建，积分一分没扣。"""
+    """资格键开＋凭证关：资格已删除不送、查看行不建，什么都不送，
+    积分一分没扣。"""
     _set_config(db, "register_gift_welfare_enabled", "true")
     user = _make_user(db)
     _grant_register_gifts(db, user)
 
     db.refresh(user)
-    assert user.is_welfare is True
-    assert user.welfare_grant_channel == "register_gift"
+    assert not user.is_welfare
+    assert user.welfare_grant_channel != "register_gift"
     assert user.points == 0
     assert _view_rows(db, user) == []
 
