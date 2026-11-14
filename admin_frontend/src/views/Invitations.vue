@@ -10,8 +10,17 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
-  AlertTriangle, Gift, Megaphone, Plus, QrCode, RefreshCw, Save, Search, UserPlus,
+  AlertTriangle, Coins, Gift, Megaphone, Plus, QrCode, RefreshCw, Save, Search, TrendingUp, UserPlus,
 } from 'lucide-vue-next'
+import {
+  fetchInviteOverview,
+  fetchInviteRebates,
+  settleInviteRebates,
+  updateTrialPolicy,
+  type InviteOverview,
+  type InviteRebateRow,
+  type InviteTrialPolicy,
+} from '@/api/inviteAdmin'
 import { EmptyState, PageHeader, SectionCard, StatTile } from '@/components/ui'
 import {
   fetchInvitations,
@@ -431,10 +440,139 @@ function codeBadge(state: string): string {
   return 'badge-warn'
 }
 
+// ===== 返利与福利邀请总览（2026-11-14 邀请全套单） =====
+// 返利比例/模式/分档阈值是钱包键，在「系统设置 → 钱包」改，本页只读展示
+// 当前口径；本页能写的是福利邀请（送试用）策略与待入账返利的补入账。
+const moneyOverview = ref<InviteOverview | null>(null)
+const moneyRebates = ref<InviteRebateRow[]>([])
+const moneyLoading = ref(false)
+const settling = ref(false)
+
+const yuanOfFen = (fen: number) =>
+  Number.isInteger(fen / 100) ? String(fen / 100) : (fen / 100).toFixed(2)
+
+const rebateConfigText = computed(() => {
+  const c = moneyOverview.value?.rebate_config
+  if (!c) return ''
+  if (c.mode === 'tiered') {
+    return `分档：每位好友累计付费前 ¥${yuanOfFen(c.tier_threshold_fen)} 返 ${c.percent}%，超出部分返 ${c.tier_percent}%`
+  }
+  const cap = c.cap_fen > 0 ? `，累计上限 ¥${yuanOfFen(c.cap_fen)}` : ''
+  return `一律比例：按好友付费金额的 ${c.percent}% 返利${cap}`
+})
+
+const conversionText = computed(() => {
+  const o = moneyOverview.value
+  if (!o) return '—'
+  return `${o.paid_invitees} 人 · ${(o.conversion_rate * 100).toFixed(1)}%`
+})
+
+const rebateColumns: DataColumn[] = [
+  { key: 'inviter_username', label: '邀请人', width: 130, mobile: 'title' },
+  { key: 'invitee_username', label: '好友', width: 130 },
+  { key: 'paid_amount', label: '好友实付（¥）', width: 110 },
+  { key: 'rebate_amount', label: '返利（¥）', width: 100 },
+  { key: 'status', label: '状态', width: 90 },
+  { key: 'created_at', label: '时间' },
+]
+
+const trialForm = reactive({ enabled: true, days: 0, monthly_limit: 2, min_paid_yuan: 10 })
+const trialSaving = ref(false)
+
+function fillTrialForm(p: InviteTrialPolicy) {
+  trialForm.enabled = p.enabled
+  trialForm.days = p.days
+  trialForm.monthly_limit = p.monthly_limit
+  trialForm.min_paid_yuan = p.min_paid_fen / 100
+}
+
+const trialDirty = computed(() => {
+  const p = moneyOverview.value?.trial_policy
+  if (!p) return false
+  return p.enabled !== trialForm.enabled
+    || p.days !== trialForm.days
+    || p.monthly_limit !== trialForm.monthly_limit
+    || Math.round(trialForm.min_paid_yuan * 100) !== p.min_paid_fen
+})
+
+async function loadInviteMoney() {
+  moneyLoading.value = true
+  try {
+    const [ov, reb] = await Promise.all([
+      fetchInviteOverview().catch(() => null),
+      fetchInviteRebates({ limit: 50 }).catch(() => null),
+    ])
+    if (ov) {
+      moneyOverview.value = ov
+      fillTrialForm(ov.trial_policy)
+    }
+    if (reb) moneyRebates.value = reb.rebates
+  } finally {
+    moneyLoading.value = false
+  }
+}
+
+async function settleRebates() {
+  const pending = moneyOverview.value?.rebate.pending_count ?? 0
+  try {
+    await ElMessageBox.confirm(
+      `把 ${pending} 笔待入账返利补进邀请人的钱包余额？钱包未就绪时补入账笔数为 0，不会丢账。`,
+      '补入账返利',
+      { type: 'warning', confirmButtonText: '补入账', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  settling.value = true
+  try {
+    const res = await settleInviteRebates()
+    ElMessage.success(`已补入账 ${res.settled} 笔，剩余待入账 ${res.pending_remaining} 笔`)
+    await loadInviteMoney()
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    settling.value = false
+  }
+}
+
+async function saveTrialPolicy() {
+  const effect = !trialForm.enabled || trialForm.days <= 0 || trialForm.monthly_limit <= 0
+    ? '保存后福利邀请不实际发放试用。'
+    : `保存后好友注册可得 ${trialForm.days} 天试用，每位邀请人每月 ${trialForm.monthly_limit} 次，资格门槛为累计付费 ¥${trialForm.min_paid_yuan}。`
+  try {
+    await ElMessageBox.confirm(
+      `${effect}只影响之后的新注册，已发放的试用不变。确认保存？`,
+      '修改福利邀请策略',
+      { type: 'warning', confirmButtonText: '确认保存', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  trialSaving.value = true
+  try {
+    const res = await updateTrialPolicy({
+      invite_trial_enabled: trialForm.enabled,
+      invite_trial_days: trialForm.days,
+      invite_welfare_monthly_limit: trialForm.monthly_limit,
+      invite_welfare_min_paid_fen: Math.round(trialForm.min_paid_yuan * 100),
+    })
+    if (moneyOverview.value) {
+      moneyOverview.value = { ...moneyOverview.value, trial_policy: res.policy }
+    }
+    fillTrialForm(res.policy)
+    ElMessage.success('福利邀请策略已保存')
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    trialSaving.value = false
+  }
+}
+
 function reloadAll() {
   load()
   loadCodes()
   loadPromotion()
+  loadInviteMoney()
 }
 
 onMounted(reloadAll)
@@ -455,6 +593,14 @@ onMounted(reloadAll)
     <section class="stat-row" aria-label="邀请概况">
       <StatTile label="累计邀请关系" :value="stats?.invitations ?? '—'" :icon="UserPlus" />
       <StatTile label="本页邀请记录" :value="inviteTotal" :icon="Gift" hint="最新 100 条" />
+      <StatTile label="已付费好友" :value="conversionText" :icon="TrendingUp" hint="付费转化（人数 · 比例）" />
+      <StatTile label="返利已入账" :value="moneyOverview ? `¥${moneyOverview.rebate.credited}` : '—'" :icon="Coins" />
+      <StatTile
+        label="返利待入账"
+        :value="moneyOverview ? `¥${moneyOverview.rebate.pending}` : '—'"
+        :icon="Coins"
+        :hint="moneyOverview ? `${moneyOverview.rebate.pending_count} 笔待入账` : undefined"
+      />
     </section>
 
     <!-- 页内锚点导航：5 个区块太长，点一下直达 -->
@@ -462,6 +608,7 @@ onMounted(reloadAll)
       <a href="#invite-codes">邀请码</a>
       <a href="#invite-records">邀请记录</a>
       <a href="#invite-promo">推广奖励</a>
+      <a href="#invite-rebate">返利与福利</a>
     </nav>
 
     <!-- 邀请码管理（v2.44.0）：筛选在左、批量生成在右 -->
@@ -672,6 +819,97 @@ onMounted(reloadAll)
           </template>
         </DataTable>
       </template>
+    </SectionCard>
+
+    <!-- 返利与福利邀请（2026-11-14）：返利总览 + 明细 + 补入账 + 送试用策略 -->
+    <SectionCard
+      id="invite-rebate"
+      title="返利与福利邀请"
+      :icon="Coins"
+      :meta="moneyOverview ? `已送出试用 ${moneyOverview.trial_grants} 次` : undefined"
+      description="返利只挂好友的真实付费：好友付费后按当前口径计提，进邀请人钱包余额。返利比例 / 模式 / 分档阈值在「系统设置 → 钱包」里改；这里管福利邀请（送好友试用）的策略与待入账返利的补入账。"
+      flush
+    >
+      <div class="promo-policy">
+        <div v-if="moneyOverview" class="promo-active-line">
+          <span class="au-badge au-badge-info">当前返利口径</span>
+          <span>{{ rebateConfigText }}</span>
+        </div>
+        <el-alert
+          v-if="moneyOverview?.burst_alerts.length"
+          type="warning"
+          show-icon
+          :closable="false"
+          :title="`异常聚集提示（${moneyOverview.burst_rule}，仅提示、需人工核查）`"
+        >
+          <template #default>
+            <span v-for="(a, i) in moneyOverview.burst_alerts" :key="a.inviter_id">
+              {{ a.inviter_username }}（近 7 天 {{ a.invited_7d }} 人）{{ i < moneyOverview.burst_alerts.length - 1 ? '；' : '' }}
+            </span>
+          </template>
+        </el-alert>
+
+        <el-form label-position="top" class="promo-form" :disabled="!canWrite || trialSaving" @submit.prevent>
+          <el-form-item label="福利邀请开关">
+            <el-switch v-model="trialForm.enabled" active-text="开启" inactive-text="关闭" />
+          </el-form-item>
+          <el-form-item label="好友试用天数（0 = 不发）">
+            <el-input-number v-model="trialForm.days" :min="0" :max="3650" :precision="0" aria-label="福利邀请试用天数" />
+            <span class="field-suffix">天</span>
+          </el-form-item>
+          <el-form-item label="每月可送次数（0 = 关闭）">
+            <el-input-number v-model="trialForm.monthly_limit" :min="0" :max="1000" :precision="0" aria-label="福利邀请每月次数" />
+            <span class="field-suffix">次/人</span>
+          </el-form-item>
+          <el-form-item label="邀请人资格门槛（累计付费）">
+            <el-input-number v-model="trialForm.min_paid_yuan" :min="0" :max="1000000" :precision="2" aria-label="福利邀请资格门槛" />
+            <span class="field-suffix">元</span>
+          </el-form-item>
+        </el-form>
+        <div class="promo-actions">
+          <span v-if="!canWrite" class="promo-hint">当前账号是只读角色，只能查看。</span>
+          <span v-else class="promo-hint">福利邀请 = 送好友试用（体验权益）；注册本身不发任何可变现奖励。</span>
+          <el-button
+            v-if="(moneyOverview?.rebate.pending_count ?? 0) > 0"
+            :loading="settling"
+            :disabled="!canWrite"
+            @click="settleRebates"
+          >
+            补入账待入账返利（{{ moneyOverview?.rebate.pending_count }} 笔）
+          </el-button>
+          <el-button
+            type="primary"
+            :icon="Save"
+            :loading="trialSaving"
+            :disabled="!canWrite || !trialDirty"
+            @click="saveTrialPolicy"
+          >
+            保存福利策略
+          </el-button>
+        </div>
+      </div>
+
+      <DataTable
+        class="flush-table"
+        :rows="moneyRebates"
+        :columns="rebateColumns"
+        :loading="moneyLoading"
+        empty="还没有返利记录"
+        empty-description="好友付费后，返利计提会出现在这里。"
+      >
+        <template #cell-inviter_username="{ row }">
+          <span class="user-name">{{ row.inviter_username }}</span>
+        </template>
+        <template #cell-invitee_username="{ row }">{{ row.invitee_username }}</template>
+        <template #cell-paid_amount="{ row }"><span class="num">{{ row.paid_amount }}</span></template>
+        <template #cell-rebate_amount="{ row }"><span class="amt-in">+{{ row.rebate_amount }}</span></template>
+        <template #cell-status="{ row }">
+          <span class="au-badge" :class="row.status === 'credited' ? 'au-badge-green' : 'badge-warn'">
+            {{ row.status === 'credited' ? '已入账' : '待入账' }}
+          </span>
+        </template>
+        <template #cell-created_at="{ row }"><span class="num">{{ fmtTime(row.created_at) }}</span></template>
+      </DataTable>
     </SectionCard>
 
     <!-- 批量生成邀请码 -->

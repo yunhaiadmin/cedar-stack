@@ -121,6 +121,7 @@ from backend.api.emby_portal import auth_router, password_reset_router
 from backend.api.account_security import platform_router, security_router
 from backend.api.economy import router as economy_router
 from backend.api.invitation import router as invitation_router
+from backend.api.admin_invitation import router as admin_invitation_router
 from backend.api.teams import router as teams_router
 from backend.api.welfare_reviews import router as welfare_reviews_router
 from backend.api.tg_bind import router as tg_bind_router
@@ -993,6 +994,7 @@ app.include_router(platform_router)
 # 用户经济系统（签到/兑换码/支付/订单）与邀请返利
 app.include_router(economy_router)
 app.include_router(invitation_router)
+app.include_router(admin_invitation_router)
 app.include_router(teams_router)
 app.include_router(welfare_reviews_router)
 app.include_router(tg_bind_router)
