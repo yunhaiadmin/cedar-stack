@@ -176,7 +176,6 @@ const navGroups: NavGroup[] = [
       { path: '/orders', label: '订单', icon: Receipt },
       { path: '/coupons', label: '优惠券', icon: TicketPercent },
       { path: '/invitations', label: '邀请与积分', icon: UserPlus },
-      { path: '/member-levels', label: '会员等级', icon: Medal },
       { path: '/agents', label: '代理分销', icon: HandCoins },
       { path: '/wallet', label: '钱包管理', icon: Wallet },
       { path: '/team-applications', label: '团队申请', icon: Users },
@@ -184,7 +183,7 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    // 求片 / 公告 / 工单都是「和用户对话」；公益服两页先并入内容组（批 2 再并为一入口）
+    // 求片 / 公告 / 工单都是「和用户对话」
     title: '内容',
     icon: MessageSquareDashed,
     items: [
@@ -194,8 +193,8 @@ const navGroups: NavGroup[] = [
       { path: '/tickets', label: '工单', icon: Ticket },
       // 等级治理：举报终审队列 + 治理停权（复核达标的举报在这里受理 / 驳回）
       { path: '/governance', label: '举报与停权', icon: Flag },
-      // 公益服：抽奖配置 / 积分配置（公益用户已并入「用户管理」，求片审核已并入「求片管理」）
-      { path: '/welfare-lottery-rounds', label: '公益服', icon: Trophy },
+      // 群抽奖：轮次配置与提案黑名单（公益配置已随公益资格整族删除）
+      { path: '/welfare-lottery-rounds', label: '群抽奖', icon: Trophy },
     ],
   },
   {

@@ -17,28 +17,18 @@
 /**
  * 「我的」页状态预警条：只吃父页（PersonalCenterView）已经加载好的账号
  * 数据，不自己发请求。触发口径：
- * - 活力低于可播下限（服务端 limit_threshold，缺省 3）：红色预警，
- *   写清暂时看不了片，并给恢复路（今天看片自动回 1 点）。
- * - 活力刚过下限 1 点内（默认 3–4）：黄色提醒，趁早补。
- * - 公益资格／付费会员 7 天内到期：黄色提醒到期日与续期入口（会员页
- *   现行续期／续费口径，不在这里新造逻辑）。
- * 任一数据拿不到就不出对应条，全部不触发时整块不渲染。
+ * - 付费会员 7 天内到期：黄色提醒到期日与续费入口（会员页现行续费
+ *   口径，不在这里新造逻辑）。
+ * 活力预警与公益资格到期提醒已随活力/公益资格整族于 2026-11-14 删除。
+ * 数据拿不到就不出条，不触发时整块不渲染。
  */
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { TriangleAlert } from 'lucide-vue-next'
 import type { MySubscription } from '@/api'
-import type { VitalityStatus } from '@/api/economy'
-
-interface WelfareState {
-  is_welfare: boolean
-  expires_at: string | null
-}
 
 const props = defineProps<{
   isFreeRealm: boolean
-  vitality: VitalityStatus | null
-  welfare: WelfareState | null
   activeSub: MySubscription | null
 }>()
 
@@ -50,52 +40,10 @@ interface AlertItem {
   action?: { to: string; label: string }
 }
 
-/** 距到期日的日历天数（按本地日期对齐，今天到期 = 0）；解析不了返回无穷大（不出提醒） */
-function daysUntil(iso: string): number {
-  const end = new Date(iso)
-  if (Number.isNaN(end.getTime())) return Number.POSITIVE_INFINITY
-  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-  return Math.round((startOfDay(end) - startOfDay(new Date())) / 86400000)
-}
-
 const alerts = computed<AlertItem[]>(() => {
   const out: AlertItem[] = []
-  // ── 活力（仅公益服；非公益服 vitality 恒为 null 自然不出） ──
-  const vit = props.isFreeRealm ? props.vitality : null
-  if (vit) {
-    const limit = vit.limit_threshold || 3
-    if (vit.vitality < limit) {
-      out.push({
-        key: 'vitality-danger',
-        level: 'danger',
-        title: '活力不足，暂时看不了片',
-        text: `当前活力 ${vit.vitality} 点，低于 ${limit} 点就播不了。今天看片能自动回 1 点。`,
-      })
-    } else if (vit.vitality <= limit + 1) {
-      out.push({
-        key: 'vitality-warn',
-        level: 'warn',
-        title: '活力偏低',
-        text: `当前活力 ${vit.vitality} 点，再掉就看不了片了。今天记得看片回 1 点。`,
-      })
-    }
-  }
-  // ── 到期（7 天内） ──
-  if (props.isFreeRealm) {
-    const w = props.welfare
-    if (w?.is_welfare && w.expires_at) {
-      const days = daysUntil(w.expires_at)
-      if (days >= 0 && days <= 7) {
-        out.push({
-          key: 'welfare-expiry',
-          level: 'warn',
-          title: days === 0 ? '公益资格今天到期' : `公益资格还有 ${days} 天到期`,
-          text: `资格到 ${w.expires_at.slice(0, 10)} 为止，断了就看不了片，趁现在续上。`,
-          action: { to: '/game/account/member', label: '去续期' },
-        })
-      }
-    }
-  } else if (props.activeSub && props.activeSub.days_left <= 7) {
+  // ── 订阅到期（7 天内） ──
+  if (!props.isFreeRealm && props.activeSub && props.activeSub.days_left <= 7) {
     // 公益服下 legacy 订阅记录不作数（与会员页同款设门）：只在付费服提醒
     const sub = props.activeSub
     out.push({

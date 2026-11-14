@@ -422,7 +422,8 @@ class CodeGenerateRequest(BaseModel):
     # 余额型（reward_type=balance）：入账面额（元），字符串收避免 float 丢精度
     balance_value: str = Field(default="0", max_length=32)
     discount_pct: int = Field(default=0, ge=0, le=100)
-    # G1 资格码：核销时打包首张查看行（仅 reward_type=welfare 时生效），默认开
+    # 历史字段：资格码打包查看行开关（资格码已下线，本字段不再生效，
+    # 保留收参兼容存量调用方，落库值仅作记录）
     welfare_include_view: bool = True
 
 
@@ -438,6 +439,9 @@ def generate_codes(
     if (request.reward_type or "").strip().lower() == "points":
         # 能量已随货币下线（2026-11-13）：能量卡码不可核销，不许再生成。
         raise HTTPException(status_code=400, detail="能量卡码已下线，不能再生成")
+    if (request.reward_type or "").strip().lower() == codes.REWARD_WELFARE:
+        # 公益资格已随福利整族下线（2026-11-14）：资格卡码不可核销，不许再生成。
+        raise HTTPException(status_code=400, detail="资格卡码已下线，不能再生成")
 
     days = request.days if request.days is not None else codes.DEFAULT_DAYS
     if request.code_type == codes.CODE_TYPE_WHITELIST:
@@ -457,19 +461,6 @@ def generate_codes(
     if not realms.get_realm(db, target_realm):
         raise HTTPException(status_code=400, detail=f"服不存在: #{target_realm}")
 
-    # G1 资格码月配额：只卡 reward_type=welfare（其余三类不计入也不受限）。
-    # 超限在生成前整批拒绝，不许生成一半才发现超额（见 codes 的配额口径：
-    # <=0 不限，缺失/非法回退 30）。
-    if request.reward_type == codes.REWARD_WELFARE:
-        quota = codes.welfare_code_monthly_quota(db)
-        if quota > 0:
-            used_this_month = codes.welfare_codes_created_this_month(db, current_admin.id)
-            if used_this_month + request.count > quota:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(f"资格码月配额已用尽：本月已生成 {used_this_month} 张，"
-                            f"每月上限 {quota} 张（可在公益配置里调整，填 0 不限）"))
-
     expires_at = datetime.now() + timedelta(days=request.expires_days)
     created = []
     for index in range(1, request.count + 1):
@@ -487,7 +478,7 @@ def generate_codes(
             raise HTTPException(status_code=500, detail="卡码生成冲突，请重试")
 
         # M1：校验奖励类型
-        if request.reward_type not in ("subscription", "points", "discount", "welfare", "balance"):
+        if request.reward_type not in ("subscription", "points", "discount", "balance"):
             raise HTTPException(status_code=400, detail="reward_type 非法")
         # 交叉校验「奖励类型 × 面额」：坏卡一旦入库，用户核销时才会失败
         # （见 codes.redeem_code 里的 points<=0 / pct<=0 or pct>=100 判断），
@@ -548,9 +539,7 @@ def generate_codes(
             "welfare_include_view": bool(request.welfare_include_view)})
     db.commit()
 
-    if request.reward_type == codes.REWARD_WELFARE:
-        gen_message = f"已生成 {len(created)} 个{type_name}（公益资格码）"
-    elif request.reward_type == codes.REWARD_BALANCE:
+    if request.reward_type == codes.REWARD_BALANCE:
         gen_message = f"已生成 {len(created)} 个{type_name}（余额码，面额 ¥{balance_amount:.2f}）"
     else:
         gen_message = f"已生成 {len(created)} 个{type_name}（「{realm_name}」的会员）"

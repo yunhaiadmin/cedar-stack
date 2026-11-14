@@ -1,15 +1,13 @@
 """等级公益服活动治理 Step 4：治理审计日志与停权工具（领域逻辑，无 HTTP）。
 
-约定与 ``member_level.add_xp`` 一致：**不提交事务**，只做写入／更新，
-由调用方统一 commit。
+约定：**不提交事务**，只做写入／更新，由调用方统一 commit。
 
 硬线（设计稿）：
 - 审计日志只追加、不改不删；Lv.6 与管理员只读可见。
 - 停权只冻结治理特权（权重／提案／复核／举报），保留基础附议 1 票与
   等级展示，不影响播放／查看／基础求片额度，不扣经验。
-- 降级仅管理员手动：走 ``add_xp`` 负数（source=governance_penalty），
-  理由必填，全程审计。
 - 治理动作不产生经验；经验绝不换积分／活力。
+- 降级（扣经验）已随等级体系于 2026-11-14 删除，不再提供。
 """
 
 from __future__ import annotations
@@ -21,7 +19,6 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from backend import models
-from backend.member_level import add_xp
 
 logger = logging.getLogger(__name__)
 
@@ -133,51 +130,6 @@ def release_governance_freeze(
     )
     logger.info("治理解封：用户 %s 被管理员 %s 解封", user_id, admin_id)
     return row
-
-
-def governance_downgrade(
-    db: Session,
-    *,
-    user_id: int,
-    xp: int,
-    reason: str,
-    admin_id: int,
-) -> dict:
-    """管理员手动降级：扣经验（钳制在 0）＋重算等级＋审计。理由必填。
-
-    只动经验与等级，不动积分／活力／其它权益。
-    """
-    if xp <= 0:
-        raise ValueError("扣减经验须为正数")
-    if not (reason or "").strip():
-        raise ValueError("降级理由必填")
-    user = db.query(models.WebUser).filter(models.WebUser.id == user_id).first()
-    if user is None:
-        raise ValueError("用户不存在")
-    level_before = user.member_level or 1
-    xp_before = user.member_xp or 0
-    add_xp(db, user, -xp, source="governance_penalty",
-           ref_id=f"governance:{admin_id}")
-    db.flush()
-    xp_after = int(
-        db.query(models.WebUser.member_xp).filter(models.WebUser.id == user_id).scalar() or 0
-    )
-    level_after = int(
-        db.query(models.WebUser.member_level).filter(models.WebUser.id == user_id).scalar() or 1
-    )
-    record_governance_audit(
-        db,
-        action=ACTION_DOWNGRADE,
-        actor_user_id=admin_id,
-        target_user_id=user_id,
-        detail={"reason": reason.strip(), "xp_deducted": xp,
-                "xp_before": xp_before, "xp_after": xp_after,
-                "level_before": level_before, "level_after": level_after},
-    )
-    logger.info("治理降级：用户 %s 被管理员 %s 扣 %s 经验（Lv%s -> Lv%s）",
-                user_id, admin_id, xp, level_before, level_after)
-    return {"xp_before": xp_before, "xp_after": xp_after,
-            "level_before": level_before, "level_after": level_after}
 
 
 def list_audit_logs(

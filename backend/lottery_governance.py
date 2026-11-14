@@ -54,7 +54,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend import governance, lottery, member_level, models
+from backend import governance, lottery, models
 from backend.api.admin_core import _audit
 # 注意：必须用 subscriptions.is_free_realm（无 realm_id 时解析为面板当前服）；
 # realms.is_free_realm(db, None) 会因查不到服而一律按 paid 处理，公益服下会误拦。
@@ -76,6 +76,10 @@ DEFAULT_PROPOSAL_CAP_BASE = 1
 DEFAULT_PROPOSAL_CAP_LV4 = 2
 DEFAULT_DIRECT_CAP_LV5 = 1
 DEFAULT_DIRECT_CAP_LV6 = 2
+
+# 等级阈值兜底（等级体系已于 2026-11-14 删除，member_levels 表不再有
+# 种子维护）：表里还有 active 行时按表算，表空时按这组原默认阈值算。
+_DEFAULT_LEVEL_THRESHOLDS = [(1, 0), (2, 100), (3, 500), (4, 1500), (5, 5000), (6, 15000)]
 
 # ---- SystemConfig 奖品上限键与默认值（A-101） ----
 KEY_PRIZE_DAYS_MAX = "lottery_governance_prize_days_max"
@@ -106,11 +110,11 @@ def _config_int(db: Session, key: str, default: int) -> int:
 
 
 def user_level(db: Session, user_id: int) -> int:
-    """按 member_xp 纯计算等级（不写库、不触发种子/迁移副作用）。
+    """按 member_xp 纯计算等级（不写库）。
 
-    阈值取 member_levels 表的 active 行；表空时回落 member_level.DEFAULT_LEVELS。
-    注意：不调用 member_level.get_member_info（它有种子写入副作用），
-    也不信任 web_users.member_level 缓存列（可能滞后）。
+    阈值取 member_levels 表的 active 行；表空时回落 _DEFAULT_LEVEL_THRESHOLDS
+    （原 member_level.DEFAULT_LEVELS 的阈值，等级体系删除后就地保留）。
+    不信任 web_users.member_level 缓存列（可能滞后）。
     """
     user = db.query(models.WebUser).filter(models.WebUser.id == user_id).first()
     if user is None:
@@ -125,7 +129,7 @@ def user_level(db: Session, user_id: int) -> int:
     thresholds = (
         [(lv.level, lv.xp_threshold or 0) for lv in levels]
         if levels
-        else [(lv["level"], lv["xp_threshold"]) for lv in member_level.DEFAULT_LEVELS]
+        else list(_DEFAULT_LEVEL_THRESHOLDS)
     )
     level = 1
     for lv, threshold in thresholds:

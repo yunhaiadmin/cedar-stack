@@ -1,15 +1,14 @@
 # -*- coding: utf-8 -*-
-"""资格码（reward_type=welfare）回归：卡码直发公益资格＋打包查看行。
+"""资格码（reward_type=welfare）已下线回归（2026-11-14 公益资格整族删除）。
 
-定版口径（2026-10-30 用户亲点 G1）：
-- 核销后发 N 天公益资格（复用 grant_welfare 单一入口，channel=code_redeem）；
-- 生成时带「打包查看凭证」开关（默认开）：核销时 EmbyViewUnlock 行同天数
-  一并到账（同一事务），points_spent=0 标记赠送（同注册赠送口径）；
-- 防倒卖沿用既有码体系：指名（target_username）、一码一用、过期作废；
-- 管理员月配额 welfare_code_monthly_quota（默认 30，<=0 不限）只卡资格码。
+新口径：
+- 存量资格码核销直接拒绝、不烧码（与能量码同口径），不发资格、不打包
+  查看行；生成端同样拒绝（400）。
+- 白名单码与 reward_type 无关：welfare 型白名单码仍按 code_type 走
+  长期有效（订阅＋查看行永久），只是不再含公益资格一处。
+- 其余奖励类型（subscription/points）行为不变。
 """
 import os
-from datetime import datetime, timedelta
 
 os.environ.setdefault("DATABASE_TYPE", "sqlite")
 os.environ.setdefault("REDIS_ENABLED", "false")
@@ -66,203 +65,58 @@ def _unlock(db, user_id):
         models.EmbyViewUnlock.user_id == user_id).first()
 
 
-# ==================== 核销：资格到账 ====================
+# ==================== 核销：资格码已下线 ====================
 
-def test_welfare_code_grants_welfare(db):
+def test_welfare_code_rejected_without_burning(db):
+    """存量资格码核销：直接拒绝、不烧码、不发资格、不建查看行。"""
     user = _make_user(db, "alice")
-    _make_code(db, "WEL-AAAA")
+    code = _make_code(db, "WEL-AAAA")
     result = codes.redeem_code(db, user, "WEL-AAAA")
     db.commit()
-    assert result["success"] is True
-    assert result["reward_type"] == "welfare"
-    db.refresh(user)
-    assert user.is_welfare is True
-    assert user.welfare_expires_at is not None
-    assert user.welfare_expires_at > datetime.now() + timedelta(days=29)
-    log = db.query(models.WelfareGrantLog).filter(
-        models.WelfareGrantLog.user_id == user.id).first()
-    assert log is not None and log.channel == "code_redeem" and log.days == 30
-
-
-def test_welfare_code_bundles_view_unlock_by_default(db):
-    user = _make_user(db, "alice")
-    _make_code(db, "WEL-BBBB")
-    result = codes.redeem_code(db, user, "WEL-BBBB")
-    db.commit()
-    assert result["success"] is True
-    assert result.get("view_bundled") is True
-    row = _unlock(db, user.id)
-    assert row is not None
-    assert row.points_spent == 0
-    assert row.expires_at is not None
-    assert row.expires_at > datetime.now() + timedelta(days=29)
-
-
-def test_welfare_code_without_view_bundle(db):
-    user = _make_user(db, "alice")
-    _make_code(db, "WEL-CCCC", welfare_include_view=False)
-    result = codes.redeem_code(db, user, "WEL-CCCC")
-    db.commit()
-    assert result["success"] is True
-    assert result.get("view_bundled") is False
-    assert _unlock(db, user.id) is None
-    db.refresh(user)
-    assert user.is_welfare is True
-
-
-def test_welfare_code_extends_existing_view_unlock(db):
-    user = _make_user(db, "alice")
-    now = datetime.now()
-    db.add(models.EmbyViewUnlock(
-        user_id=user.id, realm_id=1, unlocked_at=now - timedelta(days=20),
-        expires_at=now + timedelta(days=10), points_spent=50))
-    db.commit()
-    _make_code(db, "WEL-DDDD")
-    result = codes.redeem_code(db, user, "WEL-DDDD")
-    db.commit()
-    assert result["success"] is True
-    row = _unlock(db, user.id)
-    # 在原到期上叠 30 天（≈40 天后），不是从今天重算 30 天
-    assert row.expires_at > now + timedelta(days=39)
-
-
-def test_welfare_code_stacks_on_existing_welfare(db):
-    user = _make_user(db, "alice", is_welfare=True,
-                      welfare_expires_at=datetime.now() + timedelta(days=5))
-    _make_code(db, "WEL-EEEE")
-    result = codes.redeem_code(db, user, "WEL-EEEE")
-    db.commit()
-    assert result["success"] is True
-    db.refresh(user)
-    assert user.welfare_expires_at > datetime.now() + timedelta(days=34)
-
-
-# ==================== 核销：防倒卖口径 ====================
-
-def test_named_welfare_code_rejected_for_other_user(db):
-    alice = _make_user(db, "alice")
-    bob = _make_user(db, "bob")
-    code = _make_code(db, "WEL-NAME", target_username="alice")
-    result = codes.redeem_code(db, bob, "WEL-NAME")
-    db.rollback()
     assert result["success"] is False
-    assert result.get("error_code") == codes.CODE_ERROR_NAMED_OTHER
-    db.refresh(bob)
-    assert not bob.is_welfare
+    assert "下线" in result["message"]
+    db.refresh(user)
+    assert not user.is_welfare
+    assert _unlock(db, user.id) is None
     db.refresh(code)
     assert (code.use_count or 0) == 0
-    # 指名本人可用
-    result2 = codes.redeem_code(db, alice, "WEL-NAME")
+
+
+def test_whitelist_code_with_welfare_flavor_still_permanent(db):
+    """白名单码语义只看 code_type：welfare 型白名单码照常置长期有效
+    （订阅＋查看行永久），但不再发公益资格。"""
+    user = _make_user(db, "bob")
+    _make_code(db, "VIP-AAAA", code_type=codes.CODE_TYPE_WHITELIST)
+    result = codes.redeem_code(db, user, "VIP-AAAA")
     db.commit()
-    assert result2["success"] is True
-
-
-def test_welfare_code_single_use(db):
-    alice = _make_user(db, "alice")
-    bob = _make_user(db, "bob")
-    _make_code(db, "WEL-ONCE")
-    assert codes.redeem_code(db, alice, "WEL-ONCE")["success"] is True
-    db.commit()
-    again = codes.redeem_code(db, bob, "WEL-ONCE")
-    db.rollback()
-    assert again["success"] is False
-    # 既有全类型口径：max_uses 用满即自动停用，第二人命中的是「已停用」
-    # （或抢占失败的「已用尽」），两种都算明确拒绝、不发奖
-    assert again.get("error_code") in (codes.CODE_ERROR_USED_UP, codes.CODE_ERROR_DISABLED)
-    self_again = codes.redeem_code(db, alice, "WEL-ONCE")
-    db.rollback()
-    assert self_again["success"] is False
-
-
-def test_expired_welfare_code_rejected(db):
-    user = _make_user(db, "alice")
-    _make_code(db, "WEL-OLD", expires_at=datetime.now() - timedelta(days=1))
-    result = codes.redeem_code(db, user, "WEL-OLD")
-    db.rollback()
-    assert result["success"] is False
-    assert result.get("error_code") == codes.CODE_ERROR_EXPIRED
+    assert result["success"] is True
+    sub = db.query(models.UserSubscription).filter(
+        models.UserSubscription.user_id == user.id).first()
+    assert sub is not None
+    unlock = _unlock(db, user.id)
+    assert unlock is not None
+    assert unlock.expires_at is None
     db.refresh(user)
     assert not user.is_welfare
 
 
-def test_welfare_code_preview(db):
-    _make_user(db, "alice")
-    _make_code(db, "WEL-PREV")
-    preview = codes.preview_code(db, "WEL-PREV", "alice")
-    assert preview["valid"] is True
-    assert preview["reward_type"] == "welfare"
-
-
-# ==================== 生成：配额 ====================
+# ==================== 生成：资格码已下线 ====================
 
 @pytest.fixture()
 def admin(db):
     return _make_user(db, "admin_test", is_staff=True, is_active=True)
 
 
-def _gen_request(**overrides):
-    payload = {"count": 1, "code_type": 2, "reward_type": "welfare", "days": 30}
-    payload.update(overrides)
-    return ops.CodeGenerateRequest(**payload)
-
-
-def _set_quota(db, value):
-    row = db.query(models.SystemConfig).filter(
-        models.SystemConfig.key == "welfare_code_monthly_quota").first()
-    if row is None:
-        db.add(models.SystemConfig(key="welfare_code_monthly_quota", value=str(value)))
-    else:
-        row.value = str(value)
-    db.commit()
-
-
-def test_generate_welfare_code_stores_bundle_flag(db, admin):
-    res = ops.generate_codes(_gen_request(welfare_include_view=False), admin, db)
-    assert res["success"] is True
-    code = db.query(models.RegistrationCode).filter(
-        models.RegistrationCode.reward_type == "welfare").first()
-    assert code is not None
-    assert code.welfare_include_view is False
-
-
-def test_generate_welfare_code_quota_blocks_over_limit(db, admin):
-    _set_quota(db, 1)
-    assert ops.generate_codes(_gen_request(), admin, db)["success"] is True
+def test_generate_welfare_code_rejected(db, admin):
+    req = ops.CodeGenerateRequest(
+        count=1, code_type=2, reward_type="welfare", days=30)
     with pytest.raises(HTTPException) as exc:
-        ops.generate_codes(_gen_request(), admin, db)
+        ops.generate_codes(req, admin, db)
     assert exc.value.status_code == 400
+    assert db.query(models.RegistrationCode).count() == 0
 
 
-def test_generate_welfare_code_quota_counts_batch(db, admin):
-    _set_quota(db, 2)
-    with pytest.raises(HTTPException) as exc:
-        ops.generate_codes(_gen_request(count=3), admin, db)
-    assert exc.value.status_code == 400
-    assert ops.generate_codes(_gen_request(count=2), admin, db)["success"] is True
-
-
-def test_generate_welfare_code_quota_zero_means_unlimited(db, admin):
-    _set_quota(db, 0)
-    assert ops.generate_codes(_gen_request(count=5), admin, db)["success"] is True
-
-
-def test_generate_quota_only_applies_to_welfare(db, admin):
-    _set_quota(db, 1)
-    assert ops.generate_codes(_gen_request(), admin, db)["success"] is True
-    # 其他类型不受配额影响
-    res = ops.generate_codes(
-        _gen_request(reward_type="subscription", count=3), admin, db)
-    assert res["success"] is True
-
-
-def test_generate_quota_is_per_admin(db, admin):
-    other_admin = _make_user(db, "admin_two", is_staff=True, is_active=True)
-    _set_quota(db, 1)
-    assert ops.generate_codes(_gen_request(), admin, db)["success"] is True
-    assert ops.generate_codes(_gen_request(), other_admin, db)["success"] is True
-
-
-# ==================== 既有三类码不回归（抽样） ====================
+# ==================== 既有码类不回归（抽样） ====================
 
 def test_subscription_code_still_grants_membership(db):
     user = _make_user(db, "alice")

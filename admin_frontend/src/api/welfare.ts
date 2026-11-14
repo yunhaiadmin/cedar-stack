@@ -1,18 +1,9 @@
-/** 公益服管理后台 API（全部走 /api/admin/welfare/*） */
+/** 群抽奖/机器人配置管理后台 API（全部走 /api/admin/welfare/*，历史路径名） */
 import { del, get, post, put } from '@/utils/request'
 
 const E = '/welfare'
 
-// ==================== 公益用户操作（v2.55 用户列表已并入用户管理，列表接口停用） ====================
-
-export const grantWelfare = (data: { user_id: number; days: number; channel?: string }) =>
-  post<{ success: boolean; expires_at: string | null }>(`${E}/grant`, data)
-
-export const revokeWelfare = (user_id: number) =>
-  post<{ success: boolean }>(`${E}/revoke`, { user_id })
-
-export const bulkExtendWelfare = (data: { min_expired_days: number; max_expired_days: number; add_days: number }) =>
-  post<{ success: boolean; affected: number }>(`${E}/bulk-extend`, data)
+// 公益用户操作（grant/revoke/bulk-extend）已随公益资格整族于 2026-11-14 删除。
 
 // ==================== 抽奖 ====================
 // 注：求片审核已并入「求片管理」（MediaSeek.vue），welfare.ts 不再保留求片 API。

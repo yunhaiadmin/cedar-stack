@@ -105,9 +105,12 @@ def _user_app(db, user):
     return TestClient(app)
 
 
-# ---------------- F1：兑换码权益与会员折扣叠加 ----------------
+# ---------------- F1：兑换码权益（等级折扣已随等级体系删除） ----------------
 
-def test_credit_stacks_with_member_discount(db):
+def test_credit_applies_without_member_discount(db):
+    # 等级体系已删除（2026-11-14）：member_levels 行即使还在库里也不再生
+    # 效——只算兑换权益：100 的 80% 实付，总优惠 20；member_discount_*
+    # 出参字段保留兼容、恒 0。
     u = _make_user(db)
     _make_level(db, level=3, discount_pct=5)
     plan = _make_plan(db, price=100, days=30)
@@ -119,12 +122,11 @@ def test_credit_stacks_with_member_discount(db):
         json={"kind": "subscription", "item_id": plan.id})
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    # 会员折扣 5%：100 -> 95；权益 80%：95 -> 76；总优惠 24
-    assert body["member_discount_pct"] == 5
-    assert body["member_discount_amount"] == 5.0
+    assert body["member_discount_pct"] == 0
+    assert body["member_discount_amount"] == 0.0
     assert body["exchange_discount_pct"] == 80
-    assert body["discount_amount"] == 24.0
-    assert body["amount"] == 76.0
+    assert body["discount_amount"] == 20.0
+    assert body["amount"] == 80.0
     assert body["list_price"] == 100.0
 
 
@@ -158,11 +160,11 @@ def test_quote_empty_code_applies_auto_credit(db):
         json={"code": "", "kind": "subscription", "item_id": plan.id})
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    # 与下单口径一致：会员折扣 5 + 权益（95 的 80% 实付）= 总优惠 24，实付 76
-    assert body["member_discount_pct"] == 5
+    # 与下单口径一致：无等级折扣，只算权益（100 的 80% 实付）= 总优惠 20，实付 80
+    assert body["member_discount_pct"] == 0
     assert body["exchange_discount_pct"] == 80
-    assert body["discount_amount"] == 24.0
-    assert body["paid_amount"] == 76.0
+    assert body["discount_amount"] == 20.0
+    assert body["paid_amount"] == 80.0
 
 
 def test_quote_empty_code_recharge_still_requires_code(db):

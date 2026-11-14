@@ -21,7 +21,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend import member_level as ml
 from backend import models
 from backend.api import economy
 from backend.notifications import AdminEvent
@@ -36,7 +35,6 @@ def db():
     )
     models.Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
-    ml.ensure_member_levels_seeded(session)
     try:
         yield session
     finally:
@@ -69,16 +67,11 @@ def _partial_items(pending):
 def test_recharge_xp_failure_not_silent(db, monkeypatch):
     """能量充值已下线：充值单履约直接显性失败，不再自动发能量。
 
-    经验累加/返利路径根本走不到——订单保持 pending、不发任何通知，
-    由人工补单通道处理，不静默吞单。
+    经验累加（已随等级体系删除）/返利路径根本走不到——订单保持
+    pending、不发任何通知，由人工补单通道处理，不静默吞单。
     """
     u = _make_user(db, "r39xp")
     o = _make_recharge_order(db, u)
-
-    def _boom(*a, **k):
-        raise RuntimeError("xp boom")
-
-    monkeypatch.setattr(ml, "add_xp", _boom)
 
     with pytest.raises(economy.FulfillmentError, match="能量充值已下线"):
         economy._fulfill_order(db, recharge_order=o)
@@ -138,8 +131,9 @@ def test_recharge_happy_path_no_partial_message(db):
     assert u.member_xp == 0
 
 
-def test_subscription_xp_failure_not_silent(db, monkeypatch):
-    """订阅履约的经验失败：同样要通知到付款用户。"""
+def test_subscription_fulfillment_has_no_xp_leg(db, monkeypatch):
+    """订阅履约不再有经验腿（等级体系已删除）：履约成功、订阅到账，
+    不产生「经验发放失败」类 FULFILL_PARTIAL 通知。"""
     u = _make_user(db, "r39sub")
     plan = models.SubscriptionPlan(name="月卡", price=30, duration_days=30)
     db.add(plan)
@@ -149,19 +143,13 @@ def test_subscription_xp_failure_not_silent(db, monkeypatch):
     db.add(o)
     db.commit()
 
-    def _boom(*a, **k):
-        raise RuntimeError("sub xp boom")
-
-    monkeypatch.setattr(ml, "add_xp", _boom)
-
     pending = economy._fulfill_order(db, subscription_order=o)
     db.commit()
 
     db.refresh(o)
     assert o.status == "paid"
-    partials = _partial_items(pending)
-    assert len(partials) == 1
-    assert partials[0]["user_id"] == u.id
-    assert "经验" in partials[0]["title"]
+    assert _partial_items(pending) == []
     assert any(p.get("event_type") == "economy.subscription_success"
                for p in pending)
+    db.refresh(u)
+    assert (u.member_xp or 0) == 0
