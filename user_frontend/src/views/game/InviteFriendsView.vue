@@ -5,10 +5,8 @@
         <ChevronLeft :size="22" aria-hidden="true" />
         <span>邀请好友</span>
       </RouterLink>
-      <RouterLink to="/library" class="iv-watch">
-        <Play :size="15" class="iv-watch__icon" aria-hidden="true" />
-        <span>网页观影</span>
-      </RouterLink>
+      <!-- 「网页观影」钮已删（2026-11-14 顶栏统一单）：由 App.vue 统一
+           顶栏的常驻胶囊承接，本页不再自带一份（原 42px，与全站 54px 不一致） -->
     </header>
 
     <main class="iv-body">
@@ -93,7 +91,7 @@
  */
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { ChevronLeft, Play } from 'lucide-vue-next'
+import { ChevronLeft } from 'lucide-vue-next'
 import { inviteApi, type InvitationRecordRow, type MyInviteInfo } from '@/api/economy'
 import { useToast } from '@/composables/useToast'
 import './invite-friends.css'

@@ -37,37 +37,6 @@ html[data-theme='light'] .iv-page {
   gap: 12px;
 }
 
-/* 网页观影胶囊：与「我的」页同款彩虹描边（padding-box 填充＋border-box 描边） */
-.iv-watch {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 42px;
-  padding: 0 18px;
-  border: 1.5px solid transparent;
-  border-radius: 999px;
-  background:
-    linear-gradient(#312d2e, #312d2e) padding-box,
-    var(--uhd-rainbow) border-box;
-  color: #ffffff;
-  font-size: 15px;
-  font-weight: var(--uhd-fw-semibold);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-html[data-theme='light'] .iv-watch {
-  background:
-    linear-gradient(180deg, #fdf8f8 0%, #f9f1f1 100%) padding-box,
-    var(--uhd-rainbow) border-box;
-  color: #111111;
-}
-
-.iv-watch__icon {
-  color: #e8766f;
-  fill: #e8766f;
-}
-
 .iv-rule-sub {
   margin: 14px 0 6px;
   font-size: 14.5px;
