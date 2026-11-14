@@ -359,9 +359,9 @@ def sync_seek_library_row(db: Session, row: models.MovieRequest) -> bool:
         return False
     if not row.tmdb_id:
         return False
-    # 延迟导入：api.store 会拉起 api.user（它反过来 import 本模块），
-    # 顶层导入必成环；与 library_hit 的延迟导入同一先例。
-    from backend.api.store import find_library_item
+    # 延迟导入：api.store_requests 会拉起 api.user（它反过来 import
+    # 本模块），顶层导入必成环；与 library_hit 的延迟导入同一先例。
+    from backend.api.store_requests import find_library_item
 
     if find_library_item(db, row.tmdb_id) is None:
         return False

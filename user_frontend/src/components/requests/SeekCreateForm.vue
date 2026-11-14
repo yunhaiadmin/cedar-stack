@@ -88,14 +88,6 @@
         <b>{{ picked.name }}</b>
         <span class="rf-picked__meta">{{ picked.year }} · {{ picked.kind === 'movie' ? '电影' : '剧集' }}</span>
       </div>
-      <button
-        v-if="picked.in_library && !wantedIds.has(picked.tmdb_id)"
-        type="button"
-        class="rf-picked__want"
-        :disabled="wanting === picked.tmdb_id"
-        @click="doWant(picked)"
-      >{{ wanting === picked.tmdb_id ? '想看中…' : '想看' }}</button>
-      <span v-else-if="picked.in_library" class="rf-picked__wanted">已想看</span>
       <button type="button" class="rf-picked__change" @click="clearPick">换一部</button>
     </div>
 
@@ -135,7 +127,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  mediaSeekApi, storeApi,
+  mediaSeekApi,
   type HotMediaSeekRequest, type MediaSeekCandidate, type MediaSeekRequest, type TvSeason,
 } from '@/api'
 import { imageAuthUrl } from '@/api/emby'
@@ -147,16 +139,12 @@ const props = defineProps<{
   myRequests: MediaSeekRequest[]
   /** 众人榜（查重提示用，由父页拉取后传入） */
   hotRequests: HotMediaSeekRequest[]
-  /** 已想看的 tmdb 集合（父页在库候选「想看」后同步） */
-  wantedIds: Set<string>
   /** 外部预填片名（/want?q= 深链）：父页透传 route.query.q */
   prefill?: string
 }>()
 const emit = defineEmits<{
   /** 提交完成：created=true 为新建（requestId 为新行 id）；created=false 为转附议/重名 */
   submitted: [payload: { created: boolean; requestId?: number; message?: string }]
-  /** 已在库候选点了「想看」：父页同步 wantedIds */
-  wanted: [tmdbId: string]
 }>()
 
 const router = useRouter()
@@ -182,7 +170,6 @@ const seasonsError = ref('')
 const seasonsLoaded = ref(false)
 const seasonAll = ref(true)
 const chosenSeasons = ref<number[]>([])
-const wanting = ref('')
 
 let searchTimer: ReturnType<typeof setTimeout> | undefined
 let searchSeq = 0
@@ -362,21 +349,6 @@ function toggleSeason(n: number): void {
   else chosenSeasons.value.push(n)
   if (chosenSeasons.value.length === 0) seasonAll.value = true
 }
-async function doWant(c: MediaSeekCandidate): Promise<void> {
-  if (wanting.value) return
-  wanting.value = c.tmdb_id
-  try {
-    const r = await storeApi.postWant(c.tmdb_id)
-    toast.success(r.message || '已加入想看')
-    if (r.state !== 'failed' && r.state !== 'missing_source') emit('wanted', c.tmdb_id)
-  } catch (e) {
-    const d = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
-    toast.error(typeof d === 'string' ? d : humanizeError(e))
-  } finally {
-    wanting.value = ''
-  }
-}
-
 async function submitSeek(): Promise<void> {
   if (picked.value && picked.value.in_library) {
     resetForm()
@@ -554,9 +526,6 @@ watch(
 .rf-picked__info { flex: 1; min-width: 0; }
 .rf-picked__info b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rf-picked__meta { font-size: 11px; color: #9ca3af; margin-top: 2px; display: block; }
-.rf-picked__want { font-size: 12px; font-weight: 700; color: #111; background: #fbfcfd; border: 1px solid #fbfcfd; border-radius: 20px; padding: 4px 10px; cursor: pointer; white-space: nowrap; }
-.rf-picked__want:disabled { opacity: 0.6; cursor: default; }
-.rf-picked__wanted { font-size: 12px; color: #9ca3af; white-space: nowrap; }
 .rf-picked__change { font-size: 12px; color: #6ea8fe; background: transparent; border: 1px solid #6ea8fe; border-radius: 20px; padding: 4px 10px; cursor: pointer; white-space: nowrap; }
 
 .rf-seasons { display: flex; flex-direction: column; gap: 8px; }
@@ -605,7 +574,6 @@ html[data-theme='light'] .rf-chip--gray { background: #f5f5f5; color: #6b7280; b
 html[data-theme='light'] .rf-chip--green { background: #e8f0e9; color: #16a34a; border-color: #16a34a; }
 html[data-theme='light'] .rf-picked { background: #f9f9f9; border-color: #e5e5e5; }
 html[data-theme='light'] .rf-picked__want { background: #111111; color: #ffffff; border-color: #111111; }
-html[data-theme='light'] .rf-picked__wanted { color: #6b7280; }
 html[data-theme='light'] .rf-picked__change { color: #2563eb; border-color: #2563eb; }
 html[data-theme='light'] .rf-seasons__label { color: #111111; }
 html[data-theme='light'] .rf-chipbtn { background: #f5f5f5; color: #55575c; border-color: #e5e5e5; }

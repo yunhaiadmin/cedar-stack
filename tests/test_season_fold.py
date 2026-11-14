@@ -410,7 +410,7 @@ def test_copies_rebased(db):
 
 
 def test_hosted_primary_season_guid(db):
-    from backend.emby_server.upstream_import import hosted_season_guid
+    from backend.emby_server.season_fold import hosted_season_guid
     p = _series(db, "托管剧", tmdb=None, year=2023, source_id=9)
     s2 = _series(db, "托管剧第二季", tmdb=None, year=2023, source_id=9)
     s2s = _season(db, s2, 1)

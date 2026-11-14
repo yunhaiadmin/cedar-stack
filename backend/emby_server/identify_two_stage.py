@@ -365,24 +365,8 @@ def extract_binding(item, fetched: dict) -> Optional[dict]:
         "item_type": getattr(item, "item_type", None),
         "item_title": getattr(item, "name", None),
     }
-    # AI 提名标记透传（清单第 17 项）：未来 AI 提名器经 fetched 带
-    # ai_suggested / ai_sources / ai_weight；不带时证据形状与今天逐字
-    # 一致，政策门对现行行为零影响。
-    if "ai_suggested" in fetched:
-        evidence["ai_suggested"] = bool(fetched.get("ai_suggested"))
-    # 人工拍板标记透传（接线批）：已批的 AI 建议落库时带
-    # human_approved，门拒不再适用（人定了、AI 只是提名）；未拍板时
-    # 不带此键，门行为与今天逐字一致。
-    if fetched.get("human_approved"):
-        evidence["human_approved"] = True
-        if fetched.get("approved_by"):
-            evidence["approved_by"] = str(fetched.get("approved_by"))
-    if fetched.get("ai_sources") is not None:
-        evidence["sources"] = list(fetched.get("ai_sources") or [])
-    elif fetched.get("sources") is not None:
+    if fetched.get("sources") is not None:
         evidence["sources"] = list(fetched.get("sources") or [])
-    if fetched.get("ai_weight") is not None:
-        evidence["ai_weight"] = fetched.get("ai_weight")
     return {
         "provider": provider,
         "external_id": external_id,
@@ -775,11 +759,6 @@ def apply_identity(db, item, fetched: dict, tmdb_details_fetcher=None) -> Option
     身份却无 IMDb 身份时，用它显式解析一步（见 resolve_imdb_id）；
     解析不到不改任何已有值，开关语义与此前逐字一致。
 
-    AI 政策门（清单第 17 项，开关 ENRICH_AI_POLICY_ENABLED 默认关）：
-    开时纯 AI 提名的绑定一律拒绝落库（返回 None，走现行审查 / none
-    终态）；AI 与非 AI 证据并存时落库，但证据里的 ai_weight 钳制到 0.2。
-    例外（接线批）：fetched 带 human_approved 时是人工已拍板的建议，
-    裁决权在人不在 AI，门拒不再适用（权重仍钳制到 0.2）。
     """
     binding = extract_binding(item, fetched)
     if binding is not None and binding.get("provider") == "douban":
@@ -845,17 +824,6 @@ def apply_identity(db, item, fetched: dict, tmdb_details_fetcher=None) -> Option
                             getattr(item, "id", "?"), binding["tmdb_id"],
                             _title_reason)
                         return None
-    from backend.emby_server import ai_policy as _aip
-
-    if _aip.ai_policy_enabled():
-        verdict = _aip.evaluate_binding_evidence(binding["evidence"])
-        if not verdict["allowed"] and not binding["evidence"].get("human_approved"):
-            logger.warning(
-                "AI 政策门拒绝纯 AI 绑定 id=%s reason=%s",
-                item.id, verdict["reason"])
-            return None
-        if verdict["ai_weight"] is not None:
-            binding["evidence"]["ai_weight"] = verdict["ai_weight"]
     if binding.get("tmdb_id") and not binding.get("imdb_id"):
         resolved, source = resolve_imdb_id(item, fetched, tmdb_details_fetcher)
         if resolved:

@@ -21,7 +21,6 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend import models as base_models
-from backend.api import admin_upstream_sources as admin_ups
 from backend.emby_server import models as em
 from backend.emby_server import upstream_sources as ups
 
@@ -42,11 +41,6 @@ def db(db_factory):
     session = db_factory()
     yield session
     session.close()
-
-
-@pytest.fixture()
-def staff():
-    return SimpleNamespace(id=7, is_staff=True, username="admin")
 
 
 def _create(db, **kw):
@@ -237,57 +231,6 @@ def test_extra_headers_must_be_string_object(db):
 
 
 # ---------- 管理端 CRUD（直接调函数，与审查队列测试同口径） ----------
-
-def test_admin_crud_end_to_end(db, staff):
-    created = admin_ups.create_upstream_source(
-        admin_ups.UpstreamSourceCreateRequest(
-            name="管理端源", source_type="jellyfin",
-            base_url="https://jf.example.com", auth_method="api_key",
-            secret="jf-token"), staff=staff, db=db)
-    assert created["enabled"] is False
-    assert created["has_secret"] is True
-    source_id = created["id"]
-
-    listed = admin_ups.list_upstream_sources(staff=staff, db=db)
-    assert [item["id"] for item in listed["items"]] == [source_id]
-
-    enabled = admin_ups.enable_upstream_source(source_id, staff=staff, db=db)
-    assert enabled["enabled"] is True
-
-    updated = admin_ups.update_upstream_source(
-        source_id,
-        admin_ups.UpstreamSourceUpdateRequest(note="备注"),
-        staff=staff, db=db)
-    assert updated["note"] == "备注"
-    assert updated["has_secret"] is True  # 没传 secret = 凭据不动
-
-    disabled = admin_ups.disable_upstream_source(source_id, staff=staff, db=db)
-    assert disabled["enabled"] is False
-
-    result = admin_ups.delete_upstream_source(source_id, staff=staff, db=db)
-    assert result == {"success": True}
-    assert admin_ups.list_upstream_sources(staff=staff, db=db)["items"] == []
-
-
-def test_admin_create_duplicate_name_is_409(db, staff):
-    from fastapi import HTTPException
-
-    req = admin_ups.UpstreamSourceCreateRequest(
-        name="重名源", source_type="emby", base_url=PUBLIC_URL,
-        auth_method="password", username="a", secret="pw")
-    admin_ups.create_upstream_source(req, staff=staff, db=db)
-    with pytest.raises(HTTPException) as excinfo:
-        admin_ups.create_upstream_source(req, staff=staff, db=db)
-    assert excinfo.value.status_code == 409
-
-
-def test_admin_get_missing_is_404(db, staff):
-    from fastapi import HTTPException
-
-    with pytest.raises(HTTPException) as excinfo:
-        admin_ups.get_upstream_source(999999, staff=staff, db=db)
-    assert excinfo.value.status_code == 404
-
 
 # ---------- 默认关的接线钉死：播放/解析代码不许 import 本模块 ----------
 

@@ -219,11 +219,9 @@ check(set(tick) == {"sessions_reaped", "sessions_pruned",
                     "idle_gc_done",
                     # 自动续订计数（auto_renew_*）已随积分自动续订于
                     # 2026-11-13 货币下线时删除，不再出现在 tick 汇总里。
-                    # O-09：上游映射抽样巡检两键（sampled 是计数、干净时 0，
-                    # 参与全零断言；alert 是布尔、干净时 False，而 False==0
-                    # 仍过下面的全零断言，故不进排除名单）
-                    "upstream_mapping_patrol_sampled",
-                    "upstream_mapping_patrol_alert"},
+                    # 上游映射抽样巡检两键已随上游聚合整族删除，
+                    # 不再出现在 tick 汇总里。
+                    },
       # 注 2026-10-17：strm_sig_refresh 已随 strm_gen/strm_sign 删除
       "维护周期返回可观测的计数", f"{tick}")
 second = maint.janitor_tick()

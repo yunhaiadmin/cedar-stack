@@ -553,27 +553,11 @@ MP_EPISODE_FILL_CONFIG_SCHEMA: dict[str, tuple] = {
 }
 
 
-# 上游聚合拉取参数（2026-10-31 优化 O-05 起，后续 O-01/O-02/O-03
-# 的任务参数同家族登记）：读取唯一实现在 upstream_aggregate_run /
-# upstream_aggregate_jobs，范围与读取侧钳制同口径；无行时读取侧
-# 回退代码默认（页大小 500、心跳过期 120 秒等）。纯 SystemConfig
-# 键，不进 env.example（#1527 先例）。
+# 上游线路播放配置家族：拉取/聚合任务参数已随上游聚合整族删除，
+# 本家族只剩 upstream_playback 读取的线路配置键（详情线路开关、
+# 降权名单、专属线路与 pilot 入口）。纯 SystemConfig 键，不进
+# env.example（#1527 先例）。
 UPSTREAM_AGGREGATE_CONFIG_SCHEMA: dict[str, tuple] = {
-    "upstream_aggregate_default_page_size": ("int", 10, 500),
-    # 拉取有界并发（2026-11-01 加速）：逐库拉取预取后续页的并发
-    # 数，默认 4；1 = 串行旧行为。只改请求时序（页序/计数不变），
-    # 增量轮恒串行不读它。读取唯一实现 upstream_aggregate_run
-    # .configured_fetch_concurrency，钳制同此范围。
-    "upstream_aggregate_fetch_concurrency": ("int", 1, 16),
-    "upstream_aggregate_page_retries": ("int", 0, 5),
-    "upstream_aggregate_page_retry_backoff_sec": ("int", 0, 30),
-    "upstream_aggregate_heartbeat_stale_sec": ("int", 30, 3600),
-    "upstream_aggregate_claim_poll_sec": ("int", 1, 60),
-    "upstream_aggregate_progress_log_every": ("int", 1, 100),
-    "upstream_aggregate_task_retention_days": ("int", 1, 365),
-    # O-08 系列级配对（series+episode）置信度：默认 0.9（低于
-    # imdb 0.95、高于 title+year 0.7），读取侧钳制同此范围。
-    "upstream_aggregate_series_episode_confidence": ("float", 0.01, 1),
     # U-02 详情页上游线路：开时有映射的条目在详情/PlaybackInfo 来源
     # 列表多一条「上游 · <源名>」线路（点它走上游取流口现查映射起播）；
     # 关时列表不出现、取流口 404。无行＝开（读取方默认 True，
@@ -620,14 +604,6 @@ UPSTREAM_AGGREGATE_CONFIG_SCHEMA: dict[str, tuple] = {
     # 基址与入口密钥含口令/密钥，只回已配状态、原文不回浏览器。
     # 纯 SystemConfig 键，不进 env.example。
     "exclusive_lines": ("str",),
-    # O-09 映射抽样巡检（第 1、2 层常驻 janitor）：默认开、默认
-    # 每 7 天一轮、每 evidence 层默认抽 30 条；不一致率超默认
-    # 5% 响亮报红。读取唯一实现在 upstream_mapping_patrol，范围
-    # 与读取侧钳制同口径。纯 SystemConfig 键，不进 env.example。
-    "upstream_aggregate_mapping_patrol_enabled": ("bool",),
-    "upstream_aggregate_mapping_patrol_interval_days": ("int", 1, 30),
-    "upstream_aggregate_mapping_patrol_sample_size": ("int", 1, 200),
-    "upstream_aggregate_mapping_patrol_alert_pct": ("int", 0, 100),
 }
 
 

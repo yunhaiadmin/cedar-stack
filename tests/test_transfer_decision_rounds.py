@@ -39,7 +39,6 @@ from backend import models as base_models
 from backend.emby_server import models as em
 from backend.emby_server import transfer_decisions as td
 from backend.emby_server import transfer_variant as tv
-from backend.emby_server import upstream_aggregate_jobs as uaj
 from backend.integrations import store as config_store
 
 
@@ -174,33 +173,6 @@ def test_gate_survives_decision_write_failure(db, monkeypatch):
     result = tv.ensure_user_copy_gate(db, item, user)
     assert result["verdict"] == "proceed"
     assert result["reason"] == "master_off"
-
-
-# ---------------------------------------------------------------------------
-# 写入点二：聚合任务开轮处
-# ---------------------------------------------------------------------------
-
-def test_aggregate_round_open_writes_decision(db, note_here):
-    view, created = uaj._enqueue_locked(
-        db, source_id=42, page_size=50, trigger="manual")
-    assert created is True
-    rows = _rows(db)
-    assert len(rows) == 1
-    row = rows[0]
-    assert row.scope == "upstream_aggregate"
-    assert row.resource_key == "source:42"
-    assert row.decision == "round_opened"
-    assert row.reason == "manual"
-    assert row.execution_ref == view["task_id"]
-
-
-def test_aggregate_reuse_does_not_write_decision(db, note_here):
-    _, created1 = uaj._enqueue_locked(
-        db, source_id=43, page_size=50, trigger="manual")
-    _, created2 = uaj._enqueue_locked(
-        db, source_id=43, page_size=50, trigger="scheduled")
-    assert created1 is True and created2 is False
-    assert len(_rows(db)) == 1
 
 
 # ---------------------------------------------------------------------------

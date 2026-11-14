@@ -45,7 +45,6 @@ from sqlalchemy.pool import StaticPool
 from backend import models
 from backend.emby_server import api as emby_api
 from backend.emby_server import models as em
-from backend.emby_server import quality_label as ql
 from backend.emby_server import upstream_http
 from backend.emby_server import upstream_playback as up
 from backend.emby_server import upstream_sources as us
@@ -213,7 +212,7 @@ def _wait_quality(mapping_id, key, timeout=5.0):
 
 
 def test_share_redirect_to_master_backfills_quality(monkeypatch):
-    """share 地址 302 落到主清单 → 缓存写入宽高/带宽/标签。"""
+    """share 地址 302 落到主清单 → 缓存写入宽高/带宽。"""
 
     def handler(url):
         if url == SHARE_URL:
@@ -229,7 +228,8 @@ def test_share_redirect_to_master_backfills_quality(monkeypatch):
     cached = up.read_cms_quality(978001)
     assert cached["width"] == 1920 and cached["height"] == 1080
     assert cached["bandwidth"] == 8_000_000
-    assert cached["label"] == "1080P"
+    # 画质标签已删：回填不再生产 label
+    assert "label" not in cached
     # 主清单没有时长信号，不许编 duration
     assert "duration_sec" not in cached
 
@@ -247,7 +247,7 @@ def test_share_master_closes_gate(monkeypatch):
     transport = _install_transport(monkeypatch, handler)
     _capture(978009, SHARE_URL)
     cached = up.read_cms_quality(978009)
-    assert cached["width"] == 1920 and cached["label"] == "1080P"
+    assert cached["width"] == 1920 and "label" not in cached
     _capture(978009, SHARE_URL)
     assert transport.requested == [SHARE_URL, INDEX_URL]
     assert up.read_cms_quality(978009) == cached
@@ -362,13 +362,13 @@ def test_media_playlist_duration_closes_gate(monkeypatch):
 
 
 def test_media_playlist_duration_parser_units():
-    assert ql.media_playlist_duration_sec(_MEDIA_TEXT) == _MEDIA_DURATION
+    assert up.media_playlist_duration_sec(_MEDIA_TEXT) == _MEDIA_DURATION
     # 主清单不是计量对象（时长在变体里，本函数不追）
-    assert ql.media_playlist_duration_sec(_MASTER_TEXT) is None
+    assert up.media_playlist_duration_sec(_MASTER_TEXT) is None
     # 无 EXTINF / 空文本 → 判不出，不猜
-    assert ql.media_playlist_duration_sec("#EXTM3U\n#EXT-X-ENDLIST\n") is None
-    assert ql.media_playlist_duration_sec("") is None
-    assert ql.media_playlist_duration_sec(None) is None
+    assert up.media_playlist_duration_sec("#EXTM3U\n#EXT-X-ENDLIST\n") is None
+    assert up.media_playlist_duration_sec("") is None
+    assert up.media_playlist_duration_sec(None) is None
 
 
 # ---------------------------------------------------------------- 展示侧时长回填

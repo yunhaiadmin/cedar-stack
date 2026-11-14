@@ -8,9 +8,6 @@
   口径（1 分/次、5 分/天、月封顶 900、称号「片库贡献者」）。
 - 私聊偏好门控跟「贡献回响」同类（CAT_POOL_DIGEST /
   tg_notify_pool_digest）：用户关了就不发 TG，站内信照常。
-- 仅通过时，另走 group_cheer 收口在正式群发一条欢迎：只提站内
-  用户名，不带盘标签/容量/绑定/链接；新开关
-  tg_notify_group_pool_welcome_enabled 默认开，锚幂等不重发。
 - 通知层任何异常都不许把审核接口拖挂：审核照常成功。
 """
 
@@ -28,7 +25,7 @@ from sqlalchemy.pool import StaticPool
 from backend import models
 from backend.api import pool_admin
 from backend.emby_server import models as em
-from backend.tg_bot import group_cheer, proactive
+from backend.tg_bot import proactive
 
 GROUP_ID = -100123
 CHAT_ID = 777001
@@ -224,35 +221,6 @@ def test_seek_pref_off_does_not_mute_pool_dm(db, sent):
 # ---------------------------------------------------------------- 群欢迎
 
 
-def test_group_welcome_once_and_clean_text(db, sent):
-    _cfg(db, "bot_group_ids", str(GROUP_ID))
-    user = _user(db, "tms", telegram_id=CHAT_ID)
-    member = _member(db, user)
-
-    assert group_cheer.send_pool_welcome(db, member)
-    calls = _group_calls(sent)
-    assert len(calls) == 1
-    text = calls[0]["text"]
-    assert "tms" in text and "公共片库" in text
-    assert "片库贡献者" in text and "900" in text
-    # 不许出现链接/地址，也不许带盘标签、容量、绑定信息
-    assert "http" not in text and "aetrix.love" not in text
-
-    # 锚幂等：重复触发不重发
-    assert not group_cheer.send_pool_welcome(db, member)
-    assert len(_group_calls(sent)) == 1
-
-
-def test_group_welcome_switch_off(db, sent):
-    _cfg(db, "bot_group_ids", str(GROUP_ID))
-    _cfg(db, "tg_notify_group_pool_welcome_enabled", "false")
-    user = _user(db, "tms", telegram_id=CHAT_ID)
-    member = _member(db, user)
-
-    assert not group_cheer.send_pool_welcome(db, member)
-    assert _group_calls(sent) == []
-
-
 # ---------------------------------------------------------------- 审核收口接线
 
 
@@ -273,8 +241,8 @@ def test_review_wiring_approve_sends_all_channels(db, sent, station_calls):
     rows = _notices(db, user.id)
     kinds = {r.kind for r in rows}
     assert proactive.KIND_POOL_REVIEW_APPROVED in kinds
-    # 群欢迎已发一条
-    assert len(_group_calls(sent)) == 1
+    # 群欢迎已随 group_cheer 删除：审核不再发群消息
+    assert _group_calls(sent) == []
 
 
 def test_review_wiring_reject_no_group(db, sent, station_calls):
@@ -303,7 +271,6 @@ def test_review_wiring_tg_failure_silent(db, station_calls, monkeypatch):
         raise RuntimeError("tg down")
 
     monkeypatch.setattr(proactive, "note_pool_member_review", _boom)
-    monkeypatch.setattr(group_cheer, "send_pool_welcome", _boom)
 
     # 不许抛：站内信仍发出，审核收口安然返回
     pool_admin._notify_member_review(db, member, approved=True,
@@ -330,7 +297,6 @@ def test_approve_endpoint_survives_notify_failure(db, station_calls,
         raise RuntimeError("tg down")
 
     monkeypatch.setattr(proactive, "note_pool_member_review", _boom)
-    monkeypatch.setattr(group_cheer, "send_pool_welcome", _boom)
 
     class _Req:
         client = None

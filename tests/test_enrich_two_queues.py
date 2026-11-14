@@ -1,13 +1,12 @@
-"""识别 / 刮削两条队列 + AI 参谋政策（清单第 17 项，FMBY #17）。
+"""识别 / 刮削两条队列（清单第 17 项，FMBY #17）。
 
 钉死：
 ① 队列是虚拟的（抢单谓词），不是新状态值：未绑定进识别队列，
    已绑定进刮削队列；NULL 与空串都算未绑定；已绑定含 external_ids
    任一在用来源键（与 identity_gate.is_bound_row 同判据，PA-081）；
 ② 两队列抢单互斥：识别抢单只捞未绑定，刮削抢单只捞已绑定；
-③ AI 政策：权重上限 0.2、纯 AI 提名拒绝落库、强弱阈值 0.9/0.65，
-   两开关默认关；
-④ 识别段未定身份不再空转 pending：回落现行终态（计次，超限终态化）。
+③ 识别段未定身份不再空转 pending：回落现行终态（计次，超限终态化）。
+（AI 参谋政策已随 AI 整链删除，原 ③ 的政策门用例一并下线。）
 """
 import uuid
 from types import SimpleNamespace
@@ -18,7 +17,6 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend import models as base_models
-from backend.emby_server import ai_policy
 from backend.emby_server import enrich_queues as eq
 from backend.emby_server import enrich_worker
 from backend.emby_server import identify_two_stage as ts
@@ -131,73 +129,8 @@ def test_claim_batch_no_queue_unchanged(db):
     assert {row.id for row in claimed} == {unbound.id, bound.id}
 
 
-# ---------- ③ AI 政策纯函数 ----------
-
-def test_ai_weight_cap():
-    assert ai_policy.cap_ai_weight(0.9) == 0.2
-    assert ai_policy.cap_ai_weight(0.15) == 0.15
-    assert ai_policy.cap_ai_weight(None) is None
-    assert ai_policy.cap_ai_weight("not-a-number") is None
-
-
-def test_ai_confidence_thresholds():
-    assert ai_policy.classify_confidence(0.95) == "strong"
-    assert ai_policy.classify_confidence(0.9) == "strong"
-    assert ai_policy.classify_confidence(0.7) == "weak"
-    assert ai_policy.classify_confidence(0.65) == "weak"
-    assert ai_policy.classify_confidence(0.5) == "insufficient"
-    assert ai_policy.classify_confidence(None) == "insufficient"
-
-
-def test_ai_only_evidence_refused():
-    verdict = ai_policy.evaluate_binding_evidence(
-        {"ai_suggested": True, "sources": ["ai"]})
-    assert verdict["allowed"] is False
-    assert verdict["reason"] == "ai_only_refused"
-
-
-def test_ai_mixed_evidence_allowed_and_capped():
-    verdict = ai_policy.evaluate_binding_evidence(
-        {"ai_suggested": True, "sources": ["ai", "tmdb"], "ai_weight": 0.9})
-    assert verdict["allowed"] is True
-    assert verdict["ai_weight"] == 0.2
-
-
-def test_no_ai_markers_allowed():
-    # 现行证据形状（无任何 AI 标记）：政策门零影响。
-    verdict = ai_policy.evaluate_binding_evidence(
-        {"tmdb_id_source": "fetched", "has_details": True, "has_nfo": False})
-    assert verdict["allowed"] is True
-    assert verdict["ai_weight"] is None
-
-
-# ---------- ③ AI 政策门接线 ----------
-
-def test_apply_identity_refuses_ai_only_binding(db, monkeypatch):
-    monkeypatch.setattr(ai_policy, "AI_POLICY_ENABLED", 1)
-    item = _make_item(db)
-    fetched = {"tmdb_id": "60300", "ai_suggested": True, "ai_sources": ["ai"]}
-    assert ts.apply_identity(db, item, fetched) is None
-    assert item.tmdb_id is None
-    db.flush()
-    record = (db.query(em.EnrichStageRecord)
-              .filter(em.EnrichStageRecord.item_id == item.id).first())
-    assert record is None  # 拒绝落库：身份列与段记录都不写
-
-
-def test_apply_identity_caps_ai_weight_when_mixed(db, monkeypatch):
-    monkeypatch.setattr(ai_policy, "AI_POLICY_ENABLED", 1)
-    item = _make_item(db)
-    fetched = {"tmdb_id": "60300", "ai_suggested": True,
-               "ai_sources": ["ai", "tmdb"], "ai_weight": 0.9}
-    binding = ts.apply_identity(db, item, fetched)
-    assert binding is not None
-    assert binding["evidence"]["ai_weight"] == 0.2
-    assert item.tmdb_id == "60300"
-
-
 def test_apply_identity_policy_off_ignores_ai_markers(db):
-    # 开关默认关：AI 标记不影响识别（与今天逐字一致）。
+    # AI 政策门已随 AI 参谋整链删除：AI 标记不影响识别。
     item = _make_item(db)
     fetched = {"tmdb_id": "60300", "ai_suggested": True, "ai_sources": ["ai"]}
     binding = ts.apply_identity(db, item, fetched)
@@ -205,7 +138,7 @@ def test_apply_identity_policy_off_ignores_ai_markers(db):
     assert item.tmdb_id == "60300"
 
 
-# ---------- ④ 识别段未定身份终态化 ----------
+# ---------- ③ 识别段未定身份终态化 ----------
 
 def test_identify_queue_unbound_terminalizes(db):
     # 标题+年份齐（has_core）→ 现行终态路径：首轮进补次要字段轮次，
@@ -256,8 +189,7 @@ def test_identify_queue_unbound_counts_attempts_to_terminal(db):
     assert terminal in ("done", "failed")
 
 
-# ---------- 开关默认（FMBY #17 闭环后两队列默认开，AI 政策门仍默认关） ----------
+# ---------- 开关默认（FMBY #17 闭环后两队列默认开） ----------
 
 def test_switches_default_off():
     assert eq.two_queue_enabled() is True
-    assert ai_policy.ai_policy_enabled() is False
