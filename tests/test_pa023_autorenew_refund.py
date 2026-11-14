@@ -1,15 +1,13 @@
-"""PA-023 回归：自动续订订单退款必须退回当初扣的能量。
+"""PA-023 回归：自动续订订单退款的天数回滚口径。
 
-背景（审计 R10 实证）：subscriptions._auto_renew_one 落单
-payment_method='auto_renew'、扣款台账 type='subscription_auto_renew'、
-ref_id='auto_renew:{sub_id}:{分钟}'；而 orders_admin.refund_order 的积分
-退回分支此前只认 payment_method='points' + subscription_buy 台账，两项全
-不命中 → 天数回滚了、能量退回 0 且无提示。手动积分购买的同款问题已修，
-自动续订漏网。本文件走真实退款端点验证三条口径：
+背景（审计 R10 实证）：自动续订单退款曾漏退能量，积分腿修复后又随
+货币于 2026-11-13 整体下线；points_logs 台账与 WebUser.points 列已于
+2026-11-14 全清，退款不再有任何积分腿——revoked_points 出参保留、
+恒 0。本文件走真实退款端点验证现行口径：
 
-1. 自动续订单退款 → 天数回滚 + 能量全额退回（与原扣费一致）；
-2. 手动积分单退款行为不变（天数回滚 + 能量退回）；
-3. 续订单查不到扣款台账时不凭空退能量；现金单退款不碰能量。
+1. 自动续订单退款 → 天数回滚 30 天 + 订阅撤销，revoked_points 恒 0；
+2. 历史积分支付单（payment_method='points'）退款行为一致；
+3. 无台账续订单与现金单退款同样只回滚天数。
 """
 import asyncio
 from datetime import datetime, timedelta
@@ -51,16 +49,16 @@ def _mute_notify(monkeypatch):
 
 def _admin(db):
     admin = models.WebUser(username="pa023-admin", password_hash="x",
-                           is_active=True, points=0)
+                           is_active=True)
     db.add(admin)
     db.commit()
     db.refresh(admin)
     return admin
 
 
-def _user_with_sub(db, username, points):
+def _user_with_sub(db, username):
     user = models.WebUser(username=username, password_hash="x",
-                          is_active=True, points=points)
+                          is_active=True)
     db.add(user)
     plan = models.SubscriptionPlan(name="远行", price=100, duration_days=30,
                                    realm_id=None)
@@ -88,22 +86,16 @@ def _refund(db, admin, order_id):
 def test_auto_renew_order_refund_returns_points(db):
     """自动续订单退款：天数回滚 30 天；积分腿已随货币下线不再退回。
 
-    桩行为（orders_admin._reverse_points 恒返 0）：实付 900 能量不退回、
-    不写 refund 台账。退款口径如需重定（例如按人民币原路退），由 parent
-    另行拍板——本测试只钉住当前桩行为，不把未定口径锁死。
+    revoked_points 出参保留恒 0。退款口径如需重定（例如按人民币
+    原路退），由 parent 另行拍板——本测试只钉住当前行为。
     """
     admin = _admin(db)
-    user, plan, sub, now = _user_with_sub(db, "pa023-renew", points=100)
+    user, plan, sub, now = _user_with_sub(db, "pa023-renew")
     order = models.SubscriptionOrder(
         order_id="AR-PA023-1", user_id=user.id, plan_id=plan.id,
         item_name="远行", amount=plan.price, payment_method="auto_renew",
         status="paid", paid_at=now, subscription_id=sub.id, days_granted=30)
     db.add(order)
-    # 与 _auto_renew_one 完全一致的扣款台账
-    db.add(models.PointsLog(
-        user_id=user.id, amount=-900, balance_after=100,
-        type="subscription_auto_renew", description="自动续订 - 远行",
-        ref_id=f"auto_renew:{sub.id}:{now.strftime('%Y%m%d%H%M')}"))
     db.commit()
 
     result = _refund(db, admin, "AR-PA023-1")
@@ -111,19 +103,9 @@ def test_auto_renew_order_refund_returns_points(db):
     assert result["revoked_days"] == 30
     assert result["revoked_points"] == 0  # 积分腿已下线，不退回
     db.expire_all()
-    user2 = db.query(models.WebUser).filter_by(id=user.id).first()
-    assert user2.points == 100  # 余额不动
     sub2 = db.query(models.UserSubscription).filter_by(id=sub.id).first()
     assert sub2.end_date <= now + timedelta(seconds=5)
     assert sub2.status == "cancelled"
-    refund_log = (
-        db.query(models.PointsLog)
-        .filter(models.PointsLog.user_id == user.id,
-                models.PointsLog.type == "refund",
-                models.PointsLog.ref_id == "refund:AR-PA023-1")
-        .first()
-    )
-    assert refund_log is None  # 不写退积分台账
     order2 = db.query(models.SubscriptionOrder).filter_by(
         order_id="AR-PA023-1").first()
     assert order2.status == "refunded"
@@ -136,31 +118,24 @@ def test_manual_points_order_refund_unchanged(db):
     本测试只钉住当前桩行为。
     """
     admin = _admin(db)
-    user, plan, sub, now = _user_with_sub(db, "pa023-manual", points=500)
+    user, plan, sub, now = _user_with_sub(db, "pa023-manual")
     order = models.SubscriptionOrder(
         order_id="PT-PA023-1", user_id=user.id, plan_id=plan.id,
         item_name="远行", amount=plan.price, payment_method="points",
         status="paid", paid_at=now, subscription_id=sub.id, days_granted=30)
     db.add(order)
-    db.add(models.PointsLog(
-        user_id=user.id, amount=-500, balance_after=500,
-        type="subscription_buy", description="积分购买订阅 - 远行",
-        ref_id="subscription_points:PT-PA023-1"))
     db.commit()
 
     result = _refund(db, admin, "PT-PA023-1")
 
     assert result["revoked_days"] == 30
     assert result["revoked_points"] == 0  # 积分腿已下线，不退回
-    db.expire_all()
-    user2 = db.query(models.WebUser).filter_by(id=user.id).first()
-    assert user2.points == 500  # 余额不动
 
 
 def test_auto_renew_refund_without_ledger_returns_no_points(db):
     """续订单查不到扣款台账：只回滚天数，不凭空退能量。"""
     admin = _admin(db)
-    user, plan, sub, now = _user_with_sub(db, "pa023-nolog", points=100)
+    user, plan, sub, now = _user_with_sub(db, "pa023-nolog")
     order = models.SubscriptionOrder(
         order_id="AR-PA023-2", user_id=user.id, plan_id=plan.id,
         item_name="远行", amount=plan.price, payment_method="auto_renew",
@@ -172,15 +147,12 @@ def test_auto_renew_refund_without_ledger_returns_no_points(db):
 
     assert result["revoked_days"] == 30
     assert result["revoked_points"] == 0
-    db.expire_all()
-    user2 = db.query(models.WebUser).filter_by(id=user.id).first()
-    assert user2.points == 100
 
 
 def test_cash_order_refund_does_not_touch_points(db):
     """现金订阅单退款：只回滚天数，能量余额不动。"""
     admin = _admin(db)
-    user, plan, sub, now = _user_with_sub(db, "pa023-cash", points=100)
+    user, plan, sub, now = _user_with_sub(db, "pa023-cash")
     order = models.SubscriptionOrder(
         order_id="CS-PA023-1", user_id=user.id, plan_id=plan.id,
         item_name="远行", amount=plan.price, payment_method="alipay",
@@ -192,6 +164,3 @@ def test_cash_order_refund_does_not_touch_points(db):
 
     assert result["revoked_days"] == 30
     assert result["revoked_points"] == 0
-    db.expire_all()
-    user2 = db.query(models.WebUser).filter_by(id=user.id).first()
-    assert user2.points == 100

@@ -65,7 +65,6 @@ def db():
     for tbl in (
         models.WebUser.__table__,
         models.SystemConfig.__table__,
-        models.PointsLog.__table__,
         em.MediaItem.__table__,
         em.PlaybackSession.__table__,
     ):
@@ -96,7 +95,6 @@ def _make_user(db, username, *, tg_id=None, staff=False, role=None, show=True):
     u = models.WebUser(
         username=username,
         password_hash="",
-        points=0,
         telegram_id=tg_id,
         is_staff=staff,
         # 生产 staff 必有角色；推榜是写操作，测试管理员默认 operator。

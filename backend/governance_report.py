@@ -378,7 +378,7 @@ def cast_review_vote(
     _require_not_frozen(db, user.id)
     if decision not in ("agree", "disagree"):
         raise GovernanceError(400, "复核决定无效")
-    weight = review_weight(user.member_level)
+    weight = review_weight(getattr(user, "member_level", None))
     if weight <= 0:
         raise GovernanceError(403, "复核需要 Lv.3 及以上")
     if report.reporter_id == user.id:

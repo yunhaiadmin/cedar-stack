@@ -48,21 +48,12 @@ def db():
         engine.dispose()
 
 
-def _make_user(db, username="u1", member_level=3):
-    u = models.WebUser(username=username, password_hash="", points=1000,
-                       is_active=True, member_xp=0, member_level=member_level)
+def _make_user(db, username="u1"):
+    u = models.WebUser(username=username, password_hash="",
+                       is_active=True)
     db.add(u)
     db.commit()
     return u
-
-
-def _make_level(db, level=3, discount_pct=5):
-    lv = models.MemberLevel(level=level, name=f"Lv{level}",
-                            xp_threshold=500, discount_pct=discount_pct,
-                            is_active=True)
-    db.add(lv)
-    db.commit()
-    return lv
 
 
 def _make_plan(db, price=100, days=30):
@@ -112,7 +103,6 @@ def test_credit_applies_without_member_discount(db):
     # 效——只算兑换权益：100 的 80% 实付，总优惠 20；member_discount_*
     # 出参字段保留兼容、恒 0。
     u = _make_user(db)
-    _make_level(db, level=3, discount_pct=5)
     plan = _make_plan(db, price=100, days=30)
     _make_credit(db, u.id, discount_pct=80)  # 实付 80%
     _gateway_cfg(db)
@@ -132,8 +122,7 @@ def test_credit_applies_without_member_discount(db):
 
 def test_credit_without_member_discount_unchanged(db):
     # Lv1 无会员折扣：行为与修前一致（只算权益）
-    u = _make_user(db, member_level=1)
-    _make_level(db, level=1, discount_pct=0)
+    u = _make_user(db)
     plan = _make_plan(db, price=100, days=30)
     _make_credit(db, u.id, discount_pct=80)
     _gateway_cfg(db)
@@ -151,7 +140,6 @@ def test_credit_without_member_discount_unchanged(db):
 
 def test_quote_empty_code_applies_auto_credit(db):
     u = _make_user(db)
-    _make_level(db, level=3, discount_pct=5)
     plan = _make_plan(db, price=100, days=30)
     _make_credit(db, u.id, discount_pct=80)
 

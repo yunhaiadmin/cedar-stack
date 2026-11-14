@@ -46,9 +46,9 @@ def db():
         engine.dispose()
 
 
-def _make_user(db, username="u1", points=1000):
-    u = models.WebUser(username=username, password_hash="", points=points,
-                       is_active=True, member_xp=0, member_level=1)
+def _make_user(db, username="u1"):
+    u = models.WebUser(username=username, password_hash="",
+                       is_active=True)
     db.add(u)
     db.commit()
     return u
@@ -96,9 +96,9 @@ def _admin_app(db):
 
 def test_close_order_restores_credit(db):
     u = _make_user(db)
-    order = models.RechargeOrder(
-        order_id="RB8", user_id=u.id, package_id=0, amount=12,
-        price=10, payment_method="alipay", status="pending")
+    order = models.SubscriptionOrder(
+        order_id="RB8", user_id=u.id, plan_id=0, amount=12,
+        payment_method="alipay", status="pending")
     db.add(order)
     _make_credit(db, u.id, "RB8")
     db.commit()
@@ -110,8 +110,8 @@ def test_close_order_restores_credit(db):
         models.ExchangeDiscountCredit.user_id == u.id).first()
     assert c.status == "unused"
     assert c.used_order_id is None
-    o = db.query(models.RechargeOrder).filter(
-        models.RechargeOrder.order_id == "RB8").first()
+    o = db.query(models.SubscriptionOrder).filter(
+        models.SubscriptionOrder.order_id == "RB8").first()
     assert o.status == "closed"
 
 

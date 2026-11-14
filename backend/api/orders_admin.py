@@ -9,15 +9,14 @@
   所以不打扰用户（只留审计）。
 - **退款**：把已支付的订单冲正（`paid` → `refunded`），并且**按账本精确回滚**：
 
-  1. 充值订单：按 `PointsLog.ref_id = recharge:{order_id}` 找到当时发的积分并扣回；
-     同时撤回邀请人拿到的那笔返利（`ref_id = rebate:{order_id}`）——返利也是这笔订单产生的，
-     只退买家不退返利，就等于让站点为一次退款付两遍钱。
-  2. 订阅订单：按履约时记下的 `subscription_id` / `days_granted` **精确回滚天数**
-     （老订单没有这两个字段时，才退回“该用户在该服的生效订阅”这一近似），
-     回滚后已过期则把订阅置为 `cancelled`——这是真实撤销，与自然到期不是一回事。
+  订阅订单：按履约时记下的 `subscription_id` / `days_granted` **精确回滚天数**
+  （老订单没有这两个字段时，才退回“该用户在该服的生效订阅”这一近似），
+  回滚后已过期则把订阅置为 `cancelled`——这是真实撤销，与自然到期不是一回事。
+  同时撤回邀请人拿到的那笔返利——返利也是这笔订单产生的，
+  只退买家不退返利，就等于让站点为一次退款付两遍钱。
 
-积分的通用原则：**不悄悄把余额扣成负数**。卖家余额不够时默认拒绝退款并回报当前余额，
-由管理员显式选择 `allow_negative=true` 才扣（客服场景下有时候就是要先退钱后追账）。
+钱包扣回的通用原则：**不悄悄把余额扣成负数**。邀请人余额不够时返利先欠着
+（计提行置 owed），由管理员显式选择 `allow_negative=true` 才许扣负。
 
 老库自动补列（`refunded_at` / `refund_reason` / `closed_at` / `subscription_id` / `days_granted`），
 没有这些列的库不会因为升级而报错。
@@ -54,7 +53,7 @@ REFUNDABLE_STATUSES = ("paid",)
 
 class RefundRequest(BaseModel):
     reason: str = ""
-    # 是否回滚权益（积分 / 会员天数）。缺省回滚：退款不退权益 = 白送。
+    # 是否回滚权益（会员天数）。缺省回滚：退款不退权益 = 白送。
     revoke_entitlement: bool = True
     # 余额不够时是否允许扣成负数（客服先退钱后追账的场景）
     allow_negative: bool = False
@@ -63,80 +62,12 @@ class RefundRequest(BaseModel):
 
 
 def _find_order(db: Session, order_id: str):
-    """按订单号找订单（充值优先，最后回退订阅）"""
-    recharge = db.query(models.RechargeOrder).filter(
-        models.RechargeOrder.order_id == order_id).first()
-    if recharge:
-        return recharge, "recharge"
+    """按订单号找订单（充值订单已随积分货币下线全清，现只有订阅订单）"""
     subscription = db.query(models.SubscriptionOrder).filter(
         models.SubscriptionOrder.order_id == order_id).first()
     if subscription:
         return subscription, "subscription"
     return None, None
-
-
-def _ledger_entry(db: Session, user_id: int, ref_id: str, type_: str):
-    """按账本引用找那笔发放记录（退款要按当时实际发的数冲正，而不是按订单金额重算）"""
-    return db.query(models.PointsLog).filter(
-        models.PointsLog.user_id == user_id,
-        models.PointsLog.ref_id == ref_id,
-        models.PointsLog.type == type_,
-    ).order_by(models.PointsLog.id.asc()).first()
-
-
-def _subscription_spend_entry(db: Session, user_id: int, order):
-    """找订阅订单当初那笔积分扣款台账（退款退积分按实扣数，不按订单金额重算）。
-
-    两种花积分的订阅订单，落账口径不同：
-    - 手动积分购买（payment_method='points'）：economy 履约写
-      type='subscription_buy'、ref_id='subscription_points:{order_id}'；
-    - 自动续订（payment_method='auto_renew'）：subscriptions._auto_renew_one 写
-      type='subscription_auto_renew'、ref_id='auto_renew:{订阅 id}:{分钟}'，
-      分钟是扣款时刻，与订单 paid_at 同一时刻。
-    其余支付方式没花积分，返回 None。
-    """
-    method = order.payment_method or ""
-    if method == "points":
-        return _ledger_entry(db, user_id, f"subscription_points:{order.order_id}",
-                             "subscription_buy")
-    if method == "auto_renew":
-        if order.paid_at is None:
-            return None
-        minute = order.paid_at.strftime("%Y%m%d%H%M")
-        if order.subscription_id:
-            entry = _ledger_entry(
-                db, user_id, f"auto_renew:{order.subscription_id}:{minute}",
-                "subscription_auto_renew")
-            if entry is not None:
-                return entry
-        # 兜底：ref 里的 id 是续订扫描命中的订阅，订单 subscription_id 是发放
-        # 顺延后的订阅——常态同一行；不一致时按扣款分钟认领本单那一笔。
-        return (
-            db.query(models.PointsLog)
-            .filter(
-                models.PointsLog.user_id == user_id,
-                models.PointsLog.type == "subscription_auto_renew",
-                models.PointsLog.ref_id.like(f"auto_renew:%:{minute}"),
-                models.PointsLog.amount < 0,
-            )
-            .order_by(models.PointsLog.id.asc())
-            .first()
-        )
-    return None
-
-
-def _reverse_points(db: Session, user: models.WebUser, amount: int, description: str,
-                    ref_id: str, allow_negative: bool) -> int:
-    """积分冲正：积分已随货币下线（2026-11-13），冲正额恒为 0（不再扣回）。
-
-    历史 PointsLog 只读保留作对账；退款的订阅天数回滚腿不受影响。
-    退款口径如需重定（例如按人民币原路退），由 parent 另行拍板。
-    """
-    amount = abs(int(amount or 0))
-    if amount > 0:
-        logger.info("积分冲正已随货币下线跳过: user=%s amount=%s ref=%s",
-                    user.id, amount, ref_id)
-    return 0
 
 
 def _rollback_subscription(db: Session, order: models.SubscriptionOrder,
@@ -199,7 +130,7 @@ def close_order(
     # 原子推进到 paid 并履约；无条件 UPDATE 会把已支付订单覆盖成 closed，
     # 钱已付、权益已发，订单却显示作废——与 refund 的条件 UPDATE 同一写法，
     # 抢不到的行说明状态已变，报 409 让管理员刷新。
-    model = models.RechargeOrder if kind == "recharge" else models.SubscriptionOrder
+    model = models.SubscriptionOrder
     claimed = (
         db.query(model)
         .filter(model.id == order.id, model.status.in_(tuple(CLOSEABLE_STATUSES)))
@@ -233,7 +164,7 @@ async def refund_order(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """退款：冲正订单并按账本回滚权益（充值扣回积分 / 订阅回滚天数）
+    """退款：冲正订单并按账本回滚权益（订阅回滚天数）
 
     查单 / 原子占位 / 冲正 / 审计整段是同步 SQLAlchemy，下放线程池执行；
     通知要走 WebSocket，必须留在事件循环上 await。
@@ -268,11 +199,11 @@ async def refund_order(
         }
 
         # 原子占位：并发点两次「退款」时只有一个请求能拿到这一单。
-        # 上面两句状态检查与这里之间隔着整段冲正（扣回积分 / 回滚会员天数，都**不是幂等**的）：
+        # 上面两句状态检查与这里之间隔着整段冲正（回滚会员天数，不是幂等的）：
         # 读-改-写会让两个请求都读到 paid，于是各扣一次（双重回滚）。
         # 条件 UPDATE 的 rowcount 就是判据（与 economy._claim_order 同一套写法）——
         # 抢不到的那一边什么都不做，直接告诉前端「已处理」。
-        model = models.RechargeOrder if kind == "recharge" else models.SubscriptionOrder
+        model = models.SubscriptionOrder
         claimed = (
             db.query(model)
             .filter(model.id == order.id, model.status.in_(tuple(REFUNDABLE_STATUSES)))
@@ -285,51 +216,27 @@ async def refund_order(
                     "message": "该订单已处理（并发退款只有一次生效）"}
 
         if request.revoke_entitlement:
-            if kind == "recharge":
-                entry = _ledger_entry(db, user.id, f"recharge:{order_id}", "recharge")
-                granted = int(entry.amount) if entry else int(order.amount or 0)
-                result["revoked_points"] = _reverse_points(
-                    db, user, granted,
-                    f"订单退款冲正（订单 {order_id}）", f"refund:{order_id}",
-                    request.allow_negative,
+            plan = db.query(models.SubscriptionPlan).filter(
+                models.SubscriptionPlan.id == order.plan_id).first()
+            subscription, days, cancelled = _rollback_subscription(db, order, plan, now)
+            result["revoked_days"] = days
+            result["cancelled"] = cancelled
+            if subscription is not None and days > 0:
+                result["subscription_end"] = (
+                    subscription.end_date.isoformat() if subscription.end_date else None
                 )
-                if request.reverse_rebate:
-                    reversed_amount, rebate_owed = _reverse_rebate(db, order_id, request.allow_negative)
-                    result["rebate_reversed"] = reversed_amount
-                    # 欠账必须如实告诉前端：rebate_reversed=0 可能是"本来就没返利"，
-                    # 也可能是"邀请人余额不足、返利没撤回来"，两种情况界面不能长一个样
-                    result["rebate_reversal_failed"] = rebate_owed
-            else:
-                plan = db.query(models.SubscriptionPlan).filter(
-                    models.SubscriptionPlan.id == order.plan_id).first()
-                subscription, days, cancelled = _rollback_subscription(db, order, plan, now)
-                result["revoked_days"] = days
-                result["cancelled"] = cancelled
-                if subscription is not None and days > 0:
-                    result["subscription_end"] = (
-                        subscription.end_date.isoformat() if subscription.end_date else None
-                    )
-                # P1 修复（审查）：积分购买的订阅订单，退款时只回滚了天数、
-                # 当初扣的积分没退（用户积分与会员两失）。按账本查实际扣款退回。
-                # PA-023：自动续订同样是花积分落的单，只是台账 type/ref 不同，
-                # 此前没纳入 → 续订单退款只回滚天数、扣的能量不回来（同款漏网）。
-                # 查账口径统一走 _subscription_spend_entry，退回数与原扣费一致。
-                spent = _subscription_spend_entry(db, user.id, order)
-                refund_pts = abs(int(spent.amount)) if spent else 0
-                if refund_pts > 0:
-                    # 积分已随货币下线（2026-11-13）：历史积分购订阅退款
-                    # 只回滚天数，不再退回积分（口径待 parent 重定）。
-                    logger.info("订阅退款退积分已随货币下线跳过: order=%s pts=%s",
-                                order_id, refund_pts)
-                # 钱包批 2：订阅单同样产生邀请返利（_fulfill_order 的计提
-                # 钩子，source=subscription_order）——退款必须撤回，
-                # 否则「只退买家不退返利，等于让站点为一次退款付两遍钱」
-                # （与充值分支同一道理；此前订阅分支漏了这条腿）。
-                if request.reverse_rebate:
-                    reversed_amount, rebate_owed = _reverse_rebate(
-                        db, order_id, request.allow_negative)
-                    result["rebate_reversed"] = reversed_amount
-                    result["rebate_reversal_failed"] = rebate_owed
+            # 积分购订阅的历史订单：积分已随货币下线（2026-11-13），
+            # 退款只回滚天数、不再退回积分（原查台账退积分腿已随积分台账全清）。
+            # 钱包批 2：订阅单同样产生邀请返利（_fulfill_order 的计提
+            # 钩子，source=subscription_order）——退款必须撤回，
+            # 否则「只退买家不退返利，等于让站点为一次退款付两遍钱」。
+            if request.reverse_rebate:
+                reversed_amount, rebate_owed = _reverse_rebate(
+                    db, order_id, request.allow_negative)
+                result["rebate_reversed"] = reversed_amount
+                # 欠账必须如实告诉前端：rebate_reversed=0 可能是"本来就没返利"，
+                # 也可能是"邀请人余额不足、返利没撤回来"，两种情况界面不能长一个样
+                result["rebate_reversal_failed"] = rebate_owed
 
             # 会员经验已随等级体系于 2026-11-14 删除：履约不再发经验，
             # 退款也无经验可撤。revoked_xp 字段保留出参兼容、恒为 0。
@@ -337,7 +244,7 @@ async def refund_order(
 
         # 钱包批 2：退款回余额（与是否撤权益无关——revoke_entitlement
         # =False 是「只退钱不撤权益」，钱照样回钱包）。
-        # 金额按订单实付（订阅 order.amount / 充值 order.price），
+        # 金额按订单实付（订阅 order.amount），
         # 与履约时的返利/经验口径一致；幂等键 refund:<订单号>，重复
         # 退款尝试不重复入账（refund_order 本身也 400 拒重复退款，
         # 这里是第二道门）。配置 wallet_refund_to_balance 关了则
@@ -348,7 +255,7 @@ async def refund_order(
         from backend import wallet as _wallet
 
         if _wallet.wallet_config(db).get("wallet_refund_to_balance", True):
-            paid_amount = order.amount if kind == "subscription" else order.price
+            paid_amount = order.amount
             from backend.agents import money as _money
 
             refund_money = _money(paid_amount or 0)
@@ -372,8 +279,6 @@ async def refund_order(
         order.status = "refunded"
         order.refunded_at = now
         order.refund_reason = (request.reason or "").strip()[:255]
-        if kind == "recharge":
-            order.refunded_points = result["revoked_points"]
         # 退款同样释放优惠券额度（用户没付钱买成这笔，次数不该算用掉）
         coupons.release(db, order.coupon_usage_id)
         result["coupon_released"] = bool(order.coupon_usage_id)
@@ -459,19 +364,13 @@ def _reverse_rebate(db: Session, order_id: str, allow_negative: bool) -> tuple[o
     调用方必须把欠账如实告诉前端——否则界面上的 rebate_reversed=0
     既可能是"本来就没返利"，也可能是"返利没撤回来"，无法区分。
 
-    两条账本，分开处理（不混账）：
-    - 钱包时代（invite_rebate_accruals，source=subscription_order）：
-      返利已入邀请人钱包（status=credited）时从钱包扣回
-      （kind=rebate_reversal，幂等键 rebate-reversal:<订单号>），
-      成功则计提行转 reversed；余额不足则计提行置 reversal_owed
-      （仍是 credited，待管理员重试/豁免），主退款照做、返利欠着。
-      撤回金额是人民币元 Decimal；没计提/未入账/已撤回时为 0。
-    - 积分时代（PointsLog type=rebate，历史充值单）：沿用旧口径，
-      积分冲正桩恒返 0（货币已下线）。
-
-    撤回失败留下持久化欠账：钱包时代记在计提行本身
-    （reversal_owed）；积分时代记 RebateReversalDebt（同一订单只一条）；
-    后来撤回成功时把对应 pending 欠账标记 recovered。
+    账本只有钱包一条（invite_rebate_accruals，source=subscription_order）：
+    返利已入邀请人钱包（status=credited）时从钱包扣回
+    （kind=rebate_reversal，幂等键 rebate-reversal:<订单号>），
+    成功则计提行转 reversed；余额不足则计提行置 reversal_owed
+    （仍是 credited，待管理员重试/豁免），主退款照做、返利欠着。
+    撤回金额是人民币元 Decimal；没计提/未入账/已撤回时为 0。
+    积分时代的返利台账与欠账表已随积分全清，不再有第二条腿。
     """
     from backend import invite_rebate as _invite_rebate
     from backend import wallet as _wallet
@@ -507,50 +406,8 @@ def _reverse_rebate(db: Session, order_id: str, allow_negative: bool) -> tuple[o
             return accrual.rebate_amount, False
         # pending（从未入账）/ reversed（已扣回）：无返利可撤。
         return 0, False
-    entry = db.query(models.PointsLog).filter(
-        models.PointsLog.ref_id == f"rebate:{order_id}",
-        models.PointsLog.type == "rebate",
-    ).order_by(models.PointsLog.id.asc()).first()
-    if entry is None:
-        return 0, False
-    inviter = db.query(models.WebUser).filter(models.WebUser.id == entry.user_id).first()
-    if inviter is None:
-        return 0, False
-    try:
-        reversed_amount = _reverse_points(
-            db, inviter, int(entry.amount),
-            f"订单退款撤回返利（订单 {order_id}）", f"rebate-reversal:{order_id}",
-            allow_negative,
-        )
-        _mark_rebate_debt_recovered(db, order_id)
-        return reversed_amount, False
-    except HTTPException as exc:
-        # 邀请人余额不够：不因为"退不了返利"就整单退不了款——主退款照做，返利欠着
-        logger.warning("撤回返利失败（订单 %s）: %s", order_id, exc.detail)
-        _record_rebate_debt(db, order_id, inviter.id, int(entry.amount), exc.detail)
-        return 0, True
-
-
-def _record_rebate_debt(db: Session, order_id: str, user_id: int,
-                        amount: int, reason: str) -> None:
-    """返利撤回失败时落一条 pending 欠账（幂等：同一订单只许一条）"""
-    existing = db.query(models.RebateReversalDebt).filter(
-        models.RebateReversalDebt.order_id == order_id).first()
-    if existing is not None:
-        return
-    db.add(models.RebateReversalDebt(
-        order_id=order_id, user_id=user_id, amount=int(amount),
-        reason=(reason or "")[:255], status="pending"))
-
-
-def _mark_rebate_debt_recovered(db: Session, order_id: str) -> None:
-    """返利撤回成功时把该订单的 pending 欠账标记 recovered"""
-    now = datetime.now()
-    db.query(models.RebateReversalDebt).filter(
-        models.RebateReversalDebt.order_id == order_id,
-        models.RebateReversalDebt.status == "pending",
-    ).update({"status": "recovered", "resolved_at": now},
-             synchronize_session=False)
+    # 没有钱包计提行：这笔订单没产生过钱包返利，无可撤。
+    return 0, False
 
 
 @admin_orders_router.get("/economy/refunds")
@@ -565,8 +422,7 @@ def list_recent_refunds(
     """
     limit = max(1, min(int(limit or 20), 100))
     rows: list[tuple[object, str]] = []
-    for model, kind in ((models.RechargeOrder, "recharge"),
-                        (models.SubscriptionOrder, "subscription")):
+    for model, kind in ((models.SubscriptionOrder, "subscription"),):
         for o in db.query(model).filter(
             model.status.in_(("refunded", "closed"))
         ).order_by(model.created_at.desc()).limit(limit).all():
@@ -591,122 +447,6 @@ def list_recent_refunds(
     ]
     out.sort(key=lambda x: x["at"] or "", reverse=True)
     return {"records": out[:limit]}
-
-
-@admin_orders_router.get("/economy/rebate-debts")
-def list_rebate_debts(
-    status: str | None = None,
-    limit: int = 50,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """返利撤回欠账列表：退款时邀请人余额不足、返利没撤回来留下的持久化欠账"""
-    limit = max(1, min(int(limit or 50), 200))
-    q = db.query(models.RebateReversalDebt)
-    if status:
-        q = q.filter(models.RebateReversalDebt.status == status)
-    rows = q.order_by(models.RebateReversalDebt.id.desc()).limit(limit).all()
-    user_ids = {r.user_id for r in rows}
-    users = {u.id: u.username for u in db.query(models.WebUser).filter(
-        models.WebUser.id.in_(user_ids)).all()} if user_ids else {}
-    return {"records": [
-        {
-            "id": r.id,
-            "order_id": r.order_id,
-            "username": users.get(r.user_id, f"用户 {r.user_id}"),
-            "amount": r.amount,
-            "status": r.status,
-            "reason": r.reason or "",
-            "created_at": r.created_at.isoformat() if r.created_at else None,
-            "resolved_at": r.resolved_at.isoformat() if r.resolved_at else None,
-        }
-        for r in rows
-    ]}
-
-
-@admin_orders_router.post("/economy/rebate-debts/{debt_id}/waive")
-def waive_rebate_debt(
-    debt_id: int,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """豁免一条返利撤回欠账（pending → waived）"""
-    now = datetime.now()
-    n = (
-        db.query(models.RebateReversalDebt)
-        .filter(models.RebateReversalDebt.id == debt_id,
-                models.RebateReversalDebt.status == "pending")
-        .update({"status": "waived", "resolved_at": now},
-                synchronize_session=False)
-    )
-    if not n:
-        db.rollback()
-        raise HTTPException(status_code=404, detail="欠账不存在或已处理")
-    _audit(db, current_admin, "economy_waive_rebate_debt", "rebate_debt", debt_id,
-           {"status": "waived"})
-    db.commit()
-    return {"success": True, "debt_id": debt_id, "status": "waived"}
-
-
-class RebateDebtRetryRequest(BaseModel):
-    # 邀请人余额不足时是否允许扣成负数（与退款对话框的 allow_negative 同口径）
-    allow_negative: bool = False
-
-
-@admin_orders_router.post("/economy/rebate-debts/{debt_id}/retry")
-def retry_rebate_debt(
-    debt_id: int,
-    request: RebateDebtRetryRequest,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """重试一条返利撤回欠账（pending → recovered）
-
-    背景（r55 审查）：欠账在 refund_order 里产生，但订单一旦退款完成状态即
-    "refunded"，refund_order 会 400 拒绝重复退款——_reverse_rebate 的成功分支
-    在生产永远走不到，pending 欠账只进不出。本端点补上"收回"路径：
-    行锁认领（SELECT … FOR UPDATE，防并发双重试；崩溃回滚后仍是 pending，
-    不留中间态）→ 再扣一次邀请人返利 → 成功则 recovered；
-    余额仍不足则保持 pending 并如实返回原因（不是报错）。
-    """
-    now = datetime.now()
-    # 行锁认领：并发点两次重试时只有一个能拿到这一单；崩溃回滚后仍是 pending
-    debt = (
-        db.query(models.RebateReversalDebt)
-        .filter(models.RebateReversalDebt.id == debt_id,
-                models.RebateReversalDebt.status == "pending")
-        .with_for_update()
-        .first()
-    )
-    if debt is None:
-        db.rollback()
-        raise HTTPException(status_code=404, detail="欠账不存在或已处理")
-    inviter = db.query(models.WebUser).filter(
-        models.WebUser.id == debt.user_id).first()
-    if inviter is None:
-        # 邀请人已删：这笔欠账永远收不回来，保持 pending 并明示（管理员可豁免）
-        db.rollback()
-        raise HTTPException(status_code=404, detail="邀请人已不存在，无法追扣（可豁免这笔欠账）")
-    try:
-        reversed_amount = _reverse_points(
-            db, inviter, int(debt.amount),
-            f"欠账重试撤回返利（订单 {debt.order_id}）",
-            f"rebate-reversal:{debt.order_id}",
-            request.allow_negative,
-        )
-    except HTTPException as exc:
-        # 余额仍不足：保持 pending（这是"继续欠着"，不是失败），如实返回原因
-        db.rollback()
-        return {"success": False, "debt_id": debt_id, "status": "pending",
-                "reason": exc.detail}
-    debt.status = "recovered"
-    debt.resolved_at = now
-    _audit(db, current_admin, "economy_retry_rebate_debt", "rebate_debt", debt_id,
-           {"status": "recovered", "amount": int(debt.amount),
-            "allow_negative": request.allow_negative})
-    db.commit()
-    return {"success": True, "debt_id": debt_id, "status": "recovered",
-            "reversed_amount": reversed_amount}
 
 
 __all__ = ["admin_orders_router"]

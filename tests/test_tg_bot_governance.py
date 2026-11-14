@@ -37,11 +37,9 @@ def db():
         engine.dispose()
 
 
-def _user(db, tg=TG, name="alice", points=42, vitality=14, xp=0,
-          is_welfare=False, welfare_expires_at=None):
+def _user(db, tg=TG, name="alice", is_welfare=False, welfare_expires_at=None):
     row = models.WebUser(
         username=name, password_hash="x", telegram_id=tg,
-        points=points, vitality=vitality, member_xp=xp,
     )
     db.add(row)
     db.commit()
@@ -135,8 +133,7 @@ def test_dashboard_sample_layout_exact(db):
     照旧播种：行在效也不再进面板（2026-11-09 凭证行已删），逐字比对
     正好钉住这一点。
     """
-    row = _user(db, tg=TG, name="shunxian2580", points=57, vitality=14,
-                is_welfare=True, welfare_expires_at=datetime(2026, 11, 27))
+    row = _user(db, tg=TG, name="shunxian2580", is_welfare=True, welfare_expires_at=datetime(2026, 11, 27))
     db.add(models.EmbyViewUnlock(
         user_id=row.id, realm_id=1, expires_at=datetime(2030, 11, 27)))
     db.commit()
@@ -146,9 +143,6 @@ def test_dashboard_sample_layout_exact(db):
         "▎<b>欢迎进入用户面板！</b>Shun",
         f"· 🆔 <b>用户编号</b> | {row.id}",
         "· 👤 <b>账号名称</b> | <b>shunxian2580</b>",
-        "· ⭐ <b>当前等级</b> | Lv.1 初幕 · 经验 0／100 ░░░░░░░░░░（距 Lv.2 影迷还差 100 经验）",
-        "· 🍒 <b>能量余额</b> | <b>57</b>",
-        "· ⚡ <b>活力数值</b> | 14/14",
         "· 🔗 <b>网盘绑定</b> | Drive 已绑 ✓",
         "· 🐉 <b>当前馆灵</b> | 🥚 蛋（累计观影 0.0 小时），距夜枭还差 50.0 小时",
         "· 📦 <b>订阅状态</b> | 暂无",
@@ -156,41 +150,31 @@ def test_dashboard_sample_layout_exact(db):
     assert text == expected
 
 
-def test_account_level_line(db):
-    row = _user(db, xp=0)
-    text = features.handle_account(db, _tg(), TG, "")
-    assert "⭐ <b>当前等级</b> | Lv.1 初幕 · 经验 0／100 ░░░░░░░░░░（距 Lv.2 影迷还差 100 经验）" in text
-    row2 = _user(db, tg=TG + 1, name="max", xp=20000)
-    text2 = features.handle_account(db, _tg(TG + 1), TG + 1, "")
-    assert "⭐ <b>当前等级</b> | Lv.6 传奇 · 经验 20000（已满级）" in text2
-
-
-# ---------- /level ----------
-
 def test_level_free_realm(db):
     _free_realm(db)
-    row = _user(db, xp=100)
+    row = _user(db)
     text = features.handle_level(db, _tg(), TG, "")
-    assert "⭐ Lv.2 影迷" in text
-    assert "经验 100／500" in text
-    assert "距 Lv.3 鉴赏家还差 400 经验" in text
-    assert "本月提案：0／1 次" in text
+    # member_xp 已删、等级恒 Lv.1（_level_info 兼容口径）
+    assert "⭐ Lv.1 初幕" in text
+    assert "经验 0／100" in text
+    assert "距 Lv.2 影迷还差 100 经验" in text
+    assert "本月提案：Lv.2 起开放" in text
     assert "本月直接发起：Lv.5 起开放" in text
-    assert "附议权重" in text and "我的权重：2 票" in text
+    assert "附议权重" in text and "我的权重：1 票" in text
     assert "举报复核" in text and "我的权重：无（Lv.3 起获得）" in text
 
 
 def test_level_paid_realm_no_rights_table(db):
-    row = _user(db, xp=100)
+    row = _user(db)
     text = features.handle_level(db, _tg(), TG, "")
-    assert "⭐ Lv.2 影迷" in text
+    assert "⭐ Lv.1 初幕" in text
     assert "治理权表仅公益服开放" in text
     assert "附议权重" not in text
 
 
 def test_level_frozen(db):
     _free_realm(db)
-    row = _user(db, xp=1500)
+    row = _user(db)
     _freeze(db, row.id)
     text = features.handle_level(db, _tg(), TG, "")
     assert "治理特权已被冻结" in text
@@ -230,20 +214,11 @@ def test_report_frozen(db):
 
 # ---------- /propose /launch ----------
 
-def test_propose_success_and_cap(db):
-    _free_realm(db)
-    row = _user(db, xp=100)
-    text = features.handle_propose(db, _tg(), TG, "周末观影趴 | 天数:30x2 | -100123")
-    assert "活动提案已提交" in text
-    capped = features.handle_propose(db, _tg(), TG, "第二场 | 天数:7x1 | -100123")
-    assert "本月活动提案已达上限" in capped
-
-
 def test_propose_points_prize_rejected(db):
     """积分（能量）奖品已随货币删除下线（2026-11-13）：提案在
     治理核心处被拒，只收 days/whitelist。"""
     _free_realm(db)
-    _user(db, xp=100)
+    _user(db)
     text = features.handle_propose(db, _tg(), TG, "周末观影趴 | 能量:100x2 | -100123")
     assert "奖品类型只能是" in text
     assert "活动提案已提交" not in text
@@ -251,7 +226,7 @@ def test_propose_points_prize_rejected(db):
 
 def test_propose_level_gate_and_bad_prize(db):
     _free_realm(db)
-    _user(db, xp=0)
+    _user(db)
     # 等级门用例须用合法奖品（天数）：能量奖品已下线，会先被奖品解析拒掉、到不了等级门
     gated = features.handle_propose(db, _tg(), TG, "周末趴 | 天数:30x1 | -100123")
     assert "Lv.2" in gated
@@ -259,12 +234,11 @@ def test_propose_level_gate_and_bad_prize(db):
     assert "奖品类型只能是" in bad
 
 
-def test_launch_success_and_gate(db):
+def test_launch_gate(db):
+    # member_xp 已删、等级恒 Lv.1：直接发起的 Lv.5 门恒挡（成功路径
+    # 随等级体系删除不可达，本例只钉门禁口径）
     _free_realm(db)
-    row = _user(db, xp=5000)
-    text = features.handle_direct_launch(db, _tg(), TG, "周末观影趴 | 天数:30x2 | -100123")
-    assert "活动已直接发起" in text
-    low = _user(db, tg=TG + 1, name="low", xp=100)
+    low = _user(db, tg=TG + 1, name="low")
     gated = features.handle_direct_launch(db, _tg(TG + 1), TG + 1, "周末趴 | 天数:30x1 | -100123")
     assert "Lv.5" in gated
 
@@ -277,7 +251,7 @@ def test_level_renders_card_in_group_report_propose_private_only(db, monkeypatch
     _user(db)
     monkeypatch.setattr("backend.tg_bot.router._user_cmd_limits", {})
     sent = _dispatch(db, monkeypatch, "/level", chat_id=GROUP, chat_type="group")
-    assert sent and "当前等级" in sent[0] and "请私聊" not in sent[0]
+    assert sent and "账号名称" in sent[0] and "请私聊" not in sent[0]
     for cmd in ("/report 1 违规", "/propose 标题 | 能量:10x1 | -100123"):
         sent = _dispatch(db, monkeypatch, cmd, chat_id=GROUP, chat_type="group")
         assert sent and "请私聊" in sent[0], cmd

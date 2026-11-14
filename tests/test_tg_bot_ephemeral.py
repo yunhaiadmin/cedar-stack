@@ -30,7 +30,6 @@ def db():
     models.WebUser.__table__.create(engine, checkfirst=True)
     models.TgBindCode.__table__.create(engine, checkfirst=True)
     models.SystemConfig.__table__.create(engine, checkfirst=True)
-    models.PointsLog.__table__.create(engine, checkfirst=True)
     # store.get_value 有进程级缓存，fixture 开头清掉防止用例间串味
     store.invalidate()
     Session = sessionmaker(bind=engine)
@@ -39,14 +38,13 @@ def db():
     session.close()
 
 
-def _make_user(db, username="u1", tg_id=None, points=0):
+def _make_user(db, username="u1", tg_id=None):
     u = models.WebUser(username=username, telegram_id=tg_id)
     if hasattr(u, "password_hash") and getattr(u, "password_hash") is None:
         try:
             u.password_hash = ""
         except Exception:
             pass
-    u.points = points
     db.add(u)
     db.commit()
     return u

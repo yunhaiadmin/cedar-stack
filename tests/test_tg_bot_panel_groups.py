@@ -57,10 +57,6 @@ GROUPS = {
     ]),
     "account": ("🎟️ 账号权益", [
         [
-            {"text": "✨ 能量", "callback_data": "menu:points"},
-            {"text": "🏆 能量榜", "callback_data": "menu:rank"},
-        ],
-        [
             {"text": "🎟️ 续期", "callback_data": "menu:login"},
             {"text": "🔗 绑定账号", "callback_data": "menu:bind"},
         ],
@@ -75,13 +71,13 @@ GROUPS = {
 
 # 原面板平铺的 12 颗按钮的 callback（主界面在一级，其余收进分组；
 # 签到原在一级，已于 2026-11-13 随签到入口摘除）
-ORIGINAL_12 = {
+ORIGINAL_10 = {
     "menu:request", "menu:myrequests", "menu:transfers",
-    "menu:bindings", "menu:login", "menu:points", "menu:rank",
+    "menu:bindings", "menu:login",
     "menu:whyplay", "menu:wants",
     "menu:bind", "menu:help", "menu:main",
 }
-FUNCTION_CALLBACKS = ORIGINAL_12 - {"menu:main"}
+FUNCTION_CALLBACKS = ORIGINAL_10 - {"menu:main"}
 
 
 @pytest.fixture()
@@ -125,7 +121,7 @@ def _no_real_timers(monkeypatch):
 def _user(db, tg=TG, name="alice"):
     row = models.WebUser(
         username=name, password_hash="x", telegram_id=tg,
-        points=42, vitality=14, is_staff=False,
+        is_staff=False,
     )
     db.add(row)
     db.commit()
@@ -158,7 +154,7 @@ def test_all_original_buttons_reachable_within_two_clicks():
     reachable = set(_flat(level1))
     for key in GROUPS:
         reachable |= set(_flat(handlers.user_panel_group_markup(key)))
-    assert ORIGINAL_12 <= reachable
+    assert ORIGINAL_10 <= reachable
 
 
 # ---------- 二级分组面板（handlers 层） ----------

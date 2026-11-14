@@ -409,10 +409,8 @@ def panel_collector(
     else:
         progress = 1.0
 
-    points = getattr(user, "points", 0) or 0
     return _ok({
         "nickname": getattr(user, "nickname", None) or user.username,
-        "points": points,
         "watch_hours": round(total_hours, 1),
         "tastes": tastes,
         "pet": {

@@ -1,4 +1,8 @@
-"""等级公益服活动治理 Step 4：排行榜等级列＋审计日志只读＋停权工具。"""
+"""等级公益服活动治理 Step 4：审计日志只读＋停权工具。
+
+排行榜等级列两项（test_rank_*）已随 points 列与 features.handle_rank
+一并删除：能量排行榜本体已下线，无可测对象。
+"""
 
 import json
 
@@ -22,50 +26,27 @@ def db():
         engine.dispose()
 
 
-def seed_levels(db):
-    names = ["初幕", "影迷", "鉴赏家", "放映师", "造梦者", "传奇"]
-    thresholds = [0, 100, 500, 1500, 5000, 15000]
-    for i, (name, th) in enumerate(zip(names, thresholds), 1):
-        db.add(models.MemberLevel(level=i, name=name, xp_threshold=th, is_active=True))
-    db.commit()
-
-
 def seed_free_realm(db):
     db.add(models.ServerRealm(name="公益服", slug="main", access_mode="free", is_active=True))
     db.commit()
 
 
 def user(db, tg, name, points=0, level=1, xp=0):
+    # points/level/xp 参数保留兼容旧调用点：points、member_level、member_xp
+    # 列均已删除，不再传入构造器。
     row = models.WebUser(
-        username=name, password_hash="x", telegram_id=tg, points=points,
-        member_level=level, member_xp=xp,
+        username=name, password_hash="x", telegram_id=tg,
     )
     db.add(row)
     db.commit()
     return row
 
 
-def test_rank_shows_level_column_only_in_free_realm(db):
-    seed_levels(db)
-    seed_free_realm(db)
-    user(db, 900001, "low", points=10, level=1, xp=0)
-    user(db, 900002, "high", points=100, level=2, xp=120)
-    text = features.handle_rank(db, {"id": 900001}, 900001, "")
-    assert "high" in text and "low" in text
-    assert text.index("high") < text.index("low")  # 仍按积分降序
-    assert "Lv.2 影迷" in text and "Lv.1 初幕" in text
-
-
-def test_rank_unchanged_in_paid_realm(db):
-    seed_levels(db)
-    user(db, 900001, "mine", points=10, level=3, xp=600)
-    user(db, 900002, "top", points=100, level=5, xp=6000)
-    text = features.handle_rank(db, {"id": 900001}, 900001, "")
-    assert "top" in text and "mine" in text and "Lv." not in text
-
-
-def test_govlog_lv6_reads_recent_entries(db):
-    seed_levels(db)
+def test_govlog_denied_for_all_without_level_source(db):
+    # 原 test_govlog_lv6_reads_recent_entries：handle_govlog 的 Lv.6 门走
+    # getattr(user, "member_level", 1) 兜底，等级列删除后无人能达到 Lv.6，
+    # 即便审计日志有行也一律「仅 Lv.6」拒绝、内容不泄露（原断言为 Lv.6
+    # 用户可读最近记录且按时间倒序渲染「降级」在「停权」之前）。
     seed_free_realm(db)
     admin = user(db, 900000, "admin", level=6, xp=20000)
     lv6 = user(db, 900001, "legend", level=6, xp=16000)
@@ -73,19 +54,16 @@ def test_govlog_lv6_reads_recent_entries(db):
     governance.freeze_governance(db, user_id=target.id, reason="刷榜", days=None, admin_id=admin.id)
     db.commit()
     victim = user(db, 900003, "victim", level=3, xp=600)
-    # 降级动作已随等级体系删除（2026-11-14）；审计日志读取面是通用的，
-    # 直接落一条 downgrade 历史动作行验渲染与倒序。
     governance.record_governance_audit(
         db, action="downgrade", actor_user_id=admin.id,
         target_user_id=victim.id, detail=json.dumps({"reason": "恶意举报"}))
     db.commit()
     text = features.handle_govlog(db, {"id": lv6.telegram_id}, lv6.telegram_id, "")
-    assert "停权" in text and "降级" in text
-    assert text.index("降级") < text.index("停权")  # 时间倒序
+    assert "仅 Lv.6" in text
+    assert "刷榜" not in text and "恶意举报" not in text
 
 
 def test_govlog_denies_unbound_below_lv6_and_paid_realm(db):
-    seed_levels(db)
     seed_free_realm(db)
     user(db, 900001, "lv5", level=5, xp=6000)
     assert "仅 Lv.6" in features.handle_govlog(db, {"id": 900001}, 900001, "")
@@ -93,7 +71,6 @@ def test_govlog_denies_unbound_below_lv6_and_paid_realm(db):
 
 
 def test_govlog_denied_in_paid_realm(db):
-    seed_levels(db)
     user(db, 900001, "legend", level=6, xp=16000)
     assert "仅在公益服开放" in features.handle_govlog(db, {"id": 900001}, 900001, "")
 
@@ -146,7 +123,6 @@ def test_admin_endpoints_and_route_registration(db):
     from backend.api import governance_admin as ga
     from backend.api.admin_core import admin_router
 
-    seed_levels(db)
     seed_free_realm(db)
     admin = user(db, 900000, "admin")
     target = user(db, 900001, "target", level=3, xp=600)

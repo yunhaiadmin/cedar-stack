@@ -43,8 +43,8 @@ def db():
 
 
 def _make_user(db, username):
-    u = models.WebUser(username=username, password_hash="test", points=1000,
-                       is_active=True, is_staff=True, member_xp=0, member_level=1)
+    u = models.WebUser(username=username, password_hash="test",
+                       is_active=True, is_staff=True)
     db.add(u)
     db.commit()
     return u

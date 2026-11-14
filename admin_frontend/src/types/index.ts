@@ -827,7 +827,6 @@ export interface UserDetail {
   subscription: { active: UserSubscriptionRow | null; history: UserSubscriptionRow[] }
   orders: {
     paid_total: number
-    recharge: { order_id: string; item_name: string; amount: number; status: string; created_at: string | null }[]
     subscription: { order_id: string; item_name: string; amount: number; status: string; created_at: string | null }[]
   }
   invitation: {

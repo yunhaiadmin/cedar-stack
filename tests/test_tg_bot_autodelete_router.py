@@ -36,7 +36,6 @@ def db():
         models.WebUser.__table__,
         models.TgBindCode.__table__,
         models.SystemConfig.__table__,
-        models.PointsLog.__table__,
         models.UserSubscription.__table__,
         models.SubscriptionPlan.__table__,
     ):
@@ -49,14 +48,13 @@ def db():
     session.close()
 
 
-def _make_user(db, username="u1", tg_id=None, points=0):
+def _make_user(db, username="u1", tg_id=None):
     u = models.WebUser(username=username, telegram_id=tg_id)
     if hasattr(u, "password_hash") and getattr(u, "password_hash") is None:
         try:
             u.password_hash = ""
         except Exception:
             pass
-    u.points = points
     db.add(u)
     db.commit()
     return u
@@ -115,8 +113,8 @@ def _delays_for(rec, chat_id, message_id):
 # ---------- ① 群命令回复 30 秒自毁 + ③ 用户命令 3 秒自毁 ----------
 
 def test_group_command_reply_and_cmd_autodelete(db, wires):
-    _make_user(db, "g1", 710001, points=50)
-    router.dispatch(db, _msg(710001, GROUP_CHAT, "/points", message_id=4242))
+    _make_user(db, "g1", 710001)
+    router.dispatch(db, _msg(710001, GROUP_CHAT, "/me", message_id=4242))
     # 机器人回复走 ex 通道并挂 30 秒，message_id 为 ex 返回值
     assert len(wires["ex"]) == 1 and wires["ex"][0][0] == GROUP_CHAT
     assert _delays_for(wires, GROUP_CHAT, BOT_MSG_ID) == [30]
@@ -146,8 +144,8 @@ def test_group_private_only_notice_autodelete(db, wires):
 # ---------- 私聊一律不挂 ----------
 
 def test_private_command_no_autodelete(db, wires):
-    _make_user(db, "p1", 710006, points=50)
-    router.dispatch(db, _msg(710006, 710006, "/points",
+    _make_user(db, "p1", 710006)
+    router.dispatch(db, _msg(710006, 710006, "/me",
                              chat_type="private", message_id=4247))
     assert wires["ex"] == []
     assert len(wires["plain"]) == 1
@@ -175,8 +173,8 @@ def test_zero_delay_disables_all(db, wires):
     db.commit()
     store.invalidate("bot_msg_autodelete_seconds")
     store.invalidate("bot_cmd_autodelete_seconds")
-    _make_user(db, "g7", 710008, points=50)
-    router.dispatch(db, _msg(710008, GROUP_CHAT, "/points", message_id=4249))
+    _make_user(db, "g7", 710008)
+    router.dispatch(db, _msg(710008, GROUP_CHAT, "/me", message_id=4249))
     assert wires["scheduled"] == []
     assert wires["ex"] == []  # 关闭时回落普通发送
     assert len(wires["plain"]) == 1

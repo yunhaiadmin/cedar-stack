@@ -86,8 +86,6 @@ def _set(db, key, value):
 
 
 def _user(db, username, **kw):
-    kw.setdefault("member_xp", 0)
-    kw.setdefault("member_level", 1)
     u = models.WebUser(username=username, password_hash="x", is_active=True,
                        **kw)
     db.add(u)

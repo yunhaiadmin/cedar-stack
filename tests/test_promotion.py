@@ -55,9 +55,9 @@ def realm(db):
     return row
 
 
-def _user(db, username, *, points=0, is_staff=False, channel=None):
+def _user(db, username, *, is_staff=False, channel=None):
     user = models.WebUser(
-        username=username, password_hash="x", points=points, is_staff=is_staff,
+        username=username, password_hash="x", is_staff=is_staff,
         register_channel=channel,
     )
     db.add(user)
@@ -84,10 +84,6 @@ def _policy(db, **values):
     return applied
 
 
-def _balance(db, user_id):
-    return db.query(models.WebUser.points).filter(
-        models.WebUser.id == user_id).scalar() or 0
-
 
 def _rewards(db, inviter_id=None):
     query = db.query(models.PromotionReward)
@@ -95,10 +91,6 @@ def _rewards(db, inviter_id=None):
         query = query.filter(models.PromotionReward.inviter_id == inviter_id)
     return query.all()
 
-
-def _points_logs(db, user_id, type_):
-    return db.query(models.PointsLog).filter(
-        models.PointsLog.user_id == user_id, models.PointsLog.type == type_).all()
 
 
 # ===========================================================================
@@ -126,8 +118,6 @@ def test_grant_is_noop_when_disabled(db):
     db.commit()
 
     assert _rewards(db) == []
-    assert _balance(db, inviter.id) == 0
-    assert _points_logs(db, inviter.id, "promotion") == []
 
 
 def test_apply_invitation_without_promotion_pays_inviter_nothing(db):
@@ -142,11 +132,7 @@ def test_apply_invitation_without_promotion_pays_inviter_nothing(db):
 
     assert result["applied"] is True
     assert result["inviter_reward"] == 0
-    assert _balance(db, inviter.id) == 0
-    assert _balance(db, invitee.id) == 0   # 被邀请人积分奖励已随货币下线
     assert _rewards(db) == []          # 推广奖励没开 → 一行都不写
-    assert _points_logs(db, inviter.id, "invite") == []
-    assert len(_points_logs(db, inviter.id, "promotion")) == 0
 
 
 # ===========================================================================
@@ -213,7 +199,6 @@ def test_grant_days_extends_membership_and_records_realm(db, realm):
     assert sub.realm_id == realm.id
     assert sub.status == "active"
     assert sub.end_date >= datetime.now() + timedelta(days=6)
-    assert _balance(db, inviter.id) == 0        # 走有效期就不动积分
 
 
 def test_grant_skips_when_value_is_zero(db):
@@ -225,7 +210,6 @@ def test_grant_skips_when_value_is_zero(db):
     assert promotion.grant(db, inviter, invitee, _code(db, inviter)) is None
     db.commit()
     assert _rewards(db) == []
-    assert _balance(db, inviter.id) == 0
     assert promotion.policy_payload(db)["active"] is False
 
 
@@ -244,8 +228,6 @@ def test_grant_is_idempotent_per_invitee(db, realm):
 
     assert len(_rewards(db)) == 1
     assert _rewards(db)[0].reward_value == 50   # 没发第二次
-    assert _balance(db, inviter.id) == 0        # 天数型不动积分
-    assert len(_points_logs(db, inviter.id, "promotion")) == 0
 
 
 def test_grant_failure_never_breaks_the_invitation(db, realm):
@@ -269,14 +251,12 @@ def test_grant_failure_never_breaks_the_invitation(db, realm):
     db.rollback()
     # 发奖失败不留下半截：没写明细、没写台账
     assert _rewards(db) == []
-    assert _points_logs(db, inviter.id, "promotion") == []
 
     # 邀请关系照常建立（邀请人只得推广那 50 天，去重后没有第二笔）
     result = apply_invitation(db, invitee, "INVITE001")
     db.commit()
     assert result["applied"] is True
     assert _rewards(db, inviter.id)[0].reward_value == 50
-    assert _balance(db, inviter.id) == 0
     assert len(_rewards(db)) == 1
 
 
@@ -294,8 +274,6 @@ def test_apply_invitation_whitelist_blocks_others(db):
 
     assert result["applied"] is False
     assert db.query(models.InvitationRecord).count() == 0
-    assert _balance(db, inviter.id) == 0
-    assert _balance(db, carol.id) == 0
 
 
 def test_apply_invitation_whitelist_hit_is_case_insensitive(db):
@@ -307,8 +285,6 @@ def test_apply_invitation_whitelist_hit_is_case_insensitive(db):
     db.commit()
     # 白名单命中即建立关系；邀请人奖励只走推广（本例未配 → 0），
     # 被邀请人积分奖励已随货币下线（恒 0）
-    assert _balance(db, inviter.id) == 0
-    assert _balance(db, bob.id) == 0
 
 
 def test_apply_invitation_empty_whitelist_means_unlimited(db):
@@ -338,13 +314,11 @@ def test_apply_invitation_is_idempotent(db):
 
     assert apply_invitation(db, invitee, "INVITE001")["applied"] is True
     db.commit()
-    first_balance = _balance(db, inviter.id)
     first_uses = db.query(models.InvitationCode).filter_by(code="INVITE001").one().use_count
 
     assert apply_invitation(db, invitee, "INVITE001")["applied"] is False
     db.commit()
 
-    assert _balance(db, inviter.id) == first_balance
     assert db.query(models.InvitationRecord).count() == 1
     assert db.query(models.InvitationCode).filter_by(code="INVITE001").one().use_count \
         == first_uses
@@ -361,8 +335,6 @@ def test_apply_invitation_still_works_when_promotion_enabled(db, realm):
     db.commit()
 
     assert result["applied"] is True
-    assert _balance(db, inviter.id) == 0          # 天数型不动积分
-    assert _balance(db, invitee.id) == 0          # 被邀请人积分奖励已下线
     rewards = _rewards(db, inviter.id)
     assert len(rewards) == 1 and rewards[0].reward_value == 30
     assert rewards[0].code_id is not None

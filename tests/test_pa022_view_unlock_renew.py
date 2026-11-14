@@ -28,7 +28,7 @@ from backend import models
 from backend.emby_server.portal import UnlockViewRequest, unlock_emby_view
 
 _TABLES = ("web_users", "server_realms", "system_configs",
-           "emby_view_unlocks", "points_logs")
+           "emby_view_unlocks")
 
 
 @pytest.fixture()
@@ -48,7 +48,7 @@ def _setup(db, points=1000, row_expires="absent", access_mode="free"):
                                access_mode=access_mode)
     db.add(realm)
     u = models.WebUser(username="pa022user", password_hash="x",
-                       is_active=True, points=points)
+                       is_active=True)
     db.add(u)
     db.commit()
     if row_expires != "absent":
@@ -78,7 +78,6 @@ def test_retired_no_row_no_charge(db):
     exc = _call(db, u, realm)
     assert exc.status_code == 410
     db.refresh(u)
-    assert int(u.points or 0) == 1000
     assert _row(db, u, realm) is None
 
 
@@ -89,7 +88,6 @@ def test_retired_expired_row_untouched(db):
     assert exc.status_code == 410
     db.refresh(u)
     row = _row(db, u, realm)
-    assert int(u.points or 0) == 1000
     assert row is not None and row.expires_at == expired  # 没被续开
 
 

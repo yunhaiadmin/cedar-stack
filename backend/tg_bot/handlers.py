@@ -268,14 +268,7 @@ def main_markup(db, web_user, is_private: bool) -> dict:
 
 def _group_menu_markup(db) -> dict:
     """群聊主菜单。个人查询不进群菜单。"""
-    rows: list[list[dict]] = [
-        [
-            {"text": "✨ 能量", "callback_data": "menu:points"},
-        ],
-        [
-            {"text": "🏆 能量榜", "callback_data": "menu:rank"},
-        ],
-    ]
+    rows: list[list[dict]] = []
     rows.extend([
         [
             {"text": "🔥 求片榜", "callback_data": "menu:requestboard"},
@@ -342,8 +335,6 @@ USER_PANEL_GROUPS: dict[str, dict] = {
     "account": {
         "label": "🎟️ 账号权益",
         "buttons": [
-            {"text": "✨ 能量", "callback_data": "menu:points"},
-            {"text": "🏆 能量榜", "callback_data": "menu:rank"},
             {"text": "🎟️ 续期", "callback_data": "menu:login"},
             {"text": "🔗 绑定账号", "callback_data": "menu:bind"},
         ],
@@ -621,7 +612,7 @@ def handle_help(db, tg_user: dict, chat_id: int, args: str) -> str:
     return layout.card(
         layout.title("使用帮助"),
         [
-            layout.row("🤖", "主要用途", "公益服快捷操作：查能量，以及接收求片进度、订阅到期等通知"),
+            layout.row("🤖", "主要用途", "公益服快捷操作：接收求片进度、订阅到期等通知"),
             layout.row("📋", "全部命令", "点左下角的 / 菜单查看"),
             layout.row("💬", "遇到问题", "请在网页端联系客服"),
         ],
@@ -639,18 +630,6 @@ def handle_bind(db, tg_user: dict, chat_id: int, args: str) -> str:
         return _bind_guide_text()
     msg = verify_bind_code(db, int(telegram_id), chat_id, args.strip())
     return msg if msg else "绑定码无效或已过期，请在网页端重新获取绑定码"
-
-
-def handle_points(db, tg_user: dict, chat_id: int, args: str) -> str:
-    user = resolve(db, int(tg_user.get("id") or 0))
-    if user is None:
-        return _bind_guide_text()
-    points = int(user.points or 0)
-    rows = [layout.row("✨", "能量余额", points)]
-    # 活力行与群发言能量段已随货币删除摘除（2026-11-13）：二者分别
-    # 依赖的 backend.vitality / backend.points 模块已删，原先的容错
-    # 吞异常只会让死代码常驻、/chatpoints 入口恒回系统繁忙，一并清掉。
-    return layout.card(layout.title("我的能量"), rows)
 
 
 def handle_redeem(db, tg_user: dict, chat_id: int, args: str) -> str:
@@ -699,10 +678,6 @@ def handle_my_requests(db, tg_user, chat_id, args):
 
 def handle_login(db, tg_user, chat_id, args):
     from backend.tg_bot.features import handle_login as _impl
-    return _impl(db, tg_user, chat_id, args)
-
-def handle_rank(db, tg_user, chat_id, args):
-    from backend.tg_bot.features import handle_rank as _impl
     return _impl(db, tg_user, chat_id, args)
 
 def handle_govlog(db, tg_user, chat_id, args):

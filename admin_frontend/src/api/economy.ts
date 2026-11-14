@@ -45,7 +45,7 @@ export interface ExchangeCodeRow {
 
 export interface OrderRow {
   order_id: string
-  kind: 'recharge' | 'subscription'
+  kind: 'subscription'
   item_name: string
   username: string
   user_id: number
@@ -139,15 +139,15 @@ export const markOrderPaid = (orderId: string) =>
 export interface RefundResult {
   success: boolean
   order_id: string
-  kind: 'recharge' | 'subscription'
+  kind: 'subscription'
   status: string
-  /** 实际扣回的积分（充值时） */
+  /** 历史字段：积分回滚已下线，恒 0 */
   revoked_points: number
   /** 实际回滚的会员天数（订阅时） */
   revoked_days: number
-  /** 同时撤回的邀请人返利 */
+  /** 同时撤回的邀请人返利（元） */
   rebate_reversed: number
-  /** 返利撤回失败是否留了欠账（true = 邀请人余额不足，返利没撤回来，已记欠账） */
+  /** 返利撤回失败（邀请人余额不足；计提行已标记 reversal_owed 待处理） */
   rebate_reversal_failed?: boolean
   /** 回滚后是否已撤销该订阅 */
   cancelled: boolean
@@ -156,7 +156,7 @@ export interface RefundResult {
 
 export interface RefundRecord {
   order_id: string
-  kind: 'recharge' | 'subscription'
+  kind: 'subscription'
   status: 'refunded' | 'closed'
   username: string
   reason: string
@@ -167,7 +167,7 @@ export interface RefundRecord {
 export const closeOrder = (orderId: string) =>
   post<{ success: boolean; status: string }>(`/economy/orders/${orderId}/close`)
 
-/** 退款：默认按账本回滚权益（积分 / 会员天数） */
+/** 退款：默认回滚权益（会员天数 / 钱包返利） */
 export const refundOrder = (
   orderId: string,
   data: { reason?: string; revoke_entitlement?: boolean; allow_negative?: boolean; reverse_rebate?: boolean },
@@ -176,30 +176,6 @@ export const refundOrder = (
 /** 最近的退款 / 关单记录（带原因，供复盘对账） */
 export const fetchRefundRecords = (limit = 20) =>
   get<{ records: RefundRecord[] }>('/economy/refunds', { limit })
-
-export interface RebateDebt {
-  id: number
-  order_id: string
-  username: string
-  amount: number
-  status: 'pending' | 'recovered' | 'waived'
-  reason: string
-  created_at: string | null
-  resolved_at: string | null
-}
-
-/** 返利撤回欠账列表（只读）：退款时邀请人余额不足留下的持久化欠账 */
-export const fetchRebateDebts = (limit = 50) =>
-  get<{ records: RebateDebt[] }>('/economy/rebate-debts', { limit })
-
-/** 重试收回一条返利撤回欠账（pending → recovered；邀请人余额仍不足则继续欠着） */
-export const retryRebateDebt = (debtId: number, allowNegative = false) =>
-  post<{ success: boolean; debt_id: number; status: string; reason?: string; reversed_amount?: number }>(
-    `/economy/rebate-debts/${debtId}/retry`, { allow_negative: allowNegative })
-
-/** 豁免一条返利撤回欠账（pending → waived，认亏，写审计） */
-export const waiveRebateDebt = (debtId: number) =>
-  post<{ success: boolean; debt_id: number; status: string }>(`/economy/rebate-debts/${debtId}/waive`, {})
 
 // ==================== 优惠券（v2.10.0） ====================
 // 后端：backend/api/coupons_admin.py + backend/coupons.py

@@ -115,7 +115,7 @@ def test_grant_register_gifts_creates_view_row_only_no_points_spent(db):
     db.refresh(user)
     assert not hasattr(user, "is_welfare")
     assert not hasattr(user, "welfare_grant_channel")
-    assert user.points == 0
+    assert not hasattr(user, "points")  # points 列已随货币下线删除（#195）
 
     rows = (
         db.query(models.EmbyViewUnlock)
@@ -200,7 +200,7 @@ def test_grant_register_gifts_welfare_never_granted(db):
     db.refresh(user)
     assert not hasattr(user, "is_welfare")
     assert not hasattr(user, "welfare_grant_channel")
-    assert user.points == 0
+    assert not hasattr(user, "points")  # points 列已随货币下线删除（#195）
 
     rows = _view_rows(db, user)
     assert len(rows) == 1
@@ -216,7 +216,7 @@ def test_grant_register_gifts_view_off_by_default(db):
 
     db.refresh(user)
     assert not hasattr(user, "is_welfare")
-    assert user.points == 0
+    assert not hasattr(user, "points")  # points 列已随货币下线删除（#195）
     assert _view_rows(db, user) == []
 
 
@@ -239,7 +239,7 @@ def test_grant_register_gifts_welfare_on_view_off(db):
     db.refresh(user)
     assert not hasattr(user, "is_welfare")
     assert not hasattr(user, "welfare_grant_channel")
-    assert user.points == 0
+    assert not hasattr(user, "points")  # points 列已随货币下线删除（#195）
     assert _view_rows(db, user) == []
 
 

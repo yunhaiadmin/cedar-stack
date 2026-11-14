@@ -63,7 +63,7 @@ def test_admin_grant_rejects_nonexistent_realm(db):
     """显式传不存在的 realm_id：400，且不落任何订阅行。"""
     from backend.api import admin as admin_mod  # noqa: F401 —— 确保路由已注册
     u = models.WebUser(username="a108_user", password_hash="",
-                       points=0, is_active=True)
+                       is_active=True)
     db.add(u)
     realm = models.ServerRealm(name="测试服", slug="a108", is_active=True)
     db.add(realm)

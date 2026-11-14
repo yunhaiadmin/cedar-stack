@@ -40,9 +40,10 @@ def db():
 
 
 def _user(db, username, level=1, xp=0):
+    # level/xp 参数保留兼容旧调用点：member_level、member_xp 列均已删除，
+    # 等级恒 Lv.1、附议权重恒 1，两参数不再传入构造器。
     user = models.WebUser(
         username=username, password_hash="x", is_active=True,
-        member_level=level, member_xp=xp,
     )
     db.add(user)
     db.commit()
@@ -137,13 +138,15 @@ def test_vote_frozen_user_weight_forced_to_one(db):
 
 
 def test_vote_unfrozen_user_weight_by_level(db):
+    # 无等级来源恒 Lv.1：未停权用户附议权重同样为 1
+    # （原断言按 Lv.6 得加权 6、快照 6）。
     realm = _free_realm(db)
     owner = _user(db, "owner")
     voter = _user(db, "voter6", level=6)
     seek = _seek(db, owner, realm.id)
     out = media_seek.toggle_vote(db, voter, seek.id)
-    assert out["weighted_vote_count"] == 6
-    assert _vote_row(db, seek.id, voter.id).weight_snapshot == 6
+    assert out["weighted_vote_count"] == 1
+    assert _vote_row(db, seek.id, voter.id).weight_snapshot == 1
 
 
 def test_vote_cancel_not_blocked_by_freeze(db):
@@ -166,10 +169,11 @@ def test_vote_history_not_rewritten_by_freeze(db):
     admin = _admin(db)
     seek = _seek(db, owner, realm.id)
     media_seek.toggle_vote(db, voter, seek.id)
-    assert _vote_row(db, seek.id, voter.id).weight_snapshot == 6
+    # 历史票快照恒为 1（无等级来源；原断言按 Lv.6 得 6）
+    assert _vote_row(db, seek.id, voter.id).weight_snapshot == 1
     _freeze(db, admin, voter)
-    assert media_seek.weighted_votes_for(db, [seek.id])[seek.id] == 6
-    assert _vote_row(db, seek.id, voter.id).weight_snapshot == 6
+    assert media_seek.weighted_votes_for(db, [seek.id])[seek.id] == 1
+    assert _vote_row(db, seek.id, voter.id).weight_snapshot == 1
 
 
 # ==================== Step 2 举报与复核 ====================
@@ -212,15 +216,21 @@ def test_review_vote_frozen_reviewer_forbidden(db):
     assert "冻结" in ei.value.detail
 
 
-def test_review_vote_unfrozen_reviewer_ok(db):
+def test_review_vote_unfrozen_reviewer_blocked_by_level_gate(db):
+    # 原 test_review_vote_unfrozen_reviewer_ok：未停权 Lv.3 复核员可投票。
+    # 等级列删除后权重恒 0，未停权复核员同样在权重门 403——与停权 403 的
+    # 区别在文案（Lv.3 门槛，而非「冻结」）。
     realm = _free_realm(db)
     owner = _user(db, "owner")
     reporter = _user(db, "reporter")
     reviewer = _user(db, "reviewer", level=3)
     seek = _seek(db, owner, realm.id)
     report = report_svc.create_report(db, reporter, seek.id, "spam")
-    out = report_svc.cast_review_vote(db, reviewer, report["id"], "agree")
-    assert out["status"] == "pending"
+    with pytest.raises(report_svc.GovernanceError) as ei:
+        report_svc.cast_review_vote(db, reviewer, report["id"], "agree")
+    assert ei.value.status_code == 403
+    assert "Lv.3" in ei.value.detail
+    assert "冻结" not in ei.value.detail
 
 
 # ==================== Step 3 提案与直接发起 ====================
@@ -238,12 +248,16 @@ def test_submit_proposal_frozen_forbidden(db):
     assert db.query(models.LotteryActivityProposal).count() == 0
 
 
-def test_submit_proposal_unfrozen_ok(db):
+def test_submit_proposal_unfrozen_blocked_by_level_gate(db):
+    # 原 test_submit_proposal_unfrozen_ok：未停权 Lv.2 用户可提交（快照 2）。
+    # 现恒 Lv.1，未停权用户同样在等级门 403、不落提案行。
     _lottery_setup_free(db)
     user = _user(db, "lv2", xp=100)
-    proposal = lottery_gov.submit_proposal(db, user.id, _lottery_payload())
-    assert proposal.status == "pending"
-    assert proposal.level_snapshot == 2
+    with pytest.raises(lottery_gov.LotteryGovernanceError) as ei:
+        lottery_gov.submit_proposal(db, user.id, _lottery_payload())
+    assert ei.value.status_code == 403
+    assert "等级不足" in ei.value.detail
+    assert db.query(models.LotteryActivityProposal).count() == 0
 
 
 def test_direct_launch_frozen_forbidden(db):
@@ -258,9 +272,13 @@ def test_direct_launch_frozen_forbidden(db):
     assert db.query(models.LotteryRound).count() == 0
 
 
-def test_direct_launch_unfrozen_ok(db):
+def test_direct_launch_unfrozen_blocked_by_level_gate(db):
+    # 原 test_direct_launch_unfrozen_ok：未停权 Lv.5 用户可直接发起。
+    # 现恒 Lv.1，未停权用户同样在等级门 403、不建轮次。
     _lottery_setup_free(db)
     user = _user(db, "lv5", xp=5000)
-    round_obj, record = lottery_gov.direct_launch(db, user.id, _lottery_payload())
-    assert round_obj is not None
-    assert record is not None
+    with pytest.raises(lottery_gov.LotteryGovernanceError) as ei:
+        lottery_gov.direct_launch(db, user.id, _lottery_payload())
+    assert ei.value.status_code == 403
+    assert "等级不足" in ei.value.detail
+    assert db.query(models.LotteryRound).count() == 0

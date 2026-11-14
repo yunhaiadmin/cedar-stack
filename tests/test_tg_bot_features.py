@@ -18,8 +18,8 @@ def db():
     finally:
         session.close(); engine.dispose()
 
-def user(db, tg=900001, name="alice", points=42):
-    row = models.WebUser(username=name, password_hash="x", telegram_id=tg, points=points)
+def user(db, tg=900001, name="alice"):
+    row = models.WebUser(username=name, password_hash="x", telegram_id=tg)
     db.add(row); db.commit(); return row
 
 def test_account_unbound_is_private_safe(db):
@@ -61,10 +61,3 @@ def test_login_returns_one_time_url_only_for_bound_user(db, monkeypatch):
     assert isinstance(result, tuple)
     text, markup = result
     assert "10 分钟" in text and markup["inline_keyboard"][0][0]["url"].endswith("token=once")
-
-def test_rank_uses_bound_users_and_marks_self(db):
-    mine = user(db, tg=900001, name="mine", points=10)
-    user(db, tg=900002, name="top", points=100)
-    db.add(models.WebUser(username="unbound", password_hash="x", points=999)); db.commit()
-    text = features.handle_rank(db, {"id": mine.telegram_id}, mine.telegram_id, "")
-    assert "top" in text and "mine" in text and "unbound" not in text and "◀️" in text

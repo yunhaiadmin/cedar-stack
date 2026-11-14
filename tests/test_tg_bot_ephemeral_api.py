@@ -64,8 +64,7 @@ def db():
 
 
 def _user(db, tg, name, staff=False, **kw):
-    fields = {"password_hash": "x", "telegram_id": tg, "points": 10,
-              "vitality": 14, "is_active": True, "is_staff": staff}
+    fields = {"password_hash": "x", "telegram_id": tg, "is_active": True, "is_staff": staff}
     if staff and "admin_role" not in kw:
         fields["admin_role"] = "operator"
     fields.update(kw)

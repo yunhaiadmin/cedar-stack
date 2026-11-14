@@ -75,12 +75,14 @@ def client(engine):
 
 
 def _user(db, username, level=1, staff=False):
+    # level 参数保留兼容旧调用点：member_level 列已删除，复核权重走
+    # getattr(user, "member_level", None) 兜底恒为 Lv.1 权重 0，
+    # 本参数不再传入构造器。
     user = models.WebUser(
         username=username,
         password_hash="x",
         is_active=True,
         is_staff=staff,
-        member_level=level,
     )
     db.add(user)
     db.commit()
@@ -163,14 +165,17 @@ def _vote(client, user, report_id, decision):
 
 
 def _escalate(client, db, report_id, reviewers):
-    """3 个复核员各投同意，返回最终举报行（默认 quorum 3 时应 escalated）。"""
-    body = None
-    for reviewer in reviewers:
-        resp = _vote(client, reviewer, report_id, "agree")
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
-    assert body["status"] == "escalated", body
-    return body
+    """把举报行直接置 escalated 并返回状态 dict。
+
+    原实现靠 3 名 Lv.3/4/5 复核员各投同意票达 quorum 升级；等级列删除后
+    复核权重恒 0、投票恒 403，升级态改由直接播种状态驱动，终审/队列/
+    停权等下游断言口径不变。
+    """
+    row = db.query(models.GovernanceReport).filter_by(id=report_id).first()
+    row.status = "escalated"
+    row.escalated_at = datetime.now()
+    db.commit()
+    return {"id": report_id, "status": "escalated"}
 
 
 def _decide(client, admin, report_id, decision, note=None):
@@ -181,7 +186,8 @@ def _decide(client, admin, report_id, decision, note=None):
 
 
 def _setup_free(db, client):
-    """公益服＋管理员＋举报人＋3 名复核员（Lv.3/Lv.4/Lv.5）＋一条求片。"""
+    """公益服＋管理员＋举报人＋3 名复核员（旧口径 Lv.3/Lv.4/Lv.5，等级列
+    删除后三人权重恒 0）＋一条求片。"""
     realm = _free_realm(db)
     admin = _user(db, "admin", level=6, staff=True)
     reporter = _user(db, "reporter", level=1)
@@ -301,14 +307,15 @@ def test_report_detail_visibility(db, client):
     other = _user(db, "other", level=1)
     resp = _as(client, other).get(f"/api/user/governance/reports/{report_id}")
     assert resp.status_code == 404
-    # 管理员可看，含复核票明细
-    _vote(client, reviewers[0], report_id, "agree")
+    # 管理员可看，含复核票明细：复核投票已恒被权重门 403（无等级来源），
+    # 票明细为空（原断言为投票成功后 votes 长度 1 且 reviewer 对应）
+    resp = _vote(client, reviewers[0], report_id, "agree")
+    assert resp.status_code == 403
     detail = _as_admin(client, admin).get(
         f"/api/admin/governance/reports/{report_id}"
     )
     assert detail.status_code == 200
-    assert len(detail.json()["votes"]) == 1
-    assert detail.json()["votes"][0]["reviewer_id"] == reviewers[0].id
+    assert detail.json()["votes"] == []
 
 
 # ---------------- 复核投票 ----------------
@@ -324,6 +331,8 @@ def test_review_vote_low_level_forbidden(db, client):
 
 def test_review_vote_self_forbidden(db, client):
     _, _, reporter, _, seek = _setup_free(db, client)
+    # 保留属性赋值（非构造 kwarg）：复核权重走 getattr(user, "member_level")
+    # 兜底 seam，赋 6 后权重门可过、才能测到其后的自投禁令 403。
     reporter.member_level = 6
     db.commit()
     body = _report(client, reporter, seek.id)
@@ -332,11 +341,14 @@ def test_review_vote_self_forbidden(db, client):
 
 
 def test_review_vote_duplicate(db, client):
+    # 原口径：首票 200、重票 409。等级列删除后权重恒 0，两次投票都在
+    # 权重门 403、不落票行（重复票校验已不可达）。
     _, _, reporter, reviewers, seek = _setup_free(db, client)
     body = _report(client, reporter, seek.id)
-    assert _vote(client, reviewers[0], body["id"], "agree").status_code == 200
+    assert _vote(client, reviewers[0], body["id"], "agree").status_code == 403
     resp = _vote(client, reviewers[0], body["id"], "disagree")
-    assert resp.status_code == 409
+    assert resp.status_code == 403
+    assert db.query(models.GovernanceReviewVote).count() == 0
 
 
 def test_review_vote_bad_decision(db, client):
@@ -378,76 +390,86 @@ def test_review_vote_paid_realm_forbidden(db, client):
 
 
 def test_escalation_all_agree(db, client):
+    # 原口径：3 名复核员（Lv.3/4/5，权重 1+2+2=5）全同意达 quorum 升级、
+    # 进终审队列。等级列删除后复核权重恒 0（getattr 兜底 None→Lv.1），
+    # 所有复核投票都在权重门 403、不落票行，举报恒 pending、不进队列。
     _, admin, reporter, reviewers, seek = _setup_free(db, client)
     body = _report(client, reporter, seek.id)
-    final = _escalate(client, db, body["id"], reviewers)
-    assert final["status"] == "escalated"
-    assert final["escalated_at"] is not None
-    assert final["ballots"] == 3
-    assert final["agree_weight"] == 5  # Lv.3=1 + Lv.4=2 + Lv.5=2
+    for reviewer in reviewers:
+        resp = _vote(client, reviewer, body["id"], "agree")
+        assert resp.status_code == 403
+    assert db.query(models.GovernanceReviewVote).count() == 0
+    row = db.query(models.GovernanceReport).filter_by(id=body["id"]).first()
+    assert row.status == "pending"
+    assert row.escalated_at is None
     queue = _as_admin(client, admin).get("/api/admin/governance/reports/queue")
     assert queue.status_code == 200
-    assert [r["id"] for r in queue.json()] == [body["id"]]
+    assert queue.json() == []
 
 
 def test_quorum_counts_people_not_weight(db, client):
+    # 原口径：两名 Lv.6 同意（权重 6）人数不足 quorum 仍 pending，
+    # 第三人否决后按权重比升级。现无等级来源：三票全在权重门 403，
+    # quorum/权重计票已不可达，举报恒 pending。
     _, _, reporter, _, seek = _setup_free(db, client)
     lv6a = _user(db, "lv6a", level=6)
     lv6b = _user(db, "lv6b", level=6)
     lv3 = _user(db, "lv3", level=3)
     body = _report(client, reporter, seek.id)
-    # 两个 Lv.6 同意权重已 6，但人数 2 < quorum 3，仍 pending
-    r1 = _vote(client, lv6a, body["id"], "agree").json()
-    r2 = _vote(client, lv6b, body["id"], "agree").json()
-    assert r1["status"] == "pending"
-    assert r2["status"] == "pending"
-    # 再来一个 Lv.3 否决：人数 3 达标，同意权重 6/7 ≥ 2/3 → 升级
-    r3 = _vote(client, lv3, body["id"], "disagree").json()
-    assert r3["status"] == "escalated"
-    assert r3["ballots"] == 3
-    assert r3["agree_weight"] == 6
-    assert r3["disagree_weight"] == 1
+    for voter, decision in ((lv6a, "agree"), (lv6b, "agree"), (lv3, "disagree")):
+        resp = _vote(client, voter, body["id"], decision)
+        assert resp.status_code == 403
+    row = db.query(models.GovernanceReport).filter_by(id=body["id"]).first()
+    assert row.status == "pending"
+    assert db.query(models.GovernanceReviewVote).count() == 0
 
 
 def test_disagree_majority_closes(db, client):
+    # 原口径：3 名复核员全否决 → review_rejected 关闭、再投 409。
+    # 现否决票同样恒 403 在权重门，举报不关闭、恒 pending。
     _, _, reporter, reviewers, seek = _setup_free(db, client)
     body = _report(client, reporter, seek.id)
     for reviewer in reviewers:
         resp = _vote(client, reviewer, body["id"], "disagree")
-        assert resp.status_code == 200
-    final = resp.json()
-    assert final["status"] == "review_rejected"
-    # 已关闭的举报不再接受复核
+        assert resp.status_code == 403
+    row = db.query(models.GovernanceReport).filter_by(id=body["id"]).first()
+    assert row.status == "pending"
     extra = _user(db, "extra", level=6)
     resp = _vote(client, extra, body["id"], "agree")
-    assert resp.status_code == 409
+    assert resp.status_code == 403
 
 
 def test_weight_snapshot_survives_level_change(db, client):
+    # 原口径：复核员投票后升 Lv.6，其快照权重仍为投票时刻的 1，
+    # 三票加权和 5 升级。现投票恒 403 在权重门、无票行可快照，
+    # 管理员详情 votes 为空、举报恒 pending。
     _, admin, reporter, reviewers, seek = _setup_free(db, client)
     body = _report(client, reporter, seek.id)
-    _vote(client, reviewers[0], body["id"], "agree")  # Lv.3，权重 1
-    # 复核员事后升到 Lv.6，快照权重仍为 1
+    resp = _vote(client, reviewers[0], body["id"], "agree")
+    assert resp.status_code == 403
     reviewers[0].member_level = 6
     db.commit()
-    _vote(client, reviewers[1], body["id"], "agree")  # Lv.4，权重 2
-    final = _vote(client, reviewers[2], body["id"], "agree").json()
-    assert final["status"] == "escalated"
-    assert final["agree_weight"] == 5  # 1 + 2 + 2，不是 3 + 2 + 2
+    for reviewer in reviewers[1:]:
+        resp = _vote(client, reviewer, body["id"], "agree")
+        assert resp.status_code == 403
     detail = _as_admin(client, admin).get(
         f"/api/admin/governance/reports/{body['id']}"
     )
-    first_vote = detail.json()["votes"][0]
-    assert first_vote["weight"] == 1
+    assert detail.json()["votes"] == []
+    assert detail.json()["status"] == "pending"
 
 
 def test_config_custom_quorum(db, client):
+    # 原口径：quorum 配置改 2 后两票即升级。现投票恒 403 在权重门，
+    # quorum 配置不再能改变结果，举报恒 pending。
     _, _, reporter, reviewers, seek = _setup_free(db, client)
     _set_config(db, "governance_review_quorum", "2")
     body = _report(client, reporter, seek.id)
-    _vote(client, reviewers[0], body["id"], "agree")
-    final = _vote(client, reviewers[1], body["id"], "agree").json()
-    assert final["status"] == "escalated"
+    for reviewer in reviewers[:2]:
+        resp = _vote(client, reviewer, body["id"], "agree")
+        assert resp.status_code == 403
+    row = db.query(models.GovernanceReport).filter_by(id=body["id"]).first()
+    assert row.status == "pending"
 
 
 # ---------------- 终审 ----------------
@@ -499,7 +521,8 @@ def test_decide_bad_decision(db, client):
 
 
 def _reject_five(db, client, admin, reporter, reviewers):
-    """举报人 5 次举报、逐条升级并终审驳回；返回最后一次终审响应。"""
+    """举报人 5 次举报、逐条置升级态（_escalate 播种）并终审驳回；
+    返回最后一次终审响应。"""
     last = None
     for i in range(5):
         seek = _seek(db, reporter, f"求片{i}", realm_id=None)
@@ -681,8 +704,9 @@ def test_governance_actions_do_not_grant_xp(db, client):
     reviewer_row = (
         db.query(models.WebUser).filter_by(id=reviewers[0].id).first()
     )
-    assert (reporter_row.member_xp or 0) == 0
-    assert (reviewer_row.member_xp or 0) == 0
+    # member_xp 列已删除：以 getattr 兜底断言两行均无经验落点（恒 0）
+    assert (getattr(reporter_row, "member_xp", 0) or 0) == 0
+    assert (getattr(reviewer_row, "member_xp", 0) or 0) == 0
 
 
 # ---------------- 权重表 ----------------

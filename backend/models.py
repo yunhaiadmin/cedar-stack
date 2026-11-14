@@ -245,25 +245,12 @@ class WebUser(Base):
     # 管理员角色（v2.26.0，见 backend/admin_roles.py）：super / operator / viewer
     # 空值 = 升级前的老管理员 → 按 super 处理（不改权、也不会「没人进得去后台」）
     admin_role = Column(String(20), nullable=True)
-    points = Column(Integer, default=0)  # 积分余额（签到/邀请返利/兑换/充值）
-    # 发言奖励小数累计（2026-10-31）：points 与 PointsLog.amount 都是 Integer，
-    # 每条 0.1 这类小数奖励先按「分」（0.01 能量）累计到 chat_frac_cents，
-    # 满 100 分结算 1 能量进 points 并写台账；余数跨日保留不清零。
-    # chat_day（上海日期）+ chat_day_cents 记当日已累计（含已结算部分），
-    # 供每日上限按能量口径判定（见 backend/points.py award_chat_points）。
+    # 发言奖励小数累计遗留列（2026-10-31）：发言积分已随货币下线
+    # （backend/points.py 已删、points 列已摘），三列不再读写。
+    # chat_day（上海日期）+ chat_day_cents 记当日已累计（含已结算部分）。
     chat_frac_cents = Column(Integer, default=0, nullable=False, server_default="0")
     chat_day_cents = Column(Integer, default=0, nullable=False, server_default="0")
     chat_day = Column(String(10), nullable=True)
-    # 会员等级（P1 统一货币体系）：经验值只来自真实充值/有效邀请，等级由阈值推导并缓存
-    member_xp = Column(Integer, default=0, nullable=False, server_default="0")  # 会员经验值
-    member_level = Column(Integer, default=1, nullable=False, server_default="1")  # 缓存的当前等级（1-6）
-    # 历史遗留列：原成就徽章佩戴 key。成就系统已于 2026-11-14 删除，
-    # 代码不再读写此列，列本体随后续删列收口另行处理。
-    worn_badge_key = Column(String(64), nullable=True)
-    # 活力值（C1 竞品借鉴）：公益服用户每日 00:00 扣 1，上限/阈值/兑换率全部可配；
-    # 低于阈值限制观影，耗尽（0）即休眠，签到/续活力后自动恢复。老库补列默认满值。
-    vitality = Column(Integer, default=14, nullable=False, server_default="14")
-
     # 注册渠道（v2.44.0 归因）：admin=管理员创建 / code=卡密注册 /
     # invitation=邀请码注册 / open=开放注册。
     # 空值 = 升级前的存量用户（当时没记，不硬猜），后台显示为「未记录」。
@@ -400,58 +387,6 @@ class SubscriptionReminder(Base):
 
 # WelfareReminder（welfare_reminders 去重表）已随福利服役族于
 # 2026-11-14 删除：福利到期提醒轨下线，订阅轨提醒不受影响。
-
-
-class RechargePackage(Base):
-    """充值套餐表"""
-    __tablename__ = 'recharge_packages'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(100), nullable=False)
-    amount = Column(Integer, nullable=False)  # 积分数量
-    price = Column(Numeric(10, 2), nullable=False)
-    bonus = Column(Integer, default=0)  # 赠送积分
-    is_active = Column(Boolean, default=True)
-    is_popular = Column(Boolean, default=False)
-    sort_order = Column(Integer, default=0)
-    icon = Column(String(10), nullable=True)  # 套餐图标 emoji，由管理端配置，前端直接渲染
-    created_at = Column(DateTime, default=datetime.now)
-
-
-class RechargeOrder(Base):
-    """充值订单表"""
-    __tablename__ = 'recharge_orders'
-
-    __table_args__ = (
-        Index('idx_recharge_user', 'user_id'),
-        Index('idx_recharge_status', 'status'),
-        Index('idx_recharge_order_id', 'order_id'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    order_id = Column(String(64), unique=True, nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
-    package_id = Column(Integer, ForeignKey('recharge_packages.id'), nullable=False)
-    amount = Column(Integer, nullable=False)
-    price = Column(Numeric(10, 2), nullable=False)
-    payment_method = Column(String(50))
-    status = Column(String(20), default='pending')  # pending / paid / refunded / closed
-    payment_url = Column(String(500))
-    paid_at = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.now)
-    # 关单（未支付订单作废）与退款（已支付订单冲正）的留痕。
-    # 退款必须留下原因与冲正额度：客服对账、争议时这是唯一的依据。
-    closed_at = Column(DateTime)
-    refunded_at = Column(DateTime)
-    refund_reason = Column(String(255))
-    refunded_points = Column(Integer, default=0)  # 实际冲正给该用户的积分数（正数=扣回）
-    # 用优惠券时的快照：列表价、优惠金额、核销记录（退款时要把额度还回去）
-    list_price = Column(Numeric(10, 2), default=0)
-    discount_amount = Column(Numeric(10, 2), default=0)
-    coupon_usage_id = Column(Integer, ForeignKey('coupon_usages.id'), nullable=True)
-
-    package = relationship("RechargePackage")
-    user = relationship("WebUser")
 
 
 class SubscriptionOrder(Base):
@@ -705,57 +640,6 @@ class ThemeActivityProgress(Base):
 
 
 # ==================== 经济系统（积分/兑换码） ====================
-
-class PointsLog(Base):
-    """积分流水表（收入/支出台账）"""
-    __tablename__ = 'points_logs'
-
-    __table_args__ = (
-        Index('idx_points_user', 'user_id'),
-        Index('idx_points_type', 'type'),
-        Index('idx_points_time', 'created_at'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False, index=True)
-    amount = Column(Integer, nullable=False)  # 正数收入 / 负数支出
-    balance_after = Column(Integer, default=0)  # 变动后余额
-    type = Column(String(30), default='system')  # checkin, invite, invitee, rebate, exchange, recharge, admin_grant, admin_deduct
-    description = Column(String(255))
-    ref_id = Column(String(64))  # 关联对象（订单号/兑换码等）
-    prev_hash = Column(String(64), nullable=True)  # C3 流水审计：上一条该用户流水的 record_hash（链头为空字符串）
-    record_hash = Column(String(64), nullable=True)  # C3 流水审计：本条记录的 hash；NULL=审计开启前的历史记录
-    created_at = Column(DateTime, default=datetime.now)
-
-    user = relationship("WebUser")
-
-
-class RebateReversalDebt(Base):
-    """返利撤回欠账：订单退款时邀请人余额不足、返利撤回失败，留下持久化欠账。
-
-    失败时只记录不自动追扣（追扣策略未定）；同一订单只许一条欠账（唯一约束＋
-    记账前先查，重复退款尝试不重复记账）。后来返利撤回成功时把 pending 标记
-    recovered；管理员可 waived 豁免。
-    """
-    __tablename__ = 'rebate_reversal_debts'
-
-    __table_args__ = (
-        UniqueConstraint('order_id', name='uq_rebate_debt_order'),
-        Index('idx_rebate_debt_status', 'status'),
-        Index('idx_rebate_debt_user', 'user_id'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    order_id = Column(String(64), nullable=False)  # 退款的那笔订单号
-    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False, index=True)  # 欠钱的邀请人
-    amount = Column(Integer, nullable=False)  # 应撤回、没撤回来的返利积分
-    reason = Column(String(255))  # 撤回失败时的明细
-    status = Column(String(16), default='pending')  # pending / recovered / waived
-    created_at = Column(DateTime, default=datetime.now)
-    resolved_at = Column(DateTime, nullable=True)  # recovered/waived 的时间
-
-    user = relationship("WebUser")
-
 
 class EmbyViewUnlock(Base):
     """Emby 账号/线路查看权限存量行（公益服）
@@ -1036,7 +920,7 @@ class WalletLedger(Base):
     traffic_purchase 购流量扣款 / refund 退款回余额 / rebate_reversal
     返利撤回。amount 带符号（正入负出），balance_after 是变动后快照。
     idempotency_key 唯一（可空）：扣款/入账重复提交时原样回放，不重复成交。
-    prev_hash / record_hash 照 PointsLog 的链式审计（按用户串链）。
+    prev_hash / record_hash 照旧积分台账的链式审计（按用户串链）。
     """
     __tablename__ = 'wallet_ledger'
 
@@ -1355,7 +1239,7 @@ class PromotionReward(Base):
 class InviteRebateAccrual(Base):
     """邀请返利计提（钱包时代，2026-11-14）：被邀请人每笔真实付费产生一笔。
 
-    与旧积分返利（PointsLog type=rebate，已随货币下线冻结）分开记账：
+    与旧积分返利（旧积分台账 type=rebate，已随货币下线冻结）分开记账：
     本表是「应返多少钱」的计提台账，金额一律人民币元 Numeric(12,2)。
 
     - ``source`` + ``source_ref`` 唯一：一笔付费只计提一次，支付回调
@@ -1753,7 +1637,7 @@ __all__ = [
     "WebUser",
     # 订阅和支付
     "SubscriptionPlan", "UserSubscription", "SubscriptionReminder",
-    "RechargePackage", "RechargeOrder", "SubscriptionOrder",
+    "SubscriptionOrder",
     # Emby
     "EmbyServer", "PlanServerRelation", "UserEmbyAccount", "EmbySession", "MovieBookmark",
     # 工单
@@ -1761,7 +1645,7 @@ __all__ = [
     # 公告和活动
     "Announcement", "ThemeActivity", "ThemeActivityProgress",
     # 经济系统
-    "PointsLog", "ExchangeCode",
+    "ExchangeCode",
     # 邀请
     "InvitationCode", "InvitationRecord",
     # 优惠券
@@ -1977,31 +1861,6 @@ class Review(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     user = relationship("WebUser")
-
-
-class MemberLevel(Base):
-    """会员等级配置表（P1 统一货币体系）
-
-    等级 1-6，经验阈值默认 0/100/500/1500/5000/15000（后台可改）。
-    等级折扣：订阅购买时按等级 discount_pct 打折，仅付费服（access_mode='paid'）生效，公益服不打折。
-    """
-    __tablename__ = 'member_levels'
-
-    __table_args__ = (
-        Index('idx_member_level', 'level'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    level = Column(Integer, unique=True, nullable=False)  # 等级 1-6
-    name = Column(String(30), nullable=False)  # 等级名称：初幕/影迷/鉴赏家/放映师/造梦者/传奇（暗房影院主题）
-    xp_threshold = Column(Integer, nullable=False, default=0)  # 升级所需经验阈值
-    discount_pct = Column(Integer, nullable=False, default=0, server_default="0")  # 等级订阅折扣百分比 0-100，仅付费服生效
-    benefits_json = Column(Text, nullable=True)  # 权益描述 JSON 数组，如 ["权益1","权益2"]
-    badge_icon = Column(String(30), nullable=True)  # 徽章图标名（lucide 图标名）
-    badge_color = Column(String(20), nullable=True)  # 徽章主题色，如 "#c0c0c0"
-    is_active = Column(Boolean, default=True, nullable=False, server_default="1")
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
 class GovernanceAuditLog(Base):

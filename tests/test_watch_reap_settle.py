@@ -78,8 +78,9 @@ def _stale_session(db, user_id, item_id, pos_minutes, key, idle_minutes=30):
 
 
 def _xp(db, user_id):
-    return int(db.query(models.WebUser.member_xp).filter(
-        models.WebUser.id == user_id).scalar() or 0)
+    """member_xp 列已随等级体系删除（#195）：XP 无处可发，恒为 0。"""
+    assert not hasattr(models.WebUser, "member_xp")
+    return 0
 
 
 

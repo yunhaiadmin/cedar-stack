@@ -2318,7 +2318,7 @@ def economy_list_orders(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """充值/订阅订单列表（合并视图）"""
+    """订阅订单列表"""
     # F-P1-3：分页参数统一钳制（limit∈[1,200]，offset≥0）
     limit, offset = pagination_params(limit, offset)
     # F-P1-2：两分支各取 offset+limit 条再归并排序。
@@ -2328,27 +2328,9 @@ def economy_list_orders(
     fetch = offset + limit
     total = 0
 
-    want_recharge = kind in (None, "recharge")
     want_sub = kind in (None, "subscription")
 
-    recharge_rows: list = []
     sub_rows: list = []
-    if want_recharge:
-        q = db.query(models.RechargeOrder)
-        if status_filter:
-            q = q.filter(models.RechargeOrder.status == status_filter)
-        if search:
-            like = f"%{search}%"
-            q = q.join(models.WebUser, models.RechargeOrder.user_id == models.WebUser.id).filter(
-                or_(models.RechargeOrder.order_id.ilike(like),
-                    models.WebUser.username.ilike(like))
-            )
-        total += q.count()
-        # P3-5：PG 下 ORDER BY created_at DESC 默认 NULLS FIRST，而 Python 侧归并
-        # `x["created_at"] or ""` 把 NULL 排最后——两边口径对不齐时分页边界可能错位。
-        # created_at 列可空（无 nullable=False），故 SQL 侧显式 nullslast() 与 Python 对齐。
-        recharge_rows = q.order_by(models.RechargeOrder.created_at.desc().nullslast()).offset(0).limit(fetch).all()
-
     if want_sub:
         q = db.query(models.SubscriptionOrder)
         if status_filter:
@@ -2363,7 +2345,7 @@ def economy_list_orders(
         sub_rows = q.order_by(models.SubscriptionOrder.created_at.desc().nullslast()).offset(0).limit(fetch).all()
 
     # F-P1-1：两类订单的用户一次 IN 查询（原逐单查询 N+1）
-    user_ids = {o.user_id for o in recharge_rows} | {o.user_id for o in sub_rows}
+    user_ids = {o.user_id for o in sub_rows}
     usernames = {
         u.id: u.username
         for u in db.query(models.WebUser.id, models.WebUser.username)
@@ -2371,17 +2353,6 @@ def economy_list_orders(
     } if user_ids else {}
 
     items = []
-    for o in recharge_rows:
-        items.append({
-            "order_id": o.order_id, "kind": "recharge",
-            "item_name": f"积分充值（+{o.amount}）",
-            "username": usernames.get(o.user_id, "未知"),
-            "user_id": o.user_id,
-            "amount": float(o.price), "status": o.status,
-            "payment_method": o.payment_method,
-            "created_at": o.created_at.isoformat() if o.created_at else None,
-            "paid_at": o.paid_at.isoformat() if o.paid_at else None,
-        })
     for o in sub_rows:
         items.append({
             "order_id": o.order_id, "kind": "subscription",
@@ -2406,25 +2377,17 @@ def _mark_order_paid(db: Session, order_id: str, admin_id: int) -> list:
     """
     from backend.api.economy import FulfillmentError, _fulfill_order
 
-    recharge_order = db.query(models.RechargeOrder).filter(
-        models.RechargeOrder.order_id == order_id
+    subscription_order = db.query(models.SubscriptionOrder).filter(
+        models.SubscriptionOrder.order_id == order_id
     ).first()
-    subscription_order = None
-    if not recharge_order:
-        subscription_order = db.query(models.SubscriptionOrder).filter(
-            models.SubscriptionOrder.order_id == order_id
-        ).first()
-    if not recharge_order and not subscription_order:
+    if not subscription_order:
         raise HTTPException(status_code=404, detail="订单不存在")
 
-    if (recharge_order and recharge_order.status == "paid") or (
-        subscription_order and subscription_order.status == "paid"
-    ):
+    if subscription_order.status == "paid":
         raise HTTPException(status_code=400, detail="订单已是已支付状态")
 
     try:
-        pending = _fulfill_order(db, recharge_order=recharge_order,
-                                 subscription_order=subscription_order)
+        pending = _fulfill_order(db, subscription_order=subscription_order)
         commit_with_retry(db, label="人工补单")
     except FulfillmentError as exc:
         # 缺料（套餐 / 用户已不存在）：订单保持未支付，管理员先修好再补单，

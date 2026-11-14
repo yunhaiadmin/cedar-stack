@@ -67,10 +67,13 @@ def main():
     result = apply_invitation(db, u2, code_str.lower())  # 测试大小写归一
     db.commit()
     check("邀请码应用成功", result.get("applied") is True)
-    check("邀请双方均不再获得积分", (u1.points or 0) == 0 and (u2.points or 0) == 0)
     record = db.query(models.InvitationRecord).filter(
         models.InvitationRecord.invitee_id == u2.id).first()
-    check("邀请记录已建立", record is not None and record.inviter_id == u1.id)
+    # reward_points 按生产「发放值回填」口径写：天数型奖励回填天数（本冒烟为 7），
+    # 积分奖励已下线、不会再写积分值；天数奖励本身由下一断言验证。
+    check("邀请记录已建立且记录值与天数奖励一致（7 天）",
+          record is not None and record.inviter_id == u1.id
+          and (record.reward_points or 0) == 7)
     inviter_sub = db.query(models.UserSubscription).filter(
         models.UserSubscription.user_id == u1.id,
         models.UserSubscription.status == "active").first()
@@ -196,27 +199,6 @@ def main():
     db.commit()
     check("重复回调幂等（不重复发货）", pending2 == [])
 
-    # ---- 7. 历史充值单履约显性失败（转人工，不静默吞单） ----
-    print("\n[7] 历史充值单")
-    pkg = models.RechargePackage(name=f"smoke_pkg_{suffix}", amount=500, price=Decimal("25.00"))
-    db.add(pkg)
-    db.commit()
-    db.refresh(pkg)
-    recharge_order = models.RechargeOrder(
-        order_id=f"SMOKERC{suffix}", user_id=u2.id, package_id=pkg.id,
-        amount=500, price=Decimal("25.00"), payment_method="alipay", status="pending")
-    db.add(recharge_order)
-    db.commit()
-    try:
-        _fulfill_order(db, recharge_order=recharge_order)
-        fulfill_raised = False
-    except FulfillmentError:
-        db.rollback()
-        fulfill_raised = True
-    db.refresh(recharge_order)
-    check("充值单履约显性失败且订单保持 pending",
-          fulfill_raised and recharge_order.status == "pending")
-
     # ---- 清理测试数据 ----
     uids = [u1.id, u2.id]
     db.query(models.StationMessage).filter(
@@ -227,7 +209,7 @@ def main():
         models.UserSubscription.user_id.in_(uids)).delete(synchronize_session=False)
     db.query(models.PromotionReward).filter(
         models.PromotionReward.inviter_id.in_(uids)).delete(synchronize_session=False)
-    for obj in [order, recharge_order, pkg, ex_sub, ex_disc, ex_pts, reg_pts, plan, record, code]:
+    for obj in [order, ex_sub, ex_disc, ex_pts, reg_pts, plan, record, code]:
         try:
             db.delete(obj)
         except Exception:

@@ -66,11 +66,10 @@ def _no_real_timers(monkeypatch):
     monkeypatch.setattr(ephemeral, "Timer", _FakeTimer)
 
 
-def _user(db, tg=TG, name="alice", points=42, vitality=14):
+def _user(db, tg=TG, name="alice"):
     row = models.WebUser(
         username=name, password_hash="x", telegram_id=tg,
-        points=points, vitality=vitality,
-    )
+        )
     db.add(row)
     db.commit()
     return row
@@ -150,8 +149,6 @@ def test_account_full_display(db):
     row = _user(db)
     _watch(db, row.id, [100, 20])
     text = features.handle_account(db, _tg(), TG, "")
-    assert "🍒 <b>能量余额</b> |" in text and "积分：" not in text
-    assert "活力数值" in text
     # 馆灵：120 小时 → 夜枭（50），下一阶段守夜者（200）差距并进同一行
     assert "夜枭" in text and "120.0" in text
     assert "守夜者" in text and "80.0" in text
@@ -174,7 +171,7 @@ def test_compact_dashboard_counts(db):
     row = _user(db)
     _watch(db, row.id, [100, 20])
     text = features.compact_dashboard(db, row)
-    assert all(x in text for x in ("alice", "能量", "活力", "夜枭", "120.0"))
+    assert all(x in text for x in ("alice", "夜枭", "120.0"))
     assert "<b>订阅状态</b> | 暂无" in text  # 精简卡只出订阅汇总行
 
 
@@ -214,7 +211,7 @@ def test_account_and_me_render_account_card_in_group(db, monkeypatch):
     for cmd in ("/account", "/me", "/level"):
         sent = _dispatch_group(db, monkeypatch, cmd)
         assert sent, cmd
-        assert "能量余额" in sent[0], cmd  # 账号卡本体
+        assert "账号名称" in sent[0], cmd  # 账号卡本体
         assert "私聊命令" not in sent[0], cmd
 
 
@@ -250,7 +247,7 @@ def test_menu_callback_account_renders_card_in_group(db, monkeypatch):
         "message": {"message_id": 5, "chat": {"id": GROUP, "type": "group"}},
     }
     callbacks.handle_callback(db, cq)
-    assert edited and "能量余额" in edited[0]
+    assert edited and "账号名称" in edited[0]
     assert "私聊使用" not in edited[0]
 
 
@@ -260,14 +257,14 @@ def test_bot_commands_cover_router_commands():
     # 菜单简化后口径（2026-11-02）：BOT_COMMANDS 当时 27 条主命令；
     # 其后加过 /duel、/rain、/playrank；批 9 摘除五条玩法命令
     # （lottery/redpacket/slots/duel/rain）后 25 条；2026-11-13 摘除
-    # 签到入口后现为 24 条。router 另含
+    # 签到入口后 24 条；/points、/rank 随能量体系删除后现为 22 条。router 另含
     # 3 条手输别名（account/renew/level），别名不在菜单
     # 但 router 照常认（chatpoints 已随货币删除摘除，2026-11-13）。
     registered = {cmd for cmd, _desc in poller.BOT_COMMANDS}
-    assert len(registered) == 24
+    assert len(registered) == 22
     router_commands = {
-        "start", "help", "bind", "points", "account", "me",
-        "request", "myrequests", "rank", "requestboard", "rules",
+        "start", "help", "bind", "account", "me",
+        "request", "myrequests", "requestboard", "rules",
         "login", "renew", "redeem",
         "bindings", "transfers", "whyplay", "wants",
         "level", "report", "propose", "launch", "govlog",

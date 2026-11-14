@@ -24,7 +24,6 @@ def db():
     models.LotteryRoundEntry.__table__.create(engine, checkfirst=True)
     models.LotteryRoundWinner.__table__.create(engine, checkfirst=True)
     models.LotteryBlacklist.__table__.create(engine, checkfirst=True)
-    models.PointsLog.__table__.create(engine, checkfirst=True)
     # 发奖改走 codes.grant_membership_days（2026-11-14）：需服/套餐/订阅三表
     #（realms.claim → ensure_default_realm 查 server_realms，
     # _resolve_plan 查 SubscriptionPlan，UserSubscription 落订阅行）。
@@ -332,8 +331,9 @@ def test_distribute_idempotent(db):
 
     first = lottery.distribute_round(db, rnd.id)
     assert first["distributed"] == 2
-    points_before = {
-        u.id: db.query(models.WebUser).filter_by(id=u.id).first().points for u in users
+    # 发奖落点是订阅行（points 列已随货币删除）：以每人订阅行数作重复发放探针
+    subs_before = {
+        u.id: db.query(models.UserSubscription).filter_by(user_id=u.id).count() for u in users
     }
 
     second = lottery.distribute_round(db, rnd.id)
@@ -341,7 +341,7 @@ def test_distribute_idempotent(db):
     assert second["skipped"] == first["total"] == 2
     assert second["errors"] == []
     for u in users:
-        assert db.query(models.WebUser).filter_by(id=u.id).first().points == points_before[u.id]
+        assert db.query(models.UserSubscription).filter_by(user_id=u.id).count() == subs_before[u.id]
 
 
 def test_verify_round(db):

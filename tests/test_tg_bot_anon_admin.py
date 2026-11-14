@@ -64,11 +64,10 @@ def sent(monkeypatch):
     return out
 
 
-def _make_user(db, username="boss", tg_id=700001, points=1000):
+def _make_user(db, username="boss", tg_id=700001):
     u = models.WebUser(username=username, telegram_id=tg_id)
     if hasattr(u, "password_hash") and getattr(u, "password_hash") is None:
         u.password_hash = ""
-    u.points = points
     db.add(u)
     db.commit()
     return u
@@ -111,10 +110,10 @@ def test_sender_chat_with_personal_from_also_anon(db, sent, monkeypatch):
     # 以群/频道身份发言时 from 也可能带着个人号，但消息带 sender_chat
     # 就没有个人身份：哪怕这个人绑过，也不能按他本人执行身份命令。
     called = []
-    monkeypatch.setattr(handlers, "handle_points",
+    monkeypatch.setattr(handlers, "handle_request",
                         lambda *a, **kw: called.append(a) or "不应到达")
     _make_user(db)
-    router.dispatch(db, _anon_update("/points", from_id=700001))
+    router.dispatch(db, _anon_update("/request 某部电影", from_id=700001))
     assert called == []
     assert len(sent) == 1
     assert "匿名" in sent[0]
@@ -133,13 +132,10 @@ def test_anon_public_command_rules_still_works(db, sent):
 
 # ---------- ⑤ 匿名非命令发言：无回复、不计分 ----------
 
-def test_anon_plain_text_no_reply_no_points(db, sent):
+def test_anon_plain_text_no_reply(db, sent):
     _make_user(db)
     router.dispatch(db, _anon_update("影迷加分多啊"))
     assert sent == []
-    chat_logs = (db.query(models.PointsLog)
-                 .filter(models.PointsLog.type == "chat").count())
-    assert chat_logs == 0
 
 
 # ---------- ⑥ 匿名发 6 位数字：回匿名说明、不走绑定验证 ----------

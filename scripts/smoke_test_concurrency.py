@@ -111,7 +111,7 @@ def run_parallel(target, count: int):
 with SessionLocal() as db:
     users = []
     for name in ("cc-alice", "cc-bob", "cc-inviter", "cc-invitee"):
-        u = models.WebUser(username=name, password_hash="not-used", is_active=True, points=0)
+        u = models.WebUser(username=name, password_hash="not-used", is_active=True)
         db.add(u)
         users.append(u)
     db.commit()
@@ -139,9 +139,13 @@ with SessionLocal() as db:
     db.commit()
 
 
-def balance(uid: int) -> int:
+def invite_reward_points(uid: int) -> int:
+    """该邀请人名下邀请记录的 reward_points：生产按「发放值回填」口径写——
+    天数型奖励回填天数（本冒烟为 30），积分奖励已下线、不会再写积分值。"""
     with SessionLocal() as db:
-        return int(db.query(models.WebUser.points).filter(models.WebUser.id == uid).scalar() or 0)
+        row = db.query(models.InvitationRecord).filter(
+            models.InvitationRecord.inviter_id == uid).first()
+        return int(row.reward_points or 0) if row else 0
 
 
 # ==================== 1. 单次兑换码并发核销 ====================
@@ -207,15 +211,15 @@ with SessionLocal() as db:
     ).count()
 check("邀请幂等：只有 1 条关系记录", rec == 1, f"记录数={rec}")
 check(
-    "邀请幂等：邀请人天数奖励只发一次（30 天）、双方积分恒 0",
+    "邀请幂等：邀请人天数奖励只发一次（30 天）、记录值与天数奖励一致",
     _membership_days(inviter_id) - before_inviter_days == 30
-    and balance(inviter_id) == 0 and balance(invitee_id) == 0,
+    and invite_reward_points(inviter_id) == 30,
     f"邀请者 +{_membership_days(inviter_id) - before_inviter_days} 天",
 )
 
 # 并发重复应用
 with SessionLocal() as db:
-    u = models.WebUser(username="cc-invitee2", password_hash="not-used", is_active=True, points=0)
+    u = models.WebUser(username="cc-invitee2", password_hash="not-used", is_active=True)
     db.add(u)
     db.commit()
     db.refresh(u)
@@ -427,10 +431,9 @@ check("卡码并发核销：拒绝时没有再发会员", membership_days_total(
 
 # ==================== 8. 订单退款并发：只能冲正一次 ====================
 # 旧实现是「读状态 → 判断是不是 paid → 冲正 → 写回 refunded」：
-# 同一笔已支付订单被并发退两次时，两边都读到 paid → 双重回滚。现在先做
-# 条件 UPDATE 把 paid 原子推进到 refunded（rowcount=0 的那一边直接返回
-# 「已处理」）。2026-11-13 货币下线后积分冲正腿已中和：本节断言改为
-# 「状态只推进一次、积分不再扣回、无冲正流水」。
+# 同一笔已支付订阅订单被并发退两次时，两边都读到 paid → 双重回滚。
+# 现在先做条件 UPDATE 把 paid 原子推进到 refunded（rowcount=0 的那一边
+# 直接返回「已处理」）。本节断言：「状态只推进一次、天数只回滚一次」。
 
 print("\n--- 订单退款并发 ---")
 
@@ -439,28 +442,33 @@ from decimal import Decimal  # noqa: E402
 from backend.api.orders_admin import RefundRequest, refund_order  # noqa: E402
 
 REFUND_ORDER = "CC-REFUND-ONE"
-REFUND_POINTS = 200
 
 with SessionLocal() as db:
+    from datetime import datetime as _dt, timedelta as _td
+
     buyer = models.WebUser(username="cc-refund-buyer", password_hash="not-used",
-                           is_active=True, points=REFUND_POINTS)
+                           is_active=True)
     staff = models.WebUser(username="cc-refund-staff", password_hash="not-used",
                            is_active=True, is_staff=True, admin_role="super")
     db.add_all([buyer, staff])
     db.commit()
     buyer_id, staff_id = buyer.id, staff.id
-    pkg = models.RechargePackage(name="并发退款用积分包", amount=REFUND_POINTS,
-                                 price=10, bonus=0, is_active=True)
-    db.add(pkg)
+    rplan = models.SubscriptionPlan(name="并发退款套餐", price=10, duration_days=30,
+                                    is_active=True)
+    db.add(rplan)
     db.flush()
-    db.add(models.RechargeOrder(
-        order_id=REFUND_ORDER, user_id=buyer_id, package_id=pkg.id, amount=REFUND_POINTS,
-        price=Decimal("10.00"), payment_method="alipay", status="paid",
-    ))
-    # 履约时留下的账本记录：退款按它精确冲正（与真实充值链路一致）
-    db.add(models.PointsLog(
-        user_id=buyer_id, amount=REFUND_POINTS, balance_after=REFUND_POINTS,
-        type="recharge", description="并发退款回归", ref_id=f"recharge:{REFUND_ORDER}",
+    _now = _dt.now()
+    sub = models.UserSubscription(
+        user_id=buyer_id, plan_id=rplan.id, start_date=_now,
+        end_date=_now + _td(days=30), status="active")
+    db.add(sub)
+    db.flush()
+    refund_sub_id = sub.id
+    db.add(models.SubscriptionOrder(
+        order_id=REFUND_ORDER, user_id=buyer_id, plan_id=rplan.id,
+        item_name="并发退款套餐", amount=Decimal("10.00"),
+        payment_method="alipay", status="paid", paid_at=_now,
+        subscription_id=sub.id, days_granted=30,
     ))
     db.commit()
 
@@ -468,8 +476,8 @@ with SessionLocal() as db:
 def refund_once(i: int):
     db = SessionLocal()
     try:
-        order = db.query(models.RechargeOrder).filter(
-            models.RechargeOrder.order_id == REFUND_ORDER).first()
+        order = db.query(models.SubscriptionOrder).filter(
+            models.SubscriptionOrder.order_id == REFUND_ORDER).first()
         admin_user = db.query(models.WebUser).filter(models.WebUser.id == staff_id).first()
         out = run_async_endpoint(refund_order, REFUND_ORDER, RefundRequest(reason=f"并发 {i}"),
                                 admin_user, db)
@@ -494,23 +502,23 @@ bad_rejected = [getattr(exc, "status_code", 500) for _, exc in rejected
                 if not (isinstance(exc, HTTPException) and exc.status_code in (400, 409))]
 
 with SessionLocal() as db:
-    order = db.query(models.RechargeOrder).filter(
-        models.RechargeOrder.order_id == REFUND_ORDER).first()
-    points = int(db.query(models.WebUser.points).filter(
-        models.WebUser.id == buyer_id).scalar() or 0)
-    refund_logs = db.query(models.PointsLog).filter(
-        models.PointsLog.ref_id == f"refund:{REFUND_ORDER}",
-        models.PointsLog.type == "refund").count()
+    order = db.query(models.SubscriptionOrder).filter(
+        models.SubscriptionOrder.order_id == REFUND_ORDER).first()
+    sub = db.query(models.UserSubscription).filter(
+        models.UserSubscription.id == refund_sub_id).first()
     order_status = order.status
     refunded_at = order.refunded_at
+    sub_status = sub.status
+    sub_span_days = (sub.end_date - sub.start_date).days
 
-check("并发退款：只有 1 个请求真正执行了冲正", len(real_refunds) == 1,
+check("并发退款：只有 1 个请求真正执行了退款", len(real_refunds) == 1,
       f"真实退款 {len(real_refunds)} 次 / 已处理 {len(already)} 次 / 被拒 {len(rejected)} 次")
 check("并发退款：其余请求返回「已处理」或被拒（不是 500）",
       not bad_rejected and len(already) + len(rejected) == 3,
       f"已处理 {len(already)} / 被拒状态码 {[getattr(e, 'status_code', None) for _, e in rejected]}")
-check("并发退款：积分不再扣回（货币已下线）", points == REFUND_POINTS, f"余额={points}")
-check("并发退款：无冲正流水（积分腿已中和）", refund_logs == 0, f"台账条数={refund_logs}")
+check("并发退款：天数只回滚一次（订阅已撤销、时长归零）",
+      sub_status == "cancelled" and sub_span_days <= 1,
+      f"订阅状态={sub_status} 剩余跨度={sub_span_days} 天")
 check("并发退款：订单落成已退款并留时间", order_status == "refunded" and refunded_at is not None,
       f"status={order_status} refunded_at={refunded_at}")
 

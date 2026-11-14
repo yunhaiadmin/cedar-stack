@@ -134,13 +134,12 @@ def test_subscription_code_still_grants_membership(db):
 
 def test_points_code_rejected_without_burning(db):
     """能量卡码已下线：核销直接拒绝、不烧码（use_count 不动）。"""
-    user = _make_user(db, "alice", points=0)
+    user = _make_user(db, "alice")
     code = _make_code(db, "PTS-AAAA", reward_type="points", points_value=50)
     result = codes.redeem_code(db, user, "PTS-AAAA")
     db.commit()
     assert result["success"] is False
     assert "下线" in result["message"]
     db.refresh(user)
-    assert (user.points or 0) == 0
     db.refresh(code)
     assert (code.use_count or 0) == 0

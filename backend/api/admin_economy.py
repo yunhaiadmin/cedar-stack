@@ -656,16 +656,14 @@ def economy_stats(
     """经济系统概览：订单/兑换/邀请（积分存量已随货币下线）"""
     from sqlalchemy import func as _func
 
-    pending_recharge = db.query(models.RechargeOrder).filter(
-        models.RechargeOrder.status == "pending").count()
-    paid_recharge = db.query(_func.coalesce(_func.sum(models.RechargeOrder.price), 0)).filter(
-        models.RechargeOrder.status == "paid").scalar() or 0
+    pending_sub = db.query(models.SubscriptionOrder).filter(
+        models.SubscriptionOrder.status == "pending").count()
     paid_sub = db.query(_func.coalesce(_func.sum(models.SubscriptionOrder.amount), 0)).filter(
         models.SubscriptionOrder.status == "paid").scalar() or 0
 
     return {
-        "orders": {"pending": pending_recharge,
-                   "revenue": round(float(paid_recharge) + float(paid_sub), 2)},
+        "orders": {"pending": pending_sub,
+                   "revenue": round(float(paid_sub), 2)},
         "exchange_codes": {
             "total": db.query(models.ExchangeCode).count(),
             "used": db.query(models.ExchangeCode).filter(
@@ -690,7 +688,7 @@ def get_user_detail(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """用户 360° 详情：资料 / 订阅 / 积分 / 订单 / 邀请 / 签到 / 观看"""
+    """用户 360° 详情：资料 / 订阅 / 订单 / 邀请 / 观看"""
     from backend.emby_server import models as em
 
     user = db.query(models.WebUser).filter(models.WebUser.id == user_id).first()
@@ -722,13 +720,6 @@ def get_user_detail(
         }
 
     # ---------- 订单 ----------
-    recharge_orders = (
-        db.query(models.RechargeOrder)
-        .filter(models.RechargeOrder.user_id == user_id)
-        .order_by(models.RechargeOrder.created_at.desc())
-        .limit(10)
-        .all()
-    )
     sub_orders = (
         db.query(models.SubscriptionOrder)
         .filter(models.SubscriptionOrder.user_id == user_id)
@@ -736,29 +727,18 @@ def get_user_detail(
         .limit(10)
         .all()
     )
-    # P1（r49）：订阅/订单的 plan/package 名批量一次查完。此前 _sub_row 与订单行
-    # 里 s.plan.name / o.package.name / o.plan.name 都是 lazy relationship 逐行回查
+    # P1（r49）：订阅/订单的 plan 名批量一次查完。此前 _sub_row 与订单行
+    # 里 s.plan.name / o.plan.name 都是 lazy relationship 逐行回查
     # （详情页一次最多约 30 次额外查询），与邀请部分的 invitee_names 同一写法。
-    # 注意：必须放在 sub_orders / recharge_orders 取数之后（曾放错位置导致
+    # 注意：必须放在 sub_orders 取数之后（曾放错位置导致
     # UnboundLocalError，被 smoke_test_admin_v240 抓到）。
     _plan_ids = ({s.plan_id for s in subs} | {o.plan_id for o in sub_orders}) - {None}
-    _package_ids = {o.package_id for o in recharge_orders} - {None}
     _plan_names = {
         p.id: p.name
         for p in db.query(models.SubscriptionPlan.id, models.SubscriptionPlan.name)
         .filter(models.SubscriptionPlan.id.in_(list(_plan_ids) or [-1])).all()
     } if _plan_ids else {}
-    _package_names = {
-        p.id: p.name
-        for p in db.query(models.RechargePackage.id, models.RechargePackage.name)
-        .filter(models.RechargePackage.id.in_(list(_package_ids) or [-1])).all()
-    } if _package_ids else {}
     paid_total = float(
-        db.query(func.coalesce(func.sum(models.RechargeOrder.price), 0)).filter(
-            models.RechargeOrder.user_id == user_id,
-            models.RechargeOrder.status == "paid",
-        ).scalar() or 0
-    ) + float(
         db.query(func.coalesce(func.sum(models.SubscriptionOrder.amount), 0)).filter(
             models.SubscriptionOrder.user_id == user_id,
             models.SubscriptionOrder.status == "paid",
@@ -802,16 +782,6 @@ def get_user_detail(
         },
         "orders": {
             "paid_total": round(paid_total, 2),
-            "recharge": [
-                {
-                    "order_id": o.order_id,
-                    "item_name": _package_names.get(o.package_id, f"套餐 #{o.package_id}"),
-                    "amount": float(o.price),
-                    "status": o.status,
-                    "created_at": o.created_at.isoformat() if o.created_at else None,
-                }
-                for o in recharge_orders
-            ],
             "subscription": [
                 {
                     "order_id": o.order_id,
@@ -910,12 +880,6 @@ def get_stats_trend(
         em.MediaItem.merged_into_id.is_(None),
     ).group_by(em.MediaItem.date_added).all()
 
-    recharge_rows = db.query(
-        models.RechargeOrder.paid_at, func.coalesce(func.sum(models.RechargeOrder.price), 0)
-    ).filter(
-        models.RechargeOrder.status == "paid", models.RechargeOrder.paid_at >= start
-    ).group_by(models.RechargeOrder.paid_at).all()
-
     sub_rows = db.query(
         models.SubscriptionOrder.paid_at, func.coalesce(func.sum(models.SubscriptionOrder.amount), 0)
     ).filter(
@@ -925,7 +889,6 @@ def get_stats_trend(
     users_map = _series(user_rows)
     plays_map = _series(play_rows)
     items_map = _series(item_rows)
-    recharge_map = _series(recharge_rows)
     sub_map = _series(sub_rows)
 
     series = []
@@ -937,7 +900,7 @@ def get_stats_trend(
             "new_users": int(users_map.get(key, 0)),
             "plays": int(plays_map.get(key, 0)),
             "new_items": int(items_map.get(key, 0)),
-            "revenue": round(float(recharge_map.get(key, 0)) + float(sub_map.get(key, 0)), 2),
+            "revenue": round(float(sub_map.get(key, 0)), 2),
         })
 
     # 24 小时序列（2026-11-03 仪表盘补口径）：与按日同源同定义，只换

@@ -24,7 +24,6 @@ def db():
     models.LotteryRoundEntry.__table__.create(engine, checkfirst=True)
     models.LotteryRoundWinner.__table__.create(engine, checkfirst=True)
     models.LotteryBlacklist.__table__.create(engine, checkfirst=True)
-    models.PointsLog.__table__.create(engine, checkfirst=True)
     # 天数奖改走订阅发放（grant_membership_days）后需要这两张表
     models.ServerRealm.__table__.create(engine, checkfirst=True)
     models.UserSubscription.__table__.create(engine, checkfirst=True)

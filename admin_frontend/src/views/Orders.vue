@@ -40,13 +40,9 @@ import {
   closeOrder,
   refundOrder,
   fetchRefundRecords,
-  fetchRebateDebts,
-  retryRebateDebt,
-  waiveRebateDebt,
   type EconomyStats,
   type OrderRow,
   type RefundRecord,
-  type RebateDebt,
 } from '@/api/economy'
 
 const loading = ref(false)
@@ -224,15 +220,9 @@ async function submitBatchRefund() {
     selection.selectedKeys.value = summary.failedKeys as RowKey[]
     ElMessage[summary.failed ? 'warning' : 'success'](bulkSummaryText(summary, '退款'))
     batchRefundDialog.value.visible = false
-    const debtsBefore = pendingDebtCount.value
     load()
     loadStats()
     await loadRecords()
-    // 批量退款不拆单条结果：用欠账数前后差精确提示本次新增的欠账（r55）
-    const debtsAdded = pendingDebtCount.value - debtsBefore
-    if (debtsAdded > 0) {
-      ElMessage.warning(`本次新增 ${debtsAdded} 笔返利撤回欠账，可在下方欠账区重试收回`)
-    }
   } finally {
     bulkBusy.value = false
   }
@@ -267,7 +257,7 @@ function resetFilters() {
 
 // ==================== 关单 / 退款（v2.9.0） ====================
 // 以前订单只能「标记已支付」：线下多转一笔、点错套餐都没法处理，只能去改数据库。
-// 现在：待支付 → 关闭（作废）；已支付 → 退款（默认按账本回滚积分/会员天数）。
+// 现在：待支付 → 关闭（作废）；已支付 → 退款（默认回滚会员天数）。
 
 /** 状态标签：四种状态的颜色与文案集中一处，表格与筛选共用 */
 const STATUS_META: Record<string, { text: string; type: 'success' | 'warning' | 'info' | 'danger' }> = {
@@ -286,72 +276,12 @@ function statusType(status: string) {
 }
 
 const records = ref<RefundRecord[]>([])
-const rebateDebts = ref<RebateDebt[]>([])
 
 async function loadRecords() {
   try {
     records.value = (await fetchRefundRecords(8)).records
   } catch {
     // 记录区加载失败不该影响订单主表
-  }
-  try {
-    rebateDebts.value = (await fetchRebateDebts(20)).records
-  } catch {
-    // 欠账区加载失败不该影响订单主表
-  }
-}
-
-// 欠着的笔数：>0 时在欠账区标题旁醒目提示，避免静默堆积（r55）
-const pendingDebtCount = computed(() => rebateDebts.value.filter((d) => d.status === 'pending').length)
-
-// 重试收回一条欠账：再扣一次邀请人返利；余额仍不足则继续欠着（后端如实返回原因）。
-// 「允许负数」的选择嵌进确认按钮，一次弹窗搞定。
-async function retryDebt(d: RebateDebt) {
-  let allowNegative = false
-  try {
-    await ElMessageBox.confirm(
-      `对 ${d.username} 再扣 ${d.amount} 积分。选「允许扣成负数」先追回来；选「不重试」则保持欠着。`,
-      '重试收回欠账',
-      {
-        confirmButtonText: '允许扣成负数并重试',
-        cancelButtonText: '不重试，继续欠着',
-        distinguishCancelAndClose: true,
-      },
-    )
-    allowNegative = true
-  } catch {
-    return // 取消 / 右上角 X：什么都不做，保持欠着
-  }
-  try {
-    const res = await retryRebateDebt(d.id, allowNegative)
-    if (res.success) {
-      ElMessage.success(`已收回 ${res.reversed_amount ?? d.amount} 积分`)
-    } else {
-      ElMessage.warning(`仍未收回，继续欠着：${res.reason || '邀请人余额不足'}`)
-    }
-    await loadRecords()
-  } catch (e: unknown) {
-    ElMessage.error(toAdminError(e, '重试失败'))
-  }
-}
-
-// 豁免一条欠账：认亏，pending → waived（写审计，不可撤销）
-async function waiveDebt(d: RebateDebt) {
-  try {
-    await ElMessageBox.confirm(
-      `豁免后这 ${d.amount} 积分就认亏了，不会再追扣，确定吗？`,
-      '豁免欠账',
-      { confirmButtonText: '确认豁免', cancelButtonText: '取消', type: 'warning' },
-    )
-  } catch {
-    return
-  }
-  try {
-    await waiveRebateDebt(d.id)
-    ElMessage.success('已豁免（认亏）')
-    await loadRecords()
-  } catch (e: unknown) {
-    ElMessage.error(toAdminError(e, '豁免失败'))
   }
 }
 
@@ -442,9 +372,8 @@ async function submitRefund() {
       reverse_rebate: d.reverseRebate,
     })
     const bits: string[] = []
-    if (res.revoked_points) bits.push(`扣回 ${res.revoked_points} 积分`)
-    if (res.rebate_reversed) bits.push(`撤回返利 ${res.rebate_reversed} 积分`)
-    if (res.rebate_reversal_failed) bits.push('返利撤回失败，已记欠账（下方欠账区可重试收回）')
+    if (res.rebate_reversed) bits.push(`撤回返利 ¥${res.rebate_reversed}`)
+    if (res.rebate_reversal_failed) bits.push('返利未能撤回（邀请人余额不足，计提行已标记待处理）')
     if (res.revoked_days) bits.push(`回滚 ${res.revoked_days} 天`)
     if (res.cancelled) bits.push('该订阅已撤销')
     ElMessage.success(`退款完成${bits.length ? '：' + bits.join('、') : ''}`)
@@ -536,7 +465,6 @@ onMounted(() => {
             <template #prefix><Search :size="14" /></template>
           </el-input>
           <el-select v-model="kindFilter" class="f-select" placeholder="类型" clearable @change="query">
-            <el-option label="充值" value="recharge" />
             <el-option label="订阅" value="subscription" />
           </el-select>
           <el-select v-model="statusFilter" class="f-select" placeholder="状态" clearable @change="query">
@@ -587,10 +515,8 @@ onMounted(() => {
           <span class="mono">{{ row.order_id }}</span>
         </template>
 
-        <template #cell-kind="{ row }">
-          <el-tag :type="row.kind === 'recharge' ? 'success' : 'primary'" size="small">
-            {{ row.kind === 'recharge' ? '充值' : '订阅' }}
-          </el-tag>
+        <template #cell-kind>
+          <el-tag type="primary" size="small">订阅</el-tag>
         </template>
 
         <template #cell-amount="{ row }">
@@ -638,31 +564,6 @@ onMounted(() => {
       </ul>
     </SectionCard>
 
-    <!-- 返利撤回欠账：退款时邀请人余额不足、返利没撤回来留下的欠账，可重试收回或豁免 -->
-    <SectionCard
-      v-if="rebateDebts.length"
-      title="返利撤回欠账"
-      :icon="Undo2"
-      :meta="pendingDebtCount ? `有 ${pendingDebtCount} 笔欠着，点「重试」追扣` : '无待追欠账'"
-      flush
-    >
-      <ul class="records">
-        <li v-for="d in rebateDebts" :key="d.id" class="record">
-          <span class="mono record-id">{{ d.order_id }}</span>
-          <span class="au-badge" :class="d.status === 'pending' ? 'au-badge-rose' : 'au-badge-muted'">
-            {{ d.status === 'pending' ? '欠着' : d.status === 'recovered' ? '已收回' : '已豁免' }}
-          </span>
-          <span class="record-user">{{ d.username }}</span>
-          <span class="record-reason">应撤 {{ d.amount }} 积分{{ d.reason ? `（${d.reason}）` : '' }}</span>
-          <span class="record-time">{{ fmtTime(d.created_at) }}</span>
-          <span v-if="d.status === 'pending'" class="record-actions">
-            <el-button link type="primary" size="small" @click="retryDebt(d)">重试</el-button>
-            <el-button link type="danger" size="small" @click="waiveDebt(d)">豁免</el-button>
-          </span>
-        </li>
-      </ul>
-    </SectionCard>
-
     <!-- 退款：默认回滚权益，余额不够时可显式允许扣成负数 -->
     <el-dialog v-model="refundDialog.visible" title="订单退款" width="min(480px, 92vw)">
       <el-form label-position="top">
@@ -677,19 +578,19 @@ onMounted(() => {
         </el-form-item>
         <el-form-item>
           <el-checkbox v-model="refundDialog.revoke">
-            回滚权益（充值扣回积分 / 订阅回滚天数）
+            回滚权益（订阅回滚天数）
           </el-checkbox>
           <p class="opt-hint">
             取消勾选则只记账、不动权益——用于客服补偿这类“钱退了但东西留着”的场景。
           </p>
         </el-form-item>
-        <el-form-item v-if="refundDialog.revoke && refundDialog.row?.kind === 'recharge'">
+        <el-form-item v-if="refundDialog.revoke">
           <el-checkbox v-model="refundDialog.reverseRebate">同时撤回邀请人返利</el-checkbox>
           <p class="opt-hint">
             返利是这笔订单产生的；只退买家不退返利，等于站点为一次退款付两遍钱。
           </p>
         </el-form-item>
-        <el-form-item v-if="refundDialog.revoke && refundDialog.row?.kind === 'recharge'">
+        <el-form-item v-if="refundDialog.revoke">
           <el-checkbox v-model="refundDialog.allowNegative">用户余额不足时允许扣成负数</el-checkbox>
           <p class="opt-hint">
             不勾选时余额不够会被拒绝（并回报当前余额），避免悄悄把账户扣成负数。
@@ -711,7 +612,7 @@ onMounted(() => {
         </el-form-item>
         <el-form-item>
           <el-checkbox v-model="batchRefundDialog.revoke">
-            回滚权益（充值扣回积分 / 订阅回滚天数）
+            回滚权益（订阅回滚天数）
           </el-checkbox>
           <p class="opt-hint">
             取消勾选则只记账、不动权益——用于客服补偿这类"钱退了但东西留着"的场景。
@@ -754,7 +655,7 @@ onMounted(() => {
           <div class="kv-row"><span class="kv-key">订单号</span><span class="kv-value mono">{{ detail.row.order_id }}</span></div>
           <div class="kv-row"><span class="kv-key">商品</span><span class="kv-value">{{ detail.row.item_name }}</span></div>
           <div class="kv-row"><span class="kv-key">类型</span>
-            <span class="kv-value">{{ detail.row.kind === 'recharge' ? '充值' : '订阅' }}</span>
+            <span class="kv-value">订阅</span>
           </div>
           <div class="kv-row"><span class="kv-key">用户</span><span class="kv-value">{{ detail.row.username }}</span></div>
           <div class="kv-row"><span class="kv-key">支付方式</span>

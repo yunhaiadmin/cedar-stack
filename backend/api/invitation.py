@@ -222,7 +222,6 @@ def apply_invitation(db: Session, user: models.WebUser, invite_code: str) -> dic
     granted = promotion_rewards.grant(db, inviter, user, code)
     inviter_reward = int(granted.reward_value) if granted else 0
     record.reward_points = inviter_reward
-    inviter_balance = int(inviter.points or 0)
 
     try:
         # 唯一索引 invitee_id 兜底：并发重复调用时让冲突在此暴露并整体回滚，
@@ -376,7 +375,7 @@ def my_invitation_records(
 
     返利口径（2026-11-14 起）：读钱包时代的计提台账
     （invite_rebate_accruals，元，pending+credited 合计）；旧积分返利
-    台账（PointsLog）已随货币下线冻结，不再混进这个数字。
+    台账已随货币下线全清，不再混进这个数字。
     """
     from backend import invite_rebate
     from backend.agents import money

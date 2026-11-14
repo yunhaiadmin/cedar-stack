@@ -53,7 +53,6 @@ def db():
     for tbl in (
         models.WebUser.__table__,
         models.SystemConfig.__table__,
-        models.PointsLog.__table__,
         em.MediaItem.__table__,
         em.PlaybackSession.__table__,
     ):
@@ -79,11 +78,10 @@ def _make_item(db, duration_secs=7200):
     return it
 
 
-def _make_user(db, username, *, tg_id=None, staff=False, show=True, points=0):
+def _make_user(db, username, *, tg_id=None, staff=False, show=True):
     u = models.WebUser(
         username=username,
         password_hash="",
-        points=points,
         telegram_id=tg_id,
         is_staff=staff,
         # 生产 staff 必有角色；推榜是写操作，测试管理员默认 operator。
@@ -252,7 +250,6 @@ def test_no_group_no_push_no_reward(db, monkeypatch):
     res = rankpush.push_rank_board(db, "day")
     assert res["pushed"] is False and res["reason"] == "no_group"
     assert calls == []
-    assert db.query(models.PointsLog).count() == 0
 
 
 def test_enabled_off_blocks_push_and_tick(db, monkeypatch):
@@ -280,8 +277,6 @@ def test_reward_off_by_default_no_grants(db, monkeypatch):
     res = rankpush.push_rank_board(db, "day")
     assert res["pushed"] is True and len(calls) == 1
     assert calls[0]["chat_id"] == GROUP_ID
-    assert db.query(models.PointsLog).count() == 0
-    assert db.query(models.WebUser).filter_by(id=a.id).first().points == 0
 
 
 def test_reward_config_no_longer_grants(db, monkeypatch):
@@ -302,13 +297,9 @@ def test_reward_config_no_longer_grants(db, monkeypatch):
     res = rankpush.push_rank_board(db, "day")
     assert res["pushed"] is True
     assert res["rewards"] == []
-    got = {u.username: u.points for u in db.query(models.WebUser).all()}
-    assert got == {"alice": 0, "bob": 0, "carol": 0}
-    assert db.query(models.PointsLog).count() == 0
     # 再推一次同样零发分
     res2 = rankpush.push_rank_board(db, "day")
     assert res2["pushed"] is True
-    assert db.query(models.PointsLog).count() == 0
 
 
 # ---------------- /rankpush 管理员命令 ----------------

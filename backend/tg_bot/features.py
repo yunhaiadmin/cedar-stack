@@ -182,18 +182,6 @@ def _bindings_line(db, user_id: int) -> str:
     return "网盘：" + "、".join(names)
 
 
-def _vitality_config(db) -> tuple[int, int]:
-    """活力上限与观影阈值：走 get_vitality_config，读失败回落默认 14／3。"""
-    try:
-        from backend.vitality import get_vitality_config
-
-        cfg = get_vitality_config(db)
-        return int(cfg.get("max", 14)), int(cfg.get("limit_threshold", 3))
-    except Exception:
-        logger.debug("读取活力配置失败，回落默认 14／3", exc_info=True)
-        return 14, 3
-
-
 def _vitality_renew_min(db) -> int:
     """活力保号线：SystemConfig welfare_vitality_renew_min，默认 3。"""
     try:
@@ -238,9 +226,9 @@ def _bar(frac: float, width: int) -> str:
     return "█" * filled + "░" * (width - filled)
 
 
-# 等级名/阈值兜底（原 member_level.DEFAULT_LEVELS，等级体系于
-# 2026-11-14 删除后就地保留为只读展示常量）：member_levels 表还有
-# active 行时按表读，表空时用这组。
+# 等级名/阈值（原 member_level.DEFAULT_LEVELS）：等级体系已删除
+# （member_levels 表与 member_xp 列全清），只剩这组内置常量供
+# 治理展示的兼容口径引用。
 _DEFAULT_LEVEL_ROWS = [(1, "初幕", 0), (2, "影迷", 100), (3, "鉴赏家", 500),
                        (4, "放映师", 1500), (5, "造梦者", 5000), (6, "传奇", 15000)]
 
@@ -248,31 +236,18 @@ _DEFAULT_LEVEL_ROWS = [(1, "初幕", 0), (2, "影迷", 100), (3, "鉴赏家", 50
 def _level_info(db, user) -> dict:
     """会员等级只读快照：等级名／经验／下一级阈值与差值；不写库。
 
-    等级数按 member_xp 纯算（复用 lottery_governance.user_level）；等级名
-    与阈值取 member_levels active 行，表空时回落 _DEFAULT_LEVEL_ROWS。
+    等级数按内置阈值纯算（复用 lottery_governance.user_level）；经验
+    已无落库来源（member_xp 列已删，getattr 兜底恒 0，现实际恒 Lv.1）。
+    本函数只用于只读展示路径（治理展示／管理员查人卡）。
     """
     from backend.lottery_governance import user_level as _user_level
 
     try:
         level = _user_level(db, user.id)
-        rows = (
-            db.query(models.MemberLevel)
-            .filter(models.MemberLevel.is_active == True)  # noqa: E712
-            .order_by(models.MemberLevel.level.asc())
-            .all()
-        )
     except Exception:
-        # 部分建表夹具（如 tg_bot 旧测试）没有 member_levels 表：user_level 本身
-        # 也会查该表，一并回落默认阈值纯算，dashboard 仍可渲染。本函数只用于
-        # 只读展示路径，rollback 安全（后续属性访问按需从库刷新）。
         db.rollback()
         level = None
-        rows = []
-    levels = (
-        [(r.level, r.name, r.xp_threshold or 0) for r in rows]
-        if rows
-        else list(_DEFAULT_LEVEL_ROWS)
-    )
+    levels = list(_DEFAULT_LEVEL_ROWS)
     xp = int(getattr(user, "member_xp", 0) or 0)
     if level is None:
         level = 1
@@ -351,26 +326,14 @@ def _subscription_summary(db, user) -> str:
 def account_card(db, user, display_name: str | None = None) -> str:
     """账号卡（唯一构建器）：/me、/account 与用户面板共用同一张精简卡。
 
-    固定 8 行汇总——用户编号/账号名称/当前等级（带经验进度，/level
-    详情并入此行）/能量余额/活力数值/网盘绑定/
+    固定 5 行汇总——用户编号/账号名称/网盘绑定/
     当前馆灵（下一阶段差距并进同一行）/订阅状态（一行汇总）；
-    订阅/设备不逐条铺。
+    订阅/设备不逐条铺。等级/能量/活力三行已随等级体系与货币
+    下线摘除（2026-11-14）。
     白名单专属版式保留：专属问候标题＋称号/编号行紧跟账号名称行。
     """
     total_hours, pet_cur, pet_nxt = _pet_summary(db, user.id)
-    cap, threshold = _vitality_config(db)
     greet = display_name or getattr(user, "username", "") or "朋友"
-
-    vitality = getattr(user, "vitality", None)
-    if vitality is None:
-        vitality_text = "—"
-    elif cap <= 0:
-        vitality_text = f"{int(vitality)}"
-    else:
-        v = int(vitality)
-        vitality_text = f"{v}/{cap}"
-        if v < threshold:
-            vitality_text += "（暂时播不了）"
 
     pet_text = (
         f"{_esc(pet_cur.get('icon', ''))} {_esc(pet_cur.get('name', ''))}"
@@ -387,9 +350,7 @@ def account_card(db, user, display_name: str | None = None) -> str:
     rows = [
         layout.row("🆔", "用户编号", user.id),
         layout.row("👤", "账号名称", f"<b>{_esc(user.username)}</b>"),
-        layout.row("⭐", "当前等级", _level_value(db, user)),
-        layout.row("🍒", "能量余额", f"<b>{int(user.points or 0)}</b>"),
-        layout.row("⚡", "活力数值", vitality_text),
+
         layout.row("🔗", "网盘绑定", _after_colon(_bindings_line(db, user.id))),
         layout.row("🐉", "当前馆灵", pet_text),
         layout.row("📦", "订阅状态", _subscription_summary(db, user)),
@@ -614,50 +575,6 @@ def handle_rules(db, tg_user: dict, chat_id: int, args: str) -> str:
     return layout.card(layout.title("群规与使用说明"), [], _esc(rules).split("\n"))
 
 
-def handle_rank(db, tg_user: dict, chat_id: int, args: str) -> str:
-    """能量排行榜，复用 WebUser.points 单一能量余额。
-
-    排序口径不变（能量降序、同分按 id 升序、前 10 名）；等级公益服活动
-    治理 Step 4：仅公益服下追加等级列展示（Lv.数字＋等级名），付费服
-    输出与此前逐字一致。
-    """
-    rows = (
-        db.query(models.WebUser)
-        .filter(models.WebUser.is_active.is_(True),
-                models.WebUser.telegram_id.isnot(None),
-                models.WebUser.show_on_leaderboard.is_(True))
-        .order_by(models.WebUser.points.desc(), models.WebUser.id.asc())
-        .limit(10).all()
-    )
-    if not rows:
-        return layout.card(layout.title("排行榜"), [layout.row("🏆", "榜单数据", "暂时还没有排行榜数据")])
-    from backend.subscriptions import is_free_realm as _is_free_realm
-    free_realm = _is_free_realm(db)
-    level_names = {}
-    if free_realm:
-        level_names = {
-            lv.level: lv.name
-            for lv in db.query(models.MemberLevel)
-            .filter(models.MemberLevel.is_active == True)  # noqa: E712
-            .all()
-        }
-    my_id = int(tg_user.get("id") or 0)
-    card_rows = [layout.row("🏆", "上榜范围", "仅显示已绑定且允许上榜的用户")]
-    lines = card_rows
-    medals = ["🥇", "🥈", "🥉"]
-    for index, row in enumerate(rows, 1):
-        mark = medals[index - 1] if index <= 3 else f"{index}."
-        mine = " ◀️" if row.telegram_id == my_id else ""
-        if free_realm:
-            level = row.member_level or 1
-            name = level_names.get(level)
-            level_text = f" · Lv.{level} {_esc(name)}" if name else f" · Lv.{level}"
-            lines.append(layout.row(mark, f"第 {index} 名", f"{_esc(row.username)}：<b>{int(row.points or 0)}</b>{level_text}{mine}"))
-        else:
-            lines.append(layout.row(mark, f"第 {index} 名", f"{_esc(row.username)}：<b>{int(row.points or 0)}</b>{mine}"))
-    return layout.card(layout.title("全站能量排行榜"), lines)
-
-
 _GOVLOG_ACTION_TEXT = {
     "freeze": "停权",
     "release": "解封",
@@ -679,7 +596,7 @@ def handle_govlog(db, tg_user: dict, chat_id: int, args: str) -> str:
         return "请先绑定账号后再查看治理审计日志。"
     if not _is_free_realm(db):
         return "治理审计日志仅在公益服开放。"
-    if (user.member_level or 1) < 6:
+    if (getattr(user, "member_level", 1) or 1) < 6:
         return "治理审计日志仅 Lv.6 传奇可见。"
     entries = _governance.list_audit_logs(db, limit=10)
     if not entries:

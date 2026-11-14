@@ -3,8 +3,8 @@
 
 口径（2026-11-14 钱包时代起）：返利读计提台账 invite_rebate_accruals
 （被邀请人付费时按 (inviter, invitee) 逐笔落行，pending+credited 合计，
-单位元）。旧口径（PointsLog type=rebate 按充值订单号拆算）已随积分
-货币下线作废——台账里再有旧流水也不许混进这个数字。
+单位元）。旧口径（points_logs 表 type=rebate 按充值订单号拆算）已随
+积分货币下线作废、整表删除，旧流水不可能再混进这个数字。
 另：被邀请人用户名在记录里必须脱敏（只露首尾），并带「是否已付费」。
 """
 
@@ -133,17 +133,3 @@ def test_paid_flag_from_subscription_orders(db):
     out = my_invitation_records(50, inviter, db)
     paid_flags = sorted(r["paid"] for r in out["records"])
     assert paid_flags == [False, True]
-
-
-def test_legacy_pointslog_rebate_not_counted(db):
-    """旧积分返利流水（PointsLog）不得混进新口径的累计返利。"""
-    tag = uuid.uuid4().hex[:6]
-    inviter, invitee1, _ = _setup(db, tag)
-    db.add(models.PointsLog(
-        user_id=inviter.id, amount=500, balance_after=0,
-        type="rebate", description="旧返利", ref_id="rebate:RO-OLD",
-    ))
-    db.commit()
-
-    out = my_invitation_records(50, inviter, db)
-    assert all(r["rebate_total"] == 0 for r in out["records"])

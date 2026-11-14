@@ -153,26 +153,24 @@ def test_admin_card_without_row_not_granted(db):
 def test_unlock_endpoint_retired_410_no_charge_no_row(db):
     from backend.emby_server.portal import UnlockViewRequest, unlock_emby_view
     realm = _realm(db)
-    u = _user(db, points=1000)
+    u = _user(db)
     with pytest.raises(HTTPException) as exc:
         unlock_emby_view(UnlockViewRequest(realm_id=realm.id), u, db)
     assert exc.value.status_code == 410
     db.refresh(u)
-    assert int(u.points or 0) == 1000
     assert db.query(models.EmbyViewUnlock).count() == 0
 
 
 def test_unlock_endpoint_retired_even_with_expired_row(db):
     from backend.emby_server.portal import UnlockViewRequest, unlock_emby_view
     realm = _realm(db)
-    u = _user(db, points=1000)
+    u = _user(db)
     row = _unlock(db, u, realm, NOW - timedelta(days=1))
     with pytest.raises(HTTPException) as exc:
         unlock_emby_view(UnlockViewRequest(realm_id=realm.id), u, db)
     assert exc.value.status_code == 410
     db.refresh(u)
     db.refresh(row)
-    assert int(u.points or 0) == 1000
     assert row.expires_at < NOW  # 存量行原样不动，没被续开
 
 
