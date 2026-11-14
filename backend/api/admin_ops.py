@@ -150,6 +150,9 @@ def code_dto(db: Session, code: models.RegistrationCode, now: Optional[datetime]
         "agent_name": agent_name,
         # M1 奖励类型 + G1 资格码打包查看标记：列表里要分得出这张码送什么
         "reward_type": getattr(code, "reward_type", "subscription") or "subscription",
+        "balance_value": (f"{code.balance_value:.2f}"
+                          if getattr(code, "balance_value", None) is not None
+                          else None),
         "welfare_include_view": bool(getattr(code, "welfare_include_view", True)),
         "max_uses": code.max_uses,
         "use_count": code.use_count or 0,
@@ -416,6 +419,8 @@ class CodeGenerateRequest(BaseModel):
     # M1：奖励类型
     reward_type: str = Field(default="subscription")
     points_value: int = Field(default=0, ge=0)
+    # 余额型（reward_type=balance）：入账面额（元），字符串收避免 float 丢精度
+    balance_value: str = Field(default="0", max_length=32)
     discount_pct: int = Field(default=0, ge=0, le=100)
     # G1 资格码：核销时打包首张查看行（仅 reward_type=welfare 时生效），默认开
     welfare_include_view: bool = True
@@ -482,7 +487,7 @@ def generate_codes(
             raise HTTPException(status_code=500, detail="卡码生成冲突，请重试")
 
         # M1：校验奖励类型
-        if request.reward_type not in ("subscription", "points", "discount", "welfare"):
+        if request.reward_type not in ("subscription", "points", "discount", "welfare", "balance"):
             raise HTTPException(status_code=400, detail="reward_type 非法")
         # 交叉校验「奖励类型 × 面额」：坏卡一旦入库，用户核销时才会失败
         # （见 codes.redeem_code 里的 points<=0 / pct<=0 or pct>=100 判断），
@@ -491,6 +496,22 @@ def generate_codes(
             raise HTTPException(status_code=400, detail="积分型卡码必须设置积分面额（points_value > 0）")
         if request.reward_type == "discount" and not (1 <= request.discount_pct <= 99):
             raise HTTPException(status_code=400, detail="折扣型卡码的 discount_pct 必须在 1-99 之间（85=八五折）")
+        balance_amount = None
+        if request.reward_type == "balance":
+            # 余额码（钱包批 1）：面额必须 >0；白名单码走 code_type 的永久化
+            # 分支、会吞掉奖励分派，组合直接拒绝，免得生成出「核销了不到账」的码。
+            from decimal import Decimal, InvalidOperation
+
+            from backend.agents import money as _money
+
+            if request.code_type == codes.CODE_TYPE_WHITELIST:
+                raise HTTPException(status_code=400, detail="余额型卡码不能与白名单码组合")
+            try:
+                balance_amount = _money(Decimal(str(request.balance_value).strip()))
+            except (InvalidOperation, ValueError):
+                raise HTTPException(status_code=400, detail="余额型卡码的面额格式不正确")
+            if balance_amount <= 0:
+                raise HTTPException(status_code=400, detail="余额型卡码必须设置面额（balance_value > 0）")
         code = models.RegistrationCode(
             code=raw,
             max_uses=request.max_uses,
@@ -506,6 +527,7 @@ def generate_codes(
             realm_id=target_realm,
             reward_type=request.reward_type,
             points_value=request.points_value,
+            balance_value=balance_amount if balance_amount is not None else 0,
             discount_pct=request.discount_pct,
             welfare_include_view=bool(request.welfare_include_view),
         )
@@ -528,6 +550,8 @@ def generate_codes(
 
     if request.reward_type == codes.REWARD_WELFARE:
         gen_message = f"已生成 {len(created)} 个{type_name}（公益资格码）"
+    elif request.reward_type == codes.REWARD_BALANCE:
+        gen_message = f"已生成 {len(created)} 个{type_name}（余额码，面额 ¥{balance_amount:.2f}）"
     else:
         gen_message = f"已生成 {len(created)} 个{type_name}（「{realm_name}」的会员）"
     return {

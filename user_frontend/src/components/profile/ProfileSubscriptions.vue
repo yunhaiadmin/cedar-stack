@@ -106,7 +106,7 @@ const welfareExpiresDate = computed(() => {
       <div class="sub-row renew-row">
         <div class="renew-info">
           <b>到期自动续订</b>
-          <small>到期前 24 小时用能量自动续订一期 · 能量不足则不续并提醒你</small>
+          <small>到期前 24 小时自动续订一期 · 余额不足则不续并提醒你</small>
         </div>
         <button
           type="button"
@@ -127,7 +127,7 @@ const welfareExpiresDate = computed(() => {
       <!-- 自助续期：公益天数走 /redeem；查看已随资格合并，只展示状态 -->
       <div class="renew-block">
         <div class="renew-block-title">公益资格</div>
-        <p class="renew-line">{{ welfareIsWelfare ? '生效中' : '未开通' }}<template v-if="welfareExpiresDate"> · 到期 {{ welfareExpiresDate }}</template><template v-else-if="welfareStatusLoaded && welfareIsWelfare"> · 不过期</template><template v-if="pointsBalance != null"> · 当前能量 {{ pointsBalance }}</template></p>
+        <p class="renew-line">{{ welfareIsWelfare ? '生效中' : '未开通' }}<template v-if="welfareExpiresDate"> · 到期 {{ welfareExpiresDate }}</template><template v-else-if="welfareStatusLoaded && welfareIsWelfare"> · 不过期</template><template v-if="pointsBalance != null"> · 当前余额 {{ pointsBalance }}</template></p>
         <p v-if="tgBound === false" class="renew-hint">续期需先绑定 Telegram，绑定后回来续期</p>
         <div class="renew-btns">
           <button

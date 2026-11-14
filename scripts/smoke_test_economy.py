@@ -173,9 +173,17 @@ def main():
     db.refresh(sub)
     check("订阅履约发放（顺延套餐天数）",
           order.status == "paid" and (sub.end_date - end_before).days == plan.duration_days)
-    check("履约返回待发通知",
-          isinstance(pending, list) and len(pending) == 1
-          and pending[0].get("event_type") == "economy.subscription_success")
+    # 钱包在位且默认开：u2 付 ¥19.90 → 邀请人 u1 返利 ¥1.00 即时入账，
+    # 履约待发通知是两条（订阅成功 + 返利到账），不再是旧的「恰一条」。
+    sub_items = [p for p in pending
+                 if p.get("event_type") == "economy.subscription_success"]
+    rebate_items = [p for p in pending
+                    if p.get("event_type") == "economy.invite_rebate"]
+    check("履约返回待发通知（订阅成功恰一条＋返利到账在位）",
+          isinstance(pending, list) and len(sub_items) == 1
+          and len(rebate_items) == 1
+          and rebate_items[0].get("user_id") == u1.id
+          and "¥1.00" in (rebate_items[0].get("content") or ""))
 
     loop.run_until_complete(send_fulfill_notifications(pending))
     msg = db.query(models.StationMessage).filter(

@@ -352,11 +352,11 @@ export interface ViewPermission {
   granted: boolean
   /** 当前服是否为公益服（公益服查看随资格开通，付费服用订阅） */
   realm_free: boolean
-  /** 解锁需要的能量 */
+  /** 解锁需要的余额（历史字段，积分时代口径） */
   unlock_points: number
   /** 解锁有效期天数（0=永久） */
   unlock_days: number
-  /** 用户当前能量余额 */
+  /** 用户当前余额（历史字段，积分时代口径） */
   points_balance: number
   /** 已解锁的到期时间（ISO，未解锁/永久为 null） */
   expires_at: string | null
@@ -973,7 +973,7 @@ export const subscriptionApi = {
   getRecords: () => api.get<never, { records: SubscriptionRecordRow[] }>('/api/user/subscriptions/records'),
   // 终止订阅（立即失效）
   cancel: (id: number) => api.post<never, { success: boolean; message: string }>(`/api/user/subscriptions/${id}/cancel`),
-  // 自动续订开关：到期前 24 小时用能量自动续订，余额不足则不续
+  // 自动续订开关：到期前 24 小时自动续订，余额不足则不续
   setAutoRenew: (id: number, enabled: boolean) => api.post<never, { success: boolean; auto_renew: boolean; message: string }>(`/api/user/subscriptions/${id}/auto-renew`, { enabled }),
 }
 

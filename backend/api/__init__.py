@@ -9,6 +9,7 @@ from backend.api.traffic import traffic_router
 from backend.api import admin_auth  # noqa: F401 — 导入即注册
 from backend.api.admin import admin_router
 from backend.api import admin_economy  # noqa: F401 — 导入即注册
+from backend.api import admin_wallet  # noqa: F401 — 导入即注册（钱包批 1）
 from backend.api import admin_scrape  # noqa: F401 — 导入即注册（元数据与刮削）
 from backend.api import admin_identify_review  # noqa: F401 — 导入即注册（低置信识别审查队列）
 from backend.api import admin_media_governance  # noqa: F401 — 导入即注册（可见性治理复核队列 + 库级扫描预设，L7/L10）

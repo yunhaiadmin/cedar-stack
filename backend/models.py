@@ -1090,6 +1090,7 @@ class RegistrationCode(Base):
     # / welfare 公益资格（2026-10-30 G1：卡码直发资格，见 codes.redeem_code）
     reward_type = Column(String(20), default='subscription')
     points_value = Column(Integer, default=0)  # points 型：兑换积分数
+    balance_value = Column(Numeric(12, 2), default=0)  # balance 型：兑换入账金额（元）
     discount_pct = Column(Integer, default=0)  # discount 型：实付百分比，85=八五折
     # welfare 型：核销时是否打包首张查看行（EmbyViewUnlock，同天数、points_spent=0）。
     # 老数据补列默认 1（打包），与生成表单默认开一致。
@@ -1200,6 +1201,58 @@ class AgentBalanceLog(Base):
     operator_id = Column(Integer, ForeignKey('web_users.id'), nullable=True)
     ref_id = Column(Integer, nullable=True)  # purchase 时为 agent_purchases.id
     created_at = Column(DateTime, default=datetime.now)
+
+
+class UserWalletBalance(Base):
+    """用户钱包余额账本（一人一行，现金余额，全站唯一货币）
+
+    balance 是人民币元（Numeric(12,2)），绝不为负：扣款走条件 UPDATE
+    （balance >= amount 才扣），见 backend/wallet.py。不复用 web_users.points
+    （旧积分钱包已下线，混账是事故之源，与代理余额「不混账」同口径）。
+    每次变动必须同步写一条 wallet_ledger 流水（只增不改）。
+    """
+    __tablename__ = 'user_wallet_balances'
+
+    user_id = Column(Integer, ForeignKey('web_users.id'), primary_key=True)
+    balance = Column(Numeric(12, 2), nullable=False, default=0)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    user = relationship("WebUser")
+
+
+class WalletLedger(Base):
+    """钱包收支流水（只增不改：所有余额变动的唯一留痕，错账用冲正行纠）
+
+    kind：recharge 在线充值 / admin_adjust 管理员手工增减 / gift_code
+    兑换码入账 / rebate 邀请返利 / subscription_purchase 订阅购买扣款 /
+    traffic_purchase 购流量扣款 / refund 退款回余额 / rebate_reversal
+    返利撤回。amount 带符号（正入负出），balance_after 是变动后快照。
+    idempotency_key 唯一（可空）：扣款/入账重复提交时原样回放，不重复成交。
+    prev_hash / record_hash 照 PointsLog 的链式审计（按用户串链）。
+    """
+    __tablename__ = 'wallet_ledger'
+
+    __table_args__ = (
+        Index('idx_wallet_ledger_user', 'user_id'),
+        Index('idx_wallet_ledger_kind', 'kind'),
+        Index('idx_wallet_ledger_time', 'created_at'),
+        UniqueConstraint('idempotency_key', name='uq_wallet_ledger_idem'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
+    kind = Column(String(30), nullable=False)
+    amount = Column(Numeric(12, 2), nullable=False)
+    balance_after = Column(Numeric(12, 2), nullable=False)
+    ref_id = Column(String(64), nullable=True, index=True)
+    idempotency_key = Column(String(64), nullable=True)
+    note = Column(String(255))
+    operator_id = Column(Integer, ForeignKey('web_users.id'), nullable=True)
+    prev_hash = Column(String(64), nullable=True)  # 上一条该用户流水的 record_hash（链头为空字符串）
+    record_hash = Column(String(64), nullable=True)  # 本条记录的 hash
+    created_at = Column(DateTime, default=datetime.now)
+
+    user = relationship("WebUser", foreign_keys=[user_id])
 
 
 class AgentPurchase(Base):

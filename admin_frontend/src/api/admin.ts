@@ -190,6 +190,8 @@ export const generateCodes = (data: {
   /** M1：奖励类型 */
   reward_type?: string
   points_value?: number
+  /** 余额型（reward_type=balance）：入账面额（元，字符串保精度） */
+  balance_value?: string
   discount_pct?: number
   /** G1：资格码核销时打包查看行（仅 welfare 型生效） */
   welfare_include_view?: boolean

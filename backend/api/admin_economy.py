@@ -80,6 +80,18 @@ ECONOMY_CONFIG_KEYS = {
     "paid_request_monthly": "int",  # 付费服每月求片上限（此前无后台入口，本轮补登记）
     "code_default_plan_id": "int",  # r40：卡码授予天数所用默认套餐（codes._resolve_plan 读取）
     "subscription_purchase_enabled": "bool",
+    # 钱包（批 1，2026-11-14）：默认值见 backend/wallet.WALLET_CONFIG_DEFAULTS
+    "wallet_enabled": "bool",  # 钱包总开关（默认开）
+    "wallet_min_topup_amount": "int",  # 最低充值额（分，默认 1000＝¥10）
+    "wallet_topup_fee_pct": "int",  # 充值手续费比例 %（默认 0，批 3 再议）
+    "wallet_invite_rebate_percent": "int",  # 邀请返利比例 %（默认 5，批 2 计提）
+    "wallet_invite_rebate_cap": "int",  # 单人返利上限（分，默认 0＝不限）
+    "wallet_invite_rebate_mode": "str",  # 返利模式 tiered/flat（默认 tiered；两值校验在 config_schema 的 enum）
+    "wallet_invite_rebate_tier_threshold": "int",  # 分档门槛（分，默认 35000＝¥350，按每位好友累计付费计）
+    "wallet_invite_rebate_tier_percent": "int",  # 二档比例 %（默认 1，门槛以上部分）
+    "traffic_balance_price_per_100gb": "int",  # 余额购流量单价（分/100GB，默认 300＝¥3，批 2 启用）
+    "wallet_refund_to_balance": "bool",  # 退款回钱包（默认开，批 2 落地）
+    "wallet_auto_renew_enabled": "bool",  # 余额自动续订（默认关，不开）
     "payment_gateway_url": "str", "payment_partner_id": "str",
     "payment_partner_key": "secret", "payment_qqpay_enabled": "bool",
     "site_url": "str",
@@ -123,6 +135,10 @@ def economy_get_settings(
     missing_on = {
         _promo_enabled: _promo_defaults[_promo_enabled],
         "stream_accel_enabled": "true",
+        # 钱包批 1：这两个开关代码默认也是开（见 wallet.WALLET_CONFIG_DEFAULTS），
+        # 面板必须如实显示，不能因为没落库行就显示成关。
+        "wallet_enabled": "true",
+        "wallet_refund_to_balance": "true",
     }
     result = {}
     for key, value_type in ECONOMY_CONFIG_KEYS.items():

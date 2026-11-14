@@ -871,7 +871,8 @@ def my_orders(
         ).order_by(models.RechargeOrder.created_at.desc()).limit(limit).all():
             orders.append({
                 "order_id": o.order_id, "kind": "recharge",
-                "item_name": f"能量充值（+{o.amount} 能量）",
+                # 历史充值单（积分时代）：只标「充值（历史）」，不再写能量字样
+                "item_name": "充值（历史）",
                 "amount": float(o.price), "status": o.status,
                 "list_price": float(o.list_price or 0),
                 "discount_amount": float(o.discount_amount or 0),

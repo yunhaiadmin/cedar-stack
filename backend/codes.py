@@ -388,6 +388,10 @@ def grant_days_for(code: models.RegistrationCode) -> int:
 
 REWARD_WELFARE = "welfare"
 
+# 余额码（reward_type=balance，钱包批 1，2026-11-14）：核销即钱包入账，
+# 面额在 balance_value（元），发放走 backend/wallet.py 的账本服务。
+REWARD_BALANCE = "balance"
+
 # 管理员资格码月配额：每位管理员每月可生成的资格码张数上限。
 # 语义（写清）：<=0 表示不限（与能量转账上限 points_transfer_max 的
 # 「0=不限」同惯例）；行缺失 / 空值 / 非法值回退默认值 30（宽松默认，
@@ -566,6 +570,12 @@ def preview_code(db: Session, raw: str, username: Optional[str] = None) -> dict:
         elif reward_type == 'discount':
             preview["discount_pct"] = getattr(code, 'discount_pct', 0) or 0
             preview["message"] = error or (f"折扣卡码（{discount_pct_text(preview['discount_pct'])}）" if named_ok else "该卡码限指定账号使用")
+        elif reward_type == REWARD_BALANCE:
+            from decimal import Decimal
+
+            value = getattr(code, 'balance_value', None) or Decimal("0")
+            preview["balance_value"] = f"{value:.2f}"
+            preview["message"] = error or (f"余额卡码（到账 ¥{value:.2f}）" if named_ok else "该卡码限指定账号使用")
         if named_ambiguous and not error:
             # 上面各奖励分支按 named_ok 选文案，会把歧义文案覆盖回「限指定账号」，这里统一盖回。
             preview["message"] = "该卡码的指名账号不唯一，请联系管理员处理"
@@ -624,7 +634,8 @@ def redeem_code(db: Session, user: models.WebUser, raw: str) -> dict:
     """核销卡码（已登录兑换入口）：续期码 / 白名单码
 
     - 奖励类型（reward_type）：subscription 会员天数 /
-      discount 折扣权益 / welfare 公益资格（可打包同天数查看行）；
+      discount 折扣权益 / welfare 公益资格（可打包同天数查看行）/
+      balance 钱包余额入账（钱包批 1）；
       points 能量型已随货币下线，占位前直接拒绝、不烧码
     - 注册码（code_type=1）：2026-11-10 定版起与兑换分离——本入口
       明确拒绝并提示去注册页，核销只发生在凭码注册（见
@@ -780,14 +791,24 @@ def _redeem_found_code(db: Session, user: models.WebUser,
         # 能量已随货币下线（2026-11-13）：能量卡码不再核销，占位前直接拒绝、不烧码。
         return {"success": False, "message": "能量卡码已下线，无法核销，请联系管理员"}
 
+    if reward_type == REWARD_BALANCE:
+        # 余额码面额预检：坏码（无面额）在占位前拒绝、不烧码；面额在
+        # 生成阶段已校验 >0，这里是纵深防御（存量坏数据/手工改库）。
+        from decimal import Decimal
+
+        if (getattr(code, 'balance_value', None) or Decimal("0")) <= 0:
+            return {"success": False, "message": "该余额卡码面额无效，请联系管理员"}
+
     days = grant_days_for(code)
     # 这张卡码属于哪个服，就判定/开通哪个服的会员（甲服的会员不算乙服的）
     target = code_realm_id(db, code)
     target_name = realm_label(db, target)
     # 「已有会员请用续期码」的门只管会员订阅口径：资格码发的是公益资格
     # （与订阅两套口径），已持资格时由 grant_welfare 在原到期上叠加，
-    # 不许被会员门误拦；其余奖励类型行为与此前逐字一致。
-    if reward_type != REWARD_WELFARE and code.code_type == CODE_TYPE_REGISTER \
+    # 不许被会员门误拦；余额码发的是钱包入账，同样与会员无关，一并排除；
+    # 其余奖励类型行为与此前逐字一致。
+    if reward_type not in (REWARD_WELFARE, REWARD_BALANCE) \
+            and code.code_type == CODE_TYPE_REGISTER \
             and has_active_membership(db, user, target):
         return {"success": False,
                 "message": f"你在「{target_name}」已有生效中的会员，请使用续期码（本卡码只能开通新会员）"}
@@ -910,6 +931,28 @@ def _redeem_found_code(db: Session, user: models.WebUser,
             "code_type": code.code_type,
             "reward_type": "discount",
             "discount_pct": pct,
+        }
+    if reward_type == REWARD_BALANCE:
+        # 余额码：占位已在上方完成（claim_code 原子占位 + 每人每码一次），
+        # 这里只在同一事务里入账——提交由入口调用方统一负责，中间崩溃
+        # 时占位与入账一起回滚，不会出现「码烧了、钱没到账」。
+        from backend import wallet as wallet_service
+
+        amount = wallet_service.money(getattr(code, 'balance_value', 0) or 0)
+        entry, _replayed = wallet_service.credit(
+            db, user.id, amount, kind="gift_code",
+            ref_id=f"code:{code.id}",
+            note="兑换码入账")
+        type_name = CODE_TYPE_NAMES.get(code.code_type, "卡码")
+        return {
+            "success": True,
+            "message": f"{type_name}核销成功，钱包到账 ¥{amount:.2f}",
+            "code_type": code.code_type,
+            "reward_type": "balance",
+            "balance_value": f"{amount:.2f}",
+            "balance_after": f"{entry.balance_after:.2f}",
+            "realm_id": target,
+            "realm_name": target_name,
         }
     # 默认：subscription，会员天数
     sub = grant_membership_days(db, user, days, target)

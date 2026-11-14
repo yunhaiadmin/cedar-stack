@@ -789,6 +789,10 @@ def _auto_migrate():
             # agent_sales 由 create_all 建，不在此列。
             ("agent_id", "INTEGER", "NULL"),
             ("agent_purchase_id", "INTEGER", "NULL"),
+            # 钱包批 1（2026-11-14）：balance 型卡码的入账面额（元）。
+            # 老行补 0 = 无面额，非 balance 型码不读此列，存量行为不变。
+            # 新表 user_wallet_balances / wallet_ledger 由 create_all 建，不在此列。
+            ("balance_value", "NUMERIC(12, 2)", "0"),
         ]),
         # v2.6.4 媒体库刮削策略、虚拟媒体库与搜索增强；v2.6.5 增加 115 账号绑定
         # v2.6.6 增加存储挂载绑定（storage_mounts）：媒体库的内容来源

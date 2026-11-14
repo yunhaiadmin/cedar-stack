@@ -742,6 +742,22 @@ ECONOMY_CONFIG_SCHEMA: dict[str, tuple] = {
     # r40：卡码授予天数所用默认套餐（codes._resolve_plan 读取；无行=按服自动推导）
     "code_default_plan_id": ("int", 0, _BIG),
     "subscription_purchase_enabled": ("bool",),
+    # 钱包（批 1，2026-11-14）：默认值在 backend/wallet.WALLET_CONFIG_DEFAULTS，
+    # 这里只登记类型与范围；金额类键单位均为分。
+    "wallet_enabled": ("bool",),
+    "wallet_min_topup_amount": ("int", 0, _BIG),
+    "wallet_topup_fee_pct": ("int", 0, 100),
+    "wallet_invite_rebate_percent": ("int", 0, 100),
+    "wallet_invite_rebate_cap": ("int", 0, _BIG),
+    # 返利分档三键（#175 invite_rebate 读取，2026-11-14 用户分档定版）：
+    # mode 只收 tiered/flat 两值（invite_rebate.rebate_mode 的合法集），
+    # threshold 按每位好友累计付费计、单位分，tier_percent 是门槛以上比例。
+    "wallet_invite_rebate_mode": ("enum", ("tiered", "flat")),
+    "wallet_invite_rebate_tier_threshold": ("int", 0, _BIG),
+    "wallet_invite_rebate_tier_percent": ("int", 0, 100),
+    "traffic_balance_price_per_100gb": ("int", 0, _BIG),
+    "wallet_refund_to_balance": ("bool",),
+    "wallet_auto_renew_enabled": ("bool",),
     "payment_gateway_url": ("raw",), "payment_partner_id": ("raw",),
     "payment_partner_key": ("raw",), "payment_qqpay_enabled": ("bool",),
     "site_url": ("raw",),

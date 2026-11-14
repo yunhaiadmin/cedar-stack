@@ -8,8 +8,9 @@
   超出返 1%；flat 模式保留可切换；
 - 福利试用是体验权益：邀请关系建立时同事务发放，受总开关/天数/
   月次数/邀请人累计付费门槛约束，留痕防重；
-- 本树没有钱包模块（批 1 未合并）时计提保持 pending、绝不报错——
-  这正是「待批 1 接通」的预期形态，settle 返回 0 笔。
+- 本文件默认把钱包总开关关掉（fixture 置 wallet_enabled=false），
+  锚定「无钱包/钱包关停时计提挂 pending」的路径；钱包开着时的即时
+  入账路径由 test_record_rebate_credited_with_wallet 单独覆盖。
 """
 import os
 
@@ -25,7 +26,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from starlette.requests import Request
 
-from backend import invite_rebate, invite_trial, member_level as ml, models
+from backend import invite_rebate, invite_trial, member_level as ml, models, wallet
 from backend.api import economy, emby_portal
 from backend.api import invitation as invitation_api
 from backend.api import admin_invitation as admin_invitation_api
@@ -44,6 +45,11 @@ def db():
     session.add(models.ServerRealm(id=1, name="默认服", slug="main", is_active=True))
     session.commit()
     ml.ensure_member_levels_seeded(session)
+    # 钱包默认开着会让返利即时入账；本文件锚定「无钱包时计提挂 pending」
+    # 的路径，统一先把总开关关掉（即时入账另由
+    # test_record_rebate_credited_with_wallet 覆盖）。
+    session.add(models.SystemConfig(key="wallet_enabled", value="false"))
+    session.commit()
     store.invalidate()
     try:
         yield session
@@ -196,9 +202,29 @@ def test_record_rebate_pending_without_wallet(db):
     db.commit()
     assert row is not None
     assert row.rebate_amount == Decimal("2.25")
-    # 本树无钱包模块：保持待入账，不许报错、不许假装到账
+    # 钱包总开关已在 fixture 里关掉：保持待入账，不许报错、不许假装到账
     assert row.status == "pending"
     assert row.wallet_ledger_id is None
+
+
+def test_record_rebate_credited_with_wallet(db):
+    # 钱包开着时：同一笔返利即时入账（其余用例锚定 wallet-off 的挂账路径）。
+    _set(db, "wallet_enabled", "true")
+    _set(db, "wallet_invite_rebate_mode", "flat")
+    inviter = _user(db, "inviter-w")
+    invitee = _user(db, "invitee-w")
+    code = _code(db, inviter, "CODEWALL")
+    _relation(db, inviter, invitee, code)
+
+    row = invite_rebate.record_payment_rebate(
+        db, invitee, source="subscription_order", source_ref="SO-W1",
+        paid_amount=Decimal("45"))
+    db.commit()
+    assert row is not None
+    assert row.rebate_amount == Decimal("2.25")
+    assert row.status == "credited"
+    assert row.wallet_ledger_id is not None
+    assert wallet.get_balance(db, inviter.id) == Decimal("2.25")
 
 
 def test_record_rebate_idempotent(db):
