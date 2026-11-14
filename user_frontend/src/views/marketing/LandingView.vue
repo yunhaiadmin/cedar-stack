@@ -6,10 +6,11 @@
  * 文案为 Aetrix 自有口径；营销数字一律不编造：片库统计位为占位待接（第 5 节④）。
  * 页面独立于应用壳（App.vue 对 landing 路由名不渲染全局顶栏/底坞），自带悬浮胶囊导航。
  */
-import { nextTick, onMounted, onUnmounted, ref, type Component } from 'vue'
+import { nextTick, onDeactivated, onMounted, onUnmounted, ref, type Component } from 'vue'
 import { useRouter } from 'vue-router'
 import { Monitor, Sparkles, Film, Ban, Menu, X, RefreshCw, Bell, Home, Tag, BookOpen, ExternalLink, Users, Bot, MessageCircle, Send, Globe, ArrowRight } from 'lucide-vue-next'
 import UhdNavPill, { type UhdNavItem } from '@/components/uhd/UhdNavPill.vue'
+import { engageModalIsolation, trapTabKey } from '@/composables/useModalIsolation'
 import UhdButton from '@/components/uhd/UhdButton.vue'
 import UhdChip from '@/components/uhd/UhdChip.vue'
 import { branding } from '@/composables/useBranding'
@@ -37,6 +38,10 @@ const menuClosing = ref(false)
 const navScrolled = ref(false)
 const burgerBtn = ref<HTMLButtonElement | null>(null)
 const sheetEl = ref<HTMLElement | null>(null)
+const menuModal = ref<HTMLElement | null>(null)
+let menuLocked = false
+let savedOverflow = ''
+let releaseMenuIsolation: (() => void) | null = null
 function onScrollNav() {
   navScrolled.value = window.scrollY > 40
 }
@@ -44,25 +49,52 @@ function focusSheet() {
   const first = sheetEl.value?.querySelector<HTMLElement>('button, a')
   first?.focus()
 }
+function lockMenu() {
+  if (menuLocked) return
+  savedOverflow = document.documentElement.style.overflow
+  document.documentElement.style.overflow = 'hidden'
+  menuLocked = true
+  nextTick(() => {
+    if (menuModal.value) releaseMenuIsolation = engageModalIsolation(menuModal.value)
+    focusSheet()
+  })
+}
+function unlockMenu() {
+  releaseMenuIsolation?.()
+  releaseMenuIsolation = null
+  if (!menuLocked) return
+  document.documentElement.style.overflow = savedOverflow
+  menuLocked = false
+}
 function setMenu(open: boolean) {
   menuOpen.value = open
   menuClosing.value = false
-  document.documentElement.style.overflow = open ? 'hidden' : ''
-  if (open) nextTick(focusSheet)
+  if (open) lockMenu()
+  else unlockMenu()
+}
+function forceReleaseMenu() {
+  menuOpen.value = false
+  menuClosing.value = false
+  unlockMenu()
 }
 function closeMenuAnimated() {
   if (!menuOpen.value || menuClosing.value) return
   menuClosing.value = true
-  document.documentElement.style.overflow = ''
+  unlockMenu()
   window.setTimeout(() => {
-    setMenu(false)
+    menuOpen.value = false
+    menuClosing.value = false
     burgerBtn.value?.focus()
   }, 300)
 }
 function onMenuKey(event: KeyboardEvent) {
-  if (event.key !== 'Escape' || !menuOpen.value) return
-  event.preventDefault()
-  closeMenuAnimated()
+  if (!menuOpen.value) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeMenuAnimated()
+    return
+  }
+  trapTabKey(event, menuModal.value)
 }
 function toggleMenu() {
   if (menuOpen.value) closeMenuAnimated()
@@ -335,9 +367,15 @@ function setupReveal() {
   }
 }
 
+let landingWide: MediaQueryList | null = null
+function onLandingWide() {
+  if (landingWide?.matches) forceReleaseMenu()
+}
 onMounted(() => {
   window.addEventListener('scroll', onScrollNav, { passive: true })
   window.addEventListener('keydown', onMenuKey)
+  landingWide = window.matchMedia('(min-width: 901px)')
+  landingWide.addEventListener('change', onLandingWide)
   onScrollNav()
   reduceMotion.value = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   splitTitleChars()
@@ -356,15 +394,17 @@ onMounted(() => {
   window.addEventListener('scroll', onScroll, { passive: true })
   updatePin()
 })
+onDeactivated(() => forceReleaseMenu())
 onUnmounted(() => {
   if (heroTimer) clearInterval(heroTimer)
   window.removeEventListener('scroll', onScroll)
   window.removeEventListener('scroll', onScrollNav)
   window.removeEventListener('keydown', onMenuKey)
+  landingWide?.removeEventListener('change', onLandingWide)
   revealIO?.disconnect()
   pinRevealIO?.disconnect()
   pinIO?.disconnect()
-  document.documentElement.style.overflow = ''
+  forceReleaseMenu()
 })
 
 /* 跑马灯内容：Aetrix 自有口径——支持的客户端与规格字标，纯文字白标（第 5 节②） */
@@ -413,9 +453,9 @@ const year = new Date().getFullYear()
         </button>
       </span>
     </div>
-    <div v-if="menuOpen" class="m-scrim" :class="{ 'is-out': menuClosing }" @click="closeMenuAnimated" />
+    <div v-if="menuOpen" ref="menuModal" class="m-modal">
+    <div class="m-scrim" :class="{ 'is-out': menuClosing }" @click="closeMenuAnimated" />
     <div
-      v-if="menuOpen"
       ref="sheetEl"
       class="m-sheet"
       :class="{ 'is-out': menuClosing }"
@@ -478,6 +518,7 @@ const year = new Date().getFullYear()
       <div class="m-sheet__cta">
         <UhdButton variant="primary" dark block @click="goConsole">进入后台</UhdButton>
       </div>
+    </div>
     </div>
 
     <!-- ① Hero -->
@@ -726,6 +767,7 @@ const year = new Date().getFullYear()
 /* ---------- 移动端顶栏与底部抽屉（仅 ≤900px 启用，桌面走 UhdNavPill）
    字标尺寸照友站真机截图（2026-11-14）：站名约 21px/800 字距 .05em、SERVICE 11px 字距 .38em；
    玻璃 pill 层滚动 >40px 才浮起（opacity .5s ease-sheet），汉堡 chip 同步变平 ---------- */
+.m-modal { display: contents; }
 .m-nav,
 .m-scrim,
 .m-sheet {

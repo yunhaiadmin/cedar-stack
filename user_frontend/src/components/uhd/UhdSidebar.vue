@@ -5,7 +5,7 @@
  * 图标 18px + 文字 15px，激活态 = 白底胶囊 + 边框 + 轻阴影；栏顶右可收起；
  * 底部预留「账号胶囊位」（account 插槽）。无页脚。
  */
-import { ref, type Component } from 'vue'
+import { computed, onMounted, onUnmounted, ref, type Component } from 'vue'
 
 export interface UhdSidebarItem {
   key: string
@@ -27,6 +27,20 @@ const props = defineProps<{
 
 const emit = defineEmits<{ select: [key: string]; dismiss: [] }>()
 const collapsed = ref(false)
+/** ≤768 忽略桌面收起偏好：窄屏覆盖层必须带文字，回到桌面再恢复 68px。 */
+const isNarrow = ref(typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches)
+let narrowMedia: MediaQueryList | null = null
+function syncNarrow() {
+  isNarrow.value = !!narrowMedia?.matches
+}
+onMounted(() => {
+  narrowMedia = window.matchMedia('(max-width: 768px)')
+  syncNarrow()
+  narrowMedia.addEventListener('change', syncNarrow)
+})
+onUnmounted(() => narrowMedia?.removeEventListener('change', syncNarrow))
+const labelsVisible = computed(() => isNarrow.value || !collapsed.value)
+const collapsedVisual = computed(() => collapsed.value && !isNarrow.value)
 
 function onCollapse() {
   if (props.dismissible) emit('dismiss')
@@ -35,11 +49,11 @@ function onCollapse() {
 </script>
 
 <template>
-  <aside class="uhd-side" :class="{ 'uhd-side--collapsed': collapsed }">
+  <aside class="uhd-side" :class="{ 'uhd-side--collapsed': collapsedVisual }">
     <div class="uhd-side__head">
       <span class="uhd-side__brand">
         <span class="uhd-side__logo" aria-hidden="true" />
-        <span v-if="!collapsed" class="uhd-side__brand-name">{{ brand ?? 'Aetrix' }}</span>
+        <span v-if="labelsVisible" class="uhd-side__brand-name">{{ brand ?? 'Aetrix' }}</span>
       </span>
       <button
         type="button"
@@ -53,18 +67,18 @@ function onCollapse() {
 
     <nav class="uhd-side__nav">
       <div v-for="(group, gi) in groups" :key="gi" class="uhd-side__group">
-        <div v-if="group.title && !collapsed" class="uhd-side__group-title">{{ group.title }}</div>
+        <div v-if="group.title && labelsVisible" class="uhd-side__group-title">{{ group.title }}</div>
         <button
           v-for="item in group.items"
           :key="item.key"
           type="button"
           class="uhd-side__item"
           :class="{ 'uhd-side__item--active': item.key === activeKey }"
-          :title="collapsed ? item.label : undefined"
+          :title="collapsedVisual ? item.label : undefined"
           @click="emit('select', item.key)"
         >
           <component :is="item.icon" v-if="item.icon" class="uhd-side__item-icon" aria-hidden="true" />
-          <span v-if="!collapsed" class="uhd-side__item-label">{{ item.label }}</span>
+          <span v-if="labelsVisible" class="uhd-side__item-label">{{ item.label }}</span>
         </button>
       </div>
     </nav>

@@ -1,23 +1,31 @@
 <script setup lang="ts">
 /**
- * 只挂真实的 UhdAccountLayout。打开/关闭必须点组件自己的「导航」按钮。
- * 本页不改侧栏的 display，也不读取登录会话。
+ * 壳外放顶栏和底坞，用来证明模态会把它们标成 inert。
+ * 不是生产 App.vue，也不读取登录会话。
  */
-import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
+import { KeepAlive } from 'vue'
+import { RouterView } from 'vue-router'
 </script>
 
 <template>
-  <p class="fixture-banner">本地隔离夹具 · 不是登录会话 · 不连接生产账户</p>
-  <UhdAccountLayout title="夹具页" eyebrow="FIXTURE">
-    <article id="fixture-body">
-      <p>主栏夹具正文。没有用户、余额或套餐。</p>
-      <button id="fixture-main-btn" type="button">主栏按钮</button>
-      <div class="fixture-spacer" />
-    </article>
-  </UhdAccountLayout>
+  <div class="app-shell">
+    <p class="fixture-banner">本地隔离夹具 · 不是登录会话 · 不连接生产账户</p>
+    <header class="fake-top">
+      <button id="fake-top" type="button">顶栏</button>
+    </header>
+    <button id="already-inert" type="button" inert>原本不可用</button>
+    <RouterView v-slot="{ Component }">
+      <KeepAlive>
+        <component :is="Component" />
+      </KeepAlive>
+    </RouterView>
+    <nav class="fake-dock">
+      <button id="fake-dock" type="button">底坞</button>
+    </nav>
+  </div>
 </template>
 
-<style scoped>
+<style>
 .fixture-banner {
   margin: 0;
   padding: 8px 12px;
@@ -25,7 +33,14 @@ import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
   color: #1a1a1a;
   font: 600 14px/1.4 sans-serif;
 }
-.fixture-spacer {
-  height: 1400px;
+.fake-top,
+.fake-dock {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+}
+#already-inert {
+  position: absolute;
+  left: -999px;
 }
 </style>
