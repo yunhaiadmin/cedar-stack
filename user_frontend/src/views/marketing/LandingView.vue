@@ -626,19 +626,19 @@ const year = new Date().getFullYear()
             </div>
           </div>
           <div class="ess-devices" aria-hidden="true">
-            <div class="dev dev--tv rv rv--dev" data-reveal><span class="dev-play" /><span class="dev-bar"><i style="--bar-w: 60%" /></span></div>
-            <div class="dev dev--laptop rv rv--dev rv--dev-d1" data-reveal><span class="dev-play" /><span class="dev-bar"><i style="--bar-w: 60%" /></span></div>
-            <div class="dev dev--tablet rv rv--dev rv--dev-d2" data-reveal><span class="dev-play" /></div>
-            <div class="dev dev--phone rv rv--dev rv--dev-d3" data-reveal><span class="dev-play dev-play--sm" /></div>
+            <div class="dev dev--tv rv rv--dev" data-reveal><span class="dev-play" /><span class="dev-bar"><i style="--bar-w: 60%" /></span><span class="dev-label">电视</span></div>
+            <div class="dev dev--laptop rv rv--dev rv--dev-d1" data-reveal><span class="dev-play" /><span class="dev-bar"><i style="--bar-w: 60%" /></span><span class="dev-label">电脑</span></div>
+            <div class="dev dev--tablet rv rv--dev rv--dev-d2" data-reveal><span class="dev-play" /><span class="dev-label">平板</span></div>
+            <div class="dev dev--phone rv rv--dev rv--dev-d3" data-reveal><span class="dev-play dev-play--sm" /><span class="dev-label">手机</span></div>
             <p class="dev-note">上次同步 · 刚刚</p>
           </div>
           <!-- 移动端设备示意（返工单④①）：四台设备线框＋播放键＋进度条，仅 ≤900px 显示 -->
           <div class="ess-devices-m" aria-hidden="true">
             <div class="dm-row">
-              <span class="dm dm--tv"><span class="dm-play" /><span class="dm-bar"><i style="--bar-w: 60%" /></span></span>
-              <span class="dm dm--laptop"><span class="dm-play" /><span class="dm-bar"><i style="--bar-w: 60%" /></span></span>
-              <span class="dm dm--tablet"><span class="dm-play dm-play--sm" /></span>
-              <span class="dm dm--phone"><span class="dm-play dm-play--sm" /></span>
+              <span class="dm dm--tv"><span class="dm-play" /><span class="dm-bar"><i style="--bar-w: 60%" /></span><span class="dm-label">电视</span></span>
+              <span class="dm dm--laptop"><span class="dm-play" /><span class="dm-bar"><i style="--bar-w: 60%" /></span><span class="dm-label">电脑</span></span>
+              <span class="dm dm--tablet"><span class="dm-play dm-play--sm" /><span class="dm-label">平板</span></span>
+              <span class="dm dm--phone"><span class="dm-play dm-play--sm" /><span class="dm-label">手机</span></span>
             </div>
             <p class="dm-note">SYNCED · 上次同步 刚刚</p>
           </div>
@@ -1574,23 +1574,38 @@ const year = new Date().getFullYear()
   flex-wrap: wrap;
   margin-top: 22px;
 }
-/* 设备线框（CSS 绘制，照原站宽卡右侧设备图口径） */
+/* 设备线框：横排四台，名称在框下。不用叠放，窄屏另走 .ess-devices-m。 */
 .ess-devices {
   position: relative;
-  height: 240px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 22px 22px;
+  min-height: 168px;
 }
 .dev {
-  position: absolute;
+  position: relative;
+  flex: none;
   border: 1.5px solid var(--uhd-d-chip-border);
   border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.dev--tv { width: 225px; height: 130px; right: 150px; top: 6px; }
-.dev--laptop { width: 180px; height: 120px; right: 0; top: 66px; }
-.dev--tablet { width: 100px; height: 140px; right: 300px; top: 84px; }
-.dev--phone { width: 55px; height: 115px; right: 96px; top: 108px; }
+.dev--tv { width: 168px; height: 100px; }
+.dev--laptop { width: 148px; height: 92px; }
+.dev--tablet { width: 72px; height: 104px; }
+.dev--phone { width: 48px; height: 92px; }
+.dev-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 8px);
+  text-align: center;
+  font-size: 13px;
+  color: var(--uhd-d-text-2);
+}
 .dev-play {
   width: 32px;
   height: 32px;
@@ -1631,10 +1646,9 @@ const year = new Date().getFullYear()
 }
 .dev.is-in .dev-bar i { width: var(--bar-w, 60%); }
 .dev-note {
-  position: absolute;
-  right: 190px;
-  bottom: 0;
-  margin: 0;
+  flex: 1 0 100%;
+  margin: 36px 0 0;
+  text-align: center;
   font-size: var(--uhd-fs-aux-sm);
   color: var(--uhd-d-text-2);
 }
@@ -1646,7 +1660,17 @@ const year = new Date().getFullYear()
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  gap: 14px;
+  gap: 18px;
+  padding-bottom: 26px;
+}
+.dm-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  text-align: center;
+  font-size: 12px;
+  color: var(--uhd-d-text-2);
 }
 .dm {
   position: relative;
