@@ -25,7 +25,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend import entitlements as ent
-from backend import invite_rebate, member_level as ml, models, wallet as wallet_service
+from backend import invite_rebate, models, wallet as wallet_service
 from backend import traffic_quota as tq
 from backend.emby_server import models as em_models
 from backend.api import admin_wallet, economy
@@ -48,7 +48,8 @@ def db():
     session.add(models.ServerRealm(id=1, name="默认服", slug="main",
                                    is_active=True))
     session.commit()
-    ml.ensure_member_levels_seeded(session)
+    # 会员等级体系已于 2026-11-14 删除（backend/member_level.py 已删）：
+    # 钱包计价不再读等级折扣（member_discount 恒 0），无需播种等级行。
     ent._USER_PLAN_CACHE.clear()
     ent._PLAN_SNAPSHOT_CACHE.clear()
     store.invalidate()
