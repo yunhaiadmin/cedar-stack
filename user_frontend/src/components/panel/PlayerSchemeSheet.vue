@@ -113,7 +113,7 @@
                       <Copy :size="16" />
                     </button>
                     <button
-                      v-if="v.details.length || v.audios.length"
+                      v-if="v.details.length || v.audios.length || v.subs.length"
                       type="button"
                       class="psp-tool"
                       :aria-label="expandedId === v.id ? '收起版本详情' : '展开版本详情'"
@@ -122,10 +122,14 @@
                       <ChevronDown :size="16" :style="{ transform: expandedId === v.id ? 'rotate(180deg)' : '' }" />
                     </button>
                   </div>
-                  <!-- 展开态：两列信息网格（真实探测字段）+ 音轨行。
+                  <!-- 展开态：两列信息网格（真实探测字段）+ 音轨行 +
+                       内嵌字幕行（友站形态：都在展开网格内）。
                        音轨只展示清单与默认标记、不做选择：网页播放器
-                       没有选音轨能力，做成可选就是假造（详情见脚本注） -->
-                  <div v-if="expandedId === v.id && (v.details.length || v.audios.length)" class="psp-ver__detail">
+                       没有选音轨能力，做成可选就是假造（详情见脚本注）。
+                       内嵌字幕行可展开选轨：文本轨点选后经 query.sub
+                       带进播放器（播放器已认任意文本字幕轨 Index）；
+                       图片轨播放器挂不了，列出但置灰不可点 -->
+                  <div v-if="expandedId === v.id && (v.details.length || v.audios.length || v.subs.length)" class="psp-ver__detail">
                       <div v-if="v.details.length" class="psp-grid">
                         <div v-for="d in v.details" :key="d.label" class="psp-grid__cell">
                           <span class="psp-grid__label">{{ d.label }}</span>
@@ -152,6 +156,35 @@
                           </div>
                         </div>
                       </div>
+                      <div v-if="v.subs.length" class="psp-emb">
+                        <button
+                          type="button"
+                          class="psp-emb__head"
+                          :aria-expanded="embSubOpenId === v.id"
+                          @click.stop="toggleEmbSub(v, $event)"
+                        >
+                          <span class="psp-emb__name">内嵌字幕</span>
+                          <span class="psp-emb__lang">{{ v.subLang }}</span>
+                          <span class="psp-emb__count">共 {{ v.subs.length }} 条</span>
+                          <ChevronDown :size="15" :style="{ transform: embSubOpenId === v.id ? 'rotate(180deg)' : '' }" />
+                        </button>
+                        <div v-if="embSubOpenId === v.id" class="psp-emb__list">
+                          <button
+                            v-for="s in v.subs"
+                            :key="s.index"
+                            type="button"
+                            class="psp-emb__row"
+                            :class="{ 'psp-emb__row--on': selectedSubIndex === s.index }"
+                            :disabled="!s.isText"
+                            @click.stop="chooseEmbSub(v, s)"
+                          >
+                            <span v-if="s.isText" class="psp-emb__radio" aria-hidden="true"></span>
+                            <span>{{ s.label }}</span>
+                            <span v-if="!s.isText" class="psp-emb__rowmeta">图片字幕 · 网页暂不支持</span>
+                            <span v-if="s.isDefault" class="psp-emb__badge">默认</span>
+                          </button>
+                        </div>
+                      </div>
                     </div>
                 </div>
               </div>
@@ -172,7 +205,7 @@
                 :aria-expanded="subPickerOpen"
                 @click="subPickerOpen = !subPickerOpen"
               >
-                <span class="psp-subrow__name">{{ selectedSub ? selectedSub.label : '不挂字幕' }}</span>
+                <span class="psp-subrow__name">{{ selectedSubLabel || '不挂字幕' }}</span>
                 <span class="psp-subrow__count">{{ externalSubs.length }} 个</span>
                 <ChevronDown :size="15" :style="{ transform: subPickerOpen ? 'rotate(180deg)' : '' }" />
               </button>
@@ -323,6 +356,16 @@ interface VersionAudio {
   detail: string
   isDefault: boolean
 }
+interface VersionSub {
+  /** 字幕轨流 Index（与播放器 query.sub 同口径） */
+  index: number
+  /** 显示标签（DisplayTitle 优先、语言码译回中文名） */
+  label: string
+  /** 是否文本轨：只有文本轨播放器才能挂（后端给 DeliveryUrl）；
+      图片轨（PGS/DVD）列出但不可选 */
+  isText: boolean
+  isDefault: boolean
+}
 interface VersionCard {
   id: string
   name: string
@@ -338,6 +381,10 @@ interface VersionCard {
   audios: VersionAudio[]
   /** 音轨行摘要：默认音轨的语言标注 */
   audioLang: string
+  /** 展开态内嵌字幕行清单；空则不渲染内嵌字幕行 */
+  subs: VersionSub[]
+  /** 内嵌字幕行摘要：默认轨的标签 */
+  subLang: string
   /** 复制链接形态：source = MediaSource（/play/目标?ms=源id）；
       version = 独立条目行（/play/版本id） */
   kind: 'source' | 'version'
@@ -419,6 +466,8 @@ const versions = computed<VersionCard[]>(() => {
         details,
         audios: [],
         audioLang: '',
+        subs: [],
+        subLang: '',
         kind: 'version',
       }
     })
@@ -461,6 +510,17 @@ const versions = computed<VersionCard[]>(() => {
       isDefault: !!a.IsDefault,
     }))
     const dftAudio = audioStreams.find((a) => a.IsDefault) || audioStreams[0]
+    // 展开网格内嵌字幕行：该源的内嵌字幕轨（Type=Subtitle 且 !IsExternal），
+    // 与外挂字幕同源（subsSource 的 MediaStreams）；文本轨可点选，
+    // 图片轨（IsTextSubtitleStream=false）列出但不可选
+    const subStreams = streams.filter((x) => x.Type === 'Subtitle' && !x.IsExternal)
+    const subs: VersionSub[] = subStreams.map((s) => ({
+      index: s.Index,
+      label: embeddedSubLabel(s),
+      isText: !!s.IsTextSubtitleStream,
+      isDefault: !!s.IsDefault,
+    }))
+    const dftSub = subStreams.find((s) => s.IsDefault) || subStreams[0]
     return {
       id: s.Id,
       name,
@@ -470,6 +530,8 @@ const versions = computed<VersionCard[]>(() => {
       details,
       audios,
       audioLang: audios.length ? audioLangLabel(dftAudio?.Language) : '',
+      subs,
+      subLang: dftSub ? embeddedSubLabel(dftSub) : '',
       kind: 'source',
     }
   })
@@ -480,6 +542,8 @@ const selectedVersion = computed(() => versions.value.find((v) => v.id === selec
 const expandedId = ref('')
 /** 版本卡内音轨清单展开的是哪张卡 */
 const audioOpenId = ref('')
+/** 版本卡内内嵌字幕清单展开的是哪张卡 */
+const embSubOpenId = ref('')
 
 /** 展开后把目标元素底部滚进版本区视口（固定一屏下展开内容容易落在
     折叠线之下、看起来像被裁掉——2026-11-14 09:39 用户实报缺陷）。
@@ -508,6 +572,14 @@ function toggleAudio(v: VersionCard, ev: MouseEvent) {
   const block = (ev.currentTarget as HTMLElement | null)?.closest('.psp-audio') as HTMLElement | null
   const opening = audioOpenId.value !== v.id
   audioOpenId.value = opening ? v.id : ''
+  if (opening) void revealBottom(block)
+}
+
+/** 展开/收起内嵌字幕清单：展开后同样把清单底部带进视口 */
+function toggleEmbSub(v: VersionCard, ev: MouseEvent) {
+  const block = (ev.currentTarget as HTMLElement | null)?.closest('.psp-emb') as HTMLElement | null
+  const opening = embSubOpenId.value !== v.id
+  embSubOpenId.value = opening ? v.id : ''
   if (opening) void revealBottom(block)
 }
 
@@ -585,10 +657,40 @@ const externalSubs = computed<SubCard[]>(() => {
     })
 })
 
-/** 选中的外挂字幕流 Index；null = 本次不挂外挂字幕 */
+/** 内嵌字幕标签：DisplayTitle 优先；后端 DisplayTitle 缺 display_title
+    时回填了语言码（chi/eng…），先翻译回中文名再显示；都没有才用
+    Title / 语言兜底，仍为空时只写「字幕」 */
+function embeddedSubLabel(s: { DisplayTitle?: string; Title?: string | null; Language?: string }): string {
+  const title = (s.DisplayTitle || '').trim()
+  if (title) {
+    const code = title.toLowerCase()
+    if (code === 'chi' || code === 'zho' || code === 'zh' || SUB_LANG_LABELS[code]) {
+      return subLangLabel(title, s.Title || '')
+    }
+    return title
+  }
+  const t = (s.Title || '').trim()
+  if (t) return t
+  const lang = (s.Language || '').trim()
+  if (!lang) return '字幕'
+  return subLangLabel(lang, '')
+}
+
+/** 选中的字幕流 Index；null = 本次不挂字幕。外挂/内嵌共用一个
+    （流 Index 在源内唯一）：播放器 query.sub 认任意文本字幕轨
+    Index，见 start() */
 const selectedSubIndex = ref<number | null>(null)
 /** 字幕行当前选择（胶囊文案用） */
 const selectedSub = computed(() => externalSubs.value.find((s) => s.index === selectedSubIndex.value) || null)
+/** 当前选中版本里被选中的内嵌字幕轨；没选内嵌轨时为 null */
+const selectedEmbeddedSub = computed(
+  () => selectedVersion.value?.subs.find((s) => s.index === selectedSubIndex.value) || null,
+)
+/** 外挂字幕胶囊文案：当前选中的字幕轨标签（外挂/内嵌同一口径），
+    没选则 null（胶囊显示「不挂字幕」） */
+const selectedSubLabel = computed(
+  () => selectedSub.value?.label || selectedEmbeddedSub.value?.label || null,
+)
 /** 字幕选单（固定一屏：向上弹层，不撑布局）开合 */
 const subPickerOpen = ref(false)
 
@@ -597,28 +699,55 @@ function chooseSub(index: number | null) {
   subPickerOpen.value = false
 }
 
+/** 换版本时 watch 跑 syncSubSelection 会把刚点的选择重置回默认；
+    从展开网格点选内嵌轨时先置位跳过一次同步（只跳过这一次） */
+const suppressSyncOnce = ref(false)
+
+/** 点选展开网格里的内嵌字幕轨（只对文本轨有效）：
+    选轨即认该版本起播（选轨只对该版本有意义），同时把选择带过去；
+    换卡触发的 watch 同步由 suppressSyncOnce 跳过一次，不覆盖本次选择 */
+function chooseEmbSub(v: VersionCard, s: VersionSub) {
+  if (!s.isText) return
+  suppressSyncOnce.value = true
+  selectedVersionId.value = v.id
+  selectedSubIndex.value = s.index
+}
+
 function syncSubSelection() {
+  const src = subsSource.value
   const subs = externalSubs.value
-  if (!subs.length) {
+  const emb = selectedVersion.value?.subs.filter((s) => s.isText) || []
+  if (!subs.length && !emb.length) {
     selectedSubIndex.value = null
     return
   }
-  // 默认选中：源的默认字幕轨（DefaultSubtitleStreamIndex）若是外挂轨，
-  // 否则第一条外挂轨里被标 IsDefault 的；都没有就不预选（保持现状：
-  // 播放器仍会按服务端默认轨起播，弹层不强加选择）
-  const src = subsSource.value
+  // 默认选中：服务端默认字幕轨（DefaultSubtitleStreamIndex），不论
+  // 外挂/内嵌——它是播放器没带 sub 参数时也会用的那条；
+  // 否则第一条被标 IsDefault 的文本轨；都没有就不预选（播放器仍按
+  // 服务端默认轨起播，弹层不强加选择）
   const dft = src?.DefaultSubtitleStreamIndex
-  if (dft != null && subs.some((s) => s.index === dft)) {
+  if (dft != null && (subs.some((s) => s.index === dft) || emb.some((s) => s.index === dft))) {
     selectedSubIndex.value = dft
     return
   }
-  const marked = (src?.MediaStreams || []).find(
+  const markedExt = (src?.MediaStreams || []).find(
     (s) => s.Type === 'Subtitle' && s.IsExternal && s.IsDefault,
   )
-  selectedSubIndex.value = marked ? marked.Index : null
+  if (markedExt) {
+    selectedSubIndex.value = markedExt.Index
+    return
+  }
+  const markedEmb = emb.find((s) => s.isDefault)
+  selectedSubIndex.value = markedEmb ? markedEmb.index : null
 }
 
-watch(selectedVersionId, () => syncSubSelection())
+watch(selectedVersionId, () => {
+  if (suppressSyncOnce.value) {
+    suppressSyncOnce.value = false
+    return
+  }
+  syncSubSelection()
+})
 
 /* ---------- 播放线路（与测速页同源；选线只影响网页播放路径：
    起播时把所选入口带给播放器，播放器校验后本次 EA 请求全走该入口） ---------- */
@@ -832,10 +961,12 @@ async function copyVersionLink(v: VersionCard) {
  * web-player、params.id=起播目标 id（剧集为集 id）、query.ms=
  * 选定版本 MediaSource Id（PR #85）；query.line=弹层选定的播放
  * 线路入口（与默认线路相同则不带，播放器侧会再按账号下发清单
- * 校验，手改不认）；query.sub=选定的外挂字幕流 Index（取消
- * 字幕时为 off；该版本没有外挂字幕时不带，播放器保持默认轨
- * 口径）。路由未落地时不假装能播，给诚实提示。第三方播放器
- * 入口不在本弹层（2026-11-14 已删该行），走详情页的播放器入口。
+ * 校验，手改不认）；query.sub=选定的字幕流 Index（外挂/内嵌同一
+ * 口径：播放器 applyRouteSub 认任意文本字幕轨 Index；外挂行选
+ * 「不挂字幕」时为 off；只有内嵌轨且未点选时不带，播放器保持
+ * 默认轨口径——带 'off' 会把默认内嵌轨也关掉）。路由未落地时
+ * 不假装能播，给诚实提示。第三方播放器入口不在本弹层
+ * （2026-11-14 已删该行），走详情页的播放器入口。
  */
 async function start() {
   const id = playTargetId.value || props.itemId
@@ -855,6 +986,11 @@ async function start() {
     }
     if (externalSubs.value.length) {
       query.sub = selectedSubIndex.value != null ? String(selectedSubIndex.value) : 'off'
+    } else if (selectedEmbeddedSub.value) {
+      // 只有内嵌轨且用户点选了某条：把该轨 Index 带给播放器；
+      // 没点选时不带（播放器保持服务端默认轨口径），绝不能顺手
+      // 带 'off'——那会把默认内嵌轨也关掉
+      query.sub = String(selectedSubIndex.value)
     }
     close()
     void router.push({
@@ -1245,6 +1381,92 @@ async function start() {
   background: rgba(0, 0, 0, 0.07);
   color: var(--uhd-l-text-2, #6b7280);
 }
+/* 展开网格内嵌字幕行（友站形态：音轨行下方、可展开选轨）——与
+   .psp-audio 同款式，行是按钮：文本轨可点选，图片轨置灰禁用 */
+.psp-emb {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--uhd-l-border, #e5e5e5);
+}
+.psp-emb__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--uhd-l-text, #111111);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.psp-emb__name {
+  font-size: 14px;
+  font-weight: 700;
+}
+.psp-emb__lang {
+  font-size: 13px;
+  color: var(--uhd-l-text-2, #6b7280);
+}
+.psp-emb__count {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--uhd-l-text-2, #6b7280);
+}
+.psp-emb__list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+}
+.psp-emb__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 0;
+  border: none;
+  background: none;
+  color: var(--uhd-l-text, #111111);
+  font-size: 13.5px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.psp-emb__row:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.psp-emb__radio {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #b6bcc4;
+  position: relative;
+}
+.psp-emb__row--on .psp-emb__radio {
+  border-color: var(--uhd-l-text, #111111);
+}
+.psp-emb__row--on .psp-emb__radio::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  background: var(--uhd-l-text, #111111);
+}
+.psp-emb__rowmeta {
+  font-size: 12.5px;
+  color: var(--uhd-l-text-2, #6b7280);
+}
+.psp-emb__badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.07);
+  color: var(--uhd-l-text-2, #6b7280);
+}
 .psp-note {
   margin: 12px 0 0;
   font-size: 12.5px;
@@ -1529,6 +1751,8 @@ async function start() {
 .psp-subrow__pill:focus-visible,
 .psp-pop__opt:focus-visible,
 .psp-audio__head:focus-visible,
+.psp-emb__head:focus-visible,
+.psp-emb__row:focus-visible,
 .psp-line-pill:focus-visible,
 .psp-line-opt:focus-visible,
 .psp-start:focus-visible {
@@ -1580,6 +1804,9 @@ body.uhd-stream-dark .psp-grid__label,
 body.uhd-stream-dark .psp-audio__lang,
 body.uhd-stream-dark .psp-audio__count,
 body.uhd-stream-dark .psp-audio__rowmeta,
+body.uhd-stream-dark .psp-emb__lang,
+body.uhd-stream-dark .psp-emb__count,
+body.uhd-stream-dark .psp-emb__rowmeta,
 body.uhd-stream-dark .psp-subrow__label,
 body.uhd-stream-dark .psp-subrow__count,
 body.uhd-stream-dark .psp-start__ver,
@@ -1614,19 +1841,32 @@ body.uhd-stream-dark .psp-tool {
   color: #ffffff;
 }
 body.uhd-stream-dark .psp-ver__detail,
-body.uhd-stream-dark .psp-audio {
+body.uhd-stream-dark .psp-audio,
+body.uhd-stream-dark .psp-emb {
   border-top-color: rgba(255, 255, 255, 0.12);
 }
 body.uhd-stream-dark .psp-grid__value {
   color: #ffffff;
 }
 body.uhd-stream-dark .psp-audio__head,
-body.uhd-stream-dark .psp-audio__row {
+body.uhd-stream-dark .psp-audio__row,
+body.uhd-stream-dark .psp-emb__head,
+body.uhd-stream-dark .psp-emb__row {
   color: #ffffff;
 }
-body.uhd-stream-dark .psp-audio__badge {
+body.uhd-stream-dark .psp-audio__badge,
+body.uhd-stream-dark .psp-emb__badge {
   background: rgba(255, 255, 255, 0.12);
   color: #9ca3af;
+}
+body.uhd-stream-dark .psp-emb__radio {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+body.uhd-stream-dark .psp-emb__row--on .psp-emb__radio {
+  border-color: #ffffff;
+}
+body.uhd-stream-dark .psp-emb__row--on .psp-emb__radio::after {
+  background: #ffffff;
 }
 /* 深色开始播放：深色玻璃填充＋弱化彩虹边（与 .btn-primary 深色配方同口径） */
 body.uhd-stream-dark .psp-start {
