@@ -9,11 +9,10 @@
 - 额度：套餐权益 monthly_traffic_bytes 优先 → SystemConfig
   traffic_default_monthly_bytes 回退 → 都没有 = 不启用（enabled
   =False、remaining=None，不许误显 0 额度）。
-- 时间换流量（2026-11-13 23:26 定版，照 UHDNow 按比例口径）：
-  扣 end_date 的天数，按**成交时该用户月额度×比例**换本周期抵扣
-  额度（扣 15 天抵当月额度 50%、扣 30 天抵 100%，不是固定字节
-  数）；留痕记额度基数与比例；幂等键同键只成交一次；扣完订阅
-  必须仍有效，不许扣穿。
+- 时间换流量（2026-11-14 用户亲令，照 UHDNow 实测 GB 口径，
+  旧比例口径作废）：每 10 GB 需 7 天套餐剩余时长；兑换后总流量
+  （月额度＋本周期已抵扣）上限 5 TB，超出部分按超出前比例折算
+  应扣时长；幂等键同键只成交一次；扣完订阅必须仍有效，不许扣穿。
 """
 import os
 import sys
@@ -35,7 +34,7 @@ from backend.emby_server import traffic_meter as tm
 from backend.integrations import store as _store
 
 GB = 1024 ** 3
-_CONFIG_KEYS = [tq.CONFIG_DEFAULT_QUOTA, tq.CONFIG_EXCHANGE_OPTIONS]
+_CONFIG_KEYS = [tq.CONFIG_DEFAULT_QUOTA]
 
 
 @pytest.fixture()
@@ -242,47 +241,59 @@ def test_entitlement_key_registered_and_validated():
 # 时间换流量
 # ---------------------------------------------------------------------------
 
-def test_exchange_success_deducts_days_and_credits(db):
+def test_exchange_success_gb_rule(db):
+    """GB 口径：换 10GB 扣 7 天；换 100GB 扣 70 天（每 10GB/7 天）。"""
     u, _p, sub = _std_user(db)
     now = datetime(2026, 11, 20, 12, 0)
     db.add(em.TrafficUsageDaily(
-        user_id=u.id, day=date(2026, 11, 19), relay_bytes=150 * GB,
+        user_id=u.id, day=date(2026, 11, 19), relay_bytes=5 * GB,
         local_bytes=0, direct_plays=0))
     db.commit()
-    result = tq.exchange_time_for_traffic(db, u.id, 15, "key-1", now)
+    result = tq.exchange_time_for_traffic(db, u.id, 10, "key-1", now)
     assert result["replayed"] is False
-    assert result["log"]["days_deducted"] == 15
-    # 按比例口径：15 天抵当月额度（500GB）的 50% = 250GB
-    assert result["log"]["bytes_credited"] == 250 * GB
+    assert result["log"]["days_deducted"] == 7
+    assert result["log"]["bytes_credited"] == 10 * GB
     assert result["log"]["quota_base_bytes"] == 500 * GB
-    assert result["log"]["quota_pct"] == 50
+    assert result["log"]["quota_pct"] is None
     assert result["log"]["sub_end_before"] == "2027-01-13T10:00:00"
-    assert result["log"]["sub_end_after"] == "2026-12-29T10:00:00"
+    assert result["log"]["sub_end_after"] == "2027-01-06T10:00:00"
     db.refresh(sub)
-    assert sub.end_date == datetime(2026, 12, 29, 10, 0)
-    # 汇总：抵扣 250GB ≥ 毛已用 150GB → 有效已用 0，剩余回满 500GB
+    assert sub.end_date == datetime(2027, 1, 6, 10, 0)
+    # 汇总：抵扣 10GB ≥ 毛已用 5GB → 有效已用 0，剩余回满 500GB
     s = result["summary"]
-    assert s["credit_bytes"] == 250 * GB
-    assert s["credit_applied_bytes"] == 150 * GB
+    assert s["credit_bytes"] == 10 * GB
     assert s["used_bytes"] == 0
     assert s["remaining_bytes"] == 500 * GB
+
+
+def test_exchange_100gb_deducts_70_days(db):
+    u = _user(db)
+    p = _plan(db, {"monthly_traffic_bytes": 500 * GB})
+    sub = _sub(db, u, p, datetime(2026, 10, 13, 10, 0),
+               datetime(2027, 6, 13, 10, 0))
+    now = datetime(2026, 11, 20, 12, 0)
+    result = tq.exchange_time_for_traffic(db, u.id, 100, "k-100", now)
+    assert result["log"]["days_deducted"] == 70
+    assert result["log"]["bytes_credited"] == 100 * GB
+    db.refresh(sub)
+    assert sub.end_date == datetime(2027, 4, 4, 10, 0)
 
 
 def test_exchange_idempotent_replay_never_double_deducts(db):
     u, _p, sub = _std_user(db)
     now = datetime(2026, 11, 20, 12, 0)
-    tq.exchange_time_for_traffic(db, u.id, 15, "dup-key", now)
-    again = tq.exchange_time_for_traffic(db, u.id, 15, "dup-key", now)
+    tq.exchange_time_for_traffic(db, u.id, 10, "dup-key", now)
+    again = tq.exchange_time_for_traffic(db, u.id, 10, "dup-key", now)
     assert again["replayed"] is True
     db.refresh(sub)
-    assert sub.end_date == datetime(2026, 12, 29, 10, 0)  # 只扣一次
+    assert sub.end_date == datetime(2027, 1, 6, 10, 0)  # 只扣一次 7 天
     assert db.query(em.TrafficExchangeLog).count() == 1
     # 换一个键才是新的一笔
-    second = tq.exchange_time_for_traffic(db, u.id, 30, "other-key", now)
-    assert second["log"]["quota_pct"] == 100
-    assert second["log"]["bytes_credited"] == 500 * GB  # 30 天抵 100%
+    second = tq.exchange_time_for_traffic(db, u.id, 20, "other-key", now)
+    assert second["log"]["bytes_credited"] == 20 * GB
+    assert second["log"]["days_deducted"] == 14
     db.refresh(sub)
-    assert sub.end_date == datetime(2026, 11, 29, 10, 0)
+    assert sub.end_date == datetime(2026, 12, 23, 10, 0)
     assert db.query(em.TrafficExchangeLog).count() == 2
 
 
@@ -292,8 +303,9 @@ def test_exchange_rejects_insufficient_days(db):
     _sub(db, u, p, datetime(2026, 11, 15, 10, 0),
          datetime(2026, 11, 30, 10, 0))  # 只剩 10 天
     with pytest.raises(tq.TrafficError) as ei:
+        # 100GB 需 70 天，扣完订阅早已过期 → 拒绝
         tq.exchange_time_for_traffic(
-            db, u.id, 15, "k-ins", datetime(2026, 11, 20, 12, 0))
+            db, u.id, 100, "k-ins", datetime(2026, 11, 20, 12, 0))
     assert ei.value.code == "insufficient_days"
     assert db.query(em.TrafficExchangeLog).count() == 0
 
@@ -304,56 +316,45 @@ def test_exchange_rejects_without_quota_and_bad_option(db):
     _sub(db, u, p, datetime(2026, 10, 13), datetime(2027, 1, 13))
     now = datetime(2026, 11, 20, 12, 0)
     with pytest.raises(tq.TrafficError) as ei:
-        tq.exchange_time_for_traffic(db, u.id, 15, "k-noq", now)
+        tq.exchange_time_for_traffic(db, u.id, 100, "k-noq", now)
     assert ei.value.code == "quota_not_enabled"
-    # 有额度但选项不存在
+    # 有额度但 GB 不是 10 的整倍数
     u2, _p2, _s2 = _std_user(db)
     with pytest.raises(tq.TrafficError) as ei2:
-        tq.exchange_time_for_traffic(db, u2.id, 7, "k-bad", now)
+        tq.exchange_time_for_traffic(db, u2.id, 15, "k-bad", now)
     assert ei2.value.code == "bad_option"
+    with pytest.raises(tq.TrafficError) as ei3:
+        tq.exchange_time_for_traffic(db, u2.id, 5, "k-bad2", now)
+    assert ei3.value.code == "bad_option"
 
 
-def test_exchange_options_config_override(db):
-    _config(db, tq.CONFIG_EXCHANGE_OPTIONS,
-            '[{"days": 10, "quota_pct": 25}]')
-    assert tq.exchange_options(db) == [{"days": 10, "quota_pct": 25}]
-    _config(db, tq.CONFIG_EXCHANGE_OPTIONS, "not-json")
-    assert tq.exchange_options(db) == tq.DEFAULT_EXCHANGE_OPTIONS
-    # 旧固定字节形态（{"days":..,"bytes":..}）在新口径下不算合法项：
-    # 无合法项 → 整体回退默认（不许拿旧固定值继续成交）
-    _config(db, tq.CONFIG_EXCHANGE_OPTIONS,
-            '[{"days": 10, "bytes": 53687091200}]')
-    assert tq.exchange_options(db) == tq.DEFAULT_EXCHANGE_OPTIONS
-
-
-def test_exchange_full_quota_option(db):
-    """30 天档抵当月额度 100%：额度多大抵多少，不是固定值。"""
-    u, _p, _sub = _std_user(db)  # 月额度 500GB
-    now = datetime(2026, 11, 20, 12, 0)
-    result = tq.exchange_time_for_traffic(db, u.id, 30, "k-full", now)
-    assert result["log"]["bytes_credited"] == 500 * GB
-    assert result["log"]["quota_base_bytes"] == 500 * GB
-    assert result["log"]["quota_pct"] == 100
-
-
-def test_exchange_base_follows_config_fallback_quota(db):
-    """套餐未声明时，比例基数 = 全局默认额度（回退口径不变）。"""
-    _config(db, tq.CONFIG_DEFAULT_QUOTA, str(200 * GB))
+def test_exchange_cap_partial_prorates_days(db):
+    """5TB 上限：剩余额度空间不足请求量时，只按空间到账，扣减
+    时长按到账比例折算（请求 100GB、空间 20GB → 到账 20GB、
+    扣 70×20/100＝14 天）；空间耗尽后再兑换直接拒绝。"""
     u = _user(db)
-    p = _plan(db, None)
-    _sub(db, u, p, datetime(2026, 10, 13), datetime(2027, 1, 13))
+    p = _plan(db, {"monthly_traffic_bytes": 500 * GB})
+    sub = _sub(db, u, p, datetime(2026, 10, 13, 10, 0),
+               datetime(2027, 6, 13, 10, 0))
     now = datetime(2026, 11, 20, 12, 0)
-    result = tq.exchange_time_for_traffic(db, u.id, 15, "k-fb", now)
-    assert result["log"]["quota_base_bytes"] == 200 * GB
-    assert result["log"]["bytes_credited"] == 100 * GB  # 200GB 的 50%
-
-
-def test_exchange_credit_floors_to_whole_bytes(db):
-    """比例折算向下取整到整字节，不许四舍五入多给。"""
-    u, _p, _s = _std_user(db, {"monthly_traffic_bytes": 333})
-    now = datetime(2026, 11, 20, 12, 0)
-    result = tq.exchange_time_for_traffic(db, u.id, 15, "k-floor", now)
-    assert result["log"]["bytes_credited"] == 166  # 333 × 50% = 166.5 → 166
+    # 本周期（锚点 13 日 → [11-13, 12-13)）先用余额购买占掉 4600GB：
+    # 总量 500+4600=5100GB，距 5TB(5120GB) 只剩 20GB 空间
+    db.add(em.TrafficExchangeLog(
+        user_id=u.id, kind="balance_purchase", days_deducted=0,
+        bytes_credited=4600 * GB, quota_base_bytes=None, quota_pct=None,
+        subscription_id=None, sub_end_before=None, sub_end_after=None,
+        period_start=date(2026, 11, 13), period_end=date(2026, 12, 13),
+        idempotency_key="seed-balance"))
+    db.commit()
+    result = tq.exchange_time_for_traffic(db, u.id, 100, "k-cap", now)
+    assert result["log"]["bytes_credited"] == 20 * GB
+    assert result["log"]["days_deducted"] == 14
+    db.refresh(sub)
+    assert sub.end_date == datetime(2027, 5, 30, 10, 0)  # 只扣 14 天
+    # 空间耗尽：再兑换被拒
+    with pytest.raises(tq.TrafficError) as ei:
+        tq.exchange_time_for_traffic(db, u.id, 10, "k-cap2", now)
+    assert ei.value.code == "exchange_cap_reached"
 
 
 def test_exchange_period_anchor_month_end(db):
@@ -363,28 +364,31 @@ def test_exchange_period_anchor_month_end(db):
     _sub(db, u, p, datetime(2026, 1, 31, 10, 0),
          datetime(2027, 1, 31, 10, 0))  # 锚点日 = 31
     now = datetime(2026, 2, 10, 12, 0)  # 周期 [01-31, 02-28)
-    result = tq.exchange_time_for_traffic(db, u.id, 15, "k-anchor", now)
+    result = tq.exchange_time_for_traffic(db, u.id, 10, "k-anchor", now)
     assert result["log"]["period_start"] == "2026-01-31"
     assert result["log"]["period_end"] == "2026-02-28"
     assert result["summary"]["period_start"] == "2026-01-31"
-    assert result["summary"]["credit_bytes"] == 250 * GB
+    assert result["summary"]["credit_bytes"] == 10 * GB
 
 
-def test_exchange_options_view_folds_user_quota(db):
-    """选项视图：比例是配置口径，bytes 按该用户当下额度现折算。"""
+def test_exchange_rule_view(db):
+    """规则视图：单位口径 + 5TB 上限 + 按本用户现算的可兑换余量。"""
     u, _p, _s = _std_user(db)  # 月额度 500GB
-    view = tq.exchange_options_view(db, u.id)
-    assert view == [
-        {"days": 15, "quota_pct": 50, "bytes": 250 * GB},
-        {"days": 30, "quota_pct": 100, "bytes": 500 * GB},
-    ]
-    # 未启用用户：比例照给、折算字节为 0（前端整段本就不渲染）
+    view = tq.exchange_rule_view(db, u.id)
+    assert view["unit_gb"] == 10
+    assert view["days_per_unit"] == 7
+    assert view["quick_gb"] == [100, 200, 500, 1000]
+    assert view["cap_bytes"] == 5 * 1024 ** 4
+    assert view["quota_bytes"] == 500 * GB
+    assert view["credited_bytes"] == 0
+    assert view["room_bytes"] == 5 * 1024 ** 4 - 500 * GB
+    # 未启用用户：quota 为 None、余量 0（前端整段本就不渲染）
     u2 = _user(db)
     p2 = _plan(db, None)
     _sub(db, u2, p2, datetime(2026, 10, 13), datetime(2027, 1, 13))
-    view2 = tq.exchange_options_view(db, u2.id)
-    assert [o["bytes"] for o in view2] == [0, 0]
-    assert [o["quota_pct"] for o in view2] == [50, 100]
+    view2 = tq.exchange_rule_view(db, u2.id)
+    assert view2["quota_bytes"] is None
+    assert view2["room_bytes"] == 0
 
 
 # ---------------------------------------------------------------------------

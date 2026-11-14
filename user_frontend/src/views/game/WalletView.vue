@@ -102,7 +102,7 @@
     <TrafficPurchaseModal
       v-model:open="trafficModalOpen"
       :traffic="traffic"
-      :options="traffic?.exchange_options ?? []"
+      :rule="traffic?.exchange_rule ?? null"
       @exchanged="onTrafficExchanged"
     />
   </UhdAccountLayout>

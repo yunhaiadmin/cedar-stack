@@ -27,7 +27,8 @@
         </button>
       </div>
 
-      <!-- 时间换流量：真成交（扣订阅天数换抵扣额度，后端留痕幂等） -->
+      <!-- 时间换流量：真成交（按 GB 扣订阅时长换抵扣额度，后端留痕幂等；
+           口径照友站：每 10G 需 7 天、兑换后总流量上限 5TB） -->
       <div v-if="tab === 'time'" class="tq-body">
         <p class="tq-now">
           当前流量：已用 {{ formatBytes(traffic?.used_bytes) }} / 共 {{ formatBytes(traffic?.quota_bytes) }}
@@ -37,31 +38,34 @@
         </p>
         <div class="tq-opts">
           <button
-            v-for="opt in options"
-            :key="opt.days"
+            v-for="opt in timeOptions"
+            :key="opt.gb"
             type="button"
             class="tq-opt"
-            :class="{ 'tq-opt--on': selectedDays === opt.days }"
-            :disabled="submitting"
-            @click="selectOption(opt.days)"
+            :class="{ 'tq-opt--on': selectedGbTime === opt.gb }"
+            :disabled="submitting || opt.disabled"
+            @click="selectTimeOption(opt.gb)"
           >
-            <span class="tq-opt__main">−{{ opt.days }} 天</span>
-            <span class="tq-opt__sub">付费时长减少 {{ opt.days }} 天，抵扣当月额度的 {{ opt.quota_pct }}%（约 {{ formatBytes(opt.bytes) }}）已用流量</span>
+            <span class="tq-opt__main">{{ opt.gb }}G</span>
+            <span class="tq-opt__sub">需扣订阅时长约 {{ opt.days }} 天（每 10G 换 7 天）</span>
           </button>
         </div>
+        <p class="tq-note">
+          兑换后总流量上限 {{ formatBytes(rule?.cap_bytes) }}；所选档位超出剩余额度时，只按额度内到账、扣除时长按比例折算。
+        </p>
         <p class="tq-warn">
-          注意：选择后将立即扣除对应天数，用于兑换流量。此操作无法撤销，请确认后再提交！
+          注意：选择后将立即扣除对应时长，用于兑换流量。此操作无法撤销，请确认后再提交！
         </p>
         <p v-if="error" class="tq-error" role="alert">{{ error }}</p>
         <button
           type="button"
           class="tq-confirm"
-          :disabled="!selected || submitting"
+          :disabled="!selectedTime || submitting"
           :aria-busy="submitting"
           @click="onConfirmClick"
         >
           <span v-if="submitting" class="tq-spinner" aria-hidden="true"></span>
-          {{ submitting ? '提交中…' : confirming ? `确认扣除 ${selected?.days} 天兑换？` : '确认兑换' }}
+          {{ submitting ? '提交中…' : confirming ? `确认扣除约 ${selectedTime?.days} 天兑换 ${selectedTime?.gb}G？` : '确认兑换' }}
         </button>
       </div>
 
@@ -106,9 +110,11 @@
 
 <script setup lang="ts">
 /**
- * 购流量弹窗（流量额度一期，形态照 UHDNow 两页签）：
- * - 时间换流量：真做通——选档 → 二次确认 → 提交（带幂等键，同一次
- *   打开内重试不重复扣天数）→ 成功后把最新流量汇总回抛父级刷新。
+ * 购流量弹窗（形态照 UHDNow 两页签）：
+ * - 时间换流量（2026-11-14 改 GB 口径）：每 10G 需 7 天订阅时长，
+ *   兑换后总流量上限 5TB、超出按比例折算时长——选档 → 二次确认
+ *   → 提交（带幂等键，同一次打开内重试不重复扣时长）→ 成功后把
+ *   最新流量汇总回抛父级刷新。
  * - 余额购买（钱包批 2）：按后端下发的配置单价（分/100GB）扣余额，
  *   档位 100/200/500/1000GB，成交走 buyBalanceTraffic，余额不足
  *   明示差额；同一幂等键重试不重复扣款。
@@ -118,7 +124,7 @@ import {
   buyBalanceTraffic,
   exchangeTimeForTraffic,
   formatBytes,
-  type TrafficExchangeOption,
+  type TrafficExchangeRule,
   type TrafficOverview,
   type TrafficSummary,
 } from '@/api/traffic'
@@ -129,7 +135,7 @@ import { toUserMessage } from '@/utils/toUserMessage'
 const props = defineProps<{
   open: boolean
   traffic: TrafficOverview | null
-  options: TrafficExchangeOption[]
+  rule: TrafficExchangeRule | null
 }>()
 const emit = defineEmits<{
   (e: 'update:open', v: boolean): void
@@ -138,7 +144,7 @@ const emit = defineEmits<{
 
 const toast = useToast()
 const tab = ref<'time' | 'balance'>('time')
-const selectedDays = ref<number | null>(null)
+const selectedGbTime = ref<number | null>(null)
 const confirming = ref(false)
 const submitting = ref(false)
 const error = ref('')
@@ -166,8 +172,21 @@ const balanceShortfall = computed(() => {
  * 只有重新打开弹窗才换新——同一次确认绝不重复成交。 */
 const idempotencyKey = ref('')
 
-const selected = computed(
-  () => props.options.find((o) => o.days === selectedDays.value) ?? null,
+/** 时间换流量档位：后端规则下发的快捷档（缺省 100/200/500/1000G）；
+ * 应扣天数按「每 10G 换 7 天」现算；剩余额度不足该档时禁用。 */
+const GB_BYTES = 1024 ** 3
+const timeOptions = computed(() => {
+  const unit = props.rule?.unit_gb ?? 10
+  const per = props.rule?.days_per_unit ?? 7
+  const room = props.rule?.room_bytes ?? 0
+  return (props.rule?.quick_gb ?? [100, 200, 500, 1000]).map((gb) => ({
+    gb,
+    days: Math.round((gb / unit) * per),
+    disabled: gb * GB_BYTES > room,
+  }))
+})
+const selectedTime = computed(
+  () => timeOptions.value.find((o) => o.gb === selectedGbTime.value) ?? null,
 )
 
 function newKey(): string {
@@ -183,7 +202,10 @@ watch(
   (v) => {
     if (v) {
       tab.value = 'time'
-      selectedDays.value = props.options[0]?.days ?? null
+      selectedGbTime.value =
+        timeOptions.value.find((o) => !o.disabled)?.gb
+        ?? timeOptions.value[0]?.gb
+        ?? null
       confirming.value = false
       submitting.value = false
       error.value = ''
@@ -196,8 +218,8 @@ watch(
   },
 )
 
-function selectOption(days: number) {
-  selectedDays.value = days
+function selectTimeOption(gb: number) {
+  selectedGbTime.value = gb
   confirming.value = false
   error.value = ''
 }
@@ -214,7 +236,7 @@ function close() {
 }
 
 async function onConfirmClick() {
-  if (!selected.value || submitting.value) return
+  if (!selectedTime.value || submitting.value) return
   if (!confirming.value) {
     confirming.value = true
     return
@@ -222,11 +244,11 @@ async function onConfirmClick() {
   submitting.value = true
   error.value = ''
   try {
-    const res = await exchangeTimeForTraffic(selected.value.days, idempotencyKey.value)
+    const res = await exchangeTimeForTraffic(selectedTime.value.gb, idempotencyKey.value)
     toast.success(
       res.replayed
-        ? '这次兑换已经生效过了，没有重复扣天数'
-        : `已兑换：扣除 ${selected.value.days} 天，抵扣当月额度的 ${selected.value.quota_pct}%（约 ${formatBytes(selected.value.bytes)}）流量`,
+        ? '这次兑换已经生效过了，没有重复扣时长'
+        : `已兑换：扣除 ${res.log.days_deducted} 天，获得 ${formatBytes(res.log.bytes_credited)} 流量`,
     )
     emit('exchanged', res.traffic)
     emit('update:open', false)

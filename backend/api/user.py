@@ -1575,6 +1575,40 @@ def cancel_my_subscription(
     return {"success": True, "message": "订阅已终止"}
 
 
+class AutoRenewRequest(BaseModel):
+    enabled: bool = Field(..., description="是否开启余额自动续费")
+
+
+@user_router.post("/subscriptions/{subscription_id}/auto-renew")
+def set_my_subscription_auto_renew(
+    subscription_id: int,
+    req: AutoRenewRequest,
+    current_user: models.WebUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """余额自动续费开关（2026-11-14 订阅重做，友站语义）。
+
+    开启后到期前由 backend.auto_renew 引擎按当前套餐与上次时长从
+    钱包余额扣款续期；余额不足不扣、留记录与站内信。默认关、随时
+    可关；只能操作自己的、未取消的订阅。
+    """
+    sub = db.query(models.UserSubscription).filter(
+        models.UserSubscription.id == subscription_id,
+        models.UserSubscription.user_id == current_user.id,
+    ).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="订阅不存在")
+    if sub.status == "cancelled":
+        raise HTTPException(status_code=400, detail="订阅已终止，不能设置自动续费")
+    sub.auto_renew = bool(req.enabled)
+    db.commit()
+    return {
+        "success": True,
+        "auto_renew": sub.auto_renew,
+        "message": "自动续费已开启" if sub.auto_renew else "自动续费已关闭",
+    }
+
+
 @user_router.get("/subscription-plans")
 def get_subscription_plans(
     realm_id: int | None = None,

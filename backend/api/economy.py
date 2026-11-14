@@ -540,6 +540,11 @@ def payment_plans(realm_id: Optional[int] = None, db: Session = Depends(get_db))
         models.SubscriptionPlan.is_active == True  # noqa: E712
     ).order_by(models.SubscriptionPlan.sort_order).all()
     free = realms.is_free_realm(db, scope_id) if scope_id else False
+    # 对比表口径行（2026-11-14 订阅重做）：登录设备上限与下载开关是
+    # 全站口径（非套餐级配置），随套餐列表一并下发，前端不写死数值。
+    from backend import devices as _devices
+    from backend import subscriptions as _subscriptions
+
     return {
         "enabled": purchase_enabled,
         "wallet_purchase_enabled": wallet_purchase_enabled,
@@ -547,10 +552,15 @@ def payment_plans(realm_id: Optional[int] = None, db: Session = Depends(get_db))
         "access_mode": "free" if free else "paid",
         "is_free": free,
         "access_note": realms.access_note_of(db, scope_id) if scope_id else "",
+        "device_limit": _devices.device_limit(db),
+        "download_allowed": _subscriptions.download_allowed(db, scope_id),
         "plans": [
             {
                 "id": p.id, "name": p.name, "description": p.description,
                 "price": float(p.price), "duration_days": p.duration_days,
+                # 按月售卖口径：月价与基准月数（总价÷基准月数）
+                "monthly_price": float(plan_monthly_price(p)),
+                "base_months": plan_base_months(p),
                 "features": p.features, "is_popular": p.is_popular,
                 # 订阅分档权益（经判定单口 parse 归一：未声明即 {}，坏值剔除）；
                 # 用户端商店据此自动生成权益文案行，展示永远等于实际生效值
@@ -573,6 +583,9 @@ class CouponQuoteRequest(BaseModel):
     code: str = Field(default="", description="用户填写的优惠码（可空；空时按「没填码自动用最优兑换码折扣权益」口径试算，与下单一致）")
     kind: str = Field(..., description="subscription")
     item_id: int = Field(..., description="充值套餐ID 或 套餐ID")
+    # 按月售卖（2026-11-14）：带 months 时按月价口径试算，并附带
+    # 换套餐抵扣（switch_credit / switch_type / payable_amount）
+    months: int = Field(default=0, ge=0, le=12, description="购买月数（1–12）")
 
 
 @router.post("/payment/coupon/quote")
@@ -642,6 +655,22 @@ def coupon_quote(
     result["member_discount_pct"] = member_discount_pct
     result["member_discount_amount"] = float(member_discount_amount)
     result["exchange_discount_pct"] = exchange_discount_pct
+    if req.kind == "subscription" and req.months:
+        # 按月口径试算：直接走下单同一计价口，预览与实付逐分一致；
+        # 换套餐抵扣一并下发，确认弹窗据此展示「旧套餐已抵扣」一行。
+        plan = db.query(models.SubscriptionPlan).filter(
+            models.SubscriptionPlan.id == req.item_id).first()
+        if plan is not None:
+            price = _price_subscription_purchase(
+                db, current_user, plan, code, months=req.months)
+            result["list_price"] = float(price["list_price"])
+            result["discount_amount"] = float(price["coupon_discount_amount"])
+            result["paid_amount"] = float(price["paid_amount"])
+            result["months"] = price["months"]
+            result["monthly_price"] = float(price["monthly_price"])
+            result["switch_credit"] = float(price["switch_credit"])
+            result["switch_type"] = price["switch_type"]
+            result["payable_amount"] = float(price["payable_amount"])
     return result
 
 
@@ -651,6 +680,8 @@ class CreateOrderRequest(BaseModel):
     # P3 修复（审查）：payment_method 无白名单，任意字符串进网关。限定可选值。
     payment_method: str = Field(default="alipay", pattern="^(alipay|wxpay|qqpay)$")
     coupon_code: str = Field(default="", description="优惠码（可空）；下单时占额度，付款转已用，关单/退款自动还回")
+    # 按月售卖（2026-11-14）：购买月数 1–12，0/缺省＝套餐基准月数
+    months: int = Field(default=0, ge=0, le=12, description="购买月数（1–12）")
 
 
 def _yipay_sign(params: dict, key: str) -> str:
@@ -666,9 +697,121 @@ def _new_order_id() -> str:
     return f"RB{int(time.time() * 1000)}{uuid.uuid4().hex[:6].upper()}"
 
 
+# ==================== 按月售卖口径（2026-11-14 订阅照友站重做） ====================
+# 友站口径：订阅按「月」卖——滑杆选 1–12 个月，3/6 个月无折扣，
+# 仅年付（12 个月）折扣＝11×月价。存量套餐仍以 (price 总价,
+# duration_days 总天数) 存储：总价÷基准月数折算月价，存量订阅的
+# 到期日与权益一概不动，只改新购链路的计价与发放天数。
+# 折算（2026-11-14 生产三档）：启程 ¥18/30 天→1 个月→¥18/月；
+# 远行 ¥45/90 天→3 个月→¥15/月；环游 ¥150/365 天→12 个月→¥12.5/月。
+
+def plan_base_months(plan: models.SubscriptionPlan) -> int:
+    """套餐现总价对应的基准月数：duration_days 按 365 天=12 个月折算。"""
+    days = int(plan.duration_days or 0)
+    if days <= 0:
+        return 1
+    return max(1, round(days * 12 / 365))
+
+
+def plan_monthly_price(plan: models.SubscriptionPlan) -> Decimal:
+    """月价 = 现总价 ÷ 基准月数（归一到分）。"""
+    from backend.agents import money
+
+    return money(Decimal(str(plan.price)) / plan_base_months(plan))
+
+
+def normalize_months(plan: models.SubscriptionPlan, months) -> int:
+    """购买月数归一：未指定（None/0）＝套餐基准月数；合法区间 1–12。"""
+    if months is None or int(months or 0) <= 0:
+        return plan_base_months(plan)
+    return min(max(int(months), 1), 12)
+
+
+def months_list_price(plan: models.SubscriptionPlan, months: int) -> Decimal:
+    """按月购买的标价：月价 × 月数；年付（12 个月）只收 11 个月。"""
+    from backend.agents import money
+
+    monthly = plan_monthly_price(plan)
+    if months == 12:
+        return money(monthly * 11)
+    return money(monthly * months)
+
+
+def months_grant_days(months: int) -> int:
+    """购买月数对应的发放天数：1 个月＝30 天，年付＝365 天（与存量
+    30/90/365 天三档的既有口径对齐，存量订阅不被追溯改动）。"""
+    if months == 12:
+        return 365
+    return months * 30
+
+
+def _active_sub_in_realm(db: Session, user_id: int,
+                         plan: models.SubscriptionPlan,
+                         now: datetime):
+    """用户在该套餐所属服内的当前生效订阅（与 _grant_subscription
+    的顺延作用域同一口径：套餐有 realm 就按 realm 收口）。"""
+    query = db.query(models.UserSubscription).filter(
+        models.UserSubscription.user_id == user_id,
+        models.UserSubscription.status == "active",
+        models.UserSubscription.end_date > now,
+    )
+    if plan.realm_id is not None:
+        query = query.filter(
+            models.UserSubscription.realm_id == plan.realm_id)
+    return query.order_by(models.UserSubscription.end_date.desc()).first()
+
+
+def _switch_credit(db: Session, user: models.WebUser,
+                   plan: models.SubscriptionPlan,
+                   now: datetime | None = None) -> tuple[Decimal, str, object]:
+    """换套餐抵扣（友站确认弹窗「旧套餐已抵扣」一行）。
+
+    规则（公式明示，2026-11-14 订阅重做单定版）：
+    - 无生效订阅 → ("new", 0)；生效订阅就是本套餐 → ("renew", 0)
+      （同档续费走顺延、不抵扣）；
+    - 生效订阅是**别的套餐** → ("switch", 抵扣额)，抵扣额＝
+      旧订阅实付金额 × 剩余时长 / 总时长（归一到分，不为负）。
+      「实付金额」＝该订阅行名下全部 paid 订单 amount 之和（续费
+      顺延同一行时多笔订单都算它的实付）；查不到订单（兑换码/管理
+      员发放）时回退旧套餐现标价。履约时旧行先到期（end=now），
+      新订阅另起一行——抵扣的是钱，不再叠加旧天数。
+    """
+    from backend.agents import money
+
+    now = now or datetime.now()
+    active = _active_sub_in_realm(db, user.id, plan, now)
+    if active is None:
+        return Decimal("0.00"), "new", None
+    if active.plan_id == plan.id:
+        return Decimal("0.00"), "renew", active
+    total_seconds = (active.end_date - active.start_date).total_seconds()
+    remaining_seconds = (active.end_date - now).total_seconds()
+    if total_seconds <= 0 or remaining_seconds <= 0:
+        return Decimal("0.00"), "switch", active
+    paid_sum = (
+        db.query(func.coalesce(func.sum(models.SubscriptionOrder.amount), 0))
+        .filter(
+            models.SubscriptionOrder.subscription_id == active.id,
+            models.SubscriptionOrder.status == "paid",
+        )
+        .scalar()
+    )
+    paid_amount = Decimal(str(paid_sum or 0))
+    if paid_amount <= 0:
+        old_plan = db.query(models.SubscriptionPlan).filter(
+            models.SubscriptionPlan.id == active.plan_id).first()
+        paid_amount = Decimal(str(old_plan.price)) if old_plan else Decimal("0")
+    credit = money(paid_amount * Decimal(str(remaining_seconds))
+                   / Decimal(str(total_seconds)))
+    if credit < 0:
+        credit = Decimal("0.00")
+    return credit, "switch", active
+
+
 def _price_subscription_purchase(db: Session, user: models.WebUser,
                                  plan: models.SubscriptionPlan,
-                                 coupon_code: str = "") -> dict:
+                                 coupon_code: str = "",
+                                 months: int | None = None) -> dict:
     """订阅购买纯计价（无写操作）：网关下单与钱包余额购买共用同一套口径。
 
     叠加顺序（与 coupon_quote 试算口一致）：会员等级折扣已随等级体系
@@ -678,8 +821,16 @@ def _price_subscription_purchase(db: Session, user: models.WebUser,
     返回：list_price / member_discount_pct / member_discount_amount /
     discount_amount / paid_amount / coupon_obj / preview / credit /
     coupon_code（归一化后的码，无码为空串）。
+
+    按月售卖（2026-11-14 重做）：``months`` 指定购买月数（1–12，
+    None＝套餐基准月数），list_price 为月价口径的标价（年付 11×月价）；
+    换套餐时另算 switch_credit（见 _switch_credit），实付再扣抵扣：
+    payable_amount = max(0, paid_amount − switch_credit)。paid_amount
+    保持「券后价」语义不变（既有调用方/测试口径不动），新链路一律
+    以 payable_amount 为准收钱。
     """
-    list_price = Decimal(str(plan.price))
+    months = normalize_months(plan, months)
+    list_price = months_list_price(plan, months)
     # 会员等级折扣已随等级体系于 2026-11-14 删除（backend/member_level.py
     # 已删）：member_discount_* 恒为 0，优惠券/权益直接对原价算。
     member_discount_pct = 0
@@ -712,12 +863,26 @@ def _price_subscription_purchase(db: Session, user: models.WebUser,
                 coupon_base, credit.discount_pct)
             discount_amount = member_discount_amount + c_discount
             paid_amount = c_paid
+    # 换套餐抵扣在券后价之上再扣（抵扣的是旧套餐剩余价值，与优惠券
+    # 是两笔独立的减免；订单快照 discount_amount 记总减免＝券优惠＋抵扣，
+    # amount 记 payable，保证 list_price − discount_amount == amount）。
+    switch_credit, switch_type, _old_sub = _switch_credit(db, user, plan)
+    payable_amount = paid_amount - switch_credit
+    if payable_amount < 0:
+        payable_amount = Decimal("0.00")
     return {
         "list_price": list_price,
         "member_discount_pct": member_discount_pct,
         "member_discount_amount": member_discount_amount,
-        "discount_amount": discount_amount,
+        "discount_amount": discount_amount + switch_credit,
+        "coupon_discount_amount": discount_amount,
         "paid_amount": paid_amount,
+        "payable_amount": payable_amount,
+        "switch_credit": switch_credit,
+        "switch_type": switch_type,
+        "months": months,
+        "monthly_price": plan_monthly_price(plan),
+        "days": months_grant_days(months),
         "coupon_base": coupon_base,
         "coupon_obj": coupon_obj,
         "preview": preview,
@@ -801,21 +966,25 @@ def create_payment_order(
     # _price_subscription_purchase）。会员等级折扣已随等级体系于
     # 2026-11-14 删除，member_discount_* 恒为 0（字段保留兼容订单
     # 快照口径）；优惠券/自动折扣权益直接对原价算。
-    price = _price_subscription_purchase(db, current_user, plan, req.coupon_code)
+    price = _price_subscription_purchase(
+        db, current_user, plan, req.coupon_code, months=req.months or None)
     list_price = price["list_price"]
     member_discount_pct = price["member_discount_pct"]
     member_discount_amount = price["member_discount_amount"]
     coupon_base = price["coupon_base"]
     discount_amount = price["discount_amount"]
-    paid_amount = price["paid_amount"]
+    paid_amount = price["payable_amount"]
     preview = price["preview"]
     credit = price["credit"]
     coupon_code = price["coupon_code"]
 
     # 订单上快照「原价 / 优惠 / 实付」，并让订单金额一律等于**实付**：
     # 对账、邀请返利比例、退款都以用户真付的钱为准，不能按原价算。
+    # 实付＝券后价再扣换套餐抵扣（payable_amount）；发放天数按购买
+    # 月数走（days_granted 落单，履约按它发，不再按套餐固定天数）。
     order.list_price = list_price
     order.discount_amount = discount_amount
+    order.days_granted = price["days"]
     if req.kind == "recharge":
         order.price = paid_amount
     else:
@@ -847,8 +1016,8 @@ def create_payment_order(
         # reserve 记录的是优惠券口径：list_price=中间价，discount=仅优惠券部分
         usage = coupons.reserve(db, coupon=coupon, user=current_user, order_id=order_id,
                                 kind=req.kind, list_price=coupon_base,
-                                discount=discount_amount - member_discount_amount,
-                                paid=paid_amount)
+                                discount=price["coupon_discount_amount"] - member_discount_amount,
+                                paid=price["paid_amount"])
         order.coupon_usage_id = usage.id
     db.commit()
 
@@ -1094,15 +1263,28 @@ def _fulfill_order(db: Session, recharge_order=None, subscription_order=None) ->
                 f"用户 {'已删除' if user is None else '正常'}）"
             )
         if user and plan:
+            # 发放天数：订单落了 days_granted（按月购买）就按它发，
+            # 没落（历史订单/非购买通道）回退套餐固定天数。
+            grant_days = subscription_order.days_granted or plan.duration_days
+            # 换套餐（2026-11-14）：生效中的是别的套餐时，旧行先到期
+            # ——旧套餐剩余价值已在计价时折成钱抵扣（_switch_credit），
+            # 天数不再叠加；不清掉旧行，_grant_subscription 会顺延
+            # 旧行并翻档，等于钱天双给。同档续费不走这里（顺延）。
+            now_fulfill = datetime.now()
+            current = _active_sub_in_realm(db, user.id, plan, now_fulfill)
+            if current is not None and current.plan_id != plan.id:
+                current.end_date = now_fulfill
+                current.updated_at = now_fulfill
+                db.flush()
             subscription = _grant_subscription(
                 db, user, plan,
-                plan.duration_days,
+                grant_days,
                 realm_id=plan.realm_id,
             )
             # 记下「这条订单开出的是哪份订阅、多少天」：退款按这笔精确回滚，
             # 不靠猜用户当前那笔生效中的订阅（可能来自卡码/兑换码/别的订单）。
             subscription_order.subscription_id = subscription.id
-            subscription_order.days_granted = plan.duration_days
+            subscription_order.days_granted = grant_days
             pending.append(dict(
                 event_type="economy.subscription_success",
                 user_id=user.id,

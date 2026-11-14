@@ -67,6 +67,8 @@ class WalletRedeemRequest(BaseModel):
 
 class WalletPaySubscriptionRequest(BaseModel):
     plan_id: int = Field(..., gt=0)
+    # 按月售卖（2026-11-14）：购买月数 1–12，0/缺省＝套餐基准月数
+    months: int = Field(default=0, ge=0, le=12)
     coupon_code: str = Field(default="", max_length=64)
     # 客户端每次确认生成一个新键：重试/双击只成交一次（订单号即由此键
     # 派生，幂等的第一道门；钱包扣款的幂等键是第二道）。
@@ -135,10 +137,11 @@ def _pay_subscription_core(db: Session, user: models.WebUser,
     if not plan:
         raise HTTPException(status_code=404, detail="套餐不存在")
 
-    # 计价走公共函数（与网关下单同一套口径：等级折扣 → 优惠券/折扣权益）。
+    # 计价走公共函数（与网关下单同一套口径：优惠券/折扣权益 →
+    # 换套餐抵扣）。实扣一律以 payable_amount 为准（券后价再扣抵扣）。
     price = economy_api._price_subscription_purchase(
-        db, user, plan, req.coupon_code)
-    paid = price["paid_amount"]
+        db, user, plan, req.coupon_code, months=req.months or None)
+    paid = price["payable_amount"]
     balance = wallet_service.get_balance(db, user.id)
     if paid > balance:
         shortfall = money(paid - balance)
@@ -170,6 +173,7 @@ def _pay_subscription_core(db: Session, user: models.WebUser,
         order_id=order_id, user_id=user.id, plan_id=plan.id,
         item_name=plan.name, amount=paid,
         list_price=price["list_price"], discount_amount=price["discount_amount"],
+        days_granted=price["days"],
         payment_method="wallet", status="pending")
     db.add(order)
     # 先 flush 拿 id：_fulfill_order 里的 _claim_order 按 id 做条件
@@ -204,8 +208,8 @@ def _pay_subscription_core(db: Session, user: models.WebUser,
         usage = coupons.reserve(
             db, coupon=coupon, user=user, order_id=order_id,
             kind="subscription", list_price=price["coupon_base"],
-            discount=price["discount_amount"] - price["member_discount_amount"],
-            paid=paid)
+            discount=price["coupon_discount_amount"] - price["member_discount_amount"],
+            paid=price["paid_amount"])
         order.coupon_usage_id = usage.id
 
     try:
@@ -244,6 +248,9 @@ def _pay_subscription_core(db: Session, user: models.WebUser,
         "paid_amount": f"{money(paid):.2f}",
         "list_price": f"{money(price['list_price']):.2f}",
         "discount_amount": f"{money(price['discount_amount']):.2f}",
+        "switch_credit": f"{money(price['switch_credit']):.2f}",
+        "switch_type": price["switch_type"],
+        "months": price["months"],
         "balance_after": (f"{money(debit_entry.balance_after):.2f}"
                           if debit_entry is not None
                           else f"{balance:.2f}"),

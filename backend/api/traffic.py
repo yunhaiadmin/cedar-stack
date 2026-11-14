@@ -2,11 +2,11 @@
 """用户端流量额度 API（流量额度一期）：概览流量区 + 购流量。
 
 - GET  /api/user/traffic：当月额度/已用/抵扣/重置日 + 时间换流量
-  选项。额度未启用（套餐没声明、全局默认也没配）时 enabled=false，
-  前端整段不展示。
-- POST /api/user/traffic/exchange：时间换流量成交（扣订阅天数换
-  抵扣额度）。客户端带 idempotency_key，同一次确认的重试/双击
-  只成交一次（服务层幂等，见 backend/traffic_quota.py）。
+  规则（每 10GB 需 7 天、总流量上限 5TB）。额度未启用（套餐没
+  声明、全局默认也没配）时 enabled=false，前端整段不展示。
+- POST /api/user/traffic/exchange：时间换流量成交（按 GB 扣订阅
+  时长换抵扣额度）。客户端带 idempotency_key，同一次确认的重试/
+  双击只成交一次（服务层幂等，见 backend/traffic_quota.py）。
 - POST /api/user/traffic/buy-balance（钱包批 2）：余额购流量
   （按配置单价扣钱包余额换本周期抵扣额度，档位 100/200/500/
   1000GB）。同样带 idempotency_key 幂等。
@@ -31,7 +31,8 @@ traffic_router = APIRouter(prefix="/api/user", tags=["用户端·流量"])
 
 
 class TimeExchangeRequest(BaseModel):
-    days: int = Field(..., ge=1, le=365)
+    # 时间换流量按 GB 计（2026-11-14）：gb 须为 10 的整倍数（服务层校验）
+    gb: int = Field(..., ge=10, le=51200)
     idempotency_key: str = Field(..., min_length=1, max_length=64)
 
 
@@ -44,8 +45,8 @@ def get_traffic(current_user: models.WebUser = Depends(get_current_user),
     wallet_on = wallet_service.wallet_enabled(db)
     return {
         **summary,
-        # 选项带比例口径 + 按本用户当月额度现折算的抵扣字节
-        "exchange_options": traffic_quota.exchange_options_view(
+        # 时间换流量规则（GB 口径）+ 该用户当前可兑换余量
+        "exchange_rule": traffic_quota.exchange_rule_view(
             db, current_user.id),
         # 余额购买（钱包批 2）：钱包开着即放开页签；单价与余额一并下发，
         # 前端按档位现算价格、余额不足时明示差额。
@@ -72,7 +73,7 @@ def post_traffic_exchange(
                             content={"detail": "操作太频繁，请稍后再试"})
     try:
         result = traffic_quota.exchange_time_for_traffic(
-            db, current_user.id, req.days, req.idempotency_key)
+            db, current_user.id, req.gb, req.idempotency_key)
     except traffic_quota.TrafficError as exc:
         return JSONResponse(status_code=400,
                             content={"detail": str(exc), "code": exc.code})

@@ -43,6 +43,10 @@ export interface WalletPaySubscriptionResult {
   balance_after: string
   subscription_id: number | null
   end_date: string | null
+  /** 换套餐抵扣额与类型、购买月数（2026-11-14 按月重做后附带） */
+  switch_credit?: string
+  switch_type?: string
+  months?: number
 }
 
 /** 流水 kind 的人话文案（未知 kind 原样显示，不造假文案） */
@@ -66,9 +70,11 @@ export const walletApi = {
   /** 流水分页（可按 kind 筛选） */
   ledger: (params?: { kind?: string; page?: number; page_size?: number }) =>
     api.get<never, WalletLedgerPage>('/api/user/wallet/ledger', { params }),
-  /** 余额买订阅：idempotencyKey 由调用方每次确认生成一个新键 */
+  /** 余额买订阅：idempotencyKey 由调用方每次确认生成一个新键；
+   * months 为购买月数（1–12，缺省＝套餐基准月数） */
   paySubscription: (data: {
     plan_id: number
+    months?: number
     coupon_code?: string
     idempotency_key: string
   }) =>

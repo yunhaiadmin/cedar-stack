@@ -13,6 +13,10 @@
         <div class="ov-card__shine" aria-hidden="true"></div>
         <div class="ov-card__head">
           <span class="ov-card__brand">{{ branding.site_name }}</span>
+          <button type="button" class="ov-card__lines" @click="linesSheetOpen = true">
+            切换线路
+            <ChevronRight :size="15" aria-hidden="true" />
+          </button>
           <svg class="ov-card__play" width="31" height="31" viewBox="0 0 24 24" aria-hidden="true">
             <defs>
               <linearGradient id="card-play-g" x1="0" y1="0" x2="1" y2="1">
@@ -80,18 +84,30 @@
         <div class="ov-skel ov-skel--meta"></div>
       </section>
 
-      <!-- 流量区：套餐含每月流量额度时才有（后端 enabled=false 或
+      <!-- 流量圆环卡：套餐含每月流量额度时才有（后端 enabled=false 或
            接口拿不到数据，整段不渲染，绝不拿 0 额度吓人） -->
       <section v-else-if="traffic?.enabled" class="ov-quota">
-        <p class="ov-quota__label">本月剩余流量</p>
-        <p class="ov-quota__big">{{ trafficRemainGb }}<span class="ov-quota__unit">GB</span></p>
-        <p class="ov-quota__remain">剩余 {{ trafficRemainPct }}%</p>
-        <div class="ov-bar" role="img" :aria-label="`本月流量已用 ${traffic.used_pct}%`">
-          <div class="ov-bar__fill" :style="{ width: `${trafficRemainPct}%` }"></div>
-        </div>
-        <div class="ov-quota__meta">
-          <span>已用 {{ trafficUsedText }} / 共 {{ trafficQuotaText }}</span>
-          <span>{{ trafficResetText }}</span>
+        <p class="ov-quota__label">每月流量</p>
+        <div class="ov-ring-row">
+          <div class="ov-ring" role="img" :aria-label="`本月流量剩余 ${trafficRemainPct}%`">
+            <svg width="88" height="88" viewBox="0 0 88 88" aria-hidden="true">
+              <circle cx="44" cy="44" r="36" class="ov-ring__track" />
+              <circle
+                cx="44" cy="44" r="36" class="ov-ring__fill"
+                :stroke-dasharray="RING_CIRC"
+                :stroke-dashoffset="ringOffset"
+              />
+            </svg>
+            <div class="ov-ring__center">
+              <b>{{ trafficRemainPct }}%</b>
+              <span>剩余</span>
+            </div>
+          </div>
+          <div class="ov-ring-meta">
+            <p class="ov-ring-meta__big">{{ trafficRemainGb }}<span class="ov-quota__unit">GB 可用</span></p>
+            <p class="ov-ring-meta__line">已用 {{ trafficUsedText }} / 共 {{ trafficQuotaText }}</p>
+            <p class="ov-ring-meta__line">{{ trafficResetText }}</p>
+          </div>
         </div>
         <p v-if="traffic.exhausted" class="ov-quota__meta-line">
           本月流量已用完，可以购买流量继续用（本期不影响播放）。
@@ -101,11 +117,56 @@
         </div>
       </section>
 
-      <!-- 双按钮：主钮彩虹边框粉彩胶囊，次钮白胶囊描边 -->
+      <!-- 自动续费行（2026-11-14 照友站）：到期前自动从余额扣款续费；
+           开关走 subscriptionApi.setAutoRenew，后端引擎真扣款 -->
+      <section v-if="activeSub" class="ov-renew">
+        <div class="ov-renew__main">
+          <p class="ov-renew__title">自动续费</p>
+          <p class="ov-renew__desc">到期前自动从余额扣款续费，请保持余额充足。</p>
+        </div>
+        <button
+          type="button"
+          class="ov-switch"
+          :class="{ 'ov-switch--on': activeSub.auto_renew }"
+          role="switch"
+          :aria-checked="activeSub.auto_renew"
+          aria-label="自动续费开关"
+          :disabled="autoRenewBusy"
+          @click="toggleAutoRenew"
+        >
+          <span class="ov-switch__knob"></span>
+        </button>
+      </section>
+
+      <!-- 套餐卡动作：续费（主钮）＋余额充值；不再摆整排跳转钮 -->
       <div class="ov-actions">
         <RouterLink class="ov-btn ov-btn--primary" to="/game/account/subscribe">续费订阅</RouterLink>
-        <RouterLink class="ov-btn" to="/wallet">我的钱包</RouterLink>
+        <RouterLink class="ov-btn" to="/wallet">余额充值</RouterLink>
       </div>
+
+      <!-- 账户余额卡：余额真实数据（钱包接口），充值是本卡唯一动作 -->
+      <section v-if="walletInfo" class="ov-sec">
+        <div class="ov-sec__head">
+          <h2 class="ov-sec__title">账户余额</h2>
+          <RouterLink class="ov-sec__more" to="/wallet">充值</RouterLink>
+        </div>
+        <p class="ov-balance">¥ {{ walletInfo.balance }}</p>
+      </section>
+
+      <!-- 最近动态：真实订阅记录（订单＋发放合并时间线），最多 3 条 -->
+      <section v-if="recentRecords.length" class="ov-sec">
+        <div class="ov-sec__head">
+          <h2 class="ov-sec__title">最近动态</h2>
+          <RouterLink class="ov-sec__more" to="/game/account/subscription-records">查看全部</RouterLink>
+        </div>
+        <div v-for="(r, i) in recentRecords" :key="i" class="ov-rrow">
+          <span class="ov-rrow__main">
+            <span class="ov-rrow__name">{{ r.name }}</span>
+            <span class="ov-rrow__time">{{ recordTimeText(r.time) }}</span>
+          </span>
+          <span class="ov-rrow__amount">{{ recordAmountText(r) }}</span>
+        </div>
+      </section>
 
       <!-- Emby 段：图标＋两行＋chevron（弹幕 API 本站无此业务，整项省略） -->
       <section class="ov-sec">
@@ -173,10 +234,10 @@
         </div>
       </section>
 
-      <!-- 设备段：数据源＝用户侧设备接口（deviceApi.mine），拿不到整段不渲染 -->
+      <!-- 登录设备卡：数据源＝用户侧设备接口（deviceApi.mine），拿不到整段不渲染 -->
       <section v-if="devicesData" class="ov-sec">
         <div class="ov-sec__head">
-          <h2 class="ov-sec__title">设备</h2>
+          <h2 class="ov-sec__title">登录设备</h2>
           <RouterLink class="ov-sec__more" to="/game/account/settings">
             {{ devicesData.count }} / {{ devicesData.limit }} 台 · 管理
           </RouterLink>
@@ -190,17 +251,14 @@
         </div>
       </section>
 
-      <!-- 常用段：纯文字行＋右值/chevron -->
-      <section class="ov-sec">
-        <div class="ov-sec__head">
-          <h2 class="ov-sec__title">常用</h2>
-        </div>
-        <!-- 能量余额行已随商店删除＋能量货币下线摘除；邀请行先占位：
-             邀请页未建（等钱包落地），暂不挂任何链接，落地后再接 -->
-        <div class="ov-trow">
-          <span class="ov-trow__name">邀请好友</span>
-        </div>
-      </section>
+      <!-- 邀请横幅（照友站概览）：整块可点，进邀请好友页 -->
+      <RouterLink class="ov-invite" to="/game/account/invite">
+        <span class="ov-invite__main">
+          <span class="ov-invite__title">邀请好友</span>
+          <span class="ov-invite__sub">好友付费，你拿返利进钱包余额</span>
+        </span>
+        <ChevronRight :size="18" class="ov-row__chev" aria-hidden="true" />
+      </RouterLink>
 
     </div>
 
@@ -208,7 +266,7 @@
     <TrafficPurchaseModal
       v-model:open="trafficModalOpen"
       :traffic="traffic"
-      :options="traffic?.exchange_options ?? []"
+      :rule="traffic?.exchange_rule ?? null"
       @exchanged="onTrafficExchanged"
     />
 
@@ -251,7 +309,11 @@
  * 含在线状态与最后活跃时间）。公益资格状态只读登录态 is_welfare 标记。
  * 流量额度（2026-11-13 一期）：套餐声明月额度时才出现流量区＋
  * 购流量弹窗（trafficApi）；没声明整段不渲染。原站有而本站没有
- * 的（自动续费开关、弹幕 API）整项省略。
+ * 的（弹幕 API）整项省略。
+ * 2026-11-14 订阅重做（概览承担「我的订阅」，照友站）：套餐卡加
+ * 「切换线路>」；流量改圆环卡；新增自动续费开关行（后端引擎真
+ * 扣款）、账户余额卡、最近动态（真实订阅记录）、邀请横幅；
+ * 按钮收敛为每卡最多一个本卡动作。
  * 「服务器地址」行 2026-11-13 起改开线路弹层（ServerLinesSheet，友站
  * 同行点开即弹层；用户 23:15 亲点），不再跳 /game/operator 整页——
  * 播放账号页本体与菜单/侧栏入口不变。
@@ -278,8 +340,9 @@ import ServerLinesSheet from '@/components/profile/ServerLinesSheet.vue'
 import BindDriveSheet from '@/components/profile/BindDriveSheet.vue'
 import {
   embyApi, subscriptionApi,
-  type AccountCard, type MySubscription,
+  type AccountCard, type MySubscription, type SubscriptionRecordRow,
 } from '@/api'
+import { walletApi, type WalletInfo } from '@/api/wallet'
 import {
   deviceApi, storageBindingApi,
   type MyDevice, type MyDevicesResponse,
@@ -424,9 +487,62 @@ async function loadTraffic() {
   }
 }
 function onTrafficExchanged(summary: TrafficSummary) {
-  // 成交后后端回了最新汇总：就地合并（保留 options 等概览字段）
+  // 成交后后端回了最新汇总：就地合并（保留 rule 等概览字段）
   if (traffic.value) traffic.value = { ...traffic.value, ...summary }
   else void loadTraffic()
+}
+
+/** 流量圆环：r=36 的周长；dashoffset 按剩余比例收 */
+const RING_CIRC = 2 * Math.PI * 36
+const ringOffset = computed(() => RING_CIRC * (1 - trafficRemainPct.value / 100))
+
+// ── 账户余额卡（钱包接口：拿不到/未启用整卡不渲染） ──
+const walletInfo = ref<WalletInfo | null>(null)
+async function loadWallet() {
+  try {
+    const res = await walletApi.get()
+    if (res && res.wallet_enabled !== false) walletInfo.value = res
+  } catch { /* 钱包接口失败整卡不渲染 */ }
+}
+
+// ── 最近动态（订阅记录时间线前 3 条） ──
+const recentRecords = ref<SubscriptionRecordRow[]>([])
+async function loadRecords() {
+  try {
+    const res = await subscriptionApi.getRecords()
+    recentRecords.value = (res.records ?? []).slice(0, 3)
+  } catch { /* 记录拿不到整段不渲染 */ }
+}
+function recordTimeText(iso: string | null): string {
+  if (!iso) return ''
+  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(iso)
+  return m ? `${m[2]}-${m[3]} ${m[4]}:${m[5]}` : iso.slice(0, 10)
+}
+function recordAmountText(r: SubscriptionRecordRow): string {
+  if (r.amount != null) return `¥ ${r.amount.toFixed(2)}`
+  const map: Record<string, string> = {
+    active: '生效中', expired: '已到期', cancelled: '已终止',
+    paid: '已完成', pending: '待支付', closed: '已关闭', refunded: '已退款',
+  }
+  return map[r.status] ?? r.status
+}
+
+// ── 自动续费开关（后端 backend/auto_renew.py 引擎真扣款） ──
+const autoRenewBusy = ref(false)
+async function toggleAutoRenew() {
+  const sub = activeSub.value
+  if (!sub || autoRenewBusy.value) return
+  autoRenewBusy.value = true
+  const next = !sub.auto_renew
+  try {
+    const res = await subscriptionApi.setAutoRenew(sub.id, next)
+    sub.auto_renew = res.auto_renew
+    toast.success(res.auto_renew ? '自动续费已开启' : '自动续费已关闭')
+  } catch {
+    toast.error('设置失败，请稍后再试')
+  } finally {
+    autoRenewBusy.value = false
+  }
 }
 
 // ── 设备段（deviceApi.mine：用户侧设备接口） ──
@@ -519,6 +635,8 @@ onMounted(() => {
   void loadOverview()
   void loadTraffic()
   void loadDevices()
+  void loadWallet()
+  void loadRecords()
 
   void loadDriveMeta()
   void getMyExclusiveLines().then(lines => { myLines.value = lines }).catch(() => {})
@@ -993,6 +1111,188 @@ html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* 套餐卡「切换线路>」（2026-11-14）：卡头右侧文字钮，开线路弹层 */
+.ov-card__lines {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  font-weight: var(--uhd-fw-medium);
+  cursor: pointer;
+  padding: 4px 2px;
+  font-family: inherit;
+}
+.ov-card__lines:active { opacity: 0.72; }
+.ov-card__head .ov-card__play { margin-left: 6px; }
+
+/* 流量圆环卡 */
+.ov-ring-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-top: 6px;
+}
+.ov-ring {
+  position: relative;
+  flex: 0 0 auto;
+  width: 88px;
+  height: 88px;
+}
+.ov-ring svg { transform: rotate(-90deg); display: block; }
+.ov-ring__track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 8;
+}
+.ov-ring__fill {
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 8;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.6s ease;
+}
+.ov-ring__center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+.ov-ring__center b { font-size: 19px; font-weight: var(--uhd-fw-extrabold); color: #ffffff; }
+.ov-ring__center span { font-size: 11px; color: rgba(255, 255, 255, 0.5); }
+.ov-ring-meta { min-width: 0; }
+.ov-ring-meta__big {
+  margin: 0;
+  font-size: 30px;
+  font-weight: var(--uhd-fw-extrabold);
+  color: #ffffff;
+}
+.ov-ring-meta__line {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* 自动续费行＋开关 */
+.ov-renew {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 2px;
+  border-bottom: 1px solid #26262a;
+}
+.ov-renew__main { flex: 1 1 auto; min-width: 0; }
+.ov-renew__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: var(--uhd-fw-medium);
+  color: #ffffff;
+}
+.ov-renew__desc {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+}
+.ov-switch {
+  flex: 0 0 auto;
+  width: 50px;
+  height: 30px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(255, 255, 255, 0.18);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  padding: 0;
+}
+.ov-switch__knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #ffffff;
+  transition: transform 0.2s ease;
+}
+.ov-switch--on { background: #30d158; }
+.ov-switch--on .ov-switch__knob { transform: translateX(20px); }
+.ov-switch:disabled { opacity: 0.5; cursor: wait; }
+
+/* 账户余额卡 */
+.ov-balance {
+  margin: 2px 0 4px;
+  font-size: 30px;
+  font-weight: var(--uhd-fw-extrabold);
+  color: #ffffff;
+}
+
+/* 最近动态行 */
+.ov-rrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 2px;
+  border-bottom: 1px solid #26262a;
+  box-sizing: border-box;
+}
+.ov-rrow__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ov-rrow__name {
+  font-size: 15px;
+  font-weight: var(--uhd-fw-medium);
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ov-rrow__time { font-size: 12.5px; color: rgba(255, 255, 255, 0.42); }
+.ov-rrow__amount {
+  flex: 0 0 auto;
+  font-size: 15px;
+  font-weight: var(--uhd-fw-medium);
+  color: #ffffff;
+}
+
+/* 邀请横幅 */
+.ov-invite {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 26px;
+  padding: 18px;
+  border-radius: 20px;
+  text-decoration: none;
+  color: #ffffff;
+  background:
+    linear-gradient(rgba(20, 20, 24, 0.55), rgba(20, 20, 24, 0.55)) padding-box,
+    var(--uhd-rainbow) border-box;
+  border: 1.5px solid transparent;
+  box-sizing: border-box;
+}
+.ov-invite:active { opacity: 0.85; }
+.ov-invite__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ov-invite__title { font-size: 16px; font-weight: var(--uhd-fw-bold); }
+.ov-invite__sub { font-size: 13px; color: rgba(255, 255, 255, 0.65); }
 /* 浅色覆盖：跟随用户外观（html[data-theme='light']） */
 html[data-theme='light'] .ov-page {
   background: #f8f8f8;
@@ -1044,6 +1344,30 @@ html[data-theme='light'] .ov-drow__status { color: #9a9da3; }
 html[data-theme='light'] .ov-drow__status--on { color: #16a34a; }
 html[data-theme='light'] .ov-trow { border-bottom-color: #e5e5e7; color: #111111; }
 html[data-theme='light'] .ov-trow__value { color: #9a9da3; }
+html[data-theme='light'] .ov-card__lines { color: #55575c; }
+html[data-theme='light'] .ov-ring__track { stroke: #e8e8ea; }
+html[data-theme='light'] .ov-ring__fill { stroke: #111111; }
+html[data-theme='light'] .ov-ring__center b { color: #111111; }
+html[data-theme='light'] .ov-ring__center span { color: #9a9da3; }
+html[data-theme='light'] .ov-ring-meta__big { color: #111111; }
+html[data-theme='light'] .ov-ring-meta__line { color: #9a9da3; }
+html[data-theme='light'] .ov-renew { border-bottom-color: #e5e5e7; }
+html[data-theme='light'] .ov-renew__title { color: #111111; }
+html[data-theme='light'] .ov-renew__desc { color: #9a9da3; }
+html[data-theme='light'] .ov-switch { background: rgba(17, 17, 17, 0.16); }
+html[data-theme='light'] .ov-switch--on { background: #30d158; }
+html[data-theme='light'] .ov-balance { color: #111111; }
+html[data-theme='light'] .ov-rrow { border-bottom-color: #e5e5e7; }
+html[data-theme='light'] .ov-rrow__name { color: #111111; }
+html[data-theme='light'] .ov-rrow__time { color: #9a9da3; }
+html[data-theme='light'] .ov-rrow__amount { color: #111111; }
+html[data-theme='light'] .ov-invite {
+  color: #111111;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.72)) padding-box,
+    var(--uhd-rainbow) border-box;
+}
+html[data-theme='light'] .ov-invite__sub { color: #55575c; }
 
 /* 兜底回滚块：守卫已不再把本页钉成 light（V4_PATHS 摘除 /game/account）；
    若主题解析与 data-theme 出现竞态不一致，用户选深色时由 .ov-dark 类回滚为深色 */
@@ -1083,4 +1407,16 @@ html[data-theme='light'] .ov-page.ov-dark .ov-expiry { color: rgba(255, 255, 255
 html[data-theme='light'] .ov-page.ov-dark .ov-irow { border-bottom-color: #26262a; color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-drow { border-bottom-color: #26262a; }
 html[data-theme='light'] .ov-page.ov-dark .ov-trow { border-bottom-color: #26262a; color: #ffffff; }
+html[data-theme='light'] .ov-page.ov-dark .ov-card__lines { color: rgba(255, 255, 255, 0.85); }
+html[data-theme='light'] .ov-page.ov-dark .ov-ring__track { stroke: rgba(255, 255, 255, 0.12); }
+html[data-theme='light'] .ov-page.ov-dark .ov-ring__fill { stroke: #ffffff; }
+html[data-theme='light'] .ov-page.ov-dark .ov-ring__center b { color: #ffffff; }
+html[data-theme='light'] .ov-page.ov-dark .ov-ring-meta__big { color: #ffffff; }
+html[data-theme='light'] .ov-page.ov-dark .ov-renew { border-bottom-color: #26262a; }
+html[data-theme='light'] .ov-page.ov-dark .ov-renew__title { color: #ffffff; }
+html[data-theme='light'] .ov-page.ov-dark .ov-balance { color: #ffffff; }
+html[data-theme='light'] .ov-page.ov-dark .ov-rrow { border-bottom-color: #26262a; }
+html[data-theme='light'] .ov-page.ov-dark .ov-rrow__name { color: #ffffff; }
+html[data-theme='light'] .ov-page.ov-dark .ov-rrow__amount { color: #ffffff; }
+html[data-theme='light'] .ov-page.ov-dark .ov-invite { color: #ffffff; }
 </style>
