@@ -5,6 +5,9 @@ import vue from '@vitejs/plugin-vue'
 /** 只服务 fixtures/account-sidebar，不进入 npm run build。 */
 export default defineConfig({
   root: fileURLToPath(new URL('./fixtures/account-sidebar', import.meta.url)),
+  define: {
+    'import.meta.env.VITE_FIXTURE': JSON.stringify('1'),
+  },
   plugins: [vue()],
   resolve: {
     alias: {

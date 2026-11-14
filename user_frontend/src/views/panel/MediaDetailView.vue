@@ -383,6 +383,19 @@ function goBack() {
 }
 
 onMounted(() => {
+  if (import.meta.env.VITE_FIXTURE === '1') {
+    loading.value = false
+    item.value = {
+      Id: 'fixture-1',
+      Name: '夹具影片',
+      Type: 'Movie',
+      ProductionYear: 2026,
+      Overview: '夹具简介，不是片库条目。',
+      Genres: ['夹具'],
+      RunTimeTicks: 3600 * 10_000_000,
+    } as typeof item.value
+    return
+  }
   void load()
 })
 watch(itemId, () => {
@@ -431,6 +444,7 @@ watch(itemId, () => {
 
       <div class="md-wrap">
         <p class="md-type">{{ typeLabel }}</p>
+        <h1 class="md-title" :class="{ 'md-title--movie': !isSeries }">{{ item.Name }}</h1>
         <div class="md-main">
           <!-- 有顶图（backdrop 或海报兜底）时移动端隐藏海报卡（顶图就是
                主视觉，不重复摆卡）；两样图都没有才保留海报卡占位兜底 -->
@@ -440,7 +454,6 @@ watch(itemId, () => {
           </div>
 
           <div class="md-info">
-            <h1 class="md-title" :class="{ 'md-title--movie': !isSeries }">{{ item.Name }}</h1>
             <!-- 信息行（友站形态）：年份 · 季数 · ★评分 · 时长纯文字，
                  其后接类型描边胶囊同行；右侧信息栏不再重复摆评分 -->
             <p class="md-meta">
@@ -765,6 +778,17 @@ watch(itemId, () => {
 /* 电影版 H1 约 56px 特粗 */
 .md-title--movie {
   font-size: 56px;
+}
+.md-wrap > .md-title {
+  margin-top: 8px;
+}
+@media (min-width: 1200px) {
+  .md-wrap {
+    max-width: none;
+    margin: 0;
+    padding: 0 96px;
+  }
+  .md-back { left: 96px; }
 }
 .md-meta {
   margin: 12px 0 0;

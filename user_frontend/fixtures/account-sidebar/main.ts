@@ -19,6 +19,10 @@ import AccountHarness from './AccountHarness.vue'
 import FixtureLanding from './FixtureLanding.vue'
 import OnceLayout from './OnceLayout.vue'
 import PersonalCenterView from '@/views/game/PersonalCenterView.vue'
+import SubscriptionPlansView from '@/views/game/SubscriptionPlansView.vue'
+import LibraryBrowseView from '@/views/panel/LibraryBrowseView.vue'
+import MediaDetailView from '@/views/panel/MediaDetailView.vue'
+import FavoritesView from '@/views/panel/FavoritesView.vue'
 
 const Stub = { name: 'FixtureStub', template: '<main id="fixture-stub">跳转页</main>' }
 
@@ -33,6 +37,12 @@ const router = createRouter({
     { path: '/game/speedtest', component: AccountHarness },
     { path: '/landing', component: FixtureLanding },
     { path: '/overview-fixture', component: PersonalCenterView },
+    { path: '/game/account/subscribe', component: SubscriptionPlansView },
+    { path: '/library/movies', name: 'library-movies', component: LibraryBrowseView },
+    { path: '/library/series', name: 'library-series', component: LibraryBrowseView },
+    { path: '/media/:id', name: 'media-detail', component: MediaDetailView },
+    { path: '/person/:key', name: 'person-detail', component: LibraryBrowseView },
+    { path: '/favorites', name: 'favorites', component: FavoritesView },
     { path: '/pricing', component: Stub },
     { path: '/login', component: Stub },
   ],
