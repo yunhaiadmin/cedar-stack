@@ -192,6 +192,8 @@ export interface EmbyItem {
   CommunityRating?: number | null
   OfficialRating?: string | null
   Overview?: string | null
+  /** 原名（后端 _item_dto 有 original_title 才下发；弹层头图原名行用） */
+  OriginalTitle?: string | null
   Genres?: string[]
   Tags?: string[]
   Studios?: string[]
@@ -267,6 +269,14 @@ export interface EmbyMediaSource {
     IsExternal?: boolean
     IsTextSubtitleStream?: boolean
     IsDefault?: boolean
+    /** 详情页规格胶囊与播放弹层展开网格用的真实探测字段
+        （后端 _stream_dto 已下发，此前前端类型没接） */
+    Channels?: number | null
+    ChannelLayout?: string | null
+    BitRate?: number | null
+    FrameRate?: number | null
+    BitDepth?: number | null
+    Title?: string | null
     /** 字幕轨的可直取地址（服务端已附短期播放签名） */
     DeliveryUrl?: string
   }>
