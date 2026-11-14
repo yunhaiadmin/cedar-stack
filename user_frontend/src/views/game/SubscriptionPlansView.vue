@@ -10,7 +10,14 @@
     </header>
 
     <main class="sub-body">
-      <div v-if="loading" class="sub-skeleton" aria-hidden="true"></div>
+      <!-- 加载态（通用口径）：数据未到位前只许中性加载态——转圈＋骨架＋加载文案，
+           不渲染任何结论性文案或半成品控件；骨架跟随页面主题，浅色页用浅色骨架 -->
+      <div v-if="loading" class="sub-loading" role="status" aria-label="正在加载订阅">
+        <span class="sub-spinner" aria-hidden="true"></span>
+        <p class="sub-loading__text">正在加载订阅…</p>
+        <div class="sub-skeleton" aria-hidden="true"></div>
+        <div class="sub-skeleton sub-skeleton--short" aria-hidden="true"></div>
+      </div>
 
       <div v-else-if="loadError" class="sub-state">
         <p>订阅加载失败，请稍后重试</p>
@@ -34,174 +41,161 @@
       </div>
 
       <div v-else class="sub-layout">
-        <div class="sub-main">
-          <!-- 线路（服）分段切换：有几条显示几条，数据驱动 -->
-          <div v-if="realmOptions.length > 1" class="sub-seg" role="tablist" aria-label="选择线路">
-            <button
-              v-for="opt in realmOptions"
-              :key="opt.value"
-              type="button"
-              role="tab"
-              class="sub-seg__item"
-              :class="{ 'sub-seg__item--on': opt.value === selectedRealm }"
-              :aria-selected="opt.value === selectedRealm"
-              @click="selectedRealm = opt.value"
-            >{{ opt.label }}</button>
+        <!-- 线路分组切换（照友站 f039）：浅灰胶囊＋选中段白底轻阴影；
+             数据驱动——套餐按线路（服）名分组，有几组显示几组，只有一组不显示 -->
+        <div v-if="realmOptions.length > 1" class="sub-seg" role="tablist" aria-label="选择线路">
+          <button
+            v-for="opt in realmOptions"
+            :key="opt.value"
+            type="button"
+            role="tab"
+            class="sub-seg__item"
+            :class="{ 'sub-seg__item--on': opt.value === selectedRealm }"
+            :aria-selected="opt.value === selectedRealm"
+            @click="selectedRealm = opt.value"
+          >{{ opt.label }}</button>
+        </div>
+        <p v-if="realmNote" class="sub-note">{{ realmNote }}</p>
+
+        <!-- 套餐纵向全宽卡片列表（照友站 f039/f036）：一档一卡；
+             选中档白卡＋轻阴影，未选档无卡底；卡头单选圈＋档名＋右侧价格，
+             分隔线下规格逐行（标签灰小字／值中黑） -->
+        <section class="plan-list" aria-label="选择套餐">
+          <article
+            v-for="(plan, pi) in realmPlans"
+            :key="plan.id"
+            class="plan-card"
+            :class="{ 'plan-card--on': plan.id === selectedPlanId }"
+            @click="selectedPlanId = plan.id"
+          >
+            <div class="plan-card__head">
+              <span class="plan-radio" :class="{ 'plan-radio--on': plan.id === selectedPlanId }" aria-hidden="true"></span>
+              <span class="plan-card__name">{{ plan.name }}</span>
+              <span v-if="isCurrent(plan)" class="plan-current">当前</span>
+              <span class="plan-card__pricebox">
+                <span class="plan-card__price">¥ {{ fmtPrice(monthlyOf(plan)) }}<small> / 月</small></span>
+                <span class="plan-card__annual">年付 ¥ {{ fmtPrice(listPriceFor(plan, 12)) }}</span>
+              </span>
+            </div>
+            <div class="plan-specs">
+              <div v-for="row in compareRows" :key="row.label" class="plan-spec">
+                <span class="plan-spec__label">{{ row.label }}</span>
+                <span class="plan-spec__value">{{ row.cells[pi] }}</span>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <!-- 订阅时长（照友站 f036）：页内平铺——滑杆 1–12 个月＋1/3/6/年付分段；
+             3/6 个月无折扣，仅年付＝11×月价（现行计价口径不变） -->
+        <section class="sub-dur" aria-label="订阅时长">
+          <div class="sub-dur__head">
+            <span class="sub-dur__label">订阅时长</span>
+            <span class="sub-dur__value"><b>{{ months }}</b> 个月{{ months === 12 ? '（年付）' : '' }}</span>
           </div>
-          <p v-if="realmNote" class="sub-note">{{ realmNote }}</p>
+          <input
+            type="range"
+            min="1"
+            max="12"
+            step="1"
+            :value="months"
+            class="sub-slider"
+            :style="{ '--fill': sliderFill }"
+            aria-label="选择订阅时长（月）"
+            @input="onMonthsSlider"
+          />
+          <div class="sub-dur__caps" role="group" aria-label="订阅时长快捷选择">
+            <button
+              v-for="cap in MONTH_CAPS"
+              :key="cap.months"
+              type="button"
+              class="sub-cap"
+              :class="{ 'sub-cap--on': months === cap.months }"
+              :aria-pressed="months === cap.months"
+              @click="months = cap.months"
+            >{{ cap.label }}</button>
+          </div>
+          <p class="sub-dur__hint">年付按 11 个月计价，等于送 1 个月</p>
+        </section>
 
-          <!-- 套餐对比表：行＝价格/流量/登录设备/子账号/下载/线路，
-               列＝套餐，当前列高亮＋实心单选点（照友站形态） -->
-          <section class="cmp" aria-label="选择套餐">
-            <table class="cmp-table">
-              <thead>
-                <tr>
-                  <th class="cmp-corner" scope="col"><span class="cmp-sr">套餐</span></th>
-                  <th
-                    v-for="plan in realmPlans"
-                    :key="plan.id"
-                    scope="col"
-                    class="cmp-colhead"
-                    :class="{ 'cmp-colhead--on': plan.id === selectedPlanId }"
-                    @click="selectedPlanId = plan.id"
-                  >
-                    <span class="cmp-plan">
-                      <span class="plan-radio" :class="{ 'plan-radio--on': plan.id === selectedPlanId }" aria-hidden="true"></span>
-                      <span class="cmp-plan__name">{{ plan.name }}</span>
-                      <span v-if="isCurrent(plan)" class="plan-current">当前</span>
-                    </span>
-                    <span class="cmp-price">¥ {{ fmtPrice(monthlyOf(plan)) }}</span>
-                    <span class="cmp-price__sub">/ 月 · 年付 ¥ {{ fmtPrice(listPriceFor(plan, 12)) }}</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in compareRows" :key="row.label">
-                  <th scope="row" class="cmp-rowhead">{{ row.label }}</th>
-                  <td
-                    v-for="(cell, i) in row.cells"
-                    :key="realmPlans[i].id"
-                    class="cmp-cell"
-                    :class="{ 'cmp-cell--on': realmPlans[i].id === selectedPlanId }"
-                    @click="selectedPlanId = realmPlans[i].id"
-                  >{{ cell }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </section>
-
-          <!-- 订阅时长：滑杆 1–12 个月＋分段按钮双控件联动；
-               3/6 个月无折扣，仅年付＝11×月价（照友站口径） -->
-          <section class="sub-dur" aria-label="订阅时长">
-            <div class="sub-dur__head">
-              <span class="sub-dur__label">订阅时长</span>
-              <span class="sub-dur__value"><b>{{ months }}</b> 个月{{ months === 12 ? '（年付）' : '' }}</span>
-            </div>
-            <input
-              type="range"
-              min="1"
-              max="12"
-              step="1"
-              :value="months"
-              class="sub-slider"
-              :style="{ '--fill': sliderFill }"
-              aria-label="选择订阅时长（月）"
-              @input="onMonthsSlider"
-            />
-            <div class="sub-dur__caps" role="group" aria-label="订阅时长快捷选择">
-              <button
-                v-for="cap in MONTH_CAPS"
-                :key="cap.months"
-                type="button"
-                class="sub-cap"
-                :class="{ 'sub-cap--on': months === cap.months }"
-                :aria-pressed="months === cap.months"
-                @click="months = cap.months"
-              >{{ cap.label }}</button>
-            </div>
-            <p class="sub-dur__hint">年付按 11 个月计价，等于送 1 个月</p>
-          </section>
+        <!-- 优惠码（照友站 f036 页内形态）：接现有 coupon 试算口，与下单同一套口径 -->
+        <div v-if="couponEnabled" class="sub-coupon">
+          <div class="sub-coupon__row">
+            <label class="sub-coupon__box">
+              <Tag :size="16" aria-hidden="true" />
+              <input
+                v-model="couponInput"
+                class="sub-coupon__input"
+                type="text"
+                placeholder="优惠码（可选）"
+                aria-label="优惠码（可选）"
+                maxlength="64"
+                autocomplete="off"
+                :disabled="!!appliedCoupon"
+                @keydown.enter.prevent="applyCoupon"
+              />
+            </label>
+            <button
+              v-if="!appliedCoupon"
+              type="button"
+              class="sub-coupon__apply"
+              :disabled="!couponInput.trim() || couponApplying || !selectedPlan"
+              @click="applyCoupon"
+            >{{ couponApplying ? '验券中…' : '应用' }}</button>
+            <button
+              v-else
+              type="button"
+              class="sub-coupon__apply"
+              aria-label="移除优惠券"
+              @click="clearCoupon"
+            >移除</button>
+          </div>
+          <p v-if="appliedCoupon" class="sub-coupon__ok">优惠券 <b>{{ appliedCoupon }}</b> 已应用，下单自动抵扣</p>
+          <p v-else-if="couponError" class="sub-coupon__err">{{ couponError }}</p>
         </div>
 
-        <!-- 右侧结算栏（桌面）：套餐·时长、总价＋约合、续费周期、
-             优惠码、渐变主钮；手机端在主列下方整块呈现，无吸底条 -->
-        <aside v-if="selectedPlan" class="sub-rail" aria-label="结算">
-          <div class="rail-card">
-            <div class="rail-row rail-row--head">
-              <span>{{ selectedPlan.name }} · {{ months }} 个月</span>
-            </div>
-            <div class="rail-total">
-              <b>{{ moneyText(payableTotal) }}</b>
-              <s v-if="savedTotal > 0">{{ moneyText(listTotal) }}</s>
-            </div>
-            <p class="rail-approx">约合人民币 {{ moneyText(payableTotal) }}</p>
-            <div class="rail-row">
-              <span>续费周期</span>
-              <b>{{ cycleText }}</b>
-            </div>
-            <div v-if="couponCut > 0" class="rail-row rail-row--cut">
-              <span>{{ couponCutLabel }}</span>
-              <b>−{{ moneyText(couponCut) }}</b>
-            </div>
-            <div v-if="switchCredit > 0" class="rail-row rail-row--cut">
-              <span>旧套餐已抵扣</span>
-              <b>−{{ moneyText(switchCredit) }}</b>
-            </div>
-            <div class="rail-row">
-              <span>钱包余额</span>
-              <b>{{ moneyText(walletBalance) }}</b>
-            </div>
-
-            <!-- 优惠码：接现有 coupon 试算口（与下单同一套口径） -->
-            <div v-if="couponEnabled" class="sub-coupon">
-              <div class="sub-coupon__row">
-                <label class="sub-coupon__box">
-                  <Tag :size="17" aria-hidden="true" />
-                  <input
-                    v-model="couponInput"
-                    class="sub-coupon__input"
-                    type="text"
-                    placeholder="优惠码（可选）"
-                    aria-label="优惠码（可选）"
-                    maxlength="64"
-                    autocomplete="off"
-                    :disabled="!!appliedCoupon"
-                    @keydown.enter.prevent="applyCoupon"
-                  />
-                </label>
-                <button
-                  v-if="!appliedCoupon"
-                  type="button"
-                  class="sub-coupon__apply"
-                  :disabled="!couponInput.trim() || couponApplying || !selectedPlan"
-                  @click="applyCoupon"
-                >{{ couponApplying ? '验券中…' : '应用' }}</button>
-                <button
-                  v-else
-                  type="button"
-                  class="sub-coupon__apply"
-                  aria-label="移除优惠券"
-                  @click="clearCoupon"
-                >移除</button>
-              </div>
-              <p v-if="appliedCoupon" class="sub-coupon__ok">优惠券 <b>{{ appliedCoupon }}</b> 已应用，下单自动抵扣</p>
-              <p v-else-if="couponError" class="sub-coupon__err">{{ couponError }}</p>
-            </div>
-
-            <button
-              type="button"
-              class="rail-cta"
-              :disabled="ctaDisabled"
-              @click="openConfirm"
-            >{{ ctaText }}</button>
-            <p v-if="!walletEnabled" class="rail-note">钱包暂未开启，暂时无法购买</p>
-            <p v-else-if="balanceShortfall > 0" class="rail-note" role="alert">
-              钱包余额不足，还差 ¥ {{ fmtPrice(balanceShortfall) }}，充值后即可购买
-            </p>
+        <!-- 结算明细（页内小字行）：周期／抵扣／余额；吸底栏只放结论三件套 -->
+        <section v-if="selectedPlan" class="sub-summary" aria-label="结算明细">
+          <div class="sum-row">
+            <span>续费周期</span>
+            <b>{{ cycleText }}</b>
           </div>
-        </aside>
+          <div v-if="couponCut > 0" class="sum-row sum-row--cut">
+            <span>{{ couponCutLabel }}</span>
+            <b>−{{ moneyText(couponCut) }}</b>
+          </div>
+          <div v-if="switchCredit > 0" class="sum-row sum-row--cut">
+            <span>旧套餐已抵扣</span>
+            <b>−{{ moneyText(switchCredit) }}</b>
+          </div>
+          <div class="sum-row">
+            <span>钱包余额</span>
+            <b>{{ moneyText(walletBalance) }}</b>
+          </div>
+          <p v-if="!walletEnabled" class="sum-note">钱包暂未开启，暂时无法购买</p>
+          <p v-else-if="balanceShortfall > 0" class="sum-note" role="alert">
+            钱包余额不足，还差 ¥ {{ fmtPrice(balanceShortfall) }}，充值后即可购买
+          </p>
+        </section>
       </div>
     </main>
+
+    <!-- 吸底结算栏（照友站 f039/f036）：常驻底部——左已选套餐·时长＋总价，
+         右彩虹主钮；点主钮仍先弹确认弹窗算明细账（业务口径不变） -->
+    <footer v-if="!loading && selectedPlan && realmPlans.length" class="sub-sticky">
+      <div class="sub-sticky__inner">
+        <div class="sub-sticky__left">
+          <span class="sub-sticky__name">{{ selectedPlan.name }} · {{ months }} 个月</span>
+          <span class="sub-sticky__total">{{ moneyText(payableTotal) }}<s v-if="savedTotal > 0">{{ moneyText(listTotal) }}</s></span>
+        </div>
+        <button
+          type="button"
+          class="sub-sticky__cta"
+          :disabled="ctaDisabled"
+          @click="openConfirm"
+        >{{ ctaText }}</button>
+      </div>
+    </footer>
 
     <!-- 确认弹窗（照友站）：先算明细账，确认才扣钱包余额 -->
     <UhdModal v-model="confirmOpen" :title="selectedPlan ? `订阅 ${selectedPlan.name}` : '订阅'" :width="420">
@@ -271,10 +265,12 @@
  *   控件联动；3/6 个月无折扣，仅年付＝11×月价。我方套餐仍以
  *   (总价, 总天数) 存储，月价＝总价÷基准月数由后端下发
  *   （启程 ¥18/月、远行 ¥15/月、环游 ¥12.5/月），前端不自算口径；
- * - 套餐呈现：对比表（行＝价格/流量/登录设备/子账号/下载/线路）
- *   ＋线路（服）分段切换，有几条显示几条；套餐名与价格用我方数据；
- * - 结算：右侧结算栏（套餐·时长、大总价＋约合人民币、续费周期、
- *   优惠码、渐变主钮按状态变文案），无吸底条；点主钮先弹确认
+ * - 套餐呈现：纵向全宽卡片列表（2026-11-15 照友站录屏 f039/f036 重做，
+ *   取代三列对比表——手机上第三档曾被挤出屏要横滑）；选中档白卡、
+ *   未选档无卡底；线路（服）分段切换，有几组显示几组、一组不显示；
+ *   套餐名与价格用我方数据；
+ * - 结算：吸底结算栏常驻（已选套餐·时长＋总价＋彩虹主钮），明细行
+ *   （续费周期/抵扣/余额）与优惠码在页内；点主钮先弹确认
  *   弹窗算明细账（余额/新套餐金额/旧套餐已抵扣/本需支付/购买后
  *   结余），确认才扣钱包余额——本站购买走钱包单轨（友站同形），
  *   网关下单口与充值链路不在本页；
@@ -602,6 +598,10 @@ function goBack() {
 /* ---------- 加载 ---------- */
 async function loadAll() {
   if (import.meta.env.VITE_FIXTURE === '1') {
+    // QA 慢加载：?slowload 时先停在中性加载态，便于拍加载首帧（仅夹具环境）
+    if (new URLSearchParams(location.search).has('slowload')) {
+      await new Promise((r) => setTimeout(r, 1800))
+    }
     plans.value = [
       { id: 1, name: '夹具甲', description: null, price: 10, duration_days: 30, monthly_price: 10, base_months: 1, features: null, entitlements: { monthly_traffic_bytes: 500 * 1024 ** 3 }, is_popular: false, realm_name: '线路甲' },
       { id: 2, name: '夹具乙', description: null, price: 30, duration_days: 30, monthly_price: 30, base_months: 1, features: null, entitlements: { monthly_traffic_bytes: 1500 * 1024 ** 3 }, is_popular: false, realm_name: '线路甲' },
@@ -654,16 +654,19 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* ============ 订阅服务页（照友站形态：对比表＋右栏结算） ============ */
+/* ============ 订阅服务页（2026-11-15 照友站录屏 f033–f042 形态）
+   纵向卡片列表＋页内时长/优惠码＋吸底结算栏；字号按友站小尺度：
+   页标题 19 / 档名 19 / 价格 29 / 规格标签 13·值 14 / 分段 14 /
+   吸底栏名 12.5·总价 19·主钮 16。桌面同结构居中收窄，不另做一套。 ============ */
 .sub-page {
   min-height: 100dvh;
-  background: var(--uhd-d-bg);
-  color: var(--uhd-d-text);
+  background: var(--uhd-l-bg);
+  color: var(--uhd-l-text);
   font-family: var(--uhd-font-sans);
   -webkit-font-smoothing: antialiased;
 }
 .sub-head {
-  max-width: 1120px;
+  max-width: 760px;
   margin: 0 auto;
   padding: calc(14px + env(safe-area-inset-top)) 16px 6px;
   display: flex;
@@ -681,48 +684,61 @@ onMounted(() => {
   border: none;
   border-radius: 999px;
   background: transparent;
-  color: var(--uhd-d-text);
+  color: var(--uhd-l-text);
   cursor: pointer;
 }
-.sub-back:active { background: rgba(255, 255, 255, 0.08); }
+.sub-back:active { background: rgba(17, 17, 20, 0.06); }
 .sub-title {
   flex: 1 1 auto;
   margin: 0;
-  font-size: 20px;
+  font-size: 19px;
   font-weight: var(--uhd-fw-extrabold);
   letter-spacing: -0.01em;
-  color: var(--uhd-d-text);
+  color: var(--uhd-l-text);
 }
 .sub-body {
-  max-width: 1120px;
+  max-width: 760px;
   margin: 0 auto;
-  padding: 14px 16px 64px;
+  padding: 12px 16px 132px;
 }
 .sub-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 26px;
-  align-items: start;
-}
-@media (min-width: 1024px) {
-  .sub-layout { grid-template-columns: minmax(0, 1fr) 330px; }
-  .sub-rail { position: sticky; top: 24px; }
-}
-.sub-main {
   display: flex;
   flex-direction: column;
-  gap: 26px;
+  gap: 22px;
   min-width: 0;
 }
 
-/* 骨架与状态 */
+/* 加载态：中性转圈＋浅色骨架（跟随主题，禁止整块纯黑） */
+.sub-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding-top: 26px;
+}
+.sub-spinner {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 3px solid var(--uhd-l-border);
+  border-top-color: var(--uhd-l-text-3);
+  animation: sub-spin 0.9s linear infinite;
+}
+@keyframes sub-spin { to { transform: rotate(360deg); } }
+.sub-loading__text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--uhd-l-text-2);
+}
 .sub-skeleton {
-  height: 320px;
-  border-radius: var(--uhd-r-lg);
-  background: linear-gradient(100deg, #101010 40%, #181818 50%, #101010 60%);
+  width: 100%;
+  height: 168px;
+  border-radius: 20px;
+  background: linear-gradient(100deg, #ececef 40%, #f4f4f6 50%, #ececef 60%);
   background-size: 200% 100%;
   animation: sub-shimmer 1.4s infinite;
 }
+.sub-skeleton--short { height: 96px; }
 @keyframes sub-shimmer {
   from { background-position: 120% 0; }
   to { background-position: -80% 0; }
@@ -732,183 +748,186 @@ onMounted(() => {
   flex-direction: column;
   align-items: flex-start;
   gap: 12px;
-  padding: 26px 22px;
-  border-radius: var(--uhd-r-lg);
-  background: var(--uhd-d-surface);
-  border: 1px solid var(--uhd-d-border);
-  color: var(--uhd-d-text-2);
-  font-size: var(--uhd-fs-body);
+  padding: 24px 20px;
+  border-radius: 20px;
+  background: var(--uhd-l-surface);
+  border: 1px solid var(--uhd-l-border);
+  color: var(--uhd-l-text-2);
+  font-size: 14px;
 }
 .sub-state p { margin: 0; }
-.sub-state__note { color: var(--uhd-d-text-3); font-size: var(--uhd-fs-caption); }
+.sub-state__note { color: var(--uhd-l-text-3); font-size: 12.5px; }
 .sub-retry {
-  padding: 9px 18px;
+  padding: 8px 16px;
   border-radius: 999px;
-  border: 1px solid var(--uhd-d-border);
+  border: 1px solid var(--uhd-l-border);
   background: transparent;
-  color: var(--uhd-d-text);
-  font-size: var(--uhd-fs-caption);
+  color: var(--uhd-l-text);
+  font-size: 13px;
   cursor: pointer;
 }
-.sub-note { margin: 0; color: var(--uhd-d-text-3); font-size: var(--uhd-fs-caption); }
+.sub-note { margin: -12px 0 0; color: var(--uhd-l-text-2); font-size: 13px; line-height: 1.55; }
 
-/* 线路分段 */
+/* 线路分段（友站 f039：浅灰胶囊高约 40（含 3px 内边距）、段高 34、选中白底轻阴影） */
 .sub-seg {
-  display: inline-flex;
-  gap: 4px;
-  padding: 4px;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
   border-radius: 999px;
-  background: var(--uhd-d-surface);
-  border: 1px solid var(--uhd-d-border);
-  align-self: flex-start;
+  background: var(--uhd-l-seg-bg);
   max-width: 100%;
   overflow-x: auto;
 }
 .sub-seg__item {
+  flex: 1 1 0;
   border: none;
   background: transparent;
-  color: var(--uhd-d-text-2);
+  color: var(--uhd-l-text-2);
   border-radius: 999px;
-  padding: 7px 16px;
-  font-size: var(--uhd-fs-caption);
-  font-weight: 600;
+  height: 34px;
+  min-height: 34px; /* 压过全站移动端 button{min-height:44px}，照友站胶囊高 34 */
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
 }
 .sub-seg__item--on {
-  background: var(--uhd-d-text);
-  color: var(--uhd-d-bg);
+  background: #ffffff;
+  color: var(--uhd-l-text);
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(17, 17, 20, 0.10);
 }
 
-/* 对比表 */
-.cmp {
-  border-radius: var(--uhd-r-lg);
-  background: var(--uhd-d-surface);
-  border: 1px solid var(--uhd-d-border);
-  overflow-x: auto;
-}
-.cmp-table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  min-width: 430px;
-}
-.cmp-sr {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-}
-.cmp-corner { width: 76px; }
-.cmp-colhead {
-  padding: 16px 10px 14px;
-  cursor: pointer;
-  border-bottom: 1px solid var(--uhd-d-border);
-  vertical-align: top;
-  text-align: center;
-}
-.cmp-colhead--on,
-.cmp-cell--on {
-  background: rgba(255, 255, 255, 0.06);
-}
-.cmp-plan {
+/* 套餐卡片列表（友站 f039：选中白卡圆角 20/内边距 17/轻阴影；未选无卡底） */
+.plan-list {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 6px;
 }
-.cmp-price {
-  display: block;
-  margin-top: 8px;
-  font-size: 36px;
-  font-weight: var(--uhd-fw-extrabold);
-  letter-spacing: -0.03em;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
+.plan-card {
+  border-radius: 20px;
+  padding: 16px 17px 14px;
+  cursor: pointer;
 }
-.cmp-price__sub {
-  display: block;
-  margin-top: 6px;
-  font-size: 13px;
-  color: var(--uhd-d-text-3);
+.plan-card--on {
+  background: var(--uhd-l-surface);
+  box-shadow: 0 10px 34px rgba(17, 17, 20, 0.08);
 }
-.cmp-plan__name {
-  font-size: var(--uhd-fs-title);
-  font-weight: var(--uhd-fw-extrabold);
-  color: var(--uhd-d-text);
+.plan-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
 }
 .plan-radio {
   flex: 0 0 auto;
   width: 20px;
   height: 20px;
+  margin-top: 3px;
   border-radius: 50%;
-  border: 2px solid var(--uhd-d-text-3);
+  border: 2px solid #c9c9cf;
   background: transparent;
   position: relative;
 }
-.plan-radio--on { border-color: var(--uhd-d-text); }
+.plan-radio--on { border-color: var(--uhd-l-text); background: var(--uhd-l-text); }
 .plan-radio--on::after {
   content: '';
   position: absolute;
-  inset: 3px;
+  inset: 4px;
   border-radius: 50%;
-  background: var(--uhd-d-text);
+  background: #ffffff;
+}
+.plan-card__name {
+  flex: 0 1 auto;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--uhd-l-text);
+  line-height: 1.3;
 }
 .plan-current {
-  font-size: var(--uhd-fs-micro);
+  flex: 0 0 auto;
+  margin-top: 3px;
+  font-size: 11px;
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 999px;
   background: var(--uhd-rainbow, linear-gradient(100deg, #2f8fe0, #c46c90 55%, #f2a45a));
   color: #fff;
 }
-.cmp-rowhead {
-  padding: 11px 12px;
-  text-align: left;
-  font-size: var(--uhd-fs-aux);
-  font-weight: 500;
-  color: var(--uhd-d-text-3);
+.plan-card__pricebox {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+}
+.plan-card__price {
+  font-size: 29px;
+  font-weight: var(--uhd-fw-extrabold);
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  color: var(--uhd-l-text);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.cmp-cell {
-  padding: 11px 10px;
-  text-align: center;
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-d-text-2);
-  cursor: pointer;
+.plan-card__price small {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--uhd-l-text-3);
 }
-.cmp-table tbody tr + tr .cmp-cell,
-.cmp-table tbody tr + tr .cmp-rowhead { border-top: 1px solid var(--uhd-d-border); }
-.cmp-colhead--on, .cmp-cell--on {
-  background: rgba(255, 255, 255, 0.07);
-  color: var(--uhd-d-text);
+.plan-card__annual {
+  font-size: 12.5px;
+  color: var(--uhd-l-text-3);
+  font-variant-numeric: tabular-nums;
+}
+.plan-specs {
+  margin-top: 13px;
+  padding-top: 12px;
+  border-top: 1px solid var(--uhd-l-divider);
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.plan-spec {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.plan-spec__label {
+  flex: 0 0 64px;
+  font-size: 13px;
+  color: var(--uhd-l-text-2);
+}
+.plan-spec__value {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--uhd-l-text);
 }
 
-/* 时长 */
-.sub-dur {
-  border-radius: var(--uhd-r-lg);
-  background: var(--uhd-d-surface);
-  border: 1px solid var(--uhd-d-border);
-  padding: 18px;
-}
+/* 时长（友站 f036：页内平铺；滑杆浅灰轨＋白拇指黑描边，禁止黑轨） */
+.sub-dur { padding: 2px 2px 0; }
 .sub-dur__head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
-.sub-dur__label { font-size: var(--uhd-fs-caption); color: var(--uhd-d-text-2); }
-.sub-dur__value { font-size: var(--uhd-fs-caption); color: var(--uhd-d-text-2); }
-.sub-dur__value b { font-size: var(--uhd-fs-h3); color: var(--uhd-d-text); }
+.sub-dur__label { font-size: 14px; color: var(--uhd-l-text-2); }
+.sub-dur__value { font-size: 14px; color: var(--uhd-l-text-2); }
+.sub-dur__value b { font-size: 18px; color: var(--uhd-l-text); }
 .sub-slider {
   width: 100%;
   appearance: none;
   -webkit-appearance: none;
-  height: 6px;
+  height: 22px; /* 命中区 22，轨道只画中间 6px（全局 input 内边距必须清零，否则轨道被撑厚） */
+  padding: 0;
+  margin: 0;
+  border: none;
   border-radius: 999px;
-  background: linear-gradient(to right, var(--uhd-d-text) var(--fill, 0%), rgba(255, 255, 255, 0.14) var(--fill, 0%));
+  background: linear-gradient(to right, var(--uhd-l-text-3) var(--fill, 0%), var(--uhd-l-border) var(--fill, 0%)) center / 100% 6px no-repeat;
   outline: none;
   cursor: pointer;
 }
@@ -917,17 +936,17 @@ onMounted(() => {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #fff;
-  border: none;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  background: #ffffff;
+  border: 2px solid var(--uhd-l-text);
+  box-shadow: 0 2px 8px rgba(17, 17, 20, 0.18);
 }
 .sub-slider::-moz-range-thumb {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #fff;
-  border: none;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  background: #ffffff;
+  border: 2px solid var(--uhd-l-text);
+  box-shadow: 0 2px 8px rgba(17, 17, 20, 0.18);
 }
 .sub-dur__caps {
   display: flex;
@@ -936,88 +955,41 @@ onMounted(() => {
 }
 .sub-cap {
   flex: 1;
-  padding: 9px 0;
+  height: 38px;
+  min-height: 38px; /* 同上：压过全站 44px 触控下限，照友站分段高 */
   border-radius: 999px;
-  border: 1px solid var(--uhd-d-border);
-  background: transparent;
-  color: var(--uhd-d-text-2);
-  font-size: var(--uhd-fs-caption);
-  font-weight: 600;
+  border: 1px solid var(--uhd-l-border);
+  background: #ffffff;
+  color: var(--uhd-l-text-2);
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
 }
 .sub-cap--on {
-  background: var(--uhd-d-text);
-  border-color: var(--uhd-d-text);
-  color: var(--uhd-d-bg);
+  background: var(--uhd-l-text);
+  border-color: var(--uhd-l-text);
+  color: #ffffff;
+  font-weight: 600;
 }
 .sub-dur__hint {
-  margin: 12px 0 0;
-  font-size: var(--uhd-fs-aux);
-  color: var(--uhd-d-text-3);
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--uhd-l-text-3);
 }
 
-/* 结算栏 */
-.rail-card {
-  border-radius: var(--uhd-r-lg);
-  background: var(--uhd-d-surface);
-  border: 1px solid var(--uhd-d-border);
-  padding: 20px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.rail-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-d-text-2);
-}
-.rail-row b { color: var(--uhd-d-text); font-weight: 600; }
-.rail-row--head { font-size: var(--uhd-fs-lead); font-weight: 700; color: var(--uhd-d-text); }
-.rail-row--cut b { color: #f2a45a; }
-.rail-total {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-.rail-total b {
-  font-size: 30px;
-  font-weight: var(--uhd-fw-extrabold);
-  color: var(--uhd-d-text);
-}
-.rail-total s { color: var(--uhd-d-text-3); font-size: var(--uhd-fs-caption); }
-.rail-approx { margin: -6px 0 2px; font-size: var(--uhd-fs-aux); color: var(--uhd-d-text-3); }
-.rail-cta {
-  margin-top: 8px;
-  width: 100%;
-  padding: 14px 0;
-  border: none;
-  border-radius: 999px;
-  font-size: var(--uhd-fs-lead);
-  font-weight: 700;
-  color: #fff;
-  cursor: pointer;
-  background: var(--uhd-rainbow, linear-gradient(100deg, #2f8fe0, #c46c90 55%, #f2a45a));
-  transition: transform 0.12s ease, opacity 0.12s ease;
-}
-.rail-cta:active:not(:disabled) { transform: scale(0.98); }
-.rail-cta:disabled { opacity: 0.45; cursor: not-allowed; }
-.rail-note { margin: 0; font-size: var(--uhd-fs-aux); color: #f2a45a; }
-
-/* 优惠码（栏内） */
-.sub-coupon { margin-top: 4px; }
+/* 优惠码（友站 f036：圆角输入框＋应用钮同行） */
 .sub-coupon__row { display: flex; gap: 8px; }
 .sub-coupon__box {
   flex: 1;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 12px;
-  border-radius: 12px;
-  border: 1px solid var(--uhd-d-border);
-  color: var(--uhd-d-text-3);
+  padding: 0 14px;
+  height: 46px;
+  border-radius: 14px;
+  border: 1px solid var(--uhd-l-border);
+  background: #ffffff;
+  color: var(--uhd-l-text-3);
   min-width: 0;
 }
 .sub-coupon__input {
@@ -1025,25 +997,106 @@ onMounted(() => {
   min-width: 0;
   border: none;
   background: transparent;
-  color: var(--uhd-d-text);
-  font-size: var(--uhd-fs-caption);
-  padding: 10px 0;
+  color: var(--uhd-l-text);
+  font-size: 14px;
   outline: none;
 }
 .sub-coupon__apply {
   flex: 0 0 auto;
-  padding: 0 16px;
-  border-radius: 12px;
-  border: 1px solid var(--uhd-d-border);
-  background: transparent;
-  color: var(--uhd-d-text);
-  font-size: var(--uhd-fs-caption);
+  padding: 0 18px;
+  border-radius: 14px;
+  border: 1px solid var(--uhd-l-border);
+  background: #ffffff;
+  color: var(--uhd-l-text);
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
 }
 .sub-coupon__apply:disabled { opacity: 0.45; cursor: not-allowed; }
-.sub-coupon__ok { margin: 8px 0 0; font-size: var(--uhd-fs-aux); color: var(--uhd-d-text-2); }
-.sub-coupon__err { margin: 8px 0 0; font-size: var(--uhd-fs-aux); color: #ff7a7a; }
+.sub-coupon__ok { margin: 8px 0 0; font-size: 12.5px; color: var(--uhd-l-text-2); }
+.sub-coupon__err { margin: 8px 0 0; font-size: 12.5px; color: #d92d20; }
+
+/* 结算明细（页内小字） */
+.sub-summary {
+  border-top: 1px solid var(--uhd-l-divider);
+  padding-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.sum-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--uhd-l-text-2);
+}
+.sum-row b { color: var(--uhd-l-text); font-weight: 600; }
+.sum-row--cut b { color: #e07b39; }
+.sum-note { margin: 0; font-size: 12.5px; color: #e07b39; }
+
+/* 吸底结算栏（友站 f039/f036：白/半透底＋顶发丝线；左名·时长＋总价，右彩虹胶囊钮高 46） */
+.sub-sticky {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border-top: 1px solid var(--uhd-l-divider);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.sub-sticky__inner {
+  max-width: 760px;
+  margin: 0 auto;
+  min-height: 68px;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.sub-sticky__left {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.sub-sticky__name {
+  font-size: 12.5px;
+  color: var(--uhd-l-text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sub-sticky__total {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 19px;
+  font-weight: var(--uhd-fw-extrabold);
+  color: var(--uhd-l-text);
+  font-variant-numeric: tabular-nums;
+}
+.sub-sticky__total s { font-size: 12.5px; font-weight: 500; color: var(--uhd-l-text-3); }
+.sub-sticky__cta {
+  flex: 0 0 auto;
+  height: 46px;
+  padding: 0 34px;
+  border-radius: 999px;
+  border: 1.5px solid transparent;
+  background: var(--uhd-rainbow-soft) padding-box, var(--uhd-rainbow) border-box;
+  color: #111111;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+.sub-sticky__cta:active:not(:disabled) { transform: scale(0.98); }
+.sub-sticky__cta:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* 确认弹窗明细 */
 .cfm { display: flex; flex-direction: column; gap: 10px; }
@@ -1052,7 +1105,7 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: var(--uhd-fs-caption);
+  font-size: 13.5px;
   color: var(--uhd-l-text-2);
 }
 .cfm-row b { color: var(--uhd-l-text); font-weight: 600; }
@@ -1060,15 +1113,15 @@ onMounted(() => {
 .cfm-row--total {
   border-top: 1px solid rgba(128, 128, 140, 0.25);
   padding-top: 10px;
-  font-size: var(--uhd-fs-lead);
+  font-size: 15px;
   font-weight: 700;
 }
 .cfm-neg { color: #d92d20 !important; }
-.cfm-warn { margin: 2px 0 0; font-size: var(--uhd-fs-aux); color: #d92d20; }
+.cfm-warn { margin: 2px 0 0; font-size: 12.5px; color: #d92d20; }
 .cfm-btn {
   padding: 11px 22px;
   border-radius: 999px;
-  font-size: var(--uhd-fs-caption);
+  font-size: 13.5px;
   font-weight: 700;
   cursor: pointer;
   border: 1px solid rgba(128, 128, 140, 0.35);
@@ -1081,16 +1134,30 @@ onMounted(() => {
   background: var(--uhd-rainbow, linear-gradient(100deg, #2f8fe0, #c46c90 55%, #f2a45a));
 }
 .cfm-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-html[data-theme='light'] .sub-page {
-  --uhd-d-bg: #f5f5f7;
-  --uhd-d-text: #111111;
-  --uhd-d-text-2: #3a3a3c;
-  --uhd-d-text-3: #8e8e93;
-  --uhd-d-surface: #ffffff;
-  --uhd-d-border: #e6e6ea;
+
+/* 深色主题：同一套结构换深色板，骨架/滑杆/吸底栏同步跟随，禁止纯黑块 */
+html[data-theme='dark'] .sub-page {
+  background: var(--uhd-d-bg);
+  color: var(--uhd-d-text);
+  --uhd-l-surface: #17171a;
+  --uhd-l-seg-bg: #1d1d20;
+  --uhd-l-text: #ffffff;
+  --uhd-l-text-2: #a7a7ad;
+  --uhd-l-text-3: #8e8e96;
+  --uhd-l-border: #2a2a2e;
+  --uhd-l-divider: #26262a;
+  --uhd-l-bg: #050505;
 }
-html[data-theme='light'] .cmp-colhead--on,
-html[data-theme='light'] .cmp-cell--on {
-  background: #ffffff;
+html[data-theme='dark'] .plan-card--on { box-shadow: none; }
+html[data-theme='dark'] .sub-skeleton {
+  background: linear-gradient(100deg, #17171a 40%, #1f1f23 50%, #17171a 60%);
+  background-size: 200% 100%;
 }
+html[data-theme='dark'] .sub-seg__item--on { background: #2e2e33; color: #ffffff; }
+html[data-theme='dark'] .sub-cap,
+html[data-theme='dark'] .sub-coupon__box,
+html[data-theme='dark'] .sub-coupon__apply { background: #17171a; }
+html[data-theme='dark'] .sub-cap--on { background: #ffffff; border-color: #ffffff; color: #111111; }
+html[data-theme='dark'] .plan-radio--on::after { background: #111111; }
+html[data-theme='dark'] .sub-sticky { background: rgba(13, 13, 15, 0.92); }
 </style>
