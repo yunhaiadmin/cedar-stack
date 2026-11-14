@@ -335,7 +335,7 @@ def watch_duration_rank(db, period: str, limit: int = 10) -> list[dict]:
     - 上榜过滤与站内时长榜一致：show_on_leaderboard 为 False 的用户
       不上榜（NULL 视为允许）；总秒数 <= 0 不上榜。
     - 排序：秒数降序，同秒按 user_id 升序，保证同分名次稳定。
-    - 用户名展示口径与 bot /rank、站内时长榜一致（WebUser.username 原样）。
+    - 用户名展示口径与站内时长榜一致（WebUser.username 原样）。
     """
     from backend.emby_server.portal import leaderboard_window
     from backend.models import WebUser

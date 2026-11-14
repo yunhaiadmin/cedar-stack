@@ -58,10 +58,10 @@ def _no_real_timers(monkeypatch):
     monkeypatch.setattr(ephemeral, "Timer", _FakeTimer)
 
 
-def _user(db, tg=TG, name="alice", points=42, is_staff=False):
+def _user(db, tg=TG, name="alice", is_staff=False):
     row = models.WebUser(
         username=name, password_hash="x", telegram_id=tg,
-        points=points, vitality=14, is_staff=is_staff,
+        is_staff=is_staff,
     )
     db.add(row)
     db.commit()
@@ -97,7 +97,7 @@ def test_home_row_and_back_markup():
         {"text": "♻️ 主界面", "callback_data": "menu:main"}]
     markup = layout.back_markup()
     assert markup["inline_keyboard"] == [layout.home_row()]
-    markup_in = {"inline_keyboard": [[{"text": "a", "callback_data": "menu:points"}]]}
+    markup_in = {"inline_keyboard": [[{"text": "a", "callback_data": "menu:account"}]]}
     merged = layout.append_home_row(markup_in)
     assert merged["inline_keyboard"][-1] == layout.home_row()
     assert len(markup_in["inline_keyboard"]) == 1  # 不改原 markup
@@ -291,16 +291,16 @@ def _cq(action, photo=False, tg=TG, chat=None):
 def test_callback_photo_message_edits_caption(db, monkeypatch):
     _user(db)
     state = _patch_callback_sender(monkeypatch)
-    callbacks.handle_callback(db, _cq("points", photo=True))
-    assert state["caption"] and "能量余额" in state["caption"][0]
+    callbacks.handle_callback(db, _cq("account", photo=True))
+    assert state["caption"] and "账号名称" in state["caption"][0]
     assert state["text"] == []
 
 
 def test_callback_legacy_text_message_edits_text(db, monkeypatch):
     _user(db)
     state = _patch_callback_sender(monkeypatch)
-    callbacks.handle_callback(db, _cq("points", photo=False))
-    assert state["text"] and "能量余额" in state["text"][0]
+    callbacks.handle_callback(db, _cq("account", photo=False))
+    assert state["text"] and "账号名称" in state["text"][0]
     assert state["caption"] == []
 
 

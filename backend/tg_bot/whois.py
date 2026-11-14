@@ -441,7 +441,6 @@ def render_whois_lite(db, user, tg_display_name: str | None = None) -> str:
                    f"Lv.{info['level']} "
                    f"{html.escape(str(info['name']))}"),
         layout.row("📦", "订阅", _subscription_lite_line(db, user.id)),
-        layout.row("🍒", "能量余额", int(getattr(user, "points", 0) or 0)),
         layout.row("🔗", "网盘绑定", _binding_lite_line(db, user.id)),
         layout.row("🚦", "账号状态", status),
     ]

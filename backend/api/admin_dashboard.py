@@ -447,25 +447,6 @@ def get_detail_tables(admin: Any, db: Session) -> dict:
                 "status": o.status or "",
                 "created_at": _iso(o.created_at),
             })
-        recs = (
-            db.query(models.RechargeOrder, models.WebUser.username,
-                     models.RechargePackage.name)
-            .join(models.WebUser, models.WebUser.id == models.RechargeOrder.user_id)
-            .outerjoin(models.RechargePackage,
-                       models.RechargePackage.id == models.RechargeOrder.package_id)
-            .order_by(models.RechargeOrder.created_at.desc())
-            .limit(_DETAIL_ROW_LIMIT)
-            .all()
-        )
-        for o, uname, pkg_name in recs:
-            merged.append({
-                "username": uname,
-                "item": pkg_name or "充值订单",
-                "kind": "充值",
-                "amount": float(o.price or 0),
-                "status": o.status or "",
-                "created_at": _iso(o.created_at),
-            })
         merged.sort(key=lambda r: r["created_at"], reverse=True)
         return merged[:_DETAIL_ROW_LIMIT]
 

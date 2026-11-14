@@ -52,8 +52,7 @@ def db():
 
 
 def _user(db, tg, name, staff=False, **kw):
-    fields = {"password_hash": "x", "telegram_id": tg, "points": 10,
-              "vitality": 14, "is_active": True, "is_staff": staff}
+    fields = {"password_hash": "x", "telegram_id": tg, "is_active": True, "is_staff": staff}
     # 生产 staff 必有角色；测试默认 operator（可写），显式传 role 的用例
     # （PA-056 守卫等）不受影响。角色门用例见 test_tg_bot_admin_roles.py。
     if staff and "admin_role" not in kw:
@@ -109,7 +108,7 @@ def test_whois_group_opens_panel_with_buttons(db):
     assert marker == "__ephemeral__"
     assert receiver == STAFF_TG
     assert "账号速览" in text or "targetx" in text
-    assert "能量余额" in text  # 精简卡字段在
+    assert "等级" in text  # 精简卡字段在
     datas = _datas(markup)
     assert f"whois:bind:{target.id}" in datas
     assert not any(d.startswith("whois:cred") for d in datas)  # 资格页已删

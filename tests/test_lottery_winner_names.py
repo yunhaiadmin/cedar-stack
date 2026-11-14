@@ -30,7 +30,6 @@ def db():
     models.LotteryRoundEntry.__table__.create(engine, checkfirst=True)
     models.LotteryRoundWinner.__table__.create(engine, checkfirst=True)
     models.LotteryBlacklist.__table__.create(engine, checkfirst=True)
-    models.PointsLog.__table__.create(engine, checkfirst=True)
     Session = sessionmaker(bind=engine)
     session = Session()
     yield session

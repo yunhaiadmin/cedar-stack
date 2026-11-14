@@ -77,8 +77,9 @@ DEFAULT_PROPOSAL_CAP_LV4 = 2
 DEFAULT_DIRECT_CAP_LV5 = 1
 DEFAULT_DIRECT_CAP_LV6 = 2
 
-# 等级阈值兜底（等级体系已于 2026-11-14 删除，member_levels 表不再有
-# 种子维护）：表里还有 active 行时按表算，表空时按这组原默认阈值算。
+# 等级阈值（等级体系已于 2026-11-14 删除，member_levels 表与
+# web_users.member_xp 列已全清）：只剩这组原默认阈值内置保留，
+# 供治理族的等级口径函数继续引用。
 _DEFAULT_LEVEL_THRESHOLDS = [(1, 0), (2, 100), (3, 500), (4, 1500), (5, 5000), (6, 15000)]
 
 # ---- SystemConfig 奖品上限键与默认值（A-101） ----
@@ -110,29 +111,19 @@ def _config_int(db: Session, key: str, default: int) -> int:
 
 
 def user_level(db: Session, user_id: int) -> int:
-    """按 member_xp 纯计算等级（不写库）。
+    """按经验纯计算等级（不写库）。
 
-    阈值取 member_levels 表的 active 行；表空时回落 _DEFAULT_LEVEL_THRESHOLDS
-    （原 member_level.DEFAULT_LEVELS 的阈值，等级体系删除后就地保留）。
-    不信任 web_users.member_level 缓存列（可能滞后）。
+    等级体系已删除：member_levels 表与 web_users.member_xp 列均已全清，
+    阈值只用 _DEFAULT_LEVEL_THRESHOLDS 内置默认，经验已无落库来源
+    （getattr 兜底恒 0，现实际恒返回 Lv.1）。函数保留是给治理族
+    既有调用方一个稳定口径；治理族若复活，等级来源须另行设计。
     """
     user = db.query(models.WebUser).filter(models.WebUser.id == user_id).first()
     if user is None:
         return 1
-    xp = user.member_xp or 0
-    levels = (
-        db.query(models.MemberLevel)
-        .filter(models.MemberLevel.is_active.is_(True))
-        .order_by(models.MemberLevel.level.asc())
-        .all()
-    )
-    thresholds = (
-        [(lv.level, lv.xp_threshold or 0) for lv in levels]
-        if levels
-        else list(_DEFAULT_LEVEL_THRESHOLDS)
-    )
+    xp = getattr(user, "member_xp", 0) or 0
     level = 1
-    for lv, threshold in thresholds:
+    for lv, threshold in _DEFAULT_LEVEL_THRESHOLDS:
         if xp >= threshold:
             level = lv
     return level

@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 """等级公益服活动治理 Step 1 加权附议测试
 
-覆盖（设计稿 Step 1＋Q1／Q3／Q11）：
-1. 权重快照：公益服按投票时刻等级（Lv.1–Lv.6 → 1–6，封顶 6）；付费服恒为 1
-2. 快照不追溯：投票后升级，历史票权重不变；取消删行即扣减该票权重
-3. 加权排序：1 张 Lv.6 票（和 6）排在 3 张 Lv.1 票（和 3）之前，尽管人数少
+覆盖（设计稿 Step 1＋Q1／Q3／Q11；等级体系删除后按新口径收口）：
+1. 权重快照：等级列已删、无等级来源，公益服与付费服权重恒为 1
+   （原口径：公益服按投票时刻等级 Lv.1–Lv.6 → 1–6，封顶 6）
+2. 快照不追溯：投票后等级属性变化，历史票权重不变；取消删行即扣减该票权重
+3. 加权排序：无等级来源后加权和恒等于原始票数，排序与人数序一致
+   （原口径：1 张 Lv.6 票（和 6）排在 3 张 Lv.1 票（和 3）之前）
 4. 原始票数展示：RequestRecord 同时含 vote_count 与 weighted_vote_count
 5. 每日上限 20：默认 20 次；第 21 张新票 ValueError；取消删行即释放名额
    （附议取消是硬删除，无残留行可计“撤回不退还”——与求片撤回软删除不同）；
@@ -34,9 +36,9 @@ def db():
 
 
 def _user(db, username, level=None):
+    # level 参数保留兼容旧调用点：member_level 列已删除、等级无落库来源，
+    # 附议权重恒按 Lv.1 计，本参数不再传入构造器。
     kwargs = dict(username=username, password_hash="x", is_active=True)
-    if level is not None:
-        kwargs["member_level"] = level
     user = models.WebUser(**kwargs)
     db.add(user)
     db.commit()
@@ -83,6 +85,8 @@ def _vote_row(db, request_id, user_id):
 # ==================== 权重快照 ====================
 
 def test_weight_snapshot_free_realm_by_level(db):
+    # 等级体系删除后无等级来源：公益服权重不再按 Lv.1–Lv.6 分档，
+    # 旧 Lv.1/Lv.3/Lv.6 三名投票人快照恒为 1（原断言 1/3/6、加权和 10）。
     realm = _realm(db, "free1", "free")
     creator = _user(db, "creator")
     req = _req(db, creator, realm_id=realm.id)
@@ -93,9 +97,9 @@ def test_weight_snapshot_free_realm_by_level(db):
     media_seek.toggle_vote(db, voter3, req.id)
     media_seek.toggle_vote(db, voter6, req.id)
     assert _vote_row(db, req.id, voter1.id).weight_snapshot == 1
-    assert _vote_row(db, req.id, voter3.id).weight_snapshot == 3
-    assert _vote_row(db, req.id, voter6.id).weight_snapshot == 6
-    assert media_seek.weighted_votes_for(db, [req.id])[req.id] == 10
+    assert _vote_row(db, req.id, voter3.id).weight_snapshot == 1
+    assert _vote_row(db, req.id, voter6.id).weight_snapshot == 1
+    assert media_seek.weighted_votes_for(db, [req.id])[req.id] == 3
 
 
 def test_weight_snapshot_paid_realm_always_one(db):
@@ -115,7 +119,8 @@ def test_weight_snapshot_legacy_realm_when_request_has_no_realm(db):
     req = _req(db, creator, realm_id=None)
     voter3 = _user(db, "v3", level=3)
     media_seek.toggle_vote(db, voter3, req.id)
-    assert _vote_row(db, req.id, voter3.id).weight_snapshot == 3
+    # 无等级来源恒 Lv.1 权重（原断言按 Lv.3 得 3）
+    assert _vote_row(db, req.id, voter3.id).weight_snapshot == 1
 
 
 def test_weight_snapshot_no_realm_falls_back_to_paid(db):
@@ -132,10 +137,11 @@ def test_weight_snapshot_cap_and_missing_level(db):
     creator = _user(db, "creator")
     req = _req(db, creator, realm_id=realm.id)
     voter99 = _user(db, "v99", level=99)
-    voter_none = _user(db, "vnone")  # member_level 缺省 → Lv.1
+    voter_none = _user(db, "vnone")  # member_level 列已删 → 恒 Lv.1
     media_seek.toggle_vote(db, voter99, req.id)
     media_seek.toggle_vote(db, voter_none, req.id)
-    assert _vote_row(db, req.id, voter99.id).weight_snapshot == 6
+    # 旧口径超界钳制到 6 的断言已无对象：两名投票人快照恒为 1
+    assert _vote_row(db, req.id, voter99.id).weight_snapshot == 1
     assert _vote_row(db, req.id, voter_none.id).weight_snapshot == 1
 
 
@@ -149,14 +155,15 @@ def test_snapshot_immutable_on_level_change_and_cancel_subtracts(db):
     b = _user(db, "b", level=6)
     media_seek.toggle_vote(db, a, req.id)
     media_seek.toggle_vote(db, b, req.id)
-    assert media_seek.weighted_votes_for(db, [req.id])[req.id] == 7
-    # A 升到 Lv.3：历史票权重不变（仍按 1 计）
+    # 无等级来源：两票快照恒为 1，加权和 2（原断言 Lv.1+Lv.6 得 7）
+    assert media_seek.weighted_votes_for(db, [req.id])[req.id] == 2
+    # A 的等级属性事后变化（getattr 兜底 seam）：历史票权重不变（仍按快照 1 计）
     a.member_level = 3
     db.commit()
-    assert media_seek.weighted_votes_for(db, [req.id])[req.id] == 7
-    # A 取消：扣减的是当初快照的 1，不是现在的 3
+    assert media_seek.weighted_votes_for(db, [req.id])[req.id] == 2
+    # A 取消：扣减的是当初快照的 1
     media_seek.toggle_vote(db, a, req.id)
-    assert media_seek.weighted_votes_for(db, [req.id])[req.id] == 6
+    assert media_seek.weighted_votes_for(db, [req.id])[req.id] == 1
     db.refresh(req)
     assert req.vote_count == 1
 
@@ -177,8 +184,9 @@ def test_weighted_ordering_beats_raw_count(db):
         .order_by(media_seek.weighted_vote_ordering().desc())
         .all()
     )
-    # 加权和：high=6 > low=3；原始人数则相反（1 < 3）
-    assert [r.id for r in rows] == [high.id, low.id]
+    # 无等级来源后加权和恒等于原始票数：low=3 > high=1，
+    # 加权排序与原始人数排序一致（原断言 high 的 Lv.6 单票 6 > low 三票 3）
+    assert [r.id for r in rows] == [low.id, high.id]
 
 
 # ==================== 原始票数展示 ====================
@@ -195,7 +203,8 @@ def test_record_carries_both_raw_and_weighted(db):
         weighted_vote_count=media_seek.weighted_votes_for(db, [req.id])[req.id],
     )
     assert rec.vote_count == 2
-    assert rec.weighted_vote_count == 7
+    # 无等级来源：加权和恒等于原始票数（原断言 Lv.1+Lv.6 得 7）
+    assert rec.weighted_vote_count == 2
 
 
 # ==================== 每日上限 ====================
@@ -247,7 +256,8 @@ def test_toggle_vote_return_includes_weighted(db):
     result = media_seek.toggle_vote(db, voter, req.id)
     assert result["voted"] is True
     assert result["vote_count"] == 1
-    assert result["weighted_vote_count"] == 3
+    # 无等级来源恒 Lv.1 权重（原断言按 Lv.3 得 3）
+    assert result["weighted_vote_count"] == 1
 
 
 # ==================== 原有规则回归 ====================

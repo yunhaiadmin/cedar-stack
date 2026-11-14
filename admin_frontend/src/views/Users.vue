@@ -899,17 +899,11 @@ function fmtCount(n: number | null | undefined): string {
 
             <el-tab-pane label="订单" name="orders">
               <EmptyState
-                v-if="!detail.orders.recharge.length && !detail.orders.subscription.length"
+                v-if="!detail.orders.subscription.length"
                 compact
                 :icon="Wallet"
                 title="暂无订单"
               />
-              <div v-for="o in detail.orders.recharge" :key="o.order_id" class="line-row">
-                <span class="au-badge au-badge-amber line-tag">充值</span>
-                <span class="line-desc">{{ o.item_name }}</span>
-                <span class="line-amount">¥{{ o.amount }}</span>
-                <span class="line-date">{{ fmtDate(o.created_at) }}</span>
-              </div>
               <div v-for="o in detail.orders.subscription" :key="o.order_id" class="line-row">
                 <span class="au-badge au-badge-amber line-tag">订阅</span>
                 <span class="line-desc">{{ o.item_name }}</span>

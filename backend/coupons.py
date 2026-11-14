@@ -120,15 +120,7 @@ def resolve_item(db: Session, kind: str, item_id: int) -> tuple[Decimal, Optiona
         if not plan:
             raise HTTPException(status_code=404, detail="套餐不存在")
         return _money(plan.price), plan.realm_id, plan.name
-    if kind == "recharge":
-        package = db.query(models.RechargePackage).filter(
-            models.RechargePackage.id == item_id,
-            models.RechargePackage.is_active == True,  # noqa: E712
-        ).first()
-        if not package:
-            raise HTTPException(status_code=404, detail="充值套餐不存在")
-        return _money(package.price), None, package.name
-    raise HTTPException(status_code=400, detail="kind 必须是 recharge 或 subscription")
+    raise HTTPException(status_code=400, detail="kind 必须是 subscription")
 
 
 def _invalid(message: str) -> HTTPException:
@@ -353,11 +345,8 @@ def sweep_stale_reservations(db: Session, hours: Optional[int] = None) -> dict:
     now = datetime.now()
     for usage in stale:
         summary["scanned"] += 1
-        order = db.query(models.RechargeOrder).filter(
-            models.RechargeOrder.order_id == usage.order_id).first()
-        if order is None:
-            order = db.query(models.SubscriptionOrder).filter(
-                models.SubscriptionOrder.order_id == usage.order_id).first()
+        order = db.query(models.SubscriptionOrder).filter(
+            models.SubscriptionOrder.order_id == usage.order_id).first()
 
         if order is None:
             release(db, usage.id)

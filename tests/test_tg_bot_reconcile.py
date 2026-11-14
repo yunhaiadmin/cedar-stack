@@ -137,7 +137,7 @@ def _seed(db, with_group=True):
 
 def _snapshot(db):
     users = {
-        u.id: (u.username, u.points)
+        u.id: (u.username,)
         for u in db.query(models.WebUser).all()
     }
     return (

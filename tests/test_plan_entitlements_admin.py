@@ -66,7 +66,7 @@ def _clear_entitlement_caches():
 
 @pytest.fixture()
 def admin(db):
-    u = models.WebUser(username="admin", password_hash="", points=0,
+    u = models.WebUser(username="admin", password_hash="",
                        is_active=True, is_staff=True)
     db.add(u)
     db.commit()
@@ -190,7 +190,7 @@ def test_update_plan_stores_and_clears_entitlements(db, admin):
 # ==================== 落库后同进程缓存即时失效 ====================
 
 def _make_subscriber(db, plan, username="buyer"):
-    u = models.WebUser(username=username, password_hash="", points=0,
+    u = models.WebUser(username=username, password_hash="",
                        is_active=True)
     db.add(u)
     db.flush()

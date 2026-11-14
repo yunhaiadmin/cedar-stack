@@ -1,4 +1,4 @@
-"""B2 测试：TG Bot 业务命令（/points /redeem；/checkin 已于 2026-11-13 摘除）。"""
+"""B2 测试：TG Bot 业务命令（/redeem；/points 已随能量删除摘除、/checkin 已于 2026-11-13 摘除）。"""
 from __future__ import annotations
 
 import sys
@@ -25,7 +25,6 @@ def db():
     # SystemConfig 表（store.get_value 需要）
     models.SystemConfig.__table__.create(engine, checkfirst=True)
     # B2 业务表
-    models.PointsLog.__table__.create(engine, checkfirst=True)
     models.ExchangeCode.__table__.create(engine, checkfirst=True)
     models.CodeRedemption.__table__.create(engine, checkfirst=True)
     Session = sessionmaker(bind=engine)
@@ -52,32 +51,9 @@ def _make_user(db, username="u1", tg_id=None, is_welfare=False):
     db.commit()
     return u
 
-def test_points_unbound(db):
-    text = handlers.handle_points(db, {"id": 910002}, 910002, "")
-    assert "/bind" in text
-
-
 def test_redeem_unbound(db):
     text = handlers.handle_redeem(db, {"id": 910003}, 910003, "ANYCODE")
     assert "/bind" in text
-
-
-def test_points_bound(db):
-    user = _make_user(db, username="u8", tg_id=910008)
-    user.points = 250
-    db.commit()
-    text = handlers.handle_points(db, {"id": 910008}, 910008, "")
-    assert "▎<b>我的能量</b>" in text
-    assert "✨ <b>能量余额</b> | 250" in text
-
-
-def test_points_card_has_no_vitality_row(db):
-    """活力已随货币删除下线（2026-11-13）：能量卡只剩余额行，
-    不再有活力数值行（其配置模块 backend.vitality 已删）。"""
-    user = _make_user(db, username="u9", tg_id=910009, is_welfare=True)
-    text = handlers.handle_points(db, {"id": 910009}, 910009, "")
-    assert "✨ <b>能量余额</b>" in text
-    assert "活力数值" not in text
 
 
 def test_redeem_no_args(db):
@@ -101,8 +77,6 @@ def test_redeem_points_code_rejected(db):
     db.commit()
     text = handlers.handle_redeem(db, {"id": 910012}, 910012, "test100")
     assert "兑换码类型不支持" in text
-    db.refresh(user)
-    assert user.points == 0
 
 
 def test_checkin_entry_removed(db):
@@ -132,11 +106,11 @@ def test_checkin_entry_removed(db):
     assert not any("签到" in t for t in sent)
 
 
-def test_router_dispatch_points_and_redeem_registered(db):
+def test_router_dispatch_redeem_registered(db):
     """router.commands 包含业务命令（自动享受可配置限流）。"""
     from backend.tg_bot.router import _user_cmd_allow
     # 间接验证：_user_cmd_allow 对命令生效且互不干扰
-    assert _user_cmd_allow(920001, "/points", 3.0) is True
-    assert _user_cmd_allow(920001, "/points", 3.0) is False  # 3 秒内重复被限
-    assert _user_cmd_allow(920001, "/redeem", 3.0) is True    # 不同命令独立计数
-    assert _user_cmd_allow(920001, "/chatpoints", 3.0) is True
+    assert _user_cmd_allow(920001, "/redeem", 3.0) is True
+    assert _user_cmd_allow(920001, "/redeem", 3.0) is False  # 3 秒内重复被限
+    assert _user_cmd_allow(920001, "/bind", 3.0) is True    # 不同命令独立计数
+    assert _user_cmd_allow(920001, "/request", 3.0) is True

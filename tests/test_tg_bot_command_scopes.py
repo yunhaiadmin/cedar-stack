@@ -107,10 +107,14 @@ def test_group_scope_only_group_executable():
         assert name not in group_set
     # /redeem 群里拒执行（删消息+提示私聊），不进群菜单
     assert "redeem" not in group_set
-    # 群内确实可执行的要在群菜单里（chatpoints 已并入 points，不单列）
-    for name in ("rank", "requestboard",
-                 "rules", "points"):
+    # 群内确实可执行的要在群菜单里
+    for name in ("requestboard", "rules"):
         assert name in group_set
+    # /points、/rank 已随能量体系删除：命令表与群集都不许再有
+    for name in ("points", "rank"):
+        assert name not in group_set
+        assert name not in command_scopes.GROUP_COMMANDS
+        assert name not in _names(poller.BOT_COMMANDS)
     # 签到入口已摘除（2026-11-13）：命令表与群集都不许再有
     assert "checkin" not in group_set
     assert "checkin" not in command_scopes.GROUP_COMMANDS
@@ -185,7 +189,7 @@ def test_register_scopes_targets_and_payloads(db, monkeypatch):
     # 名单群：scope=chat/群 id，群集（不含 login 等私聊命令）
     for gid in (-100111, -100222):
         group_cmds = by_scope[("chat", gid)]
-        assert "points" in _names(group_cmds)
+        assert "me" in _names(group_cmds)
         assert "checkin" not in _names(group_cmds)
         assert "login" not in _names(group_cmds)
         assert "govlog" not in _names(group_cmds)

@@ -199,10 +199,10 @@ def test_dice_and_result_fixed_schedule_not_slid(db, rig):
 
 # ---------- callbacks 层：群面板互动接滑动自毁 ----------
 
-def _user(db, tg=TG_USER, name="alice", points=1000):
+def _user(db, tg=TG_USER, name="alice"):
     row = models.WebUser(
         username=name, password_hash="x", telegram_id=tg,
-        points=points, vitality=14, is_staff=False)
+        is_staff=False)
     db.add(row)
     db.commit()
     return row

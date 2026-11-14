@@ -25,7 +25,6 @@ def db():
     models.WebUser.__table__.create(engine, checkfirst=True)
     models.SystemConfig.__table__.create(engine, checkfirst=True)
     models.ServerRealm.__table__.create(engine, checkfirst=True)
-    models.MemberLevel.__table__.create(engine, checkfirst=True)
     models.LotteryRound.__table__.create(engine, checkfirst=True)
     models.LotteryRoundPrize.__table__.create(engine, checkfirst=True)
     models.LotteryActivityProposal.__table__.create(engine, checkfirst=True)
@@ -62,31 +61,41 @@ def _make_realm(db, access_mode="free"):
     return realm
 
 
-def _make_levels(db):
-    for level, threshold in [(1, 0), (2, 100), (3, 500), (4, 1500), (5, 5000), (6, 15000)]:
-        db.add(
-            models.MemberLevel(
-                level=level,
-                name=f"Lv.{level}",
-                xp_threshold=threshold,
-                discount_pct=0,
-                is_active=True,
-            )
-        )
-    db.commit()
-
-
 def _make_user(db, username, xp=0, tg_id=None):
+    # xp 参数保留兼容旧调用点：member_xp 列已删除、经验无落库来源，
+    # user_level 恒为 Lv.1，本参数不再传入构造器。
     user = models.WebUser(
         username=username,
         password_hash="",
         telegram_id=tg_id if tg_id is not None else abs(hash(username)) % 10**9,
-        member_xp=xp,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
     return user
+
+
+def _seed_proposal(db, user, status="pending", title="用户提案活动", draw_at=None):
+    """直接播种提案行（提交入口已恒被等级门拦下，批准/拒绝/列表等
+    下游流程改由播种行驱动，断言口径不变）。"""
+    import json
+
+    row = models.LotteryActivityProposal(
+        user_id=user.id,
+        title=title,
+        chat_id=999,
+        lottery_type="button",
+        password_keyword=None,
+        prizes_json=json.dumps(_payload()["prizes"], ensure_ascii=False),
+        draw_at=draw_at,
+        max_participants=0,
+        level_snapshot=1,
+        status=status,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
 
 
 def _enable_lottery(db, groups="999"):
@@ -110,7 +119,6 @@ def _payload(**over):
 
 def _setup_free(db):
     _make_realm(db, "free")
-    _make_levels(db)
     _enable_lottery(db)
 
 
@@ -118,29 +126,34 @@ def _setup_free(db):
 
 
 def test_user_level_thresholds(db):
+    # 等级体系删除后经验无落库来源：无论旧 xp 入参多大，user_level 恒 Lv.1
+    # （原断言按阈值表 0/100/500/1500/5000/15000 分别期望 Lv.1–Lv.6）。
     _setup_free(db)
-    cases = [(0, 1), (99, 1), (100, 2), (499, 2), (500, 3), (1499, 3),
-             (1500, 4), (4999, 4), (5000, 5), (14999, 5), (15000, 6), (10**9, 6)]
+    cases = [(0, 1), (99, 1), (100, 1), (499, 1), (500, 1), (1499, 1),
+             (1500, 1), (4999, 1), (5000, 1), (14999, 1), (15000, 1), (10**9, 1)]
     for xp, expected in cases:
         user = _make_user(db, f"u{xp}", xp=xp)
         assert gov.user_level(db, user.id) == expected
 
 
-def test_user_level_falls_back_to_defaults_when_table_empty(db):
+def test_user_level_always_lv1_without_xp_source(db):
+    # 原 test_user_level_falls_back_to_defaults_when_table_empty：
+    # member_levels 表已随 MemberLevel 模型删除，不再有「表空回落默认阈值」
+    # 后按 xp=5000 得 Lv.5 的路径——恒 Lv.1。
     _make_realm(db, "free")
     _enable_lottery(db)
-    # 不建 MemberLevel 行：回落 DEFAULT_LEVELS（0/100/500/1500/5000/15000）
     user = _make_user(db, "lv5", xp=5000)
-    assert gov.user_level(db, user.id) == 5
+    assert gov.user_level(db, user.id) == 1
 
 
 def test_user_level_does_not_write_back(db):
     _setup_free(db)
     user = _make_user(db, "lv5", xp=5000)
-    assert gov.user_level(db, user.id) == 5
+    assert gov.user_level(db, user.id) == 1
     db.refresh(user)
-    # 纯计算：不写回 member_level 缓存列（该列仍是建用户时的默认值 1）
-    assert user.member_level == 1
+    # 纯计算不写回：member_level 列已删除，用户行上不再有该属性
+    # （原断言 user.member_level == 1 的缓存列口径）。
+    assert getattr(user, "member_level", None) is None
 
 
 # ==================== 提案提交 ====================
@@ -154,22 +167,23 @@ def test_submit_lv1_forbidden(db):
     assert ei.value.status_code == 403
 
 
-def test_submit_lv2_ok_pending_no_round_no_xp(db):
+def test_submit_blocked_at_level_gate_no_proposal_no_round(db):
+    # 原 test_submit_lv2_ok_pending_no_round_no_xp：xp=100 旧口径可达 Lv.2
+    # 提交成功；现经验无来源恒 Lv.1，提交在等级门 403，不落提案行、
+    # 不建轮次，同样不产生任何经验落点。
     _setup_free(db)
     user = _make_user(db, "lv2", xp=100)
-    proposal = gov.submit_proposal(db, user.id, _payload())
-    assert proposal.status == "pending"
-    assert proposal.level_snapshot == 2
-    assert proposal.round_id is None
-    assert proposal.chat_id == 999
+    with pytest.raises(gov.LotteryGovernanceError) as ei:
+        gov.submit_proposal(db, user.id, _payload())
+    assert ei.value.status_code == 403
+    assert db.query(models.LotteryActivityProposal).count() == 0
     assert db.query(models.LotteryRound).count() == 0
     db.refresh(user)
-    assert user.member_xp == 100  # 提案不产生经验
+    assert getattr(user, "member_xp", None) is None  # 经验列已删，无落点
 
 
 def test_submit_paid_realm_forbidden(db):
     _make_realm(db, "paid")
-    _make_levels(db)
     _enable_lottery(db)
     user = _make_user(db, "lv2", xp=100)
     with pytest.raises(gov.LotteryGovernanceError) as ei:
@@ -195,52 +209,59 @@ def test_submit_group_not_allowed_forbidden(db):
 
 
 def test_submit_auto_chat_single_group(db):
+    # 提交入口已恒被等级门拦下，群解析改直测 resolve_chat_id：
+    # 允许群恰好一个时 chat_id=None 自动取该群（原断言 proposal.chat_id == 999）。
     _setup_free(db)
-    user = _make_user(db, "lv2", xp=100)
-    proposal = gov.submit_proposal(db, user.id, _payload(chat_id=None))
-    assert proposal.chat_id == 999
+    assert gov.resolve_chat_id(db, None) == 999
 
 
 def test_submit_auto_chat_ambiguous_rejected(db):
+    # 同上改直测 resolve_chat_id：允许群有两个时无法自动取，400。
     _setup_free(db)
     _set_config(db, "lottery_group_ids", "999,888")
-    user = _make_user(db, "lv2", xp=100)
     with pytest.raises(gov.LotteryGovernanceError) as ei:
-        gov.submit_proposal(db, user.id, _payload(chat_id=None))
+        gov.resolve_chat_id(db, None)
     assert ei.value.status_code == 400
 
 
 def test_submit_monthly_cap_lv2_one_lv4_two(db):
-    _setup_free(db)
-    lv2 = _make_user(db, "lv2", xp=100)
-    gov.submit_proposal(db, lv2.id, _payload(title="提案1"))
-    with pytest.raises(gov.LotteryGovernanceError) as ei:
-        gov.submit_proposal(db, lv2.id, _payload(title="提案2"))
-    assert ei.value.status_code == 400
+    # 月限数值口径不变（Lv.2/3 基础档 1、Lv.4+ 档 2），改直测
+    # proposal_cap_for_level；本月计数改由播种行驱动 proposal_count_this_month
+    # （提交入口已恒被等级门拦下，原「连提至上限 400」路径不可达）。
+    from datetime import datetime
 
+    _setup_free(db)
+    assert gov.proposal_cap_for_level(db, 2) == 1
+    assert gov.proposal_cap_for_level(db, 4) == 2
+    lv2 = _make_user(db, "lv2", xp=100)
+    _seed_proposal(db, lv2, title="提案1")
+    assert gov.proposal_count_this_month(db, lv2.id, datetime.now()) == 1
     lv4 = _make_user(db, "lv4", xp=1500)
-    gov.submit_proposal(db, lv4.id, _payload(title="提案A"))
-    gov.submit_proposal(db, lv4.id, _payload(title="提案B"))
-    with pytest.raises(gov.LotteryGovernanceError) as ei:
-        gov.submit_proposal(db, lv4.id, _payload(title="提案C"))
-    assert ei.value.status_code == 400
+    _seed_proposal(db, lv4, title="提案A")
+    _seed_proposal(db, lv4, title="提案B")
+    assert gov.proposal_count_this_month(db, lv4.id, datetime.now()) == 2
 
 
 def test_submit_rejected_proposal_still_counts_toward_cap(db):
+    # 被拒绝的提案仍占月限（防 spam 刷提案）：计数口径改由播种行直测
+    # proposal_count_this_month；提交本身现恒被等级门 403。
+    from datetime import datetime
+
     _setup_free(db)
     user = _make_user(db, "lv2", xp=100)
     admin = _make_user(db, "admin", xp=0)
-    proposal = gov.submit_proposal(db, user.id, _payload())
+    proposal = _seed_proposal(db, user)
     gov.reject_proposal(db, admin.id, proposal.id)
-    # 被拒绝的提案仍占月限（防 spam 刷提案）
+    assert gov.proposal_count_this_month(db, user.id, datetime.now()) == 1
     with pytest.raises(gov.LotteryGovernanceError) as ei:
         gov.submit_proposal(db, user.id, _payload(title="再提"))
-    assert ei.value.status_code == 400
+    assert ei.value.status_code == 403
 
 
 def test_submit_payload_validation_messages(db):
+    # 提交入口已恒被等级门拦下，载荷校验改直测 validate_round_payload
+    # （提交/批准共用的同一校验函数），文案断言逐条不变。
     _setup_free(db)
-    user = _make_user(db, "lv2", xp=100)
     cases = [
         (_payload(title="  "), "活动标题不能为空"),
         (_payload(prizes=[]), "至少需要配置 1 个奖品"),
@@ -261,7 +282,7 @@ def test_submit_payload_validation_messages(db):
     ]
     for payload, message in cases:
         with pytest.raises(gov.LotteryGovernanceError) as ei:
-            gov.submit_proposal(db, user.id, payload)
+            gov.validate_round_payload(payload, db)
         assert ei.value.status_code == 400
         assert ei.value.detail == message
 
@@ -273,7 +294,7 @@ def test_approve_creates_round_and_audit(db):
     _setup_free(db)
     user = _make_user(db, "lv2", xp=100)
     admin = _make_user(db, "admin", xp=0)
-    proposal = gov.submit_proposal(db, user.id, _payload())
+    proposal = _seed_proposal(db, user)
     approved, round_obj = gov.approve_proposal(db, admin.id, proposal.id, note="通过")
     assert approved.status == "approved"
     assert approved.round_id == round_obj.id
@@ -290,14 +311,14 @@ def test_approve_creates_round_and_audit(db):
     assert logs[0].admin_user_id == admin.id
     assert logs[0].target_id == proposal.id
     db.refresh(user)
-    assert user.member_xp == 100  # 批准不产生经验
+    assert getattr(user, "member_xp", None) is None  # 批准不产生经验（经验列已删）
 
 
 def test_approve_twice_rejected(db):
     _setup_free(db)
     user = _make_user(db, "lv2", xp=100)
     admin = _make_user(db, "admin", xp=0)
-    proposal = gov.submit_proposal(db, user.id, _payload())
+    proposal = _seed_proposal(db, user)
     gov.approve_proposal(db, admin.id, proposal.id)
     with pytest.raises(gov.LotteryGovernanceError) as ei:
         gov.approve_proposal(db, admin.id, proposal.id)
@@ -316,7 +337,7 @@ def test_approve_active_round_conflict(db):
     _setup_free(db)
     user = _make_user(db, "lv2", xp=100)
     admin = _make_user(db, "admin", xp=0)
-    proposal = gov.submit_proposal(db, user.id, _payload())
+    proposal = _seed_proposal(db, user)
     # 批准前同群已有进行中活动（另一轮次）-> 批准被拒，提案仍 pending
     from backend import lottery
 
@@ -332,7 +353,7 @@ def test_approve_paid_realm_forbidden(db):
     _setup_free(db)
     user = _make_user(db, "lv2", xp=100)
     admin = _make_user(db, "admin", xp=0)
-    proposal = gov.submit_proposal(db, user.id, _payload())
+    proposal = _seed_proposal(db, user)
     # 服切回付费后批准被拒（提案本身不被删除）
     realm = db.query(models.ServerRealm).first()
     realm.access_mode = "paid"
@@ -346,7 +367,7 @@ def test_reject_flow_and_audit(db):
     _setup_free(db)
     user = _make_user(db, "lv2", xp=100)
     admin = _make_user(db, "admin", xp=0)
-    proposal = gov.submit_proposal(db, user.id, _payload())
+    proposal = _seed_proposal(db, user)
     rejected = gov.reject_proposal(db, admin.id, proposal.id, note="奖品不合理")
     assert rejected.status == "rejected"
     assert rejected.review_note == "奖品不合理"
@@ -362,15 +383,15 @@ def test_reject_flow_and_audit(db):
 def test_approve_draw_at_not_shifted(db):
     """批准时 draw_at 不漂移：入库的上海 naive 时间原样进轮次（回归 +8h 隐患）。
 
-    提交串为 aware UTC 04:00 -> 入库上海 naive 12:00；批准若把已入库值再转一次，
-    轮次会漂成 20:00，本测试钉死 12:00。
+    提案行直接播种为已入库的上海 naive 12:00（提交串 aware UTC 04:00 的
+    入库结果）；批准若把已入库值再转一次，轮次会漂成 20:00，本测试钉死 12:00。
     """
+    from datetime import datetime
+
     _setup_free(db)
     user = _make_user(db, "lv2", xp=100)
     admin = _make_user(db, "admin", xp=0)
-    proposal = gov.submit_proposal(
-        db, user.id, _payload(draw_at="2026-11-01T04:00:00+00:00")
-    )
+    proposal = _seed_proposal(db, user, draw_at=datetime(2026, 11, 1, 12, 0))
     assert (proposal.draw_at.hour, proposal.draw_at.minute) == (12, 0)
     _, round_obj = gov.approve_proposal(db, admin.id, proposal.id)
     assert round_obj.draw_at is not None
@@ -380,7 +401,10 @@ def test_approve_draw_at_not_shifted(db):
 # ==================== 直接发起 ====================
 
 
-def test_direct_lv4_forbidden_lv5_ok(db):
+def test_direct_always_level_forbidden(db):
+    # 原 test_direct_lv4_forbidden_lv5_ok：旧口径 Lv.4 拦、Lv.5 放行；
+    # 现经验无来源恒 Lv.1，两档入参都在等级门 403，不建轮次、不落发起记录，
+    # 同样不产生任何经验落点。
     _setup_free(db)
     lv4 = _make_user(db, "lv4", xp=1500)
     with pytest.raises(gov.LotteryGovernanceError) as ei:
@@ -388,46 +412,42 @@ def test_direct_lv4_forbidden_lv5_ok(db):
     assert ei.value.status_code == 403
 
     lv5 = _make_user(db, "lv5", xp=5000)
-    round_obj, record = gov.direct_launch(db, lv5.id, _payload())
-    assert round_obj.status == "open"
-    assert round_obj.created_by == lv5.id
-    assert record.round_id == round_obj.id
-    assert record.level_snapshot == 5
+    with pytest.raises(gov.LotteryGovernanceError) as ei:
+        gov.direct_launch(db, lv5.id, _payload())
+    assert ei.value.status_code == 403
+    assert db.query(models.LotteryRound).count() == 0
+    assert db.query(models.LotteryDirectLaunch).count() == 0
     db.refresh(lv5)
-    assert lv5.member_xp == 5000  # 发起不产生经验
+    assert getattr(lv5, "member_xp", None) is None  # 经验列已删，无落点
 
 
 def test_direct_monthly_cap_lv5_one_lv6_two(db):
-    _setup_free(db)
-    lv5 = _make_user(db, "lv5", xp=5000)
-    gov.direct_launch(db, lv5.id, _payload(title="直发1"))
-    # 第一轮仍 open 时第二发会被同群冲突拦——先取消它，再测月限
+    # 月限数值口径不变（Lv.5 档 1、Lv.6 档 2），改直测 direct_cap_for_level；
+    # 本月计数改由播种的直接发起记录行驱动 direct_count_this_month
+    # （直接发起入口已恒被等级门拦下，原「连发至上限 400」路径不可达）。
+    from datetime import datetime
+
     from backend import lottery
 
-    rnd = db.query(models.LotteryRound).filter_by(title="直发1").first()
-    rnd.status = "cancelled"
+    _setup_free(db)
+    assert gov.direct_cap_for_level(db, 5) == 1
+    assert gov.direct_cap_for_level(db, 6) == 2
+    lv5 = _make_user(db, "lv5", xp=5000)
+    rnd = lottery.create_round(db, title="直发1", chat_id=999, prizes=_payload()["prizes"])
+    db.add(models.LotteryDirectLaunch(user_id=lv5.id, round_id=rnd.id, level_snapshot=1))
     db.commit()
-    with pytest.raises(gov.LotteryGovernanceError) as ei:
-        gov.direct_launch(db, lv5.id, _payload(title="直发2"))
-    assert ei.value.status_code == 400  # 月限（不是同群冲突）
+    assert gov.direct_count_this_month(db, lv5.id, datetime.now()) == 1
 
     lv6 = _make_user(db, "lv6", xp=15000)
-    gov.direct_launch(db, lv6.id, _payload(title="直发A"))
-    rnd = db.query(models.LotteryRound).filter_by(title="直发A").first()
-    rnd.status = "cancelled"
-    db.commit()
-    gov.direct_launch(db, lv6.id, _payload(title="直发B"))
-    rnd = db.query(models.LotteryRound).filter_by(title="直发B").first()
-    rnd.status = "cancelled"
-    db.commit()
-    with pytest.raises(gov.LotteryGovernanceError) as ei:
-        gov.direct_launch(db, lv6.id, _payload(title="直发C"))
-    assert ei.value.status_code == 400
+    for title in ("直发A", "直发B"):
+        rnd = lottery.create_round(db, title=title, chat_id=888, prizes=_payload()["prizes"])
+        db.add(models.LotteryDirectLaunch(user_id=lv6.id, round_id=rnd.id, level_snapshot=1))
+        db.commit()
+    assert gov.direct_count_this_month(db, lv6.id, datetime.now()) == 2
 
 
 def test_direct_paid_realm_forbidden(db):
     _make_realm(db, "paid")
-    _make_levels(db)
     _enable_lottery(db)
     user = _make_user(db, "lv5", xp=5000)
     with pytest.raises(gov.LotteryGovernanceError) as ei:
@@ -436,6 +456,8 @@ def test_direct_paid_realm_forbidden(db):
 
 
 def test_direct_active_round_conflict(db):
+    # 门禁顺序：等级门在同群进行中检查之前——现恒 Lv.1 以 403 被拒
+    # （原断言为 Lv.5 用户走到冲突检查得 400）。
     _setup_free(db)
     user = _make_user(db, "lv5", xp=5000)
     from backend import lottery
@@ -443,7 +465,7 @@ def test_direct_active_round_conflict(db):
     lottery.create_round(db, title="已有活动", chat_id=999, prizes=_payload()["prizes"])
     with pytest.raises(gov.LotteryGovernanceError) as ei:
         gov.direct_launch(db, user.id, _payload())
-    assert ei.value.status_code == 400
+    assert ei.value.status_code == 403
 
 
 # ==================== 列表与路由注册 ====================
@@ -453,8 +475,8 @@ def test_list_proposals_user_and_admin_scopes(db):
     _setup_free(db)
     u1 = _make_user(db, "u1", xp=100)
     u2 = _make_user(db, "u2", xp=100)
-    gov.submit_proposal(db, u1.id, _payload(title="u1提案"))
-    gov.submit_proposal(db, u2.id, _payload(title="u2提案"))
+    _seed_proposal(db, u1, title="u1提案")
+    _seed_proposal(db, u2, title="u2提案")
     total, items = gov.list_proposals(db, user_id=u1.id)
     assert total == 1 and items[0]["title"] == "u1提案"
     total, items = gov.list_proposals(db, user_id=None, status="pending")
@@ -464,19 +486,14 @@ def test_list_proposals_user_and_admin_scopes(db):
 
 
 def test_config_cap_override(db):
+    # 配置覆盖口径不变，改直测 proposal_cap_for_level（提交入口已恒被
+    # 等级门拦下，原「连提 2 次后第 3 次被拒」路径不可达）。
     _setup_free(db)
     _set_config(db, "lottery_governance_proposal_cap_base", "2")
-    user = _make_user(db, "lv2", xp=100)
-    gov.submit_proposal(db, user.id, _payload(title="提案1"))
-    gov.submit_proposal(db, user.id, _payload(title="提案2"))
-    with pytest.raises(gov.LotteryGovernanceError):
-        gov.submit_proposal(db, user.id, _payload(title="提案3"))
+    assert gov.proposal_cap_for_level(db, 2) == 2
     # 非法键值回落默认值 1
     _set_config(db, "lottery_governance_proposal_cap_base", "not-a-number")
-    lv2b = _make_user(db, "lv2b", xp=100)
-    gov.submit_proposal(db, lv2b.id, _payload(title="提案X"))
-    with pytest.raises(gov.LotteryGovernanceError):
-        gov.submit_proposal(db, lv2b.id, _payload(title="提案Y"))
+    assert gov.proposal_cap_for_level(db, 2) == 1
 
 
 def test_routes_registered():

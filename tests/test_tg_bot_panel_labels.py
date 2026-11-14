@@ -25,13 +25,11 @@ LABEL_RE = re.compile(r"^· \S+ <b>([^<]+)</b> \|", re.M)
 CJK4 = re.compile(r"^[一-鿿]{4}$")
 
 DASHBOARD_LABELS = [
-    "用户编号", "账号名称", "当前等级", "能量余额",
-    "活力数值", "网盘绑定", "当前馆灵",
+    "用户编号", "账号名称", "网盘绑定", "当前馆灵",
     "订阅状态",
 ]
 SHARED_LABELS = [
-    "用户编号", "账号名称", "当前等级", "能量余额",
-    "活力数值", "网盘绑定", "当前馆灵",
+    "用户编号", "账号名称", "网盘绑定", "当前馆灵",
     "订阅状态",
 ]
 
@@ -48,10 +46,9 @@ def db():
         engine.dispose()
 
 
-def _user(db, tg=TG, name="alice", points=42, vitality=14, is_welfare=True):
+def _user(db, tg=TG, name="alice", is_welfare=True):
     row = models.WebUser(
         username=name, password_hash="x", telegram_id=tg,
-        points=points, vitality=vitality,
     )
     db.add(row)
     db.commit()
@@ -63,10 +60,10 @@ def _labels(text):
 
 
 def test_layout_row_bolds_label():
-    assert layout.row("🍒", "能量余额", 16) == "· 🍒 <b>能量余额</b> | 16"
+    assert layout.row("📊", "公益资格", 16) == "· 📊 <b>公益资格</b> | 16"
 
 
-def test_dashboard_labels_are_the_nine_four_char(db):
+def test_dashboard_labels_are_the_five_four_char(db):
     user = _user(db)
     text = features.user_panel(db, user)
     assert _labels(text) == DASHBOARD_LABELS
@@ -87,22 +84,11 @@ def test_account_labels_four_char_and_consistent_with_dashboard(db):
         assert label in dash_labels, label
 
 
-def test_points_panel_labels(db):
-    user = _user(db)
-    text = handlers.handle_points(db, {"id": TG}, TG, "")
-    labels = _labels(text)
-    assert "能量余额" in labels
-    assert "活力数值" not in labels  # 活力已随货币删除下线（2026-11-13）
-    for label in labels:
-        assert CJK4.match(label), label
-
-
 def test_no_legacy_wording_in_panels(db):
     user = _user(db)
     for text in (
         features.user_panel(db, user),
         handlers.handle_account(db, {"id": TG}, TG, ""),
-        handlers.handle_points(db, {"id": TG}, TG, ""),
     ):
         assert "积分" not in text
         assert "用户 ID" not in text

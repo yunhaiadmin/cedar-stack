@@ -63,26 +63,26 @@ def test_sweep_keeps_order_paid_after_concurrent_payment(tmp_path):
     # 文件库：engine.begin() 的另一个连接才能看到已提交的数据（:memory: 做不到）
     engine = create_engine(f"sqlite:///{tmp_path / 'coupons_sweep_race.db'}")
     # 只建用到的表，SQLite 默认不校验外键，未建的表不影响
-    for model in (models.WebUser, models.RechargePackage, models.CouponCode,
-                  models.CouponUsage, models.RechargeOrder):
+    for model in (models.WebUser, models.SubscriptionPlan, models.CouponCode,
+                  models.CouponUsage, models.SubscriptionOrder):
         model.__table__.create(engine, checkfirst=True)
     Session = sessionmaker(bind=engine)
 
     stale_at = datetime.now() - timedelta(hours=72)
 
-    # ---- 造数：用户 + 充值套餐 + 优惠券 + pending 订单 + RESERVED 核销记录 ----
+    # ---- 造数：用户 + 订阅套餐 + 优惠券 + pending 订单 + RESERVED 核销记录 ----
     setup = Session()
     try:
         user = _make(models.WebUser)
-        package = _make(models.RechargePackage)
+        plan = _make(models.SubscriptionPlan)
         coupon = _make(models.CouponCode, use_count=1)
-        setup.add_all([user, package, coupon])
+        setup.add_all([user, plan, coupon])
         setup.commit()
 
-        user_id, package_id, coupon_id = user.id, package.id, coupon.id
-        order = _make(models.RechargeOrder, order_id=ORDER_ID, user_id=user_id,
-                      package_id=package_id, amount=1000,
-                      price=decimal.Decimal("9.90"), status="pending")
+        user_id, plan_id, coupon_id = user.id, plan.id, coupon.id
+        order = _make(models.SubscriptionOrder, order_id=ORDER_ID, user_id=user_id,
+                      plan_id=plan_id, amount=decimal.Decimal("9.90"),
+                      status="pending")
         usage_kwargs = {"order_id": ORDER_ID, "status": RESERVED, "created_at": stale_at}
         # 核销记录指向优惠券的外键字段名各版本可能不同，存在才显式指过去
         for fk_name in ("coupon_id", "coupon_code_id", "code_id"):
@@ -95,7 +95,7 @@ def test_sweep_keeps_order_paid_after_concurrent_payment(tmp_path):
 
     reader = Session()
     # 先把 pending 的订单读进 session 缓存：sweep 后面再查同一行会直接复用这份旧值
-    cached = reader.query(models.RechargeOrder).filter_by(order_id=ORDER_ID).first()
+    cached = reader.query(models.SubscriptionOrder).filter_by(order_id=ORDER_ID).first()
     assert cached is not None and cached.status == "pending"
 
     # ---- 关键：sweep 写回订单之前，用另一个连接模拟支付回调并提交 ----
@@ -105,12 +105,12 @@ def test_sweep_keeps_order_paid_after_concurrent_payment(tmp_path):
         if fired["done"]:
             return
         head = statement.lstrip().upper()
-        if not head.startswith("UPDATE") or "recharge_orders" not in statement:
+        if not head.startswith("UPDATE") or "subscription_orders" not in statement:
             return
         fired["done"] = True
         with engine.begin() as other:
-            other.execute(models.RechargeOrder.__table__.update().where(
-                models.RechargeOrder.__table__.c.order_id == ORDER_ID
+            other.execute(models.SubscriptionOrder.__table__.update().where(
+                models.SubscriptionOrder.__table__.c.order_id == ORDER_ID
             ).values(status="paid"))
             other.execute(models.CouponUsage.__table__.update().where(
                 models.CouponUsage.__table__.c.order_id == ORDER_ID
@@ -130,7 +130,7 @@ def test_sweep_keeps_order_paid_after_concurrent_payment(tmp_path):
     # ---- 断言：订单仍是 paid、核销记录仍是 CONSUMED、额度没有被退回 ----
     check = Session()
     try:
-        assert check.query(models.RechargeOrder).filter_by(
+        assert check.query(models.SubscriptionOrder).filter_by(
             order_id=ORDER_ID).one().status == "paid"
         assert check.query(models.CouponUsage).filter_by(
             order_id=ORDER_ID).one().status == CONSUMED

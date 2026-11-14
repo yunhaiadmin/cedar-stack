@@ -22,17 +22,17 @@ from backend import models
 @pytest.fixture()
 def db():
     engine = create_engine("sqlite:///:memory:")
-    # 全量建表：economy 记账（PointsLog）、白名单判定（codes）等旁路
-    # 也会查表，缺表会在红阶段之外制造夹具噪音。
+    # 全量建表：白名单判定（codes）等旁路也会查表，
+    # 缺表会在红阶段之外制造夹具噪音。
     models.Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
     yield session
     session.close()
 
 
-def _make_user(db, username, points=10000, is_active=True):
+def _make_user(db, username, is_active=True):
     u = models.WebUser(
-        username=username, password_hash="x", points=points,
+        username=username, password_hash="x",
         is_active=is_active)
     db.add(u)
     db.commit()

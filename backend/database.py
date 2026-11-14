@@ -723,25 +723,18 @@ def _auto_migrate():
 
     migrations: list[tuple[str, list[tuple[str, str, str]]]] = [
         ("web_users", [
-            ("points", "INTEGER", "0"),
             # v2.26.0 管理员角色（super / operator / viewer）：老库补列后为 NULL，
             # 按 super 处理 → 升级前后权限完全一致（见 backend/admin_roles.py）
             ("admin_role", "VARCHAR(20)", "NULL"),
             # v2.44.0 注册渠道归因（admin/code/invitation/open）：老用户补列后为 NULL，
             # 按「未记录」显示——不硬猜成 open（见 backend/register_channel.py）
             ("register_channel", "VARCHAR(20)", "NULL"),
-            # v2.57.0 公益服模块1 的四列（is_welfare 等）已随福利服役族
-            # 于 2026-11-14 删除（模型已摘，生产由配套 DDL 删列），
-            # 不再补列。
-            # P1 统一货币体系：会员经验与缓存等级。老用户补列后 xp=0/level=1（初幕），
-            # 与升级前行为一致（此前无等级概念）。
-            ("member_xp", "INTEGER", "0"),
-            ("member_level", "INTEGER", "1"),
+            # v2.57.0 公益服模块1 四列（is_welfare 等）与 P1 会员经验/等级
+            # 两列（member_xp/member_level）已随福利服役族与删表收口 CLEAN
+            # 余项删除（模型已摘，生产由配套 DDL 删列），不再补列。
             # P2/P3 审查修复：token 版本号（改密后旧 JWT 作废）。老库补列默认 0，
             # 存量 token 的 tv 也是 0，对得上，不会误杀。
             ("token_version", "INTEGER", "0"),
-            # C1 活力值（竞品借鉴）：老库补列默认满值 14，升级后无人被误拦观影。
-            ("vitality", "INTEGER", "14"),
             # 探险世界 · 时长榜隐私开关：老库补列默认上榜，与升级前行为一致。
             ("show_on_leaderboard", "BOOLEAN", "1"),
             # 私聊通报优化批 · TG 通知偏好三类：老库补列默认收，与新列
@@ -857,11 +850,6 @@ def _auto_migrate():
         ("subscription_plans", [
             ("entitlements", "JSON", "NULL"),
         ]),
-        # P4 会员等级订阅折扣：老库补列后为 0（无折扣），与升级前行为一致；
-        # migrate_discount_pct 会按等级回填默认值。
-        ("member_levels", [
-            ("discount_pct", "INTEGER", "0"),
-        ]),
         ("user_subscriptions", [
             ("realm_id", "INTEGER", "NULL"),
         ]),
@@ -903,11 +891,6 @@ def _auto_migrate():
         # v2.10.0 优惠券：订单上快照「原价 / 优惠金额 / 核销记录」。
         # 退款与对账要能解释「当时到底按多少钱算的」——套餐改价之后不能按现价重算。
         # （新表 coupon_codes / coupon_usages 由 create_all 建，不在此列）
-        ("recharge_orders", [
-            ("list_price", "NUMERIC(10, 2)", "0"),
-            ("discount_amount", "NUMERIC(10, 2)", "0"),
-            ("coupon_usage_id", "INTEGER", "NULL"),
-        ]),
         ("subscription_orders", [
             ("list_price", "NUMERIC(10, 2)", "0"),
             ("discount_amount", "NUMERIC(10, 2)", "0"),

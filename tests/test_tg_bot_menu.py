@@ -19,15 +19,14 @@ def db():
     engine = create_engine("sqlite:///:memory:")
     models.WebUser.__table__.create(engine, checkfirst=True)
     models.SystemConfig.__table__.create(engine, checkfirst=True)
-    models.PointsLog.__table__.create(engine, checkfirst=True)
     Session = sessionmaker(bind=engine)
     session = Session()
     yield session
     session.close()
 
 
-def _make_user(db, username="menutest", tg_id=800001, points=100):
-    u = models.WebUser(username=username, telegram_id=tg_id, points=points)
+def _make_user(db, username="menutest", tg_id=800001):
+    u = models.WebUser(username=username, telegram_id=tg_id)
     for col in ("password_hash",):
         if hasattr(u, col) and getattr(u, col) is None:
             try:
@@ -94,14 +93,6 @@ def test_menu_checkin_action_removed_ignored(db, monkeypatch):
     answered, edits = _patch_sender(monkeypatch)
     callbacks.handle_callback(db, _cq("checkin"))
     assert edits == []
-
-
-def test_menu_points_shows_card(db, monkeypatch):
-    _make_user(db, points=250)
-    answered, edits = _patch_sender(monkeypatch)
-    callbacks.handle_callback(db, _cq("points"))
-    assert len(edits) == 1
-    assert "✨ <b>能量余额</b> | 250" in edits[0][2]
 
 
 def test_menu_unknown_action_ignored(db, monkeypatch):

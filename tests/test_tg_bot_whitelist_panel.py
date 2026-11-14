@@ -38,9 +38,6 @@ PLAIN_PANEL_GOLDEN = (
     "▎<b>欢迎进入用户面板！</b>alice\n"
     "· 🆔 <b>用户编号</b> | 1\n"
     "· 👤 <b>账号名称</b> | <b>alice</b>\n"
-    "· ⭐ <b>当前等级</b> | Lv.1 初幕 · 经验 0／100 ░░░░░░░░░░（距 Lv.2 影迷还差 100 经验）\n"
-    "· 🍒 <b>能量余额</b> | <b>42</b>\n"
-    "· ⚡ <b>活力数值</b> | 14/14\n"
     "· 🔗 <b>网盘绑定</b> | 未绑定，绑定后才能点播\n"
     "· 🐉 <b>当前馆灵</b> | 🥚 蛋（累计观影 0.0 小时），距夜枭还差 50.0 小时\n"
     "· 📦 <b>订阅状态</b> | 暂无"
@@ -63,8 +60,7 @@ def db():
 
 
 def _user(db, tg, name, **kw):
-    fields = {"password_hash": "x", "telegram_id": tg, "points": 42,
-              "vitality": 14, "is_active": True}
+    fields = {"password_hash": "x", "telegram_id": tg, "is_active": True}
     fields.update(kw)
     u = models.WebUser(username=name, **fields)
     db.add(u)
@@ -119,15 +115,15 @@ def test_user_panel_whitelist_layout(db):
     text = features.user_panel(db, vip)
     # 专属问候标题（称号唯一来源 codes.WHITELIST_TITLE，断言按常量取值）
     assert text.startswith(f"▎<b>欢迎回来，{codes.WHITELIST_TITLE}！</b>vip")
-    # 称号行：紧跟账号名称行、在当前等级行之前（合并卡行序）
+    # 称号行：紧跟账号名称行、在网盘绑定行之前（合并卡行序）
     title_row = f"· 👑 <b>专属称号</b> | <b>{codes.WHITELIST_TITLE}</b>"
     assert title_row in text
-    assert text.index("账号名称") < text.index("专属称号") < text.index("当前等级")
+    assert text.index("账号名称") < text.index("专属称号") < text.index("网盘绑定")
     # 编号尚未落地：只显示称号，不出编号行
     assert "创世编号" not in text
-    # 其余信息行照现行口径（能量照旧；公益资格行已随福利族删除）
+    # 其余信息行照现行口径（公益资格行已随福利族删除、能量行已随积分删除）
     assert "公益资格" not in text
-    assert "· 🍒 <b>能量余额</b> | <b>42</b>" in text
+    assert "能量余额" not in text
 
 
 def test_compact_dashboard_whitelist_layout(db):
@@ -162,12 +158,12 @@ def test_account_whitelist_layout(db):
     assert text.startswith(f"▎<b>欢迎回来，{codes.WHITELIST_TITLE}！</b>vip")
     title_row = f"· 👑 <b>专属称号</b> | <b>{codes.WHITELIST_TITLE}</b>"
     assert title_row in text
-    # 称号行紧跟账号名称行、在当前等级行之前
-    assert text.index("账号名称") < text.index("专属称号") < text.index("当前等级")
+    # 称号行紧跟账号名称行、在网盘绑定行之前
+    assert text.index("账号名称") < text.index("专属称号") < text.index("网盘绑定")
     assert "创世编号" not in text
     # 其余信息行照现行口径
     assert "· 👤 <b>账号名称</b> | <b>vip</b>" in text
-    assert "· 🍒 <b>能量余额</b> | <b>42</b>" in text
+    assert "能量余额" not in text
     assert "公益资格" not in text
 
 

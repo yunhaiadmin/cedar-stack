@@ -52,8 +52,7 @@ def db():
 
 
 def _user(db, tg, name, staff=False, role=None, **kw):
-    fields = {"password_hash": "x", "telegram_id": tg, "points": 10,
-              "vitality": 14, "is_active": True, "is_staff": staff}
+    fields = {"password_hash": "x", "telegram_id": tg, "is_active": True, "is_staff": staff}
     if role is not None:
         fields["admin_role"] = role
     fields.update(kw)
@@ -103,7 +102,6 @@ def test_viewer_gift_via_execute_refused_zero_effect(db):
     assert READONLY_MARK in note
     db.refresh(target)
     assert not hasattr(target, "is_welfare")
-    assert db.query(models.PointsLog).count() == 0
     assert db.query(models.EmbyViewUnlock).count() == 0
 
 

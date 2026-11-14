@@ -85,12 +85,11 @@ def _set_config(db, **kv):
     store.invalidate()
 
 
-def _make_user(db, username="fan", tg_id=USER_TG, welfare=False, points=500):
+def _make_user(db, username="fan", tg_id=USER_TG, welfare=False):
     # welfare 参数仅为兼容旧调用点签名：公益资格字段已删除，不再落任何标记
     u = models.WebUser(username=username, telegram_id=tg_id)
     if hasattr(u, "password_hash") and getattr(u, "password_hash") is None:
         u.password_hash = ""
-    u.points = points
     db.add(u)
     db.commit()
     return u
@@ -130,15 +129,13 @@ def test_external_channel_text_deleted_with_notice(db, sent, deleted):
     group_msgs = [t for cid, t in sent if cid == GROUP_ID]
     assert len(group_msgs) == 1
     assert "频道" in group_msgs[0]
-    assert db.query(models.PointsLog).filter(
-        models.PointsLog.type == "chat").count() == 0
 
 
 def test_external_channel_command_deleted_not_executed(db, sent, deleted, monkeypatch):
     called = []
-    monkeypatch.setattr(handlers, "handle_points",
+    monkeypatch.setattr(handlers, "handle_request",
                         lambda *a, **kw: called.append(a) or "不应到达")
-    router.dispatch(db, _channel_update("/points"))
+    router.dispatch(db, _channel_update("/request 某片"))
     assert called == []
     assert deleted == [(GROUP_ID, 42)]
     assert any("频道" in t for _, t in sent)
@@ -206,14 +203,13 @@ def test_private_chat_unaffected(db, sent, deleted):
 # ---------- ⑦ 退群：处置已下线，任何成员变动都零动作零通知 ----------
 
 def test_leave_noop(db, sent):
-    u = _make_user(db, points=500)
+    u = _make_user(db)
     db.add(models.EmbyViewUnlock(
         user_id=u.id, realm_id=1,
         expires_at=datetime.now() + timedelta(days=10), points_spent=50))
     db.commit()
     router.dispatch(db, _member_update())
     db.refresh(u)
-    assert u.points == 500
     assert db.query(models.EmbyViewUnlock).count() == 1
     assert sent == []
 

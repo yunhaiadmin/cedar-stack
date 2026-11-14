@@ -55,7 +55,6 @@ def db():
     for tbl in (
         models.WebUser.__table__,
         models.SystemConfig.__table__,
-        models.PointsLog.__table__,
         em.MediaItem.__table__,
         em.PlaybackSession.__table__,
     ):
@@ -86,7 +85,6 @@ def _make_user(db, username):
     u = models.WebUser(
         username=username,
         password_hash="",
-        points=0,
         is_active=True,
         show_on_leaderboard=True,
     )

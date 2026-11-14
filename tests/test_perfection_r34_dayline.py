@@ -42,7 +42,7 @@ def db():
 
 
 def _make_user(db, username="u1", **kw):
-    u = models.WebUser(username=username, password_hash="", points=0,
+    u = models.WebUser(username=username, password_hash="",
                        is_active=True, **kw)
     db.add(u)
     db.commit()

@@ -71,8 +71,7 @@ def _set(db, key, value):
 
 
 def _user(db, username):
-    u = models.WebUser(username=username, password_hash="x", is_active=True,
-                       member_xp=0, member_level=1)
+    u = models.WebUser(username=username, password_hash="x", is_active=True)
     db.add(u)
     db.commit()
     db.refresh(u)

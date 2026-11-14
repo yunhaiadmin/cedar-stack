@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 # 群菜单里走按钮回调临时回复的个人结果动作（Bot API 10.4 包1 PR-2）：
 # 结果是点击者本人的，只给他看，不编辑进群共享面板。
-_EPHEMERAL_RESULT_ACTIONS = ("points",)
+_EPHEMERAL_RESULT_ACTIONS: tuple = ()
 
 
 def handle_callback(db, callback_query: dict) -> None:
@@ -295,10 +295,7 @@ def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,
     elif action == "renewcode":
         text = handlers.handle_redeem(db, tg_user, chat_id, "")
         markup = handlers.back_markup()
-    elif action == "points":
-        text = handlers.handle_points(db, tg_user, chat_id, "")
-        markup = handlers.back_markup()
-    elif action in ("account", "request", "myrequests", "rank", "requestboard", "rules", "login", "govlog", "level", "report", "propose", "launch"):
+    elif action in ("account", "request", "myrequests", "requestboard", "rules", "login", "govlog", "level", "report", "propose", "launch"):
         # 凭据类与求片类仍私聊限定；账号展示（account/level）群里放行
         # （2026-10-28 用户亲定、2026-11-02 重申）：落下面正常渲染分支
         # 出点击者本人的账号卡，与命令层 /me 口径一致。
@@ -312,7 +309,6 @@ def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,
                 "account": handlers.handle_account,
                 "request": handlers.handle_request,
                 "myrequests": handlers.handle_my_requests,
-                "rank": handlers.handle_rank,
                 "requestboard": handlers.handle_request_board,
                 "rules": handlers.handle_rules,
                 "login": handlers.handle_login,

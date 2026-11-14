@@ -8,8 +8,8 @@
 2. **订阅退款回滚天数**：按履约时记下的 `subscription_id` / `days_granted` 精确回滚；
    回滚后已过期则置 `cancelled`（真实撤销，与自然到期不是一回事），
    若用户还有别的来源的天数则保持生效中；也可只退款不回滚权益；
-3. **历史充值单（能量充值）**：货币已下线，补单发货必须显性失败（400 +
-   转人工处理），不许静默吞掉、也不许把订单标成已支付；这类订单只能关单收口；
+3. **不存在的订单补单**：充值单已随货币下线整表删除，订单只剩订阅单
+   一路；对不存在的订单补单必须显性失败（404），不许静默吞掉；
 4. **退过的订单不能再被履约**：晚到/重放的支付回调与「补单」都不能把退过的订单再发一次货；
 5. **留痕与可见性**：订单带 `refunded_at` / `refund_reason`，写审计，
    用户收到站内信、用户端订单列表能看到状态与原因；管理端有退款/关单记录列表；
@@ -73,27 +73,17 @@ with SessionLocal() as db:
     staff = models.WebUser(username="refund_staff", password_hash=hash_password("staffpass123"),
                            is_staff=True, admin_role="super", is_active=True)
     buyer = models.WebUser(username="refund_buyer", password_hash=hash_password("buyerpass123"),
-                           is_active=True, points=0)
+                           is_active=True)
     db.add_all([staff, buyer])
     db.commit()
 
-    # 历史充值套餐行保留（recharge_orders.package_id 引用它造历史单）
-    pkg = models.RechargePackage(name="100 积分包（历史）", amount=100, price=100, bonus=0, is_active=True)
     plan = models.SubscriptionPlan(name="月卡", price=30, duration_days=30,
                                    realm_id=realm.id, is_active=True)
-    db.add_all([pkg, plan])
+    db.add_all([plan])
     db.commit()
 
-    realm_id, plan_id, pkg_id = realm.id, plan.id, pkg.id
+    realm_id, plan_id = realm.id, plan.id
     buyer_id = buyer.id
-
-
-def make_recharge_order(order_id: str) -> None:
-    with SessionLocal() as db:
-        db.add(models.RechargeOrder(order_id=order_id, user_id=buyer_id, package_id=pkg_id,
-                                    amount=100, price=100, payment_method="alipay",
-                                    status="pending"))
-        db.commit()
 
 
 def make_subscription_order(order_id: str) -> None:
@@ -104,18 +94,8 @@ def make_subscription_order(order_id: str) -> None:
         db.commit()
 
 
-def points_of(user_id: int) -> int:
-    with SessionLocal() as db:
-        return int(db.query(models.WebUser.points).filter(
-            models.WebUser.id == user_id).scalar() or 0)
-
-
 def order_row(order_id: str):
     with SessionLocal() as db:
-        row = db.query(models.RechargeOrder).filter(
-            models.RechargeOrder.order_id == order_id).first()
-        if row:
-            return row
         return db.query(models.SubscriptionOrder).filter(
             models.SubscriptionOrder.order_id == order_id).first()
 
@@ -155,13 +135,12 @@ USER_H = {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 print("\n--- 关单：未支付订单作废 ---")
 
-make_recharge_order("RC-CLOSE-1")
+make_subscription_order("RC-CLOSE-1")
 r = client.post("/api/admin/economy/orders/RC-CLOSE-1/close", headers=ADMIN_H)
 check("可关闭待支付订单", r.status_code == 200 and r.json()["status"] == "closed",
       f"status={r.status_code} {r.text[:120]}")
 row = order_row("RC-CLOSE-1")
 check("订单记为已关闭并带时间", row.status == "closed" and row.closed_at is not None)
-check("关单不碰积分", points_of(buyer_id) == 0)
 check("关单不打扰用户（他并没付钱）", "↩️ 订单已退款" not in station_titles(buyer_id))
 
 r = client.post("/api/admin/economy/orders/RC-CLOSE-1/close", headers=ADMIN_H)
@@ -173,36 +152,12 @@ check("已关闭订单不能退款", r.status_code == 400, f"status={r.status_co
 r = client.post("/api/admin/economy/orders/NOT-EXIST/close", headers=ADMIN_H)
 check("不存在的订单返回 404", r.status_code == 404, f"status={r.status_code}")
 
-# ==================== 2. 历史充值单：补单发货显性拒绝 ====================
+# ==================== 2. 不存在订单补单：显性失败 ====================
 
-print("\n--- 历史充值单：能量已下线，补单转人工 ---")
+print("\n--- 补单：订单不存在必须显性失败 ---")
 
-make_recharge_order("RC-REFUND-1")
-r = client.post("/api/admin/economy/orders/RC-REFUND-1/mark-paid", headers=ADMIN_H)
-check("历史充值单补单被显性拒绝（400）", r.status_code == 400, f"status={r.status_code} {r.text[:120]}")
-check("拒绝说明含转人工口径", "人工" in r.text, r.text[:160])
-check("拒绝后订单仍是待支付（不静默标 paid）", order_row("RC-REFUND-1").status == "pending",
-      order_row("RC-REFUND-1").status)
-check("拒绝后不发任何积分", points_of(buyer_id) == 0, str(points_of(buyer_id)))
-
-# 待支付的历史充值单只能关单收口
-r = client.post("/api/admin/economy/orders/RC-REFUND-1/close", headers=ADMIN_H)
-check("历史充值单可关单收口", r.status_code == 200 and order_row("RC-REFUND-1").status == "closed",
-      f"status={r.status_code}")
-
-# 直接调履约核心重放：同样显性失败、不发货
-with SessionLocal() as db:
-    from backend.api.economy import FulfillmentError, _fulfill_order
-    order = db.query(models.RechargeOrder).filter(
-        models.RechargeOrder.order_id == "RC-REFUND-1").first()
-    raised = False
-    try:
-        _fulfill_order(db, recharge_order=order)
-    except FulfillmentError:
-        raised = True
-    db.rollback()
-check("履约核心对充值单抛 FulfillmentError", raised)
-check("重放后仍不发货", points_of(buyer_id) == 0, str(points_of(buyer_id)))
+r = client.post("/api/admin/economy/orders/NOT-EXIST/mark-paid", headers=ADMIN_H)
+check("不存在订单补单返回 404", r.status_code == 404, f"status={r.status_code} {r.text[:120]}")
 
 # ==================== 3. 订阅退款：精确回滚天数 ====================
 
@@ -369,7 +324,7 @@ with SessionLocal() as db:
             db.add(models.SystemConfig(key=key, value=value))
     notify_buyer = models.WebUser(username="refund_notify_buyer",
                                   password_hash=hash_password("notifypass123"),
-                                  is_active=True, points=0)
+                                  is_active=True)
     db.add(notify_buyer)
     db.commit()
     invalidate("payment_partner_key", "payment_partner_id")  # 热缓存失效：测试直接写库，手动清缓存

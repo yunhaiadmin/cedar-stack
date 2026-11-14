@@ -57,58 +57,7 @@ def test_pagination_used_in_admin_and_realms():
     assert "pagination_params(limit, offset)" in inspect.getsource(realms_api.realm_subscriptions)
 
 
-# ---------- F-P1-3 / F-P1-2：订单合并分页 ----------
-
-def test_orders_merge_no_missing(tmp_path):
-    """F-P1-2：充值 100/订阅 90/充值 80 场景，limit=1 翻页不遗漏。
-
-    直接复现审查报告的用例：按 created_at 倒序全局第 2 条应为订阅 90。
-    """
-    Session = _make_session(tmp_path)
-    db = Session()
-    try:
-        u = models.WebUser(username="u1", email="u1@x.com", password_hash="x")
-        db.add(u)
-        db.flush()
-        base = datetime(2026, 1, 1, 12, 0, 0)
-        # 充值 100（最新）、订阅 90、充值 80（最旧）
-        r1 = models.RechargeOrder(order_id="R100", user_id=u.id, package_id=1,
-                                  amount=100, price=100, status="paid",
-                                  created_at=base + timedelta(seconds=100))
-        s1 = models.SubscriptionOrder(order_id="S90", user_id=u.id, plan_id=1,
-                                      item_name="月卡", amount=30, status="paid",
-                                      created_at=base + timedelta(seconds=90))
-        r2 = models.RechargeOrder(order_id="R80", user_id=u.id, package_id=1,
-                                  amount=80, price=80, status="paid",
-                                  created_at=base + timedelta(seconds=80))
-        db.add_all([r1, s1, r2])
-        db.commit()
-
-        from backend.api.pagination import pagination_params
-
-        def merged_page(limit, offset):
-            limit, offset = pagination_params(limit, offset)
-            fetch = offset + limit
-            rq = (db.query(models.RechargeOrder)
-                  .order_by(models.RechargeOrder.created_at.desc())
-                  .offset(0).limit(fetch).all())
-            sq = (db.query(models.SubscriptionOrder)
-                  .order_by(models.SubscriptionOrder.created_at.desc())
-                  .offset(0).limit(fetch).all())
-            items = ([("recharge", o.order_id, o.created_at) for o in rq]
-                     + [("subscription", o.order_id, o.created_at) for o in sq])
-            items.sort(key=lambda x: x[2] or datetime.min, reverse=True)
-            return [i[1] for i in items[offset:offset + limit]]
-
-        # 第 1 页：R100；第 2 页：S90（原 bug 会返回 R80）；第 3 页：R80
-        assert merged_page(1, 0) == ["R100"]
-        assert merged_page(1, 1) == ["S90"]
-        assert merged_page(1, 2) == ["R80"]
-        # 整页一次取完
-        assert merged_page(10, 0) == ["R100", "S90", "R80"]
-    finally:
-        db.close()
-
+# ---------- F-P1-3：订单分页 ----------
 
 def test_orders_uses_pagination_and_batch_users():
     """F-P1-3/F-P1-1：订单接口走 pagination_params，且无逐单查用户。"""
@@ -608,25 +557,25 @@ def test_economy_orders_null_created_at_nullslast(tmp_path):
     try:
         now = datetime.now()
         user = models.WebUser(username="ord_null_t", password_hash="x")
-        pkg = models.RechargePackage(name="t", amount=1, price=1)
-        db.add_all([user, pkg])
+        plan = models.SubscriptionPlan(name="t", price=1, duration_days=30)
+        db.add_all([user, plan])
         db.flush()
         db.add_all([
-            models.RechargeOrder(order_id="R-NULL", user_id=user.id, package_id=pkg.id,
-                                 amount=1, price=1, status="paid", created_at=now),
-            models.RechargeOrder(order_id="R-NEW", user_id=user.id, package_id=pkg.id,
-                                 amount=1, price=1, status="paid", created_at=now),
+            models.SubscriptionOrder(order_id="R-NULL", user_id=user.id, plan_id=plan.id,
+                                     amount=1, status="paid", created_at=now),
+            models.SubscriptionOrder(order_id="R-NEW", user_id=user.id, plan_id=plan.id,
+                                     amount=1, status="paid", created_at=now),
         ])
         db.commit()
         # 真正的 NULL 行：ORM 显式传 None 会触发 Column(default=datetime.now)，
         # 用 core UPDATE 把 R-NULL 写成 NULL。
         from sqlalchemy import update as sa_update
-        db.execute(sa_update(models.RechargeOrder)
-                   .where(models.RechargeOrder.order_id == "R-NULL")
+        db.execute(sa_update(models.SubscriptionOrder)
+                   .where(models.SubscriptionOrder.order_id == "R-NULL")
                    .values(created_at=None))
         db.commit()
-        rows = (db.query(models.RechargeOrder.order_id)
-                .order_by(models.RechargeOrder.created_at.desc().nullslast()).all())
+        rows = (db.query(models.SubscriptionOrder.order_id)
+                .order_by(models.SubscriptionOrder.created_at.desc().nullslast()).all())
         assert [r[0] for r in rows] == ["R-NEW", "R-NULL"]
         # Python 侧归并：x["created_at"] or "" 把 NULL 排最后，与 SQL 口径一致
         items = [{"created_at": None}, {"created_at": now.isoformat()}]

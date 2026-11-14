@@ -39,7 +39,7 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 # ---------- 造数据 ----------
 db = SessionLocal()
 admin = models.WebUser(username=f"adm{suf}", password_hash=hash_password("admin12345"), is_staff=True, admin_role="super")
-target = models.WebUser(username=f"usr{suf}", password_hash=hash_password("user12345"), points=320)
+target = models.WebUser(username=f"usr{suf}", password_hash=hash_password("user12345"))
 invitee = models.WebUser(username=f"inv{suf}", password_hash=hash_password("user12345"))
 plan = models.SubscriptionPlan(
     name=f"测试套餐{suf}", price=Decimal("19.90"), duration_days=30, is_active=True,
@@ -61,13 +61,10 @@ db.add_all([
         user_id=invitee.id, plan_id=plan.id,
         start_date=now - timedelta(days=40), end_date=now - timedelta(days=10), status="expired",
     ),
-    models.PointsLog(user_id=target.id, amount=200, balance_after=200, type="checkin", description="签到"),
-    models.PointsLog(user_id=target.id, amount=150, balance_after=350, type="rebate", description="充值返利"),
-    models.PointsLog(user_id=target.id, amount=-30, balance_after=320, type="exchange", description="兑换消费"),
     models.InvitationRecord(inviter_id=target.id, invitee_id=invitee.id, code_id=1, reward_points=50),
-    models.RechargeOrder(
-        order_id=f"SMOKE{suf}", user_id=target.id, package_id=1, amount=500,
-        price=Decimal("50.00"), payment_method="alipay", status="paid", paid_at=now,
+    models.SubscriptionOrder(
+        order_id=f"SMOKE{suf}", user_id=target.id, plan_id=plan.id,
+        amount=Decimal("50.00"), payment_method="alipay", status="paid", paid_at=now,
     ),
     models.Announcement(title=f"冒烟公告{suf}", content="内容", type="system", is_active=True),
     models.Announcement(title=f"停用公告{suf}", content="内容", type="system", is_active=False),
@@ -103,8 +100,7 @@ try:
     # days_left 与用户端一致：截断取整（27 天有效期可能显示 26）
     active_days = (data.get("subscription", {}).get("active") or {}).get("days_left")
     check("详情含生效订阅", active_days is not None and 25 <= active_days <= 27, str(active_days))
-    # 2026-11-13 货币下线：详情不再返回积分节（种子里仍有历史 PointsLog，
-    # 钉住「有历史行也不回积分节」）
+    # 2026-11-13 货币下线、2026-11-14 台账整表删除：详情不返回积分节
     check("详情已无积分节", "points" not in data)
     check("详情含订单金额", data["orders"]["paid_total"] == 50.0, str(data["orders"]["paid_total"]))
     check("详情含邀请统计", data["invitation"]["count"] == 1 and "rebate_total" not in data["invitation"],
@@ -186,8 +182,7 @@ finally:
     if ids:
         for model, col in (
             (models.UserSubscription, models.UserSubscription.user_id),
-            (models.PointsLog, models.PointsLog.user_id),
-            (models.RechargeOrder, models.RechargeOrder.user_id),
+            (models.SubscriptionOrder, models.SubscriptionOrder.user_id),
             (models.InvitationRecord, models.InvitationRecord.inviter_id),
         ):
             db.query(model).filter(col.in_(ids)).delete(synchronize_session=False)

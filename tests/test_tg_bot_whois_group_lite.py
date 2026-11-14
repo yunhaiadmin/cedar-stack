@@ -7,7 +7,7 @@
 - 入口两种：回复某人的消息发 /kk（凭被回复者 TG 身份定位），
   或 /kk 站内用户名 / TG 号带参定位。
 - 精简卡字段白名单：站内用户名、TG 显示名、等级、订阅
-  到期、能量余额、网盘绑定（2026-11-08 新设计：一行汇总、绑定
+  到期、网盘绑定（2026-11-08 新设计：一行汇总、绑定
   自设标签认盘＋状态符号，见 test_tg_bot_whois_kk_drive_line）、
   账号状态。
   IP / 设备 / 登录记录 / 播放记录 / 凭据 id / 密码一律不许出现
@@ -97,10 +97,9 @@ def _staff(db):
 
 
 def _rich_target(db):
-    """资料齐全的被查人：等级/公益/订阅/能量/绑定/敏感痕迹全备。"""
+    """资料齐全的被查人：等级/公益/订阅/绑定/敏感痕迹全备。"""
     u = _user(
         db, "lite_target", tg_id=TARGET_TG,
-        points=321,
         password_hash="SECRET_HASH_SENTINEL",
         emby_password="SECRET_EMBY_PW_SENTINEL",
     )
@@ -171,7 +170,6 @@ def test_group_reply_lookup_renders_lite_card(db, sent):
     assert "Lv.1" in card                  # 等级
     assert "公益资格" not in card          # 公益资格行已随福利族删除
     assert "2027-03-01" in card            # 订阅到期
-    assert "321" in card                   # 能量余额
     # 绑定行（2026-11-08 新设计）：按 provider 分组一行汇总、标签认盘
     assert "💾 谷歌盘 ×1：绝密主盘LABEL ✓" in card
     assert "115 网盘 ×1：绝密副盘LABEL ✕已过期" in card
@@ -221,7 +219,6 @@ def test_group_non_staff_gets_no_target_info(db, sent):
     assert len(sent) == 1
     assert "仅管理员可用" in sent[0]
     assert "lite_target" not in sent[0]
-    assert "321" not in sent[0]
     router._user_cmd_limits.clear()
     router.dispatch(db, _group_update(
         "/kk", tg_id=PLAIN_TG,

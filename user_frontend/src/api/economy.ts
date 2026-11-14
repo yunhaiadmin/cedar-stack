@@ -32,16 +32,6 @@ export const homeApi = {
 
 // ==================== 类型 ====================
 
-export interface RechargePackage {
-  id: number
-  name: string
-  amount: number
-  bonus: number
-  price: number
-  is_popular: boolean
-  icon: string | null
-  total_points: number
-}
 
 export interface SubscriptionPlan {
   id: number
@@ -69,7 +59,7 @@ export interface PaymentMethod {
 
 export interface OrderRow {
   order_id: string
-  kind: 'recharge' | 'subscription'
+  kind: 'subscription'
   item_name: string
   /** 实付金额（用券后就是折后价） */
   amount: number
@@ -485,7 +475,7 @@ export const couponApi = {
   config: () =>
     api.get<never, { enabled: boolean }>('/api/user/economy/payment/coupon/config'),
   /** 试算：POST 以免优惠码进访问日志/浏览器历史；code 可空＝按自动权益口径试算 */
-  quote: (data: { code: string; kind: 'recharge' | 'subscription'; item_id: number; months?: number }) =>
+  quote: (data: { code: string; kind: 'subscription'; item_id: number; months?: number }) =>
     api.post<never, CouponQuote>('/api/user/economy/payment/coupon/quote', data),
 }
 
@@ -509,14 +499,13 @@ export const discountCreditApi = {
 
 export const paymentApi = {
   methods: () => api.get<never, PaymentMethod[]>('/api/user/economy/payment/methods'),
-  packages: () => api.get<never, { enabled: boolean; packages: RechargePackage[] }>('/api/user/economy/payment/packages'),
   // is_free / access_mode = 当前服是公益服（免费开放）：此时不展示套餐与购买引导
   plans: () =>
     api.get<never, { enabled: boolean; wallet_purchase_enabled?: boolean; plans: SubscriptionPlan[]; access_mode?: 'paid' | 'free'; is_free?: boolean; access_note?: string; device_limit?: number; download_allowed?: boolean }>(
       '/api/user/economy/payment/plans',
     ),
-  createOrder: (data: { kind: 'recharge' | 'subscription'; item_id?: number; payment_method: string; coupon_code?: string; custom_amount?: number; pay_with_points?: boolean }) =>
-    api.post<never, { success: boolean; order_id: string; amount: number; list_price?: number; discount_amount?: number; coupon_code?: string; exchange_discount_pct?: number; pay_url?: string; message: string; paid_with_points?: boolean; points_cost?: number }>('/api/user/economy/payment/order', data),
+  createOrder: (data: { kind: 'subscription'; item_id?: number; payment_method: string; coupon_code?: string; custom_amount?: number }) =>
+    api.post<never, { success: boolean; order_id: string; amount: number; list_price?: number; discount_amount?: number; coupon_code?: string; exchange_discount_pct?: number; pay_url?: string; message: string }>('/api/user/economy/payment/order', data),
   orders: (params?: { kind?: string; limit?: number }) =>
     api.get<never, { orders: OrderRow[] }>('/api/user/economy/payment/orders', { params }),
 }

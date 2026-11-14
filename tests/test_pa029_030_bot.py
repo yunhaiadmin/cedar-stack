@@ -48,7 +48,7 @@ def db():
 def _make_user(db, username, tg_id, points=0, is_active=True, is_welfare=True):
     u = models.WebUser(
         username=username, password_hash="x", telegram_id=tg_id,
-        points=points, is_active=is_active)
+        is_active=is_active)
     if hasattr(u, "is_welfare"):
         u.is_welfare = is_welfare
     db.add(u)
@@ -82,7 +82,6 @@ def test_disabled_user_cannot_redeem_via_bot(db):
     text = handlers.handle_redeem(db, _tg(), TG, "TEST100")
     assert "账号已被停用" in text
     db.refresh(user)
-    assert user.points == 0
     assert db.query(models.CodeRedemption).filter(
         models.CodeRedemption.user_id == user.id).count() == 0
 
@@ -98,6 +97,5 @@ def test_active_user_redeem_points_code_rejected(db):
     text = handlers.handle_redeem(db, _tg(), TG, "TEST101")
     assert "兑换码类型不支持" in text
     db.refresh(user)
-    assert user.points == 0
     assert db.query(models.CodeRedemption).filter(
         models.CodeRedemption.user_id == user.id).count() == 0

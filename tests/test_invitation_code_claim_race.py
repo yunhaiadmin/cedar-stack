@@ -293,7 +293,7 @@ def test_sequential_single_use_code():
 
 
 def test_exhausted_code_rejected_without_side_effects():
-    """停用码 / 已用尽码被拒绝，且不产生任何副作用（无新积分流水、无新邀请记录）"""
+    """停用码 / 已用尽码被拒绝，且不产生任何副作用（无新邀请记录）"""
     _invalidate_store()
     engine = _sqlite_memory_engine()
     models.Base.metadata.create_all(engine)
@@ -310,7 +310,6 @@ def test_exhausted_code_rejected_without_side_effects():
         assert apply_invitation(db, first, used.code)["applied"] is True
         db.commit()
 
-        points_before = db.query(models.PointsLog).count()
         records_before = db.query(models.InvitationRecord).count()
 
         # 1) 停用码：读查询直接查不到 → 拒绝
@@ -329,7 +328,6 @@ def test_exhausted_code_rejected_without_side_effects():
         db.rollback()
 
         db.expire_all()
-        assert db.query(models.PointsLog).count() == points_before, "被拒绝的邀请码不应发积分"
         assert db.query(models.InvitationRecord).count() == records_before, "被拒绝的邀请码不应建关系"
     finally:
         db.close()

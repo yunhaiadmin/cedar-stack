@@ -44,8 +44,8 @@ def _mk_session(engine):
 
 
 def _make_user(db, username="u1"):
-    u = models.WebUser(username=username, password_hash="", points=10000,
-                       is_active=True, member_xp=0, member_level=1)
+    u = models.WebUser(username=username, password_hash="",
+                       is_active=True)
     db.add(u)
     db.commit()
     return u

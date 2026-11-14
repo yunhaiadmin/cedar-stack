@@ -89,7 +89,7 @@ def test_policy_defaults_empty_db(db):
     assert policy.is_group_allowed(cfg, None) is False
     assert policy.rate_limit_seconds(cfg) == 3.0
     assert policy.group_rate_limit(cfg) == 20
-    assert policy.is_command_enabled(cfg, "/points") is True
+    assert policy.is_command_enabled(cfg, "/rules") is True
     assert policy.is_command_enabled(cfg, "/start") is True  # 不在开关表=常开
 
 
@@ -113,10 +113,10 @@ def test_policy_invalid_values_fall_back(db):
 
 def test_policy_bool_tolerant(db):
     _set_cfg(db, "bot_enabled", " True ")
-    _set_cfg(db, "bot_cmd_points", "FALSE")
+    _set_cfg(db, "bot_cmd_rules", "FALSE")
     cfg = policy.read_bot_config(db)
     assert policy.is_enabled(cfg) is True
-    assert policy.is_command_enabled(cfg, "/points") is False
+    assert policy.is_command_enabled(cfg, "/rules") is False
 
 
 def test_policy_decimal_rate_limit(db):
@@ -130,22 +130,22 @@ def test_policy_decimal_rate_limit(db):
 def test_group_whitelist_blocks(db, sent):
     _set_cfg(db, "bot_group_ids", "-100111")
     _make_user(db, "g1", 610001)
-    router.dispatch(db, _msg(610001, -100222, "/points", "supergroup"))
+    router.dispatch(db, _msg(610001, -100222, "/rules", "supergroup"))
     assert sent == []  # 非名单群静默忽略
 
 
 def test_group_whitelist_allows(db, sent):
     _set_cfg(db, "bot_group_ids", "-100111, -100222")
     _make_user(db, "g2", 610002)
-    router.dispatch(db, _msg(610002, -100222, "/points", "group"))
-    assert len(sent) == 1 and "能量余额" in sent[0]
+    router.dispatch(db, _msg(610002, -100222, "/rules", "group"))
+    assert len(sent) == 1 and "群规" in sent[0]
 
 
 def test_private_chat_unaffected_by_whitelist(db, sent):
     _set_cfg(db, "bot_group_ids", "-100111")
     _make_user(db, "p1", 610003)
-    router.dispatch(db, _msg(610003, 610003, "/points", "private"))
-    assert len(sent) == 1 and "能量余额" in sent[0]
+    router.dispatch(db, _msg(610003, 610003, "/rules", "private"))
+    assert len(sent) == 1 and "群规" in sent[0]
 
 
 def test_bind_code_in_blocked_group_ignored(db, sent):
@@ -172,7 +172,7 @@ def test_callback_in_blocked_group_ignored(db, monkeypatch):
 def test_master_switch_off_message(db, sent):
     _set_cfg(db, "bot_enabled", "false")
     _make_user(db, "m1", 620001)
-    router.dispatch(db, _msg(620001, 620001, "/points"))
+    router.dispatch(db, _msg(620001, 620001, "/rules"))
     assert sent == []
 
 
@@ -192,14 +192,14 @@ def test_master_switch_off_callback(db, monkeypatch):
 # ---------- 单命令开关 ----------
 
 def test_command_switch_off(db, sent):
-    _set_cfg(db, "bot_cmd_points", "false")
+    _set_cfg(db, "bot_cmd_rules", "false")
     _make_user(db, "c1", 630001)
-    router.dispatch(db, _msg(630001, 630001, "/points"))
+    router.dispatch(db, _msg(630001, 630001, "/rules"))
     assert sent == ["该功能已关闭"]
 
 
 def test_command_switch_start_always_on(db, sent):
-    _set_cfg(db, "bot_cmd_points", "false")
+    _set_cfg(db, "bot_cmd_rules", "false")
     _set_cfg(db, "bot_cmd_bind", "false")
     router.dispatch(db, _msg(630002, 630002, "/start"))
     assert len(sent) == 1 and "想看的片，喊一声就来" in sent[0]
@@ -209,36 +209,36 @@ def test_command_switch_start_always_on(db, sent):
 
 def test_user_rate_limit_triggers(db, sent):
     _make_user(db, "l1", 640001)
-    router.dispatch(db, _msg(640001, 640001, "/points"))
-    router.dispatch(db, _msg(640001, 640001, "/points"))
+    router.dispatch(db, _msg(640001, 640001, "/rules"))
+    router.dispatch(db, _msg(640001, 640001, "/rules"))
     assert len(sent) == 2
-    assert "能量余额" in sent[0]
+    assert "群规" in sent[0]
     assert sent[1] == "操作太快了，稍后再试"
 
 
 def test_user_rate_limit_configurable(db):
     _set_cfg(db, "bot_rate_limit_seconds", "100")
-    assert router._user_cmd_allow(640011, "/points", policy.rate_limit_seconds(policy.read_bot_config(db))) is True
-    assert router._user_cmd_allow(640011, "/points", policy.rate_limit_seconds(policy.read_bot_config(db))) is False
+    assert router._user_cmd_allow(640011, "/rules", policy.rate_limit_seconds(policy.read_bot_config(db))) is True
+    assert router._user_cmd_allow(640011, "/rules", policy.rate_limit_seconds(policy.read_bot_config(db))) is False
     # 不同命令互不影响
     assert router._user_cmd_allow(640011, "/redeem", 100.0) is True
 
 
 def test_user_rate_limit_window_expires():
-    assert router._user_cmd_allow(640021, "/points", 0.05) is True
-    assert router._user_cmd_allow(640021, "/points", 0.05) is False
+    assert router._user_cmd_allow(640021, "/rules", 0.05) is True
+    assert router._user_cmd_allow(640021, "/rules", 0.05) is False
     time.sleep(0.06)
-    assert router._user_cmd_allow(640021, "/points", 0.05) is True
+    assert router._user_cmd_allow(640021, "/rules", 0.05) is True
 
 
 def test_group_rate_limit_drops_silently(db, sent):
     _set_cfg(db, "bot_group_rate_limit", "2")
     for i, tg_id in enumerate((650001, 650002, 650003)):
         _make_user(db, f"gl{i}", tg_id)
-        router.dispatch(db, _msg(tg_id, -100650, "/points", "group"))
+        router.dispatch(db, _msg(tg_id, -100650, "/rules", "group"))
     # 前两条正常处理，第三条静默丢弃（无任何回复）
     assert len(sent) == 2
-    assert all("能量余额" in s for s in sent)
+    assert all("群规" in s for s in sent)
 
 
 def test_group_chatter_does_not_consume_budget(db, sent):
@@ -246,8 +246,8 @@ def test_group_chatter_does_not_consume_budget(db, sent):
     _make_user(db, "gc1", 650011)
     for _ in range(25):
         router.dispatch(db, _msg(650011, -100651, "普通聊天内容", "group"))
-    router.dispatch(db, _msg(650011, -100651, "/points", "group"))
-    assert len(sent) == 1 and "能量余额" in sent[0]
+    router.dispatch(db, _msg(650011, -100651, "/rules", "group"))
+    assert len(sent) == 1 and "群规" in sent[0]
 
 
 def test_group_window_slides():

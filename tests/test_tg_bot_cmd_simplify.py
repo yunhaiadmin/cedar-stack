@@ -8,17 +8,15 @@
   个人账号数据；私聊是欢迎＋快捷入口（主卡），同样不渲染账号卡。
 - 账号卡只有一张（features.account_card 唯一构建器）：/me、/account、
   用户面板（user_panel/compact_dashboard 旧名）输出逐字一致；固定
-  8 行汇总（编号/名称/等级带经验进度/能量/活力/绑定/
-  馆灵/订阅状态；资格行已随福利服役族、成就行已随成就系统
-  于 2026-11-14 删除），不逐条铺订阅/设备，不带连签行。
+  5 行汇总（编号/名称/绑定/馆灵/订阅状态；资格行已随福利
+  服役族、成就行已随成就系统、等级/能量/活力三行已随等级
+  体系与货币删除摘除），不逐条铺订阅/设备，不带连签行。
 - 账号展示一家（/me、/account、/level）群里放行（2026-10-28 用户
   亲定、2026-11-02 10:43 重申）：群里调用直接回账号卡（#1705 曾一并
   改成私聊限定，用户纠正后恢复）；其余私聊命令（private_only/P1/
   redeem）在群里仍回私聊提示形态。
-- /points 输出并入群发言能量段（今日已得/累计能量/发言规则），
-  /chatpoints 手输仍出原群发言能量卡。
-  （2026-11-13 货币删除收口：群发言计分随 backend.points 模块删除
-  整条摘除——/points 不再并入发言段、/chatpoints 入口删除走未知命令。）
+- /points、/rank 与 /chatpoints 入口已随能量体系删除整条摘除，
+  走未知命令（发言计分与能量段一并下线）。
 """
 from __future__ import annotations
 
@@ -38,8 +36,7 @@ TG = 900001
 GROUP = -100123
 
 ACCOUNT_LABELS = [
-    "用户编号", "账号名称", "当前等级", "能量余额",
-    "活力数值", "网盘绑定", "当前馆灵",
+    "用户编号", "账号名称", "网盘绑定", "当前馆灵",
     "订阅状态",
 ]
 
@@ -56,11 +53,10 @@ def db():
         engine.dispose()
 
 
-def _user(db, tg=TG, name="alice", points=42, vitality=14):
+def _user(db, tg=TG, name="alice"):
     row = models.WebUser(
         username=name, password_hash="x", telegram_id=tg,
-        points=points, vitality=vitality,
-    )
+        )
     db.add(row)
     db.commit()
     return row
@@ -103,7 +99,7 @@ def _dispatch(db, monkeypatch, text, chat_id, chat_type="private"):
 
 def test_menu_slimmed_to_27_with_me_kept():
     names = [n for n, _ in poller.BOT_COMMANDS]
-    assert len(names) == 24  # 原 27 条 + /playrank，批 9 摘除 duel/rain/redpacket/lottery/slots 五条、2026-11-13 摘除 checkin 后
+    assert len(names) == 22  # 原 27 条 + /playrank，批 9 摘除 duel/rain/redpacket/lottery/slots 五条、2026-11-13 摘除 checkin 后
     assert ("me", "[群/私聊] 账号中心") in poller.BOT_COMMANDS
     for gone in ("account", "renew", "chatpoints", "level"):
         assert gone not in names
@@ -125,24 +121,22 @@ def test_group_scope_drops_private_and_merged_commands():
     assert "start" in group_names
 
 
-# ---------- 账号卡：唯一构建器＋8 行汇总 ----------
+# ---------- 账号卡：唯一构建器＋5 行汇总 ----------
 
-def test_account_card_single_builder_8_rows(db):
+def test_account_card_single_builder_5_rows(db):
     user = _user(db)
     via_panel = features.user_panel(db, user)
     via_dashboard = features.compact_dashboard(db, user)
     via_account = features.handle_account(db, _tg(), TG, "")
     assert via_panel == via_dashboard == via_account
     rows = [ln for ln in via_account.split("\n") if ln.startswith("· ")]
-    assert len(rows) == 8
+    assert len(rows) == 5
     for label in ACCOUNT_LABELS:
         assert f"<b>{label}</b>" in via_account
     # 精简：不逐条铺订阅/设备、无连签行
     assert "最近设备" not in via_account
     assert "连签天数" not in via_account
     assert "解锁成就" not in via_account
-    # /level 的等级详情（经验进度）已并入当前等级行
-    assert "经验" in via_account and "还差" in via_account
 
 
 def test_me_and_account_alias_show_same_card_private(db, monkeypatch):
@@ -178,7 +172,6 @@ def test_me_in_group_renders_account_card(db, monkeypatch):
     assert sent
     text, _markup = sent[0]
     assert "账号名称" in text
-    assert "能量余额" in text
     assert "这是一条私聊命令" not in text
 
 
@@ -232,15 +225,6 @@ def test_start_private_bound_is_welcome_card(db):
 
 # ---------- 发言能量段与 /chatpoints 入口已随货币删除摘除 ----------
 
-def test_points_card_has_no_chatpoints_section(db):
-    _user(db)
-    text = handlers.handle_points(db, _tg(), TG, "")
-    assert "能量余额" in text
-    assert "今日已得" not in text
-    assert "累计能量" not in text
-    assert "发言规则" not in text
-
-
 def test_chatpoints_entry_removed(db, monkeypatch):
     """发言能量入口摘除回归钉（2026-11-13）：handler 不存在、
     /chatpoints 走未知命令路径，不再有群发言能量卡。"""
@@ -258,7 +242,7 @@ def test_user_scope_menu_only_three():
     names = [n for n, _ in command_scopes.default_commands(poller.BOT_COMMANDS)]
     assert names == ["start", "help", "me"]  # 按 BOT_COMMANDS 注册顺序下发
     admin_names = [n for n, _ in command_scopes.admin_commands(poller.BOT_COMMANDS)]
-    assert len(admin_names) == 24  # 全量菜单：批 9 摘五条玩法、2026-11-13 摘签到后
+    assert len(admin_names) == 22  # 全量菜单：批 9 摘五条玩法、2026-11-13 摘签到后
 
 
 # ---------- 二期：/start 私聊面板按钮覆盖全部用户功能 ----------
@@ -270,13 +254,11 @@ def test_user_scope_menu_only_three():
 PANEL_BUTTON_PATHS = {
     "用户面板/账号": "menu:user",
     "使用兑换码": "menu:renewcode",
-    "能量": "menu:points",
     "快捷登录/续期": "menu:login",
     "绑定账号": "menu:bind",
     "求片": "menu:request",
     "我的求片": "menu:myrequests",
     "求片榜": "menu:requestboard",
-    "排行榜": "menu:rank",
     "网盘绑定": "menu:bindings",
     "转存进度": "menu:transfers",
     "播放诊断": "menu:whyplay",

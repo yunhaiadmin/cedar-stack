@@ -100,7 +100,7 @@ def _today_start() -> datetime:
 def _today_start_utc_naive() -> datetime:
     """上海自然日 00:00，换算成 UTC naive——与入库时间列的存储帧对齐。
 
-    生产容器系统时区为 UTC，``PointsLog.created_at`` 等列以 UTC naive 入库；
+    生产容器系统时区为 UTC，各入库时间列以 UTC naive 入库；
     直接用服务器本地 00:00 当「今日」起点，会让日限额在北京时间 08:00 才重置
     （r18 F1、r30 L1 同类问题）。返回的起点已是 UTC 帧，可直接与入库列比较。
     """
@@ -911,11 +911,7 @@ def create_payment_order(
         max_pending = 5
     if max_pending > 0:
         pending = (
-            db.query(models.RechargeOrder).filter(
-                models.RechargeOrder.user_id == current_user.id,
-                models.RechargeOrder.status == "pending",
-            ).count()
-            + db.query(models.SubscriptionOrder).filter(
+            db.query(models.SubscriptionOrder).filter(
                 models.SubscriptionOrder.user_id == current_user.id,
                 models.SubscriptionOrder.status == "pending",
             ).count()
@@ -984,10 +980,7 @@ def create_payment_order(
     order.list_price = list_price
     order.discount_amount = discount_amount
     order.days_granted = price["days"]
-    if req.kind == "recharge":
-        order.price = paid_amount
-    else:
-        order.amount = paid_amount
+    order.amount = paid_amount
 
     db.add(order)
     if credit is not None:
@@ -1060,32 +1053,12 @@ def my_orders(
     current_user: models.WebUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """我的订单列表（充值 + 订阅合并）
+    """我的订单列表（订阅订单；充值订单已随积分全清）
 
     带优惠快照：原价 / 优惠金额 / 实付 / 用的哪个码。用户端要能自己对账
     （“我明明用了券，为什么订单显示全价”）。
     """
     orders: list[dict] = []
-
-    if kind in (None, "recharge"):
-        for o in db.query(models.RechargeOrder).filter(
-            models.RechargeOrder.user_id == current_user.id
-        ).order_by(models.RechargeOrder.created_at.desc()).limit(limit).all():
-            orders.append({
-                "order_id": o.order_id, "kind": "recharge",
-                # 历史充值单（积分时代）：只标「充值（历史）」，不再写能量字样
-                "item_name": "充值（历史）",
-                "amount": float(o.price), "status": o.status,
-                "list_price": float(o.list_price or 0),
-                "discount_amount": float(o.discount_amount or 0),
-                "coupon_code": "",
-                "coupon_usage_id": o.coupon_usage_id,
-                "created_at": o.created_at.isoformat() if o.created_at else None,
-                "paid_at": o.paid_at.isoformat() if o.paid_at else None,
-                # 退款留痕：用户端要能看到“为什么退了/退了多少”，否则只会来问客服
-                "refunded_at": o.refunded_at.isoformat() if o.refunded_at else None,
-                "refund_reason": o.refund_reason or "",
-            })
 
     if kind in (None, "subscription"):
         for o in db.query(models.SubscriptionOrder).filter(
@@ -1134,16 +1107,16 @@ def _verify_yipay_notify(params: dict, key: str) -> bool:
     return hmac.compare_digest(sign.lower(), expected.lower())
 
 
-def _order_paid_amount(recharge_order=None, subscription_order=None) -> Optional[Decimal]:
+def _order_paid_amount(subscription_order=None) -> Optional[Decimal]:
     """订单**应付金额**（实付口径）
 
     下单时把订单金额统一写成实付（原价 / 优惠 / 实付三个快照见 ``create_payment_order``），
     所以这里读的就是用户真正该付的钱。
     """
-    order = recharge_order if recharge_order is not None else subscription_order
+    order = subscription_order
     if order is None:
         return None
-    raw = order.price if recharge_order is not None else order.amount
+    raw = order.amount
     if raw is None:
         return None
     try:
@@ -1162,7 +1135,7 @@ def _notify_amount(value) -> Optional[Decimal]:
         return None
 
 
-def _amount_mismatch(recharge_order, subscription_order, raw: dict) -> Optional[str]:
+def _amount_mismatch(subscription_order, raw: dict) -> Optional[str]:
     """回调金额与订单是否对不上（对不上时返回给人看的说明）
 
     验签只证明「这条通知来自网关」；它不证明**钱数对不对**。网关配错价、订单号被复用、
@@ -1171,7 +1144,7 @@ def _amount_mismatch(recharge_order, subscription_order, raw: dict) -> Optional[
     所以回调里报了金额就逐笔核对：对不上 **不发货**（返回 fail，让网关重试并让运维看见）。
     回调没带金额时只能记一行日志按原逻辑发货——不能因为「读不到 money」把正常付款卡死。
     """
-    expected = _order_paid_amount(recharge_order, subscription_order)
+    expected = _order_paid_amount(subscription_order)
     reported = _notify_amount(raw.get("money"))
     if expected is None:
         return None
@@ -1222,7 +1195,7 @@ class FulfillmentError(RuntimeError):
     """
 
 
-def _fulfill_order(db: Session, recharge_order=None, subscription_order=None) -> list:
+def _fulfill_order(db: Session, subscription_order=None) -> list:
     """订单履约：订阅发放，幂等（重复回调不重复发货）
 
     **同步函数**（体内一个 await 都没有）：async 路由调用它时必须用
@@ -1238,13 +1211,6 @@ def _fulfill_order(db: Session, recharge_order=None, subscription_order=None) ->
     # 已退款 / 已关闭的订单绝不再履约：支付回调可能晚到或重放（网关重试、管理员已经
     # 关单后又收到回调），只判 `!= "paid"` 会把退过的订单又发一遍货。
     pending: list = []
-    if recharge_order:
-        # 能量充值已下线（2026-11-13）：历史 pending 充值单的回调不再自动发能量，
-        # 显性失败让网关/人工补单通道看见，转人工处理，不静默吞单。
-        raise FulfillmentError(
-            f"能量充值已下线：充值订单 {recharge_order.order_id} 无法自动履约，需人工处理"
-        )
-
     if subscription_order and _claim_order(db, models.SubscriptionOrder, subscription_order):
         plan = db.query(models.SubscriptionPlan).filter(
             models.SubscriptionPlan.id == subscription_order.plan_id
@@ -1372,25 +1338,21 @@ async def payment_notify(request: Request, db: Session = Depends(get_db)):
         if trade_status not in ("TRADE_SUCCESS", "TRADE_FINISHED"):
             return "success", []  # 非成功状态直接确认，避免重复通知
 
-        recharge_order = db.query(models.RechargeOrder).filter(
-            models.RechargeOrder.order_id == out_trade_no
-        ).first()
         subscription_order = db.query(models.SubscriptionOrder).filter(
             models.SubscriptionOrder.order_id == out_trade_no
         ).first()
 
-        if not recharge_order and not subscription_order:
+        if not subscription_order:
             logger.warning("支付回调订单不存在: %s", out_trade_no)
             return "fail", []
 
-        mismatch = _amount_mismatch(recharge_order, subscription_order, raw)
+        mismatch = _amount_mismatch(subscription_order, raw)
         if mismatch:
             logger.error("支付回调被拒（%s）: order=%s", mismatch, out_trade_no)
             return "fail", []
 
         try:
-            pending = _fulfill_order(db, recharge_order=recharge_order,
-                                     subscription_order=subscription_order)
+            pending = _fulfill_order(db, subscription_order=subscription_order)
             db.commit()
         except Exception:  # noqa: BLE001
             db.rollback()

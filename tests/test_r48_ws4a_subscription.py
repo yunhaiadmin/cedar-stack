@@ -28,21 +28,11 @@ def db():
     s.close()
 
 
-def _user(db, username="u1", points=0, level=1):
-    u = models.WebUser(username=username, password_hash="x", points=points,
-                       member_level=level, is_active=True)
+def _user(db, username="u1"):
+    u = models.WebUser(username=username, password_hash="x", is_active=True)
     db.add(u)
     db.commit()
     db.refresh(u)
-    if points:
-        # 生产里余额变动必经 _add_points/_spend_points 写台账（全仓无
-        # 直接赋值 points 的代码路径）。P1-4 来源限定是台账纯函数，
-        # 裸余额不代表任何真实用户：这里把初始余额按「签到挣来」入账，
-        # 与成功路径用例的隐含前提（余额可花）对齐。
-        db.add(models.PointsLog(user_id=u.id, amount=points,
-                                balance_after=points, type="checkin",
-                                description="test", created_at=datetime.now()))
-        db.commit()
     return u
 
 
@@ -65,24 +55,11 @@ def _plan(db, realm_id, name="月卡", price="18.00", points_price="400", days=3
     return p
 
 
-def _level(db, level, discount_pct):
-    db.add(models.MemberLevel(level=level, name=f"Lv{level}",
-                              xp_threshold=0, discount_pct=discount_pct,
-                              is_active=True))
-    db.commit()
-
-
 def _order_req(plan_id, **kw):
     base = dict(kind="subscription", item_id=plan_id,
                 payment_method="alipay", pay_with_points=True)
     base.update(kw)
     return economy.CreateOrderRequest(**base)
-
-
-def _balance(db, uid):
-    db.expire_all()
-    return db.query(models.WebUser.points).filter(
-        models.WebUser.id == uid).scalar() or 0
 
 
 def _gateway_cfg(db):

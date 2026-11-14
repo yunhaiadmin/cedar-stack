@@ -81,9 +81,9 @@ with SessionLocal() as db:
     staff = models.WebUser(username="coupon_staff", password_hash=hash_password("staffpass123"),
                            is_staff=True, admin_role="super", is_active=True)
     buyer = models.WebUser(username="coupon_buyer", password_hash=hash_password("buyerpass123"),
-                           is_active=True, points=0)
+                           is_active=True)
     buyer2 = models.WebUser(username="coupon_buyer2", password_hash=hash_password("buyer2pass123"),
-                            is_active=True, points=0)
+                            is_active=True)
     db.add_all([staff, buyer, buyer2])
     db.commit()
 
@@ -123,10 +123,6 @@ def usage_of(order_id: str):
 
 def order_row(order_id: str):
     with SessionLocal() as db:
-        row = db.query(models.RechargeOrder).filter(
-            models.RechargeOrder.order_id == order_id).first()
-        if row:
-            return row
         return db.query(models.SubscriptionOrder).filter(
             models.SubscriptionOrder.order_id == order_id).first()
 

@@ -23,7 +23,6 @@ _TABLES = [
     models.WebUser,
     models.SystemConfig,
     models.ServerRealm,
-    models.MemberLevel,
     models.LotteryRound,
     models.LotteryRoundPrize,
     models.LotteryRoundEntry,
@@ -65,14 +64,10 @@ def _make_realm(db):
     return realm
 
 
-def _make_levels(db):
-    for level, threshold in [(1, 0), (2, 100), (3, 500), (4, 1500), (5, 5000), (6, 15000)]:
-        db.add(models.MemberLevel(level=level, name=f"Lv.{level}", xp_threshold=threshold, discount_pct=0, is_active=True))
-    db.commit()
-
-
 def _make_user(db, username, xp=0):
-    user = models.WebUser(username=username, password_hash="", telegram_id=abs(hash(username)) % 10**9, member_xp=xp)
+    # xp 参数保留兼容旧调用点：member_xp 列已删除、经验无落库来源，
+    # user_level 恒为 Lv.1，本参数不再传入构造器。
+    user = models.WebUser(username=username, password_hash="", telegram_id=abs(hash(username)) % 10**9)
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -86,7 +81,6 @@ def _enable_lottery(db, groups="999"):
 
 def _setup(db, groups="999"):
     _make_realm(db)
-    _make_levels(db)
     _enable_lottery(db, groups)
 
 
@@ -116,46 +110,53 @@ def test_direct_points_prize_type_rejected(db):
 
 
 def test_direct_whitelist_banned(db):
+    # 等级体系删除后 user_level 恒 Lv.1：直接发起在载荷校验（whitelist 禁令）
+    # 之前先被等级门 403 拦下，whitelist 校验已不可达；仍断言不建轮次。
     _setup(db)
     user = _make_user(db, "lv5", xp=5000)
     with pytest.raises(gov.LotteryGovernanceError) as ei:
         gov.direct_launch(db, user.id, _payload(prizes=[{"name": "x", "type": "whitelist", "value": 0, "quantity": 1}]))
-    assert ei.value.status_code == 400
+    assert ei.value.status_code == 403
     assert db.query(models.LotteryRound).count() == 0
 
 
 def test_direct_days_value_over_default_cap_rejected(db):
+    # 同上：等级门先于奖品上限校验，超限载荷现以 403 在等级门被拒。
     _setup(db)
     user = _make_user(db, "lv5", xp=5000)
     with pytest.raises(gov.LotteryGovernanceError) as ei:
         gov.direct_launch(db, user.id, _payload(prizes=[{"name": "x", "type": "days", "value": 31, "quantity": 1}]))
-    assert ei.value.status_code == 400
+    assert ei.value.status_code == 403
 
 
 def test_direct_total_value_over_default_cap_rejected(db):
-    # 单奖 30 天未超单奖上限，但 30*167=5010 超每轮总价值上限 5000。
+    # 单奖 30 天未超单奖上限，但 30*167=5010 超每轮总价值上限 5000；
+    # 现等级门先行，同以 403 被拒（总价值上限校验已不可达）。
     _setup(db)
     user = _make_user(db, "lv5", xp=5000)
     with pytest.raises(gov.LotteryGovernanceError) as ei:
         gov.direct_launch(db, user.id, _payload(prizes=[{"name": "x", "type": "days", "value": 30, "quantity": 167}]))
-    assert ei.value.status_code == 400
+    assert ei.value.status_code == 403
 
 
 def test_direct_at_caps_allowed(db):
-    # 边界：单奖 == 天数上限（30）时放行（上限是 <= 语义）。
+    # 原边界（单奖 == 天数上限 30 时放行）已不可达：无经验来源恒 Lv.1，
+    # 直接发起一律在等级门 403、不建轮次。
     _setup(db)
     user = _make_user(db, "lv5", xp=5000)
-    round_obj, _rec = gov.direct_launch(db, user.id, _payload(prizes=[{"name": "x", "type": "days", "value": 30, "quantity": 5}]))
-    assert round_obj.status == "open"
+    with pytest.raises(gov.LotteryGovernanceError) as ei:
+        gov.direct_launch(db, user.id, _payload(prizes=[{"name": "x", "type": "days", "value": 30, "quantity": 5}]))
+    assert ei.value.status_code == 403
+    assert db.query(models.LotteryRound).count() == 0
 
 
 def test_proposal_over_cap_rejected(db):
-    # 提案提交与批准共用同一上限：超限提案提交即 400。
+    # 提案提交同理：等级门先于奖品上限校验，超限提案现以 403 被拒。
     _setup(db)
     user = _make_user(db, "lv5", xp=5000)
     with pytest.raises(gov.LotteryGovernanceError) as ei:
         gov.submit_proposal(db, user.id, _payload(prizes=[{"name": "x", "type": "days", "value": 10**9, "quantity": 1}]))
-    assert ei.value.status_code == 400
+    assert ei.value.status_code == 403
 
 
 # ---------------- A-101：发起人禁参赛 ----------------
@@ -187,7 +188,8 @@ def test_single_seat_round_empty_after_creator_excluded(db):
     dist = lottery.distribute_round(db, round_obj.id)
     assert dist["distributed"] == 0
     db.refresh(creator)
-    assert creator.points == 0
+    # points 列已随货币删除：创建者没有任何积分落点（原断言 creator.points == 0）
+    assert getattr(creator, "points", None) is None
 
 
 def test_admin_created_round_unaffected(db):
@@ -295,6 +297,7 @@ def test_concurrent_proposals_cap_one(file_db):
 def test_concurrent_direct_same_group_single_open(file_db):
     # 对照：同群并发双建仍只有一轮 open（生产 PG 靠部分唯一索引兜底；
     # sqlite 测试库无该索引，串行化后的同群进行中检查给出同一 400 结果）。
+    # 等级体系删除后恒 Lv.1：两路都在等级门 403，open 轮次为 0（原断言 ==1）。
     Session, lv5_id, _lv2_id = file_db
     outcomes, worker = _run_two(Session, lambda s, title: gov.direct_launch(
         s, lv5_id, _payload(title=title, chat_id=999)))
@@ -306,8 +309,9 @@ def test_concurrent_direct_same_group_single_open(file_db):
     t2.join(timeout=60)
     assert not t1.is_alive() and not t2.is_alive()
     assert [o for o in outcomes if o.startswith("error")] == []
+    assert outcomes.count("ok") == 0
     s = Session()
     try:
-        assert s.query(models.LotteryRound).filter_by(chat_id=999, status="open").count() == 1
+        assert s.query(models.LotteryRound).filter_by(chat_id=999, status="open").count() == 0
     finally:
         s.close()

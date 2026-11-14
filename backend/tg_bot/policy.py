@@ -21,13 +21,11 @@ DEFAULTS: dict[str, str] = {
     # 限流：每群每分钟最多处理消息数
     "bot_group_rate_limit": "20",
     # 各命令开关（/start /help 常开，不在表里）
-    "bot_cmd_points": "true",
     "bot_cmd_redeem": "true",
     "bot_cmd_bind": "true",
     "bot_cmd_account": "true",
     "bot_cmd_request": "true",
     "bot_cmd_myrequests": "true",
-    "bot_cmd_rank": "true",
     "bot_cmd_requestboard": "true",
     "bot_cmd_rules": "true",
     "bot_cmd_login": "true",
@@ -54,14 +52,12 @@ DEFAULTS: dict[str, str] = {
 
 # 命令 → 开关配置键（不在表中的命令视为常开）
 COMMAND_SWITCHES: dict[str, str] = {
-    "/points": "bot_cmd_points",
     "/redeem": "bot_cmd_redeem",
     "/bind": "bot_cmd_bind",
     "/account": "bot_cmd_account",
     "/me": "bot_cmd_account",
     "/request": "bot_cmd_request",
     "/myrequests": "bot_cmd_myrequests",
-    "/rank": "bot_cmd_rank",
     "/requestboard": "bot_cmd_requestboard",
     "/rules": "bot_cmd_rules",
     "/login": "bot_cmd_login",

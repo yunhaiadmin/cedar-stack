@@ -209,10 +209,10 @@ ANON_ADMIN_TEXT = (
 
 # 需要发送者身份的命令全集：handler 内走 resolve / _bound_user /
 # _p1_user，匿名发在 router 层统一拦下回 ANON_ADMIN_TEXT。
-# 不在表内＝公开命令（/help /rank /requestboard /rules：不查
+# 不在表内＝公开命令（/help /requestboard /rules：不查
 # 发送者身份、只读全站或群级数据），匿名发照常执行。
 _IDENTITY_COMMANDS = {
-    "/start", "/bind", "/points",
+    "/start", "/bind",
     "/account", "/me", "/request", "/myrequests", "/login", "/renew",
     "/govlog", "/level", "/report", "/propose", "/launch",
     "/redeem",
@@ -499,12 +499,10 @@ def dispatch(db, update: dict) -> None:
             "/start": handlers.handle_start,
             "/help": handlers.handle_help,
             "/bind": handlers.handle_bind,
-            "/points": handlers.handle_points,
             "/account": handlers.handle_account,
             "/me": handlers.handle_account,
             "/request": handlers.handle_request,
             "/myrequests": handlers.handle_my_requests,
-            "/rank": handlers.handle_rank,
             "/govlog": handlers.handle_govlog,
             "/level": handlers.handle_account,
             "/report": handlers.handle_report,
