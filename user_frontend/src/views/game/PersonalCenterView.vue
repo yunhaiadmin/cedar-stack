@@ -119,8 +119,23 @@
           </span>
           <ChevronRight :size="18" class="ov-row__chev" aria-hidden="true" />
         </button>
+        <!-- 我的网盘行：未绑定时点开绑盘弹层就地绑（2026-11-14 用户
+             亲点，与线路弹层同形态）；已绑定/不可用维持进设置页管理 -->
+        <button
+          v-if="driveRowVisible && driveState === 'unbound'"
+          type="button"
+          class="ov-irow"
+          @click="bindSheetOpen = true"
+        >
+          <HardDrive :size="25" class="ov-irow__icon" aria-hidden="true" />
+          <span class="ov-irow__main">
+            <span class="ov-irow__name">我的网盘</span>
+            <span class="ov-irow__sub">{{ driveMeta }}</span>
+          </span>
+          <ChevronRight :size="18" class="ov-row__chev" aria-hidden="true" />
+        </button>
         <RouterLink
-          v-if="driveRowVisible"
+          v-else-if="driveRowVisible"
           class="ov-irow"
           :to="{ path: '/game/account/settings', hash: '#my-drive' }"
         >
@@ -203,6 +218,15 @@
       :dark="themeResolved === 'dark'"
       @close="linesSheetOpen = false"
     />
+
+    <!-- 绑定谷歌盘弹层：我的网盘行未绑定时点开（2026-11-14 用户亲点，
+         与线路弹层同形态）；绑成后刷新本行状态 -->
+    <BindDriveSheet
+      :open="bindSheetOpen"
+      :dark="themeResolved === 'dark'"
+      @close="bindSheetOpen = false"
+      @bound="onDriveBound"
+    />
   </div>
 </template>
 
@@ -248,6 +272,7 @@ import {
   type TrafficSummary,
 } from '@/api/traffic'
 import ServerLinesSheet from '@/components/profile/ServerLinesSheet.vue'
+import BindDriveSheet from '@/components/profile/BindDriveSheet.vue'
 import {
   embyApi, subscriptionApi,
   type AccountCard, type MySubscription,
@@ -441,6 +466,8 @@ async function copyLineUrl(url: string) {
 }
 const driveRowVisible = ref(false)
 const driveMeta = ref('')
+const driveState = ref<'unbound' | 'bound' | 'unavailable'>('unbound')
+const bindSheetOpen = ref(false)
 async function loadDriveMeta() {
   try {
     const res = await storageBindingApi.providers()
@@ -448,10 +475,21 @@ async function loadDriveMeta() {
     driveRowVisible.value = true
     const list = await storageBindingApi.list()
     const drive = (list.bindings || []).filter(b => b.provider === 'drive')
-    if (!drive.length) driveMeta.value = '谷歌盘 · 未绑定'
-    else if (drive.some(b => b.status === 'active')) driveMeta.value = '谷歌盘 · 已绑定'
-    else driveMeta.value = '谷歌盘 · 不可用'
+    if (!drive.length) {
+      driveMeta.value = '谷歌盘 · 未绑定'
+      driveState.value = 'unbound'
+    } else if (drive.some(b => b.status === 'active')) {
+      driveMeta.value = '谷歌盘 · 已绑定'
+      driveState.value = 'bound'
+    } else {
+      driveMeta.value = '谷歌盘 · 不可用'
+      driveState.value = 'unavailable'
+    }
   } catch { /* 名单拿不到整行不渲染（与设置页门控一致） */ }
+}
+function onDriveBound() {
+  // 弹层里绑成：刷新本行状态（未绑定 → 已绑定，行随之变回进设置页管理）
+  void loadDriveMeta()
 }
 
 // ── 总览数据 ──
@@ -473,7 +511,8 @@ async function loadOverview() {
 }
 
 onMounted(() => {
-  // 旧深链（播放器方案弹窗的「去绑盘」）直达设置页绑定组
+  // 旧深链 #my-drive 仍直达设置页绑定组（行为保留；站内绑盘入口
+  // 已改弹层，这里只兜历史链接）
   if (route.hash === '#my-drive') {
     void router.replace({ path: '/game/account/settings', hash: '#my-drive' })
     return
