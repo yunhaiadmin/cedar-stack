@@ -7,7 +7,7 @@ compat_routes._record_stopped，回收路径只标 ended_at 不结算。
 2026-11-14 等级体系删除收口：观影 XP 已下线（活力/能量更早随货币
 下线），结算函数现为空转。本文件钉死剩余口径：
 1. 无 Stopped、会话被回收仍照常收尾：ended_at 落、rewards_settled_at
-   幂等标记落；不发任何经验（member_xp 不动、无 MemberXpLog 行）。
+   幂等标记落；不发任何经验（member_xp 不动）。
 2. 先结算的一方落标记，后到的迟到 Stopped / 重复 Stopped / 复活重播
    都不再重复结算、不报错。
 """
@@ -83,12 +83,6 @@ def _xp(db, user_id):
         models.WebUser.id == user_id).scalar() or 0)
 
 
-def _watch_xp_rows(db, user_id):
-    return (db.query(models.MemberXpLog)
-            .filter(models.MemberXpLog.user_id == user_id,
-                    models.MemberXpLog.source == "watch")
-            .count())
-
 
 def _req():
     return SimpleNamespace(headers={},
@@ -119,7 +113,6 @@ def test_reap_closes_and_marks_without_stopped(db):
     assert s.ended_at is not None
     assert s.rewards_settled_at is not None
     assert _xp(db, u.id) == 0
-    assert _watch_xp_rows(db, u.id) == 0
 
 
 def test_reap_long_session_still_no_xp(db):
@@ -128,7 +121,6 @@ def test_reap_long_session_still_no_xp(db):
     _stale_session(db, u.id, it.id, 65, "reap-t2-key")
     assert maintenance.reap_stale_playback_sessions(db, stale_minutes=10) == 1
     assert _xp(db, u.id) == 0
-    assert _watch_xp_rows(db, u.id) == 0
 
 
 def test_reap_below_tier_session_closed(db):
@@ -153,7 +145,6 @@ def test_late_stopped_after_reap_no_double(db):
     assert maintenance.reap_stale_playback_sessions(db, stale_minutes=10) == 1
     _stopped(db, u, it, "late-stop-key", 46)
     assert _xp(db, u.id) == 0
-    assert _watch_xp_rows(db, u.id) == 0
 
 
 def test_duplicate_stopped_no_double(db):
@@ -163,7 +154,6 @@ def test_duplicate_stopped_no_double(db):
     _stopped(db, u, it, "dup-stop-key", 46)
     _stopped(db, u, it, "dup-stop-key", 46)
     assert _xp(db, u.id) == 0
-    assert _watch_xp_rows(db, u.id) == 0
 
 
 def test_revival_same_item_no_double(db):
@@ -182,7 +172,6 @@ def test_revival_same_item_no_double(db):
     finally:
         compat_routes._require_visible_item = orig
     assert _xp(db, u.id) == 0
-    assert _watch_xp_rows(db, u.id) == 0
 
 
 # ---------- 3. 两场同日各结各的 ----------
@@ -196,4 +185,3 @@ def test_reap_two_sessions_both_settle(db):
     _stale_session(db, u.id, it2.id, 65, "reap-cap-2")
     assert maintenance.reap_stale_playback_sessions(db, stale_minutes=10) == 2
     assert _xp(db, u.id) == 0
-    assert _watch_xp_rows(db, u.id) == 0

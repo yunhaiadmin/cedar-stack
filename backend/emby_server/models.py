@@ -912,24 +912,6 @@ class WorldWallPost(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
-class WorldFortuneDraw(Base):
-    """探险世界 · 每日抽一签记录"""
-    __tablename__ = "world_fortune_draws"
-    __table_args__ = (
-        Index("idx_fortune_user_date", "user_id", "draw_date", unique=True),
-        Index("idx_fortune_date", "draw_date"),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("web_users.id"), nullable=False, index=True)
-    draw_date = Column(Date, nullable=False)  # 抽签日期（自然日，Asia/Shanghai）
-    level = Column(String(20))  # 等级：上上签/上签/中签/下签
-    text = Column(String(200))  # 签文
-    yi = Column(String(100))  # 宜
-    ji = Column(String(100))  # 忌
-    created_at = Column(DateTime, default=datetime.now)
-
-
 class ItemFacet(Base):
     """条目 ↔ 分类值（流派 / 工作室 / 标签 / 发行平台）关联表（v2.15.0）
 
@@ -1436,129 +1418,6 @@ class UpstreamItemMapping(Base):
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now,
                         nullable=False)
-
-
-class CmsAdSkipDetection(Base):
-    """CMS 片头印制广告检测结果（广告剪除试点，2026-11-03）。
-
-    一行 = 一条上游映射（upstream_item_mappings.id）的一次现行
-    检测结论：后台检测把片头抽帧后按「静止段 + 已知赞助卡指纹」
-    双信号判定，结果记在这里供清单代理剪除时查（高置信 ad 才
-    剪，见 emby_server/cms_ad_skip）。证据只留帧文件路径与短码
-    说明，不存视频字节、不存任何凭据。不加外键（照
-    UpstreamItemMapping 先例）：映射删了行留着供追溯。由
-    create_all 自动建表，老库无需 ALTER。
-    """
-
-    __tablename__ = "cms_ad_skip_detections"
-
-    __table_args__ = (
-        UniqueConstraint("mapping_id",
-                         name="uq_cms_ad_skip_detection_mapping"),
-        Index("ix_cms_ad_skip_detections_source", "source_id"),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    mapping_id = Column(Integer, nullable=False)  # upstream_item_mappings.id
-    local_item_id = Column(Integer, nullable=False)  # emby_items.id
-    source_id = Column(Integer, nullable=False)  # upstream_sources.id
-    # ad / clean / static_unknown / insufficient / fetch_blocked / failed
-    status = Column(String(30), nullable=False, default="pending")
-    skip_seconds = Column(Float, nullable=True)  # 建议剪除的片头时长（仅 ad）
-    ad_start = Column(Float, nullable=True)
-    ad_end = Column(Float, nullable=True)
-    confidence = Column(Float, nullable=False, default=0.0)
-    detector_version = Column(String(20), nullable=False, default="")
-    seed_name = Column(String(100), nullable=False, default="")  # 命中的指纹名
-    evidence_path = Column(String(300), nullable=False, default="")  # 证据帧路径
-    detail = Column(String(500), nullable=False, default="")  # 短码/失败原因
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now,
-                        nullable=False)
-
-
-class CmsGraftRepair(Base):
-    """CMS 片头印制广告「借帧修复」记账（2026-11-03 站主亲定产品化）。
-
-    一行 = 一条上游映射（upstream_item_mappings.id）的修复结论：
-    修复工人（emby_server/cms_graft_worker）把脏版片头条带用同片
-    干净版的同一帧像素贴回，产物分段落在数据卷
-    ``cms_graft/<mapping_id>/seg_*.ts``，本行记状态与段表。
-    播放路径只认 ``status='verified'`` 的行（修完必须经真取流
-    验证才许下发，见 emby_server/cms_graft.lookup_verified）；
-    其余状态一律当无修复、原样播（选线降权兜底）。证据只留
-    路径/短码，不存凭据。不加外键（照 UpstreamItemMapping
-    先例）：映射删了行留着供追溯。由 create_all 自动建表。
-    """
-
-    __tablename__ = "cms_graft_repairs"
-
-    __table_args__ = (
-        UniqueConstraint("mapping_id",
-                         name="uq_cms_graft_repair_mapping"),
-        Index("ix_cms_graft_repairs_source", "source_id"),
-        Index("ix_cms_graft_repairs_status", "status"),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    mapping_id = Column(Integer, nullable=False)  # upstream_item_mappings.id
-    local_item_id = Column(Integer, nullable=False)  # emby_items.id
-    source_id = Column(Integer, nullable=False)  # upstream_sources.id
-    # queued / running / verified / repaired（修完未验，不下发）/
-    # skipped（不入选，reason 记因）/ failed / verify_failed
-    status = Column(String(30), nullable=False, default="queued")
-    # 修复方法（2026-11-04 自帧线并列）：graft（借帧，存量默认）/
-    # self（自帧处理中）/ self_fill（均匀背景填充）/ self_blur
-    # （复杂画面强模糊）。下发只认 status=verified、与 method 无关。
-    method = Column(String(20), nullable=False, default="graft")
-    # no_clean_sibling / band_too_long / watermark_or_overlong /
-    # align_failed / gate_failed / codec_unsupported / fetch_failed /
-    # sibling_dirty / probe_failed（短码，detail 里可带补充）
-    reason = Column(String(60), nullable=False, default="")
-    band_end_sec = Column(Float, nullable=True)  # 解码轴上带结束秒
-    band_family = Column(String(10), nullable=False, default="")  # A/B/C/D
-    strip_json = Column(Text, nullable=False, default="")  # {y0,y1,h}
-    sibling_mapping_id = Column(Integer, nullable=True)  # 借帧方映射
-    segments_json = Column(Text, nullable=False, default="")  # 段表 JSON
-    mouth_sec = Column(Float, nullable=True)  # 本次入选口子
-    worker_version = Column(String(20), nullable=False, default="")
-    detail = Column(String(500), nullable=False, default="")  # 短码/统计
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now,
-                        nullable=False)
-
-
-class AppleCMSDetailCache(Base):
-    """苹果 CMS detail 抓取缓存（抓详情分流，2026-11-02）。
-
-    一行 = 一个（源, vod）的 detail 提取结果：``area`` 是
-    ``vod_area`` 原文，``harvest`` 是多源填充用的源站字段 JSON
-    （海报/简介/评分/演员/导演/备注/分类名，键名与
-    ``UpstreamCatalogRecord`` 透传组一致）。为什么新表：detail
-    只许打一次是**跨库**不变式——同一个（源, vod）会被总库与
-    地区库各处理一遍，被某库按桶跳过的条目不建行、不记映射，
-    现有表（upstream_item_mappings / upstream_hosted_lifecycle）
-    都以 local_item_id 为键，挂不下「还没有本地行」的抓取结果。
-
-    只存提取后的字段，**绝不存 detail 原文**（vod_play_url 等
-    播放地址不落库的红线不变）。抓取失败不写行：下轮重试。
-    不加外键（照 UpstreamSource 先例），由 create_all 自动建表。
-    """
-
-    __tablename__ = "applecms_detail_cache"
-
-    __table_args__ = (
-        UniqueConstraint("source_id", "upstream_item_id",
-                         name="uq_applecms_detail_cache_pair"),
-        Index("ix_applecms_detail_cache_source", "source_id"),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    source_id = Column(Integer, nullable=False)  # upstream_sources.id，无外键
-    upstream_item_id = Column(String(100), nullable=False)  # 源站 vod_id
-    area = Column(String(200), nullable=False, default="")  # vod_area 原文
-    harvest = Column(Text, nullable=False, default="")  # 提取字段 JSON
-    fetched_at = Column(DateTime, default=datetime.now, nullable=False)
 
 
 class UpstreamLibraryLink(Base):
@@ -3177,49 +3036,6 @@ class EmbyApiToken(Base):
 from backend.emby_server import soft_delete as _soft_delete  # noqa: E402,F401
 
 
-class IntroMarker(Base):
-    """片头片尾标记（对标 StrmAssistant #3）。
-
-    marker_type: intro（片头）/ outro（片尾）/ credits（字幕）
-    时间单位：毫秒（与 Emby Chapter 标记对齐）。
-    数据来源：manual（手动标记）/ auto（自动探测，预留）
-    """
-    __tablename__ = "emby_intro_markers"
-    # item_id 列级已有 index=True，这里不再重复建（避免同一列两个索引）
-    __table_args__ = ()
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    item_id = Column(Integer, ForeignKey("emby_items.id"), nullable=False, index=True)
-    marker_type = Column(String(20), nullable=False)  # intro / outro / credits
-    start_ms = Column(BigInteger, nullable=False, default=0)
-    end_ms = Column(BigInteger, nullable=False, default=0)
-    source = Column(String(20), default="manual")  # manual / auto
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-
-
-class IntroSegment(Base):
-    """IntroDB 自动片头片尾分段缓存（2026-10-17 学 raisemby 接入）。
-
-    segment_type: intro（片头）/ recap（前情提要）/ outro（片尾）/
-    credits（字幕）/ post-credits（片尾彩蛋）；segment_type='none' 是
-    负缓存哨兵行（拉过但上游没分段）。
-    时间单位：毫秒（与 IntroMarker 对齐，直接进 to_chapters 下发）。
-    缓存 TTL：正缓存 30 天、负缓存 7 天（见 introdb.py），按 fetched_at 判。
-    新表由 Base.metadata.create_all 自动建。
-    """
-    __tablename__ = "emby_intro_segments"
-    __table_args__ = ()
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    item_id = Column(Integer, ForeignKey("emby_items.id"), nullable=False, index=True)
-    segment_type = Column(String(20), nullable=False)  # intro/recap/outro/credits/post-credits/none
-    start_ms = Column(BigInteger, nullable=False, default=0)
-    end_ms = Column(BigInteger, nullable=False, default=0)
-    source = Column(String(20), default="introdb")  # introdb
-    fetched_at = Column(DateTime, default=datetime.now)
-
-
 class ChaseFileSnapshot(Base):
     """追新文件指纹快照（P0-2）：文件级 diff 取代目录 mtime 过滤。
 
@@ -3434,8 +3250,6 @@ __all__ = [
     "StorageMount",
     "Pan115Account",
     "EmbyApiToken",
-    "IntroMarker",
-    "IntroSegment",
     "ChaseFileSnapshot",
     "ChaseRun",
     "ChaseSourceState",
@@ -3556,46 +3370,6 @@ class EnrichStageRecord(Base):
     rule_pack_version = Column(String(20))
     rule_pack_hash = Column(String(64))
     updated_at = Column(DateTime, default=datetime.now)
-
-
-class AiAdvisorSuggestion(Base):
-    """AI 参谋建议行（高级刮削第二批的接线批；魂 6 状态集中维护）。
-
-    一条建议一行，只追加、不改写历史：建议的每次状态变化都把最新
-    全量快照（含 audit trail）写回本行，旧快照不另存——审计看的是
-    本行的 suggestion_json（to_dict 全量，含 raw 与 audit）。
-
-    不复用识别审查队列表：那张表的 reason CHECK 只允许
-    ``no_confident_match``，参谋建议的状态机（pending /
-    refused_by_policy / approved / rejected）与它不是一回事，硬塞
-    会重蹈 FMBY 的 reason 漂移坑。新表由 init_db 的 create_all 建出
-    （老库升级同 EnrichStageRecord 口径），无外键（条目删了行留着
-    供追溯，item_id 不回查条目表）。
-
-    status 取值与 ai_advisor.Suggestion.status 同源；落库成功不另立
-    状态，用 applied_at 标记（建议状态机里没有 applied，硬加会与
-    模块的状态机漂移）。
-    """
-
-    __tablename__ = "emby_ai_suggestions"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    item_id = Column(Integer, nullable=False, index=True)
-    status = Column(String(20), nullable=False, default="pending", index=True)
-    provider = Column(String(100))
-    model = Column(String(100))
-    proposed_tmdb_id = Column(String(32))
-    proposed_imdb_id = Column(String(32))
-    ai_weight = Column(Float)
-    confidence_band = Column(String(20))
-    reason = Column(String(40))
-    # 全量快照 JSON：Suggestion.to_dict（含 raw 与 audit trail）。
-    suggestion_json = Column(Text)
-    approved_by = Column(String(100))
-    applied_at = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
-    updated_at = Column(DateTime, default=datetime.now,
-                        onupdate=datetime.now, nullable=False)
 
 
 class RoleTemplate(Base):

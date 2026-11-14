@@ -21,7 +21,6 @@ def db():
     models.SystemConfig.__table__.create(engine, checkfirst=True)
     models.CheckinRecord.__table__.create(engine, checkfirst=True)
     models.PointsLog.__table__.create(engine, checkfirst=True)
-    models.VitalityLog.__table__.create(engine, checkfirst=True)
     Session = sessionmaker(bind=engine)
     session = Session()
     yield session

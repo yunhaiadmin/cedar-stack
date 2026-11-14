@@ -36,11 +36,8 @@ def db():
         models.WebUser.__table__,
         models.TgBindCode.__table__,
         models.SystemConfig.__table__,
-        models.RedPacket.__table__,
-        models.RedPacketClaim.__table__,
         models.PointsLog.__table__,
         models.CheckinRecord.__table__,
-        models.VitalityLog.__table__,
         models.UserSubscription.__table__,
         models.SubscriptionPlan.__table__,
     ):

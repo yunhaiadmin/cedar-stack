@@ -362,7 +362,7 @@ def delete_item_child_rows(db, item_ids) -> None:
     A-048/A-049：管理端删条目、删库、软删回收三条路径此前各有一份过期清单，
     漏掉的表在 PG（FK 默认 NO ACTION）上直接让条目 DELETE 撞外键 500，
     或让回收整批回滚。此后三处共用本清单；新增指向 emby_items 的 FK 子表
-    时只改这里。PanelUnseal 已有 ON DELETE CASCADE，不用管；无 FK 的孤儿行
+    时只改这里。无 FK 的孤儿行
     （Transfer*、ArtworkOverride 等）不在此列，另行评估。
     SeriesFollow 用 series_item_id 列，其余 8 张用 item_id 列。
     """
@@ -377,8 +377,6 @@ def delete_item_child_rows(db, item_ids) -> None:
         (em.ItemFacet, em.ItemFacet.item_id),
         (em.EmbyPerson, em.EmbyPerson.item_id),
         (em.PlaybackSession, em.PlaybackSession.item_id),
-        (em.IntroMarker, em.IntroMarker.item_id),
-        (em.IntroSegment, em.IntroSegment.item_id),
         (em.EmbyMediaSetMember, em.EmbyMediaSetMember.item_id),
         (em.SeriesFollow, em.SeriesFollow.series_item_id),
     ):
