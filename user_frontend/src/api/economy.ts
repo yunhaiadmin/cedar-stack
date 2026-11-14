@@ -49,6 +49,9 @@ export interface SubscriptionPlan {
   description: string | null
   price: number
   duration_days: number
+  /** 按月售卖口径（2026-11-14）：月价＝总价÷基准月数，后端下发 */
+  monthly_price?: number
+  base_months?: number
   features: string[] | null
   /** 订阅分档权益（后端经 parse 归一下发，未声明为 {}）；商店权益文案行据此自动生成 */
   entitlements?: Record<string, number> | null
@@ -466,6 +469,15 @@ export interface CouponQuote {
   member_discount_amount?: number
   /** 兑换码折扣权益（没填优惠码时自动用最优一张），已含在 discount_amount 内 */
   exchange_discount_pct?: number
+  /** 按月试算（带 months 时后端附带）：购买月数与月价 */
+  months?: number
+  monthly_price?: number
+  /** 换套餐抵扣（带 months 时后端附带）：旧套餐剩余价值抵扣额 */
+  switch_credit?: number
+  /** new=新开通 / renew=同档续费 / switch=换套餐 */
+  switch_type?: 'new' | 'renew' | 'switch'
+  /** 最终应付＝券后价 − 换套餐抵扣（带 months 时后端附带） */
+  payable_amount?: number
 }
 
 export const couponApi = {
@@ -473,7 +485,7 @@ export const couponApi = {
   config: () =>
     api.get<never, { enabled: boolean }>('/api/user/economy/payment/coupon/config'),
   /** 试算：POST 以免优惠码进访问日志/浏览器历史；code 可空＝按自动权益口径试算 */
-  quote: (data: { code: string; kind: 'recharge' | 'subscription'; item_id: number }) =>
+  quote: (data: { code: string; kind: 'recharge' | 'subscription'; item_id: number; months?: number }) =>
     api.post<never, CouponQuote>('/api/user/economy/payment/coupon/quote', data),
 }
 
@@ -500,7 +512,7 @@ export const paymentApi = {
   packages: () => api.get<never, { enabled: boolean; packages: RechargePackage[] }>('/api/user/economy/payment/packages'),
   // is_free / access_mode = 当前服是公益服（免费开放）：此时不展示套餐与购买引导
   plans: () =>
-    api.get<never, { enabled: boolean; wallet_purchase_enabled?: boolean; plans: SubscriptionPlan[]; access_mode?: 'paid' | 'free'; is_free?: boolean; access_note?: string }>(
+    api.get<never, { enabled: boolean; wallet_purchase_enabled?: boolean; plans: SubscriptionPlan[]; access_mode?: 'paid' | 'free'; is_free?: boolean; access_note?: string; device_limit?: number; download_allowed?: boolean }>(
       '/api/user/economy/payment/plans',
     ),
   createOrder: (data: { kind: 'recharge' | 'subscription'; item_id?: number; payment_method: string; coupon_code?: string; custom_amount?: number; pay_with_points?: boolean }) =>

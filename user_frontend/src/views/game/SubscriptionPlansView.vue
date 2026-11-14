@@ -1,9 +1,7 @@
 <template>
-  <!-- 桌面并壳（2026-11-14 统一壳单）：≥769px 经闸门进用户中心壳，
-       壳内贴合（摘返回钮、结算条让侧栏）由布局全局样式处理；手机原样 -->
+  <!-- 桌面并壳（2026-11-14 统一壳单）：≥769px 经闸门进用户中心壳；手机原样 -->
   <UhdAccountShellGate>
   <div class="sub-page">
-    <!-- 页头：左返回＋标题（「我的订阅」页已删除，右上胶囊入口一并摘除） -->
     <header class="sub-head">
       <button type="button" class="sub-back" aria-label="返回" @click="goBack">
         <ChevronLeft :size="24" aria-hidden="true" />
@@ -19,7 +17,7 @@
         <button type="button" class="sub-retry" @click="loadAll">重试</button>
       </div>
 
-      <!-- 公益服：不卖套餐，给免费开放说明＋资格入口（口径与补给站原「会员」区一致） -->
+      <!-- 公益服：不卖套餐，给免费开放说明 -->
       <div v-else-if="isFreeRealm" class="sub-state">
         <p>当前为公益服，全片库免费开放，无需购买订阅</p>
         <p v-if="realmNote" class="sub-state__note">{{ realmNote }}</p>
@@ -35,212 +33,269 @@
         <button type="button" class="sub-retry" @click="loadAll">刷新看看</button>
       </div>
 
-      <template v-else>
-        <!-- 服分段切换：Aetrix 的真实维度是「服」（套餐 realm），多服时才出现 -->
-        <div v-if="realmOptions.length > 1" class="sub-seg" role="tablist" aria-label="选择服">
-          <button
-            v-for="opt in realmOptions"
-            :key="opt.value"
-            type="button"
-            role="tab"
-            class="sub-seg__item"
-            :class="{ 'sub-seg__item--on': opt.value === selectedRealm }"
-            :aria-selected="opt.value === selectedRealm"
-            @click="selectedRealm = opt.value"
-          >{{ opt.label }}</button>
-        </div>
-        <p v-if="realmNote" class="sub-note">{{ realmNote }}</p>
-
-        <!-- 套餐单选卡：选中提亮＋实心圆点，未选压暗；「当前」标记在用档 -->
-        <section class="sub-cards" aria-label="选择套餐">
-          <article
-            v-for="plan in realmPlans"
-            :key="plan.id"
-            class="plan-card"
-            :class="{ 'plan-card--on': plan.id === selectedPlanId }"
-          >
+      <div v-else class="sub-layout">
+        <div class="sub-main">
+          <!-- 线路（服）分段切换：有几条显示几条，数据驱动 -->
+          <div v-if="realmOptions.length > 1" class="sub-seg" role="tablist" aria-label="选择线路">
             <button
+              v-for="opt in realmOptions"
+              :key="opt.value"
               type="button"
-              class="plan-card__head"
-              :aria-pressed="plan.id === selectedPlanId"
-              @click="selectedPlanId = plan.id"
-            >
-              <span class="plan-radio" :class="{ 'plan-radio--on': plan.id === selectedPlanId }" aria-hidden="true"></span>
-              <span class="plan-name">{{ plan.name }}</span>
-              <span v-if="isCurrent(plan)" class="plan-current">当前</span>
-              <span class="plan-price">
-                <span class="plan-price__row">
-                  <b>¥ {{ fmtPrice(plan.price) }}</b><i>/ {{ durValue(plan.duration_days) }}</i>
-                </span>
-                <span v-if="monthlyEquiv(plan)" class="plan-price__per">约 ¥ {{ monthlyEquiv(plan) }} / 月</span>
-              </span>
-            </button>
-            <ul v-if="specRows(plan).length || (plan.features && plan.features.length)" class="plan-specs">
-              <li v-for="row in specRows(plan)" :key="row.label" class="plan-spec">
-                <span class="plan-spec__label">{{ row.label }}</span>
-                <span class="plan-spec__value">{{ row.value }}</span>
-              </li>
-              <li v-for="f in plan.features || []" :key="f" class="plan-spec plan-spec--feat">
-                <span class="plan-spec__label"><Check :size="14" aria-hidden="true" /></span>
-                <span class="plan-spec__value">{{ f }}</span>
-              </li>
-            </ul>
-          </article>
-        </section>
-
-        <!-- 订阅时长：滑杆＋胶囊双向联动（档位＝在售套餐的真实时长） -->
-        <section class="sub-dur" aria-label="订阅时长">
-          <div class="sub-dur__head">
-            <span class="sub-dur__label">订阅时长</span>
-            <span class="sub-dur__value"><b>{{ selectedPlan ? durValueNum(selectedPlan.duration_days) : '–' }}</b> {{ selectedPlan ? durValueUnit(selectedPlan.duration_days) : '' }}</span>
+              role="tab"
+              class="sub-seg__item"
+              :class="{ 'sub-seg__item--on': opt.value === selectedRealm }"
+              :aria-selected="opt.value === selectedRealm"
+              @click="selectedRealm = opt.value"
+            >{{ opt.label }}</button>
           </div>
-          <input
-            type="range"
-            min="0"
-            :max="Math.max(0, realmPlans.length - 1)"
-            step="1"
-            :value="selectedPlanIndex"
-            class="sub-slider"
-            :style="{ '--fill': sliderFill }"
-            aria-label="选择订阅时长"
-            @input="onDurationSlider"
-          />
-          <div class="sub-dur__caps" role="group" aria-label="订阅时长快捷选择">
-            <button
-              v-for="(p, i) in realmPlans"
-              :key="p.id"
-              type="button"
-              class="sub-cap"
-              :class="{ 'sub-cap--on': i === selectedPlanIndex }"
-              :aria-pressed="i === selectedPlanIndex"
-              @click="selectedPlanIndex = i"
-            >{{ durShort(p.duration_days) }}</button>
-          </div>
-        </section>
+          <p v-if="realmNote" class="sub-note">{{ realmNote }}</p>
 
-        <!-- 支付方式：人民币单轨（能量支付已随货币下线）＋钱包余额
-             （钱包批 2：网关开关关着时余额通道仍可买，余额不足明示差额） -->
-        <section class="sub-pay" aria-label="支付方式">
-          <div class="sub-methods">
-            <template v-if="payMethods.length > 1">
+          <!-- 套餐对比表：行＝价格/流量/登录设备/子账号/下载/线路，
+               列＝套餐，当前列高亮＋实心单选点（照友站形态） -->
+          <section class="cmp" aria-label="选择套餐">
+            <table class="cmp-table">
+              <thead>
+                <tr>
+                  <th class="cmp-corner" scope="col"><span class="cmp-sr">套餐</span></th>
+                  <th
+                    v-for="plan in realmPlans"
+                    :key="plan.id"
+                    scope="col"
+                    class="cmp-colhead"
+                    :class="{ 'cmp-colhead--on': plan.id === selectedPlanId }"
+                    @click="selectedPlanId = plan.id"
+                  >
+                    <span class="cmp-plan">
+                      <span class="plan-radio" :class="{ 'plan-radio--on': plan.id === selectedPlanId }" aria-hidden="true"></span>
+                      <span class="cmp-plan__name">{{ plan.name }}</span>
+                      <span v-if="isCurrent(plan)" class="plan-current">当前</span>
+                    </span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in compareRows" :key="row.label">
+                  <th scope="row" class="cmp-rowhead">{{ row.label }}</th>
+                  <td
+                    v-for="(cell, i) in row.cells"
+                    :key="realmPlans[i].id"
+                    class="cmp-cell"
+                    :class="{ 'cmp-cell--on': realmPlans[i].id === selectedPlanId }"
+                    @click="selectedPlanId = realmPlans[i].id"
+                  >{{ cell }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <!-- 订阅时长：滑杆 1–12 个月＋分段按钮双控件联动；
+               3/6 个月无折扣，仅年付＝11×月价（照友站口径） -->
+          <section class="sub-dur" aria-label="订阅时长">
+            <div class="sub-dur__head">
+              <span class="sub-dur__label">订阅时长</span>
+              <span class="sub-dur__value"><b>{{ months }}</b> 个月{{ months === 12 ? '（年付）' : '' }}</span>
+            </div>
+            <input
+              type="range"
+              min="1"
+              max="12"
+              step="1"
+              :value="months"
+              class="sub-slider"
+              :style="{ '--fill': sliderFill }"
+              aria-label="选择订阅时长（月）"
+              @input="onMonthsSlider"
+            />
+            <div class="sub-dur__caps" role="group" aria-label="订阅时长快捷选择">
               <button
-                v-for="m in payMethods"
-                :key="m.id"
+                v-for="cap in MONTH_CAPS"
+                :key="cap.months"
                 type="button"
-                class="sub-method"
-                :class="{ 'sub-method--on': payMethod === m.id }"
-                :aria-pressed="payMethod === m.id"
-                @click="payMethod = m.id"
-              >{{ m.name || '在线支付' }}</button>
-            </template>
-            <span v-else-if="payMethods.length === 1" class="sub-method sub-method--on">{{ payMethods[0].name || '在线支付' }}</span>
-            <span v-if="methodsFailed" class="sub-pay__warn">支付方式加载失败，请检查网络后<button type="button" class="sub-inline-retry" @click="loadAll">重试</button></span>
-            <span v-else-if="!methodsReady" class="sub-pay__warn">暂无可用支付方式，请联系服主</span>
-          </div>
-          <p v-if="walletShortfall > 0" class="sub-pay__warn" role="alert">
-            钱包余额不足，还差 ¥ {{ fmtPrice(walletShortfall) }}，请先去钱包充值或换个套餐
-          </p>
-        </section>
+                class="sub-cap"
+                :class="{ 'sub-cap--on': months === cap.months }"
+                :aria-pressed="months === cap.months"
+                @click="months = cap.months"
+              >{{ cap.label }}</button>
+            </div>
+            <p class="sub-dur__hint">年付按 11 个月计价，等于送 1 个月</p>
+          </section>
+        </div>
 
-        <!-- 优惠码：接现有 coupon 试算口（与下单同一套口径） -->
-        <section v-if="couponEnabled" class="sub-coupon" aria-label="优惠码">
-          <div class="sub-coupon__row">
-            <label class="sub-coupon__box">
-              <Tag :size="17" aria-hidden="true" />
-              <input
-                v-model="couponInput"
-                class="sub-coupon__input"
-                type="text"
-                placeholder="优惠码（可选）"
-                aria-label="优惠码（可选）"
-                maxlength="64"
-                autocomplete="off"
-                :disabled="!!appliedCoupon"
-                @keydown.enter.prevent="applyCoupon"
-              />
-            </label>
-            <button
-              v-if="!appliedCoupon"
-              type="button"
-              class="sub-coupon__apply"
-              :disabled="!couponInput.trim() || couponApplying || !selectedPlan"
-              @click="applyCoupon"
-            >{{ couponApplying ? '验券中…' : '应用' }}</button>
-            <button
-              v-else
-              type="button"
-              class="sub-coupon__apply"
-              aria-label="移除优惠券"
-              @click="clearCoupon"
-            >移除</button>
-          </div>
-          <p v-if="appliedCoupon" class="sub-coupon__ok">优惠券 <b>{{ appliedCoupon }}</b> 已应用，下单自动抵扣</p>
-          <p v-else-if="couponError" class="sub-coupon__err">{{ couponError }}</p>
-        </section>
+        <!-- 右侧结算栏（桌面）：套餐·时长、总价＋约合、续费周期、
+             优惠码、渐变主钮；手机端在主列下方整块呈现，无吸底条 -->
+        <aside v-if="selectedPlan" class="sub-rail" aria-label="结算">
+          <div class="rail-card">
+            <div class="rail-row rail-row--head">
+              <span>{{ selectedPlan.name }} · {{ months }} 个月</span>
+            </div>
+            <div class="rail-total">
+              <b>{{ moneyText(payableTotal) }}</b>
+              <s v-if="savedTotal > 0">{{ moneyText(listTotal) }}</s>
+            </div>
+            <p class="rail-approx">约合人民币 {{ moneyText(payableTotal) }}</p>
+            <div class="rail-row">
+              <span>续费周期</span>
+              <b>{{ cycleText }}</b>
+            </div>
+            <div v-if="couponCut > 0" class="rail-row rail-row--cut">
+              <span>{{ couponCutLabel }}</span>
+              <b>−{{ moneyText(couponCut) }}</b>
+            </div>
+            <div v-if="switchCredit > 0" class="rail-row rail-row--cut">
+              <span>旧套餐已抵扣</span>
+              <b>−{{ moneyText(switchCredit) }}</b>
+            </div>
+            <div class="rail-row">
+              <span>钱包余额</span>
+              <b>{{ moneyText(walletBalance) }}</b>
+            </div>
 
-        <!-- 价格明细：全部来自 coupon 试算口（与下单同口径，含优惠券与折扣权益；
-             等级折扣已随等级体系于 2026-11-14 删除） -->
-        <section v-if="selectedPlan" class="sub-summary" aria-label="价格明细">
-          <div class="sub-sum-row">
-            <span>{{ selectedPlan.name }} · {{ durValue(selectedPlan.duration_days) }}</span>
-            <b>{{ moneyText(listTotal) }}</b>
+            <!-- 优惠码：接现有 coupon 试算口（与下单同一套口径） -->
+            <div v-if="couponEnabled" class="sub-coupon">
+              <div class="sub-coupon__row">
+                <label class="sub-coupon__box">
+                  <Tag :size="17" aria-hidden="true" />
+                  <input
+                    v-model="couponInput"
+                    class="sub-coupon__input"
+                    type="text"
+                    placeholder="优惠码（可选）"
+                    aria-label="优惠码（可选）"
+                    maxlength="64"
+                    autocomplete="off"
+                    :disabled="!!appliedCoupon"
+                    @keydown.enter.prevent="applyCoupon"
+                  />
+                </label>
+                <button
+                  v-if="!appliedCoupon"
+                  type="button"
+                  class="sub-coupon__apply"
+                  :disabled="!couponInput.trim() || couponApplying || !selectedPlan"
+                  @click="applyCoupon"
+                >{{ couponApplying ? '验券中…' : '应用' }}</button>
+                <button
+                  v-else
+                  type="button"
+                  class="sub-coupon__apply"
+                  aria-label="移除优惠券"
+                  @click="clearCoupon"
+                >移除</button>
+              </div>
+              <p v-if="appliedCoupon" class="sub-coupon__ok">优惠券 <b>{{ appliedCoupon }}</b> 已应用，下单自动抵扣</p>
+              <p v-else-if="couponError" class="sub-coupon__err">{{ couponError }}</p>
+            </div>
+
+            <button
+              type="button"
+              class="rail-cta"
+              :disabled="ctaDisabled"
+              @click="openConfirm"
+            >{{ ctaText }}</button>
+            <p v-if="!walletEnabled" class="rail-note">钱包暂未开启，暂时无法购买</p>
+            <p v-else-if="balanceShortfall > 0" class="rail-note" role="alert">
+              钱包余额不足，还差 ¥ {{ fmtPrice(balanceShortfall) }}，充值后即可购买
+            </p>
           </div>
-          <div v-if="otherCut > 0" class="sub-sum-row sub-sum-row--cut">
-            <span>{{ otherCutLabel }}</span>
-            <b>−{{ moneyText(otherCut) }}</b>
-          </div>
-        </section>
-      </template>
+        </aside>
+      </div>
     </main>
 
-    <!-- 吸底结算条：左所选＋总价，右彩虹主按钮（有在用订阅＝续费，否则＝开通） -->
-    <footer v-if="!loading && !isFreeRealm && selectedPlan" class="sub-settle">
-      <div class="sub-settle__inner">
-        <div class="sub-settle__info">
-          <span class="sub-settle__name">{{ selectedPlan.name }} · {{ durValue(selectedPlan.duration_days) }}</span>
-          <span class="sub-settle__price">
-            <b>{{ moneyText(paidTotal) }}</b>
-            <s v-if="savedTotal > 0">{{ moneyText(listTotal) }}</s>
-          </span>
+    <!-- 确认弹窗（照友站）：先算明细账，确认才扣钱包余额 -->
+    <UhdModal v-model="confirmOpen" :title="selectedPlan ? `订阅 ${selectedPlan.name}` : '订阅'" :width="420">
+      <div v-if="selectedPlan" class="cfm">
+        <div class="cfm-row">
+          <span>流量限额</span>
+          <b>{{ trafficText(selectedPlan) }}</b>
         </div>
-        <button
-          type="button"
-          class="sub-settle__btn"
-          :disabled="buyDisabled"
-          :aria-busy="orderBusy"
-          @click="buy"
-        >{{ orderBusy ? '处理中…' : ctaText }}</button>
+        <div class="cfm-row">
+          <span>切换类型</span>
+          <b>{{ switchTypeText }}</b>
+        </div>
+        <div class="cfm-row">
+          <span>当前账户余额</span>
+          <b>{{ moneyText(walletBalance) }}</b>
+        </div>
+        <div class="cfm-row">
+          <span>新套餐金额</span>
+          <b>{{ moneyText(listTotal) }}</b>
+        </div>
+        <div v-if="couponCut > 0" class="cfm-row cfm-row--cut">
+          <span>{{ couponCutLabel }}</span>
+          <b>−{{ moneyText(couponCut) }}</b>
+        </div>
+        <div v-if="switchCredit > 0" class="cfm-row cfm-row--cut">
+          <span>旧套餐已抵扣</span>
+          <b>−{{ moneyText(switchCredit) }}</b>
+        </div>
+        <div class="cfm-row cfm-row--total">
+          <span>本次需支付</span>
+          <b>{{ moneyText(payableTotal) }}</b>
+        </div>
+        <div class="cfm-row">
+          <span>购买后结余</span>
+          <b :class="{ 'cfm-neg': balanceAfter < 0 }">{{ moneyText(balanceAfter) }}</b>
+        </div>
+        <p v-if="balanceAfter < 0" class="cfm-warn" role="alert">余额不足，还差 ¥ {{ fmtPrice(-balanceAfter) }}</p>
+        <p v-if="confirmError" class="cfm-warn" role="alert">{{ confirmError }}</p>
       </div>
-    </footer>
+      <template #footer>
+        <button type="button" class="cfm-btn cfm-btn--ghost" :disabled="orderBusy" @click="confirmOpen = false">返回修改</button>
+        <button
+          v-if="balanceAfter < 0"
+          type="button"
+          class="cfm-btn cfm-btn--main"
+          @click="goRecharge"
+        >前往充值</button>
+        <button
+          v-else
+          type="button"
+          class="cfm-btn cfm-btn--main"
+          :disabled="orderBusy || !selectedPlan"
+          :aria-busy="orderBusy"
+          @click="confirmBuy"
+        >{{ orderBusy ? '处理中…' : '确认支付' }}</button>
+      </template>
+    </UhdModal>
   </div>
   </UhdAccountShellGate>
 </template>
 
 <script setup lang="ts">
 /**
- * 订阅服务（/game/account/subscribe）——按 UHDNow 订阅页逻辑重做（用户 2026-11-13 08:39 令）：
- * 深色 app 式单列流：页头（返回＋标题＋我的订阅胶囊）→ 服分段 → 套餐单选卡
- * （选中提亮/未选压暗＋当前标记＋真实 entitlements 规格行）→ 时长滑杆＋胶囊
- * → 支付方式（人民币） → 优惠码 → 价格明细 → 吸底结算条。
- * 套餐/价格/时长/规格全部接口数据驱动；价格一律走 coupon 试算口
- * （与下单同一套口径：先等级折扣，再优惠券/折扣权益），下单仍走
- * paymentApi.createOrder，支付与资格发放规则不动。
- * Aetrix 没有的维度不硬造：原站「线路」分段以真实维度「服（realm）」替代；
- * 团体方案段无对应业务，整段省略；页头右上不放播放入口，放真实入口「我的订阅」。
+ * 订阅服务（/game/account/subscribe）——2026-11-14 照友站（UHDNow）
+ * 实测形态重做（用户 22:03 亲令，四处口径全部按友站）：
+ * - 时长：滑杆选 1–12 个月＋分段「1 个月/3 个月/6 个月/年付」双
+ *   控件联动；3/6 个月无折扣，仅年付＝11×月价。我方套餐仍以
+ *   (总价, 总天数) 存储，月价＝总价÷基准月数由后端下发
+ *   （启程 ¥18/月、远行 ¥15/月、环游 ¥12.5/月），前端不自算口径；
+ * - 套餐呈现：对比表（行＝价格/流量/登录设备/子账号/下载/线路）
+ *   ＋线路（服）分段切换，有几条显示几条；套餐名与价格用我方数据；
+ * - 结算：右侧结算栏（套餐·时长、大总价＋约合人民币、续费周期、
+ *   优惠码、渐变主钮按状态变文案），无吸底条；点主钮先弹确认
+ *   弹窗算明细账（余额/新套餐金额/旧套餐已抵扣/本需支付/购买后
+ *   结余），确认才扣钱包余额——本站购买走钱包单轨（友站同形），
+ *   网关下单口与充值链路不在本页；
+ * - 换套餐抵扣：计价口 _price_subscription_purchase 按「旧订阅
+ *   实付金额×剩余时长/总时长」真抵扣，试算口同口径下发
+ *   switch_credit，前后端逐分一致；
+ * - 子账号行：本站套餐没有子账号维度的数据源，整行如实显示「—」，
+ *   不编造数字。
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Check, ChevronLeft, Tag } from 'lucide-vue-next'
+import { ChevronLeft, Tag } from 'lucide-vue-next'
 import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
+import UhdModal from '@/components/uhd/UhdModal.vue'
 import { useToast } from '@/composables/useToast'
 import { humanizeError } from '@/composables/usePanelApi'
 import {
   couponApi,
   paymentApi,
   type CouponQuote,
-  type PaymentMethod,
   type SubscriptionPlan,
 } from '@/api/economy'
+import { formatBytes } from '@/api/traffic'
 import { walletApi, newWalletKey } from '@/api/wallet'
 import { subscriptionApi, type MySubscription } from '@/api'
 
@@ -251,42 +306,17 @@ const loading = ref(true)
 const loadError = ref(false)
 const plans = ref<SubscriptionPlan[]>([])
 const plansEnabled = ref(true)
+const walletEnabled = ref(false)
 const isFreeRealm = ref(false)
 const realmNote = ref('')
-const methods = ref<PaymentMethod[]>([])
-const methodsReady = ref(false)
-const methodsFailed = ref(false)
-const payMethod = ref('alipay')
-/* 钱包余额支付（钱包批 2）：余额通道独立于网关开关，余额与可用
-   态随套餐接口一并下发；余额不足时明示差额、不静默跳网关。 */
-const walletEnabled = ref(false)
+const deviceLimit = ref(0)
+const downloadAllowed = ref(true)
 const walletBalance = ref(0)
-/** 可选支付方式：网关只留 enabled 的那几项＋钱包余额项 */
-const payMethods = computed<PaymentMethod[]>(() => {
-  const list = methods.value.filter((m) => m.enabled)
-  if (walletEnabled.value) {
-    list.push({
-      id: 'wallet',
-      name: `钱包余额（¥ ${fmtPrice(walletBalance.value)}）`,
-      enabled: true,
-    })
-  }
-  return list
-})
-/** 选了钱包且实付超过余额时的差额（>0 即不许下单） */
-const walletShortfall = computed(() => {
-  if (payMethod.value !== 'wallet' || paidTotal.value == null) return 0
-  return Math.max(0, Math.round((paidTotal.value - walletBalance.value) * 100) / 100)
-})
-/* 会员等级信息已随等级体系于 2026-11-14 删除：memberApi.info() 调用
-   与 member ref 一并摘除，折扣只走后端 quote（member_discount 恒 0）。 */
 const mySubs = ref<MySubscription[]>([])
 const couponEnabled = ref(true)
-
 const orderBusy = ref(false)
 
 /* ---------- 展示工具 ---------- */
-/** 金额：整数不带小数，有分币时两位小数 */
 function fmtPrice(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return '–'
   return Number.isInteger(n) ? n.toLocaleString() : n.toFixed(2)
@@ -295,35 +325,11 @@ function moneyText(v: number | null | undefined): string {
   if (v == null) return '–'
   return `¥ ${fmtPrice(v)}`
 }
-/** 胶囊文案（与原站四档同形：1 个月/3 个月/6 个月/年付）；非整月天数如实写天数 */
-function durShort(days: number): string {
-  if (days >= 360) return '年付'
-  if (days % 30 === 0) return `${days / 30} 个月`
-  return `${days} 天`
-}
-/** 时长完整文案（价格后缀/结算摘要用） */
-function durValue(days: number): string {
-  if (days >= 360) return '1 年'
-  if (days % 30 === 0) return `${days / 30} 个月`
-  return `${days} 天`
-}
-function durValueNum(days: number): string {
-  if (days >= 360) return '12'
-  if (days % 30 === 0) return String(days / 30)
-  return String(days)
-}
-function durValueUnit(days: number): string {
-  if (days >= 360) return '个月'
-  return days % 30 === 0 ? '个月' : '天'
-}
-/** 月均价（真实套餐价按时长折算，非虚构数字）；30 天档不显示 */
-function monthlyEquiv(plan: SubscriptionPlan): string | null {
-  if (plan.duration_days <= 30) return null
-  const per = plan.price / (plan.duration_days / 30)
-  return Number.isInteger(per) ? per.toLocaleString() : per.toFixed(1)
+function round2(n: number): number {
+  return Math.round(n * 100) / 100
 }
 
-/* ---------- 服与套餐选择 ---------- */
+/* ---------- 线路（服）与套餐选择 ---------- */
 const realmOptions = computed(() => {
   const names = [...new Set(plans.value.map((p) => p.realm_name || '默认'))]
   return names.map((n) => ({ value: n, label: n }))
@@ -334,7 +340,6 @@ watch(realmOptions, (opts) => {
     selectedRealm.value = opts[0]?.value ?? ''
   }
 }, { immediate: true })
-/** 当前服套餐：按时长升序（滑杆/胶囊的档位顺序与卡片顺序一致） */
 const realmPlans = computed(() => {
   const realm = selectedRealm.value || realmOptions.value[0]?.value || '默认'
   return [...plans.value]
@@ -342,25 +347,11 @@ const realmPlans = computed(() => {
     .sort((a, b) => a.duration_days - b.duration_days || a.price - b.price)
 })
 const selectedPlanId = ref<number | null>(null)
-const selectedPlan = computed(() => realmPlans.value.find((p) => p.id === selectedPlanId.value) ?? null)
-const selectedPlanIndex = computed<number>({
-  get: () => Math.max(0, realmPlans.value.findIndex((p) => p.id === selectedPlanId.value)),
-  set: (i) => {
-    const p = realmPlans.value[i]
-    if (p) selectedPlanId.value = p.id
-  },
-})
-const sliderFill = computed(() => {
-  const n = realmPlans.value.length
-  if (n <= 1) return '0%'
-  return `${(selectedPlanIndex.value / (n - 1)) * 100}%`
-})
-function onDurationSlider(e: Event) {
-  const v = Number((e.target as HTMLInputElement).value)
-  if (Number.isFinite(v)) selectedPlanIndex.value = v
-}
+const selectedPlan = computed(
+  () => realmPlans.value.find((p) => p.id === selectedPlanId.value) ?? null,
+)
 
-/* ---------- 当前订阅（「当前」标记与续费文案） ---------- */
+/* ---------- 当前订阅 ---------- */
 const activeSub = computed(
   () => mySubs.value.find((s) => s.status === 'active' && s.days_left > 0) ?? null,
 )
@@ -377,24 +368,59 @@ watch(realmPlans, (list) => {
     selectedPlanId.value = cur?.id ?? popular?.id ?? list[0]?.id ?? null
   }
 }, { immediate: true })
-const ctaText = computed(() => (activeSub.value ? '续费' : '开通'))
 
-/* ---------- 规格行：只映射真实 entitlements ---------- */
-function specRows(plan: SubscriptionPlan): { label: string; value: string }[] {
-  const rows: { label: string; value: string }[] = [
-    { label: '时长', value: `${plan.duration_days} 天` },
-  ]
-  const ent = plan.entitlements || {}
-  if (ent.media_seek_monthly_limit != null) {
-    rows.push({ label: '求片额度', value: `每月 ${ent.media_seek_monthly_limit} 部` })
-  }
-  if (ent.concurrent_streams != null) {
-    rows.push({ label: '同播路数', value: `${ent.concurrent_streams} 路` })
-  }
-  return rows
+/* ---------- 时长：滑杆＋分段联动（1–12 个月） ---------- */
+const MONTH_CAPS = [
+  { months: 1, label: '1 个月' },
+  { months: 3, label: '3 个月' },
+  { months: 6, label: '6 个月' },
+  { months: 12, label: '年付' },
+]
+const months = ref(1)
+/** 切套餐时时长回到该套餐的基准月数（它的现售卖时长） */
+watch(selectedPlanId, () => {
+  const p = selectedPlan.value
+  if (p) months.value = Math.min(12, Math.max(1, p.base_months ?? 1))
+})
+const sliderFill = computed(() => `${((months.value - 1) / 11) * 100}%`)
+function onMonthsSlider(e: Event) {
+  const v = Number((e.target as HTMLInputElement).value)
+  if (Number.isFinite(v)) months.value = Math.min(12, Math.max(1, Math.round(v)))
 }
 
-/* ---------- 试算（与下单同一套口径） ---------- */
+/* ---------- 按月计价（月价后端下发，前端只做同口径展示） ---------- */
+function monthlyOf(plan: SubscriptionPlan): number {
+  if (plan.monthly_price != null) return plan.monthly_price
+  const base = plan.base_months ?? Math.max(1, Math.round(plan.duration_days * 12 / 365))
+  return round2(plan.price / base)
+}
+function listPriceFor(plan: SubscriptionPlan, m: number): number {
+  const mo = monthlyOf(plan)
+  return round2(m === 12 ? mo * 11 : mo * m)
+}
+function trafficText(plan: SubscriptionPlan): string {
+  const b = plan.entitlements?.monthly_traffic_bytes
+  return b ? `${formatBytes(b)} / 月` : '—'
+}
+
+/* ---------- 对比表（行口径照友站，值全部来自真实数据） ---------- */
+const compareRows = computed(() => {
+  const list = realmPlans.value
+  return [
+    { label: '价格', cells: list.map((p) => `¥ ${fmtPrice(monthlyOf(p))} / 月`) },
+    { label: '流量', cells: list.map((p) => trafficText(p)) },
+    {
+      label: '登录设备',
+      cells: list.map(() => (deviceLimit.value > 0 ? `${deviceLimit.value} 台` : '不限')),
+    },
+    // 子账号是团队维度的能力、没有套餐级数据源：如实占位不编造
+    { label: '子账号', cells: list.map(() => '—') },
+    { label: '下载', cells: list.map(() => (downloadAllowed.value ? '支持' : '不支持')) },
+    { label: '线路', cells: list.map((p) => p.realm_name || '标准线路') },
+  ]
+})
+
+/* ---------- 试算（与下单同一口径，带 months） ---------- */
 const quote = ref<CouponQuote | null>(null)
 const couponInput = ref('')
 const appliedCoupon = ref('')
@@ -414,13 +440,13 @@ async function refreshQuote() {
       code: appliedCoupon.value,
       kind: 'subscription',
       item_id: plan.id,
+      months: months.value,
     })
     if (token !== quoteToken) return
     quote.value = q
   } catch (err) {
     if (token !== quoteToken) return
     quote.value = null
-    // 已应用的券在新选择下试算失败＝对当前选择不可用，诚实移除并提示
     if (appliedCoupon.value) {
       appliedCoupon.value = ''
       couponError.value = '这张券不适用于当前选择，已移除'
@@ -442,6 +468,7 @@ async function applyCoupon() {
       code,
       kind: 'subscription',
       item_id: plan.id,
+      months: months.value,
     })
     if (!q.valid) {
       couponError.value = '这张券用不上，换一张试试'
@@ -464,7 +491,7 @@ function clearCoupon() {
   void refreshQuote()
 }
 
-watch(selectedPlanId, () => {
+watch([selectedPlanId, months], () => {
   couponError.value = ''
   void refreshQuote()
 })
@@ -473,68 +500,94 @@ const listTotal = computed<number | null>(() => {
   const plan = selectedPlan.value
   if (!plan) return null
   if (quote.value) return quote.value.list_price
-  return plan.price
+  return listPriceFor(plan, months.value)
 })
-const paidTotal = computed<number | null>(() => {
-  if (quote.value) return quote.value.paid_amount
-  return listTotal.value
-})
-const otherCut = computed(() =>
-  Math.max(0, quote.value?.discount_amount ?? 0),
-)
-const otherCutLabel = computed(() => {
+const couponCut = computed(() => Math.max(0, quote.value?.discount_amount ?? 0))
+const couponCutLabel = computed(() => {
   if (appliedCoupon.value) return `优惠券 ${appliedCoupon.value}`
   if (quote.value?.exchange_discount_pct) return '折扣权益'
   return '优惠'
 })
+const switchCredit = computed(() => Math.max(0, quote.value?.switch_credit ?? 0))
+const switchType = computed(() => quote.value?.switch_type ?? (activeSub.value ? 'switch' : 'new'))
+const payableTotal = computed<number | null>(() => {
+  if (quote.value?.payable_amount != null) return quote.value.payable_amount
+  if (quote.value) return quote.value.paid_amount
+  return listTotal.value
+})
 const savedTotal = computed(() =>
-  listTotal.value != null && paidTotal.value != null
-    ? Math.max(0, listTotal.value - paidTotal.value)
+  listTotal.value != null && payableTotal.value != null
+    ? Math.max(0, round2(listTotal.value - payableTotal.value))
     : 0,
 )
-
-/* ---------- 下单（口径与补给站原结算栏一致，规则不动） ---------- */
-const buyDisabled = computed(() => {
-  if (orderBusy.value || !selectedPlan.value) return true
-  if (payMethod.value === 'wallet' && walletShortfall.value > 0) return true
-  return !methodsReady.value
+const cycleText = computed(() => {
+  if (months.value === 1) return '按月续费'
+  if (months.value === 12) return '按年续费'
+  return `每 ${months.value} 个月续费`
 })
-
-async function buy() {
+const balanceShortfall = computed(() => {
+  if (payableTotal.value == null) return 0
+  return Math.max(0, round2(payableTotal.value - walletBalance.value))
+})
+const balanceAfter = computed(() =>
+  payableTotal.value == null ? 0 : round2(walletBalance.value - payableTotal.value),
+)
+const switchTypeText = computed(() => {
+  if (switchType.value === 'renew') return '续费'
+  if (switchType.value === 'switch') return '升级套餐'
+  return '新开通'
+})
+const ctaText = computed(() => {
   const plan = selectedPlan.value
-  if (!plan || buyDisabled.value) return
+  if (!plan || !activeSub.value) return '开通'
+  if (isCurrent(plan)) return '续费'
+  if (plan.name.includes('家庭')) return '升级至家庭版'
+  return '升级'
+})
+const ctaDisabled = computed(
+  () => orderBusy.value || !selectedPlan.value || !walletEnabled.value,
+)
+
+/* ---------- 确认弹窗与下单（确认才扣钱包余额） ---------- */
+const confirmOpen = ref(false)
+const confirmError = ref('')
+/** 本次弹窗会话的幂等键：开弹窗时生成，确认/重试共用，防重复扣款 */
+const confirmKey = ref('')
+
+function openConfirm() {
+  if (ctaDisabled.value) return
+  confirmError.value = ''
+  confirmKey.value = newWalletKey()
+  void refreshQuote()
+  confirmOpen.value = true
+}
+
+function goRecharge() {
+  confirmOpen.value = false
+  void router.push('/wallet')
+}
+
+async function confirmBuy() {
+  const plan = selectedPlan.value
+  if (!plan || orderBusy.value) return
   orderBusy.value = true
+  confirmError.value = ''
   try {
-    // 钱包余额支付（钱包批 2）：同一事务扣款＋发订阅，成功直接去
-    // 订阅记录页看结果，不走网关跳转。
-    if (payMethod.value === 'wallet') {
-      const res = await walletApi.paySubscription({
-        plan_id: plan.id,
-        coupon_code: appliedCoupon.value ? appliedCoupon.value : undefined,
-        idempotency_key: newWalletKey(),
-      })
-      toast.success(
-        res.replayed
-          ? '这次购买已经生效过了，没有重复扣款'
-          : `已开通「${res.plan_name}」，到期 ${res.end_date ? res.end_date.slice(0, 10) : ''}`,
-      )
-      await router.push('/game/account/subscription-records')
-      return
-    }
-    const res = await paymentApi.createOrder({
-      kind: 'subscription',
-      item_id: plan.id,
-      payment_method: payMethod.value,
+    const res = await walletApi.paySubscription({
+      plan_id: plan.id,
+      months: months.value,
       coupon_code: appliedCoupon.value ? appliedCoupon.value : undefined,
+      idempotency_key: confirmKey.value,
     })
-    if (res.pay_url) {
-      toast.success('正在跳转支付')
-      window.location.href = res.pay_url
-    } else {
-      toast.error('支付链接获取失败，请稍后再试')
-    }
+    toast.success(
+      res.replayed
+        ? '这次购买已经生效过了，没有重复扣款'
+        : `已开通「${res.plan_name}」，到期 ${res.end_date ? res.end_date.slice(0, 10) : ''}`,
+    )
+    confirmOpen.value = false
+    await router.push('/game/account/subscription-records')
   } catch (err) {
-    toast.error(humanizeError(err))
+    confirmError.value = humanizeError(err)
   } finally {
     orderBusy.value = false
   }
@@ -549,9 +602,8 @@ function goBack() {
 async function loadAll() {
   loading.value = true
   loadError.value = false
-  const [pls, mth, subs, cpCfg, wal] = await Promise.allSettled([
+  const [pls, subs, cpCfg, wal] = await Promise.allSettled([
     paymentApi.plans(),
-    paymentApi.methods(),
     subscriptionApi.getMine(),
     couponApi.config(),
     walletApi.get(),
@@ -562,32 +614,16 @@ async function loadAll() {
     walletEnabled.value = pls.value.wallet_purchase_enabled === true
     isFreeRealm.value = pls.value.is_free === true || pls.value.access_mode === 'free'
     realmNote.value = pls.value.access_note || ''
+    deviceLimit.value = pls.value.device_limit ?? 0
+    downloadAllowed.value = pls.value.download_allowed !== false
   } else {
     loadError.value = true
   }
-  if (mth.status === 'fulfilled') {
-    methods.value = Array.isArray(mth.value) ? mth.value : []
-    methodsFailed.value = false
-    // 默认支付方式：网关有可用的先用网关，否则用钱包余额
-    const gateway = methods.value.find((m) => m.enabled)
-    if (gateway) payMethod.value = gateway.id
-    else if (walletEnabled.value) payMethod.value = 'wallet'
-    else if (methods.value.length > 0) payMethod.value = methods.value[0].id
-  } else {
-    methods.value = []
-    methodsFailed.value = true
-  }
-  // 钱包余额（失败不挡购买页：余额读不到时钱包项不显示）
   if (wal.status === 'fulfilled') {
     walletBalance.value = Number(wal.value.balance) || 0
     if (wal.value.wallet_enabled === false) walletEnabled.value = false
   } else {
     walletEnabled.value = false
-  }
-  // 支付方式就绪 = 网关可用项或钱包项至少一个
-  methodsReady.value = payMethods.value.length > 0
-  if (payMethods.value.length > 0 && !payMethods.value.some((m) => m.id === payMethod.value)) {
-    payMethod.value = payMethods.value[0].id
   }
   if (subs.status === 'fulfilled') mySubs.value = subs.value
   if (cpCfg.status === 'fulfilled') couponEnabled.value = cpCfg.value.enabled !== false
@@ -601,7 +637,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* ============ 订阅服务页：深色 app 单列流（UHD 语言） ============ */
+/* ============ 订阅服务页（照友站形态：对比表＋右栏结算） ============ */
 .sub-page {
   min-height: 100dvh;
   background: var(--uhd-d-bg);
@@ -609,10 +645,8 @@ onMounted(() => {
   font-family: var(--uhd-font-sans);
   -webkit-font-smoothing: antialiased;
 }
-
-/* 页头：返回＋标题＋右上彩虹边框胶囊（真实入口） */
 .sub-head {
-  max-width: 760px;
+  max-width: 1120px;
   margin: 0 auto;
   padding: calc(14px + env(safe-area-inset-top)) 16px 6px;
   display: flex;
@@ -633,25 +667,35 @@ onMounted(() => {
   color: var(--uhd-d-text);
   cursor: pointer;
 }
-.sub-back:active {
-  background: rgba(255, 255, 255, 0.08);
-}
+.sub-back:active { background: rgba(255, 255, 255, 0.08); }
 .sub-title {
   flex: 1 1 auto;
   margin: 0;
-  font-family: var(--uhd-font-sans);
   font-size: 20px;
   font-weight: var(--uhd-fw-extrabold);
   letter-spacing: -0.01em;
   color: var(--uhd-d-text);
 }
 .sub-body {
-  max-width: 760px;
+  max-width: 1120px;
   margin: 0 auto;
-  padding: 14px 16px 148px;
+  padding: 14px 16px 64px;
+}
+.sub-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 26px;
+  align-items: start;
+}
+@media (min-width: 1024px) {
+  .sub-layout { grid-template-columns: minmax(0, 1fr) 330px; }
+  .sub-rail { position: sticky; top: 24px; }
+}
+.sub-main {
   display: flex;
   flex-direction: column;
   gap: 26px;
+  min-width: 0;
 }
 
 /* 骨架与状态 */
@@ -678,498 +722,324 @@ onMounted(() => {
   color: var(--uhd-d-text-2);
   font-size: var(--uhd-fs-body);
 }
-.sub-state p {
-  margin: 0;
-}
-.sub-state__note {
-  color: var(--uhd-d-text-3);
-  font-size: var(--uhd-fs-caption);
-}
+.sub-state p { margin: 0; }
+.sub-state__note { color: var(--uhd-d-text-3); font-size: var(--uhd-fs-caption); }
 .sub-retry {
   padding: 9px 18px;
   border-radius: 999px;
   border: 1px solid var(--uhd-d-border);
-  background: var(--uhd-d-surface-raised);
+  background: transparent;
   color: var(--uhd-d-text);
   font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-semibold);
   cursor: pointer;
-  text-decoration: none;
 }
+.sub-note { margin: 0; color: var(--uhd-d-text-3); font-size: var(--uhd-fs-caption); }
 
-/* 分段切换（服 / 支付口径共用）：胶囊容器＋深底提亮选中项 */
+/* 线路分段 */
 .sub-seg {
-  display: flex;
-  gap: 2px;
-  padding: 3px;
-  width: fit-content;
-  max-width: 100%;
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
   border-radius: 999px;
-  background: #1a1a1c;
+  background: var(--uhd-d-surface);
   border: 1px solid var(--uhd-d-border);
+  align-self: flex-start;
+  max-width: 100%;
   overflow-x: auto;
-  scrollbar-width: none;
-}
-.sub-seg::-webkit-scrollbar {
-  display: none;
 }
 .sub-seg__item {
-  flex: 0 0 auto;
-  padding: 8px 18px;
   border: none;
-  border-radius: 999px;
   background: transparent;
   color: var(--uhd-d-text-2);
-  font-family: inherit;
+  border-radius: 999px;
+  padding: 7px 16px;
   font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-medium);
+  font-weight: 600;
   cursor: pointer;
-  transition: background var(--uhd-dur-ui) ease, color var(--uhd-dur-ui) ease;
+  white-space: nowrap;
 }
 .sub-seg__item--on {
-  background: #2e2e33;
-  color: var(--uhd-d-text);
-  font-weight: var(--uhd-fw-semibold);
-}
-.sub-note {
-  margin: -14px 2px 0;
-  color: var(--uhd-d-text-3);
-  font-size: var(--uhd-fs-caption);
-  line-height: 1.55;
+  background: var(--uhd-d-text);
+  color: var(--uhd-d-bg);
 }
 
-/* 套餐单选卡：选中提亮（#1d 面＋亮边＋实心圆点），未选压暗（无面、整卡降透明） */
-.sub-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.plan-card {
+/* 对比表 */
+.cmp {
   border-radius: var(--uhd-r-lg);
-  border: 1px solid transparent;
-  padding: 4px 16px;
-  opacity: 0.48;
-  transition: opacity var(--uhd-dur-ui) ease, background var(--uhd-dur-ui) ease;
+  background: var(--uhd-d-surface);
+  border: 1px solid var(--uhd-d-border);
+  overflow-x: auto;
 }
-.plan-card--on {
-  opacity: 1;
-  background: #1d1d20;
-  border-color: rgba(255, 255, 255, 0.14);
-}
-.plan-card__head {
+.cmp-table {
   width: 100%;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 14px 0 10px;
-  border: none;
-  background: transparent;
-  color: inherit;
-  font-family: inherit;
-  text-align: left;
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 430px;
+}
+.cmp-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.cmp-corner { width: 76px; }
+.cmp-colhead {
+  padding: 16px 10px 14px;
   cursor: pointer;
+  border-bottom: 1px solid var(--uhd-d-border);
+  vertical-align: top;
+}
+.cmp-plan {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.cmp-plan__name {
+  font-size: var(--uhd-fs-title);
+  font-weight: var(--uhd-fw-extrabold);
+  color: var(--uhd-d-text);
 }
 .plan-radio {
   flex: 0 0 auto;
-  width: 21px;
-  height: 21px;
-  margin-top: 5px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  border: 2px solid #6b6b70;
-  box-sizing: border-box;
+  border: 2px solid var(--uhd-d-text-3);
+  background: transparent;
+  position: relative;
 }
-.plan-radio--on {
-  border-color: #fff;
-  background: radial-gradient(circle, #fff 0 4px, transparent 4.6px);
-}
-.plan-name {
-  padding-top: 3px;
-  font-size: 17px;
-  font-weight: var(--uhd-fw-bold);
-  color: var(--uhd-d-text);
-  white-space: nowrap;
+.plan-radio--on { border-color: var(--uhd-d-text); }
+.plan-radio--on::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--uhd-d-text);
 }
 .plan-current {
-  margin-top: 6px;
   font-size: var(--uhd-fs-micro);
-  font-weight: var(--uhd-fw-medium);
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--uhd-rainbow, linear-gradient(100deg, #2f8fe0, #c46c90 55%, #f2a45a));
+  color: #fff;
+}
+.cmp-rowhead {
+  padding: 11px 12px;
+  text-align: left;
+  font-size: var(--uhd-fs-aux);
+  font-weight: 500;
   color: var(--uhd-d-text-3);
   white-space: nowrap;
 }
-.plan-price {
-  margin-left: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-}
-.plan-price__row {
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-}
-.plan-price__row b {
-  font-family: var(--uhd-font-display);
-  font-size: 30px;
-  font-weight: var(--uhd-fw-black);
-  letter-spacing: -0.02em;
-  color: var(--uhd-d-text);
-}
-.plan-price__row i {
-  font-style: normal;
+.cmp-cell {
+  padding: 11px 10px;
+  text-align: center;
   font-size: var(--uhd-fs-caption);
-  color: var(--uhd-d-text-3);
-}
-.plan-price__per {
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-d-text-3);
-}
-.plan-specs {
-  list-style: none;
-  margin: 2px 0 0;
-  padding: 0 0 10px 31px;
-}
-.plan-spec {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 7px 0;
-  border-top: 1px solid #26262a;
-  font-size: var(--uhd-fs-caption);
-}
-.plan-spec__label {
-  flex: 0 0 76px;
-  color: var(--uhd-d-text-3);
-  display: inline-flex;
-  align-items: center;
-}
-.plan-spec__value {
-  color: var(--uhd-d-text);
-  font-weight: var(--uhd-fw-medium);
-}
-.plan-spec--feat .plan-spec__value {
   color: var(--uhd-d-text-2);
+  cursor: pointer;
+}
+.cmp-table tbody tr + tr .cmp-cell,
+.cmp-table tbody tr + tr .cmp-rowhead { border-top: 1px solid var(--uhd-d-border); }
+.cmp-colhead--on, .cmp-cell--on {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--uhd-d-text);
 }
 
-/* 时长：大字当前值＋滑杆＋四档胶囊 */
+/* 时长 */
+.sub-dur {
+  border-radius: var(--uhd-r-lg);
+  background: var(--uhd-d-surface);
+  border: 1px solid var(--uhd-d-border);
+  padding: 18px;
+}
 .sub-dur__head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  margin-bottom: 12px;
 }
-.sub-dur__label {
-  font-size: var(--uhd-fs-body);
-  font-weight: var(--uhd-fw-semibold);
-  color: var(--uhd-d-text-2);
-}
-.sub-dur__value {
-  color: var(--uhd-d-text-3);
-  font-size: var(--uhd-fs-body);
-}
-.sub-dur__value b {
-  font-family: var(--uhd-font-sans);
-  font-size: 26px;
-  font-weight: var(--uhd-fw-extrabold);
-  color: var(--uhd-d-text);
-  margin-right: 2px;
-}
+.sub-dur__label { font-size: var(--uhd-fs-caption); color: var(--uhd-d-text-2); }
+.sub-dur__value { font-size: var(--uhd-fs-caption); color: var(--uhd-d-text-2); }
+.sub-dur__value b { font-size: var(--uhd-fs-h3); color: var(--uhd-d-text); }
 .sub-slider {
-  -webkit-appearance: none;
-  appearance: none;
   width: 100%;
-  height: 26px;
-  margin: 8px 0 2px;
-  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--uhd-d-text) var(--fill, 0%), rgba(255, 255, 255, 0.14) var(--fill, 0%));
+  outline: none;
   cursor: pointer;
-}
-.sub-slider::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 2px;
-  background: linear-gradient(to right, #fff 0%, #fff var(--fill, 0%), #3a3a3f var(--fill, 0%), #3a3a3f 100%);
 }
 .sub-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
-  appearance: none;
-  width: 21px;
-  height: 21px;
-  margin-top: -8.5px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  background: #111;
-  border: 2.5px solid #fff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-}
-.sub-slider::-moz-range-track {
-  height: 4px;
-  border-radius: 2px;
-  background: #3a3a3f;
-}
-.sub-slider::-moz-range-progress {
-  height: 4px;
-  border-radius: 2px;
   background: #fff;
+  border: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
 }
 .sub-slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  background: #111;
-  border: 2.5px solid #fff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  background: #fff;
+  border: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
 }
 .sub-dur__caps {
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
+  margin-top: 14px;
 }
 .sub-cap {
-  padding: 8px 16px;
+  flex: 1;
+  padding: 9px 0;
   border-radius: 999px;
   border: 1px solid var(--uhd-d-border);
   background: transparent;
   color: var(--uhd-d-text-2);
-  font-family: inherit;
   font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-medium);
+  font-weight: 600;
   cursor: pointer;
-  transition: background var(--uhd-dur-ui) ease, color var(--uhd-dur-ui) ease;
 }
 .sub-cap--on {
-  background: #2e2e33;
-  border-color: transparent;
-  color: var(--uhd-d-text);
-  font-weight: var(--uhd-fw-semibold);
+  background: var(--uhd-d-text);
+  border-color: var(--uhd-d-text);
+  color: var(--uhd-d-bg);
 }
-
-/* 支付口径 */
-.sub-pay {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.sub-methods {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.sub-method {
-  padding: 8px 16px;
-  border-radius: 999px;
-  border: 1px solid var(--uhd-d-border);
-  background: transparent;
-  color: var(--uhd-d-text-2);
-  font-family: inherit;
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-medium);
-  cursor: pointer;
-}
-.sub-method--on {
-  background: #2e2e33;
-  border-color: transparent;
-  color: var(--uhd-d-text);
-  font-weight: var(--uhd-fw-semibold);
-  cursor: default;
-}
-.sub-pay__warn {
-  color: var(--uhd-warn);
-  font-size: var(--uhd-fs-caption);
-}
-.sub-inline-retry {
-  border: none;
-  background: transparent;
-  color: var(--uhd-d-text);
-  font: inherit;
-  text-decoration: underline;
-  cursor: pointer;
-  padding: 0 2px;
-}
-/* 优惠码：胶囊输入＋应用钮同行同高 */
-.sub-coupon__row {
-  display: flex;
-  gap: 10px;
-  align-items: stretch;
-}
-.sub-coupon__box {
-  flex: 1 1 auto;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 0 16px;
-  min-height: 46px;
-  border-radius: 999px;
-  background: #1a1a1c;
-  border: 1px solid var(--uhd-d-border);
+.sub-dur__hint {
+  margin: 12px 0 0;
+  font-size: var(--uhd-fs-aux);
   color: var(--uhd-d-text-3);
 }
-.sub-coupon__input {
-  flex: 1 1 auto;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--uhd-d-text);
-  font-family: inherit;
-  font-size: var(--uhd-fs-body);
-}
-.sub-coupon__input::placeholder {
-  color: var(--uhd-d-text-3);
-}
-.sub-coupon__input:disabled {
-  color: var(--uhd-d-text-2);
-}
-.sub-coupon__apply {
-  flex: 0 0 auto;
-  padding: 0 22px;
-  min-height: 46px;
-  border-radius: 999px;
-  border: none;
-  background: #2e2e33;
-  color: var(--uhd-d-text);
-  font-family: inherit;
-  font-size: var(--uhd-fs-body);
-  font-weight: var(--uhd-fw-semibold);
-  cursor: pointer;
-}
-.sub-coupon__apply:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.sub-coupon__ok {
-  margin: 10px 2px 0;
-  color: var(--uhd-ok);
-  font-size: var(--uhd-fs-caption);
-}
-.sub-coupon__err {
-  margin: 10px 2px 0;
-  color: var(--uhd-danger);
-  font-size: var(--uhd-fs-caption);
-}
 
-/* 价格明细 */
-.sub-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 16px 18px;
+/* 结算栏 */
+.rail-card {
   border-radius: var(--uhd-r-lg);
   background: var(--uhd-d-surface);
   border: 1px solid var(--uhd-d-border);
-}
-.sub-sum-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: var(--uhd-fs-body);
-  color: var(--uhd-d-text-2);
-}
-.sub-sum-row b {
-  color: var(--uhd-d-text);
-  font-weight: var(--uhd-fw-semibold);
-  font-variant-numeric: tabular-nums;
-}
-.sub-sum-row--cut b {
-  color: var(--uhd-ok);
-}
-
-/* 吸底结算条：内容滚走它不动；左摘要两行，右彩虹大胶囊 */
-.sub-settle {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 60;
-  background: rgba(10, 10, 10, 0.88);
-  backdrop-filter: blur(18px) saturate(150%);
-  -webkit-backdrop-filter: blur(18px) saturate(150%);
-  border-top: 1px solid rgba(255, 255, 255, 0.09);
-  padding-bottom: env(safe-area-inset-bottom);
-}
-.sub-settle__inner {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 12px 16px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-.sub-settle__info {
-  flex: 1 1 auto;
-  min-width: 0;
+  padding: 20px 18px;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 10px;
 }
-.sub-settle__name {
+.rail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   font-size: var(--uhd-fs-caption);
   color: var(--uhd-d-text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
-.sub-settle__price {
+.rail-row b { color: var(--uhd-d-text); font-weight: 600; }
+.rail-row--head { font-size: var(--uhd-fs-lead); font-weight: 700; color: var(--uhd-d-text); }
+.rail-row--cut b { color: #f2a45a; }
+.rail-total {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 10px;
 }
-.sub-settle__price b {
-  font-family: var(--uhd-font-display);
-  font-size: 24px;
-  font-weight: var(--uhd-fw-black);
-  letter-spacing: -0.01em;
+.rail-total b {
+  font-size: 30px;
+  font-weight: var(--uhd-fw-extrabold);
   color: var(--uhd-d-text);
 }
-.sub-settle__price s {
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-d-text-3);
-}
-/* 结算主钮 UHD 口径（2026-11-13 补齐七彩＋玻璃）：由满面彩虹填充改彩虹边框 +
-   深色毛玻璃底 + 玻璃栈（内高光 + 柔影 + backdrop），与全站主钮统一 */
-.sub-settle__btn {
-  flex: 0 0 auto;
-  min-width: 132px;
-  padding: 14px 30px;
-  border: 1.5px solid transparent;
+.rail-total s { color: var(--uhd-d-text-3); font-size: var(--uhd-fs-caption); }
+.rail-approx { margin: -6px 0 2px; font-size: var(--uhd-fs-aux); color: var(--uhd-d-text-3); }
+.rail-cta {
+  margin-top: 8px;
+  width: 100%;
+  padding: 14px 0;
+  border: none;
   border-radius: 999px;
-  background:
-    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
-    var(--uhd-rainbow) border-box;
+  font-size: var(--uhd-fs-lead);
+  font-weight: 700;
   color: #fff;
-  font-family: inherit;
-  font-size: 16px;
-  font-weight: var(--uhd-fw-bold);
   cursor: pointer;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 12px 28px -10px rgba(0, 0, 0, 0.5);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
-  transition: transform var(--uhd-dur-ui) ease, opacity var(--uhd-dur-ui) ease;
+  background: var(--uhd-rainbow, linear-gradient(100deg, #2f8fe0, #c46c90 55%, #f2a45a));
+  transition: transform 0.12s ease, opacity 0.12s ease;
 }
-.sub-settle__btn:active {
-  transform: scale(0.97);
-}
-/* 禁用：彩虹退场、中性灰 */
-.sub-settle__btn:disabled {
-  background: var(--uhd-d-surface-raised);
-  border-color: var(--uhd-d-border-2);
-  color: var(--uhd-d-text-2);
-  cursor: not-allowed;
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
+.rail-cta:active:not(:disabled) { transform: scale(0.98); }
+.rail-cta:disabled { opacity: 0.45; cursor: not-allowed; }
+.rail-note { margin: 0; font-size: var(--uhd-fs-aux); color: #f2a45a; }
 
-@media (min-width: 1024px) {
-  .sub-head {
-    padding-top: calc(28px + env(safe-area-inset-top));
-  }
-  .sub-body {
-    padding-top: 22px;
-  }
-  .plan-price__row b {
-    font-size: 34px;
-  }
+/* 优惠码（栏内） */
+.sub-coupon { margin-top: 4px; }
+.sub-coupon__row { display: flex; gap: 8px; }
+.sub-coupon__box {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid var(--uhd-d-border);
+  color: var(--uhd-d-text-3);
+  min-width: 0;
 }
+.sub-coupon__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--uhd-d-text);
+  font-size: var(--uhd-fs-caption);
+  padding: 10px 0;
+  outline: none;
+}
+.sub-coupon__apply {
+  flex: 0 0 auto;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid var(--uhd-d-border);
+  background: transparent;
+  color: var(--uhd-d-text);
+  font-size: var(--uhd-fs-caption);
+  font-weight: 600;
+  cursor: pointer;
+}
+.sub-coupon__apply:disabled { opacity: 0.45; cursor: not-allowed; }
+.sub-coupon__ok { margin: 8px 0 0; font-size: var(--uhd-fs-aux); color: var(--uhd-d-text-2); }
+.sub-coupon__err { margin: 8px 0 0; font-size: var(--uhd-fs-aux); color: #ff7a7a; }
+
+/* 确认弹窗明细 */
+.cfm { display: flex; flex-direction: column; gap: 10px; }
+.cfm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--uhd-fs-caption);
+  color: var(--uhd-l-text-2);
+}
+.cfm-row b { color: var(--uhd-l-text); font-weight: 600; }
+.cfm-row--cut b { color: #e07b39; }
+.cfm-row--total {
+  border-top: 1px solid rgba(128, 128, 140, 0.25);
+  padding-top: 10px;
+  font-size: var(--uhd-fs-lead);
+  font-weight: 700;
+}
+.cfm-neg { color: #d92d20 !important; }
+.cfm-warn { margin: 2px 0 0; font-size: var(--uhd-fs-aux); color: #d92d20; }
+.cfm-btn {
+  padding: 11px 22px;
+  border-radius: 999px;
+  font-size: var(--uhd-fs-caption);
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid rgba(128, 128, 140, 0.35);
+  background: transparent;
+  color: var(--uhd-l-text);
+}
+.cfm-btn--main {
+  border: none;
+  color: #fff;
+  background: var(--uhd-rainbow, linear-gradient(100deg, #2f8fe0, #c46c90 55%, #f2a45a));
+}
+.cfm-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 </style>

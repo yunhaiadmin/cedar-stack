@@ -299,7 +299,8 @@ def test_wallet_config_defaults(db):
         "wallet_invite_rebate_tier_percent": 1,
         "traffic_balance_price_per_100gb": 300,
         "wallet_refund_to_balance": True,
-        "wallet_auto_renew_enabled": False,
+        # 2026-11-14 订阅重做：自动续费总闸默认开（用户侧开关默认关）
+        "wallet_auto_renew_enabled": True,
     }
 
 

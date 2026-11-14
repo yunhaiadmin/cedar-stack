@@ -27,16 +27,21 @@ export interface TrafficSummary {
   reset_date: string
 }
 
-export interface TrafficExchangeOption {
-  days: number
-  /** 抵扣当月额度的百分比（按比例口径，照 UHDNow：15 天 50%、30 天 100%） */
-  quota_pct: number
-  /** 后端按当前用户当月额度 × quota_pct 现折算的抵扣字节 */
-  bytes: number
+/** 时间换流量规则（2026-11-14 照友站 GB 口径：每 10GB 需 7 天、
+ * 兑换后总流量上限 5TB，超出按比例折算时长） */
+export interface TrafficExchangeRule {
+  unit_gb: number
+  days_per_unit: number
+  quick_gb: number[]
+  cap_bytes: number
+  quota_bytes: number | null
+  credited_bytes: number
+  /** 当前还可兑换的字节余量（上限 − 额度 − 已抵扣） */
+  room_bytes: number
 }
 
 export interface TrafficOverview extends TrafficSummary {
-  exchange_options: TrafficExchangeOption[]
+  exchange_rule: TrafficExchangeRule
   balance_purchase_available: boolean
   /** 余额购流量单价（分/100GB，钱包批 2 下发；不可用时为 0） */
   balance_price_per_100gb_fen: number
@@ -47,6 +52,10 @@ export interface TrafficOverview extends TrafficSummary {
 export interface TrafficExchangeResult {
   ok: boolean
   replayed: boolean
+  log: {
+    days_deducted: number
+    bytes_credited: number
+  }
   traffic: TrafficSummary
 }
 
@@ -59,14 +68,14 @@ export async function getTraffic(): Promise<TrafficOverview | null> {
   }
 }
 
-/** 时间换流量成交：idempotencyKey 由弹窗在打开时生成一次，同一次
- * 确认的重试/双击只成交一次（后端幂等）。失败抛错，文案走后端 detail。 */
+/** 时间换流量成交（按 GB）：idempotencyKey 由弹窗在打开时生成一次，
+ * 同一次确认的重试/双击只成交一次（后端幂等）。失败抛错，文案走后端 detail。 */
 export async function exchangeTimeForTraffic(
-  days: number,
+  gb: number,
   idempotencyKey: string,
 ): Promise<TrafficExchangeResult> {
   return api.post<never, TrafficExchangeResult>('/api/user/traffic/exchange', {
-    days,
+    gb,
     idempotency_key: idempotencyKey,
   })
 }

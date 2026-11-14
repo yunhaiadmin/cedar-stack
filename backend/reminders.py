@@ -565,6 +565,16 @@ def start_reminder_scheduler(interval_seconds: Optional[int] = None) -> bool:
                         swept["consumed"], swept["released"],
                     )
                 db.commit()
+                # 余额自动续费（2026-11-14 订阅重做）：与到期提醒同
+                # 一条调度线，每轮顺带跑一次；引擎内部逐条独立事务，
+                # 失败只记日志不影响提醒主线。
+                try:
+                    from backend import auto_renew
+
+                    asyncio.run(auto_renew.run_auto_renewals_async(db))
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("自动续费周期异常: %s", exc)
+                    db.rollback()
             except Exception as exc:  # noqa: BLE001 — 提醒线程绝不能因一次失败退出
                 logger.warning("到期提醒周期异常: %s", exc)
                 db.rollback()

@@ -540,13 +540,22 @@ with SessionLocal() as db:
         models.SubscriptionOrder.order_id == doomed_order
     ).update({"plan_id": fixed_plan.id}, synchronize_session=False)
     db.commit()
+    fixed_plan_id = fixed_plan.id
 
 r = notify_call(doomed_order, "25.00")
 check("缺料修好后回调恢复正常（success）", r.text.strip() == "success",
       f"{r.status_code} {r.text[:80]}")
-check("修好后订单支付并发出订阅（顺延 +30 天）",
+# 2026-11-14 订阅重做新口径：本单的套餐与买家现持有套餐不同，
+# 履约按「换套餐」处理——旧行先到期、新套餐另起一行 30 天，
+# 不再顺延旧行（旧行天数不再与新行相加，总天数口径随之改变）。
+with SessionLocal() as db:
+    _newest = (db.query(models.UserSubscription)
+               .filter(models.UserSubscription.user_id == notify_buyer_id)
+               .order_by(models.UserSubscription.id.desc()).first())
+check("修好后订单支付并发出订阅（新套餐另起 30 天）",
       order_row(doomed_order).status == "paid"
-      and sub_days_total(notify_buyer_id) == before_days_total + 30,
+      and _newest is not None and _newest.plan_id == fixed_plan_id
+      and int((_newest.end_date - _newest.start_date).days) == 30,
       f"{order_row(doomed_order).status} / {sub_days_total(notify_buyer_id)}")
 
 print("\n" + "=" * 60)

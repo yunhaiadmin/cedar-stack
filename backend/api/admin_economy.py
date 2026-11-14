@@ -90,7 +90,7 @@ ECONOMY_CONFIG_KEYS = {
     "wallet_invite_rebate_tier_percent": "int",  # 二档比例 %（默认 1，门槛以上部分）
     "traffic_balance_price_per_100gb": "int",  # 余额购流量单价（分/100GB，默认 300＝¥3，批 2 启用）
     "wallet_refund_to_balance": "bool",  # 退款回钱包（默认开，批 2 落地）
-    "wallet_auto_renew_enabled": "bool",  # 余额自动续订（默认关，不开）
+    "wallet_auto_renew_enabled": "bool",  # 余额自动续费总闸（默认开；用户侧开关默认关）
     "payment_gateway_url": "str", "payment_partner_id": "str",
     "payment_partner_key": "secret", "payment_qqpay_enabled": "bool",
     "site_url": "str",

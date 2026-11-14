@@ -58,7 +58,7 @@ WALLET_CONFIG_DEFAULTS = {
     "wallet_invite_rebate_tier_percent": 1,    # 二档比例 %（门槛以上部分）
     "traffic_balance_price_per_100gb": 300,    # 余额购流量单价（分/100GB）＝¥3
     "wallet_refund_to_balance": True,          # 退款回钱包（批 2 落地）
-    "wallet_auto_renew_enabled": False,        # 余额自动续订：不开
+    "wallet_auto_renew_enabled": True,         # 余额自动续费总闸（2026-11-14 订阅重做开启：用户侧开关默认关、开了才扣）
 }
 
 _BOOL_KEYS = {"wallet_enabled", "wallet_refund_to_balance",

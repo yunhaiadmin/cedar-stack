@@ -387,12 +387,17 @@ r = client.post("/api/user/economy/payment/order", headers=USER_H, json={
     "kind": "subscription", "item_id": plan_id, "payment_method": "alipay", "coupon_code": "SUB5",
 })
 ORDER_C = r.json().get("order_id", "")
-check("用减免券买会员：月卡 30 → 实付 25",
-      r.status_code == 200 and r.json().get("amount") == 25.0, r.text[:160])
-check("订阅订单落库：amount=实付 25、list_price=30、discount=5",
-      order_row(ORDER_C) is not None and float(order_row(ORDER_C).amount) == 25.0
+# 2026-11-14 订阅重做新口径：买家此前已持有「百元季卡」（实付 90、
+# 剩约 30/30 天），改买「月卡」属换套餐——旧套餐剩余价值按
+# 实付×剩余/总时长抵扣（≈90 元），叠加 SUB5 券减 5 元后实付归 0。
+# 抵扣只在计价层发生，旧订阅要等本单真付款履约时才到期（本单随后
+# 被关单，旧订阅不受影响）。
+check("用减免券买会员（换套餐抵扣后实付 0）",
+      r.status_code == 200 and r.json().get("amount") == 0.0, r.text[:160])
+check("订阅订单落库：amount=0、list_price=30、discount=券 5+抵扣≈90",
+      order_row(ORDER_C) is not None and float(order_row(ORDER_C).amount) == 0.0
       and float(order_row(ORDER_C).list_price) == 30.0
-      and float(order_row(ORDER_C).discount_amount) == 5.0,
+      and float(order_row(ORDER_C).discount_amount) >= 94.0,
       str(order_row(ORDER_C).amount if order_row(ORDER_C) else None))
 r = client.post(f"/api/admin/economy/orders/{ORDER_C}/close", headers=ADMIN_H)
 check("关单成功", r.status_code == 200, f"status={r.status_code} {r.text[:120]}")
