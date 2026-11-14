@@ -16,7 +16,7 @@
  * 映射见 emby_server _query_items）。热度无全站数据源
  * （后端 PlayCount 是当前用户自己的播放次数），不冒充、不提供。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ArrowDown, ArrowUp, ArrowUpDown, Check } from 'lucide-vue-next'
 import StreamShell from '@/components/stream/StreamShell.vue'
@@ -26,6 +26,9 @@ import {
   posterUrl,
   type EmbyItem,
 } from '@/api/emby'
+
+/* KeepAlive include 按组件 name 匹配：显式声明，保活命中不靠文件名推断 */
+defineOptions({ name: 'LibraryBrowseView' })
 
 const route = useRoute()
 const kind = computed<'movie' | 'series'>(() =>
@@ -137,11 +140,17 @@ function toggleSortOrder() {
 
 /* ---------- 条目加载（现行 getItems 口径） ---------- */
 let seq = 0
-async function load(reset = true) {
+/** 保活切回静默刷新阈值：与首页同口径 5 分钟 */
+const VIEW_REFRESH_TTL_MS = 5 * 60 * 1000
+let lastLoadedAt = 0
+/** silent = 保活切回的后台刷新：不亮骨架、失败保留已有数据不清空 */
+async function load(reset = true, silent = false) {
   const my = ++seq
   if (reset) {
-    loading.value = true
-    error.value = ''
+    if (!silent) {
+      loading.value = true
+      error.value = ''
+    }
   } else {
     loadingMore.value = true
   }
@@ -159,9 +168,10 @@ async function load(reset = true) {
     total.value = res.TotalRecordCount || items.value.length
     hasMore.value =
       res.HasMore !== undefined ? !!res.HasMore : items.value.length < total.value
+    if (reset) lastLoadedAt = Date.now()
   } catch (err) {
     if (my !== seq) return
-    if (reset) {
+    if (reset && !silent) {
       items.value = []
       error.value = err instanceof Error ? err.message : '加载失败'
     }
@@ -172,6 +182,16 @@ async function load(reset = true) {
     }
   }
 }
+
+/* 保活切回：数据还新鲜（< 5 分钟）不重拉；过期才静默刷新，不闪骨架 */
+onActivated(() => {
+  if (lastLoadedAt && Date.now() - lastLoadedAt > VIEW_REFRESH_TTL_MS) {
+    void (async () => {
+      await loadCategories()
+      await load(true, true)
+    })()
+  }
+})
 
 function scrollTop() {
   window.scrollTo({ top: 0, behavior: 'smooth' })

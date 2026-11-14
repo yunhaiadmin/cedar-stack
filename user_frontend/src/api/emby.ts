@@ -308,6 +308,8 @@ export interface EmbyQuery {
   enableTotalRecordCount?: boolean
   /** 请求取消信号（筛选/排序快速切换时丢弃过期响应，P1 #8） */
   signal?: AbortSignal
+  /** 单请求超时覆盖（毫秒；首页分级超时用，不传走全局默认） */
+  timeout?: number
 }
 
 /** 筛选菜单的可选值（后端 /Items/Filters 给出，取值来自全库） */
@@ -358,10 +360,13 @@ function cacheItem(item: EmbyItem): void {
 }
 
 export const embyApi = {
-  /** 媒体库列表（Views） */
-  async getViews(): Promise<EmbyItem[]> {
+  /** 媒体库列表（Views）；opts.timeout 为单请求超时覆盖，不传走全局默认 */
+  async getViews(opts?: { timeout?: number }): Promise<EmbyItem[]> {
     if (viewsCache && Date.now() - viewsCache.ts < VIEWS_TTL_MS) return viewsCache.items
-    const res = await embyGet<{ Items: EmbyItem[] }>('/emby/Users/me/Views')
+    const res = await embyGet<{ Items: EmbyItem[] }>(
+      '/emby/Users/me/Views',
+      opts?.timeout ? { timeout: opts.timeout } : undefined,
+    )
     const items = res?.Items || []
     viewsCache = { items, ts: Date.now() }
     return items
@@ -386,10 +391,11 @@ export const embyApi = {
     if (q.officialRatings?.length) params.OfficialRatings = q.officialRatings.join(',')
     if (q.tags?.length) params.Tags = q.tags.join('|')
     if (q.filters?.length) params.Filters = q.filters.join(',')
-    return embyGet<{ Items: EmbyItem[]; TotalRecordCount: number; HasMore?: boolean }>(
-      USER_ITEMS,
-      q.signal ? { params, signal: q.signal } : { params },
-    )
+    return embyGet<{ Items: EmbyItem[]; TotalRecordCount: number; HasMore?: boolean }>(USER_ITEMS, {
+      params,
+      ...(q.signal ? { signal: q.signal } : {}),
+      ...(q.timeout ? { timeout: q.timeout } : {}),
+    })
   },
 
   /** 筛选菜单的可选值（分类 / 标签 / 分级 / 年份） */
@@ -409,9 +415,12 @@ export const embyApi = {
     return res?.Items || []
   },
 
-  /** 最新添加 */
-  async getLatest(limit = 16): Promise<EmbyItem[]> {
-    return embyGet<EmbyItem[]>(`${USER_ITEMS}/Latest`, { params: { Limit: limit } })
+  /** 最新添加；opts.timeout 为单请求超时覆盖，不传走全局默认 */
+  async getLatest(limit = 16, opts?: { timeout?: number }): Promise<EmbyItem[]> {
+    return embyGet<EmbyItem[]>(`${USER_ITEMS}/Latest`, {
+      params: { Limit: limit },
+      ...(opts?.timeout ? { timeout: opts.timeout } : {}),
+    })
   },
 
   /** 剧集 NextUp */
