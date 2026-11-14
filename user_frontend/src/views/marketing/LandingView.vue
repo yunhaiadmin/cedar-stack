@@ -3,7 +3,7 @@
  * 官网 www 首页（UHD 换皮批 1 · 深色营销面）——说明书逐页对照表第 18 行
  * 五区块骨架：100vh Hero（棱镜光束 + 文案轮换 + 规格 chip）→ 客户端/规格跑马灯
  * → 钉住滚动影院/音频展示（钉住只此一处，说明书第 5 节①）→ 一份订阅三卡 → 单行页脚。
- * 文案为 Aetrix 自有口径；营销数字一律不编造：片库统计位为占位待接（第 5 节④）。
+ * 文案为 Aetrix 自有口径；营销数字一律不编造：片库数据行用 2026-11-15 生产真实统计取整呈现（口径见片库卡注释）。
  * 页面独立于应用壳（App.vue 对 landing 路由名不渲染全局顶栏/底坞），自带悬浮胶囊导航。
  */
 import { nextTick, onDeactivated, onMounted, onUnmounted, ref, type Component } from 'vue'
@@ -18,6 +18,9 @@ import { communityLinks } from '@/composables/useCommunityLinks'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
+/* 首屏棱镜图加载态：图未到位前只露纯黑中性底（不露半张图/半成品），load 后整图淡入 */
+const heroImgReady = ref(false)
+function onHeroImgLoad() { heroImgReady.value = true }
 const userStore = useUserStore()
 
 const navItems: UhdNavItem[] = [
@@ -283,7 +286,7 @@ const pinVisualStyle = () => {
 }
 const pinDriftStyle = () => {
   const rm = reduceMotion.value
-  return { transform: rm ? 'none' : `translateX(${(-16 * pinProgress.value).toFixed(1)}px)` }
+  return { transform: rm ? 'none' : `translateX(${(-6 * pinProgress.value).toFixed(1)}px)` }
 }
 /* 声场圆环：三环依次扩散（原站 .42/.49/.56 起，入 .18、出 .28） */
 function ringStyle(i: number) {
@@ -548,9 +551,9 @@ const year = new Date().getFullYear()
            光谱扇自出射星芒向右上展开、左上留暗给文案）；图与脉冲叠层同装
            .hero-bg-canvas（与图同比例画布 cover 撑满，叠层恒对位）；
            仅 ≤900px 显示，桌面走 hero-visual 同构图图层 -->
-      <div class="hero-bg" aria-hidden="true">
+      <div class="hero-bg" :class="{ 'is-ready': heroImgReady }" aria-hidden="true">
         <div class="hero-bg-canvas">
-          <img class="hero-bg-img" src="/images/hero-prism-mobile.webp" alt="" width="1080" height="2160" fetchpriority="high" />
+          <img class="hero-bg-img" src="/images/hero-prism-mobile.webp" alt="" width="1080" height="2160" fetchpriority="high" @load="onHeroImgLoad" />
           <div class="hp">
             <span class="hp-beamglow" />
             <span class="hp-dot" />
@@ -562,9 +565,9 @@ const year = new Date().getFullYear()
       </div>
       <!-- 桌面棱镜主视觉：自有照片铺满首屏（画布与图同比例，脉冲叠层跟图走）。
            移动端不显示，走 .hero-bg。不再另叠彩虹渐变，也不再裁成右上角方图。 -->
-      <div class="hero-visual" aria-hidden="true">
+      <div class="hero-visual" :class="{ 'is-ready': heroImgReady }" aria-hidden="true">
         <div class="hero-visual-frame">
-          <img class="hero-visual-img" src="/images/hero-prism-desktop.webp" alt="" width="1600" height="1067" />
+          <img class="hero-visual-img" src="/images/hero-prism-desktop.webp" alt="" width="1600" height="1067" @load="onHeroImgLoad" />
           <div class="hp">
             <span class="hp-beamglow" />
             <span class="hp-dot" />
@@ -642,12 +645,15 @@ const year = new Date().getFullYear()
       <div class="pin-stage">
         <div class="pin-visual" :style="pinVisualStyle()" aria-hidden="true">
           <div class="pin-drift" :style="pinDriftStyle()">
-            <div class="pin-beams pin-beams--glow" :class="{ 'is-paused': !pinInView }">
-              <span v-for="n in 8" :key="n" class="pin-bar" :class="`pin-bar--${n}`" />
+            <!-- 宽幅极光色带（2026-11-15 对友站录屏 f024/f025 补齐）：4 条竖向宽带整屏铺底，
+                 色序青绿→橙黄→粉红→紫罗兰，每条约 25% 宽、带间大模糊柔边；纯 CSS 自绘，不用友站素材 -->
+            <div class="pin-bands" :class="{ 'is-paused': !pinInView }">
+              <span class="pin-band pin-band--1" />
+              <span class="pin-band pin-band--2" />
+              <span class="pin-band pin-band--3" />
+              <span class="pin-band pin-band--4" />
             </div>
-            <div class="pin-beams" :class="{ 'is-paused': !pinInView }">
-              <span v-for="n in 8" :key="n" class="pin-bar" :class="`pin-bar--${n}`" />
-            </div>
+            <div class="pin-glass" />
           </div>
           <div class="pin-vignette" :style="vignetteStyle()" />
         </div>
@@ -734,7 +740,15 @@ const year = new Date().getFullYear()
           <p class="eyebrow">EVER-GROWING LIBRARY</p>
           <h3 class="ess-h3">片库自己长大</h3>
           <p class="ess-desc">新片自动扫描入库、刮削补齐海报与资料；追的剧更新了，自动出现在你的片库里。</p>
-          <!-- 无公开统计接口可读：不编造数字、不留占位行，改用不依赖数字的功能版式（返工单④③） -->
+          <!-- 数据行（2026-11-15）：parent 查生产 ORM 口径（deleted_at IS NULL AND merged_into_id IS NULL）——
+               影视作品 22,482 部（电影 12,807＋剧集 9,675）、剧集单集 294,126 集、媒体库 11 个、条目总计 332,085。
+               排版照友站大数据行（大数字＋小标签横排），只取整呈现；不用 PB 等本站没有口径的数字。 -->
+          <div class="ess-stats">
+            <div class="ess-stat"><span class="ess-stat-num">22,000+</span><span class="ess-stat-label">影视作品</span></div>
+            <div class="ess-stat"><span class="ess-stat-num">29万+</span><span class="ess-stat-label">剧集单集</span></div>
+            <div class="ess-stat"><span class="ess-stat-num">33万+</span><span class="ess-stat-label">条目总计</span></div>
+          </div>
+          <p class="ess-stats-note">覆盖 11 个媒体库，持续更新中</p>
           <ul class="ess-points">
             <li>
               <RefreshCw :size="18" aria-hidden="true" />
@@ -951,7 +965,11 @@ const year = new Date().getFullYear()
   display: block;
   width: 100%;
   height: 100%;
+  /* 加载态不露结论：图未到位前透明，只剩 .landing 纯黑中性底，load 后整图淡入 */
+  opacity: 0;
+  transition: opacity 0.6s ease;
 }
+.hero-bg.is-ready .hero-bg-img { opacity: 1; }
 .hero-bg::before {
   content: '';
   position: absolute;
@@ -994,7 +1012,10 @@ const year = new Date().getFullYear()
   width: 100%;
   height: 100%;
   object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.6s ease;
 }
+.hero-visual.is-ready .hero-visual-img { opacity: 1; }
 .hero-scrim {
   position: absolute;
   inset: 0;
@@ -1296,95 +1317,48 @@ const year = new Date().getFullYear()
   inset: 0;
   will-change: transform;
 }
-/* 光柱本体（按实测清单 §7 重做，代原 10 根等距彩虹幕）：黑底舞台上的 8 条疏密竖条。
-   每条两层同构：柔晕层（--glow，整条宽、层 blur 28px）垫底＋锐核层（居中窄条、宽约整条 26%，
-   背景取整条渐变的中央切片、层 blur 2px 得约 2px 锐边）；纵向明暗由 mask 给出
-   （黑→约 1/3 高亮峰→黑），宽条经 clip-path 中部最宽、向顶部收窄。
-   位置/主色逐条引 §7（x 以 1920 宽换算 %）；原站该区是视频、自带缓慢漂移/呼吸，
-   自发运动保留图层级 26s/32s 呼吸作等价自绘，不引用原站素材 */
-.pin-beams {
+/* 极光色带本体（2026-11-15 替换原 8 根细光柱）：4 条竖向宽带整屏铺底，每条约 25% 宽，
+   横向负边距交叠＋单条 blur(16px) 做带间大模糊柔边；纵向 mask 把带头带尾羽化进黑底；
+   整层 saturate 提色，缓慢呼吸漂移沿用原光柱的图层级自发运动口径（离屏暂停）。 */
+.pin-bands {
+  position: absolute;
+  inset: -4% 0;
+  display: flex;
+  filter: saturate(1.12) brightness(0.92);
+  -webkit-mask-image: linear-gradient(180deg, transparent, black 9%, black 91%, transparent);
+  mask-image: linear-gradient(180deg, transparent, black 9%, black 91%, transparent);
+  animation: pin-bands-breathe 26s ease-in-out infinite alternate;
+  will-change: transform;
+}
+.pin-bands.is-paused { animation-play-state: paused; }
+@keyframes pin-bands-breathe {
+  from { transform: translateX(-4px) scale(1.01); }
+  to { transform: translateX(5px) scale(1.03); }
+}
+.pin-band {
+  flex: 1 1 0;
+  margin: 0 -14px;
+  filter: blur(12px) saturate(1.18);
+}
+.pin-band--1 { background: linear-gradient(180deg, #5fd8c2 0%, #0e9a8a 46%, #043d38 100%); }
+.pin-band--2 { background: linear-gradient(180deg, #f5d76e 0%, #e8930c 46%, #8f2f0d 100%); }
+.pin-band--3 { background: linear-gradient(180deg, #f2a7bf 0%, #e5547e 46%, #8c1d42 100%); }
+.pin-band--4 { background: linear-gradient(180deg, #b78ae8 0%, #7434b8 46%, #2c1052 100%); }
+/* 玻璃光感层（口径六件齐：blur＋saturate＋半透底＋内高光＋边缘光＋大柔影）：
+   压在色带之上、文案之下，给整幅色带一层玻璃质感与上下边缘光。 */
+.pin-glass {
   position: absolute;
   inset: 0;
-  filter: blur(2px) saturate(1.3);
-  animation: pin-breathe 26s ease-in-out infinite alternate;
-  will-change: transform, filter;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(2px) saturate(1.5);
+  -webkit-backdrop-filter: blur(2px) saturate(1.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 48px 90px -48px rgba(255, 255, 255, 0.18),
+    0 30px 80px -30px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
 }
-.pin-beams--glow {
-  filter: blur(28px) saturate(1.45);
-  opacity: 0.6;
-  animation-duration: 32s;
-  animation-delay: -14s;
-}
-.pin-beams.is-paused {
-  animation-play-state: paused;
-}
-@keyframes pin-breathe {
-  from {
-    transform: translateX(-8px);
-    filter: blur(2px) saturate(1.26) brightness(0.96);
-  }
-  to {
-    transform: translateX(10px);
-    filter: blur(2px) saturate(1.38) brightness(1.1);
-  }
-}
-.pin-beams--glow {
-  animation-name: pin-breathe-glow;
-}
-@keyframes pin-breathe-glow {
-  from {
-    transform: translateX(8px) scale(1.02);
-    filter: blur(28px) saturate(1.4) brightness(1.04);
-  }
-  to {
-    transform: translateX(-10px) scale(1.05);
-    filter: blur(28px) saturate(1.55) brightness(1.16);
-  }
-}
-.pin-bar {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  -webkit-mask-image: linear-gradient(to top, transparent 0%, #000 17%, #000 27%, rgba(0, 0, 0, 0.5) 55%, transparent 92%);
-  mask-image: linear-gradient(to top, transparent 0%, #000 17%, #000 27%, rgba(0, 0, 0, 0.5) 55%, transparent 92%);
-}
-/* 宽条向顶部收窄（中部最宽）；两条细线（--1/--8）不收窄 */
-.pin-bar--2,
-.pin-bar--3,
-.pin-bar--4,
-.pin-bar--5,
-.pin-bar--6,
-.pin-bar--7 {
-  clip-path: polygon(12% 100%, 0% 58%, 10% 26%, 28% 0%, 72% 0%, 90% 26%, 100% 58%, 88% 100%);
-}
-/* 逐条落位（§7，x/1920 换算 %）：left＝条左缘、width＝条宽，此为柔晕层整条 */
-.pin-bar--1 { left: 18.96%; width: 0.42%; background: linear-gradient(to right, transparent, #001b8b 50%, transparent); }
-.pin-bar--2 { left: 25.52%; width: 6.25%; background: linear-gradient(to right, #013bc2, #000003); }
-.pin-bar--3 { left: 31.67%; width: 5.83%; background: linear-gradient(to right, rgba(0, 96, 194, 0) 0%, #0060c2 30%, #00b1e5 50%, #0060c2 70%, rgba(0, 96, 194, 0) 100%); }
-.pin-bar--4 { left: 37.92%; width: 3.75%; background: linear-gradient(to right, #77f0ee, #02eeef, #f4f4d8, #b0ece0); }
-.pin-bar--5 { left: 50%; width: 4.17%; background: linear-gradient(to right, #fff08a, #ffeda3); }
-.pin-bar--6 { left: 56.04%; width: 6.04%; background: linear-gradient(to right, #df7db1, #f492ae, #ffa189, #ffb17e, #ffc873, #ffd56d, #fff59f); }
-.pin-bar--7 { left: 62.29%; width: 6.04%; background: linear-gradient(to right, #010105, #070026, #200653, #4c147c, #691e8f, #952e95, #b9409c, #e66aa5, #f9aeb0); }
-.pin-bar--8 { left: 73.96%; width: 0.42%; background: linear-gradient(to right, transparent, #2a1b6e 50%, transparent); }
-/* 锐核层：居中窄条（整条宽的 26%），横向渐变背景放大到整条全幅、只露中央切片，
-   切片边缘即约 2px 锐边（青条 §7 注明核心色纵向变化，单独给纵向渐变、不走切片） */
-.pin-beams:not(.pin-beams--glow) .pin-bar {
-  background-size: 384.6% 100%;
-  background-position: 50% 50%;
-  background-repeat: no-repeat;
-}
-.pin-beams:not(.pin-beams--glow) .pin-bar--1 { left: 19.12%; width: 0.11%; }
-.pin-beams:not(.pin-beams--glow) .pin-bar--2 { left: 27.83%; width: 1.63%; }
-.pin-beams:not(.pin-beams--glow) .pin-bar--3 {
-  left: 33.83%;
-  width: 1.52%;
-  background: linear-gradient(to top, #0060c2 0%, #00b1e5 33%, #0060c2 90%);
-}
-.pin-beams:not(.pin-beams--glow) .pin-bar--4 { left: 39.31%; width: 0.98%; }
-.pin-beams:not(.pin-beams--glow) .pin-bar--5 { left: 51.54%; width: 1.08%; }
-.pin-beams:not(.pin-beams--glow) .pin-bar--6 { left: 58.27%; width: 1.57%; }
-.pin-beams:not(.pin-beams--glow) .pin-bar--7 { left: 64.52%; width: 1.57%; }
-.pin-beams:not(.pin-beams--glow) .pin-bar--8 { left: 74.12%; width: 0.11%; }
 /* 文案区恒常柔影（保证两态文字在亮柱上可读） */
 .pin-visual::after {
   content: '';
@@ -1397,7 +1371,7 @@ const year = new Date().getFullYear()
 .pin-vignette {
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at center, transparent 26%, rgba(0, 0, 0, 0.78) 78%),
+  background: radial-gradient(ellipse at center, transparent 42%, rgba(0, 0, 0, 0.42) 88%),
     radial-gradient(circle at center, rgba(120, 110, 255, 0.22) 0%, transparent 55%);
   opacity: 0;
 }
@@ -1473,6 +1447,11 @@ const year = new Date().getFullYear()
   transform: translateY(24px);
   filter: blur(10px);
   transition-duration: 0.8s;
+}
+/* 眉题从态特异性高于 .rv.is-in，不补这条会永远停在 blur(10px)（2026-11-15 截图实锤） */
+.essentials .rv.eyebrow.is-in {
+  transform: translateY(0);
+  filter: blur(0px);
 }
 .rv--card {
   transform: translateY(60px);
@@ -1876,6 +1855,31 @@ const year = new Date().getFullYear()
   font-weight: var(--uhd-fw-semibold);
 }
 
+/* 片库数据行：照友站大数据行——大数字（28px）＋小标签（12px）横排，数字收小量级 */
+.ess-stats {
+  display: flex;
+  gap: 28px;
+  flex-wrap: wrap;
+  margin-top: 26px;
+}
+.ess-stat { display: flex; flex-direction: column; }
+.ess-stat-num {
+  font-family: var(--uhd-font-display);
+  font-size: 28px;
+  font-weight: var(--uhd-fw-extrabold);
+  line-height: 1.15;
+}
+.ess-stat-label {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--uhd-d-text-2);
+}
+.ess-stats-note {
+  margin: 10px 0 0;
+  font-size: 11px;
+  color: var(--uhd-d-text-2);
+}
+
 /* ---------- 页脚 ---------- */
 .landing-foot {
   display: flex;
@@ -2123,7 +2127,7 @@ const year = new Date().getFullYear()
     overflow: visible;
   }
   .hero-sub {
-    font-size: 17px;
+    font-size: 16px;
     line-height: 1.75;
     min-height: 3.5em;
     margin-bottom: 30px;
@@ -2180,7 +2184,7 @@ const year = new Date().getFullYear()
   .marquee-word { font-size: 19px; }
 
   /* ---- 钉住区：移动端与桌面共用同一套钉住＋模糊交叉（动态返工，恢复 240svh 行程）；
-         光柱层上下柔边融入黑底（柱体羽化见 .pin-beams），文案绝对居下半区 ---- */
+         色带层上下柔边融入黑底（带体羽化见 .pin-bands），文案绝对居下半区 ---- */
   .pin-sec { height: 240vh; height: 240svh; }
   .pin-stage {
     position: sticky;
@@ -2200,6 +2204,11 @@ const year = new Date().getFullYear()
 
   /* ---- 一份订阅：卡片区收紧留白、补移动设备示意、片库砖墙换彩谱渐变（返工单④） ---- */
   .essentials { padding: 84px 20px 76px; }
+  /* 字号按友站小尺度收（2026-11-15 录屏帧量值）：总起主标题约 30px、钉住区眉题 12px */
+  .essentials .sec-title { font-size: 30px; }
+  .pin-copy .eyebrow { font-size: 12px; }
+  .ess-stats { gap: 18px; flex-wrap: nowrap; }
+  .ess-stat-num { font-size: 25px; }
   .ess-grid { grid-template-columns: 1fr; }
   .ess-card--wide { grid-template-columns: 1fr; }
   .ess-devices { display: none; }
@@ -2232,7 +2241,7 @@ const year = new Date().getFullYear()
     font-size: clamp(22px, 6.6vw, 26px);
     line-height: 1.45;
   }
-  .pin-title { font-size: clamp(28px, 8vw, 34px); }
+  .pin-title { font-size: clamp(28px, 7.7vw, 30px); }
   .pin-sub { font-size: 15px; }
   .pin-copy { padding: 0 16px; }
   .landing-foot { padding-left: 16px; padding-right: 16px; }
@@ -2245,7 +2254,7 @@ const year = new Date().getFullYear()
   .hp-flash,
   .hp-refl { animation: none; }
   .marquee-track { animation: none; }
-  .pin-beams { animation: none; }
+  .pin-bands { animation: none; }
   .rv,
   .pt-char {
     opacity: 1;
