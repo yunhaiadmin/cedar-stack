@@ -51,7 +51,7 @@ export const toastSystem = {
 
 /**
  * 失败兜底文案（纯字符串）。
- * 调用方式：`toast.error(toUserMessage(err, 'checkinFailed'))`
+ * 调用方式：`toast.error(toUserMessage(err, 'saveFailed'))`
  * toUserMessage 会优先使用后端返回的人话 detail / 状态码映射，兜底才用这里。
  */
 export const toastFallback = {

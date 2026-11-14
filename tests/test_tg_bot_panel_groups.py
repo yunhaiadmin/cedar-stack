@@ -64,7 +64,6 @@ GROUPS = {
             {"text": "🎟️ 续期", "callback_data": "menu:login"},
             {"text": "🔗 绑定账号", "callback_data": "menu:bind"},
         ],
-        [{"text": "🏅 成就", "callback_data": "menu:achievements"}],
     ]),
     "help": ("❓ 帮助中心", [
         [

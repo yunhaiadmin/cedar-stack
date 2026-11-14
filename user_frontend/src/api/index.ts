@@ -186,13 +186,6 @@ export default api
 
 // ==================== 认证 API（backend/api/emby_portal.py） ====================
 
-/** 佩戴中的成就徽章（后端存账号：换设备也在、换账号不串）；没戴为 null */
-export interface WornBadge {
-  key: string
-  name: string
-  icon: string
-}
-
 /** 白名单专属身份：创世编号 + 固定专属称号 + 展示标签（No.N）；非白名单为 null，个人页不渲染 */
 export interface WhitelistIdentity {
   serial: number
@@ -218,8 +211,6 @@ export interface AuthUser {
   is_free_realm?: boolean
   /** 公益服规则文案（付费服为空串） */
   realm_access_note?: string
-  /** 佩戴中的成就徽章；没戴为 null */
-  worn_badge?: WornBadge | null
   /** 白名单专属身份（创世编号+专属称号）；非白名单为 null */
   whitelist_identity?: WhitelistIdentity | null
   created_at?: string | null
@@ -240,8 +231,8 @@ export interface CaptchaInfo {
   label: string
   site_key: string
   script_url: string
-  /** 哪些动作受保护（管理员可分别开关登录 / 注册 / 网站签到） */
-  actions: { login: boolean; register: boolean; checkin: boolean }
+  /** 哪些动作受保护（管理员可分别开关登录 / 注册） */
+  actions: { login: boolean; register: boolean }
 }
 
 /** 本人登录记录条目（后端字段白名单：时间/IP/地区/设备/成败/类别） */

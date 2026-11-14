@@ -79,26 +79,10 @@ def _watch(db, user_id, hours_list):
     db.commit()
 
 
-def _achievements(db, user_id, total=13, unlocked=0):
-    for i in range(total):
-        db.add(models.PanelAchievementDef(
-            key=f"k{i}", name=f"成就{i}", desc="d", icon="🏅",
-            sort=i + 1, enabled=True))
-    for i in range(unlocked):
-        db.add(models.PanelAchievementUnlock(user_id=user_id, ach_key=f"k{i}"))
-    db.commit()
-
-
 def _binding(db, user_id, provider, status="active"):
     db.add(em.UserStorageBinding(
         user_id=user_id, provider=provider, account_label="盘",
         credential_id=1, status=status))
-    db.commit()
-
-
-def _checkin(db, user_id, streak, date=datetime(2026, 10, 28)):
-    db.add(models.CheckinRecord(
-        user_id=user_id, checkin_date=date, streak=streak))
     db.commit()
 
 
@@ -154,12 +138,10 @@ def test_dashboard_sample_layout_exact(db):
     """
     row = _user(db, tg=TG, name="shunxian2580", points=57, vitality=14,
                 is_welfare=True, welfare_expires_at=datetime(2026, 11, 27))
-    _achievements(db, row.id, total=13, unlocked=0)
     db.add(models.EmbyViewUnlock(
         user_id=row.id, realm_id=1, expires_at=datetime(2030, 11, 27)))
     db.commit()
     _binding(db, row.id, "drive")
-    _checkin(db, row.id, 2)
     text = features.compact_dashboard(db, row, display_name="Shun")
     expected = "\n".join([
         "▎<b>欢迎进入用户面板！</b>Shun",
@@ -171,7 +153,6 @@ def test_dashboard_sample_layout_exact(db):
         "· ⚡ <b>活力数值</b> | 14/14",
         "· 🔗 <b>网盘绑定</b> | Drive 已绑 ✓",
         "· 🐉 <b>当前馆灵</b> | 🥚 蛋（累计观影 0.0 小时），距夜枭还差 50.0 小时",
-        "· 🏅 <b>成就进度</b> | 已解锁 0／共 13 个",
         "· 📦 <b>订阅状态</b> | 暂无",
     ])
     assert text == expected

@@ -25,7 +25,6 @@ def db():
     # SystemConfig 表（store.get_value 需要）
     models.SystemConfig.__table__.create(engine, checkfirst=True)
     # B2 业务表
-    models.CheckinRecord.__table__.create(engine, checkfirst=True)
     models.PointsLog.__table__.create(engine, checkfirst=True)
     models.ExchangeCode.__table__.create(engine, checkfirst=True)
     models.CodeRedemption.__table__.create(engine, checkfirst=True)

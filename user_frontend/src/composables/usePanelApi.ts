@@ -1,5 +1,4 @@
 import api from '@/api/index'
-import type { WornBadge } from '@/api/index'
 import { toUserMessage } from '@/utils/toUserMessage'
 
 /**
@@ -26,19 +25,11 @@ function unwrap<T>(res: unknown): T {
   return r as T
 }
 
-/** 收藏家：口味护照 / 成就星图 / 馆灵 */
+/** 收藏家：口味护照 / 馆灵 */
 export interface TasteStamp {
   name: string
   stamped: boolean
   count: number
-}
-
-export interface Achievement {
-  key: string
-  name: string
-  desc: string
-  icon: string
-  unlocked: boolean
 }
 
 export interface PetStage {
@@ -61,13 +52,7 @@ export interface PetData {
 export interface CollectorData {
   nickname?: string
   watch_hours?: number
-  streak?: number
-  achievement_count?: number
   tastes?: Record<string, TasteStamp>
-  achievements?: Achievement[]
-  /** 佩戴中的成就徽章（存账号，后端已校验解锁/上架）；没戴为 null */
-  worn_badge?: WornBadge | null
-  new_unlocks?: string[]
   pet?: PetData
   [k: string]: unknown
 }
@@ -147,8 +132,6 @@ export const panelApi = {
   /** 通知偏好：更新一类（其余类别不传即不变） */
   notifyPrefsSet: (patch: Partial<{ seek: boolean; expiry: boolean; lottery: boolean; pool_digest: boolean }>) =>
     put<{ seek: boolean; expiry: boolean; lottery: boolean; pool_digest: boolean }>('/api/panel/notify-prefs', patch),
-  /** 佩戴/摘下徽章（存账号）；key=null 为摘下 */
-  setWornBadge: (key: string | null) => post<{ worn_badge: WornBadge | null }>('/api/panel/worn-badge', { key }),
   /** 服务器状态 */
   server: () => get<ServerData>('/api/panel/server'),
 }

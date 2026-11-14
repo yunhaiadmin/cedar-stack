@@ -1,7 +1,7 @@
 """观影榜海报日推（embyboss 借鉴清单第 5 项）：聚合 → 海报 → 推群。
 
 数据源：tg_bot.queries.watch_duration_rank（emby_playback_sessions +
-panel_achievements.playback_seconds，与账号面板「已观影 X 小时」同源同口径）。
+panel_stats.playback_seconds，与账号面板「已观影 X 小时」同源同口径）。
 推送目标：机器人现有交流群配置 bot_group_ids（与发言能量同一份
 配置）的第一个群，不新造配置。
 

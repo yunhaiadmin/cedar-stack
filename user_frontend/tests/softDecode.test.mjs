@@ -1,6 +1,6 @@
 // 网页软解决策回归测试（2026-11-14 批 2）：
 // 运行：cd user_frontend && node tests/softDecode.test.mjs
-// 惯例与 tests/checkinReward.test.mjs 一致：node 直接运行、不引入
+// 惯例与 tests/userLogout.test.mjs 一致：node 直接运行、不引入
 // vitest/jest；被测模块是纯决策逻辑，不触 DOM、不 import 播放器包。
 import { register } from 'node:module'
 import assert from 'node:assert'

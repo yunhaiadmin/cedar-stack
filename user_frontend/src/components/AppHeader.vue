@@ -141,10 +141,6 @@ function toggleUserMenu() {
   }
 }
 
-/** 佩戴中的徽章（后端存账号，随登录出参进 store；换账号天然不串、
- *  换设备也在。旧版只存浏览器本地的写法已废弃，见原换装页的一次性迁移） */
-const wornBadge = computed(() => userStore.user?.worn_badge ?? null)
-
 /**
  * 导航分工（v2.6.30，v4.1 更新）：全站只有一份导航定义，见 src/config/navigation.ts。
  *
@@ -353,7 +349,6 @@ onBeforeUnmount(() => {
                   <span class="dropdown-id">
                     <span class="dropdown-username">{{ displayName }}</span>
                     <span v-if="userIdLabel" class="dropdown-uid">{{ userIdLabel }}</span>
-                    <span v-if="wornBadge" class="dropdown-worn" :title="`佩戴中的徽章：${wornBadge.name}`">{{ wornBadge.icon }} {{ wornBadge.name }}</span>
                   </span>
                   <span v-if="menuBadge" class="dropdown-status" :class="menuBadge.cls">
                     <component :is="menuBadge.icon" :size="11" />
@@ -648,22 +643,6 @@ onBeforeUnmount(() => {
 
 .narrow-only { display: none; }
 
-/* 佩戴中的徽章：昵称下方小红章，读原换装页徽章墙写入的 localStorage */
-.dropdown-worn {
-  display: inline-block;
-  font-size: 10px;
-  font-weight: 800;
-  color: var(--paper-danger);
-  border: 1px solid var(--paper-danger);
-  border-radius: 10px;
-  padding: 1px 8px;
-  margin-top: 4px;
-  letter-spacing: 1px;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .avatar {
   width: 30px;

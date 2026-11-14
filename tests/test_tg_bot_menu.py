@@ -19,7 +19,6 @@ def db():
     engine = create_engine("sqlite:///:memory:")
     models.WebUser.__table__.create(engine, checkfirst=True)
     models.SystemConfig.__table__.create(engine, checkfirst=True)
-    models.CheckinRecord.__table__.create(engine, checkfirst=True)
     models.PointsLog.__table__.create(engine, checkfirst=True)
     Session = sessionmaker(bind=engine)
     session = Session()

@@ -42,7 +42,6 @@ def db():
     for table in (
         models.WebUser.__table__,
         models.SystemConfig.__table__,
-        models.CheckinRecord.__table__,
         models.PointsLog.__table__,
     ):
         table.create(engine, checkfirst=True)

@@ -34,7 +34,7 @@ caption；文字超 Telegram caption 上限（1024 字符）时退回图、文
 - 窗口：当日 Asia/Shanghai 00:00 至发送时刻；会话按 start_time
   （UTC 入库帧）落窗，换算走 portal.leaderboard_window，与时长榜
   同一口径——昨晚开播跨进今天的会话算昨天、不进今日榜。
-- 时长：panel_achievements.playback_seconds（末次上报进度近似：
+- 时长：panel_stats.playback_seconds（末次上报进度近似：
   min(position_ticks, 条目 duration_ticks)），与账号面板「已观影
   X 小时」、观影榜日推同源；暂停时 position 不前进、不计入。
 - 播放次数：窗口内会话行数，与站内热播榜 hot_leaderboard_items
@@ -204,7 +204,7 @@ def item_play_rank(db, start_utc, limit: int) -> dict:
     每行 {item_id, name, plays, seconds}，按 seconds 降序、plays
     降序、item_id 升序稳定排序后截断到 limit。
     """
-    from backend.panel_achievements import playback_seconds
+    from backend.panel_stats import playback_seconds
 
     rows = (
         db.query(

@@ -1,4 +1,4 @@
-"""TG Bot 账号展示：命令进原生菜单＋账号加成就馆灵＋群里放行。
+"""TG Bot 账号展示：命令进原生菜单＋账号加馆灵＋群里放行。
 
 只测本模块：DB 用内存 SQLite；Telegram 发送全部 patch 掉，不发真实请求。
 """
@@ -97,18 +97,6 @@ def _watch(db, user_id, hours_list):
     db.commit()
 
 
-def _achievements(db, user_id):
-    db.add(models.PanelAchievementDef(
-        key="a1", name="首夜", desc="d", icon="🌙", sort=1, enabled=True))
-    db.add(models.PanelAchievementDef(
-        key="b1", name="追剧达人", desc="d", icon="🎬", sort=2, enabled=True))
-    db.add(models.PanelAchievementDef(
-        key="c1", name="隐藏", desc="d", icon="🙈", sort=3, enabled=False))
-    db.add(models.PanelAchievementUnlock(user_id=user_id, ach_key="a1"))
-    db.add(models.PanelAchievementUnlock(user_id=user_id, ach_key="c1"))
-    db.commit()
-
-
 # ---------- 改动 1：命令不出消息 ----------
 
 def test_help_has_no_command_list(db):
@@ -121,7 +109,6 @@ def test_help_has_no_command_list(db):
 def test_start_bound_private_has_dashboard_no_command_list(db):
     row = _user(db)
     _watch(db, row.id, [100, 20])
-    _achievements(db, row.id)
     reply = handlers.handle_start(db, _tg(), TG, "")
     assert isinstance(reply, tuple)
     text, _markup = reply
@@ -157,29 +144,22 @@ def test_start_unbound_has_no_command_list(db):
     assert "绑定" in text
 
 
-# ---------- 改动 2：账号展示加成就＋馆灵 ----------
+# ---------- 改动 2：账号展示加馆灵 ----------
 
 def test_account_full_display(db):
     row = _user(db)
     _watch(db, row.id, [100, 20])
-    _achievements(db, row.id)
     text = features.handle_account(db, _tg(), TG, "")
     assert "🍒 <b>能量余额</b> |" in text and "积分：" not in text
     assert "活力数值" in text
-    # 成就：精简卡只出汇总行（总数 Y 只计 enabled），不再逐条铺成就
-    assert "已解锁 1／共 2 个" in text
-    assert "首夜" not in text  # 逐条行已砍，明细去网站账号页
-    assert "追剧达人" not in text  # 未解锁不展示
-    assert "隐藏" not in text  # disabled 定义不展示
     # 馆灵：120 小时 → 夜枭（50），下一阶段守夜者（200）差距并进同一行
     assert "夜枭" in text and "120.0" in text
     assert "守夜者" in text and "80.0" in text
 
 
-def test_account_empty_achievements_and_pet_egg(db):
+def test_account_empty_pet_egg(db):
     _user(db)
     text = features.handle_account(db, _tg(), TG, "")
-    assert "已解锁 0／共 0 个" in text
     assert "蛋" in text and "50.0" in text  # 0 小时 → 蛋，下一阶段夜枭还差 50
 
 
@@ -193,10 +173,8 @@ def test_account_pet_max_stage(db):
 def test_compact_dashboard_counts(db):
     row = _user(db)
     _watch(db, row.id, [100, 20])
-    _achievements(db, row.id)
     text = features.compact_dashboard(db, row)
     assert all(x in text for x in ("alice", "能量", "活力", "夜枭", "120.0"))
-    assert "<b>成就进度</b> | 已解锁 1／共 2 个" in text
     assert "<b>订阅状态</b> | 暂无" in text  # 精简卡只出订阅汇总行
 
 

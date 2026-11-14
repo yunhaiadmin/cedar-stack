@@ -325,7 +325,7 @@ def watch_duration_rank(db, period: str, limit: int = 10) -> list[dict]:
 
     数据源与口径（与账号面板「已观影 X 小时」同源同口径，不新造统计）：
     - 表：emby_playback_sessions（Emby 播放会话行），秒数走
-      backend.panel_achievements.playback_seconds——position 口径
+      backend.panel_stats.playback_seconds——position 口径
       （min(position_ticks, duration_ticks)），暂停时 position 不前进、
       不计入；片长取条目 duration_ticks（会话行须能 join 到条目，
       条目已删的会话不计）。
@@ -339,7 +339,7 @@ def watch_duration_rank(db, period: str, limit: int = 10) -> list[dict]:
     """
     from backend.emby_server.portal import leaderboard_window
     from backend.models import WebUser
-    from backend.panel_achievements import playback_seconds
+    from backend.panel_stats import playback_seconds
 
     _start_sh, start_utc = leaderboard_window(period)
     rows = (
