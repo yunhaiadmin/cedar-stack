@@ -167,10 +167,33 @@
     <!-- 不支持 / 出错 -->
     <div v-if="phase === 'unsupported' || phase === 'error'" class="wp-notice">
       <TriangleAlert :size="30" class="wp-notice-icon" />
-      <h2>{{ phase === 'unsupported' ? '这个格式网页里播不了' : '播放没能开始' }}</h2>
+      <h2>{{ noticeTitle }}</h2>
       <p>{{ noticeText }}</p>
       <div class="wp-notice-actions">
-        <button type="button" class="wp-notice-btn wp-notice-primary" @click="goBack">返回详情</button>
+        <button
+          v-if="phase === 'unsupported' && decodeAlt"
+          type="button"
+          class="wp-notice-btn wp-notice-primary"
+          @click="switchToAlt"
+        >
+          换到能播的版本
+        </button>
+        <button
+          v-if="phase === 'unsupported' && decodeAlt"
+          type="button"
+          class="wp-notice-btn"
+          @click="goBack"
+        >
+          返回详情
+        </button>
+        <button
+          v-else
+          type="button"
+          class="wp-notice-btn wp-notice-primary"
+          @click="goBack"
+        >
+          返回详情
+        </button>
         <button v-if="phase === 'error'" type="button" class="wp-notice-btn" @click="retry">再试一次</button>
       </div>
     </div>
@@ -270,6 +293,11 @@ import {
   type PlaybackInfoResult,
 } from '@/api/webPlayer'
 import { validatePlayLine } from '@/composables/usePlayLines'
+import {
+  probeDecode,
+  probeDecodeSync,
+  type DecodeVerdict,
+} from '@/utils/decodeSupport'
 import PlayerDanmakuSheet, { type DanmakuSettings } from '@/components/player/PlayerDanmakuSheet.vue'
 import PlayerSubtitleSheet, {
   type SubtitleFontSize,
@@ -328,6 +356,17 @@ const prepStepIndex = ref(0)
 const prepSlow = ref(false)
 const noticeText = ref('')
 const toast = ref('')
+// 解码探测结论（utils/decodeSupport）：当前版本浏览器解不了时，
+// 提示卡走「解码」口径并给出能播的替代版本（decodeAlt）
+const decodeVerdict = ref<DecodeVerdict | null>(null)
+const decodeAlt = ref<EmbyMediaSource | null>(null)
+const verdictCache = ref(new Map<string, DecodeVerdict>())
+const noticeTitle = computed(() => {
+  if (phase.value === 'unsupported') {
+    return decodeVerdict.value ? '这个版本浏览器解不了' : '这个格式网页里播不了'
+  }
+  return '播放没能开始'
+})
 
 const isPaused = ref(true)
 const currentTime = ref(0)
@@ -632,10 +671,15 @@ const sourceOptions = computed<SourceOption[]>(() => {
   return (playbackInfo.value?.MediaSources || []).map((s) => {
     const vs = videoStreamOf(s)
     const parts = [resolutionLabel(vs), vs?.Codec?.toUpperCase()].filter(Boolean)
+    const verdict = verdictCache.value.get(s.Id)
+    const metaParts = [
+      s.Size ? formatSize(s.Size) : '',
+      verdict && (verdict.badVideo || verdict.badAudio) ? '浏览器解不了' : '',
+    ].filter(Boolean)
     return {
       id: s.Id,
       label: s.Name || parts.join(' ') || '默认版本',
-      meta: s.Size ? formatSize(s.Size) : undefined,
+      meta: metaParts.length ? metaParts.join(' · ') : undefined,
     }
   })
 })
@@ -835,6 +879,17 @@ async function start(restart: boolean): Promise<void> {
     }
     currentSource.value = source
     prepStepIndex.value = 1
+    // 起播前先把所有版本的解码能力探一遍（学友站播放页：先探测、
+    // 再决定路径）：选中的版本浏览器明确解不了，就直接出解码提示卡
+    // 给出路，不让它白转 30 秒最后误报成「源暂时不可用」
+    decodeVerdict.value = null
+    decodeAlt.value = null
+    await probeAllSources(info.MediaSources)
+    const verdict = verdictCache.value.get(source.Id)
+    if (verdict?.hardBlock) {
+      showDecodeUnsupported(source, verdict)
+      return
+    }
     // 一起看晚入者优先对齐房间进度（按快照时间戳外推），盖过本地续播点
     const wtStartAt = wtPendingAlign
       ? wtPendingAlign.position +
@@ -855,6 +910,8 @@ async function start(restart: boolean): Promise<void> {
 async function openSource(source: EmbyMediaSource, atSeconds: number): Promise<void> {
   const v = videoEl.value
   if (!v) return
+  decodeVerdict.value = null
+  decodeAlt.value = null
   const url = source.DirectStreamUrl || ''
   const isHls = /\.m3u8($|\?)/i.test(url)
   if (isHls && !v.canPlayType('application/vnd.apple.mpegurl')) {
@@ -875,7 +932,7 @@ async function openSource(source: EmbyMediaSource, atSeconds: number): Promise<v
   }, 12000)
   probeTimer2 = window.setTimeout(() => {
     if (phase.value === 'preparing' && v.readyState < 1) {
-      failByContainer(source, '视频数据迟迟没到')
+      failWithDiagnosis(source, '视频数据迟迟没到')
     }
   }, 30000)
   v.src = url
@@ -899,7 +956,67 @@ async function openSource(source: EmbyMediaSource, atSeconds: number): Promise<v
   }
 }
 
+/** 把 PlaybackInfo 里的每个版本都探一遍，结果进缓存（设置面板给版本标「浏览器解不了」也用它） */
+async function probeAllSources(sources: EmbyMediaSource[]): Promise<void> {
+  await Promise.all(
+    sources.map(async (s) => {
+      if (!verdictCache.value.has(s.Id)) {
+        verdictCache.value.set(s.Id, await probeDecode(s))
+      }
+    }),
+  )
+}
+
+/** 解码提示文案：点名解不了的编码，再给真实出路，不让用户去「稍后再试」 */
+function decodeNoticeText(verdict: DecodeVerdict, hasAlt: boolean): string {
+  let head: string
+  if (verdict.badVideo && verdict.badAudio) {
+    head = `这集的画面是 ${verdict.videoName} 编码、声音是 ${verdict.audioName} 编码，你现在用的浏览器这两个都解不了。`
+  } else if (verdict.badVideo) {
+    head = `这集的画面是 ${verdict.videoName} 编码，你现在用的浏览器没有这个解码能力，网页里放不出画面。`
+  } else if (verdict.badAudio) {
+    head = `这集的声音是 ${verdict.audioName} 编码，你现在用的浏览器解不了这个声音格式，播出来会没有声音。`
+  } else {
+    head = '这个版本用的编码，你现在用的浏览器解不了。'
+  }
+  const tail = hasAlt
+    ? '不是源坏了，也不是网络问题，重试也不会变好。同片有其他版本是能播的，点下面按钮直接换过去；也可以回详情页用播放器 App（Infuse / SenPlayer / VidHub）打开，App 自带解码，这个版本能直接播。'
+    : '不是源坏了，也不是网络问题，重试也不会变好。回详情页看看有没有其他能播的版本，或者用播放器 App（Infuse / SenPlayer / VidHub）打开，App 自带解码，这个版本能直接播。'
+  return head + tail
+}
+
+function showDecodeUnsupported(source: EmbyMediaSource, verdict: DecodeVerdict): void {
+  const alt = (playbackInfo.value?.MediaSources || []).find(
+    (s) => s.Id !== source.Id && verdictCache.value.get(s.Id)?.status === 'supported',
+  )
+  decodeVerdict.value = verdict
+  decodeAlt.value = alt || null
+  noticeText.value = decodeNoticeText(verdict, !!alt)
+  phase.value = 'unsupported'
+}
+
+async function switchToAlt(): Promise<void> {
+  const alt = decodeAlt.value
+  if (!alt) return
+  await onSelectSource(alt.Id)
+}
+
+/**
+ * 失败分流：先看解码探测结论——探明解不了的走解码提示卡，
+ * 不再只按容器名猜（MP4 里装 HEVC+AC3 以前会被误报成「源不可用」）。
+ */
+function failWithDiagnosis(source: EmbyMediaSource, why: string): void {
+  const verdict = verdictCache.value.get(source.Id) || probeDecodeSync(source)
+  if (verdict.status === 'unsupported' && (verdict.badVideo || verdict.badAudio)) {
+    showDecodeUnsupported(source, verdict)
+    return
+  }
+  failByContainer(source, why)
+}
+
 function failByContainer(source: EmbyMediaSource, why: string): void {
+  decodeVerdict.value = null
+  decodeAlt.value = null
   const container = (source.Container || '').toLowerCase()
   if (RISKY_CONTAINERS.has(container)) {
     noticeText.value = `这是 ${container.toUpperCase()} 容器，浏览器内核解不了（${why}）。用第三方播放器（Infuse / SenPlayer 等）打开同一集就能播。`
@@ -970,7 +1087,7 @@ function onVideoError(): void {
   lastVideoErrorAt = now
   window.clearTimeout(probeTimer)
   window.clearTimeout(probeTimer2)
-  if (currentSource.value) failByContainer(currentSource.value, '浏览器拒绝了这个视频流')
+  if (currentSource.value) failWithDiagnosis(currentSource.value, '浏览器拒绝了这个视频流')
 }
 
 function onVideoTap(): void {
@@ -1187,6 +1304,12 @@ async function onSelectSource(sourceId: string): Promise<void> {
     return
   }
   settingsOpen.value = false
+  const cached = verdictCache.value.get(source.Id)
+  if (cached?.hardBlock) {
+    currentSource.value = source
+    showDecodeUnsupported(source, cached)
+    return
+  }
   const v = videoEl.value
   const at = v?.currentTime || currentTime.value
   const wasPlaying = !!v && !v.paused
@@ -1789,6 +1912,8 @@ onUnmounted(() => {
 }
 .wp-notice-actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 10px;
   margin-top: 10px;
 }
