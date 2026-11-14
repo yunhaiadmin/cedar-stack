@@ -110,6 +110,9 @@ const sheetDragStyle = () => {
 function goRegister() {
   router.push({ path: '/login', query: { mode: 'register' } })
 }
+function goStream() {
+  router.push('/library')
+}
 function goPricing() {
   router.push('/pricing')
 }
@@ -606,16 +609,19 @@ const year = new Date().getFullYear()
             <span :key="heroSubIdx">{{ heroSubs[heroSubIdx] }}</span>
           </Transition>
         </p>
-        <div class="hero-actions" :class="{ 'hero-actions--solo': userStore.isLoggedIn }">
-          <!-- Hero 主钮分态（2026-11-13 照友站已登录宣传页定版）：已登录进站停
-               宣传页，首屏主钮即「进入后台」（彩虹边＋玻璃底，与菜单面板大钮
-               同一去向 goConsole → 概览）；未登录保持「免费注册」原样。
-               移动端已登录态照友站真机截图只摆这一颗主钮（--solo 隐藏定价钮）。 -->
+        <div class="hero-actions">
+          <!-- Hero 双钮分态（2026-11-14 照友站真机截图复核）：已登录＝彩虹
+               「进入后台」（goConsole → 概览）＋玻璃「前往流媒体」（本站流
+               媒体入口 /library），移动端两颗并排都显示；未登录保持
+               「免费注册」＋「查看定价」原样。 -->
           <UhdButton v-if="userStore.isLoggedIn" variant="primary" dark @click="goConsole">
             进入后台 <ArrowRight :size="18" aria-hidden="true" />
           </UhdButton>
           <UhdButton v-else variant="primary" dark @click="goRegister">免费注册</UhdButton>
-          <UhdButton variant="secondary" dark class="hero-btn-pricing" @click="goPricing">查看定价</UhdButton>
+          <UhdButton v-if="userStore.isLoggedIn" variant="secondary" dark class="hero-btn-stream" @click="goStream">
+            前往流媒体 <ArrowRight :size="18" aria-hidden="true" />
+          </UhdButton>
+          <UhdButton v-else variant="secondary" dark class="hero-btn-pricing" @click="goPricing">查看定价</UhdButton>
         </div>
         <div class="hero-specs">
           <UhdChip variant="spec" sub="超高清">
@@ -1731,21 +1737,27 @@ const year = new Date().getFullYear()
   .m-sheet__row {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 16px;
     width: 100%;
-    padding: 14px 16px;
+    padding: 17px 18px;
     border: none;
     border-radius: 16px;
     background: transparent;
     color: var(--uhd-d-text);
-    font-size: 15px;
+    font-size: 18px;
     font-weight: var(--uhd-fw-medium);
     text-align: left;
     cursor: pointer;
   }
   .m-sheet__row svg {
     flex: none;
+    width: 22px;
+    height: 22px;
     opacity: 0.4;
+  }
+  .m-sheet__row .m-sheet__row-ext {
+    width: 17px;
+    height: 17px;
   }
   a.m-sheet__row { text-decoration: none; }
   .m-sheet__row .m-sheet__row-ext {
@@ -1772,7 +1784,7 @@ const year = new Date().getFullYear()
   .m-card {
     display: flex;
     flex-direction: column;
-    padding: 16px;
+    padding: 18px;
     border: 1px solid rgba(255, 255, 255, 0.07);
     border-radius: 20px;
     background: rgba(255, 255, 255, 0.045);
@@ -1784,21 +1796,21 @@ const year = new Date().getFullYear()
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
-    margin-bottom: 10px;
+    width: 44px;
+    height: 44px;
+    margin-bottom: 12px;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.08);
     color: rgba(255, 255, 255, 0.85);
   }
   .m-card__title {
-    font-size: 15px;
+    font-size: 16px;
     font-weight: var(--uhd-fw-semibold);
     line-height: 1.35;
   }
   .m-card__sub {
     margin-top: 3px;
-    font-size: 12.5px;
+    font-size: 13px;
     color: rgba(255, 255, 255, 0.42);
     word-break: break-all;
   }
@@ -1848,15 +1860,13 @@ const year = new Date().getFullYear()
     min-height: 3.5em;
     margin-bottom: 30px;
   }
-  /* 主钮照截图：高约 54px、字 17px 的彩虹玻璃胶囊（配方在 UhdButton 主钮） */
-  .hero-actions :deep(.uhd-btn--primary) {
+  /* 双钮照截图：高约 54px、字 17px 的胶囊并排（主钮配方在 UhdButton，
+     玻璃次钮等高对齐；2026-11-14 截图复核后已登录态两颗都显示） */
+  .hero-actions :deep(.uhd-btn--primary),
+  .hero-actions :deep(.uhd-btn--secondary) {
     height: 54px;
     padding: 0 28px;
     font-size: 17px;
-  }
-  /* 已登录态首屏只摆主钮一颗（照截图），定价钮移动端隐藏（导航/页脚仍可达） */
-  .hero-actions--solo .hero-btn-pricing {
-    display: none;
   }
   /* 首屏卖点 2×2 网格（#151 排法不变，尺寸照友站真机截图放大）：格内图标＋标题
      一行、说明小字换行到标题下方（左缘与标题对齐＝图标 24px＋chip 间距 13px）；
