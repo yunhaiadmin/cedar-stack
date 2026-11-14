@@ -5,10 +5,8 @@
         <ChevronLeft :size="22" aria-hidden="true" />
         <span>订阅记录</span>
       </RouterLink>
-      <RouterLink to="/library" class="sr-watch">
-        <Play :size="15" class="sr-watch__icon" aria-hidden="true" />
-        <span>网页观影</span>
-      </RouterLink>
+      <!-- 「网页观影」钮已删（2026-11-14 顶栏统一单）：由 App.vue 统一
+           顶栏的常驻胶囊承接，本页不再自带一份（原 42px，与全站 54px 不一致） -->
     </header>
 
     <main class="sr-body">
@@ -127,7 +125,6 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  Play,
   RotateCw,
 } from 'lucide-vue-next'
 import { subscriptionApi, type SubscriptionRecordRow } from '@/api'

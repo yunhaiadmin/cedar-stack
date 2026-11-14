@@ -1,26 +1,7 @@
 <template>
   <div class="am-page">
-    <!-- 页头行：品牌标＋「我的」标题，右端「网页观影」彩虹边框胶囊（→片库面） -->
-    <header class="am-topbar">
-      <div class="am-brand">
-        <img v-if="branding.logo_url" class="am-brand__logo" :src="branding.logo_url" :alt="branding.site_name" />
-        <span v-else class="am-brand__mark" aria-hidden="true">{{ brandInitial }}</span>
-        <h1 class="am-brand__title">我的</h1>
-      </div>
-      <RouterLink to="/library" class="watch-pill">
-        <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
-          <defs>
-            <linearGradient id="wp-g-menu" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stop-color="#2f8fe0" />
-              <stop offset="0.5" stop-color="#e8766f" />
-              <stop offset="1" stop-color="#ecd04f" />
-            </linearGradient>
-          </defs>
-          <path d="M7 4.2v15.6c0 .8.9 1.3 1.6.9l11.6-7.8c.6-.4.6-1.3 0-1.7L8.6 3.3C7.9 2.9 7 3.4 7 4.2Z" fill="url(#wp-g-menu)" />
-        </svg>
-        网页观影
-      </RouterLink>
-    </header>
+    <!-- 页头品牌行已删（2026-11-14 顶栏统一单）：顶栏由 App.vue 的
+         UhdTopBar 全区统一承接（本页标题传「我的」），不再自带一份 -->
 
     <!-- 身份区：头像 64 圆＋名 24/800＋状态副行（真实文案） -->
     <div class="am-identity">
@@ -109,7 +90,6 @@ import { ChevronRight, Copy } from 'lucide-vue-next'
 import { useUserStore } from '@/stores/user'
 import { useTheme } from '@/composables/useTheme'
 import { useToast } from '@/composables/useToast'
-import { branding } from '@/composables/useBranding'
 import { communityLinks, initCommunityLinks } from '@/composables/useCommunityLinks'
 import { getAgentMe } from '@/api/agent'
 import { subscriptionApi, type MySubscription } from '@/api'
@@ -143,7 +123,6 @@ const mySubs = ref<MySubscription[]>([])
 const isAgent = ref(false)
 
 const displayName = computed(() => userStore.user?.username || '我的')
-const brandInitial = computed(() => (branding.site_name.trim().charAt(0) || 'A').toUpperCase())
 const avatarInitial = computed(() => (displayName.value.trim().charAt(0) || '我').toUpperCase())
 const activeSub = computed(
   () => mySubs.value.find((s) => s.status === 'active' && s.days_left > 0) ?? null,
@@ -245,61 +224,6 @@ onMounted(async () => {
   color: #ffffff;
   font-family: var(--uhd-font-sans);
   -webkit-font-smoothing: antialiased;
-}
-
-/* 页头行 */
-.am-topbar {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: calc(14px + env(safe-area-inset-top)) 20px 4px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.am-brand {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-width: 0;
-}
-.am-brand__logo {
-  width: 26px;
-  height: 26px;
-  object-fit: contain;
-}
-.am-brand__mark {
-  font-size: 24px;
-  font-weight: var(--uhd-fw-black);
-  line-height: 1;
-  color: #ffffff;
-}
-.am-brand__title {
-  margin: 0;
-  font-family: var(--uhd-font-sans);
-  font-size: 20px;
-  font-weight: var(--uhd-fw-extrabold);
-  color: #ffffff;
-}
-/* 「网页观影」胶囊：实测大颗软胶囊＋彩虹描边（2026-11-13 用户圈图对齐）：
-   填充浅色近白底带粉色水洗（中心 #f9f3f3）、深色 #312d2e，描边走全站
-   --uhd-rainbow 渐变（padding-box 填充＋border-box 描边的双背景写法） */
-.watch-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  height: 54px;
-  padding: 0 24px;
-  border: 1.5px solid transparent;
-  border-radius: 999px;
-  background:
-    linear-gradient(#312d2e, #312d2e) padding-box,
-    var(--uhd-rainbow) border-box;
-  color: #ffffff;
-  font-size: 15px;
-  font-weight: var(--uhd-fw-semibold);
-  text-decoration: none;
-  white-space: nowrap;
 }
 
 /* 身份区 */
@@ -477,14 +401,6 @@ onMounted(async () => {
 
 /* 浅色覆盖：跟随用户外观（html[data-theme='light']） */
 html[data-theme='light'] .am-page { background: #f8f8f8; color: #111111; }
-html[data-theme='light'] .am-brand__mark { color: #111111; }
-html[data-theme='light'] .am-brand__title { color: #111111; }
-html[data-theme='light'] .watch-pill {
-  background:
-    linear-gradient(180deg, #fdf8f8 0%, #f9f1f1 100%) padding-box,
-    var(--uhd-rainbow) border-box;
-  color: #111111;
-}
 html[data-theme='light'] .am-avatar { background: #e9e9ec; color: #111111; }
 html[data-theme='light'] .am-username { color: #111111; }
 html[data-theme='light'] .am-status { color: #55575c; }

@@ -165,12 +165,14 @@ const accountSub = computed(() => {
   background: var(--uhd-l-bg);
   font-family: var(--uhd-font-sans);
 }
-/* 左栏吸顶满高 */
+/* 左栏吸顶满高：账户区上方有 App.vue 常驻的统一顶栏（sticky，
+   高 --utb-h），侧栏吸顶位置与高度须让出这一条，滚动时不钻到
+   玻璃顶栏底下（2026-11-14 顶栏统一单） */
 .uhd-account :deep(.uhd-side) {
   position: sticky;
-  top: 0;
-  height: 100vh;
-  height: 100dvh;
+  top: var(--utb-h);
+  height: calc(100vh - var(--utb-h));
+  height: calc(100dvh - var(--utb-h));
 }
 .uhd-account__main {
   flex: 1;

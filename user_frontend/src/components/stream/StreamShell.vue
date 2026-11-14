@@ -8,8 +8,10 @@
  * 深浅只改 .stream-scope 上的 data-stream-theme，令牌见 uhd-tokens.css 色板 C。
  */
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import StreamTopbar from './StreamTopbar.vue'
 import StreamBottomNav from './StreamBottomNav.vue'
+import UhdTopBar from '@/components/uhd/UhdTopBar.vue'
 
 type StreamPref = 'system' | 'light' | 'dark'
 const PREF_KEY = 'aetrix-stream-theme'
@@ -63,11 +65,21 @@ onBeforeUnmount(() => {
 })
 
 provide('stream-theme', { pref, resolved, cycleTheme })
+
+/* 统一顶栏（2026-11-14）：片库面手机端原先整组无顶栏（D2-01 按原站
+   形态隐藏双胶囊），与账户区「网页观影」常驻钮不统一、用户亲点整改。
+   手机端改挂全站同一套 UhdTopBar（sticky 玻璃条 + 观影胶囊，样式由
+   .stream-scope 作用域令牌重映射，见 uhd-topbar.css）；桌面 ≥768px
+   仍走批 3 双胶囊 StreamTopbar，本条由下方 CSS 隐藏。
+   详情页（media-detail）有自己的头部（详情页对齐单），不在此挂。 */
+const route = useRoute()
+const showUnifiedTopbar = computed(() => route.name !== 'media-detail')
 </script>
 
 <template>
   <div class="stream-scope" :data-stream-theme="resolved">
     <div class="stream-halo" aria-hidden="true"></div>
+    <UhdTopBar v-if="showUnifiedTopbar" class="stream-utb" />
     <StreamTopbar :pref="pref" :resolved="resolved" @cycle-theme="cycleTheme" />
     <main class="stream-main">
       <slot />
@@ -118,6 +130,13 @@ provide('stream-theme', { pref, resolved, cycleTheme })
      <768px 只留底部玻璃导航，顶栏双胶囊整组隐藏。
      （带 .stream-scope 前缀提权重：顶栏自身 display:flex 同权重靠后加载会胜出） */
   .stream-scope .stream-topbar {
+    display: none;
+  }
+}
+/* 统一顶栏只在手机端出现（桌面走双胶囊）；z-index 压过片库内容，
+   sticky 定位在组件内，本处只管断点显隐 */
+@media (min-width: 768px) {
+  .stream-scope .stream-utb {
     display: none;
   }
 }

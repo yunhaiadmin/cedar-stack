@@ -3,6 +3,7 @@ import { RouterView, useRoute, useRouter } from 'vue-router'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import Toast from '@/components/Toast.vue'
 import AppHeader from '@/components/AppHeader.vue'
+import UhdTopBar from '@/components/uhd/UhdTopBar.vue'
 import PanelTabbar from '@/components/panel/PanelTabbar.vue'
 import UhdAccountDock from '@/components/uhd/UhdAccountDock.vue'
 import TgBindModal from '@/components/TgBindModal.vue'
@@ -88,6 +89,17 @@ const isStreamArea = computed(
     route.path.startsWith('/play/'),
 )
 const showHeader = computed(() => showChrome.value && !isAccountArea.value && !isStreamArea.value)
+
+/**
+ * 统一顶栏（2026-11-14 用户亲点「没固定，没统一」）：账户区在此一处
+ * 挂 UhdTopBar（sticky 玻璃条 + 右上「网页观影」常驻胶囊），各页不再
+ * 自带页头品牌行——概览/我的原先各写一份（一处有彩虹边框、一处没有、
+ * 都不固定）已删。标题口径照友站两页：概览用站名、「我的」页用
+ * 「我的」，其余账户页一律站名（页内自有 H1，不在顶栏重复）。
+ * 片库面由 StreamShell 内挂同一组件（手机端），AppHeader 区由
+ * AppHeader 在右侧复用同一颗胶囊，三区同形态。
+ */
+const accountBarTitle = computed(() => (route.name === 'game-account-menu' ? '我的' : ''))
 
 /**
  * 底部坞改走 App.vue 全局常驻（PanelTabbar，≤768px 唯一一套）：
@@ -203,6 +215,7 @@ watch(
 <template>
   <div class="app-shell">
     <AppHeader v-if="showHeader" />
+    <UhdTopBar v-if="showChrome && isAccountArea" :title="accountBarTitle" />
     <RouterView v-slot="{ Component }">
       <!-- max=12：key 按登录会话隔离，登出/换号后旧实例不再命中，攒多了自动淘汰最旧的 -->
       <KeepAlive :include="KEEP_ALIVE_VIEWS" :max="12">
