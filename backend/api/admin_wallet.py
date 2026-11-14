@@ -187,3 +187,135 @@ def wallet_admin_update_settings(
            {k: str(v) for k, v in values.items()})
     db.commit()
     return {"ok": True, "saved": sorted(values)}
+
+
+# ---------- 返利撤回欠账（钱包时代，钱包批 2） ----------
+
+@admin_router.get("/economy/wallet/rebate-reversals")
+def wallet_rebate_reversals(
+    status: str = "",
+    limit: int = 50,
+    current_admin: models.WebUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """钱包时代返利撤回欠账：订单退款时邀请人余额不足、返利没扣回来
+    的计提行（status=credited 且 reversal_owed=True），以及已扣回
+    的（status=reversed）。与积分时代的 RebateReversalDebt 分开记账、
+    不混账；金额是人民币元（Decimal），不在 Integer 的旧表里存分。
+    """
+    from backend import invite_rebate as _invite_rebate
+
+    limit = max(1, min(int(limit or 50), 200))
+    q = db.query(models.InviteRebateAccrual)
+    if status == "owed":
+        q = q.filter(models.InviteRebateAccrual.reversal_owed == True)  # noqa: E712
+    elif status == "reversed":
+        q = q.filter(models.InviteRebateAccrual.status ==
+                     _invite_rebate.STATUS_REVERSED)
+    else:
+        q = q.filter(
+            (models.InviteRebateAccrual.reversal_owed == True)  # noqa: E712
+            | (models.InviteRebateAccrual.status ==
+               _invite_rebate.STATUS_REVERSED))
+    rows = q.order_by(models.InviteRebateAccrual.id.desc()).limit(limit).all()
+    user_ids = ({r.inviter_id for r in rows} | {r.invitee_id for r in rows})
+    users = {u.id: u.username for u in db.query(models.WebUser).filter(
+        models.WebUser.id.in_(user_ids)).all()} if user_ids else {}
+    return {"records": [
+        {
+            "id": r.id,
+            "order_id": r.source_ref,
+            "inviter": users.get(r.inviter_id, f"用户 {r.inviter_id}"),
+            "invitee": users.get(r.invitee_id, f"用户 {r.invitee_id}"),
+            "rebate_amount": f"{r.rebate_amount:.2f}",
+            "status": r.status,
+            "reversal_owed": bool(r.reversal_owed),
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "credited_at": r.credited_at.isoformat() if r.credited_at else None,
+            "reversed_at": r.reversed_at.isoformat() if r.reversed_at else None,
+        }
+        for r in rows
+    ]}
+
+
+class RebateReversalRetryRequest(BaseModel):
+    # 邀请人余额不足时是否允许扣成负数（与退款对话框的 allow_negative 同口径）
+    allow_negative: bool = False
+
+
+@admin_router.post("/economy/wallet/rebate-reversals/{accrual_id}/retry")
+def wallet_retry_rebate_reversal(
+    accrual_id: int,
+    request: RebateReversalRetryRequest,
+    current_admin: models.WebUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """重试一条钱包时代返利撤回欠账：再扣一次邀请人钱包返利。
+
+    行锁认领（防并发双重试；崩溃回滚后仍是 owed，不留中间态）。
+    成功则计提行转 reversed、清 owed 标记；余额仍不足则保持 owed
+    并如实返回原因（不是报错）。
+    """
+    from datetime import datetime as _dt
+
+    from backend import invite_rebate as _invite_rebate
+
+    accrual = (
+        db.query(models.InviteRebateAccrual)
+        .filter(models.InviteRebateAccrual.id == accrual_id,
+                models.InviteRebateAccrual.reversal_owed == True)  # noqa: E712
+        .with_for_update()
+        .first()
+    )
+    if accrual is None:
+        db.rollback()
+        raise HTTPException(status_code=404, detail="欠账不存在或已处理")
+    try:
+        _entry, _replayed = wallet_service.debit(
+            db, accrual.inviter_id, accrual.rebate_amount,
+            kind="rebate_reversal", ref_id=f"rebate:{accrual.source_ref}",
+            note=f"欠账重试撤回返利（订单 {accrual.source_ref}）",
+            idempotency_key=f"rebate-reversal:{accrual.source_ref}",
+            allow_negative=request.allow_negative)
+    except wallet_service.WalletError as exc:
+        db.rollback()
+        return {"success": False, "accrual_id": accrual_id,
+                "status": "owed", "reason": str(exc)}
+    accrual.status = _invite_rebate.STATUS_REVERSED
+    accrual.reversal_owed = False
+    accrual.reversed_at = _dt.now()
+    _audit(db, current_admin, "wallet_retry_rebate_reversal",
+           "invite_rebate_accrual", accrual_id,
+           {"status": "reversed",
+            "amount": f"{accrual.rebate_amount:.2f}",
+            "allow_negative": request.allow_negative})
+    db.commit()
+    return {"success": True, "accrual_id": accrual_id,
+            "status": "reversed",
+            "reversed_amount": f"{accrual.rebate_amount:.2f}"}
+
+
+@admin_router.post("/economy/wallet/rebate-reversals/{accrual_id}/waive")
+def wallet_waive_rebate_reversal(
+    accrual_id: int,
+    current_admin: models.WebUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """豁免一条钱包时代返利撤回欠账（owed → 清标记，钱留在邀请人钱包）。"""
+    accrual = (
+        db.query(models.InviteRebateAccrual)
+        .filter(models.InviteRebateAccrual.id == accrual_id,
+                models.InviteRebateAccrual.reversal_owed == True)  # noqa: E712
+        .with_for_update()
+        .first()
+    )
+    if accrual is None:
+        db.rollback()
+        raise HTTPException(status_code=404, detail="欠账不存在或已处理")
+    accrual.reversal_owed = False
+    _audit(db, current_admin, "wallet_waive_rebate_reversal",
+           "invite_rebate_accrual", accrual_id,
+           {"status": "waived",
+            "amount": f"{accrual.rebate_amount:.2f}"})
+    db.commit()
+    return {"success": True, "accrual_id": accrual_id, "status": "waived"}

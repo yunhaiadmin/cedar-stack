@@ -350,3 +350,132 @@ def _log_dict(log: em.TrafficExchangeLog) -> dict:
         "created_at": (log.created_at.isoformat()
                        if log.created_at else None),
     }
+
+
+#: 余额购流量档位（GB）：与前端弹窗四档一致；只许 100 的整倍数，
+#: 单次上限 1000GB（防手误多买；改价走配置键，不改档）。
+BALANCE_PURCHASE_GB_OPTIONS = (100, 200, 500, 1000)
+
+
+def balance_price_yuan(db: Session, gb: int):
+    """余额购流量价（元）：单价键 ``traffic_balance_price_per_100gb``
+    （分/100GB，默认 300＝¥3，钱包方案 §10 定版），按 100GB 为单位计价。
+
+    单价未配/≤0 时拒绝成交（不许按 0 元白送）。
+    """
+    from decimal import Decimal
+
+    from backend import wallet as wallet_service
+    from backend.agents import money
+
+    per_100gb_fen = int(
+        wallet_service.wallet_config(db).get("traffic_balance_price_per_100gb") or 0)
+    if per_100gb_fen <= 0:
+        raise TrafficError("余额购流量暂未定价，请联系管理员",
+                           "balance_price_unset")
+    return money(Decimal(per_100gb_fen) * Decimal(gb // 100) / Decimal(100))
+
+
+def buy_traffic_with_balance(db: Session, user_id: int, gb: int,
+                             idempotency_key: str,
+                             now: Optional[datetime] = None) -> dict:
+    """余额购流量：按配置单价扣钱包余额，换本周期抵扣额度。
+
+    抵扣量 = 档位 GB（1024 进制字节）；购流量不扩套餐总额度、不延
+    到期日——抵扣只冲本周期已用（与时间换流量同一消费口径，
+    usage_summary 按周期求和现算）。
+
+    - 幂等：同 idempotency_key 已成交 → 原样返回那笔（replayed
+      =True），不重复扣款；键被别人占用 → 拒绝。
+    - 资格：用户须启用流量区（有额度）；余额不足时钱包条件 UPDATE
+      拒绝，整笔回滚（订单/留痕都不落）。
+    - 顺序：先查留痕（重放）→ 扣款 → 写留痕 → 提交；扣款在留痕前，
+      并发同键撞钱包幂等唯一约束时 _apply 内部回滚只冲掉本次事务
+      已有的写（此时还没写留痕），回放到的已扣行继续走留痕补齐。
+    返回 {"log", "replayed", "summary", "paid_amount",
+    "balance_after", "gb"}。
+    """
+    from backend import wallet as wallet_service
+    from backend.agents import money
+
+    now = now or datetime.now()
+    key = str(idempotency_key or "").strip()
+    if not key or len(key) > 64:
+        raise TrafficError("缺少有效的确认标识，请重新打开弹窗再试",
+                           "bad_idempotency_key")
+    try:
+        gb = int(gb)
+    except (TypeError, ValueError):
+        raise TrafficError("没有这个购买档位", "bad_option")
+    if gb not in BALANCE_PURCHASE_GB_OPTIONS:
+        raise TrafficError("没有这个购买档位", "bad_option")
+
+    existing = (db.query(em.TrafficExchangeLog)
+                .filter(em.TrafficExchangeLog.idempotency_key == key)
+                .first())
+    if existing is not None:
+        if existing.user_id != user_id:
+            raise TrafficError("确认标识已被占用，请重新打开弹窗再试",
+                               "bad_idempotency_key")
+        paid_row = (db.query(models.WalletLedger)
+                    .filter(models.WalletLedger.idempotency_key == key)
+                    .first())
+        return {"log": _log_dict(existing), "replayed": True,
+                "summary": usage_summary(db, user_id, now),
+                "paid_amount": (f"{money(-paid_row.amount):.2f}"
+                                if paid_row is not None else "0.00"),
+                "balance_after": (f"{money(paid_row.balance_after):.2f}"
+                                  if paid_row is not None else
+                                  f"{wallet_service.get_balance(db, user_id):.2f}"),
+                "gb": int(existing.bytes_credited or 0) // (1024 ** 3)}
+    quota = quota_bytes_for(db, user_id)
+    if quota is None:
+        raise TrafficError("当前套餐没有流量额度，暂不能购买流量",
+                           "quota_not_enabled")
+    price = balance_price_yuan(db, gb)
+    entry, _replayed = wallet_service.debit(
+        db, user_id, price, kind="traffic_purchase",
+        ref_id=f"traffic:{key}", note=f"余额购买流量 {gb}GB",
+        idempotency_key=key)
+    # 回放到的已扣行：留痕可能已落（上一笔在扣款后、留痕前崩了才没有），
+    # 查一次再决定补写还是直接返回。
+    existing = (db.query(em.TrafficExchangeLog)
+                .filter(em.TrafficExchangeLog.idempotency_key == key)
+                .first())
+    if existing is not None:
+        if existing.user_id != user_id:
+            raise TrafficError("确认标识已被占用，请重新打开弹窗再试",
+                               "bad_idempotency_key")
+        return {"log": _log_dict(existing), "replayed": True,
+                "summary": usage_summary(db, user_id, now),
+                "paid_amount": f"{money(price):.2f}",
+                "balance_after": f"{money(entry.balance_after):.2f}",
+                "gb": int(existing.bytes_credited or 0) // (1024 ** 3)}
+    start, end, _ = current_period(db, user_id, now)
+    log = em.TrafficExchangeLog(
+        user_id=user_id, kind="balance_purchase",
+        days_deducted=0, bytes_credited=gb * (1024 ** 3),
+        quota_base_bytes=None, quota_pct=None,
+        subscription_id=None, sub_end_before=None, sub_end_after=None,
+        period_start=start, period_end=end, idempotency_key=key)
+    db.add(log)
+    try:
+        db.commit()
+    except IntegrityError:
+        # 并发同键双击：唯一约束兜底——回滚后按已成交回放。
+        db.rollback()
+        existing = (db.query(em.TrafficExchangeLog)
+                    .filter(em.TrafficExchangeLog.idempotency_key == key)
+                    .first())
+        if existing is not None and existing.user_id == user_id:
+            return {"log": _log_dict(existing), "replayed": True,
+                    "summary": usage_summary(db, user_id, now),
+                    "paid_amount": f"{money(price):.2f}",
+                    "balance_after": f"{money(entry.balance_after):.2f}",
+                    "gb": int(existing.bytes_credited or 0) // (1024 ** 3)}
+        raise
+    return {"log": _log_dict(log), "replayed": False,
+            "summary": usage_summary(db, user_id, now),
+            "paid_amount": f"{money(price):.2f}",
+            "balance_after": f"{money(entry.balance_after):.2f}",
+            "gb": gb}

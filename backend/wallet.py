@@ -227,11 +227,14 @@ def _replay(db: Session, key: Optional[str], user_id: int):
 
 def _apply(db: Session, user_id: int, signed_amount: Decimal, *,
            kind: str, ref_id: Optional[str], note: Optional[str],
-           operator_id: Optional[int], idempotency_key: Optional[str]):
+           operator_id: Optional[int], idempotency_key: Optional[str],
+           allow_negative: bool = False):
     """账本变动的唯一写入口：锁用户行 → 条件 UPDATE → 重读余额 → 串链写流水。
 
     signed_amount 为带符号金额（正入账 / 负出账）。不提交。
-    返回 (ledger_row, replayed)。
+    ``allow_negative``：仅管理员显式授权的扣回场景（如退款撤回返利时
+    邀请人余额不足、先退钱后追账）才许扣成负数；缺省 False，余额
+    不足整笔拒绝。返回 (ledger_row, replayed)。
     """
     if kind not in LEDGER_KINDS:
         raise WalletError(f"未知流水类型：{kind}", "bad_kind")
@@ -264,10 +267,12 @@ def _apply(db: Session, user_id: int, signed_amount: Decimal, *,
                     synchronize_session=False)
         )
     else:
+        cond = [models.UserWalletBalance.user_id == user_id]
+        if not allow_negative:
+            cond.append(models.UserWalletBalance.balance >= -signed_amount)
         updated = (
             db.query(models.UserWalletBalance)
-            .filter(models.UserWalletBalance.user_id == user_id,
-                    models.UserWalletBalance.balance >= -signed_amount)
+            .filter(*cond)
             .update({models.UserWalletBalance.balance:
                      models.UserWalletBalance.balance + signed_amount,
                      models.UserWalletBalance.updated_at: datetime.now()},
@@ -315,18 +320,21 @@ def credit(db: Session, user_id: int, amount, *, kind: str,
 def debit(db: Session, user_id: int, amount, *, kind: str,
           ref_id: Optional[str] = None, note: Optional[str] = None,
           operator_id: Optional[int] = None,
-          idempotency_key: Optional[str] = None):
+          idempotency_key: Optional[str] = None,
+          allow_negative: bool = False):
     """扣款原语（金额为正数，元；落账为负数行）。
 
     条件 UPDATE 防扣负：余额不足抛 InsufficientWalletBalance，余额与
     流水都不动。批 1 不接任何扣款端点，供批 2 调用。不提交。
+    ``allow_negative``：仅管理员显式授权的扣回场景才许扣成负数。
     """
     amount = money(amount)
     if amount <= 0:
         raise WalletError("扣款金额必须大于 0", "bad_amount")
     return _apply(db, user_id, -amount, kind=kind, ref_id=ref_id,
                   note=note, operator_id=operator_id,
-                  idempotency_key=_normalize_key(idempotency_key))
+                  idempotency_key=_normalize_key(idempotency_key),
+                  allow_negative=allow_negative)
 
 
 def admin_adjust(db: Session, user_id: int, amount, *, note: str,

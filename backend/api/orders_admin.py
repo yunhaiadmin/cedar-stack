@@ -263,7 +263,8 @@ async def refund_order(
             "success": True, "order_id": order_id, "kind": kind,
             "status": "refunded", "revoked_points": 0, "revoked_days": 0,
             "revoked_xp": 0,
-            "rebate_reversed": 0, "cancelled": False, "coupon_released": False,
+            "rebate_reversed": 0, "rebate_reversal_failed": False,
+            "cancelled": False, "coupon_released": False,
         }
 
         # 原子占位：并发点两次「退款」时只有一个请求能拿到这一单。
@@ -320,10 +321,52 @@ async def refund_order(
                     # 只回滚天数，不再退回积分（口径待 parent 重定）。
                     logger.info("订阅退款退积分已随货币下线跳过: order=%s pts=%s",
                                 order_id, refund_pts)
+                # 钱包批 2：订阅单同样产生邀请返利（_fulfill_order 的计提
+                # 钩子，source=subscription_order）——退款必须撤回，
+                # 否则「只退买家不退返利，等于让站点为一次退款付两遍钱」
+                # （与充值分支同一道理；此前订阅分支漏了这条腿）。
+                if request.reverse_rebate:
+                    reversed_amount, rebate_owed = _reverse_rebate(
+                        db, order_id, request.allow_negative)
+                    result["rebate_reversed"] = reversed_amount
+                    result["rebate_reversal_failed"] = rebate_owed
 
             # 履约时按实付发的会员经验也要撤回（两种 kind 都发），否则「买→退」
             # 可以刷经验升等级。revoke_entitlement=False（只退钱不撤权益）时不撤。
             result["revoked_xp"] = _reverse_xp(db, user, order_id, kind)
+
+        # 钱包批 2：退款回余额（与是否撤权益无关——revoke_entitlement
+        # =False 是「只退钱不撤权益」，钱照样回钱包）。
+        # 金额按订单实付（订阅 order.amount / 充值 order.price），
+        # 与履约时的返利/经验口径一致；幂等键 refund:<订单号>，重复
+        # 退款尝试不重复入账（refund_order 本身也 400 拒重复退款，
+        # 这里是第二道门）。配置 wallet_refund_to_balance 关了则
+        # 不入账（走人工/原路，另一单）；入账失败整单回滚——绝不
+        # 出现「订单已标 refunded、钱没回来」的半笔账。
+        result["refund_to_wallet"] = False
+        result["refund_amount"] = "0.00"
+        from backend import wallet as _wallet
+
+        if _wallet.wallet_config(db).get("wallet_refund_to_balance", True):
+            paid_amount = order.amount if kind == "subscription" else order.price
+            from backend.agents import money as _money
+
+            refund_money = _money(paid_amount or 0)
+            if refund_money > 0:
+                try:
+                    entry, _replayed = _wallet.credit(
+                        db, user.id, refund_money, kind="refund",
+                        ref_id=f"refund:{order_id}",
+                        note=f"订单退款（订单 {order_id}）",
+                        idempotency_key=f"refund:{order_id}")
+                except _wallet.WalletError as exc:
+                    db.rollback()
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"退款入账钱包失败，请稍后重试（{exc}）")
+                result["refund_to_wallet"] = True
+                result["refund_amount"] = f"{refund_money:.2f}"
+                result["wallet_balance_after"] = f"{entry.balance_after:.2f}"
 
         # 状态与时间已由上面那次条件 UPDATE 原子写入，这里让当前事务里的 ORM 对象跟上
         order.status = "refunded"
@@ -343,7 +386,9 @@ async def refund_order(
                 "revoked_points": result["revoked_points"],
                 "revoked_days": result["revoked_days"],
                 "revoked_xp": result["revoked_xp"],
-                "rebate_reversed": result["rebate_reversed"],
+                "rebate_reversed": str(result["rebate_reversed"]),
+                "refund_to_wallet": result.get("refund_to_wallet", False),
+                "refund_amount": result.get("refund_amount", "0.00"),
                 "coupon_released": result.get("coupon_released", False),
                 "allow_negative": request.allow_negative})
         db.commit()
@@ -355,6 +400,10 @@ async def refund_order(
             detail_bits.append(f"已扣回 {result['revoked_points']} 积分")
         if result["revoked_days"]:
             detail_bits.append(f"已回滚 {result['revoked_days']} 天会员")
+        if result.get("refund_to_wallet"):
+            detail_bits.append(f"已退回钱包 ¥{result['refund_amount']}")
+        if result.get("rebate_reversal_failed"):
+            detail_bits.append("邀请返利未能撤回（邀请人余额不足，已挂欠账）")
         result["_notify"] = {"user_id": user.id, "reason": order.refund_reason or "",
                              "details": detail_bits}
         return result
@@ -437,16 +486,61 @@ def _reverse_xp(db: Session, user: models.WebUser, order_id: str, kind: str) -> 
     return to_reverse
 
 
-def _reverse_rebate(db: Session, order_id: str, allow_negative: bool) -> tuple[int, bool]:
-    """撤回这笔充值带给邀请人的返利（按账本引用精确找，不重算比例）
+def _reverse_rebate(db: Session, order_id: str, allow_negative: bool) -> tuple[object, bool]:
+    """撤回这笔订单带给邀请人的返利（按账本引用精确找，不重算比例）
 
     返回 (撤回金额, 是否欠账)：邀请人余额不足时主退款照做、返利欠着，
     调用方必须把欠账如实告诉前端——否则界面上的 rebate_reversed=0
     既可能是"本来就没返利"，也可能是"返利没撤回来"，无法区分。
 
-    撤回失败留下持久化欠账（RebateReversalDebt，同一订单只一条）；
+    两条账本，分开处理（不混账）：
+    - 钱包时代（invite_rebate_accruals，source=subscription_order）：
+      返利已入邀请人钱包（status=credited）时从钱包扣回
+      （kind=rebate_reversal，幂等键 rebate-reversal:<订单号>），
+      成功则计提行转 reversed；余额不足则计提行置 reversal_owed
+      （仍是 credited，待管理员重试/豁免），主退款照做、返利欠着。
+      撤回金额是人民币元 Decimal；没计提/未入账/已撤回时为 0。
+    - 积分时代（PointsLog type=rebate，历史充值单）：沿用旧口径，
+      积分冲正桩恒返 0（货币已下线）。
+
+    撤回失败留下持久化欠账：钱包时代记在计提行本身
+    （reversal_owed）；积分时代记 RebateReversalDebt（同一订单只一条）；
     后来撤回成功时把对应 pending 欠账标记 recovered。
     """
+    from backend import invite_rebate as _invite_rebate
+    from backend import wallet as _wallet
+
+    accrual = db.query(models.InviteRebateAccrual).filter(
+        models.InviteRebateAccrual.source ==
+        _invite_rebate.SOURCE_SUBSCRIPTION_ORDER,
+        models.InviteRebateAccrual.source_ref == order_id,
+    ).first()
+    if accrual is not None:
+        if accrual.status == _invite_rebate.STATUS_CREDITED:
+            inviter = db.query(models.WebUser).filter(
+                models.WebUser.id == accrual.inviter_id).first()
+            if inviter is None:
+                return 0, False
+            try:
+                _wallet.debit(
+                    db, inviter.id, accrual.rebate_amount,
+                    kind="rebate_reversal", ref_id=f"rebate:{order_id}",
+                    note=f"订单退款撤回返利（订单 {order_id}）",
+                    idempotency_key=f"rebate-reversal:{order_id}",
+                    allow_negative=allow_negative)
+            except _wallet.WalletError as exc:
+                # 余额不足（或其他钱包拒绝）：不因为"退不了返利"就整单
+                # 退不了款——主退款照做，返利欠着（计提行置 owed 标记，
+                # 管理员可在钱包管理端重试/豁免）。
+                logger.warning("撤回返利失败（订单 %s）: %s", order_id, exc)
+                accrual.reversal_owed = True
+                return 0, True
+            accrual.status = _invite_rebate.STATUS_REVERSED
+            accrual.reversal_owed = False
+            accrual.reversed_at = datetime.now()
+            return accrual.rebate_amount, False
+        # pending（从未入账）/ reversed（已扣回）：无返利可撤。
+        return 0, False
     entry = db.query(models.PointsLog).filter(
         models.PointsLog.ref_id == f"rebate:{order_id}",
         models.PointsLog.type == "rebate",

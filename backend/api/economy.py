@@ -521,10 +521,19 @@ def payment_plans(realm_id: Optional[int] = None, db: Session = Depends(get_db))
     scope_id = None if realm_id == 0 else (realm_id or realms.active_realm_id(db))
     # P1-5：购买开关按服判——看哪个服就用哪个服的开关；看全部服
     # （realm_id=0）时按当前服口径（单服部署与改前行为一致）。
-    if not _get_bool_realm_config(
-            db, "subscription_purchase_enabled",
-            scope_id if scope_id is not None else realms.active_realm_id(db), True):
-        return {"enabled": False, "plans": []}
+    # 钱包批 2：网关购买开关关着时，余额购买仍是独立通道——前端据
+    # wallet_purchase_enabled 决定是否展示套餐与「余额支付」，
+    # enabled 本身只代表网关通道，口径不动。
+    from backend import wallet as _wallet
+
+    wallet_purchase_enabled = _wallet.wallet_enabled(db)
+    purchase_enabled = _get_bool_realm_config(
+        db, "subscription_purchase_enabled",
+        scope_id if scope_id is not None else realms.active_realm_id(db), True)
+    if not purchase_enabled and not wallet_purchase_enabled:
+        # 两条购买通道都关着：前端整页显示「订阅购买暂未开启」。
+        return {"enabled": False, "plans": [],
+                "wallet_purchase_enabled": False}
     query = realms.scope(db.query(models.SubscriptionPlan),
                          models.SubscriptionPlan.realm_id, scope_id)
     plans = query.filter(
@@ -532,7 +541,8 @@ def payment_plans(realm_id: Optional[int] = None, db: Session = Depends(get_db))
     ).order_by(models.SubscriptionPlan.sort_order).all()
     free = realms.is_free_realm(db, scope_id) if scope_id else False
     return {
-        "enabled": True,
+        "enabled": purchase_enabled,
+        "wallet_purchase_enabled": wallet_purchase_enabled,
         "realm_id": scope_id,
         "access_mode": "free" if free else "paid",
         "is_free": free,
@@ -662,6 +672,81 @@ def _yipay_sign(params: dict, key: str) -> str:
     return hashlib.md5(f"{qs}{key}".encode("utf-8")).hexdigest()
 
 
+def _new_order_id() -> str:
+    """订单号：RB + 毫秒时间戳 + 6 位随机大写 hex（网关与钱包共用同一格式）。"""
+    return f"RB{int(time.time() * 1000)}{uuid.uuid4().hex[:6].upper()}"
+
+
+def _price_subscription_purchase(db: Session, user: models.WebUser,
+                                 plan: models.SubscriptionPlan,
+                                 coupon_code: str = "") -> dict:
+    """订阅购买纯计价（无写操作）：网关下单与钱包余额购买共用同一套口径。
+
+    叠加顺序（与 coupon_quote 试算口一致）：先会员等级折扣（仅付费服）
+    得中间价，再对中间价算优惠券（填了码）或自动折扣权益（没填码）。
+    优惠码无效时 coupons.quote 直接抛 400（文案给用户看）。
+
+    返回：list_price / member_discount_pct / member_discount_amount /
+    discount_amount / paid_amount / coupon_obj / preview / credit /
+    coupon_code（归一化后的码，无码为空串）。
+    """
+    list_price = Decimal(str(plan.price))
+    member_discount_pct = 0
+    member_discount_amount = Decimal("0.00")
+    # plan.realm 已由调用方 joinedload 预加载；realm 为空（老数据）按付费服处理
+    _realm = plan.realm
+    _is_paid_plan = not (_realm is not None
+                         and getattr(_realm, "access_mode", "paid") == "free")
+    if _is_paid_plan:
+        from backend import member_level as _ml
+
+        member_discount_pct = _ml.get_user_discount_pct(db, user)
+        if member_discount_pct > 0:
+            member_discount_amount = (
+                list_price * Decimal(member_discount_pct) / Decimal(100)
+            ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    coupon_base = list_price - member_discount_amount
+
+    discount_amount = member_discount_amount
+    paid_amount = coupon_base
+    preview = None
+    coupon_obj = None
+    code = (coupon_code or "").strip()
+    credit = None
+    if code:
+        preview = coupons.quote(db, user=user, code=code,
+                                kind="subscription", item_id=plan.id)
+        coupon_obj = db.query(models.CouponCode).filter(
+            models.CouponCode.id == preview["coupon_id"]).first()
+        if coupon_obj is None:
+            raise HTTPException(status_code=400, detail="优惠码不存在")
+        c_discount, c_paid = coupons.compute(coupon_base, coupon_obj)
+        discount_amount = member_discount_amount + c_discount
+        paid_amount = c_paid
+        code = preview["code"]
+    else:
+        # 兑换码折扣权益：没填优惠券时自动用最优的一张（pct 最小=折扣最大），
+        # 不与优惠券叠加；但与会员等级折扣叠加（与优惠券分支同口径）。
+        credit = _best_discount_credit(db, user.id)
+        if credit is not None:
+            c_discount, c_paid = _exchange_discount_amount(
+                coupon_base, credit.discount_pct)
+            discount_amount = member_discount_amount + c_discount
+            paid_amount = c_paid
+    return {
+        "list_price": list_price,
+        "member_discount_pct": member_discount_pct,
+        "member_discount_amount": member_discount_amount,
+        "discount_amount": discount_amount,
+        "paid_amount": paid_amount,
+        "coupon_base": coupon_base,
+        "coupon_obj": coupon_obj,
+        "preview": preview,
+        "credit": credit,
+        "coupon_code": code,
+    }
+
+
 @router.post("/payment/order")
 def create_payment_order(
     request: Request,
@@ -708,7 +793,7 @@ def create_payment_order(
     notify_url = f"{site_url}/api/user/economy/payment/notify"
     return_url = f"{site_url}/wallet?paid=1"
 
-    order_id = f"RB{int(time.time() * 1000)}{uuid.uuid4().hex[:6].upper()}"
+    order_id = _new_order_id()
 
     if req.kind == "subscription":
         plan = db.query(models.SubscriptionPlan).options(
@@ -733,50 +818,18 @@ def create_payment_order(
     else:
         raise HTTPException(status_code=400, detail="kind 必须是 subscription")
 
-    # 会员等级折扣：仅订阅 + 仅付费服。公益服（access_mode='free'）不打折，充值不打折。
-    # 叠加顺序：先等级折扣得中间价，再对中间价算优惠券。
-    list_price = Decimal(str(amount))
-    member_discount_pct = 0
-    member_discount_amount = Decimal("0.00")
-    if req.kind == "subscription":
-        from backend import member_level as _ml
-        # plan.realm 已用 joinedload 预加载；realm 为空（老数据）按付费服处理
-        _realm = plan.realm
-        _is_paid_plan = not (_realm is not None
-                             and getattr(_realm, "access_mode", "paid") == "free")
-        if _is_paid_plan:
-            member_discount_pct = _ml.get_user_discount_pct(db, current_user)
-            if member_discount_pct > 0:
-                member_discount_amount = (
-                    list_price * Decimal(member_discount_pct) / Decimal(100)
-                ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    coupon_base = list_price - member_discount_amount
-
-    # 优惠券：先用 quote 校验券有效性（按原价校验门槛），再对中间价重算折扣
-    discount_amount = member_discount_amount
-    paid_amount = coupon_base
-    preview = None
-    coupon_code = (req.coupon_code or "").strip()
-    credit = None
-    if coupon_code:
-        preview = coupons.quote(db, user=current_user, code=coupon_code,
-                                kind=req.kind, item_id=req.item_id)
-        coupon_obj = db.query(models.CouponCode).filter(
-            models.CouponCode.id == preview["coupon_id"]).first()
-        if coupon_obj is None:
-            raise HTTPException(status_code=400, detail="优惠码不存在")
-        c_discount, c_paid = coupons.compute(coupon_base, coupon_obj)
-        discount_amount = member_discount_amount + c_discount
-        paid_amount = c_paid
-        coupon_code = preview["code"]
-    elif req.kind == "subscription":
-        # 兑换码折扣权益：没填优惠券时自动用最优的一张（pct 最小=折扣最大），不与优惠券叠加；
-        # 但与会员等级折扣叠加（与上面的优惠券分支同口径：先会员折扣得中间价，再对中间价算权益）。
-        credit = _best_discount_credit(db, current_user.id)
-        if credit is not None:
-            c_discount, c_paid = _exchange_discount_amount(coupon_base, credit.discount_pct)
-            discount_amount = member_discount_amount + c_discount
-            paid_amount = c_paid
+    # 计价走公共函数（与钱包余额购买同一套口径：先等级折扣得中间价，
+    # 再对中间价算优惠券或自动折扣权益；见 _price_subscription_purchase）。
+    price = _price_subscription_purchase(db, current_user, plan, req.coupon_code)
+    list_price = price["list_price"]
+    member_discount_pct = price["member_discount_pct"]
+    member_discount_amount = price["member_discount_amount"]
+    coupon_base = price["coupon_base"]
+    discount_amount = price["discount_amount"]
+    paid_amount = price["paid_amount"]
+    preview = price["preview"]
+    credit = price["credit"]
+    coupon_code = price["coupon_code"]
 
     # 订单上快照「原价 / 优惠 / 实付」，并让订单金额一律等于**实付**：
     # 对账、邀请返利比例、退款都以用户真付的钱为准，不能按原价算。

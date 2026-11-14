@@ -1243,6 +1243,13 @@ def _auto_migrate():
             ("quota_base_bytes", "BIGINT", "NULL"),
             ("quota_pct", "INTEGER", "NULL"),
         ]),
+        # 钱包批 2（2026-11-14）：邀请返利撤回留痕两列。老库补列后
+        # reversal_owed=0（无欠账）、reversed_at=NULL（未撤回），
+        # 与新列缺省一致；撤回/欠账由退款流程写入。
+        ("invite_rebate_accruals", [
+            ("reversal_owed", "BOOLEAN", "0"),
+            ("reversed_at", "DATETIME", "NULL"),
+        ]),
     ]
 
     _newly_added_columns: list[tuple[str, str]] = []
