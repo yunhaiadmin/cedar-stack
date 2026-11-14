@@ -79,14 +79,36 @@ def _get_bool_config(db: Session, key: str, default: bool) -> bool:
 
 
 def get_invite_config(db: Session) -> dict:
-    """邀请配置：能量/积分奖励已随货币下线（2026-11-13），只剩总开关。
+    """邀请配置全貌：总开关 + 返利口径 + 福利试用口径（均为配置键现读）。
 
-    邀请关系本身保留（注册归因、邀请记录）；邀请人推广奖励若配置为
-    会员天数仍由 promotion 发放，余额（积分）型奖励不再发放。
+    能量/积分奖励已随货币下线（2026-11-13）；钱包时代（2026-11-14）起：
+    返利按 invite_rebate 的模式/比例/分档键计提进钱包，福利邀请按
+    invite_trial 的天数/门槛/月次数键给被邀请人发试用。邀请页的规则
+    文案由前端按这份配置生成，数字不在代码里写死。
     """
+    from backend import invite_rebate, invite_trial
+
     return {
         "enabled": _get_bool_config(db, "invitation_enabled", True),
+        "rebate": invite_rebate.config_snapshot(db),
+        "trial": invite_trial.config(db),
     }
+
+
+def _mask_username(name: str | None) -> str:
+    """用户名脱敏（邀请记录/返利明细展示用）：露首尾、中间打码。
+
+    邀请人只需要认得出「是哪位好友」，不需要完整用户名（隐私口径与
+    机器人查人卡一致：最小披露）。注销用户统一显示「已注销」。
+    """
+    s = (name or "").strip()
+    if not s:
+        return "已注销"
+    if len(s) == 1:
+        return "*"
+    if len(s) == 2:
+        return f"{s[0]}*"
+    return f"{s[0]}***{s[-1]}"
 
 
 def _claim_invitation_use(db: Session, code: models.InvitationCode, now: datetime) -> bool:
@@ -224,6 +246,21 @@ def apply_invitation(db: Session, user: models.WebUser, invite_code: str) -> dic
         logger.warning("邀请发奖遇到写锁竞争，已回滚: invitee=%s", user.id)
         return {"applied": False}
 
+    # 福利邀请：给被邀请人发试用订阅（见面礼，体验权益不可变现）。
+    # 必须排在上面的 flush 之后：试用模块的配置/用量查询会触发 autoflush，
+    # 若排在 flush 前，并发败者的关系行会被提前 flush 撞唯一索引、毒化
+    # session，让最终 flush 抛 PendingRollbackError 逃出本函数的静默口径。
+    # 保存点隔离：试用发放失败只回滚试用本身，邀请关系与邀请人奖励
+    # 照常落盘（与推广奖励「失败不阻塞」的口径一致，但不许静默——记日志）。
+    try:
+        with db.begin_nested():
+            from backend import invite_trial
+
+            invite_trial.grant_invitee_trial(db, inviter, user)
+    except Exception:  # noqa: BLE001
+        logger.warning("福利邀请试用发放失败，已跳过: inviter=%s invitee=%s",
+                       inviter.id, user.id, exc_info=True)
+
     logger.info("邀请关系建立: inviter=%s invitee=%s code_id=%s",
                 inviter.id, user.id, code.id)
     return {
@@ -237,6 +274,8 @@ def apply_invitation(db: Session, user: models.WebUser, invite_code: str) -> dic
 
 class InviteConfigResponse(BaseModel):
     enabled: bool
+    rebate: dict = {}
+    trial: dict = {}
 
 
 @router.get("/config", response_model=InviteConfigResponse)
@@ -244,84 +283,95 @@ async def invite_config(db: Session = Depends(get_db)):
     return InviteConfigResponse(**get_invite_config(db))
 
 
-@router.get("/my-code")
-def my_code(
-    current_user: models.WebUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """我的邀请码（没有则自动生成）+ 邀请统计"""
-    code = db.query(models.InvitationCode).filter(
-        models.InvitationCode.user_id == current_user.id,
+def _active_code(db: Session, user_id: int):
+    return db.query(models.InvitationCode).filter(
+        models.InvitationCode.user_id == user_id,
         models.InvitationCode.is_active == True,  # noqa: E712
     ).first()
+
+
+def _create_self_code(db: Session, user: models.WebUser) -> models.InvitationCode:
+    """生成一张自助邀请码并提交（撞号重试一次）。"""
+    # 自助码恒写 reward_points=0：语义是「跟随全局配置」（r31 起 reward_points
+    # 是本码专属奖励字段，>0 才覆盖全局；自助码不该冻结生成时的配置快照）。
+    # 撞号重试：极低概率下两个并发请求生成了同码，唯一索引拦下后重生成一次。
+    created = None
+    for _attempt in range(2):
+        created = models.InvitationCode(
+            code=_generate_invite_code(db),
+            user_id=user.id,
+            reward_points=0,
+        )
+        db.add(created)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            logger.info("邀请码并发撞号，已重生成重试: user=%s", user.id)
+            created = None
+            continue
+        break
+    if created is None or created.id is None:
+        raise HTTPException(status_code=500, detail="邀请码生成失败，请重试")
+    db.refresh(created)
+    return created
+
+
+def _my_code_payload(db: Session, current_user: models.WebUser) -> dict:
+    from backend import invite_rebate, invite_trial
+
+    code = _active_code(db, current_user.id)
     if not code:
-        # 自助码恒写 reward_points=0：语义是「跟随全局配置」（r31 起 reward_points
-        # 是本码专属奖励字段，>0 才覆盖全局；自助码不该冻结生成时的配置快照）。
-        # 撞号重试：极低概率下两个并发请求生成了同码，唯一索引拦下后重生成一次。
-        created = None
-        for _attempt in range(2):
-            created = models.InvitationCode(
-                code=_generate_invite_code(db),
-                user_id=current_user.id,
-                reward_points=0,
-            )
-            db.add(created)
-            try:
-                db.commit()
-            except IntegrityError:
-                db.rollback()
-                logger.info("邀请码并发撞号，已重生成重试: user=%s", current_user.id)
-                created = None
-                continue
-            break
-        if created is None or created.id is None:
-            raise HTTPException(status_code=500, detail="邀请码生成失败，请重试")
-        code = created
-        db.refresh(code)
+        code = _create_self_code(db, current_user)
 
     invited_count = db.query(models.InvitationRecord).filter(
         models.InvitationRecord.inviter_id == current_user.id
     ).count()
+    totals = invite_rebate.totals_for_inviter(db, current_user.id)
 
     return {
         "code": code.code,
         "use_count": code.use_count or 0,
         "max_uses": code.max_uses,
         "invited_count": invited_count,
+        "username": current_user.username,
         "config": get_invite_config(db),
+        "rebate_totals": {
+            "credited": f"{totals['credited']:.2f}",
+            "pending": f"{totals['pending']:.2f}",
+            "count": totals["count"],
+        },
+        "welfare": invite_trial.welfare_status(db, current_user),
     }
 
 
-def _rebate_totals_by_invitee(
-    db: Session, inviter_id: int, invitee_ids: list[int]
-) -> dict[int, int]:
-    """按被邀请人归集累计返利（只记账口径，读现行台账，不发生发放）。
+@router.get("/my-code")
+def my_code(
+    current_user: models.WebUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """我的邀请码（没有则自动生成）+ 邀请统计 + 返利汇总 + 福利资格"""
+    return _my_code_payload(db, current_user)
 
-    返利流水（PointsLog type=rebate）的 ``ref_id`` 是 ``rebate:{充值订单号}``，
-    订单归属人就是被邀请人，据此把邀请人的返利台账拆回每个人头上。
-    归不上（订单已删/老流水无此格式）的返利不硬塞，宁可少算不许错算。
+
+@router.post("/my-code/regenerate")
+def regenerate_my_code(
+    current_user: models.WebUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """换一个邀请码（邀请页标题旁的刷新钮）：作废当前码、生成新码。
+
+    失效口径：旧码即刻停用——已分享出去的旧链接/旧码不能再绑定新的
+    邀请关系；**已建立的邀请关系、已产生的返利与试用都不受影响**
+    （关系行独立于码存在）。管理员发的渠道码不在此处理（本端点只
+    轮换 my-code 当前展示的这张自助码）。
     """
-    if not invitee_ids:
-        return {}
-    order_owner = {
-        oid: uid for oid, uid in db.query(
-            models.RechargeOrder.order_id, models.RechargeOrder.user_id
-        ).filter(models.RechargeOrder.user_id.in_(invitee_ids)).all()
-    }
-    if not order_owner:
-        return {}
-    totals: dict[int, int] = {}
-    logs = db.query(models.PointsLog).filter(
-        models.PointsLog.user_id == inviter_id,
-        models.PointsLog.type == "rebate",
-        models.PointsLog.amount > 0,
-        models.PointsLog.ref_id.like("rebate:%"),
-    ).all()
-    for log in logs:
-        owner = order_owner.get((log.ref_id or "")[len("rebate:"):])
-        if owner is not None:
-            totals[owner] = totals.get(owner, 0) + int(log.amount or 0)
-    return totals
+    old = _active_code(db, current_user.id)
+    if old is not None:
+        old.is_active = False
+        db.commit()
+        logger.info("邀请码已轮换: user=%s old_code_id=%s", current_user.id, old.id)
+    return _my_code_payload(db, current_user)
 
 
 @router.get("/records")
@@ -330,26 +380,75 @@ def my_invitation_records(
     current_user: models.WebUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """我邀请的用户列表（含每人累计返利：从返利台账按充值订单归属拆算）"""
+    """我邀请的用户列表：脱敏名 + 注册时间 + 是否已付费 + 每人累计返利。
+
+    返利口径（2026-11-14 起）：读钱包时代的计提台账
+    （invite_rebate_accruals，元，pending+credited 合计）；旧积分返利
+    台账（PointsLog）已随货币下线冻结，不再混进这个数字。
+    """
+    from backend import invite_rebate
+    from backend.agents import money
+
     records = db.query(models.InvitationRecord).filter(
         models.InvitationRecord.inviter_id == current_user.id
     ).order_by(models.InvitationRecord.created_at.desc()).limit(min(limit, 200)).all()
 
-    rebate_totals = _rebate_totals_by_invitee(
-        db, current_user.id, [r.invitee_id for r in records]
-    )
+    invitee_ids = [r.invitee_id for r in records]
+    rebate_totals = invite_rebate.totals_by_invitee(db, current_user.id, invitee_ids)
+    paid_ids = {
+        uid for (uid,) in db.query(models.SubscriptionOrder.user_id)
+        .filter(models.SubscriptionOrder.user_id.in_(invitee_ids),
+                models.SubscriptionOrder.status == "paid")
+        .distinct().all()
+    } if invitee_ids else set()
+    names = {
+        u.id: u.username for u in db.query(models.WebUser)
+        .filter(models.WebUser.id.in_(invitee_ids)).all()
+    } if invitee_ids else {}
 
     items = []
     for r in records:
-        invitee = db.query(models.WebUser).filter(models.WebUser.id == r.invitee_id).first()
         items.append({
             "id": r.id,
-            "invitee_username": invitee.username if invitee else "已注销",
+            "invitee_username": _mask_username(names.get(r.invitee_id)),
             "reward_points": r.reward_points,
-            "rebate_total": rebate_totals.get(r.invitee_id, 0),
+            "paid": r.invitee_id in paid_ids,
+            "rebate_total": float(money(rebate_totals.get(r.invitee_id, 0))),
             "created_at": r.created_at.isoformat() if r.created_at else None,
         })
     return {"total": len(items), "records": items}
+
+
+@router.get("/rebates")
+def my_rebates(
+    limit: int = 50,
+    current_user: models.WebUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """我的返利明细（计提台账逐笔）：谁付的费、付了多少、返多少、到账没。"""
+    from backend import invite_rebate
+
+    rows = (
+        db.query(models.InviteRebateAccrual)
+        .filter(models.InviteRebateAccrual.inviter_id == current_user.id)
+        .order_by(models.InviteRebateAccrual.id.desc())
+        .limit(min(limit, 200))
+        .all()
+    )
+    names = {
+        u.id: u.username for u in db.query(models.WebUser)
+        .filter(models.WebUser.id.in_({r.invitee_id for r in rows})).all()
+    } if rows else {}
+    totals = invite_rebate.totals_for_inviter(db, current_user.id)
+    return {
+        "total_rebate": float(totals["credited"] + totals["pending"]),
+        "credited": f"{totals['credited']:.2f}",
+        "pending": f"{totals['pending']:.2f}",
+        "rebates": [
+            invite_rebate.accrual_dto(r, _mask_username(names.get(r.invitee_id)))
+            for r in rows
+        ],
+    }
 
 
 @router.get("/promotions")

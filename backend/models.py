@@ -1530,6 +1530,75 @@ class PromotionReward(Base):
     code = relationship("InvitationCode")
 
 
+class InviteRebateAccrual(Base):
+    """邀请返利计提（钱包时代，2026-11-14）：被邀请人每笔真实付费产生一笔。
+
+    与旧积分返利（PointsLog type=rebate，已随货币下线冻结）分开记账：
+    本表是「应返多少钱」的计提台账，金额一律人民币元 Numeric(12,2)。
+
+    - ``source`` + ``source_ref`` 唯一：一笔付费只计提一次，支付回调
+      重放 / 履约重试都不会重复返利（幂等的第一道门；钱包入账侧再用
+      idempotency_key 兜第二道）。
+    - ``status``：pending = 已计提未入账（钱包未上线/被关停时挂账，
+      不丢账）；credited = 已入邀请人钱包（``wallet_ledger_id`` 指回
+      钱包流水行）。退款撤回由钱包批 2 按 (source, source_ref) 精确
+      定位本行处理，本表不改金额，只随状态流转。
+    - ``percent`` 记计提时的比例快照，事后改配置不影响已计提的账。
+    """
+    __tablename__ = 'invite_rebate_accruals'
+
+    __table_args__ = (
+        UniqueConstraint('source', 'source_ref', name='uq_invite_rebate_source'),
+        Index('idx_invite_rebate_inviter', 'inviter_id'),
+        Index('idx_invite_rebate_invitee', 'invitee_id'),
+        Index('idx_invite_rebate_status', 'status'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    inviter_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
+    invitee_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
+    # subscription_order = 网关订阅订单（source_ref = order_id）；
+    # wallet_topup / wallet_purchase 预留给钱包批 2/3 的付费入口
+    source = Column(String(30), nullable=False)
+    source_ref = Column(String(64), nullable=False)
+    paid_amount = Column(Numeric(12, 2), nullable=False)    # 被邀请人实付（元）
+    rebate_amount = Column(Numeric(12, 2), nullable=False)  # 应返金额（元）
+    percent = Column(Integer, nullable=False)               # 计提时比例快照 %
+    status = Column(String(20), default='pending', nullable=False)
+    wallet_ledger_id = Column(Integer)  # credited 后回填钱包流水行 id
+    created_at = Column(DateTime, default=datetime.now)
+    credited_at = Column(DateTime)
+
+    inviter = relationship("WebUser", foreign_keys=[inviter_id])
+    invitee = relationship("WebUser", foreign_keys=[invitee_id])
+
+
+class InviteTrialGrant(Base):
+    """被邀请人见面礼（试用订阅）发放留痕：一个被邀请人只发一次。
+
+    邀请关系建立时按 ``invite_trial_days`` 配置给被邀请人发会员天数
+    （体验权益、不可变现，与返利「只挂真实付费」不冲突）。本表既是
+    明细也是防重复领取的那道门（invitee_id 唯一索引兜底），发放与
+    邀请关系同一事务落盘。
+    """
+    __tablename__ = 'invite_trial_grants'
+
+    __table_args__ = (
+        Index('idx_invite_trial_invitee', 'invitee_id', unique=True),
+        Index('idx_invite_trial_inviter', 'inviter_id'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    inviter_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
+    invitee_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
+    days = Column(Integer, nullable=False, default=0)
+    realm_id = Column(Integer)  # 天数落到的服（与 grant_membership_days 同口径）
+    created_at = Column(DateTime, default=datetime.now)
+
+    inviter = relationship("WebUser", foreign_keys=[inviter_id])
+    invitee = relationship("WebUser", foreign_keys=[invitee_id])
+
+
 # ==================== 优惠券 ====================
 
 class CouponCode(Base):
