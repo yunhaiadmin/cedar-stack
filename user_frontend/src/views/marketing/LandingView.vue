@@ -10,7 +10,7 @@ import { nextTick, onDeactivated, onMounted, onUnmounted, ref, type Component } 
 import { useRouter } from 'vue-router'
 import { Monitor, Sparkles, Film, Ban, Menu, X, RefreshCw, Bell, Home, Tag, BookOpen, ExternalLink, Users, Bot, MessageCircle, Send, Globe, ArrowRight } from 'lucide-vue-next'
 import UhdNavPill, { type UhdNavItem } from '@/components/uhd/UhdNavPill.vue'
-import { engageModalIsolation, trapTabKey } from '@/composables/useModalIsolation'
+import { engageModalIsolation, lockModalOverflow, trapTabKey, unlockModalOverflow } from '@/composables/useModalIsolation'
 import UhdButton from '@/components/uhd/UhdButton.vue'
 import UhdChip from '@/components/uhd/UhdChip.vue'
 import { branding } from '@/composables/useBranding'
@@ -40,8 +40,13 @@ const burgerBtn = ref<HTMLButtonElement | null>(null)
 const sheetEl = ref<HTMLElement | null>(null)
 const menuModal = ref<HTMLElement | null>(null)
 let menuLocked = false
-let savedOverflow = ''
+let closeTimer = 0
 let releaseMenuIsolation: (() => void) | null = null
+function cancelCloseTimer() {
+  if (!closeTimer) return
+  window.clearTimeout(closeTimer)
+  closeTimer = 0
+}
 function onScrollNav() {
   navScrolled.value = window.scrollY > 40
 }
@@ -51,8 +56,7 @@ function focusSheet() {
 }
 function lockMenu() {
   if (menuLocked) return
-  savedOverflow = document.documentElement.style.overflow
-  document.documentElement.style.overflow = 'hidden'
+  lockModalOverflow()
   menuLocked = true
   nextTick(() => {
     if (menuModal.value) releaseMenuIsolation = engageModalIsolation(menuModal.value)
@@ -63,16 +67,18 @@ function unlockMenu() {
   releaseMenuIsolation?.()
   releaseMenuIsolation = null
   if (!menuLocked) return
-  document.documentElement.style.overflow = savedOverflow
+  unlockModalOverflow()
   menuLocked = false
 }
 function setMenu(open: boolean) {
+  cancelCloseTimer()
   menuOpen.value = open
   menuClosing.value = false
   if (open) lockMenu()
   else unlockMenu()
 }
 function forceReleaseMenu() {
+  cancelCloseTimer()
   menuOpen.value = false
   menuClosing.value = false
   unlockMenu()
@@ -81,11 +87,17 @@ function closeMenuAnimated() {
   if (!menuOpen.value || menuClosing.value) return
   menuClosing.value = true
   unlockMenu()
-  window.setTimeout(() => {
+  cancelCloseTimer()
+  closeTimer = window.setTimeout(() => {
+    closeTimer = 0
     menuOpen.value = false
     menuClosing.value = false
     burgerBtn.value?.focus()
   }, 300)
+}
+function closeMenuToOpener() {
+  setMenu(false)
+  nextTick(() => burgerBtn.value?.focus())
 }
 function onMenuKey(event: KeyboardEvent) {
   if (!menuOpen.value) return
@@ -97,11 +109,16 @@ function onMenuKey(event: KeyboardEvent) {
   trapTabKey(event, menuModal.value)
 }
 function toggleMenu() {
+  if (menuClosing.value) {
+    setMenu(true)
+    return
+  }
   if (menuOpen.value) closeMenuAnimated()
   else setMenu(true)
 }
 function onMobileNav(key: string) {
-  setMenu(false)
+  if (key === 'home') closeMenuToOpener()
+  else setMenu(false)
   onNav(key)
 }
 /* 菜单面板下半（2026-11-13 用户发友站截图定版，整体 1:1）：
@@ -453,7 +470,7 @@ const year = new Date().getFullYear()
         </button>
       </span>
     </div>
-    <div v-if="menuOpen" ref="menuModal" class="m-modal">
+    <div v-if="menuOpen" ref="menuModal" class="m-modal" data-modal-root>
     <div class="m-scrim" :class="{ 'is-out': menuClosing }" @click="closeMenuAnimated" />
     <div
       ref="sheetEl"
@@ -464,6 +481,9 @@ const year = new Date().getFullYear()
       aria-modal="true"
       aria-label="菜单"
     >
+      <button type="button" class="m-sheet__close" aria-label="关闭菜单" @click="closeMenuAnimated">
+        <X :size="18" aria-hidden="true" />
+      </button>
       <div
         class="m-sheet__handle"
         aria-hidden="true"
@@ -485,7 +505,7 @@ const year = new Date().getFullYear()
           :href="communityLinks.docs_url"
           target="_blank"
           rel="noopener noreferrer"
-          @click="setMenu(false)"
+          @click="closeMenuToOpener"
         >
           <BookOpen :size="18" aria-hidden="true" />文档
           <ExternalLink :size="15" class="m-sheet__row-ext" aria-hidden="true" />
@@ -503,7 +523,7 @@ const year = new Date().getFullYear()
               :href="channel.url"
               target="_blank"
               rel="noopener noreferrer"
-              @click="setMenu(false)"
+              @click="closeMenuToOpener"
             >
               <span class="m-card__bubble">
                 <component :is="channelIcon(channel.icon)" :size="20" aria-hidden="true" />
@@ -834,6 +854,7 @@ const year = new Date().getFullYear()
   cursor: pointer;
 }
 .m-nav__burger:focus-visible,
+.m-sheet__close:focus-visible,
 .m-sheet__row:focus-visible,
 .m-card:focus-visible {
   outline: 2px solid #ffffff;
@@ -1953,6 +1974,22 @@ const year = new Date().getFullYear()
     height: 3px;
     border-radius: 9999px;
     background: rgba(255, 255, 255, 0.2);
+  }
+  .m-sheet__close {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--uhd-d-text);
+    cursor: pointer;
   }
   .m-sheet__links {
     display: flex;

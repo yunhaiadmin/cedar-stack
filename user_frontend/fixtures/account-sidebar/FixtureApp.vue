@@ -15,7 +15,7 @@ import { RouterView } from 'vue-router'
     </header>
     <button id="already-inert" type="button" inert>原本不可用</button>
     <RouterView v-slot="{ Component }">
-      <KeepAlive>
+      <KeepAlive include="AccountHarness,FixtureLanding">
         <component :is="Component" />
       </KeepAlive>
     </RouterView>

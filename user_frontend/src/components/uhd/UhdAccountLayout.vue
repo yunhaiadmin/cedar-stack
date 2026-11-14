@@ -21,7 +21,7 @@ import {
 } from 'lucide-vue-next'
 import UhdSidebar, { type UhdSidebarGroup } from './UhdSidebar.vue'
 import { getAgentMe } from '@/api/agent'
-import { engageModalIsolation, trapTabKey } from '@/composables/useModalIsolation'
+import { engageModalIsolation, lockModalOverflow, trapTabKey, unlockModalOverflow } from '@/composables/useModalIsolation'
 import { useTheme } from '@/composables/useTheme'
 import { useUserStore } from '@/stores/user'
 
@@ -104,7 +104,6 @@ const navOpen = ref(false)
 const openerBtn = ref<HTMLButtonElement | null>(null)
 const drawerEl = ref<HTMLElement | null>(null)
 const modalRoot = ref<HTMLElement | null>(null)
-let savedOverflow = ''
 let overflowLocked = false
 let releaseIsolation: (() => void) | null = null
 
@@ -119,15 +118,14 @@ function focusableInDrawer(): HTMLElement[] {
 }
 function lockNav() {
   if (overflowLocked) return
-  savedOverflow = document.documentElement.style.overflow
-  document.documentElement.style.overflow = 'hidden'
+  lockModalOverflow()
   overflowLocked = true
 }
 function unlockNav() {
   releaseIsolation?.()
   releaseIsolation = null
   if (!overflowLocked) return
-  document.documentElement.style.overflow = savedOverflow
+  unlockModalOverflow()
   overflowLocked = false
 }
 function openNav() {
@@ -182,11 +180,14 @@ async function settleNav(key: string, emitSelect: () => void) {
     return
   }
   let failure: unknown
+  let threw = false
   try {
     failure = await router.push(key)
   } catch (err) {
+    threw = true
     failure = err
   }
+  if (threw && !isNavigationFailure(failure)) return
   if (isNavigationFailure(failure)) {
     if (isNavigationFailure(failure, NavigationFailureType.duplicated) && opened) closeNav(true)
     return
@@ -241,7 +242,7 @@ const accountSub = computed(() => {
 
 <template>
   <div class="uhd-account" :class="{ 'is-nav-open': navOpen }">
-    <div ref="modalRoot" class="uhd-account__modal">
+    <div ref="modalRoot" class="uhd-account__modal" data-modal-root>
     <button
       v-if="navOpen"
       type="button"

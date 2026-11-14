@@ -3,6 +3,8 @@
 import { onDeactivated, onUnmounted } from 'vue'
 import LandingView from '@/views/marketing/LandingView.vue'
 
+defineOptions({ name: 'FixtureLanding' })
+
 onDeactivated(() => {
   const w = window as unknown as { __ld?: number }
   w.__ld = (w.__ld || 0) + 1

@@ -7,27 +7,62 @@
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
-type Snap = { el: HTMLElement; prev: boolean }
+const inertCount = new WeakMap<HTMLElement, number>()
+const inertOriginal = new WeakMap<HTMLElement, boolean>()
 
-export function engageModalIsolation(modalRoot: HTMLElement): () => void {
-  const touched: Snap[] = []
+function keepAlive(el: HTMLElement, keep: HTMLElement[]) {
+  return keep.some((node) => node === el || el.contains(node) || node.contains(el))
+}
+
+export function engageModalIsolation(modalRoot: HTMLElement, keep: HTMLElement[] = []): () => void {
+  const touched: HTMLElement[] = []
   const seen = new Set<HTMLElement>()
   let node: HTMLElement | null = modalRoot
   while (node?.parentElement) {
     const parent = node.parentElement
     for (const child of parent.children) {
       if (!(child instanceof HTMLElement) || child === node || seen.has(child)) continue
-      if (child === modalRoot || modalRoot.contains(child)) continue
+      if (child === modalRoot || modalRoot.contains(child) || child.hasAttribute('data-modal-root')) continue
+      if (keepAlive(child, keep)) continue
       seen.add(child)
-      touched.push({ el: child, prev: child.inert })
+      const count = inertCount.get(child) ?? 0
+      if (count === 0) inertOriginal.set(child, child.inert)
+      inertCount.set(child, count + 1)
       child.inert = true
+      touched.push(child)
     }
     if (parent === document.body) break
     node = parent
   }
   return () => {
-    for (const { el, prev } of touched) el.inert = prev
+    for (const el of touched) {
+      const next = (inertCount.get(el) ?? 1) - 1
+      if (next <= 0) {
+        inertCount.delete(el)
+        el.inert = inertOriginal.get(el) ?? false
+        inertOriginal.delete(el)
+      } else {
+        inertCount.set(el, next)
+        el.inert = true
+      }
+    }
   }
+}
+
+let overflowDepth = 0
+let overflowOriginal = ''
+
+/** 多层模态共用一把锁：只有最外层记住并恢复原来的 overflow，包括非空值。 */
+export function lockModalOverflow() {
+  if (overflowDepth === 0) overflowOriginal = document.documentElement.style.overflow
+  overflowDepth += 1
+  document.documentElement.style.overflow = 'hidden'
+}
+
+export function unlockModalOverflow() {
+  if (overflowDepth === 0) return
+  overflowDepth -= 1
+  if (overflowDepth === 0) document.documentElement.style.overflow = overflowOriginal
 }
 
 export function trapTabKey(event: KeyboardEvent, root: HTMLElement | null) {

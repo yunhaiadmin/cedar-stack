@@ -13,9 +13,13 @@ import '@/styles/uhd-topbar.css'
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import { createRouter, createWebHistory } from 'vue-router'
+import { engageModalIsolation, lockModalOverflow, unlockModalOverflow } from '@/composables/useModalIsolation'
 import FixtureApp from './FixtureApp.vue'
 import AccountHarness from './AccountHarness.vue'
 import FixtureLanding from './FixtureLanding.vue'
+import OnceLayout from './OnceLayout.vue'
+
+const Stub = { name: 'FixtureStub', template: '<main id="fixture-stub">跳转页</main>' }
 
 const router = createRouter({
   history: createWebHistory('/'),
@@ -24,13 +28,38 @@ const router = createRouter({
     { path: '/game/account', component: AccountHarness },
     { path: '/wallet', component: AccountHarness },
     { path: '/game/operator', component: AccountHarness },
+    { path: '/game/once', component: OnceLayout },
+    { path: '/game/speedtest', component: AccountHarness },
     { path: '/landing', component: FixtureLanding },
+    { path: '/pricing', component: Stub },
+    { path: '/login', component: Stub },
   ],
 })
 router.beforeEach((to) => {
   if (to.path === '/game/operator') return false
+  if (to.path === '/game/speedtest') throw new Error('router-threw')
+})
+router.onError((err) => {
+  ;(window as unknown as { __lastNavError?: string }).__lastNavError = String(err?.message || err)
 })
 
 const app = createApp(FixtureApp).use(createPinia()).use(router)
-;(window as unknown as { __fixtureGo?: (path: string) => Promise<unknown> }).__fixtureGo = (path) => router.push(path)
+const w = window as unknown as {
+  __fixtureGo?: (path: string) => Promise<unknown>
+  __lock?: () => void
+  __unlock?: () => void
+  __engage?: (el: HTMLElement) => void
+  __releaseLast?: () => void
+  __holds?: Array<() => void>
+}
+w.__fixtureGo = (path) => router.push(path)
+w.__lock = lockModalOverflow
+w.__unlock = unlockModalOverflow
+w.__holds = []
+w.__engage = (el) => {
+  w.__holds?.push(engageModalIsolation(el))
+}
+w.__releaseLast = () => {
+  w.__holds?.pop()?.()
+}
 app.mount('#app')

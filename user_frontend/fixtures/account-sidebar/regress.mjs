@@ -259,8 +259,219 @@ check('keepalive deactivates landing', life.ld >= 1 && life.lu === 0, JSON.strin
 check('leave landing restores overflow', s.overflow === '', JSON.stringify(s.overflow))
 check('leave landing clears chrome inert', !s.topInert && !s.dockInert)
 
+const routerCases = {}
+async function gapState() {
+  return evalJson(`(() => {
+    const dialog = document.querySelector('[role="dialog"]')
+    const closeBtn = document.querySelector('.m-sheet__close')
+    const burger = document.querySelector('.m-nav__burger')
+    const active = document.activeElement
+    return JSON.stringify({
+      path: location.pathname,
+      overflow: document.documentElement.style.overflow,
+      dialog: !!dialog,
+      closeName: closeBtn ? (closeBtn.getAttribute('aria-label') || '') : '',
+      closeTag: closeBtn ? closeBtn.tagName : '',
+      closeInDialog: !!(dialog && closeBtn && dialog.contains(closeBtn)),
+      closeInert: !!(closeBtn && closeBtn.inert),
+      navInert: !!document.querySelector('.m-nav')?.inert,
+      topInert: !!document.querySelector('.fake-top')?.inert,
+      dockInert: !!document.querySelector('.fake-dock')?.inert,
+      already: !!document.getElementById('already-inert')?.inert,
+      mainInert: !!document.querySelector('.uhd-account__main')?.inert,
+      active: active?.getAttribute?.('aria-label') || active?.id || active?.tagName || '',
+      activeIsBurger: active === burger,
+      activeInDialog: !!(dialog && active && dialog.contains(active)),
+      sheet: !!document.querySelector('.m-sheet'),
+      err: window.__lastNavError || '',
+      ad: window.__ad || 0,
+      au: window.__au || 0,
+      once: window.__once || 0,
+    })
+  })()`)
+}
+async function clickText(selector, text) {
+  await act(`(() => {
+    const el = [...document.querySelectorAll(${JSON.stringify(selector)})].find((node) => (node.innerText || '').includes(${JSON.stringify(text)}))
+    if (!el) throw new Error('missing ' + ${JSON.stringify(text)})
+    el.click()
+  })()`)
+}
+
+let g = await gapState()
+if (g.dialog) {
+  await key('Escape')
+  await sleep(200)
+}
+await act(`document.documentElement.style.overflow = 'clip'`)
+await act(`document.querySelector('.uhd-account__navbtn').click()`)
+await sleep(250)
+await act(`window.__lastNavError = ''`)
+await clickText('.uhd-side__item', '接线员')
+await sleep(300)
+g = await gapState()
+routerCases.guardReturnFalse = {
+  kind: 'guard-return-false',
+  path: g.path,
+  drawerOpen: g.dialog,
+  threw: !!g.err,
+  error: g.err,
+  activeInDialog: g.activeInDialog,
+}
+check('gap guard-return-false keeps drawer', g.path === '/game/account' && g.dialog && g.activeInDialog, JSON.stringify(routerCases.guardReturnFalse))
+check('gap guard-return-false does not throw', g.err === '', g.err)
+
+await act(`window.__lastNavError = ''`)
+await clickText('.uhd-side__item', '线路测速')
+await sleep(350)
+g = await gapState()
+routerCases.routerThrow = {
+  kind: 'router-throw',
+  path: g.path,
+  drawerOpen: g.dialog,
+  threw: g.err.includes('router-threw'),
+  error: g.err,
+  activeInDialog: g.activeInDialog,
+  notGuardReturnFalse: g.err.includes('router-threw'),
+}
+check('gap router-throw keeps drawer', g.path === '/game/account' && g.dialog && g.activeInDialog, JSON.stringify(routerCases.routerThrow))
+check('gap router-throw is an exception', g.err.includes('router-threw'), g.err)
+
+await act(`window.__lock()`)
+await key('Escape')
+await sleep(200)
+g = await gapState()
+check('gap other overflow lock survives account close', g.overflow === 'hidden' && !g.dialog, g.overflow)
+check('gap account close restores inert while other lock remains', !g.mainInert && !g.topInert && !g.dockInert && g.already, JSON.stringify({ main: g.mainInert, top: g.topInert, already: g.already }))
+await act(`window.__unlock()`)
+g = await gapState()
+check('gap overflow restores initial clip', g.overflow === 'clip', JSON.stringify(g.overflow))
+
+const lifeBefore = await gapState()
+await act(`document.querySelector('.uhd-account__navbtn').click()`)
+await sleep(250)
+g = await gapState()
+check('gap account open locks overflow from clip', g.overflow === 'hidden' && g.mainInert && g.already, g.overflow)
+await act(`window.__fixtureGo('/landing')`)
+await sleep(500)
+g = await gapState()
+check('gap account keepalive deactivate restores overflow', g.overflow === 'clip' && g.ad > lifeBefore.ad, JSON.stringify({ overflow: g.overflow, ad: g.ad, before: lifeBefore.ad }))
+check('gap account keepalive deactivate restores inert', !g.topInert && !g.dockInert && g.already && g.au === lifeBefore.au, JSON.stringify({ top: g.topInert, already: g.already, au: g.au }))
+
+await act(`window.__fixtureGo('/game/once')`)
+await sleep(400)
+await size(390, 844)
+await act(`document.documentElement.style.overflow = 'clip'`)
+await act(`document.querySelector('.uhd-account__navbtn').click()`)
+await sleep(250)
+g = await gapState()
+check('gap once drawer open', g.dialog && g.overflow === 'hidden', g.overflow)
+const onceBefore = g.once
+await act(`window.__fixtureGo('/landing')`)
+await sleep(500)
+g = await gapState()
+check('gap account unmount restores overflow', g.overflow === 'clip' && g.once > onceBefore, JSON.stringify({ overflow: g.overflow, once: g.once }))
+check('gap account unmount restores inert', !g.topInert && !g.dockInert && g.already && !g.dialog, JSON.stringify({ top: g.topInert, already: g.already }))
+
+await size(390, 844)
+await sleep(200)
+await act(`document.querySelector('.m-nav__burger').click()`)
+await sleep(350)
+g = await gapState()
+check('gap close button inside dialog', g.closeTag === 'BUTTON' && g.closeName === '关闭菜单' && g.closeInDialog, JSON.stringify({ tag: g.closeTag, name: g.closeName, inside: g.closeInDialog }))
+check('gap close button usable while background inert', !g.closeInert && g.navInert && g.topInert && g.active === '关闭菜单', JSON.stringify({ closeInert: g.closeInert, navInert: g.navInert, active: g.active }))
+await snap('regress-landing-dialog-close')
+await act(`document.querySelector('.m-sheet__close').click()`)
+await sleep(450)
+g = await gapState()
+check('gap close button restores burger and clip overflow', !g.sheet && g.activeIsBurger && g.active === '打开菜单' && g.overflow === 'clip', JSON.stringify({ active: g.active, overflow: g.overflow, sheet: g.sheet }))
+
+await act(`document.querySelector('.m-nav__burger').click()`)
+await sleep(250)
+await key('Escape')
+await sleep(450)
+g = await gapState()
+check('gap esc restores burger', !g.sheet && g.activeIsBurger && g.overflow === 'clip', g.active)
+
+await act(`document.querySelector('.m-nav__burger').click()`)
+await sleep(250)
+await act(`document.querySelector('.m-scrim').click()`)
+await sleep(450)
+g = await gapState()
+check('gap scrim restores burger', !g.sheet && g.activeIsBurger && g.overflow === 'clip', g.active)
+
+await act(`document.querySelector('.m-nav__burger').click()`)
+await sleep(250)
+await clickText('.m-sheet__row', '首页')
+await sleep(250)
+g = await gapState()
+check('gap same-route restores burger', g.path === '/landing' && !g.sheet && g.activeIsBurger && g.overflow === 'clip', JSON.stringify({ path: g.path, active: g.active, overflow: g.overflow }))
+
+await act(`document.querySelector('.m-nav__burger').click()`)
+await sleep(250)
+await clickText('.m-sheet__row', '定价')
+await sleep(500)
+g = await gapState()
+check('gap route change releases menu and restores overflow', g.path === '/pricing' && !g.sheet && g.overflow === 'clip' && !g.topInert && g.already, JSON.stringify({ path: g.path, overflow: g.overflow, active: g.active, top: g.topInert }))
+
+await act(`window.__fixtureGo('/landing')`)
+await sleep(500)
+await size(390, 844)
+await act(`document.documentElement.style.overflow = 'clip'`)
+await act(`document.querySelector('.m-nav__burger').click()`)
+await sleep(300)
+await act(`document.querySelector('.m-sheet__close').click()`)
+await sleep(80)
+await act(`document.querySelector('.m-nav__burger').click()`)
+await sleep(450)
+g = await gapState()
+check('gap reopen within 300ms keeps isolation', g.sheet && g.overflow === 'hidden' && g.navInert && g.closeInDialog && !g.closeInert, JSON.stringify({ sheet: g.sheet, overflow: g.overflow, nav: g.navInert }))
+
+await act(`document.querySelector('.m-sheet__close').click()`)
+await sleep(80)
+await act(`window.__fixtureGo('/game/account')`)
+await sleep(120)
+const mid = await gapState()
+await sleep(450)
+g = await gapState()
+check('gap route within 300ms releases and timer stays cancelled', mid.overflow === 'clip' && !mid.topInert && !mid.sheet && g.overflow === 'clip' && !g.topInert && !g.sheet && g.already, JSON.stringify({ mid: mid.overflow, late: g.overflow, midActive: mid.active, lateActive: g.active }))
+
+await act(`(() => {
+  const host = document.createElement('div')
+  host.id = 'nest-host'
+  host.innerHTML = '<p id="nest-bg">背景</p><div id="nest-a" data-modal-root><button type="button">甲</button></div><div id="nest-b" data-modal-root><button type="button">乙</button></div>'
+  document.body.appendChild(host)
+  document.getElementById('nest-bg').inert = true
+  window.__engage(document.getElementById('nest-a'))
+  window.__engage(document.getElementById('nest-b'))
+})()`)
+let nest = await evalJson(`JSON.stringify({
+  bg: document.getElementById('nest-bg').inert,
+  b: document.getElementById('nest-b').inert,
+  app: document.getElementById('app').inert,
+})`)
+check('gap second modal keeps background inert', nest.bg === true && nest.b === false, JSON.stringify(nest))
+await act(`window.__releaseLast()`)
+nest = await evalJson(`JSON.stringify({ bg: document.getElementById('nest-bg').inert, app: document.getElementById('app').inert })`)
+check('gap releasing one modal keeps the other', nest.bg === true, JSON.stringify(nest))
+await act(`window.__releaseLast()`)
+nest = await evalJson(`JSON.stringify({
+  bg: document.getElementById('nest-bg').inert,
+  app: document.getElementById('app').inert,
+})`)
+check('gap inert original restored and app not left inert', nest.bg === true && nest.app === false, JSON.stringify(nest))
+await act(`document.getElementById('nest-host').remove()`)
+
 const failed = checks.filter((c) => !c.pass)
-const report = { pass: failed.length === 0, failed: failed.length, checks }
+const gapChecks = checks.filter((c) => c.name.startsWith('gap '))
+const report = {
+  pass: failed.length === 0,
+  failed: failed.length,
+  checks,
+  routerCases,
+  gapChecks,
+  notCovered: ['真实生产登录会话'],
+}
 writeFileSync(`${OUT}/pr192-nav-regress.json`, JSON.stringify(report, null, 2))
 writeFileSync(`${STORE}/pr192-nav-regress.json`, JSON.stringify(report, null, 2))
 console.log(`\n${checks.length - failed.length}/${checks.length} passed`)

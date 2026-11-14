@@ -1,6 +1,17 @@
 <script setup lang="ts">
 /** 真实账户壳。路由由夹具路由器决定，不代表登录会话。 */
+import { onDeactivated, onUnmounted } from 'vue'
 import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
+
+defineOptions({ name: 'AccountHarness' })
+onDeactivated(() => {
+  const w = window as unknown as { __ad?: number }
+  w.__ad = (w.__ad || 0) + 1
+})
+onUnmounted(() => {
+  const w = window as unknown as { __au?: number }
+  w.__au = (w.__au || 0) + 1
+})
 </script>
 
 <template>
