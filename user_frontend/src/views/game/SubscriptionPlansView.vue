@@ -664,11 +664,6 @@ onMounted(() => {
   color: var(--uhd-l-text);
   font-family: var(--uhd-font-sans);
   -webkit-font-smoothing: antialiased;
-  --sub-card-bg: #ffffff;
-  --sub-seg-bg: #f1f1f4;
-  --sub-track: #e6e6ea;
-  --sub-fill: #c6c6cd;
-  --sub-shadow: 0 10px 34px rgba(17, 17, 20, 0.08);
 }
 .sub-head {
   max-width: 760px;
@@ -725,7 +720,7 @@ onMounted(() => {
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  border: 3px solid var(--sub-track);
+  border: 3px solid var(--uhd-l-border);
   border-top-color: var(--uhd-l-text-3);
   animation: sub-spin 0.9s linear infinite;
 }
@@ -755,7 +750,7 @@ onMounted(() => {
   gap: 12px;
   padding: 24px 20px;
   border-radius: 20px;
-  background: var(--sub-card-bg);
+  background: var(--uhd-l-surface);
   border: 1px solid var(--uhd-l-border);
   color: var(--uhd-l-text-2);
   font-size: 14px;
@@ -779,7 +774,7 @@ onMounted(() => {
   gap: 2px;
   padding: 3px;
   border-radius: 999px;
-  background: var(--sub-seg-bg);
+  background: var(--uhd-l-seg-bg);
   max-width: 100%;
   overflow-x: auto;
 }
@@ -816,8 +811,8 @@ onMounted(() => {
   cursor: pointer;
 }
 .plan-card--on {
-  background: var(--sub-card-bg);
-  box-shadow: var(--sub-shadow);
+  background: var(--uhd-l-surface);
+  box-shadow: 0 10px 34px rgba(17, 17, 20, 0.08);
 }
 .plan-card__head {
   display: flex;
@@ -932,7 +927,7 @@ onMounted(() => {
   margin: 0;
   border: none;
   border-radius: 999px;
-  background: linear-gradient(to right, var(--sub-fill) var(--fill, 0%), var(--sub-track) var(--fill, 0%)) center / 100% 6px no-repeat;
+  background: linear-gradient(to right, var(--uhd-l-text-3) var(--fill, 0%), var(--uhd-l-border) var(--fill, 0%)) center / 100% 6px no-repeat;
   outline: none;
   cursor: pointer;
 }
@@ -1144,11 +1139,8 @@ onMounted(() => {
 html[data-theme='dark'] .sub-page {
   background: var(--uhd-d-bg);
   color: var(--uhd-d-text);
-  --sub-card-bg: #17171a;
-  --sub-seg-bg: #1d1d20;
-  --sub-track: rgba(255, 255, 255, 0.16);
-  --sub-fill: rgba(255, 255, 255, 0.38);
-  --sub-shadow: none;
+  --uhd-l-surface: #17171a;
+  --uhd-l-seg-bg: #1d1d20;
   --uhd-l-text: #ffffff;
   --uhd-l-text-2: #a7a7ad;
   --uhd-l-text-3: #8e8e96;
@@ -1156,6 +1148,7 @@ html[data-theme='dark'] .sub-page {
   --uhd-l-divider: #26262a;
   --uhd-l-bg: #050505;
 }
+html[data-theme='dark'] .plan-card--on { box-shadow: none; }
 html[data-theme='dark'] .sub-skeleton {
   background: linear-gradient(100deg, #17171a 40%, #1f1f23 50%, #17171a 60%);
   background-size: 200% 100%;
