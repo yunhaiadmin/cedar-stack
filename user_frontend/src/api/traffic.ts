@@ -3,8 +3,8 @@
  *
  * 额度未启用（套餐未声明月额度、全局默认也没配）时后端回
  * enabled=false，页面整段不展示，绝不拿 0 额度吓人。
- * 余额购买依赖钱包（未建）：后端只回 balance_purchase_available
- * 状态，**没有**余额支付端点，前端页签置灰，不许假接。
+ * 余额购买（钱包批 2）：后端回 balance_purchase_available +
+ * 单价 + 钱包余额，前端页签据此放开，成交走 buyBalanceTraffic。
  */
 import api from '@/api'
 
@@ -38,6 +38,10 @@ export interface TrafficExchangeOption {
 export interface TrafficOverview extends TrafficSummary {
   exchange_options: TrafficExchangeOption[]
   balance_purchase_available: boolean
+  /** 余额购流量单价（分/100GB，钱包批 2 下发；不可用时为 0） */
+  balance_price_per_100gb_fen: number
+  /** 当前钱包余额（元字符串，不可用时为 '0.00'） */
+  wallet_balance: string
 }
 
 export interface TrafficExchangeResult {
@@ -63,6 +67,35 @@ export async function exchangeTimeForTraffic(
 ): Promise<TrafficExchangeResult> {
   return api.post<never, TrafficExchangeResult>('/api/user/traffic/exchange', {
     days,
+    idempotency_key: idempotencyKey,
+  })
+}
+
+export interface BalancePurchaseResult {
+  ok: boolean
+  replayed: boolean
+  log: {
+    id: number
+    kind: string
+    bytes_credited: number
+    period_start: string | null
+    period_end: string | null
+  }
+  traffic: TrafficSummary
+  paid_amount: string
+  balance_after: string
+  gb: number
+}
+
+/** 余额购流量成交：gb 只许 100/200/500/1000（后端再校验），
+ * idempotencyKey 由弹窗在打开时生成一次，同一次确认重试/双击
+ * 只成交一次（后端幂等）。失败抛错，文案走后端 detail。 */
+export async function buyBalanceTraffic(
+  gb: number,
+  idempotencyKey: string,
+): Promise<BalancePurchaseResult> {
+  return api.post<never, BalancePurchaseResult>('/api/user/traffic/buy-balance', {
+    gb,
     idempotency_key: idempotencyKey,
   })
 }

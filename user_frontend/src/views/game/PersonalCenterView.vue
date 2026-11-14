@@ -104,6 +104,7 @@
       <div class="ov-actions">
         <RouterLink class="ov-btn ov-btn--primary" to="/game/account/subscribe">续费订阅</RouterLink>
         <RouterLink class="ov-btn" to="/game/account/member">我的订阅</RouterLink>
+        <RouterLink class="ov-btn" to="/wallet">我的钱包</RouterLink>
       </div>
 
       <!-- Emby 段：图标＋两行＋chevron（弹幕 API 本站无此业务，整项省略） -->

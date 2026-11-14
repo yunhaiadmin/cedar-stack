@@ -24,7 +24,7 @@
         <RouterLink class="sub-retry" to="/game/account/member">查看我的资格</RouterLink>
       </div>
 
-      <div v-else-if="!plansEnabled" class="sub-state">
+      <div v-else-if="!plansEnabled && !walletEnabled" class="sub-state">
         <p>订阅购买暂未开启，稍后再来看看</p>
         <button type="button" class="sub-retry" @click="loadAll">刷新看看</button>
       </div>
@@ -117,12 +117,13 @@
           </div>
         </section>
 
-        <!-- 支付方式：人民币单轨（能量支付已随货币下线） -->
+        <!-- 支付方式：人民币单轨（能量支付已随货币下线）＋钱包余额
+             （钱包批 2：网关开关关着时余额通道仍可买，余额不足明示差额） -->
         <section class="sub-pay" aria-label="支付方式">
           <div class="sub-methods">
-            <template v-if="methods.length > 1">
+            <template v-if="payMethods.length > 1">
               <button
-                v-for="m in methods"
+                v-for="m in payMethods"
                 :key="m.id"
                 type="button"
                 class="sub-method"
@@ -131,10 +132,13 @@
                 @click="payMethod = m.id"
               >{{ m.name || '在线支付' }}</button>
             </template>
-            <span v-else-if="methods.length === 1" class="sub-method sub-method--on">{{ methods[0].name || '在线支付' }}</span>
+            <span v-else-if="payMethods.length === 1" class="sub-method sub-method--on">{{ payMethods[0].name || '在线支付' }}</span>
             <span v-if="methodsFailed" class="sub-pay__warn">支付方式加载失败，请检查网络后<button type="button" class="sub-inline-retry" @click="loadAll">重试</button></span>
             <span v-else-if="!methodsReady" class="sub-pay__warn">暂无可用支付方式，请联系服主</span>
           </div>
+          <p v-if="walletShortfall > 0" class="sub-pay__warn" role="alert">
+            钱包余额不足，还差 ¥ {{ fmtPrice(walletShortfall) }}，请先去钱包充值或换个套餐
+          </p>
         </section>
 
         <!-- 优惠码：接现有 coupon 试算口（与下单同一套口径） -->
@@ -239,6 +243,7 @@ import {
   type PaymentMethod,
   type SubscriptionPlan,
 } from '@/api/economy'
+import { walletApi, newWalletKey } from '@/api/wallet'
 import { subscriptionApi, type MySubscription } from '@/api'
 
 const toast = useToast()
@@ -254,6 +259,27 @@ const methods = ref<PaymentMethod[]>([])
 const methodsReady = ref(false)
 const methodsFailed = ref(false)
 const payMethod = ref('alipay')
+/* 钱包余额支付（钱包批 2）：余额通道独立于网关开关，余额与可用
+   态随套餐接口一并下发；余额不足时明示差额、不静默跳网关。 */
+const walletEnabled = ref(false)
+const walletBalance = ref(0)
+/** 可选支付方式：网关只留 enabled 的那几项＋钱包余额项 */
+const payMethods = computed<PaymentMethod[]>(() => {
+  const list = methods.value.filter((m) => m.enabled)
+  if (walletEnabled.value) {
+    list.push({
+      id: 'wallet',
+      name: `钱包余额（¥ ${fmtPrice(walletBalance.value)}）`,
+      enabled: true,
+    })
+  }
+  return list
+})
+/** 选了钱包且实付超过余额时的差额（>0 即不许下单） */
+const walletShortfall = computed(() => {
+  if (payMethod.value !== 'wallet' || paidTotal.value == null) return 0
+  return Math.max(0, Math.round((paidTotal.value - walletBalance.value) * 100) / 100)
+})
 const member = ref<MyMemberInfo | null>(null)
 const mySubs = ref<MySubscription[]>([])
 const couponEnabled = ref(true)
@@ -473,6 +499,7 @@ const memberLevelName = computed(() => member.value?.level_name || '')
 /* ---------- 下单（口径与补给站原结算栏一致，规则不动） ---------- */
 const buyDisabled = computed(() => {
   if (orderBusy.value || !selectedPlan.value) return true
+  if (payMethod.value === 'wallet' && walletShortfall.value > 0) return true
   return !methodsReady.value
 })
 
@@ -481,6 +508,22 @@ async function buy() {
   if (!plan || buyDisabled.value) return
   orderBusy.value = true
   try {
+    // 钱包余额支付（钱包批 2）：同一事务扣款＋发订阅，成功直接去
+    // 「我的订阅」看结果，不走网关跳转。
+    if (payMethod.value === 'wallet') {
+      const res = await walletApi.paySubscription({
+        plan_id: plan.id,
+        coupon_code: appliedCoupon.value ? appliedCoupon.value : undefined,
+        idempotency_key: newWalletKey(),
+      })
+      toast.success(
+        res.replayed
+          ? '这次购买已经生效过了，没有重复扣款'
+          : `已开通「${res.plan_name}」，到期 ${res.end_date ? res.end_date.slice(0, 10) : ''}`,
+      )
+      await router.push('/game/account/member')
+      return
+    }
     const res = await paymentApi.createOrder({
       kind: 'subscription',
       item_id: plan.id,
@@ -509,16 +552,18 @@ function goBack() {
 async function loadAll() {
   loading.value = true
   loadError.value = false
-  const [pls, mth, mem, subs, cpCfg] = await Promise.allSettled([
+  const [pls, mth, mem, subs, cpCfg, wal] = await Promise.allSettled([
     paymentApi.plans(),
     paymentApi.methods(),
     memberApi.info(),
     subscriptionApi.getMine(),
     couponApi.config(),
+    walletApi.get(),
   ])
   if (pls.status === 'fulfilled') {
     plans.value = pls.value.plans || []
     plansEnabled.value = pls.value.enabled !== false
+    walletEnabled.value = pls.value.wallet_purchase_enabled === true
     isFreeRealm.value = pls.value.is_free === true || pls.value.access_mode === 'free'
     realmNote.value = pls.value.access_note || ''
   } else {
@@ -526,13 +571,27 @@ async function loadAll() {
   }
   if (mth.status === 'fulfilled') {
     methods.value = Array.isArray(mth.value) ? mth.value : []
-    methodsReady.value = methods.value.length > 0
     methodsFailed.value = false
-    if (methods.value.length > 0) payMethod.value = methods.value[0].id
+    // 默认支付方式：网关有可用的先用网关，否则用钱包余额
+    const gateway = methods.value.find((m) => m.enabled)
+    if (gateway) payMethod.value = gateway.id
+    else if (walletEnabled.value) payMethod.value = 'wallet'
+    else if (methods.value.length > 0) payMethod.value = methods.value[0].id
   } else {
     methods.value = []
-    methodsReady.value = false
     methodsFailed.value = true
+  }
+  // 钱包余额（失败不挡购买页：余额读不到时钱包项不显示）
+  if (wal.status === 'fulfilled') {
+    walletBalance.value = Number(wal.value.balance) || 0
+    if (wal.value.wallet_enabled === false) walletEnabled.value = false
+  } else {
+    walletEnabled.value = false
+  }
+  // 支付方式就绪 = 网关可用项或钱包项至少一个
+  methodsReady.value = payMethods.value.length > 0
+  if (payMethods.value.length > 0 && !payMethods.value.some((m) => m.id === payMethod.value)) {
+    payMethod.value = payMethods.value[0].id
   }
   if (mem.status === 'fulfilled') member.value = mem.value
   if (subs.status === 'fulfilled') mySubs.value = subs.value
