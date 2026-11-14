@@ -1,7 +1,6 @@
 <template>
   <UhdAccountLayout title="我的订阅">
-  <div class="v4-scope">
-  <div class="v4-page member-page">
+  <div class="uhd-shell-scope member-page">
     <div class="member-body">
       <!-- 订阅购买入口：购买流程在订阅页（单选卡＋时长＋优惠码＋吸底结算）；
            公益服不卖套餐，不显示入口 -->
@@ -52,7 +51,6 @@
         </div>
       </template>
     </Modal>
-  </div>
   </div>
   </UhdAccountLayout>
 </template>
@@ -217,7 +215,22 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.member-page { padding-bottom: 34px; }
+/* 页根（2026-11-14 统一壳单）：摘掉 .v4-scope/.v4-page 纸面嵌套后，
+   宽度与底距由本类自承——手机与原 .v4-page 同口径（430 居中＋坞距），
+   桌面随办事面容器 1000px；令牌由 .uhd-shell-scope（布局全局样式）供给，
+   与原壳内覆盖值一致。文字色在此定死，免继承链漂移。 */
+.member-page {
+  max-width: min(430px, 100%);
+  margin: 0 auto;
+  padding-bottom: calc(76px + env(safe-area-inset-bottom));
+  color: var(--uhd-l-text);
+}
+@media (min-width: 769px) {
+  .member-page {
+    max-width: var(--uhd-container-app);
+    padding-bottom: 34px;
+  }
+}
 /* 横向不再自加内边距：与布局 H1 左缘对齐（布局 main 已给 16/32px） */
 .member-body { padding-top: 4px; }
 /* 订阅购买入口：平面行（发丝线收尾），彩虹主按钮引到订阅页（购买流程在那边一页完成） */
@@ -248,7 +261,7 @@ onMounted(() => {
   color: var(--ink2);
 }
 /* 入口主钮 UHD 口径（2026-11-13 补齐七彩＋玻璃）：由满面彩虹填充改彩虹边框 +
-   淡彩粉彩底 + 玻璃栈，与全站主钮统一（本页 .v4-scope 恒浅色纸面） */
+   淡彩粉彩底 + 玻璃栈，与全站主钮统一（本页令牌由 .uhd-shell-scope 供给浅色值） */
 .member-sub-entry__btn {
   flex: 0 0 auto;
   padding: 10px 20px;
@@ -287,7 +300,7 @@ onMounted(() => {
   color: var(--ink2);
 }
 /* 主钮 UHD 口径（2026-11-13 补齐七彩＋玻璃）：彩虹边框 + 淡彩粉彩底 + 玻璃栈
-   （本页在 V4_PATHS 内被守卫钉浅色，只需浅色配方） */
+   （2026-11-14 摘钉浅色后外观跟随用户三态；本钮底色为不透明粉彩，配方两态共用） */
 .m-btn.primary {
   border: 1.5px solid transparent;
   background:
@@ -310,5 +323,5 @@ onMounted(() => {
   -webkit-backdrop-filter: none;
 }
 .m-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-/* 桌面宽随 UhdAccountLayout 办事面口径（.uhd-account .v4-page 1000px），本页不再自收 720 */
+/* 桌面宽随页根 .member-page 的 1000px 口径（见页头注释），本页不再自收 720 */
 </style>

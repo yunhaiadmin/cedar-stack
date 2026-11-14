@@ -369,13 +369,15 @@ router.beforeEach(async (to) => {
 // 例外（2026-11-13 UHD 1:1 跟进）：/game/account（概览）已自带主题跟随，
 // 不再钉 light——本集合摘除该路径后守卫对它走 restoreUserTheme；
 // /game/account/menu（我的）本就不在集合内，同样跟随用户外观。
-// /game/account/settings、/game/account/member 等其余账号页仍是 v4 纸面，继续钉 light。
+// 例外（2026-11-14 桌面统一壳单）：/game/account/settings、/game/account/member
+// 已摘掉 .v4-scope 纸面嵌套（页根改挂 .uhd-shell-scope 承接壳内令牌），
+// 不再是纸面页，一并摘除钉 light，外观跟随用户三态（与概览同口径）。
 // 例外（2026-11-13 二级页重做组 A）：/server 与 /game/operator 已换 UHD 布局，
 // 一并摘除——/server 页内自带三态主题跟随；/game/operator 在 UhdAccountLayout
 // 办事面壳内（壳为浅色办事面，与同壳的订阅页未钉 light 先例一致），不再由守卫钉 light。
 // 批 1+2 删除后：'/collections'（合集）路由已删，一并摘除。
 // #127 能量删除：'/game/ledger'（能量明细）路由已删，一并摘除。
-export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/want', '/store-requests', '/game/account/settings', '/game/account/member'])
+export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/want', '/store-requests'])
 // 参数路由前缀：条目详情是 /media/:id，afterEach 拿到的是实例路径
 // （如 /media/123），静态集合永远匹配不上，须按前缀另判；
 // /media/ 页是 v4 纸色页，必须强制 light，

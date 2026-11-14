@@ -1,4 +1,7 @@
 <template>
+  <!-- 桌面并壳（2026-11-14 统一壳单）：≥769px 经闸门进用户中心壳
+       （壳内隐藏移动返回顶栏）；手机原样 -->
+  <UhdAccountShellGate>
   <div class="sr-page">
     <header class="sr-topbar">
       <RouterLink to="/game/account/menu" class="sr-back" aria-label="返回我的">
@@ -106,6 +109,7 @@
       </template>
     </main>
   </div>
+  </UhdAccountShellGate>
 </template>
 
 <script setup lang="ts">
@@ -128,6 +132,7 @@ import {
   RotateCw,
 } from 'lucide-vue-next'
 import { subscriptionApi, type SubscriptionRecordRow } from '@/api'
+import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
 import './subscription-records.css'
 
 const records = ref<SubscriptionRecordRow[]>([])
