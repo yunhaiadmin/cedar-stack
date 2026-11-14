@@ -683,9 +683,6 @@ def test_governance_actions_do_not_grant_xp(db, client):
     )
     assert (reporter_row.member_xp or 0) == 0
     assert (reviewer_row.member_xp or 0) == 0
-    assert (
-        db.query(models.MemberXpLog).filter_by(user_id=reporter.id).count() == 0
-    )
 
 
 # ---------------- 权重表 ----------------

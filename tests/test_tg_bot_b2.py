@@ -29,7 +29,6 @@ def db():
     models.PointsLog.__table__.create(engine, checkfirst=True)
     models.ExchangeCode.__table__.create(engine, checkfirst=True)
     models.CodeRedemption.__table__.create(engine, checkfirst=True)
-    models.VitalityLog.__table__.create(engine, checkfirst=True)
     Session = sessionmaker(bind=engine)
     session = Session()
     yield session

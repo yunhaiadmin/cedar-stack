@@ -1,7 +1,7 @@
 """回归：2d7d996（安全修复 v2）误删的 StrmAssistant（神医助手）移植功能已恢复。
 
 2d7d996 基于旧底稿重新应用，把 #403/#405/#406/#407/#408 的一批功能整段覆盖掉了：
-IntroMarker 模型（表 emby_intro_markers，intro_marker.py 与路由还在 → 500）、
+IntroMarker 模型（表 emby_intro_markers；片头识别已随批 3 删除，本锁已随模型移除而失效）、
 演员 person_tmdb_id、TMDB 备选语言链 / 原语言海报、代理 URL 工具、拼音 lru_cache、
 worker 跨进程心跳、媒体信息 JSON 清理、缩略图 guid 净化 / 单视频超时等。
 这里逐项锁住，防止再被整文件覆盖时悄悄丢失。
@@ -49,15 +49,6 @@ def mem_db():
     finally:
         db.close()
         engine.dispose()
-
-
-# ---------- #3 片头片尾标记：模型 + 读写 ----------
-
-def test_intro_marker_model_and_table(mem_db):
-    _db, engine, _item = mem_db
-    assert em.IntroMarker.__tablename__ == "emby_intro_markers"
-    assert "IntroMarker" in em.__all__
-    assert "emby_intro_markers" in inspect(engine).get_table_names()
 
 
 # ---------- #9 演员增强：person_tmdb_id ----------

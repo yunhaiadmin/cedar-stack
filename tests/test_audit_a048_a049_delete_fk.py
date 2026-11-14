@@ -5,8 +5,8 @@
 删除路径漏删 FK 子表的问题全程测不出来。本文件用 FK-ON 的 SQLite 会话
 模拟 PG 强制语义，钉住：
 
-- admin_delete_item 删条目时 9 张 FK 子表全清、子集级联、合并副本改指；
-- delete_library 删库时 chunk 内 9 张 FK 子表全清；
+- admin_delete_item 删条目时 7 张 FK 子表全清、子集级联、合并副本改指；
+- delete_library 删库时 chunk 内 7 张 FK 子表全清；
 - scanner._purge_items 补齐 5 张漏删子表；
 - purge_expired 整批失败时逐行回落：毒单跳过记日志、其余行照常回收。
 
@@ -93,16 +93,12 @@ def _item(db, lib_id, item_type="series", name="剧甲", **kw):
 
 
 def _attach_all(db, item, user, mset):
-    """给 item 挂上 9 张 FK 子表各一行（SeriesFollow 用 series_item_id）。"""
+    """给 item 挂上 7 张 FK 子表各一行（SeriesFollow 用 series_item_id）。"""
     db.add(em.MediaStream(item_id=item.id, stream_type="Video", codec="h264"))
     db.add(em.UserMediaData(user_id=user.id, item_id=item.id))
     db.add(em.ItemFacet(item_id=item.id, kind="genre", value="剧情"))
     db.add(em.EmbyPerson(item_id=item.id, name="演员甲"))
     db.add(em.PlaybackSession(user_id=user.id, item_id=item.id))
-    db.add(em.IntroMarker(item_id=item.id, marker_type="intro",
-                          start_ms=0, end_ms=1000))
-    db.add(em.IntroSegment(item_id=item.id, segment_type="intro",
-                           start_ms=0, end_ms=1000))
     db.add(em.EmbyMediaSetMember(set_id=mset.id, item_id=item.id))
     db.add(em.SeriesFollow(user_id=user.id, series_item_id=item.id))
     db.commit()
@@ -121,10 +117,6 @@ def _child_counts(db, item_id):
                 em.EmbyPerson.item_id == item_id).count(),
             "session": db.query(em.PlaybackSession).filter(
                 em.PlaybackSession.item_id == item_id).count(),
-            "marker": db.query(em.IntroMarker).filter(
-                em.IntroMarker.item_id == item_id).count(),
-            "segment": db.query(em.IntroSegment).filter(
-                em.IntroSegment.item_id == item_id).count(),
             "member": db.query(em.EmbyMediaSetMember).filter(
                 em.EmbyMediaSetMember.item_id == item_id).count(),
             "follow": db.query(em.SeriesFollow).filter(

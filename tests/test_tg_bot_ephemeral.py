@@ -30,8 +30,6 @@ def db():
     models.WebUser.__table__.create(engine, checkfirst=True)
     models.TgBindCode.__table__.create(engine, checkfirst=True)
     models.SystemConfig.__table__.create(engine, checkfirst=True)
-    models.RedPacket.__table__.create(engine, checkfirst=True)
-    models.RedPacketClaim.__table__.create(engine, checkfirst=True)
     models.PointsLog.__table__.create(engine, checkfirst=True)
     # store.get_value 有进程级缓存，fixture 开头清掉防止用例间串味
     store.invalidate()

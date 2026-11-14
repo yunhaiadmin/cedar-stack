@@ -44,7 +44,6 @@ def db():
         models.SystemConfig.__table__,
         models.CheckinRecord.__table__,
         models.PointsLog.__table__,
-        models.VitalityLog.__table__,
     ):
         table.create(engine, checkfirst=True)
     session = sessionmaker(bind=engine)()

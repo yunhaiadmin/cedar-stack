@@ -1001,17 +1001,6 @@ def _auto_migrate():
         ("exchange_codes", [
             ("discount_pct", "INTEGER", "0"),
         ]),
-        # P1 审查修复：红包幂等键（防 TG poller 重放双花）。老库补列后为 NULL，
-        # 唯一约束只对将来带键的新包生效，存量包行为不变。
-        ("red_packets", [
-            ("idempotency_key", "VARCHAR(64)", "NULL"),
-        ]),
-        # 红包雨：系统出资的包不走用户扣款。老包补列后 funding=user，
-        # 行为和升级前一致；rain_id 为空表示不是红包雨。
-        ("red_packets", [
-            ("funding", "VARCHAR(16)", "'user'"),
-            ("rain_id", "INTEGER", "NULL"),
-        ]),
         # 系统告警（事件型规则）：AlertRule 表扩展事件类型/接收人/冷却列。
         # 老库补列后 event_type/recipients 为 NULL（= legacy 指标型规则，行为不变），
         # cooldown_sec 默认 3600（与模型 default 一致）。
@@ -1038,13 +1027,6 @@ def _auto_migrate():
             ("event_type", "VARCHAR(20)", "'system'"),
             ("library", "VARCHAR(200)", "NULL"),
             ("realm_id", "INTEGER", "NULL"),
-        ]),
-        # AI 配额跨午夜退款漂移修复（r51 观察项）：ai_refund_log 加 refunded 标记。
-        # 老库补列后 DEFAULT TRUE：升级前的行都是在退款时写入的「已退」标记，
-        # 语义与升级前完全一致（升级后重放旧 request_id 是空操作，不会再退一次）；
-        # 升级后 consume 在扣费时写 refunded=0 的归属行，退款时原子认领翻成 1。
-        ("ai_refund_log", [
-            ("refunded", "BOOLEAN", "1"),
         ]),
         # Drive 链接分享自动补开（2026-10-19 播放事故治本；r57 补上 #1127 漏掉的迁移）：
         # emby_items 加 drive_share_ok / drive_share_checked_at。老库补列后为
@@ -1211,12 +1193,6 @@ def _auto_migrate():
         ("emby_libraries", [
             ("direct_play", "BOOLEAN", "0"),
         ]),
-        # 自帧修复线（2026-11-04）：修复方法列。老库补列后为
-        # 'graft'（存量行全是借帧修复），与升级前行为一致（见
-        # emby_server.cms_self_frame）。
-        ("cms_graft_repairs", [
-            ("method", "VARCHAR(20)", "'graft'"),
-        ]),
         # 补资料轻量化 P5（2026-11-04）：字段补齐「已跑过一轮」独立标记列。
         # 旧口径复用 enrich_priority=-10 当标记，与 CMS 入库优先级撞值。
         # 老库补列后为 0（False）= 未补过；存量误终态行由 janitor 回捞巡检
@@ -1310,12 +1286,9 @@ def _auto_migrate():
         _backfill_filename_meta()
     _ensure_legacy_indexes(existing_tables)
     _ensure_lottery_g1_tables(existing_tables)
-    _migrate_redpacket_claim_unique(existing_tables)
-    _migrate_redpacket_idempotency_unique(existing_tables)
     _migrate_upstream_source_checks(existing_tables)
     _migrate_user_storage_binding_provider_check(existing_tables)
     _migrate_scan_run_single_running(existing_tables)
-    _migrate_panel_unseal_fk(existing_tables)
     _migrate_exchange_discount_credit_fk(existing_tables)
     _relax_mount_credential_mount_id(existing_tables)
     _resurrect_soft_deleted(existing_tables)
@@ -1853,76 +1826,6 @@ def _ensure_legacy_indexes(existing_tables: set) -> None:
         _ensure_index(existing_tables, *spec)
 
 
-def _migrate_redpacket_claim_unique(existing_tables: set) -> None:
-    """red_packet_claims 加唯一约束 (packet_id, user_id)（幂等）
-
-    并发重复领取的数据库级兜底：同一用户对同一红包只能有一条领取记录。
-    先去重（同一对只保留 id 最早的一条），再加约束；
-    SQLite 由 create_all 建表时自带约束，此处跳过。
-    """
-    from sqlalchemy import inspect, text
-
-    if "red_packet_claims" not in existing_tables:
-        return
-    inspector = inspect(engine)
-    existing = {c["name"] for c in inspector.get_unique_constraints("red_packet_claims")}
-    # 唯一索引与唯一约束同名也会冲突，一并检查
-    existing |= {ix["name"] for ix in inspector.get_indexes("red_packet_claims")
-                 if ix.get("unique")}
-    if "uq_rpc_packet_user" in existing:
-        return
-    dialect = engine.dialect.name
-    if dialect not in ("postgresql", "mysql"):
-        return
-    with engine.begin() as conn:
-        # 去重：同一 (packet_id, user_id) 只保留最早一条（其余是历史竞态脏数据，
-        # 积分已在 PointsLog 落账，删领取行不影响余额）
-        if dialect == "postgresql":
-            conn.execute(text(
-                "DELETE FROM red_packet_claims a USING red_packet_claims b "
-                "WHERE a.id > b.id AND a.packet_id = b.packet_id AND a.user_id = b.user_id"
-            ))
-        else:
-            conn.execute(text(
-                "DELETE a FROM red_packet_claims a "
-                "JOIN red_packet_claims b ON a.packet_id = b.packet_id "
-                "AND a.user_id = b.user_id AND a.id > b.id"
-            ))
-        conn.execute(text(
-            "ALTER TABLE red_packet_claims ADD CONSTRAINT uq_rpc_packet_user "
-            "UNIQUE (packet_id, user_id)"
-        ))
-    logger.info("  🔧 已迁移: red_packet_claims 唯一约束 (packet_id, user_id)")
-
-
-def _migrate_redpacket_idempotency_unique(existing_tables: set) -> None:
-    """red_packets 加唯一约束 idempotency_key（幂等，防 TG 重放双花）
-
-    列由 _auto_migrate 补齐后，这里补唯一约束。SQLite 由 create_all 建表时
-    自带约束，此处跳过；PG/MySQL 显式加。NULL 值不参与唯一性（各方言一致），
-    老包 idempotency_key 全 NULL 不会冲突。
-    """
-    from sqlalchemy import inspect, text
-
-    if "red_packets" not in existing_tables:
-        return
-    inspector = inspect(engine)
-    existing = {c["name"] for c in inspector.get_unique_constraints("red_packets")}
-    existing |= {ix["name"] for ix in inspector.get_indexes("red_packets")
-                 if ix.get("unique")}
-    if "uq_redpacket_idempotency" in existing:
-        return
-    dialect = engine.dialect.name
-    if dialect not in ("postgresql", "mysql"):
-        return
-    with engine.begin() as conn:
-        conn.execute(text(
-            "ALTER TABLE red_packets ADD CONSTRAINT uq_redpacket_idempotency "
-            "UNIQUE (idempotency_key)"
-        ))
-    logger.info("  🔧 已迁移: red_packets 唯一约束 (idempotency_key)")
-
-
 def _migrate_scan_run_single_running(existing_tables: set) -> None:
     """emby_scan_runs 同库只许一条 running 流水（跨进程防重，FMBY 学习批一 #7）
 
@@ -2000,43 +1903,6 @@ def _migrate_scan_run_single_running(existing_tables: set) -> None:
         logger.info("  🔧 已迁移: emby_scan_runs 同库单运行唯一索引 (library_id WHERE status='running')")
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"  ⚠️ emby_scan_runs 同库单运行唯一索引创建跳过: {exc}")
-
-
-def _migrate_panel_unseal_fk(existing_tables: set) -> None:
-    """panel_unseals.item_id 加外键 → emby_items.id（幂等，r20 P3）
-
-    模型侧已声明 ForeignKey('emby_items.id', ondelete='CASCADE')：新装库由
-    create_all 直接建约束；老库（panel_unseals 已存在）走这里补。
-    SQLite 跳过（create_all 建表时自带约束）；PG/MySQL 显式加。
-    ondelete=CASCADE：条目被物理回收（purge_expired）时拆封记录一并消失——
-    unseal 只按 user_id 查、只在条目存在时有意义，级联无副作用。
-    补约束前先清孤儿行（item_id 在 emby_items 里不存在的），否则 ADD CONSTRAINT 失败。
-    """
-    from sqlalchemy import inspect, text
-
-    if "panel_unseals" not in existing_tables or "emby_items" not in existing_tables:
-        return
-    inspector = inspect(engine)
-    existing = {fk.get("name") for fk in inspector.get_foreign_keys("panel_unseals")}
-    existing |= {fk.get("name") for fk in inspector.get_foreign_keys("panel_unseals")
-                 if (fk.get("constrained_columns") or []) == ["item_id"]}
-    if "fk_panel_unseal_item" in existing:
-        return
-    dialect = engine.dialect.name
-    if dialect not in ("postgresql", "mysql"):
-        return
-    with engine.begin() as conn:
-        # 清孤儿行：item_id 指向已不存在的条目
-        orphan = conn.execute(text(
-            "DELETE FROM panel_unseals WHERE item_id NOT IN (SELECT id FROM emby_items)"
-        )).rowcount
-        if orphan:
-            logger.info(f"  🧹 panel_unseals 孤儿行已清理: {orphan}")
-        conn.execute(text(
-            "ALTER TABLE panel_unseals ADD CONSTRAINT fk_panel_unseal_item "
-            "FOREIGN KEY (item_id) REFERENCES emby_items(id) ON DELETE CASCADE"
-        ))
-    logger.info("  🔧 已迁移: panel_unseals 外键 item_id → emby_items.id (CASCADE)")
 
 
 def _migrate_exchange_discount_credit_fk(existing_tables: set) -> None:

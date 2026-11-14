@@ -61,8 +61,6 @@ def seed():
         ids = [r[0] for r in db.query(em.MediaItem.id)
                .filter(em.MediaItem.library_id == stale.id).all()]
         if ids:
-            db.query(em.IntroMarker).filter(
-                em.IntroMarker.item_id.in_(ids)).delete(synchronize_session=False)
             db.query(em.UserMediaData).filter(
                 em.UserMediaData.item_id.in_(ids)).delete(synchronize_session=False)
             db.query(em.ItemFacet).filter(
@@ -107,9 +105,6 @@ def seed():
     ep = mk("episode", "缺口测试剧 S01E01", series_id=series.id,
             parent_id=season.id, season_number=1, episode_number=1,
             file_path="/tmp/none/gaps-e01.mp4", container="mp4")
-    marker = em.IntroMarker(item_id=ep.id, marker_type="intro",
-                            start_ms=1000, end_ms=61000, source="manual")
-    db.add(marker)
     db.commit()
     # facets 关联表就绪状态决定 _filters_payload 走索引还是文本列回退；
     # 文本列回退同样能拿到 tags/genres，这里只需保证 Items/Filters 可用。
@@ -129,8 +124,6 @@ def seed():
             ids = [r[0] for r in db.query(em.MediaItem.id)
                    .filter(em.MediaItem.library_id == row.id).all()]
             if ids:
-                db.query(em.IntroMarker).filter(
-                    em.IntroMarker.item_id.in_(ids)).delete(synchronize_session=False)
                 db.query(em.UserMediaData).filter(
                     em.UserMediaData.item_id.in_(ids)).delete(synchronize_session=False)
                 db.query(em.ItemFacet).filter(

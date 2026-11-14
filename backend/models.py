@@ -771,109 +771,6 @@ class PointsLog(Base):
     user = relationship("WebUser")
 
 
-class BlindboxDraw(Base):
-    """盲盒抽盒记录（双服通用新功能，2026-11-11 用户亲定）
-
-    每抽必落账，是抽盒的唯一事实账：扣分/定奖/发放同事务完成，
-    发放失败整抽回滚、不留 charged 记录，只补一条 status=failed、
-    charged=False 的审计行。charged=True 且未发放（delivery_failed）
-    的记录可经 blindbox.redeliver 补发（不重复扣分、幂等）。
-
-    库存（白名单总量）、资格类奖品每日预算、每人每日消费上限的
-    计数全部从本表聚合，不另建计数表。prize_params / delivery 存
-    发放参数与结果快照（码面、到期时间等），便于对账与卡包展示。
-    """
-    __tablename__ = 'blindbox_draws'
-
-    __table_args__ = (
-        Index('idx_blindbox_user_time', 'user_id', 'created_at'),
-        Index('idx_blindbox_realm_time', 'realm_id', 'created_at'),
-        Index('idx_blindbox_status', 'status'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    draw_key = Column(String(64), nullable=False, unique=True, index=True)
-    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False, index=True)
-    realm_id = Column(Integer, index=True)  # 抽盒发生的服（server_realms.id）
-    tier_key = Column(String(64))
-    tier_name = Column(String(120))
-    price = Column(Integer, default=0)  # 本抽售价（积分）
-    prize_kind = Column(String(30))  # points/vitality/access_days/reg_code/sub_code/whitelist
-    prize_params = Column(JSON, default=dict)  # 奖品参数（amount/days 等）
-    prize_value = Column(Integer, default=0)  # 发放时按估值表折算的积分等值
-    fallback_from = Column(String(30))  # 非空=原奖品因库存/预算/无订阅改发的兜底来源
-    status = Column(String(20), default='delivered', index=True)  # delivered/delivery_failed/failed
-    charged = Column(Boolean, default=False)  # 是否已扣售价
-    delivery = Column(JSON, default=dict)  # 发放结果快照（码面/新到期/余额等）
-    error = Column(String(500))
-    created_at = Column(DateTime, default=datetime.now, index=True)
-    delivered_at = Column(DateTime)
-
-    user = relationship("WebUser")
-
-
-class PointsGiftBatch(Base):
-    """全员赠送能量批次（管理端能力，2026-10-31）
-
-    把「给全体用户送能量」从一次性手工数据操作做成正式能力：管理员建批时
-    只落参数快照（每人金额 amount、人群范围 scope、备注 reason）与预计人数
-    target_count，真正的发放在 worker 里分块执行（见 backend/gift_all.py），
-    端点请求里绝不同步遍历全站发分。
-
-    - scope：all＝现存全部 web_users（WebUser 无软删列，注销即行不存在；
-      is_active 是禁用态、与注销不同口径，不在此排除）；welfare＝当前持有
-      有效公益资格者（is_welfare 且 welfare_expires_at 为空或未到期，
-      与 welfare_expiry 的现行口径一致）。
-    - status：pending 待发放 / running 发放中 / done 已完成 / failed 中途
-      失败（可被 worker 重新认领续跑，已发的不重发，靠 PointsGiftGrant
-      的唯一约束兜底）。
-    """
-    __tablename__ = 'points_gift_batches'
-
-    __table_args__ = (
-        Index('idx_gift_batch_status', 'status'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    amount = Column(Integer, nullable=False)  # 每人赠送量（正整数，建批时校验）
-    scope = Column(String(16), nullable=False, default='all')  # all / welfare
-    reason = Column(String(255), nullable=False, default='')  # 进每笔台账的说明
-    target_count = Column(Integer, nullable=False, default=0)  # 建批时预计人数（快照）
-    granted_count = Column(Integer, nullable=False, default=0)  # 已发人数（执行器维护）
-    status = Column(String(16), nullable=False, default='pending')
-    created_by = Column(Integer, ForeignKey('web_users.id'), nullable=True)  # 创建管理员
-    last_error = Column(String(255), nullable=True)  # 最近一次失败原因（failed 时）
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-    finished_at = Column(DateTime, nullable=True)
-
-    creator = relationship("WebUser")
-
-
-class PointsGiftGrant(Base):
-    """全员赠送发放明细：一行＝一个用户在一个批次里已到账。
-
-    (batch_id, user_id) 唯一约束是整条链的幂等锚点：执行器先落明细再随同
-    一事务写余额与台账，撞唯一约束即说明已发过、跳过——重跑/续跑/双实例
-    都不会重复发分。
-    """
-    __tablename__ = 'points_gift_grants'
-
-    __table_args__ = (
-        UniqueConstraint('batch_id', 'user_id', name='uq_gift_grant_batch_user'),
-        Index('idx_gift_grant_batch', 'batch_id'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    batch_id = Column(Integer, ForeignKey('points_gift_batches.id'), nullable=False)
-    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
-    points_log_id = Column(Integer, ForeignKey('points_logs.id'), nullable=True)
-    created_at = Column(DateTime, default=datetime.now)
-
-    batch = relationship("PointsGiftBatch")
-    user = relationship("WebUser")
-
-
 class RebateReversalDebt(Base):
     """返利撤回欠账：订单退款时邀请人余额不足、返利撤回失败，留下持久化欠账。
 
@@ -897,54 +794,6 @@ class RebateReversalDebt(Base):
     status = Column(String(16), default='pending')  # pending / recovered / waived
     created_at = Column(DateTime, default=datetime.now)
     resolved_at = Column(DateTime, nullable=True)  # recovered/waived 的时间
-
-    user = relationship("WebUser")
-
-
-class VitalityLog(Base):
-    """活力值变动流水（C1 竞品借鉴）：每日扣减/签到恢复/积分续活"""
-    __tablename__ = 'vitality_logs'
-
-    __table_args__ = (
-        Index('idx_vitality_user', 'user_id'),
-        Index('idx_vitality_time', 'created_at'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False, index=True)
-    delta = Column(Integer, nullable=False)  # 正数恢复 / 负数扣减
-    balance_after = Column(Integer, default=0)  # 变动后活力值
-    reason = Column(String(30), default='system')  # daily_deduct, checkin, watch_reward, recharge, admin_grant, admin_deduct, archive_clamp
-    created_at = Column(DateTime, default=datetime.now)
-
-    user = relationship("WebUser")
-
-
-class WatchPointsDaily(Base):
-    """观影能量每日累计（货币再设计第一期，2026-11-01）
-
-    观影能量按「当日累计观影分钟」分档发放（首看/一档/二档），累计量
-    无法从 UserMediaData 推出（那是单条目本轮最远点，看完即清零），故
-    每人每天一行落库累计：total_minutes 是当日已计入的累计分钟，
-    item_baselines 是 {item_id: 已计入基线分钟} 的 JSON——同条目重复
-    停播只计超出基线的增量，看完（90% 口径）后基线清零、重看重新计。
-    发了哪几档不存这里：以 points_logs 里 type='watch_points'、
-    ref_id='watch_points:<day>:<tier>' 的流水为唯一凭证（审计同源）。
-    day 为 Asia/Shanghai 自然日（YYYY-MM-DD），与成就日界口径一致。
-    """
-    __tablename__ = 'watch_points_daily'
-
-    __table_args__ = (
-        UniqueConstraint('user_id', 'day', name='uq_watch_points_daily_user_day'),
-        Index('idx_watch_points_daily_day', 'day'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
-    day = Column(String(10), nullable=False)  # Asia/Shanghai 日期 YYYY-MM-DD
-    total_minutes = Column(Float, default=0, nullable=False)  # 当日已计入累计分钟
-    item_baselines = Column(Text, default='{}')  # JSON {item_id: 已计入基线分钟}
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     user = relationship("WebUser")
 
@@ -1450,38 +1299,6 @@ class AiUsage(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
-class AiRefundLog(Base):
-    """AI 配额回滚幂等账本（r48 遗留 ①）
-
-    上游调用失败时要退回预扣的配额。AiUsage 是 (user_id, day) 聚合计数行，
-    没有请求级锚点，同一请求被客户端重试/服务端重复走失败分支时会双退——
-    所以每个回滚请求带 request_id，这里用唯一约束做「已退」标记：
-    同一 request_id 第二次 refund 是空操作。
-    新表由 create_all 建（与 ai_usage 等表同口径）。
-
-    跨午夜漂移修复：``day`` 记录的是**扣费归属日**（consume 时写入），退款
-    按该日退回，不按退款时刻的当天退。``refunded`` 为 0 表示扣费时落的归属行
-    （尚未退），1 表示已退；退款用「refunded=0 → 1」的原子认领（条件 UPDATE
-    看 rowcount）防并发双退。
-    老数据行（升级前在退款时写入的、实质是「已退」标记）在 _auto_migrate 里
-    以 DEFAULT TRUE 补列——语义与升级前完全一致（升级后重放旧 request_id
-    是空操作，不会再退一次）。
-    """
-    __tablename__ = 'ai_refund_log'
-
-    __table_args__ = (
-        UniqueConstraint('request_id', name='uq_ai_refund_log_request_id'),
-        Index('idx_ai_refund_log_day', 'day'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
-    day = Column(String(10), nullable=False)   # 扣费归属日（Asia/Shanghai 日界，与 AiUsage 同口径）
-    request_id = Column(String(64), nullable=False)  # assistant_ask 入口生成的 uuid4 hex
-    refunded = Column(Boolean, default=False, nullable=False)  # 0=扣费归属行未退，1=已退
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
-
-
 class InvitationCode(Base):
     """邀请码表"""
     __tablename__ = 'invitation_codes'
@@ -1506,8 +1323,6 @@ class InvitationCode(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     user = relationship("WebUser")
-
-
 
 
 class WelfareGrantLog(Base):
@@ -2190,195 +2005,6 @@ class LotteryBlacklist(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
-class RedPacket(Base):
-    """红包表（积分红包）"""
-    __tablename__ = 'red_packets'
-
-    __table_args__ = (
-        Index('idx_rp_sender', 'sender_id'),
-        Index('idx_rp_time', 'created_at'),
-        # P1 修复（审查）：TG poller at-least-once 重放 /redpacket 会重复建包扣款。
-        # 用 TG update_id 做幂等键，唯一约束保证重放只返回已存在的包。
-        UniqueConstraint('idempotency_key', name='uq_redpacket_idempotency'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    sender_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
-    total_amount = Column(Integer, nullable=False)  # 总积分
-    total_count = Column(Integer, nullable=False)  # 总个数
-    remaining_amount = Column(Integer, nullable=False)
-    remaining_count = Column(Integer, nullable=False)
-    expires_at = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, default=datetime.now)
-    # 幂等键（如 tg:<update_id>）；非 TG 渠道调用时可为空
-    idempotency_key = Column(String(64), nullable=True)
-    # user=用户出资（默认，老包升级后也是这个）；system=红包雨系统出资
-    funding = Column(String(16), nullable=False, default='user', server_default='user')
-    # 红包雨场次；普通红包为空。不设外键，避免和红包雨表互相引用。
-    rain_id = Column(Integer, nullable=True)
-
-    sender = relationship("WebUser")
-
-
-class RedPacketClaim(Base):
-    """红包领取记录表"""
-    __tablename__ = 'red_packet_claims'
-
-    __table_args__ = (
-        Index('idx_rpc_packet', 'packet_id'),
-        Index('idx_rpc_user', 'user_id'),
-        # 并发重复领取的数据库级兜底：同一用户对同一红包只能有一条领取记录
-        UniqueConstraint('packet_id', 'user_id', name='uq_rpc_packet_user'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    packet_id = Column(Integer, ForeignKey('red_packets.id'), nullable=False)
-    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
-    amount = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=datetime.now)
-
-    user = relationship("WebUser")
-
-
-class SlotsPool(Base):
-    """老虎机头奖池（单行表，id 恒为 1）。
-
-    余额必须事务安全：begin/settle 都在行锁内改这行，绝不放 SystemConfig。
-    抽水按百分之一能量精确累计：整数能量在 balance，余数在
-    remainder_hundredths（每注抽水 bet×pct 个百分之一，可跨局攒满 1 整数）。
-    """
-    __tablename__ = 'slots_pool'
-
-    id = Column(Integer, primary_key=True)
-    balance = Column(Integer, nullable=False, default=0)
-    remainder_hundredths = Column(Integer, nullable=False, default=0)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-
-
-class SlotsSpin(Base):
-    """老虎机对局（一行一局）。
-
-    spin_key = Telegram callback_query.id（"tgcq:<id>"），唯一约束 +
-    应用层先查实现下注→结算全程幂等：重复回调只认这一行，不重复扣款。
-    结算依据是 TG 原生 sendDice 返回的 dice_value（1-64）。
-    """
-    __tablename__ = 'slots_spins'
-
-    __table_args__ = (
-        UniqueConstraint('spin_key', name='uq_slots_spin_key'),
-        Index('idx_slots_spin_user_status', 'user_id', 'status'),
-        Index('idx_slots_spin_created', 'created_at'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    spin_key = Column(String(64), nullable=False)
-    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
-    bet = Column(Integer, nullable=False)
-    dice_value = Column(Integer, nullable=True)
-    reels = Column(String(32), nullable=True)  # 三轴符号 key，逗号分隔
-    base_payout = Column(Integer, nullable=False, default=0)
-    pool_payout = Column(Integer, nullable=False, default=0)
-    rake_hundredths = Column(Integer, nullable=False, default=0)
-    status = Column(String(16), nullable=False, default='pending')  # pending/settled/failed
-    created_at = Column(DateTime, default=datetime.now)
-    settled_at = Column(DateTime, nullable=True)
-
-
-class RedPacketRain(Base):
-    """一场红包雨。系统出钱，不扣管理员。
-
-    底下挂一个普通红包（packet_id），份数按间隔放开，抢包仍走
-    welfare_redpacket.claim_packet。一个群同时只一场，靠
-    red_packet_rain_live 的主键挡住并发。
-    """
-    __tablename__ = 'red_packet_rains'
-
-    __table_args__ = (
-        UniqueConstraint('idempotency_key', name='uq_rain_idempotency'),
-        Index('idx_rain_chat_status', 'chat_id', 'status'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    chat_id = Column(BigInteger, nullable=False)
-    message_id = Column(BigInteger, nullable=True)
-    packet_id = Column(Integer, ForeignKey('red_packets.id'), nullable=False)
-    total_amount = Column(Integer, nullable=False)
-    packet_count = Column(Integer, nullable=False)
-    interval_sec = Column(Integer, nullable=False, default=3)
-    status = Column(String(16), nullable=False, default='running')
-    idempotency_key = Column(String(64), nullable=True)
-    created_by = Column(Integer, ForeignKey('web_users.id'), nullable=True)
-    panel_finalized = Column(Boolean, nullable=False, default=False, server_default='0')
-    shown_released = Column(Integer, nullable=False, default=0)
-    created_at = Column(DateTime, default=datetime.now)
-    started_at = Column(DateTime, default=datetime.now)
-    last_panel_edit_at = Column(DateTime, nullable=True)
-
-
-class RedPacketRainLive(Base):
-    """一个群同时只一场进行中的红包雨。"""
-    __tablename__ = 'red_packet_rain_live'
-
-    chat_id = Column(BigInteger, primary_key=True)
-    rain_id = Column(Integer, ForeignKey('red_packet_rains.id'), nullable=False)
-
-
-class Duel(Base):
-    """群内骰子对决（一行一局）。
-
-    发起时冻结发起人押注；第一个应战的人押同额。结果只认 Telegram
-    sendDice 🎲 的 dice.value（1-6）。idempotency_key（tg:<update_id>）
-    与 accept_key（tgcq:<callback id>）各自唯一，poller 重放不双花。
-    终态：settled 分出胜负 / tie 平局各退 / refunded 超时或上限退回 /
-    failed 掷骰失败退回。
-    """
-    __tablename__ = 'duels'
-
-    __table_args__ = (
-        UniqueConstraint('idempotency_key', name='uq_duel_idempotency'),
-        UniqueConstraint('accept_key', name='uq_duel_accept_key'),
-        Index('idx_duel_chat_status', 'chat_id', 'status'),
-        Index('idx_duel_status_expires', 'status', 'expires_at'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    chat_id = Column(BigInteger, nullable=False)
-    message_id = Column(BigInteger, nullable=True)
-    initiator_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
-    challenger_id = Column(Integer, ForeignKey('web_users.id'), nullable=True)
-    stake = Column(Integer, nullable=False)
-    rake_pct = Column(Integer, nullable=False, default=5)
-    status = Column(String(16), nullable=False, default='open')
-    initiator_dice = Column(Integer, nullable=True)
-    challenger_dice = Column(Integer, nullable=True)
-    winner_id = Column(Integer, ForeignKey('web_users.id'), nullable=True)
-    rake = Column(Integer, nullable=False, default=0)
-    prize = Column(Integer, nullable=False, default=0)
-    idempotency_key = Column(String(64), nullable=True)
-    accept_key = Column(String(64), nullable=True)
-    panel_finalized = Column(Boolean, nullable=False, default=False, server_default='0')
-    created_at = Column(DateTime, default=datetime.now)
-    expires_at = Column(DateTime, nullable=False)
-    accepted_at = Column(DateTime, nullable=True)
-    settled_at = Column(DateTime, nullable=True)
-    last_panel_edit_at = Column(DateTime, nullable=True)
-
-    initiator = relationship('WebUser', foreign_keys=[initiator_id])
-    challenger = relationship('WebUser', foreign_keys=[challenger_id])
-
-
-class DuelLive(Base):
-    """一个群同时只留一局进行中的对决（chat_id 主键）。
-
-    开局插入、终态删除。不依赖部分唯一索引，SQLite / PostgreSQL / MySQL
-    都能靠主键冲突挡住并发第二局。
-    """
-    __tablename__ = 'duel_live'
-
-    chat_id = Column(BigInteger, primary_key=True)
-    duel_id = Column(Integer, ForeignKey('duels.id'), nullable=False)
-
-
 class Review(Base):
     """影评表"""
     __tablename__ = 'reviews'
@@ -2397,7 +2023,6 @@ class Review(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     user = relationship("WebUser")
-
 
 
 class MemberLevel(Base):
@@ -2423,30 +2048,6 @@ class MemberLevel(Base):
     is_active = Column(Boolean, default=True, nullable=False, server_default="1")
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-
-
-class MemberXpLog(Base):
-    """会员经验流水表（P1 统一货币体系）
-
-    经验来源：真实充值（订单回调成功）、有效邀请（＋10／人）、Step 0 公益原生经验
-    （观影 watch／签到 checkin／成就 achievement，见 member_level.py）；
-    兑换码／红包不加经验。
-    """
-    __tablename__ = 'member_xp_log'
-
-    __table_args__ = (
-        Index('idx_xplog_user', 'user_id'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False, index=True)
-    xp_delta = Column(Integer, nullable=False)  # 经验变动（正数=发放，负数=退款回滚）
-    xp_after = Column(Integer, nullable=False)  # 变动后经验
-    source = Column(String(20), nullable=False)  # recharge=充值 / invite=有效邀请 / subscription=订阅购买
-    ref_id = Column(String(64), nullable=True)  # 关联订单号等
-    created_at = Column(DateTime, default=datetime.now)
-
-    user = relationship("WebUser")
 
 
 class GovernanceAuditLog(Base):
@@ -2586,34 +2187,6 @@ class TgProactiveNotice(Base):
     updated_at = Column(DateTime, default=datetime.now)
 
 
-class ChatPointsLog(Base):
-    """群发言积分明细表（M1）
-
-    bot 统计 TG 群有效发言的计分明细，同时作为防刷依据：
-    - 唯一约束 (telegram_id, chat_id, message_id) 保证幂等（offset 重放/重启不重复计分）
-    - 索引 (web_user_id, points_date) 供每日上限查询
-    - 索引 (telegram_id, created_at) 供防刷窗口查询
-    积分本身进 WebUser.points（单一货币），流水见 PointsLog(type='chat')。
-    """
-    __tablename__ = 'chat_points_log'
-
-    __table_args__ = (
-        UniqueConstraint('telegram_id', 'chat_id', 'message_id', name='uq_chat_points_msg'),
-        Index('idx_chat_points_user_date', 'web_user_id', 'points_date'),
-        Index('idx_chat_points_tg_time', 'telegram_id', 'created_at'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    web_user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False, index=True)
-    telegram_id = Column(BigInteger, nullable=False)
-    chat_id = Column(BigInteger, nullable=False)
-    message_id = Column(BigInteger, nullable=False)
-    points = Column(Integer, nullable=False, default=1)
-    points_date = Column(Date, nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
-
-
-
 class RevokedJwt(Base):
     """JWT 吊销表（P2 修复：jti 生成了但从未校验/存储，无吊销能力）。
 
@@ -2719,24 +2292,6 @@ class UserPlatformApiKey(Base):
 
 
 # ==================== v4 探险家日志面板 ====================
-
-class PanelUnseal(Base):
-    """面板盲盒拆封记录：用户拆了哪件今日封存（幂等，UNIQUE 约束）"""
-    __tablename__ = 'panel_unseals'
-
-    __table_args__ = (
-        UniqueConstraint('user_id', 'item_id', name='uq_panel_unseal_user_item'),
-        Index('idx_panel_unseal_user', 'user_id'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
-    # emby_items.id（MediaItem 与本表同属 backend.database.Base 同一 metadata，FK 可解析）。
-    # ondelete=CASCADE：条目被物理回收（purge_expired）时拆封记录一并消失——记录只在条目
-    # 存在时有意义（标记今日 5 件封存是否已拆），且 unseal 只按 user_id 查，级联无副作用。
-    item_id = Column(Integer, ForeignKey('emby_items.id', ondelete='CASCADE'), nullable=False)
-    unsealed_at = Column(DateTime, default=datetime.now, nullable=False)
-
 
 class PanelAchievementDef(Base):
     """成就定义（启动时 seed，规则文本不写死在代码里）"""
