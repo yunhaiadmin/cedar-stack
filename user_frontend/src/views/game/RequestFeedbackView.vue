@@ -74,10 +74,8 @@
           <SeekCreateForm
             :my-requests="myRequests"
             :hot-requests="hotRequests"
-            :wanted-ids="wantedIds"
             :prefill="prefillQ"
             @submitted="onSeekSubmitted"
-            @wanted="onWanted"
           />
           <p v-if="monthlyRemaining != null" class="rf-quota">本月还可求片 {{ monthlyRemaining }} 次</p>
           <NoticeCards kind="seek" />
@@ -326,7 +324,7 @@ import NoticeCards from '@/components/requests/NoticeCards.vue'
 import SeekCreateForm from '@/components/requests/SeekCreateForm.vue'
 import TicketThread from '@/components/requests/TicketThread.vue'
 import {
-  mediaSeekApi, storeApi, ticketApi,
+  mediaSeekApi, ticketApi,
   type HotMediaSeekRequest, type MediaSeekQuota, type MediaSeekRequest, type PlazaGroup, type Ticket,
 } from '@/api'
 import { imageAuthUrl } from '@/api/emby'
@@ -427,7 +425,6 @@ const hotRequests = ref<HotMediaSeekRequest[]>([])
 type QuotaExt = MediaSeekQuota & { monthly_remaining?: number; monthly_limit?: number; monthly_used?: number }
 const myQuota = ref<QuotaExt | null>(null)
 const monthlyRemaining = computed(() => myQuota.value?.monthly_remaining ?? null)
-const wantedIds = ref(new Set<string>())
 
 const mineLoading = ref(true)
 const mineError = ref('')
@@ -691,20 +688,6 @@ function goMediaDetail(g: PlazaGroup): void {
 watch([plazaStateFilter, plazaTypeFilter], () => {
   void loadPlaza()
 })
-/* 已想看集合（只为已在库候选卡的「想看/已想看」状态服务，不渲染想看列表） */
-async function loadWantIds(): Promise<void> {
-  try {
-    const res = await storeApi.getWants()
-    wantedIds.value = new Set(
-      (res.items || [])
-        .filter((w) => w.state !== 'failed' && w.state !== 'missing_source')
-        .map((w) => w.tmdb_id),
-    )
-  } catch { /* 商店未开启/未登录会员时不显示已想看态 */ }
-}
-function onWanted(tmdbId: string): void {
-  wantedIds.value = new Set(wantedIds.value).add(tmdbId)
-}
 function highlight(key: string): void {
   justAddedKey.value = key
   window.setTimeout(() => { if (justAddedKey.value === key) justAddedKey.value = null }, 1700)
@@ -775,7 +758,6 @@ onMounted(() => {
   void loadMine()
   void loadHot()
   void loadPlaza()
-  void loadWantIds()
 })
 </script>
 

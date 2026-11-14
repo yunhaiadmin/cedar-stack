@@ -224,7 +224,10 @@ def _spec_defaults(slug: str) -> list[tuple[str, str, str]]:
 
 
 def _spec_field_defaults(slug: str) -> list[tuple[str, str, str]]:
-    """ai / branding / captcha 三个模块自带 _FIELD_DEFAULTS（算法是 (default or "")），直接引用。"""
+    """branding / captcha 两个模块自带 _FIELD_DEFAULTS（算法是 (default or "")），直接引用。
+
+    2026-11-14 批 4 删 AI 整链后 ai 不再参与：backend/integrations/ai.py
+    已删，其 9 个 ai_* 键不再注册为系统配置默认值。"""
     mod = importlib.import_module(f"backend.integrations.{slug}")
     spec = mod.SPEC
     title = spec.get("title") or slug
@@ -236,10 +239,11 @@ def collect_system_config_defaults() -> list[tuple[str, str, str]]:
     """汇总代码里定义的所有 SystemConfig (key, 默认值, 说明)。"""
     items: list[tuple[str, str, str]] = []
 
-    # 1. 能力中心（proxy / mail / telegram / geoip 走 SPEC；ai / branding / captcha 有 _FIELD_DEFAULTS）
+    # 1. 能力中心（proxy / mail / telegram / geoip 走 SPEC；branding / captcha 有 _FIELD_DEFAULTS；
+    #    ai 已随批 4 删除，不再注册）
     for slug in ("proxy", "mail", "telegram", "geoip"):
         items.extend(_spec_defaults(slug))
-    for slug in ("ai", "branding", "captcha"):
+    for slug in ("branding", "captcha"):
         items.extend(_spec_field_defaults(slug))
 
     # 2. 定时扫描

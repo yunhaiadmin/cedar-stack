@@ -1,6 +1,7 @@
 """想看商店求片 R1：登记 + 榜单 + 入库联动（路由层）。
 
-总闸与会员闸复用商店骨架（``backend.api.store``）：
+总闸与会员闸原在商店骨架（已删），商店删除后迁入本模块自持
+（本模块是唯一存活消费方，口径逐字不变）：
 - 总闸 ``STORE_ENABLED`` 默认关，关时本组接口惰性 404（路由级依赖
   先于鉴权，未登录也不会先露 401），与商店同款。
 - 我的列表限会员（``require_store_member``，与商店 B2 同款）；
@@ -34,25 +35,92 @@
 
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend import media_seek, models
+from backend import media_seek, models, subscriptions
 from backend.api.admin_core import get_current_admin
-from backend.api.store import (
-    find_library_item,
-    require_store_enabled,
-    require_store_member,
-)
 from backend.api.user import get_current_user
 from backend.database import get_db
+from backend.emby_server import models as em
 from backend.emby_server.store_requests_contract import (
     STATUS_TO_R1_STATE,
     RequestIn,
     RequestListResponse,
     RequestRecord,
 )
+
+#: 总闸关闭时的 404 文案（惰性 404，与合集域「功能未开启」同一做法）。
+STORE_DISABLED_DETAIL = "想看商店未开启"
+
+#: 非会员打想看写口 / 我的列表时的 403 文案。
+STORE_MEMBERSHIP_REQUIRED_DETAIL = "想看需要有效的会员订阅"
+
+
+def store_enabled() -> bool:
+    """想看商店总闸，默认关。
+
+    读法对齐 ``transfer_variant.master_enabled``：每次调用现读
+    ``STORE_ENABLED``，不在 import 时钉死。合法开值：``1`` / ``true`` /
+    ``yes`` / ``on``（大小写不敏感）。缺省、空串、``0`` / ``false`` /
+    ``no`` / ``off`` 都是关。
+    """
+    raw = os.getenv("STORE_ENABLED", "0") or "0"
+    return raw.strip().lower() not in {"0", "false", "no", "off", ""}
+
+
+def require_store_enabled() -> None:
+    """总闸。关时 404，避免未开启的路径先被鉴权依赖回答成 401。"""
+    if not store_enabled():
+        raise HTTPException(status_code=404, detail=STORE_DISABLED_DETAIL)
+
+
+def require_store_member(db: Session, user: models.WebUser) -> None:
+    """想看写入和想看清单要有效会员订阅。
+
+    复用 ``subscriptions.has_active_subscription``（按 end_date 现算，
+    全站会员口径）。不走 ``can_play`` / ``ensure_playback_allowed``：
+    那条口在公益服或付费墙关闭时会放行播放，想看商店锁的是会员资格，
+    能播放不等于能想看。
+    """
+    if subscriptions.has_active_subscription(db, user.id):
+        return
+    raise HTTPException(status_code=403,
+                        detail=STORE_MEMBERSHIP_REQUIRED_DETAIL)
+
+
+def find_library_item(db: Session, tmdb_id: str) -> em.MediaItem | None:
+    """R0：tmdb 是否映射到现有 emby_items。
+
+    下架行与隐藏行不算（A-113：隐藏条目不得经在库判定探查）。
+    优先电影 / 剧集主条，没有再退到任意未下架行
+    （避免只剩一集时把「库里有」判丢）。不创建、不修改任何行。
+    """
+    key = (tmdb_id or "").strip()
+    if not key:
+        return None
+
+    def visible():
+        # 每次新开查询：Query.filter 在部分版本上会改自身，不能复用同一条。
+        return db.query(em.MediaItem).filter(
+            em.MediaItem.tmdb_id == key,
+            em.MediaItem.deleted_at.is_(None),
+            em.MediaItem.is_hidden == False,  # noqa: E712
+        )
+
+    primary = (
+        visible()
+        .filter(em.MediaItem.item_type.in_(("movie", "series")))
+        .order_by(em.MediaItem.merged_into_id.isnot(None), em.MediaItem.id)
+        .first()
+    )
+    if primary is not None:
+        return primary
+    return visible().order_by(em.MediaItem.id).first()
+
 
 #: 榜单与列表的单页上限（防全表扫）。
 BOARD_LIMIT = 50

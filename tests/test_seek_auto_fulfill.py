@@ -224,7 +224,10 @@ def test_worker_isolates_row_errors(engine, factory, monkeypatch):
     _media_item(db, name="好行", tmdb_id="t300")
     db.close()
 
-    import backend.api.store as store_api
+    # find_library_item 原在已删的 backend.api.store，批 4 起由
+    # backend.api.store_requests 自持；工人经 media_seek 延迟导入
+    # 该模块，补丁打在 store_requests 上才进判定链路。
+    import backend.api.store_requests as store_api
 
     real_find = store_api.find_library_item
 

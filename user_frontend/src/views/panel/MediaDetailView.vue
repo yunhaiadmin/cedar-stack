@@ -13,7 +13,7 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, BellPlus, BookmarkPlus, Clapperboard, Heart, Play, Trash2 } from 'lucide-vue-next'
+import { ArrowLeft, BellPlus, Clapperboard, Heart, Play, Trash2 } from 'lucide-vue-next'
 import Modal from '@/components/ui/Modal.vue'
 import {
   embyApi as embyProtocol,
@@ -24,7 +24,7 @@ import {
   ticksToSeconds,
   type EmbyItem,
 } from '@/api/emby'
-import { embyApi, mediaSeekApi, storeApi, type PortalResumeItem } from '@/api'
+import { embyApi, mediaSeekApi, type PortalResumeItem } from '@/api'
 import { seriesFollowApi } from '@/api/economy'
 import SeriesEpisodeList from '@/components/panel/SeriesEpisodeList.vue'
 import PlayerSchemeSheet from '@/components/panel/PlayerSchemeSheet.vue'
@@ -299,7 +299,6 @@ async function load() {
     item.value = await embyProtocol.getItem(itemId.value)
     void loadRecommendations(item.value)
     void loadResume()
-    void loadWantState()
     void loadFollowState()
   } catch (err) {
     item.value = null
@@ -322,40 +321,6 @@ async function toggleFavorite() {
     toast.error(`收藏操作失败：${errText(err)}`)
   } finally {
     favBusy.value = false
-  }
-}
-
-/** 想看（概览「我的片子」组摘除后归位到详情页动作区）：与求片页同一个
- * postWant 口，按 tmdb 匹配本人想看清单；商店闸未开/非会员时 getWants
- * 失败，整钮不显示（与求片页想看区同口径）。 */
-const wantVisible = ref(false)
-const wanted = ref(false)
-const wantBusy = ref(false)
-async function loadWantState() {
-  wantVisible.value = false
-  wanted.value = false
-  const tid = tmdbId.value
-  if (!tid) return
-  try {
-    const res = await storeApi.getWants()
-    wantVisible.value = true
-    wanted.value = (res.items || []).some(
-      i => i.tmdb_id === tid && i.state !== 'failed' && i.state !== 'missing_source',
-    )
-  } catch { /* 拿不到就不显示 */ }
-}
-async function handleWant() {
-  const tid = tmdbId.value
-  if (!tid || wantBusy.value || wanted.value) return
-  wantBusy.value = true
-  try {
-    const r = await storeApi.postWant(tid)
-    toast.success(r.message || '已加入想看')
-    if (r.state !== 'failed' && r.state !== 'missing_source') wanted.value = true
-  } catch (err) {
-    toast.error(`想看没加上：${errText(err)}`)
-  } finally {
-    wantBusy.value = false
   }
 }
 
@@ -493,10 +458,11 @@ watch(itemId, () => {
               {{ resumeText }}
             </p>
 
-            <!-- 按钮行高 52：「立即播放」主胶囊 + 收藏 + 想看 + 追剧订阅 + 状态。
-                 想看/追剧订阅原在概览「我的片子」组，2026-11-13 按用户令
-                 摘组后归位到详情页动作区（显隐口径见脚本 loadWantState /
-                 loadFollowState：拿不到数据整钮不显示）。
+            <!-- 按钮行高 52：「立即播放」主胶囊 + 收藏 + 追剧订阅 + 状态。
+                 追剧订阅原在概览「我的片子」组，2026-11-13 按用户令
+                 摘组后归位到详情页动作区（显隐口径见脚本
+                 loadFollowState：拿不到数据整钮不显示）。「想看」钮
+                 已随想看商店删除。
                  2026-11-13 用户新口径：页面组织/交互可按 UHDNow 打破重排，
                  详情页恢复播放主入口；播放走现行 PlayerSchemeSheet，
                  选播放器/起播状态/未绑盘引导都在弹层内，门禁口径不变。 -->
@@ -514,17 +480,6 @@ watch(itemId, () => {
               >
                 <Heart :size="17" :fill="item.UserData?.IsFavorite ? 'currentColor' : 'none'" />
                 {{ item.UserData?.IsFavorite ? '已收藏' : '加入收藏' }}
-              </button>
-              <button
-                v-if="wantVisible"
-                type="button"
-                class="md-btn md-btn--fav"
-                :class="{ 'md-btn--fav-on': wanted }"
-                :disabled="wantBusy || wanted"
-                @click="handleWant"
-              >
-                <BookmarkPlus :size="17" :fill="wanted ? 'currentColor' : 'none'" />
-                {{ wanted ? '已想看' : '想看' }}
               </button>
               <button
                 v-if="followVisible"

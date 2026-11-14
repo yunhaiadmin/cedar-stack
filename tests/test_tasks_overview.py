@@ -2,7 +2,7 @@
 
 - 5 张卡片一次返回：scan / probe / enrich / thumbnail / chase_new
   （注 2026-10-17：strm_gen 删除，strm 卡片同步下线）
-  （注 2026-11-05：暖地址保鲜工人上线，新增 upstream_warm 卡，共 6 张）
+  （注：上游地址保鲜卡已随上游聚合整族删除，卡片回到 6 张）
 - 结构断言：每张卡都有 key/title/status/status_text/summary/metrics
 - 种子数据驱动状态：扫描运行中、probe 有失败、追新开着
 - 降级：单个任务采集抛异常时，该卡 status=error，其余卡片不受影响
@@ -138,7 +138,7 @@ def test_overview_returns_eight_cards(db, seed):
     assert "fetched_at" in res
     cards = _by_key(res)
     assert set(cards) == {"scan", "probe", "enrich", "thumbnail", "chase_new",
-                          "upstream_warm", "missing_episodes"}
+                          "missing_episodes"}
     for key, card in cards.items():
         for field in ("key", "title", "status", "status_text", "summary", "metrics"):
             assert field in card, f"{key} 缺字段 {field}"
@@ -204,12 +204,8 @@ def test_single_task_failure_degrades_only_that_card(db, seed, monkeypatch):
 def _clear_task_snapshots():
     """快照缓存是进程级的：每个测试前后清掉，避免测试间污染。"""
     admin_tasks._clear_task_snapshots()
-    from backend.database import CacheManager
-    from backend.emby_server import upstream_warm_worker as _uw
-    CacheManager.delete(_uw.STATUS_CACHE_KEY)
     yield
     admin_tasks._clear_task_snapshots()
-    CacheManager.delete(_uw.STATUS_CACHE_KEY)
 
 def test_cards_keep_builders_order(db, seed):
     """并行采集后，卡片顺序仍与 _BUILDERS 定义一致。"""

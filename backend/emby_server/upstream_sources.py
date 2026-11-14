@@ -484,6 +484,34 @@ def disable_source(db, source):
     return source
 
 
+def _delete_rows(db: Session, rows) -> int:
+    """托管行下架：软删优先（与 scanner 清理同一口径）。
+
+    软删走 soft_delete.mark_soft_deleted（带合并子行孤儿守卫）；
+    全局关软删时回落硬删（站点既定策略，不在本模块另立口径）——
+    硬删分支没有 rehome 守卫，删前必须先走物理删除兜底
+    （soft_delete.detach_merged_children）解开入向合并引用，
+    否则被删托管行若是合并目标，分身的 merged_into_id 立刻悬空。
+
+    本函数原在已删的上游进库模块，删源联动是唯一存活消费方，
+    随删源逻辑迁入本模块自持，口径逐字不变。
+    """
+    from backend.emby_server import soft_delete
+
+    ids = [r.id for r in rows if r is not None and getattr(r, "id", None)]
+    if not ids:
+        return 0
+    if soft_delete.soft_delete_enabled():
+        return soft_delete.mark_soft_deleted(db, ids)
+    soft_delete.detach_merged_children(db, ids)
+    count = 0
+    for row in rows:
+        db.delete(row)
+        count += 1
+    db.flush()
+    return count
+
+
 def delete_source(db, source) -> dict:
     """删除上游源并联动清理（PA-038；同一事务内，调用方提交）。
 
@@ -492,7 +520,7 @@ def delete_source(db, source) -> dict:
     货架面全仓无 upstream_source_id 过滤），2026-11-01 唯一源
     删除时就得靠 parent 手工软删 6,074 部托管行＋硬删 9,554 条
     映射——产品删口必须自己做这件事。联动清单：
-    - 托管行：全部软删（复用 upstream_import._delete_rows 口径：
+    - 托管行：全部软删（复用本模块 _delete_rows 口径：
       软删开时 mark_soft_deleted，否则硬删；剧→季→集子树行
       同样带 upstream_source_id，按源过滤即全覆盖）；
     - 硬删残留行：映射、自动建库关系、托管生命周期、分类绑定、
@@ -506,8 +534,6 @@ def delete_source(db, source) -> dict:
     才验源存在），属已知竞态，不在本单加锁，管理员删源前停
     聚合可避开。
     """
-    from backend.emby_server.upstream_import import _delete_rows
-
     source_id = source.id
     hosted = (db.query(em.MediaItem)
               .filter(em.MediaItem.upstream_source_id == source_id)

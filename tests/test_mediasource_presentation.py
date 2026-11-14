@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
-"""播放源呈现口径（站主 2026-11-02 亲定）回归。
+"""播放源呈现口径回归（画质标签已删，Name 回条目名）。
 
 背景：第三方播放器里别家源卡显示「Dolby＋17.4 GB＋19.02Mbps」并按
 分辨率进 4K 页签，我方源卡只剩「文件」二字、无大小无码率、落进
 「其他」页签。钉死的新口径：
 
-1. MediaSource.Name 一律纯画质标签（分辨率＋HDR/杜比组合，如
-   「4K Dolby」「1080P HDR」），不带片名/源名/服务器名；探测
-   （宽高/video_range）优先、文件名解析补缺；判不出回落条目名
-   （Emby 默认形态），不许编造。
+1. MediaSource.Name 一律条目名（Emby 默认形态；画质标签已
+   随删除令下线，不再按探测/文件名拼标签），不带源名/服务器名。
+   唯一例外：CMS 线路的存量画质缓存带 label 时沿用它作线路名
+   （标签不再生产，缓存过期后自然回落条目名）。
 2. 本地条目 Size/Bitrate/MediaStreams 从真实探测数据下发；
-   无探测时除文件名画质标外留空（补探测走既有按需入队）。
+   无探测时留空（补探测走既有按需入队）。
 3. CMS 托管条目：每条可展示映射一条 MediaSource（Id 带映射
-   id），画质取自取流路径回填的缓存（m3u8 主清单/备注标记）；
+   id），宽高/范围取自取流路径回填的缓存（m3u8 主清单解析）；
    取流口按 MediaSourceId 定向解析所选映射，选错硬报错 404，
    绝不偷偷换线；旧形态（只到 :upstream）保持最佳映射口径。
 """
@@ -36,7 +36,6 @@ from sqlalchemy.orm import sessionmaker
 from backend import models
 from backend.database import CacheManager, SessionLocal, init_db
 from backend.emby_server import models as em
-from backend.emby_server import quality_label as ql
 from backend.emby_server import upstream_playback as up
 from backend.security import hash_password
 
@@ -53,40 +52,8 @@ CMS_MOVIE = "画质托管片"
 
 
 # ---------------------------------------------------------------------------
-# 纯函数：画质标签与 m3u8 主清单解析
+# 纯函数：m3u8 主清单解析（解析器已迁入 upstream_playback）
 # ---------------------------------------------------------------------------
-
-def test_quality_label_from_probe_values():
-    assert ql.label_for(3840, 2160, "HDR10") == "4K HDR"
-    assert ql.label_for(3840, 2160, "DolbyVision") == "4K Dolby"
-    assert ql.label_for(1920, 1080, "SDR") == "1080P"
-    assert ql.label_for(1280, 720, None) == "720P"
-    assert ql.label_for(0, 0, "DolbyVision") == "Dolby"
-    assert ql.label_for(0, 0, "SDR") is None
-    assert ql.label_for(0, 0, None) is None
-
-
-def test_quality_label_filename_fallback_and_no_guessing():
-    assert ql.label_for(0, 0, None,
-                        "某片.2024.2160p.Dolby.Vision.WEB-DL.mkv") == "4K Dolby"
-    assert ql.label_for(0, 0, None, "某片.1080p.x264.mkv") == "1080P"
-    # DVDRip 不是杜比：裸 DV 只在独立成词时才算标记
-    assert ql.label_for(0, 0, None, "某片.DVDRip.mkv") is None
-    # 探测与文件名分量独立：探测有分辨率时不因文件名没标记丢范围
-    assert ql.label_for(3840, 2160, None, "某片.HDR.mkv") == "4K HDR"
-    # 文件名没数据不许猜
-    assert ql.label_for(0, 0, None, "plain.mkv") is None
-
-
-def test_quality_label_from_cms_text_marks():
-    assert ql.label_from_text("4K") == "4K"
-    assert ql.label_from_text("BD1080P") == "1080P"
-    assert ql.label_from_text("杜比视界 2160P") == "4K Dolby"
-    # 裸 HD 语义含糊，不猜
-    assert ql.label_from_text("HD") is None
-    assert ql.label_from_text("更新至第12集") is None
-    assert ql.label_from_text("") is None
-
 
 def test_parse_m3u8_master_picks_top_bandwidth():
     text = (
@@ -98,13 +65,12 @@ def test_parse_m3u8_master_picks_top_bandwidth():
         'CODECS="dvhe.08.06,mp4a.40.2"\n'
         "2160.m3u8\n"
     )
-    master = ql.parse_m3u8_master(text)
+    master = up.parse_m3u8_master(text)
     assert master == {"width": 3840, "height": 2160,
                       "bandwidth": 18500000, "video_range": "DolbyVision"}
-    assert ql.label_for_master(master) == "4K Dolby"
     # 单码率清单没有变体行 → 判不出，不猜
-    assert ql.parse_m3u8_master("#EXTM3U\n#EXTINF:10,\nseg.ts\n") is None
-    assert ql.parse_m3u8_master("") is None
+    assert up.parse_m3u8_master("#EXTM3U\n#EXTINF:10,\nseg.ts\n") is None
+    assert up.parse_m3u8_master("") is None
 
 
 # ---------------------------------------------------------------------------
@@ -295,7 +261,7 @@ def _playback_sources(client, token, guid):
 
 def test_local_probed_movie_source_presentation(client, token, seed):
     src = _playback_sources(client, token, seed["probed"])[0]
-    assert src["Name"] == "4K HDR"
+    assert src["Name"] == "画质探测片"
     assert src["Size"] == 17_400_000_000
     assert src["Bitrate"] == 19_020_000
     video = [s for s in src["MediaStreams"] if s["Type"] == "Video"][0]
@@ -303,10 +269,10 @@ def test_local_probed_movie_source_presentation(client, token, seed):
     assert video["VideoRange"] == "HDR10"
 
 
-def test_local_unprobed_movie_name_from_filename_only(client, token, seed):
+def test_local_unprobed_movie_name_is_item_name(client, token, seed):
     src = _playback_sources(client, token, seed["dv_named"])[0]
-    # 画质标来自文件名解析（Emby 版本名惯例），不是编的探测值
-    assert src["Name"] == "4K Dolby"
+    # 画质标签已删：未探测条目的 Name 就是条目名，不从文件名拼标
+    assert src["Name"] == "画质文件名片"
     # 无探测：轨道留空、码率不推导（无时长），不许编造
     assert src["MediaStreams"] == []
     assert "Bitrate" not in src
@@ -329,8 +295,8 @@ def test_cms_item_one_source_per_mapping_with_quality(client, token, seed):
         assert q["MediaSourceId"][0] == f"{seed['cms']}:upstream:{mid}"
         # 名字里绝不出现源名
         assert SRC_A not in line["Name"] and SRC_B not in line["Name"]
-    # 甲源有画质缓存：纯画质标 + 宽高/范围摘要；清单 BANDWIDTH
-    # 只是上游模板声明，不能当真实码率下发给客户端。
+    # 甲源有存量画质缓存：label 仍作线路名 + 宽高/范围摘要；
+    # 清单 BANDWIDTH 只是上游模板声明，不能当真实码率下发。
     assert line_a["Name"] == "4K Dolby"
     assert "Bitrate" not in line_a
     video = [s for s in line_a["MediaStreams"] if s["Type"] == "Video"][0]

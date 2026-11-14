@@ -1876,37 +1876,28 @@ def _upstream_line_for_mapping(item, mapping, source, base_source,
     """一条映射 = 一条上游线路 MediaSource（U-02 多线形态）。
 
     Id={guid}:upstream:{mapping_id}、取流地址带同一 MediaSourceId
-    ——点哪条、取流口定向解析哪条。Name 纯画质标（站主
-    2026-11-02 亲定，不带源名/片名）：
-
-    - 有本地基础源（本地条目挂的上游线路）：沿 U-02 深拷贝口径
-      与主源同形，Name 用条目自身画质标（与主源一致）；
-    - 托管行 + Emby 型源：现查参数的轨道摘要拼标（见
-      _synthetic_upstream_base_source），查不到回落条目名；
-    - 托管行 + CMS 源：画质缓存里的标签（取流回填），没缓存
-      回落条目名（Emby 默认形态，不拿源名凑数）。
+    ——点哪条、取流口定向解析哪条。Name 口径：画质标签已删，
+    一律条目名（Emby 默认形态，不拿源名凑数）；唯一例外是 CMS
+    源的存量画质缓存里带 label 时沿用它（标签不再生产，缓存
+    过期后自然回落条目名）。
 
     Protocol=Http/IsRemote=True（字节在上游那侧）、只报直放/直流
     （上游取流口 302 到上游直链，我方不转码）。
     """
-    from backend.emby_server import quality_label as ql
     from backend.emby_server import upstream_playback as _up
     if base_source is not None:
         line = copy.deepcopy(base_source)
-        name = _quality_name_for_item(item)
+        name = item.name
     elif getattr(source, "source_type", None) == "applecms":
         line = _synthetic_cms_base_source(item, mapping, base, api_key, db)
         cached = _up.read_cms_quality(mapping.id) or {}
-        name = (cached.get("label")
-                or ql.label_from_streams(line.get("MediaStreams"))
-                or item.name)
+        name = cached.get("label") or item.name
     else:
         # 无本地源（上游托管行，进库一期）：合成基础源——本地行数据
         # 打底、媒体参数现查上游补强（见 _synthetic_upstream_base_source）。
         line = _synthetic_upstream_base_source(
             item, mapping, source, base, api_key, db)
-        name = (ql.label_from_streams(line.get("MediaStreams"))
-                or item.name)
+        name = item.name
     url, _exp, _sig = _signed_upstream_line_url(
         item, base, user_id, db, api_key, with_sign=with_sign,
         mapping_id=mapping.id)
@@ -2122,26 +2113,6 @@ def _upstream_only_media_sources(db, item, request, user):
         user=user, entry_line=_pilot_mod.match_line(db, request))
 
 
-def _quality_name_for_item(item: em.MediaItem) -> str:
-    """MediaSource.Name 的画质口径（站主 2026-11-02 亲定）。
-
-    纯画质标签（探测宽高/video_range 优先、文件名解析补缺，见
-    quality_label）；判不出回落条目名——Emby 默认形态，不许拿
-    片名以外的信息凑数。播放器来源卡的标题与分辨率页签都吃这个
-    字段：下发片名时卡片只剩「文件」、落进「其他」页签（用户
-    2026-11-02 截图实证）。
-    """
-    from backend.emby_server import quality_label as ql
-    video_range = None
-    for s in (item.streams or []):
-        if (s.stream_type or "").lower() == "video":
-            video_range = s.video_range
-            break
-    label = ql.label_for(item.width, item.height, video_range,
-                       item.file_path)
-    return label or item.name
-
-
 def _media_source(item: em.MediaItem, base: str, api_key: str = "", db: Session = None,
                   auth_qs: str = "", synthesize: bool = False, user=None) -> dict:
     # 转码删除（2026-10-24）：服务端不再转码，申报恒 False。
@@ -2150,7 +2121,7 @@ def _media_source(item: em.MediaItem, base: str, api_key: str = "", db: Session 
     _supports_transcoding = False
     dto = {
         "Id": item.guid,
-        "Name": _quality_name_for_item(item),
+        "Name": item.name,
         # 隐藏时置 None，由下面的 _strip_nulls 整个去掉（官方 Path 可空，客户端兼容）
         "Path": None if hide_media_path() else item.file_path,
         "Protocol": "File",

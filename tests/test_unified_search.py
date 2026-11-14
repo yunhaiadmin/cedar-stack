@@ -12,12 +12,11 @@ os.environ.setdefault("DATABASE_TYPE", "sqlite")
 os.environ.setdefault("REDIS_ENABLED", "false")
 
 from backend.emby_server import unified_search as us
-from backend.emby_server import upstream_aggregation as agg
 
 
 def _record(source, item_id, name="肖申克的救赎", tmdb="278", year=1994,
             item_type="Movie"):
-    return agg.parse_emby_item(
+    return us.parse_emby_item(
         {"Id": item_id, "Name": name, "Type": item_type,
          "ProductionYear": year, "ProviderIds": {"Tmdb": tmdb}},
         source_id=source)
@@ -120,15 +119,14 @@ def test_search_upstream_source_maps_403_frontend_blocked():
     def fake_resolve(source, http_post=None):
         return None  # 匿名
 
-    import backend.emby_server.upstream_aggregate_run as run
     # 直接替换模块级解析函数后复原（只 patch 模块属性，不 patch 实例）。
-    orig_resolve = run._resolve_api_key
-    run._resolve_api_key = fake_resolve
+    orig_resolve = us._resolve_api_key
+    us._resolve_api_key = fake_resolve
     try:
         records, error = us.search_upstream_source(
             Source(), "肖申克", http_get=fake_get)
     finally:
-        run._resolve_api_key = orig_resolve
+        us._resolve_api_key = orig_resolve
     assert records == []
     assert error is not None and error.startswith("upstream_frontend_blocked")
     assert "api_key" not in error
@@ -151,14 +149,13 @@ def test_search_upstream_source_200_parses_and_filters_by_term():
              "ProductionYear": 1994, "ProviderIds": {"Tmdb": "329"}},
         ], "TotalRecordCount": 2}
 
-    import backend.emby_server.upstream_aggregate_run as run
-    orig_resolve = run._resolve_api_key
-    run._resolve_api_key = lambda source, http_post=None: None
+    orig_resolve = us._resolve_api_key
+    us._resolve_api_key = lambda source, http_post=None: None
     try:
         records, error = us.search_upstream_source(
             Source(), "肖申克", http_get=fake_get)
     finally:
-        run._resolve_api_key = orig_resolve
+        us._resolve_api_key = orig_resolve
     assert error is None
     assert [r.upstream_item_id for r in records] == ["a"]
 
@@ -194,11 +191,11 @@ def test_local_key_prefers_production_year_over_scan_year():
         production_year=2021, scan_year=2020,
         tmdb_id=None, imdb_id=None,
         season_number=None, episode_number=None)
-    upstream = agg.parse_emby_item(
+    upstream = us.parse_emby_item(
         {"Id": "u", "Name": "无身份片", "Type": "Movie",
          "ProductionYear": 2021, "ProviderIds": {}},
         source_id="1")
-    assert key == agg.aggregate_key_for(upstream)
+    assert key == us.aggregate_key_for(upstream)
     merged = us.merge_search_results(
         [us.LocalSearchEntry(aggregate_key=key, name="无身份片",
                              item_type="movie", production_year=2021)],

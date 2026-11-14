@@ -55,7 +55,6 @@ DEFAULTS_SENTINEL = object()
 # 以本表为动态读取证据（key.upper() 动态拼名，静态扫描抓不到）。
 # ---------------------------------------------------------------------------
 PANEL_REMOVED_SWITCHES: tuple[tuple[str, str], ...] = (
-    ("ai_enabled", "AI_ENABLED"),
     ("backup_enabled", "BACKUP_ENABLED"),
     ("bot_cmd_bind", "BOT_CMD_BIND"),
     ("bot_cmd_checkin", "BOT_CMD_CHECKIN"),

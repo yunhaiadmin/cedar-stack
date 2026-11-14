@@ -7,9 +7,9 @@
 2. 计数行为：连续失败达阈值（默认 5）置 paused_until；成功清零；
    暂停到期即半开（再失败立即重新暂停）；scope 之间分账。
 3. 非阻断：计数读写异常一律吞掉，绝不外泄到主流程。
-4. 消费方接线：upstream_health.probe_source /
-   upstream_health.probe_source / upstream_aggregate_run 三处在
-   暂停期跳过、按口径喂数（凭据类/单资源类失败不计数）。
+4. 消费方接线：upstream_health.probe_source 在暂停期跳过、
+   按口径喂数（凭据类/单资源类失败不计数）。聚合拉取侧的接线
+   已随上游聚合整族删除。
 
 DB 口径：计数单测用注入 session（本地内存 sqlite，只建本表），
 不碰全局 engine/SessionLocal；接线单测用内存假熔断替换模块函数。
@@ -26,7 +26,6 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.emby_server import external_failure_counts as efc
-from backend.emby_server import upstream_aggregate_run as uar
 from backend.emby_server import upstream_health as uh
 
 
@@ -321,79 +320,3 @@ def test_probe_feeds_real_counter(monkeypatch):
     state = efc.pause_states_for_key(key)
     assert state["scopes"][efc.SCOPE_UPSTREAM_PROBE]["fail_count"] == 0
     engine.dispose()
-
-
-# --- upstream_aggregate_run -------------------------------------------------
-
-def _agg_source():
-    return types.SimpleNamespace(
-        id=7, base_url="https://up.example.com", user_agent=None,
-        referer=None, extra_headers_json=None)
-
-
-def test_aggregate_libraries_skips_when_paused(fake_breaker):
-    key = efc.normalize_target_key("https://up.example.com")
-    fake_breaker.paused.add((efc.SCOPE_UPSTREAM_FETCH, key))
-    get, calls = _scripted_get([(200, {"Items": []})])
-    with pytest.raises(uar.UpstreamAggregateRunError) as ei:
-        uar.fetch_upstream_libraries(_agg_source(), http_get=get,
-                                     api_key="k")
-    assert ei.value.code == "upstream_unavailable"
-    assert calls["n"] == 0
-
-
-def test_aggregate_records_skips_when_paused(fake_breaker):
-    key = efc.normalize_target_key("https://up.example.com")
-    fake_breaker.paused.add((efc.SCOPE_UPSTREAM_FETCH, key))
-    get, calls = _scripted_get([(200, {"Items": []})])
-    with pytest.raises(uar.UpstreamAggregateRunError) as ei:
-        uar.fetch_upstream_records(_agg_source(), http_get=get)
-    assert ei.value.code == "upstream_unavailable"
-    assert calls["n"] == 0
-
-
-def test_aggregate_iter_records_skips_when_paused(fake_breaker):
-    key = efc.normalize_target_key("https://up.example.com")
-    fake_breaker.paused.add((efc.SCOPE_UPSTREAM_FETCH, key))
-    get, calls = _scripted_get([(200, {"Items": []})])
-    with pytest.raises(uar.UpstreamAggregateRunError) as ei:
-        next(uar.iter_upstream_records_for_parent(
-            _agg_source(), "lib1", http_get=get, api_key="k"))
-    assert ei.value.code == "upstream_unavailable"
-    assert calls["n"] == 0
-
-
-def test_aggregate_libraries_counts_unavailable_not_credential(fake_breaker):
-    def _dead(url, headers, timeout):
-        return None, None
-
-    with pytest.raises(uar.UpstreamAggregateRunError) as ei:
-        uar.fetch_upstream_libraries(_agg_source(), http_get=_dead,
-                                     api_key="k")
-    assert ei.value.code == "upstream_unavailable"
-    assert ("record_failure", efc.SCOPE_UPSTREAM_FETCH,
-            efc.normalize_target_key("https://up.example.com")) in \
-        fake_breaker.calls
-
-    fake_breaker.calls.clear()
-
-    def _unauth(url, headers, timeout):
-        return 401, {"Message": "bad"}
-
-    with pytest.raises(uar.UpstreamAggregateRunError) as ei:
-        uar.fetch_upstream_libraries(_agg_source(), http_get=_unauth,
-                                     api_key="k")
-    assert ei.value.code == "upstream_credential_invalid"
-    assert not any(c[0] == "record_failure" for c in fake_breaker.calls)
-
-
-def test_aggregate_libraries_success_feeds_success(fake_breaker):
-    def _ok(url, headers, timeout):
-        return 200, {"Items": [{"Id": "lib1", "Name": "电影"}]}
-
-    libs = uar.fetch_upstream_libraries(_agg_source(), http_get=_ok,
-                                        api_key="k")
-    assert libs == [{"id": "lib1", "name": "电影", "collection_type": ""}]
-    assert ("record_success", efc.SCOPE_UPSTREAM_FETCH,
-            efc.normalize_target_key("https://up.example.com")) in \
-        fake_breaker.calls

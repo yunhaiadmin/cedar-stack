@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from backend.emby_server import upstream_aggregate_run as agg
+from backend.emby_server import unified_search as agg
 from backend.emby_server import upstream_health as uh
 from backend.emby_server import upstream_playback as up
 

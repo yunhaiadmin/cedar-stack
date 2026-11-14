@@ -3,10 +3,10 @@
 定位（#25/#1352 聚合的延伸，只做搜索、不做聚合）：
 - 复用现有口径，不新造索引：本站侧复用 ``search_api`` 的预筛
   （``search.search_variants``）与精排（``search.rank_items``）；
-  上游侧复用 ``upstream_aggregation`` 的作品归一键
+  上游侧用本模块自持的作品归一键
   （``aggregate_key_for``：tmdb > imdb > 标题+年份，单集追加季集号）
-  与多源失败隔离形态（``aggregate_sources``：单源失败只隔离到该源）。
-- 只读：本模块不触发聚合（绝不调 ``run_manual_aggregation``）、
+  与多源失败隔离形态（单源失败只隔离到该源）。
+- 只读：本模块不触发聚合、
   不写库（绝不调 ``record_mapping``、不写任何表）。上游现查是
   只读的 Emby ``/Items?SearchTerm=`` 查询，不是聚合跑批；查到
   的记录只进本次响应，不落库、不建映射。
@@ -25,9 +25,8 @@
 
 排序与去重口径（写死在本模块，调用方不另定）：
 - 本地在前：本站命中按 ``rank_items`` 的顺序全在前，上游绝不
-  插队到本地前面（与 ``select_for_presentation`` 的本地优先同口径）。
-- 上游在后：上游命中按 ``aggregate_key`` 排序（与 ``build_aggregates``
-  的输出顺序同口径），与上游返回顺序抖动无关。
+  插队到本地前面（本地优先口径）。
+- 上游在后：上游命中按 ``aggregate_key`` 排序，与上游返回顺序抖动无关。
 - 去重：同一 ``aggregate_key`` 只出一行；首现来源为主来源，
   其余同键来源记进 ``also_on_sources``（不静默丢源信息）。
   本地已有的作品，上游同键只追加到该本地行的 ``also_on_sources``。
@@ -42,12 +41,18 @@
 
 from __future__ import annotations
 
+import json
 import os
+import re
+import unicodedata
+import urllib.error
 import urllib.parse
+import urllib.request
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
-from backend.emby_server import upstream_aggregation as agg
+from backend.emby_server import upstream_http
+from backend.emby_server import upstream_sources as us
 from backend.emby_server.search import normalize_compact, search_variants
 
 #: 统一搜索总开关 env 键（默认关）。
@@ -56,6 +61,253 @@ UNIFIED_SEARCH_ENV = "UNIFIED_SEARCH_ENABLED"
 #: 上游现查单次返回上限（Emby Items Limit）：搜索不是拉全目录，
 #: 只取首屏候选，超了不翻页、不谎报全量（TotalRecordCount 照实回）。
 UPSTREAM_SEARCH_LIMIT = 100
+
+
+# ---------------------------------------------------------------------------
+# 上游目录记录模型与作品归一键（原上游聚合的解析/归一簇；聚合整族
+# 删除后，本模块是唯一存活消费方，故迁入本模块自持）
+# ---------------------------------------------------------------------------
+
+#: 单次上游请求超时（秒）：现查带数据，比探活的 10 秒放宽。
+HTTP_TIMEOUT_SEC = 30.0
+
+
+@dataclass(frozen=True)
+class UpstreamVersion:
+    """一条线路下的一个版本：仅来自同一 Emby Item 的 MediaSource。
+
+    只存 Id + Name + RunTimeTicks，不存 Path（对方服务器本地
+    路径，存了就是泄露对方布局，且本模块用不上）。
+    """
+
+    media_source_id: str
+    name: str = ""
+    run_time_ticks: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class UpstreamCatalogRecord:
+    """拉回的一条目录记录（Emby Items 的一项）。
+
+    ``category_id`` 是上游侧的库/分类标识；现查只用它做来源
+    标识，不做本地库映射。
+    """
+
+    source_id: str
+    upstream_item_id: str
+    name: str
+    item_type: str  # Movie / Series / Episode / Season 等，照 Emby 原值
+    category_id: str = ""
+    production_year: Optional[int] = None
+    tmdb_id: Optional[str] = None
+    imdb_id: Optional[str] = None
+    series_name: str = ""
+    season_number: Optional[int] = None
+    episode_number: Optional[int] = None
+    versions: Tuple[UpstreamVersion, ...] = ()
+    # 上游侧所属剧的 Item Id（Emby Episode 的 SeriesId 基础字段）：
+    # 进库二期单集回查所属剧的身份级依据（靠它查映射/托管剧行，
+    # 不靠剧名猜）。Movie / Series 记录恒为空。放末尾保位置构造兼容。
+    series_upstream_id: str = ""
+    # 增量拉取排序时间戳原文（Emby ``DateLastContentAdded``，缺失
+    # 回落 ``DateCreated``）：增量轮按此字段倒序拉、水位线比对用
+    # 它。只存原文串，解析/比较归拉取方；
+    # 两字段都缺时为 None，该记录不参与水位计算（拉取方按未证明
+    # 已旧处理，不据此早停）。放末尾保位置构造兼容。
+    last_content_added_at: Optional[str] = None
+    # 源站自带元数据（透传组，2026-11-02 多源合并填充）：苹果 CMS
+    # list 负载里现成带的海报/地区/分类名/备注/评分/演员/导演/简介，
+    # 由 ``applecms_sync.cms_entry_to_record`` 采集。**不参与聚合键、
+    # 不参与配对**（键与证据口径不变，见 aggregate_key_for）；消费方
+    # 是 CMS 库同步工人的合行填空——只填空缺、TMDB 仍是权威（行上
+    # 以 metadata_source='applecms' 标记为暂定填充，TMDB 命中后可
+    # 盖过）。Emby 型上游记录恒为空。放末尾保位置构造兼容。
+    poster_url: str = ""
+    area: str = ""
+    category_name: str = ""
+    remarks: str = ""
+    score: Optional[float] = None
+    actors: Tuple[str, ...] = ()
+    directors: Tuple[str, ...] = ()
+    blurb: str = ""
+
+
+def _provider_id(provider_ids: object, *names: str) -> Optional[str]:
+    if not isinstance(provider_ids, dict):
+        return None
+    for name in names:
+        value = provider_ids.get(name)
+        if value not in (None, ""):
+            return str(value)
+    return None
+
+
+def _as_int(value: object) -> Optional[int]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+        return int(value.strip())
+    return None
+
+
+def _raw_timestamp(raw: dict) -> Optional[str]:
+    """取增量排序时间戳原文：DateLastContentAdded 优先、DateCreated 兜底。
+
+    DateLastContentAdded 是 Emby 的「内容最近入库时间」：新条目
+    入库即赋值，剧集新增集时所属剧的该值同步刷新（本站 compat
+    层 Items 实现同口径，见 api.py 的 _date_last_content_added）。
+    非字符串/空值按缺失处理（返回 None）。
+    """
+    for key in ("DateLastContentAdded", "DateCreated"):
+        value = raw.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def parse_emby_item(
+    raw: dict, *, source_id: str, category_id: str = ""
+) -> UpstreamCatalogRecord:
+    """把一个 Emby/Jellyfin Items 项解析为目录记录（纯函数）。
+
+    只取身份与结构字段；凭据类键、原始字典、对方服务器路径
+    一律不进记录。``ProviderIds`` 的 Tmdb/Imdb 是身份证据，
+    不是凭据，保留。
+    """
+    if not isinstance(raw, dict):
+        raise ValueError("emby item must be a dict")
+    item_id = raw.get("Id")
+    if not item_id:
+        raise ValueError("emby item missing Id")
+    media_sources = raw.get("MediaSources")
+    versions: List[UpstreamVersion] = []
+    if isinstance(media_sources, list):
+        for media_source in media_sources:
+            if not isinstance(media_source, dict):
+                continue
+            media_source_id = media_source.get("Id")
+            if not media_source_id:
+                continue
+            versions.append(
+                UpstreamVersion(
+                    media_source_id=str(media_source_id),
+                    name=str(media_source.get("Name") or ""),
+                    run_time_ticks=_as_int(media_source.get("RunTimeTicks")),
+                )
+            )
+    return UpstreamCatalogRecord(
+        source_id=source_id,
+        upstream_item_id=str(item_id),
+        name=str(raw.get("Name") or ""),
+        item_type=str(raw.get("Type") or ""),
+        category_id=category_id,
+        production_year=_as_int(raw.get("ProductionYear")),
+        tmdb_id=_provider_id(raw.get("ProviderIds"), "Tmdb", "tmdb"),
+        imdb_id=_provider_id(raw.get("ProviderIds"), "Imdb", "imdb"),
+        series_name=str(raw.get("SeriesName") or ""),
+        season_number=_as_int(raw.get("ParentIndexNumber")),
+        episode_number=_as_int(raw.get("IndexNumber")),
+        versions=tuple(versions),
+        series_upstream_id=str(raw.get("SeriesId") or ""),
+        last_content_added_at=_raw_timestamp(raw),
+    )
+
+
+def parse_emby_items_page(
+    page: dict, *, source_id: str, category_id: str = ""
+) -> Tuple[List[UpstreamCatalogRecord], int]:
+    """解析一页 Emby Items 响应，返回（记录，TotalRecordCount）。
+
+    Items 不是列表时按空页处理（上游返回形态异常时不炸调用方，
+    对账层按“取页失败/空页”各自的纪律处理，见 :func:`reconcile`）。
+    """
+    if not isinstance(page, dict):
+        return [], 0
+    items = page.get("Items")
+    records: List[UpstreamCatalogRecord] = []
+    if isinstance(items, list):
+        for raw in items:
+            try:
+                records.append(
+                    parse_emby_item(raw, source_id=source_id, category_id=category_id)
+                )
+            except ValueError:
+                # 无 Id 的脏项跳过，不让一条脏数据毁掉整页。
+                continue
+    return records, _as_int(page.get("TotalRecordCount")) or 0
+
+
+def iter_emby_pages(
+    fetch_page: Callable[[int, int], dict],
+    *,
+    source_id: str,
+    category_id: str = "",
+    page_size: int,
+    on_page: Optional[Callable[[List[UpstreamCatalogRecord], int], bool]] = None,
+) -> Iterable[UpstreamCatalogRecord]:
+    """按 Emby StartIndex/Limit 分页拉取（传输由调用方注入）。
+
+    调用方须保证 ``fetch_page`` 已授权、已过 SSRF 校验；本模块
+    不发 HTTP。某页返回 0 条即停（防上游 TotalRecordCount 说谎
+    导致死循环）；TotalRecordCount 为 0 时只拉首轮即停。
+
+    ``on_page``（增量拉取用）：每取到一页后以（本页记录，
+    TotalRecordCount）回调一次，返回 True 表示本页处理完即停
+    （不再取下一页）；该页记录照常产出。缺省 None 时行为与
+    历史口径逐字一致。回调异常照常上抛（与取页失败同路）。
+    """
+    if page_size <= 0:
+        raise ValueError("page_size must be positive")
+    start = 0
+    while True:
+        page = fetch_page(start, page_size)
+        records, total = parse_emby_items_page(
+            page, source_id=source_id, category_id=category_id
+        )
+        stop_after = bool(on_page(records, total)) if on_page else False
+        yield from records
+        if stop_after:
+            break
+        if not records:
+            break
+        start += len(records)
+        if total and start >= total:
+            break
+
+
+# ---------------------------------------------------------------------------
+# 聚合层：作品 + 线路 + 版本（对应 upstream_aggregate_items/variants）
+# ---------------------------------------------------------------------------
+
+
+def _normalize_title(title: str) -> str:
+    text = unicodedata.normalize("NFKC", title or "").strip().lower()
+    text = re.sub(r"[\s\-_.,:;!?()\[\]{}'\"]+", "", text)
+    return text
+
+
+def aggregate_key_for(record: UpstreamCatalogRecord) -> str:
+    """作品归一键：外部身份优先，缺身份时退化为标题+年份。
+
+    优先级 tmdb > imdb > 标题+年份——与 #13 远端身份“证据先行”
+    同序：有外部身份绝不靠标题猜。剧集单集在系列键后追加
+    季/集号，同一系列的不同集绝不归成同一作品。
+    """
+    if record.tmdb_id:
+        base = f"tmdb:{record.tmdb_id}"
+    elif record.imdb_id:
+        base = f"imdb:{record.imdb_id}"
+    else:
+        title = _normalize_title(record.series_name or record.name)
+        year = record.production_year or ""
+        base = f"title:{title}:{year}"
+    if record.item_type == "Episode" or record.episode_number is not None:
+        # 注意：单集即使有 tmdb/imdb，季集号仍须参与键——同一
+        # 剧集的不同集靠它区分，同一集重复出现时靠它归一。
+        base = f"{base}:s{record.season_number}:e{record.episode_number}"
+    return base
 
 
 def unified_search_enabled() -> bool:
@@ -102,14 +354,14 @@ def local_aggregate_key(*, name: str, item_type: str,
     会让无外部身份的同一作品（标题+年份键）在两边算出不同的键，
     去重 miss、本地行与上游行重复出现。
     """
-    probe = agg.UpstreamCatalogRecord(
+    probe = UpstreamCatalogRecord(
         source_id="", upstream_item_id="",
         name=name, item_type=item_type,
         production_year=(production_year if production_year is not None
                          else scan_year),
         tmdb_id=tmdb_id, imdb_id=imdb_id, series_name="",
         season_number=season_number, episode_number=episode_number)
-    return agg.aggregate_key_for(probe)
+    return aggregate_key_for(probe)
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +420,7 @@ class UnifiedSearchResponse:
 # ---------------------------------------------------------------------------
 
 
-def matches_upstream_term(record: agg.UpstreamCatalogRecord, term: str) -> bool:
+def matches_upstream_term(record: UpstreamCatalogRecord, term: str) -> bool:
     """上游记录是否命中查询词：归一化标题/剧名子串。
 
     用 ``search_variants`` 的繁简变体逐个比对紧凑串；空词恒为
@@ -208,7 +460,7 @@ def merge_search_results(
 ) -> UnifiedSearchResponse:
     """合并本站与多源上游搜索结果（纯函数，不写库、不发 HTTP）。
 
-    ``per_source`` 的值约定（与 ``aggregate_sources`` 同款）：
+    ``per_source`` 的值约定：
     成功时为该源的目录记录列表（``UpstreamCatalogRecord``），
     失败时为 ``Exception`` 实例或错误字符串；未知形态按失败计，
     不抛异常。空词返回空结果（不 dump 全库）。
@@ -272,7 +524,7 @@ def merge_search_results(
                                          error=value))
             continue
         if not (isinstance(value, list) and all(
-                isinstance(record, agg.UpstreamCatalogRecord)
+                isinstance(record, UpstreamCatalogRecord)
                 for record in value)):
             statuses.append(SourceStatus(
                 source_id=source_id, status="unavailable",
@@ -283,7 +535,7 @@ def merge_search_results(
         for record in value:
             if not matches_upstream_term(record, query):
                 continue
-            key = agg.aggregate_key_for(record)
+            key = aggregate_key_for(record)
             if key in seen_in_source:
                 continue
             seen_in_source.add(key)
@@ -301,7 +553,7 @@ def merge_search_results(
         statuses.append(SourceStatus(source_id=source_id, status="ok",
                                      count=matched))
 
-    # 上游在后：按 aggregate_key 排序，与 build_aggregates 同口径。
+    # 上游在后：按 aggregate_key 排序。
     for key in sorted(upstream_by_key):
         slot = upstream_by_key[key]
         sources = slot["sources"]
@@ -373,6 +625,163 @@ def to_response_body(response: UnifiedSearchResponse,
 
 
 # ---------------------------------------------------------------------------
+# 上游现查的传输与凭据（原上游聚合跑批的同名函数簇；跑批删除后
+# 本模块是唯一存活消费方，故迁入本模块自持）
+# ---------------------------------------------------------------------------
+
+class UpstreamSearchError(Exception):
+    """上游现查的运行错误：带 HTTP 状态码与短码，调用方映射为固定原因码。"""
+
+    def __init__(self, status: int, code: str, message: str):
+        super().__init__(message)
+        self.status = status
+        self.code = code
+        self.message = message
+
+
+def _credential_error() -> UpstreamSearchError:
+    return UpstreamSearchError(
+        409, "upstream_credential_invalid",
+        "上游凭据失效，请管理员重录该源凭据")
+
+
+def _unavailable_error() -> UpstreamSearchError:
+    return UpstreamSearchError(
+        502, "upstream_unavailable", "上游服务当前不可用，请稍后再试")
+
+
+def _frontend_blocked_error() -> UpstreamSearchError:
+    return UpstreamSearchError(
+        502, "upstream_frontend_blocked",
+        "上游前门（nginx）拦截，未到 Emby：请对方放行本方出口 IP，"
+        "重录凭据无效")
+
+
+def _forbidden_error(body) -> UpstreamSearchError:
+    """403 分流：Emby JSON 报错体 → 凭据失效；无 JSON 体（nginx HTML
+    被传输层吞成 None）→ 前门拦截 502。重录凭据修不好后者，绝不误判。"""
+    if isinstance(body, dict):
+        return _credential_error()
+    return _frontend_blocked_error()
+
+
+
+def _default_http_post(url: str, payload: dict, headers: dict,
+                       timeout: float):
+    """认证 POST：返回 (status|None, body|None)，超时/断连给 (None, None)。"""
+    data = json.dumps(payload).encode("utf-8")
+    headers = dict(headers or {})
+    headers.setdefault("User-Agent", "Aetrix/1.0")
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+    try:
+        with upstream_http.safe_urlopen(req, timeout=timeout) as resp:
+            try:
+                body = json.loads(resp.read().decode("utf-8", "replace"))
+            except (ValueError, UnicodeDecodeError):
+                body = None
+            return resp.status, body
+    except urllib.error.HTTPError as exc:
+        try:
+            body = json.loads(exc.read().decode("utf-8", "replace"))
+        except (ValueError, UnicodeDecodeError, AttributeError):
+            body = None
+        return exc.code, body
+    except Exception:
+        return None, None
+
+
+def _default_http_get(url: str, headers: dict, timeout: float):
+    """目录 GET：返回 (status|None, body|None)，超时/断连给 (None, None)。"""
+    headers = dict(headers or {})
+    headers.setdefault("User-Agent", "Aetrix/1.0")
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with upstream_http.safe_urlopen(req, timeout=timeout) as resp:
+            try:
+                body = json.loads(resp.read().decode("utf-8", "replace"))
+            except (ValueError, UnicodeDecodeError):
+                body = None
+            return resp.status, body
+    except urllib.error.HTTPError as exc:
+        try:
+            body = json.loads(exc.read().decode("utf-8", "replace"))
+        except (ValueError, UnicodeDecodeError, AttributeError):
+            body = None
+        return exc.code, body
+    except Exception:
+        return None, None
+
+
+def _source_headers(source) -> dict:
+    """发往上游的请求头：源上配的 UA / Referer / 附加头。
+
+    与 upstream_playback._source_headers 同口径；凭据绝不走这里。
+    """
+    headers: dict = {"Accept": "application/json"}
+    # 前门会拦 Python-urllib 默认 UA（实测 403，聚合误判为凭据失效）：
+    # 源没配 UA 时默认用 Aetrix UA，不许裸用 urllib 默认 UA 出站。
+    headers["User-Agent"] = getattr(source, "user_agent", None) or "Aetrix/1.0"
+    if getattr(source, "referer", None):
+        headers["Referer"] = source.referer
+    try:
+        extra = json.loads(source.extra_headers_json or "{}")
+    except (TypeError, ValueError):
+        extra = {}
+    if isinstance(extra, dict):
+        for key, value in extra.items():
+            if isinstance(key, str) and isinstance(value, str):
+                headers[key] = value
+    return headers
+
+
+def _api_key_for_source(source, *, http_post: Optional[Callable] = None):
+    """取上游 Items 请求用的 api_key（匿名返回 None）。
+
+    - 未配凭据 → None（匿名访问）；
+    - api_key 形态 → 密封值本身就是 key；
+    - password 形态 → 向上游认证口换 AccessToken，换不到按凭据
+      失效 / 上游不可用映射，绝不降级成匿名；403 按体分流
+      （JSON 体 → 凭据失效，无 JSON 体 → 前门拦截 502）。
+    密封解不开（SealedSecretError）→ 凭据失效，调用方须请管理员重录。
+    """
+    try:
+        cred = us.load_credential(source)
+    except us.SealedSecretError as exc:
+        raise _credential_error() from exc
+    if cred is None:
+        return None
+    if cred["auth_method"] == "api_key":
+        return cred["secret"]
+    if cred["auth_method"] == "password":
+        post = _default_http_post if http_post is None else http_post
+        base = (source.base_url or "").rstrip("/")
+        headers = dict(_source_headers(source))
+        headers["Content-Type"] = "application/json"
+        headers["X-Emby-Authorization"] = (
+            'MediaBrowser Client="Aetrix", Device="upstream-aggregate", '
+            'DeviceId="upstream-aggregate", Version="1.0"'
+        )
+        status, body = post(
+            f"{base}/Users/AuthenticateByName",
+            {"Username": cred["username"], "Pw": cred["secret"]},
+            headers, HTTP_TIMEOUT_SEC)
+        if status == 200 and isinstance(body, dict) and body.get("AccessToken"):
+            return str(body["AccessToken"])
+        if status == 401:
+            raise _credential_error()
+        if status == 403:
+            raise _forbidden_error(body)
+        raise _unavailable_error()
+    raise _unavailable_error()
+
+
+def _resolve_api_key(source, *, http_post=None):
+    """取 Items 请求用的 api_key；None = 匿名。只解析一次供逐库复用。"""
+    return _api_key_for_source(source, http_post=http_post)
+
+
+
+# ---------------------------------------------------------------------------
 # 上游现查（只读 Emby /Items?SearchTerm=，不是聚合跑批）
 # ---------------------------------------------------------------------------
 
@@ -386,24 +795,22 @@ def search_upstream_source(source, term: str, *,
     上游原始体与异常文本）。applecms 型源调用方不许走到这里
     （调用方直接记 unavailable，见 unified_search_api）。
 
-    传输与凭据复用 ``upstream_aggregate_run``（``_resolve_api_key`` /
+    传输与凭据用本模块自持实现（``_resolve_api_key`` /
     ``_default_http_get`` / ``_source_headers``）：凭据只在容器内
     解密使用，绝不进返回值。本函数不写库、不触发聚合。
     """
-    from backend.emby_server import upstream_aggregate_run as run
-
     term = (term or "").strip()
     if not term:
         return [], "empty_query"
-    get = run._default_http_get if http_get is None else http_get
+    get = _default_http_get if http_get is None else http_get
     try:
-        api_key = run._resolve_api_key(source, http_post=http_post)
-    except run.UpstreamAggregateRunError as exc:
+        api_key = _resolve_api_key(source, http_post=http_post)
+    except UpstreamSearchError as exc:
         return [], f"{exc.code}: {exc.message}"
     except Exception:  # noqa: BLE001 — 异常文本可能含带 key 的 URL，绝不外泄
         return [], "upstream_unavailable: 上游搜索请求失败"
     base = (source.base_url or "").rstrip("/")
-    headers = run._source_headers(source)
+    headers = _source_headers(source)
     params = {
         "SearchTerm": term,
         "Recursive": "true",
@@ -416,11 +823,11 @@ def search_upstream_source(source, term: str, *,
         params["api_key"] = api_key
     url = f"{base}/Items?{urllib.parse.urlencode(params)}"
     try:
-        status, body = get(url, headers, run.HTTP_TIMEOUT_SEC)
+        status, body = get(url, headers, HTTP_TIMEOUT_SEC)
     except Exception:  # noqa: BLE001 — 同上，不外泄异常文本
         return [], "upstream_unavailable: 上游搜索请求失败"
     if status == 200 and isinstance(body, dict):
-        records, _total = agg.parse_emby_items_page(
+        records, _total = parse_emby_items_page(
             body, source_id=str(source.id))
         matched = [record for record in records
                    if matches_upstream_term(record, term)]

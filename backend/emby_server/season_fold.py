@@ -14,7 +14,7 @@
   正主第一季。故新建本模块而不是扩宽松通道：分组键、逐行守卫、
   折叠力学三者都不同；复用零件：标题季号解析（本模块内，
   全仓一套）、映射迁移（upstream_item_mappings.migrate_mappings）、
-  托管季行 guid 锚（upstream_import.hosted_season_guid）、合并工人
+  托管季行 guid 锚（本模块 hosted_season_guid）、合并工人
   的配置与一程挂接。
 
 判定口径（照 2026-11-05 手工折叠验证版，自动化从严）：
@@ -359,6 +359,22 @@ def _primary_episode_index(db, primary_id: int) -> Dict[Tuple, int]:
     return {(r.season_number, r.episode_number): r.id for r in rows}
 
 
+def hosted_season_guid(source_id: int, series_local_id: int,
+                       season_number: int) -> str:
+    """托管季行 guid：md5("upstream:{source}:season:{剧行 id}:{季号}")。
+
+    上游季不进聚合抓取（IncludeItemTypes 只有 Movie/Series/
+    Episode），季行是按集号合成的结构行，没有上游条目 id 可
+    派生；以所属剧的本地行 id 为锚（剧行一旦落定 id 恒定），
+    与 scanner._ensure_season_row 的 (series.id, season_no)
+    幂等键同义。公式与历史进库侧（已删的 upstream_import）逐字
+    一致：已落库的托管季行 guid 锚于此，不许改公式。
+    """
+    return hashlib.md5(
+        f"upstream:{source_id}:season:{series_local_id}:{season_number}"
+        .encode("utf-8")).hexdigest()
+
+
 def _ensure_target_season(db, primary, season_no: int, stats: Dict[str, int]):
     """正主对应季行：已有可见季行直接用；缺失时新建（懒建）。"""
     from backend.emby_server import models as em
@@ -379,8 +395,6 @@ def _ensure_target_season(db, primary, season_no: int, stats: Dict[str, int]):
         return row
     if primary.upstream_source_id:
         # 托管正主：用托管季行 guid 锚，与进库侧幂等键一致。
-        from backend.emby_server.upstream_import import hosted_season_guid
-
         guid = hosted_season_guid(primary.upstream_source_id, primary.id, season_no)
     else:
         guid = hashlib.md5(
