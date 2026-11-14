@@ -8,10 +8,11 @@
  * 深浅只改 .stream-scope 上的 data-stream-theme，令牌见 uhd-tokens.css 色板 C。
  */
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import StreamTopbar from './StreamTopbar.vue'
 import StreamBottomNav from './StreamBottomNav.vue'
 import UhdTopBar from '@/components/uhd/UhdTopBar.vue'
+import DetailTopPill from '@/components/panel/DetailTopPill.vue'
 
 type StreamPref = 'system' | 'light' | 'dark'
 const PREF_KEY = 'aetrix-stream-theme'
@@ -71,15 +72,33 @@ provide('stream-theme', { pref, resolved, cycleTheme })
    手机端改挂全站同一套 UhdTopBar（sticky 玻璃条 + 观影胶囊，样式由
    .stream-scope 作用域令牌重映射，见 uhd-topbar.css）；桌面 ≥768px
    仍走批 3 双胶囊 StreamTopbar，本条由下方 CSS 隐藏。
-   详情页（media-detail）有自己的头部（详情页对齐单），不在此挂。 */
+   详情页（media-detail）有自己的头部（详情页对齐单），不在此挂。
+   片库首页（library）例外（2026-11-14 红圈对照改定，用户放大亲验）：
+   友站此页没有整条顶栏，右上只有一颗约 93×38 的深色玻璃胶囊，内含
+   月亮（外观切换）＋圆片底 X（退出媒体库）两钮，与友站详情页右上胶囊
+   是同一个控件；且本页已在片库里、「网页观影」钮在此是空转。故首页
+   手机端不挂整条栏，直接复用详情页的 DetailTopPill（外观钮走本壳
+   provide 的主题上下文、点击循环切换；X 的 close 事件在此接为退出
+   媒体库回概览 /game/account）；桌面仍走双胶囊浮动顶栏，形态一致。 */
 const route = useRoute()
-const showUnifiedTopbar = computed(() => route.name !== 'media-detail')
+const router = useRouter()
+const isLibraryHome = computed(() => route.name === 'library')
+const showUnifiedTopbar = computed(
+  () => route.name !== 'media-detail' && !isLibraryHome.value,
+)
 </script>
 
 <template>
   <div class="stream-scope" :data-stream-theme="resolved">
     <div class="stream-halo" aria-hidden="true"></div>
     <UhdTopBar v-if="showUnifiedTopbar" class="stream-utb" />
+    <!-- 片库首页右上胶囊：与详情页同一颗 DetailTopPill（外观＋退出），
+         浮在 Hero 海报上；退出 = 回概览。仅手机端渲染（组件内断点） -->
+    <DetailTopPill
+      v-if="isLibraryHome"
+      close-label="退出媒体库"
+      @close="router.push('/game/account')"
+    />
     <StreamTopbar :pref="pref" :resolved="resolved" @cycle-theme="cycleTheme" />
     <main class="stream-main">
       <slot />

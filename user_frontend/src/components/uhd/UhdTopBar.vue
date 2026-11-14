@@ -48,7 +48,7 @@ const brandInitial = computed(() => (branding.site_name.trim().charAt(0) || 'A')
   justify-content: space-between;
   gap: 12px;
   height: calc(var(--utb-h) + env(safe-area-inset-top));
-  padding: env(safe-area-inset-top) 20px 0;
+  padding: env(safe-area-inset-top) 16px 0;
   box-sizing: border-box;
   /* 玻璃底：半透 + blur/saturate + 底部边缘光 + 顶部内高光 + 柔影 */
   background: var(--utb-bg);
@@ -68,19 +68,19 @@ const brandInitial = computed(() => (branding.site_name.trim().charAt(0) || 'A')
   min-width: 0;
 }
 .uhd-topbar__logo {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   object-fit: contain;
   flex: none;
 }
 .uhd-topbar__mark {
-  font-size: 26px;
+  font-size: 22px;
   font-weight: var(--uhd-fw-black);
   line-height: 1;
   flex: none;
 }
 .uhd-topbar__title {
-  font-size: 21px;
+  font-size: 18px;
   font-weight: var(--uhd-fw-extrabold);
   letter-spacing: -0.01em;
   white-space: nowrap;

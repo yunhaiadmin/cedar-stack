@@ -16,7 +16,7 @@
       <Sun v-else :size="16" />
     </button>
     <span v-if="theme" class="dtp__sep" aria-hidden="true"></span>
-    <button type="button" class="dtp__btn" aria-label="关闭详情" @click="emit('close')">
+    <button type="button" class="dtp__btn" :aria-label="closeLabel" @click="emit('close')">
       <X :size="16" />
     </button>
   </div>
@@ -27,6 +27,10 @@ import { computed, inject, type ComputedRef, type Ref } from 'vue'
 import { Moon, Sun, X } from 'lucide-vue-next'
 
 const emit = defineEmits<{ close: [] }>()
+
+/** 关闭钮的无障碍文案：详情页是「关闭详情」；片库首页复用本控件时
+    语义是「退出媒体库」，由使用方传入。关闭动作本身走 close 事件。 */
+withDefaults(defineProps<{ closeLabel?: string }>(), { closeLabel: '关闭详情' })
 
 interface StreamThemeCtx {
   pref: Ref<'system' | 'light' | 'dark'>

@@ -15,7 +15,7 @@ import { RouterLink } from 'vue-router'
 
 <template>
   <RouterLink to="/library" class="utb-pill" aria-label="网页观影：前往片库">
-    <svg class="utb-pill__icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+    <svg class="utb-pill__icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
       <defs>
         <linearGradient id="utb-pill-g" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stop-color="#2f8fe0" />
@@ -37,7 +37,10 @@ import { RouterLink } from 'vue-router'
 .utb-pill {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: 7px;
+  /* 中和全局 mobile.css 的 a{min-height:44px}：胶囊高由 --utb-pill-h
+     令牌钉死（40），账户区没有片库面的作用域中和、会被撑到 44 */
+  min-height: 0;
   height: var(--utb-pill-h);
   padding: 0 var(--utb-pill-px);
   border: 1.5px solid transparent;
@@ -51,7 +54,7 @@ import { RouterLink } from 'vue-router'
     inset 0 1px 0 rgba(255, 255, 255, 0.35),
     var(--utb-shadow);
   color: var(--utb-pill-fg);
-  font-size: 15px;
+  font-size: 13.5px;
   font-weight: var(--uhd-fw-semibold);
   font-family: var(--uhd-font-sans);
   text-decoration: none;

@@ -370,6 +370,10 @@ onMounted(() => {
   50% { opacity: 0.55; }
 }
 @media (max-width: 767px) {
+  .sl-skel {
+    /* 手机端首页已无整条顶栏（浮动胶囊不占流），骨架不再让 76px */
+    padding-top: 20px;
+  }
   .sl-skel__poster {
     flex-basis: 152px;
   }
@@ -391,7 +395,8 @@ onMounted(() => {
 }
 .sl-continue__track {
   display: flex;
-  gap: 20px;
+  /* 卡间距：友站真机截图实测约 12（初版 20 偏空） */
+  gap: 12px;
   margin-top: 18px;
   padding: 0 clamp(16px, 5vw, 96px) 8px;
   overflow-x: auto;
@@ -494,6 +499,13 @@ onMounted(() => {
   cursor: pointer;
 }
 @media (max-width: 767px) {
+  /* 内容左右内距：友站实测 16（clamp 在 390 宽下给 19.5，偏大） */
+  .sl-continue__head {
+    padding: 0 16px;
+  }
+  .sl-continue__track {
+    padding: 0 16px 8px;
+  }
   .sl-continue__title {
     font-size: 22px;
   }
