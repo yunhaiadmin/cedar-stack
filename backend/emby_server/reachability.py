@@ -47,7 +47,6 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from backend import models, realms
-from backend.emby_server import applecms_library as cms_lib
 from backend.emby_server import models as em
 from backend.emby_server import mount_health, mounts as mount_lib, nodes
 
@@ -205,10 +204,10 @@ def library_reachability(db: Session, library, ctx: Optional[Context] = None,
         else:
             shared_sources.append(label)
 
-    # CMS 库的来源形态：接入的上游源名单。内容由 CMS 同步工人按名单灌入、播放走
-    # 上游线路解析，不经本机目录 / 挂载出流；解析口径与同步工人共用一份实现。
-    upstream_ids = cms_lib.parse_upstream_source_ids(library)
-    upstream_sources = [f"CMS 源 #{sid}" for sid in upstream_ids]
+    # 上游/CMS 供源已下线：来源只剩本机路径与挂载两类。结果里的
+    # upstream_sources 键保留为空列表（面板形状不变）。
+    upstream_ids: list = []
+    upstream_sources: list = []
 
     is_virtual = bool(getattr(library, "is_virtual", False))
     if is_virtual:
@@ -326,9 +325,6 @@ def library_reachability(db: Session, library, ctx: Optional[Context] = None,
     primary = next((p for p in problems if p["level"] == LEVEL_BAD), None) or (problems[0] if problems else None)
     if primary:
         ok_message = primary["message"]
-    elif upstream_ids and not local_sources and not shared_sources:
-        # 纯 CMS 供源：内容不在出流节点的文件系统上，默认那句「节点能拿到」不准确
-        ok_message = f"内容由 CMS 同步供源：已接入 {len(upstream_ids)} 家上游来源，播放走上游线路"
     else:
         ok_message = "出流节点能拿到这条库的内容"
     return {

@@ -7,8 +7,8 @@
   api_key 或令牌**——每个成员在自己的播放页走各自账号的现行签名
   链路（PlaybackInfo）取流，互不可见。
 - 建房 / 进房时服务端按现行播放门禁逐人校验，走单一入口
-  ``playback_gate.sign_allowed_for_item``（绑定盘 / 公共池 / CMS 免
-  绑定同一口径），不过门禁不许建房、不许进房；房间本身不下发任何
+  ``playback_gate.sign_allowed_for_item``（绑定盘 / 公共池同一
+  口径），不过门禁不许建房、不许进房；房间本身不下发任何
   播放凭证，校验只是「这个人自己能不能播这部片」。
 
 通道：复用 ``backend/websocket.py`` 的 ``/ws/{user_id}`` 连接与 JWT
@@ -160,8 +160,8 @@ def db_access_checker(db, user_id: int, item_guid: str):
 
     返回 (username, item_found, allowed)：item_found=False 表示条目
     不存在；allowed 走 ``playback_gate.sign_allowed_for_item``——已
-    绑定恒可、免门禁条目（CMS 库）可、公共池有 ready 副本可，其余
-    不可。与取流时现场裁决同一口径，不另写一份判定。
+    绑定恒可、公共池有 ready 副本可，其余不可。与取流时现场裁决
+    同一口径，不另写一份判定。
     """
     from backend import models
     from backend.emby_server import models as em

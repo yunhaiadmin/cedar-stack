@@ -1017,14 +1017,6 @@ export const createLibrary = (data: {
   enable_merge?: boolean
   /** 直出模式（N9-1）；不传 = 关 */
   direct_play?: boolean
-  /** 库类型：applecms 时内容来自 CMS 同步，paths 可空、来源必填 */
-  kind?: 'local' | 'applecms'
-  /** kind=applecms 时收哪些苹果 CMS 型上游源 */
-  upstream_source_ids?: number[]
-  /** kind=applecms 时的分类映射：源分类名 → in/out；不传 = 全收 */
-  cms_type_map?: Record<string, string> | null
-  /** kind=applecms 时的地区分流桶：huayu/oumei/rihan；不传/空 = 不分地区 */
-  cms_area_bucket?: string | null
 }) => post<{ success: boolean; id: number; guid: string }>(`${E}/libraries`, data)
 
 export const updateLibrary = (
@@ -1059,14 +1051,6 @@ export const updateLibrary = (
     enable_merge?: boolean
     /** 直出模式（N9-1）；省略则不修改 */
     direct_play?: boolean
-    /** 库类型：建库后不可更改，传了与现值不同后端会 400 */
-    kind?: 'local' | 'applecms'
-    /** kind=applecms 的库可改来源清单；省略则不修改 */
-    upstream_source_ids?: number[]
-    /** kind=applecms 的分类映射：传 null = 清空（回全收），省略则不修改 */
-    cms_type_map?: Record<string, string> | null
-    /** kind=applecms 的地区分流桶：传 null = 清空（回不分地区），省略则不修改 */
-    cms_area_bucket?: string | null
   }
 ) => put<{ success: boolean; rescan_required?: boolean }>(`${E}/libraries/${id}`, data)
 
