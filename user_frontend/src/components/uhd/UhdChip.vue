@@ -35,6 +35,13 @@ withDefaults(
   gap: 7px;
   font-family: var(--uhd-font-sans);
   white-space: nowrap;
+  /* 基本交互过渡（批 B 微交互）：状态/主题切换与按压不再硬跳，
+     时长走手册 base 档、transform 走 micro 档＋spring */
+  transition:
+    background-color var(--uhd-dur-base) var(--uhd-ease-standard),
+    border-color var(--uhd-dur-base) var(--uhd-ease-standard),
+    color var(--uhd-dur-base) var(--uhd-ease-standard),
+    transform var(--uhd-dur-micro) var(--uhd-ease-spring);
 }
 /* 规格 chip：无边框横排 */
 .uhd-chip--spec {

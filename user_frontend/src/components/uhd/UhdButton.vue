@@ -46,7 +46,16 @@ withDefaults(
   font-weight: var(--uhd-fw-semibold);
   white-space: nowrap;
   cursor: pointer;
-  transition: opacity var(--uhd-dur-ui) var(--uhd-ease-standard);
+  transition:
+    opacity var(--uhd-dur-ui) var(--uhd-ease-standard),
+    transform var(--uhd-dur-base) var(--uhd-ease-spring),
+    background-color var(--uhd-dur-base) var(--uhd-ease-standard),
+    box-shadow var(--uhd-dur-base) var(--uhd-ease-standard);
+}
+/* 按压回弹（批 B 微交互，报告 §2.4）：spring 缓动＋base 时长；
+   禁用态不触发，松手靠 spring 曲线回弹 */
+.uhd-btn:not(:disabled):active {
+  transform: scale(0.97);
 }
 .uhd-btn--md {
   height: 48px;
