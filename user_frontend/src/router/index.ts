@@ -176,6 +176,16 @@ const router = createRouter({
             component: () => import('@/views/game/SubscriptionRecordsView.vue'),
             meta: { title: '订阅记录', requiresAuth: true },
           },
+          // 钱包（2026-11-14 钱包批 2）：余额卡＋充值占位＋余额码兑换＋
+          // 购流量入口＋收支流水；同时是易支付 return_url 落点
+          // （/wallet?paid=1），进页即刷新余额并提示到账结果。
+          // 不进保活名单：每次进页都重新拉余额，不拿旧数吓人。
+          {
+            path: '/wallet',
+            name: 'wallet',
+            component: () => import('@/views/game/WalletView.vue'),
+            meta: { title: '我的钱包', requiresAuth: true },
+          },
           // 邀请好友（2026-11-13 对齐友站「我的 · 账户」）：邀请码/链接＋
           // 返利规则（比例读后端配置）＋邀请记录（累计返利为台账口径）
           {

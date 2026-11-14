@@ -77,6 +77,10 @@ SOURCE_WALLET_PURCHASE = "wallet_purchase"  # 钱包批 2（余额购买）预�
 
 STATUS_PENDING = "pending"
 STATUS_CREDITED = "credited"
+# 钱包批 2：订单退款把返利扣回后，计提行转 reversed（钱已从邀请人
+# 钱包扣回）。上限累计与分档累计都不再计这笔（等于这笔付费没发生过）；
+# 扣不回时不转态，改置 reversal_owed=True（仍是 credited，待追回）。
+STATUS_REVERSED = "reversed"
 
 
 # ==================== 配置 ====================
@@ -169,10 +173,15 @@ def compute_rebate_tiered(paid_amount, base_percent: int, tier_percent_: int,
 
 
 def _accrued_total(db: Session, inviter_id: int) -> Decimal:
-    """邀请人已计提返利总额（pending + credited，上限口径按已占额度算）。"""
+    """邀请人已计提返利总额（pending + credited，上限口径按已占额度算）。
+
+    已撤回（reversed）的不计：钱已扣回，上限额度应还给邀请人。
+    """
     total = (
         db.query(func.coalesce(func.sum(models.InviteRebateAccrual.rebate_amount), 0))
-        .filter(models.InviteRebateAccrual.inviter_id == inviter_id)
+        .filter(models.InviteRebateAccrual.inviter_id == inviter_id,
+                models.InviteRebateAccrual.status.in_(
+                    (STATUS_PENDING, STATUS_CREDITED)))
         .scalar()
     )
     return money(total or 0)
@@ -183,12 +192,15 @@ def _invitee_prior_paid(db: Session, inviter_id: int, invitee_id: int) -> Decima
 
     分档口径锚在计提台账上：每笔产生返利的付费都有一行，累计值与
     返利明细天然一致；比例被配成 0 的时期不产生行，那段付费不计入
-    累计（口径如实，报告中注明）。
+    累计（口径如实，报告中注明）。已撤回（reversed）的不计：订单
+    退款后等于这笔付费没发生过，后续付费重新从阈值下爬。
     """
     total = (
         db.query(func.coalesce(func.sum(models.InviteRebateAccrual.paid_amount), 0))
         .filter(models.InviteRebateAccrual.inviter_id == inviter_id,
-                models.InviteRebateAccrual.invitee_id == invitee_id)
+                models.InviteRebateAccrual.invitee_id == invitee_id,
+                models.InviteRebateAccrual.status.in_(
+                    (STATUS_PENDING, STATUS_CREDITED)))
         .scalar()
     )
     return money(total or 0)
@@ -334,7 +346,7 @@ def settle_pending_rebates(db: Session, limit: int = 200) -> int:
 # ==================== 查询（用户页 / 管理端共用） ====================
 
 def totals_for_inviter(db: Session, inviter_id: int) -> dict:
-    """某邀请人的返利汇总（元）：已到账 / 待到账 / 笔数。"""
+    """某邀请人的返利汇总（元）：已到账 / 待到账 / 已撤回 / 笔数。"""
     rows = (
         db.query(models.InviteRebateAccrual.status,
                  func.coalesce(func.sum(models.InviteRebateAccrual.rebate_amount), 0),
@@ -343,13 +355,16 @@ def totals_for_inviter(db: Session, inviter_id: int) -> dict:
         .group_by(models.InviteRebateAccrual.status)
         .all()
     )
-    result = {"credited": Decimal("0"), "pending": Decimal("0"), "count": 0}
+    result = {"credited": Decimal("0"), "pending": Decimal("0"),
+              "reversed": Decimal("0"), "count": 0}
     for status, total, count in rows:
         result["count"] += int(count or 0)
         if status == STATUS_CREDITED:
             result["credited"] = money(total or 0)
         elif status == STATUS_PENDING:
             result["pending"] = money(total or 0)
+        elif status == STATUS_REVERSED:
+            result["reversed"] = money(total or 0)
     return result
 
 
@@ -393,7 +408,7 @@ __all__ = [
     "DEFAULT_TIER_PERCENT", "DEFAULT_TIER_THRESHOLD_FEN",
     "MODE_FLAT", "MODE_TIERED",
     "SOURCE_SUBSCRIPTION_ORDER", "SOURCE_WALLET_PURCHASE", "SOURCE_WALLET_TOPUP",
-    "STATUS_CREDITED", "STATUS_PENDING",
+    "STATUS_CREDITED", "STATUS_PENDING", "STATUS_REVERSED",
     "accrual_dto", "compute_rebate", "compute_rebate_tiered",
     "config_snapshot", "rebate_cap_fen", "rebate_mode", "rebate_percent",
     "record_payment_rebate", "settle_pending_rebates", "tier_percent",

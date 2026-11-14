@@ -65,17 +65,40 @@
         </button>
       </div>
 
-      <!-- 余额购买：钱包未建，整页签置灰说明，绝不假接支付 -->
-      <div v-else class="tq-body tq-body--disabled" aria-disabled="true">
-        <p class="tq-now">当前流量：已用 {{ formatBytes(traffic?.used_bytes) }} / 共 {{ formatBytes(traffic?.quota_bytes) }}</p>
+      <!-- 余额购买（钱包批 2）：按配置单价扣余额换本周期抵扣额度 -->
+      <div v-else class="tq-body">
+        <p class="tq-now">
+          当前流量：已用 {{ formatBytes(traffic?.used_bytes) }} / 共 {{ formatBytes(traffic?.quota_bytes) }}
+          <span class="tq-now__credit">钱包余额 ¥ {{ walletBalanceText }}</span>
+        </p>
         <div class="tq-opts">
-          <button v-for="g in [100, 200, 500, 1000]" :key="g" type="button" class="tq-opt" disabled>
-            <span class="tq-opt__main">{{ g }}G</span>
-            <span class="tq-opt__sub">用余额抵扣已用流量</span>
+          <button
+            v-for="g in balanceOptions"
+            :key="g.gb"
+            type="button"
+            class="tq-opt"
+            :class="{ 'tq-opt--on': selectedGb === g.gb }"
+            :disabled="balanceSubmitting"
+            @click="selectBalance(g.gb)"
+          >
+            <span class="tq-opt__main">{{ g.gb }}G · ¥ {{ g.price }}</span>
+            <span class="tq-opt__sub">用余额抵扣已用流量（¥{{ pricePer100Gb }} / 100G）</span>
           </button>
         </div>
-        <p class="tq-note">余额购买将在钱包功能上线后可用，敬请期待。</p>
-        <button type="button" class="tq-confirm" disabled>钱包上线后可用</button>
+        <p v-if="balanceShortfall > 0" class="tq-error" role="alert">
+          钱包余额不足，还差 ¥ {{ balanceShortfall.toFixed(2) }}，请先去钱包充值
+        </p>
+        <p v-if="balanceError" class="tq-error" role="alert">{{ balanceError }}</p>
+        <button
+          type="button"
+          class="tq-confirm"
+          :disabled="!selectedBalance || balanceSubmitting || balanceShortfall > 0"
+          :aria-busy="balanceSubmitting"
+          @click="onBalanceConfirmClick"
+        >
+          <span v-if="balanceSubmitting" class="tq-spinner" aria-hidden="true"></span>
+          {{ balanceSubmitting ? '提交中…' : balanceConfirming ? `确认支付 ¥ ${selectedBalance?.price} 购买 ${selectedGb}G？` : '确认购买' }}
+        </button>
       </div>
     </div>
   </div>
@@ -86,14 +109,17 @@
  * 购流量弹窗（流量额度一期，形态照 UHDNow 两页签）：
  * - 时间换流量：真做通——选档 → 二次确认 → 提交（带幂等键，同一次
  *   打开内重试不重复扣天数）→ 成功后把最新流量汇总回抛父级刷新。
- * - 余额购买：钱包（余额）功能尚未建，整页签置灰＋说明，不接任何
- *   支付端点，不许假装能买。
+ * - 余额购买（钱包批 2）：按后端下发的配置单价（分/100GB）扣余额，
+ *   档位 100/200/500/1000GB，成交走 buyBalanceTraffic，余额不足
+ *   明示差额；同一幂等键重试不重复扣款。
  */
 import { computed, ref, watch } from 'vue'
 import {
+  buyBalanceTraffic,
   exchangeTimeForTraffic,
   formatBytes,
   type TrafficExchangeOption,
+  type TrafficOverview,
   type TrafficSummary,
 } from '@/api/traffic'
 import { useToast } from '@/composables/useToast'
@@ -102,7 +128,7 @@ import { toUserMessage } from '@/utils/toUserMessage'
 
 const props = defineProps<{
   open: boolean
-  traffic: TrafficSummary | null
+  traffic: TrafficOverview | null
   options: TrafficExchangeOption[]
 }>()
 const emit = defineEmits<{
@@ -116,6 +142,26 @@ const selectedDays = ref<number | null>(null)
 const confirming = ref(false)
 const submitting = ref(false)
 const error = ref('')
+/** 余额购买（钱包批 2）：档位只许 100/200/500/1000GB（后端再校验） */
+const selectedGb = ref(100)
+const balanceConfirming = ref(false)
+const balanceSubmitting = ref(false)
+const balanceError = ref('')
+/** 余额购流量单价（元/100GB，后端下发分/100GB；未下发时按默认 ¥3） */
+const pricePer100Gb = computed(() => ((props.traffic?.balance_price_per_100gb_fen ?? 300) / 100).toFixed(2))
+const walletBalanceText = computed(() => props.traffic?.wallet_balance ?? '0.00')
+const balanceOptions = computed(() =>
+  [100, 200, 500, 1000].map((gb) => ({
+    gb,
+    price: ((gb / 100) * Number(pricePer100Gb.value)).toFixed(2),
+  })),
+)
+const selectedBalance = computed(() => balanceOptions.value.find((o) => o.gb === selectedGb.value) ?? null)
+const balanceShortfall = computed(() => {
+  const price = Number(selectedBalance.value?.price ?? 0)
+  const bal = Number(walletBalanceText.value) || 0
+  return Math.max(0, Math.round((price - bal) * 100) / 100)
+})
 /** 本次打开弹窗的幂等键：打开时生成一次，选档/重试都不换，
  * 只有重新打开弹窗才换新——同一次确认绝不重复成交。 */
 const idempotencyKey = ref('')
@@ -141,6 +187,10 @@ watch(
       confirming.value = false
       submitting.value = false
       error.value = ''
+      selectedGb.value = 100
+      balanceConfirming.value = false
+      balanceSubmitting.value = false
+      balanceError.value = ''
       idempotencyKey.value = newKey()
     }
   },
@@ -152,8 +202,14 @@ function selectOption(days: number) {
   error.value = ''
 }
 
+function selectBalance(gb: number) {
+  selectedGb.value = gb
+  balanceConfirming.value = false
+  balanceError.value = ''
+}
+
 function close() {
-  if (submitting.value) return // 提交在途不许关，防结果丢失
+  if (submitting.value || balanceSubmitting.value) return // 提交在途不许关，防结果丢失
   emit('update:open', false)
 }
 
@@ -179,6 +235,34 @@ async function onConfirmClick() {
     error.value = toUserMessage(e)
   } finally {
     submitting.value = false
+  }
+}
+
+/** 余额购流量成交（钱包批 2）：二次确认 → 同一幂等键提交，
+ * 成功回抛最新流量汇总给父级刷新，余额不足由按钮禁用＋后端
+ * 双重拦截，失败文案走后端 detail。 */
+async function onBalanceConfirmClick() {
+  if (!selectedBalance.value || balanceSubmitting.value) return
+  if (!balanceConfirming.value) {
+    balanceConfirming.value = true
+    return
+  }
+  balanceSubmitting.value = true
+  balanceError.value = ''
+  try {
+    const res = await buyBalanceTraffic(selectedGb.value, idempotencyKey.value)
+    toast.success(
+      res.replayed
+        ? '这次购买已经生效过了，没有重复扣款'
+        : `已购买 ${selectedGb.value}G 流量，扣款 ¥${res.paid_amount}，余额剩 ¥${res.balance_after}`,
+    )
+    emit('exchanged', res.traffic)
+    emit('update:open', false)
+  } catch (e) {
+    balanceConfirming.value = false
+    balanceError.value = toUserMessage(e)
+  } finally {
+    balanceSubmitting.value = false
   }
 }
 </script>

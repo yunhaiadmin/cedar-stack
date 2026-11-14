@@ -635,7 +635,7 @@ export const paymentApi = {
   packages: () => api.get<never, { enabled: boolean; packages: RechargePackage[] }>('/api/user/economy/payment/packages'),
   // is_free / access_mode = 当前服是公益服（免费开放）：此时不展示套餐与购买引导
   plans: () =>
-    api.get<never, { enabled: boolean; plans: SubscriptionPlan[]; access_mode?: 'paid' | 'free'; is_free?: boolean; access_note?: string }>(
+    api.get<never, { enabled: boolean; wallet_purchase_enabled?: boolean; plans: SubscriptionPlan[]; access_mode?: 'paid' | 'free'; is_free?: boolean; access_note?: string }>(
       '/api/user/economy/payment/plans',
     ),
   createOrder: (data: { kind: 'recharge' | 'subscription'; item_id?: number; payment_method: string; coupon_code?: string; custom_amount?: number; pay_with_points?: boolean }) =>

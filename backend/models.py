@@ -1596,6 +1596,11 @@ class InviteRebateAccrual(Base):
       不丢账）；credited = 已入邀请人钱包（``wallet_ledger_id`` 指回
       钱包流水行）。退款撤回由钱包批 2 按 (source, source_ref) 精确
       定位本行处理，本表不改金额，只随状态流转。
+    - 撤回（钱包批 2）：退款时从邀请人钱包扣回返利成功 → status 转
+      ``reversed``（``reversed_at`` 留痕）；邀请人余额不足扣不回 →
+      不转态，置 ``reversal_owed=True``（仍是 credited，钱还在邀请
+      人钱包里），待管理员在钱包管理端重试/豁免（见
+      backend/api/admin_wallet 的 rebate-reversals 端点）。
     - ``percent`` 记计提时的比例快照，事后改配置不影响已计提的账。
     """
     __tablename__ = 'invite_rebate_accruals'
@@ -1621,6 +1626,10 @@ class InviteRebateAccrual(Base):
     wallet_ledger_id = Column(Integer)  # credited 后回填钱包流水行 id
     created_at = Column(DateTime, default=datetime.now)
     credited_at = Column(DateTime)
+    # 钱包批 2 撤回留痕：reversal_owed=True = 退款时邀请人余额不足、
+    # 返利没扣回来（仍是 credited，待重试/豁免）；reversed_at = 扣回时间。
+    reversal_owed = Column(Boolean, default=False)
+    reversed_at = Column(DateTime, nullable=True)
 
     inviter = relationship("WebUser", foreign_keys=[inviter_id])
     invitee = relationship("WebUser", foreign_keys=[invitee_id])
