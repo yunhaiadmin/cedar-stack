@@ -140,7 +140,8 @@ with SessionLocal() as db:
 
 
 def invite_reward_points(uid: int) -> int:
-    """该邀请人名下邀请记录的 reward_points（积分奖励已下线，恒 0）。"""
+    """该邀请人名下邀请记录的 reward_points：生产按「发放值回填」口径写——
+    天数型奖励回填天数（本冒烟为 30），积分奖励已下线、不会再写积分值。"""
     with SessionLocal() as db:
         row = db.query(models.InvitationRecord).filter(
             models.InvitationRecord.inviter_id == uid).first()
@@ -210,9 +211,9 @@ with SessionLocal() as db:
     ).count()
 check("邀请幂等：只有 1 条关系记录", rec == 1, f"记录数={rec}")
 check(
-    "邀请幂等：邀请人天数奖励只发一次（30 天）、不发积分",
+    "邀请幂等：邀请人天数奖励只发一次（30 天）、记录值与天数奖励一致",
     _membership_days(inviter_id) - before_inviter_days == 30
-    and invite_reward_points(inviter_id) == 0,
+    and invite_reward_points(inviter_id) == 30,
     f"邀请者 +{_membership_days(inviter_id) - before_inviter_days} 天",
 )
 
