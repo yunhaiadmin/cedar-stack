@@ -24,6 +24,7 @@ from backend.emby_server.portal import resolve_emby_base_url
 from backend.emby_server.public_url import client_base_url, configured_public_url
 from backend.integrations import branding as branding_capability
 from backend.integrations import community as community_capability
+from backend.integrations import store
 from backend.tg_bind import get_bot_username
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,21 @@ site_router = APIRouter(prefix="/api/site", tags=["站点信息"])
 def get_branding(db: Session = Depends(get_db)):
     """站点名称 / Logo / 主题色 / SEO（公开）"""
     return branding_capability.public_info(db)
+
+
+@site_router.get("/web-softdecode")
+def get_web_softdecode(db: Session = Depends(get_db)) -> dict:
+    """网页软解开关（公开，只读下发一个布尔值）
+
+    播放页起播前读一次：关 = 保持现状（浏览器解不了就出解码提示卡）；
+    开 = 浏览器硬解失败时改走站内自编 LGPL wasm 软解。读取异常回落
+    关——公开端点绝不能 500 拖垮播放页。
+    """
+    try:
+        return {"enabled": store.get_value(db, "web_softdecode_enabled", "false") == "true"}
+    except Exception:
+        logger.warning("读取网页软解开关失败，按关处理", exc_info=True)
+        return {"enabled": False}
 
 
 @site_router.get("/community")

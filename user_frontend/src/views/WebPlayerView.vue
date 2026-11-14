@@ -7,6 +7,7 @@
   >
     <video
       ref="videoEl"
+      v-show="!softActive"
       class="wp-video"
       playsinline
       preload="auto"
@@ -20,6 +21,10 @@
       @ended="onEnded"
       @error="onVideoError"
     />
+
+    <!-- 软解画布：浏览器硬解失败且开关开时，AVPlayer 在此渲染（canvas），
+         原生 video 隐藏。点一下切换控制层显隐，口径同原生 video 点按。 -->
+    <div v-show="softActive" ref="softEl" class="wp-soft" @click="onSoftTap" />
 
     <!-- 顶部栏：返回圆钮 + 标题 + 一起看 -->
     <header v-show="chromeVisible" class="wp-top">
@@ -139,7 +144,7 @@
               class="wp-icon wp-danmaku-btn"
               :class="{ off: !danmaku.enabled, on: danmaku.enabled }"
               aria-label="弹幕设置"
-              @click="danmakuOpen = true"
+              @click="openDanmaku"
             >
               <span class="wp-danmaku-txt">弹</span>
               <span v-if="!danmaku.enabled" class="wp-danmaku-slash" />
@@ -149,7 +154,7 @@
               class="wp-icon"
               :class="{ on: primarySub !== null }"
               aria-label="字幕"
-              @click="subtitleOpen = true"
+              @click="openSubtitles"
             >
               <Captions :size="20" />
             </button>
@@ -298,6 +303,12 @@ import {
   probeDecodeSync,
   type DecodeVerdict,
 } from '@/utils/decodeSupport'
+import {
+  createSoftPlayer,
+  fetchSoftDecodeEnabled,
+  shouldSoftDecode,
+  type SoftPlayerHandle,
+} from '@/utils/softDecode'
 import PlayerDanmakuSheet, { type DanmakuSettings } from '@/components/player/PlayerDanmakuSheet.vue'
 import PlayerSubtitleSheet, {
   type SubtitleFontSize,
@@ -361,6 +372,14 @@ const toast = ref('')
 const decodeVerdict = ref<DecodeVerdict | null>(null)
 const decodeAlt = ref<EmbyMediaSource | null>(null)
 const verdictCache = ref(new Map<string, DecodeVerdict>())
+// 软解播放器（批 2）：浏览器硬解失败且开关开时启用，渲染在 .wp-soft
+// 容器里（AVPlayer 自带 canvas）。softFailedFor 记最近一次软解失败的
+// 版本 id——失败只回落提示卡一次，不许自动重试循环；用户点「再试一次」
+// 才清掉它（retry 里）。
+const softEl = ref<HTMLDivElement | null>(null)
+const softHandle = ref<SoftPlayerHandle | null>(null)
+const softActive = computed(() => softHandle.value !== null)
+const softFailedFor = ref('')
 const noticeTitle = computed(() => {
   if (phase.value === 'unsupported') {
     return decodeVerdict.value ? '这个版本浏览器解不了' : '这个格式网页里播不了'
@@ -636,6 +655,7 @@ const bitrateText = computed(() => {
 const currentStepLabel = computed(() => PREP_STEPS[prepStepIndex.value]?.label || '')
 const prepSub = computed(() => {
   const src = currentSource.value
+  if (softHandle.value) return '浏览器硬解不支持，正在用站内软解播放（首次加载解码器约需几秒）'
   if (prepSlow.value) return '源响应有点慢，仍在尝试打开（网盘源第一次打开经常要等）'
   if (prepStepIndex.value === 0) return '正在向服务器确认可播放的版本'
   if (prepStepIndex.value === 1 && src) return src.Name || '正在连接播放地址'
@@ -880,16 +900,12 @@ async function start(restart: boolean): Promise<void> {
     currentSource.value = source
     prepStepIndex.value = 1
     // 起播前先把所有版本的解码能力探一遍（学友站播放页：先探测、
-    // 再决定路径）：选中的版本浏览器明确解不了，就直接出解码提示卡
-    // 给出路，不让它白转 30 秒最后误报成「源暂时不可用」
+    // 再决定路径）：选中的版本浏览器明确解不了，就先看能不能走站内
+    // 软解兜底，不行再出解码提示卡给出路，不让它白转 30 秒最后误报成
+    // 「源暂时不可用」
     decodeVerdict.value = null
     decodeAlt.value = null
     await probeAllSources(info.MediaSources)
-    const verdict = verdictCache.value.get(source.Id)
-    if (verdict?.hardBlock) {
-      showDecodeUnsupported(source, verdict)
-      return
-    }
     // 一起看晚入者优先对齐房间进度（按快照时间戳外推），盖过本地续播点
     const wtStartAt = wtPendingAlign
       ? wtPendingAlign.position +
@@ -897,7 +913,7 @@ async function start(restart: boolean): Promise<void> {
           ? (Date.now() - wtPendingAlign.at) / 1000
           : 0)
       : null
-    await openSource(
+    await playSource(
       source,
       wtStartAt ?? (startedFromResume ? resumeSeconds.value : 0),
     )
@@ -954,6 +970,119 @@ async function openSource(source: EmbyMediaSource, atSeconds: number): Promise<v
   } catch {
     /* 自动播放被拦时留在准备态，等用户再点一次开始 */
   }
+}
+
+/**
+ * 选定版本后的统一入口：解不了的版本先看能不能走站内软解兜底，
+ * 不行再按现行口径（硬拦的出解码提示卡，其余先试着播）。
+ */
+async function playSource(source: EmbyMediaSource, atSeconds: number): Promise<void> {
+  // 切版本：旧的软解实例先停掉，新版本再按决策重建（软解/原生二选一）
+  if (softHandle.value) await destroySoft()
+  const verdict = verdictCache.value.get(source.Id)
+  if (verdict?.status === 'unsupported' && (verdict.badVideo || verdict.badAudio)) {
+    if (await startSoftDecode(source, verdict, atSeconds)) return
+    if (verdict.hardBlock) {
+      showDecodeUnsupported(source, verdict)
+      return
+    }
+  }
+  await openSource(source, atSeconds)
+}
+
+/** 销毁软解实例（切版本/回落/卸载时调用），失败不影响回落。 */
+async function destroySoft(): Promise<void> {
+  const h = softHandle.value
+  softHandle.value = null
+  if (!h) return
+  try {
+    await h.destroy()
+  } catch {
+    /* 销毁失败不影响回落 */
+  }
+}
+
+/**
+ * 站内软解起播：开关关、编解码不在子集里、本版本已失败过，三者任一
+ * 命中即返回 false（调用方按现行路径走）。起播成功返回 true；起播中
+ * 的任何失败（wasm 拉不到、分析失败、超时）由 createSoftPlayer 内部
+ * 销毁实例，这里只记失败版本、返回 false——调用方回落解码提示卡，
+ * 不重试、不黑屏。
+ */
+async function startSoftDecode(
+  source: EmbyMediaSource,
+  verdict: DecodeVerdict,
+  atSeconds: number,
+): Promise<boolean> {
+  if (softFailedFor.value === source.Id) return false
+  const container = softEl.value
+  if (!container) return false
+  if (!shouldSoftDecode(verdict, source, await fetchSoftDecodeEnabled())) return false
+  // 先停掉原生 video（切版本时它可能还在播旧源），再建软解实例
+  videoEl.value?.pause()
+  softFailedFor.value = source.Id
+  phase.value = 'preparing'
+  prepStepIndex.value = 2
+  const url = source.DirectStreamUrl || ''
+  let started = false
+  let seekDone = false
+  try {
+    softHandle.value = await createSoftPlayer(
+      container,
+      url,
+      {
+        onFirstVideo: () => {
+          const h = softHandle.value
+          if (!h) return
+          const d = h.durationSeconds()
+          if (Number.isFinite(d) && d > 0) duration.value = d
+          if (atSeconds > 0 && !seekDone) {
+            seekDone = true
+            void h.seek(atSeconds).catch(() => {})
+          }
+          if (phase.value === 'preparing') {
+            phase.value = 'playing'
+            prepStepIndex.value = 3
+            pokeControls()
+          }
+        },
+        onFirstAudio: () => {},
+        onPlaying: () => {
+          isPaused.value = false
+          reportStartIfNeeded()
+          wtBroadcast('play')
+        },
+        onPaused: () => {
+          isPaused.value = true
+          sendProgress(true)
+          wtBroadcast('pause')
+        },
+        onTime: (s: number) => {
+          currentTime.value = s
+          const h = softHandle.value
+          if (h) {
+            const d = h.durationSeconds()
+            if (Number.isFinite(d) && d > 0) duration.value = d
+          }
+        },
+        onEnded: () => onEnded(),
+        onError: () => {
+          // 起播中的失败由调用方（playSource）决定回落，这里只处理
+          // 播起来之后的中途失败：销毁实例、回落解码提示卡，只一次。
+          if (!started) return
+          if (phase.value !== 'playing' && phase.value !== 'preparing') return
+          if (currentSource.value?.Id !== source.Id) return
+          void destroySoft().then(() => showDecodeUnsupported(source, verdict))
+        },
+      },
+      { ext: (source.Container || '').toLowerCase() || undefined },
+    )
+  } catch {
+    softHandle.value = null
+    return false
+  }
+  started = true
+  return true
 }
 
 /** 把 PlaybackInfo 里的每个版本都探一遍，结果进缓存（设置面板给版本标「浏览器解不了」也用它） */
@@ -1028,6 +1157,10 @@ function failByContainer(source: EmbyMediaSource, why: string): void {
 }
 
 async function retry(): Promise<void> {
+  // 用户明确点「再试一次」：清掉软解失败标记，给软解一次新的尝试机会；
+  // 失败本身仍只回落一次，不会自动重试循环。
+  await destroySoft()
+  softFailedFor.value = ''
   playbackInfo.value = null
   await start(false)
 }
@@ -1098,6 +1231,28 @@ function onVideoTap(): void {
   }
 }
 
+/** 软解画布点按：与原生 video 点按同一口径（切换控制层显隐） */
+function onSoftTap(): void {
+  onVideoTap()
+}
+
+/** 软解模式暂不支持字幕/弹幕（字幕轨挂在原生 video 的 <track> 上，
+    软解画布不走这条路）：点按钮时明说，不静默无反应。 */
+function openDanmaku(): void {
+  if (softActive.value) {
+    showToast('软解模式暂不支持弹幕')
+    return
+  }
+  danmakuOpen.value = true
+}
+function openSubtitles(): void {
+  if (softActive.value) {
+    showToast('软解模式暂不支持字幕')
+    return
+  }
+  subtitleOpen.value = true
+}
+
 // ---------- 上报 ----------
 
 function reportPayload() {
@@ -1140,6 +1295,13 @@ function pokeControls(): void {
   }, 3500)
 }
 function togglePlay(): void {
+  const soft = softHandle.value
+  if (soft) {
+    if (isPaused.value) void soft.play()
+    else void soft.pause()
+    pokeControls()
+    return
+  }
   const v = videoEl.value
   if (!v) return
   if (v.paused) void v.play()
@@ -1152,10 +1314,20 @@ function onSeekInput(e: Event): void {
   seekPreview.value = (val / 1000) * (duration.value || 0)
 }
 function onSeekCommit(e: Event): void {
-  const v = videoEl.value
-  if (!v) return
   const val = Number((e.target as HTMLInputElement).value)
   const target = (val / 1000) * (duration.value || 0)
+  const soft = softHandle.value
+  if (soft) {
+    void soft.seek(target).catch(() => {})
+    seeking.value = false
+    currentTime.value = target
+    sendProgress(isPaused.value)
+    pokeControls()
+    wtBroadcast('seek')
+    return
+  }
+  const v = videoEl.value
+  if (!v) return
   try {
     v.currentTime = target
   } catch {
@@ -1291,6 +1463,11 @@ function onSubtitleDelay(ms: number): void {
 
 function onRate(r: number): void {
   rate.value = r
+  const soft = softHandle.value
+  if (soft) {
+    soft.setRate(r)
+    return
+  }
   const v = videoEl.value
   if (v) v.playbackRate = r
 }
@@ -1304,15 +1481,13 @@ async function onSelectSource(sourceId: string): Promise<void> {
     return
   }
   settingsOpen.value = false
-  const cached = verdictCache.value.get(source.Id)
-  if (cached?.hardBlock) {
-    currentSource.value = source
-    showDecodeUnsupported(source, cached)
-    return
+  let cached = verdictCache.value.get(source.Id)
+  if (!cached) {
+    cached = await probeDecode(source)
+    verdictCache.value.set(source.Id, cached)
   }
-  const v = videoEl.value
-  const at = v?.currentTime || currentTime.value
-  const wasPlaying = !!v && !v.paused
+  const at = currentTime.value
+  const wasPlaying = phase.value === 'playing' && !isPaused.value
   currentSource.value = source
   reportedPlayingFor = ''
   // 切版本后字幕轨索引随新源走：保留同 Index 选择，新源没有就清掉
@@ -1325,8 +1500,9 @@ async function onSelectSource(sourceId: string): Promise<void> {
   if (secondarySub.value !== null && !valid.has(secondarySub.value)) secondarySub.value = null
   phase.value = 'preparing'
   prepStepIndex.value = 1
-  await openSource(source, at)
-  if (wasPlaying) videoEl.value?.play().catch(() => {})
+  // 解不了的新版本同样先过软解决策（软解/提示卡/原生试播三选一）
+  await playSource(source, at)
+  if (wasPlaying && !softActive.value) videoEl.value?.play().catch(() => {})
 }
 
 function onSelectEpisode(id: string): void {
@@ -1345,6 +1521,10 @@ function goEpisode(ep: EmbyItem | undefined): void {
 }
 
 function onScreenshot(): void {
+  if (softActive.value) {
+    showToast('软解模式暂不支持截图')
+    return
+  }
   const v = videoEl.value
   if (!v || !v.videoWidth) {
     showToast('现在还没有画面可截')
@@ -1386,6 +1566,10 @@ const pipSupported =
   'requestPictureInPicture' in HTMLVideoElement.prototype
 
 async function onPip(): Promise<void> {
+  if (softActive.value) {
+    showToast('软解模式暂不支持小窗')
+    return
+  }
   const v = videoEl.value
   if (!v || !pipSupported) return
   try {
@@ -1431,6 +1615,8 @@ watch(
       }
       reportedPlayingFor = ''
       window.clearInterval(progressTimer)
+      // 切集：软解实例先停掉（新集按自己的版本重新决策）
+      void destroySoft()
       // 切集：字幕选择是每集自己的，复位后按新集的 query/默认轨重新定
       primarySub.value = null
       secondarySub.value = null
@@ -1467,6 +1653,7 @@ onUnmounted(() => {
   window.clearInterval(progressTimer)
   window.clearInterval(wtStateTimer)
   wt.dispose()
+  void destroySoft()
   sendStopped()
   subBlobUrls.forEach((u) => URL.revokeObjectURL(u))
 })
@@ -1492,6 +1679,20 @@ onUnmounted(() => {
   height: 100%;
   object-fit: contain;
   background: #000;
+}
+/* 软解画布（AVPlayer 自建 canvas）：与原生 video 同框同层，canvas
+   撑满容器、按 contain 等比，不拉伸变形 */
+.wp-soft {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+.wp-soft canvas {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain;
 }
 .wp-video::cue {
   background: rgba(0, 0, 0, 0.55);

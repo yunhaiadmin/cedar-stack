@@ -65,6 +65,8 @@ SCHEMAS: dict[str, dict[str, tuple]] = {
     "upstream_aggregate": config_schema.UPSTREAM_AGGREGATE_CONFIG_SCHEMA,
     # 播放器登录黑名单（2026-10-30）：规则数组 JSON 校验
     "player_blacklist": config_schema.PLAYER_BLACKLIST_CONFIG_SCHEMA,
+    # 网页软解开关（2026-11-14 批 2）：web_softdecode_enabled，默认关
+    "web_softdecode": config_schema.WEB_SOFTDECODE_CONFIG_SCHEMA,
     # 安装应用页（2026-11-13）：6 平台官方客户端下载链接
     "install_app": config_schema.INSTALL_APP_CONFIG_SCHEMA,
     "welfare": config_schema.WELFARE_CONFIG_SCHEMA,

@@ -79,6 +79,7 @@ from backend.api.admin_apikey import router as admin_apikey_router
 from backend.api.orders_admin import admin_orders_router
 from backend.api.coupons_admin import admin_coupons_router
 from backend.api.admin_player_blacklist import admin_player_blacklist_router
+from backend.api.admin_softdecode import admin_softdecode_router
 from backend.api.install_app import (
     admin_install_app_router,
     user_install_app_router,
@@ -853,6 +854,8 @@ app.include_router(admin_orders_router)
 app.include_router(admin_coupons_router)
 # 播放器登录黑名单（2026-10-30）：规则读写，见 backend/api/admin_player_blacklist.py
 app.include_router(admin_player_blacklist_router)
+# 网页软解开关（2026-11-14 批 2）：开关读写，见 backend/api/admin_softdecode.py
+app.include_router(admin_softdecode_router)
 # 安装应用页（2026-11-13）：用户端页面数据 + 管理端下载链接配置，
 # 见 backend/api/install_app.py
 app.include_router(user_install_app_router)
