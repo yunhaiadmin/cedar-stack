@@ -70,6 +70,8 @@
                       <span class="cmp-plan__name">{{ plan.name }}</span>
                       <span v-if="isCurrent(plan)" class="plan-current">当前</span>
                     </span>
+                    <span class="cmp-price">¥ {{ fmtPrice(monthlyOf(plan)) }}</span>
+                    <span class="cmp-price__sub">/ 月 · 年付 ¥ {{ fmtPrice(listPriceFor(plan, 12)) }}</span>
                   </th>
                 </tr>
               </thead>
@@ -407,7 +409,6 @@ function trafficText(plan: SubscriptionPlan): string {
 const compareRows = computed(() => {
   const list = realmPlans.value
   return [
-    { label: '价格', cells: list.map((p) => `¥ ${fmtPrice(monthlyOf(p))} / 月`) },
     { label: '流量', cells: list.map((p) => trafficText(p)) },
     {
       label: '登录设备',
@@ -600,6 +601,22 @@ function goBack() {
 
 /* ---------- 加载 ---------- */
 async function loadAll() {
+  if (import.meta.env.VITE_FIXTURE === '1') {
+    plans.value = [
+      { id: 1, name: '夹具甲', description: null, price: 10, duration_days: 30, monthly_price: 10, base_months: 1, features: null, entitlements: { monthly_traffic_bytes: 500 * 1024 ** 3 }, is_popular: false, realm_name: '线路甲' },
+      { id: 2, name: '夹具乙', description: null, price: 30, duration_days: 30, monthly_price: 30, base_months: 1, features: null, entitlements: { monthly_traffic_bytes: 1500 * 1024 ** 3 }, is_popular: false, realm_name: '线路甲' },
+      { id: 3, name: '夹具丙', description: null, price: 20, duration_days: 30, monthly_price: 20, base_months: 1, features: null, entitlements: null, is_popular: false, realm_name: '线路乙' },
+    ]
+    plansEnabled.value = true
+    walletEnabled.value = true
+    couponEnabled.value = true
+    deviceLimit.value = 10
+    downloadAllowed.value = true
+    realmNote.value = '夹具说明，不是生产套餐'
+    walletBalance.value = 0
+    loading.value = false
+    return
+  }
   loading.value = true
   loadError.value = false
   const [pls, subs, cpCfg, wal] = await Promise.allSettled([
@@ -789,11 +806,33 @@ onMounted(() => {
   cursor: pointer;
   border-bottom: 1px solid var(--uhd-d-border);
   vertical-align: top;
+  text-align: center;
+}
+.cmp-colhead--on,
+.cmp-cell--on {
+  background: rgba(255, 255, 255, 0.06);
 }
 .cmp-plan {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  flex-wrap: wrap;
+}
+.cmp-price {
+  display: block;
+  margin-top: 8px;
+  font-size: 36px;
+  font-weight: var(--uhd-fw-extrabold);
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.cmp-price__sub {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--uhd-d-text-3);
 }
 .cmp-plan__name {
   font-size: var(--uhd-fs-title);
@@ -1042,4 +1081,16 @@ onMounted(() => {
   background: var(--uhd-rainbow, linear-gradient(100deg, #2f8fe0, #c46c90 55%, #f2a45a));
 }
 .cfm-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+html[data-theme='light'] .sub-page {
+  --uhd-d-bg: #f5f5f7;
+  --uhd-d-text: #111111;
+  --uhd-d-text-2: #3a3a3c;
+  --uhd-d-text-3: #8e8e93;
+  --uhd-d-surface: #ffffff;
+  --uhd-d-border: #e6e6ea;
+}
+html[data-theme='light'] .cmp-colhead--on,
+html[data-theme='light'] .cmp-cell--on {
+  background: #ffffff;
+}
 </style>

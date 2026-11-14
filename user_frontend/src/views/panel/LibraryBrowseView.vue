@@ -232,9 +232,23 @@ async function refreshCounts(list: EmbyItem[], myKind: string) {
   if (myKind === kind.value) maybeWriteBrowseCache()
 }
 
+function fixtureMovies(): EmbyItem[] {
+  return Array.from({ length: 6 }, (_, i) => ({
+    Id: `fix-${i + 1}`,
+    Name: `夹具海报 ${i + 1}`,
+    Type: 'Movie',
+    ProductionYear: 2026,
+  })) as EmbyItem[]
+}
 function pickCategory(id: string) {
   if (activeCat.value === id) return
   activeCat.value = id
+  if (import.meta.env.VITE_FIXTURE === '1') {
+    const empty = id === 'fix-b'
+    items.value = empty ? [] : fixtureMovies()
+    total.value = items.value.length
+    return
+  }
   void load(true)
 }
 
@@ -286,6 +300,7 @@ const VIEW_REFRESH_TTL_MS = 5 * 60 * 1000
 let lastLoadedAt = 0
 /** silent = 保活切回的后台刷新：不亮骨架、失败保留已有数据不清空 */
 async function load(reset = true, silent = false) {
+  if (import.meta.env.VITE_FIXTURE === '1') return
   const my = ++seq
   if (reset) {
     if (!silent) {
@@ -361,6 +376,17 @@ watch(kind, () => {
   void reloadAll()
 })
 onMounted(() => {
+  if (import.meta.env.VITE_FIXTURE === '1') {
+    categories.value = [
+      { id: 'fix-a', name: '夹具分类', count: 6 },
+      { id: 'fix-b', name: '另一类', count: 0 },
+    ]
+    activeCat.value = 'fix-a'
+    items.value = fixtureMovies()
+    total.value = 6
+    loading.value = false
+    return
+  }
   const cached = readBrowseCache()
   if (cached) {
     applyBrowseCache(cached)
@@ -501,6 +527,10 @@ function retryCategories() {
 <style scoped>
 .lb-wrap {
   padding: 26px clamp(16px, 5vw, 96px) 56px;
+}
+@media (min-width: 1200px) {
+  /* 1440 采样左缘约 28。海报宽随 6 列和列距算出，不锁死 148，否则一行铺不满。 */
+  .lb-wrap { padding-left: 28px; padding-right: 28px; }
 }
 .lb-eyebrow {
   margin: 0;

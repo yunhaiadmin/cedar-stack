@@ -176,6 +176,7 @@ const VIEW_REFRESH_TTL_MS = 5 * 60 * 1000
 let lastLoadedAt = 0
 /** silent = 保活切回的后台刷新：不亮骨架、失败保留已有数据、不动用户页签 */
 async function load(silent = false) {
+  if (import.meta.env.VITE_FIXTURE === '1') return
   if (!silent) {
     loading.value = true
     error.value = ''
@@ -287,6 +288,14 @@ const filteredItems = computed(() =>
 )
 
 onMounted(() => {
+  if (import.meta.env.VITE_FIXTURE === '1') {
+    items.value = [
+      { id: 'fav-m', type: 'movie', name: '夹具电影', poster_url: '' },
+      { id: 'fav-s', type: 'series', name: '夹具剧集', poster_url: '' },
+    ] as PortalMediaItem[]
+    loading.value = false
+    return
+  }
   void load()
   void loadPeople()
 })

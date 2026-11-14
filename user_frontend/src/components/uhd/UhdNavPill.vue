@@ -41,11 +41,13 @@ function onScrollShrink() {
   scrolled.value = window.scrollY > 40
 }
 onMounted(() => {
+  window.addEventListener('keydown', onNavKey)
   if (!props.shrinkOnScroll) return
   window.addEventListener('scroll', onScrollShrink, { passive: true })
   onScrollShrink()
 })
 onUnmounted(() => {
+  window.removeEventListener('keydown', onNavKey)
   window.removeEventListener('scroll', onScrollShrink)
 })
 
@@ -56,6 +58,12 @@ function onItem(item: UhdNavItem) {
   } else {
     openKey.value = ''
     emit('select', item.key)
+  }
+}
+function onNavKey(event: KeyboardEvent) {
+  if (event.key === 'Escape' && openKey.value) {
+    event.preventDefault()
+    openKey.value = ''
   }
 }
 </script>
@@ -83,6 +91,7 @@ function onItem(item: UhdNavItem) {
           type="button"
           class="uhd-nav__item"
           :class="{ 'uhd-nav__item--active': item.key === activeKey }"
+          :aria-expanded="item.children?.length ? openKey === item.key : undefined"
           @click="onItem(item)"
         >
           {{ item.label }}
@@ -197,6 +206,11 @@ function onItem(item: UhdNavItem) {
   color: var(--uhd-d-text);
   font-weight: var(--uhd-fw-semibold);
 }
+.uhd-nav__item:focus-visible,
+.uhd-nav__drop-row:focus-visible {
+  outline: 2px solid var(--uhd-d-text);
+  outline-offset: 2px;
+}
 .uhd-nav__caret { font-size: 10px; }
 /* 下拉：深色毛玻璃卡 */
 .uhd-nav__dropdown {
@@ -255,8 +269,41 @@ function onItem(item: UhdNavItem) {
   margin-right: auto;
   transition: max-width 0.5s cubic-bezier(0.32, 0.72, 0, 1);
 }
+/* 滚过首屏后收成一条胶囊：字标、导航、主钮同处一条玻璃条里（顶区仍是字标在外、胶囊居中）。 */
 .uhd-nav--shrink.is-shrunk {
-  max-width: 760px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  width: fit-content;
+  max-width: calc(100vw - 32px);
+  margin-top: 14px;
+  padding: 6px 8px 6px 16px;
+  border: var(--uhd-border-w) solid var(--uhd-glass-border);
+  border-radius: 999px;
+  background: rgba(10, 10, 14, 0.72);
+  backdrop-filter: var(--uhd-glass-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-filter);
+}
+.uhd-nav--shrink.is-shrunk .uhd-nav__pill {
+  position: static;
+  transform: none;
+  height: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.uhd-nav--shrink.is-shrunk .uhd-nav__item {
+  height: 36px;
+  padding: 0 12px;
+}
+.uhd-nav--shrink.is-shrunk .uhd-nav__brand {
+  flex: none;
+  margin-right: 6px;
 }
 @media (max-width: 720px) {
   .uhd-nav__brand-sub { display: none; }
