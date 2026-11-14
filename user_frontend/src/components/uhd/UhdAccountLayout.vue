@@ -294,8 +294,28 @@ html[data-theme='light'] .uhd-account {
   color: var(--uhd-l-text-3);
 }
 @media (max-width: 768px) {
-  .uhd-account :deep(.uhd-side) { display: none; }
-  .uhd-account__main { padding: 20px 16px 120px; }
+  /* 手机侧栏退出文档流后折叠。即使用户再展开，也是贴边覆盖，不许用 250px 实宽去挤主栏。 */
+  .uhd-account { display: block; min-width: 0; }
+  .uhd-account :deep(.uhd-side) {
+    display: none;
+    position: fixed;
+    z-index: 45;
+    top: var(--utb-h);
+    left: 0;
+    bottom: 0;
+    width: min(var(--uhd-sidebar-w), 86vw);
+    height: auto;
+  }
+  .uhd-account__main {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: 20px 16px 120px;
+  }
+  .uhd-account__title {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
 }
 </style>
 

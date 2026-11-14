@@ -6,7 +6,7 @@
  * 文案为 Aetrix 自有口径；营销数字一律不编造：片库统计位为占位待接（第 5 节④）。
  * 页面独立于应用壳（App.vue 对 landing 路由名不渲染全局顶栏/底坞），自带悬浮胶囊导航。
  */
-import { onMounted, onUnmounted, ref, type Component } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref, type Component } from 'vue'
 import { useRouter } from 'vue-router'
 import { Monitor, Sparkles, Film, Ban, Menu, X, RefreshCw, Bell, Home, Tag, BookOpen, ExternalLink, Users, Bot, MessageCircle, Send, Globe, ArrowRight } from 'lucide-vue-next'
 import UhdNavPill, { type UhdNavItem } from '@/components/uhd/UhdNavPill.vue'
@@ -35,19 +35,34 @@ function onNav(key: string) {
 const menuOpen = ref(false)
 const menuClosing = ref(false)
 const navScrolled = ref(false)
+const burgerBtn = ref<HTMLButtonElement | null>(null)
+const sheetEl = ref<HTMLElement | null>(null)
 function onScrollNav() {
   navScrolled.value = window.scrollY > 40
+}
+function focusSheet() {
+  const first = sheetEl.value?.querySelector<HTMLElement>('button, a')
+  first?.focus()
 }
 function setMenu(open: boolean) {
   menuOpen.value = open
   menuClosing.value = false
   document.documentElement.style.overflow = open ? 'hidden' : ''
+  if (open) nextTick(focusSheet)
 }
 function closeMenuAnimated() {
   if (!menuOpen.value || menuClosing.value) return
   menuClosing.value = true
   document.documentElement.style.overflow = ''
-  window.setTimeout(() => setMenu(false), 300)
+  window.setTimeout(() => {
+    setMenu(false)
+    burgerBtn.value?.focus()
+  }, 300)
+}
+function onMenuKey(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || !menuOpen.value) return
+  event.preventDefault()
+  closeMenuAnimated()
 }
 function toggleMenu() {
   if (menuOpen.value) closeMenuAnimated()
@@ -257,6 +272,7 @@ function splitTitleChars() {
   if (!el || el.dataset.splitDone) return
   el.dataset.splitDone = '1'
   const nodes = [...el.childNodes]
+  const scope = [...el.attributes].find((attr) => attr.name.startsWith('data-v-'))
   el.textContent = ''
   let idx = 0
   for (const node of nodes) {
@@ -269,6 +285,10 @@ function splitTitleChars() {
       wrap.className = 'pt-char-wrap'
       const inner = document.createElement('span')
       inner.className = 'pt-char'
+      if (scope) {
+        wrap.setAttribute(scope.name, '')
+        inner.setAttribute(scope.name, '')
+      }
       inner.style.transitionDelay = `${(0.1 + idx * 0.035).toFixed(3)}s`
       inner.textContent = ch === ' ' ? ' ' : ch
       wrap.appendChild(inner)
@@ -317,6 +337,7 @@ function setupReveal() {
 
 onMounted(() => {
   window.addEventListener('scroll', onScrollNav, { passive: true })
+  window.addEventListener('keydown', onMenuKey)
   onScrollNav()
   reduceMotion.value = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   splitTitleChars()
@@ -339,6 +360,7 @@ onUnmounted(() => {
   if (heroTimer) clearInterval(heroTimer)
   window.removeEventListener('scroll', onScroll)
   window.removeEventListener('scroll', onScrollNav)
+  window.removeEventListener('keydown', onMenuKey)
   revealIO?.disconnect()
   pinRevealIO?.disconnect()
   pinIO?.disconnect()
@@ -379,9 +401,11 @@ const year = new Date().getFullYear()
       </span>
       <span class="m-nav__chip" :class="{ 'is-flat': navScrolled }">
         <button
+          ref="burgerBtn"
           type="button"
           class="m-nav__burger"
           :aria-label="menuOpen ? '关闭菜单' : '打开菜单'"
+          :aria-expanded="menuOpen"
           @click="toggleMenu"
         >
           <X v-if="menuOpen" :size="19" aria-hidden="true" />
@@ -392,6 +416,7 @@ const year = new Date().getFullYear()
     <div v-if="menuOpen" class="m-scrim" :class="{ 'is-out': menuClosing }" @click="closeMenuAnimated" />
     <div
       v-if="menuOpen"
+      ref="sheetEl"
       class="m-sheet"
       :class="{ 'is-out': menuClosing }"
       :style="sheetDragStyle()"
@@ -474,20 +499,23 @@ const year = new Date().getFullYear()
           </div>
         </div>
       </div>
-      <div class="hero-beam" aria-hidden="true" />
-      <!-- 桌面棱镜主视觉（L-02）：与移动端同一构图的照片级图层＋脉冲叠层，
-           取代原自绘 SVG 棱镜扇面；移动端不显示（走 .hero-bg 全幅背景） -->
+      <!-- 桌面棱镜主视觉：自有照片铺满首屏（画布与图同比例，脉冲叠层跟图走）。
+           移动端不显示，走 .hero-bg。不再另叠彩虹渐变，也不再裁成右上角方图。 -->
       <div class="hero-visual" aria-hidden="true">
-        <img class="hero-visual-img" src="/images/hero-prism-desktop.webp" alt="" width="1600" height="1067" />
-        <div class="hp">
-          <span class="hp-beamglow" />
-          <span class="hp-dot" />
-          <span class="hp-flash hp-flash--entry" />
-          <span class="hp-flash hp-flash--prism" />
-          <span class="hp-refl" />
+        <div class="hero-visual-frame">
+          <img class="hero-visual-img" src="/images/hero-prism-desktop.webp" alt="" width="1600" height="1067" />
+          <div class="hp">
+            <span class="hp-beamglow" />
+            <span class="hp-dot" />
+            <span class="hp-flash hp-flash--entry" />
+            <span class="hp-flash hp-flash--prism" />
+            <span class="hp-refl" />
+          </div>
         </div>
       </div>
+      <div class="hero-scrim" aria-hidden="true" />
       <div class="hero-inner" :style="heroInnerStyle()">
+        <div class="hero-copy">
         <p class="eyebrow hero-el hero-el--eyebrow">{{ branding.site_name }} SERVICE</p>
         <h1 class="hero-title hero-el hero-el--title">你的私人影院<br />随时随地开场</h1>
         <p class="hero-sub hero-el hero-el--sub" aria-live="polite">
@@ -496,18 +524,19 @@ const year = new Date().getFullYear()
           </Transition>
         </p>
         <div class="hero-actions hero-el hero-el--actions">
-          <!-- Hero 双钮分态（2026-11-14 照友站真机截图复核）：已登录＝彩虹
-               「进入后台」（goConsole → 概览）＋玻璃「前往流媒体」（本站流
-               媒体入口 /library），移动端两颗并排都显示；未登录保持
-               「免费注册」＋「查看定价」原样。 -->
+          <!-- Hero 双钮分态（业务入口不动）：已登录＝「进入后台」＋「前往流媒体」；
+               未登录＝「免费注册」＋「查看定价」。箭头只是主钮的视觉收束。 -->
           <UhdButton v-if="userStore.isLoggedIn" variant="primary" dark @click="goConsole">
             进入后台 <ArrowRight :size="18" aria-hidden="true" />
           </UhdButton>
-          <UhdButton v-else variant="primary" dark @click="goRegister">免费注册</UhdButton>
+          <UhdButton v-else variant="primary" dark @click="goRegister">
+            免费注册 <ArrowRight :size="18" aria-hidden="true" />
+          </UhdButton>
           <UhdButton v-if="userStore.isLoggedIn" variant="secondary" dark class="hero-btn-stream" @click="goStream">
             前往流媒体 <ArrowRight :size="18" aria-hidden="true" />
           </UhdButton>
           <UhdButton v-else variant="secondary" dark class="hero-btn-pricing" @click="goPricing">查看定价</UhdButton>
+        </div>
         </div>
         <div class="hero-specs hero-el hero-el--specs">
           <UhdChip variant="spec" sub="超高清">
@@ -534,7 +563,7 @@ const year = new Date().getFullYear()
     <!-- ② 跑马灯 -->
     <section class="marquee-sec">
       <p class="eyebrow eyebrow--center rv" data-reveal>CLIENTS &amp; SPECS</p>
-      <h2 ref="platformsTitle" class="sec-title sec-title--platforms">在你顺手的设备上，<br />以它最好的规格播放</h2>
+      <h2 id="platforms-heading" ref="platformsTitle" class="sec-title sec-title--platforms">在你顺手的设备上，<br />以它最好的规格播放</h2>
       <p class="sec-sub rv rv--lede" data-reveal>播放交给专业客户端，服务器只做整理与供给——手机、电视、电脑，打开就能看。</p>
       <div class="marquee rv rv--marquee" data-reveal aria-hidden="true">
         <div class="marquee-track marquee-track--a">
@@ -682,8 +711,8 @@ const year = new Date().getFullYear()
   color: var(--uhd-d-text);
   font-family: var(--uhd-font-sans);
   /* 必须用 clip 不能用 hidden：hidden 会把本元素变成滚动容器、令 .pin-stage 的 sticky 失效
-     （动态返工实测：hidden 下 stage 随页面滚走、钉住从未生效） */
-  overflow-x: hidden;
+     （动态返工实测：hidden 下 stage 随页面滚走、钉住从未生效）。
+     clip 只收住跑马灯轨道的横向溢出，标题本身必须在视口内换行，不许靠裁切藏字。 */
   overflow-x: clip;
 }
 .landing-nav {
@@ -762,6 +791,12 @@ const year = new Date().getFullYear()
   color: var(--uhd-d-text);
   cursor: pointer;
 }
+.m-nav__burger:focus-visible,
+.m-sheet__row:focus-visible,
+.m-card:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
 @keyframes m-sheet-in {
   from { transform: translateY(100%); }
   to { transform: translateY(0); }
@@ -784,17 +819,21 @@ const year = new Date().getFullYear()
 }
 .eyebrow--center { text-align: center; }
 .sec-title {
-  margin: 0 0 16px;
+  margin: 0 auto 16px;
+  max-width: min(920px, calc(100% - 32px));
   text-align: center;
   font-family: var(--uhd-font-display);
   /* 原站 --text-landing-service-hero: clamp(2rem, 4.4vw, 4.4rem) */
   font-size: clamp(32px, 4.4vw, 70.4px);
   font-weight: var(--uhd-fw-extrabold);
-  line-height: 1.15;
+  line-height: 1.28;
+  overflow-wrap: anywhere;
 }
 .sec-title--platforms {
   /* 原站 --text-landing-platforms-title: clamp(1.8rem, 3.4vw, 2.8rem) */
-  font-size: clamp(28.8px, 3.4vw, 44.8px);
+  font-size: clamp(26px, 3.4vw, 44.8px);
+  line-height: 1.35;
+  scroll-margin-top: 96px;
 }
 .sec-sub {
   margin: 0 auto;
@@ -809,21 +848,11 @@ const year = new Date().getFullYear()
 .hero {
   position: relative;
   min-height: 100vh;
+  min-height: 100svh;
   display: flex;
-  align-items: center;
-  overflow: hidden;
-}
-.hero-beam {
-  position: absolute;
-  top: -22%;
-  right: -12%;
-  width: 62vw;
-  height: 90vh;
-  background: var(--uhd-rainbow-conic);
-  opacity: 0.5;
-  filter: blur(70px);
-  transform: rotate(18deg);
-  pointer-events: none;
+  align-items: stretch;
+  /* 文字层不许被裁掉。装饰图的出血只在 .hero-visual / .hero-bg 里收。 */
+  overflow: visible;
 }
 /* 移动端全幅背景层：默认隐藏（桌面走 .hero-visual），仅 ≤900px 启用（见文末断点）。
    .hero-bg 作尺寸容器，内层画布 .hero-bg-canvas 与底图同比例（1080:2160）
@@ -839,12 +868,14 @@ const year = new Date().getFullYear()
 }
 .hero-bg-canvas {
   position: absolute;
+  /* 下移画布，让棱镜落在屏下沿，按钮留在上方暗部。不用 transform：减动效会清掉它。 */
+  top: 10%;
   left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
   aspect-ratio: 1080 / 2160;
-  width: max(100%, 50svh);
-  width: max(100%, 50cqh);
+  width: max(124%, 58svh);
+  margin-left: calc(max(124%, 58svh) / -2);
+  width: max(124cqw, 58cqh);
+  margin-left: calc(max(124cqw, 58cqh) / -2);
   /* 脉冲几何覆盖值（对自有移动图 1080×2160 像素实测，图内 % 坐标）：
      光束线 y=59.2、入射星芒 x=37.5、棱镜中心 (48.9, 68.1)、倒影心 y=87 */
   --hp-beam-y: 59.2%;
@@ -873,24 +904,42 @@ const year = new Date().getFullYear()
   position: absolute;
   z-index: 2;
   inset: 0;
-  background: linear-gradient(0deg, rgba(1, 1, 4, 0.52), rgba(1, 1, 4, 0.2) 34%, transparent 58%);
+  background: linear-gradient(0deg, rgba(1, 1, 4, 0.86), rgba(1, 1, 4, 0.55) 28%, transparent 56%);
 }
-/* 棱镜主视觉（L-02）：桌面居右上、与底图同比例（1600×1067）；四边径向
-   柔化，图层融进底色不留矩形硬边（移动端全幅出血不套此罩，走 .hero-bg） */
+/* 桌面棱镜：自有图按 cover 铺满首屏。画布保持 1600:1067，脉冲百分比才跟得上星芒。
+   定位把棱镜压到首屏下沿偏左、光束铺满右侧，左侧黑部留给文案。只裁装饰层。 */
 .hero-visual {
   position: absolute;
-  top: 84px;
-  right: 1.5%;
-  width: min(620px, 46vw);
-  aspect-ratio: 1600 / 1067;
+  inset: 0;
+  overflow: hidden;
   pointer-events: none;
-  -webkit-mask-image: radial-gradient(ellipse 92% 90% at 50% 46%, #000 52%, transparent 97%);
-  mask-image: radial-gradient(ellipse 92% 90% at 50% 46%, #000 52%, transparent 97%);
+  container-type: size;
+}
+.hero-visual-frame {
+  position: absolute;
+  /* 不用 transform 定位：全站减动效会把 transform 清掉，构图不能靠它。 */
+  left: -42%;
+  top: -6%;
+  width: max(148%, 210svh);
+  left: -42cqw;
+  top: -6cqh;
+  width: max(148cqw, 210cqh);
+  aspect-ratio: 1600 / 1067;
 }
 .hero-visual-img {
   display: block;
   width: 100%;
   height: 100%;
+  object-fit: cover;
+}
+.hero-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(96deg, rgba(2, 2, 10, 0.82) 0%, rgba(2, 2, 10, 0.4) 26%, rgba(2, 2, 10, 0.08) 46%, transparent 62%),
+    linear-gradient(180deg, rgba(2, 2, 10, 0.55) 0%, transparent 16%, transparent 72%, rgba(1, 1, 4, 0.72) 100%);
 }
 
 /* ---------- Hero 棱镜脉冲（L-02 唯一动效，2026-11-14 友站实测） ----------
@@ -994,10 +1043,22 @@ const year = new Date().getFullYear()
 }
 .hero-inner {
   position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   max-width: var(--uhd-container-marketing);
   margin: 0 auto;
-  padding: 130px 28px 120px;
+  min-height: 100vh;
+  min-height: 100svh;
+  padding: 112px 40px 34px;
+  box-sizing: border-box;
+}
+.hero-copy {
+  max-width: min(540px, 46vw);
+  margin-top: auto;
+  margin-bottom: auto;
+  padding-bottom: 88px;
 }
 /* Hero 入场编排（L-11）：整层一把梭改为分件交错，全走令牌入场库。
    交错步长 0.08s——与本站 .rv--dev 阶梯（0.08/0.16/0.24）的步距一致；
@@ -1022,11 +1083,13 @@ const year = new Date().getFullYear()
 }
 .hero-title {
   margin: 0 0 22px;
+  max-width: 100%;
   font-family: var(--uhd-font-display);
   /* 原站 --text-landing-hero: clamp(2.1rem, 4.1vw, 3.9rem) */
   font-size: clamp(33.6px, 4.1vw, 62.4px);
   font-weight: var(--uhd-fw-black);
   line-height: var(--uhd-lh-tight);
+  overflow-wrap: anywhere;
 }
 .hero-sub {
   position: relative;
@@ -1072,19 +1135,36 @@ const year = new Date().getFullYear()
 }
 .hero-specs {
   display: flex;
-  gap: 34px;
+  gap: 22px 36px;
   flex-wrap: wrap;
-  margin-top: 64px;
+  align-items: flex-start;
+  max-width: min(720px, 58%);
+  margin-top: 0;
+}
+/* 卖点：图标在左，主词在上、说明在下。只改本页规格 chip，不动共享 UhdChip。 */
+.hero-specs :deep(.uhd-chip--spec) {
+  display: grid;
+  grid-template-columns: 22px auto;
+  column-gap: 10px;
+  row-gap: 2px;
+  align-items: center;
+  white-space: normal;
+}
+.hero-specs :deep(.uhd-chip__icon) {
+  grid-row: 1 / span 2;
+}
+.hero-specs :deep(.uhd-chip__sub) {
+  grid-column: 2;
 }
 .hero-scroll-hint {
   position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: 26px;
+  z-index: 2;
+  right: max(28px, calc((100vw - var(--uhd-container-marketing)) / 2));
+  bottom: 28px;
   margin: 0;
-  white-space: nowrap;
   font-size: var(--uhd-fs-caption);
   color: var(--uhd-d-text-2);
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.72);
 }
 
 /* ---------- 跑马灯 ---------- */
@@ -1097,8 +1177,9 @@ const year = new Date().getFullYear()
   display: flex;
   flex-direction: column;
   gap: 60px;
-  -webkit-mask-image: linear-gradient(90deg, transparent, black 12%, black 88%, transparent);
-  mask-image: linear-gradient(90deg, transparent, black 12%, black 88%, transparent);
+  /* 只淡出轨道两端的词，标题在轨道外面，不跟着被裁。 */
+  -webkit-mask-image: linear-gradient(90deg, transparent, black 10%, black 90%, transparent);
+  mask-image: linear-gradient(90deg, transparent, black 10%, black 90%, transparent);
 }
 .marquee-track {
   display: flex;
@@ -1280,6 +1361,8 @@ const year = new Date().getFullYear()
   bottom: 16vh;
   bottom: 16svh;
   z-index: 2;
+  box-sizing: border-box;
+  max-width: 100%;
   text-align: center;
   padding: 0 24px;
   transition: none;
@@ -1368,8 +1451,9 @@ const year = new Date().getFullYear()
   display: inline-block;
   overflow: hidden;
   vertical-align: bottom;
-  padding-bottom: 0.12em;
-  margin-bottom: -0.12em;
+  /* 上下留出字形墨水，静止帧不再被 overflow 切掉字头/字脚；离场的 translateY 仍被裁掉 */
+  line-height: 1.35;
+  padding: 0.14em 0 0.18em;
 }
 .pt-char {
   display: inline-block;
@@ -1385,16 +1469,21 @@ const year = new Date().getFullYear()
 }
 .pin-title {
   margin: 0 0 14px;
+  max-width: 100%;
   font-family: var(--uhd-font-display);
   /* 原站 --text-landing-immersive-title: clamp(2.25rem, 4.8vw, 5.4rem) */
-  font-size: clamp(36px, 4.8vw, 86.4px);
+  font-size: clamp(32px, 4.8vw, 86.4px);
   font-weight: var(--uhd-fw-black);
-  line-height: 1.1;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
 }
 .pin-sub {
-  margin: 0;
+  margin: 0 auto;
+  max-width: min(920px, 100%);
   font-size: var(--uhd-fs-lead);
+  line-height: 1.55;
   color: #cfd8e3;
+  overflow-wrap: anywhere;
 }
 
 /* ---------- 一份订阅 ---------- */
@@ -1907,22 +1996,28 @@ const year = new Date().getFullYear()
     flex-direction: column;
     align-items: stretch;
   }
-  .hero-beam { display: none; }
   .hero-bg { display: block; }
-  .hero-visual { display: none; }
+  .hero-visual,
+  .hero-scrim { display: none; }
+  .hero-copy {
+    max-width: none;
+    margin: 0;
+    padding-bottom: 0;
+  }
   .hero-inner {
     flex: 1;
     display: flex;
     flex-direction: column;
-    padding: 24svh 14px 10svh;
+    padding: 22svh 16px 8svh;
   }
   .hero-inner .eyebrow {
     margin-bottom: 20px;
   }
   .hero-title {
-    font-size: 34px;
+    font-size: clamp(28px, 8.4vw, 34px);
     line-height: 1.3;
     margin-bottom: 16px;
+    overflow: visible;
   }
   .hero-sub {
     font-size: 17px;
@@ -1946,6 +2041,7 @@ const year = new Date().getFullYear()
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 18px 24px;
+    max-width: none;
     margin-top: auto;
   }
   .hero-specs :deep(.uhd-chip--spec) {
@@ -2015,6 +2111,28 @@ const year = new Date().getFullYear()
   .ess-tile--3 { background: linear-gradient(160deg, #453026, #1d1410); }
   .ess-tile--4 { background: linear-gradient(160deg, #274435, #101a14); }
   .ess-points b { display: block; margin: 0 0 2px; }
+}
+@media (max-width: 420px) {
+  /* 390 档：跑马灯标题与钉住区副题整句落在视口内。靠换行和字号，不靠把 overflow 全藏掉。 */
+  .hero-actions { gap: 10px; }
+  .hero-actions :deep(.uhd-btn--primary),
+  .hero-actions :deep(.uhd-btn--secondary) {
+    padding: 0 14px;
+  }
+  .hero-specs { gap: 14px 12px; }
+  .hero-specs :deep(.uhd-chip--spec) { font-size: 16px; }
+  .sec-title,
+  .sec-title--platforms,
+  .pin-title,
+  .ess-h3 { overflow: visible; }
+  .sec-title--platforms {
+    font-size: clamp(22px, 6.6vw, 26px);
+    line-height: 1.45;
+  }
+  .pin-title { font-size: clamp(28px, 8vw, 34px); }
+  .pin-sub { font-size: 15px; }
+  .pin-copy { padding: 0 16px; }
+  .landing-foot { padding-left: 16px; padding-right: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .hero-el { animation: none; }
