@@ -51,6 +51,11 @@ WALLET_CONFIG_DEFAULTS = {
     "wallet_topup_fee_pct": 0,                 # 充值手续费比例（批 3 再议）
     "wallet_invite_rebate_percent": 5,         # 邀请返利比例（批 2 计提）
     "wallet_invite_rebate_cap": 0,             # 返利上限（分），0=不限
+    # 返利分档三键与 #175 invite_rebate 的 DEFAULT_* 逐字一致（同文件
+    # rebate_mode/tier_threshold_fen/tier_percent 的出厂默认）：
+    "wallet_invite_rebate_mode": "tiered",     # 返利模式：tiered 分档 / flat 统一比例
+    "wallet_invite_rebate_tier_threshold": 35000,  # 分档门槛（分）＝¥350，按每位好友累计付费计
+    "wallet_invite_rebate_tier_percent": 1,    # 二档比例 %（门槛以上部分）
     "traffic_balance_price_per_100gb": 300,    # 余额购流量单价（分/100GB）＝¥3
     "wallet_refund_to_balance": True,          # 退款回钱包（批 2 落地）
     "wallet_auto_renew_enabled": False,        # 余额自动续订：不开
@@ -91,12 +96,15 @@ def _config_raw(db: Session, key: str) -> str:
 
 
 def wallet_config(db: Session) -> dict:
-    """钱包 8 键的生效值（DB 行优先，缺行/坏值回代码默认）。"""
+    """钱包 11 键的生效值（DB 行优先，缺行/坏值回代码默认）。"""
     result = {}
     for key, default in WALLET_CONFIG_DEFAULTS.items():
         raw = _config_raw(db, key)
         if key in _BOOL_KEYS:
             result[key] = str(raw).strip().lower() in ("1", "true", "yes", "on")
+        elif isinstance(default, str):
+            # 字符串键（如返利模式）：原样取库值，空/缺行回默认
+            result[key] = str(raw).strip() or default
         else:
             try:
                 result[key] = int(str(raw).strip())

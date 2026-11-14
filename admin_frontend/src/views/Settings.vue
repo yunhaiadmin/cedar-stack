@@ -185,12 +185,24 @@ const GROUPS: Group[] = [
       { key: 'site_url', label: '站点地址', type: 'str', hint: '用于支付回调，必须是外网可访问地址' },
       { key: 'max_pending_orders_per_user', label: '待支付订单上限', type: 'int', suffix: '单/人', hint: '每人同时未支付的订单上限，默认 5，r40 补后台入口' },
       // 钱包（批 1，2026-11-14）：余额/流水在「钱包管理」页，这里只放配置；
-      // 无库行时按代码默认生效（开/¥10/0/5%/不限/¥3/开/关，见钱包管理页）
+      // 无库行时按代码默认生效（开/¥10/0/5%/不限/分档·门槛¥350·二档1%/¥3/开/关，见钱包管理页）
       { key: 'wallet_enabled', label: '启用钱包', type: 'bool', hint: '钱包总开关；关闭后余额兑换与后续余额支付入口全灭，只读余额仍可查' },
       { key: 'wallet_min_topup_amount', label: '最低充值额（分）', type: 'int', suffix: '分', hint: '默认 1000 ＝ ¥10，在线充值（批 3）用' },
       { key: 'wallet_topup_fee_pct', label: '充值手续费比例（%）', type: 'int', suffix: '%', hint: '默认 0' },
       { key: 'wallet_invite_rebate_percent', label: '邀请返利比例（%）', type: 'int', suffix: '%', hint: '默认 5，好友充值到账后返给邀请人（批 2 计提）' },
       { key: 'wallet_invite_rebate_cap', label: '单人返利上限（分）', type: 'int', suffix: '分', hint: '默认 0 ＝ 不限' },
+      {
+        key: 'wallet_invite_rebate_mode',
+        label: '返利模式',
+        type: 'str',
+        choices: [
+          { value: 'tiered', label: '分档（tiered）' },
+          { value: 'flat', label: '统一比例（flat）' },
+        ],
+        hint: '默认分档：每位好友累计付费在分档门槛内按返利比例、超出部分按二档比例；统一比例 ＝ 全程按返利比例',
+      },
+      { key: 'wallet_invite_rebate_tier_threshold', label: '分档门槛（分）', type: 'int', suffix: '分', hint: '默认 35000 ＝ ¥350，按每位好友累计付费计，仅分档模式用' },
+      { key: 'wallet_invite_rebate_tier_percent', label: '二档比例（%）', type: 'int', suffix: '%', hint: '默认 1，超出分档门槛的部分按此比例返，仅分档模式用' },
       { key: 'traffic_balance_price_per_100gb', label: '余额购流量单价（分/100GB）', type: 'int', suffix: '分', hint: '默认 300 ＝ ¥3/100GB（批 2 启用）' },
       { key: 'wallet_refund_to_balance', label: '退款回钱包', type: 'bool', hint: '默认开（批 2 落地）' },
       { key: 'wallet_auto_renew_enabled', label: '余额自动续订', type: 'bool', hint: '默认关，不开' },

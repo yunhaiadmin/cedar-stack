@@ -741,6 +741,12 @@ ECONOMY_CONFIG_SCHEMA: dict[str, tuple] = {
     "wallet_topup_fee_pct": ("int", 0, 100),
     "wallet_invite_rebate_percent": ("int", 0, 100),
     "wallet_invite_rebate_cap": ("int", 0, _BIG),
+    # 返利分档三键（#175 invite_rebate 读取，2026-11-14 用户分档定版）：
+    # mode 只收 tiered/flat 两值（invite_rebate.rebate_mode 的合法集），
+    # threshold 按每位好友累计付费计、单位分，tier_percent 是门槛以上比例。
+    "wallet_invite_rebate_mode": ("enum", ("tiered", "flat")),
+    "wallet_invite_rebate_tier_threshold": ("int", 0, _BIG),
+    "wallet_invite_rebate_tier_percent": ("int", 0, 100),
     "traffic_balance_price_per_100gb": ("int", 0, _BIG),
     "wallet_refund_to_balance": ("bool",),
     "wallet_auto_renew_enabled": ("bool",),

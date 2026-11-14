@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from backend import codes, models
+from backend import codes, config_schema, models
 from backend import wallet as wallet_service
 from backend.api import admin_ops, admin_wallet
 from backend.api import wallet as wallet_api
@@ -293,6 +293,10 @@ def test_wallet_config_defaults(db):
         "wallet_topup_fee_pct": 0,
         "wallet_invite_rebate_percent": 5,
         "wallet_invite_rebate_cap": 0,
+        # 返利分档三键：与 #175 invite_rebate 的 DEFAULT_* 逐字一致
+        "wallet_invite_rebate_mode": "tiered",
+        "wallet_invite_rebate_tier_threshold": 35000,
+        "wallet_invite_rebate_tier_percent": 1,
         "traffic_balance_price_per_100gb": 300,
         "wallet_refund_to_balance": True,
         "wallet_auto_renew_enabled": False,
@@ -302,12 +306,33 @@ def test_wallet_config_defaults(db):
 def test_wallet_settings_endpoint_roundtrip(db, admin):
     resp = admin_wallet.wallet_admin_get_settings(admin, db)
     assert resp["settings"]["wallet_invite_rebate_percent"] == "5"
+    # 返利分档三键（#175 invite_rebate 读）：无库行时回代码默认
+    assert resp["settings"]["wallet_invite_rebate_mode"] == "tiered"
+    assert resp["settings"]["wallet_invite_rebate_tier_threshold"] == "35000"
+    assert resp["settings"]["wallet_invite_rebate_tier_percent"] == "1"
     out = admin_wallet.wallet_admin_update_settings(
         admin_wallet.WalletSettingsRequest(
             settings={"wallet_invite_rebate_percent": 8}),
         admin, db)
     assert out["ok"] is True
     assert wallet_service.wallet_config(db)["wallet_invite_rebate_percent"] == 8
+    out = admin_wallet.wallet_admin_update_settings(
+        admin_wallet.WalletSettingsRequest(settings={
+            "wallet_invite_rebate_mode": "flat",
+            "wallet_invite_rebate_tier_threshold": 20000,
+            "wallet_invite_rebate_tier_percent": 2}),
+        admin, db)
+    assert out["ok"] is True
+    config = wallet_service.wallet_config(db)
+    assert config["wallet_invite_rebate_mode"] == "flat"
+    assert config["wallet_invite_rebate_tier_threshold"] == 20000
+    assert config["wallet_invite_rebate_tier_percent"] == 2
+    # mode 只收 tiered/flat 两值：schema enum 校验拒绝其余取值
+    with pytest.raises(config_schema.ConfigValueError):
+        admin_wallet.wallet_admin_update_settings(
+            admin_wallet.WalletSettingsRequest(
+                settings={"wallet_invite_rebate_mode": "bogus"}),
+            admin, db)
     with pytest.raises(HTTPException):
         admin_wallet.wallet_admin_update_settings(
             admin_wallet.WalletSettingsRequest(settings={"nope": 1}),

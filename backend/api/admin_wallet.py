@@ -145,7 +145,7 @@ def wallet_admin_ledger(
             "page_size": page_size}
 
 
-# ---------- 钱包配置（8 键，默认值见 wallet.WALLET_CONFIG_DEFAULTS） ----------
+# ---------- 钱包配置（11 键，默认值见 wallet.WALLET_CONFIG_DEFAULTS） ----------
 
 @admin_router.get("/economy/wallet/settings")
 def wallet_admin_get_settings(
@@ -170,7 +170,7 @@ def wallet_admin_update_settings(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """保存钱包配置：只认 8 个钱包键，未知键 400（不静默吞，防写错键名）。"""
+    """保存钱包配置：只认 11 个钱包键，未知键 400（不静默吞，防写错键名）。"""
     from backend import config_service
 
     allowed = set(wallet_service.WALLET_CONFIG_DEFAULTS)
