@@ -897,10 +897,10 @@ LONGTERM_SUB_MIN_DAYS = 18250
 def _whitelist_status(db: Session, user: models.WebUser, now: datetime) -> dict:
     """某账号当前「永久」状态（判定与全站各口径一致，只读组装）。
 
-    历史上是三处（公益资格/查看行/订阅）；公益资格已随福利整族于
-    2026-11-14 删除、白名单核销不再发放资格，故 is_permanent_active
-    只看剩余两处（查看行永久＋订阅长期）。welfare_permanent 字段保留
-    输出（存量数据只读展示），不再参与生效判定。
+    历史上是三处（公益资格/查看行/订阅）；公益资格已随福利服役族于
+    2026-11-14 删除（四列已删）、白名单核销不再发放资格，故
+    is_permanent_active 只看剩余两处（查看行永久＋订阅长期），
+    原 welfare_permanent 输出字段随之一并摘除。
     """
     view_permanent = (
         db.query(models.EmbyViewUnlock.id)
@@ -916,9 +916,7 @@ def _whitelist_status(db: Session, user: models.WebUser, now: datetime) -> dict:
                 > now + timedelta(days=LONGTERM_SUB_MIN_DAYS))
         .first() is not None
     )
-    welfare_permanent = bool(user.is_welfare) and user.welfare_expires_at is None
     return {
-        "welfare_permanent": welfare_permanent,
         "view_permanent": view_permanent,
         "subscription_longterm": sub_longterm,
         "is_permanent_active": view_permanent and sub_longterm,
@@ -1019,11 +1017,12 @@ def whitelist_accounts(db: Session) -> list:
 
 
 def revoke_whitelist_account(db: Session, user_id: int) -> Optional[dict]:
-    """回收某账号的永久资格：三处「永久」表示一并到期（不提交，调用方提交）。
+    """回收某账号的永久资格：两处「永久」表示一并到期（不提交，调用方提交）。
 
-    只动永久形态的那几行：资格 expires 为空才填到期、查看行 expires
-    为空才填到期、订阅只处理长期（>50 年）的那条；用户正常购买/续费的
-    有限期权益不在回收范围。返回回收后的名单行；用户不存在返回 None。
+    只动永久形态的那几行：查看行 expires 为空才填到期、订阅只处理
+    长期（>50 年）的那条；用户正常购买/续费的有限期权益不在回收范围。
+    （原公益资格一处已随福利服役族于 2026-11-14 删除。）
+    返回回收后的名单行；用户不存在返回 None。
     """
     user = db.query(models.WebUser).filter(
         models.WebUser.id == user_id).first()
@@ -1031,8 +1030,6 @@ def revoke_whitelist_account(db: Session, user_id: int) -> Optional[dict]:
         return None
     now = datetime.now()
     past = now - timedelta(seconds=1)
-    if user.is_welfare and user.welfare_expires_at is None:
-        user.welfare_expires_at = past
     for row in (db.query(models.EmbyViewUnlock)
                 .filter(models.EmbyViewUnlock.user_id == user_id,
                         models.EmbyViewUnlock.expires_at.is_(None)).all()):

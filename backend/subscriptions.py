@@ -96,36 +96,15 @@ def realm_access_note(db: Session, realm_id: Optional[int] = None) -> str:
     return realms.access_note_of(db, _scoped_realm_id(db, realm_id))
 
 
-def welfare_qualification_active(user: models.WebUser) -> bool:
-    """公益资格是否在期（全站既有口径，收口在此）
-
-    口径 = ``is_welfare`` 且 ``welfare_expires_at`` 为空（永久资格，
-    白名单等）或未到期。与 ``media_seek`` 的 ``_is_welfare_active``
-    判定逐字一致——那处是模块内私有判定，subscriptions 不能反向
-    import 它，故在此收口一份并注明，谁改口径必须两处同改。
-    （portal 的同名判定已随公益资格发放于 2026-11-14 删除。）
-
-    **保留期不算在期**：``welfare_expires_at`` 一过即不在期；保留期
-    （grace）只是过期处置的宽限，不给任何权益。
-    """
-    if not bool(getattr(user, "is_welfare", False)):
-        return False
-    expires_at = getattr(user, "welfare_expires_at", None)
-    if expires_at is None:
-        return True
-    return expires_at > datetime.now()
-
-
 def view_grant(db: Session, user: models.WebUser,
                realm_id: Optional[int] = None) -> tuple[bool, Optional[models.EmbyViewUnlock]]:
     """用户有没有权限查看某服的 Emby 账号 / 线路（**全站单一事实来源**）
 
-    规则：付费服 = 有效订阅即权限；公益服 = **公益资格在期**（见
-    ``welfare_qualification_active``）**或**持有未到期的存量查看行
-    （``EmbyViewUnlock``）。资格与凭证已合并（2026-11-09 用户定版）：
-    资格在期自动带查看，购买写口已退役；存量查看行继续有效到期为止，
-    资格过期者靠它过渡、行到期即停。返回的第二项是命中的存量行
-    （仅靠资格放行时为 None），供调用方展示到期日。
+    规则：付费服 = 有效订阅即权限；公益服 = 持有未到期的存量查看行
+    （``EmbyViewUnlock``）。公益资格已随福利服役族于 2026-11-14 删除
+    （资格全量折算成订阅时间），不再有「资格在期自动带查看」；
+    存量查看行继续有效到期为止，行到期即停。返回的第二项是命中的
+    存量行（未放行时为 None），供调用方展示到期日。
     判定一律按 ``end_date`` / ``expires_at`` **现算**，不信行上的 status 字段
     （它不会随时间自动翻转，见本模块开头）。
 
@@ -147,7 +126,7 @@ def view_grant(db: Session, user: models.WebUser,
             .order_by(models.EmbyViewUnlock.unlocked_at.desc())
             .first()
         )
-        return (unlock is not None or welfare_qualification_active(user)), unlock
+        return (unlock is not None), unlock
     return has_active_subscription(db, user.id, target), None  # r49: 用 _scoped 口径（此前 resolve_realm_id；现有调用方下等价）
 
 CONFIG_REQUIRED = "subscription_required"
@@ -304,7 +283,6 @@ __all__ = [
     "can_play",
     "ensure_playback_allowed",
     "view_grant",
-    "welfare_qualification_active",
     "download_allowed",
     "download_gate_message",
     "ensure_download_allowed",

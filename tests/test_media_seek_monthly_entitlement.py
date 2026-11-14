@@ -83,23 +83,24 @@ def _make_sub(db, user, plan, days=30, status="active"):
     return s
 
 
-# ---------------- welfare 优先：套餐声明跳不过公益口径 ----------------
+# ---------------- 公益口径已删除：全员走套餐声明口径 ----------------
+# （原 welfare 分支优先于套餐声明，已随福利服役族于 2026-11-14 删除）
 
-def test_welfare_with_entitled_plan_still_welfare_limit(db):
-    """welfare 用户买了声明 20 的套餐，月度仍走公益口径 3（一期有意如此）。"""
-    user = _make_user(db, is_welfare=True)
+def test_user_with_entitled_plan_uses_plan_limit(db):
+    """持有声明 20 的套餐，月度走套餐声明 20、kind 恒 paid。"""
+    user = _make_user(db)
     plan = _make_plan(db, entitlements_value={KEY_SEEK: 20})
     _make_sub(db, user, plan)
-    assert media_seek.monthly_limit(db, user) == media_seek.DEFAULT_MONTHLY_WELFARE == 3
-    assert media_seek.monthly_quota(db, user)["kind"] == "welfare"
+    assert media_seek.monthly_limit(db, user) == 20
+    assert media_seek.monthly_quota(db, user)["kind"] == "paid"
 
 
-def test_welfare_without_subscription_still_welfare_limit(db):
-    user = _make_user(db, is_welfare=True)
-    assert media_seek.monthly_limit(db, user) == 3
+def test_user_without_subscription_uses_paid_default(db):
+    user = _make_user(db)
+    assert media_seek.monthly_limit(db, user) == media_seek.DEFAULT_MONTHLY_PAID == 10
 
 
-# ---------------- 非 welfare：声明生效 ----------------
+# ---------------- 声明生效 ----------------
 
 def test_paid_plan_declared_limit_wins(db):
     user = _make_user(db)

@@ -21,9 +21,9 @@
 2. **判定必须带服**。多服部署下同一个用户在每个服各有一份互不影响的订阅
    （``realm_id``），拿「最近一条订阅」当成通用结论就是错的。
 3. **公益服不需要订阅**。free 服 ``can_play`` 恒为真；**查看 Emby 账号/线路**
-   已随公益资格合并（2026-11-09）：资格在期即放行，卡片来源记
-   ``GRANT_WELFARE``；资格不在期但存量查看行（``EmbyViewUnlock``，购买
-   写口已退役）仍在效时记 ``GRANT_UNLOCK`` 并注明来源是存量行。
+   只认存量查看行（``EmbyViewUnlock``，购买写口已退役）在效，记
+   ``GRANT_UNLOCK`` 并注明来源是存量行。（原公益资格来源已随福利
+   服役族于 2026-11-14 删除，资格已折算成订阅。）
 
 ## 不做的事
 
@@ -51,15 +51,15 @@ GRANT_SUBSCRIPTION = "subscription"   # 付费服：有效订阅
 GRANT_EXPIRED = "expired"             # 付费服：有过订阅但已到期 / 已取消
 GRANT_NONE = "none"                   # 付费服：从来没有订阅
 GRANT_UNLOCK = "unlock"               # 公益服：存量查看行在效（购买已退役）
-GRANT_WELFARE = "welfare"             # 公益服：资格在期，查看随资格开通
-GRANT_FREE_OPEN = "free_open"         # 公益服：资格不在期且无存量行（账号卡不下发地址）
+GRANT_FREE_OPEN = "free_open"         # 公益服：无存量行（账号卡不下发地址）
+# 公益资格来源（原 GRANT_WELFARE）已随福利服役族于 2026-11-14 删除：
+# 资格全量折算成订阅，公益服查看只剩存量查看行一轨。
 
 GRANT_LABELS = {
     GRANT_SUBSCRIPTION: "订阅生效中",
     GRANT_EXPIRED: "订阅已到期",
     GRANT_NONE: "未授权",
     GRANT_UNLOCK: "存量查看凭证在效",
-    GRANT_WELFARE: "随公益资格开通",
     GRANT_FREE_OPEN: "查看未开通",
 }
 
@@ -162,10 +162,8 @@ def _grant_of(db: Session, user: models.WebUser, realm: models.ServerRealm,
             "expires_at": unlock.expires_at.isoformat() if unlock and unlock.expires_at else None,
             "points_spent": int(unlock.points_spent) if unlock else 0,
         }
-        # 查看跟随资格（2026-11-09 合并）：资格在期优先记 welfare 来源；
-        # 资格不在期靠存量查看行在效的记 unlock（注明来源是存量行）。
-        if subscriptions.welfare_qualification_active(user):
-            return GRANT_WELFARE, {"unlock": unlock_payload}
+        # 公益服查看只剩存量查看行一轨（公益资格来源已随福利服役族
+        # 于 2026-11-14 删除，资格已折算成订阅、不再单独记来源）。
         return (GRANT_UNLOCK if granted else GRANT_FREE_OPEN), {"unlock": unlock_payload}
 
     sub = _latest_subscription(db, user.id, realm.id)
@@ -196,7 +194,7 @@ def realm_card(db: Session, user: models.WebUser,
 
     if expiring:
         state = "warn"
-    elif grant in (GRANT_SUBSCRIPTION, GRANT_UNLOCK, GRANT_WELFARE):
+    elif grant in (GRANT_SUBSCRIPTION, GRANT_UNLOCK):
         state = "ok"
     else:
         state = "off"
@@ -281,7 +279,6 @@ __all__ = [
     "GRANT_NONE",
     "GRANT_SUBSCRIPTION",
     "GRANT_UNLOCK",
-    "GRANT_WELFARE",
     "cards",
     "realm_card",
     "summary",

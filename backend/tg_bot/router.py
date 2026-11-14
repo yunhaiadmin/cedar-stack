@@ -10,8 +10,8 @@ B4 策略（全部可配置，见 backend/tg_bot/policy.py）：
   自毁（红包本体豁免）、用户命令消息默认 3 秒自毁；私聊不自毁。
 - 频道马甲治理：群里以外部频道身份（sender_chat）发言的消息默认删除
   ＋回说明（匿名管理员形态不处理，判别见 policy.mask_sender_chat）。
-- 退群处置：chat_member 更新里已绑定用户退群/被踢时，按
-  bot_leave_action（默认 cancel_welfare）只取消其公益资格。
+- 退群处置：已随福利服役族于 2026-11-14 删除（原 bot_leave_action
+  cancel_welfare 取消公益资格）；chat_member 更新现只做校验、无处置。
 """
 from __future__ import annotations
 
@@ -239,13 +239,6 @@ CHANNEL_MASK_TEXT = (
     "请用你本人账号发言；频道确需在本群发言，请联系管理员加白名单。"
 )
 
-# 退群取消公益资格后私聊通知本人的文案
-LEAVE_WELFARE_TEXT = (
-    "👋 你已退出 Aetrix 交流群，按群规设置，你的公益资格已随之取消。\n"
-    "重新进群后联系管理员即可恢复；你的账号、能量与查看凭证都不受影响。"
-)
-
-
 def _intercept_channel_mask(db, cfg, msg) -> bool:
     """频道马甲治理：外部频道身份在群里发言 → 删消息＋回说明。
 
@@ -288,40 +281,12 @@ def _intercept_channel_mask(db, cfg, msg) -> bool:
     return True
 
 
-def _apply_leave_cancel_welfare(db, tg_id: int, chat_id) -> None:
-    """退群取消公益资格：与 welfare_expiry 的 auto_expire 同一口径——
-    is_welfare=False + WelfareGrantLog(channel="group_leave", days=0)
-    留痕；查看凭证、能量一律不动。原本就无资格的只记日志、不通知
-    （避免 poller 重放或重复事件误报）；状态真正变化才私聊通知本人。
-    """
-    from backend import models
-    from backend.tg_bot import sender
-    from backend.tg_bot.identity import resolve
-
-    user = resolve(db, int(tg_id))
-    if user is None:
-        return
-    if not user.is_welfare:
-        logger.info("group leave: user=%s 无公益资格，跳过 chat=%s",
-                    user.id, chat_id)
-        return
-    user.is_welfare = False
-    db.add(models.WelfareGrantLog(
-        user_id=user.id, channel="group_leave", days=0, granted_by=None))
-    db.commit()
-    logger.info("group leave welfare cancelled: user=%s tg=%s chat=%s",
-                user.id, tg_id, chat_id)
-    try:
-        sender.send_message(db, int(tg_id), LEAVE_WELFARE_TEXT)
-    except Exception:  # noqa: BLE001
-        logger.debug("退群取消资格通知发送失败（忽略）", exc_info=True)
-
-
 def _handle_chat_member(db, cfg, cm: dict) -> None:
-    """chat_member 更新：已绑定用户退群/被踢 → 按 bot_leave_action 处置。
+    """chat_member 更新：已绑定用户退群/被踢——现无处置，仅校验后记录。
 
+    原处置（取消公益资格）已随福利服役族于 2026-11-14 删除。
     只处理名单内群、状态真正变为 left/kicked 的变动（old 已是
-    left/kicked 的重复推送/重放直接跳过）。处置失败只记日志：
+    left/kicked 的重复推送/重放直接跳过）。异常只记日志：
     成员事件不许把分发打崩、更不许给群里发"系统繁忙"。
     注意：Telegram 只在 bot 为群管理员时才稳定推送他人的成员变动，
     非管理员场景可能根本收不到这类 update（真机未验）。
@@ -343,32 +308,10 @@ def _handle_chat_member(db, cfg, cm: dict) -> None:
         tg_id = tg_user.get("id")
         if not tg_id or tg_user.get("is_bot"):
             return
-        if policy.leave_action(cfg) != "cancel_welfare":
-            logger.info("group leave not actioned (bot_leave_action=%s): "
-                        "chat=%s tg=%s", policy.leave_action(cfg),
-                        chat_id, tg_id)
-            return
-        # A-110：处置前须与对账用同一“在群”口径逐群复核——任一名单群
-        # 仍在即跳过；有群接口失败且无群确认在群时 fail-closed 跳过
-        # 本次处置（事件重放／下次对账再裁决），绝不在“未核验”时取消。
-        # 名单为空时无法枚举他群，沿用事件群本身的判定（既有行为不变）。
-        from backend.tg_bot import reconcile, sender
-
-        groups = sorted(policy.parse_group_ids(cfg.get("bot_group_ids", "")))
-        if groups:
-            status = reconcile._member_status(
-                db, groups, int(tg_id), sender.get_chat_member)
-            if status is True:
-                logger.info(
-                    "group leave skipped (still member in another group): "
-                    "chat=%s tg=%s", chat_id, tg_id)
-                return
-            if status is None:
-                logger.info(
-                    "group leave skipped (member status unverified): "
-                    "chat=%s tg=%s", chat_id, tg_id)
-                return
-        _apply_leave_cancel_welfare(db, int(tg_id), chat_id)
+        # 退群处置已下线（见模块头注）：事件只校验、无任何处置，
+        # 不查库、不发消息；账号资格一律走订阅口径，与在不在群无关。
+        logger.debug("group leave observed (no action): chat=%s tg=%s",
+                     chat_id, tg_id)
     except Exception:
         logger.exception("chat_member handling failed")
 

@@ -92,10 +92,9 @@ def _user(db, username):
 
 
 def _grant_logs(db, user_id):
-    return (db.query(models.WelfareGrantLog)
-            .filter_by(user_id=user_id)
-            .order_by(models.WelfareGrantLog.id)
-            .all())
+    # 发放总账模型已随福利服役族删除：结构上不可能再有发放记录
+    assert not hasattr(models, "WelfareGrantLog")
+    return []
 
 
 def _view_rows(db, user_id):
@@ -104,8 +103,8 @@ def _view_rows(db, user_id):
 
 def _assert_no_welfare(user):
     """新口径：注册一律不发公益资格。"""
-    assert user.is_welfare is False
-    assert user.welfare_expires_at is None
+    assert not hasattr(user, "is_welfare")
+    assert not hasattr(user, "welfare_expires_at")
 
 
 def _assert_view_about(db, user, days, before, after):
@@ -235,7 +234,7 @@ def test_open_register_gift_switch_off_no_welfare(db):
     _register(db, "open_user")
 
     user = _user(db, "open_user")
-    assert user.is_welfare is False
+    assert not hasattr(user, "is_welfare")
     assert _grant_logs(db, user.id) == []
 
 

@@ -460,14 +460,12 @@ def _account_card(user: models.WebUser, db: Session, realm_id: int | None = None
             "realm_free": realms.is_free_realm(db, realm_id),
             "unlock_days": price_days,
             "expires_at": unlock.expires_at.isoformat() if unlock and unlock.expires_at else None,
-            # 放行来源（资格与凭证合并后前端按它展示状态，不再有购买动作）：
-            # welfare＝公益资格在期自动带；unlock＝存量查看行在效；
-            # subscription＝付费服订阅；None＝未放行。
+            # 放行来源（前端按它展示状态，不再有购买动作）：
+            # unlock＝存量查看行在效；subscription＝付费服订阅；
+            # None＝未放行。（原 welfare＝公益资格来源已随福利服役族
+            # 于 2026-11-14 删除，资格已折算成订阅。）
             "source": (
-                "welfare"
-                if realms.is_free_realm(db, realm_id)
-                and subscriptions.welfare_qualification_active(user)
-                else "unlock" if unlock is not None
+                "unlock" if unlock is not None
                 else "subscription" if granted
                 else None
             ),

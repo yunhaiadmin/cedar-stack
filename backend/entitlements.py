@@ -19,8 +19,7 @@
   读路径忽略、按未登记键调 helper 抛 KeyError（编程错误要响亮）。
 - 「当前有效套餐」不另立标准：直接复用
   ``subscriptions.active_subscription`` 的现行口径（status=active 且
-  end_date 现算未过期、按服过滤、end_date 倒序取第一份）。公益 welfare
-  不是套餐，本模块**不看 is_welfare**（两条轴正交）；管理员豁免也留在
+  end_date 现算未过期、按服过滤、end_date 倒序取第一份）。管理员豁免也留在
   各消费方，本模块只管「套餐声明了什么」。
 - 坏数据（人工改库写坏的 JSON）整体降级为「无声明」并打 warning，
   绝不抛、绝不把脏值当权益。但 helper 内部的 DB 查询异常**不吞**：
@@ -55,8 +54,8 @@ logger = logging.getLogger(__name__)
 #: ``fallback`` 只写明缺键时消费方现行走哪条全局配置（文档性字段），
 #: helper 本人不读它、更不拿它当默认值（设计 §1.4 第 4 条）。
 ENTITLEMENT_SPECS: dict[str, dict] = {
-    # 每月可提交的求片条数；welfare 用户不经此键（media_seek 的判定
-    # 顺序里 welfare 分支在前，设计 §3.2）
+    # 每月可提交的求片条数（media_seek 判定第一档，设计 §3.2；
+    # 原 welfare 分支已随福利服役族于 2026-11-14 删除）
     "media_seek_monthly_limit": {
         "min": 1, "max": 1000, "fallback": "paid_request_monthly",
     },
@@ -223,8 +222,8 @@ def get_user_entitlement(
     ``user`` 可传 WebUser 对象或 user_id（int）。返回 None = 没声明
     （无订阅 / 套餐未声明该键 / 值非法），消费方据此回退自己现行的
     全局配置——helper 不内置任何业务默认值。``key`` 未在注册表登记
-    → KeyError（编程错误要响亮，不许静默当缺键）。不看 welfare、
-    不特判 staff：helper 只回答「套餐声明了什么」。
+    → KeyError（编程错误要响亮，不许静默当缺键）。不特判 staff：
+    helper 只回答「套餐声明了什么」。
     """
     if key not in ENTITLEMENT_SPECS:
         raise KeyError(f"未登记的权益键: {key}")

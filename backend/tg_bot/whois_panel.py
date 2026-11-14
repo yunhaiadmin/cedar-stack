@@ -10,7 +10,7 @@ callbacks 的 whois:* 回调，每次点击都重新校验点击者 is_staff。
   子视图/写操作按钮；
 - bind：绑定详情（各 provider 的状态与最近验证时间；绑定表无到期
   字段，不编造）；
-- cred：公益资格（状态/到期）；
+- cred：公益资格页已随福利服役族于 2026-11-14 删除（按钮与页一并摘除）；
 - gift：赠送菜单（预设档位按钮，无自由输入）；
 - ask/do：写操作二次确认——ask 只出确认页（写明对谁、做什么、
   多少），do 才真正执行；执行后回 main 页并回显最新状态。赠送类
@@ -91,7 +91,6 @@ def main_markup(user) -> dict:
     return {"inline_keyboard": [
         [
             {"text": "🔗 绑定详情", "callback_data": f"whois:bind:{uid}"},
-            {"text": "🎟️ 公益资格", "callback_data": f"whois:cred:{uid}"},
         ],
         [
             ban_btn,
@@ -141,31 +140,6 @@ def bindings_page(db, user) -> tuple[str, dict]:
             f"，最近验证 {verified}"))
     text = layout.card(
         layout.title("绑定详情", f"{user.username}（#{user.id}）"), lines)
-    return text, _back_markup(user)
-
-
-def cred_page(db, user) -> tuple[str, dict]:
-    """公益资格页：资格状态/到期。
-
-    查看已随资格合并（2026-11-09），面板不再单独展示凭证行：存量
-    查看行仍是 view_grant 的过渡放行依据；赠送查看权（写口）保留
-    在赠送页，与本展示页无关。
-    """
-    from backend.tg_bot import features
-
-    welfare = features._welfare_line(user).split("：", 1)[-1]
-    if not bool(getattr(user, "is_welfare", False)):
-        welfare_detail = "未开通"
-    elif getattr(user, "welfare_expires_at", None) is None:
-        welfare_detail = "永不过期"
-    else:
-        welfare_detail = user.welfare_expires_at.strftime("%Y-%m-%d %H:%M")
-    lines = [
-        layout.row("📊", "公益资格", welfare),
-        layout.row("📅", "资格到期", welfare_detail),
-    ]
-    text = layout.card(
-        layout.title("公益资格", f"{user.username}（#{user.id}）"), lines)
     return text, _back_markup(user)
 
 
@@ -317,8 +291,6 @@ def render(db, admin, user, page: str, op: str | None = None,
     """面板翻页统一渲染口（callbacks 调用；admin 已过 is_staff 校验）。"""
     if page == "bind":
         return bindings_page(db, user)
-    if page == "cred":
-        return cred_page(db, user)
     if page == "gift":
         return gift_page(db, user)
     if page == "ask" and op in OPS:

@@ -822,7 +822,7 @@ def _create_media_seek_result(
     if media_seek.used_today(db, user.id) >= limit:
         raise HTTPException(status_code=429, detail=f"今日求片已达上限（{limit} 条），请明天再提交")
 
-    # 月度额度：公益服 / 付费区分（与旧版公益服求片中心合并，见 media_seek.monthly_quota）。
+    # 月度额度：套餐权益口径（见 media_seek.monthly_quota；原公益口径已删）。
     # 每日额度与月度额度同时校验，两个都通过才放行。
     mquota = media_seek.monthly_quota(db, user)
     if mquota["monthly_remaining"] <= 0:

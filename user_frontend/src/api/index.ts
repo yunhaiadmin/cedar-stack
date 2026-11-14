@@ -202,8 +202,6 @@ export interface AuthUser {
   is_active: boolean
   /** 管理员：用户端据此显示「管理后台」入口（两端同源同 JWT，无需二次登录） */
   is_staff?: boolean
-  /** 公益服用户标记：活力值等公益专属请求只对这类用户发（其余人发了必 403） */
-  is_welfare?: boolean
   /** 付费墙是否开启：开启且非会员时播放会被拦截；公益服恒为 false */
   subscription_required?: boolean
   /** 接入方式：free = 本服是公益服（免费开放，不需要会员） */
@@ -351,8 +349,8 @@ export interface ViewPermission {
   points_balance: number
   /** 已解锁的到期时间（ISO，未解锁/永久为 null） */
   expires_at: string | null
-  /** 放行来源：welfare＝随公益资格开通 / unlock＝存量凭证在效 / subscription＝付费订阅 / null＝未放行 */
-  source?: 'welfare' | 'unlock' | 'subscription' | null
+  /** 放行来源：unlock＝存量凭证在效 / subscription＝付费订阅 / null＝未放行 */
+  source?: 'unlock' | 'subscription' | null
 }
 
 export interface AccountCard {

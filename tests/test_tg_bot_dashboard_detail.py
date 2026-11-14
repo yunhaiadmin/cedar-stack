@@ -43,7 +43,6 @@ def _user(db, tg=TG, name="alice", points=42, vitality=14,
     row = models.WebUser(
         username=name, password_hash="x", telegram_id=tg,
         points=points, vitality=vitality,
-        is_welfare=is_welfare, welfare_expires_at=welfare_expires_at,
     )
     db.add(row)
     db.commit()
@@ -84,17 +83,13 @@ def _binding(db, user_id, provider, status="active", label="盘"):
     db.commit()
 
 
-# ---------- 公益资格三态 ----------
+# ---------- 公益资格行已删除（福利服役族 2026-11-14 下线） ----------
 
 def test_welfare_states(db):
     off = _user(db, tg=TG, name="off")
-    assert "📊 <b>公益资格</b> | 未开通" in features.compact_dashboard(db, off)
-    dated = _user(db, tg=TG + 1, name="dated", is_welfare=True,
-                  welfare_expires_at=datetime(2026, 11, 27))
-    assert "📊 <b>公益资格</b> | 至 2026-11-27" in features.compact_dashboard(db, dated)
-    perm = _user(db, tg=TG + 2, name="perm", is_welfare=True,
-                 welfare_expires_at=None)
-    assert "📊 <b>公益资格</b> | 长期有效" in features.compact_dashboard(db, perm)
+    assert "公益资格" not in features.compact_dashboard(db, off)
+    dated = _user(db, tg=TG + 1, name="dated")
+    assert "公益资格" not in features.compact_dashboard(db, dated)
 
 
 # ---------- 查看行已删除（2026-11-09 资格合并：面板不再展示凭证） ----------
@@ -166,8 +161,7 @@ def test_pet_next_and_max(db):
 # ---------- 卡片版式整版：标题＋9 行汇总行（明细不铺） ----------
 
 def test_slim_layout_full(db):
-    row = _user(db, tg=TG, name="alice", points=16, vitality=14,
-                is_welfare=True, welfare_expires_at=datetime(2026, 11, 27))
+    row = _user(db, tg=TG, name="alice", points=16, vitality=14)
     _watch(db, row.id, [100, 20])
     _unlock(db, row.id, datetime(2026, 11, 27))
     _binding(db, row.id, "drive")
@@ -178,7 +172,6 @@ def test_slim_layout_full(db):
         "· 👤 <b>账号名称</b> | <b>alice</b>",
         "· ⭐ <b>当前等级</b> | Lv.1 初幕 · 经验 0／100 ░░░░░░░░░░（距 Lv.2 影迷还差 100 经验）",
         "· 🍒 <b>能量余额</b> | <b>16</b>",
-        "· 📊 <b>公益资格</b> | 至 2026-11-27",
         "· ⚡ <b>活力数值</b> | 14/14",
         "· 🔗 <b>网盘绑定</b> | Drive 已绑 ✓",
         "· 🐉 <b>当前馆灵</b> | 🦉 夜枭（累计观影 120.0 小时），距守夜者还差 80.0 小时",
@@ -199,4 +192,4 @@ def test_no_bar_chars_full_vitality(db):
     text = features.compact_dashboard(db, row)
     assert "活力数值</b> | 14/14" in text
     assert "──" not in text
-    assert len(text.split("\n")) == 10  # 标题＋9 行汇总行（查看行已删）
+    assert len(text.split("\n")) == 10  # 标题＋9 行汇总行（查看行、公益资格行已删）

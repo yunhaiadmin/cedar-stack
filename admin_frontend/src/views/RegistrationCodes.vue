@@ -717,15 +717,12 @@ function usedByNames(row: RegistrationCode): string {
 
     <SectionCard v-if="!isRegister" title="白名单账号" :icon="ShieldAlert">
       <p class="whitelist-hint">
-        核销过白名单码的账号：公益资格、查看凭证与会员订阅均为长期有效、不用续费。
-        回收后三处一并到期（账号自己购买/续费的有限期权益不受影响）。
+        核销过白名单码的账号：查看凭证与会员订阅均为长期有效、不用续费。
+        回收后两处一并到期（账号自己购买/续费的有限期权益不受影响）。
       </p>
       <el-table v-loading="whitelistLoading" :data="whitelistAccounts" size="small" empty-text="暂无白名单账号">
         <el-table-column prop="username" label="账号" min-width="140" />
         <el-table-column prop="code" label="核销的白名单码" min-width="170" />
-        <el-table-column label="公益资格" width="100">
-          <template #default="{ row }">{{ row.welfare_permanent ? '永久' : '—' }}</template>
-        </el-table-column>
         <el-table-column label="查看凭证" width="100">
           <template #default="{ row }">{{ row.view_permanent ? '永久' : '—' }}</template>
         </el-table-column>

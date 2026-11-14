@@ -296,8 +296,9 @@ def list_users(
     """用户列表：搜索（用户名/邮箱）+ 状态筛选 + 注册渠道筛选 + 用户类型筛选 + 分页
 
     ``channel`` 空 = 全部；``channel=__unrecorded`` = 存量用户（当时没记渠道）。
-    ``user_type`` 空 = 全部；``welfare`` = 公益服（is_welfare 为真）；
-    ``paid`` = 付费（有生效中订阅且非公益）；``normal`` = 普通（非公益且无生效中订阅）。
+    ``user_type`` 空 = 全部；``paid`` = 付费（有生效中订阅）；
+    ``normal`` = 普通（无生效中订阅）。（原 welfare 公益类型已随福利
+    服役族于 2026-11-14 删除，存量值按未筛选处理。）
     """
     query = db.query(models.WebUser)
     if search:
@@ -317,10 +318,8 @@ def list_users(
         else:
             query = query.filter(or_(col.is_(None), col == ""))
 
-    # 用户类型筛选（v2.55 公益服并入用户管理）：公益 > 付费 > 普通
-    if user_type == "welfare":
-        query = query.filter(models.WebUser.is_welfare == True)  # noqa: E712
-    elif user_type in ("paid", "normal"):
+    # 用户类型筛选：付费（有生效中订阅）/ 普通（无生效中订阅）
+    if user_type in ("paid", "normal"):
         _active_sub_q = (
             db.query(models.UserSubscription.user_id)
             .filter(
@@ -329,14 +328,10 @@ def list_users(
             )
             .distinct()
         )
-        _not_welfare = or_(
-            models.WebUser.is_welfare == False,  # noqa: E712
-            models.WebUser.is_welfare.is_(None),
-        )
         if user_type == "paid":
-            query = query.filter(_not_welfare, models.WebUser.id.in_(_active_sub_q))
+            query = query.filter(models.WebUser.id.in_(_active_sub_q))
         else:
-            query = query.filter(_not_welfare, ~models.WebUser.id.in_(_active_sub_q))
+            query = query.filter(~models.WebUser.id.in_(_active_sub_q))
 
     # F-P1-5：分页参数统一钳制（limit∈[1,200]，offset≥0；负数/非法输入不再绕过）
     limit, offset = pagination_params(limit, offset)
@@ -371,16 +366,9 @@ def list_users(
             "is_active": u.is_active,
             "is_staff": u.is_staff,
             "emby_username": u.emby_username,
-            # 用户类型（v2.55 公益服并入用户管理）：welfare > paid > normal
-            "is_welfare": bool(u.is_welfare),
-            "welfare_expires_at": u.welfare_expires_at.isoformat() if u.welfare_expires_at else None,
-            "welfare_grant_channel": u.welfare_grant_channel,
-            # TG 绑定状态（公益服门禁用）：只暴露是否绑定，不暴露具体 ID
+            # TG 绑定状态：只暴露是否绑定，不暴露具体 ID
             "tg_bound": bool(u.telegram_id),
-            "user_type": (
-                "welfare" if u.is_welfare
-                else ("paid" if active_sub is not None else "normal")
-            ),
+            "user_type": "paid" if active_sub is not None else "normal",
             "has_subscription": active_sub is not None,
             "subscription_id": active_sub.id if active_sub else None,
             "subscription_end": active_sub.end_date.isoformat() if active_sub else None,

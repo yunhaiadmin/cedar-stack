@@ -6,7 +6,7 @@
   私聊 /kk 仍出审计全卡，行为逐字不变。
 - 入口两种：回复某人的消息发 /kk（凭被回复者 TG 身份定位），
   或 /kk 站内用户名 / TG 号带参定位。
-- 精简卡字段白名单：站内用户名、TG 显示名、等级、公益资格、订阅
+- 精简卡字段白名单：站内用户名、TG 显示名、等级、订阅
   到期、能量余额、网盘绑定（2026-11-08 新设计：一行汇总、绑定
   自设标签认盘＋状态符号，见 test_tg_bot_whois_kk_drive_line）、
   账号状态。
@@ -101,7 +101,6 @@ def _rich_target(db):
     u = _user(
         db, "lite_target", tg_id=TARGET_TG,
         points=321,
-        is_welfare=True, welfare_expires_at=datetime(2027, 1, 15),
         password_hash="SECRET_HASH_SENTINEL",
         emby_password="SECRET_EMBY_PW_SENTINEL",
     )
@@ -170,7 +169,7 @@ def test_group_reply_lookup_renders_lite_card(db, sent):
     assert "lite_target" in card          # 站内用户名
     assert "小明" in card                  # TG 显示名（来自被回复消息）
     assert "Lv.1" in card                  # 等级
-    assert "2027-01-15" in card            # 公益资格到期
+    assert "公益资格" not in card          # 公益资格行已随福利族删除
     assert "2027-03-01" in card            # 订阅到期
     assert "321" in card                   # 能量余额
     # 绑定行（2026-11-08 新设计）：按 provider 分组一行汇总、标签认盘

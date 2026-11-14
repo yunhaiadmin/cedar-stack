@@ -152,47 +152,32 @@ def test_quota_key_registered_in_self_heal():
     assert defaults[media_seek.CONFIG_DAILY_LIMIT] == str(media_seek.DEFAULT_DAILY_LIMIT)
 
 
-# ==================== 1b. 月度额度（公益/付费区分） ====================
-
-def _welfare_user(db, username="welfare_seeker", expired=False):
-    user = _user(db, username=username)
-    user.is_welfare = True
-    user.welfare_expires_at = (
-        datetime.now() - timedelta(days=1) if expired else datetime.now() + timedelta(days=30)
-    )
-    db.commit()
-    db.refresh(user)
-    return user
-
+# ==================== 1b. 月度额度（统一付费口径） ====================
+# 原公益/付费双口径已随福利服役族于 2026-11-14 删除：全员 kind=paid，
+# 额度 = 套餐权益声明 → paid_request_monthly 配置 → 默认 10。
 
 def test_monthly_quota_defaults_by_user_kind(db):
-    welfare = _welfare_user(db)
     paid = _user(db, username="paid_seeker")
-
-    wq = media_seek.monthly_quota(db, welfare)
-    assert wq["kind"] == "welfare"
-    assert wq["monthly_limit"] == media_seek.DEFAULT_MONTHLY_WELFARE == 3
-    assert wq["monthly_used"] == 0
-    assert wq["monthly_remaining"] == 3
 
     pq = media_seek.monthly_quota(db, paid)
     assert pq["kind"] == "paid"
     assert pq["monthly_limit"] == media_seek.DEFAULT_MONTHLY_PAID == 10
+    assert pq["monthly_used"] == 0
     assert pq["monthly_remaining"] == 10
 
 
 def test_monthly_quota_config_override_and_dirty_fallback(db):
-    welfare = _welfare_user(db)
-    db.add(models.SystemConfig(key=media_seek.CONFIG_MONTHLY_WELFARE, value="7"))
+    user = _user(db, username="cfg_seeker")
+    db.add(models.SystemConfig(key=media_seek.CONFIG_MONTHLY_PAID, value="7"))
     db.commit()
-    assert media_seek.monthly_limit(db, welfare) == 7
+    assert media_seek.monthly_limit(db, user) == 7
 
     cfg = db.query(models.SystemConfig).filter(
-        models.SystemConfig.key == media_seek.CONFIG_MONTHLY_WELFARE
+        models.SystemConfig.key == media_seek.CONFIG_MONTHLY_PAID
     ).first()
     cfg.value = "not-a-number"
     db.commit()
-    assert media_seek.monthly_limit(db, welfare) == media_seek.DEFAULT_MONTHLY_WELFARE, "脏值要回默认值"
+    assert media_seek.monthly_limit(db, user) == media_seek.DEFAULT_MONTHLY_PAID, "脏值要回默认值"
 
 
 def test_monthly_quota_counts_this_month_only(db):
@@ -208,19 +193,15 @@ def test_monthly_quota_counts_this_month_only(db):
 
 
 def test_monthly_quota_remaining_never_negative(db):
-    welfare = _welfare_user(db)
+    user = _user(db, username="heavy_seeker")
+    db.add(models.SystemConfig(key=media_seek.CONFIG_MONTHLY_PAID, value="3"))
+    db.commit()
     for i in range(5):
-        _request(db, welfare, name=f"片{i}")
-    mq = media_seek.monthly_quota(db, welfare)
+        _request(db, user, name=f"片{i}")
+    mq = media_seek.monthly_quota(db, user)
     assert mq["monthly_used"] == 5
     assert mq["monthly_remaining"] == 0, "剩余不为负"
-
-
-def test_expired_welfare_counts_as_paid(db):
-    user = _welfare_user(db, expired=True)
-    mq = media_seek.monthly_quota(db, user)
-    assert mq["kind"] == "paid", "公益过期后按付费额度算"
-    assert mq["monthly_limit"] == media_seek.DEFAULT_MONTHLY_PAID
+    assert mq["monthly_limit"] == 3  # 配置覆盖值（paid_request_monthly=3）
 
 
 # ==================== 2. 剧集按整季申请 ====================

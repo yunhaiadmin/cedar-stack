@@ -282,7 +282,7 @@
  * 页面跟随用户外观（浅/深本地变量切换，不再经纸色布局强制浅色）。
  * 所有数字/条目只用现有接口数据：订阅（subscriptionApi）、账号卡
  * （embyApi.getAccountCard）、设备（deviceApi.mine，用户侧设备接口，
- * 含在线状态与最后活跃时间）。公益资格状态只读登录态 is_welfare 标记。
+ * 含在线状态与最后活跃时间）。（原公益资格状态已随福利服役族删除。）
  * 流量额度（2026-11-13 一期）：套餐声明月额度时才出现流量区＋
  * 购流量弹窗（trafficApi）；没声明整段不渲染。原站有而本站没有
  * 的（弹幕 API）整项省略。
@@ -342,12 +342,8 @@ const whitelistIdentity = computed(() => userStore.user?.whitelist_identity ?? n
 
 // ── 总览数据 ──
 const subscriptions = ref<MySubscription[]>([])
-// 公益资格状态：原 welfareApi.status() 的端点已随后端公益资格整族删除，
-// 现只从登录态用户信息取 is_welfare 标记；到期日无数据源（恒 null，
-// 依赖到期日的展示分支随之不触发，与端点 404 时期的实际行为一致）。
-const welfare = computed<{ is_welfare: boolean; expires_at: string | null } | null>(() =>
-  userStore.user ? { is_welfare: !!userStore.user.is_welfare, expires_at: null } : null,
-)
+// 公益资格状态已随福利服役族于 2026-11-14 删除（资格已折算成订阅）：
+// 公益服（free 服）免费开放，会员卡在公益服恒显「生效中」，到期日无数据源。
 const accountCard = ref<AccountCard | null>(null)
 
 const activeSub = computed(
@@ -363,7 +359,7 @@ const memberUserLine = computed(
 )
 const memberStatusText = computed(() => {
   if (whitelistIdentity.value) return '白名单'
-  if (isFreeRealm.value) return welfare.value?.is_welfare ? '生效中' : '未开通'
+  if (isFreeRealm.value) return '生效中'
   return activeSub.value ? '生效中' : '未开通'
 })
 const memberNote = computed(() => {
@@ -371,47 +367,21 @@ const memberNote = computed(() => {
   if (whitelistIdentity.value) {
     parts.push(`${whitelistIdentity.value.title} · ${whitelistIdentity.value.label}`)
   }
-  if (isFreeRealm.value) {
-    if (welfare.value?.is_welfare && welfare.value.expires_at) {
-      parts.push(`到期 ${welfare.value.expires_at.slice(0, 10)}`)
-    }
-  } else if (activeSub.value) {
+  if (!isFreeRealm.value && activeSub.value) {
     parts.push(`${activeSub.value.plan_name} · ${activeSub.value.end_date.slice(0, 10)} 到期`)
   }
   return parts.join(' · ')
 })
 
-/** 有效期文案（YYYY.MM.DD）：付费取订阅到期，公益取资格到期 */
+/** 有效期文案（YYYY.MM.DD）：付费取订阅到期；公益服免费开放无到期 */
 const expiryText = computed(() => {
-  if (isFreeRealm.value) {
-    return welfare.value?.is_welfare && welfare.value.expires_at
-      ? welfare.value.expires_at.slice(0, 10).replace(/-/g, '.')
-      : ''
-  }
+  if (isFreeRealm.value) return ''
   return activeSub.value ? activeSub.value.end_date.slice(0, 10).replace(/-/g, '.') : ''
 })
 
-/** 大数字区：剩余天数＋本周期已过比例（按真实起止日期算；公益只有到期日，不画进度条） */
+/** 大数字区：剩余天数＋本周期已过比例（按真实起止日期算；公益服免费开放不画大数字区） */
 const quota = computed(() => {
-  if (isFreeRealm.value) {
-    if (welfare.value?.is_welfare && welfare.value.expires_at) {
-      const days = Math.max(
-        0,
-        Math.ceil((new Date(welfare.value.expires_at).getTime() - Date.now()) / 86_400_000),
-      )
-      return {
-        label: '公益资格剩余',
-        days,
-        hasPeriod: false,
-        usedDays: 0,
-        totalDays: 0,
-        usedPct: 0,
-        remainPct: 0,
-        endText: `有效期至 ${welfare.value.expires_at.slice(0, 10).replace(/-/g, '.')}`,
-      }
-    }
-    return null
-  }
+  if (isFreeRealm.value) return null
   const s = activeSub.value
   if (!s) return null
   const start = new Date(s.start_date).getTime()

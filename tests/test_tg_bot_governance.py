@@ -42,7 +42,6 @@ def _user(db, tg=TG, name="alice", points=42, vitality=14, xp=0,
     row = models.WebUser(
         username=name, password_hash="x", telegram_id=tg,
         points=points, vitality=vitality, member_xp=xp,
-        is_welfare=is_welfare, welfare_expires_at=welfare_expires_at,
     )
     db.add(row)
     db.commit()
@@ -132,7 +131,7 @@ def _dispatch(db, monkeypatch, text, chat_id=TG, chat_type="private"):
 def test_dashboard_sample_layout_exact(db):
     """用户批准的卡片式用户面板逐字结构：▎标题＋「· emoji 标签 | 值」信息行。
 
-    公益资格行不校验过期，可直接用样例日期。存量查看行（2030 年到期）
+    存量查看行（2030 年到期）
     照旧播种：行在效也不再进面板（2026-11-09 凭证行已删），逐字比对
     正好钉住这一点。
     """
@@ -149,7 +148,6 @@ def test_dashboard_sample_layout_exact(db):
         "· 👤 <b>账号名称</b> | <b>shunxian2580</b>",
         "· ⭐ <b>当前等级</b> | Lv.1 初幕 · 经验 0／100 ░░░░░░░░░░（距 Lv.2 影迷还差 100 经验）",
         "· 🍒 <b>能量余额</b> | <b>57</b>",
-        "· 📊 <b>公益资格</b> | 至 2026-11-27",
         "· ⚡ <b>活力数值</b> | 14/14",
         "· 🔗 <b>网盘绑定</b> | Drive 已绑 ✓",
         "· 🐉 <b>当前馆灵</b> | 🥚 蛋（累计观影 0.0 小时），距夜枭还差 50.0 小时",

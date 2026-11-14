@@ -275,11 +275,11 @@ class WebUser(Base):
     # 自建 Emby 凭据（完全自建模式下，Emby 客户端用此账号密码登录）
     emby_username = Column(String(64), unique=True, nullable=True)
     emby_password = Column(String(128), nullable=True)
-    # 公益服身份与资格（模块1）
-    is_welfare = Column(Boolean, default=False, nullable=False, server_default="0")
-    welfare_expires_at = Column(DateTime, nullable=True)
-    welfare_grant_channel = Column(String(20), nullable=True)
-    welfare_granted_at = Column(DateTime, nullable=True)
+    # 公益服身份与资格四列（is_welfare / welfare_expires_at /
+    # welfare_grant_channel / welfare_granted_at）已随福利服役族于
+    # 2026-11-14 删除：资格已全量折算成订阅时间（折算执行档案在
+    # 生产 /data/welfare_conversion/，防重标记 welfare_conversion_
+    # executed_at 保留），不再有任何裁决读这四列。
     # 连签断签保护用量（2026-11-09 上线、同日随保号改活力口径回滚）：
     # streak_forgive_ym / streak_forgive_used 两列保留不用——不再有任何
     # 读写点（economy._do_checkin_core 已撤 forgiven 分支），不写 drop
@@ -398,30 +398,8 @@ class SubscriptionReminder(Base):
     sent_at = Column(DateTime, default=datetime.now)
 
 
-class WelfareReminder(Base):
-    """公益资格到期提醒的发送记录（去重表）。
-
-    与 SubscriptionReminder 同口径：每个（用户 × 档位）只发一次，
-    ``kind`` 是 ``7d`` / ``3d`` / ``1d`` / ``expired``。公益资格挂在
-    WebUser 上（``welfare_expires_at``）、没有订阅行，所以单独一张表；
-    但同一次续期只有一个到期日，若用户续期后到期日变远，旧档位记录
-    不会误挡新一轮——collect 时按当前到期日重新落档（见 reminders.py
-    的 ``expires_key``：kind 里带上到期日指纹）。新表由 create_all 建。
-    """
-
-    __tablename__ = 'welfare_reminders'
-
-    __table_args__ = (
-        UniqueConstraint('user_id', 'kind', name='uq_welfare_reminder_kind'),
-        Index('idx_welfare_reminder_user', 'user_id'),
-        Index('idx_welfare_reminder_time', 'sent_at'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
-    # kind 形如 "2026-11-20:3d"：到期日 + 档位，续期改日后旧记录不挡新提醒
-    kind = Column(String(32), nullable=False)
-    sent_at = Column(DateTime, default=datetime.now)
+# WelfareReminder（welfare_reminders 去重表）已随福利服役族于
+# 2026-11-14 删除：福利到期提醒轨下线，订阅轨提醒不受影响。
 
 
 class RechargePackage(Base):
@@ -1306,15 +1284,10 @@ class InvitationCode(Base):
     user = relationship("WebUser")
 
 
-class WelfareGrantLog(Base):
-    """公益资格开通/续期记录表"""
-    __tablename__ = "welfare_grant_logs"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("web_users.id"), nullable=False, index=True)
-    channel = Column(String(20), nullable=False)
-    days = Column(Integer, nullable=False, default=0)
-    granted_by = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.now)
+# WelfareGrantLog（welfare_grant_logs 发放总账）已随福利服役族于
+# 2026-11-14 删除：折算对账档案另存生产 /data/welfare_conversion/。
+
+
 class InvitationRecord(Base):
     """邀请记录表"""
     __tablename__ = 'invitation_records'

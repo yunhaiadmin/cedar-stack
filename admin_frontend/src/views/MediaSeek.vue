@@ -577,7 +577,7 @@ function statusLabel(status: string): string {
           </div>
           <div class="kv-row"><span class="kv-key">提交用户</span><span class="kv-value">{{ handle.row.user_name }}</span></div>
           <div v-if="handleQuota" class="kv-row"><span class="kv-key">本月额度</span>
-            <span class="kv-value">已用 {{ handleQuota.monthly_used }} / {{ handleQuota.monthly_limit }}（{{ handleQuota.kind === 'welfare' ? '公益服' : '付费' }}），剩余 {{ handleQuota.monthly_remaining }} 次</span>
+            <span class="kv-value">已用 {{ handleQuota.monthly_used }} / {{ handleQuota.monthly_limit }}，剩余 {{ handleQuota.monthly_remaining }} 次</span>
           </div>
           <div class="kv-row"><span class="kv-key">求给</span>
             <span class="kv-value">{{ handle.row.realm_name || '未标注' }}</span>

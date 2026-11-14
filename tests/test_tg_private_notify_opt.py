@@ -363,49 +363,18 @@ def reminder_calls(monkeypatch):
     return calls
 
 
-def _welfare_user(db, name, expires_at, tg=4001, **kw):
-    return _user(db, name, telegram_id=tg, is_welfare=True,
-                 welfare_expires_at=expires_at, **kw)
-
-
-def test_welfare_reminder_due_and_dedup(db, reminder_calls):
+def test_welfare_reminder_track_removed(db, reminder_calls):
+    """福利到期提醒轨已随福利服役族删除：跑提醒不产生 welfare 事件、
+    结果 dict 无 welfare_* 键（订阅提醒轨照常，见后续用例）。"""
     now = datetime.now()
-    _welfare_user(db, "w1", now + timedelta(days=2, hours=1))
+    _user(db, "w1", telegram_id=4001)
     result = asyncio.run(reminders.run_expiry_reminders(db, now=now))
-    assert result["welfare_reminded"] == 1
+    assert "welfare_reminded" not in result
+    assert "welfare_expired_notified" not in result
+    assert not hasattr(models, "WelfareReminder")
     welfare = [c for c in reminder_calls
                if str(c["event_type"]).startswith("welfare.")]
-    assert len(welfare) == 1
-    assert welfare[0]["channels"] == ["in_app", "telegram"]
-    assert db.query(models.WelfareReminder).count() == 1
-    # 第二轮不重发（去重表挡住）
-    result = asyncio.run(reminders.run_expiry_reminders(db, now=now))
-    assert result["welfare_reminded"] == 0
-    assert len([c for c in reminder_calls
-                if str(c["event_type"]).startswith("welfare.")]) == 1
-
-
-def test_welfare_expired_notice_once(db, reminder_calls):
-    now = datetime.now()
-    _welfare_user(db, "w2", now - timedelta(hours=2))
-    result = asyncio.run(reminders.run_expiry_reminders(db, now=now))
-    assert result["welfare_expired_notified"] == 1
-    result = asyncio.run(reminders.run_expiry_reminders(db, now=now))
-    assert result["welfare_expired_notified"] == 0
-
-
-def test_welfare_permanent_and_pref_off_channels(db, reminder_calls):
-    now = datetime.now()
-    # 永久资格（expires_at 为空）不提醒
-    _welfare_user(db, "w3", None, tg=4003)
-    user = _welfare_user(db, "w4", now + timedelta(days=2, hours=1), tg=4004)
-    user.tg_notify_expiry = False
-    db.commit()
-    result = asyncio.run(reminders.run_expiry_reminders(db, now=now))
-    assert result["welfare_reminded"] == 1
-    welfare = [c for c in reminder_calls
-               if str(c["event_type"]).startswith("welfare.")]
-    assert welfare[0]["channels"] == ["in_app"]
+    assert welfare == []
 
 
 def test_subscription_reminder_pref_drops_telegram(db, reminder_calls):

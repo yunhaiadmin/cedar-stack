@@ -1,8 +1,10 @@
-"""A-110 回归：退群处置与对账的“在群”定义须一致。
+"""A-110 回归（口径已随福利服役族于 2026-11-14 变更）。
 
-退群事件只凭“离了当前群”就取消公益资格是错的：用户可能仍在
-其他名单群。对账口径是“任一群在群即在群”，退群处置处置前必须
-用同一口径逐群复核。
+历史问题：退群事件只凭"离了当前群"就取消公益资格是错的——处置前
+须逐群复核"在群"口径。2026-11-14 公益资格整族删除后，退群处置本身
+已下线：_handle_chat_member 只做校验、零处置零通知。本文件把原四种
+场景（仍在别群 / 已离全部群 / 接口失败 / 单群）全部钉成无动作，
+防处置逻辑以任何形式复活。
 """
 
 from __future__ import annotations
@@ -29,7 +31,6 @@ def db():
     for table in (
         models.WebUser.__table__,
         models.SystemConfig.__table__,
-        models.WelfareGrantLog.__table__,
         models.AdminLog.__table__,
     ):
         table.create(engine, checkfirst=True)
@@ -41,17 +42,20 @@ def db():
 
 
 @pytest.fixture()
-def _sent(monkeypatch):
+def sent(monkeypatch):
+    out = []
     monkeypatch.setattr(
         sender, "send_message",
-        lambda db_, chat_id, text, reply_markup=None, **kw: (True, None),
+        lambda db_, chat_id, text, reply_markup=None, **kw:
+            out.append((chat_id, text)) or (True, None),
     )
+    return out
 
 
-def _user(db, tg_id, is_welfare=True):
+def _user(db, tg_id):
     u = models.WebUser(username="u%d" % tg_id, telegram_id=tg_id)
     u.password_hash = ""
-    u.is_welfare = is_welfare
+    u.points = 321
     db.add(u)
     db.commit()
     return u
@@ -73,55 +77,41 @@ def _leave_event(tg_id, chat_id):
 
 
 def _cfg(groups):
+    # 存量配置值 cancel_welfare 也必须无动作（动作已删、恒 none）
     return {"bot_group_ids": groups, "bot_leave_action": "cancel_welfare"}
 
 
-def _group_leave_logs(db):
-    return (
-        db.query(models.WelfareGrantLog)
-        .filter(models.WelfareGrantLog.channel == "group_leave")
-        .count()
-    )
-
-
-def _refresh(db, user):
+def _assert_untouched(db, user, sent):
     db.expire(user)
-    return db.query(models.WebUser).filter(models.WebUser.id == user.id).first()
+    fresh = db.query(models.WebUser).filter(models.WebUser.id == user.id).first()
+    assert fresh.points == 321
+    assert not hasattr(fresh, "is_welfare")
+    assert sent == []
 
 
-def test_leave_one_group_still_member_elsewhere_keeps_welfare(
-    db, _sent, monkeypatch
-):
-    """(a) 群 A=left、群 B=member → 不取消、无日志。"""
-    user = _user(db, USER_TG, is_welfare=True)
+def test_leave_one_group_still_member_elsewhere_noop(db, sent, monkeypatch):
+    user = _user(db, USER_TG)
     _stub_members(monkeypatch, {GROUP_A: (False, "left"), GROUP_B: (True, "member")})
     router._handle_chat_member(db, _cfg(f"{GROUP_A},{GROUP_B}"), _leave_event(USER_TG, GROUP_A))
-    assert _refresh(db, user).is_welfare is True
-    assert _group_leave_logs(db) == 0
+    _assert_untouched(db, user, sent)
 
 
-def test_leave_all_groups_cancels(db, _sent, monkeypatch):
-    """(b) 两群皆 left → 取消且有日志。"""
-    user = _user(db, USER_TG, is_welfare=True)
+def test_leave_all_groups_noop(db, sent, monkeypatch):
+    user = _user(db, USER_TG)
     _stub_members(monkeypatch, {GROUP_A: (False, "left"), GROUP_B: (False, "left")})
     router._handle_chat_member(db, _cfg(f"{GROUP_A},{GROUP_B}"), _leave_event(USER_TG, GROUP_A))
-    assert _refresh(db, user).is_welfare is False
-    assert _group_leave_logs(db) == 1
+    _assert_untouched(db, user, sent)
 
 
-def test_leave_other_group_api_error_skips(db, _sent, monkeypatch):
-    """(c) 群 B 接口失败（None）→ fail-closed，不取消。"""
-    user = _user(db, USER_TG, is_welfare=True)
+def test_leave_other_group_api_error_noop(db, sent, monkeypatch):
+    user = _user(db, USER_TG)
     _stub_members(monkeypatch, {GROUP_A: (False, "left"), GROUP_B: (None, "api_error")})
     router._handle_chat_member(db, _cfg(f"{GROUP_A},{GROUP_B}"), _leave_event(USER_TG, GROUP_A))
-    assert _refresh(db, user).is_welfare is True
-    assert _group_leave_logs(db) == 0
+    _assert_untouched(db, user, sent)
 
 
-def test_leave_single_group_cancels(db, _sent, monkeypatch):
-    """(d) 单群配置离群 → 照常取消。"""
-    user = _user(db, USER_TG, is_welfare=True)
+def test_leave_single_group_noop(db, sent, monkeypatch):
+    user = _user(db, USER_TG)
     _stub_members(monkeypatch, {GROUP_A: (False, "left")})
     router._handle_chat_member(db, _cfg(f"{GROUP_A}"), _leave_event(USER_TG, GROUP_A))
-    assert _refresh(db, user).is_welfare is False
-    assert _group_leave_logs(db) == 1
+    _assert_untouched(db, user, sent)

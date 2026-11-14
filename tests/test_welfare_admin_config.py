@@ -141,7 +141,7 @@ def test_register_gifts_custom_days(db):
     after = datetime.now()
 
     db.refresh(user)
-    assert not user.is_welfare  # 资格赠送已删除，只剩查看行
+    assert not hasattr(user, "is_welfare")  # 资格赠送已删除，只剩查看行（字段本身已摘）
     row = db.query(models.EmbyViewUnlock).filter(
         models.EmbyViewUnlock.user_id == user.id).one()
     assert before + timedelta(days=15) - timedelta(seconds=5) <= row.expires_at
@@ -159,7 +159,7 @@ def test_register_gifts_invalid_rows_fall_back_to_30(db):
     after = datetime.now()
 
     db.refresh(user)
-    assert not user.is_welfare
+    assert not hasattr(user, "is_welfare")
     row = db.query(models.EmbyViewUnlock).filter(
         models.EmbyViewUnlock.user_id == user.id).one()
     assert before + timedelta(days=30) - timedelta(seconds=5) <= row.expires_at

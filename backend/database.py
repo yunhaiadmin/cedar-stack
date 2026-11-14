@@ -730,12 +730,9 @@ def _auto_migrate():
             # v2.44.0 注册渠道归因（admin/code/invitation/open）：老用户补列后为 NULL，
             # 按「未记录」显示——不硬猜成 open（见 backend/register_channel.py）
             ("register_channel", "VARCHAR(20)", "NULL"),
-            # v2.57.0 公益服模块1：公益身份与资格。老库补列后 is_welfare=0（非公益）、
-            # 其余为 NULL（无公益资格），行为与升级前完全一致。
-            ("is_welfare", "BOOLEAN", "0"),
-            ("welfare_expires_at", "DATETIME", "NULL"),
-            ("welfare_grant_channel", "VARCHAR(20)", "NULL"),
-            ("welfare_granted_at", "DATETIME", "NULL"),
+            # v2.57.0 公益服模块1 的四列（is_welfare 等）已随福利服役族
+            # 于 2026-11-14 删除（模型已摘，生产由配套 DDL 删列），
+            # 不再补列。
             # P1 统一货币体系：会员经验与缓存等级。老用户补列后 xp=0/level=1（初幕），
             # 与升级前行为一致（此前无等级概念）。
             ("member_xp", "INTEGER", "0"),

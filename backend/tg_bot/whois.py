@@ -422,13 +422,12 @@ def _subscription_lite_line(db, user_id: int) -> str:
 def render_whois_lite(db, user, tg_display_name: str | None = None) -> str:
     """群内精简卡：字段白名单逐项对用户定版，不许私自加行。
 
-    等级 / 公益资格复用 features 的现行口径（横切只许一套）：
-    _level_info 只读快照、_welfare_line 三态文案。
+    等级复用 features 的现行口径（横切只许一套）：_level_info 只读快照。
+    （原公益资格行已随福利服役族于 2026-11-14 删除。）
     """
     from backend.tg_bot import features
 
     info = features._level_info(db, user)
-    welfare = features._welfare_line(user).split("：", 1)[-1]
     status = "正常" if bool(getattr(user, "is_active", True)) else "已停用"
     rows = [
         layout.row("👤", "账号",
@@ -440,7 +439,6 @@ def render_whois_lite(db, user, tg_display_name: str | None = None) -> str:
         layout.row("⭐", "等级",
                    f"Lv.{info['level']} "
                    f"{html.escape(str(info['name']))}"),
-        layout.row("📊", "公益资格", welfare),
         layout.row("📦", "订阅", _subscription_lite_line(db, user.id)),
         layout.row("🍒", "能量余额", int(getattr(user, "points", 0) or 0)),
         layout.row("🔗", "网盘绑定", _binding_lite_line(db, user.id)),

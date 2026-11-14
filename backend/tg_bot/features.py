@@ -161,19 +161,6 @@ def _pet_summary(db, user_id: int):
     return total_hours, cur, nxt
 
 
-def _welfare_line(user) -> str:
-    """公益资格三态：未开通／长期有效／至 YYYY-MM-DD。
-
-    口径与 /account 既有写法一致（is_welfare＋welfare_expires_at），只补未开通分支。
-    """
-    if not bool(getattr(user, "is_welfare", False)):
-        return "公益资格：未开通"
-    end = getattr(user, "welfare_expires_at", None)
-    if end is None:
-        return "公益资格：长期有效"
-    return f"公益资格：至 {end.strftime('%Y-%m-%d')}"
-
-
 def _bindings_line(db, user_id: int) -> str:
     """网盘绑定：仅 active 行，按 provider 区分展示；已绑带 ✓。"""
     from backend.emby_server import models as em
@@ -402,7 +389,6 @@ def account_card(db, user, display_name: str | None = None) -> str:
         layout.row("👤", "账号名称", f"<b>{_esc(user.username)}</b>"),
         layout.row("⭐", "当前等级", _level_value(db, user)),
         layout.row("🍒", "能量余额", f"<b>{int(user.points or 0)}</b>"),
-        layout.row("📊", "公益资格", _after_colon(_welfare_line(user))),
         layout.row("⚡", "活力数值", vitality_text),
         layout.row("🔗", "网盘绑定", _after_colon(_bindings_line(db, user.id))),
         layout.row("🐉", "当前馆灵", pet_text),

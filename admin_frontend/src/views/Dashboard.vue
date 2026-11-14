@@ -971,13 +971,12 @@ function serviceRoleLabel(role: string): string {
           <el-tab-pane label="最近注册" name="users">
             <EmptyState v-if="detail.recent_users.length === 0" compact :icon="Users" title="暂无用户" description="" />
             <table v-else class="detail-table">
-              <thead><tr><th>用户</th><th>注册时间</th><th>渠道</th><th>类型</th></tr></thead>
+              <thead><tr><th>用户</th><th>注册时间</th><th>渠道</th></tr></thead>
               <tbody>
                 <tr v-for="u in detail.recent_users" :key="u.username + u.created_at">
                   <td>{{ u.username }}</td>
                   <td>{{ fmtTime(u.created_at) }}</td>
                   <td>{{ u.channel || '—' }}</td>
-                  <td>{{ u.is_welfare ? '公益' : '付费' }}</td>
                 </tr>
               </tbody>
             </table>

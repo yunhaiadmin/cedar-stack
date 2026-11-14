@@ -113,8 +113,8 @@ def test_grant_register_gifts_creates_view_row_only_no_points_spent(db):
     after = datetime.now()
 
     db.refresh(user)
-    assert not user.is_welfare
-    assert user.welfare_grant_channel != "register_gift"
+    assert not hasattr(user, "is_welfare")
+    assert not hasattr(user, "welfare_grant_channel")
     assert user.points == 0
 
     rows = (
@@ -150,7 +150,7 @@ def test_grant_register_gifts_view_row_not_duplicated(db):
     )
     assert len(rows) == 1
     assert rows[0].expires_at == first_view_expires
-    assert not user.is_welfare
+    assert not hasattr(user, "is_welfare")
 
 
 def test_grant_register_gifts_existing_view_row_untouched(db):
@@ -198,8 +198,8 @@ def test_grant_register_gifts_welfare_never_granted(db):
     _grant_register_gifts(db, user)
 
     db.refresh(user)
-    assert not user.is_welfare
-    assert user.welfare_grant_channel != "register_gift"
+    assert not hasattr(user, "is_welfare")
+    assert not hasattr(user, "welfare_grant_channel")
     assert user.points == 0
 
     rows = _view_rows(db, user)
@@ -215,7 +215,7 @@ def test_grant_register_gifts_view_off_by_default(db):
     _grant_register_gifts(db, user)
 
     db.refresh(user)
-    assert not user.is_welfare
+    assert not hasattr(user, "is_welfare")
     assert user.points == 0
     assert _view_rows(db, user) == []
 
@@ -237,8 +237,8 @@ def test_grant_register_gifts_welfare_on_view_off(db):
     _grant_register_gifts(db, user)
 
     db.refresh(user)
-    assert not user.is_welfare
-    assert user.welfare_grant_channel != "register_gift"
+    assert not hasattr(user, "is_welfare")
+    assert not hasattr(user, "welfare_grant_channel")
     assert user.points == 0
     assert _view_rows(db, user) == []
 
@@ -252,8 +252,8 @@ def test_grant_register_gifts_view_on_creates_row_welfare_stays_off(db):
     after = datetime.now()
 
     db.refresh(user)
-    assert not user.is_welfare
-    assert user.welfare_grant_channel != "register_gift"
+    assert not hasattr(user, "is_welfare")
+    assert not hasattr(user, "welfare_grant_channel")
     rows = _view_rows(db, user)
     assert len(rows) == 1
     assert rows[0].points_spent == 0

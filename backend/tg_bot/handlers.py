@@ -789,8 +789,8 @@ def handle_reconcile(db, tg_user: dict, chat_id: int, args: str):
     双门与 handle_whois 同一口径：私聊限定（handler 层 guard，
     router 的 private_only 另有一层）+ resolve 后 is_staff 判定，
     一字不改判定逻辑；非管理员回现行拒绝卡，未绑定回绑定指引。
-    本命令只出报告卡（全只读，零处置）；处置走报告卡按钮的
-    二次确认（callbacks 的 reconcile:ask / reconcile:do）。
+    本命令只出报告卡（全只读，零处置）。（原报告卡上的资格取消
+    处置已随福利服役族于 2026-11-14 删除。）
     """
     from backend.tg_bot import queries, reconcile
 

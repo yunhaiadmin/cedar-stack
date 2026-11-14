@@ -47,9 +47,9 @@ DEFAULTS: dict[str, str] = {
     # 不在此列。白名单存频道 chat id（逗号分隔），命中的频道放行。
     "bot_channel_guard_enabled": "true",
     "bot_channel_whitelist": "",
-    # 退群处置：cancel_welfare=已绑定用户退群/被踢时只取消公益资格
-    # （不动账号/能量/查看凭证）；none=不处置。非法值回落默认。
-    "bot_leave_action": "cancel_welfare",
+    # 退群处置：原 cancel_welfare（退群取消公益资格）已随福利服役族
+    # 于 2026-11-14 删除，现恒为 none=不处置；键保留只为兼容存量配置行。
+    "bot_leave_action": "none",
 }
 
 # 命令 → 开关配置键（不在表中的命令视为常开）
@@ -174,8 +174,8 @@ def group_rate_limit(cfg: dict[str, str]) -> int:
     return _to_int(cfg.get("bot_group_rate_limit"), _DEFAULT_GROUP_RATE_LIMIT)
 
 
-# 退群处置的合法取值
-LEAVE_ACTIONS = ("cancel_welfare", "none")
+# 退群处置的合法取值（cancel_welfare 已随福利服役族删除，只剩 none）
+LEAVE_ACTIONS = ("none",)
 
 
 def is_channel_guard_enabled(cfg: dict[str, str]) -> bool:
@@ -200,7 +200,10 @@ def is_channel_whitelisted(cfg: dict[str, str], sender_chat_id) -> bool:
 
 
 def leave_action(cfg: dict[str, str]) -> str:
-    """退群处置动作：cancel_welfare / none；非法值回落默认 cancel_welfare。"""
+    """退群处置动作：现恒为 none（原 cancel_welfare 已删除）；
+
+    存量配置里的 cancel_welfare 等任何旧值一律按 none 处理。
+    """
     value = str(cfg.get("bot_leave_action") or "").strip().lower()
     return value if value in LEAVE_ACTIONS else DEFAULTS["bot_leave_action"]
 

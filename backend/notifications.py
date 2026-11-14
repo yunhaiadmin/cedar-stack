@@ -788,9 +788,8 @@ class AdminEvent:
     MEDIA_SEEK_REJECTED = "media_seek.rejected"
     MEDIA_SEEK_COMPLETED = "media_seek.completed"
 
-    # 公益资格到期提醒（后台周期任务发出，见 backend/reminders.py）
-    WELFARE_REMINDER = "welfare.reminder"
-    WELFARE_EXPIRED = "welfare.expired"
+    # 公益资格到期提醒事件（welfare.reminder / welfare.expired）已随
+    # 福利服役族于 2026-11-14 删除；历史通知行按字符串留存、不再产生新行。
 
     # 治理举报终审结果（通知举报人，见 backend/governance_report.py）
     REPORT_DECIDED = "governance.report_decided"

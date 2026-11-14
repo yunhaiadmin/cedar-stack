@@ -317,9 +317,8 @@ def collect_system_config_defaults() -> list[tuple[str, str, str]]:
     from backend import media_seek
     items.append((media_seek.CONFIG_DAILY_LIMIT, str(media_seek.DEFAULT_DAILY_LIMIT),
                   "用户每日求片上限（超过当天不能再提交）"))
-    # 7.7b 求片中心：月度额度（公益/付费区分，与旧版公益服求片中心合并）
-    items.append((media_seek.CONFIG_MONTHLY_WELFARE, str(media_seek.DEFAULT_MONTHLY_WELFARE),
-                  "公益服用户每月求片上限"))
+    # 7.7b 求片中心：月度额度回落值（套餐权益未声明时用；原公益口径
+    # welfare_request_monthly 已随福利服役族于 2026-11-14 删除）
     items.append((media_seek.CONFIG_MONTHLY_PAID, str(media_seek.DEFAULT_MONTHLY_PAID),
                   "付费用户每月求片上限"))
     # v2 求片：总开关 / 附议 / 附议者通知（全部可配置，默认开）
