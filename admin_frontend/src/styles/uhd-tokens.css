@@ -125,7 +125,40 @@
   /* 主按钮深色毛玻璃底：须近不透明，否则彩虹边框层会透成满面（验收截图实证） */
   --uhd-glass-btn-d: rgba(18, 18, 20, 0.88);
   --uhd-glass-border-l: rgba(17, 17, 17, 0.08);
-  --uhd-glass-filter: blur(12px) saturate(160%);
+  /* 玻璃分级（批 B 地基，2026-11-14）：按构件分四档，blur/saturate 照友站
+     材质原文（排查报告第二章 §2.2）——navpill 20/160、pill 16/150、
+     slab 20–24/160（本站取 24，与友站 surface/chrome 同档）、float 28/170。
+     每档的阴影束（内高光＋边缘环＋大柔影）绑进材质令牌本身：组件只引
+     一对（*-filter＋*-shadow），不许再逐组件自己凑阴影。阴影束结构照
+     友站 float 五段式，色值沿本站既有先例（内高光白、柔影近黑低透）。 */
+  --uhd-glass-navpill-filter: blur(20px) saturate(160%);
+  --uhd-glass-navpill-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 10px 28px -12px rgba(0, 0, 0, 0.35);
+  --uhd-glass-pill-filter: blur(16px) saturate(150%);
+  --uhd-glass-pill-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 8px 22px -10px rgba(0, 0, 0, 0.3);
+  --uhd-glass-slab-filter: blur(24px) saturate(160%);
+  --uhd-glass-slab-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 2px 6px -2px rgba(0, 0, 0, 0.18),
+    0 16px 34px -16px rgba(0, 0, 0, 0.32);
+  --uhd-glass-float-filter: blur(28px) saturate(170%);
+  /* float 阴影束＝友站 --mat-float-shadow 原文结构逐段落码（内高光 -0.25px /
+     反向弱光 / 边缘环 / 小柔影 / 大柔影） */
+  --uhd-glass-float-shadow:
+    inset 1px 1px 0 -0.25px rgba(255, 255, 255, 0.55),
+    inset -1px -1px 0 -0.25px rgba(255, 255, 255, 0.18),
+    0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 2px 6px -2px rgba(0, 0, 0, 0.22),
+    0 20px 40px -20px rgba(0, 0, 0, 0.45);
+  /* 存量别名：--uhd-glass-filter 保留原名、指向 pill 档（存量引用本单不
+     迁移，逐构件归档是批 C 的事）；原 12px 一档制就此退役。 */
+  --uhd-glass-filter: var(--uhd-glass-pill-filter);
   /* 深色卡极淡网格纹（透明度以「几乎看不见」为准，组件层按需引用） */
   --uhd-grid-tex: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
   --uhd-grid-tex-size: 28px 28px;
@@ -141,13 +174,36 @@
   --uhd-card-pad: 30px;
   --uhd-nav-h: 46px;
 
-  /* ---------- 1.6 动效口径（时长/缓动为原站实测：blur-in .56s / fade-in .52s / hero-fade .74s） ---------- */
+  /* ---------- 1.6 动效手册（批 B 补齐成一套，2026-11-14） ----------
+     数值唯一真源：排查报告第二章 §2.1（友站 CSS 原文）。全站动效只许走
+     本节令牌；旧三套动效令牌（aurora / neo-noir / v4-paper）已冻结
+     （user 端各文件头有宣告），存量逐页收编是批 C 的事。
+     时长 6 档分工：micro 微反馈（按压/小钮）／base 通用过渡／layout 布局
+     变化／slow 弹层与大件／hero 首屏入场／cinematic 品牌级慢动。 */
+  --uhd-dur-micro: 0.15s;
+  --uhd-dur-base: 0.2s;
+  --uhd-dur-layout: 0.3s;
+  --uhd-dur-slow: 0.5s;
+  --uhd-dur-hero: 0.74s;
+  --uhd-dur-cinematic: 1s;
+  /* 角色时长（与 6 档并存）：ui＝base 档旧名（存量引用保留）；fade .52s /
+     blur-in .56s 为原站实测既有值；glass 三件是玻璃形态变化专用
+     （emerge .22s / retract .14s / content-in .16s，content-in 的 40ms
+     延迟由组件侧写 animation-delay）；ticker .36s 文字整行竖滑轮换。 */
   --uhd-dur-ui: 0.2s;
   --uhd-dur-fade: 0.52s;
   --uhd-dur-blur-in: 0.56s;
-  --uhd-dur-hero: 0.74s;
-  --uhd-ease-pop: cubic-bezier(0.22, 1, 0.36, 1);
+  --uhd-dur-glass-emerge: 0.22s;
+  --uhd-dur-glass-retract: 0.14s;
+  --uhd-dur-glass-content: 0.16s;
+  --uhd-dur-ticker: 0.36s;
+  /* 缓动 5 条成阶梯（友站原文）：standard 通用／pop 浮层入场／sheet 弹层／
+     spring 按压回弹／spring-soft 玻璃形态变化 */
   --uhd-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --uhd-ease-pop: cubic-bezier(0.22, 1, 0.36, 1);
+  --uhd-ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+  --uhd-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --uhd-ease-spring-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
 }
 
 /* 入场：只做淡入（与 user 端 #144 同口径，名字留档、效果已改）。
@@ -160,6 +216,47 @@
 @keyframes uhd-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+/* 入场库补位（批 B，报告 §2.1）：按元素角色分件的纯位移/缩放新件。
+   红线不变：入场关键帧不许含 blur（check_no_ghost_entrance.py 守着）；
+   友站 blur-in（blur6＋Y8）本站不复刻，本站 uhd-blur-in 维持纯淡入。 */
+/* hero-fade：首屏入场，Y16＋淡入（走 --uhd-dur-hero .74s） */
+@keyframes uhd-hero-fade {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* fade-up：区块入场，Y24 纯位移＋淡入（走 --uhd-dur-fade .52s） */
+@keyframes uhd-fade-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* pg-pop：浮层/小卡入场，Y6＋scale .97（走 --uhd-dur-base .2s＋ease-pop） */
+@keyframes uhd-pg-pop {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+/* glass 三件：玻璃胶囊形态变化（emerge .22s spring-soft 放大浮现 /
+   retract .14s 收至 .94 / content-in .16s 内容随后淡入，组件配 40ms 延迟） */
+@keyframes uhd-glass-emerge {
+  from { transform: scale(0.9); }
+  to { transform: scale(1); }
+}
+@keyframes uhd-glass-retract {
+  from { transform: scale(1); }
+  to { transform: scale(0.94); }
+}
+@keyframes uhd-glass-content-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+/* ticker：文字整行竖滑轮换（in 自下入 / out 向上出，走 --uhd-dur-ticker .36s） */
+@keyframes uhd-ticker-in {
+  from { opacity: 0; transform: translateY(100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes uhd-ticker-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-100%); }
 }
 /* 加载态统一：旋转圈 + 「正在加载…」灰字（禁骨架屏闪烁占位） */
 @keyframes uhd-spin {

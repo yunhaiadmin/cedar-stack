@@ -5,6 +5,9 @@
  * 元信息 14px 灰、评分黑色粗体。首页海报无任何角标、悬停无浮层——
  * 本组件不渲染角标、不做悬停浮层（收藏星钮是收藏页的业务控件，
  * 由收藏页自己叠加，不在本组件内）。
+ * 批 B 微交互（2026-11-14）：悬停只给「反馈」不给「浮层」——海报图
+ * 轻缩放＋海报框影深（数值走 uhd 动效手册）；图片加载完成淡入，
+ * 不再整块硬切出现。
  */
 import { ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -26,10 +29,13 @@ const props = withDefaults(
 
 /** 图片加载失败（个别条目图 404 等）：撤下 img 换占位，不留浏览器裂图图标 */
 const broken = ref(false)
+/** 图片加载完成标记：未完成时 opacity 0，完成后淡入（批 B） */
+const loaded = ref(false)
 watch(
   () => props.image,
   () => {
     broken.value = false
+    loaded.value = false
   },
 )
 </script>
@@ -37,7 +43,7 @@ watch(
 <template>
   <RouterLink class="sp-card" :class="`sp-card--${size}`" :to="to">
     <span class="sp-poster">
-      <img v-if="image && !broken" :src="image" alt="" loading="lazy" decoding="async" class="sp-img" @error="broken = true" />
+      <img v-if="image && !broken" :src="image" alt="" loading="lazy" decoding="async" class="sp-img" :class="{ 'sp-img--loaded': loaded }" @load="loaded = true" @error="broken = true" />
       <Clapperboard v-else :size="30" :stroke-width="1.5" class="sp-fallback" aria-hidden="true" />
     </span>
     <span class="sp-title" :title="title">{{ title }}</span>
@@ -70,11 +76,31 @@ watch(
   border-radius: 13px;
   overflow: hidden;
   background: var(--uhd-s-card-soft);
+  transition: box-shadow var(--uhd-dur-base) var(--uhd-ease-standard);
 }
 .sp-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  /* 加载淡入（批 B）：完成前透明，完成后按 layout 档淡入；
+     transform 同档供悬停轻缩放共用一条过渡 */
+  opacity: 0;
+  transition:
+    opacity var(--uhd-dur-layout) var(--uhd-ease-standard),
+    transform var(--uhd-dur-layout) var(--uhd-ease-standard);
+}
+.sp-img--loaded {
+  opacity: 1;
+}
+/* 悬停反馈（批 B）：只在真有悬停能力的设备上——海报轻缩放＋框影加深，
+   不加浮层（守本组件实测口径） */
+@media (hover: hover) {
+  .sp-card:hover .sp-poster {
+    box-shadow: var(--uhd-s-shadow-pill);
+  }
+  .sp-card:hover .sp-img {
+    transform: scale(1.04);
+  }
 }
 .sp-fallback {
   color: var(--uhd-s-text-2);
