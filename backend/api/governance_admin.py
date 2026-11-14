@@ -160,33 +160,3 @@ def governance_freeze_release(
            {"freeze_id": row.id})
     db.commit()
     return {"success": True, "freeze_id": row.id}
-
-
-class DowngradeRequest(BaseModel):
-    user_id: int
-    xp: int = Field(gt=0, description="扣减经验数，须为正数")
-    reason: str
-
-
-@admin_router.post("/governance/downgrade")
-def governance_downgrade(
-    req: DowngradeRequest,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """管理员手动降级：扣经验（钳制在 0）＋重算等级＋审计，理由必填。"""
-    _require_free_realm(db)
-    user = db.query(models.WebUser).filter(models.WebUser.id == req.user_id).first()
-    if user is None:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    try:
-        result = governance.governance_downgrade(
-            db, user_id=req.user_id, xp=req.xp,
-            reason=req.reason, admin_id=current_admin.id,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    _audit(db, current_admin.id, "governance_downgrade", "user", req.user_id,
-           {"xp": req.xp, "reason": req.reason})
-    db.commit()
-    return {"success": True, **result}

@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
-"""公益服管理后台 API
+"""群抽奖与机器人配置管理后台 API（历史文件名 welfare_admin）
 
-- GET  /welfare/users              公益用户列表
-- POST /welfare/grant              开通/续期公益
-- POST /welfare/revoke             取消公益资格
-- POST /welfare/bulk-extend        批量延期
-- GET/PUT /welfare/config          公益配置读写
+- GET/PUT /welfare/config          配置读写（抽奖/机器人键）
+- GET/POST /welfare/lottery/*      群抽奖轮次/提案/黑名单管理
+
+公益用户/资格发放端点已随公益资格整族于 2026-11-14 删除。
 """
 
 from __future__ import annotations
@@ -20,267 +19,24 @@ logger = logging.getLogger(__name__)
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from backend import config_service, lottery_governance, models
 from backend.api.admin_core import admin_router, get_current_admin, _audit
 from backend.database import get_db
 
 
-# ==================== 公益用户管理 ====================
-
-@admin_router.get("/welfare/users")
-def welfare_users(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    keyword: str = Query(""),
-    only_welfare: bool = Query(True),
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """公益用户列表"""
-    q = db.query(models.WebUser)
-    if only_welfare:
-        q = q.filter(models.WebUser.is_welfare == True)  # noqa: E712
-    if keyword:
-        q = q.filter(models.WebUser.username.like(f"%{keyword}%"))
-    total = q.count()
-    users = q.order_by(models.WebUser.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    from backend.emby_server import portal
-    items = []
-    for u in users:
-        st = portal.get_welfare_status(db, u)
-        items.append({
-            "id": u.id,
-            "username": u.username,
-            "is_welfare": bool(getattr(u, "is_welfare", False)),
-            "welfare_expires_at": u.welfare_expires_at.isoformat() if getattr(u, "welfare_expires_at", None) else None,
-            "days_left": st["days_left"],
-            "welfare_grant_channel": getattr(u, "welfare_grant_channel", None),
-        })
-    return {"total": total, "items": items}
-
-
-class GrantRequest(BaseModel):
-    user_id: int
-    # P2 修复（完美审查 B-P2-1）：负天数会穿透成"永不过期"，必须 ge=0。
-    days: int = Field(30, ge=0, description="天数，0=永不过期")
-    channel: str = "admin"
-
-
-@admin_router.post("/welfare/grant")
-def welfare_grant(
-    req: GrantRequest,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """开通/续期公益资格"""
-    user = db.query(models.WebUser).filter(models.WebUser.id == req.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    from backend.emby_server import portal
-    expires = portal.grant_welfare(db, user, req.channel, req.days, granted_by=current_admin.id)
-    _audit(db, current_admin.id, "welfare_grant", "user", user.id, {"days": req.days, "channel": req.channel})
-    db.commit()
-    return {"success": True, "expires_at": expires.isoformat() if expires else None}
-
-
-class RevokeRequest(BaseModel):
-    user_id: int
-
-
-@admin_router.post("/welfare/revoke")
-def welfare_revoke(
-    req: RevokeRequest,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """取消公益资格"""
-    user = db.query(models.WebUser).filter(models.WebUser.id == req.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    user.is_welfare = False
-    db.add(models.WelfareGrantLog(user_id=user.id, channel="admin_revoke", days=0, granted_by=current_admin.id))
-    _audit(db, current_admin.id, "welfare_revoke", "user", user.id, {})
-    db.commit()
-    return {"success": True}
-
-
-class BulkExtendRequest(BaseModel):
-    min_expired_days: int = Field(0, description="过期天数下限")
-    max_expired_days: int = Field(30, description="过期天数上限")
-    # P2 修复（完美审查 B-P2-1）：负天数会穿透成"永不过期"，必须 ge=0。
-    add_days: int = Field(30, ge=0, description="增加天数")
-
-
-@admin_router.post("/welfare/bulk-extend")
-def welfare_bulk_extend(
-    req: BulkExtendRequest,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """按过期天数范围批量延期"""
-    now = datetime.now()
-    from backend.emby_server import portal
-    affected = 0
-    failed: list[dict] = []
-    # P2 修复（完美审查 B-P2-3）：键集分页（id > last_id，每批 500），
-    # 与 welfare_expiry.check_welfare_expiry 同一口径——之前全表 .all()
-    # 无界加载进内存。
-    last_id = 0
-    while True:
-        users = (
-            db.query(models.WebUser)
-            .filter(models.WebUser.is_welfare == True, models.WebUser.id > last_id)  # noqa: E712
-            .order_by(models.WebUser.id)
-            .limit(500)
-            .all()
-        )
-        if not users:
-            break
-        for u in users:
-            last_id = u.id
-            exp = getattr(u, "welfare_expires_at", None)
-            if exp is None:
-                continue  # 永不过期跳过
-            expired_days = (now - exp).days
-            if expired_days < 0:
-                continue  # 未过期跳过
-            if req.min_expired_days <= expired_days <= req.max_expired_days:
-                try:
-                    portal.grant_welfare(db, u, "bulk_extend", req.add_days, granted_by=current_admin.id)
-                    affected += 1
-                except Exception as e:
-                    # 批量里单个失败不许掀翻整批：grant_welfare 每用户独立提交，
-                    # 已延期的不回滚；失败记清单并 rollback 清会话，最后汇总审计
-                    # 如实返回，前端能看到谁没延上（此前中途抛错=前面白做、
-                    # 汇总审计也没落盘、前端只拿到 500 猜谜）。
-                    db.rollback()
-                    failed.append({"user_id": u.id, "username": u.username,
-                                   "error": str(e)[:200]})
-                    logger.warning("公益批量延期用户 %s 失败：%s", u.id, e)
-    _audit(db, current_admin.id, "welfare_bulk_extend", "system", None,
-           {"affected": affected, "failed": len(failed), "add_days": req.add_days})
-    db.commit()
-    return {"success": True, "affected": affected, "failed": failed}
-
-
-# ==================== 求片审核 ====================
-
-def _request_to_dict(r):
-    return {
-        "id": r.id,
-        "title": r.title,
-        "media_type": r.media_type,
-        "tmdb_id": r.tmdb_id,
-        "username": r.user.username if r.user else "",
-        "status": r.status,
-        "admin_note": r.admin_note or "",
-        "created_at": r.created_at.isoformat() if r.created_at else None,
-    }
-
-
-@admin_router.get("/welfare/requests")
-def welfare_requests(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    status: Optional[str] = Query(None),
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """求片审核列表"""
-    q = (
-        db.query(models.MediaRequest)
-        .options(joinedload(models.MediaRequest.user))  # r49: 防 N+1（_request_to_dict 逐行读 r.user.username）
-        .order_by(models.MediaRequest.id.desc())
-    )
-    if status:
-        q = q.filter(models.MediaRequest.status == status)
-    total = q.count()
-    items = q.offset((page - 1) * page_size).limit(page_size).all()
-    return {"total": total, "items": [_request_to_dict(r) for r in items]}
-
-
-class RequestNote(BaseModel):
-    admin_note: str = ""
-
-
-@admin_router.post("/welfare/requests/{request_id}/approve")
-def welfare_request_approve(
-    request_id: int,
-    req: RequestNote,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """通过求片"""
-    r = db.query(models.MediaRequest).filter(models.MediaRequest.id == request_id).first()
-    if not r:
-        raise HTTPException(status_code=404, detail="求片记录不存在")
-    r.status = "approved"
-    r.admin_note = req.admin_note
-    _audit(db, current_admin.id, "welfare_request_approve", "media_request", r.id, {"title": r.title})
-    db.commit()
-    return {"success": True}
-
-
-@admin_router.post("/welfare/requests/{request_id}/reject")
-def welfare_request_reject(
-    request_id: int,
-    req: RequestNote,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """拒绝求片"""
-    r = db.query(models.MediaRequest).filter(models.MediaRequest.id == request_id).first()
-    if not r:
-        raise HTTPException(status_code=404, detail="求片记录不存在")
-    r.status = "rejected"
-    r.admin_note = req.admin_note
-    _audit(db, current_admin.id, "welfare_request_reject", "media_request", r.id, {"title": r.title})
-    db.commit()
-    return {"success": True}
-
-
-@admin_router.post("/welfare/requests/{request_id}/done")
-def welfare_request_done(
-    request_id: int,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """标记求片已入库"""
-    r = db.query(models.MediaRequest).filter(models.MediaRequest.id == request_id).first()
-    if not r:
-        raise HTTPException(status_code=404, detail="求片记录不存在")
-    r.status = "done"
-    _audit(db, current_admin.id, "welfare_request_done", "media_request", r.id, {"title": r.title})
-    db.commit()
-    return {"success": True}
-
-
-# ==================== 公益配置 ====================
+# ==================== 配置（抽奖/机器人/查看赠送） ====================
 
 WELFARE_CONFIG_KEYS = {
-    # G1 资格码月配额：每位管理员每月可生成的资格码（reward_type=welfare）
-    # 张数上限，默认 30（宽松值）；0=不限（读侧 codes.welfare_code_monthly_quota）
-    "welfare_code_monthly_quota": "30",
-    # 新注册冷启动赠送天数（emby_portal._grant_register_gifts 读取；0=永不过期仅福利天数适用）
-    "register_gift_welfare_days": "30",
+    # 公益资格族键（资格码配额/注册送资格/到期保留/活力保号/福利申请）
+    # 已随公益资格整族于 2026-11-14 删除，本字典只剩抽奖/机器人/查看
+    # 赠送等在用键（字典名与端点路径为历史名，不动以免断现行调用）。
+    # 新注册送查看凭证天数（emby_portal._grant_register_gifts 读取）
     "register_gift_view_days": "30",
-    # 新注册送公益资格总开关（2026-10-29 默认关：开放注册但不送资格；
-    # 服主在管理端改成 true 即可重开，天数仍走上面两个键）
-    "register_gift_welfare_enabled": "false",
-    # 新注册送查看凭证总开关（2026-10-29 默认关：新注册不送凭证、可以送资格；
+    # 新注册送查看凭证总开关（2026-10-29 默认关：新注册不送凭证；
     # 服主在管理端改成 true 即可重开，天数仍走 register_gift_view_days）
     "register_gift_view_enabled": "false",
-    "welfare_grace_days": "7",
-    # 活力保号（vitality_renew，2026-11-09 取代连签保号）总开关（默认开）
-    # ＋活力线（默认 3）；读侧 welfare_expiry._try_vitality_renew
-    "welfare_vitality_renew_enabled": "true",
-    "welfare_vitality_renew_min": "3",
-    # 保号续期天数（默认 30）：沿用连签保号时代的既有键，语义已转活力保号
-    "welfare_streak_renew_days": "30",
-    "welfare_inactive_days": "30",
-    "welfare_request_monthly": "3",
     # P0 统一货币体系：充值比例
     "recharge_ratio": "1.2",
     # C4 商店改造：快捷金额
@@ -349,7 +105,7 @@ def welfare_config_get(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """读取公益配置"""
+    """读取配置（抽奖/机器人/查看赠送键）"""
     result = {}
     for key, default in WELFARE_CONFIG_KEYS.items():
         cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == key).first()
@@ -363,7 +119,7 @@ def welfare_config_set(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """保存公益配置（数值/开关键按 config_schema 校验，非法 400；空字符串=未设置，回退默认值）"""
+    """保存配置（数值/开关键按 config_schema 校验，非法 400；空字符串=未设置，回退默认值）"""
     if not isinstance(data, dict):
         raise HTTPException(status_code=400, detail="配置必须是对象")
     # 配置瘦身第 4 批 4-4：白名单过滤保留在端点层（未知键静默忽略，行为不变），

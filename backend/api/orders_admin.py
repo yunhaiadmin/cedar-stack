@@ -321,9 +321,9 @@ async def refund_order(
                     logger.info("订阅退款退积分已随货币下线跳过: order=%s pts=%s",
                                 order_id, refund_pts)
 
-            # 履约时按实付发的会员经验也要撤回（两种 kind 都发），否则「买→退」
-            # 可以刷经验升等级。revoke_entitlement=False（只退钱不撤权益）时不撤。
-            result["revoked_xp"] = _reverse_xp(db, user, order_id, kind)
+            # 会员经验已随等级体系于 2026-11-14 删除：履约不再发经验，
+            # 退款也无经验可撤。revoked_xp 字段保留出参兼容、恒为 0。
+            result["revoked_xp"] = 0
 
         # 状态与时间已由上面那次条件 UPDATE 原子写入，这里让当前事务里的 ORM 对象跟上
         order.status = "refunded"
@@ -398,43 +398,6 @@ def _restore_discount_credit(db: Session, order_id: str) -> bool:
                 synchronize_session=False)
     )
     return bool(restored)
-
-
-def _reverse_xp(db: Session, user: models.WebUser, order_id: str, kind: str) -> int:
-    """撤回这笔订单履约时发放的会员经验（按账本精确找，不重算）
-
-    充值/订阅履约成功时会按实付金额 1 元 = 1 经验发放（``member_level.add_xp``，
-    ref_id = ``recharge:{order_id}`` / ``subscription:{order_id}``）。退款只回滚
-    积分/天数而不撤经验，用户就能「买→退→买→退」刷经验升等级、永久拿折扣特权。
-    经验钳制在 0，不扣成负数；等级按阈值重算，够格降级就降。
-    """
-    from backend import member_level as _ml
-
-    prefix = "recharge" if kind == "recharge" else "subscription"
-    granted = (
-        db.query(func.coalesce(func.sum(models.MemberXpLog.xp_delta), 0))
-        .filter(
-            models.MemberXpLog.user_id == user.id,
-            models.MemberXpLog.ref_id == f"{prefix}:{order_id}",
-            models.MemberXpLog.xp_delta > 0,
-        )
-        .scalar()
-    ) or 0
-    already = (
-        db.query(func.coalesce(func.sum(-models.MemberXpLog.xp_delta), 0))
-        .filter(
-            models.MemberXpLog.user_id == user.id,
-            models.MemberXpLog.ref_id == f"refund:{order_id}",
-            models.MemberXpLog.xp_delta < 0,
-        )
-        .scalar()
-    ) or 0
-    to_reverse = int(granted) - int(already)
-    if to_reverse <= 0:
-        return 0
-    _ml.add_xp(db, user, -to_reverse, "refund", f"refund:{order_id}")
-    logger.info("订单 %s 撤回会员经验 %d", order_id, to_reverse)
-    return to_reverse
 
 
 def _reverse_rebate(db: Session, order_id: str, allow_negative: bool) -> tuple[int, bool]:

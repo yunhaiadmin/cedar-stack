@@ -574,7 +574,7 @@ def coupon_quote(
     """优惠码试算（下单前预览）
 
     用 POST 而不是 GET：优惠码不该进访问日志/浏览器历史（与卡码预检同一考虑）。
-    下单时走的是同一套口径（先会员折扣→再优惠券/权益），不会出现「预览 8 折、实付全价」。
+    下单时走的是同一套口径（优惠券/权益直接对原价算），不会出现「预览 8 折、实付全价」。
     code 可空：空时按「没填优惠券自动用最优兑换码折扣权益」口径试算（与下单一致），
     否则有未用权益的用户看到的预览价会高于实付价。
     返回里带 member_discount_pct/amount，前端可算出最终实付。
@@ -602,28 +602,17 @@ def coupon_quote(
             "discount_type": "percent",
             "value": 0,
         }
-    # 会员等级折扣（仅订阅+仅付费服），与 create_payment_order 同一口径：
-    # 先会员折扣得中间价，再对中间价算优惠券/权益。预览与下单必须一致。
-    # 注意：自动权益在下单时不分付费/公益服（没填码就用），这里同样。
+    # 会员等级折扣已随等级体系于 2026-11-14 删除：折扣一律走套餐价/
+    # 优惠码/兑换权益。member_discount_* 字段保留出参兼容、恒为 0。
+    # 与 create_payment_order 同一口径：优惠券/权益直接对原价算。
+    # 预览与下单必须一致。注意：自动权益在下单时不分付费/公益服
+    # （没填码就用），这里同样。
     member_discount_pct = 0
     member_discount_amount = Decimal("0.00")
     exchange_discount_pct = 0
     if req.kind == "subscription":
-        from backend import member_level as _ml
-        plan = db.query(models.SubscriptionPlan).options(
-            joinedload(models.SubscriptionPlan.realm)
-        ).filter(models.SubscriptionPlan.id == req.item_id).first()
-        _realm = plan.realm if plan else None
-        _is_paid = not (_realm is not None
-                        and getattr(_realm, "access_mode", "paid") == "free")
         _list = Decimal(str(result.get("list_price", 0)))
-        if _is_paid:
-            member_discount_pct = _ml.get_user_discount_pct(db, current_user)
-            if member_discount_pct > 0:
-                member_discount_amount = (
-                    _list * Decimal(member_discount_pct) / Decimal(100)
-                ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        _base = _list - member_discount_amount
+        _base = _list
         if code:
             # 对中间价重算优惠券（与下单逻辑一致）
             coupon_obj = db.query(models.CouponCode).filter(
@@ -633,7 +622,7 @@ def coupon_quote(
                 result["discount_amount"] = float(member_discount_amount + c_discount)
                 result["paid_amount"] = float(c_paid)
         else:
-            # 没填码：自动用最优兑换码折扣权益（与下单逻辑一致，同样先会员折扣再算权益）
+            # 没填码：自动用最优兑换码折扣权益（与下单逻辑一致，直接对原价算）
             credit = _best_discount_credit(db, current_user.id)
             if credit is not None:
                 exchange_discount_pct = credit.discount_pct
@@ -733,24 +722,12 @@ def create_payment_order(
     else:
         raise HTTPException(status_code=400, detail="kind 必须是 subscription")
 
-    # 会员等级折扣：仅订阅 + 仅付费服。公益服（access_mode='free'）不打折，充值不打折。
-    # 叠加顺序：先等级折扣得中间价，再对中间价算优惠券。
+    # 会员等级折扣已随等级体系于 2026-11-14 删除：优惠券/权益直接对
+    # 原价算。member_discount_* 恒为 0（字段保留兼容订单快照口径）。
     list_price = Decimal(str(amount))
     member_discount_pct = 0
     member_discount_amount = Decimal("0.00")
-    if req.kind == "subscription":
-        from backend import member_level as _ml
-        # plan.realm 已用 joinedload 预加载；realm 为空（老数据）按付费服处理
-        _realm = plan.realm
-        _is_paid_plan = not (_realm is not None
-                             and getattr(_realm, "access_mode", "paid") == "free")
-        if _is_paid_plan:
-            member_discount_pct = _ml.get_user_discount_pct(db, current_user)
-            if member_discount_pct > 0:
-                member_discount_amount = (
-                    list_price * Decimal(member_discount_pct) / Decimal(100)
-                ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    coupon_base = list_price - member_discount_amount
+    coupon_base = list_price
 
     # 优惠券：先用 quote 校验券有效性（按原价校验门槛），再对中间价重算折扣
     discount_amount = member_discount_amount
@@ -770,8 +747,8 @@ def create_payment_order(
         paid_amount = c_paid
         coupon_code = preview["code"]
     elif req.kind == "subscription":
-        # 兑换码折扣权益：没填优惠券时自动用最优的一张（pct 最小=折扣最大），不与优惠券叠加；
-        # 但与会员等级折扣叠加（与上面的优惠券分支同口径：先会员折扣得中间价，再对中间价算权益）。
+        # 兑换码折扣权益：没填优惠券时自动用最优的一张（pct 最小=折扣最大），
+        # 不与优惠券叠加，直接对原价算（与上面的优惠券分支同口径）。
         credit = _best_discount_credit(db, current_user.id)
         if credit is not None:
             c_discount, c_paid = _exchange_discount_amount(coupon_base, credit.discount_pct)
@@ -1065,25 +1042,6 @@ def _fulfill_order(db: Session, recharge_order=None, subscription_order=None) ->
                 plan.duration_days,
                 realm_id=plan.realm_id,
             )
-            # P1 会员经验：订阅实付 1 元 = 1 经验（向下取整），与订阅发放同一事务。
-            # 经验失败不阻塞订阅履约，但绝不静默：同充值，发一条用户可见的站内信。
-            _xp = max(0, int(subscription_order.amount or 0))
-            try:
-                from backend import member_level as _ml
-                if _xp:
-                    _ml.add_xp(db, user, _xp, "subscription",
-                               f"subscription:{subscription_order.order_id}")
-            except Exception as exc:  # noqa: BLE001
-                logger.exception("订阅经验累加失败: %s", subscription_order.order_id)
-                pending.append(dict(
-                    event_type=AdminEvent.FULFILL_PARTIAL,
-                    user_id=user.id,
-                    title="⚠️ 订阅成功，会员经验发放失败",
-                    content=(f"订单 {subscription_order.order_id} 的订阅已开通，"
-                             f"但会员经验（约 {_xp} 点）累加失败。"
-                             "请联系客服补发。"),
-                    related_id=None,
-                ))
             # 记下「这条订单开出的是哪份订阅、多少天」：退款按这笔精确回滚，
             # 不靠猜用户当前那笔生效中的订阅（可能来自卡码/兑换码/别的订单）。
             subscription_order.subscription_id = subscription.id

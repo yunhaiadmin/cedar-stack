@@ -39,11 +39,9 @@
         <span v-else-if="memberNote" class="ov-expiry__note">{{ memberNote }}</span>
       </div>
 
-      <!-- 状态预警（活力不足/临期；数据复用本页已加载状态，不触发时整块不渲染） -->
+      <!-- 状态预警（订阅临期；数据复用本页已加载状态，不触发时整块不渲染） -->
       <StatusAlertBar
         :is-free-realm="isFreeRealm"
-        :vitality="vitality"
-        :welfare="welfare"
         :active-sub="activeSub"
       />
 
@@ -244,9 +242,9 @@
  * 收藏页签、求片归求片页、想看与追剧订阅归条目详情页动作区，追剧订阅
  * 管理面板归账号设置页。
  * 页面跟随用户外观（浅/深本地变量切换，不再经纸色布局强制浅色）。
- * 所有数字/条目只用现有接口数据：订阅（subscriptionApi）、福利
- * （welfareApi）、账号卡（embyApi.getAccountCard）、设备
- * （deviceApi.mine，用户侧设备接口，含在线状态与最后活跃时间）。
+ * 所有数字/条目只用现有接口数据：订阅（subscriptionApi）、账号卡
+ * （embyApi.getAccountCard）、设备（deviceApi.mine，用户侧设备接口，
+ * 含在线状态与最后活跃时间）。公益资格状态只读登录态 is_welfare 标记。
  * 流量额度（2026-11-13 一期）：套餐声明月额度时才出现流量区＋
  * 购流量弹窗（trafficApi）；没声明整段不渲染。原站有而本站没有
  * 的（自动续费开关、弹幕 API）整项省略。
@@ -278,8 +276,8 @@ import {
   type AccountCard, type MySubscription,
 } from '@/api'
 import {
-  deviceApi, storageBindingApi, vitalityApi, welfareApi,
-  type MyDevice, type MyDevicesResponse, type VitalityStatus,
+  deviceApi, storageBindingApi,
+  type MyDevice, type MyDevicesResponse,
 } from '@/api/economy'
 import { getMyExclusiveLines, type MyExclusiveLine } from '@/api/user'
 import { useUserStore } from '@/stores/user'
@@ -301,9 +299,13 @@ const whitelistIdentity = computed(() => userStore.user?.whitelist_identity ?? n
 
 // ── 总览数据 ──
 const subscriptions = ref<MySubscription[]>([])
-const welfare = ref<{ is_welfare: boolean; expires_at: string | null } | null>(null)
+// 公益资格状态：原 welfareApi.status() 的端点已随后端公益资格整族删除，
+// 现只从登录态用户信息取 is_welfare 标记；到期日无数据源（恒 null，
+// 依赖到期日的展示分支随之不触发，与端点 404 时期的实际行为一致）。
+const welfare = computed<{ is_welfare: boolean; expires_at: string | null } | null>(() =>
+  userStore.user ? { is_welfare: !!userStore.user.is_welfare, expires_at: null } : null,
+)
 const accountCard = ref<AccountCard | null>(null)
-const vitality = ref<VitalityStatus | null>(null)
 
 const activeSub = computed(
   () => subscriptions.value.find(s => s.status === 'active' && s.days_left > 0) || null,
@@ -498,16 +500,8 @@ async function loadOverview() {
     subscriptions.value = await subscriptionApi.getMine()
   } catch { /* 摘要拿不到就留空 */ }
   try {
-    const st = await welfareApi.status()
-    welfare.value = { is_welfare: st.is_welfare, expires_at: st.welfare_expires_at }
-    if (userStore.user) userStore.user.is_welfare = st.is_welfare
-  } catch { /* 状态口失败不阻断页面 */ }
-  try {
     accountCard.value = await embyApi.getAccountCard()
   } catch { /* 账号卡失败不阻断页面 */ }
-  try {
-    vitality.value = await vitalityApi.status()
-  } catch { /* 非公益服用户注定失败，格子不渲染 */ }
 }
 
 onMounted(() => {

@@ -173,15 +173,12 @@
           <p v-else-if="couponError" class="sub-coupon__err">{{ couponError }}</p>
         </section>
 
-        <!-- 价格明细：全部来自 coupon 试算口（与下单同口径，含等级折扣与折扣权益） -->
+        <!-- 价格明细：全部来自 coupon 试算口（与下单同口径，含优惠券与折扣权益；
+             等级折扣已随等级体系于 2026-11-14 删除） -->
         <section v-if="selectedPlan" class="sub-summary" aria-label="价格明细">
           <div class="sub-sum-row">
             <span>{{ selectedPlan.name }} · {{ durValue(selectedPlan.duration_days) }}</span>
             <b>{{ moneyText(listTotal) }}</b>
-          </div>
-          <div v-if="memberCut > 0" class="sub-sum-row sub-sum-row--cut">
-            <span>{{ memberLevelName ? `${memberLevelName}等级折扣` : '会员等级折扣' }}</span>
-            <b>−{{ moneyText(memberCut) }}</b>
           </div>
           <div v-if="otherCut > 0" class="sub-sum-row sub-sum-row--cut">
             <span>{{ otherCutLabel }}</span>
@@ -232,10 +229,8 @@ import { useToast } from '@/composables/useToast'
 import { humanizeError } from '@/composables/usePanelApi'
 import {
   couponApi,
-  memberApi,
   paymentApi,
   type CouponQuote,
-  type MyMemberInfo,
   type PaymentMethod,
   type SubscriptionPlan,
 } from '@/api/economy'
@@ -254,7 +249,6 @@ const methods = ref<PaymentMethod[]>([])
 const methodsReady = ref(false)
 const methodsFailed = ref(false)
 const payMethod = ref('alipay')
-const member = ref<MyMemberInfo | null>(null)
 const mySubs = ref<MySubscription[]>([])
 const couponEnabled = ref(true)
 
@@ -454,9 +448,8 @@ const paidTotal = computed<number | null>(() => {
   if (quote.value) return quote.value.paid_amount
   return listTotal.value
 })
-const memberCut = computed(() => quote.value?.member_discount_amount ?? 0)
 const otherCut = computed(() =>
-  Math.max(0, (quote.value?.discount_amount ?? 0) - memberCut.value),
+  Math.max(0, quote.value?.discount_amount ?? 0),
 )
 const otherCutLabel = computed(() => {
   if (appliedCoupon.value) return `优惠券 ${appliedCoupon.value}`
@@ -468,7 +461,6 @@ const savedTotal = computed(() =>
     ? Math.max(0, listTotal.value - paidTotal.value)
     : 0,
 )
-const memberLevelName = computed(() => member.value?.level_name || '')
 
 /* ---------- 下单（口径与补给站原结算栏一致，规则不动） ---------- */
 const buyDisabled = computed(() => {
@@ -509,10 +501,9 @@ function goBack() {
 async function loadAll() {
   loading.value = true
   loadError.value = false
-  const [pls, mth, mem, subs, cpCfg] = await Promise.allSettled([
+  const [pls, mth, subs, cpCfg] = await Promise.allSettled([
     paymentApi.plans(),
     paymentApi.methods(),
-    memberApi.info(),
     subscriptionApi.getMine(),
     couponApi.config(),
   ])
@@ -534,7 +525,6 @@ async function loadAll() {
     methodsReady.value = false
     methodsFailed.value = true
   }
-  if (mem.status === 'fulfilled') member.value = mem.value
   if (subs.status === 'fulfilled') mySubs.value = subs.value
   if (cpCfg.status === 'fulfilled') couponEnabled.value = cpCfg.value.enabled !== false
   loading.value = false

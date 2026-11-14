@@ -13,7 +13,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  CalendarCheck, CircleCheck, CircleSlash, Crown, Download, Eye, EyeOff, Film, Gift,
+  CircleCheck, CircleSlash, Crown, Download, Eye, EyeOff, Film, Gift,
   History, KeyRound, Mail, Megaphone, MonitorSmartphone, MoreHorizontal, PlayCircle, RefreshCw, Search,
   Server, ShieldCheck, Smartphone, UserX, Users as UsersIcon, Wallet, Waypoints,
 } from 'lucide-vue-next'
@@ -25,7 +25,6 @@ import {
   updateUser, type PlanRow,
 } from '@/api/admin'
 import { parseServerTime } from '@/utils/serverTime'
-import { bulkExtendWelfare, grantWelfare, revokeWelfare } from '@/api/welfare'
 import type { AdminUserRow, DeviceRow, UserDetail, UserGrantCard, UserGrants } from '@/types'
 import { useAuthStore } from '@/stores/auth'
 import DataTable from '@/components/DataTable.vue'
@@ -377,78 +376,6 @@ async function submitSub() {
   }
 }
 
-// ==================== 公益服操作（v2.55 公益用户页并入） ====================
-
-const welfareGrantDlg = reactive({
-  visible: false,
-  user: null as AdminUserRow | null,
-  days: 30,
-  busy: false,
-})
-
-function openWelfareGrant(row: AdminUserRow) {
-  welfareGrantDlg.user = row
-  welfareGrantDlg.days = 30
-  welfareGrantDlg.visible = true
-}
-
-async function submitWelfareGrant() {
-  const u = welfareGrantDlg.user
-  if (!u) return
-  welfareGrantDlg.busy = true
-  try {
-    await grantWelfare({ user_id: u.id, days: welfareGrantDlg.days, channel: 'admin' })
-    ElMessage.success('已开通/续期公益')
-    welfareGrantDlg.visible = false
-    await load()
-  } catch {
-    // 拦截器已提示
-  } finally {
-    welfareGrantDlg.busy = false
-  }
-}
-
-async function doWelfareRevoke(row: AdminUserRow) {
-  try {
-    await ElMessageBox.confirm(`确定取消 ${row.username} 的公益资格？`, '确认', { type: 'warning' })
-  } catch {
-    return
-  }
-  try {
-    await revokeWelfare(row.id)
-    ElMessage.success('已取消公益资格')
-    await load()
-  } catch {
-    // 拦截器已提示
-  }
-}
-
-const welfareBulkDlg = reactive({
-  visible: false,
-  min_expired_days: 0,
-  max_expired_days: 30,
-  add_days: 30,
-  busy: false,
-})
-
-async function submitWelfareBulk() {
-  welfareBulkDlg.busy = true
-  try {
-    const res = await bulkExtendWelfare({
-      min_expired_days: welfareBulkDlg.min_expired_days,
-      max_expired_days: welfareBulkDlg.max_expired_days,
-      add_days: welfareBulkDlg.add_days,
-    })
-    ElMessage.success(`已延期 ${res.affected} 个用户`)
-    welfareBulkDlg.visible = false
-    await load()
-  } catch {
-    // 拦截器已提示
-  } finally {
-    welfareBulkDlg.busy = false
-  }
-}
-
 function fmtWelfareDate(s: string | null): string {
   if (!s) return '永不过期'
   return s.replace('T', ' ').slice(0, 16)
@@ -575,8 +502,6 @@ function onRowCommand(cmd: string, row: AdminUserRow) {
     detail: () => openDetail(row),
     grant: () => openGrant(row),
     extend: () => openExtend(row),
-    welfare_grant: () => openWelfareGrant(row),
-    welfare_revoke: () => doWelfareRevoke(row),
     password: () => openPwd(row),
     message: () => openMsg(row),
     active: () => toggleActive(row),
@@ -636,9 +561,6 @@ function fmtCount(n: number | null | undefined): string {
         </el-button>
         <el-button :loading="loading" @click="load">
           <RefreshCw :size="14" class="btn-ico" />刷新
-        </el-button>
-        <el-button @click="welfareBulkDlg.visible = true">
-          <CalendarCheck :size="14" class="btn-ico" />公益批量延期
         </el-button>
       </template>
     </PageHeader>
@@ -751,8 +673,7 @@ function fmtCount(n: number | null | undefined): string {
               <el-dropdown-menu>
                 <el-dropdown-item command="grant">授予会员</el-dropdown-item>
                 <el-dropdown-item v-if="row.subscription_id" command="extend">延长会员</el-dropdown-item>
-                <el-dropdown-item command="welfare_grant">公益开通/续期</el-dropdown-item>
-                <el-dropdown-item v-if="row.is_welfare" command="welfare_revoke" divided>取消公益资格</el-dropdown-item>
+
                 <el-dropdown-item command="password" divided>重置密码</el-dropdown-item>
                 <el-dropdown-item command="message">发送消息</el-dropdown-item>
                 <el-dropdown-item command="active" divided>
@@ -1107,44 +1028,6 @@ function fmtCount(n: number | null | undefined): string {
       <template #footer>
         <el-button @click="pwdDialog.visible = false">取消</el-button>
         <el-button type="primary" :loading="pwdSaving" @click="submitPwd">确认重置</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- ==================== 公益开通/续期 ==================== -->
-    <el-dialog v-model="welfareGrantDlg.visible" title="开通/续期公益" width="min(400px, 92vw)">
-      <el-form label-width="80px">
-        <el-form-item label="用户">
-          <span class="dialog-user">{{ welfareGrantDlg.user?.username }}</span>
-        </el-form-item>
-        <el-form-item label="天数">
-          <el-input-number v-model="welfareGrantDlg.days" :min="0" :max="3650" />
-          <span class="au-hint">0 = 永不过期</span>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="welfareGrantDlg.visible = false">取消</el-button>
-        <el-button type="primary" :loading="welfareGrantDlg.busy" @click="submitWelfareGrant">确定</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- ==================== 公益批量延期 ==================== -->
-    <el-dialog v-model="welfareBulkDlg.visible" title="批量延期公益" width="min(420px, 92vw)">
-      <el-form label-width="110px">
-        <el-form-item label="过期天数范围">
-          <div class="range-row">
-            <el-input-number v-model="welfareBulkDlg.min_expired_days" :min="0" class="range-num" />
-            <span class="range-sep">~</span>
-            <el-input-number v-model="welfareBulkDlg.max_expired_days" :min="welfareBulkDlg.min_expired_days" class="range-num" />
-          </div>
-          <span class="dialog-hint">已过期天数落在该区间内的公益用户会统一延期</span>
-        </el-form-item>
-        <el-form-item label="增加天数">
-          <el-input-number v-model="welfareBulkDlg.add_days" :min="1" :max="365" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="welfareBulkDlg.visible = false">取消</el-button>
-        <el-button type="primary" :loading="welfareBulkDlg.busy" @click="submitWelfareBulk">确定</el-button>
       </template>
     </el-dialog>
 

@@ -24,16 +24,9 @@
         :realm-note="realmNote"
         :cancelling-sub="cancellingSub"
         :toggling-renew="togglingRenew"
-        :welfare-is-welfare="!!userStore.user?.is_welfare"
-        :welfare-expires-at="welfareExpiresAt"
-        :welfare-status-loaded="welfareStatusLoaded"
-        :points-balance="pointsBalance"
-        :tg-bound="tgBound"
         :view-unlock="viewUnlock"
-        :renewing-welfare="renewingWelfare"
         @cancel="cancelSubscription"
         @toggle-renew="toggleAutoRenew"
-        @renew-welfare="renewWelfare"
       />
     </div>
 
@@ -62,7 +55,7 @@ import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 /**
  * 我的订阅（从个人中心「我的权益」进入的子页）：承接原账号页的全部订阅
  * 管理——展示层全在 ProfileSubscriptions（到期 / 自动续订 / 历史账单 /
- * 终止、公益资格续期、查看凭证续费，长规则文字随组件在本页呈现）。
+ * 终止、查看凭证状态，长规则文字随组件在本页呈现）。
  * 逻辑自旧 AccountSettingsView 原样迁入，口径不变（含焦点归还：确认弹窗
  * 任何关闭路径都把焦点还给触发按钮）。
  */
@@ -71,8 +64,6 @@ import { RouterLink } from 'vue-router'
 import Modal from '@/components/ui/Modal.vue'
 import ProfileSubscriptions from '@/components/profile/ProfileSubscriptions.vue'
 import { subscriptionApi, embyApi, isExpiringSoon, type MySubscription, type AccountCard } from '@/api'
-import { welfareApi } from '@/api/economy'
-import { tgApi } from '@/api/tg'
 import { useUserStore } from '@/stores/user'
 import { useToast } from '@/composables/useToast'
 import { humanizeError } from '@/composables/usePanelApi'
@@ -125,12 +116,10 @@ async function toggleAutoRenew(s: MySubscription) {
   }
 }
 
-// ===== 自助续期（公益服） =====
+// ===== 查看凭证状态（公益服；账号卡 view_permission） =====
+// 公益资格自助续期已随公益资格整族于 2026-11-14 删除，这里只剩
+// 账号卡加载（查看凭证展示用）。
 const accountCard = ref<AccountCard | null>(null)
-const tgBound = ref<boolean | null>(null)
-const welfareExpiresAt = ref<string | null>(null)
-const welfareStatusLoaded = ref(false)
-const renewingWelfare = ref<number | null>(null)
 
 const viewUnlock = computed(() => {
   const vp = accountCard.value?.view_permission
@@ -141,45 +130,12 @@ const viewUnlock = computed(() => {
     source: vp.source ?? null,
   }
 })
-const pointsBalance = computed(() => accountCard.value?.view_permission?.points_balance ?? null)
 
 async function loadRenewal() {
-  // 三路各自容错：账号卡失败不挡 TG 状态，反之亦然
   try {
     accountCard.value = await embyApi.getAccountCard()
   } catch {
     accountCard.value = null
-  }
-  try {
-    const st = await tgApi.status()
-    tgBound.value = st.telegram_id !== null && st.telegram_id !== undefined
-  } catch {
-    tgBound.value = null
-  }
-  try {
-    const st = await welfareApi.status()
-    welfareExpiresAt.value = st.welfare_expires_at
-    if (userStore.user) userStore.user.is_welfare = st.is_welfare
-    welfareStatusLoaded.value = true
-  } catch {
-    // 状态口失败时不显示日期，不阻断页面
-  }
-}
-
-async function renewWelfare(days: 7 | 30) {
-  if (renewingWelfare.value !== null) return
-  renewingWelfare.value = days
-  try {
-    const res = await welfareApi.redeem(days)
-    welfareExpiresAt.value = res.expires_at
-    welfareStatusLoaded.value = true
-    if (userStore.user) userStore.user.is_welfare = true
-    toast.success(`续期成功，已延至 ${res.expires_at ? res.expires_at.slice(0, 10) : `${days} 天后`}`)
-    await loadRenewal()
-  } catch (err: any) {
-    toast.error(toUserMessage(err, 'renewFailed'))
-  } finally {
-    renewingWelfare.value = null
   }
 }
 

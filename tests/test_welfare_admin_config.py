@@ -2,15 +2,11 @@
 """公益服规则后台可配置（feat/welfare-admin-config）。
 
 审计结论（2026-10-29）：公益服／经济规则绝大多数早已走标准口径
-（SystemConfig 键＋config_schema＋管理端字段），本单只补缺口：
-1. welfare_vitality_renew_min（活力保号线，2026-11-09 取代原
-   welfare_streak_renew_min 连签门槛）：键＋校验与管理端公益配置页字段成套；
-2. vitality_watch_tier1/2_minutes/reward：键＋校验早已有，管理端系统设置活力值卡无字段 → 只补字段；
-3. vitality_checkin_gain：签到恢复活力点数此前硬编码 1 → 提升为 SystemConfig 键
-   （当时默认 1；2026-11-09「签到不送活力」新政后代码默认改 0，键保留可配）；
-4. register_gift_welfare_days／register_gift_view_days：新注册赠送天数此前硬编码 30／30
-   → 提升为 SystemConfig 键（默认 30／30）。
-计分语义、默认值、行为一字不许变；故意未暴露项见 PR body。
+（SystemConfig 键＋config_schema＋管理端字段），本单只补缺口。
+2026-11-14 更新：公益资格整族删除后，福利类键（welfare_vitality_renew_min、
+register_gift_welfare_days 等）已从配置注册表摘除，本文件改测剩余的
+注册赠送查看天数键（register_gift_view_days）与抽奖键的注册/校验/回读，
+并钉死福利键不得再被注册。
 """
 
 import os
@@ -73,19 +69,22 @@ def _make_user(db, username="u1", **kw):
 # ==================== 1. 注册与默认值 ====================
 
 def test_new_keys_registered_with_current_defaults():
-    assert welfare_admin.WELFARE_CONFIG_KEYS["register_gift_welfare_days"] == "30"
     assert welfare_admin.WELFARE_CONFIG_KEYS["register_gift_view_days"] == "30"
-    assert config_schema.WELFARE_CONFIG_SCHEMA["register_gift_welfare_days"] == (
-        "int", 0, config_schema._BIG)
     assert config_schema.WELFARE_CONFIG_SCHEMA["register_gift_view_days"] == (
         "int", 1, config_schema._BIG)
+    # 公益资格整族键已摘除（2026-11-14），两处注册表都不许再出现
+    for key in ("register_gift_welfare_days", "register_gift_welfare_enabled",
+                "welfare_vitality_renew_min", "welfare_code_monthly_quota",
+                "welfare_grace_days", "welfare_inactive_days"):
+        assert key not in welfare_admin.WELFARE_CONFIG_KEYS
+        assert key not in config_schema.WELFARE_CONFIG_SCHEMA
 
 
 def test_preexisting_keys_for_ui_only_fields_untouched():
-    # 活力保号线与观影分档：键＋校验与管理端字段成套
-    assert welfare_admin.WELFARE_CONFIG_KEYS["welfare_vitality_renew_min"] == "3"
-    assert config_schema.WELFARE_CONFIG_SCHEMA["welfare_vitality_renew_min"] == (
-        "int", 0, 1000)
+    # 抽奖键：键＋校验成套保留
+    assert welfare_admin.WELFARE_CONFIG_KEYS["lottery_draw_interval_sec"] == "60"
+    assert config_schema.WELFARE_CONFIG_SCHEMA["lottery_draw_interval_sec"] == (
+        "int", 30, 86400)
     # 经济键集与注册表仍逐键对齐（config_slim_b4e 的契约）
     assert set(config_schema.ECONOMY_CONFIG_SCHEMA) == set(admin_economy.ECONOMY_CONFIG_KEYS)
 
@@ -94,40 +93,27 @@ def test_preexisting_keys_for_ui_only_fields_untouched():
 
 def test_new_keys_normalize_valid_values():
     assert config_schema.normalize(
-        "register_gift_welfare_days",
-        config_schema.WELFARE_CONFIG_SCHEMA["register_gift_welfare_days"], 45) == "45"
-    # 福利天数 0=永不过期（grant_welfare 口径），合法
-    assert config_schema.normalize(
-        "register_gift_welfare_days",
-        config_schema.WELFARE_CONFIG_SCHEMA["register_gift_welfare_days"], 0) == "0"
-    assert config_schema.normalize(
         "register_gift_view_days",
         config_schema.WELFARE_CONFIG_SCHEMA["register_gift_view_days"], 15) == "15"
 
 
 def test_new_keys_normalize_rejects_invalid():
-    welfare_spec = config_schema.WELFARE_CONFIG_SCHEMA["register_gift_welfare_days"]
-    for bad in (-1, "abc", 1.5, True):
-        with pytest.raises(config_schema.ConfigValueError):
-            config_schema.normalize("register_gift_welfare_days", welfare_spec, bad)
     # 查看天数 0 按 timedelta 是“立即过期”不是永久，管理端直接禁掉
     view_spec = config_schema.WELFARE_CONFIG_SCHEMA["register_gift_view_days"]
-    for bad in (0, -1, "abc"):
+    for bad in (0, -1, "abc", 1.5, True):
         with pytest.raises(config_schema.ConfigValueError):
             config_schema.normalize("register_gift_view_days", view_spec, bad)
 
 
 def test_welfare_keys_save_and_read_back(db):
-    save_config(db, {"welfare_vitality_renew_min": "5",
-                     "register_gift_welfare_days": "45",
+    save_config(db, {"lottery_draw_interval_sec": "45",
                      "register_gift_view_days": "15"}, schema="welfare")
     db.commit()
     got = welfare_admin.welfare_config_get(db=db, current_admin=_make_user(db, "admin"))
-    assert got["welfare_vitality_renew_min"] == "5"
-    assert got["register_gift_welfare_days"] == "45"
+    assert got["lottery_draw_interval_sec"] == "45"
     assert got["register_gift_view_days"] == "15"
     with pytest.raises(config_schema.ConfigValueError):
-        save_config(db, {"welfare_vitality_renew_min": "-1"}, schema="welfare")
+        save_config(db, {"lottery_draw_interval_sec": "0"}, schema="welfare")
 
 
 def test_economy_keys_save_and_read_back(db):
@@ -147,9 +133,7 @@ def test_economy_keys_save_and_read_back(db):
 def test_register_gifts_custom_days(db):
     from backend.api.emby_portal import _grant_register_gifts
 
-    _set_config(db, "register_gift_welfare_enabled", "true")
     _set_config(db, "register_gift_view_enabled", "true")
-    _set_config(db, "register_gift_welfare_days", "45")
     _set_config(db, "register_gift_view_days", "15")
     user = _make_user(db, "newbie")
     before = datetime.now()
@@ -157,8 +141,7 @@ def test_register_gifts_custom_days(db):
     after = datetime.now()
 
     db.refresh(user)
-    assert before + timedelta(days=45) - timedelta(seconds=5) <= user.welfare_expires_at
-    assert user.welfare_expires_at <= after + timedelta(days=45) + timedelta(seconds=5)
+    assert not user.is_welfare  # 资格赠送已删除，只剩查看行
     row = db.query(models.EmbyViewUnlock).filter(
         models.EmbyViewUnlock.user_id == user.id).one()
     assert before + timedelta(days=15) - timedelta(seconds=5) <= row.expires_at
@@ -168,9 +151,7 @@ def test_register_gifts_custom_days(db):
 def test_register_gifts_invalid_rows_fall_back_to_30(db):
     from backend.api.emby_portal import _grant_register_gifts
 
-    _set_config(db, "register_gift_welfare_enabled", "true")
     _set_config(db, "register_gift_view_enabled", "true")
-    _set_config(db, "register_gift_welfare_days", "abc")
     _set_config(db, "register_gift_view_days", "0")
     user = _make_user(db, "newbie2")
     before = datetime.now()
@@ -178,8 +159,7 @@ def test_register_gifts_invalid_rows_fall_back_to_30(db):
     after = datetime.now()
 
     db.refresh(user)
-    assert before + timedelta(days=30) - timedelta(seconds=5) <= user.welfare_expires_at
-    assert user.welfare_expires_at <= after + timedelta(days=30) + timedelta(seconds=5)
+    assert not user.is_welfare
     row = db.query(models.EmbyViewUnlock).filter(
         models.EmbyViewUnlock.user_id == user.id).one()
     assert before + timedelta(days=30) - timedelta(seconds=5) <= row.expires_at

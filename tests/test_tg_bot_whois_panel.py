@@ -213,15 +213,14 @@ def _do_data_from_ask(db, monkeypatch, target, op):
     return datas[0]
 
 
-def test_gift_welfare_lands(db, monkeypatch):
+def test_gift_page_offers_view_only(db, monkeypatch):
+    """赠送页只剩查看凭证档位：资格档位（gw7/gw30）已随福利族删除。"""
     _staff, target = _panel(db)
-    edited = _click(db, monkeypatch,
-                    _do_data_from_ask(db, monkeypatch, target, "gw7"))
+    edited = _click(db, monkeypatch, f"whois:gift:{target.id}")
     assert edited
-    db.refresh(target)
-    assert target.is_welfare is True
-    assert target.welfare_expires_at is not None
-    assert target.welfare_expires_at > datetime.now() + timedelta(days=6)
+    datas = _datas(edited[0][1])
+    assert f"whois:ask:{target.id}:gv30" in datas
+    assert not any(":gw7" in d or ":gw30" in d for d in datas)
 
 
 def test_gift_view_unlock_lands(db, monkeypatch):
@@ -352,31 +351,38 @@ def test_pa056_super_ban_super_with_two_active_allowed(db, monkeypatch):
 # ---------- PA-058：赠送确认一次性 nonce，同一 ask 双击只发一次 ----------
 
 def test_pa058_double_click_gifts_once(db, monkeypatch):
-    # 赠送档位改用资格 gw7（赠能量三档已随积分删除摘除，2026-11-13）；
+    # 赠送档位只剩查看凭证 gv30（资格档位已随福利族删除，2026-11-14）；
     # PA-058 一次性 nonce 幂等口径对剩余赠送档位不变。
     _staff, target = _panel(db)
-    do_data = _do_data_from_ask(db, monkeypatch, target, "gw7")
+    realm = ensure_default_realm(db)
+    do_data = _do_data_from_ask(db, monkeypatch, target, "gv30")
     edited = _click(db, monkeypatch, do_data)
     assert edited
-    db.refresh(target)
-    assert target.is_welfare is True
-    assert target.welfare_expires_at is not None
-    first_expiry = target.welfare_expires_at
+
+    def _unlock_row():
+        return (db.query(models.EmbyViewUnlock)
+                .filter(models.EmbyViewUnlock.user_id == target.id,
+                        models.EmbyViewUnlock.realm_id == realm.id).first())
+
+    row = _unlock_row()
+    assert row is not None
+    first_expiry = row.expires_at
     # 同一 ask 的 do 回调第二次到达：不再重复发放，只回已执行提示
     edited = _click(db, monkeypatch, do_data)
     assert edited
-    db.refresh(target)
-    assert target.welfare_expires_at == first_expiry
+    db.expire_all()
+    assert _unlock_row().expires_at == first_expiry
     assert "已经执行过" in edited[0][0]
 
 
 def test_pa058_do_without_nonce_refused(db, monkeypatch):
     _staff, target = _panel(db)
     # 不经 ask、直接拼旧格式 do 回调：无有效 nonce，拒绝落账
-    edited = _click(db, monkeypatch, f"whois:do:{target.id}:gw7")
+    edited = _click(db, monkeypatch, f"whois:do:{target.id}:gv30")
     assert edited
-    db.refresh(target)
-    assert not target.is_welfare
+    rows = (db.query(models.EmbyViewUnlock)
+            .filter(models.EmbyViewUnlock.user_id == target.id).count())
+    assert rows == 0
     assert "已失效" in edited[0][0]
 
 

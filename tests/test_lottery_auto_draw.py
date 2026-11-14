@@ -26,8 +26,14 @@ def db():
     models.LotteryBlacklist.__table__.create(engine, checkfirst=True)
     models.PointsLog.__table__.create(engine, checkfirst=True)
     models.WelfareGrantLog.__table__.create(engine, checkfirst=True)
+    # 天数奖改走订阅发放（grant_membership_days）后需要这两张表
+    models.ServerRealm.__table__.create(engine, checkfirst=True)
+    models.UserSubscription.__table__.create(engine, checkfirst=True)
+    models.SubscriptionPlan.__table__.create(engine, checkfirst=True)
     Session = sessionmaker(bind=engine)
     session = Session()
+    session.add(models.ServerRealm(name="公益服", slug="main"))
+    session.commit()
     yield session
     session.close()
 
@@ -288,14 +294,17 @@ def test_run_due_draws_retries_undistributed_after_partial_failure(db, monkeypat
     winners = db.query(models.LotteryRoundWinner).filter(models.LotteryRoundWinner.round_id == rnd.id).all()
     assert all(w.distributed for w in winners)
     user_ids = [db.get(models.LotteryRoundEntry, w.entry_id).user_id for w in winners]
-    # 发奖走 portal.grant_welfare，留痕在 WelfareGrantLog（积分已下线，不再写 PointsLog）
-    logs = db.query(models.WelfareGrantLog).filter(models.WelfareGrantLog.user_id.in_(user_ids)).all()
-    assert len(logs) == len(winners)  # 每人只发一次
+    # 发奖走订阅系统 grant_membership_days（2026-11-14 起，原 grant_welfare
+    # 已删除）：天数奖品给中奖者当前服订阅加 7 天，每人只发一次
+    subs = db.query(models.UserSubscription).filter(models.UserSubscription.user_id.in_(user_ids)).all()
+    assert len(subs) == len(winners)
+    for s in subs:
+        assert s.end_date > datetime.now() + timedelta(days=6)
 
     # 再跑一次：无待补发，不会重复发奖
     third = lottery.run_due_draws(db)
     assert third.get("redistributed", []) == []
-    assert db.query(models.WelfareGrantLog).filter(models.WelfareGrantLog.user_id.in_(user_ids)).count() == len(winners)
+    assert db.query(models.UserSubscription).filter(models.UserSubscription.user_id.in_(user_ids)).count() == len(winners)
 
 
 def test_admin_draw_endpoint_redistributes_done_round(db, monkeypatch):
