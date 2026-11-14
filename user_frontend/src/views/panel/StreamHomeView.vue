@@ -5,6 +5,7 @@
  * 数据口径全部复用现行接口，不新造：
  * - Hero / 海报行：Emby 协议口 getLatest + getViews 逐库 getItems；
  * - 继续观看：门户口径 getResume（与发现页同一只读口）；
+ * - 下一集：协议口 getNextUp（2026-11-15 补齐友站同名分区）；
  * - 分区行：getHomeSections 的 recently_updated 分区（有才渲染）。
  * 播放入口：Hero「立即播放」打开 PlayerSchemeSheet（批 3 底部弹层形态：
  * 选版本 + 选线路，开始播放默认进网页播放器 /watch、第三方播放器保留），
@@ -24,7 +25,6 @@ import { embyApi, type HomeSection, type PortalResumeItem } from '@/api'
 import {
   embyApi as embyProtocol,
   backdropUrl,
-  formatDuration,
   posterUrl,
   ticksToSeconds,
   type EmbyItem,
@@ -45,7 +45,7 @@ defineOptions({ name: 'StreamHomeView' })
 const toast = useToast()
 const userStore = useUserStore()
 
-/* ---------- 渐进渲染状态：四条腿各自 pending → ready / error，先到先画 ----------
+/* ---------- 渐进渲染状态：五条腿各自 pending → ready / error，先到先画 ----------
    旧版 load() 两段瀑布全 settle 才撤骨架：任一条腿慢（全局超时 30s）整页
    骨架最长挂约 60s，数据到手也不先画（2026-11-14 用户真机截图实锤）。
    现每条腿独立落画：hero / 继续观看 / 分区 / 逐库行各有自己的小骨架，
@@ -67,6 +67,12 @@ const heroItems = ref<StreamHeroItem[]>([])
 const heroStatus = ref<LegStatus>('pending')
 const resumeItems = ref<PortalResumeItem[]>([])
 const resumeStatus = ref<LegStatus>('pending')
+/* 下一集（2026-11-15 录屏核查补齐）：友站首页在继续观看下方有独立
+   「下一集」分区（f047/f056），我方此前整区缺失。数据走现行协议口
+   getNextUp（Emby NextUp 口径：每部已开看剧的第一集未看单集），
+   卡形态与继续观看同模（16:9 缩略图 + 剧名 + 集信息行 + 时长行）。 */
+const nextUpItems = ref<EmbyItem[]>([])
+const nextUpStatus = ref<LegStatus>('pending')
 const sectionRows = ref<RowEntry[]>([])
 const sectionsStatus = ref<LegStatus>('pending')
 const viewRows = ref<RowEntry[]>([])
@@ -74,11 +80,12 @@ const viewRows = ref<RowEntry[]>([])
     列表本身失败才置 error（单库失败是 entry 级 error，不算整腿失败） */
 const viewsStatus = ref<LegStatus>('pending')
 
-/** 整页大骨架只在四条腿全 pending（什么都还没到）时出现 */
+/** 整页大骨架只在五条腿全 pending（什么都还没到）时出现 */
 const showFullSkeleton = computed(
   () =>
     heroStatus.value === 'pending' &&
     resumeStatus.value === 'pending' &&
+    nextUpStatus.value === 'pending' &&
     sectionsStatus.value === 'pending' &&
     viewsStatus.value === 'pending',
 )
@@ -86,6 +93,7 @@ const allSettled = computed(
   () =>
     heroStatus.value !== 'pending' &&
     resumeStatus.value !== 'pending' &&
+    nextUpStatus.value !== 'pending' &&
     sectionsStatus.value !== 'pending' &&
     viewsStatus.value !== 'pending',
 )
@@ -93,6 +101,7 @@ const hasContent = computed(
   () =>
     heroItems.value.length > 0 ||
     resumeItems.value.length > 0 ||
+    nextUpItems.value.length > 0 ||
     sectionRows.value.some((r) => r.row) ||
     viewRows.value.some((r) => r.row),
 )
@@ -105,7 +114,7 @@ const HOME_TIMEOUT_MS = 10_000
 const HOME_REFRESH_TTL_MS = 5 * 60 * 1000
 /** 首页 SWR 缓存有效期：超过即丢弃走冷加载 */
 const HOME_CACHE_TTL_MS = 10 * 60 * 1000
-const HOME_CACHE_VERSION = 1
+const HOME_CACHE_VERSION = 2
 
 /** 只对超时 / 网络失败重试一次（HTTP 错误是服务端明确答复，不重试） */
 function isTimeoutOrNetwork(err: unknown): boolean {
@@ -128,11 +137,12 @@ async function fetchHome<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /* ---------- 首页 SWR 缓存（sessionStorage，按 user id + 会话序列隔离） ----------
-   只存四条腿的原始 DTO 响应，不存拼好的图片地址（地址里带图片凭据，
+   只存五条腿的原始 DTO 响应，不存拼好的图片地址（地址里带图片凭据，
    凭据不许进缓存）。冷启动 / 重进首页先用缓存秒画，再后台静默刷新替换。 */
 interface HomeRawData {
   latest?: EmbyItem[]
   resume?: { items: PortalResumeItem[] }
+  nextUp?: EmbyItem[]
   sections?: { sections: HomeSection[] }
   views?: EmbyItem[]
   viewItems?: Record<string, { Items: EmbyItem[]; TotalRecordCount: number }>
@@ -223,11 +233,21 @@ function resumeSub(m: PortalResumeItem): string {
   if (m.episode_name) parts.push(m.episode_name)
   return parts.join(' · ') || m.name
 }
-/** 进度行（录屏形态）：已看 X% · 已看时长 */
+/** 进度行（录屏形态）：已看 X% · 播放位置。
+    位置按 f047 实证用 m:ss 时码（0:22 / 0:07），不用 formatDuration 的
+    「X分钟」粗粒度——22 秒会被它渲染成「0分钟」，与友站形态不符
+    （2026-11-15 逐帧核查发现）；只改本行格式，不动共享 formatDuration。 */
 function resumeProgress(m: PortalResumeItem): string {
   const parts: string[] = []
   if (typeof m.progress === 'number') parts.push(`已看 ${Math.round(m.progress)}%`)
-  if (m.position_ticks) parts.push(formatDuration(ticksToSeconds(m.position_ticks)))
+  if (m.position_ticks) {
+    const s = Math.max(0, Math.floor(ticksToSeconds(m.position_ticks)))
+    const hh = Math.floor(s / 3600)
+    const mm = Math.floor((s % 3600) / 60)
+    const ss = s % 60
+    const pad = (n: number) => String(n).padStart(2, '0')
+    parts.push(hh > 0 ? `${hh}:${pad(mm)}:${pad(ss)}` : `${mm}:${pad(ss)}`)
+  }
   return parts.join(' · ')
 }
 const hidingId = ref('')
@@ -282,6 +302,32 @@ function applyLatest(items: EmbyItem[] | undefined) {
 function applyResume(res: { items: PortalResumeItem[] } | undefined) {
   resumeItems.value = res?.items || []
 }
+function applyNextUp(items: EmbyItem[] | undefined) {
+  nextUpItems.value = items || []
+}
+/* 下一集卡三行（录屏 f047/f056 形态）：剧名 / 「下一集 · Sx Ex · 集名」/ 时长 */
+function nextUpTitle(m: EmbyItem): string {
+  return m.SeriesName || m.Name
+}
+function nextUpSub(m: EmbyItem): string {
+  const parts: string[] = ['下一集']
+  if (m.ParentIndexNumber != null && m.IndexNumber != null) {
+    parts.push(`S${m.ParentIndexNumber} E${m.IndexNumber}`)
+  }
+  if (m.Name && m.Name !== nextUpTitle(m)) parts.push(m.Name)
+  return parts.join(' · ')
+}
+function nextUpDuration(m: EmbyItem): string {
+  if (!m.RunTimeTicks) return ''
+  const mins = Math.round(ticksToSeconds(m.RunTimeTicks) / 60)
+  if (mins <= 0) return ''
+  return mins >= 60 ? `${Math.floor(mins / 60)} 小时 ${mins % 60} 分钟` : `${mins} 分钟`
+}
+function nextUpImage(m: EmbyItem): string {
+  return backdropUrl(m, 640) || posterUrl(m, 640)
+}
+/** 下一集卡图加载失败的卡：撤下 img 换占位（与继续观看同口径） */
+const brokenNextUpThumbs = ref(new Set<string>())
 function applySections(res: { sections: HomeSection[] } | undefined) {
   const out: RowEntry[] = []
   for (const sec of res?.sections || []) {
@@ -362,6 +408,7 @@ async function load(opts?: { silent?: boolean }) {
   if (!silent) {
     heroStatus.value = 'pending'
     resumeStatus.value = 'pending'
+    nextUpStatus.value = 'pending'
     sectionsStatus.value = 'pending'
     viewsStatus.value = 'pending'
     sectionRows.value = []
@@ -371,7 +418,7 @@ async function load(opts?: { silent?: boolean }) {
   let settledLegs = 0
   const legDone = () => {
     settledLegs += 1
-    if (settledLegs === 4 && my === loadSeq) {
+    if (settledLegs === 5 && my === loadSeq) {
       loadInFlight = false
       lastLoadedAt = Date.now()
       writeHomeCache(raw)
@@ -403,6 +450,21 @@ async function load(opts?: { silent?: boolean }) {
       resumeStatus.value = 'ready'
     } catch {
       if (my === loadSeq && resumeStatus.value !== 'ready') resumeStatus.value = 'error'
+    } finally {
+      if (my === loadSeq) legDone()
+    }
+  })()
+
+  // 下一集（协议口 NextUp）
+  void (async () => {
+    try {
+      const items = await fetchHome(() => embyProtocol.getNextUp(12))
+      if (my !== loadSeq) return
+      raw.nextUp = items
+      applyNextUp(items)
+      nextUpStatus.value = 'ready'
+    } catch {
+      if (my === loadSeq && nextUpStatus.value !== 'ready') nextUpStatus.value = 'error'
     } finally {
       if (my === loadSeq) legDone()
     }
@@ -509,6 +571,17 @@ async function retryResume() {
     resumeStatus.value = 'error'
   }
 }
+async function retryNextUp() {
+  nextUpStatus.value = 'pending'
+  try {
+    const items = await fetchHome(() => embyProtocol.getNextUp(12))
+    applyNextUp(items)
+    nextUpStatus.value = 'ready'
+    patchHomeCache({ nextUp: items })
+  } catch {
+    nextUpStatus.value = 'error'
+  }
+}
 async function retrySections() {
   sectionsStatus.value = 'pending'
   try {
@@ -604,6 +677,10 @@ function paintFromCache(payload: HomeCachePayload) {
   if (d.resume) {
     applyResume(d.resume)
     resumeStatus.value = 'ready'
+  }
+  if (d.nextUp) {
+    applyNextUp(d.nextUp)
+    nextUpStatus.value = 'ready'
   }
   if (d.sections) {
     applySections(d.sections)
@@ -735,7 +812,7 @@ onActivated(() => {
                 title="从继续观看移除"
                 @click.prevent.stop="hideResume(m)"
               >
-                <Trash2 :size="15" />
+                <Trash2 :size="17" />
               </button>
             </span>
             <span class="sl-ccard__title">{{ resumeTitle(m) }}</span>
@@ -747,6 +824,56 @@ onActivated(() => {
       <div v-if="resumeStatus === 'error' && !showFatalError" class="sl-rowerror">
         <span>继续观看加载失败</span>
         <button type="button" class="sl-retry" @click="retryResume">重试</button>
+      </div>
+
+      <!-- 下一集：pending 显示 16:9 行骨架；失败给行级重试（与继续观看同模） -->
+      <div v-if="nextUpStatus === 'pending'" class="sl-rowskel" role="status" aria-label="正在加载">
+        <div class="sl-skel__rowhead"><span class="sl-skel__bar" style="width: 120px"></span></div>
+        <div class="sl-rowskel__track">
+          <div v-for="i in 3" :key="`n${i}`" class="sl-skel__ccard">
+            <span class="sl-skel__logo">A</span>
+          </div>
+        </div>
+      </div>
+      <section v-else-if="nextUpItems.length" class="sl-continue">
+        <div class="sl-continue__head">
+          <h2 class="sl-continue__title">
+            下一集 <span class="sl-continue__count">{{ nextUpItems.length }} 部</span>
+          </h2>
+        </div>
+        <div class="sl-continue__track">
+          <RouterLink
+            v-for="m in nextUpItems"
+            :key="m.Id"
+            class="sl-ccard"
+            :to="{ name: 'media-detail', params: { id: m.SeriesId || m.Id } }"
+          >
+            <span class="sl-ccard__thumb">
+              <img
+                v-if="nextUpImage(m) && !brokenNextUpThumbs.has(m.Id)"
+                :src="nextUpImage(m)"
+                alt=""
+                loading="lazy"
+                @error="brokenNextUpThumbs.add(m.Id)"
+              />
+              <Clapperboard
+                v-else
+                :size="30"
+                :stroke-width="1.5"
+                class="sl-ccard__fallback"
+                aria-hidden="true"
+              />
+              <!-- 友站卡面有垃圾桶钮；我方无「隐藏下一集」现行口，不假造功能，故不渲染 -->
+            </span>
+            <span class="sl-ccard__title">{{ nextUpTitle(m) }}</span>
+            <span class="sl-ccard__sub">{{ nextUpSub(m) }}</span>
+            <span v-if="nextUpDuration(m)" class="sl-ccard__prog">{{ nextUpDuration(m) }}</span>
+          </RouterLink>
+        </div>
+      </section>
+      <div v-if="nextUpStatus === 'error' && !showFatalError" class="sl-rowerror">
+        <span>下一集加载失败</span>
+        <button type="button" class="sl-retry" @click="retryNextUp">重试</button>
       </div>
 
       <!-- 分区行：pending 显示一行海报骨架；失败给行级重试 -->
@@ -954,13 +1081,13 @@ onActivated(() => {
   overflow: hidden;
   background: var(--uhd-s-card-soft);
 }
-/* 卡面右上垃圾桶（录屏形态）：半透明深色圆钮 */
+/* 卡面右上垃圾桶（录屏形态）：半透明深色圆钮，Ø 按 f047 量测收至 34 */
 .sl-ccard__trash {
   position: absolute;
   top: 8px;
   right: 8px;
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   border: none;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.45);
@@ -1094,6 +1221,17 @@ onActivated(() => {
   .sl-ccard {
     flex-basis: 220px;
     width: 220px;
+  }
+  /* 字号收小一号（2026-11-15 逐帧核查，f047 量级）：卡标题 15 / 副行 13 /
+     进度行 12.5（此前 17/14/13 全面偏大一号）；下一集卡共用同组类名同口径 */
+  .sl-ccard__title {
+    font-size: 15px;
+  }
+  .sl-ccard__sub {
+    font-size: 13px;
+  }
+  .sl-ccard__prog {
+    font-size: 12.5px;
   }
 }
 </style>
