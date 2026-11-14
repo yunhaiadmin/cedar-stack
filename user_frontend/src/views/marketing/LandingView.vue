@@ -107,6 +107,15 @@ const sheetDragStyle = () => {
   return { transform: `translateY(${dragY.value}px)`, transition: 'none' }
 }
 
+/* 三卡聚光灯（L-10，友站 useSpotlight 口径）：指针位置写 --mx/--my（px），
+   卡面 ::after 的径向高光跟随；呈现只在 CSS (hover:hover) 段，触屏不触发。 */
+function onSpotlight(e: PointerEvent) {
+  const el = e.currentTarget as HTMLElement
+  const r = el.getBoundingClientRect()
+  el.style.setProperty('--mx', `${Math.round(e.clientX - r.left)}px`)
+  el.style.setProperty('--my', `${Math.round(e.clientY - r.top)}px`)
+}
+
 function goRegister() {
   router.push({ path: '/login', query: { mode: 'register' } })
 }
@@ -521,14 +530,14 @@ const year = new Date().getFullYear()
         </svg>
       </div>
       <div class="hero-inner" :style="heroInnerStyle()">
-        <p class="eyebrow">{{ branding.site_name }} SERVICE</p>
-        <h1 class="hero-title">你的私人影院<br />随时随地开场</h1>
-        <p class="hero-sub" aria-live="polite">
-          <Transition name="hero-sub-fade" mode="out-in">
-            <span :key="heroSubIdx">{{ heroSubs[heroSubIdx] }}</span>
+        <p class="eyebrow hero-el hero-el--eyebrow">{{ branding.site_name }} SERVICE</p>
+        <h1 class="hero-title hero-el hero-el--title">你的私人影院<br />随时随地开场</h1>
+        <p class="hero-sub hero-el hero-el--sub" aria-live="polite">
+          <Transition name="hero-sub-ticker">
+            <span :key="heroSubIdx" class="hero-sub-line">{{ heroSubs[heroSubIdx] }}</span>
           </Transition>
         </p>
-        <div class="hero-actions">
+        <div class="hero-actions hero-el hero-el--actions">
           <!-- Hero 双钮分态（2026-11-14 照友站真机截图复核）：已登录＝彩虹
                「进入后台」（goConsole → 概览）＋玻璃「前往流媒体」（本站流
                媒体入口 /library），移动端两颗并排都显示；未登录保持
@@ -542,7 +551,7 @@ const year = new Date().getFullYear()
           </UhdButton>
           <UhdButton v-else variant="secondary" dark class="hero-btn-pricing" @click="goPricing">查看定价</UhdButton>
         </div>
-        <div class="hero-specs">
+        <div class="hero-specs hero-el hero-el--specs">
           <UhdChip variant="spec" sub="超高清">
             <template #icon><Monitor :size="20" aria-hidden="true" /></template>
             4K
@@ -617,7 +626,7 @@ const year = new Date().getFullYear()
       <p class="sec-sub rv rv--lede2" data-reveal>一个账号打通所有设备与服务，不用为每块屏幕单独折腾。</p>
 
       <div class="ess-grid">
-        <article class="ess-card ess-card--wide rv rv--card" data-reveal>
+        <article class="ess-card ess-card--wide rv rv--card" data-reveal @pointermove="onSpotlight">
           <div class="ess-card-text">
             <p class="eyebrow">MULTI-DEVICE SYNC</p>
             <h3 class="ess-h3">一部片子，<br />所有屏幕接着看</h3>
@@ -630,8 +639,8 @@ const year = new Date().getFullYear()
             </div>
           </div>
           <div class="ess-devices" aria-hidden="true">
-            <div class="dev dev--tv rv rv--dev" data-reveal><span class="dev-play" /><span class="dev-bar"><i style="width: 60%" /></span></div>
-            <div class="dev dev--laptop rv rv--dev rv--dev-d1" data-reveal><span class="dev-play" /><span class="dev-bar"><i style="width: 60%" /></span></div>
+            <div class="dev dev--tv rv rv--dev" data-reveal><span class="dev-play" /><span class="dev-bar"><i style="--bar-w: 60%" /></span></div>
+            <div class="dev dev--laptop rv rv--dev rv--dev-d1" data-reveal><span class="dev-play" /><span class="dev-bar"><i style="--bar-w: 60%" /></span></div>
             <div class="dev dev--tablet rv rv--dev rv--dev-d2" data-reveal><span class="dev-play" /></div>
             <div class="dev dev--phone rv rv--dev rv--dev-d3" data-reveal><span class="dev-play dev-play--sm" /></div>
             <p class="dev-note">上次同步 · 刚刚</p>
@@ -639,8 +648,8 @@ const year = new Date().getFullYear()
           <!-- 移动端设备示意（返工单④①）：四台设备线框＋播放键＋进度条，仅 ≤900px 显示 -->
           <div class="ess-devices-m" aria-hidden="true">
             <div class="dm-row">
-              <span class="dm dm--tv"><span class="dm-play" /><span class="dm-bar"><i style="width: 60%" /></span></span>
-              <span class="dm dm--laptop"><span class="dm-play" /><span class="dm-bar"><i style="width: 60%" /></span></span>
+              <span class="dm dm--tv"><span class="dm-play" /><span class="dm-bar"><i style="--bar-w: 60%" /></span></span>
+              <span class="dm dm--laptop"><span class="dm-play" /><span class="dm-bar"><i style="--bar-w: 60%" /></span></span>
               <span class="dm dm--tablet"><span class="dm-play dm-play--sm" /></span>
               <span class="dm dm--phone"><span class="dm-play dm-play--sm" /></span>
             </div>
@@ -648,7 +657,7 @@ const year = new Date().getFullYear()
           </div>
         </article>
 
-        <article class="ess-card rv rv--card rv--d1" data-reveal>
+        <article class="ess-card rv rv--card rv--d1" data-reveal @pointermove="onSpotlight">
           <p class="eyebrow">ZERO INTERRUPTION</p>
           <h3 class="ess-h3">没有广告，<br />只有电影</h3>
           <p class="ess-desc">从按下播放到片尾字幕，全程无插播、无贴片，沉浸感不被打断。</p>
@@ -663,7 +672,7 @@ const year = new Date().getFullYear()
           </div>
         </article>
 
-        <article class="ess-card ess-card--library rv rv--card rv--d2" data-reveal>
+        <article class="ess-card ess-card--library rv rv--card rv--d2" data-reveal @pointermove="onSpotlight">
           <div class="ess-wall" aria-hidden="true">
             <span
               v-for="n in 12"
@@ -803,17 +812,9 @@ const year = new Date().getFullYear()
   from { opacity: 0; }
   to { opacity: 1; }
 }
-/* 原站 Hero 入场 hero-fade：淡入＋上移 16px、.74s ease-out（无模糊，桌面移动一致） */
-@keyframes landing-hero-fade {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
+/* Hero 入场已收编令牌入场库（L-11）：本页私有的 landing-hero-fade 与令牌
+   uhd-hero-fade（Y16＋淡入、--uhd-dur-hero .74s）数值重复，删除私有件，
+   入场编排改为分件交错（见 .hero-el 系列规则）。 */
 
 .eyebrow {
   margin: 0 0 18px;
@@ -923,7 +924,27 @@ const year = new Date().getFullYear()
   max-width: var(--uhd-container-marketing);
   margin: 0 auto;
   padding: 130px 28px 120px;
-  animation: landing-hero-fade 0.74s ease-out both;
+}
+/* Hero 入场编排（L-11）：整层一把梭改为分件交错，全走令牌入场库。
+   交错步长 0.08s——与本站 .rv--dev 阶梯（0.08/0.16/0.24）的步距一致；
+   取值表：眉题 uhd-fade-in（--uhd-dur-fade .52s，延迟 0s）→ 标题
+   uhd-hero-fade（--uhd-dur-hero .74s、Y16，延迟 .08s）→ 副题 uhd-fade-up
+   （.52s、Y24，延迟 .16s）→ 双钮 uhd-fade-up（延迟 .24s）→ 规格 chip
+   uhd-fade-up（延迟 .32s）；缓动一律 --uhd-ease-standard。 */
+.hero-el--eyebrow {
+  animation: uhd-fade-in var(--uhd-dur-fade) var(--uhd-ease-standard) both;
+}
+.hero-el--title {
+  animation: uhd-hero-fade var(--uhd-dur-hero) var(--uhd-ease-standard) 0.08s both;
+}
+.hero-el--sub {
+  animation: uhd-fade-up var(--uhd-dur-fade) var(--uhd-ease-standard) 0.16s both;
+}
+.hero-el--actions {
+  animation: uhd-fade-up var(--uhd-dur-fade) var(--uhd-ease-standard) 0.24s both;
+}
+.hero-el--specs {
+  animation: uhd-fade-up var(--uhd-dur-fade) var(--uhd-ease-standard) 0.32s both;
 }
 .hero-title {
   margin: 0 0 22px;
@@ -934,17 +955,27 @@ const year = new Date().getFullYear()
   line-height: var(--uhd-lh-tight);
 }
 .hero-sub {
+  position: relative;
+  overflow: hidden;
   margin: 0 0 34px;
   min-height: 1.6em;
   font-size: var(--uhd-fs-lead);
   color: var(--uhd-d-text-2);
 }
-.hero-sub-fade-enter-active,
-.hero-sub-fade-leave-active {
-  transition: opacity var(--uhd-dur-fade) var(--uhd-ease-standard);
+/* 副标题轮换（L-01）：纯淡入淡出改为整行竖滑 ticker——新句 uhd-ticker-in
+   （Y100%→0）自下滑入、旧句 uhd-ticker-out（→Y-100%）向上滑出，各
+   --uhd-dur-ticker .36s＋--uhd-ease-standard，与友站 ticker-in/out 同帧
+   交叉口径一致；容器 overflow:hidden 裁切竖滑轨道，离场句绝对定位脱流，
+   与入场句同一 .36s 内交叉更替。关键帧本体在 uhd-tokens.css 入场库。 */
+.hero-sub-line { display: block; }
+.hero-sub-ticker-enter-active {
+  animation: uhd-ticker-in var(--uhd-dur-ticker) var(--uhd-ease-standard) both;
 }
-.hero-sub-fade-enter-from,
-.hero-sub-fade-leave-to { opacity: 0; }
+.hero-sub-ticker-leave-active {
+  position: absolute;
+  inset: 0;
+  animation: uhd-ticker-out var(--uhd-dur-ticker) var(--uhd-ease-standard) both;
+}
 .hero-actions {
   display: flex;
   gap: 16px;
@@ -1314,6 +1345,39 @@ const year = new Date().getFullYear()
     var(--uhd-d-surface);
   overflow: hidden;
 }
+/* 三卡 hover（L-10）：spotlight 聚光灯＋background/transform .22s spring
+   （友站原文过渡配方：background-color 走 base 档时长＋transform .22s
+   spring 缓动；本站映射为 .22s＋--uhd-ease-spring，聚光灯坐标 --mx/--my
+   的初值在 uhd-tokens.css 1.7 组件运行态，运行时由 onSpotlight 写 px 值）。
+   ::after 径向高光以 --mx/--my 为圆心跟随指针，opacity 走 --uhd-dur-base
+   淡入；hover 的 transform/background 过渡只挂在 :hover/:active 态上，
+   不改 .ess-card 的常态 transition——避免顶掉 .rv 入场过渡（.9s）的
+   时序（入场仍走 .rv，进入 hover 时才按 .22s spring 接管）。
+   全部 hover 规则限定 (hover:hover) and (pointer:fine)，触屏不误触。 */
+.ess-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(340px circle at var(--mx) var(--my), rgba(255, 255, 255, 0.1), transparent 70%);
+  opacity: 0;
+  transition: opacity var(--uhd-dur-base) var(--uhd-ease-standard);
+  pointer-events: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .ess-card.is-in:hover {
+    transform: translateY(-2px);
+    background-color: var(--uhd-d-surface-2);
+    transition:
+      transform 0.22s var(--uhd-ease-spring),
+      background-color 0.22s var(--uhd-ease-spring);
+  }
+  .ess-card.is-in:active {
+    transform: translateY(0) scale(0.99);
+    transition: transform 0.22s var(--uhd-ease-spring);
+  }
+  .ess-card:hover::after { opacity: 1; }
+}
 .ess-card--wide {
   grid-column: 1 / -1;
   display: grid;
@@ -1396,7 +1460,13 @@ const year = new Date().getFullYear()
   height: 100%;
   border-radius: 2px;
   background: var(--uhd-d-text);
+  /* 同步进度线（L-05）：宽度不再写死——初始 0，设备框 reveal 落定
+     （.dev.is-in）后生长到 --bar-w 目标宽（现行 60% 口径，模板内联给值）；
+     时长走 --uhd-dur-slow 档＋0.2s 延迟，让线跟在设备框入场之后生长。 */
+  width: 0;
+  transition: width var(--uhd-dur-slow) var(--uhd-ease-standard) 0.2s;
 }
+.dev.is-in .dev-bar i { width: var(--bar-w, 60%); }
 .dev-note {
   position: absolute;
   right: 190px;
@@ -1461,7 +1531,12 @@ const year = new Date().getFullYear()
   height: 100%;
   border-radius: 2px;
   background: var(--uhd-d-text);
+  /* 同步进度线（L-05）：与桌面 .dev-bar 同口径——初始 0，宽卡 reveal
+     落定（.ess-card.is-in，移动设备条无独立 .rv）后生长到 --bar-w。 */
+  width: 0;
+  transition: width var(--uhd-dur-slow) var(--uhd-ease-standard) 0.2s;
 }
+.ess-card.is-in .dm-bar i { width: var(--bar-w, 60%); }
 .dm-note {
   margin: 14px 0 0;
   text-align: center;
@@ -1868,7 +1943,7 @@ const year = new Date().getFullYear()
   .ess-points b { display: block; margin: 0 0 2px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .hero-inner { animation: none; }
+  .hero-el { animation: none; }
   .marquee-track { animation: none; }
   .pin-beams { animation: none; }
   .rv,
@@ -1880,7 +1955,13 @@ const year = new Date().getFullYear()
   }
   .m-sheet,
   .m-scrim { animation: none; }
-  .hero-sub-fade-enter-active,
-  .hero-sub-fade-leave-active { transition: none; }
+  .hero-sub-ticker-enter-active,
+  .hero-sub-ticker-leave-active { animation: none; }
+  /* 进度线（L-05）：减动效时直接落定目标宽，不生长 */
+  .dev-bar i,
+  .dm-bar i {
+    width: var(--bar-w, 60%);
+    transition: none;
+  }
 }
 </style>
