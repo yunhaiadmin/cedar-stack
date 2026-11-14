@@ -95,16 +95,17 @@ def test_mobile_menu_keeps_keyboard_and_overlay():
     assert ".m-sheet" in css
 
 
-def test_account_sidebar_mobile_control_is_real():
-    """源码契约：窄屏有可达的打开钮、遮罩和 Esc。不是浏览器回归。"""
+def test_account_sidebar_has_no_mobile_nav_button():
+    """源码契约：用户 2026-11-15 亲点删除手机「导航」钮——钮、遮罩与
+    抽屉开合接线不许回来；窄屏侧栏隐藏，桌面侧栏本体保留。不是浏览器回归。"""
     src = ACCOUNT.read_text(encoding="utf-8")
     css = _css(ACCOUNT)
     narrow = _media(css, "@media (max-width: 768px)")
-    assert "uhd-account__navbtn" in src
-    assert "Escape" in src
-    assert "uhd-account__scrim" in src
-    assert "is-nav-open" in narrow
-    assert "position: fixed" in narrow
+    assert "uhd-account__navbtn" not in src
+    assert "uhd-account__scrim" not in src
+    assert "is-nav-open" not in src
+    assert "toggleNav" not in src
+    assert "UhdSidebar" in src
     assert "display: none" in narrow
 
 
