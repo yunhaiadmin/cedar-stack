@@ -1,4 +1,7 @@
 <template>
+  <!-- 桌面并壳（2026-11-14 统一壳单）：≥769px 经闸门进用户中心壳，
+       壳内贴合（摘返回钮、结算条让侧栏）由布局全局样式处理；手机原样 -->
+  <UhdAccountShellGate>
   <div class="sub-page">
     <!-- 页头：左返回＋标题，右上真实入口（我的订阅）彩虹边框胶囊 -->
     <header class="sub-head">
@@ -211,6 +214,7 @@
       </div>
     </footer>
   </div>
+  </UhdAccountShellGate>
 </template>
 
 <script setup lang="ts">
@@ -228,6 +232,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { Check, ChevronLeft, Tag } from 'lucide-vue-next'
+import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
 import { useToast } from '@/composables/useToast'
 import { humanizeError } from '@/composables/usePanelApi'
 import {

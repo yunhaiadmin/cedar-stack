@@ -1,4 +1,7 @@
 <template>
+  <!-- 桌面并壳（2026-11-14 统一壳单）：≥769px 经闸门进 UhdAccountLayout
+       与其余用户中心页同壳同侧栏；≤768px 透传，本页 app 形态一字不动 -->
+  <UhdAccountShellGate>
   <div class="ov-page" :class="{ 'ov-dark': themeResolved === 'dark' }">
     <div class="ov-inner">
       <!-- 页头品牌行已删（2026-11-14 顶栏统一单）：顶栏由 App.vue 的
@@ -228,6 +231,7 @@
       @bound="onDriveBound"
     />
   </div>
+  </UhdAccountShellGate>
 </template>
 
 <script setup lang="ts">
@@ -261,6 +265,7 @@ import {
   ChevronRight, HardDrive, Monitor, MonitorPlay, Route, Smartphone, Tv,
   type LucideIcon,
 } from 'lucide-vue-next'
+import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
 import StatusAlertBar from '@/components/profile/StatusAlertBar.vue'
 import TrafficPurchaseModal from '@/components/profile/TrafficPurchaseModal.vue'
 import {

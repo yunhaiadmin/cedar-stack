@@ -1,4 +1,6 @@
 <template>
+  <!-- 桌面并壳（2026-11-14 统一壳单）：≥769px 经闸门进用户中心壳；手机原样 -->
+  <UhdAccountShellGate>
   <div class="tm-page">
     <div class="tm-inner">
       <header class="tm-head">
@@ -384,6 +386,7 @@
       </template>
     </Modal>
   </div>
+  </UhdAccountShellGate>
 </template>
 
 <script setup lang="ts">
@@ -402,6 +405,7 @@
  */
 import './team-view.css'
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
 import Modal from '@/components/ui/Modal.vue'
 import { teamApi, type MyTeam, type TeamApplication, type TeamConfig, type TeamMemberRow } from '@/api/team'
 import { useToast } from '@/composables/useToast'

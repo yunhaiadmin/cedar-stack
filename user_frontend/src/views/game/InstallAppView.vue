@@ -1,4 +1,7 @@
 <template>
+  <!-- 桌面并壳（2026-11-14 统一壳单）：≥769px 经闸门进用户中心壳
+       （壳内隐藏返回钮、页根内边距由布局承接）；手机原样 -->
+  <UhdAccountShellGate>
   <div class="ia-page">
     <header class="ia-head">
       <RouterLink to="/game/account/menu" class="ia-back" aria-label="返回我的">
@@ -197,6 +200,7 @@
       </template>
     </main>
   </div>
+  </UhdAccountShellGate>
 </template>
 
 <script setup lang="ts">
@@ -219,6 +223,7 @@ import {
   MonitorDown, Plus, Share, SquarePlus,
 } from 'lucide-vue-next'
 import UhdInstallRow from '@/components/uhd/UhdInstallRow.vue'
+import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
 import { getInstallApp, type InstallAppPayload } from '@/api/installApp'
 import { writeToClipboard } from '@/composables/useClipboard'
 import { isStandalone } from '@/composables/useInstallPrompt'
