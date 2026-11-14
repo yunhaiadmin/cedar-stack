@@ -448,109 +448,11 @@ const year = new Date().getFullYear()
 
     <!-- ① Hero -->
     <header class="hero">
-      <!-- 移动端全幅背景（照友站真机截图构图自绘，不用对方素材）：深色星空作底、
+      <!-- 移动端全幅背景（自有生成图，照友站真机截图构图：深色星空作底、
            棱镜在左下、光谱扇自棱镜向右上展开、文字压在左上暗部、卖点压在下部；
            仅 ≤900px 显示，桌面仍走 hero-visual 棱镜图层 -->
       <div class="hero-bg" aria-hidden="true">
-        <svg viewBox="0 0 390 844" preserveAspectRatio="xMidYMid slice" focusable="false">
-          <defs>
-            <linearGradient id="hbg-sky" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="#05050d" />
-              <stop offset="0.45" stop-color="#08081a" />
-              <stop offset="0.75" stop-color="#030309" />
-              <stop offset="1" stop-color="#010102" />
-            </linearGradient>
-            <radialGradient id="hbg-neb-v" cx="0.5" cy="0.5" r="0.5">
-              <stop offset="0" stop-color="#7a4fd8" stop-opacity="0.5" />
-              <stop offset="1" stop-color="#7a4fd8" stop-opacity="0" />
-            </radialGradient>
-            <radialGradient id="hbg-neb-b" cx="0.5" cy="0.5" r="0.5">
-              <stop offset="0" stop-color="#2a5fd7" stop-opacity="0.38" />
-              <stop offset="1" stop-color="#2a5fd7" stop-opacity="0" />
-            </radialGradient>
-            <radialGradient id="hbg-glow-w" cx="0.5" cy="0.5" r="0.5">
-              <stop offset="0" stop-color="#e6f1ff" stop-opacity="0.9" />
-              <stop offset="0.45" stop-color="#a8c8ff" stop-opacity="0.28" />
-              <stop offset="1" stop-color="#a8c8ff" stop-opacity="0" />
-            </radialGradient>
-            <linearGradient id="hbg-prism" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stop-color="#ffffff" stop-opacity="0.30" />
-              <stop offset="0.5" stop-color="#9fd8ff" stop-opacity="0.10" />
-              <stop offset="1" stop-color="#ffffff" stop-opacity="0.20" />
-            </linearGradient>
-            <linearGradient id="hbg-floor" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="#010102" stop-opacity="0" />
-              <stop offset="0.45" stop-color="#010102" stop-opacity="0.55" />
-              <stop offset="1" stop-color="#010102" stop-opacity="0.88" />
-            </linearGradient>
-            <!-- 光谱平滑渐变（2026-11-14 背景优化）：取代原先一格一格的平色
-                 色带扇——整幅扇面只用这一条多段色标渐变填充，颜色沿扇面
-                 纵向连续过渡（紫→蓝→青→绿→黄→橙→红），无硬分界 -->
-            <linearGradient id="hbg-spectrum" gradientUnits="userSpaceOnUse" x1="0" y1="185" x2="0" y2="615">
-              <stop offset="0" stop-color="#7b5cff" />
-              <stop offset="0.16" stop-color="#5a6cff" />
-              <stop offset="0.32" stop-color="#2f8fe0" />
-              <stop offset="0.46" stop-color="#22b8e6" />
-              <stop offset="0.58" stop-color="#2fd48c" />
-              <stop offset="0.68" stop-color="#a8d44d" />
-              <stop offset="0.78" stop-color="#f2c94c" />
-              <stop offset="0.89" stop-color="#f28c3c" />
-              <stop offset="1" stop-color="#e85d3c" />
-            </linearGradient>
-            <linearGradient id="hbg-corefade" gradientUnits="userSpaceOnUse" x1="71" y1="593" x2="390" y2="400">
-              <stop offset="0" stop-color="#ffffff" stop-opacity="0.95" />
-              <stop offset="0.5" stop-color="#cfe4ff" stop-opacity="0.45" />
-              <stop offset="1" stop-color="#cfe4ff" stop-opacity="0" />
-            </linearGradient>
-            <linearGradient id="hbg-beamfade" gradientUnits="userSpaceOnUse" x1="71" y1="0" x2="390" y2="0">
-              <stop offset="0" stop-color="#ffffff" />
-              <stop offset="0.6" stop-color="#ffffff" stop-opacity="0.88" />
-              <stop offset="1" stop-color="#ffffff" stop-opacity="0.45" />
-            </linearGradient>
-            <mask id="hbg-beammask" maskUnits="userSpaceOnUse" x="0" y="0" width="390" height="844">
-              <rect width="390" height="844" fill="url(#hbg-beamfade)" />
-            </mask>
-          </defs>
-          <rect width="390" height="844" fill="url(#hbg-sky)" />
-          <ellipse cx="332" cy="238" rx="196" ry="180" fill="url(#hbg-neb-v)" opacity="0.6" />
-          <ellipse cx="252" cy="472" rx="205" ry="170" fill="url(#hbg-neb-b)" opacity="0.55" />
-          <g fill="#ffffff">
-            <circle cx="22" cy="96" r="1.1" opacity="0.5" /><circle cx="58" cy="150" r="0.8" opacity="0.35" />
-            <circle cx="96" cy="70" r="1.3" opacity="0.6" /><circle cx="132" cy="128" r="0.8" opacity="0.4" />
-            <circle cx="168" cy="52" r="1" opacity="0.5" /><circle cx="204" cy="110" r="1.4" opacity="0.65" />
-            <circle cx="238" cy="66" r="0.8" opacity="0.4" /><circle cx="272" cy="140" r="1.1" opacity="0.55" />
-            <circle cx="306" cy="88" r="0.9" opacity="0.45" /><circle cx="342" cy="150" r="1.3" opacity="0.6" />
-            <circle cx="368" cy="60" r="0.8" opacity="0.4" /><circle cx="44" cy="238" r="0.9" opacity="0.35" />
-            <circle cx="84" cy="300" r="1.1" opacity="0.45" /><circle cx="150" cy="252" r="0.8" opacity="0.35" />
-            <circle cx="196" cy="300" r="1" opacity="0.4" /><circle cx="330" cy="262" r="0.9" opacity="0.4" />
-            <circle cx="362" cy="330" r="1.1" opacity="0.45" /><circle cx="28" cy="360" r="0.8" opacity="0.3" />
-            <circle cx="118" cy="392" r="0.9" opacity="0.35" /><circle cx="238" cy="392" r="0.8" opacity="0.3" />
-            <circle cx="300" cy="430" r="1" opacity="0.35" /><circle cx="52" cy="470" r="0.9" opacity="0.3" />
-            <circle cx="352" cy="486" r="0.8" opacity="0.3" /><circle cx="180" cy="486" r="0.8" opacity="0.28" />
-            <circle cx="96" cy="540" r="0.8" opacity="0.25" /><circle cx="262" cy="548" r="0.9" opacity="0.3" />
-          </g>
-          <g mask="url(#hbg-beammask)">
-            <g class="hbg-fan hbg-fan--halo" opacity="0.3">
-              <polygon points="71,593 390,150 390,624" fill="url(#hbg-spectrum)" />
-            </g>
-            <g class="hbg-fan hbg-fan--glow" opacity="0.42">
-              <polygon points="71,593 390,214 390,602" fill="url(#hbg-spectrum)" />
-            </g>
-            <g class="hbg-fan" opacity="0.6">
-              <polygon points="71,593 390,252 390,586" fill="url(#hbg-spectrum)" />
-              <polygon points="71,593 390,362 390,430" fill="url(#hbg-corefade)" />
-            </g>
-          </g>
-          <polygon points="-4,458 64,584 79,591 -4,486" fill="#ffffff" opacity="0.13" class="hbg-inbeam" />
-          <rect y="636" width="390" height="208" fill="url(#hbg-floor)" />
-          <ellipse cx="62" cy="692" rx="96" ry="13" fill="#bcd9ff" opacity="0.07" class="hbg-inbeam" />
-          <polygon points="130,676 390,706 390,766 150,712" fill="#f28c3c" opacity="0.05" class="hbg-inbeam" />
-          <circle cx="71" cy="593" r="37" fill="url(#hbg-glow-w)" />
-          <polygon points="4,656 110,661 72,530" fill="url(#hbg-prism)" stroke="rgba(255, 255, 255, 0.22)" stroke-width="1.2" />
-          <polyline points="72,530 71,593 8,652" fill="none" stroke="rgba(255, 255, 255, 0.14)" stroke-width="1" />
-          <polyline points="71,593 106,657" fill="none" stroke="rgba(255, 255, 255, 0.10)" stroke-width="1" />
-          <circle cx="71" cy="593" r="3" fill="#ffffff" opacity="0.9" />
-        </svg>
+        <img class="hero-bg-img" src="/images/hero-prism.webp" alt="" width="1184" height="2096" fetchpriority="high" />
       </div>
       <div class="hero-beam" aria-hidden="true" />
       <!-- 桌面棱镜主视觉：自绘 SVG 棱镜＋彩虹光束＋星点，不用对方素材；
@@ -972,25 +874,12 @@ const year = new Date().getFullYear()
   inset: 0;
   pointer-events: none;
 }
-.hero-bg svg {
+.hero-bg-img {
   display: block;
   width: 100%;
   height: 100%;
-}
-.hero-bg .hbg-fan {
-  mix-blend-mode: screen;
-}
-.hero-bg .hbg-fan--halo {
-  filter: blur(16px);
-}
-.hero-bg .hbg-fan--glow {
-  filter: blur(7px);
-}
-.hero-bg .hbg-fan:not(.hbg-fan--glow):not(.hbg-fan--halo) {
-  filter: blur(2.2px);
-}
-.hero-bg .hbg-inbeam {
-  filter: blur(2px);
+  object-fit: cover;
+  object-position: 50% 50%;
 }
 .hero-bg::before {
   content: '';
@@ -1005,7 +894,7 @@ const year = new Date().getFullYear()
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(0deg, rgba(1, 1, 4, 0.38), transparent 30%);
+  background: linear-gradient(0deg, rgba(1, 1, 4, 0.52), rgba(1, 1, 4, 0.2) 34%, transparent 58%);
 }
 /* 棱镜主视觉（D1-03）：桌面居右上、移动端全幅居顶（见文末断点） */
 .hero-visual {
@@ -1069,7 +958,7 @@ const year = new Date().getFullYear()
 .hero-actions :deep(.uhd-btn--secondary.hero-btn-stream) {
   color: #ffffff;
   border: 1px solid rgba(255, 255, 255, 0.32);
-  background: rgba(10, 13, 26, 0.38);
+  background: rgba(10, 13, 26, 0.45);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.25),
     0 12px 32px -12px rgba(0, 0, 0, 0.45);
@@ -1876,13 +1765,13 @@ const year = new Date().getFullYear()
     flex: 1;
     display: flex;
     flex-direction: column;
-    padding: 24svh 14px 13svh;
+    padding: 24svh 14px 10svh;
   }
   .hero-inner .eyebrow {
     margin-bottom: 20px;
   }
   .hero-title {
-    font-size: 32px;
+    font-size: 34px;
     line-height: 1.3;
     margin-bottom: 16px;
   }
@@ -1892,13 +1781,14 @@ const year = new Date().getFullYear()
     min-height: 3.5em;
     margin-bottom: 30px;
   }
-  /* 双钮照截图：高约 54px、字 17px 的胶囊并排（主钮配方在 UhdButton，
-     玻璃次钮等高对齐；2026-11-14 截图复核后已登录态两颗都显示） */
+  /* 双钮照截图量值：高 52px、字 16px、左右垫 20px、间距 14px 并排
+     （主钮配方在 UhdButton，玻璃次钮等高对齐；2026-11-14 截图复核后已登录态两颗都显示） */
+  .hero-actions { gap: 14px; }
   .hero-actions :deep(.uhd-btn--primary),
   .hero-actions :deep(.uhd-btn--secondary) {
-    height: 54px;
-    padding: 0 28px;
-    font-size: 17px;
+    height: 52px;
+    padding: 0 20px;
+    font-size: 16px;
   }
   /* 首屏卖点 2×2 网格（#151 排法不变，尺寸照友站真机截图放大）：格内图标＋标题
      一行、说明小字换行到标题下方（左缘与标题对齐＝图标 24px＋chip 间距 13px）；
@@ -1922,7 +1812,7 @@ const year = new Date().getFullYear()
   .hero-specs :deep(.uhd-chip__sub) {
     flex-basis: 100%;
     padding-left: 37px;
-    font-size: 15px;
+    font-size: 13.5px;
   }
   /* 友站首屏底部无滚动提示（卖点之下只有背景地板），移动端隐藏 */
   .hero-scroll-hint {
