@@ -18,6 +18,7 @@ import FixtureApp from './FixtureApp.vue'
 import AccountHarness from './AccountHarness.vue'
 import FixtureLanding from './FixtureLanding.vue'
 import OnceLayout from './OnceLayout.vue'
+import PersonalCenterView from '@/views/game/PersonalCenterView.vue'
 
 const Stub = { name: 'FixtureStub', template: '<main id="fixture-stub">跳转页</main>' }
 
@@ -31,6 +32,7 @@ const router = createRouter({
     { path: '/game/once', component: OnceLayout },
     { path: '/game/speedtest', component: AccountHarness },
     { path: '/landing', component: FixtureLanding },
+    { path: '/overview-fixture', component: PersonalCenterView },
     { path: '/pricing', component: Stub },
     { path: '/login', component: Stub },
   ],

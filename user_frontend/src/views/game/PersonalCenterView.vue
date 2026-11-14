@@ -8,6 +8,11 @@
            UhdTopBar 全区统一承接（sticky 玻璃条＋「网页观影」胶囊），
            本页不再自带一份（原实现无彩虹边框、且不固定） -->
 
+      <h1 class="ov-title">概览</h1>
+      <!-- 桌面双栏：左会员卡（有效期＋自动续费），右本月流量。
+           窄屏改成上下排，不把右栏裁出视口。没有月流量额度时右栏用真实剩余天数，不写假的 GB。 -->
+      <div class="ov-hero">
+      <div class="ov-hero__card">
       <!-- 会员卡：白底（深色深炭）＋右上斜向粉彩渐变与细斜纹（纯 CSS 自绘） -->
       <section class="ov-card" aria-label="会员卡">
         <div class="ov-card__shine" aria-hidden="true"></div>
@@ -33,27 +38,64 @@
           </svg>
         </div>
         <div class="ov-card__foot">
-          <h1 class="ov-card__plan">{{ memberPlanName }}</h1>
+          <p class="ov-card__plan">{{ memberPlanName }}</p>
           <p class="ov-card__user">{{ memberUserLine }}</p>
         </div>
       </section>
 
-      <!-- 卡下信息行：左有效期（真实到期日），右端为身份徽记（自动续费本站无此业务，省略） -->
+      <!-- 卡下：左有效期，右自动续费。身份说明另起一行，避免和开关挤出窄屏。 -->
       <div class="ov-expiry">
         <span v-if="expiryText">有效期至 {{ expiryText }}</span>
         <span v-else>{{ memberStatusText }}</span>
-        <span v-if="whitelistIdentity" class="ov-expiry__note">{{ whitelistIdentity.title }} · {{ whitelistIdentity.label }}</span>
-        <span v-else-if="memberNote" class="ov-expiry__note">{{ memberNote }}</span>
+        <span v-if="activeSub" class="ov-expiry__renew">
+          自动续费
+          <button
+            type="button"
+            class="ov-switch"
+            :class="{ 'ov-switch--on': activeSub.auto_renew }"
+            role="switch"
+            :aria-checked="activeSub.auto_renew"
+            aria-label="自动续费开关"
+            :disabled="autoRenewBusy"
+            @click="toggleAutoRenew"
+          >
+            <span class="ov-switch__knob"></span>
+          </button>
+        </span>
+      </div>
+      <p v-if="whitelistIdentity" class="ov-expiry__note ov-expiry__note--block">{{ whitelistIdentity.title }} · {{ whitelistIdentity.label }}</p>
+      <p v-else-if="memberNote" class="ov-expiry__note ov-expiry__note--block">{{ memberNote }}</p>
+      <p v-if="activeSub" class="ov-renew__desc">到期前自动从余额扣款续费，请保持余额充足。</p>
       </div>
 
-      <!-- 状态预警（订阅临期；数据复用本页已加载状态，不触发时整块不渲染） -->
-      <StatusAlertBar
-        :is-free-realm="isFreeRealm"
-        :active-sub="activeSub"
-      />
+      <div class="ov-hero__meter">
 
-      <!-- 大数字区：剩余天数（真实口径映射原站的剩余流量位） -->
-      <section v-if="quota" class="ov-quota">
+      <!-- 流量区加载骨架：数据回来前先占位；未启用时骨架消失 -->
+      <section v-if="trafficLoading" class="ov-quota" aria-hidden="true">
+        <div class="ov-skel ov-skel--label"></div>
+        <div class="ov-skel ov-skel--big"></div>
+        <div class="ov-skel ov-skel--remain"></div>
+        <div class="ov-skel ov-skel--bar"></div>
+        <div class="ov-skel ov-skel--meta"></div>
+      </section>
+
+      <!-- 有月额度才显示流量大数字。单位和重置日来自接口，不写死 GB 数。 -->
+      <section v-else-if="traffic?.enabled" class="ov-quota" aria-label="本月剩余流量">
+        <p class="ov-quota__label">本月剩余流量</p>
+        <p class="ov-quota__big">{{ trafficRemainGb }}<span class="ov-quota__unit">GB</span></p>
+        <p class="ov-quota__remain">剩余 {{ trafficRemainPct }}%</p>
+        <div class="ov-bar" role="img" :aria-label="`本月流量剩余 ${trafficRemainPct}%`">
+          <div class="ov-bar__fill" :style="{ width: `${trafficRemainPct}%` }"></div>
+        </div>
+        <div class="ov-quota__meta">
+          <span>已用 {{ trafficUsedText }} / 共 {{ trafficQuotaText }}</span>
+          <span>{{ trafficResetText }}</span>
+        </div>
+        <p v-if="traffic.exhausted" class="ov-quota__meta-line">
+          本月流量已用完，可以购买流量继续用（本期不影响播放）。
+        </p>
+      </section>
+      <section v-else-if="quota" class="ov-quota">
         <p class="ov-quota__label">{{ quota.label }}</p>
         <p class="ov-quota__big">{{ quota.days }}<span class="ov-quota__unit">天</span></p>
         <template v-if="quota.hasPeriod">
@@ -74,75 +116,35 @@
         <p class="ov-quota__meta-line">{{ isFreeRealm ? '开通公益资格后即可观影' : '开通订阅后即可观影' }}</p>
       </section>
 
-      <!-- 流量区加载骨架：数据回来前先占位（app 口径，不许空白干等、
-           不许内容闪入顶动布局）；未启用时骨架消失、整段不渲染 -->
-      <section v-if="trafficLoading" class="ov-quota" aria-hidden="true">
-        <div class="ov-skel ov-skel--label"></div>
-        <div class="ov-skel ov-skel--big"></div>
-        <div class="ov-skel ov-skel--remain"></div>
-        <div class="ov-skel ov-skel--bar"></div>
-        <div class="ov-skel ov-skel--meta"></div>
-      </section>
-
-      <!-- 流量圆环卡：套餐含每月流量额度时才有（后端 enabled=false 或
-           接口拿不到数据，整段不渲染，绝不拿 0 额度吓人） -->
-      <section v-else-if="traffic?.enabled" class="ov-quota">
-        <p class="ov-quota__label">每月流量</p>
-        <div class="ov-ring-row">
-          <div class="ov-ring" role="img" :aria-label="`本月流量剩余 ${trafficRemainPct}%`">
-            <svg width="88" height="88" viewBox="0 0 88 88" aria-hidden="true">
-              <circle cx="44" cy="44" r="36" class="ov-ring__track" />
-              <circle
-                cx="44" cy="44" r="36" class="ov-ring__fill"
-                :stroke-dasharray="RING_CIRC"
-                :stroke-dashoffset="ringOffset"
-              />
-            </svg>
-            <div class="ov-ring__center">
-              <b>{{ trafficRemainPct }}%</b>
-              <span>剩余</span>
-            </div>
-          </div>
-          <div class="ov-ring-meta">
-            <p class="ov-ring-meta__big">{{ trafficRemainGb }}<span class="ov-quota__unit">GB 可用</span></p>
-            <p class="ov-ring-meta__line">已用 {{ trafficUsedText }} / 共 {{ trafficQuotaText }}</p>
-            <p class="ov-ring-meta__line">{{ trafficResetText }}</p>
-          </div>
-        </div>
-        <p v-if="traffic.exhausted" class="ov-quota__meta-line">
-          本月流量已用完，可以购买流量继续用（本期不影响播放）。
-        </p>
-        <div class="ov-actions ov-actions--traffic">
-          <button type="button" class="ov-btn" @click="trafficModalOpen = true">购买流量</button>
-        </div>
-      </section>
-
-      <!-- 自动续费行（2026-11-14 照友站）：到期前自动从余额扣款续费；
-           开关走 subscriptionApi.setAutoRenew，后端引擎真扣款 -->
-      <section v-if="activeSub" class="ov-renew">
-        <div class="ov-renew__main">
-          <p class="ov-renew__title">自动续费</p>
-          <p class="ov-renew__desc">到期前自动从余额扣款续费，请保持余额充足。</p>
-        </div>
-        <button
-          type="button"
-          class="ov-switch"
-          :class="{ 'ov-switch--on': activeSub.auto_renew }"
-          role="switch"
-          :aria-checked="activeSub.auto_renew"
-          aria-label="自动续费开关"
-          :disabled="autoRenewBusy"
-          @click="toggleAutoRenew"
-        >
-          <span class="ov-switch__knob"></span>
-        </button>
-      </section>
-
-      <!-- 套餐卡动作：续费（主钮）＋余额充值；不再摆整排跳转钮 -->
       <div class="ov-actions">
         <RouterLink class="ov-btn ov-btn--primary" to="/game/account/subscribe">续费订阅</RouterLink>
-        <RouterLink class="ov-btn" to="/wallet">余额充值</RouterLink>
+        <button v-if="traffic?.enabled" type="button" class="ov-btn" @click="trafficModalOpen = true">购买流量</button>
       </div>
+      </div>
+      </div>
+
+      <!-- 状态预警（订阅临期；数据复用本页已加载状态，不触发时整块不渲染） -->
+      <StatusAlertBar
+        :is-free-realm="isFreeRealm"
+        :active-sub="activeSub"
+      />
+
+      <!-- 既有订阅天数：流量栏已经占了右栏时仍保留，不把资格显示删掉 -->
+      <section v-if="traffic?.enabled && quota" class="ov-quota">
+        <p class="ov-quota__label">{{ quota.label }}</p>
+        <p class="ov-quota__big">{{ quota.days }}<span class="ov-quota__unit">天</span></p>
+        <template v-if="quota.hasPeriod">
+          <p class="ov-quota__remain">剩余 {{ quota.remainPct }}%</p>
+          <div class="ov-bar" role="img" :aria-label="`本周期已用 ${quota.usedPct}%`">
+            <div class="ov-bar__fill" :style="{ width: `${quota.remainPct}%` }"></div>
+          </div>
+          <div class="ov-quota__meta">
+            <span>已用 {{ quota.usedDays }} / 共 {{ quota.totalDays }} 天</span>
+            <span>{{ quota.endText }}</span>
+          </div>
+        </template>
+        <p v-else class="ov-quota__meta-line">{{ quota.endText }}</p>
+      </section>
 
       <!-- 账户余额卡：余额真实数据（钱包接口），充值是本卡唯一动作 -->
       <section v-if="walletInfo" class="ov-sec">
@@ -492,10 +494,6 @@ function onTrafficExchanged(summary: TrafficSummary) {
   else void loadTraffic()
 }
 
-/** 流量圆环：r=36 的周长；dashoffset 按剩余比例收 */
-const RING_CIRC = 2 * Math.PI * 36
-const ringOffset = computed(() => RING_CIRC * (1 - trafficRemainPct.value / 100))
-
 // ── 账户余额卡（钱包接口：拿不到/未启用整卡不渲染） ──
 const walletInfo = ref<WalletInfo | null>(null)
 async function loadWallet() {
@@ -668,6 +666,26 @@ onMounted(() => {
   padding: 14px 20px 150px;
   box-sizing: border-box;
 }
+.ov-title {
+  margin: 2px 0 18px;
+  font-size: 34px;
+  font-weight: var(--uhd-fw-extrabold);
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+.ov-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px 36px;
+  align-items: start;
+}
+.ov-hero__card,
+.ov-hero__meter { min-width: 0; }
+@media (min-width: 1100px) {
+  .ov-inner { max-width: 1040px; }
+  .ov-hero { grid-template-columns: minmax(0, 1.08fr) minmax(260px, 0.92fr); }
+  .ov-hero__meter .ov-quota { padding-top: 4px; }
+}
 
 /* 会员卡：斜向粉彩渐变＋细斜纹，圆角约 28、柔影极淡无描边
    渐变停点＝UHDNow 实测像素采样串（实测清单第 1/1b 节，逐停点照抄） */
@@ -746,12 +764,23 @@ html:not([data-theme='light']) .ov-card {
   padding: 16px 2px 0;
   font-size: 15px;
   color: rgba(255, 255, 255, 0.62);
+  flex-wrap: wrap;
+}
+.ov-expiry__renew {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
 }
 .ov-expiry__note {
   color: rgba(255, 255, 255, 0.42);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.ov-expiry__note--block {
+  margin: 8px 2px 0;
+  white-space: normal;
 }
 
 /* 大数字区 */
@@ -822,6 +851,7 @@ html:not([data-theme='light']) .ov-card {
 /* 双按钮 */
 .ov-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   padding-top: 26px;
 }
@@ -1294,6 +1324,7 @@ html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
 .ov-invite__title { font-size: 16px; font-weight: var(--uhd-fw-bold); }
 .ov-invite__sub { font-size: 13px; color: rgba(255, 255, 255, 0.65); }
 /* 浅色覆盖：跟随用户外观（html[data-theme='light']） */
+html[data-theme='light'] .ov-title { color: #111111; }
 html[data-theme='light'] .ov-page {
   background: #f8f8f8;
   color: #111111;
