@@ -266,6 +266,14 @@ const router = createRouter({
       component: () => import('@/views/PrivacyView.vue'),
       meta: { title: '隐私政策' },
     },
+    // 开源许可：公开页（站内软解用的自编 LGPL 解码器许可说明），
+    // 不带 requiresAuth，未登录也能直接打开；管理端软解卡片链到这里。
+    {
+      path: '/licenses',
+      name: 'licenses',
+      component: () => import('@/views/LicensesView.vue'),
+      meta: { title: '开源许可' },
+    },
     // UHD 换皮批 1（营销面）：官网定价，公开页不带 requiresAuth，自带悬浮胶囊导航，
     // App.vue 按路由名（pricing）不渲染全局顶栏/底坞。
     // 官网首页已按 2026-11-13 定版绑到根路径 '/'（RootView 未登录分支渲染

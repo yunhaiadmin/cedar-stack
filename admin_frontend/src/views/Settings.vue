@@ -2709,6 +2709,12 @@ watch(
                   <span class="field-hint">开：浏览器解不了的版本改走站内软解；关：保持现状，出解码提示卡。默认关</span>
                 </div>
               </el-form-item>
+              <el-form-item label="开源许可">
+                <div class="field-stack">
+                  <a class="license-link" href="/licenses" target="_blank" rel="noopener">在本站查看开源许可页</a>
+                  <span class="field-hint">软解用的自编 LGPL 解码器与第三方组件的许可说明。</span>
+                </div>
+              </el-form-item>
             </el-form>
           </SectionCard>
           </template>
@@ -2962,6 +2968,7 @@ watch(
 .field-control { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .field-suffix { font-size: 12px; color: var(--au-text-3); white-space: nowrap; }
 .field-hint { font-size: 12px; color: var(--au-text-3); line-height: 1.6; }
+.license-link { font-size: 13px; color: var(--au-primary); text-decoration: underline; text-underline-offset: 3px; }
 .num-input { width: 160px; }
 
 .card-footer {
