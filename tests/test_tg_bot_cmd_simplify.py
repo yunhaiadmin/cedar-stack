@@ -8,9 +8,9 @@
   个人账号数据；私聊是欢迎＋快捷入口（主卡），同样不渲染账号卡。
 - 账号卡只有一张（features.account_card 唯一构建器）：/me、/account、
   用户面板（user_panel/compact_dashboard 旧名）输出逐字一致；固定
-  9 行汇总（编号/名称/等级带经验进度/能量/资格/活力/绑定/
-  馆灵/订阅状态；成就行已随成就系统于 2026-11-14 删除），
-  不逐条铺订阅/设备，不带连签行。
+  8 行汇总（编号/名称/等级带经验进度/能量/活力/绑定/
+  馆灵/订阅状态；资格行已随福利服役族、成就行已随成就系统
+  于 2026-11-14 删除），不逐条铺订阅/设备，不带连签行。
 - 账号展示一家（/me、/account、/level）群里放行（2026-10-28 用户
   亲定、2026-11-02 10:43 重申）：群里调用直接回账号卡（#1705 曾一并
   改成私聊限定，用户纠正后恢复）；其余私聊命令（private_only/P1/
@@ -38,7 +38,7 @@ TG = 900001
 GROUP = -100123
 
 ACCOUNT_LABELS = [
-    "用户编号", "账号名称", "当前等级", "能量余额", "公益资格",
+    "用户编号", "账号名称", "当前等级", "能量余额",
     "活力数值", "网盘绑定", "当前馆灵",
     "订阅状态",
 ]
@@ -125,16 +125,16 @@ def test_group_scope_drops_private_and_merged_commands():
     assert "start" in group_names
 
 
-# ---------- 账号卡：唯一构建器＋9 行汇总 ----------
+# ---------- 账号卡：唯一构建器＋8 行汇总 ----------
 
-def test_account_card_single_builder_9_rows(db):
+def test_account_card_single_builder_8_rows(db):
     user = _user(db)
     via_panel = features.user_panel(db, user)
     via_dashboard = features.compact_dashboard(db, user)
     via_account = features.handle_account(db, _tg(), TG, "")
     assert via_panel == via_dashboard == via_account
     rows = [ln for ln in via_account.split("\n") if ln.startswith("· ")]
-    assert len(rows) == 9
+    assert len(rows) == 8
     for label in ACCOUNT_LABELS:
         assert f"<b>{label}</b>" in via_account
     # 精简：不逐条铺订阅/设备、无连签行

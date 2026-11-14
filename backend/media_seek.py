@@ -4,8 +4,9 @@
 
 - **额度**：每日上限走 SystemConfig ``media_seek_daily_limit``（后台可改），
   默认值只在这里定义一次（``DEFAULT_DAILY_LIMIT``），config_self_heal 引用它；
-  另有月度上限（公益服 ``welfare_request_monthly`` 默认3 / 付费 ``paid_request_monthly``
-  默认10，与旧版公益服求片中心合并），每日与月度同时生效；
+  另有月度上限（套餐权益 ``media_seek_monthly_limit`` 优先、未声明回落
+  ``paid_request_monthly`` 默认10；原公益口径 ``welfare_request_monthly``
+  已随福利服役族于 2026-11-14 删除），每日与月度同时生效；
 - **剧集按整季申请**：``season`` 存 ``"1,2"`` 或 ``"all"``（全季），
   ``normalize_season`` 负责校验与归一化，界面文案走 ``season_label``；
 - **TMDB 候选搜索**：用户端「搜你想看的片」列的是 TMDB 条目，
@@ -98,24 +99,13 @@ def quota(db: Session, user_id: int) -> dict:
     return {"used_today": used, "daily_limit": limit, "remaining": max(0, limit - used)}
 
 
-# ==================== 月度额度（公益服/付费区分） ====================
-# 与旧版公益服求片中心（已退役）合并：
-# 公益用户每月 welfare_request_monthly 条（默认3），付费用户每月 paid_request_monthly 条（默认10）。
+# ==================== 月度额度 ====================
+# 原公益口径（welfare_request_monthly，默认 3，优先于套餐权益）已随
+# 福利服役族于 2026-11-14 删除：资格已全量折算成订阅，1298 名原福利
+# 用户与其他订阅用户一致走套餐权益口径。
 
-CONFIG_MONTHLY_WELFARE = "welfare_request_monthly"
 CONFIG_MONTHLY_PAID = "paid_request_monthly"
-DEFAULT_MONTHLY_WELFARE = 3
 DEFAULT_MONTHLY_PAID = 10
-
-
-def _is_welfare_active(user) -> bool:
-    """用户公益资格是否有效（is_welfare 开关 + 到期时间）"""
-    if not bool(getattr(user, "is_welfare", False)):
-        return False
-    expires_at = getattr(user, "welfare_expires_at", None)
-    if expires_at is None:
-        return True  # 永不过期
-    return expires_at > datetime.now()
 
 
 def _monthly_limit_value(db: Session, key: str, default: int) -> int:
@@ -132,17 +122,13 @@ def _monthly_limit_value(db: Session, key: str, default: int) -> int:
 def monthly_limit(db: Session, user) -> int:
     """该用户的月度求片上限（判定顺序钉死，设计 §3.2）：
 
-    1. 公益口径优先且不变：welfare 用户永远走 ``welfare_request_monthly``
-       （默认 3）——**即使他买了声明更高月度额度的套餐，也仍走公益口径**。
-       这是一期有意保留的语义（红线「公益口径不动」的直接推论），不是 bug；
-       将来若要改成「取两者较高」，是单独的产品决策，不许在此顺手改。
-    2. 非 welfare：当前套餐在权益表里声明了 ``media_seek_monthly_limit``
+    1. 当前套餐在权益表里声明了 ``media_seek_monthly_limit``
        就用声明值（经 backend/entitlements 单口读，不许在此私自判套餐）。
-    3. 没声明（无订阅/缺键/值非法）回落现行 paid 口径
+    2. 没声明（无订阅/缺键/值非法）回落现行 paid 口径
        ``paid_request_monthly``（默认 10），与没有权益表时逐字一致。
+
+    （原第 1 档公益口径已随福利服役族于 2026-11-14 删除。）
     """
-    if _is_welfare_active(user):
-        return _monthly_limit_value(db, CONFIG_MONTHLY_WELFARE, DEFAULT_MONTHLY_WELFARE)
     entitled = entitlements.get_user_entitlement(db, user, "media_seek_monthly_limit")
     if entitled is not None:
         return entitled
@@ -196,7 +182,7 @@ def monthly_quota(db: Session, user) -> dict:
     used = used_this_month(db, user.id)
     exempt = _is_whitelist_exempt(db, user)
     return {
-        "kind": "welfare" if _is_welfare_active(user) else "paid",
+        "kind": "paid",
         "monthly_limit": limit,
         "monthly_used": used,
         "monthly_remaining": limit if exempt else max(0, limit - used),

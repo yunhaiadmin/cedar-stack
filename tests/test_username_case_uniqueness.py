@@ -212,7 +212,7 @@ def test_redeem_named_code_ambiguous_target_rejected_for_both(db):
         assert result["success"] is False
         assert "不唯一" in result["message"]
         db.refresh(user)
-        assert not user.is_welfare
+        assert not hasattr(user, "is_welfare")
     db.refresh(code)
     assert (code.use_count or 0) == 0
 
@@ -226,7 +226,7 @@ def test_redeem_named_code_unique_target_still_works(db):
     db.commit()
     assert result["success"] is True
     db.refresh(user)
-    assert user.is_welfare is False
+    assert not hasattr(user, "is_welfare")
     sub = db.query(models.UserSubscription).filter_by(
         user_id=user.id, status="active").first()
     assert sub is not None

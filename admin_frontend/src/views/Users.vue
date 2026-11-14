@@ -75,7 +75,7 @@ const users = ref<AdminUserRow[]>([])
 const total = ref(0)
 const search = ref('')
 const activeFilter = ref<string>('')
-/** 用户类型筛选（v2.55 公益服并入用户管理）：空=全部，welfare=公益服，paid=付费，normal=普通 */
+/** 用户类型筛选：空=全部，paid=付费（会员生效中），normal=普通（无会员） */
 const typeFilter = ref<string>('')
 /** 注册渠道枚举由后端下发（含「未记录」），前端不自己拼一份 */
 const channelFilter = ref<string>('')
@@ -376,11 +376,6 @@ async function submitSub() {
   }
 }
 
-function fmtWelfareDate(s: string | null): string {
-  if (!s) return '永不过期'
-  return s.replace('T', ' ').slice(0, 16)
-}
-
 // ==================== 其他操作 ====================
 
 async function toggleActive(u: AdminUserRow) {
@@ -531,12 +526,11 @@ function grantReason(card: UserGrantCard): string {
     if (sub?.cancelled) return `${sub.plan_name || '会员'} 已退款取消`
     return `${sub?.plan_name || '会员'} 已于 ${fmtDay(sub?.end_date ?? null)} 到期`
   }
-  if (card.grant === 'welfare') return '公益资格在期，查看随资格自动开通'
   if (card.grant === 'unlock') {
     const u = card.unlock
     return u?.expires_at ? `存量查看凭证 · ${fmtDay(u.expires_at)} 到期` : '存量查看凭证 · 永久有效'
   }
-  if (card.grant === 'free_open') return '公益资格不在期，也没有存量查看凭证'
+  if (card.grant === 'free_open') return '没有存量查看凭证'
   return '付费服未开通会员，播放会被付费墙拦下'
 }
 
@@ -588,7 +582,6 @@ function fmtCount(n: number | null | undefined): string {
             <el-option v-for="c in channels" :key="c.value" :label="c.label" :value="c.value" />
           </el-select>
           <el-select v-model="typeFilter" class="f-select" placeholder="用户类型" clearable @change="applyFilter">
-            <el-option label="公益服" value="welfare" />
             <el-option label="付费（会员生效中）" value="paid" />
             <el-option label="普通（无会员）" value="normal" />
           </el-select>
@@ -638,17 +631,7 @@ function fmtCount(n: number | null | undefined): string {
         </template>
 
         <template #cell-user_type="{ row }">
-          <template v-if="row.user_type === 'welfare'">
-            <span class="au-badge au-badge-green">公益服</span>
-            <div class="user-sub">
-              <span
-                v-if="row.welfare_expires_at && parseServerTime(row.welfare_expires_at) < new Date()"
-                class="welfare-expired"
-              >已过期</span>
-              <span v-else>{{ fmtWelfareDate(row.welfare_expires_at) }}</span>
-            </div>
-          </template>
-          <span v-else-if="row.user_type === 'paid'" class="au-badge au-badge-amber">付费</span>
+          <span v-if="row.user_type === 'paid'" class="au-badge au-badge-amber">付费</span>
           <span v-else class="au-badge au-badge-muted">普通</span>
         </template>
 
@@ -1171,7 +1154,6 @@ function fmtCount(n: number | null | undefined): string {
 .dialog-user { font-weight: 600; color: var(--au-text); }
 .dialog-hint { font-size: 12px; color: var(--au-text-3); line-height: 1.6; }
 .dialog-hint.warn { color: var(--au-warning); }
-.welfare-expired { color: var(--au-danger); }
 .range-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; width: 100%; }
 .range-num { width: 120px; }
 .range-sep { color: var(--au-text-3); }

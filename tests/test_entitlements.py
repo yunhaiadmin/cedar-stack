@@ -5,7 +5,7 @@
   值非法（坏数据不抛、不当权益）；
 - 声明后读到值；「当前套餐」复用 subscriptions.active_subscription
   （过期/已取消不算、同用户多份取 end_date 最晚、顺延后 plan 跟随最近购买）；
-- welfare 用户在 helper 层不被特殊化（helper 不看 is_welfare）；
+- helper 只看套餐声明，不按用户身份特殊化；
 - 两级缓存：命中读旧值、invalidate 后刷新、TTL 过期重查；缓存条目
   自带 end_date，订阅到期不被缓存拖延；
 - 发放口失效挂点：economy._grant_subscription 发放后不手动 invalidate
@@ -171,9 +171,9 @@ def test_plan_deleted_returns_none(db):
 
 
 def test_welfare_user_not_special_cased(db):
-    # helper 不看 is_welfare：公益用户持有套餐时权益照常可读
-    # （求片消费方按判定顺序根本不会来读，那是 PR-2 的事）
-    user = _make_user(db, is_welfare=True)
+    # helper 只看套餐声明：普通用户持有套餐时权益照常可读
+    # （原 is_welfare 维度已随福利服役族于 2026-11-14 删除）
+    user = _make_user(db)
     plan = _make_plan(db, entitlements_value={KEY_SEEK: 30})
     _make_sub(db, user, plan)
     assert entitlements.get_user_entitlement(db, user, KEY_SEEK) == 30

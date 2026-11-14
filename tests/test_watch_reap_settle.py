@@ -41,8 +41,7 @@ def db():
 
 
 def _user(db, name, welfare=True):
-    u = models.WebUser(username=name, password_hash="x",
-                       is_welfare=welfare)
+    u = models.WebUser(username=name, password_hash="x")
     db.add(u)
     db.commit()
     db.refresh(u)

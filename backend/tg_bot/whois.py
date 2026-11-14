@@ -284,8 +284,9 @@ def render_whois(db, keyword: str) -> str:
 # 与上面审计全卡是两条链路，硬规矩更严：
 # - 定位只查 web_users 本表（TG 号 / 站内用户名），绝不碰 login_logs /
 #   播放会话——IP、设备、UA 信号根本不进精简卡链路；
-# - 渲染只出字段白名单：站内用户名、TG 显示名、等级、公益资格、订阅
+# - 渲染只出字段白名单：站内用户名、TG 显示名、等级、订阅
 #   到期、能量余额、网盘绑定（2026-11-08 用户拍板新设计：一行汇总、
+#   公益资格行已随福利服役族于 2026-11-14 删除）、
 #   用绑定自设标签认盘＋状态符号＋池标记；邮箱 / 凭据 id 仍绝不进）、
 #   账号状态；多一个字段都不许加（断言型测试挡敏感字段）；
 # - 全只读，与全卡同一口径：不建行、不改行、不提交事务。
@@ -422,13 +423,12 @@ def _subscription_lite_line(db, user_id: int) -> str:
 def render_whois_lite(db, user, tg_display_name: str | None = None) -> str:
     """群内精简卡：字段白名单逐项对用户定版，不许私自加行。
 
-    等级 / 公益资格复用 features 的现行口径（横切只许一套）：
-    _level_info 只读快照、_welfare_line 三态文案。
+    等级复用 features 的现行口径（横切只许一套）：_level_info 只读快照。
+    （原公益资格行已随福利服役族于 2026-11-14 删除。）
     """
     from backend.tg_bot import features
 
     info = features._level_info(db, user)
-    welfare = features._welfare_line(user).split("：", 1)[-1]
     status = "正常" if bool(getattr(user, "is_active", True)) else "已停用"
     rows = [
         layout.row("👤", "账号",
@@ -440,7 +440,6 @@ def render_whois_lite(db, user, tg_display_name: str | None = None) -> str:
         layout.row("⭐", "等级",
                    f"Lv.{info['level']} "
                    f"{html.escape(str(info['name']))}"),
-        layout.row("📊", "公益资格", welfare),
         layout.row("📦", "订阅", _subscription_lite_line(db, user.id)),
         layout.row("🍒", "能量余额", int(getattr(user, "points", 0) or 0)),
         layout.row("🔗", "网盘绑定", _binding_lite_line(db, user.id)),

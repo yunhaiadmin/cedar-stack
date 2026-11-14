@@ -155,15 +155,6 @@ const GROUPS: Group[] = [
         hint: '用户每天附议次数上限（按当日现存附议行计，取消即释放名额），未设置时默认 20 次',
       },
       {
-        // 2026-10-23 去重 #5：两个月限原先散在公益页（付费月限甚至没有
-        // 后台入口），与日限收进同一张卡；后端键与 media_seek 消费不变
-        key: 'welfare_request_monthly',
-        label: '公益服每月求片上限',
-        type: 'int',
-        suffix: '条/月',
-        hint: '公益服用户每月最多求片条数，未设置时默认 3 条',
-      },
-      {
         key: 'paid_request_monthly',
         label: '付费服每月求片上限',
         type: 'int',

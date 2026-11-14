@@ -195,11 +195,11 @@ def test_daily_limit_unicode_digit_falls_back(db):
 
 
 def test_monthly_limit_unicode_digit_falls_back(db):
-    db.add(models.SystemConfig(key=media_seek.CONFIG_MONTHLY_WELFARE, value="²"))
+    db.add(models.SystemConfig(key=media_seek.CONFIG_MONTHLY_PAID, value="²"))
     db.commit()
     assert media_seek._monthly_limit_value(
-        db, media_seek.CONFIG_MONTHLY_WELFARE,
-        media_seek.DEFAULT_MONTHLY_WELFARE) == media_seek.DEFAULT_MONTHLY_WELFARE
+        db, media_seek.CONFIG_MONTHLY_PAID,
+        media_seek.DEFAULT_MONTHLY_PAID) == media_seek.DEFAULT_MONTHLY_PAID
 
 
 # ==================== F5：LIKE 转义 ====================

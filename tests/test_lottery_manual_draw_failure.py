@@ -36,7 +36,6 @@ def db():
     models.LotteryRoundWinner.__table__.create(engine, checkfirst=True)
     models.LotteryBlacklist.__table__.create(engine, checkfirst=True)
     models.PointsLog.__table__.create(engine, checkfirst=True)
-    models.WelfareGrantLog.__table__.create(engine, checkfirst=True)
     # 发奖改走 codes.grant_membership_days（2026-11-14）：需服/套餐/订阅三表
     models.ServerRealm.__table__.create(engine, checkfirst=True)
     models.SubscriptionPlan.__table__.create(engine, checkfirst=True)

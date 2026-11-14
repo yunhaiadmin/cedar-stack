@@ -102,7 +102,7 @@ def test_viewer_gift_via_execute_refused_zero_effect(db):
     note = whois_panel.execute(db, viewer, target, "gv30")
     assert READONLY_MARK in note
     db.refresh(target)
-    assert not target.is_welfare
+    assert not hasattr(target, "is_welfare")
     assert db.query(models.PointsLog).count() == 0
     assert db.query(models.EmbyViewUnlock).count() == 0
 
@@ -120,7 +120,7 @@ def test_viewer_unban_and_welfare_gift_refused(db):
     note = whois_panel.execute(db, viewer, target, "gv30")
     assert READONLY_MARK in note
     db.refresh(target)
-    assert not target.is_welfare
+    assert not hasattr(target, "is_welfare")
     assert db.query(models.EmbyViewUnlock).count() == 0
 
 
@@ -144,7 +144,7 @@ def test_operator_ban_and_gift_via_execute_allowed(db):
     note = whois_panel.execute(db, operator, target, "gv30", nonce=nonce)
     assert "赠送查看权 30 天" in note
     db.refresh(target)
-    assert target.is_welfare is False
+    assert not hasattr(target, "is_welfare")
     row = db.query(models.EmbyViewUnlock).filter_by(user_id=target.id).first()
     assert row is not None
     assert row.expires_at is not None
@@ -162,45 +162,32 @@ def test_operator_cannot_ban_other_admin_guard_kept(db):
     assert other_op.is_active is True
 
 
-# ---------- 一、对账处置：viewer 经 reconcile:do 被拒零处置 ----------
+# ---------- 一、对账处置：已随福利服役族删除（对账全只读） ----------
 
 def _reconcile_seed(db):
     viewer, operator, target = _staff(db)
-    target.is_welfare = True
-    target.welfare_expires_at = datetime.now() + timedelta(days=30)
-    db.commit()
     _cfg(db, "bot_group_ids", str(GROUP))
     return viewer, operator, target
 
 
-def test_viewer_reconcile_execute_refused_zero_effect(db):
+def test_reconcile_has_no_welfare_execute(db):
     from backend.tg_bot import reconcile
 
-    viewer, _op, target = _reconcile_seed(db)
-    result = reconcile.ReconcileResult(
-        groups=[GROUP], welfare_targets=[target])
-    done, _skipped = reconcile.execute_cancel_welfare(
-        db, viewer, result, checker=lambda *a: (False, "left"))
-    assert done == []
+    _viewer, _op, target = _reconcile_seed(db)
+    # 处置入口已整删：模块无 execute_cancel_welfare、结果无 welfare 分类
+    assert not hasattr(reconcile, "execute_cancel_welfare")
+    result = reconcile.run_reconcile(
+        db, checker=lambda *a: (False, "left"))
+    assert not hasattr(result, "welfare_targets")
+    # 退群未绑定目标只进只读报告的「未在群」名单，不产生任何处置
+    assert target in result.not_in_group
+    text = reconcile.render_report(result)
+    assert "处置" not in text
     db.refresh(target)
-    assert target.is_welfare is True
-    assert db.query(models.WelfareGrantLog).count() == 0
+    assert target.is_active is True
 
 
-def test_operator_reconcile_execute_allowed(db):
-    from backend.tg_bot import reconcile
-
-    _viewer, operator, target = _reconcile_seed(db)
-    result = reconcile.ReconcileResult(
-        groups=[GROUP], welfare_targets=[target])
-    done, _skipped = reconcile.execute_cancel_welfare(
-        db, operator, result, checker=lambda *a: (False, "left"))
-    assert [u.id for u in done] == [target.id]
-    db.refresh(target)
-    assert target.is_welfare is False
-
-
-def test_viewer_reconcile_do_callback_refused(db, monkeypatch):
+def test_reconcile_do_callback_silently_ignored(db, monkeypatch):
     from backend.tg_bot import reconcile
 
     viewer, _op, target = _reconcile_seed(db)
@@ -213,7 +200,6 @@ def test_viewer_reconcile_do_callback_refused(db, monkeypatch):
         sender, "edit_panel",
         lambda db_, cid, mid, text, markup=None, **kw:
             edited.append(text) or (True, None))
-    # 先经命令出报告并缓存结果（读口对 viewer 放行）
     handlers.handle_reconcile(db, {"id": VIEWER_TG}, VIEWER_TG, "")
     assert reconcile.cached_result(VIEWER_TG) is not None
     cq = {"id": "cq9", "data": "reconcile:do",
@@ -221,9 +207,10 @@ def test_viewer_reconcile_do_callback_refused(db, monkeypatch):
           "message": {"message_id": 7, "chat": {"id": VIEWER_TG,
                                                 "type": "private"}}}
     callbacks.handle_callback(db, cq)
-    assert edited and READONLY_MARK in edited[0]
+    # 旧报告卡的处置按钮已无分发：静默忽略、不编辑面板、不改任何状态
+    assert edited == []
     db.refresh(target)
-    assert target.is_welfare is True
+    assert target.is_active is True
 
 
 # ---------- 一、推榜：viewer 被拒、operator 放行 ----------

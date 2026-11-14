@@ -179,12 +179,9 @@ export interface AdminUserRow {
   register_channel: string
   register_channel_label: string
   created_at: string
-  /** 用户类型（v2.55 公益服并入用户管理）：welfare=公益服，paid=付费，normal=普通 */
-  is_welfare: boolean
-  welfare_expires_at: string | null
-  welfare_grant_channel: string | null
-  user_type: 'welfare' | 'paid' | 'normal'
-  /** TG 绑定状态（公益服门禁用）：是否绑定 Telegram */
+  /** 用户类型：paid=付费（有生效中订阅），normal=普通 */
+  user_type: 'paid' | 'normal'
+  /** TG 绑定状态：是否绑定 Telegram */
   tg_bound: boolean
 }
 
@@ -870,8 +867,8 @@ export interface UserGrantCard {
   access_mode: 'paid' | 'free'
   is_free: boolean
   access_note: string
-  /** 授权来源：subscription / expired / none / welfare / unlock / free_open */
-  grant: 'subscription' | 'expired' | 'none' | 'welfare' | 'unlock' | 'free_open'
+  /** 授权来源：subscription / expired / none / unlock / free_open */
+  grant: 'subscription' | 'expired' | 'none' | 'unlock' | 'free_open'
   grant_label: string
   /** 配色语义：ok 生效 / warn 即将到期 / off 未授权或已过期 */
   state: 'ok' | 'warn' | 'off'

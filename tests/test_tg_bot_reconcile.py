@@ -4,15 +4,12 @@
 口径：
 - 仅私聊、仅网站管理员（is_staff 现行判定，与 handle_admin 同一口径）；
   群里发命令由 router private_only 拦 + handler 层私聊 guard 双保险。
-- 默认只报告、零自动处置：报告阶段不写任何行、不改任何字段。
-- 处置只有一类（取消公益资格），且必须二次确认：报告卡按钮（ask）
-  只出确认卡、不执行；确认卡按钮（do）才执行。执行口径与退群处置
-  （#1527）一致：is_welfare=False + WelfareGrantLog(channel=
-  "group_leave", days=0, granted_by=操作管理员)，另写 AdminLog 审计；
-  不删号、不动能量与查看凭证。执行前对每个目标逐一复核在群状态，
-  已回群/接口失败的一律跳过。
+- 只报告、零处置：报告阶段不写任何行、不改任何字段。原唯一的处置
+  （取消公益资格）已随福利服役族于 2026-11-14 删除，报告卡不再带
+  处置按钮；存量报告卡上的 reconcile:ask / reconcile:do 回调一律
+  静默忽略。
 - 覆盖必须如实：Telegram Bot API 没有群成员枚举接口，「在群未绑号」
-  不可全量统计；②③ 只覆盖已绑号用户且逐一 getChatMember 核验，
+  不可全量统计；分类只覆盖已绑号用户且逐一 getChatMember 核验，
   接口失败（api_error）单独计「未核验」，绝不计入「不在群」。
 """
 from __future__ import annotations
@@ -54,7 +51,6 @@ def db():
     for table in (
         models.WebUser.__table__,
         models.SystemConfig.__table__,
-        models.WelfareGrantLog.__table__,
         models.AdminLog.__table__,
     ):
         table.create(engine, checkfirst=True)
@@ -129,24 +125,23 @@ def _user(db, username, tg_id=None, staff=False, **kw):
 def _seed(db, with_group=True):
     if with_group:
         db.add(models.SystemConfig(key="bot_group_ids", value=str(GROUP_ID)))
-    admin = _user(db, "boss", STAFF_TG, staff=True, is_welfare=True)
-    _user(db, "alice", 700101, is_welfare=True)
-    _user(db, "bob", 700102, is_welfare=False)
-    _user(db, "carol", 700103, is_welfare=True)
-    _user(db, "dave", 700104, is_welfare=True)
-    _user(db, "erin", None, is_welfare=True)  # 未绑 TG：不在对账总体内
+    admin = _user(db, "boss", STAFF_TG, staff=True)
+    _user(db, "alice", 700101)
+    _user(db, "bob", 700102)
+    _user(db, "carol", 700103)
+    _user(db, "dave", 700104)
+    _user(db, "erin", None)  # 未绑 TG：不在对账总体内
     db.commit()
     return admin
 
 
 def _snapshot(db):
     users = {
-        u.id: (u.username, u.is_welfare, u.points)
+        u.id: (u.username, u.points)
         for u in db.query(models.WebUser).all()
     }
     return (
         users,
-        db.query(models.WelfareGrantLog).count(),
         db.query(models.AdminLog).count(),
     )
 
@@ -187,20 +182,20 @@ def test_classification_and_report(db, member):
     # ② 已绑但不在群：bob + carol = 2
     assert "<b>已绑但不在群</b> | 2 人" in text
     assert "bob" in text and "carol" in text
-    # ③ 其中仍有公益资格：carol = 1
-    assert "<b>仍有公益资格</b> | 1 人" in text
+    # 公益资格分类已随福利族删除：报告里不再出现
+    assert "仍有公益资格" not in text
+    assert "公益资格" not in text
     # 未核验：dave = 1，且不被算进「不在群」
     assert "<b>未核验</b> | 1 人" in text
     assert "dave" in text
     # ① 不可枚举的覆盖声明必须在报告里
     assert "无法全量统计" in text
-    # 报告卡带处置入口按钮（只进确认，不直接执行）
+    # 报告卡不再带任何处置入口按钮
     datas = [
         b["callback_data"]
         for row in markup["inline_keyboard"] for b in row
     ]
-    assert "reconcile:ask" in datas
-    assert "reconcile:do" not in datas
+    assert not any(d.startswith("reconcile:") for d in datas)
 
 
 def test_report_only_writes_nothing(db, member):
@@ -231,34 +226,23 @@ def test_group_chat_not_executed(db, sent, member):
     assert member["calls"] == []
 
 
-def test_two_clicks_required_then_execute(db, sent, edited, member):
-    admin = _seed(db)
+def test_legacy_dispose_callbacks_ignored(db, sent, edited, member):
+    _seed(db)
     before = _snapshot(db)
     router.dispatch(db, _msg_update(STAFF_TG, STAFF_TG, "/reconcile"))
     assert _snapshot(db) == before  # 报告零写入
 
-    # 第一次点击：只出确认卡，仍然零写入
+    # 存量报告卡上的两段确认按钮：分发已删，静默忽略、零写入零编辑
     router.dispatch(db, _cq_update(STAFF_TG, "reconcile:ask"))
-    assert edited and "确认" in edited[-1]["text"]
-    assert "carol" in edited[-1]["text"]
-    assert _snapshot(db) == before
-
-    # 第二次点击：才执行
     router.dispatch(db, _cq_update(STAFF_TG, "reconcile:do"))
-    carol = db.query(models.WebUser).filter_by(username="carol").one()
-    assert carol.is_welfare is False
-    log = db.query(models.WelfareGrantLog).filter_by(user_id=carol.id).one()
-    assert log.channel == "group_leave"
-    assert log.days == 0
-    assert log.granted_by == admin.id
-    audit = db.query(models.AdminLog).filter_by(target_id=carol.id).one()
-    assert audit.admin_user_id == admin.id
-    assert audit.action == "welfare_revoke"
-    # bob 无资格不在处置名单：没有任何留痕
-    bob = db.query(models.WebUser).filter_by(username="bob").one()
-    assert db.query(models.WelfareGrantLog).filter_by(user_id=bob.id).count() == 0
-    # 回执卡列明实际处置名单
-    assert "carol" in edited[-1]["text"]
+    assert _snapshot(db) == before
+    assert edited == []
+
+
+def test_reconcile_module_has_no_dispose_api(db, member):
+    assert not hasattr(reconcile, "execute_cancel_welfare")
+    assert not hasattr(reconcile, "render_confirm")
+    assert not hasattr(reconcile, "render_receipt")
 
 
 def test_non_staff_callback_blocked(db, edited, member):
@@ -270,33 +254,12 @@ def test_non_staff_callback_blocked(db, edited, member):
     assert _snapshot(db) == before
 
 
-def test_execute_rechecks_membership(db, edited, member):
-    _seed(db)
-    handlers.handle_reconcile(db, {"id": STAFF_TG}, STAFF_TG, "")
-    # 确认期间 carol 已回群：执行时必须跳过
-    member["state"][700103] = (True, "member")
-    router.dispatch(db, _cq_update(STAFF_TG, "reconcile:ask"))
-    router.dispatch(db, _cq_update(STAFF_TG, "reconcile:do"))
-    carol = db.query(models.WebUser).filter_by(username="carol").one()
-    assert carol.is_welfare is True
-    assert db.query(models.WelfareGrantLog).filter_by(user_id=carol.id).count() == 0
-    assert "carol" in edited[-1]["text"]  # 回执里列明被跳过
-
-
 def test_no_groups_configured(db, member):
     _seed(db, with_group=False)
     result = handlers.handle_reconcile(db, {"id": STAFF_TG}, STAFF_TG, "")
     text = result[0] if isinstance(result, tuple) else result
     assert "未配置名单群" in text
     assert member["calls"] == []
-
-
-def test_confirm_card_truncation_noted(db, member, monkeypatch):
-    _seed(db)
-    monkeypatch.setattr(reconcile, "CONFIRM_LIMIT", 0)
-    handlers.handle_reconcile(db, {"id": STAFF_TG}, STAFF_TG, "")
-    text, _markup = reconcile.render_confirm(db, STAFF_TG)
-    assert "等共 1 人" in text
 
 
 def test_switch_off_replies_closed(db, sent, member):

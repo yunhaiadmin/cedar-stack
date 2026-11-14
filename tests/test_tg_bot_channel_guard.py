@@ -7,11 +7,9 @@
 - is_automatic_forward（关联频道自动转发进讨论群）是系统行为，不删
 - 白名单频道（bot_channel_whitelist）放行；总开关可关
 
-退群口径（bot_leave_action，默认 cancel_welfare）：
-- 已绑定用户在名单群内状态变为 left/kicked → 只取消公益资格
-  （is_welfare=False + WelfareGrantLog channel="group_leave"，与
-  welfare_expiry 的 auto_expire 同一口径）；账号、能量、查看凭证不动
-- 状态真正变化才私聊通知本人；无资格/未绑定/动作=none 一律不动
+退群口径：原「退群取消公益资格」已随福利服役族于 2026-11-14 删除——
+chat_member 更新现只做校验、零处置零通知（bot_leave_action 恒 none，
+存量配置里的 cancel_welfare 等旧值一律按 none 处理）。
 """
 from __future__ import annotations
 
@@ -88,13 +86,11 @@ def _set_config(db, **kv):
 
 
 def _make_user(db, username="fan", tg_id=USER_TG, welfare=False, points=500):
+    # welfare 参数仅为兼容旧调用点签名：公益资格字段已删除，不再落任何标记
     u = models.WebUser(username=username, telegram_id=tg_id)
     if hasattr(u, "password_hash") and getattr(u, "password_hash") is None:
         u.password_hash = ""
     u.points = points
-    u.is_welfare = welfare
-    if welfare:
-        u.welfare_expires_at = datetime.now() + timedelta(days=30)
     db.add(u)
     db.commit()
     return u
@@ -123,11 +119,6 @@ def _member_update(tg_id=USER_TG, old="member", new="left", chat_id=GROUP_ID,
         "new_chat_member": {"user": {"id": tg_id, "is_bot": False, "first_name": "Fan"},
                             "status": new},
     }}
-
-
-def _leave_logs(db):
-    return (db.query(models.WelfareGrantLog)
-            .filter(models.WelfareGrantLog.channel == "group_leave").all())
 
 
 # ---------- ① 外部频道发言：删＋说明，不计分、不进 handler ----------
@@ -212,84 +203,73 @@ def test_private_chat_unaffected(db, sent, deleted):
     assert sent == []
 
 
-# ---------- ⑦ 退群：只取消公益资格，凭证/能量不动，通知本人 ----------
+# ---------- ⑦ 退群：处置已下线，任何成员变动都零动作零通知 ----------
 
-def test_leave_cancels_welfare_only(db, sent):
-    u = _make_user(db, welfare=True, points=500)
+def test_leave_noop(db, sent):
+    u = _make_user(db, points=500)
     db.add(models.EmbyViewUnlock(
         user_id=u.id, realm_id=1,
         expires_at=datetime.now() + timedelta(days=10), points_spent=50))
     db.commit()
     router.dispatch(db, _member_update())
     db.refresh(u)
-    assert u.is_welfare is False
     assert u.points == 500
     assert db.query(models.EmbyViewUnlock).count() == 1
-    logs = _leave_logs(db)
-    assert len(logs) == 1 and logs[0].user_id == u.id and logs[0].days == 0
-    notices = [t for cid, t in sent if cid == USER_TG]
-    assert len(notices) == 1
-    assert "公益资格" in notices[0] and "重新进群" in notices[0]
-
-
-def test_kicked_also_cancels(db, sent):
-    u = _make_user(db, welfare=True)
-    router.dispatch(db, _member_update(new="kicked"))
-    db.refresh(u)
-    assert u.is_welfare is False
-    assert len(_leave_logs(db)) == 1
-
-
-# ---------- ⑧ bot_leave_action=none 不处置 ----------
-
-def test_leave_action_none_noop(db, sent):
-    _set_config(db, bot_leave_action="none")
-    u = _make_user(db, welfare=True)
-    router.dispatch(db, _member_update())
-    db.refresh(u)
-    assert u.is_welfare is True
-    assert _leave_logs(db) == []
     assert sent == []
 
 
-# ---------- ⑨ 未绑定 / 无资格 / 无状态变化：一律不动 ----------
+def test_kicked_also_noop(db, sent):
+    _make_user(db)
+    router.dispatch(db, _member_update(new="kicked"))
+    assert sent == []
+
+
+# ---------- ⑧ 存量配置 cancel_welfare 也按 none（动作已删） ----------
+
+def test_leave_action_none_noop(db, sent):
+    _set_config(db, bot_leave_action="none")
+    _make_user(db)
+    router.dispatch(db, _member_update())
+    assert sent == []
+
+
+def test_leave_action_legacy_cancel_welfare_noop(db, sent):
+    _set_config(db, bot_leave_action="cancel_welfare")
+    _make_user(db)
+    router.dispatch(db, _member_update())
+    assert sent == []
+
+
+# ---------- ⑨ 未绑定 / 无状态变化 / 入群 / 非名单群：一律不动 ----------
 
 def test_leave_unbound_user_noop(db, sent):
     router.dispatch(db, _member_update(tg_id=799999))
-    assert _leave_logs(db) == []
     assert sent == []
 
 
 def test_leave_non_welfare_user_noop(db, sent):
     _make_user(db, welfare=False)
     router.dispatch(db, _member_update())
-    assert _leave_logs(db) == []
     assert sent == []
 
 
 def test_leave_no_transition_noop(db, sent):
-    u = _make_user(db, welfare=True)
+    _make_user(db)
     router.dispatch(db, _member_update(old="left", new="left"))
-    db.refresh(u)
-    assert u.is_welfare is True
-    assert _leave_logs(db) == []
+    assert sent == []
 
 
 def test_join_noop(db, sent):
-    u = _make_user(db, welfare=True)
+    _make_user(db)
     router.dispatch(db, _member_update(old="left", new="member"))
-    db.refresh(u)
-    assert u.is_welfare is True
-    assert _leave_logs(db) == []
+    assert sent == []
 
 
 def test_leave_in_unlisted_group_noop(db, sent):
     _set_config(db, bot_group_ids=str(OTHER_GROUP_ID))
-    u = _make_user(db, welfare=True)
+    _make_user(db)
     router.dispatch(db, _member_update())
-    db.refresh(u)
-    assert u.is_welfare is True
-    assert _leave_logs(db) == []
+    assert sent == []
 
 
 # ---------- ⑩ 配置缺省与判定口径 ----------
@@ -297,13 +277,19 @@ def test_leave_in_unlisted_group_noop(db, sent):
 def test_policy_defaults_and_getters(db):
     assert policy.DEFAULTS["bot_channel_guard_enabled"] == "true"
     assert policy.DEFAULTS["bot_channel_whitelist"] == ""
-    assert policy.DEFAULTS["bot_leave_action"] == "cancel_welfare"
+    assert policy.DEFAULTS["bot_leave_action"] == "none"
     cfg = policy.read_bot_config(db)
     assert policy.is_channel_guard_enabled(cfg) is True
     assert policy.is_channel_whitelisted(cfg, CHAN_ID) is False
-    assert policy.leave_action(cfg) == "cancel_welfare"
+    assert policy.leave_action(cfg) == "none"
     _set_config(db, bot_channel_whitelist=f"{CHAN_ID}, -1001",
                 bot_leave_action="乱写")
     cfg = policy.read_bot_config(db)
     assert policy.is_channel_whitelisted(cfg, CHAN_ID) is True
-    assert policy.leave_action(cfg) == "cancel_welfare"
+    assert policy.leave_action(cfg) == "none"
+    row = db.query(models.SystemConfig).filter_by(key="bot_leave_action").one()
+    row.value = "cancel_welfare"
+    db.commit()
+    store.invalidate()
+    cfg = policy.read_bot_config(db)
+    assert policy.leave_action(cfg) == "none"  # 存量旧值一律按 none

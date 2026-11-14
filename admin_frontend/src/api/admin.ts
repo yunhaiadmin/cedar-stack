@@ -98,7 +98,7 @@ export const fetchUsers = (params: {
   active?: boolean
   /** 注册渠道：空 = 全部；__unrecorded = 升级前存量（未记录） */
   channel?: string
-  /** 用户类型：空 = 全部；welfare = 公益服；paid = 付费；normal = 普通 */
+  /** 用户类型：空 = 全部；paid = 付费；normal = 普通 */
   user_type?: string
   limit?: number
   offset?: number
@@ -246,13 +246,12 @@ export const patchRegistrationCode = (id: number, data: { is_active?: boolean; n
 export const deleteRegistrationCode = (id: number) =>
   del<{ success: boolean; message: string }>(`/registration-codes/${id}`)
 
-/** 白名单账号：核销过白名单码的账号与三处永久状态 */
+/** 白名单账号：核销过白名单码的账号与两处永久状态 */
 export interface WhitelistAccount {
   user_id: number
   username: string
   code: string | null
   redeemed_at: string | null
-  welfare_permanent: boolean
   view_permanent: boolean
   subscription_longterm: boolean
   is_permanent_active: boolean
@@ -652,9 +651,9 @@ export const markMediaSeekInLibrary = (id: number, force = false) =>
     { silent: true },
   )
 
-/** 某用户的求片月度额度（公益/付费区分）：审核时查看该用户本月还剩几次 */
+/** 某用户的求片月度额度：审核时查看该用户本月还剩几次 */
 export interface MediaSeekMonthlyQuota {
-  kind: 'welfare' | 'paid'
+  kind: 'paid'
   monthly_limit: number
   monthly_used: number
   monthly_remaining: number
@@ -841,7 +840,7 @@ export const fetchOverview = () => get<OverviewStats>('/stats/overview')
 
 /** 仪表盘数据明细（2026-10-23 新增 detail part：多张表，前端集中一区页签切换；积分流水表已随货币于 2026-11-13 下线） */
 export interface DashboardDetailTables {
-  recent_users: Array<{ username: string; created_at: string; channel: string; is_welfare: boolean }>
+  recent_users: Array<{ username: string; created_at: string; channel: string }>
   recent_orders: Array<{ username: string; item: string; kind: string; amount: number; status: string; created_at: string }>
   library_stats: Array<{ library: string; movies: number; shows: number; episodes: number; total: number }>
   enrich_progress: Array<{ library: string; enriched: number; pending: number }>

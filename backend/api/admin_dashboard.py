@@ -425,7 +425,6 @@ def get_detail_tables(admin: Any, db: Session) -> dict:
                 "username": u.username,
                 "created_at": _iso(u.created_at),
                 "channel": u.register_channel or "",
-                "is_welfare": bool(u.is_welfare),
             }
             for u in rows
         ]

@@ -25,7 +25,6 @@ def db():
     models.LotteryRoundWinner.__table__.create(engine, checkfirst=True)
     models.LotteryBlacklist.__table__.create(engine, checkfirst=True)
     models.PointsLog.__table__.create(engine, checkfirst=True)
-    models.WelfareGrantLog.__table__.create(engine, checkfirst=True)
     # 发奖改走 codes.grant_membership_days（2026-11-14）：需服/套餐/订阅三表
     #（realms.claim → ensure_default_realm 查 server_realms，
     # _resolve_plan 查 SubscriptionPlan，UserSubscription 落订阅行）。

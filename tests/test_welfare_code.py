@@ -76,7 +76,7 @@ def test_welfare_code_rejected_without_burning(db):
     assert result["success"] is False
     assert "下线" in result["message"]
     db.refresh(user)
-    assert not user.is_welfare
+    assert not hasattr(user, "is_welfare")
     assert _unlock(db, user.id) is None
     db.refresh(code)
     assert (code.use_count or 0) == 0
@@ -97,7 +97,7 @@ def test_whitelist_code_with_welfare_flavor_still_permanent(db):
     assert unlock is not None
     assert unlock.expires_at is None
     db.refresh(user)
-    assert not user.is_welfare
+    assert not hasattr(user, "is_welfare")
 
 
 # ==================== 生成：资格码已下线 ====================
@@ -129,7 +129,7 @@ def test_subscription_code_still_grants_membership(db):
         models.UserSubscription.user_id == user.id).first()
     assert sub is not None
     db.refresh(user)
-    assert not user.is_welfare
+    assert not hasattr(user, "is_welfare")
 
 
 def test_points_code_rejected_without_burning(db):

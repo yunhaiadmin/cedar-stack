@@ -25,12 +25,12 @@ LABEL_RE = re.compile(r"^· \S+ <b>([^<]+)</b> \|", re.M)
 CJK4 = re.compile(r"^[一-鿿]{4}$")
 
 DASHBOARD_LABELS = [
-    "用户编号", "账号名称", "当前等级", "能量余额", "公益资格",
+    "用户编号", "账号名称", "当前等级", "能量余额",
     "活力数值", "网盘绑定", "当前馆灵",
     "订阅状态",
 ]
 SHARED_LABELS = [
-    "用户编号", "账号名称", "当前等级", "能量余额", "公益资格",
+    "用户编号", "账号名称", "当前等级", "能量余额",
     "活力数值", "网盘绑定", "当前馆灵",
     "订阅状态",
 ]
@@ -51,7 +51,7 @@ def db():
 def _user(db, tg=TG, name="alice", points=42, vitality=14, is_welfare=True):
     row = models.WebUser(
         username=name, password_hash="x", telegram_id=tg,
-        points=points, vitality=vitality, is_welfare=is_welfare,
+        points=points, vitality=vitality,
     )
     db.add(row)
     db.commit()
@@ -66,7 +66,7 @@ def test_layout_row_bolds_label():
     assert layout.row("🍒", "能量余额", 16) == "· 🍒 <b>能量余额</b> | 16"
 
 
-def test_dashboard_labels_are_the_ten_four_char(db):
+def test_dashboard_labels_are_the_nine_four_char(db):
     user = _user(db)
     text = features.user_panel(db, user)
     assert _labels(text) == DASHBOARD_LABELS

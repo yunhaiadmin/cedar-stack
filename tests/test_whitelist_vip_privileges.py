@@ -144,8 +144,10 @@ def test_monthly_quota_exempt_for_whitelist(db):
     assert snap["monthly_remaining"] > 0
 
 
-def test_monthly_quota_normal_welfare_user_not_exempt(db):
-    plain = _user(db, "plain_quota", is_welfare=True, welfare_expires_at=None)
+def test_monthly_quota_normal_user_not_exempt(db):
+    # 普通用户走付费口径：把 paid_request_monthly 设为 3 钉死额度边界
+    plain = _user(db, "plain_quota")
+    db.add(models.SystemConfig(key="paid_request_monthly", value="3"))
     db.commit()
     for i in range(3):
         _seek_row(db, plain, f"已求片{i}")
@@ -156,8 +158,8 @@ def test_monthly_quota_normal_welfare_user_not_exempt(db):
 
 def test_submit_beyond_monthly_limit_whitelist_passes_normal_blocked(db):
     vip = _whitelist_user(db, "vip_submit")
-    plain = _user(db, "plain_submit", is_welfare=True,
-                  welfare_expires_at=None)
+    plain = _user(db, "plain_submit")
+    db.add(models.SystemConfig(key="paid_request_monthly", value="3"))
     db.commit()
     for i in range(3):
         _seek_row(db, vip, f"白名单已求{i}")
@@ -166,7 +168,7 @@ def test_submit_beyond_monthly_limit_whitelist_passes_normal_blocked(db):
     def _payload(name):
         return user_api.MediaSeekRequest(movie_name=name, type="movie")
 
-    # 普通公益用户：第 4 条撞月度额度 429（每日上限 5 未到，卡的是月度）
+    # 普通用户：第 4 条撞月度额度 429（每日上限 5 未到，卡的是月度）
     with pytest.raises(HTTPException) as exc:
         user_api._create_media_seek_sync(db, plain, "普通第四条",
                                          _payload("普通第四条"))

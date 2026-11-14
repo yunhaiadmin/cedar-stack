@@ -17,7 +17,7 @@ def test_concurrent_distribute_pays_once(tmp_path):
     # 发奖改走 codes.grant_membership_days（2026-11-14）：需服/套餐/订阅三表
     for t in (models.WebUser, models.SystemConfig, models.LotteryRound, models.LotteryRoundPrize,
               models.LotteryRoundEntry, models.LotteryRoundWinner, models.LotteryBlacklist,
-              models.PointsLog, models.WelfareGrantLog,
+              models.PointsLog,
               models.ServerRealm, models.SubscriptionPlan, models.UserSubscription):
         t.__table__.create(engine, checkfirst=True)
     Session = sessionmaker(bind=engine)

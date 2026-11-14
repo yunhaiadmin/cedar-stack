@@ -112,12 +112,12 @@ def test_whois_group_opens_panel_with_buttons(db):
     assert "能量余额" in text  # 精简卡字段在
     datas = _datas(markup)
     assert f"whois:bind:{target.id}" in datas
-    assert f"whois:cred:{target.id}" in datas
+    assert not any(d.startswith("whois:cred") for d in datas)  # 资格页已删
     assert f"whois:gift:{target.id}" in datas
     assert f"whois:ask:{target.id}:ban" in datas  # 正常账号出封禁入口
 
 
-def test_whois_panel_bindings_and_cred_pages(db, monkeypatch):
+def test_whois_panel_bindings_page_and_cred_removed(db, monkeypatch):
     _staff, target = _panel(db)
     realm = ensure_default_realm(db)
     db.add(em.UserStorageBinding(
@@ -133,10 +133,12 @@ def test_whois_panel_bindings_and_cred_pages(db, monkeypatch):
     text, _m = edited[0]
     assert "谷歌网盘" in text and "正常" in text
     assert "2026-11-01" in text  # 最近验证时间
+    # 公益资格页已随福利服役族删除：whois:cred 按未知页回落主面板，
+    # 渲染出的主面板里不再有公益资格内容
     edited = _click(db, monkeypatch, f"whois:cred:{target.id}")
+    assert edited
     text, _m = edited[0]
-    assert "公益资格" in text and "资格到期" in text
-    assert "查看凭证" not in text  # 凭证行已删（2026-11-09），存量行不展示
+    assert "公益资格" not in text and "资格到期" not in text
 
 
 # ---------- 管理员校验：非管理员点击拒绝 ----------

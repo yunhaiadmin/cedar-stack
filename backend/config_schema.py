@@ -157,7 +157,7 @@ WELFARE_CONFIG_SCHEMA: dict[str, tuple] = {
     # 退群动作是封闭枚举，非法值在端点层 400，不许落库后靠读侧猜。
     "bot_channel_guard_enabled": ("bool",),
     "bot_channel_whitelist": ("str",),
-    "bot_leave_action": ("enum", ("cancel_welfare", "none")),
+    "bot_leave_action": ("enum", ("none",)),  # cancel_welfare 已随福利服役族于 2026-11-14 删除
     # 2026-10-17 第 4 批 4-4：以下 9 键在 WELFARE_CONFIG_KEYS 里的默认值是 "1"/"0"，
     # 端点现行的 normalize 按 ("bool", "digit") 存 "1"/"0"。风格必须跟键走，
     # 注册为 digit 才能与今天逐字一致（读侧 lottery.py 等是宽容口径，本应无感，
@@ -635,9 +635,9 @@ ECONOMY_CONFIG_SCHEMA: dict[str, tuple] = {
     # 读侧同口径钳制，schema 是保存侧的纵深防御）
     "media_seek_auto_approve_enabled": ("bool",),
     "media_seek_fulfill_interval_minutes": ("int", 1, 1440),
-    # 2026-10-23 去重 #5：两个月限与日限同卡（运营参数）后需在此登记才可
-    # 从该页保存；paid_request_monthly 此前无任何登记
-    "welfare_request_monthly": ("int", 0, 10000),
+    # 2026-10-23 去重 #5：月限与日限同卡（运营参数）后需在此登记才可
+    # 从该页保存；paid_request_monthly 此前无任何登记。
+    # （welfare_request_monthly 已随福利服役族于 2026-11-14 删除。）
     "paid_request_monthly": ("int", 0, 10000),
     # r40：卡码授予天数所用默认套餐（codes._resolve_plan 读取；无行=按服自动推导）
     "code_default_plan_id": ("int", 0, _BIG),

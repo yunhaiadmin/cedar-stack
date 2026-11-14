@@ -131,11 +131,7 @@ const userId = computed(() => userStore.user?.id ?? null)
 // 身份副行照友站形态：订阅档名 · 用户 ID（复制钮在模板里）；剩余天数在概览页看
 const statusLine = computed(() => {
   const s = activeSub.value
-  const base = s
-    ? s.plan_name
-    : userStore.user?.is_welfare
-      ? '公益服用户'
-      : '普通用户'
+  const base = s ? s.plan_name : '普通用户'
   return userId.value ? `${base} · ${userId.value}` : base
 })
 

@@ -37,7 +37,6 @@ def db():
     models.LotteryRoundWinner.__table__.create(engine, checkfirst=True)
     models.LotteryBlacklist.__table__.create(engine, checkfirst=True)
     models.PointsLog.__table__.create(engine, checkfirst=True)
-    models.WelfareGrantLog.__table__.create(engine, checkfirst=True)
     models.AdminLog.__table__.create(engine, checkfirst=True)
     Session = sessionmaker(bind=engine)
     session = Session()

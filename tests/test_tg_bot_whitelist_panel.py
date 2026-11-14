@@ -40,7 +40,6 @@ PLAIN_PANEL_GOLDEN = (
     "· 👤 <b>账号名称</b> | <b>alice</b>\n"
     "· ⭐ <b>当前等级</b> | Lv.1 初幕 · 经验 0／100 ░░░░░░░░░░（距 Lv.2 影迷还差 100 经验）\n"
     "· 🍒 <b>能量余额</b> | <b>42</b>\n"
-    "· 📊 <b>公益资格</b> | 未开通\n"
     "· ⚡ <b>活力数值</b> | 14/14\n"
     "· 🔗 <b>网盘绑定</b> | 未绑定，绑定后才能点播\n"
     "· 🐉 <b>当前馆灵</b> | 🥚 蛋（累计观影 0.0 小时），距夜枭还差 50.0 小时\n"
@@ -85,8 +84,6 @@ def _make_whitelist(db, user):
     db.add(models.CodeRedemption(
         code_kind=codes.REDEMPTION_KIND_REG, code_id=code.id,
         user_id=user.id))
-    user.is_welfare = True
-    user.welfare_expires_at = None
     db.add(models.EmbyViewUnlock(
         user_id=user.id, realm_id=realm.id, expires_at=None))
     plan = models.SubscriptionPlan(
@@ -128,8 +125,8 @@ def test_user_panel_whitelist_layout(db):
     assert text.index("账号名称") < text.index("专属称号") < text.index("当前等级")
     # 编号尚未落地：只显示称号，不出编号行
     assert "创世编号" not in text
-    # 其余信息行照现行口径（公益资格永久 → 长期有效、能量照旧）
-    assert "· 📊 <b>公益资格</b> | 长期有效" in text
+    # 其余信息行照现行口径（能量照旧；公益资格行已随福利族删除）
+    assert "公益资格" not in text
     assert "· 🍒 <b>能量余额</b> | <b>42</b>" in text
 
 
@@ -171,7 +168,7 @@ def test_account_whitelist_layout(db):
     # 其余信息行照现行口径
     assert "· 👤 <b>账号名称</b> | <b>vip</b>" in text
     assert "· 🍒 <b>能量余额</b> | <b>42</b>" in text
-    assert "· 📊 <b>公益资格</b> | 长期有效" in text
+    assert "公益资格" not in text
 
 
 # ---------- 3. 创世编号落地后自动带出（只读兼容） ----------
