@@ -4,7 +4,7 @@
 season 525）的 merged_into_id 指向已被物理删除的行，挂在下面的 10929 集
 随之不可见。成因是几条真删路径删目标行时没处理入向合并引用——
 ``scanner._purge_items``（扫描清理软删关分支、byos 清理、软删回收共用）
-与 ``upstream_import._delete_rows`` 的硬删分支（上游托管行下架/删源）。
+与 ``upstream_sources._delete_rows`` 的硬删分支（上游托管行下架/删源）。
 
 语义定版（本文件钉住）：
 - 真删前，把 merged_into_id 指向待删行的**存活行**一律置 NULL 解开，
@@ -30,7 +30,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend import models
 from backend.emby_server import models as em
-from backend.emby_server import scanner, soft_delete, upstream_import
+from backend.emby_server import scanner, soft_delete, upstream_sources
 from backend.integrations import store
 
 
@@ -227,7 +227,7 @@ def test_purge_items_movie_family(db):
     assert _merged_into(db, child_id) is None
 
 
-# ==================== 3. 真删路径二：upstream_import._delete_rows 硬删分支 =====
+# ==================== 3. 真删路径二：upstream_sources._delete_rows 硬删分支 =====
 
 def test_upstream_delete_rows_hard_branch_detaches(db, monkeypatch):
     monkeypatch.setenv("MEDIA_SOFT_DELETE", "0")
@@ -238,7 +238,7 @@ def test_upstream_delete_rows_hard_branch_detaches(db, monkeypatch):
     target_id, child_id = target.id, child.id
     target_row = _row(db, target_id)
 
-    n = upstream_import._delete_rows(db, [target_row])
+    n = upstream_sources._delete_rows(db, [target_row])
     db.commit()
 
     assert n == 1

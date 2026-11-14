@@ -226,7 +226,6 @@ def _notify_member_review(db: Session, member: em.PoolMember, *,
     - TG 私聊：proactive 管道新 kind（pool_review_approved /
       pool_review_rejected），claim 幂等、未绑 TG 跳过、偏好跟
       「贡献回响」同类；本函数里先入队并提交（提交唤醒发送线程）。
-    - 群欢迎：仅通过时走 group_cheer 收口发正式群一条。
     """
     import asyncio
 
@@ -257,12 +256,10 @@ def _notify_member_review(db: Session, member: em.PoolMember, *,
         logger.warning("贡献池审核通知失败 member=%s", member.id,
                        exc_info=True)
     try:
-        from backend.tg_bot import group_cheer, proactive
+        from backend.tg_bot import proactive
 
         proactive.note_pool_member_review(db, member, approved=approved)
         db.commit()
-        if approved:
-            group_cheer.send_pool_welcome(db, member)
     except Exception:
         logger.warning("贡献池审核 TG 通知失败 member=%s", member.id,
                        exc_info=True)

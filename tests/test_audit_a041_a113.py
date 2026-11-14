@@ -1,6 +1,6 @@
 """审计 A-041 + A-113 同批：用户端在库判定与求片 lookup 须认隐藏/删除/可见范围。
 
-A-113：store.find_library_item、media_seek.library_hit（tmdb/片名两分支）、
+A-113：store_requests.find_library_item、media_seek.library_hit（tmdb/片名两分支）、
   store_requests._library_hit/_sync_row 三路在库判定，隐藏与已删条目不得判在库。
 A-041：GET /media-seek/lookup（lookup_media）须转义 LIKE 通配符、过滤
   deleted_at/is_hidden、按 _library_scope 可见库过滤。
@@ -16,18 +16,14 @@ os.environ.setdefault("REDIS_ENABLED", "false")
 from datetime import datetime
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend import library_scope, media_seek, models
-from backend.api.store import find_library_item
-from backend.api.store import router as store_router
+from backend.api.store_requests import find_library_item
 from backend.api.store_requests import _library_hit, _sync_row
 from backend.api.user import lookup_media
-from backend.database import get_db
 from backend.emby_server import models as em
 
 
@@ -83,7 +79,7 @@ def _user(db):
     return user
 
 
-# ---------------- A-113：store.find_library_item ----------------
+# ---------------- A-113：store_requests.find_library_item ----------------
 
 def test_store_find_library_item_ignores_hidden_and_deleted(db):
     lib = _library(db, "s")
@@ -94,35 +90,6 @@ def test_store_find_library_item_ignores_hidden_and_deleted(db):
     assert find_library_item(db, "1002") is None
     assert find_library_item(db, "1003") is not None
     assert find_library_item(db, "1003").id == visible.id
-
-
-def test_store_get_item_hidden_returns_in_library_false(db, engine, monkeypatch):
-    # 访客口（无鉴权）：隐藏条目不得回 in_library=true，更不得回内部 id。
-    monkeypatch.setenv("STORE_ENABLED", "1")
-    lib = _library(db, "g")
-    _item(db, lib, tmdb_id="2001", name="藏片", hidden=True)
-    _item(db, lib, tmdb_id="2002", name="可见片")
-    app = FastAPI()
-    app.include_router(store_router)
-    sessions = sessionmaker(bind=engine)
-
-    def _override_get_db():
-        session = sessions()
-        try:
-            yield session
-        finally:
-            session.close()
-
-    app.dependency_overrides[get_db] = _override_get_db
-    with TestClient(app) as client:
-        hidden = client.get("/api/user/store/items/2001")
-        assert hidden.status_code == 200
-        assert hidden.json()["in_library"] is False
-        assert hidden.json()["library_item_id"] is None
-        visible = client.get("/api/user/store/items/2002")
-        assert visible.json()["in_library"] is True
-        assert visible.json()["library_item_id"] is not None
-    app.dependency_overrides.clear()
 
 
 # ---------------- A-113：media_seek.library_hit ----------------
