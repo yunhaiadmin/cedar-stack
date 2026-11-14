@@ -1,6 +1,6 @@
 <template>
   <UhdAccountLayout>
-  <div class="v4-scope">
+  <div class="uhd-shell-scope">
     <div class="v4-page">
       <header class="v4-loghead">
         <h1>代理中心</h1>
@@ -350,7 +350,7 @@ onMounted(reload)
 }
 /* 本页 .v4-mini-btn 无 base 定义（其他页面的 base 是各自 scoped 副本，不覆盖本页），
    .primary 直接落全套 UHD 口径（2026-11-13 补齐七彩＋玻璃）：彩虹边框 + 淡彩粉彩底 + 玻璃栈。
-   本页在 .v4-scope 内（恒浅色纸面），只需浅色配方 */
+   本页令牌由 .uhd-shell-scope 供给浅色值（2026-11-14 摘 .v4-scope 嵌套），只需浅色配方 */
 .v4-mini-btn.primary {
   font-weight: 700;
   border: 1.5px solid transparent;

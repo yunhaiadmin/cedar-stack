@@ -1,4 +1,7 @@
 <template>
+  <!-- 桌面并壳（2026-11-14 统一壳单）：≥769px 经闸门进用户中心壳
+       （壳内隐藏移动返回顶栏）；手机原样 -->
+  <UhdAccountShellGate>
   <div class="iv-page">
     <header class="iv-topbar">
       <RouterLink to="/game/account/menu" class="iv-back" aria-label="返回我的">
@@ -185,6 +188,7 @@
       </div>
     </div>
   </div>
+  </UhdAccountShellGate>
 </template>
 
 <script setup lang="ts">
@@ -206,6 +210,7 @@ import {
   type RebateRow,
 } from '@/api/economy'
 import { useToast } from '@/composables/useToast'
+import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
 import './invite-friends.css'
 
 const toast = useToast()

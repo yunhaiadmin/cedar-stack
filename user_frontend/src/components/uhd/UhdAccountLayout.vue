@@ -276,9 +276,13 @@ const accountSub = computed(() => {
   皮肤覆盖（非 scoped）：.v4-scope 自己重定义了纸色令牌，祖先继承赢不了它，
   须用更高特异性的 .uhd-account .v4-scope 在办事面作用域内逐项覆盖为 UHD 浅色值。
   只动令牌与版式，不动任何业务标记与行为。
+  2026-11-14 统一壳单：账号页（我的订阅/账号设置/代理中心）已摘掉
+  .v4-scope 纸面嵌套，页根改挂 .uhd-shell-scope 承接同一套壳内令牌值，
+  两选择器并列同值，存量 .v4-scope 页（若再有）口径不变。
 -->
 <style>
-.uhd-account .v4-scope {
+.uhd-account .v4-scope,
+.uhd-account .uhd-shell-scope {
   --paper: #f8f8f8;
   --paper2: #f5f5f5;
   --ink: #111111;
@@ -299,7 +303,11 @@ const accountSub = computed(() => {
   background: var(--uhd-l-bg);
   background-image: none;
 }
-.uhd-account .v4-scope {
+/* .uhd-shell-scope 页根自承文字色：原 .v4-scope 的 color 由 v4-paper.css
+   提供，摘嵌套后按壳内 --ink 值在此补齐，免继承全局主题文字色漂移 */
+.uhd-account .uhd-shell-scope { color: var(--ink); }
+.uhd-account .v4-scope,
+.uhd-account .uhd-shell-scope {
   --paper-bg: var(--paper);
   --paper-bg-soft: var(--paper2);
   --paper-ink: var(--ink);
@@ -352,4 +360,27 @@ const accountSub = computed(() => {
 }
 /* 卡片圆角随令牌走 16–20px；行间分隔用 #eee */
 .uhd-account .v4-card { border-radius: 16px; }
+/* 桌面并壳页贴合（2026-11-14 统一壳单）：经 UhdAccountShellGate 并入壳的
+   全幅页（概览/订阅服务/订阅记录/邀请/团队/安装）原本是独立整页——自带
+   100dvh 高与移动返回顶栏。壳只在桌面挂载，故下述规则只在桌面生效：
+   - 高度：扣掉统一顶栏与布局 main 的上下内边距（28+120），不再溢出
+     一截造无谓滚动；
+   - 移动返回顶栏在壳内隐藏（侧栏常驻即返回路径，不再层层递进）；
+     订阅服务页头只摘返回钮（标题与「我的订阅」入口是真实内容，保留）；
+   - 订阅吸底结算条让开侧栏宽度，不再压住侧栏。 */
+.uhd-account .ov-page,
+.uhd-account .sub-page,
+.uhd-account .sr-page,
+.uhd-account .iv-page,
+.uhd-account .tm-page,
+.uhd-account .ia-page {
+  min-height: calc(100dvh - var(--utb-h) - 148px);
+}
+/* 特异性须压过各页 scoped 的「类+data-v 属性」（0,2,0），故选择器带页根类走（0,3,0） */
+.uhd-account .sr-page .sr-topbar,
+.uhd-account .iv-page .iv-topbar { display: none; }
+.uhd-account .ia-page .ia-back,
+.uhd-account .sub-page .sub-back { display: none; }
+.uhd-account .sub-page .sub-settle { left: var(--uhd-sidebar-w); }
+.uhd-account .ia-page { padding: 0 0 48px; }
 </style>

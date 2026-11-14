@@ -1,7 +1,6 @@
 <template>
   <UhdAccountLayout title="账号与设置" eyebrow="账号">
-  <div class="v4-scope">
-  <div class="settings-page">
+  <div class="uhd-shell-scope settings-page">
     <!-- 安全 -->
     <section class="set-group">
       <h2 class="set-gtitle">安全</h2>
@@ -111,7 +110,6 @@
     </section>
 
     <ChangePasswordModal v-model:open="pwdOpen" />
-  </div>
   </div>
   </UhdAccountLayout>
 </template>
@@ -260,6 +258,10 @@ onMounted(() => {
   margin: 0 auto;
   padding-bottom: 34px;
   font-family: var(--uhd-font-sans);
+  /* 2026-11-14 统一壳单：摘掉 .v4-scope 纸面嵌套，文字色由页根自承
+     （与原纸面 --ink 的壳内覆盖值 #111 一致）；子面板的纸面令牌改由
+     页根 .uhd-shell-scope（布局全局样式）供给，值不变。 */
+  color: var(--uhd-l-text);
 }
 .set-group { margin-top: 36px; }
 .set-group:first-child { margin-top: 4px; }
