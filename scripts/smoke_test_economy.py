@@ -69,9 +69,11 @@ def main():
     check("邀请码应用成功", result.get("applied") is True)
     record = db.query(models.InvitationRecord).filter(
         models.InvitationRecord.invitee_id == u2.id).first()
-    check("邀请记录已建立且不发积分",
+    # reward_points 按生产「发放值回填」口径写：天数型奖励回填天数（本冒烟为 7），
+    # 积分奖励已下线、不会再写积分值；天数奖励本身由下一断言验证。
+    check("邀请记录已建立且记录值与天数奖励一致（7 天）",
           record is not None and record.inviter_id == u1.id
-          and (record.reward_points or 0) == 0)
+          and (record.reward_points or 0) == 7)
     inviter_sub = db.query(models.UserSubscription).filter(
         models.UserSubscription.user_id == u1.id,
         models.UserSubscription.status == "active").first()
