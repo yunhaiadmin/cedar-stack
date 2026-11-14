@@ -68,7 +68,12 @@ const showChrome = computed(
  * 双页签在该页隐藏（isSubscribePage）。
  * 变基对齐批 3 后，PanelTabbar 的条件应为 showChrome && !isAccountArea && !isStreamArea。
  */
-const isAccountArea = computed(() => route.path.startsWith('/game'))
+/* 钱包页路径是顶层 /wallet（易支付 return_url 落点，路径不能挪），但
+   形态属账号区：视图自带 UhdAccountLayout，若按非账号区再叠全局顶栏与
+   PanelTabbar 就是三层壳（2026-11-15 用户真机亲指），故一并算账号区。 */
+const isAccountArea = computed(
+  () => route.path.startsWith('/game') || route.path === '/wallet',
+)
 const isSubscribePage = computed(() => route.name === 'game-account-subscribe')
 
 /**
