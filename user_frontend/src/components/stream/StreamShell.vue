@@ -8,7 +8,7 @@
  * 深浅只改 .stream-scope 上的 data-stream-theme，令牌见 uhd-tokens.css 色板 C。
  */
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import StreamTopbar from './StreamTopbar.vue'
 import StreamBottomNav from './StreamBottomNav.vue'
 import UhdTopBar from '@/components/uhd/UhdTopBar.vue'
@@ -78,10 +78,10 @@ provide('stream-theme', { pref, resolved, cycleTheme })
    月亮（外观切换）＋圆片底 X（退出媒体库）两钮，与友站详情页右上胶囊
    是同一个控件；且本页已在片库里、「网页观影」钮在此是空转。故首页
    手机端不挂整条栏，直接复用详情页的 DetailTopPill（外观钮走本壳
-   provide 的主题上下文、点击循环切换；X 的 close 事件在此接为退出
-   媒体库回概览 /game/account）；桌面仍走双胶囊浮动顶栏，形态一致。 */
+   provide 的主题上下文、点击循环切换；X 在首页为 menu 模式——
+   2026-11-15 录屏 f057 实证友站点 X 弹用户小菜单，此前「点 X 直接
+   退出回概览」与友站形态不符，已改）；桌面仍走双胶囊浮动顶栏。 */
 const route = useRoute()
-const router = useRouter()
 const isLibraryHome = computed(() => route.name === 'library')
 const showUnifiedTopbar = computed(
   () => route.name !== 'media-detail' && !isLibraryHome.value,
@@ -92,13 +92,11 @@ const showUnifiedTopbar = computed(
   <div class="stream-scope" :data-stream-theme="resolved">
     <div class="stream-halo" aria-hidden="true"></div>
     <UhdTopBar v-if="showUnifiedTopbar" class="stream-utb" />
-    <!-- 片库首页右上胶囊：与详情页同一颗 DetailTopPill（外观＋退出），
-         浮在 Hero 海报上；退出 = 回概览。仅手机端渲染（组件内断点） -->
-    <DetailTopPill
-      v-if="isLibraryHome"
-      close-label="退出媒体库"
-      @close="router.push('/game/account')"
-    />
+    <!-- 片库首页右上胶囊：与详情页同一颗 DetailTopPill，浮在 Hero 海报上。
+         2026-11-15 录屏核查修订：友站此页点 X 弹用户小菜单（f057），
+         故首页传 menu 模式（用户中心/线路测速/退出登录在菜单内），
+         不再点 X 直接退出媒体库。仅手机端渲染（组件内断点） -->
+    <DetailTopPill v-if="isLibraryHome" menu close-label="打开用户菜单" />
     <StreamTopbar :pref="pref" :resolved="resolved" @cycle-theme="cycleTheme" />
     <main class="stream-main">
       <slot />

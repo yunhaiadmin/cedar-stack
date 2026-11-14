@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * 片库分类页（/library/movies、/library/series —— UHDNow 分类页对应面）
- * 骨架（存档第 10 节＋用户真机截图）：无 Hero；H1 56–60px 超粗（手机约 40）；
+ * 骨架（存档第 10 节＋用户真机截图）：无 Hero；H1 56–60px 超粗
+ * （手机 32px——2026-11-15 录屏 f052/f054 逐帧量测修订，此前 40 偏大）；
  * 分类行：片库分类胶囊（激活 = 白胶囊高 40/圆角 20 + 阴影，内含「名称＋计数」；
  * 未激活 = 15px 字 + 13px 灰计数）；行右端排序单胶囊（当前排序名 + ⇅，
  * 点开下拉选排序 + 升降序切换）；计数行「{分类} · N 部」14px 灰；
@@ -179,10 +180,14 @@ function applyBrowseCache(payload: BrowseCachePayload) {
 
 /** 分类加载失败时置真（仅当尚无分类可显示时）：分类行出重试钮，正文不受影响 */
 const catError = ref(false)
+/** 分类腿在途标记：未到位前不渲染兜底「全部」胶囊这类半成品控件
+    （2026-11-15 通用口径：加载态不露结论、只许中性占位） */
+const catLoading = ref(false)
 
 async function loadCategories() {
   const myKind = kind.value
   catError.value = false
+  catLoading.value = true
   try {
     // 正文只等 views 这一条腿：getViews 带 5 分钟内存缓存（api/emby.ts），
     // 首页已拉过；真正挡路的 N 条计数腿已拆到后台，不再等。
@@ -205,6 +210,8 @@ async function loadCategories() {
       categories.value = []
       catError.value = true
     }
+  } finally {
+    if (myKind === kind.value) catLoading.value = false
   }
 }
 
@@ -436,7 +443,7 @@ function retryCategories() {
           >
             {{ c.name }}<span v-if="c.count !== null" class="lb-pill__count">{{ c.count }}</span>
           </button>
-          <span v-if="!categories.length" class="lb-pill lb-pill--on">全部</span>
+          <span v-if="!categories.length && !catLoading" class="lb-pill lb-pill--on">全部</span>
           <button
             v-if="catError && !categories.length"
             type="button"
@@ -451,10 +458,17 @@ function retryCategories() {
             type="button"
             class="lb-sortbtn"
             :aria-expanded="sortOpen"
+            :aria-label="`排序：${sortLabel}`"
             @click="sortOpen = !sortOpen"
           >
-            {{ sortLabel }}
+            <span class="lb-sortbtn__label">{{ sortLabel }}</span>
             <ArrowUpDown :size="14" aria-hidden="true" />
+            <!-- 手机端第二段（友站 f052/f054 形态：纯图标双段胶囊约 84×40，
+                 左段开排序菜单、右段是当前升降序状态图标，整钮同开菜单） -->
+            <span class="lb-sortbtn__order" aria-hidden="true">
+              <ArrowDown v-if="sortOrder === 'Descending'" :size="14" />
+              <ArrowUp v-else :size="14" />
+            </span>
           </button>
           <template v-if="sortOpen">
             <div class="lb-sortveil" @click="sortOpen = false"></div>
@@ -481,7 +495,9 @@ function retryCategories() {
         </div>
       </div>
 
-      <p class="lb-count">{{ activeCatName }} · {{ total }} 部</p>
+      <!-- 计数行是结论性文案：首屏数据未到位（loading 且无任何缓存条目）时不渲染，
+           不许先露出「全部 · 0 部」再跳成真实数字（2026-11-15 通用口径） -->
+      <p v-if="!loading || items.length" class="lb-count">{{ activeCatName }} · {{ total }} 部</p>
 
       <!-- 骨架屏（录屏形态）：海报灰块 + 居中站标，网格与真实网格同列数 -->
       <div v-if="loading" class="lb-skel" role="status" aria-label="正在加载">
@@ -688,9 +704,15 @@ function retryCategories() {
 @media (max-width: 1023px) {
   .lb-grid { grid-template-columns: repeat(4, 1fr); }
 }
+/* 排序钮第二段（当前升降序）：桌面端不渲染，手机端与第一段以细线分隔 */
+.lb-sortbtn__order {
+  display: none;
+}
 @media (max-width: 767px) {
   .lb-grid { grid-template-columns: repeat(3, 1fr); gap: 22px 12px; }
-  .lb-h1 { font-size: 40px; }
+  /* H1 收小（2026-11-15 逐帧量测 f052/f054：友站「剧集/电影」约 30–32px，
+     此前 40px 大一号）；分类胶囊高按 f054 实测约 35 收至 36 */
+  .lb-h1 { font-size: 32px; }
   /* 用户真机截图：手机版无「媒体库」眉题 */
   .lb-eyebrow { display: none; }
   .lb-h1 { margin-top: 0; }
@@ -701,7 +723,21 @@ function retryCategories() {
     scrollbar-width: none;
   }
   .lb-pills::-webkit-scrollbar { display: none; }
-  .lb-pill { height: 38px; padding: 0 14px; }
+  .lb-pill { height: 36px; padding: 0 14px; }
+  /* 排序胶囊手机形态：去文字、双段纯图标，宽约 84（f054 实测） */
+  .lb-sortbtn {
+    width: 84px;
+    justify-content: center;
+    gap: 10px;
+    padding: 0;
+  }
+  .lb-sortbtn__label { display: none; }
+  .lb-sortbtn__order {
+    display: inline-flex;
+    align-items: center;
+    padding-left: 10px;
+    border-left: 1px solid var(--uhd-s-border);
+  }
 }
 .lb-error,
 .lb-empty {

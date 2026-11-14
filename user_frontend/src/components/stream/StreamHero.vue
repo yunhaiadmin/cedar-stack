@@ -116,7 +116,7 @@ function onBgError() {
     </Transition>
     <div class="sh-fade-bottom" aria-hidden="true"></div>
     <div class="sh-content">
-      <p class="sh-eyebrow">首页推荐 · {{ String(index + 1).padStart(2, '0') }}/{{ String(items.length).padStart(2, '0') }}</p>
+      <p class="sh-eyebrow">首页推荐 · {{ String(index + 1).padStart(2, '0') }} / {{ String(items.length).padStart(2, '0') }}</p>
       <h1 class="sh-title">{{ current.title }}</h1>
       <p class="sh-meta">
         {{ current.meta }}<b v-if="current.rating" class="sh-rating"> · {{ current.rating.toFixed(1) }}</b>
@@ -364,21 +364,22 @@ function onBgError() {
   .sh-overview {
     display: none;
   }
-  /* D2-03：手机播放钮约 110×38（QA 估约 115×36、录屏帧定位约 98 宽，取中值）；
+  /* D2-03 修订（2026-11-15 录屏帧 f046 逐帧量测）：播放钮实测约
+     124×39 CSS px（帧宽 720≈390 CSS px 换算），此前 110×38 偏小一号；
      分段指示保留并与播放钮同行靠右（录屏帧实证）、双圆箭头隐藏 */
   .sh-play {
-    width: 110px;
-    height: 38px;
-    border-radius: 19px;
-    font-size: 13.5px;
+    width: 124px;
+    height: 40px;
+    border-radius: 20px;
+    font-size: 15px;
     margin-top: 16px;
   }
   .sh-arrow {
     display: none;
   }
   .sh-controls {
-    /* 与播放钮（内容底 84 + 高 38）垂直居中对齐 */
-    bottom: 100px;
+    /* 与播放钮（内容底 84 + 高 40、点线高 4）垂直居中对齐 */
+    bottom: 102px;
     right: 16px;
   }
   .sh-dots {
