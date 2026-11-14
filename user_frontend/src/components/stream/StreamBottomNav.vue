@@ -153,7 +153,11 @@ function submitSearch() {
     z-index: 65;
   }
 }
-/* 液态玻璃块：radius 28、blur 24px */
+/* 液态玻璃块：radius 28、blur 24px + saturate 160%；
+   玻璃配方六件齐：半透底（--uhd-s-glass）＋亮边（--uhd-s-glass-border）
+   ＋内高光/大柔影（--uhd-s-navdock-shadow 内的 inset 与外影）。
+   2026-11-14 用户亲点「玻璃程度不够」后按友站观感调透，此前底 alpha
+   0.72/0.66 近实色、边是暗边、无内高光，看着是磨砂塑料板不是玻璃。 */
 .sbn-main,
 .sbn-search-block {
   border-radius: 28px;
@@ -161,7 +165,7 @@ function submitSearch() {
   border: 1px solid var(--uhd-s-glass-border);
   backdrop-filter: blur(24px) saturate(160%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
-  box-shadow: var(--uhd-s-shadow-pill);
+  box-shadow: var(--uhd-s-navdock-shadow);
 }
 .sbn-main {
   position: relative;
@@ -169,7 +173,9 @@ function submitSearch() {
   display: flex;
   padding: 4px; /* 内 p-1 */
 }
-/* 激活滑块：宽 25%、白 10%、滑动跟随 */
+/* 激活滑块：宽 25%、滑动跟随；选中片与坞身同材质、只差一档
+   （深色＝提亮玻璃，浅色＝浅灰玻璃，均配 --uhd-s-slider-shadow 内高光），
+   不再用平板实色（原浅色 rgba(17,17,17,0.08) 平灰、深色白 0.10） */
 .sbn-slider {
   position: absolute;
   top: 4px;
@@ -178,6 +184,7 @@ function submitSearch() {
   width: calc((100% - 8px) / 4);
   border-radius: 24px;
   background: var(--uhd-s-slider-bg);
+  box-shadow: var(--uhd-s-slider-shadow);
   transition: transform 0.28s var(--uhd-ease-pop);
 }
 .sbn-tab {
