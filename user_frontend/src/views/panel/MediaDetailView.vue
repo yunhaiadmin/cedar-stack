@@ -28,6 +28,7 @@ import { embyApi, mediaSeekApi, storeApi, type PortalResumeItem } from '@/api'
 import { seriesFollowApi } from '@/api/economy'
 import SeriesEpisodeList from '@/components/panel/SeriesEpisodeList.vue'
 import PlayerSchemeSheet from '@/components/panel/PlayerSchemeSheet.vue'
+import DetailTopPill from '@/components/panel/DetailTopPill.vue'
 import StreamShell from '@/components/stream/StreamShell.vue'
 import StreamRow from '@/components/stream/StreamRow.vue'
 import StreamPosterCard from '@/components/stream/StreamPosterCard.vue'
@@ -144,19 +145,83 @@ async function removeWatchRecord() {
   }
 }
 
+/** 动态范围标签：VideoRange 原值优先，判不出再从 DisplayTitle 里认，
+    两处都没有证据就不出（不许默认 SDR 冒充探测结果） */
+function rangeChipOf(video?: { VideoRange?: string | null; DisplayTitle?: string } | null): string {
+  const raw = (video?.VideoRange || '').trim()
+  if (raw) {
+    if (/dolby/i.test(raw)) return 'Dolby Vision'
+    if (/hdr10\+/i.test(raw)) return 'HDR10+'
+    if (/hdr10/i.test(raw)) return 'HDR10'
+    if (/hlg/i.test(raw)) return 'HLG'
+    if (/hdr/i.test(raw)) return 'HDR'
+    if (/sdr/i.test(raw)) return 'SDR'
+    return ''
+  }
+  const t = video?.DisplayTitle || ''
+  for (const tok of ['Dolby Vision', 'HDR10+', 'HDR10', 'HLG', 'HDR']) {
+    if (t.includes(tok)) return tok
+  }
+  return ''
+}
+
+/** 声道标签：Atmos 看音轨标题里的真实标记，其余按声道布局/声道数；
+    判不出返回空（不猜布局） */
+function audioChipOf(streams: NonNullable<EmbyItem['MediaSources']>[number]['MediaStreams']): string {
+  const audios = (streams || []).filter((s) => s.Type === 'Audio')
+  if (!audios.length) return ''
+  if (audios.some((s) => /atmos/i.test(`${s.DisplayTitle || ''} ${s.Title || ''}`))) return '杜比全景声'
+  const a = audios.find((s) => s.IsDefault) || audios[0]
+  const layout = (a.ChannelLayout || '').toLowerCase()
+  if (layout.includes('7.1')) return '7.1声道'
+  if (layout.includes('5.1')) return '5.1声道'
+  if (layout === 'stereo' || layout === '2.0') return '2.0声道'
+  const byChannels: Record<number, string> = { 8: '7.1声道', 6: '5.1声道', 2: '2.0声道', 1: '1.0声道' }
+  return a.Channels ? byChannels[a.Channels] || '' : ''
+}
+
+/** 中文字幕：字幕轨语言为中文或文件名/标题带中文标记才算，不猜 */
+function hasChineseSub(streams: NonNullable<EmbyItem['MediaSources']>[number]['MediaStreams']): boolean {
+  return (streams || []).some((s) => {
+    if (s.Type !== 'Subtitle') return false
+    const lang = (s.Language || '').trim().toLowerCase()
+    if (['chi', 'zho', 'zh', 'zh-cn', 'zh-tw', 'zh-hans', 'zh-hant'].includes(lang)) return true
+    return /中文|简中|繁中|chs|cht/i.test(s.DisplayTitle || '')
+  })
+}
+
+/**
+ * 规格胶囊（友站详情形态）：分辨率 / 动态范围 / 声道 / 中文字幕，
+ * 全部由主源的真实探测字段驱动，没有就不渲染——与播放弹层版本卡
+ * 同一套口径（弹层展开网格是同一批字段）。旧口径（分级 + 容器格式）
+ * 不是规格，已撤：分级在信息栏、容器在弹层展开网格里。
+ */
 const specChips = computed(() => {
   const it = item.value
   if (!it) return [] as string[]
+  const src = (it.MediaSources || [])[0]
+  const streams = src?.MediaStreams || []
+  const video = streams.find((s) => s.Type === 'Video')
   const chips: string[] = []
-  if (it.Width && it.Height) {
-    chips.push(it.Height >= 2000 ? '4K' : it.Height >= 1000 ? '1080p' : `${it.Height}p`)
+  const w = video?.Width ?? it.Width
+  const h = video?.Height ?? it.Height
+  if (w && h) {
+    chips.push(h >= 2000 || w >= 3800 ? '4K' : h >= 1000 || w >= 1900 ? '1080p' : h >= 700 || w >= 1200 ? '720p' : `${h}p`)
   }
-  if (it.OfficialRating) chips.push(it.OfficialRating)
-  for (const s of it.MediaSources || []) {
-    if (s.Container) chips.push(s.Container.toUpperCase())
-  }
-  return [...new Set(chips)].slice(0, 4)
+  const range = rangeChipOf(video)
+  if (range) chips.push(range)
+  const audio = audioChipOf(streams)
+  if (audio) chips.push(audio)
+  if (hasChineseSub(streams)) chips.push('中文字幕')
+  return chips
 })
+
+/** 影片信息「主演」行：People 按后端 sort_order 排，前 5 位即主演序。
+    导演无数据面：后端 _people_dto 只下发 Actor、库里没有导演字段，
+    不渲染导演行（不许拿演员冒充）。 */
+const leadActors = computed(() =>
+  (item.value?.People || []).slice(0, 5).map((p) => p.Name).filter(Boolean),
+)
 
 interface VersionCard {
   key: string
@@ -384,33 +449,39 @@ watch(itemId, () => {
     </div>
 
     <template v-else-if="item">
-      <!-- 剧照带 Hero：高约 340、底部渐隐至页面底 -->
+      <!-- 剧照带 Hero：桌面高约 340 渐隐；移动端全幅 backdrop 大图
+           （2026-11-14 用户截图亲点友站形态）：高约 40vh、底部渐隐入
+           页底，类型/片名/信息行叠在渐隐尾上，无海报卡 -->
       <div class="md-hero">
-        <img v-if="backdrop" :src="backdrop" alt="" class="md-hero__img" />
+        <!-- 无 backdrop 的条目用海报图兜底当顶图，避免顶图带空白 -->
+        <img v-if="backdrop || poster" :src="backdrop || poster" alt="" class="md-hero__img" />
         <div class="md-hero__fade" aria-hidden="true"></div>
         <button type="button" class="md-back" aria-label="返回" @click="goBack">
           <ArrowLeft :size="20" />
         </button>
+        <!-- 移动端右上玻璃胶囊：月牙主题切换 + X 关闭（仅移动端显示） -->
+        <DetailTopPill @close="goBack" />
       </div>
 
       <div class="md-wrap">
         <p class="md-type">{{ typeLabel }}</p>
         <div class="md-main">
-          <div class="md-poster">
+          <!-- 有顶图（backdrop 或海报兜底）时移动端隐藏海报卡（顶图就是
+               主视觉，不重复摆卡）；两样图都没有才保留海报卡占位兜底 -->
+          <div class="md-poster" :class="{ 'md-poster--dup': !!(backdrop || poster) }">
             <img v-if="poster && !posterBroken" :src="poster" :alt="item.Name" class="md-poster__img" @error="posterBroken = true" />
             <span v-else class="md-poster__fallback" aria-hidden="true">{{ posterInitial }}</span>
           </div>
 
           <div class="md-info">
             <h1 class="md-title" :class="{ 'md-title--movie': !isSeries }">{{ item.Name }}</h1>
+            <!-- 信息行（友站形态）：年份 + 时长纯文字，其后接类型描边
+                 胶囊同行；评分挪去右侧信息栏，不再混在信息行里 -->
             <p class="md-meta">
               <template v-for="(p, i) in metaParts" :key="i">{{ i ? ' · ' : '' }}{{ p }}</template>
-              <b v-if="item.CommunityRating" class="md-rating"> · ★ {{ item.CommunityRating.toFixed(1) }}</b>
+              <span v-for="g in (item.Genres || []).slice(0, 4)" :key="`g-${g}`" class="md-chip md-chip--genre">{{ g }}</span>
             </p>
-            <div v-if="item.Genres?.length" class="md-chips">
-              <span v-for="g in item.Genres.slice(0, 4)" :key="g" class="md-chip">{{ g }}</span>
-            </div>
-            <div v-if="specChips.length" class="md-chips">
+            <div v-if="specChips.length" class="md-chips md-chips--spec">
               <span v-for="c in specChips" :key="c" class="md-chip">{{ c }}</span>
             </div>
             <p v-if="resumeText" class="md-resume">
@@ -488,10 +559,16 @@ watch(itemId, () => {
             <p class="md-note">点「立即播放」选个播放器就能看；本页也能看这部片齐不齐，缺的集可以直接求补，补齐后会通知你。</p>
           </div>
 
-          <!-- 右侧信息栏：竖分隔线 + TMDB/IMDb chip -->
-          <aside class="md-rail" aria-label="条目信息">
+          <!-- 右侧信息栏（移动端排在演职人员之后）：竖分隔线 + TMDB/IMDb chip -->
+          <aside class="md-rail" :class="{ 'md-rail--series': isSeries }" aria-label="条目信息">
             <h2 class="md-rail__title">{{ isSeries ? '剧集信息' : '影片信息' }}</h2>
             <dl class="md-rail__list">
+              <div v-if="leadActors.length" class="md-rail__row">
+                <dt>主演</dt><dd>{{ leadActors.join(' / ') }}</dd>
+              </div>
+              <div v-if="item.CommunityRating" class="md-rail__row">
+                <dt>评分</dt><dd>★ {{ item.CommunityRating.toFixed(1) }}</dd>
+              </div>
               <div v-if="item.ProductionYear" class="md-rail__row">
                 <dt>年份</dt><dd>{{ item.ProductionYear }}</dd>
               </div>
@@ -574,7 +651,7 @@ watch(itemId, () => {
           :to="`/media/${rec.Id}`"
         />
       </StreamRow>
-      <div style="height: 48px"></div>
+      <div class="md-tail"></div>
 
       <!-- 选播放器弹层（现行组件的片库面皮）：起播/绑盘引导/状态条都在里面 -->
       <PlayerSchemeSheet
@@ -762,6 +839,21 @@ watch(itemId, () => {
   border: 1px solid var(--uhd-s-border);
   font-size: 13px;
   color: var(--uhd-s-text-2);
+}
+/* 信息行内的类型胶囊：描边小胶囊、与年份/时长同行（友站形态） */
+.md-chip--genre {
+  min-width: 0;
+  height: 24px;
+  margin-left: 10px;
+  padding: 0 11px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: var(--uhd-fw-semibold);
+  vertical-align: 2px;
+}
+/* 底部留白：桌面给页脚让位，移动端另在媒体查询里加高避开玻璃坞 */
+.md-tail {
+  height: 48px;
 }
 /* 续看提示胶囊：高 36/圆角 18/边框 */
 .md-resume {
@@ -1180,52 +1272,61 @@ watch(itemId, () => {
   50% { opacity: 0.55; }
 }
 
-/* 手机详情 = 录屏的 app 形态：无剧照带，顺序为
-   返回 → 海报 → 类型小字 → 大标题 → 元信息 → 全宽播放行（吸顶）→ 简介
-   → 演职员 → 集数 → 信息表 → 推荐
-   （海报原被整块隐藏，2026-11-13 用户亲报「详情页没有显示海报」后补回） */
+/* 手机详情 = 友站 app 形态（2026-11-14 用户截图亲点）：全幅 backdrop
+   顶图（高约 40vh、底部渐隐入页底）→ 类型小字/大标题/信息行叠在渐隐
+   尾上 → 全宽播放行（吸顶）→ 简介 → 演职人员 → 影片信息 → 版本/剧集
+   → 推荐。有 backdrop 时不再摆海报卡（顶图即主视觉）；无 backdrop 时
+   海报卡仍在内容首位兜底（2026-11-13「详情页没有显示海报」教训）。 */
 @media (max-width: 767px) {
   .md-hero {
-    height: auto;
+    height: 40vh;
+    min-height: 300px;
+    max-height: 370px;
     margin-top: 0;
-    /* D2-01 后手机无顶栏，回退钮不再需要给胶囊让位 */
-    padding-top: 16px;
-    background: none;
+    padding-top: 0;
   }
-  .md-hero__img,
-  .md-hero__fade {
-    display: none;
-  }
+  /* 返回钮：圆形玻璃，悬在顶图左侧约垂直居中（截图采样位） */
   .md-back {
-    position: static;
-    margin-left: 20px;
-    width: 44px;
-    height: 44px;
-    background: var(--uhd-s-card-soft);
-    border: 1px solid var(--uhd-s-border);
-    color: var(--uhd-s-text);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
+    position: absolute;
+    top: 50%;
+    left: 16px;
+    transform: translateY(-50%);
+    width: 46px;
+    height: 46px;
+    margin-left: 0;
   }
   .md-wrap {
     display: flex;
     flex-direction: column;
+    padding: 0 20px;
+    /* 内容整体压过剧照带：hero 是定位元素、绘制层在普通流之上，
+       标题等与渐隐区重叠的元素不抬层就会被渐隐盖掉（实测标题消失） */
+    position: relative;
+    z-index: 2;
   }
   .md-main {
     display: contents;
   }
-  /* 海报在内容首位真显示：132 宽、2:3，不被任何装饰层覆盖 */
+  /* 有 backdrop 时海报卡与顶图重复，隐藏；无 backdrop 时仍居首位兜底 */
   .md-poster {
     order: -1;
     flex: none;
     width: 132px;
     margin-top: 12px;
   }
+  .md-poster--dup {
+    display: none;
+  }
   .md-poster__fallback {
     font-size: 44px;
   }
+  /* 类型小字叠在顶图渐隐尾上（负边距拉进渐隐区） */
   .md-type {
     order: 0;
+    position: relative;
+    z-index: 2;
+    margin-top: -72px;
+    font-size: 15px;
   }
   /* info 也打散：让播放行以整页（.md-wrap）为吸顶容器，全程常驻 */
   .md-info {
@@ -1234,40 +1335,83 @@ watch(itemId, () => {
   .md-info > * {
     order: 1;
   }
-  .md-versions {
+  /* 段序（友站截图）：演职人员 → 影片信息 → 版本/剧集 → 推荐；
+     剧集时信息栏仍排在剧集列表之后（先看集、后看信息） */
+  .md-cast {
     order: 2;
   }
-  .md-cast {
-    order: 3;
-  }
-  .md-episodes {
-    order: 4;
-  }
   .md-rail {
-    order: 5;
+    order: 3;
     border-left: none;
     border-top: 1px solid var(--uhd-s-divider);
     padding-left: 0;
     margin-top: 36px;
     width: auto;
   }
+  .md-rail--series {
+    order: 5;
+  }
+  .md-versions {
+    order: 4;
+  }
+  .md-episodes {
+    order: 4;
+  }
   .sr-row {
     order: 6;
   }
   .md-title {
-    font-size: 34px;
+    font-size: 32px;
   }
   .md-title--movie {
-    font-size: 36px;
+    font-size: 33px;
+  }
+  /* 规格胶囊（截图形态）：实心深底（浅色为浅灰底）粗字小方角胶囊 */
+  .md-chips--spec {
+    gap: 7px;
+    margin-top: 14px;
+  }
+  .md-chips--spec .md-chip {
+    min-width: 0;
+    height: 27px;
+    padding: 0 10px;
+    border-radius: 8px;
+    border-color: transparent;
+    background: var(--uhd-s-card-soft);
+    color: var(--uhd-s-text);
+    font-size: 12.5px;
+    font-weight: var(--uhd-fw-bold);
+    letter-spacing: 0.02em;
+  }
+  /* 简介行高收紧到截图口径（16px/26px，仍 3 行截断） */
+  .md-overview {
+    line-height: 26px;
+  }
+  /* 友站移动端简介下无说明段，段落直接接演职人员 */
+  .md-note {
+    display: none;
+  }
+  /* 演职人员：大头像横滑（截图采样约 88px） */
+  .md-cast__track {
+    gap: 16px;
+  }
+  .md-cast__avatar {
+    width: 88px;
+    height: 88px;
+    font-size: 26px;
+  }
+  /* 底部留白避开全站玻璃坞 */
+  .md-tail {
+    height: 120px;
   }
   /* 播放行吸顶（录屏 f03 形态）：毛玻璃条常驻顶部（手机已无顶栏） */
   .md-actions {
     position: sticky;
     top: 8px;
     z-index: 8;
-    margin-left: -24px;
-    margin-right: -24px;
-    padding: 8px 24px;
+    margin-left: -20px;
+    margin-right: -20px;
+    padding: 8px 20px;
     background: var(--uhd-s-pill-bg);
     backdrop-filter: blur(18px) saturate(160%);
     -webkit-backdrop-filter: blur(18px) saturate(160%);
@@ -1302,9 +1446,10 @@ watch(itemId, () => {
       var(--uhd-s-shadow-pill);
   }
   .md-btn--fav {
-    flex: 0 0 52px;
-    width: 52px;
-    min-width: 52px;
+    flex: 0 0 50px;
+    width: 50px;
+    min-width: 50px;
+    height: 50px;
     padding: 0;
     border-radius: 50%;
     font-size: 0;
@@ -1312,9 +1457,10 @@ watch(itemId, () => {
   }
   /* 移除钮在吸顶条里与收藏钮同形：圆形图标钮（设施与桌面一致，只变排版） */
   .md-btn--remove {
-    flex: 0 0 52px;
-    width: 52px;
-    min-width: 52px;
+    flex: 0 0 50px;
+    width: 50px;
+    min-width: 50px;
+    height: 50px;
     padding: 0;
     border-radius: 50%;
     gap: 0;
@@ -1324,6 +1470,11 @@ watch(itemId, () => {
   }
   .md-btn--state {
     display: none;
+  }
+  /* 集数条全幅出血量随页边距 20px 同步（基规则按 24px 写） */
+  .md-episodes :deep(.ep-strip) {
+    width: calc(100% + 40px);
+    margin-left: -20px;
   }
   .md-skel__band {
     height: 120px;
