@@ -26,6 +26,12 @@ def db():
     models.LotteryBlacklist.__table__.create(engine, checkfirst=True)
     models.PointsLog.__table__.create(engine, checkfirst=True)
     models.WelfareGrantLog.__table__.create(engine, checkfirst=True)
+    # 发奖改走 codes.grant_membership_days（2026-11-14）：需服/套餐/订阅三表
+    #（realms.claim → ensure_default_realm 查 server_realms，
+    # _resolve_plan 查 SubscriptionPlan，UserSubscription 落订阅行）。
+    models.ServerRealm.__table__.create(engine, checkfirst=True)
+    models.SubscriptionPlan.__table__.create(engine, checkfirst=True)
+    models.UserSubscription.__table__.create(engine, checkfirst=True)
     Session = sessionmaker(bind=engine)
     session = Session()
     yield session
@@ -264,10 +270,6 @@ def test_distribute_days_prizes(db):
     rnd = _make_round(db)
     _fix_seed(db, rnd)
     users = _join_five(db, rnd)
-    # 预置已过期的公益资格，覆盖"续期从当前时间起算"路径
-    for u in users:
-        u.welfare_expires_at = datetime.now() - timedelta(days=1)
-        u.is_welfare = True
     db.commit()
     lottery.draw_round(db, rnd.id)
 
@@ -277,7 +279,8 @@ def test_distribute_days_prizes(db):
     assert result["skipped"] == 0
     assert result["errors"] == []
 
-    # 两名中奖者按各自奖品天数（100 / 30）续期，误差一天内
+    # 两名中奖者按各自奖品天数（100 / 30）加订阅天数，误差一天内
+    #（公益资格已随福利整族于 2026-11-14 删除，发奖改走订阅系统）。
     prize_by_id = {p.id: p for p in db.query(models.LotteryRoundPrize).filter_by(round_id=rnd.id)}
     entry_user = {e.id: e.user_id for e in db.query(models.LotteryRoundEntry).filter_by(round_id=rnd.id)}
     winners = db.query(models.LotteryRoundWinner).filter_by(round_id=rnd.id).all()
@@ -287,15 +290,17 @@ def test_distribute_days_prizes(db):
     for w in winners:
         uid = entry_user[w.entry_id]
         winner_ids.add(uid)
-        u = db.query(models.WebUser).filter_by(id=uid).first()
-        assert u.is_welfare is True
-        got_days = (u.welfare_expires_at - now).days
+        sub = (db.query(models.UserSubscription)
+               .filter_by(user_id=uid, status="active")
+               .order_by(models.UserSubscription.id.desc()).first())
+        assert sub is not None
+        got_days = (sub.end_date - now).days
         assert abs(got_days - prize_by_id[w.prize_id].value) <= 1, (got_days, prize_by_id[w.prize_id].value)
-    # 没中奖的人资格不动（仍是过期状态）
+    # 没中奖的人没有订阅行
     for u in users:
         if u.id not in winner_ids:
-            fresh = db.query(models.WebUser).filter_by(id=u.id).first()
-            assert fresh.welfare_expires_at < now
+            assert (db.query(models.UserSubscription)
+                    .filter_by(user_id=u.id).count()) == 0
 
 
 def test_distribute_whitelist(db):
@@ -310,9 +315,14 @@ def test_distribute_whitelist(db):
 
     winner = db.query(models.LotteryRoundWinner).filter_by(round_id=rnd.id).first()
     entry = db.query(models.LotteryRoundEntry).filter_by(id=winner.entry_id).first()
-    u = db.query(models.WebUser).filter_by(id=entry.user_id).first()
-    assert u.is_welfare is True
-    assert u.welfare_expires_at is None  # 永久
+    # 白名单奖品改走订阅长期有效（days=-1 → PERMANENT_DAYS 36500 天，
+    # 公益资格已随福利整族于 2026-11-14 删除）。
+    from datetime import datetime as _dt
+    sub = (db.query(models.UserSubscription)
+           .filter_by(user_id=entry.user_id, status="active")
+           .order_by(models.UserSubscription.id.desc()).first())
+    assert sub is not None
+    assert (sub.end_date - _dt.now()).days >= 36500 - 1
 
 
 def test_distribute_idempotent(db):

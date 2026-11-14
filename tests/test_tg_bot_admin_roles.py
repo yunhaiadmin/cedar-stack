@@ -97,12 +97,14 @@ def test_viewer_gift_via_execute_refused_zero_effect(db):
     from backend.tg_bot import whois_panel
 
     viewer, _op, target = _staff(db)
-    # 赠送档位用 gw7（赠能量档位已随积分删除摘除，2026-11-13）
-    note = whois_panel.execute(db, viewer, target, "gw7")
+    # 赠送档位用 gv30（赠资格 gw* 已随福利整族于 2026-11-14 删除，
+    # 赠能量档位已随积分删除摘除，2026-11-13；现存唯一赠送档位是查看权）
+    note = whois_panel.execute(db, viewer, target, "gv30")
     assert READONLY_MARK in note
     db.refresh(target)
     assert not target.is_welfare
     assert db.query(models.PointsLog).count() == 0
+    assert db.query(models.EmbyViewUnlock).count() == 0
 
 
 def test_viewer_unban_and_welfare_gift_refused(db):
@@ -115,10 +117,11 @@ def test_viewer_unban_and_welfare_gift_refused(db):
     assert READONLY_MARK in note
     db.refresh(target)
     assert target.is_active is False
-    note = whois_panel.execute(db, viewer, target, "gw30")
+    note = whois_panel.execute(db, viewer, target, "gv30")
     assert READONLY_MARK in note
     db.refresh(target)
     assert not target.is_welfare
+    assert db.query(models.EmbyViewUnlock).count() == 0
 
 
 def test_operator_ban_and_gift_via_execute_allowed(db):
@@ -130,16 +133,22 @@ def test_operator_ban_and_gift_via_execute_allowed(db):
     db.refresh(target)
     assert target.is_active is False
     # 赠送走 ask 确认页拿一次性 nonce 后执行（PA-058 口径不变）；
-    # 档位用资格 gw7（赠能量档位已随积分删除摘除，2026-11-13）
-    _text, markup = whois_panel.confirm_page(db, target, "gw7")
+    # 档位用查看权 gv30（赠资格 gw* 已随福利整族于 2026-11-14 删除，
+    # 现存唯一赠送档位是查看权 +30 天）
+    from datetime import datetime as _dt
+    _text, markup = whois_panel.confirm_page(db, target, "gv30")
     do_data = [d for d in _datas(markup)
-               if d.startswith(f"whois:do:{target.id}:gw7")][0]
+               if d.startswith(f"whois:do:{target.id}:gv30")][0]
     nonce = do_data.split(":")[-1]
-    note = whois_panel.execute(db, operator, target, "gw7", nonce=nonce)
-    assert "赠送公益资格 7 天" in note
+    before = _dt.now()
+    note = whois_panel.execute(db, operator, target, "gv30", nonce=nonce)
+    assert "赠送查看权 30 天" in note
     db.refresh(target)
-    assert target.is_welfare is True
-    assert target.welfare_expires_at is not None
+    assert target.is_welfare is False
+    row = db.query(models.EmbyViewUnlock).filter_by(user_id=target.id).first()
+    assert row is not None
+    assert row.expires_at is not None
+    assert abs((row.expires_at - before).total_seconds() - 30 * 86400) < 120
 
 
 def test_operator_cannot_ban_other_admin_guard_kept(db):

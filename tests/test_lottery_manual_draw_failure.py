@@ -37,6 +37,10 @@ def db():
     models.LotteryBlacklist.__table__.create(engine, checkfirst=True)
     models.PointsLog.__table__.create(engine, checkfirst=True)
     models.WelfareGrantLog.__table__.create(engine, checkfirst=True)
+    # 发奖改走 codes.grant_membership_days（2026-11-14）：需服/套餐/订阅三表
+    models.ServerRealm.__table__.create(engine, checkfirst=True)
+    models.SubscriptionPlan.__table__.create(engine, checkfirst=True)
+    models.UserSubscription.__table__.create(engine, checkfirst=True)
     Session = sessionmaker(bind=engine)
     session = Session()
     yield session
@@ -132,8 +136,9 @@ def test_manual_draw_distribute_failure_keeps_done(db, monkeypatch):
     db.refresh(rnd)
     # WHERE status='drawing' 匹配不到行：状态保持 done，不会触发重开奖
     assert rnd.status == "done"
+    # 发奖改走订阅（2026-11-14）：补发前无人持有订阅行
     assert (
-        db.query(models.WelfareGrantLog).filter(models.WelfareGrantLog.user_id.in_(user_ids)).count() == 0
+        db.query(models.UserSubscription).filter(models.UserSubscription.user_id.in_(user_ids)).count() == 0
     )
 
     # 恢复真实发奖后重试：走 done+pending 补发，只发一份
@@ -143,14 +148,15 @@ def test_manual_draw_distribute_failure_keeps_done(db, monkeypatch):
     assert res["distribute"]["distributed"] == 1
     db.refresh(rnd)
     assert rnd.status == "done"
-    logs = db.query(models.WelfareGrantLog).filter(models.WelfareGrantLog.user_id.in_(user_ids)).all()
-    assert len(logs) == 1
+    subs = db.query(models.UserSubscription).filter(models.UserSubscription.user_id.in_(user_ids)).all()
+    assert len(subs) == 1
+    assert subs[0].status == "active"
 
     # 再点一次：已全部发放，400 拒绝，不会重复发奖
     with pytest.raises(HTTPException) as ei2:
         welfare_admin.draw_lottery_round(rnd.id, current_admin=admin, db=db)
     assert ei2.value.status_code == 400
-    assert db.query(models.WelfareGrantLog).filter(models.WelfareGrantLog.user_id.in_(user_ids)).count() == 1
+    assert db.query(models.UserSubscription).filter(models.UserSubscription.user_id.in_(user_ids)).count() == 1
 
 
 def test_manual_draw_failure_detail_matches_actual_state_draw(db, monkeypatch):

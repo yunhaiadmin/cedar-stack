@@ -163,10 +163,11 @@ def test_welfare_config_invalidate(db, admin_user):
         db,
         admin_user,
     )
-    _prime(db, "welfare_grace_days", "7")
-    r = TestClient(app).put("/api/admin/welfare/config", json={"welfare_grace_days": "10"})
+    # welfare_grace_days 已随福利整族于 2026-11-14 删除：改用同端点现存键
+    _prime(db, "register_gift_view_days", "7")
+    r = TestClient(app).put("/api/admin/welfare/config", json={"register_gift_view_days": "10"})
     assert r.status_code == 200
-    assert store.get_value(db, "welfare_grace_days", "7") == "10"
+    assert store.get_value(db, "register_gift_view_days", "7") == "10"
 
 
 def test_registration_settings_invalidate(db, admin_user):

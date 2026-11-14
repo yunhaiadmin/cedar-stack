@@ -36,6 +36,10 @@ def db():
     models.LotteryBlacklist.__table__.create(engine, checkfirst=True)
     models.PointsLog.__table__.create(engine, checkfirst=True)
     models.WelfareGrantLog.__table__.create(engine, checkfirst=True)
+    # 发奖改走 codes.grant_membership_days（2026-11-14）：需服/套餐/订阅三表
+    models.ServerRealm.__table__.create(engine, checkfirst=True)
+    models.SubscriptionPlan.__table__.create(engine, checkfirst=True)
+    models.UserSubscription.__table__.create(engine, checkfirst=True)
     Session = sessionmaker(bind=engine)
     session = Session()
     yield session
@@ -145,12 +149,21 @@ def test_run_due_draws_recovers_crashed_auto_round(db, monkeypatch):
     )
     assert len(winners) == 1
     assert all(w.distributed for w in winners)
-    assert (
-        db.query(models.WelfareGrantLog)
-        .filter(models.WelfareGrantLog.channel == "lottery_win")
-        .count()
-        == 1
+    # 发奖改走订阅（2026-11-14）：中奖者持有 7 天有效订阅一行
+    winner_user_ids = [
+        e.user_id for e in
+        db.query(models.LotteryRoundEntry)
+        .filter(models.LotteryRoundEntry.round_id == rnd.id).all()
+    ]
+    subs = (
+        db.query(models.UserSubscription)
+        .filter(models.UserSubscription.user_id.in_(winner_user_ids),
+                models.UserSubscription.status == "active")
+        .all()
     )
+    assert len(subs) == 1
+    from datetime import datetime as _dt
+    assert abs((subs[0].end_date - _dt.now()).total_seconds() - 7 * 86400) < 180
 
 
 def test_run_due_draws_recovers_crashed_manual_round(db, monkeypatch):

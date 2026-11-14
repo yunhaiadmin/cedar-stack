@@ -82,28 +82,29 @@ def _clean_store_cache():
 def test_save_config_raises_on_out_of_range():
     """统一通道确实会拒绝非法值（抛 ConfigValueError，不写半截）。"""
     with pytest.raises(config_schema.ConfigValueError):
-        # welfare_grace_days 的 schema 是 ("int", 0, 3650)
+        # welfare_grace_days 已随福利整族于 2026-11-14 删除：改用同端点
+        # 现存键 register_gift_view_days，其 schema 是 ("int", 1, _BIG)
         config_service.save_config(
-            None, {"welfare_grace_days": 99999}, schema="welfare")
+            None, {"register_gift_view_days": 0}, schema="welfare")
 
 
 def test_welfare_invalid_value_returns_400_not_500(client):
     """端到端：非法值 → 400 + detail 中文人话，而不是 500「服务器内部错误」。"""
-    r = client.put("/api/admin/welfare/config", json={"welfare_grace_days": 99999})
+    r = client.put("/api/admin/welfare/config", json={"register_gift_view_days": 0})
     assert r.status_code == 400, r.text
     body = r.json()
     assert "detail" in body
-    assert "welfare_grace_days" in body["detail"]
+    assert "register_gift_view_days" in body["detail"]
 
 
 def test_welfare_valid_value_still_saves(client, db):
     """合法值不受影响：照常保存并返回 success。"""
-    r = client.put("/api/admin/welfare/config", json={"welfare_grace_days": 30})
+    r = client.put("/api/admin/welfare/config", json={"register_gift_view_days": 30})
     assert r.status_code == 200, r.text
     assert r.json()["success"] is True
     row = (
         db.query(models.SystemConfig)
-        .filter(models.SystemConfig.key == "welfare_grace_days")
+        .filter(models.SystemConfig.key == "register_gift_view_days")
         .first()
     )
     assert row is not None and row.value == "30"

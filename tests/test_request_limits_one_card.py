@@ -37,6 +37,8 @@ def test_monthly_limits_reject_out_of_range():
 
 
 def test_monthly_limits_still_valid_for_welfare_endpoint():
-    # welfare_request_monthly 在 WELFARE_CONFIG_SCHEMA 的历史登记保留，
-    # 公益配置端点的校验口径不因本轮收拢而变化
-    assert config_schema.WELFARE_CONFIG_SCHEMA["welfare_request_monthly"] == ("int", 0, 10000)
+    # welfare_request_monthly 已随福利整族于 2026-11-14 从福利配置表
+    # 摘除（只剩运营参数侧 ECONOMY 注册，见上两用例）：福利端点不再
+    # 接受该键，未知键静默忽略、不落库。
+    assert "welfare_request_monthly" not in config_schema.WELFARE_CONFIG_SCHEMA
+    assert config_schema.ECONOMY_CONFIG_SCHEMA["welfare_request_monthly"] == ("int", 0, 10000)
