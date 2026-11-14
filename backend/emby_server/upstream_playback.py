@@ -226,9 +226,10 @@ def read_cms_quality(mapping_id) -> Optional[dict]:
     """读 CMS 线路画质缓存（取流路径回填，展示路径消费）。
 
     内容形态：``{"width": int, "height": int, "bandwidth": int,
-    "video_range": str|None, "label": str|None,
-    "duration_sec": float}``（字段可缺；duration_sec 是 media
-    playlist 分段时长求和，只有分段清单的源才有）。
+    "video_range": str|None, "duration_sec": float}``（字段可缺；
+    duration_sec 是 media playlist 分段时长求和，只有分段清单的
+    源才有）。存量缓存可能带 ``label`` 键（画质标签已删，不再
+    生产），展示侧仍兼容读它作线路名。
     无缓存/缓存坏了返回 None——展示侧回落默认形态，不报错。
     """
     if mapping_id is None:
@@ -607,48 +608,149 @@ def _is_playlist_text(text) -> bool:
     return str(text).lstrip("﻿ \t\r\n").startswith("#EXTM3U")
 
 
+_STREAM_INF_PREFIX = "#EXT-X-STREAM-INF:"
+
+
+def _parse_attr_list(text: str) -> dict:
+    """解析 HLS 属性列表（值可带引号、引号内可含逗号）。"""
+    attrs: dict = {}
+    parts: list[str] = []
+    buf = ""
+    in_quotes = False
+    for ch in text:
+        if ch == '"':
+            in_quotes = not in_quotes
+            buf += ch
+        elif ch == "," and not in_quotes:
+            parts.append(buf)
+            buf = ""
+        else:
+            buf += ch
+    if buf:
+        parts.append(buf)
+    for part in parts:
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        attrs[key.strip().upper()] = value.strip().strip('"')
+    return attrs
+
+
+def parse_m3u8_master(text: Optional[str]) -> Optional[dict]:
+    """解析 m3u8 主清单：取 BANDWIDTH 最高的一档变体参数。
+
+    返回 ``{"width": int, "height": int, "bandwidth": int,
+    "video_range": str|None}``（缺的字段为 0/None）；没有变体行
+    （单码率清单/非主清单）返回 None——判不出就不报，不猜。
+    video_range 只取清单里有据可查的信号：CODECS 含 dvhe/dvh1 →
+    DolbyVision；VIDEO-RANGE=HLG → HLG；VIDEO-RANGE=PQ → HDR10。
+
+    本函数与 media_playlist_duration_sec 原在已删的画质标签
+    模块，CMS 画质回填是唯一存活消费方，随回填逻辑迁入本模块
+    自持，解析口径逐字不变。
+    """
+    if not text:
+        return None
+    best: Optional[dict] = None
+    for raw_line in str(text).splitlines():
+        line = raw_line.strip()
+        if not line.startswith(_STREAM_INF_PREFIX):
+            continue
+        attrs = _parse_attr_list(line[len(_STREAM_INF_PREFIX):])
+        try:
+            bandwidth = int(attrs.get("BANDWIDTH") or 0)
+        except ValueError:
+            bandwidth = 0
+        width = height = 0
+        resolution = attrs.get("RESOLUTION") or ""
+        if "x" in resolution:
+            w_text, h_text = resolution.split("x", 1)
+            try:
+                width, height = int(w_text), int(h_text)
+            except ValueError:
+                width = height = 0
+        codecs = (attrs.get("CODECS") or "").lower()
+        video_range = None
+        if "dvhe" in codecs or "dvh1" in codecs:
+            video_range = "DolbyVision"
+        elif (attrs.get("VIDEO-RANGE") or "").upper() == "HLG":
+            video_range = "HLG"
+        elif (attrs.get("VIDEO-RANGE") or "").upper() == "PQ":
+            video_range = "HDR10"
+        candidate = {"width": width, "height": height,
+                     "bandwidth": bandwidth, "video_range": video_range}
+        if best is None or bandwidth > best["bandwidth"]:
+            best = candidate
+    return best
+
+
+def media_playlist_duration_sec(text: Optional[str]) -> Optional[float]:
+    """media playlist 总时长（秒）：全部分段 #EXTINF 时长求和。
+
+    只有分段、没有主清单变体的清单（部分源直链即此形态）拿不到
+    宽高/带宽，但时长是真信号——逐行累加 ``#EXTINF:<秒>,``。
+    主清单（含 #EXT-X-STREAM-INF）不是计量对象（时长在变体清单
+    里），返回 None；没有 EXTINF 或合计非正同样返回 None：
+    判不出就不报，不猜。坏行跳过不整单作废。
+    """
+    if not text:
+        return None
+    total = 0.0
+    seen = False
+    for raw_line in str(text).splitlines():
+        line = raw_line.strip()
+        if line.startswith(_STREAM_INF_PREFIX):
+            return None
+        if not line.startswith("#EXTINF:"):
+            continue
+        num = line[len("#EXTINF:"):].split(",", 1)[0].strip()
+        try:
+            total += float(num)
+        except ValueError:
+            continue
+        seen = True
+    if not seen or total <= 0:
+        return None
+    return round(total, 3)
+
+
 def _capture_cms_quality(source, mapping_id, detail, address, *,
                          http_get_text=None) -> None:
-    """取流成功顺手回填 CMS 线路画质（备注标记 + m3u8 主清单）。
+    """取流成功顺手回填 CMS 线路画质（m3u8 主清单解析）。
 
-    两路信号：detail 的 vod_remarks 里带明确画质标记（4K/1080P
-    等）时拼标签存 ``label``；播放地址现抓清单解析分辨率/带宽/
-    范围信号（真实数值，优先于备注标签）——.m3u8 地址直抓，
+    播放地址现抓清单解析分辨率/带宽/范围信号（真实数值）
+    —— .m3u8 地址直抓，
     跳转型地址（share 页等无 .m3u8 后缀的地址）走有界跟随
     （逐跳复验、只认 #EXTM3U 开头的内容，其余一律留空）；
     抓到的若是只有分段的 media playlist（无主清单信号），只
     回填分段时长求和 ``duration_sec``。全程 fail-safe：任何
     失败只留空，绝不阻塞、绝不改写 302 结果。
 
-    新鲜度门禁（PA-073）：缓存里已有 label 且宽、高非空即视为
-    完整，直接返回、不再发任何 HTTP——画质是 vod 的固有属性，
-    7 天 TTL 内重复点播不该每次都在 302 下发前同步抓主清单；
-    仅缺失/不完整（缺 label 或宽高任一为空）时才抓取回填，
-    与 CMS_QUALITY_CACHE_TTL_SEC 注释的「过期后下一次点播取流
-    时自然回填」口径一致。
+    新鲜度门禁（PA-073）：缓存里宽、高齐全即视为完整，直接
+    返回、不再发任何 HTTP——画质是 vod 的固有属性，7 天 TTL
+    内重复点播不该每次都在 302 下发前同步抓主清单；仅缺失/
+    不完整（宽高任一为空）时才抓取回填，与
+    CMS_QUALITY_CACHE_TTL_SEC 注释的「过期后下一次点播取流
+    时自然回填」口径一致。（画质标签删除前门禁还要求 label
+    在场；标签停产后完整判定只看宽高，存量带 label 的缓存
+    同样按宽高闭合。）
 
     门禁放宽（PA-080）：media playlist 线只回填 duration_sec、403/
-    HTML 线 payload 为空，旧门禁（仅 label＋宽高）对这两类永不
-    闭合、每播重复抓取；现放宽为 label＋宽高齐全、或已有
-    duration_sec、或已有 no-master 标记（非清单/失败落点已判死）
-    任一即闭合；no-master 标记走 store_cms_quality 的 7 天 TTL，
-    到期后下一次点播自然重探。
+    HTML 线 payload 为空，旧门禁（仅宽高）对这两类永不闭合、
+    每播重复抓取；现放宽为宽高齐全、或已有 duration_sec、或
+    已有 no-master 标记（非清单/失败落点已判死）任一即闭合；
+    no-master 标记走 store_cms_quality 的 7 天 TTL，到期后
+    下一次点播自然重探。
     """
     if mapping_id is None:
         return
     try:
         existing = read_cms_quality(mapping_id) or {}
-        if ((existing.get("label") and existing.get("width")
-                and existing.get("height"))
+        if ((existing.get("width") and existing.get("height"))
                 or existing.get("duration_sec")
                 or existing.get("no_master")):
             return
-        from backend.emby_server import quality_label as ql
         payload: dict = {}
-        if isinstance(detail, dict):
-            label = ql.label_from_text(detail.get("vod_remarks"))
-            if label:
-                payload["label"] = label
         path = (address or "").split("?", 1)[0].lower()
         is_m3u8 = path.endswith(".m3u8")
         if http_get_text is not None:
@@ -665,7 +767,7 @@ def _capture_cms_quality(source, mapping_id, detail, address, *,
         except Exception:  # noqa: BLE001 — 抓清单失败留空
             status, text = None, None
         if status == 200 and text and (is_m3u8 or _is_playlist_text(text)):
-            master = ql.parse_m3u8_master(text)
+            master = parse_m3u8_master(text)
             if master:
                 payload.update({
                     "width": master.get("width") or 0,
@@ -673,13 +775,10 @@ def _capture_cms_quality(source, mapping_id, detail, address, *,
                     "bandwidth": master.get("bandwidth") or 0,
                     "video_range": master.get("video_range"),
                 })
-                master_label = ql.label_for_master(master)
-                if master_label:
-                    payload["label"] = master_label
             elif _is_playlist_text(text):
                 # media playlist（只有分段、无主清单信号）：宽高/
                 # 带宽判不出，只回填分段时长求和这一项真信号。
-                duration = ql.media_playlist_duration_sec(text)
+                duration = media_playlist_duration_sec(text)
                 if duration:
                     payload["duration_sec"] = duration
         if payload:

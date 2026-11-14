@@ -1728,8 +1728,10 @@ export const rerunIdentifyReviewTask = (taskId: number) =>
   post<{ success: boolean; task: IdentifyReviewTask }>(
     `${E}/identify-review/tasks/${taskId}/rerun`)
 
-/** 上游源（FMBY 学习 #25 25-1：只做源管理，不做聚合/探活/播放接入）。
- *  响应永不出凭据原文，只出 has_secret；新建恒为关闭，启用走单独端点。 */
+/** 上游源（FMBY 学习 #25 25-1）。源的写口已随后上游聚合整族
+ *  删除，本文件只保留只读列表：存量源行仍是播放线路与专属线路
+ *  配置的数据基础（选源候选 / 按 id 显示源名 / 建 CMS 库选源）。
+ *  响应永不出凭据原文，只出 has_secret。 */
 export interface UpstreamSource {
   id: number
   name: string
@@ -1750,36 +1752,8 @@ export interface UpstreamSource {
   updated_at: string | null
 }
 
-export interface UpstreamSourceInput {
-  name: string
-  source_type: 'emby' | 'jellyfin' | 'applecms'
-  base_url: string
-  auth_method: 'password' | 'api_key' | 'none'
-  username?: string | null
-  secret?: string | null
-  extra_headers?: Record<string, string> | null
-  user_agent?: string | null
-  referer?: string | null
-  note?: string | null
-}
-
 export const fetchUpstreamSources = () =>
   get<{ items: UpstreamSource[] }>(`${E}/upstream-sources`)
-
-export const createUpstreamSource = (input: UpstreamSourceInput) =>
-  post<UpstreamSource>(`${E}/upstream-sources`, input)
-
-export const updateUpstreamSource = (id: number, input: Partial<UpstreamSourceInput>) =>
-  put<UpstreamSource>(`${E}/upstream-sources/${id}`, input)
-
-export const enableUpstreamSource = (id: number) =>
-  post<UpstreamSource>(`${E}/upstream-sources/${id}/enable`, {})
-
-export const disableUpstreamSource = (id: number) =>
-  post<UpstreamSource>(`${E}/upstream-sources/${id}/disable`, {})
-
-export const deleteUpstreamSource = (id: number) =>
-  del<{ success: boolean }>(`${E}/upstream-sources/${id}`)
 
 /** 详情页上游线路开关（U-02）：开时有上游映射的条目在用户端详情 /
  *  PlaybackInfo 来源列表多一条「上游 · <源名>」线路；默认开。 */
@@ -1792,18 +1766,6 @@ export const fetchUpstreamDetailLineConfig = () =>
 
 export const updateUpstreamDetailLineConfig = (enabled: boolean) =>
   put<UpstreamDetailLineConfig>(`${E}/upstream-detail-line-config`, { enabled })
-
-/** 聚合拉取并发（2026-11-01 加速）：逐库拉取时预取后续页的并发
- * 数，默认 4、范围 1–16；只改请求时序不改结果，1 = 串行旧行为。 */
-export interface UpstreamFetchConcurrencyConfig {
-  concurrency: number
-}
-
-export const fetchUpstreamFetchConcurrencyConfig = () =>
-  get<UpstreamFetchConcurrencyConfig>(`${E}/upstream-fetch-concurrency-config`)
-
-export const updateUpstreamFetchConcurrencyConfig = (concurrency: number) =>
-  put<UpstreamFetchConcurrencyConfig>(`${E}/upstream-fetch-concurrency-config`, { concurrency })
 
 /** 专属线路通用能力（2026-11-05）：线路＝一条配置记录、可多条。
  * 取流基址含路径口令、入口密钥是内部配置：后端所有读口只回
@@ -1865,92 +1827,6 @@ export const resetExclusiveLineSecret = (id: string, secret: string) =>
 
 export const deleteExclusiveLine = (id: string) =>
   del<{ deleted: boolean }>(`${E}/exclusive-lines/${id}`)
-
-/** 上游目录聚合手动触发（FMBY 学习 #25 25-2 接线）。
- *  只做手动触发，不做自动调度、不做自动播放兜底。
- *  POST 立刻返回任务（queued），聚合在后台跑；用
- *  fetchUpstreamAggregateTask 轮询。完成时 result 与原先同步口同形
- *  （libraries_discovered / fetched / paired / written / failed_libraries）。
- *  失败时 error.detail 是原来的中文错误（源未启用、凭据、上游不可用等）。
- *  苹果 CMS 不走这个口。 */
-export interface UpstreamAggregateLibrarySummary {
-  library_id: string
-  library_name: string
-  fetched: number
-  aggregates: number
-  paired: number
-  written: number
-  status: string
-  error_code?: string
-  error?: string
-}
-
-export interface UpstreamAggregateFailedLibrary {
-  library_id: string
-  library_name: string
-  code: string
-  message: string
-}
-
-export interface UpstreamAggregateResult {
-  source_id: number
-  fetched: number
-  aggregates: number
-  paired: number
-  written: number
-  mapping_enabled: boolean
-  unpaired_reasons: Record<string, number>
-  libraries: UpstreamAggregateLibrarySummary[]
-  libraries_discovered: number
-  failed_libraries: UpstreamAggregateFailedLibrary[]
-}
-
-export type UpstreamAggregateTaskStatus =
-  | 'queued'
-  | 'running'
-  | 'succeeded'
-  | 'failed'
-  | 'interrupted'
-
-export interface UpstreamAggregateTaskError {
-  status: number
-  code: string
-  detail: string
-}
-
-export interface UpstreamAggregateTask {
-  task_id: string
-  source_id: number
-  status: UpstreamAggregateTaskStatus
-  result: UpstreamAggregateResult | null
-  error: UpstreamAggregateTaskError | null
-  /** 进度计数（O-01 落库、O-03 worker 执行面）：后端任务行直出，
-   *  libraries_done 只计跑完且成功的库；终态之外 result/error 为 null。 */
-  trigger: string
-  resume_of: string | null
-  libraries_total: number
-  libraries_done: number
-  current_library_id: string | null
-  current_library_name: string | null
-  fetched: number
-  paired: number
-  written: number
-  created_at: string | null
-  started_at: string | null
-  finished_at: string | null
-  heartbeat_at: string | null
-}
-
-/** 入队。本地就能判定的错误（源不存在 / 未启用 / 苹果 CMS）仍是 HTTP 4xx。 */
-export const aggregateUpstreamSource = (id: number) =>
-  post<UpstreamAggregateTask>(`${E}/upstream-sources/${id}/aggregate`, {})
-
-/** 按任务 id 查聚合进度。进行中 status 为 queued / running，快照带
- *  libraries_done / libraries_total 与 fetched / paired / written 计数；
- *  完成时带 result，失败时带 error，心跳过期被标 interrupted。 */
-export const fetchUpstreamAggregateTask = (id: number, taskId: string) =>
-  get<UpstreamAggregateTask>(`${E}/upstream-sources/${id}/aggregate/${taskId}`)
-
 
 /** 阶段统计（v2.42.9）：次数 + 累计耗时 + 平均耗时。avg_ms 只对「计过时」的那几次求平均 */
 export interface EnrichStageStat {

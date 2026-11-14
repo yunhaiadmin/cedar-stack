@@ -569,8 +569,6 @@ def janitor_tick(heavy: bool = True) -> dict:
               "images_pruned": 0,
               "images_freed_bytes": 0, "ai_usage_pruned": 0,
               "thumbs_backfilled": 0, "thumbs_backfill_done": False,
-              "upstream_mapping_patrol_sampled": 0,
-              "upstream_mapping_patrol_alert": False,
               "query_plans_optimized": False}
     db = SessionLocal()
     try:

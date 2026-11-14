@@ -5,7 +5,7 @@
 """
 from unittest import mock
 
-from backend.emby_server import upstream_aggregate_run as agg
+from backend.emby_server import unified_search as agg
 
 
 class _Src:

@@ -45,7 +45,6 @@ from backend.api.media_sets_api import (
     admin_media_sets_router,
     user_media_sets_router,
 )
-from backend.api.store import router as store_router
 from backend.api.store_requests import admin_router as store_requests_admin_router
 from backend.api.store_requests import router as store_requests_router
 from backend.api.governance_report import admin_router as governance_report_admin_router
@@ -895,9 +894,6 @@ app.include_router(admin_readonly_router)
 # 总闸 COLLECTIONS_ENABLED 默认关，关时本组接口惰性 404，现有路由不动。
 app.include_router(admin_media_sets_router)
 app.include_router(user_media_sets_router)
-# 想看商店骨架（§7 / R0）：总闸 STORE_ENABLED 默认关，关时本组接口惰性 404。
-# 不入队转存、不接播放。见 backend/api/store.py 与 store_contract.py。
-app.include_router(store_router)
 # 想看商店求片 R1：登记 + 榜单 + 入库联动（读时同步翻 completed）。
 # 复用 movie_requests / movie_request_votes，不另建表；只受 STORE_ENABLED 总闸 + 会员闸管。
 app.include_router(store_requests_router)
