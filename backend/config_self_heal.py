@@ -23,7 +23,7 @@ SystemConfig 新增键同样靠人工补行。
 - 读配置仍走原有入口（``os.getenv`` / ``integrations.store``），
   本模块只负责「补缺」，不提供新的读取方式。
 
-幂等：只补缺失，已存在的 key 绝不覆盖；补了哪些 key 用 logger.info 记录。
+幂等：只补缺失，已存在的 key 绝不覆盖，退役配置行也不删除；补了哪些 key 用 logger.info 记录。
 任何异常内部消化、只记日志，绝不阻断启动。
 """
 from __future__ import annotations
@@ -497,23 +497,11 @@ def _migrate_legacy_meta_keys(db) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# 已退役死键清理（管理后台清理批 1，2026-10-25）
+# 已退役配置键（启动保留，不删除）
 # ---------------------------------------------------------------------------
-# 以下 key 经整仓核查确认无生产读方：后端 / 前端两站 / scripts / 文档皆 0
-# 命中，仅剩历史注释提及（strm_gen 系为 2026-10-17 删除的子系统残留，
-# cdn_enabled 为 2026-10-17 删除的 CDN 配置能力残留，
-# playback_transcode_enabled 为 2026-10-24 转码删除后残留，
-# panel_* / chase_new_strm_enabled / local_cache_enabled /
-# playback_prewarm_enabled / chat_points_enabled 为面板摘除后残留）。
-# 生产实查（2026-10-25）：清单中仅 playback_transcode_enabled 仍有行
-# （value=true，2026-09-30），其余皆无行；本清单以防御为主——若某行被
-# 旧备份恢复回来，下次启动自愈即清掉，不再误导按 DB 排障的人。
-# 注意：清单只许显式列名，绝不按前缀批量删（防误删未来新键）。
-# strm_gen 系来源：审计枚举（19 键口径）＋已删模块
-# backend/emby_server/strm_gen.py 在删除提交 2070b7e9 前的 CONFIG 常量
-# 全量；审计括号内枚举相加为 18、与所称 19 差 1，且 changes_token 第二
-# 键名未能从历史中精确恢复——但生产 LIKE 'strm%' = 0 行，缺失的键名
-# 无行可删，不影响本次删除效果。
+# 这些 key 已无生产读方（面板摘除、转码/CDN/strm 删除、自挣来源限定删除
+# 后的残留）。存量行是退役功能的配置记录：启动自愈只补缺失，不删除、
+# 不改写这些行，也不按前缀批量处理。
 DEAD_CONFIG_KEYS = (
     # 面板摘除残留（管理后台审计 M11）
     "panel_auto_scan",
@@ -528,9 +516,8 @@ DEAD_CONFIG_KEYS = (
     "playback_transcode_enabled",
     # 2026-10-23 去重退役
     "chat_points_enabled",
-    # 2026-11-02 自挣来源限定删除残留（#1678）：两键的校验与注册已删净，
-    # 生产实查 welfare_redeem_self_earned_only=true 仍有存量行（另一键无行），
-    # 靠自愈清掉；残留行即使未清也无读方、不复活门槛（回归在
+    # 2026-11-02 自挣来源限定删除残留（#1678）：两键的校验与注册已删净。
+    # 存量行无读方、不复活门槛，启动保留不删（回归在
     # tests/test_welfare_redeem_gate.py 与 tests/test_subscription_points_gate.py）
     "welfare_redeem_self_earned_only",
     "subscription_buy_self_earned_only",
@@ -571,41 +558,6 @@ DEAD_CONFIG_KEYS = (
 )
 
 
-def _prune_dead_config_keys(db) -> list[str]:
-    """删除已退役死键的残留行；返回实际删除的 key 列表。
-
-    幂等：无行时就是空操作。失败只记日志、不阻断启动（下次启动重试）。
-    删后失效读缓存，避免进程内仍读到已删行的旧值。
-    """
-    from backend import models
-    from backend.integrations import store
-
-    try:
-        rows = (
-            db.query(models.SystemConfig)
-            .filter(models.SystemConfig.key.in_(DEAD_CONFIG_KEYS))
-            .all()
-        )
-        pruned = [row.key for row in rows]
-        for row in rows:
-            db.delete(row)
-        if pruned:
-            db.commit()
-            try:
-                store.invalidate(*pruned)
-            except Exception:  # noqa: BLE001 — 缓存失效失败不影响删行结果
-                logger.warning("[配置自愈] 死键缓存失效失败", exc_info=True)
-            logger.info("[配置自愈] 已删除退役死键行 %s", ", ".join(pruned))
-        return pruned
-    except Exception:  # noqa: BLE001 — 清理失败不能阻断启动
-        logger.warning("[配置自愈] 删除退役死键行失败，本次跳过", exc_info=True)
-        try:
-            db.rollback()
-        except Exception:  # noqa: BLE001
-            pass
-        return []
-
-
 def heal_system_config(db) -> list[str]:
     """SystemConfig 自愈：DB 里没有的 key 插入默认值行；返回补了的 key 列表。"""
     from sqlalchemy.exc import IntegrityError
@@ -624,7 +576,7 @@ def heal_system_config(db) -> list[str]:
     if healed:
         logger.info("[配置自愈] system_configs 本次共补齐 %d 项", len(healed))
     _migrate_legacy_meta_keys(db)
-    _prune_dead_config_keys(db)
+    # 退役配置行保留：启动不删除 DEAD_CONFIG_KEYS 里的存量记录。
     return healed
 
 
