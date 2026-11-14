@@ -1,12 +1,12 @@
 """外部服务能力中心冒烟测试（v2.19.0 起，v2.20.0 扩展，探险世界批新增两卡片，心理学批再增两卡片）
 
-覆盖后台「系统设置」里新增的六个能力：网络代理 / 人机验证 / 邮件与模板 /
-Telegram 通知 / AI 模型设置 / IP 与地理位置。口径是**只提供能力、凭据自己填**，
+覆盖后台「系统设置」里新增的五个能力：网络代理 / 人机验证 / 邮件与模板 /
+Telegram 通知 / IP 与地理位置。口径是**只提供能力、凭据自己填**，
 所以重点验证四件事：
 
 探险世界批新增两张纯本地设置卡：服主告示牌 / 每日抽一签签文池。它们没有外部
 凭据、开箱默认可用（告示牌留空即不显示、签文池自带 30 条默认签文），因此总览
-口径里单独与需要外部凭据的六个能力区分：未配置时六个「未启用 / 未配置」，
+口径里单独与需要外部凭据的五个能力区分：未配置时五个「未启用 / 未配置」，
 三张本地设置卡默认「已配置且生效」。
 
 1. **鉴权与阀门**：普通用户进不去；没配置的能力一律「放行 / 不显示」，不能把站点锁在门外；
@@ -15,7 +15,8 @@ Telegram 通知 / AI 模型设置 / IP 与地理位置。口径是**只提供能
 4. **测试是真的在测**：真实走一次网络 / 投递路径（这里用假 httpx 与假 SMTP 拦截出口，
    验证请求确实发出去了、失败原因确实原样回来）。
 
-AI 部分还验证用户端配额（默认 20 次/天）与多密钥轮换。
+AI 模型设置已随批 4 整链删除（integrations/ai 模块、能力卡与用户端路由），
+本冒烟只在第 6 节断言其入口确实不存在、维护回收行为不变。
 """
 import json
 import os
@@ -39,7 +40,6 @@ from backend.database import SessionLocal, init_db
 from backend.main import app
 from backend.security import create_access_token, hash_password
 from backend.integrations.store import invalidate
-from backend.integrations import ai as ai_cap
 from backend.integrations import captcha as captcha_cap
 from backend.integrations import geoip as geoip_cap
 from backend.integrations import mail as mail_cap
@@ -198,8 +198,8 @@ db.close()
 ADMIN_H = {"Authorization": f"Bearer {create_access_token(staff_id, {'username': 'staff'})}"}
 
 
-# 2026-10-21 A 类开关摘面板：能力页里缺省开的开关（ai_enabled /
-# captcha_protect_login / captcha_protect_register）不再经面板落库，改走 env；
+# 2026-10-21 A 类开关摘面板：能力页里缺省开的开关（captcha_protect_login /
+# captcha_protect_register）不再经面板落库，改走 env；
 # 缺省关的（proxy_enabled / email_enabled / captcha_protect_admin_login）
 # 按服主口径保留在面板，照旧 PUT 落库（辅助函数按开关表自动区分）。冒烟里仍按
 # 「保存一次配置」来驱动：开关键改设 env，其余字段照常 PUT（PUT 会触发能力
@@ -234,14 +234,14 @@ check("普通用户访问能力中心被拒", r.status_code in (401, 403), f"HTT
 r = client.get("/api/admin/capabilities", headers=ADMIN_H)
 check("管理员可读能力总览", r.status_code == 200, f"HTTP {r.status_code}")
 caps = {c["slug"]: c for c in r.json().get("capabilities", [])}
-expected = {"proxy", "captcha", "mail", "telegram", "ai", "geoip", "branding", "community"}
-check("八个能力都在总览里", expected == set(caps), f"实际 {sorted(caps)}")
+expected = {"proxy", "captcha", "mail", "telegram", "geoip", "branding", "community"}
+check("七个能力都在总览里", expected == set(caps), f"实际 {sorted(caps)}")
 check("总览带标题/说明/分组", all(c.get("title") and c.get("desc") and c.get("group")
                                   for c in caps.values()))
 check("总览带测试按钮文案", all(c.get("test_label") for c in caps.values()))
 # 纯本地设置卡只剩「站点与品牌」：它有内置默认值（未配置时回落站名「Aetrix」），
 # 所以未配置时始终「已配置且生效」。它没有外部凭据、没有出站请求，语义不同于
-# 需要外部凭据的其余七个外部服务能力。
+# 需要外部凭据的其余六个外部服务能力。
 # （原同属纯本地卡的服主告示牌 / 签文池 / 连签里程碑 / 世界文案池 / 昨日来信五个
 # world_* 能力已随发现页退役删除，见 backend/integrations 的 CAPABILITY_MODULES。）
 _ALWAYS_ON = {"branding"}
@@ -253,7 +253,7 @@ check("纯本地设置卡未配置时默认「已配置且生效」",
       all(c["configured"] and c["enabled"]
           for s, c in caps.items() if s in _ALWAYS_ON),
       str({s: (caps[s]["enabled"], caps[s]["configured"]) for s in caps}))
-check("共有八个能力卡片（站点与品牌为唯一纯本地设置卡，其余七个为外部服务能力）", len(caps) == 8, str(sorted(caps)))
+check("共有七个能力卡片（站点与品牌为唯一纯本地设置卡，其余六个为外部服务能力）", len(caps) == 7, str(sorted(caps)))
 
 r = client.get("/api/admin/capabilities/not-a-capability", headers=ADMIN_H)
 check("未知能力返回 404", r.status_code == 404, f"HTTP {r.status_code}")
@@ -509,107 +509,44 @@ check("Token 无效时报出 Telegram 的原因",
 restore_httpx()
 
 
-# ==================== 6. AI 模型设置 ====================
-# 批 3 已删 assistant 模块：用户端 /api/user/ai/status 与 /api/user/ai/ask
-# 路由不存在（404）。AI 能力本身（integrations/ai：配置 / 密钥 / 配额）属核心
-# 横切，保留；下面只验能力层与管理端，用户端路由只断言「已删除」。
+# ==================== 6. AI 已随批 4 整链删除 ====================
+# integrations/ai 模块、能力卡与用户端路由都已删除，本节只断言「删干净了」：
+# 用户端入口不存在、管理端能力卡 404（总览里没有 ai 已在第 1 节断言）。
+# AiUsage 表与维护回收（maintenance.prune_ai_usage）不在本批删除范围，
+# 其「只回收过期行」的行为仍在本节末尾覆盖。
 
 r = client.get("/api/user/ai/status", headers=USER_H)
-check("助手入口路由已随 assistant 模块删除（status 404）", r.status_code == 404,
+check("助手入口路由已随 AI 整链删除（status 404）", r.status_code == 404,
       f"HTTP {r.status_code}")
 
 r = client.post("/api/user/ai/ask", headers=USER_H, json={"question": "你好"})
 # POST 到已删的 /api/* 路由回 405 而不是 404：站里有条 GET-only 的 SPA
 # 兜底 /{full_path:path}，Starlette 对「路径命中、方法不命中」回 405；404/405
 # 都证明 POST 处理器已不存在。
-check("提问路由已随 assistant 模块删除（ask 404/405）", r.status_code in (404, 405),
+check("提问路由已随 AI 整链删除（ask 404/405）", r.status_code in (404, 405),
       f"HTTP {r.status_code}")
 
-cap_put("/api/admin/capabilities/ai", headers=ADMIN_H, json={"values": {
-    "ai_enabled": True, "ai_base_url": "https://api.example.com/v1",
-    "ai_api_keys": "key-one\nkey-two", "ai_model": "demo-model",
-    "ai_system_prompt": "你是客服", "ai_daily_limit": "2",
-}})
-db = SessionLocal()
-check("多密钥按行读入", ai_cap.api_keys(db) == ["key-one", "key-two"],
-      str(ai_cap.api_keys(db)))
-check("配置齐全后判定为可用", ai_cap.available(db) is True)
-db.close()
 r = client.get("/api/admin/capabilities/ai", headers=ADMIN_H)
-check("AI 密钥只回掩码", r.json()["values"]["ai_api_keys"] == "******")
-r = client.get("/api/user/ai/status", headers=USER_H)
-check("配置 AI 后用户端入口仍不存在（路由已删）", r.status_code == 404,
+check("AI 能力卡已随批 4 删除（管理端 404）", r.status_code == 404,
       f"HTTP {r.status_code}")
 
-def _chat_ok(m, u, k):
-    body = k.get("json") or {}
-    return FakeResponse(200, {
-        "choices": [{"message": {"content": "可用"}}],
-        "model": body.get("model", "demo-model"),
-        "usage": {"total_tokens": 7},
-    })
+# 每日一行会一直涨，维护周期按 90 天回收（只删过期行，今天的必须留着）。
+# 「今天」与已删 ai._today() 同口径：Asia/Shanghai 自然日。
+from datetime import datetime  # noqa: E402
+from zoneinfo import ZoneInfo  # noqa: E402
 
-
-use_routes({"chat/completions": _chat_ok})
-r = client.post("/api/admin/capabilities/ai/test", headers=ADMIN_H, json={"payload": {}})
-check("模型测试走真实 completion", r.json()["ok"] and "demo-model" in r.json()["message"],
-      r.json().get("message", ""))
-first_call = FakeHttpxClient.calls[-1]
-check("系统提示词被带上", json.dumps(first_call["kwargs"]["json"], ensure_ascii=False)
-      .find("你是客服") >= 0)
-
-# 用户端提问流（回答 / 配额递减 / 密钥轮换 / 429 / system 过滤 / 上限 0 /
-# 上游 502 透传）走的都是已删的 /api/user/ai/ask 路由，随模块删除一并移除；
-# 配额语义由下面「配额落库」一节在能力层（ai_cap.consume / quota）直接覆盖。
-cap_put("/api/admin/capabilities/ai", headers=ADMIN_H, json={"values": {"ai_enabled": False}})
-r = client.get("/api/user/ai/status", headers=USER_H)
-check("关闭 AI 后用户端入口仍不存在（路由已删）", r.status_code == 404,
-      f"HTTP {r.status_code}")
-
-# ---- 配额落库：多进程/多会话共用同一份计数，且绝不超过上限 ----
-cap_put("/api/admin/capabilities/ai", headers=ADMIN_H, json={"values": {"ai_enabled": True}})
-clear_ai_usage(user_id)
-
-db = SessionLocal()
-grants = [ai_cap.consume(db, user_id, 2)[0] for _ in range(5)]
-db.close()
-check("上限 2 时连续占用只会放行 2 次", grants == [True, True, False, False, False], str(grants))
-
-db1 = SessionLocal()
-seen_1 = ai_cap.used_today(db1, user_id)
-db1.close()
-db2 = SessionLocal()
-seen_2 = ai_cap.used_today(db2, user_id)
-seen_quota = ai_cap.quota(db2, user_id)
-db2.close()
-check("新会话（相当于另一个 worker）看到的是同一份计数",
-      seen_1 == seen_2 == 2, f"{seen_1}/{seen_2}")
-check("配额快照口径一致",
-      seen_quota == {"daily_limit": 2, "used": 2, "remaining": 0}, str(seen_quota))
-
-# 不限次数时仍会记账（便于统计），但不拦人
-db = SessionLocal()
-allowed_unlimited, used_unlimited, _deducted = ai_cap.consume(db, user_id, 0)
-db.close()
-check("上限 0 表示不限，但依然计入用量",
-      allowed_unlimited is True and used_unlimited == 3, f"{allowed_unlimited}/{used_unlimited}")
-
-# 「用户端状态」走的也是已删的 /api/user/ai/status 路由；同一份计数口径
-# 已由上面「配额快照口径一致」在能力层覆盖，这里只清掉当日用量。
-clear_ai_usage(user_id)
-
-# 每日一行会一直涨，维护周期按 90 天回收（只删过期行，今天的必须留着）
 from backend.emby_server import maintenance as maint_mod  # noqa: E402
 
+_today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
 db = SessionLocal()
 db.add(models.AiUsage(user_id=user_id, day="2020-01-01", count=7))
-db.add(models.AiUsage(user_id=user_id, day=ai_cap._today(), count=1))
+db.add(models.AiUsage(user_id=user_id, day=_today, count=1))
 db.commit()
 pruned = maint_mod.prune_ai_usage(db)
 left = db.query(models.AiUsage).filter(models.AiUsage.user_id == user_id).all()
 db.close()
 check("维护周期只回收过期的用量行",
-      pruned == 1 and len(left) == 1 and left[0].day == ai_cap._today(),
+      pruned == 1 and len(left) == 1 and left[0].day == _today,
       f"pruned={pruned} left={[r.day for r in left]}")
 clear_ai_usage(user_id)
 
