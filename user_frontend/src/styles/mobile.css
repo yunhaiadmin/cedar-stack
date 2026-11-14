@@ -390,8 +390,10 @@
   .tm-title { font-size: 26px !important; }
   .tm-sec__title { font-size: 20px !important; }
   .tm-teamhead__name { font-size: 22px !important; }
-  /* 片库 Hero 标题：clamp 下限 40 在手机上顶满；友站片名墨迹约 16 → 20 */
-  .sh-title { font-size: 20px !important; }
+  /* 片库 Hero 标题：全局收紧层保底 30（字号阶梯契约钉值，管没有组件
+     移动口径的场合）；StreamHero 组件自带移动口径 20px（友站片名墨迹
+     约 16，2026-11-14 定版），以组件 scoped !important 终局（见组件内注释） */
+  .sh-title { font-size: 30px !important; }
   /* 订阅结算条：总价 24→20、主按钮 16→15（友站按钮约 15） */
   .sub-settle__price b { font-size: 20px !important; }
   .sub-settle__btn { font-size: 15px !important; }
