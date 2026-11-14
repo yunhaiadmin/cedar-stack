@@ -142,7 +142,7 @@ const router = createRouter({
             meta: { title: '播放账号', requiresAuth: true },
           },
           // v4 游戏化：「我的」个人中心（身份卡 / 状态总览 / 分组入口行）；
-          // 设置类功能在子页 /game/account/settings，会员管理在 /game/account/member
+          // 设置类功能在子页 /game/account/settings（「我的订阅」页已随 2026-11-14 删除单整页删除）
           {
             path: '/game/account',
             name: 'game-account',
@@ -154,12 +154,6 @@ const router = createRouter({
             name: 'game-account-settings',
             component: () => import('@/views/game/AccountSettingsView.vue'),
             meta: { title: '账号设置', requiresAuth: true },
-          },
-          {
-            path: '/game/account/member',
-            name: 'game-account-member',
-            component: () => import('@/views/game/MemberView.vue'),
-            meta: { title: '我的订阅', requiresAuth: true },
           },
           // 订阅服务：按 UHDNow 订阅逻辑重做的购买页（深色 app 单列流＋吸底结算条）
           {
@@ -379,9 +373,10 @@ router.beforeEach(async (to) => {
 // 例外（2026-11-13 UHD 1:1 跟进）：/game/account（概览）已自带主题跟随，
 // 不再钉 light——本集合摘除该路径后守卫对它走 restoreUserTheme；
 // /game/account/menu（我的）本就不在集合内，同样跟随用户外观。
-// 例外（2026-11-14 桌面统一壳单）：/game/account/settings、/game/account/member
+// 例外（2026-11-14 桌面统一壳单）：/game/account/settings
 // 已摘掉 .v4-scope 纸面嵌套（页根改挂 .uhd-shell-scope 承接壳内令牌），
 // 不再是纸面页，一并摘除钉 light，外观跟随用户三态（与概览同口径）。
+// 「我的订阅」页（/game/account/member）已随 2026-11-14 删除单整页删除，路由已注销。
 // 例外（2026-11-13 二级页重做组 A）：/server 与 /game/operator 已换 UHD 布局，
 // 一并摘除——/server 页内自带三态主题跟随；/game/operator 在 UhdAccountLayout
 // 办事面壳内（壳为浅色办事面，与同壳的订阅页未钉 light 先例一致），不再由守卫钉 light。

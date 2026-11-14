@@ -104,7 +104,6 @@
       <!-- 双按钮：主钮彩虹边框粉彩胶囊，次钮白胶囊描边 -->
       <div class="ov-actions">
         <RouterLink class="ov-btn ov-btn--primary" to="/game/account/subscribe">续费订阅</RouterLink>
-        <RouterLink class="ov-btn" to="/game/account/member">我的订阅</RouterLink>
         <RouterLink class="ov-btn" to="/wallet">我的钱包</RouterLink>
       </div>
 

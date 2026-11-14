@@ -246,7 +246,7 @@ onMounted(() => {
 
 <style scoped>
 /* 浅色纸面口径（与 UhdAccountLayout 内其他账号页一致：--paper/--ink/--line；
-   主钮用彩虹边框＋淡彩粉彩底＋玻璃栈，与 MemberView 同款） */
+   主钮用彩虹边框＋淡彩粉彩底＋玻璃栈，与订阅购买页主钮同款） */
 .wallet-page { padding-bottom: 34px; }
 .wallet-body { padding-top: 4px; display: flex; flex-direction: column; gap: 28px; }
 
@@ -273,7 +273,7 @@ onMounted(() => {
 .wallet-err { margin: 10px 0 0; font-size: 13px; color: #dc2626; }
 .wallet-empty { margin: 0; font-size: 13px; color: var(--ink2); }
 
-/* 按钮：主钮彩虹边框＋淡彩粉彩底＋玻璃栈（与 MemberView 入口钮同款） */
+/* 按钮：主钮彩虹边框＋淡彩粉彩底＋玻璃栈（与订阅购买页入口钮同款） */
 .wallet-btn {
   padding: 10px 20px;
   border: 1.5px solid transparent;
