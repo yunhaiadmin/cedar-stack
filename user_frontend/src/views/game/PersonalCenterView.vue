@@ -8,6 +8,14 @@
            UhdTopBar 全区统一承接（sticky 玻璃条＋「网页观影」胶囊），
            本页不再自带一份（原实现无彩虹边框、且不固定） -->
 
+      <!-- 加载态（2026-11-15 假空态根治，照友站 f030）：订阅数据未落定前
+           整页只给中性加载态（转圈＋「正在加载概览...」），会员卡/按钮行/
+           徽章一律等数据到位再一起出现，不许先渲染「未开通」等结论 -->
+      <div v-if="!subsLoaded" class="ov-loading" role="status" aria-live="polite">
+        <span class="ov-loading__spin" aria-hidden="true"></span>
+        <p class="ov-loading__text">正在加载概览...</p>
+      </div>
+      <template v-else>
       <h1 class="ov-title">概览</h1>
       <!-- 桌面双栏：左会员卡（有效期＋自动续费），右本月流量。
            窄屏改成上下排，不把右栏裁出视口。没有月流量额度时右栏用真实剩余天数，不写假的 GB。 -->
@@ -95,26 +103,9 @@
           本月流量已用完，可以购买流量继续用（本期不影响播放）。
         </p>
       </section>
-      <section v-else-if="quota" class="ov-quota">
-        <p class="ov-quota__label">{{ quota.label }}</p>
-        <p class="ov-quota__big">{{ quota.days }}<span class="ov-quota__unit">天</span></p>
-        <template v-if="quota.hasPeriod">
-          <p class="ov-quota__remain">剩余 {{ quota.remainPct }}%</p>
-          <div class="ov-bar" role="img" :aria-label="`本周期已用 ${quota.usedPct}%`">
-            <div class="ov-bar__fill" :style="{ width: `${quota.remainPct}%` }"></div>
-          </div>
-          <div class="ov-quota__meta">
-            <span>已用 {{ quota.usedDays }} / 共 {{ quota.totalDays }} 天</span>
-            <span>{{ quota.endText }}</span>
-          </div>
-        </template>
-        <p v-else class="ov-quota__meta-line">{{ quota.endText }}</p>
-      </section>
-      <section v-else class="ov-quota">
-        <p class="ov-quota__label">{{ isFreeRealm ? '公益资格' : '订阅' }}</p>
-        <p class="ov-quota__big ov-quota__big--empty">未开通</p>
-        <p class="ov-quota__meta-line">{{ isFreeRealm ? '开通公益资格后即可观影' : '开通订阅后即可观影' }}</p>
-      </section>
+      <!-- 「订阅剩余 N 天」大字块已删（2026-11-15 对照友站）：到期信息
+           只留会员卡下「有效期至」一处；无月流量额度时右栏不渲染，
+           不再拿「未开通」结论占位 -->
 
       <div class="ov-actions">
         <RouterLink class="ov-btn ov-btn--primary" to="/game/account/subscribe">续费订阅</RouterLink>
@@ -129,46 +120,8 @@
         :active-sub="activeSub"
       />
 
-      <!-- 既有订阅天数：流量栏已经占了右栏时仍保留，不把资格显示删掉 -->
-      <section v-if="traffic?.enabled && quota" class="ov-quota">
-        <p class="ov-quota__label">{{ quota.label }}</p>
-        <p class="ov-quota__big">{{ quota.days }}<span class="ov-quota__unit">天</span></p>
-        <template v-if="quota.hasPeriod">
-          <p class="ov-quota__remain">剩余 {{ quota.remainPct }}%</p>
-          <div class="ov-bar" role="img" :aria-label="`本周期已用 ${quota.usedPct}%`">
-            <div class="ov-bar__fill" :style="{ width: `${quota.remainPct}%` }"></div>
-          </div>
-          <div class="ov-quota__meta">
-            <span>已用 {{ quota.usedDays }} / 共 {{ quota.totalDays }} 天</span>
-            <span>{{ quota.endText }}</span>
-          </div>
-        </template>
-        <p v-else class="ov-quota__meta-line">{{ quota.endText }}</p>
-      </section>
-
-      <!-- 账户余额卡：余额真实数据（钱包接口），充值是本卡唯一动作 -->
-      <section v-if="walletInfo" class="ov-sec">
-        <div class="ov-sec__head">
-          <h2 class="ov-sec__title">账户余额</h2>
-          <RouterLink class="ov-sec__more" to="/wallet">充值</RouterLink>
-        </div>
-        <p class="ov-balance">¥ {{ walletInfo.balance }}</p>
-      </section>
-
-      <!-- 最近动态：真实订阅记录（订单＋发放合并时间线），最多 3 条 -->
-      <section v-if="recentRecords.length" class="ov-sec">
-        <div class="ov-sec__head">
-          <h2 class="ov-sec__title">最近动态</h2>
-          <RouterLink class="ov-sec__more" to="/game/account/subscription-records">查看全部</RouterLink>
-        </div>
-        <div v-for="(r, i) in recentRecords" :key="i" class="ov-rrow">
-          <span class="ov-rrow__main">
-            <span class="ov-rrow__name">{{ r.name }}</span>
-            <span class="ov-rrow__time">{{ recordTimeText(r.time) }}</span>
-          </span>
-          <span class="ov-rrow__amount">{{ recordAmountText(r) }}</span>
-        </div>
-      </section>
+      <!-- 「最近动态」整区已删（2026-11-15）：订阅记录页已有动态可查；
+           账户余额降为下方「常用」里的一行（行尾金额＋箭头），不再独立大区 -->
 
       <!-- Emby 段：图标＋两行＋chevron（弹幕 API 本站无此业务，整项省略） -->
       <section class="ov-sec">
@@ -217,7 +170,7 @@
         <div class="ov-sec__head">
           <h2 class="ov-sec__title">登录设备</h2>
           <RouterLink class="ov-sec__more" to="/game/account/settings">
-            {{ devicesData.count }} / {{ devicesData.limit }} 台 · 管理
+            {{ deviceCountText }}
           </RouterLink>
         </div>
         <div v-for="d in previewDevices" :key="d.device_id" class="ov-drow">
@@ -229,15 +182,34 @@
         </div>
       </section>
 
-      <!-- 邀请横幅（照友站概览）：整块可点，进邀请好友页 -->
-      <RouterLink class="ov-invite" to="/game/account/invite">
-        <span class="ov-invite__main">
-          <span class="ov-invite__title">邀请好友</span>
-          <span class="ov-invite__sub">好友付费，你拿返利进钱包余额</span>
-        </span>
-        <ChevronRight :size="18" class="ov-row__chev" aria-hidden="true" />
-      </RouterLink>
-
+      <!-- 常用（照友站概览末段）：账户余额一行（行尾金额＋箭头，走现有
+           钱包接口数据）＋邀请好友＋使用说明（外链未配不渲染）；
+           原邀请横幅并入本段，不再重复出现 -->
+      <section class="ov-sec">
+        <div class="ov-sec__head">
+          <h2 class="ov-sec__title">常用</h2>
+        </div>
+        <RouterLink v-if="walletInfo" class="ov-trow" to="/wallet">
+          <span class="ov-trow__name">账户余额</span>
+          <span class="ov-trow__value">¥ {{ walletInfo.balance }}</span>
+          <ChevronRight :size="18" class="ov-row__chev" aria-hidden="true" />
+        </RouterLink>
+        <RouterLink class="ov-trow" to="/game/account/invite">
+          <span class="ov-trow__name">邀请好友</span>
+          <ChevronRight :size="18" class="ov-row__chev" aria-hidden="true" />
+        </RouterLink>
+        <a
+          v-if="docsUrl"
+          class="ov-trow"
+          :href="docsUrl"
+          target="_blank"
+          rel="noopener"
+        >
+          <span class="ov-trow__name">使用说明</span>
+          <ArrowUpRight :size="18" class="ov-row__chev" aria-hidden="true" />
+        </a>
+      </section>
+      </template>
     </div>
 
     <!-- 购流量弹窗（时间换流量真成交；余额购买页签等钱包上线） -->
@@ -292,6 +264,12 @@
  * 「切换线路>」；流量改圆环卡；新增自动续费开关行（后端引擎真
  * 扣款）、账户余额卡、最近动态（真实订阅记录）、邀请横幅；
  * 按钮收敛为每卡最多一个本卡动作。
+ * 2026-11-15 假空态根治＋对照友站收口：订阅改走单一数据源
+ * useSubscriptionStore，落定前整页中性加载态（转圈＋正在加载概览），
+ * 不再先渲染「未开通」；删「订阅剩余 N 天」大字块（到期只留卡下
+ * 「有效期至」）与「最近动态」整区；账户余额降为「常用」段一行
+ * （行尾金额＋箭头），邀请横幅并入「常用」；设备计数改有效设备数
+ * active_count / 上限（原 count 为历史登记总数，曾显示 15 / 3 台）。
  * 「服务器地址」行 2026-11-13 起改开线路弹层（ServerLinesSheet，友站
  * 同行点开即弹层；用户 23:15 亲点），不再跳 /game/operator 整页——
  * 播放账号页本体与菜单/侧栏入口不变。
@@ -300,7 +278,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
-  ChevronRight, HardDrive, Monitor, MonitorPlay, Route, Smartphone, Tv,
+  Apple, ArrowUpRight, ChevronRight, HardDrive, Monitor, MonitorPlay, Route, Smartphone, Tv,
   type LucideIcon,
 } from 'lucide-vue-next'
 import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
@@ -318,7 +296,7 @@ import ServerLinesSheet from '@/components/profile/ServerLinesSheet.vue'
 import BindDriveSheet from '@/components/profile/BindDriveSheet.vue'
 import {
   embyApi, subscriptionApi,
-  type AccountCard, type MySubscription, type SubscriptionRecordRow,
+  type AccountCard,
 } from '@/api'
 import { walletApi, type WalletInfo } from '@/api/wallet'
 import {
@@ -326,6 +304,8 @@ import {
   type MyDevice, type MyDevicesResponse,
 } from '@/api/economy'
 import { useUserStore } from '@/stores/user'
+import { useSubscriptionStore } from '@/stores/subscription'
+import { communityLinks, initCommunityLinks } from '@/composables/useCommunityLinks'
 import { branding } from '@/composables/useBranding'
 import { useTheme } from '@/composables/useTheme'
 import { useToast } from '@/composables/useToast'
@@ -343,14 +323,15 @@ const isFreeRealm = computed(() => userStore.isFreeRealm)
 const whitelistIdentity = computed(() => userStore.user?.whitelist_identity ?? null)
 
 // ── 总览数据 ──
-const subscriptions = ref<MySubscription[]>([])
-// 公益资格状态已随福利服役族于 2026-11-14 删除（资格已折算成订阅）：
-// 公益服（free 服）免费开放，会员卡在公益服恒显「生效中」，到期日无数据源。
+// 订阅改走单一数据源 useSubscriptionStore（2026-11-15）：与「我的」页
+// 同源同拍；loaded 落定前整页只显示中性加载态（见模板 ov-loading），
+// 不再先按空数组渲染「未开通」。公益资格状态已随福利服役族于
+// 2026-11-14 删除（资格已折算成订阅）：公益服（free 服）免费开放，
+// 会员卡在公益服恒显「生效中」，到期日无数据源。
+const subStore = useSubscriptionStore()
+const subsLoaded = computed(() => subStore.loaded)
+const activeSub = computed(() => subStore.activeSub)
 const accountCard = ref<AccountCard | null>(null)
-
-const activeSub = computed(
-  () => subscriptions.value.find(s => s.status === 'active' && s.days_left > 0) || null,
-)
 /** 会员卡文案：套餐名 / 用户名·ID / 状态（全部真实数据） */
 const memberPlanName = computed(() => {
   if (isFreeRealm.value) return '公益资格'
@@ -381,28 +362,8 @@ const expiryText = computed(() => {
   return activeSub.value ? activeSub.value.end_date.slice(0, 10).replace(/-/g, '.') : ''
 })
 
-/** 大数字区：剩余天数＋本周期已过比例（按真实起止日期算；公益服免费开放不画大数字区） */
-const quota = computed(() => {
-  if (isFreeRealm.value) return null
-  const s = activeSub.value
-  if (!s) return null
-  const start = new Date(s.start_date).getTime()
-  const end = new Date(s.end_date).getTime()
-  const totalMs = end - start
-  const totalDays = Math.max(1, Math.round(totalMs / 86_400_000))
-  const usedPctRaw = totalMs > 0 ? ((Date.now() - start) / totalMs) * 100 : 0
-  const usedPct = Math.min(100, Math.max(0, Math.round(usedPctRaw)))
-  return {
-    label: '订阅剩余',
-    days: s.days_left,
-    hasPeriod: totalMs > 0,
-    usedDays: Math.min(totalDays, Math.max(0, Math.floor((Date.now() - start) / 86_400_000))),
-    totalDays,
-    usedPct,
-    remainPct: 100 - usedPct,
-    endText: `${s.end_date.slice(0, 10).replace(/-/g, '.')} 到期`,
-  }
-})
+/** 使用说明外链（后台可配，未配不渲染；与「我的」页同源） */
+const docsUrl = computed(() => communityLinks.docs_url || '')
 
 /** 服务器地址行副文案：线路数＝账号卡下发的服地址数（真实数据） */
 const serverAddressSub = computed(() => {
@@ -448,28 +409,6 @@ async function loadWallet() {
   } catch { /* 钱包接口失败整卡不渲染 */ }
 }
 
-// ── 最近动态（订阅记录时间线前 3 条） ──
-const recentRecords = ref<SubscriptionRecordRow[]>([])
-async function loadRecords() {
-  try {
-    const res = await subscriptionApi.getRecords()
-    recentRecords.value = (res.records ?? []).slice(0, 3)
-  } catch { /* 记录拿不到整段不渲染 */ }
-}
-function recordTimeText(iso: string | null): string {
-  if (!iso) return ''
-  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(iso)
-  return m ? `${m[2]}-${m[3]} ${m[4]}:${m[5]}` : iso.slice(0, 10)
-}
-function recordAmountText(r: SubscriptionRecordRow): string {
-  if (r.amount != null) return `¥ ${r.amount.toFixed(2)}`
-  const map: Record<string, string> = {
-    active: '生效中', expired: '已到期', cancelled: '已终止',
-    paid: '已完成', pending: '待支付', closed: '已关闭', refunded: '已退款',
-  }
-  return map[r.status] ?? r.status
-}
-
 // ── 自动续费开关（后端 backend/auto_renew.py 引擎真扣款） ──
 const autoRenewBusy = ref(false)
 async function toggleAutoRenew() {
@@ -492,14 +431,35 @@ async function toggleAutoRenew() {
 const devicesData = ref<MyDevicesResponse | null>(null)
 /** 概览只预览最近 3 台（接口已按最后活跃倒序）；全量在账号设置页管理 */
 const previewDevices = computed(() => (devicesData.value?.devices ?? []).slice(0, 3))
+/**
+ * 设备计数口径（2026-11-15 核查）：分子用后端 active_count（有效设备数：
+ * 未禁用且近 ACTIVE_DEVICE_DAYS=30 天内活跃，与后端 remaining=limit-
+ * active_count 及设置页 DevicesEntry 同口径），不用 count（历史登记
+ * 总数，含过期/闲置记录，曾显示「15 / 3 台」读不通）；分母 limit 为
+ * 套餐/配置上限，0 表示不限、只显台数。
+ */
+const deviceCountText = computed(() => {
+  const d = devicesData.value
+  if (!d) return ''
+  return d.limit > 0
+    ? `${d.active_count} / ${d.limit} 台 · 管理`
+    : `${d.active_count} 台 · 管理`
+})
 function deviceIcon(d: MyDevice): LucideIcon {
   const tag = `${d.client ?? ''} ${d.name ?? ''}`.toLowerCase()
   if (/tv|television/.test(tag)) return Tv
-  if (/ios|iphone|ipad|android|phone|mobile|safari|infuse/.test(tag)) return Smartphone
+  // 苹果系设备/浏览器用 Apple 图标（照友站设备行：iOS/Safari 带苹果标）
+  if (/ios|iphone|ipad|mac|safari|apple/.test(tag)) return Apple
+  if (/android|phone|mobile|infuse/.test(tag)) return Smartphone
   return Monitor
 }
 function deviceLabel(d: MyDevice): string {
-  return d.name || d.client || '未知设备'
+  // 照友站「平台 / 客户端」形态（如 iOS / Safari）：name 与 client
+  // 都有且不同才拼，数据取现有字段、不新造口径
+  const parts = [d.name, d.client].filter(
+    (v, i, a): v is string => !!v && a.indexOf(v) === i,
+  )
+  return parts.length ? parts.join(' / ') : '未知设备'
 }
 /** 最后活跃相对时间（原站「37 分钟前」口径） */
 function relTime(iso: string | null): string {
@@ -550,9 +510,8 @@ function onDriveBound() {
 
 // ── 总览数据 ──
 async function loadOverview() {
-  try {
-    subscriptions.value = await subscriptionApi.getMine()
-  } catch { /* 摘要拿不到就留空 */ }
+  // 订阅走单一数据源 store（落定前模板只显示中性加载态）
+  void subStore.ensureLoaded()
   try {
     accountCard.value = await embyApi.getAccountCard()
   } catch { /* 账号卡失败不阻断页面 */ }
@@ -565,11 +524,11 @@ onMounted(() => {
     void router.replace({ path: '/game/account/settings', hash: '#my-drive' })
     return
   }
+  void initCommunityLinks()
   void loadOverview()
   void loadTraffic()
   void loadDevices()
   void loadWallet()
-  void loadRecords()
 
   void loadDriveMeta()
 })
@@ -606,6 +565,39 @@ onMounted(() => {
   font-weight: var(--uhd-fw-extrabold);
   letter-spacing: -0.03em;
   line-height: 1.1;
+}
+/* 整页中性加载态（照友站）：居中转圈＋一句加载文案，无任何结论性内容 */
+.ov-loading {
+  min-height: 52dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+.ov-loading__spin {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.16);
+  border-top-color: rgba(255, 255, 255, 0.75);
+  animation: ov-spin 0.8s linear infinite;
+}
+.ov-loading__text {
+  margin: 0;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.55);
+}
+@keyframes ov-spin {
+  to { transform: rotate(360deg); }
+}
+html[data-theme='light'] .ov-loading__spin {
+  border-color: rgba(17, 17, 17, 0.14);
+  border-top-color: rgba(17, 17, 17, 0.65);
+}
+html[data-theme='light'] .ov-loading__text { color: #8a8d93; }
+@media (prefers-reduced-motion: reduce) {
+  .ov-loading__spin { animation-duration: 1.6s; }
 }
 .ov-hero {
   display: grid;
@@ -696,7 +688,7 @@ html:not([data-theme='light']) .ov-card {
   justify-content: space-between;
   gap: 12px;
   padding: 16px 2px 0;
-  font-size: 15px;
+  font-size: 14px;
   color: rgba(255, 255, 255, 0.62);
   flex-wrap: wrap;
 }
@@ -723,7 +715,8 @@ html:not([data-theme='light']) .ov-card {
 }
 .ov-quota__label {
   margin: 0;
-  font-size: 19px;
+  /* 2026-11-15 对照友站「本月剩余流量」标签收小：19px → 16px */
+  font-size: 16px;
   font-weight: var(--uhd-fw-medium);
   color: #ffffff;
 }
@@ -887,14 +880,14 @@ html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
 .ov-sec__title {
   margin: 0;
   font-family: var(--uhd-font-sans);
-  /* 实测区块标题 24–28px/700 */
-  font-size: 26px;
+  /* 2026-11-15 对照友站帧（设备/常用标题）收小一个量级：26px → 20px */
+  font-size: 20px;
   font-weight: var(--uhd-fw-bold);
   letter-spacing: -0.01em;
   color: #ffffff;
 }
 .ov-sec__more {
-  font-size: 15.5px;
+  font-size: 14px;
   color: rgba(255, 255, 255, 0.62);
   text-decoration: none;
   white-space: nowrap;
@@ -911,7 +904,8 @@ html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
 /* Emby 段图标两行 */
 .ov-irow {
   width: 100%;
-  min-height: 63px;
+  /* 2026-11-15 行高对照友站收小：63px → 56px */
+  min-height: 56px;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -941,8 +935,8 @@ html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
   gap: 2px;
 }
 .ov-irow__name {
-  /* 实测行标题 15–16px、副标题 13px */
-  font-size: 16px;
+  /* 2026-11-15 对照友站行标题收小：16px → 15px（副标题 13px 不动） */
+  font-size: 15px;
   font-weight: var(--uhd-fw-semibold);
   color: #ffffff;
 }
@@ -959,9 +953,10 @@ html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
   display: flex;
   align-items: center;
   gap: 14px;
-  min-height: 52px;
+  /* 2026-11-15 行高对照友站收小：52px → 48px */
+  min-height: 48px;
   box-sizing: border-box;
-  padding: 13px 2px;
+  padding: 10px 2px;
   border-bottom: 1px solid #26262a;
 }
 .ov-drow__icon {
@@ -971,7 +966,7 @@ html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
 .ov-drow__name {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: var(--uhd-fw-semibold);
   color: #ffffff;
   white-space: nowrap;
@@ -980,7 +975,8 @@ html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
 }
 .ov-drow__status {
   flex: 0 0 auto;
-  font-size: 15px;
+  /* 2026-11-15 右侧状态文字对照友站收小：15px → 13.5px */
+  font-size: 13.5px;
   color: rgba(255, 255, 255, 0.42);
 }
 .ov-drow__status--on {
@@ -991,7 +987,7 @@ html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
 /* 纯文字行（常用及其余归段） */
 .ov-trow {
   width: 100%;
-  min-height: 52px;
+  min-height: 48px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1011,7 +1007,7 @@ html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
 }
 .ov-trow__name {
   flex: 1 1 auto;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: var(--uhd-fw-medium);
   white-space: nowrap;
   overflow: hidden;
@@ -1020,7 +1016,7 @@ html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
 .ov-trow__value {
   flex: 0 1 auto;
   min-width: 0;
-  font-size: 15px;
+  font-size: 14px;
   color: rgba(255, 255, 255, 0.42);
   white-space: nowrap;
   overflow: hidden;
