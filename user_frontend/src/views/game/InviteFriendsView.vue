@@ -105,7 +105,7 @@
                   <RefreshCw :size="20" aria-hidden="true" />
                 </button>
               </div>
-              <p class="iv-wsub">好友通过链接注册并验证邮箱后，即可领取所选试用。</p>
+              <p class="iv-wsub">好友通过链接注册后，即可领取所选试用。</p>
 
               <p class="iv-wcount">
                 本月可用 <strong class="iv-wcount__num">{{ welfareRemaining }}</strong>
