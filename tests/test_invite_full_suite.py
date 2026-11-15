@@ -411,12 +411,12 @@ def _scope(ip="1.2.3.4"):
             "headers": [], "client": (ip, 1234)}
 
 
-def _register(db, username, invite=None, reg_code=None, mode="open"):
+def _register(db, username, invite=None, mode="open"):
     _set(db, "register_ratelimit_enabled", "false")
     _set(db, "registration_mode", mode)
     req = emby_portal.RegisterRequest(
         username=username, password="pass1234",
-        invitation_code=invite, registration_code=reg_code)
+        invitation_code=invite)
     return emby_portal.register(Request(_scope()), req, db)
 
 
@@ -431,19 +431,19 @@ def test_register_open_with_invite_binds_and_grants_trial(db):
     assert db.query(models.InviteTrialGrant).filter_by(invitee_id=newbie.id).count() == 1
 
 
-def test_register_code_mode_both_codes(db):
+def test_register_open_with_invite_channel_attribution(db):
+    """开放注册＋邀请码：邀请关系建成、渠道归因记 invitation。
+
+    （本用例前身测「凭码模式下注册码＋邀请码双码同行」；注册码已于
+    2026-11-15 下线，进门凭据只剩邀请码，归因口径随之收敛到这里。）"""
     _set(db, "invite_trial_days", "7")
     inviter = _eligible_inviter(db, "inviter-both")
     code = _code(db, inviter, "CODEBOTH")
-    db.add(models.RegistrationCode(
-        code="REG-BOTH-0001", code_type=1, days=30, max_uses=1, use_count=0,
-        is_active=True, source="admin", realm_id=1, reward_type="subscription"))
-    db.commit()
-    _register(db, "newbie_both", invite=code.code, reg_code="REG-BOTH-0001",
-              mode="code")
+    _register(db, "newbie_both", invite=code.code, mode="open")
     newbie = db.query(models.WebUser).filter_by(username="newbie_both").one()
     record = db.query(models.InvitationRecord).filter_by(invitee_id=newbie.id).one()
     assert record.inviter_id == inviter.id
+    assert newbie.register_channel == "invitation"
 
 
 def test_register_without_invite_no_relation(db):

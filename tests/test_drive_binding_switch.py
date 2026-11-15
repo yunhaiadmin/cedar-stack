@@ -6,7 +6,7 @@
 - 开关只管「新建 Drive 绑定」一个动作：OAuth 发起与回调完成、
   「我的网盘」providers 名单里的 drive，都受它管；
 - 默认关：无配置行 / 值非法 / 读取异常，一律按关处理（只有字面
-  "true" 才算开，word 风格，与 register_gift_* 开关同口径）；
+  "true" 才算开，word 风格，与全站布尔配置键同口径）；
 - 已有绑定记录、列表、解绑、取绑定等既有能力一律不受开关影响；
 - 管理端在既有 Drive API 配置卡片上可见可改（GET/PUT
   /api/admin/drive-api-config 的 binding_enabled 字段），写入走

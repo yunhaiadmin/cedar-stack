@@ -121,7 +121,6 @@
           <label class="agent-field">
             <span>卡码类型</span>
             <select v-model.number="buyForm.code_type">
-              <option :value="1">注册码（给新用户开通）</option>
               <option :value="2">续期码（给老用户续期）</option>
             </select>
           </label>
@@ -247,14 +246,14 @@ async function copyCode(code: string) {
 
 // ===== 进货 =====
 const buyTarget = ref<AgentProduct | null>(null)
-const buyForm = ref({ code_type: 1, quantity: 1 })
+const buyForm = ref({ code_type: 2, quantity: 1 })
 const buying = ref(false)
 const buyError = ref('')
 const boughtCodes = ref<{ id: number; code: string }[]>([])
 
 function openBuy(p: AgentProduct) {
   buyTarget.value = p
-  buyForm.value = { code_type: 1, quantity: 1 }
+  buyForm.value = { code_type: 2, quantity: 1 }
   buyError.value = ''
   boughtCodes.value = []
 }

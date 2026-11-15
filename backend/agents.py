@@ -37,8 +37,9 @@ from backend import codes, models, realms
 logger = logging.getLogger(__name__)
 
 CENT = Decimal("0.01")
-# 代理可进货的卡码类型：注册码 / 续期码。白名单码是身份特权、不作商品。
-PURCHASABLE_CODE_TYPES = (codes.CODE_TYPE_REGISTER, codes.CODE_TYPE_RENEW)
+# 代理可进货的卡码类型：只有续期码。白名单码是身份特权、不作商品；
+# 注册码已于 2026-11-15 整体下线，同步退出进货。
+PURCHASABLE_CODE_TYPES = (codes.CODE_TYPE_RENEW,)
 MAX_PURCHASE_QUANTITY = 100
 
 
@@ -163,7 +164,7 @@ def purchase_codes(db: Session, agent: models.Agent,
     if not plan.is_active:
         raise AgentError("该套餐已停售，不能进货")
     if code_type not in PURCHASABLE_CODE_TYPES:
-        raise AgentError("代理只能进货注册码或续期码")
+        raise AgentError("代理只能进货续期码")
     if quantity < 1 or quantity > MAX_PURCHASE_QUANTITY:
         raise AgentError(f"单次进货数量须在 1-{MAX_PURCHASE_QUANTITY} 之间")
 

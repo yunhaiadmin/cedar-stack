@@ -27,22 +27,23 @@ echo "token ok: ${TOKEN:0:20}..."
 echo "== 4. auth/me =="
 curl -s -m 10 $B/api/admin/auth/me -H "Authorization: Bearer $TOKEN"; echo
 
-echo "== 5. 批量生成注册码(3个, 每个2次) =="
-C=$(curl -s -m 10 -X POST $B/api/admin/registration-codes/generate -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"code_type":1,"count":3,"days":30,"max_uses":2,"expires_days":30}')
+echo "== 5. 批量生成续期码(3个, 每个2次) =="
+C=$(curl -s -m 10 -X POST $B/api/admin/registration-codes/generate -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"code_type":2,"count":3,"days":30,"max_uses":2,"expires_days":30}')
 CODE=$(echo "$C" | python3 -c 'import sys,json;print(json.load(sys.stdin)["codes"][0]["code"])' 2>/dev/null)
 echo "$C" | python3 -c 'import sys,json;print("codes:",[c["code"] for c in json.load(sys.stdin)["codes"]])' || { echo "$C"; exit 1; }
 
-echo "== 6. 切换注册模式 = code =="
-curl -s -m 10 -X PUT $B/api/admin/settings/registration -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"mode":"code"}'; echo
+echo "== 6. 切换注册模式 = open（注册码已下线，只剩 open/closed） =="
+curl -s -m 10 -X PUT $B/api/admin/settings/registration -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"mode":"open"}'; echo
 
-echo "== 7. 无码注册应被拒 =="
-curl -s -m 10 -X POST $B/api/user/auth/register -H "Content-Type: application/json" -d '{"username":"nocode","password":"pass12345"}'; echo
-
-echo "== 8. 用码注册成功 =="
-R2=$(curl -s -m 10 -X POST $B/api/user/auth/register -H "Content-Type: application/json" -d '{"username":"coder","password":"pass12345","registration_code":"'$CODE'"}')
+echo "== 7. 无码开放注册成功 =="
+R2=$(curl -s -m 10 -X POST $B/api/user/auth/register -H "Content-Type: application/json" -d '{"username":"coder","password":"pass12345"}')
 echo "$R2" | python3 -c 'import sys,json;print("coder uid =",json.load(sys.stdin).get("user",{}).get("id"))' 2>/dev/null || echo "$R2"
+UTOKEN=$(echo "$R2" | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])' 2>/dev/null)
 
-echo "== 9. 注册码审计 =="
+echo "== 8. 登录后兑换续期码 =="
+curl -s -m 10 -X POST $B/api/user/membership/redeem -H "Authorization: Bearer $UTOKEN" -H "Content-Type: application/json" -d '{"code":"'$CODE'"}'; echo
+
+echo "== 9. 卡码审计 =="
 curl -s -m 10 "$B/api/admin/registration-codes/list" -H "Authorization: Bearer $TOKEN" | python3 -c 'import sys,json;c=json.load(sys.stdin)["codes"][0];print("code",c["code"],": use",c["use_count"],"/",c["max_uses"],"used_by",[u["username"] for u in c["used_by"]])'
 
 echo "== 10. 用户管理: 列表/禁用/重置密码 =="
