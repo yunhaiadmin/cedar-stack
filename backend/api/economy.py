@@ -12,7 +12,7 @@
 
 能量/积分/活力货币已于 2026-11-13 删除（用户亲令「只用友站口径」）：
 签到发分、积分台账/转让、能量买订阅、能量充值、活力兑换一并下线；
-订阅发放（_grant_subscription）、人民币下单与履约链原样保留。
+订阅发放（_grant_subscription）、美元下单与履约链原样保留。
 """
 from __future__ import annotations
 
@@ -544,6 +544,20 @@ def payment_plans(realm_id: Optional[int] = None, db: Session = Depends(get_db))
     from backend import devices as _devices
     from backend import subscriptions as _subscriptions
 
+    # 线路展示名（2026-11-15 美元目录单）：订阅页分组与对比表「线路」行
+    # 读 line_name——取该服配置 subscription_line_name（如「国际线路」），
+    # 未配回退服名 realm_name。服名本身是另一回事（首页服务器卡读
+    # realm.name，用户亲定不许动），两者分开、互不覆盖。
+    line_names: dict = {}
+    for p in plans:
+        if p.realm_id in line_names:
+            continue
+        label = ""
+        if p.realm_id is not None:
+            label = realms.realm_config(
+                db, "subscription_line_name", p.realm_id, "").strip()
+        line_names[p.realm_id] = label or (p.realm.name if p.realm else "")
+
     return {
         "enabled": purchase_enabled,
         "wallet_purchase_enabled": wallet_purchase_enabled,
@@ -566,6 +580,7 @@ def payment_plans(realm_id: Optional[int] = None, db: Session = Depends(get_db))
                 "entitlements": _entitlements.parse_entitlements(p.entitlements),
                 "realm_id": p.realm_id,
                 "realm_name": (p.realm.name if p.realm else ""),
+                "line_name": line_names.get(p.realm_id, ""),
             }
             for p in plans
         ],
@@ -703,6 +718,10 @@ def _new_order_id() -> str:
 # 到期日与权益一概不动，只改新购链路的计价与发放天数。
 # 折算（2026-11-14 生产三档）：启程 ¥18/30 天→1 个月→¥18/月；
 # 远行 ¥45/90 天→3 个月→¥15/月；环游 ¥150/365 天→12 个月→¥12.5/月。
+# 2026-11-15 币种改美刀＋目录换友站国际线路两档（Global 国际版
+# $1.2/月、Global 家庭版 $3.6/月，均以 price=月价、duration_days=30
+# 存储）：同一折算口径下月价即 $1.2/$3.6、年付 $13.2/$39.6，上方
+# 人民币三档仅为存量订阅的历史记录。
 
 def plan_base_months(plan: models.SubscriptionPlan) -> int:
     """套餐现总价对应的基准月数：duration_days 按 365 天=12 个月折算。"""
@@ -1277,8 +1296,8 @@ def _fulfill_order(db: Session, subscription_order=None) -> list:
                         event_type="economy.invite_rebate",
                         user_id=_accrual.inviter_id,
                         title="💰 邀请返利到账",
-                        content=(f"好友付费 ¥{subscription_order.amount}，"
-                                 f"返利 ¥{_accrual.rebate_amount:.2f} 已存入你的钱包余额。"),
+                        content=(f"好友付费 ${subscription_order.amount}，"
+                                 f"返利 ${_accrual.rebate_amount:.2f} 已存入你的钱包余额。"),
                         related_id=None,
                     ))
             except Exception:  # noqa: BLE001

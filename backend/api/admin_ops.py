@@ -545,7 +545,7 @@ def generate_codes(
     db.commit()
 
     if request.reward_type == codes.REWARD_BALANCE:
-        gen_message = f"已生成 {len(created)} 个{type_name}（余额码，面额 ¥{balance_amount:.2f}）"
+        gen_message = f"已生成 {len(created)} 个{type_name}（余额码，面额 ${balance_amount:.2f}）"
     else:
         gen_message = f"已生成 {len(created)} 个{type_name}（「{realm_name}」的会员）"
     return {

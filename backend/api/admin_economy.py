@@ -81,14 +81,14 @@ ECONOMY_CONFIG_KEYS = {
     "subscription_purchase_enabled": "bool",
     # 钱包（批 1，2026-11-14）：默认值见 backend/wallet.WALLET_CONFIG_DEFAULTS
     "wallet_enabled": "bool",  # 钱包总开关（默认开）
-    "wallet_min_topup_amount": "int",  # 最低充值额（分，默认 1000＝¥10）
+    "wallet_min_topup_amount": "int",  # 最低充值额（美分，默认 1000＝$10）
     "wallet_topup_fee_pct": "int",  # 充值手续费比例 %（默认 0，批 3 再议）
     "wallet_invite_rebate_percent": "int",  # 邀请返利比例 %（默认 5，批 2 计提）
-    "wallet_invite_rebate_cap": "int",  # 单人返利上限（分，默认 0＝不限）
+    "wallet_invite_rebate_cap": "int",  # 单人返利上限（美分，默认 0＝不限）
     "wallet_invite_rebate_mode": "str",  # 返利模式 tiered/flat（默认 tiered；两值校验在 config_schema 的 enum）
-    "wallet_invite_rebate_tier_threshold": "int",  # 分档门槛（分，默认 35000＝¥350，按每位好友累计付费计）
+    "wallet_invite_rebate_tier_threshold": "int",  # 分档门槛（美分，默认 5000＝$50，按每位好友累计付费计）
     "wallet_invite_rebate_tier_percent": "int",  # 二档比例 %（默认 1，门槛以上部分）
-    "traffic_balance_price_per_100gb": "int",  # 余额购流量单价（分/100GB，默认 300＝¥3，批 2 启用）
+    "traffic_balance_price_per_100gb": "int",  # 余额购流量单价（美分/100GB，默认 30＝$0.30，批 2 启用）
     "wallet_refund_to_balance": "bool",  # 退款回钱包（默认开，批 2 落地）
     "wallet_auto_renew_enabled": "bool",  # 余额自动续费总闸（默认开；用户侧开关默认关）
     "payment_gateway_url": "str", "payment_partner_id": "str",

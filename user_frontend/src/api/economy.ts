@@ -50,6 +50,8 @@ export interface SubscriptionPlan {
   /** 套餐属于哪个服（一个服一个）：买哪份就开哪个服的会员 */
   realm_id?: number | null
   realm_name?: string
+  /** 线路展示名（订阅页分组/对比表用）：后端按服配置下发，未配时与 realm_name 相同 */
+  line_name?: string
 }
 
 export interface PaymentMethod {
@@ -112,7 +114,7 @@ export interface MyInviteInfo {
   invited_count: number
   username: string
   config: InviteConfig
-  /** 累计返利汇总（元，字符串保精度）：已入账 + 待入账 */
+  /** 累计返利汇总（美元，字符串保精度）：已入账 + 待入账 */
   rebate_totals: { credited: string; pending: string; count: number }
   welfare: InviteWelfareStatus
 }
@@ -124,12 +126,12 @@ export interface InvitationRecordRow {
   reward_points: number
   /** 是否已付费（有已支付订阅订单） */
   paid: boolean
-  /** 该好友累计产生的返利（元，计提台账口径） */
+  /** 该好友累计产生的返利（美元，计提台账口径） */
   rebate_total: number
   created_at: string | null
 }
 
-/** 返利明细一笔（计提台账）：金额为元的字符串 */
+/** 返利明细一笔（计提台账）：金额为美元的字符串 */
 export interface RebateRow {
   id: number
   invitee_username: string

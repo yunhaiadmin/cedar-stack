@@ -490,7 +490,7 @@ async function submit() {
             <el-option
               v-for="p in plans"
               :key="p.id"
-              :label="`${p.name}（${p.duration_days} 天 / ¥${p.price}）`"
+              :label="`${p.name}（${p.duration_days} 天 / $${p.price}）`"
               :value="p.id"
             />
           </el-select>

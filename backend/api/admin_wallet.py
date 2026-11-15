@@ -201,7 +201,7 @@ def wallet_rebate_reversals(
     """钱包时代返利撤回欠账：订单退款时邀请人余额不足、返利没扣回来
     的计提行（status=credited 且 reversal_owed=True），以及已扣回
     的（status=reversed）。与积分时代的 RebateReversalDebt 分开记账、
-    不混账；金额是人民币元（Decimal），不在 Integer 的旧表里存分。
+    不混账；金额是美元（Decimal），不在 Integer 的旧表里存分。
     """
     from backend import invite_rebate as _invite_rebate
 

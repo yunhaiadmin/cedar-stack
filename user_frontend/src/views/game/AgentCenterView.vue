@@ -24,18 +24,18 @@
             </div>
             <div class="agent-stat">
               <div class="agent-stat-lbl">进货余额</div>
-              <div class="agent-stat-num">¥{{ money(profile.balance) }}</div>
+              <div class="agent-stat-num">${{ money(profile.balance) }}</div>
               <div class="agent-stat-sub">余额不足请联系管理员补充</div>
             </div>
             <div class="agent-stat">
               <div class="agent-stat-lbl">累计销售</div>
               <div class="agent-stat-num">{{ stats?.summary.sales_count ?? 0 }} 单</div>
-              <div class="agent-stat-sub">面值 ¥{{ money(stats?.summary.sales_face_total ?? 0) }}</div>
+              <div class="agent-stat-sub">面值 ${{ money(stats?.summary.sales_face_total ?? 0) }}</div>
             </div>
             <div class="agent-stat">
               <div class="agent-stat-lbl">累计进货</div>
               <div class="agent-stat-num">{{ stats?.summary.purchase_quantity ?? 0 }} 张</div>
-              <div class="agent-stat-sub">花费 ¥{{ money(stats?.summary.purchase_cost_total ?? 0) }}</div>
+              <div class="agent-stat-sub">花费 ${{ money(stats?.summary.purchase_cost_total ?? 0) }}</div>
             </div>
           </div>
         </section>
@@ -49,7 +49,7 @@
             <div v-for="p in products" :key="p.plan_id" class="acct-row">
               <span class="acct-row-main">
                 <span class="acct-row-text">{{ p.name }}（{{ p.duration_days }} 天）</span>
-                <span class="acct-row-meta">面值 ¥{{ money(p.face_value) }} · 你的进货价 ¥{{ money(p.unit_cost) }}</span>
+                <span class="acct-row-meta">面值 ${{ money(p.face_value) }} · 你的进货价 ${{ money(p.unit_cost) }}</span>
               </span>
               <button type="button" class="v4-mini-btn" @click="openBuy(p)">进货</button>
             </div>
@@ -81,7 +81,7 @@
                 <span class="acct-row-text mono">{{ s.code }}</span>
                 <span class="acct-row-meta">{{ s.buyer_username }} 购买 · {{ fmtTime(s.created_at) }}</span>
               </span>
-              <span class="acct-row-meta">面值 ¥{{ money(s.face_value) }} · 毛利 ¥{{ money(s.face_value - s.unit_cost) }}</span>
+              <span class="acct-row-meta">面值 ${{ money(s.face_value) }} · 毛利 ${{ money(s.face_value - s.unit_cost) }}</span>
             </div>
           </div>
           <div v-if="stats && stats.monthly.some(m => m.count > 0)" class="v4-card" style="margin-top:10px">
@@ -90,7 +90,7 @@
                 <span class="acct-row-text">{{ m.period }}</span>
                 <span class="acct-row-meta">{{ m.count }} 单</span>
               </span>
-              <span class="acct-row-meta">¥{{ money(m.face_total) }}</span>
+              <span class="acct-row-meta">${{ money(m.face_total) }}</span>
             </div>
           </div>
         </section>
@@ -103,9 +103,9 @@
             <div v-for="l in logs" :key="l.id" class="acct-row">
               <span class="acct-row-main">
                 <span class="acct-row-text">{{ l.kind === 'purchase' ? '进货扣款' : '管理员调整' }}{{ l.note ? ` · ${l.note}` : '' }}</span>
-                <span class="acct-row-meta">{{ fmtTime(l.created_at) }} · 变动后余额 ¥{{ money(l.balance_after) }}</span>
+                <span class="acct-row-meta">{{ fmtTime(l.created_at) }} · 变动后余额 ${{ money(l.balance_after) }}</span>
               </span>
-              <span class="acct-row-meta">{{ l.amount >= 0 ? '+' : '' }}¥{{ money(l.amount) }}</span>
+              <span class="acct-row-meta">{{ l.amount >= 0 ? '+' : '' }}${{ money(l.amount) }}</span>
             </div>
           </div>
         </section>
@@ -116,7 +116,7 @@
         <div class="agent-modal" role="dialog" aria-modal="true" aria-label="确认进货">
           <div class="v4-sec-title">进货：{{ buyTarget.name }}</div>
           <div class="v4-sec-sub">
-            面值 ¥{{ money(buyTarget.face_value) }} · 进货价 ¥{{ money(buyTarget.unit_cost) }} / 张
+            面值 ${{ money(buyTarget.face_value) }} · 进货价 ${{ money(buyTarget.unit_cost) }} / 张
           </div>
           <label class="agent-field">
             <span>卡码类型</span>
@@ -129,8 +129,8 @@
             <input v-model.number="buyForm.quantity" type="number" min="1" max="100">
           </label>
           <div class="agent-total">
-            合计扣款 ¥{{ money(buyTarget.unit_cost * (buyForm.quantity || 0)) }}
-            （余额 ¥{{ money(profile?.balance ?? 0) }}）
+            合计扣款 ${{ money(buyTarget.unit_cost * (buyForm.quantity || 0)) }}
+            （余额 ${{ money(profile?.balance ?? 0) }}）
           </div>
           <div v-if="buyError" class="v4-err">{{ buyError }}</div>
           <div v-if="boughtCodes.length" class="bought">
@@ -269,7 +269,7 @@ async function doBuy() {
       quantity: buyForm.value.quantity,
     })
     boughtCodes.value = res.codes
-    toast.success(`进货成功，扣款 ¥${money(res.purchase.total_cost)}`)
+    toast.success(`进货成功，扣款 $${money(res.purchase.total_cost)}`)
     // 刷新余额/卡码/流水（弹窗保持打开看新码，关掉后数据已是新的）
     const me = await getAgentMe()
     profile.value = me.agent

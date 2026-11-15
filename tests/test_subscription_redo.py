@@ -112,6 +112,67 @@ def test_monthly_price_conversion_table(db):
     assert economy.months_grant_days(12) == 365
 
 
+def test_usd_catalog_pricing(db):
+    """美元目录计价（2026-11-15 币种改美刀＋友站国际线路两档）。
+
+    两档以 (price=月价, duration_days=30) 存储：Global 国际版 $1.2/月、
+    Global 家庭版 $3.6/月；3/6 个月无折扣、仅年付＝11×月价，与友站
+    现行目录逐项一致（$1.2/$3.6、年付 $13.2/$39.6）。
+    """
+    standard = _plan(db, "Global 国际版", "1.2", 30)
+    family = _plan(db, "Global 家庭版", "3.6", 30)
+    assert economy.plan_base_months(standard) == 1
+    assert economy.plan_monthly_price(standard) == Decimal("1.20")
+    assert economy.plan_monthly_price(family) == Decimal("3.60")
+    assert economy.months_list_price(standard, 1) == Decimal("1.20")
+    assert economy.months_list_price(standard, 3) == Decimal("3.60")
+    assert economy.months_list_price(standard, 6) == Decimal("7.20")
+    assert economy.months_list_price(standard, 12) == Decimal("13.20")
+    assert economy.months_list_price(family, 1) == Decimal("3.60")
+    assert economy.months_list_price(family, 12) == Decimal("39.60")
+
+
+def test_payment_plans_line_name_and_entitlements(db):
+    """订阅页线路名与权益透传（2026-11-15 美元目录单）。
+
+    - 套餐 DTO 新增 line_name：取该服配置 subscription_line_name，
+      未配时回退 realm_name（服名本身不动）；
+    - entitlements 经 parse 归一透传（monthly_traffic_bytes 在位）。
+    """
+    from backend import realms as realms_mod
+
+    plan = _plan(db, "Global 国际版", "1.2", 30)
+    plan.entitlements = {"monthly_traffic_bytes": 536870912000}
+    db.commit()
+
+    resp = economy.payment_plans(db=db)
+    dto = {p["id"]: p for p in resp["plans"]}[plan.id]
+    assert dto["realm_name"] == "默认服"
+    assert dto["line_name"] == "默认服"  # 未配线路名 → 回退服名
+    assert dto["entitlements"] == {"monthly_traffic_bytes": 536870912000}
+
+    realms_mod.set_realm_config(
+        db, "subscription_line_name", "国际线路", realm_id=1)
+    db.commit()
+    resp = economy.payment_plans(db=db)
+    dto = {p["id"]: p for p in resp["plans"]}[plan.id]
+    assert dto["line_name"] == "国际线路"
+    assert dto["realm_name"] == "默认服"  # 服名不许被线路名覆盖
+
+
+def test_wallet_pay_usd_catalog_annual(db):
+    """钱包实付：国际版年付扣 $13.20、发 365 天。"""
+    u = _user(db, "usd-buyer")
+    _topup(db, u, "20")
+    standard = _plan(db, "Global 国际版", "1.2", 30)
+    result, _ = _pay(db, u, standard, "usd-12", months=12)
+    assert result["paid_amount"] == "13.20"
+    assert wallet_service.get_balance(db, u.id) == Decimal("6.80")
+    order = db.query(models.SubscriptionOrder).filter_by(
+        order_id="WBusd-12").one()
+    assert order.days_granted == 365
+
+
 def test_wallet_pay_by_months(db):
     u = _user(db, "months-buyer")
     _topup(db, u, "200")

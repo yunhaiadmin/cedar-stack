@@ -8,20 +8,20 @@
   - flat（一律比例）：返利 = 被邀请人**实付金额** ×
     ``wallet_invite_rebate_percent``（默认 5，钱包方案 §8 的键，钱包
     批 1 已登记进配置注册表与管理端 Settings）；
-  - tiered（分档，友站形态的人民币映射）：按**每位被邀请人累计付费**
-    计——累计前 ``wallet_invite_rebate_tier_threshold``（分，默认
-    35000 = ¥350，用户 2026-11-14 拍板的占位默认值）部分按
-    ``wallet_invite_rebate_percent`` 返，超出部分按
+  - tiered（分档，照友站原值）：按**每位被邀请人累计付费**
+    计——累计前 ``wallet_invite_rebate_tier_threshold``（美分，默认
+    5000 = $50，友站原值；2026-11-15 币种改美刀，此前 ¥350 映射作废）
+    部分按 ``wallet_invite_rebate_percent`` 返，超出部分按
     ``wallet_invite_rebate_tier_percent``（默认 1）返。
   两种模式切换只改配置、不改代码。
-- ``wallet_invite_rebate_cap`` = 邀请人累计返利上限（分，0 = 不限、无门槛），
+- ``wallet_invite_rebate_cap`` = 邀请人累计返利上限（美分，0 = 不限、无门槛），
   两档模式都生效（先按模式算，再按剩余额度截断）；
 - 注册即得的可变现奖励一律不发（邀请刷号事故教训）——返利只从真实
   付费产生，被邀请人的体验权益（试用天数）走 invite_trial，不经本模块。
 
-金额纪律：库里只存人民币元 ``Numeric(12,2)``；比例计算先落到分再四舍
+金额纪律：库里只存美元 ``Numeric(12,2)``；比例计算先落到美分再四舍
 五入（``agents.money`` 的 ROUND_HALF_UP 口径，与全站金额列一致），
-即 rebate = money(paid × percent / 100)，例：实付 ¥33.33 × 5% = ¥1.67。
+即 rebate = money(paid × percent / 100)，例：实付 $33.33 × 5% = $1.67。
 
 与钱包的接合（不另造余额账）：
 
@@ -60,15 +60,16 @@ CONFIG_TIER_THRESHOLD = "wallet_invite_rebate_tier_threshold"
 CONFIG_TIER_PERCENT = "wallet_invite_rebate_tier_percent"
 
 #: 出厂默认：比例 5%（与钱包方案 §8、钱包批 1 WALLET_CONFIG_DEFAULTS
-#: 一致），上限 0 分 = 不限。模式默认 tiered（2026-11-14 09:06 用户
-#: 拍板照友站分档）：阈值 ¥350（约等值友站 50 USD，配置可改）、
-#: 超出部分 1%。flat 保留为配置可切换的模式。
+#: 一致），上限 0 美分 = 不限。模式默认 tiered（2026-11-14 09:06 用户
+#: 拍板照友站分档）：阈值 $50 = 5000 美分（友站原值，配置可改；
+#: 2026-11-15 币种改美刀，此前 ¥350 映射作废）、超出部分 1%。
+#: flat 保留为配置可切换的模式。
 MODE_FLAT = "flat"
 MODE_TIERED = "tiered"
 DEFAULT_PERCENT = 5
 DEFAULT_CAP_FEN = 0
 DEFAULT_MODE = MODE_TIERED
-DEFAULT_TIER_THRESHOLD_FEN = 35000
+DEFAULT_TIER_THRESHOLD_FEN = 5000
 DEFAULT_TIER_PERCENT = 1
 
 SOURCE_SUBSCRIPTION_ORDER = "subscription_order"
@@ -100,7 +101,7 @@ def rebate_percent(db: Session) -> int:
 
 
 def rebate_cap_fen(db: Session) -> int:
-    """生效返利上限（分）：0 = 不限；坏值回 0（不限）。"""
+    """生效返利上限（美分）：0 = 不限；坏值回 0（不限）。"""
     value = _int_config(db, CONFIG_CAP, DEFAULT_CAP_FEN)
     return max(0, value)
 
@@ -113,7 +114,7 @@ def rebate_mode(db: Session) -> str:
 
 
 def tier_threshold_fen(db: Session) -> int:
-    """分档阈值（分）：每位被邀请人累计付费的前段上限；坏值回默认。"""
+    """分档阈值（美分）：每位被邀请人累计付费的前段上限；坏值回默认。"""
     value = _int_config(db, CONFIG_TIER_THRESHOLD, DEFAULT_TIER_THRESHOLD_FEN)
     return max(0, value)
 
@@ -137,10 +138,10 @@ def config_snapshot(db: Session) -> dict:
 # ==================== 计算 ====================
 
 def compute_rebate(paid_amount, percent: int) -> Decimal:
-    """返利金额（元）：实付 × 比例%，按分四舍五入（ROUND_HALF_UP）。
+    """返利金额（美元）：实付 × 比例%，按美分四舍五入（ROUND_HALF_UP）。
 
-    例：¥45.00 × 5% = ¥2.25；¥33.33 × 5% = ¥1.6665 → ¥1.67；
-    ¥10.01 × 5% = ¥0.5005 → ¥0.50。比例 0 或实付 ≤0 时为 0。
+    例：$45.00 × 5% = $2.25；$33.33 × 5% = $1.6665 → $1.67；
+    $10.01 × 5% = $0.5005 → $0.50。比例 0 或实付 ≤0 时为 0。
     """
     paid = money(paid_amount)
     if paid <= 0 or percent <= 0:
@@ -150,14 +151,14 @@ def compute_rebate(paid_amount, percent: int) -> Decimal:
 
 def compute_rebate_tiered(paid_amount, base_percent: int, tier_percent_: int,
                           prior_paid, threshold) -> Decimal:
-    """分档返利（元）：按该被邀请人累计付费拆段计算，整笔最后按分取整一次。
+    """分档返利（美元）：按该被邀请人累计付费拆段计算，整笔最后按美分取整一次。
 
-    - ``prior_paid``：这笔之前该被邀请人已累计付费（元）；
+    - ``prior_paid``：这笔之前该被邀请人已累计付费（美元）；
     - 累计未达 ``threshold`` 的部分按 ``base_percent`` 返，超出部分按
       ``tier_percent_`` 返；一笔付费正好跨过阈值时按段拆算。
-    例（阈值 ¥350、5%/1%）：首付 ¥400 → 350×5% + 50×1% = ¥18.00；
-    已付 ¥350 后再付 ¥100 → 全部按 1% = ¥1.00；
-    已付 ¥300 后付 ¥50（恰达阈值）→ 全部按 5% = ¥2.50。
+    例（阈值 $50、5%/1%）：首付 $400 → 50×5% + 350×1% = $6.00；
+    已付 $50 后再付 $100 → 全部按 1% = $1.00；
+    已付 $30 后付 $20（恰达阈值）→ 全部按 5% = $1.00。
     """
     paid = money(paid_amount)
     if paid <= 0:

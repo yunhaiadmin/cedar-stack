@@ -79,7 +79,7 @@ const metric = ref<Metric>('new_users')
 const metricTabs: { key: Metric; label: string; color: string }[] = [
   { key: 'new_users', label: '新增用户', color: 'var(--au-primary)' },
   { key: 'plays', label: '播放次数', color: 'var(--au-info)' },
-  { key: 'revenue', label: '营收 (¥)', color: 'var(--au-success)' },
+  { key: 'revenue', label: '营收 ($)', color: 'var(--au-success)' },
 ]
 
 async function loadTrend() {
@@ -489,7 +489,7 @@ const axisLabels = computed(() => {
 })
 
 function fmtMoney(v: number): string {
-  return `¥${v.toFixed(2)}`
+  return `$${v.toFixed(2)}`
 }
 
 function libraryStatus(library: EmbyLibrary): string {
@@ -990,7 +990,7 @@ function serviceRoleLabel(role: string): string {
                   <td>{{ o.username }}</td>
                   <td>{{ o.item }}</td>
                   <td>{{ o.kind }}</td>
-                  <td>¥{{ o.amount }}</td>
+                  <td>${{ o.amount }}</td>
                   <td>{{ o.status }}</td>
                   <td>{{ fmtTime(o.created_at) }}</td>
                 </tr>

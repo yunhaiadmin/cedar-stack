@@ -35,8 +35,8 @@ WELFARE_CONFIG_KEYS = {
     # 等在用键（字典名与端点路径为历史名，不动以免断现行调用）。
     # P0 统一货币体系：充值比例
     "recharge_ratio": "1.2",
-    # C4 商店改造：快捷金额
-    "recharge_quick_amounts": "10,30,50,100,200",
+    # C4 商店改造：快捷金额（2026-11-15 币种改美刀：USD 档位）
+    "recharge_quick_amounts": "5,10,20,50,100",
     # B4 TG Bot 总控：总开关、群白名单、限流、各命令开关
     "bot_group_ids": "",
     "bot_rate_limit_seconds": "3",

@@ -189,7 +189,7 @@
         </div>
         <RouterLink v-if="walletInfo" class="ov-trow" to="/wallet">
           <span class="ov-trow__name">账户余额</span>
-          <span class="ov-trow__value">¥ {{ walletInfo.balance }}</span>
+          <span class="ov-trow__value">$ {{ walletInfo.balance }}</span>
           <ChevronRight :size="18" class="ov-row__chev" aria-hidden="true" />
         </RouterLink>
         <RouterLink class="ov-trow" to="/game/account/invite">

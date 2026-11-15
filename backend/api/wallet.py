@@ -147,7 +147,7 @@ def _pay_subscription_core(db: Session, user: models.WebUser,
         shortfall = money(paid - balance)
         raise HTTPException(
             status_code=400,
-            detail=f"钱包余额不足，还差 ¥{shortfall:.2f}，请先充值或更换套餐")
+            detail=f"钱包余额不足，还差 ${shortfall:.2f}，请先充值或更换套餐")
 
     # 扣款先于建单：并发同键撞上钱包幂等唯一约束时，_apply 内部的
     # db.rollback() 只会冲掉本次事务里已有的写——扣款在最前、其余写

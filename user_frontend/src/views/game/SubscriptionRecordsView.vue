@@ -218,7 +218,7 @@ const STATUS_LABEL: Record<string, string> = {
 /** 第二行：支出/状态＋时长。金额与时长都是后端真实数据，不编造 */
 function summaryLine(r: SubscriptionRecordRow): string {
   const dur = durationLabel(r.days)
-  const money = r.amount != null ? `¥${r.amount.toFixed(2)}` : null
+  const money = r.amount != null ? `$${r.amount.toFixed(2)}` : null
   const parts: string[] = []
   if (r.kind === 'order') {
     if (r.status === 'paid') parts.push(money ? `支出 ${money}` : '已支付')

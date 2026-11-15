@@ -204,7 +204,7 @@ def test_pay_subscription_insufficient(db):
         _pay(db, alice, plan, "pay-poor-1")
     db.rollback()
     assert excinfo.value.status_code == 400
-    assert "还差 ¥35.00" in excinfo.value.detail
+    assert "还差 $35.00" in excinfo.value.detail
     assert wallet_service.get_balance(db, alice.id) == Decimal("10.00")
     assert db.query(models.SubscriptionOrder).count() == 0
     assert db.query(models.UserSubscription).count() == 0
@@ -296,10 +296,10 @@ def test_buy_traffic_success(db):
     result = tq.buy_traffic_with_balance(db, user.id, 100, "tq-ok-1")
 
     assert result["replayed"] is False
-    assert result["paid_amount"] == "3.00"  # 默认单价 ¥3/100GB
-    assert result["balance_after"] == "97.00"
+    assert result["paid_amount"] == "0.30"  # 默认单价 $0.30/100GB（30 美分）
+    assert result["balance_after"] == "99.70"
     assert result["gb"] == 100
-    assert wallet_service.get_balance(db, user.id) == Decimal("97.00")
+    assert wallet_service.get_balance(db, user.id) == Decimal("99.70")
     log = db.query(em_models.TrafficExchangeLog).filter_by(
         idempotency_key="tq-ok-1").one()
     assert log.kind == "balance_purchase"
@@ -317,20 +317,21 @@ def test_buy_traffic_replay(db):
 
     assert first["replayed"] is False
     assert second["replayed"] is True
-    assert first["paid_amount"] == second["paid_amount"] == "6.00"
-    assert wallet_service.get_balance(db, user.id) == Decimal("94.00")
+    assert first["paid_amount"] == second["paid_amount"] == "0.60"
+    assert wallet_service.get_balance(db, user.id) == Decimal("99.40")
     assert db.query(em_models.TrafficExchangeLog).count() == 1
     assert (db.query(models.WalletLedger)
             .filter_by(kind="traffic_purchase").count() == 1)
 
 
 def test_buy_traffic_insufficient(db):
-    user = _traffic_user(db, balance="2")
+    # 余额 $0.20 < 100GB 单价 $0.30（默认价改美刀后口径）
+    user = _traffic_user(db, balance="0.20")
 
     with pytest.raises(wallet_service.InsufficientWalletBalance):
         tq.buy_traffic_with_balance(db, user.id, 100, "tq-poor-1")
     db.rollback()
-    assert wallet_service.get_balance(db, user.id) == Decimal("2.00")
+    assert wallet_service.get_balance(db, user.id) == Decimal("0.20")
     assert db.query(em_models.TrafficExchangeLog).count() == 0
     assert (db.query(models.WalletLedger)
             .filter_by(kind="traffic_purchase").count() == 0)
@@ -395,35 +396,35 @@ def test_reversed_excluded_from_cap_and_tier(db):
     code = _code(db, inviter, "CODEREV1")
     _relation(db, inviter, invitee, code)
 
-    # 第一笔 ¥400：350×5% + 50×1% = ¥18.00（默认 tiered）
+    # 第一笔 $400：50×5% + 350×1% = $6.00（默认 tiered，门槛 $50）
     first = invite_rebate.record_payment_rebate(
         db, invitee, source="subscription_order", source_ref="SO-REV-1",
         paid_amount=Decimal("400"))
     db.commit()
-    assert first.rebate_amount == Decimal("18.00")
+    assert first.rebate_amount == Decimal("6.00")
     assert first.status == "credited"
-    assert wallet_service.get_balance(db, inviter.id) == Decimal("18.00")
+    assert wallet_service.get_balance(db, inviter.id) == Decimal("6.00")
 
     # 退款撤回：上限额度与分档累计都应还回来
     reversed_amount, owed = orders_admin._reverse_rebate(db, "SO-REV-1", False)
     db.commit()
-    assert reversed_amount == Decimal("18.00")
+    assert reversed_amount == Decimal("6.00")
     assert owed is False
     assert _accruals(db, inviter.id)[0].status == "reversed"
     assert wallet_service.get_balance(db, inviter.id) == Decimal("0.00")
     assert invite_rebate._accrued_total(db, inviter.id) == Decimal("0")
     totals = invite_rebate.totals_for_inviter(db, inviter.id)
-    assert totals["reversed"] == Decimal("18.00")
+    assert totals["reversed"] == Decimal("6.00")
     assert totals["credited"] == Decimal("0")
 
-    # 第二笔同样 ¥400：若 reversed 还占累计，只剩 1%（¥4.00）；
-    # 排除后重新从阈值下爬，应仍是 ¥18.00
+    # 第二笔同样 $400：若 reversed 还占累计，只剩 1%（$4.00）；
+    # 排除后重新从阈值下爬，应仍是 $6.00
     second = invite_rebate.record_payment_rebate(
         db, invitee, source="subscription_order", source_ref="SO-REV-2",
         paid_amount=Decimal("400"))
     db.commit()
-    assert second.rebate_amount == Decimal("18.00")
-    assert invite_rebate._accrued_total(db, inviter.id) == Decimal("18.00")
+    assert second.rebate_amount == Decimal("6.00")
+    assert invite_rebate._accrued_total(db, inviter.id) == Decimal("6.00")
 
 
 # ==================== ④ 退款回钱包 ====================

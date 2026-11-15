@@ -75,10 +75,10 @@ function specRows(plan: SubscriptionPlan): string[] {
         <span class="uhd-plans__radio" :class="{ 'uhd-plans__radio--on': plan.id === selectedId }" aria-hidden="true" />
         <span class="uhd-plans__name">{{ plan.name }}</span>
       </div>
-      <p v-if="showRealm && plan.realm_name" class="uhd-plans__realm">{{ plan.realm_name }}</p>
+      <p v-if="showRealm && (plan.line_name || plan.realm_name)" class="uhd-plans__realm">{{ plan.line_name || plan.realm_name }}</p>
 
       <p class="uhd-plans__price">
-        <span class="uhd-plans__price-num">¥{{ plan.price }}</span>
+        <span class="uhd-plans__price-num">${{ plan.price }}</span>
         <span class="uhd-plans__price-per">/ {{ plan.duration_days }} 天</span>
       </p>
       <p v-if="plan.description" class="uhd-plans__desc">{{ plan.description }}</p>
