@@ -102,14 +102,15 @@ const menuFacilities = computed(() =>
   gameFacilities.filter((f) => f.enabled).sort((a, b) => a.order - b.order),
 )
 
-/** 昵称展示：登录名可能是一长串邮箱，头像旁只取 @ 前段；@id 用数字 id */
+/** 昵称展示：登录名可能是一长串邮箱，头像旁只取 @ 前段；@ 后跟公开 ID
+ * （2026-11-15：不再露数字 id；公开 ID 缺失时整段不显示） */
 const displayName = computed(() => {
   const raw = userStore.user?.username || ''
   const at = raw.indexOf('@')
   return at > 0 ? raw.slice(0, at) : raw || '用户'
 })
 
-const userIdLabel = computed(() => (userStore.user?.id ? `@${userStore.user.id}` : ''))
+const userIdLabel = computed(() => (userStore.user?.public_id ? `@${userStore.user.public_id}` : ''))
 
 /** 管理员判定：后端 AuthUser.is_staff（注释写明了就是为用户端「管理后台」入口准备的）。
  *  头像菜单里的管理后台行仅管理员渲染，普通用户看不见。 */
