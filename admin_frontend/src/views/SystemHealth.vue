@@ -1019,7 +1019,7 @@ onUnmounted(() => {
 .alert-block { margin-bottom: 20px; }
 .alert-block:last-child { margin-bottom: 0; }
 .alert-block-title { font-size: 14px; font-weight: 600; color: var(--au-text); margin-bottom: 10px; }
-/* 高级设置折叠：与 RegistrationCodes 的 gen-advanced 同口径（默认收起） */
+/* 高级设置折叠：与 MemberCodes 的 gen-advanced 同口径（默认收起） */
 .alert-advanced { margin-top: 2px; }
 .alert-advanced .el-collapse-item__header { font-size: var(--font-size-xs, 12px); color: var(--au-text-3); border-bottom: none; }
 .alert-settings-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }

@@ -298,12 +298,10 @@ export interface LoginLogsResponse {
 }
 
 export interface RegistrationSettings {
-  // 注册三档：open 开放 / code 凭码（两步流程，2026-11-10 定版）/ closed 关闭
-  mode: 'open' | 'closed' | 'code'
+  // 注册两档：open 开放 / closed 关闭（注册码已于 2026-11-15 下线；
+  // 后端对存量 code 值归一为 open 后才下发，这里不会再收到 code）
+  mode: 'open' | 'closed'
   message: string
-  /** 凭码模式下注册页第一步「没有注册码去哪领」的提示文案与链接 */
-  registration_code_hint_text?: string
-  registration_code_hint_url?: string
   // 注册限流（C5）：后端带默认值下发；可选以兼容旧构造处
   ratelimit_enabled?: boolean
   ratelimit_max?: number

@@ -14,6 +14,11 @@
 - 总开关 ``invite_trial_enabled``（默认开）+ 天数默认 0 —— 与推广
   奖励同一出厂口径（开关开、值为 0 = 不实际发放），管理员在管理端
   「邀请管理」页把天数调大即生效，不许在代码里写死天数。
+- 试用订阅默认建在卡码口径的默认套餐上（权益跟随该套餐声明）；
+  管理员可另建一个隐藏的试用专属套餐（如只声明 30G 月流量），把
+  其 ID 写进 ``invite_trial_plan_id``，试用便建在该套餐上、流量等
+  权益按该套餐算。0/未配 = 不指定，行为与以前完全一致；指定套餐
+  不存在或属于别的服时回退默认口径并发放照常（见 codes 侧校验）。
 
 发放留痕走 ``invite_trial_grants``（被邀请人唯一索引，防重复领取），
 与邀请关系同一事务落盘；失败由调用方（apply_invitation）用保存点
@@ -39,13 +44,16 @@ CONFIG_ENABLED = "invite_trial_enabled"
 CONFIG_DAYS = "invite_trial_days"
 CONFIG_MONTHLY_LIMIT = "invite_welfare_monthly_limit"
 CONFIG_MIN_PAID_FEN = "invite_welfare_min_paid_fen"
+CONFIG_PLAN_ID = "invite_trial_plan_id"
 
-#: 出厂默认：开关开、天数 0（不发）、月 2 次、邀请人实付门槛 ¥10
+#: 出厂默认：开关开、天数 0（不发）、月 2 次、邀请人实付门槛 ¥10、
+#: 试用专属套餐不指定（0 = 沿用卡码默认套餐口径）
 DEFAULTS: dict[str, str] = {
     CONFIG_ENABLED: "true",
     CONFIG_DAYS: "0",
     CONFIG_MONTHLY_LIMIT: "2",
     CONFIG_MIN_PAID_FEN: "1000",
+    CONFIG_PLAN_ID: "0",
 }
 
 DESCRIPTIONS = {
@@ -53,11 +61,14 @@ DESCRIPTIONS = {
     CONFIG_DAYS: "福利邀请试用天数（被邀请人注册得试用订阅；0 = 不发）",
     CONFIG_MONTHLY_LIMIT: "福利邀请每月次数上限（每位邀请人；0 = 关闭福利试用）",
     CONFIG_MIN_PAID_FEN: "福利邀请资格门槛（邀请人累计实付，分；0 = 无门槛）",
+    CONFIG_PLAN_ID: "福利邀请试用专属套餐 ID（0 = 不指定、沿用默认套餐口径；"
+                    "指定后试用订阅建在该套餐上，流量等权益按该套餐声明）",
 }
 
 DAYS_MIN, DAYS_MAX = 0, 3650
 LIMIT_MIN, LIMIT_MAX = 0, 1000
 PAID_MIN, PAID_MAX = 0, 100_000_000
+PLAN_ID_MIN, PLAN_ID_MAX = 0, 100_000_000
 
 
 def _raw(db: Session, key: str) -> str:
@@ -78,6 +89,7 @@ def config(db: Session) -> dict:
         "days": _int(db, CONFIG_DAYS, DAYS_MIN, DAYS_MAX),
         "monthly_limit": _int(db, CONFIG_MONTHLY_LIMIT, LIMIT_MIN, LIMIT_MAX),
         "min_paid_fen": _int(db, CONFIG_MIN_PAID_FEN, PAID_MIN, PAID_MAX),
+        "plan_id": _int(db, CONFIG_PLAN_ID, PLAN_ID_MIN, PLAN_ID_MAX),
     }
 
 
@@ -103,6 +115,12 @@ def write_policy(db: Session, values: dict) -> dict:
                 continue
         elif key == CONFIG_MONTHLY_LIMIT:
             low, high = LIMIT_MIN, LIMIT_MAX
+            try:
+                text = str(max(low, min(high, int(float(str(value).strip() or "0")))))
+            except (TypeError, ValueError):
+                continue
+        elif key == CONFIG_PLAN_ID:
+            low, high = PLAN_ID_MIN, PLAN_ID_MAX
             try:
                 text = str(max(low, min(high, int(float(str(value).strip() or "0")))))
             except (TypeError, ValueError):
@@ -191,7 +209,11 @@ def grant_invitee_trial(db: Session, inviter: models.WebUser,
 
     from backend import codes
 
-    subscription = codes.grant_membership_days(db, invitee, cfg["days"], None)
+    # 试用专属套餐：配了就把订阅建在它上面（流量等权益按它声明）；
+    # 套餐不存在/跨服的校验与回退在 codes 侧（记 warning、照常发放），
+    # 这里只把配置原样递过去，0 = 不指定、走现行默认套餐口径。
+    subscription = codes.grant_membership_days(
+        db, invitee, cfg["days"], None, plan_id=cfg["plan_id"] or None)
     row = models.InviteTrialGrant(
         inviter_id=inviter.id,
         invitee_id=invitee.id,
@@ -207,7 +229,7 @@ def grant_invitee_trial(db: Session, inviter: models.WebUser,
 
 __all__ = [
     "CONFIG_DAYS", "CONFIG_ENABLED", "CONFIG_MIN_PAID_FEN",
-    "CONFIG_MONTHLY_LIMIT", "DEFAULTS", "DESCRIPTIONS",
+    "CONFIG_MONTHLY_LIMIT", "CONFIG_PLAN_ID", "DEFAULTS", "DESCRIPTIONS",
     "config", "grant_invitee_trial", "inviter_paid_total_fen",
     "policy_payload", "welfare_status", "welfare_used_this_month",
     "write_policy",

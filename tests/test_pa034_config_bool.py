@@ -33,13 +33,14 @@ class TestPa034WordStyle:
         from backend import config_schema
 
         # 代表键原为 slots_enabled，老虎机随批 11 删除后改用同风格的现存键；
-        # welfare_vitality_renew_enabled 已随福利整族于 2026-11-14 删除，
-        # 改用同为 word 风格 ("bool",) 的现存键 register_gift_view_enabled
-        assert config_schema.WELFARE_CONFIG_SCHEMA["register_gift_view_enabled"] == ("bool",)
+        # welfare_vitality_renew_enabled 已随福利整族于 2026-11-14 删除、
+        # register_gift_view_enabled 已随注册不送体验于 2026-11-15 删除，
+        # 改用同为 word 风格 ("bool",) 的现存键 bot_channel_guard_enabled
+        assert config_schema.WELFARE_CONFIG_SCHEMA["bot_channel_guard_enabled"] == ("bool",)
         assert (
             normalize(
-                "register_gift_view_enabled",
-                config_schema.WELFARE_CONFIG_SCHEMA["register_gift_view_enabled"],
+                "bot_channel_guard_enabled",
+                config_schema.WELFARE_CONFIG_SCHEMA["bot_channel_guard_enabled"],
                 1,
             )
             == "true"

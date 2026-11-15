@@ -170,12 +170,12 @@ def test_renew_code_unchanged(db):
 
 def test_welfare_code_rejected_no_subscription(db):
     """普通资格码（code_type=注册码 + reward_type=welfare）已下线：
-    注册页核销入口直接拒绝，不发资格、不发订阅、不建查看行。"""
+    兑换入口直接拒绝，不发资格、不发订阅、不建查看行。"""
     u = _user(db, "plain_welfare")
     _code(db, "REG-WEL000000001", code_type=codes.CODE_TYPE_REGISTER,
           days=30, reward_type="welfare")
     db.commit()
-    result = codes.consume_registration_code(db, u, "REG-WEL000000001")
+    result = codes.redeem_code(db, u, "REG-WEL000000001")
     db.commit()
     assert result["success"] is False
     db.refresh(u)

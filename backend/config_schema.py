@@ -139,14 +139,9 @@ def normalize(key: str, spec: tuple, value: Any, bool_style: str = "word") -> Op
 # 配置（welfare_admin.WELFARE_CONFIG_KEYS，历史名）里的数值/开关键；未列出的（群 id 列表等）按字符串保存
 WELFARE_CONFIG_SCHEMA: dict[str, tuple] = {
     # 公益资格族键（资格码配额/到期保留/活力保号/福利申请/注册送资格）
-    # 已随公益资格整族于 2026-11-14 删除，本表只剩抽奖/机器人/查看赠送键。
-    # 新注册送查看凭证天数：最小 1（0 天按 timedelta 算是“立即过期”，
-    # 不是永久，管理端直接禁掉）
-    "register_gift_view_days": ("int", 1, _BIG),
-    # 新注册送查看凭证总开关（2026-10-29 用户拍板默认关）：word 风格
-    # ("bool",) 存 "true"/"false"。关≠天数 0——查看天数 schema
-    # 下限是 1，0 天只会“立即过期”，不是关闭，不能复用天数键。
-    "register_gift_view_enabled": ("bool",),
+    # 已随公益资格整族于 2026-11-14 删除；注册送查看凭证两键
+    # （register_gift_view_days / register_gift_view_enabled）已随
+    # 「注册不送体验」（2026-11-15）删除发放逻辑、就此失效，不再登记。
     "recharge_ratio": ("float", 0.0001, 1000000),
     "recharge_quick_amounts": ("int_list", 1, 1000000),
     "bot_rate_limit_seconds": ("int", 0, 3600),
@@ -253,17 +248,15 @@ COUPONS_CONFIG_SCHEMA: dict[str, tuple] = {
     "coupon_reserve_hours": ("int", 0, 720),
 }
 
-# 注册模式（admin.set_registration_mode；mode 端点层只认 open/closed；
+# 注册模式（admin.set_registration_mode；mode 只剩 open/closed 两档——
+# 注册码已于 2026-11-15 下线，存量 code 值由端点层归一为 open 后才落库，
+# 本表枚举不再认 code；registration_code_hint_* 两键随之失效、不再登记；
 # ratelimit_max≥1、ratelimit_window≥60 是端点现有校验，上限沿用 _BIG 口径；
 # A-112：register_ratelimit_enabled 恢复登记（bool word 风格存 true/false，
 # 与 _get_register_ratelimit 的 =="true" 判定一致；env 显式设置时仍接管））
 REGISTRATION_CONFIG_SCHEMA: dict[str, tuple] = {
-    "registration_mode": ("enum", ("open", "code", "closed")),
+    "registration_mode": ("enum", ("open", "closed")),
     "registration_closed_message": ("str",),
-    # 凭码注册第一步的「没有注册码去哪领」提示（2026-11-10 两步版）：
-    # 文案与链接都走配置，链接不许写死在前端代码里。
-    "registration_code_hint_text": ("str",),
-    "registration_code_hint_url": ("str",),
     "register_ratelimit_enabled": ("bool",),
     "register_ratelimit_max": ("int", 1, _BIG),
     "register_ratelimit_window": ("int", 60, _BIG),
