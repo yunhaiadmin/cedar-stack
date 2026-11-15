@@ -452,6 +452,18 @@ export interface HiddenResumeItem {
   last_played_at?: string | null
 }
 
+/** 已藏的下一集条目：按剧关闭，取消藏的键是 episode_guid（被关那集）。 */
+export interface HiddenNextUpItem {
+  series_guid: string
+  series_name: string
+  episode_guid: string
+  episode_name?: string | null
+  season_number?: number | null
+  episode_number?: number | null
+  poster_url?: string | null
+  dismissed_at?: string | null
+}
+
 /** 演职人员（收藏列表项；key 是人员键，name/image 是收藏当刻快照） */
 export interface PortalPerson {
   key: string
@@ -578,6 +590,12 @@ export const embyApi = {
   hideResumeItem: (itemGuid: string) => api.post<never, { ok: boolean }>(`/api/user/media-library/resume/${itemGuid}/hide`),
   unhideResumeItem: (itemGuid: string) => api.post<never, { ok: boolean }>(`/api/user/media-library/resume/${itemGuid}/unhide`),
   getHiddenResume: () => api.get<never, { items: HiddenResumeItem[] }>('/api/user/media-library/resume/hidden'),
+
+  // 下一集藏 / 取消藏 / 已藏清单（审计 ❌1：按剧关闭，传被关那集 guid；
+  // 下一集变了关闭自动失效，已藏清单只列仍生效的）
+  hideNextUpItem: (episodeGuid: string) => api.post<never, { ok: boolean }>(`/api/user/media-library/next-up/${episodeGuid}/hide`),
+  unhideNextUpItem: (episodeGuid: string) => api.post<never, { ok: boolean }>(`/api/user/media-library/next-up/${episodeGuid}/unhide`),
+  getHiddenNextUp: () => api.get<never, { items: HiddenNextUpItem[] }>('/api/user/media-library/next-up/hidden'),
 
   // 收藏列表
   getFavorites: () => api.get<never, { items: PortalMediaItem[] }>('/api/user/emby/favorites'),

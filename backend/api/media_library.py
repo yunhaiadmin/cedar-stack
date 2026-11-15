@@ -12,6 +12,9 @@
 - L9：POST /resume/{guid}/hide、/unhide 与 GET /resume/hidden。
   藏是按用户自己的观看记录（UserMediaData.hide_from_resume）置位；
   前端对剧集卡传单集 guid（播的是那集），对电影卡传电影 guid。
+- 隐藏下一集（审计 ❌1）：POST /next-up/{episode_guid}/hide、/unhide
+  与 GET /next-up/hidden，与 L9 同形状；落点是 user_nextup_dismissals
+  （用户 × 剧 → 关闭时那一集 guid），下一集变了自动失效。
 
 鉴权：门户 JWT 用户（get_current_user），与门户其它用户口同口径。
 """
@@ -29,6 +32,7 @@ from backend.api.user import get_current_user
 from backend.database import get_db
 from backend.emby_server import models as em
 from backend.emby_server import cover_mirror, item_artwork, item_sort_projection, library_covers
+from backend.emby_server import nextup_dismissals
 from backend.emby_server.env_util import env_int
 from backend.emby_server.identity_gate import gate_enabled, identity_clause
 
@@ -357,5 +361,111 @@ def hidden_resume_items(
             "episode_number": item.episode_number,
             "poster_url": portal_poster_url(display, db),
             "last_played_at": umd.last_played_at.isoformat() if umd.last_played_at else None,
+        })
+    return {"items": out}
+
+
+
+# ------------------------------------------------------- 隐藏下一集（❌1）
+
+
+def _resolve_next_up_episode(db, episode_guid: str):
+    """由 guid 找「下一集」单集：不存在 → 404；不是带剧的单集 → 400
+    （电影/剧本身没有下一集概念，不许拿别的条目冒充）。"""
+    item = db.query(em.MediaItem).filter(em.MediaItem.guid == episode_guid).first()
+    if item is None:
+        raise HTTPException(status_code=404, detail="条目不存在")
+    if item.item_type != "episode" or not item.series_id:
+        raise HTTPException(status_code=400, detail="只能隐藏剧集的下一集")
+    return item
+
+
+def _series_of(db, item):
+    return db.query(em.MediaItem).filter(em.MediaItem.id == item.series_id).first()
+
+
+@router.post("/next-up/{episode_guid}/hide")
+def hide_next_up(
+    episode_guid: str,
+    user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """隐藏这部剧的下一集（❌1）：按（本人 × 剧）记关闭，幂等。
+    只记关闭时那一集的 guid——下一集变了之后关闭自动失效。"""
+    item = _resolve_next_up_episode(db, episode_guid)
+    nextup_dismissals.dismiss(db, user.id, item.series_id, item.guid)
+    series = _series_of(db, item)
+    return {
+        "ok": True,
+        "episode_guid": item.guid,
+        "series_guid": series.guid if series else None,
+        "hidden": True,
+    }
+
+
+@router.post("/next-up/{episode_guid}/unhide")
+def unhide_next_up(
+    episode_guid: str,
+    user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """取消隐藏下一集（❌1）：删本人的关闭记录，幂等。"""
+    item = _resolve_next_up_episode(db, episode_guid)
+    nextup_dismissals.undismiss(db, user.id, item.series_id)
+    series = _series_of(db, item)
+    return {
+        "ok": True,
+        "episode_guid": item.guid,
+        "series_guid": series.guid if series else None,
+        "hidden": False,
+    }
+
+
+@router.get("/next-up/hidden")
+def hidden_next_up_items(
+    user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """已藏的下一集清单（❌1，恢复入口）：只列仍生效的关闭——被关那集
+    仍是这部剧当前下一集；已自动失效（下一集已变）的记录不列。
+    取消藏的键是 episode_guid（与 hide 入参一致）。"""
+    rows = (
+        db.query(em.UserNextUpDismissal)
+        .filter(em.UserNextUpDismissal.user_id == user.id)
+        .order_by(em.UserNextUpDismissal.created_at.desc().nullslast())
+        .limit(100)
+        .all()
+    )
+    if not rows:
+        return {"items": []}
+    # 当前下一集口径与 get_next_up 共用同一实现，避免两处漂移；
+    # api 模块体量大，延迟 import（与 home_sections 延 import portal 同例）。
+    from backend.emby_server.api import _next_up_first_unwatched
+
+    series_ids = [r.series_id for r in rows]
+    current = _next_up_first_unwatched(db, user.id, series_ids)
+    series_map = {
+        s.id: s
+        for s in db.query(em.MediaItem)
+        .filter(em.MediaItem.id.in_(series_ids), em.MediaItem.deleted_at.is_(None))
+        .all()
+    }
+    out = []
+    for row in rows:
+        cur = current.get(row.series_id)
+        if cur is None or cur.guid != row.dismissed_episode_guid:
+            continue  # 已失效：下一集已变，这条关闭不再起作用
+        series = series_map.get(row.series_id)
+        if series is None:
+            continue
+        out.append({
+            "series_guid": series.guid,
+            "series_name": series.name,
+            "episode_guid": cur.guid,
+            "episode_name": cur.name,
+            "season_number": cur.season_number,
+            "episode_number": cur.episode_number,
+            "poster_url": portal_poster_url(series, db),
+            "dismissed_at": row.created_at.isoformat() if row.created_at else None,
         })
     return {"items": out}

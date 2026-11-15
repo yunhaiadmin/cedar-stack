@@ -4783,6 +4783,17 @@ def get_next_up(request: Request, user: models.WebUser = Depends(get_emby_user),
             nxt = nxt_map.get(sid)
             if nxt is not None:
                 ranked.append((series_recent.get(sid), nxt))
+    # 「隐藏下一集」（审计 ❌1）：按（用户 × 剧）排除「已关闭且被关那集
+    # 仍是当前下一集」的剧；下一集变了（真看了新集）关闭自动失效、卡片
+    # 回来。只作用于首页推送主列表；上方 SeriesId 点名分支是详情页
+    # 直达，不拦（关闭只管系统主动推送面）。
+    if ranked:
+        from backend.emby_server import nextup_dismissals as _nud
+
+        _dmap = _nud.dismissal_map(db, user.id, [e.series_id for _, e in ranked])
+        if _dmap:
+            ranked = [(ts, e) for ts, e in ranked
+                      if _dmap.get(e.series_id) != e.guid]
     episodes = [e for _, e in ranked[start:start + limit]]
     # 返回列表非空时只暖第一条 episode，不暖整页。
     try:

@@ -663,6 +663,29 @@ class UserMediaData(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
+class UserNextUpDismissal(Base):
+    """用户「隐藏下一集」记录（首页 NextUp 按剧关闭，审计 ❌1）。
+
+    一行 = 这个用户把某部剧当时的下一集关掉了：dismissed_episode_guid
+    记关闭时那一集的 guid。查询时只有「被关那集仍是当前下一集」才
+    真正排除；用户真看了新集、下一集变了之后记录自动失效（行留着
+    也不再命中），卡片回来。不动观看记录本身，与 hide_from_resume
+    （继续观看）互不影响。新表由 create_all 建，不走 _auto_migrate。
+    """
+
+    __tablename__ = "user_nextup_dismissals"
+    __table_args__ = (
+        UniqueConstraint("user_id", "series_id", name="uq_nextup_dismiss_user_series"),
+        Index("idx_nextup_dismiss_user", "user_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("web_users.id"), nullable=False)
+    series_id = Column(Integer, ForeignKey("emby_items.id"), nullable=False)
+    dismissed_episode_guid = Column(String(64), nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+
+
 class PlaybackSession(Base):
     """播放会话"""
 

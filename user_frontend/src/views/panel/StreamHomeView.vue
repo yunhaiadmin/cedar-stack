@@ -272,6 +272,29 @@ async function hideResume(m: PortalResumeItem) {
     hidingId.value = ''
   }
 }
+const hidingNextUpId = ref('')
+/** 下一集卡右上垃圾桶：按剧关闭下一集推送（hideNextUpItem 口径，
+ * 后端按「被关那集仍是当前下一集」才排除；看了新集自动失效，可恢复） */
+async function hideNextUp(m: EmbyItem) {
+  if (hidingNextUpId.value) return
+  hidingNextUpId.value = m.Id
+  try {
+    await embyApi.hideNextUpItem(m.Id)
+    nextUpItems.value = nextUpItems.value.filter((x) => x.Id !== m.Id)
+    /* 缓存里的下一集列表同步摘掉，否则下次冷启动秒画会先把这张卡画回来 */
+    const cached = readHomeCache()
+    if (cached?.data.nextUp) {
+      patchHomeCache({
+        nextUp: (cached.data.nextUp || []).filter((x) => x.Id !== m.Id),
+      })
+    }
+    toast.success('已隐藏这部剧的下一集')
+  } catch {
+    toast.error('隐藏失败，请稍后再试')
+  } finally {
+    hidingNextUpId.value = ''
+  }
+}
 function resumeImage(m: PortalResumeItem): string {
   return m.poster_url ? imageAuthUrl(m.poster_url, 640) : ''
 }
@@ -863,7 +886,16 @@ onActivated(() => {
                 class="sl-ccard__fallback"
                 aria-hidden="true"
               />
-              <!-- 友站卡面有垃圾桶钮；我方无「隐藏下一集」现行口，不假造功能，故不渲染 -->
+              <button
+                type="button"
+                class="sl-ccard__trash"
+                :disabled="hidingNextUpId === m.Id"
+                aria-label="隐藏这部剧的下一集"
+                title="隐藏这部剧的下一集"
+                @click.prevent.stop="hideNextUp(m)"
+              >
+                <Trash2 :size="17" />
+              </button>
             </span>
             <span class="sl-ccard__title">{{ nextUpTitle(m) }}</span>
             <span class="sl-ccard__sub">{{ nextUpSub(m) }}</span>
