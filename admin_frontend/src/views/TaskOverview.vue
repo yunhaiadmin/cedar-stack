@@ -19,7 +19,9 @@ import {
   ArrowLeftRight, BellRing, ExternalLink, Image as ImageIcon,
   Radar, RefreshCw, ScanSearch, Sparkles, TriangleAlert,
 } from 'lucide-vue-next'
-import { EmptyState, PageHeader } from '@/components/ui'
+import { EmptyState, PageHeader, SectionCard } from '@/components/ui'
+import DataTable from '@/components/DataTable.vue'
+import type { DataColumn } from '@/components/DataTable.vue'
 import { parseServerTime } from '@/utils/serverTime'
 import {
   cancelTransferJob,
@@ -121,6 +123,16 @@ const jobCounts = ref<Record<string, number>>({})
 const jobsLoading = ref(false)
 const cancellingId = ref<number | null>(null)
 
+const jobColumns: DataColumn[] = [
+  { key: 'item_name', label: '条目', minWidth: 170, mobile: 'title' },
+  { key: 'owner_scope', label: '归属', width: 110 },
+  { key: 'trigger', label: '触发', width: 80 },
+  { key: 'status', label: '状态', width: 100 },
+  { key: 'attempts', label: '尝试', width: 64 },
+  { key: 'created_at', label: '创建时间', width: 168 },
+  { key: 'actions', label: '操作', width: 96 },
+]
+
 const jobsSummary = computed(() => {
   const c = jobCounts.value
   return `排队 ${c.pending ?? 0} · 转存中 ${c.running ?? 0} · 失败 ${c.failed ?? 0}`
@@ -186,6 +198,15 @@ async function onCancelJob(job: TransferJobRow) {
 // ---------- 转存决策留痕（只读，PanSave A 线 PR-1） ----------
 const rounds = ref<TransferDecisionRoundRow[]>([])
 const roundsLoading = ref(false)
+
+const roundColumns: DataColumn[] = [
+  { key: 'created_at', label: '时间', width: 168 },
+  { key: 'scope', label: '范围', width: 96 },
+  { key: 'resource_key', label: '资源', minWidth: 120, mobile: 'title' },
+  { key: 'decision', label: '裁决', width: 110 },
+  { key: 'reason', label: '理由', minWidth: 120 },
+  { key: 'execution_ref', label: '执行回链', width: 130 },
+]
 
 function scopeText(scope: string): string {
   switch (scope) {
@@ -255,20 +276,22 @@ onMounted(() => {
         </div>
       </template>
 
-      <section v-for="card in cards" :key="card.key" class="task-card">
-        <header class="task-head">
+      <SectionCard v-for="card in cards" :key="card.key" as="section" class="task-scard">
+        <template #title>
           <span
             class="dot"
             :class="{ 'dot--pulse': card.status === 'running' }"
             :style="{ background: DOT_COLOR[card.status] ?? 'var(--au-text-3)' }"
           />
           <component :is="CARD_ICON[card.key]" :size="16" class="task-icon" />
-          <h3 class="task-title">{{ card.title }}</h3>
+          <span class="task-title">{{ card.title }}</span>
+        </template>
+        <template #actions>
           <span class="task-status">{{ card.status_text }}</span>
           <router-link v-if="card.link" :to="card.link" class="task-link">
             详情 <ExternalLink :size="12" />
           </router-link>
-        </header>
+        </template>
 
         <p class="task-summary">{{ card.summary }}</p>
 
@@ -290,115 +313,99 @@ onMounted(() => {
           </li>
         </ul>
 
-        <footer class="task-foot">
-          <span class="muted">{{ card.last_run_label }}：{{ fmtTime(card.last_run) }}</span>
-          <el-switch
-            v-if="card.switch && card.key === 'probe'"
-            v-model="card.switch.enabled"
-            :loading="toggling[card.key]"
-            :active-text="card.switch.label"
-            @change="(v: boolean) => onToggle(card, v)"
-          />
-          <!-- 重新布局批 5：刮削开关（自动扫描/追新/夜间刮削）唯一写入口在媒体库页，本页只读展示 -->
-          <span v-else-if="card.switch" class="muted">
-            {{ card.switch.enabled ? '已开启' : '已关闭' }} · 开关在媒体库页改
-          </span>
-        </footer>
-      </section>
+        <template #footer>
+          <div class="task-foot">
+            <span class="muted">{{ card.last_run_label }}：{{ fmtTime(card.last_run) }}</span>
+            <el-switch
+              v-if="card.switch && card.key === 'probe'"
+              v-model="card.switch.enabled"
+              :loading="toggling[card.key]"
+              :active-text="card.switch.label"
+              @change="(v: boolean) => onToggle(card, v)"
+            />
+            <!-- 重新布局批 5：刮削开关（自动扫描/追新/夜间刮削）唯一写入口在媒体库页，本页只读展示 -->
+            <span v-else-if="card.switch" class="muted">
+              {{ card.switch.enabled ? '已开启' : '已关闭' }} · 开关在媒体库页改
+            </span>
+          </div>
+        </template>
+      </SectionCard>
     </div>
 
     <!-- 转存任务队列：排队中的可取消（终态/执行中后端回 409 明示当前状态） -->
-    <section class="task-card jobs-card">
-      <header class="task-head">
-        <ArrowLeftRight :size="16" class="task-icon" />
-        <h3 class="task-title">转存任务队列</h3>
-        <span class="task-status">{{ jobsSummary }}</span>
-      </header>
+    <SectionCard
+      title="转存任务队列"
+      :icon="ArrowLeftRight"
+      :meta="jobsSummary"
+      class="task-scard"
+    >
       <p class="task-summary">
         只有排队中（含失败待重试）的任务能取消；正在转存的已被工人认领，点取消会被拒绝并告诉你当前状态。
         取消只置「已取消」终态、不删记录。扫描排队的取消入口在媒体库页。
       </p>
-      <el-table v-if="jobs.length" :data="jobs" size="small" class="jobs-table">
-        <el-table-column label="条目" min-width="170">
-          <template #default="{ row }">
-            <span>{{ row.item_name }}</span><span class="muted"> #{{ row.item_id }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="归属" width="110">
-          <template #default="{ row }">{{ row.owner_scope === 'user' ? `用户 ${row.owner_ref}` : '服主' }}</template>
-        </el-table-column>
-        <el-table-column label="触发" width="80">
-          <template #default="{ row }">{{ triggerText(row.trigger) }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="100">
-          <template #default="{ row }">
-            <span :class="['lib-chip', jobChip(row.status).cls]">{{ jobChip(row.status).text }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="尝试" width="64" prop="attempts" />
-        <el-table-column label="创建时间" width="168">
-          <template #default="{ row }"><span class="mono">{{ fmtTime(row.created_at) }}</span></template>
-        </el-table-column>
-        <el-table-column label="操作" width="96">
-          <template #default="{ row }">
-            <el-button
-              v-if="row.cancellable"
-              size="small"
-              type="danger"
-              plain
-              :loading="cancellingId === row.id"
-              @click="onCancelJob(row)"
-            >
-              取消
-            </el-button>
-            <span v-else class="muted">—</span>
-          </template>
-        </el-table-column>
-      </el-table>
-      <EmptyState
-        v-else-if="!jobsLoading"
-        compact
-        :icon="ArrowLeftRight"
-        title="暂无转存任务"
-        description="用户首播触发或手动发起的转存任务会显示在这里。"
-      />
-    </section>
+      <DataTable
+        :columns="jobColumns"
+        :rows="jobs"
+        :loading="jobsLoading"
+        empty="暂无转存任务"
+        empty-description="用户首播触发或手动发起的转存任务会显示在这里。"
+      >
+        <template #cell-item_name="{ row }">
+          <span>{{ row.item_name }}</span><span class="muted"> #{{ row.item_id }}</span>
+        </template>
+        <template #cell-owner_scope="{ row }">
+          {{ row.owner_scope === 'user' ? `用户 ${row.owner_ref}` : '服主' }}
+        </template>
+        <template #cell-trigger="{ row }">{{ triggerText(row.trigger) }}</template>
+        <template #cell-status="{ row }">
+          <span :class="['lib-chip', jobChip(row.status).cls]">{{ jobChip(row.status).text }}</span>
+        </template>
+        <template #cell-created_at="{ row }">
+          <span class="mono">{{ fmtTime(row.created_at) }}</span>
+        </template>
+        <template #cell-actions="{ row }">
+          <el-button
+            v-if="row.cancellable"
+            size="small"
+            type="danger"
+            plain
+            :loading="cancellingId === row.id"
+            @click="onCancelJob(row)"
+          >
+            取消
+          </el-button>
+          <span v-else class="muted">—</span>
+        </template>
+      </DataTable>
+    </SectionCard>
 
     <!-- 转存决策留痕：每轮自动裁决一行，复盘「为什么建这单/为什么被节流」（只读） -->
-    <section class="task-card jobs-card">
-      <header class="task-head">
-        <ArrowLeftRight :size="16" class="task-icon" />
-        <h3 class="task-title">转存决策留痕</h3>
-        <span class="task-status">最近 {{ rounds.length }} 条</span>
-      </header>
+    <SectionCard
+      title="转存决策留痕"
+      :icon="ArrowLeftRight"
+      :meta="`最近 ${rounds.length} 条`"
+      class="task-scard"
+    >
       <p class="task-summary">
         转存门禁每次裁决、上游聚合每开一轮都会落一行：当时参与决策的配置指纹、裁决与理由、回链的任务。
         出问题先在这里看当时凭什么这么判。只保留最近 30 天（后台可配）。
       </p>
-      <el-table v-if="rounds.length" :data="rounds" size="small" class="jobs-table">
-        <el-table-column label="时间" width="168">
-          <template #default="{ row }"><span class="mono">{{ fmtTime(row.created_at) }}</span></template>
-        </el-table-column>
-        <el-table-column label="范围" width="96">
-          <template #default="{ row }">{{ scopeText(row.scope) }}</template>
-        </el-table-column>
-        <el-table-column label="资源" min-width="120" prop="resource_key" />
-        <el-table-column label="裁决" width="110" prop="decision" />
-        <el-table-column label="理由" min-width="120">
-          <template #default="{ row }">{{ row.reason || '—' }}</template>
-        </el-table-column>
-        <el-table-column label="执行回链" width="130">
-          <template #default="{ row }"><span class="mono">{{ row.execution_ref || '—' }}</span></template>
-        </el-table-column>
-      </el-table>
-      <EmptyState
-        v-else-if="!roundsLoading"
-        compact
-        :icon="ArrowLeftRight"
-        title="暂无决策留痕"
-        description="转存门禁裁决与上游聚合开轮后会显示在这里。"
-      />
-    </section>
+      <DataTable
+        :columns="roundColumns"
+        :rows="rounds"
+        :loading="roundsLoading"
+        empty="暂无决策留痕"
+        empty-description="转存门禁裁决与上游聚合开轮后会显示在这里。"
+      >
+        <template #cell-created_at="{ row }">
+          <span class="mono">{{ fmtTime(row.created_at) }}</span>
+        </template>
+        <template #cell-scope="{ row }">{{ scopeText(row.scope) }}</template>
+        <template #cell-execution_ref="{ row }">
+          <span class="mono">{{ row.execution_ref || '—' }}</span>
+        </template>
+      </DataTable>
+    </SectionCard>
   </div>
 </template>
 
@@ -423,10 +430,11 @@ onMounted(() => {
   min-width: 0;
 }
 
-.task-head {
+/* SectionCard 正文恢复原任务卡的纵向节奏（摘要 / 指标 / 库列表之间 12px） */
+.task-scard :deep(.au-section__body) {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .dot {
@@ -577,18 +585,13 @@ onMounted(() => {
 
 .lib-time { flex-shrink: 0; }
 
+/* 边框与内边距由 SectionCard 的 footer 插槽区提供，这里只管横向排布 */
 .task-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  border-top: 1px solid var(--au-border);
-  padding-top: 10px;
-  margin-top: auto;
 }
-
-.jobs-card { margin-top: 16px; }
-.jobs-table { --el-table-bg-color: transparent; --el-table-tr-bg-color: transparent; --el-table-header-bg-color: transparent; }
 
 .muted { color: var(--au-text-3); font-size: 12px; }
 .mono { font-variant-numeric: tabular-nums; }

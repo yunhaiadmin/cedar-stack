@@ -13,7 +13,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { CheckCircle2, ClipboardList, Gift, RefreshCw, XCircle } from 'lucide-vue-next'
-import { EmptyState, PageHeader, SectionCard } from '@/components/ui'
+import { PageHeader, SectionCard } from '@/components/ui'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import { useAuthStore } from '@/stores/auth'
 import { toAdminError } from '@/utils/errorMessage'
@@ -80,6 +80,14 @@ const load = async () => {
     loading.value = false
   }
 }
+
+/** 详情抽屉里的奖品小表（收编 DataTable，空态文案沿原 EmptyState 口径） */
+const prizeColumns: DataColumn[] = [
+  { key: 'name', label: '名称', mobile: 'title' },
+  { key: 'type', label: '类型', width: 100 },
+  { key: 'value', label: '值', width: 90 },
+  { key: 'quantity', label: '份数', width: 90 },
+]
 
 const onFilterChange = () => {
   page.value = 1
@@ -232,15 +240,13 @@ onMounted(load)
         </el-descriptions>
 
         <div class="detail-title"><Gift :size="14" /> 奖品</div>
-        <el-table :data="detail.prizes ?? []" size="small" border>
-          <el-table-column prop="name" label="名称" show-overflow-tooltip />
-          <el-table-column label="类型" width="100">
-            <template #default="{ row }">{{ prizeTypeMap[row.type] ?? row.type }}</template>
-          </el-table-column>
-          <el-table-column prop="value" label="值" width="90" />
-          <el-table-column prop="quantity" label="份数" width="90" />
-        </el-table>
-        <EmptyState v-if="!(detail.prizes ?? []).length" compact title="提案未包含奖品" />
+        <DataTable
+          :columns="prizeColumns"
+          :rows="detail.prizes ?? []"
+          empty="提案未包含奖品"
+        >
+          <template #cell-type="{ row }">{{ prizeTypeMap[row.type] ?? row.type }}</template>
+        </DataTable>
       </template>
       <template v-if="detail?.status === 'pending'" #footer>
         <el-button type="danger" plain :disabled="!canWrite" @click="openReview(detail, 'reject')">驳回</el-button>

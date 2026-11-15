@@ -11,10 +11,13 @@
  * 口径如实：Drive 报错只有账号不可逆哈希，没有用户/绑定/条目
  * 维度——按这三者筛时报错行不会出现，页头说明里写明。
  */
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { RefreshCw, ScrollText, Search } from 'lucide-vue-next'
-import { EmptyState, PageHeader, SectionCard } from '@/components/ui'
+import { RefreshCw, Search } from 'lucide-vue-next'
+import { PageHeader, SectionCard } from '@/components/ui'
+import DataTable from '@/components/DataTable.vue'
+import type { DataColumn } from '@/components/DataTable.vue'
+import { useBreakpoint } from '@/composables/useBreakpoint'
 import { parseServerTime } from '@/utils/serverTime'
 import { toAdminError } from '@/utils/errorMessage'
 import {
@@ -89,6 +92,33 @@ const total = ref(0)
 const offset = ref(0)
 const loading = ref(false)
 
+const { isPhone } = useBreakpoint()
+
+const columns: DataColumn[] = [
+  { key: 'occurred_at', label: '时间', width: 168 },
+  { key: 'action_label', label: '动作', minWidth: 140, mobile: 'title' },
+  { key: 'ids', label: '用户 / 成员 / 绑定 / 条目', minWidth: 190 },
+  { key: 'outcome', label: '结果', width: 150 },
+  { key: 'reason', label: '原因', minWidth: 180 },
+  { key: 'actions', label: '详情', width: 90 },
+]
+
+const pageNum = computed(() => Math.floor(offset.value / PAGE_SIZE) + 1)
+
+function onPageChange(page: number) {
+  offset.value = (page - 1) * PAGE_SIZE
+  void load()
+}
+
+// ---------- 事件详情（原展开行改抽屉，沿全站详情承载口径） ----------
+const detailVisible = ref(false)
+const detailRow = ref<AuditEventRow | null>(null)
+
+function openDetail(row: AuditEventRow) {
+  detailRow.value = row
+  detailVisible.value = true
+}
+
 function fmtTime(iso: string | null): string {
   if (!iso) return '—'
   const d = parseServerTime(iso)
@@ -143,18 +173,6 @@ function resetFilters() {
   filters.start = ''
   filters.end = ''
   search()
-}
-
-function prevPage() {
-  if (offset.value <= 0) return
-  offset.value = Math.max(0, offset.value - PAGE_SIZE)
-  void load()
-}
-
-function nextPage() {
-  if (offset.value + PAGE_SIZE >= total.value) return
-  offset.value += PAGE_SIZE
-  void load()
 }
 
 function detailText(row: AuditEventRow): string {
@@ -231,68 +249,43 @@ onMounted(() => void load())
     </SectionCard>
 
     <SectionCard :title="`台账（共 ${total} 条）`">
-      <el-table
-        v-if="rows.length"
-        :data="rows"
-        size="small"
-        class="audit-table"
-        v-loading="loading"
+      <DataTable
+        :columns="columns"
+        :rows="rows"
+        :loading="loading"
+        empty="没有符合条件的记录"
+        empty-description="换个筛选条件试试；起播取用类记录从本功能上线后开始积累。"
+        :pagination="{ total, page: pageNum, pageSize: PAGE_SIZE }"
+        @page-change="onPageChange"
       >
-        <el-table-column type="expand">
-          <template #default="{ row }">
-            <pre class="detail-pre">{{ detailText(row) }}</pre>
-          </template>
-        </el-table-column>
-        <el-table-column label="时间" width="168">
-          <template #default="{ row }">
-            <span class="mono">{{ fmtTime(row.occurred_at) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="动作" min-width="140">
-          <template #default="{ row }">{{ row.action_label }}</template>
-        </el-table-column>
-        <el-table-column label="用户 / 成员 / 绑定 / 条目" min-width="190">
-          <template #default="{ row }">
-            <span class="mono dim">
-              用户 {{ row.user_id ?? '—' }} · 成员 {{ row.member_id ?? '—' }}
-              · 绑定 {{ row.binding_id ?? '—' }} · 条目 {{ row.item_id ?? '—' }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column label="结果" width="150">
-          <template #default="{ row }">
-            <span :class="OUTCOME_CLASS[row.outcome] || 'outcome-mut'">
-              {{ OUTCOME_TEXT[row.outcome] || row.outcome }}
-            </span>
-            <span class="mono dim"> {{ row.result }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="原因" min-width="180">
-          <template #default="{ row }">{{ row.reason || '—' }}</template>
-        </el-table-column>
-      </el-table>
-      <EmptyState
-        v-else-if="!loading"
-        compact
-        :icon="ScrollText"
-        title="没有符合条件的记录"
-        description="换个筛选条件试试；起播取用类记录从本功能上线后开始积累。"
-      />
-      <div class="pager">
-        <el-button :disabled="offset <= 0 || loading" @click="prevPage">
-          上一页
-        </el-button>
-        <span class="dim">
-          第 {{ Math.floor(offset / PAGE_SIZE) + 1 }} 页 · 本页 {{ rows.length }} 条
-        </span>
-        <el-button
-          :disabled="offset + PAGE_SIZE >= total || loading"
-          @click="nextPage"
-        >
-          下一页
-        </el-button>
-      </div>
+        <template #cell-occurred_at="{ row }">
+          <span class="mono">{{ fmtTime(row.occurred_at) }}</span>
+        </template>
+        <template #cell-ids="{ row }">
+          <span class="mono dim">
+            用户 {{ row.user_id ?? '—' }} · 成员 {{ row.member_id ?? '—' }}
+            · 绑定 {{ row.binding_id ?? '—' }} · 条目 {{ row.item_id ?? '—' }}
+          </span>
+        </template>
+        <template #cell-outcome="{ row }">
+          <span :class="OUTCOME_CLASS[row.outcome] || 'outcome-mut'">
+            {{ OUTCOME_TEXT[row.outcome] || row.outcome }}
+          </span>
+          <span class="mono dim"> {{ row.result }}</span>
+        </template>
+        <template #cell-actions="{ row }">
+          <el-button link type="primary" @click="openDetail(row)">详情</el-button>
+        </template>
+      </DataTable>
     </SectionCard>
+
+    <el-drawer
+      v-model="detailVisible"
+      title="事件详情"
+      :size="isPhone ? '100%' : '560px'"
+    >
+      <pre v-if="detailRow" class="detail-pre">{{ detailText(detailRow) }}</pre>
+    </el-drawer>
   </div>
 </template>
 
@@ -313,10 +306,6 @@ onMounted(() => void load())
 .filter-actions {
   display: flex;
   gap: 8px;
-}
-
-.audit-table {
-  width: 100%;
 }
 
 .mono {
@@ -341,11 +330,4 @@ onMounted(() => void load())
 .outcome-bad { color: var(--au-danger); }
 .outcome-mid { color: var(--au-warning); }
 .outcome-mut { color: var(--au-text-2); }
-
-.pager {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 12px;
-}
 </style>
