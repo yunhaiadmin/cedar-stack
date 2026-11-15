@@ -79,6 +79,25 @@ def is_sub_account(user) -> bool:
     return user is not None and getattr(user, "parent_user_id", None) is not None
 
 
+def _single_col(row, name):
+    """读单列查询返回的一行：真 SQLAlchemy Row 与测试桩对象都兼容。
+
+    真 Row 既支持下标也支持属性访问；部分旧测试的桩 DB
+    （如 ``_stub_stream`` 的 ``_DB``）的 ``first()``/``all()``
+    返回 ``types.SimpleNamespace``，只支持属性访问、不支持下标。
+    这里先取属性、再试下标，两种形态都读得到。
+    """
+    if row is None:
+        return None
+    value = getattr(row, name, None)
+    if value is not None:
+        return value
+    try:
+        return row[0]
+    except (TypeError, IndexError, KeyError):
+        return None
+
+
 def _root_id(db: Session, user_id: int) -> int:
     """沿 parent_user_id 跟到主账号 id（脏数据成环时在深度上限处停）。"""
     current = int(user_id)
@@ -86,9 +105,10 @@ def _root_id(db: Session, user_id: int) -> int:
     for _ in range(_MAX_PARENT_HOPS):
         row = (db.query(models.WebUser.parent_user_id)
                .filter(models.WebUser.id == current).first())
-        if row is None or row[0] is None:
+        parent_id = _single_col(row, "parent_user_id")
+        if parent_id is None:
             return current
-        parent_id = int(row[0])
+        parent_id = int(parent_id)
         if parent_id in seen:
             logger.warning("子账号 parent 链成环，停在 user=%s", current)
             return current
@@ -146,7 +166,7 @@ def family_user_ids(db: Session, user_or_id) -> list[int]:
     与每个子账号提交的都算进同一份套餐额度）。
     """
     root_id = effective_user_id(db, user_or_id)
-    child_ids = [r[0] for r in (db.query(models.WebUser.id)
+    child_ids = [int(_single_col(r, "id")) for r in (db.query(models.WebUser.id)
                                 .filter(models.WebUser.parent_user_id == root_id)
                                 .order_by(models.WebUser.id.asc()).all())]
     return [root_id, *child_ids]
