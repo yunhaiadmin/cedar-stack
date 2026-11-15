@@ -44,6 +44,7 @@ import copy
 import logging
 import os
 from dataclasses import dataclass
+from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -140,6 +141,15 @@ _VARIANTS: dict[str, Variant] = {
     # is_remote=True / needs_relay=False——与 drive_direct 同形。
     POOL_COPY: Variant(POOL_COPY, "公共池", "Http", True, False),
 }
+
+
+def variant_by_name(name: str) -> Optional[Variant]:
+    """按枚举名取变体静态元数据（无此变体返回 None）。
+
+    消费方（如流量拦截的签发侧分类）只许走这里读元数据，
+    不许各自再抄一份变体表。
+    """
+    return _VARIANTS.get(name)
 
 
 def variants_enabled() -> bool:

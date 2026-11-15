@@ -656,6 +656,9 @@ ECONOMY_CONFIG_SCHEMA: dict[str, tuple] = {
     "wallet_invite_rebate_tier_threshold": ("int", 0, _BIG),
     "wallet_invite_rebate_tier_percent": ("int", 0, 100),
     "traffic_balance_price_per_100gb": ("int", 0, _BIG),
+    # 流量额度真拦截总开关（2026-11-15 用户亲点）：默认开（无行=开），
+    # 读侧 backend/traffic_gate.enforcement_enabled；关掉全部放行。
+    "traffic_enforce_enabled": ("bool",),
     "wallet_refund_to_balance": ("bool",),
     "wallet_auto_renew_enabled": ("bool",),
     "payment_gateway_url": ("raw",), "payment_partner_id": ("raw",),
