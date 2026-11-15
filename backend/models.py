@@ -820,7 +820,7 @@ class RegistrationCode(Base):
     # 属于哪个服：这张卡码开出来的是那个服的会员（见 economy.redeem_registration_code）
     realm_id = Column(Integer, ForeignKey('server_realms.id'), nullable=True)
     # ===== 卡码体系（借鉴 twilight-kotomi 的 RegCode）=====
-    code_type = Column(Integer, default=1)  # 1 注册码 / 2 续期码 / 3 白名单码
+    code_type = Column(Integer, default=2)  # 1 注册码（已下线）/ 2 续期码 / 3 白名单码；存量行保留原值
     days = Column(Integer, default=30)  # 授予或叠加的会员天数；-1 表示永久
     target_username = Column(String(50))  # 指名码：非空时仅限该用户名使用
     source = Column(String(20), default='admin')  # admin 管理员发放 / invite 邀请体系生成
@@ -1012,7 +1012,7 @@ class AgentPurchase(Base):
     plan_id = Column(Integer, ForeignKey('subscription_plans.id'), nullable=False)
     plan_name = Column(String(100))  # 套餐名快照
     realm_id = Column(Integer, ForeignKey('server_realms.id'), nullable=True)
-    code_type = Column(Integer, default=1)  # 1 注册码 / 2 续期码
+    code_type = Column(Integer, default=2)  # 2 续期码（1 注册码已下线；存量行保留原值）
     quantity = Column(Integer, nullable=False)
     face_value = Column(Numeric(10, 2), nullable=False)  # 单张面值（套餐价快照）
     discount_rate = Column(Numeric(5, 4), nullable=False)  # 等级折扣率快照

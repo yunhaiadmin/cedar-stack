@@ -4,13 +4,14 @@
 审计结论（2026-10-29）：公益服／经济规则绝大多数早已走标准口径
 （SystemConfig 键＋config_schema＋管理端字段），本单只补缺口。
 2026-11-14 更新：公益资格整族删除后，福利类键（welfare_vitality_renew_min、
-register_gift_welfare_days 等）已从配置注册表摘除，本文件改测剩余的
-注册赠送查看天数键（register_gift_view_days）与抽奖键的注册/校验/回读，
-并钉死福利键不得再被注册。
+register_gift_welfare_days 等）已从配置注册表摘除。
+2026-11-15 更新：注册赠送查看两键（register_gift_view_days /
+register_gift_view_enabled）随「注册不送体验」一并摘除，注册赠送
+行为测试已删除（新口径由 test_registration_open_no_code.py 覆盖）；
+本文件改测剩余抽奖键的注册/校验/回读，并钉死已删键不得再被注册。
 """
 
 import os
-from datetime import datetime, timedelta
 
 os.environ.setdefault("DATABASE_TYPE", "sqlite")
 os.environ.setdefault("REDIS_ENABLED", "false")
@@ -49,15 +50,6 @@ def db():
     session.close()
 
 
-def _set_config(db, key, value):
-    cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == key).first()
-    if cfg:
-        cfg.value = str(value)
-    else:
-        db.add(models.SystemConfig(key=key, value=str(value)))
-    db.commit()
-
-
 def _make_user(db, username="u1", **kw):
     u = models.WebUser(username=username, password_hash="x", **kw)
     db.add(u)
@@ -69,11 +61,14 @@ def _make_user(db, username="u1", **kw):
 # ==================== 1. 注册与默认值 ====================
 
 def test_new_keys_registered_with_current_defaults():
-    assert welfare_admin.WELFARE_CONFIG_KEYS["register_gift_view_days"] == "30"
-    assert config_schema.WELFARE_CONFIG_SCHEMA["register_gift_view_days"] == (
-        "int", 1, config_schema._BIG)
-    # 公益资格整族键已摘除（2026-11-14），两处注册表都不许再出现
+    # 抽奖键仍在册：默认值与 schema 口径不变
+    assert welfare_admin.WELFARE_CONFIG_KEYS["lottery_draw_interval_sec"] == "60"
+    assert config_schema.WELFARE_CONFIG_SCHEMA["lottery_draw_interval_sec"] == (
+        "int", 30, 86400)
+    # 公益资格整族键已摘除（2026-11-14）、注册赠送查看键已摘除
+    # （2026-11-15），两处注册表都不许再出现
     for key in ("register_gift_welfare_days", "register_gift_welfare_enabled",
+                "register_gift_view_days", "register_gift_view_enabled",
                 "welfare_vitality_renew_min", "welfare_code_monthly_quota",
                 "welfare_grace_days", "welfare_inactive_days"):
         assert key not in welfare_admin.WELFARE_CONFIG_KEYS
@@ -93,25 +88,25 @@ def test_preexisting_keys_for_ui_only_fields_untouched():
 
 def test_new_keys_normalize_valid_values():
     assert config_schema.normalize(
-        "register_gift_view_days",
-        config_schema.WELFARE_CONFIG_SCHEMA["register_gift_view_days"], 15) == "15"
+        "lottery_draw_interval_sec",
+        config_schema.WELFARE_CONFIG_SCHEMA["lottery_draw_interval_sec"], 45) == "45"
 
 
 def test_new_keys_normalize_rejects_invalid():
-    # 查看天数 0 按 timedelta 是“立即过期”不是永久，管理端直接禁掉
-    view_spec = config_schema.WELFARE_CONFIG_SCHEMA["register_gift_view_days"]
+    # 抽奖间隔下限 30 秒：0/负数/非数字/小数/布尔一律拒绝
+    spec = config_schema.WELFARE_CONFIG_SCHEMA["lottery_draw_interval_sec"]
     for bad in (0, -1, "abc", 1.5, True):
         with pytest.raises(config_schema.ConfigValueError):
-            config_schema.normalize("register_gift_view_days", view_spec, bad)
+            config_schema.normalize("lottery_draw_interval_sec", spec, bad)
 
 
 def test_welfare_keys_save_and_read_back(db):
     save_config(db, {"lottery_draw_interval_sec": "45",
-                     "register_gift_view_days": "15"}, schema="welfare")
+                     "bot_rate_limit_seconds": "10"}, schema="welfare")
     db.commit()
     got = welfare_admin.welfare_config_get(db=db, current_admin=_make_user(db, "admin"))
     assert got["lottery_draw_interval_sec"] == "45"
-    assert got["register_gift_view_days"] == "15"
+    assert got["bot_rate_limit_seconds"] == "10"
     with pytest.raises(config_schema.ConfigValueError):
         save_config(db, {"lottery_draw_interval_sec": "0"}, schema="welfare")
 
@@ -127,40 +122,3 @@ def test_economy_keys_save_and_read_back(db):
     with pytest.raises(config_schema.ConfigValueError):
         save_config(db, {"promotion_reward_days": "-1"}, schema="economy")
 
-
-# ==================== 5. 新注册赠送走新键 ====================
-
-def test_register_gifts_custom_days(db):
-    from backend.api.emby_portal import _grant_register_gifts
-
-    _set_config(db, "register_gift_view_enabled", "true")
-    _set_config(db, "register_gift_view_days", "15")
-    user = _make_user(db, "newbie")
-    before = datetime.now()
-    _grant_register_gifts(db, user)
-    after = datetime.now()
-
-    db.refresh(user)
-    assert not hasattr(user, "is_welfare")  # 资格赠送已删除，只剩查看行（字段本身已摘）
-    row = db.query(models.EmbyViewUnlock).filter(
-        models.EmbyViewUnlock.user_id == user.id).one()
-    assert before + timedelta(days=15) - timedelta(seconds=5) <= row.expires_at
-    assert row.expires_at <= after + timedelta(days=15) + timedelta(seconds=5)
-
-
-def test_register_gifts_invalid_rows_fall_back_to_30(db):
-    from backend.api.emby_portal import _grant_register_gifts
-
-    _set_config(db, "register_gift_view_enabled", "true")
-    _set_config(db, "register_gift_view_days", "0")
-    user = _make_user(db, "newbie2")
-    before = datetime.now()
-    _grant_register_gifts(db, user)
-    after = datetime.now()
-
-    db.refresh(user)
-    assert not hasattr(user, "is_welfare")
-    row = db.query(models.EmbyViewUnlock).filter(
-        models.EmbyViewUnlock.user_id == user.id).one()
-    assert before + timedelta(days=30) - timedelta(seconds=5) <= row.expires_at
-    assert row.expires_at <= after + timedelta(days=30) + timedelta(seconds=5)

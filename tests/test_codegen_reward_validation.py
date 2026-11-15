@@ -37,8 +37,12 @@ def admin(db):
 
 
 def _request(**overrides):
-    """构造统一码生成请求，默认生成 1 张 code_type=1 的卡。"""
-    payload = {"count": 1, "code_type": 1}
+    """构造统一码生成请求，默认生成 1 张 code_type=2（续期码）的卡。
+
+    （原默认 code_type=1 注册码已于 2026-11-15 下线、生成被拒；
+    type-1 被拒的断言在 test_registration_open_no_code.py。）
+    """
+    payload = {"count": 1, "code_type": 2}
     payload.update(overrides)
     return ops.CodeGenerateRequest(**payload)
 

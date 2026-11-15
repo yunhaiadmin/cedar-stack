@@ -40,12 +40,14 @@ def _make_user(db, username="u1", tg_id=None):
     return u
 
 
-# ---------- 注册门禁：code 档（2026-11-10 定版恢复为正式档位） ----------
+# ---------- 注册门禁：存量 code 值归一 open（2026-11-15 注册码下线） ----------
 
-def test_register_code_mode_requires_code(db):
-    """DB 里的 "code" 不再是待归一的历史残值，而是凭码注册档：
-    没带注册码的注册必须被拒（400）、不落库；完整两步回归见
-    test_reg_code_two_step.py。未知值仍旧 fail-closed 按 closed。"""
+def test_stored_code_mode_registers_open_without_code(db):
+    """DB 里的存量 "code" 是待归一的历史残值：注册码已下线，归一为
+    open——没带任何码的注册必须成功落库（归一成 closed 等于关死注册）；
+    配置下发同样报 open 且不再有 registration_code_required 键。
+    未知值仍旧 fail-closed 按 closed。完整新口径回归见
+    test_registration_open_no_code.py。"""
     from starlette.requests import Request
     from backend.api import emby_portal
 
@@ -55,13 +57,12 @@ def test_register_code_mode_requires_code(db):
     scope = {"type": "http", "method": "POST", "path": "/", "headers": [],
              "client": ("1.2.3.4", 1234)}
     req = emby_portal.RegisterRequest(username="newbie", password="secret123")
-    with pytest.raises(HTTPException) as exc:
-        emby_portal.register(Request(scope), req, db)
-    assert exc.value.status_code == 400
-    assert db.query(models.WebUser).filter_by(username="newbie").first() is None
+    resp = emby_portal.register(Request(scope), req, db)
+    assert resp.access_token
+    assert db.query(models.WebUser).filter_by(username="newbie").first() is not None
     cfg = emby_portal.register_config(db)
-    assert cfg["registration_mode"] == "code"
-    assert cfg["registration_code_required"] is True
+    assert cfg["registration_mode"] == "open"
+    assert "registration_code_required" not in cfg
 
 
 def test_normalize_registration_mode():
@@ -71,5 +72,5 @@ def test_normalize_registration_mode():
     assert norm("") == "open"
     assert norm("open") == "open"
     assert norm("closed") == "closed"
-    assert norm("code") == "code"
+    assert norm("code") == "open"
     assert norm("garbage") == "closed"

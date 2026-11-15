@@ -78,7 +78,6 @@ class RegisterRequest(BaseModel):
     password: str = Field(..., min_length=6, max_length=64)
     email: str | None = None
     invitation_code: str | None = None  # 邀请码（选填，双向奖励+返利绑定）
-    registration_code: str | None = None  # 注册码（凭码模式必填，建号同事务核销）
     captcha_token: str | None = None  # 人机验证令牌（管理员开启保护时必填）
 
 
@@ -272,19 +271,22 @@ def captcha_config(request: Request, db: Session = Depends(get_db)):
 
 
 def _normalize_registration_mode(raw) -> str:
-    """注册模式归一：未配置 → open；open/code/closed 原样；未知值 → closed。
+    """注册模式归一：未配置 → open；open/closed 原样；未知值 → closed。
 
-    code（凭注册码注册）2026-11-10 用户亲定恢复为正式档位（此前
-    v2.7.x 下线过，未知值 fail-closed 的口径不变）。
+    注册码已于 2026-11-15 整体下线：模式只剩 open / closed 两档。
+    存量值 code 一律归一为 open——生产配置在下线时就是 code，
+    归一成 closed 等于把注册关死，不许。
     """
     value = (raw or "").strip().lower()
     if not value:
         return "open"
-    return value if value in ("open", "code", "closed") else "closed"
+    if value == "code":
+        return "open"
+    return value if value in ("open", "closed") else "closed"
 
 
 def _registration_mode(db: Session) -> str:
-    """当前注册模式（注册端点 / 配置下发 / 验码端点共用同一读取）。"""
+    """当前注册模式（注册端点 / 配置下发共用同一读取）。"""
     row = (
         db.query(models.SystemConfig)
         .filter(models.SystemConfig.key == "registration_mode")
@@ -293,39 +295,12 @@ def _registration_mode(db: Session) -> str:
     return _normalize_registration_mode(row.value if row else None)
 
 
-#: 注册页第一步「没有注册码去哪领」的默认文案（配置键
-#: registration_code_hint_text / registration_code_hint_url 可覆盖；
-#: 链接默认空——具体渠道链接由管理员在后台填，不写死在代码里）。
-REGISTRATION_CODE_HINT_TEXT_DEFAULT = (
-    "没有注册码？可通过官方 Telegram 群或代理渠道获取，拿到后再回来注册。"
-)
-
-
-def _registration_code_hint(db: Session) -> dict:
-    rows = (
-        db.query(models.SystemConfig)
-        .filter(models.SystemConfig.key.in_([
-            "registration_code_hint_text",
-            "registration_code_hint_url",
-        ]))
-        .all()
-    )
-    values = {r.key: (r.value or "").strip() for r in rows}
-    return {
-        "text": values.get("registration_code_hint_text")
-        or REGISTRATION_CODE_HINT_TEXT_DEFAULT,
-        "url": values.get("registration_code_hint_url") or "",
-    }
-
-
 @auth_router.get("/register-config")
 def register_config(db: Session = Depends(get_db)):
     """公开：注册页需要的开关状态（未登录可调）。
 
     前端据此决定注册页形态：
-    - registration_mode: open=开放注册 / code=凭码注册（两步） / closed=关闭注册
-    - registration_code_required: 是否必须先验注册码（mode == code 时为 true）
-    - registration_code_hint: 「没有注册码去哪领」的提示文案与链接（走配置键）
+    - registration_mode: open=开放注册 / closed=关闭注册
     - invitation_enabled: 邀请码功能开关
     """
     from backend.api.invitation import get_invite_config
@@ -333,42 +308,8 @@ def register_config(db: Session = Depends(get_db)):
     mode = _registration_mode(db)
     return {
         "registration_mode": mode,
-        "registration_code_required": mode == "code",
-        "registration_code_hint": _registration_code_hint(db),
         "invitation_enabled": get_invite_config(db)["enabled"],
     }
-
-
-class RegisterCodeVerifyRequest(BaseModel):
-    code: str
-
-
-@auth_router.post("/register-code/verify")
-def verify_register_code(request: Request, req: RegisterCodeVerifyRequest,
-                         db: Session = Depends(get_db)):
-    """公开：两步注册第一步——只校验注册码，绝不消耗。
-
-    凭码模式下注册页先调它：码有效才放出账号表单。防撞码：按 IP
-    限流（20 次 / 10 分钟），且不存在与蜜罐一律回「注册码无效」，
-    不给枚举者区分线索。提交注册时服务端会再验一次并同事务核销，
-    本端点的放行不是凭据，绕过它直接调 /register 也过不了。
-    """
-    allowed, _ = check_rate_limit(
-        f"regcode_verify:{client_ip(request)}", 20, 600)
-    if not allowed:
-        raise HTTPException(status_code=429, detail="尝试过于频繁，请稍后再试")
-    from backend import codes
-
-    result = codes.check_registration_code(db, req.code)
-    response = {"valid": result["valid"], "message": result["message"]}
-    if result["valid"]:
-        response.update({
-            "reward_type": result["reward_type"],
-            "days_text": result["days_text"],
-            "realm_name": result["realm_name"],
-            "is_named": result["is_named"],
-        })
-    return response
 
 
 def _get_register_ratelimit(db: Session) -> tuple[bool, int, int]:
@@ -421,74 +362,9 @@ def _get_register_ratelimit(db: Session) -> tuple[bool, int, int]:
     return enabled, max_events, window_seconds
 
 
-# 新注册冷启动赠送（2026-10-28）：新注册可送查看行（EmbyViewUnlock，
-# points_spent=0 标记赠送），只给新用户，不动现有用户行。原先一并送的
-# 公益资格已随公益资格整族于 2026-11-14 删除，注册不再送任何资格。
-# 查看凭证由总开关 register_gift_view_enabled 控制、默认关
-# （2026-10-29 用户拍板：新注册不送凭证，管理端可重开）。
-# 天数走 SystemConfig（未配行／非法行回退下面默认值）：
-# register_gift_view_days（最小 1；0 天按 timedelta 算是“立即过期”，不是永久）。
-REGISTER_GIFT_VIEW_DAYS = 30
-
-
-def _get_register_gift_days(db, key, default, min_value):
-    """读新注册赠送天数：直查 SystemConfig，无进程缓存，管理端保存即生效。"""
-    row = db.query(models.SystemConfig).filter(models.SystemConfig.key == key).first()
-    if row is None or row.value is None or str(row.value).strip() == "":
-        return default
-    try:
-        value = int(str(row.value).strip())
-    except (TypeError, ValueError):
-        return default
-    return value if value >= min_value else default
-
-
-def _get_register_gift_view_enabled(db):
-    """读新注册送查看凭证总开关：直查 SystemConfig，无进程缓存，保存即生效。
-
-    默认 False（2026-10-29 用户拍板不送）；行缺失／空值／非法值一律按关。
-    真值口径与 config_schema 的布尔真值集对齐（"1"/"true"/"yes"/"on"）。
-    """
-    row = db.query(models.SystemConfig).filter(
-        models.SystemConfig.key == "register_gift_view_enabled").first()
-    if row is None or row.value is None:
-        return False
-    return str(row.value).strip().lower() in ("1", "true", "yes", "on")
-
-
-def _grant_register_gifts(db, user, code_reward_type=None):
-    """新注册冷启动赠送：只送查看凭证（公益资格赠送已于 2026-11-14 删除）。
-
-    凭证开关 register_gift_view_enabled 默认关（2026-10-29 用户拍板：
-    开放注册默认不送凭证，管理端可重开）；开时天数走
-    register_gift_view_days（最小 1 口径不变）。code_reward_type 参数
-    已不再参与任何分支（凭码注册曾据此自带资格，该口径随资格族删除），
-    保留形参只为调用点兼容。
-    """
-    from backend import realms
-
-    if not _get_register_gift_view_enabled(db):
-        logger.info("新注册送查看凭证开关关闭，跳过凭证赠送: user=%s", user.id)
-        return
-    view_days = _get_register_gift_days(
-        db, "register_gift_view_days", REGISTER_GIFT_VIEW_DAYS, 1)
-    realm_id = realms.active_realm_id(db)
-    existing = (
-        db.query(models.EmbyViewUnlock)
-        .filter(models.EmbyViewUnlock.user_id == user.id,
-                models.EmbyViewUnlock.realm_id == realm_id)
-        .first()
-    )
-    if existing is None:
-        now = datetime.now()
-        db.add(models.EmbyViewUnlock(
-            user_id=user.id,
-            realm_id=realm_id,
-            unlocked_at=now,
-            expires_at=now + timedelta(days=view_days),
-            points_spent=0,
-        ))
-        db.commit()
+# 注册不再送任何体验/赠送（2026-11-15 用户亲令）：原新注册冷启动赠送
+# （register_gift_view_* 控的查看行发放）已整段删除，register_gift_view_*
+# 与 register_gift_welfare_* 配置键就此失效（留库不管，代码不再读）。
 
 
 @auth_router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
@@ -514,12 +390,11 @@ def register(request: Request, req: RegisterRequest, db: Session = Depends(get_d
         )
 
     # ===== 注册模式开关（r4-auth：必须在撞名检查之前）=====
-    # open: 开放注册 / code: 凭码注册 / closed: 关闭注册
-    # 「code」曾于 v2.7.x 下线，2026-11-10 用户亲定恢复为正式档位：
-    # 注册码与兑换码分离，code_type=1 只许在注册页核销。
+    # open: 开放注册 / closed: 关闭注册（注册码已于 2026-11-15 下线，
+    # 存量 code 值在 _normalize_registration_mode 里归一为 open）。
     # 顺序是安全语义：旧顺序先查撞名、后查模式，关闭注册时探一个已占用的
     # 名字回 409、探未占用的名字回 403，等于用注册接口枚举门户名与接线名
-    # 是否存在。先判模式（凭码模式先验码），不把撞名信息泄露给无权注册的人。
+    # 是否存在。先判模式，不把撞名信息泄露给无权注册的人。
     reg_mode = _registration_mode(db)
 
     if reg_mode == "closed":
@@ -531,19 +406,6 @@ def register(request: Request, req: RegisterRequest, db: Session = Depends(get_d
             detail=(closed_msg_config.value if closed_msg_config and closed_msg_config.value
                     else "当前未开放注册"),
         )
-
-    # 凭码模式：提交时二次校验（第一步验码端点的放行不是凭据，绕过
-    # 第一步直接调本接口也必须带有效注册码）。这里只校验不消耗——
-    # 消耗在建号同一事务里由核销主体的 CAS 占位完成（见下方建号段）；
-    # 先验码也免得无码者走到撞名检查去探名字是否被占用。
-    reg_code_check = None
-    if reg_mode == "code":
-        from backend import codes as _codes
-
-        reg_code_check = _codes.check_registration_code(
-            db, req.registration_code, username=username)
-        if not reg_code_check["valid"]:
-            raise HTTPException(status_code=400, detail=reg_code_check["message"])
 
     # 大小写不敏感撞名检查（门户名＋接线名都查）：只按精确大小写查会放行
     # Foo/foo 异壳账号，而转账、指名码等消费侧按不敏感匹配时会命中不确定，
@@ -570,31 +432,12 @@ def register(request: Request, req: RegisterRequest, db: Session = Depends(get_d
         # 公开 ID（2026-11-15）：建号即分配、永不变更（唯一实现
         # 在 backend.models.new_public_id，查库防碰撞）
         public_id=models.new_public_id(db),
-        # 注册渠道归因（v2.44.0）：凭码注册记 code（卡密是进门凭据，
-        # 优先级高于邀请码，见 register_channel.resolve），其余记 open
-        register_channel=(register_channel.CODE if reg_code_check
-                          else register_channel.OPEN),
+        # 注册渠道归因（v2.44.0）：注册码下线后进门凭据只剩邀请码，
+        # 入口先记 open，邀请码真的建成了关系再由下方 resolve 改记
+        # invitation（见 register_channel.resolve）。
+        register_channel=register_channel.OPEN,
     )
     db.add(user)
-    consume_reward_type = None
-    if reg_code_check is not None:
-        # 凭码注册：核销与建号同一个事务。先 flush 拿到新用户 id，再走
-        # 核销主体（CAS 原子占位 + 代理销售归属 + 附带权益发放，均不
-        # 提交），最后连同建号一次提交；核销失败整体回滚——码不消耗、
-        # 人不落库，不会出现「码烧了号没建好」或「号建好了码还能再用」。
-        from backend import codes as _codes
-
-        db.flush()
-        consume = _codes.consume_registration_code(
-            db, user, req.registration_code)
-        if not consume.get("success"):
-            db.rollback()
-            raise HTTPException(
-                status_code=400,
-                detail=consume.get("message") or "注册码无效")
-        # 核销返回值自带 reward_type（核销主体的四种分派口径），供下方
-        # 赠送段判定「资格是否已随码发放」，不另查码行、不靠猜。
-        consume_reward_type = consume.get("reward_type")
     commit_with_retry(db, label="注册落库")  # 一次提交落盘
     db.refresh(user)
 
@@ -618,15 +461,6 @@ def register(request: Request, req: RegisterRequest, db: Session = Depends(get_d
             logger.warning("邀请码应用失败: user=%s code_mask=%s", user.id,
                            _mask_invite_code(req.invitation_code),
                            exc_info=True)
-
-    # 新注册冷启动赠送（只剩查看凭证）：失败静默不阻塞注册（与邀请
-    # 奖励同一容错口径）。发放摆在建号提交之后，异常只回滚赠送事务、
-    # 记日志，已落库的号不受影响。
-    try:
-        _grant_register_gifts(db, user, code_reward_type=consume_reward_type)
-    except Exception:  # noqa: BLE001 — 赠送失败不阻塞注册
-        db.rollback()
-        logger.warning("新注册赠送失败: user=%s", user.id, exc_info=True)
 
     logger.info("新用户注册: %s (id=%s, mode=%s)", username, user.id, reg_mode)
     # 计数语义：注册成功后退还该 IP 的注册限流计数，失败尝试（验证码错 /

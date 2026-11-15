@@ -151,14 +151,12 @@ export const broadcastMessage = (data: { title: string; content: string }) =>
   post<{ success: boolean }>('/messages/broadcast', data)
 
 // ==================== 会员卡码体系 =============
-/** 注册码门禁设置 */
+/** 注册门禁设置 */
 export const fetchRegistrationSettings = () => get<RegistrationSettings>('/settings/registration')
 
 export const updateRegistrationSettings = (data: {
   mode: string
   message?: string
-  registration_code_hint_text?: string
-  registration_code_hint_url?: string
   ratelimit_max?: number
   ratelimit_window?: number
 }) => put<{ success: boolean }>('/settings/registration', data)
@@ -174,7 +172,7 @@ export const fetchSoftdecodeConfig = () => get<SoftdecodeConfig>('/softdecode/co
 export const updateSoftdecodeConfig = (data: { enabled: boolean }) =>
   put<SoftdecodeConfig>('/softdecode/config', data)
 
-/** 类型化会员卡码生成（注册码 / 续期码 / 白名单码 / 诱饵码 / 指名码） */
+/** 类型化会员卡码生成（续期码 / 白名单码 / 诱饵码 / 指名码） */
 export const generateCodes = (data: {
   code_type: number
   count: number
@@ -205,8 +203,7 @@ export const generateCodes = (data: {
   '/registration-codes/generate', data)
 
 /** 会员卡码清单（按服；`realm_id=0` = 全部服，不传 = 当前服）
- * 注册码分区用 code_type=1（可再按 source/出品人筛选）；兑换码分区用
- * exclude_code_type=1 把注册码排除在外。 */
+ * 会员卡码页用 exclude_code_type=1 把存量注册码排除在外。 */
 export const fetchCodeList = (params: {
   code_type?: number
   exclude_code_type?: number

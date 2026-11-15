@@ -664,12 +664,12 @@ check("兑换码的指引不再指向已经收掉的「钱包 → 兑换码」",
       "钱包" not in pv["message"] and "使用" in pv["message"], pv["message"])
 
 pv = preview_code("REG-SMOKE1")
-# 2026-11-10 注册码分离定版：统一入口仍识别卡码（类型与天数照常下发），
-# 但注册码在兑换入口不再算「可用」——valid=False 并指路注册页。
-check("卡码仍走同一个入口（kind=code + 类型与天数；注册码指路注册页）",
+# 注册码已于 2026-11-15 整体下线：统一入口仍识别卡码（类型与天数
+# 照常下发），但存量注册码不再算「可用」——valid=False 并说明已停止使用。
+check("卡码仍走同一个入口（kind=code + 类型与天数；注册码已停止使用）",
       pv["kind"] == "code" and pv["valid"] is False
       and pv["type_name"] == "注册码" and bool(pv["days_text"])
-      and "注册页" in pv["message"], str(pv))
+      and "停止使用" in pv["message"], str(pv))
 
 check("不存在的码不会被误判成券",
       preview_code("NOPE-NOT-A-CODE")["kind"] == "unknown")
