@@ -1,126 +1,209 @@
 <template>
-  <UhdAccountLayout title="我的钱包">
-    <div class="v4-scope">
-      <div class="v4-page wallet-page">
-        <div class="wallet-body">
-          <!-- 余额卡：当前余额（唯一货币：现金余额，美元） -->
-          <section class="wallet-card" aria-label="钱包余额">
-            <p class="wallet-card__label">钱包余额</p>
-            <p class="wallet-card__big">
-              <span v-if="loading">—</span>
-              <span v-else>$ {{ balance }}</span>
-            </p>
-            <p class="wallet-card__note">全站唯一货币：现金余额（美元）。订阅、购流量、邀请返利都走这里。</p>
-            <p v-if="!walletEnabled" class="wallet-card__note" role="alert">钱包功能暂未开启，余额相关操作不可用，请联系服主。</p>
-          </section>
+  <UhdAccountLayout>
+    <div class="uhd-shell-scope wallet-page">
+      <h1 class="w-title">钱包</h1>
 
-          <div v-if="loadError" class="v4-err">
-            钱包加载失败，请稍后重试<br /><button class="v4-retry" @click="loadAll">重试</button>
+      <!-- 余额区：标签 + 大数字 + 充值钮（照友站钱包页截图） -->
+      <p class="w-balance-label">账户余额</p>
+      <div class="w-balance-row">
+        <p class="w-balance"><span v-if="loading">—</span><span v-else>${{ balance }}</span></p>
+        <button type="button" class="btn-primary w-recharge" @click="onRecharge">充值</button>
+      </div>
+      <p v-if="!walletEnabled && !loading" class="w-alert" role="alert">
+        钱包功能暂未开启，余额相关操作不可用，请联系服主。
+      </p>
+      <div v-if="loadError" class="v4-err">
+        钱包加载失败，请稍后重试<br /><button class="v4-retry" @click="loadWallet">重试</button>
+      </div>
+
+      <!-- 分段页签：我的兑换码 / 资金明细 -->
+      <div class="w-seg" role="tablist" aria-label="钱包页签">
+        <button
+          type="button"
+          role="tab"
+          class="w-seg__btn"
+          :class="{ 'w-seg__btn--on': tab === 'codes' }"
+          :aria-selected="tab === 'codes'"
+          @click="tab = 'codes'"
+        >我的兑换码</button>
+        <button
+          type="button"
+          role="tab"
+          class="w-seg__btn"
+          :class="{ 'w-seg__btn--on': tab === 'ledger' }"
+          :aria-selected="tab === 'ledger'"
+          @click="switchToLedger"
+        >资金明细</button>
+      </div>
+
+      <!-- ============ 我的兑换码 ============ -->
+      <div v-show="tab === 'codes'" class="w-tab">
+        <section aria-label="使用兑换码">
+          <h2 class="w-sec-title">使用兑换码</h2>
+          <div class="w-redeem-row">
+            <input
+              v-model="redeemCode"
+              class="w-redeem-input"
+              type="text"
+              placeholder="输入好友分享的兑换码"
+              aria-label="兑换码"
+              maxlength="64"
+              autocomplete="off"
+              :disabled="redeeming"
+              @keydown.enter.prevent="doRedeem"
+            />
+            <button
+              type="button"
+              class="btn-primary w-redeem-btn"
+              :disabled="!redeemCode.trim() || redeeming"
+              @click="doRedeem"
+            >{{ redeeming ? '兑换中…' : '兑换' }}</button>
+          </div>
+          <p class="w-note">面值会立刻存进你的余额，兑换成功后不能撤销。</p>
+          <p v-if="redeemError" class="w-err" role="alert">{{ redeemError }}</p>
+        </section>
+
+        <section aria-label="生成兑换码">
+          <h2 class="w-sec-title w-sec-title--rule">生成兑换码</h2>
+          <div class="w-gen-row">
+            <div class="w-gen-text">
+              <p class="w-gen-name">把余额做成礼品卡</p>
+              <p class="w-gen-sub">自定义面额，有效期最长 7 天 · 可用余额 ${{ balance }}</p>
+            </div>
+            <button
+              type="button"
+              class="w-outline-btn"
+              :disabled="!walletEnabled || loading"
+              @click="giftOpen = true"
+            >生成</button>
+          </div>
+        </section>
+
+        <section aria-label="我生成的兑换码">
+          <div class="w-list-head w-sec-title--rule">
+            <h2 class="w-sec-title w-sec-title--inhead">我生成的兑换码</h2>
+            <button
+              type="button"
+              class="w-refresh"
+              aria-label="刷新列表"
+              :disabled="giftLoading"
+              @click="loadGiftCodes"
+            >
+              <RefreshCw :size="17" :class="{ 'w-refresh--spin': giftLoading }" />
+            </button>
+            <div class="w-filter">
+              <button
+                type="button"
+                class="w-filter__btn"
+                aria-haspopup="listbox"
+                :aria-expanded="filterOpen"
+                @click="filterOpen = !filterOpen"
+              >{{ filterLabel }}<ChevronDown :size="15" /></button>
+              <div v-if="filterOpen" class="w-filter__mask" @click="filterOpen = false"></div>
+              <ul v-if="filterOpen" class="w-filter__menu" role="listbox">
+                <li
+                  v-for="opt in filterOptions"
+                  :key="opt.value"
+                  role="option"
+                  :aria-selected="giftFilter === opt.value"
+                >
+                  <button
+                    type="button"
+                    class="w-filter__opt"
+                    :class="{ 'w-filter__opt--on': giftFilter === opt.value }"
+                    @click="setFilter(opt.value)"
+                  >{{ opt.label }}</button>
+                </li>
+              </ul>
+            </div>
           </div>
 
-          <!-- 在线充值（批 3）：商户信息未到位，入口只占位、不假接支付 -->
-          <section class="wallet-sec" aria-label="在线充值">
-            <h2 class="wallet-sec__title">在线充值</h2>
-            <p class="wallet-sec__note">在线充值即将上线（最低 $10）。现在可通过管理员充值或兑换余额码入账。</p>
-            <button type="button" class="wallet-btn wallet-btn--disabled" disabled>即将上线</button>
-          </section>
-
-          <!-- 余额码兑换（批 1 已有端点）：只认 reward_type=balance 的码 -->
-          <section class="wallet-sec" aria-label="兑换余额码">
-            <h2 class="wallet-sec__title">兑换余额码</h2>
-            <div class="wallet-redeem__row">
-              <input
-                v-model="redeemCode"
-                class="wallet-redeem__input"
-                type="text"
-                placeholder="输入余额码"
-                aria-label="余额码"
-                maxlength="64"
-                autocomplete="off"
-                :disabled="redeeming"
-                @keydown.enter.prevent="doRedeem"
-              />
-              <button
-                type="button"
-                class="wallet-btn"
-                :disabled="!redeemCode.trim() || redeeming"
-                @click="doRedeem"
-              >{{ redeeming ? '兑换中…' : '兑换' }}</button>
-            </div>
-            <p v-if="redeemError" class="wallet-err" role="alert">{{ redeemError }}</p>
-          </section>
-
-          <!-- 购流量入口：余额购流量走弹窗（与概览页同一弹窗） -->
-          <section v-if="traffic?.enabled" class="wallet-sec" aria-label="购买流量">
-            <h2 class="wallet-sec__title">购买流量</h2>
-            <p class="wallet-sec__note">
-              本月已用 {{ formatBytes(traffic.used_bytes) }} / 共 {{ formatBytes(traffic.quota_bytes) }}，
-              余额可抵扣已用流量。
-            </p>
-            <button type="button" class="wallet-btn" @click="trafficModalOpen = true">购买流量</button>
-          </section>
-
-          <!-- 收支流水：只增不改，错账用冲正行纠 -->
-          <section class="wallet-sec" aria-label="收支流水">
-            <h2 class="wallet-sec__title">收支流水</h2>
-            <div class="wallet-filter" role="group" aria-label="按类型筛选">
-              <button
-                v-for="opt in kindOptions"
-                :key="opt.value"
-                type="button"
-                class="wallet-chip"
-                :class="{ 'wallet-chip--on': kindFilter === opt.value }"
-                :aria-pressed="kindFilter === opt.value"
-                @click="setKind(opt.value)"
-              >{{ opt.label }}</button>
-            </div>
-            <div v-if="ledgerLoading" class="v4-skeleton" style="height:120px"></div>
-            <p v-else-if="ledger.length === 0" class="wallet-empty">暂无流水</p>
-            <ul v-else class="wallet-list">
-              <li v-for="row in ledger" :key="row.id" class="wallet-row">
-                <span class="wallet-row__main">
-                  <b>{{ walletKindText(row.kind) }}</b>
-                  <span>{{ row.note || row.ref_id || '' }}</span>
-                  <span class="wallet-row__time">{{ fmtTime(row.created_at) }}</span>
-                </span>
-                <span
-                  class="wallet-row__amount"
-                  :class="Number(row.amount) >= 0 ? 'wallet-row__amount--in' : 'wallet-row__amount--out'"
-                >{{ Number(row.amount) >= 0 ? '+' : '' }}{{ row.amount }}</span>
-              </li>
-            </ul>
-            <div v-if="ledgerTotal > pageSize" class="wallet-pager">
-              <button type="button" class="wallet-btn wallet-btn--ghost" :disabled="page <= 1 || ledgerLoading" @click="page -= 1; loadLedger()">上一页</button>
-              <span class="wallet-pager__info">第 {{ page }} 页 / 共 {{ totalPages }} 页</span>
-              <button type="button" class="wallet-btn wallet-btn--ghost" :disabled="page >= totalPages || ledgerLoading" @click="page += 1; loadLedger()">下一页</button>
-            </div>
-          </section>
-        </div>
+          <div v-if="giftLoading && giftCodes.length === 0" class="w-skeleton" aria-hidden="true"></div>
+          <p v-else-if="giftCodes.length === 0" class="w-empty">没有符合条件的兑换码</p>
+          <ul v-else class="w-code-list">
+            <li v-for="item in giftCodes" :key="item.id" class="w-code-row">
+              <div class="w-code-main">
+                <button
+                  type="button"
+                  class="w-code-text"
+                  title="点击复制兑换码"
+                  @click="copyGiftCode(item.code)"
+                >{{ item.code }}</button>
+                <span class="w-code-meta">{{ fmtTime(item.created_at) }} 生成 · {{ fmtTime(item.expires_at) }} 到期</span>
+              </div>
+              <div class="w-code-side">
+                <span class="w-code-amount">${{ item.amount }}</span>
+                <span class="w-pill" :class="`w-pill--${item.status}`">{{ statusText(item.status) }}</span>
+              </div>
+            </li>
+          </ul>
+        </section>
       </div>
-    </div>
 
-    <TrafficPurchaseModal
-      v-model:open="trafficModalOpen"
-      :traffic="traffic"
-      :rule="traffic?.exchange_rule ?? null"
-      @exchanged="onTrafficExchanged"
-    />
+      <!-- ============ 资金明细 ============ -->
+      <div v-show="tab === 'ledger'" class="w-tab">
+        <div v-if="ledgerLoading && ledger.length === 0" class="w-skeleton" aria-hidden="true"></div>
+        <p v-else-if="ledger.length === 0" class="w-empty">暂无资金明细</p>
+        <template v-else>
+          <ul class="w-led-list">
+            <li v-for="row in ledger" :key="row.id" class="w-led-row">
+              <div class="w-led-main">
+                <b>{{ walletLedgerLabel(row) }}</b>
+                <span v-if="row.note" class="w-led-note">{{ row.note }}</span>
+                <span class="w-led-time">{{ fmtTime(row.created_at) }}</span>
+              </div>
+              <span
+                class="w-led-amount"
+                :class="{ 'w-led-amount--in': Number(row.amount) >= 0 }"
+              >{{ Number(row.amount) >= 0 ? '+' : '-' }}${{ absAmount(row.amount) }}</span>
+            </li>
+          </ul>
+          <button
+            v-if="ledger.length < ledgerTotal"
+            type="button"
+            class="w-more"
+            :disabled="ledgerLoading"
+            @click="loadMoreLedger"
+          >{{ ledgerLoading ? '加载中…' : '加载更多' }}</button>
+        </template>
+      </div>
+
+      <!-- 弹层必须留在 .uhd-shell-scope 内继承壳面令牌（挪出即落到
+           v4-paper 暖纸令牌、整层变暖棕色，2026-11-15 QA 实证） -->
+      <GiftCodeSheet
+        :open="giftOpen"
+        :balance="balance"
+        @close="giftOpen = false"
+        @created="onGiftCreated"
+      />
+    </div>
   </UhdAccountLayout>
 </template>
 
 <script setup lang="ts">
 /**
- * 我的钱包（/wallet，钱包批 2）：余额卡 + 在线充值占位（批 3，
- * 不假接）+ 余额码兑换 + 购流量入口（弹窗）+ 收支流水分页。
+ * 钱包（/wallet，2026-11-15 照 UHDNow 钱包页整页重做，旧实现已删）：
+ * 余额 + 充值钮 → 分段页签（我的兑换码 / 资金明细）。
+ * 我的兑换码：用兑换码入账（既有 redeem 口）+ 把余额做成礼品卡
+ * （自生成 balance 兑换码，GiftCodeSheet 弹层）+ 我生成的码列表
+ * （状态筛选；过期未用的面值由后端在列表查询时惰性退回）。
+ * 资金明细：钱包流水分页加载更多。
+ * 在线充值仍未接网关（批 3 未到）：充值钮只给诚实提示，不假接支付。
  * 支付回调落点：易支付 return_url 指到 /wallet?paid=1——进页时
  * 识别该参数，刷新余额并提示到账结果（不再 404）。
  */
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { ChevronDown, RefreshCw } from 'lucide-vue-next'
 import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
-import TrafficPurchaseModal from '@/components/profile/TrafficPurchaseModal.vue'
-import { walletApi, walletKindText, type WalletLedgerRow } from '@/api/wallet'
-import { getTraffic, formatBytes, type TrafficOverview } from '@/api/traffic'
+import GiftCodeSheet from '@/components/profile/GiftCodeSheet.vue'
+import {
+  walletApi,
+  walletLedgerLabel,
+  type GiftCodeCreateResult,
+  type GiftCodeItem,
+  type WalletLedgerRow,
+} from '@/api/wallet'
 import { useToast } from '@/composables/useToast'
 import { toUserMessage } from '@/utils/toUserMessage'
 
@@ -132,34 +215,49 @@ const loadError = ref(false)
 const balance = ref('0.00')
 const walletEnabled = ref(true)
 
+const tab = ref<'codes' | 'ledger'>('codes')
+
+/* ---------- 使用兑换码 ---------- */
 const redeemCode = ref('')
 const redeeming = ref(false)
 const redeemError = ref('')
 
-const traffic = ref<TrafficOverview | null>(null)
-const trafficModalOpen = ref(false)
+/* ---------- 我生成的兑换码 ---------- */
+const giftOpen = ref(false)
+const giftCodes = ref<GiftCodeItem[]>([])
+const giftLoading = ref(false)
+type GiftFilter = 'all' | 'unused' | 'used' | 'expired'
+const giftFilter = ref<GiftFilter>('all')
+const filterOpen = ref(false)
+const filterOptions: { value: GiftFilter; label: string }[] = [
+  { value: 'all', label: '全部记录' },
+  { value: 'unused', label: '未使用' },
+  { value: 'used', label: '已使用' },
+  { value: 'expired', label: '已过期' },
+]
+const filterLabel = computed(
+  () => filterOptions.find((o) => o.value === giftFilter.value)?.label ?? '全部记录',
+)
 
+/* ---------- 资金明细 ---------- */
 const ledger = ref<WalletLedgerRow[]>([])
 const ledgerTotal = ref(0)
+const ledgerPage = ref(1)
 const ledgerLoading = ref(false)
-const page = ref(1)
-const pageSize = 20
-const totalPages = computed(() => Math.max(1, Math.ceil(ledgerTotal.value / pageSize)))
-const kindFilter = ref('')
-const kindOptions = [
-  { value: '', label: '全部' },
-  { value: 'recharge', label: '充值' },
-  { value: 'gift_code', label: '兑换码' },
-  { value: 'rebate', label: '返利' },
-  { value: 'subscription_purchase', label: '订阅' },
-  { value: 'traffic_purchase', label: '流量' },
-  { value: 'refund', label: '退款' },
-  { value: 'admin_adjust', label: '调整' },
-]
+const ledgerLoaded = ref(false)
+const LEDGER_PAGE_SIZE = 20
 
 function fmtTime(iso: string | null): string {
   if (!iso) return ''
   return iso.slice(0, 10) + ' ' + iso.slice(11, 16)
+}
+
+function absAmount(amount: string): string {
+  return amount.startsWith('-') ? amount.slice(1) : amount
+}
+
+function statusText(status: GiftCodeItem['status']): string {
+  return { unused: '未使用', used: '已使用', expired: '已过期' }[status]
 }
 
 async function loadWallet() {
@@ -169,48 +267,58 @@ async function loadWallet() {
     const info = await walletApi.get()
     balance.value = info.balance
     walletEnabled.value = info.wallet_enabled
-  } catch (e) {
+  } catch {
     loadError.value = true
-    void e
   } finally {
     loading.value = false
   }
 }
 
-async function loadLedger() {
+async function loadGiftCodes() {
+  giftLoading.value = true
+  try {
+    const res = await walletApi.giftCodes(giftFilter.value)
+    giftCodes.value = res.items
+  } catch {
+    giftCodes.value = []
+  } finally {
+    giftLoading.value = false
+  }
+}
+
+function setFilter(v: GiftFilter) {
+  giftFilter.value = v
+  filterOpen.value = false
+  void loadGiftCodes()
+}
+
+async function loadLedger(reset: boolean) {
+  if (ledgerLoading.value) return
   ledgerLoading.value = true
   try {
-    const res = await walletApi.ledger({
-      kind: kindFilter.value || undefined,
-      page: page.value,
-      page_size: pageSize,
-    })
-    ledger.value = res.items
+    const page = reset ? 1 : ledgerPage.value + 1
+    const res = await walletApi.ledger({ page, page_size: LEDGER_PAGE_SIZE })
+    ledger.value = reset ? res.items : [...ledger.value, ...res.items]
     ledgerTotal.value = res.total
+    ledgerPage.value = page
+    ledgerLoaded.value = true
   } catch {
-    ledger.value = []
-    ledgerTotal.value = 0
+    if (reset) {
+      ledger.value = []
+      ledgerTotal.value = 0
+    }
   } finally {
     ledgerLoading.value = false
   }
 }
 
-function setKind(v: string) {
-  kindFilter.value = v
-  page.value = 1
-  void loadLedger()
+function switchToLedger() {
+  tab.value = 'ledger'
+  if (!ledgerLoaded.value) void loadLedger(true)
 }
 
-async function loadTraffic() {
-  try {
-    traffic.value = await getTraffic()
-  } catch {
-    traffic.value = null
-  }
-}
-
-async function loadAll() {
-  await Promise.all([loadWallet(), loadLedger(), loadTraffic()])
+function loadMoreLedger() {
+  void loadLedger(false)
 }
 
 async function doRedeem() {
@@ -222,7 +330,12 @@ async function doRedeem() {
     const res = await walletApi.redeem(code)
     toast.success(res.message || `已入账 $${res.balance_value ?? ''}`)
     redeemCode.value = ''
-    await loadAll()
+    // 兑的可能是别人给的码、也可能回头影响我生成的码状态，两边都刷新
+    await Promise.all([
+      loadWallet(),
+      loadGiftCodes(),
+      ledgerLoaded.value ? loadLedger(true) : Promise.resolve(),
+    ])
   } catch (e) {
     redeemError.value = toUserMessage(e)
   } finally {
@@ -230,12 +343,28 @@ async function doRedeem() {
   }
 }
 
-function onTrafficExchanged() {
-  void loadAll()
+function onGiftCreated(res: GiftCodeCreateResult) {
+  balance.value = res.balance
+  void loadGiftCodes()
+  if (ledgerLoaded.value) void loadLedger(true)
+}
+
+function onRecharge() {
+  toast.info('在线充值即将上线，可先通过兑换码入账')
+}
+
+async function copyGiftCode(code: string) {
+  try {
+    await navigator.clipboard.writeText(code)
+    toast.success('兑换码已复制')
+  } catch {
+    toast.error('复制失败，请长按兑换码手动复制')
+  }
 }
 
 onMounted(() => {
-  void loadAll()
+  void loadWallet()
+  void loadGiftCodes()
   // 支付回调落点（economy.return_url = /wallet?paid=1）：进页即刷新
   // 余额并给到账提示；order 参数同理（网关同步跳转带订单号）。
   if (route.query.paid === '1' || route.query.order) {
@@ -245,118 +374,300 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* 浅色纸面口径（与 UhdAccountLayout 内其他账号页一致：--paper/--ink/--line；
-   主钮用彩虹边框＋淡彩粉彩底＋玻璃栈，与订阅购买页主钮同款） */
-.wallet-page { padding-bottom: 34px; }
-.wallet-body { padding-top: 4px; display: flex; flex-direction: column; gap: 28px; }
+/* 钱包页（UHD 重做）：令牌走用户中心壳面（--paper/--paper2/--paper-card/
+   --ink/--ink2/--line），深色为默认、浅色随 html[data-theme='light']，
+   与友站截图的深色形态同值（卡 #17181a / 输入 #242526 / 边 #26262a）。 */
+.wallet-page { padding-bottom: 40px; }
 
-/* 余额卡：白底卡面＋大数字 */
-.wallet-card {
-  padding: 20px 22px;
-  border-radius: var(--paper-r-lg, 16px);
-  background: var(--paper-card);
-  border: 1px solid var(--line);
+.w-title { margin: 6px 0 0; font-size: 34px; font-weight: 800; letter-spacing: -0.01em; color: var(--ink); }
+
+.w-balance-label { margin: 30px 0 0; font-size: 15px; color: var(--ink2); }
+.w-balance-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; margin-top: 6px;
 }
-.wallet-card__label { margin: 0 0 4px; font-size: 13px; color: var(--ink2); }
-.wallet-card__big {
+.w-balance {
   margin: 0;
   font-family: var(--uhd-font-display);
-  font-size: 40px;
-  font-weight: var(--uhd-fw-black);
+  font-size: 44px;
+  font-weight: var(--uhd-fw-black, 900);
   letter-spacing: -0.02em;
   color: var(--ink);
+  font-variant-numeric: tabular-nums;
 }
-.wallet-card__note { margin: 10px 0 0; font-size: 13px; line-height: 1.6; color: var(--ink2); }
-
-.wallet-sec__title { margin: 0 0 8px; font-size: 16px; font-weight: 700; color: var(--ink); }
-.wallet-sec__note { margin: 0 0 12px; font-size: 13px; line-height: 1.6; color: var(--ink2); }
-.wallet-err { margin: 10px 0 0; font-size: 13px; color: #dc2626; }
-.wallet-empty { margin: 0; font-size: 13px; color: var(--ink2); }
-
-/* 按钮：主钮彩虹边框＋淡彩粉彩底＋玻璃栈（与订阅购买页入口钮同款） */
-.wallet-btn {
-  padding: 10px 20px;
-  border: 1.5px solid transparent;
+.w-recharge {
+  flex: none;
+  height: 44px;
+  padding: 0 24px;
   border-radius: 999px;
-  background:
-    var(--uhd-rainbow-soft) padding-box,
-    var(--uhd-rainbow) border-box;
-  color: #111111;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
   cursor: pointer;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    var(--uhd-shadow-card-l);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
 }
-.wallet-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.wallet-btn--disabled {
-  background: var(--paper2);
-  border-color: var(--line);
-  color: var(--ink2);
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  cursor: not-allowed;
-}
-.wallet-btn--ghost {
-  background: var(--paper2);
-  border-color: var(--line);
-  color: var(--ink);
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-.wallet-btn:active:not(:disabled) { transform: scale(0.97); }
+.w-recharge:active { transform: scale(0.96); }
+.w-alert { margin: 12px 0 0; font-size: 13.5px; color: #f87171; }
+html[data-theme='light'] .w-alert { color: #dc2626; }
 
-.wallet-redeem__row { display: flex; gap: 10px; align-items: stretch; }
-.wallet-redeem__input {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: 0 16px;
-  min-height: 46px;
+/* 分段页签：深色胶囊容器 + 选中项浅底（照截图） */
+.w-seg {
+  margin-top: 30px;
+  display: inline-flex;
+  gap: 4px;
+  padding: 5px;
   border-radius: 999px;
   background: var(--paper-card);
   border: 1px solid var(--line);
-  color: var(--ink);
-  font-family: inherit;
-  font-size: 15px;
-  outline: none;
 }
-.wallet-redeem__input::placeholder { color: var(--ink2); }
-
-.wallet-filter { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-.wallet-chip {
-  padding: 7px 14px;
+.w-seg__btn {
+  height: 42px;
+  padding: 0 20px;
   border-radius: 999px;
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   background: transparent;
   color: var(--ink2);
   font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 600;
   cursor: pointer;
 }
-.wallet-chip--on { background: #111111; border-color: transparent; color: #ffffff; font-weight: 600; }
+.w-seg__btn--on {
+  background: var(--paper2);
+  border-color: var(--line);
+  color: var(--ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+html[data-theme='light'] .w-seg__btn--on {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 1px 3px rgba(20, 22, 28, 0.12);
+}
 
-.wallet-list { list-style: none; margin: 0; padding: 0; }
-.wallet-row {
+.w-tab { margin-top: 30px; display: flex; flex-direction: column; gap: 36px; }
+.w-sec-title { margin: 0 0 14px; font-size: 20px; font-weight: 700; color: var(--ink); }
+.w-sec-title--rule { border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+.w-sec-title--inhead { margin: 0; }
+.w-note { margin: 10px 0 0; font-size: 13.5px; color: var(--ink2); }
+.w-err { margin: 10px 0 0; font-size: 13.5px; color: #f87171; }
+html[data-theme='light'] .w-err { color: #dc2626; }
+.w-empty { margin: 16px 0 0; font-size: 14px; color: var(--ink2); }
+.w-skeleton { height: 96px; margin-top: 14px; border-radius: 14px; background: var(--paper-card); opacity: 0.6; }
+
+/* 使用兑换码 */
+.w-redeem-row { display: flex; gap: 10px; align-items: stretch; }
+.w-redeem-input {
+  flex: 1;
+  min-width: 0;
+  height: 52px;
+  padding: 0 20px;
+  border-radius: 26px;
+  background: var(--paper2);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 15.5px;
+  outline: none;
+}
+.w-redeem-input::placeholder { color: var(--ink2); }
+.w-redeem-input:focus { border-color: var(--line-deep, var(--line)); }
+.w-redeem-btn {
+  flex: none;
+  height: 52px;
+  padding: 0 26px;
+  border-radius: 26px;
+  font-size: 15.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* 生成兑换码行 */
+.w-gen-row { display: flex; align-items: center; gap: 14px; }
+.w-gen-text { flex: 1; min-width: 0; }
+.w-gen-name { margin: 0; font-size: 17px; font-weight: 700; color: var(--ink); }
+.w-gen-sub { margin: 5px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--ink2); }
+.w-outline-btn {
+  flex: none;
+  height: 40px;
+  padding: 0 20px;
+  border-radius: 999px;
+  border: 1.5px solid var(--line-deep, var(--line));
+  background: transparent;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.w-outline-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.w-outline-btn:active:not(:disabled) { transform: scale(0.96); }
+
+/* 我生成的兑换码：标题行 + 筛选 */
+.w-list-head { display: flex; align-items: center; gap: 8px; }
+.w-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--ink2);
+  cursor: pointer;
+}
+.w-refresh:disabled { cursor: default; }
+.w-refresh--spin { animation: w-spin 0.9s linear infinite; }
+@keyframes w-spin { to { transform: rotate(360deg); } }
+.w-filter { position: relative; margin-left: auto; }
+.w-filter__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.w-filter__mask { position: fixed; inset: 0; z-index: 40; }
+.w-filter__menu {
+  /* 向上展开：列表头在页面下半部，向下展开会溢出视口、被底部坞挡住
+     （2026-11-15 QA 实证），向上弹盖住上方区块是浮层常态 */
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 41;
+  min-width: 136px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.5);
+}
+.w-filter__opt {
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  color: var(--ink2);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.w-filter__opt--on { color: var(--ink); background: var(--paper2); }
+
+/* 礼品卡列表行 */
+.w-code-list { list-style: none; margin: 6px 0 0; padding: 0; }
+.w-code-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 0;
+  border-top: 1px solid var(--line);
+}
+.w-code-row:first-child { border-top: none; }
+.w-code-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+.w-code-text {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.w-code-meta { font-size: 12px; color: var(--ink2); }
+.w-code-side {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+}
+.w-code-amount { font-size: 15.5px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+.w-pill {
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper2);
+  color: var(--ink2);
+  white-space: nowrap;
+}
+.w-pill--unused {
+  background: rgba(22, 163, 74, 0.15);
+  border-color: rgba(22, 163, 74, 0.5);
+  color: #4ade80;
+}
+.w-pill--expired {
+  background: rgba(220, 38, 38, 0.12);
+  border-color: rgba(220, 38, 38, 0.4);
+  color: #f87171;
+}
+html[data-theme='light'] .w-pill--unused { background: #e8f0e9; color: #16a34a; }
+html[data-theme='light'] .w-pill--expired { background: #fdecec; color: #dc2626; }
+
+/* 资金明细行 */
+.w-led-list { list-style: none; margin: 0; padding: 0; }
+.w-led-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 0;
+  padding: 13px 0;
   border-top: 1px solid var(--line);
 }
-.wallet-row__main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.wallet-row__main b { font-size: 14px; font-weight: 600; color: var(--ink); }
-.wallet-row__main span { font-size: 12px; color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wallet-row__amount { flex: 0 0 auto; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.wallet-row__amount--in { color: var(--uhd-ok); }
-.wallet-row__amount--out { color: var(--ink); }
-
-.wallet-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
-.wallet-pager__info { font-size: 13px; color: var(--ink2); }
+.w-led-row:first-child { border-top: none; }
+.w-led-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.w-led-main b { font-size: 14.5px; font-weight: 600; color: var(--ink); }
+.w-led-note {
+  font-size: 12.5px;
+  color: var(--ink2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.w-led-time { font-size: 12px; color: var(--ink2); }
+.w-led-amount {
+  flex: none;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.w-led-amount--in { color: var(--green); }
+.w-more {
+  display: block;
+  margin: 18px auto 0;
+  height: 40px;
+  padding: 0 22px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper-card);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.w-more:disabled { opacity: 0.5; cursor: default; }
 </style>

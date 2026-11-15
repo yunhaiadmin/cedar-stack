@@ -7,6 +7,11 @@
   reward_type=balance 的卡码，核销主体复用 codes.redeem_code
   （claim_code 原子占位 + 蜜罐 + 指名 + 每人每码一次），非余额码
   在占位前分流拒绝、不烧码。
+- POST /api/user/wallet/gift-codes：把余额做成礼品卡——扣款 + 建
+  source='gift' 的 balance 兑换码，同一事务（钱包页 UHD 重做，
+  2026-11-15）。
+- GET  /api/user/wallet/gift-codes：我生成的礼品卡列表；查询时
+  惰性退款（过期未用且未退过的，面值退回并停用码，只退一次）。
 
 批 1 不提供任何扣款/充值端点：订阅购买、购流量、在线充值分别是
 批 2 / 批 2 / 批 3，不许在这里假接。
@@ -14,6 +19,8 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
@@ -364,3 +371,187 @@ async def pay_subscription_with_wallet(
     if pending:
         await economy_api.send_fulfill_notifications(pending)
     return result
+
+
+# ==================== 礼品卡：用户自生成兑换码 ====================
+
+#: 礼品卡有效期上限（天）：与钱包页文案「有效期最长 7 天」一致
+GIFT_CODE_MAX_VALID_DAYS = 7
+
+
+class WalletGiftCodeCreateRequest(BaseModel):
+    # 金额用字符串收，避免 float 丢精度（与管理端余额码生成同口径）；
+    # 不设 min_length：空串也要走端点内的统一 400，而不是 pydantic 422
+    amount: str = Field(..., max_length=16)
+    valid_days: int = Field(default=GIFT_CODE_MAX_VALID_DAYS)
+
+
+def _gift_code_status(code: models.RegistrationCode, now: datetime) -> str:
+    if (code.use_count or 0) >= (code.max_uses or 1):
+        return "used"
+    if code.expires_at and code.expires_at < now:
+        return "expired"
+    return "unused"
+
+
+@wallet_router.post("/wallet/gift-codes")
+def create_gift_code(req: WalletGiftCodeCreateRequest,
+                     current_user: models.WebUser = Depends(get_current_user),
+                     db: Session = Depends(get_db)):
+    """把余额做成礼品卡：扣款 + 建 balance 兑换码，同一事务。
+
+    码就是普通的 RegistrationCode（reward_type=balance、source='gift'、
+    created_by=本人、max_uses=1），兑换走既有 redeem 入口，不另起核销
+    逻辑。扣款复用 wallet_service.debit（条件 UPDATE 防超额 + 行锁），
+    校验顺序与 redeem 同口径：子账号拦截 → 限流 → 账号状态 → 钱包开关。
+    """
+    sub_accounts.forbid_sub_account(current_user)
+    allowed, _ = check_rate_limit(
+        f"wallet_gift_create:{current_user.id}", 10, 60)
+    if not allowed:
+        return JSONResponse(status_code=429,
+                            content={"detail": "操作过于频繁，请稍后再试"})
+    if not current_user.is_active:
+        return JSONResponse(status_code=403,
+                            content={"detail": "账号已被禁用，请联系管理员"})
+    if not wallet_service.wallet_enabled(db):
+        return JSONResponse(status_code=403,
+                            content={"detail": "钱包功能暂未开启"})
+
+    days = req.valid_days
+    if not isinstance(days, int) or days < 1 or days > GIFT_CODE_MAX_VALID_DAYS:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": f"有效期只能选 1 到 {GIFT_CODE_MAX_VALID_DAYS} 天"})
+    try:
+        amount = Decimal(str(req.amount).strip())
+    except (InvalidOperation, ValueError):
+        return JSONResponse(status_code=400,
+                            content={"detail": "金额格式不正确"})
+    if amount != wallet_service.money(amount):
+        return JSONResponse(status_code=400,
+                            content={"detail": "金额最多保留两位小数"})
+    amount = wallet_service.money(amount)
+    if amount <= 0:
+        return JSONResponse(status_code=400,
+                            content={"detail": "金额必须大于 0"})
+    balance = wallet_service.get_balance(db, current_user.id)
+    if amount > balance:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": f"余额不足：当前可用余额 ${balance:.2f}"})
+
+    raw = None
+    for _ in range(10):
+        candidate = codes.render_code(code_type=codes.CODE_TYPE_RENEW, days=0)
+        if codes.find_reg_code(db, candidate) is None:
+            raw = candidate
+            break
+    if raw is None:
+        return JSONResponse(status_code=500,
+                            content={"detail": "卡码生成冲突，请重试"})
+
+    now = datetime.now()
+    code = models.RegistrationCode(
+        code=raw, max_uses=1, use_count=0, is_active=True,
+        note="礼品卡（用户生成）",
+        expires_at=now + timedelta(days=days),
+        created_by=current_user.id,
+        code_type=codes.CODE_TYPE_RENEW, days=0,
+        source="gift", reward_type=codes.REWARD_BALANCE,
+        balance_value=amount)
+    db.add(code)
+    db.flush()  # 先拿到 code.id，扣款流水 ref 要指向它
+    try:
+        entry, _replayed = wallet_service.debit(
+            db, current_user.id, amount, kind="gift_code",
+            ref_id=f"code:{code.id}", note="生成礼品卡")
+    except wallet_service.WalletError as exc:
+        db.rollback()
+        return JSONResponse(status_code=400,
+                            content={"detail": str(exc), "code": exc.code})
+    commit_with_retry(db, label="生成礼品卡扣款")
+    return {
+        "ok": True,
+        "code": raw,
+        "amount": f"{amount:.2f}",
+        "valid_days": days,
+        "expires_at": code.expires_at.isoformat(),
+        "balance": f"{entry.balance_after:.2f}",
+    }
+
+
+def _refund_expired_gift_codes(db: Session, user_id: int) -> bool:
+    """惰性退款：本人礼品卡过期未用且未退过的，面值退回钱包 + 停用码。
+
+    退款标记 = 本人流水里 kind='gift_code_refund' 且 ref_id='code:{id}'
+    的行：查到已退则只补停用、绝不重复入账（不依赖 note 文案）。
+    返回是否发生了写入（调用方据此决定要不要提交）。
+    """
+    now = datetime.now()
+    rows = (db.query(models.RegistrationCode)
+            .filter(models.RegistrationCode.created_by == user_id,
+                    models.RegistrationCode.source == "gift",
+                    models.RegistrationCode.expires_at.isnot(None),
+                    models.RegistrationCode.expires_at < now)
+            .all())
+    changed = False
+    for code in rows:
+        if (code.use_count or 0) >= (code.max_uses or 1):
+            continue  # 已被兑换：钱已到兑换人账上，不退生成人
+        refunded = (db.query(models.WalletLedger.id)
+                    .filter(models.WalletLedger.user_id == user_id,
+                            models.WalletLedger.kind == "gift_code_refund",
+                            models.WalletLedger.ref_id == f"code:{code.id}")
+                    .first())
+        if refunded is None:
+            amount = wallet_service.money(code.balance_value or 0)
+            if amount > 0:
+                wallet_service.credit(
+                    db, user_id, amount, kind="gift_code_refund",
+                    ref_id=f"code:{code.id}",
+                    note="礼品卡过期未使用，面值退回")
+                changed = True
+        if code.is_active:
+            code.is_active = False
+            changed = True
+    return changed
+
+
+@wallet_router.get("/wallet/gift-codes")
+def list_gift_codes(status: str = "all",
+                    current_user: models.WebUser = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    """我生成的礼品卡（只回 source='gift' 且 created_by=本人的）。
+
+    查询前先做一轮惰性退款（见 _refund_expired_gift_codes）；退款
+    失败只回滚并记日志，列表照常返回，下次查询会再试，不许让退款
+    把读口拖死。
+    """
+    try:
+        if _refund_expired_gift_codes(db, current_user.id):
+            commit_with_retry(db, label="礼品卡过期退款")
+    except Exception:  # noqa: BLE001 — 退款失败不拖垮列表
+        db.rollback()
+        logger.exception("礼品卡惰性退款失败 user_id=%s", current_user.id)
+
+    now = datetime.now()
+    rows = (db.query(models.RegistrationCode)
+            .filter(models.RegistrationCode.created_by == current_user.id,
+                    models.RegistrationCode.source == "gift")
+            .order_by(models.RegistrationCode.id.desc())
+            .limit(200).all())
+    items = []
+    for code in rows:
+        st = _gift_code_status(code, now)
+        if status in ("unused", "used", "expired") and st != status:
+            continue
+        items.append({
+            "id": code.id,
+            "code": code.code,
+            "amount": f"{wallet_service.money(code.balance_value or 0):.2f}",
+            "status": st,
+            "created_at": code.created_at.isoformat() if code.created_at else None,
+            "expires_at": code.expires_at.isoformat() if code.expires_at else None,
+        })
+    return {"items": items, "total": len(items)}

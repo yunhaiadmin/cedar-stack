@@ -55,6 +55,7 @@ export function walletKindText(kind: string): string {
     recharge: '在线充值',
     admin_adjust: '管理员调整',
     gift_code: '兑换码入账',
+    gift_code_refund: '礼品卡过期退款',
     rebate: '邀请返利',
     subscription_purchase: '购买订阅',
     traffic_purchase: '购买流量',
@@ -62,6 +63,30 @@ export function walletKindText(kind: string): string {
     rebate_reversal: '返利撤回',
   }
   return map[kind] ?? kind
+}
+
+/** 一行流水的展示标签：gift_code 正负两用（生成扣款 / 兑换入账），按符号分 */
+export function walletLedgerLabel(row: WalletLedgerRow): string {
+  if (row.kind === 'gift_code' && Number(row.amount) < 0) return '生成礼品卡'
+  return walletKindText(row.kind)
+}
+
+export interface GiftCodeItem {
+  id: number
+  code: string
+  amount: string
+  status: 'unused' | 'used' | 'expired'
+  created_at: string | null
+  expires_at: string | null
+}
+
+export interface GiftCodeCreateResult {
+  ok: boolean
+  code: string
+  amount: string
+  valid_days: number
+  expires_at: string
+  balance: string
 }
 
 export const walletApi = {
@@ -87,6 +112,15 @@ export const walletApi = {
     api.post<never, { ok: boolean; message?: string; balance_value?: string; balance?: string }>(
       '/api/user/wallet/redeem',
       { code },
+    ),
+  /** 把余额做成礼品卡：amount 为金额字符串（两位小数），valid_days 1–7 */
+  createGiftCode: (data: { amount: string; valid_days: number }) =>
+    api.post<never, GiftCodeCreateResult>('/api/user/wallet/gift-codes', data),
+  /** 我生成的礼品卡列表（status：all / unused / used / expired） */
+  giftCodes: (status: 'all' | 'unused' | 'used' | 'expired' = 'all') =>
+    api.get<never, { items: GiftCodeItem[]; total: number }>(
+      '/api/user/wallet/gift-codes',
+      { params: { status } },
     ),
 }
 
