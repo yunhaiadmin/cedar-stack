@@ -239,9 +239,67 @@ def check_freeze(frontend: str) -> None:
             failures.append(f"    {f}")
 
 
+# 管理端 UI 统一（2026-11-15 定版，标准第 3/5 条）：结构层冻结。
+# el-card 与 views 里的裸 el-table 只许退场、不许扩张：存量文件登记在下面两张表里，
+# 逐批收编后从表中删行；表外文件新出现即失败。收编进度见
+# admin_frontend/src/components/ui/README.md 第 7 节验收单。
+ADMIN_EL_CARD_FREEZE = {
+    "views/WalletAdmin.vue",  # 批 3 收编
+}
+ADMIN_BARE_TABLE_FREEZE = {
+    "views/Agents.vue",  # 批 2/4
+    "views/DualDriveAudit.vue",  # 批 2
+    "views/MediaCollections.vue",  # 批 3
+    "views/MediaLibraryAdmin.vue",  # 批 2
+    "views/MemberCodes.vue",  # 批 2 尾/4
+    "views/MissingEpisodes.vue",  # 批 2
+    "views/PoolAdmin.vue",  # 批 4
+    "views/SystemHealth.vue",  # 批 4
+    "views/TaskOverview.vue",  # 批 2
+    "views/WalletAdmin.vue",  # 批 3
+    "views/WelfareLotteryProposals.vue",  # 批 2
+    "views/WelfareLotteryRounds.vue",  # 批 2
+}
+EL_CARD_RE = re.compile(r"<el-card[\s>]")
+EL_TABLE_RE = re.compile(r"<el-table[\s>]")
+
+
+def check_admin_structure() -> None:
+    global checks
+    src = ROOT / "admin_frontend" / "src"
+
+    checks += 1
+    card_files = set()
+    table_files = set()
+    for path in src.rglob("*.vue"):
+        rel = str(path.relative_to(src))
+        text = path.read_text(encoding="utf-8")
+        if EL_CARD_RE.search(text):
+            card_files.add(rel)
+        if rel.startswith("views/") and EL_TABLE_RE.search(text):
+            table_files.add(rel)
+    new_cards = sorted(card_files - ADMIN_EL_CARD_FREEZE)
+    if new_cards:
+        failures.append(
+            "admin_frontend: 新增了 el-card 用法（UI 统一标准第 3 条：卡片一律 SectionCard，"
+            "el-card 只许退场）："
+        )
+        for f in new_cards:
+            failures.append(f"    {f}")
+    new_tables = sorted(table_files - ADMIN_BARE_TABLE_FREEZE)
+    if new_tables:
+        failures.append(
+            "admin_frontend: 新增了裸 el-table 页面（UI 统一标准第 5 条：表格一律 DataTable，"
+            "裸表只许退场；只读小表例外须在 PR 说明里注明并登记到冻结表）："
+        )
+        for f in new_tables:
+            failures.append(f"    {f}")
+
+
 for frontend in FRONTENDS:
     check_frontend(frontend)
     check_freeze(frontend)
+check_admin_structure()
 
 print(f"设计令牌契约检查：{checks} 项")
 if failures:

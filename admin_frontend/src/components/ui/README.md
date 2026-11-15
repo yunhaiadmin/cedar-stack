@@ -169,3 +169,51 @@ pagination / form / message / notification / dropdown / menu / switch / date pic
 5. 删除页面里的 `html[data-theme='light']` 分叉规则（令牌自己会切）。
 6. `npm run type-check && npm run build`，再跑 `python3 scripts/check_frontend_tokens.py`。
 7. 深色 / 白日两档各看一眼，窄屏（≤768px）看一眼。
+
+## 7. 管理端 UI 统一标准（2026-11-15 定版 · 验收单）
+
+基准：共享原语套件本身；样板页 `Dashboard`（列表/通用页）＋ `Settings`（设置型页）。
+以下 13 条是各批改造 PR 的验收单——交卷时逐条对照，不满足的要在 PR 说明里写明理由与例外登记。
+
+1. **页头**：一律 `PageHeader`：eyebrow＝侧栏分组名、title 与路由 `meta.title` 一致或更具体、
+   description 一句话写清页面用途/数据口径；actions 右置，全页头只许一个 `type="primary"` 主按钮。
+   壳页不叠第二层页头（子页带页头，沿 Codes 现行做法）。
+   【验收】页面模板首个块为 PageHeader；grep 页头区 `type="primary"` ≤ 1。
+2. **页面骨架**：根节点 `.admin-page`（flex 纵列、gap 16px），卡片之间不写 margin；
+   内容最大宽度、内边距沿 Layout 现行口径不动。
+   【验收】根节点 class 含 `admin-page`；SectionCard 上无 margin 样式。
+3. **卡片**：一律 `SectionCard`（title＋meta＋actions）；表格卡加 `flush`；
+   `tone="accent"` 一页最多 1–2 处；禁止再用 el-card 与自绘 `.card/.admin-card`。
+   【验收】`scripts/check_frontend_tokens.py` 的 el-card 冻结检查通过（存量仅 WalletAdmin，批 3 清零）。
+4. **筛选**：列表页筛选一律 `FilterBar` 声明式配置（搜索框＋select＋日期范围），
+   禁止手写 `.xxx-filters` 与 el-form inline 筛选行；筛选状态走 `useQueryFilter` 同步到 URL。
+   【验收】筛选区由 FilterBar 渲染；页面无 `*-filters` 自绘筛选类、无 inline 筛选表单。
+5. **表格**：`DataTable` 为唯一表格载体（内置分页、移动端卡片模式、骨架屏、空态、多选、陈旧数据提示）；
+   裸 el-table 只允许出现在 DataTable 内部，或 SectionCard flush 的只读小表（如详情键值表），
+   且须在 PR 说明里注明理由。
+   【验收】`check_frontend_tokens.py` 的裸 el-table 冻结检查通过（存量文件清单只许减不许增，逐批收编清零）。
+6. **分页**：统一由 DataTable 的 pagination 配置出 el-pagination，不再各页自带；
+   页大小口径沿 DataTable 现行默认值，列表默认 20 条/页一档（以组件现值为准，不新造）。
+   【验收】页面模板无自带 el-pagination（DataTable 内部除外）。
+7. **按钮**：表单/动作一律 el-button；一个区域一个 primary，语义色（success/warning/danger）
+   用 EP 浅底描边口径（主题已映射）；行内操作 `size="small"`；
+   危险操作统一走 `useDangerOps` 确认，不再各页自写 ElMessageBox 文案。
+   【验收】同一 SectionCard/actions 区 primary ≤ 1；删除类操作经 useDangerOps。
+8. **弹层**：新建/编辑短表单用 el-dialog（footer：取消＋保存，保存带 loading）；
+   详情/长表单/多段内容用 el-drawer（沿 Tickets 详情抽屉样板）；
+   同一页不混用两种承载同一类操作；弹层宽度沿 EP 主题现行口径，不在页面里覆写。
+   【验收】同类操作只用一种弹层；dialog footer 为「取消＋保存」且保存钮绑 loading。
+9. **表单**：el-form＋label-width 全站统一 **90px**；设置型页面按 Settings 样板：
+   SectionCard 分组＋卡内表单＋统一保存条/未保存提示，不再每组各放一个保存钮。
+   【验收】grep `label-width` 只有 90px（或不写、走默认继承）；设置页只有一个统一保存入口。
+10. **空态与加载**：整页/卡片空态用 `EmptyState`，表格空态用 DataTable 内置或 EmptyState compact；
+    加载用 au-skeleton 或 DataTable 骨架，禁止裸 `v-loading` 满屏转圈作为唯一反馈。
+    【验收】空数据时页面出现 EmptyState/DataTable 空态而非空白或自绘提示行。
+11. **KPI/统计行**：一律 `StatTile`（icon-left 布局用于页顶），数字走正文色，tone 只用于异常提示。
+    【验收】页顶统计区由 StatTile 渲染，无自绘 KPI 卡类名。
+12. **令牌与样式**：只用 `--au-*`；禁止写死 hex、linear-gradient、装饰 box-shadow、backdrop-filter；
+    禁止页面内 `html[data-theme='light']` 分叉；scoped 样式只写布局/尺寸，不覆写 EP 颜色；
+    交卷必过 `scripts/check_frontend_tokens.py` ＋ type-check ＋ build，深/浅两档各看一眼。
+13. **字号间距**：标题走全局 h1/h2/h3（base.css 已统一）；卡片圆角 `--au-r-lg`、控件 `--au-r-md`；
+    间距节奏 `--space-*`（16px 为卡间距基准）。
+    【验收】页面不自设标题字号/字族；卡片圆角不写死数值。

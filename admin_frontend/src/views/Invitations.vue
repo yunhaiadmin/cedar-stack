@@ -10,7 +10,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
-  AlertTriangle, Coins, Gift, Megaphone, Plus, QrCode, RefreshCw, Save, Search, TrendingUp, UserPlus,
+  AlertTriangle, Coins, Gift, Megaphone, Plus, QrCode, RefreshCw, Save, TrendingUp, UserPlus,
 } from 'lucide-vue-next'
 import {
   fetchInviteOverview,
@@ -22,6 +22,8 @@ import {
   type InviteTrialPolicy,
 } from '@/api/inviteAdmin'
 import { EmptyState, PageHeader, SectionCard, StatTile } from '@/components/ui'
+import FilterBar from '@/components/FilterBar.vue'
+import type { AppliedFilter, FilterConfig } from '@/components/FilterBar.vue'
 import {
   fetchInvitations,
   fetchEconomyStats,
@@ -178,6 +180,48 @@ function onCodesFilter() {
 function clearCodesFilters() {
   invKeyword.value = ''
   invState.value = ''
+  onCodesFilter()
+}
+
+/**
+ * FilterBar 声明式筛选配置（统一标准第 4 条）：搜索走 submit 模式——
+ * 原 el-input 是 @change（回车/失焦才提交），submit 模式的回车/查询钮/清空提交与之等价；
+ * 状态下拉与原 select 同选项（后端下发 states）。
+ */
+const invFilters = computed<FilterConfig[]>(() => [
+  {
+    key: 'state',
+    label: '状态',
+    type: 'select',
+    value: invState.value,
+    placeholder: '全部状态',
+    options: invStates.value.map((st) => ({ label: st.label, value: st.value })),
+  },
+])
+
+/** chips 只反映已提交条件：submit 模式下 invKeyword 只在提交时变化，本身即已提交值 */
+const appliedInvFilters = computed<AppliedFilter[]>(() => {
+  const items: AppliedFilter[] = []
+  if (invKeyword.value) {
+    items.push({ key: 'keyword', label: '关键词', text: invKeyword.value })
+  }
+  if (invState.value) {
+    const st = invStates.value.find((s) => s.value === invState.value)
+    items.push({ key: 'state', label: '状态', text: st?.label ?? invState.value })
+  }
+  return items
+})
+
+function onInvFilterChange(key: string, value: string) {
+  if (key !== 'state') return
+  invState.value = value
+  onCodesFilter()
+}
+
+function removeInvFilterChip(key: string) {
+  if (key === 'keyword') invKeyword.value = ''
+  else if (key === 'state') invState.value = ''
+  else return
   onCodesFilter()
 }
 
@@ -621,20 +665,23 @@ onMounted(reloadAll)
       flush
     >
       <div class="view-toolbar">
-        <div class="view-toolbar__filters">
-          <el-input
-            v-model="invKeyword"
-            class="f-search"
-            placeholder="搜邀请码"
-            clearable
-            @change="onCodesFilter"
-          >
-            <template #prefix><Search :size="14" /></template>
-          </el-input>
-          <el-select v-model="invState" class="f-select" placeholder="全部状态" clearable @change="onCodesFilter">
-            <el-option v-for="st in invStates" :key="st.value" :label="st.label" :value="st.value" />
-          </el-select>
-        </div>
+        <FilterBar
+          class="fb-grow"
+          :search="{
+            value: invKeyword,
+            placeholder: '搜邀请码',
+            mode: 'submit',
+          }"
+          :filters="invFilters"
+          :applied-filters="appliedInvFilters"
+          :loading="invLoading"
+          @update:search="invKeyword = $event"
+          @search-submit="onCodesFilter"
+          @query="onCodesFilter"
+          @filter-change="onInvFilterChange"
+          @remove-chip="removeInvFilterChip"
+          @clear="clearCodesFilters"
+        />
         <div class="view-toolbar__actions">
           <el-button type="primary" :icon="Plus" @click="openGen">批量生成</el-button>
         </div>
@@ -1033,10 +1080,8 @@ onMounted(reloadAll)
   border-bottom: 1px solid var(--au-border);
 }
 
-.view-toolbar__filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
+.view-toolbar .fb-grow { flex: 1 1 auto; min-width: 0; }
 .view-toolbar__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.f-search { width: 200px; }
-.f-select { width: 140px; }
 
 .flush-table :deep(.dt-cards) { padding: 12px 12px 8px; }
 .card-pager { display: flex; justify-content: flex-end; flex-wrap: wrap; row-gap: 8px; }
@@ -1083,8 +1128,6 @@ onMounted(reloadAll)
 
 @media (max-width: 768px) {
   .view-toolbar { padding: 2px 16px 12px; }
-  .view-toolbar__filters > .f-search,
-  .view-toolbar__filters > .f-select { flex: 1 1 140px; width: auto; }
   .view-toolbar__actions { width: 100%; }
   .view-toolbar__actions > .el-button { flex: 1; }
   .card-pager { justify-content: center; }

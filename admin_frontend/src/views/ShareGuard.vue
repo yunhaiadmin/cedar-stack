@@ -34,6 +34,8 @@ import { useAuthStore } from '@/stores/auth'
 import { confirmIrreversible } from '@/composables/useDangerOps'
 import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import type { AppliedFilter, FilterConfig } from '@/components/FilterBar.vue'
 
 /** 手机卡片：用户为标题，城市/处置/详情/时间做键值行（事件类型与并发数在标题里） */
 const columns: DataColumn[] = [
@@ -96,6 +98,42 @@ async function load() {
 }
 
 onMounted(load)
+
+/**
+ * FilterBar 声明式筛选配置（统一标准第 4 条）：唯一的筛选是检测类型，
+ * 选项由后端 kinds 下发（含 ''=全部）；原 select 未带 clearable，
+ * FilterBar 的清空同样落到 ''，结果口径一致。
+ */
+const sgFilters = computed<FilterConfig[]>(() => [
+  {
+    key: 'kind',
+    label: '检测类型',
+    type: 'select',
+    value: kindFilter.value,
+    placeholder: '检测类型',
+    options: (data.value?.kinds || [{ value: '', label: '全部' }]).map((k) => ({
+      label: k.label,
+      value: k.value,
+    })),
+  },
+])
+
+const appliedSgFilters = computed<AppliedFilter[]>(() => {
+  if (!kindFilter.value) return []
+  const k = (data.value?.kinds || []).find((item) => item.value === kindFilter.value)
+  return [{ key: 'kind', label: '检测类型', text: k?.label ?? kindFilter.value }]
+})
+
+function onSgFilterChange(key: string, value: string) {
+  if (key !== 'kind') return
+  kindFilter.value = value
+  load()
+}
+
+function clearSgFilters() {
+  kindFilter.value = ''
+  load()
+}
 
 async function save() {
   const d = draft.value
@@ -433,16 +471,15 @@ const emptyText = computed(() => {
       flush
     >
       <div class="sg-toolbar">
-        <div class="sg-toolbar-filters">
-          <el-select v-model="kindFilter" class="sg-kind" aria-label="检测类型" @change="load">
-            <el-option
-              v-for="k in data?.kinds || [{ value: '', label: '全部' }]"
-              :key="k.value"
-              :value="k.value"
-              :label="k.label"
-            />
-          </el-select>
-        </div>
+        <FilterBar
+          class="fb-grow"
+          :filters="sgFilters"
+          :applied-filters="appliedSgFilters"
+          :loading="loading"
+          @filter-change="onSgFilterChange"
+          @remove-chip="clearSgFilters"
+          @clear="clearSgFilters"
+        />
         <div class="sg-toolbar-actions">
           <el-button
             :loading="pruning"
@@ -602,9 +639,8 @@ const emptyText = computed(() => {
   flex-wrap: wrap;
   padding: 12px 20px 0;
 }
-.sg-toolbar-filters,
+.sg-toolbar .fb-grow { flex: 1 1 auto; min-width: 0; }
 .sg-toolbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.sg-kind { width: 160px; }
 .sg-table-hint { padding: 8px 20px 4px; margin: 0; }
 .sg-region {
   display: block;
@@ -627,9 +663,8 @@ const emptyText = computed(() => {
   .sg-grid { grid-template-columns: 1fr; gap: 12px; }
   .sg-toolbar { padding: 10px 16px 0; }
   .sg-table-hint { padding: 8px 16px 4px; }
-  .sg-toolbar-filters,
+  .sg-toolbar .fb-grow,
   .sg-toolbar-actions { flex: 1 1 100%; }
-  .sg-kind { flex: 1 1 auto; width: auto; }
   .sg-toolbar-actions .el-button { flex: 1 1 0; margin-left: 0; }
   .sg-actions-btns { flex: 1 1 100%; }
   .sg-actions-btns .el-button { flex: 1 1 0; }

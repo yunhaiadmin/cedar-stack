@@ -9,12 +9,14 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { toAdminError } from '@/utils/errorMessage'
 import {
-  RefreshCw, Search, CircleCheck, Wallet, Ban, Undo2, ReceiptText, Clock3,
+  RefreshCw, CircleCheck, Wallet, Ban, Undo2, ReceiptText, Clock3,
   Gift, UserPlus, AlertTriangle,
 } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard, StatTile } from '@/components/ui'
 import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import type { AppliedFilter, FilterConfig } from '@/components/FilterBar.vue'
 import { useQueryFilter } from '@/composables/useQueryFilter'
 import { useTableSelection } from '@/composables/useTableSelection'
 import { runBulkOperation, bulkSummaryText, BULK_LIMIT } from '@/utils/runBulkOperation'
@@ -78,12 +80,15 @@ async function loadStats() {
 let loadSeq = 0
 /** 最近一次实际查询用的关键字：防抖回调据此跳过重复查询（深链改 search 时 load 已经发过） */
 let lastSearch = ''
+/** lastSearch 的响应式镜像：FilterBar chips 只展示已提交的关键字，不拿草稿冒充 */
+const appliedSearch = ref('')
 
 async function load() {
   const seq = ++loadSeq
   loading.value = true
   loadError.value = ''
   lastSearch = search.value
+  appliedSearch.value = search.value
   try {
     const o = await fetchEconomyOrders({
       status_filter: statusFilter.value || undefined,
@@ -235,10 +240,17 @@ function query() {
   load()
 }
 
-/** 搜索框输入防抖：停手 350ms 自动查询（回车 / 清空仍立即查询） */
+/**
+ * 搜索框输入防抖：停手 350ms 自动查询（清空仍立即查询）。
+ * FilterBar 以 debounceMs: 0 逐键同步 search，防抖只由这里负责，避免叠加等待。
+ */
 let searchTimer: ReturnType<typeof setTimeout> | undefined
 watch(search, (value) => {
   clearTimeout(searchTimer)
+  if (!value) {
+    if (value !== lastSearch) query()
+    return
+  }
   searchTimer = setTimeout(() => {
     if (value !== lastSearch) query()
   }, 350)
@@ -273,6 +285,60 @@ function statusText(status: string): string {
 
 function statusType(status: string) {
   return STATUS_META[status]?.type || 'info'
+}
+
+/** FilterBar 声明式筛选配置：与原手写 select 同字段、同选项；查询钮由 FilterBar 的 queryButton 出 */
+const orderFilters = computed<FilterConfig[]>(() => [
+  {
+    key: 'kind',
+    label: '类型',
+    type: 'select',
+    value: kindFilter.value,
+    placeholder: '类型',
+    options: [{ label: '订阅', value: 'subscription' }],
+  },
+  {
+    key: 'status',
+    label: '状态',
+    type: 'select',
+    value: statusFilter.value,
+    placeholder: '状态',
+    options: ['pending', 'paid', 'refunded', 'closed'].map((value) => ({
+      label: STATUS_META[value].text,
+      value,
+    })),
+  },
+])
+
+/** chips 只反映已提交条件：下拉即选即提交，关键字以 load() 的快照为准 */
+const appliedFilters = computed<AppliedFilter[]>(() => {
+  const items: AppliedFilter[] = []
+  if (appliedSearch.value) {
+    items.push({ key: 'search', label: '关键词', text: appliedSearch.value })
+  }
+  if (kindFilter.value) {
+    items.push({ key: 'kind', label: '类型', text: '订阅' })
+  }
+  if (statusFilter.value) {
+    items.push({ key: 'status', label: '状态', text: statusText(statusFilter.value) })
+  }
+  return items
+})
+
+function onFilterChange(key: string, value: string) {
+  if (key === 'kind') kindFilter.value = value
+  else if (key === 'status') statusFilter.value = value
+  else return
+  query()
+}
+
+function removeFilterChip(key: string) {
+  if (key === 'search') {
+    // 清空走 watch 的立即查询分支，这里只改值
+    search.value = ''
+    return
+  }
+  onFilterChange(key, '')
 }
 
 const records = ref<RefundRecord[]>([])
@@ -453,31 +519,24 @@ onMounted(() => {
     <!-- 订单表：筛选在左、查询在右；桌面表格 / 手机卡片；分页在卡片底栏 -->
     <SectionCard title="全部订单" :icon="ReceiptText" :meta="total ? `共 ${total} 条` : ''" flush>
       <div class="view-toolbar">
-        <div class="view-toolbar__filters">
-          <el-input
-            v-model="search"
-            class="f-search"
-            placeholder="搜索订单号 / 用户名"
-            clearable
-            @keyup.enter="query"
-            @clear="query"
-          >
-            <template #prefix><Search :size="14" /></template>
-          </el-input>
-          <el-select v-model="kindFilter" class="f-select" placeholder="类型" clearable @change="query">
-            <el-option label="订阅" value="subscription" />
-          </el-select>
-          <el-select v-model="statusFilter" class="f-select" placeholder="状态" clearable @change="query">
-            <el-option label="待支付" value="pending" />
-            <el-option label="已支付" value="paid" />
-            <el-option label="已退款" value="refunded" />
-            <el-option label="已关闭" value="closed" />
-          </el-select>
-        </div>
-        <div class="view-toolbar__actions">
-          <el-button v-if="hasFilter" text @click="resetFilters">清空筛选</el-button>
-          <el-button type="primary" :icon="Search" @click="query">查询</el-button>
-        </div>
+        <FilterBar
+          class="fb-grow"
+          :search="{
+            value: search,
+            placeholder: '搜索订单号 / 用户名',
+            mode: 'debounced',
+            debounceMs: 0,
+          }"
+          :filters="orderFilters"
+          :applied-filters="appliedFilters"
+          :query-button="true"
+          :loading="loading"
+          @update:search="search = $event"
+          @filter-change="onFilterChange"
+          @query="query"
+          @remove-chip="removeFilterChip"
+          @clear="resetFilters"
+        />
       </div>
 
       <EmptyState
@@ -720,18 +779,7 @@ onMounted(() => {
   border-bottom: 1px solid var(--au-border);
 }
 
-.view-toolbar__filters {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.view-toolbar__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.f-search { width: 240px; }
-.f-select { width: 130px; }
+.view-toolbar .fb-grow { flex: 1 1 auto; min-width: 0; }
 
 /* flush 卡片里的表格 / 手机卡片：表格贴边，手机卡片留出边距 */
 .flush-table :deep(.dt-cards) { padding: 12px 12px 8px; }
@@ -778,9 +826,6 @@ onMounted(() => {
 
 @media (max-width: 768px) {
   .view-toolbar { padding: 2px 16px 12px; }
-  .view-toolbar__filters > .f-search { flex: 1 1 100%; width: auto; }
-  .view-toolbar__filters > .f-select { flex: 1 1 120px; width: auto; }
-  .view-toolbar__actions { width: 100%; justify-content: flex-end; }
   .card-pager { justify-content: center; }
   .record { padding: 10px 16px; }
 }
