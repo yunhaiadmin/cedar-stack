@@ -16,8 +16,6 @@ import { toUserMessage } from '@/utils/toUserMessage'
 import { toastFallback } from '@/constants/toastMessages'
 import { User, Lock, Mail, Eye, EyeOff, Clapperboard, Gift, Send, Menu, Sun, Moon, Fingerprint, ShieldCheck } from 'lucide-vue-next'
 import { useTheme } from '@/composables/useTheme'
-// 人机验证挂件（能力：人机验证）：管理员未开启时该组件自己什么都不渲染
-import CaptchaChallenge from '@/components/ui/CaptchaChallenge.vue'
 // 站名来自「站点与品牌」能力（未配置时用默认值）
 import { branding } from '@/composables/useBranding'
 import { getRegisterConfig, requestPasswordReset, confirmPasswordReset } from '@/api/user'
@@ -109,10 +107,6 @@ const loginLoading = ref(false)
 const registerLoading = ref(false)
 const error = ref('')
 
-// 人机验证令牌：由挂件回调写入；未开启保护时一直是空串（后端也不校验）
-const captchaToken = ref('')
-const captchaRef = ref<InstanceType<typeof CaptchaChallenge> | null>(null)
-
 // 找回密码（后端 #94 已上线，本单补前端入口）：
 // - 登录表单内「忘记密码？」展开小表单，填用户名或邮箱申请重置邮件；
 //   后端防枚举统一响应，前端原样展示后端 message，不做区分账号是否存在的提示。
@@ -144,8 +138,6 @@ const passwordStrength = computed(() => {
 function toggleMode(next: 'login' | 'register') {
   mode.value = next
   error.value = ''
-  // 人机验证令牌显式清空：即使挂件会随表单重建，也防止时序上复用旧令牌
-  captchaToken.value = ''
 }
 
 function onTabKey(e: KeyboardEvent, current: 'login' | 'register') {
@@ -214,7 +206,7 @@ async function handleLogin() {
   loginLoading.value = true
   try {
     await userStore.login(
-      loginForm.username.trim(), loginForm.password, captchaToken.value,
+      loginForm.username.trim(), loginForm.password,
       loginFactors.value.totp_required ? loginForm.totpCode.trim() : undefined,
     )
     toast.success('登录成功')
@@ -225,8 +217,6 @@ async function handleLogin() {
     if (String(err?.response?.data?.detail || '').includes('动态验证码')) {
       loginFactors.value.totp_required = true
     }
-    // 令牌是一次性的：失败后换一个新的，否则第二次点击会因「已使用」而失败
-    captchaRef.value?.reset()
   } finally {
     loginLoading.value = false
   }
@@ -244,13 +234,10 @@ async function handleForgot() {
   forgotMessage.value = ''
   forgotLoading.value = true
   try {
-    // 人机验证与登录共用同一道闸（后端 action=login），复用当前令牌
-    const res = await requestPasswordReset(identifier, captchaToken.value)
+    const res = await requestPasswordReset(identifier)
     forgotMessage.value = res.message
   } catch (err) {
     forgotError.value = friendlyError(err, '申请失败，请稍后重试')
-    // 令牌是一次性的：失败后换一个新的（同 handleLogin 口径）
-    captchaRef.value?.reset()
   } finally {
     forgotLoading.value = false
   }
@@ -321,7 +308,7 @@ async function handleRegister() {
     const inviteCode = f.inviteCode.trim() || firstQueryValue(route.query.invite)
     await userStore.register(
       f.username.trim(), f.password, f.email || undefined,
-      inviteCode || undefined, captchaToken.value,
+      inviteCode || undefined,
     )
     toast.success('注册成功，已自动开通观影账号')
     // 注册后 TG 绑定引导：仅注册流程触发，普通登录不动。
@@ -339,7 +326,6 @@ async function handleRegister() {
     router.push(redirect)
   } catch (err) {
     error.value = friendlyError(err, '注册失败，请稍后重试')
-    captchaRef.value?.reset()
   } finally {
     registerLoading.value = false
   }
@@ -604,8 +590,6 @@ onMounted(() => {
 
         <p v-if="error" id="login-form-error" class="form-error" role="alert">{{ error }}</p>
 
-        <CaptchaChallenge ref="captchaRef" action="login" @update:token="captchaToken = $event" />
-
         <button type="submit" class="submit-btn" :disabled="loginLoading || !loginForm.username.trim() || !loginForm.password">
           {{ loginLoading ? '登录中…' : '登 录' }}
         </button>
@@ -725,8 +709,6 @@ onMounted(() => {
         <p v-if="registrationClosed" class="closed-notice">当前未开放注册</p>
         <p v-if="configError" class="closed-notice">注册配置拉取失败，<button type="button" class="retry-link" @click="loadRegisterConfig">点重试</button></p>
         <p v-if="error" id="register-form-error" class="form-error" role="alert">{{ error }}</p>
-
-        <CaptchaChallenge ref="captchaRef" action="register" @update:token="captchaToken = $event" />
 
         <button type="submit" class="submit-btn" :disabled="registerLoading || registrationClosed || !registerForm.username.trim() || !registerForm.password || !registerForm.confirmPassword">
           {{ registerLoading ? '注册中…' : '注 册' }}

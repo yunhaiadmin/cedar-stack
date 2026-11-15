@@ -112,9 +112,9 @@ class TestGatewayRules:
         assert "/api/admin/emby/login" not in prefixes
 
     def test_auth_prefix_paths_split_into_own_bucket(self):
-        """注册链路的公开接口（captcha/register-config）落 /api/user/auth/ 独立桶，
+        """注册链路的公开接口（register-config/refresh）落 /api/user/auth/ 独立桶，
         不再与全站 /api/ 通用桶混在一起被连坐。"""
-        for path in ("/api/user/auth/captcha", "/api/user/auth/register-config",
+        for path in ("/api/user/auth/refresh", "/api/user/auth/register-config",
                      "/api/user/auth/register"):
             prefix, _, _ = _resolve_rule(path)
             assert prefix == "/api/user/auth/", path

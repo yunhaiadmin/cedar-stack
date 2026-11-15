@@ -68,15 +68,12 @@ export interface PasswordResetResult {
  * 后端防枚举——账号不存在 / 未绑邮箱 / 已发送三种情况返回完全一致的
  * success + message，调用方必须原样展示后端 message，不许自行改写成
  * 「邮件已发送到你的邮箱」之类能区分账号是否存在的文案。
- * 人机验证与登录共用同一道闸（action=login），令牌随请求带上。
  */
 export async function requestPasswordReset(
   identifier: string,
-  captchaToken: string,
 ): Promise<PasswordResetResult> {
   return api.post<never, PasswordResetResult>('/api/auth/password-reset/request', {
     identifier,
-    captcha_token: captchaToken || null,
   })
 }
 

@@ -43,8 +43,6 @@ from backend.subscriptions import (
     realm_requires_subscription,
 )
 from backend.ratelimit import check_rate_limit, client_ip, reset_rate_limit
-# 人机验证（能力中心）：用户端登录/注册与后台登录共用同一个守卫（含安全日志）
-from backend.integrations import captcha
 # 邮件（能力中心）：找回密码走与站内通知同一个 EmailChannel，不另造发信实现
 from backend.integrations import mail as integrations_mail
 from backend.security import (
@@ -78,13 +76,11 @@ class RegisterRequest(BaseModel):
     password: str = Field(..., min_length=6, max_length=64)
     email: str | None = None
     invitation_code: str | None = None  # 邀请码（选填，双向奖励+返利绑定）
-    captcha_token: str | None = None  # 人机验证令牌（管理员开启保护时必填）
 
 
 class LoginRequest(BaseModel):
     username: str
     password: str
-    captcha_token: str | None = None  # 人机验证令牌（管理员开启保护时必填）
     totp_code: str | None = None  # 动态验证码（账号已启用 TOTP 时必填）
 
 
@@ -285,16 +281,6 @@ def get_current_user_jwt(
 
 # ==================== Endpoints ====================
 
-@auth_router.get("/captcha")
-def captcha_config(request: Request, db: Session = Depends(get_db)):
-    """人机验证挂件信息（公开）：前端据此决定要不要渲染挂件
-
-    只下发公开的站点密钥与脚本地址；私钥永不出现在这里。未配置时 ``enabled=false``，
-    前端直接不渲染挂件——不会把站点锁在门外。
-    """
-    return captcha.widget_info(db)
-
-
 def _normalize_registration_mode(raw) -> str:
     """注册模式归一：未配置 → open；open/closed 原样；未知值 → closed。
 
@@ -405,8 +391,6 @@ def register(request: Request, req: RegisterRequest, db: Session = Depends(get_d
         allowed, retry_after = check_rate_limit(rl_key, rl_max, rl_window)
         if not allowed:
             raise HTTPException(status_code=429, detail="注册过于频繁，请稍后再试")
-    # 人机验证（能力中心）：未配置 / 未开保护时直接放行；失败一律 400 + 安全日志
-    captcha.guard(db, request, "register", req.captcha_token, username=req.username.strip())
     username = req.username.strip()
     if not USERNAME_RE.match(username):
         raise HTTPException(
@@ -502,7 +486,6 @@ def login(request: Request, req: LoginRequest, db: Session = Depends(get_db)):
     allowed, retry_after = check_rate_limit(f"login:{client_ip(request)}", 8, 60)
     if not allowed:
         raise HTTPException(status_code=429, detail="尝试过于频繁，请稍后再试")
-    captcha.guard(db, request, "login", req.captcha_token, username=req.username.strip())
     user = (
         db.query(models.WebUser)
         .filter(models.WebUser.username == req.username.strip())
@@ -904,7 +887,6 @@ def change_password(
 
 class PasswordResetRequestIn(BaseModel):
     identifier: str = Field(..., min_length=1, max_length=255)  # 用户名或邮箱
-    captcha_token: str | None = None  # 人机验证令牌（与登录同口径，开启保护时必填）
 
 
 class PasswordResetConfirmIn(BaseModel):
@@ -1002,8 +984,6 @@ def password_reset_request(
     if not allowed:
         raise HTTPException(status_code=429, detail="尝试过于频繁，请稍后再试")
     identifier = (req.identifier or "").strip()
-    # 人机验证与登录共用同一道闸（action=login 的保护开关与校验函数），不另写一套。
-    captcha.guard(db, request, "login", req.captcha_token, username=identifier or None)
 
     user = _find_user_for_reset(db, identifier) if identifier else None
     if user is None or not (user.email or "").strip():

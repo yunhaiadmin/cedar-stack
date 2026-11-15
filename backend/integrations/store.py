@@ -1,7 +1,7 @@
 """能力配置的批量读写
 
 能力模块原先各自写了一个「按 key 查一次 SystemConfig」的小助手，读一次配置要 4~6 次往返
-（人机验证挂件一次要问 5 个键：提供方 / 站点密钥 / 私钥 / 两个动作开关）。这里统一成
+（单个能力一次就要问 4~6 个键）。这里统一成
 **一次 IN 查询取回一批**，语义与逐键查询完全一致：
 
 - 行存在 → 用行里的值（**哪怕是空串**，空串是「用户清空过」，不能被默认值顶掉）；
@@ -35,10 +35,10 @@ DEFAULTS_SENTINEL = object()
 
 # ---------------------------------------------------------------------------
 # A 类开关摘面板（2026-10-21 施工，用户 2026-10-19「功能开关从简」原则）：
-# 以下 46 个键管理后台不再提供开关（UI 与各面板写路径已同步摘除）。
+# 以下 42 个键管理后台不再提供开关（UI 与各面板写路径已同步摘除）。
 # 不在本表、仍走「DB 行 > 代码缺省」的键：
 # - 缺省=关、留在面板（服主 2026-10-21 口径）：签到 / 群发言积分 / 系统告警 /
-#   访问守卫两项 / 后台登录人机验证 / 邮件 / 代理 / 媒体库默认范围；
+#   访问守卫两项 / 邮件 / 代理 / 媒体库默认范围；
 #   备用元数据 altmeta_enabled 缺省关、向来无面板，只认数据库。
 # - 缺省=开、服主 2026-10-21 13:53 要求留在面板（代码缺省保持 #1163 的开，
 #   读口径回到摘面板前）：auto_scan_enabled / chase_new_enabled / douban_enabled /
@@ -61,8 +61,6 @@ PANEL_REMOVED_SWITCHES: tuple[tuple[str, str], ...] = (
     ("bot_cmd_redeem", "BOT_CMD_REDEEM"),
     ("bot_enabled", "BOT_ENABLED"),
     ("bot_redpacket_enabled", "BOT_REDPACKET_ENABLED"),
-    ("captcha_protect_login", "CAPTCHA_PROTECT_LOGIN"),
-    ("captcha_protect_register", "CAPTCHA_PROTECT_REGISTER"),
     ("coupon_enabled", "COUPON_ENABLED"),
     ("drive_direct_play_enabled", "DRIVE_DIRECT_PLAY_ENABLED"),
     ("enrich_douban_ban_downgrade", "ENRICH_DOUBAN_BAN_DOWNGRADE"),

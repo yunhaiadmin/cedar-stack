@@ -5,7 +5,8 @@
  * v2.4.0 注册策略（开放 / 关闭 + 关闭提示文案）与经济配置分组
  * v2.5.2 付费墙分组（要求有效订阅 + 拦截提示文案）
  * v2.6.0 下载与设备风控分组（下载开关 / 设备上限 / 自动踢人 / 日志保留）
- * v2.19.0 **外部服务能力中心**：代理 / 人机验证 / 邮件与模板 / Telegram / AI 模型 / IP 归属地
+ * v2.19.0 **外部服务能力中心**：代理 / 邮件与模板 / Telegram / IP 归属地
+ * （人机验证已于 2026-11-15 整体摘除，能力卡随之后端下线）
  *
  * v2.42.10（Phase 5·危险操作独立 tab）：页面改成三个页签——「能力与服务」「运营参数」
  * 「**危险操作**」。前两个装的都是日常要改的东西，第三个装的是**会立刻改变线上数据、
@@ -392,7 +393,7 @@ function isSupported(key: string): boolean {
 // ==================== 外部服务能力中心 ====================
 
 const CAP_ICONS: Record<string, unknown> = {
-  proxy: Network, captcha: ShieldCheck, mail: Mail,
+  proxy: Network, mail: Mail,
   telegram: Send, ai: Sparkles, geoip: MapPin, branding: Palette,
 }
 

@@ -14,7 +14,7 @@
 与经济设置的约定一致。
 
 读配置走 ``store.read_values``：一次 IN 查询取回一批键。原先每个能力各自按 key 查一次，
-人机验证挂件一次要 5 次往返、AI 一次问答要 4 次；现在总览整页只要 1 次。
+单能力一次要 4~5 次往返；现在总览整页只要 1 次。
 """
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ FIELD_TYPES = ("str", "secret", "int", "bool", "select")
 
 # 能力清单：顺序即后台展示顺序；模块里再声明 title / desc / group
 CAPABILITY_MODULES: tuple[str, ...] = (
-    "proxy", "captcha", "mail", "telegram", "geoip", "branding", "community",
+    "proxy", "mail", "telegram", "geoip", "branding", "community",
 )
 
 
@@ -111,7 +111,7 @@ def mask_values(slug: str, values: dict) -> dict:
 def is_enabled(values: dict, slug: str) -> bool:
     """能力当前是否生效
 
-    模块可自定义判定（例如人机验证要看「选没选提供方」，而不是某个 ``*_enabled`` 布尔），
+    模块可自定义判定（例如要看多个字段的组合，而不是某个 ``*_enabled`` 布尔），
     没自定义时按字段表里第一个 ``*_enabled`` 布尔判。
     """
     module = _module(slug)

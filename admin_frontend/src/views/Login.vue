@@ -11,8 +11,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { Clapperboard, Loader2, Lock, ShieldCheck, User } from 'lucide-vue-next'
 import { login } from '@/api/admin'
 import { useAuthStore } from '@/stores/auth'
-// 人机验证（能力：人机验证）：管理员开了「保护管理后台登录」时才会渲染
-import CaptchaChallenge from '@/components/CaptchaChallenge.vue'
 // 站名与 Logo 来自「站点与品牌」能力（未配置时用默认值）
 import { branding, initBranding } from '@/composables/branding'
 
@@ -25,8 +23,6 @@ const auth = useAuthStore()
 const form = reactive({ username: '', password: '' })
 const loading = ref(false)
 const error = ref('')
-const captchaToken = ref('')
-const captchaRef = ref<InstanceType<typeof CaptchaChallenge> | null>(null)
 
 async function submit() {
   if (!form.username || !form.password) {
@@ -39,15 +35,12 @@ async function submit() {
     const res = await login({
       username: form.username,
       password: form.password,
-      captcha_token: captchaToken.value || undefined,
     })
     auth.setSession(res.access_token, res.user)
     const redirect = (route.query.redirect as string) || '/'
     router.push(redirect)
   } catch (e) {
     error.value = e instanceof Error ? e.message : '登录失败'
-    // 令牌一次性：失败后换一个新的，否则第二次点击会因「已使用」而失败
-    captchaRef.value?.reset()
   } finally {
     loading.value = false
   }
@@ -90,8 +83,6 @@ async function submit() {
             <input v-model="form.password" type="password" name="password" autocomplete="current-password" placeholder="登录密码" />
           </span>
         </label>
-
-        <CaptchaChallenge ref="captchaRef" @update:token="captchaToken = $event" />
 
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
 

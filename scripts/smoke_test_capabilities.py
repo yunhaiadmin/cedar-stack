@@ -40,7 +40,6 @@ from backend.database import SessionLocal, init_db
 from backend.main import app
 from backend.security import create_access_token, hash_password
 from backend.integrations.store import invalidate
-from backend.integrations import captcha as captcha_cap
 from backend.integrations import geoip as geoip_cap
 from backend.integrations import mail as mail_cap
 from backend.integrations import proxy as proxy_cap
@@ -198,9 +197,8 @@ db.close()
 ADMIN_H = {"Authorization": f"Bearer {create_access_token(staff_id, {'username': 'staff'})}"}
 
 
-# 2026-10-21 A 类开关摘面板：能力页里缺省开的开关（captcha_protect_login /
-# captcha_protect_register）不再经面板落库，改走 env；
-# 缺省关的（proxy_enabled / email_enabled / captcha_protect_admin_login）
+# 2026-10-21 A 类开关摘面板：能力页里缺省开的开关不再经面板落库，改走 env；
+# 缺省关的（proxy_enabled / email_enabled）
 # 按服主口径保留在面板，照旧 PUT 落库（辅助函数按开关表自动区分）。冒烟里仍按
 # 「保存一次配置」来驱动：开关键改设 env，其余字段照常 PUT（PUT 会触发能力
 # 重新应用，如代理环境变量的写入/清理）。
@@ -234,8 +232,8 @@ check("普通用户访问能力中心被拒", r.status_code in (401, 403), f"HTT
 r = client.get("/api/admin/capabilities", headers=ADMIN_H)
 check("管理员可读能力总览", r.status_code == 200, f"HTTP {r.status_code}")
 caps = {c["slug"]: c for c in r.json().get("capabilities", [])}
-expected = {"proxy", "captcha", "mail", "telegram", "geoip", "branding", "community"}
-check("七个能力都在总览里", expected == set(caps), f"实际 {sorted(caps)}")
+expected = {"proxy", "mail", "telegram", "geoip", "branding", "community"}
+check("六个能力都在总览里", expected == set(caps), f"实际 {sorted(caps)}")
 check("总览带标题/说明/分组", all(c.get("title") and c.get("desc") and c.get("group")
                                   for c in caps.values()))
 check("总览带测试按钮文案", all(c.get("test_label") for c in caps.values()))
@@ -324,112 +322,21 @@ check("未启用时测试给出明确提示", not r.json()["ok"] and "未启用"
       r.json().get("message", ""))
 
 
-# ==================== 3. 人机验证 ====================
+# ==================== 3. 人机验证已于 2026-11-15 整链删除 ====================
+# integrations/captcha 模块、能力卡、挂件端点与四处守卫（用户登录/注册、
+# 找回密码、管理后台登录）都已删除，本节只断言「删干净了」：能力卡 404、
+# 挂件端点 404、无令牌登录照常。总览里没有 captcha 已在第 1 节断言。
 
 r = client.get("/api/user/auth/captcha")
-check("公开挂件接口可读", r.status_code == 200, f"HTTP {r.status_code}")
-check("未配置时不要求验证（不锁门）", r.json()["enabled"] is False, r.text[:120])
+check("挂件端点已随人机验证删除（captcha 404）", r.status_code == 404,
+      f"HTTP {r.status_code}")
+
+r = client.get("/api/admin/capabilities/captcha", headers=ADMIN_H)
+check("人机验证能力卡已删除（管理端 404）", r.status_code == 404,
+      f"HTTP {r.status_code}")
 
 r = client.post("/api/user/auth/login", json={"username": f"cap_usr{suf}", "password": "pass12345"})
-check("未配置人机验证时登录照常可用", r.status_code == 200, f"HTTP {r.status_code}")
-
-cap_put("/api/admin/capabilities/captcha", headers=ADMIN_H, json={"values": {
-    "captcha_provider": "turnstile", "captcha_site_key": "site-key-123",
-    "captcha_secret_key": "secret-key-456",
-    "captcha_protect_login": True, "captcha_protect_register": True,
-}})
-r = client.get("/api/user/auth/captcha")
-info = r.json()
-check("配置后挂件开启且下发站点密钥",
-      info["enabled"] is True and info["site_key"] == "site-key-123", r.text[:160])
-check("挂件接口不下发私钥", "secret-key-456" not in r.text, r.text[:200])
-check("挂件接口下发脚本地址", info["script_url"].startswith("https://challenges.cloudflare.com"),
-      info.get("script_url", ""))
-check("挂件接口带动作保护开关（含后台登录，默认不保护）",
-      info["actions"] == {"login": True, "register": True, "admin_login": False},
-      str(info.get("actions")))
-
-r = client.post("/api/user/auth/login", json={"username": f"cap_usr{suf}", "password": "pass12345"})
-check("开启保护后不带令牌登录被拦", r.status_code == 400 and "人机验证" in r.json()["detail"],
-      f"HTTP {r.status_code} {r.text[:120]}")
-db = SessionLocal()
-denied = db.query(models.LoginLog).filter(
-    models.LoginLog.reason == "captcha_failed").order_by(models.LoginLog.id.desc()).first()
-db.close()
-check("人机验证失败落了安全日志", denied is not None)
-check("安全日志里能筛到新原因", authlog.REASONS.get("captcha_failed") == "人机验证失败")
-
-use_routes({"siteverify": lambda m, u, k: FakeResponse(200, {"success": True})})
-r = client.post("/api/user/auth/login", json={"username": f"cap_usr{suf}",
-                                             "password": "pass12345",
-                                             "captcha_token": "good-token"})
-check("令牌有效时登录放行", r.status_code == 200, f"HTTP {r.status_code} {r.text[:120]}")
-sent = FakeHttpxClient.calls[0]["kwargs"].get("data", {})
-check("校验请求带上了私钥与令牌",
-      sent.get("response") == "good-token" and "secret" in sent, str(sent.keys()))
-check("校验请求不带站点密钥（避免混用）", "site-key-123" not in json.dumps(sent, ensure_ascii=False))
-
-use_routes({"siteverify": lambda m, u, k: FakeResponse(200, {
-    "success": False, "error-codes": ["invalid-input-response"]})})
-r = client.post("/api/user/auth/login", json={"username": f"cap_usr{suf}",
-                                             "password": "pass12345",
-                                             "captcha_token": "bad-token"})
-check("令牌无效时给出提供方原因",
-      r.status_code == 400 and "invalid-input-response" in r.json()["detail"],
-      r.text[:160])
-
-r = client.post("/api/user/auth/register", json={"username": f"cap_reg{suf}", "password": "pass12345"})
-check("注册也受保护", r.status_code == 400 and "人机验证" in r.json()["detail"],
-      f"HTTP {r.status_code} {r.text[:120]}")
-
-# ---- 管理后台登录：站点最值钱的入口，同一道闸 ----
-cap_put("/api/admin/capabilities/captcha", headers=ADMIN_H, json={"values": {
-    "captcha_protect_admin_login": True}})
-use_routes({"siteverify": lambda m, u, k: FakeResponse(200, {"success": True})})
-
-r = client.post("/api/admin/auth/login", json={"username": f"cap_stf{suf}", "password": "pass12345"})
-check("开启保护后后台登录不带令牌被拦",
-      r.status_code == 400 and "人机验证" in r.json()["detail"], f"HTTP {r.status_code} {r.text[:120]}")
-
-db = SessionLocal()
-admin_denied = db.query(models.LoginLog).filter(
-    models.LoginLog.reason == "captcha_failed",
-    models.LoginLog.username == f"cap_stf{suf}").order_by(models.LoginLog.id.desc()).first()
-db.close()
-check("后台登录的人机验证失败也留痕（带上了用户名）", admin_denied is not None)
-
-r = client.post("/api/admin/auth/login", json={"username": f"cap_stf{suf}",
-                                               "password": "pass12345",
-                                               "captcha_token": "good-token"})
-check("后台登录带有效令牌时放行", r.status_code == 200, f"HTTP {r.status_code} {r.text[:120]}")
-
-cap_put("/api/admin/capabilities/captcha", headers=ADMIN_H,
-           json={"values": {"captcha_protect_admin_login": False}})
-r = client.post("/api/admin/auth/login", json={"username": f"cap_stf{suf}", "password": "pass12345"})
-check("关掉后台保护后不用令牌也能登", r.status_code == 200, f"HTTP {r.status_code}")
-
-use_routes({"siteverify": lambda m, u, k: FakeResponse(200, {
-    "success": False, "error-codes": ["invalid-input-secret"]})})
-r = client.post("/api/admin/capabilities/captcha/test", headers=ADMIN_H, json={"payload": {}})
-check("能力测试能识别私钥无效",
-      r.status_code == 200 and not r.json()["ok"] and "invalid-input-secret" in r.json()["message"],
-      r.json().get("message", ""))
-
-use_routes({"siteverify": lambda m, u, k: FakeResponse(200, {
-    "success": False, "error-codes": ["invalid-input-response"]})})
-r = client.post("/api/admin/capabilities/captcha/test", headers=ADMIN_H, json={"payload": {}})
-check("私钥有效时报成功", r.json()["ok"] is True, r.json().get("message", ""))
-restore_httpx()
-
-# 关掉保护：登录必须立刻恢复可用（能力要能一键退场）
-cap_put("/api/admin/capabilities/captcha", headers=ADMIN_H,
-           json={"values": {"captcha_provider": "none"}})
-r = client.post("/api/user/auth/login", json={"username": f"cap_usr{suf}", "password": "pass12345"})
-check("关闭人机验证后登录立刻恢复", r.status_code == 200, f"HTTP {r.status_code}")
-r = client.get("/api/user/auth/captcha")
-check("关闭后挂件不再启用且不下发站点密钥",
-      r.json()["enabled"] is False and r.json()["site_key"] == ""
-      and r.json()["provider"] == "none", r.text[:160])
+check("无验证令牌登录照常", r.status_code == 200, f"HTTP {r.status_code}")
 
 
 # ==================== 4. 邮件与模板 ====================

@@ -230,17 +230,6 @@ export interface AuthResponse {
   user: AuthUser
 }
 
-/** 人机验证挂件信息（能力：人机验证；未配置时 enabled=false，前端不渲染挂件） */
-export interface CaptchaInfo {
-  enabled: boolean
-  provider: 'none' | 'turnstile' | 'recaptcha' | 'hcaptcha'
-  label: string
-  site_key: string
-  script_url: string
-  /** 哪些动作受保护（管理员可分别开关登录 / 注册） */
-  actions: { login: boolean; register: boolean }
-}
-
 /** 本人登录记录条目（后端字段白名单：时间/IP/地区/设备/成败/类别） */
 export interface LoginHistoryItem {
   created_at: string | null
@@ -258,10 +247,10 @@ export interface LoginHistoryResponse {
 }
 
 export const authApi = {
-  login: (data: { username: string; password: string; captcha_token?: string; totp_code?: string }) =>
+  login: (data: { username: string; password: string; totp_code?: string }) =>
     api.post<never, AuthResponse>('/api/user/auth/login', data),
 
-  register: (data: { username: string; password: string; email?: string; invitation_code?: string; captcha_token?: string }) =>
+  register: (data: { username: string; password: string; email?: string; invitation_code?: string }) =>
     api.post<never, AuthResponse>('/api/user/auth/register', data),
 
   /** bot 一键免密登录：用一次性 token 换登录态 */
@@ -278,9 +267,6 @@ export const authApi = {
   /** 本人登录记录（只读，只查自己，分页倒序） */
   getLoginHistory: (params?: { limit?: number; offset?: number }) =>
     api.get<never, LoginHistoryResponse>('/api/user/auth/login-history', { params }),
-
-  /** 挂件配置：站点密钥是公开信息，私钥由后端保管（永不下发） */
-  captcha: () => api.get<never, CaptchaInfo>('/api/user/auth/captcha'),
 }
 
 // ==================== 站点品牌（能力：站点与品牌，backend/api/site.py） ====================
