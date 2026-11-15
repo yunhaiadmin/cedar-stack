@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
  * 官网 www 首页（UHD 换皮批 1 · 深色营销面）——说明书逐页对照表第 18 行
- * 五区块骨架：100vh Hero（棱镜光束 + 文案轮换 + 规格 chip）→ 客户端/规格跑马灯
- * → 钉住滚动影院/音频展示（钉住只此一处，说明书第 5 节①）→ 一份订阅三卡 → 单行页脚。
+ * 六区块骨架：100vh Hero（棱镜光束 + 文案轮换 + 规格 chip）→ 流媒体伙伴字标行
+ * → 客户端/规格跑马灯 → 钉住滚动影院/音频展示（钉住只此一处，说明书第 5 节①）
+ * → 一份订阅三卡 → 页脚（免责声明＋单行信息）。
  * 文案为 Aetrix 自有口径；营销数字一律不编造：片库数据行用 2026-11-15 生产真实统计取整呈现（口径见片库卡注释）。
  * 页面独立于应用壳（App.vue 对 landing 路由名不渲染全局顶栏/底坞），自带悬浮胶囊导航。
  */
@@ -546,14 +547,13 @@ const year = new Date().getFullYear()
 
     <!-- ① Hero -->
     <header class="hero">
-      <!-- 移动端全幅背景（L-02 照片级棱镜图，2026-11-14）：自有生成图，
-           构图照友站实测（纯黑底、棱镜居下中、细光束自左缘水平入射、
-           光谱扇自出射星芒向右上展开、左上留暗给文案）；图与脉冲叠层同装
-           .hero-bg-canvas（与图同比例画布 cover 撑满，叠层恒对位）；
-           仅 ≤900px 显示，桌面走 hero-visual 同构图图层 -->
+      <!-- 移动端全幅背景（L-02 棱镜光束图，2026-11-15 换新图：深黑星空底、
+           棱镜居左下、白色光束自左缘入射、光谱扇斜射右上、左上大片黑场留给
+           文案）；图与脉冲叠层同装 .hero-bg-canvas（画布与图同比例 2048:1152、
+           高度撑满首屏，叠层恒对位）；仅 ≤900px 显示，桌面走 hero-visual 同图 -->
       <div class="hero-bg" :class="{ 'is-ready': heroImgReady }" aria-hidden="true">
         <div class="hero-bg-canvas">
-          <img class="hero-bg-img" src="/images/hero-prism-mobile.webp" alt="" width="1080" height="2160" fetchpriority="high" @load="onHeroImgLoad" />
+          <img class="hero-bg-img" src="/images/hero-prism-beam.webp" alt="" width="2048" height="1152" fetchpriority="high" @load="onHeroImgLoad" />
           <div class="hp">
             <span class="hp-beamglow" />
             <span class="hp-dot" />
@@ -563,11 +563,12 @@ const year = new Date().getFullYear()
           </div>
         </div>
       </div>
-      <!-- 桌面棱镜主视觉：自有照片铺满首屏（画布与图同比例，脉冲叠层跟图走）。
-           移动端不显示，走 .hero-bg。不再另叠彩虹渐变，也不再裁成右上角方图。 -->
+      <!-- 桌面棱镜主视觉：与移动端同一张棱镜光束图（2048×1152）。帧与图同
+           比例、高度撑满首屏，水平锚点把棱镜压到左下（几何见 .hero-visual-frame）。
+           移动端不显示，走 .hero-bg。不再另叠彩虹渐变。 -->
       <div class="hero-visual" :class="{ 'is-ready': heroImgReady }" aria-hidden="true">
         <div class="hero-visual-frame">
-          <img class="hero-visual-img" src="/images/hero-prism-desktop.webp" alt="" width="1600" height="1067" @load="onHeroImgLoad" />
+          <img class="hero-visual-img" src="/images/hero-prism-beam.webp" alt="" width="2048" height="1152" @load="onHeroImgLoad" />
           <div class="hp">
             <span class="hp-beamglow" />
             <span class="hp-dot" />
@@ -624,7 +625,18 @@ const year = new Date().getFullYear()
       <p class="hero-scroll-hint" :style="heroHintStyle()" aria-hidden="true">↓ 向下探索更多精彩</p>
     </header>
 
-    <!-- ② 跑马灯 -->
+    <!-- ② 流媒体伙伴（2026-11-15 用户亲点，照友站结构）：英文节题＋一行三平台
+         文字字标（排版实现，不用官方 logo 图），弱化白、等距排列 -->
+    <section class="partners-sec">
+      <p class="eyebrow eyebrow--center rv" data-reveal>STREAMING PARTNERS</p>
+      <div class="partners-row rv" data-reveal>
+        <span class="partner partner--netflix">Netflix</span>
+        <span class="partner partner--disney">Disney+</span>
+        <span class="partner partner--hbo">HBO Max</span>
+      </div>
+    </section>
+
+    <!-- ③ 跑马灯 -->
     <section class="marquee-sec">
       <p class="eyebrow eyebrow--center rv" data-reveal>CLIENTS &amp; SPECS</p>
       <h2 id="platforms-heading" ref="platformsTitle" class="sec-title sec-title--platforms">在你顺手的设备上，<br />以它最好的规格播放</h2>
@@ -639,7 +651,7 @@ const year = new Date().getFullYear()
       </div>
     </section>
 
-    <!-- ③ 钉住滚动展示（仅此一处）：240vh 行程（stage 100svh＋钉住 140%），
+    <!-- ④ 钉住滚动展示（仅此一处）：240vh 行程（stage 100svh＋钉住 140%），
          光柱自绘＋滚动驱动模糊交叉（参数见 dynamics-spec.md ②/③） -->
     <section ref="pinSection" class="pin-sec">
       <div class="pin-stage">
@@ -673,7 +685,7 @@ const year = new Date().getFullYear()
       </div>
     </section>
 
-    <!-- ④ 一份订阅 -->
+    <!-- ⑤ 一份订阅 -->
     <section class="essentials">
       <p class="eyebrow eyebrow--center rv" data-reveal>SERVICE ESSENTIALS</p>
       <h2 class="sec-title rv rv--sectitle" data-reveal>一份订阅，全部搞定</h2>
@@ -767,14 +779,20 @@ const year = new Date().getFullYear()
       </div>
     </section>
 
-    <!-- ⑤ 单行页脚 -->
+    <!-- ⑥ 页脚：免责声明（2026-11-15 用户亲点，照友站结构、本站措辞）＋单行信息 -->
     <footer class="landing-foot">
-      <span>© {{ year }} {{ branding.site_name }} · 自建 Emby 影视服务平台</span>
-      <span class="landing-foot-links">
-        <RouterLink to="/pricing">定价</RouterLink>
-        <RouterLink to="/privacy">隐私政策</RouterLink>
-        <RouterLink to="/login">登录</RouterLink>
-      </span>
+      <p class="landing-foot-disclaimer">
+        本站所有内容均来自互联网，仅供学习与交流使用，不作任何商业用途。如有侵权，请通过 TG 联系
+        <a href="https://t.me/xiayea" target="_blank" rel="noopener noreferrer">@xiayea</a>，我们将在核实后及时删除。
+      </p>
+      <div class="landing-foot-row">
+        <span>© {{ year }} {{ branding.site_name }} · 自建 Emby 影视服务平台</span>
+        <span class="landing-foot-links">
+          <RouterLink to="/pricing">定价</RouterLink>
+          <RouterLink to="/privacy">隐私政策</RouterLink>
+          <RouterLink to="/login">登录</RouterLink>
+        </span>
+      </div>
     </footer>
   </div>
 </template>
@@ -932,34 +950,36 @@ const year = new Date().getFullYear()
   overflow: visible;
 }
 /* 移动端全幅背景层：默认隐藏（桌面走 .hero-visual），仅 ≤900px 启用（见文末断点）。
-   .hero-bg 作尺寸容器，内层画布 .hero-bg-canvas 与底图同比例（1080:2160）
-   按 cover 撑满（宽 = max(容器宽, 容器高一半)）：图与脉冲叠层同画布，
-   任意视口下叠层坐标恒与图对位。::before 压暗左上文字区、::after 压暗
+   .hero-bg 作尺寸容器，内层画布 .hero-bg-canvas 与底图同比例（2048:1152）、
+   高度撑满首屏：图与脉冲叠层同画布，任意视口下叠层坐标恒与图对位。::before 压暗左上文字区、::after 压暗
    底部卖点区（z-index 抬到画布之上），保证文字压在暗部上 */
 .hero-bg {
   display: none;
   position: absolute;
   inset: 0;
+  /* 画布只许在首屏内出血：旧 1:2 画布高过首屏、底边溢进下一节（2026-11-15
+     真机实锤跑马灯节顶被图尾压住），这里 clip 兜底，画布几何本身也不再溢出 */
+  overflow: hidden;
   pointer-events: none;
   container-type: size;
 }
 .hero-bg-canvas {
   position: absolute;
-  /* 下移画布，让棱镜落在屏下沿，按钮留在上方暗部。不用 transform：减动效会清掉它。 */
-  top: 10%;
-  left: 50%;
-  aspect-ratio: 1080 / 2160;
-  width: max(124%, 58svh);
-  margin-left: calc(max(124%, 58svh) / -2);
-  width: max(124cqw, 58cqh);
-  margin-left: calc(max(124cqw, 58cqh) / -2);
-  /* 脉冲几何覆盖值（对自有移动图 1080×2160 像素实测，图内 % 坐标）：
-     光束线 y=59.2、入射星芒 x=37.5、棱镜中心 (48.9, 68.1)、倒影心 y=87 */
-  --hp-beam-y: 59.2%;
-  --hp-entry-x: 37.5%;
-  --hp-prism-x: 48.9%;
-  --hp-prism-y: 68.1%;
-  --hp-refl-y: 87%;
+  /* 画布与新图同比例（2048:1152）、高度撑满首屏：图宽＝177.78cqh 恒覆盖屏宽。
+     水平锚点：把棱镜中心（图 x≈21.3%）压到屏左 78px 处——棱镜落在左下、
+     入射光束自左缘入画、光谱扇斜贯右上、左上黑场留给文案。
+     脉冲几何覆盖值（对新图 2048×1152 像素实测，图内 % 坐标）：
+     光束线 y≈81、入射星芒 (19.5, 79.5)、棱镜中心 (21.3, 76.5)、倒影心 y≈90.5 */
+  top: 0;
+  left: 0;
+  height: 100%;
+  aspect-ratio: 2048 / 1152;
+  margin-left: calc(78px - 37.8cqh);
+  --hp-beam-y: 81%;
+  --hp-entry-x: 19.5%;
+  --hp-prism-x: 21.3%;
+  --hp-prism-y: 76.5%;
+  --hp-refl-y: 90.5%;
 }
 .hero-bg-img {
   display: block;
@@ -987,8 +1007,8 @@ const year = new Date().getFullYear()
   inset: 0;
   background: linear-gradient(0deg, rgba(1, 1, 4, 0.86), rgba(1, 1, 4, 0.55) 28%, transparent 56%);
 }
-/* 桌面棱镜：自有图按 cover 铺满首屏。画布保持 1600:1067，脉冲百分比才跟得上星芒。
-   定位把棱镜压到首屏下沿偏左、光束铺满右侧，左侧黑部留给文案。只裁装饰层。 */
+/* 桌面棱镜：与移动端同一张图，帧与图同比例（2048:1152）撑满首屏，
+   脉冲百分比跟图走；定位把棱镜压到左下、光谱扇斜贯右上，左上黑部留给文案。只裁装饰层。 */
 .hero-visual {
   position: absolute;
   inset: 0;
@@ -998,14 +1018,21 @@ const year = new Date().getFullYear()
 }
 .hero-visual-frame {
   position: absolute;
-  /* 不用 transform 定位：全站减动效会把 transform 清掉，构图不能靠它。 */
-  left: -42%;
-  top: -6%;
-  width: max(148%, 210svh);
-  left: -42cqw;
-  top: -6cqh;
-  width: max(148cqw, 210cqh);
-  aspect-ratio: 1600 / 1067;
+  /* 不用 transform 定位：全站减动效会把 transform 清掉，构图不能靠它。
+     帧与图同比例（2048:1152）、高度撑满首屏（超宽屏 min-width 兜底、底对齐，
+     图不拉伸不变形）；水平锚点：图比容器宽时把棱镜中心（图 x≈21.3%）压到
+     容器宽 12% 处，图恰好/不足时贴左/右对齐兜底不露黑。脉冲坐标与移动画布
+     同一组图内 % 值（同一张图、帧图同比例恒对位）。 */
+  bottom: 0;
+  height: 100%;
+  min-width: 100%;
+  aspect-ratio: 2048 / 1152;
+  left: max(min(0px, calc(100cqw - 177.78cqh)), min(0px, calc(12cqw - 37.3cqh)));
+  --hp-beam-y: 81%;
+  --hp-entry-x: 19.5%;
+  --hp-prism-x: 21.3%;
+  --hp-prism-y: 76.5%;
+  --hp-refl-y: 90.5%;
 }
 .hero-visual-img {
   display: block;
@@ -1032,7 +1059,8 @@ const year = new Date().getFullYear()
    后半程全静默。光谱扇／出射星芒／行星光晕／画面本体零动画（实测
    90s+ 恒定，不加）。周期 5s 字面值照本文件环境动画先例（uhd-marquee
    46s linear、pin-breathe 26s）；相位 % 由实测秒数换算；几何坐标走
-   --hp-* 令牌（uhd-tokens.css §1.7 给桌面图实测值，移动画布覆盖）。 */
+   --hp-* 令牌（uhd-tokens.css §1.7 是旧图兜底值，现行几何在
+   .hero-visual-frame／.hero-bg-canvas 内按新图实测覆盖，两端同值）。 */
 .hp {
   position: absolute;
   inset: 0;
@@ -1249,6 +1277,41 @@ const year = new Date().getFullYear()
   font-size: var(--uhd-fs-caption);
   color: var(--uhd-d-text-2);
   text-shadow: 0 1px 10px rgba(0, 0, 0, 0.72);
+}
+
+/* ---------- 流媒体伙伴（文字字标行，2026-11-15） ----------
+   节题沿用 .eyebrow 居中口径；字标一行等距、弱化白，桌面字高约 30px。 */
+.partners-sec {
+  padding: 88px 28px 4px;
+}
+.partners-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  flex-wrap: nowrap;
+  max-width: var(--uhd-container-marketing);
+  margin: 10px auto 0;
+}
+.partner {
+  font-family: var(--uhd-font-display);
+  font-size: 30px;
+  line-height: 1;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.52);
+}
+.partner--netflix {
+  font-weight: var(--uhd-fw-extrabold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.partner--disney {
+  font-weight: var(--uhd-fw-bold);
+  letter-spacing: 0.01em;
+}
+.partner--hbo {
+  font-weight: var(--uhd-fw-extrabold);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 /* ---------- 跑马灯 ---------- */
@@ -1883,15 +1946,30 @@ const year = new Date().getFullYear()
 /* ---------- 页脚 ---------- */
 .landing-foot {
   display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 14px;
   max-width: var(--uhd-container-marketing);
   margin: 0 auto;
   padding: 22px 28px 30px;
   border-top: var(--uhd-border-w) solid var(--uhd-d-border);
   font-size: var(--uhd-fs-aux);
   color: var(--uhd-d-text-2);
+}
+.landing-foot-disclaimer {
+  margin: 0;
+  max-width: 760px;
+  line-height: 1.7;
+}
+.landing-foot-disclaimer a {
+  color: var(--uhd-d-text);
+  text-decoration: none;
+}
+.landing-foot-disclaimer a:hover { text-decoration: underline; }
+.landing-foot-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 .landing-foot-links {
   display: inline-flex;
@@ -2152,8 +2230,12 @@ const year = new Date().getFullYear()
     margin-top: auto;
   }
   .hero-specs :deep(.uhd-chip--spec) {
-    flex-wrap: wrap;
-    gap: 13px;
+    /* 沿用桌面 grid 分列（图标列＋文案列）：图标列收 24px、列距 13px，
+       说明与主标题同列左缘对齐。旧写法在 grid 之上残留 flex 的
+       padding-left:37px，副标题被多推 37px（真机量值：主标题 x=51、
+       副标题文字 x=88），2026-11-15 实锤后摘除。 */
+    grid-template-columns: 24px auto;
+    column-gap: 13px;
     row-gap: 6px;
     font-size: 21px;
   }
@@ -2162,8 +2244,6 @@ const year = new Date().getFullYear()
     height: 24px;
   }
   .hero-specs :deep(.uhd-chip__sub) {
-    flex-basis: 100%;
-    padding-left: 37px;
     font-size: 13.5px;
   }
   /* 友站首屏底部无滚动提示（卖点之下只有背景地板），移动端隐藏 */
@@ -2171,8 +2251,13 @@ const year = new Date().getFullYear()
     display: none;
   }
 
-  /* ---- 跑马灯：收紧字距行距与区块留白（返工单⑥） ---- */
-  .marquee-sec { padding: 84px 0 76px; }
+  /* ---- 流媒体伙伴：字标收小、一行排下不换行 ---- */
+  .partners-sec { padding: 56px 20px 0; }
+  .partner { font-size: 19px; }
+
+  /* ---- 跑马灯：收紧字距行距与区块留白（返工单⑥）；
+     底距 76→40：旧底距叠加钉住区羽化形成约三分之一屏死黑（2026-11-15 真机实锤） ---- */
+  .marquee-sec { padding: 84px 0 40px; }
   .marquee {
     gap: 30px;
     margin-top: 44px;
