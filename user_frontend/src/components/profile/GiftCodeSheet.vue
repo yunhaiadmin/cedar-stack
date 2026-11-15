@@ -72,9 +72,9 @@
 
 <script setup lang="ts">
 /**
- * GiftCodeSheet —— 把余额做成礼品卡的底部弹层（钱包页 UHD 重做，
- * 2026-11-15）。截图未展示友站的生成弹层形态，照我方 app 弹层形态
- * 推导：面额输入（带可用余额提示）+ 有效期胶囊（1/3/7 天，上限 7）
+ * GiftCodeSheet —— 把余额做成礼品卡的居中玻璃浮窗（钱包页 UHD 重做，
+ * 2026-11-15；弹层形态 2026-11-15 批 1 改居中玻璃浮窗，与购流量弹窗
+ * 同口径）。面额输入（带可用余额提示）+ 有效期胶囊（1/3/7 天，上限 7）
  * + 确认生成；成功后弹层内展示码 + 复制钮 + 用途说明。
  * 金额校验以后端为准（余额/小数位/有效期），前端只拦空与明显格式错，
  * 后端 detail 原样展示，不在前端假算。
@@ -82,6 +82,7 @@
 import { ref, watch } from 'vue'
 import { Check, Copy, X } from 'lucide-vue-next'
 import { walletApi, type GiftCodeCreateResult } from '@/api/wallet'
+import '../../styles/traffic-view.css'
 import { useToast } from '@/composables/useToast'
 import { toUserMessage } from '@/utils/toUserMessage'
 
@@ -171,42 +172,52 @@ async function copyCode() {
 </script>
 
 <style scoped>
-/* 底部弹层：遮罩 + 上滑面板（与购流量弹窗同一力学）；令牌走用户中心
-   壳面（--paper-card/--ink/--line…），深浅双态自动跟随。 */
+/* 居中玻璃浮窗（2026-11-15 弹层形态批 1，与购流量弹窗同一口径）：
+   宽 92%、max 420px、四角圆角 26；玻璃五件＝半透底 --uhd-glass-d/l
+   ＋slab 档 blur(24px) saturate(160%)＋边缘亮光＋内高光＋大柔影
+   （--uhd-glass-slab-* 阴影束）；内层填充/描边走 --tq-* 弹窗令牌，
+   深浅双态自动跟随。 */
 .gc-mask {
   position: fixed;
   inset: 0;
   z-index: 120;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(6px) saturate(140%);
-  -webkit-backdrop-filter: blur(6px) saturate(140%);
+  background: rgba(10, 10, 14, 0.55);
+  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
+  animation: gc-fade-in 0.22s ease both;
+}
+@keyframes gc-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 .gc-sheet {
-  width: 100%;
-  max-width: 560px;
+  width: 92%;
+  max-width: 420px;
   max-height: 88vh;
   overflow-y: auto;
-  background: var(--paper-card);
-  border: 1px solid var(--line);
-  border-bottom: none;
-  border-radius: 22px 22px 0 0;
-  padding: 20px 20px 26px;
-  color: var(--ink);
-  animation: gc-sheet-up 0.3s cubic-bezier(0.32, 0.72, 0.28, 1) both;
+  background: var(--uhd-glass-d);
+  border: 1px solid var(--uhd-glass-border);
+  border-radius: 26px;
+  padding: 22px 22px 24px;
+  color: var(--tq-fg);
+  box-shadow: var(--uhd-glass-slab-shadow);
+  backdrop-filter: var(--uhd-glass-slab-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-slab-filter);
+  animation: gc-pop-in 0.28s cubic-bezier(0.32, 0.72, 0.28, 1) both;
 }
-@keyframes gc-sheet-up {
-  from { transform: translateY(24px); opacity: 0.4; }
-  to { transform: translateY(0); opacity: 1; }
+html[data-theme='light'] .gc-sheet {
+  background: var(--uhd-glass-l);
+  border-color: var(--uhd-glass-border-l);
+}
+@keyframes gc-pop-in {
+  from { transform: translateY(12px) scale(0.97); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .gc-sheet { animation: none; }
-}
-@media (min-width: 768px) {
-  .gc-mask { align-items: center; }
-  .gc-sheet { border-radius: 22px; border-bottom: 1px solid var(--line); }
+  .gc-mask, .gc-sheet { animation: none; }
 }
 
 .gc-head {
@@ -223,9 +234,9 @@ async function copyCode() {
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  border: 1px solid var(--line);
+  border: 1px solid var(--tq-border);
   background: transparent;
-  color: var(--ink2);
+  color: var(--tq-dim);
   cursor: pointer;
 }
 
@@ -233,7 +244,7 @@ async function copyCode() {
   display: block;
   font-size: 13px;
   font-weight: 600;
-  color: var(--ink2);
+  color: var(--tq-dim);
   margin: 14px 0 8px;
 }
 .gc-label:first-of-type { margin-top: 0; }
@@ -244,37 +255,43 @@ async function copyCode() {
   height: 52px;
   padding: 0 16px;
   border-radius: 14px;
-  background: var(--paper2);
-  border: 1px solid var(--line);
+  background: var(--tq-card);
+  border: 1px solid var(--tq-border);
 }
-.gc-amount-sign { font-size: 17px; font-weight: 700; color: var(--ink2); }
+.gc-amount-sign { font-size: 17px; font-weight: 700; color: var(--tq-dim); }
 .gc-amount {
   flex: 1;
   min-width: 0;
   border: none;
   background: transparent;
-  color: var(--ink);
+  color: inherit;
   font-family: inherit;
   font-size: 17px;
   font-weight: 650;
   outline: none;
 }
-.gc-amount::placeholder { color: var(--ink2); }
-.gc-hint { margin: 8px 0 0; font-size: 12.5px; color: var(--ink2); }
+.gc-amount::placeholder { color: var(--tq-dim); }
+.gc-hint { margin: 8px 0 0; font-size: 12.5px; color: var(--tq-dim); }
 
 .gc-days { display: flex; gap: 8px; }
 .gc-day {
   padding: 9px 18px;
   border-radius: 999px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--tq-border);
   background: transparent;
-  color: var(--ink2);
+  color: var(--tq-dim);
   font-family: inherit;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
 }
-.gc-day--on { background: var(--ink); border-color: transparent; color: var(--paper); }
+/* 选中片＝微亮玻璃（与购流量弹窗分段选中片同口径，不用实心反色块） */
+.gc-day--on {
+  background: var(--tq-seg-on);
+  border-color: var(--tq-border);
+  color: inherit;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
 
 .gc-err { margin: 12px 0 0; font-size: 13px; color: #f87171; }
 html[data-theme='light'] .gc-err { color: #dc2626; }
@@ -287,7 +304,7 @@ html[data-theme='light'] .gc-err { color: #dc2626; }
   font-weight: 750;
   cursor: pointer;
 }
-.gc-note { margin: 12px 0 0; font-size: 12.5px; line-height: 1.6; color: var(--ink2); }
+.gc-note { margin: 12px 0 0; font-size: 12.5px; line-height: 1.6; color: var(--tq-dim); }
 
 .gc-done { text-align: center; padding: 6px 0 2px; }
 .gc-done__icon {
@@ -303,7 +320,7 @@ html[data-theme='light'] .gc-err { color: #dc2626; }
 }
 html[data-theme='light'] .gc-done__icon { color: #16a34a; }
 .gc-done__title { margin: 10px 0 0; font-size: 16.5px; font-weight: 750; }
-.gc-done__sub { margin: 4px 0 0; font-size: 13px; color: var(--ink2); }
+.gc-done__sub { margin: 4px 0 0; font-size: 13px; color: var(--tq-dim); }
 .gc-code-row {
   display: flex;
   align-items: center;
@@ -311,8 +328,8 @@ html[data-theme='light'] .gc-done__icon { color: #16a34a; }
   margin-top: 16px;
   padding: 12px 14px;
   border-radius: 14px;
-  background: var(--paper2);
-  border: 1px dashed var(--line-deep, var(--line));
+  background: var(--tq-card);
+  border: 1px dashed var(--tq-border);
 }
 .gc-code {
   flex: 1;
@@ -330,9 +347,9 @@ html[data-theme='light'] .gc-done__icon { color: #16a34a; }
   gap: 5px;
   padding: 8px 13px;
   border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--paper-card);
-  color: var(--ink);
+  border: 1px solid var(--tq-border);
+  background: var(--tq-seg);
+  color: inherit;
   font-family: inherit;
   font-size: 13px;
   font-weight: 650;
