@@ -792,11 +792,25 @@ function loadDanmaku(): DanmakuSettings {
 }
 function errorText(e: unknown, fallback: string): string {
   const err = e as {
-    response?: { status?: number; data?: { detail?: string; message?: string; msg?: string } }
+    response?: {
+      status?: number
+      data?: {
+        detail?: string | { error_code?: string; message?: string }
+        message?: string
+        msg?: string
+      }
+    }
     message?: string
   }
   const data = err?.response?.data
-  const text = data?.detail || data?.message || data?.msg
+  // 流量拦截（后端 403 + 结构化 detail）：透出它的人话 message，
+  // 不许落到下面 403 的播放门禁文案上（那是另一件事）。
+  const detail = data?.detail
+  if (detail && typeof detail === 'object') {
+    if (detail.error_code === 'TRAFFIC_EXHAUSTED' && detail.message) return detail.message
+    if (typeof detail.message === 'string' && detail.message) return detail.message
+  }
+  const text = (typeof detail === 'string' ? detail : undefined) || data?.message || data?.msg
   if (typeof text === 'string' && text) return text
   if (err?.response?.status === 403) return '还没过播放门禁：先绑定自己的网盘，或等公共池副本就绪后再来。'
   if (err?.response?.status === 409) return '这部片正在准备中（转存/搬运），过一会儿再点播放。'

@@ -6950,6 +6950,14 @@ async def playback_info(
                 item.id, user.id, mode="next", source="next")
     except Exception:  # noqa: BLE001 — 预热启动失败不影响本次播放
         pass
+    # 流量拦截签发侧（2026-11-15）：额度用尽时摘除已知中继类
+    # 变体源；全部源都是已知中继类时 403（error_code=
+    # TRAFFIC_EXHAUSTED）。_pi_quota_error 的更具体报错优先，
+    # 它在场时本段跳过（其清单已被剥地址，不重复裁决）。
+    if sources and not _pi_quota_error:
+        sources, _playback_variants = await run_db(
+            _apply_traffic_gate_to_sources,
+            db, user, sources, _playback_variants)
     if _pi_quota_error:
         return _strip_nulls({
             "MediaSources": sources,
@@ -7022,6 +7030,18 @@ def _observe_traffic(response):
     # 迭代消费阶段直接用，不依赖 ContextVar 在消费侧的传播。
     from backend.emby_server import traffic_meter
     _traffic_uid = traffic_meter.current_user_id()
+    # 流量拦截（2026-11-15 用户亲点）：200/206 字节响应在未发出
+    # 前过闸——起播且本周期额度用尽时整响应替换成 403，字节一滴
+    # 不出；302 直链与 Range 续传不在此拦（判定口径、开关与异常
+    # 放行都在 backend/traffic_gate，本处只做出口替换）。
+    if getattr(response, "status_code", None) in (200, 206):
+        from backend import traffic_gate as _traffic_gate
+        if _traffic_gate.egress_traffic_blocked(
+                _traffic_uid, _traffic_gate.current_range()):
+            return JSONResponse(
+                status_code=403,
+                content={"detail":
+                         _traffic_gate.TRAFFIC_EXHAUSTED_MESSAGE})
     if getattr(response, "status_code", None) == 302:
         from backend.emby_server import playback_risk
         playback_risk.bump("redirect_302")
@@ -7045,6 +7065,58 @@ def _observe_traffic(response):
 
     response.body_iterator = _counting()
     return response
+
+
+def _raise_if_traffic_exhausted(db, user, request) -> None:
+    """本机文件腿（video_stream 两处 serve_file）起播前的流量拦截。
+
+    判定、开关与文案统一在 backend/traffic_gate；命中抛 403
+    人话 detail。判定异常在 gate 内已放行，这里不另兜底。
+    同步函数：调用方走 run_db（与 _enforce_path_access 同口径）。
+    """
+    from backend import traffic_gate
+
+    if traffic_gate.metered_start_blocked(
+            db, getattr(user, "id", None),
+            request.headers.get("range")):
+        raise HTTPException(
+            status_code=403,
+            detail=traffic_gate.TRAFFIC_EXHAUSTED_MESSAGE)
+
+
+def _apply_traffic_gate_to_sources(db, user, sources, descriptors):
+    """PlaybackInfo 签发侧流量拦截（2026-11-15）。
+
+    额度用尽时摘除已知中继类变体源与对应描述子，只剩直链/
+    未知源照常下发；全部源都是已知中继类时抛 403，detail 带
+    error_code=TRAFFIC_EXHAUSTED 与人话 message（前端播放流按
+    码认这条拦截）。分类口径见 traffic_gate.classify_source：
+    类型未知的源（无变体身份的本站 /stream 基础源）不动——
+    它的腿在取流时才定，由取流侧出口裁决，不许签发侧凭猜拦。
+    同步函数：调用方走 run_db。
+    """
+    from backend import traffic_gate
+
+    if not sources:
+        return sources, descriptors
+    if not traffic_gate.user_traffic_exhausted(
+            db, getattr(user, "id", None)):
+        return sources, descriptors
+    kept = traffic_gate.drop_metered_sources(sources)
+    if not kept:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error_code": traffic_gate.TRAFFIC_EXHAUSTED_CODE,
+                "message": traffic_gate.TRAFFIC_EXHAUSTED_MESSAGE,
+            })
+    kept_descriptors = descriptors
+    if descriptors:
+        kept_descriptors = [
+            d for d in descriptors
+            if not traffic_gate.variant_is_metered(
+                d.get("kind") if isinstance(d, dict) else None)]
+    return kept, kept_descriptors
 
 
 def _available_variant_names(db: Session, item: em.MediaItem,
@@ -7099,6 +7171,12 @@ async def video_stream(
     # 家庭子账号的流量归账到主账号（有效账号解析唯一实现
     # backend/sub_accounts.py）：解析要查库，走 run_db 不堵事件循环。
     from backend.emby_server import traffic_meter as _traffic_meter
+    _traffic_meter.set_current_user(getattr(user, "id", None))
+    # 流量拦截同点登记：把本次请求的 Range 头带给字节出口
+    # （_observe_traffic 只有 response 一个参数，起播/续传判定
+    # 靠 traffic_gate 的 ContextVar，见该模块 docstring）。
+    from backend import traffic_gate as _traffic_gate_vs
+    _traffic_gate_vs.set_current_range(request.headers.get("range"))
     # P0（2026-09-29）：async 路由里直接调同步 DB 会卡住单 worker 的事件循环。
     from backend.emby_server.async_db import run_db
     from backend import sub_accounts as _sub_accounts
@@ -8286,6 +8364,8 @@ async def video_stream(
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         if _ms_path is not None:
             _pt.mark("mount_serving")
+            # 流量拦截（本机文件腿起播）：额度用尽 403，续传放行。
+            await run_db(_raise_if_traffic_exhausted, db, user, request)
             _pt.done()
             return serve_file(
                 _ms_path, request, media_type,
@@ -8489,6 +8569,8 @@ async def video_stream(
         raise HTTPException(status_code=410, detail="relay removed")
     # 本机文件：直接流形态，分片可被 CDN/浏览器缓存（第 2/3 层预留的另一半）
     _pt.mark("serve_file")
+    # 流量拦截（本机文件腿起播）：额度用尽 403，续传放行。
+    await run_db(_raise_if_traffic_exhausted, db, user, request)
     _pt.done()
     _local_resp = serve_file(
         target.value, request, media_type,
