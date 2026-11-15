@@ -27,17 +27,21 @@ export interface TrafficSummary {
   reset_date: string
 }
 
-/** 时间换流量规则（2026-11-14 照友站 GB 口径：每 10GB 需 7 天、
- * 兑换后总流量上限 5TB，超出按比例折算时长） */
+/** 时间换流量包（2026-11-15 照友站录屏包型）：包参数全部由
+ * 后端配置下发，前端不写死天数/比例——credit ＝ 当月配额 ×
+ * quota_percent，只冲已用、不扩总配额，固定扣 days 天时长。 */
+export interface TrafficExchangePackage {
+  key: string
+  name: string
+  days: number
+  quota_percent: number
+}
+
+/** 时间换流量规则视图：包表 + 该用户额度与本周期已抵扣 */
 export interface TrafficExchangeRule {
-  unit_gb: number
-  days_per_unit: number
-  quick_gb: number[]
-  cap_bytes: number
+  packages: TrafficExchangePackage[]
   quota_bytes: number | null
   credited_bytes: number
-  /** 当前还可兑换的字节余量（上限 − 额度 − 已抵扣） */
-  room_bytes: number
 }
 
 export interface TrafficOverview extends TrafficSummary {
@@ -68,14 +72,15 @@ export async function getTraffic(): Promise<TrafficOverview | null> {
   }
 }
 
-/** 时间换流量成交（按 GB）：idempotencyKey 由弹窗在打开时生成一次，
- * 同一次确认的重试/双击只成交一次（后端幂等）。失败抛错，文案走后端 detail。 */
+/** 时间换流量成交（按包）：packageKey 是规则下发的包 key；
+ * idempotencyKey 由弹窗在打开时生成一次，同一次确认的重试/双击
+ * 只成交一次（后端幂等）。失败抛错，文案走后端 detail。 */
 export async function exchangeTimeForTraffic(
-  gb: number,
+  packageKey: string,
   idempotencyKey: string,
 ): Promise<TrafficExchangeResult> {
   return api.post<never, TrafficExchangeResult>('/api/user/traffic/exchange', {
-    gb,
+    package: packageKey,
     idempotency_key: idempotencyKey,
   })
 }
@@ -96,9 +101,9 @@ export interface BalancePurchaseResult {
   gb: number
 }
 
-/** 余额购流量成交：gb 只许 100/200/500/1000（后端再校验），
- * idempotencyKey 由弹窗在打开时生成一次，同一次确认重试/双击
- * 只成交一次（后端幂等）。失败抛错，文案走后端 detail。 */
+/** 余额购流量成交：gb 为任意 ≥100 的整数（后端再校验下限并按
+ * 单价比例计价），idempotencyKey 由弹窗在打开时生成一次，
+ * 同一次确认重试/双击只成交一次（后端幂等）。失败抛错，文案走后端 detail。 */
 export async function buyBalanceTraffic(
   gb: number,
   idempotencyKey: string,
@@ -111,11 +116,18 @@ export async function buyBalanceTraffic(
 
 const GB = 1024 ** 3
 
-/** 大数字用：剩余量按 GB 显示（整数不带小数，否则一位小数） */
+/** 购流量弹窗流量卡口径：GB 两位小数（照友站帧「已用 0.27 GB / 共 500.00 GB」） */
+export function formatGbFixed(bytes: number | null | undefined): string {
+  if (bytes == null) return '—'
+  return (bytes / GB).toFixed(2)
+}
+
+/** 大数字用：剩余量按 GB 显示（≥100 取整向下取，照友站帧
+ * 499.73 →「499」；否则一位小数）。概览 meta 行已用/共同口径。 */
 export function formatGbValue(bytes: number | null | undefined): string {
   if (bytes == null) return '—'
   const gb = bytes / GB
-  if (gb >= 100) return String(Math.round(gb))
+  if (gb >= 100) return String(Math.floor(gb))
   const s = gb.toFixed(1)
   return s.endsWith('.0') ? s.slice(0, -2) : s
 }
