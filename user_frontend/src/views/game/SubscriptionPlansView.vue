@@ -1157,29 +1157,44 @@ onMounted(() => {
 }
 .cfm-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
-/* 深色主题：同一套结构换深色板，骨架/滑杆/吸底栏同步跟随，禁止纯黑块 */
-html[data-theme='dark'] .sub-page {
-  background: var(--uhd-d-bg);
-  color: var(--uhd-d-text);
-  --uhd-l-surface: #17171a;
-  --uhd-l-seg-bg: #1d1d20;
-  --uhd-l-text: #ffffff;
-  --uhd-l-text-2: #a7a7ad;
-  --uhd-l-text-3: #8e8e96;
-  --uhd-l-border: #2a2a2e;
+/* 深色主题：全站口径是「深色＝html 无 data-theme、只有浅色才写 data-theme='light'」
+   （useTheme.ts 的 applyTheme）。此前整段挂在 html[data-theme='dark'] 上——该属性
+   永远不会出现，深色覆盖成死代码，深色下整页落回 :root 浅色令牌变白底（2026-11-15 修）。
+   令牌值与用户中心壳 UhdAccountLayout 的深色套同源（页底 #09090b／卡面 #111214），
+   骨架/滑杆/吸底栏同步跟随；浅色态不进本段、保持原样。 */
+html:not([data-theme='light']) .sub-page {
+  background: #09090b;
+  color: #fbfcfd;
+  --uhd-l-bg: #09090b;
+  --uhd-l-surface: #111214;
+  --uhd-l-border: #26262a;
   --uhd-l-divider: #26262a;
-  --uhd-l-bg: #050505;
+  --uhd-l-text: #fbfcfd;
+  --uhd-l-text-2: var(--uhd-d-text-2);
+  --uhd-l-text-3: var(--uhd-d-text-3);
+  --uhd-l-seg-bg: #1b1c1e;
+  --uhd-l-input-bg: #242526;
+  --uhd-l-active: #2d2d2f;
 }
-html[data-theme='dark'] .plan-card--on { box-shadow: none; }
-html[data-theme='dark'] .sub-skeleton {
+html:not([data-theme='light']) .plan-card--on { box-shadow: 0 10px 34px rgba(0, 0, 0, 0.35); }
+html:not([data-theme='light']) .sub-skeleton {
   background: linear-gradient(100deg, #17171a 40%, #1f1f23 50%, #17171a 60%);
   background-size: 200% 100%;
 }
-html[data-theme='dark'] .sub-seg__item--on { background: #2e2e33; color: #ffffff; }
-html[data-theme='dark'] .sub-cap,
-html[data-theme='dark'] .sub-coupon__box,
-html[data-theme='dark'] .sub-coupon__apply { background: #17171a; }
-html[data-theme='dark'] .sub-cap--on { background: #ffffff; border-color: #ffffff; color: #111111; }
-html[data-theme='dark'] .plan-radio--on::after { background: #111111; }
-html[data-theme='dark'] .sub-sticky { background: rgba(13, 13, 15, 0.92); }
+html:not([data-theme='light']) .sub-back:active { background: rgba(255, 255, 255, 0.08); }
+html:not([data-theme='light']) .sub-seg__item--on { background: #2d2d2f; color: #fbfcfd; box-shadow: none; }
+html:not([data-theme='light']) .sub-cap,
+html:not([data-theme='light']) .sub-coupon__box,
+html:not([data-theme='light']) .sub-coupon__apply { background: #111214; }
+html:not([data-theme='light']) .sub-cap--on { background: #fbfcfd; border-color: #fbfcfd; color: #111214; }
+html:not([data-theme='light']) .plan-radio--on::after { background: #111214; }
+html:not([data-theme='light']) .sub-slider::-webkit-slider-thumb { background: #2e2e33; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45); }
+html:not([data-theme='light']) .sub-slider::-moz-range-thumb { background: #2e2e33; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45); }
+html:not([data-theme='light']) .sub-sticky { background: rgba(13, 13, 15, 0.92); }
+html:not([data-theme='light']) .sub-sticky__cta {
+  background:
+    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
+    var(--uhd-rainbow) border-box;
+  color: #ffffff;
+}
 </style>
