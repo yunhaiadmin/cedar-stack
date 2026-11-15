@@ -397,4 +397,33 @@
   /* 订阅结算条：总价 24→20、主按钮 16→15（友站按钮约 15） */
   .sub-settle__price b { font-size: 20px !important; }
   .sub-settle__btn { font-size: 15px !important; }
+  /* 页题统一收 28（2026-11-15 全站排查批 3）：收藏 40／电影·剧集·日历·
+     服务器 32／搜索·订阅记录 30／隐私·许可 32（组件 ≤640 自有口径）／
+     求片 31——各页自有移动口径未入阶梯，以账号设置页 28 为标尺终局覆盖；
+     电影/剧集组件注释里的友站 30–32 量测口径让位于全站阶梯（本层为准）。
+     定价 hero 例外：40→33，与官网首页 h1 渲染值一致，不套页题 28。
+     .sr-title 必须带 .sr-page 前缀：StreamRow 行题同名类自有 22px 口径，
+     裸类覆盖会误伤片库首页行题。 */
+  .fv-h1 { font-size: 28px !important; }
+  .lb-h1 { font-size: 28px !important; }
+  .cc-h1 { font-size: 28px !important; }
+  .sv-title { font-size: 28px !important; }
+  .sv-h1 { font-size: 28px !important; }
+  .sr-page .sr-title { font-size: 28px !important; }
+  .privacy-title { font-size: 28px !important; }
+  .licenses-title { font-size: 28px !important; }
+  .rf-head h1 { font-size: 28px !important; }
+  .pricing-title { font-size: 33px !important; }
+  /* 求片反馈表单控件高（2026-11-15 全站排查批 4）：48–50 → 46（基准
+     输入 44–46／主钮 44–48）；作品搜索圆钮与图标行高随输入同高，
+     广场搜索内嵌钮（被全局 min-height 顶成 44）随输入 50→46 改
+     top 5→1 保持居中。结构不动。 */
+  .rf-form__input { height: 46px !important; }
+  .rf-submit { height: 46px !important; }
+  .rf-search__input { height: 46px !important; }
+  .rf-search__icon { height: 46px !important; }
+  .rf-search__btn { width: 46px !important; height: 46px !important; }
+  .rf-searchbar__input { height: 46px !important; }
+  .rf-searchbar__btn { top: 1px !important; }
+  .rf-filter__select--wide { height: 46px !important; }
 }

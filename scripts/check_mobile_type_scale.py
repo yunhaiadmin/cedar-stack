@@ -73,6 +73,17 @@ MOBILE_OVERRIDES = {
     ".tm-teamhead__name": "22px",
     ".sh-title": "30px",
     ".sub-settle__btn": "15px",
+    # 2026-11-15 全站排查批 3：页题统一 28（定价 hero 例外 33，对齐官网 h1）
+    ".fv-h1": "28px",
+    ".lb-h1": "28px",
+    ".cc-h1": "28px",
+    ".sv-title": "28px",
+    ".sv-h1": "28px",
+    ".sr-page .sr-title": "28px",
+    ".privacy-title": "28px",
+    ".licenses-title": "28px",
+    ".rf-head h1": "28px",
+    ".pricing-title": "33px",
 }
 
 failures: list[str] = []
@@ -155,7 +166,7 @@ def main() -> int:
         for f in failures:
             print("  -", f)
         return 1
-    print("✅ 移动端字号阶梯契约检查通过（桌面阶梯原值未动 · 移动阶梯 8 令牌 · 收紧层 17+1 条 · admin 关键帧无 blur）")
+    print("✅ 移动端字号阶梯契约检查通过（桌面阶梯原值未动 · 移动阶梯 8 令牌 · 收紧层 27+1 条 · admin 关键帧无 blur）")
     return 0
 
 
