@@ -121,46 +121,6 @@ def _whitelist_rows(identity) -> list[str]:
     return rows
 
 
-def _pet_summary(db, user_id: int):
-    """馆灵：返回（累计观影小时，当前阶段 dict，下一阶段 dict 或 None）。
-
-    观影秒数与阶段解析口径与 GET /api/panel/collector 逐字一致：
-    emby_playback_sessions join MediaItem 后 playback_seconds 累加，
-    阶段一律走 backend.api.panel._read_pet_stages（横切只许一套）。
-    """
-    from backend.api.panel import _read_pet_stages
-    from backend.emby_server import models as em
-    from backend.panel_stats import playback_seconds
-
-    rows = (
-        db.query(
-            em.PlaybackSession.position_ticks,
-            em.MediaItem.duration_ticks,
-        )
-        .join(em.MediaItem, em.MediaItem.id == em.PlaybackSession.item_id)
-        .filter(em.PlaybackSession.user_id == user_id,
-                # PA-037：联结查询的 FROM 是 Join 对象，软删钩子看不见，
-                # 必须自己带 deleted_at 条件，否则已下架条目会虚增馆灵小时。
-                em.MediaItem.deleted_at.is_(None))
-        .all()
-    )
-    total_secs = sum(playback_seconds(r) for r in rows)
-    total_hours = total_secs / 3600
-    stages = _read_pet_stages(db)
-    if not stages:
-        # _read_pet_stages 自带非法回退，正常走不到这里；防御性兜底
-        from backend.api.panel import PET_STAGES_DEFAULT
-
-        stages = [dict(s) for s in PET_STAGES_DEFAULT]
-    cur_idx = 0
-    for i, st in enumerate(stages):
-        if total_hours >= st["hours"]:
-            cur_idx = i
-    cur = stages[cur_idx]
-    nxt = stages[cur_idx + 1] if cur_idx + 1 < len(stages) else None
-    return total_hours, cur, nxt
-
-
 def _bindings_line(db, user_id: int) -> str:
     """网盘绑定：仅 active 行，按 provider 区分展示；已绑带 ✓。"""
     from backend.emby_server import models as em
@@ -326,33 +286,18 @@ def _subscription_summary(db, user) -> str:
 def account_card(db, user, display_name: str | None = None) -> str:
     """账号卡（唯一构建器）：/me、/account 与用户面板共用同一张精简卡。
 
-    固定 5 行汇总——用户编号/账号名称/网盘绑定/
-    当前馆灵（下一阶段差距并进同一行）/订阅状态（一行汇总）；
+    固定 4 行汇总——用户编号/账号名称/网盘绑定/订阅状态（一行汇总）；
     订阅/设备不逐条铺。等级/能量/活力三行已随等级体系与货币
-    下线摘除（2026-11-14）。
+    下线摘除（2026-11-14）；馆灵行已随馆灵功能删除（2026-11-15）。
     白名单专属版式保留：专属问候标题＋称号/编号行紧跟账号名称行。
     """
-    total_hours, pet_cur, pet_nxt = _pet_summary(db, user.id)
     greet = display_name or getattr(user, "username", "") or "朋友"
-
-    pet_text = (
-        f"{_esc(pet_cur.get('icon', ''))} {_esc(pet_cur.get('name', ''))}"
-        f"（累计观影 {total_hours:.1f} 小时）"
-    )
-    if pet_nxt is not None:
-        pet_text += (
-            f"，距{_esc(pet_nxt.get('name', ''))}还差 "
-            f"{pet_nxt['hours'] - total_hours:.1f} 小时"
-        )
-    else:
-        pet_text += "，已满级"
 
     rows = [
         layout.row("🆔", "用户编号", user.id),
         layout.row("👤", "账号名称", f"<b>{_esc(user.username)}</b>"),
 
         layout.row("🔗", "网盘绑定", _after_colon(_bindings_line(db, user.id))),
-        layout.row("🐉", "当前馆灵", pet_text),
         layout.row("📦", "订阅状态", _subscription_summary(db, user)),
     ]
     identity = _whitelist_identity(db, user)

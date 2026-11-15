@@ -25,7 +25,6 @@ from backend import models
 from backend import subscriptions
 from backend.api import governance_report as gov_api
 from backend.api import media_sets_api as ms_api
-from backend.api import panel as panel_api
 from backend.emby_server import media_sets as ms
 from backend.emby_server import models as em
 
@@ -265,19 +264,6 @@ def test_media_set_template_instantiate_audits(db, admin):
     row = _assert_one_log(db, admin, "media_set_template_instantiate",
                           "media_set_template", tpl["id"])
     assert row.details["media_set_id"] == out["id"]
-
-
-# ---------------------------------------------------------------- panel
-
-def test_panel_pet_stages_put_audits(db, admin):
-    body = panel_api.PetStagesIn(stages=[
-        {"name": "蛋", "icon": "🥚", "hours": 0},
-        {"name": "馆灵", "icon": "🐉", "hours": 100}])
-    panel_api.admin_pet_stages_put(body, admin, db)
-    row = _assert_one_log(db, admin, "panel_pet_stages_update",
-                          "system_config", None)
-    assert row.details["key"] == "panel_pet_stages"
-    assert row.details["stages"] == 2
 
 
 # ---------------------------------------------------------------- governance

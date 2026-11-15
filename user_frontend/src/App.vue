@@ -25,12 +25,8 @@ watch(
     if (id === prevId) return
     panelStore.reset()
     // 切号后按路由重载，避免面板卡空态
-    if (route.path.startsWith('/collector')) {
-      void panelStore.loadCollector(true)
-    } else if (route.path.startsWith('/server')) {
+    if (route.path.startsWith('/server')) {
       void panelStore.loadServer(true)
-    } else if (route.path.startsWith('/game')) {
-      void panelStore.loadCollector(true)
     }
     // 旧发现页（loadHome 的今日/包裹/脉搏/信件面）已删除，不再预载。
   },

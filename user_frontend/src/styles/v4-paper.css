@@ -348,9 +348,9 @@ html[data-theme='light'] {
   from { transform: translateX(-100%); }
   to { transform: translateX(100%); }
 }
-/* R99：v4-fadein 全局唯一定义——此前 ParcelBox/PulseActivity/WaxLetter/CollectorView
-   四处 scoped style 各自定义一份（scoped 不隔离 @keyframes，全局同名后加载者胜，
-   PulseActivity 的 6px 与另三处的 8px 互相覆盖）；收敛到 8px（多数值，2px 差肉眼不可辨） */
+/* R99：v4-fadein 全局唯一定义——此前 ParcelBox/PulseActivity/WaxLetter
+   三处 scoped style 各自定义一份（scoped 不隔离 @keyframes，全局同名后加载者胜，
+   PulseActivity 的 6px 与另两处的 8px 互相覆盖）；收敛到 8px（多数值，2px 差肉眼不可辨） */
 @keyframes v4-fadein {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: none; }
@@ -747,9 +747,8 @@ html[data-theme='light'] {
   .d-only { display: none !important; }
   .v4-page.d3-root { display: flex; flex-direction: column; }
   .d3-left, .d3-mid { display: contents; }
-  /* 移动端视觉顺序：日志头 → 收藏家 → 服务器卡 → 封存 → 脉搏 → 信 */
+  /* 移动端视觉顺序：日志头 → 服务器卡 → 封存 → 脉搏 → 信 */
   .d3-ord-loghead { order: 1; }
-  .d3-ord-collector { order: 2; }
   .d3-ord-ticket { order: 3; }
   .d3-ord-shelf { order: 4; }
   .d3-ord-pulse { order: 5; }
@@ -764,7 +763,6 @@ html[data-theme='light'] {
    用 .d3-root 前缀提特异性，避免与 SFC scoped 同级规则竞争） */
 @media (min-width: 1280px) {
   .d3-root .d3-left .v4-sec, .d3-root .d3-mid .v4-sec { padding: 0; }
-  .d3-root .d3-left .v4-collector-entry { margin: 0; }
   .d3-root .d3-left .hc-wrap { width: 100%; }
   .d3-root .d3-mid .v4-parcels, .d3-root .d3-mid .v4-skel-row { margin: 0; padding: 4px 2px 12px; }
   .d3-root .d3-mid .v4-parcels { scroll-padding: 0 8px; }

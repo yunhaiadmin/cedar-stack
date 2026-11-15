@@ -9,7 +9,6 @@
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone
@@ -23,100 +22,10 @@ from sqlalchemy.orm import Session
 from backend import models
 from backend.database import get_db
 from backend.api.user import get_current_user
-from backend.api.admin_core import _audit, get_current_admin
 
 logger = logging.getLogger("aetrix.panel")
 
 router = APIRouter(prefix="/api/panel", tags=["面板-v4"])
-
-PET_STAGES_KEY = "panel_pet_stages"
-
-# 馆灵阶段出厂默认（与 GET 回退口径一致；用户端回退处复用此常量）
-PET_STAGES_DEFAULT = [
-    {"name": "蛋", "icon": "🥚", "hours": 0},
-    {"name": "夜枭", "icon": "🦉", "hours": 50},
-    {"name": "守夜者", "icon": "🦅", "hours": 200},
-    {"name": "星语者", "icon": "🦄", "hours": 500},
-    {"name": "馆灵", "icon": "🐉", "hours": 1000},
-]
-
-
-def _read_pet_stages(db: Session) -> list:
-    """读馆灵阶段配置；未配置/非法时回退到出厂默认。
-
-    r45：形状校验——合法 JSON 但非 list[dict]（如裸字符串/对象）以前会穿透，
-    在 /collector 里 `st["hours"]` 抛 TypeError 致全站 500；现在统一走
-    _validate_pet_stages（与管理后台写入口同一套校验），非法即回退默认。
-    """
-    try:
-        from backend.servers import config_value
-        raw = config_value(db, PET_STAGES_KEY, "")
-        stages = json.loads(raw) if raw else []
-        return _validate_pet_stages(stages)
-    except Exception:  # noqa: BLE001
-        return [dict(s) for s in PET_STAGES_DEFAULT]
-
-
-def _validate_pet_stages(stages) -> list:
-    """校验管理员提交的阶段配置，返回规范化后的 list；非法抛 HTTPException(400)。"""
-    if not isinstance(stages, list) or not stages:
-        raise HTTPException(status_code=400, detail="stages 必须是非空数组")
-    norm = []
-    for i, st in enumerate(stages):
-        if not isinstance(st, dict):
-            raise HTTPException(status_code=400, detail=f"stages[{i}] 必须是对象")
-        name = st.get("name")
-        icon = st.get("icon", "")
-        hours = st.get("hours")
-        if not isinstance(name, str) or not name.strip():
-            raise HTTPException(status_code=400, detail=f"stages[{i}].name 必须是非空字符串")
-        if not isinstance(icon, str):
-            raise HTTPException(status_code=400, detail=f"stages[{i}].icon 必须是字符串")
-        if isinstance(hours, bool) or not isinstance(hours, (int, float)) or hours < 0:
-            raise HTTPException(status_code=400, detail=f"stages[{i}].hours 必须是非负数")
-        norm.append({"name": name.strip(), "icon": icon, "hours": hours})
-    # r48 遗留 ⑨：消费处（panel.py /collector 按升序判定当前阶段）隐式依赖阈值升序。
-    # 第一阶段必须从 0 开始，否则 0 小时用户无阶段可归；阈值倒挂会让阶段错乱。
-    if norm[0]["hours"] != 0:
-        raise HTTPException(status_code=400, detail="stages[0].hours 必须为 0（第一阶段从 0 小时开始）")
-    for i in range(1, len(norm)):
-        if norm[i]["hours"] < norm[i - 1]["hours"]:
-            raise HTTPException(
-                status_code=400,
-                detail=f"stages[{i}].hours 不能小于前一阶段（判定按升序，写歪会阶段错乱）")
-    return norm
-
-
-admin_router = APIRouter(prefix="/api/admin/panel", tags=["管理后台-面板v4"])
-
-
-class PetStagesIn(BaseModel):
-    stages: list
-
-
-@admin_router.get("/pet-stages")
-def admin_pet_stages_get(
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """管理后台：读馆灵阶段配置（未配置时返回出厂默认）。"""
-    return {"stages": _read_pet_stages(db)}
-
-
-@admin_router.put("/pet-stages")
-def admin_pet_stages_put(
-    body: PetStagesIn,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """管理后台：写馆灵阶段配置（JSON 数组，hours 为累计观影小时阈值）。"""
-    from backend.servers import set_config
-    stages = _validate_pet_stages(body.stages)
-    set_config(db, PET_STAGES_KEY, json.dumps(stages, ensure_ascii=False), "馆灵阶段配置（管理后台）")
-    _audit(db, current_admin, "panel_pet_stages_update", "system_config",
-           None, {"key": PET_STAGES_KEY, "stages": len(stages)})
-    db.commit()
-    return {"stages": stages}
 
 
 def _panel_enabled() -> bool:
@@ -359,71 +268,6 @@ def panel_home(
     return _ok({
         "today": _section_or_none(panel_today, db, user),
         "pulse": _section_or_none(panel_pulse, db, user),
-    })
-
-
-# ==================== 6. GET /api/panel/collector ====================
-
-@router.get("/collector")
-def panel_collector(
-    db: Session = Depends(get_db),
-    user: models.WebUser = Depends(get_current_user),
-):
-    _guard()
-    from backend.panel_stats import user_tastes
-
-    tastes = {}
-    try:
-        tastes = user_tastes(db, user.id)
-    except Exception:  # noqa: BLE001
-        logger.exception("口味聚合失败")
-
-    # 馆灵：累计观影小时推导（阈值走 SystemConfig，可配置）
-    # 数据源：emby_playback_sessions（旧 emby_sessions 无写入、恒 0 行，
-    # 2026-10-19 换源；每 (user, item) 一行、两列窄查询后 Python 累加）
-    from backend.emby_server import models as em
-    from backend.panel_stats import playback_seconds
-    _sess_rows = db.query(
-        em.PlaybackSession.position_ticks,
-        em.MediaItem.duration_ticks,
-    ).join(
-        em.MediaItem, em.MediaItem.id == em.PlaybackSession.item_id
-    ).filter(em.PlaybackSession.user_id == user.id,
-             # PA-037：联结查询的 FROM 是 Join 对象，软删钩子看不见，
-             # 必须自己带 deleted_at 条件，否则已下架条目会虚增馆灵小时。
-             em.MediaItem.deleted_at.is_(None)).all()
-    total_secs = sum(playback_seconds(r) for r in _sess_rows)
-    total_hours = total_secs / 3600
-    # r45：直接复用 _read_pet_stages（横切只许一套）——原来这里另起一套内联解析，
-    # 无形状校验，畸形 JSON 值会让 /collector 全站 500。
-    stages = _read_pet_stages(db)
-    cur_idx = 0
-    for i, st in enumerate(stages):
-        if total_hours >= st["hours"]:
-            cur_idx = i
-    cur = stages[cur_idx]
-    nxt = stages[cur_idx + 1] if cur_idx + 1 < len(stages) else None
-    if nxt:
-        span = nxt["hours"] - cur["hours"]
-        progress = min(1.0, max(0.0, (total_hours - cur["hours"]) / span)) if span else 1.0
-    else:
-        progress = 1.0
-
-    return _ok({
-        "nickname": getattr(user, "nickname", None) or user.username,
-        "watch_hours": round(total_hours, 1),
-        "tastes": tastes,
-        "pet": {
-            "stage": cur_idx,
-            "name": cur["name"],
-            "icon": cur["icon"],
-            "hours": round(total_hours, 1),
-            "next_name": nxt["name"] if nxt else None,
-            "next_icon": nxt["icon"] if nxt else None,
-            "next_hours": nxt["hours"] if nxt else None,
-            "progress": round(progress, 3),
-            "stages": [{"name": s["name"], "icon": s["icon"]} for s in stages],
-        },
     })
 
 

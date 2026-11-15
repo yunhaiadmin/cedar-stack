@@ -33,15 +33,10 @@ const router = createRouter({
       component: () => import('@/views/RootView.vue'),
       meta: { title: '欢迎' },
     },
-    // v4 面板：收藏家 / 服务器（需要登录，panel 接口全部要鉴权）
+    // v4 面板：服务器（需要登录，panel 接口全部要鉴权）
+    // 收藏家页（/collector）已于 2026-11-15 随馆灵功能整页删除（用户亲点）。
     ...(panelV4
       ? [
-          {
-            path: '/collector',
-            name: 'collector',
-            component: () => import('@/views/panel/CollectorView.vue'),
-            meta: { title: '收藏家', requiresAuth: true },
-          },
           // 我的收藏：收藏列表页（老 /favorites 地址复活承接；入口在账号设置，底栏不占位）
           {
             path: '/favorites',
@@ -390,7 +385,7 @@ router.beforeEach(async (to) => {
 // 办事面壳内（壳为浅色办事面，与同壳的订阅页未钉 light 先例一致），不再由守卫钉 light。
 // 批 1+2 删除后：'/collections'（合集）路由已删，一并摘除。
 // #127 能量删除：'/game/ledger'（能量明细）路由已删，一并摘除。
-export const V4_PATHS = new Set(['/', '/collector', '/favorites', '/want', '/store-requests'])
+export const V4_PATHS = new Set(['/', '/favorites', '/want', '/store-requests'])
 // 参数路由前缀：条目详情是 /media/:id，afterEach 拿到的是实例路径
 // （如 /media/123），静态集合永远匹配不上，须按前缀另判；
 // /media/ 页是 v4 纸色页，必须强制 light，

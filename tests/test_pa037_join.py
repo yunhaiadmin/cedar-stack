@@ -145,23 +145,13 @@ def test_home_stats_and_sessions_exclude_deleted(db):
     assert "pa037-vis" in _dump(sessions["sessions"])
 
 
-# ---------------- panel：昨日信与口味 ----------------
+# ---------------- panel：昨日信 ----------------
 
-def test_panel_letter_tastes_exclude_deleted(db):
+def test_panel_letter_stays_deleted(db):
     from backend.api import panel
-    from backend import panel_stats
-    user, _vis, _dele = _vis_del(db)
     # 每日一封（panel_letter）已随发现页删除批次下线：钉住删除语义——
     # 该属性不得存在，将来有人误加回本用例即红。
     assert not hasattr(panel, "panel_letter")
-    # 口味：已下架条目的 genre 不计入
-    db.query(em.MediaItem).filter(em.MediaItem.id == _dele).update(
-        {"genres": '["动画"]'}, synchronize_session=False)
-    db.query(em.MediaItem).filter(em.MediaItem.id == _vis).update(
-        {"genres": '["动画"]'}, synchronize_session=False)
-    db.commit()
-    tastes = panel_stats.user_tastes(db, user.id)
-    assert tastes["taste_anime"]["count"] == 1
 
 
 # ---------------- portal：续看/收藏/统计/会话/历史/管理会话 ----------------
@@ -309,12 +299,9 @@ def test_transfer_preheat_signal_ignores_deleted(db):
     assert tv._series_preheat_strong_signal(db, user.id, anchor) is False
 
 
-def test_tg_pet_and_rank_exclude_deleted(db):
-    from backend.tg_bot import features as tg_features
+def test_tg_rank_excludes_deleted(db):
     from backend.tg_bot import queries as tg_queries
-    user, _vis, _dele = _vis_del(db)
-    hours, _cur, _nxt = tg_features._pet_summary(db, user.id)
-    assert hours == 120 / 3600  # 仅可见条目 120 秒；旧实现连已下架一起算 240 秒
+    _vis_del(db)
     rank = tg_queries.watch_duration_rank(db, "day", limit=10)
     assert rank and rank[0]["seconds"] == 120
 
@@ -333,7 +320,6 @@ FIXED_FUNCTIONS = [
     ("backend.api.home_summary", "_stats"),
     ("backend.api.home_summary", "_sessions"),
     ("backend.api.media_library", "_recently_updated_items"),
-    ("backend.api.panel", "panel_collector"),
     ("backend.api.admin", "get_playback_stats"),
     ("backend.emby_server.api", "_prefetch_list_data"),
     ("backend.emby_server.api", "_item_dto"),
@@ -348,8 +334,6 @@ FIXED_FUNCTIONS = [
     ("backend.emby_server.portal", "get_watch_history"),
     ("backend.emby_server.portal", "admin_sessions"),
     ("backend.emby_server.transfer_variant", "_series_preheat_strong_signal"),
-    ("backend.panel_stats", "user_tastes"),
-    ("backend.tg_bot.features", "_pet_summary"),
     ("backend.tg_bot.queries", "watch_duration_rank"),
 ]
 

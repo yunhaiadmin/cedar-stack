@@ -123,25 +123,7 @@ def test_bindings_line(db):
     assert "🔗 <b>网盘绑定</b> | 未绑定，绑定后才能点播" in features.compact_dashboard(db, invalid)
 
 
-# ---------- 活力值／上限／低于阈值提示 ----------
-
-def test_pet_next_and_max(db):
-    row = _user(db, tg=TG, name="mid")
-    _watch(db, row.id, [100, 20])
-    text = features.compact_dashboard(db, row)
-    assert "夜枭" in text and "120.0" in text
-    # 精简卡：馆灵行 = 名称＋累计小时＋下一阶段差距（同一行，无独立行）
-    assert "🐉 <b>当前馆灵</b> | 🦉 夜枭（累计观影 120.0 小时），距守夜者还差 80.0 小时" in text
-    top = _user(db, tg=TG + 1, name="top")
-    _watch(db, top.id, [1200])
-    text = features.compact_dashboard(db, top)
-    assert "累计观影 1200.0 小时" in text
-    pet_line = [ln for ln in text.split("\n") if "当前馆灵" in ln][0]
-    assert "还差" not in pet_line  # 满级：馆灵行无下一阶段差距
-    assert "已满级" in pet_line
-
-
-# ---------- 卡片版式整版：标题＋5 行汇总行（明细不铺） ----------
+# ---------- 卡片版式整版：标题＋4 行汇总行（明细不铺） ----------
 
 def test_slim_layout_full(db):
     row = _user(db, tg=TG, name="alice")
@@ -154,7 +136,6 @@ def test_slim_layout_full(db):
         f"· 🆔 <b>用户编号</b> | {row.id}",
         "· 👤 <b>账号名称</b> | <b>alice</b>",
         "· 🔗 <b>网盘绑定</b> | Drive 已绑 ✓",
-        "· 🐉 <b>当前馆灵</b> | 🦉 夜枭（累计观影 120.0 小时），距守夜者还差 80.0 小时",
         "· 📦 <b>订阅状态</b> | 暂无",
     ])
     assert reply == expected
@@ -164,12 +145,12 @@ def test_slim_layout_full(db):
     assert "最近设备" not in reply
 
 
-# ---------- 瘦身边界：固定 9 行，活力行不带进度条 ----------
+# ---------- 瘦身边界：固定行数，活力行不带进度条 ----------
 
 def test_no_bar_chars_in_card(db):
     row = _user(db, tg=TG, name="full")
-    _watch(db, row.id, [120])  # 馆灵中段进度：旧版这里会渲染馆灵条
+    _watch(db, row.id, [120])
     text = features.compact_dashboard(db, row)
     assert "活力数值" not in text
     assert "──" not in text
-    assert len(text.split("\n")) == 6  # 标题＋5 行汇总行（查看行、公益资格行、成就行、等级/能量/活力行已删）
+    assert len(text.split("\n")) == 5  # 标题＋4 行汇总行（查看行、公益资格行、成就行、等级/能量/活力行、馆灵行已删）
