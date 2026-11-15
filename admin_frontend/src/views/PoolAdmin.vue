@@ -400,6 +400,16 @@ const REWARD_REASON_LABELS: Record<string, string> = {
   ejected_violation: '违规清退',
   daily_play_freeze: '单日激增冻结',
   user_missing: '账号不存在',
+  sub_account: '子账号不参与',
+}
+
+function normalizeRewardCfg(cfg: PoolRewardConfig): PoolRewardConfig {
+  // 美金额键后端按字符串下发（Decimal 落库口径），表单要数字。
+  cfg.pool_reward_usd_per_play = Number(cfg.pool_reward_usd_per_play)
+  cfg.pool_reward_usd_per_active_day =
+    Number(cfg.pool_reward_usd_per_active_day)
+  cfg.pool_reward_cap_ratio = Number(cfg.pool_reward_cap_ratio)
+  return cfg
 }
 
 async function loadRewards() {
@@ -407,7 +417,7 @@ async function loadRewards() {
     const [cfg, list] = await Promise.all([
       fetchPoolRewardConfig(), fetchPoolRewardSettlements(),
     ])
-    rewardCfg.value = cfg
+    rewardCfg.value = normalizeRewardCfg(cfg)
     settlements.value = list.settlements
   } catch {
     // 激励区加载失败不拖垮成员区；request 层已弹提示
@@ -418,17 +428,17 @@ async function doSaveRewardCfg() {
   if (!rewardCfg.value) return
   rewardCfgSaving.value = true
   try {
-    rewardCfg.value = await savePoolRewardConfig({
+    rewardCfg.value = normalizeRewardCfg(await savePoolRewardConfig({
       pool_reward_enabled: rewardCfg.value.pool_reward_enabled,
       pool_reward_payout_enabled: rewardCfg.value.pool_reward_payout_enabled,
-      pool_reward_points_per_play: rewardCfg.value.pool_reward_points_per_play,
-      pool_reward_points_per_active_day:
-        rewardCfg.value.pool_reward_points_per_active_day,
-      pool_reward_points_cap: rewardCfg.value.pool_reward_points_cap,
+      pool_reward_usd_per_play: rewardCfg.value.pool_reward_usd_per_play,
+      pool_reward_usd_per_active_day:
+        rewardCfg.value.pool_reward_usd_per_active_day,
+      pool_reward_cap_ratio: rewardCfg.value.pool_reward_cap_ratio,
       pool_reward_min_active_days: rewardCfg.value.pool_reward_min_active_days,
       pool_reward_min_counted_plays:
         rewardCfg.value.pool_reward_min_counted_plays,
-    })
+    }))
     ElMessage.success('激励配置已保存')
   } catch {
     // request 层已弹错误提示
@@ -452,7 +462,7 @@ async function doPreview() {
 async function doSettle() {
   try {
     await ElMessageBox.confirm(
-      '按当前配置执行这一期结算。真发开关开着时会真的发积分/经验；' +
+      '按当前配置执行这一期结算。真发开关开着时会真的入账钱包余额；' +
       '关着时只落影子行对账。重复执行不会重复发钱。',
       '执行激励结算',
       { confirmButtonText: '执行结算', cancelButtonText: '取消', type: 'warning' },
@@ -741,7 +751,7 @@ onMounted(() => {
         </template>
       </SectionCard>
 
-      <SectionCard title="激励结算" :icon="Coins" description="贡献者激励按周期结算：先影子跑对账（只算账落行、不发钱），核对无误再开真发开关。计奖口径：起播 1 分 + 有效在线日 5 分（默认，可改），门槛＝在线 ≥7 天且起播 ≥10，单期上限 900 分。">
+      <SectionCard title="激励结算" :icon="Coins" description="贡献者激励按周期结算：先影子跑对账（只算账落行、不发钱），核对无误再开真发开关。计奖口径：每次起播 $0.005 + 每有效在线日 $0.025（默认，可改）入账钱包余额，门槛＝在线 ≥7 天且起播 ≥10；每月入账上限＝本人套餐月价 × 封顶比例（无付费套餐按在售最低档兜底）。">
         <template v-if="rewardCfg">
           <div class="pool-grant">
             <el-switch v-model="rewardCfg.pool_reward_enabled" />
@@ -751,12 +761,12 @@ onMounted(() => {
             <el-button type="primary" :loading="rewardCfgSaving" @click="doSaveRewardCfg">保存激励配置</el-button>
           </div>
           <div class="pool-grant" style="margin-top: 10px">
-            <span class="pool-cell-sub">每起播积分</span>
-            <el-input-number v-model="rewardCfg.pool_reward_points_per_play" :min="0" :controls="false" class="pool-num-input" />
-            <span class="pool-cell-sub">每在线日积分</span>
-            <el-input-number v-model="rewardCfg.pool_reward_points_per_active_day" :min="0" :controls="false" class="pool-num-input" />
-            <span class="pool-cell-sub">单期上限</span>
-            <el-input-number v-model="rewardCfg.pool_reward_points_cap" :min="0" :controls="false" class="pool-num-input" />
+            <span class="pool-cell-sub">每起播奖励（$）</span>
+            <el-input-number v-model="rewardCfg.pool_reward_usd_per_play" :min="0" :step="0.005" :precision="4" :controls="false" class="pool-num-input" />
+            <span class="pool-cell-sub">每在线日奖励（$）</span>
+            <el-input-number v-model="rewardCfg.pool_reward_usd_per_active_day" :min="0" :step="0.005" :precision="4" :controls="false" class="pool-num-input" />
+            <span class="pool-cell-sub">月封顶比例（×套餐月价）</span>
+            <el-input-number v-model="rewardCfg.pool_reward_cap_ratio" :min="0" :step="0.1" :precision="2" :controls="false" class="pool-num-input" />
             <span class="pool-cell-sub">门槛在线天</span>
             <el-input-number v-model="rewardCfg.pool_reward_min_active_days" :min="0" :controls="false" class="pool-num-input" />
             <span class="pool-cell-sub">门槛起播</span>
@@ -789,8 +799,11 @@ onMounted(() => {
             <el-table-column label="有效在线天" width="100">
               <template #default="{ row }">{{ row.active_days }}</template>
             </el-table-column>
-            <el-table-column label="应发积分" width="100">
-              <template #default="{ row }">{{ row.points }}</template>
+            <el-table-column label="应发金额（$）" width="110">
+              <template #default="{ row }">{{ row.amount_usd }}</template>
+            </el-table-column>
+            <el-table-column label="月封顶（$）" width="100">
+              <template #default="{ row }">{{ row.cap_usd }}</template>
             </el-table-column>
             <el-table-column label="预计走向" min-width="130">
               <template #default="{ row }">
@@ -819,8 +832,8 @@ onMounted(() => {
               {{ row.members }} / {{ row.paid }} / {{ row.frozen }} / {{ row.skipped }}
             </template>
           </el-table-column>
-          <el-table-column label="已发积分" width="100">
-            <template #default="{ row }">{{ row.paid_points_total }}</template>
+          <el-table-column label="已发金额（$）" width="110">
+            <template #default="{ row }">{{ row.paid_amount_total }}</template>
           </el-table-column>
           <el-table-column label="建批时间" min-width="120">
             <template #default="{ row }">{{ fmtTime(row.created_at) }}</template>
@@ -845,8 +858,8 @@ onMounted(() => {
             <el-table-column label="在线天" width="80">
               <template #default="{ row }">{{ row.active_days }}</template>
             </el-table-column>
-            <el-table-column label="积分 / 经验" width="110">
-              <template #default="{ row }">{{ row.points }} / {{ row.xp }}</template>
+            <el-table-column label="应发 / 实发（$）" width="130">
+              <template #default="{ row }">{{ row.amount_usd }} / {{ row.credited_usd }}</template>
             </el-table-column>
             <el-table-column label="转存（对账）" width="110">
               <template #default="{ row }">{{ fmtBytes(row.transfer_bytes) }}</template>

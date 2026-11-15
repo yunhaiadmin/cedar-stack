@@ -987,7 +987,8 @@ class WalletLedger(Base):
     礼品卡生成扣款（负）与兑换码入账（正）/ gift_code_refund 礼品卡
     过期未使用退回生成人 / rebate 邀请返利 / subscription_purchase
     订阅购买扣款 / traffic_purchase 购流量扣款 / refund 退款回余额 /
-    rebate_reversal 返利撤回。amount 带符号（正入负出），balance_after
+    rebate_reversal 返利撤回 / pool_reward 贡献池激励入账。
+    amount 带符号（正入负出），balance_after
     是变动后快照。
     idempotency_key 唯一（可空）：扣款/入账重复提交时原样回放，不重复成交。
     prev_hash / record_hash 照旧积分台账的链式审计（按用户串链）。

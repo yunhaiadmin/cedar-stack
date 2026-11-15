@@ -26,6 +26,7 @@ const KIND_LABELS: Record<string, string> = {
   traffic_purchase: '购流量',
   refund: '退款回余额',
   rebate_reversal: '返利撤回',
+  pool_reward: '贡献池激励',
 }
 
 // ---------- 按用户查余额 + 调账 ----------

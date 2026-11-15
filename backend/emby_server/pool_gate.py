@@ -152,9 +152,12 @@ POOL_REWARD_CONFIG_DEFAULTS: dict = {
     "pool_reward_enabled": False,
     "pool_reward_payout_enabled": False,
     "pool_reward_period": "monthly",
-    "pool_reward_points_per_play": 1,
-    "pool_reward_points_per_active_day": 5,
-    "pool_reward_points_cap": 900,
+    # 美金额（2026-11-15 用户亲点）：字符串落库、读侧 Decimal
+    # 解析（config_schema float-places 口径），不经 float 中转。
+    "pool_reward_usd_per_play": "0.005",
+    "pool_reward_usd_per_active_day": "0.025",
+    # 月封顶 = 本人套餐月价 × 本比例（默认 1 = 100%）。
+    "pool_reward_cap_ratio": "1",
     "pool_reward_min_active_days": 7,
     "pool_reward_min_counted_plays": 10,
     "pool_reward_play_dedupe_window_sec": 1800,

@@ -44,6 +44,7 @@ LEDGER_KINDS = {
     "traffic_purchase",       # 购流量扣款（批 2）
     "refund",                 # 退款回余额（批 2）
     "rebate_reversal",        # 返利撤回（批 2）
+    "pool_reward",            # 公共贡献池激励结算入账（2026-11-15 改发美金）
 }
 
 #: 钱包配置默认值（§10 定版口径；DB 无行时按此生效，管理端可改）

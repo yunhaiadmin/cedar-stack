@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -486,8 +487,8 @@ def _settlement_payload(db: Session, batch) -> dict:
                  func.count(em.PoolRewardDetail.id))
         .filter(em.PoolRewardDetail.settlement_id == batch.id)
         .group_by(em.PoolRewardDetail.status).all())
-    points_total = (
-        db.query(func.coalesce(func.sum(em.PoolRewardDetail.points), 0))
+    amount_total = (
+        db.query(func.coalesce(func.sum(em.PoolRewardDetail.credited_usd), 0))
         .filter(em.PoolRewardDetail.settlement_id == batch.id,
                 em.PoolRewardDetail.status == "paid")
         .scalar())
@@ -508,7 +509,7 @@ def _settlement_payload(db: Session, batch) -> dict:
         "shadow_rows": int(counts.get("shadow", 0)),
         "frozen": int(counts.get("frozen", 0)),
         "skipped": int(counts.get("skipped", 0)),
-        "paid_points_total": int(points_total or 0),
+        "paid_amount_total": f"{Decimal(str(amount_total or 0)):.2f}",
         "created_at": (batch.created_at.isoformat()
                        if batch.created_at else None),
         "finished_at": (batch.finished_at.isoformat()
@@ -531,6 +532,9 @@ def _detail_payload(db: Session, detail) -> dict:
         "transfer_bytes": detail.transfer_bytes,
         "points": detail.points,
         "xp": detail.xp,
+        "amount_usd": f"{Decimal(str(detail.amount_usd or 0)):.4f}",
+        "credited_usd": f"{Decimal(str(detail.credited_usd or 0)):.2f}",
+        "wallet_ledger_id": detail.wallet_ledger_id,
         "welfare_days": detail.welfare_days,
         "status": detail.status,
         "reason": detail.reason,
@@ -552,7 +556,7 @@ def pool_rewards_preview(
     db: Session = Depends(get_db),
 ):
     """结算预览（只算不落行）：每位成员当期 counted/在线日/应发
-    积分与预计走向（paid/shadow/frozen/skipped）。与执行结算
+    金额与预计走向（paid/shadow/frozen/skipped）。与执行结算
     共用 pool_reward 同一份计量，总开关关时也可预览。"""
     try:
         return pool_reward.preview_settlement(db, period_key)

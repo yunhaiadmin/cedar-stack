@@ -452,12 +452,15 @@ POOL_CONFIG_SCHEMA: dict[str, tuple] = {
 POOL_REWARD_CONFIG_SCHEMA: dict[str, tuple] = {
     "pool_reward_enabled": ("bool",),
     # 真发开关（PR-6 任务书新增）：关＝结算只算账落影子行不发钱，
-    # 开＝按明细真发积分/经验；与总开关分开，先影子跑对账再开闸。
+    # 开＝按明细真入账钱包余额；与总开关分开，先影子跑对账再开闸。
     "pool_reward_payout_enabled": ("bool",),
     "pool_reward_period": ("enum", ("monthly", "weekly")),
-    "pool_reward_points_per_play": ("int", 0, _BIG),
-    "pool_reward_points_per_active_day": ("int", 0, _BIG),
-    "pool_reward_points_cap": ("int", 0, _BIG),
+    # 美金额费率（2026-11-15 改发美金）：float-places 校验小数
+    # 位数并归一化落库字符串，读侧 Decimal 解析、无浮点误差。
+    "pool_reward_usd_per_play": ("float", 0, 10000, 4),
+    "pool_reward_usd_per_active_day": ("float", 0, 10000, 4),
+    # 月封顶比例：上限 = 本人当前套餐月价 × 本值（默认 1）。
+    "pool_reward_cap_ratio": ("float", 0, 100, 4),
     "pool_reward_min_active_days": ("int", 0, 366),
     "pool_reward_min_counted_plays": ("int", 0, _BIG),
     "pool_reward_play_dedupe_window_sec": ("int", 0, 604800),
