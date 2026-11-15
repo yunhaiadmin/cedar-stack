@@ -410,27 +410,17 @@ export default {
 }
 
 /* ==================== 响应式 ==================== */
+/* 手机端与桌面同形态：居中浮窗（2026-11-15 弹窗收尾批，原贴底全宽
+   抽屉与全站居中玻璃浮窗基准冲突）。容器沿用桌面 1rem 内边距 →
+   390px 下卡片宽 358px ≈ 92%；尺寸变体 max-width、四角圆角、
+   max-height 与 pop-in 动画（scale＋translateY）全部沿用桌面规则，
+   不再单独覆盖；这里只把对齐钉死为居中——centered=false 的顶对齐
+   在手机端也收成居中，与购流量弹窗同口径。modal--full 例外：
+   height/max-height/border-radius:0 的全屏规则在基础段，不受影响。 */
 @media (max-width: 640px) {
   .modal-container {
-    padding: 0;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    align-items: flex-end;
-  }
-
-  .modal-content-wrapper {
-    max-height: 85vh;
-    border-radius: var(--neo-radius-lg, 18px) var(--neo-radius-lg, 18px) 0 0;
-  }
-
-  .modal--sm,
-  .modal--md,
-  .modal--lg,
-  .modal--xl {
-    max-width: 100%;
-  }
-
-  .modal-content-enter-from {
-    transform: translateY(100%);
+    align-items: center;
+    justify-content: center;
   }
 }
 </style>

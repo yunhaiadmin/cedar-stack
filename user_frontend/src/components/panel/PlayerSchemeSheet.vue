@@ -307,6 +307,7 @@ import { ChevronDown, Copy, Eye, EyeOff, Play, X } from 'lucide-vue-next'
 import BindDriveGuide from '@/components/panel/BindDriveGuide.vue'
 import { useToast } from '@/composables/useToast'
 import PlayStatusBar from '@/components/panel/PlayStatusBar.vue'
+import '../../styles/modal-glass.css'
 import { storageBindingApi } from '@/api/economy'
 import {
   embyApi as embyProtocol,
@@ -1041,12 +1042,30 @@ async function start() {
   bottom: calc(env(safe-area-inset-bottom) + 12px);
   display: flex;
   flex-direction: column;
-  background: var(--uhd-l-surface, #ffffff);
+  /* 面板玻璃化（2026-11-15 弹窗收尾批）：实心 --uhd-l-surface 换玻璃
+     五件。本弹层深浅由片库面自有外观（body.uhd-stream-dark 桥接）
+     决定、不跟全站 data-theme，故 --modal-glass-* 在本作用域按态
+     钉值：此处（缺省浅色态）钉浅色档、深色桥接块钉深色档，数值与
+     styles/modal-glass.css 两档逐字一致（那边是全站真源）。
+     位置/尺寸/圆角 28 不动；卡内 --uhd-l-surface 小面照旧。 */
+  --modal-glass-bg: rgba(255, 255, 255, 0.72);
+  --modal-glass-edge: rgba(17, 17, 17, 0.12);
+  --modal-glass-hi: rgba(255, 255, 255, 0.7);
+  --modal-glass-ring: rgba(255, 255, 255, 0);
+  --modal-glass-shadow: 0 24px 56px rgba(30, 32, 60, 0.25);
+  --modal-glass-filter: blur(24px) saturate(160%);
+  background: var(--modal-glass-bg);
+  border: 1px solid var(--modal-glass-edge);
   color: var(--uhd-l-text, #111111);
   border-radius: 28px;
   overflow: hidden;
   font-family: var(--uhd-font-sans, sans-serif);
-  box-shadow: var(--uhd-shadow-modal, 0 24px 64px -24px rgba(0, 0, 0, 0.35));
+  box-shadow:
+    inset 0 1px 0 var(--modal-glass-hi),
+    inset 0 0 0 1px var(--modal-glass-ring),
+    var(--modal-glass-shadow);
+  backdrop-filter: var(--modal-glass-filter);
+  -webkit-backdrop-filter: var(--modal-glass-filter);
 }
 /* 头图区 */
 .psp-hero-wrap {
@@ -1791,7 +1810,14 @@ async function start() {
 <style>
 /* 片库面深色态（body 标记桥接） */
 body.uhd-stream-dark .psp-sheet {
-  background: #1c1c1c;
+  /* 深色态把玻璃令牌钉成深色档（数值同 styles/modal-glass.css
+     深色档），面板组装在 .psp-sheet 本体、此处只换令牌值 */
+  --modal-glass-bg: rgba(28, 28, 30, 0.55);
+  --modal-glass-edge: rgba(255, 255, 255, 0.24);
+  --modal-glass-hi: rgba(255, 255, 255, 0.28);
+  --modal-glass-ring: rgba(255, 255, 255, 0.04);
+  --modal-glass-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+  --modal-glass-filter: blur(24px) saturate(160%);
   color: #ffffff;
 }
 body.uhd-stream-dark .psp-sec-head,

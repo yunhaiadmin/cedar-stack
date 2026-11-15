@@ -72,6 +72,7 @@ import { mediaSeekApi, type TvSeason } from '@/api'
 import { imageAuthUrl } from '@/api/emby'
 import { useToast } from '@/composables/useToast'
 import { humanizeError } from '@/composables/usePanelApi'
+import '../../styles/modal-glass.css'
 
 export interface SubmitWork {
   tmdb_id?: string | null
@@ -230,7 +231,18 @@ async function submit(): Promise<void> {
 }
 .rsm-card {
   position: relative; width: 100%; max-width: 560px; max-height: 88dvh; overflow-y: auto;
-  background: #17181a; border: 1px solid #2c2d30; border-radius: 20px;
+  /* 面板玻璃化（2026-11-15 弹窗收尾批）：实心 #17181a/浅 #fff 换玻璃
+     五件，令牌 styles/modal-glass.css（深浅随 data-theme）；尺寸/
+     圆角/内边距不动，卡内元素配色照旧。 */
+  background: var(--modal-glass-bg);
+  border: 1px solid var(--modal-glass-edge);
+  border-radius: 20px;
+  box-shadow:
+    inset 0 1px 0 var(--modal-glass-hi),
+    inset 0 0 0 1px var(--modal-glass-ring),
+    var(--modal-glass-shadow);
+  backdrop-filter: var(--modal-glass-filter);
+  -webkit-backdrop-filter: var(--modal-glass-filter);
   padding: 22px 20px 20px; color: #fbfcfd;
 }
 .rsm-title { margin: 0; text-align: center; font-size: 19px; font-weight: 800; }
@@ -297,7 +309,7 @@ async function submit(): Promise<void> {
 }
 .rsm-cancel:disabled { opacity: 0.6; cursor: default; }
 
-html[data-theme='light'] .rsm-card { background: #ffffff; border-color: #e5e5e5; color: #111111; }
+html[data-theme='light'] .rsm-card { color: #111111; }
 html[data-theme='light'] .rsm-sub, html[data-theme='light'] .rsm-work__meta, html[data-theme='light'] .rsm-count, html[data-theme='light'] .rsm-seasons__hint { color: #6b7280; }
 html[data-theme='light'] .rsm-work { border-top-color: #e5e5e5; }
 html[data-theme='light'] .rsm-work__poster, html[data-theme='light'] .rsm-work__ph { background: #f0f0f1; }
