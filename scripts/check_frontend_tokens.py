@@ -243,20 +243,18 @@ def check_freeze(frontend: str) -> None:
 # el-card 与 views 里的裸 el-table 只许退场、不许扩张：存量文件登记在下面两张表里，
 # 逐批收编后从表中删行；表外文件新出现即失败。收编进度见
 # admin_frontend/src/components/ui/README.md 第 7 节验收单。
-ADMIN_EL_CARD_FREEZE = {
-    "views/WalletAdmin.vue",  # 批 3 收编
-}
+# 注：el-card 存量已随批 3 WalletAdmin 收编清零；裸表存量已删 MediaCollections /
+# WalletAdmin 两行（批 3）。
+ADMIN_EL_CARD_FREEZE: set[str] = set()  # 批 3 已清零（原存量仅 WalletAdmin.vue）
 ADMIN_BARE_TABLE_FREEZE = {
     "views/Agents.vue",  # 批 2/4
     "views/DualDriveAudit.vue",  # 批 2
-    "views/MediaCollections.vue",  # 批 3
     "views/MediaLibraryAdmin.vue",  # 批 2
     "views/MemberCodes.vue",  # 批 2 尾/4
     "views/MissingEpisodes.vue",  # 批 2
     "views/PoolAdmin.vue",  # 批 4
     "views/SystemHealth.vue",  # 批 4
     "views/TaskOverview.vue",  # 批 2
-    "views/WalletAdmin.vue",  # 批 3
     "views/WelfareLotteryProposals.vue",  # 批 2
     "views/WelfareLotteryRounds.vue",  # 批 2
 }
