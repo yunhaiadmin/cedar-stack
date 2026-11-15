@@ -5,6 +5,9 @@
 - GET  /config          邀请规则（开关）——公开
 - GET  /my-code         我的邀请码（自动生成），含统计
 - GET  /records         我邀请的记录
+- GET  /trial-codes     我生成的福利试用码 + 福利资格（改版：生成码机制）
+- POST /trial-codes     生成一张福利试用码（生成即占当月次数）
+- POST /trial-codes/claim 凭福利码领取试用（注册钩子同路径）
 - apply_invitation      供注册流程调用的内部函数（只落关系，不再发积分）
 """
 from __future__ import annotations
@@ -83,8 +86,9 @@ def get_invite_config(db: Session) -> dict:
 
     能量/积分奖励已随货币下线（2026-11-13）；钱包时代（2026-11-14）起：
     返利按 invite_rebate 的模式/比例/分档键计提进钱包，福利邀请按
-    invite_trial 的天数/门槛/月次数键给被邀请人发试用。邀请页的规则
-    文案由前端按这份配置生成，数字不在代码里写死。
+    invite_trial 的天数/门槛/月次数键走「邀请人生成码、好友凭码
+    领取」的发放路径（2026-11-15 改版）。邀请页的规则文案由前端按
+    这份配置生成，数字不在代码里写死。
     """
     from backend import invite_rebate, invite_trial
 
@@ -237,20 +241,10 @@ def apply_invitation(db: Session, user: models.WebUser, invite_code: str) -> dic
         logger.warning("邀请发奖遇到写锁竞争，已回滚: invitee=%s", user.id)
         return {"applied": False}
 
-    # 福利邀请：给被邀请人发试用订阅（见面礼，体验权益不可变现）。
-    # 必须排在上面的 flush 之后：试用模块的配置/用量查询会触发 autoflush，
-    # 若排在 flush 前，并发败者的关系行会被提前 flush 撞唯一索引、毒化
-    # session，让最终 flush 抛 PendingRollbackError 逃出本函数的静默口径。
-    # 保存点隔离：试用发放失败只回滚试用本身，邀请关系与邀请人奖励
-    # 照常落盘（与推广奖励「失败不阻塞」的口径一致，但不许静默——记日志）。
-    try:
-        with db.begin_nested():
-            from backend import invite_trial
-
-            invite_trial.grant_invitee_trial(db, inviter, user)
-    except Exception:  # noqa: BLE001
-        logger.warning("福利邀请试用发放失败，已跳过: inviter=%s invitee=%s",
-                       inviter.id, user.id, exc_info=True)
+    # 福利试用（2026-11-15 改版）：邀请注册**不再自动发试用**——发放
+    # 改走福利码领取（邀请人主动生成码、好友凭码领取，见 invite_trial
+    # 的 generate/claim 与注册端点的 trial_code 领取钩子）。本函数只
+    # 建邀请关系与邀请人奖励，口径与改版前一致。
 
     logger.info("邀请关系建立: inviter=%s invitee=%s code_id=%s",
                 inviter.id, user.id, code.id)
@@ -461,4 +455,84 @@ def my_promotions(
         "config": promotion.config(db),
         "rewards": items,
     }
+
+
+# ==================== 福利试用码（2026-11-15 改版：生成码机制） ====================
+
+#: 福利码分享链接的落地形态：与邀请链接同页（/login），trial 参数
+#: 让注册页切到注册并在注册成功后走领取钩子（见 emby_portal.register）。
+TRIAL_LINK_PATH = "/login?trial="
+
+
+def _trial_code_payload(db: Session, row: models.InviteTrialCode,
+                        creator: models.WebUser) -> dict:
+    from backend import invite_trial
+
+    dto = invite_trial.trial_code_dto(row, creator_name=creator.username)
+    dto["link_path"] = f"{TRIAL_LINK_PATH}{row.code}"
+    return dto
+
+
+@router.get("/trial-codes")
+def my_trial_codes(
+    limit: int = 50,
+    current_user: models.WebUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """我生成的福利试用码列表 + 最新福利资格（福利邀请页签数据源）。"""
+    from backend import invite_trial
+
+    return {
+        "codes": invite_trial.my_trial_codes(db, current_user.id, limit),
+        "welfare": invite_trial.welfare_status(db, current_user),
+    }
+
+
+@router.post("/trial-codes")
+def generate_trial_code(
+    current_user: models.WebUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """生成一张福利试用码（生成即占当月次数）。
+
+    子账号禁经济动作口径沿用：子账号不能生成码（403，与钱包同口径）。
+    资格/次数不满足回 400 + 人话原因；成功回码面 DTO + 分享链接路径。
+    """
+    from backend import invite_trial, sub_accounts
+
+    sub_accounts.forbid_sub_account(current_user)
+    try:
+        row = invite_trial.generate_trial_code(db, current_user)
+    except invite_trial.TrialCodeError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(row)
+    return {
+        "code": _trial_code_payload(db, row, current_user),
+        "welfare": invite_trial.welfare_status(db, current_user),
+    }
+
+
+class TrialClaimRequest(BaseModel):
+    code: str = Field(..., min_length=1, max_length=32)
+
+
+@router.post("/trial-codes/claim")
+def claim_trial_code(
+    payload: TrialClaimRequest,
+    current_user: models.WebUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """凭福利码领取试用订阅（已登录用户事后输码领取的入口；注册流程
+    带 trial_code 时走同一服务函数，见 emby_portal.register）。"""
+    from backend import invite_trial
+
+    try:
+        grant = invite_trial.claim_trial_code(db, payload.code, current_user)
+    except invite_trial.TrialCodeError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.commit()
+    return {"claimed": True, "days": grant.days, "grant_id": grant.id}
 

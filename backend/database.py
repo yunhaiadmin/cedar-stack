@@ -1217,6 +1217,12 @@ def _auto_migrate():
             ("reversal_owed", "BOOLEAN", "0"),
             ("reversed_at", "DATETIME", "NULL"),
         ]),
+        # 福利试用码改版（2026-11-15）：发放留痕加来源码关联。老库
+        # 补列后为 NULL（历史行是改版前自动发放、无来源码），与新列
+        # 缺省一致；新表 invite_trial_codes 由 create_all 建，不在此列。
+        ("invite_trial_grants", [
+            ("code_id", "INTEGER", "NULL"),
+        ]),
     ]
 
     _newly_added_columns: list[tuple[str, str]] = []

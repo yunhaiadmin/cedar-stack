@@ -10,6 +10,7 @@ Settings 经济分组。本模块只补「钱与转化」的总览：
 - GET  /api/admin/invite/rebates      返利计提明细（可按状态筛）
 - POST /api/admin/invite/rebates/settle  把待入账返利补入账（钱包就绪后用）
 - GET/PUT /api/admin/invite/trial-policy 福利邀请（送试用）策略读写
+- GET  /api/admin/invite/trial-codes  福利试用码只读列表（2026-11-15 改版）
 
 异常聚集只是**提示位**：列出近 7 天拉新 ≥ 阈值的邀请人供人工核查，
 不自动处置（处置口径未定，不许代码自作主张封人）。
@@ -154,6 +155,40 @@ class TrialPolicyUpdate(BaseModel):
     invite_welfare_monthly_limit: int | None = None
     invite_welfare_min_paid_fen: int | None = None
     invite_trial_plan_id: int | None = None
+
+
+@router.get("/trial-codes")
+def invite_trial_codes(
+    limit: int = 100,
+    status: str | None = None,
+    current_admin: models.WebUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """福利试用码只读列表（最新在前）：生成人/码/状态/使用者/时间全貌。
+
+    状态按下发口径（惰性过期）过滤与展示：pending 且已过期的按
+    expired 算。本端点只读，不提供作废/补发等处置动作（口径未定）。
+    """
+    q = db.query(models.InviteTrialCode)
+    rows_all = q.order_by(models.InviteTrialCode.id.desc()).limit(500).all()
+    user_ids = {r.creator_id for r in rows_all} | {
+        r.used_by for r in rows_all if r.used_by}
+    users = {
+        u.id: u.username for u in db.query(models.WebUser)
+        .filter(models.WebUser.id.in_(user_ids)).all()
+    } if user_ids else {}
+    items = []
+    for r in rows_all:
+        dto = invite_trial.trial_code_dto(
+            r, creator_name=users.get(r.creator_id, "未知"),
+            claimer_name=users.get(r.used_by) if r.used_by else None)
+        if status in (invite_trial.STATUS_PENDING, invite_trial.STATUS_USED,
+                      invite_trial.STATUS_EXPIRED) and dto["status"] != status:
+            continue
+        items.append(dto)
+        if len(items) >= min(max(limit, 1), 200):
+            break
+    return {"total": len(items), "codes": items}
 
 
 @router.get("/trial-policy")

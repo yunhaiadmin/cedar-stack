@@ -7,8 +7,11 @@
 - 默认分档 tiered：按每位好友累计付费，前 $50（配置键，美分）返 5%、
   超出返 1%（2026-11-15 币种改美刀，门槛由 ¥350 改为友站原值 $50）；
   flat 模式保留可切换；
-- 福利试用是体验权益：邀请关系建立时同事务发放，受总开关/天数/
-  月次数/邀请人累计付费门槛约束，留痕防重；
+- 福利试用是体验权益：2026-11-15 改版后走「邀请人生成码、好友凭码
+  领取」（生成受总开关/天数/月次数/邀请人累计付费门槛约束，留痕
+  防重）；邀请关系建立不再自动发放，机制专测在
+  test_invite_trial_codes.py，本文件只锚「注册不自动发」的退役断言
+  与套餐快照的领取路径；
 - 本文件默认把钱包总开关关掉（fixture 置 wallet_enabled=false），
   锚定「无钱包/钱包关停时计提挂 pending」的路径；钱包开着时的即时
   入账路径由 test_record_rebate_credited_with_wallet 单独覆盖。
@@ -327,7 +330,9 @@ def _eligible_inviter(db, name="inviter-t", paid="45"):
     return inviter
 
 
-def test_trial_granted_on_invite(db):
+def test_trial_not_granted_on_invite_anymore(db):
+    """改版退役断言：邀请关系建立不再自动发试用（发放只走凭码领取，
+    专测在 test_invite_trial_codes.py）。"""
     _set(db, "invite_trial_days", "7")
     inviter = _eligible_inviter(db)
     invitee = _user(db, "invitee-t")
@@ -336,12 +341,11 @@ def test_trial_granted_on_invite(db):
     result = invitation_api.apply_invitation(db, invitee, code.code)
     db.commit()
     assert result
-    grants = db.query(models.InviteTrialGrant).filter_by(invitee_id=invitee.id).all()
-    assert len(grants) == 1
-    assert grants[0].days == 7
-    assert grants[0].inviter_id == inviter.id
-    sub = db.query(models.UserSubscription).filter_by(user_id=invitee.id).first()
-    assert sub is not None
+    assert result["applied"] is True
+    assert db.query(models.InviteTrialGrant).filter_by(
+        invitee_id=invitee.id).count() == 0
+    assert db.query(models.UserSubscription).filter_by(
+        user_id=invitee.id).count() == 0
 
 
 def test_trial_skipped_when_days_zero(db):
@@ -364,6 +368,9 @@ def test_trial_skipped_below_threshold(db):
 
 
 def test_trial_monthly_limit(db):
+    """月次数改版后管的是「生成码」而非邀请人数（专测在
+    test_invite_trial_codes.py）；这里锚：月限为 1 时邀请两个人，
+    关系都成立、试用一张都不自动发。"""
     _set(db, "invite_trial_days", "7")
     _set(db, "invite_welfare_monthly_limit", "1")
     inviter = _eligible_inviter(db, "inviter-lim")
@@ -374,10 +381,8 @@ def test_trial_monthly_limit(db):
     db.commit()
     assert invitation_api.apply_invitation(db, second, code.code)
     db.commit()
-    grants = db.query(models.InviteTrialGrant).all()
-    assert len(grants) == 1
-    assert grants[0].invitee_id == first.id
-    # 第二人的邀请关系照常成立，只是没试用
+    assert db.query(models.InviteTrialGrant).count() == 0
+    assert db.query(models.InvitationRecord).filter_by(invitee_id=first.id).count() == 1
     assert db.query(models.InvitationRecord).filter_by(invitee_id=second.id).count() == 1
 
 
@@ -390,10 +395,10 @@ def test_trial_no_double_and_no_rebind(db):
     code2 = _code(db, other, "CODEDBL2")
     assert invitation_api.apply_invitation(db, invitee, code.code)
     db.commit()
-    # 已绑定：换谁的码都不能改绑、不能再领试用
+    # 已绑定：换谁的码都不能改绑；试用改版后本就不随邀请发放（恒 0）
     assert invitation_api.apply_invitation(db, invitee, code2.code)["applied"] is False
     db.rollback()
-    assert db.query(models.InviteTrialGrant).filter_by(invitee_id=invitee.id).count() == 1
+    assert db.query(models.InviteTrialGrant).filter_by(invitee_id=invitee.id).count() == 0
     record = db.query(models.InvitationRecord).filter_by(invitee_id=invitee.id).one()
     assert record.inviter_id == inviter.id
 
@@ -422,7 +427,9 @@ def _register(db, username, invite=None, mode="open"):
     return emby_portal.register(Request(_scope()), req, db)
 
 
-def test_register_open_with_invite_binds_and_grants_trial(db):
+def test_register_open_with_invite_binds_without_trial(db):
+    """改版退役断言：带邀请码注册只建关系，试用不再随注册自动发
+    （带 trial_code 注册领取的专测在 test_invite_trial_codes.py）。"""
     _set(db, "invite_trial_days", "7")
     inviter = _eligible_inviter(db, "inviter-reg")
     code = _code(db, inviter, "CODEREG1")
@@ -430,7 +437,7 @@ def test_register_open_with_invite_binds_and_grants_trial(db):
     newbie = db.query(models.WebUser).filter_by(username="newbie_reg").one()
     record = db.query(models.InvitationRecord).filter_by(invitee_id=newbie.id).one()
     assert record.inviter_id == inviter.id
-    assert db.query(models.InviteTrialGrant).filter_by(invitee_id=newbie.id).count() == 1
+    assert db.query(models.InviteTrialGrant).filter_by(invitee_id=newbie.id).count() == 0
 
 
 def test_register_open_with_invite_channel_attribution(db):
@@ -618,9 +625,12 @@ def test_trial_granted_on_specified_plan(db):
     _set(db, "invite_trial_plan_id", str(trial_plan.id))
     inviter = _eligible_inviter(db, "inviter-plan")
     invitee = _user(db, "invitee-plan")
-    code = _code(db, inviter, "CODEPLAN")
 
-    assert invitation_api.apply_invitation(db, invitee, code.code)
+    # 改版路径：邀请人生成码（快照套餐）→ 好友凭码领取
+    trial_code = invite_trial.generate_trial_code(db, inviter)
+    db.commit()
+    assert trial_code.plan_id == trial_plan.id
+    invite_trial.claim_trial_code(db, trial_code.code, invitee)
     db.commit()
 
     grant = db.query(models.InviteTrialGrant).filter_by(invitee_id=invitee.id).one()
@@ -639,9 +649,10 @@ def test_trial_unspecified_plan_keeps_current_behavior(db):
     _set(db, "invite_trial_days", "7")
     inviter = _eligible_inviter(db, "inviter-def")
     invitee = _user(db, "invitee-def")
-    code = _code(db, inviter, "CODEDEFL")
 
-    assert invitation_api.apply_invitation(db, invitee, code.code)
+    trial_code = invite_trial.generate_trial_code(db, inviter)
+    db.commit()
+    invite_trial.claim_trial_code(db, trial_code.code, invitee)
     db.commit()
 
     default_plan = db.query(models.SubscriptionPlan).filter_by(name="测试套餐").one()
@@ -655,10 +666,11 @@ def test_trial_plan_id_missing_plan_falls_back(db):
     _set(db, "invite_trial_plan_id", "999999")
     inviter = _eligible_inviter(db, "inviter-miss")
     invitee = _user(db, "invitee-miss")
-    code = _code(db, inviter, "CODEMISS")
 
-    # 指定套餐不存在：回退现行口径发放、不许抛错（注册不能被拖垮）
-    assert invitation_api.apply_invitation(db, invitee, code.code)
+    # 指定套餐不存在：领取时回退现行口径发放、不许抛错
+    trial_code = invite_trial.generate_trial_code(db, inviter)
+    db.commit()
+    invite_trial.claim_trial_code(db, trial_code.code, invitee)
     db.commit()
 
     assert db.query(models.InviteTrialGrant).filter_by(invitee_id=invitee.id).count() == 1
@@ -676,10 +688,11 @@ def test_trial_plan_id_cross_realm_falls_back(db):
     _set(db, "invite_trial_plan_id", str(foreign.id))
     inviter = _eligible_inviter(db, "inviter-xrealm")
     invitee = _user(db, "invitee-xrealm")
-    code = _code(db, inviter, "CODEXRLM")
 
     # 指定套餐属于别的服：不许把乙服套餐开到甲服，回退本服默认套餐
-    assert invitation_api.apply_invitation(db, invitee, code.code)
+    trial_code = invite_trial.generate_trial_code(db, inviter)
+    db.commit()
+    invite_trial.claim_trial_code(db, trial_code.code, invitee)
     db.commit()
 
     assert db.query(models.InviteTrialGrant).filter_by(invitee_id=invitee.id).count() == 1

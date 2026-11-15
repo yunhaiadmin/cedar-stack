@@ -1358,13 +1358,45 @@ class InviteRebateAccrual(Base):
     invitee = relationship("WebUser", foreign_keys=[invitee_id])
 
 
-class InviteTrialGrant(Base):
-    """被邀请人见面礼（试用订阅）发放留痕：一个被邀请人只发一次。
+class InviteTrialCode(Base):
+    """福利试用码（2026-11-15 机制改版，照友站「生成试用码」）：邀请人
+    主动生成、好友凭码领取试用订阅。
 
-    邀请关系建立时按 ``invite_trial_days`` 配置给被邀请人发会员天数
-    （体验权益、不可变现，与返利「只挂真实付费」不冲突）。本表既是
-    明细也是防重复领取的那道门（invitee_id 唯一索引兜底），发放与
-    邀请关系同一事务落盘。
+    生成即占当月次数（月度计数口径 = 当月生成数，pending/used/expired
+    都算），``days``/``plan_id`` 是生成时的配置快照——领取按快照发放，
+    管理员事后改配置不影响已发出的码。码生成后 30 天未用自动过期
+    （状态惰性推进：读到过期未用的码时落 expired），过期不返还次数。
+    """
+    __tablename__ = 'invite_trial_codes'
+
+    __table_args__ = (
+        Index('idx_invite_trial_code_code', 'code', unique=True),
+        Index('idx_invite_trial_code_creator', 'creator_id', 'created_at'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(32), nullable=False)
+    creator_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
+    plan_id = Column(Integer)  # 生成时的试用专属套餐快照（NULL = 不指定）
+    days = Column(Integer, nullable=False, default=0)  # 生成时的天数快照
+    status = Column(String(16), nullable=False, default='pending')  # pending/used/expired
+    used_by = Column(Integer, ForeignKey('web_users.id'))
+    created_at = Column(DateTime, default=datetime.now)
+    used_at = Column(DateTime)
+    expires_at = Column(DateTime)
+
+    creator = relationship("WebUser", foreign_keys=[creator_id])
+    claimer = relationship("WebUser", foreign_keys=[used_by])
+
+
+class InviteTrialGrant(Base):
+    """试用订阅发放留痕：一个被邀请人只发一次。
+
+    2026-11-15 起发放只走福利试用码领取（``code_id`` 关联来源码）：
+    好友凭码领取时按码上快照给被邀请人发会员天数（体验权益、不可
+    变现，与返利「只挂真实付费」不冲突）。本表既是明细也是防重复
+    领取的那道门（invitee_id 唯一索引兜底）。历史行（改版前邀请
+    注册自动发放）的 code_id 为 NULL。
     """
     __tablename__ = 'invite_trial_grants'
 
@@ -1378,6 +1410,7 @@ class InviteTrialGrant(Base):
     invitee_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
     days = Column(Integer, nullable=False, default=0)
     realm_id = Column(Integer)  # 天数落到的服（与 grant_membership_days 同口径）
+    code_id = Column(Integer, ForeignKey('invite_trial_codes.id'))  # 来源福利码
     created_at = Column(DateTime, default=datetime.now)
 
     inviter = relationship("WebUser", foreign_keys=[inviter_id])

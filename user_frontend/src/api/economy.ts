@@ -104,9 +104,36 @@ export interface InviteConfig {
 }
 
 export interface InviteWelfareStatus extends InviteTrialConfig {
+  /** 本月已生成码数（生成即占次数，含待使用/已使用/已过期） */
   used_this_month: number
+  /** 本月生成码里待使用的张数 */
+  pending_this_month: number
+  /** 本月生成码里已被领取的张数 */
+  used_codes_this_month: number
+  /** 本月还可生成的张数 */
+  remaining_this_month: number
   inviter_paid_fen: number
   eligible: boolean
+  /** 试用选卡摘要：套餐名 + 月流量字节（未指定套餐时流量为 null） */
+  plan: { plan_id: number | null; plan_name: string; monthly_traffic_bytes: number | null }
+}
+
+/** 福利试用码（2026-11-15 生成码机制）：邀请人生成、好友凭码领取 */
+export interface TrialCodeRow {
+  id: number
+  code: string
+  creator_id: number
+  plan_id: number | null
+  /** 生成时的天数快照 */
+  days: number
+  status: 'pending' | 'used' | 'expired'
+  used_by: number | null
+  used_by_username?: string | null
+  created_at: string | null
+  used_at: string | null
+  expires_at: string | null
+  /** 分享链接路径（生成接口回包才有，拼 origin 即完整链接） */
+  link_path?: string
 }
 
 export interface MyInviteInfo {
@@ -557,4 +584,10 @@ export const inviteApi = {
   /** 我的推广奖励明细（邀请即发的一次性奖励，与充值返利分开两张表） */
   promotions: (params?: { limit?: number }) =>
     api.get<never, MyPromotions>('/api/user/invite/promotions', { params }),
+  /** 我生成的福利试用码 + 最新福利资格（福利邀请页签数据源） */
+  trialCodes: (params?: { limit?: number }) =>
+    api.get<never, { codes: TrialCodeRow[]; welfare: InviteWelfareStatus }>('/api/user/invite/trial-codes', { params }),
+  /** 生成一张福利试用码（生成即占当月次数；子账号后端 403） */
+  generateTrialCode: () =>
+    api.post<never, { code: TrialCodeRow; welfare: InviteWelfareStatus }>('/api/user/invite/trial-codes'),
 }

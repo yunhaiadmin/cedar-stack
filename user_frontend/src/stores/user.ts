@@ -104,6 +104,7 @@ export const useUserStore = defineStore('user', () => {
     password: string,
     email?: string,
     invitationCode?: string,
+    trialCode?: string,
   ) {
     loading.value = true
     try {
@@ -112,6 +113,7 @@ export const useUserStore = defineStore('user', () => {
         password,
         email,
         invitation_code: invitationCode || undefined,
+        trial_code: trialCode || undefined,
       })
       _persist(response)
       return true

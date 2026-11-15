@@ -250,7 +250,7 @@ export const authApi = {
   login: (data: { username: string; password: string; totp_code?: string }) =>
     api.post<never, AuthResponse>('/api/user/auth/login', data),
 
-  register: (data: { username: string; password: string; email?: string; invitation_code?: string }) =>
+  register: (data: { username: string; password: string; email?: string; invitation_code?: string; trial_code?: string }) =>
     api.post<never, AuthResponse>('/api/user/auth/register', data),
 
   /** bot 一键免密登录：用一次性 token 换登录态 */

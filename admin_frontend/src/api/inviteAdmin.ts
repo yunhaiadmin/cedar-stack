@@ -50,7 +50,26 @@ export interface InviteRebateRow {
   credited_at: string | null
 }
 
+/** 福利试用码（2026-11-15 生成码机制）：管理端只读列表行 */
+export interface InviteTrialCodeRow {
+  id: number
+  code: string
+  creator_id: number
+  creator_username: string | null
+  plan_id: number | null
+  days: number
+  status: 'pending' | 'used' | 'expired'
+  used_by: number | null
+  used_by_username: string | null
+  created_at: string | null
+  used_at: string | null
+  expires_at: string | null
+}
+
 export const fetchInviteOverview = () => get<InviteOverview>(`${E}/overview`)
+
+export const fetchInviteTrialCodes = (params?: { limit?: number; status?: string }) =>
+  get<{ total: number; codes: InviteTrialCodeRow[] }>(`${E}/trial-codes`, params)
 
 export const fetchInviteRebates = (params?: { limit?: number; status?: string }) =>
   get<{ total: number; rebates: InviteRebateRow[] }>(`${E}/rebates`, params)
