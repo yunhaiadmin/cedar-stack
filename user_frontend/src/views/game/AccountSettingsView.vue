@@ -101,6 +101,32 @@
       </p>
     </section>
 
+    <!-- 展示与隐私：观影排行榜上榜开关（原组 2026-11-13 摘除，2026-11-15 用户令只恢复这一行） -->
+    <section class="set-group">
+      <h2 class="set-gtitle">展示与隐私</h2>
+      <div class="set-rows">
+        <div class="set-row">
+          <span class="set-row-ic" aria-hidden="true"><Eye :size="22" /></span>
+          <span class="set-row-name">出现在观影排行榜</span>
+          <button
+            type="button"
+            class="set-switch"
+            :class="{ 'is-on': privacyShow }"
+            :disabled="privacyLoading"
+            role="switch"
+            :aria-checked="privacyShow"
+            aria-label="出现在观影排行榜"
+            @click="togglePrivacy"
+          ></button>
+        </div>
+      </div>
+      <p class="set-note">关掉后，观影排行榜上不会再展示你；打开则照常上榜。</p>
+      <p v-if="privacyError" class="set-errline">
+        <span>{{ privacyError }}</span>
+        <button type="button" class="set-retry" @click="loadPrivacy">重试</button>
+      </p>
+    </section>
+
     <!-- 账号 -->
     <section class="set-group">
       <h2 class="set-gtitle">账号</h2>
@@ -117,20 +143,22 @@
 <script setup lang="ts">
 /**
  * 账号设置页（/game/account/settings）：个人中心重做后设置类功能的家。
- * 五组——安全（改密码 / 我的设备 / 登录记录）、绑定（谷歌盘管理 + 已
+ * 六组——安全（改密码 / 我的设备 / 登录记录）、绑定（谷歌盘管理 + 已
  * 下线绑定解绑）、追剧订阅（订阅列表 / 搜片名订阅 / 分集转存状态，
  * 面板原家；概览归组摘除后归位）、通
- * 知（TG 私聊三类偏好开关）、账号（退出登录）。各块逻辑都在 components/profile/ 的对应组件里（自旧
+ * 知（TG 私聊偏好开关）、展示与隐私（观影排行榜上榜开关）、账号（退出登录）。各块逻辑都在 components/profile/ 的对应组件里（自旧
  * 账号页原样抽出，行为口径不变）；本页只留退出登录。原「展示与隐私」组
  * （发现页卡片展示 / 观影碑上榜开关）已随发现页删除与榜单下架定版整组
- * 摘除（2026-11-13 残留入口清理单）。
+ * 摘除（2026-11-13 残留入口清理单）；2026-11-15 用户令恢复其中「观影
+ * 排行榜上榜开关」一行（排行榜为活功能，用户须能关掉自己的展示），
+ * 其余原组项不恢复。
  * 带 #my-drive 锚点进来（旧深链 / 播放器方案弹窗）时，等绑定组显示后
  * 自动展开谷歌盘并滚到位。点播引导带 bind_return 参数进来时，绑好
  * （列表出现可用绑定）自动回跳来源页并让其重开播放器选择。
  */
 import { nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Bell, Lock, LogOut } from 'lucide-vue-next'
+import { Bell, Eye, Lock, LogOut } from 'lucide-vue-next'
 import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 import PcEntryRow from '@/components/profile/PcEntryRow.vue'
 import ChangePasswordModal from '@/components/profile/ChangePasswordModal.vue'
@@ -237,6 +265,41 @@ async function toggleNotifyPref(key: NotifyPrefKey) {
   }
 }
 
+// ── 展示与隐私：观影排行榜上榜开关（GET 回读渲染，PUT 落库，失败回滚） ──
+const privacyShow = ref(true)
+const privacyLoading = ref(false)
+const privacyError = ref('')
+
+async function loadPrivacy() {
+  privacyLoading.value = true
+  privacyError.value = ''
+  try {
+    const d = await panelApi.privacyGet()
+    privacyShow.value = d.show_on_leaderboard !== false
+  } catch (e) {
+    privacyError.value = humanizeError(e)
+  } finally {
+    privacyLoading.value = false
+  }
+}
+async function togglePrivacy() {
+  if (privacyLoading.value) return
+  const prev = privacyShow.value
+  const next = !prev
+  privacyShow.value = next
+  privacyLoading.value = true
+  try {
+    const d = await panelApi.privacySet(next)
+    privacyShow.value = d.show_on_leaderboard !== false
+    toast.success(next ? '已打开：你会出现在观影排行榜上' : '已关掉：排行榜不再展示你')
+  } catch (e) {
+    privacyShow.value = prev
+    toast.error(humanizeError(e))
+  } finally {
+    privacyLoading.value = false
+  }
+}
+
 /** 退出登录：与顶栏头像菜单同款动作——清登录态后回登录页，不另写一套 */
 async function handleLogout() {
   await userStore.logout()
@@ -245,6 +308,7 @@ async function handleLogout() {
 
 onMounted(() => {
   void loadNotifyPrefs()
+  void loadPrivacy()
 })
 </script>
 
