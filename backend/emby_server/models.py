@@ -3332,3 +3332,27 @@ class TransferSedimentRecord(Base):
     bytes_read = Column(BigInteger, nullable=False, default=0)
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     consumed_at = Column(DateTime)
+
+
+class SearchTermStat(Base):
+    """片库搜索词聚合计数（热搜榜数据源）。
+
+    只存词与次数、**不关联用户**：按（归一化词 × 自然日）一行聚合，
+    热搜口按近 N 天 SUM 出榜。写入走 emby_server.search_stats，
+    读走 api/media_library 的 /search/hot。
+    """
+
+    __tablename__ = "emby_search_term_stats"
+    __table_args__ = (
+        UniqueConstraint("term_key", "day", name="uq_search_term_day"),
+        Index("idx_search_term_day", "day"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    # 归一化词（去首尾空白、内部空白折叠、casefold）：聚合与去重的键
+    term_key = Column(String(200), nullable=False)
+    # 最近一次搜索的原始写法：榜单展示用（英文片名保留大小写）
+    display_term = Column(String(200), nullable=False)
+    day = Column(Date, nullable=False)
+    count = Column(Integer, nullable=False, default=0)
+    last_seen_at = Column(DateTime)
