@@ -89,6 +89,9 @@ ECONOMY_CONFIG_KEYS = {
     "wallet_invite_rebate_tier_threshold": "int",  # 分档门槛（分，默认 35000＝¥350，按每位好友累计付费计）
     "wallet_invite_rebate_tier_percent": "int",  # 二档比例 %（默认 1，门槛以上部分）
     "traffic_balance_price_per_100gb": "int",  # 余额购流量单价（分/100GB，默认 300＝¥3，批 2 启用）
+    # 流量额度真拦截总开关（2026-11-15 用户亲点）：默认开（无行=开），
+    # 读侧 backend/traffic_gate.enforcement_enabled；关掉全部放行。
+    "traffic_enforce_enabled": "bool",
     "wallet_refund_to_balance": "bool",  # 退款回钱包（默认开，批 2 落地）
     "wallet_auto_renew_enabled": "bool",  # 余额自动续费总闸（默认开；用户侧开关默认关）
     "payment_gateway_url": "str", "payment_partner_id": "str",
@@ -138,6 +141,9 @@ def economy_get_settings(
         # 面板必须如实显示，不能因为没落库行就显示成关。
         "wallet_enabled": "true",
         "wallet_refund_to_balance": "true",
+        # 流量拦截总开关代码默认也是开（见 traffic_gate.enforcement_enabled），
+        # 面板必须如实显示，不能因为没落库行就显示成关。
+        "traffic_enforce_enabled": "true",
     }
     result = {}
     for key, value_type in ECONOMY_CONFIG_KEYS.items():
