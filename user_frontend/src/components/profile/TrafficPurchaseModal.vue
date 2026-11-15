@@ -232,10 +232,10 @@ const preview = ref<{ gb: number; price: string } | null>(null)
 const balanceConfirming = ref(false)
 const balanceSubmitting = ref(false)
 const balanceError = ref('')
-/** 余额购流量单价（$/100GB，后端下发美分/100GB，字段名为历史命名；未下发时按默认 $3） */
+/** 余额购流量单价（$/100GB，后端下发美分/100GB，字段名为历史命名；未下发时按默认 $0.30） */
 const pricePer100Gb = computed(() => {
   const fen = props.traffic?.balance_price_per_100gb_fen ?? 0
-  return fen > 0 ? fen / 100 : 3
+  return fen > 0 ? fen / 100 : 0.3
 })
 const walletBalanceText = computed(() => props.traffic?.wallet_balance ?? '0.00')
 const inputGb = computed(() => {
