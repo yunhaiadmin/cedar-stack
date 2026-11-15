@@ -1,0 +1,35 @@
+/* 共享弹窗玻璃令牌（ui/Modal 与 UhdModal 两套共享原语共用）。
+ * 数值真源＝购流量弹窗 #233 逐帧标尺（styles/traffic-view.css 的
+ * --tq-* 面板令牌）：深色半透底 rgba(28,28,30,0.55)＋blur 24 /
+ * saturate 160＋亮边 0.24＋顶部内高光＋大柔影 0 24px 64px；
+ * 浅色按站内既有浅色玻璃写法（--tq-* 浅色档）：近白半透底
+ * rgba(255,255,255,0.72)＋深边 0.12＋内高光 0.7＋柔影带蓝灰。
+ * 弹窗跟随用户外观：默认（无 data-theme）＝深色玻璃，
+ * html[data-theme='light']＝浅色玻璃；组件内一律引令牌组装
+ * 玻璃五件（半透底／backdrop blur·saturate／亮边／内高光／大柔影），
+ * 不许再写死面板底色。
+ * 由 components/ui/Modal.vue 与 components/uhd/UhdModal.vue 直接
+ * import；令牌契约要求定义必须落在被引入的独立样式表里，
+ * scoped 样式里的定义不算数。 */
+:root {
+  --modal-glass-bg: rgba(28, 28, 30, 0.55);
+  --modal-glass-edge: rgba(255, 255, 255, 0.24);
+  --modal-glass-hi: rgba(255, 255, 255, 0.28);
+  --modal-glass-ring: rgba(255, 255, 255, 0.04);
+  --modal-glass-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+  --modal-glass-filter: blur(24px) saturate(160%);
+  /* 面板内文字（UhdModal 作用域翻转 --uhd-l-text 系时引用，
+     与 --tq-fg / --tq-dim 同值） */
+  --modal-glass-fg: #f4f4f6;
+  --modal-glass-dim: rgba(244, 244, 246, 0.55);
+}
+html[data-theme='light'] {
+  --modal-glass-bg: rgba(255, 255, 255, 0.72);
+  --modal-glass-edge: rgba(17, 17, 17, 0.12);
+  --modal-glass-hi: rgba(255, 255, 255, 0.7);
+  --modal-glass-ring: rgba(255, 255, 255, 0);
+  --modal-glass-shadow: 0 24px 56px rgba(30, 32, 60, 0.25);
+  --modal-glass-filter: blur(24px) saturate(160%);
+  --modal-glass-fg: #16161a;
+  --modal-glass-dim: rgba(22, 22, 26, 0.55);
+}
