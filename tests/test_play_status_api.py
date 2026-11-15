@@ -263,3 +263,30 @@ def test_series_aggregates_episode_preparing(db, user, client):
     data = _get(client, series.id)
     assert data["state"] == "preparing"
     assert data["stage"] == "working"
+
+
+# ---------------------------------------------------------------------------
+# guid 口径（回归：前端 DTO 的 Id 恒为 guid 字符串，路由曾只收 int，
+# 正常路径恒 422、状态条永不出现；int 传法须继续兼容）
+# ---------------------------------------------------------------------------
+
+def test_status_by_guid_idle(db, user, client):
+    it = _item(db)
+    data = _get(client, it.guid)
+    assert data["item_id"] == it.id
+    assert data["state"] == "idle"
+
+
+def test_status_by_guid_ready_own(db, user, client):
+    it = _item(db)
+    _variant(db, it.id, user.id)
+    data = _get(client, it.guid)
+    assert data["item_id"] == it.id
+    assert data["state"] == "ready"
+    assert data["source"] == "own"
+
+
+def test_status_unknown_guid_404(client):
+    res = client.get(
+        "/api/play/items/00000000000000000000000000000000/status")
+    assert res.status_code == 404

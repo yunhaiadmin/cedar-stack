@@ -55,12 +55,8 @@ _REASON_BY_KIND = {
 _INFLIGHT_STATUSES = ("pending", "running")
 
 
-def _resolve_item(db: Session, item_id: int):
-    """按 id 取条目；合并副本沿 merged_into_id 跟到存活行。
-
-    取不到/最终落到软删行 → None（端点回 404）。
-    """
-    item = db.query(em.MediaItem).filter_by(id=item_id).first()
+def _follow_live(db: Session, item):
+    """沿 merged_into_id 跟到存活行；最终落到软删行 → None。"""
     hops = 0
     while item is not None and getattr(item, "merged_into_id", None) \
             and hops < 5:
@@ -73,6 +69,31 @@ def _resolve_item(db: Session, item_id: int):
     if item is None or getattr(item, "deleted_at", None) is not None:
         return None
     return item
+
+
+def _resolve_item(db: Session, item_id: int):
+    """按 id 取条目；合并副本沿 merged_into_id 跟到存活行。
+
+    取不到/最终落到软删行 → None（端点回 404）。
+    """
+    item = db.query(em.MediaItem).filter_by(id=item_id).first()
+    return _follow_live(db, item)
+
+
+def _resolve_item_ref(db: Session, ref: str):
+    """按前端传来的条目引用取条目。
+
+    前端 DTO 的 Id 恒为 guid 字符串，先按 guid 解析（与
+    media_library._resolve_resume_item 同口径）；纯数字串再按
+    内部 id 解析，兼容旧 int 传法。都取不到 → None（端点回 404）。
+    """
+    item = db.query(em.MediaItem).filter(
+        em.MediaItem.guid == ref).first()
+    if item is not None:
+        return _follow_live(db, item)
+    if ref.isdigit():
+        return _resolve_item(db, int(ref))
+    return None
 
 
 def _episode_ids(db: Session, series_id: int) -> list[int]:
@@ -250,11 +271,11 @@ def compute_play_status(db: Session, user, item) -> dict:
 
 @router.get("/items/{item_id}/status")
 def play_status(
-    item_id: int,
+    item_id: str,
     db: Session = Depends(get_db),
     user: models.WebUser = Depends(get_current_user),
 ):
-    item = _resolve_item(db, item_id)
+    item = _resolve_item_ref(db, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="条目不存在")
     return {"code": 0, "msg": "ok",
