@@ -606,6 +606,9 @@ class MediaSeekRequest(BaseModel):
     tmdb_id: Optional[str] = None
     # 剧集按整季申请："1,2" 或 "all"（全季）；电影/其它类型忽略
     season: Optional[str] = None
+    # TMDB 候选的海报地址快照（按作品组织展示用；落库前过
+    # media_seek.clean_poster_url 清洗，脏值直接丢弃）
+    poster_url: Optional[str] = None
 
 
 def _resolve_seek_realm(db: Session, user: models.WebUser,
@@ -738,6 +741,12 @@ def _create_media_seek_result(
     校验失败照原样抛 HTTPException——线程里抛出的异常会由 await 处原样抛给客户端，
     状态码与文案和以前一致（400 / 409 / 429 的语义没有变）。
     """
+    # 具体说明字数上限：与提交弹层计数同一口径（media_seek.MAX_NOTE_LENGTH），
+    # 前端守一遍、后端再守一遍，绕过前端也塞不进超长说明。
+    if request.note is not None and len(request.note) > media_seek.MAX_NOTE_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"具体说明最多 {media_seek.MAX_NOTE_LENGTH} 字")
     # 剧集按整季申请：先把季归一化（无 / 脏输入 → 400；不填 = 全季）。
     # 电影/纪录片等非剧集类型忽略该字段，存空串，不让脏值进库。
     try:
@@ -843,6 +852,8 @@ def _create_media_seek_result(
         title_only=tmdb_id is None,
         season=season or None,
         note=request.note,
+        # 海报快照：候选带过来的 TMDB 海报地址（清洗后落库，脏值丢弃）
+        poster_url=media_seek.clean_poster_url(request.poster_url),
         # 自动批准开关（media_seek_auto_approve_enabled，默认关）：
         # 开着落单即 approved——就是人工批准的同一状态，后续转交/
         # 标记/盯梢口径完全一致；关着与现行逐字一致（pending）。
@@ -1084,6 +1095,189 @@ def _create_missing_episode_request(
     }
 
 
+# ==================== 追新（按作品发起，2026-11-15） ====================
+
+class ChaseCreateRequest(BaseModel):
+    """追新入参：只认 TMDB 号＋具体说明（作品必须已在库，口径见落单函数）。"""
+
+    tmdb_id: str
+    note: str
+    # movie / series（候选类型，库内匹配时按它过滤条目类型）
+    type: Optional[str] = None
+    # 追给哪个服；留空时后端自己推导（与整片求片同口径）
+    realm_id: Optional[int] = None
+    # TMDB 候选的海报地址快照（清洗后落库，脏值丢弃）
+    poster_url: Optional[str] = None
+
+
+def _find_visible_item_by_tmdb(db: Session, user: models.WebUser,
+                               tmdb_id: str, media_type: Optional[str] = None):
+    """按 TMDB 号找站内可见条目（电影/剧集通用；与 lookup 同款可见
+    范围口径：不可见库的条目不许经追新口被枚举出来）。"""
+    from backend.emby_server import models as em
+
+    query = library_scope.scope_query(
+        db.query(em.MediaItem),
+        library_scope.effective_ids_safe(db, user),
+    )
+    query = query.filter(
+        em.MediaItem.tmdb_id == str(tmdb_id),
+        em.MediaItem.deleted_at.is_(None),
+        em.MediaItem.merged_into_id.is_(None),
+        em.MediaItem.is_hidden == False,  # noqa: E712
+    )
+    allowed = media_seek._TYPE_MATCH.get(str(media_type or ""))
+    if allowed:
+        query = query.filter(em.MediaItem.item_type.in_(allowed))
+    return query.order_by(em.MediaItem.date_added.desc()).first()
+
+
+def _create_chase_request(
+    db: Session,
+    user: models.WebUser,
+    tmdb_id: str,
+    note: Optional[str],
+    realm_id: Optional[int] = None,
+    poster_url: Optional[str] = None,
+    media_type: Optional[str] = None,
+) -> dict:
+    """追新落单（同步版，与 _create_missing_episode_request 同契约）。
+
+    与整片求片/补缺集同一收口：只落 movie_requests 同一张表
+    （request_kind='chase'）、同一把用户行锁、每日＋月度额度、幂等
+    附议转换，不新开平行的表与额度体系。口径（2026-11-15 推导）：
+
+    - 追新只许库内已有的作品（按 tmdb 在用户可见库里查，查不到 400）；
+    - 同作品已有未完成的追新类请求（自由追新/补缺集）：本人 → 409；
+      他人 → 转附议（created=False），不重复建行；
+    - 具体说明必填、上限与求片说明同一口径（MAX_NOTE_LENGTH）。
+    """
+    tmdb_text = media_seek.normalize_tmdb_id(tmdb_id)
+    if not tmdb_text:
+        raise HTTPException(status_code=400, detail="缺少作品信息，请重新搜索选择")
+    text = (note or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="先写清楚想追的内容，再提交")
+    if len(text) > media_seek.MAX_NOTE_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"具体说明最多 {media_seek.MAX_NOTE_LENGTH} 字")
+
+    item = _find_visible_item_by_tmdb(db, user, tmdb_text, media_type)
+    if item is None:
+        raise HTTPException(
+            status_code=400, detail="这部作品还没在站里，先去求片吧")
+    name = item.name or "这部作品"
+
+    from backend.api.economy import lock_user_row
+    lock_user_row(db, user.id)
+
+    dup = (
+        db.query(models.MovieRequest)
+        .filter(
+            models.MovieRequest.tmdb_id == tmdb_text,
+            models.MovieRequest.request_kind.in_(media_seek.CHASE_KINDS),
+            models.MovieRequest.status.in_(media_seek.ACTIVE_STATUSES),
+        )
+        .order_by(models.MovieRequest.created_at, models.MovieRequest.id)
+        .first()
+    )
+    if dup is not None:
+        if dup.user_id == user.id:
+            raise HTTPException(
+                status_code=409,
+                detail=f"《{name}》已经有一条未完成的追新了，请查看处理进度")
+        voted = False
+        vote_count = dup.vote_count or 0
+        if dup.status == "pending" and media_seek.vote_enabled(db):
+            try:
+                vr = media_seek.ensure_vote(db, user, dup.id)
+                voted = bool(vr["voted"])
+                vote_count = int(vr["vote_count"])
+            except ValueError:
+                db.rollback()
+        return {
+            "request_id": dup.id,
+            "created": False,
+            "voted": voted,
+            "vote_count": vote_count,
+            "movie_name": name,
+        }
+
+    limit = media_seek.daily_limit(db)
+    if media_seek.used_today(db, user.id) >= limit:
+        raise HTTPException(
+            status_code=429,
+            detail=f"今日求片已达上限（{limit} 条），请明天再提交")
+    mquota = media_seek.monthly_quota(db, user)
+    if mquota["monthly_remaining"] <= 0:
+        raise HTTPException(
+            status_code=429,
+            detail=f"本月求片额度已用完（{mquota['monthly_used']}/{mquota['monthly_limit']}），请下月再提交",
+        )
+
+    media_request = models.MovieRequest(
+        user_id=user.id,
+        movie_name=name,
+        year=str(item.production_year) if item.production_year else None,
+        type=item.item_type if item.item_type in ("movie", "series")
+        else (media_type or "series"),
+        tmdb_id=tmdb_text,
+        season=None,
+        title_only=False,
+        request_kind=media_seek.KIND_CHASE,
+        note=text,
+        poster_url=media_seek.clean_poster_url(poster_url),
+        status="pending",
+        realm_id=_resolve_seek_realm(db, user, realm_id),
+    )
+    db.add(media_request)
+    db.commit()
+    db.refresh(media_request)
+    return {
+        "request_id": media_request.id,
+        "created": True,
+        "voted": False,
+        "vote_count": 0,
+        "movie_name": name,
+    }
+
+
+def _add_supplement(db: Session, user: models.WebUser, request_id: int,
+                    body: Optional[str]) -> dict:
+    """给自己的未完结请求追加一条补充说明（作品详情页「补充说明」）。
+
+    只许本人、只许未完结（pending/approved）：已完结/已撤回再补没有
+    处理意义；他人行按不存在处理（404），不泄露别人的请求存在与否。
+    """
+    text = (body or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="补充说明不能为空")
+    if len(text) > media_seek.MAX_NOTE_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"补充说明最多 {media_seek.MAX_NOTE_LENGTH} 字")
+    row = db.query(models.MovieRequest).filter(
+        models.MovieRequest.id == request_id,
+        models.MovieRequest.user_id == user.id,
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="请求记录不存在")
+    if row.status not in media_seek.ACTIVE_STATUSES:
+        raise HTTPException(status_code=400, detail="这条请求已经处理完了，不能再补充")
+    sup = models.MovieRequestSupplement(
+        request_id=row.id, user_id=user.id, body=text)
+    db.add(sup)
+    db.commit()
+    db.refresh(sup)
+    return {
+        "id": sup.id,
+        "body": sup.body,
+        "mine": True,
+        "created_at": sup.created_at.isoformat() if sup.created_at else "",
+    }
+
+
 def _request_missing_text(row: models.MovieRequest) -> str:
     """求片行列表展示用：补缺集行的大白话缺集文案（其余行为空）。"""
     from backend import missing_episodes as _me
@@ -1162,6 +1356,71 @@ async def create_missing_episode_request(
         "success": True,
         "request_id": request_id,
         "message": "求补已提交，补齐后会通知你",
+        "created": True,
+        "voted": False,
+        "vote_count": 0,
+    }
+
+
+@user_router.post("/media-seek/chase")
+async def create_chase_request(
+    request: ChaseCreateRequest,
+    current_user: models.WebUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """提交追新：从库内作品行发起（落单口径见 _create_chase_request）。"""
+    if not media_seek.seek_enabled(db):
+        raise HTTPException(status_code=403, detail="求片功能已关闭")
+
+    result = await run_in_threadpool(
+        _create_chase_request, db, current_user,
+        request.tmdb_id, request.note, request.realm_id,
+        request.poster_url, request.type,
+    )
+    request_id = result["request_id"]
+    name = result["movie_name"]
+
+    if not result["created"]:
+        if result["voted"]:
+            message = f"《{name}》已有 {result['vote_count'] + 1} 人在追，已帮你 +1 附议"
+        else:
+            message = f"《{name}》已经有人在追了"
+        return {
+            "success": True,
+            "request_id": request_id,
+            "message": message,
+            "created": False,
+            "voted": result["voted"],
+            "vote_count": result["vote_count"],
+        }
+
+    # 通知管理员（与整片求片/补缺集同两条现成通道：站内消息＋TG 私聊）
+    try:
+        from backend.notifications import notify_staff_users
+
+        await notify_staff_users(
+            db,
+            title="📥 新的追新请求",
+            content=f"{current_user.username} 追新《{name}》",
+            message_type="media_seek",
+            related_id=request_id,
+        )
+    except Exception as exc:  # 通知失败不应影响追新提交
+        logger.warning("追新通知发送失败: %s", exc)
+    try:
+        from backend.tg_bot import features as _tg_features
+
+        await run_in_threadpool(
+            _tg_features._notify_staff_about_request,
+            db, request_id, current_user, name,
+        )
+    except Exception as exc:  # 通知失败不应影响追新提交
+        logger.warning("追新 TG 管理员通知发送失败: %s", exc)
+
+    return {
+        "success": True,
+        "request_id": request_id,
+        "message": "追新已提交",
         "created": True,
         "voted": False,
         "vote_count": 0,
@@ -1356,6 +1615,43 @@ def plaza_media_seeks(
     }
 
 
+@user_router.get("/media-seek/work")
+def media_seek_work(
+    tmdb_id: Optional[str] = None,
+    name: Optional[str] = None,
+    year: Optional[str] = None,
+    type: Optional[str] = None,
+    current_user: models.WebUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """作品请求详情：按作品汇集全部公开请求＋计数＋我的未完结指针。
+
+    身份口径在 media_seek.work_detail（有 tmdb 按 tmdb、无 tmdb 按
+    广场同一套分组键认亲；撤回行与反馈工单不进本口）。
+    """
+    return media_seek.work_detail(
+        db, current_user,
+        tmdb_id=tmdb_id, name=name, year=year, media_type=type)
+
+
+class SupplementRequest(BaseModel):
+    """补充说明入参"""
+
+    body: str
+
+
+@user_router.post("/media-seek/{request_id}/supplement")
+def supplement_media_seek(
+    request_id: int,
+    request: SupplementRequest,
+    current_user: models.WebUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """给自己的未完结请求追加补充说明（校验口径见 _add_supplement）"""
+    sup = _add_supplement(db, current_user, request_id, request.body)
+    return {"success": True, "supplement": sup}
+
+
 @user_router.post("/media-seek/{request_id}/vote")
 def vote_media_seek(
     request_id: int,
@@ -1394,6 +1690,34 @@ def get_my_media_seeks(
     realm_names = {r.id: r.name for r in realms.list_realms(db)}
     # v2：一次查询拿出当前用户附议过的求片 id（列表打标用）
     voted = media_seek.voted_ids(db, current_user.id, [r.id for r in requests])
+    # 海报（按作品组织，2026-11-15）：行上快照优先；老行没快照时按
+    # tmdb 批量回退库内条目海报（类型相符才认，防同号串片——与广场
+    # _TYPE_MATCH 同一口径），都没有就 None（前端占位图）。
+    poster_by_tmdb: dict[str, str] = {}
+    missing_tmdb = {r.tmdb_id for r in requests
+                    if not getattr(r, "poster_url", None) and r.tmdb_id}
+    if missing_tmdb:
+        from backend.emby_server import models as _em
+
+        items = (
+            db.query(_em.MediaItem)
+            .filter(_em.MediaItem.tmdb_id.in_(missing_tmdb))
+            .filter(_em.MediaItem.deleted_at.is_(None))
+            .filter(_em.MediaItem.is_hidden == False)  # noqa: E712
+            .order_by(_em.MediaItem.date_added.desc())
+            .all()
+        )
+        type_by_tmdb = {r.tmdb_id: r.type for r in requests if r.tmdb_id}
+        for it in items:
+            key = str(it.tmdb_id)
+            if key in poster_by_tmdb:
+                continue
+            allowed = media_seek._TYPE_MATCH.get(str(type_by_tmdb.get(key) or ""))
+            if allowed and it.item_type not in allowed:
+                continue
+            url = media_seek._plaza_poster_url(it)
+            if url:
+                poster_by_tmdb[key] = url
 
     return {
         "requests": [
@@ -1403,6 +1727,8 @@ def get_my_media_seeks(
                 "year": r.year,
                 "type": r.type,
                 "note": r.note,
+                "poster_url": getattr(r, "poster_url", None)
+                or poster_by_tmdb.get(r.tmdb_id or ""),
                 "status": r.status,
                 "admin_note": r.admin_note,
                 # v2 附议数 + 我是否已附议

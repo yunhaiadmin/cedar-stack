@@ -891,6 +891,10 @@ def _auto_migrate():
             # 存量行一律 seek、无快照，与新行缺省一致。
             ("request_kind", "VARCHAR(20)", "'seek'"),
             ("request_detail", "TEXT", "NULL"),
+            # 按作品组织（2026-11-15）：提交时的 TMDB 海报快照；
+            # 老库补列后为 NULL（无快照），展示侧回退库内海报。
+            # 新表 movie_request_supplements 由 create_all 建，不在此列。
+            ("poster_url", "VARCHAR(500)", "NULL"),
         ]),
         # Step 1 加权附议：附议行投票时刻等级权重快照；老库补列默认 1，
         # 历史票权重与升级前行为一致（每票恒＝1）。

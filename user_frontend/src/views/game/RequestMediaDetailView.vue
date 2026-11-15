@@ -1,10 +1,12 @@
 <template>
   <UhdAccountLayout>
-    <!-- 标题详情（2026-11-14 新增，照友站《谷雨》详情态）：从搜索结果/广场点进单片——
-         媒体卡（海报/库内 pill/片名/类型·年份/TMDB 外链/站内观看）＋「请求」计数与
-         防重复提示＋该片请求卡列表。数据全走真实接口：广场按片名聚合（组信息＋
-         pending 明细）＋我的请求（本人全部状态行）合并去重；他人已完成/已拒绝的
-         明细接口不下发，列表口径见脚本注释。页面跟随用户外观。 -->
+    <!-- 作品请求详情（2026-11-15 按作品组织重做，照友站 2.4）：作品头卡
+         （标题上方状态徽标＋TMDB 外链）＋该作品全部请求（后端
+         GET /media-seek/work 按作品汇集：求片/追新计数、我的未完结指针、
+         补充说明与管理员回复都在一条口里）＋底部「没有涵盖你的问题」卡
+         （求片/追新/资源反馈三胶囊，同类型未完成时拦截提示）。
+         本人未完结行可补充说明、可撤回；他人处理中行可 +1 附议。
+         页面跟随用户外观。 -->
     <div class="rmd-page">
       <div class="rmd-inner">
         <div class="rmd-topbar">
@@ -31,86 +33,128 @@
           <ChevronLeft :size="16" aria-hidden="true" /> 返回
         </button>
 
-        <section class="rmd-media" aria-label="影片信息">
-          <img
-            v-if="posterUrl"
-            class="rmd-media__poster"
-            :src="imageAuthUrl(posterUrl, 300)"
-            :alt="mediaName"
-            loading="lazy"
-          />
-          <span v-else class="rmd-media__ph" aria-hidden="true">{{ (mediaName || '片').slice(0, 1) }}</span>
-          <div class="rmd-media__info">
-            <span v-if="inLibrary" class="rmd-pill rmd-pill--green">✓ 库内已有</span>
-            <h1 class="rmd-media__name">{{ mediaName }}</h1>
-            <p class="rmd-media__meta">{{ kindLabel }}<template v-if="mediaYear"> / {{ mediaYear }}</template></p>
-            <div class="rmd-media__actions">
-              <a
-                v-if="tmdbUrl"
-                class="rmd-media__tmdb"
-                :href="tmdbUrl"
-                target="_blank"
-                rel="noopener noreferrer"
-              >TMDB ↗</a>
-              <button
-                v-if="inLibrary && embyItemId"
-                type="button"
-                class="rmd-media__watch"
-                @click="goWatch"
-              >站内观看</button>
-            </div>
-          </div>
-        </section>
-
-        <div class="rmd-reqhead">
-          <h2 class="rmd-reqhead__title">请求</h2>
-          <span class="rmd-reqhead__count">{{ totalCount }} 条</span>
-        </div>
-        <p class="rmd-hint">同一部片已经有人在求时，不用重复提交，给已有请求 +1 附议就行；处理进度都会在这里更新。</p>
-
         <div v-if="loading" class="rmd-loading">
-          <div v-for="i in 2" :key="i" class="rmd-skeleton" style="height: 92px; margin-bottom: 10px"></div>
+          <div class="rmd-skeleton" style="height: 170px; margin-bottom: 10px"></div>
+          <div class="rmd-skeleton" style="height: 92px"></div>
         </div>
         <div v-else-if="loadError" class="rmd-err">
           请求记录读取失败：{{ loadError }}<br />
           <button class="rmd-retry" @click="loadAll">重试</button>
         </div>
-        <div v-else-if="rows.length === 0" class="rmd-empty">
-          <p>这部片还没有人提交过请求</p>
-          <RouterLink class="rmd-empty__go" :to="{ path: '/game/requests', query: { tab: 'create', q: mediaName } }">去发起求片</RouterLink>
-        </div>
-        <div v-else class="rmd-rows">
-          <article v-for="row in rows" :key="row.id" class="rmd-card">
-            <div class="rmd-card__head">
-              <span class="rmd-pill rmd-pill--type">{{ row.kindLabel }}</span>
-              <span class="rmd-pill" :class="'rmd-pill--' + row.state">{{ stateLabel(row.state) }}</span>
-              <span v-if="row.mine" class="rmd-pill rmd-pill--mine">我提交的</span>
-              <span v-else-if="row.requesterName" class="rmd-card__requester">{{ maskName(row.requesterName) }}</span>
-              <span class="rmd-card__time">{{ formatDate(row.created_at) }}</span>
+        <template v-else-if="detail">
+          <section class="rmd-media" aria-label="影片信息">
+            <img
+              v-if="detail.work.poster_url"
+              class="rmd-media__poster"
+              :src="imageAuthUrl(detail.work.poster_url, 300)"
+              :alt="detail.work.name"
+              loading="lazy"
+            />
+            <span v-else class="rmd-media__ph" aria-hidden="true">{{ (detail.work.name || '片').slice(0, 1) }}</span>
+            <div class="rmd-media__info">
+              <span v-if="detail.work.in_library" class="rmd-pill rmd-pill--green">✓ 库内已有</span>
+              <span v-else class="rmd-pill rmd-pill--outline">库外求片</span>
+              <h1 class="rmd-media__name">{{ detail.work.name }}</h1>
+              <p class="rmd-media__meta">{{ kindLabel }}<template v-if="detail.work.year"> / {{ detail.work.year }}</template></p>
+              <div class="rmd-media__actions">
+                <a
+                  v-if="tmdbUrl"
+                  class="rmd-media__tmdb"
+                  :href="tmdbUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >TMDB ↗</a>
+                <button
+                  v-if="detail.work.in_library && detail.work.library_item_id"
+                  type="button"
+                  class="rmd-media__watch"
+                  @click="goWatch"
+                >站内观看</button>
+              </div>
             </div>
-            <p class="rmd-card__body">
-              {{ row.title }}<template v-if="row.seasonLabel"> · {{ row.seasonLabel }}</template>
-            </p>
-            <p v-if="row.missingText" class="rmd-card__sub">{{ row.missingText }}</p>
-            <p v-if="row.adminNote" class="rmd-card__note">管理员备注：{{ row.adminNote }}</p>
-            <div class="rmd-card__foot">
-              <span class="rmd-card__votes">{{ row.voteCount > 0 ? row.voteCount + ' 人想看' : '还没有人附议' }}</span>
-              <button
-                v-if="row.state === 'pending' || row.state === 'doing'"
-                class="rmd-vote"
-                :class="{ 'rmd-vote--done': row.voted }"
-                :disabled="row.voted || voting !== null"
-                @click="upvote(row)"
-              >{{ row.voted ? '✓ 已附议' : voting === row.id ? '附议中' : '+1 附议' }}</button>
-              <button
-                v-if="row.state === 'done' && row.embyItemId"
-                type="button"
-                class="rmd-link"
-                @click="goItem(row.embyItemId)"
-              >去看这部</button>
+          </section>
+
+          <div class="rmd-reqhead">
+            <h2 class="rmd-reqhead__title">请求</h2>
+            <span class="rmd-reqhead__count">{{ detail.counts.total }} 条</span>
+          </div>
+          <p class="rmd-hint">同一部片已经有人在求时，不用重复提交，给已有请求 +1 附议就行；处理进度都会在这里更新。</p>
+
+          <div v-if="detail.requests.length === 0" class="rmd-empty">
+            <p>这部片还没有人提交过请求</p>
+          </div>
+          <div v-else class="rmd-rows">
+            <article v-for="row in detail.requests" :key="row.id" class="rmd-card">
+              <div class="rmd-card__head">
+                <span class="rmd-pill rmd-pill--type">{{ row.kind === 'chase' ? '追新' : '求片' }}</span>
+                <span class="rmd-pill" :class="'rmd-pill--' + row.state">{{ stateLabel(row.state) }}</span>
+                <span v-if="row.mine" class="rmd-pill rmd-pill--mine">我提交的</span>
+                <span class="rmd-card__time">{{ formatTime(row.created_at) }}</span>
+              </div>
+              <p class="rmd-card__body">{{ rowBody(row) }}</p>
+              <p v-if="row.missing_text" class="rmd-card__sub">{{ row.missing_text }}</p>
+              <div class="rmd-card__records">
+                <p v-if="row.admin_note" class="rmd-rec rmd-rec--staff">
+                  <span class="rmd-rec__tag">处理回复</span>{{ row.admin_note }}
+                </p>
+                <p v-for="s in row.supplements" :key="s.id" class="rmd-rec">
+                  <span class="rmd-rec__tag">{{ s.mine ? '我的补充' : '补充说明' }}</span>{{ s.body }}
+                  <span class="rmd-rec__time">{{ formatTime(s.created_at) }}</span>
+                </p>
+                <p v-if="!row.admin_note && row.supplements.length === 0" class="rmd-rec rmd-rec--empty">
+                  暂无补充说明或处理记录
+                </p>
+              </div>
+              <div v-if="row.mine && isActive(row)" class="rmd-card__mine">
+                <button type="button" class="rmd-actbtn" @click="toggleSupplement(row.id)">
+                  {{ supplementOpenId === row.id ? '收起' : '补充说明' }}
+                </button>
+                <button type="button" class="rmd-actbtn rmd-actbtn--danger" :disabled="withdrawing === row.id" @click="withdrawRow(row)">
+                  {{ withdrawing === row.id ? '撤回中…' : '撤回请求' }}
+                </button>
+              </div>
+              <div v-if="row.mine && supplementOpenId === row.id" class="rmd-supform">
+                <textarea
+                  v-model="supplementText"
+                  class="rmd-supform__area"
+                  maxlength="2000"
+                  rows="3"
+                  placeholder="把新的情况补在这里，处理的人能直接看到"
+                ></textarea>
+                <button type="button" class="rmd-supform__btn" :disabled="supplementing" @click="submitSupplement(row)">
+                  {{ supplementing ? '提交中…' : '提交补充' }}
+                </button>
+              </div>
+              <div v-if="!row.mine && isActive(row)" class="rmd-card__foot">
+                <span class="rmd-card__votes">{{ row.vote_count > 0 ? row.vote_count + ' 人附议' : '还没有人附议' }}</span>
+                <button
+                  class="rmd-vote"
+                  :class="{ 'rmd-vote--done': row.voted }"
+                  :disabled="row.voted || voting !== null"
+                  @click="upvote(row)"
+                >{{ row.voted ? '✓ 已附议' : voting === row.id ? '附议中' : '+1 附议' }}</button>
+              </div>
+            </article>
+          </div>
+
+          <section class="rmd-more" aria-label="继续提交">
+            <h3 class="rmd-more__title">现有请求没有涵盖你的问题？</h3>
+            <div class="rmd-more__row">
+              <button type="button" class="rmd-more__pill" @click="openKind('seek')">求片</button>
+              <button type="button" class="rmd-more__pill" @click="openKind('chase')">追新</button>
+              <button type="button" class="rmd-more__pill" @click="goFeedback">资源反馈</button>
             </div>
-          </article>
-        </div>
+            <p v-if="interceptText" class="rmd-more__note">{{ interceptText }}</p>
+          </section>
+        </template>
+
+        <RequestSubmitModal
+          :open="modalOpen"
+          :mode="modalMode"
+          :work="modalWork"
+          @close="modalOpen = false"
+          @submitted="onModalSubmitted"
+        />
       </div>
     </div>
   </UhdAccountLayout>
@@ -121,45 +165,14 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ChevronLeft } from 'lucide-vue-next'
 import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
+import RequestSubmitModal, { type SubmitWork } from '@/components/requests/RequestSubmitModal.vue'
 import {
   mediaSeekApi,
-  type HotMediaSeekRequest, type MediaSeekRequest, type PlazaGroup,
+  type WorkDetail, type WorkRequestRow,
 } from '@/api'
 import { imageAuthUrl } from '@/api/emby'
 import { useToast } from '@/composables/useToast'
 import { humanizeError } from '@/composables/usePanelApi'
-
-type UnifiedState = 'pending' | 'doing' | 'done' | 'rejected' | 'withdrawn'
-
-interface DetailRow {
-  id: number
-  kindLabel: string
-  state: UnifiedState
-  title: string
-  seasonLabel?: string
-  missingText?: string
-  adminNote?: string
-  embyItemId?: string | null
-  voteCount: number
-  voted: boolean
-  mine: boolean
-  created_at: string
-  /** 请求人姓名：公开接口当前不下发（数据缺口），运行时带上即打码展示 */
-  requesterName?: string
-}
-
-/* 公开面用户名打码（照友站样本）：首尾各留 1 字符、中间星号；
-   只用在广场/详情等公开面，本人行走「我提交的」不打码 */
-function maskName(name: string): string {
-  const s = (name || '').trim()
-  if (s.length <= 1) return s
-  if (s.length === 2) return s[0] + '*'
-  return s[0] + '*'.repeat(s.length - 2) + s[s.length - 1]
-}
-function requesterOf(r: unknown): string | undefined {
-  const o = r as { requester_name?: string | null; username?: string | null }
-  return (o.requester_name || o.username || undefined) || undefined
-}
 
 const route = useRoute()
 const router = useRouter()
@@ -174,94 +187,51 @@ const tmdbUrl = computed(() => (tmdbId.value
   ? `https://www.themoviedb.org/${mediaType.value === 'movie' ? 'movie' : 'tv'}/${tmdbId.value}`
   : ''))
 
-const group = ref<PlazaGroup | null>(null)
-const myRequests = ref<MediaSeekRequest[]>([])
+const detail = ref<WorkDetail | null>(null)
 const loading = ref(true)
 const loadError = ref('')
 const voting = ref<number | null>(null)
+const withdrawing = ref<number | null>(null)
+const supplementOpenId = ref<number | null>(null)
+const supplementText = ref('')
+const supplementing = ref(false)
+const modalOpen = ref(false)
+const modalMode = ref<'seek' | 'chase'>('seek')
+const modalWork = ref<SubmitWork | null>(null)
+/* 底部卡点过的类型（拦截提示按它显示） */
+const pickedKind = ref<'seek' | 'chase' | null>(null)
 
-const posterUrl = computed(() => group.value?.poster_url || null)
-const inLibrary = computed(() => group.value?.in_library ?? false)
-const embyItemId = computed(() => group.value?.emby_item_id || null)
-const totalCount = computed(() => group.value?.total_count ?? rows.value.length)
-
-function normTitle(s: string): string {
-  return s.toLowerCase().replace(/[《》\s·•:：,，.。!！?？;；'"“”‘’()（）\-—]/g, '')
+function stateLabel(s: WorkRequestRow['state']): string {
+  return { pending: '待处理', doing: '处理中', done: '已完成', rejected: '已拒绝' }[s]
 }
-function sameMedia(name: string, rowTmdb: string | null | undefined): boolean {
-  if (tmdbId.value && (rowTmdb || '').trim() === tmdbId.value) return true
-  return !!mediaName.value && normTitle(name) === normTitle(mediaName.value)
+function isActive(row: WorkRequestRow): boolean {
+  return row.state === 'pending' || row.state === 'doing'
 }
-function seekState(s: string): UnifiedState {
-  if (s === 'approved') return 'doing'
-  if (s === 'completed') return 'done'
-  if (s === 'rejected') return 'rejected'
-  if (s === 'withdrawn') return 'withdrawn'
-  return 'pending'
+/* 请求卡正文：提交时的具体说明优先；老行没说明时用片名＋季信息兜底 */
+function rowBody(row: WorkRequestRow): string {
+  if (row.note) return row.note
+  return row.season_label ? `${row.movie_name} · ${row.season_label}` : row.movie_name
 }
-function stateLabel(s: UnifiedState): string {
-  return { pending: '待处理', doing: '处理中', done: '已完成', rejected: '已拒绝', withdrawn: '已撤回' }[s]
+/* 时间照友站详情态：M/D HH:mm */
+function formatTime(dateStr: string): string {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  if (Number.isNaN(d.getTime())) return ''
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${d.getMonth() + 1}/${d.getDate()} ${hh}:${mm}`
 }
-function kindLabelOf(r: { request_kind?: string | null }): string {
-  return r.request_kind === 'missing_episodes' ? '追新' : '求片'
-}
-
-/* 请求列表口径：广场组内明细只有 pending 可附议行（他人已完成/已拒绝的明细
-   接口不下发，是已知数据缺口）；本人行走我的请求接口、状态齐全。两边按 id
-   去重合并（广场行优先，附议态以广场为准），按创建时间倒序。 */
-const rows = computed<DetailRow[]>(() => {
-  const byId = new Map<number, DetailRow>()
-  for (const w of myRequests.value) {
-    if (!sameMedia(w.movie_name, w.tmdb_id)) continue
-    byId.set(w.id, {
-      id: w.id,
-      kindLabel: kindLabelOf(w),
-      state: seekState(w.status),
-      title: w.movie_name,
-      seasonLabel: w.season_label,
-      missingText: w.missing_text,
-      adminNote: w.admin_note || undefined,
-      embyItemId: w.emby_item_id,
-      voteCount: w.vote_count ?? 0,
-      voted: false,
-      mine: true,
-      created_at: w.created_at,
-    })
-  }
-  for (const r of group.value?.requests ?? []) {
-    const prev = byId.get(r.id)
-    byId.set(r.id, {
-      id: r.id,
-      kindLabel: kindLabelOf(r),
-      state: prev?.state ?? 'pending',
-      title: r.movie_name,
-      seasonLabel: r.season_label,
-      missingText: r.missing_text,
-      adminNote: prev?.adminNote,
-      embyItemId: prev?.embyItemId,
-      voteCount: r.vote_count,
-      voted: r.voted,
-      mine: r.mine,
-      created_at: r.created_at,
-      requesterName: r.mine ? undefined : requesterOf(r),
-    })
-  }
-  return [...byId.values()].sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-  )
-})
 
 async function loadAll(): Promise<void> {
   loading.value = true
   loadError.value = ''
   try {
-    const [plazaRes, mineRes] = await Promise.all([
-      mediaSeekApi.plaza(mediaName.value ? { q: mediaName.value } : {}),
-      mediaSeekApi.getMyRequests(),
-    ])
-    const groups = plazaRes.groups || []
-    group.value = groups.find((g) => sameMedia(g.movie_name, g.tmdb_id)) ?? null
-    myRequests.value = mineRes.requests || []
+    detail.value = await mediaSeekApi.work({
+      ...(tmdbId.value ? { tmdb_id: tmdbId.value } : {}),
+      ...(mediaName.value ? { name: mediaName.value } : {}),
+      ...(mediaYear.value ? { year: mediaYear.value } : {}),
+      ...(mediaType.value ? { type: mediaType.value } : {}),
+    })
   } catch (e) {
     loadError.value = humanizeError(e)
   } finally {
@@ -269,13 +239,13 @@ async function loadAll(): Promise<void> {
   }
 }
 
-async function upvote(row: DetailRow): Promise<void> {
+async function upvote(row: WorkRequestRow): Promise<void> {
   if (row.voted || voting.value) return
   voting.value = row.id
   try {
     const r = await mediaSeekApi.vote(row.id)
     row.voted = r.voted
-    row.voteCount = r.vote_count
+    row.vote_count = r.vote_count
   } catch {
     toast.error('附议失败，再试一次')
   } finally {
@@ -283,41 +253,97 @@ async function upvote(row: DetailRow): Promise<void> {
   }
 }
 
+async function withdrawRow(row: WorkRequestRow): Promise<void> {
+  if (withdrawing.value) return
+  withdrawing.value = row.id
+  try {
+    await mediaSeekApi.withdraw(row.id)
+    toast.success('已撤回')
+    await loadAll()
+  } catch (e) {
+    toast.error(humanizeError(e))
+  } finally {
+    withdrawing.value = null
+  }
+}
+
+function toggleSupplement(id: number): void {
+  supplementOpenId.value = supplementOpenId.value === id ? null : id
+  supplementText.value = ''
+}
+async function submitSupplement(row: WorkRequestRow): Promise<void> {
+  const text = supplementText.value.trim()
+  if (!text) { toast.error('先写下要补充的内容'); return }
+  if (supplementing.value) return
+  supplementing.value = true
+  try {
+    await mediaSeekApi.supplement(row.id, text)
+    toast.success('补充说明已提交')
+    supplementOpenId.value = null
+    supplementText.value = ''
+    await loadAll()
+  } catch (e) {
+    toast.error(humanizeError(e))
+  } finally {
+    supplementing.value = false
+  }
+}
+
+/* 底部三胶囊：同类型已有未完成请求先拦截（后端 my_open 指针），
+   不让用户重复开单；追新只许库内作品（与提交口同一口径） */
+const interceptText = computed(() => {
+  if (!detail.value || !pickedKind.value) return ''
+  const open = detail.value.my_open[pickedKind.value]
+  if (!open) return ''
+  return pickedKind.value === 'seek'
+    ? '你已经有一条未完成的求片了，处理完再来提交新的。'
+    : '你已经有一条未完成的追新了，处理完再来提交新的。'
+})
+function openKind(kind: 'seek' | 'chase'): void {
+  if (!detail.value) return
+  pickedKind.value = kind
+  if (detail.value.my_open[kind]) return
+  if (kind === 'chase' && !detail.value.work.in_library) {
+    toast.error('这部作品还没在站里，先去求片吧')
+    return
+  }
+  const w = detail.value.work
+  modalMode.value = kind
+  modalWork.value = {
+    tmdb_id: w.tmdb_id || tmdbId.value || null,
+    name: w.name,
+    year: w.year || undefined,
+    kind: (w.type === 'movie' ? 'movie' : 'series'),
+    poster_url: w.poster_url,
+  }
+  modalOpen.value = true
+}
+function goFeedback(): void {
+  void router.push({
+    path: '/game/requests',
+    query: { tab: 'create', type: 'feedback', q: detail.value?.work.name || mediaName.value },
+  })
+}
+function onModalSubmitted(): void {
+  modalOpen.value = false
+  pickedKind.value = null
+  void loadAll()
+}
+
 function goBack(): void {
   if (window.history.length > 1) router.back()
   else void router.push('/game/requests')
 }
 function goWatch(): void {
-  if (embyItemId.value) void router.push(`/media/${embyItemId.value}`)
-}
-function goItem(id: string): void {
-  void router.push(`/media/${id}`)
-}
-function formatDate(dateStr: string): string {
-  if (!dateStr) return ''
-  const date = new Date(dateStr)
-  if (Number.isNaN(date.getTime())) return '时间未知'
-  const now = new Date()
-  const diff = Math.max(0, now.getTime() - date.getTime())
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-  if (days === 0) {
-    const hours = Math.floor(diff / (1000 * 60 * 60))
-    if (hours === 0) {
-      const minutes = Math.floor(diff / (1000 * 60))
-      return minutes === 0 ? '刚刚' : `${minutes}分钟前`
-    }
-    return `${hours}小时前`
-  }
-  if (days === 1) return '昨天'
-  if (days < 7) return `${days}天前`
-  return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+  const id = detail.value?.work.library_item_id
+  if (id) void router.push(`/media/${id}`)
 }
 
 onMounted(() => { void loadAll() })
 </script>
 
 <style scoped>
-/* 标题详情页：与求片反馈页同壳（.rf-page 同款负边距铺满＋深/浅两套）。 */
+/* 作品请求详情：与求片反馈页同壳（负边距铺满＋深/浅两套）。 */
 .rmd-page { margin: -28px -32px -120px; padding: 28px 32px 220px; background: #08080a; min-height: 100dvh; }
 .rmd-inner { max-width: 1006px; margin: 0 auto; }
 .rmd-topbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
@@ -340,7 +366,6 @@ onMounted(() => { void loadAll() })
   -webkit-backdrop-filter: var(--uhd-glass-filter);
   font-size: 14px; font-weight: 700; text-decoration: none; white-space: nowrap;
 }
-/* 「← 返回」胶囊（照友站详情态）：描边胶囊，位于顶栏与媒体卡之间 */
 .rmd-backpill {
   display: inline-flex; align-items: center; gap: 2px;
   height: 36px; padding: 0 16px 0 10px; margin-bottom: 16px;
@@ -379,13 +404,13 @@ onMounted(() => { void loadAll() })
   border: 1px solid #333336; color: #9ca3af; background: transparent;
 }
 .rmd-pill--green { background: rgba(22, 163, 74, 0.16); color: #4ade80; border-color: rgba(22, 163, 74, 0.5); }
+.rmd-pill--outline { background: transparent; color: #d4d4d8; border-color: #4b5563; }
 .rmd-pill--type { background: #26262a; color: #d4d4d8; border-color: #26262a; }
 .rmd-pill--mine { background: transparent; color: #6ea8fe; border-color: #6ea8fe; }
 .rmd-pill--pending { color: #9ca3af; border-color: #3a3b3f; }
 .rmd-pill--doing { color: #f59e0b; border-color: #f59e0b; }
 .rmd-pill--done { color: #4ade80; border-color: #16a34a; }
 .rmd-pill--rejected { color: #f87171; border-color: #ef4444; }
-.rmd-pill--withdrawn { color: #9ca3af; border-color: #3a3b3f; }
 .rmd-reqhead { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .rmd-reqhead__title { margin: 0; font-size: 17px; font-weight: 800; color: #fbfcfd; }
 .rmd-reqhead__count { font-size: 13px; color: #9ca3af; }
@@ -394,10 +419,39 @@ onMounted(() => { void loadAll() })
 .rmd-card { background: #17181a; border: 1px solid #26262a; border-radius: 16px; padding: 14px; }
 .rmd-card__head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .rmd-card__time { margin-left: auto; font-size: 12px; color: #9ca3af; white-space: nowrap; }
-.rmd-card__requester { font-size: 12px; color: #9ca3af; }
-.rmd-card__body { margin: 10px 0 0; font-size: 14px; font-weight: 700; color: #fbfcfd; word-break: break-word; }
+.rmd-card__body { margin: 10px 0 0; font-size: 14px; font-weight: 700; color: #fbfcfd; word-break: break-word; line-height: 1.6; }
 .rmd-card__sub { margin: 4px 0 0; font-size: 12px; color: #9ca3af; line-height: 1.6; }
-.rmd-card__note { margin: 6px 0 0; font-size: 12px; color: #d4d4d8; line-height: 1.6; }
+/* 记录区（照友站 2.4）：卡内分隔线下放处理回复与补充说明 */
+.rmd-card__records { margin-top: 12px; border-top: 1px solid #26262a; padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.rmd-rec { margin: 0; font-size: 13px; color: #d4d4d8; line-height: 1.6; word-break: break-word; }
+.rmd-rec__tag {
+  display: inline-block; margin-right: 8px; padding: 1px 7px; border-radius: 999px;
+  background: #26262a; color: #9ca3af; font-size: 11px; font-weight: 700; vertical-align: 1px;
+}
+.rmd-rec--staff .rmd-rec__tag { background: rgba(22, 163, 74, 0.16); color: #4ade80; }
+.rmd-rec__time { margin-left: 8px; font-size: 11px; color: #9ca3af; }
+.rmd-rec--empty { color: #9ca3af; font-size: 12px; }
+.rmd-card__mine { margin-top: 12px; display: flex; gap: 8px; }
+.rmd-actbtn {
+  min-height: 34px; padding: 0 14px; border-radius: 999px; cursor: pointer;
+  background: transparent; border: 1.5px solid #4b5563; color: #fbfcfd;
+  font-size: 13px; font-weight: 700; font-family: inherit;
+}
+.rmd-actbtn--danger { border-color: rgba(239, 68, 68, 0.55); color: #f87171; }
+.rmd-actbtn:disabled { opacity: 0.5; cursor: default; }
+.rmd-supform { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.rmd-supform__area {
+  width: 100%; padding: 10px 12px; resize: none;
+  font-size: 13px; line-height: 1.6; color: #fbfcfd; font-family: inherit;
+  background: #101012; border: 1px solid #26262a; border-radius: 12px; outline: none;
+}
+.rmd-supform__area:focus { border-color: #6b7280; }
+.rmd-supform__btn {
+  align-self: flex-end; min-height: 36px; padding: 0 16px; border-radius: 999px; cursor: pointer;
+  background: #fbfcfd; color: #111111; border: none;
+  font-size: 13px; font-weight: 700; font-family: inherit;
+}
+.rmd-supform__btn:disabled { opacity: 0.5; cursor: default; }
 .rmd-card__foot { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
 .rmd-card__votes { flex: 1; font-size: 12px; color: #9ca3af; }
 .rmd-vote {
@@ -407,7 +461,18 @@ onMounted(() => { void loadAll() })
 }
 .rmd-vote--done { background: #16a34a; color: #ffffff; }
 .rmd-vote:disabled { cursor: default; }
-.rmd-link { background: none; border: none; color: #6ea8fe; font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; padding: 0; }
+/* 底部卡（照友站 2.4）：一问＋三胶囊＋拦截提示 */
+.rmd-more {
+  margin-top: 18px; background: #17181a; border: 1px solid #26262a; border-radius: 16px; padding: 16px;
+}
+.rmd-more__title { margin: 0 0 12px; font-size: 15px; font-weight: 800; color: #fbfcfd; }
+.rmd-more__row { display: flex; gap: 10px; flex-wrap: wrap; }
+.rmd-more__pill {
+  min-height: 38px; padding: 0 20px; border-radius: 999px; cursor: pointer;
+  background: #1e1f21; border: 1.5px solid #333336; color: #fbfcfd;
+  font-size: 14px; font-weight: 700; font-family: inherit;
+}
+.rmd-more__note { margin: 12px 0 0; font-size: 12px; color: #f59e0b; line-height: 1.6; }
 .rmd-empty {
   display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center;
   min-height: 180px; justify-content: center;
@@ -415,7 +480,6 @@ onMounted(() => { void loadAll() })
   font-size: 14px; color: #8a8f96;
 }
 .rmd-empty p { margin: 0; }
-.rmd-empty__go { color: #6ea8fe; font-weight: 700; text-decoration: none; }
 .rmd-err { font-size: 13px; color: #fca5a5; line-height: 1.6; }
 .rmd-retry { margin-top: 6px; padding: 3px 12px; font-size: 12px; color: #fbfcfd; background: transparent; border: 1px solid currentColor; border-radius: 999px; cursor: pointer; opacity: 0.8; }
 .rmd-skeleton { background: #1e1f21; border-radius: 10px; animation: rmd-pulse 1.4s ease-in-out infinite; }
@@ -447,6 +511,7 @@ html[data-theme='light'] .rmd-media__watch {
 }
 html[data-theme='light'] .rmd-pill { border-color: #e5e5e5; color: #6b7280; }
 html[data-theme='light'] .rmd-pill--green { background: #e6f4ea; color: #16a34a; border-color: #16a34a; }
+html[data-theme='light'] .rmd-pill--outline { color: #55575c; border-color: #c9ccd1; }
 html[data-theme='light'] .rmd-pill--type { background: #f0f0f1; color: #55575c; border-color: #f0f0f1; }
 html[data-theme='light'] .rmd-pill--mine { color: #2563eb; border-color: #2563eb; }
 html[data-theme='light'] .rmd-pill--doing { color: #d97706; border-color: #f59e0b; }
@@ -456,15 +521,25 @@ html[data-theme='light'] .rmd-reqhead__title { color: #111111; }
 html[data-theme='light'] .rmd-reqhead__count, html[data-theme='light'] .rmd-hint { color: #6b7280; }
 html[data-theme='light'] .rmd-card { background: #ffffff; border-color: #e5e5e5; }
 html[data-theme='light'] .rmd-card__time { color: #6b7280; }
-html[data-theme='light'] .rmd-card__requester { color: #6b7280; }
 html[data-theme='light'] .rmd-card__body { color: #111111; }
 html[data-theme='light'] .rmd-card__sub, html[data-theme='light'] .rmd-card__votes { color: #6b7280; }
-html[data-theme='light'] .rmd-card__note { color: #55575c; }
+html[data-theme='light'] .rmd-card__records { border-top-color: #e5e5e5; }
+html[data-theme='light'] .rmd-rec { color: #55575c; }
+html[data-theme='light'] .rmd-rec__tag { background: #f0f0f1; color: #6b7280; }
+html[data-theme='light'] .rmd-rec--staff .rmd-rec__tag { background: #e6f4ea; color: #16a34a; }
+html[data-theme='light'] .rmd-rec__time, html[data-theme='light'] .rmd-rec--empty { color: #6b7280; }
+html[data-theme='light'] .rmd-actbtn { border-color: #c9ccd1; color: #111111; }
+html[data-theme='light'] .rmd-actbtn--danger { border-color: rgba(220, 38, 38, 0.5); color: #dc2626; }
+html[data-theme='light'] .rmd-supform__area { background: #f8f8f8; border-color: #e5e5e5; color: #111111; }
+html[data-theme='light'] .rmd-supform__area:focus { border-color: #9ca3af; }
+html[data-theme='light'] .rmd-supform__btn { background: #111111; color: #ffffff; }
 html[data-theme='light'] .rmd-vote { background: #111111; color: #ffffff; }
 html[data-theme='light'] .rmd-vote--done { background: #16a34a; color: #ffffff; }
-html[data-theme='light'] .rmd-link { color: #2563eb; }
+html[data-theme='light'] .rmd-more { background: #ffffff; border-color: #e5e5e5; }
+html[data-theme='light'] .rmd-more__title { color: #111111; }
+html[data-theme='light'] .rmd-more__pill { background: #f5f5f5; border-color: #e5e5e5; color: #111111; }
+html[data-theme='light'] .rmd-more__note { color: #d97706; }
 html[data-theme='light'] .rmd-empty { border-color: #d4d4d8; color: #8a8f96; }
-html[data-theme='light'] .rmd-empty__go { color: #2563eb; }
 html[data-theme='light'] .rmd-err { color: #dc2626; }
 html[data-theme='light'] .rmd-retry { color: #111111; }
 html[data-theme='light'] .rmd-skeleton { background: #f0f0f1; }

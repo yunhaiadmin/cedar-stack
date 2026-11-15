@@ -753,6 +753,8 @@ export interface MediaSeekRequest {
   season_label?: string
   /** TMDB 条目 id（从候选列表带过来；手填片名为空） */
   tmdb_id?: string | null
+  /** 作品海报（提交快照或库内条目海报，后端统一回退；都没有为空） */
+  poster_url?: string | null
   /** 原名投下的兜底行（没绑 TMDB 候选、待人工确认）；选片行为 false */
   title_only?: boolean
   /** 求片分类：seek 整片求片 / missing_episodes 补缺集求片 */
@@ -779,6 +781,8 @@ export interface MediaSeekCandidate {
   /** movie / series（剧集要选季） */
   kind: 'movie' | 'series'
   name: string
+  /** 原名（TMDB 原名；与中文名相同或缺失时为空串） */
+  original_name?: string
   year: string
   overview?: string
   poster_url?: string | null
@@ -786,6 +790,10 @@ export interface MediaSeekCandidate {
   in_library: boolean
   /** 在库时对应条目 guid（可直接跳详情） */
   library_item_id?: string | null
+  /** 已有未完成的求片（任何人）——求片态动作分化用 */
+  open_seek?: boolean
+  /** 已有未完成的追新（任何人，含补缺集）——追新态动作分化用 */
+  open_chase?: boolean
 }
 
 /** 剧集的一季（TMDB） */
@@ -846,6 +854,8 @@ export const mediaSeekApi = {
     tmdb_id?: string
     /** 剧集按整季申请："1,2" 或 "all"（全季） */
     season?: string
+    /** TMDB 候选海报地址快照（按作品组织展示用） */
+    poster_url?: string
   }) =>
     api.post<never, {
       success: boolean
@@ -862,6 +872,33 @@ export const mediaSeekApi = {
 
   /** 撤回尚未处理的求片 */
   withdraw: (requestId: number) => api.delete(`/api/user/media-seek/${requestId}`),
+
+  /** 追新：从库内作品行发起（绑定 tmdb；他人已有未完成追新时转附议） */
+  createChase: (data: {
+    tmdb_id: string
+    note: string
+    type?: string
+    poster_url?: string
+  }) =>
+    api.post<never, {
+      success: boolean
+      request_id: number
+      message: string
+      created?: boolean
+      voted?: boolean
+      vote_count?: number
+    }>('/api/user/media-seek/chase', data),
+
+  /** 作品请求详情：按作品汇集全部公开请求（tmdb 优先，无 tmdb 按片名认亲） */
+  work: (params: { tmdb_id?: string; name?: string; year?: string; type?: string }) =>
+    api.get<never, WorkDetail>('/api/user/media-seek/work', { params }),
+
+  /** 给自己的未完结请求追加补充说明 */
+  supplement: (requestId: number, body: string) =>
+    api.post<never, { success: boolean; supplement: WorkSupplement }>(
+      `/api/user/media-seek/${requestId}/supplement`,
+      { body },
+    ),
 
   /** v2 附议 / 取消附议（每人每条只能附议一次，不能给自己附议） */
   vote: (requestId: number) =>
@@ -940,6 +977,52 @@ export interface HotMediaSeekRequest {
   voted: boolean
   mine: boolean
   created_at: string
+}
+
+/** 补充说明一条（作品详情里挂在请求卡下） */
+export interface WorkSupplement {
+  id: number
+  body: string
+  mine: boolean
+  created_at: string
+}
+
+/** 作品请求详情里的一条请求（后端 GET /api/user/media-seek/work） */
+export interface WorkRequestRow {
+  id: number
+  /** 展示分类：seek 求片 / chase 追新（补缺集也归 chase） */
+  kind: 'seek' | 'chase'
+  request_kind: string
+  status: string
+  /** 统一状态名：pending/doing/done/rejected */
+  state: 'pending' | 'doing' | 'done' | 'rejected'
+  movie_name: string
+  note?: string | null
+  season_label?: string
+  missing_text?: string
+  admin_note?: string | null
+  vote_count: number
+  voted: boolean
+  mine: boolean
+  created_at: string
+  supplements: WorkSupplement[]
+}
+
+/** 作品请求详情（按作品汇集：作品头＋全部请求＋我的未完结指针） */
+export interface WorkDetail {
+  work: {
+    tmdb_id?: string | null
+    name: string
+    year?: string | null
+    type?: string | null
+    poster_url?: string | null
+    in_library: boolean
+    library_item_id?: string | null
+  }
+  counts: { seek: number; chase: number; feedback: number; total: number }
+  /** 我未完结的请求 id（同类型拦截提示读它） */
+  my_open: { seek: number | null; chase: number | null }
+  requests: WorkRequestRow[]
 }
 
 /** 请求广场的一张媒体聚合卡（后端 GET /api/user/media-seek/plaza 的 groups 项） */
