@@ -1,6 +1,6 @@
 """外部服务能力中心冒烟测试（v2.19.0 起，v2.20.0 扩展，探险世界批新增两卡片，心理学批再增两卡片）
 
-覆盖后台「系统设置」里新增的五个能力：网络代理 / 人机验证 / 邮件与模板 /
+覆盖后台「系统设置」里新增的四个能力：网络代理 / 邮件与模板 /
 Telegram 通知 / IP 与地理位置。口径是**只提供能力、凭据自己填**，
 所以重点验证四件事：
 
@@ -17,6 +17,9 @@ Telegram 通知 / IP 与地理位置。口径是**只提供能力、凭据自己
 
 AI 模型设置已随批 4 整链删除（integrations/ai 模块、能力卡与用户端路由），
 本冒烟只在第 6 节断言其入口确实不存在、维护回收行为不变。
+
+人机验证已于 2026-11-15 整链删除（integrations/captcha 模块、能力卡、挂件端点
+与四处守卫），本冒烟只在第 3 节断言其入口确实不存在、无令牌登录照常。
 """
 import json
 import os
@@ -239,7 +242,7 @@ check("总览带标题/说明/分组", all(c.get("title") and c.get("desc") and 
 check("总览带测试按钮文案", all(c.get("test_label") for c in caps.values()))
 # 纯本地设置卡只剩「站点与品牌」：它有内置默认值（未配置时回落站名「Aetrix」），
 # 所以未配置时始终「已配置且生效」。它没有外部凭据、没有出站请求，语义不同于
-# 需要外部凭据的其余六个外部服务能力。
+# 需要外部凭据的其余五个外部服务能力。
 # （原同属纯本地卡的服主告示牌 / 签文池 / 连签里程碑 / 世界文案池 / 昨日来信五个
 # world_* 能力已随发现页退役删除，见 backend/integrations 的 CAPABILITY_MODULES。）
 _ALWAYS_ON = {"branding"}
@@ -251,7 +254,7 @@ check("纯本地设置卡未配置时默认「已配置且生效」",
       all(c["configured"] and c["enabled"]
           for s, c in caps.items() if s in _ALWAYS_ON),
       str({s: (caps[s]["enabled"], caps[s]["configured"]) for s in caps}))
-check("共有七个能力卡片（站点与品牌为唯一纯本地设置卡，其余六个为外部服务能力）", len(caps) == 7, str(sorted(caps)))
+check("共有六个能力卡片（站点与品牌为唯一纯本地设置卡，其余五个为外部服务能力）", len(caps) == 6, str(sorted(caps)))
 
 r = client.get("/api/admin/capabilities/not-a-capability", headers=ADMIN_H)
 check("未知能力返回 404", r.status_code == 404, f"HTTP {r.status_code}")
