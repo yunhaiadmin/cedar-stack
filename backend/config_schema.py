@@ -652,6 +652,9 @@ ECONOMY_CONFIG_SCHEMA: dict[str, tuple] = {
     # 流量额度真拦截总开关（2026-11-15 用户亲点）：默认开（无行=开），
     # 读侧 backend/traffic_gate.enforcement_enabled；关掉全部放行。
     "traffic_enforce_enabled": ("bool",),
+    # 时间换流量包表（JSON 数组，读侧 traffic_quota.exchange_packages
+    # 校验后下发；缺省/非法回退默认半月包/整月包），raw 整串保存。
+    "traffic_exchange_packages": ("raw",),
     "wallet_refund_to_balance": ("bool",),
     "wallet_auto_renew_enabled": ("bool",),
     "payment_gateway_url": ("raw",), "payment_partner_id": ("raw",),

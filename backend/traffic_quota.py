@@ -5,11 +5,13 @@
 （如 500GB），按订阅周期重置；概览页展示剩余/已用/重置日；流量
 不够用时可以「购流量」：花余额抵扣已用或扣订阅时长换抵扣额度。
 购流量不扩套餐总额度、不延到期日（时间换流量反而是**缩短**到期
-日换额度）。时间换流量按 GB 计（2026-11-14 用户亲令，照 UHDNow
-实测口径，旧「15 天抵 50%/30 天抵 100%」比例口径作废）：每
-10 GB 流量需 7 天套餐剩余时长；兑换后总流量（套餐月额度＋本
-周期已兑换抵扣）上限 5 TB，超出上限的部分按超出前比例折算应
-扣时长（只扣与实际到账字节成比例的那部分时长）。
+日换额度）。时间换流量是包型（2026-11-15 用户真机录屏定版，照
+UHDNow）：不扩充总配额，而是从已用记录中扣除、让剩余量恢复，
+同时消耗套餐有效时长——半月包扣 15 天抵当月配额 50%、整月包扣
+30 天抵 100%。包参数（key/name/days/quota_percent）走配置键
+``traffic_exchange_packages``（SystemConfig JSON）下发，缺省/非法
+回退默认两包；旧「每 10G 换 7 天、5TB 上限、按比例折算」GB 口径
+（2026-11-14）就此退役。
 
 数据分工（不许另起一套）：
 - 额度声明：套餐权益键 ``monthly_traffic_bytes``（backend/
@@ -54,15 +56,18 @@ logger = logging.getLogger(__name__)
 #: 空/0/非法 = 不启用流量区）。
 CONFIG_DEFAULT_QUOTA = "traffic_default_monthly_bytes"
 
-#: 时间换流量规则（2026-11-14 照友站实测定版）：每 10 GB 需
-#: 7 天订阅剩余时长；兑换后总流量上限 5 TB。
-EXCHANGE_GB_PER_UNIT = 10
-EXCHANGE_DAYS_PER_UNIT = 7
-#: 弹窗快捷档位（GB）；任意 10 的整倍数 GB 均可兑换，快捷档只是
-#: 前端预置按钮，与余额购流量共用同一组档位。
-EXCHANGE_QUICK_GB = (100, 200, 500, 1000)
-#: 兑换后总流量上限（套餐月额度 + 本周期全部抵扣，含余额购买）。
-EXCHANGE_TOTAL_CAP_BYTES = 5 * 1024 ** 4
+#: 时间换流量包表配置键（SystemConfig，JSON 数组）：每项
+#: {"key", "name", "days", "quota_percent"}；缺行/非法一律回退
+#: 默认两包（配置写坏不许把兑换打挂）。管理员改包走系统设置存
+#: 这个键（config_schema 已登记 raw）。
+CONFIG_EXCHANGE_PACKAGES = "traffic_exchange_packages"
+
+#: 默认包表（2026-11-15 录屏定版）：半月包 15 天抵 50% 当月
+#: 配额、整月包 30 天抵 100%。
+DEFAULT_EXCHANGE_PACKAGES = (
+    {"key": "half", "name": "半月包", "days": 15, "quota_percent": 50},
+    {"key": "full", "name": "整月包", "days": 30, "quota_percent": 100},
+)
 
 ENTITLEMENT_KEY = "monthly_traffic_bytes"
 
@@ -92,9 +97,45 @@ def _config_int(db: Session, key: str) -> Optional[int]:
     return value if value > 0 else None
 
 
-def exchange_days_for_gb(gb: int) -> int:
-    """兑换 gb 流量名义应扣的订阅天数：每 10 GB 需 7 天。"""
-    return gb * EXCHANGE_DAYS_PER_UNIT // EXCHANGE_GB_PER_UNIT
+def exchange_packages(db: Session) -> list[dict]:
+    """时间换流量包表：配置键 JSON 优先，缺失/非法回退默认两包。
+
+    校验口径（任一项不合格 → 整表回退默认，不许半张坏表下发）：
+    非空数组、key 非空字符串且不重复、name 非空、days 为
+    1..365 的整数、quota_percent 为 1..100 的整数。
+    """
+    import json
+
+    try:
+        raw = store.get_value(db, CONFIG_EXCHANGE_PACKAGES, "")
+    except Exception:  # noqa: BLE001
+        raw = ""
+    try:
+        data = json.loads(raw) if str(raw or "").strip() else None
+    except (TypeError, ValueError):
+        data = None
+    if isinstance(data, list) and data:
+        packages: list[dict] = []
+        seen: set[str] = set()
+        for item in data:
+            if not isinstance(item, dict):
+                break
+            key = str(item.get("key") or "").strip()
+            name = str(item.get("name") or "").strip()
+            days = item.get("days")
+            pct = item.get("quota_percent")
+            if (not key or key in seen or not name
+                    or not isinstance(days, int) or isinstance(days, bool)
+                    or not 1 <= days <= 365
+                    or not isinstance(pct, int) or isinstance(pct, bool)
+                    or not 1 <= pct <= 100):
+                break
+            seen.add(key)
+            packages.append({"key": key, "name": name, "days": days,
+                             "quota_percent": pct})
+        if len(packages) == len(data):
+            return packages
+    return [dict(p) for p in DEFAULT_EXCHANGE_PACKAGES]
 
 
 def period_credit_bytes(db: Session, user_id: int, period_start) -> int:
@@ -107,23 +148,17 @@ def period_credit_bytes(db: Session, user_id: int, period_start) -> int:
 
 
 def exchange_rule_view(db: Session, user_id: int) -> dict:
-    """给前端的时间换流量规则视图：单位口径（10GB/7 天）、快捷
-    档位、5 TB 总上限与该用户当前还可兑换的字节余量。未启用
-    用户 quota 为 None——前端整段不渲染，成交端点也会以
+    """给前端的时间换流量规则视图：包表（配置下发，前端不写死
+    天数/比例）＋该用户当前额度与本周期已抵扣。未启用用户
+    quota 为 None——前端整段不渲染，成交端点也会以
     quota_not_enabled 拒绝。"""
     quota = quota_bytes_for(db, user_id)
     start, _end, _sub = current_period(db, user_id)
     credited = period_credit_bytes(db, user_id, start) if quota else 0
-    room = (max(0, EXCHANGE_TOTAL_CAP_BYTES - quota - credited)
-            if quota else 0)
     return {
-        "unit_gb": EXCHANGE_GB_PER_UNIT,
-        "days_per_unit": EXCHANGE_DAYS_PER_UNIT,
-        "quick_gb": list(EXCHANGE_QUICK_GB),
-        "cap_bytes": EXCHANGE_TOTAL_CAP_BYTES,
+        "packages": exchange_packages(db),
         "quota_bytes": quota,
         "credited_bytes": credited,
-        "room_bytes": room,
     }
 
 
@@ -232,17 +267,16 @@ def usage_summary(db: Session, user_id: int,
 # 购流量 · 时间换流量（成交走同步事务，不经计量模块）
 # ---------------------------------------------------------------------------
 
-def exchange_time_for_traffic(db: Session, user_id: int, gb: int,
+def exchange_time_for_traffic(db: Session, user_id: int, package_key: str,
                               idempotency_key: str,
                               now: Optional[datetime] = None) -> dict:
-    """扣订阅时长换本周期抵扣流量（GB 口径，2026-11-14 定版）。
+    """扣订阅时长换本周期抵扣流量（包型，2026-11-15 定版）。
 
-    规则：每 10 GB 需 7 天；兑换后总流量（套餐月额度＋本周期已
-    抵扣，含余额购买部分）不得超过 5 TB——请求量超出剩余空间时
-    只按空间到账，扣减时长按「实际到账字节 ÷ 请求字节」的超出前
-    比例折算（整数秒向下取整，不多扣）。留痕记实际到账字节与
-    实际扣减秒数（sub_end_before/after 精确对账；days_deducted
-    存折算整天数供展示）。
+    规则：包由配置下发（默认半月包 15 天抵当月配额 50%、整月包
+    30 天抵 100%）；credit = 当前周期额度 × quota_percent 向下
+    取整，只冲本周期已用、不扩总配额；应扣天数固定（15/30），
+    不按到账量折算。留痕记实际 credit 字节与扣减天数，基数与
+    比例同行留痕（quota_base_bytes/quota_pct）供事后复算对账。
 
     - 幂等：同 idempotency_key 已成交 → 原样返回那笔（replayed
       =True），不重复扣时长；键被别人占用 → 拒绝。
@@ -270,22 +304,15 @@ def exchange_time_for_traffic(db: Session, user_id: int, gb: int,
     if quota is None:
         raise TrafficError("当前套餐没有流量额度，暂不能购买流量",
                            "quota_not_enabled")
-    try:
-        gb = int(gb)
-    except (TypeError, ValueError):
-        raise TrafficError("兑换流量必须是 10GB 的整倍数", "bad_option")
-    if gb < EXCHANGE_GB_PER_UNIT or gb % EXCHANGE_GB_PER_UNIT != 0:
-        raise TrafficError("兑换流量必须是 10GB 的整倍数", "bad_option")
+    package = next(
+        (p for p in exchange_packages(db)
+         if p["key"] == str(package_key or "").strip()),
+        None)
+    if package is None:
+        raise TrafficError("没有这个流量包，请刷新后再试", "bad_option")
+    credited = quota * int(package["quota_percent"]) // 100
+    deduct = timedelta(days=int(package["days"]))
     start, end, _ = current_period(db, user_id, now)
-    room = (EXCHANGE_TOTAL_CAP_BYTES - quota
-            - period_credit_bytes(db, user_id, start))
-    if room <= 0:
-        raise TrafficError("总流量已达 5TB 上限，不能再兑换了",
-                           "exchange_cap_reached")
-    requested_bytes = gb * (1024 ** 3)
-    credited = min(requested_bytes, room)
-    nominal_seconds = exchange_days_for_gb(gb) * 86400
-    deduct_seconds = nominal_seconds * credited // requested_bytes
     sub = subscriptions.active_subscription(db, user_id)
     if sub is None:
         raise TrafficError("没有生效中的订阅，无法用时长兑换",
@@ -298,16 +325,16 @@ def exchange_time_for_traffic(db: Session, user_id: int, gb: int,
         raise TrafficError("订阅状态已变化，请刷新后再试",
                            "no_active_subscription")
     before = locked.end_date
-    after = before - timedelta(seconds=deduct_seconds)
+    after = before - deduct
     if after <= now:
         raise TrafficError("订阅剩余时长不足，扣完就过期了，不能兑换",
                            "insufficient_days")
     locked.end_date = after
     log = em.TrafficExchangeLog(
         user_id=user_id, kind="time_exchange",
-        days_deducted=int(round(deduct_seconds / 86400)),
+        days_deducted=int(package["days"]),
         bytes_credited=credited,
-        quota_base_bytes=quota, quota_pct=None,
+        quota_base_bytes=quota, quota_pct=int(package["quota_percent"]),
         subscription_id=locked.id, sub_end_before=before,
         sub_end_after=after, period_start=start, period_end=end,
         idempotency_key=key)
@@ -327,8 +354,6 @@ def exchange_time_for_traffic(db: Session, user_id: int, gb: int,
     entitlements.invalidate(user_id)
     return {"log": _log_dict(log), "replayed": False,
             "summary": usage_summary(db, user_id, now)}
-
-
 def _log_dict(log: em.TrafficExchangeLog) -> dict:
     return {
         "id": log.id,
@@ -351,14 +376,15 @@ def _log_dict(log: em.TrafficExchangeLog) -> dict:
     }
 
 
-#: 余额购流量档位（GB）：与前端弹窗四档一致；只许 100 的整倍数，
-#: 单次上限 1000GB（防手误多买；改价走配置键，不改档）。
-BALANCE_PURCHASE_GB_OPTIONS = (100, 200, 500, 1000)
+#: 余额购流量最低量（GB）：弹窗自由输入，任意 ≥ 此值的整数 GB
+#: 均可购买（2026-11-15 录屏口径）；快捷 chips 只是前端预置。
+BALANCE_PURCHASE_MIN_GB = 100
 
 
 def balance_price_yuan(db: Session, gb: int):
     """余额购流量价（元）：单价键 ``traffic_balance_price_per_100gb``
-    （分/100GB，默认 300＝¥3，钱包方案 §10 定版），按 100GB 为单位计价。
+    （分/100GB，默认 300＝¥3，钱包方案 §10 定版），按 GB 比例计价
+    （150GB = 1.5 × 单价），归一到分。
 
     单价未配/≤0 时拒绝成交（不许按 0 元白送）。
     """
@@ -372,7 +398,7 @@ def balance_price_yuan(db: Session, gb: int):
     if per_100gb_fen <= 0:
         raise TrafficError("余额购流量暂未定价，请联系管理员",
                            "balance_price_unset")
-    return money(Decimal(per_100gb_fen) * Decimal(gb // 100) / Decimal(100))
+    return money(Decimal(per_100gb_fen) * Decimal(gb) / Decimal(10000))
 
 
 def buy_traffic_with_balance(db: Session, user_id: int, gb: int,
@@ -405,9 +431,10 @@ def buy_traffic_with_balance(db: Session, user_id: int, gb: int,
     try:
         gb = int(gb)
     except (TypeError, ValueError):
-        raise TrafficError("没有这个购买档位", "bad_option")
-    if gb not in BALANCE_PURCHASE_GB_OPTIONS:
-        raise TrafficError("没有这个购买档位", "bad_option")
+        raise TrafficError("购买流量必须是整数 GB", "bad_option")
+    if gb < BALANCE_PURCHASE_MIN_GB:
+        raise TrafficError(
+            f"购买流量最低 {BALANCE_PURCHASE_MIN_GB}GB 起", "bad_option")
 
     existing = (db.query(em.TrafficExchangeLog)
                 .filter(em.TrafficExchangeLog.idempotency_key == key)

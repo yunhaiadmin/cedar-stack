@@ -92,6 +92,7 @@ ECONOMY_CONFIG_KEYS = {
     # 流量额度真拦截总开关（2026-11-15 用户亲点）：默认开（无行=开），
     # 读侧 backend/traffic_gate.enforcement_enabled；关掉全部放行。
     "traffic_enforce_enabled": "bool",
+    "traffic_exchange_packages": "str",  # 时间换流量包表（JSON 数组，读侧校验后下发；非法回退默认两包）
     "wallet_refund_to_balance": "bool",  # 退款回钱包（默认开，批 2 落地）
     "wallet_auto_renew_enabled": "bool",  # 余额自动续费总闸（默认开；用户侧开关默认关）
     "payment_gateway_url": "str", "payment_partner_id": "str",
