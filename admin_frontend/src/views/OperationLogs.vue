@@ -1,12 +1,14 @@
 <script setup lang="ts">
 /** 操作日志：管理员操作审计流水（Logs 外壳的默认标签子页，与「双盘审计」标签并列，?tab= 定位见 Logs.vue） */
 import { computed, onMounted, ref } from 'vue'
-import { RefreshCw, ScrollText, Search } from 'lucide-vue-next'
+import { RefreshCw, ScrollText } from 'lucide-vue-next'
 import { fetchLogs } from '@/api/admin'
 import { PageHeader, SectionCard } from '@/components/ui'
 import type { AdminLogRow } from '@/types'
 import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import type { AppliedFilter, FilterConfig } from '@/components/FilterBar.vue'
 
 /** 手机卡片以「操作」为标题，时间/目标/IP 作为键值行；详情本来就是长文本 */
 const columns: DataColumn[] = [
@@ -216,6 +218,48 @@ function toggleQuick(a: string) {
   load()
 }
 
+/**
+ * FilterBar 声明式筛选配置（统一标准第 4 条）：
+ * 关键字是已加载行内的前端过滤、逐键即时生效，走 debounced + debounceMs: 0 逐键同步；
+ * 操作类型选项多且需可搜索，FilterBar 的标准 select 不支持 filterable，
+ * 用 custom 插槽保留原 el-select 本体（字段与 @change 口径不变）。
+ */
+const opFilters = computed<FilterConfig[]>(() => [
+  { key: 'action', label: '操作类型', type: 'custom', value: actionFilter.value },
+])
+
+const appliedOpFilters = computed<AppliedFilter[]>(() => {
+  const items: AppliedFilter[] = []
+  if (keyword.value.trim()) {
+    items.push({ key: 'keyword', label: '关键词', text: keyword.value.trim() })
+  }
+  if (actionFilter.value) {
+    items.push({
+      key: 'action',
+      label: '操作类型',
+      text: ACTION_LABELS[actionFilter.value] ?? actionFilter.value,
+    })
+  }
+  return items
+})
+
+function clearOpFilters() {
+  keyword.value = ''
+  if (actionFilter.value) {
+    actionFilter.value = ''
+    load()
+  }
+}
+
+function removeOpFilterChip(key: string) {
+  if (key === 'keyword') {
+    keyword.value = ''
+  } else if (key === 'action') {
+    actionFilter.value = ''
+    load()
+  }
+}
+
 const metaText = computed(() =>
   keyword.value.trim() ? `筛出 ${visibleLogs.value.length} / ${logs.value.length} 条` : `最近 ${logs.value.length} 条`,
 )
@@ -248,14 +292,34 @@ function detailText(log: AdminLogRow): string {
 
     <SectionCard title="审计流水" :icon="ScrollText" :meta="loading ? '加载中…' : metaText" flush>
       <div class="list-bar">
-        <div class="toolbar">
-          <el-input v-model="keyword" placeholder="搜索操作人 / 目标 / 详情" clearable>
-            <template #prefix><Search :size="14" /></template>
-          </el-input>
-          <el-select v-model="actionFilter" placeholder="全部操作类型" clearable filterable @change="load">
-            <el-option v-for="(label, key) in ACTION_LABELS" :key="key" :label="label" :value="key" />
-          </el-select>
-        </div>
+        <FilterBar
+          class="fb-grow"
+          :search="{
+            value: keyword,
+            placeholder: '搜索操作人 / 目标 / 详情',
+            mode: 'debounced',
+            debounceMs: 0,
+          }"
+          :filters="opFilters"
+          :applied-filters="appliedOpFilters"
+          :loading="loading"
+          @update:search="keyword = $event"
+          @remove-chip="removeOpFilterChip"
+          @clear="clearOpFilters"
+        >
+          <template #filter-action>
+            <el-select
+              v-model="actionFilter"
+              class="op-action-select"
+              placeholder="全部操作类型"
+              clearable
+              filterable
+              @change="load"
+            >
+              <el-option v-for="(label, key) in ACTION_LABELS" :key="key" :label="label" :value="key" />
+            </el-select>
+          </template>
+        </FilterBar>
         <div class="head-actions">
           <el-select v-model="limit" class="w-limit" aria-label="加载条数" @change="load">
             <el-option :label="'最近 100 条'" :value="100" />
@@ -285,7 +349,9 @@ function detailText(log: AdminLogRow): string {
         :error="loadError"
         :empty="keyword || actionFilter ? '没有匹配的日志' : '暂无操作日志'"
         :empty-description="keyword || actionFilter ? '换个关键字或清空操作类型再试。' : '管理员的每次改动都会记录在这里。'"
+        :has-active-filters="!!(keyword || actionFilter)"
         @retry="load"
+        @clear-filters="clearOpFilters"
       >
         <template #cell-action="{ row }">
           <span class="au-badge au-badge-amber">{{ ACTION_LABELS[row.action] || row.action }}</span>
@@ -329,8 +395,9 @@ function detailText(log: AdminLogRow): string {
   padding: 4px 20px 10px;
 }
 
-.list-bar .toolbar { flex: 1 1 auto; }
+.list-bar .fb-grow { flex: 1 1 auto; min-width: 0; }
 .list-bar .head-actions { justify-content: flex-end; }
+.op-action-select { width: 190px; max-width: 100%; }
 .w-limit { width: 124px; }
 
 .quick-filters {

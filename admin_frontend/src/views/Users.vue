@@ -14,7 +14,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   CircleCheck, CircleSlash, Crown, Download, Eye, EyeOff, Film, Gift,
-  History, KeyRound, Mail, Megaphone, MonitorSmartphone, MoreHorizontal, PlayCircle, RefreshCw, Search,
+  History, KeyRound, Mail, Megaphone, MonitorSmartphone, MoreHorizontal, PlayCircle, RefreshCw,
   Server, ShieldCheck, Smartphone, UserX, Users as UsersIcon, Wallet, Waypoints,
 } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard, StatTile } from '@/components/ui'
@@ -29,6 +29,8 @@ import type { AdminUserRow, DeviceRow, UserDetail, UserGrantCard, UserGrants } f
 import { useAuthStore } from '@/stores/auth'
 import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import type { AppliedFilter, FilterConfig } from '@/components/FilterBar.vue'
 import { useTableSelection } from '@/composables/useTableSelection'
 import { runBulkOperation, bulkSummaryText, BULK_LIMIT } from '@/utils/runBulkOperation'
 import type { RowKey } from '@/composables/useTableSelection'
@@ -74,6 +76,8 @@ const deviceColumns: DataColumn[] = [
 const users = ref<AdminUserRow[]>([])
 const total = ref(0)
 const search = ref('')
+/** 最近一次已提交查询用的关键字（FilterBar chips 只展示已提交条件，不拿草稿冒充） */
+const appliedSearch = ref('')
 const activeFilter = ref<string>('')
 /** 用户类型筛选：空=全部，paid=付费（会员生效中），normal=普通（无会员） */
 const typeFilter = ref<string>('')
@@ -91,10 +95,17 @@ const hasFilter = computed(() =>
   Boolean(search.value || activeFilter.value || channelFilter.value || typeFilter.value),
 )
 
-/** 搜索框输入防抖：停手 350ms 自动查询（回车 / 清空仍立即查询） */
+/**
+ * 搜索框输入防抖：停手 350ms 自动查询（清空仍立即查询，同 ExchangeCodes 的 FilterBar 口径）。
+ * FilterBar 以 debounceMs: 0 逐键同步 search，防抖只由这里负责，避免叠加等待。
+ */
 let searchTimer: ReturnType<typeof setTimeout> | undefined
 watch(search, () => {
   clearTimeout(searchTimer)
+  if (!search.value) {
+    applyFilter()
+    return
+  }
   searchTimer = setTimeout(applyFilter, 350)
 })
 onBeforeUnmount(() => clearTimeout(searchTimer))
@@ -152,6 +163,7 @@ async function bulkToggleActive(enable: boolean) {
 function applyFilter() {
   // 筛选提交清空选择：老选择对应的行可能已不在结果里
   selection.clear()
+  appliedSearch.value = search.value
   page.value = 0
   load()
 }
@@ -163,6 +175,84 @@ function resetFilters() {
   channelFilter.value = ''
   typeFilter.value = ''
   applyFilter()
+}
+
+/** FilterBar 声明式筛选配置：三个下拉与原手写 select 同字段、同选项、同清空口径 */
+const userFilters = computed<FilterConfig[]>(() => [
+  {
+    key: 'active',
+    label: '账号状态',
+    type: 'select',
+    value: activeFilter.value,
+    placeholder: '账号状态',
+    options: [
+      { label: '正常', value: 'true' },
+      { label: '已禁用', value: 'false' },
+    ],
+  },
+  {
+    key: 'channel',
+    label: '注册来源',
+    type: 'select',
+    value: channelFilter.value,
+    placeholder: '注册来源',
+    options: channels.value.map((c) => ({ label: c.label, value: c.value })),
+  },
+  {
+    key: 'type',
+    label: '用户类型',
+    type: 'select',
+    value: typeFilter.value,
+    placeholder: '用户类型',
+    options: [
+      { label: '付费（会员生效中）', value: 'paid' },
+      { label: '普通（无会员）', value: 'normal' },
+    ],
+  },
+])
+
+/** chips 只反映已提交条件：下拉即选即提交，关键字以 applyFilter 的快照为准 */
+const appliedFilters = computed<AppliedFilter[]>(() => {
+  const items: AppliedFilter[] = []
+  if (appliedSearch.value) {
+    items.push({ key: 'search', label: '关键词', text: appliedSearch.value })
+  }
+  if (activeFilter.value) {
+    items.push({
+      key: 'active',
+      label: '账号状态',
+      text: activeFilter.value === 'true' ? '正常' : '已禁用',
+    })
+  }
+  if (channelFilter.value) {
+    const ch = channels.value.find((c) => c.value === channelFilter.value)
+    items.push({ key: 'channel', label: '注册来源', text: ch?.label ?? channelFilter.value })
+  }
+  if (typeFilter.value) {
+    items.push({
+      key: 'type',
+      label: '用户类型',
+      text: typeFilter.value === 'paid' ? '付费（会员生效中）' : '普通（无会员）',
+    })
+  }
+  return items
+})
+
+function onFilterChange(key: string, value: string) {
+  if (key === 'active') activeFilter.value = value
+  else if (key === 'channel') channelFilter.value = value
+  else if (key === 'type') typeFilter.value = value
+  else return
+  applyFilter()
+}
+
+function removeFilterChip(key: string) {
+  if (key === 'search') {
+    // 清空走 watch 的立即查询分支，这里只改值
+    search.value = ''
+    return
+  }
+  onFilterChange(key, '')
 }
 
 /** 请求序号：筛选连续变化时只采纳最后一次请求的结果，避免旧响应覆盖新筛选 */
@@ -560,35 +650,24 @@ function fmtCount(n: number | null | undefined): string {
     </PageHeader>
 
     <SectionCard title="全部用户" :icon="UsersIcon" :meta="`共 ${total} 位`" flush>
-      <!-- 工具栏：筛选在左，重置在右 -->
+      <!-- 工具栏：筛选一律 FilterBar（统一标准第 4 条）；清除走 chips 行的「清除全部」 -->
       <div class="users-toolbar">
-        <div class="users-filters">
-          <el-input
-            v-model="search"
-            class="f-search"
-            placeholder="搜索用户名 / 邮箱"
-            aria-label="搜索用户"
-            clearable
-            @keyup.enter="applyFilter"
-            @clear="applyFilter"
-          >
-            <template #prefix><Search :size="14" /></template>
-          </el-input>
-          <el-select v-model="activeFilter" class="f-select" placeholder="账号状态" clearable @change="applyFilter">
-            <el-option label="正常" value="true" />
-            <el-option label="已禁用" value="false" />
-          </el-select>
-          <el-select v-model="channelFilter" class="f-select" placeholder="注册来源" clearable @change="applyFilter">
-            <el-option v-for="c in channels" :key="c.value" :label="c.label" :value="c.value" />
-          </el-select>
-          <el-select v-model="typeFilter" class="f-select" placeholder="用户类型" clearable @change="applyFilter">
-            <el-option label="付费（会员生效中）" value="paid" />
-            <el-option label="普通（无会员）" value="normal" />
-          </el-select>
-        </div>
-        <div v-if="hasFilter" class="users-actions">
-          <el-button text @click="resetFilters">清除筛选</el-button>
-        </div>
+        <FilterBar
+          class="fb-grow"
+          :search="{
+            value: search,
+            placeholder: '搜索用户名 / 邮箱',
+            mode: 'debounced',
+            debounceMs: 0,
+          }"
+          :filters="userFilters"
+          :applied-filters="appliedFilters"
+          :loading="loading"
+          @update:search="search = $event"
+          @filter-change="onFilterChange"
+          @remove-chip="removeFilterChip"
+          @clear="resetFilters"
+        />
       </div>
 
       <DataTable :rows="users" :columns="columns" :loading="loading"
@@ -963,7 +1042,7 @@ function fmtCount(n: number | null | undefined): string {
       :title="subDialog.mode === 'grant' ? '授予会员' : '延长会员'"
       width="min(440px, 92vw)"
     >
-      <el-form label-width="80px">
+      <el-form label-width="90px">
         <el-form-item label="用户">
           <span class="dialog-user">{{ subDialog.user?.username }}</span>
         </el-form-item>
@@ -998,7 +1077,7 @@ function fmtCount(n: number | null | undefined): string {
 
     <!-- ==================== 重置密码 ==================== -->
     <el-dialog v-model="pwdDialog.visible" title="重置密码" width="min(400px, 92vw)">
-      <el-form label-width="80px">
+      <el-form label-width="90px">
         <el-form-item label="用户">
           <span class="dialog-user">{{ pwdDialog.user?.username }}</span>
         </el-form-item>
@@ -1014,7 +1093,7 @@ function fmtCount(n: number | null | undefined): string {
 
     <!-- ==================== 发送消息 ==================== -->
     <el-dialog v-model="msgDialog.visible" title="发送站内消息" width="min(460px, 92vw)">
-      <el-form label-width="80px">
+      <el-form label-width="90px">
         <el-form-item label="收件人">
           <span class="dialog-user">{{ msgDialog.user?.username }}</span>
         </el-form-item>
@@ -1033,7 +1112,7 @@ function fmtCount(n: number | null | undefined): string {
 
     <!-- ==================== 全站广播 ==================== -->
     <el-dialog v-model="broadcastVisible" title="全站广播" width="min(460px, 92vw)">
-      <el-form label-width="80px">
+      <el-form label-width="90px">
         <el-form-item label="标题">
           <el-input v-model="broadcastForm.title" />
         </el-form-item>
@@ -1068,10 +1147,7 @@ function fmtCount(n: number | null | undefined): string {
   padding: 12px 20px;
   border-bottom: 1px solid var(--au-border);
 }
-.users-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
-.users-actions { display: flex; align-items: center; gap: 8px; }
-.f-search { width: 240px; }
-.f-select { width: 150px; }
+.users-toolbar .fb-grow { flex: 1 1 auto; min-width: 0; }
 
 /* ===== 列表单元格 ===== */
 .user-cell { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -1283,9 +1359,6 @@ function fmtCount(n: number | null | undefined): string {
 
 @media (max-width: 768px) {
   .users-toolbar { padding: 10px 16px; }
-  .users-filters { flex: 1 1 100%; }
-  .f-search { flex: 1 1 100%; width: auto; }
-  .f-select { flex: 1 1 calc(50% - 4px); width: auto; min-width: 0; }
   .pager { justify-content: center; }
   .detail-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .grant-metric b { font-size: 14px; }
