@@ -440,6 +440,12 @@ export interface HomeSection {
   items: PortalResumeItem[] | RecentAddedItem[]
 }
 
+/** 热搜词条（近 7 天聚合榜；count 是窗口内总次数） */
+export interface HotSearchTerm {
+  term: string
+  count: number
+}
+
 /** 已藏的继续观看条目：取消藏的键是 item_guid（单集 guid / 电影 guid）。 */
 export interface HiddenResumeItem {
   item_guid: string
@@ -578,6 +584,10 @@ export const embyApi = {
   hideResumeItem: (itemGuid: string) => api.post<never, { ok: boolean }>(`/api/user/media-library/resume/${itemGuid}/hide`),
   unhideResumeItem: (itemGuid: string) => api.post<never, { ok: boolean }>(`/api/user/media-library/resume/${itemGuid}/unhide`),
   getHiddenResume: () => api.get<never, { items: HiddenResumeItem[] }>('/api/user/media-library/resume/hidden'),
+
+  // 片库热搜榜（近 7 天搜索词聚合；无数据时 items 为空，搜索页整行不渲染）
+  getHotSearchTerms: (limit = 10) =>
+    api.get<never, { items: HotSearchTerm[] }>('/api/user/media-library/search/hot', { params: { limit } }),
 
   // 收藏列表
   getFavorites: () => api.get<never, { items: PortalMediaItem[] }>('/api/user/emby/favorites'),

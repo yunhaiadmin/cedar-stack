@@ -5,7 +5,7 @@
  * 激活白胶囊约 65×40/圆角 20）；网格与分类页同款（7 列 228×343）。
  * 数据走现行 Emby 协议搜索口 getItems(searchTerm)，与顶栏下拉同一口径。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import StreamShell from '@/components/stream/StreamShell.vue'
 import StreamPosterCard from '@/components/stream/StreamPosterCard.vue'
@@ -14,6 +14,7 @@ import {
   posterUrl,
   type EmbyItem,
 } from '@/api/emby'
+import { embyApi, type HotSearchTerm } from '@/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -66,6 +67,26 @@ async function load() {
   }
 }
 
+// 热搜榜（近 7 天聚合）：只在空态展示；拉不到或没数据就整行不渲染
+const hotTerms = ref<HotSearchTerm[]>([])
+async function loadHot() {
+  try {
+    const res = await embyApi.getHotSearchTerms(10)
+    hotTerms.value = res.items || []
+  } catch {
+    hotTerms.value = []
+  }
+}
+function goHot(word: string) {
+  void router.push({ path: '/search', query: { q: word } })
+}
+onMounted(() => {
+  if (!term.value) void loadHot()
+})
+watch(term, (q) => {
+  if (!q && hotTerms.value.length === 0) void loadHot()
+})
+
 function metaOf(item: EmbyItem): string {
   const parts: string[] = []
   parts.push(item.Type === 'Series' ? '剧集' : '电影')
@@ -115,6 +136,16 @@ watch([term, filter], () => void load(), { immediate: true })
       </template>
       <template v-else>
         <h1 class="sv-h1">搜索</h1>
+        <div v-if="hotTerms.length" class="sv-hot">
+          <span class="sv-hot__label">热搜</span>
+          <button
+            v-for="h in hotTerms"
+            :key="h.term"
+            type="button"
+            class="sv-hot__chip"
+            @click="goHot(h.term)"
+          >{{ h.term }}</button>
+        </div>
         <p class="sv-note">用顶栏的放大镜，或手机底部的搜索按钮，输入片名开始找片。</p>
         <button type="button" class="sv-back" @click="router.push('/library')">回片库首页</button>
       </template>
@@ -201,6 +232,34 @@ watch([term, filter], () => void load(), { immediate: true })
   margin-top: 28px;
   font-size: 15px;
   color: var(--uhd-s-text-2);
+}
+.sv-hot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 22px;
+}
+.sv-hot__label {
+  font-size: 14px;
+  font-weight: var(--uhd-fw-semibold);
+  color: var(--uhd-s-text-2);
+  margin-right: 2px;
+}
+.sv-hot__chip {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 17px;
+  border: 1px solid var(--uhd-s-pill-border);
+  background: var(--uhd-s-card-soft);
+  color: var(--uhd-s-text);
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sv-back {
   margin-top: 18px;

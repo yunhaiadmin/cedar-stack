@@ -2691,6 +2691,21 @@ def get_items(
     db: Session = Depends(get_db),
 ):
     result = _query_items(request, user, db, _base_url(request))
+    # 热搜计数：带 SearchTerm 的搜索成功后 best-effort 记一笔聚合计数
+    # （只存归一化词与次数、不关联用户，见 search_stats）。旁路失败
+    # 只记日志并回滚，绝不影响搜索响应本体。
+    _search_raw = request.query_params.get("SearchTerm")
+    if _search_raw and _search_raw.strip():
+        try:
+            from backend.emby_server import search_stats as _search_stats
+
+            _search_stats.record_search_term(db, _search_raw)
+        except Exception as exc:  # noqa: BLE001 — 计数失败不拖垮搜索
+            try:
+                db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            logger.warning("热搜计数失败 term=%r: %s", _search_raw, exc)
     # Fields 明确要 MediaSources/MediaStreams 时按详情面同口径补齐
     # （官方 Emby 口径；未请求时列表行为逐字不变）。补齐失败不许
     # 拖垮列表本体——列表可用性优先于字段完整性。
