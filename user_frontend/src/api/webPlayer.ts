@@ -18,8 +18,8 @@
  *   /Playing/Stopped，body 与旧 wrapper 逐字一致
  *   { ItemId, PositionTicks, IsPaused?, PlayMethod }，另附 PlaySessionId /
  *   MediaSourceId（Emby 标准字段，服务端按确定性会话键落同一行）。
- * - 弹幕：本站没有弹幕数据源（服务端只有 Danmu 插件约定的空弹幕兼容
- *   端点），本模块不提供弹幕数据，播放器面板只做设置与缺口提示。
+ * - 弹幕：站内自发弹幕走门户 JWT 口（见 @/api/danmaku），与第三方
+ *   客户端的 Danmu 空弹幕兼容端点无关；本站开关关时播放器隐藏弹幕入口。
  */
 import api from '@/api'
 import { embyAuthConfig, ensureEmbyBase, secondsToTicks, type EmbyMediaSource } from '@/api/emby'

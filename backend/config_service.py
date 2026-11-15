@@ -66,6 +66,8 @@ SCHEMAS: dict[str, dict[str, tuple]] = {
     "player_blacklist": config_schema.PLAYER_BLACKLIST_CONFIG_SCHEMA,
     # 网页软解开关（2026-11-14 批 2）：web_softdecode_enabled，默认关
     "web_softdecode": config_schema.WEB_SOFTDECODE_CONFIG_SCHEMA,
+    # 站内弹幕（2026-11-15）：开关（默认关）/ 敏感词表 / 最小发送间隔 / 字数上限
+    "danmaku": config_schema.DANMAKU_CONFIG_SCHEMA,
     # 安装应用页（2026-11-13）：6 平台官方客户端下载链接
     "install_app": config_schema.INSTALL_APP_CONFIG_SCHEMA,
     "welfare": config_schema.WELFARE_CONFIG_SCHEMA,

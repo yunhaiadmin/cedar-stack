@@ -64,9 +64,9 @@
       <p class="wp-hint">弹幕出现时间相对画面的偏移，负数提前、正数延后。</p>
     </div>
 
-    <!-- 诚实缺口：本站没有弹幕数据源（服务端只有空弹幕兼容端点），
-         这里只保存设置，不假装有弹幕可显示。 -->
-    <p class="wp-gap">本站暂时没有弹幕数据，设置会先替你存好，有弹幕时按这套生效。</p>
+    <!-- 站内弹幕（2026-11-15）：数据来自观众在播放页发的弹幕，
+         按时间点飘过；这里的设置即时生效。 -->
+    <p class="wp-note">弹幕由大家在播放页发送，会在对应的时间点飘过画面。关掉显示开关就只看片、不看弹幕。</p>
   </PlayerSheet>
 </template>
 
@@ -215,13 +215,13 @@ function bumpOffset(delta: number): void {
   color: rgba(255, 255, 255, 0.4);
   margin: 8px 0 0;
 }
-.wp-gap {
+.wp-note {
   margin: 20px 0 0;
   font-size: 12.5px;
   line-height: 1.6;
-  color: #f2c14e;
-  background: rgba(242, 193, 78, 0.1);
-  border: 1px solid rgba(242, 193, 78, 0.25);
+  color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   padding: 10px 12px;
 }
