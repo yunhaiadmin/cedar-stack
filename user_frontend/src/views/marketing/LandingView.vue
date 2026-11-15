@@ -4,10 +4,10 @@
  * 六区块骨架：100vh Hero（棱镜光束 + 文案轮换 + 规格 chip）→ 流媒体伙伴字标行
  * → 客户端/规格跑马灯 → 钉住滚动影院/音频展示（钉住只此一处，说明书第 5 节①）
  * → 一份订阅三卡 → 页脚（免责声明＋单行信息）。
- * 文案为 Aetrix 自有口径；营销数字一律不编造：片库数据行用 2026-11-15 生产真实统计取整呈现（口径见片库卡注释）。
+ * 文案为 Aetrix 自有口径；营销数字一律不编造：片库数据行读 /api/site/library-stats 实时统计取整呈现，接口不可用时回落快照（见 useLibraryStats）。
  * 页面独立于应用壳（App.vue 对 landing 路由名不渲染全局顶栏/底坞），自带悬浮胶囊导航。
  */
-import { nextTick, onDeactivated, onMounted, onUnmounted, ref, type Component } from 'vue'
+import { computed, nextTick, onDeactivated, onMounted, onUnmounted, ref, type Component } from 'vue'
 import { useRouter } from 'vue-router'
 import { Monitor, Sparkles, Film, Ban, Menu, X, RefreshCw, Bell, Home, Tag, BookOpen, ExternalLink, Users, Bot, MessageCircle, Send, Globe, ArrowRight } from 'lucide-vue-next'
 import UhdNavPill, { type UhdNavItem } from '@/components/uhd/UhdNavPill.vue'
@@ -16,6 +16,7 @@ import UhdButton from '@/components/uhd/UhdButton.vue'
 import UhdChip from '@/components/uhd/UhdChip.vue'
 import { branding } from '@/composables/useBranding'
 import { communityLinks } from '@/composables/useCommunityLinks'
+import { initLibraryStats, libraryStats } from '@/composables/useLibraryStats'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
@@ -23,6 +24,18 @@ const router = useRouter()
 const heroImgReady = ref(false)
 function onHeroImgLoad() { heroImgReady.value = true }
 const userStore = useUserStore()
+
+/* 片库数据行取整呈现（与原快照展示格式一致）：作品向下取整到千并加千分位，
+   单集 / 总计向下取整到万。libraryStats 未拉到实时数时保持快照值。 */
+function fmtThousandsPlus(n: number): string {
+  return `${(Math.floor(n / 1000) * 1000).toLocaleString('en-US')}+`
+}
+function fmtWanPlus(n: number): string {
+  return `${Math.floor(n / 10000)}万+`
+}
+const statsWorks = computed(() => fmtThousandsPlus(libraryStats.works))
+const statsEpisodes = computed(() => fmtWanPlus(libraryStats.episodes))
+const statsTotal = computed(() => fmtWanPlus(libraryStats.total_items))
 
 const navItems: UhdNavItem[] = [
   { key: 'home', label: '首页' },
@@ -393,6 +406,7 @@ function onLandingWide() {
   if (landingWide?.matches) forceReleaseMenu()
 }
 onMounted(() => {
+  void initLibraryStats()
   window.addEventListener('scroll', onScrollNav, { passive: true })
   window.addEventListener('keydown', onMenuKey)
   landingWide = window.matchMedia('(min-width: 901px)')
@@ -752,15 +766,16 @@ const year = new Date().getFullYear()
           <p class="eyebrow">EVER-GROWING LIBRARY</p>
           <h3 class="ess-h3">片库自己长大</h3>
           <p class="ess-desc">新片自动扫描入库、刮削补齐海报与资料；追的剧更新了，自动出现在你的片库里。</p>
-          <!-- 数据行（2026-11-15）：parent 查生产 ORM 口径（deleted_at IS NULL AND merged_into_id IS NULL）——
-               影视作品 22,482 部（电影 12,807＋剧集 9,675）、剧集单集 294,126 集、媒体库 11 个、条目总计 332,085。
-               排版照友站大数据行（大数字＋小标签横排），只取整呈现；不用 PB 等本站没有口径的数字。 -->
+          <!-- 数据行：读 /api/site/library-stats 实时统计（ORM 口径：deleted_at IS NULL
+               AND merged_into_id IS NULL），取整呈现；接口不可用时回落 useLibraryStats 里的
+               2026-11-15 生产快照。排版照友站大数据行（大数字＋小标签横排）；
+               不用 PB 等本站没有口径的数字。 -->
           <div class="ess-stats">
-            <div class="ess-stat"><span class="ess-stat-num">22,000+</span><span class="ess-stat-label">影视作品</span></div>
-            <div class="ess-stat"><span class="ess-stat-num">29万+</span><span class="ess-stat-label">剧集单集</span></div>
-            <div class="ess-stat"><span class="ess-stat-num">33万+</span><span class="ess-stat-label">条目总计</span></div>
+            <div class="ess-stat"><span class="ess-stat-num">{{ statsWorks }}</span><span class="ess-stat-label">影视作品</span></div>
+            <div class="ess-stat"><span class="ess-stat-num">{{ statsEpisodes }}</span><span class="ess-stat-label">剧集单集</span></div>
+            <div class="ess-stat"><span class="ess-stat-num">{{ statsTotal }}</span><span class="ess-stat-label">条目总计</span></div>
           </div>
-          <p class="ess-stats-note">覆盖 11 个媒体库，持续更新中</p>
+          <p class="ess-stats-note">覆盖 {{ libraryStats.libraries }} 个媒体库，持续更新中</p>
           <ul class="ess-points">
             <li>
               <RefreshCw :size="18" aria-hidden="true" />

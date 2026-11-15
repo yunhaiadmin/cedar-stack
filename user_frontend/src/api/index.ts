@@ -312,6 +312,24 @@ export const communityApi = {
   /** 公开端点：文档外链 + 社区渠道（只含要显示的项，不含任何凭据） */
   get: () => api.get<never, CommunityLinks>('/api/site/community'),
 }
+
+// ==================== 官网片库数字（backend/api/site.py） ====================
+
+export interface LibraryStats {
+  /** 影视作品（电影 + 剧集，ORM 可见口径） */
+  works: number
+  /** 剧集单集 */
+  episodes: number
+  /** 条目总计（全部类型） */
+  total_items: number
+  /** 启用的媒体库数 */
+  libraries: number
+}
+
+export const libraryStatsApi = {
+  /** 公开端点：官网首页片库数据行（后端缓存 10 分钟，回全 0 表示后端故障兜底） */
+  get: () => api.get<never, LibraryStats>('/api/site/library-stats'),
+}
 // ==================== 自建 Emby 门户 API（backend/emby_server/portal.py） ====================
 
 /** 一个「服」的连接信息与会员状态（多服运营：同一个面板下可以有几个独立的服） */
