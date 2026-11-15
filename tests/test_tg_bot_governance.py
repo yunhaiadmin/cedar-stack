@@ -144,7 +144,6 @@ def test_dashboard_sample_layout_exact(db):
         f"· 🆔 <b>用户编号</b> | {row.id}",
         "· 👤 <b>账号名称</b> | <b>shunxian2580</b>",
         "· 🔗 <b>网盘绑定</b> | Drive 已绑 ✓",
-        "· 🐉 <b>当前馆灵</b> | 🥚 蛋（累计观影 0.0 小时），距夜枭还差 50.0 小时",
         "· 📦 <b>订阅状态</b> | 暂无",
     ])
     assert text == expected

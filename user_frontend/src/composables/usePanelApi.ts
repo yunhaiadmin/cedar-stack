@@ -25,38 +25,6 @@ function unwrap<T>(res: unknown): T {
   return r as T
 }
 
-/** 收藏家：口味护照 / 馆灵 */
-export interface TasteStamp {
-  name: string
-  stamped: boolean
-  count: number
-}
-
-export interface PetStage {
-  name: string
-  icon: string
-}
-
-export interface PetData {
-  stage: number
-  name: string
-  icon: string
-  hours: number
-  next_name: string | null
-  next_icon: string | null
-  next_hours: number | null
-  progress: number
-  stages: PetStage[]
-}
-
-export interface CollectorData {
-  nickname?: string
-  watch_hours?: number
-  tastes?: Record<string, TasteStamp>
-  pet?: PetData
-  [k: string]: unknown
-}
-
 /** 服务器页：连接状态 / 任务 / 媒体库 / 入库趋势 */
 export interface ServerVitals {
   status?: string
@@ -112,8 +80,6 @@ async function put<T>(url: string, body?: unknown): Promise<T> {
 }
 
 export const panelApi = {
-  /** 收藏家数据 */
-  collector: () => get<CollectorData>('/api/panel/collector'),
   /** 观影碑榜单：board=hot/duration，period=day/week */
   leaderboard: (board: 'hot' | 'duration', period: 'day' | 'week') =>
     get<{

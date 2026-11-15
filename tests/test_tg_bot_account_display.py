@@ -1,4 +1,4 @@
-"""TG Bot 账号展示：命令进原生菜单＋账号加馆灵＋群里放行。
+"""TG Bot 账号展示：命令进原生菜单＋群里放行。
 
 只测本模块：DB 用内存 SQLite；Telegram 发送全部 patch 掉，不发真实请求。
 """
@@ -143,35 +143,23 @@ def test_start_unbound_has_no_command_list(db):
     assert "绑定" in text
 
 
-# ---------- 改动 2：账号展示加馆灵 ----------
+# ---------- 改动 2：账号展示（馆灵行已随馆灵功能于 2026-11-15 删除） ----------
 
-def test_account_full_display(db):
+def test_account_card_has_no_pet_row(db):
     row = _user(db)
     _watch(db, row.id, [100, 20])
     text = features.handle_account(db, _tg(), TG, "")
-    # 馆灵：120 小时 → 夜枭（50），下一阶段守夜者（200）差距并进同一行
-    assert "夜枭" in text and "120.0" in text
-    assert "守夜者" in text and "80.0" in text
-
-
-def test_account_empty_pet_egg(db):
-    _user(db)
-    text = features.handle_account(db, _tg(), TG, "")
-    assert "蛋" in text and "50.0" in text  # 0 小时 → 蛋，下一阶段夜枭还差 50
-
-
-def test_account_pet_max_stage(db):
-    row = _user(db)
-    _watch(db, row.id, [1200])
-    text = features.handle_account(db, _tg(), TG, "")
-    assert "馆灵" in text and "已满级" in text
+    # 钉住删除语义：账号卡不得再出现馆灵行/阶段名
+    assert "馆灵" not in text
+    assert "夜枭" not in text and "守夜者" not in text
 
 
 def test_compact_dashboard_counts(db):
     row = _user(db)
     _watch(db, row.id, [100, 20])
     text = features.compact_dashboard(db, row)
-    assert all(x in text for x in ("alice", "夜枭", "120.0"))
+    assert "alice" in text
+    assert "馆灵" not in text
     assert "<b>订阅状态</b> | 暂无" in text  # 精简卡只出订阅汇总行
 
 

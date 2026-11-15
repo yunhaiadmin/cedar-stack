@@ -56,7 +56,7 @@ from backend.api.admin_artwork import router as admin_artwork_router
 from backend.api.library_order import router as library_order_router
 from backend.api.home_summary import router as home_summary_router
 from backend.api.homepage_sections import router as homepage_sections_router
-from backend.api.panel import router as panel_router, admin_router as panel_admin_router
+from backend.api.panel import router as panel_router
 from backend.api.play_status import router as play_status_router
 from backend.api.realms import router as realms_router
 from backend.api.servers import router as servers_router
@@ -820,7 +820,6 @@ app.include_router(home_summary_router)
 app.include_router(homepage_sections_router)
 # v4 探险家日志面板（特性开关 PANEL_V4_ENABLED，只做加法）
 app.include_router(panel_router)
-app.include_router(panel_admin_router)
 # 条目起播状态（只读展示口，不改播放主链路）
 app.include_router(play_status_router)
 

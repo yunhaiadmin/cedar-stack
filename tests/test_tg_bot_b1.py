@@ -28,7 +28,7 @@ def db():
     # 绑定成功消息需要查订阅与套餐
     models.UserSubscription.__table__.create(engine, checkfirst=True)
     models.SubscriptionPlan.__table__.create(engine, checkfirst=True)
-    # /start 已绑定 dashboard 需要查馆灵
+    # 播放会话/条目表（排行等查询需要）
     em.PlaybackSession.__table__.create(engine, checkfirst=True)
     em.MediaItem.__table__.create(engine, checkfirst=True)
     # /start 详细版 dashboard：网盘绑定

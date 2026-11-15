@@ -47,8 +47,6 @@ const routes: RouteRecordRaw[] = [
       { path: 'tickets', name: 'Tickets', component: () => import('@/views/Tickets.vue'), meta: { title: '工单' } },
       // 等级治理 Step 2：举报终审队列 + 治理停权（一页两标签，?tab=suspensions 落到停权）
       { path: 'governance', name: 'Governance', component: () => import('@/views/Governance.vue'), meta: { title: '举报与停权' } },
-      // 馆灵阶段（r48 遗留 ⑨）：面板 v4 馆灵阶段的管理入口（成就定义已随成就系统删除）
-      { path: 'panel-achievements', name: 'PanelAchievements', component: () => import('@/views/PanelAchievements.vue'), meta: { title: '馆灵阶段' } },
       { path: 'media-seek', name: 'MediaSeek', component: () => import('@/views/MediaSeek.vue'), meta: { title: '求片管理' } },
       // 群抽奖（Welfare.vue，历史文件名）：抽奖轮次 + 提案黑名单标签；
       // 公益配置标签已随公益资格整族于 2026-11-14 删除

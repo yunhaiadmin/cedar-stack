@@ -8,8 +8,8 @@
 2. 机关拨杆：普通用户 403，管理员可写，未知 key 400
 3. 特性开关：PANEL_V4_ENABLED=0 时接口 403
 4. envelope 格式：{code, msg, data}
-5. 收藏家口味/馆灵统计（panel_stats）
-（成就定义 seed 与评估器用例已于 2026-11-14 随成就系统删除摘除。）
+（成就定义 seed 与评估器用例已于 2026-11-14 随成就系统删除摘除；
+收藏家口味/馆灵用例已于 2026-11-15 随馆灵功能删除摘除。）
 """
 import os
 
@@ -28,7 +28,6 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend import models
-from backend import panel_stats as pa
 from backend.api import panel as panel_api
 
 
@@ -88,71 +87,6 @@ def _make_app(db_session, current_user):
     return app
 
 
-# ==================== 2. 口味与收藏家 ====================
-
-# 真实播放会话数据源（emby_playback_sessions）：每 (user, item) 一行，
-# 观看秒数 = position_ticks/1e7（与 backend.panel_stats.playback_seconds 同口径）。
-_session_seq = [0]
-
-
-def _mk_session(db, user, name, start, duration, genres=""):
-    from backend.emby_server import models as em
-    _session_seq[0] += 1
-    n = _session_seq[0]
-    item = em.MediaItem(
-        guid=f"sess-item-{n:06d}",
-        library_id=1, item_type="movie", name=name,
-        date_added=datetime.now(), genres=genres,
-    )
-    db.add(item)
-    db.commit()
-    db.refresh(item)
-    s = em.PlaybackSession(
-        session_key=f"sess-key-{n:06d}",
-        user_id=user.id,
-        item_id=item.id,
-        start_time=start,
-        last_update_at=start,
-        position_ticks=int(duration * 10_000_000),
-    )
-    db.add(s)
-    db.commit()
-    return s
-
-
-def _bj_to_storage(bj_hour, bj_minute=0, days_ago=0):
-    """北京时间墙钟 → 入库存储帧（UTC naive）：播放会话时间按此换算构造。"""
-    bj = datetime.now() + timedelta(hours=8)
-    t = bj.replace(hour=bj_hour, minute=bj_minute, second=0, microsecond=0)
-    if days_ago:
-        t -= timedelta(days=days_ago)
-    return t - timedelta(hours=8)
-
-
-def test_user_tastes_reads_playback_sessions(db, user):
-    """换源回归：口味印章从 emby_playback_sessions（真实播放）来，
-    genre 走 item_id 精确关联；不足 1 分钟的播放不计入。"""
-    for i in range(5):
-        _mk_session(db, user, f"纪录片{i}", datetime.now() - timedelta(hours=i + 1),
-                    3600, genres="纪录片,自然")
-    _mk_session(db, user, "快进纪录片", datetime.now() - timedelta(hours=9),
-                30, genres="纪录片")
-    tastes = pa.user_tastes(db, user.id)
-    assert tastes["taste_doc"]["stamped"] is True
-    assert tastes["taste_doc"]["count"] == 5
-
-
-def test_collector_reads_playback_sessions(db, user):
-    """换源回归：/collector 累计小时从 emby_playback_sessions 的
-    position_ticks 来。"""
-    start = _bj_to_storage(12, 0, days_ago=1)
-    _mk_session(db, user, "昨日电影", start, 7200)
-    app = _make_app(db, user)
-    client = TestClient(app)
-    coll = client.get("/api/panel/collector").json()["data"]
-    assert coll["watch_hours"] == 2.0
-
-
 # ==================== 5. 特性开关 ====================
 
 def test_panel_disabled_returns_403(db, user, monkeypatch):
@@ -170,7 +104,7 @@ def test_envelope_format(db, user):
     app = _make_app(db, user)
     client = TestClient(app)
     for path in ["/api/panel/today", "/api/panel/pulse", "/api/panel/home",
-                 "/api/panel/collector", "/api/panel/server"]:
+                 "/api/panel/server"]:
         r = client.get(path)
         assert r.status_code == 200, path
         body = r.json()
