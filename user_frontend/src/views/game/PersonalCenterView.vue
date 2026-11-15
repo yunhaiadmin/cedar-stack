@@ -94,11 +94,11 @@
           <div class="ov-bar__fill" :style="{ width: `${trafficRemainPct}%` }"></div>
         </div>
         <div class="ov-quota__meta">
-          <span>已用 {{ trafficUsedText }} / 共 {{ trafficQuotaText }}</span>
+          <span>已用 {{ trafficUsedText }} / 共 {{ trafficQuotaText }} GB</span>
           <span>{{ trafficResetText }}</span>
         </div>
         <p v-if="traffic.exhausted" class="ov-quota__meta-line">
-          本月流量已用完，可以购买流量继续用（本期不影响播放）。
+          本月流量已用完，购买流量包后可继续播放。
         </p>
       </section>
       <!-- 「订阅剩余 N 天」大字块已删（2026-11-15 对照友站）：到期信息
@@ -283,7 +283,6 @@ import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
 import StatusAlertBar from '@/components/profile/StatusAlertBar.vue'
 import TrafficPurchaseModal from '@/components/profile/TrafficPurchaseModal.vue'
 import {
-  formatBytes as formatTrafficBytes,
   formatGbValue,
   formatResetDate,
   getTraffic,
@@ -368,8 +367,10 @@ const trafficRemainPct = computed(() => {
   const pct = 100 - (traffic.value?.used_pct ?? 0)
   return Math.min(100, Math.max(0, Math.round(pct)))
 })
-const trafficUsedText = computed(() => formatTrafficBytes(traffic.value?.used_bytes))
-const trafficQuotaText = computed(() => formatTrafficBytes(traffic.value?.quota_bytes))
+/* meta 行照友站帧：已用/共都按 GB（一单位收尾「0.3 / 500 GB」），
+ * 不许 formatBytes 在 <1GB 时跳成 MB（2026-11-15 对帧实证） */
+const trafficUsedText = computed(() => formatGbValue(traffic.value?.used_bytes))
+const trafficQuotaText = computed(() => formatGbValue(traffic.value?.quota_bytes))
 const trafficResetText = computed(() =>
   traffic.value ? formatResetDate(traffic.value.reset_date) : '',
 )
