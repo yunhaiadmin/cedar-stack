@@ -82,6 +82,7 @@ from backend.api.admin_player_blacklist import admin_player_blacklist_router
 from backend.api.admin_softdecode import admin_softdecode_router
 from backend.api.admin_danmaku import admin_danmaku_router
 from backend.api.danmaku import router as danmaku_router
+from backend.api.player_prefs import router as player_prefs_router
 from backend.api.install_app import (
     admin_install_app_router,
     user_install_app_router,
@@ -856,6 +857,9 @@ app.include_router(admin_softdecode_router)
 # 见 backend/api/admin_danmaku.py 与 backend/api/danmaku.py
 app.include_router(admin_danmaku_router)
 app.include_router(danmaku_router)
+# 网页播放器设置同步（2026-11-15 ⚠️11）：偏好真落库、换设备跟随，
+# 见 backend/api/player_prefs.py 与 backend/player_prefs.py
+app.include_router(player_prefs_router)
 # 安装应用页（2026-11-13）：用户端页面数据 + 管理端下载链接配置，
 # 见 backend/api/install_app.py
 app.include_router(user_install_app_router)

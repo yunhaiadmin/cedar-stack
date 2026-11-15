@@ -308,6 +308,14 @@ class WebUser(Base):
     tg_notify_expiry = Column(Boolean, default=True, nullable=False, server_default="1")
     tg_notify_lottery = Column(Boolean, default=True, nullable=False, server_default="1")
     tg_notify_pool_digest = Column(Boolean, default=True, nullable=False, server_default="1")
+    # 网页播放器设置同步（2026-11-15 ⚠️11）：弹幕显示/倍速/字幕等个人
+    # 偏好的整对象 JSON，原样存取、服务端不解释内部结构（上限 16KB，
+    # 口径见 backend/player_prefs.py）。与 privacy/通知偏好同一套
+    # 「偏好即 WebUser 列」的 per-user 存储，不另起 KV 表。
+    # NULL = 从未保存过（与存了空对象 {} 区分）。子账号按本人存，
+    # 不走主账号归属（个人偏好、非经济动作）。老库补列见
+    # database._auto_migrate（JSON NULL）。
+    player_preferences = Column(JSON, nullable=True)
     last_login_at = Column(DateTime)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
@@ -976,9 +984,11 @@ class WalletLedger(Base):
     """钱包收支流水（只增不改：所有余额变动的唯一留痕，错账用冲正行纠）
 
     kind：recharge 在线充值 / admin_adjust 管理员手工增减 / gift_code
-    兑换码入账 / rebate 邀请返利 / subscription_purchase 订阅购买扣款 /
-    traffic_purchase 购流量扣款 / refund 退款回余额 / rebate_reversal
-    返利撤回。amount 带符号（正入负出），balance_after 是变动后快照。
+    礼品卡生成扣款（负）与兑换码入账（正）/ gift_code_refund 礼品卡
+    过期未使用退回生成人 / rebate 邀请返利 / subscription_purchase
+    订阅购买扣款 / traffic_purchase 购流量扣款 / refund 退款回余额 /
+    rebate_reversal 返利撤回。amount 带符号（正入负出），balance_after
+    是变动后快照。
     idempotency_key 唯一（可空）：扣款/入账重复提交时原样回放，不重复成交。
     prev_hash / record_hash 照旧积分台账的链式审计（按用户串链）。
     """

@@ -161,6 +161,26 @@ const openDetail = (row: LotteryRoundRow) => {
 }
 const isDistributed = (w: { distributed?: boolean }) => w?.distributed === true || (w as Record<string, unknown>)?.distributed === 1
 
+/** 详情抽屉里的奖品 / 中奖名单小表（收编 DataTable） */
+const prizeColumns: DataColumn[] = [
+  { key: 'name', label: '名称', mobile: 'title' },
+  { key: 'type', label: '类型', width: 100 },
+  { key: 'value', label: '值', width: 90 },
+  { key: 'quantity', label: '份数', width: 90 },
+]
+const winnerColumns: DataColumn[] = [
+  { key: 'prize_name', label: '奖品名', mobile: 'title' },
+  { key: 'winner_user', label: '中奖用户' },
+  { key: 'distributed', label: '发放状态', width: 100 },
+]
+/** 奖品名取值沿原口径：prize_name 直用，缺失时回退 prize.name（旧数据形态） */
+const winnerPrizeName = (w: LotteryRoundDetail['winners'][number]): string => {
+  const prize = (w as unknown as Record<string, unknown>).prize as
+    | { name?: string }
+    | undefined
+  return w.prize_name ?? prize?.name ?? ''
+}
+
 // 开奖 / 取消
 const handleDraw = async (row: { id: number; title: string }) => {
   try {
@@ -442,29 +462,18 @@ onMounted(() => {
         <div class="detail-title">
           <Gift :size="14" /> 奖品列表
         </div>
-        <el-table :data="detail.prizes ?? []" size="small" border>
-          <el-table-column prop="name" label="名称" show-overflow-tooltip />
-          <el-table-column label="类型" width="100">
-            <template #default="{ row }">{{ prizeTypeMap[row.type] ?? row.type }}</template>
-          </el-table-column>
-          <el-table-column prop="value" label="值" width="90" />
-          <el-table-column prop="quantity" label="份数" width="90" />
-        </el-table>
+        <DataTable :columns="prizeColumns" :rows="detail.prizes ?? []">
+          <template #cell-type="{ row }">{{ prizeTypeMap[row.type] ?? row.type }}</template>
+        </DataTable>
 
         <div class="detail-title"><Trophy :size="14" /> 中奖名单</div>
-        <el-table :data="detail.winners ?? []" size="small" border>
-          <el-table-column label="奖品名" show-overflow-tooltip>
-            <template #default="{ row }">{{ row.prize_name ?? row.prize?.name }}</template>
-          </el-table-column>
-          <el-table-column label="中奖用户" show-overflow-tooltip>
-            <template #default="{ row }">{{ row.telegram_id ?? row.user_id }}</template>
-          </el-table-column>
-          <el-table-column label="发放状态" width="100">
-            <template #default="{ row }">
-              <el-tag :type="isDistributed(row) ? 'success' : 'warning'" size="small">{{ isDistributed(row) ? '已发放' : '待发放' }}</el-tag>
-            </template>
-          </el-table-column>
-        </el-table>
+        <DataTable :columns="winnerColumns" :rows="detail.winners ?? []">
+          <template #cell-prize_name="{ row }">{{ winnerPrizeName(row) }}</template>
+          <template #cell-winner_user="{ row }">{{ row.telegram_id ?? row.user_id }}</template>
+          <template #cell-distributed="{ row }">
+            <el-tag :type="isDistributed(row) ? 'success' : 'warning'" size="small">{{ isDistributed(row) ? '已发放' : '待发放' }}</el-tag>
+          </template>
+        </DataTable>
 
         <div class="detail-title">
           <History :size="14" /> 参与者（前 100）

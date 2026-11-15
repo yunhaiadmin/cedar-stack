@@ -173,8 +173,9 @@ const router = createRouter({
             component: () => import('@/views/game/SubscriptionRecordsView.vue'),
             meta: { title: '订阅记录', requiresAuth: true },
           },
-          // 钱包（2026-11-14 钱包批 2）：余额卡＋充值占位＋余额码兑换＋
-          // 购流量入口＋收支流水；同时是易支付 return_url 落点
+          // 钱包（2026-11-15 照友站整页重做）：余额＋充值钮＋分段页签
+          // （我的兑换码：兑换入账/生成礼品卡/我生成的码；资金明细）；
+          // 同时是易支付 return_url 落点
           // （/wallet?paid=1），进页即刷新余额并提示到账结果。
           // 不进保活名单：每次进页都重新拉余额，不拿旧数吓人。
           {

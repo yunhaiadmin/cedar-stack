@@ -273,7 +273,7 @@
       @update:primary="onPrimarySub"
       @update:secondary="onSecondarySub"
       @update:delay-ms="onSubtitleDelay"
-      @update:font-size="subtitleFontSize = $event"
+      @update:font-size="onSubtitleFontSize"
     />
     <PlayerTogetherSheet
       :open="togetherOpen"
@@ -378,6 +378,13 @@ import {
   type WtSnapshot,
 } from '@/composables/useWatchTogether'
 import { useUserStore } from '@/stores/user'
+import {
+  loadLocalPlayerPrefs,
+  saveLocalPlayerPrefs,
+  schedulePushPlayerPrefs,
+  syncPlayerPrefsFromServer,
+  type PlayerPrefs,
+} from '@/api/playerPrefs'
 
 type Phase = 'loading' | 'idle' | 'preparing' | 'playing' | 'unsupported' | 'error'
 
@@ -405,7 +412,20 @@ const PREP_STEPS = [
   { key: 'probe', label: '正在分析容器' },
   { key: 'ready', label: '就绪，正在起播' },
 ] as const
-const DANMAKU_KEY = 'aetrix-player-danmaku'
+// 弹幕设置默认值：必须声明在 danmaku ref（loadDanmaku 调用点）之前，
+// 放函数体外靠后会 TDZ（loadDanmaku 在 setup 前段就被调用）。
+const DANMAKU_DEFAULTS: DanmakuSettings = {
+  enabled: true,
+  area: 'full',
+  opacity: 100,
+  fontSize: 'medium',
+  density: 'standard',
+  speed: 'standard',
+  offsetSeconds: 0,
+}
+function withDanmakuDefaults(p?: Partial<DanmakuSettings> | null): DanmakuSettings {
+  return { ...DANMAKU_DEFAULTS, ...(p ?? {}) }
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -443,7 +463,13 @@ const noticeTitle = computed(() => {
 const isPaused = ref(true)
 const currentTime = ref(0)
 const duration = ref(0)
-const rate = ref(1)
+// 播放器设置（⚠️11 同步）：先用本地值起播（不阻塞），挂载后异步拉
+// 服务端合并补缺（见 applyRemotePlayerPrefs）；本地存取/合并/回推的
+// 唯一实现在 @/api/playerPrefs。
+const bootPrefs = loadLocalPlayerPrefs()
+const rate = ref(
+  typeof bootPrefs.rate === 'number' && bootPrefs.rate > 0 ? bootPrefs.rate : 1,
+)
 const controlsVisible = ref(true)
 const locked = ref(false)
 const seeking = ref(false)
@@ -455,8 +481,8 @@ const settingsOpen = ref(false)
 const togetherOpen = ref(false)
 const primarySub = ref<number | null>(null)
 const secondarySub = ref<number | null>(null)
-const subtitleDelayMs = ref(0)
-const subtitleFontSize = ref<SubtitleFontSize>('default')
+const subtitleDelayMs = ref(bootPrefs.subtitle?.delayMs ?? 0)
+const subtitleFontSize = ref<SubtitleFontSize>(bootPrefs.subtitle?.fontSize ?? 'default')
 const danmaku = ref<DanmakuSettings>(loadDanmaku())
 
 // ---------- 站内弹幕（数据面） ----------
@@ -852,22 +878,8 @@ function showToast(text: string): void {
   toastTimer = window.setTimeout(() => (toast.value = ''), 2600)
 }
 function loadDanmaku(): DanmakuSettings {
-  const fallback: DanmakuSettings = {
-    enabled: true,
-    area: 'full',
-    opacity: 100,
-    fontSize: 'medium',
-    density: 'standard',
-    speed: 'standard',
-    offsetSeconds: 0,
-  }
-  try {
-    const raw = localStorage.getItem(DANMAKU_KEY)
-    if (raw) return { ...fallback, ...(JSON.parse(raw) as Partial<DanmakuSettings>) }
-  } catch {
-    /* 坏数据用默认 */
-  }
-  return fallback
+  // 本地存取收敛在 @/api/playerPrefs（新键整对象 + 旧键 danmaku 补入）
+  return withDanmakuDefaults(loadLocalPlayerPrefs().danmaku)
 }
 function errorText(e: unknown, fallback: string): string {
   const err = e as {
@@ -1598,11 +1610,46 @@ async function sendDanmaku(): Promise<void> {
     danmakuSending.value = false
   }
 }
+/** 当前完整设置对象（同步口径：danmaku / rate / subtitle 三个顶层键） */
+function currentPlayerPrefs(): PlayerPrefs {
+  return {
+    danmaku: danmaku.value,
+    rate: rate.value,
+    subtitle: { fontSize: subtitleFontSize.value, delayMs: subtitleDelayMs.value },
+  }
+}
+/** 任一设置变更后调：本地整存 + 防抖回推服务端（失败静默、本地为准）。 */
+function persistPlayerPrefs(): void {
+  const prefs = currentPlayerPrefs()
+  saveLocalPlayerPrefs(prefs)
+  schedulePushPlayerPrefs(prefs)
+}
 function persistDanmaku(): void {
-  try {
-    localStorage.setItem(DANMAKU_KEY, JSON.stringify(danmaku.value))
-  } catch {
-    /* 存不下就算了 */
+  persistPlayerPrefs()
+}
+/**
+ * 挂载后异步同步：拉服务端设置、本地优先合并，只应用「本地原本没有、
+ * 服务端补来的」顶层键——不覆盖用户在本机已有的选择。全程不阻塞起播，
+ * 失败静默（sync 内部已吞）。
+ */
+async function applyRemotePlayerPrefs(): Promise<void> {
+  const local = loadLocalPlayerPrefs()
+  const merged = await syncPlayerPrefsFromServer()
+  if (local.danmaku === undefined && merged.danmaku) {
+    danmaku.value = withDanmakuDefaults(merged.danmaku)
+  }
+  if (local.rate === undefined && typeof merged.rate === 'number' && merged.rate > 0) {
+    rate.value = merged.rate
+    const soft = softHandle.value
+    if (soft) soft.setRate(merged.rate)
+    else if (videoEl.value) videoEl.value.playbackRate = merged.rate
+  }
+  if (local.subtitle === undefined && merged.subtitle) {
+    subtitleFontSize.value = merged.subtitle.fontSize
+    if (merged.subtitle.delayMs !== subtitleDelayMs.value) {
+      subtitleDelayMs.value = merged.subtitle.delayMs
+      void rebuildSubtitleTracks()
+    }
   }
 }
 function onTogether(): void {
@@ -1702,12 +1749,18 @@ function onSecondarySub(index: number | null): void {
 function onSubtitleDelay(ms: number): void {
   subtitleDelayMs.value = ms
   void rebuildSubtitleTracks()
+  persistPlayerPrefs()
+}
+function onSubtitleFontSize(fs: SubtitleFontSize): void {
+  subtitleFontSize.value = fs
+  persistPlayerPrefs()
 }
 
 // ---------- 设置面板动作 ----------
 
 function onRate(r: number): void {
   rate.value = r
+  persistPlayerPrefs()
   const soft = softHandle.value
   if (soft) {
     soft.setRate(r)
@@ -1874,6 +1927,8 @@ onMounted(() => {
   document.body.style.overflow = 'hidden'
   document.addEventListener('keydown', onKeydown)
   document.addEventListener('visibilitychange', onVisibility)
+  // 播放器设置后端同步（⚠️11）：异步拉服务端设置补本地缺的键，不阻塞起播
+  void applyRemotePlayerPrefs()
   // 字幕预选：弹层带了 sub 就按它，没带跟服务端 DefaultSubtitleStreamIndex（在 applyRouteSub 内兜底）
   void loadItem(itemId.value).then(() => {
     applyRouteSub()
