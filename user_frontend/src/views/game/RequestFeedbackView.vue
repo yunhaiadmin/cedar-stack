@@ -235,8 +235,9 @@
       </section>
 
       <!-- 请求广场：按媒体聚合卡（后端 /media-seek/plaza 真聚合，一部片一张卡）。
-           广场只放求片数据：工单类类型（电影追新/修正信息/其他反馈）不公开，
-           选到时直接显示不公开空态；剧集追新在我方是补缺集行（chase 计数）。 -->
+           类型筛选只留后端真支持的：影片求片＋剧集追新（补缺集行，chase 计数）；
+           工单类类型（电影追新/修正信息/其他反馈）不进广场聚合，此前挂在筛选里
+           选了必然是空态，已摘掉（2026-11-15）。 -->
       <section v-else class="rf-list">
         <form class="rf-searchbar" @submit.prevent="applyPlazaSearch">
           <input
@@ -264,10 +265,7 @@
           <select v-model="plazaTypeFilter" class="rf-filter__select" aria-label="按类型筛选">
             <option value="all">全部类型</option>
             <option value="seek">影片求片</option>
-            <option value="chase_movie">电影追新</option>
             <option value="chase_series">剧集追新</option>
-            <option value="correction">修正信息</option>
-            <option value="feedback">其他反馈</option>
           </select>
         </div>
 
@@ -278,7 +276,6 @@
           广场加载失败：{{ plazaError }}<br />
           <button class="rf-retry" @click="loadPlaza">重试</button>
         </div>
-        <div v-else-if="plazaEmptyText" class="rf-empty">{{ plazaEmptyText }}</div>
         <div v-else-if="plazaGroups.length === 0" class="rf-empty">暂无符合条件的请求</div>
         <div v-else class="rf-topics">
           <article v-for="g in plazaGroups" :key="g.key" class="rf-topic">
@@ -533,17 +530,8 @@ const filteredMine = computed(() => unifiedMine.value.filter((r) => {
   return true
 }))
 /* 广场聚合走后端 /media-seek/plaza（按媒体身份真聚合，前端不拼数）。
-   工单类类型（电影追新/修正信息/其他反馈）不进广场：选到时不查接口、
-   直接显示不公开空态；剧集追新在我方是求片的补缺集行，走 kind=chase。 */
-const plazaTypeHidden = computed(() =>
-  plazaTypeFilter.value === 'chase_movie'
-  || plazaTypeFilter.value === 'correction'
-  || plazaTypeFilter.value === 'feedback')
-const plazaEmptyText = computed(() => {
-  const f = plazaTypeFilter.value
-  if (f !== 'chase_movie' && f !== 'correction' && f !== 'feedback') return ''
-  return `${typeLabel(f)}走工单处理，不在广场公开显示，去「我的请求」里看自己的`
-})
+   类型筛选只剩后端真支持的两类：影片求片 kind=seek、剧集追新 kind=chase；
+   工单类类型（电影追新/修正信息/其他反馈）已从筛选摘除，不再有必然空态。 */
 const isChase = computed(() => reqType.value === 'chase_movie' || reqType.value === 'chase_series')
 const chaseMedia = computed<'movie' | 'series'>(() => (reqType.value === 'chase_movie' ? 'movie' : 'series'))
 const chaseCopy = computed(() => (chaseMedia.value === 'movie'
@@ -643,12 +631,6 @@ async function loadHot(): Promise<void> {
 }
 let plazaSeq = 0
 async function loadPlaza(): Promise<void> {
-  if (plazaTypeHidden.value) {
-    plazaGroups.value = []
-    plazaError.value = ''
-    plazaLoading.value = false
-    return
-  }
   const seq = ++plazaSeq
   plazaLoading.value = true
   plazaError.value = ''

@@ -113,16 +113,22 @@ const resumeText = computed(() => {
 })
 
 /**
- * 「移除观看记录」只对电影开放：现行口径里真接口是 Emby 的
- * DELETE /Users/{uid}/PlayedItems/{id}（后端 mark_unplayed 清已看标记、
- * 播放次数与断点，条目随之离开继续观看）——电影上它就是整部口径。
- * 剧集不开放：观看记录逐集存，后端该接口不级联到各集，门户口只有
- * hide/unhide（藏起来、记录还在），语义不同，不许拿来冒充整部移除。
+ * 「移除观看记录」走真接口 Emby 的 DELETE /Users/{uid}/PlayedItems/{id}
+ * （后端 mark_unplayed 清已看标记、播放次数与断点，条目随之离开继续观看）。
+ * 电影上它就是整部口径；剧集后端已级联：打到剧行时同事务清掉名下
+ * 全部季/集的本人记录，所以剧集同钮开放、语义同为整部移除。
+ * 门户口的 hide/unhide（藏起来、记录还在）语义不同，不许拿来冒充。
  */
 const canRemoveRecord = computed(() => {
-  if (isSeries.value) return false
   const ud = item.value?.UserData
-  return !!(ud?.Played || (ud?.PlaybackPositionTicks || 0) > 0 || resumeEntry.value)
+  if (ud?.Played || (ud?.PlaybackPositionTicks || 0) > 0 || resumeEntry.value) return true
+  if (isSeries.value) {
+    // 剧行自身没断点时靠集级信号：总集数 > 未看集数 = 至少一集留有记录
+    const total = item.value?.RecursiveItemCount || 0
+    const unplayed = ud?.UnplayedItemCount
+    return total > 0 && typeof unplayed === 'number' && unplayed < total
+  }
+  return false
 })
 
 async function removeWatchRecord() {
@@ -131,10 +137,12 @@ async function removeWatchRecord() {
   removeBusy.value = true
   try {
     const ud = await embyProtocol.setPlayed(it.Id, false)
-    item.value = {
-      ...it,
-      UserData: { ...it.UserData, ...ud, Played: false, PlaybackPositionTicks: 0 },
+    const mergedUd = { ...it.UserData, ...ud, Played: false, PlaybackPositionTicks: 0 }
+    if (isSeries.value && it.RecursiveItemCount) {
+      // 各集已全清：未看集数回到总集数，角标与钮态不用等重新拉取
+      mergedUd.UnplayedItemCount = it.RecursiveItemCount
     }
+    item.value = { ...it, UserData: mergedUd }
     resumeEntry.value = null
     removeOpen.value = false
     toast.success('观看记录已移除')
@@ -632,7 +640,12 @@ watch(itemId, () => {
           <h3 class="modal-title">移除观看记录</h3>
         </template>
         <p class="md-confirm-text">
-          把《{{ item.Name }}》的观看记录清掉？播放进度和「已看完」标记都会清除，这部片也会从「继续观看」里消失。
+          <template v-if="isSeries && item.RecursiveItemCount">
+            把《{{ item.Name }}》整部的观看记录清掉？全剧共 {{ item.RecursiveItemCount }} 集，各集的播放进度和「已看完」标记都会清除，这部剧也会从「继续观看」里消失。
+          </template>
+          <template v-else>
+            把《{{ item.Name }}》的观看记录清掉？播放进度和「已看完」标记都会清除，这部片也会从「继续观看」里消失。
+          </template>
         </p>
         <template #footer>
           <div class="md-confirm-actions">

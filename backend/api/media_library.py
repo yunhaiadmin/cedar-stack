@@ -15,6 +15,8 @@
 - 隐藏下一集（审计 ❌1）：POST /next-up/{episode_guid}/hide、/unhide
   与 GET /next-up/hidden，与 L9 同形状；落点是 user_nextup_dismissals
   （用户 × 剧 → 关闭时那一集 guid），下一集变了自动失效。
+- 热搜：GET /search/hot 近 7 天搜索词聚合榜（计数写入在 Emby
+  Items 搜索口，见 emby_server.search_stats；只存词与次数）。
 
 鉴权：门户 JWT 用户（get_current_user），与门户其它用户口同口径。
 """
@@ -469,3 +471,16 @@ def hidden_next_up_items(
             "dismissed_at": row.created_at.isoformat() if row.created_at else None,
         })
     return {"items": out}
+
+@router.get("/search/hot")
+def hot_search_terms(
+    limit: int = Query(10, ge=1, le=20),
+    user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """片库热搜榜：近 7 天搜索词聚合 Top（计数只存词与次数、不关联
+    用户，写入侧见 emby_server.search_stats）。无数据回空表，
+    前端整行不渲染、不摆空壳。"""
+    from backend.emby_server import search_stats
+
+    return {"items": search_stats.hot_search_terms(db, limit=limit, days=7)}

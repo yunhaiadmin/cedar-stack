@@ -6,6 +6,7 @@ import type {
   MySubscription, Announcement, WatchStats, MediaSeekRequest, MediaSeekQuota,
   Ticket, MyPlaybackSession,
 } from './index'
+import type { EmbyItem } from './emby'
 
 /**
  * 首页聚合接口：一次请求取回首屏 9 项数据（backend/api/home_summary.py）
@@ -441,6 +442,32 @@ export const seriesFollowApi = {
     ),
 }
 
+// ==================== 追新日历（2026-11-15 前端接线，后端早已实现） ====================
+// 后端口径（backend/emby_server/portal.py user_emby_router，前缀 /api/user/emby）：
+// GET /calendar?start&end&item_type&library_id → 按入库日（Asia/Shanghai 自然日）
+// 分组的新增条目；days[].count 是当天全部条数（含未回详情的），items 每日至多
+// 24 条 DTO（多出只计 count）；types 是区间内分类型计数（不受 item_type 筛选
+// 影响，前端拿它给类型筛选写角标）。区间不传默认当月，跨度上限 93 天。
+export interface ChaseCalendarItem extends EmbyItem {
+  LibraryName?: string
+}
+export interface ChaseCalendarDay {
+  date: string
+  count: number
+  items: ChaseCalendarItem[]
+}
+export interface ChaseCalendarResponse {
+  start: string
+  end: string
+  total: number
+  days: ChaseCalendarDay[]
+  types: Record<string, number>
+}
+export const chaseCalendarApi = {
+  get: (params?: { start?: string; end?: string; item_type?: string; library_id?: string }) =>
+    api.get<never, ChaseCalendarResponse>('/api/user/emby/calendar', { params }),
+}
+
 // ==================== 优惠券（v2.10.0） ====================
 
 /** 试算结果：能不能用、省多少、实付多少（与真正下单同一套口径） */
@@ -500,9 +527,11 @@ export const discountCreditApi = {
 export const paymentApi = {
   methods: () => api.get<never, PaymentMethod[]>('/api/user/economy/payment/methods'),
   // is_free / access_mode = 当前服是公益服（免费开放）：此时不展示套餐与购买引导
-  plans: () =>
+  // realmId 传 0 = 拉全部服套餐（后端按 realm 分组下发 realm_name）；不传只回当前服
+  plans: (realmId?: number) =>
     api.get<never, { enabled: boolean; wallet_purchase_enabled?: boolean; plans: SubscriptionPlan[]; access_mode?: 'paid' | 'free'; is_free?: boolean; access_note?: string; device_limit?: number; download_allowed?: boolean }>(
       '/api/user/economy/payment/plans',
+      realmId != null ? { params: { realm_id: realmId } } : undefined,
     ),
   createOrder: (data: { kind: 'subscription'; item_id?: number; payment_method: string; coupon_code?: string; custom_amount?: number }) =>
     api.post<never, { success: boolean; order_id: string; amount: number; list_price?: number; discount_amount?: number; coupon_code?: string; exchange_discount_pct?: number; pay_url?: string; message: string }>('/api/user/economy/payment/order', data),

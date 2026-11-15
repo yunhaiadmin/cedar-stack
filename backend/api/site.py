@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from backend import realms
 from backend.database import get_db
-from backend.emby_server.models import MediaItem
+from backend.emby_server.models import Library, MediaItem
 from backend.emby_server.portal import resolve_emby_base_url
 from backend.emby_server.public_url import client_base_url, configured_public_url
 from backend.integrations import branding as branding_capability
@@ -84,6 +84,100 @@ def get_tg_login_entry(db: Session = Depends(get_db)) -> dict:
         logger.warning("获取 Telegram 机器人用户名失败，登录入口将不展示", exc_info=True)
         bot_username = ""
     return {"bot_username": bot_username or ""}
+
+
+# 官网片库数字（公开）：服务端缓存 10 分钟。数字随入库缓慢变化，没必要
+# 每个访客都打全表 COUNT；失败负缓存 30 秒，DB 故障时有旧值回旧值、没旧值
+# 回全 0（前端据此回落页面内置的快照值）——公开端点绝不能 500 拖垮官网。
+_LIBRARY_STATS_TTL = 600
+_LIBRARY_STATS_FAIL_TTL = 30
+_LIBRARY_STATS_EMPTY = {"works": 0, "episodes": 0, "total_items": 0, "libraries": 0}
+_library_stats_cache: dict = {"at": None, "fail_at": None, "data": None}
+# single-flight 锁：TTL 到期瞬间只放一个线程重数，其余直接回旧值
+_library_stats_lock = threading.Lock()
+
+
+def _count_library_stats(db: Session) -> dict:
+    """片库四数，口径与官网快照定义一致（2026-11-15 已用生产库逐项核对）。
+
+    可见行 = ORM 口径（deleted_at IS NULL AND merged_into_id IS NULL）：
+    软删除行与合并副本不算，否则会虚高两个数量级。
+    works = 电影 + 剧集；episodes = 单集；total_items = 全部类型可见行；
+    libraries = 启用的媒体库数。
+    """
+    rows = (
+        db.query(MediaItem.item_type, func.count(MediaItem.id))
+        .filter(
+            MediaItem.deleted_at.is_(None),
+            MediaItem.merged_into_id.is_(None),
+        )
+        .group_by(MediaItem.item_type)
+        .all()
+    )
+    counts = dict(rows)
+    libraries = (
+        db.query(func.count(Library.id))
+        .filter(Library.is_enabled == True)  # noqa: E712
+        .scalar()
+    )
+    return {
+        "works": int(counts.get("movie", 0)) + int(counts.get("series", 0)),
+        "episodes": int(counts.get("episode", 0)),
+        "total_items": int(sum(counts.values())),
+        "libraries": int(libraries or 0),
+    }
+
+
+def _library_stats_fresh(now: float) -> bool:
+    at = _library_stats_cache.get("at")
+    return (
+        _library_stats_cache.get("data") is not None
+        and at is not None
+        and now - at < _LIBRARY_STATS_TTL
+    )
+
+
+def _library_stats_payload() -> dict:
+    return _library_stats_cache.get("data") or dict(_LIBRARY_STATS_EMPTY)
+
+
+@site_router.get("/library-stats")
+def get_library_stats(db: Session = Depends(get_db)) -> dict:
+    """官网首页片库数据行（公开）
+
+    回四个实时数：影视作品（电影+剧集）、剧集单集、条目总计、启用媒体库数。
+    前端取整呈现（22,000+ / 29万+ / 33万+），接口失败或回全 0 时前端回落
+    页面内置的快照值，官网不会因此开天窗。
+    """
+    now = time.monotonic()
+    if _library_stats_fresh(now):
+        return _library_stats_payload()
+    fail_at = _library_stats_cache.get("fail_at")
+    if fail_at is not None and now - fail_at < _LIBRARY_STATS_FAIL_TTL:
+        return _library_stats_payload()
+    # single-flight：拿不到锁说明已有线程在重数，直接回旧值（没旧值回全 0）
+    if not _library_stats_lock.acquire(blocking=False):
+        return _library_stats_payload()
+    try:
+        # 拿锁后二次检查：等待期间可能已被别的线程刷过
+        now = time.monotonic()
+        if _library_stats_fresh(now):
+            return _library_stats_payload()
+        fail_at = _library_stats_cache.get("fail_at")
+        if fail_at is not None and now - fail_at < _LIBRARY_STATS_FAIL_TTL:
+            return _library_stats_payload()
+        try:
+            fresh = _count_library_stats(db)
+        except Exception:
+            logger.warning("官网片库数字统计失败，回旧值/全 0 兜底", exc_info=True)
+            _library_stats_cache["fail_at"] = now
+            return _library_stats_payload()
+        _library_stats_cache["at"] = now
+        _library_stats_cache["fail_at"] = None
+        _library_stats_cache["data"] = fresh
+        return fresh
+    finally:
+        _library_stats_lock.release()
 
 
 # 登录页海报拼贴（公开）：服务端缓存 10 分钟，海报不常变

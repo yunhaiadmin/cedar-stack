@@ -1011,9 +1011,13 @@ def _item_dto(item: em.MediaItem, base: str, user_id: int, db: Session, full: bo
                     {
                         "Id": s.guid,
                         "Name": _version_label(s),
+                        # 前端 EmbyItemVersion 读的别名（与 Name/Size
+                        # 同值；Size 单位为字节，与 SizeBytes 同口径）
+                        "VersionLabel": _version_label(s),
                         "Height": s.height or 0,
                         "Width": s.width or 0,
                         "Size": s.size or 0,
+                        "SizeBytes": s.size or 0,
                         "Container": s.container or "",
                         "IsPrimary": s.id == primary_id,
                     }
@@ -2691,6 +2695,21 @@ def get_items(
     db: Session = Depends(get_db),
 ):
     result = _query_items(request, user, db, _base_url(request))
+    # 热搜计数：带 SearchTerm 的搜索成功后 best-effort 记一笔聚合计数
+    # （只存归一化词与次数、不关联用户，见 search_stats）。旁路失败
+    # 只记日志并回滚，绝不影响搜索响应本体。
+    _search_raw = request.query_params.get("SearchTerm")
+    if _search_raw and _search_raw.strip():
+        try:
+            from backend.emby_server import search_stats as _search_stats
+
+            _search_stats.record_search_term(db, _search_raw)
+        except Exception as exc:  # noqa: BLE001 — 计数失败不拖垮搜索
+            try:
+                db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            logger.warning("热搜计数失败 term=%r: %s", _search_raw, exc)
     # Fields 明确要 MediaSources/MediaStreams 时按详情面同口径补齐
     # （官方 Emby 口径；未请求时列表行为逐字不变）。补齐失败不许
     # 拖垮列表本体——列表可用性优先于字段完整性。
@@ -4939,11 +4958,32 @@ def mark_unplayed(item_id: str, user_id: str,
     umd = db.query(em.UserMediaData).filter(
         em.UserMediaData.user_id == user.id, em.UserMediaData.item_id == item.id
     ).first()
+    dirty = False
     if umd:
         umd.played = False
         umd.play_count = 0
         umd.playback_position_ticks = 0
         umd.max_position_ticks = 0  # 进度双记：与断点一起清零（批一 #4）
+        dirty = True
+    if item.item_type == "series":
+        # 整部移除（审计 ⚠️1）：剧集观看记录逐集存，只清剧行等于没清——
+        # 级联清其名下全部季/集的本人记录，与剧行同事务提交。
+        # 只动本人行；收藏、别人的记录、别的剧都不受影响。
+        child_ids = [r[0] for r in db.query(em.MediaItem.id).filter(
+            em.MediaItem.series_id == item.id,
+            em.MediaItem.item_type.in_(("season", "episode"))).all()]
+        if child_ids:
+            db.query(em.UserMediaData).filter(
+                em.UserMediaData.user_id == user.id,
+                em.UserMediaData.item_id.in_(child_ids),
+            ).update({
+                em.UserMediaData.played: False,
+                em.UserMediaData.play_count: 0,
+                em.UserMediaData.playback_position_ticks: 0,
+                em.UserMediaData.max_position_ticks: 0,
+            }, synchronize_session=False)
+            dirty = True
+    if dirty:
         db.commit()
     return _user_data_dto(umd, item.guid, _run_time_ticks(item))
 
