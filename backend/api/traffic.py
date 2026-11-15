@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from backend import models, traffic_quota
+from backend import models, sub_accounts, traffic_quota
 from backend.api.user import get_current_user
 from backend.database import get_db
 from backend.ratelimit import check_rate_limit
@@ -66,6 +66,8 @@ def post_traffic_exchange(
         req: TimeExchangeRequest,
         current_user: models.WebUser = Depends(get_current_user),
         db: Session = Depends(get_db)):
+    # 家庭子账号禁止经济动作：换流量动的是主账号订阅时长，回主账号操作
+    sub_accounts.forbid_sub_account(current_user)
     allowed, _ = check_rate_limit(
         f"traffic_exchange:{current_user.id}", 10, 60)
     if not allowed:
@@ -101,6 +103,8 @@ def post_traffic_buy_balance(
     生成一个新幂等键，重试/双击只成交一次。钱包余额不足时服务层
     条件 UPDATE 拒绝，整笔回滚。
     """
+    # 家庭子账号禁止经济动作：扣的是主账号钱包，回主账号操作
+    sub_accounts.forbid_sub_account(current_user)
     allowed, _ = check_rate_limit(
         f"traffic_buy_balance:{current_user.id}", 10, 60)
     if not allowed:

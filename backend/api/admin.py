@@ -356,12 +356,26 @@ def list_users(
         ):
             sub_map.setdefault(s.user_id, s)
 
+    # 家庭子账号归属（2026-11-15）：批量取主账号用户名（与 sub_map
+    # 同款批量口径，不逐用户查），列表据此标出子账号归属。
+    parent_ids = {u.parent_user_id for u in users
+                  if getattr(u, "parent_user_id", None)}
+    parent_names: dict = {}
+    if parent_ids:
+        for p in (db.query(models.WebUser)
+                  .filter(models.WebUser.id.in_(parent_ids)).all()):
+            parent_names[p.id] = p.username
+
     items = []
     for u in users:
         active_sub = sub_map.get(u.id)
         items.append({
             "id": u.id,
             "username": u.username,
+            # 家庭子账号归属：非子账号两字段均为 None
+            "parent_user_id": getattr(u, "parent_user_id", None),
+            "parent_username": (parent_names.get(u.parent_user_id)
+                                if getattr(u, "parent_user_id", None) else None),
             "email": u.email,
             "is_active": u.is_active,
             "is_staff": u.is_staff,

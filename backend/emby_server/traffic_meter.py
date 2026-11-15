@@ -20,8 +20,10 @@
   **永远不记字节**，不许拿文件大小/码率估算冒充计量。
 
 用户归属走 ContextVar：``api.video_stream`` 在入口
-``set_current_user(user.id)``，字节出口在**包装点**（与 handler
-同一上下文）取出后显式传给 note_*，不依赖消费阶段的上下文传播。
+``set_current_user(有效账号 id)``——家庭子账号经
+``backend/sub_accounts`` 的有效账号解析归到主账号（子账号没有
+自己的流量账），字节出口在**包装点**（与 handler 同一上下文）
+取出后显式传给 note_*，不依赖消费阶段的上下文传播。
 取不到用户（非 video_stream 上下文）就整笔不计——宁可漏计，
 不许错记到别人头上。
 

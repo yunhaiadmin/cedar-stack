@@ -7096,10 +7096,14 @@ async def video_stream(
     # 流量计量归属：本次流的字节出口（_observe_traffic 计数包装 /
     # serve_file 的 Range 迭代器）经 ContextVar 把字节归到这个
     # 用户；本端点之外的响应取不到归属、整笔不计（见 traffic_meter）。
+    # 家庭子账号的流量归账到主账号（有效账号解析唯一实现
+    # backend/sub_accounts.py）：解析要查库，走 run_db 不堵事件循环。
     from backend.emby_server import traffic_meter as _traffic_meter
-    _traffic_meter.set_current_user(getattr(user, "id", None))
     # P0（2026-09-29）：async 路由里直接调同步 DB 会卡住单 worker 的事件循环。
     from backend.emby_server.async_db import run_db
+    from backend import sub_accounts as _sub_accounts
+    _traffic_meter.set_current_user(
+        await run_db(_sub_accounts.effective_user_id, db, user))
     # 安全修复（P0 / H1）：条目必须在用户可见的库范围内（统一 helper）
     item = await run_db(_require_visible_item, db, user, item_id)
     _pt.mark("auth_visible")

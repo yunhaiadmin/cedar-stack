@@ -233,6 +233,9 @@ class WebUser(Base):
         Index('idx_web_username', 'username'),
         Index('idx_web_telegram_id', 'telegram_id'),
         Index('idx_web_email', 'email'),
+        # 家庭子账号按主账号反查（backend/sub_accounts.py）；老库由
+        # database 的索引迁移清单同名补建（idx_web_users_parent）。
+        Index('idx_web_users_parent', 'parent_user_id'),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -285,6 +288,16 @@ class WebUser(Base):
     last_login_at = Column(DateTime)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    # 家庭子账号（2026-11-15 用户亲令，家庭版核心卖点）：非空 = 本号
+    # 是该主账号的子账号。子账号是独立 WebUser（自己的用户名/密码/
+    # 登录/观看记录），但没有自己的订阅与钱包——订阅有效性、月流量
+    # 配额与用量归账、求片月额度、播放门禁（绑定＋订阅）一律按主
+    # 账号算，有效账号解析的唯一实现在 backend/sub_accounts.py；
+    # 子账号禁止一切经济动作（购买/充值/兑换/代理/再建子账号）。
+    # 只能由主账号在用户中心创建，不走开放注册。老库补列见
+    # database._auto_migrate（INTEGER NULL，存量全为空 = 全是主账号）。
+    parent_user_id = Column(Integer, ForeignKey("web_users.id"),
+                            nullable=True)
 
 
 class UserPlayLine(Base):

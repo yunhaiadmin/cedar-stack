@@ -183,6 +183,10 @@ export interface AdminUserRow {
   user_type: 'paid' | 'normal'
   /** TG 绑定状态：是否绑定 Telegram */
   tg_bound: boolean
+  /** 家庭子账号归属（2026-11-15）：非子账号为 null；子账号带主账号
+   * id 与用户名，列表据此标出「子账号 · 主账号 X」 */
+  parent_user_id: number | null
+  parent_username: string | null
 }
 
 export interface UsersResponse {

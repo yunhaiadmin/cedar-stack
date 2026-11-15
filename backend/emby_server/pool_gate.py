@@ -309,9 +309,12 @@ def _audience_eligible(db: Session, user) -> bool:
 
         return bool(codes.is_whitelist_account(db, user))
     if audience == "subscribers":
-        from backend import subscriptions
+        from backend import sub_accounts, subscriptions
 
-        return bool(subscriptions.has_active_subscription(db, user.id))
+        # 家庭子账号随主账号：主账号是订阅者，子账号即在人群内
+        # （有效账号解析，见 backend/sub_accounts.py）。
+        return bool(subscriptions.has_active_subscription(
+            db, sub_accounts.effective_user_id(db, user)))
     return False
 
 

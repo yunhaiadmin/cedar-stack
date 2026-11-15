@@ -36,7 +36,7 @@ from sqlalchemy import func, or_, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, joinedload
 
-from backend import coupons, models, realms
+from backend import coupons, models, realms, sub_accounts
 from backend.integrations.store import switch_env_value as _switch_env_value
 from backend.database import get_db
 from backend.api.user import get_current_user
@@ -445,6 +445,8 @@ async def redeem_exchange_code(
     占位 / 发奖 / 审计整段是同步 SQLAlchemy（体内一个 await 都没有），下放线程池执行；
     通知要走 WebSocket，必须留在事件循环上 await。
     """
+    # 家庭子账号禁止经济动作：兑换发的是订阅/权益，回主账号操作
+    sub_accounts.forbid_sub_account(current_user)
     user_id = current_user.id
     allowed, _ = check_rate_limit(f"redeem:{user_id}", 10, 60)
     if not allowed:
@@ -898,6 +900,8 @@ def create_payment_order(
     db: Session = Depends(get_db),
 ):
     """创建支付订单，返回易支付跳转 URL（epay 标准提交）"""
+    # 家庭子账号禁止经济动作：购买订阅回主账号操作
+    sub_accounts.forbid_sub_account(current_user)
     allowed, _ = check_rate_limit(f"order:{current_user.id}", 10, 60)
     if not allowed:
         raise HTTPException(status_code=429, detail="下单过于频繁，请稍后再试")
