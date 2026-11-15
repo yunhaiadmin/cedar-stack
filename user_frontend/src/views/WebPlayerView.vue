@@ -222,6 +222,9 @@
       <TriangleAlert :size="30" class="wp-notice-icon" />
       <h2>{{ noticeTitle }}</h2>
       <p>{{ noticeText }}</p>
+      <p v-if="phase === 'unsupported' && softFailReason" class="wp-notice-sub">
+        软解也没能启动：{{ softFailReason }}
+      </p>
       <div class="wp-notice-actions">
         <button
           v-if="phase === 'unsupported' && decodeAlt"
@@ -359,6 +362,7 @@ import {
 import {
   createSoftPlayer,
   fetchSoftDecodeEnabled,
+  humanizeSoftError,
   shouldSoftDecode,
   type SoftPlayerHandle,
 } from '@/utils/softDecode'
@@ -439,6 +443,8 @@ const episodes = ref<EmbyItem[]>([])
 const prepStepIndex = ref(0)
 const prepSlow = ref(false)
 const noticeText = ref('')
+/** 软解失败的人话原因（回落提示卡小字）：软解试过又失败时才有值，不许再静默吞掉 */
+const softFailReason = ref('')
 const toast = ref('')
 // 解码探测结论（utils/decodeSupport）：当前版本浏览器解不了时，
 // 提示卡走「解码」口径并给出能播的替代版本（decodeAlt）
@@ -451,7 +457,10 @@ const verdictCache = ref(new Map<string, DecodeVerdict>())
 // 才清掉它（retry 里）。
 const softEl = ref<HTMLDivElement | null>(null)
 const softHandle = ref<SoftPlayerHandle | null>(null)
-const softActive = computed(() => softHandle.value !== null)
+/** 软解起播中标记：构造 AVPlayer 前就得亮出容器——它按容器尺寸初始化
+ * 渲染器，display:none（0×0）下建出来只会黑屏（2026-11-15 实证） */
+const softStarting = ref(false)
+const softActive = computed(() => softHandle.value !== null || softStarting.value)
 const softFailedFor = ref('')
 const noticeTitle = computed(() => {
   if (phase.value === 'unsupported') {
@@ -1086,6 +1095,7 @@ async function openSource(source: EmbyMediaSource, atSeconds: number): Promise<v
 async function playSource(source: EmbyMediaSource, atSeconds: number): Promise<void> {
   // 切版本：旧的软解实例先停掉，新版本再按决策重建（软解/原生二选一）
   if (softHandle.value) await destroySoft()
+  softFailReason.value = ''
   const verdict = verdictCache.value.get(source.Id)
   if (verdict?.status === 'unsupported' && (verdict.badVideo || verdict.badAudio)) {
     if (await startSoftDecode(source, verdict, atSeconds)) return
@@ -1101,6 +1111,7 @@ async function playSource(source: EmbyMediaSource, atSeconds: number): Promise<v
 async function destroySoft(): Promise<void> {
   const h = softHandle.value
   softHandle.value = null
+  softStarting.value = false
   if (!h) return
   try {
     await h.destroy()
@@ -1133,6 +1144,9 @@ async function startSoftDecode(
   const url = source.DirectStreamUrl || ''
   let started = false
   let seekDone = false
+  // 先亮出软解容器再构造播放器（见 softStarting 注释：隐藏容器下
+  // AVPlayer 渲染器按 0×0 初始化，只会黑屏）
+  softStarting.value = true
   try {
     softHandle.value = await createSoftPlayer(
       container,
@@ -1173,7 +1187,10 @@ async function startSoftDecode(
           }
         },
         onEnded: () => onEnded(),
-        onError: () => {
+        onError: (message: string) => {
+          // 失败原因先记下（起播中/中途都记）：回落提示卡要带这句人话，
+          // 不许再静默吞掉（2026-11-15 软解无声卡死教训）。
+          softFailReason.value = humanizeSoftError(message)
           // 起播中的失败由调用方（playSource）决定回落，这里只处理
           // 播起来之后的中途失败：销毁实例、回落解码提示卡，只一次。
           if (!started) return
@@ -1184,10 +1201,20 @@ async function startSoftDecode(
       },
       { ext: (source.Container || '').toLowerCase() || undefined },
     )
-  } catch {
+  } catch (e) {
+    // createSoftPlayer 的 failOnce 已先把原因递到 onError；这里兜底
+    // （如构造本身抛错、onError 没机会触发的情形），保证卡上有原因。
+    if (!softFailReason.value) {
+      softFailReason.value = humanizeSoftError(
+        e instanceof Error ? e.message : String(e),
+      )
+    }
     softHandle.value = null
+    softStarting.value = false
     return false
   }
+  // 实例已接管 softActive，起播中标记可以撤了
+  softStarting.value = false
   started = true
   return true
 }
@@ -2498,6 +2525,10 @@ onUnmounted(() => {
   font-size: 14px;
   line-height: 1.7;
   color: rgba(255, 255, 255, 0.7);
+}
+.wp-notice .wp-notice-sub {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
 }
 .wp-notice-actions {
   display: flex;

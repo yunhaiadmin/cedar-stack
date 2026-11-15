@@ -4,8 +4,9 @@
  *
  * 决策与播放器构造分开，决策是纯函数、可单测：
  * - shouldSoftDecode：探测结论 + 编解码子集 + 开关，三者齐了才走软解；
- * - createSoftPlayer：AVPlayer 只在这里被动态 import（懒加载 chunk，
- *   开关关着/原生能播时不下载这 600KB+ 的播放器代码）。
+ * - createSoftPlayer：AVPlayer 只在这里按 URL 动态加载（站内静态
+ *   托管的原始构建，见 public/libmedia/README.md——经 vite/rollup
+ *   重新打包会打断它内部的 Worker 启动代码，不许走包导入）。
  *
  * 约束（批 1 实证）：只编了 simd 变体；FFmpeg 钉 7.1；不承诺 4K/HDR。
  * 软解只覆盖 HEVC/H.264 画面 + AAC/AC3/EAC3/DTS 声音；AV1/Opus 等
@@ -117,7 +118,171 @@ export function __resetSoftDecodeEnabledCache(): void {
   enabledPromise = null
 }
 
+// ---------- 软解取流地址 ----------
+
+/**
+ * 直链变体 → 中继变体（与 backend/emby_server/play_variants.py 的变体
+ * 枚举一一对应）。直链变体（drive_direct 等）的取流是 302 跳网盘直链
+ * （跨源、无 CORS 头），AVPlayer 的 IO 在 Worker 里用 fetch 取流，
+ * 永远读不到：2026-11-15 生产实证——load() 在 IO 层反复重试约
+ * 20 秒后才失败、期间零 wasm 请求，最终被 45 秒守卫吞掉回落。
+ * 中继变体是同一个流端点改由服务器出字节，fetch 可读；软解只换
+ * 自己用的这一条地址，原生 <video> 路径（能跟 302）逐字不变。
+ */
+export const DIRECT_TO_RELAY_VARIANT: Record<string, string> = {
+  drive_direct: 'drive_relay',
+  byos_drive_direct: 'byos_drive_relay',
+  byos115_direct: 'mount_relay',
+}
+
+/** 无变体标记时探测中继变体的顺序：本人盘中继是灰度直链的设计兜底，先探它 */
+const RELAY_PROBE_ORDER = ['byos_drive_relay', 'drive_relay']
+
+/**
+ * 从播放地址里读变体名：variant 参数优先，其次 MediaSourceId 的
+ * {guid}:{variant} 后缀——与服务端 parse_requested_variant 同口径。
+ * 读不到返回空串。
+ */
+export function variantOfStreamUrl(rawUrl: string): string {
+  try {
+    const u = new URL(rawUrl, 'http://softdecode.invalid/')
+    const v = (u.searchParams.get('variant') || '').trim()
+    if (v) return v
+    const msid = u.searchParams.get('MediaSourceId') || ''
+    if (msid.includes(':')) return msid.slice(msid.lastIndexOf(':') + 1).trim()
+  } catch {
+    /* 地址解析不了就没有变体 */
+  }
+  return ''
+}
+
+/** 给地址打上变体参数（与服务端 variantize_url 同形态；MediaSourceId 后缀由调用方按需同步） */
+function withVariantParam(url: string, variant: string): string {
+  const u = new URL(url)
+  u.searchParams.set('variant', variant)
+  return u.toString()
+}
+
+/**
+ * 地址若标的是直链变体，换成对应中继变体（variant 参数与
+ * MediaSourceId 后缀双保险位一起换，与服务端 variantize_url 的
+ * 打标形态一致；验签不看这两个参数）。不是直链变体时原样返回。
+ */
+export function relayVariantUrl(rawUrl: string): string {
+  const variant = variantOfStreamUrl(rawUrl)
+  const relay = DIRECT_TO_RELAY_VARIANT[variant]
+  if (!relay) return rawUrl
+  try {
+    const u = new URL(rawUrl)
+    u.searchParams.set('variant', relay)
+    const msid = u.searchParams.get('MediaSourceId') || ''
+    if (msid.endsWith(`:${variant}`)) {
+      u.searchParams.set(
+        'MediaSourceId',
+        `${msid.slice(0, msid.length - variant.length)}${relay}`,
+      )
+    }
+    return u.toString()
+  } catch {
+    return rawUrl
+  }
+}
+
+export type SoftUrlProbeResult = 'bytes' | 'redirect' | 'fail'
+export type SoftUrlProbe = (
+  url: string,
+  redirect: 'manual' | 'follow',
+) => Promise<SoftUrlProbeResult>
+
+/** 默认探测：1 字节 Range 读，只看「出字节 / 会重定向 / 其余失败」，不读完 body */
+async function fetchProbe(
+  url: string,
+  redirect: 'manual' | 'follow',
+): Promise<SoftUrlProbeResult> {
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 6000)
+    try {
+      const res = await fetch(url, {
+        redirect,
+        headers: { Range: 'bytes=0-0' },
+        signal: controller.signal,
+      })
+      if ((res as { type?: string }).type === 'opaqueredirect') return 'redirect'
+      return res.status === 200 || res.status === 206 ? 'bytes' : 'fail'
+    } finally {
+      clearTimeout(timer)
+    }
+  } catch {
+    return 'fail'
+  }
+}
+
+/**
+ * 算软解真正要喂给 AVPlayer 的地址：
+ * 1. 相对地址先绝对化——AVPlayer 的 IO 在 Worker 里 fetch，
+ *    相对地址解析不了（复现台实证：Failed to parse URL）。
+ * 2. 地址带直链变体标记 → 直接换中继变体（确定性，不探测）。
+ * 3. 无标记（生产默认口径：PlaybackInfo 单源下发、取流分支由服务端
+ *    开关现场决定）→ 探原地址：出字节就用原地址；会 302 才逐个探
+ *    中继变体，谁出字节用谁；都探不通回原地址，让播放器把真实
+ *    失败抛出来（不再静默）。探测有任何不确定都回原地址，
+ *    绝不比现状更差。
+ */
+export async function resolveSoftDecodeUrl(
+  rawUrl: string,
+  deps: { probe?: SoftUrlProbe; base?: string } = {},
+): Promise<string> {
+  if (!rawUrl) return rawUrl
+  const probe = deps.probe ?? fetchProbe
+  let url = rawUrl
+  try {
+    const base =
+      deps.base ?? (typeof location !== 'undefined' ? location.href : undefined)
+    if (base) url = new URL(rawUrl, base).toString()
+  } catch {
+    /* 绝对化失败就用原串 */
+  }
+  if (variantOfStreamUrl(url)) return relayVariantUrl(url)
+  const first = await probe(url, 'manual')
+  if (first !== 'redirect') return url
+  for (const relay of RELAY_PROBE_ORDER) {
+    const candidate = withVariantParam(url, relay)
+    if ((await probe(candidate, 'follow')) === 'bytes') return candidate
+  }
+  return url
+}
+
+/** 把软解的原始失败串翻成一句人话（回落提示卡小字用；原始串仍走 console.error 留痕） */
+export function humanizeSoftError(message: string): string {
+  const raw = (message || '').trim()
+  if (!raw) return '未知错误'
+  if (/timeout/i.test(raw)) return '启动超时，网络或片源太慢'
+  if (/open stream failed|failed to fetch|fetch|network/i.test(raw)) {
+    return '视频流打不开，没能从服务器取到数据'
+  }
+  if (/wasm|webassembly/i.test(raw)) return '解码器组件加载失败'
+  if (/decode|decoder|codec/i.test(raw)) return '解码器启动失败'
+  // libmedia 的错误串带 [packages/...][line N] 前缀与 taskId，去掉再截断
+  const cleaned = raw
+    .replace(/\[[^\]]*\]/g, '')
+    .replace(/taskId:\s*\S+/i, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s:：\-—]+/, '')
+    .trim()
+  return (cleaned || '未知错误').slice(0, 60)
+}
+
 // ---------- AVPlayer 包装 ----------
+
+/**
+ * AVPlayer 原始构建的站内托管地址（版本目录防缓存串版）。
+ * 只能按 URL 加载：包导入经 rollup 重新打包后，其内部 cheap
+ * Worker 启动代码会因标识符改名报 `W is not defined`，load()
+ * 永远不返回（2026-11-15 实证，tests/softDecode.test.mjs 有
+ * 结构断言钉住这两条）。
+ */
+export const SOFT_PLAYER_SCRIPT_URL = '/libmedia/1.3.1/avplayer.js'
 
 export interface SoftPlayerHooks {
   onFirstVideo: () => void
@@ -168,7 +333,9 @@ type AVPlayerInstance = {
 /**
  * 创建软解播放器：AVPlayer 动态 import（不进首屏包），强制 wasm 解码
  *（enableHardware/enableWebCodecs 都关——浏览器已经探明解不了，再试
- * 硬解只会重蹈覆辙）。wasm 一律走站内自托管路径。
+ * 硬解只会重蹈覆辙）。wasm 一律走站内自托管路径。取流地址先过
+ * resolveSoftDecodeUrl：直链变体（302 跳跨源）换中继变体，
+ * AVPlayer 的 fetch 取流才读得到字节。
  */
 export async function createSoftPlayer(
   container: HTMLDivElement,
@@ -176,11 +343,17 @@ export async function createSoftPlayer(
   hooks: SoftPlayerHooks,
   options: CreateSoftPlayerOptions = {},
 ): Promise<SoftPlayerHandle> {
-  const { default: AVPlayer } = await import('@libmedia/avplayer')
+  const { default: AVPlayer } = (await import(
+    /* @vite-ignore */ SOFT_PLAYER_SCRIPT_URL
+  )) as { default: new (options: Record<string, unknown>) => unknown }
+  // 取流地址先过软解口径：直链（302 跳跨源）换中继，fetch 才读得到
+  const playUrl = await resolveSoftDecodeUrl(url)
   let errorReported = false
   const failOnce = (message: string) => {
     if (errorReported) return
     errorReported = true
+    // 失败必须留痕：原始错误进控制台，调用方再翻成人话上提示卡
+    console.error('[softDecode] 软解失败:', message)
     hooks.onError(message)
   }
   const player = new AVPlayer({
@@ -222,7 +395,7 @@ export async function createSoftPlayer(
   try {
     await Promise.race([
       (async () => {
-        await player.load(url, options.ext ? { ext: options.ext } : undefined)
+        await player.load(playUrl, options.ext ? { ext: options.ext } : undefined)
         await player.play()
       })(),
       startGuard,
