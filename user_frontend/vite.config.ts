@@ -70,11 +70,10 @@ export default defineConfig({
             if (id.includes('hls.js') || id.includes('hls.js/dist')) {
               return 'hls'
             }
-            // 软解播放器（@libmedia/*，只在软解时动态 import，独立分包
-            // 避免 600KB+ 进首屏 vendor；同 hls.js 口径）
-            if (id.includes('@libmedia/')) {
-              return 'softdecode'
-            }
+            // 软解播放器（@libmedia/avplayer）不许进打包：它是 webpack
+            // 构建，rollup 重打包会打断其内部 Worker 启动代码
+            //（2026-11-15 实证）。它走 public/libmedia/ 静态托管 +
+            // softDecode.ts 按 URL 动态加载，这里不给它留分包口子。
             // 工具库
             if (id.includes('axios') || id.includes('lodash-es')) {
               return 'utils'
