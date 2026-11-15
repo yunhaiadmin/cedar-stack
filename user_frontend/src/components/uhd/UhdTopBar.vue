@@ -50,14 +50,15 @@ const brandInitial = computed(() => (branding.site_name.trim().charAt(0) || 'A')
   height: calc(var(--utb-h) + env(safe-area-inset-top));
   padding: env(safe-area-inset-top) 16px 0;
   box-sizing: border-box;
-  /* 玻璃底：半透 + blur/saturate + 底部边缘光 + 顶部内高光 + 柔影 */
+  /* 玻璃底：半透（底色取自本面页底、同色无缝，见 uhd-topbar.css 口径注）
+     + blur/saturate + 顶部内高光。2026-11-15 颜色对齐单：去掉外柔影——
+     它在栏下方洇出一条异色带（浅色为蓝灰、友站顶栏无此带）；--utb-shadow
+     只剩浮动观影胶囊在用。底部边线由 --utb-edge 控制（现 transparent）。 */
   background: var(--utb-bg);
   backdrop-filter: var(--utb-glass-filter);
   -webkit-backdrop-filter: var(--utb-glass-filter);
   border-bottom: 1px solid var(--utb-edge);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
-    var(--utb-shadow);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
   color: var(--utb-fg);
   font-family: var(--uhd-font-sans);
 }
