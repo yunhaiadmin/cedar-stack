@@ -1,121 +1,18 @@
-<template>
-  <div class="team-apps">
-    <header class="team-apps__head">
-      <div>
-        <h1 class="team-apps__title">团队申请</h1>
-        <p class="team-apps__sub">
-          用户提交的团队套餐申请（意向单）。通过即给该团登记套餐开通；付款与开通细节走客服确认
-          （本站未接在线支付与团队流量计量，审核只是人工开通登记）。
-        </p>
-        <p class="team-apps__sub">
-          套餐口径：起订流量 {{ config ? fmtBytes(config.team_plan_min_traffic_bytes) : '—' }}、子账号上限
-          {{ config?.team_plan_max_members ?? '—' }} 个——数值在下方「团队配置」里改，不写死在页面。
-        </p>
-      </div>
-      <button type="button" class="btn" :disabled="loading" @click="load">刷新</button>
-    </header>
-
-    <!-- 团队配置（系统配置 team 段，改完立即生效） -->
-    <section class="card">
-      <h2 class="card__title">团队配置</h2>
-      <div class="grid3">
-        <label class="field">
-          <span class="field__label">套餐起订流量（TB）</span>
-          <input v-model.number="cfgForm.minTrafficTb" class="input" type="number" min="0" step="1" />
-        </label>
-        <label class="field">
-          <span class="field__label">套餐子账号上限（人）</span>
-          <input v-model.number="cfgForm.maxMembers" class="input" type="number" min="1" step="1" />
-        </label>
-        <label class="field">
-          <span class="field__label">未开通套餐的团队成员上限（人）</span>
-          <input v-model.number="cfgForm.defaultLimit" class="input" type="number" min="1" step="1" />
-        </label>
-      </div>
-      <div class="row-actions">
-        <button type="button" class="btn btn--primary" :disabled="savingCfg" @click="saveConfig">
-          保存配置
-        </button>
-        <span v-if="cfgMsg" class="hint">{{ cfgMsg }}</span>
-      </div>
-    </section>
-
-    <!-- 申请列表 -->
-    <section class="card">
-      <div class="tabs" role="tablist">
-        <button
-          v-for="t in tabs"
-          :key="t.value"
-          type="button"
-          class="tab"
-          :class="{ 'tab--on': statusFilter === t.value }"
-          @click="setFilter(t.value)"
-        >
-          {{ t.label }}
-        </button>
-      </div>
-
-      <p v-if="error" class="err">{{ error }}</p>
-      <div v-if="loading" class="empty">加载中…</div>
-      <div v-else-if="!items.length" class="empty">暂无申请</div>
-      <table v-else class="table">
-        <thead>
-          <tr>
-            <th>申请人</th>
-            <th>团队</th>
-            <th>线路</th>
-            <th>总流量</th>
-            <th>子账号</th>
-            <th>备注</th>
-            <th>提交时间</th>
-            <th>状态</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="a in items" :key="a.id">
-            <td>{{ a.username }}（#{{ a.user_id }}）</td>
-            <td>{{ a.team_name || '—' }}</td>
-            <td>{{ a.line || '—' }}</td>
-            <td>{{ fmtBytes(a.traffic_bytes) }}</td>
-            <td>{{ a.member_limit }}</td>
-            <td class="note">{{ a.note || '—' }}</td>
-            <td>{{ fmtDateTime(a.created_at) }}</td>
-            <td>
-              <span class="chip" :class="`chip--${a.status}`">{{ statusText(a.status) }}</span>
-              <span v-if="a.review_note" class="review-note">{{ a.review_note }}</span>
-            </td>
-            <td>
-              <template v-if="a.status === 'pending'">
-                <button
-                  type="button"
-                  class="btn btn--sm btn--primary"
-                  :disabled="busyId === a.id"
-                  @click="doApprove(a)"
-                >
-                  通过
-                </button>
-                <button
-                  type="button"
-                  class="btn btn--sm btn--danger"
-                  :disabled="busyId === a.id"
-                  @click="doReject(a)"
-                >
-                  驳回
-                </button>
-              </template>
-              <span v-else class="hint">{{ a.reviewed_at ? fmtDateTime(a.reviewed_at) : '' }}</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
-    </section>
-  </div>
-</template>
-
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+/**
+ * 团队申请（意向单审核 + 团队配置）。
+ *
+ * UI 统一批 3：全自绘原生控件收编 EP 控件＋共享原语（PageHeader/SectionCard/
+ * DataTable、el-tabs、el-tag、el-input）。行为级改动逐项核对过：
+ * - 配置三输入保留原生 number 语义：el-input type="number" + v-model.number，
+ *   min/step 属性照旧透传，不用 el-input-number（避免失焦钳制改变提交值），
+ *   保存换算公式（|| 0 归一、TB 换算）一字未动；
+ * - 状态页签改 el-tabs：点页签即重拉列表（@tab-change 在 v-model 更新后触发，
+ *   等价于原 setFilter+load）；仅「点已选中的页签」不再重拉（原自绘会重拉），
+ *   刷新走页头「刷新」钮；
+ * - 通过/驳回的确认框、忙碌禁用条件（busyId）、错误文案口径全部原样。
+ */
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   approveTeamApplication,
@@ -126,6 +23,9 @@ import {
   type AdminTeamApplication,
   type TeamConfig,
 } from '@/api/adminTeams'
+import { PageHeader, SectionCard } from '@/components/ui'
+import DataTable from '@/components/DataTable.vue'
+import type { DataColumn } from '@/components/DataTable.vue'
 
 const TB = 10 ** 12
 
@@ -133,19 +33,43 @@ const items = ref<AdminTeamApplication[]>([])
 const loading = ref(false)
 const error = ref('')
 const busyId = ref<number | null>(null)
-const statusFilter = ref<'' | 'pending' | 'approved' | 'rejected'>('pending')
 
-const tabs = [
-  { value: 'pending' as const, label: '待审核' },
-  { value: '' as const, label: '全部' },
-  { value: 'approved' as const, label: '已通过' },
-  { value: 'rejected' as const, label: '已驳回' },
+type TabName = 'pending' | 'all' | 'approved' | 'rejected'
+const activeTab = ref<TabName>('pending')
+/** 与原 statusFilter 同值域：'all' 页签对应接口的空状态参数 */
+const statusParam = computed<'' | 'pending' | 'approved' | 'rejected'>(() =>
+  activeTab.value === 'all' ? '' : activeTab.value,
+)
+
+const tabs: { name: TabName; label: string }[] = [
+  { name: 'pending', label: '待审核' },
+  { name: 'all', label: '全部' },
+  { name: 'approved', label: '已通过' },
+  { name: 'rejected', label: '已驳回' },
+]
+
+const columns: DataColumn[] = [
+  { key: 'applicant', label: '申请人', minWidth: 115, mobile: 'title' },
+  { key: 'team_name', label: '团队', minWidth: 90 },
+  { key: 'line', label: '线路', width: 90 },
+  { key: 'traffic', label: '总流量', width: 80 },
+  { key: 'member_limit', label: '子账号', width: 70 },
+  { key: 'note', label: '备注', minWidth: 90 },
+  { key: 'created_at', label: '提交时间', width: 140 },
+  { key: 'status', label: '状态', width: 100 },
+  { key: 'actions', label: '操作', width: 140 },
 ]
 
 const config = ref<TeamConfig | null>(null)
 const cfgForm = reactive({ minTrafficTb: 10, maxMembers: 100, defaultLimit: 10 })
 const savingCfg = ref(false)
 const cfgMsg = ref('')
+
+const configDesc = computed(
+  () =>
+    `套餐口径：起订流量 ${config.value ? fmtBytes(config.value.team_plan_min_traffic_bytes) : '—'}、` +
+    `子账号上限 ${config.value?.team_plan_max_members ?? '—'} 个——数值在本卡里改，不写死在页面。`,
+)
 
 function fmtBytes(bytes: number): string {
   if (!bytes) return '—'
@@ -171,13 +95,18 @@ function statusText(s: AdminTeamApplication['status']): string {
   return '待审核'
 }
 
+function statusTagType(s: AdminTeamApplication['status']): 'warning' | 'success' | 'danger' {
+  if (s === 'approved') return 'success'
+  if (s === 'rejected') return 'danger'
+  return 'warning'
+}
+
 function errText(e: unknown, fallback: string): string {
   const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
   return typeof detail === 'string' && detail ? detail : fallback
 }
 
-function setFilter(v: typeof statusFilter.value) {
-  statusFilter.value = v
+function onTabChange() {
   void load()
 }
 
@@ -185,7 +114,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await listTeamApplications({ status: statusFilter.value })
+    const res = await listTeamApplications({ status: statusParam.value })
     items.value = res.applications
   } catch (e) {
     error.value = errText(e, '申请列表加载失败')
@@ -277,37 +206,77 @@ onMounted(() => {
 })
 </script>
 
+<template>
+  <div class="admin-page">
+    <PageHeader eyebrow="经营" title="团队申请">
+      <template #description>
+        用户提交的团队套餐申请（意向单）。通过即给该团登记套餐开通；付款与开通细节走客服确认
+        （本站未接在线支付与团队流量计量，审核只是人工开通登记）。
+      </template>
+      <template #actions>
+        <el-button :disabled="loading" @click="load">刷新</el-button>
+      </template>
+    </PageHeader>
+
+    <!-- 团队配置（系统配置 team 段，改完立即生效） -->
+    <SectionCard title="团队配置" :description="configDesc">
+      <el-form label-position="top">
+        <div class="cfg-grid">
+          <el-form-item label="套餐起订流量（TB）">
+            <el-input v-model.number="cfgForm.minTrafficTb" type="number" min="0" step="1" />
+          </el-form-item>
+          <el-form-item label="套餐子账号上限（人）">
+            <el-input v-model.number="cfgForm.maxMembers" type="number" min="1" step="1" />
+          </el-form-item>
+          <el-form-item label="未开通套餐的团队成员上限（人）">
+            <el-input v-model.number="cfgForm.defaultLimit" type="number" min="1" step="1" />
+          </el-form-item>
+        </div>
+        <div class="row-actions">
+          <el-button type="primary" :disabled="savingCfg" @click="saveConfig">保存配置</el-button>
+          <span v-if="cfgMsg" class="hint">{{ cfgMsg }}</span>
+        </div>
+      </el-form>
+    </SectionCard>
+
+    <!-- 申请列表 -->
+    <SectionCard title="申请列表" flush>
+      <div class="list-head">
+        <el-tabs v-model="activeTab" @tab-change="onTabChange">
+          <el-tab-pane v-for="t in tabs" :key="t.name" :label="t.label" :name="t.name" />
+        </el-tabs>
+        <el-alert v-if="error" type="error" :title="error" show-icon :closable="false" class="list-error" />
+      </div>
+      <DataTable :rows="items" :columns="columns" :loading="loading" empty="暂无申请">
+        <template #cell-applicant="{ row }">{{ row.username }}（#{{ row.user_id }}）</template>
+        <template #cell-team_name="{ row }">{{ row.team_name || '—' }}</template>
+        <template #cell-line="{ row }">{{ row.line || '—' }}</template>
+        <template #cell-traffic="{ row }">{{ fmtBytes(row.traffic_bytes) }}</template>
+        <template #cell-note="{ row }"><span class="note-cell">{{ row.note || '—' }}</span></template>
+        <template #cell-created_at="{ row }">{{ fmtDateTime(row.created_at) }}</template>
+        <template #cell-status="{ row }">
+          <el-tag :type="statusTagType(row.status)" size="small">{{ statusText(row.status) }}</el-tag>
+          <span v-if="row.review_note" class="review-note">{{ row.review_note }}</span>
+        </template>
+        <template #cell-actions="{ row }">
+          <template v-if="row.status === 'pending'">
+            <el-button size="small" type="primary" :disabled="busyId === row.id" @click="doApprove(row)">通过</el-button>
+            <el-button size="small" type="danger" :disabled="busyId === row.id" @click="doReject(row)">驳回</el-button>
+          </template>
+          <span v-else class="hint">{{ row.reviewed_at ? fmtDateTime(row.reviewed_at) : '' }}</span>
+        </template>
+      </DataTable>
+    </SectionCard>
+  </div>
+</template>
+
 <style scoped>
-.team-apps { display: grid; gap: 16px; }
-.team-apps__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
-.team-apps__title { margin: 0; font-size: 22px; font-weight: 700; }
-.team-apps__sub { margin: 6px 0 0; font-size: 13px; color: var(--el-text-color-secondary); max-width: 760px; line-height: 1.6; }
-.card { background: var(--el-bg-color); border: 1px solid var(--el-border-color-light); border-radius: 8px; padding: 16px; }
-.card__title { margin: 0 0 12px; font-size: 16px; font-weight: 600; }
-.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.field { display: grid; gap: 6px; }
-.field__label { font-size: 13px; color: var(--el-text-color-regular); }
-.input { height: 34px; padding: 0 10px; border: 1px solid var(--el-border-color); border-radius: 6px; background: var(--el-bg-color); color: var(--el-text-color-primary); font-size: 14px; }
+.cfg-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .row-actions { margin-top: 12px; display: flex; align-items: center; gap: 12px; }
-.tabs { display: flex; gap: 8px; margin-bottom: 12px; }
-.tab { padding: 6px 14px; border-radius: 999px; border: 1px solid var(--el-border-color); background: transparent; color: var(--el-text-color-primary); cursor: pointer; font-size: 13px; }
-.tab--on { background: var(--el-color-primary); border-color: var(--el-color-primary); color: #fff; }
-.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-.table th, .table td { padding: 8px 10px; border-bottom: 1px solid var(--el-border-color-lighter); text-align: left; vertical-align: top; }
-.table th { color: var(--el-text-color-secondary); font-weight: 500; }
-.note { max-width: 220px; white-space: pre-wrap; word-break: break-word; }
-.chip { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; border: 1px solid var(--el-border-color); }
-.chip--pending { color: var(--el-color-warning); border-color: var(--el-color-warning); }
-.chip--approved { color: var(--el-color-success); border-color: var(--el-color-success); }
-.chip--rejected { color: var(--el-color-danger); border-color: var(--el-color-danger); }
-.review-note { display: block; margin-top: 4px; font-size: 12px; color: var(--el-text-color-secondary); }
-.btn { padding: 7px 14px; border-radius: 6px; border: 1px solid var(--el-border-color); background: transparent; color: var(--el-text-color-primary); cursor: pointer; font-size: 13px; }
-.btn:disabled { opacity: 0.5; cursor: default; }
-.btn--primary { background: var(--el-color-primary); border-color: var(--el-color-primary); color: #fff; }
-.btn--danger { color: var(--el-color-danger); border-color: var(--el-color-danger); }
-.btn--sm { padding: 4px 10px; margin-right: 6px; }
-.empty { padding: 32px 0; text-align: center; color: var(--el-text-color-secondary); }
-.err { color: var(--el-color-danger); font-size: 13.5px; }
-.hint { font-size: 12.5px; color: var(--el-text-color-secondary); }
-@media (max-width: 900px) { .grid3 { grid-template-columns: 1fr; } }
+.hint { font-size: 12.5px; color: var(--au-text-3); }
+.list-head { padding: 8px 16px 0; }
+.list-error { margin-bottom: 12px; }
+.note-cell { display: inline-block; max-width: 220px; white-space: pre-wrap; word-break: break-word; }
+.review-note { display: block; margin-top: 4px; font-size: 12px; color: var(--au-text-3); }
+@media (max-width: 900px) { .cfg-grid { grid-template-columns: 1fr; } }
 </style>

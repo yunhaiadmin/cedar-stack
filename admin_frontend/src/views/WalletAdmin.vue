@@ -2,10 +2,20 @@
 /**
  * 钱包管理（钱包批 1）：按用户查余额与流水、手工调账、全站流水、钱包配置。
  * 余额是钱：金额一律字符串传输，调账必须填原因（后端记 operator_id + 审计）。
+ *
+ * UI 统一批 3：el-card 三块收编 PageHeader＋SectionCard；查询/调账改标准表单
+ * （label-width 90px，配置表单按 Settings 样板 label-position=top）；全站流水
+ * 筛选收编 FilterBar（提交口径不变：点「查询」才查并重置到第 1 页，筛选控件
+ * 本身只改草稿）、表格与自带分页换 DataTable。功能与接口口径零变化。
  */
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { walletApi, type WalletBalanceResponse, type WalletLedgerRow } from '@/api/wallet'
+import { PageHeader, SectionCard } from '@/components/ui'
+import DataTable from '@/components/DataTable.vue'
+import type { DataColumn } from '@/components/DataTable.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import type { AppliedFilter, FilterConfig } from '@/components/FilterBar.vue'
 
 const KIND_LABELS: Record<string, string> = {
   recharge: '在线充值',
@@ -75,8 +85,49 @@ const ledgerTotal = ref(0)
 const ledgerLoading = ref(false)
 const ledgerQuery = reactive({ user_id: undefined as number | undefined, kind: '', page: 1, page_size: 20 })
 
+const ledgerColumns: DataColumn[] = [
+  { key: 'id', label: 'ID', width: 60 },
+  { key: 'user', label: '用户', minWidth: 120, mobile: 'title' },
+  { key: 'kind', label: '类型', width: 100 },
+  { key: 'amount', label: '金额（美元）', width: 110 },
+  { key: 'balance_after', label: '变动后余额', width: 110 },
+  { key: 'note', label: '备注', minWidth: 125 },
+  { key: 'operator', label: '操作人', width: 100 },
+  { key: 'created_at', label: '时间', width: 175 },
+]
+
+/** chips 只反映最近一次真正执行过的查询（与 FilterBar 的草稿/已提交分离口径一致） */
+const appliedLedger = reactive({ user_id: undefined as number | undefined, kind: '' })
+
+const ledgerFilters = computed<FilterConfig[]>(() => [
+  {
+    key: 'user_id', label: '用户 ID', type: 'custom', value: ledgerQuery.user_id ?? null,
+    isEmpty: (v: unknown) => v == null, chipText: (v: unknown) => `用户 ${v}`,
+  },
+  {
+    key: 'kind', label: '类型', type: 'select', value: ledgerQuery.kind, placeholder: '全部',
+    options: [
+      { label: '全部', value: '' },
+      ...Object.entries(KIND_LABELS).map(([value, label]) => ({ label, value })),
+    ],
+  },
+])
+
+const appliedLedgerFilters = computed<AppliedFilter[]>(() => {
+  const chips: AppliedFilter[] = []
+  if (appliedLedger.user_id != null) {
+    chips.push({ key: 'user_id', label: '用户 ID', text: String(appliedLedger.user_id) })
+  }
+  if (appliedLedger.kind) {
+    chips.push({ key: 'kind', label: '类型', text: KIND_LABELS[appliedLedger.kind] || appliedLedger.kind })
+  }
+  return chips
+})
+
 async function loadLedger() {
   ledgerLoading.value = true
+  appliedLedger.user_id = ledgerQuery.user_id
+  appliedLedger.kind = ledgerQuery.kind
   try {
     const res = await walletApi.ledger({
       user_id: ledgerQuery.user_id || undefined,
@@ -89,6 +140,28 @@ async function loadLedger() {
   } finally {
     ledgerLoading.value = false
   }
+}
+
+/** 筛选控件只改草稿（与原页面一致：点「查询」才真正查）；user_id 走 custom 插槽直绑，不经这里 */
+function onLedgerFilterChange(key: string, value: unknown) {
+  if (key === 'kind') ledgerQuery.kind = String(value ?? '')
+}
+
+function queryLedger() {
+  ledgerQuery.page = 1
+  void loadLedger()
+}
+
+function removeLedgerChip(key: string) {
+  if (key === 'user_id') ledgerQuery.user_id = undefined
+  if (key === 'kind') ledgerQuery.kind = ''
+  queryLedger()
+}
+
+function clearLedgerFilters() {
+  ledgerQuery.user_id = undefined
+  ledgerQuery.kind = ''
+  queryLedger()
 }
 
 // ---------- 钱包配置 ----------
@@ -135,15 +208,18 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="wallet-admin">
-    <el-card shadow="never" class="block">
-      <template #header><span>用户钱包</span></template>
-      <el-form inline>
+  <div class="admin-page">
+    <PageHeader
+      eyebrow="经营"
+      title="钱包管理"
+      description="按用户查余额与流水、手工调账、全站流水与钱包配置。金额一律字符串传输，调账必填原因并记操作人。"
+    />
+
+    <SectionCard title="用户钱包">
+      <el-form label-width="90px">
         <el-form-item label="用户 ID">
           <el-input-number v-model="queryUserId" :min="1" controls-position="right" placeholder="用户 ID" />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" :loading="queryLoading" @click="loadBalance">查询余额</el-button>
+          <el-button class="inline-btn" type="primary" :loading="queryLoading" @click="loadBalance">查询余额</el-button>
         </el-form-item>
       </el-form>
 
@@ -154,12 +230,12 @@ onMounted(async () => {
           <el-descriptions-item label="流水条数">{{ balanceInfo.ledger_total }}</el-descriptions-item>
         </el-descriptions>
 
-        <el-form inline class="adjust-form">
+        <el-form label-width="90px" class="adjust-form">
           <el-form-item label="调账金额（美元）">
-            <el-input v-model="adjustForm.amount" placeholder="正数增 / 负数减，如 50 或 -20" style="width: 220px" />
+            <el-input v-model="adjustForm.amount" class="amount-input" placeholder="正数增 / 负数减，如 50 或 -20" />
           </el-form-item>
           <el-form-item label="原因（必填）">
-            <el-input v-model="adjustForm.reason" placeholder="为什么调账" style="width: 260px" />
+            <el-input v-model="adjustForm.reason" class="reason-input" placeholder="为什么调账" />
           </el-form-item>
           <el-form-item>
             <el-button type="warning" :loading="adjustLoading" @click="submitAdjust">提交调账</el-button>
@@ -167,82 +243,79 @@ onMounted(async () => {
         </el-form>
         <p class="hint">调账会写一条流水并记操作人；扣减超过余额会被拒绝，余额不会扣成负数。</p>
       </template>
-    </el-card>
+    </SectionCard>
 
-    <el-card shadow="never" class="block">
-      <template #header><span>全站流水</span></template>
-      <el-form inline>
-        <el-form-item label="用户 ID">
-          <el-input-number v-model="ledgerQuery.user_id" :min="1" controls-position="right" placeholder="不限" />
-        </el-form-item>
-        <el-form-item label="类型">
-          <el-select v-model="ledgerQuery.kind" clearable placeholder="全部" style="width: 160px">
-            <el-option v-for="(label, kind) in KIND_LABELS" :key="kind" :label="label" :value="kind" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-button @click="ledgerQuery.page = 1; loadLedger()">查询</el-button>
-        </el-form-item>
-      </el-form>
-      <el-table :data="ledgerRows" v-loading="ledgerLoading" stripe>
-        <el-table-column prop="id" label="ID" width="70" />
-        <el-table-column label="用户" min-width="140">
-          <template #default="{ row }">{{ row.username || '-' }}（{{ row.user_id }}）</template>
-        </el-table-column>
-        <el-table-column label="类型" width="120">
-          <template #default="{ row }">{{ KIND_LABELS[row.kind] || row.kind }}</template>
-        </el-table-column>
-        <el-table-column label="金额（美元）" width="120">
-          <template #default="{ row }">
-            <span :class="row.amount.startsWith('-') ? 'neg' : 'pos'">{{ row.amount.startsWith('-') ? '' : '+' }}{{ row.amount }}</span>
+    <SectionCard title="全站流水" flush>
+      <div class="ledger-filter">
+        <FilterBar
+          :filters="ledgerFilters"
+          :applied-filters="appliedLedgerFilters"
+          :query-button="true"
+          :loading="ledgerLoading"
+          @filter-change="onLedgerFilterChange"
+          @query="queryLedger"
+          @remove-chip="removeLedgerChip"
+          @clear="clearLedgerFilters"
+        >
+          <template #filter-user_id>
+            <el-input-number
+              v-model="ledgerQuery.user_id"
+              :min="1"
+              controls-position="right"
+              placeholder="用户 ID 不限"
+            />
           </template>
-        </el-table-column>
-        <el-table-column prop="balance_after" label="变动后余额" width="120" />
-        <el-table-column prop="note" label="备注" min-width="160" show-overflow-tooltip />
-        <el-table-column label="操作人" width="120">
-          <template #default="{ row }">{{ row.operator_name || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="时间" width="170">
-          <template #default="{ row }">{{ fmtTime(row.created_at) }}</template>
-        </el-table-column>
-      </el-table>
-      <el-pagination
-        class="pager"
-        layout="total, prev, pager, next"
-        :total="ledgerTotal"
-        :page-size="ledgerQuery.page_size"
-        :current-page="ledgerQuery.page"
-        @current-change="(p: number) => { ledgerQuery.page = p; loadLedger() }"
-      />
-    </el-card>
+        </FilterBar>
+      </div>
+      <DataTable
+        :rows="ledgerRows"
+        :columns="ledgerColumns"
+        :loading="ledgerLoading"
+        :pagination="{ total: ledgerTotal, page: ledgerQuery.page, pageSize: ledgerQuery.page_size }"
+        @page-change="(p: number) => { ledgerQuery.page = p; void loadLedger() }"
+      >
+        <template #cell-user="{ row }">{{ row.username || '-' }}（{{ row.user_id }}）</template>
+        <template #cell-kind="{ row }">{{ KIND_LABELS[row.kind] || row.kind }}</template>
+        <template #cell-amount="{ row }">
+          <span :class="row.amount.startsWith('-') ? 'neg' : 'pos'">{{ row.amount.startsWith('-') ? '' : '+' }}{{ row.amount }}</span>
+        </template>
+        <template #cell-operator="{ row }">{{ row.operator_name || '-' }}</template>
+        <template #cell-created_at="{ row }">{{ fmtTime(row.created_at) }}</template>
+      </DataTable>
+    </SectionCard>
 
-    <el-card shadow="never" class="block">
-      <template #header><span>钱包配置</span></template>
-      <el-form label-width="220px" style="max-width: 720px">
+    <SectionCard title="钱包配置">
+      <el-form label-position="top" class="settings-form">
         <el-form-item v-for="field in SETTING_FIELDS" :key="field.key" :label="field.label">
-          <el-switch
-            v-if="field.type === 'bool'"
-            :model-value="settings[field.key] === 'true'"
-            @update:model-value="(v: string | number | boolean) => { settings[field.key] = v === true ? 'true' : 'false' }"
-          />
-          <el-input v-else v-model="settings[field.key]" style="width: 200px" />
-          <span class="hint inline">{{ field.hint }}</span>
+          <div class="setting-row">
+            <el-switch
+              v-if="field.type === 'bool'"
+              :model-value="settings[field.key] === 'true'"
+              @update:model-value="(v: string | number | boolean) => { settings[field.key] = v === true ? 'true' : 'false' }"
+            />
+            <el-input v-else v-model="settings[field.key]" class="setting-input" />
+            <span class="hint">{{ field.hint }}</span>
+          </div>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="settingsLoading" @click="saveSettings">保存配置</el-button>
         </el-form-item>
       </el-form>
-    </el-card>
+    </SectionCard>
   </div>
 </template>
 
 <style scoped>
-.wallet-admin .block { margin-bottom: 16px; }
+.inline-btn { margin-left: 12px; }
 .balance-desc { margin: 12px 0; }
 .adjust-form { margin-top: 8px; }
-.hint { color: var(--el-text-color-secondary); font-size: 12px; }
-.hint.inline { margin-left: 12px; }
-.pager { margin-top: 12px; justify-content: flex-end; }
-.pos { color: var(--el-color-success); }
-.neg { color: var(--el-color-danger); }
+.amount-input { width: 220px; }
+.reason-input { width: 260px; }
+.hint { color: var(--au-text-3); font-size: 12px; }
+.ledger-filter { padding: 16px 16px 4px; }
+.settings-form { max-width: 720px; }
+.setting-row { display: flex; align-items: center; gap: 12px; }
+.setting-input { width: 200px; }
+.pos { color: var(--au-success); }
+.neg { color: var(--au-danger); }
 </style>

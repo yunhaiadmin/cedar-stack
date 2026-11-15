@@ -1,10 +1,15 @@
 <template>
-  <div>
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-      <h2 style="margin:0">合集管理</h2>
-      <el-button type="primary" @click="openCreate">新建合集</el-button>
-      <el-button @click="loadSets">刷新</el-button>
-    </div>
+  <div class="admin-page">
+    <PageHeader
+      eyebrow="媒体"
+      title="合集管理"
+      description="合集与模板的维护：成员、顺序、可见性都在这里；合集总闸关闭时本页与用户端货架读口都会 404。"
+    >
+      <template #actions>
+        <el-button type="primary" @click="openCreate">新建合集</el-button>
+        <el-button @click="loadSets">刷新</el-button>
+      </template>
+    </PageHeader>
 
     <!-- 总闸关时：读口 404，前端明示开关名，不报成加载失败 -->
     <el-alert
@@ -13,116 +18,96 @@
       description="先把合集总闸打开，本页才有内容；用户端货架读口同样会 404。"
       type="warning"
       show-icon
-      style="margin-bottom:16px"
     />
     <el-alert
       v-else-if="loadError"
       :title="`合集列表加载失败：${loadError}`"
       type="error"
       show-icon
-      style="margin-bottom:16px"
     />
 
     <el-tabs v-model="activeTab">
       <!-- ================= 合集 ================= -->
       <el-tab-pane label="合集" name="sets">
-        <el-table v-loading="setsLoading" :data="sets" style="width: 100%">
-          <el-table-column prop="name" label="名称" min-width="160" />
-          <el-table-column prop="source_type" label="来源" width="130">
-            <template #default="{ row }">{{ sourceLabel(row.source_type) }}</template>
-          </el-table-column>
-          <el-table-column label="可见性" width="110">
-            <template #default="{ row }">
-              <!-- 独立可见性开关：visible 上架、hidden 按不存在处理 -->
-              <el-switch
-                :model-value="row.visibility_status === 'visible'"
-                active-text="可见"
-                inactive-text="隐藏"
-                @change="() => toggleVisibility(row, row.visibility_status !== 'visible')"
-              />
-            </template>
-          </el-table-column>
-          <el-table-column label="顺序" width="110">
-            <template #default="{ row }">
-              <el-input-number
-                v-model="row.sort_order"
-                :min="0"
-                size="small"
-                style="width: 90px"
-                @change="orderDirty = true"
-              />
-            </template>
-          </el-table-column>
-          <el-table-column label="成员" width="150">
-            <template #default="{ row }">{{ row.effective_count }} / {{ row.member_count }} 有效</template>
-          </el-table-column>
-          <el-table-column label="上架" width="90">
-            <template #default="{ row }">
-              <el-tag :type="row.shelf_eligible ? 'success' : 'info'">
-                {{ row.shelf_eligible ? '可上架' : '未达门槛' }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="260">
-            <template #default="{ row }">
-              <el-button size="small" @click="openMembers(row)">成员管理</el-button>
-              <el-button size="small" @click="openEdit(row)">编辑</el-button>
-              <el-button size="small" @click="refreshSet(row)">刷新</el-button>
-              <el-button size="small" type="danger" @click="removeSet(row)">删除</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-        <div style="margin-top:12px">
+        <DataTable :rows="sets" :columns="setColumns" :loading="setsLoading">
+          <template #cell-source_type="{ row }">{{ sourceLabel(row.source_type) }}</template>
+          <template #cell-visibility="{ row }">
+            <!-- 独立可见性开关：visible 上架、hidden 按不存在处理 -->
+            <el-switch
+              :model-value="row.visibility_status === 'visible'"
+              active-text="可见"
+              inactive-text="隐藏"
+              @change="() => toggleVisibility(row, row.visibility_status !== 'visible')"
+            />
+          </template>
+          <template #cell-sort_order="{ row }">
+            <el-input-number
+              v-model="row.sort_order"
+              :min="0"
+              size="small"
+              class="sort-input"
+              @change="orderDirty = true"
+            />
+          </template>
+          <template #cell-members="{ row }">{{ row.effective_count }} / {{ row.member_count }} 有效</template>
+          <template #cell-shelf="{ row }">
+            <el-tag :type="row.shelf_eligible ? 'success' : 'info'">
+              {{ row.shelf_eligible ? '可上架' : '未达门槛' }}
+            </el-tag>
+          </template>
+          <template #cell-actions="{ row }">
+            <el-button size="small" @click="openMembers(row)">成员管理</el-button>
+            <el-button size="small" @click="openEdit(row)">编辑</el-button>
+            <el-button size="small" @click="refreshSet(row)">刷新</el-button>
+            <el-button size="small" type="danger" @click="removeSet(row)">删除</el-button>
+          </template>
+        </DataTable>
+        <div class="order-bar">
           <el-button type="primary" :disabled="!orderDirty" @click="saveOrder">保存顺序</el-button>
-          <span style="margin-left:8px;color:#909399;font-size:12px">改动“顺序”列后点保存顺序，整表一次提交（后端 /media-sets/order）。</span>
+          <span class="hint">改动“顺序”列后点保存顺序，整表一次提交（后端 /media-sets/order）。</span>
         </div>
       </el-tab-pane>
 
       <!-- ================= 模板（机制位，不预置内容） ================= -->
       <el-tab-pane label="模板" name="templates">
-        <div style="margin-bottom:12px">
+        <div class="tpl-bar">
           <el-button type="primary" @click="openCreateTemplate">新建模板</el-button>
-          <span style="margin-left:8px;color:#909399;font-size:12px">模板只存规则 JSON（由服主填），不预置任何片单；豆列导入闭环不在本页做。</span>
+          <span class="hint">模板只存规则 JSON（由服主填），不预置任何片单；豆列导入闭环不在本页做。</span>
         </div>
-        <el-table v-loading="templatesLoading" :data="templates" style="width: 100%">
-          <el-table-column prop="name" label="模板名" min-width="160" />
-          <el-table-column label="规则数" width="100">
-            <template #default="{ row }">{{ row.rules.length }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="180">
-            <template #default="{ row }">
-              <el-button size="small" type="primary" @click="openInstantiate(row)">用模板建合集</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+        <DataTable :rows="templates" :columns="templateColumns" :loading="templatesLoading">
+          <template #cell-rules="{ row }">{{ row.rules.length }}</template>
+          <template #cell-actions="{ row }">
+            <el-button size="small" type="primary" @click="openInstantiate(row)">用模板建合集</el-button>
+          </template>
+        </DataTable>
       </el-tab-pane>
     </el-tabs>
 
     <!-- 新建 / 编辑合集 -->
     <el-dialog v-model="editDialog" :title="editTarget ? '编辑合集' : '新建合集'" width="520px">
-      <el-form :model="editForm" label-width="110px">
+      <el-form :model="editForm" label-width="90px">
         <el-form-item label="名称" required>
           <el-input v-model="editForm.name" placeholder="合集名称" />
         </el-form-item>
         <el-form-item label="来源">
-          <el-select v-model="editForm.source_type" style="width:100%">
+          <el-select v-model="editForm.source_type" class="w-full">
             <el-option v-for="s in SOURCE_TYPES" :key="s" :label="sourceLabel(s)" :value="s" />
           </el-select>
         </el-form-item>
         <el-form-item label="可见性">
-          <el-select v-model="editForm.visibility_status" style="width:100%">
+          <el-select v-model="editForm.visibility_status" class="w-full">
             <el-option label="可见（上架）" value="visible" />
             <el-option label="隐藏（按不存在处理）" value="hidden" />
           </el-select>
         </el-form-item>
         <el-form-item label="顺序">
-          <el-input-number v-model="editForm.sort_order" :min="0" style="width:100%" />
+          <el-input-number v-model="editForm.sort_order" :min="0" class="w-full" />
         </el-form-item>
         <el-form-item label="最少有效成员">
-          <el-input-number v-model="editForm.min_effective_members" :min="1" style="width:100%" />
+          <el-input-number v-model="editForm.min_effective_members" :min="1" class="w-full" />
         </el-form-item>
         <el-form-item label="封面策略">
-          <el-select v-model="editForm.artwork_mode" style="width:100%">
+          <el-select v-model="editForm.artwork_mode" class="w-full">
             <el-option v-for="m in ARTWORK_MODES" :key="m" :label="artworkLabel(m)" :value="m" />
           </el-select>
         </el-form-item>
@@ -130,43 +115,36 @@
           <el-input v-model="editForm.path_prefix" placeholder="path 合集必填，如 /movies/" />
         </el-form-item>
         <el-form-item v-if="['rule', 'path', 'preset'].includes(editForm.source_type)" label="绑定人物 id">
-          <el-input-number v-model="editForm.bound_person_id" :min="1" placeholder="仅 rule/path/preset 有效" style="width:100%" />
+          <el-input-number v-model="editForm.bound_person_id" :min="1" placeholder="仅 rule/path/preset 有效" class="w-full" />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="editDialog = false">取消</el-button>
-        <el-button type="primary" @click="saveEdit">保存</el-button>
+        <el-button type="primary" :loading="editSaving" @click="saveEdit">保存</el-button>
       </template>
     </el-dialog>
 
     <!-- 成员管理 -->
     <el-dialog v-model="memberDialog" :title="`成员管理：${memberSet?.name ?? ''}`" width="640px">
-      <p v-if="memberDetail" style="margin:0 0 12px;color:#909399;font-size:13px">
+      <p v-if="memberDetail" class="member-note">
         规则 {{ memberDetail.rules.length }} 条（本页只读，不做规则编辑）·
         成员 {{ memberDetail.members.length }} 条 · 未绑定成员不上用户端货架（案 A 门控），成员资格本身不看绑定。
       </p>
-      <el-table v-loading="memberLoading" :data="memberRows" style="width: 100%">
-        <el-table-column label="#" width="50">
-          <template #default="{ $index }">{{ $index + 1 }}</template>
-        </el-table-column>
-        <el-table-column prop="item_id" label="条目 id" width="110" />
-        <el-table-column prop="member_source" label="来源" width="110" />
-        <el-table-column prop="order_index" label="顺序键" width="90" />
-        <el-table-column label="操作">
-          <template #default="{ $index, row }">
-            <el-button size="small" :disabled="$index === 0" @click="moveMember($index, -1)">上移</el-button>
-            <el-button size="small" :disabled="$index === memberRows.length - 1" @click="moveMember($index, 1)">下移</el-button>
-            <el-button size="small" type="danger" @click="dropMember(row)">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-      <div style="display:flex;gap:8px;margin-top:12px">
-        <el-input-number v-model="newMemberItemId" :min="1" placeholder="条目 id" style="width:160px" />
-        <el-input-number v-model="newMemberOrder" :min="0" placeholder="顺序键" style="width:120px" />
+      <DataTable :rows="memberRows" :columns="memberColumns" :loading="memberLoading" row-key="item_id">
+        <template #cell-index="{ index }">{{ index + 1 }}</template>
+        <template #cell-actions="{ index, row }">
+          <el-button size="small" :disabled="index === 0" @click="moveMember(index, -1)">上移</el-button>
+          <el-button size="small" :disabled="index === memberRows.length - 1" @click="moveMember(index, 1)">下移</el-button>
+          <el-button size="small" type="danger" @click="dropMember(row)">删除</el-button>
+        </template>
+      </DataTable>
+      <div class="member-add-row">
+        <el-input-number v-model="newMemberItemId" :min="1" placeholder="条目 id" class="w-160" />
+        <el-input-number v-model="newMemberOrder" :min="0" placeholder="顺序键" class="w-120" />
         <el-button type="primary" @click="addMember">添加成员</el-button>
         <el-button type="success" :disabled="!memberOrderDirty" @click="saveMemberOrder">保存成员顺序</el-button>
       </div>
-      <p style="color:#909399;font-size:12px">上移/下移只改本地顺序，点“保存成员顺序”才一次提交（后端 /members/order）。条目 id 请从条目详情里取。顺序键 0 = 未编排：观影轨上未编排行排在已编排行之后（按上映序），所以重排从 1 开始编号，不用 0。</p>
+      <p class="hint">上移/下移只改本地顺序，点“保存成员顺序”才一次提交（后端 /members/order）。条目 id 请从条目详情里取。顺序键 0 = 未编排：观影轨上未编排行排在已编排行之后（按上映序），所以重排从 1 开始编号，不用 0。</p>
     </el-dialog>
 
     <!-- 新建模板 -->
@@ -186,29 +164,47 @@
       </el-form>
       <template #footer>
         <el-button @click="templateDialog = false">取消</el-button>
-        <el-button type="primary" @click="saveTemplate">保存</el-button>
+        <el-button type="primary" :loading="templateSaving" @click="saveTemplate">保存</el-button>
       </template>
     </el-dialog>
 
     <!-- 用模板建合集 -->
     <el-dialog v-model="instantiateDialog" :title="`用模板建合集：${instantiateTarget?.name ?? ''}`" width="480px">
-      <el-form :model="instantiateForm" label-width="110px">
+      <el-form :model="instantiateForm" label-width="90px">
         <el-form-item label="新合集名">
           <el-input v-model="instantiateForm.name" placeholder="留空则用模板名" />
         </el-form-item>
         <el-form-item label="最少有效成员">
-          <el-input-number v-model="instantiateForm.min_effective_members" :min="1" style="width:100%" />
+          <el-input-number v-model="instantiateForm.min_effective_members" :min="1" class="w-full" />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="instantiateDialog = false">取消</el-button>
-        <el-button type="primary" @click="doInstantiate">创建</el-button>
+        <el-button type="primary" :loading="instantiateSaving" @click="doInstantiate">创建</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
+<style scoped>
+.hint { color: var(--au-text-3); font-size: 12px; }
+.order-bar { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.tpl-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.sort-input { width: 90px; }
+.w-full { width: 100%; }
+.w-160 { width: 160px; }
+.w-120 { width: 120px; }
+.member-note { margin: 0 0 12px; color: var(--au-text-3); font-size: 13px; }
+.member-add-row { display: flex; gap: 8px; margin-top: 12px; }
+</style>
+
 <script setup lang="ts">
+/**
+ * 合集管理。UI 统一批 3：行内 style 页头收编 PageHeader＋.admin-page 骨架，
+ * 行内样式清进 scoped 令牌样式（写死色全清）；两标签与成员弹层里
+ * 的裸 el-table 换 DataTable；弹层 label-width 收到 90px、保存钮补 loading。
+ * el-tabs 保留（与 Codes 壳页模式同理）。接口与业务口径零变化。
+ */
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -220,8 +216,35 @@ import {
   type MediaSetMember,
   type MediaSetTemplate,
 } from '@/api/collections'
+import { PageHeader } from '@/components/ui'
+import DataTable from '@/components/DataTable.vue'
+import type { DataColumn } from '@/components/DataTable.vue'
 
 const activeTab = ref('sets')
+
+const setColumns: DataColumn[] = [
+  { key: 'name', label: '名称', minWidth: 100, mobile: 'title' },
+  { key: 'source_type', label: '来源', width: 80 },
+  { key: 'visibility', label: '可见性', width: 130 },
+  { key: 'sort_order', label: '顺序', width: 105 },
+  { key: 'members', label: '成员', width: 95 },
+  { key: 'shelf', label: '上架', width: 95 },
+  { key: 'actions', label: '操作', width: 295 },
+]
+
+const templateColumns: DataColumn[] = [
+  { key: 'name', label: '模板名', minWidth: 160, mobile: 'title' },
+  { key: 'rules', label: '规则数', width: 100 },
+  { key: 'actions', label: '操作', width: 180 },
+]
+
+const memberColumns: DataColumn[] = [
+  { key: 'index', label: '#', width: 50 },
+  { key: 'item_id', label: '条目 id', width: 110 },
+  { key: 'member_source', label: '来源', width: 110 },
+  { key: 'order_index', label: '顺序键', width: 90 },
+  { key: 'actions', label: '操作' },
+]
 
 const sets = ref<MediaSet[]>([])
 const setsLoading = ref(false)
@@ -338,6 +361,7 @@ async function removeSet(row: MediaSet) {
 
 // ---------------- 新建 / 编辑 ----------------
 const editDialog = ref(false)
+const editSaving = ref(false)
 const editTarget = ref<MediaSet | null>(null)
 const editForm = ref({
   name: '',
@@ -396,6 +420,7 @@ async function saveEdit() {
     path_prefix: f.source_type === 'path' ? (f.path_prefix || null) : null,
     bound_person_id: ['rule', 'path', 'preset'].includes(f.source_type) ? f.bound_person_id : null,
   }
+  editSaving.value = true
   try {
     if (editTarget.value) {
       await collectionsAdminApi.patch(editTarget.value.id, body)
@@ -406,6 +431,8 @@ async function saveEdit() {
     await loadSets()
   } catch (err: unknown) {
     ElMessage.error(errText(err))
+  } finally {
+    editSaving.value = false
   }
 }
 
@@ -495,8 +522,10 @@ async function dropMember(row: MediaSetMember) {
 
 // ---------------- 模板 ----------------
 const templateDialog = ref(false)
+const templateSaving = ref(false)
 const templateForm = ref({ name: '', rulesJson: '' })
 const instantiateDialog = ref(false)
+const instantiateSaving = ref(false)
 const instantiateTarget = ref<MediaSetTemplate | null>(null)
 const instantiateForm = ref({ name: '', min_effective_members: 2 as number | null })
 
@@ -522,12 +551,15 @@ async function saveTemplate() {
       return
     }
   }
+  templateSaving.value = true
   try {
     await collectionsAdminApi.createTemplate({ name: templateForm.value.name.trim(), rules })
     templateDialog.value = false
     await loadTemplates()
   } catch (err: unknown) {
     ElMessage.error(errText(err))
+  } finally {
+    templateSaving.value = false
   }
 }
 
@@ -539,6 +571,7 @@ function openInstantiate(t: MediaSetTemplate) {
 
 async function doInstantiate() {
   if (!instantiateTarget.value) return
+  instantiateSaving.value = true
   try {
     await collectionsAdminApi.instantiateTemplate(instantiateTarget.value.id, {
       name: instantiateForm.value.name.trim() || null,
@@ -549,6 +582,8 @@ async function doInstantiate() {
     await loadSets()
   } catch (err: unknown) {
     ElMessage.error(errText(err))
+  } finally {
+    instantiateSaving.value = false
   }
 }
 
