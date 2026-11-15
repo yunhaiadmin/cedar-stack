@@ -20,24 +20,31 @@
      横内距 13（顶栏总高令牌仍 56：胶囊在栏内居中，布局偏移不迁） */
   --utb-pill-h: 33px;
   --utb-pill-px: 13px;
-  /* 玻璃配方：blur + saturate（半透底/内高光/边缘光/柔影在组件里组装） */
+  /* 玻璃配方：blur + saturate（半透底/内高光在组件里组装） */
   --utb-glass-filter: blur(18px) saturate(170%);
-  /* 深色底（默认）：近黑半透 */
-  --utb-bg: rgba(15, 14, 17, 0.68);
+  /* 顶栏底色口径（2026-11-15 颜色对齐单）：底色必须取自本面页面底色本身，
+     合成后与页面同色无缝——友站录屏帧实测顶栏区/页面区采样差 ≤3、无边线
+     无阴影带。此前取旧纸面暖白色系 (250,248,246)/(15,14,17)，与账户面
+     页底 #09090b 异色，栏下还有边线＋外阴影洇出色带（用户真机亲指）。
+     --utb-shadow 仅剩观影胶囊在用（胶囊是浮动件，柔影保留），顶栏本体
+     不再取它（见 UhdTopBar.vue）。 */
+  /* 深色底（默认）：账户面页底 #09090b 的半透版 */
+  --utb-bg: rgba(9, 9, 11, 0.8);
   --utb-fg: #ffffff;
-  --utb-edge: rgba(255, 255, 255, 0.14);
+  --utb-edge: transparent;
   --utb-shadow: 0 12px 32px rgba(0, 0, 0, 0.26);
   /* 胶囊填充（深色）：暗玻璃底（更透、更暗，去实色感，配彩虹边） */
   --utb-pill-fill: rgba(24, 24, 28, 0.55);
   --utb-pill-fg: #ffffff;
 }
 
-/* 浅色底（用户外观浅色）：近白半透，胶囊换浅粉水洗填充＋深字
+/* 浅色底（用户外观浅色）：账户面页底 #f8f8f8 的半透版（同色无缝，口径
+   见 :root 注），胶囊换浅粉水洗填充＋深字
    （原「我的」页浅色态实测口径：#fdf8f8 → #f9f1f1） */
 html[data-theme='light'] {
-  --utb-bg: rgba(250, 248, 246, 0.74);
+  --utb-bg: rgba(248, 248, 248, 0.82);
   --utb-fg: #111111;
-  --utb-edge: rgba(17, 17, 17, 0.1);
+  --utb-edge: transparent;
   --utb-shadow: 0 12px 28px rgba(90, 94, 150, 0.12);
   --utb-pill-fill: rgba(252, 246, 246, 0.62);
   --utb-pill-fg: #111111;
@@ -47,17 +54,19 @@ html[data-theme='light'] {
    与全站 data-theme 互不污染——在本作用域内按片库面解析值重映射，
    底色/文字借片库面色板 C 的既有令牌，不新造第二套颜色。 */
 .stream-scope[data-stream-theme='dark'] {
-  --utb-bg: rgba(15, 14, 17, 0.68);
+  /* 片库面页底 #121214 的半透版（同色无缝，口径见 :root 注） */
+  --utb-bg: rgba(18, 18, 20, 0.8);
   --utb-fg: var(--uhd-s-text);
-  --utb-edge: rgba(255, 255, 255, 0.14);
+  --utb-edge: transparent;
   --utb-shadow: 0 12px 32px rgba(0, 0, 0, 0.26);
   --utb-pill-fill: rgba(24, 24, 28, 0.55);
   --utb-pill-fg: #ffffff;
 }
 .stream-scope[data-stream-theme='light'] {
-  --utb-bg: rgba(250, 248, 246, 0.74);
+  /* 片库面页底 #ffffff 的半透版（同色无缝，口径见 :root 注） */
+  --utb-bg: rgba(255, 255, 255, 0.82);
   --utb-fg: var(--uhd-s-text);
-  --utb-edge: rgba(17, 17, 17, 0.1);
+  --utb-edge: transparent;
   --utb-shadow: 0 12px 28px rgba(90, 94, 150, 0.12);
   --utb-pill-fill: rgba(252, 246, 246, 0.62);
   --utb-pill-fg: #111111;
