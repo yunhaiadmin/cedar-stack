@@ -3,6 +3,7 @@
 整合用户端、管理后台和主项目的所有数据模型
 """
 from datetime import datetime
+import secrets
 from sqlalchemy import Column, Integer, String, Boolean, BigInteger, DateTime, Date, Text, Numeric, Index, ForeignKey, JSON, Float, UniqueConstraint
 from sqlalchemy.orm import relationship
 from backend.database import Base
@@ -225,6 +226,22 @@ class StationMessage(Base):
 
 # ==================== 用户相关 ====================
 
+# 站内用户公开 ID（2026-11-15 用户亲点：数字 ID 太简单）：10 位、
+# 大写字母＋数字、剔除易混字符（0/O/1/I/L）→ 31 字符字母表，
+# 31^10 ≈ 8.2e14 空间。生成只许这一处实现：建号口径走
+# new_public_id（查库防碰撞），列默认走 generate_public_id 兜底，
+# 回填脚本复用 new_public_id。一旦分配永不变更。
+PUBLIC_ID_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+PUBLIC_ID_LENGTH = 10
+PUBLIC_ID_MAX_ATTEMPTS = 20
+
+
+def generate_public_id() -> str:
+    """随机生成一个公开 ID（纯格式生成，不查库）。"""
+    return "".join(
+        secrets.choice(PUBLIC_ID_ALPHABET) for _ in range(PUBLIC_ID_LENGTH))
+
+
 class WebUser(Base):
     """Web 用户表（网站登录用户）"""
     __tablename__ = 'web_users'
@@ -261,6 +278,12 @@ class WebUser(Base):
     # P2/P3 修复（审查）：token 版本号。改密码 / 管理员踢下线时 +1，
     # JWT payload 里带 tv，鉴权时比对——旧版本 token 全部失效（改密后旧 token 立即作废）。
     token_version = Column(Integer, default=0, nullable=False, server_default="0")
+    # 公开 ID（2026-11-15）：用户侧露出与复制一律用它，不再露自增数字 id。
+    # 可空 = 升级前存量（由 scripts/backfill_user_public_ids.py 回填）；
+    # 新行由建号口径显式赋值＋列默认兜底保证非空。老库补列见
+    # database._auto_migrate（VARCHAR(16) NULL＋唯一索引）。
+    public_id = Column(String(16), unique=True, index=True,
+                       default=generate_public_id)
 
     # 自建 Emby 凭据（完全自建模式下，Emby 客户端用此账号密码登录）
     emby_username = Column(String(64), unique=True, nullable=True)
@@ -298,6 +321,30 @@ class WebUser(Base):
     # database._auto_migrate（INTEGER NULL，存量全为空 = 全是主账号）。
     parent_user_id = Column(Integer, ForeignKey("web_users.id"),
                             nullable=True)
+
+
+def new_public_id(db, taken=None, *, max_attempts: int = PUBLIC_ID_MAX_ATTEMPTS) -> str:
+    """分配一个不与库内已有值碰撞的公开 ID（唯一实现，见上方常量）。
+
+    ``taken``：调用方维护的已用集合（回填脚本逐行生成时传入，免得
+    未提交的行互相撞）；命中集合或库内已有值都重抽，连续
+    ``max_attempts`` 次碰撞后抛 RuntimeError，不许无限循环。
+    """
+    for _ in range(max_attempts):
+        candidate = generate_public_id()
+        if taken is not None and candidate in taken:
+            continue
+        exists = (
+            db.query(WebUser.id)
+            .filter(WebUser.public_id == candidate)
+            .first()
+        )
+        if exists is None:
+            if taken is not None:
+                taken.add(candidate)
+            return candidate
+    raise RuntimeError(
+        f"public_id 连续 {max_attempts} 次生成碰撞，已中止分配")
 
 
 class UserPlayLine(Base):

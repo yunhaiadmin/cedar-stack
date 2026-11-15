@@ -14,7 +14,7 @@
           <span v-if="!subsLoaded" class="am-status-skel" aria-hidden="true"></span>
           <p v-else class="am-status">{{ statusLine }}</p>
           <button
-            v-if="userId"
+            v-if="publicId"
             type="button"
             class="am-copy"
             aria-label="复制用户 ID"
@@ -135,18 +135,20 @@ const walletBalance = ref<string | null>(null)
 
 const displayName = computed(() => userStore.user?.username || '我的')
 const avatarInitial = computed(() => (displayName.value.trim().charAt(0) || '我').toUpperCase())
-const userId = computed(() => userStore.user?.id ?? null)
-// 身份副行照友站形态：订阅档名 · 用户 ID（复制钮在模板里）；剩余天数在概览页看
+// 公开 ID（2026-11-15）：身份副行与复制钮一律用它，不再露数字 id；
+// 缺失（存量未回填/老会话）时副行只剩档名、复制钮不渲染，不许拿数字 id 兜底
+const publicId = computed(() => userStore.user?.public_id || null)
+// 身份副行照友站形态：订阅档名 · 公开 ID（复制钮在模板里）；剩余天数在概览页看
 const statusLine = computed(() => {
   const s = activeSub.value
   const base = s ? s.plan_name : '普通用户'
-  return userId.value ? `${base} · ${userId.value}` : base
+  return publicId.value ? `${base} · ${publicId.value}` : base
 })
 
 async function copyUserId() {
-  if (!userId.value) return
+  if (!publicId.value) return
   try {
-    await navigator.clipboard.writeText(String(userId.value))
+    await navigator.clipboard.writeText(publicId.value)
     toast.success('用户 ID 已复制')
   } catch {
     toast.error('复制失败，请手动复制')

@@ -752,6 +752,10 @@ def _auto_migrate():
             # 用过）、used=0，与新列缺省一致（口径见 models.WebUser）。
             ("streak_forgive_ym", "VARCHAR(6)", "NULL"),
             ("streak_forgive_used", "INTEGER", "0"),
+            # 公开 ID（2026-11-15）：老库补列后为 NULL（存量由
+            # scripts/backfill_user_public_ids.py 回填）；唯一索引在
+            # 下方单独补（与 alert_rules 同一口径）。
+            ("public_id", "VARCHAR(16)", "NULL"),
         ]),
         # v2.44.0 邀请码白名单（内测码 / 渠道码）：NULL / 空串都按「不限」处理，
         # 所以存量邀请码行为升级前后完全一致（见 backend/api/invitation.py）
@@ -1254,6 +1258,22 @@ def _auto_migrate():
             logger.info("  🔧 已迁移: lottery_rounds 同群进行中唯一索引 (chat_id WHERE open)")
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"  ⚠️ lottery_rounds 同群进行中唯一索引创建跳过: {exc}")
+
+    # 公开 ID（2026-11-15）：web_users.public_id 唯一索引。老库补列后
+    # 存量为 NULL，PG/SQLite 唯一索引允许多个 NULL，不挡回填脚本
+    # 逐行填互不重复值；有重复非空值时记 warning 不崩启动（与上面
+    # uq_alert_rules_event_type 同一口径）。新建库 create_all 已按
+    # 模型 unique=True 建唯一约束，此索引冗余但无害。
+    if "web_users" in existing_tables:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_web_users_public_id "
+                    "ON web_users (public_id)"
+                ))
+            logger.info("  🔧 已迁移: web_users 唯一索引 (public_id)")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"  ⚠️ web_users public_id 唯一索引创建跳过: {exc}")
 
     _widen_code_column(existing_tables, inspector)
     _widen_bitrate_column(existing_tables, inspector)

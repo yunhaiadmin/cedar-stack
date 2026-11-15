@@ -293,7 +293,7 @@ def list_users(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """用户列表：搜索（用户名/邮箱）+ 状态筛选 + 注册渠道筛选 + 用户类型筛选 + 分页
+    """用户列表：搜索（用户名/邮箱模糊、公开 ID 精确）+ 状态筛选 + 注册渠道筛选 + 用户类型筛选 + 分页
 
     ``channel`` 空 = 全部；``channel=__unrecorded`` = 存量用户（当时没记渠道）。
     ``user_type`` 空 = 全部；``paid`` = 付费（有生效中订阅）；
@@ -306,6 +306,9 @@ def list_users(
         query = query.filter(or_(
             models.WebUser.username.ilike(like),
             models.WebUser.email.ilike(like),
+            # 公开 ID 精确查（2026-11-15）：公开 ID 是定长随机串，
+            # 只认全串相等（大小写不敏感，值恒大写），不做模糊匹配
+            models.WebUser.public_id == search.strip().upper(),
         ))
     if active is not None:
         query = query.filter(models.WebUser.is_active == active)
@@ -371,6 +374,8 @@ def list_users(
         active_sub = sub_map.get(u.id)
         items.append({
             "id": u.id,
+            # 公开 ID（2026-11-15）：与用户侧同一标识，管理员按它对人
+            "public_id": u.public_id,
             "username": u.username,
             # 家庭子账号归属：非子账号两字段均为 None
             "parent_user_id": getattr(u, "parent_user_id", None),

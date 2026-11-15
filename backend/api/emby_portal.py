@@ -114,6 +114,9 @@ class PoolIdentityOut(BaseModel):
 
 class UserOut(BaseModel):
     id: int
+    # 公开 ID（2026-11-15）：用户侧展示/复制用它，不再露数字 id；
+    # 存量未回填（或老会话）时为 None，前端回落不显示那段
+    public_id: str | None = None
     username: str
     email: str | None = None
     emby_username: str | None = None
@@ -208,6 +211,7 @@ def _user_out(user: models.WebUser, db: Session | None = None) -> UserOut:
             pool_identity = None
     return UserOut(
         id=user.id,
+        public_id=getattr(user, "public_id", None),
         username=user.username,
         email=user.email,
         emby_username=user.emby_username,
@@ -450,6 +454,9 @@ def register(request: Request, req: RegisterRequest, db: Session = Depends(get_d
         password_hash=hash_password(req.password),
         email=req.email.strip() if req.email else None,
         is_active=True,
+        # 公开 ID（2026-11-15）：建号即分配、永不变更（唯一实现
+        # 在 backend.models.new_public_id，查库防碰撞）
+        public_id=models.new_public_id(db),
         # 注册渠道归因（v2.44.0）：注册码下线后进门凭据只剩邀请码，
         # 入口先记 open，邀请码真的建成了关系再由下方 resolve 改记
         # invitation（见 register_channel.resolve）。

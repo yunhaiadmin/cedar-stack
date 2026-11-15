@@ -1,8 +1,39 @@
 /* 购流量弹窗令牌（TrafficPurchaseModal.vue 引用）。
- * --tq-bg 是弹窗面底色：弹窗通体浅色、文字在组件内写死深色，
- * 故深浅主题下都取纸白，与旧兜底值 #ffffff 一致。
+ * 弹窗跟随用户外观三态：默认（无 data-theme）＝深色玻璃，
+ * html[data-theme='light']＝浅色纸面；组件内一律引令牌，
+ * 不许再写死底色/字色（2026-11-15 对齐单：旧版写死白底黑字，
+ * 深色外观下突兀，已改）。
  * 由 TrafficPurchaseModal.vue 直接 import；令牌契约要求定义必须
  * 落在被引入的独立样式表里，scoped 样式里的定义不算数。 */
 :root {
+  --tq-bg: rgba(25, 25, 30, 0.94);
+  --tq-fg: #f4f4f6;
+  --tq-dim: rgba(244, 244, 246, 0.55);
+  --tq-card: rgba(255, 255, 255, 0.055);
+  --tq-border: rgba(255, 255, 255, 0.09);
+  --tq-seg: rgba(255, 255, 255, 0.07);
+  --tq-seg-on: rgba(255, 255, 255, 0.15);
+  --tq-green: #3ecf7f;
+  --tq-orange: #f5a54a;
+  --tq-hint-bg: rgba(242, 164, 90, 0.13);
+  --tq-hint-fg: #f0b269;
+  --tq-icon-bg: rgba(245, 166, 35, 0.16);
+  --tq-icon-fg: #f5a623;
+  --tq-shadow: 0 -12px 44px rgba(0, 0, 0, 0.45);
+}
+html[data-theme='light'] {
   --tq-bg: #ffffff;
+  --tq-fg: #16161a;
+  --tq-dim: rgba(22, 22, 26, 0.55);
+  --tq-card: rgba(17, 17, 20, 0.045);
+  --tq-border: rgba(17, 17, 20, 0.09);
+  --tq-seg: rgba(17, 17, 20, 0.06);
+  --tq-seg-on: #ffffff;
+  --tq-green: #16a34a;
+  --tq-orange: #ea7a28;
+  --tq-hint-bg: rgba(242, 164, 90, 0.16);
+  --tq-hint-fg: #b45309;
+  --tq-icon-bg: rgba(245, 166, 35, 0.18);
+  --tq-icon-fg: #d97706;
+  --tq-shadow: 0 -12px 44px rgba(0, 0, 0, 0.28);
 }
