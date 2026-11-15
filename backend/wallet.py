@@ -37,7 +37,8 @@ logger = logging.getLogger(__name__)
 LEDGER_KINDS = {
     "recharge",               # 在线充值（批 3）
     "admin_adjust",           # 管理员手工增减
-    "gift_code",              # 兑换码 / 礼品码入账
+    "gift_code",              # 礼品卡/兑换码：生成扣款（负）与兑换入账（正）共用
+    "gift_code_refund",       # 礼品卡过期未使用，面值退回生成人
     "rebate",                 # 邀请返利（批 2 计提）
     "subscription_purchase",  # 订阅购买扣款（批 2）
     "traffic_purchase",       # 购流量扣款（批 2）
