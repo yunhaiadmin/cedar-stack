@@ -748,6 +748,9 @@ def _auto_migrate():
             ("tg_notify_expiry", "BOOLEAN", "1"),
             ("tg_notify_lottery", "BOOLEAN", "1"),
             ("tg_notify_pool_digest", "BOOLEAN", "1"),
+            # 网页播放器设置同步（2026-11-15 ⚠️11）：老库补列后为 NULL
+            # = 从未保存过，与新列缺省一致（见 backend/player_prefs.py）。
+            ("player_preferences", "JSON", "NULL"),
             # 连签断签保护用量（2026-11-09）：老库补列后 ym=NULL（从未
             # 用过）、used=0，与新列缺省一致（口径见 models.WebUser）。
             ("streak_forgive_ym", "VARCHAR(6)", "NULL"),
