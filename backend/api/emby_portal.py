@@ -189,7 +189,7 @@ def _user_out(user: models.WebUser, db: Session | None = None) -> UserOut:
             pool_identity = None
     return UserOut(
         id=user.id,
-        public_id=user.public_id,
+        public_id=getattr(user, "public_id", None),
         username=user.username,
         email=user.email,
         emby_username=user.emby_username,
