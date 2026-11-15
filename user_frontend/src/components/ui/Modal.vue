@@ -54,6 +54,7 @@
 
 <script setup lang="ts">
 import { nextTick, ref } from 'vue'
+import '../../styles/modal-glass.css'
 
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full'
 
@@ -234,13 +235,23 @@ export default {
 }
 
 /* ==================== 内容卡片 ==================== */
+/* 2026-11-15 弹窗玻璃化（全站排查批 2）：实心面 --au-surface 换玻璃
+   五件（半透底＋blur/saturate＋亮边＋内高光＋大柔影），令牌在
+   styles/modal-glass.css（#233 购流量弹窗标尺，深浅双主题）；
+   尺寸/圆角/动画/遮罩不动。contentClass 自定义外观（如工单
+   .rf-confirm 的全局覆盖）仍按原级联生效。 */
 .modal-content-wrapper {
   position: relative;
   width: 100%;
-  background: var(--au-surface);
-  border: 1px solid var(--au-border-strong);
+  background: var(--modal-glass-bg);
+  border: 1px solid var(--modal-glass-edge);
   border-radius: var(--neo-radius-lg, 18px);
-  box-shadow: var(--neo-shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.6));
+  box-shadow:
+    inset 0 1px 0 var(--modal-glass-hi),
+    inset 0 0 0 1px var(--modal-glass-ring),
+    var(--modal-glass-shadow);
+  backdrop-filter: var(--modal-glass-filter);
+  -webkit-backdrop-filter: var(--modal-glass-filter);
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - 2rem);
@@ -399,27 +410,17 @@ export default {
 }
 
 /* ==================== 响应式 ==================== */
+/* 手机端与桌面同形态：居中浮窗（2026-11-15 弹窗收尾批，原贴底全宽
+   抽屉与全站居中玻璃浮窗基准冲突）。容器沿用桌面 1rem 内边距 →
+   390px 下卡片宽 358px ≈ 92%；尺寸变体 max-width、四角圆角、
+   max-height 与 pop-in 动画（scale＋translateY）全部沿用桌面规则，
+   不再单独覆盖；这里只把对齐钉死为居中——centered=false 的顶对齐
+   在手机端也收成居中，与购流量弹窗同口径。modal--full 例外：
+   height/max-height/border-radius:0 的全屏规则在基础段，不受影响。 */
 @media (max-width: 640px) {
   .modal-container {
-    padding: 0;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    align-items: flex-end;
-  }
-
-  .modal-content-wrapper {
-    max-height: 85vh;
-    border-radius: var(--neo-radius-lg, 18px) var(--neo-radius-lg, 18px) 0 0;
-  }
-
-  .modal--sm,
-  .modal--md,
-  .modal--lg,
-  .modal--xl {
-    max-width: 100%;
-  }
-
-  .modal-content-enter-from {
-    transform: translateY(100%);
+    align-items: center;
+    justify-content: center;
   }
 }
 </style>

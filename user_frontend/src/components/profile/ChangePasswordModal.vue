@@ -36,6 +36,7 @@ import { authApi } from '@/api'
 import { useToast } from '@/composables/useToast'
 import { toastCopy } from '@/constants/toastMessages'
 import { toUserMessage } from '@/utils/toUserMessage'
+import '../../styles/modal-glass.css'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ (e: 'update:open', v: boolean): void }>()
@@ -150,10 +151,19 @@ async function submit() {
   max-height: calc(100dvh - 48px);
   overflow-y: auto;
   padding: 20px;
-  background: var(--paper-card);
-  border: 1.5px solid var(--ink);
+  /* 面板玻璃化（2026-11-15 弹窗收尾批）：纸色实心面 --paper-card＋
+     硬边偏移阴影换玻璃五件，令牌 styles/modal-glass.css；本页是
+     v4 路由、data-theme 恒 light，取浅色玻璃档。圆角 14/尺寸不动，
+     卡内纸色表单元素照旧。 */
+  background: var(--modal-glass-bg);
+  border: 1px solid var(--modal-glass-edge);
   border-radius: 14px;
-  box-shadow: 4px 4px 0 rgba(42, 38, 32, 0.15);
+  box-shadow:
+    inset 0 1px 0 var(--modal-glass-hi),
+    inset 0 0 0 1px var(--modal-glass-ring),
+    var(--modal-glass-shadow);
+  backdrop-filter: var(--modal-glass-filter);
+  -webkit-backdrop-filter: var(--modal-glass-filter);
 }
 .acct-modal-title {
   margin: 0 0 14px;

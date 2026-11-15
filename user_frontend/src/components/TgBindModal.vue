@@ -5,6 +5,7 @@ import Modal from '@/components/ui/Modal.vue'
 import { tgApi } from '@/api/tg'
 import { useToast } from '@/composables/useToast'
 import { toUserMessage } from '@/utils/toUserMessage'
+import '../styles/modal-glass.css'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{
@@ -275,8 +276,9 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <!-- R37 P3-C1：解绑二次确认（纸色 Modal，走 .paper-confirm 全局纸色覆盖） -->
-      <Modal v-model="unbindConfirmOpen" size="sm" content-class="paper-confirm">
+      <!-- R37 P3-C1：解绑二次确认（通用 Modal；原 content-class="paper-confirm"
+           全站无任何定义、是空挂，2026-11-15 弹窗收尾批摘除） -->
+      <Modal v-model="unbindConfirmOpen" size="sm">
         <template #header>
           <h3 class="modal-title">解绑 Telegram</h3>
         </template>
@@ -309,9 +311,17 @@ onBeforeUnmount(() => {
   width: min(420px, calc(100vw - 32px));
   padding: 28px 24px 24px;
   border-radius: var(--paper-r-xl, 16px);
-  background: var(--au-surface, #1a1a22);
-  border: 1px solid var(--au-border, rgba(255, 255, 255, 0.08));
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+  /* 面板玻璃化（2026-11-15 弹窗收尾批）：实心 --au-surface 换玻璃
+     五件，令牌 styles/modal-glass.css（深浅随 data-theme）；
+     尺寸/圆角/内边距不动。 */
+  background: var(--modal-glass-bg);
+  border: 1px solid var(--modal-glass-edge);
+  box-shadow:
+    inset 0 1px 0 var(--modal-glass-hi),
+    inset 0 0 0 1px var(--modal-glass-ring),
+    var(--modal-glass-shadow);
+  backdrop-filter: var(--modal-glass-filter);
+  -webkit-backdrop-filter: var(--modal-glass-filter);
   color: var(--text-primary, #ececf1);
 }
 

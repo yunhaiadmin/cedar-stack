@@ -1,10 +1,20 @@
 /* 线路弹层本地主题变量（--sls-*）：缺省浅色（用户中心办事面），
    .sls--dark 时换概览页深色令牌同值（父页按主题解析值加类）。
    定义放在独立样式表供设计令牌契约核查，由 ServerLinesSheet.vue
-   引入；组件 scoped 样式只引用不定义（契约只认被引入的 .css 定义）。 */
+   引入；组件 scoped 样式只引用不定义（契约只认被引入的 .css 定义）。
+   面板材质（2026-11-15 弹窗收尾批）：原 --sls-card 实心面退役，
+   改在本作用域按本弹层自己的双态（父页 --dark 类）钉
+   --modal-glass-* 令牌，数值与 styles/modal-glass.css 两档逐字
+   一致（那边是全站真源；这里按类钉值，与 bind-drive-sheet.css
+   同口径），.sls-card 只用 --modal-glass-* 令牌组装玻璃五件。 */
 
 .sls-overlay {
-  --sls-card: #ffffff;
+  --modal-glass-bg: rgba(255, 255, 255, 0.72);
+  --modal-glass-edge: rgba(17, 17, 17, 0.12);
+  --modal-glass-hi: rgba(255, 255, 255, 0.7);
+  --modal-glass-ring: rgba(255, 255, 255, 0);
+  --modal-glass-shadow: 0 24px 56px rgba(30, 32, 60, 0.25);
+  --modal-glass-filter: blur(24px) saturate(160%);
   --sls-text: #111111;
   --sls-sub: #9a9da3;
   --sls-divider: #e5e5e7;
@@ -16,7 +26,12 @@
 }
 
 .sls-overlay.sls--dark {
-  --sls-card: #17181c;
+  --modal-glass-bg: rgba(28, 28, 30, 0.55);
+  --modal-glass-edge: rgba(255, 255, 255, 0.24);
+  --modal-glass-hi: rgba(255, 255, 255, 0.28);
+  --modal-glass-ring: rgba(255, 255, 255, 0.04);
+  --modal-glass-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+  --modal-glass-filter: blur(24px) saturate(160%);
   --sls-text: #ffffff;
   --sls-sub: rgba(255, 255, 255, 0.42);
   --sls-divider: #26262a;
