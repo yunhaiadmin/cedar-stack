@@ -10,7 +10,7 @@ B 网关规则表：登录专档必须是真实路由（旧 /api/user/login、/a
 C 计数语义：注册成功 reset、失败保留计数；preview/redeem 命中「明确无效」
   的码直接返回业务文案，不被 429 盖掉；preview 额度放宽到 60/分钟。
 D 已用码提示：redeem/preview 失败带 error_code，已用尽/已被使用统一文案
-  「该注册码已被使用」；前端 toUserMessage 对 400 的 detail 透传不许回退。
+  「该卡码已被使用」；前端 toUserMessage 对 400 的 detail 透传不许回退。
 """
 import asyncio
 import os
@@ -222,7 +222,7 @@ class TestCodeEndpoints:
 
     def test_preview_used_up_returns_message_not_429(self, db):
         """已用尽的码连试 30+ 次（烧满 preview 桶后继续试）：
-        每次都拿到「该注册码已被使用」+ CODE_USED_UP，绝不被 429 盖掉。"""
+        每次都拿到「该卡码已被使用」+ CODE_USED_UP，绝不被 429 盖掉。"""
         from backend.api.user import RedeemCodeRequest, preview_membership_code
 
         user = _make_user(db, "pv_user")
@@ -236,7 +236,7 @@ class TestCodeEndpoints:
         for _ in range(65):  # 超过新额度 60：烧满之后仍靠业务文案放行，不许变 429
             result = asyncio.run(_preview())
             assert result["valid"] is False
-            assert result["message"] == "该注册码已被使用"
+            assert result["message"] == "该卡码已被使用"
             assert result["error_code"] == codes.CODE_ERROR_USED_UP
 
     def test_preview_valid_code_still_rate_limited(self, db):
@@ -271,7 +271,7 @@ class TestCodeEndpoints:
         assert resp.status_code == 400
         import json
         body = json.loads(resp.body)
-        assert body["detail"] == "该注册码已被使用"
+        assert body["detail"] == "该卡码已被使用"
         assert body["error_code"] == codes.CODE_ERROR_USED_UP
 
     def test_redeem_used_up_over_limit_still_returns_message(self, db):
@@ -290,7 +290,7 @@ class TestCodeEndpoints:
         assert resp.status_code == 400
         import json
         body = json.loads(resp.body)
-        assert body["detail"] == "该注册码已被使用"
+        assert body["detail"] == "该卡码已被使用"
         assert body["error_code"] == codes.CODE_ERROR_USED_UP
 
     def test_redeem_valid_code_over_limit_is_429(self, db):
@@ -343,7 +343,7 @@ class TestCodesErrorCodes:
         result = codes.redeem_code(db, user, "CC-USED")
         db.rollback()
         assert result["success"] is False
-        assert result["message"] == "该注册码已被使用"
+        assert result["message"] == "该卡码已被使用"
         assert result["error_code"] == codes.CODE_ERROR_USED_UP
 
     def test_preview_not_found(self, db):
@@ -357,7 +357,7 @@ class TestCodesErrorCodes:
         _make_code(db, "CC-VALID", max_uses=5, use_count=0)
         hit = codes.classify_invalid_code(db, user, "CC-USED2")
         assert hit == {"error_code": codes.CODE_ERROR_USED_UP,
-                       "message": "该注册码已被使用"}
+                       "message": "该卡码已被使用"}
         assert codes.classify_invalid_code(db, user, "CC-VALID") is None
         miss = codes.classify_invalid_code(db, user, "CC-MISSING")
         assert miss["error_code"] == codes.CODE_ERROR_NOT_FOUND
@@ -383,7 +383,7 @@ class TestCodesErrorCodes:
 
 def test_frontend_400_detail_passthrough_locked():
     """toUserMessage 只对 401/403/429/500 做状态码优先映射；400 的人话
-    detail 必须透传——核销失败文案（「该注册码已被使用」等）靠这条上屏，
+    detail 必须透传——核销失败文案（「该卡码已被使用」等）靠这条上屏，
     谁把 400 也加进状态码优先表，明确无效提示就会再次被吞掉。"""
     from pathlib import Path
 

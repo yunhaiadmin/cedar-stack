@@ -163,11 +163,12 @@ def test_welfare_config_invalidate(db, admin_user):
         db,
         admin_user,
     )
-    # welfare_grace_days 已随福利整族于 2026-11-14 删除：改用同端点现存键
-    _prime(db, "register_gift_view_days", "7")
-    r = TestClient(app).put("/api/admin/welfare/config", json={"register_gift_view_days": "10"})
+    # welfare_grace_days 已随福利整族于 2026-11-14 删除、register_gift_view_days
+    # 已随注册不送体验于 2026-11-15 删除：改用同端点现存键
+    _prime(db, "lottery_draw_interval_sec", "60")
+    r = TestClient(app).put("/api/admin/welfare/config", json={"lottery_draw_interval_sec": "120"})
     assert r.status_code == 200
-    assert store.get_value(db, "register_gift_view_days", "7") == "10"
+    assert store.get_value(db, "lottery_draw_interval_sec", "60") == "120"
 
 
 def test_registration_settings_invalidate(db, admin_user):

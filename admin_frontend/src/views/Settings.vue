@@ -2,7 +2,7 @@
 /**
  * 系统设置
  *
- * v2.4.0 注册策略（开放 / 注册码 / 关闭 + 关闭提示文案）与经济配置分组
+ * v2.4.0 注册策略（开放 / 关闭 + 关闭提示文案）与经济配置分组
  * v2.5.2 付费墙分组（要求有效订阅 + 拦截提示文案）
  * v2.6.0 下载与设备风控分组（下载开关 / 设备上限 / 自动踢人 / 日志保留）
  * v2.19.0 **外部服务能力中心**：代理 / 人机验证 / 邮件与模板 / Telegram / AI 模型 / IP 归属地
@@ -321,8 +321,6 @@ const original = ref<EconomySettings>({})
 const reg = reactive({
   mode: 'open',
   message: '',
-  hintText: '',
-  hintUrl: '',
   ratelimitMax: 5,
   ratelimitWindow: 3600,
 })
@@ -345,16 +343,12 @@ function regFormInstance(): FormInstance | undefined {
 const regOriginal = ref({
   mode: 'open',
   message: '',
-  hintText: '',
-  hintUrl: '',
   ratelimitMax: 5,
   ratelimitWindow: 3600,
 })
 const regDirty = computed(() =>
   reg.mode !== regOriginal.value.mode
   || reg.message !== regOriginal.value.message
-  || reg.hintText !== regOriginal.value.hintText
-  || reg.hintUrl !== regOriginal.value.hintUrl
   || reg.ratelimitMax !== regOriginal.value.ratelimitMax
   || reg.ratelimitWindow !== regOriginal.value.ratelimitWindow,
 )
@@ -362,8 +356,6 @@ function snapshotReg() {
   regOriginal.value = {
     mode: reg.mode,
     message: reg.message,
-    hintText: reg.hintText,
-    hintUrl: reg.hintUrl,
     ratelimitMax: reg.ratelimitMax,
     ratelimitWindow: reg.ratelimitWindow,
   }
@@ -381,7 +373,6 @@ const regRules: FormRules = {
 const regModeHint = computed(() => {
   const map: Record<string, string> = {
     open: '任何人都可以直接注册',
-    code: '凭注册码注册：先验码（不消耗），通过才出账号表单，建号时同事务核销',
     closed: '关闭注册入口，仅显示提示文案',
   }
   return map[reg.mode] || ''
@@ -558,11 +549,9 @@ async function load() {
     ])
     Object.assign(settings, econ.settings)
     original.value = { ...econ.settings }
-    // 注册三档（open / code 凭码 / closed）后端原样下发，直接展示
+    // 注册两档（open / closed）后端归一后下发，直接展示
     reg.mode = registration.mode
     reg.message = registration.message || ''
-    reg.hintText = registration.registration_code_hint_text || ''
-    reg.hintUrl = registration.registration_code_hint_url || ''
     reg.ratelimitMax = typeof registration.ratelimit_max === 'number' && Number.isFinite(registration.ratelimit_max)
       ? Math.floor(registration.ratelimit_max)
       : 5
@@ -1323,8 +1312,6 @@ async function saveRegistrationCore(): Promise<boolean> {
     await updateRegistrationSettings({
       mode: reg.mode,
       message: reg.message,
-      registration_code_hint_text: reg.hintText,
-      registration_code_hint_url: reg.hintUrl,
       ratelimit_max: rlMax,
       ratelimit_window: rlWindow,
     })
@@ -1703,7 +1690,6 @@ watch(
                 <div class="field-stack">
                   <el-radio-group v-model="reg.mode">
                     <el-radio-button value="open">开放注册</el-radio-button>
-                    <el-radio-button value="code">凭码注册</el-radio-button>
                     <el-radio-button value="closed">关闭注册</el-radio-button>
                   </el-radio-group>
                   <span class="field-hint">{{ regModeHint }}</span>
@@ -1711,18 +1697,6 @@ watch(
               </el-form-item>
               <el-form-item v-if="reg.mode === 'closed'" label="关闭提示" prop="message">
                 <el-input v-model="reg.message" type="textarea" :rows="2" placeholder="展示给无法注册的用户…" />
-              </el-form-item>
-              <el-form-item v-if="reg.mode === 'code'" label="没有注册码的提示文案">
-                <div class="field-stack">
-                  <el-input v-model="reg.hintText" type="textarea" :rows="2" placeholder="展示在注册页第一步，如：没有注册码？可通过官方 Telegram 群或代理渠道获取。" />
-                  <span class="field-hint">留空时用系统默认文案；注册码在「码管理 → 注册码」里生成与发放</span>
-                </div>
-              </el-form-item>
-              <el-form-item v-if="reg.mode === 'code'" label="注册码获取链接">
-                <div class="field-stack">
-                  <el-input v-model="reg.hintUrl" placeholder="https://…（可空，填了会在提示后带「去获取」链接）" />
-                  <span class="field-hint">指向 TG 群 / 代理渠道的链接，由这里统一配置，不写死在页面里</span>
-                </div>
               </el-form-item>
               <el-form-item label="窗口内最大注册次数" prop="ratelimitMax">
                 <div class="field-stack">

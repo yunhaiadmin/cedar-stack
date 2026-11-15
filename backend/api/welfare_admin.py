@@ -26,17 +26,13 @@ from backend.api.admin_core import admin_router, get_current_admin, _audit
 from backend.database import get_db
 
 
-# ==================== 配置（抽奖/机器人/查看赠送） ====================
+# ==================== 配置（抽奖/机器人） ====================
 
 WELFARE_CONFIG_KEYS = {
     # 公益资格族键（资格码配额/注册送资格/到期保留/活力保号/福利申请）
-    # 已随公益资格整族于 2026-11-14 删除，本字典只剩抽奖/机器人/查看
-    # 赠送等在用键（字典名与端点路径为历史名，不动以免断现行调用）。
-    # 新注册送查看凭证天数（emby_portal._grant_register_gifts 读取）
-    "register_gift_view_days": "30",
-    # 新注册送查看凭证总开关（2026-10-29 默认关：新注册不送凭证；
-    # 服主在管理端改成 true 即可重开，天数仍走 register_gift_view_days）
-    "register_gift_view_enabled": "false",
+    # 已随公益资格整族于 2026-11-14 删除；注册送查看凭证两键已随
+    # 「注册不送体验」（2026-11-15）失效删除。本字典只剩抽奖/机器人
+    # 等在用键（字典名与端点路径为历史名，不动以免断现行调用）。
     # P0 统一货币体系：充值比例
     "recharge_ratio": "1.2",
     # C4 商店改造：快捷金额

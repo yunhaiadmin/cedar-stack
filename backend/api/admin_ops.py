@@ -4,7 +4,7 @@
 借鉴 twilight-kotomi 的运营面板核心运营能力，与 `backend/api/admin.py`
 （用户、套餐、经济、审计等既有管理面）分文件维护，避免单文件继续膨胀。
 
-- 卡码：类型化生成（注册码 / 续期码 / 白名单码 / 诱饵码 / 指名码）、总览统计、停用与回收
+- 卡码：类型化生成（续期码 / 白名单码 / 诱饵码 / 指名码；注册码已下线，只剩存量行）、总览统计、停用与回收
 - 设备：跨用户设备审查、封禁（同时吊销该设备令牌）、移除（踢下线）
 - 日志：登录成功/失败、设备超限、诱饵码触发等风控事件筛选与清理
 
@@ -142,7 +142,7 @@ def code_dto(db: Session, code: models.RegistrationCode, now: Optional[datetime]
         "is_decoy": codes.is_honeypot(code),
         "target_username": code.target_username or "",
         "source": code.source or "admin",
-        # 出品人：管理员直发看 created_by，代理出品看 agent（注册码分区
+        # 出品人：管理员直发看 created_by，代理出品看 agent（码列表
         # 按出品人筛选/展示用；老码两列为空时展示名为空串）
         "created_by": code.created_by,
         "created_by_name": created_by_name,
@@ -183,9 +183,9 @@ def list_codes(
     """卡码列表（类型 / 状态 / 关键字 / 出品人 / 归属服筛选 + 分页）
 
     卡码是一个服一个的：``realm_id=0`` 看全部服，不传看当前服。
-    注册码与兑换码分离（2026-11-10）后，两个分区共用本接口：
-    注册码分区传 ``code_type=1``（可再按 source=admin/agent 分出品人），
-    兑换码分区传 ``exclude_code_type=1`` 把注册码排除在外。
+    注册码已下线（2026-11-15），原注册码分区随之取消；会员卡码页
+    传 ``exclude_code_type=1`` 把存量注册码排除在外，统计页仍可按
+    ``code_type=1`` 查存量行做审计。
     """
     scope_id = None if realm_id == 0 else (realm_id or realms.active_realm_id(db))
     query = realms.scope(db.query(models.RegistrationCode),
@@ -296,10 +296,10 @@ def list_code_redemptions(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """单张码的核销流水：谁在何时用它注册/兑换（核销记录表为唯一出处）。
+    """单张码的核销流水：谁在何时核销了它（核销记录表为唯一出处）。
 
-    注册码分区看「谁用它注册、何时」就走这里；兑换码的核销同样落
-    在这张表（code_kind='reg'），口径一致。
+    会员卡码页看核销明细走这里；存量注册码的历史核销同样落在这张
+    表（code_kind='reg'），口径一致。
     """
     code = db.query(models.RegistrationCode).filter(
         models.RegistrationCode.id == code_id
@@ -405,7 +405,9 @@ def code_stats(
 
 class CodeGenerateRequest(BaseModel):
     """类型化卡码生成"""
-    code_type: int = Field(default=codes.CODE_TYPE_REGISTER, ge=1, le=3)
+    # 默认续期码；ge/le 仍放行 1 是为了让存量调用传 1 时走到端点层的
+    # 明确拒绝（「注册码已停用」），而不是 pydantic 的含糊校验错误。
+    code_type: int = Field(default=codes.CODE_TYPE_RENEW, ge=1, le=3)
     count: int = Field(default=1, ge=1, le=200)
     days: Optional[int] = Field(default=None, ge=-1, le=36500)
     max_uses: int = Field(default=1, ge=1, le=1000)
@@ -442,6 +444,9 @@ def generate_codes(
     if (request.reward_type or "").strip().lower() == codes.REWARD_WELFARE:
         # 公益资格已随福利整族下线（2026-11-14）：资格卡码不可核销，不许再生成。
         raise HTTPException(status_code=400, detail="资格卡码已下线，不能再生成")
+    if request.code_type == codes.CODE_TYPE_REGISTER:
+        # 注册码已整体下线（2026-11-15）：不再生成，存量行只留审计。
+        raise HTTPException(status_code=400, detail="注册码已停用，不能再生成")
 
     days = request.days if request.days is not None else codes.DEFAULT_DAYS
     if request.code_type == codes.CODE_TYPE_WHITELIST:

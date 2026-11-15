@@ -107,7 +107,6 @@ export const useUserStore = defineStore('user', () => {
     email?: string,
     invitationCode?: string,
     captchaToken?: string,
-    registrationCode?: string,
   ) {
     loading.value = true
     try {
@@ -116,7 +115,6 @@ export const useUserStore = defineStore('user', () => {
         password,
         email,
         invitation_code: invitationCode || undefined,
-        registration_code: registrationCode || undefined,
         captcha_token: captchaToken || undefined,
       })
       _persist(response)

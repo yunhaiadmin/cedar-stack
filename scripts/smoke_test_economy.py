@@ -129,7 +129,7 @@ def main():
           sub2.id == sub_id_before
           and (sub.end_date - end_before).days == 10)
 
-    # ---- 4. 能量型注册码拒绝核销（不烧码） ----
+    # ---- 4. 能量型卡码拒绝核销（不烧码） ----
     print("\n[4] 能量卡码拒绝")
     reg_pts = models.RegistrationCode(
         code="SMOKEPTS" + suffix[-4:], code_type=2, max_uses=1, use_count=0,
@@ -140,8 +140,8 @@ def main():
     res = redeem_registration_code(db, u2, reg_pts.code)
     db.rollback()
     db.refresh(reg_pts)
-    check("能量注册码核销被拒", res.get("success") is False and "下线" in (res.get("message") or ""))
-    check("能量注册码未被消耗", (reg_pts.use_count or 0) == 0)
+    check("能量卡码核销被拒", res.get("success") is False and "下线" in (res.get("message") or ""))
+    check("能量卡码未被消耗", (reg_pts.use_count or 0) == 0)
 
     # ---- 5. 支付签名（易支付 MD5） ----
     print("\n[5] 支付网关签名")
