@@ -414,7 +414,7 @@ finally:
 
 print("\n--- 卡码（一个服一个：开的就是归属服的会员）---")
 r = client.post("/api/admin/registration-codes/generate", headers=H,
-                json={"code_type": 1, "count": 1, "days": 30, "expires_days": 30,
+                json={"code_type": 2, "count": 1, "days": 30, "expires_days": 30,
                       "realm_id": realm_b})
 body = r.json() if r.status_code == 200 else {}
 code_b = (body.get("codes") or [{}])[0].get("code")
@@ -423,7 +423,7 @@ check("生成卡码时可以指定归属服",
       f"HTTP {r.status_code} {body.get('message')}")
 
 r = client.get("/api/admin/registration-codes/list", headers=H,
-               params={"code_type": 1, "realm_id": realm_b})
+               params={"code_type": 2, "realm_id": realm_b})
 codes_b = {c["code"]: c for c in r.json().get("codes", [])}
 check("卡码清单按服过滤，且带归属服名称",
       code_b in codes_b and codes_b[code_b].get("realm_name") == f"二服改名{suf}",
@@ -431,12 +431,12 @@ check("卡码清单按服过滤，且带归属服名称",
 check("清单同时下发可选服（生成弹窗要用）",
       len(r.json().get("realms") or []) >= 2, str(r.json().get("realms")))
 
-r = client.get("/api/admin/registration-codes/list", headers=H, params={"code_type": 1})
+r = client.get("/api/admin/registration-codes/list", headers=H, params={"code_type": 2})
 codes_default = {c["code"] for c in r.json().get("codes", [])}
 check("默认只看当前服（A）的卡码，B 服的不会混进来",
       code_b not in codes_default, f"当前服={r.json().get('realm_name')}")
 
-r = client.get("/api/admin/registration-codes/list", headers=H, params={"code_type": 1, "realm_id": 0})
+r = client.get("/api/admin/registration-codes/list", headers=H, params={"code_type": 2, "realm_id": 0})
 check("realm_id=0 才跨服汇总卡码",
       code_b in {c["code"] for c in r.json().get("codes", [])}, str(r.status_code))
 
@@ -446,7 +446,9 @@ check("卡码统计按服（B 服的统计只算 B 服的码）",
       stat_b.get("realm_id") == realm_b and stat_b.get("total") == 1,
       f"total={stat_b.get('total')} realm={stat_b.get('realm_name')}")
 
-# 一个「只有 A 服会员」的用户来核销 B 服的注册码：旧实现在这里会误报「已有会员」
+# 一个「只有 A 服会员」的用户来核销 B 服的续期码：发放必须按码的归属服走，
+# 不能因为他已有 A 服会员就误判/误发（注册码时代这里曾误报「已有会员」，
+# 注册码已于 2026-11-15 下线，本段改用续期码继续钉同一口径）
 db = SessionLocal()
 try:
     solo = models.WebUser(username=f"code_user{suf}", password_hash=hash_password(PASSWORD),
@@ -489,15 +491,14 @@ try:
 finally:
     db.close()
 
-# 2026-11-10 注册码分离定版：注册码（code_type=1）的核销入口已迁到注册页
-# （codes.consume_registration_code），登录后兑换入口只认续期/白名单码；
-# 跨服会员门判定与发放仍是同一套核销主体，本段改走注册核销入口验证，
-# 验码预检（不消耗）同样能告诉用户这张码开的是哪个服的会员。
+# 核销走登录后兑换入口（codes.redeem_code）；跨服发放判定仍是同一套
+# 核销主体。兑换预检（preview_code，不消耗）同样能告诉用户这张码
+# 开的是哪个服的会员。
 from backend import codes as codes_lib
 
 db = SessionLocal()
 try:
-    pre = codes_lib.check_registration_code(db, code_b)
+    pre = codes_lib.preview_code(db, code_b)
 finally:
     db.close()
 check("卡码预检就告诉用户开的是哪个服的会员",
@@ -508,14 +509,14 @@ db = SessionLocal()
 try:
     solo_user = db.query(models.WebUser).filter(
         models.WebUser.id == solo_id).first()
-    res = codes_lib.consume_registration_code(db, solo_user, code_b)
+    res = codes_lib.redeem_code(db, solo_user, code_b)
     if res.get("success"):
         db.commit()
     else:
         db.rollback()
 finally:
     db.close()
-check("A 服会员可以核销 B 服的注册码（不再被误判为「已有会员」）",
+check("A 服会员可以核销 B 服的续期码（按归属服发放，不串服）",
       res.get("success") is True, str(res.get("message")))
 
 db = SessionLocal()
@@ -523,9 +524,9 @@ try:
     rows = (db.query(models.UserSubscription)
             .filter(models.UserSubscription.user_id == solo_id).all())
     by_realm = {s.realm_id: s for s in rows}
-    check("B 服的注册码开的是 B 服的会员",
+    check("B 服的续期码开的是 B 服的会员",
           realm_b in by_realm, str(sorted(r for r in by_realm if r is not None)))
-    check("A 服的会员没有被那张 B 服的注册码改变",
+    check("A 服的会员没有被那张 B 服的续期码改变",
           by_realm[default_id].end_date == sub_a_end,
           f"{sub_a_end} → {by_realm[default_id].end_date}")
     from backend import subscriptions as subs_lib

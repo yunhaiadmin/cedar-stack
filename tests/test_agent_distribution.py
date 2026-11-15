@@ -193,7 +193,7 @@ def test_purchase_insufficient_balance_rejected_atomically(db, admin, agent_user
 
     with pytest.raises(HTTPException) as exc:
         agent_center.purchase(
-            agent_center.PurchaseRequest(plan_id=plan.id, code_type=1, quantity=2),
+            agent_center.PurchaseRequest(plan_id=plan.id, code_type=2, quantity=2),
             agent_user, db)
     assert exc.value.status_code == 400
 
@@ -212,11 +212,11 @@ def test_double_spend_cannot_go_negative(db, admin, agent_user, plan):
     _fund(db, agent["id"], "80")  # 正好够 1 张
 
     agent_center.purchase(
-        agent_center.PurchaseRequest(plan_id=plan.id, code_type=1, quantity=1),
+        agent_center.PurchaseRequest(plan_id=plan.id, code_type=2, quantity=1),
         agent_user, db)
     with pytest.raises(HTTPException):
         agent_center.purchase(
-            agent_center.PurchaseRequest(plan_id=plan.id, code_type=1, quantity=1),
+            agent_center.PurchaseRequest(plan_id=plan.id, code_type=2, quantity=1),
             agent_user, db)
     row = db.query(models.Agent).filter(models.Agent.id == agent["id"]).first()
     assert float(row.balance) == 0.0
@@ -240,14 +240,14 @@ def test_redeem_agent_code_records_sale(db, admin, agent_user, plan):
     agent = _assign(db, agent_user, level["id"])
     _fund(db, agent["id"], "500")
     resp = agent_center.purchase(
-        agent_center.PurchaseRequest(plan_id=plan.id, code_type=1, quantity=1),
+        agent_center.PurchaseRequest(plan_id=plan.id, code_type=2, quantity=1),
         agent_user, db)
     raw = resp["codes"][0]["code"]
 
     buyer = _user(db, "buyer_1")
-    # 2026-11-10 注册码分离定版：code_type=1 已登录兑换入口拒绝，
-    # 核销走注册页入口 consume_registration_code，销售归属口径不变。
-    result = codes.consume_registration_code(db, buyer, raw)
+    # 代理进货只剩续期码（注册码 2026-11-15 下线）：核销走已登录
+    # 兑换入口 redeem_code，销售归属口径不变。
+    result = codes.redeem_code(db, buyer, raw)
     assert result["success"] is True
     db.commit()
 
@@ -287,7 +287,7 @@ def test_agent_data_isolated(db, admin, agent_user, plan):
     _fund(db, agent_a["id"], "500")
     _fund(db, agent_b["id"], "500")
     agent_center.purchase(
-        agent_center.PurchaseRequest(plan_id=plan.id, code_type=1, quantity=2),
+        agent_center.PurchaseRequest(plan_id=plan.id, code_type=2, quantity=2),
         agent_user, db)
 
     mine = agent_center.my_codes(current_user=agent_user, db=db)

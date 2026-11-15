@@ -94,7 +94,7 @@ def list_products(
 
 class PurchaseRequest(BaseModel):
     plan_id: int
-    code_type: int = Field(default=codes.CODE_TYPE_REGISTER)
+    code_type: int = Field(default=codes.CODE_TYPE_RENEW)
     quantity: int = Field(default=1, ge=1, le=agent_service.MAX_PURCHASE_QUANTITY)
     note: str = ""
 

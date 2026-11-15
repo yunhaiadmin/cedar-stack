@@ -1667,7 +1667,7 @@ async def preview_membership_code(
     计数与拦截分离：先计数，再看预检结果——命中「明确无效」（已被
     使用/已停用/已过期/不存在/指名他人）的码，状态已经确定，直接
     返回业务文案，不许被 429 盖掉（用户拿一张用掉的码反复试，看到的
-    应该是「该注册码已被使用」，而不是「操作过于频繁」）。
+    应该是「该卡码已被使用」，而不是「操作过于频繁」）。
     """
     allowed, _ = check_rate_limit(f"code_preview:{current_user.id}", 60, 60)
     result = codes.preview_code(db, req.code, current_user.username)
@@ -1685,7 +1685,7 @@ def redeem_membership_code(
     current_user: models.WebUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """核销会员卡码：注册码 / 续期码 / 白名单码
+    """核销会员卡码：续期码 / 白名单码（存量注册码已停用，本入口明确拒绝）
 
     同步 `def`：整条链路（限速 / 查码 / 原子占位 / 发天数 / 提交）都是同步 SQLAlchemy，
     没有一个 await。留成 `async def` 就是让占位与发天数的那段写库压在事件循环上

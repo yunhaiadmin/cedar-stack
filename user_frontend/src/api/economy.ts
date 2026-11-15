@@ -178,7 +178,7 @@ export const exchangeApi = {
     api.post<never, { success: boolean; reward_type?: string; points?: number; balance?: number; plan_name?: string; days?: number; message: string }>('/api/user/economy/exchange/redeem', { code }),
 }
 
-// ==================== 会员卡码（注册码 / 续期码 / 白名单码） ====================
+// ==================== 会员卡码（续期码 / 白名单码） ====================
 
 export interface CodePreview {
   valid: boolean
