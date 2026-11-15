@@ -423,10 +423,10 @@ def test_sub_account_economy_endpoints_forbidden(db):
                        headers=headers,
                        json={"gb": 100, "idempotency_key": "k1"})
     assert resp.status_code == 403
-    # 时间换流量
+    # 时间换流量（#215 起按包计：package=half，旧 gb 字段已删）
     resp = client.post("/api/user/traffic/exchange",
                        headers=headers,
-                       json={"gb": 100, "idempotency_key": "k2"})
+                       json={"package": "half", "idempotency_key": "k2"})
     assert resp.status_code == 403
     # 再建子账号（子账号视角调创建接口）
     resp = client.post("/api/user/sub-accounts",
