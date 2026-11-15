@@ -188,6 +188,8 @@ export interface EmbyItem {
   Type: 'Movie' | 'Series' | 'Season' | 'Episode' | string
   IsFolder: boolean
   ChildCount?: number | null
+  /** 后代条目总数（剧集 = 可见集数，后端 _item_dto 下发） */
+  RecursiveItemCount?: number | null
   ProductionYear?: number | null
   CommunityRating?: number | null
   OfficialRating?: string | null

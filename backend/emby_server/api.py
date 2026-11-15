@@ -4928,11 +4928,32 @@ def mark_unplayed(item_id: str, user_id: str,
     umd = db.query(em.UserMediaData).filter(
         em.UserMediaData.user_id == user.id, em.UserMediaData.item_id == item.id
     ).first()
+    dirty = False
     if umd:
         umd.played = False
         umd.play_count = 0
         umd.playback_position_ticks = 0
         umd.max_position_ticks = 0  # 进度双记：与断点一起清零（批一 #4）
+        dirty = True
+    if item.item_type == "series":
+        # 整部移除（审计 ⚠️1）：剧集观看记录逐集存，只清剧行等于没清——
+        # 级联清其名下全部季/集的本人记录，与剧行同事务提交。
+        # 只动本人行；收藏、别人的记录、别的剧都不受影响。
+        child_ids = [r[0] for r in db.query(em.MediaItem.id).filter(
+            em.MediaItem.series_id == item.id,
+            em.MediaItem.item_type.in_(("season", "episode"))).all()]
+        if child_ids:
+            db.query(em.UserMediaData).filter(
+                em.UserMediaData.user_id == user.id,
+                em.UserMediaData.item_id.in_(child_ids),
+            ).update({
+                em.UserMediaData.played: False,
+                em.UserMediaData.play_count: 0,
+                em.UserMediaData.playback_position_ticks: 0,
+                em.UserMediaData.max_position_ticks: 0,
+            }, synchronize_session=False)
+            dirty = True
+    if dirty:
         db.commit()
     return _user_data_dto(umd, item.guid, _run_time_ticks(item))
 
