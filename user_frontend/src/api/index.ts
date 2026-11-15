@@ -214,6 +214,11 @@ export interface AuthUser {
   realm_access_note?: string
   /** 白名单专属身份（创世编号+专属称号）；非白名单为 null */
   whitelist_identity?: WhitelistIdentity | null
+  /** 家庭子账号（2026-11-15）：本号是子账号时为 true，订阅/流量/门禁
+   * 按主账号算；前端据此显示「家庭子账号」标识并隐藏购买类入口 */
+  is_sub_account?: boolean
+  /** 主账号用户名（仅子账号有值） */
+  parent_username?: string | null
   created_at?: string | null
 }
 

@@ -140,6 +140,13 @@ class UserOut(BaseModel):
     # 贡献池专属身份（称号「片库贡献者」）；判定走 pool_reward
     # 状态驱动口径，非在池贡献者为 None，用户端不渲染
     pool_identity: PoolIdentityOut | None = None
+    # 家庭子账号（2026-11-15）：本号是子账号时为 True，
+    # parent_username 为主账号用户名。子账号的订阅/流量/播放
+    # 门禁按主账号算（backend/sub_accounts 有效账号解析），
+    # is_vip 也按主账号派生；前端据此显示「家庭子账号」标识
+    # 并隐藏购买类入口。主账号恒 False / None。
+    is_sub_account: bool = False
+    parent_username: str | None = None
     created_at: str | None = None
 
 
@@ -160,7 +167,23 @@ def _user_out(user: models.WebUser, db: Session | None = None) -> UserOut:
     公益服（``realm_access_mode='free'``）恒为 false，前端据此换一套「免费开放」的文案，
     而不是把一个不需要付费的服宣传成付费墙。
     """
-    is_vip = has_active_subscription(db, user.id) if db is not None else bool(user.is_vip)
+    # 家庭子账号的 VIP 派生看主账号订阅（子账号没有自己的订阅）：
+    # 经 backend/sub_accounts 有效账号解析，异常按本人处理不拖垮登录。
+    _effective_id = user.id
+    _is_sub = False
+    _parent_username = None
+    if db is not None:
+        try:
+            from backend import sub_accounts as _sub_accounts
+
+            _is_sub = _sub_accounts.is_sub_account(user)
+            if _is_sub:
+                _effective_id = _sub_accounts.effective_user_id(db, user)
+                _parent = _sub_accounts.effective_user(db, user)
+                _parent_username = _parent.username if _parent else None
+        except Exception:
+            _effective_id, _is_sub, _parent_username = user.id, False, None
+    is_vip = has_active_subscription(db, _effective_id) if db is not None else bool(user.is_vip)
     requires_sub = realm_requires_subscription(db) if db is not None else False
     free_realm = is_free_realm(db) if db is not None else False
     # 白名单专属身份同为纯展示：判定/编号走 codes 唯一口径，异常一律 None
@@ -203,6 +226,8 @@ def _user_out(user: models.WebUser, db: Session | None = None) -> UserOut:
         realm_access_note=realm_access_note(db) if db is not None else "",
         whitelist_identity=whitelist_identity,
         pool_identity=pool_identity,
+        is_sub_account=_is_sub,
+        parent_username=_parent_username,
         created_at=user.created_at.isoformat() if user.created_at else None,
     )
 

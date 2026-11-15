@@ -616,6 +616,10 @@ function fmtCount(n: number | null | undefined): string {
               {{ row.is_staff ? '管理员' : '用户' }}
             </span>
             <span v-if="!row.is_active" class="au-badge au-badge-rose">已禁用</span>
+            <!-- 家庭子账号归属标记（2026-11-15）：订阅/流量都记在主账号名下 -->
+            <span v-if="row.parent_username" class="au-badge au-badge-info">
+              子账号 · 主账号 {{ row.parent_username }}
+            </span>
           </div>
           <div class="user-sub">{{ row.email || '未绑定邮箱' }}</div>
         </template>

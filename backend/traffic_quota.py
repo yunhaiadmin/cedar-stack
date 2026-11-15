@@ -46,7 +46,7 @@ from typing import Optional
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend import entitlements, models, subscriptions
+from backend import entitlements, models, sub_accounts, subscriptions
 from backend.emby_server import models as em
 from backend.integrations import store
 
@@ -166,7 +166,10 @@ def quota_bytes_for(db: Session, user_id: int) -> Optional[int]:
     """该用户的月流量额度（字节）；None = 不启用流量区。
 
     顺序：套餐权益声明 → SystemConfig 全局默认 → None。
+    家庭子账号按主账号算（backend/sub_accounts 有效账号解析）：
+    子账号自己没有套餐，额度永远取主账号当前套餐的声明。
     """
+    user_id = sub_accounts.effective_user_id(db, user_id)
     declared = entitlements.get_user_entitlement(
         db, user_id, ENTITLEMENT_KEY)
     if declared is not None:
@@ -200,9 +203,11 @@ def current_period(db: Session, user_id: int,
     """当前流量周期 (start, end, active_subscription|None)。
 
     锚点取当前有效订阅的 start_date 之日；无有效订阅回退自然月
-    （锚点日 = 1），sub 返回 None。
+    （锚点日 = 1），sub 返回 None。家庭子账号按主账号算
+    （有效账号解析，见 backend/sub_accounts.py）。
     """
     now = now or datetime.now()
+    user_id = sub_accounts.effective_user_id(db, user_id)
     sub = subscriptions.active_subscription(db, user_id)
     anchor_day = sub.start_date.day if sub is not None else 1
     start, end = period_bounds(anchor_day, now.date())
@@ -221,8 +226,11 @@ def usage_summary(db: Session, user_id: int,
     计量数字照常给出（已用是事实，不因没额度就藏）。
     抵扣口径：有效已用 = max(0, 毛已用 − 本周期抵扣)，多出的
     抵扣自动留给本周期后续用量（读时现算，不回写）。
+    家庭子账号按主账号算：子账号的概览流量区展示主账号的额度与
+    已用（计量落账时已归到主账号，见 traffic_meter 归账点解析）。
     """
     now = now or datetime.now()
+    user_id = sub_accounts.effective_user_id(db, user_id)
     quota = quota_bytes_for(db, user_id)
     start, end, _sub = current_period(db, user_id, now)
     rows = (db.query(em.TrafficUsageDaily)

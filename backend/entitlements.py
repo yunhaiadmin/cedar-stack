@@ -71,6 +71,14 @@ ENTITLEMENT_SPECS: dict[str, dict] = {
         "min": 1, "max": 1_125_899_906_842_624,
         "fallback": "traffic_default_monthly_bytes",
     },
+    # 家庭子账号可建数量（2026-11-15）：家庭版套餐声明 2、国际版
+    # 声明 0；消费方 backend/sub_accounts.py（创建校验＋用户中心
+    # 子账号区显隐）。与其它键不同，本键允许显式声明 0（=明确不可
+    # 建），故 min=0；缺键/无订阅返回 None，消费方一律按 0 处理
+    # （不回退任何全局配置——没有声明就是没有这个卖点）。
+    "sub_account_limit": {
+        "min": 0, "max": 20, "fallback": "无声明按 0（不可建）",
+    },
 }
 
 #: 进程内缓存 TTL（秒），与 integrations.store 的 60 秒口径对齐（设计 §2.3）。

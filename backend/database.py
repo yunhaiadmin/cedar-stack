@@ -723,6 +723,11 @@ def _auto_migrate():
 
     migrations: list[tuple[str, list[tuple[str, str, str]]]] = [
         ("web_users", [
+            # 家庭子账号（2026-11-15）：parent_user_id 非空 = 子账号。
+            # 老库补列后为 NULL = 全部按主账号处理，存量行为不变；
+            # 索引 idx_web_users_parent 在下方索引迁移清单同名补建
+            # （见 backend/sub_accounts.py）。
+            ("parent_user_id", "INTEGER", "NULL"),
             # v2.26.0 管理员角色（super / operator / viewer）：老库补列后为 NULL，
             # 按 super 处理 → 升级前后权限完全一致（见 backend/admin_roles.py）
             ("admin_role", "VARCHAR(20)", "NULL"),
@@ -1559,6 +1564,12 @@ _LEGACY_INDEXES: tuple[tuple[str, ...], ...] = (
     # 回滚：DROP INDEX idx_reg_code_agent。
     ("registration_codes", "idx_reg_code_agent", "agent_id", "agent_id",
      "  🔧 已迁移: registration_codes.idx_reg_code_agent（代理分销按代理查码）"),
+    # 家庭子账号（2026-11-15）：按主账号反查子账号（用户中心子账号
+    # 列表、管理端归属标记）；列由上面的 _auto_migrate 先补上，列不
+    # 存在时静默跳过（防御式）。models.py __table_args__ 已声明同名
+    # 索引（新库 create_all 自带）。回滚：DROP INDEX idx_web_users_parent。
+    ("web_users", "idx_web_users_parent", "parent_user_id", "parent_user_id",
+     "  🔧 已迁移: web_users.idx_web_users_parent（家庭子账号按主账号查）"),
 )
 
 

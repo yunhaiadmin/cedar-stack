@@ -15,7 +15,7 @@ import logging
 from sqlalchemy import func
 
 from backend.database import get_db
-from backend import codes, devices, library_scope, media_seek, models, realms
+from backend import codes, devices, library_scope, media_seek, models, realms, sub_accounts
 from backend.emby_server.api import season_poster_url
 from backend.db_retry import commit_with_retry
 from backend.notifications import get_notification_service, AdminEvent
@@ -1443,9 +1443,14 @@ def get_my_subscriptions(
 
     生效状态按 end_date 现算（status 字段不会随时间自动翻转），
     与后台订阅总览 / 用户 VIP 派生使用同一口径。
+    家庭子账号没有自己的订阅：列表展示主账号的订阅（有效账号
+    解析），每行带 shared_from_family=True 标明来源；取消/自动
+    续费端点仍按本人 id 过滤，子账号操作不到主账号的订阅行。
     """
+    is_sub = sub_accounts.is_sub_account(current_user)
+    owner_id = sub_accounts.effective_user_id(db, current_user)
     subscriptions = db.query(models.UserSubscription).filter(
-        models.UserSubscription.user_id == current_user.id
+        models.UserSubscription.user_id == owner_id
     ).order_by(models.UserSubscription.created_at.desc()).all()
 
     now = datetime.now()
@@ -1474,6 +1479,8 @@ def get_my_subscriptions(
             "is_current": is_current,
             "auto_renew": sub.auto_renew,
             "days_left": max(0, (sub.end_date - now).days) if sub.end_date else 0,
+            # 家庭子账号视角下这行是主账号的订阅（本人无订阅行）
+            "shared_from_family": is_sub,
         })
 
     return result
@@ -1691,6 +1698,8 @@ def redeem_membership_code(
     没有一个 await。留成 `async def` 就是让占位与发天数的那段写库压在事件循环上
     （见 docs/performance.md 的「事务范围」与 check_blocking_routes 的说明）。
     """
+    # 家庭子账号禁止经济动作：核销发的天数归主账号订阅，回主账号操作
+    sub_accounts.forbid_sub_account(current_user)
     allowed, _ = check_rate_limit(f"code_redeem:{current_user.id}", 10, 60)
     if not allowed:
         # 限流拒绝也要先分清这张码是不是「明确无效」：状态已确定的码

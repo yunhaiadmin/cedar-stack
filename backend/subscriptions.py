@@ -195,6 +195,11 @@ def can_play(db: Session, user: models.WebUser, realm_id: Optional[int] = None) 
 
     订阅判定保持原有口径（显式服 / 本进程的服，不拿面板当前服去做回退），
     所以付费服的行为与升级前完全一致；公益服是新增的一层判断。
+    家庭子账号看主账号的订阅（子账号没有自己的订阅）：经
+    backend/sub_accounts 的有效账号解析后仍走本函数的同一判定，
+    不另立标准（懒引防循环导入）；另对子账号追加一条权益判定——
+    主账号当前套餐须声明 sub_account_limit>0，降到无子账号权益
+    的档时子账号同步不可播（口径见 backend/sub_accounts.py）。
     """
     if getattr(user, "is_staff", False):
         return True
@@ -204,7 +209,21 @@ def can_play(db: Session, user: models.WebUser, realm_id: Optional[int] = None) 
         return True
     if not subscription_required(db):
         return True
-    return has_active_subscription(db, user.id, resolve_realm_id(realm_id))
+    from backend import sub_accounts
+
+    if not has_active_subscription(
+            db, sub_accounts.effective_user_id(db, user),
+            resolve_realm_id(realm_id)):
+        return False
+    if sub_accounts.is_sub_account(user):
+        # 子账号的播放资格含一条权益判定：主账号**当前套餐**须声明
+        # 子账号权益（sub_account_limit>0，与创建上限同一个键、同
+        # 一个单口）。主账号降到无子账号权益的档时子账号同步不可
+        # 播——「权益读主账号当前套餐」的机械结果，不另设规则；
+        # limit 只是变小（仍 >0）时存量子账号照常可播、不逐个卡位。
+        return sub_accounts.sub_account_limit(
+            db, sub_accounts.effective_user(db, user)) > 0
+    return True
 
 
 def ensure_playback_allowed(db: Session, user: models.WebUser,

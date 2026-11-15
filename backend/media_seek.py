@@ -177,9 +177,19 @@ def monthly_quota(db: Session, user) -> dict:
     卡死、另带 monthly_exempt=True 标明身份。提交口（api.user 的月度
     429 校验）读的就是本快照的 remaining，豁免在这一处单点生效，
     展示与校验不会两张皮。每日防刷上限不豁免，不在此列。
+
+    家庭子账号（2026-11-15）：额度是主账号套餐的一份，全家共用——
+    上限读主账号当前套餐（有效账号解析），已用量把主账号与全部
+    子账号本月提交合并计（family_user_ids）；豁免身份仍看请求者
+    本人（子账号不会是白名单）。求片记录本身仍记在提交者名下，
+    这里只改额度口径，不动归属。
     """
-    limit = monthly_limit(db, user)
-    used = used_this_month(db, user.id)
+    from backend import sub_accounts
+
+    effective = sub_accounts.effective_user(db, user)
+    limit = monthly_limit(db, effective)
+    used = sum(used_this_month(db, uid)
+               for uid in sub_accounts.family_user_ids(db, effective))
     exempt = _is_whitelist_exempt(db, user)
     return {
         "kind": "paid",

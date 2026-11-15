@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend import agents as agent_service
-from backend import codes, models
+from backend import codes, models, sub_accounts
 from backend.api.admin_ops import code_dto
 from backend.api.agents_admin import _log_dto, _purchase_dto, _sale_dto
 from backend.api.pagination import pagination_params
@@ -106,6 +106,9 @@ def purchase(
     db: Session = Depends(get_db),
 ):
     """进货：扣余额 + 生成卡码，同一事务，失败整单回滚。"""
+    # 家庭子账号禁止经济动作（_require_agent 本已挡下无代理行的
+    # 子账号，这里是显式口径：即使被误设代理行也不许进货）
+    sub_accounts.forbid_sub_account(current_user)
     agent = _require_agent(db, current_user)
     plan = db.query(models.SubscriptionPlan).filter(
         models.SubscriptionPlan.id == request.plan_id).first()

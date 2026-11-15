@@ -91,11 +91,17 @@ def _invite(db: Session, user: models.WebUser) -> dict:
 
 
 def _subscriptions(db: Session, user: models.WebUser) -> list:
-    """≈ GET /user/subscriptions（end_date 现算 active，与原 handler 同口径）"""
-    from backend import realms
+    """≈ GET /user/subscriptions（end_date 现算 active，与原 handler 同口径）
 
+    家庭子账号同原 handler：展示主账号的订阅（有效账号解析），
+    每行带 shared_from_family 标明来源。
+    """
+    from backend import realms, sub_accounts
+
+    is_sub = sub_accounts.is_sub_account(user)
+    owner_id = sub_accounts.effective_user_id(db, user)
     subs = db.query(models.UserSubscription).filter(
-        models.UserSubscription.user_id == user.id
+        models.UserSubscription.user_id == owner_id
     ).order_by(models.UserSubscription.created_at.desc()).all()
 
     now = datetime.now()
@@ -123,6 +129,7 @@ def _subscriptions(db: Session, user: models.WebUser) -> list:
             "is_current": is_current,
             "auto_renew": sub.auto_renew,
             "days_left": max(0, (sub.end_date - now).days) if sub.end_date else 0,
+            "shared_from_family": is_sub,
         })
     return result
 

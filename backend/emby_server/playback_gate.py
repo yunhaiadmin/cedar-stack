@@ -47,13 +47,20 @@ def has_active_binding(db: Session, user_id: int) -> bool:
     """该用户名下是否存在至少一条 active 的 Drive 用户存储绑定。
 
     只认 provider == "drive"（夸克/115 绑定线 2026-11-02 已下线，
-    存量行视为不存在）；只认本用户自己的行，绝不跨用户；
-    invalid / expired 行不算。
+    存量行视为不存在）；invalid / expired 行不算。归属口径：
+    绝不跨无关用户——唯一例外是家庭子账号：子账号自己不绑盘，
+    绑定按主账号计（2026-11-15 家庭子账号单，经 backend/
+    sub_accounts 的有效账号解析：主账号有 active 绑盘即算已绑）。
+    本函数是全站绑定判定的单点（门禁/签名/池分流/起播状态都走
+    这里），归属解析收在这里一处，各调用点不许自己再判归属。
     """
+    from backend import sub_accounts
+
+    effective_id = sub_accounts.effective_user_id(db, user_id)
     return (
         db.query(em.UserStorageBinding)
         .filter(
-            em.UserStorageBinding.user_id == user_id,
+            em.UserStorageBinding.user_id == effective_id,
             em.UserStorageBinding.provider == "drive",
             em.UserStorageBinding.status == "active",
         )
@@ -68,14 +75,17 @@ def has_removed_provider_binding(db: Session, user_id: int) -> bool:
     不论行状态：active 是删线时未收敛的存量，expired / invalid 同样
     说明此人绑过这两家——被门禁拦时据此出下线专用文案。provider
     名单只认 ``user_bindings.REMOVED_PROVIDERS`` 一处（函数内懒引，
-    与本仓既有防循环口径一致）。
+    与本仓既有防循环口径一致）。归属口径与 has_active_binding
+    一致：家庭子账号按主账号计（有效账号解析）。
     """
+    from backend import sub_accounts
     from backend.emby_server.user_bindings import REMOVED_PROVIDERS
 
+    effective_id = sub_accounts.effective_user_id(db, user_id)
     return (
         db.query(em.UserStorageBinding)
         .filter(
-            em.UserStorageBinding.user_id == user_id,
+            em.UserStorageBinding.user_id == effective_id,
             em.UserStorageBinding.provider.in_(REMOVED_PROVIDERS),
         )
         .first()

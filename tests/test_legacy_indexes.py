@@ -99,6 +99,9 @@ def test_spec_table_covers_all_seven_in_restored_order():
         # 2026-11-06：代理分销按代理查码（registration_codes.agent_id，
         # models.py 同名声明，spec 表末尾追加）
         "idx_reg_code_agent",
+        # 2026-11-15：家庭子账号按主账号查子账号（web_users.parent_user_id，
+        # models.py 同名声明，spec 表末尾追加）
+        "idx_web_users_parent",
     ]
 
 
