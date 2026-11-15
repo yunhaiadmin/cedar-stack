@@ -11,6 +11,9 @@
  * 分类 = 现行 getViews 按 CollectionType 过滤（movies / tvshows），
  * 计数 = 各库 getItems 的 TotalRecordCount，全部数据驱动、不写死分类名与数字。
  * 条目数据调用仍走现行 getItems 口径（仅加既有 parentId 参数，与首页逐库行同口径）。
+ * 筛选行（2026-11-15 接线）：分类行下方，类型/年份/分级/标签四组多选，
+ * 菜单与选项走后端 GET /emby/Items/Filters、选中透传 getItems，后端早已
+ * 全支持、此前前端整块没接。页头右上「追新日历」入口进 /library/calendar。
  * 排序（友站口径）：单胶囊下拉 5 键——最近添加 / 上映日期 / 名称 / 评分 /
  * 资源更新 + 升降序切换。五键全部后端 Items 真支持（DateCreated /
  * PremiereDate / SortName / CommunityRating / DateLastContentAdded，
@@ -18,7 +21,7 @@
  * （后端 PlayCount 是当前用户自己的播放次数），不冒充、不提供。
  */
 import { computed, onActivated, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { ArrowDown, ArrowUp, ArrowUpDown, Check } from 'lucide-vue-next'
 import StreamShell from '@/components/stream/StreamShell.vue'
@@ -26,6 +29,7 @@ import StreamPosterCard from '@/components/stream/StreamPosterCard.vue'
 import {
   embyApi as embyProtocol,
   posterUrl,
+  type EmbyFilters,
   type EmbyItem,
 } from '@/api/emby'
 
@@ -142,6 +146,8 @@ function readBrowseCache(): BrowseCachePayload | null {
 function maybeWriteBrowseCache() {
   try {
     if (!categories.value.length || !items.value.length || !lastLoadedAt) return
+    /* 筛选激活时的条目不是无筛选首屏口径，不许写进缓存冒充 */
+    if (activeFilterCount.value > 0) return
     const payload: BrowseCachePayload = {
       v: BROWSE_CACHE_VERSION,
       ts: Date.now(),
@@ -300,6 +306,103 @@ function toggleSortOrder() {
   void load(true)
 }
 
+/* ---------- 筛选（2026-11-15 接线：后端早已全支持，此前整块没接） ----------
+   菜单走 GET /emby/Items/Filters（getFilters），选项与口径全以后端返回为准、
+   前端不写死；选中项透传 getItems 的 Genres/Years/OfficialRatings/Tags，
+   与分类、排序、分页共存。筛选激活时不写 SWR 缓存（缓存口径是无筛选首屏）。 */
+type FilterKey = 'genres' | 'years' | 'ratings' | 'tags'
+const filterMenu = ref<EmbyFilters | null>(null)
+const selGenres = ref<string[]>([])
+const selYears = ref<number[]>([])
+const selRatings = ref<string[]>([])
+const selTags = ref<string[]>([])
+const openFilterKey = ref<FilterKey | ''>('')
+const activeFilterCount = computed(
+  () =>
+    selGenres.value.length +
+    selYears.value.length +
+    selRatings.value.length +
+    selTags.value.length,
+)
+interface FilterGroup {
+  key: FilterKey
+  label: string
+  options: string[]
+  selected: string[]
+}
+const filterGroups = computed<FilterGroup[]>(() => {
+  const m = filterMenu.value
+  if (!m) return []
+  const groups: FilterGroup[] = []
+  if (m.Genres.length)
+    groups.push({ key: 'genres', label: '类型', options: m.Genres, selected: selGenres.value })
+  if (m.Years.length)
+    groups.push({
+      key: 'years',
+      label: '年份',
+      options: m.Years.map(String),
+      selected: selYears.value.map(String),
+    })
+  if (m.OfficialRatings.length)
+    groups.push({
+      key: 'ratings',
+      label: '分级',
+      options: m.OfficialRatings,
+      selected: selRatings.value,
+    })
+  if (m.Tags.length)
+    groups.push({ key: 'tags', label: '标签', options: m.Tags, selected: selTags.value })
+  return groups
+})
+async function loadFilters() {
+  if (import.meta.env.VITE_FIXTURE === '1') {
+    filterMenu.value = {
+      Genres: ['剧情', '喜剧', '动作', '科幻'],
+      Years: [2026, 2025, 2024, 2023],
+      OfficialRatings: ['PG-13', 'R', 'G'],
+      Tags: ['4K', '杜比视界', 'HDR10+'],
+    }
+    return
+  }
+  try {
+    filterMenu.value = await embyProtocol.getFilters()
+  } catch {
+    /* 菜单拿不到就不渲染筛选行，正文不受影响 */
+    filterMenu.value = null
+  }
+}
+function toggleFilter(key: FilterKey, value: string) {
+  const flip = (arr: string[]) =>
+    arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value]
+  if (key === 'genres') selGenres.value = flip(selGenres.value)
+  else if (key === 'ratings') selRatings.value = flip(selRatings.value)
+  else if (key === 'tags') selTags.value = flip(selTags.value)
+  else {
+    const cur = selYears.value.map(String)
+    selYears.value = (cur.includes(value)
+      ? cur.filter((v) => v !== value)
+      : [...cur, value]
+    ).map(Number)
+  }
+  void load(true)
+}
+function clearFilters() {
+  selGenres.value = []
+  selYears.value = []
+  selRatings.value = []
+  selTags.value = []
+  openFilterKey.value = ''
+  void load(true)
+}
+function filterParams() {
+  return {
+    ...(selGenres.value.length ? { genres: [...selGenres.value] } : {}),
+    ...(selYears.value.length ? { years: [...selYears.value] } : {}),
+    ...(selRatings.value.length ? { officialRatings: [...selRatings.value] } : {}),
+    ...(selTags.value.length ? { tags: [...selTags.value] } : {}),
+  }
+}
+
 /* ---------- 条目加载（现行 getItems 口径） ---------- */
 let seq = 0
 /** 保活切回静默刷新阈值：与首页同口径 5 分钟 */
@@ -325,6 +428,7 @@ async function load(reset = true, silent = false) {
         startIndex: reset ? 0 : items.value.length,
         limit: PAGE,
         ...sortParams(),
+        ...filterParams(),
         timeout: BROWSE_TIMEOUT_MS,
       }),
     )
@@ -380,9 +484,11 @@ function metaOf(item: EmbyItem): string {
 watch(kind, () => {
   activeCat.value = ''
   sortOpen.value = false
+  openFilterKey.value = ''
   void reloadAll()
 })
 onMounted(() => {
+  void loadFilters()
   if (import.meta.env.VITE_FIXTURE === '1') {
     categories.value = [
       { id: 'fix-a', name: '夹具分类', count: 6 },
@@ -428,6 +534,7 @@ function retryCategories() {
       <p class="lb-eyebrow">媒体库</p>
       <div class="lb-head">
         <h1 class="lb-h1">{{ heading }}</h1>
+        <RouterLink class="lb-cal-link" to="/library/calendar">追新日历</RouterLink>
       </div>
 
       <!-- 分类行：左分类胶囊（激活含计数），右排序单胶囊 -->
@@ -495,6 +602,42 @@ function retryCategories() {
         </div>
       </div>
 
+      <!-- 筛选行：分组与选项全部来自后端 Filters 端点（类型/年份/分级/标签，
+           哪组有值才渲染哪组），多选透传 getItems；与分类/排序/分页共存 -->
+      <div v-if="filterGroups.length" class="lb-filterrow">
+        <div v-for="g in filterGroups" :key="g.key" class="lb-filterwrap">
+          <button
+            type="button"
+            class="lb-filterbtn"
+            :class="{ 'lb-filterbtn--on': g.selected.length > 0 }"
+            :aria-expanded="openFilterKey === g.key"
+            @click="openFilterKey = openFilterKey === g.key ? '' : g.key"
+          >
+            <span>{{ g.label }}<template v-if="g.selected.length"> · {{ g.selected.length }}</template></span>
+            <ArrowDown :size="13" aria-hidden="true" />
+          </button>
+          <template v-if="openFilterKey === g.key">
+            <div class="lb-sortveil" @click="openFilterKey = ''"></div>
+            <div class="lb-filtermenu" role="menu" :aria-label="g.label">
+              <button
+                v-for="opt in g.options"
+                :key="opt"
+                type="button"
+                class="lb-sortmenu__item"
+                :class="{ 'lb-sortmenu__item--on': g.selected.includes(opt) }"
+                @click="toggleFilter(g.key, opt)"
+              >
+                <span>{{ opt }}</span>
+                <Check v-if="g.selected.includes(opt)" :size="15" aria-hidden="true" />
+              </button>
+            </div>
+          </template>
+        </div>
+        <button v-if="activeFilterCount" type="button" class="lb-filterclear" @click="clearFilters">
+          清除筛选
+        </button>
+      </div>
+
       <!-- 计数行是结论性文案：首屏数据未到位（loading 且无任何缓存条目）时不渲染，
            不许先露出「全部 · 0 部」再跳成真实数字（2026-11-15 通用口径） -->
       <p v-if="!loading || items.length" class="lb-count">{{ activeCatName }} · {{ total }} 部</p>
@@ -507,7 +650,13 @@ function retryCategories() {
         {{ heading }}没加载出来：{{ error }}<br />
         <button type="button" class="lb-retry" @click="load(true)">重试</button>
       </div>
-      <div v-else-if="items.length === 0" class="lb-empty">这个分类下暂时没有{{ heading }}</div>
+      <div v-else-if="items.length === 0" class="lb-empty">
+        <template v-if="activeFilterCount">
+          没有符合筛选条件的{{ heading }}<br />
+          <button type="button" class="lb-retry" @click="clearFilters">清除筛选</button>
+        </template>
+        <template v-else>这个分类下暂时没有{{ heading }}</template>
+      </div>
       <template v-else>
         <div class="lb-grid">
           <StreamPosterCard
@@ -682,6 +831,79 @@ function retryCategories() {
   height: 1px;
   margin: 5px 8px;
   background: var(--uhd-s-border);
+}
+/* 追新日历入口：页头右侧小胶囊，与排序胶囊同口径 */
+.lb-cal-link {
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 20px;
+  border: 1px solid var(--uhd-s-pill-border);
+  background: var(--uhd-s-pill-bg);
+  color: var(--uhd-s-text);
+  font-size: 14px;
+  font-weight: var(--uhd-fw-semibold);
+  text-decoration: none;
+  white-space: nowrap;
+}
+/* 筛选行：分组胶囊与排序胶囊同口径，菜单复用排序菜单项样式 */
+.lb-filterrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.lb-filterwrap {
+  position: relative;
+}
+.lb-filterbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 18px;
+  border: 1px solid var(--uhd-s-pill-border);
+  background: var(--uhd-s-pill-bg);
+  color: var(--uhd-s-text-2);
+  font-size: 13.5px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.lb-filterbtn--on {
+  background: var(--uhd-s-pill-active-bg);
+  color: var(--uhd-s-pill-active-text);
+  font-weight: var(--uhd-fw-semibold);
+  box-shadow: var(--uhd-shadow-seg);
+}
+.lb-filtermenu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 41;
+  min-width: 168px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 16px;
+  border: 1px solid var(--uhd-s-pill-border);
+  background: var(--uhd-s-pill-active-bg);
+  box-shadow: var(--uhd-s-shadow-pill);
+}
+.lb-filterclear {
+  height: 36px;
+  padding: 0 6px;
+  border: none;
+  background: transparent;
+  color: var(--uhd-s-text-2);
+  font-size: 13.5px;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .lb-count {
   margin: 18px 0 0;

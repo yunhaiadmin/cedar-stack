@@ -620,7 +620,9 @@ async function loadAll() {
   loading.value = true
   loadError.value = false
   const [pls, subs, cpCfg, wal] = await Promise.allSettled([
-    paymentApi.plans(),
+    // realm_id=0 拉全部服套餐：线路分组胶囊靠返回的 realm_name 分组，
+    // 不传参后端只回当前服、永远只有一组，胶囊永不渲染（2026-11-15 接线）
+    paymentApi.plans(0),
     subscriptionApi.getMine(),
     couponApi.config(),
     walletApi.get(),
