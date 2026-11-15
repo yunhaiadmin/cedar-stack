@@ -215,8 +215,32 @@ def _resolve_plan(db: Session, realm_id: Optional[int] = None):
     return plan
 
 
+def _resolve_specified_plan(db: Session, plan_id: int, target: int):
+    """调用方指定的套餐（福利试用专属套餐等）：可用才返回，否则 None
+
+    只认「套餐存在且归属与目标服一致（未标注服的套餐视为全服通用）」，
+    与 ``_resolve_plan`` 对 ``code_default_plan_id`` 的归属校验同口径；
+    不要求 ``is_active``——指定场景用的正是隐藏套餐（如试用专属套餐
+    不在商店展示）。不存在 / 跨服都记 warning 并回退现行解析，绝不把
+    别的服的套餐开到本服，也绝不让发放因此失败。
+    """
+    plan = db.query(models.SubscriptionPlan).filter(
+        models.SubscriptionPlan.id == int(plan_id)
+    ).first()
+    if plan is None:
+        logger.warning("指定套餐不存在，回退默认套餐解析: plan_id=%s", plan_id)
+        return None
+    if plan.realm_id is not None and int(plan.realm_id) != int(target):
+        logger.warning(
+            "指定套餐不属于目标服，回退默认套餐解析: plan_id=%s plan_realm=%s target_realm=%s",
+            plan_id, plan.realm_id, target)
+        return None
+    return plan
+
+
 def grant_membership_days(db: Session, user: models.WebUser, days: int,
-                          realm_id: Optional[int] = None) -> models.UserSubscription:
+                          realm_id: Optional[int] = None,
+                          plan_id: Optional[int] = None) -> models.UserSubscription:
     """按天数开通或延长**某个服**的会员，返回生效中的订阅
 
     会员是一个服一个：续期只在**同一个服**里叠加（乙服的续期码不该延长甲服的会员），
@@ -224,6 +248,11 @@ def grant_membership_days(db: Session, user: models.WebUser, days: int,
     写空的话这张卡码开的会员在 EA 上根本放不了。
 
     ``realm_id`` 为空时归当前服（``realms.claim``）：单服部署下就是原来那个唯一的服。
+
+    ``plan_id`` 为空时套餐走 ``_resolve_plan`` 现行口径（一字不变）；
+    指定时只影响**新建**订阅建在哪个套餐上（已有生效订阅仍是叠加天数、
+    套餐不变），且指定套餐不存在 / 不属于目标服时回退现行口径并发放
+    照常（见 ``_resolve_specified_plan``）。
 
     `with_for_update()` 在 PostgreSQL 下锁住该订阅行，避免同一用户并发叠加天数时
     两边读到同一到期时间、后提交的覆盖前者（丢天数）；SQLite 忽略该子句。
@@ -255,7 +284,9 @@ def grant_membership_days(db: Session, user: models.WebUser, days: int,
         sub.end_date = sub.end_date + timedelta(days=total)
         sub.status = "active"
     else:
-        plan = _resolve_plan(db, target)
+        plan = _resolve_specified_plan(db, plan_id, target) if plan_id else None
+        if plan is None:
+            plan = _resolve_plan(db, target)
         sub = models.UserSubscription(
             user_id=user.id, plan_id=plan.id, start_date=now,
             end_date=now + timedelta(days=total), status="active",

@@ -153,6 +153,7 @@ class TrialPolicyUpdate(BaseModel):
     invite_trial_days: int | None = None
     invite_welfare_monthly_limit: int | None = None
     invite_welfare_min_paid_fen: int | None = None
+    invite_trial_plan_id: int | None = None
 
 
 @router.get("/trial-policy")

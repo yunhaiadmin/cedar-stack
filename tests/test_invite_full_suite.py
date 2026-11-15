@@ -26,7 +26,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from starlette.requests import Request
 
-from backend import invite_rebate, invite_trial, models, wallet
+from backend import entitlements, invite_rebate, invite_trial, models, wallet
+from backend import traffic_quota
 from backend.api import economy, emby_portal
 from backend.api import invitation as invitation_api
 from backend.api import admin_invitation as admin_invitation_api
@@ -136,7 +137,7 @@ def test_rebate_config_defaults_are_tiered(db):
 def test_trial_config_defaults(db):
     cfg = invite_trial.config(db)
     assert cfg == {"enabled": True, "days": 0, "monthly_limit": 2,
-                   "min_paid_fen": 1000}
+                   "min_paid_fen": 1000, "plan_id": 0}
     # 出厂不实际发放（天数 0）
     assert invite_trial.policy_payload(db)["active"] is False
 
@@ -567,3 +568,121 @@ def test_admin_trial_policy_roundtrip(db):
     assert out["policy"]["active"] is True
     got = admin_invitation_api.get_trial_policy(admin, db)
     assert got["policy"]["days"] == 14
+
+
+# ==================== 福利试用专属套餐（invite_trial_plan_id） ====================
+
+GB = 1024 ** 3
+
+
+def _trial_plan(db, name="福利试用", realm_id=1, traffic_bytes=30 * GB):
+    """试用专属套餐：隐藏（不在商店展示）、权益声明 30G 月流量。"""
+    plan = models.SubscriptionPlan(
+        name=name, price=Decimal("0"), duration_days=3, realm_id=realm_id,
+        is_active=False, entitlements={"monthly_traffic_bytes": traffic_bytes})
+    db.add(plan)
+    db.commit()
+    db.refresh(plan)
+    return plan
+
+
+def _trial_sub(db, invitee):
+    return db.query(models.UserSubscription).filter_by(user_id=invitee.id).first()
+
+
+def test_trial_plan_id_write_policy(db):
+    # 出厂不指定（0 = 沿用现行套餐口径）
+    assert invite_trial.config(db)["plan_id"] == 0
+    # 合法值写入并回读
+    applied = invite_trial.write_policy(db, {"invite_trial_plan_id": 7})
+    db.commit()
+    assert applied == {"invite_trial_plan_id": "7"}
+    assert invite_trial.config(db)["plan_id"] == 7
+    # 非数字：不应用、保持原值
+    applied = invite_trial.write_policy(db, {"invite_trial_plan_id": "abc"})
+    db.commit()
+    assert applied == {}
+    assert invite_trial.config(db)["plan_id"] == 7
+    # 负数：钳到 0（与同文件其余键的钳制口径一致）
+    applied = invite_trial.write_policy(db, {"invite_trial_plan_id": -3})
+    db.commit()
+    assert applied == {"invite_trial_plan_id": "0"}
+    assert invite_trial.config(db)["plan_id"] == 0
+
+
+def test_trial_granted_on_specified_plan(db):
+    _set(db, "invite_trial_days", "3")
+    trial_plan = _trial_plan(db)
+    _set(db, "invite_trial_plan_id", str(trial_plan.id))
+    inviter = _eligible_inviter(db, "inviter-plan")
+    invitee = _user(db, "invitee-plan")
+    code = _code(db, inviter, "CODEPLAN")
+
+    assert invitation_api.apply_invitation(db, invitee, code.code)
+    db.commit()
+
+    grant = db.query(models.InviteTrialGrant).filter_by(invitee_id=invitee.id).one()
+    assert grant.days == 3
+    sub = _trial_sub(db, invitee)
+    assert sub is not None
+    # 试用订阅建在指定套餐上，而不是现行口径解析出的默认套餐
+    assert sub.plan_id == trial_plan.id
+    assert grant.realm_id == sub.realm_id
+    # 流量额度单口读到的就是试用套餐声明的 30G
+    entitlements.invalidate()
+    assert traffic_quota.quota_bytes_for(db, invitee.id) == 30 * GB
+
+
+def test_trial_unspecified_plan_keeps_current_behavior(db):
+    _set(db, "invite_trial_days", "7")
+    inviter = _eligible_inviter(db, "inviter-def")
+    invitee = _user(db, "invitee-def")
+    code = _code(db, inviter, "CODEDEFL")
+
+    assert invitation_api.apply_invitation(db, invitee, code.code)
+    db.commit()
+
+    default_plan = db.query(models.SubscriptionPlan).filter_by(name="测试套餐").one()
+    sub = _trial_sub(db, invitee)
+    assert sub is not None
+    assert sub.plan_id == default_plan.id
+
+
+def test_trial_plan_id_missing_plan_falls_back(db):
+    _set(db, "invite_trial_days", "7")
+    _set(db, "invite_trial_plan_id", "999999")
+    inviter = _eligible_inviter(db, "inviter-miss")
+    invitee = _user(db, "invitee-miss")
+    code = _code(db, inviter, "CODEMISS")
+
+    # 指定套餐不存在：回退现行口径发放、不许抛错（注册不能被拖垮）
+    assert invitation_api.apply_invitation(db, invitee, code.code)
+    db.commit()
+
+    assert db.query(models.InviteTrialGrant).filter_by(invitee_id=invitee.id).count() == 1
+    default_plan = db.query(models.SubscriptionPlan).filter_by(name="测试套餐").one()
+    sub = _trial_sub(db, invitee)
+    assert sub is not None
+    assert sub.plan_id == default_plan.id
+
+
+def test_trial_plan_id_cross_realm_falls_back(db):
+    db.add(models.ServerRealm(id=2, name="乙服", slug="sub", is_active=True))
+    db.commit()
+    _set(db, "invite_trial_days", "7")
+    foreign = _trial_plan(db, name="乙服试用", realm_id=2)
+    _set(db, "invite_trial_plan_id", str(foreign.id))
+    inviter = _eligible_inviter(db, "inviter-xrealm")
+    invitee = _user(db, "invitee-xrealm")
+    code = _code(db, inviter, "CODEXRLM")
+
+    # 指定套餐属于别的服：不许把乙服套餐开到甲服，回退本服默认套餐
+    assert invitation_api.apply_invitation(db, invitee, code.code)
+    db.commit()
+
+    assert db.query(models.InviteTrialGrant).filter_by(invitee_id=invitee.id).count() == 1
+    default_plan = db.query(models.SubscriptionPlan).filter_by(name="测试套餐").one()
+    sub = _trial_sub(db, invitee)
+    assert sub is not None
+    assert sub.plan_id == default_plan.id
+    assert sub.realm_id == 1
