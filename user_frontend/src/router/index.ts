@@ -73,6 +73,14 @@ const router = createRouter({
             component: () => import('@/views/panel/LibraryBrowseView.vue'),
             meta: { title: '剧集', requiresAuth: true },
           },
+          // 追新日历（2026-11-15 接线）：后端 /api/user/emby/calendar 早已实现，
+          // 此前前端无入口；入口在电影/剧集分类页页头右上。
+          {
+            path: '/library/calendar',
+            name: 'library-calendar',
+            component: () => import('@/views/panel/ChaseCalendarView.vue'),
+            meta: { title: '追新日历', requiresAuth: true },
+          },
           {
             path: '/search',
             name: 'search',
