@@ -379,9 +379,9 @@ onMounted(() => {
    与友站截图的深色形态同值（卡 #17181a / 输入 #242526 / 边 #26262a）。 */
 .wallet-page { padding-bottom: 40px; }
 
-.w-title { margin: 6px 0 0; font-size: 34px; font-weight: 800; letter-spacing: -0.01em; color: var(--ink); }
+.w-title { margin: 6px 0 0; font-size: 30px; font-weight: 800; letter-spacing: -0.01em; color: var(--ink); }
 
-.w-balance-label { margin: 30px 0 0; font-size: 15px; color: var(--ink2); }
+.w-balance-label { margin: 26px 0 0; font-size: 13.5px; color: var(--ink2); }
 .w-balance-row {
   display: flex; align-items: center; justify-content: space-between;
   gap: 16px; margin-top: 6px;
@@ -389,44 +389,48 @@ onMounted(() => {
 .w-balance {
   margin: 0;
   font-family: var(--uhd-font-display);
-  font-size: 44px;
+  font-size: 40px;
   font-weight: var(--uhd-fw-black, 900);
   letter-spacing: -0.02em;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
+/* 充值钮：小号彩虹描边玻璃胶囊（.btn-primary 提供彩虹边＋玻璃配方，
+   这里只收尺寸，照友站钱包帧的小号量级） */
 .w-recharge {
   flex: none;
-  height: 44px;
-  padding: 0 24px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 18px;
   border-radius: 999px;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
   cursor: pointer;
 }
 .w-recharge:active { transform: scale(0.96); }
-.w-alert { margin: 12px 0 0; font-size: 13.5px; color: #f87171; }
+.w-alert { margin: 12px 0 0; font-size: 12.5px; color: #f87171; }
 html[data-theme='light'] .w-alert { color: #dc2626; }
 
 /* 分段页签：深色胶囊容器 + 选中项浅底（照截图） */
 .w-seg {
-  margin-top: 30px;
+  margin-top: 26px;
   display: inline-flex;
   gap: 4px;
-  padding: 5px;
+  padding: 4px;
   border-radius: 999px;
   background: var(--paper-card);
   border: 1px solid var(--line);
 }
 .w-seg__btn {
-  height: 42px;
-  padding: 0 20px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0 17px;
   border-radius: 999px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--ink2);
   font-family: inherit;
-  font-size: 15px;
+  font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
 }
@@ -440,14 +444,14 @@ html[data-theme='light'] .w-seg__btn--on {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 1px 3px rgba(20, 22, 28, 0.12);
 }
 
-.w-tab { margin-top: 30px; display: flex; flex-direction: column; gap: 36px; }
-.w-sec-title { margin: 0 0 14px; font-size: 20px; font-weight: 700; color: var(--ink); }
+.w-tab { margin-top: 26px; display: flex; flex-direction: column; gap: 32px; }
+.w-sec-title { margin: 0 0 12px; font-size: 18px; font-weight: 700; color: var(--ink); }
 .w-sec-title--rule { border-bottom: 1px solid var(--line); padding-bottom: 12px; }
 .w-sec-title--inhead { margin: 0; }
-.w-note { margin: 10px 0 0; font-size: 13.5px; color: var(--ink2); }
-.w-err { margin: 10px 0 0; font-size: 13.5px; color: #f87171; }
+.w-note { margin: 10px 0 0; font-size: 12.5px; color: var(--ink2); }
+.w-err { margin: 10px 0 0; font-size: 12.5px; color: #f87171; }
 html[data-theme='light'] .w-err { color: #dc2626; }
-.w-empty { margin: 16px 0 0; font-size: 14px; color: var(--ink2); }
+.w-empty { margin: 16px 0 0; font-size: 13px; color: var(--ink2); }
 .w-skeleton { height: 96px; margin-top: 14px; border-radius: 14px; background: var(--paper-card); opacity: 0.6; }
 
 /* 使用兑换码 */
@@ -455,24 +459,24 @@ html[data-theme='light'] .w-err { color: #dc2626; }
 .w-redeem-input {
   flex: 1;
   min-width: 0;
-  height: 52px;
-  padding: 0 20px;
-  border-radius: 26px;
+  height: 46px;
+  padding: 0 18px;
+  border-radius: 23px;
   background: var(--paper2);
   border: 1px solid var(--line);
   color: var(--ink);
   font-family: inherit;
-  font-size: 15.5px;
+  font-size: 14px;
   outline: none;
 }
 .w-redeem-input::placeholder { color: var(--ink2); }
 .w-redeem-input:focus { border-color: var(--line-deep, var(--line)); }
 .w-redeem-btn {
   flex: none;
-  height: 52px;
-  padding: 0 26px;
-  border-radius: 26px;
-  font-size: 15.5px;
+  height: 46px;
+  padding: 0 22px;
+  border-radius: 23px;
+  font-size: 14px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -480,18 +484,19 @@ html[data-theme='light'] .w-err { color: #dc2626; }
 /* 生成兑换码行 */
 .w-gen-row { display: flex; align-items: center; gap: 14px; }
 .w-gen-text { flex: 1; min-width: 0; }
-.w-gen-name { margin: 0; font-size: 17px; font-weight: 700; color: var(--ink); }
-.w-gen-sub { margin: 5px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--ink2); }
+.w-gen-name { margin: 0; font-size: 15.5px; font-weight: 700; color: var(--ink); }
+.w-gen-sub { margin: 5px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--ink2); }
 .w-outline-btn {
   flex: none;
-  height: 40px;
-  padding: 0 20px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 17px;
   border-radius: 999px;
   border: 1.5px solid var(--line-deep, var(--line));
   background: transparent;
   color: var(--ink);
   font-family: inherit;
-  font-size: 14.5px;
+  font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
 }
@@ -520,14 +525,15 @@ html[data-theme='light'] .w-err { color: #dc2626; }
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 40px;
-  padding: 0 14px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 13px;
   border-radius: 999px;
   background: var(--paper-card);
   border: 1px solid var(--line);
   color: var(--ink);
   font-family: inherit;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
 }
@@ -602,7 +608,7 @@ html[data-theme='light'] .w-err { color: #dc2626; }
   align-items: flex-end;
   gap: 5px;
 }
-.w-code-amount { font-size: 15.5px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+.w-code-amount { font-size: 14px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
 .w-pill {
   font-size: 11.5px;
   font-weight: 700;
@@ -638,7 +644,7 @@ html[data-theme='light'] .w-pill--expired { background: #fdecec; color: #dc2626;
 }
 .w-led-row:first-child { border-top: none; }
 .w-led-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.w-led-main b { font-size: 14.5px; font-weight: 600; color: var(--ink); }
+.w-led-main b { font-size: 13.5px; font-weight: 600; color: var(--ink); }
 .w-led-note {
   font-size: 12.5px;
   color: var(--ink2);
@@ -649,7 +655,7 @@ html[data-theme='light'] .w-pill--expired { background: #fdecec; color: #dc2626;
 .w-led-time { font-size: 12px; color: var(--ink2); }
 .w-led-amount {
   flex: none;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
@@ -658,8 +664,9 @@ html[data-theme='light'] .w-pill--expired { background: #fdecec; color: #dc2626;
 .w-more {
   display: block;
   margin: 18px auto 0;
-  height: 40px;
-  padding: 0 22px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 20px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--paper-card);

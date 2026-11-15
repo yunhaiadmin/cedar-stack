@@ -37,7 +37,7 @@ import { RouterLink } from 'vue-router'
 .utb-pill {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   /* 中和全局 mobile.css 的 a{min-height:44px}：胶囊高由 --utb-pill-h
      令牌钉死（40），账户区没有片库面的作用域中和、会被撑到 44 */
   min-height: 0;
@@ -54,7 +54,7 @@ import { RouterLink } from 'vue-router'
     inset 0 1px 0 rgba(255, 255, 255, 0.35),
     var(--utb-shadow);
   color: var(--utb-pill-fg);
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: var(--uhd-fw-semibold);
   font-family: var(--uhd-font-sans);
   text-decoration: none;
