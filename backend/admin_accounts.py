@@ -89,6 +89,9 @@ def upsert_admin(db, username: str, password: str | None = None,
             password_hash=hash_password(applied),
             is_staff=True,
             is_active=True,
+            # 公开 ID（2026-11-15）：建号即分配、永不变更（唯一实现
+            # 在 backend.models.new_public_id，查库防碰撞）
+            public_id=models.new_public_id(db),
             # 服务器本机建的号（安装向导 / create_admin.py）= 站长：显式 super。
             # 空角色现在按只读处理（安全修复 S1），所以必须写明。
             admin_role="super",

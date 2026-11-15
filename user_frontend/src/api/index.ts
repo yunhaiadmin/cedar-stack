@@ -195,6 +195,9 @@ export interface WhitelistIdentity {
 
 export interface AuthUser {
   id: number
+  /** 公开 ID（2026-11-15）：用户侧展示/复制用它，不再露数字 id；
+   * 存量未回填或老会话未刷新资料时缺失，展示侧回落不显示 */
+  public_id?: string | null
   username: string
   email?: string | null
   emby_username?: string | null

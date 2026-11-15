@@ -330,14 +330,16 @@ const subStore = useSubscriptionStore()
 const subsLoaded = computed(() => subStore.loaded)
 const activeSub = computed(() => subStore.activeSub)
 const accountCard = ref<AccountCard | null>(null)
-/** 会员卡文案：套餐名 / 用户名·ID / 状态（全部真实数据） */
+/** 会员卡文案：套餐名 / 用户名·公开 ID / 状态（全部真实数据；
+ * 公开 ID 缺失时只剩用户名，不许拿数字 id 兜底） */
 const memberPlanName = computed(() => {
   if (isFreeRealm.value) return '公益资格'
   return activeSub.value?.plan_name ?? '未开通'
 })
-const memberUserLine = computed(
-  () => `${displayName.value} · ID ${userStore.user?.id ?? ''}`,
-)
+const memberUserLine = computed(() => {
+  const pid = userStore.user?.public_id
+  return pid ? `${displayName.value} · ID ${pid}` : displayName.value
+})
 const memberStatusText = computed(() => {
   if (whitelistIdentity.value) return '白名单'
   if (isFreeRealm.value) return '生效中'
