@@ -56,14 +56,12 @@ export const useUserStore = defineStore('user', () => {
     refreshEmbyBaseUrl()
   }
 
-  async function login(username: string, password: string, captchaToken?: string, totpCode?: string) {
+  async function login(username: string, password: string, totpCode?: string) {
     loading.value = true
     try {
-      // captcha_token：站点开启人机验证时由挂件生成（未开启时后端不校验）
       // totp_code：账号启用了动态验证码时必填（后端对未启用账号忽略此字段）
       const response = await authApi.login({
         username, password,
-        captcha_token: captchaToken || undefined,
         totp_code: totpCode || undefined,
       })
       _persist(response)
@@ -106,7 +104,6 @@ export const useUserStore = defineStore('user', () => {
     password: string,
     email?: string,
     invitationCode?: string,
-    captchaToken?: string,
   ) {
     loading.value = true
     try {
@@ -115,7 +112,6 @@ export const useUserStore = defineStore('user', () => {
         password,
         email,
         invitation_code: invitationCode || undefined,
-        captcha_token: captchaToken || undefined,
       })
       _persist(response)
       return true

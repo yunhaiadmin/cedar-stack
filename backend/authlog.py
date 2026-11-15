@@ -23,7 +23,6 @@ REASONS = {
     "device_limit": "设备数超限",
     "player_blacklisted": "播放器黑名单拦截",
     "decoy_code": "诱饵码触发",
-    "captcha_failed": "人机验证失败",
     "password_change": "修改密码",
     "password_change_failed": "修改密码失败",
     "password_reset_request": "找回密码申请",

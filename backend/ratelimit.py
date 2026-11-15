@@ -102,9 +102,9 @@ API_RATE_LIMITS = [
     ("/api/user/auth/login", 10, 10),   # 用户登录：每分钟 10 次/IP（防暴力破解）
     ("/api/admin/auth/login", 10, 10),  # 管理员登录：每分钟 10 次/IP（防暴力破解）
     # 公开/认证前置路径拆独立桶（中间件的计数键含命中的前缀，拆条目即拆桶）：
-    # 注册页一打开就要打 captcha/register-config/branding 等一串接口，混在
+    # 注册页一打开就要打 register-config/branding 等一串接口，混在
     # /api/ 通用桶里时，任何来源的流量高峰都会把注册链路连坐限流（429）。
-    ("/api/user/auth/", 60, 300),       # 认证前置：captcha/注册配置/注册/刷新令牌
+    ("/api/user/auth/", 60, 300),       # 认证前置：注册配置/注册/刷新令牌
     ("/api/site/", 120, 600),           # 站点公开信息：branding/海报等每次页面加载都调
     ("/api/admin/", 60, 300),           # 管理接口：未认证 60，认证 300
     ("/api/", 120, 600),               # 普通 API：未认证 120，认证 600

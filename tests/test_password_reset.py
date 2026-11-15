@@ -4,7 +4,8 @@
 口径：
 - 防枚举：查无此人 / 无邮箱 / 已发送三种情况响应一字不差（200＋同一文案）；
 - 令牌只存 SHA256，30 分钟过期、单次使用，重新申请作废旧令牌；
-- 人机验证复用登录那道闸（captcha.guard，action=login 的保护开关）；
+- 人机验证已于 2026-11-15 整体摘除：申请不带任何验证令牌照常走完，
+  存量 captcha_* 配置行残留也不许再拦人（摘除围栏见 test_captcha_scope.py）；
 - 改密副作用与 change_password 共用 _apply_password_change：门户哈希 +
   Emby 播放密码同步 + token_version+1 + Emby 客户端令牌全吊销；
 - 限流：申请 IP 5/小时、账号 3/小时；确认 IP 10/小时。
@@ -30,7 +31,6 @@ from backend import models, ratelimit
 from backend.api import emby_portal
 from backend.database import get_db
 from backend.emby_server import models as emby_models
-from backend.integrations import captcha
 from backend.integrations import mail as integrations_mail
 from backend.security import hash_password, verify_password
 
@@ -325,31 +325,28 @@ def test_confirm_ip_rate_limit(db):
     assert resp.status_code == 429
 
 
-def test_captcha_required_when_login_protection_on(db, monkeypatch, mail_channel):
+def test_reset_works_without_token_despite_legacy_captcha_config(db, mail_channel):
+    """人机验证摘除后：存量 captcha_* 配置行（生产待 parent 清理）不许再拦人。
+
+    摘除前这里断言的是「开了登录保护时缺令牌被拒」（与登录同口径）；
+    2026-11-15 验证整体摘除后翻转：不带任何令牌、库里还躺着旧配置行，
+    申请也必须照常走完（建令牌＋发信）。
+    """
     for k, v in {
         "captcha_provider": "turnstile",
         "captcha_site_key": "site-key",
         "captcha_secret_key": "secret-key",
+        "captcha_protect_login": "true",
+        "captcha_protect_admin_login": "true",
     }.items():
         db.add(models.SystemConfig(key=k, value=v))
     db.commit()
 
-    def fake_verify(db_, cfg, token, ip=""):
-        if token == "good-token":
-            return True, ""
-        if not (token or "").strip():
-            return False, "请完成人机验证"
-        return False, "人机验证失败（invalid-input-response）"
-
-    monkeypatch.setattr(captcha, "_verify", fake_verify)
     user = _user(db)
     client = _client(db)
 
     resp = _request_reset(client, user.username)
-    assert resp.status_code == 400  # 缺令牌被拒（与登录同口径）
-    assert db.query(models.PasswordResetToken).count() == 0
-
-    resp = _request_reset(client, user.username, captcha_token="good-token")
     assert resp.status_code == 200
     assert resp.json() == GENERIC
     assert db.query(models.PasswordResetToken).filter_by(user_id=user.id).count() == 1
+    assert len(mail_channel.sent) == 1

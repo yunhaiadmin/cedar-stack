@@ -64,8 +64,8 @@ import type {
 } from '@/types'
 
 // ==================== 认证 =============
-/** 管理员登录；站点开了「保护管理后台登录」时必须带人机验证令牌 */
-export const login = (data: { username: string; password: string; captcha_token?: string }) =>
+/** 管理员登录 */
+export const login = (data: { username: string; password: string }) =>
   post<LoginResponse>('/auth/login', data)
 
 // ==================== 首次运行向导 =============

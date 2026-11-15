@@ -91,7 +91,7 @@ from backend.api.admin_license import admin_license_router
 from backend.api.admin_pool import admin_pool_router
 from backend.api.admin_teams import admin_teams_router
 from backend.api.pool_admin import pool_admin_router
-# v2.19.0：外部服务能力中心（代理 / 人机验证 / 邮件 / Telegram / AI / IP 归属地）。
+# v2.19.0：外部服务能力中心（代理 / 邮件 / Telegram / IP 归属地）。
 # 只提供能力，密钥一律由管理员自己填。
 from backend.api.capabilities_admin import capabilities_router
 # 站点品牌公开端点（前端启动时读一次，决定站名 / 主题色 / 标题）

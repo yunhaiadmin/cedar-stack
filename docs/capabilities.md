@@ -1,6 +1,6 @@
 # 外部服务能力中心
 
-后台「系统设置」顶部是一组**能力卡片**：站点与品牌、网络代理、人机验证、邮件与模板、
+后台「系统设置」顶部是一组**能力卡片**：站点与品牌、网络代理、邮件与模板、
 Telegram 通知、AI 模型设置、IP 与地理位置。它们有一个共同口径：
 
 > **面板只提供能力，凭据全部由你自己填。**
@@ -57,23 +57,11 @@ Telegram 通知、AI 模型设置、IP 与地理位置。它们有一个共同�
   相对路径，`javascript:` / `data:` 一律忽略并回落到内置图标。
 - 改完刷新即生效，**不需要重新构建前端**。
 
-## 人机验证
+## 人机验证（已摘除）
 
-为**用户端登录 / 注册 / 网站签到**与**管理后台登录**加一道人机验证，可选 Cloudflare Turnstile、
-Google reCAPTCHA、hCaptcha。各动作分别开关（字段表里的 `captcha_protect_<动作>`）。
-
-- 站点密钥是公开信息，由 `/api/user/auth/captcha` 下发给前端挂件；私钥只留在后端。
-- 各动作共用同一个守卫（`captcha.guard`）：校验失败一律 400 + 一条带用户名的
-  `人机验证失败` 安全日志——各处各写一遍迟早有一处漏掉「失败要留痕」。
-- 签到只保护网站签到端点（`POST /api/user/economy/checkin`）；TG 机器人签到不走该端点、
-  不受影响。播放器 / Emby 程序化登录同样不在保护范围内（它们做不了人机验证）。
-- **没配置 = 直接放行**：不填密钥不会把站点锁在门外，后台只提示「未配置」。
-- 各动作可以分别开关（登录 / 注册 / 签到的保护开关走 env，见 env.example；后台登录在面板里）。
-- 校验失败一律 400，并把提供方返回的 `error-codes` 带上（例如 `invalid-input-response`），
-  同时在「登录与安全日志」里落一条 `人机验证失败`——暴力破解会在这里留下痕迹。
-- 令牌是一次性的：前端提交失败后会自动取一个新的，用户不会遇到「第二次点击莫名失败」。
-- **测试**：用一个必然无效的 token 打一次 `siteverify`。返回 `invalid-input-response` 说明**密钥有效、
-  域名可达**；返回 `invalid-input-secret` 才是密钥错了。这是不依赖真实用户的前提下最直接的验证。
+2026-11-15 按用户令整体摘除：`backend/integrations/captcha.py`、`/api/user/auth/captcha`
+端点、登录 / 注册 / 找回密码申请 / 管理后台登录四处守卫与双端挂件均已删除，登录类接口
+只保留限流与防枚举。生产库里残留的 `captcha_*` 配置行由部署后统一清理，代码不再读取。
 
 ## 邮件与模板（SMTP）
 
@@ -137,8 +125,6 @@ Google reCAPTCHA、hCaptcha。各动作分别开关（字段表里的 `captcha_p
 | `admin_frontend/src/views/Settings.vue` | 能力卡片与按字段表渲染的配置抽屉 |
 | `user_frontend/src/composables/useBranding.ts` | 用户端品牌落地（主题色令牌 / 标题 / meta） |
 | `admin_frontend/src/composables/branding.ts` | 管理端品牌落地（`--primary*` 令牌 / 标题） |
-| `user_frontend/src/components/ui/CaptchaChallenge.vue` | 用户端登录/注册的人机验证挂件 |
-| `admin_frontend/src/components/CaptchaChallenge.vue` | 后台登录的人机验证挂件 |
 | `scripts/smoke_test_capabilities.py` | 114 项断言：阀门、密钥不外泄、保存即生效、测试是真在测、配额并发 |
 
 ### 两条实现约定（都是拿真实故障换来的）
@@ -146,7 +132,7 @@ Google reCAPTCHA、hCaptcha。各动作分别开关（字段表里的 `captcha_p
 1. **端点写同步 `def`**：能力测试会真发网络请求 / SMTP 投递，AI 问答是阻塞 httpx（默认超时
    60 秒）。这些放进 `async def` 就是把整个事件循环按住——播放会跟着卡。FastAPI 会把同步端点
    丢进线程池，所以这里一律用 `def`（与 v2.13 把协议路由移出事件循环同一做法）。
-2. **读配置走 `store.read_values`**：人机验证挂件一次要用 5 个键、AI 问答 4 个、能力总览 29 个。
+2. **读配置走 `store.read_values`**：AI 问答一次要用 4 个键、能力总览 29 个。
    逐键查询意味着每个请求都有 4~29 次往返，批量之后各是 1 次。
 
 ### 加一个新能力要写什么
