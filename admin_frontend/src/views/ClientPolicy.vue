@@ -41,8 +41,7 @@ const isSuper = computed(() => auth.admin?.is_super !== false)
 const loading = ref(false)
 /** 主策略读不到（整页没法展示）时显示错误态 */
 const loadError = ref(false)
-const savingPolicy = ref(false)
-const savingOps = ref(false)
+const savingAll = ref(false)
 
 const policy = ref<PlaybackPolicy>({
   drive_direct_play_enabled: true,
@@ -54,6 +53,35 @@ const runtime = ref<PlaybackRuntime | null>(null)
 const ops = ref({ allow_download: 'true', device_limit_per_user: '0', device_limit_auto_evict: 'false', login_log_retention_days: '' })
 /** 下载与设备配置没读到：表单里不是生效值，禁止保存（否则会用空值覆盖线上配置） */
 const opsError = ref(false)
+
+/**
+ * 保存快照（对齐 Settings 样板：统一保存条＋未保存提示，不再每组各放一个保存钮）。
+ * load 完成后把两组值各存一份快照，脏判定与改动计数都跟快照比；
+ * 哪组保存成功就只刷新哪组的快照，失败的那组保持未保存状态。
+ */
+const savedOps = ref<typeof ops.value | null>(null)
+const savedPolicy = ref<PlaybackPolicy | null>(null)
+
+function snapshot() {
+  savedOps.value = { ...ops.value }
+  savedPolicy.value = { ...policy.value }
+}
+
+function countDirty(cur: object, saved: object | null): number {
+  if (!saved) return 0
+  const c = cur as Record<string, unknown>
+  const s = saved as Record<string, unknown>
+  let n = 0
+  for (const k of Object.keys(c)) if (c[k] !== s[k]) n++
+  return n
+}
+
+const opsDirty = computed(() => countDirty(ops.value, savedOps.value) > 0)
+const policyDirty = computed(() => countDirty(policy.value, savedPolicy.value) > 0)
+const dirtyCount = computed(
+  () => countDirty(ops.value, savedOps.value) + countDirty(policy.value, savedPolicy.value),
+)
+const anyDirty = computed(() => dirtyCount.value > 0)
 
 
 const PLAYBACK_NODE_LABEL: Record<string, string> = {
@@ -89,6 +117,8 @@ async function load() {
     /* 拦截器已提示；运行态都没拿到说明主策略没读到 */
     loadError.value = !runtime.value
   } finally {
+    /* 以本次读到的（或保留的）值作保存快照，脏判定从这一刻起算 */
+    snapshot()
     loading.value = false
   }
 }
@@ -127,30 +157,51 @@ function riskItemName(it: PlayRiskSnapshot['top_items'][number]) {
 /** 本机文件整文件直发不走本服务响应体，流量口径不包含它 */
 const lineBytesHint = '流量 = 本进程经手的出流量（不含整文件直发）'
 
-async function savePolicy() {
-  savingPolicy.value = true
+async function savePolicyGroup(): Promise<boolean> {
   try {
     const res = await updatePlaybackPolicy(policy.value)
     policy.value = res.policy
+    savedPolicy.value = { ...policy.value }
     ElMessage.success('播放策略已保存（出流的节点下次判定即生效）')
+    return true
   } catch (e) {
     ElMessage.error(toAdminError(e, '保存失败'))
-  } finally {
-    savingPolicy.value = false
+    return false
   }
 }
 
-async function saveOps() {
-  if (opsError.value) return
-  savingOps.value = true
+async function saveOpsGroup(): Promise<boolean> {
+  if (opsError.value) return false
   try {
     await updateEconomySettings({ ...ops.value })
+    savedOps.value = { ...ops.value }
     ElMessage.success('下载与设备策略已保存')
+    return true
   } catch (e) {
     ElMessage.error(toAdminError(e, '保存失败'))
-  } finally {
-    savingOps.value = false
+    return false
   }
+}
+
+/**
+ * 统一保存（Settings 样板）：两组策略各自独立 endpoint，哪组脏了存哪组、按顺序逐个存；
+ * 某组失败就停在那里，那组保持未保存状态，保存条继续挂着。
+ */
+async function saveAll() {
+  if (savingAll.value) return
+  savingAll.value = true
+  try {
+    if (opsDirty.value && !(await saveOpsGroup())) return
+    if (policyDirty.value && !(await savePolicyGroup())) return
+  } finally {
+    savingAll.value = false
+  }
+}
+
+/** 放弃：两组都回到最近一次快照（服务端当前值） */
+function discardAll() {
+  if (savedOps.value) ops.value = { ...savedOps.value }
+  if (savedPolicy.value) policy.value = { ...savedPolicy.value }
 }
 
 
@@ -174,6 +225,24 @@ async function saveOps() {
       <template #title>保存需要超级管理员角色</template>
       <template #default>你可以查看当前策略，但保存会被服务端拒绝（这些策略会改变所有人的播放体验）。</template>
     </el-alert>
+
+    <!-- 统一保存条（Settings 样板）：全页改动只在这里存一次，两组策略按顺序逐个提交 -->
+    <div v-if="anyDirty" class="savebar" role="status">
+      <span class="savebar-text">有 <strong>{{ dirtyCount }}</strong> 处改动还没保存</span>
+      <span class="savebar-actions">
+        <el-button size="small" @click="discardAll">放弃</el-button>
+        <el-button
+          size="small"
+          type="primary"
+          :loading="savingAll"
+          :disabled="!isSuper || opsError"
+          :title="opsError ? '下载与设备配置读取失败，请先刷新再保存' : ''"
+          @click="saveAll"
+        >
+          <Save :size="14" class="btn-ico" />全部保存
+        </el-button>
+      </span>
+    </div>
 
     <!-- 首屏骨架 -->
     <div v-if="loading && !runtime" class="cp-skeleton" aria-busy="true" aria-label="加载中">
@@ -270,20 +339,9 @@ async function saveOps() {
       </AdvancedSettings>
 
       <template #footer>
-        <div class="cp-save">
-          <span class="cp-save-hint cp-inline-icon">
-            <Smartphone :size="13" /> 逐台设备与登录日志在「设备与安全 / 登录日志」；这里只决定「多一台设备时怎么处理」。
-          </span>
-          <el-button
-            type="primary"
-            :loading="savingOps"
-            :disabled="!isSuper || opsError"
-            :title="opsError ? '配置读取失败，请先刷新再保存' : ''"
-            @click="saveOps"
-          >
-            <Save :size="14" class="btn-ico" />保存
-          </el-button>
-        </div>
+        <span class="cp-save-hint cp-inline-icon">
+          <Smartphone :size="13" /> 逐台设备与登录日志在「设备与安全 / 登录日志」；这里只决定「多一台设备时怎么处理」。
+        </span>
       </template>
     </SectionCard>
 
@@ -375,15 +433,6 @@ async function saveOps() {
           </p>
         </div>
       </div>
-
-      <template #footer>
-        <div class="cp-save">
-          <span class="cp-save-hint">属于播放策略，保存会一起提交。</span>
-          <el-button type="primary" :loading="savingPolicy" :disabled="!isSuper" @click="savePolicy">
-            <Save :size="14" class="btn-ico" />保存
-          </el-button>
-        </div>
-      </template>
     </SectionCard>
 
     <!-- Drive 中继状态（重新布局批 5：与 302 直链卡对称，只读；开关走服务端配置） -->
@@ -473,21 +522,25 @@ async function saveOps() {
 .num-pair { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .num-pair .el-input-number { flex: none; width: 120px; }
 
-/* ===== 卡片底部保存栏：说明左、按钮右 ===== */
+/* ===== 统一保存条（与 Settings 样板同款） ===== */
 .cp-ops-alert { margin-bottom: 12px; }
-.cp-save {
+.savebar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid var(--au-primary-border);
+  border-radius: var(--au-r-md);
+  background: var(--au-primary-soft);
 }
-.cp-save-hint { flex: 1 1 240px; }
+.savebar-text { font-size: 13px; color: var(--au-text-2); }
+.savebar-text strong { color: var(--au-primary); }
+.savebar-actions { display: flex; align-items: center; gap: 8px; flex: none; }
 /* Batch D 入口收敛：页内互链（UA 两处 / 下载与设备只读提示） */
 .cp-link { color: var(--au-accent, #b45309); font-weight: 700; text-decoration: none; }
 .cp-link:hover { text-decoration: underline; }
 .cp-inline-icon { display: inline-flex; align-items: center; gap: 6px; }
-.cp-save-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .danger-jump {
   color: var(--au-text-3);
   text-decoration: none;
@@ -603,9 +656,9 @@ code {
   .cache-item { flex-direction: column; align-items: flex-start; gap: 4px; }
   .cache-item .ci-name { max-width: 100%; }
   .cache-item .ci-meta { flex-wrap: wrap; }
-  .cp-save > .el-button { flex: 1 1 100%; }
-  .cp-save-left { flex: 1 1 100%; }
-  .cp-save-left .el-button { flex: 1 1 0; margin-left: 0; }
+  .savebar { flex-wrap: wrap; }
+  .savebar-actions { flex: 1 1 100%; }
+  .savebar-actions .el-button { flex: 1 1 0; }
   /*
     窄屏下响应式层会把 .el-input-number 统一拉成 100%：两个数字框挤在同一行里会
     互相抢宽度，数字被两侧的加减按钮盖住。这里让它们各占可读的最小宽度。

@@ -11,8 +11,11 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { toAdminError } from '@/utils/errorMessage'
 import { parseServerTime } from '@/utils/serverTime'
-import { KeyRound, Plus, RefreshCw, Copy, Trash2, Pencil } from 'lucide-vue-next'
-import { EmptyState, PageHeader } from '@/components/ui'
+import { KeyRound, Plus, RefreshCw, Copy, Trash2, Pencil, Info } from 'lucide-vue-next'
+import { PageHeader, SectionCard, StatTile } from '@/components/ui'
+import DataTable from '@/components/DataTable.vue'
+import type { DataColumn } from '@/components/DataTable.vue'
+import NoticePanel from '@/components/NoticePanel.vue'
 import {
   createApiKey,
   fetchApiKeys,
@@ -39,6 +42,7 @@ const plaintextName = ref('')
 
 // 编辑弹窗
 const showEdit = ref(false)
+const savingEdit = ref(false)
 const editing = ref<ApiKeyRow | null>(null)
 const editForm = ref({ name: '', scopes: [] as string[], is_active: true })
 
@@ -49,6 +53,22 @@ const SCOPES = [
 ]
 
 const activeCount = computed(() => keys.value.filter((k) => k.is_active).length)
+
+/** 列表列定义（统一标准：DataTable 为唯一表格载体，不分页、一次全量展示） */
+const columns: DataColumn[] = [
+  { key: 'name', label: '名称', minWidth: 180, mobile: 'title' },
+  { key: 'scopes', label: '权限范围', minWidth: 150 },
+  { key: 'status', label: '状态', width: 96 },
+  { key: 'expires_at', label: '过期时间', minWidth: 160 },
+  { key: 'last_used_at', label: '最后使用', minWidth: 160 },
+  { key: 'actions', label: '操作', width: 190, fixed: 'right', align: 'right' },
+]
+
+function keyStatus(k: ApiKeyRow): { type: 'success' | 'danger'; text: string } {
+  if (!k.is_active) return { type: 'danger', text: '已吊销' }
+  if (isExpired(k)) return { type: 'danger', text: '已过期' }
+  return { type: 'success', text: '生效中' }
+}
 
 function scopeLabel(s: string) {
   return SCOPES.find((x) => x.value === s)?.label || s
@@ -144,6 +164,7 @@ function openEdit(k: ApiKeyRow) {
 
 async function doEdit() {
   if (!editing.value) return
+  savingEdit.value = true
   try {
     await updateApiKey(editing.value.key_id, {
       name: editForm.value.name,
@@ -155,6 +176,8 @@ async function doEdit() {
     await load()
   } catch (e: any) {
     ElMessage.error(toAdminError(e, '保存失败'))
+  } finally {
+    savingEdit.value = false
   }
 }
 
@@ -181,52 +204,68 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="apikey-page">
-    <PageHeader title="API Key" desc="第三方系统的长期访问凭证（Service Token），用 X-API-Key 请求头鉴权">
+  <div class="admin-page">
+    <PageHeader
+      eyebrow="系统"
+      title="API Key"
+      description="第三方系统的长期访问凭证（Service Token），用 X-API-Key 请求头鉴权"
+    >
       <template #actions>
         <el-button :icon="RefreshCw" @click="load" :loading="loading">刷新</el-button>
         <el-button type="primary" :icon="Plus" @click="openCreate">创建 Key</el-button>
       </template>
     </PageHeader>
 
-    <div class="summary-bar" v-if="!loading && !loadError">
-      <span class="summary-item"><b>{{ keys.length }}</b> 个 Key</span>
-      <span class="summary-item"><b class="is-ok">{{ activeCount }}</b> 生效中</span>
-      <span class="summary-item"><b class="is-down">{{ keys.length - activeCount }}</b> 已吊销/停用</span>
+    <div v-if="!loading && !loadError" class="tile-grid">
+      <StatTile label="全部 Key" :value="keys.length" />
+      <StatTile label="生效中" :value="activeCount" />
+      <StatTile label="已吊销 / 停用" :value="keys.length - activeCount" />
     </div>
 
-    <el-skeleton :rows="6" animated v-if="loading" />
-    <EmptyState v-else-if="loadError" title="加载失败" :description="loadError" @retry="load" />
-    <EmptyState v-else-if="!keys.length" title="还没有 API Key" description="点右上角「创建 Key」" />
+    <SectionCard title="凭证列表" :icon="KeyRound" flush>
+      <DataTable
+        :rows="keys"
+        :columns="columns"
+        :loading="loading"
+        :error="loadError"
+        row-key="id"
+        empty="还没有 API Key"
+        empty-description="点右上角「创建 Key」生成第一个。"
+        @retry="load"
+      >
+        <template #cell-name="{ row }">
+          <div class="key-name">{{ row.name }}</div>
+          <div class="key-id"><KeyRound class="ic" />{{ row.key_id_masked }}</div>
+        </template>
+        <template #cell-scopes="{ row }">
+          <div class="key-scopes">
+            <span v-for="s in row.scopes" :key="s" class="scope-pill" :class="scopeClass(s)">{{ scopeLabel(s) }}</span>
+          </div>
+        </template>
+        <template #cell-status="{ row }">
+          <el-tag :type="keyStatus(row).type" size="small">{{ keyStatus(row).text }}</el-tag>
+        </template>
+        <template #cell-expires_at="{ row }">{{ row.expires_at ? fmtTime(row.expires_at) : '永不过期' }}</template>
+        <template #cell-last_used_at="{ row }">{{ fmtTime(row.last_used_at) }}</template>
+        <template #cell-actions="{ row }">
+          <el-button size="small" :icon="Pencil" @click="openEdit(row)">编辑</el-button>
+          <el-button v-if="row.is_active" size="small" type="danger" :icon="Trash2" @click="doRevoke(row)">吊销</el-button>
+        </template>
+      </DataTable>
+    </SectionCard>
 
-    <div class="key-grid" v-else>
-      <div v-for="k in keys" :key="k.id" class="key-card" :class="{ 'is-off': !k.is_active || isExpired(k) }">
-        <div class="key-head">
-          <span class="key-name">{{ k.name }}</span>
-          <el-tag :type="k.is_active && !isExpired(k) ? 'success' : 'danger'" size="small">
-            {{ !k.is_active ? '已吊销' : isExpired(k) ? '已过期' : '生效中' }}
-          </el-tag>
-        </div>
-        <div class="key-id"><KeyRound class="ic" />{{ k.key_id_masked }}</div>
-        <div class="key-scopes">
-          <span v-for="s in k.scopes" :key="s" class="scope-pill" :class="scopeClass(s)">{{ scopeLabel(s) }}</span>
-        </div>
-        <div class="key-meta">
-          <span>过期：{{ k.expires_at ? fmtTime(k.expires_at) : '永不过期' }}</span>
-          <span>最后使用：{{ fmtTime(k.last_used_at) }}</span>
-        </div>
-        <div class="key-actions">
-          <el-button size="small" :icon="Pencil" @click="openEdit(k)">编辑</el-button>
-          <el-button v-if="k.is_active" size="small" type="danger" :icon="Trash2" @click="doRevoke(k)">吊销</el-button>
-        </div>
-      </div>
-    </div>
-
-    <div class="usage-hint">
-      <b>第三方怎么用：</b>请求头带 <code>X-API-Key: ak_...</code> 即可。
-      第三方拿到 Key 后，用该 Key 作 X-API-Key 请求头调 <code>GET /api/admin/api-keys/verify</code> 验证连通性（走 Key 鉴权，不是管理员登录）。
-      权限层级：管理 &gt; 读写 &gt; 只读。
-    </div>
+    <NoticePanel
+      title="第三方怎么用"
+      summary="请求头带 X-API-Key 即可，权限层级：管理 > 读写 > 只读"
+      :icon="Info"
+      storage-key="api-keys-usage"
+    >
+      <p class="usage-text">
+        请求头带 <code>X-API-Key: ak_...</code> 即可。
+        第三方拿到 Key 后，用该 Key 作 X-API-Key 请求头调 <code>GET /api/admin/api-keys/verify</code> 验证连通性（走 Key 鉴权，不是管理员登录）。
+        权限层级：管理 &gt; 读写 &gt; 只读。
+      </p>
+    </NoticePanel>
 
     <!-- 创建弹窗 -->
     <el-dialog v-model="showCreate" title="创建 API Key" width="480px">
@@ -282,59 +321,21 @@ onMounted(load)
       </el-form>
       <template #footer>
         <el-button @click="showEdit = false">取消</el-button>
-        <el-button type="primary" @click="doEdit">保存</el-button>
+        <el-button type="primary" @click="doEdit" :loading="savingEdit">保存</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <style scoped>
-.apikey-page {
-  padding: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
-}
-.summary-bar {
-  display: flex;
-  gap: 24px;
-  padding: 12px 16px;
-  margin-bottom: 16px;
-  background: var(--au-surface);
-  border: 1px solid var(--au-border);
-  border-radius: var(--au-r-lg);
-  color: var(--au-text-2);
-  font-size: 14px;
-}
-.summary-item b {
-  font-size: 18px;
-  margin-right: 4px;
-  color: var(--au-text);
+.tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
 }
 .is-ok { color: var(--au-success); }
 .is-warn { color: var(--au-warning); }
 .is-down { color: var(--au-danger); }
-.key-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 16px;
-}
-.key-card {
-  background: var(--au-surface);
-  border: 1px solid var(--au-border);
-  border-left: 3px solid var(--au-success);
-  border-radius: var(--au-r-lg);
-  padding: 16px;
-}
-.key-card.is-off {
-  border-left-color: var(--au-danger);
-  opacity: 0.75;
-}
-.key-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
 .key-name {
   font-weight: 600;
   font-size: 15px;
@@ -344,15 +345,16 @@ onMounted(load)
   display: flex;
   align-items: center;
   gap: 6px;
+  margin-top: 2px;
   font-family: monospace;
+  font-size: 12px;
   color: var(--au-text-2);
-  margin-bottom: 8px;
 }
 .key-id .ic { width: 14px; height: 14px; }
 .key-scopes {
   display: flex;
   gap: 8px;
-  margin-bottom: 8px;
+  flex-wrap: wrap;
 }
 .scope-pill {
   font-size: 12px;
@@ -360,29 +362,13 @@ onMounted(load)
   border-radius: 999px;
   border: 1px solid currentColor;
 }
-.key-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--au-text-2);
-  margin-bottom: 12px;
-}
-.key-actions {
-  display: flex;
-  gap: 8px;
-}
-.usage-hint {
-  margin-top: 20px;
-  padding: 12px 16px;
-  background: var(--au-surface);
-  border: 1px solid var(--au-border);
-  border-radius: var(--au-r-lg);
+.usage-text {
+  margin: 0;
   font-size: 13px;
   color: var(--au-text-2);
   line-height: 1.8;
 }
-.usage-hint code {
+.usage-text code {
   background: var(--au-bg);
   padding: 2px 6px;
   border-radius: 4px;
