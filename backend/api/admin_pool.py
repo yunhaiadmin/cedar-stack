@@ -12,6 +12,7 @@ get_current_admin 里的 admin_roles 集中判定，端点不自造鉴权）。
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -69,9 +70,11 @@ class PoolRewardConfigRequest(BaseModel):
     pool_reward_enabled: Optional[bool] = None
     pool_reward_payout_enabled: Optional[bool] = None
     pool_reward_period: Optional[str] = None
-    pool_reward_points_per_play: Optional[int] = None
-    pool_reward_points_per_active_day: Optional[int] = None
-    pool_reward_points_cap: Optional[int] = None
+    # 美金额费率/封顶比例（2026-11-15 改发美金）：Decimal 收数，
+    # 落库走 config_schema float-places 归一化字符串、无浮点误差。
+    pool_reward_usd_per_play: Optional[Decimal] = None
+    pool_reward_usd_per_active_day: Optional[Decimal] = None
+    pool_reward_cap_ratio: Optional[Decimal] = None
     pool_reward_min_active_days: Optional[int] = None
     pool_reward_min_counted_plays: Optional[int] = None
     pool_reward_play_dedupe_window_sec: Optional[int] = None

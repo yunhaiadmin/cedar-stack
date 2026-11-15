@@ -176,9 +176,10 @@ export interface PoolRewardConfig {
   pool_reward_enabled: boolean
   pool_reward_payout_enabled: boolean
   pool_reward_period: 'monthly' | 'weekly'
-  pool_reward_points_per_play: number
-  pool_reward_points_per_active_day: number
-  pool_reward_points_cap: number
+  // 美金额键后端按字符串下发（Decimal 落库），页面加载时转 Number。
+  pool_reward_usd_per_play: number
+  pool_reward_usd_per_active_day: number
+  pool_reward_cap_ratio: number
   pool_reward_min_active_days: number
   pool_reward_min_counted_plays: number
   pool_reward_play_dedupe_window_sec: number
@@ -208,7 +209,8 @@ export interface PoolRewardPreviewRow {
   active_days: number
   raw_plays: number
   transfer_bytes: number
-  points: number
+  amount_usd: string
+  cap_usd: string
   xp: number
   would_status: string
   reason: string | null
@@ -244,7 +246,7 @@ export interface PoolRewardSettlement {
   shadow_rows: number
   frozen: number
   skipped: number
-  paid_points_total: number
+  paid_amount_total: string
   created_at: string | null
   finished_at: string | null
 }
@@ -261,6 +263,9 @@ export interface PoolRewardDetail {
   transfer_bytes: number
   points: number
   xp: number
+  amount_usd: string
+  credited_usd: string
+  wallet_ledger_id: number | null
   welfare_days: number
   status: string
   reason: string | null

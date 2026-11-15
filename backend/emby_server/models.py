@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Numeric,
     Index,
     Integer,
     LargeBinary,
@@ -2482,14 +2483,18 @@ class PoolRewardDetail(Base):
 
     一行 = 一个成员在一个批次里的结算结论。(settlement_id,
     member_id) 唯一约束是整条链的第一道幂等锚：重跑/续跑撞键
-    即已结；发放第二道锚是 points_logs.ref_id =
-    ``pool_reward:{detail_id}``（发放前双查）。
+    即已结；发放第二道锚是钱包流水 idempotency_key =
+    ``pool_reward:{detail_id}``（钱包侧幂等回放兜底）。
 
     计量快照：counted_plays（过防刷后的起播数）、active_days
     （有效在线日）、raw_plays（原始起播数，对账面）、
     transfer_bytes（当期转存字节，仅展示/对账、一期不计奖）。
-    应发量：points（封顶后）、xp；welfare_days 一期恒 0
-    （公益天数一期关闭不发，键位与列先留）。
+    应发量（2026-11-15 改发美金）：amount_usd = 按费率精确累计
+    的美元额（4 位小数，封顶前）；credited_usd = 经月封顶
+    （本人套餐月价 × 比例）与钱包美分精度取整后的实际入账额；
+    wallet_ledger_id = 入账流水锚（未入账为空）。points/xp 是
+    2026-11-13/14 下线的旧影子数，历史行保留、新行 points 恒 0；
+    welfare_days 一期恒 0（公益天数一期关闭不发，键位与列先留）。
 
     status：shadow 影子落行（只算账未发钱）/ pending 待发
     （发放中断的中间态，续跑补发）/ frozen 冻结待人工审
@@ -2519,6 +2524,9 @@ class PoolRewardDetail(Base):
     transfer_bytes = Column(BigInteger, nullable=False, default=0)
     points = Column(Integer, nullable=False, default=0)
     xp = Column(Integer, nullable=False, default=0)
+    amount_usd = Column(Numeric(14, 4), nullable=False, default=0)
+    credited_usd = Column(Numeric(12, 2), nullable=False, default=0)
+    wallet_ledger_id = Column(Integer, nullable=True)
     welfare_days = Column(Integer, nullable=False, default=0)
     status = Column(String(16), nullable=False, default="pending")
     reason = Column(String(80), nullable=True)

@@ -12,10 +12,18 @@
   结算与管理端预览共用同一份，事后可重算。
 - 结算执行器 ``run_settlement``：管理员手动触发（自动定时默认
   不开）。先落明细行（(settlement_id, member_id) 唯一键第一道
-  幂等锚）→ 真发开关开时同一事务发积分＋经验（points_logs
-  .ref_id = ``pool_reward:{detail_id}`` 第二道锚），连跑不双发。
+  幂等锚）→ 真发开关开时同一事务入账钱包余额（wallet.credit，
+  kind=pool_reward、idempotency_key =
+  ``pool_reward:{detail_id}`` 第二道锚），连跑不双发。
   真发开关（pool_reward_payout_enabled）默认关：落行 status
   =shadow 只算账不发钱（影子跑对账），开关开后重跑同批补发。
+- 金额（2026-11-15 用户亲点改发美金，废积分口径）：每次
+  counted 播放 $0.005＋每在线日 $0.025（费率键可配），Decimal
+  精确累计存明细 amount_usd；入账时按月封顶（本人当前付费
+  套餐月价 × pool_reward_cap_ratio、无付费套餐按在售最低档
+  月价兜底；封顶按批次所属上海自然月归集，同月多批共享）后
+  按钱包账本精度（美分 ROUND_HALF_UP）取整存 credited_usd，
+  取整不得越封顶（越界向下取整到分）。子账号不参与结算。
 - 称号 ``pool_identity_payload``：状态驱动展示（§11.4），成员
   有 active 行即出「片库贡献者」，无发放动作、无存储。
 
@@ -36,12 +44,15 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation, ROUND_FLOOR
 from typing import Optional
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend import models as base_models
+from backend import wallet as wallet_svc
+from backend.agents import money as _money
 from backend.emby_server import models as em
 from backend.emby_server import pool_gate
 
@@ -60,9 +71,9 @@ _SETTLABLE_STATUSES = ("active", "suspended", "exited", "ejected")
 #: 按原计量口径补发，靠的就是快照里这组键不被事后改动污染）。
 _SNAPSHOT_KEYS = (
     "pool_reward_period",
-    "pool_reward_points_per_play",
-    "pool_reward_points_per_active_day",
-    "pool_reward_points_cap",
+    "pool_reward_usd_per_play",
+    "pool_reward_usd_per_active_day",
+    "pool_reward_cap_ratio",
     "pool_reward_min_active_days",
     "pool_reward_min_counted_plays",
     "pool_reward_play_dedupe_window_sec",
@@ -284,20 +295,94 @@ def meter_member(events, *, member_user_id: int, status_intervals,
     return result
 
 
-def _amounts(meter: MeterResult, cfg: dict) -> tuple[int, int]:
-    """计量 → 应发（积分封顶、经验封顶；上限 0 = 不限）。"""
-    points = (meter.counted_plays
-              * int(cfg["pool_reward_points_per_play"])
-              + meter.active_days
-              * int(cfg["pool_reward_points_per_active_day"]))
-    cap = int(cfg["pool_reward_points_cap"])
-    if cap > 0:
-        points = min(points, cap)
+def _usd_value(cfg: dict, key: str) -> Decimal:
+    """配置里的美金额/比例 → Decimal（字符串落库口径，坏值回 0）。"""
+    try:
+        return Decimal(str(cfg.get(key, "0")).strip())
+    except (InvalidOperation, ValueError, AttributeError):
+        return Decimal("0")
+
+
+def _amounts(meter: MeterResult, cfg: dict) -> tuple[Decimal, int]:
+    """计量 → 应发（金额 Decimal 精确累计、封顶在入账时按套餐判；
+    经验影子数封顶保留，上限 0 = 不限）。"""
+    amount = (Decimal(meter.counted_plays)
+              * _usd_value(cfg, "pool_reward_usd_per_play")
+              + Decimal(meter.active_days)
+              * _usd_value(cfg, "pool_reward_usd_per_active_day"))
     xp = meter.counted_plays * int(cfg["pool_reward_xp_per_play"])
     xp_cap = int(cfg["pool_reward_xp_cap"])
     if xp_cap > 0:
         xp = min(xp, xp_cap)
-    return points, xp
+    return amount, xp
+
+
+# ------------------------------------------------------------ 月封顶
+
+
+def _plan_monthly(plan) -> Decimal:
+    """套餐月价：与订阅目录同一份实现（api.economy
+    .plan_monthly_price），懒导入避顶层环。"""
+    from backend.api.economy import plan_monthly_price
+
+    return plan_monthly_price(plan)
+
+
+def _monthly_cap_usd(db: Session, user, cfg: dict) -> Decimal:
+    """月封顶额 = 套餐月价 × 比例（pool_reward_cap_ratio）。
+
+    套餐月价口径（2026-11-15 用户亲点跟套餐走）：结算时本人有
+    生效付费订阅（status=active、未到期、月价 > 0）取其月价，
+    多份取最高；无生效付费套餐按在售（is_active）最低档月价
+    兜底；在售目录为空则封顶 0（fail-closed，不入账并留日志）。
+    比例 ≤ 0 同样封顶 0。
+    """
+    ratio = _usd_value(cfg, "pool_reward_cap_ratio")
+    if ratio <= 0:
+        return Decimal("0")
+    now = datetime.now()
+    subs = (db.query(base_models.UserSubscription)
+            .filter(base_models.UserSubscription.user_id == user.id,
+                    base_models.UserSubscription.status == "active",
+                    base_models.UserSubscription.end_date > now)
+            .all())
+    own = [m for m in (_plan_monthly(s.plan) for s in subs
+                       if s.plan is not None) if m > 0]
+    if own:
+        return max(own) * ratio
+    plans = (db.query(base_models.SubscriptionPlan)
+             .filter(base_models.SubscriptionPlan.is_active == True)  # noqa: E712
+             .all())
+    prices = [m for m in (_plan_monthly(p) for p in plans) if m > 0]
+    if not prices:
+        logger.warning(
+            "pool_reward 月封顶兜底失败：在售目录为空 user=%s", user.id)
+        return Decimal("0")
+    return min(prices) * ratio
+
+
+def _credited_in_batch_month(db: Session, batch, user_id: int) -> Decimal:
+    """该用户在批次所属上海自然月已入账总额（同月多批共享封顶）。
+
+    按各批次 period_start 的上海年月归集，只计 status=paid 的
+    明细 credited_usd；调用时本明细尚未 paid，不会自计。
+    """
+    target = _sh_date(batch.period_start)
+    total = Decimal("0")
+    rows = (db.query(em.PoolRewardDetail, em.PoolRewardSettlement)
+            .join(em.PoolRewardSettlement,
+                  em.PoolRewardDetail.settlement_id
+                  == em.PoolRewardSettlement.id)
+            .filter(em.PoolRewardDetail.user_id == user_id,
+                    em.PoolRewardDetail.status == "paid")
+            .all())
+    for detail, other in rows:
+        if other.period_start is None:
+            continue
+        d = _sh_date(other.period_start)
+        if (d.year, d.month) == (target.year, target.month):
+            total += Decimal(str(detail.credited_usd or 0))
+    return total
 
 
 def _decide(meter: MeterResult, cfg: dict, violation: bool) \
@@ -379,11 +464,13 @@ def _member_meter(db: Session, member, start: datetime,
 
 
 def _grant_detail(db: Session, batch, detail) -> str:
-    """明细结算标记（同一事务、调用方提交）。
+    """明细真发（同一事务、调用方提交）：钱包余额入账。
 
-    积分已随货币于 2026-11-13 下线、经验已随等级体系于 2026-11-14
-    删除：两部分都不再真发，明细 points/xp 数值保留作影子对账，
-    本函数只把明细标为 paid。池激励口径重定归贡献池批次。
+    入账额 = min(精确应发 amount_usd, 月封顶剩余) 后按钱包账本
+    精度（美分 ROUND_HALF_UP）取整；取整越封顶时向下取整到分，
+    保证实际入账永不越封顶。应发 ≤ 0 或封顶已满时 credited=0、
+    不写流水、仍标 paid（计量结论已成立，差额按口径不结转）。
+    经验已随等级体系于 2026-11-14 下线：xp 只留影子数不发放。
     返回最终状态。
     """
     user = (db.query(base_models.WebUser)
@@ -392,19 +479,33 @@ def _grant_detail(db: Session, batch, detail) -> str:
         detail.status = "skipped"
         detail.reason = "user_missing"
         return "skipped"
-    if int(detail.points or 0) > 0:
-        # 积分已随货币下线（2026-11-13）：池激励的积分部分不再发放
-        # （economy._add_points 已删除）；明细 points 数值保留作影子对账
-        # 历史。池激励口径重定归贡献池批次。
-        logger.warning(
-            "pool_reward 积分发放已下线，跳过: detail=%s points=%s",
-            detail.id, detail.points)
-    if int(detail.xp or 0) > 0:
-        # 经验已随等级体系下线（2026-11-14，member_level.add_xp 已删除）：
-        # 池激励的经验部分不再发放；明细 xp 数值保留作影子对账历史。
-        logger.warning(
-            "pool_reward 经验发放已下线，跳过: detail=%s xp=%s",
-            detail.id, detail.xp)
+    cfg = pool_gate.reward_config_payload(db)
+    if batch is not None and batch.params_snapshot:
+        try:
+            cfg.update(json.loads(batch.params_snapshot))
+        except (TypeError, ValueError):
+            logger.warning("发放时批次 %s 参数快照解析失败，用实时配置",
+                           batch.id, exc_info=True)
+    exact = Decimal(str(detail.amount_usd or 0))
+    credited = Decimal("0")
+    if exact > 0:
+        cap = _monthly_cap_usd(db, user, cfg)
+        room = cap - _credited_in_batch_month(db, batch, user.id)
+        if room > 0:
+            credited = _money(min(exact, room))
+            if credited > room:
+                credited = room.quantize(
+                    Decimal("0.01"), rounding=ROUND_FLOOR)
+    detail.credited_usd = credited
+    if credited > 0:
+        entry, _replayed = wallet_svc.credit(
+            db, user.id, credited, kind="pool_reward",
+            ref_id=f"pool_reward:{detail.id}",
+            note=(f"贡献池激励 {batch.period_key}：播放 "
+                  f"{detail.counted_plays} 次 · 在线 "
+                  f"{detail.active_days} 天"),
+            idempotency_key=f"pool_reward:{detail.id}")
+        detail.wallet_ledger_id = entry.id
     detail.status = "paid"
     detail.granted_at = datetime.now()
     return "paid"
@@ -438,7 +539,16 @@ def _settle_member(db: Session, batch, member, cfg: dict,
         db, member, batch.period_start, batch.period_end, cfg)
     violation = pool_gate.member_violation_ejected(db, member.id)
     decision, reason = _decide(meter, cfg, violation)
-    points, xp = _amounts(meter, cfg)
+    # 子账号不参与贡献结算（经济动作口径）：计量照常记录、结论
+    # 一律 skipped/sub_account，压过其余判定（违规重评路径除外
+    # 的既有 skipped 语义不变——本行属计量结论型 skipped）。
+    member_user = (db.query(base_models.WebUser)
+                   .filter(base_models.WebUser.id == member.user_id)
+                   .first())
+    if (member_user is not None
+            and getattr(member_user, "parent_user_id", None)):
+        decision, reason = "skipped", "sub_account"
+    amount, xp = _amounts(meter, cfg)
     if existing is None:
         detail = em.PoolRewardDetail(
             settlement_id=batch.id, member_id=member.id,
@@ -450,7 +560,8 @@ def _settle_member(db: Session, batch, member, cfg: dict,
     detail.active_days = meter.active_days
     detail.raw_plays = meter.raw_plays
     detail.transfer_bytes = transfer_bytes
-    detail.points = points
+    detail.points = 0  # 积分已下线：新行不再写影子积分（历史行保留）
+    detail.amount_usd = amount
     detail.xp = xp
     detail.welfare_days = 0
     if decision == "payable":
@@ -565,10 +676,13 @@ def preview_settlement(db: Session,
                                               cfg)
         violation = pool_gate.member_violation_ejected(db, member.id)
         decision, reason = _decide(meter, cfg, violation)
-        points, xp = _amounts(meter, cfg)
+        amount, xp = _amounts(meter, cfg)
         user = (db.query(base_models.WebUser)
                 .filter(base_models.WebUser.id == member.user_id)
                 .first())
+        if (user is not None
+                and getattr(user, "parent_user_id", None)):
+            decision, reason = "skipped", "sub_account"
         rows.append({
             "member_id": member.id,
             "user_id": member.user_id,
@@ -578,7 +692,9 @@ def preview_settlement(db: Session,
             "active_days": meter.active_days,
             "raw_plays": meter.raw_plays,
             "transfer_bytes": transfer_bytes,
-            "points": points,
+            "amount_usd": format(amount, "f"),
+            "cap_usd": (format(_monthly_cap_usd(db, user, cfg), "f")
+                        if user is not None else "0"),
             "xp": xp,
             "would_status": ("paid" if payout else "shadow")
             if decision == "payable" else decision,

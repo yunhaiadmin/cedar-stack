@@ -61,6 +61,7 @@ export function walletKindText(kind: string): string {
     traffic_purchase: '购买流量',
     refund: '订单退款',
     rebate_reversal: '返利撤回',
+    pool_reward: '贡献池激励',
   }
   return map[kind] ?? kind
 }
