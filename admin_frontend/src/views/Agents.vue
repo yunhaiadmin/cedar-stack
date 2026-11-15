@@ -203,6 +203,32 @@ async function loadDetail() {
   }
 }
 
+/** 明细弹窗三张表（收编 DataTable，列与口径不变） */
+const ledgerColumns: DataColumn[] = [
+  { key: 'created_at', label: '时间', width: 160, mobile: 'title' },
+  { key: 'kind', label: '类型', width: 110 },
+  { key: 'amount', label: '金额', width: 110 },
+  { key: 'balance_after', label: '变动后余额', width: 120 },
+  { key: 'note', label: '备注' },
+]
+
+const purchaseColumns: DataColumn[] = [
+  { key: 'created_at', label: '时间', width: 160, mobile: 'title' },
+  { key: 'plan_name', label: '套餐' },
+  { key: 'quantity', label: '数量', width: 70 },
+  { key: 'face_value', label: '面值', width: 100 },
+  { key: 'unit_cost', label: '进货价', width: 100 },
+  { key: 'total_cost', label: '总扣款', width: 110 },
+]
+
+const saleDetailColumns: DataColumn[] = [
+  { key: 'created_at', label: '核销时间', width: 160, mobile: 'title' },
+  { key: 'code', label: '卡码' },
+  { key: 'buyer_username', label: '购买用户', width: 120 },
+  { key: 'face_value', label: '面值', width: 100 },
+  { key: 'unit_cost', label: '进货价', width: 100 },
+]
+
 // ==================== 等级管理 ====================
 const levelsLoading = ref(false)
 const levelColumns = computed<DataColumn[]>(() => [
@@ -510,32 +536,27 @@ onMounted(async () => {
     >
       <el-tabs v-model="detailDlg.tab" @tab-change="loadDetail">
         <el-tab-pane label="余额流水" name="ledger">
-          <el-table :data="detailDlg.logs" v-loading="detailDlg.loading" size="small" stripe>
-            <el-table-column label="时间" width="160"><template #default="{ row }">{{ fmtTime(row.created_at) }}</template></el-table-column>
-            <el-table-column label="类型" width="110"><template #default="{ row }">{{ row.kind === 'purchase' ? '进货扣款' : '管理员调整' }}</template></el-table-column>
-            <el-table-column label="金额" width="110"><template #default="{ row }">{{ money(row.amount) }}</template></el-table-column>
-            <el-table-column label="变动后余额" width="120"><template #default="{ row }">{{ money(row.balance_after) }}</template></el-table-column>
-            <el-table-column prop="note" label="备注" />
-          </el-table>
+          <DataTable :columns="ledgerColumns" :rows="detailDlg.logs" :loading="detailDlg.loading">
+            <template #cell-created_at="{ row }">{{ fmtTime(row.created_at) }}</template>
+            <template #cell-kind="{ row }">{{ row.kind === 'purchase' ? '进货扣款' : '管理员调整' }}</template>
+            <template #cell-amount="{ row }">{{ money(row.amount) }}</template>
+            <template #cell-balance_after="{ row }">{{ money(row.balance_after) }}</template>
+          </DataTable>
         </el-tab-pane>
         <el-tab-pane label="进货记录" name="purchases">
-          <el-table :data="detailDlg.purchases" v-loading="detailDlg.loading" size="small" stripe>
-            <el-table-column label="时间" width="160"><template #default="{ row }">{{ fmtTime(row.created_at) }}</template></el-table-column>
-            <el-table-column prop="plan_name" label="套餐" />
-            <el-table-column label="数量" width="70"><template #default="{ row }">{{ row.quantity }}</template></el-table-column>
-            <el-table-column label="面值" width="100"><template #default="{ row }">{{ money(row.face_value) }}</template></el-table-column>
-            <el-table-column label="进货价" width="100"><template #default="{ row }">{{ money(row.unit_cost) }}</template></el-table-column>
-            <el-table-column label="总扣款" width="110"><template #default="{ row }">{{ money(row.total_cost) }}</template></el-table-column>
-          </el-table>
+          <DataTable :columns="purchaseColumns" :rows="detailDlg.purchases" :loading="detailDlg.loading">
+            <template #cell-created_at="{ row }">{{ fmtTime(row.created_at) }}</template>
+            <template #cell-face_value="{ row }">{{ money(row.face_value) }}</template>
+            <template #cell-unit_cost="{ row }">{{ money(row.unit_cost) }}</template>
+            <template #cell-total_cost="{ row }">{{ money(row.total_cost) }}</template>
+          </DataTable>
         </el-tab-pane>
         <el-tab-pane label="销售记录" name="sales">
-          <el-table :data="detailDlg.sales" v-loading="detailDlg.loading" size="small" stripe>
-            <el-table-column label="核销时间" width="160"><template #default="{ row }">{{ fmtTime(row.created_at) }}</template></el-table-column>
-            <el-table-column prop="code" label="卡码" />
-            <el-table-column prop="buyer_username" label="购买用户" width="120" />
-            <el-table-column label="面值" width="100"><template #default="{ row }">{{ money(row.face_value) }}</template></el-table-column>
-            <el-table-column label="进货价" width="100"><template #default="{ row }">{{ money(row.unit_cost) }}</template></el-table-column>
-          </el-table>
+          <DataTable :columns="saleDetailColumns" :rows="detailDlg.sales" :loading="detailDlg.loading">
+            <template #cell-created_at="{ row }">{{ fmtTime(row.created_at) }}</template>
+            <template #cell-face_value="{ row }">{{ money(row.face_value) }}</template>
+            <template #cell-unit_cost="{ row }">{{ money(row.unit_cost) }}</template>
+          </DataTable>
         </el-tab-pane>
       </el-tabs>
     </el-dialog>

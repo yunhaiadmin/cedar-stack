@@ -7,10 +7,13 @@
  * 哪部剧缺哪几季几集、缺了多久、多少人在求补，管理员对着清单
  * 补源。补齐后工人自动划掉并完成对应的求补，不用在这里操作。
  */
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ListChecks, RefreshCw, Search } from 'lucide-vue-next'
-import { EmptyState, PageHeader, SectionCard } from '@/components/ui'
+import { RefreshCw, Search } from 'lucide-vue-next'
+import { PageHeader, SectionCard } from '@/components/ui'
+import DataTable from '@/components/DataTable.vue'
+import type { DataColumn } from '@/components/DataTable.vue'
+import { useBreakpoint } from '@/composables/useBreakpoint'
 import { parseServerTime } from '@/utils/serverTime'
 import { toAdminError } from '@/utils/errorMessage'
 import {
@@ -36,6 +39,34 @@ const total = ref(0)
 const offset = ref(0)
 const loading = ref(false)
 const summary = ref<MissingEpisodesSummary | null>(null)
+
+const { isPhone } = useBreakpoint()
+
+const columns: DataColumn[] = [
+  { key: 'series_name', label: '剧名', minWidth: 180, mobile: 'title' },
+  { key: 'library_name', label: '所属库', width: 140 },
+  { key: 'missing_text', label: '缺集', minWidth: 260 },
+  { key: 'missing_count', label: '缺集数', width: 80 },
+  { key: 'first_detected_at', label: '首次发现', width: 168 },
+  { key: 'requesters', label: '求补人数', width: 90 },
+  { key: 'actions', label: '明细', width: 90 },
+]
+
+const pageNum = computed(() => Math.floor(offset.value / PAGE_SIZE) + 1)
+
+function onPageChange(page: number) {
+  offset.value = (page - 1) * PAGE_SIZE
+  void load()
+}
+
+// ---------- 缺集明细（原展开行改抽屉，沿全站详情承载口径） ----------
+const detailVisible = ref(false)
+const detailRow = ref<MissingEpisodeRow | null>(null)
+
+function openDetail(row: MissingEpisodeRow) {
+  detailRow.value = row
+  detailVisible.value = true
+}
 
 function fmtTime(iso: string | null): string {
   if (!iso) return '—'
@@ -91,18 +122,6 @@ function resetFilters() {
   filters.libraryId = undefined
   filters.sort = 'missing_count'
   search()
-}
-
-function prevPage() {
-  if (offset.value <= 0) return
-  offset.value = Math.max(0, offset.value - PAGE_SIZE)
-  void load()
-}
-
-function nextPage() {
-  if (offset.value + PAGE_SIZE >= total.value) return
-  offset.value += PAGE_SIZE
-  void load()
 }
 
 /** 自动补集（MP 手动通道）：配置卡状态。token 只收新值、从不回填。 */
@@ -269,63 +288,35 @@ onMounted(() => {
     </SectionCard>
 
     <SectionCard :title="`清单（共 ${total} 部）`">
-      <el-table
-        v-if="rows.length"
-        :data="rows"
-        size="small"
-        class="missing-table"
-        v-loading="loading"
+      <DataTable
+        :columns="columns"
+        :rows="rows"
+        :loading="loading"
+        row-key="series_item_id"
+        empty="没有正在缺集的剧"
+        empty-description="核算工人跑过之后，缺集的剧会自动出现在这里。"
+        :pagination="{ total, page: pageNum, pageSize: PAGE_SIZE }"
+        @page-change="onPageChange"
       >
-        <el-table-column type="expand">
-          <template #default="{ row }">
-            <pre class="detail-pre">{{ detailText(row) }}</pre>
-          </template>
-        </el-table-column>
-        <el-table-column label="剧名" min-width="180">
-          <template #default="{ row }">{{ row.series_name }}</template>
-        </el-table-column>
-        <el-table-column label="所属库" width="140">
-          <template #default="{ row }">{{ row.library_name || '—' }}</template>
-        </el-table-column>
-        <el-table-column label="缺集" min-width="260">
-          <template #default="{ row }">{{ row.missing_text }}</template>
-        </el-table-column>
-        <el-table-column label="缺集数" width="80">
-          <template #default="{ row }">{{ row.missing_count }}</template>
-        </el-table-column>
-        <el-table-column label="首次发现" width="168">
-          <template #default="{ row }">
-            <span class="mono">{{ fmtTime(row.first_detected_at) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="求补人数" width="90">
-          <template #default="{ row }">
-            {{ row.requesters > 0 ? `${row.requesters} 人` : '—' }}
-          </template>
-        </el-table-column>
-      </el-table>
-      <EmptyState
-        v-else-if="!loading"
-        compact
-        :icon="ListChecks"
-        title="没有正在缺集的剧"
-        description="核算工人跑过之后，缺集的剧会自动出现在这里。"
-      />
-      <div class="pager">
-        <el-button :disabled="offset <= 0 || loading" @click="prevPage">
-          上一页
-        </el-button>
-        <span class="dim">
-          第 {{ Math.floor(offset / PAGE_SIZE) + 1 }} 页 · 本页 {{ rows.length }} 条
-        </span>
-        <el-button
-          :disabled="offset + PAGE_SIZE >= total || loading"
-          @click="nextPage"
-        >
-          下一页
-        </el-button>
-      </div>
+        <template #cell-first_detected_at="{ row }">
+          <span class="mono">{{ fmtTime(row.first_detected_at) }}</span>
+        </template>
+        <template #cell-requesters="{ row }">
+          {{ row.requesters > 0 ? `${row.requesters} 人` : '—' }}
+        </template>
+        <template #cell-actions="{ row }">
+          <el-button link type="primary" @click="openDetail(row)">明细</el-button>
+        </template>
+      </DataTable>
     </SectionCard>
+
+    <el-drawer
+      v-model="detailVisible"
+      :title="detailRow ? `缺集明细 · ${detailRow.series_name}` : '缺集明细'"
+      :size="isPhone ? '100%' : '520px'"
+    >
+      <pre v-if="detailRow" class="detail-pre">{{ detailText(detailRow) }}</pre>
+    </el-drawer>
   </div>
 </template>
 
@@ -361,10 +352,6 @@ onMounted(() => {
   gap: 8px;
 }
 
-.missing-table {
-  width: 100%;
-}
-
 .mono {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -381,13 +368,6 @@ onMounted(() => {
   white-space: pre-wrap;
   word-break: break-all;
   color: var(--au-text-2);
-}
-
-.pager {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 12px;
 }
 
 .fill-note {
