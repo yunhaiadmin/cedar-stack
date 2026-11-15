@@ -10,7 +10,7 @@
   ``agent_balance_logs``（只增不改），不与积分钱包
   （``web_users.points`` / ``points_logs``）混账。余额来源 v1 只有
   管理员手工增减（带备注、留痕）。
-- **进货商品 = 现有订阅套餐**：面值 = 套餐人民币价 ``SubscriptionPlan.price``；
+- **进货商品 = 现有订阅套餐**：面值 = 套餐价（美元） ``SubscriptionPlan.price``；
   进货单价 = 面值 × 等级折扣率，**按分四舍五入**（``ROUND_HALF_UP``
   到 2 位小数，与全站金额列 ``Numeric(10, 2)`` 的口径一致，见
   :func:`discounted_unit_price`）。生成的码就是现有卡码

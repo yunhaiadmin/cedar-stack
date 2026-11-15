@@ -2,13 +2,14 @@
 """福利邀请：送好友试用（被邀请人见面礼），口径映射自友站福利邀请。
 
 友站机制（2026-11-13 对账报告实查）：福利邀请 = 送试用、每月 2 次、
-邀请人充值 > $10 才有资格。映射到我方（人民币口径、全走配置键）：
+邀请人充值 > $10 才有资格。映射到我方（美元口径、全走配置键；
+2026-11-15 币种改美刀，门槛直接用友站原值 $10）：
 
 - 被邀请人经邀请注册成功 → 得 ``invite_trial_days`` 天试用订阅
   （体验权益、不可变现，与返利「只挂真实付费」不冲突）；
 - 邀请人资格门槛：累计实付（已支付订阅订单额合计）≥
-  ``invite_welfare_min_paid_fen``（默认 1000 分 = ¥10，友站 $10 的
-  人民币占位映射，管理端可改；0 = 无门槛）；
+  ``invite_welfare_min_paid_fen``（默认 1000 美分 = $10，友站原值，
+  管理端可改；0 = 无门槛）；
 - 次数上限：每位邀请人每月最多送出 ``invite_welfare_monthly_limit``
   次（默认 2；0 = 福利试用关闭）；
 - 总开关 ``invite_trial_enabled``（默认开）+ 天数默认 0 —— 与推广
@@ -46,7 +47,7 @@ CONFIG_MONTHLY_LIMIT = "invite_welfare_monthly_limit"
 CONFIG_MIN_PAID_FEN = "invite_welfare_min_paid_fen"
 CONFIG_PLAN_ID = "invite_trial_plan_id"
 
-#: 出厂默认：开关开、天数 0（不发）、月 2 次、邀请人实付门槛 ¥10、
+#: 出厂默认：开关开、天数 0（不发）、月 2 次、邀请人实付门槛 $10、
 #: 试用专属套餐不指定（0 = 沿用卡码默认套餐口径）
 DEFAULTS: dict[str, str] = {
     CONFIG_ENABLED: "true",
@@ -60,7 +61,7 @@ DESCRIPTIONS = {
     CONFIG_ENABLED: "福利邀请（送好友试用）总开关",
     CONFIG_DAYS: "福利邀请试用天数（被邀请人注册得试用订阅；0 = 不发）",
     CONFIG_MONTHLY_LIMIT: "福利邀请每月次数上限（每位邀请人；0 = 关闭福利试用）",
-    CONFIG_MIN_PAID_FEN: "福利邀请资格门槛（邀请人累计实付，分；0 = 无门槛）",
+    CONFIG_MIN_PAID_FEN: "福利邀请资格门槛（邀请人累计实付，美分；0 = 无门槛）",
     CONFIG_PLAN_ID: "福利邀请试用专属套餐 ID（0 = 不指定、沿用默认套餐口径；"
                     "指定后试用订阅建在该套餐上，流量等权益按该套餐声明）",
 }
@@ -141,7 +142,7 @@ def write_policy(db: Session, values: dict) -> dict:
 # ==================== 资格与用量 ====================
 
 def inviter_paid_total_fen(db: Session, inviter_id: int) -> int:
-    """邀请人累计实付（分）：已支付订阅订单 amount 合计（元 → 分）。"""
+    """邀请人累计实付（美分）：已支付订阅订单 amount 合计（美元 → 美分）。"""
     total = (
         db.query(func.coalesce(func.sum(models.SubscriptionOrder.amount), 0))
         .filter(models.SubscriptionOrder.user_id == inviter_id,

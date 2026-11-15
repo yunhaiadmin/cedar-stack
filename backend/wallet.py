@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """钱包余额账本服务（钱包批 1：地基）。
 
-全站唯一货币 = 现金余额（人民币元，Numeric(12,2)，绝不 float 运算）。
+全站唯一货币 = 现金余额（美元，Numeric(12,2)，绝不 float 运算；
+2026-11-15 用户亲令币种改美刀为主，此前人民币口径就此作废）。
 模式照抄已验证的两套现成账本：
 
 - 代理余额（backend/agents.py）：条件 UPDATE 防扣负（``balance >= amount``
@@ -47,16 +48,16 @@ LEDGER_KINDS = {
 #: 钱包配置默认值（§10 定版口径；DB 无行时按此生效，管理端可改）
 WALLET_CONFIG_DEFAULTS = {
     "wallet_enabled": True,                    # 钱包总开关
-    "wallet_min_topup_amount": 1000,           # 最低充值额（分）＝¥10
+    "wallet_min_topup_amount": 1000,           # 最低充值额（美分）＝$10
     "wallet_topup_fee_pct": 0,                 # 充值手续费比例（批 3 再议）
     "wallet_invite_rebate_percent": 5,         # 邀请返利比例（批 2 计提）
-    "wallet_invite_rebate_cap": 0,             # 返利上限（分），0=不限
+    "wallet_invite_rebate_cap": 0,             # 返利上限（美分），0=不限
     # 返利分档三键与 #175 invite_rebate 的 DEFAULT_* 逐字一致（同文件
     # rebate_mode/tier_threshold_fen/tier_percent 的出厂默认）：
     "wallet_invite_rebate_mode": "tiered",     # 返利模式：tiered 分档 / flat 统一比例
-    "wallet_invite_rebate_tier_threshold": 35000,  # 分档门槛（分）＝¥350，按每位好友累计付费计
+    "wallet_invite_rebate_tier_threshold": 5000,  # 分档门槛（美分）＝$50（友站原值），按每位好友累计付费计
     "wallet_invite_rebate_tier_percent": 1,    # 二档比例 %（门槛以上部分）
-    "traffic_balance_price_per_100gb": 300,    # 余额购流量单价（分/100GB）＝¥3
+    "traffic_balance_price_per_100gb": 30,     # 余额购流量单价（美分/100GB）＝$0.30（友站原值）
     "wallet_refund_to_balance": True,          # 退款回钱包（批 2 落地）
     "wallet_auto_renew_enabled": True,         # 余额自动续费总闸（2026-11-14 订阅重做开启：用户侧开关默认关、开了才扣）
 }

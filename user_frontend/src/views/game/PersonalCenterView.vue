@@ -198,7 +198,7 @@
         <!-- 子账号没有钱包：余额行隐藏（钱包页的购买/兑换后端同步 403） -->
         <RouterLink v-if="walletInfo && !isSubAccount" class="ov-trow" to="/wallet">
           <span class="ov-trow__name">账户余额</span>
-          <span class="ov-trow__value">¥ {{ walletInfo.balance }}</span>
+          <span class="ov-trow__value">$ {{ walletInfo.balance }}</span>
           <ChevronRight :size="18" class="ov-row__chev" aria-hidden="true" />
         </RouterLink>
         <RouterLink class="ov-trow" to="/game/account/invite">

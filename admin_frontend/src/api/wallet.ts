@@ -6,7 +6,7 @@ export interface WalletLedgerRow {
   user_id: number
   username?: string | null
   kind: string
-  /** 带符号金额（元，字符串保精度）：正入账 / 负出账 */
+  /** 带符号金额（美元，字符串保精度）：正入账 / 负出账 */
   amount: string
   balance_after: string
   ref_id: string | null

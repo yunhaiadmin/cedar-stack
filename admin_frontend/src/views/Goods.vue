@@ -252,7 +252,7 @@ onMounted(load)
         </template>
 
         <template #cell-price="{ row }">
-          <span class="price">¥ {{ Number(row.price).toFixed(2) }}</span>
+          <span class="price">$ {{ Number(row.price).toFixed(2) }}</span>
         </template>
 
         <template #cell-duration_days="{ row }">{{ row.duration_days }} 天</template>
@@ -291,7 +291,7 @@ onMounted(load)
         </el-form-item>
         <el-form-item label="描述" prop="description"><el-input v-model="planForm.description" maxlength="200" /></el-form-item>
         <div class="form-grid">
-          <el-form-item label="价格 (¥)" prop="price"><el-input-number v-model="planForm.price" :min="0" :precision="2" class="w-full" /></el-form-item>
+          <el-form-item label="价格 ($)" prop="price"><el-input-number v-model="planForm.price" :min="0" :precision="2" class="w-full" /></el-form-item>
           <el-form-item label="时长 (天)" prop="duration_days"><el-input-number v-model="planForm.duration_days" :min="1" :max="3650" class="w-full" /></el-form-item>
         </div>
         <el-form-item label="特性" prop="features">

@@ -173,7 +173,7 @@ const groups = computed<MenuGroup[]>(() => {
       key: 'wallet',
       label: '我的钱包',
       to: '/wallet',
-      value: walletBalance.value != null ? `¥ ${walletBalance.value}` : undefined,
+      value: walletBalance.value != null ? `$ ${walletBalance.value}` : undefined,
     },
   ]
   const account: MenuItem[] = [

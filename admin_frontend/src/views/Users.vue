@@ -725,7 +725,7 @@ function fmtCount(n: number | null | undefined): string {
               :value="detail.invitation.count"
               :suffix="'人'"
             />
-            <StatTile label="累计付费" :icon="Wallet" :value="`¥${detail.orders.paid_total.toFixed(2)}`" />
+            <StatTile label="累计付费" :icon="Wallet" :value="`$${detail.orders.paid_total.toFixed(2)}`" />
             <StatTile
               label="观看"
               :icon="Film"
@@ -911,7 +911,7 @@ function fmtCount(n: number | null | undefined): string {
               <div v-for="o in detail.orders.subscription" :key="o.order_id" class="line-row">
                 <span class="au-badge au-badge-amber line-tag">订阅</span>
                 <span class="line-desc">{{ o.item_name }}</span>
-                <span class="line-amount">¥{{ o.amount }}</span>
+                <span class="line-amount">${{ o.amount }}</span>
                 <span class="line-date">{{ fmtDate(o.created_at) }}</span>
               </div>
             </el-tab-pane>
@@ -972,7 +972,7 @@ function fmtCount(n: number | null | undefined): string {
             <el-option
               v-for="p in plans"
               :key="p.id"
-              :label="`${p.name}（${p.duration_days} 天 / ¥${p.price}）`"
+              :label="`${p.name}（${p.duration_days} 天 / $${p.price}）`"
               :value="p.id"
             />
           </el-select>

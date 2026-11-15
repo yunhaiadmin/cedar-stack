@@ -306,7 +306,7 @@ async def refund_order(
         if result["revoked_days"]:
             detail_bits.append(f"已回滚 {result['revoked_days']} 天会员")
         if result.get("refund_to_wallet"):
-            detail_bits.append(f"已退回钱包 ¥{result['refund_amount']}")
+            detail_bits.append(f"已退回钱包 ${result['refund_amount']}")
         if result.get("rebate_reversal_failed"):
             detail_bits.append("邀请返利未能撤回（邀请人余额不足，已挂欠账）")
         result["_notify"] = {"user_id": user.id, "reason": order.refund_reason or "",
@@ -369,7 +369,7 @@ def _reverse_rebate(db: Session, order_id: str, allow_negative: bool) -> tuple[o
     （kind=rebate_reversal，幂等键 rebate-reversal:<订单号>），
     成功则计提行转 reversed；余额不足则计提行置 reversal_owed
     （仍是 credited，待管理员重试/豁免），主退款照做、返利欠着。
-    撤回金额是人民币元 Decimal；没计提/未入账/已撤回时为 0。
+    撤回金额是美元 Decimal；没计提/未入账/已撤回时为 0。
     积分时代的返利台账与欠账表已随积分全清，不再有第二条腿。
     """
     from backend import invite_rebate as _invite_rebate

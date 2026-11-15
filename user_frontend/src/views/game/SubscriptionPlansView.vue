@@ -73,8 +73,8 @@
               <span class="plan-card__name">{{ plan.name }}</span>
               <span v-if="isCurrent(plan)" class="plan-current">当前</span>
               <span class="plan-card__pricebox">
-                <span class="plan-card__price">¥ {{ fmtPrice(monthlyOf(plan)) }}<small> / 月</small></span>
-                <span class="plan-card__annual">年付 ¥ {{ fmtPrice(listPriceFor(plan, 12)) }}</span>
+                <span class="plan-card__price">$ {{ fmtPrice(monthlyOf(plan)) }}<small> / 月</small></span>
+                <span class="plan-card__annual">年付 $ {{ fmtPrice(listPriceFor(plan, 12)) }}</span>
               </span>
             </div>
             <div class="plan-specs">
@@ -174,7 +174,7 @@
           </div>
           <p v-if="!walletEnabled" class="sum-note">钱包暂未开启，暂时无法购买</p>
           <p v-else-if="balanceShortfall > 0" class="sum-note" role="alert">
-            钱包余额不足，还差 ¥ {{ fmtPrice(balanceShortfall) }}，充值后即可购买
+            钱包余额不足，还差 $ {{ fmtPrice(balanceShortfall) }}，充值后即可购买
           </p>
         </section>
       </div>
@@ -232,7 +232,7 @@
           <span>购买后结余</span>
           <b :class="{ 'cfm-neg': balanceAfter < 0 }">{{ moneyText(balanceAfter) }}</b>
         </div>
-        <p v-if="balanceAfter < 0" class="cfm-warn" role="alert">余额不足，还差 ¥ {{ fmtPrice(-balanceAfter) }}</p>
+        <p v-if="balanceAfter < 0" class="cfm-warn" role="alert">余额不足，还差 $ {{ fmtPrice(-balanceAfter) }}</p>
         <p v-if="confirmError" class="cfm-warn" role="alert">{{ confirmError }}</p>
       </div>
       <template #footer>
@@ -264,7 +264,8 @@
  * - 时长：滑杆选 1–12 个月＋分段「1 个月/3 个月/6 个月/年付」双
  *   控件联动；3/6 个月无折扣，仅年付＝11×月价。我方套餐仍以
  *   (总价, 总天数) 存储，月价＝总价÷基准月数由后端下发
- *   （启程 ¥18/月、远行 ¥15/月、环游 ¥12.5/月），前端不自算口径；
+ *   （2026-11-15 起目录为友站国际线路两档：Global 国际版 $1.2/月、
+ *   Global 家庭版 $3.6/月），前端不自算口径；
  * - 套餐呈现：纵向全宽卡片列表（2026-11-15 照友站录屏 f039/f036 重做，
  *   取代三列对比表——手机上第三档曾被挤出屏要横滑）；选中档白卡、
  *   未选档无卡底；线路（服）分段切换，有几组显示几组、一组不显示；
@@ -321,15 +322,21 @@ function fmtPrice(n: number | null | undefined): string {
 }
 function moneyText(v: number | null | undefined): string {
   if (v == null) return '–'
-  return `¥ ${fmtPrice(v)}`
+  return `$ ${fmtPrice(v)}`
 }
 function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
 /* ---------- 线路（服）与套餐选择 ---------- */
+// 分组按线路展示名走（line_name，后端按服配置下发，如「国际线路」）；
+// 未配线路名时后端已回退为服名，前端再兜底一层。服名本身（realm_name）
+// 只作回退，不拿它当分组名覆盖线路名。
+function lineLabel(p: SubscriptionPlan): string {
+  return p.line_name || p.realm_name || '默认'
+}
 const realmOptions = computed(() => {
-  const names = [...new Set(plans.value.map((p) => p.realm_name || '默认'))]
+  const names = [...new Set(plans.value.map((p) => lineLabel(p)))]
   return names.map((n) => ({ value: n, label: n }))
 })
 const selectedRealm = ref('')
@@ -341,7 +348,7 @@ watch(realmOptions, (opts) => {
 const realmPlans = computed(() => {
   const realm = selectedRealm.value || realmOptions.value[0]?.value || '默认'
   return [...plans.value]
-    .filter((p) => (p.realm_name || '默认') === realm)
+    .filter((p) => lineLabel(p) === realm)
     .sort((a, b) => a.duration_days - b.duration_days || a.price - b.price)
 })
 const selectedPlanId = ref<number | null>(null)
@@ -410,10 +417,17 @@ const compareRows = computed(() => {
       label: '登录设备',
       cells: list.map(() => (deviceLimit.value > 0 ? `${deviceLimit.value} 台` : '不限')),
     },
-    // 子账号是团队维度的能力、没有套餐级数据源：如实占位不编造
-    { label: '子账号', cells: list.map(() => '—') },
+    // 子账号：读套餐权益 sub_account_limit（子账号单登记/消费）；未声明
+    // 显示「—」、声明 0 显示「无」、声明 N 显示「N 个」，不编造
+    {
+      label: '子账号',
+      cells: list.map((p) => {
+        const n = p.entitlements?.sub_account_limit
+        return n == null ? '—' : n > 0 ? `${n} 个` : '无'
+      }),
+    },
     { label: '下载', cells: list.map(() => (downloadAllowed.value ? '支持' : '不支持')) },
-    { label: '线路', cells: list.map((p) => p.realm_name || '标准线路') },
+    { label: '线路', cells: list.map((p) => p.line_name || p.realm_name || '标准线路') },
   ]
 })
 

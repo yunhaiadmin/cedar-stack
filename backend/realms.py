@@ -103,6 +103,9 @@ REALM_CONFIG_BASES = (
     # subscription_buy_self_earned_only 已于 2026-11-02 随来源限定删除）
     "subscription_purchase_enabled",
     "subscription_points_purchase_enabled",
+    # 订阅线路展示名（2026-11-15 美元目录单）：订阅页分组/对比表按服读，
+    # 空 = 回退服名；服名本身（首页服务器卡等）不受影响
+    "subscription_line_name",
     # 挂载体检快照：挂载跟着服走，结论文案也必须按服分别存
     "emby_managed_mounts_health",
 )

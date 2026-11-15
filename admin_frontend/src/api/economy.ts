@@ -145,7 +145,7 @@ export interface RefundResult {
   revoked_points: number
   /** 实际回滚的会员天数（订阅时） */
   revoked_days: number
-  /** 同时撤回的邀请人返利（元） */
+  /** 同时撤回的邀请人返利（美元） */
   rebate_reversed: number
   /** 返利撤回失败（邀请人余额不足；计提行已标记 reversal_owed 待处理） */
   rebate_reversal_failed?: boolean
@@ -186,7 +186,7 @@ export interface CouponRow {
   code: string
   kind: 'all' | 'subscription' | 'recharge'
   discount_type: 'percent' | 'fixed'
-  /** percent: 实付百分比（90 = 九折）；fixed: 减免金额（元） */
+  /** percent: 实付百分比（90 = 九折）；fixed: 减免金额（美元） */
   value: number
   min_amount: number
   max_discount: number

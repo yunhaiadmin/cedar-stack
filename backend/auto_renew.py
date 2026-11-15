@@ -93,8 +93,8 @@ def _renew_one(db: Session, sub: models.UserSubscription,
             event_type="economy.subscription_auto_renew_failed",
             user_id=user.id,
             title="⚠️ 自动续费失败：余额不足",
-            content=(f"「{plan.name}」自动续费需要 ¥{price:.2f}，"
-                     f"当前余额 ¥{balance:.2f}，请充值后等待下一次自动续费"
+            content=(f"「{plan.name}」自动续费需要 ${price:.2f}，"
+                     f"当前余额 ${balance:.2f}，请充值后等待下一次自动续费"
                      "或手动续费。"),
             related_id=sub.id,
         )]

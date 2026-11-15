@@ -155,7 +155,7 @@ function resetFilters() {
 function discountText(row: CouponRow): string {
   return row.discount_type === 'percent'
     ? `${(row.value / 10).toFixed(1).replace(/\.0$/, '')} 折（实付 ${row.value}%）`
-    : `立减 ¥${row.value.toFixed(2)}`
+    : `立减 $${row.value.toFixed(2)}`
 }
 
 function scopeText(row: CouponRow): string {
@@ -223,7 +223,7 @@ const createRules: FormRules = {
         const min = percent ? 1 : 0.01
         const max = percent ? 100 : 100000
         if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
-          callback(new Error(percent ? '实付百分比应在 1 到 100 之间' : '减免金额应在 0.01 到 100000 元之间'))
+          callback(new Error(percent ? '实付百分比应在 1 到 100 之间' : '减免金额应在 0.01 到 100000 美元之间'))
           return
         }
         callback()
@@ -379,7 +379,7 @@ const editRules: FormRules = {
         const min = percent ? 1 : 0.01
         const max = percent ? 100 : 100000
         if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
-          callback(new Error(percent ? '实付百分比应在 1 到 100 之间' : '减免金额应在 0.01 到 100000 元之间'))
+          callback(new Error(percent ? '实付百分比应在 1 到 100 之间' : '减免金额应在 0.01 到 100000 美元之间'))
           return
         }
         callback()
@@ -702,8 +702,8 @@ onMounted(() => {
         <template #cell-discount="{ row }">
           <span class="discount">{{ discountText(row) }}</span>
           <div v-if="row.min_amount > 0 || row.max_discount > 0" class="sub">
-            <span v-if="row.min_amount > 0">满 ¥{{ row.min_amount.toFixed(2) }} 可用</span>
-            <span v-if="row.max_discount > 0">· 最多省 ¥{{ row.max_discount.toFixed(2) }}</span>
+            <span v-if="row.min_amount > 0">满 ${{ row.min_amount.toFixed(2) }} 可用</span>
+            <span v-if="row.max_discount > 0">· 最多省 ${{ row.max_discount.toFixed(2) }}</span>
           </div>
         </template>
 
@@ -775,7 +775,7 @@ onMounted(() => {
               <el-radio-button value="fixed">固定减免</el-radio-button>
             </el-radio-group>
           </el-form-item>
-          <el-form-item :label="createForm.discount_type === 'percent' ? '实付百分比（90 = 九折）' : '减免金额（元）'" prop="value">
+          <el-form-item :label="createForm.discount_type === 'percent' ? '实付百分比（90 = 九折）' : '减免金额（美元）'" prop="value">
             <el-input-number
               v-model="createForm.value"
               :min="createForm.discount_type === 'percent' ? 1 : 0.01"
@@ -868,7 +868,7 @@ onMounted(() => {
               <el-radio-button value="fixed">固定减免</el-radio-button>
             </el-radio-group>
           </el-form-item>
-          <el-form-item :label="editForm.discount_type === 'percent' ? '实付百分比（90 = 九折）' : '减免金额（元）'" prop="value">
+          <el-form-item :label="editForm.discount_type === 'percent' ? '实付百分比（90 = 九折）' : '减免金额（美元）'" prop="value">
             <el-input-number
               v-model="editForm.value"
               :min="editForm.discount_type === 'percent' ? 1 : 0.01"
@@ -925,8 +925,8 @@ onMounted(() => {
         <template #cell-order_id="{ row }"><span class="mono">{{ row.order_id }}</span></template>
 
         <template #cell-amount="{ row }">
-          ¥{{ row.paid_amount.toFixed(2) }}
-          <span class="muted">（原价 ¥{{ row.list_price.toFixed(2) }}，省 ¥{{ row.discount_amount.toFixed(2) }}）</span>
+          ${{ row.paid_amount.toFixed(2) }}
+          <span class="muted">（原价 ${{ row.list_price.toFixed(2) }}，省 ${{ row.discount_amount.toFixed(2) }}）</span>
         </template>
 
         <template #cell-status="{ row }">
@@ -971,8 +971,8 @@ onMounted(() => {
           </div>
           <div class="kv-row"><span class="kv-key">门槛 / 封顶</span>
             <span class="kv-value">
-              {{ manage.row.min_amount > 0 ? `满 ¥${manage.row.min_amount.toFixed(2)}` : '无门槛' }} ·
-              {{ manage.row.max_discount > 0 ? `最多省 ¥${manage.row.max_discount.toFixed(2)}` : '不封顶' }}
+              {{ manage.row.min_amount > 0 ? `满 $${manage.row.min_amount.toFixed(2)}` : '无门槛' }} ·
+              {{ manage.row.max_discount > 0 ? `最多省 $${manage.row.max_discount.toFixed(2)}` : '不封顶' }}
             </span>
           </div>
           <div class="kv-row"><span class="kv-key">有效期</span><span class="kv-value">{{ validText(manage.row) }}</span></div>

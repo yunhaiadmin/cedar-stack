@@ -3,14 +3,14 @@
     <div class="v4-scope">
       <div class="v4-page wallet-page">
         <div class="wallet-body">
-          <!-- 余额卡：当前余额（唯一货币：现金余额，人民币元） -->
+          <!-- 余额卡：当前余额（唯一货币：现金余额，美元） -->
           <section class="wallet-card" aria-label="钱包余额">
             <p class="wallet-card__label">钱包余额</p>
             <p class="wallet-card__big">
               <span v-if="loading">—</span>
-              <span v-else>¥ {{ balance }}</span>
+              <span v-else>$ {{ balance }}</span>
             </p>
-            <p class="wallet-card__note">全站唯一货币：现金余额（人民币）。订阅、购流量、邀请返利都走这里。</p>
+            <p class="wallet-card__note">全站唯一货币：现金余额（美元）。订阅、购流量、邀请返利都走这里。</p>
             <p v-if="!walletEnabled" class="wallet-card__note" role="alert">钱包功能暂未开启，余额相关操作不可用，请联系服主。</p>
           </section>
 
@@ -21,7 +21,7 @@
           <!-- 在线充值（批 3）：商户信息未到位，入口只占位、不假接支付 -->
           <section class="wallet-sec" aria-label="在线充值">
             <h2 class="wallet-sec__title">在线充值</h2>
-            <p class="wallet-sec__note">在线充值即将上线（最低 ¥10）。现在可通过管理员充值或兑换余额码入账。</p>
+            <p class="wallet-sec__note">在线充值即将上线（最低 $10）。现在可通过管理员充值或兑换余额码入账。</p>
             <button type="button" class="wallet-btn wallet-btn--disabled" disabled>即将上线</button>
           </section>
 
@@ -220,7 +220,7 @@ async function doRedeem() {
   redeemError.value = ''
   try {
     const res = await walletApi.redeem(code)
-    toast.success(res.message || `已入账 ¥${res.balance_value ?? ''}`)
+    toast.success(res.message || `已入账 $${res.balance_value ?? ''}`)
     redeemCode.value = ''
     await loadAll()
   } catch (e) {

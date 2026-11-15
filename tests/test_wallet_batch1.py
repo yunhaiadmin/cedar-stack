@@ -295,9 +295,9 @@ def test_wallet_config_defaults(db):
         "wallet_invite_rebate_cap": 0,
         # 返利分档三键：与 #175 invite_rebate 的 DEFAULT_* 逐字一致
         "wallet_invite_rebate_mode": "tiered",
-        "wallet_invite_rebate_tier_threshold": 35000,
+        "wallet_invite_rebate_tier_threshold": 5000,
         "wallet_invite_rebate_tier_percent": 1,
-        "traffic_balance_price_per_100gb": 300,
+        "traffic_balance_price_per_100gb": 30,
         "wallet_refund_to_balance": True,
         # 2026-11-14 订阅重做：自动续费总闸默认开（用户侧开关默认关）
         "wallet_auto_renew_enabled": True,
@@ -309,7 +309,7 @@ def test_wallet_settings_endpoint_roundtrip(db, admin):
     assert resp["settings"]["wallet_invite_rebate_percent"] == "5"
     # 返利分档三键（#175 invite_rebate 读）：无库行时回代码默认
     assert resp["settings"]["wallet_invite_rebate_mode"] == "tiered"
-    assert resp["settings"]["wallet_invite_rebate_tier_threshold"] == "35000"
+    assert resp["settings"]["wallet_invite_rebate_tier_threshold"] == "5000"
     assert resp["settings"]["wallet_invite_rebate_tier_percent"] == "1"
     out = admin_wallet.wallet_admin_update_settings(
         admin_wallet.WalletSettingsRequest(

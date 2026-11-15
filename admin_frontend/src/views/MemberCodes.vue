@@ -81,7 +81,7 @@ const genForm = ref({
   // M1：奖励类型（balance=钱包余额码，钱包批 1；welfare 公益资格码已下线）
   reward_type: 'subscription' as 'subscription' | 'discount' | 'balance',
   discount_pct: 85,
-  /** 余额码面额（元，字符串避免 float 丢精度） */
+  /** 余额码面额（美元，字符串避免 float 丢精度） */
   balance_value: '50',
   algorithm: 'base32-20',
   is_decoy: false,
@@ -456,7 +456,7 @@ function usedByNames(row: RegistrationCode): string {
           <el-input-number v-model="genForm.discount_pct" :min="1" :max="99" />
           <span class="form-hint inline-hint">如 85 = 八五折</span>
         </el-form-item>
-        <el-form-item v-if="genForm.reward_type === 'balance'" label="余额面额（元）">
+        <el-form-item v-if="genForm.reward_type === 'balance'" label="余额面额（美元）">
           <el-input v-model="genForm.balance_value" placeholder="如 50" style="width: 160px" />
           <span class="form-hint inline-hint">核销后钱包到账这个金额；不能与白名单码组合</span>
         </el-form-item>

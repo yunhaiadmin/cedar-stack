@@ -372,7 +372,7 @@ async function submitRefund() {
       reverse_rebate: d.reverseRebate,
     })
     const bits: string[] = []
-    if (res.rebate_reversed) bits.push(`撤回返利 ¥${res.rebate_reversed}`)
+    if (res.rebate_reversed) bits.push(`撤回返利 $${res.rebate_reversed}`)
     if (res.rebate_reversal_failed) bits.push('返利未能撤回（邀请人余额不足，计提行已标记待处理）')
     if (res.revoked_days) bits.push(`回滚 ${res.revoked_days} 天`)
     if (res.cancelled) bits.push('该订阅已撤销')
@@ -431,7 +431,7 @@ onMounted(() => {
 
     <!-- 经济总览：数字走正文色，只有「待支付 > 0」染警示；累计营收是全页唯一的琥珀数字 -->
     <section v-if="stats" class="stat-row" aria-label="经济总览">
-      <StatTile label="累计营收" :value="stats.orders.revenue.toFixed(2)" suffix="¥" :icon="Wallet" tone="accent" />
+      <StatTile label="累计营收" :value="stats.orders.revenue.toFixed(2)" suffix="$" :icon="Wallet" tone="accent" />
       <StatTile
         label="待支付订单"
         :value="stats.orders.pending"
@@ -520,7 +520,7 @@ onMounted(() => {
         </template>
 
         <template #cell-amount="{ row }">
-          <span class="amount">¥ {{ Number(row.amount).toFixed(2) }}</span>
+          <span class="amount">$ {{ Number(row.amount).toFixed(2) }}</span>
         </template>
 
         <template #cell-username="{ row }">{{ row.username }}</template>
@@ -570,7 +570,7 @@ onMounted(() => {
         <el-form-item label="订单">
           <span class="dialog-order">
             <span class="mono">{{ refundDialog.row?.order_id }}</span>
-            <em class="muted">（{{ refundDialog.row?.item_name }} · ¥{{ Number(refundDialog.row?.amount ?? 0).toFixed(2) }}）</em>
+            <em class="muted">（{{ refundDialog.row?.item_name }} · ${{ Number(refundDialog.row?.amount ?? 0).toFixed(2) }}）</em>
           </span>
         </el-form-item>
         <el-form-item label="退款原因（必填，写入审计）">
@@ -648,7 +648,7 @@ onMounted(() => {
           <el-tag :type="statusType(detail.row.status)" size="small">
             {{ statusText(detail.row.status) }}
           </el-tag>
-          <span class="od-amount">¥ {{ Number(detail.row.amount).toFixed(2) }}</span>
+          <span class="od-amount">$ {{ Number(detail.row.amount).toFixed(2) }}</span>
         </div>
 
         <div class="kv-list">

@@ -82,10 +82,10 @@
               </div>
               <div class="iv-stat">
                 <span class="iv-stat__label">累计返利</span>
-                <span class="iv-stat__value">¥{{ totalRebateText }}</span>
+                <span class="iv-stat__value">${{ totalRebateText }}</span>
               </div>
             </div>
-            <p v-if="pendingRebate > 0" class="iv-note">其中 ¥{{ pendingText }} 待入账，钱包开通后自动到账。</p>
+            <p v-if="pendingRebate > 0" class="iv-note">其中 ${{ pendingText }} 待入账，钱包开通后自动到账。</p>
             <p class="iv-rule">{{ rebateRuleText }}</p>
           </template>
 
@@ -143,14 +143,14 @@
                 <span class="iv-row__name">{{ r.invitee_username }}</span>
                 <span v-if="r.paid" class="iv-badge">已付费</span>
                 <span class="iv-row__date">{{ formatDate(r.created_at) }}</span>
-                <span class="iv-row__amt">¥{{ moneyText(r.rebate_total) }}</span>
+                <span class="iv-row__amt">${{ moneyText(r.rebate_total) }}</span>
               </li>
             </ul>
           </template>
 
           <template v-else>
             <div class="iv-rec-sub">
-              <span>累计返利 ¥{{ totalRebateText }}<template v-if="pendingRebate > 0">（待入账 ¥{{ pendingText }}）</template></span>
+              <span>累计返利 ${{ totalRebateText }}<template v-if="pendingRebate > 0">（待入账 ${{ pendingText }}）</template></span>
               <button type="button" class="iv-icon-btn iv-icon-btn--sm" aria-label="刷新返利明细" @click="loadRecords">
                 <RefreshCw :size="18" aria-hidden="true" />
               </button>
@@ -163,7 +163,7 @@
                   {{ r.status === 'credited' ? '已入账' : '待入账' }}
                 </span>
                 <span class="iv-row__date">{{ formatDate(r.created_at) }}</span>
-                <span class="iv-row__amt">¥{{ r.rebate_amount }}</span>
+                <span class="iv-row__amt">${{ r.rebate_amount }}</span>
               </li>
             </ul>
           </template>
@@ -253,9 +253,9 @@ const rebateRuleText = computed(() => {
   if (!r) return ''
   if (r.percent <= 0) return '返利活动暂未开启，好友付费暂时不会产生返利。'
   if (r.mode === 'tiered') {
-    return `好友注册并付费后返利自动计入余额：每位好友累计付费前 ¥${yuanText(r.tier_threshold_fen)} 返 ${r.percent}%，超出部分返 ${r.tier_percent}%。`
+    return `好友注册并付费后返利自动计入余额：每位好友累计付费前 $${yuanText(r.tier_threshold_fen)} 返 ${r.percent}%，超出部分返 ${r.tier_percent}%。`
   }
-  const cap = r.cap_fen > 0 ? `，累计返利上限 ¥${yuanText(r.cap_fen)}` : ''
+  const cap = r.cap_fen > 0 ? `，累计返利上限 $${yuanText(r.cap_fen)}` : ''
   return `好友注册并付费后返利自动计入余额：按好友付费金额的 ${r.percent}% 返利${cap}。`
 })
 
@@ -278,7 +278,7 @@ const welfareStatusText = computed(() => {
   if (w.eligible) return `你已符合福利邀请资格，本月已送出 ${w.used_this_month} 次。`
   if (w.used_this_month >= w.monthly_limit) return '本月福利次数已用完，下个月再来送好友试用。'
   if (w.inviter_paid_fen < w.min_paid_fen) {
-    return `还差 ¥${yuanText(w.min_paid_fen - w.inviter_paid_fen)} 达到福利邀请资格（累计付费满 ¥${yuanText(w.min_paid_fen)}）。`
+    return `还差 $${yuanText(w.min_paid_fen - w.inviter_paid_fen)} 达到福利邀请资格（累计付费满 $${yuanText(w.min_paid_fen)}）。`
   }
   return ''
 })
@@ -286,7 +286,7 @@ const welfareStatusText = computed(() => {
 const welfareRuleText = computed(() => {
   const w = welfare.value
   if (!w) return ''
-  return `好友通过你的邀请注册成功，立刻得 ${w.days} 天试用订阅。每位邀请人每月可送 ${w.monthly_limit} 次，邀请人累计付费满 ¥${yuanText(w.min_paid_fen)} 即可参与。试用是体验权益，不能转让或变现。`
+  return `好友通过你的邀请注册成功，立刻得 ${w.days} 天试用订阅。每位邀请人每月可送 ${w.monthly_limit} 次，邀请人累计付费满 $${yuanText(w.min_paid_fen)} 即可参与。试用是体验权益，不能转让或变现。`
 })
 
 function formatDate(iso: string | null): string {

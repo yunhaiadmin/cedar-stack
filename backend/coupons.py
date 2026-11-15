@@ -185,7 +185,7 @@ def quote(db: Session, *, user: models.WebUser, code: str, kind: str, item_id: i
           now: Optional[datetime] = None) -> dict:
     """预览：给定优惠码与商品，返回能不能用、优惠多少、实付多少
 
-    下单前调用（用户端展示「已优惠 ¥X」），下单时也走这里——两处口径必须一致，
+    下单前调用（用户端展示「已优惠 $X」），下单时也走这里——两处口径必须一致，
     否则会出现「预览 8 折、实付全价」这类信任问题。
     """
     if not enabled(db):

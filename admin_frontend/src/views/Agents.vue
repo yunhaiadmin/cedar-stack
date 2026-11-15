@@ -38,7 +38,7 @@ import {
 const { isPhone } = useBreakpoint()
 const tab = ref<'agents' | 'levels' | 'stats'>('agents')
 
-const money = (n: number) => `¥${(n ?? 0).toFixed(2)}`
+const money = (n: number) => `$${(n ?? 0).toFixed(2)}`
 const rateText = (r: number) => `${(r * 10).toFixed(1).replace(/\.0$/, '')}折`
 
 // ==================== 代理列表 ====================

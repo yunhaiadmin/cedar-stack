@@ -455,9 +455,9 @@ const rebateConfigText = computed(() => {
   const c = moneyOverview.value?.rebate_config
   if (!c) return ''
   if (c.mode === 'tiered') {
-    return `分档：每位好友累计付费前 ¥${yuanOfFen(c.tier_threshold_fen)} 返 ${c.percent}%，超出部分返 ${c.tier_percent}%`
+    return `分档：每位好友累计付费前 $${yuanOfFen(c.tier_threshold_fen)} 返 ${c.percent}%，超出部分返 ${c.tier_percent}%`
   }
-  const cap = c.cap_fen > 0 ? `，累计上限 ¥${yuanOfFen(c.cap_fen)}` : ''
+  const cap = c.cap_fen > 0 ? `，累计上限 $${yuanOfFen(c.cap_fen)}` : ''
   return `一律比例：按好友付费金额的 ${c.percent}% 返利${cap}`
 })
 
@@ -470,8 +470,8 @@ const conversionText = computed(() => {
 const rebateColumns: DataColumn[] = [
   { key: 'inviter_username', label: '邀请人', width: 130, mobile: 'title' },
   { key: 'invitee_username', label: '好友', width: 130 },
-  { key: 'paid_amount', label: '好友实付（¥）', width: 110 },
-  { key: 'rebate_amount', label: '返利（¥）', width: 100 },
+  { key: 'paid_amount', label: '好友实付（$）', width: 110 },
+  { key: 'rebate_amount', label: '返利（$）', width: 100 },
   { key: 'status', label: '状态', width: 90 },
   { key: 'created_at', label: '时间' },
 ]
@@ -538,7 +538,7 @@ async function settleRebates() {
 async function saveTrialPolicy() {
   const effect = !trialForm.enabled || trialForm.days <= 0 || trialForm.monthly_limit <= 0
     ? '保存后福利邀请不实际发放试用。'
-    : `保存后好友注册可得 ${trialForm.days} 天试用，每位邀请人每月 ${trialForm.monthly_limit} 次，资格门槛为累计付费 ¥${trialForm.min_paid_yuan}。`
+    : `保存后好友注册可得 ${trialForm.days} 天试用，每位邀请人每月 ${trialForm.monthly_limit} 次，资格门槛为累计付费 $${trialForm.min_paid_yuan}。`
   try {
     await ElMessageBox.confirm(
       `${effect}只影响之后的新注册，已发放的试用不变。确认保存？`,
@@ -594,10 +594,10 @@ onMounted(reloadAll)
       <StatTile label="累计邀请关系" :value="stats?.invitations ?? '—'" :icon="UserPlus" />
       <StatTile label="本页邀请记录" :value="inviteTotal" :icon="Gift" hint="最新 100 条" />
       <StatTile label="已付费好友" :value="conversionText" :icon="TrendingUp" hint="付费转化（人数 · 比例）" />
-      <StatTile label="返利已入账" :value="moneyOverview ? `¥${moneyOverview.rebate.credited}` : '—'" :icon="Coins" />
+      <StatTile label="返利已入账" :value="moneyOverview ? `$${moneyOverview.rebate.credited}` : '—'" :icon="Coins" />
       <StatTile
         label="返利待入账"
-        :value="moneyOverview ? `¥${moneyOverview.rebate.pending}` : '—'"
+        :value="moneyOverview ? `$${moneyOverview.rebate.pending}` : '—'"
         :icon="Coins"
         :hint="moneyOverview ? `${moneyOverview.rebate.pending_count} 笔待入账` : undefined"
       />
@@ -863,7 +863,7 @@ onMounted(reloadAll)
           </el-form-item>
           <el-form-item label="邀请人资格门槛（累计付费）">
             <el-input-number v-model="trialForm.min_paid_yuan" :min="0" :max="1000000" :precision="2" aria-label="福利邀请资格门槛" />
-            <span class="field-suffix">元</span>
+            <span class="field-suffix">美元</span>
           </el-form-item>
         </el-form>
         <div class="promo-actions">

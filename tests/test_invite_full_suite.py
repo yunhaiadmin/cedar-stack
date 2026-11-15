@@ -2,10 +2,11 @@
 注册归属 + 履约钩子 + 换码 + 管理总览。
 
 口径锚点：
-- 返利只挂被邀请人的真实付费，注册不发可变现奖励；金额 Decimal 元、
-  按分 ROUND_HALF_UP 取整（整笔算完取整一次）；
-- 默认分档 tiered：按每位好友累计付费，前 ¥350（配置键，分）返 5%、
-  超出返 1%；flat 模式保留可切换；
+- 返利只挂被邀请人的真实付费，注册不发可变现奖励；金额 Decimal 美元、
+  按美分 ROUND_HALF_UP 取整（整笔算完取整一次）；
+- 默认分档 tiered：按每位好友累计付费，前 $50（配置键，美分）返 5%、
+  超出返 1%（2026-11-15 币种改美刀，门槛由 ¥350 改为友站原值 $50）；
+  flat 模式保留可切换；
 - 福利试用是体验权益：邀请关系建立时同事务发放，受总开关/天数/
   月次数/邀请人累计付费门槛约束，留痕防重；
 - 本文件默认把钱包总开关关掉（fixture 置 wallet_enabled=false），
@@ -129,7 +130,7 @@ def test_rebate_config_defaults_are_tiered(db):
         "mode": "tiered",
         "percent": 5,
         "cap_fen": 0,
-        "tier_threshold_fen": 35000,
+        "tier_threshold_fen": 5000,
         "tier_percent": 1,
     }
 
@@ -155,35 +156,35 @@ def test_compute_rebate_flat_rounding():
 
 
 def test_compute_rebate_tiered_crossing_threshold():
-    # 首付 ¥400：350×5% + 50×1% = 17.50 + 0.50
+    # 首付 $400：50×5% + 350×1% = 2.50 + 3.50
     got = invite_rebate.compute_rebate_tiered(
-        Decimal("400"), 5, 1, Decimal("0"), Decimal("350"))
-    assert got == Decimal("18.00")
+        Decimal("400"), 5, 1, Decimal("0"), Decimal("50"))
+    assert got == Decimal("6.00")
 
 
 def test_compute_rebate_tiered_exact_threshold():
-    # 已付 ¥300 再付 ¥50 恰达阈值：整笔按 5%
+    # 已付 $30 再付 $20 恰达阈值：整笔按 5%
     got = invite_rebate.compute_rebate_tiered(
-        Decimal("50"), 5, 1, Decimal("300"), Decimal("350"))
-    assert got == Decimal("2.50")
+        Decimal("20"), 5, 1, Decimal("30"), Decimal("50"))
+    assert got == Decimal("1.00")
 
 
 def test_compute_rebate_tiered_above_threshold():
-    # 已付满 ¥350 后再付 ¥100：整笔按 1%
+    # 已付满 $50 后再付 $100：整笔按 1%
     got = invite_rebate.compute_rebate_tiered(
-        Decimal("100"), 5, 1, Decimal("350"), Decimal("350"))
+        Decimal("100"), 5, 1, Decimal("50"), Decimal("50"))
     assert got == Decimal("1.00")
     got = invite_rebate.compute_rebate_tiered(
-        Decimal("100"), 5, 1, Decimal("900"), Decimal("350"))
+        Decimal("100"), 5, 1, Decimal("900"), Decimal("50"))
     assert got == Decimal("1.00")
 
 
 def test_compute_rebate_tiered_rounds_once():
-    # 已付 ¥340 再付 ¥33.33：前段 10×5%=0.50，后段 23.33×1%=0.2333，
+    # 已付 $40 再付 $33.33：前段 10×5%=0.50，后段 23.33×1%=0.2333，
     # 合计 0.7333 → 整笔取整一次 = 0.73（不是分段各取整的 0.50+0.23=0.73 同值例，
     # 这里验证不爆不多算）
     got = invite_rebate.compute_rebate_tiered(
-        Decimal("33.33"), 5, 1, Decimal("340"), Decimal("350"))
+        Decimal("33.33"), 5, 1, Decimal("40"), Decimal("50"))
     assert got == Decimal("0.73")
 
 
@@ -261,19 +262,20 @@ def test_record_rebate_tiered_sequence(db):
     _relation(db, inviter, invitee, code)
 
     amounts = []
-    for i, paid in enumerate(("300", "100", "100")):
+    for i, paid in enumerate(("30", "40", "100")):
         row = invite_rebate.record_payment_rebate(
             db, invitee, source="subscription_order", source_ref=f"SO-T{i}",
             paid_amount=Decimal(paid))
         db.commit()
         amounts.append(row.rebate_amount)
-    # 300 全前段 5% = 15.00；100 跨段 = 50×5% + 50×1% = 3.00；100 全后段 1% = 1.00
-    assert amounts == [Decimal("15.00"), Decimal("3.00"), Decimal("1.00")]
+    # 门槛 $50：30 全前段 5% = 1.50；40 跨段 = 20×5% + 20×1% = 1.20；
+    # 100 全后段 1% = 1.00
+    assert amounts == [Decimal("1.50"), Decimal("1.20"), Decimal("1.00")]
 
 
 def test_record_rebate_cap_truncates(db):
     _set(db, "wallet_invite_rebate_mode", "flat")
-    _set(db, "wallet_invite_rebate_cap", "100")  # 上限 ¥1
+    _set(db, "wallet_invite_rebate_cap", "100")  # 上限 $1（100 美分）
     inviter = _user(db, "inviter-d")
     invitee = _user(db, "invitee-d")
     code = _code(db, inviter, "CODEDDDD")

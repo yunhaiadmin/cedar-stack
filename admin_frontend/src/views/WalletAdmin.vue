@@ -59,7 +59,7 @@ async function submitAdjust() {
       amount: adjustForm.amount,
       reason: adjustForm.reason.trim(),
     })
-    ElMessage.success(`调账完成，当前余额 ¥${res.balance}`)
+    ElMessage.success(`调账完成，当前余额 $${res.balance}`)
     adjustForm.amount = ''
     adjustForm.reason = ''
     await loadBalance()
@@ -94,14 +94,14 @@ async function loadLedger() {
 // ---------- 钱包配置 ----------
 const SETTING_FIELDS = [
   { key: 'wallet_enabled', label: '钱包总开关', type: 'bool', hint: '关了之后余额兑换与后续余额支付入口全灭，只读余额仍可查' },
-  { key: 'wallet_min_topup_amount', label: '最低充值额（分）', type: 'int', hint: '默认 1000 ＝ ¥10，在线充值（批 3）用' },
+  { key: 'wallet_min_topup_amount', label: '最低充值额（美分）', type: 'int', hint: '默认 1000 ＝ $10，在线充值（批 3）用' },
   { key: 'wallet_topup_fee_pct', label: '充值手续费比例（%）', type: 'int', hint: '默认 0，批 3 再议' },
   { key: 'wallet_invite_rebate_percent', label: '邀请返利比例（%）', type: 'int', hint: '默认 5，好友充值到账后返给邀请人（批 2 计提）' },
-  { key: 'wallet_invite_rebate_cap', label: '单人返利上限（分）', type: 'int', hint: '默认 0 ＝ 不限' },
+  { key: 'wallet_invite_rebate_cap', label: '单人返利上限（美分）', type: 'int', hint: '默认 0 ＝ 不限' },
   { key: 'wallet_invite_rebate_mode', label: '返利模式', type: 'str', hint: '默认 tiered ＝ 分档（门槛内按返利比例、超出按二档比例）；flat ＝ 全程统一比例；只填 tiered 或 flat' },
-  { key: 'wallet_invite_rebate_tier_threshold', label: '分档门槛（分）', type: 'int', hint: '默认 35000 ＝ ¥350，按每位好友累计付费计，仅分档模式用' },
+  { key: 'wallet_invite_rebate_tier_threshold', label: '分档门槛（美分）', type: 'int', hint: '默认 5000 ＝ $50，按每位好友累计付费计，仅分档模式用' },
   { key: 'wallet_invite_rebate_tier_percent', label: '二档比例（%）', type: 'int', hint: '默认 1，超出分档门槛的部分按此比例返，仅分档模式用' },
-  { key: 'traffic_balance_price_per_100gb', label: '余额购流量单价（分 / 100GB）', type: 'int', hint: '默认 300 ＝ ¥3/100GB（批 2 启用）' },
+  { key: 'traffic_balance_price_per_100gb', label: '余额购流量单价（美分 / 100GB）', type: 'int', hint: '默认 30 ＝ $0.30/100GB（批 2 启用）' },
   { key: 'wallet_refund_to_balance', label: '退款回钱包', type: 'bool', hint: '默认开（批 2 落地）' },
   { key: 'wallet_auto_renew_enabled', label: '余额自动续订', type: 'bool', hint: '默认关，不开' },
 ] as const
@@ -150,12 +150,12 @@ onMounted(async () => {
       <template v-if="balanceInfo">
         <el-descriptions :column="3" border class="balance-desc">
           <el-descriptions-item label="用户">{{ balanceInfo.username }}（ID {{ balanceInfo.user_id }}）</el-descriptions-item>
-          <el-descriptions-item label="当前余额">¥{{ balanceInfo.balance }}</el-descriptions-item>
+          <el-descriptions-item label="当前余额">${{ balanceInfo.balance }}</el-descriptions-item>
           <el-descriptions-item label="流水条数">{{ balanceInfo.ledger_total }}</el-descriptions-item>
         </el-descriptions>
 
         <el-form inline class="adjust-form">
-          <el-form-item label="调账金额（元）">
+          <el-form-item label="调账金额（美元）">
             <el-input v-model="adjustForm.amount" placeholder="正数增 / 负数减，如 50 或 -20" style="width: 220px" />
           </el-form-item>
           <el-form-item label="原因（必填）">
@@ -192,7 +192,7 @@ onMounted(async () => {
         <el-table-column label="类型" width="120">
           <template #default="{ row }">{{ KIND_LABELS[row.kind] || row.kind }}</template>
         </el-table-column>
-        <el-table-column label="金额（元）" width="120">
+        <el-table-column label="金额（美元）" width="120">
           <template #default="{ row }">
             <span :class="row.amount.startsWith('-') ? 'neg' : 'pos'">{{ row.amount.startsWith('-') ? '' : '+' }}{{ row.amount }}</span>
           </template>

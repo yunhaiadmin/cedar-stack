@@ -560,7 +560,7 @@ def preview_code(db: Session, raw: str, username: Optional[str] = None) -> dict:
 
             value = getattr(code, 'balance_value', None) or Decimal("0")
             preview["balance_value"] = f"{value:.2f}"
-            preview["message"] = error or (f"余额卡码（到账 ¥{value:.2f}）" if named_ok else "该卡码限指定账号使用")
+            preview["message"] = error or (f"余额卡码（到账 ${value:.2f}）" if named_ok else "该卡码限指定账号使用")
         if named_ambiguous and not error:
             # 上面各奖励分支按 named_ok 选文案，会把歧义文案覆盖回「限指定账号」，这里统一盖回。
             preview["message"] = "该卡码的指名账号不唯一，请联系管理员处理"
@@ -806,7 +806,7 @@ def _redeem_found_code(db: Session, user: models.WebUser,
         type_name = CODE_TYPE_NAMES.get(code.code_type, "卡码")
         return {
             "success": True,
-            "message": f"{type_name}核销成功，钱包到账 ¥{amount:.2f}",
+            "message": f"{type_name}核销成功，钱包到账 ${amount:.2f}",
             "code_type": code.code_type,
             "reward_type": "balance",
             "balance_value": f"{amount:.2f}",
