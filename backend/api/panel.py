@@ -498,6 +498,60 @@ def set_notify_prefs(
     return _ok(notify_prefs.get_prefs(user))
 
 
+def _radar_tasks(db: Session, backlog) -> list:
+    """服务器页「雷达任务」：4 项后台任务逐项接真源，不许恒真/恒假。
+
+    - enrich 刮削：沿用既有 backlog 口径（health 的 enrich_backlog 非零＝在干活）。
+    - probe 探针：probe_worker.status_snapshot——启用且未暂停，且有在飞
+      任务（runtime in_flight）或 DB 里 probing 状态的条目才算进行中；
+      总开关关（enabled=False）或快照接不出时整项不下发。
+    - scan 扫描：ScanRun 有 running 流水，或本进程 scanner.is_scan_active，
+      或 Library.is_scanning 标志（与 portal 的 is_scanning 同口径）。
+    - night 单集：凌晨单集刮削（enrich_worker 夜间窗口配置）——功能开时
+      下发、active＝当前是否在夜间窗口内；功能关时整项不下发。
+    任一真源抛错只丢该项，不拖垮整个面板（与其余段落的容错口径一致）。
+    """
+    tasks = [{"key": "enrich", "name": "刮削", "active": bool(backlog)}]
+
+    try:
+        from backend.emby_server import probe_worker
+        snap = probe_worker.status_snapshot(db, light=True)
+        if snap.get("enabled"):
+            runtime = snap.get("runtime") or {}
+            in_flight = runtime.get("in_flight") or 0
+            probing = (snap.get("counts") or {}).get("probing", 0) or 0
+            active = (not snap.get("paused")) and (in_flight > 0 or probing > 0)
+            tasks.append({"key": "probe", "name": "探针", "active": bool(active)})
+    except Exception:  # noqa: BLE001
+        logger.exception("雷达任务·探针状态接源失败，该项不下发")
+
+    try:
+        from backend.emby_server import models as em
+        from backend.emby_server import scanner
+        running = (db.query(em.ScanRun.id)
+                   .filter(em.ScanRun.status == "running").first())
+        active = running is not None
+        if not active:
+            for lib in db.query(em.Library).all():
+                if scanner.is_scan_active(lib.id) or lib.is_scanning:
+                    active = True
+                    break
+        tasks.append({"key": "scan", "name": "扫描", "active": bool(active)})
+    except Exception:  # noqa: BLE001
+        logger.exception("雷达任务·扫描状态接源失败，该项不下发")
+
+    try:
+        from backend.emby_server import enrich_worker
+        night_cfg = enrich_worker.get_episode_night_config(db)
+        if night_cfg.get("enabled"):
+            tasks.append({"key": "night", "name": "单集",
+                          "active": bool(night_cfg.get("in_window"))})
+    except Exception:  # noqa: BLE001
+        logger.exception("雷达任务·单集夜间配置接源失败，该项不下发")
+
+    return tasks
+
+
 # ==================== 7. GET /api/panel/server ====================
 
 @router.get("/server")
@@ -582,13 +636,8 @@ def panel_server(
     except Exception:  # noqa: BLE001
         logger.exception("生长记录查询失败")
 
-    # 雷达任务：固定 4 个后台任务 + 状态
-    radar_tasks = [
-        {"key": "enrich", "name": "刮削", "active": bool(vitals.get("backlog"))},
-        {"key": "probe", "name": "探针", "active": True},
-        {"key": "scan", "name": "扫描", "active": False},
-        {"key": "night", "name": "单集", "active": False},
-    ]
+    # 雷达任务：逐项接真源（见 _radar_tasks），接不出的项不下发
+    radar_tasks = _radar_tasks(db, vitals.get("backlog"))
 
     # 面板是否可写（管理员）
     is_admin = bool(getattr(user, "is_staff", False))
