@@ -653,6 +653,9 @@ ECONOMY_CONFIG_SCHEMA: dict[str, tuple] = {
     "wallet_invite_rebate_tier_threshold": ("int", 0, _BIG),
     "wallet_invite_rebate_tier_percent": ("int", 0, 100),
     "traffic_balance_price_per_100gb": ("int", 0, _BIG),
+    # 时间换流量包表（JSON 数组，读侧 traffic_quota.exchange_packages
+    # 校验后下发；缺省/非法回退默认半月包/整月包），raw 整串保存。
+    "traffic_exchange_packages": ("raw",),
     "wallet_refund_to_balance": ("bool",),
     "wallet_auto_renew_enabled": ("bool",),
     "payment_gateway_url": ("raw",), "payment_partner_id": ("raw",),

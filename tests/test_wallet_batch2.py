@@ -337,11 +337,29 @@ def test_buy_traffic_insufficient(db):
             .filter_by(kind="traffic_purchase").count() == 0)
 
 
-def test_buy_traffic_bad_option(db):
+def test_buy_traffic_arbitrary_gb(db):
+    """任意 ≥100 的整数 GB 都可买（2026-11-15 弹窗自由输入口径）：
+    150G 按单价比例计价 ¥3/100GB → ¥4.50，抵扣 150GB。"""
+    user = _traffic_user(db, balance="100")
+
+    result = tq.buy_traffic_with_balance(db, user.id, 150, "tq-arb-1")
+
+    assert result["replayed"] is False
+    assert result["paid_amount"] == "4.50"
+    assert result["balance_after"] == "95.50"
+    assert result["gb"] == 150
+    log = db.query(em_models.TrafficExchangeLog).filter_by(
+        idempotency_key="tq-arb-1").one()
+    assert log.bytes_credited == 150 * GB
+    assert result["summary"]["credit_bytes"] == 150 * GB
+
+
+def test_buy_traffic_below_minimum(db):
+    """低于最低 100GB 拒绝（bad_option），不扣款不留痕。"""
     user = _traffic_user(db, balance="100")
 
     with pytest.raises(tq.TrafficError) as excinfo:
-        tq.buy_traffic_with_balance(db, user.id, 150, "tq-bad-1")
+        tq.buy_traffic_with_balance(db, user.id, 99, "tq-low-1")
     db.rollback()
     assert excinfo.value.code == "bad_option"
     assert wallet_service.get_balance(db, user.id) == Decimal("100.00")

@@ -89,6 +89,7 @@ ECONOMY_CONFIG_KEYS = {
     "wallet_invite_rebate_tier_threshold": "int",  # 分档门槛（美分，默认 5000＝$50，按每位好友累计付费计）
     "wallet_invite_rebate_tier_percent": "int",  # 二档比例 %（默认 1，门槛以上部分）
     "traffic_balance_price_per_100gb": "int",  # 余额购流量单价（美分/100GB，默认 30＝$0.30，批 2 启用）
+    "traffic_exchange_packages": "str",  # 时间换流量包表（JSON 数组，读侧校验后下发；非法回退默认两包）
     "wallet_refund_to_balance": "bool",  # 退款回钱包（默认开，批 2 落地）
     "wallet_auto_renew_enabled": "bool",  # 余额自动续费总闸（默认开；用户侧开关默认关）
     "payment_gateway_url": "str", "payment_partner_id": "str",
