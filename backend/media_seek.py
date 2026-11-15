@@ -50,6 +50,35 @@ WITHDRAWN_STATUS = "withdrawn"
 # 求片「处理中」的状态：去重与撤回判定都用这一份口径
 ACTIVE_STATUSES = ("pending", "approved")
 
+# 请求分类（MovieRequest.request_kind）：整片求片与补缺集在
+# backend/missing_episodes 里另有常量（KIND_SEEK / KIND_MISSING）；
+# 这里补「追新」——用户从库内作品行发起的自由说明追新（2026-11-15
+# 按作品组织），与补缺集同属「追新类」（广场计数 / 查重同口径）。
+KIND_CHASE = "chase"
+CHASE_KINDS = (KIND_CHASE, "missing_episodes")
+
+# 具体说明 / 补充说明的字数上限（提交弹层计数同口径，前后端各守一遍）
+MAX_NOTE_LENGTH = 2000
+
+
+def kind_class(kind) -> str:
+    """request_kind → 展示分类：追新类（追新/补缺集）归 'chase'，其余归 'seek'"""
+    return "chase" if (kind or "seek") in CHASE_KINDS else "seek"
+
+
+def clean_poster_url(raw) -> Optional[str]:
+    """海报快照地址清洗：只收 http(s) 地址且不超长，其余一律丢弃为 None。
+
+    快照来自前端候选（TMDB 图片地址），落库前过这一道，避免脏值/脚本
+    地址混进展示面；展示时它只会进 <img src>，但口径上先挡一道。
+    """
+    text = str(raw or "").strip()
+    if not text or len(text) > 500:
+        return None
+    if not (text.startswith("https://") or text.startswith("http://")):
+        return None
+    return text
+
 # 剧集类求片必须带季（端点校验用；电影/纪录片等忽略该字段）
 SERIES_TYPES = ("series", "anime")
 
@@ -348,10 +377,11 @@ def sync_seek_library_row(db: Session, row: models.MovieRequest) -> bool:
     """
     if row.status not in ACTIVE_STATUSES:
         return False
-    # 补缺集行（request_kind='missing_episodes'）不许走这条联动：
-    # 它的剧本来就在库、tmdb 必然对得上，按「在库」翻完成等于
-    # 一落单就假完成。它的完成只认缺集核算工人确认补齐。
-    if (getattr(row, "request_kind", None) or "seek") == "missing_episodes":
+    # 追新类行（补缺集 missing_episodes / 自由追新 chase）不许走这条
+    # 联动：它们的作品本来就在库、tmdb 必然对得上，按「在库」翻完成
+    # 等于一落单就假完成。补缺集的完成只认缺集核算工人确认补齐，
+    # 自由追新只认管理员处理。
+    if kind_class(getattr(row, "request_kind", None)) != "seek":
         return False
     if not row.tmdb_id:
         return False
@@ -441,10 +471,17 @@ def search_candidates(db: Session, query: str, kind: Optional[str] = None) -> di
                 continue
             match = library_hit(db, tmdb_id=tmdb_id, name=name, item_type=one_kind,
                                 year=_year_of(hit, one_kind))
+            original = str(
+                hit.get("original_title") or hit.get("original_name") or ""
+            ).strip()
             results.append({
                 "tmdb_id": tmdb_id,
                 "kind": one_kind,               # movie / series（前端用来选「季」）
                 "name": name,
+                # 原名（TMDB original_title/original_name）：结果行
+                # 「原名 / 年份」一行用它；与中文名相同或缺失时回空串，
+                # 前端回退展示中文名，不编造。
+                "original_name": original if original != name else "",
                 "year": _year_of(hit, one_kind),
                 "overview": str(hit.get("overview") or "")[:300],
                 "poster_url": _poster_url(hit.get("poster_path")),
@@ -452,9 +489,42 @@ def search_candidates(db: Session, query: str, kind: Optional[str] = None) -> di
                 "in_library": match is not None,
                 "library_item_id": str(getattr(match, "guid", "") or "") or None,
             })
+    # 未完成请求标注（按作品组织，2026-11-15）：结果行要按「这部作品
+    # 已经有人在求/在追」分化动作（查看已有请求 vs 发起），一次批量查
+    # 完本页候选的未完结行，按 tmdb 聚成 open_seek / open_chase 两旗。
+    open_flags = open_request_flags(
+        db, [r["tmdb_id"] for r in results])
+    for r in results:
+        flags = open_flags.get(r["tmdb_id"]) or {}
+        r["open_seek"] = bool(flags.get("seek"))
+        r["open_chase"] = bool(flags.get("chase"))
     # 已在库的沉到下面：用户要的是「还没入库、可以求」的候选
     results.sort(key=lambda r: (r["in_library"], -float(r.get("rating") or 0)))
     return {"configured": True, "degraded": degraded, "results": results[:12]}
+
+
+def open_request_flags(db: Session, tmdb_ids: list) -> dict:
+    """一批 tmdb_id 各自有没有未完结的求片/追新：``{tmdb_id: {"seek": bool, "chase": bool}}``
+
+    未完结 = ACTIVE_STATUSES（pending/approved）；追新类含补缺集行
+    （kind_class 口径）。搜索标注与作品详情的拦截提示共用这一口。
+    """
+    ids = [str(t).strip() for t in (tmdb_ids or []) if str(t or "").strip()]
+    if not ids:
+        return {}
+    rows = (
+        db.query(models.MovieRequest.tmdb_id, models.MovieRequest.request_kind)
+        .filter(
+            models.MovieRequest.tmdb_id.in_(ids),
+            models.MovieRequest.status.in_(ACTIVE_STATUSES),
+        )
+        .all()
+    )
+    flags: dict[str, dict] = {}
+    for tmdb_id, kind in rows:
+        entry = flags.setdefault(str(tmdb_id), {"seek": False, "chase": False})
+        entry[kind_class(kind)] = True
+    return flags
 
 
 def seasons_for(tmdb_id: str) -> list[dict]:
@@ -843,8 +913,8 @@ def plaza_groups(db: Session, user_id: int, *, status: Optional[str] = None,
     口径（与「广场只放求片数据、工单不进广场」的既定规则一致）：
     - 数据源只有 movie_requests；反馈工单没有媒体身份、也不公开，恒不进广场，
       故每组的 feedback_count 恒为 0——这是数据口径的结果，不是估算；
-    - 计数三分：seek＝整片求片行，chase＝补缺集行（request_kind=missing_episodes，
-      本站的追新形态），total＝组内全部行；
+    - 计数三分：seek＝整片求片行，chase＝追新类行（自由追新 chase＋
+      补缺集 missing_episodes，kind_class 口径），total＝组内全部行；
     - status / kind / q 都先作用在行上再聚合（筛选后计数自洽）；
       status 取 PLAZA_STATUS_MAP 的键，kind 取 seek / chase，未知值忽略（按全部）；
     - 「库内已有」：组内有 completed 行 / 任一行带 emby_item_id / tmdb 命中库内
@@ -861,7 +931,7 @@ def plaza_groups(db: Session, user_id: int, *, status: Optional[str] = None,
             or_(models.MovieRequest.request_kind.is_(None),
                 models.MovieRequest.request_kind == "seek"))
     elif kind == "chase":
-        query = query.filter(models.MovieRequest.request_kind == "missing_episodes")
+        query = query.filter(models.MovieRequest.request_kind.in_(CHASE_KINDS))
     keyword = (q or "").strip()
     if keyword:
         query = query.filter(
@@ -893,13 +963,19 @@ def plaza_groups(db: Session, user_id: int, *, status: Optional[str] = None,
                 "vote_total": 0,
                 "latest_at": row.created_at,
                 "_pending": [],
+                "_poster_snapshot": None,
             }
             order.append(key)
         g["total_count"] += 1
-        if (getattr(row, "request_kind", None) or "seek") == "missing_episodes":
+        if kind_class(getattr(row, "request_kind", None)) == "chase":
             g["chase_count"] += 1
         else:
             g["seek_count"] += 1
+        # 海报快照回退：组内最新一条带快照的行（行已按创建时间倒序）
+        if g["_poster_snapshot"] is None:
+            snap = clean_poster_url(getattr(row, "poster_url", None))
+            if snap:
+                g["_poster_snapshot"] = snap
         if row.status in ACTIVE_STATUSES:
             g["processing_count"] += 1
         if row.status == "completed" or getattr(row, "emby_item_id", None):
@@ -952,6 +1028,11 @@ def plaza_groups(db: Session, user_id: int, *, status: Optional[str] = None,
     result: list[dict] = []
     for key in order:
         g = groups[key]
+        # 库内海报优先；没有库内海报（库外作品）时用提交快照，
+        # 与友站广场「库外作品也带 TMDB 海报」的展示口径一致。
+        if g["poster_url"] is None:
+            g["poster_url"] = g["_poster_snapshot"]
+        del g["_poster_snapshot"]
         pending = sorted(
             g.pop("_pending"),
             key=lambda r: weighted_map.get(r.id, 0), reverse=True,
@@ -980,30 +1061,182 @@ def plaza_groups(db: Session, user_id: int, *, status: Optional[str] = None,
     return result[:PLAZA_GROUP_LIMIT]
 
 
+# ==================== 作品请求详情（按作品汇集，2026-11-15） ====================
+
+#: 作品详情里 movie_requests.status → 用户端统一状态名（与广场口径一致，
+#: 撤回行不进详情——它在任何公开面都不出现）。
+WORK_STATE_MAP = {
+    "pending": "pending",
+    "approved": "doing",
+    "completed": "done",
+    "rejected": "rejected",
+}
+
+
+def work_detail(db: Session, user, *, tmdb_id=None, name=None, year=None,
+                media_type=None) -> dict:
+    """作品请求详情：按作品汇集全部公开请求（求片反馈「作品页」的数据口）。
+
+    身份口径与广场聚合一致：有 tmdb_id 按 tmdb_id 认亲；没有（原名
+    兜底行）退回广场同一套分组键（归一化片名|年份|类型）。反馈工单
+    没有媒体身份、不进本口（feedback 计数恒 0，与广场同一数据口径）。
+
+    返回 ``{"work", "counts", "my_open", "requests"}``：
+    - work：作品头（片名/年份/类型/海报/库内状态/库内条目 id）；
+      海报先认库内条目、再认提交快照，都没有为 None；
+    - counts：seek / chase / feedback / total 三分计数（撤回不计）；
+    - my_open：当前用户未完结请求的 id 指针（{seek, chase}），
+      详情页「同类型未完成拦截」直接读它，不用前端自己翻列表猜；
+    - requests：全部非撤回行（创建时间倒序），带补充说明与我的附议态。
+    """
+    tmdb_text = normalize_tmdb_id(tmdb_id)
+    user_id = getattr(user, "id", None)
+
+    if tmdb_text:
+        rows = (
+            db.query(models.MovieRequest)
+            .filter(
+                models.MovieRequest.tmdb_id == tmdb_text,
+                models.MovieRequest.status != WITHDRAWN_STATUS,
+            )
+            .order_by(models.MovieRequest.created_at.desc(),
+                      models.MovieRequest.id.desc())
+            .all()
+        )
+    else:
+        wanted_key = "title:{}|{}|{}".format(
+            _plaza_title_key(name), year or "", media_type or "")
+        candidates = (
+            db.query(models.MovieRequest)
+            .filter(
+                models.MovieRequest.tmdb_id.is_(None),
+                models.MovieRequest.status != WITHDRAWN_STATUS,
+                models.MovieRequest.movie_name.ilike(
+                    f"%{_escape_like((name or '').strip())}%", escape="\\"),
+            )
+            .order_by(models.MovieRequest.created_at.desc(),
+                      models.MovieRequest.id.desc())
+            .limit(_PLAZA_ROW_LIMIT)
+            .all()
+        ) if (name or "").strip() else []
+        rows = [r for r in candidates if _plaza_group_key(r) == wanted_key]
+
+    head = rows[0] if rows else None
+    work_name = (head.movie_name if head else (name or "")) or ""
+    work_year = (head.year if head and head.year else year) or None
+    work_type = (head.type if head and head.type else media_type) or None
+
+    hit = library_hit(
+        db,
+        tmdb_id=tmdb_text or None,
+        name=work_name,
+        item_type=work_type,
+        year=str(work_year) if work_year else None,
+    ) if (tmdb_text or work_name) else None
+
+    poster_url = _plaza_poster_url(hit) if hit is not None else None
+    if poster_url is None:
+        for r in rows:  # 行已按时间倒序：最新一条的快照
+            poster_url = clean_poster_url(getattr(r, "poster_url", None))
+            if poster_url:
+                break
+
+    # 补充说明批量取（一次查询，按时间正序挂回各行）
+    supplements_by_request: dict[int, list] = {}
+    if rows:
+        sup_rows = (
+            db.query(models.MovieRequestSupplement)
+            .filter(models.MovieRequestSupplement.request_id.in_(
+                [r.id for r in rows]))
+            .order_by(models.MovieRequestSupplement.created_at,
+                      models.MovieRequestSupplement.id)
+            .all()
+        )
+        for s in sup_rows:
+            supplements_by_request.setdefault(s.request_id, []).append({
+                "id": s.id,
+                "body": s.body,
+                "mine": s.user_id == user_id,
+                "created_at": s.created_at.isoformat() if s.created_at else "",
+            })
+
+    voted = voted_ids(db, user_id, [r.id for r in rows]) if user_id else set()
+
+    counts = {"seek": 0, "chase": 0, "feedback": 0, "total": 0}
+    my_open: dict[str, Optional[int]] = {"seek": None, "chase": None}
+    payload_rows = []
+    for r in rows:
+        cls = kind_class(getattr(r, "request_kind", None))
+        counts[cls] += 1
+        counts["total"] += 1
+        if (r.user_id == user_id and r.status in ACTIVE_STATUSES
+                and my_open[cls] is None):
+            my_open[cls] = r.id
+        payload_rows.append({
+            "id": r.id,
+            "kind": cls,
+            "request_kind": getattr(r, "request_kind", None) or "seek",
+            "status": r.status,
+            "state": WORK_STATE_MAP.get(r.status, "pending"),
+            "movie_name": r.movie_name,
+            "note": r.note,
+            "season_label": season_label(r.season),
+            "missing_text": _plaza_missing_text(r),
+            "admin_note": r.admin_note,
+            "vote_count": r.vote_count or 0,
+            "voted": r.id in voted,
+            "mine": r.user_id == user_id,
+            "created_at": r.created_at.isoformat() if r.created_at else "",
+            "supplements": supplements_by_request.get(r.id, []),
+        })
+
+    return {
+        "work": {
+            "tmdb_id": tmdb_text or (head.tmdb_id if head else None) or None,
+            "name": work_name,
+            "year": work_year,
+            "type": work_type,
+            "poster_url": poster_url,
+            "in_library": hit is not None,
+            "library_item_id": str(getattr(hit, "guid", "") or "") or None,
+        },
+        "counts": counts,
+        "my_open": my_open,
+        "requests": payload_rows,
+    }
+
+
 __all__ = [
     "ACTIVE_STATUSES",
+    "CHASE_KINDS",
     "CONFIG_DAILY_LIMIT",
     "CONFIG_ENABLED",
     "CONFIG_NOTIFY_VOTERS",
     "CONFIG_VOTE_ENABLED",
     "DEFAULT_DAILY_LIMIT",
+    "KIND_CHASE",
+    "MAX_NOTE_LENGTH",
     "MAX_SEASON_COUNT",
     "MAX_SEASON_NUMBER",
     "SERIES_TYPES",
     "SEASON_ALL",
     "WITHDRAWN_STATUS",
+    "clean_poster_url",
     "daily_limit",
     "find_library_match",
+    "kind_class",
     "library_hit",
     "normalize_season",
     "normalize_tmdb_id",
     "notify_voters_enabled",
+    "open_request_flags",
     "plaza_groups",
     "quota",
     "search_candidates",
     "season_label",
     "seasons_for",
     "seek_enabled",
+    "work_detail",
     "CONFIG_DAILY_VOTE_LIMIT",
     "DEFAULT_DAILY_VOTE_LIMIT",
     "VOTE_WEIGHTS",

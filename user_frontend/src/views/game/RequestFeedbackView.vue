@@ -1,15 +1,13 @@
 <template>
   <UhdAccountLayout>
-    <!-- 求片反馈（2026-11-13 合并页＋同日返工补全）：许愿池＋求救信号合并为一页。
-         三页签（发起请求/我的请求/请求广场），每页签一句副标题；发起请求是三档
-         分段（求片/追新/资源反馈，映射我方 5 种类型：影片求片、电影/剧集追新、
-         修正信息、其他反馈，映射见脚本 segGroups 注释）＋每档一套须知卡组；
-         请求广场是后端真聚合的媒体卡（海报/库内已有/处理中/计数行）；
-         视觉照 UHDNow 原站求片反馈页 1:1（实测清单 §10＋用户六张真机截图）；
-         页面跟随用户外观。
-         2026-11-14 细节对齐（用户真机双截图亲点）：补顶栏（返回＋标题＋
-         「网页观影」彩虹玻璃胶囊）、类型分段补容器描边、提交钮换招牌主按钮
-         配方（收 #138 尾巴）；搜索框内放大镜与必看盒盾牌图标在子组件内。 -->
+    <!-- 求片反馈（2026-11-13 合并页；2026-11-15 按作品组织重做）：许愿池＋
+         求救信号合并为一页。三页签（发起请求/我的请求/请求广场），每页签一句
+         副标题；发起请求是三档分段（求片/追新/资源反馈）＋每档一套须知卡组。
+         2026-11-15 重做（照友站录屏逐帧形态，任务书 uhd-request-flow-frame-study）：
+         求片/追新共用搜索、先搜后发、提交走弹层、成功跳作品请求详情页；
+         我的请求与广场改单容器分隔行＋海报＋分页；追新落 movie_requests
+         （kind=chase），旧追新工单仍在我的请求里展开线程看管理员回复。
+         页面跟随用户外观；顶栏与招牌主按钮配方沿用 2026-11-14 对齐版。 -->
     <div class="rf-page">
       <div class="rf-inner">
       <!-- 顶栏（照友站：返回＋小标题＋右上「网页观影」彩虹玻璃胶囊） -->
@@ -55,9 +53,10 @@
       <!-- 发起请求 -->
       <section v-if="tab === 'create'" class="rf-create">
         <!-- 三档分段（原站形态）：求片／追新／资源反馈。
-             与我方 5 种类型的映射：求片＝影片求片；追新＝电影追新/剧集追新
-             （档内电影/剧集小切换）；资源反馈＝修正信息＋其他反馈的问题类型
-             （表单内网格第一项就是修正信息）。每个类型都可达，不丢类型。 -->
+             映射：求片＝按作品搜 TMDB 发起求片；追新＝按作品搜、从库内
+             作品行发起（电影/剧集由作品本身决定，不再手选）；资源反馈＝
+             修正信息＋其他反馈的问题类型（表单内网格第一项就是修正信息）。
+             旧的电影/剧集追新工单仍在「我的请求」里可查，不丢类型。 -->
         <div class="rf-seg" role="group" aria-label="请求类型">
           <button
             v-for="g in segGroups"
@@ -70,55 +69,59 @@
           >{{ g.label }}</button>
         </div>
 
-        <div v-if="reqType === 'seek'" class="rf-create__body">
-          <SeekCreateForm
-            :my-requests="myRequests"
-            :hot-requests="hotRequests"
-            :prefill="prefillQ"
-            @submitted="onSeekSubmitted"
-          />
-          <p v-if="monthlyRemaining != null" class="rf-quota">本月还可求片 {{ monthlyRemaining }} 次</p>
-          <NoticeCards kind="seek" />
-        </div>
-
-        <div v-else-if="isChase" class="rf-create__body">
-          <div class="rf-seg rf-seg--mini" role="group" aria-label="追新类型">
-            <button
-              type="button"
-              class="rf-seg__btn"
-              :class="{ 'rf-seg__btn--on': chaseMedia === 'movie' }"
-              :aria-pressed="chaseMedia === 'movie'"
-              @click="setType('chase_movie')"
-            >电影</button>
-            <button
-              type="button"
-              class="rf-seg__btn"
-              :class="{ 'rf-seg__btn--on': chaseMedia === 'series' }"
-              :aria-pressed="chaseMedia === 'series'"
-              @click="setType('chase_series')"
-            >剧集</button>
-          </div>
-          <div class="rf-form">
-            <label class="rf-form__label" for="rf-chase-title">{{ chaseCopy.titleLabel }}</label>
+        <!-- 求片/追新共用搜索（2026-11-15 按作品组织重做，照友站 2.1/2.2）：
+             先搜后发——同一搜索框、同一结果列表，只有右侧行动按档分化；
+             提交走弹层（RequestSubmitModal），成功后跳作品请求详情页。
+             追新不再手填片名：必须从库内作品行发起（后端同口径校验）。 -->
+        <div v-if="reqType === 'seek' || isChase" class="rf-create__body">
+          <div class="rf-search">
+            <span class="rf-search__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+                <circle cx="10.5" cy="10.5" r="6.5" />
+                <path d="M15.5 15.5 21 21" />
+              </svg>
+            </span>
             <input
-              id="rf-chase-title"
-              v-model="chaseTitle"
-              class="rf-form__input"
+              ref="seekInput"
+              v-model="wishText"
+              class="rf-search__input"
               type="text"
-              :placeholder="chaseCopy.titlePh"
-              maxlength="100"
+              placeholder="输入电影或剧集名称"
+              maxlength="30"
+              aria-label="片名"
+              @keyup.enter="runSearchNow"
+              @input="onWishInput"
             />
-            <label class="rf-form__label" for="rf-chase-msg">{{ chaseCopy.msgLabel }}</label>
-            <textarea
-              id="rf-chase-msg"
-              v-model="chaseMessage"
-              class="rf-form__area"
-              :placeholder="chaseCopy.msgPh"
-              maxlength="1000"
-            ></textarea>
-            <button class="rf-submit" :disabled="chaseSending" @click="submitChase">{{ chaseSending ? '提交中…' : '提交追新' }}</button>
+            <button
+              type="button"
+              class="rf-search__btn"
+              :disabled="searching"
+              aria-label="搜索"
+              title="搜索"
+              @click="runSearchNow"
+            >
+              <span v-if="searching" class="rf-search__spinner" aria-hidden="true"></span>
+              <svg v-else viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+                <circle cx="10.5" cy="10.5" r="6.5" />
+                <path d="M15.5 15.5 21 21" />
+              </svg>
+            </button>
           </div>
-          <NoticeCards kind="chase" />
+          <div v-if="emptyWarn" class="rf-hint--err">先输入片名，再点搜索</div>
+          <WorkSearchResults
+            :mode="reqType === 'seek' ? 'seek' : 'chase'"
+            :candidates="candidates"
+            :searching="searching"
+            :status="searchStatus"
+            :error="searchError"
+            :degraded="searchDegraded"
+            :query="searchFor"
+            @pick="openSubmitModal"
+            @existing="goExistingWork"
+            @fallback="openFallbackModal"
+          />
+          <p v-if="reqType === 'seek' && monthlyRemaining != null" class="rf-quota">本月还可求片 {{ monthlyRemaining }} 次</p>
+          <NoticeCards :kind="reqType === 'seek' ? 'seek' : 'chase'" />
         </div>
 
         <!-- 资源反馈档：修正信息并入问题类型网格第一项（选中后走 correction
@@ -159,11 +162,21 @@
           </div>
           <NoticeCards kind="feedback" />
         </div>
+        <RequestSubmitModal
+          :open="modalOpen"
+          :mode="modalMode"
+          :work="modalWork"
+          @close="modalOpen = false"
+          @submitted="onModalSubmitted"
+        />
       </section>
 
-      <!-- 我的请求 -->
+      <!-- 我的请求（照友站 2.6）：状态 chips 在圆角容器条内（全部＝填充
+           pill、其余文字＋色点）＋整宽类型下拉；行＝海报＋片名＋类型 pill＋
+           状态 pill＋正文摘要＋›；求片类行点进作品请求详情页，工单行仍在
+           本页展开线程（管理员回复保留在此，2026-11-15 定版）；底部分页。 -->
       <section v-else-if="tab === 'mine'" class="rf-list">
-        <div class="rf-filter">
+        <div class="rf-filterbar">
           <div class="rf-statchips" role="group" aria-label="按状态筛选">
             <button
               v-for="s in stateOptions"
@@ -175,15 +188,15 @@
               @click="stateFilter = s.key"
             ><span v-if="s.key !== 'all'" class="rf-dot" :class="'rf-dot--' + s.key" aria-hidden="true"></span>{{ s.label }}</button>
           </div>
-          <select v-model="typeFilter" class="rf-filter__select" aria-label="按类型筛选">
-            <option value="all">全部类型</option>
-            <option value="seek">影片求片</option>
-            <option value="chase_movie">电影追新</option>
-            <option value="chase_series">剧集追新</option>
-            <option value="correction">修正信息</option>
-            <option value="feedback">其他反馈</option>
-          </select>
         </div>
+        <select v-model="typeFilter" class="rf-filter__select rf-filter__select--wide" aria-label="按类型筛选">
+          <option value="all">全部类型</option>
+          <option value="seek">影片求片</option>
+          <option value="chase_movie">电影追新</option>
+          <option value="chase_series">剧集追新</option>
+          <option value="correction">修正信息</option>
+          <option value="feedback">其他反馈</option>
+        </select>
 
         <div v-if="mineLoading" class="rf-loading">
           <div v-for="i in 3" :key="i" class="rf-skeleton" style="height: 76px; margin-bottom: 10px"></div>
@@ -193,51 +206,58 @@
           <button class="rf-retry" @click="() => loadMine()">重试</button>
         </div>
         <div v-else-if="filteredMine.length === 0" class="rf-empty">暂无符合条件的请求</div>
-        <div v-else class="rf-rows">
-          <div
-            v-for="row in filteredMine"
-            :key="row.source + ':' + row.id"
-            class="rf-row"
-            :class="{ 'rf-row--new': justAddedKey === row.source + ':' + row.id }"
-          >
-            <button class="rf-row__head" :aria-expanded="expandedKey === row.source + ':' + row.id" @click="toggleDetail(row)">
-              <span class="rf-row__main">
-                <span class="rf-row__pills">
-                  <span class="rf-pill rf-pill--type">{{ typeLabel(row.type) }}</span>
-                  <span class="rf-pill" :class="'rf-pill--' + row.state">{{ stateLabel(row.state) }}</span>
-                  <span class="rf-row__time">{{ formatDate(row.updated_at) }}</span>
+        <template v-else>
+          <div class="rf-minebox">
+            <div
+              v-for="row in pagedMine"
+              :key="row.source + ':' + row.id"
+              class="rf-mrow"
+              :class="{ 'rf-mrow--new': justAddedKey === row.source + ':' + row.id }"
+            >
+              <button class="rf-mrow__head" :aria-expanded="row.source === 'ticket' ? expandedKey === row.source + ':' + row.id : undefined" @click="onMineRowClick(row)">
+                <img v-if="row.posterUrl" :src="imageAuthUrl(row.posterUrl, 120)" :alt="row.title" class="rf-mrow__poster" loading="lazy" />
+                <span v-else class="rf-mrow__poster rf-mrow__poster--ph" aria-hidden="true">{{ row.title.slice(0, 1) }}</span>
+                <span class="rf-mrow__main">
+                  <span class="rf-mrow__titlerow">
+                    <span class="rf-mrow__title">{{ row.title }}</span>
+                    <span class="rf-pill rf-pill--type">{{ rowTypeLabel(row) }}</span>
+                    <span class="rf-pill rf-pill--state" :class="'rf-pill--' + row.state">{{ stateLabel(row.state) }}</span>
+                  </span>
+                  <span v-if="rowSummary(row)" class="rf-mrow__summary">{{ rowSummary(row) }}</span>
                 </span>
-                <span class="rf-row__title">{{ row.title }}</span>
-                <span v-if="(row.type === 'feedback' && row.categoryLabel) || (row.source === 'seek' && row.voteCount)" class="rf-row__meta">
-                  <template v-if="row.type === 'feedback' && row.categoryLabel">{{ row.categoryLabel }}</template>
-                  <template v-else-if="row.source === 'seek' && row.voteCount">{{ row.voteCount }} 人附议</template>
-                </span>
-              </span>
-              <span class="rf-row__chev" :class="{ 'rf-row__chev--open': expandedKey === row.source + ':' + row.id }" aria-hidden="true">›</span>
-            </button>
-            <div v-if="expandedKey === row.source + ':' + row.id" class="rf-row__detail">
-              <template v-if="row.source === 'seek'">
-                <p class="rf-detail__line">片名：{{ row.movieName }}<span v-if="row.year">（{{ row.year }}）</span></p>
-                <p v-if="row.seasonLabel" class="rf-detail__line">季：{{ row.seasonLabel }}</p>
-                <p v-if="row.titleOnly" class="rf-detail__line">按原名提交，待人工确认</p>
-                <p v-if="row.voteCount" class="rf-detail__line">附议：{{ row.voteCount }} 人</p>
-                <button
-                  v-if="row.state === 'done' && row.embyItemId"
-                  type="button"
-                  class="rf-link"
-                  @click="goDetail(row.embyItemId)"
-                >去看这部</button>
-              </template>
-              <TicketThread v-else :ticket="row.rawTicket" @changed="onThreadChanged" />
+                <span class="rf-row__chev" :class="{ 'rf-row__chev--open': row.source === 'ticket' && expandedKey === row.source + ':' + row.id }" aria-hidden="true">›</span>
+              </button>
+              <div v-if="row.source === 'ticket' && expandedKey === row.source + ':' + row.id" class="rf-row__detail">
+                <TicketThread :ticket="row.rawTicket" @changed="onThreadChanged" />
+              </div>
             </div>
           </div>
-        </div>
+          <div class="rf-pager">
+            <span class="rf-pager__info">共 {{ filteredMine.length }} 条 · 第 {{ pageRangeText }} 条</span>
+            <div class="rf-pager__nav" role="navigation" aria-label="分页">
+              <button type="button" class="rf-pager__btn" :disabled="minePage <= 1" aria-label="第一页" @click="minePage = 1">«</button>
+              <button type="button" class="rf-pager__btn" :disabled="minePage <= 1" aria-label="上一页" @click="minePage--">‹</button>
+              <button
+                v-for="p in pageNumbers"
+                :key="p"
+                type="button"
+                class="rf-pager__btn"
+                :class="{ 'rf-pager__btn--on': p === minePage }"
+                :aria-current="p === minePage ? 'page' : undefined"
+                @click="minePage = p"
+              >{{ p }}</button>
+              <button type="button" class="rf-pager__btn" :disabled="minePage >= pageCount" aria-label="下一页" @click="minePage++">›</button>
+              <button type="button" class="rf-pager__btn" :disabled="minePage >= pageCount" aria-label="最后一页" @click="minePage = pageCount">»</button>
+            </div>
+          </div>
+        </template>
       </section>
 
-      <!-- 请求广场：按媒体聚合卡（后端 /media-seek/plaza 真聚合，一部片一张卡）。
-           类型筛选只留后端真支持的：影片求片＋剧集追新（补缺集行，chase 计数）；
-           工单类类型（电影追新/修正信息/其他反馈）不进广场聚合，此前挂在筛选里
-           选了必然是空态，已摘掉（2026-11-15）。 -->
+      <!-- 请求广场（照友站 2.7）：搜索框内右侧嵌「搜索」钮；chips＋整宽
+           类型下拉；单容器分隔行按作品聚合（后端 /media-seek/plaza 真聚合）。
+           类型筛选只留后端真支持的：求片＋追新（自由追新与补缺集同归
+           chase）；反馈工单没有作品绑定、不进广场聚合（计数恒 0 是数据
+           口径，见后端 plaza_groups docstring）。 -->
       <section v-else class="rf-list">
         <form class="rf-searchbar" @submit.prevent="applyPlazaSearch">
           <input
@@ -250,7 +270,7 @@
           />
           <button type="submit" class="rf-searchbar__btn">搜索</button>
         </form>
-        <div class="rf-filter">
+        <div class="rf-filterbar">
           <div class="rf-statchips" role="group" aria-label="按状态筛选">
             <button
               v-for="s in plazaStateOptions"
@@ -262,42 +282,42 @@
               @click="plazaStateFilter = s.key"
             ><span v-if="s.key !== 'all'" class="rf-dot" :class="'rf-dot--' + s.key" aria-hidden="true"></span>{{ s.label }}</button>
           </div>
-          <select v-model="plazaTypeFilter" class="rf-filter__select" aria-label="按类型筛选">
-            <option value="all">全部类型</option>
-            <option value="seek">影片求片</option>
-            <option value="chase_series">剧集追新</option>
-          </select>
         </div>
+        <select v-model="plazaTypeFilter" class="rf-filter__select rf-filter__select--wide" aria-label="按类型筛选">
+          <option value="all">全部类型</option>
+          <option value="seek">影片求片</option>
+          <option value="chase">追新</option>
+        </select>
 
         <div v-if="plazaLoading" class="rf-loading">
-          <div v-for="i in 3" :key="i" class="rf-skeleton" style="height: 140px; margin-bottom: 10px"></div>
+          <div v-for="i in 3" :key="i" class="rf-skeleton" style="height: 76px; margin-bottom: 10px"></div>
         </div>
         <div v-else-if="plazaError" class="rf-err">
           广场加载失败：{{ plazaError }}<br />
           <button class="rf-retry" @click="loadPlaza">重试</button>
         </div>
         <div v-else-if="plazaGroups.length === 0" class="rf-empty">暂无符合条件的请求</div>
-        <div v-else class="rf-topics">
-          <article v-for="g in plazaGroups" :key="g.key" class="rf-topic">
-            <div class="rf-topic__main">
+        <div v-else class="rf-minebox">
+          <article v-for="g in plazaGroups" :key="g.key" class="rf-mrow">
+            <div class="rf-mrow__head rf-mrow__head--static">
               <img
                 v-if="g.poster_url"
-                class="rf-topic__poster"
-                :src="imageAuthUrl(g.poster_url, 200)"
+                class="rf-mrow__poster"
+                :src="imageAuthUrl(g.poster_url, 120)"
                 :alt="g.movie_name"
                 loading="lazy"
               />
-              <span v-else class="rf-topic__ph" aria-hidden="true">{{ (g.movie_name || '片').slice(0, 1) }}</span>
-              <div class="rf-topic__info">
-                <div class="rf-topic__titlerow">
-                  <h3 class="rf-topic__title">{{ g.movie_name }}</h3>
+              <span v-else class="rf-mrow__poster rf-mrow__poster--ph" aria-hidden="true">{{ (g.movie_name || '片').slice(0, 1) }}</span>
+              <span class="rf-mrow__main">
+                <span class="rf-mrow__titlerow">
+                  <span class="rf-mrow__title">{{ g.movie_name }}</span>
                   <span v-if="g.in_library" class="rf-badge rf-badge--green">库内已有</span>
-                  <span v-if="g.processing_count > 0" class="rf-badge rf-badge--gray">{{ g.processing_count }} 条处理中</span>
-                </div>
-                <p class="rf-topic__counts">
+                  <span v-else-if="g.processing_count > 0" class="rf-badge rf-badge--gray">{{ g.processing_count }} 条处理中</span>
+                </span>
+                <span class="rf-mrow__summary rf-mrow__summary--wrap">
                   求片 {{ g.seek_count }}<span class="rf-topic__sep" aria-hidden="true">·</span>追新 {{ g.chase_count }}<span class="rf-topic__sep" aria-hidden="true">·</span>反馈 {{ g.feedback_count }}<span class="rf-topic__sep" aria-hidden="true">·</span>{{ g.total_count }} 条记录
-                </p>
-              </div>
+                </span>
+              </span>
               <button
                 type="button"
                 class="rf-topic__view"
@@ -318,11 +338,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { ChevronLeft } from 'lucide-vue-next'
 import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 import NoticeCards from '@/components/requests/NoticeCards.vue'
-import SeekCreateForm from '@/components/requests/SeekCreateForm.vue'
+import RequestSubmitModal, { type SubmitWork } from '@/components/requests/RequestSubmitModal.vue'
 import TicketThread from '@/components/requests/TicketThread.vue'
+import WorkSearchResults from '@/components/requests/WorkSearchResults.vue'
 import {
   mediaSeekApi, ticketApi,
-  type HotMediaSeekRequest, type MediaSeekQuota, type MediaSeekRequest, type PlazaGroup, type Ticket,
+  type MediaSeekCandidate, type MediaSeekQuota, type MediaSeekRequest, type PlazaGroup, type Ticket,
 } from '@/api'
 import { imageAuthUrl } from '@/api/emby'
 import { useToast } from '@/composables/useToast'
@@ -344,6 +365,12 @@ interface UnifiedRow {
   created_at: string
   updated_at: string
   state: UnifiedState
+  /* 求片类行（movie_requests）的展示分类：seek 求片 / chase 追新（含补缺集） */
+  kind?: 'seek' | 'chase'
+  posterUrl?: string | null
+  note?: string | null
+  tmdbId?: string | null
+  workType?: string | null
   movieName?: string
   year?: string | null
   voteCount?: number
@@ -418,21 +445,21 @@ const segGroup = computed<SegGroup>(() => {
 
 const myRequests = ref<MediaSeekRequest[]>([])
 const tickets = ref<Ticket[]>([])
-const hotRequests = ref<HotMediaSeekRequest[]>([])
 type QuotaExt = MediaSeekQuota & { monthly_remaining?: number; monthly_limit?: number; monthly_used?: number }
 const myQuota = ref<QuotaExt | null>(null)
 const monthlyRemaining = computed(() => myQuota.value?.monthly_remaining ?? null)
 
 const mineLoading = ref(true)
 const mineError = ref('')
-const hotLoading = ref(true)
-const hotError = ref('')
 const expandedKey = ref<string | null>(null)
 const justAddedKey = ref<string | null>(null)
 const stateFilter = ref<'all' | UnifiedState>('all')
 const typeFilter = ref<'all' | RowType>('all')
 const plazaStateFilter = ref<'all' | UnifiedState>('all')
-const plazaTypeFilter = ref<'all' | RowType>('all')
+const plazaTypeFilter = ref<'all' | 'seek' | 'chase'>('all')
+/* 我的请求分页（照友站 2.6：每页 10 条＋底部计数与分页器） */
+const MINE_PAGE_SIZE = 10
+const minePage = ref(1)
 /* 广场状态 chips 不含「已撤回」（撤回是自己的取消，后端口径也不进广场） */
 const plazaStateOptions = stateOptions.filter((s) => s.key !== 'withdrawn')
 const plazaGroups = ref<PlazaGroup[]>([])
@@ -441,9 +468,22 @@ const plazaError = ref('')
 const plazaQuery = ref('')
 const plazaQ = ref('')
 
-const chaseTitle = ref('')
-const chaseMessage = ref('')
-const chaseSending = ref(false)
+/* ===== 作品搜索（求片/追新共用，先搜后发）＋提交弹层 ===== */
+const wishText = ref('')
+const seekInput = ref<HTMLInputElement | null>(null)
+const emptyWarn = ref(false)
+const searching = ref(false)
+const searchError = ref('')
+const searchStatus = ref<'idle' | 'loading' | 'done' | 'unconfigured' | 'error'>('idle')
+const searchFor = ref('')
+const searchDegraded = ref(false)
+const candidates = ref<MediaSeekCandidate[]>([])
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+let searchSeq = 0
+const modalOpen = ref(false)
+const modalMode = ref<'seek' | 'chase'>('seek')
+const modalWork = ref<SubmitWork | null>(null)
+
 const fbCategory = ref('other')
 const fbTitle = ref('')
 const fbMessage = ref('')
@@ -500,9 +540,16 @@ function ticketState(s: string): UnifiedState {
 const unifiedMine = computed<UnifiedRow[]>(() => {
   const rows: UnifiedRow[] = []
   for (const w of myRequests.value) {
+    /* 求片类行的类型筛选口径：整片求片归 seek；自由追新/补缺集归两个
+       追新筛选（行本身不再分电影/剧集，靠作品类型展示） */
+    const isChaseKind = w.request_kind === 'chase' || w.request_kind === 'missing_episodes'
     rows.push({
-      source: 'seek', id: w.id, type: 'seek', title: w.movie_name,
+      source: 'seek', id: w.id,
+      type: isChaseKind ? (w.type === 'movie' ? 'chase_movie' : 'chase_series') : 'seek',
+      kind: isChaseKind ? 'chase' : 'seek',
+      title: w.movie_name,
       created_at: w.created_at, updated_at: w.created_at, state: seekState(w.status),
+      posterUrl: w.poster_url, note: w.note, tmdbId: w.tmdb_id, workType: w.type,
       movieName: w.movie_name, year: w.year, voteCount: w.vote_count,
       seasonLabel: w.season_label, titleOnly: w.title_only, embyItemId: w.emby_item_id,
     })
@@ -529,14 +576,61 @@ const filteredMine = computed(() => unifiedMine.value.filter((r) => {
   }
   return true
 }))
-/* 广场聚合走后端 /media-seek/plaza（按媒体身份真聚合，前端不拼数）。
-   类型筛选只剩后端真支持的两类：影片求片 kind=seek、剧集追新 kind=chase；
-   工单类类型（电影追新/修正信息/其他反馈）已从筛选摘除，不再有必然空态。 */
+/* 我的请求分页（筛选后切片；筛选变化回第一页） */
+const pageCount = computed(() => Math.max(1, Math.ceil(filteredMine.value.length / MINE_PAGE_SIZE)))
+const pagedMine = computed(() => filteredMine.value.slice(
+  (minePage.value - 1) * MINE_PAGE_SIZE, minePage.value * MINE_PAGE_SIZE))
+const pageRangeText = computed(() => {
+  if (filteredMine.value.length === 0) return '0 至 0'
+  const from = (minePage.value - 1) * MINE_PAGE_SIZE + 1
+  const to = Math.min(filteredMine.value.length, minePage.value * MINE_PAGE_SIZE)
+  return `${from} 至 ${to}`
+})
+const pageNumbers = computed(() => {
+  const total = pageCount.value
+  const cur = minePage.value
+  const pages = new Set<number>([1, total, cur - 1, cur, cur + 1])
+  return [...pages].filter((p) => p >= 1 && p <= total).sort((a, b) => a - b)
+})
+watch([stateFilter, typeFilter], () => { minePage.value = 1 })
+watch(pageCount, (n) => { if (minePage.value > n) minePage.value = n })
+
+/* 行 pill 短标签：求片类行用「求片/追新」（照友站 2.6），工单行沿用全称 */
+function rowTypeLabel(row: UnifiedRow): string {
+  if (row.source === 'seek') return row.kind === 'chase' ? '追新' : '求片'
+  return typeLabel(row.type)
+}
+/* 行正文摘要：求片类行是提交时的具体说明；工单行是问题类型/附议数 */
+function rowSummary(row: UnifiedRow): string {
+  if (row.source === 'seek') {
+    const parts: string[] = []
+    if (row.note) parts.push(row.note)
+    else if (row.seasonLabel) parts.push(row.seasonLabel)
+    if (row.voteCount) parts.push(`${row.voteCount} 人附议`)
+    return parts.join(' · ')
+  }
+  if (row.type === 'feedback' && row.categoryLabel) return row.categoryLabel
+  return ''
+}
+/* 行点击分化：求片类行进作品请求详情页；工单行在本页展开线程
+   （管理员回复的老口径保留在我的请求详情里） */
+function onMineRowClick(row: UnifiedRow): void {
+  if (row.source === 'seek') {
+    void router.push({
+      path: '/game/requests/media',
+      query: {
+        ...(row.tmdbId ? { tmdb: row.tmdbId } : {}),
+        name: row.movieName || row.title,
+        ...(row.year ? { year: row.year } : {}),
+        ...(row.workType ? { type: row.workType } : {}),
+      },
+    })
+    return
+  }
+  toggleDetail(row)
+}
+
 const isChase = computed(() => reqType.value === 'chase_movie' || reqType.value === 'chase_series')
-const chaseMedia = computed<'movie' | 'series'>(() => (reqType.value === 'chase_movie' ? 'movie' : 'series'))
-const chaseCopy = computed(() => (chaseMedia.value === 'movie'
-  ? { titleLabel: '片名', titlePh: '比如：《长安的荔枝》', msgLabel: '想追的内容', msgPh: '比如：续集什么时候上映？' }
-  : { titleLabel: '剧名', titlePh: '比如：《一念永恒》', msgLabel: '想追的季 / 集', msgPh: '比如：第 3 季第 5 集，什么时候更新？' }))
 
 function syncFromQuery(): void {
   const t = route.query.tab
@@ -556,11 +650,12 @@ function setType(t: ReqType): void {
   reqType.value = t
   void router.replace({ query: { tab: 'create', type: t } })
 }
-/* 三档切换落到具体类型：追新档保留当前电影/剧集选择（默认剧集）；
+/* 三档切换落到具体类型：追新档落 chase_series 占位（电影/剧集由搜到的
+   作品本身决定，reqType 只用来区分当前在哪一档）；
    资源反馈档若已在修正信息/其他反馈内则不动当前选择 */
 function setSegGroup(g: SegGroup): void {
   if (g === 'seek') setType('seek')
-  else if (g === 'chase') setType(chaseMedia.value === 'movie' ? 'chase_movie' : 'chase_series')
+  else if (g === 'chase') setType('chase_series')
   else if (reqType.value !== 'correction' && reqType.value !== 'feedback') setType('feedback')
 }
 /* 资源反馈档问题类型网格：修正信息切换类型本身，其余项切 fbCategory */
@@ -572,26 +667,6 @@ function setFbOption(value: string): void {
   fbCategory.value = value
   if (reqType.value !== 'feedback') setType('feedback')
 }
-function formatDate(dateStr: string): string {
-  if (!dateStr) return ''
-  const date = new Date(dateStr)
-  if (Number.isNaN(date.getTime())) return '时间未知'
-  const now = new Date()
-  const diff = Math.max(0, now.getTime() - date.getTime())
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-  if (days === 0) {
-    const hours = Math.floor(diff / (1000 * 60 * 60))
-    if (hours === 0) {
-      const minutes = Math.floor(diff / (1000 * 60))
-      return minutes === 0 ? '刚刚' : `${minutes}分钟前`
-    }
-    return `${hours}小时前`
-  }
-  if (days === 1) return '昨天'
-  if (days < 7) return `${days}天前`
-  return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
-}
-
 let mineSeq = 0
 async function loadMine(silent = false): Promise<void> {
   const seq = ++mineSeq
@@ -613,22 +688,6 @@ async function loadMine(silent = false): Promise<void> {
     if (seq === mineSeq) mineLoading.value = false
   }
 }
-let hotSeq = 0
-async function loadHot(): Promise<void> {
-  const seq = ++hotSeq
-  hotLoading.value = true
-  hotError.value = ''
-  try {
-    const r = await mediaSeekApi.hot()
-    if (seq !== hotSeq) return
-    hotRequests.value = r.requests || []
-  } catch (e) {
-    if (seq !== hotSeq) return
-    hotError.value = humanizeError(e)
-  } finally {
-    if (seq === hotSeq) hotLoading.value = false
-  }
-}
 let plazaSeq = 0
 async function loadPlaza(): Promise<void> {
   const seq = ++plazaSeq
@@ -637,8 +696,7 @@ async function loadPlaza(): Promise<void> {
   try {
     const params: { status?: string; kind?: string; q?: string } = {}
     if (plazaStateFilter.value !== 'all') params.status = plazaStateFilter.value
-    if (plazaTypeFilter.value === 'seek') params.kind = 'seek'
-    else if (plazaTypeFilter.value === 'chase_series') params.kind = 'chase'
+    if (plazaTypeFilter.value !== 'all') params.kind = plazaTypeFilter.value
     if (plazaQ.value) params.q = plazaQ.value
     const r = await mediaSeekApi.plaza(params)
     if (seq !== plazaSeq) return
@@ -674,31 +732,86 @@ function highlight(key: string): void {
   justAddedKey.value = key
   window.setTimeout(() => { if (justAddedKey.value === key) justAddedKey.value = null }, 1700)
 }
-function onSeekSubmitted(payload: { created: boolean; requestId?: number; message?: string }): void {
-  void loadMine(true)
-  void loadHot()
-  void loadPlaza()
-  setTab('mine')
-  if (payload.created && payload.requestId) highlight(`seek:${payload.requestId}`)
+
+/* ===== 作品搜索（求片/追新共用）：防抖搜 TMDB 候选，后端逐条标库内
+   状态与未完成请求（open_seek/open_chase），行行动分化在结果组件里 ===== */
+function onWishInput(): void {
+  emptyWarn.value = false
+  if (searchTimer !== undefined) { clearTimeout(searchTimer); searchTimer = undefined }
+  const q = wishText.value.trim()
+  if (!q) {
+    searchSeq++
+    candidates.value = []
+    searching.value = false
+    searchError.value = ''
+    searchStatus.value = 'idle'
+    searchFor.value = ''
+    return
+  }
+  searchTimer = setTimeout(() => { void runSearch(q) }, 350)
 }
-async function submitChase(): Promise<void> {
-  const title = chaseTitle.value.trim()
-  const message = chaseMessage.value.trim()
-  if (!title || !message) { toast.error(`先写清楚${chaseCopy.value.titleLabel}和想追的内容，再提交`); return }
-  if (chaseSending.value) return
-  chaseSending.value = true
+async function runSearch(q: string): Promise<void> {
+  const seq = ++searchSeq
+  searching.value = true
+  searchError.value = ''
+  searchStatus.value = 'loading'
+  searchFor.value = q
   try {
-    const r = await ticketApi.create({ category: chaseMedia.value === 'movie' ? 'chase_movie' : 'chase_series', title, message })
-    toast.success(r.message || '追新已提交')
-    chaseTitle.value = ''
-    chaseMessage.value = ''
-    await loadMine(true)
-    setTab('mine')
-    highlight(`ticket:${r.ticket_id}`)
+    const r = await mediaSeekApi.search(q)
+    if (seq !== searchSeq) return
+    if (q !== wishText.value.trim()) return
+    searchDegraded.value = r.degraded === true
+    candidates.value = r.configured ? (r.results || []) : []
+    searchStatus.value = r.configured ? 'done' : 'unconfigured'
   } catch (e) {
-    toast.error(humanizeError(e))
+    if (seq !== searchSeq) return
+    searchStatus.value = 'error'
+    searchError.value = humanizeError(e)
   } finally {
-    chaseSending.value = false
+    if (seq === searchSeq) searching.value = false
+  }
+}
+function runSearchNow(): void {
+  const q = wishText.value.trim()
+  if (!q) { emptyWarn.value = true; return }
+  if (searchTimer !== undefined) { clearTimeout(searchTimer); searchTimer = undefined }
+  void runSearch(q)
+}
+function openSubmitModal(work: SubmitWork): void {
+  modalMode.value = reqType.value === 'seek' ? 'seek' : 'chase'
+  modalWork.value = work
+  modalOpen.value = true
+}
+/* 原名兜底：搜不到/搜不了时按输入的名字开弹层（只求片档有） */
+function openFallbackModal(): void {
+  const name = wishText.value.trim()
+  if (!name) return
+  modalMode.value = 'seek'
+  modalWork.value = { name, kind: '' }
+  modalOpen.value = true
+}
+function goExistingWork(c: MediaSeekCandidate): void {
+  void router.push({
+    path: '/game/requests/media',
+    query: { tmdb: c.tmdb_id, name: c.name, year: c.year, type: c.kind },
+  })
+}
+/* 提交成功（照友站 2.3）：关弹层、刷新各面、跳作品请求详情页 */
+function onModalSubmitted(): void {
+  const w = modalWork.value
+  modalOpen.value = false
+  void loadMine(true)
+  void loadPlaza()
+  if (w) {
+    void router.push({
+      path: '/game/requests/media',
+      query: {
+        ...(w.tmdb_id ? { tmdb: w.tmdb_id } : {}),
+        name: w.name,
+        ...(w.year ? { year: w.year } : {}),
+        ...(w.kind ? { type: w.kind } : {}),
+      },
+    })
   }
 }
 /* 提交资源反馈档：fbSelected=correction 时 category 就是 'correction'
@@ -731,14 +844,22 @@ function toggleDetail(row: UnifiedRow): void {
 function onThreadChanged(): void {
   void loadMine(true)
 }
-function goDetail(embyItemId: string): void {
-  void router.push(`/media/${embyItemId}`)
-}
+/* 外部预填（/want?q= 深链、作品详情页「资源反馈」带过来的片名）：
+   求片/追新档填进搜索框立即搜；反馈档填进标题（只填空，不覆盖手输） */
+watch(prefillQ, (q) => {
+  const text = (q || '').trim()
+  if (!text) return
+  if (segGroup.value === 'feedback') {
+    if (!fbTitle.value) fbTitle.value = text
+    return
+  }
+  wishText.value = text
+  void runSearch(text)
+}, { immediate: true })
 watch(() => route.query, () => syncFromQuery())
 onMounted(() => {
   syncFromQuery()
   void loadMine()
-  void loadHot()
   void loadPlaza()
 })
 </script>
@@ -803,7 +924,6 @@ onMounted(() => {
   font-size: 12px; color: #9ca3af; border-radius: 16px; padding: 0 14px; font-family: inherit; white-space: nowrap;
 }
 .rf-seg__btn--on { background: #2a2b2d; color: #fbfcfd; font-weight: 700; }
-.rf-seg--mini { min-width: 160px; }
 .rf-quota { margin: 0; font-size: 12px; color: #9ca3af; }
 .rf-create__body { display: flex; flex-direction: column; gap: 16px; }
 .rf-form { display: flex; flex-direction: column; gap: 12px; }
@@ -835,27 +955,61 @@ onMounted(() => {
 }
 .rf-submit:disabled { opacity: 0.5; cursor: default; }
 
+/* 作品搜索框（照友站 2.1）：50 高圆角 25 输入（内左放大镜）＋50×50 圆形
+   彩虹描边搜索钮；搜索中钮内转 spinner */
+.rf-search { display: flex; gap: 10px; position: relative; }
+.rf-search__icon {
+  position: absolute; left: 16px; top: 0; height: 50px;
+  display: inline-flex; align-items: center; pointer-events: none;
+  color: #9ca3af;
+}
+.rf-search__input {
+  flex: 1; min-width: 0; height: 50px; padding: 0 18px 0 42px;
+  font-size: 15px; color: #fbfcfd; font-family: inherit;
+  background: #242526; border: 1px solid #232426; border-radius: 25px; outline: none;
+}
+.rf-search__input::placeholder { color: #9ca3af; }
+.rf-search__input:focus { border-color: #6b7280; }
+.rf-search__btn {
+  flex: none; width: 50px; height: 50px; border-radius: 50%;
+  color: #111111; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid transparent;
+  background: linear-gradient(#ffffff, #ffffff) padding-box, var(--uhd-rainbow-border) border-box;
+}
+.rf-search__btn:disabled { opacity: 0.6; cursor: default; }
+.rf-search__spinner {
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 2px solid rgba(0, 0, 0, 0.2); border-top-color: #111111;
+  animation: rf-spin 0.8s linear infinite;
+}
+@keyframes rf-spin { to { transform: rotate(360deg); } }
+.rf-hint--err { font-size: 12px; color: #fca5a5; }
+
 .rf-list { display: flex; flex-direction: column; gap: 14px; }
-/* 广场搜索行：与求片搜索同构（50 高圆角 25 输入＋85×50 白底彩虹描边「搜索」钮） */
-.rf-searchbar { display: flex; gap: 10px; }
+/* 广场搜索框（照友站 2.7）：「搜索」钮嵌在输入框内右侧（彩虹描边胶囊） */
+.rf-searchbar { position: relative; }
 .rf-searchbar__input {
-  flex: 1; min-width: 0; height: 50px; padding: 0 18px;
+  width: 100%; height: 50px; padding: 0 108px 0 18px;
   font-size: 15px; color: #fbfcfd; font-family: inherit;
   background: #242526; border: 1px solid #232426; border-radius: 25px; outline: none;
 }
 .rf-searchbar__input::placeholder { color: #9ca3af; }
 .rf-searchbar__input:focus { border-color: #6b7280; }
 .rf-searchbar__btn {
-  flex: none; width: 85px; height: 50px; border-radius: 25px;
-  font-size: 14px; font-weight: 700; color: #111111; cursor: pointer; font-family: inherit;
+  position: absolute; right: 5px; top: 5px; height: 40px; padding: 0 20px; border-radius: 20px;
+  font-size: 14px; font-weight: 700; color: #fbfcfd; cursor: pointer; font-family: inherit;
   border: 1.5px solid transparent;
-  background: linear-gradient(#ffffff, #ffffff) padding-box, var(--uhd-rainbow-border) border-box;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box, var(--uhd-rainbow) border-box;
 }
-.rf-filter { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-/* 状态 chips（原站截图形态）：未选＝透明底＋彩色圆点＋文字；选中＝胶囊
-   （深色 #2a2b2d／浅色白底＋轻阴影）；一行放不下时横向滚动 */
+/* 筛选容器条（照友站 2.6/2.7）：chips 装在圆角容器里，全部＝填充 pill、
+   其余＝文字＋色点；一行放不下横向滚动 */
+.rf-filterbar {
+  background: #17181a; border: 1px solid #26262a; border-radius: 999px;
+  padding: 4px 6px;
+}
 .rf-statchips {
-  display: flex; gap: 4px; max-width: 100%; padding: 2px;
+  display: flex; gap: 4px; max-width: 100%;
   overflow-x: auto; scrollbar-width: none;
 }
 .rf-statchips::-webkit-scrollbar { display: none; }
@@ -870,36 +1024,52 @@ onMounted(() => {
   width: 134px; height: 38px; border-radius: 19px; border: 1px solid #26262a;
   background: #1e1f21; color: #fbfcfd; font-size: 13px; padding: 0 10px; outline: none; font-family: inherit;
 }
-.rf-rows { display: flex; flex-direction: column; gap: 10px; }
-.rf-row {
-  background: #17181a; border: 1px solid #26262a; border-radius: 16px; padding: 14px;
+/* 类型下拉整宽（照友站 2.6：高约 50、圆角 25） */
+.rf-filter__select--wide { width: 100%; height: 50px; border-radius: 25px; padding: 0 16px; font-size: 14px; }
+/* 单容器分隔行（我的请求/广场共用，照友站 2.6/2.7）：海报 43×60＋片名行
+   （类型 pill＋状态 pill）＋正文摘要一行＋右侧 › */
+.rf-minebox {
+  background: #17181a; border: 1px solid #26262a; border-radius: 16px;
+  padding: 4px 16px;
 }
-.rf-row--new { border-color: #f59e0b; animation: rf-glow 1.6s; }
+.rf-mrow { padding: 12px 0; }
+.rf-mrow + .rf-mrow { border-top: 1px solid #26262a; }
+.rf-mrow--new { animation: rf-glow 1.6s; }
 @keyframes rf-glow { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
-.rf-row__head {
-  display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;
+.rf-mrow__head {
+  display: flex; align-items: center; gap: 12px;
   width: 100%; background: none; border: none; cursor: pointer; text-align: left;
   font-family: inherit; color: #fbfcfd; padding: 0;
 }
-.rf-row__head--static { cursor: default; }
-.rf-row__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-/* 请求卡头（照友站态3）：类型 pill＋状态 pill（描边带色）＋右侧时间 */
-.rf-row__pills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.rf-row__time { margin-left: auto; font-size: 12px; font-weight: 400; color: #9ca3af; white-space: nowrap; }
+.rf-mrow__head--static { cursor: default; }
+.rf-mrow__poster { flex: none; width: 43px; height: 60px; object-fit: cover; border-radius: 8px; background: #1e1f21; }
+.rf-mrow__poster--ph {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 17px; font-weight: 800; color: #55575c;
+}
+.rf-mrow__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.rf-mrow__titlerow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rf-mrow__title { font-size: 15px; font-weight: 700; word-break: break-word; }
+.rf-mrow__summary {
+  font-size: 12px; color: #9ca3af; line-height: 1.5;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* 广场计数行不截断（数字是这行的主信息，宁可换行） */
+.rf-mrow__summary--wrap { white-space: normal; overflow: visible; text-overflow: clip; }
 .rf-pill {
   flex: none; display: inline-flex; align-items: center; height: 22px; padding: 0 8px;
   border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap;
   border: 1px solid #333336; color: #9ca3af;
 }
 .rf-pill--type { background: #26262a; color: #d4d4d8; border-color: #26262a; }
-.rf-pill--pending { color: #9ca3af; border-color: #3a3b3f; }
-.rf-pill--doing { color: #f59e0b; border-color: #f59e0b; }
-.rf-pill--done { color: #4ade80; border-color: #16a34a; }
-.rf-pill--rejected { color: #f87171; border-color: #ef4444; }
-.rf-pill--withdrawn { color: #9ca3af; border-color: #3a3b3f; }
-.rf-row__title { font-size: 14px; font-weight: 700; word-break: break-word; display: flex; align-items: center; gap: 8px; }
-.rf-row__meta { font-size: 12px; color: #9ca3af; }
-.rf-row__chev { font-size: 20px; color: #9ca3af; line-height: 1; transition: transform 0.15s ease; }
+/* 状态 pill：填充深色胶囊＋状态色字（照友站 2.6） */
+.rf-pill--state { background: #26262a; border-color: #26262a; }
+.rf-pill--pending { color: #d4d4d8; }
+.rf-pill--doing { color: #f59e0b; }
+.rf-pill--done { color: #4ade80; }
+.rf-pill--rejected { color: #f87171; }
+.rf-pill--withdrawn { color: #9ca3af; }
+.rf-row__chev { flex: none; font-size: 20px; color: #9ca3af; line-height: 1; transition: transform 0.15s ease; }
 .rf-row__chev--open { transform: rotate(90deg); }
 .rf-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
 .rf-dot--pending { background: #9ca3af; }
@@ -908,39 +1078,30 @@ onMounted(() => {
 .rf-dot--rejected { background: #ef4444; }
 .rf-dot--withdrawn { background: #9ca3af; }
 .rf-row__detail { margin-top: 12px; border-top: 1px dotted #333336; padding-top: 12px; }
-.rf-detail__line { margin: 0 0 6px; font-size: 13px; color: #d4d4d8; }
-.rf-link { background: none; border: none; color: #6ea8fe; font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; padding: 0; }
-/* 广场媒体聚合卡（原站截图形态）：海报 84×112＋片名行（徽章）＋计数行＋右侧「查看 ›」，
-   点开后是组内可附议的 pending 明细行 */
-.rf-topics { display: flex; flex-direction: column; gap: 10px; }
-.rf-topic { background: #17181a; border: 1px solid #26262a; border-radius: 16px; padding: 14px; }
-.rf-topic__main { display: flex; gap: 14px; align-items: center; }
-.rf-topic__poster {
-  flex: none; width: 84px; height: 112px; border-radius: 10px; object-fit: cover; background: #1e1f21;
+/* 分页（照友站 2.6）：计数行＋« ‹ 页码 › » */
+.rf-pager { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.rf-pager__info { font-size: 12px; color: #9ca3af; }
+.rf-pager__nav { display: flex; gap: 6px; align-items: center; }
+.rf-pager__btn {
+  min-width: 34px; height: 34px; padding: 0 8px; border-radius: 10px; cursor: pointer;
+  background: #17181a; border: 1px solid #26262a; color: #d4d4d8;
+  font-size: 13px; font-weight: 700; font-family: inherit;
 }
-.rf-topic__ph {
-  flex: none; width: 84px; height: 112px; border-radius: 10px; background: #1e1f21;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 28px; font-weight: 800; color: #55575c;
-}
-.rf-topic__info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-.rf-topic__titlerow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.rf-topic__title { margin: 0; font-size: 16px; font-weight: 700; color: #fbfcfd; word-break: break-word; }
+.rf-pager__btn--on { background: #fbfcfd; color: #111111; border-color: #fbfcfd; }
+.rf-pager__btn:disabled { opacity: 0.4; cursor: default; }
 .rf-badge {
   flex: none; display: inline-flex; align-items: center; height: 22px; padding: 0 8px;
   border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap;
 }
-.rf-badge--green { background: rgba(22, 163, 74, 0.16); color: #4ade80; }
+.rf-badge--green { color: #4ade80; }
 .rf-badge--gray { background: #26262a; color: #9ca3af; }
-.rf-topic__counts { margin: 0; font-size: 13px; color: #9ca3af; }
 .rf-topic__sep { margin: 0 6px; }
 .rf-topic__view {
   flex: none; display: inline-flex; align-items: center; gap: 2px;
   background: none; border: none; cursor: pointer; padding: 6px 2px;
   font-size: 14px; font-weight: 700; color: #fbfcfd; font-family: inherit; white-space: nowrap;
 }
-.rf-topic__chev { font-size: 18px; color: #9ca3af; line-height: 1; transition: transform 0.15s ease; }
-.rf-topic__chev--open { transform: rotate(90deg); }
+.rf-topic__chev { font-size: 18px; color: #9ca3af; line-height: 1; }
 .rf-empty {
   display: flex; align-items: center; justify-content: center; text-align: center;
   min-height: 210px; border: 1px dashed #3a3b3f; border-radius: 16px;
@@ -953,8 +1114,7 @@ onMounted(() => {
 @media (max-width: 768px) {
   .rf-page { margin: -20px -16px -120px; padding: 20px 16px 120px; }
   .rf-types { grid-template-columns: repeat(3, 1fr); }
-  .rf-filter__select { width: 120px; }
-  /* 五类型分段在窄屏收紧内边距，保证一排排得下 */
+  /* 三档分段在窄屏收紧内边距，保证一排排得下 */
   .rf-seg__btn { padding: 0 8px; }
 }
 
@@ -988,34 +1148,42 @@ html[data-theme='light'] .rf-watch {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--uhd-shadow-card-l);
 }
 html[data-theme='light'] .rf-quota { color: #6b7280; }
+html[data-theme='light'] .rf-hint--err { color: #dc2626; }
+html[data-theme='light'] .rf-search__input { background: #f0f0f1; border-color: #e5e5e5; color: #111111; }
+html[data-theme='light'] .rf-search__input:focus { border-color: #9ca3af; }
 html[data-theme='light'] .rf-searchbar__input { background: #f0f0f1; border-color: #e8e8ea; color: #111111; }
 html[data-theme='light'] .rf-searchbar__input::placeholder { color: #9ca3af; }
 html[data-theme='light'] .rf-searchbar__input:focus { border-color: #9ca3af; }
+html[data-theme='light'] .rf-searchbar__btn {
+  background: var(--uhd-rainbow-soft) padding-box, var(--uhd-rainbow) border-box;
+  color: #111111;
+}
+html[data-theme='light'] .rf-filterbar { background: #ffffff; border-color: #e5e5e5; }
 html[data-theme='light'] .rf-statchip { color: #6b7280; }
-html[data-theme='light'] .rf-statchip--on { background: #ffffff; border-color: #e5e5e5; color: #111111; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); }
-html[data-theme='light'] .rf-topic { background: #ffffff; border-color: #e5e5e5; }
-html[data-theme='light'] .rf-topic__poster, html[data-theme='light'] .rf-topic__ph { background: #f0f0f1; }
-html[data-theme='light'] .rf-topic__ph { color: #9ca3af; }
-html[data-theme='light'] .rf-topic__title { color: #111111; }
-html[data-theme='light'] .rf-badge--green { background: #e6f4ea; color: #16a34a; }
+html[data-theme='light'] .rf-statchip--on { background: #111111; border-color: #111111; color: #ffffff; }
+html[data-theme='light'] .rf-badge--green { color: #16a34a; }
 html[data-theme='light'] .rf-badge--gray { background: #f0f0f1; color: #6b7280; }
-html[data-theme='light'] .rf-topic__counts { color: #6b7280; }
 html[data-theme='light'] .rf-topic__view { color: #111111; }
 html[data-theme='light'] .rf-topic__chev { color: #9ca3af; }
 html[data-theme='light'] .rf-filter__select { background: #f6f8fa; border-color: #e5e5e5; color: #111111; }
-html[data-theme='light'] .rf-row__time { color: #6b7280; }
+html[data-theme='light'] .rf-minebox { background: #ffffff; border-color: #e5e5e5; }
+html[data-theme='light'] .rf-mrow + .rf-mrow { border-top-color: #e5e5e5; }
+html[data-theme='light'] .rf-mrow__head { color: #111111; }
+html[data-theme='light'] .rf-mrow__poster { background: #f0f0f1; }
+html[data-theme='light'] .rf-mrow__poster--ph { color: #9ca3af; }
+html[data-theme='light'] .rf-mrow__summary { color: #6b7280; }
 html[data-theme='light'] .rf-pill { border-color: #e5e5e5; color: #6b7280; }
 html[data-theme='light'] .rf-pill--type { background: #f0f0f1; color: #55575c; border-color: #f0f0f1; }
-html[data-theme='light'] .rf-pill--doing { color: #d97706; border-color: #f59e0b; }
-html[data-theme='light'] .rf-pill--done { color: #16a34a; border-color: #16a34a; }
-html[data-theme='light'] .rf-pill--rejected { color: #dc2626; border-color: #ef4444; }
-html[data-theme='light'] .rf-row { background: #ffffff; border-color: #e5e5e5; }
-html[data-theme='light'] .rf-row__head { color: #111111; }
-html[data-theme='light'] .rf-row__meta { color: #6b7280; }
+html[data-theme='light'] .rf-pill--state { background: #f0f0f1; border-color: #f0f0f1; }
+html[data-theme='light'] .rf-pill--pending { color: #55575c; }
+html[data-theme='light'] .rf-pill--doing { color: #d97706; }
+html[data-theme='light'] .rf-pill--done { color: #16a34a; }
+html[data-theme='light'] .rf-pill--rejected { color: #dc2626; }
 html[data-theme='light'] .rf-row__chev { color: #9ca3af; }
 html[data-theme='light'] .rf-row__detail { border-top-color: #e5e5e5; }
-html[data-theme='light'] .rf-detail__line { color: #55575c; }
-html[data-theme='light'] .rf-link { color: #2563eb; }
+html[data-theme='light'] .rf-pager__info { color: #6b7280; }
+html[data-theme='light'] .rf-pager__btn { background: #ffffff; border-color: #e5e5e5; color: #55575c; }
+html[data-theme='light'] .rf-pager__btn--on { background: #111111; color: #ffffff; border-color: #111111; }
 html[data-theme='light'] .rf-empty { border-color: #d4d4d8; color: #8a8f96; }
 html[data-theme='light'] .rf-err { color: #dc2626; }
 html[data-theme='light'] .rf-retry { color: #111111; }

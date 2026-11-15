@@ -1499,8 +1499,31 @@ class MovieRequest(Base):
     # 的 build_request_detail）；整片求片恒为空。工人核算发现部分
     # 补齐时只刷新这份快照、不发通知；全部补齐才置 completed。
     request_detail = Column(Text)
+    # 作品海报快照（2026-11-15 按作品组织）：从 TMDB 候选带过来的海报
+    # 地址，广场/我的请求/作品详情在没有库内海报时用它展示；老行为
+    # 空（老库补列默认 NULL，见 database.py），展示侧回退库内海报。
+    poster_url = Column(String(500))
 
     user = relationship("WebUser")
+
+
+class MovieRequestSupplement(Base):
+    """求片补充说明（2026-11-15）：请求人对自己未完结请求的追加说明。
+
+    作品请求详情页的「补充说明」落这里——一条请求可多条、按时间排；
+    管理员的处理回复仍走 MovieRequest.admin_note，不混进本表。
+    """
+    __tablename__ = 'movie_request_supplements'
+
+    __table_args__ = (
+        Index('idx_reqsup_request', 'request_id'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    request_id = Column(Integer, ForeignKey('movie_requests.id'), nullable=False)
+    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
 
 
 class MovieRequestVote(Base):
