@@ -339,14 +339,14 @@ def test_buy_traffic_insufficient(db):
 
 def test_buy_traffic_arbitrary_gb(db):
     """任意 ≥100 的整数 GB 都可买（2026-11-15 弹窗自由输入口径）：
-    150G 按单价比例计价 ¥3/100GB → ¥4.50，抵扣 150GB。"""
+    150G 按单价比例计价 $0.30/100GB → $0.45，抵扣 150GB。"""
     user = _traffic_user(db, balance="100")
 
     result = tq.buy_traffic_with_balance(db, user.id, 150, "tq-arb-1")
 
     assert result["replayed"] is False
-    assert result["paid_amount"] == "4.50"
-    assert result["balance_after"] == "95.50"
+    assert result["paid_amount"] == "0.45"
+    assert result["balance_after"] == "99.55"
     assert result["gb"] == 150
     log = db.query(em_models.TrafficExchangeLog).filter_by(
         idempotency_key="tq-arb-1").one()

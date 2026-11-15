@@ -79,6 +79,7 @@ ECONOMY_CONFIG_KEYS = {
     "paid_request_monthly": "int",  # 付费服每月求片上限（此前无后台入口，本轮补登记）
     "code_default_plan_id": "int",  # r40：卡码授予天数所用默认套餐（codes._resolve_plan 读取）
     "subscription_purchase_enabled": "bool",
+    "subscription_line_name": "str",  # 订阅线路展示名（按服配置，如「国际线路」；未配回退服名，读侧在 api/economy.py 的 payment_plans）
     # 钱包（批 1，2026-11-14）：默认值见 backend/wallet.WALLET_CONFIG_DEFAULTS
     "wallet_enabled": "bool",  # 钱包总开关（默认开）
     "wallet_min_topup_amount": "int",  # 最低充值额（美分，默认 1000＝$10）
