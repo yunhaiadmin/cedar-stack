@@ -6,34 +6,42 @@
  * 由 TrafficPurchaseModal.vue 直接 import；令牌契约要求定义必须
  * 落在被引入的独立样式表里，scoped 样式里的定义不算数。 */
 :root {
-  --tq-bg: rgba(25, 25, 30, 0.94);
+  /* 2026-11-15 逐帧修复：弹窗改居中玻璃浮窗——深色半透底
+     rgba(28,28,30,0.55)＋亮边 --tq-edge，blur/saturate 在组件里组装 */
+  --tq-bg: rgba(28, 28, 30, 0.55);
+  --tq-edge: rgba(255, 255, 255, 0.24);
   --tq-fg: #f4f4f6;
   --tq-dim: rgba(244, 244, 246, 0.55);
   --tq-card: rgba(255, 255, 255, 0.055);
   --tq-border: rgba(255, 255, 255, 0.09);
   --tq-seg: rgba(255, 255, 255, 0.07);
-  --tq-seg-on: rgba(255, 255, 255, 0.15);
+  --tq-seg-on: rgba(255, 255, 255, 0.1);
+  --tq-seg-on-edge: rgba(255, 255, 255, 0.3);
+  --tq-input-edge: rgba(255, 255, 255, 0.22);
   --tq-green: #3ecf7f;
   --tq-orange: #f5a54a;
   --tq-hint-bg: rgba(242, 164, 90, 0.13);
   --tq-hint-fg: #f0b269;
-  --tq-icon-bg: rgba(245, 166, 35, 0.16);
+  --tq-icon-bg: rgba(18, 16, 14, 0.55);
   --tq-icon-fg: #f5a623;
-  --tq-shadow: 0 -12px 44px rgba(0, 0, 0, 0.45);
+  --tq-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
 }
 html[data-theme='light'] {
-  --tq-bg: #ffffff;
+  --tq-bg: rgba(255, 255, 255, 0.72);
+  --tq-edge: rgba(17, 17, 17, 0.12);
   --tq-fg: #16161a;
   --tq-dim: rgba(22, 22, 26, 0.55);
   --tq-card: rgba(17, 17, 20, 0.045);
   --tq-border: rgba(17, 17, 20, 0.09);
   --tq-seg: rgba(17, 17, 20, 0.06);
   --tq-seg-on: #ffffff;
+  --tq-seg-on-edge: rgba(17, 17, 17, 0.16);
+  --tq-input-edge: rgba(17, 17, 17, 0.16);
   --tq-green: #16a34a;
   --tq-orange: #ea7a28;
   --tq-hint-bg: rgba(242, 164, 90, 0.16);
   --tq-hint-fg: #b45309;
   --tq-icon-bg: rgba(245, 166, 35, 0.18);
   --tq-icon-fg: #d97706;
-  --tq-shadow: 0 -12px 44px rgba(0, 0, 0, 0.28);
+  --tq-shadow: 0 24px 56px rgba(30, 32, 60, 0.25);
 }

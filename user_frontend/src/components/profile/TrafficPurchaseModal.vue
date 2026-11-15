@@ -385,9 +385,9 @@ async function onBalanceConfirmClick() {
   inset: 0;
   z-index: 1200;
   background: rgba(10, 10, 14, 0.55);
-  backdrop-filter: blur(6px) saturate(140%);
+  backdrop-filter: blur(10px) saturate(150%);
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
   animation: tq-fade-in 0.22s ease both;
 }
@@ -395,47 +395,57 @@ async function onBalanceConfirmClick() {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+/* 居中玻璃浮窗（2026-11-15 逐帧修复，照友站帧）：宽 92%、四角
+   圆角 26；玻璃五件＝半透底 --tq-bg＋blur 24/saturate 160＋顶部
+   内高光（inset 白）＋边缘亮光 --tq-edge＋大柔影 --tq-shadow */
 .tq-modal {
-  width: 100%;
-  max-width: 460px;
+  width: 92%;
+  max-width: 420px;
   max-height: 88vh;
   overflow-y: auto;
   background: var(--tq-bg);
   color: var(--tq-fg);
-  border: 1px solid var(--tq-border);
-  border-bottom: none;
-  border-radius: 22px 22px 0 0;
-  padding: 20px 20px 28px;
-  box-shadow: var(--tq-shadow);
+  border: 1px solid var(--tq-edge);
+  border-radius: 26px;
+  padding: 22px 22px 24px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    var(--tq-shadow);
   backdrop-filter: blur(24px) saturate(160%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
-  /* app 式底部弹层：自下而上滑入 */
-  animation: tq-sheet-up 0.3s cubic-bezier(0.32, 0.72, 0.28, 1) both;
+  /* app 式浮窗：轻缩放＋上浮入场 */
+  animation: tq-pop-in 0.28s cubic-bezier(0.32, 0.72, 0.28, 1) both;
 }
-@keyframes tq-sheet-up {
-  from { transform: translateY(48px); opacity: 0.4; }
-  to { transform: translateY(0); opacity: 1; }
+html[data-theme='light'] .tq-modal {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    var(--tq-shadow);
+}
+@keyframes tq-pop-in {
+  from { transform: translateY(12px) scale(0.97); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
   .tq-mask, .tq-modal { animation: none; }
   .tq-spinner { animation-duration: 1.6s; }
 }
-@media (min-width: 640px) {
-  .tq-mask { align-items: center; }
-  .tq-modal { border-radius: 22px; border-bottom: 1px solid var(--tq-border); }
-}
 
-/* 头部：40px 琥珀图标 + 标题 17 粗 / 副标题 12 灰 + 右上 × */
+/* 头部：40px 圆形深色徽章 + 标题 17 粗 / 副标题 12 灰 + 右上 ×，
+   头部下发丝分隔线（照友站帧） */
 .tq-head {
   display: flex;
   align-items: center;
   gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--tq-border);
 }
 .tq-head__icon {
   flex: none;
   width: 40px;
   height: 40px;
-  border-radius: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   background: var(--tq-icon-bg);
   color: var(--tq-icon-fg);
   display: inline-flex;
@@ -456,10 +466,11 @@ async function onBalanceConfirmClick() {
   padding: 4px 8px;
 }
 
-/* 当前流量卡（圆角 16、淡填充） */
+/* 当前流量卡（圆角 16、淡填充＋描边，照友站帧的描边玻璃卡） */
 .tq-card {
   margin-top: 16px;
   background: var(--tq-card);
+  border: 1px solid var(--tq-border);
   border-radius: 16px;
   padding: 14px 16px;
 }
@@ -473,28 +484,39 @@ async function onBalanceConfirmClick() {
 .tq-card__pct { font-size: 15px; font-weight: 700; }
 .tq-card__used { font-size: 12.5px; color: var(--tq-dim); margin: 8px 0 0; }
 
-/* 分段页签（胶囊容器） */
+/* 分段页签（胶囊容器）：按友站帧收小（总高约 42）；
+   选中片＝描边＋微亮玻璃，不许实心灰填充 */
 .tq-tabs {
   display: flex;
   gap: 4px;
-  margin: 16px 0 4px;
+  margin: 14px 0 4px;
   background: var(--tq-seg);
   border-radius: 999px;
-  padding: 4px;
+  padding: 3px;
 }
 .tq-tab {
   flex: 1;
-  border: none;
+  /* 中和全局 mobile.css 的 button{min-height:44px}：分段总高按
+     友站帧收至约 44（38＋容器内距 6），不许被触控规范顶大 */
+  min-height: 38px;
+  border: 1px solid transparent;
   background: transparent;
   border-radius: 999px;
-  padding: 8px 0;
-  font-size: 14px;
+  padding: 7px 0;
+  font-size: 13.5px;
   font-weight: 600;
   color: inherit;
   opacity: 0.65;
   cursor: pointer;
 }
-.tq-tab--on { background: var(--tq-seg-on); opacity: 1; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.14); }
+.tq-tab--on {
+  background: var(--tq-seg-on);
+  border-color: var(--tq-seg-on-edge);
+  opacity: 1;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 1px 6px rgba(0, 0, 0, 0.14);
+}
 .tq-body { padding-top: 12px; }
 
 /* 余额购买 */
@@ -508,15 +530,16 @@ async function onBalanceConfirmClick() {
 .tq-balrow__amt { font-size: 15px; font-weight: 700; color: var(--tq-green); }
 .tq-label { font-size: 13px; color: var(--tq-dim); margin: 16px 0 8px; }
 .tq-inputrow { display: flex; gap: 10px; }
+/* 金额输入：描边式（透明底＋边框），照友站帧 */
 .tq-input {
   flex: 1;
   display: flex;
   align-items: center;
-  background: var(--tq-card);
-  border: 1px solid var(--tq-border);
+  background: transparent;
+  border: 1px solid var(--tq-input-edge);
   border-radius: 12px;
   padding: 0 14px;
-  height: 46px;
+  height: 44px;
   min-width: 0;
 }
 .tq-input__field {
@@ -533,8 +556,8 @@ async function onBalanceConfirmClick() {
 /* 预览钮：彩虹边 + 玻璃（与站内 .btn-primary 同一套配方） */
 .tq-preview-btn {
   flex: none;
-  height: 46px;
-  padding: 0 22px;
+  height: 44px;
+  padding: 0 20px;
   border-radius: 999px;
   border: 1.5px solid transparent;
   background:
@@ -556,16 +579,17 @@ html[data-theme='light'] .tq-preview-btn {
 .tq-chips { display: flex; gap: 8px; margin-top: 12px; }
 .tq-chip {
   flex: 1;
+  min-height: 30px;
   border: 1px solid var(--tq-border);
   background: transparent;
   border-radius: 999px;
-  padding: 7px 0;
-  font-size: 13px;
+  padding: 6px 0;
+  font-size: 12.5px;
   font-weight: 500;
   color: inherit;
   cursor: pointer;
 }
-.tq-chip--on { background: var(--tq-seg-on); border-color: transparent; font-weight: 700; }
+.tq-chip--on { background: var(--tq-seg-on); border-color: var(--tq-seg-on-edge); font-weight: 700; }
 .tq-preview {
   margin-top: 16px;
   background: var(--tq-card);
