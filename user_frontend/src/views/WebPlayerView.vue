@@ -26,6 +26,28 @@
          原生 video 隐藏。点一下切换控制层显隐，口径同原生 video 点按。 -->
     <div v-show="softActive" ref="softEl" class="wp-soft" @click="onSoftTap" />
 
+    <!-- 站内弹幕层：站点开关开 + 用户弹幕开关开 + 原生播放路径时才渲染。
+         弹幕按时间窗分片拉取、到点从右向左飘过，样式（区域/透明度/
+         字号/密度/速度/偏移）服从弹幕设置弹层。 -->
+    <div
+      v-if="danmakuSiteOn && danmaku.enabled && !softActive"
+      class="wp-dm-layer"
+      :class="{ half: danmaku.area === 'half' }"
+      aria-hidden="true"
+    >
+      <span
+        v-for="f in flying"
+        :key="f.key"
+        class="wp-dm-item"
+        :style="{
+          top: `${f.lane * 12.5}%`,
+          animationDuration: `${f.duration}s`,
+          fontSize: `${f.sizePx}px`,
+          opacity: danmaku.opacity / 100,
+        }"
+      >{{ f.text }}</span>
+    </div>
+
     <!-- 顶部栏：返回圆钮 + 标题 + 一起看 -->
     <header v-show="chromeVisible" class="wp-top">
       <div class="wp-top-left">
@@ -108,6 +130,31 @@
         <Lock v-else-if="controlsVisible" :size="17" />
       </button>
 
+      <!-- 弹幕发送行：站点开关开时才出现，贴在控制条上方 -->
+      <form
+        v-if="danmakuSiteOn"
+        v-show="controlsVisible && !locked"
+        class="wp-dm-send"
+        @submit.prevent="sendDanmaku"
+      >
+        <input
+          v-model="danmakuText"
+          class="wp-dm-input"
+          type="text"
+          :maxlength="danmakuMaxLen"
+          :placeholder="`发条弹幕，最多 ${danmakuMaxLen} 字`"
+          aria-label="弹幕内容"
+          @click.stop
+        />
+        <button
+          type="submit"
+          class="wp-dm-send-btn"
+          :disabled="danmakuSending || !danmakuText.trim()"
+        >
+          发送
+        </button>
+      </form>
+
       <div v-show="controlsVisible && !locked" class="wp-bar">
         <div class="wp-bar-progress">
           <span class="wp-time">{{ formatClock(currentTime) }}</span>
@@ -140,6 +187,7 @@
           </div>
           <div class="wp-bar-group">
             <button
+              v-if="danmakuSiteOn"
               type="button"
               class="wp-icon wp-danmaku-btn"
               :class="{ off: !danmaku.enabled, on: danmaku.enabled }"
@@ -297,6 +345,11 @@ import {
   reportStoppedBeacon,
   type PlaybackInfoResult,
 } from '@/api/webPlayer'
+import {
+  fetchDanmakuWindow,
+  postDanmaku,
+  type DanmakuItem,
+} from '@/api/danmaku'
 import { validatePlayLine } from '@/composables/usePlayLines'
 import {
   probeDecode,
@@ -405,6 +458,32 @@ const secondarySub = ref<number | null>(null)
 const subtitleDelayMs = ref(0)
 const subtitleFontSize = ref<SubtitleFontSize>('default')
 const danmaku = ref<DanmakuSettings>(loadDanmaku())
+
+// ---------- 站内弹幕（数据面） ----------
+// 站点开关（后端 danmaku_enabled）关时拉取口 404 → danmakuSiteOn=false，
+// 弹幕按钮/发送行/弹幕层整组不渲染。数据按 180 秒时间窗分片拉取、
+// 合并进 danmakuPool（按 id 去重、按时间轴排序），播放头走到点上冒出。
+const DANMAKU_CHUNK_SECONDS = 180
+const danmakuSiteOn = ref(false)
+const danmakuMaxLen = ref(100)
+const danmakuPool = ref<DanmakuItem[]>([])
+const danmakuText = ref('')
+const danmakuSending = ref(false)
+interface FlyingDanmaku {
+  key: number
+  text: string
+  lane: number
+  duration: number
+  sizePx: number
+}
+const flying = ref<FlyingDanmaku[]>([])
+let danmakuFetchedUntil = 0
+let danmakuFetching = false
+let danmakuSpawnIdx = 0
+let danmakuLastTick = 0
+let danmakuKeySeq = 1
+let danmakuLaneCursor = 0
+const danmakuTimers = new Set<number>()
 
 let controlsTimer: number | undefined
 let progressTimer: number | undefined
@@ -828,6 +907,8 @@ async function loadItem(id: string): Promise<void> {
     const it = await embyApi.getItem(id)
     item.value = it
     document.title = `${it.Name} · 播放`
+    // 站内弹幕：条目定了就探一次站点开关并预拉首窗（关时 404 静默隐藏）
+    void initDanmaku(id)
     if (it.Type === 'Episode' && it.SeriesId) {
       embyApi
         .getEpisodes(it.SeriesId, it.SeasonId || undefined)
@@ -1367,6 +1448,156 @@ function onDanmakuSettings(s: DanmakuSettings): void {
   danmaku.value = s
   persistDanmaku()
 }
+
+// ---------- 站内弹幕（拉取 / 冒出 / 发送） ----------
+
+const DM_FONT_PX = { small: 15, medium: 18, large: 22 } as const
+const DM_DURATION_S = { slow: 13, standard: 10, fast: 7.5 } as const
+const DM_CAP = { low: 6, standard: 14, high: 26 } as const
+const DM_LANES = 8
+/** 自己刚发的弹幕已手动冒出过，播放头走到点上时不要再冒第二遍 */
+const danmakuLocalPosted = new Set<number>()
+
+function resetDanmakuData(): void {
+  danmakuSiteOn.value = false
+  danmakuPool.value = []
+  flying.value = []
+  danmakuFetchedUntil = 0
+  danmakuFetching = false
+  danmakuSpawnIdx = 0
+  danmakuLastTick = 0
+  danmakuText.value = ''
+  danmakuLocalPosted.clear()
+  for (const t of danmakuTimers) window.clearTimeout(t)
+  danmakuTimers.clear()
+}
+
+async function initDanmaku(guid: string): Promise<void> {
+  resetDanmakuData()
+  try {
+    const win = await fetchDanmakuWindow(guid, 0, DANMAKU_CHUNK_SECONDS)
+    danmakuSiteOn.value = true
+    danmakuMaxLen.value = win.max_text_length || 100
+    mergeDanmakuItems(win.items)
+    danmakuFetchedUntil = DANMAKU_CHUNK_SECONDS
+  } catch {
+    // 404 = 站点开关关：整组弹幕 UI 不出现，不打扰播放
+    danmakuSiteOn.value = false
+  }
+}
+
+function mergeDanmakuItems(items: DanmakuItem[]): void {
+  if (!items.length) return
+  const seen = new Set(danmakuPool.value.map((i) => i.id))
+  const fresh = items.filter((i) => !seen.has(i.id))
+  if (!fresh.length) return
+  danmakuPool.value = [...danmakuPool.value, ...fresh].sort(
+    (a, b) => a.position_seconds - b.position_seconds || a.id - b.id,
+  )
+}
+
+async function prefetchDanmaku(): Promise<void> {
+  if (!danmakuSiteOn.value || danmakuFetching) return
+  if (
+    duration.value > 0 &&
+    danmakuFetchedUntil > duration.value + DANMAKU_CHUNK_SECONDS
+  ) {
+    return
+  }
+  danmakuFetching = true
+  const from = danmakuFetchedUntil
+  try {
+    const win = await fetchDanmakuWindow(
+      itemId.value,
+      from,
+      from + DANMAKU_CHUNK_SECONDS,
+    )
+    mergeDanmakuItems(win.items)
+    danmakuFetchedUntil = from + DANMAKU_CHUNK_SECONDS
+  } catch {
+    /* 拉取失败静默：播放头继续走，下一轮预取点再试 */
+  } finally {
+    danmakuFetching = false
+  }
+}
+
+function spawnDanmaku(entry: DanmakuItem): void {
+  if (flying.value.length >= DM_CAP[danmaku.value.density]) return
+  const key = danmakuKeySeq++
+  const dur = DM_DURATION_S[danmaku.value.speed]
+  flying.value = [
+    ...flying.value,
+    {
+      key,
+      text: entry.text,
+      lane: danmakuLaneCursor++ % DM_LANES,
+      duration: dur,
+      sizePx: DM_FONT_PX[danmaku.value.fontSize],
+    },
+  ]
+  const timer = window.setTimeout(() => {
+    danmakuTimers.delete(timer)
+    flying.value = flying.value.filter((f) => f.key !== key)
+  }, dur * 1000 + 300)
+  danmakuTimers.add(timer)
+}
+
+function danmakuTick(t: number): void {
+  if (
+    !danmakuSiteOn.value ||
+    !danmaku.value.enabled ||
+    softActive.value ||
+    phase.value !== 'playing'
+  ) {
+    danmakuLastTick = t
+    return
+  }
+  const offset = danmaku.value.offsetSeconds
+  // 跳转（seek / 换集）：重定位冒出下标、清掉在飞的，避免旧点弹幕串场
+  if (Math.abs(t - danmakuLastTick) > 2) {
+    flying.value = []
+    const idx = danmakuPool.value.findIndex(
+      (i) => i.position_seconds + offset > t,
+    )
+    danmakuSpawnIdx = idx < 0 ? danmakuPool.value.length : idx
+  }
+  while (danmakuSpawnIdx < danmakuPool.value.length) {
+    const entry = danmakuPool.value[danmakuSpawnIdx]
+    if (entry.position_seconds + offset > t) break
+    if (
+      entry.position_seconds + offset > danmakuLastTick &&
+      !danmakuLocalPosted.has(entry.id)
+    ) {
+      spawnDanmaku(entry)
+    }
+    danmakuSpawnIdx++
+  }
+  danmakuLastTick = t
+  if (t > danmakuFetchedUntil - 60) void prefetchDanmaku()
+}
+
+watch(currentTime, (t) => danmakuTick(t))
+
+async function sendDanmaku(): Promise<void> {
+  const text = danmakuText.value.trim()
+  if (!text || danmakuSending.value || !danmakuSiteOn.value) return
+  danmakuSending.value = true
+  try {
+    const res = await postDanmaku(
+      itemId.value,
+      Math.max(0, Math.round(currentTime.value * 10) / 10),
+      text,
+    )
+    danmakuText.value = ''
+    danmakuLocalPosted.add(res.item.id)
+    mergeDanmakuItems([res.item])
+    if (danmaku.value.enabled && !softActive.value) spawnDanmaku(res.item)
+  } catch (e) {
+    showToast(errorText(e, '弹幕发送失败'))
+  } finally {
+    danmakuSending.value = false
+  }
+}
 function persistDanmaku(): void {
   try {
     localStorage.setItem(DANMAKU_KEY, JSON.stringify(danmaku.value))
@@ -1666,6 +1897,7 @@ onUnmounted(() => {
   window.clearTimeout(probeTimer2)
   window.clearInterval(progressTimer)
   window.clearInterval(wtStateTimer)
+  resetDanmakuData()
   wt.dispose()
   void destroySoft()
   sendStopped()
@@ -2096,6 +2328,93 @@ onUnmounted(() => {
   background: currentColor;
   transform: rotate(-45deg);
   border-radius: 1px;
+}
+
+/* 站内弹幕层：覆盖画面上部（area=half 时只占上半屏），不挡点击 */
+.wp-dm-layer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 100%;
+  z-index: 8;
+  overflow: hidden;
+  pointer-events: none;
+}
+.wp-dm-layer.half {
+  height: 50%;
+}
+.wp-dm-item {
+  position: absolute;
+  left: 0;
+  white-space: nowrap;
+  color: #fff;
+  font-weight: 600;
+  line-height: 1.3;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.9),
+    1px 0 2px rgba(0, 0, 0, 0.9),
+    -1px 0 2px rgba(0, 0, 0, 0.9),
+    0 -1px 2px rgba(0, 0, 0, 0.9);
+  animation-name: wp-dm-fly;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+  will-change: left, transform;
+}
+@keyframes wp-dm-fly {
+  from {
+    left: 100%;
+    transform: translateX(0);
+  }
+  to {
+    left: 0;
+    transform: translateX(-100%);
+  }
+}
+
+/* 弹幕发送行：贴在控制条上方居中，形态与控制条同族（深色玻璃） */
+.wp-dm-send {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(128px + env(safe-area-inset-bottom));
+  z-index: 20;
+  width: min(680px, calc(100% - 24px));
+  display: flex;
+  gap: 8px;
+  background: rgba(22, 22, 25, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 6px 6px 6px 16px;
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+}
+.wp-dm-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #fff;
+  font-size: 14px;
+}
+.wp-dm-input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+.wp-dm-send-btn {
+  flex: none;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #111;
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 7px 16px;
+  cursor: pointer;
+}
+.wp-dm-send-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .wp-notice {

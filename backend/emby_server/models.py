@@ -686,6 +686,30 @@ class UserNextUpDismissal(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
+class DanmakuComment(Base):
+    """站内自发弹幕（网页播放器，2026-11-15）。
+
+    一行 = 某用户在某条目时间轴 position_seconds 处发的一条弹幕。
+    user_id 记发言者本人：子账号按本人记，不归主账号——弹幕是发言
+    行为，不是权益消费（与 sub_accounts 的有效账号解析刻意不挂钩）。
+    开关/敏感词/限流/字数上限全走 SystemConfig（家族 danmaku），
+    本表只存弹幕本体。新表由 create_all 建，不走 _auto_migrate。
+    """
+
+    __tablename__ = "danmaku_comments"
+    __table_args__ = (
+        Index("idx_danmaku_item_time", "item_id", "position_seconds"),
+        Index("idx_danmaku_user_created", "user_id", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("web_users.id"), nullable=False)
+    item_id = Column(Integer, ForeignKey("emby_items.id"), nullable=False)
+    position_seconds = Column(Float, nullable=False)
+    text = Column(String(500), nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+
+
 class PlaybackSession(Base):
     """播放会话"""
 

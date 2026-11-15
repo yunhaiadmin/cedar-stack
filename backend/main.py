@@ -80,6 +80,8 @@ from backend.api.orders_admin import admin_orders_router
 from backend.api.coupons_admin import admin_coupons_router
 from backend.api.admin_player_blacklist import admin_player_blacklist_router
 from backend.api.admin_softdecode import admin_softdecode_router
+from backend.api.admin_danmaku import admin_danmaku_router
+from backend.api.danmaku import router as danmaku_router
 from backend.api.install_app import (
     admin_install_app_router,
     user_install_app_router,
@@ -851,6 +853,10 @@ app.include_router(admin_coupons_router)
 app.include_router(admin_player_blacklist_router)
 # 网页软解开关（2026-11-14 批 2）：开关读写，见 backend/api/admin_softdecode.py
 app.include_router(admin_softdecode_router)
+# 站内弹幕（2026-11-15）：管理端设置读写 + 用户端拉取/发送两口，
+# 见 backend/api/admin_danmaku.py 与 backend/api/danmaku.py
+app.include_router(admin_danmaku_router)
+app.include_router(danmaku_router)
 # 安装应用页（2026-11-13）：用户端页面数据 + 管理端下载链接配置，
 # 见 backend/api/install_app.py
 app.include_router(user_install_app_router)

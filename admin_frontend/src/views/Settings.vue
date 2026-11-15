@@ -26,13 +26,14 @@ import {
   Coins, Globe, KeyRound, Layers, Mail, MapPin, Network, Palette, RefreshCw, Save,
   ShieldCheck, Send, Sparkles, TicketCheck, UserPlus, Wallet, Lock, Zap,
   History, TriangleAlert, SlidersHorizontal, PlugZap, Rocket, HardDrive, Gauge,
-  Download, Cpu,
+  Download, Cpu, MessageSquareText,
 } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard } from '@/components/ui'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import {
   fetchRegistrationSettings, updateRegistrationSettings,
   fetchSoftdecodeConfig, updateSoftdecodeConfig, type SoftdecodeConfig,
+  fetchDanmakuConfig, updateDanmakuConfig, type DanmakuConfig,
 } from '@/api/admin'
 import { useAuthStore } from '@/stores/auth'
 import { useQueryFilter } from '@/composables/useQueryFilter'
@@ -570,7 +571,7 @@ async function load() {
 }
 
 onMounted(async () => {
-  await Promise.all([load(), loadCapabilities(), loadHotlink(), loadInstallApp(), loadItemsDedupCache(), loadTransfer(), loadMountServing(), loadDriveApi(), loadSoftdecode(), loadLicense(), loadPool()])
+  await Promise.all([load(), loadCapabilities(), loadHotlink(), loadInstallApp(), loadItemsDedupCache(), loadTransfer(), loadMountServing(), loadDriveApi(), loadSoftdecode(), loadDanmaku(), loadLicense(), loadPool()])
   // Batch D 入口收敛：邀请页 / 客户端策略等用 hash 深链跳进来（如 #group-invitation）
   // R40：querySelector 直接塞 hash 会在畸形值时抛 SyntaxError；改用 getElementById
   if (route.hash) {
@@ -1057,6 +1058,57 @@ async function saveSoftdecodeCore(): Promise<boolean> {
   }
 }
 
+/** ==================== 弹幕设置卡片（独立 endpoint，非通用分组） ====================
+ * 站内自发弹幕的全部可调项（后端 SystemConfig 家族 danmaku）：
+ * 站点开关默认关（关时用户端两口 404、播放器隐藏弹幕入口）、
+ * 敏感词表（逗号分隔、空 = 不过滤）、最小发送间隔、单条字数上限。 */
+const danmaku = reactive<DanmakuConfig>({
+  enabled: false,
+  blocked_words: '',
+  min_interval_seconds: 5,
+  max_text_length: 100,
+})
+const danmakuOriginal = reactive<DanmakuConfig>({ ...danmaku })
+const danmakuLoading = ref(false)
+
+function applyDanmaku(data: DanmakuConfig) {
+  danmaku.enabled = data.enabled === true
+  danmaku.blocked_words = data.blocked_words ?? ''
+  danmaku.min_interval_seconds = data.min_interval_seconds ?? 5
+  danmaku.max_text_length = data.max_text_length ?? 100
+  Object.assign(danmakuOriginal, danmaku)
+}
+
+async function loadDanmaku() {
+  danmakuLoading.value = true
+  try {
+    applyDanmaku(await fetchDanmakuConfig())
+  } catch {
+    // 错误提示由 HTTP 拦截器统一处理
+  } finally {
+    danmakuLoading.value = false
+  }
+}
+
+const danmakuDirty = computed(
+  () =>
+    danmaku.enabled !== danmakuOriginal.enabled ||
+    danmaku.blocked_words !== danmakuOriginal.blocked_words ||
+    danmaku.min_interval_seconds !== danmakuOriginal.min_interval_seconds ||
+    danmaku.max_text_length !== danmakuOriginal.max_text_length,
+)
+
+/** 弹幕设置保存核心：返回是否成功，失败时拦截器已提示。 */
+async function saveDanmakuCore(): Promise<boolean> {
+  try {
+    applyDanmaku(await updateDanmakuConfig({ ...danmaku }))
+    return true
+  } catch {
+    // 拦截器已提示
+    return false
+  }
+}
+
 /** ==================== 软件授权卡片（独立 endpoint，非通用分组） ====================
  * 发行版授权校验的运营面：看状态（档位/到期/绑定/宽限/到期提醒）、
  * 填授权码与绑定域名、立即校验。总开关 AETRIX_LICENSE_ENFORCE 走
@@ -1229,6 +1281,7 @@ async function reloadAll() {
   loadMountServing()
   loadDriveApi()
   loadSoftdecode()
+  loadDanmaku()
 }
 
 function isDirty(group: Group): boolean {
@@ -1256,7 +1309,7 @@ const dirtyGroups = computed(() => GROUPS.filter((g) => isDirty(g)))
 const dirtyCount = computed(() =>
   dirtyGroups.value.length + (regDirty.value ? 1 : 0) + (hotlinkDirty.value ? 1 : 0)
   + (itemsDedupCacheDirty.value ? 1 : 0) + (transferDirty.value ? 1 : 0) + (mountServingDirty.value ? 1 : 0)
-  + (driveApiDirty.value ? 1 : 0) + (softdecodeDirty.value ? 1 : 0) + (installAppDirty.value ? 1 : 0),
+  + (driveApiDirty.value ? 1 : 0) + (softdecodeDirty.value ? 1 : 0) + (danmakuDirty.value ? 1 : 0) + (installAppDirty.value ? 1 : 0),
 )
 const anyDirty = computed(() => dirtyCount.value > 0)
 const savingAll = ref(false)
@@ -1370,6 +1423,10 @@ async function saveAll() {
       if (await saveSoftdecodeCore()) saved += 1
       else failed.push('网页软解')
     }
+    if (danmakuDirty.value) {
+      if (await saveDanmakuCore()) saved += 1
+      else failed.push('弹幕设置')
+    }
   } finally {
     savingAll.value = false
   }
@@ -1404,6 +1461,7 @@ async function discardAll() {
   loadMountServing()
   loadDriveApi()
   loadSoftdecode()
+  loadDanmaku()
 }
 
 // ==================== 危险操作（Phase 5） ====================
@@ -1665,6 +1723,16 @@ watch(
               >
                 <Cpu :size="13" />网页软解
                 <span v-if="softdecodeDirty" class="chip-dot" aria-label="有未保存的改动" />
+              </button>
+              <button
+                v-if="sec.id === 'playback'"
+                type="button"
+                class="group-chip"
+                :class="{ 'is-dirty': danmakuDirty }"
+                @click="scrollToGroup('danmaku')"
+              >
+                <MessageSquareText :size="13" />弹幕设置
+                <span v-if="danmakuDirty" class="chip-dot" aria-label="有未保存的改动" />
               </button>
             </div>
           </nav>
@@ -2700,6 +2768,71 @@ watch(
                 <div class="field-stack">
                   <a class="license-link" href="/licenses" target="_blank" rel="noopener">在本站查看开源许可页</a>
                   <span class="field-hint">软解用的自编 LGPL 解码器与第三方组件的许可说明。</span>
+                </div>
+              </el-form-item>
+            </el-form>
+          </SectionCard>
+          <!-- 弹幕设置：独立卡片，归「播放与风控」段 -->
+          <SectionCard
+            v-if="sec.id === 'playback'"
+            id="group-danmaku"
+            title="弹幕设置"
+            :icon="MessageSquareText"
+            description="网页播放器的站内弹幕：观众在播放页发弹幕、按时间点飘过画面。默认关：关时播放器不显示弹幕入口，发送与拉取接口一律关闭；开启后下面三项（敏感词、发送间隔、字数上限）立即对新发送生效。"
+            :tone="danmakuDirty ? 'accent' : 'default'"
+            class="group-card"
+          >
+            <template v-if="danmakuDirty" #actions>
+              <span class="au-badge au-badge-amber">未保存</span>
+            </template>
+
+            <el-form label-position="top" class="field-form field-grid">
+              <el-form-item label="弹幕开关">
+                <div class="field-stack">
+                  <div class="field-control">
+                    <el-switch v-model="danmaku.enabled" />
+                    <span class="field-suffix">{{ danmaku.enabled ? '已开启' : '已关闭' }}</span>
+                  </div>
+                  <span class="field-hint">开：播放器出现弹幕按钮与发送框；关：入口隐藏、接口关闭。默认关</span>
+                </div>
+              </el-form-item>
+              <el-form-item label="敏感词表">
+                <div class="field-stack">
+                  <el-input
+                    v-model="danmaku.blocked_words"
+                    type="textarea"
+                    :rows="3"
+                    placeholder="用逗号分隔，如：词一，词二"
+                  />
+                  <span class="field-hint">发送时命中任意一词（不分大小写）直接拒绝并提示发送者；留空 = 不过滤</span>
+                </div>
+              </el-form-item>
+              <el-form-item label="最小发送间隔（秒）">
+                <div class="field-stack">
+                  <div class="field-control">
+                    <el-input-number
+                      v-model="danmaku.min_interval_seconds"
+                      :min="0"
+                      :max="3600"
+                      :step="1"
+                      controls-position="right"
+                    />
+                  </div>
+                  <span class="field-hint">同一用户两条弹幕之间的最短间隔；0 = 不限制。默认 5 秒</span>
+                </div>
+              </el-form-item>
+              <el-form-item label="单条字数上限">
+                <div class="field-stack">
+                  <div class="field-control">
+                    <el-input-number
+                      v-model="danmaku.max_text_length"
+                      :min="1"
+                      :max="500"
+                      :step="10"
+                      controls-position="right"
+                    />
+                  </div>
+                  <span class="field-hint">一条弹幕最多几个字，超出发送时被拒。默认 100 字</span>
                 </div>
               </el-form-item>
             </el-form>

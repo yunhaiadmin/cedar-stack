@@ -172,6 +172,23 @@ export const fetchSoftdecodeConfig = () => get<SoftdecodeConfig>('/softdecode/co
 export const updateSoftdecodeConfig = (data: { enabled: boolean }) =>
   put<SoftdecodeConfig>('/softdecode/config', data)
 
+/** 站内弹幕设置（2026-11-15）：后端 /api/admin/danmaku/config */
+export interface DanmakuConfig {
+  /** 站点开关，默认关 */
+  enabled: boolean
+  /** 敏感词表（逗号分隔，空 = 不过滤） */
+  blocked_words: string
+  /** 同一用户最小发送间隔（秒） */
+  min_interval_seconds: number
+  /** 单条字数上限 */
+  max_text_length: number
+}
+
+export const fetchDanmakuConfig = () => get<DanmakuConfig>('/danmaku/config')
+
+export const updateDanmakuConfig = (data: DanmakuConfig) =>
+  put<DanmakuConfig>('/danmaku/config', data)
+
 /** 类型化会员卡码生成（续期码 / 白名单码 / 诱饵码 / 指名码） */
 export const generateCodes = (data: {
   code_type: number

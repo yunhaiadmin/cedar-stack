@@ -592,6 +592,18 @@ WEB_SOFTDECODE_CONFIG_SCHEMA: dict[str, tuple] = {
     "web_softdecode_enabled": ("bool",),
 }
 
+# 站内弹幕（2026-11-15）：网页播放器的站内自发弹幕。全部可调项走
+# SystemConfig、后台「弹幕设置」卡片可改，代码只留默认值：
+# 开关默认关（无行 = 关）；敏感词表逗号分隔、默认空 = 不过滤；
+# 最小发送间隔默认 5 秒；单条字数上限默认 100（上限 500 与落库列宽一致）。
+DANMAKU_CONFIG_SCHEMA: dict[str, tuple] = {
+    # word 风格 ("bool",) 存 "true"/"false"（同 welfare 口径）。
+    "danmaku_enabled": ("bool",),
+    "danmaku_blocked_words": ("str",),
+    "danmaku_min_interval_seconds": ("int", 0, 3600),
+    "danmaku_max_text_length": ("int", 1, 500),
+}
+
 # 安装应用页（2026-11-13）：6 个平台的官方客户端下载链接，全部 ("str",)。
 # 没有代码级默认链接：空串/None = 删行取消配置，未配的平台用户端整行
 # 不显示。链接的 http(s) 形状校验在端点层（保存侧纵深防御只管类型，
