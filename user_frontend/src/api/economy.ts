@@ -52,6 +52,8 @@ export interface SubscriptionPlan {
   realm_name?: string
   /** 线路展示名（订阅页分组/对比表用）：后端按服配置下发，未配时与 realm_name 相同 */
   line_name?: string
+  /** 该套餐所属服的购买开关（逐服下发）：false 时前端禁用购买钮并明示暂未开放 */
+  purchase_enabled?: boolean
 }
 
 export interface PaymentMethod {
