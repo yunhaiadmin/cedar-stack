@@ -560,6 +560,16 @@ def payment_plans(realm_id: Optional[int] = None, db: Session = Depends(get_db))
                 db, "subscription_line_name", p.realm_id, "").strip()
         line_names[p.realm_id] = label or (p.realm.name if p.realm else "")
 
+    # 逐服购买开关（2026-11-15）：顶层 enabled 只按当前服判，拉全服
+    # （realm_id=0）时前端无从知道哪组能买、哪组不能——每项补
+    # purchase_enabled 按套餐所属服读（与下单校验同一口 _get_bool_
+    # realm_config、缺省 True），前端据此提前禁用关着的服的购买钮。
+    purchase_by_realm: dict = {}
+    for p in plans:
+        if p.realm_id not in purchase_by_realm:
+            purchase_by_realm[p.realm_id] = _get_bool_realm_config(
+                db, "subscription_purchase_enabled", p.realm_id, True)
+
     return {
         "enabled": purchase_enabled,
         "wallet_purchase_enabled": wallet_purchase_enabled,
@@ -583,6 +593,7 @@ def payment_plans(realm_id: Optional[int] = None, db: Session = Depends(get_db))
                 "realm_id": p.realm_id,
                 "realm_name": (p.realm.name if p.realm else ""),
                 "line_name": line_names.get(p.realm_id, ""),
+                "purchase_enabled": purchase_by_realm.get(p.realm_id, True),
             }
             for p in plans
         ],

@@ -390,11 +390,11 @@ BALANCE_PURCHASE_MIN_GB = 100
 
 
 def balance_price_yuan(db: Session, gb: int):
-    """余额购流量价（元）：单价键 ``traffic_balance_price_per_100gb``
-    （分/100GB，默认 300＝¥3，钱包方案 §10 定版），按 GB 比例计价
-    （150GB = 1.5 × 单价），归一到分。
+    """余额购流量价（美元）：单价键 ``traffic_balance_price_per_100gb``
+    （美分/100GB，默认 30＝$0.30，钱包方案 §10 定版），按 GB 比例计价
+    （150GB = 1.5 × 单价），归一到美分。
 
-    单价未配/≤0 时拒绝成交（不许按 0 元白送）。
+    单价未配/≤0 时拒绝成交（不许按零价白送）。
     """
     from decimal import Decimal
 

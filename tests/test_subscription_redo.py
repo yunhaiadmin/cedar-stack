@@ -160,6 +160,50 @@ def test_payment_plans_line_name_and_entitlements(db):
     assert dto["realm_name"] == "默认服"  # 服名不许被线路名覆盖
 
 
+def test_payment_plans_purchase_enabled_per_realm(db):
+    """套餐逐项 purchase_enabled 按所属服读（2026-11-15 逐服字段单）。
+
+    两服开关不同时，各 plan 项字段各随其服——关着的服前端要能提前
+    禁用购买按钮，而不是等用户点下单才报错；顶层 enabled 保持
+    现行语义（realm_id=0 时按当前服判）不动。
+    """
+    from backend import realms as realms_mod
+
+    db.add(models.ServerRealm(id=2, name="乙服", slug="sub", is_active=True))
+    db.commit()
+    plan_a = _plan(db, "甲服套餐", "1.2", 30)
+    plan_b = models.SubscriptionPlan(
+        name="乙服套餐", price=Decimal("3.6"), duration_days=30,
+        realm_id=2, is_active=True)
+    db.add(plan_b)
+    db.commit()
+    db.refresh(plan_b)
+
+    # 甲服（当前服）购买关、乙服购买开
+    realms_mod.set_realm_config(
+        db, "subscription_purchase_enabled", "false", realm_id=1)
+    realms_mod.set_realm_config(
+        db, "subscription_purchase_enabled", "true", realm_id=2)
+    db.commit()
+    resp = economy.payment_plans(realm_id=0, db=db)
+    dto = {p["id"]: p for p in resp["plans"]}
+    assert dto[plan_a.id]["purchase_enabled"] is False
+    assert dto[plan_b.id]["purchase_enabled"] is True
+    assert resp["enabled"] is False  # 顶层口径不动：按当前服判
+
+    # 反过来：甲服开、乙服关
+    realms_mod.set_realm_config(
+        db, "subscription_purchase_enabled", "true", realm_id=1)
+    realms_mod.set_realm_config(
+        db, "subscription_purchase_enabled", "false", realm_id=2)
+    db.commit()
+    resp = economy.payment_plans(realm_id=0, db=db)
+    dto = {p["id"]: p for p in resp["plans"]}
+    assert dto[plan_a.id]["purchase_enabled"] is True
+    assert dto[plan_b.id]["purchase_enabled"] is False
+    assert resp["enabled"] is True
+
+
 def test_wallet_pay_usd_catalog_annual(db):
     """钱包实付：国际版年付扣 $13.20、发 365 天。"""
     u = _user(db, "usd-buyer")

@@ -172,6 +172,7 @@
             <span>钱包余额</span>
             <b>{{ moneyText(walletBalance) }}</b>
           </div>
+          <p v-if="selectedPlan && selectedPlan.purchase_enabled === false" class="sum-note" role="alert">该套餐暂未开放购买</p>
           <p v-if="!walletEnabled" class="sum-note">钱包暂未开启，暂时无法购买</p>
           <p v-else-if="balanceShortfall > 0" class="sum-note" role="alert">
             钱包余额不足，还差 $ {{ fmtPrice(balanceShortfall) }}，充值后即可购买
@@ -548,7 +549,12 @@ const switchTypeText = computed(() => {
   if (switchType.value === 'switch') return '升级套餐'
   return '新开通'
 })
+/** 所选套餐所属服的购买开关（后端逐项下发）：未下发按可购处理（兼容旧后端/夹具） */
+const planPurchasable = computed(
+  () => selectedPlan.value?.purchase_enabled !== false,
+)
 const ctaText = computed(() => {
+  if (!planPurchasable.value) return '暂未开放购买'
   const plan = selectedPlan.value
   if (!plan || !activeSub.value) return '开通'
   if (isCurrent(plan)) return '续费'
@@ -556,7 +562,7 @@ const ctaText = computed(() => {
   return '升级'
 })
 const ctaDisabled = computed(
-  () => orderBusy.value || !selectedPlan.value || !walletEnabled.value,
+  () => orderBusy.value || !selectedPlan.value || !walletEnabled.value || !planPurchasable.value,
 )
 
 /* ---------- 确认弹窗与下单（确认才扣钱包余额） ---------- */
