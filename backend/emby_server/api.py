@@ -1011,9 +1011,13 @@ def _item_dto(item: em.MediaItem, base: str, user_id: int, db: Session, full: bo
                     {
                         "Id": s.guid,
                         "Name": _version_label(s),
+                        # 前端 EmbyItemVersion 读的别名（与 Name/Size
+                        # 同值；Size 单位为字节，与 SizeBytes 同口径）
+                        "VersionLabel": _version_label(s),
                         "Height": s.height or 0,
                         "Width": s.width or 0,
                         "Size": s.size or 0,
+                        "SizeBytes": s.size or 0,
                         "Container": s.container or "",
                         "IsPrimary": s.id == primary_id,
                     }
