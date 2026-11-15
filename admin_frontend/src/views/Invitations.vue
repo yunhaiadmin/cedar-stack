@@ -15,10 +15,12 @@ import {
 import {
   fetchInviteOverview,
   fetchInviteRebates,
+  fetchInviteTrialCodes,
   settleInviteRebates,
   updateTrialPolicy,
   type InviteOverview,
   type InviteRebateRow,
+  type InviteTrialCodeRow,
   type InviteTrialPolicy,
 } from '@/api/inviteAdmin'
 import { EmptyState, PageHeader, SectionCard, StatTile } from '@/components/ui'
@@ -489,8 +491,19 @@ function codeBadge(state: string): string {
 // 当前口径；本页能写的是福利邀请（送试用）策略与待入账返利的补入账。
 const moneyOverview = ref<InviteOverview | null>(null)
 const moneyRebates = ref<InviteRebateRow[]>([])
+const trialCodes = ref<InviteTrialCodeRow[]>([])
 const moneyLoading = ref(false)
 const settling = ref(false)
+
+const trialCodeColumns: DataColumn[] = [
+  { key: 'creator_username', label: '生成人', width: 130, mobile: 'title' },
+  { key: 'code', label: '福利码', width: 150 },
+  { key: 'days', label: '天数', width: 70 },
+  { key: 'status', label: '状态', width: 90 },
+  { key: 'used_by_username', label: '使用者', width: 130 },
+  { key: 'created_at', label: '生成时间', width: 160 },
+  { key: 'used_at', label: '使用时间' },
+]
 
 const yuanOfFen = (fen: number) =>
   Number.isInteger(fen / 100) ? String(fen / 100) : (fen / 100).toFixed(2)
@@ -542,15 +555,17 @@ const trialDirty = computed(() => {
 async function loadInviteMoney() {
   moneyLoading.value = true
   try {
-    const [ov, reb] = await Promise.all([
+    const [ov, reb, tc] = await Promise.all([
       fetchInviteOverview().catch(() => null),
       fetchInviteRebates({ limit: 50 }).catch(() => null),
+      fetchInviteTrialCodes({ limit: 100 }).catch(() => null),
     ])
     if (ov) {
       moneyOverview.value = ov
       fillTrialForm(ov.trial_policy)
     }
     if (reb) moneyRebates.value = reb.rebates
+    if (tc) trialCodes.value = tc.codes
   } finally {
     moneyLoading.value = false
   }
@@ -582,10 +597,10 @@ async function settleRebates() {
 async function saveTrialPolicy() {
   const effect = !trialForm.enabled || trialForm.days <= 0 || trialForm.monthly_limit <= 0
     ? '保存后福利邀请不实际发放试用。'
-    : `保存后好友注册可得 ${trialForm.days} 天试用，每位邀请人每月 ${trialForm.monthly_limit} 次，资格门槛为累计付费 $${trialForm.min_paid_yuan}。`
+    : `保存后邀请人可生成 ${trialForm.days} 天试用的福利码，每位邀请人每月 ${trialForm.monthly_limit} 次，资格门槛为累计付费 $${trialForm.min_paid_yuan}。`
   try {
     await ElMessageBox.confirm(
-      `${effect}只影响之后的新注册，已发放的试用不变。确认保存？`,
+      `${effect}只影响之后新生成的码，已发出的码按生成时快照兑现。确认保存？`,
       '修改福利邀请策略',
       { type: 'warning', confirmButtonText: '确认保存', cancelButtonText: '取消' },
     )
@@ -956,6 +971,39 @@ onMounted(reloadAll)
           </span>
         </template>
         <template #cell-created_at="{ row }"><span class="num">{{ fmtTime(row.created_at) }}</span></template>
+      </DataTable>
+
+      <!-- 福利试用码（2026-11-15 生成码机制）：只读列表，处置口径未定不给动作 -->
+      <div class="promo-policy">
+        <div class="promo-active-line">
+          <span class="au-badge au-badge-info">福利试用码</span>
+          <span>邀请人主动生成、好友凭码领取；生成即占当月次数，过期不返还。本列表只读。</span>
+        </div>
+      </div>
+      <DataTable
+        class="flush-table"
+        :rows="trialCodes"
+        :columns="trialCodeColumns"
+        :loading="moneyLoading"
+        empty="还没有福利试用码"
+        empty-description="用户在福利邀请页生成试用码后会出现在这里。"
+      >
+        <template #cell-creator_username="{ row }">
+          <span class="user-name">{{ row.creator_username }}</span>
+        </template>
+        <template #cell-code="{ row }"><span class="num">{{ row.code }}</span></template>
+        <template #cell-days="{ row }"><span class="num">{{ row.days }} 天</span></template>
+        <template #cell-status="{ row }">
+          <span
+            class="au-badge"
+            :class="row.status === 'used' ? 'au-badge-green' : row.status === 'expired' ? 'au-badge-rose' : 'badge-warn'"
+          >
+            {{ row.status === 'used' ? '已使用' : row.status === 'expired' ? '已过期' : '待使用' }}
+          </span>
+        </template>
+        <template #cell-used_by_username="{ row }">{{ row.used_by_username || '—' }}</template>
+        <template #cell-created_at="{ row }"><span class="num">{{ fmtTime(row.created_at) }}</span></template>
+        <template #cell-used_at="{ row }"><span class="num">{{ row.used_at ? fmtTime(row.used_at) : '—' }}</span></template>
       </DataTable>
     </SectionCard>
 

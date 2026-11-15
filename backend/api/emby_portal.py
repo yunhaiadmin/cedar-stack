@@ -76,6 +76,7 @@ class RegisterRequest(BaseModel):
     password: str = Field(..., min_length=6, max_length=64)
     email: str | None = None
     invitation_code: str | None = None  # 邀请码（选填，双向奖励+返利绑定）
+    trial_code: str | None = None  # 福利试用码（选填，注册成功后凭码领试用）
 
 
 class LoginRequest(BaseModel):
@@ -469,6 +470,25 @@ def register(request: Request, req: RegisterRequest, db: Session = Depends(get_d
 
             logger.warning("邀请码应用失败: user=%s code_mask=%s", user.id,
                            _mask_invite_code(req.invitation_code),
+                           exc_info=True)
+
+    # 福利试用码领取（2026-11-15 改版）：分享链接带 trial 参数注册的，
+    # 注册成功后凭码领取试用（发放只走这条路，邀请注册不再自动发）。
+    # 保存点隔离：领取失败（码已用/过期/已领过等）只回滚领取本身，
+    # 注册与邀请关系照常成立；不许静默——记日志（码只记掩码，A-128）。
+    if req.trial_code:
+        try:
+            with db.begin_nested():
+                from backend import invite_trial
+
+                invite_trial.claim_trial_code(db, req.trial_code, user)
+            db.commit()
+        except Exception:  # noqa: BLE001 — 领取失败不阻塞注册
+            db.rollback()
+            from backend.api.invitation import _mask_invite_code
+
+            logger.warning("福利试用码领取失败: user=%s code_mask=%s", user.id,
+                           _mask_invite_code(req.trial_code),
                            exc_info=True)
 
     logger.info("新用户注册: %s (id=%s, mode=%s)", username, user.id, reg_mode)

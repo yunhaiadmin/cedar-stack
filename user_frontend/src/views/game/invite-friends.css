@@ -466,3 +466,125 @@ html[data-theme='light'] .iv-btn--glass {
   border: 1px solid var(--iv-line);
   opacity: 0.6;
 }
+
+/* ---------- 福利邀请：送好友一份试用（2026-11-15 生成码机制，照友站帧） ---------- */
+
+.iv-whead {
+  margin-top: 30px;
+}
+
+.iv-wtitle {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.2;
+  font-weight: var(--uhd-fw-extrabold);
+  letter-spacing: 0.01em;
+}
+
+.iv-wsub {
+  margin: 10px 0 0;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--iv-text-2);
+}
+
+.iv-wcount {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 20px 0 0;
+  font-size: 15px;
+  color: var(--iv-text-2);
+}
+
+.iv-wcount__num {
+  font-size: 30px;
+  line-height: 1;
+  font-weight: var(--uhd-fw-extrabold);
+}
+
+.iv-wcount__dim {
+  color: var(--iv-text-2);
+}
+
+.iv-wcount__split {
+  margin-left: 10px;
+  color: var(--iv-text-2);
+}
+
+/* 试用选卡：选中态填充卡 + 左侧白色竖条指示（友站帧形态） */
+.iv-tcard {
+  display: flex;
+  gap: 14px;
+  margin-top: 22px;
+  padding: 20px 18px;
+  border-radius: 20px;
+  background: var(--iv-chip);
+  border: 1px solid var(--iv-line);
+}
+
+.iv-tcard__bar {
+  flex: 0 0 auto;
+  width: 5px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.9;
+}
+
+.iv-tcard__main {
+  min-width: 0;
+}
+
+.iv-tcard__name {
+  margin: 0;
+  font-size: 19px;
+  font-weight: var(--uhd-fw-bold);
+}
+
+.iv-tcard__desc {
+  margin: 8px 0 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--iv-text-2);
+}
+
+.iv-tcard__meta {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: var(--iv-text-3);
+}
+
+.iv-btn--wide {
+  width: 100%;
+  margin-top: 22px;
+  min-height: 54px;
+  font-size: 17px;
+}
+
+/* 刚生成结果块 */
+.iv-gen {
+  margin-top: 22px;
+  padding: 18px;
+  border-radius: 20px;
+  background: var(--iv-card);
+  border: 1px solid var(--iv-line);
+}
+
+.iv-gen__code {
+  margin: 0;
+  font-size: 30px;
+  font-weight: var(--uhd-fw-extrabold);
+  letter-spacing: 0.12em;
+  word-break: break-all;
+}
+
+.iv-gen__actions {
+  margin-top: 16px;
+}
+
+.iv-row__code {
+  font-weight: var(--uhd-fw-semibold);
+  letter-spacing: 0.08em;
+  word-break: break-all;
+}

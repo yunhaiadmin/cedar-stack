@@ -306,9 +306,12 @@ async function handleRegister() {
   try {
     // 表单里填的优先；没填时沿用链接带来的（多值 query 取第一个）
     const inviteCode = f.inviteCode.trim() || firstQueryValue(route.query.invite)
+    // 福利试用码链接 ?trial=CODE：随注册请求带上，注册成功后后端凭码发试用
+    const trialCode = firstQueryValue(route.query.trial)
     await userStore.register(
       f.username.trim(), f.password, f.email || undefined,
       inviteCode || undefined,
+      trialCode || undefined,
     )
     toast.success('注册成功，已自动开通观影账号')
     // 注册后 TG 绑定引导：仅注册流程触发，普通登录不动。
@@ -375,6 +378,11 @@ onMounted(() => {
     mode.value = 'register'
     registerForm.inviteCode = firstQueryValue(route.query.invite)
     toast.info(`已收到好友邀请码，注册成功后双方都可获得奖励`, 5000)
+  }
+  // 福利试用码链接 ?trial=CODE：自动切到注册页，注册成功后凭码领取试用
+  if (route.query.trial) {
+    mode.value = 'register'
+    toast.info('已收到好友送的试用邀请，注册成功后即可领取试用', 5000)
   }
 })
 </script>
