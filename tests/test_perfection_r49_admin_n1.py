@@ -1,8 +1,7 @@
 """r49 后端完美迭代：管理后台 API 全链路 N+1 三项修复 + view_grant hardening 回归。
 
-F1（welfare_admin.py）：求片审核列表 `/welfare/requests` 读 r.user.username，
-    MediaRequest.user 是 lazy relationship，查询无 joinedload → 每页 ≤100 条额外 SQL。
-    修法：查询加 .options(joinedload(MediaRequest.user))。
+F1（welfare_admin.py）：求片审核列表 `/welfare/requests` 的 N+1 修复用例
+    已随该组端点于 2026-11-17 删除（A3，用户亲点）。
 F2（welfare_admin.py）：抽奖黑名单列表 `/welfare/lottery/blacklist` 循环内逐行
     query WebUser → 每页 ≤100 条额外 SQL。修法：一次 IN 查完 user_id→username 映射。
 F3（coupons_admin.py）：建券 `create_coupons` 循环内逐码查 DB 查重（count≤200）。
@@ -27,7 +26,7 @@ from sqlalchemy.pool import StaticPool
 from backend import models, subscriptions
 from backend.api import welfare_admin
 from backend.api.coupons_admin import CouponCreateRequest, create_coupons
-from backend.api.welfare_admin import list_lottery_blacklist, welfare_requests
+from backend.api.welfare_admin import list_lottery_blacklist
 
 
 @pytest.fixture()
@@ -83,31 +82,6 @@ def _realm(db, name="主服", slug="main", access_mode="paid"):
     db.add(r)
     db.commit()
     return r
-
-
-# ---------------------------------------------------------------------------
-# F1：求片审核列表 joinedload，1 次 count + 1 次带 JOIN 的查询，不再逐行回查
-# ---------------------------------------------------------------------------
-
-def test_welfare_requests_no_n_plus_one(db):
-    admin = _user(db, "admin", is_staff=True)
-    u1 = _user(db, "u1")
-    u2 = _user(db, "u2")
-    for i in range(5):
-        db.add(models.MediaRequest(
-            user_id=u1.id if i % 2 == 0 else u2.id,
-            tmdb_id=str(1000 + i), media_type="movie", title=f"片{i}",
-            status="pending"))
-    db.commit()
-
-    with _count_statements(db) as c:
-        resp = welfare_requests(page=1, page_size=20, status=None,
-                                current_admin=admin, db=db)
-    # count(1) + 列表查询(1，含 LEFT JOIN 一次性带出 user)；此前是 1 + 1 + 5
-    assert c.n == 2, f"期望 2 条 SQL，实际 {c.n}"
-    names = {it["username"] for it in resp["items"]}
-    assert names == {"u1", "u2"}
-    assert resp["total"] == 5
 
 
 # ---------------------------------------------------------------------------
