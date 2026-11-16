@@ -8,6 +8,7 @@
  */
 import { onMounted, onUnmounted, ref } from 'vue'
 import UhdButton from './UhdButton.vue'
+import BrandMark from '@/components/BrandMark.vue'
 
 export interface UhdNavChild {
   label: string
@@ -78,7 +79,7 @@ function onNavKey(event: KeyboardEvent) {
     }"
   >
     <span class="uhd-nav__brand">
-      <span class="uhd-nav__logo" aria-hidden="true" />
+      <span class="uhd-nav__logo"><BrandMark /></span>
       <span class="uhd-nav__brand-text">
         <span class="uhd-nav__brand-name">{{ props.brand }}</span>
         <span class="uhd-nav__brand-sub">{{ props.brandSub }}</span>
@@ -140,12 +141,11 @@ function onNavKey(event: KeyboardEvent) {
   color: var(--uhd-d-text);
   z-index: 2;
 }
-/* 彩虹三角 Logo（白名单） */
+/* Aetrix 品牌标（2026-11-16 定版，BrandMark 组件，A 色随当前文字色） */
 .uhd-nav__logo {
   width: 26px;
-  height: 24px;
-  background: var(--uhd-rainbow-conic);
-  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  height: 25px;
+  flex: none;
 }
 .uhd-nav__brand-text {
   display: flex;

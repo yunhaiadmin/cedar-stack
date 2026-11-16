@@ -3,12 +3,13 @@ import { RouterLink, useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import {
-  Clapperboard, LogOut, Crown, Sparkles,
+  LogOut, Crown, Sparkles,
   Sun, Moon, MonitorSmartphone,
   ChevronRight, ShieldCheck,
   Globe, Plug, MessageSquare, Receipt, Settings,
 } from 'lucide-vue-next'
 import UhdWatchPill from '@/components/uhd/UhdWatchPill.vue'
+import BrandMark from '@/components/BrandMark.vue'
 import { isExpiringSoon, subscriptionApi } from '@/api'
 import type { MySubscription } from '@/api'
 import { primaryNav, resolveActiveNavPath } from '@/config/navigation'
@@ -284,7 +285,7 @@ onBeforeUnmount(() => {
       <RouterLink to="/" class="header-logo" @click="closeMenus">
         <span class="logo-mark">
           <img decoding="async" fetchpriority="high" v-if="branding.logo_url" :src="branding.logo_url" :alt="branding.site_name" />
-          <Clapperboard v-else :size="17" />
+          <span v-else class="logo-mark__fallback"><BrandMark /></span>
         </span>
         <span class="logo-text">{{ branding.site_name }}</span>
       </RouterLink>
@@ -479,6 +480,14 @@ onBeforeUnmount(() => {
   height: 100%;
   object-fit: contain;
   border-radius: inherit;
+}
+
+.logo-mark__fallback {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  /* 品牌标定版口径：A 跟标题墨色（深面近白/浅面近黑），不随纸面主题主色染色 */
+  color: var(--paper-ink);
 }
 
 /* 品牌字：与登录页同一口径，CJK 不拉距、不再 uppercase */

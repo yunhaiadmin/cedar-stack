@@ -15,6 +15,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { Clapperboard, MonitorSmartphone, Moon, Search, Sun, X } from 'lucide-vue-next'
+import BrandMark from '@/components/BrandMark.vue'
 import { embyApi as embyProtocol, imageUrl, type EmbyItem } from '@/api/emby'
 import StreamGuessRow from './StreamGuessRow.vue'
 import { useGuessRecommendations } from '@/composables/useGuessRecommendations'
@@ -149,7 +150,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   <header class="stream-topbar">
     <nav class="st-capsule st-capsule--nav" aria-label="片库导航">
       <RouterLink to="/library" class="st-logo" :aria-label="branding.site_name">
-        <Clapperboard :size="20" :stroke-width="2" />
+        <span class="st-logo__mark"><BrandMark /></span>
       </RouterLink>
       <RouterLink
         v-for="item in NAV"
@@ -274,6 +275,11 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   height: 34px;
   color: var(--uhd-s-text);
   text-decoration: none;
+  flex: none;
+}
+.st-logo__mark {
+  width: 21px;
+  height: 20px;
   flex: none;
 }
 .st-nav-item {

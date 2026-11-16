@@ -25,7 +25,7 @@ import { ElMessage } from 'element-plus'
 import { toAdminError } from '@/utils/errorMessage'
 import {
   LayoutDashboard, Users, Package, Ticket, Settings, Server,
-  Menu, X, ChevronDown, RefreshCw, LogOut, KeyRound, ExternalLink, Clapperboard,
+  Menu, X, ChevronDown, RefreshCw, LogOut, KeyRound, ExternalLink,
   CheckCircle2, Route as RealmIcon, Lock, Search, Wallet, Crown, MessageSquareDashed,
   TriangleAlert, ScrollText, Smartphone, MonitorCog, ShieldAlert, Ban, Library, Eye,
   Image as ImageIcon, Layers,
@@ -40,6 +40,7 @@ import { useRealmStore } from '@/stores/realm'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import { useFocusTrap } from '@/composables/useFocusTrap'
 import CommandPalette, { type PaletteItem } from '@/components/CommandPalette.vue'
+import BrandMark from '@/components/BrandMark.vue'
 // v2.42.4：后台白日/黑暗双主题（与用户端同一套三档口径）
 import { useAdminTheme } from '@/composables/useTheme'
 // 站名 / Logo 来自「站点与品牌」能力（改完刷新即生效，不用重新构建）
@@ -506,7 +507,7 @@ onUnmounted(() => {
         <RouterLink to="/" class="brand-link">
           <span class="brand-mark">
             <img v-if="branding.logo_url" :src="branding.logo_url" :alt="branding.site_name" />
-            <Clapperboard v-else :size="17" />
+            <span v-else class="brand-mark__fallback"><BrandMark /></span>
           </span>
           <span class="brand-text">
             <strong class="brand-name">{{ siteName() }}</strong>
@@ -817,6 +818,14 @@ onUnmounted(() => {
   height: 100%;
   object-fit: contain;
   border-radius: inherit;
+}
+
+.brand-mark__fallback {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  /* 品牌标定版口径：深色面上 A 为白色，不随管理端主色染色 */
+  color: #ffffff;
 }
 
 .brand-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }

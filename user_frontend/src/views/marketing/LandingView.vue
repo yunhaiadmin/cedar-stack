@@ -14,6 +14,7 @@ import UhdNavPill, { type UhdNavItem } from '@/components/uhd/UhdNavPill.vue'
 import { engageModalIsolation, lockModalOverflow, trapTabKey, unlockModalOverflow } from '@/composables/useModalIsolation'
 import UhdButton from '@/components/uhd/UhdButton.vue'
 import UhdChip from '@/components/uhd/UhdChip.vue'
+import BrandMark from '@/components/BrandMark.vue'
 import { branding } from '@/composables/useBranding'
 import { communityLinks } from '@/composables/useCommunityLinks'
 import { initLibraryStats, libraryStats } from '@/composables/useLibraryStats'
@@ -468,7 +469,7 @@ const year = new Date().getFullYear()
          未滚动时整条透明、滚动 >40px 玻璃 pill 浮起且 chip 变平；菜单为底部抽屉 -->
     <div class="m-nav" :class="{ 'is-on': navScrolled }">
       <span class="m-nav__brand">
-        <span class="m-nav__logo" aria-hidden="true" />
+        <span class="m-nav__logo"><BrandMark /></span>
         <span class="m-nav__brand-text">
           <span class="m-nav__brand-name">{{ branding.site_name }}</span>
           <span class="m-nav__brand-sub">SERVICE</span>
@@ -849,9 +850,8 @@ const year = new Date().getFullYear()
 }
 .m-nav__logo {
   width: 26px;
-  height: 24px;
-  background: var(--uhd-rainbow-conic);
-  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  height: 25px;
+  flex: none;
 }
 .m-nav__brand-text {
   display: flex;
