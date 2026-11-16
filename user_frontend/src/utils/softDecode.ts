@@ -135,8 +135,8 @@ export const DIRECT_TO_RELAY_VARIANT: Record<string, string> = {
   byos115_direct: 'mount_relay',
 }
 
-/** 无变体标记时探测中继变体的顺序：本人盘中继是灰度直链的设计兜底，先探它 */
-const RELAY_PROBE_ORDER = ['byos_drive_relay', 'drive_relay']
+/** 无变体标记时探测中继变体的顺序：本人盘中继是灰度直链的设计兜底，先探它；转存副本中继次之（挂载原件+本人副本条目只有它能出字节） */
+const RELAY_PROBE_ORDER = ['byos_drive_relay', 'usercopy_relay', 'drive_relay']
 
 /**
  * 从播放地址里读变体名：variant 参数优先，其次 MediaSourceId 的
@@ -251,6 +251,55 @@ export async function resolveSoftDecodeUrl(
     if ((await probe(candidate, 'follow')) === 'bytes') return candidate
   }
   return url
+}
+
+/** 软解能直接取字节的中继变体（优先级：本人转存副本 > 本人盘 > 共享 Drive 中继 > 挂载中继） */
+const SOFT_RELAY_VARIANT_ORDER = [
+  'usercopy_relay',
+  'byos_drive_relay',
+  'drive_relay',
+  'mount_relay',
+] as const
+
+/**
+ * 从 PlaybackInfo 的 MediaSources 里为软解挑可取流的中继源 URL。
+ *
+ * #232 的确定性换路只改选中源 URL 上的变体标记（drive_direct 机械
+ * 换 drive_relay）——但「挂载原件 + 本人 Drive 转存副本」这类条目，
+ * drive_direct 实际 302 到副本的无 CORS 直链、drive_relay 又被
+ * 生产开关关掉不在清单里，换过去只会 409（2026-11-16 生产实证）。
+ * 清单里真能出字节的是同条目的中继兄弟源，必须按源挑：选中源
+ * 本身已是中继变体 → 用它自己；否则按优先级找兄弟中继源。
+ * 找不到返回 ''，调用方回落既有 resolveSoftDecodeUrl 流程。
+ */
+export function pickSoftRelayUrl(
+  sources:
+    | Array<{ Id?: string; DirectStreamUrl?: string }>
+    | undefined
+    | null,
+  selectedId: string | undefined | null,
+): string {
+  if (!sources?.length || !selectedId) return ''
+  const variantOfSource = (s: { Id?: string; DirectStreamUrl?: string }) => {
+    const id = String(s?.Id || '')
+    const idx = id.indexOf(':')
+    if (idx > 0 && idx < id.length - 1) return id.slice(idx + 1)
+    return s?.DirectStreamUrl ? variantOfStreamUrl(s.DirectStreamUrl) : ''
+  }
+  const selected = sources.find((s) => s?.Id === selectedId)
+  if (!selected) return ''
+  if (
+    (SOFT_RELAY_VARIANT_ORDER as readonly string[]).includes(
+      variantOfSource(selected),
+    )
+  ) {
+    return String(selected.DirectStreamUrl || '')
+  }
+  for (const name of SOFT_RELAY_VARIANT_ORDER) {
+    const hit = sources.find((s) => variantOfSource(s) === name)
+    if (hit?.DirectStreamUrl) return String(hit.DirectStreamUrl)
+  }
+  return ''
 }
 
 /** 把软解的原始失败串翻成一句人话（回落提示卡小字用；原始串仍走 console.error 留痕） */
