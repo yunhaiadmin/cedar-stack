@@ -4,7 +4,7 @@
 1. 凭据分离：Drive 用户凭据只走 mount_credentials（scope=user，
    密封 + key_id 信封，与 P1 的 115 绑定同款拼法：绑定行引用凭据
    行，不另起第三套）。取用户 Drive 令牌的唯一口是
-   :func:`get_user_drive_access_token`——它只读 scope=user 且
+   :func:`get_token_for_user`——它只读 scope=user 且
    owner_user_id=本人的凭据行，**绝不**回落 SA 池、rclone.conf、
    scope=source 行；回落会查错盘、跨用户。
 2. Drive OAuth 全套：授权接入（PKCE S256 + access_type=offline +
@@ -1098,7 +1098,7 @@ def get_binding_drive_access_token(db: Session, binding,
                                  force_refresh: bool = False) -> str:
     """指定绑定行的 Drive 令牌口（BYOS P3 按绑定扫描用）。
 
-    与 get_user_drive_access_token 同一套刷新/落态逻辑，只是不做
+    与 get_token_for_user 同一套刷新/落态逻辑，只是不做
     “最早 active 绑定”查找：调用方已按绑定分账选好行，本口绝不
     替调用方换一行——换行就是跨绑定复用凭据。
     force_refresh=True 时跳过“未过期直接返回”捷径，真走
@@ -1136,10 +1136,15 @@ def get_binding_drive_access_token(db: Session, binding,
 
 
 
-def get_user_drive_access_token(db: Session, user_id: int,
-                                http_post=None,
-                                force_refresh: bool = False) -> str:
+def get_token_for_user(db: Session, user_id: int,
+                       http_post=None,
+                       force_refresh: bool = False) -> str:
     """该用户 Drive 令牌唯一口（播放 / 扫描 / 工人共用，不许各写一套）。
+
+    规范名（闭环 #13 登记口径）：BYOS 用户令牌中继的取令牌口
+    就叫这个名，video_stream 的中继选路经此名取当前用户令牌。
+    旧名 get_user_drive_access_token 保留为同对象别名（见函数后
+    赋值），不许另写第二套实现。
 
     - 无 active 绑定 → not_found（调用方按“无可用绑定”处理，绝不
       回落共享 SA——回落会把别人的盘或共享盘当成该用户的盘）；
@@ -1154,6 +1159,11 @@ def get_user_drive_access_token(db: Session, user_id: int,
         raise DriveOAuthError("not_found", "当前用户没有可用的 Drive 绑定。")
     return get_binding_drive_access_token(db, binding, http_post=http_post,
                                           force_refresh=force_refresh)
+
+
+#: 旧名别名（横切只许一套）：与 get_token_for_user 是同一函数
+#: 对象，既有调用方照旧可用；新接线一律用规范名 get_token_for_user。
+get_user_drive_access_token = get_token_for_user
 
 
 def refresh_drive_binding(db: Session, user_id: int, binding_id: int,

@@ -348,7 +348,7 @@ def _setup_stream(monkeypatch, *, copy_row, token="USER_TOKEN"):
     else:
         def fake_token(db, user_id):
             return token
-    monkeypatch.setattr(_drive_oauth, "get_user_drive_access_token",
+    monkeypatch.setattr(_drive_oauth, "get_token_for_user",
                         fake_token)
 
     notes = []
