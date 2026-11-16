@@ -18,6 +18,7 @@ const {
   resolveSoftDecodeUrl,
   pickSoftRelayUrl,
   humanizeSoftError,
+  SOFT_START_TIMEOUT_MS,
 } = await import('../src/utils/softDecode.ts')
 
 let passed = 0
@@ -261,6 +262,34 @@ check(
   }),
   'https://ea.example/emby/Videos/g1/stream.mkv?MediaSourceId=g1',
 )
+
+// --- 默认探测（真 fetchProbe，桩 fetch）：结论一出必须掐断正文 ---
+// 2026-11-16 生产实证：探测命中的地址回 200 整流时正文没掐断，
+// 整文件在后台继续下载（单发漏下 90MB+），与播放器取流抢带宽。
+{
+  const realFetch = globalThis.fetch
+  let cancelled = 0
+  globalThis.fetch = async () => ({
+    status: 206,
+    type: 'basic',
+    body: {
+      cancel: async () => {
+        cancelled += 1
+      },
+    },
+  })
+  try {
+    const decided = await resolveSoftDecodeUrl(`${EA}?MediaSourceId=g1`)
+    check('default probe bytes => original url', decided, `${EA}?MediaSourceId=g1`)
+    check('default probe cancels body after deciding', cancelled, 1)
+  } finally {
+    globalThis.fetch = realFetch
+  }
+}
+
+// --- 起播守卫时长：慢源冷起播（demux 大文件 + 四件 wasm 下载） ---
+// 实测全程约 45 秒，旧 45 秒守卫在解码器加载完、首帧未出时误杀。
+check('soft start timeout default is 90s', SOFT_START_TIMEOUT_MS, 90000)
 
 // --- 本例形态（2026-11-16）：挂载原件 + 本人 Drive 副本，H264+AC3 ---
 // PlaybackInfo 下发 [drive_direct（副本 usercontent 302）, usercopy_relay]；
