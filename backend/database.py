@@ -1127,6 +1127,11 @@ def _auto_migrate():
         ("emby_transfer_jobs", [
             ("cooldown_until", "DATETIME", "NULL"),
         ]),
+        # 门禁重触发标记（2026-11-16）：本行是播放门禁重建出的单。
+        # 老库补列后为 NULL（= 按 False 读，与 models.py 注释口径一致）。
+        ("emby_transfer_jobs", [
+            ("gate_rebuild", "BOOLEAN", "NULL"),
+        ]),
         # PanSave A 线 PR-2：转存副本保留期两列。老库补列后为
         # NULL（= 无保留，清理器照旧删）。
         ("emby_transfer_variants", [

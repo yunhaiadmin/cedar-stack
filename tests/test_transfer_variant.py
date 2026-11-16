@@ -434,13 +434,16 @@ def _mount(db, mount_id, mount_type, path):
 
 
 def _user_job(db, item_id, user_id, provider="drive", status="pending",
-              drive_id="drive1", trigger="playback"):
-    dest = (f"userdrive:{user_id}" if provider == "drive"
-            else f"pan115:user-{user_id}")
+              drive_id="drive1", trigger="playback", gate_rebuild=False,
+              dest=None):
+    if dest is None:
+        dest = (f"userdrive:{user_id}" if provider == "drive"
+                else f"pan115:user-{user_id}")
     row = em.TransferJob(item_id=item_id, trigger=trigger,
                          drive_id=drive_id, provider=provider,
                          owner_scope="user", owner_ref=str(user_id),
-                         dest_drive_id=dest, status=status)
+                         dest_drive_id=dest, status=status,
+                         gate_rebuild=gate_rebuild)
     db.add(row)
     db.commit()
     return row
@@ -534,6 +537,7 @@ def test_gate_done_job_copy_gone_rebuilds(db, monkeypatch):
         em.TransferJob.id.desc()).first()
     assert new_job.status == "pending" and new_job.trigger == "playback"
     assert new_job.dest_drive_id == "userdrive:7"
+    assert new_job.gate_rebuild is True
     assert gate["job_id"] == new_job.id
     # 同一次播放的后续重查只见在途，不再建第 3 单。
     gate2 = tv.ensure_user_copy_gate(db, item, _user())
@@ -541,19 +545,69 @@ def test_gate_done_job_copy_gone_rebuilds(db, monkeypatch):
     assert db.query(em.TransferJob).count() == 2
 
 
-def test_gate_done_job_copy_gone_budget_exhausted(db, monkeypatch):
-    # 24h 同桶已有 2 行（上次 done + 已重建过一次又 done）：不再建，
-    # 仍 throttled，防播放器重试刷任务洪水。
+def test_gate_done_normal_history_copy_gone_rebuilds(db, monkeypatch):
+    # 2026-11-16 生产实证（item 598385 / user 1）：窗内只有两单正常
+    # 历史——prefetch done（预取）+ playback done（正常首播），副本曾
+    # ready 并播出过画，之后被闲置 TTL 清理删行。旧预算把这两单正常
+    # 行也算进重触发预算 → 判 throttled，用户被锁到窗内首行滑出
+    # （次日 08:16）为止。正常 done 历史不该消耗重建预算：副本缺失
+    # 必须能重建。
     _enable(monkeypatch)
     _mount(db, 3, "drive", "drive:drive1")
     item = _item(db)
     _binding(db, 7)
     _user_job(db, item.id, 7, status="done", trigger="prefetch")
-    job = _user_job(db, item.id, 7, status="done")
+    _user_job(db, item.id, 7, status="done")
+    gate = tv.ensure_user_copy_gate(db, item, _user())
+    assert gate["verdict"] == "preparing"
+    assert gate["reason"] == "job_rebuilt"
+    assert db.query(em.TransferJob).count() == 3
+    new_job = db.query(em.TransferJob).order_by(
+        em.TransferJob.id.desc()).first()
+    assert new_job.status == "pending" and new_job.trigger == "playback"
+    assert gate["job_id"] == new_job.id
+    # 重建单落重触发标记：之后计入门禁预算（重建链仍受封顶）。
+    assert new_job.gate_rebuild is True
+
+
+def test_gate_done_job_copy_gone_budget_exhausted(db, monkeypatch):
+    # 24h 同桶重触发类已有 2 行（门禁已重建过两次、又都 done 且副本
+    # 又被清）：不再建，仍 throttled，防播放器重试刷任务洪水。
+    # 2026-11-16 口径：占额的是带 gate_rebuild 标记的重建行；无标记
+    # 的正常 done 行不占额（见 normal_history 用例）。
+    _enable(monkeypatch)
+    _mount(db, 3, "drive", "drive:drive1")
+    item = _item(db)
+    _binding(db, 7)
+    _user_job(db, item.id, 7, status="done", gate_rebuild=True)
+    job = _user_job(db, item.id, 7, status="done", gate_rebuild=True)
     gate = tv.ensure_user_copy_gate(db, item, _user())
     assert gate == {"verdict": "preparing", "reason": "throttled",
                     "job_id": job.id}
     assert db.query(em.TransferJob).count() == 2
+
+
+def test_gate_cross_done_normal_history_rebuilds(db, monkeypatch):
+    # 跨 provider 分支同口径（2026-11-16）：115 条目、只绑 Drive，
+    # 窗内 prefetch done + playback done 两单正常跨单历史（dest=
+    # userdrive:7）、副本行已清 → 预算不被正常行占额，照常重建。
+    _enable(monkeypatch)
+    item = _item(db, file_path="115:/电影/a.mkv", drive_file_id="srcfid")
+    _binding(db, 7, provider="drive")
+    _user_job(db, item.id, 7, provider="pan115", status="done",
+              trigger="prefetch", dest="userdrive:7")
+    _user_job(db, item.id, 7, provider="pan115", status="done",
+              dest="userdrive:7")
+    gate = tv.ensure_user_copy_gate(db, item, _user(7))
+    assert gate["verdict"] == "preparing"
+    assert gate["reason"] == "job_rebuilt"
+    assert db.query(em.TransferJob).count() == 3
+    new_job = db.query(em.TransferJob).order_by(
+        em.TransferJob.id.desc()).first()
+    assert new_job.provider == "pan115"
+    assert new_job.dest_drive_id == "userdrive:7"
+    assert new_job.gate_rebuild is True
+    assert gate["job_id"] == new_job.id
 
 
 def test_gate_done_job_with_ready_copy_proceeds(db, monkeypatch):
@@ -709,10 +763,29 @@ def test_gate_failed_retriable_retriggers_once(db, monkeypatch):
     new_job = db.query(em.TransferJob).order_by(
         em.TransferJob.id.desc()).first()
     assert new_job.status == "pending" and new_job.trigger == "playback"
+    assert new_job.gate_rebuild is True
     assert gate["job_id"] == new_job.id
     gate2 = tv.ensure_user_copy_gate(db, item, _user())
     assert gate2["verdict"] == "preparing"
     assert gate2["reason"] == "job_in_flight"
+    assert db.query(em.TransferJob).count() == 2
+
+
+def test_gate_failed_budget_counts_marked_rebuild(db, monkeypatch):
+    # 重触发标记行与 failed 行合并计数：窗内已有 1 单门禁重建
+    # （done）+ 最新单 failed-retriable → 预算已满（2 行），不再
+    # 重触发，仍判失败（2026-11-16 口径，防洪不削弱）。
+    _enable(monkeypatch)
+    _mount(db, 3, "drive", "drive:drive1")
+    item = _item(db)
+    _binding(db, 7)
+    _user_job(db, item.id, 7, status="done", gate_rebuild=True)
+    job = _user_job(db, item.id, 7, status="failed")
+    job.error_kind = "retriable"
+    db.commit()
+    gate = tv.ensure_user_copy_gate(db, item, _user())
+    assert gate == {"verdict": "failed", "reason": "retriable",
+                    "job_id": job.id}
     assert db.query(em.TransferJob).count() == 2
 
 

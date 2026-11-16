@@ -186,16 +186,19 @@ def test_user_throttle_state_field_governs(db):
 
 
 def test_retrigger_budget_field_governs(db):
+    # 本用例只验「预算的窗内归属由 cooldown_until 落字决定」：
+    # 行用 failed（2026-11-16 起预算只数 failed 行与门禁重建标记
+    # 行，正常 done 行不占额，见 _gate_retrigger_budget_ok 口径）。
     now = datetime.now()
     item = _drive_item(db)
     for _ in range(2):
-        _job(db, item.id, scope="user", ref="7",
+        _job(db, item.id, scope="user", ref="7", status="failed",
              created_at=now - timedelta(hours=25),
              cooldown_until=now + timedelta(hours=1))
     assert tv._gate_retrigger_budget_ok(db, item.id, 7) is False
     item2 = _drive_item(db)
     for _ in range(2):
-        _job(db, item2.id, scope="user", ref="7",
+        _job(db, item2.id, scope="user", ref="7", status="failed",
              created_at=now - timedelta(hours=1),
              cooldown_until=now - timedelta(hours=1))
     assert tv._gate_retrigger_budget_ok(db, item2.id, 7) is True
