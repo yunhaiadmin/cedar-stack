@@ -3,9 +3,6 @@
 覆盖 3 个 GET 口：绑定列表、sidecar 状态、139 池列表
 （采样进度口已随批 3 sample_hash 删除、映射列表口已在主线移除）。全部在隔离临时 SQLite 里跑，不连生产库；sidecar 成功
 路径用本地假 UDS 服务端，不碰真实侧车。
-
-总线两口（/api/admin/playback-bus/snapshot 与 /commands）已在
-playback_bus_admin.py 存在，本单不重复建、不重复测。
 """
 
 import json

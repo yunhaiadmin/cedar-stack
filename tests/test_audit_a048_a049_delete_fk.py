@@ -74,14 +74,6 @@ def _user(db, name):
     return row
 
 
-def _mset(db, name="合集甲"):
-    row = em.EmbyMediaSet(name=name)
-    db.add(row)
-    db.commit()
-    db.refresh(row)
-    return row
-
-
 def _item(db, lib_id, item_type="series", name="剧甲", **kw):
     row = em.MediaItem(guid=_guid(), library_id=lib_id, item_type=item_type,
                        name=name, file_path="", **kw)
@@ -92,14 +84,13 @@ def _item(db, lib_id, item_type="series", name="剧甲", **kw):
     return row
 
 
-def _attach_all(db, item, user, mset):
-    """给 item 挂上 7 张 FK 子表各一行（SeriesFollow 用 series_item_id）。"""
+def _attach_all(db, item, user):
+    """给 item 挂上 6 张 FK 子表各一行（SeriesFollow 用 series_item_id）。"""
     db.add(em.MediaStream(item_id=item.id, stream_type="Video", codec="h264"))
     db.add(em.UserMediaData(user_id=user.id, item_id=item.id))
     db.add(em.ItemFacet(item_id=item.id, kind="genre", value="剧情"))
     db.add(em.EmbyPerson(item_id=item.id, name="演员甲"))
     db.add(em.PlaybackSession(user_id=user.id, item_id=item.id))
-    db.add(em.EmbyMediaSetMember(set_id=mset.id, item_id=item.id))
     db.add(em.SeriesFollow(user_id=user.id, series_item_id=item.id))
     db.commit()
 
@@ -117,8 +108,6 @@ def _child_counts(db, item_id):
                 em.EmbyPerson.item_id == item_id).count(),
             "session": db.query(em.PlaybackSession).filter(
                 em.PlaybackSession.item_id == item_id).count(),
-            "member": db.query(em.EmbyMediaSetMember).filter(
-                em.EmbyMediaSetMember.item_id == item_id).count(),
             "follow": db.query(em.SeriesFollow).filter(
                 em.SeriesFollow.series_item_id == item_id).count(),
         }
@@ -136,10 +125,9 @@ def test_fixture_really_enforces_foreign_keys(db):
 def test_admin_delete_item_removes_all_child_rows(db):
     lib = _lib(db)
     user = _user(db, "u_a048_1")
-    mset = _mset(db)
     item = _item(db, lib.id)
     item_id = item.id
-    _attach_all(db, item, user, mset)
+    _attach_all(db, item, user)
     assert all(v == 1 for v in _child_counts(db, item_id).values())
 
     portal.admin_delete_item(item.guid, staff=None, db=db)
@@ -152,15 +140,14 @@ def test_admin_delete_item_removes_all_child_rows(db):
 def test_admin_delete_item_cascades_subtree(db):
     lib = _lib(db)
     user = _user(db, "u_a048_2")
-    mset = _mset(db)
     series = _item(db, lib.id, "series", "剧乙")
     season = _item(db, lib.id, "season", "第 1 季",
                    series_id=series.id)
     episode = _item(db, lib.id, "episode", "第 1 集",
                     series_id=series.id, parent_id=season.id)
     series_id, season_id, episode_id = series.id, season.id, episode.id
-    _attach_all(db, episode, user, mset)
-    _attach_all(db, season, user, mset)
+    _attach_all(db, episode, user)
+    _attach_all(db, season, user)
 
     portal.admin_delete_item(series.guid, staff=None, db=db)
 
@@ -192,12 +179,11 @@ def test_admin_delete_item_rehomes_merged_duplicate(db):
 def test_delete_library_removes_all_child_rows(db, monkeypatch):
     lib = _lib(db)
     user = _user(db, "u_a048_3")
-    mset = _mset(db)
     series = _item(db, lib.id, "series", "剧丁")
     episode = _item(db, lib.id, "episode", "第 1 集",
                     series_id=series.id)
-    _attach_all(db, series, user, mset)
-    _attach_all(db, episode, user, mset)
+    _attach_all(db, series, user)
+    _attach_all(db, episode, user)
     dup = _item(db, lib.id, "series", "剧丁",
                 merged_into_id=series.id)
     series_id, episode_id = series.id, episode.id
@@ -218,10 +204,9 @@ def test_delete_library_removes_all_child_rows(db, monkeypatch):
 def test_purge_items_removes_all_child_rows(db):
     lib = _lib(db)
     user = _user(db, "u_a049_1")
-    mset = _mset(db)
     item = _item(db, lib.id)
     item_id = item.id
-    _attach_all(db, item, user, mset)
+    _attach_all(db, item, user)
 
     scanner._purge_items(db, [item_id])
     db.commit()

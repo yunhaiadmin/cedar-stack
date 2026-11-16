@@ -1095,13 +1095,6 @@ def _auto_migrate():
             ("content_hash_algo", "VARCHAR(16)", "NULL"),
             ("identity_json", "TEXT", "NULL"),
         ]),
-        # 阶段 8 PR-1（2026-10-25）：命令表加 payload（命令参数 JSON 文本，
-        # seek 的目标 ticks 等）。老库补列后为 NULL（= 无参数命令），
-        # 读数按无参数处理，行为与升级前一致；create_all 不改已建的表，
-        # 不走这里老库会报 no such column。
-        ("playback_control_commands", [
-            ("payload", "TEXT", "NULL"),
-        ]),
         # 防外流三件套（2026-10-28）：转存副本行加 anyone-reader
         # 收回标记（审计列：最后一次收回时间）。老库补列后为 NULL
         # （= 尚未收回）；收回 pass 不以本列过滤——重授路径

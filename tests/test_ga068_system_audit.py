@@ -32,7 +32,6 @@ from backend import models as base_models
 from backend.api.admin_core import _audit
 from backend.database import SessionLocal, init_db
 from backend.emby_server import models as em
-from backend.emby_server.playback_bus import PlaybackControlCommand
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -64,7 +63,6 @@ _TABLES = (
     base_models.WebUser,
     base_models.SystemConfig,
     em.Library,
-    PlaybackControlCommand,
 )
 
 
@@ -168,30 +166,6 @@ def test_node_scan_library_writes_system_audit(db):
     assert row.target_id == lib.id
     assert row.details["actor"] == "system"
     assert row.details["full"] is False
-
-
-def test_send_command_writes_admin_audit(db, monkeypatch):
-    """POST /api/admin/playback-bus/commands 补进 AdminLog（C 类）。"""
-    from backend.emby_server import playback_bus as bus
-    from backend.emby_server import playback_bus_admin
-
-    monkeypatch.setattr(bus, "_ENABLED", True)
-    admin = base_models.WebUser(username="ga068-admin", password_hash="x",
-                                is_staff=True, is_active=True,
-                                admin_role="operator")
-    db.add(admin)
-    db.commit()
-    body = playback_bus_admin.CommandIn(
-        session_key="s-ga068-nonexistent", command="pause")
-    result = playback_bus_admin.send_command(
-        body, None, current_admin=admin, db=db)
-    assert result["command"] == "pause"
-    row = db.query(base_models.AdminLog).filter(
-        base_models.AdminLog.action == "playback_bus_command").one()
-    assert row.admin_user_id == admin.id
-    assert row.details["command"] == "pause"
-    assert row.details["session_key"] == "s-ga068-nonexistent"
-    assert row.details["command_id"] == result["command_id"]
 
 
 def test_system_audit_row_renders_as_system(db):

@@ -1450,7 +1450,7 @@ export interface EmbySessionRow {
 }
 
 
-/** 专线 B 第二阶段 · 只读观测口（字段与 backend/api/admin_readonly.py、playback_bus_admin.py 一一对应，不自造） */
+/** 专线 B 第二阶段 · 只读观测口（字段与 backend/api/admin_readonly.py 一一对应，不自造） */
 
 /** 存储绑定行（GET /api/admin/storage-bindings；凭据只出 has_credential） */
 export interface StorageBindingRow {
@@ -1495,40 +1495,3 @@ export interface SidecarStatusResponse {
   providers: SidecarProviderStatus[]
 }
 
-/** 播放快照里的进行中会话（GET /api/admin/playback-bus/snapshot；无快照时后端回 404） */
-export interface PlaybackBusSnapshotSession {
-  session_id: string
-  session_key: string
-  user_id: number | null
-  item_id: number | null
-  variant: string | null
-  device_id: string | null
-  position_ticks: number
-  is_paused: boolean
-  last_update_at: string | null
-  last_command_status: string | null
-  last_command_type: string | null
-}
-
-export interface PlaybackBusSnapshot {
-  v: number
-  computed_at: string
-  sessions: PlaybackBusSnapshotSession[]
-}
-
-/** 播放命令行（GET /api/admin/playback-bus/commands；行数组，非分页包裹） */
-export interface PlaybackBusCommand {
-  command_id: string
-  session_key: string
-  device_id: string | null
-  command: string
-  payload: unknown
-  status: string
-  outcome: string | null
-  requested_by: number | null
-  requested_at: string | null
-  sent_at: string | null
-  delivered_at: string | null
-  completed_at: string | null
-  error: string | null
-}

@@ -30,10 +30,8 @@ GA068_MODULES = (
     "backend.api.admin_alerts",
     "backend.api.admin_tasks",
     "backend.api.admin_player_blacklist",
-    "backend.api.media_sets_api",
     "backend.api.panel",
     "backend.api.governance_report",
-    "backend.emby_server.playback_bus_admin",
     "backend.api.admin_services",
     "backend.api.admin_artwork",
 )

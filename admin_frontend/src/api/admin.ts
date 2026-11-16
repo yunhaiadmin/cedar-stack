@@ -56,8 +56,6 @@ import type {
   UserDetail,
   UserGrants,
   UsersResponse,
-  PlaybackBusCommand,
-  PlaybackBusSnapshot,
   SidecarStatusResponse,
   StorageBindingsResponse,
 } from '@/types'
@@ -2397,7 +2395,7 @@ export const sendTestAlert = (channel: AlertChannel) =>
   post<{ ok: boolean; channel: string }>('/alerts/test', { channel })
 
 // ==================== 专线 B 第二阶段 · 只读观测口（GET，仅展示） =============// 全部走 get（@/utils/request，baseURL /api/admin），不新增任何写调用。
-// 字段口径见 backend/api/admin_readonly.py 与 backend/emby_server/playback_bus_admin.py。
+// 字段口径见 backend/api/admin_readonly.py。
 
 /** 存储绑定列表：按用户 / 状态过滤，limit/offset 分页（id 倒序） */
 export const fetchStorageBindings = (params: {
@@ -2411,12 +2409,6 @@ export const fetchStorageBindings = (params: {
 export const fetchSidecarStatus = (provider?: string) =>
   get<SidecarStatusResponse>('/providers/sidecar', provider ? { provider } : undefined)
 
-/** 播放快照：无快照时后端回 404，调用方须按空状态处理、不当错误页 */
-export const fetchPlaybackBusSnapshot = () => get<PlaybackBusSnapshot>('/playback-bus/snapshot')
-
-/** 播放命令列表：最近命令审计行数组（倒序，limit 默认 50） */
-export const fetchPlaybackBusCommands = (limit = 50) =>
-  get<PlaybackBusCommand[]>('/playback-bus/commands', { limit })
 // ==================== 媒体库图片与顺序（媒体库学习 L2 / L4） =============
 export interface ArtworkOverrideRow {
   id: number

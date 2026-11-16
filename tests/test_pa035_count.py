@@ -1,9 +1,10 @@
 """PA-035：Query.count() 绕过软删全局钩子，计数把已下架条目算进去。
 
-6 处计数点（R15-B15 清单）逐一钉：1 可见＋1 已下架的夹具下，
-计数必须等于列表长度（只含可见条目），且合集上架门不被下架成员顶过去。
+计数点（R15-B15 清单）逐一钉：1 可见＋1 已下架的夹具下，
+计数必须等于列表长度（只含可见条目）。（合集计数点已随合集功能
+于 2026-11-17 删除。）
 
-另补一条静态门禁：6 个已修函数的源码里不许再出现 `.count()`，
+另补一条静态门禁：已修函数的源码里不许再出现 `.count()`，
 防止有人把 Query.count() 写回来（其余文件的非条目 .count() 不受影响）。
 
 隔离 SQLite 内存库，不连生产库；软删钩子装在 Session 类上，
@@ -28,7 +29,6 @@ from starlette.requests import Request
 from backend import models as base_models
 from backend.emby_server import models as em
 from backend.emby_server import soft_delete  # noqa: F401 — 装全局软删钩子
-from backend.emby_server import media_sets as ms
 
 
 @pytest.fixture()
@@ -89,23 +89,6 @@ def _request():
         "scheme": "http",
     }
     return Request(scope)
-
-
-def test_effective_count_excludes_soft_deleted(db):
-    """合集有效数：1 可见＋1 下架 → 1；min 门 2 时不上架。"""
-    vis = _item(db, "pa035-vis")
-    dead = _item(db, "pa035-dead", deleted=True)
-    s = em.EmbyMediaSet(name="pa035set", visibility_status="visible",
-                        min_effective_members=2)
-    db.add(s)
-    db.commit()
-    db.refresh(s)
-    for i, it in enumerate((vis, dead)):
-        db.add(em.EmbyMediaSetMember(set_id=s.id, item_id=it, order_index=i))
-    db.commit()
-    assert ms.effective_count(db, s) == 1
-    assert ms.shelf_eligible(db, s) is False
-    assert len(ms.visible_items_query(db, s.id).all()) == 1
 
 
 def test_favorite_total_matches_list(db):
@@ -177,7 +160,7 @@ def test_count_virtual_items_excludes_soft_deleted(db):
 
 
 def test_no_query_count_in_fixed_functions():
-    """静态门禁：6 个已修函数源码里不许再出现 Query.count() 调用。
+    """静态门禁：已修函数源码里不许再出现 Query.count() 调用。
 
     用 AST 判定（只认真正的 `.count()` 调用，docstring/注释里提到
     Query.count() 不算），其余文件的非条目 .count() 不受影响。
@@ -191,7 +174,6 @@ def test_no_query_count_in_fixed_functions():
     from backend.emby_server import scanner as scanner_mod
 
     fns = [
-        ms.effective_count,
         emby_api.get_favorites,
         emby_api.get_played_items,
         portal_mod.admin_search_items,

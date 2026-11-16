@@ -28,7 +28,7 @@ import {
   Menu, X, ChevronDown, RefreshCw, LogOut, KeyRound, ExternalLink,
   CheckCircle2, Route as RealmIcon, Lock, Search, Wallet, Crown, MessageSquareDashed,
   TriangleAlert, ScrollText, Smartphone, MonitorCog, ShieldAlert, Ban, Library, Eye,
-  Image as ImageIcon, Layers,
+  Image as ImageIcon,
   Database, Megaphone, Receipt, Trophy, TicketPercent, UserPlus, KeySquare,
   UserCog, Activity, HandCoins,
   Sun, Moon, MonitorSmartphone, ListChecks, Flag,
@@ -240,9 +240,9 @@ const navGroups: NavGroup[] = [
  * 不占导航位置、但仍要归属到某个分组的页面（只负责面包屑归属与分组展开）：
  * - 服管理 = 媒体里的一条支线。放进导航就会让「多服」又变成要先理解的一级概念——
  *   它的入口在「服务器与线路」页里。
- * - 合集管理、图片与顺序 = 媒体里的支线。页保留、导航不占位，入口只剩直接地址与命令面板。
+ * - 图片与顺序 = 媒体里的支线。页保留、导航不占位，入口只剩直接地址与命令面板。
  */
-const OFF_NAV_GROUP: Record<string, string> = { '/realms': '媒体', '/media-collections': '媒体', '/media-library': '媒体' }
+const OFF_NAV_GROUP: Record<string, string> = { '/realms': '媒体', '/media-library': '媒体' }
 
 /** 某个路径归哪个分组（含不占导航位置的页面，见 OFF_NAV_GROUP） */
 function groupOf(path: string): NavGroup | undefined {
@@ -302,11 +302,10 @@ const QUICK_JUMPS: PaletteItem[] = [
 /** 不占导航位置的页面在命令面板里的显示（label / 图标按路径给，不许硬编码成某一页） */
 const OFF_NAV_META: Record<string, { label: string; icon: unknown; keywords?: string }> = {
   '/realms': { label: '服管理', icon: RealmIcon, keywords: 'realm 服 切换' },
-  '/media-collections': { label: '合集管理', icon: Layers },
   '/media-library': { label: '图片与顺序', icon: ImageIcon },
 }
 
-/** 侧边栏的页面清单（含不占导航位置的 /realms、/media-collections 与 /media-library）——命令面板不维护第二份 */
+/** 侧边栏的页面清单（含不占导航位置的 /realms 与 /media-library）——命令面板不维护第二份 */
 const pageCommands = computed<PaletteItem[]>(() => {
   const items: PaletteItem[] = []
   for (const group of navGroups) {

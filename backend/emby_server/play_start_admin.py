@@ -11,7 +11,7 @@
   小时起播事件按源（provider × mount_id）与错误类型汇总，
   回答“起播慢是慢在哪家源、失败是哪类错误”。
 
-鉴权：与 playback_bus_admin 同口径——get_current_admin
+鉴权：与管理端只读口同口径——get_current_admin
 （Bearer token + is_staff）。只读口，不写库、不进播放热路径：
 低频管理面调用，不在 video_stream / PlaybackInfo 路径上。
 """
