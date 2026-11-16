@@ -244,69 +244,6 @@ def _start_heartbeat_thread(redis_client) -> threading.Thread:
     return t
 
 
-_playback_bus_snapshot_thread: threading.Thread | None = None
-
-
-def start_playback_bus_snapshot(stop_event=None) -> bool:
-    """播放实时总线快照工人（FMBY #24 接线）。
-
-    仅在 PLAYBACK_BUS_ENABLED=1 时启动一根 daemon 线程跑
-    run_snapshot_loop；关时返回 False、不启动、不写快照，全站行为
-    逐字不变。幂等：已有存活线程时直接返回 True，不重复启动。
-    stop_event 供测试与优雅关闭；默认用 worker 的 _shutdown_event。
-    """
-    global _playback_bus_snapshot_thread
-    from backend.emby_server import playback_bus
-
-    if not playback_bus.bus_enabled():
-        return False
-    alive = _playback_bus_snapshot_thread
-    if alive is not None and alive.is_alive():
-        return True
-    from backend.database import SessionLocal
-
-    t = threading.Thread(
-        target=playback_bus.run_snapshot_loop,
-        args=(SessionLocal,),
-        kwargs={"stop_event": stop_event if stop_event is not None else _shutdown_event},
-        daemon=True, name="playback-bus-snapshot",
-    )
-    t.start()
-    _playback_bus_snapshot_thread = t
-    return True
-
-
-_playback_bus_consumer_thread: threading.Thread | None = None
-
-
-def start_playback_bus_consumer(stop_event=None) -> bool:
-    """播放实时总线事件消费工人（FMBY #24 消费端）。
-
-    仅在 PLAYBACK_BUS_ENABLED=1 时启动一根 daemon 线程跑
-    run_event_consumer_loop（订阅频道 → 事件尾巴）；关时返回 False、
-    不启动，频道事件无人消费也不产生尾巴，全站行为逐字不变。
-    幂等：已有存活线程时直接返回 True，不重复启动。
-    """
-    global _playback_bus_consumer_thread
-    from backend.emby_server import playback_bus
-
-    if not playback_bus.bus_enabled():
-        return False
-    alive = _playback_bus_consumer_thread
-    if alive is not None and alive.is_alive():
-        return True
-    t = threading.Thread(
-        target=playback_bus.run_event_consumer_loop,
-        kwargs={"stop_event": stop_event if stop_event is not None else _shutdown_event},
-        daemon=True, name="playback-bus-consumer",
-    )
-    t.start()
-    _playback_bus_consumer_thread = t
-    return True
-
-
-
-
 def main() -> int:
     """Worker 主入口"""
     logger.info("🚀 Aetrix Worker 正在启动...")
@@ -591,29 +528,6 @@ def main() -> int:
                 logger.info("本机目录实时监听未启用，已降级为定时扫描")
         except Exception as e:
             logger.warning(f"启动目录监听失败（已降级为定时扫描）: {e}")
-
-        # 播放实时总线快照工人（FMBY #24 接线）：仅开关开时启动；
-        # 关时不启动、不写快照，全站行为逐字不变。worker 进程持有
-        # Redis 单实例锁，快照只由本进程写，无双跑风险。
-        try:
-            if start_playback_bus_snapshot():
-                started.append("playback_bus_snapshot")
-                logger.info("✅ 播放总线快照工人已启动")
-            else:
-                logger.info("播放实时总线未开启，快照工人不启动")
-        except Exception as e:
-            logger.warning(f"启动播放总线快照工人失败（可忽略）: {e}")
-
-        # 播放实时总线事件消费工人（FMBY #24 消费端）：与快照工人
-        # 同开关；只在开时启动，关时不启动、不写事件尾巴。
-        try:
-            if start_playback_bus_consumer():
-                started.append("playback_bus_consumer")
-                logger.info("✅ 播放总线事件消费工人已启动")
-            else:
-                logger.info("播放实时总线未开启，事件消费工人不启动")
-        except Exception as e:
-            logger.warning(f"启动播放总线事件消费工人失败（可忽略）: {e}")
 
         # 媒体库列表投影重建工人（FMBY 列表投影读模型试点）：仅开关开时启动；
         # 关时不启动，读路径走现行现算，全站行为逐字不变。行落 PG 表，

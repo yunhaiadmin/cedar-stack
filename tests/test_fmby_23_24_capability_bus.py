@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""FMBY #23 能力门控执法 + #24 总线消费端（2026-10-27 第 5 路）。
+"""FMBY #23 能力门控执法（2026-10-27 第 5 路）。
 
 #23 之前的状态：五能力位只声明不执法——can_list（扫描）、
 can_refresh_credentials（刷新重试）、can_generate_play_target（变体
@@ -8,20 +8,14 @@ can_refresh_credentials（刷新重试）、can_generate_play_target（变体
 声明 False 的提供者对应接口根本不被调（间谍计数为 0），而不是
 调了之后才失败。
 
-#24 之前的状态：总线只有生产没有消费——publish_event 发频道，
-subscribe() 在生产代码里零调用方。本文件钉：工人消费端订阅频道
-→ 事件尾巴 → 管理端读口，整条生产→消费链真实走通；远程控制
-整环（命令→websocket 投递→帧到达）已有 test_session_push.py 的
-TestClient 实测，本文件不重复，只补消费端与读口。
+全部离线：DB 用内存 SQLite。
 
-全部离线：DB 用内存 SQLite，Redis 用进程内替身；开关读数走
-monkeypatch（模块级 _ENABLED，与 test_playback_bus.py 同口径）。
+（本文件的 #24 播放总线消费端用例已随总线功能于 2026-11-17 删除。）
 """
 
 import base64
 import json
 import os
-import threading
 
 os.environ.setdefault("DATABASE_TYPE", "sqlite")
 os.environ.setdefault("REDIS_ENABLED", "false")
@@ -36,10 +30,7 @@ from types import SimpleNamespace
 
 from backend import models
 from backend.database import Base
-from backend.emby_server import compat_routes
 from backend.emby_server import mounts as mnt
-from backend.emby_server import playback_bus as bus
-from backend.emby_server import playback_bus_admin as bus_admin
 from backend.emby_server import models as em
 from backend.emby_server.mounts import (
     MountProvider,
@@ -251,181 +242,3 @@ def test_generate_gate_module_resolve_allows_true_provider(
     target = mnt.resolve_play_target(f"mount://{mount.id}/f.mkv", mount_db)
     assert target.kind == "local"
     assert target.value.endswith("f.mkv")
-
-
-# ---------------------------------------------------------------- #24：消费端替身与夹具
-
-class _FakePubSub:
-    def __init__(self, redis):
-        self._redis = redis
-        self._channels = set()
-        self._queue = []
-
-    def subscribe(self, channel):
-        self._channels.add(channel)
-        self._redis._subscribers.append((channel, self))
-
-    def get_message(self, timeout=None):
-        if self._queue:
-            return self._queue.pop(0)
-        return None
-
-
-class _FakeRedis:
-    def __init__(self):
-        self._store = {}
-        self._subscribers = []
-
-    def get(self, key):
-        return self._store.get(key)
-
-    def set(self, key, value, ex=None):
-        self._store[key] = value
-        return True
-
-    def publish(self, channel, message):
-        for ch, sub in self._subscribers:
-            if ch == channel:
-                sub._queue.append({"type": "message", "channel": channel,
-                                   "data": message})
-        return 1
-
-    def pubsub(self):
-        return _FakePubSub(self)
-
-    def rpush(self, key, value):
-        self._store.setdefault(key, []).append(value)
-        return len(self._store[key])
-
-    def lrange(self, key, start, end):
-        items = self._store.get(key, [])
-        return items[start:end + 1 if end >= 0 else None]
-
-    def ltrim(self, key, start, end):
-        items = self._store.get(key, [])
-        self._store[key] = items[start:] if end == -1 else items[start:end + 1]
-
-
-@pytest.fixture()
-def fake_redis():
-    return _FakeRedis()
-
-
-@pytest.fixture()
-def bus_on(monkeypatch, fake_redis):
-    monkeypatch.setattr(bus, "_ENABLED", True)
-    monkeypatch.setattr(bus, "_redis_client",
-                        lambda client=None: client if client is not None
-                        else fake_redis)
-    return fake_redis
-
-
-def _publish_started(fake_redis, session_id):
-    event = bus.build_event(bus.EVENT_STARTED, session_id=session_id,
-                            user_id=1, item_id=2)
-    assert bus.publish_event(event, client=fake_redis) is True
-    return event
-
-
-def test_bus_consume_roundtrip_and_drain_is_at_most_once(
-        bus_on, fake_redis):
-    pubsub = bus.subscribe(client=fake_redis)
-    assert pubsub is not None
-    _publish_started(fake_redis, "s-1")
-    assert bus.drain_bus_pubsub(pubsub, client=fake_redis) == 1
-    # 第二拍已空：at-most-once，同一事件绝不重复进尾巴。
-    assert bus.drain_bus_pubsub(pubsub, client=fake_redis) == 0
-    events = bus.read_bus_events(client=fake_redis)
-    assert [e["type"] for e in events] == ["started"]
-    assert events[0]["session_id"] == "s-1"
-
-
-def test_bus_consume_upsert_session_end_to_end(bus_on, fake_redis, mount_db):
-    """生产→消费整环：_upsert_session（真实发布点）发的事件，
-    消费端确实收到并写进尾巴——不是只测 publish 本身。"""
-    lib = em.Library(guid="lib-bus-consume", name="电影",
-                     collection_type="movies", is_enabled=True)
-    mount_db.add(lib)
-    mount_db.commit()
-    item = em.MediaItem(guid="g-bus-consume-0001", library_id=lib.id,
-                        item_type="movie", name="消费测试片")
-    mount_db.add(item)
-    user = models.WebUser(username="bus-consume-user", password_hash="x",
-                          is_active=True)
-    mount_db.add(user)
-    mount_db.commit()
-    scope = {
-        "type": "http", "http_version": "1.1", "method": "POST",
-        "scheme": "http", "path": "/emby/Sessions/Playing",
-        "headers": [], "client": ("127.0.0.1", 5000),
-        "server": ("t", 80), "query_string": b"",
-    }
-    # 订阅必须发生在发布之前（频道 at-most-once，事后订阅收不到旧事件）。
-    pubsub = bus.subscribe(client=fake_redis)
-    session, wrote = compat_routes._upsert_session(
-        mount_db, Request(scope), user, item,
-        {"PlaySessionId": "bus-consume-1", "PositionTicks": 0,
-         "IsPaused": False})
-    assert wrote is True
-    assert bus.drain_bus_pubsub(pubsub, client=fake_redis) == 1
-    events = bus.read_bus_events(client=fake_redis)
-    assert [e["type"] for e in events] == ["started"]
-    assert events[0]["session_id"] == "bus-consume-1"
-
-
-def test_bus_consume_skips_invalid_messages(bus_on, fake_redis):
-    pubsub = bus.subscribe(client=fake_redis)
-    pubsub._queue.append({"type": "message", "channel": bus.BUS_CHANNEL,
-                          "data": "not-json"})
-    pubsub._queue.append({"type": "message", "channel": "other-channel",
-                          "data": json.dumps(
-                              bus.build_event(bus.EVENT_STARTED,
-                                              session_id="s-x"))})
-    pubsub._queue.append({"type": "subscribe", "channel": bus.BUS_CHANNEL,
-                          "data": 1})
-    assert bus.drain_bus_pubsub(pubsub, client=fake_redis) == 0
-    assert bus.read_bus_events(client=fake_redis) == []
-
-
-def test_bus_consume_caps_tail_at_100(bus_on, fake_redis):
-    pubsub = bus.subscribe(client=fake_redis)
-    for i in range(105):
-        _publish_started(fake_redis, f"s-{i}")
-    assert bus.drain_bus_pubsub(pubsub, client=fake_redis) == 105
-    events = bus.read_bus_events(client=fake_redis, limit=200)
-    assert len(events) == 100
-    ids = [e["session_id"] for e in events]
-    assert "s-0" not in ids  # 最旧的 5 条被裁掉
-    assert ids[0] == "s-104"  # 最新在前
-
-
-def test_bus_events_endpoint_gates_and_reads(bus_on, fake_redis,
-                                            monkeypatch):
-    pubsub = bus.subscribe(client=fake_redis)
-    _publish_started(fake_redis, "s-ev-1")
-    assert bus.drain_bus_pubsub(pubsub, client=fake_redis) == 1
-    events = bus_admin.get_events(limit=10, current_admin=SimpleNamespace())
-    assert [e["session_id"] for e in events] == ["s-ev-1"]
-    monkeypatch.setattr(bus, "_ENABLED", False)
-    with pytest.raises(HTTPException) as excinfo:
-        bus_admin.get_events(limit=10, current_admin=SimpleNamespace())
-    assert excinfo.value.status_code == 503
-
-
-def test_bus_consumer_loop_exits_on_preset_stop(bus_on, fake_redis):
-    stop = threading.Event()
-    stop.set()
-    # 预置 stop：循环一拍都不跑就退出，不挂起测试。
-    bus.run_event_consumer_loop(client=fake_redis, stop_event=stop)
-
-
-def test_bus_consumer_worker_start_gating(monkeypatch):
-    import backend.worker as worker_mod
-
-    monkeypatch.setattr(bus, "_ENABLED", False)
-    assert worker_mod.start_playback_bus_consumer() is False
-    monkeypatch.setattr(bus, "_ENABLED", True)
-    stop = threading.Event()
-    stop.set()
-    assert worker_mod.start_playback_bus_consumer(stop_event=stop) is True
-    worker_mod._playback_bus_consumer_thread.join(timeout=5)

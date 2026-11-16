@@ -364,7 +364,7 @@ def delete_item_child_rows(db, item_ids) -> None:
     或让回收整批回滚。此后三处共用本清单；新增指向 emby_items 的 FK 子表
     时只改这里。无 FK 的孤儿行
     （Transfer*、ArtworkOverride 等）不在此列，另行评估。
-    SeriesFollow 用 series_item_id 列，其余 8 张用 item_id 列。
+    SeriesFollow 用 series_item_id 列，其余用 item_id 列。
     """
     from backend.emby_server import models as em
 
@@ -377,7 +377,6 @@ def delete_item_child_rows(db, item_ids) -> None:
         (em.ItemFacet, em.ItemFacet.item_id),
         (em.EmbyPerson, em.EmbyPerson.item_id),
         (em.PlaybackSession, em.PlaybackSession.item_id),
-        (em.EmbyMediaSetMember, em.EmbyMediaSetMember.item_id),
         (em.SeriesFollow, em.SeriesFollow.series_item_id),
     ):
         db.query(model).filter(column.in_(ids)).delete(synchronize_session=False)

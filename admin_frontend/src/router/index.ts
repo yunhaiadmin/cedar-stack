@@ -62,7 +62,6 @@ const routes: RouteRecordRaw[] = [
       { path: 'emby', name: 'EmbyAdmin', component: () => import('@/views/EmbyAdmin.vue'), meta: { title: '媒体库' } },
       { path: 'media-library', name: 'MediaLibraryAdmin', component: () => import('@/views/MediaLibraryAdmin.vue'), meta: { title: '图片与顺序' } },
       // 合集管理：不占导航位置（见 Layout.vue OFF_NAV_GROUP，归属“媒体”分组），入口在媒体库页
-      { path: 'media-collections', name: 'MediaCollections', component: () => import('@/views/MediaCollections.vue'), meta: { title: '合集管理' } },
       // 媒体库可见范围（v2.43.0）：服务器默认范围 + 指定用户单独覆盖，默认关闭
       { path: 'library-scope', name: 'LibraryScope', component: () => import('@/views/LibraryScope.vue'), meta: { title: '媒体库可见范围' } },
       // 元数据来源（Phase 6）：条目级的元数据纠偏与补全进度，从「媒体库」页迁到这里
@@ -94,7 +93,6 @@ const routes: RouteRecordRaw[] = [
       { path: 'tasks', name: 'TaskOverview', component: () => import('@/views/TaskOverview.vue'), meta: { title: '任务总览' } },
       // 专线 B 第二阶段 · 只读观测口（GET，仅展示）
       { path: 'sample-hash-progress', redirect: '/tasks' },
-      { path: 'playback-bus', redirect: '/health' },
       // v2.56.0 健康一页：十个子系统红黄绿灯同屏（原 Health.vue 已并入「系统健康」）
       // Batch E（健康体系合并）：旧「健康总览」地址保留为跳转，收藏与外部链接不会落到 404
       { path: 'health-board', redirect: '/health' },

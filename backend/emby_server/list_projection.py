@@ -395,7 +395,7 @@ def run_rebuild_loop(session_factory, stop_event=None) -> None:
 
 
 def start_projection_worker(stop_event=None) -> bool:
-    """启动投影重建工人（worker.py 调用，照 playback_bus_snapshot 的写法）。
+    """启动投影重建工人（worker.py 调用）。
 
     开关关时返回 False、不启动；幂等：已有存活线程时直接返回 True。
     """

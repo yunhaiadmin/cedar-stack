@@ -41,10 +41,6 @@ from backend.api.setup import router as setup_router
 from backend.api.playback_admin import router as playback_admin_router
 from backend.api.series_follow_api import router as series_follow_router
 from backend.api.admin_readonly import router as admin_readonly_router
-from backend.api.media_sets_api import (
-    admin_media_sets_router,
-    user_media_sets_router,
-)
 from backend.api.store_requests import admin_router as store_requests_admin_router
 from backend.api.store_requests import router as store_requests_router
 from backend.api.governance_report import admin_router as governance_report_admin_router
@@ -107,7 +103,6 @@ from backend.emby_server import facets  # noqa: F401
 # 这里的顺序（media → compat → stream）与拆分前的定义顺序一致，不能调换。
 from backend.emby_server import media_routes  # noqa: F401
 from backend.emby_server import compat_routes  # noqa: F401
-from backend.emby_server import playback_bus_admin
 from backend.emby_server import play_start_admin
 from backend.emby_server import stream_routes  # noqa: F401
 from backend.emby_server.image_routes import install_image_routes
@@ -878,21 +873,12 @@ app.include_router(admins_router)
 app.include_router(setup_router)
 # 播放与客户端策略（v2.26.0）：转码开关 / 并发上限 / 码率上限 / 客户端准入，见 backend/api/playback_admin.py
 app.include_router(playback_admin_router)
-# 播放实时总线管理端（FMBY #24 接线）：命令表 + 快照读数；总线仍默认关，
-# 关时发命令回 503、不执行（见 backend/emby_server/playback_bus_admin.py）。
-# 挂载即导入模型，lifespan 的 init_db create_all 随既有表建出
-# playback_control_commands 新表（部署时须亲验新表已建出）。
-app.include_router(playback_bus_admin.router)
 # 起播事件聚合读口（FMBY #2 闭环接线）：管理端只读口直接调
 # play_events.aggregate_play_start_events，见 play_start_admin.py。
 app.include_router(play_start_admin.router)
 # 管理后台只读观测口（专线 B 第一阶段：补口）：绑定 / 采样进度 / sidecar /
 # 映射 / 139 池，全部 GET，见 backend/api/admin_readonly.py
 app.include_router(admin_readonly_router)
-# 媒体库合集域 L3：管理端 CRUD/规则/刷新/模板 + 用户端架与成员读口。
-# 总闸 COLLECTIONS_ENABLED 默认关，关时本组接口惰性 404，现有路由不动。
-app.include_router(admin_media_sets_router)
-app.include_router(user_media_sets_router)
 # 想看商店求片 R1：登记 + 榜单 + 入库联动（读时同步翻 completed）。
 # 复用 movie_requests / movie_request_votes，不另建表；只受 STORE_ENABLED 总闸 + 会员闸管。
 app.include_router(store_requests_router)

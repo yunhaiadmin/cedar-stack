@@ -1,10 +1,6 @@
 """管理后台 · 只读观测口（专线 B 第一阶段：补口）。
 
-本单新建 5 个 GET 口（总线快照口 + 命令列表口已在
-``backend/emby_server/playback_bus_admin.py`` 存在——
-``GET /api/admin/playback-bus/snapshot`` 包 ``read_snapshot``、
-``GET /api/admin/playback-bus/commands`` 包 ``list_commands``，
-本单不重复建、不改现有路由行为）：
+本单新建以下 GET 口：
 
 - ``GET /api/admin/storage-bindings``：全站绑定列表（按用户 / 状态查）。
 - ``GET /api/admin/providers/sidecar``：sidecar 运行时状态（p115 / yun139）。
