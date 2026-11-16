@@ -6,6 +6,7 @@
  * 底部预留「账号胶囊位」（account 插槽）。无页脚。
  */
 import { computed, onMounted, onUnmounted, ref, type Component } from 'vue'
+import BrandMark from '@/components/BrandMark.vue'
 
 export interface UhdSidebarItem {
   key: string
@@ -52,7 +53,7 @@ function onCollapse() {
   <aside class="uhd-side" :class="{ 'uhd-side--collapsed': collapsedVisual }">
     <div class="uhd-side__head">
       <span class="uhd-side__brand">
-        <span class="uhd-side__logo" aria-hidden="true" />
+        <span class="uhd-side__logo"><BrandMark /></span>
         <span v-if="labelsVisible" class="uhd-side__brand-name">{{ brand ?? 'Aetrix' }}</span>
       </span>
       <button
@@ -115,13 +116,11 @@ function onCollapse() {
   font-weight: var(--uhd-fw-bold);
   color: var(--uhd-l-text);
 }
-/* 彩虹三角 Logo（白名单） */
+/* Aetrix 品牌标（2026-11-16 定版，BrandMark 组件，A 色随当前文字色） */
 .uhd-side__logo {
   width: 20px;
-  height: 18px;
+  height: 20px;
   flex: none;
-  background: var(--uhd-rainbow-conic);
-  clip-path: polygon(50% 0, 100% 100%, 0 100%);
 }
 .uhd-side__collapse {
   width: 26px;

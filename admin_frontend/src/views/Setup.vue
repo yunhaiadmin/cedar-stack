@@ -11,7 +11,8 @@
  */
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { CheckCircle2, Clapperboard, KeyRound, Loader2, Lock, ShieldCheck, User } from 'lucide-vue-next'
+import { CheckCircle2, KeyRound, Loader2, Lock, ShieldCheck, User } from 'lucide-vue-next'
+import BrandMark from '@/components/BrandMark.vue'
 import { createFirstAdmin, setupStatus } from '@/api/admin'
 import { branding, initBranding } from '@/composables/branding'
 
@@ -93,7 +94,7 @@ async function submit() {
       <div class="auth-brand">
         <div class="brand-mark">
           <img v-if="branding.logo_url" :src="branding.logo_url" :alt="branding.site_name" />
-          <Clapperboard v-else :size="22" />
+          <span v-else class="brand-mark__fallback"><BrandMark /></span>
         </div>
         <p class="au-eyebrow brand-eyebrow">初始化向导</p>
         <h1 class="brand-title">{{ branding.site_name }}</h1>
@@ -212,6 +213,14 @@ async function submit() {
   height: 100%;
   object-fit: contain;
   border-radius: inherit;
+}
+
+.brand-mark__fallback {
+  width: 24px;
+  height: 23px;
+  flex: none;
+  /* 品牌标定版口径：深色面上 A 为白色，不随管理端主色染色 */
+  color: #ffffff;
 }
 
 .brand-eyebrow { margin: 0 0 0.375rem; }

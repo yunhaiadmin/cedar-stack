@@ -15,11 +15,11 @@
 import { computed } from 'vue'
 import { branding } from '@/composables/useBranding'
 import UhdWatchPill from './UhdWatchPill.vue'
+import BrandMark from '@/components/BrandMark.vue'
 
 const props = withDefaults(defineProps<{ title?: string }>(), { title: '' })
 
 const barTitle = computed(() => props.title || branding.site_name)
-const brandInitial = computed(() => (branding.site_name.trim().charAt(0) || 'A').toUpperCase())
 </script>
 
 <template>
@@ -31,7 +31,7 @@ const brandInitial = computed(() => (branding.site_name.trim().charAt(0) || 'A')
         :src="branding.logo_url"
         :alt="branding.site_name"
       />
-      <span v-else class="uhd-topbar__mark" aria-hidden="true">{{ brandInitial }}</span>
+      <span v-else class="uhd-topbar__mark"><BrandMark /></span>
       <span class="uhd-topbar__title">{{ barTitle }}</span>
     </div>
     <UhdWatchPill />
@@ -75,9 +75,8 @@ const brandInitial = computed(() => (branding.site_name.trim().charAt(0) || 'A')
   flex: none;
 }
 .uhd-topbar__mark {
-  font-size: 22px;
-  font-weight: var(--uhd-fw-black);
-  line-height: 1;
+  width: 24px;
+  height: 23px;
   flex: none;
 }
 .uhd-topbar__title {

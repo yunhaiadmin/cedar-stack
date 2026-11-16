@@ -7,6 +7,7 @@
  * 数据全部由调用方传入（订阅/资格接口），组件不写死任何数字。
  */
 import UhdChip from './UhdChip.vue'
+import BrandMark from '@/components/BrandMark.vue'
 
 withDefaults(
   defineProps<{
@@ -33,7 +34,7 @@ withDefaults(
           {{ brand }}
           <UhdChip v-if="statusText" variant="member">{{ statusText }}</UhdChip>
         </span>
-        <span class="uhd-member__logo" aria-hidden="true" />
+        <span class="uhd-member__logo"><BrandMark /></span>
       </div>
       <div class="uhd-member__bottom">
         <div class="uhd-member__plan">{{ planName }}</div>
@@ -90,12 +91,11 @@ withDefaults(
   font-weight: var(--uhd-fw-bold);
   color: var(--uhd-l-text);
 }
-/* 彩虹三角 Logo（白名单） */
+/* Aetrix 品牌标（2026-11-16 定版，BrandMark 组件，A 色随当前文字色） */
 .uhd-member__logo {
   width: 24px;
-  height: 22px;
-  background: var(--uhd-rainbow-conic);
-  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  height: 23px;
+  flex: none;
 }
 .uhd-member__bottom { position: relative; }
 .uhd-member__plan {

@@ -42,7 +42,7 @@
                   Aetrix
                   <span class="sv-card__chip"><span class="sv-dot" :class="`sv-dot--${statusTone}`" aria-hidden="true"></span>{{ statusChip }}</span>
                 </span>
-                <span class="sv-card__logo" aria-hidden="true"></span>
+                <span class="sv-card__logo"><BrandMark /></span>
               </div>
               <div class="sv-card__bottom">
                 <div class="sv-card__big">{{ cardBig }}</div>
@@ -170,6 +170,7 @@ import { computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { Activity, ChevronRight, HeartPulse, LibraryBig, ListTodo, MonitorPlay, Tag } from 'lucide-vue-next'
 import { usePanelStore } from '@/stores/panel'
+import BrandMark from '@/components/BrandMark.vue'
 import type { ServerData } from '@/composables/usePanelApi'
 import './server-view.css'
 
@@ -399,9 +400,7 @@ const growthFoot = computed(() => {
 .sv-card__logo {
   flex: none;
   width: 25px;
-  height: 25px;
-  background: var(--uhd-rainbow-conic);
-  clip-path: polygon(50% 8%, 92% 88%, 8% 88%);
+  height: 24px;
 }
 .sv-card__bottom { position: relative; margin-top: auto; padding-top: 48px; }
 .sv-card__big {

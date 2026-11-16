@@ -8,7 +8,8 @@
  */
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Clapperboard, Loader2, Lock, ShieldCheck, User } from 'lucide-vue-next'
+import { Loader2, Lock, ShieldCheck, User } from 'lucide-vue-next'
+import BrandMark from '@/components/BrandMark.vue'
 import { login } from '@/api/admin'
 import { useAuthStore } from '@/stores/auth'
 // 站名与 Logo 来自「站点与品牌」能力（未配置时用默认值）
@@ -54,7 +55,7 @@ async function submit() {
       <div class="auth-brand">
         <div class="brand-mark">
           <img v-if="branding.logo_url" :src="branding.logo_url" :alt="branding.site_name" />
-          <Clapperboard v-else :size="22" />
+          <span v-else class="brand-mark__fallback"><BrandMark /></span>
         </div>
         <h1 class="brand-title">{{ branding.site_name }}</h1>
         <p class="brand-subtitle">运营管理后台 · 仅限管理员账号登录</p>
@@ -143,6 +144,14 @@ async function submit() {
   height: 100%;
   object-fit: contain;
   border-radius: inherit;
+}
+
+.brand-mark__fallback {
+  width: 24px;
+  height: 23px;
+  flex: none;
+  /* 品牌标定版口径：深色面上 A 为白色，不随管理端主色染色 */
+  color: #ffffff;
 }
 
 /* 站名：衬线（base.css 的 h1），字距收进 0.04em 以内，不再 uppercase */

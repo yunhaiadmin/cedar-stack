@@ -14,7 +14,8 @@ import { useUserStore } from '@/stores/user'
 import { useToast } from '@/composables/useToast'
 import { toUserMessage } from '@/utils/toUserMessage'
 import { toastFallback } from '@/constants/toastMessages'
-import { User, Lock, Mail, Eye, EyeOff, Clapperboard, Gift, Send, Menu, Sun, Moon, Fingerprint, ShieldCheck } from 'lucide-vue-next'
+import { User, Lock, Mail, Eye, EyeOff, Gift, Send, Menu, Sun, Moon, Fingerprint, ShieldCheck } from 'lucide-vue-next'
+import BrandMark from '@/components/BrandMark.vue'
 import { useTheme } from '@/composables/useTheme'
 // 站名来自「站点与品牌」能力（未配置时用默认值）
 import { branding } from '@/composables/useBranding'
@@ -395,7 +396,7 @@ onMounted(() => {
     <header class="auth-top">
       <div class="auth-top__brand">
         <img v-if="branding.logo_url" class="auth-top__logo" :src="branding.logo_url" :alt="branding.site_name" />
-        <Clapperboard v-else :size="25" aria-hidden="true" />
+        <span v-else class="auth-top__mark"><BrandMark /></span>
         <span class="auth-top__word">
           <span class="auth-top__name">{{ branding.site_name }}</span>
           <span class="auth-top__sub">SERVICE</span>
@@ -788,6 +789,11 @@ onMounted(() => {
   width: 28px;
   height: 28px;
   object-fit: contain;
+}
+.auth-top__mark {
+  width: 26px;
+  height: 25px;
+  flex: none;
 }
 .auth-top__word {
   display: flex;
