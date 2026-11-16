@@ -758,8 +758,8 @@ html:not([data-theme='light']) .ov-card {
 /* 卡面右上品牌标：占位与原小三角（31px 盒）相当；A 色随卡面——深色卡白 A、浅色粉彩卡深 A */
 .ov-card__mark {
   flex: 0 0 auto;
-  width: 30px;
-  height: 29px;
+  width: 22px;
+  height: 21px;
   margin-left: 6px;
   color: #ffffff;
 }
