@@ -64,7 +64,6 @@ def db():
     s = SessionLocal()
     try:
         for table in (em.UserStorageBinding,
-                      em.Yun139AccountPoolMember, em.Yun139AccountPool,
                       em.MediaItem, base_models.WebUser):
             s.query(table).delete()
         s.commit()
@@ -113,12 +112,11 @@ def authed(client, admin):
 READ_PATHS = [
     "/api/admin/storage-bindings",
     "/api/admin/providers/sidecar",
-    "/api/admin/yun139/pools",
 ]
 
 
 def test_read_paths_require_auth(client):
-    """3 口无鉴权头 → 401/403（与 playback_admin 同口径）。"""
+    """2 口无鉴权头 → 401/403（与 playback_admin 同口径）。"""
     for path in READ_PATHS:
         r = client.get(path)
         assert r.status_code in (401, 403), path
@@ -244,29 +242,3 @@ def test_sidecar_available_via_fake_uds(authed, monkeypatch, uds_sock_dir):
         assert item["error"] is None
     finally:
         server.stop()
-
-
-def test_yun139_pools_members_no_credential_id(db, authed):
-    pool = em.Yun139AccountPool(name="p1", strategy="weighted",
-                                cooldown_seconds=60, max_concurrent=0)
-    db.add(pool)
-    db.commit()
-    db.add(em.Yun139AccountPoolMember(pool_id=pool.id, label="a",
-                                      weight=2, fail_count=3,
-                                      credential_id=None))
-    db.add(em.Yun139AccountPoolMember(pool_id=pool.id, label="b",
-                                      weight=1, fail_count=0,
-                                      credential_id=999))
-    db.commit()
-    r = authed.get("/api/admin/yun139/pools")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["total"] == 1
-    item = body["items"][0]
-    assert item["name"] == "p1"
-    assert item["member_count"] == 2
-    members = {m["label"]: m for m in item["members"]}
-    assert members["a"]["has_credential"] is False
-    assert members["b"]["has_credential"] is True
-    assert members["b"]["fail_count"] == 0
-    assert all("credential_id" not in m for m in item["members"])

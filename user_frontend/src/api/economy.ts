@@ -199,22 +199,12 @@ export interface MyPromotions {
   rewards: PromotionRewardRow[]
 }
 
-// ==================== 兑换码 ====================
-
-export const exchangeApi = {
-  /** 兑换规则与开关（关闭时用户端隐藏核销入口，避免提交后报错） */
-  config: () =>
-    api.get<never, { enabled: boolean; invitee_note?: string }>('/api/user/economy/exchange/config'),
-  redeem: (code: string) =>
-    api.post<never, { success: boolean; reward_type?: string; points?: number; balance?: number; plan_name?: string; days?: number; message: string }>('/api/user/economy/exchange/redeem', { code }),
-}
-
 // ==================== 会员卡码（续期码 / 白名单码） ====================
 
 export interface CodePreview {
   valid: boolean
-  // coupon（v2.10.1）：优惠券与卡码/兑换码共用同一个入口，由后端预检识别来源
-  kind: 'code' | 'invite' | 'exchange' | 'coupon' | 'unknown'
+  // coupon（v2.10.1）：优惠券与卡码共用同一个入口，由后端预检识别来源
+  kind: 'code' | 'invite' | 'coupon' | 'unknown'
   code_type?: number
   type_name?: string
   days?: number
@@ -548,7 +538,7 @@ export interface DiscountCredit {
   discount_pct?: number
   expires_at?: string | null
 }
-/** 兑换码折扣权益：用户核销 discount 型兑换码后获得，订阅下单自动抵扣 */
+/** 折扣权益：用户核销 discount 型卡码后获得，订阅下单自动抵扣 */
 export const discountCreditApi = {
   get: () => api.get<never, DiscountCredit>('/api/user/economy/exchange/discount-credit'),
 }

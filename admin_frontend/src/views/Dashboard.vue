@@ -795,14 +795,6 @@ function serviceRoleLabel(role: string): string {
           tone="accent"
           :hint="`${economy?.orders.pending ?? 0} 笔待支付`"
         />
-        <StatTile
-          to="/codes?tab=exchange"
-          :icon="TicketCheck"
-          label="兑换码"
-          :value="economy?.exchange_codes.used ?? 0"
-          :suffix="`/ ${economy?.exchange_codes.total ?? 0}`"
-          hint="已核销 / 已生成"
-        />
         <StatTile to="/invitations" :icon="Gift" label="邀请关系" :value="economy?.invitations ?? 0" hint="累计成功邀请" />
       </section>
 

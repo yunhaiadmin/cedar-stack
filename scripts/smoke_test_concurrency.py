@@ -2,7 +2,7 @@
 
 这些场景都是「读-判断-写」型逻辑，单线程跑永远是对的，只有真并发才暴露：
 
-1. 单次兑换码被多个请求同时核销 → 只能成功一次（不能发两份奖励）
+1. 单次卡码被多个请求同时核销 → 只能成功一次（不能发两份奖励，见第 7 节）
 2. 同一被邀请人被重复应用邀请码 → 只建立一次关系、邀请人天数奖励只发一次
 3. `client_ip` 不再采信攻击者可控的 `X-Forwarded-For` 首值（限流桶不可伪造）
 4. 优惠券单人限领、卡码核销、订单退款的并发占位（见下文各节）
@@ -37,7 +37,6 @@ from backend.database import SessionLocal, init_db  # noqa: E402
 
 init_db()
 
-from backend.api.economy import redeem_exchange_code  # noqa: E402
 from backend.api.invitation import apply_invitation  # noqa: E402
 from backend.ratelimit import client_ip  # noqa: E402
 
@@ -127,13 +126,6 @@ with SessionLocal() as db:
     db.add(models.SystemConfig(key="promotion_reward_days", value="30"))
     db.commit()
 
-    plan = models.SubscriptionPlan(name="并发冒烟套餐", price=10, duration_days=30, is_active=True)
-    db.add(plan)
-    db.flush()
-    db.add(models.ExchangeCode(
-        code="CC-SINGLE-USE", type="subscription", plan_id=plan.id, duration_days=30,
-        max_uses=1, use_count=0, is_active=True,
-    ))
     inv = models.InvitationCode(code="CCINVITE", user_id=inviter_id, is_active=True, use_count=0)
     db.add(inv)
     db.commit()
@@ -148,48 +140,12 @@ def invite_reward_points(uid: int) -> int:
         return int(row.reward_points or 0) if row else 0
 
 
-# ==================== 1. 单次兑换码并发核销 ====================
-
-def redeem_once(i: int):
-    db = SessionLocal()
-    try:
-        user = db.query(models.WebUser).filter(models.WebUser.id == alice_id).first()
-        from backend.api.economy import RedeemRequest
-
-        return run_async_endpoint(
-            redeem_exchange_code, FakeRequest(), RedeemRequest(code="CC-SINGLE-USE"), user, db
-        )
-    finally:
-        db.close()
-
-
-results = run_parallel(redeem_once, 4)
-oks = [r for r in results if r and r[0]]
-fails = [r for r in results if r and not r[0]]
-
-with SessionLocal() as db:
-    code_row = db.query(models.ExchangeCode).filter(models.ExchangeCode.code == "CC-SINGLE-USE").first()
-    use_count = code_row.use_count
-    is_active = code_row.is_active
-
-check("单次码并发核销：只有 1 个请求成功", len(oks) == 1, f"成功 {len(oks)} / 失败 {len(fails)}")
-bad = [
-    getattr(exc, "status_code", 500)
-    for _, exc in fails
-    if not (isinstance(exc, HTTPException) and exc.status_code in (400, 409))
-]
-check("单次码并发核销：失败方返回 400/409（可重试语义），不是 500", not bad, f"异常状态码={bad}")
 def _membership_days(uid: int) -> int:
     with SessionLocal() as db:
         rows = db.query(models.UserSubscription).filter(
             models.UserSubscription.user_id == uid).all()
         return sum(int((r.end_date - r.start_date).days) for r in rows if r.end_date and r.start_date)
 
-
-check("单次码并发核销：只发了一份会员（30 天）", _membership_days(alice_id) == 30,
-      f"天数={_membership_days(alice_id)}")
-check("单次码并发核销：use_count 恰好为 1", use_count == 1, f"use_count={use_count}")
-check("单次码并发核销：用满后自动停用", is_active is False, f"is_active={is_active}")
 
 # ==================== 4. 邀请关系幂等 ====================
 

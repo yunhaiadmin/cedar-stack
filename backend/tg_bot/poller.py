@@ -30,7 +30,7 @@ HEARTBEAT_STALE_SECONDS = 360
 # /level 指向账号卡（等级详情已并入卡内当前等级行）。
 # 描述统一带场景标签前缀（学 embyboss 命令表）：[群/私聊] = 群里与
 # 私聊都能用（与 command_scopes.GROUP_COMMANDS 逐条一致）；[私聊] =
-# 群里不执行（router private_only / P1 个人查询 / redeem 群内拒执行，
+# 群里不执行（router private_only / P1 个人查询，
 # 这类命令群内只回私聊提示）。
 # 标签只改说明文案、不改任何命令行为；改 router 拦截口径时必须同步
 # 改这里的标签与 GROUP_COMMANDS，有双向断言在
@@ -49,7 +49,6 @@ BOT_COMMANDS: list[tuple[str, str]] = [
     ("requestboard", "[群/私聊] 求片榜"),
     ("rules", "[群/私聊] 群规"),
     ("login", "[私聊] 快捷登录"),
-    ("redeem", "[私聊] 兑换码兑换"),
     ("bindings", "[私聊] 查网盘绑定"),
     ("transfers", "[私聊] 查转存进度"),
     ("whyplay", "[私聊] 为什么播不了"),

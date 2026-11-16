@@ -292,9 +292,6 @@ def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,
 
             text = bot_perms.render_card(db)
             markup = handlers.admin_back_markup()
-    elif action == "renewcode":
-        text = handlers.handle_redeem(db, tg_user, chat_id, "")
-        markup = handlers.back_markup()
     elif action in ("account", "request", "myrequests", "requestboard", "rules", "login", "govlog", "level", "report", "propose", "launch"):
         # 凭据类与求片类仍私聊限定；账号展示（account/level）群里放行
         # （2026-10-28 用户亲定、2026-11-02 重申）：落下面正常渲染分支

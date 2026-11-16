@@ -6,7 +6,6 @@
   （默认 3）挂自毁；
 - 私聊发送点一律不挂自毁；
 - 延时配置为 0 时全不挂；
-- 群内 /redeem 原命令消息走既有即时删除，不再重复挂定时自毁；
 - 匿名说明（#1516 的 ANON_ADMIN_TEXT）发送点同样挂 30 秒自毁；
   用例原以 skipif 守卫，#1516 合并、本分支变基后已激活真跑。
 """
@@ -150,19 +149,6 @@ def test_private_command_no_autodelete(db, wires):
     assert wires["ex"] == []
     assert len(wires["plain"]) == 1
     assert wires["scheduled"] == []
-
-
-# ---------- /redeem 即时删除不重复挂 ----------
-
-def test_group_redeem_immediate_delete_no_timer(db, wires):
-    _make_user(db, "g6", 710007)
-    router.dispatch(db, _msg(710007, GROUP_CHAT, "/redeem ABCD1234",
-                             message_id=4248))
-    # 原命令消息被即时删除，且没有再给它挂 3 秒定时
-    assert wires["deleted"] == [(GROUP_CHAT, 4248)]
-    assert _delays_for(wires, GROUP_CHAT, 4248) == []
-    # 机器人的护码提示照常 30 秒自毁
-    assert _delays_for(wires, GROUP_CHAT, BOT_MSG_ID) == [30]
 
 
 # ---------- ④ 延时为 0 时全不挂 ----------

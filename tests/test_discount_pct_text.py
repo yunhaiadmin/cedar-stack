@@ -79,24 +79,3 @@ def test_registration_discount_code_preview_and_redeem(db):
     result = code_lib.redeem_code(db, u, code.code)
     assert result["success"] is True
     assert "8.5折" in result["message"]
-
-
-def test_exchange_discount_code_preview_and_redeem(db):
-    u = _user(db, "discount_text_user2")
-    ex = models.ExchangeCode(
-        code="EX-DISCOUNT-85",
-        type="discount",
-        discount_pct=85,
-        max_uses=10,
-        use_count=0,
-        is_active=True,
-        expires_at=datetime.now() + timedelta(days=30),
-    )
-    db.add(ex)
-    db.commit()
-
-    preview = code_lib.preview_code(db, ex.code)
-    assert preview["discount_text"] == "8.5折"
-
-    result = E._redeem_exchange_core(db, u, ex.code)
-    assert "8.5折" in result["message"]

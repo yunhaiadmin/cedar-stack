@@ -487,7 +487,7 @@ def generate_codes(
             raise HTTPException(status_code=400, detail="reward_type 非法")
         # 交叉校验「奖励类型 × 面额」：坏卡一旦入库，用户核销时才会失败
         # （见 codes.redeem_code 里的 points<=0 / pct<=0 or pct>=100 判断），
-        # 不如在生成阶段就拦截；口径与 admin.economy_create_exchange_codes 一致。
+        # 不如在生成阶段就拦截。
         if request.reward_type == "points" and request.points_value <= 0:
             raise HTTPException(status_code=400, detail="积分型卡码必须设置积分面额（points_value > 0）")
         if request.reward_type == "discount" and not (1 <= request.discount_pct <= 99):

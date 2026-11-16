@@ -260,7 +260,6 @@ def main_markup(db, web_user, is_private: bool) -> dict:
         {"text": "👥 用户功能", "callback_data": "menu:user"},
         {"text": "🌐 服务器", "callback_data": "menu:server"},
     ])
-    rows.append([{"text": "🎟️ 使用兑换码", "callback_data": "menu:renewcode"}])
     if bool(getattr(web_user, "is_staff", False)):
         rows.append([{"text": "👮 管理", "callback_data": "menu:admin"}])
     return {"inline_keyboard": rows}
@@ -630,38 +629,6 @@ def handle_bind(db, tg_user: dict, chat_id: int, args: str) -> str:
         return _bind_guide_text()
     msg = verify_bind_code(db, int(telegram_id), chat_id, args.strip())
     return msg if msg else "绑定码无效或已过期，请在网页端重新获取绑定码"
-
-
-def handle_redeem(db, tg_user: dict, chat_id: int, args: str) -> str:
-    from backend.api.economy import _redeem_exchange_core
-    from fastapi import HTTPException
-
-    user = resolve(db, int(tg_user.get("id") or 0))
-    if user is None:
-        return _bind_guide_text()
-    # PA-029：停用账号经机器人兑码须拦（与签到门同口径，入口处拦，
-    # 码本身不受影响、仍可由正常账号兑换）。
-    if not getattr(user, "is_active", True):
-        return "账号已被停用"
-    code_str = (args or "").strip()
-    if not code_str:
-        return layout.card(
-            layout.title("兑换码兑换"),
-            [
-                layout.row("🎟️", "使用方法", f"{_cmd('/redeem')} <i>兑换码</i>"),
-                layout.row("💡", "兑换示例", _cmd('/redeem ABCD1234')),
-            ],
-        )
-    try:
-        result = _redeem_exchange_core(db, user, code_str)
-    except HTTPException as e:
-        return html.escape(str(e.detail))
-    except Exception:
-        return "兑换失败，请稍后再试"
-    return layout.card(
-        layout.title("兑换结果"),
-        [layout.row("🎁", "兑换结果", html.escape(str(result.get("message", "兑换成功"))))],
-    )
 
 
 def handle_account(db, tg_user, chat_id, args):

@@ -1,4 +1,4 @@
-"""B2 测试：TG Bot 业务命令（/redeem；/points 已随能量删除摘除、/checkin 已于 2026-11-13 摘除）。"""
+"""B2 测试：TG Bot 业务命令摘除回归（/redeem 已随旧兑换码体系于 2026-11-17 摘除；/points 已随能量删除摘除、/checkin 已于 2026-11-13 摘除）。"""
 from __future__ import annotations
 
 import sys
@@ -24,8 +24,6 @@ def db():
     models.TgBindCode.__table__.create(engine, checkfirst=True)
     # SystemConfig 表（store.get_value 需要）
     models.SystemConfig.__table__.create(engine, checkfirst=True)
-    # B2 业务表
-    models.ExchangeCode.__table__.create(engine, checkfirst=True)
     models.CodeRedemption.__table__.create(engine, checkfirst=True)
     Session = sessionmaker(bind=engine)
     session = Session()
@@ -50,34 +48,6 @@ def _make_user(db, username="u1", tg_id=None, is_welfare=False):
     db.add(u)
     db.commit()
     return u
-
-def test_redeem_unbound(db):
-    text = handlers.handle_redeem(db, {"id": 910003}, 910003, "ANYCODE")
-    assert "/bind" in text
-
-
-def test_redeem_no_args(db):
-    user = _make_user(db, username="u10", tg_id=910010)
-    text = handlers.handle_redeem(db, {"id": 910010}, 910010, "")
-    assert "使用方法" in text
-
-
-def test_redeem_invalid_code(db):
-    user = _make_user(db, username="u11", tg_id=910011)
-    text = handlers.handle_redeem(db, {"id": 910011}, 910011, "NOPE9999")
-    assert "兑换码无效或已过期" in text
-
-
-def test_redeem_points_code_rejected(db):
-    """积分型兑换码已随货币删除下线（2026-11-13）：兑码核心按类型
-    拒绝，机器人原样回错误文案，不发分。"""
-    user = _make_user(db, username="u12", tg_id=910012, is_welfare=True)
-    code = models.ExchangeCode(code="TEST100", type="points", points_value=100, is_active=True, max_uses=1)
-    db.add(code)
-    db.commit()
-    text = handlers.handle_redeem(db, {"id": 910012}, 910012, "test100")
-    assert "兑换码类型不支持" in text
-
 
 def test_checkin_entry_removed(db):
     """签到入口摘除回归钉（2026-11-13 用户亲点）：handler 不存在、
@@ -106,11 +76,35 @@ def test_checkin_entry_removed(db):
     assert not any("签到" in t for t in sent)
 
 
-def test_router_dispatch_redeem_registered(db):
-    """router.commands 包含业务命令（自动享受可配置限流）。"""
+def test_redeem_entry_removed(db):
+    """兑换码命令摘除回归钉（2026-11-17 旧兑换码体系删除）：handler 不存在、
+    /redeem 走未知命令路径，菜单与命令表里都没有它。"""
+    from backend.tg_bot import poller, sender
+    assert not hasattr(handlers, "handle_redeem")
+    assert "redeem" not in {name for name, _ in poller.BOT_COMMANDS}
+    _make_user(db, username="u14", tg_id=910014)
+    update = {
+        "update_id": 14,
+        "message": {
+            "message_id": 14,
+            "from": {"id": 910014, "first_name": "R"},
+            "chat": {"id": 910014, "type": "private"},
+            "text": "/redeem ABCD1234",
+        },
+    }
+    sent = []
+    orig = sender.send_message
+    sender.send_message = lambda db_, chat_id, text, reply_markup=None, **kw: sent.append(text) or (True, None)
+    try:
+        router.dispatch(db, update)
+    finally:
+        sender.send_message = orig
+    assert any("未知命令" in t for t in sent)
+
+
+def test_router_dispatch_rate_limit_per_command(db):
+    """命令限流按命令独立计数（_user_cmd_allow 口径）。"""
     from backend.tg_bot.router import _user_cmd_allow
-    # 间接验证：_user_cmd_allow 对命令生效且互不干扰
-    assert _user_cmd_allow(920001, "/redeem", 3.0) is True
-    assert _user_cmd_allow(920001, "/redeem", 3.0) is False  # 3 秒内重复被限
-    assert _user_cmd_allow(920001, "/bind", 3.0) is True    # 不同命令独立计数
-    assert _user_cmd_allow(920001, "/request", 3.0) is True
+    assert _user_cmd_allow(920001, "/bind", 3.0) is True
+    assert _user_cmd_allow(920001, "/bind", 3.0) is False  # 3 秒内重复被限
+    assert _user_cmd_allow(920001, "/request", 3.0) is True  # 不同命令独立计数

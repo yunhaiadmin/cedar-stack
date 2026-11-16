@@ -127,13 +127,12 @@ def test_main_markup_structure(monkeypatch):
     markup = handlers.main_markup(None, engine_user, True)
     rows = markup["inline_keyboard"]
     assert [b["callback_data"] for b in rows[0]] == ["menu:user", "menu:server"]
-    assert rows[1] == [{"text": "🎟️ 使用兑换码", "callback_data": "menu:renewcode"}]
-    assert len(rows) == 2  # 非管理员无管理行
+    assert len(rows) == 1  # 非管理员无管理行（兑换码按钮已随旧体系于 2026-11-17 摘除）
 
 
-def test_main_markup_no_renewcode_wording(monkeypatch):
-    # 改名守卫（2026-10-30 用户亲点）：核销按钮叫「使用兑换码」，三态主界面
-    # 按钮里不许再出现「续期码」；独立续期功能是另一颗按钮，不在此列。
+def test_main_markup_no_renew_wording(monkeypatch):
+    # 改名守卫（2026-10-30 用户亲点）：三态主界面按钮里不许出现「续期码」
+    # 字样。（原「使用兑换码」按钮已随旧兑换码体系于 2026-11-17 摘除。）
     from backend.tg_bot import login_token
     monkeypatch.setattr(login_token, "build_login_url", lambda db_, user: None)
     engine_user = type("U", (), {"username": "alice", "is_staff": False})()
@@ -144,8 +143,7 @@ def test_main_markup_no_renewcode_wording(monkeypatch):
     ):
         texts = [b["text"] for row in markup["inline_keyboard"] for b in row]
         assert not any("续期码" in t for t in texts)
-    private_rows = handlers.main_markup(None, engine_user, True)["inline_keyboard"]
-    assert private_rows[1] == [{"text": "🎟️ 使用兑换码", "callback_data": "menu:renewcode"}]
+        assert not any("兑换码" in t for t in texts)
 
 
 def test_main_markup_admin_row_and_login_first(monkeypatch):
@@ -312,14 +310,11 @@ def test_callback_user_action_renders_panel(db, monkeypatch):
     assert "用户编号" in state["text"][0]
 
 
-def test_callback_server_and_renewcode_actions(db, monkeypatch):
+def test_callback_server_action(db, monkeypatch):
     _user(db)
     state = _patch_callback_sender(monkeypatch)
     callbacks.handle_callback(db, _cq("server"))
     assert "服务器" in state["text"][0]
-    state["text"].clear()
-    callbacks.handle_callback(db, _cq("renewcode"))
-    assert "兑换码兑换" in state["text"][0]
 
 
 def test_callback_admin_action_staff_only(db, monkeypatch):

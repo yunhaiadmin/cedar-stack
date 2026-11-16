@@ -992,11 +992,6 @@ def _auto_migrate():
         ("emby_people", [
             ("person_tmdb_id", "VARCHAR(32)", "NULL"),
         ]),
-        # P3 兑换码折扣类型：老库补 discount_pct 列（默认 0，老兑换码不受影响）；
-        # 新表 exchange_discount_credits 由 create_all 建，不在此列
-        ("exchange_codes", [
-            ("discount_pct", "INTEGER", "0"),
-        ]),
         # 系统告警（事件型规则）：AlertRule 表扩展事件类型/接收人/冷却列。
         # 老库补列后 event_type/recipients 为 NULL（= legacy 指标型规则，行为不变），
         # cooldown_sec 默认 3600（与模型 default 一致）。

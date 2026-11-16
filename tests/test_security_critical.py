@@ -573,49 +573,14 @@ def economy_client(db, monkeypatch):
         yield c, state
 
 
-def test_h5_exchange_code_once_per_user(db, economy_client):
-    # points 型兑换码已随货币下线：改用 discount 型（每人限一次的核销守卫与类型无关）
-    client, state = economy_client
-    db.add(models.ExchangeCode(code="PROMO100", type="discount", discount_pct=85,
-                               max_uses=100, is_active=True))
-    db.add(models.ExchangeCode(code="UNLIMITED", type="discount", discount_pct=90,
-                               is_active=True))
-    db.commit()
-    db.query(models.ExchangeCode).filter_by(code="UNLIMITED").update({"max_uses": None})
-    db.commit()
-    alice, bob = _user(db, "alice"), _user(db, "bob")
-    for code in ("PROMO100", "UNLIMITED"):
-        state["user"] = alice
-        assert client.post("/api/user/economy/exchange/redeem", json={"code": code}).status_code == 200
-        r = client.post("/api/user/economy/exchange/redeem", json={"code": code})
-        assert r.status_code == 400 and "兑换过" in r.json()["detail"]
-        state["user"] = bob
-        assert client.post("/api/user/economy/exchange/redeem", json={"code": code}).status_code == 200
-    # 每人各领一张折扣权益（alice 两码各一张，bob 同样两张）
-    assert db.query(models.ExchangeDiscountCredit).filter_by(user_id=alice.id).count() == 2
-    assert db.query(models.ExchangeDiscountCredit).filter_by(user_id=bob.id).count() == 2
-    row = db.query(models.ExchangeCode).filter_by(code="PROMO100").one()
-    assert row.use_count == 2
-
-
-def test_h5_legacy_used_by_is_respected(db, economy_client):
-    client, state = economy_client
-    alice = _user(db, "alice")
-    db.add(models.ExchangeCode(code="OLDCODE1", type="points", points_value=10,
-                               max_uses=10, use_count=1, used_by=str(alice.id), is_active=True))
-    db.commit()
-    state["user"] = alice
-    assert client.post("/api/user/economy/exchange/redeem", json={"code": "OLDCODE1"}).status_code == 400
-
-
 def test_h5_db_unique_constraint_blocks_concurrent_duplicate(db):
     """并发兜底：即使绕过预检查，同一 (码, 用户) 第二条核销记录也写不进去"""
     from backend import codes
 
     alice = _user(db, "alice")
-    assert codes.record_redemption(db, codes.REDEMPTION_KIND_EXCHANGE, 7, alice.id)
+    assert codes.record_redemption(db, codes.REDEMPTION_KIND_REG, 7, alice.id)
     db.commit()
-    assert not codes.record_redemption(db, codes.REDEMPTION_KIND_EXCHANGE, 7, alice.id)
+    assert not codes.record_redemption(db, codes.REDEMPTION_KIND_REG, 7, alice.id)
     assert db.query(models.CodeRedemption).count() == 1
 
 

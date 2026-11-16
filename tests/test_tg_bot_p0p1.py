@@ -386,7 +386,7 @@ def test_menu_contains_new_buttons(db, monkeypatch):
     flat = [b["callback_data"] for row in markup["inline_keyboard"] for b in row
             if "callback_data" in b]
     # 主界面改为分类入口：四项查询入口收进用户面板网格，主界面挂分类与整行动作
-    for action in ("menu:user", "menu:server", "menu:renewcode"):
+    for action in ("menu:user", "menu:server"):
         assert action in flat
     panel = handlers.user_panel_markup()
     panel_flat = [b["callback_data"] for row in panel["inline_keyboard"]
