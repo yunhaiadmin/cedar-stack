@@ -29,20 +29,8 @@
           <span class="ov-card__brand">{{ branding.site_name }}</span>
           <!-- 卡上「切换线路」文字入口已删（2026-11-15 照友站 t90 帧）：友站卡面
                右上只有小三角标；线路切换走下方 Emby「服务器地址」行开弹层 -->
-          <svg class="ov-card__play" width="31" height="31" viewBox="0 0 24 24" aria-hidden="true">
-            <defs>
-              <linearGradient id="card-play-g" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stop-color="#2f8fe0" />
-                <stop offset="0.28" stop-color="#6f7ad8" />
-                <stop offset="0.48" stop-color="#c46c90" />
-                <stop offset="0.62" stop-color="#e8766f" />
-                <stop offset="0.76" stop-color="#f2a45a" />
-                <stop offset="0.88" stop-color="#ecd04f" />
-                <stop offset="1" stop-color="#39b3ec" />
-              </linearGradient>
-            </defs>
-            <path d="M7 4.2v15.6c0 .8.9 1.3 1.6.9l11.6-7.8c.6-.4.6-1.3 0-1.7L8.6 3.3C7.9 2.9 7 3.4 7 4.2Z" fill="url(#card-play-g)" />
-          </svg>
+          <!-- 卡面右上品牌标（2026-11-16 用户亲点）：原粉彩小三角换全站统一新标 BrandMark -->
+          <span class="ov-card__mark"><BrandMark /></span>
         </div>
         <div class="ov-card__foot">
           <p class="ov-card__plan">{{ memberPlanName }}</p>
@@ -349,6 +337,7 @@ import {
   type LucideIcon,
 } from 'lucide-vue-next'
 import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
+import BrandMark from '@/components/BrandMark.vue'
 import StatusAlertBar from '@/components/profile/StatusAlertBar.vue'
 import TrafficPurchaseModal from '@/components/profile/TrafficPurchaseModal.vue'
 import {
@@ -766,9 +755,13 @@ html:not([data-theme='light']) .ov-card {
   font-weight: var(--uhd-fw-bold);
   color: #ffffff;
 }
-.ov-card__play {
+/* 卡面右上品牌标：占位与原小三角（31px 盒）相当；A 色随卡面——深色卡白 A、浅色粉彩卡深 A */
+.ov-card__mark {
   flex: 0 0 auto;
-  filter: drop-shadow(0 3px 8px rgba(80, 120, 220, 0.35));
+  width: 30px;
+  height: 29px;
+  margin-left: 6px;
+  color: #ffffff;
 }
 .ov-card__foot {
   position: relative;
@@ -1184,8 +1177,6 @@ html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
   text-overflow: ellipsis;
 }
 
-.ov-card__head .ov-card__play { margin-left: 6px; }
-
 /* 流量圆环卡 */
 .ov-ring-row {
   display: flex;
@@ -1368,6 +1359,7 @@ html[data-theme='light'] .ov-card {
   box-shadow: 0 8px 22px rgba(90, 94, 150, 0.08);
 }
 html[data-theme='light'] .ov-card__brand { color: #111111; }
+html[data-theme='light'] .ov-card__mark { color: #101014; }
 html[data-theme='light'] .ov-card__plan { color: #111111; }
 html[data-theme='light'] .ov-card__user { color: #55575c; }
 html[data-theme='light'] .ov-expiry { color: #55575c; }
@@ -1427,6 +1419,7 @@ html[data-theme='light'] .ov-sub-input::placeholder { color: #9a9da3; }
 /* 兜底回滚块：守卫已不再把本页钉成 light（V4_PATHS 摘除 /game/account）；
    若主题解析与 data-theme 出现竞态不一致，用户选深色时由 .ov-dark 类回滚为深色 */
 html[data-theme='light'] .ov-page.ov-dark .ov-card__brand { color: #ffffff; }
+html[data-theme='light'] .ov-page.ov-dark .ov-card__mark { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-card__plan { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-card__user { color: rgba(255, 255, 255, 0.55); }
 html[data-theme='light'] .ov-page.ov-dark .ov-switch { background: rgba(255, 255, 255, 0.18); }
