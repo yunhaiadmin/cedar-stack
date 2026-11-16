@@ -157,7 +157,7 @@ async function copyUserId() {
 
 const groups = computed<MenuGroup[]>(() => {
   // 2026-11-13 细节对齐（用户圈图亲点）：分组与条目顺序照友站「我的」——
-  // 订阅与财务（订阅服务/订阅记录/钱包）、账户（账号安全/邀请好友/团队管理）、
+  // 订阅与财务（订阅服务/订阅记录/钱包）、账户（账号安全/邀请好友）、
   // 帮助（求片反馈/安装应用/线路测速/使用说明）。「我的订阅」页已随 2026-11-14
   // 删除单整页删除，原财务组末尾位置改放钱包行。
   const finance: MenuItem[] = [
@@ -179,7 +179,6 @@ const groups = computed<MenuGroup[]>(() => {
   const account: MenuItem[] = [
     { key: 'settings', label: '账号安全', to: '/game/account/settings' },
     { key: 'invite', label: '邀请好友', to: '/game/account/invite' },
-    { key: 'team', label: '团队管理', to: '/game/account/team' },
   ]
   if (isAgent.value) {
     account.push({ key: 'agent', label: '代理中心', to: '/game/agent' })

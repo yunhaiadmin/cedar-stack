@@ -953,7 +953,6 @@ export interface RealmSubscriptionsResponse extends SubscriptionOverview {
 
 export interface EconomyOverview {
   orders: { pending: number; revenue: number }
-  exchange_codes: { total: number; used: number }
   invitations: number
 }
 
@@ -1494,36 +1493,6 @@ export interface SidecarProviderStatus {
 
 export interface SidecarStatusResponse {
   providers: SidecarProviderStatus[]
-}
-
-/** 139 账号池成员（只出 has_credential，绝不含凭据） */
-export interface Yun139PoolMember {
-  id: number
-  label: string | null
-  weight: number
-  fail_count: number
-  cooldown_until: string | null
-  has_credential: boolean
-  created_at: string | null
-}
-
-/** 139 账号池（GET /api/admin/yun139/pools） */
-export interface Yun139Pool {
-  id: number
-  name: string
-  strategy: string
-  cooldown_seconds: number
-  max_concurrent: number
-  created_at: string | null
-  member_count: number
-  members: Yun139PoolMember[]
-}
-
-export interface Yun139PoolsResponse {
-  items: Yun139Pool[]
-  total: number
-  limit: number
-  offset: number
 }
 
 /** 播放快照里的进行中会话（GET /api/admin/playback-bus/snapshot；无快照时后端回 404） */

@@ -30,10 +30,10 @@ const routes: RouteRecordRaw[] = [
       { path: 'subscriptions', name: 'Subscriptions', component: () => import('@/views/Subscriptions.vue'), meta: { title: '订阅与权益' } },
       { path: 'goods', name: 'Goods', component: () => import('@/views/Goods.vue'), meta: { title: '订阅套餐' } },
       { path: 'orders', name: 'Orders', component: () => import('@/views/Orders.vue'), meta: { title: '订单' } },
-      // 会员卡码 / 兑换码已并入「码管理」（Codes.vue 两个标签页）：旧地址跳到对应标签，收藏不会落到仪表盘
-      { path: 'exchange-codes', redirect: { path: '/codes', query: { tab: 'exchange' } } },
-      { path: 'registration-codes', redirect: { path: '/codes', query: { tab: 'reg' } } },
-      // 优惠券（v2.10.0）：与兑换码分工不同——兑换码不花钱拿东西，优惠券是付费时抵扣
+      // 会员卡码在「码管理」（Codes.vue）：旧地址跳过去，收藏不会落到仪表盘
+      { path: 'exchange-codes', redirect: '/codes' },
+      { path: 'registration-codes', redirect: '/codes' },
+      // 优惠券（v2.10.0）：与卡码分工不同——卡码不花钱拿东西，优惠券是付费时抵扣
       { path: 'coupons', name: 'Coupons', component: () => import('@/views/Coupons.vue'), meta: { title: '优惠券' } },
       { path: 'invitations', name: 'Invitations', component: () => import('@/views/Invitations.vue'), meta: { title: '邀请管理' } },
       { path: 'codes', name: 'Codes', component: () => import('@/views/Codes.vue'), meta: { title: '码管理' } },
@@ -59,8 +59,6 @@ const routes: RouteRecordRaw[] = [
       // 代理分销（2026-11-06 完整版）：等级 / 指定 / 余额 / 统计一页三标签
       { path: 'agents', name: 'Agents', component: () => import('@/views/Agents.vue'), meta: { title: '代理分销' } },
       { path: 'wallet', name: 'WalletAdmin', component: () => import('@/views/WalletAdmin.vue'), meta: { title: '钱包管理' } },
-      // 团队套餐申请审核（2026-11-13）：用户端团队页提交的意向单在这里通过/驳回，团队配置同页可改
-      { path: 'team-applications', name: 'TeamApplications', component: () => import('@/views/TeamApplications.vue'), meta: { title: '团队申请' } },
       { path: 'emby', name: 'EmbyAdmin', component: () => import('@/views/EmbyAdmin.vue'), meta: { title: '媒体库' } },
       { path: 'media-library', name: 'MediaLibraryAdmin', component: () => import('@/views/MediaLibraryAdmin.vue'), meta: { title: '图片与顺序' } },
       // 合集管理：不占导航位置（见 Layout.vue OFF_NAV_GROUP，归属“媒体”分组），入口在媒体库页
@@ -76,10 +74,9 @@ const routes: RouteRecordRaw[] = [
       { path: 'pool', name: 'PoolAdmin', component: () => import('@/views/PoolAdmin.vue'), meta: { title: '贡献池' } },
       // 双盘审计台账已并入「操作日志」页的双盘审计标签（Logs.vue ?tab=audit）：旧地址跳到对应标签，收藏不会 404
       { path: 'audit', redirect: { path: '/logs', query: { tab: 'audit' } } },
-      // 原「上游源」页的三个观测标签（存储绑定 / 139 账号池 / sidecar）：
-      // 上游源页已随上游全清删除，三页恢复独立路由（地址不变）。
+      // 原「上游源」页的观测标签（存储绑定 / sidecar）：
+      // 上游源页已随上游全清删除，两页恢复独立路由（地址不变）。
       { path: 'storage-bindings', name: 'StorageBindings', component: () => import('@/views/StorageBindings.vue'), meta: { title: '存储绑定' } },
-      { path: 'yun139-pools', name: 'Yun139Pools', component: () => import('@/views/Yun139Pools.vue'), meta: { title: '139 账号池' } },
       { path: 'provider-sidecar', name: 'ProviderSidecar', component: () => import('@/views/ProviderSidecar.vue'), meta: { title: '观测·sidecar' } },
       // 「存储来源」独立页已于 v2.42.15 撒销：挂载建在「添加服务器」弹窗里（按服务器配置），
       // 目录浏览 / 体检 / 编辑都已搬过去。旧地址跳到服务器页，别人的书签不至于 404。

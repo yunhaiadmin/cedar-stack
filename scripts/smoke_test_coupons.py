@@ -622,17 +622,17 @@ check("建券 / 改券 / 删券 / 开关都写了审计",
       str(sorted(set(actions))))
 
 # ==================== 9. 统一核销入口（v2.10.1） ====================
-# 钱包页此前是「卡码 · 兑换码」+「优惠码」两个入口上下并列，同一页两个
+# 钱包页此前是「卡码」+「优惠码」两个入口上下并列，同一页两个
 # 「输入码 → 应用」的面板。现在只有一个入口，靠预检区分来源——这里守的就是
-# 「四种码都能被认出来」与「旧入口的过期指引不会再回来」。
+# 「各种码都能被认出来」与「旧入口的过期指引不会再回来」。
+# （旧兑换码 kind=exchange 已随旧体系于 2026-11-17 删除。）
 
-print("\n--- 统一核销入口：一个输入框认四种码 ---")
+print("\n--- 统一核销入口：一个输入框认各种码 ---")
 
 with SessionLocal() as db:
     db.add(models.CouponCode(code="STOPPED10", kind="all", discount_type="percent",
                              value=90, is_active=False))
-    db.add(models.ExchangeCode(code="EXCH100", type="subscription", plan_id=pkg_id,
-                               duration_days=30, max_uses=1, is_active=True))
+    db.add(models.InvitationCode(code="INVSMOKE1", user_id=buyer_id, is_active=True))
     db.add(models.RegistrationCode(code="REG-SMOKE1", code_type=1, days=30,
                                    max_uses=1, is_active=True))
     db.commit()
@@ -658,10 +658,9 @@ pv = preview_code("STOPPED10")
 check("停用的券在预检里就说清原因",
       pv["kind"] == "coupon" and pv["valid"] is False and "停用" in pv["message"], str(pv))
 
-pv = preview_code("EXCH100")
-check("兑换码走同一个入口（kind=exchange）", pv["kind"] == "exchange", str(pv))
-check("兑换码的指引不再指向已经收掉的「钱包 → 兑换码」",
-      "钱包" not in pv["message"] and "使用" in pv["message"], pv["message"])
+pv = preview_code("INVSMOKE1")
+check("邀请码走同一个入口（kind=invite，指引去注册页）",
+      pv["kind"] == "invite" and "注册页" in pv["message"], str(pv))
 
 pv = preview_code("REG-SMOKE1")
 # 注册码已于 2026-11-15 整体下线：统一入口仍识别卡码（类型与天数

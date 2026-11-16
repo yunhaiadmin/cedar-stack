@@ -50,10 +50,9 @@ ADMIN_ONLY_COMMANDS: frozenset[str] = frozenset({
 
 # 群内可执行命令（不带斜杠）：逐条对 router.dispatch 的现行群内拦截口径——
 # 不在 private_only、不在 _P1_COMMANDS、且不被群内专门拒执行。
-# 排除项（16)：private_only 11 (request/myrequests/login/renew/govlog/
+# 排除项（15)：private_only 11 (request/myrequests/login/renew/govlog/
 # report/propose/launch/reconcile/rankpush/playrank) + P1 私人查询 4 (bindings/
-# transfers/whyplay/wants) + redeem（群内拒执行：删原消息并回私聊
-# 提示）。
+# transfers/whyplay/wants)。
 # me/account/level（账号展示一家，指向同一张账号卡）在群里放行
 # （2026-10-28 用户亲定、2026-11-02 重申），在下面集合里；其中
 # account/level 是手输别名、不在 BOT_COMMANDS 菜单表，群菜单实际

@@ -1,4 +1,4 @@
-"""P0-2 回归测试：兑换码/卡码"已使用禁删"检查与删除必须是原子的。
+"""P0-2 回归测试：卡码"已使用禁删"检查与删除必须是原子的。
 
 背景：此前两处删除都是先查 use_count 再按主键删，检查与删除之间无锁无约束。
 并发兑换可在检查之后提交使用次数，删除仍按主键执行，删掉已使用记录及其痕迹。
@@ -83,70 +83,11 @@ def _bearer(user) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _exchange_code(db, code="TEST-CODE-001", use_count=0):
-    c = models.ExchangeCode(code=code, use_count=use_count, is_active=True,
-                            type="points", points_value=10)
-    db.add(c)
-    db.commit()
-    return c
-
-
 def _reg_code(db, code="REG-CODE-001", use_count=0):
     c = models.RegistrationCode(code=code, use_count=use_count, is_active=True)
     db.add(c)
     db.commit()
     return c
-
-
-# ===========================================================================
-# 兑换码删除
-# ===========================================================================
-
-def test_delete_unused_exchange_code_ok(db, admin_client):
-    admin = _admin(db)
-    c = _exchange_code(db, use_count=0)
-    code_id = c.id
-
-    r = admin_client.delete(f"/api/admin/economy/exchange-codes/{code_id}",
-                            headers=_bearer(admin))
-    assert r.status_code == 200, r.text
-    assert db.query(models.ExchangeCode).filter_by(id=code_id).first() is None
-
-
-def test_delete_nonexistent_exchange_code_404(db, admin_client):
-    admin = _admin(db)
-    r = admin_client.delete("/api/admin/economy/exchange-codes/999999",
-                            headers=_bearer(admin))
-    assert r.status_code == 404, r.text
-
-
-def test_delete_used_exchange_code_rejected(db, admin_client):
-    admin = _admin(db)
-    c = _exchange_code(db, use_count=3)
-
-    r = admin_client.delete(f"/api/admin/economy/exchange-codes/{c.id}",
-                            headers=_bearer(admin))
-    assert r.status_code == 400, r.text
-    # 记录必须还在
-    assert db.query(models.ExchangeCode).filter_by(id=c.id).first() is not None
-
-
-def test_delete_exchange_code_atomicity(db, admin_client):
-    """模拟并发：在删除的 WHERE 条件里 use_count 已 > 0，必须删不掉。"""
-    admin = _admin(db)
-    c = _exchange_code(db, use_count=0)
-
-    # 模拟"检查之后、删除之前"有并发兑换提交了使用次数
-    db.query(models.ExchangeCode).filter_by(id=c.id).update(
-        {models.ExchangeCode.use_count: 1}, synchronize_session=False)
-    db.commit()
-
-    # 此时走删除接口：原子条件 DELETE 必须 0 行 → 400，且记录保留
-    r = admin_client.delete(f"/api/admin/economy/exchange-codes/{c.id}",
-                            headers=_bearer(admin))
-    assert r.status_code == 400, r.text
-    row = db.query(models.ExchangeCode).filter_by(id=c.id).first()
-    assert row is not None and row.use_count == 1
 
 
 # ===========================================================================
@@ -247,15 +188,15 @@ def _concurrent_client():
 
 
 def test_concurrent_double_delete_single_winner():
-    """真并发：8 线程同时删除同一个未使用兑换码，恰好一个成功，无 5xx。"""
+    """真并发：8 线程同时删除同一个未使用卡码，恰好一个成功，无 5xx。"""
     client, engine = _concurrent_client()
     Session = sessionmaker(bind=engine, expire_on_commit=False)
 
     db = Session()
     admin = _admin(db)
     headers = _bearer(admin)
-    code = models.ExchangeCode(code="CONC-DOUBLE-DELETE", use_count=0, is_active=True,
-                               type="points", points_value=10)
+    code = models.RegistrationCode(code="CONC-DOUBLE-DELETE", use_count=0,
+                                   is_active=True)
     db.add(code)
     db.flush()
     code_id = code.id
@@ -270,7 +211,7 @@ def test_concurrent_double_delete_single_winner():
     def worker():
         try:
             barrier.wait()  # 同步起跑，挤进同一个竞态窗口
-            resp = client.delete(f"/api/admin/economy/exchange-codes/{code_id}",
+            resp = client.delete(f"/api/admin/registration-codes/{code_id}",
                                  headers=headers)
             with lock:
                 statuses.append(resp.status_code)
@@ -292,7 +233,7 @@ def test_concurrent_double_delete_single_winner():
 
     db = Session()
     try:
-        assert db.query(models.ExchangeCode).filter_by(id=code_id).first() is None
+        assert db.query(models.RegistrationCode).filter_by(id=code_id).first() is None
     finally:
         db.close()
 
@@ -313,8 +254,8 @@ def test_concurrent_use_vs_delete_never_deletes_used():
 
     for round_no in range(25):
         db = Session()
-        code = models.ExchangeCode(code=f"CONC-USE-DEL-{round_no}", use_count=0,
-                                   is_active=True, type="points", points_value=10)
+        code = models.RegistrationCode(code=f"CONC-USE-DEL-{round_no}",
+                                   use_count=0, is_active=True)
         db.add(code)
         db.flush()
         code_id = code.id
@@ -337,7 +278,7 @@ def test_concurrent_use_vs_delete_never_deletes_used():
                 s = Session()
                 try:
                     res = s.execute(
-                        text("UPDATE exchange_codes SET use_count = use_count + 1 "
+                        text("UPDATE registration_codes SET use_count = use_count + 1 "
                              "WHERE id = :id"),
                         {"id": code_id},
                     )
@@ -356,7 +297,7 @@ def test_concurrent_use_vs_delete_never_deletes_used():
                 barrier.wait()
                 if slow_side == "delete":
                     time.sleep(0.03)
-                resp = client.delete(f"/api/admin/economy/exchange-codes/{code_id}",
+                resp = client.delete(f"/api/admin/registration-codes/{code_id}",
                                      headers=headers)
                 with lock:
                     results["delete_status"] = resp.status_code

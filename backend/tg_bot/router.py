@@ -161,9 +161,8 @@ def _send_ephemeral_reply(db, chat_id, text, reply_markup, receiver_tg_id, *,
 def _schedule_cmd_autodelete(db, chat_id, message_id):
     """群聊里用户命令消息本体挂 3 秒自毁（bot_cmd_autodelete_seconds）。
 
-    延时为 0（关闭）时不挂。群内 /redeem 的原命令消息走既有即时删除、
-    不经这里；万一某条消息已被即时删除又被挂上定时，到期删除失败也
-    只在 ephemeral 内记一条日志，不外抛、不刷屏。
+    延时为 0（关闭）时不挂。万一某条消息已被删除又被挂上定时，
+    到期删除失败也只在 ephemeral 内记一条日志，不外抛、不刷屏。
     """
     if not chat_id or not message_id:
         return
@@ -175,22 +174,19 @@ def _schedule_cmd_autodelete(db, chat_id, message_id):
     ephemeral.schedule_delete(chat_id, message_id, delay)
 
 
-def _reply_private_only(db, chat_id, msg, *, schedule_cmd: bool = True):
+def _reply_private_only(db, chat_id, msg):
     """私聊命令在群里被调用的统一回复：提示卡＋去私聊跳转按钮。
 
-    所有私聊命令（private_only 集、P1 个人查询、群内 /redeem）共用
-    这一种形态：handlers.private_only_card 文案＋private_only_markup
-    深链按钮；回复按群面自毁口径发送，命令消息本体挂 3 秒自毁。
-    /redeem 的原消息已即时删除（护码），不再重复挂定时
-    （schedule_cmd=False）。
+    所有私聊命令（private_only 集、P1 个人查询）共用这一种形态：
+    handlers.private_only_card 文案＋private_only_markup 深链按钮；
+    回复按群面自毁口径发送，命令消息本体挂 3 秒自毁。
     """
     from backend.tg_bot import handlers
 
     _send_reply(db, chat_id, handlers.private_only_card(),
                 reply_markup=handlers.private_only_markup(db),
                 autodelete=True)
-    if schedule_cmd:
-        _schedule_cmd_autodelete(db, chat_id, msg.get("message_id"))
+    _schedule_cmd_autodelete(db, chat_id, msg.get("message_id"))
 
 
 # P1 自助查询命令：个人数据，群聊里不执行（handler 层另有私聊 guard 双保险）
@@ -215,7 +211,6 @@ _IDENTITY_COMMANDS = {
     "/start", "/bind",
     "/account", "/me", "/request", "/myrequests", "/login", "/renew",
     "/govlog", "/level", "/report", "/propose", "/launch",
-    "/redeem",
     "/bindings", "/transfers", "/whyplay", "/wants", "/reconcile",
     "/rankpush", "/playrank",
     "/kk",
@@ -512,7 +507,6 @@ def dispatch(db, update: dict) -> None:
             "/rules": handlers.handle_rules,
             "/login": handlers.handle_login,
             "/renew": handlers.handle_login,
-            "/redeem": handlers.handle_redeem,
             "/bindings": handlers.handle_bindings,
             "/transfers": handlers.handle_transfers,
             "/whyplay": handlers.handle_whyplay,
@@ -530,13 +524,7 @@ def dispatch(db, update: dict) -> None:
 
         # 匿名管理员拦截：需要身份的命令统一回匿名说明，不许落进
         # handler 被 resolve→None 误回绑定指引（对方其实早已绑定）。
-        # 唯一例外：群内 /redeem 的删消息护码分支在下方先于 handler
-        # 执行、给的是私聊提示而非绑定指引，匿名发继续走它不拦。
-        if (
-            _is_anonymous_admin(msg)
-            and cmd in _IDENTITY_COMMANDS
-            and not (cmd == "/redeem" and in_group)
-        ):
+        if _is_anonymous_admin(msg) and cmd in _IDENTITY_COMMANDS:
             _send_reply(db, chat_id, ANON_ADMIN_TEXT, autodelete=True)
             return
 
@@ -560,23 +548,13 @@ def dispatch(db, update: dict) -> None:
             _reply_private_only(db, chat_id, msg)
             return
 
-        # /redeem 在群里发 = 把兑换码公开给全群：拒绝执行，尽量删掉原消息（没权限就算了），再回统一私聊提示
-        if cmd == "/redeem" and in_group:
-            try:
-                sender.delete_message(db, chat_id, msg.get("message_id"))
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("删除群内 /redeem 消息失败（忽略）: %s", exc)
-            if _group_allow(chat_id, group_limit):
-                _reply_private_only(db, chat_id, msg, schedule_cmd=False)
-            return
-
         # 群级限流：超限静默丢弃，避免刷屏
         if in_group and not _group_allow(chat_id, group_limit):
             return
 
         # 用户命令消息 3 秒自毁：命令已识别、已过群白名单与群级限流，
-        # 在此统一定时删除（私聊不挂；/redeem 即时删除分支已先行返回，
-        # 私聊限定/P1 拦截分支在各自回复处已单独挂过，不重复）
+        # 在此统一定时删除（私聊不挂；私聊限定/P1 拦截分支在各自
+        # 回复处已单独挂过，不重复）
         if in_group:
             _schedule_cmd_autodelete(db, chat_id, msg.get("message_id"))
 

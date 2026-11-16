@@ -60,7 +60,6 @@ import type {
   PlaybackBusSnapshot,
   SidecarStatusResponse,
   StorageBindingsResponse,
-  Yun139PoolsResponse,
 } from '@/types'
 
 // ==================== 认证 =============
@@ -2411,10 +2410,6 @@ export const fetchStorageBindings = (params: {
 /** sidecar 状态：不传 provider 查 p115 + yun139 两个，传了只查该个 */
 export const fetchSidecarStatus = (provider?: string) =>
   get<SidecarStatusResponse>('/providers/sidecar', provider ? { provider } : undefined)
-
-/** 139 账号池列表（含成员；成员只出 has_credential），limit/offset 分页 */
-export const fetchYun139Pools = (params: { limit?: number; offset?: number } = {}) =>
-  get<Yun139PoolsResponse>('/yun139/pools', params)
 
 /** 播放快照：无快照时后端回 404，调用方须按空状态处理、不当错误页 */
 export const fetchPlaybackBusSnapshot = () => get<PlaybackBusSnapshot>('/playback-bus/snapshot')

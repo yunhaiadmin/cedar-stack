@@ -414,10 +414,6 @@ def test_sub_account_economy_endpoints_forbidden(db):
                        headers=headers,
                        json={"kind": "subscription", "item_id": 1})
     assert resp.status_code == 403
-    # 兑换码核销
-    resp = client.post("/api/user/economy/exchange/redeem",
-                       headers=headers, json={"code": "XXXX"})
-    assert resp.status_code == 403
     # 购流量（余额购买）
     resp = client.post("/api/user/traffic/buy-balance",
                        headers=headers,

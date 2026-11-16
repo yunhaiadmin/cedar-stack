@@ -992,11 +992,6 @@ def _auto_migrate():
         ("emby_people", [
             ("person_tmdb_id", "VARCHAR(32)", "NULL"),
         ]),
-        # P3 兑换码折扣类型：老库补 discount_pct 列（默认 0，老兑换码不受影响）；
-        # 新表 exchange_discount_credits 由 create_all 建，不在此列
-        ("exchange_codes", [
-            ("discount_pct", "INTEGER", "0"),
-        ]),
         # 系统告警（事件型规则）：AlertRule 表扩展事件类型/接收人/冷却列。
         # 老库补列后 event_type/recipients 为 NULL（= legacy 指标型规则，行为不变），
         # cooldown_sec 默认 3600（与模型 default 一致）。
@@ -1835,6 +1830,13 @@ def _migrate_exchange_discount_credit_fk(existing_tables: set) -> None:
 
     幂等：指向 exchange_codes 的 FK 已不存在且列已可空时直接返回；
     SQLite 跳过（不强制 FK，0 本来就能写；NOT NULL 由 0 满足）。
+
+    2026-11-17（B2 删除旧兑换码）：ExchangeCode 模型已摘，create_all
+    不再建 exchange_codes——新库上 ``'exchange_codes'::regclass``
+    直接报 UndefinedTable，init_db 在 PG 冒烟 [1] 步崩（CI run
+    43911692570）。去外键段只在 exchange_codes 表仍在库里时才跑
+    （表不在就不存在指向它的 FK，没东西可删）；放宽 NOT NULL 段走
+    information_schema、不碰该表，新旧库都照常跑。
     """
     from sqlalchemy import text
 
@@ -1844,19 +1846,20 @@ def _migrate_exchange_discount_credit_fk(existing_tables: set) -> None:
         return
 
     with engine.begin() as conn:
-        fks = conn.execute(text(
-            "SELECT conname FROM pg_constraint "
-            "WHERE conrelid='exchange_discount_credits'::regclass AND contype='f' "
-            "AND confrelid='exchange_codes'::regclass "
-            "AND 'exchange_code_id' = ANY (SELECT attname FROM pg_attribute "
-            "WHERE attrelid=conrelid AND attnum = ANY (conkey))"
-        )).fetchall()
-        for (conname,) in fks:
-            safe = conname.replace('"', '""')
-            conn.execute(text(
-                f'ALTER TABLE exchange_discount_credits DROP CONSTRAINT "{safe}"'
-            ))
-            logger.info(f"  🔧 已迁移: exchange_discount_credits 去外键 {safe}")
+        if "exchange_codes" in existing_tables:
+            fks = conn.execute(text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conrelid='exchange_discount_credits'::regclass AND contype='f' "
+                "AND confrelid='exchange_codes'::regclass "
+                "AND 'exchange_code_id' = ANY (SELECT attname FROM pg_attribute "
+                "WHERE attrelid=conrelid AND attnum = ANY (conkey))"
+            )).fetchall()
+            for (conname,) in fks:
+                safe = conname.replace('"', '""')
+                conn.execute(text(
+                    f'ALTER TABLE exchange_discount_credits DROP CONSTRAINT "{safe}"'
+                ))
+                logger.info(f"  🔧 已迁移: exchange_discount_credits 去外键 {safe}")
         is_nullable = conn.execute(text(
             "SELECT is_nullable FROM information_schema.columns "
             "WHERE table_name='exchange_discount_credits' "

@@ -672,11 +672,6 @@ def economy_stats(
     return {
         "orders": {"pending": pending_sub,
                    "revenue": round(float(paid_sub), 2)},
-        "exchange_codes": {
-            "total": db.query(models.ExchangeCode).count(),
-            "used": db.query(models.ExchangeCode).filter(
-                models.ExchangeCode.use_count > 0).count(),
-        },
         "invitations": db.query(models.InvitationRecord).count(),
     }
 

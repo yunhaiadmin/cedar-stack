@@ -179,7 +179,6 @@ const navGroups: NavGroup[] = [
       { path: '/invitations', label: '邀请管理', icon: UserPlus },
       { path: '/agents', label: '代理分销', icon: HandCoins },
       { path: '/wallet', label: '钱包管理', icon: Wallet },
-      { path: '/team-applications', label: '团队申请', icon: Users },
       { path: '/codes', label: '码管理', icon: KeySquare },
     ],
   },
@@ -212,10 +211,9 @@ const navGroups: NavGroup[] = [
       { path: '/identify-review', label: '识别审查', icon: ListChecks },
       // 缺集清单：哪部剧缺哪几集、缺了多久、几个人在求补
       { path: '/missing-episodes', label: '缺集清单', icon: ListChecks },
-      // 存储绑定 / 139 账号池 / sidecar 观测：原「上游源」页的三个标签页，
+      // 存储绑定 / sidecar 观测：原「上游源」页的标签页，
       // 上游源随上游全清删除后恢复独立入口（批 3 合并入上游源页的布局随之撤销）
       { path: '/storage-bindings', label: '存储绑定', icon: Database },
-      { path: '/yun139-pools', label: '139 账号池', icon: Users },
       { path: '/provider-sidecar', label: '观测·sidecar', icon: Activity },
       // 贡献池：用户贡献盘组成的公共缓存池，成员生命周期管理（goal-33 PR-4）
       { path: '/pool', label: '贡献池', icon: Users },

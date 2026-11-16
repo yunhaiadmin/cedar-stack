@@ -1,7 +1,7 @@
-"""经济系统冒烟测试（货币下线后）：邀请关系 → 兑换码 → 支付订单 → 能量码拒绝
+"""经济系统冒烟测试（货币下线后）：邀请关系 → 卡码 → 支付订单 → 能量码拒绝
 
 2026-11-13 能量/积分/活力货币下线后，本冒烟只验仍存活的链路：
-邀请只落关系（推广天数奖励仍发）、兑换码订阅/折扣核销、易支付签名、
+邀请只落关系（推广天数奖励仍发）、卡码续期/折扣核销、易支付签名、
 订阅订单履约发订阅、历史充值单履约显性失败、能量型卡码拒绝核销。
 直接调用函数级逻辑（不启动 HTTP 服务）。
 """
@@ -19,7 +19,7 @@ from backend.database import SessionLocal, init_db
 from backend import models
 from backend.security import hash_password
 from backend.api.economy import (
-    _fulfill_order, _grant_subscription, _redeem_exchange_core,
+    _fulfill_order, _grant_subscription,
     _yipay_sign, _verify_yipay_notify, FulfillmentError, send_fulfill_notifications,
 )
 from backend.api.invitation import apply_invitation, _generate_invite_code
@@ -80,43 +80,40 @@ def main():
     check("邀请人获得推广天数奖励（7 天订阅）",
           inviter_sub is not None and inviter_sub.end_date > now)
 
-    # ---- 2. 兑换码（订阅型 + 折扣型 + 能量型拒绝） ----
-    print("\n[2] 兑换码")
+    # ---- 2. 卡码（续期型 + 折扣型） ----
+    # （旧兑换码体系已于 2026-11-17 删除，本节改走现行卡码核销链
+    # codes.redeem_code；能量型拒绝在第 4 节按卡码口径覆盖。）
+    print("\n[2] 卡码")
     plan = models.SubscriptionPlan(name=f"smoke_plan_{suffix}", price=Decimal("19.90"),
                                    duration_days=30)
     db.add(plan)
     db.commit()
     db.refresh(plan)
 
-    ex_sub = models.ExchangeCode(code="SMOKESUB" + suffix[-4:], type="subscription",
-                                 plan_id=plan.id, duration_days=15)
-    ex_disc = models.ExchangeCode(code="SMOKEDISC" + suffix[-4:], type="discount",
-                                  discount_pct=20)
-    ex_pts = models.ExchangeCode(code="SMOKEPT" + suffix[-4:], type="points", points_value=88)
-    db.add_all([ex_sub, ex_disc, ex_pts])
+    ex_sub = models.RegistrationCode(code="SMOKESUB" + suffix[-4:], code_type=2,
+                                     days=15, max_uses=10, use_count=0,
+                                     is_active=True,
+                                     expires_at=now + timedelta(days=30))
+    ex_disc = models.RegistrationCode(code="SMOKEDISC" + suffix[-4:], code_type=2,
+                                      days=30, reward_type="discount", discount_pct=80,
+                                      max_uses=10, use_count=0, is_active=True,
+                                      expires_at=now + timedelta(days=30))
+    db.add_all([ex_sub, ex_disc])
     db.commit()
 
-    res = _redeem_exchange_core(db, u2, ex_sub.code)
+    res = redeem_registration_code(db, u2, ex_sub.code)
+    db.commit()
     db.refresh(u2)
     sub = db.query(models.UserSubscription).filter(
         models.UserSubscription.user_id == u2.id,
         models.UserSubscription.status == "active").first()
-    check("订阅型兑换发放", res.get("success") is True and sub is not None and sub.end_date > now)
+    check("续期卡码发放订阅", res.get("success") is True and sub is not None and sub.end_date > now)
 
-    res = _redeem_exchange_core(db, u2, ex_disc.code)
+    res = redeem_registration_code(db, u2, ex_disc.code)
+    db.commit()
     credit = db.query(models.ExchangeDiscountCredit).filter(
         models.ExchangeDiscountCredit.user_id == u2.id).first()
-    check("折扣型兑换发放折扣权益", res.get("success") is True and credit is not None)
-
-    from fastapi import HTTPException
-    try:
-        _redeem_exchange_core(db, u2, ex_pts.code)
-        pts_rejected = False
-    except HTTPException:
-        db.rollback()
-        pts_rejected = True
-    db.refresh(ex_pts)
-    check("能量型兑换码被拒绝且不消耗次数", pts_rejected and (ex_pts.use_count or 0) == 0)
+    check("折扣卡码发放折扣权益", res.get("success") is True and credit is not None)
 
     # ---- 3. 订阅顺延 ----
     print("\n[3] 订阅顺延")
@@ -209,7 +206,7 @@ def main():
         models.UserSubscription.user_id.in_(uids)).delete(synchronize_session=False)
     db.query(models.PromotionReward).filter(
         models.PromotionReward.inviter_id.in_(uids)).delete(synchronize_session=False)
-    for obj in [order, ex_sub, ex_disc, ex_pts, reg_pts, plan, record, code]:
+    for obj in [order, ex_sub, ex_disc, reg_pts, plan, record, code]:
         try:
             db.delete(obj)
         except Exception:

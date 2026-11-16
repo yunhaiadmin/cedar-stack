@@ -321,7 +321,6 @@ def find_reg_code(db: Session, raw: str) -> Optional[models.RegistrationCode]:
 
 
 REDEMPTION_KIND_REG = "reg"
-REDEMPTION_KIND_EXCHANGE = "exchange"
 
 
 def user_already_redeemed(db: Session, kind: str, code, user_id: int) -> bool:
@@ -362,7 +361,7 @@ def claim_code(db: Session, code: models.RegistrationCode, user_id: int) -> bool
     「先读 use_count 判断、再写 use_count + 1」是读-改-写：同一张 ``max_uses=1`` 的卡码
     被两个请求同时提交时，两边都读到 ``use_count=0``，于是各发一份会员天数（重复核销）。
     这里改成条件 ``UPDATE``：只有「仍然可用」的那一行会被 +1，并发下的第二个请求拿到
-    ``rowcount=0``，直接拒绝（与 ``economy.redeem_exchange_code`` 同一套写法）。
+    ``rowcount=0``，直接拒绝。
 
     条件里把「是否可用」表达完整，所以它同时也是可用性判定：
     停用 / 过期 / 用尽的卡码都进不了 WHERE。**不提交**——消耗与发奖必须同一个事务
@@ -582,18 +581,6 @@ def preview_code(db: Session, raw: str, username: Optional[str] = None) -> dict:
         return {
             "valid": False, "kind": "invite", "days": 0, "days_text": "-",
             "message": "这是邀请码，请在注册页填写",
-        }
-
-    exchange = db.query(models.ExchangeCode).filter(
-        func.upper(models.ExchangeCode.code) == raw.upper()
-    ).first()
-    if exchange:
-        return {
-            "valid": False, "kind": "exchange", "days": exchange.duration_days or 0,
-            "days_text": format_days(exchange.duration_days) if exchange.type == "subscription" else "-",
-            "discount_text": discount_pct_text(exchange.discount_pct) if exchange.type == "discount" else "-",
-            # 兑换码在同一个入口里直接核销，不再指向已经收掉的「钱包 → 兑换码」
-            "message": "这是兑换码，点「使用」直接核销",
         }
 
     # 优惠券（v2.10.0）：付费时抵扣，与卡码/兑换码同一个入口识别，

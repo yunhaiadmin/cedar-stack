@@ -96,7 +96,7 @@ const hasFilter = computed(() =>
 )
 
 /**
- * 搜索框输入防抖：停手 350ms 自动查询（清空仍立即查询，同 ExchangeCodes 的 FilterBar 口径）。
+ * 搜索框输入防抖：停手 350ms 自动查询（清空仍立即查询，同 FilterBar 口径）。
  * FilterBar 以 debounceMs: 0 逐键同步 search，防抖只由这里负责，避免叠加等待。
  */
 let searchTimer: ReturnType<typeof setTimeout> | undefined

@@ -14,8 +14,8 @@
   不逐条铺订阅/设备，不带连签行。
 - 账号展示一家（/me、/account、/level）群里放行（2026-10-28 用户
   亲定、2026-11-02 10:43 重申）：群里调用直接回账号卡（#1705 曾一并
-  改成私聊限定，用户纠正后恢复）；其余私聊命令（private_only/P1/
-  redeem）在群里仍回私聊提示形态。
+  改成私聊限定，用户纠正后恢复）；其余私聊命令（private_only/P1）
+  在群里仍回私聊提示形态。
 - /points、/rank 与 /chatpoints 入口已随能量体系删除整条摘除，
   走未知命令（发言计分与能量段一并下线）。
 """
@@ -100,7 +100,7 @@ def _dispatch(db, monkeypatch, text, chat_id, chat_type="private"):
 
 def test_menu_slimmed_to_27_with_me_kept():
     names = [n for n, _ in poller.BOT_COMMANDS]
-    assert len(names) == 22  # 原 27 条 + /playrank，批 9 摘除 duel/rain/redpacket/lottery/slots 五条、2026-11-13 摘除 checkin 后
+    assert len(names) == 21  # 原 27 条 + /playrank，批 9 摘除 duel/rain/redpacket/lottery/slots 五条、2026-11-13 摘除 checkin、2026-11-17 摘除 redeem 后
     assert ("me", "[群/私聊] 账号中心") in poller.BOT_COMMANDS
     for gone in ("account", "renew", "chatpoints", "level"):
         assert gone not in names
@@ -188,7 +188,7 @@ def test_account_and_level_in_group_render_account_card(db, monkeypatch):
 
 def test_other_private_commands_in_group_use_same_form(db, monkeypatch):
     _user(db)
-    for cmd in ("/login", "/bindings", "/redeem 123456"):
+    for cmd in ("/login", "/bindings"):
         sent = _dispatch(db, monkeypatch, cmd, GROUP, "group")
         assert sent, cmd
         assert sent[0][0] == handlers.private_only_card(), cmd
@@ -243,7 +243,7 @@ def test_user_scope_menu_only_three():
     names = [n for n, _ in command_scopes.default_commands(poller.BOT_COMMANDS)]
     assert names == ["start", "help", "me"]  # 按 BOT_COMMANDS 注册顺序下发
     admin_names = [n for n, _ in command_scopes.admin_commands(poller.BOT_COMMANDS)]
-    assert len(admin_names) == 22  # 全量菜单：批 9 摘五条玩法、2026-11-13 摘签到后
+    assert len(admin_names) == 21  # 全量菜单：批 9 摘五条玩法、2026-11-13 摘签到、2026-11-17 摘 redeem 后
 
 
 # ---------- 二期：/start 私聊面板按钮覆盖全部用户功能 ----------
@@ -254,7 +254,6 @@ def test_user_scope_menu_only_three():
 # 手输命令保留可用不算数，必须有按钮路径。
 PANEL_BUTTON_PATHS = {
     "用户面板/账号": "menu:user",
-    "使用兑换码": "menu:renewcode",
     "快捷登录/续期": "menu:login",
     "绑定账号": "menu:bind",
     "求片": "menu:request",

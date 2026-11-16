@@ -8,7 +8,6 @@
 
 - ``GET /api/admin/storage-bindings``：全站绑定列表（按用户 / 状态查）。
 - ``GET /api/admin/providers/sidecar``：sidecar 运行时状态（p115 / yun139）。
-- ``GET /api/admin/yun139/pools``：139 账号池只读列表（含成员）。
 
 全部纯只读：无 POST / PUT / DELETE；凭据类字段只出 ``has_credential``
 布尔值，``credential_id`` 与密封值永不进响应（绑定口复用
@@ -124,49 +123,3 @@ def sidecar_status(
         )
     names = (provider,) if provider is not None else KNOWN_SIDECAR_PROVIDERS
     return {"providers": [_sidecar_status(name) for name in names]}
-
-
-@router.get("/yun139/pools")
-def list_yun139_pools(
-    limit: int = 50,
-    offset: int = 0,
-    current_admin=Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """139 账号池只读列表（含成员；成员只出 has_credential，credential_id 不给）。"""
-    limit, offset = pagination_params(limit, offset)
-    q = db.query(em.Yun139AccountPool)
-    total = q.count()
-    pools = (
-        q.order_by(em.Yun139AccountPool.id)
-        .limit(limit)
-        .offset(offset)
-        .all()
-    )
-    items = []
-    for pool in pools:
-        members = (
-            db.query(em.Yun139AccountPoolMember)
-            .filter(em.Yun139AccountPoolMember.pool_id == pool.id)
-            .order_by(em.Yun139AccountPoolMember.id)
-            .all()
-        )
-        items.append({
-            "id": pool.id,
-            "name": pool.name,
-            "strategy": pool.strategy,
-            "cooldown_seconds": pool.cooldown_seconds,
-            "max_concurrent": pool.max_concurrent,
-            "created_at": _iso(pool.created_at),
-            "member_count": len(members),
-            "members": [{
-                "id": m.id,
-                "label": m.label,
-                "weight": m.weight,
-                "fail_count": m.fail_count,
-                "cooldown_until": _iso(m.cooldown_until),
-                "has_credential": m.credential_id is not None,
-                "created_at": _iso(m.created_at),
-            } for m in members],
-        })
-    return {"items": items, "total": total, "limit": limit, "offset": offset}

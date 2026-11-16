@@ -5,7 +5,6 @@ import { get, post, put, del } from '@/utils/request'
 
 export interface EconomyStats {
   orders: { pending: number; revenue: number }
-  exchange_codes: { total: number; used: number }
   invitations: number
 }
 
@@ -24,23 +23,6 @@ export interface PlanRowFull {
   /** 一个服一个：留空时后端归到面板当前服 */
   realm_id?: number | null
   realm_name?: string
-}
-
-export interface ExchangeCodeRow {
-  id: number
-  code: string
-  // 'points' 为历史行类型（能量已下线、不可再生成/核销），列表仍须能显示
-  type: 'subscription' | 'discount' | 'points'
-  plan_name: string | null
-  duration_days: number
-  discount_pct: number
-  max_uses: number
-  use_count: number
-  is_active: boolean
-  note: string | null
-  expires_at: string | null
-  used_by: { id: number; username: string }[]
-  created_at: string
 }
 
 export interface OrderRow {
@@ -109,16 +91,6 @@ export const updateEconomyPlan = (id: number, data: Omit<PlanRowFull, 'id'>) =>
   put<{ success: boolean }>(`/economy/plans/${id}`, data)
 
 export const deleteEconomyPlan = (id: number) => del<{ success: boolean; message?: string }>(`/economy/plans/${id}`)
-
-// ==================== 兑换码 ====================
-
-export const fetchExchangeCodes = (params: { limit?: number } = {}) =>
-  get<{ codes: ExchangeCodeRow[] }>('/economy/exchange-codes', params)
-
-// R40：删除死导出 createExchangeCodes——调用方 ExchangeCodes.vue 已删除，全仓零引用
-
-export const updateExchangeCode = (id: number, is_active: boolean) =>
-  put<{ success: boolean }>(`/economy/exchange-codes/${id}`, { is_active })
 
 // ==================== 订单 ====================
 

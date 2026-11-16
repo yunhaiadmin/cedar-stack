@@ -10,7 +10,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { toAdminError } from '@/utils/errorMessage'
 import {
   RefreshCw, CircleCheck, Wallet, Ban, Undo2, ReceiptText, Clock3,
-  Gift, UserPlus, AlertTriangle,
+  UserPlus, AlertTriangle,
 } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard, StatTile } from '@/components/ui'
 import DataTable from '@/components/DataTable.vue'
@@ -505,13 +505,6 @@ onMounted(() => {
         :tone="stats.orders.pending > 0 ? 'warn' : 'plain'"
         :to="stats.orders.pending > 0 ? '/orders?status=pending' : undefined"
         :hint="stats.orders.pending > 0 ? '点开只看待支付' : '没有待处理的'"
-      />
-      <StatTile
-        label="兑换码已用"
-        :value="stats.exchange_codes.used"
-        :suffix="`/ ${stats.exchange_codes.total}`"
-        :icon="Gift"
-        to="/exchange-codes"
       />
       <StatTile label="邀请总数" :value="stats.invitations" :icon="UserPlus" to="/invitations" />
     </section>

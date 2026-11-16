@@ -245,15 +245,16 @@ def test_bot_commands_cover_router_commands():
     # 菜单简化后口径（2026-11-02）：BOT_COMMANDS 当时 27 条主命令；
     # 其后加过 /duel、/rain、/playrank；批 9 摘除五条玩法命令
     # （lottery/redpacket/slots/duel/rain）后 25 条；2026-11-13 摘除
-    # 签到入口后 24 条；/points、/rank 随能量体系删除后现为 22 条。router 另含
+    # 签到入口后 24 条；/points、/rank 随能量体系删除后 22 条；/redeem 随
+    # 旧兑换码体系删除（2026-11-17）后现为 21 条。router 另含
     # 3 条手输别名（account/renew/level），别名不在菜单
     # 但 router 照常认（chatpoints 已随货币删除摘除，2026-11-13）。
     registered = {cmd for cmd, _desc in poller.BOT_COMMANDS}
-    assert len(registered) == 22
+    assert len(registered) == 21
     router_commands = {
         "start", "help", "bind", "account", "me",
         "request", "myrequests", "requestboard", "rules",
-        "login", "renew", "redeem",
+        "login", "renew",
         "bindings", "transfers", "whyplay", "wants",
         "level", "report", "propose", "launch", "govlog",
         "reconcile", "rankpush", "playrank", "kk",
