@@ -35,7 +35,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'registration-codes', redirect: { path: '/codes', query: { tab: 'reg' } } },
       // 优惠券（v2.10.0）：与兑换码分工不同——兑换码不花钱拿东西，优惠券是付费时抵扣
       { path: 'coupons', name: 'Coupons', component: () => import('@/views/Coupons.vue'), meta: { title: '优惠券' } },
-      { path: 'invitations', name: 'Invitations', component: () => import('@/views/Invitations.vue'), meta: { title: '邀请与积分' } },
+      { path: 'invitations', name: 'Invitations', component: () => import('@/views/Invitations.vue'), meta: { title: '邀请管理' } },
       { path: 'codes', name: 'Codes', component: () => import('@/views/Codes.vue'), meta: { title: '码管理' } },
       { path: 'devices', name: 'Devices', component: () => import('@/views/Devices.vue'), meta: { title: '设备与安全' } },
       { path: 'login-logs', name: 'LoginLogs', component: () => import('@/views/LoginLogs.vue'), meta: { title: '登录日志' } },
