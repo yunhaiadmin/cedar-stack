@@ -176,7 +176,7 @@ const navGroups: NavGroup[] = [
       { path: '/goods', label: '订阅套餐', icon: Package },
       { path: '/orders', label: '订单', icon: Receipt },
       { path: '/coupons', label: '优惠券', icon: TicketPercent },
-      { path: '/invitations', label: '邀请与积分', icon: UserPlus },
+      { path: '/invitations', label: '邀请管理', icon: UserPlus },
       { path: '/agents', label: '代理分销', icon: HandCoins },
       { path: '/wallet', label: '钱包管理', icon: Wallet },
       { path: '/team-applications', label: '团队申请', icon: Users },

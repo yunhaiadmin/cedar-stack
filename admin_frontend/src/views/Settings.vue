@@ -118,7 +118,7 @@ const GROUPS: Group[] = [
   {
     id: 'exchange',
     title: '兑换码 · 求片',
-    desc: '卡码默认套餐与求片额度（日限 + 公益/付费月限都在这一张卡）',
+    desc: '卡码默认套餐与求片额度（日限 + 付费月限都在这一张卡）',
     icon: TicketCheck,
     fields: [
       {
