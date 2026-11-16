@@ -5918,7 +5918,7 @@ async def _usercopy_quota_relay_attempt(
     try:
         from backend.emby_server import drive_oauth as _drive_oauth_q
         _token_q = await run_db(
-            _drive_oauth_q.get_user_drive_access_token, db, uid)
+            _drive_oauth_q.get_token_for_user, db, uid)
     except Exception as exc:  # noqa: BLE001 — 无绑定/令牌失效都回现行口径
         _tv_q.log_byos(
             "byos_usercopy_quota_relay", item=getattr(item, "id", None),
@@ -7966,9 +7966,9 @@ async def video_stream(
     # 令牌中继，走该用户自己的额度。任何一步失败都明文报错，绝不
     # 静默回落共享 SA 中继或 _play_target；显式变体请求不受阶段 6
     # 换线影响（客户端选了就是选了）。
-    # 令牌口说明：不用 get_user_drive_access_token——它内部取的是该
-    # 用户“最早 active 绑定”，多个 Drive 绑定时会播错盘；这里钉住
-    # 路径绑定行，用同一令牌源的绑定级口
+    # 令牌口说明：不用 get_token_for_user（用户级口）——它内部取
+    # 的是该用户“最早 active 绑定”，多个 Drive 绑定时会播错盘；
+    # 这里钉住路径绑定行，用同一令牌源的绑定级口
     # get_binding_drive_access_token，令牌本身仍是该用户自己的、
     # scope=user 的行，绝不碰 SA 池。
     if _requested_variant == play_variants.BYOS_DRIVE_RELAY:
@@ -8083,7 +8083,7 @@ async def video_stream(
         from backend.emby_server import drive_oauth as _drive_oauth_uc
         try:
             _uc_token = await run_db(
-                _drive_oauth_uc.get_user_drive_access_token, db, user.id)
+                _drive_oauth_uc.get_token_for_user, db, user.id)
         except _drive_oauth_uc.DriveOAuthError as exc:
             _note_play_start_safe(
                 item, user_id=getattr(user, "id", None), method="relay",

@@ -132,7 +132,7 @@ def _user():
 
 
 def _token_ok(monkeypatch):
-    monkeypatch.setattr(drive_oauth, "get_user_drive_access_token",
+    monkeypatch.setattr(drive_oauth, "get_token_for_user",
                         lambda db_, uid: USER_TOKEN)
 
 
@@ -140,7 +140,7 @@ def _token_missing(monkeypatch):
     def _raise(db_, uid):
         raise drive_oauth.DriveOAuthError(
             "not_found", "当前用户没有可用的 Drive 绑定。")
-    monkeypatch.setattr(drive_oauth, "get_user_drive_access_token", _raise)
+    monkeypatch.setattr(drive_oauth, "get_token_for_user", _raise)
 
 
 def _relay_fake(record, resp=None, exc=None):
