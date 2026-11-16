@@ -16,6 +16,7 @@ const {
   variantOfStreamUrl,
   relayVariantUrl,
   resolveSoftDecodeUrl,
+  pickSoftRelayUrl,
   humanizeSoftError,
 } = await import('../src/utils/softDecode.ts')
 
@@ -259,6 +260,86 @@ check(
     probe: probeReturning({ orig: 'bytes' }),
   }),
   'https://ea.example/emby/Videos/g1/stream.mkv?MediaSourceId=g1',
+)
+
+// --- 本例形态（2026-11-16）：挂载原件 + 本人 Drive 副本，H264+AC3 ---
+// PlaybackInfo 下发 [drive_direct（副本 usercontent 302）, usercopy_relay]；
+// 软解取流必须确定性选同条目的 usercopy_relay 兄弟源，而不是把
+// drive_direct 机械换成 drive_relay（该条目 drive_relay 不可用、409）。
+check(
+  'h264+ac3 unsupported + enabled => soft (this case codecs)',
+  shouldSoftDecode(unsupported(false, true), src('h264', 'ac3'), true),
+  true,
+)
+const srcOf = (variant) => ({
+  Id: `g1:${variant}`,
+  DirectStreamUrl: `${EA}?MediaSourceId=g1%3A${variant}&variant=${variant}`,
+})
+check(
+  'sibling pick: drive_direct selected => usercopy_relay source',
+  pickSoftRelayUrl(
+    [srcOf('drive_direct'), srcOf('usercopy_relay')],
+    'g1:drive_direct',
+  ),
+  srcOf('usercopy_relay').DirectStreamUrl,
+)
+check(
+  'sibling pick: relay selected itself => its own url',
+  pickSoftRelayUrl(
+    [srcOf('drive_direct'), srcOf('usercopy_relay')],
+    'g1:usercopy_relay',
+  ),
+  srcOf('usercopy_relay').DirectStreamUrl,
+)
+check(
+  'sibling pick: usercopy relay beats shared drive_relay',
+  pickSoftRelayUrl(
+    [srcOf('drive_direct'), srcOf('drive_relay'), srcOf('usercopy_relay')],
+    'g1:drive_direct',
+  ),
+  srcOf('usercopy_relay').DirectStreamUrl,
+)
+check(
+  'sibling pick: drive_relay when no usercopy sibling',
+  pickSoftRelayUrl([srcOf('drive_direct'), srcOf('drive_relay')], 'g1:drive_direct'),
+  srcOf('drive_relay').DirectStreamUrl,
+)
+check(
+  'sibling pick: byos direct => byos relay',
+  pickSoftRelayUrl(
+    [srcOf('byos_drive_direct'), srcOf('byos_drive_relay')],
+    'g1:byos_drive_direct',
+  ),
+  srcOf('byos_drive_relay').DirectStreamUrl,
+)
+check(
+  'sibling pick: single direct source => empty (legacy flow)',
+  pickSoftRelayUrl([srcOf('drive_direct')], 'g1:drive_direct'),
+  '',
+)
+check(
+  'sibling pick: unknown selection => empty',
+  pickSoftRelayUrl([srcOf('drive_direct'), srcOf('usercopy_relay')], 'nope'),
+  '',
+)
+
+// --- 无标记回落探测：usercopy_relay 进候选（byos 之后、drive 之前） ---
+const probeReturning2 = (table) => async (url, redirect) => {
+  const key = url.includes('variant=byos_drive_relay')
+    ? 'byos'
+    : url.includes('variant=usercopy_relay')
+      ? 'usercopy'
+      : url.includes('variant=drive_relay')
+        ? 'drive'
+        : 'orig'
+  return table[key] ?? 'fail'
+}
+check(
+  'unmarked redirect => usercopy relay when it serves bytes',
+  await resolveSoftDecodeUrl(`${EA}?MediaSourceId=g1`, {
+    probe: probeReturning2({ orig: 'redirect', byos: 'fail', usercopy: 'bytes' }),
+  }),
+  `${EA}?MediaSourceId=g1&variant=usercopy_relay`,
 )
 
 // --- 失败人话：分类命中 + libmedia 噪声前缀剥离 ---

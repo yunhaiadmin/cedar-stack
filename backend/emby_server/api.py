@@ -5687,6 +5687,34 @@ def _user_drive_byos_quota_known(db: Session, item: em.MediaItem,
     return detail.get("page") == "quota"
 
 
+def _user_copy_relay_available(db: Session, item: em.MediaItem,
+                               user) -> bool:
+    """用户 Drive 转存副本中继变体可用性（变体清单与取流校验共用）。
+
+    同时满足才 True：条目有 drive_file_id、副本中继后路开关开
+    （playback_strategy.usercopy_quota_relay_fallback_enabled，
+    与额度后路同一台中继机器的总闸）、选路解析
+    （transfer_variant.resolve_play_file_id，与 PlaybackInfo alt
+    面 / video_stream 选路同一实现）落到该用户 ready 的本人
+    Drive 副本行（_is_user_drive_copy_variant）。清单阶段不真取
+    令牌——令牌只在取流时现取现用；异常一律 False（按无副本，
+    清单与现行逐字一致）。
+    """
+    if user is None or getattr(user, "id", None) is None:
+        return False
+    if not (getattr(item, "drive_file_id", "") or "").strip():
+        return False
+    try:
+        from backend.emby_server import playback_strategy as _strategy_uc
+        from backend.emby_server import transfer_variant as _tv_uc
+        if not _strategy_uc.usercopy_quota_relay_fallback_enabled(db):
+            return False
+        _fid, variant = _tv_uc.resolve_play_file_id(db, item, user)
+    except Exception:  # noqa: BLE001 — 信号读不到按无副本
+        return False
+    return bool(_fid) and _is_user_drive_copy_variant(variant)
+
+
 def _pool_copy_available(db: Session, item: em.MediaItem,
                          user) -> bool:
     """公共池变体可用性信号（goal-33 PR-3，design §5.1）。
@@ -6426,6 +6454,12 @@ async def playback_info(
         # 池副本行时，清单追加 pool_copy 变体。
         _pool_copy_ok = await run_db(
             _pool_copy_available, db, item, user)
+        # 用户转存副本中继（2026-11-16）：该用户对此条目有 ready
+        # 的本人 Drive 副本且后路开关开时，清单追加 usercopy_relay
+        # ——网页软解据此确定性选到能取字节的中继线路（副本直链
+        # 是无 CORS 的 usercontent，软解 fetch 取不到字节）。
+        _user_copy_ok = await run_db(
+            _user_copy_relay_available, db, item, user)
         _variants = await run_db(
             play_variants.list_variants, db, item,
             drive_mount_locatable=_drive_mount_ok,
@@ -6433,7 +6467,8 @@ async def playback_info(
             user115_direct_available=_user115_ok,
             user_drive_byos_available=_user_drive_byos_ok,
             pool_copy_available=_pool_copy_ok,
-            byos_quota_known=_user_drive_byos_quota)
+            byos_quota_known=_user_drive_byos_quota,
+            user_copy_available=_user_copy_ok)
         # 挂载第 5 步播放过滤（变体层）：源已隐藏时变体清单清零，
         # 且不静默回落单源——下发空 MediaSources，客户端无可播变体。
         # 只新增本调用，不改上面任何变体判定行。
@@ -7144,7 +7179,8 @@ def _available_variant_names(db: Session, item: em.MediaItem,
         pool_copy_available=_pool_copy_available(db, item, user),
         byos_quota_known=(
             _user_drive_byos_quota_known(db, item, user)
-            if _byos_ok_vs else False))]
+            if _byos_ok_vs else False),
+        user_copy_available=_user_copy_relay_available(db, item, user))]
     # 挂载第 5 步播放过滤（变体层）：源已隐藏时可用变体为空，
     # 已选变体按 resolve_requested_variant 现成语义报 409。
     from backend.emby_server import playback_source_health as _psh
@@ -7370,7 +7406,8 @@ async def video_stream(
             and _requested_variant not in (
                 play_variants.BYOS_DRIVE_RELAY,
                 play_variants.BYOS115_DIRECT,
-                play_variants.BYOS_DRIVE_DIRECT)
+                play_variants.BYOS_DRIVE_DIRECT,
+                play_variants.USERCOPY_RELAY)
             and await run_db(
                 _pool_gate_vs.large_file_pool_route, db, user, item)):
         _pool_pre_gate = await run_db(
@@ -7378,6 +7415,11 @@ async def video_stream(
         if (_pool_pre_gate or {}).get("verdict") == "serve_pool_copy":
             _pool_routed_stream = True
             _pool_stream_mode = True
+    # 注意：usercopy_relay 不进这个跳过名单——它与 byos 变体不同，
+    # 副本选路与 _on_user_copy 来自下方转存门禁段，必须照常跑；
+    # 它只在上方大文件分流预判里被排除（显式选本人副本中继时
+    # 不许被池捷径改道），_pool_stream_mode 因此恒 False，池
+    # 分支不会触发。
     if _requested_variant not in (play_variants.BYOS_DRIVE_RELAY,
                                   play_variants.BYOS115_DIRECT,
                                   play_variants.BYOS_DRIVE_DIRECT):
@@ -8015,6 +8057,66 @@ async def video_stream(
             request, user, item,
             getattr(_byos_drive_resp, "status_code", None))
         return _observe_traffic(_byos_drive_resp)
+    # 用户 Drive 转存副本中继（usercopy_relay 显式变体，2026-11-16
+    # 网页软解取流修复）：客户端（网页软解）显式选了这条线路——
+    # 门禁段已把选路顶到本人 ready 副本（_play_fid/_play_variant），
+    # 这里凭本人绑定令牌中继同一份副本出字节（与额度后路
+    # _usercopy_quota_relay_attempt 同一台机器的 access_token 腿：
+    # 单次直试、从不调 get_token_for_drive、不进 SA failover）。
+    # 铁律：只服务本人 Drive 副本行、凭据只用本人令牌；任何不符/
+    # 失败都明示报错，绝不静默回落直链或共享中继——软解回落原
+    # 地址必然取不到字节（usercontent 无 CORS），静默回落只会把
+    # 明示错误拖成几十秒超时。
+    if _requested_variant == play_variants.USERCOPY_RELAY:
+        _uc_t0 = time.perf_counter()
+        if not _on_user_copy or not _play_fid \
+                or not _is_user_drive_copy_variant(_play_variant):
+            _note_play_start_safe(
+                item, user_id=getattr(user, "id", None), method="relay",
+                variant=play_variants.USERCOPY_RELAY, result="error",
+                error_kind="no_user_drive_copy",
+                total_ms=_pt.elapsed_ms())
+            raise HTTPException(
+                status_code=409,
+                detail="播放变体当前不可用：usercopy_relay"
+                       "（无本人 Drive 副本）")
+        from backend.emby_server import drive_oauth as _drive_oauth_uc
+        try:
+            _uc_token = await run_db(
+                _drive_oauth_uc.get_user_drive_access_token, db, user.id)
+        except _drive_oauth_uc.DriveOAuthError as exc:
+            _note_play_start_safe(
+                item, user_id=getattr(user, "id", None), method="relay",
+                variant=play_variants.USERCOPY_RELAY, result="error",
+                error_kind="drive_oauth_error",
+                total_ms=_pt.elapsed_ms())
+            raise HTTPException(
+                status_code=503,
+                detail="Drive 授权不可用，暂时无法播放") from exc
+        try:
+            _uc_resp = await serve_drive_relay_async(
+                request, _play_variant.variant_drive_id, _play_fid,
+                media_type=media_type, pt=_pt, access_token=_uc_token)
+        except HTTPException as exc:
+            _note_play_start_safe(
+                item, user_id=getattr(user, "id", None), method="relay",
+                variant=play_variants.USERCOPY_RELAY, result="error",
+                error_kind=f"upstream_{exc.status_code}",
+                resolve_ms=int((time.perf_counter() - _uc_t0) * 1000),
+                total_ms=_pt.elapsed_ms())
+            raise
+        _note_play_start_safe(
+            item, user_id=getattr(user, "id", None), method="relay",
+            variant=play_variants.USERCOPY_RELAY,
+            result="error" if _uc_resp.status_code >= 400 else "ok",
+            error_kind=(f"upstream_{_uc_resp.status_code}"
+                        if _uc_resp.status_code >= 400 else None),
+            resolve_ms=int((time.perf_counter() - _uc_t0) * 1000),
+            total_ms=_pt.elapsed_ms())
+        _note_watch_activity(
+            request, user, item,
+            getattr(_uc_resp, "status_code", None))
+        return _observe_traffic(_uc_resp)
     # BYOS 用户令牌中继（Drive 腿，闭环 #13）：条目是 byos:// 路径且
     # drive_relay_enabled 开时，字节走该用户自己的 Drive 令牌中继，
     # 绝不走共享 SA 池。铁律：一个用户、一份凭据、一份额度；下面

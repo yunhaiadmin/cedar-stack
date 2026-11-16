@@ -363,6 +363,7 @@ import {
   createSoftPlayer,
   fetchSoftDecodeEnabled,
   humanizeSoftError,
+  pickSoftRelayUrl,
   shouldSoftDecode,
   type SoftPlayerHandle,
 } from '@/utils/softDecode'
@@ -1141,7 +1142,14 @@ async function startSoftDecode(
   softFailedFor.value = source.Id
   phase.value = 'preparing'
   prepStepIndex.value = 2
-  const url = source.DirectStreamUrl || ''
+  // 软解取流地址：优先同条目的中继兄弟源（本人转存副本等场景下，
+  // 选中源是无 CORS 的直链、机械换标记又换到不可用的变体，只有
+  // 清单里的中继兄弟源能出字节）；没有兄弟源时用选中源原地址，
+  // 后续仍走 createSoftPlayer 内的 resolveSoftDecodeUrl 裁决。
+  const url =
+    pickSoftRelayUrl(playbackInfo.value?.MediaSources, source.Id) ||
+    source.DirectStreamUrl ||
+    ''
   let started = false
   let seekDone = false
   // 先亮出软解容器再构造播放器（见 softStarting 注释：隐藏容器下

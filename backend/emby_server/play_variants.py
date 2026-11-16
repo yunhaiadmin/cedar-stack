@@ -101,6 +101,18 @@ BYOS_QUARK_RELAY = "byos_quark_relay"
 #: pool_copy_available（未绑 + 池 eligible + 变体行复核有 ready
 #: 池副本）为真时才进清单，绑盘用户与池外条目恒不列。
 POOL_COPY = "pool_copy"
+#: 用户 Drive 转存副本中继（2026-11-16 网页软解取流修复）：挂载/
+#: 共享原件条目在该用户自己 Drive 里有一份 ready 转存副本时，
+#: drive_direct 实际 302 到的是副本的免凭证 usercontent 直链——
+#: 网页软解的 fetch 无 CORS 取不到字节，且生产 drive_relay 关时
+#: 没有任何可取流的中继线路下发。本变体即那条缺失的线路：凭
+#: 本人绑定令牌中继同一份副本出字节（与额度后路
+#: _usercopy_quota_relay_attempt 同一台机器），诚实申报为中继
+#: （is_remote=False / needs_relay=True）。只在调用方信号
+#: user_copy_available（该用户对此条目有 ready 的本人 Drive
+#: 副本且副本中继后路开关开）为真时才进清单；与 byos 变体面
+#: 互斥（byos 条目文件本就在用户盘里，不存在转存副本）。
+USERCOPY_RELAY = "usercopy_relay"
 
 
 @dataclass(frozen=True)
@@ -140,6 +152,10 @@ _VARIANTS: dict[str, Variant] = {
     # 池副本直链形态：客户端从贡献者盘自拉（免凭证公开链），
     # is_remote=True / needs_relay=False——与 drive_direct 同形。
     POOL_COPY: Variant(POOL_COPY, "公共池", "Http", True, False),
+    # 中继形态：字节过服务器（凭本人绑定令牌取本人副本），故
+    # is_remote=False / needs_relay=True——与 byos_drive_relay 同形，
+    # 只是副本来源是转存登记行而非 byos 扫描行。
+    USERCOPY_RELAY: Variant(USERCOPY_RELAY, "我的副本中继", "Http", False, True),
 }
 
 
@@ -163,7 +179,8 @@ def list_variants(db: Session, item, *,
                   user115_direct_available: bool = False,
                   user_drive_byos_available: bool = False,
                   pool_copy_available: bool = False,
-                  byos_quota_known: bool = False) -> list[Variant]:
+                  byos_quota_known: bool = False,
+                  user_copy_available: bool = False) -> list[Variant]:
     """按条目算可用变体清单（唯一判定口），第一条恒为现行主线变体。
 
     排序即兼容：第一条就是今天 video_stream 自动判定实际会走的那条
@@ -207,6 +224,13 @@ def list_variants(db: Session, item, *,
     （只读缓存、不触发探测）：True 表示该文件公开链已被探针判
     回额度页。仅在灰度开关开时有意义——quota 已知时不列
     byos_drive_direct（公开直链必死，可用性判定），中继照列。
+
+    ``user_copy_available`` 由调用方用 api._user_copy_relay_available
+    算好传进来（该用户对此条目有 ready 的本人 Drive 转存副本，
+    且副本中继后路开关开）：True 时在主线之后追加 usercopy_relay
+    ——网页软解据此确定性选到能取字节的线路。本函数内再以
+    drive_file_id 兜底，且 byos 信号成立时不叠加（两种个人副本
+    机制按条目互斥）。
     """
     fid = (getattr(item, "drive_file_id", "") or "").strip()
     file_path = getattr(item, "file_path", "") or ""
@@ -248,6 +272,13 @@ def list_variants(db: Session, item, *,
         names = [BYOS_DRIVE_DIRECT, BYOS_DRIVE_RELAY] + names
     elif user_drive_byos_available and fid:
         names.append(BYOS_DRIVE_RELAY)
+    # 用户转存副本中继：排在主线与 BYOS 之后、公共池之前（第一条
+    # 仍是现行主线 drive_direct，第三方播放器/App 的直链第一线路
+    # 口径不动；本变体只给网页软解等需要服务器出字节的场景选路）。
+    # 信号由调用方按「本人 ready Drive 副本 + 后路开关」算好，
+    # 这里再以 fid 兜底、且 byos 信号成立时不叠加防外溢。
+    if user_copy_available and fid and not user_drive_byos_available:
+        names.append(USERCOPY_RELAY)
     # 公共池：排在主线与 BYOS 之后（第一条仍是现行主线）；信号由
     # 调用方按「未绑 + 池 eligible + 变体行复核」算好，这里再以
     # fid 兜底防信号外溢。

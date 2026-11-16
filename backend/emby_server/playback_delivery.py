@@ -13,7 +13,8 @@ FMBY 深挖的区分（报告 fmby-playback-exclusive-deepdive-20261024 §2/§3�
 - 302 直链：drive_direct / byos115_direct / byos_drive_direct
   —— video_stream 下发 302
   （drive_usercontent_download_url / 115 现签地址），字节不经服务器。
-- 令牌流：drive_relay / mount_relay / byos_drive_relay / local_file
+- 令牌流：drive_relay / mount_relay / byos_drive_relay /
+  usercopy_relay / local_file
   —— Range 透传与 206 对齐的唯一实现在 streaming.py：
   serve_mount_relay_async（Range 原样发上游、上游 206/Content-Range
   原样透回）与 serve_file（本地文件 Range → 206，非法 Range → 416）。
@@ -40,6 +41,7 @@ _DELIVERY_BY_VARIANT = {
     "drive_relay": TOKEN_STREAM,
     "mount_relay": TOKEN_STREAM,
     "byos_drive_relay": TOKEN_STREAM,
+    "usercopy_relay": TOKEN_STREAM,
     "local_file": TOKEN_STREAM,
 }
 
