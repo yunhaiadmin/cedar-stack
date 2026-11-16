@@ -208,8 +208,23 @@ async function fetchProbe(
         headers: { Range: 'bytes=0-0' },
         signal: controller.signal,
       })
-      if ((res as { type?: string }).type === 'opaqueredirect') return 'redirect'
-      return res.status === 200 || res.status === 206 ? 'bytes' : 'fail'
+      const result: SoftUrlProbeResult =
+        (res as { type?: string }).type === 'opaqueredirect'
+          ? 'redirect'
+          : res.status === 200 || res.status === 206
+            ? 'bytes'
+            : 'fail'
+      // 探测只看响应头，结论一出立刻掐断正文：被探的地址若回 200
+      // 整流（上游偶发不认 Range），不掐断就是一份整文件下载在后台
+      // 继续跑——2026-11-16 生产实证：一发探测在后台漏下 90MB+，
+      // 与播放器自己的取流抢同一条中继和带宽。掐断失败不影响结论。
+      try {
+        await res.body?.cancel()
+      } catch {
+        /* 正文掐断失败不掩盖探测结论 */
+      }
+      controller.abort()
+      return result
     } finally {
       clearTimeout(timer)
     }
@@ -357,6 +372,17 @@ export interface SoftPlayerHandle {
   destroy(): Promise<void>
 }
 
+/**
+ * 软解起播守卫默认时长（毫秒）。2026-11-16 生产实测校准：一部
+ * 4.4GB MKV（Drive 转存副本中继）的冷起播全程——IO 打开、demux
+ * 分析多 GB 文件、播放器懒加载分片、h264+ac3+resample+stretchpitch
+ * 四件 wasm 下载——走完约 45 秒，旧的 45 秒守卫恰好在解码器刚
+ * 加载完、首帧未出时把播放器销毁（失败文案「启动超时」）。软解是
+ * 最后一道兜底，守卫按慢源冷起播的真实量级放宽到 90 秒；真死的源
+ * 仍由 IO 层自己的错误先行暴露，不靠守卫兜底判死。
+ */
+export const SOFT_START_TIMEOUT_MS = 90000
+
 export interface CreateSoftPlayerOptions {
   /** 容器扩展名（如 mkv/mp4）：DirectStreamUrl 常无扩展名，靠它选 demuxer */
   ext?: string
@@ -433,7 +459,7 @@ export async function createSoftPlayer(
   })
   player.on('timeout', () => failOnce('soft decode timeout'))
 
-  const startTimeoutMs = options.startTimeoutMs ?? 45000
+  const startTimeoutMs = options.startTimeoutMs ?? SOFT_START_TIMEOUT_MS
   let startTimer: ReturnType<typeof setTimeout> | undefined
   const startGuard = new Promise<never>((_resolve, reject) => {
     startTimer = setTimeout(
