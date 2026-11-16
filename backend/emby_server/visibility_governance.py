@@ -137,6 +137,46 @@ def create_task(db, item, surface: str, reason: str = "",
     return task
 
 
+#: 自动入队（识别链收尾）的提请理由：系统动作留痕，与人工提请区分。
+AUTO_ENQUEUE_REASON = "识别完成仍未绑定身份，自动入队复核"
+
+#: 自动入队只治理这两类（案 A 的治理对象本体；season/episode 跟随所属
+#: series 判定与露出，不单独入队，避免整剧逐集淹没复核队列）。
+_AUTO_ENQUEUE_TYPES = ("movie", "series")
+
+
+def maybe_enqueue_unbound(db, item) -> bool:
+    """识别收尾自动入队：条目终态仍未绑定（案 A 货架不露出）时提请复核。
+
+    扫描/识别链的唯一自动入队口（enrich_worker 写库收尾调用）。口径：
+
+    - 开关关 → 返回 False，行为与未接线时逐字一致（硬约束①的延伸）；
+    - 只治理 movie/series 本体；已绑定（item_bound 案 A 判定）→ 不入队；
+    - 幂等：同条目已有 pending 的 shelf 任务 → 不重复建行（沿
+      identify_review.enqueue_review 的「一物一条 pending」先查口径，
+      不新造机制；任务被处置后条目再次终态仍未绑定，可再入队一轮）。
+
+    只 flush 不 commit（调用方事务内执行，与 identify_review 同口径）。
+    """
+    if not governance_enabled():
+        return False
+    if getattr(item, "item_type", None) not in _AUTO_ENQUEUE_TYPES:
+        return False
+    if item_bound(db, item):
+        return False
+    existing = (db.query(em.VisibilityGovernanceTask)
+                .filter(em.VisibilityGovernanceTask.item_id == item.id,
+                        em.VisibilityGovernanceTask.surface == "shelf",
+                        em.VisibilityGovernanceTask.status == "pending")
+                .first())
+    if existing is not None:
+        return False
+    create_task(db, item, "shelf", reason=AUTO_ENQUEUE_REASON)
+    logger.info("可见性治理自动入队 item_id=%s name=%r",
+                item.id, getattr(item, "name", ""))
+    return True
+
+
 def list_tasks(db, status: Optional[str] = None, page: int = 1,
                page_size: int = 20):
     """复核队列分页（最新在前；status 可筛 pending/approved/rejected）。"""

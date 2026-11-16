@@ -3591,6 +3591,35 @@ def _enrich_apply(db, item: Any, fetched: dict) -> None:
     # probe 衔接：需要探测的送进 probe 队列（幂等）
     _maybe_queue_probe(db, item)
 
+    # 可见性治理自动入队（L7）：本轮终态 done 且仍未绑定的 movie/series
+    # 提请管理员复核（开关默认关，关时零行为变化；时机与失败隔离见
+    # _maybe_enqueue_visibility_governance）。
+    _maybe_enqueue_visibility_governance(db, item)
+
+
+def _maybe_enqueue_visibility_governance(db, item: Any) -> None:
+    """可见性治理自动入队衔接（L7）：识别终态仍未绑定 → 复核队列提请。
+
+    从 _enrich_apply 尾部提取（与 _maybe_queue_probe 同点）：只对本轮落
+    done 的条目转调 visibility_governance.maybe_enqueue_unbound——开关、
+    类型、绑定判定、幂等全在治理模块内收口，本处只管时机与失败隔离。
+    身份在扫描时未定（新条目人人未绑定），故不挂扫描收尾、只挂识别
+    写库收尾这一身份落定点；逐条与批量写库都经 _enrich_apply 汇入。
+
+    失败静默：治理入队是审计旁路，失败只记 warning 绝不拖垮识别收尾
+    （与 identify_review 入队失败响亮回滚的区别：识别证据丢了不可
+    恢复，治理任务漏一轮可由终态重跑 / retry_unmatched 再经本函数
+    补入队）。锁定早退分支不经此处：锁定条目已转人工，不自动提请。
+    """
+    try:
+        if getattr(item, "enrich_status", None) != "done":
+            return
+        from backend.emby_server import visibility_governance as _vg
+        _vg.maybe_enqueue_unbound(db, item)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("可见性治理自动入队失败 id=%s: %s",
+                       getattr(item, "id", "?"), exc)
+
 
 def _maybe_queue_probe(db, item: Any) -> None:
     """probe 衔接：需要探测的送进 probe 队列（幂等）。
