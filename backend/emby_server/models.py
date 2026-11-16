@@ -1705,6 +1705,15 @@ class TransferJob(Base):
     # 改读本列，存量行为 NULL 时回退 created_at 现算（口径等价）。
     # 老库由 _auto_migrate 补列（NULL）。
     cooldown_until = Column(DateTime)
+    # 门禁重触发标记（2026-11-16）：True = 本行是播放门禁在副本缺失／
+    # 失败时 force 越过节流重建出的单（_retrigger_failed_job /
+    # _rebuild_done_job / rebuild_dead_drive_copy 经建单函数的
+    # gate_rebuild 参数落字）。门禁重触发预算只数 failed 行与本标记
+    # 行：prefetch / 正常 playback 等正常 done 行不占额——旧口径把
+    # 窗内全部任务行都算进 24h<2 预算，副本被闲置清理删掉后连第一
+    # 次重建都被正常历史挡死（2026-11-16 生产实证）。存量行 NULL
+    # 按 False 读。老库由 auto-migrate 补列（NULL）。
+    gate_rebuild = Column(Boolean, default=False)
     # 等待分段度量（2026-11-01 探针道方案期一/期二）：claimed_at
     # 为最近一次认领（普通/探针/当场）落笔时刻，NULL = 从未被
     # 认领；W1=created_at→claimed_at、W2/W3=claimed_at→终态可

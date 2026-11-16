@@ -1993,7 +1993,7 @@ def _source_drive_id(db, item, provider):
 
 
 def create_user_job(db, item, user_id, provider, trigger="playback",
-                    force=False):
+                    force=False, gate_rebuild=False):
     """给该用户建一个用户盘转存任务（门禁与 Quota 信号共用）。
 
     - 总闸关 → master_off；无条目 id → no_item_id；
@@ -2007,6 +2007,9 @@ def create_user_job(db, item, user_id, provider, trigger="playback",
     force=True 仅供门禁对 failed-retriable 任务的重触发：24h 内
     已失败的任务不挡重建（否则重触发永远撞上自己留下的失败行，
     等于没修）；其它调用方一律不传，重触发预算由门禁侧把关。
+    gate_rebuild=True 仅供门禁三口（失败重触发／done 重建／死副本
+    重建）与 force 成对传：落行打上重触发标记，之后计入门禁重
+    触发预算（_gate_retrigger_budget_ok）；正常建单一律不传。
     """
     if provider in ("pan115", "quark"):
         # 目标盘已下线（2026-11-02 删除单）：明确拒绝建单，
@@ -2048,7 +2051,8 @@ def create_user_job(db, item, user_id, provider, trigger="playback",
                          drive_id=source_drive_id or None,
                          provider=provider, owner_scope="user",
                          owner_ref=owner_ref, dest_drive_id=dest,
-                         status="pending")
+                         status="pending",
+                         gate_rebuild=bool(gate_rebuild))
     db.add(job)
     db.flush()
     _stamp_job_cooldown(job)
@@ -2134,7 +2138,7 @@ FILE_ONLY_COPY_UNAVAILABLE_DETAIL = (
 
 def create_cross_provider_job(db, item, user_id, source_provider,
                               trigger="playback", force=False,
-                              dest_provider=None):
+                              dest_provider=None, gate_rebuild=False):
     """给该用户建一个跨 provider 转存任务（门禁共用）。
 
     校验与 create_user_job 同款（总闸、条目 id、24h 同归属桶节流、
@@ -2143,7 +2147,8 @@ def create_cross_provider_job(db, item, user_id, source_provider,
     不会同时在途两单。provider=源 provider，dest_drive_id=目标盘
     （drive 源→pan115:user-<uid>，pan115 源→userdrive:<uid>）。
     force=True 仅供门禁对 failed-retriable 任务的重触发，语义同
-    create_user_job（24h 内已失败的任务不挡重建）。
+    create_user_job（24h 内已失败的任务不挡重建）；gate_rebuild
+    同 create_user_job，仅门禁三口与 force 成对传、落行打标记。
 
     dest_provider（二期夸克）：落点 provider，缺省按源推导
     （drive 源→pan115、pan115 源→drive，既有调用方行为逐字
@@ -2208,7 +2213,8 @@ def create_cross_provider_job(db, item, user_id, source_provider,
                          drive_id=source_drive_id or None,
                          provider=source_provider, owner_scope="user",
                          owner_ref=owner_ref, dest_drive_id=dest,
-                         status="pending")
+                         status="pending",
+                         gate_rebuild=bool(gate_rebuild))
     db.add(job)
     db.flush()
     _stamp_job_cooldown(job)
@@ -3469,19 +3475,30 @@ def _emit_quota_bound(result, item_id, user_id) -> dict:
 
 
 def _gate_retrigger_budget_ok(db, item_id, user_id, dest=None):
-    """门禁重触发预算（2026-10-29 #1453 回归修复）。
+    """门禁重触发预算（2026-10-29 #1453 回归修复；2026-11-16 改口径）。
 
-    24h 窗口内同一归属桶已有 >=2 行任务时不再重触发：一次失败
-    任务 + 一次重触发 = 2 行；第 3 次起不再建——防播放器每秒
-    重试把“失败→重建”循环刷成任务洪水。桶口径与节流一致：
-    同 provider 按 (item, user)，跨 provider 按 (item, user, dest)。
-    窗口口径与节流一致（PR-2：改读 cooldown_until 落字）。
+    只数「重触发类」行：24h 窗口内同一归属桶的 failed 行 + 门禁
+    重建标记行（gate_rebuild）合计 >=2 时不再重触发——一次失败
+    任务 + 一次重触发 = 2 行；第 3 次起不再建，防播放器每秒重试
+    把“失败→重建”循环刷成任务洪水（防洪口径不变）。
+
+    旧口径数窗内全部任务行：prefetch、正常 playback 首单这类正常
+    done 行也占额，副本被闲置 TTL 清理删掉后，第一次重建就被两单
+    正常历史挡成 throttled，用户被锁到窗内首行滑出为止
+    （2026-11-16 生产实证 item 598385）。正常行不是重触发循环的
+    一环，不占额；重建单由建单时落的 gate_rebuild 标记识别计数，
+    重建链本身仍受 <2 封顶。桶口径与节流一致：同 provider 按
+    (item, user)，跨 provider 按 (item, user, dest)。窗口口径与
+    节流一致（PR-2：改读 cooldown_until 落字）。
     """
+    from sqlalchemy import or_ as _or
     q = (db.query(em.TransferJob)
          .filter(em.TransferJob.item_id == item_id,
                  em.TransferJob.owner_scope == "user",
                  em.TransferJob.owner_ref == str(user_id),
-                 _throttle_window_filter(datetime.now())))
+                 _throttle_window_filter(datetime.now()),
+                 _or(em.TransferJob.status == "failed",
+                     em.TransferJob.gate_rebuild == True)))  # noqa: E712
     if dest is not None:
         q = q.filter(em.TransferJob.dest_drive_id == dest)
     return q.count() < 2
@@ -3506,10 +3523,12 @@ def _retrigger_failed_job(db, item, user_id, provider, job, *,
         if cross:
             new_job = create_cross_provider_job(
                 db, item, user_id, provider, trigger="playback",
-                force=True, dest_provider=_dest_provider_of_dest(dest))
+                force=True, dest_provider=_dest_provider_of_dest(dest),
+                gate_rebuild=True)
         else:
             new_job = create_user_job(
-                db, item, user_id, provider, trigger="playback", force=True)
+                db, item, user_id, provider, trigger="playback",
+                force=True, gate_rebuild=True)
     except TransferError as exc:
         if exc.kind == "throttled":
             return {"verdict": "preparing", "reason": "throttled",
@@ -3527,7 +3546,8 @@ def _rebuild_done_job(db, item, user_id, provider, job, *,
     闲置清理 / 额度信号标 stale 删掉后，用户 24h 内一直“准备中”
     播不了（生产 99 个用户 357 条卡死）。调用方已确认本人无 ready
     副本（ready 检查在前）。新行为：预算内（与失败重触发同一个
-    _gate_retrigger_budget_ok，24h 同桶 < 2 行）force 重建一单，
+    _gate_retrigger_budget_ok，24h 同桶重触发类 < 2 行；正常 done
+    历史不占额，2026-11-16 口径）force 重建一单，
     返回 preparing/job_rebuilt 走准备中等流；预算耗尽仍 throttled，
     不会被播放器重试刷成任务洪水。只建用户盘任务（files.copy 到
     本人盘），不碰共享原件、不改选路。
@@ -3540,10 +3560,12 @@ def _rebuild_done_job(db, item, user_id, provider, job, *,
         if cross:
             new_job = create_cross_provider_job(
                 db, item, user_id, provider, trigger="playback",
-                force=True, dest_provider=_dest_provider_of_dest(dest))
+                force=True, dest_provider=_dest_provider_of_dest(dest),
+                gate_rebuild=True)
         else:
             new_job = create_user_job(
-                db, item, user_id, provider, trigger="playback", force=True)
+                db, item, user_id, provider, trigger="playback",
+                force=True, gate_rebuild=True)
     except TransferError as exc:
         if exc.kind == "throttled":
             return {"verdict": "preparing", "reason": "throttled",
@@ -3556,7 +3578,7 @@ def _rebuild_done_job(db, item, user_id, provider, job, *,
 def rebuild_dead_drive_copy(db, item, user_id):
     """用户 Drive 副本已确认不可用后的重建（serve 路径专用）。
 
-    与已删 115 重建同款预算口径：24h 同桶 < 2 行才
+    与已删 115 重建同款预算口径：24h 同桶重触发类 < 2 行才
     force 重建一单（_gate_retrigger_budget_ok），预算耗尽不建新单、
     不刷任务洪水。provider==drive 走同 provider 任务；115 源→用户
     Drive 盘走跨 provider 任务（dest=userdrive:<uid>）；只建用户盘
@@ -3573,10 +3595,12 @@ def rebuild_dead_drive_copy(db, item, user_id):
     try:
         if cross:
             new_job = create_cross_provider_job(
-                db, item, user_id, provider, trigger="playback", force=True)
+                db, item, user_id, provider, trigger="playback",
+                force=True, gate_rebuild=True)
         else:
             new_job = create_user_job(
-                db, item, user_id, provider, trigger="playback", force=True)
+                db, item, user_id, provider, trigger="playback",
+                force=True, gate_rebuild=True)
     except TransferError as exc:
         if exc.kind == "throttled":
             return {"verdict": "preparing", "reason": "throttled"}
