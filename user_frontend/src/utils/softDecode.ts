@@ -9,8 +9,9 @@
  *   重新打包会打断它内部的 Worker 启动代码，不许走包导入）。
  *
  * 约束（批 1 实证）：只编了 simd 变体；FFmpeg 钉 7.1；wasm 不承诺
- * 4K/HDR——4K 只走 WebCodecs 硬解尝试（见下方管线决策一节），
- * 探不到硬解就出护栏提示卡，不许拿 wasm 硬解 4K。
+ * 4K/HDR——4K 走 libmedia 自带 MSE 原生管线（见下方管线决策一节），
+ * MSE 预检不过/被否回就出护栏提示卡，不许拿 wasm 或 WebCodecs 解
+ * 4K（解码帧进页面内存排队必爆内存崩页，#260/#261 两度实证）。
  * 软解只覆盖 HEVC/H.264 画面 + AAC/AC3/EAC3/DTS 声音；AV1/Opus 等
  * 不在 wasm 集里，照旧走解码提示卡，不许硬上。
  */
@@ -18,6 +19,7 @@ import {
   normalizeAudioCodec,
   normalizeVideoCodec,
   type DecodeSourceLike,
+  type DecodeStreamLike,
   type DecodeVerdict,
 } from './decodeSupport'
 
@@ -140,24 +142,26 @@ export function softDecodeResolutionGate(
   return { blocked: false, width, height, reason: 'below-uhd' }
 }
 
-// ---------- 4K 硬解尝试（WebCodecs，2026-11-17 用户点头） ----------
+// ---------- 4K MSE 原生管线（2026-11-17 晚，真机探针验通） ----------
 
 /**
- * 4K 硬解关停开关（前端常量，现为关停）。落点说明：软解总开关走后端
- * SystemConfig（/api/site/web-softdecode 只读下发），本单范围不动
- * 后端，硬解这个子能力的关停先落前端常量，与本文件既有的前端侧
- * 口径常量（SOFT_START_TIMEOUT_MS 等）同形态；改值需随前端发一次版。
+ * 4K MSE 关停开关（前端常量，默认开）。关停时 4K 完全回到 #260
+ * 护栏行为（不启任何解码器、只出提示卡）。落点与本文件既有的
+ * 前端侧口径常量同形态；改值需随前端发一次版。
  *
- * 关停原因（2026-11-17）：用户真机（iPhone Safari）实证——《多喜
- * 一家人》第 1 集 3840×2160 HEVC 走硬解时，VideoDecoder.
- * isConfigSupported 探测通过、硬解管线起来后页面仍被内存打崩。
- * 探测通过 ≠ 真播得动。关停后 4K 完全回到 #260 护栏行为（不启
- * 解码器、只出提示卡）。重启硬解须先有真机出画证据，不许只凭
- * 探测结果再开。
+ * 来历：4K 崩页的根因是帧交付路径——wasm 软解（#260）与 WebCodecs
+ * 硬解（#261）都把解码后的 4K 帧（25–33MB/帧）搬进页面内存排队，
+ * 撞 iOS 单页约 1.5GB 上限被系统杀，与解码器是否硬解无关（调查
+ * 报告《网页 4K 播放路线调查》2026-11-17）。MSE 原生管线把画面
+ * 交给系统媒体管线播、帧不进页面内存，是友站的第一顺位；探针页
+ * （#279）已在用户 iPhone 上实测一次成功：默认选轨（eac3 主轨）
+ * useMSE=true、出画、播放头正常推进（生产库 probe_4k_results
+ * 汇总 mse-ok-default）。WebCodecs 硬解尝试路径已整段退役删除，
+ * 不许留作可选项——它已被真机证明会崩页。
  */
-export const SOFTDECODE_HARDWARE_ENABLED = false
+export const SOFTDECODE_MSE_ENABLED = true
 
-export type SoftPipelineKind = 'wasm' | 'hardware' | 'blocked'
+export type SoftPipelineKind = 'wasm' | 'mse' | 'blocked'
 
 export interface SoftPipelineDecisionResult {
   pipeline: SoftPipelineKind
@@ -170,70 +174,188 @@ export interface SoftPipelineDecisionResult {
 /**
  * 软解管线决策（纯函数）：在分辨率护栏之上分流——
  * - 未达 4K 线（或非软解管线）→ 'wasm'：现行 wasm 构造，行为不变；
- * - 达 4K 线 + 开关开 + 硬解探测可用 → 'hardware'：以 WebCodecs
- *   硬解构造 AVPlayer 试播一次；
- * - 达 4K 线但开关关 / 探测不可用 → 'blocked'：#260 提示卡。
+ * - 达 4K 线 + 开关开 + MSE 预检通过 → 'mse'：以 checkUseMSE 改判
+ *   构造 AVPlayer、走原生管线试播；
+ * - 达 4K 线但开关关 / 预检不过 → 'blocked'：#260 提示卡。
  * 阈值直接复用 softDecodeResolutionGate，不另立一套判定。
  */
 export function softDecodePipelineDecision(
   source: DecodeSourceLike,
   softPipeline: boolean,
-  hardware: { enabled: boolean; supported: boolean },
+  mse: { enabled: boolean; supported: boolean },
 ): SoftPipelineDecisionResult {
   const gate = softDecodeResolutionGate(source, softPipeline)
   if (!gate.blocked) {
     return { pipeline: 'wasm', width: gate.width, height: gate.height, reason: gate.reason }
   }
-  if (!hardware.enabled) {
-    return { pipeline: 'blocked', width: gate.width, height: gate.height, reason: 'hardware-switch-off' }
+  if (!mse.enabled) {
+    return { pipeline: 'blocked', width: gate.width, height: gate.height, reason: 'mse-switch-off' }
   }
-  if (!hardware.supported) {
-    return { pipeline: 'blocked', width: gate.width, height: gate.height, reason: 'hardware-unsupported' }
+  if (!mse.supported) {
+    return { pipeline: 'blocked', width: gate.width, height: gate.height, reason: 'mse-unsupported' }
   }
-  return { pipeline: 'hardware', width: gate.width, height: gate.height, reason: 'uhd-hardware' }
+  return { pipeline: 'mse', width: gate.width, height: gate.height, reason: 'uhd-mse' }
 }
 
-/** 归一化编码 → WebCodecs codec 参数（与 decodeSupport 的复核口径同表，只留软解子集内的两种） */
-const HARDWARE_CODEC_PARAM: Record<string, string> = {
-  hevc: 'hev1.1.6.L93.B0',
-  h264: 'avc1.640028',
-}
+// ---------- MSE 预检（移植探针页 #279 已真机验证的逻辑） ----------
 
-interface WebCodecsVideoDecoderCtor {
-  isConfigSupported(cfg: {
-    codec: string
-    codedWidth: number
-    codedHeight: number
-  }): Promise<{ supported?: boolean }>
+export interface MseMimeCandidate {
+  kind: 'video' | 'audio'
+  codec: string
+  mime: string
+  /** 音频候选归属的流 Index；视频候选为 null */
+  audioIndex: number | null
 }
 
 /**
- * 探测所选源的视频能否走 WebCodecs 硬解：按该源的实际编码
- * （归一化编码 + 视频流实际宽高）问平台 VideoDecoder.
- * isConfigSupported——libmedia 内部开 WebCodecs 解码器时用的也是
- * 这道平台检查（它还会带真实 extradata 再验一次，这里只做起播前
- * 分流预筛）。VideoDecoder 不存在（旧浏览器、iOS 锁定模式会禁用
- * WebCodecs）或问不出确凿的「能」，一律按不可用处理。
+ * HEVC 的 RFC 6381 参数对（本档领衔 + 另一档兜底）：按流的真实
+ * Profile / BitDepth / Level 现拼。档次判读：Profile 含 Main10 或
+ * BitDepth≥10 按 Main10（2.4）；两者都缺（老数据没探测字段）时 4K
+ * HEVC 绝大多数是 Main10，仍按 Main10 领衔、Main 作兜底候选——
+ * 闸门只要求任一带参数候选被认，领衔顺序不决定过不过。
  */
-export async function probeSoftHardwareDecode(
-  source: DecodeSourceLike,
-): Promise<boolean> {
-  try {
-    const vd = (window as unknown as { VideoDecoder?: WebCodecsVideoDecoderCtor })
-      .VideoDecoder
-    if (!vd) return false
-    const vs = (source.MediaStreams || []).find((s) => s.Type === 'Video')
-    const param = HARDWARE_CODEC_PARAM[normalizeVideoCodec(vs?.Codec)]
-    if (!param) return false
-    const res = await vd.isConfigSupported({
-      codec: param,
-      codedWidth: vs?.Width || SOFT_UHD_MIN_WIDTH,
-      codedHeight: vs?.Height || SOFT_UHD_MIN_HEIGHT,
-    })
-    return !!res?.supported
-  } catch {
-    return false
+function hevcMimeParams(vs: DecodeStreamLike): { main: string; alt: string } {
+  const profile = (vs.Profile || '').toLowerCase().replace(/\s+/g, '')
+  const hasProfileInfo = !!profile || (typeof vs.BitDepth === 'number' && vs.BitDepth > 0)
+  const isMain10 =
+    profile.includes('main10') || (vs.BitDepth || 0) >= 10 || !hasProfileInfo
+  const level =
+    typeof vs.Level === 'number' && vs.Level > 0 ? Math.round(vs.Level) : 150
+  const main10 = `2.4.L${level}.B0`
+  const main = `1.6.L${level}.B0`
+  return isMain10 ? { main: main10, alt: main } : { main, alt: main10 }
+}
+
+/**
+ * 按流的真实参数拼 isTypeSupported 候选串（候选策略照探针页）：
+ * 视频 HEVC 先本档 hvc1/hev1 双标签、再另一档兜底、最后裸标签；
+ * H.264 用 High 档参数 + 裸标签。音频逐轨：eac3→ec-3、ac3→ac-3、
+ * aac→mp4a.40.2/.40.5。逐串留痕不许合并——平台只认裸标签、
+ * 不认带参数串的区别本身就是结论的一部分。
+ */
+export function mseMimeCandidates(source: DecodeSourceLike): MseMimeCandidate[] {
+  const streams = source.MediaStreams || []
+  const out: MseMimeCandidate[] = []
+  const video = streams.find((s) => s.Type === 'Video')
+  const vc = normalizeVideoCodec(video?.Codec)
+  if (vc === 'hevc' && video) {
+    const { main, alt } = hevcMimeParams(video)
+    for (const param of [`hvc1.${main}`, `hev1.${main}`, `hvc1.${alt}`, 'hvc1']) {
+      out.push({ kind: 'video', codec: 'hevc', mime: `video/mp4; codecs="${param}"`, audioIndex: null })
+    }
+  } else if (vc === 'h264') {
+    for (const param of ['avc1.640028', 'avc1']) {
+      out.push({ kind: 'video', codec: 'h264', mime: `video/mp4; codecs="${param}"`, audioIndex: null })
+    }
   }
+  for (const a of streams.filter((s) => s.Type === 'Audio')) {
+    const ac = normalizeAudioCodec(a.Codec)
+    const audioIndex = typeof a.Index === 'number' ? a.Index : null
+    if (ac === 'eac3') {
+      out.push({ kind: 'audio', codec: 'eac3', mime: 'audio/mp4; codecs="ec-3"', audioIndex })
+    } else if (ac === 'ac3') {
+      out.push({ kind: 'audio', codec: 'ac3', mime: 'audio/mp4; codecs="ac-3"', audioIndex })
+    } else if (ac === 'aac') {
+      out.push({ kind: 'audio', codec: 'aac', mime: 'audio/mp4; codecs="mp4a.40.2"', audioIndex })
+      out.push({ kind: 'audio', codec: 'aac', mime: 'audio/mp4; codecs="mp4a.40.5"', audioIndex })
+    }
+  }
+  return out
+}
+
+export interface SoftMsePreflightEntry extends MseMimeCandidate {
+  /** true/false = 平台明确答复；null = 无 MSE API 或问询异常 */
+  supported: boolean | null
+}
+
+export interface SoftMsePreflight {
+  /** 实际用的 MSE 接口：iOS 17.1+ 是 ManagedMediaSource；注入问询函数（测试）时记 'injected' */
+  mseApi: 'ManagedMediaSource' | 'MediaSource' | 'injected' | ''
+  entries: SoftMsePreflightEntry[]
+}
+
+interface MseCtorLike {
+  isTypeSupported(mime: string): boolean
+}
+
+/** 跑一遍 MSE 预检：候选串逐个问平台 isTypeSupported（同步 API）。第二个参数仅供测试注入。 */
+export function runSoftMsePreflight(
+  source: DecodeSourceLike,
+  isTypeSupported?: (mime: string) => boolean | null,
+): SoftMsePreflight {
+  let mseApi: SoftMsePreflight['mseApi'] = ''
+  let checker = isTypeSupported
+  if (checker) {
+    mseApi = 'injected'
+  } else if (typeof window !== 'undefined') {
+    const w = window as unknown as {
+      ManagedMediaSource?: MseCtorLike
+      MediaSource?: MseCtorLike
+    }
+    const mse = w.ManagedMediaSource || w.MediaSource
+    mseApi = w.ManagedMediaSource
+      ? 'ManagedMediaSource'
+      : w.MediaSource
+        ? 'MediaSource'
+        : ''
+    if (mse) {
+      checker = (mime: string) => {
+        try {
+          return !!mse.isTypeSupported(mime)
+        } catch {
+          return null
+        }
+      }
+    }
+  }
+  const entries: SoftMsePreflightEntry[] = mseMimeCandidates(source).map((c) => {
+    let supported: boolean | null = null
+    if (checker) {
+      try {
+        supported = checker(c.mime)
+      } catch {
+        supported = null
+      }
+    }
+    return { ...c, supported }
+  })
+  return { mseApi, entries }
+}
+
+export type SoftMseGate = 'pass' | 'no-mse-api' | 'video-unsupported' | 'audio-unsupported'
+
+/**
+ * 构造播放器前的闸门（移植探针页 gateForAttempt 的默认选轨口径）：
+ * 视频任一带参数候选被认（裸标签不算——libmedia 内部用的就是带
+ * 参数串，只认裸标签它照样否）且默认音轨（第一条音轨，即正式
+ * 播放走 libmedia 默认选轨时会选中的那条）的候选被认，才许构造。
+ * 闸门不过就不构造播放器：libmedia 内部否掉 MSE 后会掉进解码
+ * 管线，那正是 4K 崩页的路，正式路径同样不许去试。
+ */
+export function softMseGate(pre: SoftMsePreflight, source: DecodeSourceLike): SoftMseGate {
+  if (!pre.mseApi) return 'no-mse-api'
+  // 带参数串 = codec 参数里带 '.'（如 hvc1.2.4.L150.B0）；裸标签不算
+  const parameterized = (mime: string) => (mime.split('"')[1] || '').includes('.')
+  const videoOk = pre.entries.some(
+    (e) => e.kind === 'video' && e.supported === true && parameterized(e.mime),
+  )
+  if (!videoOk) return 'video-unsupported'
+  const audios = (source.MediaStreams || []).filter((s) => s.Type === 'Audio')
+  if (!audios.length) return 'pass'
+  const targetIndex = typeof audios[0].Index === 'number' ? audios[0].Index : null
+  const audioOk = pre.entries.some(
+    (e) => e.kind === 'audio' && e.audioIndex === targetIndex && e.supported === true,
+  )
+  return audioOk ? 'pass' : 'audio-unsupported'
+}
+
+/** 预检一站式（正式播放器起播前调用）：闸门结论 + 是否放行走 MSE。 */
+export function probeSoftMseSupport(
+  source: DecodeSourceLike,
+  isTypeSupported?: (mime: string) => boolean | null,
+): { supported: boolean; gate: SoftMseGate } {
+  const gate = softMseGate(runSoftMsePreflight(source, isTypeSupported), source)
+  return { supported: gate === 'pass', gate }
 }
 
 // ---------- 开关读取（公开端点，只读一个布尔值） ----------
@@ -475,6 +597,7 @@ export function humanizeSoftError(message: string): string {
     return '视频流打不开，没能从服务器取到数据'
   }
   if (/wasm|webassembly/i.test(raw)) return '解码器组件加载失败'
+  if (/mse/i.test(raw)) return '浏览器没有接住原生播放管线'
   if (/decode|decoder|codec/i.test(raw)) return '解码器启动失败'
   // libmedia 的错误串带 [packages/...][line N] 前缀与 taskId，去掉再截断
   const cleaned = raw
@@ -538,17 +661,21 @@ export interface CreateSoftPlayerOptions {
   /** 首帧/起播超时（毫秒）：wasm 下载 + 分析超了就判失败回落，不干等 */
   startTimeoutMs?: number
   /**
-   * 以 WebCodecs 硬解构造（enableHardware/enableWebCodecs 打开）。
-   * 只许 4K 分流决策判 'hardware' 时传 true（见
-   * softDecodePipelineDecision）；缺省/false 与旧行为逐字一致。
-   * 音频不受这两个开关影响：libmedia 1.3.1 的音频解码管线
-   * （AudioDecodePipeline.createTask）只看 getWasm 有没有给该编码
-   * 的 wasm 资源——有就走 wasm、没有才考虑 WebCodecs AudioDecoder，
-   * 且音频 registerTask 根本不带 enable* 选项；本文件的 getWasm 对
-   * aac/ac3/eac3/dts 都给 wasm 路径，所以 EAC3 等音频恒走 wasm，
-   * 与视频硬解并行不悖（2026-11-17 查 public/libmedia/1.3.1 产物实证）。
+   * 以 MSE 原生管线构造（checkUseMSE 回调改判 true）。只许 4K 分流
+   * 决策判 'mse' 时传 true（见 softDecodePipelineDecision）；缺省/
+   * false 与 wasm 软解旧行为逐字一致。解码开关恒关：MSE 模式下
+   * libmedia 把音视频转封装成一条 fMP4 流喂 <video> 元素、由系统
+   * 媒体管线解码，解码管线（wasm/WebCodecs）不参与。
+   *
+   * 音频路径（2026-11-17 真机探针查证结论）：MSE 模式下音频随流
+   * 由系统播，libmedia 自己的音频渲染管线不参与，因此
+   * firstAudioRendered 事件不会触发——探针实测该事件未发、
+   * hasAudio=true、播放头正常推进，且用户亲耳确认声音正常。
+   * 「事件不发」是 MSE 模式的正常形态，不是缺陷；调用方的
+   * onFirstAudio 在 MSE 模式下不会被调用，不许拿它当出声判据。
+   * （非 MSE 的 wasm 模式音频仍走 wasm 解码管线，事件照常。）
    */
-  hardware?: boolean
+  mse?: boolean
 }
 
 type AVPlayerInstance = {
@@ -564,18 +691,22 @@ type AVPlayerInstance = {
   destroy(): Promise<void>
   on(event: string, handler: (arg?: unknown) => void): void
   readonly currentTime: bigint
+  /** play() 内管线判定结果（产物实证的实例属性）：true = 真走了 MSE */
+  useMSE?: boolean
 }
 
 /**
  * 创建软解播放器：AVPlayer 动态 import（不进首屏包），默认强制
  * wasm 解码（enableHardware/enableWebCodecs 都关——<video> 已经探
- * 明解不了）。唯一例外：options.hardware=true（仅 4K 源经
- * softDecodePipelineDecision 分流且硬解探测通过时）打开 WebCodecs
- * 硬解——canPlayType/MSE 解不了不等于 WebCodecs 解不了（iOS 17.4+
- * 的 HEVC 硬解只在 WebCodecs 面上开放），这正是探测复核信号的
- * 由来。wasm 一律走站内自托管路径。取流地址先过
- * resolveSoftDecodeUrl：直链变体（302 跳跨源）换中继变体，
- * AVPlayer 的 fetch 取流才读得到字节。
+ * 明解不了）。唯一例外：options.mse=true（仅 4K 源经
+ * softDecodePipelineDecision 分流且 MSE 预检通过时）挂 checkUseMSE
+ * 回调把管线改判到 libmedia 自带 MSE 原生管线，并挂 useMSE 看门
+ * 狗：play 后一旦发现实例没走 MSE（被 libmedia 内部否回解码
+ * 管线），立刻销毁判失败——解码管线就是 4K 崩页的那条路，帧
+ * 积压以百毫秒计，抢在它前面收场（打法移植探针页 #279）。
+ * wasm 一律走站内自托管路径。取流地址先过 resolveSoftDecodeUrl：
+ * 直链变体（302 跳跨源）换中继变体，AVPlayer 的 fetch 取流才
+ * 读得到字节。
  */
 export async function createSoftPlayer(
   container: HTMLDivElement,
@@ -598,8 +729,14 @@ export async function createSoftPlayer(
   }
   const player = new AVPlayer({
     container,
-    enableHardware: options.hardware === true,
-    enableWebCodecs: options.hardware === true,
+    // 解码开关恒关：wasm 模式靠 getWasm 给的自托管解码器干活；MSE
+    // 模式根本不走解码管线。WebCodecs 解码路径已随 #261 退役。
+    enableHardware: false,
+    enableWebCodecs: false,
+    // MSE 模式：构造选项里的官方改判口子，恒回 true 请求走 MSE
+    // （libmedia 内部先过 isTypeSupported 关、回调才有话语权；
+    // 起播前预检已同口径问过）。是否真走 MSE 由下方看门狗验明。
+    ...(options.mse === true ? { checkUseMSE: () => true } : {}),
     // 预读深度（libmedia 1.3.1 构造选项 preLoadTime，单位秒，按各流
     // 码率换算成解封装预读包数）：默认 4 秒在中继取流下太浅——软解
     // 只能走服务器中继，上游抖动一来缓冲就见底（2026-11-17 网页
@@ -641,6 +778,19 @@ export async function createSoftPlayer(
       startTimeoutMs,
     )
   })
+  // MSE 看门狗（移植探针页 #279 的已验证打法）：起播期间 120ms
+  // 轮询实例 useMSE 标志，发现不是 MSE 就判失败——外层 catch 会
+  // 销毁实例回落提示卡，不让解码管线在 4K 上真跑起来（解码帧
+  // 积压以百毫秒计，抢在它前面收场）。非 MSE 模式此承诺永不落定。
+  let vetoTimer: ReturnType<typeof setInterval> | undefined
+  const mseVeto = new Promise<never>((_resolve, reject) => {
+    if (options.mse !== true) return
+    vetoTimer = setInterval(() => {
+      if (player.useMSE === false) {
+        reject(new Error('mse pipeline vetoed: platform fell back to decoder pipeline'))
+      }
+    }, 120)
+  })
   try {
     await Promise.race([
       (async () => {
@@ -648,7 +798,12 @@ export async function createSoftPlayer(
         await player.play()
       })(),
       startGuard,
+      mseVeto,
     ])
+    // 起播落定后再核一次：轮询间隙里刚翻成 false 的同样算被否回
+    if (options.mse === true && player.useMSE === false) {
+      throw new Error('mse pipeline vetoed: platform fell back to decoder pipeline')
+    }
   } catch (e) {
     failOnce(e instanceof Error ? e.message : String(e))
     // 起播失败：把已建的实例销毁，不留后台继续拉 wasm/拉流的残留
@@ -660,6 +815,7 @@ export async function createSoftPlayer(
     throw e
   } finally {
     if (startTimer) clearTimeout(startTimer)
+    if (vetoTimer) clearInterval(vetoTimer)
   }
 
   return {
