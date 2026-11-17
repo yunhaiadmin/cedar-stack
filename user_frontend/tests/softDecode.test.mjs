@@ -591,7 +591,7 @@ check(
   softDecodePipelineDecision(sizedSrc(4096, 2160), true, { enabled: true, supported: true }).pipeline,
   'hardware',
 )
-check('hardware kill switch defaults on', SOFTDECODE_HARDWARE_ENABLED, true)
+check('hardware kill switch off (2026-11-17 real-device still crashes)', SOFTDECODE_HARDWARE_ENABLED, false)
 
 // --- 硬解探测：按所选源的实际编码 + 实际宽高问 VideoDecoder ---
 // node 环境没有 window：必须按不可用处理，不许抛错。

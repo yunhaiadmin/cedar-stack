@@ -143,13 +143,19 @@ export function softDecodeResolutionGate(
 // ---------- 4K 硬解尝试（WebCodecs，2026-11-17 用户点头） ----------
 
 /**
- * 4K 硬解关停开关（前端常量，默认开）。落点说明：软解总开关走后端
+ * 4K 硬解关停开关（前端常量，现为关停）。落点说明：软解总开关走后端
  * SystemConfig（/api/site/web-softdecode 只读下发），本单范围不动
  * 后端，硬解这个子能力的关停先落前端常量，与本文件既有的前端侧
- * 口径常量（SOFT_START_TIMEOUT_MS 等）同形态；改成 false 需随前端
- * 发一次版，关掉时 4K 完全回到 #260 护栏行为（只出提示卡）。
+ * 口径常量（SOFT_START_TIMEOUT_MS 等）同形态；改值需随前端发一次版。
+ *
+ * 关停原因（2026-11-17）：用户真机（iPhone Safari）实证——《多喜
+ * 一家人》第 1 集 3840×2160 HEVC 走硬解时，VideoDecoder.
+ * isConfigSupported 探测通过、硬解管线起来后页面仍被内存打崩。
+ * 探测通过 ≠ 真播得动。关停后 4K 完全回到 #260 护栏行为（不启
+ * 解码器、只出提示卡）。重启硬解须先有真机出画证据，不许只凭
+ * 探测结果再开。
  */
-export const SOFTDECODE_HARDWARE_ENABLED = true
+export const SOFTDECODE_HARDWARE_ENABLED = false
 
 export type SoftPipelineKind = 'wasm' | 'hardware' | 'blocked'
 
