@@ -36,7 +36,7 @@ from backend.api import emby_portal
 from backend.database import get_db
 from backend.security import hash_password
 
-PASSWORD = "Lockout-Pass-123"
+PASSWORD = "Lockout-Pass-123"  # secret-scan: allow — 测试夹具假密码，只进内存 SQLite 库、从不连任何真实账号
 
 
 @pytest.fixture()
