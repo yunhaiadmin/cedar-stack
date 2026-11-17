@@ -355,6 +355,36 @@ def test_child_reparented_to_bound_series(db, lib):
     assert bool(ep.has_identity) is True, "集改挂到已绑定剧应跟随变已绑定"
 
 
+def test_scan_like_flow_adds_no_series_selects(db, lib):
+    """扫描形态守卫：同会话同事务先落剧、再逐批落集——集解析所属剧
+    必须走会话内存，不许再对 emby_items 发 SELECT（CI 扫描资源预算
+    冒烟对该表 SELECT 次数有硬上限，钩子不许成为新查询源）。"""
+    from sqlalchemy import event
+
+    s = _mk(db, lib, "series", "剧", tmdb_id="60")
+    selects = []
+    engine = db.get_bind()
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def _count(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("SELECT") \
+                and "emby_items" in statement:
+            selects.append(statement)
+
+    try:
+        for i in range(5):
+            _mk(db, lib, "episode", f"集{i}", series_id=s.id,
+                season_number=1, episode_number=i + 1)
+        db.commit()
+    finally:
+        event.remove(engine, "before_cursor_execute", _count)
+    assert selects == [], f"同会话落集不该查库解析剧：{selects}"
+    db.expire_all()
+    eps = (db.query(em.MediaItem)
+           .filter(em.MediaItem.item_type == "episode").all())
+    assert eps and all(bool(e.has_identity) for e in eps)
+
+
 # ---------- 4. 索引 ----------
 
 def test_explain_uses_identity_index(db, lib):

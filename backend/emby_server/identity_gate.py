@@ -367,6 +367,9 @@ def resync_children_of_series(db, series_ids) -> int:
     if not ids:
         return 0
     effective = _fetch_series_effective(db, ids)
+    # 同会话备忘同步刷新：本会话后续 flush 解析这些剧时不许读到旧判据
+    if isinstance(getattr(db, "info", None), dict):
+        db.info.setdefault("_identity_series_memo", {}).update(effective)
     t = em.MediaItem.__table__
     conn = db.connection()
     updated = 0
@@ -452,14 +455,41 @@ def _flags_before_flush(session) -> None:
             if _row_effective(row) != new_eff:
                 flips[obj.id] = new_eff
 
-    # 子行解析所属 series 的判据：pending 优先，其余批量查库一次。
+    # 子行解析所属 series 的判据：本 flush 待定值 → 本会话备忘（此前
+    # 任一路径算过的 series 判据；本会话内对该剧的写都经 targets /
+    # resync 刷新备忘，与 identity_map 的会话内一致性同口径）→ 本会话
+    # 内存里的 series 对象（身份字段未过期才读，零查询）→ 批量查库一次。
+    # 扫描入库时剧与集在同一会话里逐批落库（含跨 commit 边界），走
+    # 内存/备忘解析，不给扫描链路加查询——扫描资源预算冒烟对
+    # emby_items 的 SELECT 次数有硬上限，本钩子不许成为新的查询源
+    # （2026-11-17 CI 实测：只走查库解析时 SELECT 12→26 顶破预算）。
+    memo = session.info.setdefault("_identity_series_memo", {})
+    for sid, (own, deleted) in pending_series.items():
+        memo[sid] = _series_effective(own, deleted)
+    known_series = {}
+    if any(obj.item_type in _CHILD_TYPES for obj in targets):
+        for o in list(session.identity_map.values()):
+            if (isinstance(o, em.MediaItem) and o.item_type == "series"
+                    and o.id is not None and o.id not in pending_series
+                    and o.id not in memo):
+                state = sa_inspect(o)
+                if state.expired_attributes.isdisjoint(
+                        ("tmdb_id", "imdb_id", "external_ids", "deleted_at")):
+                    bound = o.identity_bound
+                    if bound is None:
+                        bound = is_bound_row(o)
+                    known_series[o.id] = _series_effective(bound, o.deleted_at)
     need_db = {
         obj.series_id for obj in targets
         if obj.item_type in _CHILD_TYPES
         and obj.series_id is not None
         and obj.series_id not in pending_series
+        and obj.series_id not in memo
+        and obj.series_id not in known_series
     }
     db_series = _fetch_series_effective(session, need_db) if need_db else {}
+    memo.update(known_series)
+    memo.update(db_series)
 
     def series_effective_for(obj):
         sid = obj.series_id
@@ -467,6 +497,8 @@ def _flags_before_flush(session) -> None:
             if sid in pending_series:
                 own, deleted = pending_series[sid]
                 return _series_effective(own, deleted)
+            if sid in memo:
+                return memo[sid]
             return db_series.get(sid, False)
         # series_id 还没落值（同 flush 经 relationship 关联）：读内存关系
         rel = getattr(obj, "series", None)
