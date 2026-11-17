@@ -1,15 +1,12 @@
 """管理后台只读观测口（专线 B 第一阶段：补口）。
 
-覆盖 3 个 GET 口：绑定列表、sidecar 状态、139 池列表
-（采样进度口已随批 3 sample_hash 删除、映射列表口已在主线移除）。全部在隔离临时 SQLite 里跑，不连生产库；sidecar 成功
-路径用本地假 UDS 服务端，不碰真实侧车。
+覆盖 GET 口：绑定列表（sidecar 状态口已随观测页删除、采样进度口已随
+批 3 sample_hash 删除、映射列表口已在主线移除）。全部在隔离临时
+SQLite 里跑，不连生产库。
 """
 
-import json
 import os
-import socket
 import tempfile
-import threading
 
 os.environ.setdefault("DATABASE_TYPE", "sqlite")
 os.environ.setdefault("REDIS_ENABLED", "false")
@@ -108,12 +105,11 @@ def authed(client, admin):
 
 READ_PATHS = [
     "/api/admin/storage-bindings",
-    "/api/admin/providers/sidecar",
 ]
 
 
 def test_read_paths_require_auth(client):
-    """2 口无鉴权头 → 401/403（与 playback_admin 同口径）。"""
+    """各口无鉴权头 → 401/403（与 playback_admin 同口径）。"""
     for path in READ_PATHS:
         r = client.get(path)
         assert r.status_code in (401, 403), path
@@ -148,94 +144,3 @@ def test_bindings_list_filters_and_no_credential_leak(db, authed):
                    params={"limit": 999, "offset": -5})
     assert r.json()["limit"] == 200
     assert r.json()["offset"] == 0
-
-
-def test_sidecar_unavailable_is_error_not_500(authed, monkeypatch):
-    """测试环境无侧车：available=False + remote_unavailable，整口仍 200。"""
-    monkeypatch.setenv("PROVIDER_RUNTIME_SOCK_DIR", "/nonexistent-dir-xyz")
-    r = authed.get("/api/admin/providers/sidecar")
-    assert r.status_code == 200
-    providers = {p["provider"]: p for p in r.json()["providers"]}
-    assert set(providers) == {"p115", "yun139"}
-    for p in providers.values():
-        assert p["available"] is False
-        assert p["error"]["kind"] == "remote_unavailable"
-    r = authed.get("/api/admin/providers/sidecar",
-                   params={"provider": "nope"})
-    assert r.status_code == 400
-
-
-class _FakeSidecar(threading.Thread):
-    """最小 UDS JSON-RPC 服务端：一连接一请求，行收发。"""
-
-    def __init__(self, sock_path):
-        super().__init__(daemon=True)
-        self.sock_path = sock_path
-        self.stop_event = threading.Event()
-
-    def run(self):
-        srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        srv.bind(self.sock_path)
-        srv.listen(8)
-        srv.settimeout(0.5)
-        try:
-            while not self.stop_event.is_set():
-                try:
-                    conn, _ = srv.accept()
-                except socket.timeout:
-                    continue
-                try:
-                    chunks = []
-                    while True:
-                        data = conn.recv(65536)
-                        if not data:
-                            break
-                        chunks.append(data)
-                    raw = b"".join(chunks)
-                    if not raw.strip():
-                        continue  # 停表时的空探活连接，无请求可解析
-                    req = json.loads(raw.decode("utf-8"))
-                    method = req.get("method")
-                    if method == "manifest":
-                        result = {"protocol": "external-provider-runtime-v1",
-                                  "provider": "p115"}
-                    elif method == "health":
-                        result = {"ok": True}
-                    else:
-                        result = {}
-                    resp = {"jsonrpc": "2.0", "id": req.get("id"),
-                            "result": result}
-                    conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
-                finally:
-                    conn.close()
-        finally:
-            srv.close()
-
-    def stop(self):
-        self.stop_event.set()
-        try:
-            dummy = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            dummy.connect(self.sock_path)
-            dummy.close()
-        except OSError:
-            pass
-        self.join(timeout=5)
-
-
-def test_sidecar_available_via_fake_uds(authed, monkeypatch, uds_sock_dir):
-    monkeypatch.setenv("PROVIDER_RUNTIME_SOCK_DIR", str(uds_sock_dir))
-    sock_dir = uds_sock_dir / "p115"
-    sock_dir.mkdir()
-    server = _FakeSidecar(str(sock_dir / "runtime.sock"))
-    server.start()
-    try:
-        r = authed.get("/api/admin/providers/sidecar",
-                       params={"provider": "p115"})
-        assert r.status_code == 200
-        item = r.json()["providers"][0]
-        assert item["available"] is True
-        assert item["manifest"]["provider"] == "p115"
-        assert item["health"] == {"ok": True}
-        assert item["error"] is None
-    finally:
-        server.stop()

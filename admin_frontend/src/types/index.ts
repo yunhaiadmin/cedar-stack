@@ -1475,23 +1475,4 @@ export interface StorageBindingsResponse {
   offset: number
 }
 
-/** sidecar 单端状态（GET /api/admin/providers/sidecar；manifest / health 为对端原样对象） */
-export interface SidecarError {
-  code: string
-  kind: string
-  message: string
-}
-
-export interface SidecarProviderStatus {
-  provider: string
-  socket_path: string
-  available: boolean
-  manifest: Record<string, unknown> | null
-  health: Record<string, unknown> | null
-  error: SidecarError | null
-}
-
-export interface SidecarStatusResponse {
-  providers: SidecarProviderStatus[]
-}
 

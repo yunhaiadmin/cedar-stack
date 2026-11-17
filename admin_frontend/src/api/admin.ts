@@ -56,7 +56,6 @@ import type {
   UserDetail,
   UserGrants,
   UsersResponse,
-  SidecarStatusResponse,
   StorageBindingsResponse,
 } from '@/types'
 
@@ -2420,10 +2419,6 @@ export const fetchStorageBindings = (params: {
   limit?: number
   offset?: number
 } = {}) => get<StorageBindingsResponse>('/storage-bindings', params)
-
-/** sidecar 状态：不传 provider 查 p115 + yun139 两个，传了只查该个 */
-export const fetchSidecarStatus = (provider?: string) =>
-  get<SidecarStatusResponse>('/providers/sidecar', provider ? { provider } : undefined)
 
 // ==================== 媒体库图片与顺序（媒体库学习 L2 / L4） =============
 export interface ArtworkOverrideRow {

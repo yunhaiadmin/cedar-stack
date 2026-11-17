@@ -876,8 +876,8 @@ app.include_router(playback_admin_router)
 # 起播事件聚合读口（FMBY #2 闭环接线）：管理端只读口直接调
 # play_events.aggregate_play_start_events，见 play_start_admin.py。
 app.include_router(play_start_admin.router)
-# 管理后台只读观测口（专线 B 第一阶段：补口）：绑定 / 采样进度 / sidecar /
-# 映射 / 139 池，全部 GET，见 backend/api/admin_readonly.py
+# 管理后台只读观测口（专线 B 第一阶段：补口）：绑定列表，
+# 全部 GET，见 backend/api/admin_readonly.py
 app.include_router(admin_readonly_router)
 # 想看商店求片 R1：登记 + 榜单 + 入库联动（读时同步翻 completed）。
 # 复用 movie_requests / movie_request_votes，不另建表；只受 STORE_ENABLED 总闸 + 会员闸管。
