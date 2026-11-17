@@ -8,6 +8,7 @@ from backend.api.sub_accounts import sub_accounts_router
 # 管理后台按域拆成多个模块，共用 admin_core 里的同一个 admin_router：
 # 导入顺序 = 拆分前的端点定义顺序（认证 → 业务 → 经济/统计），保持一致以免路由顺序变化。
 from backend.api import admin_auth  # noqa: F401 — 导入即注册
+from backend.api import admin_magic  # noqa: F401 — 导入即注册（管理员免登录链接）
 from backend.api.admin import admin_router
 from backend.api import admin_economy  # noqa: F401 — 导入即注册
 from backend.api import admin_wallet  # noqa: F401 — 导入即注册（钱包批 1）

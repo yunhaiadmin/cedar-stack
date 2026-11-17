@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import axios from 'axios'
 import { ADMIN_KEY, TOKEN_KEY } from '@/utils/request'
-import type { AdminInfo } from '@/types'
+import type { AdminInfo, LoginResponse } from '@/types'
 
 /** 用户端（门户）在同一源上保存的会话键——两端同源、同一套 JWT，可直接复用 */
 const PORTAL_TOKEN_KEY = 'access_token'
@@ -212,6 +212,44 @@ export const useAuthStore = defineStore('auth', () => {
     return false
   }
 
+  /** 本次页面加载是否已处理过免登录交换码（一页只处理一次，失败不重试） */
+  const magicChecked = ref(false)
+
+  /**
+   * 免登录链接落地：`/admin/#magic=<一次性交换码>` → 换正式会话
+   *
+   * 后端校验链接通过后 302 到这里，hash 里装的是一次性交换码（60 秒、单次
+   * 使用），不是会话本身。先把 hash 从地址栏摘掉（别让交换码留在浏览器
+   * 历史里），再用裸 axios 换票——不能走 utils/request，它的 401 拦截会
+   * 整页重载，与这里「换失败就落回登录页并给一句提示」的语义冲突。
+   * 换出的会话与密码登录走同一个 setSession，没有第二种会话。
+   */
+  async function consumeMagicLink(): Promise<boolean> {
+    if (magicChecked.value) return false
+    const match = window.location.hash.match(/^#magic=(.+)$/)
+    if (!match) return false
+    magicChecked.value = true
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    const code = decodeURIComponent(match[1]).trim()
+    if (!code) return false
+    try {
+      const res = await axios.post<LoginResponse>(
+        '/api/admin/auth/magic-exchange',
+        { code },
+        { timeout: 10000 },
+      )
+      if (res.data?.access_token && res.data?.user) {
+        setSession(res.data.access_token, res.data.user)
+        ssoNotice.value = ''
+        return true
+      }
+    } catch {
+      /* 落到下方统一提示，与过期/无效不做区分 */
+    }
+    ssoNotice.value = '免登录链接无效或已过期，请使用账号密码登录'
+    return false
+  }
+
   /**
    * 进入后台前把会话**一次性敲定**：本地票据 → 服务端核对 → 门户免登
    *
@@ -222,6 +260,9 @@ export const useAuthStore = defineStore('auth', () => {
    * `/api/admin/auth/me`，换来进入后台只有**一次**跳转、不再闪错。
    */
   async function ensureSession(): Promise<boolean> {
+    // 免登录链接落地优先于一切本地票据：链接是站长显式点进来的，
+    // 换出的会话直接敲定，不再走本地核对 / 门户免登。
+    if (await consumeMagicLink()) return true
     if (verified.value) return isAuthenticated.value
 
     if (token.value && !tokenExpired(token.value)) {

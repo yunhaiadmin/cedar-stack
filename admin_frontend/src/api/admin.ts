@@ -77,6 +77,22 @@ export const createFirstAdmin = (data: { username: string; password: string; boo
 export const changePassword = (data: { old_password: string; new_password: string }) =>
   post<{ success: boolean }>('/auth/change-password', data)
 
+// ==================== 免登录链接（2026-11-17） ====================
+/** 免登录链接状态：三态 + 绑定账号 + 时间；永不含明文/哈希（后端也不回） */
+export interface MagicLinkStatus {
+  state: 'none' | 'active' | 'disabled'
+  username: string
+  created_at: string | null
+  last_used_at: string | null
+}
+
+export const fetchMagicLinkStatus = () => get<MagicLinkStatus>('/auth/magic-link')
+
+/** 生成 / 重新生成自己的免登录链接：明文只在这一次响应里出现，旧链接立即失效 */
+export const generateMagicLink = () => post<{ url: string }>('/auth/magic-link/generate', {})
+
+export const disableMagicLink = () => post<{ success: boolean }>('/auth/magic-link/disable', {})
+
 /**
  * 管理员登出：服务端吊销当前 access token 的 jti（P0-1 安全修复）。
  * 最佳努力：即使请求失败（比如 token 已失效）也继续走本地清理，不阻塞退出；
