@@ -47,6 +47,7 @@ from urllib.parse import urlencode
 from sqlalchemy.orm import Session
 
 from backend import models
+from backend.emby_server import identity_gate
 from backend.emby_server import models as em
 from backend.integrations import store
 
@@ -292,7 +293,11 @@ def _canonical_params(query_params) -> str:
 def _cache_key(user_id: int, params_hash: str, versions: dict[int, str]) -> str:
     ver = "|".join(f"{lid}={versions[lid]}" for lid in sorted(versions))
     ver_hash = hashlib.sha1(ver.encode()).hexdigest()[:16]
-    return f"{_KEY_PREFIX}:u{int(user_id)}:p{params_hash}:v{ver_hash}"
+    # 门状态段（BE-08）：dropped 集是从已挂身份门的基础查询里圈出的，
+    # 门形态变化必须换键（段的唯一实现在 identity_gate）。
+    return (f"{_KEY_PREFIX}:u{int(user_id)}"
+            f":{identity_gate.cache_variant_segment()}"
+            f":p{params_hash}:v{ver_hash}")
 
 
 def _serialize(dropped: set[int]) -> str:

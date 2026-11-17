@@ -587,6 +587,73 @@ def has_play_signal(db, user_id: int, item) -> bool:
         return False
 
 
+def any_play_signal_item_ids(db, items) -> set:
+    """一批条目里有「任一用户真实播放信号」的 id 集合（巡检批量口径）。
+
+    信号定义与 :func:`has_play_signal` 同源，只是把「该用户」放宽为
+    「任一用户」：条目本身被任何人看过（看过 / 有进度 / 有播放次数）、
+    同剧任一集被任何人看过、或该剧有任一 active 追剧订阅。批量实现
+    恒为三条集合查询（不逐条查），供图片补下载巡检（BE-18）整批过滤。
+    查询异常按整批无信号处理（巡检宁可少补，取图按需自愈仍是兜底）。
+    """
+    items = [it for it in (items or []) if it is not None]
+    if not items:
+        return set()
+    try:
+        from backend.emby_server import models as _em
+        from sqlalchemy import or_
+
+        watched_cond = or_(_em.UserMediaData.played == True,  # noqa: E712
+                           _em.UserMediaData.playback_position_ticks > 0,
+                           _em.UserMediaData.play_count > 0)
+        ids = [it.id for it in items]
+        out = {
+            row[0] for row in
+            db.query(_em.UserMediaData.item_id)
+            .filter(_em.UserMediaData.item_id.in_(ids), watched_cond)
+            .distinct().all()
+        }
+        series_ids = set()
+        for it in items:
+            if it.item_type == "series":
+                series_ids.add(it.id)
+            elif it.item_type in ("episode", "season") and it.series_id:
+                series_ids.add(it.series_id)
+        if series_ids:
+            hot_series = {
+                row[0] for row in
+                db.query(_em.MediaItem.series_id)
+                .join(_em.UserMediaData,
+                      _em.UserMediaData.item_id == _em.MediaItem.id)
+                .filter(_em.MediaItem.item_type == "episode",
+                        _em.MediaItem.series_id.in_(series_ids),
+                        watched_cond)
+                .distinct().all()
+            }
+            hot_series |= {
+                row[0] for row in
+                db.query(_em.SeriesFollow.series_item_id)
+                .filter(_em.SeriesFollow.series_item_id.in_(series_ids),
+                        _em.SeriesFollow.status == "active")
+                .distinct().all()
+            }
+            for it in items:
+                sid = (it.id if it.item_type == "series"
+                       else getattr(it, "series_id", None))
+                if sid is not None and sid in hot_series:
+                    out.add(it.id)
+        return out
+    except Exception:  # noqa: BLE001 — 信号判定失败按无信号，绝不拖垮巡检
+        return set()
+
+
+def has_any_play_signal(db, item) -> bool:
+    """任一用户对该条目有没有真实播放信号（单条版，见批量实现）。"""
+    if item is None:
+        return False
+    return item.id in any_play_signal_item_ids(db, [item])
+
+
 def _episodes_of_series(db, series_id: int):
     """同剧全部单集（活行，按季/集/id 排序；NULL 季集号排最后）。"""
     from backend.emby_server import models as _em

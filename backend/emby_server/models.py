@@ -201,6 +201,10 @@ class MediaItem(Base):
         # 复合第二列带上 item_type：日历的类型筛选（电影 / 剧集 / 单集）
         # 绝大多数时候都带，能把回表行数再压一截。
         Index("idx_item_added", "date_added", "item_type"),
+        # DateLastContentAdded 排序（BE-26）：物化列 last_content_added_at
+        # 的单列索引，供按「最后内容添加时间」排序时走索引序。
+        # 老库由 database._LEGACY_INDEXES 同名补建。
+        Index("idx_item_last_content_added", "last_content_added_at"),
         # 软删除（v2.48.0）：几乎所有查询都带 `library_id = ? AND deleted_at IS NULL`
         # （可见性由全局过滤器拼上）。把 deleted_at 跟在 library_id 后面，已下架的
         # 行能在索引里就被跳过，不用先回表再过滤。
@@ -366,6 +370,13 @@ class MediaItem(Base):
     repair_requested_at = Column(DateTime)
     is_hidden = Column(Boolean, default=False)
     date_added = Column(DateTime, default=datetime.now)
+    # DateLastContentAdded 物化值（BE-26）：series = 其下未软删单集
+    # date_added 的最大值（无集时 = 自身 date_added）；其余类型 = 自身
+    # date_added。维护在 emby_server/last_content.py（Session flush 钩子
+    # + 存量回填）；排序热路径读本列，不再逐行跑相关标量子查询。NULL
+    # = 尚未回填（批量 Core 写入绕过钩子时出现），排序侧 coalesce 回退
+    # 旧子查询，结果不变。老库由 database._auto_migrate 补列。
+    last_content_added_at = Column(DateTime, default=None)
     premiere_date = Column(DateTime)
     date_modified = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     # 分层扫描（v2.40.0）：L1 只做文件发现与秒跳，L2/L3 后台补全元数据。

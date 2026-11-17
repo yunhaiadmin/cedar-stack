@@ -275,6 +275,31 @@ def kind_values(db: Session, kind: str) -> list[str]:
     return list(distinct_values(db, kind))
 
 
+def kind_values_visible(db: Session, kind: str) -> list[str]:
+    """身份门开启时的取值列表：只保留至少有一条货架可见条目在用的值。
+
+    筛选菜单是货架面（BE-25）：未绑定条目独有的类型/标签不许进菜单，
+    否则用户点进去只见空列表。经 item_id 关联回条目行套
+    ``identity_gate.identity_clause()``（判据唯一实现）；软删行显式
+    排除（本查询主实体是 ItemFacet，全局软删钩子下推不到条目行）。
+    门关时与 :func:`kind_values` 逐字一致。
+    """
+    if not identity_gate.gate_enabled():
+        return kind_values(db, kind)
+    rows = (
+        db.query(em.ItemFacet.value)
+        .join(em.MediaItem, em.ItemFacet.item_id == em.MediaItem.id)
+        .filter(
+            em.ItemFacet.kind == kind,
+            em.MediaItem.deleted_at.is_(None),
+            identity_gate.identity_clause(),
+        )
+        .distinct()
+        .all()
+    )
+    return [r[0] for r in rows if r[0]]
+
+
 def count_virtual_items(db: Session, library) -> int:
     """虚拟媒体库的条目数（跨库的「发行平台视图」，按平台标签计数）
 

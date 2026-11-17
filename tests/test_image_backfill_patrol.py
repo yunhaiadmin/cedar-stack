@@ -13,6 +13,9 @@
   已有本地图（poster_path 非空，含 sidecar）不碰；软删/合并副本跳过；
   新入库优先 + 单轮上限；下载失败不计数且冷却内不重复尝试；
   EMBY_IMAGE_BACKFILL=0 时整轮跳过、零下载。
+- 播放信号门（BE-18，2026-11-17）：巡检只补有真实播放信号的条目
+  （任一用户看过该条/其任一集，或该剧有 active 追剧订阅）；无信号
+  条目不下图。故下面预期被补的条目都先经 _signal() 种下播放记录。
 """
 import os
 import tempfile
@@ -43,6 +46,7 @@ def db():
     s = SessionLocal()
     try:
         s.query(em.MediaItem).delete()
+        s.query(em.UserMediaData).delete()
         s.commit()
         yield s
     finally:
@@ -86,6 +90,13 @@ def _mk_item(db, **kw):
     return it
 
 
+def _signal(db, item):
+    """给条目种一条真实播放信号（BE-18 信号门：任一用户看过即算）。"""
+    db.add(em.UserMediaData(user_id=1, item_id=item.id,
+                            played=True, play_count=1))
+    db.commit()
+
+
 class TestSwitches:
     def test_prewarm_default_off(self, monkeypatch):
         monkeypatch.delenv("EMBY_IMAGE_PREWARM", raising=False)
@@ -125,6 +136,7 @@ class TestBacklogPatrol:
     def test_fills_poster_and_backdrop(self, db, downloads):
         it = _mk_item(db, item_type="movie", name="有图无本地",
                       primary_image_url=GOOD, backdrop_image_url=GOOD_BG)
+        _signal(db, it)
         n = enrich_worker.image_backlog_patrol(db)
         db.refresh(it)
         assert n == 1
@@ -143,6 +155,7 @@ class TestBacklogPatrol:
                  primary_image_url=GOOD, deleted_at=datetime.now())
         keep = _mk_item(db, item_type="movie", name="主行",
                         primary_image_url=GOOD)
+        _signal(db, keep)
         _mk_item(db, item_type="movie", name="合并副本",
                  primary_image_url=GOOD, merged_into_id=keep.id)
         n = enrich_worker.image_backlog_patrol(db)
@@ -153,6 +166,8 @@ class TestBacklogPatrol:
         monkeypatch.setattr(enrich_worker, "_IMAGE_BACKFILL_PER_ROUND", 2)
         items = [_mk_item(db, item_type="movie", name=f"片{i}",
                           primary_image_url=GOOD) for i in range(4)]
+        for it in items:
+            _signal(db, it)
         n = enrich_worker.image_backlog_patrol(db)
         assert n == 2
         db.refresh(items[3])
@@ -161,7 +176,9 @@ class TestBacklogPatrol:
         assert not items[0].poster_path
 
     def test_failed_download_cooldown(self, db, downloads):
-        _mk_item(db, item_type="movie", name="坏图", primary_image_url=BAD)
+        bad = _mk_item(db, item_type="movie", name="坏图",
+                       primary_image_url=BAD)
+        _signal(db, bad)
         assert enrich_worker.image_backlog_patrol(db) == 0
         first_calls = len(downloads)
         assert first_calls >= 1

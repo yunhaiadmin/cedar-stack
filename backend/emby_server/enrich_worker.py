@@ -5265,6 +5265,10 @@ def image_backlog_patrol(db) -> int:
     - 候选口径：可见未合并行，海报（primary_image_url 有、poster_path 空）
       或背景（backdrop_image_url 有、backdrop_path 空）缺本地图。
       poster_path 非空的行已有本地图（缓存或 sidecar 本地图），不动。
+    - 播放信号门（BE-18）：候选还须有真实播放信号（任一用户看过该条/
+      其任一集，或该剧有 active 追剧订阅，口径与 first_play 的
+      has_play_signal 同源）——预热只做真实播放请求，无信号的条目不
+      下图，等用户真打开时走取图按需自愈。
     - 新入库优先（id 倒序）：刚入库的片子最可能马上被打开。
     - 单轮硬上限 ``_IMAGE_BACKFILL_PER_ROUND`` 条；下载走
       ``image_store.prewarm``（全局信号量有界、非阻塞，抢不到名额本轮
@@ -5293,21 +5297,41 @@ def image_backlog_patrol(db) -> int:
                             em.MediaItem.backdrop_image_url != "",
                             or_(em.MediaItem.backdrop_path.is_(None),
                                 em.MediaItem.backdrop_path == ""))
-    rows = (db.query(em.MediaItem)
-            .filter(em.MediaItem.deleted_at.is_(None),
-                    em.MediaItem.merged_into_id.is_(None),
-                    or_(poster_missing, backdrop_missing))
-            .order_by(em.MediaItem.id.desc())
-            .limit(_IMAGE_BACKFILL_PER_ROUND * 4)
-            .all())
+    # 候选按 id 倒序分块扫（新入库优先），逐块过冷却 + 播放信号门凑满
+    # 一轮上限；扫描有硬顶（单轮最多看 PER_ROUND*40 条候选），不许为了
+    # 凑满一轮把全库候选翻完。
+    from backend.emby_server import first_play as _first_play
+
     batch = []
-    for row in rows:
-        tried_at = _IMAGE_BACKFILL_TRIED.get(row.id)
-        if tried_at is not None and now - tried_at < _IMAGE_BACKFILL_COOLDOWN_SEC:
-            continue
-        batch.append(row)
-        if len(batch) >= _IMAGE_BACKFILL_PER_ROUND:
+    scanned = 0
+    cursor = None
+    scan_cap = _IMAGE_BACKFILL_PER_ROUND * 40
+    while len(batch) < _IMAGE_BACKFILL_PER_ROUND and scanned < scan_cap:
+        cand_q = (db.query(em.MediaItem)
+                  .filter(em.MediaItem.deleted_at.is_(None),
+                          em.MediaItem.merged_into_id.is_(None),
+                          or_(poster_missing, backdrop_missing)))
+        if cursor is not None:
+            cand_q = cand_q.filter(em.MediaItem.id < cursor)
+        rows = (cand_q.order_by(em.MediaItem.id.desc())
+                .limit(_IMAGE_BACKFILL_PER_ROUND * 4)
+                .all())
+        if not rows:
             break
+        signal_ids = _first_play.any_play_signal_item_ids(db, rows)
+        for row in rows:
+            scanned += 1
+            cursor = row.id
+            tried_at = _IMAGE_BACKFILL_TRIED.get(row.id)
+            if tried_at is not None and now - tried_at < _IMAGE_BACKFILL_COOLDOWN_SEC:
+                continue
+            # 播放信号门（BE-18）：预热只做真实播放请求——没有任何用户
+            # 看过/在追的条目不下图，取图时按需自愈仍是兜底。
+            if row.id not in signal_ids:
+                continue
+            batch.append(row)
+            if len(batch) >= _IMAGE_BACKFILL_PER_ROUND:
+                break
     if not batch:
         return 0
     urls = []

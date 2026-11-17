@@ -1216,6 +1216,14 @@ def _auto_migrate():
         ("invite_trial_grants", [
             ("code_id", "INTEGER", "NULL"),
         ]),
+        # DateLastContentAdded 物化列（BE-26，2026-11-17）：老库补列后
+        # 为 NULL（尚未回填），排序侧 coalesce 回退旧标量子查询、结果
+        # 不变；启动维护 last_content.ensure_backfill 增量补齐，写入
+        # 路径由 flush 钩子同事务维护。索引 idx_item_last_content_added
+        # 在下方 _LEGACY_INDEXES 同名补建。
+        ("emby_items", [
+            ("last_content_added_at", "DATETIME", "NULL"),
+        ]),
     ]
 
     _newly_added_columns: list[tuple[str, str]] = []
@@ -1451,6 +1459,12 @@ _LEGACY_INDEXES: tuple[tuple[str, ...], ...] = (
     # 追新日历：否则用户打开追新日历就是一次全表扫
     ("emby_items", "idx_item_added", "date_added, item_type", None,
      "  🔧 已迁移: emby_items.idx_item_added（追新日历索引）"),
+    # DateLastContentAdded 物化列排序（BE-26）：models.py 的
+    # MediaItem.__table_args__ 已声明同名索引（新库 create_all 自带），
+    # 这里给升级上来的老库补上。回滚：DROP INDEX idx_item_last_content_added。
+    ("emby_items", "idx_item_last_content_added", "last_content_added_at",
+     "last_content_added_at",
+     "  🔧 已迁移: emby_items.idx_item_last_content_added（DateLastContentAdded 物化列索引）"),
     # v2.48.0 软删除可见性：deleted_at IS NULL 与几乎所有查询的 library_id = ? 绑在一起，
     # deleted_at 跟在 library_id 后面，已下架的行在索引里就被跳过
     ("emby_items", "idx_item_lib_deleted", "library_id, deleted_at", None,
