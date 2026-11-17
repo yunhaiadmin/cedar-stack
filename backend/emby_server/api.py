@@ -3538,6 +3538,13 @@ def _query_items(request: Request, user: models.WebUser, db: Session, base: str)
             query.order_by(*coarse_order(search)).limit(SEARCH_CANDIDATE_LIMIT).all()
         )
         ranked = rank_items(candidates, search)  # 相关度排序（完全匹配 > 前缀 > 别名 > 模糊）
+        # BE-15：搜索面代表折叠——同片跨库份与合并副本只留代表（口径
+        # 见 dedup.deduplicate_search_items）；折叠后再分页。
+        # TotalRecordCount 报折叠后总数：真实命中数减去候选池内折叠掉
+        # 的重复份（池外命中未载入、无法折叠，仍按 BE-14 口径计入总数）。
+        _folded = dedup_lib.deduplicate_search_items(ranked)
+        total -= len(ranked) - len(_folded)
+        ranked = _folded
         page = ranked[start:start + limit]
         _prefetch_list_data(db, user.id, page)
         return {

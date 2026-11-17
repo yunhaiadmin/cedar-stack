@@ -261,6 +261,64 @@ def deduplicate_items(items: Iterable, library_switches: Optional[dict] = None) 
     return result
 
 
+def search_dedup_key(item: Any) -> Optional[tuple]:
+    """搜索面去重键：与 :func:`dedup_key` 同一分组身份、仅去掉 library_id。
+
+    货架按库浏览，键含库是「同库才并组」的口径；搜索是跨库面，同片在
+    多个库各有一份时按货架键永远分属不同组、一条都折不掉（BE-15：
+    生产同片重复 531 组全部为跨库重复、同库内无重复）。这里直接由
+    dedup_key 派生——tmdb 优先、否则归一化标题+年份、非 movie/series
+    返回 None，逐字复用同一判定，只剥掉首元（library_id）。
+    """
+    key = dedup_key(item)
+    if key is None:
+        return None
+    return key[1:]
+
+
+def deduplicate_search_items(items: Iterable) -> list:
+    """搜索面代表折叠（BE-15）：同片只留代表，保序。
+
+    与 :func:`deduplicate_items` 同一代表口径——``merged_into_id``
+    非空的物理合并副本先剔除、代表由 :func:`pick_primary` 选（评分
+    与三期已绑定优先都在同一函数里）、每组占其首个成员在原序中的
+    位置、代表行挂 ``_merged_ids`` / ``_merged_guids`` /
+    ``_merged_count``、非 movie/series 原样透传。唯一差异是分组键
+    不含库（:func:`search_dedup_key`）：搜索跨库，同片的多库份必须
+    并组，否则生产存量重复折不掉。
+
+    不挂每库 merge_same 展示开关：该开关是按库浏览的展示口径，
+    搜索面定版只有「搜索宽」（案 A ②），关开关的库其行在搜索里
+    仍按同片折叠。不挂身份门同理——本函数只折同片，不收紧可见性。
+    """
+    items = [i for i in items if getattr(i, "merged_into_id", None) is None]
+    groups: dict = {}
+    order: list = []  # 保持原有顺序：记录每个 key 首次出现的位置
+    for item in items:
+        key = search_dedup_key(item)
+        if key is None:
+            # 不参与去重：用 guid 占一个独立组，保证原样返回
+            key = ("__raw__", getattr(item, "guid", id(item)))
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(item)
+
+    result = []
+    for key in order:
+        group = groups[key]
+        if len(group) == 1:
+            result.append(group[0])
+            continue
+        primary = pick_primary(group)
+        # 挂合并信息（内存属性，与 deduplicate_items 同形态）
+        primary._merged_ids = [g.id for g in group if g.id != primary.id]
+        primary._merged_guids = [g.guid for g in group if g.guid != primary.guid]
+        primary._merged_count = len(group) - 1
+        result.append(primary)
+    return result
+
+
 def find_duplicate_ids(db, library_id: int, item_type: str,
                        tmdb_id: Optional[str] = None,
                        name: Optional[str] = None,
