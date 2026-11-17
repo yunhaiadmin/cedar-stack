@@ -8,7 +8,9 @@
  *   托管的原始构建，见 public/libmedia/README.md——经 vite/rollup
  *   重新打包会打断它内部的 Worker 启动代码，不许走包导入）。
  *
- * 约束（批 1 实证）：只编了 simd 变体；FFmpeg 钉 7.1；不承诺 4K/HDR。
+ * 约束（批 1 实证）：只编了 simd 变体；FFmpeg 钉 7.1；wasm 不承诺
+ * 4K/HDR——4K 只走 WebCodecs 硬解尝试（见下方管线决策一节），
+ * 探不到硬解就出护栏提示卡，不许拿 wasm 硬解 4K。
  * 软解只覆盖 HEVC/H.264 画面 + AAC/AC3/EAC3/DTS 声音；AV1/Opus 等
  * 不在 wasm 集里，照旧走解码提示卡，不许硬上。
  */
@@ -136,6 +138,96 @@ export function softDecodeResolutionGate(
     return { blocked: true, width, height, reason: 'uhd-soft-decode' }
   }
   return { blocked: false, width, height, reason: 'below-uhd' }
+}
+
+// ---------- 4K 硬解尝试（WebCodecs，2026-11-17 用户点头） ----------
+
+/**
+ * 4K 硬解关停开关（前端常量，默认开）。落点说明：软解总开关走后端
+ * SystemConfig（/api/site/web-softdecode 只读下发），本单范围不动
+ * 后端，硬解这个子能力的关停先落前端常量，与本文件既有的前端侧
+ * 口径常量（SOFT_START_TIMEOUT_MS 等）同形态；改成 false 需随前端
+ * 发一次版，关掉时 4K 完全回到 #260 护栏行为（只出提示卡）。
+ */
+export const SOFTDECODE_HARDWARE_ENABLED = true
+
+export type SoftPipelineKind = 'wasm' | 'hardware' | 'blocked'
+
+export interface SoftPipelineDecisionResult {
+  pipeline: SoftPipelineKind
+  /** 所选源视频流的宽/高（缺失按 0），回带给调用方留痕 */
+  width: number
+  height: number
+  reason: string
+}
+
+/**
+ * 软解管线决策（纯函数）：在分辨率护栏之上分流——
+ * - 未达 4K 线（或非软解管线）→ 'wasm'：现行 wasm 构造，行为不变；
+ * - 达 4K 线 + 开关开 + 硬解探测可用 → 'hardware'：以 WebCodecs
+ *   硬解构造 AVPlayer 试播一次；
+ * - 达 4K 线但开关关 / 探测不可用 → 'blocked'：#260 提示卡。
+ * 阈值直接复用 softDecodeResolutionGate，不另立一套判定。
+ */
+export function softDecodePipelineDecision(
+  source: DecodeSourceLike,
+  softPipeline: boolean,
+  hardware: { enabled: boolean; supported: boolean },
+): SoftPipelineDecisionResult {
+  const gate = softDecodeResolutionGate(source, softPipeline)
+  if (!gate.blocked) {
+    return { pipeline: 'wasm', width: gate.width, height: gate.height, reason: gate.reason }
+  }
+  if (!hardware.enabled) {
+    return { pipeline: 'blocked', width: gate.width, height: gate.height, reason: 'hardware-switch-off' }
+  }
+  if (!hardware.supported) {
+    return { pipeline: 'blocked', width: gate.width, height: gate.height, reason: 'hardware-unsupported' }
+  }
+  return { pipeline: 'hardware', width: gate.width, height: gate.height, reason: 'uhd-hardware' }
+}
+
+/** 归一化编码 → WebCodecs codec 参数（与 decodeSupport 的复核口径同表，只留软解子集内的两种） */
+const HARDWARE_CODEC_PARAM: Record<string, string> = {
+  hevc: 'hev1.1.6.L93.B0',
+  h264: 'avc1.640028',
+}
+
+interface WebCodecsVideoDecoderCtor {
+  isConfigSupported(cfg: {
+    codec: string
+    codedWidth: number
+    codedHeight: number
+  }): Promise<{ supported?: boolean }>
+}
+
+/**
+ * 探测所选源的视频能否走 WebCodecs 硬解：按该源的实际编码
+ * （归一化编码 + 视频流实际宽高）问平台 VideoDecoder.
+ * isConfigSupported——libmedia 内部开 WebCodecs 解码器时用的也是
+ * 这道平台检查（它还会带真实 extradata 再验一次，这里只做起播前
+ * 分流预筛）。VideoDecoder 不存在（旧浏览器、iOS 锁定模式会禁用
+ * WebCodecs）或问不出确凿的「能」，一律按不可用处理。
+ */
+export async function probeSoftHardwareDecode(
+  source: DecodeSourceLike,
+): Promise<boolean> {
+  try {
+    const vd = (window as unknown as { VideoDecoder?: WebCodecsVideoDecoderCtor })
+      .VideoDecoder
+    if (!vd) return false
+    const vs = (source.MediaStreams || []).find((s) => s.Type === 'Video')
+    const param = HARDWARE_CODEC_PARAM[normalizeVideoCodec(vs?.Codec)]
+    if (!param) return false
+    const res = await vd.isConfigSupported({
+      codec: param,
+      codedWidth: vs?.Width || SOFT_UHD_MIN_WIDTH,
+      codedHeight: vs?.Height || SOFT_UHD_MIN_HEIGHT,
+    })
+    return !!res?.supported
+  } catch {
+    return false
+  }
 }
 
 // ---------- 开关读取（公开端点，只读一个布尔值） ----------
@@ -439,6 +531,18 @@ export interface CreateSoftPlayerOptions {
   ext?: string
   /** 首帧/起播超时（毫秒）：wasm 下载 + 分析超了就判失败回落，不干等 */
   startTimeoutMs?: number
+  /**
+   * 以 WebCodecs 硬解构造（enableHardware/enableWebCodecs 打开）。
+   * 只许 4K 分流决策判 'hardware' 时传 true（见
+   * softDecodePipelineDecision）；缺省/false 与旧行为逐字一致。
+   * 音频不受这两个开关影响：libmedia 1.3.1 的音频解码管线
+   * （AudioDecodePipeline.createTask）只看 getWasm 有没有给该编码
+   * 的 wasm 资源——有就走 wasm、没有才考虑 WebCodecs AudioDecoder，
+   * 且音频 registerTask 根本不带 enable* 选项；本文件的 getWasm 对
+   * aac/ac3/eac3/dts 都给 wasm 路径，所以 EAC3 等音频恒走 wasm，
+   * 与视频硬解并行不悖（2026-11-17 查 public/libmedia/1.3.1 产物实证）。
+   */
+  hardware?: boolean
 }
 
 type AVPlayerInstance = {
@@ -457,9 +561,13 @@ type AVPlayerInstance = {
 }
 
 /**
- * 创建软解播放器：AVPlayer 动态 import（不进首屏包），强制 wasm 解码
- *（enableHardware/enableWebCodecs 都关——浏览器已经探明解不了，再试
- * 硬解只会重蹈覆辙）。wasm 一律走站内自托管路径。取流地址先过
+ * 创建软解播放器：AVPlayer 动态 import（不进首屏包），默认强制
+ * wasm 解码（enableHardware/enableWebCodecs 都关——<video> 已经探
+ * 明解不了）。唯一例外：options.hardware=true（仅 4K 源经
+ * softDecodePipelineDecision 分流且硬解探测通过时）打开 WebCodecs
+ * 硬解——canPlayType/MSE 解不了不等于 WebCodecs 解不了（iOS 17.4+
+ * 的 HEVC 硬解只在 WebCodecs 面上开放），这正是探测复核信号的
+ * 由来。wasm 一律走站内自托管路径。取流地址先过
  * resolveSoftDecodeUrl：直链变体（302 跳跨源）换中继变体，
  * AVPlayer 的 fetch 取流才读得到字节。
  */
@@ -484,8 +592,8 @@ export async function createSoftPlayer(
   }
   const player = new AVPlayer({
     container,
-    enableHardware: false,
-    enableWebCodecs: false,
+    enableHardware: options.hardware === true,
+    enableWebCodecs: options.hardware === true,
     // 预读深度（libmedia 1.3.1 构造选项 preLoadTime，单位秒，按各流
     // 码率换算成解封装预读包数）：默认 4 秒在中继取流下太浅——软解
     // 只能走服务器中继，上游抖动一来缓冲就见底（2026-11-17 网页
