@@ -78,6 +78,7 @@ from backend.api.admin_player_blacklist import admin_player_blacklist_router
 from backend.api.admin_softdecode import admin_softdecode_router
 from backend.api.admin_danmaku import admin_danmaku_router
 from backend.api.danmaku import router as danmaku_router
+from backend.api.probe_4k import router as probe_4k_router
 from backend.api.player_prefs import router as player_prefs_router
 from backend.api.install_app import (
     admin_install_app_router,
@@ -854,6 +855,8 @@ app.include_router(admin_softdecode_router)
 # 见 backend/api/admin_danmaku.py 与 backend/api/danmaku.py
 app.include_router(admin_danmaku_router)
 app.include_router(danmaku_router)
+# 4K MSE 探针结果回传（一次性真机诊断，仅 staff 可写，见 backend/api/probe_4k.py）
+app.include_router(probe_4k_router)
 # 网页播放器设置同步（2026-11-15 ⚠️11）：偏好真落库、换设备跟随，
 # 见 backend/api/player_prefs.py 与 backend/player_prefs.py
 app.include_router(player_prefs_router)

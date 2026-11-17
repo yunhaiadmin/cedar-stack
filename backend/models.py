@@ -2274,3 +2274,28 @@ class PanelActivity(Base):
     library = Column(String(200))
     # 归属服（NULL = 全局事件，所有服可见）
     realm_id = Column(Integer)
+
+
+class Probe4kResult(Base):
+    """4K MSE 探针结果（一次性真机诊断，2026-11-17）。
+
+    网页 4K 播放路线定音用：探针页 /probe-4k（仅 staff）在真机上以
+    libmedia MSE 管线试播样本集，把每次尝试的管线判定/出画/出声/
+    报错原文回传落这张表，服务端侧直接查表读结论，不靠用户转述。
+    payload 是探针页拼的 JSON 串，服务端只存不解析。路线定音后
+    本表与探针页一并退役。
+    """
+    __tablename__ = 'probe_4k_results'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False, index=True)
+    item_guid = Column(String(64), nullable=False, default="")
+    # 尝试标识：preflight（环境预检）/ default（默认选轨）/
+    # audio-<流Index>（强制指定音轨）/ summary（整轮汇总）
+    attempt = Column(String(64), nullable=False, default="")
+    # 结论短码：如 mse-playing / vetoed-decoder / gate-audio-unsupported /
+    # error / timeout / done 等，由探针页口径写入，只作筛选不作解析
+    outcome = Column(String(64), nullable=False, default="")
+    payload = Column(Text, nullable=False, default="")
+    user_agent = Column(String(400), nullable=False, default="")
+    created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)

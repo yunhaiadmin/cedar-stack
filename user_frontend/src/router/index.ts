@@ -307,6 +307,15 @@ const router = createRouter({
       component: () => import('@/views/WebPlayerView.vue'),
       meta: { title: '播放', requiresAuth: true },
     },
+    // 4K MSE 探针（一次性真机诊断，2026-11-17）：隐藏页，不进任何
+    // 导航/菜单；页面只对 staff 渲染、回传端点只对 staff 放行。
+    // 路线定音后本路由与探针页一并退役。
+    {
+      path: '/probe-4k',
+      name: 'probe-4k',
+      component: () => import('@/views/Probe4kView.vue'),
+      meta: { title: '4K 探针', requiresAuth: true },
+    },
     {
       path: '/:pathMatch(.*)*',
       name: 'not-found',
