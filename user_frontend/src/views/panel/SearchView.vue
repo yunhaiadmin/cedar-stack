@@ -4,6 +4,8 @@
  * H1「『xxx』的搜索结果」36–40px；筛选 pill（全部/电影/剧集，
  * 激活白胶囊约 65×40/圆角 20）；网格与分类页同款（7 列 228×343）。
  * 数据走现行 Emby 协议搜索口 getItems(searchTerm)，与顶栏下拉同一口径。
+ * 分页与分类页同口径：按 StartIndex/Limit 逐页拉取＋「加载更多」，
+ * 显示总数取接口 TotalRecordCount，可达条数与总数一致（FE-16）。
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -25,6 +27,11 @@ const items = ref<EmbyItem[]>([])
 const total = ref(0)
 const loading = ref(false)
 const error = ref('')
+const hasMore = ref(false)
+const loadingMore = ref(false)
+
+/** 每页条数：与分类页 LibraryBrowseView 同口径 */
+const PAGE = 60
 
 const FILTERS = [
   { key: 'all', label: '全部' },
@@ -33,16 +40,22 @@ const FILTERS = [
 ] as const
 
 let seq = 0
-async function load() {
+/** reset=true 拉第一页（换词/换筛选）；false 追加下一页（加载更多） */
+async function load(reset = true) {
   const q = term.value
   if (!q) {
     items.value = []
     total.value = 0
+    hasMore.value = false
     return
   }
   const my = ++seq
-  loading.value = true
-  error.value = ''
+  if (reset) {
+    loading.value = true
+    error.value = ''
+  } else {
+    loadingMore.value = true
+  }
   try {
     const res = await embyProtocol.getItems({
       searchTerm: q,
@@ -52,19 +65,33 @@ async function load() {
           : filter.value === 'series'
             ? ['Series']
             : ['Movie', 'Series'],
-      limit: 70,
+      startIndex: reset ? 0 : items.value.length,
+      limit: PAGE,
       recursive: true,
     })
     if (my !== seq) return
-    items.value = res.Items || []
+    const page = res.Items || []
+    items.value = reset ? page : [...items.value, ...page]
     total.value = res.TotalRecordCount || items.value.length
+    hasMore.value =
+      res.HasMore !== undefined ? !!res.HasMore : items.value.length < total.value
   } catch (err) {
     if (my !== seq) return
-    items.value = []
-    error.value = err instanceof Error ? err.message : '搜索失败'
+    // 加载更多失败保留已有结果（与分类页同口径），「加载更多」仍可再点
+    if (reset) {
+      items.value = []
+      error.value = err instanceof Error ? err.message : '搜索失败'
+    }
   } finally {
-    if (my === seq) loading.value = false
+    if (my === seq) {
+      loading.value = false
+      loadingMore.value = false
+    }
   }
+}
+
+function scrollTop() {
+  window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 // 热搜榜（近 7 天聚合）：只在空态展示；拉不到或没数据就整行不渲染
@@ -119,20 +146,39 @@ watch([term, filter], () => void load(), { immediate: true })
         <div v-if="loading" class="sv-skel" role="status" aria-label="正在搜索">
           <div v-for="i in 14" :key="i" class="sv-skel__poster"><span class="sv-skel__logo">A</span></div>
         </div>
-        <div v-else-if="error" class="sv-note">搜索没完成：{{ error }}</div>
-        <div v-else-if="items.length === 0" class="sv-note">没有找到和『{{ term }}』相关的片子</div>
-        <div v-else class="sv-grid">
-          <StreamPosterCard
-            v-for="item in items"
-            :key="item.Id"
-            size="grid"
-            :title="item.Name"
-            :meta="metaOf(item)"
-            :rating="item.CommunityRating ?? null"
-            :image="posterUrl(item, 456)"
-            :to="`/media/${item.Id}`"
-          />
+        <div v-else-if="error" class="sv-note">
+          搜索没完成：{{ error }}<br />
+          <button type="button" class="sv-back" @click="load(true)">重试</button>
         </div>
+        <div v-else-if="items.length === 0" class="sv-note">没有找到和『{{ term }}』相关的片子</div>
+        <template v-else>
+          <div class="sv-grid">
+            <StreamPosterCard
+              v-for="item in items"
+              :key="item.Id"
+              size="grid"
+              :title="item.Name"
+              :meta="metaOf(item)"
+              :rating="item.CommunityRating ?? null"
+              :image="posterUrl(item, 456)"
+              :to="`/media/${item.Id}`"
+            />
+          </div>
+          <div class="sv-more">
+            <button
+              v-if="hasMore"
+              type="button"
+              class="sv-more__btn"
+              :disabled="loadingMore"
+              @click="load(false)"
+            >
+              {{ loadingMore ? '正在加载…' : '加载更多' }}
+            </button>
+            <button type="button" class="sv-more__btn sv-more__btn--ghost" @click="scrollTop">
+              回到顶部
+            </button>
+          </div>
+        </template>
       </template>
       <template v-else>
         <h1 class="sv-h1">搜索</h1>
@@ -273,6 +319,30 @@ watch([term, filter], () => void load(), { immediate: true })
   font-weight: var(--uhd-fw-semibold);
   font-family: inherit;
   cursor: pointer;
+}
+
+/* 加载更多行：与分类页 .lb-more 同形态 */
+.sv-more {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 44px;
+}
+.sv-more__btn {
+  height: 44px;
+  padding: 0 26px;
+  border-radius: 22px;
+  border: 1px solid var(--uhd-s-border);
+  background: var(--uhd-s-pill-active-bg);
+  color: var(--uhd-s-text);
+  font-size: 15px;
+  font-weight: var(--uhd-fw-semibold);
+  font-family: inherit;
+  cursor: pointer;
+}
+.sv-more__btn--ghost {
+  background: transparent;
+  color: var(--uhd-s-text-2);
 }
 
 /* 骨架屏网格（与 .sv-grid 同步列数） */
