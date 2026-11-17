@@ -259,6 +259,10 @@ export const authApi = {
 
   getCurrentUser: () => api.get<never, AuthUser>('/api/user/auth/me'),
 
+  /** 前台「管理后台」入口（仅管理员）：凭前台会话换一次性交接地址，
+   * 跳过去后管理端用 60 秒交换码换正式管理员会话（免密直进） */
+  adminHandoff: () => api.post<never, { url: string }>('/api/user/auth/admin-handoff'),
+
   logout: () => api.post('/api/user/auth/logout'),
 
   changePassword: (data: { old_password: string; new_password: string }) =>

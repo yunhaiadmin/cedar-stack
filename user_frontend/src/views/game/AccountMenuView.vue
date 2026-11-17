@@ -95,6 +95,7 @@ import { useSubscriptionStore } from '@/stores/subscription'
 import { useTheme } from '@/composables/useTheme'
 import { useToast } from '@/composables/useToast'
 import { communityLinks, initCommunityLinks } from '@/composables/useCommunityLinks'
+import { authApi } from '@/api'
 import { getAgentMe } from '@/api/agent'
 import { walletApi } from '@/api/wallet'
 
@@ -133,6 +134,10 @@ const isAgent = ref(false)
 /** 钱包余额（现有钱包接口；拿不到钱包行就不显金额，不假造） */
 const walletBalance = ref<string | null>(null)
 
+/** 管理员判定：后端 AuthUser.is_staff（/auth/me 已下发）；「管理后台」行
+ * 仅管理员渲染，普通用户看不见（与顶栏头像菜单的管理后台行同口径） */
+const isStaff = computed(() => !!userStore.user?.is_staff)
+
 const displayName = computed(() => userStore.user?.username || '我的')
 const avatarInitial = computed(() => (displayName.value.trim().charAt(0) || '我').toUpperCase())
 // 公开 ID（2026-11-15）：身份副行与复制钮一律用它，不再露数字 id；
@@ -144,6 +149,22 @@ const statusLine = computed(() => {
   const base = s ? s.plan_name : '普通用户'
   return publicId.value ? `${base} · ${publicId.value}` : base
 })
+
+/** 管理后台交接：凭前台会话向后端换一次性交接地址（60 秒交换码），
+ * 整页跳过去由管理端换正式管理员会话；失败只给人话提示，不露技术细节 */
+const adminBusy = ref(false)
+async function goAdmin() {
+  if (adminBusy.value) return
+  adminBusy.value = true
+  try {
+    const res = await authApi.adminHandoff()
+    if (!res?.url) throw new Error('empty handoff url')
+    window.location.href = res.url
+  } catch {
+    toast.error('进入失败，请重新登录后再试')
+    adminBusy.value = false
+  }
+}
 
 async function copyUserId() {
   if (!publicId.value) return
@@ -182,6 +203,15 @@ const groups = computed<MenuGroup[]>(() => {
   ]
   if (isAgent.value) {
     account.push({ key: 'agent', label: '代理中心', to: '/game/agent' })
+  }
+  // 管理后台（2026-11-17 用户亲点）：仅管理员账号（is_staff）渲染，
+  // 与代理中心同为条件行；点按走 action 免密交接，不走站内路由
+  if (isStaff.value) {
+    account.push({
+      key: 'admin',
+      label: '管理后台',
+      action: () => { void goAdmin() },
+    })
   }
   // 用户 2026-11-13 圈选令＋条件令：探险设施整组摘除、「我的概览」行删除；
   // 「每日报到」「信鸽」两行摘除（友站核查无签到/站内消息，两页定整页删除，

@@ -667,6 +667,43 @@ def me(
     return _user_out(current_user, db)
 
 
+@auth_router.post("/admin-handoff")
+def admin_handoff(
+    request: Request,
+    current_user: models.WebUser = Depends(get_current_user_jwt),
+    db: Session = Depends(get_db),
+):
+    """前台「管理后台」入口（2026-11-17 用户亲点）：管理员账号登录前台时
+    免密交接进管理后台。
+
+    鉴权与 ``/me`` 同一个依赖（前台用户会话），不新造第二套；只有
+    ``is_staff`` 的账号能拿到交换码，非 staff 回 403 且不签发任何码。
+    签发复用 ``admin_magic.issue_exchange_code``（同一张交换码表、同一
+    60 秒口径），前端拿到地址后跳 ``/admin/#magic=<code>``，管理端走
+    既有 magic-exchange 换正式会话。限流与免登录链接入口同档
+    （5 次/分钟/IP，复用现行 ratelimit）；成功签发写 AdminLog 审计，
+    action 与链接入口的 ``admin_magic_login`` 区分来源。
+    """
+    if not current_user.is_staff:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="当前账号没有管理权限",
+        )
+    ip = client_ip(request)
+    allowed, _retry = check_rate_limit(
+        f"admin_magic_frontend_handoff:{ip}", 5, 60)
+    if not allowed:
+        raise HTTPException(status_code=429, detail="操作太频繁，请稍后再试")
+    from backend.api.admin_core import _audit
+    from backend.api.admin_magic import issue_exchange_code
+
+    code = issue_exchange_code(db, current_user.id, ip)
+    _audit(db, current_user.id, "admin_magic_frontend_handoff", "self",
+           current_user.id, ip=ip)
+    db.commit()
+    return {"url": f"/admin/#magic={code}"}
+
+
 @auth_router.post("/logout")
 def logout(request: Request,
            current_user: models.WebUser = Depends(get_current_user_jwt),
