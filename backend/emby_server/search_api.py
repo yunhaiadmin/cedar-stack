@@ -30,6 +30,7 @@ from backend.emby_server.search import (
     rank_items,
     search_variants,
 )
+from backend.emby_server import dedup as dedup_lib
 from backend.emby_server import unified_search as unified
 from fastapi import HTTPException
 
@@ -94,6 +95,13 @@ def search_hints(request: Request, user: models.WebUser = Depends(get_emby_user)
     total = query.order_by(None).with_entities(func.count()).scalar() or 0
     rows = query.order_by(*coarse_order(term)).limit(SEARCH_CANDIDATE_LIMIT).all()
     ordered = rank_items(rows, term) if term else rows
+    # BE-15：与 /Items?SearchTerm= 同口径的搜索面代表折叠（同片跨库
+    # 份与合并副本只留代表，见 dedup.deduplicate_search_items）；
+    # TotalRecordCount 报折叠后总数：真实命中数减去候选池内折叠掉
+    # 的重复份（与 /Items?SearchTerm= 同口径）。
+    _folded = dedup_lib.deduplicate_search_items(ordered)
+    total -= len(ordered) - len(_folded)
+    ordered = _folded
 
     hints = [
         {
@@ -114,7 +122,7 @@ def search_hints(request: Request, user: models.WebUser = Depends(get_emby_user)
     # r50：TotalRecordCount 必须是截断前的命中总数（客户端据此翻页）；
     # 此前是当前页条数，有更多结果时客户端会认为没有下一页。
     # BE-14：r50 当时报的仍是候选截断后（≤500）的条数，现改为同一
-    # query 的真实 COUNT。
+    # query 的真实 COUNT；BE-15 在此基础上减去池内折叠份。
     return {"SearchHints": hints, "TotalRecordCount": total}
 
 
