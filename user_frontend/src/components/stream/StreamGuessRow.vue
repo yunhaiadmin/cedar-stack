@@ -5,12 +5,20 @@
  * 数据由 useGuessRecommendations 提供（现行三路只读信号合的 5 条），
  * 本组件只负责渲染；select 事件让父级（顶栏面板/手机全屏层）收起浮层。
  */
+import { ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Clapperboard } from 'lucide-vue-next'
 import type { GuessCard } from '@/composables/useGuessRecommendations'
 
 defineProps<{ items: GuessCard[] }>()
 const emit = defineEmits<{ select: [] }>()
+
+/** 海报失败兜底（FE-23，与海报卡 broken 口径一致）：失败记条目 id，
+    模板改走已有的 Clapperboard 占位，不出破图 */
+const brokenPosters = ref<ReadonlySet<string>>(new Set())
+function onPosterError(id: string) {
+  brokenPosters.value = new Set(brokenPosters.value).add(id)
+}
 </script>
 
 <template>
@@ -25,7 +33,7 @@ const emit = defineEmits<{ select: [] }>()
         @click="emit('select')"
       >
         <span class="sg__poster">
-          <img v-if="g.image" :src="g.image" alt="" loading="lazy" />
+          <img v-if="g.image && !brokenPosters.has(g.id)" :src="g.image" alt="" loading="lazy" @error="onPosterError(g.id)" />
           <Clapperboard v-else :size="20" aria-hidden="true" />
         </span>
         <span class="sg__name">{{ g.title }}</span>

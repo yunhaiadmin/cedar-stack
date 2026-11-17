@@ -64,6 +64,27 @@ const poster = computed(() => (item.value ? posterUrl(item.value, 440) : ''))
 /** 海报缺失/加载失败时的占位：片名首字（数据驱动，不写死） */
 const posterInitial = computed(() => (item.value?.Name || '').trim().charAt(0) || 'A')
 const backdrop = computed(() => (item.value ? backdropUrl(item.value, 1600) : ''))
+
+/* ---------- 顶图二段兜底（FE-15，与 StreamHero imgStage 同口径） ----------
+ * 顶图先 backdrop（无 backdrop 时用 poster 兜底），失败换 poster，
+ * 再失败落空态 div，不留破图区；切条目在 load() 里复位。 */
+const heroStage = ref(0)
+const heroSrc = computed(() => {
+  if (heroStage.value === 0) return backdrop.value || poster.value
+  if (heroStage.value === 1) {
+    // 首张是 backdrop 时才有 poster 可换；首张已是 poster 则无下一张
+    return backdrop.value && poster.value && poster.value !== backdrop.value
+      ? poster.value
+      : ''
+  }
+  return ''
+})
+/** 有图但顶图全失败：海报卡不再按「与顶图重复」连带隐藏，
+    改由海报卡自己的 @error/占位兜底（FE-15） */
+const heroBroken = computed(() => !!(backdrop.value || poster.value) && !heroSrc.value)
+function onHeroError() {
+  heroStage.value += 1
+}
 const isSeries = computed(() => item.value?.Type === 'Series')
 const typeLabel = computed(() => (isSeries.value ? '剧集' : item.value?.Type === 'Movie' ? '电影' : item.value?.Type || ''))
 
@@ -302,6 +323,7 @@ async function load() {
   loading.value = true
   error.value = ''
   posterBroken.value = false
+  heroStage.value = 0
   overviewExpanded.value = false
   try {
     item.value = await embyProtocol.getItem(itemId.value)
@@ -440,8 +462,10 @@ watch(itemId, () => {
            （2026-11-14 用户截图亲点友站形态）：高约 40vh、底部渐隐入
            页底，类型/片名/信息行叠在渐隐尾上，无海报卡 -->
       <div class="md-hero">
-        <!-- 无 backdrop 的条目用海报图兜底当顶图，避免顶图带空白 -->
-        <img v-if="backdrop || poster" :src="backdrop || poster" alt="" class="md-hero__img" />
+        <!-- 无 backdrop 的条目用海报图兜底当顶图，避免顶图带空白；
+             顶图失败二段降级（FE-15）：先换 poster，再失败落空态 -->
+        <img v-if="heroSrc" :src="heroSrc" alt="" class="md-hero__img" @error="onHeroError" />
+        <div v-else-if="backdrop || poster" class="md-hero__img md-hero__img--empty" aria-hidden="true"></div>
         <div class="md-hero__fade" aria-hidden="true"></div>
         <button type="button" class="md-back" aria-label="返回" @click="goBack">
           <ArrowLeft :size="20" />
@@ -455,8 +479,9 @@ watch(itemId, () => {
         <h1 class="md-title" :class="{ 'md-title--movie': !isSeries }">{{ item.Name }}</h1>
         <div class="md-main">
           <!-- 有顶图（backdrop 或海报兜底）时移动端隐藏海报卡（顶图就是
-               主视觉，不重复摆卡）；两样图都没有才保留海报卡占位兜底 -->
-          <div class="md-poster" :class="{ 'md-poster--dup': !!(backdrop || poster) }">
+               主视觉，不重复摆卡）；两样图都没有、或顶图加载全失败
+               （heroBroken，FE-15）时保留海报卡，由它自己兜底 -->
+          <div class="md-poster" :class="{ 'md-poster--dup': !!(backdrop || poster) && !heroBroken }">
             <img v-if="poster && !posterBroken" :src="poster" :alt="item.Name" class="md-poster__img" @error="posterBroken = true" />
             <span v-else class="md-poster__fallback" aria-hidden="true">{{ posterInitial }}</span>
           </div>
@@ -714,6 +739,10 @@ watch(itemId, () => {
   height: 100%;
   object-fit: cover;
   object-position: center 22%;
+}
+/* 顶图全失败的空态（FE-15）：只留剧照带底色，不出破图 */
+.md-hero__img--empty {
+  background: var(--uhd-s-card-soft);
 }
 .md-hero__fade {
   position: absolute;
@@ -1532,8 +1561,13 @@ watch(itemId, () => {
   .md-btn--remove-txt {
     display: none;
   }
+  /* 状态标手机端恢复显示（FE-26）：设施与桌面一致（同色板同形态），
+     只按小尺度收成小字胶囊并入动作行，不再整件隐藏 */
   .md-btn--state {
-    display: none;
+    height: 34px;
+    padding: 0 12px;
+    border-radius: 999px;
+    font-size: 12.5px;
   }
   /* 集数条全幅出血量随页边距 20px 同步（基规则按 24px 写） */
   .md-episodes :deep(.ep-strip) {

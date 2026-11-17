@@ -12,7 +12,8 @@
  * 桌面走批 3 双胶囊顶栏）、AppHeader 只复用胶囊不复用整条。
  * 令牌见 styles/uhd-topbar.css。
  */
-import { computed } from 'vue'
+import { computed, inject, type ComputedRef, type Ref } from 'vue'
+import { MonitorSmartphone, Moon, Sun } from 'lucide-vue-next'
 import { branding } from '@/composables/useBranding'
 import UhdWatchPill from './UhdWatchPill.vue'
 import BrandMark from '@/components/BrandMark.vue'
@@ -20,6 +21,32 @@ import BrandMark from '@/components/BrandMark.vue'
 const props = withDefaults(defineProps<{ title?: string }>(), { title: '' })
 
 const barTitle = computed(() => props.title || branding.site_name)
+
+interface StreamThemeCtx {
+  pref: Ref<'system' | 'light' | 'dark'>
+  resolved: ComputedRef<'light' | 'dark'>
+  cycleTheme: () => void
+}
+
+/* 外观切换钮（FE-25）：本栏在片库面（StreamShell）内挂载时，手机端
+   原先没有外观入口、与桌面双胶囊顶栏的设施不对齐——StreamShell
+   provide 了外观上下文时在观影胶囊旁补一颗循环钮（图标/文案/三态
+   循环与桌面 StreamTopbar 的外观钮同口径，点一下直接切换、不出下拉）。
+   账户区（App.vue）没有这份注入，不渲染此钮。 */
+const streamTheme = inject<StreamThemeCtx | null>('stream-theme', null)
+const themeIcon = computed(() => {
+  if (!streamTheme) return null
+  return streamTheme.pref.value === 'light'
+    ? Sun
+    : streamTheme.pref.value === 'dark'
+      ? Moon
+      : MonitorSmartphone
+})
+const themeLabel = computed(() => {
+  if (!streamTheme) return ''
+  const pref = streamTheme.pref.value
+  return `外观：${pref === 'system' ? '跟随系统' : pref === 'light' ? '浅色' : '深色'}（点击切换）`
+})
 </script>
 
 <template>
@@ -34,7 +61,19 @@ const barTitle = computed(() => props.title || branding.site_name)
       <span v-else class="uhd-topbar__mark"><BrandMark /></span>
       <span class="uhd-topbar__title">{{ barTitle }}</span>
     </div>
-    <UhdWatchPill />
+    <div class="uhd-topbar__actions">
+      <button
+        v-if="streamTheme"
+        type="button"
+        class="uhd-topbar__theme"
+        :title="themeLabel"
+        :aria-label="themeLabel"
+        @click="streamTheme.cycleTheme()"
+      >
+        <component :is="themeIcon" :size="17" aria-hidden="true" />
+      </button>
+      <UhdWatchPill />
+    </div>
   </header>
 </template>
 
@@ -67,6 +106,30 @@ const barTitle = computed(() => props.title || branding.site_name)
   align-items: center;
   gap: 9px;
   min-width: 0;
+}
+.uhd-topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+/* 外观钮：与观影胶囊同高（--utb-pill-h）的圆玻璃钮，配方同顶栏令牌 */
+.uhd-topbar__theme {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--utb-pill-h);
+  height: var(--utb-pill-h);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: var(--utb-pill-fill);
+  color: var(--utb-pill-fg);
+  font-family: inherit;
+  cursor: pointer;
+}
+.uhd-topbar__theme:active {
+  opacity: 0.75;
 }
 .uhd-topbar__logo {
   width: 24px;

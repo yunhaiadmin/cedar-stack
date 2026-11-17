@@ -53,6 +53,15 @@ const loading = ref(false)
 const loadingMore = ref(false)
 const error = ref('')
 
+/** 错误文案口径与详情页 errText 一致（FE-09）：优先拦截器挂的人话
+    userMessage，不把 axios 原始英文信息直接上屏 */
+function errText(err: unknown): string {
+  const msg = (err as { userMessage?: string })?.userMessage
+  if (msg) return msg
+  if (err instanceof Error) return err.message
+  return '加载失败'
+}
+
 /* ---------- 分类（片库视图 + 计数，数据驱动） ---------- */
 interface Category {
   id: string
@@ -446,7 +455,7 @@ async function load(reset = true, silent = false) {
     if (my !== seq) return
     if (reset && !silent) {
       items.value = []
-      error.value = err instanceof Error ? err.message : '加载失败'
+      error.value = errText(err)
     }
   } finally {
     if (my === seq) {

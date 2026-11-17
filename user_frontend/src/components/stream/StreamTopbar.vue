@@ -119,6 +119,12 @@ function goResults() {
 function thumb(item: EmbyItem): string {
   return item.ImageTags?.Primary ? imageUrl(item.Id, 'Primary', 80) : ''
 }
+/** 下拉拇指失败兜底（FE-23，与海报卡 broken 口径一致）：失败记条目 id，
+    模板改走已有的 Clapperboard 占位，不出破图 */
+const brokenThumbs = ref<ReadonlySet<string>>(new Set())
+function onThumbError(id: string) {
+  brokenThumbs.value = new Set(brokenThumbs.value).add(id)
+}
 function metaLine(item: EmbyItem): string {
   const parts: string[] = []
   if (item.ProductionYear) parts.push(String(item.ProductionYear))
@@ -191,7 +197,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
               @click="closeSearch"
             >
               <span class="st-panel__thumb">
-                <img v-if="thumb(item)" :src="thumb(item)" alt="" loading="lazy" />
+                <img v-if="thumb(item) && !brokenThumbs.has(item.Id)" :src="thumb(item)" alt="" loading="lazy" @error="onThumbError(item.Id)" />
                 <Clapperboard v-else :size="16" aria-hidden="true" />
               </span>
               <span class="st-panel__body">
