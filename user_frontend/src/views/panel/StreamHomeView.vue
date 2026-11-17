@@ -12,8 +12,8 @@
  * 海报卡只进详情页、不挂播放入口。
  */
 import { computed, onActivated, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
-import { Clapperboard, Trash2 } from 'lucide-vue-next'
+import { RouterLink, useRouter } from 'vue-router'
+import { Clapperboard, Play, Trash2 } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import { useUserStore } from '@/stores/user'
 import StreamShell from '@/components/stream/StreamShell.vue'
@@ -44,6 +44,7 @@ defineOptions({ name: 'StreamHomeView' })
 
 const toast = useToast()
 const userStore = useUserStore()
+const router = useRouter()
 
 /* ---------- 渐进渲染状态：五条腿各自 pending → ready / error，先到先画 ----------
    旧版 load() 两段瀑布全 settle 才撤骨架：任一条腿慢（全局超时 30s）整页
@@ -252,7 +253,8 @@ function resumeSub(m: PortalResumeItem): string {
     （2026-11-15 逐帧核查发现）；只改本行格式，不动共享 formatDuration。 */
 function resumeProgress(m: PortalResumeItem): string {
   const parts: string[] = []
-  if (typeof m.progress === 'number') parts.push(`已看 ${Math.round(m.progress)}%`)
+  /* 封顶 99 与详情页续看文案同口径（FE-20）：未看完不显示 100% */
+  if (typeof m.progress === 'number') parts.push(`已看 ${Math.min(99, Math.round(m.progress))}%`)
   if (m.position_ticks) {
     const s = Math.max(0, Math.floor(ticksToSeconds(m.position_ticks)))
     const hh = Math.floor(s / 3600)
@@ -307,6 +309,15 @@ async function hideNextUp(m: EmbyItem) {
   } finally {
     hidingNextUpId.value = ''
   }
+}
+/** FE-21：续看/下一集卡的直达播放钮——不绕详情页两跳，直进网页播放器；
+ * 剧集续看播最近在看的那一集（episode_id），电影播本身；下一集播该集本身。
+ * at 不传：播放器按现行契约自己读 UserData 断点续播。 */
+function playResume(m: PortalResumeItem) {
+  void router.push({ name: 'web-player', params: { id: m.episode_id || m.id } })
+}
+function playNextUp(m: EmbyItem) {
+  void router.push({ name: 'web-player', params: { id: m.Id } })
 }
 function resumeImage(m: PortalResumeItem): string {
   return m.poster_url ? imageAuthUrl(m.poster_url, 640) : ''
@@ -494,7 +505,7 @@ async function load(opts?: { silent?: boolean }) {
   // 下一集（协议口 NextUp）
   void (async () => {
     try {
-      const items = await fetchHome(() => embyProtocol.getNextUp(12))
+      const items = await fetchHome(() => embyProtocol.getNextUp(12, { timeout: HOME_TIMEOUT_MS }))
       if (my !== loadSeq) return
       raw.nextUp = items
       applyNextUp(items)
@@ -610,7 +621,7 @@ async function retryResume() {
 async function retryNextUp() {
   nextUpStatus.value = 'pending'
   try {
-    const items = await fetchHome(() => embyProtocol.getNextUp(12))
+    const items = await fetchHome(() => embyProtocol.getNextUp(12, { timeout: HOME_TIMEOUT_MS }))
     applyNextUp(items)
     nextUpStatus.value = 'ready'
     patchHomeCache({ nextUp: items })
@@ -709,6 +720,13 @@ function paintFromCache(payload: HomeCachePayload) {
   if (d.latest) {
     applyLatest(d.latest)
     heroStatus.value = 'ready'
+    /* FE-24：缓存秒画后顺手预热首张 Hero 图——静默刷新会用同地址再渲染一遍，
+       图先进浏览器缓存，替换时不再等网络（只预热运行时地址，不落任何存储） */
+    const firstBackdrop = heroItems.value[0]?.backdrop
+    if (firstBackdrop) {
+      const pre = new Image()
+      pre.src = firstBackdrop
+    }
   }
   if (d.resume) {
     applyResume(d.resume)
@@ -850,6 +868,15 @@ onActivated(() => {
               >
                 <Trash2 :size="17" />
               </button>
+              <button
+                type="button"
+                class="sl-ccard__play"
+                aria-label="直接播放"
+                title="直接播放"
+                @click.prevent.stop="playResume(m)"
+              >
+                <Play :size="16" />
+              </button>
             </span>
             <span class="sl-ccard__title">{{ resumeTitle(m) }}</span>
             <span class="sl-ccard__sub">{{ resumeSub(m) }}</span>
@@ -908,6 +935,15 @@ onActivated(() => {
                 @click.prevent.stop="hideNextUp(m)"
               >
                 <Trash2 :size="17" />
+              </button>
+              <button
+                type="button"
+                class="sl-ccard__play"
+                aria-label="直接播放"
+                title="直接播放"
+                @click.prevent.stop="playNextUp(m)"
+              >
+                <Play :size="16" />
               </button>
             </span>
             <span class="sl-ccard__title">{{ nextUpTitle(m) }}</span>
@@ -1151,6 +1187,22 @@ onActivated(() => {
 }
 .sl-ccard__trash:disabled {
   opacity: 0.5;
+}
+/* 卡面左下直达播放钮（FE-21）：与垃圾桶同模的半透明深色圆钮 */
+.sl-ccard__play {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
 }
 .sl-continue__count {
   font-size: 14px;
