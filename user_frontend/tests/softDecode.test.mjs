@@ -407,6 +407,11 @@ check(
     !softDecodeSrc.includes("from '@libmedia/avplayer'"),
   true,
 )
+check(
+  'avplayer preload depth raised for relay soft decode (preLoadTime 10s)',
+  softDecodeSrc.includes('preLoadTime: 10'),
+  true,
+)
 const libmediaDir = new URL('../public/libmedia/1.3.1/', import.meta.url)
 check('hosted player entry exists', existsSync(new URL('avplayer.js', libmediaDir)), true)
 check(

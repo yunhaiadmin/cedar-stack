@@ -435,6 +435,15 @@ export async function createSoftPlayer(
     container,
     enableHardware: false,
     enableWebCodecs: false,
+    // 预读深度（libmedia 1.3.1 构造选项 preLoadTime，单位秒，按各流
+    // 码率换算成解封装预读包数）：默认 4 秒在中继取流下太浅——软解
+    // 只能走服务器中继，上游抖动一来缓冲就见底（2026-11-17 网页
+    // 播放卡顿诊断）。设 10 秒：以本次个案 6.5Mbps 计约 8MB 预读，
+    // 25Mbps 高码率片约 31MB，内存代价可控；起播侧的服务端已同步
+    // 做续段快速通道＋中继预读，10 秒存货足够跨过秒级抖动。
+    // jitterBufferMin/Max 保持默认（1/4 秒）：那是渲染侧同步缓冲，
+    // 与取流存货不是一回事，本次不动。
+    preLoadTime: 10,
     getWasm: (type: string, codecId?: number) => {
       if (type === 'decoder') return wasmPathForDecoder(codecId)
       if (type === 'resampler') return '/wasm/resample/resample-simd.wasm'

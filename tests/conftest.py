@@ -125,6 +125,34 @@ def _reset_leaked_worker_state() -> None:
         pass
 
 
+@pytest.fixture(autouse=True)
+def _reset_stream_resolve_cache():
+    """续段快速通道的解析结果缓存（CacheManager playback 域，内存
+    回退）是跨请求进程级状态：测试里 (用户, 条目, 变体) 键跨文件
+    高频复用（user 11 / item1 / usercopy_relay 等），不清会让前一
+    文件落下的描述符被后一文件的同名请求命中、绕过它要钉的门禁
+    与令牌校验（2026-11-17 引入时实证：byos 变体两条校验用例被
+    邻居文件存下的描述符短路）。每测前后清内存回退里的
+    stream_resolve:* 键；测试环境 Redis 恒关，不涉及真 Redis。"""
+    def _clear():
+        try:
+            from backend.database import CacheManager
+            with CacheManager._memory_cache_lock:
+                for _key in [k for k in CacheManager._memory_cache
+                             if "stream_resolve:" in k]:
+                    CacheManager._memory_cache.pop(_key, None)
+                    try:
+                        CacheManager._memory_cache_order.remove(_key)
+                    except ValueError:
+                        pass
+        except Exception:
+            pass
+
+    _clear()
+    yield
+    _clear()
+
+
 @pytest.fixture()
 def uds_sock_dir():
     """AF_UNIX socket 路径上限约 107 字节：本地门 TMPDIR 很长时，
