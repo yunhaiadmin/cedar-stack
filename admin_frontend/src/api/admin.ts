@@ -201,6 +201,25 @@ export const fetchDanmakuConfig = () => get<DanmakuConfig>('/danmaku/config')
 export const updateDanmakuConfig = (data: DanmakuConfig) =>
   put<DanmakuConfig>('/danmaku/config', data)
 
+/** 登录失败锁定（2026-11-18，F4/F8 补项）：后端 /api/admin/login-lockout/config */
+export interface LoginLockoutConfig {
+  /** 总开关，默认开 */
+  enabled: boolean
+  /** 窗口内账号失败次数上限，默认 10 */
+  account_max_failures: number
+  /** 窗口内同一 IP 失败次数上限，默认 30 */
+  ip_max_failures: number
+  /** 失败计数窗口（秒），默认 900 */
+  window_sec: number
+  /** 锁定持续时间（秒），默认 900 */
+  lock_sec: number
+}
+
+export const fetchLoginLockoutConfig = () => get<LoginLockoutConfig>('/login-lockout/config')
+
+export const updateLoginLockoutConfig = (data: LoginLockoutConfig) =>
+  put<LoginLockoutConfig>('/login-lockout/config', data)
+
 /** 官网菜单抽屉（2026-11-18）：后端 /api/admin/site-drawer/config */
 export interface SiteDrawerNavItem {
   icon: string

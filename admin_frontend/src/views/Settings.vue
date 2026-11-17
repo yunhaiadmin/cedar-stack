@@ -35,6 +35,7 @@ import {
   fetchRegistrationSettings, updateRegistrationSettings,
   fetchSoftdecodeConfig, updateSoftdecodeConfig, type SoftdecodeConfig,
   fetchDanmakuConfig, updateDanmakuConfig, type DanmakuConfig,
+  fetchLoginLockoutConfig, updateLoginLockoutConfig, type LoginLockoutConfig,
   fetchSiteDrawerConfig, updateSiteDrawerConfig,
   type SiteDrawerConfig, type SiteDrawerConfigResponse,
 } from '@/api/admin'
@@ -575,7 +576,7 @@ async function load() {
 }
 
 onMounted(async () => {
-  await Promise.all([load(), loadCapabilities(), loadHotlink(), loadInstallApp(), loadItemsDedupCache(), loadTransfer(), loadMountServing(), loadDriveApi(), loadSoftdecode(), loadDanmaku(), loadSiteDrawer(), loadLicense(), loadPool()])
+  await Promise.all([load(), loadCapabilities(), loadHotlink(), loadInstallApp(), loadItemsDedupCache(), loadTransfer(), loadMountServing(), loadDriveApi(), loadSoftdecode(), loadDanmaku(), loadLoginLockout(), loadSiteDrawer(), loadLicense(), loadPool()])
   // Batch D 入口收敛：邀请页 / 客户端策略等用 hash 深链跳进来（如 #group-invitation）
   // R40：querySelector 直接塞 hash 会在畸形值时抛 SyntaxError；改用 getElementById
   if (route.hash) {
@@ -1113,6 +1114,61 @@ async function saveDanmakuCore(): Promise<boolean> {
   }
 }
 
+/** ==================== 登录锁定卡片（独立 endpoint，非通用分组） ====================
+ * 门户 / Emby / 管理端三处密码登录共用的失败锁定（后端 SystemConfig 家族
+ * login_lockout，#286 执法）：总开关默认开；账号维度窗口内失败达阈值
+ * （默认 10 次 / 900 秒）锁定该账号、IP 维度达阈值（默认 30 次）锁定该 IP，
+ * 锁定时长默认 900 秒；成功登录只清账号维度。 */
+const loginLockout = reactive<LoginLockoutConfig>({
+  enabled: true,
+  account_max_failures: 10,
+  ip_max_failures: 30,
+  window_sec: 900,
+  lock_sec: 900,
+})
+const loginLockoutOriginal = reactive<LoginLockoutConfig>({ ...loginLockout })
+const loginLockoutLoading = ref(false)
+
+function applyLoginLockout(data: LoginLockoutConfig) {
+  loginLockout.enabled = data.enabled === true
+  loginLockout.account_max_failures = data.account_max_failures ?? 10
+  loginLockout.ip_max_failures = data.ip_max_failures ?? 30
+  loginLockout.window_sec = data.window_sec ?? 900
+  loginLockout.lock_sec = data.lock_sec ?? 900
+  Object.assign(loginLockoutOriginal, loginLockout)
+}
+
+async function loadLoginLockout() {
+  loginLockoutLoading.value = true
+  try {
+    applyLoginLockout(await fetchLoginLockoutConfig())
+  } catch {
+    // 错误提示由 HTTP 拦截器统一处理
+  } finally {
+    loginLockoutLoading.value = false
+  }
+}
+
+const loginLockoutDirty = computed(
+  () =>
+    loginLockout.enabled !== loginLockoutOriginal.enabled ||
+    loginLockout.account_max_failures !== loginLockoutOriginal.account_max_failures ||
+    loginLockout.ip_max_failures !== loginLockoutOriginal.ip_max_failures ||
+    loginLockout.window_sec !== loginLockoutOriginal.window_sec ||
+    loginLockout.lock_sec !== loginLockoutOriginal.lock_sec,
+)
+
+/** 登录锁定保存核心：返回是否成功，失败时拦截器已提示。 */
+async function saveLoginLockoutCore(): Promise<boolean> {
+  try {
+    applyLoginLockout(await updateLoginLockoutConfig({ ...loginLockout }))
+    return true
+  } catch {
+    // 拦截器已提示
+    return false
+  }
+}
+
 /** ==================== 官网菜单抽屉卡片（独立 endpoint，非通用分组） ====================
  * 官网落地页移动端菜单抽屉的全部内容（后端 SystemConfig 单键
  * site_drawer_config，整份 JSON）：导航项、社区渠道卡片、分组标题、
@@ -1368,6 +1424,7 @@ async function reloadAll() {
   loadDriveApi()
   loadSoftdecode()
   loadDanmaku()
+  loadLoginLockout()
   loadSiteDrawer()
 }
 
@@ -1396,7 +1453,7 @@ const dirtyGroups = computed(() => GROUPS.filter((g) => isDirty(g)))
 const dirtyCount = computed(() =>
   dirtyGroups.value.length + (regDirty.value ? 1 : 0) + (hotlinkDirty.value ? 1 : 0)
   + (itemsDedupCacheDirty.value ? 1 : 0) + (transferDirty.value ? 1 : 0) + (mountServingDirty.value ? 1 : 0)
-  + (driveApiDirty.value ? 1 : 0) + (softdecodeDirty.value ? 1 : 0) + (danmakuDirty.value ? 1 : 0) + (installAppDirty.value ? 1 : 0)
+  + (driveApiDirty.value ? 1 : 0) + (softdecodeDirty.value ? 1 : 0) + (danmakuDirty.value ? 1 : 0) + (loginLockoutDirty.value ? 1 : 0) + (installAppDirty.value ? 1 : 0)
   + (siteDrawerDirty.value ? 1 : 0),
 )
 const anyDirty = computed(() => dirtyCount.value > 0)
@@ -1515,6 +1572,10 @@ async function saveAll() {
       if (await saveDanmakuCore()) saved += 1
       else failed.push('弹幕设置')
     }
+    if (loginLockoutDirty.value) {
+      if (await saveLoginLockoutCore()) saved += 1
+      else failed.push('登录锁定')
+    }
     if (siteDrawerDirty.value) {
       if (await saveSiteDrawerCore()) saved += 1
       else failed.push('官网菜单抽屉')
@@ -1554,6 +1615,7 @@ async function discardAll() {
   loadDriveApi()
   loadSoftdecode()
   loadDanmaku()
+  loadLoginLockout()
   loadSiteDrawer()
 }
 
@@ -1826,6 +1888,16 @@ watch(
               >
                 <MessageSquareText :size="13" />弹幕设置
                 <span v-if="danmakuDirty" class="chip-dot" aria-label="有未保存的改动" />
+              </button>
+              <button
+                v-if="sec.id === 'playback'"
+                type="button"
+                class="group-chip"
+                :class="{ 'is-dirty': loginLockoutDirty }"
+                @click="scrollToGroup('login-lockout')"
+              >
+                <Lock :size="13" />登录锁定
+                <span v-if="loginLockoutDirty" class="chip-dot" aria-label="有未保存的改动" />
               </button>
               <button
                 v-if="sec.id === 'site'"
@@ -2936,6 +3008,88 @@ watch(
                     />
                   </div>
                   <span class="field-hint">一条弹幕最多几个字，超出发送时被拒。默认 100 字</span>
+                </div>
+              </el-form-item>
+            </el-form>
+          </SectionCard>
+          <!-- 登录锁定：独立卡片，归「播放与风控」段 -->
+          <SectionCard
+            v-if="sec.id === 'playback'"
+            id="group-login-lockout"
+            title="登录锁定"
+            :icon="Lock"
+            description="门户、Emby、管理端三处密码登录共用的失败锁定：有人反复试密码时，先锁账号、再锁 IP。关掉总开关后三处登录都不再锁定（只剩每分钟请求数限流兜底），非必要别关；改完下面四项立即对新登录生效。"
+            :tone="loginLockoutDirty ? 'accent' : 'default'"
+            class="group-card"
+          >
+            <template v-if="loginLockoutDirty" #actions>
+              <span class="au-badge au-badge-amber">未保存</span>
+            </template>
+
+            <el-form label-position="top" class="field-form field-grid">
+              <el-form-item label="锁定总开关">
+                <div class="field-stack">
+                  <div class="field-control">
+                    <el-switch v-model="loginLockout.enabled" />
+                    <span class="field-suffix">{{ loginLockout.enabled ? '已开启' : '已关闭' }}</span>
+                  </div>
+                  <span class="field-hint">开：失败到阈值就锁；关：三处登录都不锁定。默认开</span>
+                </div>
+              </el-form-item>
+              <el-form-item label="账号失败阈值（次）">
+                <div class="field-stack">
+                  <div class="field-control">
+                    <el-input-number
+                      v-model="loginLockout.account_max_failures"
+                      :min="1"
+                      :max="1000"
+                      :step="1"
+                      controls-position="right"
+                    />
+                  </div>
+                  <span class="field-hint">窗口内同一账号密码错这么多次就锁该账号。默认 10 次</span>
+                </div>
+              </el-form-item>
+              <el-form-item label="IP 失败阈值（次）">
+                <div class="field-stack">
+                  <div class="field-control">
+                    <el-input-number
+                      v-model="loginLockout.ip_max_failures"
+                      :min="1"
+                      :max="1000"
+                      :step="1"
+                      controls-position="right"
+                    />
+                  </div>
+                  <span class="field-hint">窗口内同一 IP 密码错这么多次就锁该 IP（防换号撞库）。默认 30 次</span>
+                </div>
+              </el-form-item>
+              <el-form-item label="计数窗口（秒）">
+                <div class="field-stack">
+                  <div class="field-control">
+                    <el-input-number
+                      v-model="loginLockout.window_sec"
+                      :min="60"
+                      :max="86400"
+                      :step="60"
+                      controls-position="right"
+                    />
+                  </div>
+                  <span class="field-hint">只数窗口内的失败，超出窗口的旧失败不累计。默认 900 秒（15 分钟）</span>
+                </div>
+              </el-form-item>
+              <el-form-item label="锁定时长（秒）">
+                <div class="field-stack">
+                  <div class="field-control">
+                    <el-input-number
+                      v-model="loginLockout.lock_sec"
+                      :min="60"
+                      :max="86400"
+                      :step="60"
+                      controls-position="right"
+                    />
+                  </div>
+                  <span class="field-hint">锁上后多久自动解开，期间正确密码也进不去。默认 900 秒（15 分钟）</span>
                 </div>
               </el-form-item>
             </el-form>
