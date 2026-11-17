@@ -43,6 +43,8 @@ _ITEM_INDEXES = {
                                     "external_ids"],
     # 单集认领：未终态 series/season 的主键部分索引
     "idx_item_enrich_open_parent": ["id"],
+    # BE-24（2026-11-17）：身份门物化列计数/列表索引（spec 表末尾追加）
+    "idx_item_identity_gate": ["item_type", "has_identity", "library_id"],
 }
 
 
@@ -58,6 +60,8 @@ def _engine(tmp_path):
             "parent_id INTEGER, repair_requested_at TEXT, "
             "metadata_locked BOOLEAN, tmdb_id TEXT, imdb_id TEXT, "
             "external_ids TEXT, "
+            # BE-24：_auto_migrate 先行补出的身份物化列（索引依赖列）
+            "identity_bound BOOLEAN, has_identity BOOLEAN, "
             "sort_name TEXT, is_hidden BOOLEAN, content_hash TEXT)"
         ))
         conn.execute(text("CREATE TABLE emby_people (id INTEGER PRIMARY KEY, name TEXT)"))
@@ -102,6 +106,9 @@ def test_spec_table_covers_all_seven_in_restored_order():
         # 2026-11-15：家庭子账号按主账号查子账号（web_users.parent_user_id，
         # models.py 同名声明，spec 表末尾追加）
         "idx_web_users_parent",
+        # BE-24（2026-11-17）：身份门物化列 has_identity 的计数/列表索引
+        # （emby_items，models.py 同名声明，spec 表末尾追加）
+        "idx_item_identity_gate",
         # 2026-11-17（BE-26）：DateLastContentAdded 物化列排序索引
         # （emby_items.last_content_added_at，models.py 同名声明，末尾追加）
         "idx_item_last_content_added",
@@ -235,7 +242,7 @@ def test_creates_missing_indexes_and_is_idempotent(tmp_path, monkeypatch, caplog
     # person_tmdb_id 列不存在 → 静默跳过
     assert _indexes(eng, "emby_people") == {}
     first = _migration_log_text()
-    assert first.count("已迁移") == 13
+    assert first.count("已迁移") == 14
 
     # 第二次：全部已存在，不再建、不再打日志
     caplog.clear()

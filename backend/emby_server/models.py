@@ -220,6 +220,12 @@ class MediaItem(Base):
         # 部分谓词与查询条件一致，规划器可用。
         Index("idx_item_browse_sort_all", "sort_name", "id",
               postgresql_where=text("is_hidden = false AND deleted_at IS NULL")),
+        # 身份门计数/列表（BE-24）：identity_clause 只读 has_identity 后，
+        # 带门 GROUP BY 计数与按库列表过滤走这条部分索引（谓词与全局软删
+        # 钩子的 deleted_at IS NULL 一致，ORM 查询恒满足）。老库由
+        # database.py 的 _LEGACY_INDEXES 同名补建（非部分索引，语义等价）。
+        Index("idx_item_identity_gate", "item_type", "has_identity", "library_id",
+              postgresql_where=text("deleted_at IS NULL")),
         # 搜索 trigram GIN 索引（r7）：/emby/Items?SearchTerm=、/emby/Search/Hints、
         # 求片中心的 ILIKE 预筛都走这四列。postgresql_using / postgresql_ops
         # 是 PG 专属参数，SQLite 下 create_all 会忽略它们、退化为普通 btree 索引。
@@ -443,6 +449,19 @@ class MediaItem(Base):
     # 这里另存一份完整的，**只增不改**已有列；tmdb/imdb 同时回写那两列（引擎负责）。
     # 用途：跨源去重、换源时直接命中、改名后重新匹配。
     external_ids = Column(Text)
+    # 身份门判据物化列（BE-24，2026-11-17）：旧 identity_clause 是
+    # 「tmdb/imdb 两列 + external_ids 七键 LIKE + series EXISTS」逐行求值，
+    # 不可索引，带门计数生产实测约 13s/条。这里把判据物化成两列：
+    # identity_bound = 自身已绑定（identity_gate.is_bound_row 的 Python
+    # 口径）；has_identity = 货架判据结果（season/episode 跟随 series，
+    # 其余类型恒 True）。identity_clause() 只读 has_identity。
+    # 维护：identity_gate 的 Session flush 同步钩子（任何 ORM 写路径落库
+    # 前重算；series 判据翻转级联其子行；soft_delete 的 Core 批量软删/
+    # 复活走 identity_gate.resync_children_of_series 显式重算）。NULL =
+    # 尚未回填/未维护（存量由 scripts/backfill_identity_flags.py 回填），
+    # 子句按未通过处理，回填后不许再出现成片 NULL。
+    identity_bound = Column(Boolean, default=None)
+    has_identity = Column(Boolean, default=None)
     # 软删除（v2.48.0）：清理阶段不再物理删条目，只写这个时刻。
     # NULL = 正常可见；非 NULL = 已下架。读路径由 backend/emby_server/soft_delete.py
     # 的全局 ORM 过滤器自动挡掉，文件重新出现时扫描器会把它清空（连播放进度一起回来）。
@@ -643,6 +662,14 @@ event.listen(
     MediaItem, "before_update",
     lambda mapper, connection, target: fill_item_pinyin_fields(target),
 )
+
+# 身份标记同步钩子注册（BE-24）：identity_bound / has_identity 的重算逻辑
+# 与 Session flush 监听都在 identity_gate，本行只保证「任何进程只要加载
+# 了模型就完成注册」——写路径（扫描/补全/EA/API/脚本）无一例外，与上面
+# 拼音钩子同理。identity_gate 顶层只绑定本模块引用、导入期不访问
+# MediaItem 属性，无循环导入问题（它 import 本模块时本模块已在
+# sys.modules 中，MediaItem 定义在本行之前）。
+from backend.emby_server import identity_gate as _identity_gate  # noqa: F401,E402
 
 
 class UserMediaData(Base):

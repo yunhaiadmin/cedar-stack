@@ -130,6 +130,9 @@ class TestBE03Latest:
         _mk(db, lib, "movie", "另一片", tmdb_id="200",
             date_added=now - timedelta(hours=5))
         db.commit()
+        # 门状态钉关：本类只测 Latest 折叠力学，不依赖环境门默认值
+        # （BE-06 后默认开，种子条目身份不齐时会先被门滤掉）。
+        monkeypatch.setattr(identity_gate, "IDENTITY_SHELF_GATE", 0)
         monkeypatch.setattr(api, "_base_url", lambda request: "http://t")
         monkeypatch.setattr(api, "_prefetch_list_data", lambda *a, **k: None)
         monkeypatch.setattr(api, "_library_scope", lambda db, user: None)
@@ -155,7 +158,10 @@ class TestBE04RandomNoTotal:
         db.commit()
 
     def test_no_count_and_has_more_when_total_unwanted(
-            self, scene, fake_backend):
+            self, scene, fake_backend, monkeypatch):
+        # 门状态钉关：只测随机分支的 COUNT/HasMore 力学（种子无身份，
+        # BE-06 后门默认开会把结果全滤空，与本类断言无关）。
+        monkeypatch.setattr(identity_gate, "IDENTITY_SHELF_GATE", 0)
         self._seed(scene)
         statements = []
 
@@ -178,7 +184,9 @@ class TestBE04RandomNoTotal:
                if "count(" in s.lower() and "emby_items" in s]
         assert not bad, f"want_total=false 时不许再跑 COUNT：{bad[:1]}"
 
-    def test_want_total_true_still_real_total(self, scene, fake_backend):
+    def test_want_total_true_still_real_total(self, scene, fake_backend,
+                                              monkeypatch):
+        monkeypatch.setattr(identity_gate, "IDENTITY_SHELF_GATE", 0)
         self._seed(scene)
         res = api._query_items(
             _req({"Recursive": "true", "IncludeItemTypes": "Movie",
@@ -473,7 +481,10 @@ class TestBE26LastContentAdded:
         assert series.last_content_added_at == d1
         assert movie.last_content_added_at == d0
 
-    def test_sort_behavior_preserved(self, scene, fake_backend):
+    def test_sort_behavior_preserved(self, scene, fake_backend, monkeypatch):
+        # 门状态钉关：只测 DateLastContentAdded 排序力学（种子无身份，
+        # BE-06 后门默认开会把结果全滤空，与本类断言无关）。
+        monkeypatch.setattr(identity_gate, "IDENTITY_SHELF_GATE", 0)
         db, lib = scene.db, scene.lib
         old_series = _mk(db, lib, "series", "老剧新集",
                          date_added=datetime(2026, 1, 1, 12, 0, 0))
