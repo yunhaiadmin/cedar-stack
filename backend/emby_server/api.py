@@ -39,6 +39,7 @@ from backend.database import SessionLocal, get_db
 from backend.emby_server import cdn
 from backend.emby_server.async_db import release_db_before_response
 from backend.emby_server import facets
+from backend.emby_server import last_content  # noqa: F401 — 导入即注册 DateLastContentAdded 物化列的 flush 维护钩子（BE-26）
 from backend.emby_server.fastjson import json_route
 from backend.emby_server import image_store
 from backend.emby_server import item_anchor
@@ -963,16 +964,21 @@ def _item_dto(item: em.MediaItem, base: str, user_id: int, db: Session, full: bo
         # 口径对齐），容器类（series/season）不加。地址只回本服务：
         # 门禁 / quota 改道 / 副本形态仍由 video_stream 取流时裁决，
         # 详情面绝不下发网盘直链、绝不带真实 Path（hide 口径不变）。
-        # 签名轨只给已有 active 绑定的用户：播放签名是「已过门禁才
-        # 下发」的凭证，未绑定用户拿无签地址打流端点会被现场 403 并
-        # 看到去绑定引导，不许在这里先把凭证发出去。
+        # 签名轨只给已过门禁的用户：播放签名是「已过门禁才下发」的
+        # 凭证，判定走 sign_allowed_for_item（绑定 / 不需绑定 / 池放行
+        # 三路，BE-22）；都不过的用户拿无签地址打流端点会被现场 403
+        # 并看到去绑定引导，不许在这里先把凭证发出去。
         if (dto["MediaSources"] and item.item_type in ("movie", "episode")
                 and item.file_path):
             from backend.emby_server import playback_gate as _gate_mod
+            # 签名判定与流端点裁决同源（BE-22）：统一走
+            # sign_allowed_for_item——已绑用户可签、未绑用户有池资格
+            # 且条目有 ready 池副本时也可签。此前只认 has_active_binding，
+            # 仅池资格用户在 DTO 里拿到无签地址，与流端点口径撕裂。
             _detail_url, _, _ = _signed_local_stream_url(
                 item, base, user_id, db, api_key,
-                with_sign=bool(user_id)
-                and _gate_mod.has_active_binding(db, user_id))
+                with_sign=_gate_mod.sign_allowed_for_item(
+                    db, user_id, item))
             dto["MediaSources"][0]["DirectPlayUrl"] = _detail_url
             dto["MediaSources"][0]["DirectStreamUrl"] = _detail_url
         # 片头片尾标记 → Chapters：复用 MediaSource 里已算好的（_chapters_for_item
@@ -3484,16 +3490,23 @@ def _query_items(request: Request, user: models.WebUser, db: Session, base: str)
     # 排序
     # DateLastContentAdded: 剧集取其下所有单集的最大入库时间（新集入库即刷新），
     # 其他类型取自身 date_added。Rex 等第三方客户端按此排序最新更新。
+    # BE-26：该值已物化到 last_content_added_at（维护见 last_content.py），
+    # 排序优先读物化列；列为 NULL（存量回填未及 / 批量 Core 写入绕过钩子）
+    # 时 coalesce 回退下面的旧标量子查询，结果逐字一致、只是慢行逐行算。
     # 注意：标量子查询不经过软删钩子（钩子只给外层语句补 deleted_at），
     # 已下架单集必须在这里显式排除，否则会抬高剧集的最新入库时间（PA-042）。
     _ChildItem = aliased(em.MediaItem)
-    _date_last_content_added = func.coalesce(
+    _date_last_content_added_legacy = func.coalesce(
         select(func.max(_ChildItem.date_added))
         .where(_ChildItem.series_id == em.MediaItem.id)
         .where(_ChildItem.deleted_at.is_(None))
         .correlate(em.MediaItem)
         .scalar_subquery(),
         em.MediaItem.date_added,
+    )
+    _date_last_content_added = func.coalesce(
+        em.MediaItem.last_content_added_at,
+        _date_last_content_added_legacy,
     )
     order_cols = []
     _desc = bool(sort_order and sort_order[0].lower().startswith("desc"))
@@ -3572,6 +3585,33 @@ def _query_items(request: Request, user: models.WebUser, db: Session, base: str)
         # 每次请求都重排，StartIndex 在随机模式下本就没有跨请求的稳定性；
         # 直接抽 need 个随机行号得到的是同分布的均匀随机子集。
         # 注意：随机模式下跳过去重（Emby 官方随机也是全量随机），保持原有行为。
+        if not want_total:
+            # BE-04：调用方明确不要总数时不许白跑 COUNT（旧实现先 count
+            # 再把返回值改写成本页条数，COUNT 纯浪费；且不返回 HasMore，
+            # TotalRecordCount=本页条数会让客户端误判已到底）。改走
+            # ORDER BY random() 取 limit+1 条 id 探下一页——随机序下
+            # StartIndex 本就无跨请求稳定性（见上 R63-1 注释），多取
+            # 一条判 HasMore 与主路径 want_total=false 同口径。
+            page_ids = [
+                row[0] for row in query.order_by(None)
+                .order_by(func.random())
+                .with_entities(em.MediaItem.id)
+                .offset(start).limit(limit + 1).all()
+            ]
+            has_more_rand = len(page_ids) > limit
+            page_ids = page_ids[:limit]
+            items = (db.query(em.MediaItem)
+                     .filter(em.MediaItem.id.in_(page_ids)).all()
+                     if page_ids else [])
+            position = {iid: ix for ix, iid in enumerate(page_ids)}
+            items.sort(key=lambda it: position.get(it.id, 0))
+            _prefetch_list_data(db, user.id, items)
+            return {
+                "Items": [_item_dto(i, base, user.id, db) for i in items],
+                "TotalRecordCount": len(items),
+                "StartIndex": start,
+                "HasMore": has_more_rand,
+            }
         total = query.order_by(None).with_entities(func.count()).scalar() or 0
         if not total:
             return {"Items": [], "TotalRecordCount": 0, "StartIndex": start}
@@ -3598,7 +3638,7 @@ def _query_items(request: Request, user: models.WebUser, db: Session, base: str)
         items = db.query(em.MediaItem).filter(em.MediaItem.id.in_(picked)).all() if picked else []
         position = {item_id: index for index, item_id in enumerate(picked)}
         items.sort(key=lambda item: position.get(item.id, 0))
-        total = total if want_total else len(picked)
+        # want_total=false 已在分支入口单独处理并返回，这里恒为真总数。
         # 随机分支这里直接返回：它既没走 page_ids 路径（page_ids 在 else 分支
         # 才定义，继续往下走会 NameError → 500），形态照抄 search 分支。
         _prefetch_list_data(db, user.id, items)
@@ -3924,10 +3964,14 @@ def get_latest(request: Request, user: models.WebUser = Depends(get_emby_user),
         lib = db.query(em.Library).filter(em.Library.guid == parent_id).first()
         if lib is not None:
             q = q.filter(em.MediaItem.library_id == lib.id)
+    # 多取候选再折叠（BE-03）：未合并的跨路径重复行只能在内存去重层
+    # 折叠（merged 副本与身份门已在 SQL 里先滤掉），若按 Limit 先截断，
+    # 重复行占满名额后页长会短于 Limit。取 Limit*3 折叠后再截断，与
+    # 门户 Resume 的「多取再截」同形；候选仍有界，不会全表物化。
     items = (
         _scope_items(q, _library_scope(db, user))
         .order_by(em.MediaItem.date_added.desc())
-        .limit(limit)
+        .limit(limit * 3)
         .all()
     )
     # 去重：同一部剧/电影在不同路径有多条记录时只保留一条（首页海报行不重复）
@@ -3935,7 +3979,7 @@ def get_latest(request: Request, user: models.WebUser = Depends(get_emby_user),
     items = dedup_lib.deduplicate_items(
         items,
         library_switches=dedup_lib.resolve_library_switches(
-            db, [i.library_id for i in items]))
+            db, [i.library_id for i in items]))[:limit]
     # 最多暖 1 条：电影暖自身；剧走 detail（线程里选第一集未看）。
     try:
         if items:
@@ -4118,39 +4162,40 @@ def _filters_payload(db: Session) -> dict:
         # 免得扫描期间客户端每点一次筛选面板就重建一次菜单
         if stale and now - _FILTERS_CACHE["stale_at"] < _FILTERS_MIN_REFRESH:
             return cached
+    # 可见性口径（BE-25）：菜单是货架面，身份门开启时聚合必须叠加与
+    # 列表相同的 identity_clause——未绑定条目独有的值不进菜单（点进去
+    # 必然空/变少，与货架口径撕裂）。门状态进程内恒定（env 启动读一
+    # 次），与本函数的进程级缓存相容。按用户库范围（library_scope）
+    # 不叠加：菜单只出值名、不出条目数据，且 payload 全用户共享，
+    # 口径在此明示除外。
+    _gate_clause = (identity_gate.identity_clause()
+                    if identity_gate.gate_enabled() else None)
     if facets.ensure_ready(db):
         # 流派 / 标签走关联表：一次覆盖索引扇描拿全取值，不再扫全库文本列。
         # （可见性差异：关联表不记 is_hidden，隐藏条目独有的分类值也会出现在菜单里；
         #   点进去的结果集仍会过滤掉隐藏条目，所以只是菜单多一个可选项。）
-        genres: set = set(facets.kind_values(db, facets.KIND_GENRE))
-        tags: set = set(facets.kind_values(db, facets.KIND_TAG))
+        genres: set = set(facets.kind_values_visible(db, facets.KIND_GENRE))
+        tags: set = set(facets.kind_values_visible(db, facets.KIND_TAG))
     else:
         # 老库还没回填完：沿用旧口径
         genres, tags = set(), set()
-        for item_genres, item_tags in (
-            db.query(em.MediaItem.genres, em.MediaItem.tags)
-            .filter(em.MediaItem.is_hidden == False)  # noqa: E712
-            .yield_per(1000)
-        ):
+        _fallback_q = db.query(em.MediaItem.genres, em.MediaItem.tags).filter(
+            em.MediaItem.is_hidden == False)  # noqa: E712
+        if _gate_clause is not None:
+            _fallback_q = _fallback_q.filter(_gate_clause)
+        for item_genres, item_tags in _fallback_q.yield_per(1000):
             genres.update(g for g in (item_genres or "").split(",") if g)
             tags.update(t for t in (item_tags or "").split(",") if t)
     # 分级与年份是单值列：DISTINCT 只取需要的列（不再把四个列一起读回来物化）
-    ratings = {
-        r
-        for (r,) in db.query(em.MediaItem.official_rating)
-        .filter(em.MediaItem.is_hidden == False, em.MediaItem.official_rating.isnot(None))  # noqa: E712
-        .distinct()
-        .all()
-        if r
-    }
-    years = {
-        y
-        for (y,) in db.query(em.MediaItem.production_year)
-        .filter(em.MediaItem.is_hidden == False, em.MediaItem.production_year.isnot(None))  # noqa: E712
-        .distinct()
-        .all()
-        if y
-    }
+    _ratings_q = db.query(em.MediaItem.official_rating).filter(
+        em.MediaItem.is_hidden == False, em.MediaItem.official_rating.isnot(None))  # noqa: E712
+    _years_q = db.query(em.MediaItem.production_year).filter(
+        em.MediaItem.is_hidden == False, em.MediaItem.production_year.isnot(None))  # noqa: E712
+    if _gate_clause is not None:
+        _ratings_q = _ratings_q.filter(_gate_clause)
+        _years_q = _years_q.filter(_gate_clause)
+    ratings = {r for (r,) in _ratings_q.distinct().all() if r}
+    years = {y for (y,) in _years_q.distinct().all() if y}
     payload = {
         "Genres": sorted(genres),
         "Tags": sorted(tags),
@@ -4589,15 +4634,20 @@ def get_episodes(item_id: str, request: Request,
                     "Episodes 收到不匹配的 SeasonId，忽略该筛选：series=%s season_id=%s",
                     item.guid, season_id)
     episodes = query.order_by(em.MediaItem.season_number, em.MediaItem.episode_number).all()
-    # 集级别去重：同一季集号只保留一条（不同 series 记录下的重复集）
-    seen = set()
-    deduped = []
+    # 集级别去重：同一季集号只保留一条（不同 series 记录下的重复集）。
+    # 代表选取与 Versions 同口径（BE-12）：组内走 _sort_versions_by_bitrate
+    # 码率优先取首条，不再由排序偶然决定展示哪份；组间次序仍按集号
+    # 首次出现序（即 SQL 的季/集排序）。
+    _ep_groups: dict = {}
+    _ep_order: list = []
     for e in episodes:
         key = (e.season_number or 0, e.episode_number or 0)
-        if key not in seen:
-            seen.add(key)
-            deduped.append(e)
-    episodes = deduped
+        if key not in _ep_groups:
+            _ep_groups[key] = []
+            _ep_order.append(key)
+        _ep_groups[key].append(e)
+    episodes = [_sort_versions_by_bitrate(_ep_groups[key])[0]
+                for key in _ep_order]
     # r50：补 Limit/StartIndex 分页（去重后分页；此前千集级剧集一次全量序列化）
     start = qstart(request.query_params)
     limit = qlimit(request.query_params, default=100)

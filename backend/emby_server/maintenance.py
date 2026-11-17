@@ -31,6 +31,7 @@ from backend.db_retry import commit_with_retry
 from backend.emby_server import drive_error_events
 from backend.emby_server import play_access_events
 from backend.emby_server import facets
+from backend.emby_server import last_content
 from backend.emby_server import image_store
 from backend.emby_server import models as em
 from backend.emby_server import transfer_decisions
@@ -426,6 +427,11 @@ def run_startup_maintenance(scan_owner: bool = True) -> dict:
         result["item_facets_backfilled"] = facets.ensure_backfill(db)
         result["item_facets_pruned"] = facets.prune_orphans(db)
         result["item_facets_ready"] = facets.ready(db)
+        # DateLastContentAdded 物化列（BE-26）：存量 NULL 行补齐（增量有界）。
+        # 计数只进日志、不进 result：tick 结果键集合被冒烟契约钉死，不许加键。
+        _lc_filled = last_content.ensure_backfill(db)
+        if _lc_filled:
+            logger.info("DateLastContentAdded 物化列回填 %s 行", _lc_filled)
     except Exception as exc:  # noqa: BLE001
         logger.warning("启动维护（数据库部分）失败: %s", exc)
         db.rollback()
@@ -599,6 +605,11 @@ def janitor_tick(heavy: bool = True) -> dict:
         try:
             result["item_facets_backfilled"] = facets.ensure_backfill(db)
             result["item_facets_orphans"] = facets.prune_orphans(db)
+            # DateLastContentAdded 物化列（BE-26）：存量 NULL 行补齐。
+            # 计数只进日志、不进 result：tick 结果键集合被冒烟契约钉死。
+            _lc_filled = last_content.ensure_backfill(db)
+            if _lc_filled:
+                logger.info("DateLastContentAdded 物化列回填 %s 行", _lc_filled)
         except Exception as exc:  # noqa: BLE001
             logger.warning("维护分类关联表失败: %s", exc)
             db.rollback()

@@ -17,7 +17,9 @@
 3. **键**：规范化查询参数（排除 ``api_key``/``StartIndex``/``Limit``/
    ``EnableTotalRecordCount``；StartIndex/Limit 是分页切片维度，不能进键，
    否则每页一个键）+ **allowed 可见库集合的哈希**（不用用户 id：相同可见
-   范围的用户共享清单；用户状态在 DTO 层现查）+ 范围内各库数据版本号
+   范围的用户共享清单；用户状态在 DTO 层现查）+ 身份门状态段
+   （``identity_gate.cache_variant_segment``，BE-08：清单随门形态变化，
+   开关翻转必须换键）+ 范围内各库数据版本号
    （与 :mod:`items_dedup_cache` 同一套 ``items_dedup_version_lib_<库id>``
    版本行、同样的直查 DB 读法；版本号变 → 键变 → 自然失效）。
    未来新增的筛选参数自动参与键，不会悄悄复用旧缓存。
@@ -60,6 +62,7 @@ from urllib.parse import urlencode
 
 from sqlalchemy.orm import Session
 
+from backend.emby_server import identity_gate
 from backend.emby_server import items_dedup_cache as _dedup
 from backend.emby_server import models as em
 from backend.integrations import store
@@ -249,7 +252,10 @@ def _cache_key(lib_ids: list[int], params_hash: str, versions: dict[int, str]) -
     scope_hash = hashlib.sha1(",".join(map(str, lib_ids)).encode()).hexdigest()[:12]
     ver = "|".join(f"{lid}={versions.get(lid, '0')}" for lid in lib_ids)
     ver_hash = hashlib.sha1(ver.encode()).hexdigest()[:16]
-    return f"{_KEY_PREFIX}:a{scope_hash}:p{params_hash}:v{ver_hash}"
+    # 门状态段（BE-08）：清单内容随身份门形态变化，键里必须含门段，
+    # 否则开关翻转后旧口径清单最长残留一个 TTL。
+    return (f"{_KEY_PREFIX}:a{scope_hash}:{identity_gate.cache_variant_segment()}"
+            f":p{params_hash}:v{ver_hash}")
 
 
 def _key_for(db: Session, query_params, lib_ids: list[int],
@@ -567,7 +573,9 @@ def _counts_key(lib_ids: list[int], versions: dict, variant: str) -> str:
     scope_hash = hashlib.sha1(",".join(map(str, lib_ids)).encode()).hexdigest()[:12]
     ver = "|".join(f"{lid}={versions.get(lid, '0')}" for lid in lib_ids)
     ver_hash = hashlib.sha1(ver.encode()).hexdigest()[:16]
-    return f"{_COUNTS_KEY_PREFIX}:a{scope_hash}:{variant}:v{ver_hash}"
+    # 门状态段（BE-08）：与清单键同口径，计数随门形态变化必须换键。
+    return (f"{_COUNTS_KEY_PREFIX}:a{scope_hash}"
+            f":{identity_gate.cache_variant_segment()}:{variant}:v{ver_hash}")
 
 
 def get_cached_counts(db: Session, lib_ids: Optional[list[int]],

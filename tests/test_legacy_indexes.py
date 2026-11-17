@@ -109,6 +109,9 @@ def test_spec_table_covers_all_seven_in_restored_order():
         # BE-24（2026-11-17）：身份门物化列 has_identity 的计数/列表索引
         # （emby_items，models.py 同名声明，spec 表末尾追加）
         "idx_item_identity_gate",
+        # 2026-11-17（BE-26）：DateLastContentAdded 物化列排序索引
+        # （emby_items.last_content_added_at，models.py 同名声明，末尾追加）
+        "idx_item_last_content_added",
     ]
 
 

@@ -99,6 +99,10 @@ from backend.emby_server.api import emby_router
 # 把关联行同步好，不需要每个调用点各自记得调一次。
 from backend.emby_server import facets  # noqa: F401
 
+# BE-26：DateLastContentAdded 物化列维护。导入即注册 ORM flush 钩子，
+# 任何写条目（尤其单集入库/软删）的代码都会同事务刷新所属剧的物化值。
+from backend.emby_server import last_content  # noqa: F401
+
 # v2.13.0：api.py 拆分出来的协议路由模块。导入即把路由注册到同一个 emby_router 上，
 # 这里的顺序（media → compat → stream）与拆分前的定义顺序一致，不能调换。
 from backend.emby_server import media_routes  # noqa: F401
