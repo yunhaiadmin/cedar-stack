@@ -573,19 +573,20 @@ def stream_resolve_cache_get(user_id, item_id: str,
 def stream_resolve_cache_put(user_id, item_id: str, variant: str,
                              descriptor: dict,
                              sign_cap_seconds: Optional[float] = None
-                             ) -> None:
+                             ) -> bool:
     """写解析结果描述符。TTL = min(配置 TTL, 签名剩余有效期)，
-    低于最小门槛不存。失败自吞。永不抛。"""
+    低于最小门槛不存。失败自吞。永不抛。返回 True 表示已落存
+    （供调用方打 store 观测日志），未存/失败一律 False。"""
     ttl = _stream_resolve_cache_ttl()
     if user_id is None or not item_id or not variant or ttl <= 0:
-        return
+        return False
     if not isinstance(descriptor, dict) \
             or descriptor.get("kind") not in _STREAM_RESOLVE_KINDS:
-        return
+        return False
     if sign_cap_seconds is not None:
         ttl = min(ttl, int(sign_cap_seconds))
     if ttl < _STREAM_RESOLVE_MIN_TTL:
-        return
+        return False
     try:
         import json
         payload = dict(descriptor)
@@ -594,8 +595,9 @@ def stream_resolve_cache_put(user_id, item_id: str, variant: str,
         CacheManager.set(
             _stream_resolve_cache_key(user_id, item_id, variant),
             json.dumps(payload), ttl, domain=_FINAL_URL_CACHE_DOMAIN)
+        return True
     except Exception:  # noqa: BLE001 — 写不进只丢这次复用机会
-        pass
+        return False
 
 
 def stream_resolve_cache_invalidate(user_id, item_id: str,
