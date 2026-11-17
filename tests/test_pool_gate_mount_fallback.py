@@ -453,6 +453,89 @@ def test_stream_unbound_drive_mount_pool_serve_unchanged(
     assert ORIG_FID not in loc
 
 
+def _set_probe_budget(raw):
+    db = SessionLocal()
+    try:
+        db.query(models.SystemConfig).filter(
+            models.SystemConfig.key
+            == "mount_serving_probe_budget_ms").delete(
+            synchronize_session=False)
+        if raw is not None:
+            db.add(models.SystemConfig(
+                key="mount_serving_probe_budget_ms", value=raw))
+        db.commit()
+    finally:
+        db.close()
+    store.invalidate()
+
+
+# -------------------------------------------- 有界探测（2026-11-17 定案）
+
+def test_playbackinfo_slow_mount_stat_within_budget_stays_failed(
+        client, free_token, seed, monkeypatch):
+    """挂载文件 stat 冷查挂住时，PlaybackInfo 回落段必须在预算内
+    按未命中返回、清单维持池门禁原判 failed（修前同步等 stat，
+    生产实测堵了 19.6 秒且形态被改成 proceed）。"""
+    import threading
+    import time as _time
+
+    _set_mount_serving(ids=str(RCLONE_MOUNT_ID),
+                       roots=f"{RCLONE_MOUNT_ID}={seed['media_root']}")
+    _set_probe_budget("200")
+    # stat 缓存是进程级的：同模块先跑的用例已把该路径喂热会让
+    # 本例的挂死 stat 根本不发生，先清掉保证测的是冷查路径
+    ms._clear_stat_cache()
+    gate = threading.Event()
+    real_isfile = os.path.isfile
+
+    def picky(path):
+        if str(path).endswith("龙门飞甲 (2011) - 1080p.mkv"):
+            gate.wait(10)
+            return True
+        return real_isfile(path)
+
+    monkeypatch.setattr(os.path, "isfile", picky)
+    try:
+        start = _time.monotonic()
+        body = _playbackinfo(client, free_token, seed["paul"])
+        elapsed = _time.monotonic() - start
+    finally:
+        gate.set()
+        _set_probe_budget(None)
+    assert elapsed < 5, f"PlaybackInfo 被挂载 stat 堵住：{elapsed:.1f}s"
+    src = body["MediaSources"][0]
+    assert src["TransferStatus"] == "failed"
+    assert "DirectPlayUrl" not in src
+
+
+def test_stream_slow_mount_stat_still_serves(
+        client, free_token, seed, monkeypatch):
+    """取流端口径不随计划层有界化改变：stat 慢（超过 PI 预算）
+    但文件在位 → 取流端照常等到结果出字节，不许套 PI 的超时
+    按未命中口径（套了会把可播的挂载片打成 409）。"""
+    import time as _time
+
+    _set_mount_serving(ids=str(RCLONE_MOUNT_ID),
+                       roots=f"{RCLONE_MOUNT_ID}={seed['media_root']}")
+    _set_probe_budget("200")
+    ms._clear_stat_cache()
+    real_isfile = os.path.isfile
+
+    def slow(path):
+        if str(path).endswith("龙门飞甲 (2011) - 1080p.mkv"):
+            _time.sleep(1.0)
+            return True
+        return real_isfile(path)
+
+    monkeypatch.setattr(os.path, "isfile", slow)
+    try:
+        r = _stream(client, free_token, seed["paul"])
+    finally:
+        _set_probe_budget(None)
+    assert r.status_code == 200, r.text
+    assert r.content == DATA
+
+
 def test_stream_unbound_drive_mount_preparing_unchanged(
         client, free_token, seed, monkeypatch):
     """drive 挂载条目无副本 → 照旧建池单、preparing 409（provider

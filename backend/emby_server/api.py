@@ -6654,12 +6654,17 @@ async def playback_info(
             # 下方 alt=media 段对无变体行的原件逐字不动，地址
             # 仍是本站 /stream）。直读不 engages / 文件缺失则
             # 维持池门禁原判，下方 apply_transfer_status 照旧。
+            # 探测走有界版 probe_local_file_bounded（2026-11-17
+            # 首播 19.6 秒定案）：resolve_local_file 的同步
+            # isfile 在 rclone FUSE 冷查可达 20 秒量级，无界等
+            # 会把整个 PlaybackInfo 堵死；预算内没确认按未命中
+            # （维持原判），取流端仍走 resolve_local_file 原口径。
             _pi_ms_path = None
             try:
                 from backend.emby_server import (
                     mount_serving as _mount_serving_pi)
                 _pi_ms_path = await run_db(
-                    _mount_serving_pi.resolve_local_file, db, item)
+                    _mount_serving_pi.probe_local_file_bounded, db, item)
             except Exception:  # noqa: BLE001 — 探测失败按未命中
                 _pi_ms_path = None
             if _pi_ms_path is not None:
