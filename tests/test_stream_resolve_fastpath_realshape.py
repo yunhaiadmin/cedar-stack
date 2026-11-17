@@ -18,17 +18,17 @@ MediaSourceId={guid}:usercopy_relay&api_key=…&uid=1&exp=…&
 sign=…&variant=usercopy_relay``，签名由 play_sign.issue_play_sign
 真签发、门禁 _request_uses_issued_play_sign 真校验（不桩）：
 
-- 首请求 miss（reason=no_descriptor 有日志）→ 全链落存
-  （store 有日志、kind=drive_token：令牌腿 capture 回填的是
+- 首请求 miss（无描述符）→ 全链落存
+  （kind=drive_token：令牌腿 capture 回填的是
   alt=media API 地址本身、与拼出的 API 地址相同，不成
-  drive_final）→ 续段命中（hit 有日志），令牌/选路计数不增，
+  drive_final）→ 续段命中，令牌/选路计数不增，
   续段用的是存入的那枚令牌（令牌工厂产出带序号，串味可辨）；
 - 首请求响应体未被消费（AVPlayer 拿了响应就移走/中途断开）
   时描述符已在缓存里，次请求照常命中；
 - 首请求 serve 阶段就失败（上游异常）时，令牌描述符已在
   解析成功时先行落存（不依赖 serve 完成），次请求仍可命中；
-- 签名被篡改 → 真校验不过 → miss（reason=sign_invalid 有
-  日志）、快速通道零出流，回全链按门禁 403；
+- 签名被篡改 → 真校验不过 → miss、快速通道零出流，
+  回全链按门禁 403；
 - 跨用户：B 用自己的真签名同条目，各走各的链、各自的令牌，
   不吃 A 的描述符。
 
@@ -36,7 +36,6 @@ sign=…&variant=usercopy_relay``，签名由 play_sign.issue_play_sign
 tests/test_stream_resolve_fastpath.py。
 """
 import asyncio
-import logging
 import os
 import time
 from types import SimpleNamespace
@@ -65,9 +64,6 @@ COPY_FID = "1TN2Wu4I5bNV3gy0mLC8ibNPGQI11-qE9"
 # 填的 final_url 与 _store_stream_resolve 拼出的 api_url 相同
 # → 描述符落 drive_token 而非 drive_final（生产实况）。
 API_URL = drive_api_media_url(drive_usercontent_download_url(COPY_FID))
-
-API_LOGGER = "backend.emby_server.api"
-
 
 def _run(coro):
     return asyncio.run(coro)
@@ -241,22 +237,16 @@ def _setup_real(monkeypatch):
     return counts, relay_calls, notes
 
 
-def _fp_lines(caplog):
-    return [r.getMessage() for r in caplog.records
-            if "[stream-fastpath]" in r.getMessage()]
+# ---------- 真实形状：miss → 落存 → 命中 ----------
 
-
-# ---------- 真实形状：miss → 落存 → 命中，全程有日志 ----------
-
-def test_realshape_miss_store_hit_with_logs(monkeypatch, caplog):
+def test_realshape_miss_store_hit(monkeypatch):
     counts, relay_calls, notes = _setup_real(monkeypatch)
     user = SimpleNamespace(id=11)
     exp, sign = play_sign.issue_play_sign(11, GUID, 3600)
 
-    with caplog.at_level(logging.INFO, logger=API_LOGGER):
-        resp1 = _run(api.video_stream(
-            GUID, _real_request(11, sign=sign, exp=exp),
-            user, _FakeDB()))
+    resp1 = _run(api.video_stream(
+        GUID, _real_request(11, sign=sign, exp=exp),
+        user, _FakeDB()))
     assert resp1.status_code == 200
     first_counts = dict(counts)
     assert first_counts["token"] >= 1 and first_counts["relay"] == 1
@@ -264,26 +254,16 @@ def test_realshape_miss_store_hit_with_logs(monkeypatch, caplog):
         11, GUID, "usercopy_relay")
     assert desc is not None and desc["kind"] == "drive_token"
     assert desc["access_token"] == "TOK11"
-    lines = _fp_lines(caplog)
-    assert any("miss" in m and "reason=no_descriptor" in m
-               for m in lines), lines
-    assert any("store" in m and "kind=drive_token" in m
-               for m in lines), lines
 
-    caplog.clear()
-    with caplog.at_level(logging.INFO, logger=API_LOGGER):
-        resp2 = _run(api.video_stream(
-            GUID, _real_request(11, sign=sign, exp=exp),
-            user, _FakeDB()))
+    resp2 = _run(api.video_stream(
+        GUID, _real_request(11, sign=sign, exp=exp),
+        user, _FakeDB()))
     assert resp2.status_code == 200
     # 命中：令牌不再现取、选路不再重跑；中继腿用存入的 TOK11
     assert counts["token"] == first_counts["token"]
     assert counts["resolve"] == first_counts["resolve"]
     assert counts["relay"] == first_counts["relay"] + 1
     assert relay_calls[-1]["access_token"] == "TOK11"
-    lines = _fp_lines(caplog)
-    assert any("hit" in m and "kind=drive_token" in m
-               for m in lines), lines
     assert len(notes) == 2  # 打点口径不变：每请求一条
 
 
@@ -370,10 +350,9 @@ def test_realshape_store_survives_serve_failure(monkeypatch):
     assert counts["resolve"] == mid_counts["resolve"]
 
 
-# ---------- 篡改签名：真校验拦截＋miss 日志 ----------
+# ---------- 篡改签名：真校验拦截 ----------
 
-def test_realshape_tampered_sign_miss_logged_never_serves(
-        monkeypatch, caplog):
+def test_realshape_tampered_sign_never_serves(monkeypatch):
     from backend.emby_server import playback_gate as _gate
     from backend.emby_server import pool_gate as _pool_gate
 
@@ -397,15 +376,11 @@ def test_realshape_tampered_sign_miss_logged_never_serves(
 
     # 32 位 ASCII、格式合法但值不对的签名（真 verify 必拒）
     bad = _real_request(11, sign="0" * 32, exp=exp)
-    with caplog.at_level(logging.INFO, logger=API_LOGGER):
-        with pytest.raises(HTTPException) as ei:
-            _run(api.video_stream(GUID, bad, user, _FakeDB()))
+    with pytest.raises(HTTPException) as ei:
+        _run(api.video_stream(GUID, bad, user, _FakeDB()))
     assert ei.value.status_code == 403
     # 快速通道零出流、全链也在门禁处停住：计数零增量
     assert counts == before
-    lines = _fp_lines(caplog)
-    assert any("miss" in m and "reason=sign_invalid" in m
-               for m in lines), lines
 
 
 # ---------- 跨用户：各自真签名、各自令牌 ----------

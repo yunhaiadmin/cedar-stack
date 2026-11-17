@@ -7244,14 +7244,9 @@ def _store_stream_resolve(request: Request, user, item_id: str,
                     "max_attempts": max_attempts}
         if desc is None:
             return
-        if _streaming_sr.stream_resolve_cache_put(
-                getattr(user, "id", None), item_id, variant, desc,
-                sign_cap_seconds=_sign_remaining_seconds(request)):
-            logger.info(
-                "[stream-fastpath] store user_id=%s item_id=%s "
-                "variant=%s kind=%s",
-                getattr(user, "id", None), item_id, variant,
-                desc.get("kind"))
+        _streaming_sr.stream_resolve_cache_put(
+            getattr(user, "id", None), item_id, variant, desc,
+            sign_cap_seconds=_sign_remaining_seconds(request))
     except Exception:  # noqa: BLE001 — 落缓存失败只丢复用机会
         pass
 
@@ -7293,29 +7288,17 @@ async def _try_fastpath_relay(request: Request, db: Session, user,
     desc = _streaming_fp.stream_resolve_cache_get(
         user_id, item_id, variant_name)
     if not desc:
-        logger.info(
-            "[stream-fastpath] miss user_id=%s item_id=%s "
-            "variant=%s reason=no_descriptor",
-            user_id, item_id, variant_name)
         return None
     qs = getattr(request, "query_params", None) or {}
     _bound_ok = False
     if qs.get("sign"):
         if not await run_db(
                 _gate_fp._request_uses_issued_play_sign, request, db):
-            logger.info(
-                "[stream-fastpath] miss user_id=%s item_id=%s "
-                "variant=%s reason=sign_invalid",
-                user_id, item_id, variant_name)
             return None
     else:
         _bound_ok = bool(await run_db(
             _gate_fp.has_active_binding, db, user_id))
         if not _bound_ok:
-            logger.info(
-                "[stream-fastpath] miss user_id=%s item_id=%s "
-                "variant=%s reason=no_binding",
-                user_id, item_id, variant_name)
             return None
     kind = desc.get("kind")
     if kind == "drive_sa" and not _bound_ok:
@@ -7323,10 +7306,6 @@ async def _try_fastpath_relay(request: Request, db: Session, user,
         # 仍在——未绑的池观众即便持有效签名，也绝不许凭缓存吃到
         # 共享原件（池门禁口径），回全链由池门禁段裁决。
         if not await run_db(_gate_fp.has_active_binding, db, user_id):
-            logger.info(
-                "[stream-fastpath] miss user_id=%s item_id=%s "
-                "variant=%s reason=sa_no_binding",
-                user_id, item_id, variant_name)
             return None
     _fp_t0 = time.perf_counter()
     media_type = (f"video/{item.container}" if getattr(
@@ -7355,23 +7334,11 @@ async def _try_fastpath_relay(request: Request, db: Session, user,
     except HTTPException:
         _streaming_fp.stream_resolve_cache_invalidate(
             user_id, item_id, variant_name)
-        logger.info(
-            "[stream-fastpath] miss user_id=%s item_id=%s "
-            "variant=%s reason=serve_failed kind=%s",
-            user_id, item_id, variant_name, kind)
         return None
     except Exception:  # noqa: BLE001 — 额度页等腿内异常同样回全链处置
         _streaming_fp.stream_resolve_cache_invalidate(
             user_id, item_id, variant_name)
-        logger.info(
-            "[stream-fastpath] miss user_id=%s item_id=%s "
-            "variant=%s reason=serve_failed kind=%s",
-            user_id, item_id, variant_name, kind)
         return None
-    logger.info(
-        "[stream-fastpath] hit user_id=%s item_id=%s "
-        "variant=%s kind=%s",
-        user_id, item_id, variant_name, kind)
     _note_play_start_safe(
         item, user_id=user_id, method="relay", variant=variant_name,
         result="error" if resp.status_code >= 400 else "ok",
