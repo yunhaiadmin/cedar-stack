@@ -18,6 +18,8 @@ from backend.database import SessionLocal, get_db
 from backend.emby_server import models as em
 from backend.emby_server.auth import get_emby_user, parse_emby_authorization, resolve_token
 from backend.emby_server import facets
+from backend.emby_server import identity_gate
+from backend.emby_server import dedup as dedup_lib
 from backend.emby_server import watch_settle
 from backend.emby_server.watch_settle import effective_max_position_ticks
 from backend.emby_server.facets import count_virtual_items  # 索引版（虚拟库条目数）
@@ -50,9 +52,11 @@ from backend.emby_server.api import (
     _guid_of,
     _now_playing_dto,
     item_guid_for,
+    _library_scope,
     _policy_dto,
     _query_result,
     _require_visible_item,
+    _scope_items,
     _run_time_ticks,
     _stream_client_identity,
     _user_data_dto,
@@ -738,18 +742,32 @@ def similar_items(item_id: str, request: Request,
         genre_cond = facets.candidate_condition(facets.KIND_GENRE, genres, db)
     else:  # 老库还没回填完：退回旧口径，结果一致
         genre_cond = or_(*[em.MediaItem.genres.ilike(f"%{g}%") for g in genres])
+    q = db.query(em.MediaItem).filter(
+        em.MediaItem.item_type == item.item_type,
+        em.MediaItem.id != item.id,
+        em.MediaItem.is_hidden == False,  # noqa: E712
+        # 副本（merged_into_id 非空）不进推荐、也不占 limit 名额
+        # （与 Latest 同口径，必须进 SQL 先过滤再取 Limit）
+        em.MediaItem.merged_into_id.is_(None),
+        genre_cond,
+    )
+    if identity_gate.gate_enabled():
+        # 身份门（案 A 货架面）：推荐是系统主动枚举，与 Latest / 浏览
+        # 同口径——条件进 SQL，未绑定条目不许先占 limit 名额再被剔除。
+        # 门关时不挂，与旧行为逐字一致。搜索面/直达面不在此列，不波及。
+        q = q.filter(identity_gate.identity_clause())
     rows = (
-        db.query(em.MediaItem)
-        .filter(
-            em.MediaItem.item_type == item.item_type,
-            em.MediaItem.id != item.id,
-            em.MediaItem.is_hidden == False,  # noqa: E712
-            genre_cond,
-        )
+        _scope_items(q, _library_scope(db, user))
         .order_by(func.coalesce(em.MediaItem.community_rating, 0).desc())
         .limit(limit)
         .all()
     )
+    # 代表层：同片多行只留代表（与 Latest 同口径，含每库 merge_same
+    # 展示开关）；物理副本已在 SQL 层排除，这里只做同键选主。
+    rows = dedup_lib.deduplicate_items(
+        rows,
+        library_switches=dedup_lib.resolve_library_switches(
+            db, [r.library_id for r in rows]))
     return _query_result(rows, user, db, _base_url(request))
 
 
