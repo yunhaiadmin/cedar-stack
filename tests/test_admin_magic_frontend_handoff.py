@@ -35,7 +35,7 @@ from backend.api.emby_portal import auth_router
 from backend.database import get_db
 from backend.security import create_access_token, hash_password
 
-PASSWORD = "handoff-pass-123"
+PASSWORD = "handoff-pass-123"  # secret-scan: allow —— 测试夹具假密码，非真实凭据
 HANDOFF_URL = "/api/user/auth/admin-handoff"
 
 
