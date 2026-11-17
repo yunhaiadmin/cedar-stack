@@ -19,6 +19,9 @@ const {
   pickSoftRelayUrl,
   humanizeSoftError,
   softDecodeResolutionGate,
+  softDecodePipelineDecision,
+  probeSoftHardwareDecode,
+  SOFTDECODE_HARDWARE_ENABLED,
   SOFT_START_TIMEOUT_MS,
   SOFT_UHD_BLOCK_MESSAGE,
 } = await import('../src/utils/softDecode.ts')
@@ -546,6 +549,124 @@ check(
 check(
   'player shows gate block message on the notice card',
   wpvSrc.includes('SOFT_UHD_BLOCK_MESSAGE'),
+  true,
+)
+
+// --- 4K 硬解分流决策（2026-11-17）：达 4K 线的软解源先试 WebCodecs ---
+// 硬解（iOS 17.4+ 的 VideoToolbox），探到才开；探不到/开关关回到
+// #260 的护栏提示卡。未达 4K 线的软解源永远走 wasm、行为不变。
+// 阈值复用 softDecodeResolutionGate，不另立一套。
+check(
+  'pipeline: 4K + switch on + hw supported => hardware',
+  softDecodePipelineDecision(sizedSrc(3840, 2160), true, { enabled: true, supported: true }),
+  { pipeline: 'hardware', width: 3840, height: 2160, reason: 'uhd-hardware' },
+)
+check(
+  'pipeline: 4K + hw unsupported => blocked',
+  softDecodePipelineDecision(sizedSrc(3840, 2160), true, { enabled: true, supported: false }),
+  { pipeline: 'blocked', width: 3840, height: 2160, reason: 'hardware-unsupported' },
+)
+check(
+  'pipeline: 4K + switch off => blocked even if hw supported',
+  softDecodePipelineDecision(sizedSrc(3840, 2160), true, { enabled: false, supported: true }),
+  { pipeline: 'blocked', width: 3840, height: 2160, reason: 'hardware-switch-off' },
+)
+check(
+  'pipeline: 1080p + hw supported => wasm unchanged',
+  softDecodePipelineDecision(sizedSrc(1920, 1080), true, { enabled: true, supported: true }),
+  { pipeline: 'wasm', width: 1920, height: 1080, reason: 'below-uhd' },
+)
+check(
+  'pipeline: 1080p + switch off => wasm unchanged',
+  softDecodePipelineDecision(sizedSrc(1920, 1080), true, { enabled: false, supported: false }),
+  { pipeline: 'wasm', width: 1920, height: 1080, reason: 'below-uhd' },
+)
+check(
+  'pipeline: 4K native pipeline => wasm decision (never consulted)',
+  softDecodePipelineDecision(sizedSrc(3840, 2160), false, { enabled: true, supported: true }),
+  { pipeline: 'wasm', width: 3840, height: 2160, reason: 'native-pipeline' },
+)
+check(
+  'pipeline: DCI 4K + hw supported => hardware',
+  softDecodePipelineDecision(sizedSrc(4096, 2160), true, { enabled: true, supported: true }).pipeline,
+  'hardware',
+)
+check('hardware kill switch defaults on', SOFTDECODE_HARDWARE_ENABLED, true)
+
+// --- 硬解探测：按所选源的实际编码 + 实际宽高问 VideoDecoder ---
+// node 环境没有 window：必须按不可用处理，不许抛错。
+check(
+  'hw probe: no VideoDecoder in environment => false',
+  await probeSoftHardwareDecode(sizedSrc(3840, 2160)),
+  false,
+)
+{
+  let probedCfg = null
+  globalThis.window = {
+    VideoDecoder: {
+      isConfigSupported: async (cfg) => {
+        probedCfg = cfg
+        return { supported: true }
+      },
+    },
+  }
+  check(
+    'hw probe: VideoDecoder says supported => true',
+    await probeSoftHardwareDecode(sizedSrc(3840, 2160)),
+    true,
+  )
+  check(
+    'hw probe: asks with the source actual codec config + dimensions',
+    probedCfg,
+    { codec: 'hev1.1.6.L93.B0', codedWidth: 3840, codedHeight: 2160 },
+  )
+  globalThis.window = {
+    VideoDecoder: {
+      isConfigSupported: async () => ({ supported: false }),
+    },
+  }
+  check(
+    'hw probe: VideoDecoder says unsupported => false',
+    await probeSoftHardwareDecode(sizedSrc(3840, 2160)),
+    false,
+  )
+  globalThis.window = {
+    VideoDecoder: {
+      isConfigSupported: async () => {
+        throw new Error('probe boom')
+      },
+    },
+  }
+  check(
+    'hw probe: probe throws => false',
+    await probeSoftHardwareDecode(sizedSrc(3840, 2160)),
+    false,
+  )
+  delete globalThis.window
+}
+
+// --- 硬解接线契约：视图只在 4K 分流命中时把 hardware 标志交给构造，---
+// 起播失败与播后报错都回落 #260 提示卡（showSoftUhdBlocked 出现于
+// 分流拦截、起播 catch、播后 onError 三处调用点）。
+check(
+  'player probes hardware decode for UHD sources',
+  wpvSrc.includes('await probeSoftHardwareDecode(source)'),
+  true,
+)
+check(
+  'player passes hardware flag into soft player creation',
+  wpvSrc.includes('hardware: hardwareAttempt'),
+  true,
+)
+check(
+  'player falls back to UHD block card on hardware failure (3 call sites)',
+  wpvSrc.split('showSoftUhdBlocked(source, verdict)').length - 1 >= 3,
+  true,
+)
+check(
+  'soft player maps hardware option to AVPlayer webcodecs flags',
+  softDecodeSrc.includes('enableHardware: options.hardware === true') &&
+    softDecodeSrc.includes('enableWebCodecs: options.hardware === true'),
   true,
 )
 
