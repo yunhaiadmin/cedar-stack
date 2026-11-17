@@ -35,6 +35,24 @@ def _g():
     return uuid.uuid4().hex
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _dedup_gate_off():
+    """本模块断言的是去重本身，与身份门默认无关。
+
+    #268 把门开关默认翻成开后，_query_items 会把无身份行（m4/m5 等）
+    滤出候选集，绝对计数断言（dropped>=4、收藏集）本地就红；CI 冒烟
+    job 钉了四键=0 才过。显式关门（与 test_identity_gate_items.py 的
+    gate_off 同款口径），不靠默认值。module-scoped 不能直接用
+    monkeypatch fixture，手动 MonkeyPatch + undo。
+    """
+    from backend.emby_server import identity_gate
+
+    mp = pytest.MonkeyPatch()
+    mp.setattr(identity_gate, "IDENTITY_SHELF_GATE", 0)
+    yield
+    mp.undo()
+
+
 @pytest.fixture(scope="module")
 def seeded(tmp_path_factory):
     path = tmp_path_factory.mktemp("dedup") / "items.db"

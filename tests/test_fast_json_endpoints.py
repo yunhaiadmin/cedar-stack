@@ -52,13 +52,23 @@ def test_route_order_unchanged():
 
 def test_bytes_identical_on_real_endpoints(seeded):  # noqa: F811
     db, user = seeded.db, seeded.user
-    # order_by(id) 钉住取第一部剧：无序 .first() 的返回行随查询计划变
-    # （BE-24 的 idx_item_identity_gate 让规划器改走索引序后会先命中
-    # 无季的 s3/s4，season 变 None）；本测试要的是有季的首部剧 s1。
-    series = db.query(em.MediaItem).filter(em.MediaItem.item_type == "series").order_by(em.MediaItem.id).first()
-    season = db.query(em.MediaItem).filter(em.MediaItem.item_type == "season",
-                                           em.MediaItem.series_id == series.id).first()
-    movie = db.query(em.MediaItem).filter(em.MediaItem.item_type == "movie").first()
+    # 顺序无关：无 ORDER BY 的 .first() 在哪个索引上扫是未定义的。BE-24
+    # 新增 idx_item_identity_gate 后，SQLite 规划器可能先扫 has_identity
+    # 为 False 的行（s3/s4 无季），season 取到 None 即崩；且索引建表顺序
+    # 随进程变化（SQLAlchemy 按 set 迭代建索引），同一命令两次运行结果
+    # 都可能不同（本地已复现）。先取一个真实存在的季、再反查它所属的
+    # 剧，保证 series/season 一定存在；电影同理加 ORDER BY。
+    season = (db.query(em.MediaItem)
+                .filter(em.MediaItem.item_type == "season")
+                .order_by(em.MediaItem.series_id, em.MediaItem.id)
+                .first())
+    assert season is not None, "种子里没有任何季"
+    series = db.query(em.MediaItem).filter(em.MediaItem.id == season.series_id).one()
+    movie = (db.query(em.MediaItem)
+               .filter(em.MediaItem.item_type == "movie")
+               .order_by(em.MediaItem.sort_name, em.MediaItem.id)
+               .first())
+    assert movie is not None, "种子里没有任何电影"
     calls = [
         (api.get_items, "/emby/Users/{user_id}/Items",
          dict(request=_req({"Recursive": "true", "Limit": 200, "Fields": "Overview,Genres"}))),
