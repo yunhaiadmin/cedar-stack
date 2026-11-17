@@ -12,12 +12,17 @@ const {
   softDecodeCodecSubset,
   wasmPathForDecoder,
   fetchSoftDecodeEnabled,
+  fetchSoftDecodeDirectEnabled,
   __resetSoftDecodeEnabledCache,
   variantOfStreamUrl,
   relayVariantUrl,
   resolveSoftDecodeUrl,
   pickSoftRelayUrl,
   humanizeSoftError,
+  isOwnDriveSoftVariant,
+  buildDriveApiMediaUrl,
+  softDirectCredentialUrl,
+  fetchSoftDirectCredential,
   SOFT_START_TIMEOUT_MS,
 } = await import('../src/utils/softDecode.ts')
 
@@ -386,6 +391,135 @@ check(
   'something odd happened,',
 )
 
+// --- 软解直连（2026-11-17 方案改版）：开关 / 变体分流 / 地址拼装 / 凭据领取 ---
+try {
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({ enabled: true, direct_enabled: true }),
+  })
+  __resetSoftDecodeEnabledCache()
+  check('direct enabled true', await fetchSoftDecodeDirectEnabled(), true)
+  check('enabled still true alongside direct', await fetchSoftDecodeEnabled(), true)
+
+  // 老后端缺 direct_enabled 字段 → 按关处理（宁可回中继，不许误走发令牌新路）
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({ enabled: true }),
+  })
+  __resetSoftDecodeEnabledCache()
+  check('direct missing field => false', await fetchSoftDecodeDirectEnabled(), false)
+
+  globalThis.fetch = async () => ({ ok: false, json: async () => ({}) })
+  __resetSoftDecodeEnabledCache()
+  check('direct non-ok => false', await fetchSoftDecodeDirectEnabled(), false)
+} finally {
+  globalThis.fetch = realFetch
+  __resetSoftDecodeEnabledCache()
+}
+
+// 本人 Drive 副本变体才许领凭据；池/挂载/共享一律不在集合里
+check('own variant usercopy_relay', isOwnDriveSoftVariant('usercopy_relay'), true)
+check('own variant byos_drive_relay', isOwnDriveSoftVariant('byos_drive_relay'), true)
+check('own variant byos_drive_direct', isOwnDriveSoftVariant('byos_drive_direct'), true)
+check('pool_copy not own', isOwnDriveSoftVariant('pool_copy'), false)
+check('mount_relay not own', isOwnDriveSoftVariant('mount_relay'), false)
+check('drive_relay not own', isOwnDriveSoftVariant('drive_relay'), false)
+check('empty variant not own', isOwnDriveSoftVariant(''), false)
+
+check(
+  'drive api media url',
+  buildDriveApiMediaUrl('FID123'),
+  'https://www.googleapis.com/drive/v3/files/FID123?alt=media',
+)
+check(
+  'drive api media url encodes file id',
+  buildDriveApiMediaUrl('a/b c'),
+  'https://www.googleapis.com/drive/v3/files/a%2Fb%20c?alt=media',
+)
+
+check(
+  'credential url swaps stream.mkv tail, keeps query',
+  softDirectCredentialUrl(
+    `${EA}?MediaSourceId=g1:usercopy_relay&variant=usercopy_relay&api_key=k`,
+  ),
+  'https://ea.example/emby/Videos/g1/soft-direct?MediaSourceId=g1:usercopy_relay&variant=usercopy_relay&api_key=k',
+)
+check(
+  'credential url swaps bare stream tail',
+  softDirectCredentialUrl('https://ea.example/Videos/g2/stream?variant=byos_drive_relay'),
+  'https://ea.example/Videos/g2/soft-direct?variant=byos_drive_relay',
+)
+check(
+  'credential url non-stream path => empty',
+  softDirectCredentialUrl('https://ea.example/emby/Videos/g1/master.m3u8?x=1'),
+  '',
+)
+
+try {
+  let seenUrl = ''
+  globalThis.fetch = async (u) => {
+    seenUrl = String(u)
+    return {
+      ok: true,
+      json: async () => ({
+        file_id: 'COPYFID',
+        access_token: 'TOK',
+        expires_at: 1999999999,
+      }),
+    }
+  }
+  check(
+    'credential fetch ok maps fields',
+    await fetchSoftDirectCredential(`${EA}?variant=usercopy_relay`),
+    { fileId: 'COPYFID', accessToken: 'TOK', expiresAt: 1999999999 },
+  )
+  check(
+    'credential fetch hit soft-direct endpoint',
+    seenUrl,
+    'https://ea.example/emby/Videos/g1/soft-direct?variant=usercopy_relay',
+  )
+
+  globalThis.fetch = async () => ({ ok: false, json: async () => ({}) })
+  check(
+    'credential fetch 409 => null (falls back to relay)',
+    await fetchSoftDirectCredential(`${EA}?variant=usercopy_relay`),
+    null,
+  )
+
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({ file_id: 'COPYFID' }),
+  })
+  check(
+    'credential fetch missing token => null',
+    await fetchSoftDirectCredential(`${EA}?variant=usercopy_relay`),
+    null,
+  )
+
+  globalThis.fetch = async () => {
+    throw new Error('network down')
+  }
+  check(
+    'credential fetch throws => null',
+    await fetchSoftDirectCredential(`${EA}?variant=usercopy_relay`),
+    null,
+  )
+
+  let calls = 0
+  globalThis.fetch = async () => {
+    calls += 1
+    return { ok: true, json: async () => ({}) }
+  }
+  check(
+    'credential fetch non-stream url => null without fetch',
+    await fetchSoftDirectCredential('https://ea.example/emby/Videos/g1/master.m3u8'),
+    null,
+  )
+  check('credential fetch skipped network for bad url', calls, 0)
+} finally {
+  globalThis.fetch = realFetch
+}
+
 // --- 结构断言：AVPlayer 只能按 URL 加载原始构建，不许再走包导入 ---
 // 经 rollup 重打包后它内部的 Worker 启动代码会报 W is not defined、
 // load() 永远不返回（2026-11-15 生产软解无声卡死的第一层根因）。
@@ -410,6 +544,17 @@ check(
 check(
   'avplayer preload depth raised for relay soft decode (preLoadTime 10s)',
   softDecodeSrc.includes('preLoadTime: 10'),
+  true,
+)
+check(
+  'direct mode passes Authorization header into AVPlayer load http options',
+  softDecodeSrc.includes('Authorization: `Bearer ${drive.accessToken}`') &&
+    softDecodeSrc.includes('googleapis.com/drive/v3/files/'),
+  true,
+)
+check(
+  'token never persisted: no localStorage/sessionStorage in softDecode',
+  !softDecodeSrc.includes('localStorage') && !softDecodeSrc.includes('sessionStorage'),
   true,
 )
 const libmediaDir = new URL('../public/libmedia/1.3.1/', import.meta.url)

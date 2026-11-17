@@ -1166,6 +1166,33 @@ def get_token_for_user(db: Session, user_id: int,
 get_user_drive_access_token = get_token_for_user
 
 
+def get_binding_drive_token_info(db: Session, binding,
+                                 http_post=None,
+                                 force_refresh: bool = False) -> tuple:
+    """绑定级令牌口的「令牌 + 到期」版：返回 (access_token, expires_at)。
+
+    与 get_binding_drive_access_token 完全同源（同一刷新/落态逻辑，
+    本函数只是顺带把凭据行里存的到期时刻一并带出），供网页软解直连
+    凭据端点告知浏览器令牌何时过期好提前续领；不另起第二套刷新。
+    expires_at 是 epoch 秒；凭据行缺到期时回 0（调用方按已过期处理）。
+    """
+    token = get_binding_drive_access_token(
+        db, binding, http_post=http_post, force_refresh=force_refresh)
+    _cred, stored = _drive_credential_of(db, binding)
+    return token, int(stored.get("expires_at") or 0)
+
+
+def get_user_drive_token_info(db: Session, user_id: int,
+                              http_post=None) -> tuple:
+    """用户级令牌口的「令牌 + 到期」版：语义与 get_token_for_user
+    逐字一致（无 active 绑定 → not_found、绝不回落共享 SA），只是
+    多带出到期时刻。"""
+    binding = ub.get_active_binding(db, user_id, ub.PROVIDER_DRIVE)
+    if binding is None:
+        raise DriveOAuthError("not_found", "当前用户没有可用的 Drive 绑定。")
+    return get_binding_drive_token_info(db, binding, http_post=http_post)
+
+
 def refresh_drive_binding(db: Session, user_id: int, binding_id: int,
                           http_post=None, http_get=None,
                           ) -> em.UserStorageBinding:

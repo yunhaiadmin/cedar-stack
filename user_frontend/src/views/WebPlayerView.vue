@@ -361,10 +361,14 @@ import {
 } from '@/utils/decodeSupport'
 import {
   createSoftPlayer,
+  fetchSoftDecodeDirectEnabled,
   fetchSoftDecodeEnabled,
+  fetchSoftDirectCredential,
   humanizeSoftError,
+  isOwnDriveSoftVariant,
   pickSoftRelayUrl,
   shouldSoftDecode,
+  variantOfStreamUrl,
   type SoftPlayerHandle,
 } from '@/utils/softDecode'
 import PlayerDanmakuSheet, { type DanmakuSettings } from '@/components/player/PlayerDanmakuSheet.vue'
@@ -463,6 +467,21 @@ const softHandle = ref<SoftPlayerHandle | null>(null)
 const softStarting = ref(false)
 const softActive = computed(() => softHandle.value !== null || softStarting.value)
 const softFailedFor = ref('')
+/**
+ * 软解直连会话（2026-11-17 方案改版）：本人 Drive 副本软解走浏览器
+ * 直连谷歌时，凭据只存这里（内存变量，不进 storage/日志/上报）；
+ * 令牌过期时凭 streamUrl 重领并从当前进度续播。renewals 设上限，
+ * 防过期判定抖动时无限重领。
+ */
+interface SoftDirectSession {
+  sourceId: string
+  streamUrl: string
+  expiresAt: number
+  renewals: number
+}
+const softDirectSession = ref<SoftDirectSession | null>(null)
+let softDirectRenewing = false
+const SOFT_DIRECT_MAX_RENEWALS = 3
 const noticeTitle = computed(() => {
   if (phase.value === 'unsupported') {
     return decodeVerdict.value ? '这个版本浏览器解不了' : '这个格式网页里播不了'
@@ -1097,6 +1116,7 @@ async function playSource(source: EmbyMediaSource, atSeconds: number): Promise<v
   // 切版本：旧的软解实例先停掉，新版本再按决策重建（软解/原生二选一）
   if (softHandle.value) await destroySoft()
   softFailReason.value = ''
+  softDirectSession.value = null
   const verdict = verdictCache.value.get(source.Id)
   if (verdict?.status === 'unsupported' && (verdict.badVideo || verdict.badAudio)) {
     if (await startSoftDecode(source, verdict, atSeconds)) return
@@ -1150,6 +1170,31 @@ async function startSoftDecode(
     pickSoftRelayUrl(playbackInfo.value?.MediaSources, source.Id) ||
     source.DirectStreamUrl ||
     ''
+  // 软解直连分流（2026-11-17 方案改版）：直连开关开且所挑地址的
+  // 变体是本人 Drive 副本时，先向服务端领本人凭据——领到走浏览器
+  // 直连谷歌起播（字节不过服务器）；领不到（服务端判非本人归属/
+  // 开关在服务端关着/网络失败）逐字回落下面的中继起播，与新方案
+  // 上线前完全一致。池/挂载等来源的变体不在本人集合里，凭据端点
+  // 碰都不会碰，软解行为保持现状。
+  let driveDirect: { fileId: string; accessToken: string } | undefined
+  if (
+    url &&
+    isOwnDriveSoftVariant(variantOfStreamUrl(url)) &&
+    (await fetchSoftDecodeDirectEnabled())
+  ) {
+    const cred = await fetchSoftDirectCredential(url)
+    if (cred) {
+      driveDirect = { fileId: cred.fileId, accessToken: cred.accessToken }
+      const prev = softDirectSession.value
+      softDirectSession.value = {
+        sourceId: source.Id,
+        streamUrl: url,
+        expiresAt: cred.expiresAt,
+        renewals: prev && prev.sourceId === source.Id ? prev.renewals : 0,
+      }
+    }
+  }
+  if (!driveDirect) softDirectSession.value = null
   let started = false
   let seekDone = false
   // 先亮出软解容器再构造播放器（见 softStarting 注释：隐藏容器下
@@ -1204,10 +1249,29 @@ async function startSoftDecode(
           if (!started) return
           if (phase.value !== 'playing' && phase.value !== 'preparing') return
           if (currentSource.value?.Id !== source.Id) return
+          // 直连令牌过期（Drive 令牌约 1 小时寿命，长片/剧集必中途
+          // 过期）：重领一次并从当前进度续播，不从头播、也不直接掉
+          // 提示卡；续领次数用尽或重领失败仍走下面的既有回落。
+          const session = softDirectSession.value
+          if (
+            driveDirect &&
+            session &&
+            session.sourceId === source.Id &&
+            session.renewals < SOFT_DIRECT_MAX_RENEWALS &&
+            (Date.now() / 1000 >= session.expiresAt - 120 ||
+              /401|403|fetch|open stream/i.test(message))
+          ) {
+            session.renewals += 1
+            void renewSoftDirect(source, verdict)
+            return
+          }
           void destroySoft().then(() => showDecodeUnsupported(source, verdict))
         },
       },
-      { ext: (source.Container || '').toLowerCase() || undefined },
+      {
+        ext: (source.Container || '').toLowerCase() || undefined,
+        ...(driveDirect ? { driveDirect } : {}),
+      },
     )
   } catch (e) {
     // createSoftPlayer 的 failOnce 已先把原因递到 onError；这里兜底
@@ -1225,6 +1289,34 @@ async function startSoftDecode(
   softStarting.value = false
   started = true
   return true
+}
+
+/**
+ * 直连令牌续领（2026-11-17 方案改版）：销毁当前软解实例、清掉本
+ * 版本的失败标记，以当前进度重走 startSoftDecode——它会重新领
+ * 凭据并直连起播，onFirstVideo 时 seek 回 at 处，不从头播。
+ * 重领/起播没成 → 回落既有解码提示卡，口径与中途失败一致。
+ */
+async function renewSoftDirect(
+  source: EmbyMediaSource,
+  verdict: DecodeVerdict,
+): Promise<void> {
+  if (softDirectRenewing) return
+  softDirectRenewing = true
+  try {
+    const session = softDirectSession.value
+    if (!session || session.sourceId !== source.Id) return
+    const at = currentTime.value
+    await destroySoft()
+    if (currentSource.value?.Id !== source.Id) return
+    softFailedFor.value = ''
+    const ok = await startSoftDecode(source, verdict, at)
+    if (!ok && currentSource.value?.Id === source.Id) {
+      showDecodeUnsupported(source, verdict)
+    }
+  } finally {
+    softDirectRenewing = false
+  }
 }
 
 /** 把 PlaybackInfo 里的每个版本都探一遍，结果进缓存（设置面板给版本标「浏览器解不了」也用它） */

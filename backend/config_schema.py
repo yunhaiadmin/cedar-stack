@@ -593,6 +593,10 @@ PLAYER_BLACKLIST_CONFIG_SCHEMA: dict[str, tuple] = {
 WEB_SOFTDECODE_CONFIG_SCHEMA: dict[str, tuple] = {
     # word 风格 ("bool",) 存 "true"/"false"（同 welfare 口径）。
     "web_softdecode_enabled": ("bool",),
+    # 软解直连（2026-11-17 方案改版）：本人 Drive 副本的网页软解改走
+    # 浏览器直连谷歌取流。无行 = 开（默认开，读法在 site.py 下发处钉
+    # 默认 "true"）；关 = 软解回落既有服务器中继老路。
+    "web_softdecode_direct_enabled": ("bool",),
 }
 
 # 站内弹幕（2026-11-15）：网页播放器的站内自发弹幕。全部可调项走

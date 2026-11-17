@@ -7384,6 +7384,160 @@ async def _try_fastpath_relay(request: Request, db: Session, user,
     return _observe_traffic(resp)
 
 
+@emby_router.get("/emby/Videos/{item_id}/soft-direct")
+@emby_router.get("/Videos/{item_id}/soft-direct")
+async def soft_direct_credential(
+    item_id: str, request: Request,
+    user: models.WebUser = Depends(get_play_user),
+    db: Session = Depends(get_db),
+):
+    """网页软解直连凭据（2026-11-17 方案改版，用户亲点）。
+
+    本人 Drive 副本的网页软解改由浏览器拿**请求者本人**的短时 Drive
+    令牌直连 Google Drive API（alt=media）取流解码，字节不过服务器。
+    本端点只做三件事：过门禁、验归属、发本人令牌。
+
+    - 鉴权与门禁链与 video_stream 同口径：get_play_user（play_sign
+      签名优先、回退 Emby token）→ 可见范围 → 付费墙 → 绑定门禁
+      （池门禁复核）→ 路径授权 → 防盗链；任一不过按 video_stream
+      既有口径抛错，不另设宽松路径。
+    - 归属红线：只对**本人归属**的 Drive 副本发令牌——usercopy 变体
+      须解析到 owner_ref == 本人且 variant_drive_id ==
+      ``userdrive:<本人 id>`` 的 ready 副本行（resolve 可能回落服主
+      副本行，那是别人的副本，一律拒）；byos 变体须路径绑定行归属
+      本人、provider=drive、状态 active。其余变体（池副本/共享
+      Drive/挂载/paul/115）一律 409：池贡献者令牌、共享 SA 令牌、
+      他人令牌绝不下发（这些来源的网页软解保持现状走既有路径）。
+    - 令牌只进响应体（Cache-Control: no-store），不写日志、不进
+      任何打点字段；续领走同一端点（前端在令牌过期时重领并续播）。
+    - 限流：凭据发放是敏感面，按用户+IP 走 ratelimit 既有滑动窗口
+      （60 秒 30 次，远高于正常起播+续领量级），超限 429。
+    """
+    from backend.emby_server.async_db import run_db
+    from backend.ratelimit import check_rate_limit, client_ip
+
+    _sd_ip = client_ip(request)
+    _sd_allowed, _sd_retry = check_rate_limit(
+        f"soft-direct:{getattr(user, 'id', 0)}:{_sd_ip}", 30, 60)
+    if not _sd_allowed:
+        raise HTTPException(
+            status_code=429, detail="软解凭据请求过于频繁，请稍后再试",
+            headers={"Retry-After": str(_sd_retry)})
+    # 与 video_stream 逐字同口径的门禁链（见 video_stream 对应段注释）
+    item = await run_db(_require_visible_item, db, user, item_id)
+    await run_db(ensure_playback_allowed, db, user)
+    from backend.emby_server import playback_gate as _gate
+    from backend.emby_server import pool_gate as _pool_gate_sd
+    try:
+        await run_db(_gate.ensure_binding_playback_allowed,
+                     db, user, request)
+    except HTTPException:
+        await run_db(_pool_gate_sd.ensure_playback_allowed_for_item,
+                     db, user, item, request)
+    await run_db(_enforce_path_access, db, user, item)
+    await run_db(play_sign.check_referer, request, db)
+    # 变体口径与 video_stream 一致：variant 与 MediaSourceId 不一致
+    # 404；没带变体不许猜（凭据发放必须指名变体）。
+    _sd_qs = getattr(request, "query_params", None) or {}
+    _sd_variant, _sd_mismatch = play_variants.parse_requested_variant(
+        _sd_qs)
+    if _sd_mismatch:
+        raise HTTPException(
+            status_code=404,
+            detail="播放变体不存在：variant 与 MediaSourceId 不一致")
+    if not _sd_variant:
+        raise HTTPException(
+            status_code=400, detail="软解直连凭据需要显式播放变体")
+    from backend.integrations import store as _sd_store
+    if _sd_store.get_value(
+            db, "web_softdecode_direct_enabled", "true") != "true":
+        raise HTTPException(
+            status_code=409, detail="软解直连未开启，请走既有播放路径")
+    from backend.emby_server import drive_oauth as _sd_oauth
+    _sd_fid = ""
+    _sd_token = ""
+    _sd_expires = 0
+    if _sd_variant == play_variants.USERCOPY_RELAY:
+        from backend.emby_server import transfer_variant as _tv
+        _sd_play_fid, _sd_row = await run_db(
+            _tv.resolve_play_file_id, db, item, user)
+        # resolve 的规则 ②可能回落服主副本行（owner_scope=source）：
+        # 那不是请求者本人的副本，绝不发令牌，按变体不可用拒绝。
+        if (not _sd_play_fid or _sd_row is None
+                or not _is_user_drive_copy_variant(_sd_row)
+                or str(getattr(_sd_row, "owner_ref", "")) != str(
+                    getattr(user, "id", ""))):
+            raise HTTPException(
+                status_code=409,
+                detail="播放变体当前不可用：usercopy_relay"
+                       "（无本人 Drive 副本）")
+        _sd_fid = _sd_play_fid
+        try:
+            _sd_token, _sd_expires = await run_db(
+                _sd_oauth.get_user_drive_token_info,
+                db, getattr(user, "id", None))
+        except _sd_oauth.DriveOAuthError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Drive 授权不可用，暂时无法播放") from exc
+    elif _sd_variant in (play_variants.BYOS_DRIVE_RELAY,
+                         play_variants.BYOS_DRIVE_DIRECT):
+        # 与 video_stream 的 byos 分支逐项同口径验归属（绑定行钉住，
+        # 不取「最早 active 绑定」，防多绑定时发错盘的令牌）。
+        _sd_byos_id, _sd_byos_row = await run_db(
+            _byos_binding_row, db, item)
+        if _sd_byos_id is None:
+            raise HTTPException(
+                status_code=409,
+                detail="BYOS 路径无法解析绑定：byos://<绑定 id> 格式错误")
+        if _sd_byos_row is None:
+            raise HTTPException(
+                status_code=409, detail="BYOS Drive 绑定不存在，无法下发凭据")
+        if getattr(_sd_byos_row, "user_id", None) != getattr(
+                user, "id", None):
+            raise HTTPException(
+                status_code=403, detail="BYOS 绑定不属于当前用户，无法下发凭据")
+        if getattr(_sd_byos_row, "provider", "") != "drive":
+            raise HTTPException(
+                status_code=409,
+                detail="软解直连只支持 Drive 绑定，其他 provider 暂不支持")
+        if getattr(_sd_byos_row, "status", "") != "active":
+            raise HTTPException(
+                status_code=409,
+                detail="BYOS Drive 绑定当前不可用"
+                       f"（状态：{getattr(_sd_byos_row, 'status', '')}），"
+                       "请重新绑定后再播")
+        _sd_fid = (getattr(item, "drive_file_id", "") or "").strip()
+        if not _sd_fid:
+            raise HTTPException(
+                status_code=409,
+                detail="BYOS Drive 条目缺少 drive_file_id，无法下发凭据")
+        try:
+            _sd_token, _sd_expires = await run_db(
+                _sd_oauth.get_binding_drive_token_info, db, _sd_byos_row)
+        except _sd_oauth.DriveOAuthError as exc:
+            _sd_detail = exc.message or "Drive 绑定令牌不可用"
+            if exc.kind in ("expired", "auth_error"):
+                if "重新绑定" not in _sd_detail:
+                    _sd_detail += "，请重新绑定。"
+            elif exc.kind == "transient":
+                if "重试" not in _sd_detail:
+                    _sd_detail += "，可重试。"
+            else:
+                _sd_detail = "Drive 绑定令牌不可用，请重新绑定。"
+            raise HTTPException(
+                status_code=503, detail=_sd_detail) from exc
+    else:
+        raise HTTPException(
+            status_code=409,
+            detail=f"播放变体当前不可用：{_sd_variant}"
+                   "（软解直连只支持本人 Drive 副本）")
+    return JSONResponse(
+        {"file_id": _sd_fid, "access_token": _sd_token,
+         "expires_at": _sd_expires},
+        headers={"Cache-Control": "no-store"})
+
+
 @emby_router.get("/emby/Videos/{item_id}/stream")
 @emby_router.get("/Videos/{item_id}/stream")
 @release_db_before_response

@@ -40,17 +40,23 @@ def get_branding(db: Session = Depends(get_db)):
 
 @site_router.get("/web-softdecode")
 def get_web_softdecode(db: Session = Depends(get_db)) -> dict:
-    """网页软解开关（公开，只读下发一个布尔值）
+    """网页软解开关（公开，只读下发）
 
-    播放页起播前读一次：关 = 保持现状（浏览器解不了就出解码提示卡）；
-    开 = 浏览器硬解失败时改走站内自编 LGPL wasm 软解。读取异常回落
-    关——公开端点绝不能 500 拖垮播放页。
+    播放页起播前读一次：enabled 关 = 保持现状（浏览器解不了就出解码
+    提示卡）；开 = 浏览器硬解失败时改走站内自编 LGPL wasm 软解。
+    direct_enabled（2026-11-17 方案改版，默认开）：本人 Drive 副本的
+    软解改走浏览器直连谷歌取流；关 = 软解回落既有服务器中继老路。
+    读取异常回落全关——公开端点绝不能 500 拖垮播放页。
     """
     try:
-        return {"enabled": store.get_value(db, "web_softdecode_enabled", "false") == "true"}
+        return {
+            "enabled": store.get_value(db, "web_softdecode_enabled", "false") == "true",
+            "direct_enabled": store.get_value(
+                db, "web_softdecode_direct_enabled", "true") == "true",
+        }
     except Exception:
         logger.warning("读取网页软解开关失败，按关处理", exc_info=True)
-        return {"enabled": False}
+        return {"enabled": False, "direct_enabled": False}
 
 
 @site_router.get("/community")

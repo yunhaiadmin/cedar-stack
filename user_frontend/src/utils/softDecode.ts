@@ -87,35 +87,64 @@ export function shouldSoftDecode(
   return softDecodeCodecSubset(source).supported
 }
 
-// ---------- 开关读取（公开端点，只读一个布尔值） ----------
+// ---------- 开关读取（公开端点，只读布尔值） ----------
 
-let enabledPromise: Promise<boolean> | null = null
+interface SoftDecodeSiteConfig {
+  enabled: boolean
+  directEnabled: boolean
+}
 
-/** 读一次开关并缓存（页面级）：取不到/超时一律按关处理，不拖垮起播。 */
-export function fetchSoftDecodeEnabled(): Promise<boolean> {
-  if (enabledPromise) return enabledPromise
-  enabledPromise = (async () => {
+let siteConfigPromise: Promise<SoftDecodeSiteConfig> | null = null
+
+/**
+ * 读一次站点软解配置并缓存（页面级，enabled 与 direct_enabled 同一
+ * 次请求拿齐）：取不到/超时一律按「软解关 + 直连关」处理，不拖垮
+ * 起播；direct_enabled 缺字段（老后端）也按关——宁可回中继老路，
+ * 不许在没确认开关时走发令牌的新路。
+ */
+function fetchSoftDecodeSiteConfig(): Promise<SoftDecodeSiteConfig> {
+  if (siteConfigPromise) return siteConfigPromise
+  siteConfigPromise = (async () => {
     try {
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 5000)
       try {
         const res = await fetch('/api/site/web-softdecode', { signal: controller.signal })
-        if (!res.ok) return false
-        const data = (await res.json()) as { enabled?: unknown }
-        return data?.enabled === true
+        if (!res.ok) return { enabled: false, directEnabled: false }
+        const data = (await res.json()) as {
+          enabled?: unknown
+          direct_enabled?: unknown
+        }
+        return {
+          enabled: data?.enabled === true,
+          directEnabled: data?.direct_enabled === true,
+        }
       } finally {
         clearTimeout(timer)
       }
     } catch {
-      return false
+      return { enabled: false, directEnabled: false }
     }
   })()
-  return enabledPromise
+  return siteConfigPromise
+}
+
+/** 软解总开关（默认关，服务端下发） */
+export function fetchSoftDecodeEnabled(): Promise<boolean> {
+  return fetchSoftDecodeSiteConfig().then((c) => c.enabled)
+}
+
+/**
+ * 软解直连开关（默认开，服务端下发，2026-11-17 方案改版）：
+ * 关 = 本人 Drive 副本的软解回落既有服务器中继老路。
+ */
+export function fetchSoftDecodeDirectEnabled(): Promise<boolean> {
+  return fetchSoftDecodeSiteConfig().then((c) => c.directEnabled)
 }
 
 /** 仅测试用：清掉开关缓存，让下一轮重新读。 */
 export function __resetSoftDecodeEnabledCache(): void {
-  enabledPromise = null
+  siteConfigPromise = null
 }
 
 // ---------- 软解取流地址 ----------
@@ -317,6 +346,96 @@ export function pickSoftRelayUrl(
   return ''
 }
 
+// ---------- 软解直连谷歌（本人 Drive 副本，2026-11-17 方案改版） ----------
+
+/**
+ * 本人 Drive 副本的变体名：只有这些变体的字节归请求者本人所有，
+ * 服务端凭据端点才肯发本人令牌。池副本 / 共享 Drive / 挂载 / paul /
+ * 115 一律不在此列——它们的软解保持现状走中继，令牌红线不许碰。
+ */
+export const OWN_DRIVE_SOFT_VARIANTS: ReadonlySet<string> = new Set([
+  'usercopy_relay',
+  'byos_drive_relay',
+  'byos_drive_direct',
+])
+
+export function isOwnDriveSoftVariant(variant: string): boolean {
+  return OWN_DRIVE_SOFT_VARIANTS.has(variant)
+}
+
+/** Google Drive API 取流地址（alt=media）：浏览器带本人令牌直连取字节 */
+export function buildDriveApiMediaUrl(fileId: string): string {
+  return `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`
+}
+
+/**
+ * 由取流地址拼凭据端点地址：把路径尾段 stream[.ext] 换成
+ * soft-direct，query 原样保留（variant / MediaSourceId / play_sign
+ * 都在里面，服务端按与 video_stream 相同的口径验）。相对地址先按
+ * 当前页绝对化（凭据端点与取流端点同源）。拼不出返回 ''。
+ */
+export function softDirectCredentialUrl(streamUrl: string): string {
+  try {
+    const base =
+      typeof location !== 'undefined'
+        ? location.href
+        : 'http://softdecode.invalid/'
+    const u = new URL(streamUrl, base)
+    const m = u.pathname.match(/^(.*\/)stream(?:\.[A-Za-z0-9]+)?$/)
+    if (!m) return ''
+    u.pathname = `${m[1]}soft-direct`
+    return u.toString()
+  } catch {
+    return ''
+  }
+}
+
+export interface SoftDirectCredential {
+  fileId: string
+  accessToken: string
+  /** epoch 秒：令牌到期时刻，播放器据此在过期前重领并从当前进度续播 */
+  expiresAt: number
+}
+
+/**
+ * 向服务端领本人 Drive 副本的软解直连凭据。任何失败（未绑定、非
+ * 本人副本、直连开关关、网络异常）都回 null——调用方回落既有中继
+ * 路径，行为与新方案上线前逐字一致。令牌只经返回值进调用方内存
+ * 变量，不落 storage、不打日志、不进任何上报字段。
+ */
+export async function fetchSoftDirectCredential(
+  streamUrl: string,
+): Promise<SoftDirectCredential | null> {
+  const credUrl = softDirectCredentialUrl(streamUrl)
+  if (!credUrl) return null
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 8000)
+    try {
+      const res = await fetch(credUrl, { signal: controller.signal })
+      if (!res.ok) return null
+      const data = (await res.json()) as {
+        file_id?: unknown
+        access_token?: unknown
+        expires_at?: unknown
+      }
+      const fileId = typeof data?.file_id === 'string' ? data.file_id : ''
+      const accessToken =
+        typeof data?.access_token === 'string' ? data.access_token : ''
+      if (!fileId || !accessToken) return null
+      const expiresAt =
+        typeof data?.expires_at === 'number' && Number.isFinite(data.expires_at)
+          ? data.expires_at
+          : 0
+      return { fileId, accessToken, expiresAt }
+    } finally {
+      clearTimeout(timer)
+    }
+  } catch {
+    return null
+  }
+}
+
 /** 把软解的原始失败串翻成一句人话（回落提示卡小字用；原始串仍走 console.error 留痕） */
 export function humanizeSoftError(message: string): string {
   const raw = (message || '').trim()
@@ -388,10 +507,25 @@ export interface CreateSoftPlayerOptions {
   ext?: string
   /** 首帧/起播超时（毫秒）：wasm 下载 + 分析超了就判失败回落，不干等 */
   startTimeoutMs?: number
+  /**
+   * 本人 Drive 副本直连（2026-11-17 方案改版）：给了就跳过中继地址
+   * 解析，直接以 Drive API 地址起播、IO 请求带 Authorization 头
+   * （libmedia AVPlayerLoadOptions.http.headers，spike 已实证其
+   * FetchIOLoader 会把 headers 合进每个取流请求），字节不过服务器。
+   * 令牌只从这里进播放器内存，不落任何持久化/日志。
+   */
+  driveDirect?: { fileId: string; accessToken: string }
 }
 
 type AVPlayerInstance = {
-  load(source: string, options?: { ext?: string }): Promise<void>
+  load(
+    source: string,
+    options?: {
+      ext?: string
+      /** libmedia AVPlayerLoadOptions.http：IO 层每个 fetch 都带上 */
+      http?: { headers?: Record<string, string> }
+    },
+  ): Promise<void>
   play(): Promise<void>
   pause(): Promise<void>
   seek(timestamp: bigint): Promise<void>
@@ -421,8 +555,12 @@ export async function createSoftPlayer(
   const { default: AVPlayer } = (await import(
     /* @vite-ignore */ SOFT_PLAYER_SCRIPT_URL
   )) as { default: new (options: Record<string, unknown>) => unknown }
-  // 取流地址先过软解口径：直链（302 跳跨源）换中继，fetch 才读得到
-  const playUrl = await resolveSoftDecodeUrl(url)
+  // 取流地址：直连模式直接用 Drive API 地址（浏览器直连谷歌）；
+  // 否则先过软解口径——直链（302 跳跨源）换中继，fetch 才读得到
+  const drive = options.driveDirect
+  const playUrl = drive
+    ? buildDriveApiMediaUrl(drive.fileId)
+    : await resolveSoftDecodeUrl(url)
   let errorReported = false
   const failOnce = (message: string) => {
     if (errorReported) return
@@ -479,7 +617,16 @@ export async function createSoftPlayer(
   try {
     await Promise.race([
       (async () => {
-        await player.load(playUrl, options.ext ? { ext: options.ext } : undefined)
+        await player.load(playUrl, {
+          ...(options.ext ? { ext: options.ext } : {}),
+          ...(drive
+            ? {
+                http: {
+                  headers: { Authorization: `Bearer ${drive.accessToken}` },
+                },
+              }
+            : {}),
+        })
         await player.play()
       })(),
       startGuard,

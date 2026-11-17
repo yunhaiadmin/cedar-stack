@@ -162,12 +162,16 @@ export const updateRegistrationSettings = (data: {
 export interface SoftdecodeConfig {
   /** 浏览器硬解失败时是否用站内自编 LGPL wasm 软解兜底，默认关 */
   enabled: boolean
+  /** 软解直连（2026-11-17 方案改版）：本人 Drive 副本软解走浏览器直连谷歌取流，默认开；关 = 回服务器中继 */
+  direct_enabled: boolean
 }
 
 export const fetchSoftdecodeConfig = () => get<SoftdecodeConfig>('/softdecode/config')
 
-export const updateSoftdecodeConfig = (data: { enabled: boolean }) =>
-  put<SoftdecodeConfig>('/softdecode/config', data)
+export const updateSoftdecodeConfig = (data: {
+  enabled: boolean
+  direct_enabled?: boolean
+}) => put<SoftdecodeConfig>('/softdecode/config', data)
 
 /** 站内弹幕设置（2026-11-15）：后端 /api/admin/danmaku/config */
 export interface DanmakuConfig {

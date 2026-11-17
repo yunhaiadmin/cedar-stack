@@ -198,15 +198,18 @@ class TestWiring:
         # playback_info 双轨发放签名参数
         assert "issue_play_sign" in content
         assert "&uid=" in content and "&exp=" in content and "&sign=" in content
-        # 四个播放路由走签名优先的鉴权依赖
+        # 五个播放路由走签名优先的鉴权依赖
         # （video_stream / video_stream_ext / video_stream_bare / video_hls；
         # video_stream_bare 为 #1358 新增的无后缀 /stream 重定向口；
         # 原上游兜底口 / 详情上游线路口 / 白名单专属线路口三个
-        # Depends(get_play_user) 已随上游全清删除，不再计入）
-        assert content.count("Depends(get_play_user)") == 4
+        # Depends(get_play_user) 已随上游全清删除，不再计入；
+        # 第五个是 2026-11-17 软解直连凭据端点 soft_direct_credential，
+        # 按方案要求与 video_stream 共用同一鉴权依赖与门禁链）
+        assert content.count("Depends(get_play_user)") == 5
         # 防盗链检查挂在 video_stream（video_hls 转交 video_stream，
-        # 同一检查点覆盖两个入口）
-        assert content.count("play_sign.check_referer") == 1
+        # 同一检查点覆盖两个入口）与 soft_direct_credential
+        # （凭据端点同口径挂一份，共 2 处）
+        assert content.count("play_sign.check_referer") == 2
 
     def test_auth_wiring(self):
         with open("backend/emby_server/auth.py", encoding="utf-8") as f:

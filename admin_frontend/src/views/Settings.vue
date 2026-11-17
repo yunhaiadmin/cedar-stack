@@ -1024,12 +1024,14 @@ async function saveDriveApiCore(): Promise<boolean> {
 /** ==================== 网页软解卡片（独立 endpoint，非通用分组） ====================
  * 浏览器硬解失败时的站内软解兜底：只在网页播放路径生效，解码器是站内自编
  * 的 LGPL wasm（/wasm/decode/）。默认关：关时保持现状出解码提示卡。 */
-const softdecode = reactive({ enabled: false })
-const softdecodeOriginal = reactive({ enabled: false })
+const softdecode = reactive({ enabled: false, direct_enabled: true })
+const softdecodeOriginal = reactive({ enabled: false, direct_enabled: true })
 const softdecodeLoading = ref(false)
 
 function applySoftdecode(data: SoftdecodeConfig) {
   softdecode.enabled = data.enabled === true
+  // 直连默认开：后端缺字段（老后端）时按开处理，与后端默认口径一致
+  softdecode.direct_enabled = data.direct_enabled !== false
   Object.assign(softdecodeOriginal, softdecode)
 }
 
@@ -1045,13 +1047,20 @@ async function loadSoftdecode() {
 }
 
 const softdecodeDirty = computed(
-  () => softdecode.enabled !== softdecodeOriginal.enabled,
+  () =>
+    softdecode.enabled !== softdecodeOriginal.enabled ||
+    softdecode.direct_enabled !== softdecodeOriginal.direct_enabled,
 )
 
 /** 网页软解保存核心：返回是否成功，失败时拦截器已提示。 */
 async function saveSoftdecodeCore(): Promise<boolean> {
   try {
-    applySoftdecode(await updateSoftdecodeConfig({ enabled: softdecode.enabled }))
+    applySoftdecode(
+      await updateSoftdecodeConfig({
+        enabled: softdecode.enabled,
+        direct_enabled: softdecode.direct_enabled,
+      }),
+    )
     return true
   } catch {
     // 拦截器已提示
@@ -2763,6 +2772,15 @@ watch(
                     <span class="field-suffix">{{ softdecode.enabled ? '已开启' : '已关闭' }}</span>
                   </div>
                   <span class="field-hint">开：浏览器解不了的版本改走站内软解；关：保持现状，出解码提示卡。默认关</span>
+                </div>
+              </el-form-item>
+              <el-form-item label="软解直连开关">
+                <div class="field-stack">
+                  <div class="field-control">
+                    <el-switch v-model="softdecode.direct_enabled" />
+                    <span class="field-suffix">{{ softdecode.direct_enabled ? '已开启' : '已关闭' }}</span>
+                  </div>
+                  <span class="field-hint">开：本人绑盘副本的软解由观众浏览器直连谷歌取流（字节不过服务器，只下发观众本人的令牌）；关：回落服务器中继老路。默认开</span>
                 </div>
               </el-form-item>
               <el-form-item label="开源许可">
