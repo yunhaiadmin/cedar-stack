@@ -425,9 +425,12 @@ export const embyApi = {
     })
   },
 
-  /** 剧集 NextUp */
-  async getNextUp(limit = 12): Promise<EmbyItem[]> {
-    const res = await embyGet<{ Items: EmbyItem[] }>('/emby/Shows/NextUp', { params: { Limit: limit } })
+  /** 剧集 NextUp；opts.timeout 为单请求超时覆盖，不传走全局默认（与 getLatest 同口径） */
+  async getNextUp(limit = 12, opts?: { timeout?: number }): Promise<EmbyItem[]> {
+    const res = await embyGet<{ Items: EmbyItem[] }>('/emby/Shows/NextUp', {
+      params: { Limit: limit },
+      ...(opts?.timeout ? { timeout: opts.timeout } : {}),
+    })
     return res?.Items || []
   },
 
@@ -563,9 +566,6 @@ function withEmbyBase(url: string): string {
   return base ? `${base}${url}` : url
 }
 
-/** 进度条百分比 */
-export function progressPercent(item: EmbyItem): number {
-  const pos = item.UserData?.PlaybackPositionTicks || 0
-  if (!pos || !item.RunTimeTicks) return 0
-  return Math.min(100, Math.round((pos / item.RunTimeTicks) * 100))
-}
+/* 进度百分比口径（FE-20 收口）：全站统一「未看完最高显示 99%」——
+   首页继续观看与详情页续看文案各自按数据源（门户 progress / ticks）现算并
+   在展示处封顶 99，不再留独立的 ticks 口径函数（旧 progressPercent 无调用方已删）。 */

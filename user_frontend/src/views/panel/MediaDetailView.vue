@@ -103,12 +103,14 @@ const metaParts = computed(() => {
 
 /** 门户续看条目（按条目 id 匹配）：给播放钮与续看胶囊提供季/集/集名 */
 const resumeEntry = ref<PortalResumeItem | null>(null)
-async function loadResume() {
+async function loadResume(my: number) {
   resumeEntry.value = null
   try {
     const res = await embyApi.getResume(50)
+    if (my !== loadSeq) return
     resumeEntry.value = (res?.items || []).find((x) => String(x.id) === itemId.value) || null
   } catch {
+    if (my !== loadSeq) return
     resumeEntry.value = null
   }
 }
@@ -126,7 +128,8 @@ const playLabel = computed(() => {
 const resumeText = computed(() => {
   const e = resumeEntry.value
   if (e && e.type === 'series' && e.season_number != null && e.episode_number != null) {
-    const pct = typeof e.progress === 'number' ? ` · 已看 ${Math.round(e.progress)}%` : ''
+    /* 封顶 99 与下方 ticks 分支、首页续看同口径（FE-20）：未看完不显示 100% */
+    const pct = typeof e.progress === 'number' ? ` · 已看 ${Math.min(99, Math.round(e.progress))}%` : ''
     return `续看 S${e.season_number}：E${e.episode_number}${e.episode_name ? `《${e.episode_name}》` : ''}${pct}`
   }
   const pos = item.value?.UserData?.PlaybackPositionTicks || 0
@@ -169,7 +172,7 @@ async function removeWatchRecord() {
     resumeEntry.value = null
     removeOpen.value = false
     toast.success('观看记录已移除')
-    void loadResume()
+    void loadResume(loadSeq)
   } catch (err) {
     toast.error(`移除失败：${errText(err)}`)
   } finally {
@@ -397,7 +400,7 @@ function errText(err: unknown): string {
   return '加载失败'
 }
 
-async function loadRecommendations(it: EmbyItem) {
+async function loadRecommendations(it: EmbyItem, my: number) {
   recommendations.value = []
   const genre = it.Genres?.[0]
   if (!genre) return
@@ -407,33 +410,43 @@ async function loadRecommendations(it: EmbyItem) {
       includeTypes: [it.Type === 'Series' ? 'Series' : 'Movie'],
       limit: 12,
     })
+    if (my !== loadSeq) return
     recommendations.value = (res.Items || []).filter((x) => x.Id !== it.Id).slice(0, 10)
   } catch {
+    if (my !== loadSeq) return
     recommendations.value = []
   }
 }
+
+/** 详情 load 竞态守卫（与 FE-10 同型 seq）：切条目时旧慢响应不许覆盖新条目；
+ * 子加载（推荐/续看/追剧）与 load() 共用同一号，旧号落共享状态前一律丢弃。 */
+let loadSeq = 0
 
 async function load() {
   if (!itemId.value) {
     error.value = '条目地址不对'
     return
   }
+  const my = ++loadSeq
   loading.value = true
   error.value = ''
   posterBroken.value = false
   heroStage.value = 0
   overviewExpanded.value = false
   try {
-    item.value = await embyProtocol.getItem(itemId.value)
-    void loadRecommendations(item.value)
-    void loadResume()
-    void loadFollowState()
+    const it = await embyProtocol.getItem(itemId.value)
+    if (my !== loadSeq) return
+    item.value = it
+    void loadRecommendations(item.value, my)
+    void loadResume(my)
+    void loadFollowState(my)
     void loadDanmaku()
   } catch (err) {
+    if (my !== loadSeq) return
     item.value = null
     error.value = `详情没加载出来：${errText(err)}`
   } finally {
-    loading.value = false
+    if (my === loadSeq) loading.value = false
   }
 }
 
@@ -460,7 +473,7 @@ const followVisible = ref(false)
 const followBusy = ref(false)
 const followSubscribed = ref(false)
 const followSeriesId = ref<number | null>(null)
-async function loadFollowState() {
+async function loadFollowState(my: number) {
   followVisible.value = false
   followSubscribed.value = false
   followSeriesId.value = null
@@ -469,10 +482,12 @@ async function loadFollowState() {
   let follows
   try {
     const res = await seriesFollowApi.list()
+    if (my !== loadSeq) return
     follows = res.follows || []
   } catch { return /* 未启用/失败：整钮不显示 */ }
   try {
     const res = await mediaSeekApi.lookup(it.Name)
+    if (my !== loadSeq) return
     const cands = (res.items || []).filter(
       i => i.type === 'series' && typeof i.item_id === 'number',
     )

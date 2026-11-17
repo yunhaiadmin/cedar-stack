@@ -414,6 +414,8 @@ function filterParams() {
 
 /* ---------- 条目加载（现行 getItems 口径） ---------- */
 let seq = 0
+/** FE-10：在途请求真取消——新 load 先 abort 上一条，不再只靠 seq 丢弃响应 */
+let loadAbort: AbortController | null = null
 /** 保活切回静默刷新阈值：与首页同口径 5 分钟 */
 const VIEW_REFRESH_TTL_MS = 5 * 60 * 1000
 let lastLoadedAt = 0
@@ -421,6 +423,9 @@ let lastLoadedAt = 0
 async function load(reset = true, silent = false) {
   if (import.meta.env.VITE_FIXTURE === '1') return
   const my = ++seq
+  loadAbort?.abort()
+  const controller = new AbortController()
+  loadAbort = controller
   if (reset) {
     if (!silent) {
       loading.value = true
@@ -439,6 +444,7 @@ async function load(reset = true, silent = false) {
         ...sortParams(),
         ...filterParams(),
         timeout: BROWSE_TIMEOUT_MS,
+        signal: controller.signal,
       }),
     )
     if (my !== seq) return

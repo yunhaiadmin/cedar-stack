@@ -49,16 +49,22 @@ const FILTERS = [
 ] as const
 
 let seq = 0
+/** FE-10：在途请求真取消——新 load 先 abort 上一条，不再只靠 seq 丢弃响应 */
+let loadAbort: AbortController | null = null
 /** reset=true 拉第一页（换词/换筛选）；false 追加下一页（加载更多） */
 async function load(reset = true) {
   const q = term.value
   if (!q) {
+    loadAbort?.abort()
     items.value = []
     total.value = 0
     hasMore.value = false
     return
   }
   const my = ++seq
+  loadAbort?.abort()
+  const controller = new AbortController()
+  loadAbort = controller
   if (reset) {
     loading.value = true
     error.value = ''
@@ -77,6 +83,7 @@ async function load(reset = true) {
       startIndex: reset ? 0 : items.value.length,
       limit: PAGE,
       recursive: true,
+      signal: controller.signal,
     })
     if (my !== seq) return
     const page = res.Items || []
