@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from backend import models
@@ -26,6 +26,7 @@ from backend import library_scope
 from backend.emby_server.auth import get_emby_user
 from backend.emby_server.search import (
     CANDIDATE_LIMIT as SEARCH_CANDIDATE_LIMIT,
+    coarse_order,
     rank_items,
     search_variants,
 )
@@ -88,7 +89,10 @@ def search_hints(request: Request, user: models.WebUser = Depends(get_emby_user)
         type_map = {"movie": "movie", "series": "series", "episode": "episode", "season": "season"}
         query = query.filter(em.MediaItem.item_type.in_([type_map.get(t, t) for t in include]))
 
-    rows = query.order_by(em.MediaItem.sort_name.asc()).limit(SEARCH_CANDIDATE_LIMIT).all()
+    # BE-14：总数先按同一 query 现算真实命中数；候选截断前先按粗
+    # 相关度排序，精确/前缀命中优先进候选集，再由 rank_items 精排。
+    total = query.order_by(None).with_entities(func.count()).scalar() or 0
+    rows = query.order_by(*coarse_order(term)).limit(SEARCH_CANDIDATE_LIMIT).all()
     ordered = rank_items(rows, term) if term else rows
 
     hints = [
@@ -109,7 +113,9 @@ def search_hints(request: Request, user: models.WebUser = Depends(get_emby_user)
     ]
     # r50：TotalRecordCount 必须是截断前的命中总数（客户端据此翻页）；
     # 此前是当前页条数，有更多结果时客户端会认为没有下一页。
-    return {"SearchHints": hints, "TotalRecordCount": len(ordered)}
+    # BE-14：r50 当时报的仍是候选截断后（≤500）的条数，现改为同一
+    # query 的真实 COUNT。
+    return {"SearchHints": hints, "TotalRecordCount": total}
 
 
 @search_router.get("/emby/UnifiedSearch")
@@ -147,7 +153,8 @@ def unified_search(request: Request, user: models.WebUser = Depends(get_emby_use
     if include:
         type_map = {"movie": "movie", "series": "series", "episode": "episode", "season": "season"}
         query = query.filter(em.MediaItem.item_type.in_([type_map.get(t, t) for t in include]))
-    rows = query.order_by(em.MediaItem.sort_name.asc()).limit(SEARCH_CANDIDATE_LIMIT).all()
+    # BE-14：候选截断前先按粗相关度排序（与 Hints / _query_items 同口径）
+    rows = query.order_by(*coarse_order(term)).limit(SEARCH_CANDIDATE_LIMIT).all()
     ordered = rank_items(rows, term)
     local_entries = []
     for it in ordered:

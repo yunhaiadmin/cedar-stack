@@ -165,6 +165,36 @@ def search_variants(term: str) -> list[str]:
     return out[:6]
 
 
+def coarse_order(term: str) -> list:
+    """候选截断前的 SQL 粗相关度排序键（BE-14）。
+
+    ``rank_items`` 的精排只作用于候选集：候选若先按 sort_name 截断到
+    CANDIDATE_LIMIT，真正最相关的条目（精确/前缀命中）可能根本进不了
+    候选集。这里在 SQL 层先按粗相关度分档——标题族（name /
+    original_title / sort_name）任一变体精确命中（0）> 前缀命中（1）
+    > 其余包含命中（2），同档按 sort_name——再截断，精排语义不变。
+    归一化（繁简/标点/拼音）在 SQL 里复刻不了，粗档只用变体对原始列
+    做大小写不敏感比较，精度由 rank_items 兜底。无变体（空词）时
+    退回纯 sort_name 排序（与旧行为一致）。
+    """
+    from sqlalchemy import case, or_
+
+    from backend.emby_server import models as em
+
+    variants = search_variants(term)
+    if not variants:
+        return [em.MediaItem.sort_name.asc()]
+    exact: list = []
+    prefix: list = []
+    for v in variants:
+        for col in (em.MediaItem.name, em.MediaItem.original_title,
+                    em.MediaItem.sort_name):
+            exact.append(col.ilike(v))
+            prefix.append(col.ilike(f"{v}%"))
+    tier = case((or_(*exact), 0), (or_(*prefix), 1), else_=2)
+    return [tier.asc(), em.MediaItem.sort_name.asc()]
+
+
 # ==================== 打分 ====================
 
 
