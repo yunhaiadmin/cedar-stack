@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import dataclasses
 import ipaddress
 import os
 import threading
@@ -265,6 +266,204 @@ def get_client_ip(request) -> str:
             if is_valid_ip(hops[-1]):
                 return hops[-1]
     return direct_ip
+
+
+# ============ 登录失败锁定（F4：账号＋IP 双维度失败计数）============
+# 与上面的请求数限流是两层不同的防线：
+# - 请求数限流（SlidingWindowLimiter / 网关 rate_limit_incr）数的是
+#   「请求总数」，攻击者把尝试摊到多分钟里就能绕开（黑盒实证：连错
+#   12 次无任何拦截）；
+# - 这里数的是「失败次数」：同一账号在窗口内累计失败达阈值 → 临时
+#   锁定该账号；同一 IP 跨账号累计失败达阈值 → 临时封该 IP 的登录。
+#   两个维度任一命中即拦：只按 IP 会被换 IP 绕过，只按账号会让爆破
+#   者在共享出口下无感。IP 阈值刻意高于账号阈值，降低 NAT 共享出口
+#   的连坐面；成功登录只清账号维度（IP 维度保留，防「猜中一个号就
+#   洗白整个 IP 的失败史」）。
+# 存储与 SlidingWindowLimiter 同风格（进程内、单锁、有界清理）：
+# handler 层既有登录防护全在本模块，横切能力只许一套，不另立系统。
+# 多进程部署时各进程各算一份（与既有 handler 层限流同一性质）。
+
+
+@dataclasses.dataclass(frozen=True)
+class LoginLockoutConfig:
+    enabled: bool = True
+    account_max_failures: int = 10
+    ip_max_failures: int = 30
+    window_sec: float = 900
+    lock_sec: float = 900
+
+
+#: Emby Policy 下发口径的单一真源（_policy_dto 的 LoginAttemptsBeforeLockout
+#: 读它；实际执法阈值走 SystemConfig，管理员改配置后该字段可能与执法值
+#: 不一致——它只是给客户端看的策略声明，执法以服务端守卫为准）。
+LOGIN_LOCKOUT_DEFAULT_ACCOUNT_MAX_FAILURES = 10
+
+_LOCKOUT_CONFIG_KEYS = (
+    "login_lockout_enabled",
+    "login_lockout_account_max_failures",
+    "login_lockout_ip_max_failures",
+    "login_lockout_window_sec",
+    "login_lockout_lock_sec",
+)
+
+
+def login_lockout_config(db) -> LoginLockoutConfig:
+    """从 SystemConfig 读登录锁定配置（键见 config_schema 的
+    LOGIN_LOCKOUT_CONFIG_SCHEMA）；缺行/非法值一律回退默认，读库异常
+    也回退默认——配置层故障不能把登录入口整体打死。"""
+    values: dict[str, str] = {}
+    if db is not None:
+        try:
+            from backend import models
+
+            rows = (
+                db.query(models.SystemConfig)
+                .filter(models.SystemConfig.key.in_(_LOCKOUT_CONFIG_KEYS))
+                .all()
+            )
+            values = {row.key: (row.value or "") for row in rows}
+        except Exception:  # noqa: BLE001 - 回退默认，不让登录挂掉
+            values = {}
+
+    def _int(key: str, default: int) -> int:
+        try:
+            v = int(str(values.get(key, "")).strip())
+        except (TypeError, ValueError):
+            return default
+        return v if v >= 1 else default
+
+    raw_enabled = str(values.get("login_lockout_enabled", "")).strip().lower()
+    return LoginLockoutConfig(
+        enabled=raw_enabled not in ("false", "0", "no", "off"),
+        account_max_failures=_int(
+            "login_lockout_account_max_failures",
+            LOGIN_LOCKOUT_DEFAULT_ACCOUNT_MAX_FAILURES),
+        ip_max_failures=_int("login_lockout_ip_max_failures", 30),
+        window_sec=_int("login_lockout_window_sec", 900),
+        lock_sec=_int("login_lockout_lock_sec", 900),
+    )
+
+
+class LoginLockoutGuard:
+    """登录失败计数＋临时锁定（进程内）。
+
+    键：``{scope}:acct:{账号小写}`` 与 ``{scope}:ip:{IP}`` 两族。
+    scope 区分入口（portal / emby / admin）：三处凭据并不互通
+    （门户密码与播放密码可不同），失败计数不跨 scope 串扰。
+    """
+
+    _PURGE_THRESHOLD = 5000
+
+    def __init__(self) -> None:
+        self._fails: dict[str, deque[float]] = defaultdict(deque)
+        self._locked_until: dict[str, float] = {}
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _acct_key(scope: str, account: str) -> str:
+        return f"{scope}:acct:{(account or '').strip().lower() or '-'}"
+
+    @staticmethod
+    def _ip_key(scope: str, ip: str) -> str:
+        return f"{scope}:ip:{(ip or 'unknown').strip() or 'unknown'}"
+
+    def check(self, scope: str, account: str, ip: str,
+              cfg: LoginLockoutConfig, now: Optional[float] = None,
+              ) -> tuple[bool, int]:
+        """是否已被锁定（账号或 IP 任一维度）。返回 (锁定中, 还需等待秒数)。"""
+        if not cfg.enabled:
+            return False, 0
+        now = time.monotonic() if now is None else now
+        retry = 0
+        with self._lock:
+            for key in (self._acct_key(scope, account), self._ip_key(scope, ip)):
+                until = self._locked_until.get(key)
+                if until is not None:
+                    if until > now:
+                        retry = max(retry, int(until - now) + 1)
+                    else:
+                        self._locked_until.pop(key, None)
+        return retry > 0, retry
+
+    def record_failure(self, scope: str, account: str, ip: str,
+                       cfg: LoginLockoutConfig, now: Optional[float] = None,
+                       ) -> Optional[str]:
+        """记一次登录失败；触发锁定时返回维度名（"account" / "ip"），否则 None。
+
+        已在锁定中的维度不再累加（锁定不续期，防攻击者把受害者永久锁死）。
+        """
+        if not cfg.enabled:
+            return None
+        now = time.monotonic() if now is None else now
+        locked_dim: Optional[str] = None
+        with self._lock:
+            for key, threshold, dim in (
+                (self._acct_key(scope, account), cfg.account_max_failures, "account"),
+                (self._ip_key(scope, ip), cfg.ip_max_failures, "ip"),
+            ):
+                until = self._locked_until.get(key)
+                if until is not None:
+                    if until > now:
+                        continue  # 锁定中：不累加、不续期
+                    self._locked_until.pop(key, None)
+                q = self._fails[key]
+                cutoff = now - cfg.window_sec
+                while q and q[0] < cutoff:
+                    q.popleft()
+                q.append(now)
+                if len(q) >= threshold:
+                    self._locked_until[key] = now + cfg.lock_sec
+                    q.clear()
+                    if locked_dim is None:
+                        locked_dim = dim
+            if len(self._fails) > self._PURGE_THRESHOLD:
+                self._purge(now, cfg)
+        return locked_dim
+
+    def record_success(self, scope: str, account: str,
+                       now: Optional[float] = None) -> None:
+        """登录成功：清零该账号维度的失败计数与锁定（IP 维度不动）。"""
+        key = self._acct_key(scope, account)
+        with self._lock:
+            self._fails.pop(key, None)
+            self._locked_until.pop(key, None)
+
+    def _purge(self, now: float, cfg: LoginLockoutConfig) -> None:
+        """丢掉已不可能再命中的桶（调用方持锁）。"""
+        dead = [
+            k for k, v in self._fails.items()
+            if not v or v[-1] < now - cfg.window_sec
+        ]
+        for k in dead:
+            self._fails.pop(k, None)
+        for k in [k for k, u in self._locked_until.items() if u <= now]:
+            self._locked_until.pop(k, None)
+
+    def clear(self) -> None:
+        """清空全部状态（测试隔离用）。"""
+        with self._lock:
+            self._fails.clear()
+            self._locked_until.clear()
+
+
+_login_lockout_guard = LoginLockoutGuard()
+
+
+def login_lockout_check(scope: str, account: str, ip: str,
+                         cfg: LoginLockoutConfig) -> tuple[bool, int]:
+    """模块级便捷入口：该 (账号, IP) 当前是否被登录锁定拦下。"""
+    return _login_lockout_guard.check(scope, account, ip, cfg)
+
+
+def login_lockout_record_failure(scope: str, account: str, ip: str,
+                                 cfg: LoginLockoutConfig) -> Optional[str]:
+    """模块级便捷入口：记一次登录失败，返回刚触发的锁定维度或 None。"""
+    return _login_lockout_guard.record_failure(scope, account, ip, cfg)
+
+
+def login_lockout_record_success(scope: str, account: str) -> None:
+    """模块级便捷入口：登录成功后清零该账号的失败计数。"""
+    _login_lockout_guard.record_success(scope, account)
 
 
 def client_ip(request) -> str:

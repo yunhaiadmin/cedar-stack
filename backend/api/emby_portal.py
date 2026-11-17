@@ -42,7 +42,15 @@ from backend.subscriptions import (
     realm_access_note,
     realm_requires_subscription,
 )
-from backend.ratelimit import check_rate_limit, client_ip, reset_rate_limit
+from backend.ratelimit import (
+    check_rate_limit,
+    client_ip,
+    login_lockout_check,
+    login_lockout_config,
+    login_lockout_record_failure,
+    login_lockout_record_success,
+    reset_rate_limit,
+)
 # 邮件（能力中心）：找回密码走与站内通知同一个 EmailChannel，不另造发信实现
 from backend.integrations import mail as integrations_mail
 from backend.security import (
@@ -243,9 +251,13 @@ def _issue_auth_response(
     """
     if plain_password:
         ensure_emby_credentials(db, user, password=plain_password, fill_only=True)
+    # F8：一次登录 = 一个 token 家族（fid）。access 与 refresh 同家族，
+    # refresh 轮换保持家族不变；复用检测按家族吊销，不误杀同用户其它设备。
+    fid = secrets.token_hex(16)
     access = create_access_token(user.id, {"username": user.username},
-                                  token_version=user.token_version or 0)
-    refresh = create_refresh_token(user.id, token_version=user.token_version or 0)
+                                  token_version=user.token_version or 0, fid=fid)
+    refresh = create_refresh_token(user.id, token_version=user.token_version or 0,
+                                   fid=fid)
 
     return AuthResponse(
         access_token=access,
@@ -506,6 +518,21 @@ def login(request: Request, req: LoginRequest, db: Session = Depends(get_db)):
     allowed, retry_after = check_rate_limit(f"login:{client_ip(request)}", 8, 60)
     if not allowed:
         raise HTTPException(status_code=429, detail="尝试过于频繁，请稍后再试")
+    # F4（黑盒审计）：失败锁定。请求数限流只数总量，把尝试摊到多分钟
+    # 里慢慢猜就能绕过；这里按账号＋IP 双维度只数失败，达阈值临时锁定
+    # （阈值/窗口/锁长走 SystemConfig，见 ratelimit.login_lockout_config）。
+    lockout_cfg = login_lockout_config(db)
+    login_ip = client_ip(request)
+    blocked, lock_retry = login_lockout_check(
+        "portal", req.username, login_ip, lockout_cfg)
+    if blocked:
+        record_event(
+            db, username=req.username.strip(), user_id=None,
+            ip=log_ip(request), agent=user_agent(request), success=False,
+            reason="portal_login_failed",
+            detail=f"登录失败次数过多，已临时锁定（{lock_retry}s）",
+        )
+        raise HTTPException(status_code=429, detail="登录失败次数过多，请稍后再试")
     user = (
         db.query(models.WebUser)
         .filter(models.WebUser.username == req.username.strip())
@@ -519,6 +546,8 @@ def login(request: Request, req: LoginRequest, db: Session = Depends(get_db)):
     else:
         password_ok = verify_password(req.password, user.password_hash)
     if not password_ok:
+        login_lockout_record_failure(
+            "portal", req.username, login_ip, lockout_cfg)
         record_event(
             db, username=req.username.strip(), user_id=user.id if user else None,
             ip=log_ip(request), agent=user_agent(request), success=False,
@@ -540,6 +569,8 @@ def login(request: Request, req: LoginRequest, db: Session = Depends(get_db)):
     if _acct_sec.totp_enabled_for(db, user.id):
         code = (req.totp_code or "").strip()
         if not code:
+            login_lockout_record_failure(
+                "portal", req.username, login_ip, lockout_cfg)
             record_event(
                 db, username=user.username, user_id=user.id, ip=log_ip(request),
                 agent=user_agent(request), success=False,
@@ -550,6 +581,8 @@ def login(request: Request, req: LoginRequest, db: Session = Depends(get_db)):
                 detail="该账号已启用动态验证码，请输入 6 位动态验证码",
             )
         if not _acct_sec.verify_login_totp(db, user.id, code):
+            login_lockout_record_failure(
+                "portal", req.username, login_ip, lockout_cfg)
             record_event(
                 db, username=user.username, user_id=user.id, ip=log_ip(request),
                 agent=user_agent(request), success=False,
@@ -573,6 +606,8 @@ def login(request: Request, req: LoginRequest, db: Session = Depends(get_db)):
         )
     # 已有接线用户名但还没有播放密码的老用户：登录成功后用已验证的门户密码补一次。
     # 没有接线用户名的新用户什么都不写，去接线员页自己设。
+    # F4：登录全程成功，清零该账号的失败计数（IP 维度保留不清）。
+    login_lockout_record_success("portal", user.username)
     return _issue_auth_response(user, db, plain_password=req.password)
 
 
@@ -617,18 +652,33 @@ def refresh(req: RefreshRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="用户不存在或已禁用")
 
     from backend.security import (
-        enforce_token_freshness, is_jti_revoked, revoke_all_user_tokens, revoke_jti,
+        enforce_token_freshness, is_family_revoked, is_jti_revoked,
+        revoke_all_user_tokens, revoke_jti, revoke_token_family,
     )
 
+    # F8：家族已吊销（此前已判定过复用）→ 本家族任何 refresh 都不再换发。
+    fid = payload.get("fid")
+    if fid and is_family_revoked(db, fid):
+        raise HTTPException(status_code=401, detail="会话已吊销，请重新登录")
+
     # A-P1-1：refresh 复用检测——旧 refresh 的 jti 已在吊销表中，
-    # 说明同一凭证被重复使用（疑似泄露），触发应急响应吊销该用户全部 token。
+    # 说明同一凭证被重复使用（疑似泄露），触发应急响应。
     # P2-6：轮换容忍窗口内的重试视为良性重复（网络重试/并发双发），放行不误杀。
+    # F8：应急响应改为按家族吊销（只杀这台设备的会话链）；无 fid 的存量
+    # token（升级前签发）没有家族可杀，回退全量吊销（A-P1-1 旧口径）。
     old_jti = payload.get("jti")
     reuse_suspected = bool(old_jti) and is_jti_revoked(db, old_jti)
     in_grace = reuse_suspected and _refresh_rotation_in_grace(db, old_jti)
     if reuse_suspected and not in_grace:
-        revoke_all_user_tokens(db, user.id, reason="refresh_reuse_detected")  # 内部原子 bump + commit
-        raise HTTPException(status_code=401, detail="检测到异常的刷新凭证，已吊销全部会话")
+        if fid:
+            revoke_token_family(db, fid, user.id,
+                                reason="refresh_reuse_detected")
+            logger.warning(
+                "refresh 复用检测：已吊销 token 家族 user_id=%s fid=%s",
+                user.id, fid)
+        else:
+            revoke_all_user_tokens(db, user.id, reason="refresh_reuse_detected")  # 内部原子 bump + commit
+        raise HTTPException(status_code=401, detail="检测到异常的刷新凭证，相关会话已吊销")
     if in_grace:
         # P1（安全）：容忍窗口只豁免"旧 jti 已在吊销表"这一项，不能豁免改密/登出。
         # 注意：此处绝对不能调用 enforce_token_freshness——它内部会检查 payload["jti"] 是否在吊销表，
@@ -648,10 +698,13 @@ def refresh(req: RefreshRequest, db: Session = Depends(get_db)):
     if old_jti:
         revoke_jti(db, old_jti, user.id, reason="refresh_rotation")
 
+    # 轮换保持家族不变；存量无 fid 的 token 从本次起成链（新签一族）。
+    new_fid = fid or secrets.token_hex(16)
     return {
         "access_token": create_access_token(user.id, {"username": user.username},
-                                          token_version=user.token_version or 0),
-        "refresh_token": create_refresh_token(user.id, token_version=user.token_version or 0),  # 轮换
+                                          token_version=user.token_version or 0,
+                                          fid=new_fid),
+        "refresh_token": create_refresh_token(user.id, token_version=user.token_version or 0, fid=new_fid),  # 轮换
         "token_type": "bearer",
         "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         "user": _user_out(user, db),

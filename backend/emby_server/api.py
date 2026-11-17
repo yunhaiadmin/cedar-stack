@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session, aliased, joinedload
 
 from backend import library_scope, models, playback_policy
 from backend.database import SessionLocal, get_db
+from backend.ratelimit import LOGIN_LOCKOUT_DEFAULT_ACCOUNT_MAX_FAILURES
 from backend.emby_server import cdn
 from backend.emby_server.async_db import release_db_before_response
 from backend.emby_server import facets
@@ -1999,6 +2000,26 @@ def authenticate_by_name(
             headers={"Retry-After": str(retry_after)},
         )
 
+    # F4（黑盒审计）：失败锁定。上面的请求数限流只数总量，把尝试摊开
+    # 慢慢猜、或换 IP 横扫都能绕；这里与门户/管理端共用同一守卫，按
+    # 账号＋IP 双维度只数失败，达阈值临时锁定（scope=emby 独立计数，
+    # 播放密码与门户密码不互通，不跨口串扰）。
+    from backend.ratelimit import (
+        login_lockout_check,
+        login_lockout_config,
+        login_lockout_record_failure,
+        login_lockout_record_success,
+    )
+
+    lockout_cfg = login_lockout_config(db)
+    blocked, lock_retry = login_lockout_check("emby", username, ip, lockout_cfg)
+    if blocked:
+        return Response(
+            content='{"error": "TooManyAttempts"}',
+            status_code=429, media_type="application/json",
+            headers={"Retry-After": str(lock_retry)},
+        )
+
     user = None
     if username:
         # 优先自建 Emby 凭据，其次门户账号
@@ -2017,6 +2038,9 @@ def authenticate_by_name(
     def _auth_fail(detail: str = "用户名或密码错误"):
         from backend.authlog import record_event
 
+        # F4：凭据失败计入失败锁定（用户不存在/禁用/密码错都算，
+        # 与门户侧「密码错误」口径一致；黑名单/设备上限的 403 不走这里）。
+        login_lockout_record_failure("emby", username, ip, lockout_cfg)
         record_event(
             db, username=username, user_id=user.id if user else None, ip=ip,
             agent=request.headers.get("user-agent"), success=False,
@@ -2098,6 +2122,8 @@ def authenticate_by_name(
             ),
             status_code=403, media_type="application/json; charset=utf-8",
         )
+    # F4：登录成功，清零该账号（按提交的登录名计桶）的失败计数。
+    login_lockout_record_success("emby", username)
     access_token = token_value
     server_id = SERVER_ID
     user_dto = _user_dto(user, db)
@@ -2345,7 +2371,9 @@ def _policy_dto(user: models.WebUser) -> dict:
         "BlockedChannels": [],
         "AccessSchedules": [],
         "InvalidLoginAttemptCount": 0,
-        "LoginAttemptsBeforeLockout": -1,
+        # F4：与服务端失败锁定守卫同口径下发（默认阈值常量单一真源在
+        # ratelimit；实际执法阈值走 SystemConfig 可配，此处只是策略声明）。
+        "LoginAttemptsBeforeLockout": LOGIN_LOCKOUT_DEFAULT_ACCOUNT_MAX_FAILURES,
         "MaxActiveSessions": 0,
         "RemoteClientBitrateLimit": 0,
         "AuthenticationProviderId": "Emby",

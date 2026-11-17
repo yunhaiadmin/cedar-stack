@@ -123,20 +123,32 @@ def _create_token(data: dict, expires_delta: timedelta, token_type: str) -> str:
 
 
 def create_access_token(user_id: int, extra: Optional[dict[str, Any]] = None,
-                        token_version: int = 0) -> str:
+                        token_version: int = 0, fid: Optional[str] = None) -> str:
     payload = {"sub": str(user_id), "tv": int(token_version or 0)}
     if extra:
         # P3 修复（审查）：extra 在 sub 之后 update 可覆盖 sub，是 footgun。
         # 先剔除保留键，再强制写 sub。
-        for reserved in ("sub", "exp", "type", "jti", "tv"):
+        for reserved in ("sub", "exp", "type", "jti", "tv", "fid"):
             extra.pop(reserved, None)
         payload.update(extra)
+    # F8：token 家族 id（与同次登录的 refresh 同值），供家族吊销命中本 access。
+    if fid:
+        payload["fid"] = fid
     return _create_token(payload, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES), "access")
 
 
-def create_refresh_token(user_id: int, token_version: int = 0) -> str:
-    return _create_token({"sub": str(user_id), "tv": int(token_version or 0)},
-                         timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS), "refresh")
+def create_refresh_token(user_id: int, token_version: int = 0,
+                         fid: Optional[str] = None) -> str:
+    """签发 refresh token。
+
+    F8：每条 refresh 会话链共用一个家族 id（fid）——登录时新签一族，
+    轮换时由调用方把旧 fid 传回保持不变；不传则新签一族。复用检测
+    按家族吊销（见 revoke_token_family），不再连坐同用户其它设备。
+    """
+    return _create_token(
+        {"sub": str(user_id), "tv": int(token_version or 0),
+         "fid": fid or secrets.token_hex(16)},
+        timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS), "refresh")
 
 
 def decode_token(token: str, expected_type: Optional[str] = None) -> Optional[dict]:
@@ -203,6 +215,58 @@ def revoke_jti(db, jti: str | None, user_id: int, reason: str = "logout") -> Non
         _revoked_cache.add(jti)
 
 
+# JWT 家族吊销（F8）：与 jti 吊销同一套路（进程内肯定缓存 + 落库表）。
+_revoked_family_cache: set[str] = set()
+
+
+def is_family_revoked(db, fid: str | None) -> bool:
+    """token 家族（fid）是否已被吊销。查库失败 fail-closed（同 is_jti_revoked）。"""
+    if not fid:
+        return False
+    with _revoked_cache_lock:
+        if fid in _revoked_family_cache:
+            return True
+    try:
+        from backend.models import RevokedTokenFamily
+        row = db.query(RevokedTokenFamily).filter(
+            RevokedTokenFamily.fid == fid).first()
+    except Exception:
+        from fastapi import HTTPException, status
+        logger.error("家族吊销表查询失败，fail-closed 拒绝 token", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="凭证校验失败，请重新登录")
+    if row is not None:
+        with _revoked_cache_lock:
+            if len(_revoked_family_cache) >= _REVOKED_CACHE_MAX:
+                _revoked_family_cache.clear()
+            _revoked_family_cache.add(fid)
+        return True
+    return False
+
+
+def revoke_token_family(db, fid: str | None, user_id: int,
+                        reason: str = "refresh_reuse_detected") -> None:
+    """吊销一个 token 家族（幂等）：该家族全部 access / refresh 随即失效。
+
+    只杀这一条会话链（通常是一台设备的一次登录），同用户其它家族
+    （其它设备）不受影响——与 revoke_all_user_tokens 的全量口径区分。
+    """
+    if not fid:
+        return
+    try:
+        from backend.models import RevokedTokenFamily
+        from datetime import datetime, timedelta
+        expires = datetime.now() + timedelta(days=31)
+        db.merge(RevokedTokenFamily(fid=fid, user_id=user_id, reason=reason,
+                                    expires_at=expires))
+        db.commit()
+    except Exception:
+        db.rollback()
+        return
+    with _revoked_cache_lock:
+        _revoked_family_cache.add(fid)
+
+
 def enforce_token_freshness(db, payload: dict | None, user) -> None:
     """Token 新鲜度双检查：jti 吊销表 + token_version 版本号。
 
@@ -219,6 +283,11 @@ def enforce_token_freshness(db, payload: dict | None, user) -> None:
     if is_jti_revoked(db, payload.get("jti")):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="凭证已吊销，请重新登录")
+    # F8：家族被吊销（refresh 复用处置）→ 本家族 access 一并失效；
+    # 无 fid 的存量 token 跳过本项，行为与升级前一致。
+    if is_family_revoked(db, payload.get("fid")):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="会话已吊销，请重新登录")
     # P3：token 版本号对不上 → 改过密码，旧 token 全部作废（防盗号后持续登录）
     token_tv = int(payload.get("tv", 0) or 0)
     user_tv = int(getattr(user, "token_version", 0) or 0)

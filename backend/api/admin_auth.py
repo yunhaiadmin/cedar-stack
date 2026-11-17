@@ -9,6 +9,7 @@
 
 路由对象与其它后台模块共用 ``admin_core.admin_router``，导入即注册。
 """
+import secrets
 from datetime import datetime
 from typing import Optional
 
@@ -25,7 +26,14 @@ from backend.api.admin_core import (
 )
 from backend.authlog import client_ip as log_ip, record_event, user_agent
 from backend.database import get_db
-from backend.ratelimit import check_rate_limit, client_ip
+from backend.ratelimit import (
+    check_rate_limit,
+    client_ip,
+    login_lockout_check,
+    login_lockout_config,
+    login_lockout_record_failure,
+    login_lockout_record_success,
+)
 from backend.security import (
     create_access_token,
     create_refresh_token,
@@ -62,6 +70,20 @@ def admin_login(
         )
         raise HTTPException(status_code=429, detail="尝试过于频繁，请稍后再试")
 
+    # F4（黑盒审计）：失败锁定与门户/Emby 同一守卫（独立 scope=admin）。
+    # 后台是最高价值入口，只按 IP 数请求挡不住摊开慢慢猜与换 IP 爆破。
+    lockout_cfg = login_lockout_config(db)
+    admin_ip = client_ip(http_request)
+    blocked, lock_retry = login_lockout_check(
+        "admin", request.username, admin_ip, lockout_cfg)
+    if blocked:
+        record_event(
+            db, username=request.username.strip(), ip=log_ip(http_request),
+            agent=user_agent(http_request), success=False, reason="admin_login_failed",
+            detail=f"登录失败次数过多，已临时锁定（{lock_retry}s）",
+        )
+        raise HTTPException(status_code=429, detail="登录失败次数过多，请稍后再试")
+
     user = db.query(models.WebUser).filter(
         models.WebUser.username == request.username.strip()
     ).first()
@@ -74,6 +96,8 @@ def admin_login(
     else:
         password_ok = verify_password(request.password, user.password_hash)
     if not password_ok:
+        login_lockout_record_failure(
+            "admin", request.username, admin_ip, lockout_cfg)
         record_event(
             db, username=request.username.strip(), user_id=user.id if user else None,
             ip=log_ip(http_request), agent=user_agent(http_request), success=False,
@@ -105,10 +129,15 @@ def admin_login(
         db, username=user.username, user_id=user.id, ip=log_ip(http_request),
         agent=user_agent(http_request), success=True, reason="admin_login",
     )
+    # F4：登录成功，清零该账号的失败计数。
+    login_lockout_record_success("admin", user.username)
 
+    # F8：与门户同口径，一次登录一个 token 家族（fid）。
+    fid = secrets.token_hex(16)
     access = create_access_token(user.id, {"username": user.username, "staff": True},
-                                  token_version=user.token_version or 0)
-    refresh = create_refresh_token(user.id, token_version=user.token_version or 0)
+                                  token_version=user.token_version or 0, fid=fid)
+    refresh = create_refresh_token(user.id, token_version=user.token_version or 0,
+                                   fid=fid)
     # 登录响应带上角色（与 /auth/me 同一个 payload）：进后台立刻按真实角色渲染导航与按钮，
     # 不用先显示成「超级管理员」再等一次 /auth/me 纠正（v2.26.0）
     perms = admin_roles.permission_payload(user)

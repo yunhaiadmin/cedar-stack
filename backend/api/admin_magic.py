@@ -91,9 +91,12 @@ def _issue_admin_session(user: models.WebUser) -> dict:
     响应形状与 ``admin_auth.admin_login`` 的返回值保持一致：管理端前端拿到
     后走与密码登录完全相同的 ``setSession`` 路径，不存在第二种会话。
     """
+    # F8：与密码登录同口径，一次会话一个 token 家族（fid）。
+    fid = secrets.token_hex(16)
     access = create_access_token(user.id, {"username": user.username, "staff": True},
-                                 token_version=user.token_version or 0)
-    refresh = create_refresh_token(user.id, token_version=user.token_version or 0)
+                                 token_version=user.token_version or 0, fid=fid)
+    refresh = create_refresh_token(user.id, token_version=user.token_version or 0,
+                                   fid=fid)
     perms = admin_roles.permission_payload(user)
     return {
         "access_token": access,
