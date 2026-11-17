@@ -186,9 +186,11 @@ def probe_budget_ms(db: Optional[Session]) -> int:
 # ① stat 结果进程内短 TTL 缓存（正负都缓存），重复播放不重复
 #    打 FUSE；只缓存 stat 本身，engages 判定每次热读现算——
 #    清空白名单的回滚口径不受缓存拖延；
-# ② PlaybackInfo 回落段改走 probe_local_file_bounded：stat 丢
-#    专用线程池按预算等，超时按未命中返回（维持门禁原判），
-#    迟到的结果仍写进缓存，下一次同条目直接命中。
+# ② probe_local_file_bounded：stat 丢专用线程池按预算等，
+#    超时按未命中返回（维持门禁原判），迟到的结果仍写进缓存，
+#    下一次同条目直接命中。原消费者是 PlaybackInfo 池回落段，
+#    F1 定案（2026-11-18）后该回落段已删、本函数在计划层暂无
+#    消费者——防 FUSE 冷查堵死请求的机制本体保留待用，不删。
 # 取流端不走有界版：resolve_local_file 口径逐字不变（engages
 # 文件缺失仍响亮失败），只是同样吃 stat 缓存。
 
@@ -313,7 +315,8 @@ def resolve_local_file(db: Session, item) -> Optional[str]:
 
 
 def probe_local_file_bounded(db: Session, item) -> Optional[str]:
-    """PlaybackInfo 回落段专用有界探测（2026-11-17 定案）。
+    """有界探测（2026-11-17 定案，原 PlaybackInfo 回落段专用；
+    F1 后回落段已删、暂无生产消费者，保留待用）。
 
     与 resolve_local_file 的差别只在文件在位确认一步：stat 按
     probe_budget_ms 预算等，超时按未命中返回 None 并打 warning
