@@ -307,16 +307,22 @@ def test_probe_bounded_timeout_returns_none_and_caches_late_result(
             f"超时必须打 warning 留痕（item/mount/预算）：{messages}"
     finally:
         gate.set()
-    # 迟到的 stat 结果应写进缓存：再次探测直接命中、不再进 isfile
+    # 迟到的 stat 结果应写进缓存：先等后台线程把迟到结果写进缓存，
+    # 再做一次确认探测（直接命中缓存、不再进 isfile）。
+    # 注意：等缓存必须直接查 ms._stat_cache_get，不能用 probe 轮询——
+    # 缓存未就位时每调一次 probe 都会再提交一次 stat，抢在后台线程
+    # 写缓存之前到达，calls 变成 2；本机快常能赢，CI 负载下常输，
+    # 这正是该测试在 CI 连红两次的竞态（2026-11-18 #286 第三/四轮）。
+    expected = os.path.join(str(tmp_path), REL)
     deadline = time.monotonic() + 3
-    late = None
     while time.monotonic() < deadline:
-        late = ms.probe_local_file_bounded(db, item)
-        if late is not None:
+        if ms._stat_cache_get(expected) is True:
             break
         time.sleep(0.05)
+    assert ms._stat_cache_get(expected) is True, "迟到结果应在 3s 内写进缓存"
     try:
-        assert late == os.path.join(str(tmp_path), REL)
+        late = ms.probe_local_file_bounded(db, item)
+        assert late == expected
         assert len(calls) == 1, "迟到结果应已写入缓存，第二次探测不许再 stat"
     finally:
         ms._clear_stat_cache()
