@@ -37,22 +37,27 @@ _ITEMS = em.MediaItem.__table__
 _CHILD = _ITEMS.alias("lca_child")
 
 
-def _recompute_series_conn(conn, series_id: int) -> None:
-    """在给定连接上把一个 series 行的物化值重算为当前真值（同事务）。"""
+def _recompute_series_conn(conn, series_ids) -> None:
+    """在给定连接上把若干 series 行的物化值重算为当前真值（同事务）。
+
+    单条 UPDATE 带相关子查询：值由库内表达式一次算完，不先 SELECT
+    再 UPDATE——扫描入库的 flush 路径不许成为新的 SELECT 查询源
+    （BE-24 守卫：同会话落集不许对 emby_items 发 SELECT）。
+    """
+    ids = [series_ids] if isinstance(series_ids, int) else list(series_ids)
+    if not ids:
+        return
     max_child = (
         select(func.max(_CHILD.c.date_added))
         .where(_CHILD.c.series_id == _ITEMS.c.id)
         .where(_CHILD.c.deleted_at.is_(None))
         .scalar_subquery()
     )
-    value = conn.execute(
-        select(func.coalesce(max_child, _ITEMS.c.date_added))
-        .where(_ITEMS.c.id == series_id)
-    ).scalar()
     conn.execute(
         update(_ITEMS)
-        .where(_ITEMS.c.id == series_id)
-        .values(last_content_added_at=value)
+        .where(_ITEMS.c.id.in_(ids))
+        .values(last_content_added_at=func.coalesce(
+            max_child, _ITEMS.c.date_added))
     )
 
 
@@ -93,9 +98,9 @@ def ensure_backfill(db: Session, batch_size: int = BACKFILL_BATCH,
                 .values(last_content_added_at=_ITEMS.c.date_added)
             )
         conn = db.connection()
-        for r in rows:
-            if r[1] == "series":
-                _recompute_series_conn(conn, r[0])
+        series_rows = [r[0] for r in rows if r[1] == "series"]
+        if series_rows:
+            _recompute_series_conn(conn, series_rows)
         total += len(rows)
         if commit:
             db.commit()
@@ -184,7 +189,6 @@ def _lca_after_flush(session, flush_context):  # noqa: ARG001
         return
     try:
         conn = session.connection()
-        for sid in targets:
-            _recompute_series_conn(conn, sid)
+        _recompute_series_conn(conn, sorted(targets))
     except Exception:  # noqa: BLE001 — 派生数据写失败不该拖垮业务写入
         logger.exception("维护 DateLastContentAdded 物化列失败（回填会补齐）")

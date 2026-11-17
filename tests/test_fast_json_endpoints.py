@@ -52,7 +52,10 @@ def test_route_order_unchanged():
 
 def test_bytes_identical_on_real_endpoints(seeded):  # noqa: F811
     db, user = seeded.db, seeded.user
-    series = db.query(em.MediaItem).filter(em.MediaItem.item_type == "series").first()
+    # order_by(id) 钉住取第一部剧：无序 .first() 的返回行随查询计划变
+    # （BE-24 的 idx_item_identity_gate 让规划器改走索引序后会先命中
+    # 无季的 s3/s4，season 变 None）；本测试要的是有季的首部剧 s1。
+    series = db.query(em.MediaItem).filter(em.MediaItem.item_type == "series").order_by(em.MediaItem.id).first()
     season = db.query(em.MediaItem).filter(em.MediaItem.item_type == "season",
                                            em.MediaItem.series_id == series.id).first()
     movie = db.query(em.MediaItem).filter(em.MediaItem.item_type == "movie").first()
