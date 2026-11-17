@@ -79,6 +79,10 @@ def normalize(key: str, spec: tuple, value: Any, bool_style: str = "word") -> Op
         # 结构化 JSON 规则（如播放器黑名单）：入参可为 JSON 文本或已解析的
         # list，归一化为 canonical JSON 文本落库；结构非法直接拒绝。
         return normalize_player_blacklist_rules(value)
+    if kind == "json_drawer":
+        # 官网菜单抽屉的整份结构（导航/渠道/底按钮）：入参可为 JSON 文本
+        # 或已解析的 dict，归一化为 canonical JSON 文本落库。
+        return normalize_site_drawer_config(value)
     lo, hi = spec[1], spec[2]
     if kind == "int":
         if isinstance(value, bool):
@@ -590,6 +594,208 @@ def normalize_player_blacklist_rules(value: Any) -> str:
 # 空串/None = 删行回代码级默认名单；空数组 [] 存行 = 管理员主动清空（功能停用）。
 PLAYER_BLACKLIST_CONFIG_SCHEMA: dict[str, tuple] = {
     "player_login_blacklist": ("json_rules",),
+}
+
+
+# ---------------------------------------------------------------------------
+# 官网菜单抽屉（2026-11-18）：整个抽屉一份 JSON 存 site_drawer_config：
+# {nav_items[], channels_title, channels[], cta{}}。导航/渠道的顺序即
+# 数组顺序（后台编辑器上下移就是改数组），条目各自带 enabled 开关。
+# 图标名与前端线性图标组件一一对应，未知值保存侧拒绝、读侧回落。
+# ---------------------------------------------------------------------------
+SITE_DRAWER_ICONS: tuple[str, ...] = (
+    "home", "tag", "book", "bell", "users", "bot", "message", "send",
+    "globe", "login",
+)
+SITE_DRAWER_MAX_ITEMS = 12
+SITE_DRAWER_DEFAULT_CHANNELS_TITLE = "社区渠道"
+SITE_DRAWER_NAV_ICON_FALLBACK = "home"
+SITE_DRAWER_CHANNEL_ICON_FALLBACK = "message"
+
+
+def site_drawer_url_ok(url: str, *, allow_internal: bool) -> bool:
+    """抽屉链接形状：http(s) 外链恒可；站内路径须单斜杠开头（防 // 协议
+    相对地址绕到外站）、不含反斜杠与空白。空串不经此函数判定（调用方
+    按各自语义处理：导航/渠道=不下发，底按钮=内置入口行为）。"""
+    if url.startswith("https://") or url.startswith("http://"):
+        return True
+    if not allow_internal:
+        return False
+    return (
+        url.startswith("/")
+        and not url.startswith("//")
+        and "\\" not in url
+        and not any(ch.isspace() for ch in url)
+    )
+
+
+def _drawer_bool(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        s = value.strip().lower()
+        if s in _BOOL_TRUE:
+            return True
+        if s in _BOOL_FALSE:
+            return False
+    return default
+
+
+def _drawer_text(value: Any, limit: int) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()[:limit]
+
+
+def _drawer_items(raw: Any, *, strict: bool, field: str) -> list:
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        if strict:
+            raise ConfigValueError(f"site_drawer_config.{field} 必须是数组")
+        return []
+    if len(raw) > SITE_DRAWER_MAX_ITEMS:
+        if strict:
+            raise ConfigValueError(
+                f"site_drawer_config.{field} 最多 {SITE_DRAWER_MAX_ITEMS} 条")
+        raw = raw[:SITE_DRAWER_MAX_ITEMS]
+    return raw
+
+
+def _drawer_link_item(item: Any, *, strict: bool, field: str,
+                      label_field: str, icon_fallback: str,
+                      allow_internal: bool) -> Optional[dict]:
+    """导航/渠道条目归一；strict 时坏条目抛错，读侧（非 strict）跳过坏条目。
+    链接为空串保留条目（管理员可先存草稿），下发侧再按空链接过滤。"""
+    if not isinstance(item, dict):
+        if strict:
+            raise ConfigValueError(f"site_drawer_config.{field} 每条必须是对象")
+        return None
+    label = _drawer_text(item.get(label_field), 40)
+    if not label:
+        if strict:
+            raise ConfigValueError(
+                f"site_drawer_config.{field} 的{label_field}不能为空")
+        return None
+    url = _drawer_text(item.get("url"), 500)
+    if url and not site_drawer_url_ok(url, allow_internal=allow_internal):
+        if strict:
+            raise ConfigValueError(
+                f"site_drawer_config.{field}「{label}」的链接不合法"
+                "（只接受 http(s):// 或站内 / 路径）")
+        # 读侧保留条目与原文，下发侧 public_info 再按同一口径过滤，
+        # 保证管理员在后台能看到并修掉这条坏链接。
+    icon = _drawer_text(item.get("icon"), 20)
+    if icon not in SITE_DRAWER_ICONS:
+        if strict:
+            raise ConfigValueError(
+                f"site_drawer_config.{field}「{label}」的图标必须是 "
+                f"{SITE_DRAWER_ICONS} 之一")
+        icon = icon_fallback
+    out = {
+        "icon": icon,
+        label_field: label,
+        "url": url,
+        "enabled": _drawer_bool(item.get("enabled"), True),
+    }
+    if field == "nav_items":
+        out["external"] = _drawer_bool(item.get("external"), False)
+    else:
+        out["subtitle"] = _drawer_text(item.get("subtitle"), 80)
+    return out
+
+
+def coerce_site_drawer_config(value: Any, *, strict: bool) -> Optional[dict]:
+    """抽屉整份结构归一。strict=True（保存校验）：任一结构问题抛
+    ConfigValueError；strict=False（运行时读已存值）：整体坏掉（非对象/
+    JSON 解析失败）返回 None 由调用方回落默认，单条坏条目跳过或回落
+    图标，尽量不让一条坏配置把整个抽屉打挂。"""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            if strict:
+                raise ConfigValueError("site_drawer_config 必须是合法的 JSON")
+            return None
+    if not isinstance(value, dict):
+        if strict:
+            raise ConfigValueError("site_drawer_config 必须是对象")
+        return None
+
+    nav_items: list[dict] = []
+    for item in _drawer_items(value.get("nav_items"), strict=strict,
+                              field="nav_items"):
+        coerced = _drawer_link_item(
+            item, strict=strict, field="nav_items", label_field="label",
+            icon_fallback=SITE_DRAWER_NAV_ICON_FALLBACK, allow_internal=True)
+        if coerced is not None:
+            nav_items.append({
+                "icon": coerced["icon"], "label": coerced["label"],
+                "url": coerced["url"], "external": coerced["external"],
+                "enabled": coerced["enabled"],
+            })
+
+    channels: list[dict] = []
+    for item in _drawer_items(value.get("channels"), strict=strict,
+                              field="channels"):
+        coerced = _drawer_link_item(
+            item, strict=strict, field="channels", label_field="title",
+            icon_fallback=SITE_DRAWER_CHANNEL_ICON_FALLBACK,
+            allow_internal=False)
+        if coerced is not None:
+            channels.append({
+                "icon": coerced["icon"], "title": coerced["title"],
+                "subtitle": coerced["subtitle"], "url": coerced["url"],
+                "enabled": coerced["enabled"],
+            })
+
+    raw_title = value.get("channels_title")
+    channels_title = (
+        SITE_DRAWER_DEFAULT_CHANNELS_TITLE if raw_title is None
+        else _drawer_text(raw_title, 20)
+    )
+
+    raw_cta = value.get("cta")
+    if raw_cta is None:
+        raw_cta = {}
+    if not isinstance(raw_cta, dict):
+        if strict:
+            raise ConfigValueError("site_drawer_config.cta 必须是对象")
+        raw_cta = {}
+    cta_url = _drawer_text(raw_cta.get("url"), 500)
+    if cta_url and not site_drawer_url_ok(cta_url, allow_internal=True):
+        if strict:
+            raise ConfigValueError(
+                "site_drawer_config.cta 的链接不合法"
+                "（只接受 http(s):// 或站内 / 路径，留空 = 内置入口）")
+        cta_url = ""
+    cta = {
+        "label": _drawer_text(raw_cta.get("label"), 40) or "进入后台",
+        "url": cta_url,
+        "enabled": _drawer_bool(raw_cta.get("enabled"), True),
+    }
+
+    return {
+        "nav_items": nav_items,
+        "channels_title": channels_title,
+        "channels": channels,
+        "cta": cta,
+    }
+
+
+def normalize_site_drawer_config(value: Any) -> str:
+    """保存侧校验入口：JSON 文本或已解析 dict → canonical JSON 文本。"""
+    coerced = coerce_site_drawer_config(value, strict=True)
+    return json.dumps(coerced, ensure_ascii=False)
+
+
+# 官网菜单抽屉（2026-11-18）：整抽屉一份 JSON（导航/社区渠道/底按钮），
+# 后台「系统设置 → 官网菜单抽屉」卡片编辑，公开端点 /api/site/drawer
+# 只下发启用且链接合法的项。纯 SystemConfig 键，不进 env.example。
+SITE_DRAWER_CONFIG_SCHEMA: dict[str, tuple] = {
+    "site_drawer_config": ("json_drawer",),
 }
 
 # 网页软解开关（2026-11-14 批 2）：浏览器硬解失败时是否用站内自编

@@ -311,6 +311,41 @@ export const communityApi = {
   get: () => api.get<never, CommunityLinks>('/api/site/community'),
 }
 
+// ==================== 官网菜单抽屉（backend/api/site.py） ====================
+
+export interface SiteDrawerNavItem {
+  /** 图标种类：home / tag / book / bell / users / bot / message / send / globe / login */
+  icon: string
+  label: string
+  /** 站内路径（/ 开头）或 http(s) 外链 */
+  url: string
+  /** 是否外链（新标签打开并带外链小图标） */
+  external: boolean
+}
+
+export interface SiteDrawerChannel {
+  icon: string
+  title: string
+  subtitle: string
+  url: string
+}
+
+export interface SiteDrawer {
+  /** 导航项（只含启用且链接合法的项，顺序即显示顺序） */
+  nav_items: SiteDrawerNavItem[]
+  /** 渠道分组标题（管理员可改，可为空串 = 不显示标题行） */
+  channels_title: string
+  /** 社区渠道卡片（空数组 = 整个分组不渲染） */
+  channels: SiteDrawerChannel[]
+  /** 底部按钮；url 为空串 = 内置入口（按登录态跳概览/登录页）；null = 不渲染 */
+  cta: { label: string; url: string } | null
+}
+
+export const siteDrawerApi = {
+  /** 公开端点：官网落地页菜单抽屉的全部内容（后台「官网菜单抽屉」配置） */
+  get: () => api.get<never, SiteDrawer>('/api/site/drawer'),
+}
+
 // ==================== 官网片库数字（backend/api/site.py） ====================
 
 export interface LibraryStats {

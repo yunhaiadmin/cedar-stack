@@ -27,7 +27,7 @@ import {
   Coins, Globe, KeyRound, Layers, Mail, MapPin, Network, Palette, RefreshCw, Save,
   ShieldCheck, Send, Sparkles, TicketCheck, UserPlus, Wallet, Lock, Zap,
   History, TriangleAlert, SlidersHorizontal, PlugZap, Rocket, HardDrive, Gauge,
-  Download, Cpu, MessageSquareText,
+  Download, Cpu, MessageSquareText, PanelBottom,
 } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard } from '@/components/ui'
 import { useBreakpoint } from '@/composables/useBreakpoint'
@@ -35,6 +35,8 @@ import {
   fetchRegistrationSettings, updateRegistrationSettings,
   fetchSoftdecodeConfig, updateSoftdecodeConfig, type SoftdecodeConfig,
   fetchDanmakuConfig, updateDanmakuConfig, type DanmakuConfig,
+  fetchSiteDrawerConfig, updateSiteDrawerConfig,
+  type SiteDrawerConfig, type SiteDrawerConfigResponse,
 } from '@/api/admin'
 import { useAuthStore } from '@/stores/auth'
 import { useQueryFilter } from '@/composables/useQueryFilter'
@@ -289,6 +291,7 @@ const SECTION_DEFS: Array<{ id: string; title: string; groups: string[] }> = [
   { id: 'commerce', title: '付费与支付', groups: ['payment', 'paywall'] },
   { id: 'playback', title: '播放与风控', groups: ['stream_accel'] },
   { id: 'library', title: '媒体库', groups: ['series_merge'] },
+  { id: 'site', title: '站点与官网', groups: [] },
 ]
 const SECTIONS: GroupSection[] = (() => {
   const used = new Set<string>()
@@ -572,7 +575,7 @@ async function load() {
 }
 
 onMounted(async () => {
-  await Promise.all([load(), loadCapabilities(), loadHotlink(), loadInstallApp(), loadItemsDedupCache(), loadTransfer(), loadMountServing(), loadDriveApi(), loadSoftdecode(), loadDanmaku(), loadLicense(), loadPool()])
+  await Promise.all([load(), loadCapabilities(), loadHotlink(), loadInstallApp(), loadItemsDedupCache(), loadTransfer(), loadMountServing(), loadDriveApi(), loadSoftdecode(), loadDanmaku(), loadSiteDrawer(), loadLicense(), loadPool()])
   // Batch D 入口收敛：邀请页 / 客户端策略等用 hash 深链跳进来（如 #group-invitation）
   // R40：querySelector 直接塞 hash 会在畸形值时抛 SyntaxError；改用 getElementById
   if (route.hash) {
@@ -1110,6 +1113,88 @@ async function saveDanmakuCore(): Promise<boolean> {
   }
 }
 
+/** ==================== 官网菜单抽屉卡片（独立 endpoint，非通用分组） ====================
+ * 官网落地页移动端菜单抽屉的全部内容（后端 SystemConfig 单键
+ * site_drawer_config，整份 JSON）：导航项、社区渠道卡片、分组标题、
+ * 底部按钮。顺序即数组顺序（上下移就是改数组）；保存走后端整份
+ * 结构校验，非法（空标题 / 未知图标 / 危险链接 / 超量）整份拒绝。 */
+const DRAWER_ICON_LABELS: Record<string, string> = {
+  home: '首页', tag: '标签', book: '文档', bell: '铃铛', users: '人群',
+  bot: '机器人', message: '消息', send: '发送', globe: '地球', login: '登录',
+}
+const siteDrawer = reactive<SiteDrawerConfig>({
+  nav_items: [],
+  channels_title: '社区渠道',
+  channels: [],
+  cta: { label: '进入后台', url: '', enabled: true },
+})
+const siteDrawerOriginal = ref('')
+const siteDrawerIcons = ref<string[]>(Object.keys(DRAWER_ICON_LABELS))
+const siteDrawerLoading = ref(false)
+
+function siteDrawerSnapshot(): SiteDrawerConfig {
+  return JSON.parse(JSON.stringify({
+    nav_items: siteDrawer.nav_items,
+    channels_title: siteDrawer.channels_title,
+    channels: siteDrawer.channels,
+    cta: siteDrawer.cta,
+  })) as SiteDrawerConfig
+}
+
+function applySiteDrawer(data: SiteDrawerConfigResponse) {
+  const cfg = data.config
+  siteDrawer.nav_items = (cfg.nav_items || []).map((i) => ({ ...i }))
+  siteDrawer.channels_title = cfg.channels_title ?? '社区渠道'
+  siteDrawer.channels = (cfg.channels || []).map((c) => ({ ...c }))
+  siteDrawer.cta = { ...(cfg.cta || { label: '进入后台', url: '', enabled: true }) }
+  if (Array.isArray(data.icon_options) && data.icon_options.length) {
+    siteDrawerIcons.value = data.icon_options
+  }
+  siteDrawerOriginal.value = JSON.stringify(siteDrawerSnapshot())
+}
+
+async function loadSiteDrawer() {
+  siteDrawerLoading.value = true
+  try {
+    applySiteDrawer(await fetchSiteDrawerConfig())
+  } catch {
+    // 错误提示由 HTTP 拦截器统一处理
+  } finally {
+    siteDrawerLoading.value = false
+  }
+}
+
+const siteDrawerDirty = computed(
+  () => siteDrawerOriginal.value !== ''
+    && JSON.stringify(siteDrawerSnapshot()) !== siteDrawerOriginal.value,
+)
+
+/** 官网菜单抽屉保存核心：返回是否成功，失败时拦截器已提示。 */
+async function saveSiteDrawerCore(): Promise<boolean> {
+  try {
+    applySiteDrawer(await updateSiteDrawerConfig(siteDrawerSnapshot()))
+    return true
+  } catch {
+    // 拦截器已提示
+    return false
+  }
+}
+
+function drawerMove<T>(list: T[], idx: number, dir: -1 | 1) {
+  const j = idx + dir
+  if (j < 0 || j >= list.length) return
+  const [item] = list.splice(idx, 1)
+  list.splice(j, 0, item)
+}
+
+function addDrawerNav() {
+  siteDrawer.nav_items.push({ icon: 'home', label: '', url: '', external: false, enabled: true })
+}
+
+function addDrawerChannel() {
+  siteDrawer.channels.push({ icon: 'message', title: '', subtitle: '', url: '', enabled: true })
+}
+
 /** ==================== 软件授权卡片（独立 endpoint，非通用分组） ====================
  * 发行版授权校验的运营面：看状态（档位/到期/绑定/宽限/到期提醒）、
  * 填授权码与绑定域名、立即校验。总开关 AETRIX_LICENSE_ENFORCE 走
@@ -1283,6 +1368,7 @@ async function reloadAll() {
   loadDriveApi()
   loadSoftdecode()
   loadDanmaku()
+  loadSiteDrawer()
 }
 
 function isDirty(group: Group): boolean {
@@ -1310,7 +1396,8 @@ const dirtyGroups = computed(() => GROUPS.filter((g) => isDirty(g)))
 const dirtyCount = computed(() =>
   dirtyGroups.value.length + (regDirty.value ? 1 : 0) + (hotlinkDirty.value ? 1 : 0)
   + (itemsDedupCacheDirty.value ? 1 : 0) + (transferDirty.value ? 1 : 0) + (mountServingDirty.value ? 1 : 0)
-  + (driveApiDirty.value ? 1 : 0) + (softdecodeDirty.value ? 1 : 0) + (danmakuDirty.value ? 1 : 0) + (installAppDirty.value ? 1 : 0),
+  + (driveApiDirty.value ? 1 : 0) + (softdecodeDirty.value ? 1 : 0) + (danmakuDirty.value ? 1 : 0) + (installAppDirty.value ? 1 : 0)
+  + (siteDrawerDirty.value ? 1 : 0),
 )
 const anyDirty = computed(() => dirtyCount.value > 0)
 const savingAll = ref(false)
@@ -1428,6 +1515,10 @@ async function saveAll() {
       if (await saveDanmakuCore()) saved += 1
       else failed.push('弹幕设置')
     }
+    if (siteDrawerDirty.value) {
+      if (await saveSiteDrawerCore()) saved += 1
+      else failed.push('官网菜单抽屉')
+    }
   } finally {
     savingAll.value = false
   }
@@ -1463,6 +1554,7 @@ async function discardAll() {
   loadDriveApi()
   loadSoftdecode()
   loadDanmaku()
+  loadSiteDrawer()
 }
 
 // ==================== 危险操作（Phase 5） ====================
@@ -1734,6 +1826,16 @@ watch(
               >
                 <MessageSquareText :size="13" />弹幕设置
                 <span v-if="danmakuDirty" class="chip-dot" aria-label="有未保存的改动" />
+              </button>
+              <button
+                v-if="sec.id === 'site'"
+                type="button"
+                class="group-chip"
+                :class="{ 'is-dirty': siteDrawerDirty }"
+                @click="scrollToGroup('site-drawer')"
+              >
+                <PanelBottom :size="13" />官网菜单抽屉
+                <span v-if="siteDrawerDirty" class="chip-dot" aria-label="有未保存的改动" />
               </button>
             </div>
           </nav>
@@ -2838,6 +2940,94 @@ watch(
               </el-form-item>
             </el-form>
           </SectionCard>
+          <!-- 官网菜单抽屉：独立卡片，归「站点与官网」段 -->
+          <SectionCard
+            v-if="sec.id === 'site'"
+            id="group-site-drawer"
+            title="官网菜单抽屉"
+            :icon="PanelBottom"
+            description="官网落地页手机端点开菜单时滑出的抽屉，内容全部在这里配：导航项、社区渠道卡片、底部按钮。顺序就是下面的排列（用上下箭头调）；关掉某条的开关它就不再下发；渠道一条都不剩时整个分组在抽屉里不出现。链接只接受 http(s) 外链或站内 / 路径，渠道只接受 http(s) 外链。"
+            :tone="siteDrawerDirty ? 'accent' : 'default'"
+            class="group-card"
+          >
+            <template v-if="siteDrawerDirty" #actions>
+              <span class="au-badge au-badge-amber">未保存</span>
+            </template>
+
+            <el-form label-position="top" class="field-form">
+              <el-form-item label="导航项">
+                <div class="field-stack sd-stack">
+                  <div v-for="(item, idx) in siteDrawer.nav_items" :key="idx" class="sd-row">
+                    <el-select v-model="item.icon" class="sd-icon" placeholder="图标">
+                      <el-option
+                        v-for="opt in siteDrawerIcons"
+                        :key="opt"
+                        :value="opt"
+                        :label="DRAWER_ICON_LABELS[opt] || opt"
+                      />
+                    </el-select>
+                    <el-input v-model="item.label" class="sd-label" placeholder="文字，如：首页" maxlength="40" />
+                    <el-input v-model="item.url" class="sd-url" placeholder="链接：/ 站内路径或 https:// 外链" maxlength="500" />
+                    <label class="sd-check"><el-checkbox v-model="item.external" />外链</label>
+                    <el-switch v-model="item.enabled" />
+                    <span class="sd-ops">
+                      <el-button size="small" :disabled="idx === 0" @click="drawerMove(siteDrawer.nav_items, idx, -1)">↑</el-button>
+                      <el-button size="small" :disabled="idx === siteDrawer.nav_items.length - 1" @click="drawerMove(siteDrawer.nav_items, idx, 1)">↓</el-button>
+                      <el-button size="small" type="danger" plain @click="siteDrawer.nav_items.splice(idx, 1)">删除</el-button>
+                    </span>
+                  </div>
+                  <div>
+                    <el-button size="small" @click="addDrawerNav">＋ 新增导航项</el-button>
+                    <span class="field-hint">外链会在新标签打开并在行尾显示外链小图标；站内路径如 /pricing 直接站内跳转。链接留空的行不会下发。</span>
+                  </div>
+                </div>
+              </el-form-item>
+              <el-form-item label="渠道分组标题">
+                <div class="field-stack">
+                  <el-input v-model="siteDrawer.channels_title" placeholder="如：社区渠道" maxlength="20" />
+                  <span class="field-hint">渠道卡片上方的小字标题；留空则不显示标题行（有渠道时仍显示卡片）</span>
+                </div>
+              </el-form-item>
+              <el-form-item label="社区渠道卡片">
+                <div class="field-stack sd-stack">
+                  <div v-for="(ch, idx) in siteDrawer.channels" :key="idx" class="sd-row">
+                    <el-select v-model="ch.icon" class="sd-icon" placeholder="图标">
+                      <el-option
+                        v-for="opt in siteDrawerIcons"
+                        :key="opt"
+                        :value="opt"
+                        :label="DRAWER_ICON_LABELS[opt] || opt"
+                      />
+                    </el-select>
+                    <el-input v-model="ch.title" class="sd-label" placeholder="标题，如：讨论组" maxlength="40" />
+                    <el-input v-model="ch.subtitle" class="sd-label" placeholder="副标题，如：@group 名" maxlength="80" />
+                    <el-input v-model="ch.url" class="sd-url" placeholder="链接：https://t.me/…" maxlength="500" />
+                    <el-switch v-model="ch.enabled" />
+                    <span class="sd-ops">
+                      <el-button size="small" :disabled="idx === 0" @click="drawerMove(siteDrawer.channels, idx, -1)">↑</el-button>
+                      <el-button size="small" :disabled="idx === siteDrawer.channels.length - 1" @click="drawerMove(siteDrawer.channels, idx, 1)">↓</el-button>
+                      <el-button size="small" type="danger" plain @click="siteDrawer.channels.splice(idx, 1)">删除</el-button>
+                    </span>
+                  </div>
+                  <div>
+                    <el-button size="small" @click="addDrawerChannel">＋ 新增渠道卡片</el-button>
+                    <span class="field-hint">卡片 2 列排布；没有真实公开地址的渠道不要编造，先留空不加。</span>
+                  </div>
+                </div>
+              </el-form-item>
+              <el-form-item label="底部按钮">
+                <div class="field-stack">
+                  <div class="sd-row">
+                    <el-input v-model="siteDrawer.cta.label" class="sd-label" placeholder="按钮文字，如：进入后台" maxlength="40" />
+                    <el-input v-model="siteDrawer.cta.url" class="sd-url" placeholder="链接留空 = 内置入口（已登录进概览、未登录去登录）" maxlength="500" />
+                    <el-switch v-model="siteDrawer.cta.enabled" />
+                    <span class="field-suffix">{{ siteDrawer.cta.enabled ? '显示' : '不显示' }}</span>
+                  </div>
+                  <span class="field-hint">抽屉底部整宽的彩虹主按钮；关掉开关整个按钮不渲染。</span>
+                </div>
+              </el-form-item>
+            </el-form>
+          </SectionCard>
           </template>
 
           <p class="foot-note">
@@ -3086,6 +3276,14 @@ watch(
 .field-grid :deep(.el-form-item.is-wide) { grid-column: 1 / -1; max-width: 640px; }
 .field-grid :deep(.el-form-item:last-child) { margin-bottom: 18px; }
 .field-stack { display: flex; flex-direction: column; gap: 6px; width: 100%; min-width: 0; }
+/* 官网菜单抽屉卡片：条目行编辑（图标/文字/链接/开关/排序/删除一行排完，窄屏自动换行） */
+.sd-stack { gap: 10px; }
+.sd-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%; }
+.sd-row .sd-icon { width: 110px; flex: none; }
+.sd-row .sd-label { width: 170px; flex: none; }
+.sd-row .sd-url { flex: 1 1 220px; min-width: 180px; }
+.sd-row .sd-check { display: inline-flex; align-items: center; font-size: 13px; color: var(--au-text-2); }
+.sd-row .sd-ops { display: inline-flex; gap: 4px; margin-left: auto; }
 .field-control { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .field-suffix { font-size: 12px; color: var(--au-text-3); white-space: nowrap; }
 .field-hint { font-size: 12px; color: var(--au-text-3); line-height: 1.6; }
