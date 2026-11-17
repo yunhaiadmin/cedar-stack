@@ -26,13 +26,11 @@
          原生 video 隐藏。点一下切换控制层显隐，口径同原生 video 点按。 -->
     <div v-show="softActive" ref="softEl" class="wp-soft" @click="onSoftTap" />
 
-    <!-- 站内弹幕层：站点开关开 + 用户弹幕开关开时渲染，原生与软解
-         （AVPlayer canvas）两条路径都覆盖——软解时层叠在 canvas 之上，
-         时间源走软解回的播放位置（差距 #15）。弹幕按时间窗分片拉取、
-         到点从右向左飘过，样式（区域/透明度/字号/密度/速度/偏移）
-         服从弹幕设置弹层。 -->
+    <!-- 站内弹幕层：站点开关开 + 用户弹幕开关开 + 原生播放路径时才渲染。
+         弹幕按时间窗分片拉取、到点从右向左飘过，样式（区域/透明度/
+         字号/密度/速度/偏移）服从弹幕设置弹层。 -->
     <div
-      v-if="danmakuSiteOn && danmaku.enabled"
+      v-if="danmakuSiteOn && danmaku.enabled && !softActive"
       class="wp-dm-layer"
       :class="{ half: danmaku.area === 'half' }"
       aria-hidden="true"
@@ -380,6 +378,8 @@ import {
   humanizeSoftError,
   pickSoftRelayUrl,
   shouldSoftDecode,
+  softDecodeResolutionGate,
+  SOFT_UHD_BLOCK_MESSAGE,
   type SoftPlayerHandle,
 } from '@/utils/softDecode'
 import PlayerDanmakuSheet, { type DanmakuSettings } from '@/components/player/PlayerDanmakuSheet.vue'
@@ -1165,6 +1165,14 @@ async function startSoftDecode(
   const container = softEl.value
   if (!container) return false
   if (!shouldSoftDecode(verdict, source, await fetchSoftDecodeEnabled())) return false
+  // 4K 软解护栏：4K HEVC 纯 wasm 解码在 iOS Safari 上内存爆掉、页面
+  // 被系统反复杀（2026-11-17 事故，判定口径见 softDecode.ts 的
+  // softDecodeResolutionGate，用所选源视频流的实际宽高）。命中就
+  // 不实例化 AVPlayer，直接出提示卡，返回 true 表示已处理。
+  if (softDecodeResolutionGate(source, true).blocked) {
+    showSoftUhdBlocked(source, verdict)
+    return true
+  }
   // 先停掉原生 video（切版本时它可能还在播旧源），再建软解实例
   videoEl.value?.pause()
   softFailedFor.value = source.Id
@@ -1294,6 +1302,18 @@ function showDecodeUnsupported(source: EmbyMediaSource, verdict: DecodeVerdict):
   phase.value = 'unsupported'
 }
 
+/** 4K 软解护栏命中：与解码提示卡同一套样式与出路（能播的替代版本/
+    返回详情），正文换成护栏的人话文案，不让用户对着崩溃页循环重进 */
+function showSoftUhdBlocked(source: EmbyMediaSource, verdict: DecodeVerdict): void {
+  const alt = (playbackInfo.value?.MediaSources || []).find(
+    (s) => s.Id !== source.Id && verdictCache.value.get(s.Id)?.status === 'supported',
+  )
+  decodeVerdict.value = verdict
+  decodeAlt.value = alt || null
+  noticeText.value = SOFT_UHD_BLOCK_MESSAGE
+  phase.value = 'unsupported'
+}
+
 async function switchToAlt(): Promise<void> {
   const alt = decodeAlt.value
   if (!alt) return
@@ -1406,10 +1426,13 @@ function onSoftTap(): void {
   onVideoTap()
 }
 
-/** 弹幕软解同样支持（差距 #15）：弹幕层覆盖 canvas、时间源走软解位置，
-    设置弹层照常打开。字幕轨挂在原生 video 的 <track> 上、软解画布不走
-    这条路，软解下点字幕钮时明说，不静默无反应。 */
+/** 软解模式暂不支持字幕/弹幕（字幕轨挂在原生 video 的 <track> 上，
+    软解画布不走这条路）：点按钮时明说，不静默无反应。 */
 function openDanmaku(): void {
+  if (softActive.value) {
+    showToast('软解模式暂不支持弹幕')
+    return
+  }
   danmakuOpen.value = true
 }
 function openSubtitles(): void {
@@ -1618,6 +1641,7 @@ function danmakuTick(t: number): void {
   if (
     !danmakuSiteOn.value ||
     !danmaku.value.enabled ||
+    softActive.value ||
     phase.value !== 'playing'
   ) {
     danmakuLastTick = t
@@ -1662,7 +1686,7 @@ async function sendDanmaku(): Promise<void> {
     danmakuText.value = ''
     danmakuLocalPosted.add(res.item.id)
     mergeDanmakuItems([res.item])
-    if (danmaku.value.enabled) spawnDanmaku(res.item)
+    if (danmaku.value.enabled && !softActive.value) spawnDanmaku(res.item)
   } catch (e) {
     showToast(errorText(e, '弹幕发送失败'))
   } finally {
