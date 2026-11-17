@@ -7,6 +7,9 @@
   后签发 60 秒一次性交换码，302 到 ``/admin/#magic=<code>``；失败一律 404，
   不区分 key 不存在 / 已停用 / 被限流，不给枚举留口径。没有生成过任何链接
   时本端点完全惰性（查无此行即 404，与不存在等同）。
+- ``POST /api/user/auth/admin-handoff``（在 ``emby_portal``）：前台「管理
+  后台」入口——管理员账号登录前台时凭前台会话直接签发交换码（复用本
+  模块 ``issue_exchange_code``），跳 ``/admin/#magic=<code>`` 完成交接。
 - ``POST /api/admin/auth/magic-exchange``：前端拿交换码换正式会话。换出的
   access / refresh 与密码登录**同一签发函数、同一过期口径**（见
   ``_issue_admin_session``），不另起第二套鉴权；交换码单次使用、60 秒过期。
@@ -62,6 +65,24 @@ def _find_link_by_key(db: Session, key: str) -> models.AdminMagicLink | None:
     if not hmac.compare_digest(link.token_hash, digest):
         return None
     return link
+
+
+def issue_exchange_code(db: Session, admin_user_id: int, ip: str | None) -> str:
+    """签发 60 秒一次性交换码（只存 SHA256），返回明文码。
+
+    链接入口（``admin_magic_login``）与前台「管理后台」入口
+    （``emby_portal`` 的 ``POST /api/user/auth/admin-handoff``）共用同一
+    张表、同一 TTL，不许各写一份签发逻辑（横切能力只许一套）。
+    """
+    code = secrets.token_urlsafe(_TOKEN_BYTES)
+    db.add(models.AdminMagicExchangeCode(
+        admin_user_id=admin_user_id,
+        code_hash=_sha256_hex(code),
+        expires_at=datetime.now() + timedelta(seconds=_EXCHANGE_TTL_SECONDS),
+        request_ip=ip,
+    ))
+    db.commit()
+    return code
 
 
 def _issue_admin_session(user: models.WebUser) -> dict:
@@ -123,15 +144,7 @@ def admin_magic_login(
         )
         raise HTTPException(status_code=404, detail="Not Found")
 
-    code = secrets.token_urlsafe(_TOKEN_BYTES)
-    now = datetime.now()
-    db.add(models.AdminMagicExchangeCode(
-        admin_user_id=user.id,
-        code_hash=_sha256_hex(code),
-        expires_at=now + timedelta(seconds=_EXCHANGE_TTL_SECONDS),
-        request_ip=ip,
-    ))
-    db.commit()
+    code = issue_exchange_code(db, user.id, ip)
     return RedirectResponse(url=f"/admin/#magic={code}", status_code=302)
 
 
