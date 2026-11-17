@@ -5567,7 +5567,9 @@ class _PoolMountFallback(Exception):
     """池分支回落挂载直读的控制流信号（不是错误）：池门禁判条目
     不在池供给范围（pool_provider_unsupported）且挂载直读可接管
     时，video_stream 池分支在 try 内复原选路、关掉池模式后用它
-    跳出 try 块，落到下方既有流程出流。"""
+    跳出 try 块，落到下方既有流程出流。F1 定案（2026-11-18）
+    后本信号仅已绑分流用户（pool_routed）可达，原生池观众的池
+    门禁 failed 是终局、不再触发回落。"""
 
 
 def _enforce_stream_limit(db: Session, request, user, item: em.MediaItem,
@@ -6641,36 +6643,23 @@ async def playback_info(
                         "reason": ("no_binding_required"
                                    if _pool_decision.kind == "not_applicable"
                                    else "issued_sign")}
-        if ((_pi_gate or {}).get("pool")
-                and (_pi_gate or {}).get("verdict") == "failed"
-                and (_pi_gate or {}).get("reason")
-                == "pool_provider_unsupported"):
-            # 与 video_stream 池分支同口径回落（2026-11-12
-            # richotis 案）：条目不在池供给范围（rclone 挂载等）
-            # 且挂载直读能接管（engages 且文件在位）时，计划层
-            # 不把清单标 failed——取流端会经挂载直读出字节，
-            # 清单标 failed 删地址会让客户端根本不发起取流，
-            # 两层互毙。按 proceed 留清单原样（共享原件形态：
-            # 下方 alt=media 段对无变体行的原件逐字不动，地址
-            # 仍是本站 /stream）。直读不 engages / 文件缺失则
-            # 维持池门禁原判，下方 apply_transfer_status 照旧。
-            # 探测走有界版 probe_local_file_bounded（2026-11-17
-            # 首播 19.6 秒定案）：resolve_local_file 的同步
-            # isfile 在 rclone FUSE 冷查可达 20 秒量级，无界等
-            # 会把整个 PlaybackInfo 堵死；预算内没确认按未命中
-            # （维持原判），取流端仍走 resolve_local_file 原口径。
-            _pi_ms_path = None
-            try:
-                from backend.emby_server import (
-                    mount_serving as _mount_serving_pi)
-                _pi_ms_path = await run_db(
-                    _mount_serving_pi.probe_local_file_bounded, db, item)
-            except Exception:  # noqa: BLE001 — 探测失败按未命中
-                _pi_ms_path = None
-            if _pi_ms_path is not None:
-                _pi_gate = {"verdict": "proceed",
-                            "reason": "pool_provider_unsupported_mount",
-                            "pool": True}
+        # F1 定案（2026-11-18 黑盒审计）：原生池观众（kind=
+        # "pool" 且 pool_routed=False）的池门禁 verdict 不是
+        # serve_pool_copy 即为终局。2026-11-12 richotis 案曾在
+        # 这里把 failed/pool_provider_unsupported 经挂载探测
+        # （probe_local_file_bounded）改写成 proceed、按共享
+        # 原件原样下发清单——等于所有挂载条目对任何登录的未绑
+        # 用户全开，与播放门禁硬规矩（没绑盘只能浏览、例外
+        # 只有池副本）冲突，已撤销：挂载能不能探到文件与未绑
+        # 用户无关，清单由下方 apply_transfer_status 按
+        # failed/preparing 形态覆盖，不下发任何可播地址。
+        # 可达性：能走到这里的 _pi_gate 只剩池门禁原判——已绑
+        # 用户在上方 pool_routed 分支已换成本人门禁结果（其
+        # dict 不带 pool 标记）、bound 支走 ensure_user_copy_
+        # gate，删除本改写不影响已绑链与池 serve 链。
+        # probe_local_file_bounded 本体保留在 mount_serving
+        # （#281 防 FUSE 冷查堵死 PlaybackInfo 的有界探测），
+        # 本段删除后它在计划层暂无消费者，取流端不经它判定。
         _pi_verdict = (_pi_gate or {}).get("verdict")
         if _pi_verdict == "preparing" and not (_pi_gate or {}).get("pool"):
             # 点播当场先办（2026-10-29 用户亲点）：合格的同
@@ -7710,21 +7699,26 @@ async def video_stream(
                             _pool_gate_result or {}).get("verdict")
                 if (_pool_verdict == "failed"
                         and (_pool_gate_result or {}).get("reason")
-                        == "pool_provider_unsupported"):
-                    # 池供给范围外条目回落挂载直读（2026-11-12
-                    # richotis 案定案）：条目 provider 不在池启用
-                    # 列表（如 rclone 挂载 paul）时，池门禁的
-                    # failed 不是终局——这类条目本就不归池供给，
-                    # 此前却被当终局失败抛 409，请求永远到不了
-                    # 下方的挂载直读块，paul 全库对未绑用户必
-                    # 409。挂载直读（mount_serving）能接管
-                    # （engages 且文件在位）时关掉池模式、复原
-                    # 选路，落到下方既有流程：用户转存门禁对
-                    # provider=None 条目放行
-                    # （proceed/unknown_provider），最终由挂载
-                    # 直读块出字节。直读不 engages 或文件缺失
-                    # （MountServingUnavailable）→ 维持池门禁
-                    # 原判 409，绝不放行掉到尾部谷歌 302 回落。
+                        == "pool_provider_unsupported"
+                        and _pool_routed_stream):
+                    # 池供给范围外条目回落挂载直读——仅已绑分流
+                    # 用户（pool_routed，2026-11-12 richotis 案
+                    # 定案的原始适用面）：关掉池模式、复原选路，
+                    # 落到下方既有流程按本人门禁走完（用户转存
+                    # 门禁对 provider=None 条目放行
+                    # proceed/unknown_provider，最终由挂载直读
+                    # 块出字节）；直读不 engages 或文件缺失时
+                    # 本回落不触发，下方 raise_for_transfer_gate
+                    # 的 409 再经 except 分流回落纪律落回本人
+                    # 流程，两条路都归本人门禁。
+                    # F1 定案（2026-11-18 黑盒审计）：原生池观众
+                    # （未绑、_pool_routed_stream 恒 False）不许
+                    # 走本回落——池门禁 failed 即终局，挂载能
+                    # 不能探到文件与未绑用户无关，直接落到下方
+                    # raise_for_transfer_gate 按原判 409、不出
+                    # 字节（没绑盘只能浏览、例外只有池副本；
+                    # 此前本回落不限人群，等于挂载全库对任何
+                    # 登录的未绑用户全开）。
                     _ms_fallback_path = None
                     try:
                         from backend.emby_server import (
