@@ -1184,6 +1184,16 @@ def _auto_migrate():
         ("emby_items", [
             ("enrich_field_refill_done", "BOOLEAN", "0"),
         ]),
+        # 身份门判据物化（BE-24，2026-11-17）：identity_bound（自身已绑定）
+        # 与 has_identity（货架判据结果）两列。老库补列后为 NULL = 未回填，
+        # identity_clause 按未通过处理（fail-closed）；存量由
+        # scripts/backfill_identity_flags.py 回填对账，新行由 identity_gate
+        # 的 flush 同步钩子维护。索引 idx_item_identity_gate 走下方
+        # _LEGACY_INDEXES 补建。
+        ("emby_items", [
+            ("identity_bound", "BOOLEAN", "NULL"),
+            ("has_identity", "BOOLEAN", "NULL"),
+        ]),
         # 公共贡献池 PR-4（2026-11-08）：成员行清退违规标志六列。
         # 老库补列后 flagged=0（未置位）、其余 NULL（无置位/清除
         # 痕迹），与升级前行为一致；新表 pool_member_status_events
@@ -1455,6 +1465,11 @@ _LEGACY_INDEXES: tuple[tuple[str, ...], ...] = (
     # deleted_at 跟在 library_id 后面，已下架的行在索引里就被跳过
     ("emby_items", "idx_item_lib_deleted", "library_id, deleted_at", None,
      "  🔧 已迁移: emby_items.idx_item_lib_deleted（软删除可见性索引）"),
+    # BE-24 身份门：identity_clause 只读 has_identity 后，带门 GROUP BY
+    # 计数与按库列表过滤走这条索引（依赖列 has_identity 先行补列才建；
+    # 新库由模型 __table_args__ 的同名部分索引经 create_all 建出）。
+    ("emby_items", "idx_item_identity_gate", "item_type, has_identity, library_id", "has_identity",
+     "  🔧 已迁移: emby_items.idx_item_identity_gate（身份门计数/列表索引）"),
     # v2.52.0：改名/移动检测按 drive_file_id 批量查条目，没有索引就是全表扫
     ("emby_items", "idx_item_drive_file_id", "drive_file_id", None,
      "  已迁移: emby_items.idx_item_drive_file_id"),
