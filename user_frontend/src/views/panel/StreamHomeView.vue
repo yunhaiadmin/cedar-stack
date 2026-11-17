@@ -105,8 +105,21 @@ const hasContent = computed(
     sectionRows.value.some((r) => r.row) ||
     viewRows.value.some((r) => r.row),
 )
-/** 全部为空 / 全失败才出整页错误态（带重试） */
-const showFatalError = computed(() => allSettled.value && !hasContent.value)
+/** 任一腿失败（五腿全 settled、无内容时才参与整页判定） */
+const anyLegError = computed(
+  () =>
+    heroStatus.value === 'error' ||
+    resumeStatus.value === 'error' ||
+    nextUpStatus.value === 'error' ||
+    sectionsStatus.value === 'error' ||
+    viewsStatus.value === 'error',
+)
+/** 有失败且无内容 → 整页错误态（带重试） */
+const showFatalError = computed(() => allSettled.value && !hasContent.value && anyLegError.value)
+/** 五腿全部成功但库里没内容 → 空库空态（FE-04：与失败分开，不诱导重试） */
+const showEmptyLibrary = computed(
+  () => allSettled.value && !hasContent.value && !anyLegError.value,
+)
 
 /** 首页读请求分级超时（毫秒）：全局 axios 默认 30s 不动，只在本页调用点覆盖 */
 const HOME_TIMEOUT_MS = 10_000
@@ -991,10 +1004,17 @@ onActivated(() => {
         <button type="button" class="sl-retry" @click="retryViews">重试</button>
       </div>
 
-      <!-- 全部为空 / 全失败才出整页错误态 -->
+      <!-- 有失败且无内容才出整页错误态 -->
       <div v-if="showFatalError" class="sl-error">
         片库暂时没有拉到内容<br />
         <button type="button" class="sl-retry" @click="reloadAll">重试</button>
+      </div>
+      <!-- 五腿全部成功但库里没内容：空库空态（不是失败，不给重试，给去处） -->
+      <div v-if="showEmptyLibrary" class="sl-error">
+        片库里暂时还没有内容<br />
+        <span class="sl-empty__hint">先去分类里逛逛，或者求一部想看的片</span><br />
+        <RouterLink to="/library/movies" class="sl-retry sl-empty__link">逛逛分类</RouterLink>
+        <RouterLink to="/want" class="sl-retry sl-empty__link">去求片</RouterLink>
       </div>
       <div style="height: 40px"></div>
     </div>
@@ -1188,6 +1208,15 @@ onActivated(() => {
   color: var(--uhd-s-text);
   font-size: 14px;
   cursor: pointer;
+}
+/* 空库空态（FE-04）：引导文案小一档，动作用链接胶囊（与 .sl-retry 同形） */
+.sl-empty__hint {
+  font-size: 13.5px;
+}
+.sl-empty__link {
+  display: inline-block;
+  margin-right: 10px;
+  text-decoration: none;
 }
 /* 渐进渲染：行级骨架与行级错误（单条腿 pending / 失败时只占自己那一行，
    不再整页遮挡） */

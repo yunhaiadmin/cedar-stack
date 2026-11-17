@@ -42,8 +42,14 @@ def db():
 
 @pytest.fixture(autouse=True)
 def _projection_on(monkeypatch):
-    """默认开投影（模块常量 monkeypatch，不动 env）。"""
+    """默认开投影（模块常量 monkeypatch，不动 env）。
+
+    投影路径只在身份门关时启用（api 侧 gate 开即绕过投影），故同时
+    显式钉门关——BE-06 起 identity_gate 代码默认开门，不许再靠默认；
+    门开用例（test_gate_on_ignores_projection）在用例内自行钉 1。
+    """
     monkeypatch.setattr(lp, "ENABLED", 1)
+    monkeypatch.setattr(identity_gate, "IDENTITY_SHELF_GATE", 0)
     yield
 
 

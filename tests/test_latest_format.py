@@ -21,7 +21,14 @@ from sqlalchemy.orm import sessionmaker
 
 from backend import models as core  # noqa: F401
 from backend.database import Base
-from backend.emby_server import api, models as em
+from backend.emby_server import api, identity_gate, models as em
+
+
+@pytest.fixture(autouse=True)
+def _gate_off(monkeypatch):
+    """本文件测 Latest 格式/排序、与身份门无关：显式钉门关（BE-06 起
+    identity_gate 代码默认开门，不许再靠默认关）。"""
+    monkeypatch.setattr(identity_gate, "IDENTITY_SHELF_GATE", 0)
 
 
 @pytest.fixture

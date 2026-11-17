@@ -33,6 +33,15 @@ const loadingMore = ref(false)
 /** 每页条数：与分类页 LibraryBrowseView 同口径 */
 const PAGE = 60
 
+/** 错误文案口径与详情页 errText 一致（FE-09）：优先拦截器挂的人话
+    userMessage，不把 axios 原始英文信息直接上屏 */
+function errText(err: unknown): string {
+  const msg = (err as { userMessage?: string })?.userMessage
+  if (msg) return msg
+  if (err instanceof Error) return err.message
+  return '搜索失败'
+}
+
 const FILTERS = [
   { key: 'all', label: '全部' },
   { key: 'movie', label: '电影' },
@@ -77,10 +86,11 @@ async function load(reset = true) {
       res.HasMore !== undefined ? !!res.HasMore : items.value.length < total.value
   } catch (err) {
     if (my !== seq) return
-    // 加载更多失败保留已有结果（与分类页同口径），「加载更多」仍可再点
+    // 加载更多失败保留已有结果（与分类页同口径），「加载更多」仍可再点；
+    // 文案走 errText 人话口径（FE-09），不直出 axios 原始信息
     if (reset) {
       items.value = []
-      error.value = err instanceof Error ? err.message : '搜索失败'
+      error.value = errText(err)
     }
   } finally {
     if (my === seq) {

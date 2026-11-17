@@ -23,9 +23,12 @@ identity_gate.is_bound_row，不再维护副本，避免口径撕裂）：movie/
 这两张表留更新/删除函数；任务表的状态流转（pending →
 approved / rejected）是队列本身的状态机，只改任务行，不改事件与决策行。
 
-总开关：env ``VISIBILITY_GOVERNANCE_ENABLED``（默认 0=关），模块加载
+总开关：env ``VISIBILITY_GOVERNANCE_ENABLED``（默认 1=开），模块加载
 时读一次（与 IDENTITY_SHELF_GATE 同口径，改需重启）。管理后台不另立
-开关（2026-10-19 原则：开关只走 env/文件配置）。
+开关（2026-10-19 原则：开关只走 env/文件配置）。注意：本开关只管
+审计流水线（入队/复核/事件），**不决定货架露出**——露出唯一由
+identity_gate 三开关决定，两套口径的定版关系写在 identity_gate
+模块头（2026-11-17 BE-06 收敛，四开关默认全开与生产一致）。
 """
 from __future__ import annotations
 
@@ -40,8 +43,8 @@ from backend.emby_server import identity_gate
 
 logger = logging.getLogger(__name__)
 
-#: 可见性治理总开关（默认关）。启动时读一次，热路径不碰 env。
-VISIBILITY_GOVERNANCE_ENABLED = env_int("VISIBILITY_GOVERNANCE_ENABLED", 0, 0, 1)
+#: 可见性治理总开关（默认开）。启动时读一次，热路径不碰 env。
+VISIBILITY_GOVERNANCE_ENABLED = env_int("VISIBILITY_GOVERNANCE_ENABLED", 1, 0, 1)
 
 _SURFACES = ("shelf", "search", "direct")
 

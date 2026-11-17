@@ -1000,7 +1000,9 @@ async function start() {
       query,
     })
   } else {
-    toast.info('网页播放器马上就来')
+    // web-player 路由恒存在，此分支只是兜底：给诚实提示，不再用
+    // 已过时的死文案（FE-28，网页播放器早已上线）
+    toast.error('网页播放器暂时打不开，请稍后再试')
   }
 }
 </script>

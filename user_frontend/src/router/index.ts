@@ -379,13 +379,13 @@ router.beforeEach(async (to) => {
 // 办事面壳内（壳为浅色办事面，与同壳的订阅页未钉 light 先例一致），不再由守卫钉 light。
 // 批 1+2 删除后：'/collections'（合集）路由已删，一并摘除。
 // #127 能量删除：'/game/ledger'（能量明细）路由已删，一并摘除。
-export const V4_PATHS = new Set(['/', '/favorites', '/want', '/store-requests'])
-// 参数路由前缀：条目详情是 /media/:id，afterEach 拿到的是实例路径
-// （如 /media/123），静态集合永远匹配不上，须按前缀另判；
-// /media/ 页是 v4 纸色页，必须强制 light，
-// 否则深色偏好下 --au-* 令牌是暗值，纸面页上会出现黑条/黑行。
-// /person/ 同理：演职人员页 /person/:key 与详情、收藏同属纸面页。
-const V4_PATH_PREFIXES = ['/media/', '/person/']
+export const V4_PATHS = new Set(['/', '/want', '/store-requests'])
+// FE-27 收口（2026-11-17）：/favorites 与 /media/:id、/person/:key 都是
+// 片库面（StreamShell）页面，全页只用 .stream-scope 色板 C 令牌
+// （--uhd-s-*），实际深浅由 data-stream-theme 决定（已并回全站
+// aetrix-theme 主口径）。此前把它们钉 light 会让 html data-theme 与
+// theme-color 恒为浅色、与深色页面互相打架，故一并摘除钉 light，
+// 这三页与其它页面一样走 restoreUserTheme。
 // 底部坞由 App.vue 全局常驻渲染（PanelTabbar，≤768px 唯一一套，
 // 桌面 ≥769px 由 CSS 隐藏）；各视图模板不再自带 <PanelTabbar/>。
 function restoreUserTheme() {
@@ -415,7 +415,7 @@ router.afterEach((to) => {
   // 根路径完成导航的恒为官网宣传页（未登录与已登录进站都停这里，
   // 分场景定版后不再有「已登录被送走」的前提），跟随用户主题，不钉纸色。
   const rootIsLanding = v4Path === '/'
-  if ((V4_PATHS.has(v4Path) && !rootIsLanding) || V4_PATH_PREFIXES.some((p) => v4Path.startsWith(p))) {
+  if (V4_PATHS.has(v4Path) && !rootIsLanding) {
     document.documentElement.setAttribute('data-theme', 'light')
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#f5f1ea')
   } else {

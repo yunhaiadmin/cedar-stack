@@ -77,6 +77,7 @@ from backend.emby_server.scanner import (
 )
 from backend.emby_server.search import (
     CANDIDATE_LIMIT as SEARCH_CANDIDATE_LIMIT,
+    coarse_order,
     rank_items,
     search_variants,
 )
@@ -2438,7 +2439,9 @@ def _library_item_count(db, lib) -> int:
         # 0.5s，Views 一次请求要按库数跑一轮——结果只随该库条目数据
         # 变化，走与列表 total 同一套版本号失效 + TTL 兜底（见
         # items_list_cache「计数缓存」节），命中时不再逐库现算。
-        _cnt_variant = "child:g1"
+        # variant g2（BE-02）：计数口径变更（排除合并副本）后升版，
+        # 旧口径缓存值不再被读到（键含 variant，旧键自然成孤儿）。
+        _cnt_variant = "child:g2"
         _cached = _list_cache.get_cached_counts(db, [lib.id], _cnt_variant)
         if _cached is not None:
             return int(_cached.get("n", 0))
@@ -2446,6 +2449,9 @@ def _library_item_count(db, lib) -> int:
             db,
             em.MediaItem.library_id == lib.id,
             em.MediaItem.item_type.in_(["movie", "series"]),
+            # BE-02：与列表代表口径对齐，合并副本不计（扫描器写
+            # item_count 列时同口径，见 scanner 收尾计数）
+            em.MediaItem.merged_into_id.is_(None),
             identity_gate.identity_clause(),
         )
         _list_cache.put_cached_counts(db, [lib.id], _cnt_variant, {"n": _n})
@@ -2454,10 +2460,12 @@ def _library_item_count(db, lib) -> int:
         return lib.item_count
     # count_visible 而非 Query.count()：后者数得到已下架的条目（软删除可见性过滤
     # 下不到它包出来的子查询），客户端会看到比实际能浏览到的更多条目
+    # BE-02：合并副本同样不计（与列表代表口径、扫描器 item_count 列同口径）
     return soft_delete.count_visible(
         db,
         em.MediaItem.library_id == lib.id,
         em.MediaItem.item_type.in_(["movie", "series"]),
+        em.MediaItem.merged_into_id.is_(None),
     )
 
 
@@ -3532,15 +3540,22 @@ def _query_items(request: Request, user: models.WebUser, db: Session, base: str)
     if search and not random_sort:
         # 搜索时按相关度排版。旧实现只用 SQL LIKE 过滤 + 按名称排序，
         # 于是精确命中的标题会被“名字里恰好也含这几个字”的条目挤到后面。
+        # BE-14：总数报真实命中总数（同一 query 的 COUNT，口径与随机
+        # 分支的 total 同），不再拿截断后的候选数冒充；候选截断前先按
+        # 粗相关度排序（search.coarse_order），精确/前缀命中优先进
+        # 候选集，再由 rank_items 精排。候选池上限（防整库载入内存的
+        # 既有护栏）保留：可翻页范围 = 粗相关度前 CANDIDATE_LIMIT 条，
+        # 总数仍报全部命中（与前端分页契约对齐，FE-16）。
+        total = query.order_by(None).with_entities(func.count()).scalar() or 0
         candidates = (
-            query.order_by(em.MediaItem.sort_name.asc()).limit(SEARCH_CANDIDATE_LIMIT).all()
+            query.order_by(*coarse_order(search)).limit(SEARCH_CANDIDATE_LIMIT).all()
         )
         ranked = rank_items(candidates, search)  # 相关度排序（完全匹配 > 前缀 > 别名 > 模糊）
         page = ranked[start:start + limit]
         _prefetch_list_data(db, user.id, page)
         return {
             "Items": [_item_dto(i, base, user.id, db) for i in page],
-            "TotalRecordCount": len(ranked),
+            "TotalRecordCount": total,
             "StartIndex": start,
         }
 

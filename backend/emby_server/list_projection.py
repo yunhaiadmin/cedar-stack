@@ -138,6 +138,8 @@ def _live_child_count(db, lib) -> int:
         db,
         em.MediaItem.library_id == lib.id,
         em.MediaItem.item_type.in_(_COUNT_TYPES),
+        # BE-02：合并副本不计（与 api._library_item_count 同口径）
+        em.MediaItem.merged_into_id.is_(None),
     )
 
 

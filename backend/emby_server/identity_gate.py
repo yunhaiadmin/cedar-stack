@@ -23,13 +23,23 @@
 内存剔除（守 Latest 注释立过的「先占 limit 名额」纪律）。不加冗余状态列
 （治理流水线式状态列是三期可选项）。
 
-总开关：env ``IDENTITY_SHELF_GATE``（默认 0=关），模块加载时读一次
-（与既有 env 同口径，改需重启）。关 = 所有出口与旧行为逐字一致，是本
-功能的唯一回滚手段。列表 ID 清单缓存、去重缓存与计数缓存的键都含
-门状态段（见 :func:`cache_variant_segment`，BE-08），切换开关重启后
-新口径键自然生效、旧键等 TTL 过期，不再需要配套 bump 数据版本清缓存。
+总开关：env ``IDENTITY_SHELF_GATE``（默认 1=开），模块加载时读一次
+（与既有 env 同口径，改需重启）。显式设 0 关 = 所有出口与旧行为逐字
+一致，是本功能的唯一回滚手段。列表 ID 清单缓存、去重缓存与计数缓存
+的键都含门状态段（见 :func:`cache_variant_segment`，BE-08），切换开关
+重启后新口径键自然生效、旧键等 TTL 过期，不再需要配套 bump 数据
+版本清缓存。
 
-二期 / 三期开关（2026-10-25 设计收尾，默认关）：
+与治理流水线的关系（2026-11-17 BE-06 收敛，定版口径以此处为准）：
+货架露出**只由本模块三开关决定**；``visibility_governance`` 是审计
+流水线（未绑定条目入队＋复核任务＋只追加事件），其开关
+``VISIBILITY_GOVERNANCE_ENABLED`` 不决定任何出口的露出——只开它、
+不开本模块总开关，货架一条都不会少露。四开关默认值统一为开，与
+生产现行口径一致（2026-11-17 生产三容器亲验全 =1），消除换机 /
+重装 / 丢 env 时货架门静默失效的落差；要关门必须显式把
+``IDENTITY_SHELF_GATE`` 设 0（并配套 bump 数据版本清缓存）。
+
+二期 / 三期开关（2026-10-25 设计收尾，默认开）：
 - ``IDENTITY_SHELF_PHASE2_ENABLED``：个人面与剧集面货架过滤（EA 继续观看 /
   追剧下一集 / 收藏 / 已看、门户继续观看 / 门户收藏 / 追新日历）。只在总开关
   同时开启时生效——总开关是唯一回滚手段，关总开关必须连二期一起回旧口径，
@@ -64,14 +74,14 @@ from backend.emby_server.env_util import env_int
 
 logger = logging.getLogger(__name__)
 
-#: 身份准入货架总开关（默认关）。启动时读一次，热路径不碰 env。
-IDENTITY_SHELF_GATE = env_int("IDENTITY_SHELF_GATE", 0, 0, 1)
+#: 身份准入货架总开关（默认开）。启动时读一次，热路径不碰 env。
+IDENTITY_SHELF_GATE = env_int("IDENTITY_SHELF_GATE", 1, 0, 1)
 
-#: 二期开关（默认关）：个人面与剧集面货架过滤。只在总开关同时开启时生效。
-IDENTITY_SHELF_PHASE2_ENABLED = env_int("IDENTITY_SHELF_PHASE2_ENABLED", 0, 0, 1)
+#: 二期开关（默认开）：个人面与剧集面货架过滤。只在总开关同时开启时生效。
+IDENTITY_SHELF_PHASE2_ENABLED = env_int("IDENTITY_SHELF_PHASE2_ENABLED", 1, 0, 1)
 
-#: 三期开关（默认关）：代表与版本完善。只在总开关同时开启时生效。
-IDENTITY_SHELF_PHASE3_ENABLED = env_int("IDENTITY_SHELF_PHASE3_ENABLED", 0, 0, 1)
+#: 三期开关（默认开）：代表与版本完善。只在总开关同时开启时生效。
+IDENTITY_SHELF_PHASE3_ENABLED = env_int("IDENTITY_SHELF_PHASE3_ENABLED", 1, 0, 1)
 
 _TOP_TYPES = ("movie", "series")
 _CHILD_TYPES = ("season", "episode")

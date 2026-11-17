@@ -176,7 +176,13 @@ def gate_on(monkeypatch):
     monkeypatch.setattr(identity_gate, "IDENTITY_SHELF_GATE", 1)
 
 
-def test_nav_counts_gate_off_totals_include_other_types(scene, fake_backend):
+@pytest.fixture()
+def gate_off(monkeypatch):
+    # BE-06 起代码默认开门，「关」口径用例必须显式钉 0，不许再靠默认
+    monkeypatch.setattr(identity_gate, "IDENTITY_SHELF_GATE", 0)
+
+
+def test_nav_counts_gate_off_totals_include_other_types(scene, fake_backend, gate_off):
     res = api.items_counts(user=scene.user, db=scene.db)
     assert res["MovieCount"] == 2
     assert res["SeriesCount"] == 1
@@ -206,7 +212,7 @@ def test_nav_counts_second_call_hits_cache(scene, fake_backend):
         "第二次调用必须命中计数缓存，不再对 emby_items 发计数语句"
 
 
-def test_nav_counts_version_bump_invalidates(scene, fake_backend):
+def test_nav_counts_version_bump_invalidates(scene, fake_backend, gate_off):
     api.items_counts(user=scene.user, db=scene.db)
     # 新增一条电影 + 该库版本号 bump（全部条目写路径的统一动作）
     it = em.MediaItem(

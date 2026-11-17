@@ -57,6 +57,12 @@ def _hygiene_module_engine():
             os.environ["DATABASE_URL"] = _hyg_saved_url
         _hyg_engine.dispose()
 
+@pytest.fixture(autouse=True)
+def _gate_off_by_default(monkeypatch):
+    """本文件端点用例与身份门无关：显式钉门关（BE-06 起 identity_gate
+    代码默认开门，不许再靠默认关）；门开用例在用例内自行钉 1。"""
+    monkeypatch.setattr(identity_gate, "IDENTITY_SHELF_GATE", 0)
+
 @pytest.fixture()
 def db():
     s = SessionLocal()

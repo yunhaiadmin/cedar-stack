@@ -142,6 +142,15 @@ jobs:
       # Permission denied，sidecar 起不来）。这里指向 CI 可写临时路径，
       # 只改 CI；生产默认值不变，生产部署方仍须自备可写目录（见 PR 描述）。
       PROVIDER_RUNTIME_SOCK_DIR: /tmp/aetrix-providers
+      # 身份货架门四开关在 CI 显式关（BE-06 起代码默认开、与生产一致）：
+      # 本 job 的冒烟夹具媒体全是未绑定身份的本地文件，门开会把货架面
+      # 全滤空，冒烟测的扫描/播放主链路无从验起——冒烟前提历来是门关。
+      # 门开行为由 pytest 专项用例（test_identity_gate_* 等）覆盖；
+      # 代码默认值本身由 test_gate_default_on 子进程钉子守住，不受此处影响。
+      IDENTITY_SHELF_GATE: "0"
+      IDENTITY_SHELF_PHASE2_ENABLED: "0"
+      IDENTITY_SHELF_PHASE3_ENABLED: "0"
+      VISIBILITY_GOVERNANCE_ENABLED: "0"
     steps:
       - uses: actions/checkout@v7
 
