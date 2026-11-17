@@ -295,7 +295,11 @@ check("后台登录：不可信来源的伪造头被忽略（记录直连 IP）"
 
 r = client.post("/api/admin/auth/login", json={"username": "sec-alice", "password": "alice-pw"},
                 headers={"X-Forwarded-For": "10.9.9.2"})
-check("后台登录：非管理员 403", r.status_code == 403, f"status={r.status_code}")
+# 黑盒审计 F6（2026-11-18）：非管理员/已禁用此前回 403 且文案与密码错误不同，
+# 等于替撞库者验证凭据真伪；现与密码错误同为 401＋同一文案「用户名或密码错误」。
+check("后台登录：非管理员 401（与密码错误同文案，不泄露凭据真伪）",
+      r.status_code == 401 and r.json().get("detail") == "用户名或密码错误",
+      f"status={r.status_code} detail={r.json().get('detail')}")
 row = login_logs()[0]
 check("后台登录：越权尝试被记录",
       row["reason"] == "admin_login_failed" and row["username"] == "sec-alice" and "管理员权限" in (row["detail"] or ""),
