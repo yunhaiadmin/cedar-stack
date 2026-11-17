@@ -1465,11 +1465,6 @@ _LEGACY_INDEXES: tuple[tuple[str, ...], ...] = (
     # deleted_at 跟在 library_id 后面，已下架的行在索引里就被跳过
     ("emby_items", "idx_item_lib_deleted", "library_id, deleted_at", None,
      "  🔧 已迁移: emby_items.idx_item_lib_deleted（软删除可见性索引）"),
-    # BE-24 身份门：identity_clause 只读 has_identity 后，带门 GROUP BY
-    # 计数与按库列表过滤走这条索引（依赖列 has_identity 先行补列才建；
-    # 新库由模型 __table_args__ 的同名部分索引经 create_all 建出）。
-    ("emby_items", "idx_item_identity_gate", "item_type, has_identity, library_id", "has_identity",
-     "  🔧 已迁移: emby_items.idx_item_identity_gate（身份门计数/列表索引）"),
     # v2.52.0：改名/移动检测按 drive_file_id 批量查条目，没有索引就是全表扫
     ("emby_items", "idx_item_drive_file_id", "drive_file_id", None,
      "  已迁移: emby_items.idx_item_drive_file_id"),
@@ -1591,6 +1586,12 @@ _LEGACY_INDEXES: tuple[tuple[str, ...], ...] = (
     # 索引（新库 create_all 自带）。回滚：DROP INDEX idx_web_users_parent。
     ("web_users", "idx_web_users_parent", "parent_user_id", "parent_user_id",
      "  🔧 已迁移: web_users.idx_web_users_parent（家庭子账号按主账号查）"),
+    # BE-24（2026-11-17）：身份门 identity_clause 只读 has_identity 后，
+    # 带门 GROUP BY 计数与按库列表过滤走这条索引（依赖列 has_identity
+    # 先行补列才建；新库由模型 __table_args__ 的同名部分索引经
+    # create_all 建出，spec 表末尾追加）。
+    ("emby_items", "idx_item_identity_gate", "item_type, has_identity, library_id", "has_identity",
+     "  🔧 已迁移: emby_items.idx_item_identity_gate（身份门计数/列表索引）"),
 )
 
 
