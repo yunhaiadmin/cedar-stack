@@ -201,6 +201,42 @@ export const fetchDanmakuConfig = () => get<DanmakuConfig>('/danmaku/config')
 export const updateDanmakuConfig = (data: DanmakuConfig) =>
   put<DanmakuConfig>('/danmaku/config', data)
 
+/** 官网菜单抽屉（2026-11-18）：后端 /api/admin/site-drawer/config */
+export interface SiteDrawerNavItem {
+  icon: string
+  label: string
+  url: string
+  external: boolean
+  enabled: boolean
+}
+
+export interface SiteDrawerChannel {
+  icon: string
+  title: string
+  subtitle: string
+  url: string
+  enabled: boolean
+}
+
+export interface SiteDrawerConfig {
+  nav_items: SiteDrawerNavItem[]
+  channels_title: string
+  channels: SiteDrawerChannel[]
+  cta: { label: string; url: string; enabled: boolean }
+}
+
+export interface SiteDrawerConfigResponse {
+  config: SiteDrawerConfig
+  /** 图标下拉选项（后端下发，与前端图标组件映射同一份名单） */
+  icon_options: string[]
+}
+
+export const fetchSiteDrawerConfig = () =>
+  get<SiteDrawerConfigResponse>('/site-drawer/config')
+
+export const updateSiteDrawerConfig = (data: SiteDrawerConfig) =>
+  put<SiteDrawerConfigResponse>('/site-drawer/config', data)
+
 /** 类型化会员卡码生成（续期码 / 白名单码 / 诱饵码 / 指名码） */
 export const generateCodes = (data: {
   code_type: number

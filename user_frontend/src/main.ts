@@ -25,6 +25,7 @@ import router from './router'
 import { initBranding } from './composables/useBranding'
 // 官网社区渠道（能力：官网社区渠道）：文档外链 / 社区渠道卡片由后台配置，启动时读一次
 import { initCommunityLinks } from './composables/useCommunityLinks'
+import { initSiteDrawer } from './composables/useSiteDrawer'
 // 「保存到桌面＝一个 app」：beforeinstallprompt 可能赶在挂载前触发，入口处先注册暂存
 import { captureInstallPrompt } from './composables/useInstallPrompt'
 // chunk 加载失败恢复（与 router.onError 共用唯一实现 utils/chunkRecovery）
@@ -55,3 +56,4 @@ app.use(router)
 app.mount('#app')
 void initBranding()
 void initCommunityLinks()
+void initSiteDrawer()

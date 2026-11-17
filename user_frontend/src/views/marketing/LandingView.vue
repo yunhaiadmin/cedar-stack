@@ -9,14 +9,15 @@
  */
 import { computed, nextTick, onDeactivated, onMounted, onUnmounted, ref, type Component } from 'vue'
 import { useRouter } from 'vue-router'
-import { Monitor, Sparkles, Film, Ban, Menu, X, RefreshCw, Bell, Home, Tag, BookOpen, ExternalLink, Users, Bot, MessageCircle, Send, Globe, ArrowRight } from 'lucide-vue-next'
+import { Monitor, Sparkles, Film, Ban, Menu, X, RefreshCw, Bell, Home, Tag, BookOpen, ExternalLink, Users, Bot, MessageCircle, Send, Globe, LogIn, ArrowRight } from 'lucide-vue-next'
 import UhdNavPill, { type UhdNavItem } from '@/components/uhd/UhdNavPill.vue'
 import { engageModalIsolation, lockModalOverflow, trapTabKey, unlockModalOverflow } from '@/composables/useModalIsolation'
 import UhdButton from '@/components/uhd/UhdButton.vue'
 import UhdChip from '@/components/uhd/UhdChip.vue'
 import BrandMark from '@/components/BrandMark.vue'
 import { branding } from '@/composables/useBranding'
-import { communityLinks } from '@/composables/useCommunityLinks'
+import { siteDrawer } from '@/composables/useSiteDrawer'
+import type { SiteDrawerNavItem } from '@/api'
 import { initLibraryStats, libraryStats } from '@/composables/useLibraryStats'
 import { useUserStore } from '@/stores/user'
 
@@ -134,26 +135,51 @@ function toggleMenu() {
   if (menuOpen.value) closeMenuAnimated()
   else setMenu(true)
 }
-function onMobileNav(key: string) {
-  if (key === 'home') closeMenuToOpener()
-  else setMenu(false)
-  onNav(key)
-}
-/* 菜单面板下半（2026-11-13 用户发友站截图定版，整体 1:1）：
-   文档行与「社区渠道」卡片全部来自「官网社区渠道」能力配置（后台可配），
-   未配的项不渲染、四格全空时整个小节不出现；底部大钮「进入后台」
-   已登录进用户中心概览、未登录去登录页。 */
-/* 渠道图标种类 → 线性图标组件（与后台配置的图标选项一一对应） */
-const CHANNEL_ICONS: Record<string, Component> = {
+/* 菜单抽屉内容（2026-11-18 改全配置化）：导航项、社区渠道卡片、
+   分组标题与底部大钮全部来自「官网菜单抽屉」能力配置（后台可配，
+   公开端点 /api/site/drawer），前端只做数据驱动渲染：未启用的项
+   后端不下发、渠道为空整个小节不出现、底按钮关掉不渲染。
+   底按钮链接为空 = 内置入口：已登录进用户中心概览、未登录去登录页。 */
+/* 抽屉图标种类 → 线性图标组件（与后台配置的图标选项一一对应） */
+const DRAWER_ICONS: Record<string, Component> = {
+  home: Home,
+  tag: Tag,
+  book: BookOpen,
   bell: Bell,
   users: Users,
   bot: Bot,
   message: MessageCircle,
   send: Send,
   globe: Globe,
+  login: LogIn,
 }
-function channelIcon(kind: string): Component {
-  return CHANNEL_ICONS[kind] || MessageCircle
+function drawerIcon(kind: string): Component {
+  return DRAWER_ICONS[kind] || MessageCircle
+}
+function onDrawerNav(item: SiteDrawerNavItem) {
+  if (item.external) return /* 外链行是 <a>，浏览器自己打开新标签 */
+  if (item.url === '/') {
+    closeMenuToOpener()
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    return
+  }
+  setMenu(false)
+  if (/^https?:\/\//.test(item.url)) {
+    window.open(item.url, '_blank', 'noopener')
+  } else if (item.url) {
+    router.push(item.url)
+  }
+}
+function onDrawerCta() {
+  const cta = siteDrawer.cta
+  if (!cta) return
+  if (!cta.url) {
+    goConsole()
+    return
+  }
+  setMenu(false)
+  if (/^https?:\/\//.test(cta.url)) window.open(cta.url, '_blank', 'noopener')
+  else router.push(cta.url)
 }
 function goConsole() {
   setMenu(false)
@@ -500,9 +526,6 @@ const year = new Date().getFullYear()
       aria-modal="true"
       aria-label="菜单"
     >
-      <button type="button" class="m-sheet__close" aria-label="关闭菜单" @click="closeMenuAnimated">
-        <X :size="18" aria-hidden="true" />
-      </button>
       <div
         class="m-sheet__handle"
         aria-hidden="true"
@@ -511,32 +534,31 @@ const year = new Date().getFullYear()
         @pointerup="onHandlePointerUp"
         @pointercancel="onHandlePointerUp"
       ><span /></div>
-      <nav class="m-sheet__links" aria-label="主导航">
-        <button type="button" class="m-sheet__row" @click="onMobileNav('home')">
-          <Home :size="18" aria-hidden="true" />首页
-        </button>
-        <button type="button" class="m-sheet__row" @click="onMobileNav('pricing')">
-          <Tag :size="18" aria-hidden="true" />定价
-        </button>
-        <a
-          v-if="communityLinks.docs_url"
-          class="m-sheet__row"
-          :href="communityLinks.docs_url"
-          target="_blank"
-          rel="noopener noreferrer"
-          @click="closeMenuToOpener"
-        >
-          <BookOpen :size="18" aria-hidden="true" />文档
-          <ExternalLink :size="15" class="m-sheet__row-ext" aria-hidden="true" />
-        </a>
+      <nav v-if="siteDrawer.nav_items.length" class="m-sheet__links" aria-label="主导航">
+        <template v-for="(item, idx) in siteDrawer.nav_items" :key="idx">
+          <a
+            v-if="item.external"
+            class="m-sheet__row"
+            :href="item.url"
+            target="_blank"
+            rel="noopener noreferrer"
+            @click="closeMenuToOpener"
+          >
+            <component :is="drawerIcon(item.icon)" :size="18" aria-hidden="true" />{{ item.label }}
+            <ExternalLink :size="15" class="m-sheet__row-ext" aria-hidden="true" />
+          </a>
+          <button v-else type="button" class="m-sheet__row" @click="onDrawerNav(item)">
+            <component :is="drawerIcon(item.icon)" :size="18" aria-hidden="true" />{{ item.label }}
+          </button>
+        </template>
       </nav>
-      <template v-if="communityLinks.channels.length">
+      <template v-if="siteDrawer.channels.length">
         <div class="m-sheet__divider" aria-hidden="true" />
-        <section class="m-sheet__channels" aria-label="社区渠道">
-          <h3 class="m-sheet__channels-title">社区渠道</h3>
+        <section class="m-sheet__channels" :aria-label="siteDrawer.channels_title || '社区渠道'">
+          <h3 v-if="siteDrawer.channels_title" class="m-sheet__channels-title">{{ siteDrawer.channels_title }}</h3>
           <div class="m-sheet__grid">
             <a
-              v-for="(channel, idx) in communityLinks.channels"
+              v-for="(channel, idx) in siteDrawer.channels"
               :key="idx"
               class="m-card"
               :href="channel.url"
@@ -545,7 +567,7 @@ const year = new Date().getFullYear()
               @click="closeMenuToOpener"
             >
               <span class="m-card__bubble">
-                <component :is="channelIcon(channel.icon)" :size="20" aria-hidden="true" />
+                <component :is="drawerIcon(channel.icon)" :size="20" aria-hidden="true" />
               </span>
               <span class="m-card__title">{{ channel.title }}</span>
               <span v-if="channel.subtitle" class="m-card__sub">{{ channel.subtitle }}</span>
@@ -553,10 +575,12 @@ const year = new Date().getFullYear()
           </div>
         </section>
       </template>
-      <div class="m-sheet__divider" aria-hidden="true" />
-      <div class="m-sheet__cta">
-        <UhdButton variant="primary" dark block @click="goConsole">进入后台</UhdButton>
-      </div>
+      <template v-if="siteDrawer.cta">
+        <div class="m-sheet__divider" aria-hidden="true" />
+        <div class="m-sheet__cta">
+          <UhdButton variant="primary" dark block @click="onDrawerCta">{{ siteDrawer.cta.label }}</UhdButton>
+        </div>
+      </template>
     </div>
     </div>
 
@@ -901,7 +925,6 @@ const year = new Date().getFullYear()
   cursor: pointer;
 }
 .m-nav__burger:focus-visible,
-.m-sheet__close:focus-visible,
 .m-sheet__row:focus-visible,
 .m-card:focus-visible {
   outline: 2px solid #ffffff;
@@ -2062,7 +2085,7 @@ const year = new Date().getFullYear()
   .m-sheet__handle {
     display: flex;
     justify-content: center;
-    padding: 14px 0 8px;
+    padding: 12px 0 6px;
     touch-action: none;
     cursor: grab;
   }
@@ -2072,33 +2095,17 @@ const year = new Date().getFullYear()
     border-radius: 9999px;
     background: rgba(255, 255, 255, 0.2);
   }
-  .m-sheet__close {
-    position: absolute;
-    top: 10px;
-    right: 12px;
-    z-index: 1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    border: none;
-    border-radius: 9999px;
-    background: rgba(255, 255, 255, 0.1);
-    color: var(--uhd-d-text);
-    cursor: pointer;
-  }
   .m-sheet__links {
     display: flex;
     flex-direction: column;
-    padding: 4px 12px 12px;
+    padding: 2px 12px 10px;
   }
   .m-sheet__row {
     display: flex;
     align-items: center;
     gap: 16px;
     width: 100%;
-    padding: 17px 18px;
+    padding: 14px 18px;
     border: none;
     border-radius: 16px;
     background: transparent;
@@ -2110,13 +2117,13 @@ const year = new Date().getFullYear()
   }
   .m-sheet__row svg {
     flex: none;
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
     opacity: 0.4;
   }
   .m-sheet__row .m-sheet__row-ext {
-    width: 17px;
-    height: 17px;
+    width: 15px;
+    height: 15px;
   }
   a.m-sheet__row { text-decoration: none; }
   .m-sheet__row .m-sheet__row-ext {
@@ -2126,11 +2133,11 @@ const year = new Date().getFullYear()
   .m-sheet__row:active { background: rgba(255, 255, 255, 0.08); }
   /* 社区渠道：小节标题 + 2×2 卡片（圆角深灰底、圆形图标气泡、标题、@副标） */
   .m-sheet__channels {
-    padding: 16px 20px 20px;
+    padding: 14px 20px 16px;
   }
   .m-sheet__channels-title {
     margin: 0 0 12px;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: var(--uhd-fw-medium);
     letter-spacing: 0.04em;
     color: rgba(255, 255, 255, 0.45);
@@ -2138,12 +2145,12 @@ const year = new Date().getFullYear()
   .m-sheet__grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 12px;
+    gap: 14px 12px;
   }
   .m-card {
     display: flex;
     flex-direction: column;
-    padding: 18px;
+    padding: 12px 16px 11px;
     border: 1px solid rgba(255, 255, 255, 0.07);
     border-radius: 20px;
     background: rgba(255, 255, 255, 0.045);
@@ -2155,21 +2162,22 @@ const year = new Date().getFullYear()
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 44px;
-    height: 44px;
-    margin-bottom: 12px;
+    width: 36px;
+    height: 36px;
+    margin-bottom: 8px;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.08);
     color: rgba(255, 255, 255, 0.85);
   }
   .m-card__title {
-    font-size: 16px;
+    font-size: 17px;
     font-weight: var(--uhd-fw-semibold);
-    line-height: 1.35;
+    line-height: 1.3;
   }
   .m-card__sub {
-    margin-top: 3px;
+    margin-top: 2px;
     font-size: 13px;
+    line-height: 1.3;
     color: rgba(255, 255, 255, 0.42);
     word-break: break-all;
   }
@@ -2179,12 +2187,13 @@ const year = new Date().getFullYear()
     background: rgba(255, 255, 255, 0.07);
   }
   .m-sheet__cta {
-    padding: 16px 16px max(20px, env(safe-area-inset-bottom));
+    padding: 14px 16px max(20px, env(safe-area-inset-bottom));
   }
   .m-sheet__cta :deep(.uhd-btn) {
-    padding-top: 20px;
-    padding-bottom: 20px;
-    font-size: 15px;
+    height: 44px;
+    padding-top: 0;
+    padding-bottom: 0;
+    font-size: 17px;
   }
 
   /* ---- Hero：照友站真机截图整屏构图（2026-11-14 用户发图亲点）——全幅星空棱镜
