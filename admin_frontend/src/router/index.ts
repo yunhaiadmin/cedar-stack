@@ -73,10 +73,9 @@ const routes: RouteRecordRaw[] = [
       { path: 'pool', name: 'PoolAdmin', component: () => import('@/views/PoolAdmin.vue'), meta: { title: '贡献池' } },
       // 双盘审计台账已并入「操作日志」页的双盘审计标签（Logs.vue ?tab=audit）：旧地址跳到对应标签，收藏不会 404
       { path: 'audit', redirect: { path: '/logs', query: { tab: 'audit' } } },
-      // 原「上游源」页的观测标签（存储绑定 / sidecar）：
-      // 上游源页已随上游全清删除，两页恢复独立路由（地址不变）。
+      // 原「上游源」页的观测标签（存储绑定）：
+      // 上游源页已随上游全清删除，本页恢复独立路由（地址不变）。
       { path: 'storage-bindings', name: 'StorageBindings', component: () => import('@/views/StorageBindings.vue'), meta: { title: '存储绑定' } },
-      { path: 'provider-sidecar', name: 'ProviderSidecar', component: () => import('@/views/ProviderSidecar.vue'), meta: { title: '观测·sidecar' } },
       // 「存储来源」独立页已于 v2.42.15 撒销：挂载建在「添加服务器」弹窗里（按服务器配置），
       // 目录浏览 / 体检 / 编辑都已搬过去。旧地址跳到服务器页，别人的书签不至于 404。
       { path: 'mounts', redirect: '/servers' },
