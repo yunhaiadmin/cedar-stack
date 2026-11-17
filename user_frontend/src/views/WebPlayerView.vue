@@ -87,7 +87,7 @@
       <div class="wp-start-pill">
         <button type="button" class="wp-start-main" @click="start(false)">
           <Play :size="19" class="wp-start-icon" />
-          <span>{{ resumeSeconds > 5 ? '继续播放' : '开始播放' }}</span>
+          <span>{{ resumeSeconds > 5 ? '播放' : '开始播放' }}</span>
         </button>
         <template v-if="resumeSeconds > 5">
           <span class="wp-start-div" />
