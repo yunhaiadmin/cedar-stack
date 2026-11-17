@@ -13,7 +13,7 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, BellPlus, Clapperboard, Heart, Play, Trash2 } from 'lucide-vue-next'
+import { ArrowLeft, BellPlus, Captions, ChevronRight, Clapperboard, Heart, MessagesSquare, Play, Trash2 } from 'lucide-vue-next'
 import Modal from '@/components/ui/Modal.vue'
 import {
   embyApi as embyProtocol,
@@ -26,6 +26,8 @@ import {
 } from '@/api/emby'
 import { embyApi, mediaSeekApi, type PortalResumeItem } from '@/api'
 import { seriesFollowApi } from '@/api/economy'
+import { fetchDanmakuWindow } from '@/api/danmaku'
+import { embeddedSubLabel, subLangLabel } from '@/utils/subtitleLabels'
 import SeriesEpisodeList from '@/components/panel/SeriesEpisodeList.vue'
 import PlayerSchemeSheet from '@/components/panel/PlayerSchemeSheet.vue'
 import DetailTopPill from '@/components/panel/DetailTopPill.vue'
@@ -292,6 +294,102 @@ const versionCards = computed<VersionCard[]>(() => {
   })
 })
 
+interface SubtitleTrack {
+  key: string
+  external: boolean
+  label: string
+  meta: string
+}
+
+/**
+ * 字幕轨清单（FE-14，只读展示）：与播放弹层同源——条目详情 DTO 的
+ * MediaSources[].MediaStreams 里 Type=Subtitle 的轨；外挂轨看
+ * DisplayTitle（文件名）/Language/Codec，内嵌轨走共用标签函数，
+ * 语言口径与弹层完全一致（@/utils/subtitleLabels）。多源之间按
+ * （内外+语言+格式+标题）去重，同轨不摆两遍。选轨动作不在本页，
+ * 仍走播放弹层（点「播放时选择」打开同一弹层）。
+ * 剧集的字幕挂在各集上、剧行 DTO 没有 MediaSources，这里自然为空，
+ * 区块只留入口文案，不拿别集的字幕凑数。
+ */
+const subtitleTracks = computed<SubtitleTrack[]>(() => {
+  const it = item.value
+  if (!it) return []
+  const seen = new Set<string>()
+  const out: SubtitleTrack[] = []
+  for (const src of it.MediaSources || []) {
+    for (const s of src.MediaStreams || []) {
+      if (s.Type !== 'Subtitle') continue
+      const dedupe = [
+        s.IsExternal ? 'ext' : 'emb',
+        s.Language || '',
+        s.Codec || '',
+        s.DisplayTitle || '',
+        s.Title || '',
+      ].join('|')
+      if (seen.has(dedupe)) continue
+      seen.add(dedupe)
+      if (s.IsExternal) {
+        const file = s.DisplayTitle || ''
+        const codec = (s.Codec || file.split('.').pop() || '').toLowerCase()
+        out.push({
+          key: dedupe,
+          external: true,
+          label: `${subLangLabel(s.Language, file)}${codec ? ` · ${codec}` : ''}`,
+          meta: file,
+        })
+      } else {
+        out.push({
+          key: dedupe,
+          external: false,
+          label: embeddedSubLabel(s),
+          meta: s.IsTextSubtitleStream ? '文本字幕' : '图片字幕 · 网页暂不支持',
+        })
+      }
+    }
+  }
+  return out
+})
+
+/** 字幕卡副行摘要：前三条标签，多的收成「等 N 条」（清单在卡下全列） */
+const subtitleSummary = computed(() => {
+  const labels = subtitleTracks.value.map((t) => t.label)
+  if (labels.length <= 3) return labels.join('、')
+  return `${labels.slice(0, 3).join('、')} 等 ${labels.length} 条`
+})
+
+/**
+ * 弹幕入口（FE-14，站内自发弹幕）：显隐口径与播放器完全一致——
+ * 拉一次弹幕窗，接口 404（站点开关 danmaku_enabled 关）就整块不
+ * 渲染；开着才显示入口与存量。发送仍在播放器里（要对时间点），
+ * 本页入口走现行播放弹层起播，不另起逻辑。计数是拉取上限内的
+ * 条数（后端单窗上限 500），到上限显示 500+，不冒充精确总数。
+ */
+const danmakuOn = ref(false)
+const danmakuCount = ref(0)
+async function loadDanmaku() {
+  danmakuOn.value = false
+  danmakuCount.value = 0
+  const it = item.value
+  if (!it) return
+  const end = it.RunTimeTicks ? ticksToSeconds(it.RunTimeTicks) : 7 * 24 * 3600
+  try {
+    const win = await fetchDanmakuWindow(it.Id, 0, Math.max(end, 1))
+    if (item.value?.Id !== it.Id) return
+    danmakuOn.value = true
+    danmakuCount.value = (win.items || []).length
+  } catch {
+    danmakuOn.value = false
+  }
+}
+
+const danmakuNote = computed(() => {
+  if (isSeries.value) return '弹幕按集发送，播放时可以看、也可以发'
+  if (danmakuCount.value > 0) {
+    return `已有 ${danmakuCount.value}${danmakuCount.value >= 500 ? '+' : ''} 条弹幕，播放时会滚动显示`
+  }
+  return '还没有人发弹幕，播放时来发第一条'
+})
+
 function errText(err: unknown): string {
   const msg = (err as { userMessage?: string })?.userMessage
   if (msg) return msg
@@ -330,6 +428,7 @@ async function load() {
     void loadRecommendations(item.value)
     void loadResume()
     void loadFollowState()
+    void loadDanmaku()
   } catch (err) {
     item.value = null
     error.value = `详情没加载出来：${errText(err)}`
@@ -635,6 +734,53 @@ watch(itemId, () => {
             剧集列表 <span v-if="item.ChildCount" class="md-sec-sub">{{ item.ChildCount }}季</span>
           </h2>
           <SeriesEpisodeList :series-id="item.Id" :tmdb-id="tmdbId" />
+        </section>
+
+        <!-- 字幕与弹幕（FE-14）：字幕轨只读清单（与播放弹层同源，
+             数据口径见脚本 subtitleTracks），选轨/发弹幕的动作仍在
+             播放弹层与播放器里，本页只做可达入口；弹幕卡只在站点
+             开关开时渲染（关时接口 404、整卡不出现，与播放器同口径） -->
+        <section class="md-av">
+          <h2 class="md-sec-title">字幕与弹幕</h2>
+          <div class="md-av__list">
+            <div class="md-av__card">
+              <span class="md-av__body">
+                <span class="md-av__label">
+                  <Captions :size="16" />
+                  字幕
+                  <span v-if="subtitleTracks.length" class="md-av__count">{{ subtitleTracks.length }} 条</span>
+                </span>
+                <span class="md-av__sub">
+                  <template v-if="subtitleTracks.length">{{ subtitleSummary }}</template>
+                  <template v-else>{{ isSeries ? '字幕按集提供，播放时选' : '暂未探测到字幕轨，播放时可再确认' }}</template>
+                </span>
+              </span>
+              <button type="button" class="md-av__go" @click="sheetOpen = true">
+                播放时选择
+                <ChevronRight :size="15" />
+              </button>
+            </div>
+            <ul v-if="subtitleTracks.length" class="md-av__tracks">
+              <li v-for="t in subtitleTracks" :key="t.key" class="md-av__track">
+                <span class="md-av__tag">{{ t.external ? '外挂' : '内嵌' }}</span>
+                <span class="md-av__tlabel">{{ t.label }}</span>
+                <span v-if="t.meta" class="md-av__tmeta">{{ t.meta }}</span>
+              </li>
+            </ul>
+            <div v-if="danmakuOn" class="md-av__card">
+              <span class="md-av__body">
+                <span class="md-av__label">
+                  <MessagesSquare :size="16" />
+                  弹幕
+                </span>
+                <span class="md-av__sub">{{ danmakuNote }}</span>
+              </span>
+              <button type="button" class="md-av__go" @click="sheetOpen = true">
+                播放时发送
+                <ChevronRight :size="15" />
+              </button>
+            </div>
+          </div>
         </section>
       </div>
 
@@ -1157,6 +1303,104 @@ watch(itemId, () => {
   width: calc(100% + 48px);
   margin-left: -24px;
 }
+/* 字幕与弹幕（FE-14）：卡面与可播放版本卡同款（580×70/圆角 18/浅灰底），
+   不另起样式体系；轨清单是卡下的只读细行 */
+.md-av {
+  margin-top: 44px;
+}
+.md-av__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 18px;
+}
+.md-av__card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: min(580px, 100%);
+  min-height: 70px;
+  padding: 12px 20px;
+  border-radius: 18px;
+  background: var(--uhd-s-card-soft);
+  border: 1px solid var(--uhd-s-border);
+}
+.md-av__body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.md-av__label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 15px;
+  font-weight: var(--uhd-fw-semibold);
+  color: var(--uhd-s-text);
+}
+.md-av__count {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--uhd-s-text-2);
+}
+.md-av__sub {
+  font-size: 12px;
+  color: var(--uhd-s-text-2);
+}
+.md-av__go {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 18px;
+  border: 1px solid var(--uhd-s-border);
+  background: transparent;
+  color: var(--uhd-s-text);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.md-av__tracks {
+  list-style: none;
+  margin: 0;
+  padding: 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(580px, 100%);
+}
+.md-av__track {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  min-width: 0;
+}
+.md-av__tag {
+  flex: none;
+  font-size: 11px;
+  line-height: 18px;
+  padding: 0 8px;
+  border-radius: 10px;
+  border: 1px solid var(--uhd-s-border);
+  color: var(--uhd-s-text-2);
+}
+.md-av__tlabel {
+  flex: none;
+  font-weight: var(--uhd-fw-semibold);
+  color: var(--uhd-s-text);
+  white-space: nowrap;
+}
+.md-av__tmeta {
+  color: var(--uhd-s-text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* 演职人员横滑 */
 .md-cast {
   margin-top: 44px;
@@ -1376,6 +1620,9 @@ watch(itemId, () => {
   .md-episodes {
     order: 4;
   }
+  .md-av {
+    order: 4;
+  }
   .sr-row {
     order: 6;
   }
@@ -1464,7 +1711,8 @@ watch(itemId, () => {
   }
   /* 版本/剧集段距收紧；详情页版本卡同步收小 */
   .md-versions,
-  .md-episodes {
+  .md-episodes,
+  .md-av {
     margin-top: 32px;
   }
   .md-version-list {
@@ -1475,6 +1723,18 @@ watch(itemId, () => {
     min-height: 60px;
     padding: 10px 16px;
     border-radius: 16px;
+  }
+  .md-av__list {
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .md-av__card {
+    min-height: 60px;
+    padding: 10px 16px;
+    border-radius: 16px;
+  }
+  .md-av__label {
+    font-size: 14px;
   }
   .md-version__label {
     font-size: 14px;
