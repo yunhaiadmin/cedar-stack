@@ -17,7 +17,7 @@ import time
 from datetime import datetime
 from prometheus_client import make_asgi_app
 
-from backend.metrics_guard import MetricsGuard
+from backend.metrics_guard import MetricsGuard, is_local_host
 from backend.ratelimit import get_client_ip, is_authenticated_request
 from sqlalchemy import text
 
@@ -363,15 +363,29 @@ async def lifespan(app: FastAPI):
         logger.warning(f"停止封面 worker 失败（可忽略）: {e}")
 
 
+def _api_docs_enabled() -> bool:
+    """API 交互文档（/api/docs、/api/redoc、/api/openapi.json）是否开启。
+
+    黑盒审计 F2（2026-11-18）：openapi.json 未授权可读等于把全部管理
+    接口的攻击面地图免费送给任何访问者，生产默认关闭；本地/开发需要
+    时显式设置 API_DOCS_ENABLED=true。与 /metrics 的 METRICS_ALLOW_REMOTE
+    同为 env 开关口径（默认安全、显式才开）。EA 侧本来就全关，不涉及。
+    """
+    return os.getenv("API_DOCS_ENABLED", "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
+_API_DOCS_ENABLED = _api_docs_enabled()
+
 # 创建 FastAPI 应用
 app = FastAPI(
     title="Aetrix Portal",
     description="Aetrix 统一门户 API",
     # 版本号单一来源：根目录 VERSION（改版本只改那一个文件）
     version=app_version(),
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json",
+    docs_url="/api/docs" if _API_DOCS_ENABLED else None,
+    redoc_url="/api/redoc" if _API_DOCS_ENABLED else None,
+    openapi_url="/api/openapi.json" if _API_DOCS_ENABLED else None,
     lifespan=lifespan,
 )
 
@@ -682,8 +696,73 @@ def _collect_observability() -> dict:
                 "error": str(e)[:120]}
 
 
+def _health_staff_authorized(request: Request) -> bool:
+    """请求是否携带有效的管理员凭证（与 get_current_admin 同口径）。
+
+    健康详情的第二条可信通道：管理后台健康页从浏览器走 getPublic 拉
+    /api/health，拦截器自带 staff JWT，来源 IP 是公网，必须靠凭证放行。
+    判定复用 security 的验签与新鲜度检查（jti 吊销 + token_version），
+    不另立一套；任何异常都按未授权处理（fail-closed 回最小体），
+    健康端点不许因为鉴权查询自己 500。
+    """
+    try:
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            return False
+        from backend.security import decode_token, enforce_token_freshness
+
+        payload = decode_token(auth[7:].strip(), expected_type="access")
+        if payload is None:
+            return False
+        user_id = int(payload.get("sub"))
+        db = SessionLocal()
+        try:
+            user = db.query(models.WebUser).filter(
+                models.WebUser.id == user_id).first()
+            if not user or not user.is_staff or not user.is_active:
+                return False
+            enforce_token_freshness(db, payload, user)
+            return True
+        finally:
+            db.close()
+    except Exception:  # noqa: BLE001 — 鉴权失败/异常一律回最小体
+        return False
+
+
+def _health_detail_allowed(request: Request) -> bool:
+    """健康详情（内部遥测）的可读口径（黑盒审计 F3，2026-11-18）。
+
+    全量 /api/health 会摊开 worker 名单、队列深度、库规模、磁盘余量、
+    数据库类型与内部版本号，未授权只回最小存活体。详情仅对可信来源：
+    - 本机/内网来源：部署脚本、巡检与容器 healthcheck 都走 127.0.0.1 /
+      内网直连（真实 IP 经 ratelimit.get_client_ip 还原，只信可信代理头，
+      与 /metrics 的 MetricsGuard 同一信任模型）；
+    - 携带有效管理员凭证的请求（见 _health_staff_authorized）。
+    """
+    try:
+        if is_local_host(get_client_ip(request)):
+            return True
+    except Exception:  # noqa: BLE001 — 取不到来源时落到凭证通道
+        pass
+    return _health_staff_authorized(request)
+
+
+def _health_minimal(status_value: str) -> dict:
+    """未授权健康最小存活体：只有状态本身。
+
+    ``status`` 字段形态是硬约束：部署自检与漂移守卫按
+    ``"status":"healthy"`` 字面判读，值仍是 health_report 的真实判定，
+    不硬编码（同 health_check 的既有口径）。
+    """
+    return {
+        "status": status_value,
+        "service": "em",
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
 @app.get("/api/health")
-async def health_check():
+async def health_check(request: Request):
     """健康检查端点
 
     status **不再硬编码 healthy**：以前数据库断、Redis 挂、worker 刷几千条探测
@@ -692,9 +771,14 @@ async def health_check():
 
     P1 修复（审查）：_collect_health 约 20 个 SQL + 目录 walk + Redis ping，
     同步跑会卡住事件循环几十到几百毫秒（探针 10~30s 打一次）。扔线程池。
+
+    黑盒审计 F3（2026-11-18）：未授权只回最小存活体（_health_minimal），
+    全量遥测仅可信来源可读（_health_detail_allowed）。
     """
     from starlette.concurrency import run_in_threadpool
     health = await run_in_threadpool(_collect_health)
+    if not _health_detail_allowed(request):
+        return _health_minimal(health["status"])
     # 可观测底座（v2.56.0）：开关默认关；开时返回各子系统健康探针 + API 指标
     try:
         from backend.emby_server import observability as _obs
@@ -749,8 +833,10 @@ def _runtime_report() -> dict:
 
 
 @app.get("/api/health/detailed")
-def detailed_health_check():
-    """详细健康检查"""
+def detailed_health_check(request: Request):
+    """详细健康检查（黑盒审计 F3：与 /api/health 同口径，未授权只回最小体）"""
+    if not _health_detail_allowed(request):
+        return _health_minimal(_collect_health()["status"])
     health_status = {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),

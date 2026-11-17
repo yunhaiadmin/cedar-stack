@@ -80,20 +80,24 @@ def admin_login(
             reason="admin_login_failed", detail="用户名或密码错误",
         )
         raise HTTPException(status_code=401, detail="用户名或密码错误")
+    # 黑盒审计 F6（2026-11-18）：密码对但非管理员/已禁用此前回 403 且文案
+    # 与密码错误的 401 不同，等于替撞库者验证凭据真伪（凭据有效性预言机）。
+    # 未认证失败一律 401 + 同一文案，与门户登录防枚举口径一致；真实原因
+    # 只记内部登录日志（record_event 的内部 detail 不变）。
     if not user.is_staff:
         record_event(
             db, username=user.username, user_id=user.id, ip=log_ip(http_request),
             agent=user_agent(http_request), success=False, reason="admin_login_failed",
             detail="账号没有管理员权限（尝试登录后台）",
         )
-        raise HTTPException(status_code=403, detail="该账号没有管理员权限")
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
     if not user.is_active:
         record_event(
             db, username=user.username, user_id=user.id, ip=log_ip(http_request),
             agent=user_agent(http_request), success=False, reason="admin_login_failed",
             detail="账号已被禁用",
         )
-        raise HTTPException(status_code=403, detail="账号已被禁用")
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
 
     user.last_login_at = datetime.now()
     db.commit()

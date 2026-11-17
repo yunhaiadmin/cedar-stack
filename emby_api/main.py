@@ -48,7 +48,8 @@ except ImportError:  # pragma: no cover
 from fastapi.responses import JSONResponse, StreamingResponse
 from prometheus_client import make_asgi_app
 
-from backend.metrics_guard import MetricsGuard
+from backend.metrics_guard import MetricsGuard, is_local_host
+from backend.ratelimit import get_client_ip
 from sqlalchemy import inspect
 
 from backend.database import DATABASE_TYPE, SessionLocal, engine
@@ -485,11 +486,38 @@ def _health_payload() -> dict:
     }
 
 
+def _health_detail_allowed(request: Request) -> bool:
+    """EA 健康详情（内部遥测）的可读口径（黑盒审计 F3，2026-11-18）。
+
+    全量 EA 健康会摊开与 EM 的配对状态、缺失表清单、节点身份、磁盘
+    余量与内部版本号，未授权只回最小存活体。EA 健康的消费方全是机器
+    （EM 的节点探活、docker healthcheck、部署自检），都走回环/内网
+    直连，故只设来源通道、不设凭证通道：真实 IP 经
+    ratelimit.get_client_ip 还原（只信可信代理头），本机/内网判定与
+    /metrics 的 MetricsGuard 共用 metrics_guard.is_local_host。
+    """
+    try:
+        return is_local_host(get_client_ip(request))
+    except Exception:  # noqa: BLE001 — 取不到来源一律按未授权
+        return False
+
+
 @app.get("/api/health")
-async def health_check():
-    """EA 健康检查：同时报告与 EM 的配对状态"""
+async def health_check(request: Request):
+    """EA 健康检查：同时报告与 EM 的配对状态
+
+    黑盒审计 F3（2026-11-18）：未授权只回最小存活体（service/status/
+    timestamp，status 仍是真实配对判定）；全量遥测仅本机/内网可读。
+    """
     from starlette.concurrency import run_in_threadpool
 
+    if not _health_detail_allowed(request):
+        missing = await run_in_threadpool(_missing_em_tables)
+        return {
+            "service": "ea",
+            "status": "healthy" if not missing else "unpaired",
+            "timestamp": datetime.now().isoformat(),
+        }
     return await run_in_threadpool(_health_payload)
 
 
