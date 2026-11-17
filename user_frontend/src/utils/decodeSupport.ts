@@ -18,10 +18,16 @@
  */
 
 export interface DecodeStreamLike {
+  Index?: number
   Type: string
   Codec?: string
   Width?: number | null
   Height?: number | null
+  /** 后端 _stream_dto 已下发的真实探测字段（有值才发）：MSE 预检按
+      真实参数拼 mime 串用（softDecode.ts 的 mseMimeCandidates） */
+  Profile?: string | null
+  Level?: number | null
+  BitDepth?: number | null
 }
 
 export interface DecodeSourceLike {

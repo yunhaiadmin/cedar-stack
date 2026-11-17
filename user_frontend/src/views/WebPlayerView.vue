@@ -377,11 +377,11 @@ import {
   fetchSoftDecodeEnabled,
   humanizeSoftError,
   pickSoftRelayUrl,
-  probeSoftHardwareDecode,
+  probeSoftMseSupport,
   shouldSoftDecode,
   softDecodePipelineDecision,
   softDecodeResolutionGate,
-  SOFTDECODE_HARDWARE_ENABLED,
+  SOFTDECODE_MSE_ENABLED,
   SOFT_UHD_BLOCK_MESSAGE,
   type SoftPlayerHandle,
 } from '@/utils/softDecode'
@@ -1171,22 +1171,25 @@ async function startSoftDecode(
   // 4K 分流：4K HEVC 纯 wasm 解码在 iOS Safari 上内存爆掉、页面被
   // 系统反复杀（2026-11-17 事故，阈值口径见 softDecode.ts 的
   // softDecodeResolutionGate，用所选源视频流的实际宽高）。达 4K 线
-  // 的源先探 WebCodecs 硬解：探到才以硬解构造试播一次（音频仍走
-  // wasm，互不影响）；探不到/开关关，维持 #260 行为——不实例化
-  // AVPlayer、直接出提示卡，返回 true 表示已处理。硬解起播失败的
+  // 的源第一顺位走 MSE 原生管线：先按真实参数做 MSE 预检（移植
+  // 探针页 #279 已真机验通的闸门），过检才以 checkUseMSE 改判
+  // 构造试播（帧交系统播、不进页面内存）；预检不过/开关关，维持
+  // #260 行为——不实例化 AVPlayer、直接出提示卡，返回 true 表示
+  // 已处理。MSE 起播失败（含被否回解码管线的看门狗判失败）的
   // 回落也在下面 catch 与 onError 里接回同一张提示卡，只试一次。
-  let hardwareAttempt = false
+  // WebCodecs 硬解尝试（#261）已被真机证明照样崩页，整段退役。
+  let mseAttempt = false
   if (softDecodeResolutionGate(source, true).blocked) {
-    const hwSupported = SOFTDECODE_HARDWARE_ENABLED
-      ? await probeSoftHardwareDecode(source)
+    const mseSupported = SOFTDECODE_MSE_ENABLED
+      ? probeSoftMseSupport(source).supported
       : false
     if (
       softDecodePipelineDecision(source, true, {
-        enabled: SOFTDECODE_HARDWARE_ENABLED,
-        supported: hwSupported,
-      }).pipeline === 'hardware'
+        enabled: SOFTDECODE_MSE_ENABLED,
+        supported: mseSupported,
+      }).pipeline === 'mse'
     ) {
-      hardwareAttempt = true
+      mseAttempt = true
     } else {
       showSoftUhdBlocked(source, verdict)
       return true
@@ -1259,10 +1262,10 @@ async function startSoftDecode(
           if (!started) return
           if (phase.value !== 'playing' && phase.value !== 'preparing') return
           if (currentSource.value?.Id !== source.Id) return
-          // 硬解试播的会话报错回落 #260 的 4K 提示卡；普通软解照旧
+          // MSE 试播的会话报错回落 #260 的 4K 提示卡；普通软解照旧
           // 回落解码提示卡。都只落一次，不重试。
           void destroySoft().then(() =>
-            hardwareAttempt
+            mseAttempt
               ? showSoftUhdBlocked(source, verdict)
               : showDecodeUnsupported(source, verdict),
           )
@@ -1270,7 +1273,7 @@ async function startSoftDecode(
       },
       {
         ext: (source.Container || '').toLowerCase() || undefined,
-        hardware: hardwareAttempt,
+        mse: mseAttempt,
       },
     )
   } catch (e) {
@@ -1283,8 +1286,8 @@ async function startSoftDecode(
     }
     softHandle.value = null
     softStarting.value = false
-    if (hardwareAttempt) {
-      // 硬解试播起播失败：实例已由 createSoftPlayer 内部销毁，这里
+    if (mseAttempt) {
+      // MSE 试播起播失败：实例已由 createSoftPlayer 内部销毁，这里
       // 直接回落 #260 的 4K 提示卡（返回 true＝已处理），不让调用
       // 方再走原生试播，不重试。
       showSoftUhdBlocked(source, verdict)

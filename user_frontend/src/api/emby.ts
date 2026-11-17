@@ -278,6 +278,9 @@ export interface EmbyMediaSource {
     BitRate?: number | null
     FrameRate?: number | null
     BitDepth?: number | null
+    /** 编码档次与级别（后端 _stream_dto 已下发）：MSE 预检拼真实参数 mime 串用 */
+    Profile?: string | null
+    Level?: number | null
     Title?: string | null
     /** 字幕轨的可直取地址（服务端已附短期播放签名） */
     DeliveryUrl?: string

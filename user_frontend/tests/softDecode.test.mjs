@@ -20,8 +20,11 @@ const {
   humanizeSoftError,
   softDecodeResolutionGate,
   softDecodePipelineDecision,
-  probeSoftHardwareDecode,
-  SOFTDECODE_HARDWARE_ENABLED,
+  probeSoftMseSupport,
+  runSoftMsePreflight,
+  softMseGate,
+  mseMimeCandidates,
+  SOFTDECODE_MSE_ENABLED,
   SOFT_START_TIMEOUT_MS,
   SOFT_UHD_BLOCK_MESSAGE,
 } = await import('../src/utils/softDecode.ts')
@@ -552,27 +555,28 @@ check(
   true,
 )
 
-// --- 4K 硬解分流决策（2026-11-17）：达 4K 线的软解源先试 WebCodecs ---
-// 硬解（iOS 17.4+ 的 VideoToolbox），探到才开；探不到/开关关回到
-// #260 的护栏提示卡。未达 4K 线的软解源永远走 wasm、行为不变。
-// 阈值复用 softDecodeResolutionGate，不另立一套。
+// --- 4K MSE 分流决策（2026-11-17 晚）：达 4K 线的软解源第一顺位 ---
+// 走 libmedia 自带 MSE 原生管线（帧交系统播、不进页面内存）；预检
+// 不过/开关关回到 #260 的护栏提示卡。WebCodecs 硬解尝试（#261）已
+// 被真机证明照样崩页、整段退役。未达 4K 线的软解源永远走 wasm、
+// 行为不变。阈值复用 softDecodeResolutionGate，不另立一套。
 check(
-  'pipeline: 4K + switch on + hw supported => hardware',
+  'pipeline: 4K + switch on + mse supported => mse',
   softDecodePipelineDecision(sizedSrc(3840, 2160), true, { enabled: true, supported: true }),
-  { pipeline: 'hardware', width: 3840, height: 2160, reason: 'uhd-hardware' },
+  { pipeline: 'mse', width: 3840, height: 2160, reason: 'uhd-mse' },
 )
 check(
-  'pipeline: 4K + hw unsupported => blocked',
+  'pipeline: 4K + mse unsupported => blocked',
   softDecodePipelineDecision(sizedSrc(3840, 2160), true, { enabled: true, supported: false }),
-  { pipeline: 'blocked', width: 3840, height: 2160, reason: 'hardware-unsupported' },
+  { pipeline: 'blocked', width: 3840, height: 2160, reason: 'mse-unsupported' },
 )
 check(
-  'pipeline: 4K + switch off => blocked even if hw supported',
+  'pipeline: 4K + switch off => blocked even if mse supported',
   softDecodePipelineDecision(sizedSrc(3840, 2160), true, { enabled: false, supported: true }),
-  { pipeline: 'blocked', width: 3840, height: 2160, reason: 'hardware-switch-off' },
+  { pipeline: 'blocked', width: 3840, height: 2160, reason: 'mse-switch-off' },
 )
 check(
-  'pipeline: 1080p + hw supported => wasm unchanged',
+  'pipeline: 1080p + mse supported => wasm unchanged',
   softDecodePipelineDecision(sizedSrc(1920, 1080), true, { enabled: true, supported: true }),
   { pipeline: 'wasm', width: 1920, height: 1080, reason: 'below-uhd' },
 )
@@ -587,86 +591,149 @@ check(
   { pipeline: 'wasm', width: 3840, height: 2160, reason: 'native-pipeline' },
 )
 check(
-  'pipeline: DCI 4K + hw supported => hardware',
+  'pipeline: DCI 4K + mse supported => mse',
   softDecodePipelineDecision(sizedSrc(4096, 2160), true, { enabled: true, supported: true }).pipeline,
-  'hardware',
+  'mse',
 )
-check('hardware kill switch off (2026-11-17 real-device still crashes)', SOFTDECODE_HARDWARE_ENABLED, false)
+check('mse switch defaults on (real-device verified 2026-11-17)', SOFTDECODE_MSE_ENABLED, true)
 
-// --- 硬解探测：按所选源的实际编码 + 实际宽高问 VideoDecoder ---
-// node 环境没有 window：必须按不可用处理，不许抛错。
-check(
-  'hw probe: no VideoDecoder in environment => false',
-  await probeSoftHardwareDecode(sizedSrc(3840, 2160)),
-  false,
-)
-{
-  let probedCfg = null
-  globalThis.window = {
-    VideoDecoder: {
-      isConfigSupported: async (cfg) => {
-        probedCfg = cfg
-        return { supported: true }
-      },
-    },
-  }
-  check(
-    'hw probe: VideoDecoder says supported => true',
-    await probeSoftHardwareDecode(sizedSrc(3840, 2160)),
-    true,
-  )
-  check(
-    'hw probe: asks with the source actual codec config + dimensions',
-    probedCfg,
-    { codec: 'hev1.1.6.L93.B0', codedWidth: 3840, codedHeight: 2160 },
-  )
-  globalThis.window = {
-    VideoDecoder: {
-      isConfigSupported: async () => ({ supported: false }),
-    },
-  }
-  check(
-    'hw probe: VideoDecoder says unsupported => false',
-    await probeSoftHardwareDecode(sizedSrc(3840, 2160)),
-    false,
-  )
-  globalThis.window = {
-    VideoDecoder: {
-      isConfigSupported: async () => {
-        throw new Error('probe boom')
-      },
-    },
-  }
-  check(
-    'hw probe: probe throws => false',
-    await probeSoftHardwareDecode(sizedSrc(3840, 2160)),
-    false,
-  )
-  delete globalThis.window
+// --- MSE mime 候选：按流的真实参数拼串（候选策略照探针页 #279，---
+// 参数改按所选流的 Profile/Level/BitDepth 现拼，不写死样本值）。
+const mseSample = {
+  Id: 'mse1',
+  Container: 'mkv',
+  MediaStreams: [
+    { Index: 0, Type: 'Video', Codec: 'hevc', Width: 3840, Height: 2160, Profile: 'Main 10', Level: 150, BitDepth: 10 },
+    { Index: 1, Type: 'Audio', Codec: 'eac3', Channels: 6 },
+    { Index: 2, Type: 'Audio', Codec: 'aac', Channels: 2 },
+  ],
 }
+check(
+  'mse mime: hevc video candidates from real params (Main10 L150)',
+  mseMimeCandidates(mseSample).filter((c) => c.kind === 'video').map((c) => c.mime),
+  [
+    'video/mp4; codecs="hvc1.2.4.L150.B0"',
+    'video/mp4; codecs="hev1.2.4.L150.B0"',
+    'video/mp4; codecs="hvc1.1.6.L150.B0"',
+    'video/mp4; codecs="hvc1"',
+  ],
+)
+check(
+  'mse mime: Main profile L153 leads with 1.6 param',
+  mseMimeCandidates({
+    Id: 'x',
+    MediaStreams: [{ Index: 0, Type: 'Video', Codec: 'hevc', Profile: 'Main', Level: 153, BitDepth: 8 }],
+  }).filter((c) => c.kind === 'video').map((c) => c.mime)[0],
+  'video/mp4; codecs="hvc1.1.6.L153.B0"',
+)
+check(
+  'mse mime: missing profile/level falls back to Main10 L150 lead',
+  mseMimeCandidates(sizedSrc(3840, 2160)).filter((c) => c.kind === 'video').map((c) => c.mime)[0],
+  'video/mp4; codecs="hvc1.2.4.L150.B0"',
+)
+check(
+  'mse mime: h264 video candidates',
+  mseMimeCandidates({
+    Id: 'x',
+    MediaStreams: [{ Index: 0, Type: 'Video', Codec: 'h264', Width: 3840, Height: 2160 }],
+  }).filter((c) => c.kind === 'video').map((c) => c.mime),
+  ['video/mp4; codecs="avc1.640028"', 'video/mp4; codecs="avc1"'],
+)
+check(
+  'mse mime: audio candidates for eac3 + aac tracks',
+  mseMimeCandidates(mseSample).filter((c) => c.kind === 'audio').map((c) => c.mime),
+  ['audio/mp4; codecs="ec-3"', 'audio/mp4; codecs="mp4a.40.2"', 'audio/mp4; codecs="mp4a.40.5"'],
+)
 
-// --- 硬解接线契约：视图只在 4K 分流命中时把 hardware 标志交给构造，---
+// --- MSE 预检闸门（移植探针页 gateForAttempt 的默认选轨口径）：---
+// 视频须有带参数候选被认（只认裸标签不算——libmedia 内部用的就是
+// 带参数串），且默认音轨（第一条音轨）候选被认，才许构造播放器；
+// 不过闸就不构造，绝不让 libmedia 内部否掉 MSE 后掉进解码管线。
+check(
+  'mse probe: no MSE API in environment => no-mse-api',
+  probeSoftMseSupport(mseSample),
+  { supported: false, gate: 'no-mse-api' },
+)
+check(
+  'mse probe: all candidates supported => pass',
+  probeSoftMseSupport(mseSample, () => true),
+  { supported: true, gate: 'pass' },
+)
+check(
+  'mse gate: all supported => pass',
+  softMseGate(runSoftMsePreflight(mseSample, () => true), mseSample),
+  'pass',
+)
+check(
+  'mse gate: only bare video tag supported => video-unsupported',
+  softMseGate(
+    runSoftMsePreflight(mseSample, (mime) => mime === 'video/mp4; codecs="hvc1"' || mime.startsWith('audio/')),
+    mseSample,
+  ),
+  'video-unsupported',
+)
+check(
+  'mse gate: first audio track unsupported => audio-unsupported',
+  softMseGate(runSoftMsePreflight(mseSample, (mime) => !mime.startsWith('audio/')), mseSample),
+  'audio-unsupported',
+)
+check(
+  'mse gate: no audio stream => pass on video alone',
+  softMseGate(runSoftMsePreflight(sizedSrc(3840, 2160, 'hevc', null), () => true), sizedSrc(3840, 2160, 'hevc', null)),
+  'pass',
+)
+check(
+  'mse gate: no MSE API => no-mse-api',
+  softMseGate(runSoftMsePreflight(mseSample), mseSample),
+  'no-mse-api',
+)
+
+// --- MSE 接线契约：视图只在 4K 分流命中时把 mse 标志交给构造， ---
 // 起播失败与播后报错都回落 #260 提示卡（showSoftUhdBlocked 出现于
-// 分流拦截、起播 catch、播后 onError 三处调用点）。
+// 分流拦截、起播 catch、播后 onError 三处调用点）；构造侧以
+// checkUseMSE 改判 + useMSE 看门狗保证真走 MSE，被否回解码管线
+// 立刻销毁回落；WebCodecs 硬解路径整段退役、不许留作可选项。
 check(
-  'player probes hardware decode for UHD sources',
-  wpvSrc.includes('await probeSoftHardwareDecode(source)'),
+  'player probes MSE support for UHD sources',
+  wpvSrc.includes('probeSoftMseSupport(source)'),
   true,
 )
 check(
-  'player passes hardware flag into soft player creation',
-  wpvSrc.includes('hardware: hardwareAttempt'),
+  'player passes mse flag into soft player creation',
+  wpvSrc.includes('mse: mseAttempt'),
   true,
 )
 check(
-  'player falls back to UHD block card on hardware failure (3 call sites)',
+  'player falls back to UHD block card on mse failure (3 call sites)',
   wpvSrc.split('showSoftUhdBlocked(source, verdict)').length - 1 >= 3,
   true,
 )
 check(
-  'soft player maps hardware option to AVPlayer webcodecs flags',
-  softDecodeSrc.includes('enableHardware: options.hardware === true') &&
-    softDecodeSrc.includes('enableWebCodecs: options.hardware === true'),
+  'soft player forces MSE via checkUseMSE callback in mse mode',
+  softDecodeSrc.includes('checkUseMSE: () => true'),
+  true,
+)
+check(
+  'soft player watchdog vetoes decoder fallback via useMSE flag',
+  softDecodeSrc.includes('player.useMSE === false'),
+  true,
+)
+check(
+  'soft player keeps decoder switches off (no webcodecs decode path)',
+  softDecodeSrc.includes('enableHardware: false') &&
+    softDecodeSrc.includes('enableWebCodecs: false'),
+  true,
+)
+check(
+  'webcodecs hardware attempt retired from soft decode module',
+  !softDecodeSrc.includes('probeSoftHardwareDecode') &&
+    !softDecodeSrc.includes('SOFTDECODE_HARDWARE_ENABLED'),
+  true,
+)
+check(
+  'webcodecs hardware attempt retired from player view',
+  !wpvSrc.includes('probeSoftHardwareDecode') &&
+    !wpvSrc.includes('SOFTDECODE_HARDWARE_ENABLED'),
   true,
 )
 
