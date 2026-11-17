@@ -3,47 +3,23 @@
  * StreamShell —— 片库面根壳（批 3）
  * 职责：近白/近黑底 + 顶部彩虹光晕、双胶囊顶栏、手机液态玻璃底部导航、
  * 外观三态（跟随系统 → 浅色 → 深色，单键循环，与原站实测一致）。
- * 外观偏好只存片库面自己的键（aetrix-stream-theme），不碰全站 aetrix-theme：
- * 片库面是独立色板 C，不跟办事面/营销面的主题口径互相污染。
- * 深浅只改 .stream-scope 上的 data-stream-theme，令牌见 uhd-tokens.css 色板 C。
+ * 外观偏好并回全站主口径（FE-27 收口）：与全站共用 useTheme 的同一份
+ * 状态与 aetrix-theme 键——在任何一面切的外观都互相生效，不再有片库面
+ * 自己的第二套独立口径。深浅仍只改 .stream-scope 上的 data-stream-theme，
+ * 令牌见 uhd-tokens.css 色板 C。
  */
-import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, provide, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import StreamTopbar from './StreamTopbar.vue'
 import StreamBottomNav from './StreamBottomNav.vue'
 import UhdTopBar from '@/components/uhd/UhdTopBar.vue'
 import DetailTopPill from '@/components/panel/DetailTopPill.vue'
+import { useTheme } from '@/composables/useTheme'
 
-type StreamPref = 'system' | 'light' | 'dark'
-const PREF_KEY = 'aetrix-stream-theme'
-
-const pref = ref<StreamPref>('system')
-const systemDark = ref(false)
-let mq: MediaQueryList | null = null
-
-function readPref(): StreamPref {
-  try {
-    const v = localStorage.getItem(PREF_KEY)
-    return v === 'light' || v === 'dark' || v === 'system' ? v : 'system'
-  } catch {
-    return 'system'
-  }
-}
-
-const resolved = computed<'light' | 'dark'>(() => {
-  if (pref.value === 'system') return systemDark.value ? 'dark' : 'light'
-  return pref.value
-})
+const { preference: pref, resolved, setPreference } = useTheme()
 
 function cycleTheme() {
-  pref.value = pref.value === 'system' ? 'light' : pref.value === 'light' ? 'dark' : 'system'
-  try {
-    localStorage.setItem(PREF_KEY, pref.value)
-  } catch { /* 隐私模式存不下就算了，本次会话仍生效 */ }
-}
-
-function onSystemChange(e: MediaQueryListEvent) {
-  systemDark.value = e.matches
+  setPreference(pref.value === 'system' ? 'light' : pref.value === 'light' ? 'dark' : 'system')
 }
 
 /* Teleport 到 body 的浮层（如 PlayerSchemeSheet）拿不到 .stream-scope 的
@@ -55,13 +31,12 @@ watch(
 )
 
 onMounted(() => {
-  pref.value = readPref()
-  mq = window.matchMedia('(prefers-color-scheme: dark)')
-  systemDark.value = mq.matches
-  mq.addEventListener('change', onSystemChange)
+  /* 旧第二套键 aetrix-stream-theme 已废弃（FE-27）：清掉存量，不再读写 */
+  try {
+    localStorage.removeItem('aetrix-stream-theme')
+  } catch { /* 隐私模式清不掉就算了 */ }
 })
 onBeforeUnmount(() => {
-  mq?.removeEventListener('change', onSystemChange)
   document.body.classList.remove('uhd-stream-dark')
 })
 

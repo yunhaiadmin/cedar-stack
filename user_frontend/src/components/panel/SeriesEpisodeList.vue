@@ -68,7 +68,7 @@
             <!-- 手机列表形态（录屏）：大号两位数序号圆（桌面隐藏，桌面走缩略图卡） -->
             <span class="ep-bignum" aria-hidden="true">{{ row.num !== null ? String(row.num).padStart(2, '0') : '·' }}</span>
             <span class="ep-thumb">
-              <img v-if="rowThumb(row)" :src="rowThumb(row)" alt="" loading="lazy" />
+              <img v-if="rowThumb(row) && !brokenThumbs.has(row.key)" :src="rowThumb(row)" alt="" loading="lazy" @error="onThumbError(row.key)" />
               <Clapperboard v-else :size="22" :stroke-width="1.5" class="ep-thumb__fallback" aria-hidden="true" />
               <!-- 全片库唯一角标：集数缩略图右上「N版本」黑半透明胶囊 52×22/圆角 11 -->
               <span v-if="rowVersions(row) > 1" class="ep-ver-badge">{{ rowVersions(row) }}版本</span>
@@ -187,6 +187,13 @@ const seasons = ref<EmbyItem[]>([])
 const episodes = ref<EmbyItem[]>([])
 const missingInfo = ref<MissingInfo | null>(null)
 const fillBusy = ref(false)
+
+/** 集缩略图失败兜底（FE-23，与海报卡 broken 口径一致）：失败记行 key，
+    模板改走已有的 Clapperboard 占位，不出破图 */
+const brokenThumbs = ref<ReadonlySet<string>>(new Set())
+function onThumbError(key: string) {
+  brokenThumbs.value = new Set(brokenThumbs.value).add(key)
+}
 let loadSeq = 0
 let missingSeq = 0
 
