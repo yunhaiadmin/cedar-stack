@@ -4,10 +4,6 @@
     <template v-if="view === 'main'">
       <p class="wp-sec">片源</p>
       <div class="wp-list">
-        <div class="wp-row wp-row-static">
-          <span>开始播放</span>
-          <span class="wp-row-val">{{ currentSourceLabel || '—' }}</span>
-        </div>
         <button type="button" class="wp-row" @click="view = 'versions'">
           <span>切换版本</span>
           <ChevronRight :size="17" class="wp-dim" />
@@ -36,10 +32,18 @@
           <span>小窗播放</span>
           <PictureInPicture2 :size="17" class="wp-dim" />
         </button>
-        <button type="button" class="wp-row" @click="view = 'info'">
+        <div class="wp-row wp-row-toggle">
           <span>播放信息</span>
-          <ChevronRight :size="17" class="wp-dim" />
-        </button>
+          <button
+            type="button"
+            class="wp-switch"
+            :class="{ 'is-on': infoVisible }"
+            role="switch"
+            :aria-checked="infoVisible"
+            aria-label="播放信息"
+            @click="emit('update:info-visible', !infoVisible)"
+          ></button>
+        </div>
       </div>
     </template>
 
@@ -66,6 +70,20 @@
 
     <!-- 选集 -->
     <template v-else-if="view === 'episodes'">
+      <div class="wp-list wp-list-mb">
+        <div class="wp-row wp-row-toggle">
+          <span>自动连播</span>
+          <button
+            type="button"
+            class="wp-switch"
+            :class="{ 'is-on': autoPlayNext }"
+            role="switch"
+            :aria-checked="autoPlayNext"
+            aria-label="自动连播"
+            @click="emit('update:auto-play-next', !autoPlayNext)"
+          ></button>
+        </div>
+      </div>
       <div class="wp-list">
         <button
           v-for="ep in episodes"
@@ -111,15 +129,6 @@
       />
     </template>
 
-    <!-- 播放信息 -->
-    <template v-else-if="view === 'info'">
-      <dl class="wp-info">
-        <template v-for="line in infoLines" :key="line.label">
-          <dt>{{ line.label }}</dt>
-          <dd>{{ line.value }}</dd>
-        </template>
-      </dl>
-    </template>
   </PlayerSheet>
 </template>
 
@@ -146,24 +155,28 @@ const props = defineProps<{
   open: boolean
   sources: SourceOption[]
   currentSourceId: string
-  currentSourceLabel: string
   episodes: EpisodeOption[]
   currentEpisodeId: string
   rate: number
-  infoLines: InfoLine[]
+  /** 播放信息叠显开关：开时键值信息由播放页叠显在画面一角，不再开子页 */
+  infoVisible: boolean
+  /** 自动连播开关（选集子页顶部）：关后播完不自动接下一集 */
+  autoPlayNext: boolean
   /** 浏览器支持标准 PiP（requestPictureInPicture）时才渲染小窗行，不支持不许留假钮 */
   pipSupported: boolean
 }>()
 const emit = defineEmits<{
   'update:open': [boolean]
   'update:rate': [number]
+  'update:info-visible': [boolean]
+  'update:auto-play-next': [boolean]
   'select-source': [string]
   'select-episode': [string]
   'screenshot': []
   'pip': []
 }>()
 
-const view = ref<'main' | 'versions' | 'episodes' | 'speed' | 'info'>('main')
+const view = ref<'main' | 'versions' | 'episodes' | 'speed'>('main')
 const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2]
 
 const sheetTitle = computed(() => {
@@ -174,8 +187,6 @@ const sheetTitle = computed(() => {
       return '选集'
     case 'speed':
       return '播放速度'
-    case 'info':
-      return '播放信息'
     default:
       return '播放设置'
   }
@@ -228,8 +239,54 @@ function onOpenChange(v: boolean): void {
 button.wp-row:hover {
   background: rgba(255, 255, 255, 0.06);
 }
-.wp-row-static {
+.wp-row-toggle {
   cursor: default;
+}
+.wp-list-mb {
+  margin-bottom: 14px;
+}
+/* 开关模具：与全站 .set-switch 同模（44×24 轨道＋20px 钮、52×44 命中区），
+   配色按本弹层深色口径：关＝白 18% 轨＋白钮，开＝白轨＋黑钮（同 .wp-seg 的 on） */
+.wp-switch {
+  position: relative;
+  flex: none;
+  width: 52px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.wp-switch::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 10px;
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  transition: background 0.2s ease;
+}
+.wp-switch::after {
+  content: '';
+  position: absolute;
+  top: 12px;
+  left: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  transition: left 0.2s ease;
+}
+.wp-switch.is-on::before {
+  background: rgba(255, 255, 255, 0.92);
+}
+.wp-switch.is-on::after {
+  left: 26px;
+  background: #111;
 }
 .wp-row-main {
   display: flex;
@@ -299,20 +356,5 @@ button.wp-row:hover {
 .wp-range {
   width: 100%;
   accent-color: #fff;
-}
-.wp-info {
-  margin: 8px 0 0;
-  display: grid;
-  grid-template-columns: 86px 1fr;
-  row-gap: 10px;
-  font-size: 14px;
-}
-.wp-info dt {
-  color: rgba(255, 255, 255, 0.5);
-}
-.wp-info dd {
-  margin: 0;
-  color: #fff;
-  word-break: break-all;
 }
 </style>

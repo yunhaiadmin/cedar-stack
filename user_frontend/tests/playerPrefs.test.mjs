@@ -108,4 +108,28 @@ prefs.schedulePushPlayerPrefs({ rate: 3 })
 await new Promise((r) => setTimeout(r, 1000))
 check('failed push swallowed', apiStub.calls.filter((c) => c.method === 'put').length, 2)
 
+// 8) 自动连播（autoPlayNext）：存取往返保 false（不许被缺省吞掉）；
+// 合并本地优先——本地关、服务端开 → 关；本地没设、服务端关 → 关。
+reset()
+prefs.saveLocalPlayerPrefs({ autoPlayNext: false })
+check('save/load keeps autoPlayNext=false', prefs.loadLocalPlayerPrefs(), { autoPlayNext: false })
+check(
+  'merge autoPlayNext local-first (local off wins)',
+  prefs.mergePlayerPrefs({ autoPlayNext: false }, { autoPlayNext: true }),
+  { autoPlayNext: false },
+)
+check(
+  'merge autoPlayNext remote fills gap (remote off)',
+  prefs.mergePlayerPrefs({}, { autoPlayNext: false }),
+  { autoPlayNext: false },
+)
+reset()
+ls.set(NEW_KEY, JSON.stringify({ rate: 1 }))
+apiStub.__setGetResponse({ preferences: { autoPlayNext: false } })
+{
+  const merged = await prefs.syncPlayerPrefsFromServer()
+  check('sync fills autoPlayNext from remote', merged, { rate: 1, autoPlayNext: false })
+  check('sync writes autoPlayNext back locally', JSON.parse(ls.get(NEW_KEY)), { rate: 1, autoPlayNext: false })
+}
+
 console.log(`\n${passed} passed`)
