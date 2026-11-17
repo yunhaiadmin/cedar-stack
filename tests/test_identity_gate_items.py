@@ -90,7 +90,14 @@ def gate_on(monkeypatch):
     assert identity_gate.gate_enabled() is True
 
 
-def test_gate_off_browse_matches_baseline(scene):
+@pytest.fixture()
+def gate_off(monkeypatch):
+    # BE-06 起代码默认开门，「关」基线用例必须显式钉 0，不许再靠默认
+    monkeypatch.setattr(identity_gate, "IDENTITY_SHELF_GATE", 0)
+    assert identity_gate.gate_enabled() is False
+
+
+def test_gate_off_browse_matches_baseline(scene, gate_off):
     names, res = _browse(scene)
     assert names == {"已绑定电影甲", "未绑定电影乙", "只有IMDb电影戊",
                      "已绑定剧丙", "未绑定剧丁"}

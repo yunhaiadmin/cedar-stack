@@ -66,6 +66,13 @@ def scene(db):
     return s
 
 
+def test_governance_default_on():
+    # env 未设时治理总开关默认开（BE-06 收敛：代码默认值与生产现行口径
+    # 一致；本开关只管审计流水线，货架露出由 identity_gate 三开关决定）
+    assert vg.VISIBILITY_GOVERNANCE_ENABLED == 1
+    assert vg.governance_enabled() is True
+
+
 def test_switch_off_matches_current_behavior(db, scene, monkeypatch):
     """硬约束①：开关关时 = 现行口径（IDENTITY_SHELF_GATE 关全露、开则案 A）。"""
     monkeypatch.setattr(vg, "VISIBILITY_GOVERNANCE_ENABLED", 0)

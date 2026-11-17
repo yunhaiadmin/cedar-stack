@@ -118,10 +118,15 @@ def _bound_ids(db):
     return {r[0] for r in rows}
 
 
-def test_gate_default_off():
-    # env 未设时总开关默认关（关 = 全部出口旧口径，唯一的回滚手段）
-    assert identity_gate.IDENTITY_SHELF_GATE == 0
-    assert identity_gate.gate_enabled() is False
+def test_gate_default_on():
+    # env 未设时三开关默认开（BE-06 收敛：代码默认值与生产现行口径一致，
+    # 换机/丢 env 不再静默关门；显式设 0 才是回滚手段）
+    assert identity_gate.IDENTITY_SHELF_GATE == 1
+    assert identity_gate.gate_enabled() is True
+    assert identity_gate.IDENTITY_SHELF_PHASE2_ENABLED == 1
+    assert identity_gate.phase2_enabled() is True
+    assert identity_gate.IDENTITY_SHELF_PHASE3_ENABLED == 1
+    assert identity_gate.phase3_enabled() is True
 
 
 def test_movie_series_own_ids(db, scene):

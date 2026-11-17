@@ -22,6 +22,7 @@ import pytest
 from fastapi import HTTPException
 
 from backend.database import SessionLocal, init_db
+from backend.emby_server import identity_gate
 from backend.emby_server import models as em
 from backend.emby_server import portal
 from backend.models import WebUser
@@ -31,6 +32,13 @@ init_db()
 
 def _guid():
     return uuid.uuid4().hex
+
+
+@pytest.fixture(autouse=True)
+def _gate_off(monkeypatch):
+    """本文件测门户人物/收藏逻辑、与身份门无关：显式钉门关（BE-06 起
+    identity_gate 代码默认开门，不许再靠默认关）。"""
+    monkeypatch.setattr(identity_gate, "IDENTITY_SHELF_GATE", 0)
 
 
 @pytest.fixture()
