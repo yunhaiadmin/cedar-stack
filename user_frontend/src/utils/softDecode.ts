@@ -87,6 +87,57 @@ export function shouldSoftDecode(
   return softDecodeCodecSubset(source).supported
 }
 
+// ---------- 软解分辨率护栏（4K 不许软解） ----------
+
+/** 4K（UHD）判定线：宽达此值或高达 SOFT_UHD_MIN_HEIGHT 任一命中即按 4K 算 */
+export const SOFT_UHD_MIN_WIDTH = 3840
+export const SOFT_UHD_MIN_HEIGHT = 2160
+
+/** 护栏命中时提示卡的文案（人话，指出路：客户端 App 自带解码） */
+export const SOFT_UHD_BLOCK_MESSAGE =
+  '这部片子是 4K 画质，手机浏览器放不动，请用客户端 App 观看'
+
+export interface SoftResolutionGateResult {
+  blocked: boolean
+  /** 所选源视频流的宽/高（缺失按 0），回带给调用方留痕 */
+  width: number
+  height: number
+  reason: string
+}
+
+/**
+ * 软解分辨率护栏（纯函数）：只有两个条件同时成立才拦——
+ * ① 本次播放确实要走软解管线（softPipeline=true，调用方已过
+ *    shouldSoftDecode 放行）；② 所选 MediaSource 视频流分辨率达 4K
+ *    （Width≥3840 或 Height≥2160，任一维达线即算：覆盖 DCI 4K
+ *    4096×2160 与竖屏 2160×3840）。
+ *
+ * 为什么拦：4K HEVC 纯 wasm 软件解码在 iOS Safari 上内存爆掉、
+ * WebContent 进程被系统反复杀，页面循环崩溃（2026-11-17《多喜
+ * 一家人》第 1 集 3840×2160 HEVC＋EAC3 事故：Safari 报「重复
+ * 出现问题」、同窗 6 次 PlaybackInfo 重入）。命中时调用方不得
+ * 实例化 AVPlayer，直接出提示卡（SOFT_UHD_BLOCK_MESSAGE）。
+ *
+ * 口径：宽高只取 PlaybackInfo 实际所选 MediaSource 的视频流
+ * Width/Height，不许用条目级字段凑；原生路径（softPipeline=
+ * false）永不拦；宽高缺失按 0 处理、不拦——宁可放行走既有软解
+ * 失败回落，也不误拦信息不全的源；非 4K 软解完全不受影响。
+ */
+export function softDecodeResolutionGate(
+  source: DecodeSourceLike,
+  softPipeline: boolean,
+): SoftResolutionGateResult {
+  const vs = (source.MediaStreams || []).find((s) => s.Type === 'Video')
+  const width = vs?.Width || 0
+  const height = vs?.Height || 0
+  if (!softPipeline) return { blocked: false, width, height, reason: 'native-pipeline' }
+  if (!vs) return { blocked: false, width, height, reason: 'no-video-stream' }
+  if (width >= SOFT_UHD_MIN_WIDTH || height >= SOFT_UHD_MIN_HEIGHT) {
+    return { blocked: true, width, height, reason: 'uhd-soft-decode' }
+  }
+  return { blocked: false, width, height, reason: 'below-uhd' }
+}
+
 // ---------- 开关读取（公开端点，只读一个布尔值） ----------
 
 let enabledPromise: Promise<boolean> | null = null

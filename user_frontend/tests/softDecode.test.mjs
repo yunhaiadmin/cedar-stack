@@ -18,7 +18,9 @@ const {
   resolveSoftDecodeUrl,
   pickSoftRelayUrl,
   humanizeSoftError,
+  softDecodeResolutionGate,
   SOFT_START_TIMEOUT_MS,
+  SOFT_UHD_BLOCK_MESSAGE,
 } = await import('../src/utils/softDecode.ts')
 
 let passed = 0
@@ -422,6 +424,128 @@ check(
 check(
   'hosted player chunks complete (>=30)',
   readdirSync(libmediaDir).filter((f) => f.endsWith('.avplayer.js')).length >= 30,
+  true,
+)
+
+// --- 软解分辨率护栏（2026-11-17 事故）：4K HEVC 软解在 iOS Safari ---
+// 《多喜一家人》第 1 集 3840×2160 HEVC＋EAC3 走 wasm 软解，纯软件
+// 解 4K 把 WebContent 内存打爆、页面被系统反复杀（Safari 报「重复
+// 出现问题」、同窗 6 次 PlaybackInfo 重入）。护栏口径：只有本次确实
+// 走软解管线（softPipeline=true，即 shouldSoftDecode 已放行）且所选
+// MediaSource 视频流宽≥3840 或高≥2160 才拦；原生路径永不拦；
+// 1080p 软解照常放行。判定用源自带 MediaStreams 的宽高，不用条目级字段。
+const sizedSrc = (w, h, video = 'hevc', audio = 'eac3') => ({
+  Id: 'sized1',
+  Container: 'mkv',
+  MediaStreams: [
+    { Type: 'Video', Codec: video, Width: w, Height: h },
+    ...(audio ? [{ Type: 'Audio', Codec: audio }] : []),
+  ],
+})
+check(
+  'gate: 4K hevc soft pipeline => blocked',
+  softDecodeResolutionGate(sizedSrc(3840, 2160), true),
+  { blocked: true, width: 3840, height: 2160, reason: 'uhd-soft-decode' },
+)
+check(
+  'gate: 1080p hevc soft pipeline => allowed',
+  softDecodeResolutionGate(sizedSrc(1920, 1080), true),
+  { blocked: false, width: 1920, height: 1080, reason: 'below-uhd' },
+)
+check(
+  'gate: 4K hevc native pipeline => allowed',
+  softDecodeResolutionGate(sizedSrc(3840, 2160), false),
+  { blocked: false, width: 3840, height: 2160, reason: 'native-pipeline' },
+)
+check(
+  'gate: DCI 4K 4096x2160 soft => blocked',
+  softDecodeResolutionGate(sizedSrc(4096, 2160), true).blocked,
+  true,
+)
+check(
+  'gate: portrait 2160x3840 soft => blocked',
+  softDecodeResolutionGate(sizedSrc(2160, 3840), true).blocked,
+  true,
+)
+check(
+  'gate: width-only line 3840x1080 soft => blocked',
+  softDecodeResolutionGate(sizedSrc(3840, 1080), true).blocked,
+  true,
+)
+check(
+  'gate: height-only line 1920x2160 soft => blocked',
+  softDecodeResolutionGate(sizedSrc(1920, 2160), true).blocked,
+  true,
+)
+check(
+  'gate: just below line 3839x2159 soft => allowed',
+  softDecodeResolutionGate(sizedSrc(3839, 2159), true).blocked,
+  false,
+)
+check(
+  'gate: 2K 2560x1440 soft => allowed',
+  softDecodeResolutionGate(sizedSrc(2560, 1440), true).blocked,
+  false,
+)
+check(
+  'gate: missing dimensions soft => allowed',
+  softDecodeResolutionGate(sizedSrc(null, null), true),
+  { blocked: false, width: 0, height: 0, reason: 'below-uhd' },
+)
+check(
+  'gate: no video stream soft => allowed',
+  softDecodeResolutionGate(
+    { Id: 'nv', Container: 'mkv', MediaStreams: [{ Type: 'Audio', Codec: 'eac3' }] },
+    true,
+  ),
+  { blocked: false, width: 0, height: 0, reason: 'no-video-stream' },
+)
+check(
+  'gate: block message copy',
+  SOFT_UHD_BLOCK_MESSAGE,
+  '这部片子是 4K 画质，手机浏览器放不动，请用客户端 App 观看',
+)
+
+// --- 弹幕软解门控恢复契约（回退 #258 的软解放行，恢复 cb93c074 口径）---
+// #258 给软解路径放行了弹幕层，与 4K 崩溃同批上线；先回退到软解下
+// 无弹幕的旧口径排除叠加因素：弹幕层不渲染、tick 不冒弹幕、发送后
+// 不当场冒出、点弹幕钮只给「软解模式暂不支持弹幕」提示。
+const wpvSrc = readFileSync(
+  new URL('../src/views/WebPlayerView.vue', import.meta.url),
+  'utf8',
+)
+check(
+  'danmaku layer gated off during soft decode',
+  wpvSrc.includes('v-if="danmakuSiteOn && danmaku.enabled && !softActive"'),
+  true,
+)
+check(
+  'danmaku tick skips during soft decode',
+  wpvSrc.includes('!danmaku.value.enabled ||\n    softActive.value ||\n    phase.value'),
+  true,
+)
+check(
+  'danmaku send does not spawn during soft decode',
+  wpvSrc.includes('if (danmaku.value.enabled && !softActive.value) spawnDanmaku(res.item)'),
+  true,
+)
+check(
+  'openDanmaku refuses during soft decode with toast',
+  wpvSrc.includes(
+    "function openDanmaku(): void {\n  if (softActive.value) {\n    showToast('软解模式暂不支持弹幕')\n    return\n  }\n  danmakuOpen.value = true\n}",
+  ),
+  true,
+)
+
+// --- 护栏接线契约：起播软解前先过护栏判定，命中走提示卡文案 ---
+check(
+  'player consults resolution gate before creating soft player',
+  wpvSrc.includes('softDecodeResolutionGate(source, true).blocked'),
+  true,
+)
+check(
+  'player shows gate block message on the notice card',
+  wpvSrc.includes('SOFT_UHD_BLOCK_MESSAGE'),
   true,
 )
 
