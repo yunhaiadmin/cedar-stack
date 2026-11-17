@@ -82,6 +82,12 @@ def gate_on(monkeypatch):
     monkeypatch.setattr(identity_gate, "IDENTITY_SHELF_GATE", 1)
 
 
+@pytest.fixture()
+def gate_off(monkeypatch):
+    # BE-06 起代码默认开门，「关」基线用例必须显式钉 0，不许再靠默认
+    monkeypatch.setattr(identity_gate, "IDENTITY_SHELF_GATE", 0)
+
+
 def _stub_api(mp):
     mp.setattr(api, "_base_url", lambda request: "http://test")
     mp.setattr(api, "_prefetch_list_data", lambda *a, **k: None)
@@ -105,7 +111,7 @@ def _suggestions(scene):
         return api.get_suggestions("1", req, scene.user, scene.db)
 
 
-def test_latest_gate_off_baseline(scene):
+def test_latest_gate_off_baseline(scene, gate_off):
     names = [i["Name"] for i in _latest(scene)]
     assert names[0] == "未绑定新片"  # 按入库倒序，未绑定照样在（旧口径）
 
@@ -126,7 +132,7 @@ def test_suggestions_gate_on_hides_unbound(scene, gate_on):
     assert "未绑定新片" not in names, "popular 路（播放量最高）也不能漏出"
 
 
-def test_counts_gate_off_baseline(scene):
+def test_counts_gate_off_baseline(scene, gate_off):
     res = api.items_counts(user=scene.user, db=scene.db)
     assert res["MovieCount"] == 2
     assert res["SeriesCount"] == 2
@@ -143,7 +149,7 @@ def test_counts_gate_on_bound_only(scene, gate_on):
     assert res["ItemCount"] == 4
 
 
-def test_views_child_count_gate_off_uses_cache_column(scene):
+def test_views_child_count_gate_off_uses_cache_column(scene, gate_off):
     res = api.user_views("me", user=scene.user, db=scene.db)
     entry = {i["Name"]: i for i in res["Items"]}["库"]
     assert entry["ChildCount"] == 99  # 门关：扫描写回的缓存列原样（旧口径）

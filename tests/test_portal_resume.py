@@ -17,6 +17,7 @@ import pytest
 from sqlalchemy import event
 
 from backend.database import SessionLocal, engine, init_db
+from backend.emby_server import identity_gate
 from backend.emby_server import models as em
 from backend.emby_server import portal
 from backend.models import WebUser
@@ -29,6 +30,13 @@ BASE = datetime(2026, 10, 9, 20, 0, 0)
 
 def _guid():
     return uuid.uuid4().hex
+
+
+@pytest.fixture(autouse=True)
+def _gate_off(monkeypatch):
+    """本文件测门户继续观看聚合、与身份门无关：显式钉门关（BE-06 起
+    identity_gate 代码默认开门，不许再靠默认关）。"""
+    monkeypatch.setattr(identity_gate, "IDENTITY_SHELF_GATE", 0)
 
 
 @pytest.fixture()
