@@ -67,10 +67,30 @@ def scene(db):
 
 
 def test_governance_default_on():
-    # env 未设时治理总开关默认开（BE-06 收敛：代码默认值与生产现行口径
-    # 一致；本开关只管审计流水线，货架露出由 identity_gate 三开关决定）
-    assert vg.VISIBILITY_GOVERNANCE_ENABLED == 1
-    assert vg.governance_enabled() is True
+    # 代码默认值钉子（BE-06 收敛：默认值与生产现行口径一致；本开关只管
+    # 审计流水线，货架露出由 identity_gate 三开关决定）。在剥掉四开关
+    # env 的干净子进程里读模块常量——钉的是代码默认，不受本进程/CI 的
+    # ambient env（如冒烟 job 显式关门）影响。
+    import json
+    import subprocess
+    import sys
+
+    keys = ("IDENTITY_SHELF_GATE", "IDENTITY_SHELF_PHASE2_ENABLED",
+            "IDENTITY_SHELF_PHASE3_ENABLED", "VISIBILITY_GOVERNANCE_ENABLED")
+    env = {k: v for k, v in os.environ.items() if k not in keys}
+    code = (
+        "import json, os\n"
+        "os.environ.setdefault('DATABASE_TYPE', 'sqlite')\n"
+        "os.environ.setdefault('REDIS_ENABLED', 'false')\n"
+        "from backend.emby_server import visibility_governance as g\n"
+        "print(json.dumps([g.VISIBILITY_GOVERNANCE_ENABLED,"
+        " g.governance_enabled()]))\n"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code], env=env, capture_output=True,
+        text=True, check=True,
+        cwd=str(pathlib.Path(__file__).resolve().parent.parent))
+    assert json.loads(out.stdout.strip().splitlines()[-1]) == [1, True]
 
 
 def test_switch_off_matches_current_behavior(db, scene, monkeypatch):

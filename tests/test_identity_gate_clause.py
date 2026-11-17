@@ -119,14 +119,33 @@ def _bound_ids(db):
 
 
 def test_gate_default_on():
-    # env 未设时三开关默认开（BE-06 收敛：代码默认值与生产现行口径一致，
-    # 换机/丢 env 不再静默关门；显式设 0 才是回滚手段）
-    assert identity_gate.IDENTITY_SHELF_GATE == 1
-    assert identity_gate.gate_enabled() is True
-    assert identity_gate.IDENTITY_SHELF_PHASE2_ENABLED == 1
-    assert identity_gate.phase2_enabled() is True
-    assert identity_gate.IDENTITY_SHELF_PHASE3_ENABLED == 1
-    assert identity_gate.phase3_enabled() is True
+    # 代码默认值钉子（BE-06 收敛：默认值与生产现行口径一致，换机/丢 env
+    # 不再静默关门；显式设 0 才是回滚手段）。在剥掉四开关 env 的干净
+    # 子进程里读模块常量——钉的是代码默认，不受本进程/CI 的 ambient
+    # env（如冒烟 job 显式关门）影响。
+    import json
+    import pathlib
+    import subprocess
+    import sys
+
+    keys = ("IDENTITY_SHELF_GATE", "IDENTITY_SHELF_PHASE2_ENABLED",
+            "IDENTITY_SHELF_PHASE3_ENABLED", "VISIBILITY_GOVERNANCE_ENABLED")
+    env = {k: v for k, v in os.environ.items() if k not in keys}
+    code = (
+        "import json, os\n"
+        "os.environ.setdefault('DATABASE_TYPE', 'sqlite')\n"
+        "os.environ.setdefault('REDIS_ENABLED', 'false')\n"
+        "from backend.emby_server import identity_gate as g\n"
+        "print(json.dumps([g.IDENTITY_SHELF_GATE,"
+        " g.IDENTITY_SHELF_PHASE2_ENABLED, g.IDENTITY_SHELF_PHASE3_ENABLED,"
+        " g.gate_enabled(), g.phase2_enabled(), g.phase3_enabled()]))\n"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code], env=env, capture_output=True,
+        text=True, check=True,
+        cwd=str(pathlib.Path(__file__).resolve().parent.parent))
+    assert json.loads(out.stdout.strip().splitlines()[-1]) == \
+        [1, 1, 1, True, True, True]
 
 
 def test_movie_series_own_ids(db, scene):
