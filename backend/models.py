@@ -2162,6 +2162,22 @@ class RevokedJwt(Base):
     expires_at = Column(DateTime, nullable=False, index=True)
 
 
+class RevokedTokenFamily(Base):
+    """JWT 家族吊销表（F8）：一次登录签发的整条 refresh 会话链共用一个
+    fid（access 也带同一 fid）。检测到旧 refresh 被复用时只吊销该家族，
+    不连坐同用户其它设备的会话（与 RevokedJwt 的单枚吊销、token_version
+    的全量吊销三者分工）。新表由 create_all 建，不走 _auto_migrate 补列。
+    """
+
+    __tablename__ = 'revoked_token_families'
+
+    fid = Column(String(64), primary_key=True)
+    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False, index=True)
+    reason = Column(String(50), nullable=False, default="refresh_reuse_detected")
+    revoked_at = Column(DateTime, default=datetime.now, nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+
+
 class ApiKey(Base):
     """API Key / Service Token 表（服务端对服务端认证）
 

@@ -262,6 +262,18 @@ REGISTRATION_CONFIG_SCHEMA: dict[str, tuple] = {
     "register_ratelimit_window": ("int", 60, _BIG),
 }
 
+# 登录失败锁定（F4 黑盒审计修复）：门户 / Emby / 管理端三处密码登录共用
+# backend.ratelimit 的 LoginLockoutGuard 执法，阈值全走这五个键。
+# 默认值（enabled 开、账号 10 次、IP 30 次、窗口 900s、锁 900s）写在
+# ratelimit.login_lockout_config 的回退口径里，本表只管保存时的类型/范围。
+LOGIN_LOCKOUT_CONFIG_SCHEMA: dict[str, tuple] = {
+    "login_lockout_enabled": ("bool",),
+    "login_lockout_account_max_failures": ("int", 1, _BIG),
+    "login_lockout_ip_max_failures": ("int", 1, _BIG),
+    "login_lockout_window_sec": ("int", 60, _BIG),
+    "login_lockout_lock_sec": ("int", 60, _BIG),
+}
+
 # 查看解锁（portal.admin_view_unlock_put；days≥0，0=永久；积分价格已随货币下线）
 VIEW_UNLOCK_CONFIG_SCHEMA: dict[str, tuple] = {
     "emby_view_unlock_days": ("int", 0, _BIG),

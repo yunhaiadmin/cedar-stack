@@ -36,6 +36,8 @@ SCHEMAS: dict[str, dict[str, tuple]] = {
     "reminders": config_schema.REMINDERS_CONFIG_SCHEMA,
     "coupons": config_schema.COUPONS_CONFIG_SCHEMA,
     "registration": config_schema.REGISTRATION_CONFIG_SCHEMA,
+    # 登录失败锁定（F4）：账号/IP 双维度阈值、窗口与锁定时长
+    "login_lockout": config_schema.LOGIN_LOCKOUT_CONFIG_SCHEMA,
     "view_unlock": config_schema.VIEW_UNLOCK_CONFIG_SCHEMA,
     # r36：防盗链（play_sign）家族迁入（用户 2026-10-17 18:29 拍板恢复排期）
     "hotlink": config_schema.HOTLINK_CONFIG_SCHEMA,
