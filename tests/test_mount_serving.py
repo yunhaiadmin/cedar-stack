@@ -21,6 +21,9 @@ os.environ.setdefault("DATABASE_TYPE", "sqlite")
 os.environ.setdefault("REDIS_ENABLED", "false")
 
 import asyncio
+import logging
+import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -194,6 +197,130 @@ def _range_request(start, end):
 
 async def _collect(resp):
     return b"".join([chunk async for chunk in resp.body_iterator])
+
+
+def _set_budget(db, raw):
+    db.query(models.SystemConfig).filter_by(
+        key=ms.KEY_MOUNT_SERVING_PROBE_BUDGET_MS).delete()
+    if raw is not None:
+        db.add(models.SystemConfig(
+            key=ms.KEY_MOUNT_SERVING_PROBE_BUDGET_MS, value=raw))
+    db.commit()
+    store.invalidate()
+
+
+# ------------------------------------------------------- stat 缓存与有界探测
+# 2026-11-17 首播定案：PlaybackInfo 回落段同步 os.path.isfile 查
+# rclone FUSE 挂载，冷查实测 23 秒，把整个 PlaybackInfo 堵到
+# 19.6 秒。修法：stat 结果进程内短 TTL 缓存（正负都缓存）＋计划
+# 层探测有界化（预算默认 2 秒、超时按未命中、打 warning 留痕）；
+# 取流端 resolve 口径逐字不变（engages 文件缺失仍响亮抛错）。
+
+def test_stat_cache_hit_and_negative_cached(db, tmp_path, monkeypatch):
+    _make_file(tmp_path)
+    _set_config(db, ids="3", roots=f"3={tmp_path}")
+    ms._clear_stat_cache()
+    real_isfile = os.path.isfile
+    calls = []
+
+    def counting(path):
+        calls.append(str(path))
+        return real_isfile(path)
+
+    monkeypatch.setattr(os.path, "isfile", counting)
+    try:
+        assert ms.resolve_local_file(db, _item()) is not None
+        assert ms.resolve_local_file(db, _item()) is not None
+        assert len(calls) == 1, "缓存命中不许重复 stat"
+        # 负结果同样只 stat 一次，且取流口径不变：仍响亮抛错，
+        # 不许因为缓存了负结果就变 None 静默回落
+        missing = _item("mount://3/nope/missing.mp4")
+        with pytest.raises(ms.MountServingUnavailable):
+            ms.resolve_local_file(db, missing)
+        with pytest.raises(ms.MountServingUnavailable):
+            ms.resolve_local_file(db, missing)
+        assert len(calls) == 2, "负结果也应只 stat 一次"
+    finally:
+        ms._clear_stat_cache()
+
+
+def test_probe_budget_ms_default_and_clamp(db):
+    assert ms.probe_budget_ms(db) == 2000
+    _set_budget(db, "500")
+    assert ms.probe_budget_ms(db) == 500
+    _set_budget(db, "99999")
+    assert ms.probe_budget_ms(db) == 10000
+    _set_budget(db, "50")
+    assert ms.probe_budget_ms(db) == 100
+    _set_budget(db, "abc")
+    assert ms.probe_budget_ms(db) == 2000
+    _set_budget(db, None)
+    assert ms.probe_budget_ms(db) == 2000
+
+
+def test_probe_bounded_hit_returns_path_and_miss_returns_none(db, tmp_path):
+    _make_file(tmp_path)
+    _set_config(db, ids="3", roots=f"3={tmp_path}")
+    ms._clear_stat_cache()
+    try:
+        assert ms.probe_local_file_bounded(db, _item()) == os.path.join(
+            str(tmp_path), REL)
+        # engages 但文件缺失：计划层口径按未命中返回 None，不抛错
+        assert ms.probe_local_file_bounded(
+            db, _item("mount://3/nope/missing.mp4")) is None
+        # 不 engages（不在白名单）：None
+        assert ms.probe_local_file_bounded(
+            db, _item("mount://9/x.mp4")) is None
+    finally:
+        ms._clear_stat_cache()
+
+
+def test_probe_bounded_timeout_returns_none_and_caches_late_result(
+        db, tmp_path, monkeypatch, caplog):
+    _make_file(tmp_path)
+    _set_config(db, ids="3", roots=f"3={tmp_path}")
+    _set_budget(db, "200")
+    ms._clear_stat_cache()
+    gate = threading.Event()
+    real_isfile = os.path.isfile
+    calls = []
+
+    def hanging(path):
+        calls.append(str(path))
+        gate.wait(10)
+        return real_isfile(path)
+
+    monkeypatch.setattr(os.path, "isfile", hanging)
+    item = SimpleNamespace(id=987001, file_path=FILE_PATH)
+    start = time.monotonic()
+    with caplog.at_level(logging.WARNING,
+                         logger="backend.emby_server.mount_serving"):
+        result = ms.probe_local_file_bounded(db, item)
+    elapsed = time.monotonic() - start
+    try:
+        assert result is None, "超时必须按未命中返回 None"
+        assert elapsed < 2.0, f"有界探测必须在预算内返回，实际 {elapsed:.2f}s"
+        messages = [r.getMessage() for r in caplog.records]
+        assert any("探测超时" in m and "item=987001" in m
+                   and "mount=3" in m and "budget_ms=200" in m
+                   for m in messages), \
+            f"超时必须打 warning 留痕（item/mount/预算）：{messages}"
+    finally:
+        gate.set()
+    # 迟到的 stat 结果应写进缓存：再次探测直接命中、不再进 isfile
+    deadline = time.monotonic() + 3
+    late = None
+    while time.monotonic() < deadline:
+        late = ms.probe_local_file_bounded(db, item)
+        if late is not None:
+            break
+        time.sleep(0.05)
+    try:
+        assert late == os.path.join(str(tmp_path), REL)
+        assert len(calls) == 1, "迟到结果应已写入缓存，第二次探测不许再 stat"
+    finally:
+        ms._clear_stat_cache()
+        _set_budget(db, None)
 
 
 def test_serve_file_range_headers_and_bytes(tmp_path):

@@ -283,10 +283,15 @@ HOTLINK_CONFIG_SCHEMA: dict[str, tuple] = {
 # （空＝行为与现行完全一致）；ids/roots 的内容校验在
 # mount_serving.write_config（schema 层只管类型），开关 word 风格
 # ("bool",) 存 "true"/"false"（同 welfare 口径）。
+# probe_budget_ms（2026-11-17）：PlaybackInfo 回落段挂载探测预算，
+# 读取唯一实现 mount_serving.probe_budget_ms（热读、默认 2000、
+# 读取侧钳制与本 schema 同口径）。纯 SystemConfig 键，不进
+# env.example（#1527 先例）。
 MOUNT_SERVING_CONFIG_SCHEMA: dict[str, tuple] = {
     "mount_serving_enabled": ("bool",),
     "mount_serving_mount_ids": ("raw",),
     "mount_serving_local_roots": ("raw",),
+    "mount_serving_probe_budget_ms": ("int", 100, 10000),
 }
 
 # 播放交付编排器（换代线 step 5，2026-11-01）：(用户, 条目)
