@@ -29,6 +29,8 @@ REASONS = {
     "password_reset": "找回密码重置成功",
     "password_reset_failed": "找回密码失败",
     "admin_password_change_failed": "管理员修改密码失败",
+    "admin_magic_login": "管理员免登录链接登录",
+    "admin_magic_login_failed": "管理员免登录链接失败",
     # 防共享命中后停用账号（backend/share_guard.py）：这是「为什么这个号突然登不上」的答案
     "share_guard": "防共享停用",
 }

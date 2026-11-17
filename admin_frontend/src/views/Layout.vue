@@ -21,12 +21,12 @@
  */
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { RouterView, RouterLink, useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { toAdminError } from '@/utils/errorMessage'
 import {
   LayoutDashboard, Users, Package, Ticket, Settings, Server,
   Menu, X, ChevronDown, RefreshCw, LogOut, KeyRound, ExternalLink,
-  CheckCircle2, Route as RealmIcon, Lock, Search, Wallet, Crown, MessageSquareDashed,
+  CheckCircle2, Route as RealmIcon, Lock, Search, Wallet, Crown, MessageSquareDashed, Link2,
   TriangleAlert, ScrollText, Smartphone, MonitorCog, ShieldAlert, Ban, Library, Eye,
   Image as ImageIcon,
   Database, Megaphone, Receipt, Trophy, TicketPercent, UserPlus, KeySquare,
@@ -34,7 +34,13 @@ import {
   Sun, Moon, MonitorSmartphone, ListChecks, Flag,
   PanelLeftClose, PanelLeftOpen,
 } from 'lucide-vue-next'
-import { changePassword } from '@/api/admin'
+import {
+  changePassword,
+  disableMagicLink,
+  fetchMagicLinkStatus,
+  generateMagicLink,
+  type MagicLinkStatus,
+} from '@/api/admin'
 import { useAuthStore } from '@/stores/auth'
 import { useRealmStore } from '@/stores/realm'
 import { useBreakpoint } from '@/composables/useBreakpoint'
@@ -347,6 +353,7 @@ const actionCommands = computed<PaletteItem[]>(() => [
   { id: 'act-refresh', label: '刷新当前页', group: '操作', icon: RefreshCw, hint: '重新加载整页' },
   { id: 'act-theme', label: '切换外观', group: '操作', icon: MonitorSmartphone, hint: themeCommandHint.value },
   { id: 'act-password', label: '修改密码', group: '操作', icon: KeyRound, hint: '当前管理员账号' },
+  { id: 'act-magic', label: '免登录链接', group: '操作', icon: Link2, hint: '当前管理员账号' },
   { id: 'act-logout', label: '退出登录', group: '操作', icon: LogOut, hint: '清掉本地会话', danger: true },
   { id: 'act-danger', label: '危险操作', group: '操作', icon: TriangleAlert, hint: '熔断器 / 缓存 / 日志', keywords: '清理 清空 删除' },
 ].map((item) => ({ ...item, run: actionRun(item.id) })))
@@ -356,6 +363,7 @@ function actionRun(id: string): () => void {
   if (id === 'act-refresh') return refreshPage
   if (id === 'act-theme') return cycleTheme
   if (id === 'act-password') return openPwdDialog
+  if (id === 'act-magic') return openMagicDialog
   if (id === 'act-danger') return () => router.push({ name: 'Settings', query: { tab: 'danger' } })
   return logout
 }
@@ -445,7 +453,101 @@ async function submitPwd() {
 
 function onAdminCommand(cmd: string) {
   if (cmd === 'password') openPwdDialog()
+  else if (cmd === 'magic') openMagicDialog()
   else if (cmd === 'logout') logout()
+}
+
+// ==================== 免登录链接 ====================
+
+const magicVisible = ref(false)
+const magicLoading = ref(false)
+const magicStatus = ref<MagicLinkStatus | null>(null)
+/** 生成那一刻的明文链接：只活在本弹窗打开期间，关掉即清，平时页面不回显 */
+const magicFreshUrl = ref('')
+/** 生成/停用是「给自己发凭据」，服务端只给超管；界面先置灰，免得点了才吃 403 */
+const magicCanManage = computed(() => !!auth.admin?.is_super)
+
+function fmtMagicTime(raw: string | null | undefined): string {
+  if (!raw) return '从未'
+  return raw.replace('T', ' ').slice(0, 19)
+}
+
+async function loadMagicStatus() {
+  magicLoading.value = true
+  try {
+    magicStatus.value = await fetchMagicLinkStatus()
+  } catch (e) {
+    ElMessage.error(toAdminError(e, '读取免登录链接状态失败'))
+  } finally {
+    magicLoading.value = false
+  }
+}
+
+function openMagicDialog() {
+  magicFreshUrl.value = ''
+  magicVisible.value = true
+  void loadMagicStatus()
+}
+
+async function submitGenerateMagic() {
+  if (magicStatus.value?.state === 'active') {
+    // 重新生成会让旧链接立即失效：二次确认，防手滑把已存好的链接作废
+    try {
+      await ElMessageBox.confirm(
+        '重新生成后，旧链接会立即失效，只有新链接能用。确定要重新生成吗？',
+        '重新生成免登录链接',
+        { confirmButtonText: '重新生成', cancelButtonText: '取消', type: 'warning' },
+      )
+    } catch {
+      return
+    }
+  }
+  magicLoading.value = true
+  try {
+    const res = await generateMagicLink()
+    // 后端按 site_url 拼绝对地址；站点地址未配置时回的是相对路径，按当前源补全
+    magicFreshUrl.value = res.url.startsWith('http')
+      ? res.url
+      : `${window.location.origin}${res.url}`
+    ElMessage.success('免登录链接已生成，只显示这一次，请妥善保存')
+    await loadMagicStatus()
+  } catch (e) {
+    ElMessage.error(toAdminError(e, '生成免登录链接失败'))
+  } finally {
+    magicLoading.value = false
+  }
+}
+
+async function submitDisableMagic() {
+  try {
+    await ElMessageBox.confirm(
+      '停用后，这条免登录链接将不能再进入后台（之后可以重新生成）。确定停用吗？',
+      '停用免登录链接',
+      { confirmButtonText: '停用', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  magicLoading.value = true
+  try {
+    await disableMagicLink()
+    magicFreshUrl.value = ''
+    ElMessage.success('免登录链接已停用')
+    await loadMagicStatus()
+  } catch (e) {
+    ElMessage.error(toAdminError(e, '停用免登录链接失败'))
+  } finally {
+    magicLoading.value = false
+  }
+}
+
+async function copyMagicUrl() {
+  try {
+    await navigator.clipboard.writeText(magicFreshUrl.value)
+    ElMessage.success('链接已复制')
+  } catch {
+    ElMessage.warning('复制失败，请手动选中链接复制')
+  }
 }
 
 // ==================== 当前服（多服运营）====================
@@ -655,6 +757,9 @@ onUnmounted(() => {
                 <el-dropdown-item command="password">
                   <KeyRound :size="15" style="margin-right: 8px" />修改密码
                 </el-dropdown-item>
+                <el-dropdown-item command="magic">
+                  <Link2 :size="15" style="margin-right: 8px" />免登录链接
+                </el-dropdown-item>
                 <el-dropdown-item command="logout" divided>
                   <LogOut :size="15" style="margin-right: 8px" />退出登录
                 </el-dropdown-item>
@@ -690,6 +795,60 @@ onUnmounted(() => {
       <template #footer>
         <el-button @click="pwdVisible = false">取消</el-button>
         <el-button type="primary" :loading="pwdLoading" @click="submitPwd">确认修改</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="magicVisible"
+      title="免登录链接"
+      width="min(480px, 92vw)"
+      @closed="magicFreshUrl = ''"
+    >
+      <div v-loading="magicLoading">
+        <p style="margin: 0 0 16px; line-height: 1.6">
+          凭这条链接可以直接进入管理后台（进入的是你当前这个账号），不用输账号密码。
+          请像密码一样保管，不要发给任何人；怀疑泄露时重新生成，旧链接会立即失效。
+        </p>
+        <el-form label-position="top" @submit.prevent>
+          <el-form-item label="当前状态">
+            <span v-if="magicStatus?.state === 'active'">
+              已启用 · 绑定账号 {{ magicStatus.username }} · 生成于
+              {{ fmtMagicTime(magicStatus.created_at) }} · 上次使用
+              {{ fmtMagicTime(magicStatus.last_used_at) }}
+            </span>
+            <span v-else-if="magicStatus?.state === 'disabled'">已停用</span>
+            <span v-else>未生成</span>
+          </el-form-item>
+          <el-form-item v-if="magicFreshUrl" label="你的免登录链接（只显示这一次）">
+            <el-input v-model="magicFreshUrl" readonly>
+              <template #append>
+                <el-button @click="copyMagicUrl">复制</el-button>
+              </template>
+            </el-input>
+          </el-form-item>
+          <p v-if="!magicCanManage" style="margin: 0; line-height: 1.6">
+            生成 / 停用免登录链接需要「超级管理员」角色，当前账号只能查看状态。
+          </p>
+        </el-form>
+      </div>
+      <template #footer>
+        <el-button
+          v-if="magicStatus?.state === 'active'"
+          type="danger"
+          plain
+          :disabled="!magicCanManage"
+          @click="submitDisableMagic"
+        >
+          停用
+        </el-button>
+        <el-button
+          type="primary"
+          :loading="magicLoading"
+          :disabled="!magicCanManage"
+          @click="submitGenerateMagic"
+        >
+          {{ magicStatus?.state === 'active' ? '重新生成' : '生成链接' }}
+        </el-button>
       </template>
     </el-dialog>
   </div>

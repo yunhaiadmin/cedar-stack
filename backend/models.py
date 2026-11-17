@@ -1120,6 +1120,53 @@ class PasswordResetToken(Base):
     request_ip = Column(String(64))
 
 
+class AdminMagicLink(Base):
+    """管理员免登录链接（2026-11-17 用户亲点）：站长凭一条专属链接直进管理后台。
+
+    与 password_reset_tokens 同口径：明文只在生成那一刻经管理端返回一次，
+    库里只存 SHA256 十六进制。一名管理员至多一行（admin_user_id 唯一）：
+    重新生成 = 换哈希 + 刷新 created_at，旧链接立即失效；停用 = is_active
+    置假。链接绑定生成者本人，免登录进入的就是这个账号，不存在「进任意
+    管理员」的形态。没有行（从未生成）时 magic-login 端点完全惰性。
+    """
+    __tablename__ = 'admin_magic_links'
+
+    __table_args__ = (
+        Index('idx_admin_magic_link_hash', 'token_hash'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    admin_user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False, unique=True)
+    token_hash = Column(String(64), nullable=False)  # SHA256 hex，非明文
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+    last_used_at = Column(DateTime, nullable=True)
+
+
+class AdminMagicExchangeCode(Base):
+    """免登录一次性交换码：magic-login 校验链接通过后签发，60 秒、单次使用。
+
+    管理后台是前端存 JWT 的形态，链接没法直接把会话塞进浏览器，所以用它
+    过渡：magic-login 302 到 /admin/#magic=<code>，前端拿 code 调
+    /auth/magic-exchange 换与密码登录同口径的正式会话后立即清 hash。
+    只存 SHA256（与 password_reset_tokens 同口径）。
+    """
+    __tablename__ = 'admin_magic_exchange_codes'
+
+    __table_args__ = (
+        Index('idx_admin_magic_code_hash', 'code_hash'),
+        Index('idx_admin_magic_code_user', 'admin_user_id'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    admin_user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
+    code_hash = Column(String(64), nullable=False)  # SHA256 hex，非明文
+    created_at = Column(DateTime, default=datetime.now)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)  # 已消费时落值
+    request_ip = Column(String(64))
+
+
 class ShareGuardEvent(Base):
     """防共享事件（v2.43.0）：跨城市轨迹 + 同播检测的判定结果
 
