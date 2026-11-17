@@ -26,11 +26,13 @@
          原生 video 隐藏。点一下切换控制层显隐，口径同原生 video 点按。 -->
     <div v-show="softActive" ref="softEl" class="wp-soft" @click="onSoftTap" />
 
-    <!-- 站内弹幕层：站点开关开 + 用户弹幕开关开 + 原生播放路径时才渲染。
-         弹幕按时间窗分片拉取、到点从右向左飘过，样式（区域/透明度/
-         字号/密度/速度/偏移）服从弹幕设置弹层。 -->
+    <!-- 站内弹幕层：站点开关开 + 用户弹幕开关开时渲染，原生与软解
+         （AVPlayer canvas）两条路径都覆盖——软解时层叠在 canvas 之上，
+         时间源走软解回的播放位置（差距 #15）。弹幕按时间窗分片拉取、
+         到点从右向左飘过，样式（区域/透明度/字号/密度/速度/偏移）
+         服从弹幕设置弹层。 -->
     <div
-      v-if="danmakuSiteOn && danmaku.enabled && !softActive"
+      v-if="danmakuSiteOn && danmaku.enabled"
       class="wp-dm-layer"
       :class="{ half: danmaku.area === 'half' }"
       aria-hidden="true"
@@ -48,13 +50,16 @@
       >{{ f.text }}</span>
     </div>
 
-    <!-- 顶部栏：返回圆钮 + 标题 + 一起看 -->
+    <!-- 顶部栏：返回钮 + 一起看（差距 #1/#2）。桌面（≥768px）返回是
+         Ø40 玻璃圆钮、顶栏不置标题（标题只留左下元信息区）；手机返回是
+         文字胶囊（高 40、圆角 20、与一起看同款玻璃）：无集标题时
+         「← 返回」，有集标题时「← ＋集标题单行截断」。 -->
     <header v-show="chromeVisible" class="wp-top">
       <div class="wp-top-left">
-        <button type="button" class="wp-circle" aria-label="返回" @click="goBack">
-          <ChevronLeft :size="21" />
+        <button type="button" class="wp-back" aria-label="返回" @click="goBack">
+          <ChevronLeft :size="21" class="wp-back-icon" />
+          <span class="wp-back-text">{{ backPillText }}</span>
         </button>
-        <span class="wp-top-title">{{ displayTitle }}</span>
       </div>
       <button
         type="button"
@@ -68,6 +73,15 @@
       </button>
     </header>
 
+    <!-- 播放信息叠显（差距 #17）：设置里打开后，原键值信息以小字叠在
+         画面左上（顶栏下方），关掉即隐藏；内容随播放进度/倍速实时更新 -->
+    <dl v-if="infoVisible" class="wp-info-overlay" aria-hidden="true">
+      <div v-for="line in infoLines" :key="line.label" class="wp-info-line">
+        <dt>{{ line.label }}</dt>
+        <dd>{{ line.value }}</dd>
+      </div>
+    </dl>
+
     <!-- 未开始：中央彩虹边开始胶囊 -->
     <div v-if="phase === 'idle'" class="wp-center">
       <div class="wp-start-pill">
@@ -80,7 +94,6 @@
           <button type="button" class="wp-start-restart" @click="start(true)">重启</button>
         </template>
       </div>
-      <p v-if="resumeSeconds > 5" class="wp-resume-hint">上次看到 {{ formatClock(resumeSeconds) }}</p>
     </div>
 
     <!-- 左下元信息（未开始/准备态） -->
@@ -299,14 +312,16 @@
       :open="settingsOpen"
       :sources="sourceOptions"
       :current-source-id="currentSource?.Id || ''"
-      :current-source-label="currentSourceLabel"
       :episodes="episodeOptions"
       :current-episode-id="item?.Id || ''"
       :rate="rate"
-      :info-lines="infoLines"
+      :info-visible="infoVisible"
+      :auto-play-next="autoPlayNext"
       :pip-supported="pipSupported"
       @update:open="settingsOpen = $event"
       @update:rate="onRate"
+      @update:info-visible="onInfoVisible"
+      @update:auto-play-next="onAutoPlayNext"
       @select-source="onSelectSource"
       @select-episode="onSelectEpisode"
       @screenshot="onScreenshot"
@@ -480,6 +495,11 @@ const bootPrefs = loadLocalPlayerPrefs()
 const rate = ref(
   typeof bootPrefs.rate === 'number' && bootPrefs.rate > 0 ? bootPrefs.rate : 1,
 )
+/** 自动连播（差距 #20）：缺省开（保持旧行为），关后播完停在本集；
+    随播放器偏好一同持久化（见 currentPlayerPrefs） */
+const autoPlayNext = ref(bootPrefs.autoPlayNext !== false)
+/** 播放信息叠显（差距 #17）：设置里的开/关，开时键值信息叠在画面一角 */
+const infoVisible = ref(false)
 const controlsVisible = ref(true)
 const locked = ref(false)
 const seeking = ref(false)
@@ -688,6 +708,14 @@ const displayTitle = computed(() => {
     return `${it.SeriesName}${se} · ${it.Name}`
   }
   return it.Name
+})
+
+/** 手机顶栏返回胶囊的文字（差距 #1）：有集标题（剧集的本集名）时显
+    集标题（单行截断），否则「返回」；桌面圆钮形态下文字被 CSS 隐藏 */
+const backPillText = computed(() => {
+  const it = item.value
+  if (it?.Type === 'Episode' && it.Name) return it.Name
+  return '返回'
 })
 
 const episodeLine = computed(() => {
@@ -1345,7 +1373,7 @@ function onPauseEvent(): void {
 }
 function onEnded(): void {
   sendStopped()
-  if (nextEpisode.value) {
+  if (autoPlayNext.value && nextEpisode.value) {
     showToast('已播完，自动接下一集')
     goEpisode(nextEpisode.value)
   }
@@ -1378,13 +1406,10 @@ function onSoftTap(): void {
   onVideoTap()
 }
 
-/** 软解模式暂不支持字幕/弹幕（字幕轨挂在原生 video 的 <track> 上，
-    软解画布不走这条路）：点按钮时明说，不静默无反应。 */
+/** 弹幕软解同样支持（差距 #15）：弹幕层覆盖 canvas、时间源走软解位置，
+    设置弹层照常打开。字幕轨挂在原生 video 的 <track> 上、软解画布不走
+    这条路，软解下点字幕钮时明说，不静默无反应。 */
 function openDanmaku(): void {
-  if (softActive.value) {
-    showToast('软解模式暂不支持弹幕')
-    return
-  }
   danmakuOpen.value = true
 }
 function openSubtitles(): void {
@@ -1593,7 +1618,6 @@ function danmakuTick(t: number): void {
   if (
     !danmakuSiteOn.value ||
     !danmaku.value.enabled ||
-    softActive.value ||
     phase.value !== 'playing'
   ) {
     danmakuLastTick = t
@@ -1638,19 +1662,20 @@ async function sendDanmaku(): Promise<void> {
     danmakuText.value = ''
     danmakuLocalPosted.add(res.item.id)
     mergeDanmakuItems([res.item])
-    if (danmaku.value.enabled && !softActive.value) spawnDanmaku(res.item)
+    if (danmaku.value.enabled) spawnDanmaku(res.item)
   } catch (e) {
     showToast(errorText(e, '弹幕发送失败'))
   } finally {
     danmakuSending.value = false
   }
 }
-/** 当前完整设置对象（同步口径：danmaku / rate / subtitle 三个顶层键） */
+/** 当前完整设置对象（同步口径：danmaku / rate / subtitle / autoPlayNext 四个顶层键） */
 function currentPlayerPrefs(): PlayerPrefs {
   return {
     danmaku: danmaku.value,
     rate: rate.value,
     subtitle: { fontSize: subtitleFontSize.value, delayMs: subtitleDelayMs.value },
+    autoPlayNext: autoPlayNext.value,
   }
 }
 /** 任一设置变更后调：本地整存 + 防抖回推服务端（失败静默、本地为准）。 */
@@ -1685,6 +1710,9 @@ async function applyRemotePlayerPrefs(): Promise<void> {
       subtitleDelayMs.value = merged.subtitle.delayMs
       void rebuildSubtitleTracks()
     }
+  }
+  if (local.autoPlayNext === undefined && merged.autoPlayNext !== undefined) {
+    autoPlayNext.value = merged.autoPlayNext !== false
   }
 }
 function onTogether(): void {
@@ -1793,6 +1821,15 @@ function onSubtitleFontSize(fs: SubtitleFontSize): void {
 
 // ---------- 设置面板动作 ----------
 
+/** 播放信息叠显开关（差距 #17）：只管本页叠显层显隐，不进偏好持久化 */
+function onInfoVisible(v: boolean): void {
+  infoVisible.value = v
+}
+/** 自动连播开关（差距 #20）：随播放器偏好持久化 */
+function onAutoPlayNext(v: boolean): void {
+  autoPlayNext.value = v
+  persistPlayerPrefs()
+}
 function onRate(r: number): void {
   rate.value = r
   persistPlayerPrefs()
@@ -2063,24 +2100,30 @@ onUnmounted(() => {
   gap: 10px;
   min-width: 0;
 }
-.wp-circle {
+/* 返回钮（差距 #1/#2）：手机＝文字胶囊——高 40、圆角 20、与 .wp-together
+   同款玻璃（白 14% 边框＋rgba(18,18,20,.55)＋blur 14px）、白字 14px；
+   ≥768px 变 Ø40 玻璃圆钮、文字隐藏，顶栏不再另置标题 */
+.wp-back {
   flex: none;
-  width: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   height: 40px;
-  border-radius: 50%;
+  max-width: min(52vw, 320px);
+  padding: 0 16px 0 10px;
+  border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(18, 18, 20, 0.55);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   color: #fff;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  font-size: 14px;
   cursor: pointer;
 }
-.wp-top-title {
-  font-size: 15px;
-  font-weight: 500;
+.wp-back-icon {
+  flex: none;
+}
+.wp-back-text {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2167,11 +2210,38 @@ onUnmounted(() => {
 .wp-start-icon {
   fill: #fff;
 }
-.wp-resume-hint {
+
+/* 播放信息叠显（差距 #17）：键值小字叠在画面左上（顶栏下方），不挡操作 */
+.wp-info-overlay {
+  position: absolute;
+  top: calc(64px + env(safe-area-inset-top));
+  left: 14px;
+  z-index: 18;
   margin: 0;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.75);
-  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8);
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(10, 10, 12, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-size: 12px;
+  line-height: 1.55;
+  pointer-events: none;
+  max-width: min(78vw, 340px);
+}
+.wp-info-line {
+  display: flex;
+  gap: 10px;
+}
+.wp-info-line dt {
+  flex: none;
+  color: rgba(255, 255, 255, 0.5);
+}
+.wp-info-line dd {
+  margin: 0;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .wp-meta {
@@ -2588,6 +2658,16 @@ onUnmounted(() => {
 }
 
 @media (min-width: 768px) {
+  /* 桌面返回钮回归 Ø40 玻璃圆钮，胶囊文字隐藏（差距 #1/#2） */
+  .wp-back {
+    width: 40px;
+    padding: 0;
+    border-radius: 50%;
+    justify-content: center;
+  }
+  .wp-back-text {
+    display: none;
+  }
   .wp-meta {
     left: 28px;
     bottom: 30px;

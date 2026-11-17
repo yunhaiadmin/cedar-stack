@@ -14,8 +14,8 @@
  *   失败静默（本地已存为准，下次变更再推完整对象）。
  *
  * 同步范围：danmaku（弹幕显示 7 项）、rate（倍速）、subtitle
- * （字号/延迟）。主/副字幕选轨是「这部片选哪条轨」的内容选择、
- * 不是个人偏好，不进同步对象。
+ * （字号/延迟）、autoPlayNext（自动连播开关，缺省＝开）。主/副字幕
+ * 选轨是「这部片选哪条轨」的内容选择、不是个人偏好，不进同步对象。
  */
 import api from '@/api'
 import type { DanmakuSettings } from '@/components/player/PlayerDanmakuSheet.vue'
@@ -30,6 +30,8 @@ export interface PlayerPrefs {
   danmaku?: DanmakuSettings
   rate?: number
   subtitle?: PlayerSubtitlePrefs
+  /** 自动连播：播完自动接下一集。undefined＝从未设置，按开处理 */
+  autoPlayNext?: boolean
 }
 
 export const PLAYER_PREFS_LOCAL_KEY = 'aetrix-player-prefs'
@@ -89,6 +91,7 @@ export function mergePlayerPrefs(local: PlayerPrefs, remote: PlayerPrefs): Playe
   if (local.danmaku !== undefined) merged.danmaku = local.danmaku
   if (local.rate !== undefined) merged.rate = local.rate
   if (local.subtitle !== undefined) merged.subtitle = local.subtitle
+  if (local.autoPlayNext !== undefined) merged.autoPlayNext = local.autoPlayNext
   return merged
 }
 
