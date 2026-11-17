@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
 import hashlib
 import logging
@@ -488,6 +489,148 @@ def drive_final_url_cache_invalidate(scope: str) -> None:
         pass
 
 
+# ---------------------------------------------------------------------------
+# 续段请求快速通道的解析结果缓存（2026-11-17 网页播放中继优化）
+# ---------------------------------------------------------------------------
+# 与最终 URL 缓存同一套机制（CacheManager playback 域），存的不是
+# 单个 URL 而是 video_stream 首次全链通过后的「选路结果」描述符
+# （JSON 串）：命中后 api.video_stream 跳过全链重算、只做便宜
+# 校验（play_sign 验签 / active 绑定关系）直接出流。键含用户
+# 维度——描述符里有本人令牌/本人副本的解析结果，严禁跨用户串话。
+# TTL 取小者：env STREAM_RESOLVE_CACHE_TTL_SEC（默认 240、钳
+# [0, 600]、0 = 关）与签发本次播放的 play_sign 剩余有效期；描述符
+# 内再嵌一份绝对到期时刻，读时双保险。缓存的只是解析结果、不是
+# 授权本身：门禁仍在首次请求全量执行（口径见 api._try_fastpath_
+# relay），命中出流失败立即失效、回落全链。
+
+_STREAM_RESOLVE_KINDS = ("drive_final", "drive_token", "drive_sa")
+
+#: 描述符最小存活门槛（秒）：剩余有效期低于此值不值得存（存了
+#: 也赶不上几次续段请求，反而多一份过期边缘的脏数据）。
+_STREAM_RESOLVE_MIN_TTL = 10
+
+
+def _stream_resolve_cache_ttl() -> int:
+    """解析结果缓存 TTL（秒）：env STREAM_RESOLVE_CACHE_TTL_SEC，
+    默认 240，钳 [0, 600]，0 = 关缓存、非法回默认。"""
+    raw = os.getenv("STREAM_RESOLVE_CACHE_TTL_SEC", "")
+    if not str(raw).strip():
+        return 240
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        logger.warning("环境变量 STREAM_RESOLVE_CACHE_TTL_SEC=%r "
+                       "不是整数，使用默认值 240", raw)
+        return 240
+    return min(max(value, 0), 600)
+
+
+def _stream_resolve_cache_key(user_id, item_id: str, variant: str) -> str:
+    return f"stream_resolve:{user_id}:{item_id}:{variant}"
+
+
+def stream_resolve_cache_get(user_id, item_id: str,
+                             variant: str) -> Optional[dict]:
+    """读解析结果描述符；未启用/未命中/内容不合规一律 None。永不抛。"""
+    if user_id is None or not item_id or not variant:
+        return None
+    if _stream_resolve_cache_ttl() <= 0:
+        return None
+    try:
+        from backend.database import CacheManager
+        raw = CacheManager.get(
+            _stream_resolve_cache_key(user_id, item_id, variant),
+            domain=_FINAL_URL_CACHE_DOMAIN)
+    except Exception:  # noqa: BLE001 — 缓存读不到按未命中
+        return None
+    if not isinstance(raw, str) or not raw.startswith("{"):
+        return None
+    try:
+        import json
+        desc = json.loads(raw)
+    except Exception:  # noqa: BLE001 — 脏数据按未命中
+        return None
+    if not isinstance(desc, dict) \
+            or desc.get("kind") not in _STREAM_RESOLVE_KINDS:
+        return None
+    try:
+        if float(desc.get("exp") or 0) <= time.time():
+            return None
+    except (TypeError, ValueError):
+        return None
+    if desc["kind"] == "drive_final" \
+            and not str(desc.get("final_url") or "").startswith(
+                ("http://", "https://")):
+        return None
+    if desc["kind"] in ("drive_token", "drive_sa") \
+            and (not desc.get("drive_id") or not desc.get("file_id")):
+        return None
+    if desc["kind"] == "drive_token" and not desc.get("access_token"):
+        return None
+    return desc
+
+
+def stream_resolve_cache_put(user_id, item_id: str, variant: str,
+                             descriptor: dict,
+                             sign_cap_seconds: Optional[float] = None
+                             ) -> None:
+    """写解析结果描述符。TTL = min(配置 TTL, 签名剩余有效期)，
+    低于最小门槛不存。失败自吞。永不抛。"""
+    ttl = _stream_resolve_cache_ttl()
+    if user_id is None or not item_id or not variant or ttl <= 0:
+        return
+    if not isinstance(descriptor, dict) \
+            or descriptor.get("kind") not in _STREAM_RESOLVE_KINDS:
+        return
+    if sign_cap_seconds is not None:
+        ttl = min(ttl, int(sign_cap_seconds))
+    if ttl < _STREAM_RESOLVE_MIN_TTL:
+        return
+    try:
+        import json
+        payload = dict(descriptor)
+        payload["exp"] = time.time() + ttl
+        from backend.database import CacheManager
+        CacheManager.set(
+            _stream_resolve_cache_key(user_id, item_id, variant),
+            json.dumps(payload), ttl, domain=_FINAL_URL_CACHE_DOMAIN)
+    except Exception:  # noqa: BLE001 — 写不进只丢这次复用机会
+        pass
+
+
+def stream_resolve_cache_invalidate(user_id, item_id: str,
+                                    variant: str) -> None:
+    """失效解析结果描述符（命中出流失败时回落全链的收口）。永不抛。"""
+    if user_id is None or not item_id or not variant:
+        return
+    try:
+        from backend.database import CacheManager
+        CacheManager.delete(
+            _stream_resolve_cache_key(user_id, item_id, variant),
+            domain=_FINAL_URL_CACHE_DOMAIN)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+#: 本次中继的最终 URL capture 盒（调用方经 capture_relay_final_url
+#: 设置）：serve_mount_relay_async 跟随成功后把终点 URL 写进盒里，
+#: 调用方据此为快速通道落 drive_final 描述符。无盒时中继行为逐字
+#: 不变（盒只是旁路观测，不参与出流决策）。
+_RELAY_FINAL_CAPTURE: "contextvars.ContextVar[Optional[dict]]" = (
+    contextvars.ContextVar("aetrix_relay_final_capture", default=None))
+
+
+@contextlib.contextmanager
+def capture_relay_final_url(box: dict):
+    """在 with 块内开启最终 URL capture：块内 serve_drive_relay_
+    async 的成功跟随会把终点 URL 写进 ``box["final_url"]``。"""
+    token = _RELAY_FINAL_CAPTURE.set(box)
+    try:
+        yield box
+    finally:
+        _RELAY_FINAL_CAPTURE.reset(token)
+
+
 def _resolve_cache_scope(api_url: str, headers) -> str:
     """resolve 侧缓存键：API 地址 + 凭据指纹（不同凭据不许串用）。"""
     auth = ""
@@ -613,12 +756,18 @@ class _DriveLegScope:
     cache_key 为 None 时不落最终 URL 缓存（BYOS 用户令牌腿：签名
     URL 的铸出凭据是用户本人令牌，跨请求复用会把流量钉在铸出
     时刻的授权上下文上，该腿请求量小、维持每次现跟随）。
+
+    capture（可选）：调用方给的 dict，跟随成功后回填终点 URL
+    （capture["final_url"]），供 video_stream 快速通道落
+    drive_final 描述符；不给时无任何回填动作。
     """
 
-    __slots__ = ("cache_key",)
+    __slots__ = ("cache_key", "capture")
 
-    def __init__(self, cache_key: Optional[str] = None):
+    def __init__(self, cache_key: Optional[str] = None,
+                 capture: Optional[dict] = None):
         self.cache_key = cache_key
+        self.capture = capture
 
     def acquire(self):
         return _acquire_drive_client()
@@ -809,6 +958,66 @@ async def _release_upstream_when_stalled(source, resp, url: str, timeout: float)
         await source.aclose()
 
 
+def _relay_prefetch_chunks() -> int:
+    """中继预读深度（块数，块 = READ_CHUNK 1MB）：env
+    STREAM_RELAY_PREFETCH_CHUNKS，默认 3，钳 [0, 8]，0 = 关预读、
+    非法回默认。只对 Drive 中继腿生效（见 serve_mount_relay_async）。"""
+    raw = os.getenv("STREAM_RELAY_PREFETCH_CHUNKS", "")
+    if not str(raw).strip():
+        return 3
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        logger.warning("环境变量 STREAM_RELAY_PREFETCH_CHUNKS=%r "
+                       "不是整数，使用默认值 3", raw)
+        return 3
+    return min(max(value, 0), 8)
+
+
+async def _prefetch_stream_chunks(source, chunks_ahead: int):
+    """有界预读包装（2026-11-17 中继取流优化，仅 Drive 中继腿用）。
+
+    生产者任务提前从 ``source`` 读块进小队列（上限 chunks_ahead
+    块，另加生产者手里在途的一块），消费端逐块取——消费端写客户端
+    的间隙里上游不空转，上游抖动被队列里的存货抹平。语义与直通
+    迭代逐字一致：块顺序/内容不变；源的异常在原位置（已排队块
+    之后）向消费端重抛；消费端提前结束（客户端断开 / 停读看门狗
+    关流）时生产者被取消、上游读取随源迭代器关闭而停止，不留
+    后台偷读。无新增线程：生产者就是事件循环里的一个 task。
+    """
+    queue: asyncio.Queue = asyncio.Queue(maxsize=max(1, int(chunks_ahead)))
+
+    async def _produce():
+        try:
+            async for chunk in source:
+                await queue.put((True, chunk))
+        except asyncio.CancelledError:
+            raise
+        except BaseException as exc:  # noqa: BLE001 — 转交消费端原位重抛
+            await queue.put((False, exc))
+            return
+        await queue.put(None)
+
+    task = asyncio.create_task(_produce())
+    try:
+        while True:
+            item = await queue.get()
+            if item is None:
+                return
+            ok, payload = item
+            if not ok:
+                raise payload
+            yield payload
+    finally:
+        task.cancel()
+        _aclose = getattr(source, "aclose", None)
+        if _aclose is not None:
+            try:
+                await _aclose()
+            except Exception:  # noqa: BLE001 — 关源失败不许掩盖主流
+                pass
+
+
 #: 中继客户端按 event loop 共享（2026-10-30 起播/拖动提速）：旧口径
 #: 「按次创建、用完关闭」让每次拉流/拖动都重付一遍连接建立（VPS 到
 #: 谷歌实测单次 TCP+TLS 约 0.11–0.16s；生产 stream 首字节 1.6–2.2s
@@ -943,6 +1152,10 @@ async def serve_mount_relay_async(
             raise HTTPException(status_code=502, detail="源站不可达") from exc
         if _leg is not None:
             _drive_pool_note_reached()
+            if _leg.capture is not None and resp.status_code < 400:
+                # 快速通道 capture：只记成功终点（失败状态在本函数
+                # 后段抛错，调用方不会在失败时读盒）。
+                _leg.capture["final_url"] = _current
             if _final_cache_key and not _used_cached_final \
                     and _current != url and resp.status_code < 400:
                 drive_final_url_cache_put(_final_cache_key, _current)
@@ -1042,25 +1255,42 @@ async def serve_mount_relay_async(
             pass
         content_type = resp.headers.get("content-type") or media_type
 
+        # 服务端预读（2026-11-17 中继取流优化）：只对 Drive 中继腿
+        # （_leg 在位）生效——生产者先读后续块进有界队列，抹平上游
+        # 抖动；挂载腿（_leg 为 None）维持下面的直通迭代逐字不变。
+        _prefetch_ahead = _relay_prefetch_chunks() if _leg is not None else 0
+
+        async def _raw_chunks():
+            if _prelude is not None:
+                # 嗅探已预读首块：先吐首块，再续跑同一迭代器——
+                # 非 Quota 的 HTML 原样续流，字节一个不少。
+                _aiter, _first = _prelude
+                if _first:
+                    yield _first
+                async for chunk in _aiter:
+                    yield chunk
+            else:
+                async for chunk in resp.aiter_bytes(READ_CHUNK):
+                    yield chunk
+
         async def iter_mount():
+            _source = _raw_chunks()
+            if _prefetch_ahead > 0:
+                _source = _prefetch_stream_chunks(_source, _prefetch_ahead)
             try:
-                if _prelude is not None:
-                    # 嗅探已预读首块：先吐首块，再续跑同一迭代器——
-                    # 非 Quota 的 HTML 原样续流，字节一个不少。
-                    _aiter, _first = _prelude
-                    if _first:
-                        yield _first
-                    async for chunk in _aiter:
-                        yield chunk
-                else:
-                    async for chunk in resp.aiter_bytes(READ_CHUNK):
-                        yield chunk
+                async for chunk in _source:
+                    yield chunk
             except httpx.TransportError as exc:
                 # 源站中途断开：结束这条流、归还连接；响应头已发出，
                 # 播放器会对剩余区间重新发 Range。
                 logger.warning("远程挂载流中断 %s: %s",
                                url.split("?")[0], type(exc).__name__)
             finally:
+                # 先关源迭代（预读时连带停掉生产者任务），再关响应。
+                try:
+                    await _source.aclose()
+                except Exception:
+                    pass
                 # 只关响应：连接归还共享客户端的池（client 按 loop
                 # 共享，关掉会连 transport 一起关、后续请求全废）。
                 try:
@@ -1159,7 +1389,8 @@ async def serve_drive_relay_async(
     """
     _leg = _DriveLegScope(
         cache_key=None if access_token is not None
-        else f"relay:{drive_id}:{file_id}")
+        else f"relay:{drive_id}:{file_id}",
+        capture=_RELAY_FINAL_CAPTURE.get())
     _leg_token = _DRIVE_LEG.set(_leg)
     try:
         return await _serve_drive_relay_async_inner(

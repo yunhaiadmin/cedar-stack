@@ -7189,6 +7189,168 @@ def _available_variant_names(db: Session, item: em.MediaItem,
     return names
 
 
+def _sign_remaining_seconds(request: Request):
+    """本请求 play_sign 的剩余有效期（秒）；无签名参数/不可解析
+    返回 None（落缓存 TTL 时不按签名封顶，只按配置 TTL）。"""
+    try:
+        qs = getattr(request, "query_params", None) or {}
+        exp_raw = qs.get("exp")
+        if not exp_raw:
+            return None
+        return int(exp_raw) - int(time.time())
+    except Exception:  # noqa: BLE001 — 读不到按无签名处理
+        return None
+
+
+def _store_stream_resolve(request: Request, user, item_id: str,
+                          variant: str, *, drive_id, file_id,
+                          access_token=None, capture=None,
+                          rotate_on_quota=None, max_attempts=None
+                          ) -> None:
+    """把首次全链通过后的中继选路结果落快速通道缓存（永不抛）。
+
+    描述符形态（streaming.stream_resolve_cache_put 的 kind）：
+    - capture 回填到最终 URL 且终点不同于 Drive API 地址 →
+      drive_final（续段直打签名最终 URL，跳过跟随与令牌现取）；
+    - 本人令牌腿（usercopy / byos）→ drive_token（续段凭存入的
+      本人令牌走 serve_drive_relay_async，跳过令牌现取与选路）；
+    - 共享 SA 腿 → drive_sa（只存选路结果，SA 令牌仍由中继腿
+      内部按既有轮换口径取，failover/额度嗅探语义全在腿内）。
+    TTL 由缓存层取小者（配置 TTL 与本请求签名剩余有效期）。
+    """
+    try:
+        from backend.emby_server import streaming as _streaming_sr
+
+        desc = None
+        final_url = (capture or {}).get("final_url")
+        if final_url:
+            try:
+                from backend.emby_server.drive_auth import (
+                    drive_api_media_url,
+                    drive_usercontent_download_url)
+                api_url = drive_api_media_url(
+                    drive_usercontent_download_url(file_id))
+            except Exception:  # noqa: BLE001 — 拼不出 API 地址按无终点
+                api_url = None
+            if api_url and final_url != api_url:
+                desc = {"kind": "drive_final", "final_url": final_url}
+        if desc is None and access_token:
+            desc = {"kind": "drive_token", "drive_id": drive_id,
+                    "file_id": file_id, "access_token": access_token}
+        if desc is None and not access_token:
+            desc = {"kind": "drive_sa", "drive_id": drive_id,
+                    "file_id": file_id,
+                    "rotate_on_quota": bool(rotate_on_quota),
+                    "max_attempts": max_attempts}
+        if desc is None:
+            return
+        _streaming_sr.stream_resolve_cache_put(
+            getattr(user, "id", None), item_id, variant, desc,
+            sign_cap_seconds=_sign_remaining_seconds(request))
+    except Exception:  # noqa: BLE001 — 落缓存失败只丢复用机会
+        pass
+
+
+async def _try_fastpath_relay(request: Request, db: Session, user,
+                              item: em.MediaItem, item_id: str,
+                              variant_name: str, pt):
+    """续段请求快速通道（2026-11-17 网页播放中继取流优化）。
+
+    命中首次全链落下的选路描述符时跳过 video_stream 全链直接
+    出流；返回 Response 表示已出流，返回 None 表示未命中/校验
+    不过/出流失败——调用方一律回落全链，行为与从前逐字一致。
+
+    不变量（不许弱化）：
+    - play_sign 验签必做：请求带签名参数时，用门禁同一判定口
+      （playback_gate._request_uses_issued_play_sign，内含签名与
+      有效期校验）复核；验不过绝不凭缓存出流。get_play_user
+      依赖层在进本函数前已先验过一次，这里是第二道。
+    - 无签名（Emby token 直调）时，便宜校验＝has_active_binding
+      （active 绑定关系仍在）；不在此列的形态（池观众等）回全链
+      由门禁段裁决。缓存键含用户维度，跨用户天然不串。
+    - drive_sa 描述符（共享原件腿）额外复核绑定：签名模式下未绑
+      观众（池观众）一律回全链，绝不凭缓存下发共享原件。
+    - 缓存的只是解析结果、不是授权：门禁/付费墙/转存门禁已在
+      首次请求全量执行；描述符 TTL ≤ 签名剩余有效期且 ≤ 配置
+      上限（分钟量级），窗口内状态变化由 TTL 与失败失效兜底。
+    - 出流失败（最终 URL 已死/额度页等）→ 失效描述符 + 回全链，
+      全链的对账/换线/额度处置口径一概不少。
+    打点口径不变：命中出流与全链分支一样记一条 play_start 事件
+    （resolve_ms 为快速通道段实测，量级应显著低于全链）。
+    """
+    from backend.emby_server import playback_gate as _gate_fp
+    from backend.emby_server import streaming as _streaming_fp
+    from backend.emby_server.async_db import run_db
+
+    user_id = getattr(user, "id", None)
+    if user_id is None or not variant_name:
+        return None
+    desc = _streaming_fp.stream_resolve_cache_get(
+        user_id, item_id, variant_name)
+    if not desc:
+        return None
+    qs = getattr(request, "query_params", None) or {}
+    _bound_ok = False
+    if qs.get("sign"):
+        if not await run_db(
+                _gate_fp._request_uses_issued_play_sign, request, db):
+            return None
+    else:
+        _bound_ok = bool(await run_db(
+            _gate_fp.has_active_binding, db, user_id))
+        if not _bound_ok:
+            return None
+    kind = desc.get("kind")
+    if kind == "drive_sa" and not _bound_ok:
+        # 共享 SA 腿播的是共享原件：签名模式下也必须复核绑定关系
+        # 仍在——未绑的池观众即便持有效签名，也绝不许凭缓存吃到
+        # 共享原件（池门禁口径），回全链由池门禁段裁决。
+        if not await run_db(_gate_fp.has_active_binding, db, user_id):
+            return None
+    _fp_t0 = time.perf_counter()
+    media_type = (f"video/{item.container}" if getattr(
+        item, "container", None) else "video/mp4")
+    try:
+        pt.mark("relay")
+        if kind == "drive_final":
+            from backend.emby_server.streaming import (
+                serve_mount_relay_async)
+            resp = await serve_mount_relay_async(
+                desc["final_url"], request, headers={},
+                media_type=media_type, pt=pt)
+        elif kind == "drive_token":
+            resp = await serve_drive_relay_async(
+                request, desc["drive_id"], desc["file_id"],
+                media_type=media_type, pt=pt,
+                access_token=desc["access_token"])
+        elif kind == "drive_sa":
+            resp = await serve_drive_relay_async(
+                request, desc["drive_id"], desc["file_id"],
+                media_type=media_type, pt=pt,
+                rotate_on_quota=bool(desc.get("rotate_on_quota", True)),
+                max_attempts=desc.get("max_attempts"))
+        else:  # pragma: no cover — get 已按 kind 白名单过滤
+            return None
+    except HTTPException:
+        _streaming_fp.stream_resolve_cache_invalidate(
+            user_id, item_id, variant_name)
+        return None
+    except Exception:  # noqa: BLE001 — 额度页等腿内异常同样回全链处置
+        _streaming_fp.stream_resolve_cache_invalidate(
+            user_id, item_id, variant_name)
+        return None
+    _note_play_start_safe(
+        item, user_id=user_id, method="relay", variant=variant_name,
+        result="error" if resp.status_code >= 400 else "ok",
+        error_kind=(f"upstream_{resp.status_code}"
+                    if resp.status_code >= 400 else None),
+        resolve_ms=int((time.perf_counter() - _fp_t0) * 1000),
+        total_ms=pt.elapsed_ms())
+    _note_watch_activity(
+        request, user, item, getattr(resp, "status_code", None))
+    return _observe_traffic(resp)
+
+
 @emby_router.get("/emby/Videos/{item_id}/stream")
 @emby_router.get("/Videos/{item_id}/stream")
 @release_db_before_response
@@ -7221,6 +7383,20 @@ async def video_stream(
     # 安全修复（P0 / H1）：条目必须在用户可见的库范围内（统一 helper）
     item = await run_db(_require_visible_item, db, user, item_id)
     _pt.mark("auth_visible")
+    # 续段请求快速通道（2026-11-17 网页播放中继取流优化）：客户
+    # 端显式带了变体、且首次全链已为 (用户, 条目, 变体) 落下选路
+    # 描述符时，跳过下方全链直接出流（不变量见 _try_fastpath_
+    # relay）。变体参数读法与下方全链同口径（parse_requested_
+    # variant 纯函数）；不一致/无变体/未命中一律回落全链，行为
+    # 与从前逐字一致。
+    _fp_qs = getattr(request, "query_params", None) or {}
+    _fp_variant, _fp_mismatch = play_variants.parse_requested_variant(
+        _fp_qs)
+    if _fp_variant and not _fp_mismatch:
+        _fp_resp = await _try_fastpath_relay(
+            request, db, user, item, item_id, _fp_variant, _pt)
+        if _fp_resp is not None:
+            return _fp_resp
     # 授权已由 get_play_user 依赖完成（短期签名优先，回退 Emby token）
     await run_db(ensure_playback_allowed, db, user)
     # 播放门禁（2026-10-26 用户亲定硬规矩）：Emby token 直接调流是新播放，
@@ -8031,11 +8207,14 @@ async def video_stream(
             raise HTTPException(
                 status_code=503, detail=_byos_detail) from exc
         _pt.mark("relay")
+        _byos_capture: dict = {}
         try:
-            _byos_drive_resp = await serve_drive_relay_async(
-                request, f"byos:{_byos_id}", _fid,
-                media_type=media_type, pt=_pt,
-                access_token=_byos_drive_token)
+            from backend.emby_server import streaming as _streaming_br
+            with _streaming_br.capture_relay_final_url(_byos_capture):
+                _byos_drive_resp = await serve_drive_relay_async(
+                    request, f"byos:{_byos_id}", _fid,
+                    media_type=media_type, pt=_pt,
+                    access_token=_byos_drive_token)
         except HTTPException as exc:
             _note_play_start_safe(
                 item, user_id=getattr(user, "id", None),
@@ -8056,6 +8235,11 @@ async def video_stream(
         _note_watch_activity(
             request, user, item,
             getattr(_byos_drive_resp, "status_code", None))
+        if _byos_drive_resp.status_code < 400:
+            _store_stream_resolve(
+                request, user, item_id, play_variants.BYOS_DRIVE_RELAY,
+                drive_id=f"byos:{_byos_id}", file_id=_fid,
+                access_token=_byos_drive_token, capture=_byos_capture)
         return _observe_traffic(_byos_drive_resp)
     # 用户 Drive 转存副本中继（usercopy_relay 显式变体，2026-11-16
     # 网页软解取流修复）：客户端（网页软解）显式选了这条线路——
@@ -8093,10 +8277,13 @@ async def video_stream(
             raise HTTPException(
                 status_code=503,
                 detail="Drive 授权不可用，暂时无法播放") from exc
+        _uc_capture: dict = {}
         try:
-            _uc_resp = await serve_drive_relay_async(
-                request, _play_variant.variant_drive_id, _play_fid,
-                media_type=media_type, pt=_pt, access_token=_uc_token)
+            from backend.emby_server import streaming as _streaming_uc
+            with _streaming_uc.capture_relay_final_url(_uc_capture):
+                _uc_resp = await serve_drive_relay_async(
+                    request, _play_variant.variant_drive_id, _play_fid,
+                    media_type=media_type, pt=_pt, access_token=_uc_token)
         except HTTPException as exc:
             _note_play_start_safe(
                 item, user_id=getattr(user, "id", None), method="relay",
@@ -8116,6 +8303,11 @@ async def video_stream(
         _note_watch_activity(
             request, user, item,
             getattr(_uc_resp, "status_code", None))
+        if _uc_resp.status_code < 400:
+            _store_stream_resolve(
+                request, user, item_id, play_variants.USERCOPY_RELAY,
+                drive_id=_play_variant.variant_drive_id, file_id=_play_fid,
+                access_token=_uc_token, capture=_uc_capture)
         return _observe_traffic(_uc_resp)
     # BYOS 用户令牌中继（Drive 腿，闭环 #13）：条目是 byos:// 路径且
     # drive_relay_enabled 开时，字节走该用户自己的 Drive 令牌中继，
@@ -8200,11 +8392,15 @@ async def video_stream(
                 raise HTTPException(
                     status_code=503, detail=_byos_detail) from exc
             _pt.mark("relay")
+            _byos_path_capture: dict = {}
             try:
-                _byos_resp = await serve_drive_relay_async(
-                    request, f"byos:{_byos_id}", _fid,
-                    media_type=media_type, pt=_pt,
-                    access_token=_byos_token)
+                from backend.emby_server import streaming as _streaming_bp
+                with _streaming_bp.capture_relay_final_url(
+                        _byos_path_capture):
+                    _byos_resp = await serve_drive_relay_async(
+                        request, f"byos:{_byos_id}", _fid,
+                        media_type=media_type, pt=_pt,
+                        access_token=_byos_token)
             except HTTPException as exc:
                 _note_play_start_safe(
                     item, user_id=getattr(user, "id", None),
@@ -8225,6 +8421,11 @@ async def video_stream(
             _note_watch_activity(
                 request, user, item,
                 getattr(_byos_resp, "status_code", None))
+            if _byos_resp.status_code < 400:
+                _store_stream_resolve(
+                    request, user, item_id, play_variants.DRIVE_RELAY,
+                    drive_id=f"byos:{_byos_id}", file_id=_fid,
+                    access_token=_byos_token, capture=_byos_path_capture)
             return _observe_traffic(_byos_resp)
     if (_drive_switch_on and await run_db(_strategy.drive_relay_enabled, db)
             and (_requested_variant is None
@@ -8442,6 +8643,13 @@ async def video_stream(
                     _note_watch_activity(
                         request, user, item,
                         getattr(_relay_resp, "status_code", None))
+                    if _relay_resp.status_code < 400:
+                        _store_stream_resolve(
+                            request, user, item_id,
+                            play_variants.DRIVE_RELAY,
+                            drive_id=_relay_drive_id, file_id=_play_fid,
+                            rotate_on_quota=_rotate_on_quota,
+                            max_attempts=_relay_max_attempts)
                     return _observe_traffic(_relay_resp)
     # 挂载直读判定（2026-10-30 顺序修复）：原判定在 _play_target
     # 之后的尾部分支，生产 drive_direct_play_enabled=true 时
