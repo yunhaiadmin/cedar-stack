@@ -342,6 +342,12 @@ def mark_soft_deleted(db, item_ids: list) -> int:
         return 0
     db.query(MediaItem).filter(MediaItem.id.in_(safe_ids)).update(
         {"deleted_at": datetime.now()}, synchronize_session=False)
+    # BE-24：批量 UPDATE 不走 ORM 事件，series 的 deleted_at 变了其
+    # season/episode 的 has_identity 不会自动跟随——显式重算兜住
+    # （identity_gate 物化维护面 2，不留漂移时间窗）。
+    from backend.emby_server import identity_gate
+
+    identity_gate.resync_children_of_series(db, safe_ids)
     return len(safe_ids)
 
 
@@ -352,8 +358,14 @@ def resurrect(db, item_ids: list) -> int:
     ids = [int(i) for i in item_ids if i]
     if not ids:
         return 0
-    return int(db.query(MediaItem).filter(MediaItem.id.in_(ids)).update(
+    n = int(db.query(MediaItem).filter(MediaItem.id.in_(ids)).update(
         {"deleted_at": None}, synchronize_session=False) or 0)
+    if n:
+        # BE-24：同 mark_soft_deleted——复活的 series 须让子行标记跟上。
+        from backend.emby_server import identity_gate
+
+        identity_gate.resync_children_of_series(db, ids)
+    return n
 
 
 def delete_item_child_rows(db, item_ids) -> None:
@@ -465,5 +477,11 @@ def restore_all(db) -> int:
     """把**所有**隐藏条目放回来（关掉软删除开关时的回滚步骤）"""
     from backend.emby_server.models import MediaItem
 
-    return int(db.query(MediaItem).filter(MediaItem.deleted_at.isnot(None)).update(
+    n = int(db.query(MediaItem).filter(MediaItem.deleted_at.isnot(None)).update(
         {"deleted_at": None}, synchronize_session=False) or 0)
+    if n:
+        # BE-24：整表复活后所有 series 的有效判据都可能翻转，子行全量重算。
+        from backend.emby_server import identity_gate
+
+        identity_gate.resync_all_children(db)
+    return n
