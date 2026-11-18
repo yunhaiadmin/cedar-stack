@@ -266,7 +266,7 @@
   border: 1px solid transparent;
   background: var(--au-violet-soft);
   color: var(--text-secondary);
-  font-size: 11.5px;
+  font-size: var(--uhd-fs-micro);
   font-weight: var(--font-weight-semibold);
   line-height: 1;
   white-space: nowrap;
@@ -295,31 +295,6 @@
 
 .mini-badge.type,
 .mini-badge.muted { background: var(--au-violet-soft); color: var(--text-tertiary); border-color: var(--border-subtle); }
-
-/* ==================== 排行榜 / 列表行 ==================== */
-.rank-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.rank-row:last-child { border-bottom: none; }
-
-.rank-index {
-  width: 26px;
-  height: 26px;
-  flex-shrink: 0;
-  border-radius: var(--radius-sm);
-  background: var(--primary-bg);
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: var(--font-weight-bold);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
 
 /* ==================== 空状态 ==================== */
 .admin-layout .admin-content .empty-state,
