@@ -641,6 +641,12 @@ export interface SoftPlayerHandle {
   durationSeconds(): number
   hasVideo(): boolean
   hasAudio(): boolean
+  /**
+   * 播放器真实已接收字节（libmedia getStats().bufferReceiveBytes，
+   * IO 层每读一段就累加的实读字节）；统计不可用时返回 null。
+   * 只许拿它显示「已接收 X.XMB」，不许拿它推算其他量。
+   */
+  receivedBytes(): number | null
   destroy(): Promise<void>
 }
 
@@ -676,6 +682,12 @@ export interface CreateSoftPlayerOptions {
    * （非 MSE 的 wasm 模式音频仍走 wasm 解码管线，事件照常。）
    */
   mse?: boolean
+  /**
+   * 已接收字节回调：构造后每 500ms 轮询 getStats().bufferReceiveBytes，
+   * 数值变化时回调（load() 未返回、handle 还不存在的起播期也靠它拿数）。
+   * 统计不可用时不回调。实例销毁后自动停轮询。
+   */
+  onReceivedBytes?: (bytes: number) => void
 }
 
 type AVPlayerInstance = {
@@ -693,6 +705,8 @@ type AVPlayerInstance = {
   readonly currentTime: bigint
   /** play() 内管线判定结果（产物实证的实例属性）：true = 真走了 MSE */
   useMSE?: boolean
+  /** libmedia 统计（产物实证）：bufferReceiveBytes 是 IO 层实读字节累计（int64） */
+  getStats?: () => { bufferReceiveBytes?: bigint | number } | null | undefined
 }
 
 /**
@@ -770,6 +784,37 @@ export async function createSoftPlayer(
   })
   player.on('timeout', () => failOnce('soft decode timeout'))
 
+  // 已接收字节口径：getStats().bufferReceiveBytes（libmedia IO 层每读
+  // 一段就累加的实读字节，软解/MSE 两条管线都过这个 IO 层）。构造完
+  // 就开始轮询——load() 未返回时 handle 还不存在，准备卡靠回调拿数；
+  // 统计读不到（旧产物/异常）就保持 null，调用方不显示数值，不编数。
+  let lastReceivedBytes: number | null = null
+  const readReceivedBytes = (): number | null => {
+    try {
+      const raw = player.getStats?.()?.bufferReceiveBytes
+      if (typeof raw === 'bigint') return Number(raw)
+      if (typeof raw === 'number' && Number.isFinite(raw)) return raw
+    } catch {
+      /* 统计不可用：保持 null */
+    }
+    return null
+  }
+  let statsTimer: ReturnType<typeof setInterval> | undefined
+  if (options.onReceivedBytes) {
+    const onReceivedBytes = options.onReceivedBytes
+    statsTimer = setInterval(() => {
+      const bytes = readReceivedBytes()
+      if (bytes !== null && bytes !== lastReceivedBytes) {
+        lastReceivedBytes = bytes
+        onReceivedBytes(bytes)
+      }
+    }, 500)
+  }
+  const stopStatsPolling = () => {
+    if (statsTimer) clearInterval(statsTimer)
+    statsTimer = undefined
+  }
+
   const startTimeoutMs = options.startTimeoutMs ?? SOFT_START_TIMEOUT_MS
   let startTimer: ReturnType<typeof setTimeout> | undefined
   const startGuard = new Promise<never>((_resolve, reject) => {
@@ -806,6 +851,7 @@ export async function createSoftPlayer(
     }
   } catch (e) {
     failOnce(e instanceof Error ? e.message : String(e))
+    stopStatsPolling()
     // 起播失败：把已建的实例销毁，不留后台继续拉 wasm/拉流的残留
     try {
       await player.destroy()
@@ -827,6 +873,10 @@ export async function createSoftPlayer(
     durationSeconds: () => Number(player.getDuration()) / 1000,
     hasVideo: () => player.hasVideo(),
     hasAudio: () => player.hasAudio(),
-    destroy: () => player.destroy(),
+    receivedBytes: () => readReceivedBytes() ?? lastReceivedBytes,
+    destroy: async () => {
+      stopStatsPolling()
+      await player.destroy()
+    },
   }
 }
