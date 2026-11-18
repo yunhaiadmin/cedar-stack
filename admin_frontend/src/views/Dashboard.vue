@@ -23,49 +23,44 @@
  * 起播近况 / 今日数据）与「快捷操作」直达条；新接起播统计口
  * （GET /api/admin/playback/play-start-stats）成卡。原有信息区全部保留、
  * 顺序不动，只在前面加「先看状态、先到地方」的两层。
+ *
+ * v3（2026-11-19 后台大改造批 A）：13 区块精简为 5——一眼区 / KPI 3 卡 /
+ * 待办条 / 趋势 / 起播统计。删去的 8 区（快捷操作、服务接入 tiles、各服概况、
+ * 额度驾驶舱、交易概览、媒体服务、排行榜、数据明细）在各自功能页都有全量版，
+ * 去向见 ~/workspace/reports/admin-overhaul-plan-20261119.md §1。首屏骨架屏
+ * 一并删除（与用户端同口径：无全页骨架/转圈），改为内容直接渲染、各卡沿用
+ * 既有空值占位。数据请求与口径不变：队列积压卡仍消费聚合 detail 的刮削
+ * pending 与额度口的转存计数。
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import {
-  Film, MessageSquareDashed, Ticket, Users, Wallet,
-  TicketCheck, Gift, ArrowRight, TrendingUp,
-  Server, HardDrive, ScanSearch, CloudDownload, Download, Route as RealmIcon, Trophy, Flame, Activity,
-  AlertTriangle, Table2, Gauge, HeartPulse, ClipboardList, ListTodo,
+  MessageSquareDashed, Ticket, Users, Wallet,
+  ArrowRight, TrendingUp,
+  HardDrive, ScanSearch, Activity,
+  AlertTriangle, Gauge, HeartPulse, ListTodo,
 } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard, StatTile } from '@/components/ui'
 import {
-  fetchLibraries, fetchOverview, fetchPlaybackStats, fetchRealmOverview,
-  fetchServersSummary, fetchStatsTrend, fetchBackendServices, fetchDashboardAggregate, fetchQuotaDashboard,
+  fetchLibraries, fetchOverview, fetchPlaybackStats,
+  fetchStatsTrend, fetchDashboardAggregate, fetchQuotaDashboard,
   fetchPanelHealth, fetchPlayStartStats,
-  type BackendServiceStatus, type DashboardAggregate, type DashboardDetailTables, type QuotaDashboard,
+  type DashboardAggregate, type DashboardDetailTables, type QuotaDashboard,
   type PanelHealth, type PlayStartStats } from '@/api/admin'
 import { fetchEconomyStats, type EconomyStats } from '@/api/economy'
 import type {
-  EmbyLibrary, OverviewStats, PlaybackStats, RealmOverview, ServerSummary, TrendStats,
+  EmbyLibrary, OverviewStats, PlaybackStats, TrendStats,
 } from '@/types'
 
 const overview = ref<OverviewStats | null>(null)
 const playback = ref<PlaybackStats | null>(null)
-/** 数据明细 7 表（detail part）：集中在本页一个区里页签切换，不铺开 */
+/** 聚合 detail part：本页只消费其中的刮削进度（队列积压卡的补资料 pending 合计） */
 const detail = ref<DashboardDetailTables | null>(null)
-const detailTab = ref('users')
-
-/** 明细表时间：ISO → MM-DD HH:mm（年份与秒对扫表没意义） */
-function fmtTime(iso: string): string {
-  if (!iso || iso.length < 16) return iso || ''
-  return `${iso.slice(5, 10)} ${iso.slice(11, 16)}`
-}
 const economy = ref<EconomyStats | null>(null)
 const trend = ref<TrendStats | null>(null)
 // 存储健康卡按库的本机目录可读性判（见 mountSummary）。以前这里还单独拉一次 /mounts，
 // 结果从没被用到——「存储来源」独立页撤销后成了每次进仪表盘白打的一个请求，已去掉。
 const libraries = ref<EmbyLibrary[]>([])
-/** 服务器接入情况：面板到底接了几台后端服 / 几台 Emby 服 / 有没有接下载器 */
-const servers = ref<ServerSummary | null>(null)
-/** 后端服务：aetrix-api + aetrix-worker 的运行状态 */
-const backendServices = ref<BackendServiceStatus[]>([])
-/** 多服运营：每个服的会员 / 内容 / 节点，一个面板同时管几个服一眼看完 */
-const realms = ref<RealmOverview | null>(null)
 const loading = ref(true)
 const trendLoading = ref(false)
 /** 核心三项（概览 / 播放 / 经营）里拿不到的那几项：页面照常渲染其余部分，顶部给一条可重试的提示 */
@@ -120,9 +115,6 @@ async function loadAggregate(): Promise<boolean> {
   // 天数在请求途中被用户切换：沿用 watch 触发的新请求数据，不覆盖
   if (days.value === d) trend.value = parts.trend
   libraries.value = parts.libraries?.libraries ?? []
-  servers.value = parts.servers ?? null
-  realms.value = parts.realms ?? null
-  backendServices.value = parts.backend_services?.services ?? []
   detail.value = parts.detail ?? null
   failedParts.value = failed
   loading.value = false
@@ -130,7 +122,7 @@ async function loadAggregate(): Promise<boolean> {
 }
 
 /**
- * 首屏：优先走聚合接口，失败则回退原来的 8 路并行逐个调用。
+ * 首屏：优先走聚合接口，失败则回退逐个调用（概览/播放/经营/媒体库/趋势）。
  * （聚合只是把"逐个调用"搬到服务端一次完成，任一形态下各区块的
  *  失败兜底语义保持一致：失败的那几项在顶部点名并给「重试」。）
  */
@@ -140,30 +132,24 @@ async function loadAll() {
   const failed: string[] = []
   const soft = <T,>(label: string, p: Promise<T>) => p.catch(() => { failed.push(label); return null })
   try {
-    const [o, p, e, libraryData, serverData, realmData, backendData] = await Promise.all([
+    const [o, p, e, libraryData] = await Promise.all([
       soft('概览', fetchOverview()),
       soft('播放统计', fetchPlaybackStats()),
       soft('经营数据', fetchEconomyStats()),
       fetchLibraries().catch(() => ({ libraries: [] as EmbyLibrary[] })),
-      fetchServersSummary().catch(() => null),
-      fetchRealmOverview().catch(() => null),
-      fetchBackendServices().catch(() => ({ services: [] as BackendServiceStatus[] })),
       loadTrend(),
     ])
     overview.value = o
     playback.value = p
     economy.value = e
     libraries.value = libraryData.libraries
-    servers.value = serverData
-    realms.value = realmData
-    backendServices.value = (backendData as { services?: BackendServiceStatus[] } | null)?.services || []
   } finally {
     failedParts.value = failed
     loading.value = false
   }
 }
 
-/** 额度驾驶舱（只读管理端区块）：开关关时后端 404，前端直接隐藏本区块 */
+/** 额度口（只读）：本页只消费转存队列计数（队列积压卡）；开关关时后端 404，计数按未拿到处理 */
 const quota = ref<QuotaDashboard | null>(null)
 async function loadQuota() {
   try {
@@ -171,10 +157,6 @@ async function loadQuota() {
   } catch {
     quota.value = null
   }
-}
-function fmtBytes(v: number | null): string {
-  if (v == null) return '未知'
-  return `${(v / 1024 ** 3).toFixed(1)} GB`
 }
 
 /** 面板健康（/api/health）：全站状态一眼区的「站点健康」来源，独立软加载 */
@@ -218,7 +200,7 @@ const healthGlance = computed(() => {
   return { label: h.status, tone: 'plain' as KpiTone, hint: '' }
 })
 
-/** 补资料积压：数据明细的刮削进度按库 pending 合计（detail 没拿到时为 null，不显示假数） */
+/** 补资料积压：聚合 detail 的刮削进度按库 pending 合计（detail 没拿到时为 null，不显示假数） */
 const enrichPending = computed(() =>
   detail.value ? detail.value.enrich_progress.reduce((s, r) => s + r.pending, 0) : null,
 )
@@ -281,38 +263,6 @@ const playTotals = computed(() => {
 const playFailRateText = computed(() => {
   const { total, errors } = playTotals.value
   return total > 0 ? `${((errors / total) * 100).toFixed(1)}%` : '—'
-})
-
-// ==================== 快捷操作 ====================
-
-/** 常用管理动作直达：一点到地方（待办类带好筛选，与待办条同口径） */
-const quickActions = [
-  { label: '用户管理', to: '/users', icon: Users },
-  { label: '订单', to: '/orders', icon: Wallet },
-  { label: '工单', to: '/tickets?status=open', icon: Ticket },
-  { label: '求片审核', to: '/media-seek?status=pending', icon: MessageSquareDashed },
-  { label: '码管理', to: '/codes', icon: TicketCheck },
-  { label: '媒体库', to: '/emby', icon: Film },
-  { label: '任务总览', to: '/tasks', icon: ClipboardList },
-  { label: '服务器', to: '/servers', icon: Server },
-  { label: '系统健康', to: '/health', icon: Activity },
-]
-
-// ==================== 服务器接入（信息展示）====================
-
-const SERVER_ICONS: Record<string, unknown> = {
-  ea: Server,
-  emby: HardDrive,
-  moviepilot: CloudDownload,
-  qbittorrent: Download,
-}
-
-const serverTiles = computed(() => {
-  const kinds = servers.value?.kinds || {}
-  return Object.values(kinds).map((stat) => ({
-    stat,
-    icon: SERVER_ICONS[stat.kind] || Server,
-  }))
 })
 
 watch(days, loadTrend)
@@ -389,7 +339,7 @@ const mountSummary = computed(() => {
 
 type KpiTone = 'plain' | 'ok' | 'info' | 'warn' | 'danger'
 
-/** 顶部五张卡：一条交付链看下来（用户 → 求片 → 工单 → 内容 → 存储） */
+/** 顶部三张卡：用户 → 内容（扫描）→ 存储；待处理计数由待办条独占，不在此重复 */
 const kpis = computed<{
   key: string; label: string; value: number | string; foot: string
   to: string; icon: unknown; tone: KpiTone; title: string
@@ -401,20 +351,6 @@ const kpis = computed<{
       key: 'users', label: '用户总数', value: overview.value?.users.total ?? 0,
       foot: `活跃 ${overview.value?.users.active ?? 0} · 今日播放 ${playback.value?.today.plays ?? 0} 次`,
       to: '/users', icon: Users, tone: 'plain', title: '用户与账号',
-    },
-    {
-      key: 'seeks', label: '待处理求片', value: overview.value?.media_seeks.pending ?? 0,
-      foot: (overview.value?.media_seeks.pending ?? 0) > 0 ? '点开只看待审核' : '没有待处理求片',
-      to: '/media-seek?status=pending', icon: MessageSquareDashed,
-      tone: (overview.value?.media_seeks.pending ?? 0) > 0 ? 'warn' : 'plain',
-      title: '求片与内容',
-    },
-    {
-      key: 'tickets', label: '待处理工单', value: overview.value?.tickets.open ?? 0,
-      foot: (overview.value?.tickets.open ?? 0) > 0 ? '点开只看进行中' : '没有待处理工单',
-      to: '/tickets?status=open', icon: Ticket,
-      tone: (overview.value?.tickets.open ?? 0) > 0 ? 'danger' : 'plain',
-      title: '服务支持',
     },
     {
       key: 'scan', label: '扫描状态', value: `${scan.ok} 个正常/共 ${scan.total} 个库`,
@@ -492,48 +428,6 @@ function fmtMoney(v: number): string {
   return `$${v.toFixed(2)}`
 }
 
-function libraryStatus(library: EmbyLibrary): string {
-  if (library.is_scanning) return '扫描中'
-  if (!library.is_enabled) return '已停用'
-  return '正常'
-}
-
-/** 后端服务状态中文映射：redis_unavailable 这类英文枚举不直接上界面 */
-const SERVICE_STATUS_LABEL: Record<string, string> = {
-  healthy: '运行中',
-  degraded: '降级',
-  redis_unavailable: 'Redis 不可用',
-  unreachable: '心跳丢失',
-  unknown: '状态未知',
-  no_heartbeat: '无心跳',
-  stale: '心跳过期',
-  error: '读取异常',
-}
-
-function serviceStatusLabel(status: string): string {
-  return SERVICE_STATUS_LABEL[status] || status
-}
-
-/** 后端服务名中文映射（aetrix-api 这类内部名不直接上界面） */
-const SERVICE_NAME_LABEL: Record<string, string> = {
-  'aetrix-api': 'API 服务',
-  'aetrix-worker': '后台任务服务',
-}
-
-function serviceNameLabel(name: string): string {
-  return SERVICE_NAME_LABEL[name] || name
-}
-
-/** 后端服务角色中文映射 */
-const SERVICE_ROLE_LABEL: Record<string, string> = {
-  api: '接口服务',
-  worker: '后台任务',
-}
-
-function serviceRoleLabel(role: string): string {
-  return SERVICE_ROLE_LABEL[role] || role
-}
-
 </script>
 
 <template>
@@ -541,7 +435,7 @@ function serviceRoleLabel(role: string): string {
     <PageHeader
       eyebrow="概览"
       title="经营驾驶舱"
-      description="先看现在能不能用、有没有要处理的，再看经营与排行。每个数字都能点进带好筛选的明细页。"
+      description="先看现在能不能用、有没有要处理的，再看趋势与起播。每个数字都能点进带好筛选的明细页。"
     >
       <template #actions>
         <RouterLink to="/health" class="au-btn au-btn-ghost au-btn-sm">
@@ -550,15 +444,9 @@ function serviceRoleLabel(role: string): string {
       </template>
     </PageHeader>
 
-    <!-- 首屏骨架：与真实布局同形，不再是一行「加载中…」 -->
-    <div v-if="loading" class="dash-skeleton" aria-busy="true" aria-label="加载中">
-      <div v-for="n in 5" :key="n" class="au-skeleton sk-tile" />
-      <div class="au-skeleton sk-wide" />
-    </div>
-
-    <template v-else>
-      <el-alert
-        v-if="failedParts.length"
+    <!-- 无全页骨架屏（与用户端同口径）：内容直接渲染，加载中各卡走既有空值占位 -->
+    <el-alert
+      v-if="!loading && failedParts.length"
         type="warning"
         :closable="false"
         show-icon
@@ -614,17 +502,9 @@ function serviceRoleLabel(role: string): string {
         </div>
       </section>
 
-      <!-- 快捷操作：常用管理动作一键直达，不用翻菜单 -->
-      <nav class="quick-actions" aria-label="快捷操作">
-        <RouterLink v-for="a in quickActions" :key="a.label" :to="a.to" class="quick-pill">
-          <component :is="a.icon" :size="14" />
-          <span>{{ a.label }}</span>
-        </RouterLink>
-      </nav>
-
       <!--
-        交付链数据卡：先回答「现在能不能用、有没有要处理的」——
-        用户 → 求片 → 工单 → 内容（扫描）→ 存储，每张卡点进去就是这个数的明细页。
+        交付链数据卡（批 A 精简后 3 张）：用户 → 内容（扫描）→ 存储。
+        待处理求片/工单的计数不在这里重复，由下方待办条独占。
       -->
       <section class="kpi-grid" aria-label="交付链">
         <StatTile
@@ -661,142 +541,9 @@ function serviceRoleLabel(role: string): string {
         </RouterLink>
       </section>
 
-      <!--
-        服务器接入：接了什么、几台能用、当前用哪台（明细在「服务器」页）。
-        后端服务：aetrix-api + aetrix-worker 运行状态。两组同一行网格。
-      -->
-      <section v-if="serverTiles.length || backendServices.length" class="tile-grid" aria-label="服务接入">
-        <StatTile
-          v-for="tile in serverTiles"
-          :key="tile.stat.kind"
-          to="/servers"
-          :icon="tile.icon"
-          :label="tile.stat.short"
-          :value="tile.stat.total"
-          :suffix="`台 · 可用 ${tile.stat.reachable}`"
-          :tone="tile.stat.reachable > 0 ? 'ok' : 'plain'"
-          :hint="tile.stat.activatable
-            ? (tile.stat.active_name || '未设置当前使用')
-            : (tile.stat.reachable > 0 ? '可用于求片' : '未连接')"
-        >
-          <template v-if="tile.stat.active_name" #label-extra>
-            <span class="au-badge au-badge-amber tile-badge">当前</span>
-          </template>
-        </StatTile>
-        <StatTile
-          v-for="svc in backendServices"
-          :key="svc.name"
-          :icon="Server"
-          :label="serviceNameLabel(svc.name)"
-          :value="serviceStatusLabel(svc.status)"
-          :suffix="svc.lag_seconds != null ? `· 心跳 ${svc.lag_seconds}s 前` : ''"
-          :tone="svc.status === 'healthy' ? 'ok' : 'warn'"
-          :hint="svc.role === 'worker' && svc.pid ? `进程号 ${svc.pid}` : '对外接口服务'"
-          class="svc-tile"
-        >
-          <template #label-extra>
-            <span class="au-badge au-badge-muted tile-badge">{{ serviceRoleLabel(svc.role) }}</span>
-          </template>
-        </StatTile>
-      </section>
 
-      <!--
-        各服概况：每个服的会员 / 内容 / 播放节点都在这里，不用一个个切过去看。
-        切当前作用域在顶栏，服与线路的归属在「服务器」页按范围看。
-      -->
-      <SectionCard
-        v-if="realms?.realms.length"
-        title="各服概况"
-        :icon="RealmIcon"
-        :meta="`${realms.summary.total_realms} 个服 · 有效订阅 ${realms.summary.active_subscriptions} · 播放节点在线 ${realms.summary.nodes_online}/${realms.summary.nodes}`"
-      >
-        <template #actions>
-          <RouterLink class="card-link" to="/servers">服务器<ArrowRight :size="13" /></RouterLink>
-          <RouterLink class="card-link" to="/realms">服管理<ArrowRight :size="13" /></RouterLink>
-        </template>
-        <div class="realm-rows">
-          <RouterLink
-            v-for="r in realms.realms"
-            :key="r.id"
-            to="/realms"
-            class="realm-row"
-            :class="{ current: r.id === realms.active_realm_id, off: !r.is_active }"
-          >
-            <div class="realm-name">
-              <strong>{{ r.name }}</strong>
-              <span class="au-badge au-badge-muted">{{ r.slug }}</span>
-              <span v-if="r.id === realms.active_realm_id" class="au-badge au-badge-amber">当前服</span>
-              <span v-if="r.is_default" class="au-badge au-badge-info">默认服</span>
-            </div>
-            <div class="realm-stats">
-              <span>媒体库 <b>{{ r.stats.libraries }}</b></span>
-              <span>条目 <b>{{ r.stats.items }}</b></span>
-              <span>挂载 <b>{{ r.stats.mounts }}</b></span>
-              <span>套餐 <b>{{ r.stats.plans }}</b></span>
-              <span>有效订阅 <b>{{ r.stats.active_subscriptions }}</b></span>
-              <span :class="{ warn: r.stats.nodes_online < r.stats.nodes }">
-                节点 <b>{{ r.stats.nodes_online }}/{{ r.stats.nodes }}</b>
-              </span>
-              <span :class="{ warn: r.stats.pending_requests > 0 }">
-                待审求片 <b>{{ r.stats.pending_requests }}</b>
-              </span>
-            </div>
-          </RouterLink>
-        </div>
-      </SectionCard>
 
-      <!-- 额度驾驶舱（只读）：SA 池数量 + 用户盘剩余 + 转存队列；开关关时不渲染 -->
-      <SectionCard
-        v-if="quota"
-        title="额度驾驶舱"
-        :icon="HardDrive"
-        meta="只读 · 不触发转存"
-      >
-        <div class="realm-stats">
-          <span>SA 账号 <b>{{ quota.sa_pool.count ?? '未知' }}</b></span>
-          <span>转存待跑 <b>{{ quota.transfer_queue.counts.pending }}</b></span>
-          <span>转存进行中 <b>{{ quota.transfer_queue.counts.running }}</b></span>
-          <span>转存失败 <b>{{ quota.transfer_queue.counts.failed }}</b></span>
-        </div>
-        <div v-if="quota.user_disks.items.length" class="realm-rows">
-          <div v-for="d in quota.user_disks.items" :key="d.binding_id" class="realm-row">
-            <div class="realm-name">
-              <strong>{{ d.account_label }}</strong>
-              <span class="au-badge au-badge-muted">用户 {{ d.user_id }}</span>
-              <span v-if="d.status !== 'ok'" class="au-badge au-badge-amber">配额未知</span>
-            </div>
-            <div class="realm-stats">
-              <span>剩余 <b>{{ fmtBytes(d.free) }}</b></span>
-              <span>已用 <b>{{ fmtBytes(d.usage) }}</b></span>
-              <span>上限 <b>{{ fmtBytes(d.limit) }}</b></span>
-            </div>
-          </div>
-        </div>
-        <div v-if="quota.transfer_queue.recent_failed.length" class="realm-rows">
-          <div v-for="f in quota.transfer_queue.recent_failed" :key="f.job_id" class="realm-row">
-            <div class="realm-name">
-              <strong>转存失败 #{{ f.job_id }}</strong>
-              <span class="au-badge au-badge-muted">{{ f.error_kind || '未知原因' }}</span>
-            </div>
-            <div class="realm-stats">
-              <span>{{ f.error_detail }}</span>
-            </div>
-          </div>
-        </div>
-      </SectionCard>
 
-      <!-- 交易概览：每个数字都能点进它自己的明细页（带筛选深链） -->
-      <section class="tile-grid" aria-label="交易概览">
-        <StatTile
-          to="/orders?status=paid"
-          :icon="Wallet"
-          label="累计营收"
-          :value="fmtMoney(economy?.orders.revenue ?? 0)"
-          tone="accent"
-          :hint="`${economy?.orders.pending ?? 0} 笔待支付`"
-        />
-        <StatTile to="/invitations" :icon="Gift" label="邀请关系" :value="economy?.invitations ?? 0" hint="累计成功邀请" />
-      </section>
 
       <!-- 趋势 -->
       <SectionCard title="趋势" :icon="TrendingUp" :meta="`近 ${days} 天`">
@@ -854,50 +601,7 @@ function serviceRoleLabel(role: string): string {
         </div>
       </SectionCard>
 
-      <!-- 媒体服务运行态：把媒体库与扫描状态放到首页，而不是让管理员逐页排查 -->
-      <SectionCard
-        v-if="libraries.length"
-        title="媒体服务"
-        :icon="Film"
-        :meta="`条目 ${overview?.emby.total_items ?? 0}`"
-      >
-        <template #actions>
-          <RouterLink to="/emby" class="card-link">管理媒体库 <ArrowRight :size="13" /></RouterLink>
-        </template>
-        <div class="ops-list">
-          <div v-for="library in libraries.slice(0, 5)" :key="library.id" class="ops-row">
-            <div class="ops-main">
-              <strong>{{ library.name }}</strong>
-              <span>{{ library.item_count }} 个条目 · {{ libraryStatus(library) }}</span>
-            </div>
-            <span class="status-dot" :class="{ warning: library.is_scanning, danger: !library.is_enabled }" />
-          </div>
-        </div>
-      </SectionCard>
 
-      <!-- 排行榜 -->
-      <section v-if="playback" class="two-col">
-        <SectionCard title="用户播放排行" :icon="Trophy" meta="近 7 天">
-          <EmptyState v-if="playback.user_ranking.length === 0" compact :icon="Users" title="暂无播放数据" description="有人播放后这里会出现排行；如果已有人在看却没数据，去「一键体检」查一下。" />
-          <div v-for="(u, i) in playback.user_ranking" :key="u.username" class="rank-row">
-            <span class="rank-index" :class="{ top: i < 3 }">{{ i + 1 }}</span>
-            <span class="rank-name">{{ u.username }}</span>
-            <span class="rank-value">{{ u.plays }} 次</span>
-          </div>
-        </SectionCard>
-
-        <SectionCard title="热门内容" :icon="Flame" meta="近 7 天">
-          <EmptyState v-if="playback.item_ranking.length === 0" compact :icon="Film" title="暂无播放数据" description="有人播放后这里会出现排行；如果已有人在看却没数据，去「一键体检」查一下。" />
-          <div v-for="(it, i) in playback.item_ranking" :key="it.name" class="rank-row">
-            <span class="rank-index" :class="{ top: i < 3 }">{{ i + 1 }}</span>
-            <span class="rank-name">
-              {{ it.name }}
-              <span class="rank-type">{{ it.type === 'episode' ? '剧集' : it.type === 'movie' ? '电影' : it.type }}</span>
-            </span>
-            <span class="rank-value">{{ it.plays }} 次</span>
-          </div>
-        </SectionCard>
-      </section>
 
       <!-- 起播统计（v2.55 接线）：起播事件按来源/错误类型聚合——起播慢是慢在哪家源、
            失败是哪类错误，看这一张卡。窗口内没事件时是空态，不编造数据。 -->
@@ -956,98 +660,6 @@ function serviceRoleLabel(role: string): string {
         </div>
       </SectionCard>
 
-      <!-- 数据明细：7 张表集中在这一个区里页签切换（2026-10-23 用户要求补表，
-           并明确不要铺得到处都是） -->
-      <SectionCard v-if="detail" title="数据明细" :icon="Table2" meta="点页签切换">
-        <el-tabs v-model="detailTab" class="detail-tabs">
-          <el-tab-pane label="最近注册" name="users">
-            <EmptyState v-if="detail.recent_users.length === 0" compact :icon="Users" title="暂无用户" description="" />
-            <table v-else class="detail-table">
-              <thead><tr><th>用户</th><th>注册时间</th><th>渠道</th></tr></thead>
-              <tbody>
-                <tr v-for="u in detail.recent_users" :key="u.username + u.created_at">
-                  <td>{{ u.username }}</td>
-                  <td>{{ fmtTime(u.created_at) }}</td>
-                  <td>{{ u.channel || '—' }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </el-tab-pane>
-          <el-tab-pane label="最近订单" name="orders">
-            <EmptyState v-if="detail.recent_orders.length === 0" compact :icon="Wallet" title="暂无订单" description="" />
-            <table v-else class="detail-table">
-              <thead><tr><th>用户</th><th>项目</th><th>类别</th><th>金额</th><th>状态</th><th>时间</th></tr></thead>
-              <tbody>
-                <tr v-for="(o, i) in detail.recent_orders" :key="i">
-                  <td>{{ o.username }}</td>
-                  <td>{{ o.item }}</td>
-                  <td>{{ o.kind }}</td>
-                  <td>${{ o.amount }}</td>
-                  <td>{{ o.status }}</td>
-                  <td>{{ fmtTime(o.created_at) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </el-tab-pane>
-          <el-tab-pane label="库内容" name="libraries">
-            <EmptyState v-if="detail.library_stats.length === 0" compact :icon="Film" title="暂无媒体库" description="" />
-            <table v-else class="detail-table">
-              <thead><tr><th>媒体库</th><th>电影</th><th>剧集</th><th>集数</th><th>合计</th></tr></thead>
-              <tbody>
-                <tr v-for="r in detail.library_stats" :key="r.library">
-                  <td>{{ r.library }}</td>
-                  <td>{{ r.movies }}</td>
-                  <td>{{ r.shows }}</td>
-                  <td>{{ r.episodes }}</td>
-                  <td>{{ r.total }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </el-tab-pane>
-          <el-tab-pane label="刮削进度" name="enrich">
-            <EmptyState v-if="detail.enrich_progress.length === 0" compact :icon="Film" title="暂无媒体库" description="" />
-            <table v-else class="detail-table">
-              <thead><tr><th>媒体库</th><th>已刮</th><th>待刮</th><th>覆盖率</th></tr></thead>
-              <tbody>
-                <tr v-for="r in detail.enrich_progress" :key="r.library">
-                  <td>{{ r.library }}</td>
-                  <td>{{ r.enriched }}</td>
-                  <td>{{ r.pending }}</td>
-                  <td>{{ r.enriched + r.pending === 0 ? '—' : `${Math.round((r.enriched / (r.enriched + r.pending)) * 100)}%` }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </el-tab-pane>
-          <el-tab-pane label="求片热度" name="seeks">
-            <EmptyState v-if="detail.seek_hot.length === 0" compact :icon="MessageSquareDashed" title="暂无求片" description="" />
-            <table v-else class="detail-table">
-              <thead><tr><th>片名</th><th>类型</th><th>求片次数</th><th>待处理</th></tr></thead>
-              <tbody>
-                <tr v-for="s in detail.seek_hot" :key="s.title + s.media_type">
-                  <td>{{ s.title }}</td>
-                  <td>{{ s.media_type === 'movie' ? '电影' : s.media_type === 'tv' ? '剧集' : s.media_type }}</td>
-                  <td>{{ s.count }}</td>
-                  <td>{{ s.pending }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </el-tab-pane>
-          <el-tab-pane label="近 7 天活跃" name="activity">
-            <table class="detail-table">
-              <thead><tr><th>日期</th><th>活跃用户</th><th>播放次数</th><th>新增用户</th></tr></thead>
-              <tbody>
-                <tr v-for="d in detail.activity_days" :key="d.date">
-                  <td>{{ d.date.slice(5) }}</td>
-                  <td>{{ d.active_users }}</td>
-                  <td>{{ d.plays }}</td>
-                  <td>{{ d.new_users }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </el-tab-pane>
-        </el-tabs>
-      </SectionCard>
-    </template>
   </div>
 </template>
 
@@ -1056,21 +668,13 @@ function serviceRoleLabel(role: string): string {
 .dashboard { gap: 16px; }
 .dashboard :deep(.au-page-header) { margin-bottom: 4px; }
 
-/* ===== 首屏骨架 ===== */
-.dash-skeleton {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
-  gap: 12px;
-}
-.sk-tile { height: 104px; border-radius: var(--au-r-lg); }
-.sk-wide { grid-column: 1 / -1; height: 240px; border-radius: var(--au-r-lg); }
 
 /* ===== 网格 =====
- * 交付链固定五张卡：auto-fit + minmax(210px) 在 1280 宽（内容区约 990px）只排得下 4 张，
- * 第 5 张孤零零掉到第二行。改成按视口给列数：宽屏 5 列一行排完，平板 3+2，手机 2+2+1（末张通栏）。 */
+ * 交付链 3 张卡：宽屏 3 列一行排完；≤1180px 维持 3 列（内容区约 890px、单卡约 290px）；
+ * 手机 2 列＋末张通栏（见文末媒体查询）。 */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -1131,29 +735,6 @@ a.glance-card:hover { border-color: var(--au-border-strong); background: var(--a
 }
 .glance-hint.pre-line { white-space: pre-line; display: block; -webkit-line-clamp: unset; }
 
-/* ===== 快捷操作（v2.55）===== */
-.quick-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.quick-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 34px;
-  padding: 0 14px;
-  border-radius: var(--au-r-full);
-  border: 1px solid var(--au-border);
-  background: var(--au-surface);
-  color: var(--au-text-2);
-  font-size: 13px;
-  text-decoration: none;
-  transition: border-color var(--au-fast) var(--au-ease), color var(--au-fast) var(--au-ease), background var(--au-fast) var(--au-ease);
-}
-.quick-pill:hover { border-color: var(--au-primary-border, var(--au-border-strong)); color: var(--au-text); background: var(--au-surface-2); }
-.quick-pill svg { color: var(--au-text-3); }
-.quick-pill:hover svg { color: var(--au-primary); }
 
 /* ===== 起播统计（v2.55）===== */
 .play-summary { margin-bottom: 8px; }
@@ -1183,33 +764,6 @@ a.glance-card:hover { border-color: var(--au-border-strong); background: var(--a
   .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .glance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-
-.tile-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-}
-
-.two-col {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-  gap: 16px;
-}
-
-.tile-badge { padding: 0 6px; font-size: 10.5px; margin-left: 2px; }
-/* 非健康服务的状态文字较长：字号收一档，不和大数字抢权重 */
-.svc-tile :deep(.au-stat__value) { font-size: 1.125rem; }
-
-/* ===== 卡片头里的文字链接 ===== */
-.card-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--au-primary);
-  font-size: 12px;
-  text-decoration: none;
-}
-.card-link:hover { color: var(--au-text); }
 
 /* ===== 待办条 ===== */
 .todo-bar {
@@ -1274,20 +828,7 @@ a.glance-card:hover { border-color: var(--au-border-strong); background: var(--a
 .todo-arrow { opacity: 0; transition: opacity var(--au-fast) var(--au-ease); }
 .todo-pill:hover .todo-arrow { opacity: 1; }
 
-/* ===== 多服运营（每个服一行，切服在顶栏）===== */
-.realm-rows { display: flex; flex-direction: column; gap: 6px; }
-.realm-row {
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  padding: 10px 12px; border-radius: var(--au-r-md);
-  border: 1px solid var(--au-border); background: var(--au-bg-soft);
-  text-decoration: none;
-  transition: border-color var(--au-fast) var(--au-ease), background var(--au-fast) var(--au-ease);
-}
-.realm-row:hover { border-color: var(--au-border-strong); background: var(--au-surface-2); }
-.realm-row.current { border-color: var(--au-primary-border); }
-.realm-row.off { opacity: 0.6; }
-.realm-name { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; min-width: min(190px, 100%); }
-.realm-name strong { color: var(--au-text); font-size: 13px; }
+/* ===== 键值行（起播统计摘要与明细共用）===== */
 .realm-stats { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-left: auto; }
 .realm-stats span { color: var(--au-text-3); font-size: 12px; }
 .realm-stats b { color: var(--au-text-2); font-variant-numeric: tabular-nums; }
@@ -1334,27 +875,11 @@ a.glance-card:hover { border-color: var(--au-border-strong); background: var(--a
   font-variant-numeric: tabular-nums;
 }
 
-/* ===== 媒体服务 ===== */
-.ops-list { display: flex; flex-direction: column; }
-.ops-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--au-border); }
-.ops-row:last-child { border-bottom: none; }
-.ops-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.ops-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--au-text); }
-.ops-main span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--au-text-3); }
 .status-dot { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--au-success); box-shadow: 0 0 0 4px var(--au-success-soft); }
 .status-dot.warning { background: var(--au-warning); box-shadow: 0 0 0 4px var(--au-warning-soft); }
 .status-dot.danger { background: var(--au-danger); box-shadow: 0 0 0 4px var(--au-danger-soft); }
 
-/* ===== 排行 ===== */
-.rank-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 9px 0;
-  border-bottom: 1px solid var(--au-border);
-}
-
-/* 数据明细表（detail part）：紧凑扫表，与 rank-row 同一条分隔线口径 */
+/* 起播明细表：紧凑扫表 */
 .detail-table {
   width: 100%;
   border-collapse: collapse;
@@ -1372,54 +897,22 @@ a.glance-card:hover { border-color: var(--au-border-strong); background: var(--a
   border-bottom: 1px solid var(--au-border);
   white-space: nowrap;
 }
-.detail-table .desc-cell {
-  white-space: normal;
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.detail-table .amt-in { color: var(--au-success, #16a34a); }
-.detail-table .amt-out { color: var(--au-danger, #dc2626); }
-.detail-tabs :deep(.el-tabs__header) { margin-bottom: 6px; }
-.rank-row:last-child { border-bottom: none; }
-
-.rank-index {
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--au-r-sm);
-  background: var(--au-surface-2);
-  color: var(--au-text-3);
-  font-size: 12px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-.rank-index.top { background: var(--au-primary-soft); color: var(--au-primary); }
-
-.rank-name { flex: 1; font-size: 13px; color: var(--au-text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 起播来源表里的类型小字（挂载类型） */
 .rank-type { font-size: 11px; color: var(--au-text-4); margin-left: 6px; }
-.rank-value { font-size: 12px; color: var(--au-text-2); font-variant-numeric: tabular-nums; }
 
 /* ===== 手机 ===== */
 @media (max-width: 640px) {
   .dashboard { gap: 12px; }
   .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .kpi-grid > :last-child:nth-child(odd) { grid-column: 1 / -1; }
-  /* min(100%, …)：极窄屏（≤320px）也不会被轨道下限撑出横向滚动 */
-  .tile-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 10px; }
   .todo-bar { padding: 10px 12px; gap: 8px; }
   .todo-lead { width: 100%; padding-right: 0; }
   .chart { height: 132px; }
   /* 7-30 个日期标签在窄屏会挤成一团，隔一个显示一个 */
   .chart-axis span:nth-child(even) { display: none; }
   .trend-total-value { font-size: 1.25rem; }
-  .two-col { grid-template-columns: 1fr; }
   .glance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .glance-card { padding: 11px 12px; }
   .glance-value { font-size: 1.1rem; }
-  .quick-pill { height: 32px; padding: 0 12px; font-size: 12.5px; }
 }
 </style>
