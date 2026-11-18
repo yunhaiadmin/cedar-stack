@@ -109,8 +109,14 @@ def _auth_headers(user) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _enable_totp(client, db, user) -> str:
-    """走完整启用流程，返回 TOTP 明文密钥（测试侧算码用）。"""
+def _enable_totp_with_code(client, db, user) -> tuple[str, str]:
+    """走完整启用流程，返回 (TOTP 明文密钥, 启用时实际用掉的那枚码)。
+
+    重放测试必须复用这里返回的码值本身：两次 pyotp.TOTP(secret).now()
+    若跨过 30 秒窗口边界，第二次 now() 算出的是下一窗口的新码、从未用过，
+    服务端按防重放规则放行 200 属正确行为，测试会随机红（实测间隔约 0.9 秒，
+    单次运行踩雷概率约 3%，见 ~/workspace/tmp/repro_totp_replay_race.py）。
+    """
     r = client.post("/api/user/security/totp/setup", headers=_auth_headers(user))
     assert r.status_code == 200, r.text
     secret = r.json()["secret"]
@@ -118,6 +124,12 @@ def _enable_totp(client, db, user) -> str:
     r = client.post("/api/user/security/totp/enable",
                     headers=_auth_headers(user), json={"code": code})
     assert r.status_code == 200, r.text
+    return secret, code
+
+
+def _enable_totp(client, db, user) -> str:
+    """走完整启用流程，返回 TOTP 明文密钥（测试侧算码用）。"""
+    secret, _code = _enable_totp_with_code(client, db, user)
     return secret
 
 
@@ -238,14 +250,14 @@ def test_totp_enable_wrong_code_rejected(db):
 def test_totp_login_gate_and_replay(db):
     client = _client(db)
     user = _user(db)
-    secret = _enable_totp(client, db, user)
+    secret, setup_code = _enable_totp_with_code(client, db, user)
 
     # 缺码 → 401
     r = client.post("/api/user/auth/login",
                     json={"username": user.username, "password": PASSWORD})
     assert r.status_code == 401
-    # 启用时用掉的那枚码原样重放 → 401（防重放）
-    setup_code = pyotp.TOTP(secret).now()
+    # 启用时用掉的那枚码原样重放 → 401（防重放）。必须复用启用时的码值本身，
+    # 不许重新算 now()：跨窗口后 now() 是新窗口的新码、会被正确放行 200。
     r = client.post("/api/user/auth/login",
                     json={"username": user.username, "password": PASSWORD,
                           "totp_code": setup_code})
