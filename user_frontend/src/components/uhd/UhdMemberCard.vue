@@ -16,9 +16,10 @@
  *   采样真值）；深色卡面用 prism 色相序（62→24→302→258→232→175）低明度全幅渐变
  *   （L .38→.50 左深右亮、C .13–.14），斜纹全幅（深色白线 alpha .12）。
  * 右上只放彩虹三角标（BrandMark play 变体，无 A 字母）：盒 24×23、深浅同尺寸，
- * 2026-11-18 按友站干净帧实测量值定版（见 .uhd-member__logo 注）；卡名 34px 粗体
- * （同日用户截图实测：标题字宽占卡宽 63%、标题/品牌字号比约 2.5）；用户行普通
- * 无衬线 13.5px（友站同为 sans，此前误用 mono）。
+ * 2026-11-18 按友站干净帧实测量值定版（见 .uhd-member__logo 注）；卡名 37px/900
+ * （标题字宽占卡宽：34px/800 时我方实测 58.5%，改后实测 64.2%）；
+ * 用户行普通无衬线 13.5px（友站同为 sans，此前误用 mono），浅色字形色
+ * #32313A 为友站原图采样真值。
  * 深色判定：data-theme 缺省即深（useTheme 只在浅色时写 data-theme="light"）；
  * .ov-dark 为概览页主题竞态兜底（与 PersonalCenterView 的 .ov-dark 回滚块同口径）。
  * 数据全部由调用方传入（订阅/资格接口），组件不写死任何数字。
@@ -152,7 +153,9 @@ withDefaults(
    56 图像 px ≈ 30 CSS px、距卡顶 54 ≈ 29，顶边与左上站名文字顶（53 图像
    px）齐平——本组件 padding 32＋顶行 flex-start 的既有口径与之吻合，不动。
    我方三角字形宽高比 431:390 ≠ 友站约 0.90，盒按高对齐取 24×23，
-   字形实渲染 ≈24×21.7；三角为固定彩虹渐变、深浅两态同尺寸同色。 */
+   字形实渲染 ≈24×21.7；三角为固定彩虹渐变、深浅两态同尺寸同色。
+   卡名后经并排图复量改 37px/900（字宽比 58.5%→64.2%）；
+   浅色用户行字形色改 #32313A（友站原图采样真值）。 */
 .uhd-member__logo {
   width: 24px;
   height: 23px;
@@ -161,18 +164,23 @@ withDefaults(
 .uhd-member__bottom { position: relative; }
 .uhd-member__plan {
   font-family: var(--uhd-font-display);
-  /* 34px：友站截图实测标题字宽占卡宽 63%、标题/品牌字号比约 2.5（旧 28px 偏小） */
-  font-size: 34px;
-  font-weight: var(--uhd-fw-extrabold);
+  /* 37px/900：同一字符串「Global 家庭版」像素量测标题字宽占卡宽，34px/800
+     时我方仅 58.5%，按目标比例放大＋字重加一档（37.6 为纯比例值、900 另
+     贡献约 2% 宽度，故取 37/900），改后实测 64.2% */
+  font-size: 37px;
+  font-weight: var(--uhd-fw-black);
   color: var(--uhd-l-text);
   letter-spacing: -0.01em;
 }
 .uhd-member__user {
   margin-top: 6px;
-  /* 友站用户行为普通无衬线（旧版误用 mono）；13.5px 为截图实测约值 */
+  /* 友站用户行为普通无衬线（旧版误用 mono）；13.5px 为截图实测约值。
+     浅色态字形色：友站原图采样 #32313A（深石板灰、近黑），旧版走
+     --uhd-l-text-2（#6b7280）渲染实测 #6C7381、明显偏淡，故本行单独定色；
+     深色态由下方深色块覆盖为白 .55，不受此处影响 */
   font-family: var(--uhd-font-sans);
   font-size: 13.5px;
-  color: var(--uhd-l-text-2);
+  color: #32313A;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
