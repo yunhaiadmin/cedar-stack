@@ -24,6 +24,11 @@
   清零（不断播）；地址照常下发；
 - 管理接口：线路增删改查（负配额 422、坏地址 400、跨服线路
   404）、逐线 reset-traffic。
+- 挪组：更新线路时改选所属大类只改 realm_id——线路 id 不变，
+  流量日账（按 line_id）/配额/周期随线路走，账号卡按新分组
+  下发；目标大类不存在 404；主/副按两边各自排序自动重算；
+  原大类一条启用线路都不剩时账号卡 lines 为空、回退 base_url
+  单行（现行口径，不动）。
 """
 import os
 
@@ -482,3 +487,114 @@ def test_admin_api_line_cross_realm_404(admin_client, db):
     resp = admin_client.post(
         f"/api/admin/realms/{a.id}/lines/{b_line.id}/reset-traffic")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# 挪组：改选所属大类（线路 id 不变，流量/配额/周期随线路走）
+# ---------------------------------------------------------------------------
+
+def test_admin_api_move_line_keeps_traffic_and_quota(admin_client, db):
+    a = _realm(db, "mv-a", url="https://a.example.com")
+    b = _realm(db, "mv-b", url="https://b.example.com")
+    realms.ensure_realm_lines(db, b)
+    resp = admin_client.post(
+        f"/api/admin/realms/{a.id}/lines",
+        json={"url": "https://a2.example.com", "quota_bytes": 4096})
+    assert resp.status_code == 200
+    sub = resp.json()["line"]
+    _seed_usage(db, sub["id"], relay=1000)
+    # 周期起点是线路行上的字段，挪组后必须原样保留
+    line = realms.get_line(db, sub["id"])
+    line.period_started_at = datetime(2026, 11, 1, 8, 30)
+    db.commit()
+    resp = admin_client.put(
+        f"/api/admin/realms/{a.id}/lines/{sub['id']}",
+        json={"realm_id": b.id})
+    assert resp.status_code == 200
+    moved = resp.json()["line"]
+    assert moved["id"] == sub["id"]
+    assert moved["realm_id"] == b.id
+    assert moved["traffic"]["quota_bytes"] == 4096
+    assert moved["traffic"]["used_bytes"] == 1000
+    assert moved["traffic"]["period_started_at"] == "2026-11-01T08:30:00"
+    # 原大类不再有这条线，目标大类按序下发（B 主线路在前、挪入的其次）
+    resp = admin_client.get(f"/api/admin/realms/{a.id}/lines")
+    assert [l["name"] for l in resp.json()["lines"]] == ["主线路"]
+    resp = admin_client.get(f"/api/admin/realms/{b.id}/lines")
+    b_lines = resp.json()["lines"]
+    assert [l["id"] for l in b_lines] == [b_lines[0]["id"], sub["id"]]
+    assert b_lines[0]["is_primary"] is True
+    assert b_lines[1]["is_primary"] is False
+    # 日账按 line_id 记：挪组后已用仍是同一笔账
+    assert line_quota.quota_view(db, realms.get_line(db, sub["id"]))["used_bytes"] == 1000
+
+
+def test_admin_api_move_line_to_missing_realm_404(admin_client, db):
+    a = _realm(db, "mv-x", url="https://a.example.com")
+    main = realms.ensure_realm_lines(db, a)[0]
+    resp = admin_client.put(
+        f"/api/admin/realms/{a.id}/lines/{main.id}",
+        json={"realm_id": 999999})
+    assert resp.status_code == 404
+    # 挪不成，线路还留在原大类
+    assert realms.get_line(db, main.id).realm_id == a.id
+
+
+def test_admin_api_move_primary_recalculates_both_sides(admin_client, db):
+    b = _realm(db, "mv-pb", url="https://b.example.com")
+    b_main = realms.ensure_realm_lines(db, b)[0]
+    a = _realm(db, "mv-pa", url="https://a.example.com")
+    a_main = realms.ensure_realm_lines(db, a)[0]
+    a_sub = _line(db, a, "https://a2.example.com")
+    # 把 A 的主线路挪去 B：A 剩下的副线路自动成主，B 仍是原主线路为首
+    resp = admin_client.put(
+        f"/api/admin/realms/{a.id}/lines/{a_main.id}",
+        json={"realm_id": b.id})
+    assert resp.status_code == 200
+    resp = admin_client.get(f"/api/admin/realms/{a.id}/lines")
+    a_lines = resp.json()["lines"]
+    assert [l["id"] for l in a_lines] == [a_sub.id]
+    assert a_lines[0]["is_primary"] is True
+    resp = admin_client.get(f"/api/admin/realms/{b.id}/lines")
+    by_id = {l["id"]: l for l in resp.json()["lines"]}
+    assert by_id[b_main.id]["is_primary"] is True
+    assert by_id[a_main.id]["is_primary"] is False
+
+
+def test_card_lines_follow_moved_line(db):
+    a = _realm(db, "mv-ca", url="https://a.example.com")
+    a_main = realms.ensure_realm_lines(db, a)[0]
+    moved = _line(db, a, "https://a2.example.com", quota=100)
+    b = _realm(db, "mv-cb", url="https://b.example.com")
+    b_main = realms.ensure_realm_lines(db, b)[0]
+    user = _user(db)
+    _sub(db, user, a)
+    _sub(db, user, b)
+    _seed_usage(db, moved.id, relay=100)
+    cards = _cards(db, user)
+    assert [l["id"] for l in cards[a.id]["lines"]] == [a_main.id, moved.id]
+    realms.update_line(db, moved, realm_id=b.id)
+    cards = _cards(db, user)
+    # 账号卡按新分组下发：A 只剩自己的主线路，B 多出挪入的线（账随线走）
+    assert [l["id"] for l in cards[a.id]["lines"]] == [a_main.id]
+    b_lines = cards[b.id]["lines"]
+    assert [l["id"] for l in b_lines] == [b_main.id, moved.id]
+    assert b_lines[1]["quota_exhausted"] is True
+    assert cards[a.id]["base_url"] == "https://a.example.com"
+
+
+def test_card_fallback_when_realm_left_without_active_line(db):
+    a = _realm(db, "mv-fa", url="https://a.example.com")
+    only_active = realms.ensure_realm_lines(db, a)[0]
+    realms.create_line(db, a, name="停用线", url="https://a-off.example.com",
+                       is_active=False)
+    b = _realm(db, "mv-fb", url="https://b.example.com")
+    realms.ensure_realm_lines(db, b)
+    user = _user(db)
+    _sub(db, user, a)
+    realms.update_line(db, only_active, realm_id=b.id)
+    cards = _cards(db, user)
+    # 原大类一条启用线路都不剩：lines 下发空清单，用户端按现行口径
+    # 回退 base_url 单行（地址照常下发，口径不动）
+    assert cards[a.id]["lines"] == []
+    assert cards[a.id]["base_url"] == "https://a.example.com"

@@ -839,6 +839,8 @@ export interface RealmLineUpdateData {
   quota_bytes?: number
   sort_order?: number
   is_active?: boolean
+  /** 所属大类（服）id：与当前不同 = 把线路挪到那个大类（id/流量/配额随线走） */
+  realm_id?: number
 }
 
 export const fetchRealmLines = (realmId: number) =>

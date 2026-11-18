@@ -71,6 +71,9 @@ class RealmLineUpdatePayload(BaseModel):
     quota_bytes: Optional[int] = Field(default=None, ge=0)
     sort_order: Optional[int] = None
     is_active: Optional[bool] = None
+    # 所属大类（服）：传了且与当前不同 = 把线路挪到那个大类
+    # （线路 id 不变，流量日账/配额/周期随线路走）；不传 = 不挪
+    realm_id: Optional[int] = None
 
 
 def _summary(
@@ -350,20 +353,26 @@ def update_realm_line(
 ):
     realm = _realm_or_404(db, realm_id)
     line = _line_or_404(db, realm, line_id)
+    # 改选所属大类 = 挪组：目标大类必须存在（口径同服不存在 404）
+    target = realm
+    if payload.realm_id is not None and payload.realm_id != realm.id:
+        target = _realm_or_404(db, payload.realm_id)
     try:
         line = realms.update_line(
             db, line, name=payload.name, url=payload.url,
             quota_bytes=payload.quota_bytes, sort_order=payload.sort_order,
-            is_active=payload.is_active)
+            is_active=payload.is_active, realm_id=target.id)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    _audit(db, admin, "update_realm_line", "realm_line", line.id,
-           {"realm_id": realm.id, "name": line.name, "url": line.url,
-            "quota_bytes": int(line.quota_bytes or 0),
-            "is_active": bool(line.is_active)})
+    facts = {"realm_id": target.id, "name": line.name, "url": line.url,
+             "quota_bytes": int(line.quota_bytes or 0),
+             "is_active": bool(line.is_active)}
+    if target.id != realm.id:
+        facts["moved_from_realm_id"] = realm.id
+    _audit(db, admin, "update_realm_line", "realm_line", line.id, facts)
     db.commit()
-    return {"success": True, "line": _line_view(db, realm, line),
-            "realm": realms.serialize(db, realm), "summary": _summary(db)}
+    return {"success": True, "line": _line_view(db, target, line),
+            "realm": realms.serialize(db, target), "summary": _summary(db)}
 
 
 @router.delete("/{realm_id}/lines/{line_id}")
