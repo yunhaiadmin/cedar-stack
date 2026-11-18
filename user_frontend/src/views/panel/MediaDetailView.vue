@@ -128,15 +128,62 @@ async function loadResume(my: number) {
   }
 }
 
-/** 播放主按钮文案（录屏续看态）：上次看到第X季第X集 · 集名 */
-const playLabel = computed(() => {
-  const e = resumeEntry.value
-  if (e && e.type === 'series' && e.season_number != null && e.episode_number != null) {
-    return `上次看到第${e.season_number}季第${e.episode_number}集${e.episode_name ? ` · ${e.episode_name}` : ''}`
-  }
-  if (e) return '继续播放'
-  return resumeText.value ? '继续播放' : '立即播放'
+// === G-99 playButtonKindOf 开始 ===
+/* 主钮三态纯判定（2026-11-18 UHDNow 差异定案 G-99；tests/playButtonState
+   .test.mjs 抽取本段真执行，勿改段首/段尾标记、勿在本段引用段外变量）。
+   判定边界：
+   ① hasResumePoint → 'resume'「继续播放」：有未看完的续播点；优先于②——
+      看到一半的那集就是续播集，不是「下一集」；
+   ② 无续播点、已看完 ≥1 集且仍有未看集 → 'next'「播放下一集」：
+      定位＝集列表顺序第一个未看集；
+   ③ 其余 → 'immediate'「立即播放」：无任何观看记录，或全部看完
+      （定位第一集）；集计数拿不到（watchedCount/totalCount 为 0）也落③，
+      保守不误报「下一集」。
+   电影无下一集概念：isSeries=false 恒 'immediate'，三态不改电影形态。
+   起播定位不在本页另传目标：点击仍只开 PlayerSchemeSheet，弹层现行选集
+   口径（断点集优先 → 未看完集 → 第一个未看集 → 第一集）与三态一一对应。 */
+type PlayButtonKind = 'resume' | 'next' | 'immediate'
+interface PlayButtonInput {
+  isSeries: boolean
+  hasResumePoint: boolean
+  watchedCount: number
+  totalCount: number
+}
+function playButtonKindOf(input: PlayButtonInput): PlayButtonKind {
+  if (!input.isSeries) return 'immediate'
+  if (input.hasResumePoint) return 'resume'
+  if (input.watchedCount > 0 && input.totalCount > input.watchedCount) return 'next'
+  return 'immediate'
+}
+const PLAY_BUTTON_LABELS: Record<PlayButtonKind, string> = {
+  resume: '继续播放',
+  next: '播放下一集',
+  immediate: '立即播放',
+}
+// === G-99 playButtonKindOf 结束 ===
+
+/** 已看集数：总集数 RecursiveItemCount − 未看集数 UnplayedItemCount
+    （与 canRemoveRecord 同一口径）；计数拿不到时 0（判定保守落③）；
+    剧行 Played 为真（全看完）时即总集数 */
+const seriesWatchedCount = computed(() => {
+  const total = item.value?.RecursiveItemCount || 0
+  const unplayed = item.value?.UserData?.UnplayedItemCount
+  if (total > 0 && typeof unplayed === 'number') return Math.max(0, total - unplayed)
+  return item.value?.UserData?.Played && total > 0 ? total : 0
 })
+
+/** 播放主按钮三态：续播点＝续看记录命中本剧，或条目自身 UserData
+    留有 PlaybackPositionTicks 断点 */
+const playButtonKind = computed(() =>
+  playButtonKindOf({
+    isSeries: isSeries.value,
+    hasResumePoint:
+      !!resumeEntry.value || (item.value?.UserData?.PlaybackPositionTicks || 0) > 0,
+    watchedCount: seriesWatchedCount.value,
+    totalCount: item.value?.RecursiveItemCount || 0,
+  }),
+)
+const playLabel = computed(() => PLAY_BUTTON_LABELS[playButtonKind.value])
 
 const resumeText = computed(() => {
   const e = resumeEntry.value
@@ -645,7 +692,8 @@ watch(itemId, () => {
               {{ resumeText }}
             </p>
 
-            <!-- 按钮行高 52：「立即播放」主胶囊 + 收藏 + 第二副钮 + 状态。
+            <!-- 按钮行高 52：主胶囊（文案三态见脚本 playButtonKindOf，
+                 G-99：继续播放/播放下一集/立即播放）+ 收藏 + 第二副钮 + 状态。
                  第二副钮互斥状态机（2026-11-18 垃圾桶语义族定案 G-103/G-105）：
                  有观看记录→垃圾桶（移除观看记录）、无记录→追剧订阅铃铛，
                  二者永不同时出现；电影无铃铛（追剧是剧集专属），无记录时
