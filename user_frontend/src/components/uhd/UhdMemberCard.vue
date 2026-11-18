@@ -1,13 +1,17 @@
 <script setup lang="ts">
 /**
- * UhdMemberCard —— 会员卡（说明书 2.5；全站唯一实现，2026-11-18 质感第二波收敛）
- * 框约 425×228px、圆角 28px；两态各一份（友站补测裁定，见 gap 表 §5.1；高 228 按用户
- * 2026-11-18 双标签页对照截图 parent 实测友站宽高比 0.63 定，旧 265 为估值已废）：
- * - 浅色态：白底 rgb(255,255,255)＋宽阔斜向淡彩光带（核心蓝紫 rgb(160,189,242)、羽化约 60–80px）
- *   ＋全卡极细斜纹（间距 14px，落在实测 12–16px 区间）；阴影卡下 2px rgb(205,201,229)→38px 溶入页底。
- * - 深色态：紫蓝渐变底（左近黑 rgb(29,31,34)→中右靛蓝平台 rgb(110,116,153)→右近黑 rgb(22,23,27)）
- *   ＋同一条斜光带呈亮色形态＋顶部淡紫高光边 rgb(130,125,159)；阴影弱得多（2px rgb(23,23,31)→36px 至页底）。
- * 右上彩虹三角 Logo：浅色 37×40、深色 33×39；卡名约 28px 粗体。
+ * UhdMemberCard —— 会员卡（说明书 2.5；全站唯一实现）
+ * 2026-11-18 按友站公开样式表真值重做静态外观（真源 reports/member-card-friend-css-20261118.md；
+ * 用户双标签页对照截图亲点：大小/颜色/边框三项）：
+ * - 尺寸：aspect-ratio 1.586（宽由容器定、框 max-width 425 不动）、圆角 40px（专用令牌
+ *   --uhd-radius-member，不动多卡共用的 --uhd-radius-card-lg）、padding 32px（友站像素
+ *   实测内容偏移左 31/上 34/下 32 的约值）。
+ * - 层（自下而上）：卡面（155deg 半透底＋backdrop blur/saturate＋1px 边＋slab/face 合并
+ *   阴影走 --uhd-shadow-member-l/d 令牌）→ reflection（卡面 ::before）→ sheen → foil
+ *   （4px 周期白条纹＋prism 彩虹、115deg 斜带遮罩、彩虹层静态居中）→ bevel（1.5px
+ *   mask 环切、145deg 渐变）。指针倾斜/glare 跟随/halo 光晕不在本单范围。
+ * - prism 基参 --prism-l/--prism-c 定义在 uhd-tokens.css（深 .82/.13、浅 .66/.15）。
+ * 右上彩虹三角 Logo：浅色 37×40、深色 33×39；卡名约 28px 粗体（沿用此前实测）。
  * 深色判定：data-theme 缺省即深（useTheme 只在浅色时写 data-theme="light"）；
  * .ov-dark 为概览页主题竞态兜底（与 PersonalCenterView 的 .ov-dark 回滚块同口径）。
  * 数据全部由调用方传入（订阅/资格接口），组件不写死任何数字。
@@ -35,8 +39,9 @@ withDefaults(
 <template>
   <div class="uhd-member">
     <div class="uhd-member__card">
-      <div class="uhd-member__band" aria-hidden="true" />
-      <div class="uhd-member__tex" aria-hidden="true" />
+      <div class="uhd-member__sheen" aria-hidden="true" />
+      <div class="uhd-member__foil" aria-hidden="true" />
+      <div class="uhd-member__bevel" aria-hidden="true" />
       <div class="uhd-member__top">
         <span class="uhd-member__brand">
           {{ brand }}
@@ -61,32 +66,64 @@ withDefaults(
 }
 .uhd-member__card {
   position: relative;
+  isolation: isolate;
   overflow: hidden;
-  /* 高 228：2026-11-18 用户双标签页对照截图 parent 实测友站宽高比 0.63 定
-     （390 宽下卡宽约 364 → 高约 229）；旧 265 为估值已废。 */
-  min-height: 228px;
+  /* 宽高比 1.586（友站 .member-card 真值）；旧固定高 228 已废 */
+  aspect-ratio: 1.586;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 20px 22px;
-  background: rgb(255, 255, 255);
-  border: var(--uhd-border-w) solid var(--uhd-l-border);
-  border-radius: var(--uhd-radius-card-lg);
-  /* 浅色阴影：卡下 2px 淡紫 rgb(205,201,229)→38px 溶入页底（友站补测采样） */
+  padding: 32px;
+  background: linear-gradient(155deg, #ffffffbd 0%, #ffffff94 40%, #ffffff85 100%);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  border: var(--uhd-border-w) solid #ffffff4d;
+  border-radius: var(--uhd-radius-member);
   box-shadow: var(--uhd-shadow-member-l);
 }
-/* 斜向淡彩光带（浅色态）：宽阔斜向、核心蓝紫 rgb(160,189,242)、羽化约 60–80px */
-.uhd-member__band {
+/* reflection（卡面 ::before）：105deg 微光带 */
+.uhd-member__card::before {
+  content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(115deg, transparent 0%, transparent 28%, rgb(247, 245, 252) 38%, rgb(160, 189, 242) 50%, rgb(247, 245, 252) 62%, transparent 80%);
+  border-radius: inherit;
+  background: linear-gradient(105deg, transparent 0%, #ffffff24 36%, #ffffff4d 44%, #ffffff12 51%, transparent 62%);
   pointer-events: none;
 }
-/* 细斜纹（浅色态）：间距 14px，落在友站实测 12–16px 区间 */
-.uhd-member__tex {
+.uhd-member__sheen {
   position: absolute;
   inset: 0;
-  background: repeating-linear-gradient(115deg, rgba(17, 17, 17, 0.028) 0 1px, transparent 1px 14px);
+  border-radius: inherit;
+  background: linear-gradient(160deg, #fffffff2 0%, #ffffff4d 22%, #fff0 42%), radial-gradient(120% 70% at 100% 100%, #ffffff73, #fff0 60%);
+  pointer-events: none;
+}
+/* foil：4px 周期白条纹＋prism 彩虹，115deg 斜带遮罩（38%→46%–58%→66%）；
+   彩虹层 background-size 200%、友站位置随指针动，静态取 50% 居中等效位 */
+.uhd-member__foil {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0.6;
+  background:
+    repeating-linear-gradient(115deg, transparent 0 3px, #ffffff80 3px 4px),
+    linear-gradient(115deg, oklch(calc(var(--prism-l) + .04) var(--prism-c) 62), oklch(var(--prism-l) var(--prism-c) 24), oklch(var(--prism-l) var(--prism-c) 302), oklch(var(--prism-l) var(--prism-c) 258), oklch(var(--prism-l) var(--prism-c) 232), oklch(var(--prism-l) var(--prism-c) 175));
+  background-size: auto, 200% 200%;
+  background-position: 0 0, 50% 50%;
+  -webkit-mask-image: linear-gradient(115deg, #0000 38%, #000 46% 58%, #0000 66%);
+  mask-image: linear-gradient(115deg, #0000 38%, #000 46% 58%, #0000 66%);
+  pointer-events: none;
+}
+/* bevel：1.5px mask 环切斜光环（145deg） */
+.uhd-member__bevel {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: linear-gradient(145deg, #fff 0%, #ffffff80 30%, #14161c1f 68%, #fffc 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
   pointer-events: none;
 }
 .uhd-member__top {
@@ -145,19 +182,31 @@ withDefaults(
 /* ---------- 深色态（data-theme 缺省即深；.ov-dark 为概览页主题竞态兜底） ---------- */
 html:not([data-theme='light']) .uhd-member__card,
 .ov-dark .uhd-member__card {
-  background: linear-gradient(115deg, rgb(29, 31, 34) 0%, rgb(37, 38, 41) 12%, rgb(62, 62, 69) 24%, rgb(79, 74, 94) 36%, rgb(110, 116, 153) 50%, rgb(116, 117, 154) 58%, rgb(95, 120, 152) 72%, rgb(68, 90, 112) 84%, rgb(30, 35, 40) 94%, rgb(22, 23, 27) 100%);
-  border-color: rgba(255, 255, 255, 0.1);
-  /* 顶部淡紫高光边 rgb(130,125,159)＋弱阴影（卡下 2px rgb(23,23,31)→36px 至页底） */
+  /* .ov-dark 兜底时 :root 可能是浅色档，卡内强制深色 prism 基参 */
+  --prism-l: .82;
+  --prism-c: .13;
+  background: linear-gradient(155deg, #ffffff14 0%, #ffffff0a 30%, #ffffff08 75%, #ffffff0a 100%);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border-color: #ffffff0a;
   box-shadow: var(--uhd-shadow-member-d);
 }
-/* 同一条斜光带呈亮色形态 */
-html:not([data-theme='light']) .uhd-member__band,
-.ov-dark .uhd-member__band {
-  background: linear-gradient(115deg, transparent 0%, transparent 28%, rgba(134, 134, 153, 0.5) 40%, rgba(110, 116, 153, 0.7) 52%, rgba(134, 134, 153, 0.5) 64%, transparent 80%);
+html:not([data-theme='light']) .uhd-member__card::before,
+.ov-dark .uhd-member__card::before {
+  background: linear-gradient(105deg, transparent 0%, #ffffff02 36%, #ffffff03 44%, #ffffff01 51%, transparent 62%);
 }
-html:not([data-theme='light']) .uhd-member__tex,
-.ov-dark .uhd-member__tex {
-  background: repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 14px);
+html:not([data-theme='light']) .uhd-member__sheen,
+.ov-dark .uhd-member__sheen {
+  background: linear-gradient(160deg, #ffffff3d 0%, #ffffff12 24%, #fff0 44%);
+}
+html:not([data-theme='light']) .uhd-member__foil,
+.ov-dark .uhd-member__foil {
+  opacity: 0.55;
+  mix-blend-mode: screen;
+}
+html:not([data-theme='light']) .uhd-member__bevel,
+.ov-dark .uhd-member__bevel {
+  background: linear-gradient(145deg, #ffffff80 0%, #ffffff1f 30%, #ffffff08 68%, #ffffff40 100%);
 }
 html:not([data-theme='light']) .uhd-member__brand,
 .ov-dark .uhd-member__brand,
