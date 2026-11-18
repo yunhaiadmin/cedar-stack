@@ -3,6 +3,8 @@
     <div class="fv-wrap">
       <p class="fv-eyebrow">♥ 我的收藏</p>
       <h1 class="fv-h1">收藏</h1>
+      <!-- 统计行（照友站）：影视作品＝剧集＋电影收藏数，演职人员＝人员收藏数，与页签计数同源 -->
+      <p class="fv-stats">共 <strong>{{ mediaCount }}</strong> 部影视作品　<strong>{{ peopleCount }}</strong> 位演职人员</p>
       <!-- 页签：剧集 / 电影 / 演职人员（存档第 11 节；激活白胶囊；深色转深灰 + 白字，随令牌走） -->
       <div class="fv-tabs" role="group" aria-label="收藏类型">
         <button type="button" class="fv-tab" :class="{ 'fv-tab--on': tab === 'series' }" @click="pickTab('series')">剧集 {{ seriesCount }}</button>
@@ -20,7 +22,7 @@
           <div v-for="i in 7" :key="i" class="fv-skel__poster"><span class="fv-skel__logo">A</span></div>
         </div>
         <div v-else-if="peopleItems.length === 0" class="fv-empty">
-          还没有收藏的演职人员 —— 在片子详情页点任意一位演职人员，进人员页就能收藏
+          还没有收藏的演职人员
         </div>
         <div v-else class="fv-grid">
           <article v-for="p in peopleItems" :key="p.key" class="fv-card">
@@ -69,12 +71,10 @@
       <div v-else-if="loading" class="fv-skel" role="status" aria-label="正在加载">
         <div v-for="i in 7" :key="i" class="fv-skel__poster"><span class="fv-skel__logo">A</span></div>
       </div>
-      <!-- 空态虚线框：高约 230（存档第 11 节）；演职人员页签走上方独立模板块，本分支不会命中 -->
-      <div v-else-if="items.length === 0" class="fv-empty">
-        还没有收藏的{{ tab === 'movie' ? '电影' : '剧集' }} —— 在播放器里给喜欢的片子标个星，就会到这里来
-      </div>
+      <!-- 空态虚线框：高约 230（存档第 11 节）；文案照友站只留按页签短句；
+           演职人员页签走上方独立模板块，本分支不会命中 -->
       <div v-else-if="filteredItems.length === 0" class="fv-empty">
-        这个分类下还没有收藏
+        还没有收藏的{{ tab === 'movie' ? '电影' : '剧集' }}
       </div>
       <div v-else class="fv-grid">
         <article v-for="m in filteredItems" :key="m.id" class="fv-card">
@@ -282,6 +282,8 @@ function pickTab(t: FavTab) {
 }
 const seriesCount = computed(() => items.value.filter((x) => x.type === 'series').length)
 const movieCount = computed(() => items.value.filter((x) => x.type === 'movie').length)
+/** 统计行「影视作品」总数：与页签计数同源（剧集＋电影），不另开取数口径 */
+const mediaCount = computed(() => seriesCount.value + movieCount.value)
 const peopleCount = computed(() => peopleItems.value.length)
 const filteredItems = computed(() =>
   tab.value === 'people' ? [] : items.value.filter((x) => x.type === tab.value),
@@ -317,6 +319,16 @@ onMounted(() => {
   line-height: 1.05;
   letter-spacing: -0.01em;
   color: var(--uhd-s-text);
+}
+/* 统计行：标题下小字，数字加重（照友站形态，色随令牌走、明暗两态同构） */
+.fv-stats {
+  margin: 10px 0 0;
+  font-size: 15px;
+  color: var(--uhd-s-text-2);
+}
+.fv-stats strong {
+  color: var(--uhd-s-text);
+  font-weight: var(--uhd-fw-bold);
 }
 .fv-tabs {
   display: flex;
