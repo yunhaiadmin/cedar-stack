@@ -108,8 +108,8 @@
                   role="radio"
                   :aria-checked="v.id === selectedVersionId"
                   tabindex="0"
-                  @click="selectedVersionId = v.id"
-                  @keydown.enter.prevent="selectedVersionId = v.id"
+                  @click="selectVersion(v)"
+                  @keydown.enter.prevent="selectVersion(v)"
                 >
                   <!-- 卡内三行（友站顺序）：第一行标题独占（左缘与胶囊列
                        对齐）、第二行单选圆点 + 胶囊、第三行码率信息；
@@ -121,6 +121,10 @@
                   </div>
                   <div v-if="v.metaParts.length" class="psp-ver__meta"><span v-for="(mp, mi) in v.metaParts" :key="mi" class="psp-ver__metapart">{{ mp }}</span></div>
                   <div class="psp-ver__tools">
+                    <!-- 不支持网页播放徽标（G-148/G-152，友站帧 f0115 形态）：
+                         金黄描边小胶囊，挂在工具圆钮左侧（卡片中右区域）；
+                         只拦 Dolby Vision，判定见 playable 字段口径 -->
+                    <span v-if="!v.playable" class="psp-ver__dv-badge">不支持网页播放</span>
                     <button type="button" class="psp-tool" aria-label="复制该版本的播放链接" title="复制播放链接" @click.stop="copyVersionLink(v)">
                       <Copy :size="16" />
                     </button>
@@ -299,10 +303,10 @@
                  文案双色（友站形态）：「开始播放」粗体 +「· 版本名」细体灰 -->
             <div class="psp-start-sec">
               <span class="psp-start-label">开始播放</span>
-              <button type="button" class="psp-start" :class="{ 'psp-start--prep': startPreparing }" @click="start">
+              <button type="button" class="psp-start" :class="{ 'psp-start--prep': startPreparing, 'psp-start--none': noPlayableVersion }" :disabled="noPlayableVersion" @click="start">
                 <Play :size="17" fill="currentColor" />
-                <span class="psp-start__main">{{ startPreparing ? '正在准备线路' : '开始播放' }}</span>
-                <span v-if="!startPreparing && selectedVersion" class="psp-start__ver"> · {{ selectedVersion.title }}</span>
+                <span class="psp-start__main">{{ noPlayableVersion ? '暂无可播放版本' : startPreparing ? '正在准备线路' : '开始播放' }}</span>
+                <span v-if="!noPlayableVersion && !startPreparing && selectedVersion" class="psp-start__ver"> · {{ selectedVersion.title }}</span>
               </button>
             </div>
           </div>
@@ -404,6 +408,11 @@ interface VersionCard {
   /** 复制链接形态：source = MediaSource（/play/目标?ms=源id）；
       version = 独立条目行（/play/版本id） */
   kind: 'source' | 'version'
+  /** 网页可播（G-148/G-152）：false 当且仅当该源视频流动态范围为
+      Dolby Vision（rangeLabel 判）；绝不按分辨率/码率/大小拦——
+      4K HDR10/HDR10+/HLG/HDR/SDR 全可播。Versions 形态没有动态
+      范围字段、判不出，恒 true 不拦 */
+  playable: boolean
 }
 
 /** 帧率文案：整数不带小数，23.976 这类保留有效小数 */
@@ -485,6 +494,7 @@ const versions = computed<VersionCard[]>(() => {
         subs: [],
         subLang: '',
         kind: 'version',
+        playable: true,
       }
     })
   }
@@ -549,12 +559,24 @@ const versions = computed<VersionCard[]>(() => {
       subs,
       subLang: dftSub ? embeddedSubLabel(dftSub) : '',
       kind: 'source',
+      playable: rangeLabel(video) !== 'Dolby Vision',
     }
   })
 })
 
 const selectedVersionId = ref('')
 const selectedVersion = computed(() => versions.value.find((v) => v.id === selectedVersionId.value) || null)
+/** 全部版本都不可播（且版本非空）：开始钮禁用「暂无可播放版本」。
+    versions 为空（拉取失败/无版本）不算——那是 G-155 的地盘，维持现行 */
+const noPlayableVersion = computed(
+  () => versions.value.length > 0 && versions.value.every((v) => !v.playable),
+)
+
+/** 选版本：不可播版本不可选中，点击不改变当前选择（圆圈保持空心） */
+function selectVersion(v: VersionCard) {
+  if (!v.playable) return
+  selectedVersionId.value = v.id
+}
 const expandedId = ref('')
 /** 版本卡内音轨清单展开的是哪张卡 */
 const audioOpenId = ref('')
@@ -880,8 +902,13 @@ async function refresh() {
       } catch { /* 集列表拉不到就只给线路，版本区留空 */ }
     }
     const primary = versionSource.value?.Versions?.find((v) => v.IsPrimary)
+    // 默认选中第一个可播版本：主版本不可播时跳过它，全不可播时不选（null 态）
+    const playableCards = versions.value
+    const primaryCard = primary
+      ? playableCards.find((c) => c.id === primary.Id && c.playable)
+      : undefined
     selectedVersionId.value =
-      primary?.Id || versions.value[0]?.id || ''
+      primaryCard?.id || playableCards.find((c) => c.playable)?.id || ''
     playedState.value = !!(versionSource.value?.UserData?.Played ?? itemDetail.value?.UserData?.Played)
     syncSubSelection()
   } finally {
@@ -935,6 +962,7 @@ async function copyVersionLink(v: VersionCard) {
  * （2026-11-14 已删该行），走详情页的播放器入口。
  */
 async function start() {
+  if (noPlayableVersion.value) return
   const id = playTargetId.value || props.itemId
   if (id === null || id === undefined || String(id) === '') {
     toast.info('这个入口没有带条目，暂时打不开')
@@ -1298,7 +1326,22 @@ body.uhd-stream-dark .psp-failed__retry {
   grid-row: 1 / 4;
   align-self: center;
   display: flex;
+  align-items: center;
   gap: 6px;
+}
+/* 不支持网页播放徽标（友站帧 f0115 形态）：金黄描边小胶囊、
+   透明底、全圆角，约 11px 字、padding 3px 9px、1px 同色描边 */
+.psp-ver__dv-badge {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid #d4a017;
+  background: transparent;
+  color: #d4a017;
 }
 .psp-tool {
   width: 35px;
@@ -1548,6 +1591,21 @@ body.uhd-stream-dark .psp-failed__retry {
 /* 准备态（线路未落定）：形态不变，只换钮内文案，指针示意等待 */
 .psp-start--prep {
   cursor: progress;
+}
+/* 全部版本不可播（友站帧 f0115 形态）：深灰底灰字、无彩虹描边、
+   禁用不可点；仅靠 .psp-start--none 一条覆盖浅/深两态 */
+.psp-start--none,
+.psp-start--none:disabled {
+  background: #333338;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  color: #8e8e93;
+  cursor: not-allowed;
+}
+.psp-start--none:active {
+  transform: none;
 }
 /* 外挂字幕一行：左标签 + 右选择胶囊；选单向上弹层 */
 .psp-subrow {
@@ -1902,6 +1960,14 @@ body.uhd-stream-dark .psp-start {
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
     0 12px 28px -12px rgba(0, 0, 0, 0.55);
   color: #ffffff;
+}
+/* 深色态下不可播禁用钮仍须压过上面的玻璃彩虹配方：深灰底灰字 */
+body.uhd-stream-dark .psp-start--none,
+body.uhd-stream-dark .psp-start--none:disabled {
+  background: #333338;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  color: #8e8e93;
 }
 body.uhd-stream-dark .psp-subrow__pill,
 body.uhd-stream-dark .psp-line-pill {
