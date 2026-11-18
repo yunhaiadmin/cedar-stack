@@ -113,9 +113,38 @@ def _bearer(user):
 def _code_from_mail(channel, to_email):
     mails = [m for m in channel.sent if m[0] == to_email]
     assert mails, f"没有发往 {to_email} 的邮件：{channel.sent}"
-    m = re.search(r"(?<!\d)(\d{6})(?!\d)", mails[-1][2])
+    # 锚定模板固定文案「验证码是」：正文首行是「账号 g53_<uuid hex 前 10 位>」，
+    # uuid hex 约 6.5% 的概率含一段恰好 6 位的连续数字，裸正则取第一个 6 位数
+    # 会先抓到用户名里的数字、不是真码（#307 冒烟抖动根因）。
+    m = re.search(r"验证码是\s*(\d{6})", mails[-1][2])
     assert m, mails[-1][2]
     return m.group(1)
+
+
+# ==================== _code_from_mail 回归 ====================
+
+def test_code_from_mail_ignores_six_digits_in_username():
+    """回归（#307 冒烟抖动）：用户名 uuid 段含 6 位连续数字时不许错取。
+
+    旧正则 r"(?<!\\d)(\\d{6})(?!\\d)" 取正文第一个 6 位数；正文首行是
+    「账号 g53_<uuid hex 前 10 位>」，uuid hex 约 6.5% 的概率含一段恰好
+    6 位的连续数字，旧正则先抓到它、不是真正的验证码，导致
+    row.code_hash 断言哈希不匹配。新正则锚定模板固定文案「验证码是」。
+    """
+    body = (
+        "你正在修改登录密码（账号 g53_123456abcd）。\n\n"
+        "验证码是 654321，10 分钟内有效，输对了才会继续。\n\n"
+        "如果不是你本人操作，请忽略这封邮件，你的账号不会有任何变化。"
+    )
+    channel = _FakeChannel()
+    channel.sent.append(("regress@example.com", "Aetrix 改密验证码", body))
+
+    # 旧正则会错取用户名里的 123456（复现抖动根因）
+    old = re.search(r"(?<!\d)(\d{6})(?!\d)", body)
+    assert old is not None and old.group(1) == "123456"
+
+    # 新实现锚定「验证码是」，取到真码 654321
+    assert _code_from_mail(channel, "regress@example.com") == "654321"
 
 
 # ==================== 模型 ====================
