@@ -1215,13 +1215,18 @@ html[data-theme='light'] .tm-buy-error { color: var(--uhd-danger); }
 .tm-line-btns { display: flex; gap: 10px; }
 .tm-line-btn {
   flex: 1;
+  min-width: 0;
   height: 44px;
-  padding: 0 10px;
+  padding: 0 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   border: 1px solid rgba(128, 128, 140, 0.35);
   border-radius: 12px;
   background: transparent;
   color: var(--uhd-l-text-2);
-  font-size: var(--uhd-fs-caption);
+  /* 13px：14px 时 "Premium 高级线路" 在 390 宽下实测宽 122.77px，超出按钮内容宽 121px */
+  font-size: 13px;
   font-weight: var(--uhd-fw-semibold);
   font-family: var(--uhd-font-sans);
   cursor: pointer;
