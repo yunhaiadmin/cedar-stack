@@ -93,7 +93,7 @@
  * 「每日报到」「信鸽」两行摘除（签到/站内信网页页经友站核查后定整页删除）；
  * 代理中心同口径仅代理可见。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { ChevronRight, Copy, ArrowUpRight } from 'lucide-vue-next'
 import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
@@ -139,9 +139,36 @@ const subStore = useSubscriptionStore()
 const subsLoaded = computed(() => subStore.loaded)
 const activeSub = computed(() => subStore.activeSub)
 const isAgent = ref(false)
+/** 当前用户类别：团队入口判定的唯一输入。none＝user 尚未就绪 */
+const userKind = computed<'none' | 'main' | 'sub'>(() => {
+  const u = userStore.user
+  if (!u) return 'none'
+  return u.is_sub_account ? 'sub' : 'main'
+})
 /** 团队入口可见性（与桌面侧栏同口径）：普通用户/团长显示；
- * 团队成员（子账号形态）凭 my_role 显示，家庭子账号隐藏 */
-const showTeam = ref(false)
+ * 团队成员（子账号形态）凭 my_role 显示，家庭子账号隐藏。
+ * 判定时机：非子账号同步可知，初始值 setup 期直接判定、首帧即渲染，
+ * 不等任何请求；子账号的 detail 核查独立立即发起（不排在钱包/代理
+ * 请求之后），核查期间先不显示，避免家庭子账号闪现入口；
+ * user 尚未就绪时同等保守（先不显示），就绪后由下方 watcher 按
+ * 同口径判定，不出现先错误显示又消失的闪烁。 */
+const showTeam = ref(userKind.value === 'main')
+let teamCheckSeq = 0
+async function checkSubAccountTeam() {
+  const seq = ++teamCheckSeq
+  try {
+    const d = await teamsApi.detail()
+    // 序号＋类别双检：核查期间用户类别已变（如换号）则丢弃过期结果
+    if (seq === teamCheckSeq && userKind.value === 'sub') {
+      showTeam.value = d.my_role != null
+    }
+  } catch { /* 团队接口不可用时不显示入口 */ }
+}
+watch(userKind, (kind) => {
+  if (kind === 'main') showTeam.value = true
+  else if (kind === 'none') showTeam.value = false
+  else void checkSubAccountTeam()
+}, { immediate: true })
 /** 钱包余额（现有钱包接口；拿不到钱包行就不显金额，不假造） */
 const walletBalance = ref<string | null>(null)
 
@@ -271,15 +298,8 @@ onMounted(async () => {
   // 失败时回 { is_agent: false }，不能用「请求成功」当可见判据）
   const me = await getAgentMe()
   isAgent.value = me.is_agent === true
-  // 团队入口：非子账号直接显示；子账号查团队归属（成员显示、其余隐藏）
-  if (!userStore.user?.is_sub_account) {
-    showTeam.value = true
-  } else {
-    try {
-      const d = await teamsApi.detail()
-      showTeam.value = d.my_role != null
-    } catch { /* 团队接口不可用时不显示入口 */ }
-  }
+  // 团队入口判定已移至 setup 期（见 showTeam）：同步判定＋子账号
+  // 独立核查，不再排在本函数的钱包/代理请求之后
 })
 </script>
 

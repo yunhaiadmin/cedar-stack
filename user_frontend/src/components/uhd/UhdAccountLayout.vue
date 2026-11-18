@@ -13,7 +13,7 @@
  * - 代理中心只对代理可见：getAgentMe 成功才显示入口（失败静默隐藏，
  *   与 PersonalCenterView 同口径；模块级缓存，一次会话只查一次）。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   BookOpen, Briefcase, CreditCard, Download, Gauge,
@@ -61,33 +61,47 @@ function checkAgent(): Promise<boolean> {
 }
 const showAgent = ref(false)
 
-/* 团队入口可见性（同代理口径，会话内只查一次）：普通用户与团长
-   直接显示；子账号分两类——团队成员（凭团队详情 my_role）要能
-   回团队页看自己的团队，家庭子账号则隐藏入口（其权益全量归
-   主账号，团队页对其无意义，后端写口同步 403）。 */
-let teamEntryChecked: Promise<boolean> | null = null
-function checkTeamEntry(): Promise<boolean> {
-  if (!teamEntryChecked) {
-    teamEntryChecked = (async () => {
-      if (!userStore.user?.is_sub_account) return true
-      try {
-        const d = await teamsApi.detail()
-        return d.my_role != null
-      } catch {
-        return false
-      }
-    })()
+/* 团队入口可见性：普通用户与团长同步可知，setup 期直接判定、
+   首帧即显示，不等任何请求；子账号分两类——团队成员（凭团队
+   详情 my_role）要能回团队页看自己的团队，家庭子账号则隐藏入口
+   （其权益全量归主账号，团队页对其无意义，后端写口同步 403）。
+   子账号核查独立立即发起、不排在代理核查之后，detail 结果会话
+   内只查一次（模块级缓存）；核查期间先不显示，避免家庭子账号
+   闪现入口。user 尚未就绪时同等保守（先不显示），就绪后由下方
+   userKind watcher 按同口径判定，不出现先显示又消失的闪烁。 */
+let subTeamChecked: Promise<boolean> | null = null
+function checkSubAccountTeam(): Promise<boolean> {
+  if (!subTeamChecked) {
+    subTeamChecked = teamsApi
+      .detail()
+      .then((d) => d.my_role != null)
+      .catch(() => false)
   }
-  return teamEntryChecked
+  return subTeamChecked
 }
-const showTeam = ref(false)
+/** 当前用户类别：团队入口判定的唯一输入。none＝user 尚未就绪 */
+const userKind = computed<'none' | 'main' | 'sub'>(() => {
+  const u = userStore.user
+  if (!u) return 'none'
+  return u.is_sub_account ? 'sub' : 'main'
+})
+const showTeam = ref(userKind.value === 'main')
+watch(userKind, (kind) => {
+  if (kind === 'main') showTeam.value = true
+  else if (kind === 'none') showTeam.value = false
+  else {
+    void checkSubAccountTeam().then((ok) => {
+      if (userKind.value === 'sub') showTeam.value = ok
+    })
+  }
+}, { immediate: true })
 
 onMounted(async () => {
   // 使用说明外链（后台「官网社区渠道」可配 docs_url）：模块级单次拉取，
   // 与手机菜单同口径；未配时侧栏不渲染该行。
   void initCommunityLinks()
   showAgent.value = await checkAgent()
-  showTeam.value = await checkTeamEntry()
+  // 团队入口判定已移至 setup 期（见 showTeam），不再排在代理核查之后
 })
 
 const groups = computed<UhdSidebarGroup[]>(() => {
