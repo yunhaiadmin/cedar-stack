@@ -67,8 +67,8 @@ onMounted(async () => {
 const dialogVisible = ref(false)
 const editing = ref<RealmRow | null>(null)
 const saving = ref(false)
-// access_mode：paid（付费服，需要订阅）/ free（公益服，免费开放）
-// download_policy：follow（跟随全局，公益服默认禁止下载）/ allow / deny
+// access_mode：paid（付费服，需要订阅）/ free（免费服，免费开放）
+// download_policy：follow（跟随全局，免费服默认禁止下载）/ allow / deny
 const form = reactive({
   name: '', slug: '', url: '', description: '', is_active: true,
   access_mode: 'paid' as 'paid' | 'free',
@@ -353,8 +353,8 @@ function shortDate(s: string | null): string {
           <div class="realm-badges">
             <span v-if="row.id === activeId" class="au-badge au-badge-amber">当前服</span>
             <span v-if="row.is_default" class="au-badge au-badge-info">默认服</span>
-            <!-- 接入方式：公益服免费开放（不需要订阅），付费服按订阅闸门 -->
-            <span v-if="row.is_free" class="au-badge au-badge-green">公益服</span>
+            <!-- 接入方式：免费服免费开放（不需要订阅），付费服按订阅闸门 -->
+            <span v-if="row.is_free" class="au-badge au-badge-green">免费服</span>
             <span v-else class="au-badge au-badge-muted">付费服</span>
             <span v-if="!row.is_active" class="au-badge au-badge-rose">已停用</span>
           </div>
@@ -452,14 +452,14 @@ function shortDate(s: string | null): string {
         <el-form-item label="接入方式">
           <el-radio-group v-model="form.access_mode">
             <el-radio-button value="paid">付费服（需要订阅）</el-radio-button>
-            <el-radio-button value="free">公益服（免费开放）</el-radio-button>
+            <el-radio-button value="free">免费服（免费开放）</el-radio-button>
           </el-radio-group>
           <p class="field-help">
             付费服：用户要有生效中的订阅才能播放（原来的口径）。
-            公益服：不需要订阅就能看全库，用于免费引流；默认禁止下载，可用下面的下载策略覆盖。
+            免费服：不需要订阅就能看全库，用于免费引流；默认禁止下载，可用下面的下载策略覆盖。
           </p>
         </el-form-item>
-        <el-form-item v-if="form.access_mode === 'free'" label="公益规则（用户端展示）">
+        <el-form-item v-if="form.access_mode === 'free'" label="免费规则（用户端展示）">
           <el-input
             v-model="form.access_note"
             type="textarea"
@@ -470,7 +470,7 @@ function shortDate(s: string | null): string {
         </el-form-item>
         <el-form-item label="下载策略">
           <el-select v-model="form.download_policy" style="width: 100%">
-            <el-option value="follow" label="跟随全局（公益服默认禁止下载）" />
+            <el-option value="follow" label="跟随全局（免费服默认禁止下载）" />
             <el-option value="allow" label="允许下载" />
             <el-option value="deny" label="禁止下载" />
           </el-select>
@@ -591,7 +591,7 @@ function shortDate(s: string | null): string {
 
 .realm-body { display: flex; flex-direction: column; gap: 12px; }
 .realm-desc { margin: 0; font-size: 13px; line-height: 1.6; color: var(--au-text-2); }
-/* 公益服：免费开放与下载口径，一眼能看出这个服不靠会员收费 */
+/* 免费服：免费开放与下载口径，一眼能看出这个服不靠会员收费 */
 .realm-free { margin: 0; font-size: 12px; color: var(--au-success); }
 .realm-url { margin: 0; font-size: 12px; color: var(--au-text-3); word-break: break-all; }
 .realm-url code { color: var(--au-text-2); }
