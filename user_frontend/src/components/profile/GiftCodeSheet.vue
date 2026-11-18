@@ -25,7 +25,7 @@
             @keydown.enter.prevent="submit"
           />
         </div>
-        <p class="gc-hint">可用余额 $ {{ balance }}</p>
+        <p class="gc-hint">可用余额 ${{ balance }}</p>
 
         <span class="gc-label">有效期</span>
         <div class="gc-days" role="group" aria-label="有效期">
@@ -55,7 +55,7 @@
         <div class="gc-done">
           <span class="gc-done__icon" aria-hidden="true"><Check :size="22" /></span>
           <p class="gc-done__title">礼品卡已生成</p>
-          <p class="gc-done__sub">面值 $ {{ created.amount }} · {{ created.valid_days }} 天内有效</p>
+          <p class="gc-done__sub">面值 ${{ created.amount }} · {{ created.valid_days }} 天内有效</p>
         </div>
         <div class="gc-code-row">
           <span class="gc-code">{{ created.code }}</span>

@@ -50,7 +50,7 @@
       <div v-if="tab === 'balance'" class="tq-body">
         <div class="tq-balrow">
           <span class="tq-balrow__label">当前余额</span>
-          <span class="tq-balrow__amt">$ {{ walletBalanceText }}</span>
+          <span class="tq-balrow__amt">${{ walletBalanceText }}</span>
         </div>
         <p class="tq-label">抵扣已用流量（最低 100 GB）</p>
         <div class="tq-inputrow">
@@ -91,11 +91,11 @@
         <p v-if="inputError" class="tq-error" role="alert">{{ inputError }}</p>
         <div v-if="preview" class="tq-preview">
           <p class="tq-preview__line">
-            本次抵扣 <b>{{ preview.gb }} GB</b> 流量，应付 <b>$ {{ preview.price }}</b>
+            本次抵扣 <b>{{ preview.gb }} GB</b> 流量，应付 <b>${{ preview.price }}</b>
           </p>
           <p class="tq-preview__note">将抵扣已用流量，超出部分在本周期内继续抵扣</p>
           <p v-if="previewShortfall > 0" class="tq-error" role="alert">
-            钱包余额不足，还差 $ {{ previewShortfall.toFixed(2) }}，请先去钱包充值
+            钱包余额不足，还差 ${{ previewShortfall.toFixed(2) }}，请先去钱包充值
           </p>
           <button
             type="button"
@@ -105,7 +105,7 @@
             @click="onBalanceConfirmClick"
           >
             <span v-if="balanceSubmitting" class="tq-spinner" aria-hidden="true"></span>
-            {{ balanceSubmitting ? '提交中…' : balanceConfirming ? `确认支付 $ ${preview.price} 购买 ${preview.gb}G？` : '确认购买' }}
+            {{ balanceSubmitting ? '提交中…' : balanceConfirming ? `确认支付 $${preview.price} 购买 ${preview.gb}G？` : '确认购买' }}
           </button>
         </div>
         <p v-if="balanceError" class="tq-error" role="alert">{{ balanceError }}</p>
