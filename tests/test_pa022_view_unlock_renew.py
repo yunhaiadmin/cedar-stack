@@ -15,17 +15,25 @@ os.environ.setdefault("DATABASE_TYPE", "sqlite")
 os.environ.setdefault("REDIS_ENABLED", "false")
 
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from backend import models
 from backend.emby_server.portal import UnlockViewRequest, unlock_emby_view
 
-_TABLES = ("web_users", "server_realms", "system_configs",
-           "emby_view_unlocks")
+_TABLES = ("web_users", "server_realms", "system_configs")
+
+# 遗留表 emby_view_unlocks 的模型定义已删（2026-11-19）：原生 SQL 建表。
+_LEGACY_UNLOCK_DDL = (
+    "CREATE TABLE IF NOT EXISTS emby_view_unlocks ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "user_id INTEGER NOT NULL, realm_id INTEGER NOT NULL, "
+    "unlocked_at DATETIME, expires_at DATETIME, "
+    "points_spent INTEGER DEFAULT 0, UNIQUE (user_id, realm_id))")
 
 
 @pytest.fixture()
@@ -33,6 +41,8 @@ def db():
     engine = create_engine("sqlite:///:memory:")
     for t in _TABLES:
         models.Base.metadata.tables[t].create(engine, checkfirst=True)
+    with engine.begin() as conn:
+        conn.execute(text(_LEGACY_UNLOCK_DDL))
     session = sessionmaker(bind=engine)()
     yield session
     session.close()
@@ -46,19 +56,27 @@ def _setup(db, row_expires="absent"):
     db.add(u)
     db.commit()
     if row_expires != "absent":
-        db.add(models.EmbyViewUnlock(
-            user_id=u.id, realm_id=realm.id,
-            unlocked_at=datetime.now() - timedelta(days=40),
-            expires_at=row_expires, points_spent=50))
+        db.execute(
+            text("INSERT INTO emby_view_unlocks"
+                 " (user_id, realm_id, unlocked_at, expires_at, points_spent)"
+                 " VALUES (:user_id, :realm_id, :unlocked_at, :expires_at, 50)"),
+            {"user_id": u.id, "realm_id": realm.id,
+             "unlocked_at": datetime.now() - timedelta(days=40),
+             "expires_at": row_expires})
         db.commit()
     return realm, u
 
 
 def _row(db, u, realm):
-    return (db.query(models.EmbyViewUnlock)
-              .filter(models.EmbyViewUnlock.user_id == u.id,
-                      models.EmbyViewUnlock.realm_id == realm.id)
-              .first())
+    found = db.execute(
+        text("SELECT expires_at FROM emby_view_unlocks"
+             " WHERE user_id = :user_id AND realm_id = :realm_id"),
+        {"user_id": u.id, "realm_id": realm.id}).first()
+    if found is None:
+        return None
+    value = found[0]
+    return SimpleNamespace(
+        expires_at=datetime.fromisoformat(value) if value is not None else None)
 
 
 def _call(db, u, realm):

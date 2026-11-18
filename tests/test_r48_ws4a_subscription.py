@@ -36,8 +36,8 @@ def _user(db, username="u1"):
     return u
 
 
-def _realm(db, access_mode="paid"):
-    r = models.ServerRealm(name="付费服", slug="paid1", access_mode=access_mode)
+def _realm(db):
+    r = models.ServerRealm(name="付费服", slug="paid1")
     db.add(r)
     db.commit()
     db.refresh(r)

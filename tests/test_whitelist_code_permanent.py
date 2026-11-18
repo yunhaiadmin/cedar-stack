@@ -26,7 +26,7 @@ os.environ.setdefault("REDIS_ENABLED", "false")
 # 本文件此前在导入时把全局引擎绑到一个未 init_db 的空临时库，
 # 导致之后所有依赖全局 SessionLocal 的测试在 setup 报 no such table
 # （#1668 冒烟两轮同形态失败的根因）。本文件夹具自带内存库，不需要全局引擎。
-from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy import create_engine, text  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 import pytest  # noqa: E402
@@ -70,12 +70,47 @@ def _code(db, code_str, **kw):
     return c
 
 
+# 遗留表 emby_view_unlocks 的模型定义已删（2026-11-19）：存量行改走
+# 原生 SQL 建表/写行/计数，断言口径不变（核销不写、判定不读该表）。
+_LEGACY_UNLOCK_DDL = (
+    "CREATE TABLE IF NOT EXISTS emby_view_unlocks ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "user_id INTEGER NOT NULL, realm_id INTEGER NOT NULL, "
+    "unlocked_at DATETIME, expires_at DATETIME, "
+    "points_spent INTEGER DEFAULT 0, UNIQUE (user_id, realm_id))")
+
+
+def _legacy_unlock_count(db, user_id):
+    db.execute(text(_LEGACY_UNLOCK_DDL))
+    return db.execute(
+        text("SELECT COUNT(*) FROM emby_view_unlocks"
+             " WHERE user_id = :user_id"),
+        {"user_id": user_id}).scalar()
+
+
+def _add_legacy_unlock(db, user_id, realm_id, expires_at):
+    db.execute(text(_LEGACY_UNLOCK_DDL))
+    db.execute(
+        text("INSERT INTO emby_view_unlocks"
+             " (user_id, realm_id, unlocked_at, expires_at, points_spent)"
+             " VALUES (:user_id, :realm_id, :unlocked_at, :expires_at, 50)"),
+        {"user_id": user_id, "realm_id": realm_id,
+         "unlocked_at": datetime.now(), "expires_at": expires_at})
+
+
+def _legacy_unlock_expires_at(db, user_id):
+    db.execute(text(_LEGACY_UNLOCK_DDL))
+    value = db.execute(
+        text("SELECT expires_at FROM emby_view_unlocks"
+             " WHERE user_id = :user_id"),
+        {"user_id": user_id}).scalar()
+    return datetime.fromisoformat(value) if value is not None else None
+
+
 def _assert_all_permanent(db, user):
     db.refresh(user)
-    # ① 查看行写口已下线：核销不得新建任何 EmbyViewUnlock 行
-    assert (db.query(models.EmbyViewUnlock)
-            .filter(models.EmbyViewUnlock.user_id == user.id)
-            .count()) == 0
+    # ① 查看行写口已下线：核销不得新建任何遗留查看行
+    assert _legacy_unlock_count(db, user.id) == 0
     assert subscriptions.view_grant(db, user) is True
     # ② 订阅长期有效（PERMANENT_DAYS=36500 的既有「永久近似」口径）
     assert subscriptions.has_active_subscription(db, user.id) is True
@@ -138,17 +173,13 @@ def test_whitelist_redeem_stacks_on_existing_finite_rights(db):
     存量查看行原样不动（写口已下线，不再续开/升永久）。"""
     u = _user(db, "wl_stack")
     finite_expiry = datetime.now() + timedelta(days=5)
-    db.add(models.EmbyViewUnlock(
-        user_id=u.id, realm_id=1, unlocked_at=datetime.now(),
-        expires_at=finite_expiry, points_spent=50))
+    _add_legacy_unlock(db, u.id, 1, finite_expiry)
     _code(db, "VIP-STK000000001", reward_type="welfare")
     db.commit()
     result = codes.redeem_code(db, u, "VIP-STK000000001")
     db.commit()
     assert result["success"] is True
-    row = (db.query(models.EmbyViewUnlock)
-           .filter(models.EmbyViewUnlock.user_id == u.id).first())
-    assert row is not None and row.expires_at == finite_expiry
+    assert _legacy_unlock_expires_at(db, u.id) == finite_expiry
     db.refresh(u)
     assert subscriptions.view_grant(db, u) is True
     sub = (db.query(models.UserSubscription)
@@ -172,8 +203,7 @@ def test_renew_code_unchanged(db):
     assert not hasattr(u, "is_welfare")
     # 查看口径里有效订阅本身即 granted，且不得生成任何查看行
     assert subscriptions.view_grant(db, u) is True
-    assert db.query(models.EmbyViewUnlock).filter(
-        models.EmbyViewUnlock.user_id == u.id).count() == 0
+    assert _legacy_unlock_count(db, u.id) == 0
     sub = (db.query(models.UserSubscription)
            .filter(models.UserSubscription.user_id == u.id).first())
     assert sub is not None
@@ -194,8 +224,7 @@ def test_welfare_code_rejected_no_subscription(db):
     assert not hasattr(u, "is_welfare")
     assert db.query(models.UserSubscription).filter(
         models.UserSubscription.user_id == u.id).count() == 0
-    assert db.query(models.EmbyViewUnlock).filter(
-        models.EmbyViewUnlock.user_id == u.id).count() == 0
+    assert _legacy_unlock_count(db, u.id) == 0
 
 
 # ---------- 3. 管理端名单 / 回收 ----------

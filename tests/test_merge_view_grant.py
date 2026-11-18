@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from backend import models, subscriptions, user_grants
@@ -45,14 +45,45 @@ def _user(db, username="u1", **kw):
     return u
 
 
+# 遗留表 emby_view_unlocks 的模型定义已删（2026-11-19）：存量行改走
+# 原生 SQL 建表/写行/读回，断言口径不变（判定与写口均不读不写该表）。
+_LEGACY_UNLOCK_DDL = (
+    "CREATE TABLE IF NOT EXISTS emby_view_unlocks ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "user_id INTEGER NOT NULL, realm_id INTEGER NOT NULL, "
+    "unlocked_at DATETIME, expires_at DATETIME, "
+    "points_spent INTEGER DEFAULT 0, UNIQUE (user_id, realm_id))")
+
+
+def _legacy_unlock_ensure(db):
+    db.execute(text(_LEGACY_UNLOCK_DDL))
+
+
 def _unlock(db, user, realm, expires_at):
-    row = models.EmbyViewUnlock(
-        user_id=user.id, realm_id=realm.id,
-        unlocked_at=datetime.now() - timedelta(days=10),
-        expires_at=expires_at, points_spent=50)
-    db.add(row)
+    _legacy_unlock_ensure(db)
+    db.execute(
+        text("INSERT INTO emby_view_unlocks"
+             " (user_id, realm_id, unlocked_at, expires_at, points_spent)"
+             " VALUES (:user_id, :realm_id, :unlocked_at, :expires_at, 50)"),
+        {"user_id": user.id, "realm_id": realm.id,
+         "unlocked_at": datetime.now() - timedelta(days=10),
+         "expires_at": expires_at})
     db.commit()
-    return row
+
+
+def _unlock_count(db):
+    _legacy_unlock_ensure(db)
+    return db.execute(
+        text("SELECT COUNT(*) FROM emby_view_unlocks")).scalar()
+
+
+def _unlock_expires_at(db, user, realm):
+    _legacy_unlock_ensure(db)
+    value = db.execute(
+        text("SELECT expires_at FROM emby_view_unlocks"
+             " WHERE user_id = :user_id AND realm_id = :realm_id"),
+        {"user_id": user.id, "realm_id": realm.id}).scalar()
+    return datetime.fromisoformat(value) if value is not None else None
 
 
 NOW = datetime.now()
@@ -149,20 +180,20 @@ def test_unlock_endpoint_tombstone_400_no_row(db):
         unlock_emby_view(UnlockViewRequest(realm_id=realm.id), u, db)
     assert exc.value.status_code == 400
     db.refresh(u)
-    assert db.query(models.EmbyViewUnlock).count() == 0
+    assert _unlock_count(db) == 0
 
 
 def test_unlock_endpoint_tombstone_keeps_existing_row(db):
     from backend.emby_server.portal import UnlockViewRequest, unlock_emby_view
     realm = _realm(db)
     u = _user(db)
-    row = _unlock(db, u, realm, NOW - timedelta(days=1))
+    _unlock(db, u, realm, NOW - timedelta(days=1))
     with pytest.raises(HTTPException) as exc:
         unlock_emby_view(UnlockViewRequest(realm_id=realm.id), u, db)
     assert exc.value.status_code == 400
     db.refresh(u)
-    db.refresh(row)
-    assert row.expires_at < NOW  # 存量行原样不动，没被续开
+    expires_at = _unlock_expires_at(db, u, realm)
+    assert expires_at is not None and expires_at < NOW  # 存量行原样不动，没被续开
 
 
 # ---------------------------------------------------------------------------

@@ -16,7 +16,7 @@ import pytest
 
 sys.path.insert(0, ".")
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from backend import models
@@ -26,6 +26,21 @@ from backend.tg_bot import features, handlers, poller, sender
 TICKS = 10_000_000
 GROUP = -100123
 TG = 900001
+
+
+def _add_legacy_unlock(db, user_id, realm_id, expires_at):
+    """遗留表 emby_view_unlocks 的模型定义已删（2026-11-19）：原生 SQL 写行。"""
+    db.execute(text(
+        "CREATE TABLE IF NOT EXISTS emby_view_unlocks ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "user_id INTEGER NOT NULL, realm_id INTEGER NOT NULL, "
+        "unlocked_at DATETIME, expires_at DATETIME, "
+        "points_spent INTEGER DEFAULT 0, UNIQUE (user_id, realm_id))"))
+    db.execute(
+        text("INSERT INTO emby_view_unlocks (user_id, realm_id, expires_at)"
+             " VALUES (:user_id, :realm_id, :expires_at)"),
+        {"user_id": user_id, "realm_id": realm_id,
+         "expires_at": expires_at})
 
 
 @pytest.fixture()
@@ -137,8 +152,7 @@ def test_dashboard_sample_layout_exact(db):
     正好钉住这一点。
     """
     row = _user(db, tg=TG, name="shunxian2580", is_welfare=True, welfare_expires_at=datetime(2026, 11, 27))
-    db.add(models.EmbyViewUnlock(
-        user_id=row.id, realm_id=1, expires_at=datetime(2030, 11, 27)))
+    _add_legacy_unlock(db, row.id, 1, datetime(2030, 11, 27))
     db.commit()
     _binding(db, row.id, "drive")
     text = features.compact_dashboard(db, row, display_name="Shun")

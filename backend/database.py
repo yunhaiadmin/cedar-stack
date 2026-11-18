@@ -843,11 +843,9 @@ def _auto_migrate():
             ("node_key", "VARCHAR(60)", "NULL"),
             ("realm_id", "INTEGER", "NULL"),
         ]),
-        # v2.7.0 公益服：一个服可以免费开放（access_mode=free，不需要订阅就能看），
-        # 并带上自己的规则文案与下载策略。老库补列时默认 paid/允许下载 → 行为不变。
+        # 该服下载策略列（与之同批的 access_mode/access_note 两列已删
+        # 定义，补列清单同步摘除）。老库补列后为 NULL（跟随全局）→ 行为不变。
         ("server_realms", [
-            ("access_mode", "VARCHAR(10)", "'paid'"),
-            ("access_note", "VARCHAR(500)", "''"),
             ("allow_download", "BOOLEAN", "NULL"),
         ]),
         # 线路流量配额（2026-11-19）：配额挂在「线路」行上（新表

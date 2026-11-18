@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, ".")
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from backend import models
@@ -69,8 +69,18 @@ def _watch(db, user_id, hours_list):
 
 
 def _unlock(db, user_id, expires_at, realm_id=1):
-    db.add(models.EmbyViewUnlock(
-        user_id=user_id, realm_id=realm_id, expires_at=expires_at))
+    # 遗留表 emby_view_unlocks 的模型定义已删（2026-11-19）：原生 SQL 写行。
+    db.execute(text(
+        "CREATE TABLE IF NOT EXISTS emby_view_unlocks ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "user_id INTEGER NOT NULL, realm_id INTEGER NOT NULL, "
+        "unlocked_at DATETIME, expires_at DATETIME, "
+        "points_spent INTEGER DEFAULT 0, UNIQUE (user_id, realm_id))"))
+    db.execute(
+        text("INSERT INTO emby_view_unlocks (user_id, realm_id, expires_at)"
+             " VALUES (:user_id, :realm_id, :expires_at)"),
+        {"user_id": user_id, "realm_id": realm_id,
+         "expires_at": expires_at})
     db.commit()
 
 

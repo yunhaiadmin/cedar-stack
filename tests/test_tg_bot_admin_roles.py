@@ -21,7 +21,7 @@ import pytest
 
 sys.path.insert(0, ".")
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from backend import models
@@ -36,6 +36,21 @@ GROUP = -100710
 PERMS_GROUP = -100999
 
 READONLY_MARK = "只读审计"
+
+# 遗留表 emby_view_unlocks 的模型定义已删（2026-11-19）：原生 SQL 计数，
+# 断言口径不变（写口已不存在，查到行即失败）。
+_LEGACY_UNLOCK_DDL = (
+    "CREATE TABLE IF NOT EXISTS emby_view_unlocks ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "user_id INTEGER NOT NULL, realm_id INTEGER NOT NULL, "
+    "unlocked_at DATETIME, expires_at DATETIME, "
+    "points_spent INTEGER DEFAULT 0, UNIQUE (user_id, realm_id))")
+
+
+def _legacy_unlock_count(db):
+    db.execute(text(_LEGACY_UNLOCK_DDL))
+    return db.execute(
+        text("SELECT COUNT(*) FROM emby_view_unlocks")).scalar()
 
 
 @pytest.fixture()
@@ -100,7 +115,7 @@ def test_gv30_gift_op_removed_unknown_op(db):
     _viewer, operator, target = _staff(db)
     note = whois_panel.execute(db, operator, target, "gv30")
     assert note == "未知操作。"
-    assert db.query(models.EmbyViewUnlock).count() == 0
+    assert _legacy_unlock_count(db) == 0
 
 
 def test_viewer_unban_refused(db):
