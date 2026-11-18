@@ -618,12 +618,6 @@ export interface MyPlaybackSession {
   updated_at?: string | null
 }
 
-/** POST /api/user/emby/password 的返回。明文密码不会出现在这里。 */
-export interface SetEmbyPasswordResult {
-  success?: boolean
-  emby_username?: string | null
-}
-
 export const embyApi = {
   // 账号卡（服务器地址 / Emby 用户名 / 播放器一键导入 scheme，scheme 不含密码）
   getAccountCard: () => {
@@ -637,19 +631,6 @@ export const embyApi = {
       if (card?.emby_api_key) setEmbyApiKey(card.emby_api_key)
       return card
     })
-  },
-
-  /**
-   * 设置接线账号。
-   * 首次（emby_username 为空）必须带 username + password。
-   * 之后只传 password。相同用户名可以再传；改名或空串会 400「用户名设好后不可修改」。
-   * 已有用户名时这里不传 username。
-   */
-  setPassword: (password: string, username?: string) => {
-    const body: { password: string; username?: string } = { password }
-    const name = username?.trim()
-    if (name) body.username = name
-    return api.post<never, SetEmbyPasswordResult>('/api/user/emby/password', body)
   },
 
   // 续看列表（首页「继续观看」：单集按剧聚合，带上次播放的客户端 / 设备）
@@ -698,12 +679,6 @@ export const embyApi = {
   // 观看历史（按条目去重，含设备 / 客户端）
   getHistory: (params?: { limit?: number; offset?: number; item_type?: string }) =>
     api.get<never, WatchHistory>('/api/user/emby/history', { params }),
-
-  // 我的正在播放会话
-  getSessions: () => api.get<never, { sessions: MyPlaybackSession[] }>('/api/user/emby/sessions'),
-
-  // 结束某个播放会话
-  stopSession: (sessionKey: string) => api.delete(`/api/user/emby/sessions/${sessionKey}`),
 }
 
 // ==================== 站内消息 API（backend/api/user.py + admin 联动） ====================

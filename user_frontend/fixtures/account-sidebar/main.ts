@@ -1,6 +1,9 @@
 /**
  * 本地隔离夹具。不进生产构建，不使用真实登录会话。
- * /game/operator 被守卫取消，用来测导航失败后抽屉仍开着。
+ * 订阅服务（/game/account/subscribe）只在 regress.mjs 置起
+ * window.__blockSubscribe 时被守卫取消，用来测导航失败后抽屉仍开着。
+ * （原导航失败替身路由已随 2026-11-18 删除单整页删除；订阅服务
+ * 平时不拦截，batch2-shot 直接加载该页不受影响。）
  */
 import '@/styles/aurora.css'
 import '@/styles/neo-noir-tokens.css'
@@ -32,7 +35,6 @@ const router = createRouter({
     { path: '/', redirect: '/game/account' },
     { path: '/game/account', component: AccountHarness },
     { path: '/wallet', component: AccountHarness },
-    { path: '/game/operator', component: AccountHarness },
     { path: '/game/once', component: OnceLayout },
     { path: '/game/speedtest', component: AccountHarness },
     { path: '/landing', component: FixtureLanding },
@@ -48,7 +50,9 @@ const router = createRouter({
   ],
 })
 router.beforeEach((to) => {
-  if (to.path === '/game/operator') return false
+  // 导航失败替身：仅 regress.mjs 置起 __blockSubscribe 的那两步拦截订阅服务，
+  // 其余时候放行（batch2-shot 直接加载订阅页不受影响）。
+  if (to.path === '/game/account/subscribe' && (window as unknown as { __blockSubscribe?: boolean }).__blockSubscribe) return false
   if (to.path === '/game/speedtest') throw new Error('router-threw')
 })
 router.onError((err) => {

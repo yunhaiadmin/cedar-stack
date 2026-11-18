@@ -185,11 +185,13 @@ check('same route closes to opener', s.path === '/game/account' && !s.dialog && 
 
 await act(`document.querySelector('.uhd-account__navbtn').click()`)
 await sleep(200)
-await act(`[...document.querySelectorAll('.uhd-side__item')].find((el) => el.innerText.includes('接线员')).click()`)
+await act(`window.__blockSubscribe = true`)
+await act(`[...document.querySelectorAll('.uhd-side__item')].find((el) => el.innerText.includes('订阅服务')).click()`)
 await sleep(300)
 s = await evalJson(stateExpr)
 check('cancelled navigation keeps drawer', s.path === '/game/account' && s.dialog && s.btn?.expanded === 'true', s.path + ' ' + s.active)
 check('cancelled focus stays in drawer', s.activeInDrawer, s.active)
+await act(`window.__blockSubscribe = false`)
 
 await act(`[...document.querySelectorAll('.uhd-side__item')].find((el) => el.innerText.includes('我的钱包')).click()`)
 await sleep(300)
@@ -307,7 +309,8 @@ await act(`document.documentElement.style.overflow = 'clip'`)
 await act(`document.querySelector('.uhd-account__navbtn').click()`)
 await sleep(250)
 await act(`window.__lastNavError = ''`)
-await clickText('.uhd-side__item', '接线员')
+await act(`window.__blockSubscribe = true`)
+await clickText('.uhd-side__item', '订阅服务')
 await sleep(300)
 g = await gapState()
 routerCases.guardReturnFalse = {
@@ -320,6 +323,7 @@ routerCases.guardReturnFalse = {
 }
 check('gap guard-return-false keeps drawer', g.path === '/game/account' && g.dialog && g.activeInDialog, JSON.stringify(routerCases.guardReturnFalse))
 check('gap guard-return-false does not throw', g.err === '', g.err)
+await act(`window.__blockSubscribe = false`)
 
 await act(`window.__lastNavError = ''`)
 await clickText('.uhd-side__item', '线路测速')
