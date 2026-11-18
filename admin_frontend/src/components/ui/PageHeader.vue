@@ -53,7 +53,7 @@ withDefaults(
 
 .au-page-header__eyebrow {
   margin: 0 0 6px;
-  font-size: 11px;
+  font-size: var(--uhd-fs-micro);
   font-weight: 500;
   letter-spacing: 0.1em;
   color: var(--au-primary);
@@ -65,7 +65,7 @@ withDefaults(
   gap: 10px;
   margin: 0;
   font-family: var(--au-font-serif);
-  font-size: 1.5rem;
+  font-size: var(--uhd-fs-h3);
   font-weight: 700;
   line-height: 1.25;
   letter-spacing: 0.02em;
@@ -77,7 +77,7 @@ withDefaults(
 .au-page-header__desc {
   margin: 6px 0 0;
   max-width: 74ch;
-  font-size: 13px;
+  font-size: var(--uhd-fs-aux);
   line-height: 1.6;
   color: var(--au-text-3);
 }
@@ -91,6 +91,6 @@ withDefaults(
 
 @media (max-width: 640px) {
   .au-page-header { margin-bottom: 16px; }
-  .au-page-header__title { font-size: 1.3125rem; }
+  .au-page-header__title { font-size: var(--uhd-fs-h3); }
 }
 </style>

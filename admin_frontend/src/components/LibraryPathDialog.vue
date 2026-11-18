@@ -393,7 +393,7 @@ function confirmChecked() {
   border: 1px solid var(--au-border);
   border-radius: var(--au-r-md);
   background: var(--au-bg-soft);
-  font-size: var(--font-size-sm);
+  font-size: var(--uhd-fs-aux);
   color: var(--au-text-3);
 }
 .lpd-source b { color: var(--au-text); }
@@ -401,19 +401,19 @@ function confirmChecked() {
 .lpd-advanced { margin-bottom: 10px; }
 .lpd-hint {
   margin: 4px 0 0;
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-3);
   line-height: 1.6;
 }
 .lpd-warn {
   margin: 4px 0 0;
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-warning);
   line-height: 1.6;
 }
 .lpd-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .lpd-multi { flex: none; }
-.lpd-crumbs { margin-bottom: 6px; font-size: var(--font-size-xs); }
+.lpd-crumbs { margin-bottom: 6px; font-size: var(--uhd-fs-aux-sm); }
 .lpd-crumbs a { cursor: pointer; color: var(--au-primary); }
 .lpd-crumbs a:hover { color: var(--au-primary-strong); }
 .lpd-list {
@@ -429,7 +429,7 @@ function confirmChecked() {
   gap: 8px;
   padding: 8px 12px;
   cursor: pointer;
-  font-size: var(--font-size-sm);
+  font-size: var(--uhd-fs-aux);
   border-bottom: 1px solid var(--au-border);
 }
 .lpd-row:last-child { border-bottom: none; }
@@ -439,7 +439,7 @@ function confirmChecked() {
 .lpd-up { color: var(--au-text-3); }
 .lpd-icon { flex: none; color: var(--au-text-3); }
 .lpd-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lpd-tag { flex: none; font-size: var(--font-size-xs); color: var(--au-text-4); }
+.lpd-tag { flex: none; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-4); }
 .lpd-box {
   flex: none;
   width: 16px;
@@ -449,7 +449,7 @@ function confirmChecked() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: var(--uhd-fs-micro);
   line-height: 1;
   color: transparent;
   user-select: none;
@@ -460,16 +460,16 @@ function confirmChecked() {
   /* 勾选态：琥珀底上的字色走 --au-on-primary，品牌色覆盖后也保持可读 */
   color: var(--au-on-primary);
 }
-.lpd-empty, .lpd-error { padding: 24px; text-align: center; font-size: var(--font-size-sm); }
+.lpd-empty, .lpd-error { padding: 24px; text-align: center; font-size: var(--uhd-fs-aux); }
 .lpd-empty { color: var(--au-text-4); }
 .lpd-error { color: var(--au-danger); }
 .lpd-checked {
   margin-top: 8px;
-  font-size: var(--font-size-sm);
+  font-size: var(--uhd-fs-aux);
   color: var(--au-text-2);
 }
-.lpd-checked b { color: var(--au-primary); font-size: 15px; font-variant-numeric: tabular-nums; }
-.lpd-clear { margin-left: 10px; cursor: pointer; color: var(--au-primary); font-size: var(--font-size-xs); }
+.lpd-checked b { color: var(--au-primary); font-size: var(--uhd-fs-body); font-variant-numeric: tabular-nums; }
+.lpd-clear { margin-left: 10px; cursor: pointer; color: var(--au-primary); font-size: var(--uhd-fs-aux-sm); }
 @media (max-width: 768px) {
   .lpd-toolbar { flex-wrap: wrap; }
   .lpd-toolbar .el-input { flex: 1 1 100%; }

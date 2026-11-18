@@ -101,7 +101,7 @@ function toggle() {
   cursor: pointer;
   text-align: left;
   color: var(--au-text);
-  font-size: 14px;
+  font-size: var(--uhd-fs-caption);
   line-height: 1.5;
   transition: background var(--au-fast) var(--au-ease);
 }
@@ -113,7 +113,7 @@ function toggle() {
   align-items: center;
   gap: 8px;
   font-family: var(--au-font-serif);
-  font-size: 15px;
+  font-size: var(--uhd-fs-body);
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -122,7 +122,7 @@ function toggle() {
 
 .notice-summary {
   color: var(--au-text-3);
-  font-size: 12.5px;
+  font-size: var(--uhd-fs-aux-sm);
   font-weight: 400;
 }
 
@@ -139,7 +139,7 @@ function toggle() {
 
 .notice-body {
   padding: 4px 20px 18px;
-  font-size: 13px;
+  font-size: var(--uhd-fs-aux);
   line-height: 1.65;
   color: var(--au-text-2);
 }
