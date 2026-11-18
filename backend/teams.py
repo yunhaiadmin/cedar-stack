@@ -666,9 +666,12 @@ def play_eligible_team(db: Session, user_id: int) -> Optional[models.Team]:
     与 ``usage_attribution_user_id`` 的 active＋在期口径一致
     （那边只认成员行，本人归账落点不同，结论同向）。
     ``user_id`` 可传 id 或 WebUser 对象（与 usage_attribution
-    同约定：usage_summary 的存量调用方有传对象的）。
+    同约定：usage_summary 的存量调用方有传对象的）。取不到 id 的
+    桩对象返回 None，不抛错（与 _resolve_user_id 同口径）。
     """
-    uid = user_id.id if isinstance(user_id, models.WebUser) else int(user_id)
+    uid = _resolve_user_id(user_id)
+    if uid is None:
+        return None
     team, _role = get_user_team(db, uid)
     if team is None or team.status != "active":
         return None
