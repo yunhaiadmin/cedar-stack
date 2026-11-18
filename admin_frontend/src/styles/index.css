@@ -52,7 +52,7 @@
 
 /* 页面副标题：它是一段说明文，不是第二个大标题。
    旧版用 --font-size-2xl（20px），句子一长就在手机上排成「一堵墙」
-   ——「服务器与线路」页最典型。统一到正文 14px + 次要文字色（v2.42.6） */
+   ——「服务器」页最典型。统一到正文 14px + 次要文字色（v2.42.6） */
 .admin-page-desc {
   font-size: var(--font-size-md);
   color: var(--text-secondary);

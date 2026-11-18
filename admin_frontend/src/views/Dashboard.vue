@@ -294,7 +294,7 @@ const quickActions = [
   { label: '码管理', to: '/codes', icon: TicketCheck },
   { label: '媒体库', to: '/emby', icon: Film },
   { label: '任务总览', to: '/tasks', icon: ClipboardList },
-  { label: '服务器与线路', to: '/servers', icon: Server },
+  { label: '服务器', to: '/servers', icon: Server },
   { label: '系统健康', to: '/health', icon: Activity },
 ]
 
@@ -662,7 +662,7 @@ function serviceRoleLabel(role: string): string {
       </section>
 
       <!--
-        服务器接入：接了什么、几台能用、当前用哪台（明细在「服务器与线路」页）。
+        服务器接入：接了什么、几台能用、当前用哪台（明细在「服务器」页）。
         后端服务：aetrix-api + aetrix-worker 运行状态。两组同一行网格。
       -->
       <section v-if="serverTiles.length || backendServices.length" class="tile-grid" aria-label="服务接入">
@@ -702,7 +702,7 @@ function serviceRoleLabel(role: string): string {
 
       <!--
         各服概况：每个服的会员 / 内容 / 播放节点都在这里，不用一个个切过去看。
-        切当前作用域在顶栏，服与线路的归属在「服务器与线路」页按范围看。
+        切当前作用域在顶栏，服与线路的归属在「服务器」页按范围看。
       -->
       <SectionCard
         v-if="realms?.realms.length"
@@ -711,7 +711,7 @@ function serviceRoleLabel(role: string): string {
         :meta="`${realms.summary.total_realms} 个服 · 有效订阅 ${realms.summary.active_subscriptions} · 播放节点在线 ${realms.summary.nodes_online}/${realms.summary.nodes}`"
       >
         <template #actions>
-          <RouterLink class="card-link" to="/servers">服务器与线路<ArrowRight :size="13" /></RouterLink>
+          <RouterLink class="card-link" to="/servers">服务器<ArrowRight :size="13" /></RouterLink>
           <RouterLink class="card-link" to="/realms">服管理<ArrowRight :size="13" /></RouterLink>
         </template>
         <div class="realm-rows">

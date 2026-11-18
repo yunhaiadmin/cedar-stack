@@ -226,7 +226,7 @@ docker compose up -d    # 原地替换容器
 
 使用 rclone 时请注意：
 
-1. **rclone 配置由你自己粘贴。** 到后台「服务器与线路」页，编辑对应
+1. **rclone 配置由你自己粘贴。** 到后台「服务器」页，编辑对应
    的 EA，在弹窗里的 **rclone 配置** 区把你的 `rclone.conf`（标准 INI 文本）粘
    进去保存；**每台 EA 一份**（落盘为 `rclone-<服务器ID>.conf`）。面板只负责
    落盘并给 rclone 命令加 `--config`，不代管任何凭据、也不回显原文。粘好之前，
@@ -308,7 +308,7 @@ docker image rm ghcr.io/yunhaiadmin/aetrix-api:<版本> ghcr.io/yunhaiadmin/aetr
 （授权版 `docker-compose.prod.yml` 里这两个变量默认空，不会因为它起不来。）
 
 **rclone 挂载连不上了？**
-面板不代管 `rclone.conf`——到后台「服务器与线路」页，编辑对应的 EA，
+面板不代管 `rclone.conf`——到后台「服务器」页，编辑对应的 EA，
 在弹窗的 **rclone 配置** 区把你的配置粘进去保存（没有单独的「rclone.conf」页）。
 另见上面「三、升级到新版本」里的存储来源口径。
 
