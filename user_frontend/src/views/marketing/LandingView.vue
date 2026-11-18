@@ -586,22 +586,27 @@ const year = new Date().getFullYear()
 
     <!-- ① Hero -->
     <header class="hero">
-      <!-- 移动端全幅背景（L-02 棱镜图，2026-11-18 按友站构图换图：黑底星空、
-           棱镜细线轮廓居左下、彩虹光束贴底向右下展开、无入射光束、无水面，
-           左上大片黑场留给文案）；图与脉冲叠层同装 .hero-bg-canvas（画布与图
-           同比例 2048:1152、高度撑满首屏，叠层恒对位）；仅 ≤900px 显示，
-           桌面走 hero-visual 同图 -->
+      <!-- 移动端全幅背景（L-02 棱镜竖图，2026-11-18 晚重做：旧横图棱镜只占
+           图内角落 7%×11% 且是细线轮廓，高度撑满画布后只剩左下 105×92px
+           鬼影、又被底部渐黑压灭，等于没有。本图为竖图 1152×2048：黑底
+           星空、玻璃棱镜本体完整明亮居中下（图内 x 36–80%、y 56–77%）、
+           彩虹光束自棱镜右面扇出至右缘横贯、无入射光束、无水面，上半
+           黑场留给文案）；图与脉冲叠层同装 .hero-bg-canvas（画布与图同
+           比例 1152:2048、高度撑满首屏，叠层恒对位）；仅 ≤900px 显示，
+           桌面走 hero-visual 横图 -->
       <div class="hero-bg" :class="{ 'is-ready': heroImgReady }" aria-hidden="true">
         <div class="hero-bg-canvas">
-          <img class="hero-bg-img" src="/images/hero-prism-beam.webp" alt="" width="2048" height="1152" fetchpriority="high" @load="onHeroImgLoad" />
+          <img class="hero-bg-img" src="/images/hero-prism-portrait.webp" alt="" width="1152" height="2048" fetchpriority="high" @load="onHeroImgLoad" />
           <div class="hp">
             <span class="hp-flash hp-flash--prism" />
           </div>
         </div>
       </div>
-      <!-- 桌面棱镜主视觉：与移动端同一张棱镜图（2048×1152）。帧与图同
-           比例、高度撑满首屏，水平锚点把棱镜压到左下（几何见 .hero-visual-frame）。
-           移动端不显示，走 .hero-bg。不再另叠彩虹渐变。 -->
+      <!-- 桌面棱镜主视觉：棱镜横图（2048×1152，2026-11-18 晚重做：玻璃
+           棱镜本体居右，图内 x 60–80%、y 9–70%，光束自右面扇出至右缘）。
+           帧与图同比例、高度撑满首屏，水平锚点把棱镜中心压到容器宽约
+           62% 处（几何见 .hero-visual-frame）。移动端不显示，走 .hero-bg。
+           不再另叠彩虹渐变。 -->
       <div class="hero-visual" :class="{ 'is-ready': heroImgReady }" aria-hidden="true">
         <div class="hero-visual-frame">
           <img class="hero-visual-img" src="/images/hero-prism-beam.webp" alt="" width="2048" height="1152" @load="onHeroImgLoad" />
@@ -984,8 +989,8 @@ const year = new Date().getFullYear()
   overflow: visible;
 }
 /* 移动端全幅背景层：默认隐藏（桌面走 .hero-visual），仅 ≤900px 启用（见文末断点）。
-   .hero-bg 作尺寸容器，内层画布 .hero-bg-canvas 与底图同比例（2048:1152）、
-   高度撑满首屏：图与脉冲叠层同画布，任意视口下叠层坐标恒与图对位。::before 压暗左上文字区、::after 压暗
+   .hero-bg 作尺寸容器，内层画布 .hero-bg-canvas 与竖图同比例（1152:2048）、
+   高度撑满首屏：图与脉冲叠层同画布，任意视口下叠层坐标恒与图对位。::before 压暗左上文字区、::after 轻压
    底部卖点区（z-index 抬到画布之上），保证文字压在暗部上 */
 .hero-bg {
   display: none;
@@ -999,18 +1004,24 @@ const year = new Date().getFullYear()
 }
 .hero-bg-canvas {
   position: absolute;
-  /* 画布与图同比例（2048:1152）、高度撑满首屏：图宽＝177.78cqh 恒覆盖屏宽。
-     水平锚点：把棱镜中心（图 x≈9.7%）压到屏左 78px 处——棱镜落在左下、
-     彩虹光束贴底向右下展开、左上黑场留给文案。
-     脉冲几何覆盖值（对现行图 2048×1152 视觉定位实测，图内 % 坐标）：
-     棱镜轮廓 bbox x 6.2–13.2、y 85.6–96.5，中心 (9.7, 92.8) */
+  /* 画布与竖图同比例（1152:2048）、高度撑满首屏：图宽＝56.25cqh
+     （390×844 下 475px）。
+     水平锚点：把棱镜中心（图 x≈58%）压到屏宽 49% 处——棱镜居中、
+     光束自其右面扇出横贯首屏；第二项兜底保证画布右缘不小于屏宽
+     （窄高屏上高度撑满的画布会窄于屏宽，不兜底光束会在右缘前
+     15px 被裁断——首版锚点实测踩过）；上半黑场留给文案。
+     纵向与屏高 1:1：棱镜图内 y 56–77% 正落在文案区（止于约 55%）与
+     卖点栅格（起于约 78.5%）之间的空带，390×844 实测棱镜落
+     x 89–294、y 473–650，不与两区重叠，光束至屏右缘 x=390 出框。
+     脉冲几何覆盖值（对现行竖图 1152×2048 视觉定位实测，图内 % 坐标）：
+     棱镜本体 bbox x 36.4–79.5、y 56.1–77.0，中心 (58, 66.5) */
   top: 0;
   left: 0;
   height: 100%;
-  aspect-ratio: 2048 / 1152;
-  margin-left: calc(78px - 17.2cqh);
-  --hp-prism-x: 9.7%;
-  --hp-prism-y: 92.8%;
+  aspect-ratio: 1152 / 2048;
+  margin-left: max(calc(49cqw - 32.6cqh), calc(100cqw - 56.25cqh));
+  --hp-prism-x: 58%;
+  --hp-prism-y: 66.5%;
 }
 .hero-bg-img {
   display: block;
@@ -1036,7 +1047,11 @@ const year = new Date().getFullYear()
   position: absolute;
   z-index: 2;
   inset: 0;
-  background: linear-gradient(0deg, rgba(1, 1, 4, 0.86), rgba(1, 1, 4, 0.55) 28%, transparent 56%);
+  /* 底部渐黑只兜卖点栅格的可读性与节间衔接：旧值 0.86/0.55 把落在
+     底部带的棱镜旧图压到饱和像素归零（2026-11-18 量测实锤）。新图
+     棱镜已抬进中下空带、图底 22% 本就是暗星空，渐黑减半即可保住
+     白字对比，不再压灭棱镜与光束尾 */
+  background: linear-gradient(0deg, rgba(1, 1, 4, 0.52), rgba(1, 1, 4, 0.27) 24%, transparent 46%);
 }
 /* 桌面棱镜：与移动端同一张图，帧与图同比例（2048:1152）撑满首屏，
    脉冲百分比跟图走；定位把棱镜压到左下、彩虹贴底向右下展开，左上黑部留给文案。只裁装饰层。 */
@@ -1051,16 +1066,18 @@ const year = new Date().getFullYear()
   position: absolute;
   /* 不用 transform 定位：全站减动效会把 transform 清掉，构图不能靠它。
      帧与图同比例（2048:1152）、高度撑满首屏（超宽屏 min-width 兜底、底对齐，
-     图不拉伸不变形）；水平锚点：图比容器宽时把棱镜中心（图 x≈9.7%）压到
-     容器宽 12% 处，图恰好/不足时贴左/右对齐兜底不露黑。脉冲坐标与移动画布
-     同一组图内 % 值（同一张图、帧图同比例恒对位）。 */
+     图不拉伸不变形）；水平锚点：图比容器宽时把棱镜中心（图 x≈69.9%）压到
+     容器宽 62% 处，帧只比容器略宽时改为右对齐兜底（光束恰好出右框、
+     不露黑）。脉冲坐标按本图实测中心覆盖，与移动画布各用各图的值。
+     脉冲几何覆盖值（对现行横图 2048×1152 视觉定位实测，图内 % 坐标）：
+     棱镜本体 bbox x 59.7–79.9、y 9.1–69.9，中心 (69.9, 39.5) */
   bottom: 0;
   height: 100%;
   min-width: 100%;
   aspect-ratio: 2048 / 1152;
-  left: max(min(0px, calc(100cqw - 177.78cqh)), min(0px, calc(12cqw - 17.2cqh)));
-  --hp-prism-x: 9.7%;
-  --hp-prism-y: 92.8%;
+  left: max(min(0px, calc(100cqw - 177.78cqh)), min(0px, calc(62cqw - 124.1cqh)));
+  --hp-prism-x: 69.9%;
+  --hp-prism-y: 39.5%;
 }
 .hero-visual-img {
   display: block;
@@ -1078,7 +1095,7 @@ const year = new Date().getFullYear()
   pointer-events: none;
   background:
     linear-gradient(96deg, rgba(2, 2, 10, 0.82) 0%, rgba(2, 2, 10, 0.4) 26%, rgba(2, 2, 10, 0.08) 46%, transparent 62%),
-    linear-gradient(180deg, rgba(2, 2, 10, 0.55) 0%, transparent 16%, transparent 72%, rgba(1, 1, 4, 0.72) 100%);
+    linear-gradient(180deg, rgba(2, 2, 10, 0.55) 0%, transparent 16%, transparent 72%, rgba(1, 1, 4, 0.5) 100%);
 }
 
 /* ---------- Hero 棱镜脉冲（L-02 唯一动效，2026-11-14 友站实测） ----------
@@ -1088,8 +1105,9 @@ const year = new Date().getFullYear()
    只留棱镜闪。光谱扇／出射星芒／行星光晕／画面本体零动画（实测
    90s+ 恒定，不加）。周期 5s 字面值照本文件环境动画先例（uhd-marquee
    46s linear、pin-breathe 26s）；相位 % 由实测秒数换算；几何坐标走
-   --hp-* 令牌（uhd-tokens.css §1.7 同值兜底，现行几何在
-   .hero-visual-frame／.hero-bg-canvas 内按现行图实测覆盖，两端同值）。 */
+   --hp-* 令牌（uhd-tokens.css §1.7 给桌面横图值兜底，现行几何在
+   .hero-visual-frame／.hero-bg-canvas 内按各自图实测中心覆盖——
+   2026-11-18 晚起两端已是两张图、两组值，不再同值）。 */
 .hp {
   position: absolute;
   inset: 0;
