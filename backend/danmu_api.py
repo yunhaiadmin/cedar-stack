@@ -34,7 +34,10 @@ Id 取弹幕。契约要点：
   未配置，只存后台、用户不可见）；取弹幕链路是「文件名 match
   → episodeId → 整集 comment」，结果归一后与站内弹幕按时间轴
   合并。上游超时/报错/无匹配一律回落站内结果，错误不透传；
-  结果带短 TTL 进程缓存，避免每次播放都打上游。
+  结果带短 TTL 进程缓存，避免每次播放都打上游。单步请求超时
+  走 danmu_api_external_timeout_seconds（默认 15 秒、钳制
+  3–60）：上游 match 一步实测就要 8 秒上下，固定小超时会让
+  外部弹幕永远超时拿不到（2026-11-19 生产实测）。
 """
 
 from __future__ import annotations
@@ -63,6 +66,7 @@ logger = logging.getLogger(__name__)
 KEY_LINES = "danmu_api_lines"
 KEY_EXTERNAL_ENABLED = "danmu_api_external_enabled"
 KEY_EXTERNAL_URL = "danmu_api_external_url"
+KEY_EXTERNAL_TIMEOUT = "danmu_api_external_timeout_seconds"
 
 TOKEN_VALIDITY_DAYS = 365
 _TOKEN_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -287,6 +291,38 @@ def external_url(db: Session) -> str:
         return ""
 
 
+#: 外部源单步请求超时（秒）：默认 15——上游 match 一步实测 8.7 秒、
+#: comment 一步 3.3 秒（2026-11-19 生产实测），旧固定总超时 4 秒
+#: 让 match 永远 ReadTimeout、外部弹幕一条都拿不到。可配
+#: （danmu_api_external_timeout_seconds），读侧钳制 3–60：下限
+#: 防慢上游必死，上限防单个播放请求无限等；保存侧 schema 同
+#: 范围拒绝是第一层，钳制兜底直写库的脏值。
+EXTERNAL_TIMEOUT_DEFAULT_SECONDS = 15.0
+EXTERNAL_TIMEOUT_MIN_SECONDS = 3.0
+EXTERNAL_TIMEOUT_MAX_SECONDS = 60.0
+#: 连接超时固定 3 秒（且不超过总超时）：上游慢在响应生成、不在
+#: 建连；连接迟迟建不上通常是网络不通，不陪总超时一起等。
+_EXTERNAL_CONNECT_TIMEOUT = 3.0
+
+
+def external_timeout_seconds(db: Session) -> float:
+    """当前生效的外部源单步总超时（秒）：缺省/非法回默认，钳制 3–60。"""
+    raw = store.get_value(db, KEY_EXTERNAL_TIMEOUT, "")
+    try:
+        seconds = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return EXTERNAL_TIMEOUT_DEFAULT_SECONDS
+    return min(max(seconds, EXTERNAL_TIMEOUT_MIN_SECONDS),
+               EXTERNAL_TIMEOUT_MAX_SECONDS)
+
+
+def _upstream_timeout(db: Session) -> httpx.Timeout:
+    """由配置秒数拼 httpx 超时：读/写/池用总超时，连接单独 3 秒封顶。"""
+    total = external_timeout_seconds(db)
+    return httpx.Timeout(
+        total, connect=min(_EXTERNAL_CONNECT_TIMEOUT, total))
+
+
 # 外部源短 TTL 进程内缓存：键 = 条目 id，值 = (过期时刻, 归一弹幕)。
 # 命中 10 分钟、无匹配 5 分钟、上游失败 1 分钟——避免每次播放都
 # 打上游，也避免上游故障时每个请求都等一遍超时。
@@ -297,7 +333,6 @@ _EXT_CACHE_MAX = 512
 _ext_cache: dict[int, tuple[float, list[dict]]] = {}
 _ext_cache_lock = threading.Lock()
 
-_UPSTREAM_TIMEOUT = httpx.Timeout(4.0, connect=2.0)
 _MAX_EXTERNAL_ITEMS = 30000
 
 
@@ -322,6 +357,7 @@ def _ext_cache_put(item_id: int, rows: list[dict], ttl: float) -> None:
 
 
 def _upstream_json(op: str, method: str, url: str,
+                   timeout: httpx.Timeout,
                    json_body: dict | None = None) -> dict | None:
     """打上游一发：任何失败（超时/连接/HTTP 非 200/坏 JSON）回 None。
 
@@ -331,7 +367,7 @@ def _upstream_json(op: str, method: str, url: str,
         # trust_env=False：服务端取上游不看部署环境代理变量（no_proxy
         # 里带 [::1] 这类写法会让 httpx 解析代理表时直接抛 InvalidURL，
         # 2026-11-19 本机实测）；直连口径与站内其它出网调用一致。
-        with httpx.Client(timeout=_UPSTREAM_TIMEOUT,
+        with httpx.Client(timeout=timeout,
                           trust_env=False) as client:
             resp = client.request(method, url, json=json_body)
         if resp.status_code != 200:
@@ -346,8 +382,9 @@ def _upstream_json(op: str, method: str, url: str,
     return data if isinstance(data, dict) else None
 
 
-def _match_episode(base: str, item: em.MediaItem,
-                   filename: str) -> tuple[tuple[int, float] | None, bool]:
+def _match_episode(base: str, item: em.MediaItem, filename: str,
+                   timeout: httpx.Timeout
+                   ) -> tuple[tuple[int, float] | None, bool]:
     """按文件名 POST /api/v2/match 匹配：回 ((episodeId, shift 秒), False)。
 
     未命中回 (None, False)；传输层失败回 (None, True)——两者缓存
@@ -362,7 +399,7 @@ def _match_episode(base: str, item: em.MediaItem,
         "matchMode": "fileNameOnly",
     }
     data = _upstream_json("match", "POST", f"{base}/api/v2/match",
-                          json_body=body)
+                          timeout, json_body=body)
     if data is None:
         return None, True
     if not data.get("success") or not data.get("isMatched"):
@@ -378,8 +415,8 @@ def _match_episode(base: str, item: em.MediaItem,
     return (episode_id, shift), False
 
 
-def _fetch_comments(base: str, episode_id: int,
-                    shift: float) -> list[dict] | None:
+def _fetch_comments(base: str, episode_id: int, shift: float,
+                    timeout: httpx.Timeout) -> list[dict] | None:
     """GET /api/v2/comment/<episodeId> 取整集弹幕并归一；失败回 None。
 
     上游每条 {p: "时间,模式,颜色,[来源]", m: 文本, t: 时间}，映射
@@ -389,7 +426,7 @@ def _fetch_comments(base: str, episode_id: int,
     bilibili XML 里无对应字段，丢弃。
     """
     data = _upstream_json("comment", "GET",
-                          f"{base}/api/v2/comment/{episode_id}")
+                          f"{base}/api/v2/comment/{episode_id}", timeout)
     if data is None:
         return None
     rows: list[dict] = []
@@ -490,10 +527,11 @@ def fetch_external_danmaku(db: Session, item: em.MediaItem) -> list[dict]:
     cached = _ext_cache_get(item.id)
     if cached is not None:
         return cached
+    timeout = _upstream_timeout(db)
     matched: tuple[int, float] | None = None
     failed = False
     for filename in _candidate_filenames(db, item):
-        matched, failed = _match_episode(base, item, filename)
+        matched, failed = _match_episode(base, item, filename, timeout)
         if matched is not None:
             break
     if matched is None:
@@ -501,7 +539,7 @@ def fetch_external_danmaku(db: Session, item: em.MediaItem) -> list[dict]:
                        _EXT_TTL_FAIL if failed else _EXT_TTL_NOMATCH)
         return []
     episode_id, shift = matched
-    rows = _fetch_comments(base, episode_id, shift)
+    rows = _fetch_comments(base, episode_id, shift, timeout)
     if rows is None:
         _ext_cache_put(item.id, [], _EXT_TTL_FAIL)
         return []

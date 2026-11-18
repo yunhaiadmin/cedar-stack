@@ -35,7 +35,7 @@ from backend.emby_server import models as em  # noqa: E402
 
 GB = 1024 ** 3
 _KEYS = ("danmu_api_lines", "danmu_api_external_enabled",
-         "danmu_api_external_url")
+         "danmu_api_external_url", "danmu_api_external_timeout_seconds")
 
 
 def _invalidate():
@@ -611,11 +611,15 @@ class _FakeUpstream:
         self.fail = fail
 
     def install(self, monkeypatch):
+        import httpx as _real_httpx
         from types import SimpleNamespace as _NS
 
         from backend import danmu_api as _dm
 
-        monkeypatch.setattr(_dm, "httpx", _NS(Client=self._client))
+        # Timeout 是值类型、不假冒：实现侧拼超时对象要用真类
+        monkeypatch.setattr(
+            _dm, "httpx",
+            _NS(Client=self._client, Timeout=_real_httpx.Timeout))
 
     def _client(self, **kwargs):
         outer = self
@@ -872,6 +876,94 @@ def test_external_episode_filename_candidates(db, monkeypatch):
     core_api.fetch_external_danmaku(db, episode2)
     match_calls2 = fake2.calls_to("/api/v2/match")
     assert match_calls2[0][2]["fileName"] == "某文件.mkv"
+
+
+class _TimeoutCapturingUpstream(_FakeUpstream):
+    """在假上游基础上记录每次 httpx.Client 的构造参数（看 timeout）。"""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.client_kwargs = []
+
+    def _client(self, **kwargs):
+        self.client_kwargs.append(kwargs)
+        return super()._client(**kwargs)
+
+
+def _timeout_movie(item_id):
+    return SimpleNamespace(
+        id=item_id, item_type="movie", name="超时测试片",
+        file_path=None, series_id=None, season_number=None,
+        episode_number=None, production_year=2024, size=0,
+        duration_ticks=0)
+
+
+def test_external_timeout_defaults_to_15(db, monkeypatch):
+    """未配超时键：传给 httpx 的总超时是默认 15 秒、连接 3 秒。
+
+    旧固定 4 秒在上游 match 实测 8 秒面前必超时，外部弹幕永远
+    拿不到——本用例钉死默认值不再是 4。
+    """
+    from backend import danmu_api as core_api
+
+    fake = _TimeoutCapturingUpstream(match_payload=_MATCH_OK,
+                                     comment_payload=_COMMENT_OK)
+    fake.install(monkeypatch)
+    _enable_external(db)
+    rows = core_api.fetch_external_danmaku(db, _timeout_movie(990001))
+    assert rows  # 链路本身通（假上游秒回）
+    assert fake.client_kwargs, "上游客户端未被构造"
+    timeout = fake.client_kwargs[0]["timeout"]
+    assert timeout.read == 15.0
+    assert timeout.connect == 3.0
+
+
+def test_external_timeout_uses_config_value(db, monkeypatch):
+    """配了 danmu_api_external_timeout_seconds：match 与 comment
+    两步都用配置值（总超时），连接超时仍 3 秒。"""
+    from backend import config_service
+    from backend import danmu_api as core_api
+
+    fake = _TimeoutCapturingUpstream(match_payload=_MATCH_OK,
+                                     comment_payload=_COMMENT_OK)
+    fake.install(monkeypatch)
+    _enable_external(db)
+    config_service.save_config(
+        db, {"danmu_api_external_timeout_seconds": 25}, schema="danmu_api")
+    db.commit()
+    _invalidate()
+    rows = core_api.fetch_external_danmaku(db, _timeout_movie(990002))
+    assert rows
+    assert len(fake.client_kwargs) == 2  # match + comment 各构造一次
+    for kwargs in fake.client_kwargs:
+        assert kwargs["timeout"].read == 25.0
+        assert kwargs["timeout"].connect == 3.0
+
+
+def test_external_timeout_seconds_helper_clamps(db):
+    """读侧钳制：缺省/非法回默认 15；越界值钳到 3–60（防直写库的
+    脏值让请求必死或无限等；保存侧 schema 同范围拒绝是另一层）。"""
+    from backend import danmu_api as core_api
+
+    assert core_api.external_timeout_seconds(db) == 15.0
+
+    def _set_raw(value):
+        db.query(core.SystemConfig).filter(
+            core.SystemConfig.key
+            == "danmu_api_external_timeout_seconds").delete()
+        db.add(core.SystemConfig(
+            key="danmu_api_external_timeout_seconds", value=value))
+        db.commit()
+        _invalidate()
+
+    _set_raw("600")
+    assert core_api.external_timeout_seconds(db) == 60.0
+    _set_raw("1")
+    assert core_api.external_timeout_seconds(db) == 3.0
+    _set_raw("abc")
+    assert core_api.external_timeout_seconds(db) == 15.0
+    _set_raw("20")
+    assert core_api.external_timeout_seconds(db) == 20.0
 
 
 def test_admin_external_roundtrip_and_validation(db):
