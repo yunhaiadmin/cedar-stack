@@ -3320,7 +3320,7 @@ watch(
 }
 .group-nav-sec { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 /* 标签永不被压缩：窄屏下 chips 已是 flex: none，标签也要同等待遇，避免被挤到 pill 下面 */
-.group-nav-label { flex-shrink: 0; font-size: 11.5px; color: var(--au-text-3); margin-right: 2px; white-space: nowrap; }
+.group-nav-label { flex-shrink: 0; font-size: var(--uhd-fs-micro); color: var(--au-text-3); margin-right: 2px; white-space: nowrap; }
 .section-title { margin: 8px 0 -4px; scroll-margin-top: 140px; }
 .field-hint.warn { color: var(--au-warning); }
 .group-chip {
@@ -3333,7 +3333,7 @@ watch(
   background: var(--au-surface);
   color: var(--au-text-2);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--uhd-fs-aux-sm);
   cursor: pointer;
   transition: border-color var(--au-fast) var(--au-ease), color var(--au-fast) var(--au-ease);
 }
@@ -3349,7 +3349,7 @@ watch(
 }
 /* 分组 chip 上的"高级"角标：这张卡里有默认收起的高级调优项 */
 .chip-adv {
-  font-size: 10.5px;
+  font-size: var(--uhd-fs-micro);
   line-height: 1;
   padding: 2px 6px;
   border-radius: var(--au-r-full);
@@ -3369,14 +3369,14 @@ watch(
   border-radius: var(--au-r-md);
   background: var(--au-primary-soft);
 }
-.savebar-text { font-size: 13px; color: var(--au-text-2); }
+.savebar-text { font-size: var(--uhd-fs-aux); color: var(--au-text-2); }
 .savebar-text strong { color: var(--au-primary); }
 .savebar-actions { display: flex; align-items: center; gap: 8px; flex: none; }
 /* 高级调优折叠：默认收起，收的是"调了也不影响主流程"的参数 */
 .advanced-collapse { margin-top: 2px; border-top: 1px dashed var(--au-border); }
 .advanced-collapse :deep(.el-collapse-item__header) { border-bottom: none; }
-.advanced-title { font-size: 13px; font-weight: 600; color: var(--au-text-2); }
-.advanced-sub { font-weight: 400; font-size: 12px; color: var(--au-text-3); margin-left: 4px; }
+.advanced-title { font-size: var(--uhd-fs-aux); font-weight: 600; color: var(--au-text-2); }
+.advanced-sub { font-weight: 400; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); margin-left: 4px; }
 /* 跳转落点别被顶栏压住 */
 .group-card { scroll-margin-top: 140px; }
 
@@ -3397,7 +3397,7 @@ watch(
 .sd-row .sd-icon { width: 110px; flex: none; }
 .sd-row .sd-label { width: 170px; flex: none; }
 .sd-row .sd-url { flex: 1 1 220px; min-width: 180px; }
-.sd-row .sd-check { display: inline-flex; align-items: center; font-size: 13px; color: var(--au-text-2); }
+.sd-row .sd-check { display: inline-flex; align-items: center; font-size: var(--uhd-fs-aux); color: var(--au-text-2); }
 .sd-row .dl-id { width: 130px; flex: none; }
 .sd-row .dl-name { width: 150px; flex: none; }
 .sd-row .dl-note { flex: 1 1 200px; min-width: 160px; }
@@ -3405,9 +3405,9 @@ watch(
 .sd-row .dl-toggle { display: inline-flex; align-items: center; gap: 8px; flex: none; }
 .sd-row .sd-ops { display: inline-flex; gap: 4px; margin-left: auto; }
 .field-control { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.field-suffix { font-size: 12px; color: var(--au-text-3); white-space: nowrap; }
-.field-hint { font-size: 12px; color: var(--au-text-3); line-height: 1.6; }
-.license-link { font-size: 13px; color: var(--au-primary); text-decoration: underline; text-underline-offset: 3px; }
+.field-suffix { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); white-space: nowrap; }
+.field-hint { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); line-height: 1.6; }
+.license-link { font-size: var(--uhd-fs-aux); color: var(--au-primary); text-decoration: underline; text-underline-offset: 3px; }
 .num-input { width: 160px; }
 
 .card-footer {
@@ -3426,7 +3426,7 @@ watch(
   align-items: center;
   gap: 6px;
   margin: 0;
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-3);
   padding: 0 2px 8px;
 }
@@ -3440,10 +3440,10 @@ watch(
   outline: 3px solid var(--au-danger-soft);
 }
 .danger-guard { border-color: var(--au-success-border); }
-.danger-guard-meta { margin: 6px 0 0; font-size: 12px; color: var(--au-text-3); line-height: 1.6; }
+.danger-guard-meta { margin: 6px 0 0; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); line-height: 1.6; }
 .danger-effect {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--uhd-fs-aux-sm);
   line-height: 1.7;
   color: var(--au-text-2);
 }
@@ -3455,8 +3455,8 @@ watch(
   border: 1px solid var(--danger-border); border-left: 3px solid var(--danger-border);
   border-radius: var(--au-r-md); background: var(--danger-bg);
 }
-.danger-isolate-text strong { display: block; font-size: 13px; color: var(--danger); margin-bottom: 4px; }
-.danger-isolate-text span { font-size: 12px; color: var(--au-text-2); line-height: 1.7; }
+.danger-isolate-text strong { display: block; font-size: var(--uhd-fs-aux); color: var(--danger); margin-bottom: 4px; }
+.danger-isolate-text span { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-2); line-height: 1.7; }
 .purge-input { width: 120px; }
 
 /* ==================== 能力卡片 ==================== */
@@ -3520,12 +3520,12 @@ watch(
   color: var(--au-primary);
 }
 
-.cap-title { font-size: 15px; margin: 2px 0 0; color: var(--au-text); }
-.cap-card p { font-size: 12px; color: var(--au-text-3); line-height: 1.6; margin: 0; }
-.cap-more { font-size: 12px; color: var(--au-primary); margin-top: 4px; }
+.cap-title { font-size: var(--uhd-fs-body); margin: 2px 0 0; color: var(--au-text); }
+.cap-card p { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); line-height: 1.6; margin: 0; }
+.cap-more { font-size: var(--uhd-fs-aux-sm); color: var(--au-primary); margin-top: 4px; }
 
 .cap-drawer { display: flex; flex-direction: column; gap: 12px; }
-.cap-drawer-desc { font-size: 13px; color: var(--au-text-2); margin: 0; line-height: 1.6; }
+.cap-drawer-desc { font-size: var(--uhd-fs-aux); color: var(--au-text-2); margin: 0; line-height: 1.6; }
 .cap-drawer-hint { margin: 0; }
 .cap-drawer :deep(.el-select) { width: 100%; }
 
