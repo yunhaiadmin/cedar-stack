@@ -1,8 +1,8 @@
 /* ============================================================
- * UHD 统一顶栏令牌（顶栏统一固定＋「网页观影」常驻入口单，2026-11-14）
+ * UHD 统一顶栏令牌（顶栏统一固定＋「前往流媒体」常驻入口单，2026-11-14）
  *
  * 登录后用户区只许一套顶栏（components/uhd/UhdTopBar.vue）与一颗
- * 「网页观影」胶囊（components/uhd/UhdWatchPill.vue）：形态、尺寸、
+ * 「前往流媒体」胶囊（components/uhd/UhdWatchPill.vue）：形态、尺寸、
  * 玻璃配方全部在此一处定义，各页不许再自写顶栏/观影钮。
  * 本文件只定义 --utb-* 变量（顶栏作用域），不改任何既有变量的值；
  * 已按 U0 冻结流程同步登记 scripts/check_frontend_tokens.py 的
@@ -15,14 +15,13 @@
      友站办事面胶囊按截图比例折算约 37–40、片库面浮动胶囊组约 45，
      初版 72/54 量过头，统一收至 56/40。 */
   --utb-h: 56px;
-  /* 胶囊高（2026-11-18 友站 .btn-glass/.pill-primary 逐字真值，见
-     reports/member-card-friend-css-20261118.md 附节）：高由 padding＋字号
-     决定＝padding-block 10×2＋字 15 行高 22＋border 1×2＝44，组件本体
-     不再读 --utb-pill-h。--utb-pill-h 保留 33 仅供 UhdTopBar 外观钮
-     同高基准（该钮与胶囊同高口径就此脱钩，是否跟随 44 待定夺）。 */
+  /* 胶囊尺寸（改前配方，2026-11-18 用户亲点收回）：高 33 由
+     --utb-pill-h 钉死（胶囊本体与 UhdTopBar 外观钮同高共用此令牌）、
+     字 13、padding-inline 13（--utb-pill-px）。#321 曾照友站
+     .btn-glass/.pill-primary 把胶囊放大到高 44／字 15／padding-inline
+     24，用户真机嫌大收回；#321 的彩虹环与 lens 玻璃配方保留不动。 */
   --utb-pill-h: 33px;
-  --utb-pill-py: 10px;
-  --utb-pill-px: 24px;
+  --utb-pill-px: 13px;
   /* 玻璃配方：blur + saturate（半透底/内高光在组件里组装） */
   --utb-glass-filter: blur(18px) saturate(170%);
   /* 胶囊 lens 配方（友站真值）：blur 2px saturate 160%（仅胶囊用，

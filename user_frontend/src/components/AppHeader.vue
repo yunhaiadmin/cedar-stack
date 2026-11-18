@@ -321,7 +321,7 @@ onBeforeUnmount(() => {
         </button>
 
         <template v-if="userStore.isLoggedIn">
-          <!-- 「网页观影」常驻胶囊：与账户区/片库面同一颗组件（顶栏统一单，
+          <!-- 「前往流媒体」常驻胶囊：与账户区/片库面同一颗组件（顶栏统一单，
                2026-11-14），落点片库 /library；本栏已有的 sticky 玻璃形态不动 -->
           <UhdWatchPill />
           <div ref="userMenuRef" class="user-menu">

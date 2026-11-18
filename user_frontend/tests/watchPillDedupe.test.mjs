@@ -1,5 +1,7 @@
-// 「网页观影」胶囊去重契约（2026-11-18）：账户区胶囊由 App.vue 的
+// 「前往流媒体」胶囊去重契约（2026-11-18）：账户区胶囊由 App.vue 的
 // UhdTopBar（内挂 UhdWatchPill）全区统一承接，各页不得再自带手写胶囊。
+// 文案沿革：胶囊原名「网页观影」，2026-11-18 用户亲定按友站入口名
+// 改为「前往流媒体」（友站侧栏卡片同名；我方落地页 hero 次钮已同名）。
 // 运行：cd user_frontend && node tests/watchPillDedupe.test.mjs
 // 背景：2026-11-14 顶栏统一单已定版此口径（InviteFriendsView、
 // SubscriptionRecordsView 当时已删自带钮并留注释）。2026-11-15 按作品
@@ -7,7 +9,10 @@
 // 顶栏绕开口径，两页各多出一颗手写胶囊（.rf-watch / .rmd-watch），与
 // 统一顶栏的常驻胶囊上下叠出两颗——用户 2026-11-18 真机截图抓现行。
 // 本契约锁死：两页不再有手写胶囊标记/样式/直达链接；全站视图层
-// （剥注释后）不再出现「网页观影」字样（胶囊只许 UhdWatchPill 一份）。
+// （剥注释后）不再出现旧名「网页观影」字样（防旧名以手写胶囊复活）。
+// 新名「前往流媒体」不做视图层全扫：落地页 hero 次钮是另一个合法
+// 入口、本就用同名文案，全扫会误伤；新名的唯一持有靠下方正向断言
+// 锁在 UhdWatchPill 本体＋类名/直达链接两道旧检查兜底。
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -51,7 +56,7 @@ for (const f of walk(join(ROOT, 'src'))) {
   const t = readFileSync(f, 'utf8')
   check(`全站无 rf-watch/rmd-watch：${f.slice(ROOT.length + 1)}`, !t.includes('rf-watch') && !t.includes('rmd-watch'))
 }
-// 全站视图层：剥注释后不再有「网页观影」字样（胶囊文案只许统一组件持有）
+// 全站视图层：剥注释后不再有旧名「网页观影」字样（防旧名手写复活）
 for (const f of walk(join(ROOT, 'src/views'))) {
   const t = stripComments(readFileSync(f, 'utf8'))
   check(`视图层无手写「网页观影」：${f.slice(ROOT.length + 1)}`, !t.includes('网页观影'))
@@ -61,5 +66,9 @@ for (const f of walk(join(ROOT, 'src/views'))) {
 const app = read('src/App.vue')
 check('App.vue 账户区仍挂 UhdTopBar', app.includes('<UhdTopBar') && app.includes('isAccountArea'))
 check('UhdTopBar 仍挂 UhdWatchPill', read('src/components/uhd/UhdTopBar.vue').includes('<UhdWatchPill'))
+// 胶囊本体持有新名文案（可见文案＋aria-label，2026-11-18 改名单锁死）
+const pill = read('src/components/uhd/UhdWatchPill.vue')
+check('胶囊可见文案为「前往流媒体」', pill.includes('<span>前往流媒体</span>'))
+check('胶囊 aria-label 为「前往流媒体：前往片库」', pill.includes('aria-label="前往流媒体：前往片库"'))
 
 console.log(`\nwatchPillDedupe: ${passed} passed`)
