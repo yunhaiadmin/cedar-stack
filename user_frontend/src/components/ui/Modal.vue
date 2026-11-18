@@ -360,10 +360,14 @@ export default {
 }
 
 /* ==================== 动画 ==================== */
+/* 入场统一走 UhdModal 一套令牌时长/曲线（质感第二波，2026-11-18）：
+   遮罩 fade .52s＋standard、内容 blur-in .56s＋pop、离场 base .2s（与原值一致）。
+   起止态 scale(0.95)＋translateY(10px) 保持（与 UhdModal 的纯淡入不同，
+   此处保留轻微收放，见 #17 口径）。 */
 /* 背景进入/离开动画 */
 .modal-backdrop-enter-active,
 .modal-backdrop-leave-active {
-  transition: opacity var(--neo-duration-normal, 200ms) var(--neo-ease-default);
+  transition: opacity var(--uhd-dur-fade) var(--uhd-ease-standard);
 }
 
 .modal-backdrop-enter-from,
@@ -373,11 +377,11 @@ export default {
 
 /* 内容进入/离开动画 */
 .modal-content-enter-active {
-  transition: opacity var(--neo-duration-slow, 300ms) cubic-bezier(0.16, 1, 0.3, 1), transform var(--neo-duration-slow, 300ms) cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity var(--uhd-dur-blur-in) var(--uhd-ease-pop), transform var(--uhd-dur-blur-in) var(--uhd-ease-pop);
 }
 
 .modal-content-leave-active {
-  transition: opacity var(--neo-duration-normal, 200ms) ease-in, transform var(--neo-duration-normal, 200ms) ease-in;
+  transition: opacity var(--uhd-dur-base) ease-in, transform var(--uhd-dur-base) ease-in;
 }
 
 .modal-content-enter-from {

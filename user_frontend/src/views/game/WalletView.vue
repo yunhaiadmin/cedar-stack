@@ -407,7 +407,7 @@ onMounted(() => {
   font-weight: 700;
   cursor: pointer;
 }
-.w-recharge:active { transform: scale(0.96); }
+.w-recharge:active { transform: scale(var(--uhd-press-scale)); }
 .w-alert { margin: 12px 0 0; font-size: 12.5px; color: #f87171; }
 html[data-theme='light'] .w-alert { color: #dc2626; }
 
@@ -438,10 +438,10 @@ html[data-theme='light'] .w-alert { color: #dc2626; }
   background: var(--paper2);
   border-color: var(--line);
   color: var(--ink);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 2px 8px rgba(0, 0, 0, 0.25);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--uhd-shadow-soft);
 }
 html[data-theme='light'] .w-seg__btn--on {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 1px 3px rgba(20, 22, 28, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--uhd-shadow-seg);
 }
 
 .w-tab { margin-top: 26px; display: flex; flex-direction: column; gap: 32px; }
@@ -501,7 +501,7 @@ html[data-theme='light'] .w-err { color: #dc2626; }
   cursor: pointer;
 }
 .w-outline-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.w-outline-btn:active:not(:disabled) { transform: scale(0.96); }
+.w-outline-btn:active:not(:disabled) { transform: scale(var(--uhd-press-scale)); }
 
 /* 我生成的兑换码：标题行 + 筛选 */
 .w-list-head { display: flex; align-items: center; gap: 8px; }
@@ -552,7 +552,7 @@ html[data-theme='light'] .w-err { color: #dc2626; }
   background: var(--paper-card);
   border: 1px solid var(--line);
   border-radius: 14px;
-  box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--uhd-shadow-float);
 }
 .w-filter__opt {
   width: 100%;

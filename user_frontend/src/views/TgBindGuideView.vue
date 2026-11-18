@@ -517,9 +517,7 @@ onUnmounted(() => {
     linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
     var(--uhd-rainbow) border-box;
   /* 玻璃栈补齐（2026-11-13 主要按钮统一单）：内高光 + 柔影 + backdrop 毛玻璃 */
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 12px 28px -12px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--uhd-shadow-sheet);
   backdrop-filter: var(--uhd-glass-filter);
   -webkit-backdrop-filter: var(--uhd-glass-filter);
 }

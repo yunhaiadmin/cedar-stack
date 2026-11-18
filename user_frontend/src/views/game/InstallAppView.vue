@@ -565,7 +565,7 @@ html[data-theme='light'] .ia-seg__btn { color: rgba(17, 18, 20, 0.55); }
 html[data-theme='light'] .ia-seg__btn.is-on {
   background: #ffffff;
   color: #111214;
-  box-shadow: 0 1px 4px rgba(17, 18, 20, 0.12);
+  box-shadow: var(--uhd-shadow-seg);
 }
 
 /* 编号步骤：圆形图标钮＋文案（关键动作加粗），发丝线分隔 */

@@ -30,7 +30,7 @@ const emit = defineEmits<{ 'update:open': [boolean] }>()
   position: absolute;
   inset: 0;
   z-index: 40;
-  background: rgba(0, 0, 0, 0.45);
+  background: var(--modal-scrim-dark);
   display: flex;
   align-items: flex-end;
   justify-content: center;

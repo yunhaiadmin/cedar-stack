@@ -818,7 +818,7 @@ onMounted(() => {
   background: #ffffff;
   color: var(--uhd-l-text);
   font-weight: 600;
-  box-shadow: 0 2px 8px rgba(17, 17, 20, 0.10);
+  box-shadow: var(--uhd-shadow-soft);
 }
 
 /* 套餐卡片列表（友站 f039：选中白卡圆角 20/内边距 17/轻阴影；未选无卡底） */
@@ -834,7 +834,7 @@ onMounted(() => {
 }
 .plan-card--on {
   background: var(--uhd-l-surface);
-  box-shadow: 0 10px 34px rgba(17, 17, 20, 0.08);
+  box-shadow: var(--uhd-shadow-card-l);
 }
 .plan-card__head {
   display: flex;
@@ -874,7 +874,7 @@ onMounted(() => {
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 999px;
-  background: var(--uhd-rainbow, linear-gradient(100deg, #2f8fe0, #c46c90 55%, #f2a45a));
+  background: var(--uhd-rainbow-fill, linear-gradient(100deg, #2f8fe0, #c46c90 55%, #f2a45a));
   color: #fff;
 }
 .plan-card__pricebox {
@@ -960,7 +960,7 @@ onMounted(() => {
   border-radius: 50%;
   background: #ffffff;
   border: 2px solid var(--uhd-l-text);
-  box-shadow: 0 2px 8px rgba(17, 17, 20, 0.18);
+  box-shadow: var(--uhd-shadow-thumb);
 }
 .sub-slider::-moz-range-thumb {
   width: 22px;
@@ -968,7 +968,7 @@ onMounted(() => {
   border-radius: 50%;
   background: #ffffff;
   border: 2px solid var(--uhd-l-text);
-  box-shadow: 0 2px 8px rgba(17, 17, 20, 0.18);
+  box-shadow: var(--uhd-shadow-thumb);
 }
 .sub-dur__caps {
   display: flex;
@@ -1115,9 +1115,9 @@ onMounted(() => {
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 0.12s ease, opacity 0.12s ease;
+  transition: transform var(--uhd-press-dur) var(--uhd-ease-spring), opacity 0.12s ease;
 }
-.sub-sticky__cta:active:not(:disabled) { transform: scale(0.98); }
+.sub-sticky__cta:active:not(:disabled) { transform: scale(var(--uhd-press-scale)); }
 .sub-sticky__cta:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* 确认弹窗明细 */
@@ -1153,7 +1153,7 @@ onMounted(() => {
 .cfm-btn--main {
   border: none;
   color: #fff;
-  background: var(--uhd-rainbow, linear-gradient(100deg, #2f8fe0, #c46c90 55%, #f2a45a));
+  background: var(--uhd-rainbow-fill, linear-gradient(100deg, #2f8fe0, #c46c90 55%, #f2a45a));
 }
 .cfm-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
@@ -1176,7 +1176,7 @@ html:not([data-theme='light']) .sub-page {
   --uhd-l-input-bg: #242526;
   --uhd-l-active: #2d2d2f;
 }
-html:not([data-theme='light']) .plan-card--on { box-shadow: 0 10px 34px rgba(0, 0, 0, 0.35); }
+html:not([data-theme='light']) .plan-card--on { box-shadow: var(--uhd-shadow-card-d); }
 html:not([data-theme='light']) .sub-skeleton {
   background: linear-gradient(100deg, #17171a 40%, #1f1f23 50%, #17171a 60%);
   background-size: 200% 100%;
@@ -1188,8 +1188,8 @@ html:not([data-theme='light']) .sub-coupon__box,
 html:not([data-theme='light']) .sub-coupon__apply { background: #111214; }
 html:not([data-theme='light']) .sub-cap--on { background: #fbfcfd; border-color: #fbfcfd; color: #111214; }
 html:not([data-theme='light']) .plan-radio--on::after { background: #111214; }
-html:not([data-theme='light']) .sub-slider::-webkit-slider-thumb { background: #2e2e33; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45); }
-html:not([data-theme='light']) .sub-slider::-moz-range-thumb { background: #2e2e33; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45); }
+html:not([data-theme='light']) .sub-slider::-webkit-slider-thumb { background: #2e2e33; box-shadow: var(--uhd-shadow-thumb-d); }
+html:not([data-theme='light']) .sub-slider::-moz-range-thumb { background: #2e2e33; box-shadow: var(--uhd-shadow-thumb-d); }
 html:not([data-theme='light']) .sub-sticky { background: rgba(13, 13, 15, 0.92); }
 html:not([data-theme='light']) .sub-sticky__cta {
   background:

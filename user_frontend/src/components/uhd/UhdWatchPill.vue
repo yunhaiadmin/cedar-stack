@@ -60,10 +60,10 @@ import { RouterLink } from 'vue-router'
   text-decoration: none;
   white-space: nowrap;
   flex: none;
-  transition: transform var(--uhd-dur-ui, 160ms) var(--uhd-ease-standard, ease);
+  transition: transform var(--uhd-press-dur) var(--uhd-ease-standard, ease);
 }
 .utb-pill:active {
-  transform: scale(0.97);
+  transform: scale(var(--uhd-press-scale));
 }
 .utb-pill__icon {
   flex: none;

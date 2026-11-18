@@ -513,9 +513,7 @@ html[data-theme='light'] .tq-modal {
   background: var(--tq-seg-on);
   border-color: var(--tq-seg-on-edge);
   opacity: 1;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 1px 6px rgba(0, 0, 0, 0.14);
+  box-shadow: var(--uhd-shadow-tab);
 }
 .tq-body { padding-top: 12px; }
 
@@ -676,9 +674,7 @@ html:not([data-theme='light']) .tq-error { color: #f87171; }
   background:
     linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
     var(--uhd-rainbow) border-box;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 12px 28px -12px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--uhd-shadow-sheet);
   backdrop-filter: var(--uhd-glass-filter);
   -webkit-backdrop-filter: var(--uhd-glass-filter);
   display: inline-flex;
@@ -705,11 +701,11 @@ html[data-theme='light'] .tq-confirm {
 .tq-chip:active,
 .tq-preview-btn:active:not(:disabled),
 .tq-close:active {
-  transform: scale(0.97);
+  transform: scale(var(--uhd-press-scale));
   opacity: 0.88;
 }
 .tq-pkg, .tq-tab, .tq-chip, .tq-preview-btn, .tq-close {
-  transition: transform 0.12s ease, opacity 0.12s ease;
+  transition: transform var(--uhd-press-dur) var(--uhd-ease-spring), opacity 0.12s ease;
 }
 .tq-spinner {
   width: 15px;

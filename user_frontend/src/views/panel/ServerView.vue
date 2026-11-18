@@ -362,7 +362,7 @@ const growthFoot = computed(() => {
   flex-direction: column;
   background:
     linear-gradient(115deg, #2b2d2f 0%, #252629 6%, #2e2e34 12%, #35333d 18%, #3e3e45 24%, #433e4d 29%, #484255 34%, #4f4a5e 39%, #605a76 43%, #655f7d 46%, #716b8e 49%, #79769c 52%, #74759a 57%, #6d7599 62%, #697498 67%, #677598 72%, #5f7898 77%, #4e6781 82%, #445a70 86%, #3f5367 90%, #354556 93%, #313e4c 96%, #1e2328 98%, #161522 100%);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32);
+  box-shadow: var(--uhd-shadow-card-d);
   color: #ffffff;
 }
 .sv-card__shine {
@@ -514,7 +514,7 @@ html[data-theme='light'] .sv-page {
 html[data-theme='light'] .sv-card {
   background:
     linear-gradient(115deg, #fcfcfc 0%, #f4f0fa 14%, #ede7f7 25%, #e4dbf5 34%, #d7cdf2 42%, #c9bfef 48%, #c2b9ee 54%, #bdb6ee 59%, #b7b5ef 63%, #b0b6f0 67%, #a8b9f0 70%, #a0bbf1 73%, #d0dff9 76%, #a6c4f4 79%, #d7e6fa 82%, #b7d1f6 85%, #bed7f7 88%, #e1edfb 91%, #ccdff9 94%, #dae8fa 96%, #f2f7fd 98%, #fbfcfd 100%);
-  box-shadow: 0 8px 22px rgba(90, 94, 150, 0.08);
+  box-shadow: var(--uhd-shadow-card-lav);
   color: #111111;
 }
 html[data-theme='light'] .sv-card__line { color: #55575c; }

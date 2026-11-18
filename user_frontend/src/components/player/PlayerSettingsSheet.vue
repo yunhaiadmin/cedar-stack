@@ -278,7 +278,7 @@ button.wp-row:hover {
   height: 20px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--uhd-shadow-knob);
   transition: left 0.2s ease;
 }
 .wp-switch.is-on::before {

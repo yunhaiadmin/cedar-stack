@@ -88,12 +88,12 @@ withDefaults(
 .uhd-chip__dot--doing { background: var(--uhd-dot-doing); }
 .uhd-chip__dot--ok { background: var(--uhd-dot-ok); }
 .uhd-chip__dot--bad { background: var(--uhd-dot-bad); }
-/* 「推荐」角标：彩虹底（白名单） */
+/* 「推荐」角标：彩虹底（白名单）——填色走不透明 fill 版，边框版右半段透明会拖垮填色 */
 .uhd-chip--badge {
   height: 22px;
   padding: 0 9px;
   border-radius: var(--uhd-radius-pill);
-  background: var(--uhd-rainbow);
+  background: var(--uhd-rainbow-fill);
   color: var(--uhd-d-text);
   font-size: var(--uhd-fs-micro);
   font-weight: var(--uhd-fw-bold);

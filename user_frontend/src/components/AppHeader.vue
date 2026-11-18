@@ -522,7 +522,7 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   color: var(--paper-ink-3);
   text-decoration: none;
-  transition: color var(--paper-fast) var(--paper-ease);
+  transition: color var(--paper-fast) var(--paper-ease), transform var(--uhd-press-dur) var(--uhd-ease-spring);
 }
 
 /* 触点 44px：::before 透明扩展，安静纯文字导航视觉不变（::after 留给当前页圆点） */
@@ -534,7 +534,7 @@ onBeforeUnmount(() => {
   color: var(--paper-ink);
 }
 
-.nav-link:active { transform: scale(0.98); }
+.nav-link:active { transform: scale(var(--uhd-press-scale)); }
 
 .nav-link-active,
 .nav-link-active:hover {
@@ -588,7 +588,8 @@ onBeforeUnmount(() => {
   cursor: pointer;
   transition: background var(--paper-fast) var(--paper-ease),
     border-color var(--paper-fast) var(--paper-ease),
-    color var(--paper-fast) var(--paper-ease);
+    color var(--paper-fast) var(--paper-ease),
+    transform var(--uhd-press-dur) var(--uhd-ease-spring);
 }
 
 .round-btn:hover {
@@ -597,7 +598,7 @@ onBeforeUnmount(() => {
   border-color: var(--paper-line-strong);
 }
 
-.round-btn:active { transform: scale(0.96); }
+.round-btn:active { transform: scale(var(--uhd-press-scale)); }
 
 .round-btn:focus-visible {
   outline: 2px solid var(--paper-border-focus);
@@ -896,10 +897,10 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   text-decoration: none;
   color: var(--ink);
-  transition: transform 0.12s ease, border-color var(--paper-fast);
+  transition: transform var(--uhd-press-dur) var(--uhd-ease-spring), border-color var(--paper-fast);
 }
 .dropdown-facility:hover { border-color: var(--ink); }
-.dropdown-facility:active { transform: scale(0.98); }
+.dropdown-facility:active { transform: scale(var(--uhd-press-scale)); }
 /* 纸色风键盘焦点环：设施卡片 / 退出登录（与顶栏其余焦点环同配方，颜色取纸色墨色） */
 .dropdown-facility:focus-visible,
 .dropdown-logout:focus-visible {

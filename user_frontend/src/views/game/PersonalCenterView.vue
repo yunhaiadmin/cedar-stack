@@ -803,11 +803,11 @@ html[data-theme='light'] .ov-loading__text { color: #8a8d93; }
 }
 /* 购买流量钮按压反馈（app 口径：点下去要有明确反馈态） */
 .ov-actions--traffic .ov-btn:active {
-  transform: scale(0.96);
+  transform: scale(var(--uhd-press-scale));
   opacity: 0.85;
 }
 .ov-actions--traffic .ov-btn {
-  transition: transform 0.12s ease, opacity 0.12s ease;
+  transition: transform var(--uhd-press-dur) var(--uhd-ease-spring), opacity 0.12s ease;
 }
 /* 流量区骨架：与真实区同版式占位，微光扫过表示加载中 */
 .ov-skel {
@@ -861,7 +861,7 @@ html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
   font-size: 14.5px;
   font-weight: var(--uhd-fw-semibold);
   text-decoration: none;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--uhd-shadow-soft);
 }
 /* 主钮：深色面＝深色毛玻璃底＋彩虹渐变边框＋玻璃栈（内高光＋柔影＋backdrop，2026-11-13 补齐玻璃）；
    浅色面＝淡彩粉彩底＋彩虹边框（见浅色覆盖） */
@@ -871,9 +871,7 @@ html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
     linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
     var(--uhd-rainbow) border-box;
   color: #ffffff;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 12px 28px -12px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--uhd-shadow-sheet);
   backdrop-filter: var(--uhd-glass-filter);
   -webkit-backdrop-filter: var(--uhd-glass-filter);
 }
@@ -1180,7 +1178,7 @@ html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
   height: 18px;
   border-radius: 50%;
   background: #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--uhd-shadow-knob);
   transition: transform 0.2s ease;
 }
 .ov-switch--on { background: #e8e8ec; }
@@ -1331,7 +1329,7 @@ html[data-theme='light'] .ov-page.ov-dark .ov-bar__fill { background: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-quota__meta { color: rgba(255, 255, 255, 0.42); }
 html[data-theme='light'] .ov-page.ov-dark .ov-quota__meta-line { color: rgba(255, 255, 255, 0.42); }
 html[data-theme='light'] .ov-page.ov-dark .ov-btn { background: #17181c; color: #ffffff; }
-html[data-theme='light'] .ov-page.ov-dark .ov-btn--primary { background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box, var(--uhd-rainbow) border-box; color: #ffffff; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 12px 28px -12px rgba(0, 0, 0, 0.5); backdrop-filter: var(--uhd-glass-filter); -webkit-backdrop-filter: var(--uhd-glass-filter); }
+html[data-theme='light'] .ov-page.ov-dark .ov-btn--primary { background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box, var(--uhd-rainbow) border-box; color: #ffffff; box-shadow: var(--uhd-shadow-sheet); backdrop-filter: var(--uhd-glass-filter); -webkit-backdrop-filter: var(--uhd-glass-filter); }
 html[data-theme='light'] .ov-page.ov-dark .ov-sec__title { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-sec__more { color: rgba(255, 255, 255, 0.62); }
 html[data-theme='light'] .ov-page.ov-dark .ov-row__chev { color: rgba(255, 255, 255, 0.42); }
@@ -1344,7 +1342,7 @@ html[data-theme='light'] .ov-page.ov-dark .ov-drow__name { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-drow__status { color: rgba(255, 255, 255, 0.42); }
 html[data-theme='light'] .ov-page.ov-dark .ov-drow__status--on { color: #4ade80; }
 html[data-theme='light'] .ov-page.ov-dark .ov-trow__value { color: rgba(255, 255, 255, 0.42); }
-html[data-theme='light'] .ov-page.ov-dark :deep(.uad-pill) { background: rgba(30, 30, 33, 0.55); border-color: rgba(255, 255, 255, 0.16); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 16px 40px rgba(0, 0, 0, 0.5); }
+html[data-theme='light'] .ov-page.ov-dark :deep(.uad-pill) { background: rgba(30, 30, 33, 0.55); border-color: rgba(255, 255, 255, 0.16); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), var(--uhd-shadow-float); }
 html[data-theme='light'] .ov-page.ov-dark :deep(.uad-tab) { color: rgba(255, 255, 255, 0.55); }
 html[data-theme='light'] .ov-page.ov-dark :deep(.uad-tab--on) { background: rgba(255, 255, 255, 0.13); color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-expiry { color: rgba(255, 255, 255, 0.62); }

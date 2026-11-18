@@ -462,7 +462,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 14px;
-  min-height: 68px;
+  min-height: var(--uhd-row-h);
   padding: 10px 2px;
 }
 .set-row-ic {
@@ -571,7 +571,7 @@ onMounted(() => {
   align-items: center;
   gap: 14px;
   width: 100%;
-  min-height: 68px;
+  min-height: var(--uhd-row-h);
   padding: 10px 2px;
   background: none;
   border: none;

@@ -11,7 +11,7 @@ withDefaults(
     variant?: 'primary' | 'secondary' | 'danger' | 'play'
     /** 深色面语境（营销面/片库面） */
     dark?: boolean
-    size?: 'md' | 'sm'
+    size?: 'md' | 'mid' | 'sm'
     block?: boolean
     disabled?: boolean
     type?: 'button' | 'submit'
@@ -48,18 +48,26 @@ withDefaults(
   cursor: pointer;
   transition:
     opacity var(--uhd-dur-ui) var(--uhd-ease-standard),
-    transform var(--uhd-dur-base) var(--uhd-ease-spring),
+    transform var(--uhd-press-dur) var(--uhd-ease-spring),
     background-color var(--uhd-dur-base) var(--uhd-ease-standard),
     box-shadow var(--uhd-dur-base) var(--uhd-ease-standard);
 }
-/* 按压回弹（批 B 微交互，报告 §2.4）：spring 缓动＋base 时长；
+/* 按压回弹（批 B 微交互，报告 §2.4）：缩放＋亮度＋时长走 --uhd-press 三值；
    禁用态不触发，松手靠 spring 曲线回弹 */
 .uhd-btn:not(:disabled):active {
-  transform: scale(0.97);
+  transform: scale(var(--uhd-press-scale));
+  filter: brightness(var(--uhd-press-brightness));
 }
 .uhd-btn--md {
   height: 48px;
   padding: 0 26px;
+  font-size: var(--uhd-fs-body);
+}
+/* 中档 42 级（质感第二波，2026-11-18）：友站片库立即播放 146×42、
+   一起看开启 265×44 均在 42–54 区间，供片库/弹层主钮用 */
+.uhd-btn--mid {
+  height: 42px;
+  padding: 0 22px;
   font-size: var(--uhd-fs-body);
 }
 .uhd-btn--sm {
@@ -95,9 +103,7 @@ withDefaults(
   background:
     linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
     var(--uhd-rainbow) border-box;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 12px 28px -12px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--uhd-shadow-sheet);
   backdrop-filter: var(--uhd-glass-filter);
   -webkit-backdrop-filter: var(--uhd-glass-filter);
 }

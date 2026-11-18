@@ -624,7 +624,7 @@ onBeforeUnmount(() => {
 .st-seg__btn.is-active {
   background: var(--uhd-l-surface);
   color: var(--uhd-l-text);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--uhd-shadow-seg);
 }
 .st-seg__btn:disabled {
   opacity: 0.55;
@@ -735,7 +735,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--uhd-l-border);
   border-radius: var(--uhd-radius-pill);
   background: var(--uhd-l-surface);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--uhd-shadow-soft);
   font-size: var(--uhd-fs-caption);
   color: var(--uhd-l-text-2);
   white-space: nowrap;
