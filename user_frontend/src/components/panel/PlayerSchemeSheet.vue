@@ -282,12 +282,12 @@
                   :aria-expanded="linePickerOpen"
                   @click="linePickerOpen = !linePickerOpen"
                 >
-                  <span class="psp-line-pill__name">{{ selectedLine?.name || '默认线路' }}<template v-if="linesLoading"> · 准备中</template><template v-else-if="selectedLine"> · 已就绪</template></span>
+                  <span class="psp-line-pill__name">{{ selectedLine ? lineLabel(selectedLine) : '默认线路' }}<template v-if="linesLoading"> · 准备中</template><template v-else-if="selectedLine"> · 已就绪</template></span>
                   <span v-if="linesLoading" class="psp-spinner psp-spinner--sm" aria-hidden="true"></span>
                   <ChevronDown v-else :size="15" :style="{ transform: linePickerOpen ? 'rotate(180deg)' : '' }" />
                 </button>
                 <span v-else class="psp-line-pill psp-line-pill--static">
-                  <span class="psp-line-pill__name"><template v-if="linesLoading && !selectedLine">准备中</template><template v-else>{{ selectedLine?.name || '默认线路' }}<template v-if="linesLoading"> · 准备中</template><template v-else-if="selectedLine"> · 已就绪</template></template></span>
+                  <span class="psp-line-pill__name"><template v-if="linesLoading && !selectedLine">准备中</template><template v-else>{{ selectedLine ? lineLabel(selectedLine) : '默认线路' }}<template v-if="linesLoading"> · 准备中</template><template v-else-if="selectedLine"> · 已就绪</template></template></span>
                   <span v-if="linesLoading" class="psp-spinner psp-spinner--sm" aria-hidden="true"></span>
                 </span>
               </div>
@@ -303,7 +303,7 @@
                 >
                   <span class="psp-line-opt__radio" aria-hidden="true"></span>
                   <span class="psp-line-opt__main">
-                    <span class="psp-line-opt__name">{{ l.name }}</span>
+                    <span class="psp-line-opt__name">{{ lineLabel(l) }}</span>
                     <span class="psp-line-opt__host">{{ l.exhausted ? '暂停服务' : lineHost(l.url) }}</span>
                   </span>
                 </button>
@@ -778,6 +778,11 @@ const linesDefaultUrl = ref('')
 const selectedLineUrl = ref('')
 const linePickerOpen = ref(false)
 const selectedLine = computed(() => lines.value.find((l) => l.url === selectedLineUrl.value) || null)
+/** 多个大类时选项名带大类前缀消歧（同名主/副线路分属不同大类） */
+const multiGroup = computed(() => new Set(lines.value.map((l) => l.group)).size > 1)
+function lineLabel(l: PlayLine): string {
+  return multiGroup.value && l.group ? `${l.group} · ${l.name}` : l.name
+}
 /** 开始播放钮的准备态：线路清单还没定下来时钮内显示「正在准备线路」 */
 const startPreparing = computed(() => linesLoading.value)
 

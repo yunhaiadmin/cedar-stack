@@ -129,21 +129,6 @@ def self_realm_id(db: Session) -> Optional[int]:
     return realm.id if realm else None
 
 
-def scope_realm_id() -> Optional[int]:
-    """内容可见性作用域钉死的服 id（install_scope 解析结果）。
-
-    作用域未安装/未激活时返回 None。与 ``self_realm_id`` 的区别：
-    面板自带网关（role="em"）的服务服只存在作用域里（默认服或
-    GATEWAY_REALM 指定），不走 NODE_KEY/REALM 认领——线路计量
-    （traffic_meter 旁路汇总）按「本进程实际在服务哪个服」归属，
-    必须先认作用域，再回落认领口径。
-    """
-    if not _scope.get("active"):
-        return None
-    rid = _scope.get("realm_id")
-    return int(rid) if rid else None
-
-
 def describe(db: Session) -> dict:
     """本进程的节点 / 服身份（供 /api/health、节点端点与排查用）"""
     node = self_node(db)
@@ -538,7 +523,6 @@ __all__ = [
     "node_router",
     "push_scan",
     "register_self",
-    "scope_realm_id",
     "reset_cache",
     "self_node",
     "self_node_id",

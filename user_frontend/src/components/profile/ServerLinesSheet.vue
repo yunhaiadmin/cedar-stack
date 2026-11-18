@@ -7,11 +7,12 @@
  * 整页；用户 2026-11-13 23:15 亲点改弹层，本组件即该弹层。
  * （播放账号页已随 2026-11-18 删除单整页删除。）
  *
- * 线路数据只用账号卡现行口径（与线路测速页「播放线路」组同源）：
- * realms[].base_url（没查看权限的服后端置空、自动滤掉），按默认服在前
- * 排序、按地址去重；realms 为空时回退顶层 base_url。够格看到几条渲染
- * 几条：只有一条就只显示一条，不假造备用线路。主/备徽标按排序口径：
- * 首条（默认服）为主线路，其后为备用线路；服名以标签原样展示。
+ * 线路数据只用账号卡现行口径（与线路测速页同源）：两层形态——
+ * 大类 = realms[]（服），每个大类下挂多条线路（realms[].lines，
+ * 主线路在前）；按大类分组渲染（组标题 = 大类名），组内主、副
+ * 依次。没下发线路的大类用它的 base_url 补一条主线路；realms
+ * 为空时回退顶层 base_url。够格看到几条渲染几条：只有一条就只
+ * 显示一条，不假造备用线路。主/副徽标按后端下发的 is_primary。
  * 客户端区只指站内已有去处（安装应用页含客户端下载与分步教程），
  * 不编造外链；底部提示带线路测速链接（现有测速页）。
  *
@@ -36,13 +37,24 @@ import '../../styles/modal-glass.css'
  * （代码库既有怪癖，此前没人整卡传过 prop 才未暴露）；子集字段均为
  * string/number/boolean，不受该降级影响。
  */
+export interface ServerLinesLine {
+  id: number
+  name: string
+  url: string
+  is_primary: boolean
+  /** 线路流量配额已用尽：显示「暂停服务」、地址不可复制 */
+  quota_exhausted?: boolean
+}
+
 export interface ServerLinesRealm {
   id: number
   name: string
   base_url: string
   is_default: boolean
   is_free?: boolean
-  /** 线路流量配额已用尽：显示「暂停服务」、地址不可复制 */
+  /** 这个大类下的线路（主线路在前）；缺省时用 base_url 补一条 */
+  lines?: ServerLinesLine[]
+  /** 主线路的配额用尽标记（补行时用） */
   quota_exhausted?: boolean
 }
 
@@ -70,46 +82,80 @@ interface ServerLine {
   name: string
   url: string
   primary: boolean
-  free: boolean
   exhausted: boolean
 }
 
-/** 线路清单：账号卡 realms 现行口径（与测速页同源），默认服在前、按地址去重 */
-const lines = computed<ServerLine[]>(() => {
+interface ServerLineGroup {
+  key: string
+  /** 组标题 = 大类（服）名 */
+  title: string
+  free: boolean
+  lines: ServerLine[]
+}
+
+/** 线路分组：按大类（服）分组、组内主副依次，默认服在前、按地址去重 */
+const groups = computed<ServerLineGroup[]>(() => {
   const card = props.card
   if (!card) return []
-  const rows: ServerLine[] = []
+  const out: ServerLineGroup[] = []
   const seen = new Set<string>()
   const realms = [...(card.realms ?? [])].sort(
     (a, b) => Number(b.is_default) - Number(a.is_default),
   )
   for (const r of realms) {
-    const url = (r.base_url ?? '').trim()
-    if (!url || seen.has(url)) continue
-    seen.add(url)
-    rows.push({
-      key: `realm-${r.id}`,
-      name: r.name || '',
-      url,
-      primary: rows.length === 0,
-      free: !!r.is_free,
-      exhausted: !!r.quota_exhausted,
-    })
+    const rows: ServerLine[] = []
+    const realmLines = r.lines ?? []
+    if (realmLines.length) {
+      for (const l of realmLines) {
+        const url = (l.url ?? '').trim()
+        if (!url || seen.has(url)) continue
+        seen.add(url)
+        const primary = !!l.is_primary
+        const rawName = (l.name || '').trim()
+        rows.push({
+          key: `line-${l.id}`,
+          // 默认名与主/副徽标同文时不重复展示（徽标已表达主副）
+          name: rawName === (primary ? '主线路' : '副线路') ? '' : rawName,
+          url,
+          primary,
+          exhausted: !!l.quota_exhausted,
+        })
+      }
+    } else {
+      const url = (r.base_url ?? '').trim()
+      if (url && !seen.has(url)) {
+        seen.add(url)
+        rows.push({
+          key: `realm-${r.id}`,
+          name: '',
+          url,
+          primary: true,
+          exhausted: !!r.quota_exhausted,
+        })
+      }
+    }
+    if (rows.length) {
+      out.push({ key: `realm-${r.id}`, title: r.name || '', free: !!r.is_free, lines: rows })
+    }
   }
-  if (!rows.length) {
+  if (!out.length) {
     const top = (card.base_url ?? '').trim()
     if (top) {
-      rows.push({
+      out.push({
         key: 'top',
-        name: card.realm_name || card.server_name || '',
-        url: top,
-        primary: true,
+        title: card.realm_name || card.server_name || '',
         free: !!card.is_free,
-        exhausted: !!card.quota_exhausted,
+        lines: [{
+          key: 'top',
+          name: '',
+          url: top,
+          primary: true,
+          exhausted: !!card.quota_exhausted,
+        }],
       })
     }
   }
-  return rows
+  return out
 })
 
 const copiedKey = ref('')
@@ -196,28 +242,35 @@ onBeforeUnmount(() => {
             <RefreshCw :size="16" aria-hidden="true" />
           </button>
         </div>
-        <div v-if="lines.length" class="sls-lines">
-          <div v-for="line in lines" :key="line.key" class="sls-line" :class="{ 'sls-line--off': line.exhausted }">
-            <span class="sls-line__main">
-              <span class="sls-line__tags">
-                <span
-                  class="sls-badge"
-                  :class="line.primary ? 'sls-badge--primary' : 'sls-badge--backup'"
-                >{{ line.primary ? '主线路' : '备用线路' }}</span>
-                <span v-if="line.name" class="sls-line__name">{{ line.name }}</span>
-                <span v-if="line.free" class="sls-line__free">公益服</span>
-                <!-- 线路流量配额用尽（2026-11-19）：与弹幕线路暂停同口径，
-                     灰态＋「暂停服务」，地址不许复制选用 -->
-                <span v-if="line.exhausted" class="sls-line__paused">暂停服务</span>
-              </span>
-              <span class="sls-line__url">{{ line.url }}</span>
-            </span>
-            <!-- 复制钮照友站 f0004：纯文字深色玻璃胶囊（无常驻图标）；
-                 已复制态才换 ✓ 图标＋「已复制」（toast 同步提示） -->
-            <button type="button" class="sls-copy" :disabled="line.exhausted" @click="copyLine(line)">
-              <Check v-if="copiedKey === line.key" :size="13" aria-hidden="true" />
-              {{ copiedKey === line.key ? '已复制' : '复制' }}
-            </button>
+        <div v-if="groups.length" class="sls-groups">
+          <div v-for="g in groups" :key="g.key" class="sls-group-block">
+            <p v-if="g.title" class="sls-group-name">
+              {{ g.title }}
+              <span v-if="g.free" class="sls-line__free">公益服</span>
+            </p>
+            <div class="sls-lines">
+              <div v-for="line in g.lines" :key="line.key" class="sls-line" :class="{ 'sls-line--off': line.exhausted }">
+                <span class="sls-line__main">
+                  <span class="sls-line__tags">
+                    <span
+                      class="sls-badge"
+                      :class="line.primary ? 'sls-badge--primary' : 'sls-badge--backup'"
+                    >{{ line.primary ? '主线路' : '副线路' }}</span>
+                    <span v-if="line.name" class="sls-line__name">{{ line.name }}</span>
+                    <!-- 线路流量配额用尽（2026-11-19）：与弹幕线路暂停同口径，
+                         灰态＋「暂停服务」，地址不许复制选用 -->
+                    <span v-if="line.exhausted" class="sls-line__paused">暂停服务</span>
+                  </span>
+                  <span class="sls-line__url">{{ line.url }}</span>
+                </span>
+                <!-- 复制钮照友站 f0004：纯文字深色玻璃胶囊（无常驻图标）；
+                     已复制态才换 ✓ 图标＋「已复制」（toast 同步提示） -->
+                <button type="button" class="sls-copy" :disabled="line.exhausted" @click="copyLine(line)">
+                  <Check v-if="copiedKey === line.key" :size="13" aria-hidden="true" />
+                  {{ copiedKey === line.key ? '已复制' : '复制' }}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
         <p v-else class="sls-empty">
@@ -365,6 +418,22 @@ onBeforeUnmount(() => {
   to {
     transform: rotate(360deg);
   }
+}
+.sls-groups {
+  display: flex;
+  flex-direction: column;
+}
+.sls-group-name {
+  margin: 14px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--uhd-fs-body);
+  font-weight: var(--uhd-fw-bold);
+  color: var(--sls-text);
+}
+.sls-group-block:first-child .sls-group-name {
+  margin-top: 2px;
 }
 .sls-lines {
   display: flex;

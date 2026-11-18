@@ -509,9 +509,9 @@ def serialize(
         "is_free": mode == ACCESS_FREE,
         "access_note": access_note_of(db, realm.id),
         "allow_download": realm.allow_download,
-        # 线路流量配额（2026-11-19）：配额/已用/剩余/是否用尽，判定
-        # 口径统一在 backend/line_quota，管理端直接展示这一份。
-        "traffic": line_quota.quota_view(db, realm),
+        # 播放线路（2026-11-19）：配额/用量按线路计，判定口径统一
+        # 在 backend/line_quota，管理端直接展示这一份（含主/副标记）。
+        "lines": serialize_lines(db, realm),
         "is_active": bool(realm.is_active),
         "sort_order": realm.sort_order or 0,
         "is_default": realm.id == legacy_id,
@@ -557,8 +557,7 @@ def _validate_quota_bytes(value) -> int:
 def create_realm(db: Session, *, name: str, slug: str = "", url: str = "",
                  description: str = "", is_active: bool = True,
                  access_mode: str = ACCESS_PAID, access_note: str = "",
-                 allow_download: Optional[bool] = None,
-                 traffic_quota_bytes: Optional[int] = None) -> models.ServerRealm:
+                 allow_download: Optional[bool] = None) -> models.ServerRealm:
     name = (name or "").strip()
     if not name:
         raise ValueError("请填写服的名称")
@@ -573,15 +572,16 @@ def create_realm(db: Session, *, name: str, slug: str = "", url: str = "",
         access_mode=normalize_access_mode(access_mode),
         access_note=(access_note or "").strip(),
         allow_download=allow_download,
-        traffic_quota_bytes=(
-            _validate_quota_bytes(traffic_quota_bytes)
-            if traffic_quota_bytes is not None else 0),
         sort_order=(db.query(models.ServerRealm).count() + 1),
     )
     db.add(realm)
     db.commit()
     db.refresh(realm)
     invalidate_realm_cache(realm.id)
+    # 填了对外地址的新服同步生成它的「主线路」（线路才是配额与
+    # 下发的粒度；没填地址的靠 ensure_realm_lines 在读到时兜底）
+    if realm.url:
+        create_line(db, realm, name="主线路", url=realm.url)
     logger.info("已创建服：%s（id=%s，slug=%s）", realm.name, realm.id, realm.slug)
     return realm
 
@@ -603,14 +603,14 @@ def update_realm(db: Session, realm: models.ServerRealm, *, name: Optional[str] 
                  is_active: Optional[bool] = None, sort_order: Optional[int] = None,
                  access_mode: Optional[str] = None, access_note: Optional[str] = None,
                  allow_download: Optional[bool] = None,
-                 download_policy: Optional[str] = None,
-                 traffic_quota_bytes: Optional[int] = None) -> models.ServerRealm:
+                 download_policy: Optional[str] = None) -> models.ServerRealm:
     """改服
 
     ``access_mode`` / ``access_note`` / ``allow_download`` 是 v2.7.0 的公益服字段。
     下载策略用三态表达：``download_policy`` 取 ``"follow"`` / ``"allow"`` / ``"deny"``
     （``allow_download`` 直接传 bool 也可以，等价于 allow / deny）。
     """
+    old_url = (realm.url or "").strip().rstrip("/")
     if name is not None:
         name = name.strip()
         if not name:
@@ -641,12 +641,162 @@ def update_realm(db: Session, realm: models.ServerRealm, *, name: Optional[str] 
             realm.allow_download = policy == "allow"
     if allow_download is not None:
         realm.allow_download = bool(allow_download)
-    if traffic_quota_bytes is not None:
-        realm.traffic_quota_bytes = _validate_quota_bytes(traffic_quota_bytes)
     db.commit()
     db.refresh(realm)
     invalidate_realm_cache(realm.id)
+    # 服的对外地址改了：当初按旧地址自动生成的主线路（地址仍等于
+    # 旧地址的那条）跟着改，避免「改了服地址、线路还指旧地址」
+    if url is not None and realm.url != old_url:
+        _sync_main_line_url(db, realm, old_url, realm.url)
     return realm
+
+
+# ==================== 线路（服下的播放线路） ====================
+
+def list_lines(db: Session, realm_id: int, *,
+               include_inactive: bool = True) -> list[models.ServerRealmLine]:
+    """某个服的线路清单（按 sort_order、id 排序：首条启用的即主线路）。"""
+    query = (db.query(models.ServerRealmLine)
+             .filter(models.ServerRealmLine.realm_id == int(realm_id)))
+    if not include_inactive:
+        query = query.filter(models.ServerRealmLine.is_active.is_(True))
+    return (query.order_by(models.ServerRealmLine.sort_order,
+                           models.ServerRealmLine.id).all())
+
+
+def get_line(db: Session, line_id: int) -> Optional[models.ServerRealmLine]:
+    return (db.query(models.ServerRealmLine)
+            .filter(models.ServerRealmLine.id == int(line_id)).first())
+
+
+def primary_line_id(db: Session, realm_id: int) -> Optional[int]:
+    """主线路 = 启用线路里排序最靠前的一条（主/副口径的唯一实现）。"""
+    rows = list_lines(db, realm_id, include_inactive=False)
+    return rows[0].id if rows else None
+
+
+def serialize_lines(db: Session, realm: models.ServerRealm) -> list[dict]:
+    """服的线路序列化清单（管理端用，含停用线路与主/副标记）。"""
+    lines = ensure_realm_lines(db, realm)
+    primary = primary_line_id(db, realm.id)
+    return [line_quota.line_view(db, line, is_primary=(line.id == primary))
+            for line in lines]
+
+
+def ensure_realm_lines(db: Session, realm: models.ServerRealm) -> list[models.ServerRealmLine]:
+    """迁移兜底：服下一条线路都没有时，按现行对外地址生成「主线路」。
+
+    地址口径 = ``realm_public_url``（服自填 url → 服务入口配置 →
+    全局 EMBY_PUBLIC_URL，仅默认服）。地址为空（还没配）就不生成
+    ——没地址的线路没有意义，等配好后下一次读到再生成。已有任意
+    线路（含停用的）就不再自动生成：管理员删光/停用是明确意图，
+    不许兜底把删掉的线路「复活」。
+    """
+    lines = list_lines(db, realm.id)
+    if lines:
+        return lines
+    url = realm_public_url(db, realm.id)
+    if not url:
+        return []
+    line = models.ServerRealmLine(
+        realm_id=realm.id, name="主线路", url=url, sort_order=0)
+    db.add(line)
+    db.commit()
+    db.refresh(line)
+    line_quota.invalidate()
+    logger.info("已为服 #%s（%s）按对外地址自动生成主线路：%s",
+                realm.id, realm.name, url)
+    return [line]
+
+
+def validate_line_url(url: str) -> str:
+    """线路地址收敛：必须是带 host 的 http(s) 完整地址。"""
+    value = (url or "").strip().rstrip("/")
+    if not value:
+        raise ValueError("请填写线路地址")
+    if len(value) > 500:
+        raise ValueError("线路地址过长（≤500 字符）")
+    from urllib.parse import urlsplit
+
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        raise ValueError("线路地址不合法")
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise ValueError("线路地址必须是带域名的 http(s) 完整地址")
+    return value
+
+
+def create_line(db: Session, realm: models.ServerRealm, *, name: str = "",
+                url: str = "", quota_bytes: Optional[int] = None,
+                sort_order: Optional[int] = None,
+                is_active: bool = True) -> models.ServerRealmLine:
+    """给服新增一条线路。名字留空时按形态给：首条「主线路」、其后「副线路」。"""
+    url = validate_line_url(url)
+    existing = list_lines(db, realm.id)
+    name = (name or "").strip()
+    if not name:
+        name = "主线路" if not existing else "副线路"
+    if sort_order is None:
+        sort_order = max((line.sort_order or 0 for line in existing),
+                         default=-1) + 1
+    line = models.ServerRealmLine(
+        realm_id=realm.id, name=name, url=url,
+        quota_bytes=(_validate_quota_bytes(quota_bytes)
+                     if quota_bytes is not None else 0),
+        sort_order=int(sort_order), is_active=bool(is_active),
+    )
+    db.add(line)
+    db.commit()
+    db.refresh(line)
+    line_quota.invalidate()
+    logger.info("已为服 #%s 新增线路 #%s（%s，%s）",
+                realm.id, line.id, line.name, line.url)
+    return line
+
+
+def update_line(db: Session, line: models.ServerRealmLine, *,
+                name: Optional[str] = None, url: Optional[str] = None,
+                quota_bytes: Optional[int] = None,
+                sort_order: Optional[int] = None,
+                is_active: Optional[bool] = None) -> models.ServerRealmLine:
+    if name is not None:
+        name = name.strip()
+        if not name:
+            raise ValueError("线路名称不能为空")
+        line.name = name
+    if url is not None:
+        line.url = validate_line_url(url)
+    if quota_bytes is not None:
+        line.quota_bytes = _validate_quota_bytes(quota_bytes)
+    if sort_order is not None:
+        line.sort_order = int(sort_order)
+    if is_active is not None:
+        line.is_active = bool(is_active)
+    db.commit()
+    db.refresh(line)
+    line_quota.invalidate()
+    return line
+
+
+def delete_line(db: Session, line: models.ServerRealmLine) -> None:
+    """删一条线路。用量日账行不删（孤儿行，消费方查无此线不展示）。"""
+    db.delete(line)
+    db.commit()
+    line_quota.invalidate()
+
+
+def _sync_main_line_url(db: Session, realm: models.ServerRealm,
+                        old_url: str, new_url: str) -> None:
+    """服地址变更时同步自动主线路（见 update_realm 的注释）。"""
+    if not old_url or not new_url:
+        return
+    for line in list_lines(db, realm.id):
+        if (line.url or "").strip().rstrip("/") == old_url:
+            line.url = new_url
+            db.commit()
+            line_quota.invalidate()
+            return
 
 
 def delete_realm(db: Session, realm: models.ServerRealm, *, move_to: Optional[int] = None) -> dict:
@@ -690,6 +840,11 @@ def delete_realm(db: Session, realm: models.ServerRealm, *, move_to: Optional[in
         key = realm_key(db, base, realm.id)
         if key != base:
             db.query(models.SystemConfig).filter(models.SystemConfig.key == key).delete()
+    # 线路行一并清（线路是这个服的入口配置，不随数据移交；用量
+    # 日账是孤儿行口径，不删、消费方查无此线不展示）
+    (db.query(models.ServerRealmLine)
+     .filter(models.ServerRealmLine.realm_id == realm.id).delete())
+    line_quota.invalidate()
     db.delete(realm)
     db.commit()
     invalidate_realm_cache(deleted_id)
@@ -725,9 +880,18 @@ __all__ = [
     "download_policy_of",
     "is_free_realm",
     "normalize_access_mode",
+    "create_line",
     "create_realm",
+    "delete_line",
     "delete_realm",
     "ensure_default_realm",
+    "ensure_realm_lines",
+    "get_line",
+    "list_lines",
+    "primary_line_id",
+    "serialize_lines",
+    "update_line",
+    "validate_line_url",
     "get_realm",
     "legacy_realm",
     "legacy_realm_id",

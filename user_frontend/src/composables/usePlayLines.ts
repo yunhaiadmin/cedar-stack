@@ -1,13 +1,14 @@
 /**
- * 播放线路清单（弹层选线 / 播放器校验共用，与线路测速页 #126 同一真源）：
- *   - 播放线路：账号卡 GET /api/user/emby/server 的 realms[]（每项
- *     name/base_url；没查看权限的服 base_url 为空，自动滤掉）；
- *     顶层 base_url 是当前服（默认线路），realms 没带时用它补一行。
- * 两组按规范化 URL 去重（去尾斜杠）。线路只是「入口地址」：选线后
- * 本次播放的 EA 请求（PlaybackInfo / 会话上报）改走该入口，流地址
+ * 播放线路清单（弹层选线 / 播放器校验共用，与线路测速页同一真源）：
+ * 两层形态——大类 = 账号卡 GET /api/user/emby/server 的 realms[]
+ * （服），每个大类下挂多条线路（realms[].lines，主线路在前）。
+ * 没下发线路的大类（旧数据/地址靠推断）用它的 base_url 补一条；
+ * 顶层 base_url 是当前服主线路，清单里没有时用它补一行。两组按
+ * 规范化 URL 去重（去尾斜杠）。线路只是「入口地址」：选线后本次
+ * 播放的 EA 请求（PlaybackInfo / 会话上报）改走该入口，流地址
  * 仍由服务端按现行策略下发，前端不拼、不改签名。
  *
- * 线路流量配额（2026-11-19）：账号卡给每条线带 quota_exhausted
+ * 线路流量配额（2026-11-19）：账号卡给每条线路带 quota_exhausted
  * （后端已做全线用尽回落：全用尽时恒 false）。用尽的线保留在清单
  * 里供选线面显示「暂停服务」，但不可选；校验时若目标线已用尽且
  * 还有未用尽的线，自动改落到第一条未用尽的线（分流），全用尽
@@ -17,9 +18,14 @@ import { embyApi } from '@/api'
 
 export interface PlayLine {
   key: string
+  /** 线路名（主线路 / 副线路 / 管理员自定义名） */
   name: string
   url: string
   kind: 'realm'
+  /** 所属大类（服）名，选线面按它分组 */
+  group: string
+  /** 主线路（同组第一条）；默认选中主线路 */
+  primary: boolean
   /** 线路流量配额已用尽：显示「暂停服务」、不可选、校验时避开 */
   exhausted: boolean
 }
@@ -51,20 +57,38 @@ export function loadPlayLines(): Promise<PlayLinesResult> {
     const lines: PlayLine[] = []
     const seen = new Set<string>()
     let defaultUrl = ''
-    const push = (kind: PlayLine['kind'], name: string, rawUrl: string, exhausted = false) => {
+    const push = (
+      key: string, name: string, rawUrl: string,
+      group: string, primary: boolean, exhausted = false,
+    ) => {
       const url = normalizeLineUrl(rawUrl)
       if (!url || seen.has(url)) return
       seen.add(url)
-      lines.push({ key: `${kind}:${url}`, kind, name: name || hostOf(url), url, exhausted })
+      lines.push({
+        key, kind: 'realm',
+        name: name || hostOf(url), url, group, primary, exhausted,
+      })
     }
     try {
       const card = await embyApi.getAccountCard()
       defaultUrl = normalizeLineUrl(card.base_url ?? '')
       for (const r of card.realms ?? []) {
-        push('realm', r.name, r.base_url ?? '', !!r.quota_exhausted)
+        const group = r.name || ''
+        const realmLines = r.lines ?? []
+        if (realmLines.length) {
+          for (const l of realmLines) {
+            push(`line:${l.id}`, l.name, l.url ?? '', group,
+                 !!l.is_primary, !!l.quota_exhausted)
+          }
+        } else if (r.base_url) {
+          // 没下发线路的大类：用它的地址补一条（主线路形态）
+          push(`realm:${r.id}`, r.name, r.base_url, group, true,
+               !!r.quota_exhausted)
+        }
       }
       if (defaultUrl && !seen.has(defaultUrl)) {
-        push('realm', card.realm_name || card.server_name || '主线路', defaultUrl, !!card.quota_exhausted)
+        push('realm:top', card.realm_name || '主线路', defaultUrl,
+             card.realm_name || '', true, !!card.quota_exhausted)
       }
     } catch { /* 账号卡失败：清单为空，调用方据此隐藏选线 */ }
     return { lines, defaultUrl }

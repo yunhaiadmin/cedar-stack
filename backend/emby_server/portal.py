@@ -549,12 +549,15 @@ def _user_realm_cards(user: models.WebUser, db: Session,
             "days_left": max(0, (sub.end_date - now).days) if sub and sub.end_date else None,
             "plan_name": (sub.plan.name if sub and sub.plan else ""),
             "is_default": realm.id == realms.legacy_realm_id(db),
-            # 线路流量配额（2026-11-19）：该线配额是否已用尽；先按
-            # 单线口径填，循环后 apply_card_flags 做「全线用尽回落」
-            # 修正（全用尽 = 全部清零，不断播）。地址照常下发——
-            # 已连这条线的外部客户端不受影响，标记只供用户端在
-            # 选线面显示「暂停服务」与网页播放器分流。
-            "quota_exhausted": line_quota.is_exhausted(db, realm),
+            # 播放线路（2026-11-19）：这个服（大类）下的线路清单
+            # （主线路在前），每条带 quota_exhausted 初值；循环后
+            # apply_card_flags 做「全线用尽回落」修正（全用尽 =
+            # 全部清零，不断播）并回填本卡 quota_exhausted（主线路
+            # 的标记）。地址照常下发——已连线路的外部客户端不受
+            # 影响，标记只供用户端在选线面显示「暂停服务」与网页
+            # 播放器分流。没查看权限不下发线路（与 base_url 同口径）。
+            "lines": line_quota.card_lines(db, realm) if granted else [],
+            "quota_exhausted": False,
         })
     line_quota.apply_card_flags(cards)
     return cards
