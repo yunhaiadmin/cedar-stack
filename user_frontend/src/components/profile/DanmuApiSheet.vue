@@ -65,7 +65,7 @@ type Phase = 'loading' | 'none' | 'creating' | 'ready'
 const phase = ref<Phase>('loading')
 const expiresAt = ref<string | null>(null)
 const lines = ref<DanmuLine[]>([])
-const selectedLineId = ref<string | number | null>(null)
+const selectedLineId = ref<string | null>(null)
 const address = ref('')
 const addressLoading = ref(false)
 const confirmingDelete = ref(false)
@@ -291,7 +291,7 @@ onBeforeUnmount(() => {
                 />
                 <span class="dms-line__main">
                   <span class="dms-line__name">{{ line.name }}</span>
-                  <span v-if="line.description" class="dms-line__sub">{{ line.description }}</span>
+                  <span v-if="line.note" class="dms-line__sub">{{ line.note }}</span>
                 </span>
               </button>
             </div>
@@ -364,8 +364,6 @@ onBeforeUnmount(() => {
   justify-content: center;
   padding: 16px;
   background: var(--modal-scrim-dark);
-  backdrop-filter: var(--modal-scrim-dark-filter);
-  -webkit-backdrop-filter: var(--modal-scrim-dark-filter);
   animation: uhd-fade-in var(--uhd-dur-fade) var(--uhd-ease-standard);
   font-family: var(--uhd-font-sans);
   -webkit-font-smoothing: antialiased;
@@ -376,18 +374,20 @@ onBeforeUnmount(() => {
   max-height: 74dvh;
   overflow-y: auto;
   box-sizing: border-box;
-  background: var(--modal-glass-bg);
-  border: 1px solid var(--modal-glass-edge);
+  /* 实色面（2026-11-18 用户令：弹窗不用玻璃）：浅色白面、深色实色深面，
+     边框/阴影走普通卡片口径，与团队购买 .tm-sheet 同改法 */
+  background: var(--uhd-l-surface);
+  border: 1px solid var(--uhd-l-border);
   color: var(--dms-text);
   border-radius: var(--uhd-radius-modal);
-  box-shadow:
-    inset 0 1px 0 var(--modal-glass-hi),
-    inset 0 0 0 1px var(--modal-glass-ring),
-    var(--modal-glass-shadow);
-  backdrop-filter: var(--modal-glass-filter);
-  -webkit-backdrop-filter: var(--modal-glass-filter);
+  box-shadow: var(--uhd-shadow-card-l);
   padding: 28px;
   animation: uhd-fade-in var(--uhd-dur-fade) var(--uhd-ease-standard);
+}
+.dms--dark .dms-card {
+  background: var(--uhd-d-surface);
+  border-color: var(--uhd-d-border);
+  box-shadow: var(--uhd-shadow-card-d);
 }
 .dms-head {
   display: flex;

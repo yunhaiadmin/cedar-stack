@@ -2,17 +2,12 @@
    .dms--dark 时换概览页深色令牌同值（父页按主题解析值加类）。
    定义放在独立样式表供设计令牌契约核查，由 DanmuApiSheet.vue 引入；
    组件 scoped 样式只引用不定义（契约只认被引入的 .css 定义）。
-   面板材质与 server-lines-sheet.css 同口径：在本作用域按双态钉
-   --modal-glass-* 令牌（数值与 styles/modal-glass.css 两档逐字一致），
-   .dms-card 只用 --modal-glass-* 令牌组装玻璃五件。 */
+   面板本体实色不透底（2026-11-18 用户令：弹窗一律实色、不用玻璃，
+   与团队购买 .tm-sheet 同改法）：浅色 var(--uhd-l-surface) 白面、
+   深色 var(--uhd-d-surface) 实色深面在组件 scoped 样式里按双态钉，
+   本表只管文字／描边／反馈类随态变量。 */
 
 .dms-overlay {
-  --modal-glass-bg: rgba(255, 255, 255, 0.72);
-  --modal-glass-edge: rgba(17, 17, 17, 0.12);
-  --modal-glass-hi: rgba(255, 255, 255, 0.7);
-  --modal-glass-ring: rgba(255, 255, 255, 0);
-  --modal-glass-shadow: 0 24px 56px rgba(30, 32, 60, 0.25);
-  --modal-glass-filter: blur(24px) saturate(160%);
   --dms-text: #111111;
   --dms-sub: #9a9da3;
   --dms-divider: #e5e5e7;
@@ -27,12 +22,6 @@
 }
 
 .dms-overlay.dms--dark {
-  --modal-glass-bg: rgba(28, 28, 30, 0.55);
-  --modal-glass-edge: rgba(255, 255, 255, 0.24);
-  --modal-glass-hi: rgba(255, 255, 255, 0.28);
-  --modal-glass-ring: rgba(255, 255, 255, 0.04);
-  --modal-glass-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
-  --modal-glass-filter: blur(24px) saturate(160%);
   --dms-text: #ffffff;
   --dms-sub: rgba(255, 255, 255, 0.42);
   --dms-divider: #26262a;
