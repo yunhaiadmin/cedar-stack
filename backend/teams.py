@@ -655,23 +655,77 @@ def activate_team(db: Session, team: models.Team) -> models.Team:
 
 # ==================== 计量归账 ====================
 
-def usage_attribution_user_id(db: Session, user) -> int:
+def _resolve_user_id(user) -> Optional[int]:
+    """用户 id 归一（唯一口）：带 ``.id`` 的对象取 ``.id``（WebUser、
+    流式测试的 SimpleNamespace 桩等鸭子类型都算），否则按 id 值解析。
+
+    与 sub_accounts.effective_user_id 的 getattr(user, "id", None)
+    容错口径一致：取不到 id（None / 无 id 的桩对象，如裸 object()）
+    返回 None，不抛错；usage_attribution_user_id / play_eligible_team
+    共用这一口，不许各写一份 isinstance/int（#322 CI 114 红根因：
+    旧写法对桩对象 int() 抛 TypeError）。
+    """
+    uid = getattr(user, "id", None)
+    if uid is None:
+        try:
+            uid = int(user)
+        except (TypeError, ValueError):
+            return None
+    try:
+        return int(uid)
+    except (TypeError, ValueError):
+        return None
+
+
+def _active_member_team(db: Session, uid: int) -> Optional[models.Team]:
+    """成员所属的 active 且在期团队，无则 None。
+
+    只用 query/filter/first：video_stream 的调用约定允许鸭子类型
+    db（流式测试的桩 DB 只实现这三个方法，没有 get/order_by）；
+    桩 DB 不执行 filter、恒返回固定行，故按行内容自验身份
+    （user_id/role/team id），未自验的行一律不认。真 Session 下
+    结论与常规查询一致。
+    """
+    query = getattr(db, "query", None)
+    if query is None:
+        return None
+    row = (query(models.TeamMember)
+           .filter(models.TeamMember.user_id == uid,
+                   models.TeamMember.role == "member")
+           .first())
+    if (row is None
+            or getattr(row, "user_id", None) != uid
+            or getattr(row, "role", None) != "member"):
+        return None
+    team_id = getattr(row, "team_id", None)
+    if team_id is None:
+        return None
+    team = (query(models.Team)
+            .filter(models.Team.id == team_id)
+            .first())
+    if (team is None
+            or getattr(team, "id", None) != team_id
+            or getattr(team, "status", None) != "active"):
+        return None
+    expires = getattr(team, "plan_expires_at", None)
+    if expires is None or expires <= datetime.now():
+        return None
+    return team
+
+
+def usage_attribution_user_id(db: Session, user) -> Optional[int]:
     """播放计量归属解析（团队感知）：成员所属团队 active 且在期 →
     记成员本人（团队池）；其余回落有效账号解析（子账号归主账号、
     普通用户归本人），与现行口径一致。
 
     供 emby_server video_stream 的 set_current_user 调用，签名与
     sub_accounts.effective_user_id 对齐（user 可为对象或 id）。
+    取不到 id 的桩对象（如裸 object()）返回 None，不碰库——与
+    effective_user_id 的容错口径一致，调用方按无归属处理。
     """
-    uid = user.id if isinstance(user, models.WebUser) else int(user)
-    row = (db.query(models.TeamMember)
-           .filter(models.TeamMember.user_id == uid,
-                   models.TeamMember.role == "member")
-           .first())
-    if row is not None:
-        team = db.get(models.Team, row.team_id)
-        if (team is not None and team.status == "active"
-                and team.plan_expires_at is not None
-                and team.plan_expires_at > datetime.now()):
-            return uid
+    uid = _resolve_user_id(user)
+    if uid is None:
+        return sub_accounts.effective_user_id(db, user)
+    if _active_member_team(db, uid) is not None:
+        return uid
     return sub_accounts.effective_user_id(db, user)

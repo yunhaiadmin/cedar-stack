@@ -15,6 +15,7 @@
 隔离：内存 SQLite（StaticPool）+ 最小 FastAPI 应用，不碰真库。
 """
 import os
+import types
 
 os.environ.setdefault("DATABASE_TYPE", "sqlite")
 os.environ.setdefault("REDIS_ENABLED", "false")
@@ -533,3 +534,30 @@ def test_usage_attribution_states(db, client, users):
     row.plan_expires_at = datetime.now() - timedelta(days=1)
     db.commit()
     assert teams_service.usage_attribution_user_id(db, member) == owner.id
+
+
+def test_usage_attribution_duck_typed_user(db, client, users):
+    """回归（#322 CI 114 红）：video_stream 的 set_current_user 传
+    SimpleNamespace 桩用户（流式测试的 _user() 口径）时，归一口须按
+    .id 取值；旧写法 int(桩对象) 抛 TypeError 是本单根因。"""
+    plain = users["other"]
+    stub = types.SimpleNamespace(id=plain.id, is_staff=False)
+    assert teams_service.usage_attribution_user_id(db, stub) == plain.id
+    # id 值直传与 WebUser 对象两形态不变
+    assert teams_service.usage_attribution_user_id(db, plain.id) == plain.id
+    assert teams_service.usage_attribution_user_id(db, plain) == plain.id
+    # 无 id 的桩对象：返回 None，不碰库、不抛错（与 effective_user_id 同口径）
+    assert teams_service.usage_attribution_user_id(db, object()) is None
+
+    # 桩用户是 active 团队成员时同样记本人（团队池）
+    team = _small_team(db, client, users)
+    c, current = client
+    current["user"] = users["owner"]
+    resp = c.post("/api/user/teams/members",
+                  json={"username": "memberns", "password": "secret1"})
+    member_id = resp.json()["user_id"]
+    resp = c.post(f"/api/admin/teams/{team['id']}/activate")
+    assert resp.status_code == 200, resp.text
+    stub_member = types.SimpleNamespace(id=member_id, is_staff=False)
+    assert (teams_service.usage_attribution_user_id(db, stub_member)
+            == member_id)
