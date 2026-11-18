@@ -40,6 +40,15 @@
           </span>
           <span class="set-capsule">修改</span>
         </button>
+        <!-- G-54：恢复邮箱＝注册邮箱，脱敏展示；更换走验当前密码＋新邮箱验证码 -->
+        <button type="button" class="set-rowbtn" @click="emailOpen = true">
+          <span class="set-row-ic" aria-hidden="true"><Mail :size="22" /></span>
+          <span class="set-rowbtn-main">
+            <span class="set-row-name">恢复邮箱</span>
+            <span class="set-row-sub">{{ recoveryEmailMasked || '还没绑定邮箱，找回密码用不了' }}</span>
+          </span>
+          <span class="set-capsule">{{ recoveryEmailMasked ? '更换' : '添加' }}</span>
+        </button>
         <button type="button" class="set-rowbtn" @click="tgBindOpen = true">
           <span class="set-row-ic" aria-hidden="true"><Send :size="22" /></span>
           <span class="set-rowbtn-main">
@@ -193,6 +202,7 @@
     </section>
 
     <ChangePasswordModal v-model:open="pwdOpen" />
+    <ChangeEmailModal v-model:open="emailOpen" />
     <TgBindModal v-model="tgBindOpen" @bound="onTgBound" />
   </div>
   </UhdAccountLayout>
@@ -219,10 +229,12 @@
  */
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Bell, Copy, Eye, Lock, LogOut, Send } from 'lucide-vue-next'
+import { Bell, Copy, Eye, Lock, LogOut, Mail, Send } from 'lucide-vue-next'
 import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 import PcEntryRow from '@/components/profile/PcEntryRow.vue'
 import ChangePasswordModal from '@/components/profile/ChangePasswordModal.vue'
+import ChangeEmailModal from '@/components/profile/ChangeEmailModal.vue'
+import { maskEmail } from '@/utils/maskEmail'
 import DevicesEntry from '@/components/profile/DevicesEntry.vue'
 import LoginHistoryEntry from '@/components/profile/LoginHistoryEntry.vue'
 import TotpPanel from '@/components/profile/TotpPanel.vue'
@@ -249,6 +261,11 @@ const userStore = useUserStore()
 const toast = useToast()
 
 const pwdOpen = ref(false)
+
+// ── 登录与恢复组·恢复邮箱行（G-54）：脱敏展示本地账号邮箱，换邮箱成功
+// 后弹窗内 updateUser 同步 store，本行随之刷新 ──
+const emailOpen = ref(false)
+const recoveryEmailMasked = computed(() => maskEmail(userStore.user?.email))
 
 // ── 账户组：用户名/公开 ID 行与复制（公开 ID 缺失回落不显示，不拿数字 id 兜底） ──
 const clipboard = useClipboard()

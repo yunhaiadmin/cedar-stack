@@ -6,6 +6,17 @@
         <label class="acct-label" for="pwd-old">当前密码</label>
         <input id="pwd-old" ref="oldPwdInput" v-model="form.oldPassword" type="password" autocomplete="current-password" />
       </div>
+      <!-- G-53：有恢复邮箱时改密要过邮箱验证码；无邮箱不渲染本字段，只验当前密码 -->
+      <div v-if="emailMode" class="acct-field">
+        <label class="acct-label" for="pwd-code">邮箱验证码</label>
+        <div class="acct-code-row">
+          <input id="pwd-code" v-model="form.emailCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位验证码" />
+          <button type="button" class="acct-btn ghost acct-code-btn" :disabled="codeSending || countdown > 0" @click="sendCode">
+            {{ countdown > 0 ? `${countdown} 秒后重发` : '发送验证码' }}
+          </button>
+        </div>
+        <p class="acct-hint">验证码会发到你的恢复邮箱 {{ maskedEmail }}，10 分钟内有效。</p>
+      </div>
       <div class="acct-field">
         <label class="acct-label" for="pwd-new">新密码</label>
         <input id="pwd-new" v-model="form.newPassword" type="password" autocomplete="new-password" />
@@ -27,25 +38,65 @@
 
 <script setup lang="ts">
 /**
- * 修改登录密码弹窗（自旧 AccountSettingsView 原样抽出，行为口径不变）：
+ * 修改登录密码弹窗（自旧 AccountSettingsView 原样抽出）：
  * authApi.changePassword 全仓唯一改密入口；焦点陷阱 / Esc / 关闭后焦点
  * 回触发按钮 / 提交在途不许关，全部沿用原实现。
+ * G-53（2026-11-18 定案）：新密码 8–64 位；账号有恢复邮箱时改密须带
+ * 邮箱验证码（sendChangePasswordCode 发到现邮箱），无邮箱只验当前
+ * 密码、不渲染验证码字段、不锁死。
  */
-import { nextTick, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { authApi } from '@/api'
 import { useToast } from '@/composables/useToast'
+import { useUserStore } from '@/stores/user'
 import { toastCopy } from '@/constants/toastMessages'
 import { toUserMessage } from '@/utils/toUserMessage'
+import { maskEmail } from '@/utils/maskEmail'
 import '../../styles/modal-glass.css'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ (e: 'update:open', v: boolean): void }>()
 
 const toast = useToast()
-const form = ref({ oldPassword: '', newPassword: '', confirmPassword: '' })
+const userStore = useUserStore()
+const form = ref({ oldPassword: '', newPassword: '', confirmPassword: '', emailCode: '' })
 const loading = ref(false)
 const error = ref('')
 const oldPwdInput = ref<HTMLInputElement | null>(null)
+
+/** 有恢复邮箱＝邮箱验证码模式；无邮箱＝只验当前密码（后端同口径） */
+const emailMode = computed(() => !!(userStore.user?.email || '').trim())
+const maskedEmail = computed(() => maskEmail(userStore.user?.email))
+const codeSending = ref(false)
+const countdown = ref(0)
+let countdownTimer: ReturnType<typeof setInterval> | null = null
+
+function startCountdown() {
+  countdown.value = 60
+  if (countdownTimer) clearInterval(countdownTimer)
+  countdownTimer = setInterval(() => {
+    countdown.value -= 1
+    if (countdown.value <= 0 && countdownTimer) {
+      clearInterval(countdownTimer)
+      countdownTimer = null
+    }
+  }, 1000)
+}
+
+async function sendCode() {
+  if (codeSending.value || countdown.value > 0) return
+  codeSending.value = true
+  error.value = ''
+  try {
+    await authApi.sendChangePasswordCode()
+    toast.success('验证码已发送，去邮箱里看一下')
+    startCountdown()
+  } catch (err: any) {
+    error.value = toUserMessage(err, 'settingFailed')
+  } finally {
+    codeSending.value = false
+  }
+}
 /** 关闭后焦点回到触发按钮 */
 const lastTrigger = ref<HTMLElement | null>(null)
 
@@ -84,7 +135,12 @@ function close() {
 }
 function teardown() {
   document.body.style.overflow = ''
-  form.value = { oldPassword: '', newPassword: '', confirmPassword: '' }
+  form.value = { oldPassword: '', newPassword: '', confirmPassword: '', emailCode: '' }
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = null
+  }
+  countdown.value = 0
   window.removeEventListener('keydown', onEsc)
   lastTrigger.value?.focus?.()
 }
@@ -98,29 +154,38 @@ watch(
 onUnmounted(() => {
   window.removeEventListener('keydown', onEsc)
   document.body.style.overflow = ''
+  if (countdownTimer) clearInterval(countdownTimer)
 })
 
 async function submit() {
-  const { oldPassword, newPassword, confirmPassword } = form.value
+  const { oldPassword, newPassword, confirmPassword, emailCode } = form.value
   if (!oldPassword || !newPassword || !confirmPassword) {
     error.value = '请填写完整'
     return
   }
-  if (newPassword.length < 6) {
-    error.value = '新密码至少 6 位'
+  if (newPassword.length < 8 || newPassword.length > 64) {
+    error.value = '新密码要 8-64 位'
     return
   }
   if (newPassword !== confirmPassword) {
     error.value = '两次输入的新密码不一致'
     return
   }
+  if (emailMode.value && !emailCode.trim()) {
+    error.value = '请输入邮箱验证码'
+    return
+  }
   error.value = ''
   loading.value = true
   try {
-    await authApi.changePassword({ old_password: oldPassword, new_password: newPassword })
+    await authApi.changePassword({
+      old_password: oldPassword,
+      new_password: newPassword,
+      ...(emailMode.value ? { email_code: emailCode.trim() } : {}),
+    })
     toast.success(toastCopy.passwordChanged())
     emit('update:open', false)
-    form.value = { oldPassword: '', newPassword: '', confirmPassword: '' }
+    form.value = { oldPassword: '', newPassword: '', confirmPassword: '', emailCode: '' }
   } catch (err: any) {
     error.value = toUserMessage(err, 'settingFailed')
   } finally {
@@ -192,6 +257,11 @@ async function submit() {
 }
 .acct-field input:focus { border-color: var(--ink); }
 .acct-field input:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+/* G-53 验证码行：输入框＋发送钮同排，几何沿用本弹窗既有 44px 控件高 */
+.acct-code-row { display: flex; gap: 10px; }
+.acct-code-row input { flex: 1; min-width: 0; }
+.acct-code-btn { flex-shrink: 0; white-space: nowrap; }
+.acct-hint { margin: 6px 0 0; font-size: 12px; color: var(--ink2); }
 .acct-error {
   margin: 0 0 10px;
   padding: 8px 12px;

@@ -99,7 +99,11 @@ class RefreshRequest(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     old_password: str
-    new_password: str = Field(..., min_length=6, max_length=64)
+    # G-53（2026-11-18 定案）：新密码 8–64 位，与密码行副文一致；
+    # 注册/找回重置的下限不在本批范围，未动。
+    new_password: str = Field(..., min_length=8, max_length=64)
+    # 有恢复邮箱时必填：POST /change-password/send-code 发到现邮箱的 6 位码
+    email_code: str | None = Field(default=None, max_length=6)
 
 
 class WhitelistIdentityOut(BaseModel):
@@ -963,6 +967,160 @@ def _apply_password_change(db: Session, user: models.WebUser, new_password: str)
     ).update({emby_models.EmbyApiToken.is_revoked: True}, synchronize_session=False)
 
 
+# ==================== 邮箱验证码（G-53/G-54 共用一套） ====================
+# 与找回密码同一套机制（password_reset_tokens 的姊妹表，见 models
+# .EmailVerificationCode）：原始码只出现在邮件里、库里只存 SHA256、
+# 单次使用、重新申请作废同用途旧码、check_rate_limit 限流、
+# integrations_mail.build_channel + EmailChannel._deliver 投递。
+# 6 位码与 10 分钟 TTL 同 tg_bind 现行实现口径。
+
+EMAIL_CODE_TTL = timedelta(minutes=10)
+EMAIL_CODE_PURPOSE_CHANGE_PASSWORD = "change_password"
+EMAIL_CODE_PURPOSE_CHANGE_EMAIL = "change_email"
+
+
+def mask_email(email: str | None) -> str:
+    """邮箱脱敏展示：本地名只露首尾，域名原样（a***z@example.com）。"""
+    raw = (email or "").strip()
+    if "@" not in raw:
+        return ""
+    local, _, domain = raw.partition("@")
+    if len(local) <= 2:
+        masked_local = local[:1] + "***"
+    else:
+        masked_local = f"{local[:1]}***{local[-1:]}"
+    return f"{masked_local}@{domain}"
+
+
+def _email_code_hash(user_id: int, purpose: str, code: str) -> str:
+    return hashlib.sha256(f"{user_id}:{purpose}:{code}".encode("utf-8")).hexdigest()
+
+
+def _issue_email_code(
+    db: Session, user: models.WebUser, purpose: str,
+    target_email: str | None, ip: str | None,
+) -> str:
+    """签发 6 位码：作废该用户同用途全部未用旧码后落一行哈希。不 commit。"""
+    now = datetime.now()
+    db.query(models.EmailVerificationCode).filter(
+        models.EmailVerificationCode.user_id == user.id,
+        models.EmailVerificationCode.purpose == purpose,
+        models.EmailVerificationCode.used_at.is_(None),
+    ).update({models.EmailVerificationCode.used_at: now}, synchronize_session=False)
+    raw_code = str(100000 + secrets.randbelow(900000))  # CSPRNG，同 tg_bind 口径
+    db.add(models.EmailVerificationCode(
+        user_id=user.id,
+        purpose=purpose,
+        target_email=target_email,
+        code_hash=_email_code_hash(user.id, purpose, raw_code),
+        created_at=now,
+        expires_at=now + EMAIL_CODE_TTL,
+        request_ip=ip,
+    ))
+    return raw_code
+
+
+def _verify_email_code(
+    db: Session, user: models.WebUser, purpose: str, code: str,
+    target_email: str | None = None,
+) -> bool:
+    """验码：命中该用户同用途最新未用码、未过期、哈希一致（且目标邮箱
+    一致，change_email 用）才算过；通过即标记已消费（调用方 commit）。"""
+    code = (code or "").strip()
+    if not code:
+        return False
+    row = (
+        db.query(models.EmailVerificationCode)
+        .filter(
+            models.EmailVerificationCode.user_id == user.id,
+            models.EmailVerificationCode.purpose == purpose,
+            models.EmailVerificationCode.used_at.is_(None),
+        )
+        .order_by(models.EmailVerificationCode.id.desc())
+        .first()
+    )
+    if row is None:
+        return False
+    if target_email is not None and (row.target_email or "") != target_email:
+        return False
+    if row.expires_at < datetime.now():
+        return False
+    if row.code_hash != _email_code_hash(user.id, purpose, code):
+        return False
+    row.used_at = datetime.now()
+    return True
+
+
+def _deliver_email(db: Session, to_email: str, title: str, content: str, what: str) -> None:
+    """经现行 EmailChannel 投递一封纯文本邮件；失败只记日志（不记正文
+    里的验证码），不改变调用方对外响应（同 _send_reset_email 口径）。"""
+    channel = integrations_mail.build_channel(db)
+    if channel is None:
+        logger.warning("%s未发送：邮件渠道未启用或未配置 to=%s", what, mask_email(to_email))
+        return
+    try:
+        ok, error = channel._deliver(to_email, title, content)
+    except Exception as exc:  # noqa: BLE001 — 发信异常不许影响主流程
+        logger.error("%s发送失败 to=%s: %s: %s", what, mask_email(to_email), type(exc).__name__, exc)
+        return
+    if not ok:
+        logger.error("%s发送失败 to=%s: %s", what, mask_email(to_email), error)
+
+
+def _send_email_code(db: Session, user: models.WebUser, to_email: str, raw_code: str, purpose: str) -> None:
+    if purpose == EMAIL_CODE_PURPOSE_CHANGE_EMAIL:
+        title = "Aetrix 换邮箱验证码"
+        scene = "更换恢复邮箱"
+    else:
+        title = "Aetrix 改密验证码"
+        scene = "修改登录密码"
+    content = (
+        f"你正在{scene}（账号 {user.username}）。\n\n"
+        f"验证码是 {raw_code}，10 分钟内有效，输对了才会继续。\n\n"
+        "如果不是你本人操作，请忽略这封邮件，你的账号不会有任何变化。"
+    )
+    _deliver_email(db, to_email, title, content, f"{scene}验证码邮件")
+
+
+@auth_router.post("/change-password/send-code")
+def change_password_send_code(
+    request: Request,
+    current_user: models.WebUser = Depends(get_current_user_jwt),
+    db: Session = Depends(get_db),
+):
+    """G-53 改密发码：向账号现邮箱（恢复邮箱）发 6 位验证码。
+
+    无可用邮箱的账号明确回 password_only 模式（400 告知不用验证码），
+    前端据此不渲染验证码字段、直接走当前密码改密，不锁死。
+    限流沿用找回密码账号维度口径（3 次/小时）＋ IP 维度兜底。
+    """
+    email = (current_user.email or "").strip()
+    if not email:
+        raise HTTPException(
+            status_code=400,
+            detail="账号还没有绑定邮箱，不用验证码，填当前密码就能改密码",
+        )
+    ip = client_ip(request)
+    allowed, _retry = check_rate_limit(
+        f"change-password-code:ip:{ip}", 10, 3600)
+    if not allowed:
+        raise HTTPException(status_code=429, detail="尝试过于频繁，请稍后再试")
+    allowed, _retry = check_rate_limit(
+        f"change-password-code:user:{current_user.id}", 3, 3600)
+    if not allowed:
+        raise HTTPException(status_code=429, detail="验证码发得太频繁了，请过一会儿再试")
+    raw_code = _issue_email_code(
+        db, current_user, EMAIL_CODE_PURPOSE_CHANGE_PASSWORD, None, ip)
+    db.commit()
+    _send_email_code(db, current_user, email, raw_code, EMAIL_CODE_PURPOSE_CHANGE_PASSWORD)
+    return {
+        "success": True,
+        "verification": "email_code",
+        "email_masked": mask_email(email),
+        "expires_in": int(EMAIL_CODE_TTL.total_seconds()),
+    }
+
+
 @auth_router.post("/change-password")
 def change_password(
     request: Request,
@@ -990,9 +1148,148 @@ def change_password(
     if req.old_password == req.new_password:
         raise HTTPException(status_code=400, detail="新密码不能与旧密码相同")
 
+    # G-53：有恢复邮箱必须再过邮箱验证码（码由 /change-password
+    # /send-code 发到现邮箱）；无邮箱只验当前密码、不锁死。响应明示
+    # verification 模式，前端据此渲染。验码在改密落地前完成，码随
+    # 本次改密同一事务消费。
+    verification = "password_only"
+    if (current_user.email or "").strip():
+        verification = "email_code"
+        if not (req.email_code or "").strip():
+            raise HTTPException(status_code=400, detail="请输入邮箱验证码")
+        if not _verify_email_code(
+            db, current_user, EMAIL_CODE_PURPOSE_CHANGE_PASSWORD, req.email_code or "",
+        ):
+            record_event(
+                db, username=current_user.username, user_id=current_user.id,
+                ip=log_ip(request), agent=user_agent(request), success=False,
+                reason="password_change_failed", detail="邮箱验证码不正确或已过期",
+            )
+            raise HTTPException(
+                status_code=400, detail="验证码不正确或已过期，请重新获取")
+
     _apply_password_change(db, current_user, req.new_password)
     db.commit()
-    return {"success": True, "message": "密码已更新"}
+    record_event(
+        db, username=current_user.username, user_id=current_user.id,
+        ip=log_ip(request), agent=user_agent(request), success=True,
+        reason="password_change",
+        detail="经邮箱验证码改密" if verification == "email_code" else "仅当前密码改密（无恢复邮箱）",
+    )
+    return {"success": True, "message": "密码已更新", "verification": verification}
+
+
+class ChangeEmailSendCodeRequest(BaseModel):
+    current_password: str
+    new_email: str = Field(..., min_length=3, max_length=255)
+
+
+class ChangeEmailRequest(BaseModel):
+    current_password: str
+    new_email: str = Field(..., min_length=3, max_length=255)
+    code: str = Field(..., min_length=6, max_length=6)
+
+
+def _validate_new_recovery_email(db: Session, user: models.WebUser, new_email: str) -> str:
+    """G-54 换邮箱前置校验：格式 → 与现邮箱相同 → 与他人冲突（注册侧
+    唯一性口径：精确匹配查重，命中回 409）。返回归一后的新邮箱。"""
+    email = (new_email or "").strip()
+    if "@" not in email:
+        raise HTTPException(status_code=400, detail="邮箱格式不正确")
+    if (user.email or "").strip() == email:
+        raise HTTPException(status_code=400, detail="这就是你现在的邮箱，不用换")
+    existing = (
+        db.query(models.WebUser)
+        .filter(models.WebUser.email == email, models.WebUser.id != user.id)
+        .first()
+    )
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="这个邮箱已经绑在别的账号上了，换个邮箱试试")
+    return email
+
+
+def _guard_change_email_password(
+    request: Request, db: Session, current_user: models.WebUser, password: str,
+) -> None:
+    """换邮箱的当前密码门：限流同改密（8 次/分钟，IP+用户），错落安全日志。"""
+    allowed, _retry = check_rate_limit(
+        f"change-email:{client_ip(request)}:{current_user.id}", 8, 60)
+    if not allowed:
+        raise HTTPException(status_code=429, detail="尝试过于频繁，请稍后再试")
+    if not verify_password(password, current_user.password_hash):
+        record_event(
+            db, username=current_user.username, user_id=current_user.id,
+            ip=log_ip(request), agent=user_agent(request), success=False,
+            reason="email_change_failed", detail="当前密码不正确",
+        )
+        raise HTTPException(status_code=400, detail="当前密码不正确")
+
+
+@auth_router.post("/change-email/send-code")
+def change_email_send_code(
+    request: Request,
+    req: ChangeEmailSendCodeRequest,
+    current_user: models.WebUser = Depends(get_current_user_jwt),
+    db: Session = Depends(get_db),
+):
+    """G-54 换邮箱发码：先验当前密码与新邮箱可用性，再向新邮箱发码
+    （先证明新邮箱可达，换完找回链不断）。"""
+    _guard_change_email_password(request, db, current_user, req.current_password)
+    new_email = _validate_new_recovery_email(db, current_user, req.new_email)
+    allowed, _retry = check_rate_limit(
+        f"change-email-code:user:{current_user.id}", 3, 3600)
+    if not allowed:
+        raise HTTPException(status_code=429, detail="验证码发得太频繁了，请过一会儿再试")
+    raw_code = _issue_email_code(
+        db, current_user, EMAIL_CODE_PURPOSE_CHANGE_EMAIL, new_email, client_ip(request))
+    db.commit()
+    _send_email_code(db, current_user, new_email, raw_code, EMAIL_CODE_PURPOSE_CHANGE_EMAIL)
+    return {
+        "success": True,
+        "email_masked": mask_email(new_email),
+        "expires_in": int(EMAIL_CODE_TTL.total_seconds()),
+    }
+
+
+@auth_router.post("/change-email")
+def change_email(
+    request: Request,
+    req: ChangeEmailRequest,
+    current_user: models.WebUser = Depends(get_current_user_jwt),
+    db: Session = Depends(get_db),
+):
+    """G-54 更换恢复邮箱：验当前密码 → 验新邮箱验证码（码与新邮箱
+    绑定）→ 落新邮箱 → 向旧邮箱发一封变更通知。"""
+    _guard_change_email_password(request, db, current_user, req.current_password)
+    new_email = _validate_new_recovery_email(db, current_user, req.new_email)
+    if not _verify_email_code(
+        db, current_user, EMAIL_CODE_PURPOSE_CHANGE_EMAIL, req.code,
+        target_email=new_email,
+    ):
+        record_event(
+            db, username=current_user.username, user_id=current_user.id,
+            ip=log_ip(request), agent=user_agent(request), success=False,
+            reason="email_change_failed", detail="新邮箱验证码不正确或已过期",
+        )
+        raise HTTPException(status_code=400, detail="验证码不正确或已过期，请重新获取")
+    old_email = (current_user.email or "").strip()
+    current_user.email = new_email
+    db.commit()
+    record_event(
+        db, username=current_user.username, user_id=current_user.id,
+        ip=log_ip(request), agent=user_agent(request), success=True,
+        reason="email_change", detail="恢复邮箱已更换（旧邮箱已发通知）",
+    )
+    if old_email:
+        _deliver_email(
+            db, old_email, "Aetrix 恢复邮箱已更换",
+            f"你的 Aetrix 账号（{current_user.username}）的恢复邮箱刚刚被更换为 "
+            f"{mask_email(new_email)}。\n\n"
+            "更换后，找回密码的邮件会发到新邮箱。如果不是你本人操作，"
+            "请尽快登录账号改密码并检查账号安全。",
+            "恢复邮箱变更通知邮件",
+        )
+    return {"success": True, "email": new_email, "email_masked": mask_email(new_email)}
 
 
 class PasswordResetRequestIn(BaseModel):

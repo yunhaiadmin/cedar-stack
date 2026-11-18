@@ -25,6 +25,8 @@ REASONS = {
     "decoy_code": "诱饵码触发",
     "password_change": "修改密码",
     "password_change_failed": "修改密码失败",
+    "email_change": "更换恢复邮箱",
+    "email_change_failed": "更换恢复邮箱失败",
     "password_reset_request": "找回密码申请",
     "password_reset": "找回密码重置成功",
     "password_reset_failed": "找回密码失败",
