@@ -100,7 +100,10 @@ def view_grant(db: Session, user: models.WebUser,
                realm_id: Optional[int] = None) -> tuple[bool, Optional[models.EmbyViewUnlock]]:
     """用户有没有权限查看某服的 Emby 账号 / 线路（**全站单一事实来源**）
 
-    规则：付费服 = 有效订阅即权限；公益服 = 持有未到期的存量查看行
+    规则：付费服 = 有效订阅即权限，团队套餐是与个人订阅并列的资格
+    来源（active 且未过期的团队，团长与成员凭团队套餐可查看，判定
+    单口 ``teams.play_eligible_team``，与 ``can_play`` 同一口径；团队
+    无服维度，不做服过滤）；公益服 = 持有未到期的存量查看行
     （``EmbyViewUnlock``）。公益资格已随福利服役族于 2026-11-14 删除
     （资格全量折算成订阅时间），不再有「资格在期自动带查看」；
     存量查看行继续有效到期为止，行到期即停。返回的第二项是命中的
@@ -127,7 +130,11 @@ def view_grant(db: Session, user: models.WebUser,
             .first()
         )
         return (unlock is not None), unlock
-    return has_active_subscription(db, user.id, target), None  # r49: 用 _scoped 口径（此前 resolve_realm_id；现有调用方下等价）
+    if has_active_subscription(db, user.id, target):  # r49: 用 _scoped 口径（此前 resolve_realm_id；现有调用方下等价）
+        return True, None
+    from backend import teams as teams_service
+
+    return teams_service.play_eligible_team(db, user.id) is not None, None
 
 CONFIG_REQUIRED = "subscription_required"
 CONFIG_MESSAGE = "subscription_gate_message"
@@ -200,6 +207,10 @@ def can_play(db: Session, user: models.WebUser, realm_id: Optional[int] = None) 
     不另立标准（懒引防循环导入）；另对子账号追加一条权益判定——
     主账号当前套餐须声明 sub_account_limit>0，降到无子账号权益
     的档时子账号同步不可播（口径见 backend/sub_accounts.py）。
+    团队套餐是与个人订阅并列的资格来源（2026-11-18 团队批 4）：
+    active 且未过期的团队，团长与成员凭团队套餐可播（判定单口
+    teams.play_eligible_team）；购团时旧个人订阅已被抵扣置到期，
+    不接这条团长本人都会断播。
     """
     if getattr(user, "is_staff", False):
         return True
@@ -210,7 +221,10 @@ def can_play(db: Session, user: models.WebUser, realm_id: Optional[int] = None) 
     if not subscription_required(db):
         return True
     from backend import sub_accounts
+    from backend import teams as teams_service
 
+    if teams_service.play_eligible_team(db, user.id) is not None:
+        return True
     if not has_active_subscription(
             db, sub_accounts.effective_user_id(db, user),
             resolve_realm_id(realm_id)):
