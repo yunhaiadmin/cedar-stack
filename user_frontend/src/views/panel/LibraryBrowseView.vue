@@ -847,7 +847,10 @@ function retryCategories() {
   margin: 5px 8px;
   background: var(--uhd-s-border);
 }
-/* 追新日历入口：页头右侧小胶囊，与排序胶囊同口径 */
+/* 追新日历入口：页头右侧小胶囊，与排序胶囊同口径。
+   2026-11-18 用户亲点：桌面端删掉这颗钮，手机端保持原样——
+   故桌面宽（≥768px，与本文件手机断点 max-width:767px 同界）不渲染，
+   手机端样式与行为逐字不变；追新日历页本体与路由不动。 */
 .lb-cal-link {
   display: inline-flex;
   align-items: center;
@@ -861,6 +864,9 @@ function retryCategories() {
   font-weight: var(--uhd-fw-semibold);
   text-decoration: none;
   white-space: nowrap;
+}
+@media (min-width: 768px) {
+  .lb-cal-link { display: none; }
 }
 /* 筛选行：分组胶囊与排序胶囊同口径，菜单复用排序菜单项样式 */
 .lb-filterrow {
