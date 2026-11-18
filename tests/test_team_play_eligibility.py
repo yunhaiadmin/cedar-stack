@@ -16,6 +16,7 @@
 隔离：内存 SQLite（StaticPool），不碰真库。
 """
 import os
+import types
 
 os.environ.setdefault("DATABASE_TYPE", "sqlite")
 os.environ.setdefault("REDIS_ENABLED", "false")
@@ -388,3 +389,24 @@ def test_pending_team_grants_no_traffic_quota(db):
     # 未开通：不走团队池判定（回落个人口径，成员无个人额度）
     assert summary["quota_bytes"] != 1000 * GB
     assert summary["exhausted"] is False
+
+
+def test_play_eligible_team_duck_typed_user(db):
+    """回归（#322 CI 114 红同款）：usage_summary 的存量调用方传对象
+    时，play_eligible_team 须按 .id 取值；裸 object() 取不到 id
+    返回 None，不抛错。"""
+    owner = _user(db, "towner")
+    team = _buy_team(db, owner, activate=True)
+    member = teams_service.create_member(
+        db, owner, username="tmember1", password=PW)
+    stub_owner = types.SimpleNamespace(id=owner.id, is_staff=False)
+    stub_member = types.SimpleNamespace(id=member.id, is_staff=False)
+    assert teams_service.play_eligible_team(db, stub_owner) is not None
+    assert teams_service.play_eligible_team(db, stub_owner).id == team.id
+    assert teams_service.play_eligible_team(db, stub_member) is not None
+    assert teams_service.play_eligible_team(db, stub_member).id == team.id
+    assert teams_service.play_eligible_team(db, owner.id) is not None
+    assert teams_service.play_eligible_team(db, object()) is None
+    bystander = _user(db, "bystander")
+    assert teams_service.play_eligible_team(
+        db, types.SimpleNamespace(id=bystander.id)) is None
