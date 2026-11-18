@@ -66,8 +66,8 @@
               <span class="plan-card__name">{{ plan.name }}</span>
               <span v-if="isCurrent(plan)" class="plan-current">当前</span>
               <span class="plan-card__pricebox">
-                <span class="plan-card__price">$ {{ fmtPrice(monthlyOf(plan)) }}<small> / 月</small></span>
-                <span class="plan-card__annual">年付 $ {{ fmtPrice(listPriceFor(plan, 12)) }}</span>
+                <span class="plan-card__price">${{ fmtPrice(monthlyOf(plan)) }}<small> / 月</small></span>
+                <span class="plan-card__annual">年付 ${{ fmtPrice(listPriceFor(plan, 12)) }}</span>
               </span>
             </div>
             <div class="plan-specs">
@@ -168,7 +168,7 @@
           <p v-if="selectedPlan && selectedPlan.purchase_enabled === false" class="sum-note" role="alert">该套餐暂未开放购买</p>
           <p v-if="!walletEnabled" class="sum-note">钱包暂未开启，暂时无法购买</p>
           <p v-else-if="balanceShortfall > 0" class="sum-note" role="alert">
-            钱包余额不足，还差 $ {{ fmtPrice(balanceShortfall) }}，充值后即可购买
+            钱包余额不足，还差 ${{ fmtPrice(balanceShortfall) }}，充值后即可购买
           </p>
         </section>
       </div>
@@ -234,7 +234,7 @@
           <span>购买后结余</span>
           <b :class="{ 'cfm-neg': balanceAfter < 0 }">{{ moneyText(balanceAfter) }}</b>
         </div>
-        <p v-if="balanceAfter < 0" class="cfm-warn" role="alert">余额不足，还差 $ {{ fmtPrice(-balanceAfter) }}</p>
+        <p v-if="balanceAfter < 0" class="cfm-warn" role="alert">余额不足，还差 ${{ fmtPrice(-balanceAfter) }}</p>
         <p v-if="confirmError" class="cfm-warn" role="alert">{{ confirmError }}</p>
       </div>
       <template #footer>
@@ -325,7 +325,7 @@ function fmtPrice(n: number | null | undefined): string {
 }
 function moneyText(v: number | null | undefined): string {
   if (v == null) return '–'
-  return `$ ${fmtPrice(v)}`
+  return `$${fmtPrice(v)}`
 }
 function round2(n: number): number {
   return Math.round(n * 100) / 100
