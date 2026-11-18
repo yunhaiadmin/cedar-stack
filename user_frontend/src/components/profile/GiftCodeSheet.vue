@@ -172,18 +172,17 @@ async function copyCode() {
 </script>
 
 <style scoped>
-/* 居中玻璃浮窗（2026-11-15 弹层形态批 1，与购流量弹窗同一口径）：
-   宽 92%、max 420px、四角圆角 26；玻璃五件＝半透底 --uhd-glass-d/l
-   ＋slab 档 blur(24px) saturate(160%)＋边缘亮光＋内高光＋大柔影
-   （--uhd-glass-slab-* 阴影束）；内层填充/描边走 --tq-* 弹窗令牌，
+/* 居中实色浮窗（2026-11-18 用户亲令改实色；2026-11-15 弹层形态
+   批 1 曾为玻璃浮窗，与购流量弹窗同一口径）：宽 92%、max 420px、
+   四角圆角 26；面板底改实色 surface（深 var(--uhd-d-surface-raised)、
+   浅 var(--uhd-l-surface)）、阴影走 --uhd-shadow-modal、遮罩与
+   面板均无 backdrop；内层填充/描边走 --tq-* 弹窗令牌，
    深浅双态自动跟随。 */
 .gc-mask {
   position: fixed;
   inset: 0;
   z-index: 120;
   background: rgba(10, 10, 14, 0.55);
-  backdrop-filter: blur(10px) saturate(150%);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -198,18 +197,16 @@ async function copyCode() {
   max-width: 420px;
   max-height: 88vh;
   overflow-y: auto;
-  background: var(--uhd-glass-d);
+  background: var(--uhd-d-surface-raised);
   border: 1px solid var(--uhd-glass-border);
   border-radius: 26px;
   padding: 22px 22px 24px;
   color: var(--tq-fg);
-  box-shadow: var(--uhd-glass-slab-shadow);
-  backdrop-filter: var(--uhd-glass-slab-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-slab-filter);
+  box-shadow: var(--uhd-shadow-modal);
   animation: gc-pop-in 0.28s cubic-bezier(0.32, 0.72, 0.28, 1) both;
 }
 html[data-theme='light'] .gc-sheet {
-  background: var(--uhd-glass-l);
+  background: var(--uhd-l-surface);
   border-color: var(--uhd-glass-border-l);
 }
 @keyframes gc-pop-in {

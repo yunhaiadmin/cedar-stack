@@ -393,8 +393,6 @@ html[data-theme='light'] .iv-btn--glass {
   justify-content: center;
   padding: 24px;
   background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
 }
 
 .iv-modal {

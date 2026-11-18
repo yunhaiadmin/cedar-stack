@@ -231,18 +231,14 @@ async function submit(): Promise<void> {
 }
 .rsm-card {
   position: relative; width: 100%; max-width: 560px; max-height: 88dvh; overflow-y: auto;
-  /* 面板玻璃化（2026-11-15 弹窗收尾批）：实心 #17181a/浅 #fff 换玻璃
-     五件，令牌 styles/modal-glass.css（深浅随 data-theme）；尺寸/
-     圆角/内边距不动，卡内元素配色照旧。 */
+  /* 面板实色（2026-11-18 用户亲令；2026-11-15 曾玻璃化）：底用
+     实色面，令牌 styles/modal-glass.css（--modal-glass-bg 现引
+     实色 surface，深浅随 data-theme）；去 backdrop 与内高光；
+     尺寸/圆角/内边距不动，卡内元素配色照旧。 */
   background: var(--modal-glass-bg);
   border: 1px solid var(--modal-glass-edge);
   border-radius: 20px;
-  box-shadow:
-    inset 0 1px 0 var(--modal-glass-hi),
-    inset 0 0 0 1px var(--modal-glass-ring),
-    var(--modal-glass-shadow);
-  backdrop-filter: var(--modal-glass-filter);
-  -webkit-backdrop-filter: var(--modal-glass-filter);
+  box-shadow: var(--modal-glass-shadow);
   padding: 22px 20px 20px; color: #fbfcfd;
 }
 .rsm-title { margin: 0; text-align: center; font-size: 19px; font-weight: 800; }

@@ -317,8 +317,6 @@ onBeforeUnmount(() => {
   justify-content: center;
   padding: 16px;
   background: var(--modal-scrim-dark);
-  backdrop-filter: var(--modal-scrim-dark-filter);
-  -webkit-backdrop-filter: var(--modal-scrim-dark-filter);
   animation: uhd-fade-in var(--uhd-dur-fade) var(--uhd-ease-standard);
   font-family: var(--uhd-font-sans);
   -webkit-font-smoothing: antialiased;
@@ -329,19 +327,15 @@ onBeforeUnmount(() => {
   max-height: calc(100dvh - 48px);
   overflow-y: auto;
   box-sizing: border-box;
-  /* 面板玻璃化（2026-11-15 弹窗收尾批）：实心 --bds-card 换玻璃五件；
-     --modal-glass-* 在本弹层作用域由 bind-drive-sheet.css 按双态钉值
-     （数值同 styles/modal-glass.css），尺寸/圆角/内边距不动。 */
+  /* 面板实色（2026-11-18 用户亲令；2026-11-15 曾玻璃化）：底用
+     实色面；--modal-glass-bg/edge/shadow 在本弹层作用域由
+     bind-drive-sheet.css 按双态钉值（口径同 styles/modal-glass.css），
+     去 backdrop 与内高光；尺寸/圆角/内边距不动。 */
   background: var(--modal-glass-bg);
   border: 1px solid var(--modal-glass-edge);
   color: var(--bds-text);
   border-radius: var(--uhd-radius-modal);
-  box-shadow:
-    inset 0 1px 0 var(--modal-glass-hi),
-    inset 0 0 0 1px var(--modal-glass-ring),
-    var(--modal-glass-shadow);
-  backdrop-filter: var(--modal-glass-filter);
-  -webkit-backdrop-filter: var(--modal-glass-filter);
+  box-shadow: var(--modal-glass-shadow);
   padding: 28px;
   animation: uhd-fade-in var(--uhd-dur-fade) var(--uhd-ease-standard);
 }
