@@ -19,6 +19,11 @@ CSS 规范里这是循环引用，变量会变成 invalid at computed-value time
      admin_frontend 是同值副本（后台重设计批 0，2026-11-18）。历史上副本
      曾漂移成过期版（344 行 vs 真源 487 行、缺 29 个令牌）且无人察觉——
      改 --uhd-* 令牌时只许改真源，再把副本同步成逐字相同，否则 CI 失败。
+  6. 管理端壳（Layout.vue / CommandPalette.vue / uhd-admin.css 壳模具）的
+     字号只许引令牌（后台重设计批 1，2026-11-18）：壳文件里曾散着 13.5px /
+     11.5px / 10.5px 这类不在 --uhd-fs-* 梯队里的分数值与逐处手写的整数值，
+     改一处漏一处；壳模具的导航项圆角/字号、品牌字、眉题钉死引
+     --uhd-radius-navitem / --uhd-fs-body / --uhd-fs-lead / --uhd-fs-aux。
 
 样式表集合从入口（main.ts / index.html 的 <style>）出发，沿 @import 与 import 语句递归收集，
 所以「文件存在但没接进应用」不会被误判成已定义。
@@ -327,15 +332,76 @@ def check_uhd_tokens_sync() -> None:
                 break
 
 
+# 后台重设计批 1（2026-11-18）：壳字号口径。Layout.vue / CommandPalette.vue 是
+# 壳本体（侧栏/顶栏/抽屉/命令面板），font-size 不许再写数值字面量，一律引
+# --uhd-fs-*（分数值归相邻档）；uhd-admin.css 壳模具的导航项/品牌字/眉题同理
+# 钉死引统一令牌，防止模具与真源再次漂移。
+SHELL_FONT_LITERAL_RE = re.compile(r"font-size:\s*\d+(?:\.\d+)?(?:px|rem|em)\b")
+SHELL_FONT_FRACTION_RE = re.compile(r"font-size:\s*\d+\.\d+(?:px|rem|em)\b")
+ADMIN_SHELL_VUE = (
+    "admin_frontend/src/views/Layout.vue",
+    "admin_frontend/src/components/CommandPalette.vue",
+)
+ADMIN_SHELL_FILES = ADMIN_SHELL_VUE + ("admin_frontend/src/styles/uhd-admin.css",)
+ADMIN_SHELL_MOLD_TOKENS = (
+    "var(--uhd-radius-navitem)",
+    "var(--uhd-fs-body)",
+    "var(--uhd-fs-lead)",
+    "var(--uhd-fs-aux)",
+)
+
+
+def check_admin_shell() -> None:
+    global checks
+
+    checks += 1
+    bad = []
+    for rel in ADMIN_SHELL_VUE:
+        text = (ROOT / rel).read_text(encoding="utf-8")
+        for i, line in enumerate(text.splitlines(), 1):
+            if SHELL_FONT_LITERAL_RE.search(line):
+                bad.append(f"    {rel}:{i}  {line.strip()[:80]}")
+    if bad:
+        failures.append(
+            "admin_frontend: 壳文件（Layout.vue / CommandPalette.vue）里还有 font-size "
+            "数值字面量（后台重设计批 1：壳字号一律引 --uhd-fs-* 令牌）："
+        )
+        failures.extend(bad)
+
+    checks += 1
+    bad = []
+    for rel in ADMIN_SHELL_FILES:
+        text = (ROOT / rel).read_text(encoding="utf-8")
+        for i, line in enumerate(text.splitlines(), 1):
+            if SHELL_FONT_FRACTION_RE.search(line):
+                bad.append(f"    {rel}:{i}  {line.strip()[:80]}")
+    if bad:
+        failures.append(
+            "admin_frontend: 壳文件里还有分数值 font-size（--uhd-fs-* 梯队没有分数档，"
+            "须归入相邻档）："
+        )
+        failures.extend(bad)
+
+    checks += 1
+    mold = (ROOT / "admin_frontend/src/styles/uhd-admin.css").read_text(encoding="utf-8")
+    missing = [t for t in ADMIN_SHELL_MOLD_TOKENS if t not in mold]
+    if missing:
+        failures.append(
+            "admin_frontend: uhd-admin.css 壳模具没有引统一令牌（后台重设计批 1："
+            "导航项圆角/字号、品牌字、眉题走 --uhd-*）：缺少 " + ", ".join(missing)
+        )
+
+
 for frontend in FRONTENDS:
     check_frontend(frontend)
     check_freeze(frontend)
 check_admin_structure()
 check_uhd_tokens_sync()
+check_admin_shell()
 
 print(f"设计令牌契约检查：{checks} 项")
 if failures:
     print("\n".join(failures))
     print("❌ 设计令牌契约检查失败")
     sys.exit(1)
-print("✅ 设计令牌契约检查通过（引用的令牌都有定义 · 无循环引用 · 没有孤立样式表 · 主题引入冻结 · neo 冻结 · 两端 uhd-tokens 逐字同步）")
+print("✅ 设计令牌契约检查通过（引用的令牌都有定义 · 无循环引用 · 没有孤立样式表 · 主题引入冻结 · neo 冻结 · 两端 uhd-tokens 逐字同步 · 壳字号走令牌）")
