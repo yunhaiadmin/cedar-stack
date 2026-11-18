@@ -1,0 +1,37 @@
+/* 团队页本地主题变量（--tm-*）：缺省深色，html[data-theme='light'] 时
+   整套换浅（与「我的」页/邀请页同口径）。定义放在独立样式表供设计
+   令牌契约核查，由 TeamView.vue 引入；其余版式在 TeamView.vue 的
+   scoped 样式里，引用此处变量。 */
+
+.tm-page {
+  --tm-line: rgba(255, 255, 255, 0.1);
+  --tm-card: #17181c;
+  --tm-chip: rgba(255, 255, 255, 0.08);
+  --tm-text-2: rgba(255, 255, 255, 0.62);
+  --tm-text-3: rgba(255, 255, 255, 0.42);
+  --tm-input: rgba(255, 255, 255, 0.06);
+  --tm-danger: #f87171;
+  --tm-warn-bg: rgba(217, 119, 6, 0.16);
+  --tm-warn-text: #fbbf24;
+
+  min-height: 100dvh;
+  background: #050505;
+  color: #ffffff;
+  font-family: var(--uhd-font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+html[data-theme='light'] .tm-page {
+  --tm-line: #e7e7e7;
+  --tm-card: #ffffff;
+  --tm-chip: rgba(17, 17, 17, 0.05);
+  --tm-text-2: #55575c;
+  --tm-text-3: #9a9da3;
+  --tm-input: #f5f5f5;
+  --tm-danger: #dc2626;
+  --tm-warn-bg: #fdf3e0;
+  --tm-warn-text: #b45309;
+
+  background: #f8f8f8;
+  color: #111111;
+}

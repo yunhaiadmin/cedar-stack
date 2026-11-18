@@ -186,6 +186,16 @@ const router = createRouter({
             component: () => import('@/views/game/InviteFriendsView.vue'),
             meta: { title: '邀请好友', requiresAuth: true },
           },
+          // 团队管理（2026-11-18 重建批 2，照友站 /user/team 形态）：
+          // 介绍卡＋成员账号区＋两步购买弹窗；成员为团长创建的子账号，
+          // 数据走批 1 后端 /api/user/teams。入口在侧栏「我的」组与
+          // 手机「我的」菜单账户组（紧随邀请好友），另有订阅页底部提示条。
+          {
+            path: '/game/account/team',
+            name: 'game-account-team',
+            component: () => import('@/views/game/TeamView.vue'),
+            meta: { title: '团队管理', requiresAuth: true },
+          },
           // 「我的」菜单页：用户中心底坞双页签之一（全部功能列表行，一个不丢）
           {
             path: '/game/account/menu',
