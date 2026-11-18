@@ -2413,3 +2413,87 @@ class EmbyImageObsDaily(Base):
                          'size_bucket', 'status',
                          name='uq_emby_image_obs_daily_dims'),
     )
+
+
+# ==================== 团队（2026-11-18 重建批 1） ====================
+# 形态照友站 UHDNow：用户自选线路/流量/时长 → 钱包余额购买 → 建团
+# pending_activation（待开通播放权限），管理端开通后转 active。
+# 成员＝团长创建的子账号（WebUser.parent_user_id 指团长）＋本节
+# team_members 归属行；不复活 2026-11-16 已删的申请制/邀请码制旧表。
+
+class Team(Base):
+    """团队主表：一名团长至多一个未解散团队（服务层校验）。"""
+
+    __tablename__ = 'teams'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    # 团队名可选：购买时可填、事后可改；未填为空串，前端显示回退团长名
+    name = Column(String(100), nullable=False, default="")
+    owner_id = Column(Integer, ForeignKey('web_users.id'), nullable=False,
+                      index=True)
+    # pending_activation（已付款待开通）/ active（已开通）/ dissolved（已解散）
+    status = Column(String(20), nullable=False, default="pending_activation",
+                    index=True)
+    # 当前套餐快照（购买/升级时写入）：线路 global / premium
+    plan_line = Column(String(20), nullable=True)
+    plan_traffic_gb = Column(Integer, nullable=True)        # 购买的流量（GB 口径）
+    plan_traffic_bytes = Column(BigInteger, nullable=True)  # = GB × 1024³
+    plan_member_limit = Column(Integer, nullable=True)      # 子账户上限＝GB/除数
+    plan_streams = Column(Integer, nullable=False, default=0)  # 同时播放路数（只记录、不计价）
+    plan_price_fen = Column(Integer, nullable=True)         # 购买时标价快照（美分，整期）
+    plan_started_at = Column(DateTime, nullable=True)
+    plan_expires_at = Column(DateTime, nullable=True)
+    # 流量周期锚点日（1–31）：成员用量按此锚点切周期，复用 traffic_quota.period_bounds
+    plan_period_anchor_day = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now,
+                        nullable=False)
+
+
+class TeamMember(Base):
+    """团队成员归属行：owner 一行（团长本人）＋每个成员子账号一行。
+
+    user_id 唯一：一人同时只属于一个团队。成员的 WebUser.parent_user_id
+    指团长（子账号机制本体），本行是团队归属标记，两者缺一不可。
+    """
+
+    __tablename__ = 'team_members'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    team_id = Column(Integer, ForeignKey('teams.id'), nullable=False,
+                     index=True)
+    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
+    role = Column(String(20), nullable=False, default="member")  # owner / member
+    joined_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('team_id', 'user_id', name='uq_team_member_team_user'),
+        UniqueConstraint('user_id', name='uq_team_member_user'),
+    )
+
+
+class TeamOrder(Base):
+    """团队购买订单（审计＋幂等）。
+
+    不复用 subscription_orders：那张表 plan_id 外键非空、语义是个人套餐，
+    团队购买没有对应 plan 行。order_id 由客户端幂等键派生（"TM"+key），
+    与钱包购买同口径：重放同键返回原单、不重复扣款。
+    """
+
+    __tablename__ = 'team_orders'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_id = Column(String(64), unique=True, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False,
+                     index=True)
+    team_id = Column(Integer, ForeignKey('teams.id'), nullable=True)
+    line = Column(String(20), nullable=False)               # global / premium
+    traffic_gb = Column(Integer, nullable=False)
+    months = Column(Integer, nullable=False)
+    streams = Column(Integer, nullable=False, default=0)
+    list_price_fen = Column(Integer, nullable=False, default=0)   # 标价（美分）
+    credit_fen = Column(Integer, nullable=False, default=0)       # 旧套餐抵扣（美分）
+    amount_fen = Column(Integer, nullable=False, default=0)       # 实付（美分）
+    status = Column(String(20), nullable=False, default="paid")   # paid
+    idempotency_key = Column(String(64), nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)

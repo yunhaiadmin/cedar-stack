@@ -44,6 +44,8 @@ SCHEMAS: dict[str, dict[str, tuple]] = {
     "mount_serving": config_schema.MOUNT_SERVING_CONFIG_SCHEMA,
     # EA 图片流量观测（F5 前置观测，2026-11-18）：总开关一个键
     "image_obs": config_schema.IMAGE_OBS_CONFIG_SCHEMA,
+    # 团队（2026-11-18 重建批 1）：购买开关 + 定价锚点/起订/上限/子账户除数
+    "team": config_schema.TEAM_CONFIG_SCHEMA,
     # 播放交付编排器（换代线 step 5，2026-11-01）：开关 + 计划 TTL
     "delivery_plan": config_schema.DELIVERY_PLAN_CONFIG_SCHEMA,
     # 列表去重缓存（2026-10-18）：开关 + TTL + 条目上限

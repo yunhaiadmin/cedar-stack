@@ -318,6 +318,22 @@ IMAGE_OBS_CONFIG_SCHEMA: dict[str, tuple] = {
     "emby_image_obs_enabled": ("bool",),
 }
 
+# 团队（2026-11-18 重建批 1，用户拍板：定价＝友站三分之一、全部可配）：
+# 读取唯一实现 backend/teams.team_config（热读 ttl=0、带代码默认回退）。
+# 纯 SystemConfig 键，不进 env.example（#1527 先例）。
+# - team_global_price_anchors 用 ("raw",)：JSON 锚点表字符串
+#   [{"gb":…,"per_1000gb_fen":…},…]，内容结构校验在 teams.validate_anchors
+#   （schema 层只管是字符串），非法表在管理端保存口整批拒绝、不落库。
+TEAM_CONFIG_SCHEMA: dict[str, tuple] = {
+    "team_purchase_enabled": ("bool",),
+    "team_global_min_traffic_gb": ("int", 1, 10**6),
+    "team_premium_min_traffic_gb": ("int", 1, 10**6),
+    "team_max_traffic_gb": ("int", 1, 10**7),
+    "team_premium_price_per_1000gb_fen": ("int", 0, _BIG),
+    "team_global_price_anchors": ("raw",),
+    "team_sub_account_divisor": ("int", 1, 10**6),
+}
+
 # 播放交付编排器（换代线 step 5，2026-11-01）：(用户, 条目)
 # 交付计划预计算开关 + 计划 TTL。读取唯一实现 delivery_plan
 # .delivery_plan_enabled / plan_ttl_sec（热读、默认开/TTL 默认
