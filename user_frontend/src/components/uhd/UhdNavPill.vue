@@ -221,7 +221,8 @@ function onNavKey(event: KeyboardEvent) {
   width: 280px;
   padding: 8px;
   border: var(--uhd-border-w) solid var(--uhd-glass-border);
-  border-radius: var(--uhd-radius-card-sm);
+  /* 质感第二波（2026-11-18）：圆角收 20（友站实测下拉圆角约 20） */
+  border-radius: 20px;
   background: var(--uhd-glass-d);
   backdrop-filter: var(--uhd-glass-filter);
   -webkit-backdrop-filter: var(--uhd-glass-filter);
@@ -242,8 +243,9 @@ function onNavKey(event: KeyboardEvent) {
 }
 .uhd-nav__drop-row:hover { background: rgba(255, 255, 255, 0.08); }
 .uhd-nav__drop-icon {
-  width: 30px;
-  height: 30px;
+  /* 质感第二波（2026-11-18）：行图标块收 36（友站实测约 36，行高随之约 56） */
+  width: 36px;
+  height: 36px;
   flex: none;
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.09);

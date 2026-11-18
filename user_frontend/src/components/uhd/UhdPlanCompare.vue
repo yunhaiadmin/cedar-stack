@@ -90,6 +90,7 @@ function specRows(plan: SubscriptionPlan): string[] {
       <UhdButton
         :variant="plan.id === selectedId ? 'primary' : 'secondary'"
         block
+        size="sm"
         class="uhd-plans__cta"
         @click.stop="emit('select', plan)"
       >
@@ -102,8 +103,10 @@ function specRows(plan: SubscriptionPlan): string[] {
 <style scoped>
 .uhd-plans {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 20px;
+  /* 质感第二波（2026-11-18）：列宽 287px、间距 24px（友站实测卡 287×454），居中排列 */
+  grid-template-columns: repeat(auto-fit, 287px);
+  justify-content: center;
+  gap: 24px;
   max-width: var(--uhd-container-pricing);
   margin: 0 auto;
   font-family: var(--uhd-font-sans);
@@ -113,9 +116,10 @@ function specRows(plan: SubscriptionPlan): string[] {
   position: relative;
   display: flex;
   flex-direction: column;
+  min-height: 454px;
   padding: 26px 24px;
   border: var(--uhd-border-w) solid transparent;
-  border-radius: var(--uhd-radius-card-sm);
+  border-radius: 24px;
   color: var(--uhd-l-text-2);
   opacity: 0.72;
   cursor: pointer;

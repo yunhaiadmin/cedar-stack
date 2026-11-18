@@ -22,25 +22,15 @@
            窄屏改成上下排，不把右栏裁出视口。没有月流量额度时右栏用真实剩余天数，不写假的 GB。 -->
       <div class="ov-hero">
       <div class="ov-hero__card">
-      <!-- 会员卡：白底（深色深炭）＋右上斜向粉彩渐变与细斜纹（纯 CSS 自绘） -->
-      <section class="ov-card" aria-label="会员卡">
-        <div class="ov-card__shine" aria-hidden="true"></div>
-        <div class="ov-card__head">
-          <span class="ov-card__brand">{{ branding.site_name }}</span>
-          <!-- 卡上「切换线路」文字入口已删（2026-11-15 照友站 t90 帧）：友站卡面
-               右上只有小三角标；线路切换走下方 Emby「服务器地址」行开弹层 -->
-          <!-- 卡面右上品牌标（2026-11-16 用户亲点）：原粉彩小三角换全站统一新标 BrandMark -->
-          <span class="ov-card__mark"><BrandMark /></span>
-        </div>
-        <div class="ov-card__foot">
-          <p class="ov-card__plan">{{ memberPlanName }}</p>
-          <p class="ov-card__user">{{ memberUserLine }}</p>
-          <!-- 家庭子账号标识（2026-11-15）：卡面订阅是主账号的，明示归属 -->
-          <p v-if="isSubAccount" class="ov-card__family">
-            家庭子账号 · 来自主账号 @{{ parentUsername }}
-          </p>
-        </div>
-      </section>
+      <!-- 会员卡：全站唯一实现 UhdMemberCard（质感第二波 2026-11-18 收敛，
+           原实现已删）；卡面右上为全站统一新标 BrandMark，线路切换
+           走下方 Emby「服务器地址」行开弹层 -->
+      <UhdMemberCard
+        :brand="branding.site_name"
+        :plan-name="memberPlanName"
+        :user-line="memberUserLine"
+        :family-text="isSubAccount ? `家庭子账号 · 来自主账号 @${parentUsername}` : ''"
+      />
 
       <!-- 卡下：左有效期，右自动续费。照友站 t90 帧，本行之下直接是
            「本月剩余流量」——徽章行（创世元老 · No.1）与扣款说明行已于
@@ -339,7 +329,7 @@ import {
   type LucideIcon,
 } from 'lucide-vue-next'
 import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
-import BrandMark from '@/components/BrandMark.vue'
+import UhdMemberCard from '@/components/uhd/UhdMemberCard.vue'
 import StatusAlertBar from '@/components/profile/StatusAlertBar.vue'
 import TrafficPurchaseModal from '@/components/profile/TrafficPurchaseModal.vue'
 import {
@@ -716,86 +706,6 @@ html[data-theme='light'] .ov-loading__text { color: #8a8d93; }
   .ov-hero__meter .ov-quota { padding-top: 4px; }
 }
 
-/* 会员卡：斜向粉彩渐变＋细斜纹，圆角约 28、柔影极淡无描边
-   渐变停点＝UHDNow 实测像素采样串（实测清单第 1/1b 节，逐停点照抄） */
-.ov-card {
-  position: relative;
-  overflow: hidden;
-  min-height: 218px;
-  border-radius: 28px;
-  padding: 24px 26px;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  background:
-    linear-gradient(115deg, #2b2d2f 0%, #252629 6%, #2e2e34 12%, #35333d 18%, #3e3e45 24%, #433e4d 29%, #484255 34%, #4f4a5e 39%, #605a76 43%, #655f7d 46%, #716b8e 49%, #79769c 52%, #74759a 57%, #6d7599 62%, #697498 67%, #677598 72%, #5f7898 77%, #4e6781 82%, #445a70 86%, #3f5367 90%, #354556 93%, #313e4c 96%, #1e2328 98%, #161522 100%);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32);
-}
-html:not([data-theme='light']) .ov-card {
-  background:
-    linear-gradient(115deg, #2b2d2f 0%, #252629 6%, #2e2e34 12%, #35333d 18%, #3e3e45 24%, #433e4d 29%, #484255 34%, #4f4a5e 39%, #605a76 43%, #655f7d 46%, #716b8e 49%, #79769c 52%, #74759a 57%, #6d7599 62%, #697498 67%, #677598 72%, #5f7898 77%, #4e6781 82%, #445a70 86%, #3f5367 90%, #354556 93%, #313e4c 96%, #1e2328 98%, #161522 100%);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32);
-}
-/* 细斜线纹理层：实测垂直周期约 4.2px、方向约 68°（115° 轴向）；低对比雾面
-   （采样亮度带 184–254、白区近不可见），alpha 压淡＋mask 只落在渐变区 */
-.ov-card__shine {
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.1) 0 1px, transparent 1px 4.2px);
-  -webkit-mask-image: linear-gradient(115deg, transparent 30%, #000 58%);
-  mask-image: linear-gradient(115deg, transparent 30%, #000 58%);
-  pointer-events: none;
-}
-.ov-card__head {
-  position: relative;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-}
-.ov-card__brand {
-  font-size: 17px;
-  font-weight: var(--uhd-fw-bold);
-  color: #ffffff;
-}
-/* 卡面右上品牌标：占位与原小三角（31px 盒）相当；A 色随卡面——深色卡白 A、浅色粉彩卡深 A */
-.ov-card__mark {
-  flex: 0 0 auto;
-  width: 22px;
-  height: 21px;
-  margin-left: 6px;
-  color: #ffffff;
-}
-.ov-card__foot {
-  position: relative;
-  margin-top: auto;
-  padding-top: 56px;
-}
-.ov-card__plan {
-  margin: 0;
-  font-family: var(--uhd-font-sans);
-  font-size: 40px;
-  font-weight: var(--uhd-fw-extrabold);
-  letter-spacing: -0.01em;
-  line-height: 1.12;
-  color: #ffffff;
-}
-.ov-card__user {
-  margin: 10px 0 0;
-  font-size: 15.5px;
-  color: rgba(255, 255, 255, 0.55);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* 家庭子账号标识（卡面第三行，小字弱化，不与套餐名争位） */
-.ov-card__family {
-  margin: 6px 0 0;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.55);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 /* 卡下信息行 */
 .ov-expiry {
@@ -1355,15 +1265,6 @@ html[data-theme='light'] .ov-page {
   --paper-warning-soft: rgba(217, 119, 6, 0.09);
   --paper-warning: #d97706;
 }
-html[data-theme='light'] .ov-card {
-  background:
-    linear-gradient(115deg, #fcfcfc 0%, #f4f0fa 14%, #ede7f7 25%, #e4dbf5 34%, #d7cdf2 42%, #c9bfef 48%, #c2b9ee 54%, #bdb6ee 59%, #b7b5ef 63%, #b0b6f0 67%, #a8b9f0 70%, #a0bbf1 73%, #d0dff9 76%, #a6c4f4 79%, #d7e6fa 82%, #b7d1f6 85%, #bed7f7 88%, #e1edfb 91%, #ccdff9 94%, #dae8fa 96%, #f2f7fd 98%, #fbfcfd 100%);
-  box-shadow: 0 8px 22px rgba(90, 94, 150, 0.08);
-}
-html[data-theme='light'] .ov-card__brand { color: #111111; }
-html[data-theme='light'] .ov-card__mark { color: #101014; }
-html[data-theme='light'] .ov-card__plan { color: #111111; }
-html[data-theme='light'] .ov-card__user { color: #55575c; }
 html[data-theme='light'] .ov-expiry { color: #55575c; }
 html[data-theme='light'] .ov-quota__label { color: #111111; }
 html[data-theme='light'] .ov-quota__big { color: #111111; }
@@ -1413,17 +1314,12 @@ html[data-theme='light'] .ov-invite {
     var(--uhd-rainbow) border-box;
 }
 html[data-theme='light'] .ov-invite__sub { color: #55575c; }
-html[data-theme='light'] .ov-card__family { color: #55575c; }
 html[data-theme='light'] .ov-sub-note { color: #55575c; border-bottom-color: #e5e5e7; }
 html[data-theme='light'] .ov-sub-input { background: #ffffff; border-color: #e5e5e7; color: #111111; }
 html[data-theme='light'] .ov-sub-input::placeholder { color: #9a9da3; }
 
 /* 兜底回滚块：守卫已不再把本页钉成 light（V4_PATHS 摘除 /game/account）；
    若主题解析与 data-theme 出现竞态不一致，用户选深色时由 .ov-dark 类回滚为深色 */
-html[data-theme='light'] .ov-page.ov-dark .ov-card__brand { color: #ffffff; }
-html[data-theme='light'] .ov-page.ov-dark .ov-card__mark { color: #ffffff; }
-html[data-theme='light'] .ov-page.ov-dark .ov-card__plan { color: #ffffff; }
-html[data-theme='light'] .ov-page.ov-dark .ov-card__user { color: rgba(255, 255, 255, 0.55); }
 html[data-theme='light'] .ov-page.ov-dark .ov-switch { background: rgba(255, 255, 255, 0.18); }
 html[data-theme='light'] .ov-page.ov-dark .ov-switch--on { background: #e8e8ec; }
 html[data-theme='light'] .ov-page.ov-dark .ov-quota__label { color: #ffffff; }
@@ -1451,7 +1347,6 @@ html[data-theme='light'] .ov-page.ov-dark .ov-trow__value { color: rgba(255, 255
 html[data-theme='light'] .ov-page.ov-dark :deep(.uad-pill) { background: rgba(30, 30, 33, 0.55); border-color: rgba(255, 255, 255, 0.16); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 16px 40px rgba(0, 0, 0, 0.5); }
 html[data-theme='light'] .ov-page.ov-dark :deep(.uad-tab) { color: rgba(255, 255, 255, 0.55); }
 html[data-theme='light'] .ov-page.ov-dark :deep(.uad-tab--on) { background: rgba(255, 255, 255, 0.13); color: #ffffff; }
-html[data-theme='light'] .ov-page.ov-dark .ov-card { background: linear-gradient(115deg, #2b2d2f 0%, #252629 6%, #2e2e34 12%, #35333d 18%, #3e3e45 24%, #433e4d 29%, #484255 34%, #4f4a5e 39%, #605a76 43%, #655f7d 46%, #716b8e 49%, #79769c 52%, #74759a 57%, #6d7599 62%, #697498 67%, #677598 72%, #5f7898 77%, #4e6781 82%, #445a70 86%, #3f5367 90%, #354556 93%, #313e4c 96%, #1e2328 98%, #161522 100%); }
 html[data-theme='light'] .ov-page.ov-dark .ov-expiry { color: rgba(255, 255, 255, 0.62); }
 html[data-theme='light'] .ov-page.ov-dark .ov-irow { border-bottom-color: #26262a; color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-drow { border-bottom-color: #26262a; }
@@ -1467,7 +1362,6 @@ html[data-theme='light'] .ov-page.ov-dark .ov-rrow { border-bottom-color: #26262
 html[data-theme='light'] .ov-page.ov-dark .ov-rrow__name { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-rrow__amount { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-invite { color: #ffffff; }
-html[data-theme='light'] .ov-page.ov-dark .ov-card__family { color: rgba(255, 255, 255, 0.55); }
 html[data-theme='light'] .ov-page.ov-dark .ov-sub-note { color: rgba(255, 255, 255, 0.55); border-bottom-color: #26262a; }
 html[data-theme='light'] .ov-page.ov-dark .ov-sub-input { background: rgba(255, 255, 255, 0.04); border-color: #26262a; color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-sub-input::placeholder { color: rgba(255, 255, 255, 0.35); }

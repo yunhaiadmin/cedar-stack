@@ -176,7 +176,15 @@ const year = new Date().getFullYear()
   font-family: var(--uhd-font-sans);
 }
 :root[data-theme='light'] .pricing {
-  background: var(--uhd-l-bg);
+  /* 顶部 250px 淡彩虹洗色（友站定价页实测三色：粉 rgb(249,227,222)／薄荷 rgb(222,242,237)／
+     淡紫白 rgb(252,251,254)，顶部最浓、250px 处溶入页底白；横向三色＋纵向淡出两层叠加）。
+     深色态无洗色（友站实测为浅色页），保持原底色。 */
+  background:
+    linear-gradient(180deg, rgba(252, 251, 254, 0) 0%, var(--uhd-l-bg) 250px),
+    linear-gradient(90deg, rgb(249, 227, 222) 0%, rgb(222, 242, 237) 50%, rgb(252, 251, 254) 100%);
+  background-size: 100% 250px, 100% 250px;
+  background-repeat: no-repeat;
+  background-color: var(--uhd-l-bg);
 }
 .pricing-nav {
   position: fixed;
