@@ -138,12 +138,6 @@ const router = createRouter({
             component: () => import('@/views/game/AgentCenterView.vue'),
             meta: { title: '代理中心', requiresAuth: true },
           },
-          {
-            path: '/game/operator',
-            name: 'game-operator',
-            component: () => import('@/views/game/OperatorView.vue'),
-            meta: { title: '播放账号', requiresAuth: true },
-          },
           // v4 游戏化：「我的」个人中心（身份卡 / 状态总览 / 分组入口行）；
           // 设置类功能在子页 /game/account/settings（「我的订阅」页已随 2026-11-14 删除单整页删除）
           {
@@ -383,9 +377,9 @@ router.beforeEach(async (to) => {
 // 已摘掉 .v4-scope 纸面嵌套（页根改挂 .uhd-shell-scope 承接壳内令牌），
 // 不再是纸面页，一并摘除钉 light，外观跟随用户三态（与概览同口径）。
 // 「我的订阅」页（/game/account/member）已随 2026-11-14 删除单整页删除，路由已注销。
-// 例外（2026-11-13 二级页重做组 A）：/server 与 /game/operator 已换 UHD 布局，
-// 一并摘除——/server 页内自带三态主题跟随；/game/operator 在 UhdAccountLayout
-// 办事面壳内（壳为浅色办事面，与同壳的订阅页未钉 light 先例一致），不再由守卫钉 light。
+// 例外（2026-11-13 二级页重做组 A）：/server 已换 UHD 布局，一并摘除——
+// /server 页内自带三态主题跟随，不再由守卫钉 light。
+// 播放账号页（原 /game/operator）已随 2026-11-18 删除单整页删除，路由已注销。
 // 批 1+2 删除后：'/collections'（合集）路由已删，一并摘除。
 // #127 能量删除：'/game/ledger'（能量明细）路由已删，一并摘除。
 export const V4_PATHS = new Set(['/', '/want', '/store-requests'])

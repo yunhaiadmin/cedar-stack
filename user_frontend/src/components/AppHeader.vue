@@ -6,7 +6,7 @@ import {
   LogOut, Crown, Sparkles,
   Sun, Moon, MonitorSmartphone,
   ChevronRight, ShieldCheck,
-  Globe, Plug, MessageSquare, Receipt, Settings,
+  Globe, MessageSquare, Receipt, Settings,
 } from 'lucide-vue-next'
 import UhdWatchPill from '@/components/uhd/UhdWatchPill.vue'
 import BrandMark from '@/components/BrandMark.vue'
@@ -21,7 +21,6 @@ import { branding } from '@/composables/useBranding'
 /** 头像菜单设施图标：Lucide，不读 game.ts 的地图针表情。 */
 function facilityMenuIcon(key: string) {
   switch (key) {
-    case 'operator': return Plug
     case 'requests': return MessageSquare
     case 'supply': return Receipt
     case 'account': return Settings
