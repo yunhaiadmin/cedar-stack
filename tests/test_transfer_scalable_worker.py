@@ -378,7 +378,17 @@ def test_lease_reclaim_loop_recycles_without_wakeup(db_factory, db):
     调用，看门狗一个周期内就把过期租约单打回 pending，且打回后能
     被原认领路径重新认领（回收不许再搭认领/主循环迭代的车——主
     循环一轮可被长单执行或每日巡检占住十几分钟，2026-10-31 实证
-    僵单正是死在这条耦合上）。"""
+    僵单正是死在这条耦合上）。
+    轮询必须复用同一个会话（不要每轮新开会话再 close）：本文件
+    夹具是单连接 :memory:（StaticPool），回收线程与轮询会话共用
+    同一个 DBAPI 连接、也就是同一个事务；轮询会话每次 close 都
+    会在该连接上发 ROLLBACK——若正好落在回收线程 flush(UPDATE)
+    与 commit 之间，就会把还没提交的 UPDATE 回滚掉，而回收函数
+    仍按行计数返回 1、commit 静默成功、不报任何错（2026-11-18
+    #383 轮与 #340 轮两次 CI 红根因，语句级 trace 实证：UPDATE
+    后 0.3ms 即 ROLLBACK、再 COMMIT）。看门狗要 60 秒才重试，
+    10 秒 deadline 等不到。复用同一会话、等断言完再关，会话存
+    续期间不产生并发 ROLLBACK，回收的提交即落账。"""
     import threading
     import time
     now = datetime.now()
@@ -387,7 +397,6 @@ def test_lease_reclaim_loop_recycles_without_wakeup(db_factory, db):
     job.lease_expires_at = now - timedelta(seconds=1)
     db.commit()
     job_id = job.id
-    db.close()
     stop = threading.Event()
     thread = threading.Thread(target=tv._lease_reclaim_loop,
                               args=(stop, db_factory), daemon=True)
@@ -396,7 +405,10 @@ def test_lease_reclaim_loop_recycles_without_wakeup(db_factory, db):
         deadline = time.monotonic() + 10
         status = None
         while time.monotonic() < deadline:
-            status = _read_job(db_factory, job_id).status
+            db.expire_all()
+            row = db.query(em.TransferJob).filter(
+                em.TransferJob.id == job_id).first()
+            status = row.status if row else None
             if status == "pending":
                 break
             time.sleep(0.05)

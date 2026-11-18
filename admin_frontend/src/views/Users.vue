@@ -1187,7 +1187,7 @@ function fmtCount(n: number | null | undefined): string {
   margin-bottom: 14px;
 }
 /* 会员格的值是套餐名（文字）：字号收一档，避免长名字换三行 */
-.text-tile :deep(.au-stat__value) { font-size: 1.05rem; }
+.text-tile :deep(.au-stat__value) { font-size: var(--uhd-fs-lead); }
 
 .detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .detail-actions .el-button { margin-left: 0; }
