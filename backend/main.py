@@ -81,6 +81,9 @@ from backend.api.admin_danmaku import admin_danmaku_router
 from backend.api.admin_login_lockout import admin_login_lockout_router
 from backend.api.admin_site_drawer import admin_site_drawer_router
 from backend.api.danmaku import router as danmaku_router
+from backend.api.admin_danmu_api import admin_danmu_api_router
+from backend.api.danmu_api import public_router as danmu_api_public_router
+from backend.api.danmu_api import user_router as danmu_api_user_router
 from backend.api.probe_4k import router as probe_4k_router
 from backend.api.player_prefs import router as player_prefs_router
 from backend.api.install_app import (
@@ -950,6 +953,11 @@ app.include_router(admin_login_lockout_router)
 # 官网菜单抽屉配置（见 backend/api/admin_site_drawer.py）
 app.include_router(admin_site_drawer_router)
 app.include_router(danmaku_router)
+# 弹幕 API（2026-11-18）：专职 Token/线路/地址用户端 + 公开下发口 +
+# 管理端线路配置，见 backend/api/danmu_api.py 与 admin_danmu_api.py
+app.include_router(danmu_api_user_router)
+app.include_router(danmu_api_public_router)
+app.include_router(admin_danmu_api_router)
 # 4K MSE 探针结果回传（一次性真机诊断，仅 staff 可写，见 backend/api/probe_4k.py）
 app.include_router(probe_4k_router)
 # 网页播放器设置同步（2026-11-15 ⚠️11）：偏好真落库、换设备跟随，

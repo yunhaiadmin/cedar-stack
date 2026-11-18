@@ -74,6 +74,8 @@ SCHEMAS: dict[str, dict[str, tuple]] = {
     "web_softdecode": config_schema.WEB_SOFTDECODE_CONFIG_SCHEMA,
     # 站内弹幕（2026-11-15）：开关（默认关）/ 敏感词表 / 最小发送间隔 / 字数上限
     "danmaku": config_schema.DANMAKU_CONFIG_SCHEMA,
+    # 弹幕 API（2026-11-18）：线路表 JSON / 外部弹幕源适配开关（默认关）
+    "danmu_api": config_schema.DANMU_API_CONFIG_SCHEMA,
     # 官网菜单抽屉（2026-11-18）：整抽屉一份 JSON（导航/渠道/底按钮）
     "site_drawer": config_schema.SITE_DRAWER_CONFIG_SCHEMA,
     # 安装应用页（2026-11-13）：6 平台官方客户端下载链接
