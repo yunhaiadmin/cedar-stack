@@ -416,6 +416,8 @@ ADMIN_FILTERBAR_REQUIRED = (
     "views/Subscriptions.vue",
     "views/Tickets.vue",
     "views/WelfareLotteryProposals.vue",
+    # —— 团队重建批 3 新增 ——
+    "views/Teams.vue",
 )
 
 

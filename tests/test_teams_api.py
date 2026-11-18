@@ -561,3 +561,98 @@ def test_usage_attribution_duck_typed_user(db, client, users):
     stub_member = types.SimpleNamespace(id=member_id, is_staff=False)
     assert (teams_service.usage_attribution_user_id(db, stub_member)
             == member_id)
+
+
+# ==================== 管理端：团队列表筛选/搜索/分页 + 详情 + 配置校验
+# （2026-11-18 重建批 3：管理页只对接批 1 的购买制后端） ====================
+
+
+def test_admin_list_filter_search_pagination(db, client, users):
+    c, current = client
+    owner, other = users["owner"], users["other"]
+    _fund(db, owner, 50)
+    _fund(db, other, 50)
+    t1 = _buy(c, current, owner).json()["team"]
+    t2 = _buy(c, current, other, idempotency_key="buy-2").json()["team"]
+
+    resp = c.get("/api/admin/teams")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["total"] == 2
+
+    resp = c.get("/api/admin/teams", params={"status": "pending_activation"})
+    assert resp.json()["total"] == 2
+    resp = c.get("/api/admin/teams", params={"status": "active"})
+    assert resp.json()["total"] == 0
+
+    resp = c.get("/api/admin/teams", params={"q": "teamowner"})
+    assert resp.json()["total"] == 1
+    assert resp.json()["items"][0]["id"] == t1["id"]
+    resp = c.get("/api/admin/teams", params={"q": "bystander"})
+    assert resp.json()["total"] == 1
+    assert resp.json()["items"][0]["id"] == t2["id"]
+    resp = c.get("/api/admin/teams", params={"q": "zzz-no-such-team"})
+    assert resp.json()["total"] == 0
+
+    resp = c.get("/api/admin/teams", params={"limit": 1, "offset": 1})
+    assert resp.json()["total"] == 2
+    assert len(resp.json()["items"]) == 1
+
+    resp = c.post(f"/api/admin/teams/{t1['id']}/activate")
+    assert resp.status_code == 200, resp.text
+    resp = c.get("/api/admin/teams", params={"status": "active"})
+    assert resp.json()["total"] == 1
+    assert resp.json()["items"][0]["id"] == t1["id"]
+    resp = c.get("/api/admin/teams", params={"status": "pending_activation"})
+    assert resp.json()["total"] == 1
+    assert resp.json()["items"][0]["id"] == t2["id"]
+
+
+def test_admin_detail_members_orders(db, client, users):
+    c, current = client
+    owner = users["owner"]
+    _fund(db, owner, 50)
+    team = _buy(c, current, owner).json()["team"]
+
+    current["user"] = owner
+    resp = c.post("/api/user/teams/members",
+                  json={"username": "detailmember", "password": "secret1"})
+    assert resp.status_code == 200, resp.text
+
+    resp = c.get(f"/api/admin/teams/{team['id']}")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["team"]["owner_username"] == "teamowner"
+    assert body["team"]["status"] == "pending_activation"
+    usernames = [m["username"] for m in body["members"]]
+    assert "teamowner" in usernames
+    assert "detailmember" in usernames
+    assert len(body["orders"]) == 1
+    assert body["orders"][0]["status"] == "paid"
+    assert body["orders"][0]["traffic_gb"] == 10000
+
+    resp = c.get("/api/admin/teams/99999")
+    assert resp.status_code == 404
+
+
+def test_admin_config_rejects_bad_values(db, client, users):
+    c, current = client
+    resp = c.put("/api/admin/teams/config",
+                 json={"not_a_team_key": 1})
+    assert resp.status_code == 400
+    resp = c.put("/api/admin/teams/config",
+                 json={"team_global_price_anchors": "not-json"})
+    assert resp.status_code == 400
+    resp = c.put("/api/admin/teams/config",
+                 json={"team_global_price_anchors": "[{\"gb\": 1}]"})
+    assert resp.status_code == 400
+
+    resp = c.put("/api/admin/teams/config",
+                 json={"team_sub_account_divisor": 50,
+                       "team_global_price_anchors":
+                           '[{"gb": 10000, "per_1000gb_fen": 100}]'})
+    assert resp.status_code == 200, resp.text
+    cfg = resp.json()["config"]
+    assert cfg["team_sub_account_divisor"] == 50
+    assert cfg["team_global_price_anchors"][0]["per_1000gb_fen"] == 100
+    resp = c.get("/api/admin/teams/config")
+    assert resp.json()["config"]["team_sub_account_divisor"] == 50
