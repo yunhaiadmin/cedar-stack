@@ -30,6 +30,11 @@
         </button>
       </template>
       <p v-if="error" class="wt-error">{{ error }}</p>
+      <!-- 同步设置入口（G-192）：开启前一处，展开形态照友站 -->
+      <WtSyncSettings
+        :params="syncParams"
+        @apply="emit('apply-sync-params', $event)"
+      />
     </template>
 
     <!-- 已进房：独立叠层卡（G-200，友站形态为叠在邀请面板之上的新一层） -->
@@ -69,6 +74,11 @@
         </button>
         <p v-if="error" class="wt-error">{{ error }}</p>
       </div>
+      <!-- 同步设置入口（G-192）：已开启态同样一处 -->
+      <WtSyncSettings
+        :params="syncParams"
+        @apply="emit('apply-sync-params', $event)"
+      />
     </template>
   </PlayerSheet>
 </template>
@@ -77,7 +87,9 @@
 import { ref, watch } from 'vue'
 import { Check, Copy, Crown, Square } from 'lucide-vue-next'
 import PlayerSheet from '@/components/player/PlayerSheet.vue'
+import WtSyncSettings from '@/components/player/WtSyncSettings.vue'
 import type { WtMember } from '@/composables/useWatchTogether'
+import type { WtSyncParams } from '@/utils/wtSyncParams'
 
 const props = defineProps<{
   open: boolean
@@ -90,6 +102,7 @@ const props = defineProps<{
   busy: boolean
   error: string
   joinCode: string
+  syncParams: WtSyncParams
 }>()
 
 const emit = defineEmits<{
@@ -98,6 +111,7 @@ const emit = defineEmits<{
   join: []
   leave: []
   dissolve: []
+  'apply-sync-params': [params: WtSyncParams]
 }>()
 
 const copied = ref(false)

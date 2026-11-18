@@ -296,7 +296,9 @@
       :busy="wtBusy"
       :error="wtError"
       :join-code="wtJoinCode"
+      :sync-params="wtSyncParams"
       @update:open="togetherOpen = $event"
+      @apply-sync-params="onApplyWtSyncParams"
       @create="wt.createRoom(itemId)"
       @join="wt.joinRoom(wtJoinCode)"
       @leave="onWtLeave"
@@ -396,7 +398,15 @@ import PlayerTogetherSheet from '@/components/player/PlayerTogetherSheet.vue'
 import {
   useWatchTogether,
   type WtSnapshot,
+  type WtState,
 } from '@/composables/useWatchTogether'
+import {
+  decideWtDrift,
+  loadWtSyncParams,
+  saveWtSyncParams,
+  wtTargetPosition,
+  type WtSyncParams,
+} from '@/utils/wtSyncParams'
 import { useUserStore } from '@/stores/user'
 import {
   loadLocalPlayerPrefs,
@@ -565,12 +575,19 @@ let wtSuppressUntil = 0
 let wtPendingAlign: { position: number; playing: boolean; at: number } | null =
   null
 let wtStateTimer: number | undefined
+// 同步参数（G-192~G-199）：本机播放行为，本地持久化、不广播
+const wtSyncParams = ref<WtSyncParams>(loadWtSyncParams())
+let wtLastAnchor: WtState | null = null
+let wtCorrecting = false
+let wtRateHeld = false
+let wtAlignTimer: number | undefined
 
 const wt = useWatchTogether({
   onCreated: () => {
     showToast('一起看已创建，把链接发给朋友')
   },
   onJoined: (snap: WtSnapshot) => {
+    wtLastAnchor = snap.state
     wtPendingAlign = {
       position: snap.state.position,
       playing: snap.state.playing,
@@ -591,7 +608,11 @@ const wt = useWatchTogether({
       wtSafeSeek(e.position)
       showToast(`${who} 跳到了 ${formatClock(e.position)}`)
     } else if (e.event === 'play') {
-      if (Math.abs((v.currentTime || 0) - e.position) > 2.5) {
+      // 硬对齐阈值走同步参数「直接对齐」（G-196，取代旧写死 2.5 秒）
+      if (
+        Math.abs((v.currentTime || 0) - e.position) >
+        wtSyncParams.value.directMs / 1000
+      ) {
         wtSafeSeek(e.position)
       }
       void v.play().catch(() => {})
@@ -605,10 +626,9 @@ const wt = useWatchTogether({
     if (phase.value !== 'playing') return
     const v = videoEl.value
     if (!v) return
-    if (Math.abs((v.currentTime || 0) - s.position) > 2.5) {
-      wtSuppressUntil = Date.now() + 900
-      wtSafeSeek(s.position)
-    }
+    // 锚点只存最新一份：纠偏判定在 wtEvaluateDrift 里按同步参数
+    // 分段处理（G-194~G-197），自查定时器（G-198）共用同一判定
+    wtLastAnchor = s
     if (s.playing && v.paused) {
       wtSuppressUntil = Date.now() + 900
       void v.play().catch(() => {})
@@ -616,6 +636,7 @@ const wt = useWatchTogether({
       wtSuppressUntil = Date.now() + 900
       v.pause()
     }
+    wtEvaluateDrift()
   },
   onMemberJoined: (m) => {
     showToast(`${m.username || '朋友'} 加入了一起看`)
@@ -628,6 +649,7 @@ const wt = useWatchTogether({
   },
   onEnded: (reason) => {
     wtPendingAlign = null
+    wtResetSyncEngine()
     showToast(reason === 'disconnected' ? '一起看连接断了' : '一起看已结束')
   },
   onError: (message) => {
@@ -659,6 +681,80 @@ function wtSafeSeek(pos: number): void {
   }
 }
 
+/** 同步引擎代管倍速：与用户手动倍速（onRate）分开记账，离房时归还 */
+function wtSetRate(r: number): void {
+  const v = videoEl.value
+  if (!v || !Number.isFinite(r) || r <= 0) return
+  wtRateHeld = true
+  if (Math.abs((v.playbackRate || 1) - r) > 0.001) {
+    try {
+      v.playbackRate = r
+    } catch {
+      /* 个别流不支持调速，忽略 */
+    }
+  }
+}
+
+/**
+ * 成员侧一次纠偏判定（G-194~G-198）：锚点到达与周期自查共用。
+ * 差 ≤开始纠偏不动；开始纠偏~直接对齐走倍速微调，收敛到结束纠偏
+ * 以内恢复锚点倍速（迟滞对）；超直接对齐直接 seek 硬对齐。
+ */
+function wtEvaluateDrift(): void {
+  const anchor = wtLastAnchor
+  const v = videoEl.value
+  if (!anchor || !v || phase.value !== 'playing') return
+  if (wtIsHost.value) return
+  if (!anchor.playing) {
+    // 房主暂停：本地跟停由 onSync 处理，这里只收掉纠偏倍速
+    if (wtCorrecting) {
+      wtCorrecting = false
+      wtSetRate(anchor.rate || 1)
+    }
+    return
+  }
+  if (v.paused) return
+  const target = wtTargetPosition(anchor, Date.now())
+  const diffMs = (target - (v.currentTime || 0)) * 1000
+  const d = decideWtDrift({
+    diffMs,
+    correcting: wtCorrecting,
+    params: wtSyncParams.value,
+    baseRate: anchor.rate || 1,
+  })
+  wtCorrecting = d.correcting
+  if (d.action === 'seek') {
+    wtSuppressUntil = Date.now() + 900
+    wtSetRate(d.rate)
+    wtSafeSeek(target)
+  } else if (d.action === 'rate' || d.action === 'restore') {
+    wtSetRate(d.rate)
+  }
+}
+
+/** 离房/结束：停纠偏，倍速还给用户自己的播放偏好 */
+function wtResetSyncEngine(): void {
+  if (wtRateHeld) wtSetRate(rate.value)
+  wtRateHeld = false
+  wtCorrecting = false
+  wtLastAnchor = null
+}
+
+/** 成员周期自查定时器（G-198）：间隔随同步参数，应用设置后即时重建 */
+function wtRestartAlignTimer(): void {
+  window.clearInterval(wtAlignTimer)
+  wtAlignTimer = window.setInterval(() => {
+    if (wtInRoom.value && !wtIsHost.value) wtEvaluateDrift()
+  }, wtSyncParams.value.intervalMs)
+}
+
+/** 「应用设置」（G-199）：保存本地持久化并即时生效 */
+function onApplyWtSyncParams(p: WtSyncParams): void {
+  wtSyncParams.value = saveWtSyncParams(p)
+  wtRestartAlignTimer()
+  wtEvaluateDrift()
+}
+
 function wtConsumeAlign(): void {
   const pending = wtPendingAlign
   if (!pending) return
@@ -685,11 +781,13 @@ function wtBroadcast(kind: 'play' | 'pause' | 'seek'): void {
 
 function onWtLeave(): void {
   wt.leave()
+  wtResetSyncEngine()
   togetherOpen.value = false
 }
 
 function onWtDissolve(): void {
   wt.dissolve()
+  wtResetSyncEngine()
   togetherOpen.value = false
   showToast('一起看已结束')
 }
@@ -2125,6 +2223,8 @@ onMounted(() => {
       wt.sendState(v.currentTime || 0, !v.paused, v.playbackRate || 1)
     }
   }, 10000)
+  // 成员自查：按同步参数「自动对齐间隔」拿最新锚点外推自查（G-198）
+  wtRestartAlignTimer()
 })
 onUnmounted(() => {
   document.body.style.overflow = ''
@@ -2136,6 +2236,7 @@ onUnmounted(() => {
   window.clearInterval(prepByteTimer)
   window.clearInterval(progressTimer)
   window.clearInterval(wtStateTimer)
+  window.clearInterval(wtAlignTimer)
   resetDanmakuData()
   wt.dispose()
   void destroySoft()
