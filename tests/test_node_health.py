@@ -93,10 +93,20 @@ class _StopLoop(Exception):
 
 
 def test_health_loop_completes_iteration_without_unboundlocal():
-    """回归：_health_loop 一轮内不得抛 UnboundLocalError（曾每 30s 刷 warning）"""
+    """回归：_health_loop 一轮内不得抛 UnboundLocalError（曾每 30s 刷 warning）
+
+    注意：sleep 假子只打在本次加载的模块副本的 time 桩上，不碰全局
+    time.sleep——旧写法 mock.patch.object(_nh.time, 'sleep', …) 补的是
+    共享的 time 模块，补丁窗口内 worker 里任何已起的 node-health 守护
+    线程一旦调用 time.sleep 就会吃到 fake_sleep 抛出的 _StopLoop 而
+    死亡（sleep 在 _health_loop 的 try/except 之外）；CI run 44300730448
+    的 warnings 里正有这样一条线程死亡记录。"""
+    import time
+    import types
+    nh = _load()
     urls = ['http://n1:8000', 'http://n2:8000']
     for u in urls:
-        _nh._node_health.pop(u, None)
+        nh._node_health.pop(u, None)
     warnings = []
     nodes = [{'url': u, 'weight': 100, 'name': u} for u in urls]
 
@@ -109,29 +119,36 @@ def test_health_loop_completes_iteration_without_unboundlocal():
     def fake_sleep(_):
         raise _StopLoop()
 
-    with mock.patch.object(_nh, 'get_nodes', side_effect=fake_get_nodes), \
-         mock.patch.object(_nh, '_check_one', side_effect=fake_check_one), \
-         mock.patch.object(_nh.time, 'sleep', side_effect=fake_sleep), \
-         mock.patch.object(_nh.logger, 'warning', side_effect=lambda *a, **k: warnings.append(a)):
+    nh.time = types.SimpleNamespace(sleep=fake_sleep, time=time.time)
+    with mock.patch.object(nh, 'get_nodes', side_effect=fake_get_nodes), \
+         mock.patch.object(nh, '_check_one', side_effect=fake_check_one), \
+         mock.patch.object(nh.logger, 'warning', side_effect=lambda *a, **k: warnings.append(a)):
         try:
-            _nh._health_loop(lambda: mock.MagicMock())
+            nh._health_loop(lambda: mock.MagicMock())
         except _StopLoop:
             pass
 
     try:
         bug_warnings = [w for w in warnings if '节点健康检查异常' in str(w[0])]
         assert not bug_warnings, f"health loop 不应报检查异常，实际: {bug_warnings}"
-        assert _nh._node_health['http://n1:8000']['healthy'] is True
-        assert _nh._node_health['http://n2:8000']['healthy'] is False
+        assert nh._node_health['http://n1:8000']['healthy'] is True
+        assert nh._node_health['http://n2:8000']['healthy'] is False
     finally:
         for u in urls:
-            _nh._node_health.pop(u, None)
+            nh._node_health.pop(u, None)
 
 
 def test_health_loop_skips_nodes_without_url():
-    """无 url 字段的节点配置不得炸掉循环"""
+    """无 url 字段的节点配置不得炸掉循环
+
+    sleep 假子只打在本次加载的模块副本的 time 桩上，不碰全局
+    time.sleep（原因同上一个测试：全局补丁会杀死 worker 里已起的
+    node-health 守护线程）。"""
+    import time
+    import types
+    nh = _load()
     for u in ['http://ok:8000']:
-        _nh._node_health.pop(u, None)
+        nh._node_health.pop(u, None)
     warnings = []
     nodes = [
         {'url': 'http://ok:8000', 'weight': 100},
@@ -142,62 +159,85 @@ def test_health_loop_skips_nodes_without_url():
     def fake_sleep(_):
         raise _StopLoop()
 
-    with mock.patch.object(_nh, 'get_nodes', return_value=nodes), \
-         mock.patch.object(_nh, '_check_one', return_value=True), \
-         mock.patch.object(_nh.time, 'sleep', side_effect=fake_sleep), \
-         mock.patch.object(_nh.logger, 'warning', side_effect=lambda *a, **k: warnings.append(a)):
+    nh.time = types.SimpleNamespace(sleep=fake_sleep, time=time.time)
+    with mock.patch.object(nh, 'get_nodes', return_value=nodes), \
+         mock.patch.object(nh, '_check_one', return_value=True), \
+         mock.patch.object(nh.logger, 'warning', side_effect=lambda *a, **k: warnings.append(a)):
         try:
-            _nh._health_loop(lambda: mock.MagicMock())
+            nh._health_loop(lambda: mock.MagicMock())
         except _StopLoop:
             pass
 
     try:
         bug_warnings = [w for w in warnings if '节点健康检查异常' in str(w[0])]
         assert not bug_warnings, f"health loop 不应报检查异常，实际: {bug_warnings}"
-        assert _nh._node_health['http://ok:8000']['healthy'] is True
+        assert nh._node_health['http://ok:8000']['healthy'] is True
     finally:
-        _nh._node_health.pop('http://ok:8000', None)
+        nh._node_health.pop('http://ok:8000', None)
 
 
 def test_start_health_daemon_idempotent_under_concurrency():
-    """r30 B1：8 线程并发调用 start_health_daemon 只新增一个 node-health 线程。
+    """r30 B1：8 线程并发调用 start_health_daemon 只起一个 node-health 线程。
 
-    （同文件既有 test_daemon_idempotent 会先起一个同名线程，故用增量断言。）
-    计数口径说明：start_health_daemon 等到循环入口就绪事件才返回，故
-    返回后新线程必已在 threading.enumerate() 中可见，立即断言无观测竞态。
+    计数口径：不再用 threading.enumerate() 的全局 ident 差分——同一
+    xdist worker 里别的模块/文件也可能起同名守护线程，其生死会干扰
+    全局总数；更糟的是同文件另两个 _health_loop 回归测试曾全局补丁
+    time.sleep，补丁窗口内任何守护线程调用 time.sleep 都会吃到
+    fake_sleep 抛出的 _StopLoop 而死亡（sleep 在 _health_loop 的
+    try/except 之外）。CI run 44300730448 恰是这副模样：新鲜模块的
+    守护线程明明已启动并跑完首轮（日志里有首轮警告为证），ident 差分
+    却算出新增 0 个（前 1，后 1）。
+    故改为直接观测本次调用创建的 Thread 对象：记录
+    threading.Thread(target=nh._health_loop) 的构造次数。
+    两段覆盖两种合法初态（同一新鲜模块，先后两轮 8 并发）：
+    初态未起——恰好新建 1 个且存活；初态已起——新建 0 个、总数仍为 1。
     worker 异常单独断言，避免 barrier 破裂被误读成计数问题。
-    2026-11-12 补充：全量套件里同名守护线程不止本文件的——别的模块/
-    文件在同 worker 进程里也可能起同名线程，其生死会干扰全局总数
-    （CI 曾现 assert 1 == (1 + 1)，而新线程明明已跑出首轮日志）。
-    故断言改为“新增 ident 集合恰好一个”：只量本次调用新增的线程，
-    不再拿全局总数做减法。"""
+    保持并发强度：每轮 8 线程 barrier。"""
     import threading
     nh = _load()
-    before = {t.ident for t in threading.enumerate()
-              if t.name == "node-health"}
-    barrier = threading.Barrier(8)
     errors = []
+    created = []
+    _real_thread = threading.Thread
 
-    def _call():
-        try:
-            barrier.wait(timeout=10)
-            nh.start_health_daemon(lambda: None)
-        except Exception as e:  # noqa: BLE001 - 透传给断言
-            errors.append(e)
+    class _RecordingThread(_real_thread):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            target = kwargs.get("target", args[1] if len(args) > 1 else None)
+            if target is nh._health_loop:
+                created.append(self)
 
-    workers = [threading.Thread(target=_call) for _ in range(8)]
-    for w in workers:
-        w.start()
-    for w in workers:
-        w.join(timeout=30)
-    assert not any(w.is_alive() for w in workers)
-    assert not errors, f"并发调用不应抛错，实际: {errors}"
-    after = {t.ident for t in threading.enumerate()
-             if t.name == "node-health"}
-    new = after - before
-    assert len(new) == 1, (
-        f"并发调用应只新增一个 node-health 线程，实际新增 {len(new)} 个"
-        f"（前 {len(before)}，后 {len(after)}）")
+    def _run_round():
+        barrier = threading.Barrier(8)
+
+        def _call():
+            try:
+                barrier.wait(timeout=10)
+                nh.start_health_daemon(lambda: None)
+            except Exception as e:  # noqa: BLE001 - 透传给断言
+                errors.append(e)
+
+        workers = [threading.Thread(target=_call) for _ in range(8)]
+        with mock.patch.object(threading, "Thread", _RecordingThread):
+            for w in workers:
+                w.start()
+            for w in workers:
+                w.join(timeout=30)
+        assert not any(w.is_alive() for w in workers)
+        assert not errors, f"并发调用不应抛错，实际: {errors}"
+
+    # 第 1 轮：守护线程未起，并发调用应恰好新建 1 个且存活。
+    _run_round()
+    assert len(created) == 1, f"并发调用应只新建一个 node-health 线程，实际新建 {len(created)} 个"
+    daemon = created[0]
+    assert daemon.is_alive(), "新建的守护线程应在调用返回后存活"
+    assert nh._daemon_started is True
+    assert nh._daemon_ready.is_set(), "守护线程应已进入循环（就绪事件已置位）"
+
+    # 第 2 轮：守护线程已起，并发调用应新建 0 个、总数仍为 1。
+    del created[:]
+    _run_round()
+    assert len(created) == 0, f"守护线程已起时并发调用不应再新建线程，实际新建 {len(created)} 个"
+    assert daemon.is_alive(), "守护线程应在第二轮并发调用后仍存活"
 
 
 def test_start_health_daemon_waits_for_loop_entry():
