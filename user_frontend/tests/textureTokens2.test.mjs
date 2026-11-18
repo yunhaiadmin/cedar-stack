@@ -72,6 +72,13 @@ const SHADOW_ALLOW = [
   ['LandingView.vue', '0 -18px 50px', '上向辉光无对应令牌'],
   ['LandingView.vue', 'inset 0 48px 90px', 'pin-glass 玻璃辉光'],
   ['v4-paper.css', '3px 3px 0 rgba(42, 38, 32, 0.12)', '纸面硬影冻结体系'],
+  // rebase 到 main 1c2c063e（#307）后新增：UhdMemberCard 是 #307 收敛后的唯一会员卡实现，
+  // 其阴影是 #307 自家实测值（pages-2 契约 M7/M8 锁定），与 tokens-2 的 member-l/member-d
+  // 令牌值数位不同（浅：0 2px 8px -2px＋0 24px 38px -20px；深：0 2px 8px -2px＋0 20px 36px -18px
+  // ＋顶部高光 rgb(130,125,159)）；.ov-card 已随 #307 删除，两枚令牌暂无引用方。
+  // 两套值以哪套为准须 parent 定夺，rebase 时不许静默改任一已验值，故此处豁免。
+  ['UhdMemberCard.vue', '0 2px 8px -2px rgb(205, 201, 229)', '会员卡浅色阴影 #307 实测值，与 member-l 令牌值不同'],
+  ['UhdMemberCard.vue', 'inset 0 1px 0 rgb(130, 125, 159)', '会员卡深色阴影＋顶部高光 #307 实测值，与 member-d 令牌值不同'],
 ]
 function shadowOk(file, val) {
   const v = val.replace(/\s+/g, ' ').trim()
