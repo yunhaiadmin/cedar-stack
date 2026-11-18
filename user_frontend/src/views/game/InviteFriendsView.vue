@@ -1,17 +1,11 @@
 <template>
-  <!-- 桌面并壳（2026-11-14 统一壳单）：≥769px 经闸门进用户中心壳
-       （壳内隐藏移动返回顶栏）；手机原样 -->
+  <!-- 桌面并壳（2026-11-14 统一壳单）：≥769px 经闸门进用户中心壳；
+       手机端页头走统一顶栏子页模式（2026-11-18，见下方注释） -->
   <UhdAccountShellGate>
   <div class="iv-page">
-    <header class="iv-topbar">
-      <RouterLink to="/game/account/menu" class="iv-back" aria-label="返回我的">
-        <ChevronLeft :size="22" aria-hidden="true" />
-        <span>邀请好友</span>
-      </RouterLink>
-      <!-- 「前往流媒体」钮已删（2026-11-14 顶栏统一单）：由 App.vue 统一
-           顶栏的常驻胶囊承接，本页不再自带一份（原 42px，与全站 54px 不一致） -->
-    </header>
-
+    <!-- 页头（2026-11-18 对齐友站子页头）：手机端由 App.vue 统一顶栏的
+         子页模式承接（‹ 返回＋邀请好友＋胶囊同一行），本页原自带返回行
+         已摘除；桌面壳内本就隐藏该行、顶栏维持站标，口径不变。 -->
     <main class="iv-body">
       <div v-if="loadError" class="iv-err">
         {{ loadError }}<button type="button" class="iv-retry" @click="load">重试</button>
@@ -272,8 +266,7 @@
  * 注册不发可变现奖励，邀请注册也不再自动发试用。
  */
 import { computed, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
-import { ChevronLeft, Copy, Gift, RefreshCw, Share2 } from 'lucide-vue-next'
+import { Copy, Gift, RefreshCw, Share2 } from 'lucide-vue-next'
 import {
   inviteApi,
   type InvitationRecordRow,
@@ -330,16 +323,17 @@ function moneyText(v: number): string {
   return (Number(v) || 0).toFixed(2)
 }
 
-/** 返利规则文案：按后端模式/比例/阈值生成，数字一个都不写死 */
+/** 返利规则文案：按后端模式/比例/阈值生成，数字一个都不写死。
+ * 句式照友站（2026-11-18 对齐）：「充值」措辞 + 金额「N USD」后置式。 */
 const rebateRuleText = computed(() => {
   const r = info.value?.config?.rebate
   if (!r) return ''
-  if (r.percent <= 0) return '返利活动暂未开启，好友付费暂时不会产生返利。'
+  if (r.percent <= 0) return '返利活动暂未开启，好友充值暂时不会产生返利。'
   if (r.mode === 'tiered') {
-    return `好友注册并付费后返利自动计入余额：每位好友累计付费前 $${yuanText(r.tier_threshold_fen)} 返 ${r.percent}%，超出部分返 ${r.tier_percent}%。`
+    return `好友注册并充值后返利自动计入余额：每位好友累计充值前 ${yuanText(r.tier_threshold_fen)} USD 返 ${r.percent}%，超出部分返 ${r.tier_percent}%。`
   }
-  const cap = r.cap_fen > 0 ? `，累计返利上限 $${yuanText(r.cap_fen)}` : ''
-  return `好友注册并付费后返利自动计入余额：按好友付费金额的 ${r.percent}% 返利${cap}。`
+  const cap = r.cap_fen > 0 ? `，累计返利上限 ${yuanText(r.cap_fen)} USD` : ''
+  return `好友注册并充值后返利自动计入余额：按好友充值金额的 ${r.percent}% 返利${cap}。`
 })
 
 const welfare = computed(() => welfareState.value ?? info.value?.welfare ?? null)

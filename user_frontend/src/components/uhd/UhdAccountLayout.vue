@@ -437,8 +437,9 @@ html[data-theme='light'] .uhd-account .uhd-side .uhd-side__item--active {
   min-height: calc(100dvh - var(--utb-h) - 148px);
 }
 /* 特异性须压过各页 scoped 的「类+data-v 属性」（0,2,0），故选择器带页根类走（0,3,0） */
-.uhd-account .sr-page .sr-topbar,
-.uhd-account .iv-page .iv-topbar { display: none; }
+/* 邀请页原 .iv-topbar 已于 2026-11-18 摘除（手机端改走统一顶栏子页
+   返回头），不再需要壳内隐藏规则。 */
+.uhd-account .sr-page .sr-topbar { display: none; }
 .uhd-account .ia-page .ia-back,
 .uhd-account .sub-page .sub-back { display: none; }
 .uhd-account .sub-page .sub-settle { left: var(--uhd-sidebar-w); }
