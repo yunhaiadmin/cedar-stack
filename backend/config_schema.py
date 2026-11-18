@@ -831,6 +831,17 @@ DANMAKU_CONFIG_SCHEMA: dict[str, tuple] = {
     "danmaku_max_text_length": ("int", 1, 500),
 }
 
+# 弹幕 API（2026-11-18 能力单）：给第三方播放器填的专职弹幕地址，
+# 与站内弹幕（danmaku 家族）是两个功能、另立家族。线路表整份
+# JSON 存一个键（[{id,name,note,host}]，空 = 代码默认两条），
+# 逐项形状校验在端点层（同 install_app 先例）；外部弹幕源适配
+# 开关默认关（无行 = 关），本期不接真外部源。
+DANMU_API_CONFIG_SCHEMA: dict[str, tuple] = {
+    "danmu_api_lines": ("str",),
+    # word 风格 ("bool",) 存 "true"/"false"（同 danmaku 口径）。
+    "danmu_api_external_enabled": ("bool",),
+}
+
 # 安装应用页（2026-11-13）：6 个平台的官方客户端下载链接，全部 ("str",)。
 # 没有代码级默认链接：空串/None = 删行取消配置，未配的平台用户端整行
 # 不显示。链接的 http(s) 形状校验在端点层（保存侧纵深防御只管类型，

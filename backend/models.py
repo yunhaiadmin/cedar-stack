@@ -1123,6 +1123,30 @@ class PasswordResetToken(Base):
     request_ip = Column(String(64))
 
 
+class DanmuApiToken(Base):
+    """弹幕 API 专职 Token（2026-11-18 弹幕 API 能力单）。
+
+    与平台 API Key（多枚、须命名、只存哈希）不同构：弹幕地址要由
+    服务端为号主本人重新拼出（GET /api/user/danmu/address），故
+    token 明文落库；每用户恰一个（user_id 唯一约束），32 位十六
+    进制，有效期一年、不自动续期，删除即失效（硬删行）。读取面
+    只有本人接口与按 token 寻址的公开下发口，日志/审计不打印
+    明文。新表由 create_all 建，不走 _auto_migrate。
+    """
+    __tablename__ = 'danmu_api_tokens'
+
+    __table_args__ = (
+        UniqueConstraint('user_id', name='uq_danmu_token_user'),
+        Index('idx_danmu_token_value', 'token'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
+    token = Column(String(32), nullable=False)  # 32 位十六进制明文（拼地址用）
+    created_at = Column(DateTime, default=datetime.now)
+    expires_at = Column(DateTime, nullable=False)
+
+
 class EmailVerificationCode(Base):
     """邮箱 6 位验证码（G-53/G-54，2026-11-18 定案）：改密验恢复邮箱、
     更换恢复邮箱验新邮箱共用这一套，不另造第二套发码/验码。
