@@ -97,10 +97,24 @@ const showHeader = computed(() => showChrome.value && !isAccountArea.value && !i
  * 自带页头品牌行——概览/我的原先各写一份（一处有彩虹边框、一处没有、
  * 都不固定）已删。标题口径照友站两页：概览用站名、「我的」页用
  * 「我的」，其余账户页一律站名（页内自有 H1，不在顶栏重复）。
+ * 例外（2026-11-18）：邀请页照友站子页头形态，手机端顶栏换成
+ * 「‹ 邀请好友」返回头（见下方 accountBarBackTo），桌面仍站名。
  * 片库面由 StreamShell 内挂同一组件（手机端），AppHeader 区由
  * AppHeader 在右侧复用同一颗胶囊，三区同形态。
  */
-const accountBarTitle = computed(() => (route.name === 'game-account-menu' ? '我的' : ''))
+const accountBarTitle = computed(() =>
+  route.name === 'game-account-menu'
+    ? '我的'
+    : route.name === 'game-account-invite'
+      ? '邀请好友'
+      : '',
+)
+/* 子页返回头（2026-11-18 邀请页对齐友站）：邀请页手机端顶栏出
+   「‹ 邀请好友」返回头（UhdTopBar 子页模式），页内原返回行随之摘除；
+   桌面端顶栏维持站标口径（子页模式只在 ≤768px 生效）。 */
+const accountBarBackTo = computed(() =>
+  route.name === 'game-account-invite' ? '/game/account/menu' : '',
+)
 
 /**
  * 底部坞改走 App.vue 全局常驻（PanelTabbar，≤768px 唯一一套）：
@@ -227,7 +241,7 @@ watch(
 <template>
   <div class="app-shell">
     <AppHeader v-if="showHeader" />
-    <UhdTopBar v-if="showChrome && isAccountArea" :title="accountBarTitle" />
+    <UhdTopBar v-if="showChrome && isAccountArea" :title="accountBarTitle" :back-to="accountBarBackTo" />
     <RouterView v-slot="{ Component }">
       <!-- max=12：key 按登录会话隔离，登出/换号后旧实例不再命中，攒多了自动淘汰最旧的 -->
       <!-- 嵌套顺序必须是 Transition 在外、KeepAlive 在内（Vue 官方组合形态）：

@@ -8,19 +8,25 @@
  * - sticky 固定在顶部（占文档流，不遮挡首屏内容），玻璃底；
  * - 左：站标 + 标题（默认站名；「我的」页传 title="我的"，照友站两页口径）；
  * - 右：UhdWatchPill「前往流媒体」常驻。
+ * 子页模式（2026-11-18 邀请页对齐友站）：传 backTo 时，手机端（≤768px）
+ * 左侧换成「‹ 返回 + 页标题」（友站子页头形态：返回/标题/胶囊同一行），
+ * 页内不再另设返回行；桌面端维持站标 + 标题原样（壳顶栏口径不动）。
  * 挂载点只有三处：App.vue（账户区）、StreamShell（片库面手机端；
  * 桌面走批 3 双胶囊顶栏）、AppHeader 只复用胶囊不复用整条。
  * 令牌见 styles/uhd-topbar.css。
  */
 import { computed, inject, type ComputedRef, type Ref } from 'vue'
-import { MonitorSmartphone, Moon, Sun } from 'lucide-vue-next'
+import { RouterLink } from 'vue-router'
+import { ChevronLeft, MonitorSmartphone, Moon, Sun } from 'lucide-vue-next'
 import { branding } from '@/composables/useBranding'
 import UhdWatchPill from './UhdWatchPill.vue'
 import BrandMark from '@/components/BrandMark.vue'
 
-const props = withDefaults(defineProps<{ title?: string }>(), { title: '' })
+const props = withDefaults(defineProps<{ title?: string; backTo?: string }>(), { title: '', backTo: '' })
 
 const barTitle = computed(() => props.title || branding.site_name)
+/* 子页模式下站标行（桌面）仍是站名：页标题只进手机端返回头，不顶替站标 */
+const brandTitle = computed(() => (props.backTo ? branding.site_name : barTitle.value))
 
 interface StreamThemeCtx {
   pref: Ref<'system' | 'light' | 'dark'>
@@ -50,7 +56,11 @@ const themeLabel = computed(() => {
 </script>
 
 <template>
-  <header class="uhd-topbar">
+  <header class="uhd-topbar" :class="{ 'uhd-topbar--sub': !!props.backTo }">
+    <RouterLink v-if="props.backTo" :to="props.backTo" class="uhd-topbar__back" aria-label="返回我的">
+      <ChevronLeft :size="22" aria-hidden="true" />
+      <span class="uhd-topbar__back-title">{{ barTitle }}</span>
+    </RouterLink>
     <div class="uhd-topbar__brand">
       <img
         v-if="branding.logo_url"
@@ -59,7 +69,7 @@ const themeLabel = computed(() => {
         :alt="branding.site_name"
       />
       <span v-else class="uhd-topbar__mark"><BrandMark /></span>
-      <span class="uhd-topbar__title">{{ barTitle }}</span>
+      <span class="uhd-topbar__title">{{ brandTitle }}</span>
     </div>
     <div class="uhd-topbar__actions">
       <button
@@ -150,5 +160,31 @@ const themeLabel = computed(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* 子页返回头：默认（桌面）不渲染，维持站标行；仅手机端在子页模式下
+   顶替站标行（友站实测：标题 16px semibold、标题墨迹左缘距屏左 ≈56px，
+   = 栏边距 16 + 箭头 22 + 间隔 18）。 */
+.uhd-topbar__back {
+  display: none;
+}
+@media (max-width: 768px) {
+  .uhd-topbar--sub .uhd-topbar__brand {
+    display: none;
+  }
+  .uhd-topbar--sub .uhd-topbar__back {
+    display: inline-flex;
+    align-items: center;
+    gap: 18px;
+    min-width: 0;
+    color: inherit;
+    text-decoration: none;
+  }
+  .uhd-topbar__back-title {
+    font-size: 16px;
+    font-weight: var(--uhd-fw-semibold);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 </style>

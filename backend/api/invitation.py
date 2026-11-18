@@ -36,9 +36,13 @@ CODE_ALPHABET = string.ascii_uppercase + string.digits
 
 
 def _generate_invite_code(db: Session) -> str:
-    """生成不冲突的邀请码（8 位）"""
+    """生成不冲突的邀请码（6 位，2026-11-18 对齐友站码面）。
+
+    只影响新生成：存量 8 位码按字符串等值查（apply_invitation 同口径），
+    继续有效，不做迁移。
+    """
     while True:
-        code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(8))
+        code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(6))
         if not db.query(models.InvitationCode).filter(
             models.InvitationCode.code == code
         ).first():
@@ -48,9 +52,9 @@ def _generate_invite_code(db: Session) -> str:
 def _mask_invite_code(code_str: str | None) -> str:
     """邀请码掩码（A-128：日志只许记掩码，不许记原文）。
 
-    只露首尾各 1 位：8 位 36 字母码露首尾各 2 位只剩 36^4 ≈ 170 万种、
-    对无鉴权注册口可枚举；露首尾各 1 位剩 36^6，不可枚举，
-    配合 user id / 时间戳仍可定位到具体一次注册尝试。
+    只露首尾各 1 位：36 字母码露首尾各 2 位会把候选空间压掉两位指数、
+    对无鉴权注册口过于友好；露首尾各 1 位时 6 位码剩 36^4、存量 8 位码
+    剩 36^6，配合注册口限流与 user id / 时间戳仍可定位到具体一次注册尝试。
     短码（≤2 位）直接全掩。
     """
     s = (code_str or "").strip()
