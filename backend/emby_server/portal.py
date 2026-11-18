@@ -427,9 +427,12 @@ def _account_card(user: models.WebUser, db: Session, realm_id: int | None = None
     price_days = _view_unlock_days(db)
     # 未设置接线用户名时是空串，不是 null：账号卡这个字段一直是字符串。
     emby_username = (user.emby_username or "") if granted else ""
+    # 服务器显示名走唯一解析口径（配置键 > env > 默认），与 System/Info 同源
+    from backend import servers as server_registry
+
     card = {
         "server_id": SERVER_ID,
-        "server_name": os.getenv("EMBY_SERVER_NAME", "Aetrix Media Server"),
+        "server_name": server_registry.server_display_name(db),
         "base_url": url if granted else "",
         "mode": mode,
         "external": external,

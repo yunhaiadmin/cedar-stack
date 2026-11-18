@@ -1073,7 +1073,9 @@ export const revokeApiKey = (keyId: string) => del<{ ok: boolean }>(`/api-keys/$
 
 // 注：「Emby 服务入口」那两个格子的页面（及它的读写接口封装）已下线，
 // EA / Emby 入口统一在「服务器」页维护（见 views/Servers.vue）。
-// 后端 /api/admin/emby/servers 仍在（挂载体检与列表页要用），但前端不再直连。
+// 后端 /api/admin/emby/servers 仍在（挂载体检与列表页要用）；入口的增删改前端
+// 不再直连，只剩「服务器显示名」一处仍走它（GET /emby/servers 读生效值、
+// PUT /emby/server-name 改名，见下方 fetchEmbyConnection / saveEmbyServerName）。
 
 export const fetchPlaybackStats = () => get<PlaybackStats>('/stats/playback')
 
@@ -1081,6 +1083,23 @@ export const fetchPlaybackStats = () => get<PlaybackStats>('/stats/playback')
 const E = '/emby'
 
 export const fetchEmbyOverview = () => get<{ total_items: number; total_libraries: number; active_sessions: number; total_users: number }>(`${E}/overview`)
+
+/** Emby 连接口回显（只取本页要用的字段：服务器显示名 + 两入口清单名） */
+export interface EmbyConnectionInfo {
+  realm_id: number
+  realm_name: string
+  /** 当前生效的服务器显示名（配置键 > env > 默认） */
+  server_name: string
+  managed_ea: { name: string; url: string; enabled: boolean; reachable: boolean }
+  external: { name: string; url: string; enabled: boolean; has_api_key: boolean; reachable: boolean }
+  active_mode: string
+}
+
+export const fetchEmbyConnection = () => get<EmbyConnectionInfo>(`${E}/servers`)
+
+/** 改服务器显示名（客户端里显示的名字）；只改显示名，保存即生效 */
+export const saveEmbyServerName = (name: string) =>
+  put<{ success: boolean; server_name: string }>(`${E}/server-name`, { name })
 
 /** 封面自动生成的配置：样式 + 标题文字（都支持 {library}{type}{year} 变量） */
 export interface LibraryCoverConfig {

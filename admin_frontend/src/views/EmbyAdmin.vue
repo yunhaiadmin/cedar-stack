@@ -22,7 +22,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { toAdminError } from '@/utils/errorMessage'
 import {
   Film, FolderPlus, History, RefreshCw, ScanSearch,
-  CalendarClock, Info, ShieldAlert,
+  CalendarClock, Info, ShieldAlert, Upload,
   Wand2,
 } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard } from '@/components/ui'
@@ -53,7 +53,9 @@ import {
   generateVirtualLibraries,
   previewLibraryCover,
   regenerateLibraryCover,
+  removeLibraryCover,
   renderLibraryCover,
+  uploadLibraryCover,
   rescrapeLibrary,
   runRepairQueue,
   scanAllLibraries,
@@ -315,6 +317,66 @@ async function regenerateCover() {
     ElMessage.error(toAdminError(e, '重新生成失败'))
   } finally {
     coverRegenerating.value = false
+  }
+}
+
+// ---- 封面直传（上传自己的图 / 删除封面） ----
+// 后端端点与 API 封装早就都在，此前这个区只有「自动生成」一条路，
+// 管理员根本没地方传图（文案里写的「上传的封面」无处上传）。
+const coverUploading = ref(false)
+const coverRemoving = ref(false)
+const coverFileInput = ref<HTMLInputElement | null>(null)
+
+function pickCoverFile() {
+  coverFileInput.value?.click()
+}
+
+/** 上传/删除后重拉列表，并把编辑中的库对象换成新行（旧对象上的 cover_url 是旧值） */
+async function reloadAfterCoverChange(libId: number) {
+  await load()
+  const fresh = libraries.value.find((x) => x.id === libId)
+  if (fresh && libFormTarget.value?.id === libId) libFormTarget.value = fresh
+}
+
+async function onCoverFilePicked(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = '' // 清空以便重选同一文件也能再次触发 change
+  const lib = libFormTarget.value
+  if (!file || !lib) return
+  coverUploading.value = true
+  try {
+    await uploadLibraryCover(lib.id, file)
+    ElMessage.success('封面已上传，用户端即刻可见')
+    await reloadAfterCoverChange(lib.id)
+  } catch (e) {
+    ElMessage.error(toAdminError(e, '封面上传失败'))
+  } finally {
+    coverUploading.value = false
+  }
+}
+
+async function removeCover() {
+  const lib = libFormTarget.value
+  if (!lib) return
+  try {
+    await ElMessageBox.confirm(
+      '删除当前封面？删后用户端回落到自动借图或占位图。',
+      '删除封面',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+  coverRemoving.value = true
+  try {
+    await removeLibraryCover(lib.id)
+    ElMessage.success('封面已删除')
+    await reloadAfterCoverChange(lib.id)
+  } catch (e) {
+    ElMessage.error(toAdminError(e, '封面删除失败'))
+  } finally {
+    coverRemoving.value = false
   }
 }
 
@@ -2613,6 +2675,32 @@ function typeLabel(t: string): string {
                 <Film :size="20" />
                 <span>未设置封面</span>
               </div>
+            </div>
+            <div class="lib-cover-upload">
+              <input
+                ref="coverFileInput"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                class="lib-cover-upload-input"
+                @change="onCoverFilePicked"
+              />
+              <div class="lib-cover-upload-btns">
+                <el-button size="small" type="primary" :loading="coverUploading" @click="pickCoverFile">
+                  <Upload :size="14" style="margin-right: 4px" />上传封面图
+                </el-button>
+                <el-button
+                  v-if="libFormTarget.cover_url"
+                  size="small"
+                  :loading="coverRemoving"
+                  @click="removeCover"
+                >
+                  删除封面
+                </el-button>
+              </div>
+              <p class="drawer-hint" style="margin: 6px 0 0">
+                JPG / PNG / WebP，不超过 8 MB。上传即生效，用户端立刻显示这张图；
+                选了自动生成样式并重新生成时，会覆盖这张上传图。
+              </p>
             </div>
           </div>
   <div class="form-hint" style="margin-top: 12px">

@@ -29,6 +29,14 @@ class ConnectionRequest(BaseModel):
     url: str = Field(..., min_length=8, max_length=500)
     api_key: Optional[str] = Field(default=None, max_length=500)
     enabled: bool = True
+    # 入口在服务器清单里的显示名：给了非空值就同步改名（只改显示名，
+    # 不影响 node_key 认领等任何关联）；不给 = 不动名字。
+    name: Optional[str] = Field(default=None, max_length=80)
+
+
+class ServerNameRequest(BaseModel):
+    """Emby 服务器显示名（客户端里显示的那个名字，全站一个）"""
+    name: str = Field(..., max_length=80)
 
 
 def _validate_url(raw_url: str) -> str:
@@ -175,6 +183,16 @@ async def probe(mode: str, url: str, api_key: str = "") -> dict:
     return await registry.probe_emby(target, api_key)
 
 
+def _entry_name(db: Session, kind: str, scope_id: int) -> str:
+    """该入口在服务器清单里的显示名（与 upsert_legacy 选行口径一致：当前使用优先）"""
+    row = (db.query(models.RemoteServer)
+           .filter(models.RemoteServer.kind == kind,
+                   models.RemoteServer.realm_id == scope_id)
+           .order_by(models.RemoteServer.is_active.desc(), models.RemoteServer.id)
+           .first())
+    return row.name if row else ""
+
+
 @router.get("/servers")
 def get_servers(_: models.WebUser = Depends(get_current_admin), db: Session = Depends(get_db),
                 realm_id: Optional[int] = None):
@@ -189,12 +207,17 @@ def get_servers(_: models.WebUser = Depends(get_current_admin), db: Session = De
     return {
         "realm_id": scope_id,
         "realm_name": realm.name if realm else "",
+        # 服务器显示名（客户端 System/Info 的 ServerName，全站一个）：
+        # 回的是当前生效值（配置键 > env > 默认），改名走 PUT /server-name。
+        "server_name": registry.server_display_name(db),
         "managed_ea": {
+            "name": _entry_name(db, "ea", scope_id),
             "url": value(db, "emby_managed_url", realm_id=scope_id),
             "enabled": value(db, "emby_managed_enabled", "false", scope_id).lower() == "true",
             "reachable": value(db, "emby_managed_reachable", "", scope_id).lower() == "true",
         },
         "external": {
+            "name": _entry_name(db, "emby", scope_id),
             "url": value(db, "emby_external_url", realm_id=scope_id),
             "enabled": value(db, "emby_external_enabled", "false", scope_id).lower() == "true",
             "has_api_key": bool(value(db, "emby_external_api_key", realm_id=scope_id)),
@@ -261,9 +284,15 @@ async def save_server(
             db, "ea" if request.mode == "managed_ea" else "emby", url,
             api_key=api_key if request.mode == "external" else "",
             enabled=request.enabled, reachable=bool(result.get("ok")), realm_id=scope_id,
+            name=(request.name or "").strip(),
         )
 
-    await run_in_threadpool(save_all)
+    try:
+        await run_in_threadpool(save_all)
+    except ValueError as exc:
+        # upsert_legacy 的可读错误（改名重名等）：整事务回滚后按 400 回给管理员
+        await run_in_threadpool(db.rollback)
+        raise HTTPException(400, str(exc))
 
     # 挂载是主机相对的：EA 能连通不等于它能碰到面板里配的存储。
     # 所以保存 EA 服务入口时顺带做一次 EA 视角的挂载体检，把结果落到面板上。
@@ -273,10 +302,38 @@ async def save_server(
 
     _audit(db, admin_id, "save_emby_server_connection", "system", None,
            {"mode": request.mode, "ok": result.get("ok"), "realm_id": scope_id,
+            "name": (request.name or "").strip() or None,
             "mount_health_ok": None if health is None else health.get("ok")})
     await run_in_threadpool(db.commit)
     return {"success": True, "mode": request.mode, "probe": result,
             "mounts_health": health, "realm_id": scope_id}
+
+
+@router.put("/server-name")
+async def save_server_name(
+    request: ServerNameRequest,
+    admin: models.WebUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """改 Emby 服务器显示名（客户端里显示的名字）
+
+    此前这个名字只读环境变量 EMBY_SERVER_NAME，管理端无处可改。
+    现在落配置键 emby_server_name，System/Info 与用户端账号卡即时生效；
+    只改显示名，不影响任何按 id 的关联。
+    """
+    admin_id = admin.id
+    name = request.name.strip()
+    if not name:
+        raise HTTPException(400, "服务器显示名不能为空")
+
+    def save() -> None:
+        save_value(db, registry.SERVER_NAME_CONFIG_KEY, name, "Emby 服务器显示名")
+        db.commit()
+
+    await run_in_threadpool(save)
+    _audit(db, admin_id, "save_emby_server_name", "system", None, {"name": name})
+    await run_in_threadpool(db.commit)
+    return {"success": True, "server_name": name}
 
 
 @router.post("/servers/mounts/refresh")

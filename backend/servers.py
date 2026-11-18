@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime
 from typing import Optional
 
@@ -351,6 +352,30 @@ def _config_row(db: Session, key: str):
     return db.query(models.SystemConfig).filter(models.SystemConfig.key == key).first()
 
 
+#: Emby 服务器显示名（客户端 System/Info 的 ServerName、用户端账号卡的
+#: server_name）的唯一解析口径。此前只读环境变量 EMBY_SERVER_NAME，
+#: 管理端没有任何入口能改——管理员想给服务器改名只能改 env 重启进程。
+#: 现在优先读后台可改的配置键 emby_server_name，其次 env，最后内置默认。
+SERVER_NAME_CONFIG_KEY = "emby_server_name"
+SERVER_NAME_DEFAULT = "Aetrix Media Server"
+
+
+def server_display_name(db: Optional[Session] = None) -> str:
+    """服务器显示名：配置键 emby_server_name > env EMBY_SERVER_NAME > 默认值。
+
+    只改显示名：不参与 node_key 认领、配置 scope 或任何按 id 之外的关联。
+    db 读取失败时回落 env/默认，公开端点（System/Info）绝不能因读名 500。
+    """
+    if db is not None:
+        try:
+            value = config_value(db, SERVER_NAME_CONFIG_KEY, "")
+            if value:
+                return value
+        except Exception:
+            pass
+    return (os.getenv("EMBY_SERVER_NAME", "") or "").strip() or SERVER_NAME_DEFAULT
+
+
 def config_value(db: Session, key: str, default: str = "", realm_id: Optional[int] = None) -> str:
     """读配置；Emby 入口那几个键是**一个服一个**的（默认服沿用历史键名）"""
     if key in realms.REALM_CONFIG_BASES:
@@ -514,6 +539,19 @@ def upsert_legacy(db: Session, kind: str, url: str, *, api_key: str = "",
                                   url=url, realm_id=realm_id)
         db.add(row)
         db.flush()
+
+    # 改名（连接配置面补齐）：name 给了非空值就落到已有行——此前 name 只在
+    # 建行时用一次，保存连接永远改不了名。只改显示名，不动 node_key 等关联；
+    # 与别的服务器重名直接报错，不静默加后缀（管理员要的是确切的名字）。
+    new_name = (name or "").strip()
+    if new_name and new_name != row.name:
+        conflict = (db.query(models.RemoteServer)
+                    .filter(models.RemoteServer.name == new_name,
+                            models.RemoteServer.id != row.id)
+                    .first())
+        if conflict:
+            raise ValueError(f"服务器名称已被占用：{new_name}")
+        row.name = new_name
 
     row.url = url
     row.is_enabled = bool(enabled)
@@ -712,6 +750,7 @@ __all__ = [
     "redact",
     "secret_keys",
     "serialize",
+    "server_display_name",
     "set_config",
     "summary",
     "sync_legacy",

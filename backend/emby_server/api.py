@@ -1908,10 +1908,14 @@ def _now_playing_dto(session: em.PlaybackSession, item: em.MediaItem, user) -> d
 @emby_router.get("/emby/system/info/public")
 @emby_router.get("/System/Info")
 @emby_router.get("/System/Info/Public")
-def system_info(request: Request):
+def system_info(request: Request, db: Session = Depends(get_db)):
+    # 服务器显示名走唯一解析口径（配置键 > env > 默认），管理端可改；
+    # 解析器内部已吞异常回落，公开端点不会因读名失败。
+    from backend import servers as server_registry
+
     return {
         "Id": SERVER_ID,
-        "ServerName": os.getenv("EMBY_SERVER_NAME", "Aetrix Media Server"),
+        "ServerName": server_registry.server_display_name(db),
         "Version": SERVER_VERSION,
         "ProductName": "Emby Server",
         "OperatingSystem": "Linux",

@@ -32,6 +32,8 @@ import {
   createMount,
   deleteMount,
   deleteServer,
+  fetchEmbyConnection,
+  saveEmbyServerName,
   fetchServers,
   fetchServersOverview,
   fetchServerOps,
@@ -412,8 +414,40 @@ const contentColumns: DataColumn[] = [
 
 // ==================== 加载 ====================
 
+// 服务器显示名（客户端里显示的名字，全站一个）：此前只读环境变量、后台无处可改。
+const displayName = ref('')
+const displayNameSaving = ref(false)
+
+async function loadDisplayName() {
+  try {
+    const info = await fetchEmbyConnection()
+    displayName.value = info.server_name || ''
+  } catch {
+    /* 读不到不挡列表加载，输入框留空即可 */
+  }
+}
+
+async function saveDisplayName() {
+  const name = displayName.value.trim()
+  if (!name) {
+    ElMessage.warning('服务器显示名不能为空')
+    return
+  }
+  displayNameSaving.value = true
+  try {
+    const res = await saveEmbyServerName(name)
+    displayName.value = res.server_name
+    ElMessage.success('服务器显示名已保存，客户端即时生效')
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    displayNameSaving.value = false
+  }
+}
+
 async function load() {
   loading.value = true
+  loadDisplayName()
   try {
     if (!realm.loaded) realm.load().catch(() => undefined)
     const [list, ov] = await Promise.all([
@@ -827,6 +861,26 @@ function opsStateText(state: string): string {
         </el-button>
       </template>
     </PageHeader>
+
+    <!-- 服务器显示名：用户在 Emby 客户端里看到的服务器名字，全站一个，保存即生效 -->
+    <SectionCard title="服务器显示名" :icon="Server" class="display-name-card">
+      <div class="display-name-row">
+        <el-input
+          v-model="displayName"
+          maxlength="80"
+          show-word-limit
+          placeholder="例如：Aetrix Media Server"
+          class="display-name-input"
+          @keyup.enter="saveDisplayName"
+        />
+        <el-button type="primary" :loading="displayNameSaving" @click="saveDisplayName">
+          保存
+        </el-button>
+      </div>
+      <p class="display-name-hint">
+        这是用户在 Emby 客户端与账号页里看到的服务器名字，只改显示名，不影响任何连接与认领。
+      </p>
+    </SectionCard>
 
     <div class="tab-bar" role="tablist" aria-label="服务器">
       <button
@@ -1571,6 +1625,26 @@ function opsStateText(state: string): string {
 
 <style scoped>
 /* 标签条（与 Codes.vue / Welfare.vue 同款；内层与外层隔 16px，不贴在一起） */
+.display-name-card {
+  margin-bottom: 16px;
+}
+
+.display-name-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.display-name-input {
+  max-width: 420px;
+}
+
+.display-name-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
 .tab-bar {
   display: flex;
   gap: 4px;
