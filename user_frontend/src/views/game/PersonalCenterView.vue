@@ -275,12 +275,14 @@
       @exchanged="onTrafficExchanged"
     />
 
-    <!-- Emby 服务线路弹层：服务器地址行点开（2026-11-13 形态对齐，不再跳播放账号页） -->
+    <!-- Emby 线路弹层：服务器地址行点开（2026-11-13 形态对齐，不再跳播放账号页）；
+         弹层内刷新经 refresh 事件重拉账号卡（loadOverview） -->
     <ServerLinesSheet
       :open="linesSheetOpen"
       :card="accountCard"
       :dark="themeResolved === 'dark'"
       @close="linesSheetOpen = false"
+      @refresh="loadOverview"
     />
 
     <!-- 绑定谷歌盘弹层：我的网盘行未绑定时点开（2026-11-14 用户亲点，

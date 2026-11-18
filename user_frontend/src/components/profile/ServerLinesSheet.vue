@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * ServerLinesSheet —— Emby 服务线路弹层（2026-11-13 形态对齐单）
+ * ServerLinesSheet —— Emby 线路弹层（2026-11-13 形态对齐单）
  *
- * 友站概览点「服务器地址」是居中弹层（标题「Emby 服务线路」＋线路分组
+ * 友站概览点「服务器地址」是居中弹层（标题「Emby 线路」＋线路分组
  * ＋主/备线路行＋客户端区＋底部提示），我方原先点开跳 /game/operator
  * 整页；用户 2026-11-13 23:15 亲点改弹层，本组件即该弹层，播放账号页
  * 本体与菜单入口不变。
@@ -15,12 +15,16 @@
  * 客户端区只指站内已有去处（安装应用页含客户端下载与分步教程），
  * 不编造外链；底部提示带线路测速链接（现有测速页）。
  *
+ * 文案对齐（2026-11-18，差异清单 G-21/22/23/27/28）：标题、说明
+ * 两行、分组头、客户端副文与底部说明均照友站原文；「线路」组头
+ * 右侧刷新图标经 refresh 事件请父页重拉账号卡，本组件不自拉数据。
+ *
  * 主题跟随概览页：dark 由父页按其主题解析值传入，弹层调色与概览页
  * 本地令牌同值（深 #17181c 卡 / 浅白卡），不随全局用户中心浅色面走。
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { Check, ChevronRight, Copy, X } from 'lucide-vue-next'
+import { ArrowUpRight, Check, Copy, RefreshCw, X } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import './server-lines-sheet.css'
 import '../../styles/modal-glass.css'
@@ -54,7 +58,7 @@ const props = defineProps<{
   dark: boolean
 }>()
 
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; refresh: [] }>()
 
 const toast = useToast()
 
@@ -116,6 +120,25 @@ async function copyLine(line: ServerLine) {
   }
 }
 
+/** 组头刷新：只发事件请父页重拉账号卡；新卡到达（prop 变更）即停转，
+ *  3 秒兜底防父页重拉失败时图标永转。 */
+const refreshing = ref(false)
+let refreshTimer: ReturnType<typeof setTimeout> | undefined
+function onRefresh() {
+  if (refreshing.value) return
+  refreshing.value = true
+  emit('refresh')
+  if (refreshTimer) clearTimeout(refreshTimer)
+  refreshTimer = setTimeout(() => { refreshing.value = false }, 3000)
+}
+watch(
+  () => props.card,
+  () => {
+    if (refreshTimer) clearTimeout(refreshTimer)
+    refreshing.value = false
+  },
+)
+
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') emit('close')
 }
@@ -129,6 +152,7 @@ watch(
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeydown)
   if (copiedTimer) clearTimeout(copiedTimer)
+  if (refreshTimer) clearTimeout(refreshTimer)
 })
 </script>
 
@@ -140,15 +164,31 @@ onBeforeUnmount(() => {
       :class="{ 'sls--dark': dark }"
       @click.self="emit('close')"
     >
-      <div class="sls-card" role="dialog" aria-modal="true" aria-label="Emby 服务线路">
+      <div class="sls-card" role="dialog" aria-modal="true" aria-label="Emby 线路">
         <div class="sls-head">
-          <h3 class="sls-title">Emby 服务线路</h3>
+          <h3 class="sls-title">Emby 线路</h3>
           <button type="button" class="sls-close" aria-label="关闭" @click="emit('close')">
             <X :size="18" aria-hidden="true" />
           </button>
         </div>
 
-        <p class="sls-group">播放线路</p>
+        <p class="sls-intro">
+          在兼容 Emby 的第三方客户端里添加服务器，<br />
+          填入线路地址即可。
+        </p>
+
+        <div class="sls-grouprow">
+          <p class="sls-group sls-group--inrow">线路</p>
+          <button
+            type="button"
+            class="sls-refresh"
+            :class="{ 'sls-refresh--busy': refreshing }"
+            aria-label="刷新线路"
+            @click="onRefresh"
+          >
+            <RefreshCw :size="16" aria-hidden="true" />
+          </button>
+        </div>
         <div v-if="lines.length" class="sls-lines">
           <div v-for="line in lines" :key="line.key" class="sls-line">
             <span class="sls-line__main">
@@ -178,24 +218,22 @@ onBeforeUnmount(() => {
           <RouterLink class="sls-link" to="/game/install" @click="emit('close')">
             <span class="sls-link__main">
               <span class="sls-link__name">支持的客户端</span>
-              <span class="sls-link__sub">手机、电视、电脑客户端下载</span>
+              <span class="sls-link__sub">各平台可用的第三方客户端</span>
             </span>
-            <ChevronRight :size="18" class="sls-link__chev" aria-hidden="true" />
+            <ArrowUpRight :size="18" class="sls-link__chev" aria-hidden="true" />
           </RouterLink>
           <RouterLink class="sls-link" to="/game/install" @click="emit('close')">
             <span class="sls-link__main">
               <span class="sls-link__name">配置教程</span>
-              <span class="sls-link__sub">下载、添加服务器、登录，分步说明</span>
+              <span class="sls-link__sub">添加服务器与登录步骤</span>
             </span>
-            <ChevronRight :size="18" class="sls-link__chev" aria-hidden="true" />
+            <ArrowUpRight :size="18" class="sls-link__chev" aria-hidden="true" />
           </RouterLink>
         </div>
 
         <p class="sls-foot">
-          在播放器里添加服务器时填上面的地址，用 https 连接（端口 443，可留空）。
-          哪条快用哪条拿不准就先
-          <RouterLink class="sls-foot__link" to="/game/speedtest" @click="emit('close')">线路测速</RouterLink>
-          看一眼。
+          没有特别标注端口的线路，都使用 HTTPS 443 端口。<br />
+          不确定选哪条，可以先去<RouterLink class="sls-foot__link" to="/game/speedtest" @click="emit('close')">线路测速</RouterLink>。
         </p>
       </div>
     </div>
@@ -279,6 +317,49 @@ onBeforeUnmount(() => {
   font-size: var(--uhd-fs-aux);
   font-weight: var(--uhd-fw-semibold);
   color: var(--sls-sub);
+}
+.sls-intro {
+  margin: 10px 0 0;
+  font-size: var(--uhd-fs-caption);
+  line-height: 1.7;
+  color: var(--sls-sub);
+}
+/* 「线路」组头行：标签在左、刷新图标在右，间距与 .sls-group 同口径 */
+.sls-grouprow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 22px 0 4px;
+}
+.sls-group--inrow {
+  margin: 0;
+}
+.sls-refresh {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--sls-sub);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.sls-refresh:hover {
+  background: var(--sls-link-hover);
+}
+.sls-refresh--busy svg {
+  animation: sls-spin 0.9s linear infinite;
+}
+@keyframes sls-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .sls-lines {
   display: flex;
