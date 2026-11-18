@@ -45,10 +45,15 @@
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
     'Liberation Mono', monospace;
 
-  --font-size-xs: 12px;
-  --font-size-sm: 13px;
-  --font-size-md: 14px;
-  --font-size-lg: 15px;
+  /* 字阶（批 0 地基，2026-11-18）：与用户端 --uhd-fs-* 梯队同值的档改走令牌，
+     本层只保留历史名做别名。与梯队对不上的三档暂留字面量（后续批次逐处归档）：
+     xl 17px（梯队只有 16/18）、2xl 20px（只有 18/24）、4xl 30px（只有 32）；
+     3xl 24px 虽与 --uhd-fs-h3 同值，但该令牌带用户端移动阶梯覆盖
+     （≤768px 变 20px），后台不跟随移动阶梯，故同样留字面量。 */
+  --font-size-xs: var(--uhd-fs-aux-sm);
+  --font-size-sm: var(--uhd-fs-aux);
+  --font-size-md: var(--uhd-fs-caption);
+  --font-size-lg: var(--uhd-fs-body);
   --font-size-xl: 17px;
   --font-size-2xl: 20px;
   --font-size-3xl: 24px;
@@ -163,7 +168,10 @@
   --transition-slow: 0.3s var(--ease);
 
   /* ==================== 尺寸 ==================== */
-  --sidebar-w: 240px;
+  /* 侧栏宽钉死（批 0 收口 P8）：原字面量 240px 与 uhd-admin.css 的 250px 双值
+     并存、靠引入顺序定胜负；现两处同走统一令牌 --uhd-sidebar-w（250px，
+     即此前实际生效值，零视觉变化） */
+  --sidebar-w: var(--uhd-sidebar-w);
   --header-h: 56px;
   --control-h: 36px;
   --touch-target-min: 44px;

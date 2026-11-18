@@ -10,11 +10,15 @@
 CSS 规范里这是循环引用，变量会变成 invalid at computed-value time，
 所有 `color: var(--text-primary)` 静默退化成「继承父级颜色」，标题层级全乱且不报错。
 
-检查四条规则：
+检查五条规则：
   1. 任何 `var(--x)` 的 `--x` 必须在**被引入**的样式表里定义过；
   2. 不允许 `--x: var(--x)` 自引用；
   3. 不允许纯别名构成的循环（`--a: var(--b)` + `--b: var(--a)`）；
   4. src 下不允许存在「谁都没引入」的样式表（上面那次事故的根源）。
+  5. 两端 uhd-tokens.css 必须逐字一致：user_frontend 那份是唯一真源，
+     admin_frontend 是同值副本（后台重设计批 0，2026-11-18）。历史上副本
+     曾漂移成过期版（344 行 vs 真源 487 行、缺 29 个令牌）且无人察觉——
+     改 --uhd-* 令牌时只许改真源，再把副本同步成逐字相同，否则 CI 失败。
 
 样式表集合从入口（main.ts / index.html 的 <style>）出发，沿 @import 与 import 语句递归收集，
 所以「文件存在但没接进应用」不会被误判成已定义。
@@ -294,14 +298,44 @@ def check_admin_structure() -> None:
             failures.append(f"    {f}")
 
 
+def check_uhd_tokens_sync() -> None:
+    """规则 5：admin 的 uhd-tokens.css 副本必须与用户端真源逐字一致（批 0 地基）"""
+    global checks
+    checks += 1
+    source = ROOT / "user_frontend" / "src" / "styles" / "uhd-tokens.css"
+    copy = ROOT / "admin_frontend" / "src" / "styles" / "uhd-tokens.css"
+    if not source.exists() or not copy.exists():
+        failures.append("uhd-tokens 同步检查：两端 uhd-tokens.css 必须都存在")
+        return
+    if source.read_bytes() == copy.read_bytes():
+        return
+    src_lines = source.read_text(encoding="utf-8").splitlines()
+    copy_lines = copy.read_text(encoding="utf-8").splitlines()
+    failures.append(
+        "uhd-tokens 两端不一致：admin_frontend/src/styles/uhd-tokens.css 是用户端真源的"
+        "同值副本，不许漂移（改令牌只改 user_frontend 那份，再逐字同步副本）"
+        f"（真源 {len(src_lines)} 行 / 副本 {len(copy_lines)} 行）"
+    )
+    shown = 0
+    for i in range(max(len(src_lines), len(copy_lines))):
+        a = src_lines[i] if i < len(src_lines) else "<缺行>"
+        b = copy_lines[i] if i < len(copy_lines) else "<缺行>"
+        if a != b:
+            failures.append(f"    第 {i + 1} 行起不一致：真源「{a.strip()[:60]}」≠ 副本「{b.strip()[:60]}」")
+            shown += 1
+            if shown >= 3:
+                break
+
+
 for frontend in FRONTENDS:
     check_frontend(frontend)
     check_freeze(frontend)
 check_admin_structure()
+check_uhd_tokens_sync()
 
 print(f"设计令牌契约检查：{checks} 项")
 if failures:
     print("\n".join(failures))
     print("❌ 设计令牌契约检查失败")
     sys.exit(1)
-print("✅ 设计令牌契约检查通过（引用的令牌都有定义 · 无循环引用 · 没有孤立样式表 · 主题引入冻结 · neo 冻结）")
+print("✅ 设计令牌契约检查通过（引用的令牌都有定义 · 无循环引用 · 没有孤立样式表 · 主题引入冻结 · neo 冻结 · 两端 uhd-tokens 逐字同步）")

@@ -12,7 +12,8 @@ export const DEFAULT_SITE_NAME = 'Aetrix'
 export const DEFAULT_THEME_COLOR = '#e8a84a'
 /**
  * 「没自定义过」的主题色：后端默认值仍是旧品牌青 #22d3ee，加上现在的放映机琥珀。
- * 命中时不注入任何覆盖——让 aurora.css 自己的深色琥珀 / 白日深琥珀说了算（同用户端口径）。
+ * 命中时不注入任何覆盖——由样式令牌层说了算：uhd-admin.css 已把 --au-primary
+ * 映射到统一令牌 --uhd-l-link（#2563eb，后台重设计批 0），与用户端同值同口径。
  */
 const LEGACY_DEFAULT_THEME_COLORS = new Set(['#22d3ee', DEFAULT_THEME_COLOR])
 // 管理后台页脚展示的版本号（views/Layout.vue 的 foot-version）。构建期写死，不读根目录
@@ -98,7 +99,7 @@ let brandStyle: HTMLStyleElement | null = null
 function applyBrandingTokens() {
   const color = (branding.theme_color || '').trim().toLowerCase()
   if (!color || LEGACY_DEFAULT_THEME_COLORS.has(color)) {
-    // 默认主题色：不注入，主题令牌（深色琥珀 / 白日深琥珀）自己说了算
+    // 默认主题色：不注入，统一令牌层（uhd-admin.css → --uhd-l-link）自己说了算
     if (brandStyle) brandStyle.textContent = ''
     return
   }
