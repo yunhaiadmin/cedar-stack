@@ -21,6 +21,7 @@ import os
 os.environ.setdefault("DATABASE_TYPE", "sqlite")
 os.environ.setdefault("REDIS_ENABLED", "false")
 
+import time
 import uuid
 from datetime import datetime
 
@@ -132,8 +133,13 @@ def test_cache_avoids_recount_within_ttl(client, session):
                              item_type="movie", name="新入库电影"))
     session.commit()
     assert client.get("/api/site/library-stats").json() == EXPECTED
-    # 缓存过期后重数，新行计入
-    site_module._library_stats_cache["at"] = 0.0
+    # 缓存过期后重数，新行计入。过期点必须按 live 时钟往前推 TTL+1 秒：
+    # 端点用 time.monotonic()（开机起算）判新鲜，at = 0.0 在开机不足
+    # 600 秒的新跑机上仍被判新鲜（now - 0.0 < TTL），第三次读回旧值、
+    # CI 偶现红（run 44404187066 唯一失败用例即此）。
+    site_module._library_stats_cache["at"] = (
+        time.monotonic() - site_module._LIBRARY_STATS_TTL - 1
+    )
     refreshed = dict(EXPECTED, works=4, total_items=9)
     assert client.get("/api/site/library-stats").json() == refreshed
 
@@ -164,8 +170,12 @@ def test_failure_serves_stale_cache(client, session, monkeypatch):
         raise RuntimeError("db down")
 
     monkeypatch.setattr(site_module, "_count_library_stats", _boom)
-    # 缓存过期后 DB 故障：回旧值而不是 0 或 500（官网数字宁旧勿空）
-    site_module._library_stats_cache["at"] = 0.0
+    # 缓存过期后 DB 故障：回旧值而不是 0 或 500（官网数字宁旧勿空）。
+    # 过期点按 live 时钟推（见上：at = 0.0 在开机不足 TTL 的新跑机上
+    # 误判新鲜，此处虽被掩盖——旧值即期望值——仍一并改掉）。
+    site_module._library_stats_cache["at"] = (
+        time.monotonic() - site_module._LIBRARY_STATS_TTL - 1
+    )
     resp = client.get("/api/site/library-stats")
     assert resp.status_code == 200
     assert resp.json() == EXPECTED
