@@ -757,12 +757,12 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.checked-at { font-size: 12px; color: var(--au-text-4); }
+.checked-at { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-4); }
 
 .health-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 /* 脚注只放一行（悬停看全文），四块高度对齐 */
 .health-tile :deep(.au-stat__hint) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.health-tile :deep(.au-stat__value) { font-size: 1.25rem; }
+.health-tile :deep(.au-stat__value) { font-size: var(--uhd-fs-title); }
 
 .runtime-grid {
   display: grid;
@@ -780,10 +780,10 @@ onUnmounted(() => {
   border-radius: var(--au-r-md);
   background: var(--au-surface-2);
 }
-.runtime-grid dt { font-size: 12px; color: var(--au-text-3); }
+.runtime-grid dt { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
 .runtime-grid dd {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--uhd-fs-title);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--au-text);
@@ -799,13 +799,13 @@ onUnmounted(() => {
   gap: 10px;
   padding: 10px 0;
   border-bottom: 1px solid var(--au-border);
-  font-size: 13px;
+  font-size: var(--uhd-fs-aux);
   color: var(--au-text-2);
 }
 .status-row:last-child { border-bottom: 0; }
 .status-main { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status-row .muted { flex-shrink: 0; }
-.muted { color: var(--au-text-3); font-size: 12px; }
+.muted { color: var(--au-text-3); font-size: var(--uhd-fs-aux-sm); }
 
 .backup-form { display: flex; flex-direction: column; gap: 12px; }
 .backup-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -855,7 +855,7 @@ onUnmounted(() => {
 .lamp-dot.is-down { background: var(--au-danger); }
 
 .lamp-overall-text {
-  font-size: 14px;
+  font-size: var(--uhd-fs-caption);
   font-weight: 600;
   color: var(--au-text);
 }
@@ -891,14 +891,14 @@ onUnmounted(() => {
 }
 
 .lamp-name {
-  font-size: 14px;
+  font-size: var(--uhd-fs-caption);
   font-weight: 600;
   color: var(--au-text);
 }
 
 .lamp-status {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--uhd-fs-micro);
   font-weight: 600;
   padding: 2px 10px;
   border-radius: var(--au-r-full);
@@ -919,7 +919,7 @@ onUnmounted(() => {
 
 .lamp-msg {
   margin: 0 0 10px;
-  font-size: 13px;
+  font-size: var(--uhd-fs-aux);
   line-height: 1.5;
   color: var(--au-text-2);
 }
@@ -939,13 +939,13 @@ onUnmounted(() => {
 }
 
 .lamp-metric-label {
-  font-size: 11px;
+  font-size: var(--uhd-fs-micro);
   color: var(--au-text-3);
   letter-spacing: 0.04em;
 }
 
 .lamp-metric-value {
-  font-size: 1.15rem;
+  font-size: var(--uhd-fs-title);
   font-weight: 700;
   color: var(--au-text);
   font-variant-numeric: tabular-nums;
@@ -962,7 +962,7 @@ onUnmounted(() => {
 }
 
 .lamp-link {
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   padding: 4px 12px;
   border: 1px solid var(--au-border);
   border-radius: var(--au-r-full);
@@ -986,7 +986,7 @@ onUnmounted(() => {
   margin-top: 10px;
   padding-top: 8px;
   border-top: 1px dashed var(--au-border);
-  font-size: 11px;
+  font-size: var(--uhd-fs-micro);
   color: var(--au-text-4);
 }
 
@@ -1019,13 +1019,13 @@ onUnmounted(() => {
 .alert-card { margin-top: 16px; }
 .alert-block { margin-bottom: 20px; }
 .alert-block:last-child { margin-bottom: 0; }
-.alert-block-title { font-size: 14px; font-weight: 600; color: var(--au-text); margin-bottom: 10px; }
+.alert-block-title { font-size: var(--uhd-fs-caption); font-weight: 600; color: var(--au-text); margin-bottom: 10px; }
 /* 高级设置折叠：与 MemberCodes 的 gen-advanced 同口径（默认收起） */
 .alert-advanced { margin-top: 2px; }
-.alert-advanced .el-collapse-item__header { font-size: var(--font-size-xs, 12px); color: var(--au-text-3); border-bottom: none; }
+.alert-advanced .el-collapse-item__header { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); border-bottom: none; }
 .alert-settings-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
 .alert-field { display: inline-flex; align-items: center; gap: 6px; }
-.alert-secret-hint { font-size: 12px; margin-bottom: 10px; }
+.alert-secret-hint { font-size: var(--uhd-fs-aux-sm); margin-bottom: 10px; }
 .alert-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .w-seconds { width: 110px; }
 .w-webhook { max-width: 320px; }
@@ -1037,7 +1037,7 @@ onUnmounted(() => {
 .alert-sub { display: flex; align-items: center; gap: 10px; }
 .sev-tag {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--uhd-fs-micro);
   padding: 2px 8px;
   border-radius: var(--au-r-md);
   border: 1px solid var(--au-border);
@@ -1046,8 +1046,8 @@ onUnmounted(() => {
 .sev-tag--info { color: var(--au-text-2); }
 .sev-tag--warning { color: var(--au-primary); border-color: color-mix(in srgb, var(--au-primary) 40%, transparent); }
 .sev-tag--critical { color: var(--au-danger); border-color: color-mix(in srgb, var(--au-danger) 40%, transparent); }
-.send-fail { font-size: 11px; color: var(--au-danger); }
-.hint { font-size: 12px; color: var(--au-text-2); }
+.send-fail { font-size: var(--uhd-fs-micro); color: var(--au-danger); }
+.hint { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-2); }
 
 @media (max-width: 640px) {
   .alert-settings-row { flex-direction: column; align-items: stretch; }

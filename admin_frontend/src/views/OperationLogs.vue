@@ -405,7 +405,7 @@ function detailText(log: AdminLogRow): string {
   padding: 0 20px 12px;
 }
 
-.quick-label { font-size: 12px; color: var(--au-text-4); margin-right: 2px; }
+.quick-label { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-4); margin-right: 2px; }
 
 .quick-chip {
   padding: 4px 12px;
@@ -413,7 +413,7 @@ function detailText(log: AdminLogRow): string {
   border: 1px solid var(--au-border);
   background: transparent;
   color: var(--au-text-2);
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   cursor: pointer;
   transition: color var(--au-fast) var(--au-ease), border-color var(--au-fast) var(--au-ease),
     background var(--au-fast) var(--au-ease);
@@ -430,7 +430,7 @@ function detailText(log: AdminLogRow): string {
 }
 
 .log-detail {
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   font-family: var(--font-mono);
   color: var(--au-text-2);
   word-break: break-all;
@@ -446,20 +446,20 @@ function detailText(log: AdminLogRow): string {
 }
 
 .error-hint-title {
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   font-weight: 600;
   color: var(--au-primary);
   margin-bottom: 2px;
 }
 
 .error-hint-what {
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-2);
   line-height: 1.5;
 }
 
 .error-hint-steps {
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-4);
   line-height: 1.5;
   margin: 2px 0 0;

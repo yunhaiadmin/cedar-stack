@@ -32,7 +32,7 @@
   justify-content: center;
   gap: 8px;
   color: var(--au-text-3);
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
 }
 
 /* 压图叠加层：只在封面顶部压一道遮罩，保证徽标在任意图片下可读。
@@ -135,7 +135,7 @@
   border-bottom: 1px solid var(--au-border);
   color: var(--au-text);
   font-family: var(--au-font-serif);
-  font-size: var(--font-size-sm);
+  font-size: var(--uhd-fs-aux);
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -148,13 +148,13 @@
 
 .settings-paths > span {
   color: var(--au-text-3);
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
 }
 
 .settings-paths p {
   margin: 5px 0 0;
   color: var(--au-text-2);
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   line-height: 1.6;
   word-break: break-all;
 }
@@ -162,14 +162,14 @@
 /* 表单里每一项下面那句人话说明（与 Servers.vue 的 .field-help 同一套值） */
 .field-help {
   color: var(--au-text-3);
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   margin: 5px 0 0;
   line-height: 1.6;
 }
 
 /* 卡片上的一句话策略摘要：一行、溢出省略，悬停出全文 */
 .lib-summary {
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   font-family: var(--font-mono);
   color: var(--au-text-3);
   padding: 5px 8px;
@@ -224,7 +224,7 @@
   flex-wrap: wrap;
 }
 .lib-form-dirty {
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-3);
 }
 .lib-form-foot-btns {
@@ -281,15 +281,15 @@
   padding-bottom: 6px;
 }
 .lib-opt-popper .opt-label {
-  font-size: var(--font-size-sm);
+  font-size: var(--uhd-fs-aux);
   color: var(--au-text);
 }
 .lib-opt-popper .opt-rec {
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-3);
 }
 .lib-opt-popper .opt-hint {
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-3);
   white-space: normal;
   line-height: 1.5;
@@ -298,7 +298,7 @@
 /* 监听降级提示：橙色实心会像报错，这里只说“已降级为定时扫描”，不是故障 */
 .field-warn {
   color: var(--au-warning);
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   margin: 4px 0 0;
 }
 
@@ -315,7 +315,7 @@
 }
 /* 注意：这是全局样式表，:deep() 在这里无效（之前写的是 :deep，规则整条被丢弃） */
 .lpm-advanced .el-collapse-item__header {
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-3);
   border-bottom: none;
 }
@@ -355,7 +355,7 @@
   padding: 16px;
   text-align: center;
   color: var(--au-text-3);
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   line-height: 1.6;
 }
 
