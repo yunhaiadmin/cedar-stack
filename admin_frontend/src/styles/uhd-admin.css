@@ -174,10 +174,14 @@ html[data-theme='light'] {
 }
 
 /* ==================== 管理后台外壳模具（说明书 2.9） ==================== */
+/* 批 1 · 壳（2026-11-18，后台重设计）：本节字号/圆角凡有 --uhd-* 同值令牌的
+   一律引令牌（契约脚本规则 6 兜底）；没有同值令牌的保留字面量并逐处注明。
+   44px 导航项高、20px 顶栏标题是说明书 2.9 的模具基线（--uhd-fs-* 梯队里
+   没有 20px 档、--uhd-row-h 52px 是列表行高不是导航项高），不在本批收口。 */
 
 /* 品牌字：无衬线 16px 粗，不再大写拉字距 */
 .admin-layout .sidebar .brand-name {
-  font-size: 16px;
+  font-size: var(--uhd-fs-lead);
   font-weight: 800;
   letter-spacing: 0.02em;
   text-transform: none;
@@ -185,7 +189,7 @@ html[data-theme='light'] {
 
 /* 分组眉题：13px 灰 */
 .admin-layout .nav .nav-eyebrow {
-  font-size: 13px;
+  font-size: var(--uhd-fs-aux);
   font-weight: 600;
   letter-spacing: 0.08em;
   color: var(--au-text-3);
@@ -195,12 +199,14 @@ html[data-theme='light'] {
 .admin-layout .nav .nav-item {
   min-height: 44px;
   padding: 8px 12px;
-  border-radius: 12px;
-  font-size: 15px;
+  border-radius: var(--uhd-radius-navitem);
+  font-size: var(--uhd-fs-body);
 }
 .admin-layout .nav .nav-item .nav-icon { color: var(--au-text-3); }
 
-/* 激活态：白底胶囊＋边框＋轻阴影（浅色）；深色档同配方走抬升面 */
+/* 激活态：白底胶囊＋边框＋轻阴影（浅色）；深色档同配方走抬升面。
+   阴影保留字面量：--uhd-shadow-* 里没有同值档（最接近的 --uhd-shadow-knob
+   是 rgba(0,0,0,0.35)，alpha 不同，换了会改两档观感），不在本批动。 */
 .admin-layout .nav .nav-item.active {
   background: var(--au-surface);
   border-color: var(--au-border);
@@ -208,7 +214,7 @@ html[data-theme='light'] {
 }
 .admin-layout .nav .nav-item.active .nav-icon { color: var(--au-primary); }
 
-/* 顶栏标题：无衬线 20px 超粗（壳标题，不是内容区 H1） */
+/* 顶栏标题：无衬线 20px 超粗（壳标题，不是内容区 H1）；20px 无 --uhd-fs 同档，留字面量 */
 .admin-layout .topbar .topbar-title h1 {
   font-size: 20px;
   font-weight: 800;
