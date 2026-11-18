@@ -28,6 +28,7 @@ teams_router = APIRouter(prefix="/api/user/teams", tags=["团队"])
 _STATUS_BY_CODE = {
     "forbidden_sub_account": 403,
     "team_purchase_disabled": 403,
+    "premium_line_paused": 403,
     "wallet_disabled": 403,
     "limit_reached": 403,
     "member_not_found": 404,
