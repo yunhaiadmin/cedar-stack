@@ -4,7 +4,7 @@ import { get, post, put, del } from '@/utils/request'
 // ==================== 类型 ====================
 
 export interface EconomyStats {
-  orders: { pending: number; revenue: number }
+  orders: { pending: number; revenue: number; today_paid_count: number }
   invitations: number
 }
 

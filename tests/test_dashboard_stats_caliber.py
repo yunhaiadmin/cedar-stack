@@ -13,6 +13,8 @@
 - overview.emby.today_new_items == trend series 末日 new_items ==
   当日小时桶 new_items 求和，三处必须对得上（对账断言）。
 - 小时桶：最近 24 个上海整点桶（含当前未走完的整点），缺桶补零。
+- economy_stats.orders.today_paid_count：今日已支付订单笔数，与趋势
+  今日营收同一 paid_at 上海日界口径（昨日/明日/非 paid 一律不计）。
 
 时钟冻结在上海 2026-10-18 14:30，与 r43 趋势测试同手法
 （monkeypatch 目标模块的 datetime 类）。
@@ -183,3 +185,32 @@ def test_hourly_reconciles_with_daily_and_overview(db, frozen):
                            is_active=True)
     out = admin_mod.get_stats_overview(admin, db)
     assert out["emby"]["today_new_items"] == hourly_today_items
+
+
+def _mk_order(db, paid_sh, *, status="paid", amount="9.99"):
+    o = models.SubscriptionOrder(
+        order_id=uuid.uuid4().hex, user_id=1, plan_id=1,
+        amount=amount, status=status,
+        paid_at=_utc(paid_sh) if paid_sh is not None else None)
+    db.add(o)
+    db.commit()
+    return o
+
+
+def test_economy_stats_today_paid_count(db, frozen):
+    """今日订单笔数与趋势今日营收同口径：paid_at 落上海自然日内的 paid 单。"""
+    _mk_order(db, _sh(18, 0, 0))            # 今日 00:00 整（左闭边界，计）
+    _mk_order(db, _sh(18, 9, 15))           # 今日（计）
+    _mk_order(db, _sh(17, 23, 59, 59))      # 昨日 23:59:59（不计）
+    _mk_order(db, _sh(17, 10, 0))           # 昨日（不计）
+    _mk_order(db, _sh(19, 0, 0))            # 明日 00:00 整（右开边界，不计）
+    _mk_order(db, _sh(18, 10, 0), status="pending")   # 待支付：不计今日已支付
+    _mk_order(db, _sh(18, 11, 0), status="refunded")  # 已退款：不计
+    out = admin_economy.economy_stats(current_admin=None, db=db)
+    assert out["orders"]["today_paid_count"] == 2, out["orders"]
+    assert out["orders"]["pending"] == 1
+    # 既有字段语义不动：revenue 仍是全部 paid 订单累计金额（5 笔 × 9.99）
+    assert out["orders"]["revenue"] == 49.95
+    # 与趋势今日营收对账：同批 paid 单按同一日界切分，今日营收 = 2 × 9.99
+    resp = admin_economy.get_stats_trend(days=1, current_admin=None, db=db)
+    assert resp["series"][-1]["revenue"] == 19.98

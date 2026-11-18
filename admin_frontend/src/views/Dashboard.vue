@@ -33,13 +33,15 @@
  * pending 与额度口的转存计数。
  *
  * v4（2026-11-19 用户亲点：仪表盘只展示运营数据）：5 区再精简为 4 块——
- * 今日经营（今日营收 / 今日新增用户 / 今日播放）/ 用户与订阅（用户总数 /
+ * 今日经营（今日营收 / 今日订单 / 今日新增用户 / 今日播放）/ 用户与订阅（用户总数 /
  * 有效订阅数）/ 待办条 / 趋势。运维数据全部拿掉：站点健康、队列积压、
  * 扫描状态、存储健康、起播近况、起播统计表六处删除，随之无人消费的
  * 请求一并摘除（面板健康 / 起播统计 / 额度口，以及回退路径里的媒体库
  * 列表）。今日营收与今日新增用户取趋势序列末点（与趋势图同源同口径：
  * 营收 = 当日已支付订阅订单金额、按 paid_at 上海日界），今日播放沿用
- * 播放统计的 today 口径；有效订阅数取自聚合的 realms part 汇总
+ * 播放统计的 today 口径；今日订单 = economy_stats 的 today_paid_count
+ * （今日已支付订单笔数，与今日营收同一 paid_at 上海日界口径，后端计数）；
+ * 有效订阅数取自聚合的 realms part 汇总
  * （summary.active_subscriptions，与服管理页同口径）。
  */
 import { computed, onMounted, ref, watch } from 'vue'
@@ -47,7 +49,7 @@ import { RouterLink } from 'vue-router'
 import {
   MessageSquareDashed, Ticket, Users, Wallet,
   ArrowRight, TrendingUp,
-  Activity, AlertTriangle, Crown, Play, UserPlus,
+  Activity, AlertTriangle, Crown, Play, Receipt, UserPlus,
 } from 'lucide-vue-next'
 import { PageHeader, SectionCard, StatTile } from '@/components/ui'
 import {
@@ -289,10 +291,12 @@ function fmtMoney(v: number): string {
 
       <!--
         今日经营（v4 只留运营数据）：打开仪表盘先回答今天的生意怎么样——
-        收了多少钱、来了多少新用户、播了多少次。
-        营收/新增取趋势序列末点（与下方趋势图同源），播放沿用播放统计口径。
+        收了多少钱、下了多少单、来了多少新用户、播了多少次。
+        营收/新增取趋势序列末点（与下方趋势图同源），播放沿用播放统计口径；
+        今日订单取 economy_stats 的今日已支付笔数（与营收同一日界口径）。
+        订单页只有状态筛选、无日期筛选，今日订单卡链订单页不带参。
       -->
-      <section class="glance-grid cols-3" aria-label="今日经营">
+      <section class="glance-grid" aria-label="今日经营">
         <RouterLink to="/orders?status=paid" class="glance-card">
           <div class="glance-head">
             <Wallet :size="15" />
@@ -300,6 +304,14 @@ function fmtMoney(v: number): string {
           </div>
           <div class="glance-value">{{ todayRevenue != null ? fmtMoney(todayRevenue) : '—' }}</div>
           <div class="glance-hint">累计营收 {{ fmtMoney(economy?.orders.revenue ?? 0) }}</div>
+        </RouterLink>
+        <RouterLink to="/orders" class="glance-card">
+          <div class="glance-head">
+            <Receipt :size="15" />
+            <span>今日订单</span>
+          </div>
+          <div class="glance-value">{{ economy?.orders.today_paid_count ?? '—' }}</div>
+          <div class="glance-hint">待支付订单 {{ economy?.orders.pending ?? 0 }} 笔</div>
         </RouterLink>
         <RouterLink to="/users" class="glance-card">
           <div class="glance-head">
