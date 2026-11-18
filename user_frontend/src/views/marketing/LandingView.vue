@@ -586,34 +586,27 @@ const year = new Date().getFullYear()
 
     <!-- ① Hero -->
     <header class="hero">
-      <!-- 移动端全幅背景（L-02 棱镜光束图，2026-11-15 换新图：深黑星空底、
-           棱镜居左下、白色光束自左缘入射、光谱扇斜射右上、左上大片黑场留给
-           文案）；图与脉冲叠层同装 .hero-bg-canvas（画布与图同比例 2048:1152、
-           高度撑满首屏，叠层恒对位）；仅 ≤900px 显示，桌面走 hero-visual 同图 -->
+      <!-- 移动端全幅背景（L-02 棱镜图，2026-11-18 按友站构图换图：黑底星空、
+           棱镜细线轮廓居左下、彩虹光束贴底向右下展开、无入射光束、无水面，
+           左上大片黑场留给文案）；图与脉冲叠层同装 .hero-bg-canvas（画布与图
+           同比例 2048:1152、高度撑满首屏，叠层恒对位）；仅 ≤900px 显示，
+           桌面走 hero-visual 同图 -->
       <div class="hero-bg" :class="{ 'is-ready': heroImgReady }" aria-hidden="true">
         <div class="hero-bg-canvas">
           <img class="hero-bg-img" src="/images/hero-prism-beam.webp" alt="" width="2048" height="1152" fetchpriority="high" @load="onHeroImgLoad" />
           <div class="hp">
-            <span class="hp-beamglow" />
-            <span class="hp-dot" />
-            <span class="hp-flash hp-flash--entry" />
             <span class="hp-flash hp-flash--prism" />
-            <span class="hp-refl" />
           </div>
         </div>
       </div>
-      <!-- 桌面棱镜主视觉：与移动端同一张棱镜光束图（2048×1152）。帧与图同
+      <!-- 桌面棱镜主视觉：与移动端同一张棱镜图（2048×1152）。帧与图同
            比例、高度撑满首屏，水平锚点把棱镜压到左下（几何见 .hero-visual-frame）。
            移动端不显示，走 .hero-bg。不再另叠彩虹渐变。 -->
       <div class="hero-visual" :class="{ 'is-ready': heroImgReady }" aria-hidden="true">
         <div class="hero-visual-frame">
           <img class="hero-visual-img" src="/images/hero-prism-beam.webp" alt="" width="2048" height="1152" @load="onHeroImgLoad" />
           <div class="hp">
-            <span class="hp-beamglow" />
-            <span class="hp-dot" />
-            <span class="hp-flash hp-flash--entry" />
             <span class="hp-flash hp-flash--prism" />
-            <span class="hp-refl" />
           </div>
         </div>
       </div>
@@ -1006,21 +999,18 @@ const year = new Date().getFullYear()
 }
 .hero-bg-canvas {
   position: absolute;
-  /* 画布与新图同比例（2048:1152）、高度撑满首屏：图宽＝177.78cqh 恒覆盖屏宽。
-     水平锚点：把棱镜中心（图 x≈21.3%）压到屏左 78px 处——棱镜落在左下、
-     入射光束自左缘入画、光谱扇斜贯右上、左上黑场留给文案。
-     脉冲几何覆盖值（对新图 2048×1152 像素实测，图内 % 坐标）：
-     光束线 y≈81、入射星芒 (19.5, 79.5)、棱镜中心 (21.3, 76.5)、倒影心 y≈90.5 */
+  /* 画布与图同比例（2048:1152）、高度撑满首屏：图宽＝177.78cqh 恒覆盖屏宽。
+     水平锚点：把棱镜中心（图 x≈9.7%）压到屏左 78px 处——棱镜落在左下、
+     彩虹光束贴底向右下展开、左上黑场留给文案。
+     脉冲几何覆盖值（对现行图 2048×1152 视觉定位实测，图内 % 坐标）：
+     棱镜轮廓 bbox x 6.2–13.2、y 85.6–96.5，中心 (9.7, 92.8) */
   top: 0;
   left: 0;
   height: 100%;
   aspect-ratio: 2048 / 1152;
-  margin-left: calc(78px - 37.8cqh);
-  --hp-beam-y: 81%;
-  --hp-entry-x: 19.5%;
-  --hp-prism-x: 21.3%;
-  --hp-prism-y: 76.5%;
-  --hp-refl-y: 90.5%;
+  margin-left: calc(78px - 17.2cqh);
+  --hp-prism-x: 9.7%;
+  --hp-prism-y: 92.8%;
 }
 .hero-bg-img {
   display: block;
@@ -1049,7 +1039,7 @@ const year = new Date().getFullYear()
   background: linear-gradient(0deg, rgba(1, 1, 4, 0.86), rgba(1, 1, 4, 0.55) 28%, transparent 56%);
 }
 /* 桌面棱镜：与移动端同一张图，帧与图同比例（2048:1152）撑满首屏，
-   脉冲百分比跟图走；定位把棱镜压到左下、光谱扇斜贯右上，左上黑部留给文案。只裁装饰层。 */
+   脉冲百分比跟图走；定位把棱镜压到左下、彩虹贴底向右下展开，左上黑部留给文案。只裁装饰层。 */
 .hero-visual {
   position: absolute;
   inset: 0;
@@ -1061,19 +1051,16 @@ const year = new Date().getFullYear()
   position: absolute;
   /* 不用 transform 定位：全站减动效会把 transform 清掉，构图不能靠它。
      帧与图同比例（2048:1152）、高度撑满首屏（超宽屏 min-width 兜底、底对齐，
-     图不拉伸不变形）；水平锚点：图比容器宽时把棱镜中心（图 x≈21.3%）压到
+     图不拉伸不变形）；水平锚点：图比容器宽时把棱镜中心（图 x≈9.7%）压到
      容器宽 12% 处，图恰好/不足时贴左/右对齐兜底不露黑。脉冲坐标与移动画布
      同一组图内 % 值（同一张图、帧图同比例恒对位）。 */
   bottom: 0;
   height: 100%;
   min-width: 100%;
   aspect-ratio: 2048 / 1152;
-  left: max(min(0px, calc(100cqw - 177.78cqh)), min(0px, calc(12cqw - 37.3cqh)));
-  --hp-beam-y: 81%;
-  --hp-entry-x: 19.5%;
-  --hp-prism-x: 21.3%;
-  --hp-prism-y: 76.5%;
-  --hp-refl-y: 90.5%;
+  left: max(min(0px, calc(100cqw - 177.78cqh)), min(0px, calc(12cqw - 17.2cqh)));
+  --hp-prism-x: 9.7%;
+  --hp-prism-y: 92.8%;
 }
 .hero-visual-img {
   display: block;
@@ -1095,59 +1082,26 @@ const year = new Date().getFullYear()
 }
 
 /* ---------- Hero 棱镜脉冲（L-02 唯一动效，2026-11-14 友站实测） ----------
-   一轮 5s：亮点沿入射光束自左向右跑 1.3s（0–26%）→ 抵达入射点时入射
-   星芒大亮、棱镜本体闪亮、地板倒影同步微亮 → 约 2.5s（50%）衰尽，
-   后半程全静默。光谱扇／出射星芒／行星光晕／画面本体零动画（实测
+   一轮 5s：棱镜本体在约 1.6s（32%）闪亮、约 2.6s（52%）衰尽，后半程
+   全静默。2026-11-18 换友站构图图后图内已无入射光束与水面，为旧图
+   入射光束编排的亮点／光束辉光／入射星芒／地板倒影四叠层一并摘除，
+   只留棱镜闪。光谱扇／出射星芒／行星光晕／画面本体零动画（实测
    90s+ 恒定，不加）。周期 5s 字面值照本文件环境动画先例（uhd-marquee
    46s linear、pin-breathe 26s）；相位 % 由实测秒数换算；几何坐标走
-   --hp-* 令牌（uhd-tokens.css §1.7 是旧图兜底值，现行几何在
-   .hero-visual-frame／.hero-bg-canvas 内按新图实测覆盖，两端同值）。 */
+   --hp-* 令牌（uhd-tokens.css §1.7 同值兜底，现行几何在
+   .hero-visual-frame／.hero-bg-canvas 内按现行图实测覆盖，两端同值）。 */
 .hp {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
-.hp-dot,
-.hp-beamglow,
-.hp-flash,
-.hp-refl {
+.hp-flash {
   position: absolute;
   opacity: 0;
   pointer-events: none;
-}
-.hp-beamglow {
-  left: 0;
-  top: var(--hp-beam-y);
-  width: var(--hp-entry-x);
-  height: 4%;
-  transform: translateY(-50%);
-  background: linear-gradient(90deg, transparent 30%, rgba(255, 255, 255, 0.75));
-  filter: blur(3px);
-  animation: hp-beamglow 5s linear infinite;
-}
-.hp-dot {
-  left: 0;
-  top: var(--hp-beam-y);
-  width: 15%;
-  height: 8%;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.95), rgba(190, 215, 255, 0.4) 48%, transparent 72%);
-  filter: blur(1px);
-  animation: hp-travel 5s linear infinite;
-}
-.hp-flash {
   transform: translate(-50%, -50%);
   border-radius: 50%;
   mix-blend-mode: screen;
-}
-.hp-flash--entry {
-  left: var(--hp-entry-x);
-  top: var(--hp-beam-y);
-  width: 24%;
-  height: 24%;
-  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.95), rgba(200, 220, 255, 0.35) 46%, transparent 70%);
-  animation: hp-flash-entry 5s linear infinite;
 }
 .hp-flash--prism {
   left: var(--hp-prism-x);
@@ -1157,42 +1111,10 @@ const year = new Date().getFullYear()
   background: radial-gradient(closest-side, rgba(235, 242, 255, 0.55), rgba(170, 200, 255, 0.18) 52%, transparent 72%);
   animation: hp-flash-prism 5s linear infinite;
 }
-.hp-refl {
-  left: var(--hp-prism-x);
-  top: var(--hp-refl-y);
-  width: 46%;
-  height: 20%;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(220, 232, 255, 0.4), transparent 70%);
-  filter: blur(4px);
-  animation: hp-refl 5s linear infinite;
-}
-@keyframes hp-travel {
-  0% { left: -6%; opacity: 0; }
-  5% { opacity: 1; }
-  26% { left: var(--hp-entry-x); opacity: 1; }
-  31%, 100% { left: var(--hp-entry-x); opacity: 0; }
-}
-@keyframes hp-beamglow {
-  0%, 8% { opacity: 0; }
-  26% { opacity: 0.5; }
-  50%, 100% { opacity: 0; }
-}
-@keyframes hp-flash-entry {
-  0%, 23% { opacity: 0; transform: translate(-50%, -50%) scale(0.72); }
-  30% { opacity: 0.95; transform: translate(-50%, -50%) scale(1); }
-  50%, 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.15); }
-}
 @keyframes hp-flash-prism {
   0%, 24% { opacity: 0; transform: translate(-50%, -50%) scale(0.92); }
   32% { opacity: 0.6; transform: translate(-50%, -50%) scale(1); }
   52%, 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.04); }
-}
-@keyframes hp-refl {
-  0%, 25% { opacity: 0; }
-  34% { opacity: 0.4; }
-  54%, 100% { opacity: 0; }
 }
 .hero-inner {
   position: relative;
@@ -2412,10 +2334,7 @@ const year = new Date().getFullYear()
 @media (prefers-reduced-motion: reduce) {
   .hero-el { animation: none; }
   /* 棱镜脉冲（L-02）：减动效时全关，只留静态照片图 */
-  .hp-dot,
-  .hp-beamglow,
-  .hp-flash,
-  .hp-refl { animation: none; }
+  .hp-flash { animation: none; }
   .marquee-track { animation: none; }
   .pin-bands { animation: none; }
   .rv,
