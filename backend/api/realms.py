@@ -60,6 +60,25 @@ class RealmUpdatePayload(BaseModel):
     download_policy: Optional[str] = Field(default=None, max_length=10)
 
 
+class RealmLinePayload(BaseModel):
+    # 名字留空 = 按形态自动给（首条主线路、其后副线路）
+    name: str = Field(default="", max_length=80)
+    url: str = Field(..., min_length=1, max_length=500)
+    # 线路流量配额（字节）：0 = 不限额；不传 = 0
+    quota_bytes: Optional[int] = Field(default=None, ge=0)
+    sort_order: Optional[int] = None
+    is_active: bool = True
+
+
+class RealmLineUpdatePayload(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=80)
+    url: Optional[str] = Field(default=None, max_length=500)
+    # 线路流量配额（字节）：0 = 不限额；不传 = 不改
+    quota_bytes: Optional[int] = Field(default=None, ge=0)
+    sort_order: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
 def _summary(
     db: Session,
     rows: Optional[list] = None,
@@ -277,6 +296,135 @@ def update_realm(
             "access_mode": realms.normalize_access_mode(realm.access_mode)})
     db.commit()
     return {"success": True, "realm": realms.serialize(db, realm), "summary": _summary(db)}
+
+
+# ==================== 线路（服下的播放线路，配额按线路计） ====================
+
+def _realm_or_404(db: Session, realm_id: int) -> models.ServerRealm:
+    realm = realms.get_realm(db, realm_id)
+    if not realm:
+        raise HTTPException(404, "服不存在")
+    return realm
+
+
+def _line_or_404(db: Session, realm: models.ServerRealm, line_id: int):
+    line = realms.get_line(db, line_id)
+    if not line or line.realm_id != realm.id:
+        raise HTTPException(404, "线路不存在")
+    return line
+
+
+def _line_view(db: Session, realm: models.ServerRealm, line) -> dict:
+    from backend import line_quota
+
+    return line_quota.line_view(
+        db, line, is_primary=(line.id == realms.primary_line_id(db, realm.id)))
+
+
+@router.get("/{realm_id}/lines")
+def list_realm_lines(
+    realm_id: int,
+    _: models.WebUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """某个服（大类）的全部线路（含配额/已用/剩余/主副标记）。"""
+    realm = _realm_or_404(db, realm_id)
+    return {"realm_id": realm.id, "realm_name": realm.name,
+            "lines": realms.serialize_lines(db, realm)}
+
+
+@router.post("/{realm_id}/lines")
+def create_realm_line(
+    realm_id: int,
+    payload: RealmLinePayload,
+    admin: models.WebUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    realm = _realm_or_404(db, realm_id)
+    try:
+        line = realms.create_line(
+            db, realm, name=payload.name, url=payload.url,
+            quota_bytes=payload.quota_bytes, sort_order=payload.sort_order,
+            is_active=payload.is_active)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    _audit(db, admin, "create_realm_line", "realm_line", line.id,
+           {"realm_id": realm.id, "name": line.name, "url": line.url,
+            "quota_bytes": int(line.quota_bytes or 0)})
+    db.commit()
+    return {"success": True, "line": _line_view(db, realm, line),
+            "realm": realms.serialize(db, realm), "summary": _summary(db)}
+
+
+@router.put("/{realm_id}/lines/{line_id}")
+def update_realm_line(
+    realm_id: int,
+    line_id: int,
+    payload: RealmLineUpdatePayload,
+    admin: models.WebUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    realm = _realm_or_404(db, realm_id)
+    line = _line_or_404(db, realm, line_id)
+    try:
+        line = realms.update_line(
+            db, line, name=payload.name, url=payload.url,
+            quota_bytes=payload.quota_bytes, sort_order=payload.sort_order,
+            is_active=payload.is_active)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    _audit(db, admin, "update_realm_line", "realm_line", line.id,
+           {"realm_id": realm.id, "name": line.name, "url": line.url,
+            "quota_bytes": int(line.quota_bytes or 0),
+            "is_active": bool(line.is_active)})
+    db.commit()
+    return {"success": True, "line": _line_view(db, realm, line),
+            "realm": realms.serialize(db, realm), "summary": _summary(db)}
+
+
+@router.delete("/{realm_id}/lines/{line_id}")
+def delete_realm_line(
+    realm_id: int,
+    line_id: int,
+    admin: models.WebUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    realm = _realm_or_404(db, realm_id)
+    line = _line_or_404(db, realm, line_id)
+    facts = {"realm_id": realm.id, "name": line.name, "url": line.url}
+    realms.delete_line(db, line)
+    _audit(db, admin, "delete_realm_line", "realm_line", line_id, facts)
+    db.commit()
+    return {"success": True, "realm": realms.serialize(db, realm),
+            "summary": _summary(db)}
+
+
+@router.post("/{realm_id}/lines/{line_id}/reset-traffic")
+def reset_realm_line_traffic(
+    realm_id: int,
+    line_id: int,
+    admin: models.WebUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """重置一条线路的流量用量：统计起点拨到现在，重新计配额。
+
+    只动这一条线，同服其它线路不受影响。历史日账不删（对账
+    可查），只是配额判定从新起点重新求和
+    （backend/line_quota.reset_period）。
+    """
+    from backend import line_quota
+
+    realm = _realm_or_404(db, realm_id)
+    line = _line_or_404(db, realm, line_id)
+    before = line_quota.quota_view(db, line)
+    line = line_quota.reset_period(db, line)
+    _audit(db, admin, "reset_realm_line_traffic", "realm_line", line.id,
+           {"realm_id": realm.id, "name": line.name,
+            "used_bytes_before": before["used_bytes"],
+            "quota_bytes": before["quota_bytes"]})
+    db.commit()
+    return {"success": True, "line": _line_view(db, realm, line),
+            "realm": realms.serialize(db, realm), "summary": _summary(db)}
 
 
 @router.post("/{realm_id}/activate")

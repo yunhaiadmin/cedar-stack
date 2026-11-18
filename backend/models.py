@@ -131,6 +131,49 @@ class ServerRealm(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
+class ServerRealmLine(Base):
+    """服（大类）下的一条播放线路（2026-11-19 用户纠正粒度后定版）。
+
+    两层形态（照友站）：大类 = 服（``ServerRealm``，如「国际线路」），
+    每个大类下面挂多条线路（如一条「主线路」＋一条「副线路」）。用户
+    在客户端里填的入口地址就是线路的 ``url``；同一服的线路只是不同
+    入口（CDN / 主站域名 / 源站域名…），内容与订阅同属这个服。
+
+    流量配额、用量、重置都按**线路**计（不是按服）：``quota_bytes``
+    0 = 不限额；用量按线路按日汇总在 ``line_traffic_usage_daily``
+    （计量旁路，见 emby_server.traffic_meter——按请求实际进来的
+    入口 host 归属到 url 的 host 相同的线路）。已用 = 日账总和 −
+    ``usage_offset_bytes``：管理端「重置用量」时把当刻总和快照进
+    offset、``period_started_at`` 拨到现在（仅展示「自何时起计」）
+    ——用量按日落账、拆不开同一天内的重置前后，靠 offset 抵扣才能
+    让重置当刻已用精确归零；历史日行不删（对账可查）。
+
+    主/副之分不设单独标记：``sort_order`` 最小（同值比 id）的启用
+    线路即主线路，其余为副线路（展示与默认选中口径统一在
+    backend/line_quota）。不加外键（照 TrafficUsageDaily 先例）：
+    删服时由 realms.delete_realm 一并清线路行。
+    """
+
+    __tablename__ = 'server_realm_lines'
+
+    __table_args__ = (
+        Index('idx_realm_line_realm', 'realm_id'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    realm_id = Column(Integer, nullable=False)
+    name = Column(String(80), default='')
+    # 线路入口地址（完整 URL）；计量归属键 = 从它解析出的 host
+    url = Column(String(500), nullable=False, default='')
+    quota_bytes = Column(BigInteger, nullable=False, default=0, server_default="0")
+    usage_offset_bytes = Column(BigInteger, nullable=False, default=0, server_default="0")
+    period_started_at = Column(DateTime, nullable=True, default=None)
+    is_active = Column(Boolean, default=True)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
 class RemoteServer(Base):
     """已添加的服务器（面板可以加多台，每类里挑一台作为「当前使用」）
 

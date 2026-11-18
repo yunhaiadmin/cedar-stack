@@ -254,7 +254,8 @@ def serve_file(path: str, request: Request, media_type: str = "video/mp4",
                 try:
                     from backend.emby_server import traffic_meter
                     traffic_meter.note_bytes(
-                        total, "local", user_id=_traffic_uid)
+                        total, "local", user_id=_traffic_uid,
+                        entry_host=_traffic_host)
                 except Exception:  # noqa: BLE001 — 计量不拖垮播放
                     pass
 
@@ -300,8 +301,10 @@ def serve_file(path: str, request: Request, media_type: str = "video/mp4",
     try:
         from backend.emby_server import traffic_meter as _traffic_meter
         _traffic_uid = _traffic_meter.current_user_id()
+        _traffic_host = _traffic_meter.current_entry_host()
     except Exception:  # noqa: BLE001 — 计量不拖垮播放
         _traffic_uid = None
+        _traffic_host = None
     return StreamingResponse(
         _guarded_iter(),
         status_code=206,

@@ -15,6 +15,7 @@
  * 首次加载有骨架、加载失败 / 没有服时给 EmptyState。
  */
 import { computed, onMounted, reactive, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   AlertTriangle, CheckCircle2, Crown, Film, Info, Network, Pencil, Plus,
@@ -246,6 +247,18 @@ async function confirmDelete() {
   }
 }
 
+// ==================== 线路摘要（管理在「线路管理」页） ====================
+
+/** 服卡只留一行摘要：线路条数（含已用尽提示），管理入口跳线路管理页 */
+function linesSummary(row: RealmRow): string {
+  const lines = row.lines ?? []
+  if (!lines.length) return '还没有线路'
+  const exhausted = lines.filter((l) => l.traffic?.exhausted).length
+  return exhausted
+    ? `${lines.length} 条线路 · ${exhausted} 条已用尽`
+    : `${lines.length} 条线路`
+}
+
 // ==================== 展示辅助 ====================
 
 function nodesText(row: RealmRow): string {
@@ -356,6 +369,8 @@ function shortDate(s: string | null): string {
             <!-- 接入方式：免费服免费开放（不需要订阅），付费服按订阅闸门 -->
             <span v-if="row.is_free" class="au-badge au-badge-green">免费服</span>
             <span v-else class="au-badge au-badge-muted">付费服</span>
+            <!-- 有线路流量用尽：用户端那条线显示「暂停服务」（明细在「线路管理」页） -->
+            <span v-if="(row.lines ?? []).some((l) => l.traffic?.exhausted)" class="au-badge au-badge-rose">有线路流量用尽</span>
             <span v-if="!row.is_active" class="au-badge au-badge-rose">已停用</span>
           </div>
         </template>
@@ -378,6 +393,12 @@ function shortDate(s: string | null): string {
             <div><dt>有效订阅</dt><dd>{{ row.stats.active_subscriptions }}</dd></div>
             <div><dt>待审求片</dt><dd>{{ row.stats.pending_requests }}</dd></div>
           </dl>
+
+          <!-- 线路只留一行摘要：配额/用量/重置的管理在「线路管理」页 -->
+          <p class="realm-lines-summary">
+            <Route :size="13" /> 线路 · {{ linesSummary(row) }}
+            <RouterLink class="realm-lines-link" to="/lines">去线路管理</RouterLink>
+          </p>
 
           <div class="realm-nodes">
             <div class="nodes-head">
@@ -474,6 +495,12 @@ function shortDate(s: string | null): string {
             <el-option value="allow" label="允许下载" />
             <el-option value="deny" label="禁止下载" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="播放线路">
+          <p class="field-help" style="margin: 0">
+            线路（入口地址、流量配额、用量重置）在「线路管理」页统一管理；
+            新建服时填了对外地址会自动生成一条主线路。
+          </p>
         </el-form-item>
         <el-form-item label="描述">
           <el-input v-model="form.description" type="textarea" :rows="2" placeholder="可选，例如面向哪些用户" />
@@ -610,6 +637,17 @@ function shortDate(s: string | null): string {
 .realm-stats div { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
 .realm-stats dt { font-size: 12px; color: var(--au-text-3); }
 .realm-stats dd { margin: 0; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--au-text); }
+
+/* 线路摘要行：只报条数与入口，管理动作都在「线路管理」页 */
+.realm-lines-summary {
+  display: flex; align-items: center; gap: 6px;
+  margin: 0; font-size: 12.5px; color: var(--au-text-2);
+}
+.realm-lines-link {
+  margin-left: auto; font-size: 12.5px; font-weight: 600;
+  color: var(--au-primary); text-decoration: none;
+}
+.realm-lines-link:hover { text-decoration: underline; }
 
 .realm-nodes { display: flex; flex-direction: column; gap: 6px; }
 .nodes-head { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--au-text-3); }

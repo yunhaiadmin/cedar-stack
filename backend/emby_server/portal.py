@@ -28,7 +28,7 @@ from sqlalchemy import and_, case, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
-from backend import config_service, models, realms, subscriptions
+from backend import config_service, line_quota, models, realms, subscriptions
 from backend.usernames import username_conflict
 from backend.database import get_db, SessionLocal
 
@@ -493,6 +493,12 @@ def _account_card(user: models.WebUser, db: Session, realm_id: int | None = None
                            exc_info=True)
             card["emby_api_key"] = ""
     card["realms"] = _user_realm_cards(user, db, request)
+    # 顶层卡对应服的配额用尽标记（与 realms[] 同一份回落修正后的口径）
+    card["quota_exhausted"] = next(
+        (bool(c.get("quota_exhausted")) for c in card["realms"]
+         if c.get("id") == realm_id),
+        False,
+    )
     return card
 
 
@@ -543,7 +549,17 @@ def _user_realm_cards(user: models.WebUser, db: Session,
             "days_left": max(0, (sub.end_date - now).days) if sub and sub.end_date else None,
             "plan_name": (sub.plan.name if sub and sub.plan else ""),
             "is_default": realm.id == realms.legacy_realm_id(db),
+            # 播放线路（2026-11-19）：这个服（大类）下的线路清单
+            # （主线路在前），每条带 quota_exhausted 初值；循环后
+            # apply_card_flags 做「全线用尽回落」修正（全用尽 =
+            # 全部清零，不断播）并回填本卡 quota_exhausted（主线路
+            # 的标记）。地址照常下发——已连线路的外部客户端不受
+            # 影响，标记只供用户端在选线面显示「暂停服务」与网页
+            # 播放器分流。没查看权限不下发线路（与 base_url 同口径）。
+            "lines": line_quota.card_lines(db, realm) if granted else [],
+            "quota_exhausted": False,
         })
+    line_quota.apply_card_flags(cards)
     return cards
 
 

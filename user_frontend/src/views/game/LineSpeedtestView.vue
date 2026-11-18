@@ -22,7 +22,8 @@
  *   单次测速最长 180 秒，超时中止并如实标注。
  *
  * 线路清单只来自现行配置下发，不写死任何线路名/地址：
- *   - 播放线路：账号卡 GET /api/user/emby/server 的 realms[].base_url。
+ *   - 播放线路：账号卡 GET /api/user/emby/server 的 realms[].lines[]
+ *     （大类下的线路，主副依次；无线路下发时回退 realms[].base_url）。
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
@@ -163,9 +164,23 @@ async function loadLines() {
     const card = await embyApi.getAccountCard()
     cardOk = true
     for (const r of card.realms ?? []) {
+      // 两层形态（2026-11-19）：大类（服）下逐条线路展开，选项名
+      // 「大类名 · 线路名」；配额用尽的线路已暂停服务，不进测速清单。
+      const realmLines = r.lines ?? []
+      if (realmLines.length) {
+        for (const l of realmLines) {
+          const url = (l.url ?? '').trim()
+          if (!url || seen.has(url)) continue
+          seen.add(url)
+          if (l.quota_exhausted) continue
+          rows.push(makeOption(r.name ? `${r.name} · ${l.name}` : l.name, url))
+        }
+        continue
+      }
       const url = (r.base_url ?? '').trim()
       if (!url || seen.has(url)) continue
       seen.add(url)
+      if (r.quota_exhausted) continue
       rows.push(makeOption(r.name, url))
     }
     const top = (card.base_url ?? '').trim()

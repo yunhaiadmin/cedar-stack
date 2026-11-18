@@ -383,6 +383,19 @@ export const libraryStatsApi = {
 }
 // ==================== 自建 Emby 门户 API（backend/emby_server/portal.py） ====================
 
+/** 一个服（大类）下的一条播放线路（账号卡下发；配额按线路计） */
+export interface AccountLineCard {
+  id: number
+  /** 线路名（如「主线路」「副线路」，管理员可改） */
+  name: string
+  url: string
+  /** 主线路（同服启用线路里排第一条）；其余为副线路 */
+  is_primary: boolean
+  /** 线路流量配额已用尽（后端已做全线用尽回落：全用尽时恒 false）；
+   *  true 时显示「暂停服务」且不可选，网页播放器自动避开 */
+  quota_exhausted?: boolean
+}
+
 /** 一个「服」的连接信息与会员状态（多服运营：同一个面板下可以有几个独立的服） */
 export interface AccountRealmCard {
   id: number
@@ -403,6 +416,10 @@ export interface AccountRealmCard {
   is_default: boolean
   /** 该服的查看权限（没权限时 base_url 置空） */
   view_granted?: boolean
+  /** 这个服（大类）下的线路清单（主线路在前）；没查看权限时为空 */
+  lines?: AccountLineCard[]
+  /** 主线路的配额用尽标记（口径同 lines[].quota_exhausted） */
+  quota_exhausted?: boolean
 }
 
 /** Emby 账号/线路查看权限（没权限时地址类字段置空不下发） */
@@ -446,6 +463,8 @@ export interface AccountCard {
   allow_download?: boolean
   /** 我在这几个服各自的地址与会员（多服时客户端该连哪台一目了然） */
   realms?: AccountRealmCard[]
+  /** 当前卡对应服的主线路配额是否已用尽（口径同 realms[].quota_exhausted） */
+  quota_exhausted?: boolean
   /** PA-036：图片端点鉴权后网页端拼图用的专用 Emby token（每次读卡轮换，
    *  没查看权限 / 外部模式为空串）；由 getAccountCard 同步进 imageKey 持有者 */
   emby_api_key?: string

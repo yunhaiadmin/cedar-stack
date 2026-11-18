@@ -7159,6 +7159,8 @@ def _observe_traffic(response):
     # 迭代消费阶段直接用，不依赖 ContextVar 在消费侧的传播。
     from backend.emby_server import traffic_meter
     _traffic_uid = traffic_meter.current_user_id()
+    # 线路归属同理：入口 host 在此取出，消费阶段按它记线路账
+    _traffic_host = traffic_meter.current_entry_host()
     # 流量拦截（2026-11-15 用户亲点）：200/206 字节响应在未发出
     # 前过闸——起播且本周期额度用尽时整响应替换成 403，字节一滴
     # 不出；302 直链与 Range 续传不在此拦（判定口径、开关与异常
@@ -7189,8 +7191,10 @@ def _observe_traffic(response):
                 yield chunk
         finally:
             line_stats.record_bytes(total)
-            # 流量计量：同一笔真实出字节按归属用户记账（中继腿）。
-            traffic_meter.note_bytes(total, "relay", user_id=_traffic_uid)
+            # 流量计量：同一笔真实出字节按归属用户记账（中继腿），
+            # 并按入口 host 旁路记线路账（匹配不到线路不记）。
+            traffic_meter.note_bytes(total, "relay", user_id=_traffic_uid,
+                                     entry_host=_traffic_host)
 
     response.body_iterator = _counting()
     return response
@@ -7466,6 +7470,11 @@ async def video_stream(
     # 库，走 run_db 不堵事件循环。
     from backend.emby_server import traffic_meter as _traffic_meter
     _traffic_meter.set_current_user(getattr(user, "id", None))
+    # 线路计量归属：钉住本次请求的入口 host（用户从哪个对外域名
+    # 进来的），字节出口按它把旁路账记到对应线路（取法与证据见
+    # public_url.request_entry_host）。拿不到就只记用户账。
+    from backend.emby_server.public_url import request_entry_host
+    _traffic_meter.set_current_entry_host(request_entry_host(request))
     # 流量拦截同点登记：把本次请求的 Range 头带给字节出口
     # （_observe_traffic 只有 response 一个参数，起播/续传判定
     # 靠 traffic_gate 的 ContextVar，见该模块 docstring）。

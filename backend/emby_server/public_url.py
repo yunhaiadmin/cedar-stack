@@ -87,6 +87,36 @@ def _from_forwarded(request: Request) -> str:
     return f"{proto}://{host}"
 
 
+def request_entry_host(request: Request | None) -> str:
+    """本次请求实际是从哪个对外 host 进来的（线路计量归属键的原料）。
+
+    与 ``client_base_url`` 的区别：那个是「拼给客户端看的地址」
+    （EMBY_PUBLIC_URL 配了就恒用它）；这里要的是**这次请求真实的
+    入口**——同一个服挂多个域名时（cdn / 主站 / 源站），用户从
+    哪个域名进来就归哪条线路，所以绝不能被 EMBY_PUBLIC_URL 盖掉。
+
+    取法与 _from_forwarded 同口径：仅当直连方是可信反代时采信
+    ``X-Forwarded-Host`` 首段，否则用 Host 头。链路证据（生产）：
+    AWS 宿主机 nginx ``proxy_set_header Host $http_host`` 透传原始
+    Host，前端容器 nginx 再 ``Host $host`` + ``X-Forwarded-Host
+    $host`` 透传到后端——后端看到的 Host 就是用户实际用的入口
+    域名。返回原始 host（可能带端口/大小写），归一成归属键由
+    line_quota.normalize_entry_host 统一做；拿不到返回空串。
+    """
+    if request is None:
+        return ""
+    try:
+        headers = request.headers
+    except Exception:  # noqa: BLE001 — 拿不到头就当没入口信息
+        return ""
+    if _forwarded_headers_trusted(request):
+        forwarded = (headers.get("x-forwarded-host") or "").split(",")[0].strip()
+        if forwarded and _host_ok(forwarded):
+            return forwarded
+    host = (headers.get("host") or "").split(",")[0].strip()
+    return host if _host_ok(host) else ""
+
+
 def _forwarded_headers_trusted(request: Request) -> bool:
     """转发头只在「直连方是我们自己的反代」时可信。
 

@@ -31,7 +31,7 @@ import {
   Image as ImageIcon,
   Database, Megaphone, Receipt, Trophy, TicketPercent, UserPlus, KeySquare,
   UserCog, Activity, HandCoins,
-  Sun, Moon, MonitorSmartphone, ListChecks, Flag,
+  Sun, Moon, MonitorSmartphone, ListChecks, Flag, Gauge,
   PanelLeftClose, PanelLeftOpen,
 } from 'lucide-vue-next'
 import {
@@ -210,6 +210,8 @@ const navGroups: NavGroup[] = [
     icon: Server,
     items: [
       { path: '/servers', label: '服务器与线路', icon: Server },
+      // 线路管理（2026-11-19）：播放线路的配额/用量按大类分组一页管完（服管理旁、同组）
+      { path: '/lines', label: '线路管理', icon: Gauge },
       { path: '/emby', label: '媒体库', icon: Library },
       // 谁能看到哪些库（服务器默认范围 + 指定用户覆盖）：默认关闭，不改现有行为
       { path: '/library-scope', label: '可见范围', icon: Eye },

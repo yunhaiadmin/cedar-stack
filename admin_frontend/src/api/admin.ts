@@ -42,6 +42,7 @@ import type {
   MediaSeekRow,
   RealmNodeSync,
   RealmOverview,
+  RealmLine,
   RealmRow,
   RealmSubscriptionsResponse,
   RealmSummary,
@@ -825,6 +826,46 @@ export interface RealmUpdateData {
 
 export const updateRealm = (id: number, data: RealmUpdateData) =>
   put<{ success: boolean; realm: RealmRow; summary: RealmSummary }>(`${R}/${id}`, data)
+
+// ==================== 线路（服下的播放线路，配额按线路计） ====================
+
+export interface RealmLinePayload {
+  /** 名字留空 = 按形态自动给（首条主线路、其后副线路） */
+  name?: string
+  url: string
+  /** 线路流量配额（字节）：0 = 不限额 */
+  quota_bytes?: number
+  sort_order?: number
+  is_active?: boolean
+}
+
+export interface RealmLineUpdateData {
+  name?: string
+  url?: string
+  quota_bytes?: number
+  sort_order?: number
+  is_active?: boolean
+}
+
+export const fetchRealmLines = (realmId: number) =>
+  get<{ realm_id: number; realm_name: string; lines: RealmLine[] }>(`${R}/${realmId}/lines`)
+
+export const createRealmLine = (realmId: number, data: RealmLinePayload) =>
+  post<{ success: boolean; line: RealmLine; realm: RealmRow; summary: RealmSummary }>(
+    `${R}/${realmId}/lines`, data)
+
+export const updateRealmLine = (realmId: number, lineId: number, data: RealmLineUpdateData) =>
+  put<{ success: boolean; line: RealmLine; realm: RealmRow; summary: RealmSummary }>(
+    `${R}/${realmId}/lines/${lineId}`, data)
+
+export const deleteRealmLine = (realmId: number, lineId: number) =>
+  del<{ success: boolean; realm: RealmRow; summary: RealmSummary }>(
+    `${R}/${realmId}/lines/${lineId}`)
+
+/** 重置一条线路的流量用量（统计起点拨到现在，历史日账保留对账；只动该线） */
+export const resetRealmLineTraffic = (realmId: number, lineId: number) =>
+  post<{ success: boolean; line: RealmLine; realm: RealmRow; summary: RealmSummary }>(
+    `${R}/${realmId}/lines/${lineId}/reset-traffic`, {})
 
 /** 切换面板当前操作的服：后台各页的作用域跟着切（服务端落库，多管理员一致） */
 export const activateRealm = (id: number) =>

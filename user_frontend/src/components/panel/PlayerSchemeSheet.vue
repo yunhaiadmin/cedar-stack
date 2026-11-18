@@ -282,12 +282,12 @@
                   :aria-expanded="linePickerOpen"
                   @click="linePickerOpen = !linePickerOpen"
                 >
-                  <span class="psp-line-pill__name">{{ selectedLine?.name || '默认线路' }}<template v-if="linesLoading"> · 准备中</template><template v-else-if="selectedLine"> · 已就绪</template></span>
+                  <span class="psp-line-pill__name">{{ selectedLine ? lineLabel(selectedLine) : '默认线路' }}<template v-if="linesLoading"> · 准备中</template><template v-else-if="selectedLine"> · 已就绪</template></span>
                   <span v-if="linesLoading" class="psp-spinner psp-spinner--sm" aria-hidden="true"></span>
                   <ChevronDown v-else :size="15" :style="{ transform: linePickerOpen ? 'rotate(180deg)' : '' }" />
                 </button>
                 <span v-else class="psp-line-pill psp-line-pill--static">
-                  <span class="psp-line-pill__name"><template v-if="linesLoading && !selectedLine">准备中</template><template v-else>{{ selectedLine?.name || '默认线路' }}<template v-if="linesLoading"> · 准备中</template><template v-else-if="selectedLine"> · 已就绪</template></template></span>
+                  <span class="psp-line-pill__name"><template v-if="linesLoading && !selectedLine">准备中</template><template v-else>{{ selectedLine ? lineLabel(selectedLine) : '默认线路' }}<template v-if="linesLoading"> · 准备中</template><template v-else-if="selectedLine"> · 已就绪</template></template></span>
                   <span v-if="linesLoading" class="psp-spinner psp-spinner--sm" aria-hidden="true"></span>
                 </span>
               </div>
@@ -297,13 +297,14 @@
                   :key="l.key"
                   type="button"
                   class="psp-line-opt"
-                  :class="{ 'psp-line-opt--on': l.url === selectedLineUrl }"
+                  :class="{ 'psp-line-opt--on': l.url === selectedLineUrl, 'psp-line-opt--off': l.exhausted }"
+                  :disabled="l.exhausted"
                   @click="chooseLine(l)"
                 >
                   <span class="psp-line-opt__radio" aria-hidden="true"></span>
                   <span class="psp-line-opt__main">
-                    <span class="psp-line-opt__name">{{ l.name }}</span>
-                    <span class="psp-line-opt__host">{{ lineHost(l.url) }}</span>
+                    <span class="psp-line-opt__name">{{ lineLabel(l) }}</span>
+                    <span class="psp-line-opt__host">{{ l.exhausted ? '暂停服务' : lineHost(l.url) }}</span>
                   </span>
                 </button>
               </div>
@@ -777,6 +778,11 @@ const linesDefaultUrl = ref('')
 const selectedLineUrl = ref('')
 const linePickerOpen = ref(false)
 const selectedLine = computed(() => lines.value.find((l) => l.url === selectedLineUrl.value) || null)
+/** 多个大类时选项名带大类前缀消歧（同名主/副线路分属不同大类） */
+const multiGroup = computed(() => new Set(lines.value.map((l) => l.group)).size > 1)
+function lineLabel(l: PlayLine): string {
+  return multiGroup.value && l.group ? `${l.group} · ${l.name}` : l.name
+}
 /** 开始播放钮的准备态：线路清单还没定下来时钮内显示「正在准备线路」 */
 const startPreparing = computed(() => linesLoading.value)
 
@@ -787,12 +793,19 @@ async function loadLines() {
     const res = await loadPlayLines()
     lines.value = res.lines
     linesDefaultUrl.value = res.defaultUrl
-    const stillValid = selectedLineUrl.value && res.lines.some((l) => l.url === selectedLineUrl.value)
+    // 配额分流（2026-11-19）：已选线用尽后不再算有效选择；默认落点
+    // 优先默认线（未用尽时），否则第一条未用尽的线；全部用尽时后端
+    // 已回落清零标记，这里自然落回现行口径（默认线/第一条）。
+    const stillValid =
+      selectedLineUrl.value &&
+      res.lines.some((l) => l.url === selectedLineUrl.value && !l.exhausted)
     if (!stillValid) {
+      const usable = res.lines.filter((l) => !l.exhausted)
+      const pool = usable.length ? usable : res.lines
       selectedLineUrl.value =
-        (res.defaultUrl && res.lines.some((l) => l.url === res.defaultUrl)
+        (res.defaultUrl && pool.some((l) => l.url === res.defaultUrl)
           ? res.defaultUrl
-          : res.lines[0]?.url) || ''
+          : pool[0]?.url) || ''
     }
   } catch {
     lines.value = []
@@ -802,6 +815,7 @@ async function loadLines() {
 }
 
 function chooseLine(l: PlayLine) {
+  if (l.exhausted) return // 用尽线路不可选（选单里灰态展示「暂停服务」）
   selectedLineUrl.value = l.url
   linePickerOpen.value = false
 }
@@ -1884,6 +1898,11 @@ body.uhd-stream-dark .psp-failed__retry {
 }
 .psp-line-opt--on {
   border-color: var(--uhd-l-text, #111111);
+}
+/* 配额用尽：灰态不可选，副行显示「暂停服务」（与弹幕线路暂停同口径） */
+.psp-line-opt--off {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 .psp-line-opt__radio {
   flex: none;

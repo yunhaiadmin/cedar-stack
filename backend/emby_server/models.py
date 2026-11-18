@@ -944,6 +944,38 @@ class TrafficUsageDaily(Base):
                         onupdate=datetime.now)
 
 
+class LineTrafficUsageDaily(Base):
+    """线路流量用量日账（线路配额，2026-11-19）。
+
+    与 ``TrafficUsageDaily`` 同源同口径，是它在计量点的**旁路汇总**：
+    同一笔真实出字节（中继腿 / 本机文件腿，实际 yield 字节）在记到
+    用户名下的同时，再按「这笔请求实际从哪个入口 host 进来的」记
+    一份到本表——入口 host 与某条线路（``server_realm_lines``）url
+    的 host 相同即归那条线路；匹配不到任何线路就只记用户账、不记
+    线路账（宁可漏计，不许记错线）。线路的配额判定
+    （backend/line_quota）读本表：已用 = 日账总和 − 线路行上的
+    重置偏移。
+
+    302 直链字节不过本机，与用户账同口径**不记字节**（表里也没有
+    direct_plays 列——线路配额只管真经手字节）。不加外键（照
+    TrafficUsageDaily 先例）：线路删了行留着，消费方查无此线不展示。
+    """
+
+    __tablename__ = "line_traffic_usage_daily"
+    __table_args__ = (
+        UniqueConstraint("line_id", "day", name="uq_line_traffic_usage_daily_line_day"),
+        Index("ix_line_traffic_usage_daily_day", "day"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    line_id = Column(Integer, nullable=False)
+    day = Column(Date, nullable=False)
+    relay_bytes = Column(BigInteger, nullable=False, default=0)
+    local_bytes = Column(BigInteger, nullable=False, default=0)
+    updated_at = Column(DateTime, default=datetime.now,
+                        onupdate=datetime.now)
+
+
 class TrafficExchangeLog(Base):
     """购流量·时间换流量留痕（流量额度一期，2026-11-13）。
 
