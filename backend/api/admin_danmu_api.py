@@ -33,6 +33,9 @@ class DanmuLineIn(BaseModel):
     name: str
     note: str = ""
     host: str
+    # 启用/暂停：缺省启用（旧客户端不带此字段时按启用处理）；
+    # 暂停的线路仍下发给用户端展示「暂停服务」，但不拼地址。
+    enabled: bool = True
 
 
 class DanmuLinesRequest(BaseModel):

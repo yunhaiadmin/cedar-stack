@@ -10,7 +10,9 @@
 - 过期 token 按未生成处理：状态 exists=False、重新生成换新值；
 - 线路：默认两条（国际方向 cdn / 国际方向-备用 www，实测均可路由
   到后端 /api），配置覆盖后列表与地址随之变；地址拼装
-  https://<host>/api/v1/danmu/<token>/ 只换 host；
+  https://<host>/api/v1/danmu/<token>/ 只换 host；enabled 可选
+  字段缺省启用（旧配置兼容），暂停线路仍在列表带 enabled=false、
+  /address 回 409、公开下发不受线路状态影响；
 - 公开下发：按 Danmu 插件约定（bilibili 风格 XML）回站内弹幕，
   按条目 guid 寻址、按时间轴升序；未知 token 404、未知条目空文档；
 - 门槛服务端真校验：无有效套餐 / 流量耗尽 → 回空文档（弹幕内容
@@ -365,6 +367,92 @@ def test_lines_config_override(client, scene):
         f"https://dm.example.com/api/v1/danmu/{token}/")
 
 
+def test_default_lines_all_enabled(client, scene):
+    """默认线路恒带 enabled=True（前端据此区分启用/暂停）。"""
+    c, app = client
+    _as_user(app, scene.user)
+    lines = c.get("/api/user/danmu/lines").json()["lines"]
+    assert [ln["enabled"] for ln in lines] == [True, True]
+
+
+def test_lines_config_without_enabled_defaults_enabled(client, scene):
+    """旧配置（无 enabled 字段）兼容：读回默认启用、地址照常拼。"""
+    from backend import config_service
+
+    config_service.save_config(
+        scene.db,
+        {"danmu_api_lines": (
+            '[{"id": "main", "name": "主线", "note": "",'
+            ' "host": "dm.example.com"}]')},
+        schema="danmu_api")
+    scene.db.commit()
+    _invalidate()
+
+    c, app = client
+    _as_user(app, scene.user)
+    lines = c.get("/api/user/danmu/lines").json()["lines"]
+    assert lines[0]["enabled"] is True
+    _gen_token(c, app, scene.user)
+    token = _token_value(scene.db, scene.user)
+    r = c.get("/api/user/danmu/address", params={"line": "main"})
+    assert r.status_code == 200, r.text
+    assert r.json()["address"] == (
+        f"https://dm.example.com/api/v1/danmu/{token}/")
+
+
+def test_paused_line_listed_but_address_rejected(client, scene):
+    """暂停线路：/lines 照常列出带 enabled=false；/address 回 409
+    （口径：线路存在但状态冲突，与未生成 token 的 409 同族、
+    detail 区分）；启用线路不受影响；公开下发口与线路无关，
+    已拼好地址照常取弹幕（本用例以启用线路地址验下发不受影响）。"""
+    from backend import config_service
+
+    config_service.save_config(
+        scene.db,
+        {"danmu_api_lines": (
+            '[{"id": "main", "name": "主线", "note": "",'
+            ' "host": "dm.example.com", "enabled": true},'
+            ' {"id": "bak", "name": "备用", "note": "",'
+            ' "host": "bak.example.com", "enabled": false}]')},
+        schema="danmu_api")
+    scene.db.commit()
+    _invalidate()
+
+    c, app = client
+    _as_user(app, scene.user)
+    lines = c.get("/api/user/danmu/lines").json()["lines"]
+    assert [(ln["id"], ln["enabled"]) for ln in lines] == [
+        ("main", True), ("bak", False)]
+
+    _gen_token(c, app, scene.user)
+    token = _token_value(scene.db, scene.user)
+    r = c.get("/api/user/danmu/address", params={"line": "bak"})
+    assert r.status_code == 409, r.text
+    assert "暂停" in r.json()["detail"]
+    r = c.get("/api/user/danmu/address", params={"line": "main"})
+    assert r.status_code == 200, r.text
+    assert r.json()["address"] == (
+        f"https://dm.example.com/api/v1/danmu/{token}/")
+
+    # 下发口不受线路暂停影响：token 有效即可取（无套餐回空文档，
+    # 不是 404/409——证明下发路径没被线路状态拦）
+    r = c.get(f"/api/v1/danmu/{token}/{scene.item.guid}")
+    assert r.status_code == 200, r.text
+
+
+def test_validate_lines_enabled_must_be_bool(db):
+    from backend import danmu_api as core_api
+
+    with pytest.raises(ValueError):
+        core_api.validate_lines([{
+            "id": "main", "name": "主线", "note": "",
+            "host": "dm.example.com", "enabled": "yes"}])
+    out = core_api.validate_lines([{
+        "id": "main", "name": "主线", "note": "",
+        "host": "dm.example.com"}])
+    assert out[0]["enabled"] is True
+
+
 # ------------------------------------------------------------ 公开下发
 
 
@@ -487,3 +575,33 @@ def test_admin_lines_roundtrip_and_validation(db):
                 "host": "https://dm.example.com/path"}]),
             _request(), admin, db)
     assert exc.value.status_code == 400
+
+
+def test_admin_lines_enabled_roundtrip(db):
+    """管理端保存 enabled=false 落库并读回；不带 enabled 时默认启用。"""
+    from backend.api.admin_danmu_api import (
+        DanmuLinesRequest,
+        danmu_lines_get_config,
+        danmu_lines_update_config,
+    )
+
+    admin = _mk_user(db, "dmu_admin2", is_staff=True)
+    db.commit()
+    out = danmu_lines_update_config(
+        DanmuLinesRequest(lines=[
+            {"id": "main", "name": "主线", "note": "",
+             "host": "dm.example.com", "enabled": True},
+            {"id": "bak", "name": "备用", "note": "",
+             "host": "bak.example.com", "enabled": False}]),
+        _request(), admin, db)
+    assert [(ln["id"], ln["enabled"]) for ln in out["lines"]] == [
+        ("main", True), ("bak", False)]
+    _invalidate()
+    assert danmu_lines_get_config(admin, db) == out
+
+    out = danmu_lines_update_config(
+        DanmuLinesRequest(lines=[{
+            "id": "main", "name": "主线", "note": "",
+            "host": "dm.example.com"}]),
+        _request(), admin, db)
+    assert out["lines"][0]["enabled"] is True

@@ -8,7 +8,7 @@
  * - GET    /api/user/danmu/token            {exists, expires_at}（不回明文）
  * - POST   /api/user/danmu/token            {exists, expires_at, created}
  * - DELETE /api/user/danmu/token            {exists: false, expires_at: null}
- * - GET    /api/user/danmu/lines            {lines: [{id, name, note, host}]}
+ * - GET    /api/user/danmu/lines            {lines: [{id, name, note, host, enabled}]}
  * - GET    /api/user/danmu/address?line=id  {line, address}；未生成 409
  * 归一以 exists 为主形态（exists→has_token）；旧别名（has_token 等）仅作
  * 兜底，主形态出现时一律以主形态为准，不许冲突。
@@ -33,6 +33,8 @@ export interface DanmuLine {
   note: string
   /** 裸域名；地址由后端按线路拼好，前端不自拼 */
   host: string
+  /** 是否启用：false = 暂停服务（仍列出、不可选）；后端旧回包无此字段时按启用 */
+  enabled: boolean
 }
 
 /** 状态回包归一：主形态 {exists, expires_at}；exists 缺失时才看旧别名兜底 */
@@ -72,6 +74,7 @@ export async function fetchDanmuLines(): Promise<DanmuLine[]> {
       name: String(l.name ?? ''),
       note: String(l.note ?? l.description ?? l.sub ?? ''),
       host: String(l.host ?? ''),
+      enabled: l.enabled !== false,
     }))
 }
 

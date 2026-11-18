@@ -13,8 +13,11 @@ Id 取弹幕。契约要点：
   前置。明文落库只为服务端能为本人重拼地址——除本人地址接口
   外，任何响应、日志、审计都不出现 token 明文。
 - 线路：SystemConfig 家族 danmu_api 的 danmu_api_lines（JSON
-  数组 [{id,name,note,host}]），空/非法 = 代码默认两条；线路
-  只换 host，路径与 token 不变。默认两条的 host 是施工时实测
+  数组 [{id,name,note,host,enabled}]），空/非法 = 代码默认两条；
+  线路只换 host，路径与 token 不变。enabled 缺省视为启用
+  （兼容旧配置）；enabled=false 的线路仍在列表里下发（用户端
+  显示「暂停服务」不可选），但不为它拼地址（/address 回 409）。
+  默认两条的 host 是施工时实测
   能路由到后端 /api 的前台域名：cdn.aetrix.love（CF 代理的
   对外客户端地址）与 www.aetrix.love（站点主域名，同走 CF）；
   emby.aetrix.love 也可达，但那是源站直连地址，不作用户面默认。
@@ -62,10 +65,10 @@ _HOST_RE = re.compile(
 DEFAULT_LINES: list[dict] = [
     {"id": "intl", "name": "国际方向",
      "note": "CloudFlare CDN 加速的优质海外线路",
-     "host": "cdn.aetrix.love"},
+     "host": "cdn.aetrix.love", "enabled": True},
     {"id": "intl_backup", "name": "国际方向-备用",
      "note": "国际主线路不稳定时可使用",
-     "host": "www.aetrix.love"},
+     "host": "www.aetrix.love", "enabled": True},
 ]
 
 _MAX_DELIVERY_ITEMS = 5000
@@ -150,7 +153,9 @@ def validate_lines(raw) -> list[dict]:
     """线路表形状校验（管理端保存与读取共用）：非法抛 ValueError。
 
     每条必须是 {id,name,note,host}：id 为小写 slug 且全表唯一，
-    host 为裸域名（不带协议/路径/端口），name 非空。
+    host 为裸域名（不带协议/路径/端口），name 非空。可选字段
+    enabled：缺省视为 True（旧配置无此字段照常启用）；出现时
+    必须是布尔值。归一化输出恒带 enabled。
     """
     if not isinstance(raw, list) or not raw:
         raise ValueError("线路表必须是非空数组")
@@ -163,6 +168,9 @@ def validate_lines(raw) -> list[dict]:
         name = str(entry.get("name") or "").strip()
         note = str(entry.get("note") or "").strip()
         host = str(entry.get("host") or "").strip().lower()
+        enabled = entry.get("enabled", True)
+        if not isinstance(enabled, bool):
+            raise ValueError(f"线路 {line_id} 的 enabled 必须是布尔值")
         if not _LINE_ID_RE.match(line_id):
             raise ValueError(f"第 {i + 1} 条线路 id 不合法：{line_id!r}")
         if line_id in seen:
@@ -173,7 +181,7 @@ def validate_lines(raw) -> list[dict]:
             raise ValueError(f"线路 {line_id} 的 host 不是裸域名：{host!r}")
         seen.add(line_id)
         lines.append({"id": line_id, "name": name,
-                      "note": note, "host": host})
+                      "note": note, "host": host, "enabled": enabled})
     return lines
 
 
@@ -189,9 +197,13 @@ def get_lines(db: Session) -> list[dict]:
 
 
 def build_address(db: Session, user_id: int, line_id: str) -> str | None:
-    """为本人拼完整弹幕地址；线路不存在或无有效 token 时返回 None。"""
+    """为本人拼完整弹幕地址；线路不存在、已暂停或无有效 token 时返回 None。
+
+    暂停线路永不拼地址是核心不变量（端点层另对暂停回 409 区分
+    「线路暂停」与「未生成 token」，见 api/danmu_api.py）。
+    """
     line = next((ln for ln in get_lines(db) if ln["id"] == line_id), None)
-    if line is None:
+    if line is None or not line["enabled"]:
         return None
     row = _valid_row(db, user_id)
     if row is None:

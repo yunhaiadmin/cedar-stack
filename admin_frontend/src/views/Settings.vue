@@ -1062,7 +1062,9 @@ async function saveDanmakuCore(): Promise<boolean> {
  * danmu_api_lines）：用户在概览页生成弹幕 Token 后选一条线路拼地址，
  * 线路只换 host。GET 回的就是当前生效值（未配置时后端代入默认两条）；
  * 保存整批校验——至少一条、id 小写 slug 且全表唯一、名称非空、
- * host 为裸域名（不带协议/路径/端口），非法整批 400 不落库。 */
+ * host 为裸域名（不带协议/路径/端口），非法整批 400 不落库。
+ * 每行带 enabled 开关（启用/暂停服务）：随整批一并保存，旧配置
+ * 无此字段时读回默认启用。 */
 const danmuLines = ref<DanmuApiLine[]>([])
 const danmuLinesOriginal = ref('')
 const danmuLinesLoading = ref(false)
@@ -1073,6 +1075,7 @@ function danmuLinesSnapshot(): DanmuApiLine[] {
     name: ln.name.trim(),
     note: ln.note.trim(),
     host: ln.host.trim().toLowerCase(),
+    enabled: ln.enabled !== false,
   }))
 }
 
@@ -1082,6 +1085,8 @@ function applyDanmuLines(lines: DanmuApiLine[]) {
     name: ln.name ?? '',
     note: ln.note ?? '',
     host: ln.host ?? '',
+    // 旧配置无 enabled 字段时读回默认启用（后端归一化同口径）
+    enabled: ln.enabled !== false,
   }))
   danmuLinesOriginal.value = JSON.stringify(danmuLinesSnapshot())
 }
@@ -1104,7 +1109,7 @@ const danmuLinesDirty = computed(
 )
 
 function addDanmuLine() {
-  danmuLines.value.push({ id: '', name: '', note: '', host: '' })
+  danmuLines.value.push({ id: '', name: '', note: '', host: '', enabled: true })
 }
 
 /** 弹幕 API 线路保存核心：返回是否成功，失败时拦截器已提示（含后端校验原文）。 */
@@ -2892,7 +2897,7 @@ watch(
             id="group-danmu-api-lines"
             title="弹幕 API 线路"
             :icon="Network"
-            description="给第三方播放器填的弹幕 API 地址可选的线路：用户在概览页生成弹幕 Token、选一条线路，地址就是这条线路的域名加上固定路径和他的 Token——线路只换域名。改完保存立即对新读取生效；删掉一条线路后，已选该线路的用户会回到未选状态。至少保留一条。"
+            description="给第三方播放器填的弹幕 API 地址可选的线路：用户在概览页生成弹幕 Token、选一条线路，地址就是这条线路的域名加上固定路径和他的 Token——线路只换域名。改完保存立即对新读取生效；删掉一条线路后，已选该线路的用户会回到未选状态。至少保留一条。每行开关可暂停一条线路：暂停后用户端仍能看到这条线路并标注「暂停服务」，但选不了、也拼不出地址。"
             :tone="danmuLinesDirty ? 'accent' : 'default'"
             class="group-card"
           >
@@ -2908,6 +2913,10 @@ watch(
                     <el-input v-model="line.name" class="dl-name" placeholder="名称，如 国际方向" maxlength="40" />
                     <el-input v-model="line.note" class="dl-note" placeholder="说明（可空），如 CDN 加速线路" maxlength="80" />
                     <el-input v-model="line.host" class="dl-host" placeholder="域名，如 cdn.example.com" maxlength="253" />
+                    <span class="dl-toggle">
+                      <el-switch v-model="line.enabled" />
+                      <span class="field-suffix">{{ line.enabled ? '启用' : '暂停服务' }}</span>
+                    </span>
                     <span class="sd-ops">
                       <el-button size="small" type="danger" plain @click="danmuLines.splice(idx, 1)">删除</el-button>
                     </span>
@@ -3349,6 +3358,7 @@ watch(
 .sd-row .dl-name { width: 150px; flex: none; }
 .sd-row .dl-note { flex: 1 1 200px; min-width: 160px; }
 .sd-row .dl-host { flex: 1 1 220px; min-width: 180px; }
+.sd-row .dl-toggle { display: inline-flex; align-items: center; gap: 8px; flex: none; }
 .sd-row .sd-ops { display: inline-flex; gap: 4px; margin-left: auto; }
 .field-control { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .field-suffix { font-size: 12px; color: var(--au-text-3); white-space: nowrap; }

@@ -4,9 +4,10 @@
 - GET    /token            状态：{exists, expires_at}，不回明文
 - POST   /token            生成（已有有效 token 回现有状态，不重复生成）
 - DELETE /token            删除即失效
-- GET    /lines            线路列表（管理员配置，默认两条）
+- GET    /lines            线路列表（管理员配置，默认两条；
+  每条带 enabled，暂停线路照常列出供前端标「暂停服务」）
 - GET    /address?line=id  为本人拼好的完整地址（唯一出现 token
-  明文的响应）；未生成 409、线路不存在 404
+  明文的响应）；未生成 409、线路不存在 404、线路已暂停 409
 
 公开下发（无登录态，token 在路径，/api/v1/danmu）：
 - GET /{token}/ [{item_ref}[/raw]]  按 Danmu 插件约定回 bilibili
@@ -67,7 +68,11 @@ def danmu_token_delete(user=Depends(get_current_user),
 @user_router.get("/lines")
 def danmu_lines(user=Depends(get_current_user),
                 db: Session = Depends(get_db)):
-    """弹幕线路列表：{id, name, note, host}，顺序即展示顺序。"""
+    """弹幕线路列表：{id, name, note, host, enabled}，顺序即展示顺序。
+
+    暂停线路（enabled=false）照常列出：前端标「暂停服务」不可选，
+    不在此过滤（过滤掉用户就不知道有这条线路暂停了）。
+    """
     return {"lines": core_api.get_lines(db)}
 
 
@@ -75,10 +80,18 @@ def danmu_lines(user=Depends(get_current_user),
 def danmu_address(line: str = Query(...),
                   user=Depends(get_current_user),
                   db: Session = Depends(get_db)):
-    """为本人拼完整弹幕地址：线路只换 host，路径与 token 不变。"""
+    """为本人拼完整弹幕地址：线路只换 host，路径与 token 不变。
+
+    拒绝口径：线路不存在 404（与既有口径一致）；线路已暂停回
+    409——不用 404 是因为线路存在、只是当前状态不允许拼地址，
+    与「未生成 token」的 409 同属状态冲突，detail 区分两者。
+    """
     lines = core_api.get_lines(db)
-    if not any(ln["id"] == line for ln in lines):
+    target = next((ln for ln in lines if ln["id"] == line), None)
+    if target is None:
         raise HTTPException(status_code=404, detail="线路不存在")
+    if not target["enabled"]:
+        raise HTTPException(status_code=409, detail="该线路已暂停服务")
     address = core_api.build_address(db, user.id, line)
     if address is None:
         raise HTTPException(status_code=409, detail="尚未生成弹幕 Token")
