@@ -3,7 +3,6 @@
     <div class="au-card tg-login-card">
       <h1 class="tg-login-title">Telegram 快捷登录</h1>
       <div v-if="state === 'loading'" class="tg-login-loading" role="status">
-        <div class="au-skeleton tg-login-skeleton"></div>
         <p class="tg-login-msg">正在为您登录…</p>
       </div>
       <p v-else-if="state === 'success'" class="tg-login-msg tg-login-ok" role="status"><span aria-hidden="true">✅</span> 登录成功</p>
@@ -111,10 +110,6 @@ function goHome() {
   flex-direction: column;
   align-items: center;
   gap: 1rem;
-}
-.tg-login-skeleton {
-  height: 64px;
-  width: 100%;
 }
 .tg-login-actions {
   display: flex;

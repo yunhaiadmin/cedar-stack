@@ -18,10 +18,7 @@
           演职人员收藏没加载出来：{{ peopleError }}<br />
           <button type="button" class="fv-retry" :disabled="peopleLoading" @click="() => loadPeople()">{{ peopleLoading ? '正在重试…' : '重试' }}</button>
         </div>
-        <div v-else-if="peopleLoading" class="fv-skel" role="status" aria-label="正在加载">
-          <div v-for="i in 7" :key="i" class="fv-skel__poster"><span class="fv-skel__logo">A</span></div>
-        </div>
-        <div v-else-if="peopleItems.length === 0" class="fv-empty">
+        <div v-else-if="!peopleLoading && peopleItems.length === 0" class="fv-empty">
           还没有收藏的演职人员
         </div>
         <div v-else class="fv-grid">
@@ -67,13 +64,10 @@
         收藏没加载出来：{{ error }}<br />
         <button type="button" class="fv-retry" :disabled="loading" @click="() => load()">{{ loading ? '正在重试…' : '重试' }}</button>
       </div>
-      <!-- 骨架屏（录屏形态）：海报灰块 + 居中站标 -->
-      <div v-else-if="loading" class="fv-skel" role="status" aria-label="正在加载">
-        <div v-for="i in 7" :key="i" class="fv-skel__poster"><span class="fv-skel__logo">A</span></div>
-      </div>
       <!-- 空态虚线框：高约 230（存档第 11 节）；文案照友站只留按页签短句；
-           演职人员页签走上方独立模板块，本分支不会命中 -->
-      <div v-else-if="filteredItems.length === 0" class="fv-empty">
+           演职人员页签走上方独立模板块，本分支不会命中。
+           加载中不渲染占位（骨架已删，2026-11-18），空态须等加载落定才出 -->
+      <div v-else-if="!loading && filteredItems.length === 0" class="fv-empty">
         还没有收藏的{{ tab === 'movie' ? '电影' : '剧集' }}
       </div>
       <div v-else class="fv-grid">
@@ -509,37 +503,5 @@ onMounted(() => {
   margin-top: 4px;
   font-size: 14px;
   color: var(--uhd-s-text-2);
-}
-
-/* 骨架屏网格（与 .fv-grid 同步列数） */
-.fv-skel {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 34px 21px;
-  margin-top: 26px;
-}
-@media (max-width: 1599px) { .fv-skel { grid-template-columns: repeat(6, 1fr); } }
-@media (max-width: 1279px) { .fv-skel { grid-template-columns: repeat(5, 1fr); } }
-@media (max-width: 1023px) { .fv-skel { grid-template-columns: repeat(4, 1fr); } }
-@media (max-width: 767px) { .fv-skel { grid-template-columns: repeat(3, 1fr); gap: 22px 12px; } }
-.fv-skel__poster {
-  aspect-ratio: 2 / 3;
-  border-radius: 13px;
-  background: var(--uhd-s-skeleton);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.fv-skel__logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: var(--uhd-s-border);
-  color: var(--uhd-s-text-2);
-  font-size: 18px;
-  font-weight: var(--uhd-fw-black);
 }
 </style>

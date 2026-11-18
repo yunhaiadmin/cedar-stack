@@ -22,11 +22,7 @@
           <ChevronLeft :size="16" aria-hidden="true" /> 返回
         </button>
 
-        <div v-if="loading" class="rmd-loading">
-          <div class="rmd-skeleton" style="height: 170px; margin-bottom: 10px"></div>
-          <div class="rmd-skeleton" style="height: 92px"></div>
-        </div>
-        <div v-else-if="loadError" class="rmd-err">
+        <div v-if="loadError" class="rmd-err">
           请求记录读取失败：{{ loadError }}<br />
           <button class="rmd-retry" @click="loadAll">重试</button>
         </div>
@@ -477,7 +473,6 @@ onMounted(() => { void loadAll() })
 .rmd-empty p { margin: 0; }
 .rmd-err { font-size: 13px; color: #fca5a5; line-height: 1.6; }
 .rmd-retry { margin-top: 6px; padding: 3px 12px; font-size: 12px; color: #fbfcfd; background: transparent; border: 1px solid currentColor; border-radius: 999px; cursor: pointer; opacity: 0.8; }
-.rmd-skeleton { background: var(--uhd-skel-bg); border-radius: 10px; }
 @media (max-width: 768px) {
   .rmd-page { margin: -20px -16px -120px; padding: 20px 16px 120px; }
 }

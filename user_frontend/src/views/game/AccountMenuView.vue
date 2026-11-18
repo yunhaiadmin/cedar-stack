@@ -9,10 +9,10 @@
       <div class="am-identity__text">
         <p class="am-username">{{ displayName }}</p>
         <div class="am-idrow">
-          <!-- 订阅未落定前只给中性占位条，不许先渲染「普通用户」结论
-               （2026-11-15 假空态根治：与概览同一单一数据源同口径） -->
-          <span v-if="!subsLoaded" class="am-status-skel" aria-hidden="true"></span>
-          <p v-else class="am-status">{{ statusLine }}</p>
+          <!-- 订阅未落定前不渲染状态行，不许先渲染「普通用户」结论
+               （2026-11-15 假空态根治：与概览同一单一数据源同口径；
+               占位条已按用户口径删除，2026-11-18） -->
+          <p v-if="subsLoaded" class="am-status">{{ statusLine }}</p>
           <button
             v-if="publicId"
             type="button"
@@ -320,15 +320,6 @@ onMounted(async () => {
   gap: 6px;
   min-width: 0;
 }
-/* 身份副行中性占位（订阅未落定时）：只占位、不写任何结论文字 */
-.am-status-skel {
-  display: inline-block;
-  width: 96px;
-  height: 13px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.14);
-}
-html[data-theme='light'] .am-status-skel { background: #e4e4e7; }
 .am-copy {
   flex: 0 0 auto;
   display: inline-flex;

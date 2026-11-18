@@ -2,14 +2,11 @@
   <!-- 工单详情线程：对话全链＋继续回复＋关闭（带二次确认）；管理员回复原样呈现。
        逻辑与旧求救信号页同口径，关闭后只读。 -->
   <div class="rf-thread">
-    <div v-if="messagesLoading">
-      <div v-for="i in 3" :key="i" class="rf-skeleton" style="height: 56px; margin-bottom: 8px"></div>
-    </div>
-    <div v-else-if="messagesError" class="rf-err">
+    <div v-if="messagesError" class="rf-err">
       对话加载失败：{{ friendlyError(messagesError) }}<br />
       <button class="rf-retry" @click="fetchMessages">重试</button>
     </div>
-    <div v-else ref="messagesEl" class="rf-messages" tabindex="0" role="log" aria-label="对话记录">
+    <div v-else-if="!messagesLoading" ref="messagesEl" class="rf-messages" tabindex="0" role="log" aria-label="对话记录">
       <p v-if="!messages.length" class="rf-messages__empty">还没有对话内容，我们会尽快回复</p>
       <!-- 时间线形态（照友站态3）：圆形头像（提交者＝人形／管理员＝盾牌）＋
            名字＋角色标签＋时间＋灰气泡正文。本人线程是私密面，名字不打码；
@@ -173,7 +170,6 @@ onUnmounted(() => { alive = false })
 <style scoped>
 /* 工单线程：缺省深色，html[data-theme='light'] 时换浅。 */
 .rf-thread { margin-top: 10px; border-top: 1px dotted #333336; padding-top: 10px; }
-.rf-skeleton { background: var(--uhd-skel-bg); border-radius: 10px; }
 .rf-err { font-size: 13px; color: #fca5a5; line-height: 1.6; }
 .rf-retry { margin-top: 6px; padding: 3px 12px; font-size: 12px; color: #fbfcfd; background: transparent; border: 1px solid currentColor; border-radius: 999px; cursor: pointer; opacity: 0.8; }
 .rf-messages { display: flex; flex-direction: column; gap: 12px; max-height: 320px; overflow-y: auto; }

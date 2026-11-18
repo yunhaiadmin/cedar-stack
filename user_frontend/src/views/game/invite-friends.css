@@ -467,14 +467,6 @@ html[data-theme='light'] .iv-btn--glass {
   cursor: pointer;
 }
 
-.iv-skeleton {
-  height: 420px;
-  border-radius: 20px;
-  background: var(--iv-card);
-  border: 1px solid var(--iv-line);
-  opacity: 0.6;
-}
-
 /* ---------- 福利邀请：送好友一份试用（2026-11-15 生成码机制，照友站帧） ---------- */
 
 .iv-whead {

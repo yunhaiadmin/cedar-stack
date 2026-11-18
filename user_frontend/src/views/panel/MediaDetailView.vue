@@ -632,19 +632,7 @@ watch(itemId, () => {
         {{ loading ? '正在重试…' : '重试' }}
       </button>
     </div>
-    <!-- 骨架屏（录屏形态）：剧照带/海报/文本行灰块 + 居中站标，尺寸贴真实布局 -->
-    <div v-else-if="loading && !item" class="md-skel" role="status" aria-label="正在加载">
-      <div class="md-skel__band"><span class="md-skel__logo">A</span></div>
-      <div class="md-wrap md-skel__body">
-        <div class="md-skel__poster"><span class="md-skel__logo">A</span></div>
-        <div class="md-skel__lines">
-          <span class="md-skel__bar" style="width: 46%"></span>
-          <span class="md-skel__bar" style="width: 68%"></span>
-          <span class="md-skel__bar" style="width: 30%"></span>
-        </div>
-      </div>
-    </div>
-
+    <!-- 加载中不渲染占位（骨架屏已按用户口径删除，2026-11-18），数据到位直接出 -->
     <template v-else-if="item">
       <!-- 剧照带 Hero：桌面高约 340 渐隐；移动端全幅 backdrop 大图
            （2026-11-14 用户截图亲点友站形态）：高约 40vh、底部渐隐入
@@ -1609,52 +1597,6 @@ watch(itemId, () => {
   font-weight: var(--uhd-fw-regular);
   color: var(--uhd-s-text-2);
 }
-/* 详情骨架屏 */
-.md-skel__band {
-  height: 340px;
-  background: var(--uhd-s-skeleton);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.md-skel__body {
-  display: flex;
-  gap: 28px;
-  margin-top: 31px;
-}
-.md-skel__poster {
-  flex: 0 0 220px;
-  aspect-ratio: 2 / 3;
-  border-radius: 16px;
-  background: var(--uhd-s-skeleton);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.md-skel__lines {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding-top: 10px;
-}
-.md-skel__bar {
-  height: 22px;
-  border-radius: 6px;
-  background: var(--uhd-s-skeleton);
-}
-.md-skel__logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: var(--uhd-s-border);
-  color: var(--uhd-s-text-2);
-  font-size: 20px;
-  font-weight: var(--uhd-fw-black);
-}
 /* 手机详情 = 友站 app 形态（2026-11-14 用户截图亲点）：全幅 backdrop
    顶图（高约 40vh、底部渐隐入页底）→ 类型小字/大标题/信息行叠在渐隐
    尾上 → 全宽播放行（吸顶）→ 简介 → 演职人员 → 影片信息 → 版本/剧集
@@ -1932,12 +1874,6 @@ watch(itemId, () => {
   .md-episodes :deep(.ep-strip) {
     width: calc(100% + 40px);
     margin-left: -20px;
-  }
-  .md-skel__band {
-    height: 120px;
-  }
-  .md-skel__poster {
-    display: none;
   }
 }
 </style>

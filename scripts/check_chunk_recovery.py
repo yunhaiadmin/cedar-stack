@@ -17,7 +17,8 @@
      ChunkLoadError、Firefox MIME 样本）＋ sessionStorage 刷新预算键；
   2. 三处接线都在：router.onError 调统一恢复、main.ts 监听
      vite:preloadError 且接同一恢复、RootView 的 LandingView 异步组件
-     带 loadingComponent（骨架）与 onError（接同一恢复）；
+     带 onError（接同一恢复）；加载占位（骨架）已按用户口径删除
+     （2026-11-18「两个都删」），不再钉 loadingComponent；
   3. 单一实现纪律：router/index.ts 不许再自带一份判定样本/预算键。
 
 用法：python3 scripts/check_chunk_recovery.py
@@ -34,7 +35,6 @@ UTIL = ROOT / "user_frontend" / "src" / "utils" / "chunkRecovery.ts"
 ROUTER = ROOT / "user_frontend" / "src" / "router" / "index.ts"
 MAIN = ROOT / "user_frontend" / "src" / "main.ts"
 ROOT_VIEW = ROOT / "user_frontend" / "src" / "views" / "RootView.vue"
-SKELETON = ROOT / "user_frontend" / "src" / "components" / "ui" / "LandingSkeleton.vue"
 
 failures: list[str] = []
 checks = 0
@@ -116,11 +116,8 @@ def main() -> int:
 
     root_view = read(ROOT_VIEW, "RootView.vue")
     if root_view:
-        expect(root_view, "loadingComponent", "RootView 异步组件")
         expect(root_view, "onError", "RootView 异步组件")
         expect(root_view, "handleChunkLoadError", "RootView 异步组件")
-        expect(root_view, "LandingSkeleton", "RootView 异步组件")
-    read(SKELETON, "LandingSkeleton.vue")
 
     print("=" * 60)
     if failures:

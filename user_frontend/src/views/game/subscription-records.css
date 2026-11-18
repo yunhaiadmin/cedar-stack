@@ -275,11 +275,3 @@ html[data-theme='light'] .sr-page {
   text-decoration: underline;
   cursor: pointer;
 }
-
-.sr-skeleton {
-  margin-top: 22px;
-  height: 190px;
-  border-radius: 16px;
-  background: var(--sr-chip);
-  opacity: 0.6;
-}

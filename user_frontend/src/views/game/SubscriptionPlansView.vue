@@ -10,16 +10,9 @@
     </header>
 
     <main class="sub-body">
-      <!-- 加载态（通用口径）：数据未到位前只许中性加载态——转圈＋骨架＋加载文案，
-           不渲染任何结论性文案或半成品控件；骨架跟随页面主题，浅色页用浅色骨架 -->
-      <div v-if="loading" class="sub-loading" role="status" aria-label="正在加载订阅">
-        <span class="sub-spinner" aria-hidden="true"></span>
-        <p class="sub-loading__text">正在加载订阅…</p>
-        <div class="sub-skeleton" aria-hidden="true"></div>
-        <div class="sub-skeleton sub-skeleton--short" aria-hidden="true"></div>
-      </div>
-
-      <div v-else-if="loadError" class="sub-state">
+      <!-- 加载中不渲染任何占位（全页加载层已按用户口径删除，2026-11-18）：
+           数据未到位前不渲染结论性文案或半成品控件，数据到位直接出 -->
+      <div v-if="loadError" class="sub-state">
         <p>订阅加载失败，请稍后重试</p>
         <button type="button" class="sub-retry" @click="loadAll">重试</button>
       </div>
@@ -730,41 +723,6 @@ onMounted(() => {
   min-width: 0;
 }
 
-/* 加载态：中性转圈＋浅色骨架（跟随主题，禁止整块纯黑） */
-.sub-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  padding-top: 26px;
-}
-.sub-spinner {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  border: 3px solid var(--uhd-l-border);
-  border-top-color: var(--uhd-l-text-3);
-  animation: sub-spin 0.9s linear infinite;
-}
-@keyframes sub-spin { to { transform: rotate(360deg); } }
-.sub-loading__text {
-  margin: 0;
-  font-size: 13px;
-  color: var(--uhd-l-text-2);
-}
-.sub-skeleton {
-  width: 100%;
-  height: 168px;
-  border-radius: 20px;
-  background: linear-gradient(100deg, #ececef 40%, #f4f4f6 50%, #ececef 60%);
-  background-size: 200% 100%;
-  animation: sub-shimmer 1.4s infinite;
-}
-.sub-skeleton--short { height: 96px; }
-@keyframes sub-shimmer {
-  from { background-position: 120% 0; }
-  to { background-position: -80% 0; }
-}
 .sub-state {
   display: flex;
   flex-direction: column;
@@ -1177,10 +1135,6 @@ html:not([data-theme='light']) .sub-page {
   --uhd-l-active: #2d2d2f;
 }
 html:not([data-theme='light']) .plan-card--on { box-shadow: var(--uhd-shadow-card-d); }
-html:not([data-theme='light']) .sub-skeleton {
-  background: linear-gradient(100deg, #17171a 40%, #1f1f23 50%, #17171a 60%);
-  background-size: 200% 100%;
-}
 html:not([data-theme='light']) .sub-back:active { background: rgba(255, 255, 255, 0.08); }
 html:not([data-theme='light']) .sub-seg__item--on { background: #2d2d2f; color: #fbfcfd; box-shadow: none; }
 html:not([data-theme='light']) .sub-cap,
