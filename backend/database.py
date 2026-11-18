@@ -850,6 +850,14 @@ def _auto_migrate():
             ("access_note", "VARCHAR(500)", "''"),
             ("allow_download", "BOOLEAN", "NULL"),
         ]),
+        # 线路流量配额（2026-11-19）：老库补列后配额 0 = 不限、统计起点
+        # NULL = 从有计量以来全算，与升级前行为一致（新表
+        # realm_traffic_usage_daily 由 create_all 建，不在此列）。
+        ("server_realms", [
+            ("traffic_quota_bytes", "BIGINT", "0"),
+            ("traffic_usage_offset_bytes", "BIGINT", "0"),
+            ("traffic_period_started_at", "TIMESTAMP", "NULL"),
+        ]),
         # v2.6.20 多服运营：订阅、套餐、卡码、求片、挂载都归属到某个服
         ("subscription_plans", [
             ("realm_id", "INTEGER", "NULL"),

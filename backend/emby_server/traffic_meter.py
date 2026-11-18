@@ -27,6 +27,14 @@
 取不到用户（非 video_stream 上下文）就整笔不计——宁可漏计，
 不许错记到别人头上。
 
+线路（服）旁路汇总（2026-11-19 线路配额）：同一笔被接受计量的
+字节再按「本进程所属的服」记一份到 ``realm_traffic_usage_daily``。
+一个进程只服务一个服（内容可见性作用域在启动时钉死：EA 按
+REALM/NODE_KEY 认领、面板网关 = 默认服），所以热路径不需要知道
+服 id——只按日攒 relay/local 两腿，落库时一次性解析进程所属服
+（解析失败整批跳过、下轮重试，绝不把字节记到别的服头上）。
+服的配额判定读该表（backend/line_quota）；本模块只负责记。
+
 铁律（照 watch_activity 同口径）：计量不许拖慢/拖垮播放。
 - 热路径只做进程内字典累加（一次锁、O(1)），绝不查库；
 - 落库由后台守护线程按 FLUSH_INTERVAL_SEC 批量 upsert（独立
@@ -71,8 +79,15 @@ _CURRENT_USER_ID: contextvars.ContextVar[Optional[int]] = (
 _LOCK = threading.Lock()
 # (user_id, day) -> [relay_bytes, local_bytes, direct_plays]
 _PENDING: dict = {}
+# 线路旁路：day -> [relay_bytes, local_bytes]（服 id 落库时解析，见 docstring）
+_PENDING_REALM: dict = {}
+# 进程所属服的解析缓存（进程身份运行期不变，解析成功后不再查库；
+# 解析不出时不缓存，下轮落库再试）
+_PROCESS_REALM_ID: Optional[int] = None
 _STATS = {"noted_bytes": 0, "noted_plays": 0, "flushes": 0,
-          "written_rows": 0, "write_errors": 0, "skipped_no_user": 0}
+          "written_rows": 0, "write_errors": 0, "skipped_no_user": 0,
+          "realm_noted_bytes": 0, "realm_written_rows": 0,
+          "realm_write_errors": 0, "realm_skipped_no_realm": 0}
 _THREAD: Optional[threading.Thread] = None
 _THREAD_LOCK = threading.Lock()
 _STOP = threading.Event()
@@ -131,6 +146,12 @@ def note_bytes(count: int, source: str, *,
             cell = _PENDING[key] = [0, 0, 0]
         cell[0 if source == "relay" else 1] += int(count)
         _bump("noted_bytes", int(count))
+        # 线路旁路：同一笔字节按日攒一份（服 id 落库时解析）
+        rcell = _PENDING_REALM.get(key[1])
+        if rcell is None:
+            rcell = _PENDING_REALM[key[1]] = [0, 0]
+        rcell[0 if source == "relay" else 1] += int(count)
+        _bump("realm_noted_bytes", int(count))
         over = len(_PENDING) > _PENDING_MAX_KEYS
     _ensure_flusher()
     if over:
@@ -225,34 +246,135 @@ def apply_batch(db, batch: dict) -> int:
     return written
 
 
+def _resolve_process_realm_id(db) -> Optional[int]:
+    """本进程服务哪个服（线路旁路落库时解析，成功后缓存）。
+
+    优先级：内容可见性作用域钉死的服（EA 按认领/REALM、面板网关
+    按 GATEWAY_REALM/默认服在启动时解析）→ 进程自认领的服 →
+    默认服。都拿不到返回 None：这批线路字节整批跳过（宁可漏计，
+    不许错记到别的服头上），下轮落库再试。
+    """
+    global _PROCESS_REALM_ID
+    if _PROCESS_REALM_ID is not None:
+        return _PROCESS_REALM_ID
+    rid: Optional[int] = None
+    try:
+        from backend.emby_server import nodes
+
+        rid = nodes.scope_realm_id()
+        if rid is None:
+            rid = nodes.self_realm_id(db)
+    except Exception:  # noqa: BLE001 — 解析失败按拿不到处理
+        rid = None
+    if rid is None:
+        try:
+            from backend import realms
+
+            rid = realms.legacy_realm_id(db)
+        except Exception:  # noqa: BLE001
+            rid = None
+    if rid is not None:
+        _PROCESS_REALM_ID = int(rid)
+        return _PROCESS_REALM_ID
+    return None
+
+
+def apply_realm_batch(db, batch: dict, realm_id: int) -> int:
+    """把线路旁路聚合 upsert 进服日账（写线程与测试共用；自带提交）。
+
+    ``batch``：day -> [relay_bytes, local_bytes]。并发建行撞唯一
+    约束时回滚后走更新路径重试一次（与 apply_batch 同口径）。
+    """
+    written = 0
+    for day, (relay, local) in batch.items():
+        row = (db.query(em.RealmTrafficUsageDaily)
+               .filter(em.RealmTrafficUsageDaily.realm_id == realm_id,
+                       em.RealmTrafficUsageDaily.day == day)
+               .first())
+        if row is None:
+            db.add(em.RealmTrafficUsageDaily(
+                realm_id=realm_id, day=day, relay_bytes=relay,
+                local_bytes=local))
+            try:
+                db.commit()
+                written += 1
+                continue
+            except IntegrityError:
+                db.rollback()
+                row = (db.query(em.RealmTrafficUsageDaily)
+                       .filter(em.RealmTrafficUsageDaily.realm_id == realm_id,
+                               em.RealmTrafficUsageDaily.day == day)
+                       .first())
+                if row is None:
+                    raise
+        row.relay_bytes = int(row.relay_bytes or 0) + relay
+        row.local_bytes = int(row.local_bytes or 0) + local
+        row.updated_at = datetime.now()
+        db.commit()
+        written += 1
+    return written
+
+
+def _swap_pending_realm() -> dict:
+    with _LOCK:
+        if not _PENDING_REALM:
+            return {}
+        batch = dict(_PENDING_REALM)
+        _PENDING_REALM.clear()
+        return batch
+
+
 def flush_now(db=None) -> int:
     """把当前聚合落库，返回写入行数（无待落数据返回 0）。
 
     失败静默计数返回 0——这一批就此丢弃（见模块 docstring 的
     取舍），绝不把异常抛回调用方（可能是播放路径的溢出触发）。
+    线路旁路与用户账分开结算：任一侧失败只丢自己那批，不连累另一侧。
     """
     batch = _swap_pending()
-    if not batch:
+    realm_batch = _swap_pending_realm()
+    if not batch and not realm_batch:
         return 0
     own = db is None
     if own:
         from backend.database import SessionLocal
         db = SessionLocal()
+    written = 0
     try:
-        written = apply_batch(db, batch)
-        with _LOCK:
-            _bump("flushes")
-            _bump("written_rows", written)
+        if batch:
+            try:
+                written = apply_batch(db, batch)
+                with _LOCK:
+                    _bump("flushes")
+                    _bump("written_rows", written)
+            except Exception:  # noqa: BLE001 — 计量失败静默，绝不影响播放
+                with _LOCK:
+                    _bump("write_errors")
+                logger.warning("流量计量落库失败（本批丢弃）", exc_info=True)
+                try:
+                    db.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
+        if realm_batch:
+            try:
+                realm_id = _resolve_process_realm_id(db)
+                if realm_id is None:
+                    with _LOCK:
+                        _bump("realm_skipped_no_realm")
+                    logger.warning("线路计量落库跳过：本进程所属服解析不出（本批丢弃）")
+                else:
+                    realm_written = apply_realm_batch(db, realm_batch, realm_id)
+                    with _LOCK:
+                        _bump("realm_written_rows", realm_written)
+            except Exception:  # noqa: BLE001 — 线路计量失败静默，不连累用户账
+                with _LOCK:
+                    _bump("realm_write_errors")
+                logger.warning("线路计量落库失败（本批丢弃）", exc_info=True)
+                try:
+                    db.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
         return written
-    except Exception:  # noqa: BLE001 — 计量失败静默，绝不影响播放
-        with _LOCK:
-            _bump("write_errors")
-        logger.warning("流量计量落库失败（本批丢弃）", exc_info=True)
-        try:
-            db.rollback()
-        except Exception:  # noqa: BLE001
-            pass
-        return 0
     finally:
         if own:
             try:
@@ -263,7 +385,10 @@ def flush_now(db=None) -> int:
 
 def reset_pending() -> None:
     """测试用：清聚合与统计（不要在生产路径调用）。"""
+    global _PROCESS_REALM_ID
     with _LOCK:
         _PENDING.clear()
+        _PENDING_REALM.clear()
+        _PROCESS_REALM_ID = None
         for key in _STATS:
             _STATS[key] = 0

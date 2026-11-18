@@ -297,13 +297,14 @@
                   :key="l.key"
                   type="button"
                   class="psp-line-opt"
-                  :class="{ 'psp-line-opt--on': l.url === selectedLineUrl }"
+                  :class="{ 'psp-line-opt--on': l.url === selectedLineUrl, 'psp-line-opt--off': l.exhausted }"
+                  :disabled="l.exhausted"
                   @click="chooseLine(l)"
                 >
                   <span class="psp-line-opt__radio" aria-hidden="true"></span>
                   <span class="psp-line-opt__main">
                     <span class="psp-line-opt__name">{{ l.name }}</span>
-                    <span class="psp-line-opt__host">{{ lineHost(l.url) }}</span>
+                    <span class="psp-line-opt__host">{{ l.exhausted ? '暂停服务' : lineHost(l.url) }}</span>
                   </span>
                 </button>
               </div>
@@ -787,12 +788,19 @@ async function loadLines() {
     const res = await loadPlayLines()
     lines.value = res.lines
     linesDefaultUrl.value = res.defaultUrl
-    const stillValid = selectedLineUrl.value && res.lines.some((l) => l.url === selectedLineUrl.value)
+    // 配额分流（2026-11-19）：已选线用尽后不再算有效选择；默认落点
+    // 优先默认线（未用尽时），否则第一条未用尽的线；全部用尽时后端
+    // 已回落清零标记，这里自然落回现行口径（默认线/第一条）。
+    const stillValid =
+      selectedLineUrl.value &&
+      res.lines.some((l) => l.url === selectedLineUrl.value && !l.exhausted)
     if (!stillValid) {
+      const usable = res.lines.filter((l) => !l.exhausted)
+      const pool = usable.length ? usable : res.lines
       selectedLineUrl.value =
-        (res.defaultUrl && res.lines.some((l) => l.url === res.defaultUrl)
+        (res.defaultUrl && pool.some((l) => l.url === res.defaultUrl)
           ? res.defaultUrl
-          : res.lines[0]?.url) || ''
+          : pool[0]?.url) || ''
     }
   } catch {
     lines.value = []
@@ -802,6 +810,7 @@ async function loadLines() {
 }
 
 function chooseLine(l: PlayLine) {
+  if (l.exhausted) return // 用尽线路不可选（选单里灰态展示「暂停服务」）
   selectedLineUrl.value = l.url
   linePickerOpen.value = false
 }
@@ -1884,6 +1893,11 @@ body.uhd-stream-dark .psp-failed__retry {
 }
 .psp-line-opt--on {
   border-color: var(--uhd-l-text, #111111);
+}
+/* 配额用尽：灰态不可选，副行显示「暂停服务」（与弹幕线路暂停同口径） */
+.psp-line-opt--off {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 .psp-line-opt__radio {
   flex: none;

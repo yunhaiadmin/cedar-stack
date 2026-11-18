@@ -42,6 +42,8 @@ export interface ServerLinesRealm {
   base_url: string
   is_default: boolean
   is_free?: boolean
+  /** 线路流量配额已用尽：显示「暂停服务」、地址不可复制 */
+  quota_exhausted?: boolean
 }
 
 export interface ServerLinesCard {
@@ -49,6 +51,7 @@ export interface ServerLinesCard {
   server_name: string
   realm_name?: string | null
   is_free?: boolean
+  quota_exhausted?: boolean
   realms?: ServerLinesRealm[]
 }
 
@@ -68,6 +71,7 @@ interface ServerLine {
   url: string
   primary: boolean
   free: boolean
+  exhausted: boolean
 }
 
 /** 线路清单：账号卡 realms 现行口径（与测速页同源），默认服在前、按地址去重 */
@@ -89,6 +93,7 @@ const lines = computed<ServerLine[]>(() => {
       url,
       primary: rows.length === 0,
       free: !!r.is_free,
+      exhausted: !!r.quota_exhausted,
     })
   }
   if (!rows.length) {
@@ -100,6 +105,7 @@ const lines = computed<ServerLine[]>(() => {
         url: top,
         primary: true,
         free: !!card.is_free,
+        exhausted: !!card.quota_exhausted,
       })
     }
   }
@@ -109,6 +115,7 @@ const lines = computed<ServerLine[]>(() => {
 const copiedKey = ref('')
 let copiedTimer: ReturnType<typeof setTimeout> | undefined
 async function copyLine(line: ServerLine) {
+  if (line.exhausted) return // 用尽线路不可选（钮已禁用，这里兜底）
   try {
     await navigator.clipboard.writeText(line.url)
     copiedKey.value = line.key
@@ -190,7 +197,7 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <div v-if="lines.length" class="sls-lines">
-          <div v-for="line in lines" :key="line.key" class="sls-line">
+          <div v-for="line in lines" :key="line.key" class="sls-line" :class="{ 'sls-line--off': line.exhausted }">
             <span class="sls-line__main">
               <span class="sls-line__tags">
                 <span
@@ -199,12 +206,15 @@ onBeforeUnmount(() => {
                 >{{ line.primary ? '主线路' : '备用线路' }}</span>
                 <span v-if="line.name" class="sls-line__name">{{ line.name }}</span>
                 <span v-if="line.free" class="sls-line__free">公益服</span>
+                <!-- 线路流量配额用尽（2026-11-19）：与弹幕线路暂停同口径，
+                     灰态＋「暂停服务」，地址不许复制选用 -->
+                <span v-if="line.exhausted" class="sls-line__paused">暂停服务</span>
               </span>
               <span class="sls-line__url">{{ line.url }}</span>
             </span>
             <!-- 复制钮照友站 f0004：纯文字深色玻璃胶囊（无常驻图标）；
                  已复制态才换 ✓ 图标＋「已复制」（toast 同步提示） -->
-            <button type="button" class="sls-copy" @click="copyLine(line)">
+            <button type="button" class="sls-copy" :disabled="line.exhausted" @click="copyLine(line)">
               <Check v-if="copiedKey === line.key" :size="13" aria-hidden="true" />
               {{ copiedKey === line.key ? '已复制' : '复制' }}
             </button>
@@ -436,6 +446,20 @@ onBeforeUnmount(() => {
   flex: none;
   font-size: var(--uhd-fs-micro);
   color: var(--sls-sub);
+}
+/* 配额用尽：整行灰态、暂停服务标记、复制钮禁用 */
+.sls-line--off .sls-line__main {
+  opacity: 0.55;
+}
+.sls-line__paused {
+  flex: none;
+  font-size: var(--uhd-fs-micro);
+  font-weight: var(--uhd-fw-semibold);
+  color: var(--sls-sub);
+}
+.sls-copy:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .sls-line__url {
   font-family: var(--uhd-font-mono);

@@ -46,6 +46,8 @@ class RealmPayload(BaseModel):
     access_note: str = Field(default="", max_length=500)
     # 下载策略：不传 = 跟随全局（公益服默认禁止下载）
     allow_download: Optional[bool] = None
+    # 线路流量配额（字节）：0 = 不限额；不传 = 0
+    traffic_quota_bytes: Optional[int] = Field(default=None, ge=0)
 
 
 class RealmUpdatePayload(BaseModel):
@@ -58,6 +60,8 @@ class RealmUpdatePayload(BaseModel):
     access_note: Optional[str] = Field(default=None, max_length=500)
     # 三态下载策略：follow（跟随全局）/ allow / deny；不传 = 不改
     download_policy: Optional[str] = Field(default=None, max_length=10)
+    # 线路流量配额（字节）：0 = 不限额；不传 = 不改
+    traffic_quota_bytes: Optional[int] = Field(default=None, ge=0)
 
 
 def _summary(
@@ -148,6 +152,7 @@ def create_realm(
             description=payload.description, is_active=payload.is_active,
             access_mode=payload.access_mode, access_note=payload.access_note,
             allow_download=payload.allow_download,
+            traffic_quota_bytes=payload.traffic_quota_bytes,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -269,14 +274,43 @@ def update_realm(
             sort_order=payload.sort_order,
             access_mode=payload.access_mode, access_note=payload.access_note,
             download_policy=payload.download_policy,
+            traffic_quota_bytes=payload.traffic_quota_bytes,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     _audit(db, admin, "update_realm", "realm", realm.id,
            {"name": realm.name, "is_active": bool(realm.is_active),
-            "access_mode": realms.normalize_access_mode(realm.access_mode)})
+            "access_mode": realms.normalize_access_mode(realm.access_mode),
+            "traffic_quota_bytes": int(realm.traffic_quota_bytes or 0)})
     db.commit()
     return {"success": True, "realm": realms.serialize(db, realm), "summary": _summary(db)}
+
+
+@router.post("/{realm_id}/reset-traffic")
+def reset_realm_traffic(
+    realm_id: int,
+    admin: models.WebUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """重置某条线路（服）的流量用量：统计起点拨到现在，重新计配额。
+
+    历史日账不删（对账可查），只是配额判定从新起点重新求和
+    （backend/line_quota.reset_period）。
+    """
+    from backend import line_quota
+
+    realm = realms.get_realm(db, realm_id)
+    if not realm:
+        raise HTTPException(404, "服不存在")
+    before = line_quota.quota_view(db, realm)
+    realm = line_quota.reset_period(db, realm)
+    _audit(db, admin, "reset_realm_traffic", "realm", realm.id,
+           {"name": realm.name,
+            "used_bytes_before": before["used_bytes"],
+            "quota_bytes": before["quota_bytes"]})
+    db.commit()
+    return {"success": True, "realm": realms.serialize(db, realm),
+            "summary": _summary(db)}
 
 
 @router.post("/{realm_id}/activate")

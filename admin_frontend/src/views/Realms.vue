@@ -17,11 +17,11 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  AlertTriangle, CheckCircle2, Crown, Film, Info, Network, Pencil, Plus,
-  RefreshCw, Route, Server, Trash2, Wifi,
+  AlertTriangle, CheckCircle2, Crown, Film, Gauge, Info, Network, Pencil, Plus,
+  RefreshCw, RotateCcw, Route, Server, Trash2, Wifi,
 } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard, StatTile } from '@/components/ui'
-import { createRealm, deleteRealm, syncRealmNodes, updateRealm } from '@/api/admin'
+import { createRealm, deleteRealm, resetRealmTraffic, syncRealmNodes, updateRealm } from '@/api/admin'
 import { useRealmStore } from '@/stores/realm'
 import type { RealmNodeSync, RealmRow } from '@/types'
 import NoticePanel from '@/components/NoticePanel.vue'
@@ -74,7 +74,17 @@ const form = reactive({
   access_mode: 'paid' as 'paid' | 'free',
   access_note: '',
   download_policy: 'follow' as 'follow' | 'allow' | 'deny',
+  // 线路流量配额按 GB 填（后端存字节，1024 进制）；0 = 不限额
+  traffic_quota_gb: 0,
 })
+
+const GB = 1024 ** 3
+function bytesToGb(bytes: number): number {
+  return Math.round((bytes / GB) * 100) / 100
+}
+function gbToBytes(gb: number): number {
+  return Math.round(Math.max(0, gb || 0) * GB)
+}
 
 function policyOf(row: RealmRow): 'follow' | 'allow' | 'deny' {
   if (row.allow_download === null || row.allow_download === undefined) return 'follow'
@@ -86,6 +96,7 @@ function openCreate() {
   Object.assign(form, {
     name: '', slug: '', url: '', description: '', is_active: true,
     access_mode: 'paid', access_note: '', download_policy: 'follow',
+    traffic_quota_gb: 0,
   })
   dialogVisible.value = true
 }
@@ -98,6 +109,7 @@ function openEdit(row: RealmRow) {
     access_mode: row.access_mode === 'free' ? 'free' : 'paid',
     access_note: row.access_note || '',
     download_policy: policyOf(row),
+    traffic_quota_gb: bytesToGb(row.traffic?.quota_bytes ?? 0),
   })
   dialogVisible.value = true
 }
@@ -115,6 +127,7 @@ async function save() {
         access_mode: form.access_mode,
         access_note: form.access_note.trim(),
         download_policy: form.download_policy,
+        traffic_quota_bytes: gbToBytes(form.traffic_quota_gb),
       })
       ElMessage.success('已保存')
     } else {
@@ -127,6 +140,7 @@ async function save() {
         access_mode: form.access_mode,
         access_note: form.access_note.trim(),
         allow_download: form.download_policy === 'follow' ? null : form.download_policy === 'allow',
+        traffic_quota_bytes: gbToBytes(form.traffic_quota_gb),
       })
       ElMessage.success('已新建，接下来去「媒体库 / 存储来源 / 订阅套餐」里往里填内容')
     }
@@ -246,6 +260,48 @@ async function confirmDelete() {
   }
 }
 
+// ==================== 线路流量配额 ====================
+
+/** 字节 → 人话（1024 进制，与后端 line_stats.format_bytes 同口径） */
+function fmtBytes(bytes: number | null | undefined): string {
+  let value = Math.max(0, Number(bytes || 0))
+  for (const unit of ['B', 'KB', 'MB', 'GB', 'TB']) {
+    if (value < 1024 || unit === 'TB') {
+      return unit === 'B' ? `${Math.round(value)} B` : `${value.toFixed(1)} ${unit}`
+    }
+    value /= 1024
+  }
+  return `${value.toFixed(1)} TB`
+}
+
+function trafficPct(row: RealmRow): number {
+  const t = row.traffic
+  if (!t || !t.quota_bytes) return 0
+  return Math.min(100, Math.round((t.used_bytes / t.quota_bytes) * 100))
+}
+
+async function resetTraffic(row: RealmRow) {
+  try {
+    await ElMessageBox.confirm(
+      `「${row.name}」的流量用量将从现在重新计数（已用 ${fmtBytes(row.traffic?.used_bytes)} 清零重计），历史记录保留在日账里可对账。`,
+      '重置用量',
+      { type: 'warning', confirmButtonText: '重置用量', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  busyId.value = row.id
+  try {
+    await resetRealmTraffic(row.id)
+    ElMessage.success(`「${row.name}」的流量用量已重置`)
+    await realm.refresh()
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    busyId.value = null
+  }
+}
+
 // ==================== 展示辅助 ====================
 
 function nodesText(row: RealmRow): string {
@@ -356,6 +412,8 @@ function shortDate(s: string | null): string {
             <!-- 接入方式：免费服免费开放（不需要订阅），付费服按订阅闸门 -->
             <span v-if="row.is_free" class="au-badge au-badge-green">免费服</span>
             <span v-else class="au-badge au-badge-muted">付费服</span>
+            <!-- 线路流量配额用尽：用户端这条线会显示「暂停服务」并停止分流 -->
+            <span v-if="row.traffic?.exhausted" class="au-badge au-badge-rose">流量已用尽</span>
             <span v-if="!row.is_active" class="au-badge au-badge-rose">已停用</span>
           </div>
         </template>
@@ -378,6 +436,42 @@ function shortDate(s: string | null): string {
             <div><dt>有效订阅</dt><dd>{{ row.stats.active_subscriptions }}</dd></div>
             <div><dt>待审求片</dt><dd>{{ row.stats.pending_requests }}</dd></div>
           </dl>
+
+          <!-- 线路流量配额：已用 / 配额 / 剩余；用尽后新用户不再分到这条线（在播不断） -->
+          <div class="realm-traffic" :class="{ 'is-exhausted': row.traffic?.exhausted }">
+            <div class="traffic-head">
+              <Gauge :size="13" /> 线路流量
+              <span v-if="row.traffic?.exhausted" class="traffic-state">已用尽 · 用户端显示「暂停服务」</span>
+              <span v-else-if="row.traffic && row.traffic.quota_bytes > 0" class="traffic-state">剩余 {{ fmtBytes(row.traffic.remaining_bytes) }}</span>
+              <span v-else class="traffic-state">不限额</span>
+              <el-button
+                size="small"
+                text
+                :icon="RotateCcw"
+                :loading="busyId === row.id"
+                class="traffic-reset"
+                @click="resetTraffic(row)"
+              >
+                重置用量
+              </el-button>
+            </div>
+            <p class="traffic-nums">
+              已用 {{ fmtBytes(row.traffic?.used_bytes) }}
+              <template v-if="row.traffic && row.traffic.quota_bytes > 0">
+                / 配额 {{ fmtBytes(row.traffic.quota_bytes) }}（{{ trafficPct(row) }}%）
+              </template>
+              <span v-if="row.traffic?.period_started_at" class="traffic-since">
+                · 自 {{ row.traffic.period_started_at.slice(0, 10) }} 起计
+              </span>
+            </p>
+            <div v-if="row.traffic && row.traffic.quota_bytes > 0" class="traffic-bar" aria-hidden="true">
+              <span
+                class="traffic-bar__fill"
+                :class="{ 'is-exhausted': row.traffic.exhausted }"
+                :style="{ width: `${trafficPct(row)}%` }"
+              />
+            </div>
+          </div>
 
           <div class="realm-nodes">
             <div class="nodes-head">
@@ -474,6 +568,21 @@ function shortDate(s: string | null): string {
             <el-option value="allow" label="允许下载" />
             <el-option value="deny" label="禁止下载" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="线路流量配额（GB）">
+          <el-input-number
+            v-model="form.traffic_quota_gb"
+            :min="0"
+            :precision="2"
+            :step="100"
+            controls-position="right"
+            style="width: 100%"
+          />
+          <p class="field-help">
+            这条线路（服）累计能跑多少播放流量，0 = 不限额。用尽后新用户不再分到这条线
+            （用户端显示「暂停服务」），已在播的不受影响；所有线路都用尽时自动回落正常分配。
+            用量按真实出字节计（直链不经服务器的不计），在卡片上点「重置用量」重新计数。
+          </p>
         </el-form-item>
         <el-form-item label="描述">
           <el-input v-model="form.description" type="textarea" :rows="2" placeholder="可选，例如面向哪些用户" />
@@ -610,6 +719,27 @@ function shortDate(s: string | null): string {
 .realm-stats div { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
 .realm-stats dt { font-size: 12px; color: var(--au-text-3); }
 .realm-stats dd { margin: 0; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--au-text); }
+
+/* 线路流量：与统计格同面，用尽整块转红字提示（进度条填充转红） */
+.realm-traffic {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--au-surface-2);
+  border: 1px solid var(--au-border);
+  border-radius: var(--au-r-md);
+}
+.realm-traffic.is-exhausted { border-color: var(--au-danger-border); }
+.traffic-head { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--au-text-3); }
+.traffic-state { color: var(--au-text-2); font-weight: 400; }
+.realm-traffic.is-exhausted .traffic-state { color: var(--au-danger); font-weight: 600; }
+.traffic-reset { margin-left: auto; padding: 0 4px; height: 22px; font-size: 12px; }
+.traffic-nums { margin: 0; font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--au-text); }
+.traffic-since { color: var(--au-text-4); font-size: 12px; }
+.traffic-bar { height: 6px; border-radius: 999px; background: var(--au-border); overflow: hidden; }
+.traffic-bar__fill { display: block; height: 100%; border-radius: inherit; background: var(--au-primary); transition: width 0.3s ease; }
+.traffic-bar__fill.is-exhausted { background: var(--au-danger); }
 
 .realm-nodes { display: flex; flex-direction: column; gap: 6px; }
 .nodes-head { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--au-text-3); }

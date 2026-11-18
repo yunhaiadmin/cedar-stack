@@ -797,6 +797,8 @@ export interface RealmPayload {
   access_note?: string
   /** 下载策略：不传 = 跟随全局（免费服默认禁止下载） */
   allow_download?: boolean | null
+  /** 线路流量配额（字节）：0 = 不限额 */
+  traffic_quota_bytes?: number
 }
 
 export const createRealm = (data: RealmPayload) =>
@@ -812,10 +814,16 @@ export interface RealmUpdateData {
   access_note?: string
   /** 三态：follow = 跟随全局 / allow / deny */
   download_policy?: 'follow' | 'allow' | 'deny'
+  /** 线路流量配额（字节）：0 = 不限额；不传 = 不改 */
+  traffic_quota_bytes?: number
 }
 
 export const updateRealm = (id: number, data: RealmUpdateData) =>
   put<{ success: boolean; realm: RealmRow; summary: RealmSummary }>(`${R}/${id}`, data)
+
+/** 重置某条线路的流量用量（统计起点拨到现在，历史日账保留对账） */
+export const resetRealmTraffic = (id: number) =>
+  post<{ success: boolean; realm: RealmRow; summary: RealmSummary }>(`${R}/${id}/reset-traffic`, {})
 
 /** 切换面板当前操作的服：后台各页的作用域跟着切（服务端落库，多管理员一致） */
 export const activateRealm = (id: number) =>

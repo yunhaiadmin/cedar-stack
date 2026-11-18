@@ -403,6 +403,9 @@ export interface AccountRealmCard {
   is_default: boolean
   /** 该服的查看权限（没权限时 base_url 置空） */
   view_granted?: boolean
+  /** 线路流量配额已用尽（后端已做全线用尽回落：全用尽时恒 false）；
+   *  true 时用户端显示「暂停服务」且不可选，网页播放器自动避开 */
+  quota_exhausted?: boolean
 }
 
 /** Emby 账号/线路查看权限（没权限时地址类字段置空不下发） */
@@ -446,6 +449,8 @@ export interface AccountCard {
   allow_download?: boolean
   /** 我在这几个服各自的地址与会员（多服时客户端该连哪台一目了然） */
   realms?: AccountRealmCard[]
+  /** 当前卡对应服的线路配额是否已用尽（口径同 realms[].quota_exhausted） */
+  quota_exhausted?: boolean
   /** PA-036：图片端点鉴权后网页端拼图用的专用 Emby token（每次读卡轮换，
    *  没查看权限 / 外部模式为空串）；由 getAccountCard 同步进 imageKey 持有者 */
   emby_api_key?: string

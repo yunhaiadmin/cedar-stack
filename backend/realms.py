@@ -37,7 +37,7 @@ from typing import Optional
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from backend import models
+from backend import line_quota, models
 from backend.integrations import store
 from backend.emby_server import models as em
 from backend.emby_server import soft_delete
@@ -509,6 +509,9 @@ def serialize(
         "is_free": mode == ACCESS_FREE,
         "access_note": access_note_of(db, realm.id),
         "allow_download": realm.allow_download,
+        # 线路流量配额（2026-11-19）：配额/已用/剩余/是否用尽，判定
+        # 口径统一在 backend/line_quota，管理端直接展示这一份。
+        "traffic": line_quota.quota_view(db, realm),
         "is_active": bool(realm.is_active),
         "sort_order": realm.sort_order or 0,
         "is_default": realm.id == legacy_id,
@@ -540,10 +543,22 @@ def validate_slug(slug: str) -> str:
     return slug
 
 
+def _validate_quota_bytes(value) -> int:
+    """线路配额字节数收敛：None/空 = 不改（由调用方区分），数值须 ≥ 0。"""
+    try:
+        quota = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("流量配额必须是整数（字节数）")
+    if quota < 0:
+        raise ValueError("流量配额不能为负数")
+    return quota
+
+
 def create_realm(db: Session, *, name: str, slug: str = "", url: str = "",
                  description: str = "", is_active: bool = True,
                  access_mode: str = ACCESS_PAID, access_note: str = "",
-                 allow_download: Optional[bool] = None) -> models.ServerRealm:
+                 allow_download: Optional[bool] = None,
+                 traffic_quota_bytes: Optional[int] = None) -> models.ServerRealm:
     name = (name or "").strip()
     if not name:
         raise ValueError("请填写服的名称")
@@ -558,6 +573,9 @@ def create_realm(db: Session, *, name: str, slug: str = "", url: str = "",
         access_mode=normalize_access_mode(access_mode),
         access_note=(access_note or "").strip(),
         allow_download=allow_download,
+        traffic_quota_bytes=(
+            _validate_quota_bytes(traffic_quota_bytes)
+            if traffic_quota_bytes is not None else 0),
         sort_order=(db.query(models.ServerRealm).count() + 1),
     )
     db.add(realm)
@@ -585,7 +603,8 @@ def update_realm(db: Session, realm: models.ServerRealm, *, name: Optional[str] 
                  is_active: Optional[bool] = None, sort_order: Optional[int] = None,
                  access_mode: Optional[str] = None, access_note: Optional[str] = None,
                  allow_download: Optional[bool] = None,
-                 download_policy: Optional[str] = None) -> models.ServerRealm:
+                 download_policy: Optional[str] = None,
+                 traffic_quota_bytes: Optional[int] = None) -> models.ServerRealm:
     """改服
 
     ``access_mode`` / ``access_note`` / ``allow_download`` 是 v2.7.0 的公益服字段。
@@ -622,6 +641,8 @@ def update_realm(db: Session, realm: models.ServerRealm, *, name: Optional[str] 
             realm.allow_download = policy == "allow"
     if allow_download is not None:
         realm.allow_download = bool(allow_download)
+    if traffic_quota_bytes is not None:
+        realm.traffic_quota_bytes = _validate_quota_bytes(traffic_quota_bytes)
     db.commit()
     db.refresh(realm)
     invalidate_realm_cache(realm.id)

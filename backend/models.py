@@ -125,6 +125,19 @@ class ServerRealm(Base):
     access_note = Column(String(500), default='')
     # 该服下载策略：None=跟随全局（公益服默认禁止）/ True=允许 / False=禁止
     allow_download = Column(Boolean, nullable=True, default=None)
+    # 播放线路流量配额（2026-11-19 用户点选）：这个服（线路）累计可跑
+    # 多少播放字节，0 = 不限额。用量不落本行：按服按日汇总在
+    # realm_traffic_usage_daily（计量旁路，见 emby_server.traffic_meter）。
+    # 已用 = 日账总和 − traffic_usage_offset_bytes：管理端「重置用量」
+    # 时把当刻总和快照进 offset 并把 traffic_period_started_at 拨到
+    # 现在（仅展示「自何时起计」）——用量按日落账、拆不开同一天内
+    # 的重置前后，靠 offset 抵扣才能让重置当刻已用精确归零；历史
+    # 日行不删（对账可查）。
+    # server_default 必须有：database._ensure_default_realm 用裸 SQL 建
+    # 默认服、不带这两列，没有服务端默认值时 NOT NULL 直接炸（冒烟实证）。
+    traffic_quota_bytes = Column(BigInteger, nullable=False, default=0, server_default="0")
+    traffic_usage_offset_bytes = Column(BigInteger, nullable=False, default=0, server_default="0")
+    traffic_period_started_at = Column(DateTime, nullable=True, default=None)
     is_active = Column(Boolean, default=True)
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.now)

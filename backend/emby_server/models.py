@@ -944,6 +944,36 @@ class TrafficUsageDaily(Base):
                         onupdate=datetime.now)
 
 
+class RealmTrafficUsageDaily(Base):
+    """线路（服）流量用量日账（线路配额，2026-11-19）。
+
+    与 ``TrafficUsageDaily`` 同源同口径，是它在计量点的**旁路汇总**：
+    同一笔真实出字节（中继腿 / 本机文件腿，实际 yield 字节）在记到
+    用户名下的同时，再按「服务这笔字节的进程所属的服」记一份到本表
+    （进程身份见 emby_server.nodes：EA 按 REALM/NODE_KEY 认领，面板
+    网关 = 默认服）。服的配额判定（backend/line_quota）读本表：
+    已用 = 统计起点（含）以来的 relay+local 求和。
+
+    302 直链字节不过本机，与用户账同口径**不记字节**（表里也没有
+    direct_plays 列——线路配额只管真经手字节）。不加外键（照
+    TrafficUsageDaily 先例）：服删了行留着，消费方查无此服不展示。
+    """
+
+    __tablename__ = "realm_traffic_usage_daily"
+    __table_args__ = (
+        UniqueConstraint("realm_id", "day", name="uq_realm_traffic_usage_daily_realm_day"),
+        Index("ix_realm_traffic_usage_daily_day", "day"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    realm_id = Column(Integer, nullable=False)
+    day = Column(Date, nullable=False)
+    relay_bytes = Column(BigInteger, nullable=False, default=0)
+    local_bytes = Column(BigInteger, nullable=False, default=0)
+    updated_at = Column(DateTime, default=datetime.now,
+                        onupdate=datetime.now)
+
+
 class TrafficExchangeLog(Base):
     """购流量·时间换流量留痕（流量额度一期，2026-11-13）。
 

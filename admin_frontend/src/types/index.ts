@@ -411,6 +411,16 @@ export interface RealmStats {
   pending_requests: number
 }
 
+/** 线路流量配额（2026-11-19）：quota_bytes=0 表示不限额（remaining 为 null） */
+export interface RealmTraffic {
+  quota_bytes: number
+  used_bytes: number
+  remaining_bytes: number | null
+  exhausted: boolean
+  /** 统计起点（重置用量时拨到现在）；null = 从有计量以来全算 */
+  period_started_at: string | null
+}
+
 export interface RealmRow {
   id: number
   name: string
@@ -419,6 +429,7 @@ export interface RealmRow {
   description: string
   is_active: boolean
   sort_order: number
+  traffic: RealmTraffic
   /** 默认服：沿用历史配置键名，不能删除 */
   is_default: boolean
   /** 接入方式（v2.7.0）：paid = 付费服（需要订阅）/ free = 免费服（免费开放） */
