@@ -248,6 +248,9 @@ check('T14 浅色主钮不动（淡彩底＋彩虹边框整面写法保留）',
 // 全站 23 处一手写钮（含 UhdWatchPill 胶囊）已按 #309 同款改 ::before mask 环切；
 // 另 2 处（.rf-watch／.rmd-watch）已随 2026-11-18 去重单删除，不在环切集内。
 // 浅色面（--uhd-rainbow-soft 不透明）与 --uhd-rainbow-fill 填色用途不在缺陷集内。
+// 例外（2026-11-18）：观影胶囊的环已按友站 .pill-primary 真值换成 prism
+// conic 弧段（仍是 ::before mask 环切，另有 ::after 光晕），不再走
+// --uhd-rainbow 线性环，故从 RING_SITES 摘出、由下方 T15b 单列断言。
 // 另：PersonalCenterView 的 .ov-invite 邀请横幅是同病非钮（rgba 半透面＋彩虹边），
 // 本批不动，留 parent 定夺（见任务报告）。
 const DARK_FACE = /var\(--uhd-glass-btn-d\)|var\(--utb-pill-fill\)/
@@ -267,7 +270,6 @@ const RING_SITES = [
   ['src/views/game/invite-friends.css', '.iv-btn--rainbow'],
   ['src/views/game/InstallAppView.vue', '.ia-copy'],
   ['src/views/game/InstallAppView.vue', '.ia-dl'],
-  ['src/components/uhd/UhdWatchPill.vue', '.utb-pill'],
   ['src/components/profile/SeriesFollowsPanel.vue', '.ov-page.ov-dark .acct-btn.primary'],
   ['src/components/stream/StreamHero.vue', '.stream-scope[data-stream-theme="dark"] .sh-play'],
   ['src/views/game/SubscriptionPlansView.vue', "html:not([data-theme='light']) .sub-sticky__cta"],
@@ -298,6 +300,21 @@ for (const [f, sel] of RING_SITES) {
     ringBody.includes('var(--uhd-rainbow') && ringBody.includes('content-box') &&
     (ringBody.includes('mask-composite: exclude') || ringBody.includes('-webkit-mask-composite: xor')))
 }
+/* ---------- 观影胶囊 prism 环（友站 .pill-primary 真值，2026-11-18） ---------- */
+const pillText = read('src/components/uhd/UhdWatchPill.vue')
+const pillRing = (pillText.match(/\.utb-pill::before\s*\{([^}]*)\}/) || [])[1] || ''
+check('T15b 观影胶囊彩虹环为 conic 弧段（1.75px／inset -1px／mask 环切）',
+  pillRing.includes('conic-gradient(from calc(var(--utb-prism-angle) + 225deg)') &&
+  pillRing.includes('oklch(var(--utb-prism-l) var(--utb-prism-c) 25) 22deg') &&
+  pillRing.includes('padding: 1.75px') && pillRing.includes('inset: -1px') &&
+  pillRing.includes('content-box') &&
+  (pillRing.includes('mask-composite: exclude') || pillRing.includes('-webkit-mask-composite: xor')))
+check('T15b prism 环带透明缺口（152deg 起空缺＋290deg 收尾）',
+  pillText.includes('transparent 152deg') && pillText.includes('transparent 290deg'))
+const pillGlow = (pillText.match(/\.utb-pill::after\s*\{([^}]*)\}/) || [])[1] || ''
+check('T15b 观影胶囊环外光晕（同 conic 渐变＋blur 5px＋--utb-prism-glow）',
+  pillGlow.includes('conic-gradient(from calc(var(--utb-prism-angle) + 225deg)') &&
+  pillGlow.includes('blur(5px)') && pillGlow.includes('opacity: var(--utb-prism-glow)'))
 
 /* ---------- 按压反馈立档 ---------- */
 check('T10 按压三值已立（缩放 0.97／亮度 0.96／时长 micro）',
