@@ -319,7 +319,7 @@ function statusBadge(status: string): string {
   border: none;
   color: var(--au-text);
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--uhd-fs-caption);
   cursor: pointer;
   padding: 0;
   text-align: left;
@@ -329,7 +329,7 @@ function statusBadge(status: string): string {
 .ticket-title:focus-visible { outline: 2px solid var(--au-border-focus); outline-offset: 2px; }
 
 .ticket-preview {
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-3);
   margin-top: 2px;
   overflow: hidden;
@@ -338,10 +338,10 @@ function statusBadge(status: string): string {
   max-width: 320px;
 }
 
-.prio { font-size: 12px; color: var(--au-text-2); }
+.prio { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-2); }
 .prio.high, .prio.urgent { color: var(--au-danger); font-weight: 600; }
 .prio.low { color: var(--au-text-4); }
-.muted { color: var(--au-text-4); font-size: 12px; }
+.muted { color: var(--au-text-4); font-size: var(--uhd-fs-aux-sm); }
 
 .ticket-meta {
   display: flex;
@@ -359,13 +359,13 @@ function statusBadge(status: string): string {
   flex-wrap: wrap;
   gap: 8px 18px;
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--uhd-fs-aux-sm);
 }
 .meta-line div { display: flex; gap: 6px; }
 .meta-line dt, .meta-label { color: var(--au-text-3); }
 .meta-line dd { margin: 0; color: var(--au-text); }
 
-.meta-controls { display: flex; align-items: center; gap: 10px 18px; flex-wrap: wrap; font-size: 12.5px; }
+.meta-controls { display: flex; align-items: center; gap: 10px 18px; flex-wrap: wrap; font-size: var(--uhd-fs-aux-sm); }
 .meta-field { display: inline-flex; align-items: center; gap: 8px; }
 .w-meta { width: 110px; }
 
@@ -379,12 +379,12 @@ function statusBadge(status: string): string {
   padding: 10px 12px;
 }
 .msg.admin { align-self: flex-end; background: var(--au-primary-soft); border-color: var(--au-primary-border); }
-.msg-meta { font-size: 11.5px; color: var(--au-text-3); margin-bottom: 4px; }
-.msg-body { font-size: 13px; line-height: 1.6; white-space: pre-wrap; color: var(--au-text); overflow-wrap: anywhere; }
+.msg-meta { font-size: var(--uhd-fs-micro); color: var(--au-text-3); margin-bottom: 4px; }
+.msg-body { font-size: var(--uhd-fs-aux); line-height: 1.6; white-space: pre-wrap; color: var(--au-text); overflow-wrap: anywhere; }
 
 .reply-box { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--au-border); }
 .reply-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-.closed-hint { margin-top: 16px; text-align: center; color: var(--au-text-3); font-size: 13px; }
+.closed-hint { margin-top: 16px; text-align: center; color: var(--au-text-3); font-size: var(--uhd-fs-aux); }
 
 @media (max-width: 768px) {
   .list-bar { padding: 4px 16px 12px; }
