@@ -82,8 +82,9 @@ const apiKeys = computed<PlatformApiKeyItem[]>(() => overview.value?.api_keys.it
 const apiKeyCanCreate = computed(() => overview.value?.api_keys.can_create ?? false)
 const apiKeyValidityDays = computed(() => overview.value?.api_keys.validity_days ?? 365)
 
-// 默认展开：拆分前 Key 列表与创建表单常显，迁组不改变可见性
-const panelOpen = ref(true)
+// 默认折叠：友站首屏只露创建胶囊（S-2），点开展开 Key 列表与创建表单；
+// 此前默认展开（拆分前 Key 列表与创建表单常显），现按友站收起。
+const panelOpen = ref(false)
 const newKeyName = ref('')
 const newKeyPlaintext = ref('')
 const apiKeyError = ref('')

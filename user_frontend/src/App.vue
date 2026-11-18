@@ -99,6 +99,8 @@ const showHeader = computed(() => showChrome.value && !isAccountArea.value && !i
  * 「我的」，其余账户页一律站名（页内自有 H1，不在顶栏重复）。
  * 例外（2026-11-18）：邀请页照友站子页头形态，手机端顶栏换成
  * 「‹ 邀请好友」返回头（见下方 accountBarBackTo），桌面仍站名。
+ * 账号设置页同款（2026-11-18 用户中心自查 S-1）：手机端顶栏换成
+ * 「‹ 账号安全」返回头，桌面仍站名。
  * 片库面由 StreamShell 内挂同一组件（手机端），AppHeader 区由
  * AppHeader 在右侧复用同一颗胶囊，三区同形态。
  */
@@ -107,13 +109,19 @@ const accountBarTitle = computed(() =>
     ? '我的'
     : route.name === 'game-account-invite'
       ? '邀请好友'
-      : '',
+      : route.name === 'game-account-settings'
+        ? '账号安全'
+        : '',
 )
 /* 子页返回头（2026-11-18 邀请页对齐友站）：邀请页手机端顶栏出
    「‹ 邀请好友」返回头（UhdTopBar 子页模式），页内原返回行随之摘除；
-   桌面端顶栏维持站标口径（子页模式只在 ≤768px 生效）。 */
+   桌面端顶栏维持站标口径（子页模式只在 ≤768px 生效）。
+   账号设置页同款（S-1）：手机端出「‹ 账号安全」返回头，回「我的」
+   菜单页（/game/account/menu）。 */
 const accountBarBackTo = computed(() =>
-  route.name === 'game-account-invite' ? '/game/account/menu' : '',
+  route.name === 'game-account-invite' || route.name === 'game-account-settings'
+    ? '/game/account/menu'
+    : '',
 )
 
 /**

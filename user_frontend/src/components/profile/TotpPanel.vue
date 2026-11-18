@@ -1,14 +1,13 @@
 <template>
   <div class="pc-entry totp-panel">
-    <!-- 动态验证码行（登录与恢复组）：名＋副文＋状态胶囊，点行展开设置/关闭流程 -->
+    <!-- 动态验证码行（登录与恢复组）：名＋副文＋状态胶囊，点行展开设置/关闭流程。
+         S-4：照友站行形态——无左侧图标、无展开 chevron，只有「启用」胶囊 -->
     <button type="button" class="sec-rowbtn" :aria-expanded="totpOpen" @click="totpOpen = !totpOpen">
-      <span class="sec-rowbtn-ic" aria-hidden="true"><ShieldCheck :size="22" /></span>
       <span class="sec-rowbtn-main">
         <span class="sec-rowbtn-name">动态验证码</span>
         <span class="sec-rowbtn-sub">密码登录时使用的 6 位动态码</span>
       </span>
       <span class="sec-capsule">{{ totpEnabled ? '已启用' : '启用' }}</span>
-      <ChevronDown :size="18" class="sec-rowbtn-chev" :class="{ open: totpOpen }" aria-hidden="true" />
     </button>
     <div v-if="totpOpen" class="pc-expand">
       <template v-if="!totpEnabled">
@@ -67,7 +66,6 @@
  * overview 数据与 Passkeys/ApiKeys 面板共享（useSecurityOverview）。
  */
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { ChevronDown, ShieldCheck } from 'lucide-vue-next'
 import { securityApi } from '@/api/security'
 import { useToast } from '@/composables/useToast'
 import { humanizeError } from '@/composables/usePanelApi'
@@ -143,7 +141,8 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* 行形态与 PcEntryRow 同模（图标 22 + 名 16/600），多一行副文与状态胶囊 */
+/* 行形态与登录与恢复组同模（名 16/600＋副文＋状态胶囊，无左侧图标，
+   S-4）；展开区与旧版一致 */
 .sec-rowbtn {
   display: flex;
   align-items: center;
@@ -161,15 +160,6 @@ onMounted(() => {
   box-sizing: border-box;
 }
 .sec-rowbtn:active { background: var(--uhd-l-input-bg); }
-.sec-rowbtn-ic {
-  width: 22px;
-  height: 22px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--uhd-l-text);
-}
 .sec-rowbtn-main {
   display: flex;
   flex-direction: column;
@@ -199,8 +189,6 @@ onMounted(() => {
   font-weight: var(--uhd-fw-medium);
   white-space: nowrap;
 }
-.sec-rowbtn-chev { flex: none; color: var(--uhd-l-text-3); transition: transform var(--uhd-dur-ui) var(--uhd-ease-standard); }
-.sec-rowbtn-chev.open { transform: rotate(180deg); }
 .pc-expand {
   border-top: 1px dashed var(--line);
   padding: 12px 14px 14px;
