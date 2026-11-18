@@ -33,6 +33,10 @@
 - 可建上限 = 主账号当前套餐 entitlements 的 ``sub_account_limit``
   （经 ``entitlements`` 单口读，未声明按 0；国际版 0、家庭版 2）。
   创建还要求主账号当前订阅有效——订阅过期不许再往家庭里加人。
+- 团队成员子账号（backend/teams，parent 同为团长、另带
+  team_members 归属行）不是家庭子账号：不占 ``sub_account_limit``
+  名额、不进家庭管理列表，名额与资格全归团队侧（2026-11-18
+  团队批 4）。
 """
 from __future__ import annotations
 
@@ -192,12 +196,33 @@ def sub_account_limit(db: Session, user) -> int:
     return int(declared) if declared is not None else 0
 
 
+def _team_member_ids(db: Session) -> set[int]:
+    """team_members 归属（role=member）的账号 id 集。
+
+    团队成员同为 parent 挂靠的 WebUser，但不是家庭子账号：名额
+    与管理都归团队侧（backend/teams，名额读 plan_member_limit），
+    家庭侧的计数与列表必须排除，否则团长建成员会吃掉家庭版
+    名额（2026-11-18 团队批 4，两套产品不混算）。
+    """
+    rows = (db.query(models.TeamMember.user_id)
+            .filter(models.TeamMember.role == "member")
+            .all())
+    return {int(_single_col(r, "user_id")) for r in rows
+            if _single_col(r, "user_id") is not None}
+
+
 def active_children_count(db: Session, parent_id: int) -> int:
-    """在用（未禁用）子账号数：limit 数的是这个口径（见模块 docstring）。"""
-    return (db.query(models.WebUser)
-            .filter(models.WebUser.parent_user_id == int(parent_id),
-                    models.WebUser.is_active == True)  # noqa: E712
-            .count())
+    """在用（未禁用）子账号数：limit 数的是这个口径（见模块 docstring）。
+
+    团队成员子账号不计（见 _team_member_ids）。
+    """
+    query = (db.query(models.WebUser)
+             .filter(models.WebUser.parent_user_id == int(parent_id),
+                     models.WebUser.is_active == True))  # noqa: E712
+    team_ids = _team_member_ids(db)
+    if team_ids:
+        query = query.filter(models.WebUser.id.notin_(team_ids))
+    return query.count()
 
 
 # ---------------------------------------------------------------------------
@@ -307,8 +332,10 @@ def management_payload(db: Session, user: models.WebUser) -> dict:
             "items": [],
         }
     limit = sub_account_limit(db, user)
-    children = children_of(db, user.id)
-    used = sum(1 for c in children if c.is_active)
+    team_ids = _team_member_ids(db)
+    children = [c for c in children_of(db, user.id)
+                if int(c.id) not in team_ids]
+    used = active_children_count(db, user.id)
     return {
         "is_sub_account": False,
         "parent_username": None,
