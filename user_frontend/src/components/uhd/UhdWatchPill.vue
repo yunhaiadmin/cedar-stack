@@ -7,9 +7,12 @@
  * （blur 2px saturate 160%＋sheen/edge/shadow 三件套）；彩虹环是
  * conic 弧段（prism 环，透明缺口＋1.75px mask 环切、inset -1px），
  * 环外同 conic 的 blur 5px 光晕；hover 环转 32deg、active scale .97。
- * 尺寸不走友站大钮：#321 曾照 .btn-glass 放大到高 44／字 15，用户
- * 2026-11-18 亲点「变大了，收回去」——收回改前配方：高 33 由
- * --utb-pill-h 钉死、字 13、padding-inline 13（--utb-pill-px）。
+ * 尺寸走友站真值小档（2026-11-18 晚亲查友站公开 CSS/JS 包＋录屏帧
+ * 实测复核）：这颗是友站标准主钮的小尺寸档——高 36（h-9）、字 14
+ * medium、图标 16、gap 8、padding-inline 12。沿革：#321 曾照大钮
+ * .btn-glass 放大到高 44／字 15 被用户打回，#330 先收回旧配方
+ * 33／13，本次按真值定版；高由 --utb-pill-height 钉死
+ * （--utb-pill-h 33 只余 UhdTopBar 外观钮用）。
  * 落点 /library：网页播放器没有独立入口页（/play/:id 须带具体条目），
  * 片库首页是网页点播的起点，且与此前概览/我的/邀请/记录四处既有
  * 入口的落点口径一致。
@@ -21,7 +24,7 @@ import { RouterLink } from 'vue-router'
 
 <template>
   <RouterLink to="/library" class="utb-pill" aria-label="前往流媒体：前往片库">
-    <svg class="utb-pill__icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
+    <svg class="utb-pill__icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
       <defs>
         <linearGradient id="utb-pill-g" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stop-color="#2f8fe0" />
@@ -53,11 +56,11 @@ import { RouterLink } from 'vue-router'
   z-index: 0;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  /* 中和全局 mobile.css 的 a{min-height:44px}：胶囊高由 --utb-pill-h
-     令牌钉死（33），不许外力改高 */
+  gap: 8px;
+  /* 中和全局 mobile.css 的 a{min-height:44px}：胶囊高由
+     --utb-pill-height 令牌钉死（36，友站 h-9 真值），不许外力改高 */
   min-height: 0;
-  height: var(--utb-pill-h);
+  height: var(--utb-pill-height);
   padding: 0 var(--utb-pill-px);
   border: 1px solid transparent;
   border-radius: 999px;
@@ -69,10 +72,10 @@ import { RouterLink } from 'vue-router'
     var(--utb-pill-edge),
     var(--utb-pill-shadow);
   color: var(--utb-pill-fg);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: var(--uhd-fw-medium);
   letter-spacing: -0.025em;
-  line-height: 19px;
+  line-height: 20px;
   font-family: var(--uhd-font-sans);
   text-decoration: none;
   white-space: nowrap;

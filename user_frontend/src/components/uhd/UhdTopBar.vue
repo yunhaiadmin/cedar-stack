@@ -113,7 +113,8 @@ const themeLabel = computed(() => {
   gap: 8px;
   flex: none;
 }
-/* 外观钮：与观影胶囊同高（--utb-pill-h）的圆玻璃钮，配方同顶栏令牌 */
+/* 外观钮：边长 --utb-pill-h（33）的圆玻璃钮，配方同顶栏令牌；
+   观影胶囊自真值定版后走 --utb-pill-height（36），两者不再同高 */
 .uhd-topbar__theme {
   display: inline-flex;
   align-items: center;
