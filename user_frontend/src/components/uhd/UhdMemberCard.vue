@@ -11,7 +11,8 @@
  *   （4px 周期白条纹＋prism 彩虹、115deg 斜带遮罩、彩虹层静态居中）→ bevel（1.5px
  *   mask 环切、145deg 渐变）。指针倾斜/glare 跟随/halo 光晕不在本单范围。
  * - prism 基参 --prism-l/--prism-c 定义在 uhd-tokens.css（深 .82/.13、浅 .66/.15）。
- * 右上彩虹三角 Logo：浅色 37×40、深色 33×39；卡名约 28px 粗体（沿用此前实测）。
+ * 右上只放彩虹三角标（BrandMark play 变体，无 A 字母）：盒 24×23、深浅同尺寸，
+ * 2026-11-18 按友站干净帧实测量值定版（见 .uhd-member__logo 注）；卡名约 28px 粗体（沿用此前实测）。
  * 深色判定：data-theme 缺省即深（useTheme 只在浅色时写 data-theme="light"）；
  * .ov-dark 为概览页主题竞态兜底（与 PersonalCenterView 的 .ov-dark 回滚块同口径）。
  * 数据全部由调用方传入（订阅/资格接口），组件不写死任何数字。
@@ -47,7 +48,7 @@ withDefaults(
           {{ brand }}
           <UhdChip v-if="statusText" variant="member">{{ statusText }}</UhdChip>
         </span>
-        <span class="uhd-member__logo"><BrandMark /></span>
+        <span class="uhd-member__logo"><BrandMark variant="play" /></span>
       </div>
       <div class="uhd-member__bottom">
         <div class="uhd-member__plan">{{ planName }}</div>
@@ -140,11 +141,19 @@ withDefaults(
   font-weight: var(--uhd-fw-bold);
   color: var(--uhd-l-text);
 }
-/* Aetrix 品牌标（2026-11-16 定版，BrandMark 组件，A 色随当前文字色）；
-   浅色 37×40、深色 33×39（友站补测实测） */
+/* 右上彩虹三角标（BrandMark play 变体：只留三角本体、无 A 字母）。
+   2026-11-18 用户真机截图圈点后改版——此前是整个大号黑色 A（盒 37×40、
+   字形实测 66×66 图像 px），又大又重。友站干净帧（friend-overview-2，
+   720×1560）实测：同位只有一颗小三角，字形 38×42 图像 px（x 596–634、
+   y 326–368，逐行/逐列采样定界）；截图倍率 1.846（720 图像 px ↔ 390 CSS
+   px，由双站卡宽占比 94%/92% 反推校验），折 ≈20.6×22.8 CSS px；距卡右
+   56 图像 px ≈ 30 CSS px、距卡顶 54 ≈ 29，顶边与左上站名文字顶（53 图像
+   px）齐平——本组件 padding 32＋顶行 flex-start 的既有口径与之吻合，不动。
+   我方三角字形宽高比 431:390 ≠ 友站约 0.90，盒按高对齐取 24×23，
+   字形实渲染 ≈24×21.7；三角为固定彩虹渐变、深浅两态同尺寸同色。 */
 .uhd-member__logo {
-  width: 37px;
-  height: 40px;
+  width: 24px;
+  height: 23px;
   flex: none;
 }
 .uhd-member__bottom { position: relative; }
@@ -212,12 +221,6 @@ html:not([data-theme='light']) .uhd-member__brand,
 .ov-dark .uhd-member__brand,
 html:not([data-theme='light']) .uhd-member__plan,
 .ov-dark .uhd-member__plan {
-  color: #ffffff;
-}
-html:not([data-theme='light']) .uhd-member__logo,
-.ov-dark .uhd-member__logo {
-  width: 33px;
-  height: 39px;
   color: #ffffff;
 }
 html:not([data-theme='light']) .uhd-member__user,

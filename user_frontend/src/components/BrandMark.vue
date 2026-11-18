@@ -9,14 +9,25 @@ import { useId } from 'vue'
  * svg 类名避开页面级的 .brand-mark 容器类（管理端 Layout/Login/Setup 用它给容器染色，会经子组件根节点 scope 命中 svg）。
  * 渐变/clip 的 id 必须每实例唯一：同页多个本组件时 url(#id) 只认文档中第一个，
  * 若第一个恰在 display:none 子树里（如响应式隐藏的导航），其余实例的填充会失效。
+ *
+ * variant="play"：只渲染彩虹播放三角本体（无 A 字母、无编织 clip，viewBox 收紧
+ * 到三角自身 bbox），供会员卡右上用——友站同位只有一颗小三角标（2026-11-18
+ * 按友站干净帧实测改版，量值见 UhdMemberCard 的 .uhd-member__logo 注）。
  */
+withDefaults(defineProps<{ variant?: 'full' | 'play' }>(), { variant: 'full' })
 const uid = useId().replace(/[^a-zA-Z0-9-]/g, '')
 const gradId = `brandmark-rainbow-${uid}`
 const clipId = `brandmark-weave-${uid}`
 </script>
 
 <template>
-  <svg class="aetrix-brand-mark" viewBox="180 188 640 625" fill="none" aria-hidden="true" focusable="false">
+  <svg
+    class="aetrix-brand-mark"
+    :viewBox="variant === 'play' ? '280 400 431 390' : '180 188 640 625'"
+    fill="none"
+    aria-hidden="true"
+    focusable="false"
+  >
     <defs>
       <linearGradient :id="gradId" x1="0" y1="0" x2="1" y2="0">
         <stop offset="0" stop-color="#ff2442" />
@@ -30,10 +41,13 @@ const clipId = `brandmark-weave-${uid}`
         <polygon points="628,0 1000,0 1000,1000 218,1000" />
       </clipPath>
     </defs>
-    <path d="M438 188 H562 L820 813 H708 L500 313 L295 813 H180 Z" fill="currentColor" />
-    <g :clip-path="`url(#${clipId})`">
-      <path d="M420 400 L280 790 L711 546 Z" :fill="`url(#${gradId})`" />
-    </g>
+    <path v-if="variant === 'play'" d="M420 400 L280 790 L711 546 Z" :fill="`url(#${gradId})`" />
+    <template v-else>
+      <path d="M438 188 H562 L820 813 H708 L500 313 L295 813 H180 Z" fill="currentColor" />
+      <g :clip-path="`url(#${clipId})`">
+        <path d="M420 400 L280 790 L711 546 Z" :fill="`url(#${gradId})`" />
+      </g>
+    </template>
   </svg>
 </template>
 
