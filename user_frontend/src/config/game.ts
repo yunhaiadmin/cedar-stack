@@ -61,9 +61,9 @@ export const gameFacilities: GameFacility[] = [
   {
     key: 'account',
     name: '账号设置',
-    path: '/game/account',
+    path: '/game/account/settings',
     icon: '⚙️',
-    desc: '改登录密码、看我的订阅、管我的设备 —— 账号自己的事都在这儿。',
+    desc: '改登录密码、管登录设备、调通知与隐私 —— 账号自己的事都在这儿。',
     stamp: '账号 · 小屋',
     group: 'account',
     order: 10,

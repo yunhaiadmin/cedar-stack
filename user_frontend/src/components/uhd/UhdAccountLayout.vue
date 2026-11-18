@@ -70,7 +70,7 @@ const groups = computed<UhdSidebarGroup[]>(() => {
         { key: '/game/account', label: '我的概览', icon: User },
         { key: '/wallet', label: '我的钱包', icon: Wallet },
         { key: '/game/account/subscribe', label: '订阅服务', icon: CreditCard },
-        { key: '/game/account/settings', label: '账号与设置', icon: Settings },
+        { key: '/game/account/settings', label: '账号安全', icon: Settings },
       ],
     },
     {
@@ -428,7 +428,7 @@ html[data-theme='light'] .uhd-account .uhd-side .uhd-side__item--active {
 /* 卡片圆角随令牌走 16–20px；行间分隔用 #eee */
 .uhd-account .v4-card { border-radius: 16px; }
 /* 桌面并壳页贴合（2026-11-14 统一壳单）：经 UhdAccountShellGate 并入壳的
-   全幅页（概览/订阅服务/订阅记录/邀请/团队/安装）原本是独立整页——自带
+   全幅页（概览/订阅服务/订阅记录/邀请/安装）原本是独立整页——自带
    100dvh 高与移动返回顶栏。壳只在桌面挂载，故下述规则只在桌面生效：
    - 高度：扣掉统一顶栏与布局 main 的上下内边距（28+120），不再溢出
      一截造无谓滚动；
@@ -439,7 +439,6 @@ html[data-theme='light'] .uhd-account .uhd-side .uhd-side__item--active {
 .uhd-account .sub-page,
 .uhd-account .sr-page,
 .uhd-account .iv-page,
-.uhd-account .tm-page,
 .uhd-account .ia-page {
   min-height: calc(100dvh - var(--utb-h) - 148px);
 }
