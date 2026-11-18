@@ -60,11 +60,13 @@ for (const n of NEW_SHADOWS) {
   check(`T1 阴影令牌 --uhd-shadow-${n} 已定义`, tokens.includes(`--uhd-shadow-${n}:`))
 }
 const memberL = tokens.match(/--uhd-shadow-member-l:\s*([^;]+);/)
-check('T2 会员卡浅色阴影＝#307 卡片实测值（与 UhdMemberCard 完全一致）',
-  !!memberL && memberL[1].trim() === '0 2px 8px -2px rgb(205, 201, 229), 0 24px 38px -20px rgba(205, 201, 229, 0.45)')
+// 2026-11-18 外观重做：阴影改钉友站公开样式表真值（slab＋face 两段合并，
+// reports/member-card-friend-css-20261118.md）；旧 #307 采样值已作废。
+check('T2 会员卡浅色阴影＝友站真值（slab＋face 合并，与 UhdMemberCard 完全一致）',
+  !!memberL && memberL[1].trim() === 'inset 1px 1px 0 -0.25px #fffffff2, inset -1px -1px 0 -0.25px #ffffff73, 0 0 0 1px #14161c12, 0 1px 2px #14161c0d, 0 12px 28px -18px #14161c29, inset 0 -14px 26px -16px #14161c33, 0 1px 2px #14161c0f, 0 28px 50px -26px oklch(55% .2 285/.38), 0 10px 20px -14px #14161c40')
 const memberD = tokens.match(/--uhd-shadow-member-d:\s*([^;]+);/)
-check('T2 会员卡深色阴影＝#307 卡片实测值（顶部高光＋两档，注释记页底 rgb(19,20,21)）',
-  !!memberD && memberD[1].trim() === 'inset 0 1px 0 rgb(130, 125, 159), 0 2px 8px -2px rgb(23, 23, 31), 0 20px 36px -18px rgba(23, 23, 31, 0.6)' && tokens.includes('rgb(19,20,21)'))
+check('T2 会员卡深色阴影＝友站真值（slab＋face 合并，与 UhdMemberCard 完全一致）',
+  !!memberD && memberD[1].trim() === 'inset 1px 1px 0 -0.25px #ffffff38, inset -1px -1px 0 -0.25px #ffffff0f, 0 0 0 1px #0006, 0 1px 2px #0003, 0 12px 28px -18px #0006, inset 0 -16px 30px -18px #000000a6, 0 30px 58px -26px oklch(55% .2 285/.5), 0 12px 24px -14px #000000b3')
 const memberCard = read('src/components/uhd/UhdMemberCard.vue')
 check('T2 会员卡两态改引 member 令牌（视觉零变化）',
   memberCard.includes('box-shadow: var(--uhd-shadow-member-l)') &&
@@ -76,8 +78,8 @@ const SHADOW_ALLOW = [
   ['LandingView.vue', '0 -18px 50px', '上向辉光无对应令牌'],
   ['LandingView.vue', 'inset 0 48px 90px', 'pin-glass 玻璃辉光'],
   ['v4-paper.css', '3px 3px 0 rgba(42, 38, 32, 0.12)', '纸面硬影冻结体系'],
-  // texture-tokens-3：UhdMemberCard 两处临时豁免已删——member-l/member-d 令牌值已改成
-  // 与 #307 卡片实测值完全一致，卡片改引令牌，视觉零变化。
+  // texture-tokens-3：UhdMemberCard 两处临时豁免已删——member-l/member-d 令牌值与
+  // 卡片完全一致，卡片改引令牌（2026-11-18 起令牌值＝友站样式表真值，见 T2）。
 ]
 function shadowOk(file, val) {
   const v = val.replace(/\s+/g, ' ').trim()

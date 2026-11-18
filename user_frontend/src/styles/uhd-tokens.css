@@ -135,6 +135,9 @@
   --uhd-radius-card-lg: 28px;
   /* 大卡圆角短名（订阅页套餐卡/汇总卡、「我的」菜单卡用）：与 --uhd-radius-card-lg 同值 */
   --uhd-r-lg: 28px;
+  /* 会员卡专用圆角（友站真值 2026-11-18：.rounded-slab 2.5rem＝40px）；
+     --uhd-radius-card-lg 是多卡共用令牌，不许为会员卡改它，故单立此令牌 */
+  --uhd-radius-member: 40px;
   --uhd-radius-modal: 24px;
   --uhd-border-w: 1px;
   /* 设置/会话行高（质感第二波，2026-11-18）：友站账号安全行高约 52px 实测；
@@ -148,14 +151,18 @@
   /* 阴影收编（质感第二波，2026-11-18）：全仓随手 box-shadow 按值聚类收进
      本节。0.5 族收敛到 sheet 的 0.55、0.05 族收敛到 soft 的 0.08、
      1px 族收敛到 seg（见契约测试 textureTokens2.test.mjs T3 豁免说明）。
-     member-l/member-d 取 #307 会员卡实测值（pages-2 契约 M7/M8 锁定，与卡片完全一致）：
-     浅色卡下 2px rgb(205,201,229)→38px 至页底色；深色顶部高光 rgb(130,125,159)
-     ＋卡下 2px rgb(23,23,31)→36px 至页底 rgb(19,20,21)。 */
+     member-l/member-d 取友站公开样式表真值（2026-11-18，reports/member-card-friend-css-20261118.md）：
+     slab 阴影＋face 阴影两段合并（pages-2 契约 M7/M8、tokens-2 契约 T2 锁定，与卡片完全一致）；
+     旧 #307 采样值（rgb(205,201,229)／rgb(130,125,159) 等）已作废。 */
   --uhd-shadow-sheet: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 12px 28px -12px rgba(0, 0, 0, 0.55);
   --uhd-shadow-card-d: 0 10px 24px rgba(0, 0, 0, 0.32);
   --uhd-shadow-card-lav: 0 8px 22px rgba(90, 94, 150, 0.08);
-  --uhd-shadow-member-l: 0 2px 8px -2px rgb(205, 201, 229), 0 24px 38px -20px rgba(205, 201, 229, 0.45);
-  --uhd-shadow-member-d: inset 0 1px 0 rgb(130, 125, 159), 0 2px 8px -2px rgb(23, 23, 31), 0 20px 36px -18px rgba(23, 23, 31, 0.6);
+  --uhd-shadow-member-l: inset 1px 1px 0 -0.25px #fffffff2, inset -1px -1px 0 -0.25px #ffffff73, 0 0 0 1px #14161c12, 0 1px 2px #14161c0d, 0 12px 28px -18px #14161c29, inset 0 -14px 26px -16px #14161c33, 0 1px 2px #14161c0f, 0 28px 50px -26px oklch(55% .2 285/.38), 0 10px 20px -14px #14161c40;
+  --uhd-shadow-member-d: inset 1px 1px 0 -0.25px #ffffff38, inset -1px -1px 0 -0.25px #ffffff0f, 0 0 0 1px #0006, 0 1px 2px #0003, 0 12px 28px -18px #0006, inset 0 -16px 30px -18px #000000a6, 0 30px 58px -26px oklch(55% .2 285/.5), 0 12px 24px -14px #000000b3;
+  /* 会员卡棱镜彩虹基参（友站 --prism-l/--prism-c 真值）：缺省深色档 .82/.13，
+     浅色档 .66/.15 在文件后部 :root[data-theme='light'] 块覆盖 */
+  --prism-l: .82;
+  --prism-c: .13;
   --uhd-shadow-panel-lg: 0 24px 60px rgba(0, 0, 0, 0.5);
   --uhd-shadow-float: 0 18px 40px rgba(0, 0, 0, 0.45);
   --uhd-shadow-soft: 0 2px 10px rgba(17, 17, 20, 0.08);
@@ -345,6 +352,9 @@
 /* 全局骨架浅态覆盖（--uhd-skel-bg 的浅色档，灰值照友站实测 233–241） */
 :root[data-theme='light'] {
   --uhd-skel-bg: linear-gradient(135deg, rgb(238, 239, 241) 0%, rgb(233, 234, 238) 100%);
+  /* 会员卡棱镜彩虹浅色档（友站真值，见 --prism-l 定义处注记） */
+  --prism-l: .66;
+  --prism-c: .15;
 }
 
 /* 定价页主题别名（D5-01：定价页全页跟随用户主题）：--p-* 只做主题翻转别名，
