@@ -255,14 +255,28 @@ function onBgError() {
 }
 /* 深色版：黑底毛玻璃 + 同一彩虹边框 + 白字 + 玻璃栈（内高光 + 柔影，尺寸不变） */
 .stream-scope[data-stream-theme="dark"] .sh-play {
-  background:
-    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
-    var(--uhd-rainbow) border-box;
+  position: relative;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
     var(--uhd-s-shadow-pill);
   backdrop-filter: var(--uhd-glass-filter);
   -webkit-backdrop-filter: var(--uhd-glass-filter);
+}
+/* 彩虹环切（texture-tokens-3）：彩虹只走 2px 细环（::before mask 环切，
+   padding 取本钮边框宽 2px），钮面只留玻璃层；浅色基规则不动。 */
+.stream-scope[data-stream-theme="dark"] .sh-play::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 2px;
+  background: var(--uhd-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
 }
 .sh-controls {
   position: absolute;

@@ -300,11 +300,25 @@ onMounted(() => {
 /* 深色配方：以概览页自带的解析结果类 .ov-dark 为信号（页面 themeResolved，
    不单靠 html[data-theme]——守卫在该页走 restoreUserTheme，属性口径与解析结果可能不一致） */
 .ov-page.ov-dark .acct-btn.primary {
-  background:
-    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
-    var(--uhd-rainbow) border-box;
+  position: relative;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
   color: #ffffff;
   box-shadow: var(--uhd-shadow-sheet);
+}
+/* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
+   钮面只留玻璃层；浅色基规则不动。 */
+.ov-page.ov-dark .acct-btn.primary::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--uhd-rainbow-border-w);
+  background: var(--uhd-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
 }
 /* 禁用：彩虹退场、中性灰 */
 .acct-btn.primary:disabled,
@@ -314,6 +328,11 @@ onMounted(() => {
   box-shadow: inset 0 0 0 1px var(--line);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+/* 禁用态彩虹退场：环随之一并隐藏 */
+.acct-btn.primary:disabled::before,
+.ov-page.ov-dark .acct-btn.primary:disabled::before {
+  display: none;
 }
 .acct-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .follow-note {

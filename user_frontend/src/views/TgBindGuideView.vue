@@ -510,16 +510,30 @@ onUnmounted(() => {
 }
 
 .btn-primary {
+  position: relative;
   width: 100%;
   color: var(--uhd-d-text);
   border: var(--uhd-rainbow-border-w) solid transparent;
-  background:
-    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
-    var(--uhd-rainbow) border-box;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
   /* 玻璃栈补齐（2026-11-13 主要按钮统一单）：内高光 + 柔影 + backdrop 毛玻璃 */
   box-shadow: var(--uhd-shadow-sheet);
   backdrop-filter: var(--uhd-glass-filter);
   -webkit-backdrop-filter: var(--uhd-glass-filter);
+}
+/* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
+   钮面只留玻璃层；浅色覆盖只换面背景，环由本处继承。 */
+.btn-primary::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--uhd-rainbow-border-w);
+  background: var(--uhd-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
 }
 
 /* 禁用：彩虹退场、中性灰 */
@@ -529,6 +543,10 @@ onUnmounted(() => {
   box-shadow: inset 0 0 0 1px var(--border-subtle);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+/* 禁用态彩虹退场：环随之一并隐藏 */
+.btn-primary:disabled::before {
+  display: none;
 }
 
 .btn-secondary {
@@ -693,9 +711,7 @@ html[data-theme='light'] .step-desc {
 
 html[data-theme='light'] .btn-primary {
   color: var(--uhd-l-text);
-  background:
-    var(--uhd-rainbow-soft) padding-box,
-    var(--uhd-rainbow) border-box;
+  background: var(--uhd-rainbow-soft);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.65),
     var(--uhd-shadow-card-l);

@@ -1166,13 +1166,7 @@ watch(itemId, () => {
 .md-btn--play {
   position: relative;
   border: 2px solid transparent;
-  background:
-    var(--uhd-rainbow-soft) padding-box,
-    var(--uhd-rainbow-border-flow) border-box;
-  /* 描边流动（G-100）：flow 令牌一图含两周期，200% 宽下位移 0%→100%
-     恰为一个周期、无缝衔接；底色层 size auto 不受位移影响 */
-  background-size: auto, 200% 100%;
-  animation: md-rainbow-flow 6s linear infinite;
+  background: var(--uhd-rainbow-soft);
   color: #111111;
   cursor: pointer;
   min-width: 135px;
@@ -1183,25 +1177,45 @@ watch(itemId, () => {
   backdrop-filter: var(--uhd-glass-filter);
   -webkit-backdrop-filter: var(--uhd-glass-filter);
 }
+/* 彩虹环切（texture-tokens-3）：彩虹只走 2px 细环（::before mask 环切，
+   padding 取本钮边框宽 2px），流光位移改走 ::before；钮面只留淡彩底。
+   深色覆盖只换面背景，环与流光由本处继承。 */
+.md-btn--play::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 2px;
+  background: var(--uhd-rainbow-border-flow);
+  /* 描边流动（G-100）：flow 令牌一图含两周期，200% 宽下位移 0%→100%
+     恰为一个周期、无缝衔接 */
+  background-size: 200% 100%;
+  animation: md-rainbow-flow 6s linear infinite;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
 @keyframes md-rainbow-flow {
   from {
-    background-position: 0 0, 0% 0;
+    background-position: 0% 0;
   }
   to {
-    background-position: 0 0, 100% 0;
+    background-position: 100% 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .md-btn--play {
     animation: none;
   }
+  .md-btn--play::before {
+    animation: none;
+  }
 }
 /* 深色版：黑毛玻璃底 + 白字（同 StreamHero .sh-play 深色口径） */
 .stream-scope[data-stream-theme="dark"] .md-btn--play {
-  background:
-    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
-    var(--uhd-rainbow-border-flow) border-box;
-  background-size: auto, 200% 100%;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
   color: #ffffff;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
@@ -1859,10 +1873,7 @@ watch(itemId, () => {
     flex: 1 1 auto;
     min-width: 0;
     border: 2px solid transparent;
-    background:
-      var(--uhd-rainbow-soft) padding-box,
-      var(--uhd-rainbow-border-flow) border-box;
-    background-size: auto, 200% 100%;
+    background: var(--uhd-rainbow-soft);
     color: var(--uhd-s-pill-active-text);
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.65),
@@ -1875,10 +1886,7 @@ watch(itemId, () => {
   }
   /* 手机深色版：黑毛玻璃底 + 白字 */
   .stream-scope[data-stream-theme="dark"] .md-actions .md-btn--play {
-    background:
-      linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
-      var(--uhd-rainbow-border-flow) border-box;
-    background-size: auto, 200% 100%;
+    background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
     color: #ffffff;
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.22),

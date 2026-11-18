@@ -716,6 +716,7 @@ html[data-theme='light'] .ia-addr-card {
   overflow-wrap: anywhere;
 }
 .ia-copy {
+  position: relative;
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -724,19 +725,30 @@ html[data-theme='light'] .ia-addr-card {
   padding: 0 16px;
   border-radius: 999px;
   border: 1.5px solid transparent;
-  background:
-    var(--uhd-glass-btn-d) padding-box,
-    var(--uhd-rainbow) border-box;
+  background: var(--uhd-glass-btn-d);
   color: #ffffff;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
+/* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
+   钮面只留玻璃层；浅色覆盖只换面背景，环由本处继承。 */
+.ia-copy::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--uhd-rainbow-border-w);
+  background: var(--uhd-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
 html[data-theme='light'] .ia-copy {
-  background:
-    var(--uhd-rainbow-soft) padding-box,
-    var(--uhd-rainbow) border-box;
+  background: var(--uhd-rainbow-soft);
   color: #171717;
 }
 .ia-notes {
@@ -779,6 +791,7 @@ html[data-theme='light'] .ia-row + .ia-row { border-top-color: rgba(17, 18, 20, 
 .ia-row__sub { font-size: 12px; color: rgba(255, 255, 255, 0.38); }
 html[data-theme='light'] .ia-row__sub { color: rgba(17, 18, 20, 0.42); }
 .ia-dl {
+  position: relative;
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -787,19 +800,30 @@ html[data-theme='light'] .ia-row__sub { color: rgba(17, 18, 20, 0.42); }
   padding: 0 14px;
   border-radius: 999px;
   border: 1.5px solid transparent;
-  background:
-    var(--uhd-glass-btn-d) padding-box,
-    var(--uhd-rainbow) border-box;
+  background: var(--uhd-glass-btn-d);
   color: #ffffff;
   font-size: 13px;
   font-weight: 600;
   text-decoration: none;
   -webkit-tap-highlight-color: transparent;
 }
+/* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
+   钮面只留玻璃层；浅色覆盖只换面背景，环由本处继承。 */
+.ia-dl::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--uhd-rainbow-border-w);
+  background: var(--uhd-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
 html[data-theme='light'] .ia-dl {
-  background:
-    var(--uhd-rainbow-soft) padding-box,
-    var(--uhd-rainbow) border-box;
+  background: var(--uhd-rainbow-soft);
   color: #171717;
 }
 

@@ -286,16 +286,36 @@ async function submit(): Promise<void> {
 .rsm-area:focus { border-color: #6b7280; }
 .rsm-count { position: absolute; right: 12px; bottom: 10px; font-size: 12px; color: #9ca3af; }
 .rsm-confirm {
+  position: relative;
   width: 100%; height: 50px; margin-top: 16px; border-radius: 25px; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   font-size: 15px; font-weight: 800; color: #ffffff; font-family: inherit;
   border: 1.5px solid transparent;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box, var(--uhd-rainbow) border-box;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
   box-shadow: var(--uhd-shadow-sheet);
   backdrop-filter: var(--uhd-glass-filter);
   -webkit-backdrop-filter: var(--uhd-glass-filter);
 }
+/* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
+   钮面只留玻璃层；浅色覆盖只换面背景，环由本处继承。 */
+.rsm-confirm::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--uhd-rainbow-border-w);
+  background: var(--uhd-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
 .rsm-confirm:disabled { opacity: 0.6; cursor: default; }
+/* 禁用态彩虹退场：环随之一并隐藏 */
+.rsm-confirm:disabled::before {
+  display: none;
+}
 .rsm-spinner {
   width: 16px; height: 16px; border-radius: 50%; flex: none;
   border: 2px solid rgba(255, 255, 255, 0.35); border-top-color: #ffffff;
@@ -320,7 +340,7 @@ html[data-theme='light'] .rsm-seasons__err { color: #dc2626; }
 html[data-theme='light'] .rsm-area { background: #f8f8f8; border-color: #e5e5e5; color: #111111; }
 html[data-theme='light'] .rsm-area:focus { border-color: #9ca3af; }
 html[data-theme='light'] .rsm-confirm {
-  background: var(--uhd-rainbow-soft) padding-box, var(--uhd-rainbow) border-box;
+  background: var(--uhd-rainbow-soft);
   color: #111111;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--uhd-shadow-card-l);
 }

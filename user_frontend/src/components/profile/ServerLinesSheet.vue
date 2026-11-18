@@ -406,10 +406,24 @@ onBeforeUnmount(() => {
   color: #111111;
 }
 .sls--dark .sls-badge--primary {
-  background:
-    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
-    var(--uhd-rainbow) border-box;
+  position: relative;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
   color: #ffffff;
+}
+/* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
+   徽章面只留玻璃层；浅色基规则不动。 */
+.sls--dark .sls-badge--primary::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--uhd-rainbow-border-w);
+  background: var(--uhd-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
 }
 .sls-badge--backup {
   border: 1px solid var(--sls-badge-border);

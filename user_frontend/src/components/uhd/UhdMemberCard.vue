@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * UhdMemberCard —— 会员卡（说明书 2.5；全站唯一实现，2026-11-18 质感第二波收敛）
- * 框约 425×265px、圆角 28px；两态各一份（友站补测裁定，见 gap 表 §5.1）：
+ * 框约 425×228px、圆角 28px；两态各一份（友站补测裁定，见 gap 表 §5.1；高 228 按用户
+ * 2026-11-18 双标签页对照截图 parent 实测友站宽高比 0.63 定，旧 265 为估值已废）：
  * - 浅色态：白底 rgb(255,255,255)＋宽阔斜向淡彩光带（核心蓝紫 rgb(160,189,242)、羽化约 60–80px）
  *   ＋全卡极细斜纹（间距 14px，落在实测 12–16px 区间）；阴影卡下 2px rgb(205,201,229)→38px 溶入页底。
  * - 深色态：紫蓝渐变底（左近黑 rgb(29,31,34)→中右靛蓝平台 rgb(110,116,153)→右近黑 rgb(22,23,27)）
@@ -61,18 +62,18 @@ withDefaults(
 .uhd-member__card {
   position: relative;
   overflow: hidden;
-  min-height: 265px;
+  /* 高 228：2026-11-18 用户双标签页对照截图 parent 实测友站宽高比 0.63 定
+     （390 宽下卡宽约 364 → 高约 229）；旧 265 为估值已废。 */
+  min-height: 228px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 26px 28px;
+  padding: 20px 22px;
   background: rgb(255, 255, 255);
   border: var(--uhd-border-w) solid var(--uhd-l-border);
   border-radius: var(--uhd-radius-card-lg);
   /* 浅色阴影：卡下 2px 淡紫 rgb(205,201,229)→38px 溶入页底（友站补测采样） */
-  box-shadow:
-    0 2px 8px -2px rgb(205, 201, 229),
-    0 24px 38px -20px rgba(205, 201, 229, 0.45);
+  box-shadow: var(--uhd-shadow-member-l);
 }
 /* 斜向淡彩光带（浅色态）：宽阔斜向、核心蓝紫 rgb(160,189,242)、羽化约 60–80px */
 .uhd-member__band {
@@ -147,10 +148,7 @@ html:not([data-theme='light']) .uhd-member__card,
   background: linear-gradient(115deg, rgb(29, 31, 34) 0%, rgb(37, 38, 41) 12%, rgb(62, 62, 69) 24%, rgb(79, 74, 94) 36%, rgb(110, 116, 153) 50%, rgb(116, 117, 154) 58%, rgb(95, 120, 152) 72%, rgb(68, 90, 112) 84%, rgb(30, 35, 40) 94%, rgb(22, 23, 27) 100%);
   border-color: rgba(255, 255, 255, 0.1);
   /* 顶部淡紫高光边 rgb(130,125,159)＋弱阴影（卡下 2px rgb(23,23,31)→36px 至页底） */
-  box-shadow:
-    inset 0 1px 0 rgb(130, 125, 159),
-    0 2px 8px -2px rgb(23, 23, 31),
-    0 20px 36px -18px rgba(23, 23, 31, 0.6);
+  box-shadow: var(--uhd-shadow-member-d);
 }
 /* 同一条斜光带呈亮色形态 */
 html:not([data-theme='light']) .uhd-member__band,

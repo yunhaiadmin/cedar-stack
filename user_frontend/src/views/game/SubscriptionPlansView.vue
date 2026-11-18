@@ -1192,9 +1192,27 @@ html:not([data-theme='light']) .sub-slider::-webkit-slider-thumb { background: #
 html:not([data-theme='light']) .sub-slider::-moz-range-thumb { background: #2e2e33; box-shadow: var(--uhd-shadow-thumb-d); }
 html:not([data-theme='light']) .sub-sticky { background: rgba(13, 13, 15, 0.92); }
 html:not([data-theme='light']) .sub-sticky__cta {
-  background:
-    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
-    var(--uhd-rainbow) border-box;
+  position: relative;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
   color: #ffffff;
+}
+/* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
+   钮面只留玻璃层；浅色基规则不动。 */
+html:not([data-theme='light']) .sub-sticky__cta::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--uhd-rainbow-border-w);
+  background: var(--uhd-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+/* 禁用态彩虹退场：环随之一并隐藏 */
+.sub-sticky__cta:disabled::before {
+  display: none;
 }
 </style>

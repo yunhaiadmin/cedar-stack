@@ -2,7 +2,8 @@
 // 运行：cd user_frontend && node tests/texturePages2.test.mjs
 // 真源：reports/uhdnow-texture-gap-table-20261118.md §1 #1/#3/#7/#10/E4/E6/E7、§5 补测回填。
 //  #1 会员卡：补测裁定两态各一份——浅＝白底＋宽阔淡彩光带＋极细斜纹；
-//     深＝紫蓝渐变底＋亮色斜光带＋顶部淡紫高光边；卡框约 422×267、卡名约 28px 粗体。
+//     深＝紫蓝渐变底＋亮色斜光带＋顶部淡紫高光边；卡框 max-width 425、min-height 228
+//     （2026-11-18 用户对照截图 parent 实测友站宽高比 0.63，旧 265 为估值已废）、卡名约 28px 粗体。
 //  #3 底栏：用户中心移动底栏由实心纸条迁玻璃浮坞（slab 档＋坞影束），与片库坞同口径。
 //  #7/#20/E6 片库顶栏升 slab 档、海报圆角 13→16（骨架同步）；浅态选中项已是白底胶囊，无需改。
 //  #10 详情返回钮升 pill 档。E4 定价：顶部 250px 淡彩虹洗色、卡 287×454/间距 24/圆角 24、
@@ -78,8 +79,8 @@ check('M2 概览无残留 .ov-card 实现（模板＋样式全清）',
 const member = read('src/components/uhd/UhdMemberCard.vue')
 const memberStyle = member.slice(member.indexOf('<style'))
 const card = blockOf(memberStyle, 'uhd-member__card')
-check('M3 会员卡框约 422×267（max-width 425、min-height 265）',
-  /max-width:\s*425px/.test(blockOf(memberStyle, 'uhd-member')) && /min-height:\s*265px/.test(card))
+check('M3 会员卡框 max-width 425、min-height 228（2026-11-18 用户对照截图 parent 实测友站宽高比 0.63，旧 265 为估值已废）',
+  /max-width:\s*425px/.test(blockOf(memberStyle, 'uhd-member')) && /min-height:\s*228px/.test(card))
 check('M4 浅色态白底 rgb(255, 255, 255)＋光带核心 rgb(160, 189, 242)',
   memberStyle.includes('rgb(255, 255, 255)') && memberStyle.includes('rgb(160, 189, 242)'))
 check('M5 细斜纹间距落在 12–16px 区间',
@@ -88,9 +89,15 @@ check('M6 深色态紫蓝渐变底（三锚点 rgb(29, 31, 34)/rgb(110, 116, 153
   memberStyle.includes('rgb(29, 31, 34)') && memberStyle.includes('rgb(110, 116, 153)')
   && memberStyle.includes('rgb(22, 23, 27)'))
 check('M7 深色态顶部淡紫高光边 rgb(130, 125, 159)',
-  memberStyle.includes('rgb(130, 125, 159)'))
+  // texture-tokens-3：阴影值已收进 --uhd-shadow-member-d 令牌，卡片改引令牌；
+  // 值本身不变，此处经令牌解析断言（卡片引令牌＋令牌含该色）。
+  memberStyle.includes('var(--uhd-shadow-member-d)') &&
+  /--uhd-shadow-member-d:[^;]*rgb\(130, 125, 159\)/.test(read('src/styles/uhd-tokens.css')))
 check('M8 浅色阴影含 rgb(205, 201, 229)，深色阴影含 rgb(23, 23, 31)',
-  memberStyle.includes('rgb(205, 201, 229)') && memberStyle.includes('rgb(23, 23, 31)'))
+  memberStyle.includes('var(--uhd-shadow-member-l)') &&
+  memberStyle.includes('var(--uhd-shadow-member-d)') &&
+  /--uhd-shadow-member-l:[^;]*rgb\(205, 201, 229\)/.test(read('src/styles/uhd-tokens.css')) &&
+  /--uhd-shadow-member-d:[^;]*rgb\(23, 23, 31\)/.test(read('src/styles/uhd-tokens.css')))
 check('M9 卡名约 28px 粗体', /font-size:\s*28px/.test(blockOf(memberStyle, 'uhd-member__plan')))
 check('M10 右上品牌标浅色 37×40、深色 33×39',
   /width:\s*37px/.test(blockOf(memberStyle, 'uhd-member__logo'))

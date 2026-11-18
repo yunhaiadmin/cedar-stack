@@ -1150,6 +1150,7 @@ onMounted(() => {
    缺省（深色面）＝深色毛玻璃底 + 白字，浅色面＝淡彩粉彩底（--uhd-rainbow-soft）+ 黑字（见浅色覆盖）。
    旧版自带的光谱采样填充（满饱和色带、无玻璃栈）已于 2026-11-13 用户真机对比图打回后废弃。 */
 .submit-btn {
+  position: relative;
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -1162,9 +1163,7 @@ onMounted(() => {
   padding: 0 24px;
   border: 1.5px solid transparent;
   border-radius: 23px;
-  background:
-    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
-    var(--uhd-rainbow) border-box;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
   color: #ffffff;
   box-shadow: var(--uhd-shadow-sheet);
   backdrop-filter: var(--uhd-glass-filter);
@@ -1174,6 +1173,21 @@ onMounted(() => {
   font-weight: var(--uhd-fw-semibold);
   cursor: pointer;
   transition: transform var(--uhd-press-dur) var(--uhd-ease-spring), filter 0.2s ease, opacity 0.2s ease;
+}
+/* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
+   钮面只留玻璃层；浅色覆盖只换面背景，环由本处继承。 */
+.submit-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--uhd-rainbow-border-w);
+  background: var(--uhd-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
 }
 .submit-btn:hover:not(:disabled) {
   filter: brightness(1.03);
@@ -1189,6 +1203,10 @@ onMounted(() => {
   -webkit-backdrop-filter: none;
   opacity: 0.55;
   cursor: not-allowed;
+}
+/* 禁用态彩虹退场：环随之一并隐藏 */
+.submit-btn:disabled::before {
+  display: none;
 }
 
 /* 找回密码：入口链 + 展开小表单 + 重置说明（跟随页面深浅两套变量口径） */
@@ -1395,9 +1413,7 @@ html[data-theme='light'] .eye-btn:hover { color: var(--uhd-l-text); background: 
 html[data-theme='light'] .strength-track { background: var(--uhd-l-divider); }
 html[data-theme='light'] .strength-text { color: var(--uhd-l-text-3); }
 html[data-theme='light'] .submit-btn {
-  background:
-    var(--uhd-rainbow-soft) padding-box,
-    var(--uhd-rainbow) border-box;
+  background: var(--uhd-rainbow-soft);
   color: #111111;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.65),
