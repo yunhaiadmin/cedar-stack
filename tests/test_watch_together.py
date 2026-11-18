@@ -6,8 +6,9 @@
   单一入口）：本地库条目未绑定拒、已绑定过；CMS 库条目免绑定过。
 - 房间只流转控制事件与进度：任何下发 payload 里都不许出现流地址 /
   play_sign / api_key / 令牌类字段（红线，结构断言锁死）。
-- 同步：成员的 play/pause/seek 广播给全房并更新房间播放态；晚入者
-  拿到的快照进度按播放态时间戳外推对齐。
+- 同步：房主独控（G-189）——只有房主的 play/pause/seek 广播给全房
+  并更新房间播放态，成员的控制信号被拒（not_host）、状态不变；
+  晚入者拿到的快照进度按播放态时间戳外推对齐。
 - 房主解散全房收到 ended；房主离开（非解散）房主转给最早成员；
   人走空房间销毁。
 """
@@ -234,17 +235,18 @@ def test_control_event_broadcast_and_state(db, hub):
     member_ws = FakeWS()
     run(hub.join_room(member_ws, member.id, code))
 
-    run(hub.handle_event(member_ws, member.id,
+    # 房主的 seek 广播给全房并更新房间播放态
+    run(hub.handle_event(host_ws, host.id,
                          {"event": "seek", "position": 321.5,
                           "playing": True}))
-    evt = host_ws.last_of("wt.event")
+    evt = member_ws.last_of("wt.event")
     assert evt is not None
     assert evt["event"] == "seek"
     assert evt["position"] == 321.5
     assert evt["playing"] is True
-    assert evt["from_user_id"] == member.id
+    assert evt["from_user_id"] == host.id
     # 发送方不回声
-    assert member_ws.of_type("wt.event") == []
+    assert host_ws.of_type("wt.event") == []
 
     run(hub.handle_event(host_ws, host.id,
                          {"event": "pause", "position": 330.0}))
@@ -254,6 +256,71 @@ def test_control_event_broadcast_and_state(db, hub):
     room = run(hub.store.get(code))
     assert room["state"]["playing"] is False
     assert room["state"]["position"] == 330.0
+
+
+def test_member_control_events_rejected_state_unchanged(db, hub):
+    """房主独控（G-189）：成员的 play/pause/seek 全部被拒，房间
+    播放态不变、任何人收不到广播。"""
+    host, host_ws, item, code = _room_with_host(db, hub)
+    member = _user(db, "member5b")
+    _binding(db, member.id)
+    member_ws = FakeWS()
+    run(hub.join_room(member_ws, member.id, code))
+    before = dict(run(hub.store.get(code))["state"])
+
+    for payload in ({"event": "play", "position": 10.0},
+                    {"event": "pause", "position": 20.0},
+                    {"event": "seek", "position": 30.0, "playing": True}):
+        with pytest.raises(wt.WatchError) as excinfo:
+            run(hub.handle_event(member_ws, member.id, payload))
+        assert excinfo.value.error == "not_host"
+        assert excinfo.value.message == "只有房主能控制播放。"
+
+    room = run(hub.store.get(code))
+    assert room["state"]["playing"] == before["playing"]
+    assert room["state"]["position"] == before["position"]
+    assert host_ws.of_type("wt.event") == []
+    assert member_ws.of_type("wt.event") == []
+
+    # 拒绝之后房主照常可控
+    run(hub.handle_event(host_ws, host.id,
+                         {"event": "play", "position": 40.0}))
+    evt = member_ws.last_of("wt.event")
+    assert evt is not None and evt["event"] == "play"
+
+
+def test_new_host_can_control_after_transfer(db, hub):
+    """房主转移后新房主自动可控，其余成员照样被拒（G-189）。"""
+    host, host_ws, item, code = _room_with_host(db, hub)
+    m1 = _user(db, "member5c")
+    _binding(db, m1.id)
+    m1_ws = FakeWS()
+    run(hub.join_room(m1_ws, m1.id, code))
+    m2 = _user(db, "member5d")
+    _binding(db, m2.id)
+    m2_ws = FakeWS()
+    run(hub.join_room(m2_ws, m2.id, code))
+
+    run(hub.handle_disconnect(host_ws, host.id))
+    room = run(hub.store.get(code))
+    assert room["host_id"] == m1.id
+
+    # 新房主（原最早成员）的信号被采纳并广播
+    run(hub.handle_event(m1_ws, m1.id,
+                         {"event": "pause", "position": 88.0}))
+    evt = m2_ws.last_of("wt.event")
+    assert evt is not None
+    assert evt["event"] == "pause"
+    assert evt["from_user_id"] == m1.id
+
+    # 另一名普通成员仍被拒
+    with pytest.raises(wt.WatchError) as excinfo:
+        run(hub.handle_event(m2_ws, m2.id,
+                             {"event": "play", "position": 90.0}))
+    assert excinfo.value.error == "not_host"
+    room = run(hub.store.get(code))
+    assert room["state"]["playing"] is False
+    assert room["state"]["position"] == 88.0
 
 
 def test_late_joiner_aligns_to_extrapolated_position(db, hub):
@@ -365,10 +432,21 @@ def test_handle_message_create_join_event_flow(db, hub):
                            {"action": "wt.join", "code": code.lower()}))
     assert member_ws.last_of("wt.joined") is not None
 
+    # 成员的控制信号被拒：本人收到 wt.error(not_host)，房主无广播
     run(hub.handle_message(member_ws, member.id,
                            {"action": "wt.event", "event": "play",
                             "position": 42.0}))
-    evt = host_ws.last_of("wt.event")
+    err = member_ws.last_of("wt.error")
+    assert err is not None
+    assert err["error"] == "not_host"
+    assert err["message"] == "只有房主能控制播放。"
+    assert host_ws.of_type("wt.event") == []
+
+    # 房主的控制信号正常广播给成员
+    run(hub.handle_message(host_ws, host.id,
+                           {"action": "wt.event", "event": "play",
+                            "position": 42.0}))
+    evt = member_ws.last_of("wt.event")
     assert evt["event"] == "play" and evt["position"] == 42.0
 
 
@@ -409,7 +487,7 @@ def test_no_stream_secrets_in_any_payload(db, hub):
     _binding(db, member.id)
     member_ws = FakeWS()
     snap = run(hub.join_room(member_ws, member.id, code))
-    run(hub.handle_event(member_ws, member.id,
+    run(hub.handle_event(host_ws, host.id,
                          {"event": "play", "position": 10.0}))
     run(hub.handle_state(host_ws, host.id,
                          {"position": 11.0, "playing": True, "rate": 1}))
