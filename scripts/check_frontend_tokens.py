@@ -255,18 +255,11 @@ def check_freeze(frontend: str) -> None:
 # 注：el-card 存量已随批 3 WalletAdmin 收编清零；裸表存量已删 MediaCollections /
 # WalletAdmin 两行（批 3）。
 ADMIN_EL_CARD_FREEZE: set[str] = set()  # 批 3 已清零（原存量仅 WalletAdmin.vue）
-ADMIN_BARE_TABLE_FREEZE = {
-    "views/Agents.vue",  # 批 2/4
-    "views/DualDriveAudit.vue",  # 批 2
-    "views/MediaLibraryAdmin.vue",  # 批 2
-    "views/MemberCodes.vue",  # 批 2 尾/4
-    "views/MissingEpisodes.vue",  # 批 2
-    "views/PoolAdmin.vue",  # 批 4
-    "views/SystemHealth.vue",  # 批 4
-    "views/TaskOverview.vue",  # 批 2
-    "views/WelfareLotteryProposals.vue",  # 批 2
-    "views/WelfareLotteryRounds.vue",  # 批 2
-}
+# 后台重设计批 2（2026-11-18）：三页存量裸表（MemberCodes / PoolAdmin /
+# SystemHealth）已全部收编 DataTable，冻结表就此改为白名单制——views 里
+# 不许再出现裸 el-table；DataTable 实在承载不了的例外页才许登记在这里，
+# 且必须注明原因（等 parent 定夺），不许先斩后奏。
+ADMIN_BARE_TABLE_WHITELIST: dict[str, str] = {}
 EL_CARD_RE = re.compile(r"<el-card[\s>]")
 EL_TABLE_RE = re.compile(r"<el-table[\s>]")
 
@@ -293,11 +286,11 @@ def check_admin_structure() -> None:
         )
         for f in new_cards:
             failures.append(f"    {f}")
-    new_tables = sorted(table_files - ADMIN_BARE_TABLE_FREEZE)
+    new_tables = sorted(table_files - set(ADMIN_BARE_TABLE_WHITELIST))
     if new_tables:
         failures.append(
-            "admin_frontend: 新增了裸 el-table 页面（UI 统一标准第 5 条：表格一律 DataTable，"
-            "裸表只许退场；只读小表例外须在 PR 说明里注明并登记到冻结表）："
+            "admin_frontend: views 里出现了裸 el-table（UI 统一标准第 5 条：表格一律 DataTable；"
+            "DataTable 承载不了的例外须登记 ADMIN_BARE_TABLE_WHITELIST 并注明原因）："
         )
         for f in new_tables:
             failures.append(f"    {f}")
@@ -392,16 +385,70 @@ def check_admin_shell() -> None:
         )
 
 
+# 后台重设计批 2（2026-11-18）：带列表筛选/搜索区的页面必须用共享 FilterBar，
+# 不许再手写筛选条。清单为准绳（2026-11-18 全量盘点 49 个 view）：
+# 前 10 个是批 2 之前已收编的，后 11 个是批 2 本批收编的。
+# 盘点里不进清单的形态（登记在此备查，不算漏检）：页头/卡头的范围切换 radio
+# （Goods／Servers／Subscriptions／MemberCodes 的当前服/全部服，与 MediaSeek
+# 既有共存形态一致）、Servers 的统计卡切换、Dashboard 的图表口径 radio、
+# SystemHealth 的告警记录状态页签（el-tabs，FilterBar 无页签形态）、
+# LibraryScope 选择器内的本地过滤输入框。
+ADMIN_FILTERBAR_REQUIRED = (
+    "views/Devices.vue",
+    "views/Invitations.vue",
+    "views/LoginLogs.vue",
+    "views/MediaSeek.vue",
+    "views/OperationLogs.vue",
+    "views/Orders.vue",
+    "views/ShareGuard.vue",
+    "views/StorageBindings.vue",
+    "views/Users.vue",
+    "views/WalletAdmin.vue",
+    # —— 批 2 收编 ——
+    "views/Announcements.vue",
+    "views/Coupons.vue",
+    "views/DualDriveAudit.vue",
+    "views/GovernanceReports.vue",
+    "views/GovernanceSuspensions.vue",
+    "views/MemberCodes.vue",
+    "views/MissingEpisodes.vue",
+    "views/PoolAdmin.vue",
+    "views/Subscriptions.vue",
+    "views/Tickets.vue",
+    "views/WelfareLotteryProposals.vue",
+)
+
+
+def check_admin_filterbar() -> None:
+    """批 2 断言：盘点清单内的带筛选页面必须引用 FilterBar"""
+    global checks
+    checks += 1
+    src = ROOT / "admin_frontend" / "src"
+    missing = []
+    for rel in ADMIN_FILTERBAR_REQUIRED:
+        path = src / rel
+        if not path.exists() or "FilterBar" not in path.read_text(encoding="utf-8"):
+            missing.append(rel)
+    if missing:
+        failures.append(
+            "admin_frontend: 下列带筛选/搜索区的页面还没有用共享 FilterBar"
+            "（批 2 口径：筛选一律 FilterBar，手写筛选条只许退场）："
+        )
+        for f in missing:
+            failures.append(f"    {f}")
+
+
 for frontend in FRONTENDS:
     check_frontend(frontend)
     check_freeze(frontend)
 check_admin_structure()
 check_uhd_tokens_sync()
 check_admin_shell()
+check_admin_filterbar()
 
 print(f"设计令牌契约检查：{checks} 项")
 if failures:
     print("\n".join(failures))
     print("❌ 设计令牌契约检查失败")
     sys.exit(1)
-print("✅ 设计令牌契约检查通过（引用的令牌都有定义 · 无循环引用 · 没有孤立样式表 · 主题引入冻结 · neo 冻结 · 两端 uhd-tokens 逐字同步 · 壳字号走令牌）")
+print("✅ 设计令牌契约检查通过（引用的令牌都有定义 · 无循环引用 · 没有孤立样式表 · 主题引入冻结 · neo 冻结 · 两端 uhd-tokens 逐字同步 · 壳字号走令牌 · 裸表白名单 · 筛选走 FilterBar）")

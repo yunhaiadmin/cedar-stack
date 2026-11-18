@@ -12,10 +12,10 @@
  * （外面包一层 button，选中走琥珀描边）· 到期提醒与订阅清单都换成 SectionCard，
  * 清单是 flush 表格 + 统一工具条；加载失败给可重试的错误态。
  */
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
-  AlertTriangle, BellRing, CalendarClock, Crown, ListChecks, RefreshCw, Search, TimerOff, Users,
+  AlertTriangle, BellRing, CalendarClock, Crown, ListChecks, RefreshCw, TimerOff, Users,
 } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard, StatTile } from '@/components/ui'
 import { fetchPlans, fetchRealmSubscriptions, type PlanRow } from '@/api/admin'
@@ -29,6 +29,8 @@ import { useQueryFilter } from '@/composables/useQueryFilter'
 import { useRealmStore } from '@/stores/realm'
 import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import type { AppliedFilter, FilterConfig } from '@/components/FilterBar.vue'
 
 const realm = useRealmStore()
 /** 统计范围：当前服（默认）或全部服 */
@@ -73,7 +75,6 @@ let lastSearch = ''
 
 async function load() {
   const seq = ++loadSeq
-  clearTimeout(searchTimer)
   lastSearch = search.value.trim()
   loading.value = true
   loadError.value = false
@@ -96,15 +97,52 @@ async function load() {
   }
 }
 
-/** 搜索框输入防抖：停手 350ms 自动查询（回车 / 清空仍立即查询） */
-let searchTimer: ReturnType<typeof setTimeout> | undefined
-watch(search, (value) => {
-  clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => {
-    if (value.trim() !== lastSearch) load()
-  }, 350)
+/** 筛选一律 FilterBar（统一标准第 4 条）：搜索 350ms 防抖自动查（组件内防抖），
+ * 点「查询」立即按当前草稿查；chips 只反映已提交条件。状态与 URL 同步仍走
+ * useQueryFilter（它监听 statusFilter，FilterBar 改值后自动跟随）。 */
+const subFilterConfigs = computed<FilterConfig[]>(() => [
+  {
+    key: 'status', label: '状态', type: 'select', value: statusFilter.value, placeholder: '全部状态',
+    options: [
+      { value: 'active', label: '生效中' },
+      { value: 'expiring', label: '7 天内到期' },
+      { value: 'expired', label: '已过期' },
+    ],
+  },
+])
+
+const STATUS_CHIP_LABELS: Record<string, string> = {
+  active: '生效中', expiring: '7 天内到期', expired: '已过期',
+}
+
+const appliedFilters = computed<AppliedFilter[]>(() => {
+  const items: AppliedFilter[] = []
+  if (search.value.trim()) {
+    items.push({ key: 'search', label: '关键词', text: search.value.trim() })
+  }
+  if (statusFilter.value) {
+    items.push({ key: 'status', label: '状态', text: STATUS_CHIP_LABELS[statusFilter.value] ?? statusFilter.value })
+  }
+  return items
 })
-onBeforeUnmount(() => clearTimeout(searchTimer))
+
+function onSearchUpdate(value: string) {
+  search.value = value
+  if (value.trim() !== lastSearch) load()
+}
+
+function onFilterChange(key: string, value: string | number | boolean) {
+  if (key !== 'status') return
+  statusFilter.value = String(value)
+  load()
+}
+
+function onRemoveChip(key: string) {
+  if (key === 'search') search.value = ''
+  else if (key === 'status') statusFilter.value = ''
+  else return
+  load()
+}
 
 /** 可授予的套餐：跨服汇总时列出全部服的套餐（授予时按套餐所属的服开会员） */
 async function loadPlans() {
@@ -389,27 +427,18 @@ async function submit() {
     <!-- 订阅清单：筛选在左、清空在右；桌面表格 / 手机卡片 -->
     <SectionCard title="订阅清单" :icon="ListChecks" :meta="rows.length ? `${rows.length} 条` : ''" flush>
       <div class="view-toolbar">
-        <div class="view-toolbar__filters">
-          <el-input
-            v-model="search"
-            class="f-search"
-            placeholder="搜索用户名"
-            clearable
-            @keyup.enter="load"
-            @clear="load"
-          >
-            <template #prefix><Search :size="14" /></template>
-          </el-input>
-          <el-select v-model="statusFilter" class="f-select" placeholder="全部状态" clearable @change="load">
-            <el-option label="生效中" value="active" />
-            <el-option label="7 天内到期" value="expiring" />
-            <el-option label="已过期" value="expired" />
-          </el-select>
-        </div>
-        <div class="view-toolbar__actions">
-          <el-button v-if="hasFilter" text @click="resetFilters">清空筛选</el-button>
-          <el-button type="primary" :icon="Search" @click="load">查询</el-button>
-        </div>
+        <FilterBar
+          :search="{ value: search, placeholder: '搜索用户名', mode: 'debounced', debounceMs: 350 }"
+          :filters="subFilterConfigs"
+          :applied-filters="appliedFilters"
+          :loading="loading"
+          query-button
+          @update:search="onSearchUpdate"
+          @query="load"
+          @filter-change="onFilterChange"
+          @remove-chip="onRemoveChip"
+          @clear="resetFilters"
+        />
       </div>
 
       <EmptyState
@@ -532,21 +561,11 @@ async function submit() {
 .tile-btn.is-active :deep(.au-stat) { border-color: var(--au-primary-border); background: var(--au-primary-soft); }
 .tile-btn:focus-visible { outline: 2px solid var(--au-border-focus); outline-offset: 2px; }
 
-/* ---------- 工具条：筛选在左、动作在右 ---------- */
+/* ---------- 工具条：筛选一律 FilterBar，容器只管内边距与底线 ---------- */
 .view-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px 12px;
-  flex-wrap: wrap;
   padding: 4px 20px 14px;
   border-bottom: 1px solid var(--au-border);
 }
-
-.view-toolbar__filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
-.view-toolbar__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.f-search { width: 220px; }
-.f-select { width: 140px; }
 
 .flush-table :deep(.dt-cards) { padding: 12px 12px 8px; }
 
@@ -587,9 +606,6 @@ async function submit() {
 @media (max-width: 768px) {
   .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .view-toolbar { padding: 2px 16px 12px; }
-  .view-toolbar__filters > .f-search { flex: 1 1 100%; width: auto; }
-  .view-toolbar__filters > .f-select { flex: 1 1 120px; width: auto; }
-  .view-toolbar__actions { width: 100%; justify-content: flex-end; }
   .reminder-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .reminder-field, .reminder-input { width: 100%; }
   .days-input { flex: 1; width: auto; }

@@ -2,12 +2,14 @@
 /** 公告管理：创建/编辑/置顶/删除，联动全站推送 */
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Megaphone, Plus, RefreshCw, Search } from 'lucide-vue-next'
+import { Megaphone, Plus, RefreshCw } from 'lucide-vue-next'
 import { PageHeader, SectionCard } from '@/components/ui'
 import { createAnnouncement, deleteAnnouncement, fetchAnnouncements, updateAnnouncement } from '@/api/admin'
 import type { Announcement } from '@/types'
 import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import type { FilterConfig } from '@/components/FilterBar.vue'
 
 const columns: DataColumn[] = [
   { key: 'title', label: '公告', minWidth: 260, mobile: 'title' },
@@ -33,6 +35,12 @@ const visibleList = computed(() => {
   })
 })
 const hasFilter = computed(() => activeOnly.value || Boolean(keyword.value.trim()))
+
+/** 筛选一律 FilterBar（统一标准第 4 条）：关键字逐键即时本地过滤（debounceMs 0），
+ * 状态单选钮走自定义控件原样保留；两者都只改本地 ref，不发请求。 */
+const announceFilterConfigs = computed<FilterConfig[]>(() => [
+  { key: 'active_only', label: '按状态筛选', type: 'custom', value: activeOnly.value },
+])
 
 const TYPE_LABELS: Record<string, string> = { system: '系统', maintenance: '维护', activity: '活动' }
 function typeLabel(t: string): string {
@@ -183,15 +191,18 @@ function fmtDate(s: string): string {
       flush
     >
       <div class="list-bar">
-        <div class="toolbar">
-          <el-input v-model="keyword" placeholder="搜索标题 / 正文" clearable>
-            <template #prefix><Search :size="14" /></template>
-          </el-input>
-          <el-radio-group v-model="activeOnly" aria-label="按状态筛选">
-            <el-radio-button :value="false">全部</el-radio-button>
-            <el-radio-button :value="true">展示中</el-radio-button>
-          </el-radio-group>
-        </div>
+        <FilterBar
+          :search="{ value: keyword, placeholder: '搜索标题 / 正文', mode: 'debounced', debounceMs: 0 }"
+          :filters="announceFilterConfigs"
+          @update:search="keyword = $event"
+        >
+          <template #filter-active_only>
+            <el-radio-group v-model="activeOnly" aria-label="按状态筛选">
+              <el-radio-button :value="false">全部</el-radio-button>
+              <el-radio-button :value="true">展示中</el-radio-button>
+            </el-radio-group>
+          </template>
+        </FilterBar>
       </div>
 
       <DataTable

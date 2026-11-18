@@ -15,6 +15,8 @@ import { PageHeader, SectionCard } from '@/components/ui'
 import { parseServerTime } from '@/utils/serverTime'
 import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import type { FilterConfig } from '@/components/FilterBar.vue'
 import { useAuthStore } from '@/stores/auth'
 import {
   createGovernanceSuspension,
@@ -42,6 +44,13 @@ const loadError = ref('')
 const scope = ref<'active' | ''>('active')
 /** 按用户 ID 筛选（空 = 不筛） */
 const userFilter = ref<number | undefined>(undefined)
+
+/** 筛选一律 FilterBar（统一标准第 4 条）：用户 ID 输入框与「筛选 / 清除」钮走
+ * 自定义控件原样保留（钮文案与回车即查口径不动）；范围单选钮与 MediaSeek
+ * 既有形态一致，与 FilterBar 并存不进控件组。 */
+const suspensionFilterConfigs = computed<FilterConfig[]>(() => [
+  { key: 'user', label: '按用户 ID 筛选', type: 'custom', value: userFilter.value },
+])
 const rowBusyId = ref<number | null>(null)
 
 function fmtTime(v: string | null | undefined): string {
@@ -188,19 +197,23 @@ async function submitCreate() {
           <el-radio-button value="active">生效中</el-radio-button>
           <el-radio-button value="">全部</el-radio-button>
         </el-radio-group>
-        <div class="user-filter">
-          <el-input-number
-            v-model="userFilter"
-            :min="1"
-            :controls="false"
-            placeholder="按用户 ID 筛选"
-            aria-label="按用户 ID 筛选"
-            class="w-user"
-            @keyup.enter="load"
-          />
-          <el-button @click="load">筛选</el-button>
-          <el-button v-if="userFilter" text @click="userFilter = undefined; load()">清除</el-button>
-        </div>
+        <FilterBar :filters="suspensionFilterConfigs" class="user-filter-bar">
+          <template #filter-user>
+            <span class="user-filter">
+              <el-input-number
+                v-model="userFilter"
+                :min="1"
+                :controls="false"
+                placeholder="按用户 ID 筛选"
+                aria-label="按用户 ID 筛选"
+                class="w-user"
+                @keyup.enter="load"
+              />
+              <el-button @click="load">筛选</el-button>
+              <el-button v-if="userFilter" text @click="userFilter = undefined; load()">清除</el-button>
+            </span>
+          </template>
+        </FilterBar>
         <span v-if="!canWrite" class="muted">当前为只读角色：可以查看，不能停权或撤销</span>
       </div>
 

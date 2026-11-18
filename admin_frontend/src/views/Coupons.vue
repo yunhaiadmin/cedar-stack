@@ -14,16 +14,18 @@
  * 「功能设置」SectionCard（两行设置，保存在标题行右侧）+ flush 券表（筛选左、查询右）；
  * 加载失败给可重试的错误态。弹窗结构不变，只把写死的颜色 / 圆角换成 --au-* 令牌。
  */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { toAdminError } from '@/utils/errorMessage'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
-  AlertTriangle, CircleCheck, Clock3, Plus, RefreshCw, Search, Settings2, TicketPercent, Tickets,
+  AlertTriangle, CircleCheck, Clock3, Plus, RefreshCw, Settings2, TicketPercent, Tickets,
 } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard, StatTile } from '@/components/ui'
 import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import type { AppliedFilter, FilterConfig } from '@/components/FilterBar.vue'
 import { useRealmStore } from '@/stores/realm'
 import {
   createCoupons,
@@ -89,7 +91,6 @@ let lastSearch = ''
 /** 只拉列表：改筛选 / 搜索时用，不再顺带重拉优惠券设置 */
 async function loadList() {
   const seq = ++listSeq
-  clearTimeout(searchTimer)
   lastSearch = filters.value.search
   loading.value = true
   loadError.value = false
@@ -131,18 +132,60 @@ async function load() {
   await Promise.all([loadList(), loadSettings()])
 }
 
-/** 搜索框输入防抖：停手 350ms 自动查询（回车 / 清空仍立即查询） */
-let searchTimer: ReturnType<typeof setTimeout> | undefined
-watch(
-  () => filters.value.search,
-  (value) => {
-    clearTimeout(searchTimer)
-    searchTimer = setTimeout(() => {
-      if (value !== lastSearch) loadList()
-    }, 350)
+/** 筛选一律 FilterBar（统一标准第 4 条）：搜索 350ms 防抖自动查（组件内防抖），
+ * 点「查询」立即按当前草稿查；chips 只反映已提交条件（loadList 落定的 filters）。 */
+const couponFilterConfigs = computed<FilterConfig[]>(() => [
+  {
+    key: 'kind', label: '适用范围', type: 'select', value: filters.value.kind, placeholder: '适用范围',
+    options: [
+      { value: 'all', label: '全部商品' },
+      { value: 'subscription', label: '仅会员' },
+      { value: 'recharge', label: '仅充值' },
+    ],
   },
-)
-onBeforeUnmount(() => clearTimeout(searchTimer))
+  {
+    key: 'active', label: '状态', type: 'select', value: filters.value.active, placeholder: '状态',
+    options: [
+      { value: 'true', label: '启用' },
+      { value: 'false', label: '停用' },
+    ],
+  },
+])
+
+const appliedFilters = computed<AppliedFilter[]>(() => {
+  const items: AppliedFilter[] = []
+  if (filters.value.search) {
+    items.push({ key: 'search', label: '关键词', text: filters.value.search })
+  }
+  if (filters.value.kind) {
+    const opt = couponFilterConfigs.value[0].options?.find((o) => o.value === filters.value.kind)
+    items.push({ key: 'kind', label: '适用范围', text: opt?.label ?? filters.value.kind })
+  }
+  if (filters.value.active) {
+    items.push({ key: 'active', label: '状态', text: filters.value.active === 'true' ? '启用' : '停用' })
+  }
+  return items
+})
+
+function onSearchUpdate(value: string) {
+  filters.value.search = value
+  if (value !== lastSearch) loadList()
+}
+
+function onFilterChange(key: string, value: string | number | boolean) {
+  if (key === 'kind') filters.value.kind = String(value)
+  else if (key === 'active') filters.value.active = String(value)
+  else return
+  loadList()
+}
+
+function onRemoveChip(key: string) {
+  if (key === 'search') filters.value.search = ''
+  else if (key === 'kind') filters.value.kind = ''
+  else if (key === 'active') filters.value.active = ''
+  else return
+  loadList()
+}
 
 const hasFilter = computed(() => !!(filters.value.kind || filters.value.active || filters.value.search))
 
@@ -663,31 +706,18 @@ onMounted(() => {
 
     <SectionCard title="全部优惠券" :icon="Tickets" :meta="coupons.length ? `${coupons.length} 张` : ''" flush>
       <div class="view-toolbar">
-        <div class="view-toolbar__filters">
-          <el-input
-            v-model="filters.search"
-            class="f-search"
-            placeholder="搜索优惠码"
-            clearable
-            @keyup.enter="loadList"
-            @clear="loadList"
-          >
-            <template #prefix><Search :size="14" /></template>
-          </el-input>
-          <el-select v-model="filters.kind" class="f-select" placeholder="适用范围" clearable @change="loadList">
-            <el-option label="全部商品" value="all" />
-            <el-option label="仅会员" value="subscription" />
-            <el-option label="仅充值" value="recharge" />
-          </el-select>
-          <el-select v-model="filters.active" class="f-select" placeholder="状态" clearable @change="loadList">
-            <el-option label="启用" value="true" />
-            <el-option label="停用" value="false" />
-          </el-select>
-        </div>
-        <div class="view-toolbar__actions">
-          <el-button v-if="hasFilter" text @click="resetFilters">清空筛选</el-button>
-          <el-button type="primary" :icon="Search" @click="loadList">查询</el-button>
-        </div>
+        <FilterBar
+          :search="{ value: filters.search, placeholder: '搜索优惠码', mode: 'debounced', debounceMs: 350 }"
+          :filters="couponFilterConfigs"
+          :applied-filters="appliedFilters"
+          :loading="loading"
+          query-button
+          @update:search="onSearchUpdate"
+          @query="loadList"
+          @filter-change="onFilterChange"
+          @remove-chip="onRemoveChip"
+          @clear="resetFilters"
+        />
       </div>
 
       <EmptyState v-if="loadError && !coupons.length" :icon="AlertTriangle" title="优惠券加载失败" description="网络或服务暂时不可用，稍后重试。">
@@ -1037,18 +1067,9 @@ onMounted(() => {
 
 /* ---------- 工具条：筛选在左、动作在右 ---------- */
 .view-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px 12px;
-  flex-wrap: wrap;
   padding: 4px 20px 14px;
   border-bottom: 1px solid var(--au-border);
 }
-.view-toolbar__filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
-.view-toolbar__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.f-search { width: 200px; }
-.f-select { width: 130px; }
 
 .flush-table :deep(.dt-cards) { padding: 12px 12px 8px; }
 
@@ -1083,9 +1104,6 @@ onMounted(() => {
 
 @media (max-width: 768px) {
   .view-toolbar { padding: 2px 16px 12px; }
-  .view-toolbar__filters > .f-search { flex: 1 1 100%; width: auto; }
-  .view-toolbar__filters > .f-select { flex: 1 1 120px; width: auto; }
-  .view-toolbar__actions { width: 100%; justify-content: flex-end; }
   .form-grid { grid-template-columns: 1fr; }
 }
 </style>

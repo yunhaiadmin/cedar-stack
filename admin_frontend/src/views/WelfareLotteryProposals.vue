@@ -19,6 +19,8 @@ import { useAuthStore } from '@/stores/auth'
 import { toAdminError } from '@/utils/errorMessage'
 import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import type { AppliedFilter, FilterConfig } from '@/components/FilterBar.vue'
 import {
   approveLotteryProposal,
   fetchLotteryProposals,
@@ -98,6 +100,32 @@ const clearFilter = () => {
   onFilterChange()
 }
 
+/** 筛选一律 FilterBar（统一标准第 4 条）：状态下拉从页头收进列表卡（与各页
+ * 筛选条同一位置），选项与默认值（待审批）不动；chip 的清除与表格空态的
+ * 「清空筛选」走同一条 clearFilter。 */
+const proposalFilterConfigs = computed<FilterConfig[]>(() => [
+  {
+    key: 'status', label: '状态', type: 'select', value: statusFilter.value, placeholder: '全部状态',
+    options: [
+      { value: '', label: '全部状态' },
+      { value: 'pending', label: '待审批' },
+      { value: 'approved', label: '已通过' },
+      { value: 'rejected', label: '已驳回' },
+    ],
+  },
+])
+
+const appliedFilters = computed<AppliedFilter[]>(() => {
+  if (!statusFilter.value) return []
+  return [{ key: 'status', label: '状态', text: statusMap[statusFilter.value] }]
+})
+
+function onStatusFilterChange(key: string, value: string | number | boolean) {
+  if (key !== 'status') return
+  statusFilter.value = String(value) as LotteryProposalStatus | ''
+  onFilterChange()
+}
+
 // ---------- 详情 ----------
 const detailVisible = ref(false)
 const detail = ref<LotteryProposalRow | null>(null)
@@ -161,17 +189,6 @@ onMounted(load)
       description="审批用户（Lv.2 及以上）提交的群抽奖活动提案：通过后自动建活动并发群公告，驳回不产生任何活动"
     >
       <template #actions>
-        <el-select
-          v-model="statusFilter"
-          class="status-filter"
-          aria-label="按状态筛选"
-          @change="onFilterChange"
-        >
-          <el-option label="全部状态" value="" />
-          <el-option label="待审批" value="pending" />
-          <el-option label="已通过" value="approved" />
-          <el-option label="已驳回" value="rejected" />
-        </el-select>
         <el-button :icon="RefreshCw" :loading="loading" @click="load">刷新</el-button>
       </template>
     </PageHeader>
@@ -182,6 +199,16 @@ onMounted(load)
       :meta="`共 ${total} 条${statusFilter ? `（${statusMap[statusFilter]}）` : ''}`"
       flush
     >
+      <div class="list-bar">
+        <FilterBar
+          :filters="proposalFilterConfigs"
+          :applied-filters="appliedFilters"
+          :loading="loading"
+          @filter-change="onStatusFilterChange"
+          @remove-chip="clearFilter"
+          @clear="clearFilter"
+        />
+      </div>
       <DataTable
         :columns="columns"
         :rows="rows"
@@ -316,7 +343,7 @@ onMounted(load)
 </template>
 
 <style scoped>
-.status-filter { width: 130px; }
+.list-bar { padding: 4px 20px 12px; }
 .prize-summary { color: var(--au-text-2); font-size: 13px; }
 .detail-title { display: flex; align-items: center; gap: 6px; margin: 16px 0 8px; font-weight: 600; color: var(--au-text); }
 .detail-title svg { color: var(--au-primary); }
