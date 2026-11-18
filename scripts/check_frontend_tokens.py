@@ -24,6 +24,15 @@ CSS 规范里这是循环引用，变量会变成 invalid at computed-value time
      11.5px / 10.5px 这类不在 --uhd-fs-* 梯队里的分数值与逐处手写的整数值，
      改一处漏一处；壳模具的导航项圆角/字号、品牌字、眉题钉死引
      --uhd-radius-navitem / --uhd-fs-body / --uhd-fs-lead / --uhd-fs-aux。
+  7. 管理端弹层遮罩/圆角只许引令牌（后台重设计批 3，2026-11-19）：
+     遮罩双档令牌 --modal-scrim-dark / --modal-scrim-light 在 uhd-admin.css
+     定义、与用户端 modal-glass.css 同名同值，--au-scrim 深/浅两档必须
+     分别改指这两枚令牌、不许再写字面量；EP 弹层（.el-overlay /
+     .el-dialog / .el-message-box / .el-drawer）的 border-radius 与
+     --el-dialog/messagebox-border-radius 在 element-plus-theme.css 与
+     uhd-admin.css 里只许引 --uhd-radius-modal，不许写数值字面量、
+     不许再引 --au-r-lg（16px）；uhd-admin.css 必须保留 body 前缀的
+     弹层兜底规则（EP 组件 CSS 后入级联，靠特异性保证口径生效）。
 
 样式表集合从入口（main.ts / index.html 的 <style>）出发，沿 @import 与 import 语句递归收集，
 所以「文件存在但没接进应用」不会被误判成已定义。
@@ -440,6 +449,86 @@ def check_admin_filterbar() -> None:
             failures.append(f"    {f}")
 
 
+# 后台重设计批 3（2026-11-19）：弹层遮罩/圆角口径（规则 7，见文件头）。
+# aurora.css 里 --au-scrim 的字面量是被 uhd-admin.css 覆盖的基线层，
+# 与批 0 的重映射做法一致，不在本规则范围内；本规则只钉消费层
+# （uhd-admin.css 的改指与两份主题样式表的弹层圆角）。
+OVERLAY_RADIUS_FILES = (
+    "admin_frontend/src/styles/element-plus-theme.css",
+    "admin_frontend/src/styles/uhd-admin.css",
+)
+OVERLAY_SELECTOR_RE = re.compile(r"\.el-(?:overlay|dialog|message-box|drawer)(?![\w-])")
+RADIUS_DECL_RE = re.compile(
+    r"(?:border-radius|--el-(?:dialog|messagebox)-border-radius)\s*:\s*([^;}]+)"
+)
+RADIUS_LITERAL_RE = re.compile(r"\d+(?:\.\d+)?\s*(?:px|rem|em)\b")
+SCRIM_TOKEN_VALUES = {
+    "--modal-scrim-dark": "rgba(0, 0, 0, 0.45)",
+    "--modal-scrim-light": "rgba(247, 248, 250, 0.72)",
+}
+
+
+def check_admin_overlay() -> None:
+    global checks
+    admin_css = (ROOT / "admin_frontend/src/styles/uhd-admin.css").read_text(encoding="utf-8")
+    admin_body = COMMENT_RE.sub("", admin_css)
+
+    checks += 1
+    bad = []
+    for token, expected in SCRIM_TOKEN_VALUES.items():
+        m = re.search(re.escape(token) + r"\s*:\s*([^;]+);", admin_body)
+        if not m or " ".join(m.group(1).split()) != expected:
+            bad.append(f"    {token} 应定义为 {expected}（与用户端 modal-glass.css 同名同值）")
+    scrim_values = {
+        " ".join(v.split())
+        for v in re.findall(r"--au-scrim\s*:\s*([^;]+);", admin_body)
+    }
+    if scrim_values != {"var(--modal-scrim-dark)", "var(--modal-scrim-light)"}:
+        bad.append(
+            "    --au-scrim 深/浅两档必须分别改指 var(--modal-scrim-dark) / "
+            f"var(--modal-scrim-light)，现为 {sorted(scrim_values)}"
+        )
+    if bad:
+        failures.append(
+            "admin_frontend: 弹层遮罩令牌漂移（后台重设计批 3：遮罩双档与用户端同名同值、"
+            "--au-scrim 只许改指令牌）："
+        )
+        failures.extend(bad)
+
+    checks += 1
+    bad = []
+    for rel in OVERLAY_RADIUS_FILES:
+        body = COMMENT_RE.sub("", (ROOT / rel).read_text(encoding="utf-8"))
+        for chunk in body.split("}"):
+            if "{" not in chunk:
+                continue
+            selector, decls = chunk.rsplit("{", 1)
+            if not OVERLAY_SELECTOR_RE.search(selector):
+                continue
+            for m in RADIUS_DECL_RE.finditer(decls):
+                value = " ".join(m.group(1).split())
+                if RADIUS_LITERAL_RE.search(value) or (
+                    "var(--uhd-radius-modal)" not in value and value.strip("0 ") != ""
+                ):
+                    bad.append(f"    {rel}  {selector.strip()[:50]} → {m.group(0)[:70]}")
+    if bad:
+        failures.append(
+            "admin_frontend: 弹层圆角还有非令牌写法（后台重设计批 3：dialog/抽屉/确认框"
+            "圆角只许引 --uhd-radius-modal，不许数值字面量、不许 --au-r-lg）："
+        )
+        failures.extend(bad)
+
+    checks += 1
+    missing = [s for s in ("body .el-overlay", "body .el-dialog", "body .el-message-box")
+               if s not in admin_css]
+    if missing:
+        failures.append(
+            "admin_frontend: uhd-admin.css 缺弹层兜底规则（后台重设计批 3：EP 组件 CSS "
+            "后入级联，须以 body 前缀特异性保证遮罩/圆角口径生效）：缺少 "
+            + ", ".join(missing)
+        )
+
+
 for frontend in FRONTENDS:
     check_frontend(frontend)
     check_freeze(frontend)
@@ -447,10 +536,11 @@ check_admin_structure()
 check_uhd_tokens_sync()
 check_admin_shell()
 check_admin_filterbar()
+check_admin_overlay()
 
 print(f"设计令牌契约检查：{checks} 项")
 if failures:
     print("\n".join(failures))
     print("❌ 设计令牌契约检查失败")
     sys.exit(1)
-print("✅ 设计令牌契约检查通过（引用的令牌都有定义 · 无循环引用 · 没有孤立样式表 · 主题引入冻结 · neo 冻结 · 两端 uhd-tokens 逐字同步 · 壳字号走令牌 · 裸表白名单 · 筛选走 FilterBar）")
+print("✅ 设计令牌契约检查通过（引用的令牌都有定义 · 无循环引用 · 没有孤立样式表 · 主题引入冻结 · neo 冻结 · 两端 uhd-tokens 逐字同步 · 壳字号走令牌 · 裸表白名单 · 筛选走 FilterBar · 弹层遮罩/圆角走令牌）")
