@@ -1,5 +1,8 @@
 <template>
-  <UhdAccountLayout title="账号与设置" eyebrow="账号">
+  <!-- S-1（2026-11-18 用户中心自查）：标题与入口名统一为「账号安全」；
+       友站账号安全页 H1 上方无眉题，本页 eyebrow 随之摘除；手机端子页
+       返回头由 App.vue 统一顶栏子页模式承接（路由 game-account-settings） -->
+  <UhdAccountLayout title="账号安全">
   <div class="uhd-shell-scope settings-page">
     <!-- 账户：用户名/公开 ID 行＋复制账户信息（2026-11-18 照友站账号安全页分组重组） -->
     <section class="set-group">
@@ -33,24 +36,21 @@
       <p class="set-gsub">管理登录验证与找回渠道。</p>
       <div class="set-rows">
         <button type="button" class="set-rowbtn" @click="pwdOpen = true">
-          <span class="set-row-ic" aria-hidden="true"><Lock :size="22" /></span>
           <span class="set-rowbtn-main">
             <span class="set-row-name">密码</span>
             <span class="set-row-sub">8-64 字符，修改时验证恢复渠道</span>
           </span>
           <span class="set-capsule">修改</span>
         </button>
-        <!-- G-54：恢复邮箱＝注册邮箱，脱敏展示；更换走验当前密码＋新邮箱验证码 -->
+        <!-- G-54：恢复邮箱＝注册邮箱；S-4：副文案照友站固定句，不再展示脱敏邮箱本身 -->
         <button type="button" class="set-rowbtn" @click="emailOpen = true">
-          <span class="set-row-ic" aria-hidden="true"><Mail :size="22" /></span>
           <span class="set-rowbtn-main">
             <span class="set-row-name">恢复邮箱</span>
-            <span class="set-row-sub">{{ recoveryEmailMasked || '还没绑定邮箱，找回密码用不了' }}</span>
+            <span class="set-row-sub">主要恢复渠道和安全操作验证</span>
           </span>
           <span class="set-capsule">{{ recoveryEmailMasked ? '更换' : '添加' }}</span>
         </button>
         <button type="button" class="set-rowbtn" @click="tgBindOpen = true">
-          <span class="set-row-ic" aria-hidden="true"><Send :size="22" /></span>
           <span class="set-rowbtn-main">
             <span class="set-row-name">Telegram</span>
             <span class="set-row-sub">辅助恢复渠道，由 Bot 发送验证码</span>
@@ -69,15 +69,20 @@
       </div>
     </section>
 
-    <!-- 活跃会话：合并列表（G-60/G-62~G-66）——网页登录＋媒体客户端设备＋
-         弹幕 Token 三类一表；创建 API Key 胶囊（面板内）＋登录记录入口保留。
-         id="api-keys" 供概览「弹幕 API」行深链直达（2026-11-18 自查 M-1，
-         与 #my-drive 同口径） -->
+    <!-- 活跃会话：S-2（2026-11-18 用户中心自查）照友站账号安全页平铺——
+         网页登录＋媒体客户端设备＋弹幕 Token 三类一表；组副文案＋创建
+         API Key 胶囊＋筛选胶囊＋会话行全部首屏可见，不再藏手风琴；API Key
+         面板以插槽形式嵌在会话列表的副文案与筛选胶囊之间（友站顺序），
+         登录记录入口保留。id="api-keys" 供概览「弹幕 API」行深链直达
+         （2026-11-18 自查 M-1，与 #my-drive 同口径） -->
     <section class="set-group" id="api-keys">
       <h2 class="set-gtitle">活跃会话</h2>
       <div class="set-rows">
-        <ApiKeysPanel />
-        <ActiveSessionsPanel />
+        <ActiveSessionsPanel>
+          <template #api-keys>
+            <ApiKeysPanel />
+          </template>
+        </ActiveSessionsPanel>
         <LoginHistoryEntry />
       </div>
     </section>
@@ -207,7 +212,7 @@
  */
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Bell, Copy, Lock, LogOut, Mail, Send } from 'lucide-vue-next'
+import { Bell, Copy, LogOut } from 'lucide-vue-next'
 import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 import PcEntryRow from '@/components/profile/PcEntryRow.vue'
 import ChangePasswordModal from '@/components/profile/ChangePasswordModal.vue'

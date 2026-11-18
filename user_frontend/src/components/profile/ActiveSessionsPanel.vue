@@ -1,36 +1,35 @@
 <template>
+  <!-- S-2（2026-11-18 用户中心自查）：照友站账号安全页平铺——组副文案
+       ＋创建 API Key 胶囊（#api-keys 插槽，由父页传入 ApiKeysPanel）＋
+       筛选胶囊＋会话行全部首屏可见，「我的会话」手风琴已摘除 -->
   <div class="pc-entry active-sessions-panel">
-    <PcEntryRow
-      :icon="MonitorSmartphone"
-      name="我的会话"
-      :meta="metaText"
-      expandable
-      :expanded="open"
-      @click="open = !open"
-    />
-    <div v-if="open" class="pc-expand">
-      <p class="as-sub">{{ subText }}</p>
-      <div class="as-filters" role="tablist" aria-label="会话筛选">
-        <button
-          v-for="f in filters"
-          :key="f.key"
-          type="button"
-          role="tab"
-          :aria-selected="activeFilter === f.key"
-          class="as-filter"
-          :class="{ 'is-on': activeFilter === f.key }"
-          @click="activeFilter = f.key"
-        >
-          {{ f.label }} {{ f.count }}
-        </button>
-      </div>
-      <div v-if="loading && !items.length" class="sx-loading"><span class="sx-spin" aria-hidden="true"></span>正在加载…</div>
-      <div v-else-if="loadError" class="sx-err">会话列表加载失败，请稍后重试<button type="button" class="sx-mini-btn" @click="loadSessions">重试</button></div>
-      <div v-else-if="!filtered.length" class="sx-empty">
-        {{ activeFilter === 'all' ? '还没有活跃会话 —— 登录后会出现在这里' : '这一类暂无会话' }}
-      </div>
-      <template v-else>
-        <div v-for="s in filtered" :key="s.id" class="as-row">
+    <p class="as-sub">{{ subText }}</p>
+    <slot name="api-keys" />
+    <div class="as-filters" role="tablist" aria-label="会话筛选">
+      <button
+        v-for="f in filters"
+        :key="f.key"
+        type="button"
+        role="tab"
+        :aria-selected="activeFilter === f.key"
+        class="as-filter"
+        :class="{ 'is-on': activeFilter === f.key }"
+        @click="activeFilter = f.key"
+      >
+        {{ f.label }} {{ f.count }}
+      </button>
+    </div>
+    <div v-if="loading && !items.length" class="sx-loading"><span class="sx-spin" aria-hidden="true"></span>正在加载…</div>
+    <div v-else-if="loadError" class="sx-err">会话列表加载失败，请稍后重试<button type="button" class="sx-mini-btn" @click="loadSessions">重试</button></div>
+    <div v-else-if="!filtered.length" class="sx-empty">
+      {{ activeFilter === 'all' ? '还没有活跃会话 —— 登录后会出现在这里' : '这一类暂无会话' }}
+    </div>
+    <template v-else>
+      <!-- S-3：行＝平台图标＋首行（平台名＋类型标签＋锁定虚线胶囊）＋
+           IP／最近活动／到期各占一行；操作移到底部右侧：锁定文字钮＋
+           铅笔／垃圾桶图标钮，390 宽下设备名不截断 -->
+      <div v-for="s in filtered" :key="s.id" class="as-row">
+        <div class="as-row-top">
           <span class="as-ic" aria-hidden="true">
             <component :is="rowIcon(s)" :size="20" />
           </span>
@@ -39,39 +38,43 @@
               <span class="as-name">{{ rowName(s) }}</span>
               <span class="as-tag">{{ kindLabel(s.kind) }}</span>
               <span v-if="s.can_lock" class="as-lock" :class="{ 'is-locked': s.locked }">
-                {{ s.locked ? '已锁定' : '未锁定' }}
+                <component :is="s.locked ? Lock : LockOpen" :size="12" aria-hidden="true" />{{ s.locked ? '已锁定' : '未锁定' }}
               </span>
               <span v-if="s.is_blocked" class="sx-status sx-status--bad"><span class="sx-dot" aria-hidden="true"></span>已禁用</span>
             </div>
-            <span class="as-meta">{{ rowMeta(s) }}</span>
-          </div>
-          <div class="as-ops">
-            <button
-              v-if="s.can_lock"
-              type="button"
-              class="sx-mini-btn"
-              :disabled="actingId === s.id"
-              @click="toggleLock(s)"
-            >
-              {{ s.locked ? '解锁' : '锁定' }}
-            </button>
-            <button type="button" class="sx-mini-btn" :disabled="actingId === s.id" @click="openRename(s)">编辑</button>
-            <button
-              type="button"
-              class="sx-mini-btn as-del"
-              :class="{ confirming: pendingDelete === s.id }"
-              :disabled="actingId === s.id"
-              @click="handleDelete(s)"
-            >
-              {{ actingId === s.id ? '处理中' : (pendingDelete === s.id ? '确认删除' : '删除') }}
-            </button>
+            <span v-for="line in rowMetaLines(s)" :key="line" class="as-meta">{{ line }}</span>
           </div>
         </div>
-      </template>
-      <p class="as-tip">
-        超限时会自动淘汰最久未活动的未锁定会话；锁定的不会被新登录挤掉。删除会立即吊销该会话，网页会话会让那台设备重新登录。
-      </p>
-    </div>
+        <div class="as-ops">
+          <button
+            v-if="s.can_lock"
+            type="button"
+            class="as-op-text"
+            :disabled="actingId === s.id"
+            @click="toggleLock(s)"
+          >
+            <component :is="s.locked ? Lock : LockOpen" :size="15" aria-hidden="true" />{{ s.locked ? '解锁' : '锁定' }}
+          </button>
+          <button type="button" class="as-op-ic" :disabled="actingId === s.id" aria-label="改名" @click="openRename(s)">
+            <Pencil :size="16" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            class="as-op-ic as-del"
+            :class="{ confirming: pendingDelete === s.id }"
+            :disabled="actingId === s.id"
+            :aria-label="pendingDelete === s.id ? '确认删除' : '删除'"
+            @click="handleDelete(s)"
+          >
+            <Trash2 v-if="pendingDelete !== s.id" :size="16" aria-hidden="true" />
+            <span v-else>确认删除</span>
+          </button>
+        </div>
+      </div>
+    </template>
+    <p class="as-tip">
+      删除会立即吊销该会话，网页会话会让那台设备重新登录。
+    </p>
 
     <!-- 改名小弹窗：网页会话改备注名、设备改设备名、Token 改 Key 名 -->
     <div v-if="renameTarget" class="as-modal-backdrop" @click.self="renameTarget = null">
@@ -104,18 +107,15 @@
  * 取代旧 DevicesEntry（设备行已并入本表，移除动作同口径保留）。
  */
 import { computed, onMounted, ref } from 'vue'
-import { KeyRound, Monitor, MonitorSmartphone, Smartphone } from 'lucide-vue-next'
-import PcEntryRow from './PcEntryRow.vue'
+import { KeyRound, Lock, LockOpen, Monitor, Pencil, Smartphone, Trash2 } from 'lucide-vue-next'
 import { securityApi, type ActiveSessionItem } from '@/api/security'
 import { useToast } from '@/composables/useToast'
 import { humanizeError } from '@/composables/usePanelApi'
 import { formatSessionTime, parseUserAgent, sessionFilterCounts } from '@/utils/userAgent'
 
 const toast = useToast()
-const open = ref(false)
 const items = ref<ActiveSessionItem[]>([])
 const limit = ref(0)
-const total = ref(0)
 const counts = ref({ all: 0, web: 0, danmaku: 0 })
 const loading = ref(false)
 const loadError = ref('')
@@ -127,14 +127,12 @@ const renameValue = ref('')
 type FilterKey = 'all' | 'web' | 'danmaku'
 const activeFilter = ref<FilterKey>('all')
 
-const metaText = computed(() => {
-  if (!counts.value.all && !limit.value) return ''
-  return limit.value
-    ? `${total.value} / ${limit.value} 个`
-    : `${total.value} 个`
-})
+/* S-2：组副文案平铺（上限句＋淘汰／锁定语义，均取既有文案原句拼合，
+   不另造新词）；不限量时只留不限量一句 */
 const subText = computed(() =>
-  limit.value ? `合计最多 ${limit.value} 个` : '当前不限制会话数量',
+  limit.value
+    ? `合计最多 ${limit.value} 个；超限时会自动淘汰最久未活动的未锁定会话；锁定的不会被新登录挤掉。`
+    : '当前不限制会话数量',
 )
 const filters = computed(() => [
   { key: 'all' as FilterKey, label: '全部', count: counts.value.all },
@@ -154,7 +152,6 @@ async function loadSessions() {
     const res = await securityApi.sessionsList()
     items.value = res.items
     limit.value = res.limit
-    total.value = res.total
     counts.value = sessionFilterCounts(res.items)
   } catch (e) {
     loadError.value = humanizeError(e)
@@ -183,20 +180,20 @@ function rowName(s: ActiveSessionItem) {
   return '未命名 Token'
 }
 
-function rowMeta(s: ActiveSessionItem) {
-  const parts: string[] = []
-  if (s.kind === 'web') {
-    const ua = parseUserAgent(s.user_agent)
-    parts.push(`${ua.os} / ${ua.browser}`)
-  } else if (s.kind === 'device') {
-    parts.push(s.client ? `${s.client}${s.app_version ? ` v${s.app_version}` : ''}` : '未知客户端')
-  } else {
-    parts.push('填入播放器的弹幕设置使用')
+/* S-3：IP／最近活动／到期各占一行。网页会话名已是「系统 / 浏览器」
+   （友站同款），不再重复拼一行 UA；设备行保留客户端行、弹幕行保留
+   用法提示行（友站行内无此两类，沿用既有文案原句）。 */
+function rowMetaLines(s: ActiveSessionItem): string[] {
+  const lines: string[] = []
+  if (s.kind === 'device') {
+    lines.push(s.client ? `${s.client}${s.app_version ? ` v${s.app_version}` : ''}` : '未知客户端')
+  } else if (s.kind === 'danmaku') {
+    lines.push('填入播放器的弹幕设置使用')
   }
-  if (s.ip) parts.push(s.ip)
-  parts.push(`最近活动 ${formatSessionTime(s.last_seen_at)}`)
-  parts.push(s.expires_at ? `到期 ${formatSessionTime(s.expires_at)}` : '到期 长期有效')
-  return parts.join(' · ')
+  if (s.ip) lines.push(s.ip)
+  lines.push(`最近活动 ${formatSessionTime(s.last_seen_at)}`)
+  lines.push(s.expires_at ? `到期 ${formatSessionTime(s.expires_at)}` : '到期 长期有效')
+  return lines
 }
 
 async function toggleLock(s: ActiveSessionItem) {
@@ -263,16 +260,13 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* 行模具与状态行同源（说明书 2.6）：展开面板＋1px 分隔＋白底灰边小胶囊；
+/* S-2 平铺面板：副文案＋筛选胶囊＋会话行直接展开，无手风琴外壳。
+   行模具与状态行同源（说明书 2.6）：1px 分隔＋白底灰边小胶囊；
    锁定胶囊用虚线边框区分于类型标签（G-63）。 */
-.pc-expand {
-  border-top: var(--uhd-border-w) solid var(--uhd-l-divider);
-  padding: 14px 2px 18px;
-  font-family: var(--uhd-font-sans);
-}
 .as-sub {
   margin: 0 0 10px;
   font-size: var(--uhd-fs-aux);
+  line-height: 1.6;
   color: var(--uhd-l-text-2);
 }
 .as-filters {
@@ -280,31 +274,35 @@ onMounted(() => {
   gap: 8px;
   margin-bottom: 6px;
 }
+/* 筛选胶囊照友站：选中＝深色实心胶囊，未选中＝无边框纯文字 */
 .as-filter {
   min-height: 36px;
-  padding: 0 16px;
+  padding: 0 12px;
+  border: none;
   border-radius: var(--uhd-radius-pill);
-  border: var(--uhd-border-w) solid var(--uhd-l-border);
-  background: var(--uhd-l-surface);
-  color: var(--uhd-l-text);
+  background: none;
+  color: var(--uhd-l-text-2);
   font-size: var(--uhd-fs-caption);
   font-weight: var(--uhd-fw-medium);
   cursor: pointer;
   font-variant-numeric: tabular-nums;
 }
 .as-filter.is-on {
+  padding: 0 16px;
   background: var(--uhd-l-text);
   border-color: var(--uhd-l-text);
   color: var(--uhd-l-surface);
 }
+/* S-3 行：上部＝图标＋名/标签/锁定＋逐行 meta，下部＝操作行右对齐 */
 .as-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 64px;
-  padding: 10px 0;
+  padding: 12px 0 10px;
 }
 .as-row + .as-row { border-top: var(--uhd-border-w) solid var(--uhd-l-divider); }
+.as-row-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
 .as-ic {
   width: 22px;
   height: 22px;
@@ -348,6 +346,9 @@ onMounted(() => {
 }
 .as-lock {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   padding: 2px 8px;
   border-radius: var(--uhd-radius-pill);
   border: 1px dashed var(--uhd-l-border);
@@ -361,22 +362,57 @@ onMounted(() => {
   border-color: var(--uhd-l-text);
   color: var(--uhd-l-text);
 }
+/* S-3：IP／最近活动／到期各占一行，不再拼一行截断 */
 .as-meta {
+  display: block;
   font-size: var(--uhd-fs-aux);
+  line-height: 1.6;
   color: var(--uhd-l-text-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+/* S-3：操作行——锁定文字钮＋铅笔／垃圾桶图标钮，右对齐在行底部 */
 .as-ops {
   display: flex;
-  gap: 8px;
-  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 8px;
 }
-.as-del.confirming {
+.as-op-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 36px;
+  padding: 0 10px;
+  background: none;
+  border: none;
+  border-radius: var(--uhd-radius-pill);
+  color: var(--uhd-l-text);
+  font-size: var(--uhd-fs-caption);
+  font-weight: var(--uhd-fw-medium);
+  cursor: pointer;
+}
+.as-op-ic {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 8px;
+  background: none;
+  border: none;
+  border-radius: var(--uhd-radius-pill);
+  color: var(--uhd-l-text-2);
+  font-size: var(--uhd-fs-caption);
+  font-weight: var(--uhd-fw-medium);
+  cursor: pointer;
+}
+.as-op-text:disabled, .as-op-ic:disabled { opacity: 0.5; cursor: not-allowed; }
+.as-op-ic.as-del.confirming {
   color: var(--uhd-danger);
-  border-color: var(--uhd-danger);
   font-weight: var(--uhd-fw-semibold);
 }
 .as-tip {
