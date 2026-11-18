@@ -395,22 +395,36 @@ html[data-theme='light'] {
 
 /* 底部导航：≤768px 手机唯一一套（App.vue 全局常驻）；
    ≥769px 桌面隐藏（DESIGN.md v1.1：桌面导航只留顶栏一套）。
-   脱离 .v4-scope 也能渲染：关键色值带字面兜底，不依赖祖先变量。 */
+   脱离 .v4-scope 也能渲染：关键色值带字面兜底，不依赖祖先变量。
+   质感第二波（2026-11-18）：由实心纸条迁玻璃浮坞（slab 档＋坞影束），与片库坞
+   （StreamBottomNav）同口径——左右留边 12px、底部悬空 10px、圆角 28；
+   深/浅两态各引对应玻璃底（--uhd-glass-d/--uhd-glass-l）。
+   浮坞悬空后不再需要底部纸色延伸条（旧 .v4-tabbar::after 已删）；
+   深色态链接色同步提亮（纸墨 #6B6257 在深玻璃上不可读）。 */
 .v4-tabbar {
   position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  bottom: calc(10px + env(safe-area-inset-bottom));
+  left: 12px;
+  right: 12px;
   margin: 0 auto;
-  width: 100%;
+  width: auto;
   max-width: min(430px, 100vw);
-  background: var(--paper-card, #FFFDF6);
-  border-top: 1.5px solid var(--ink, #2A2620);
+  background: var(--uhd-glass-d);
+  border: 1px solid var(--uhd-glass-border);
+  border-radius: 28px;
+  backdrop-filter: var(--uhd-glass-slab-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-slab-filter);
+  box-shadow: var(--uhd-glass-slab-shadow);
   display: flex;
-  padding: 10px 0 10px; /* 老机型兜底：不支持 env() 时不贴底 */
-  padding: 10px 0 calc(10px + env(safe-area-inset-bottom));
+  padding: 10px 0;
   z-index: 50;
 }
+html[data-theme='light'] .v4-tabbar {
+  background: var(--uhd-glass-l);
+  border-color: var(--uhd-glass-border-l);
+}
+html:not([data-theme='light']) .v4-tabbar a { color: rgba(255, 255, 255, 0.62); }
+html:not([data-theme='light']) .v4-tabbar a.on { color: #ffffff; }
 .v4-tabbar a {
   flex: 1;
   text-align: center;
@@ -454,20 +468,8 @@ html[data-theme='light'] {
   .v4-tabbar { display: none; }
 }
 
-/* 手机端（≤768px）：纸色延伸条盖住 iOS Safari 固定栏与浏览器工具栏之间的漏缝，
-   免得滑动时页面内容从底栏下方露出来；纯视觉覆盖，不拦截点击 */
-@media (max-width: 768px) {
-  .v4-tabbar::after {
-    content: '';
-    position: absolute;
-    left: -1.5px;
-    right: -1.5px;
-    top: 100%;
-    height: 34px;
-    background: var(--paper-card, #FFFDF6);
-    pointer-events: none;
-  }
-}
+/* 手机端（≤768px）：底栏已为悬空玻璃浮坞，页面内容可从坞下透出，不再需要
+   纸色延伸条盖漏缝（旧 .v4-tabbar::after 随实心纸条一并摘除，2026-11-18）。 */
 
 /* 动效纪律：只用 transform/opacity；尊重减少动态偏好
    R27：animation-duration: 0.001s → animation: none —— 装饰动画直接停掉，

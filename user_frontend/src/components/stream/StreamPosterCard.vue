@@ -73,7 +73,7 @@ watch(
   align-items: center;
   justify-content: center;
   aspect-ratio: 2 / 3;
-  border-radius: 13px;
+  border-radius: 16px; /* 质感第二波（2026-11-18）：友站实测约 16，原 13 偏小 */
   overflow: hidden;
   background: var(--uhd-s-card-soft);
   transition: box-shadow var(--uhd-dur-base) var(--uhd-ease-standard);

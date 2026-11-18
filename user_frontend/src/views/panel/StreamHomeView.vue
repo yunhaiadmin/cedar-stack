@@ -1104,7 +1104,7 @@ onActivated(() => {
 .sl-skel__poster {
   flex: 0 0 260px;
   aspect-ratio: 2 / 3;
-  border-radius: 13px;
+  border-radius: 16px; /* 质感第二波（2026-11-18）：与海报卡同步 16 */
   background: var(--uhd-s-skeleton);
   display: flex;
   align-items: center;

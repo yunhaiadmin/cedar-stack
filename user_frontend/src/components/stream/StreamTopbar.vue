@@ -257,7 +257,9 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 .stream-topbar > * {
   pointer-events: auto;
 }
-/* 双胶囊：高 46、圆角 23、毛玻璃 + 柔光阴影 + 细边框 */
+/* 双胶囊：高 46、圆角 23、毛玻璃 + 柔光阴影 + 细边框
+   质感第二波（2026-11-18）：由 12px 单层柔影升 slab 档（blur 24px saturate 160%＋阴影束），
+   与友站顶栏透色强度对齐；底/边/选中白胶囊形态沿用 --uhd-s-* 片库面令牌，不动。 */
 .st-capsule {
   display: flex;
   align-items: center;
@@ -265,9 +267,9 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   border-radius: 23px;
   background: var(--uhd-s-pill-bg);
   border: 1px solid var(--uhd-s-pill-border);
-  box-shadow: var(--uhd-s-shadow-pill);
-  backdrop-filter: blur(12px) saturate(160%);
-  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  box-shadow: var(--uhd-glass-slab-shadow);
+  backdrop-filter: var(--uhd-glass-slab-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-slab-filter);
 }
 .st-capsule--nav {
   gap: 2px;

@@ -997,7 +997,8 @@ watch(itemId, () => {
   inset: 0;
   background: linear-gradient(to bottom, transparent 30%, var(--uhd-s-hero-fade) 98%);
 }
-/* 返回圆钮 48、白色毛玻璃 */
+/* 返回圆钮 48、白色毛玻璃
+   质感第二波（2026-11-18）：由裸写 blur(12px) 升 pill 档（blur 16px saturate 150%＋阴影束） */
 .md-back {
   position: absolute;
   top: 76px;
@@ -1011,8 +1012,9 @@ watch(itemId, () => {
   border: 1px solid var(--uhd-s-pill-border);
   background: var(--uhd-s-pill-bg);
   color: var(--uhd-s-text);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: var(--uhd-glass-pill-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-pill-filter);
+  box-shadow: var(--uhd-glass-pill-shadow);
   cursor: pointer;
   z-index: 2;
 }
