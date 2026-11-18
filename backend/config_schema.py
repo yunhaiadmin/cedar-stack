@@ -843,6 +843,10 @@ DANMU_API_CONFIG_SCHEMA: dict[str, tuple] = {
     # word 风格 ("bool",) 存 "true"/"false"（同 danmaku 口径）。
     "danmu_api_external_enabled": ("bool",),
     "danmu_api_external_url": ("str",),
+    # 外部源单步请求超时（秒）：上游 match 一步实测就要 8 秒上下，
+    # 旧固定 4 秒让外部弹幕永远超时；默认 15，保存侧范围 3–60，
+    # 读侧同范围钳制（防脏值让请求必死或无限等）。
+    "danmu_api_external_timeout_seconds": ("int", 3, 60),
 }
 
 # 安装应用页（2026-11-13）：6 个平台的官方客户端下载链接，全部 ("str",)。
