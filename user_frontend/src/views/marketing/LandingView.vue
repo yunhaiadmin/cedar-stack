@@ -696,13 +696,16 @@ const year = new Date().getFullYear()
       <div class="pin-stage">
         <div class="pin-visual" :style="pinVisualStyle()" aria-hidden="true">
           <div class="pin-drift" :style="pinDriftStyle()">
-            <!-- 宽幅极光色带（2026-11-15 对友站录屏 f024/f025 补齐）：4 条竖向宽带整屏铺底，
-                 色序青绿→橙黄→粉红→紫罗兰，每条约 25% 宽、带间大模糊柔边；纯 CSS 自绘，不用友站素材 -->
+            <!-- 光柱阵列（2026-11-18 友站 1919 桌面实测改版）：5 条窄柱＋2 条细线居中成簇，
+                 柱宽/色序/渐变按采样值（蓝/青/奶油黄/粉橙/紫）；纯 CSS 自绘，不用友站素材 -->
             <div class="pin-bands" :class="{ 'is-paused': !pinInView }">
+              <span class="pin-line" />
               <span class="pin-band pin-band--1" />
               <span class="pin-band pin-band--2" />
               <span class="pin-band pin-band--3" />
               <span class="pin-band pin-band--4" />
+              <span class="pin-band pin-band--5" />
+              <span class="pin-line" />
             </div>
             <div class="pin-glass" />
           </div>
@@ -1206,9 +1209,15 @@ const year = new Date().getFullYear()
 }
 .hero-copy {
   max-width: min(540px, 46vw);
-  margin-top: auto;
-  margin-bottom: auto;
-  padding-bottom: 88px;
+  /* 首屏固定间距阶梯（2026-11-18 友站 1919 桌面实测）：文案组偏上、芯片行
+     沉底（.hero-specs margin-top:auto），不再 auto 上下居中。margin-top 按
+     实测阶梯反推，使钮→芯片约 304px（100vh＝998 口径下量得）。 */
+  margin-top: 121px;
+}
+/* Hero 眉题（本页作用域）：下距对齐实测阶梯 36px、字距收 7.5px（实测约 7–8px） */
+.hero-copy .eyebrow {
+  margin-bottom: 36px;
+  letter-spacing: 7.5px;
 }
 /* Hero 入场编排（L-11）：整层一把梭改为分件交错，全走令牌入场库。
    交错步长 0.08s——与本站 .rv--dev 阶梯（0.08/0.16/0.24）的步距一致；
@@ -1232,19 +1241,20 @@ const year = new Date().getFullYear()
   animation: uhd-fade-up var(--uhd-dur-fade) var(--uhd-ease-standard) 0.32s both;
 }
 .hero-title {
-  margin: 0 0 22px;
+  margin: 0 0 44px;
   max-width: 100%;
   font-family: var(--uhd-font-display);
   /* 原站 --text-landing-hero: clamp(2.1rem, 4.1vw, 3.9rem) */
   font-size: clamp(33.6px, 4.1vw, 62.4px);
   font-weight: var(--uhd-fw-black);
-  line-height: var(--uhd-lh-tight);
+  /* 行距按实测放宽：两行顶距约 75px（62.4×1.2≈74.9），原 1.1 约 68.6 偏紧 */
+  line-height: 1.2;
   overflow-wrap: anywhere;
 }
 .hero-sub {
   position: relative;
   overflow: hidden;
-  margin: 0 0 34px;
+  margin: 0 0 48px;
   min-height: 1.6em;
   font-size: var(--uhd-fs-lead);
   color: var(--uhd-d-text-2);
@@ -1268,17 +1278,29 @@ const year = new Date().getFullYear()
   gap: 16px;
   flex-wrap: wrap;
 }
+/* 本页主钮质感对齐（2026-11-18 友站 1919 桌面实测）：底改深暖 rgb(49,40,24)
+   （原令牌底为中性冷黑 rgba(18,18,20,0.88)）；边框渐变停点按边缘采样校准——
+   左缘琥珀 rgb(245,193,101)、顶缘绿→青→蓝→紫、右缘暗青 rgb(21,90,97)。
+   只覆盖本页主钮，不动 UhdButton 组件与令牌（彩虹钮全站分档在令牌单）。 */
+.hero-actions :deep(.uhd-btn--primary.uhd-btn--dark) {
+  background:
+    linear-gradient(rgba(49, 40, 24, 0.92), rgba(49, 40, 24, 0.92)) padding-box,
+    linear-gradient(90deg, rgb(245, 193, 101) 0%, rgb(164, 222, 145) 20%, rgb(60, 220, 231) 45%, rgb(159, 177, 255) 70%, rgb(157, 124, 195) 90%, rgb(21, 90, 97) 100%) border-box;
+}
 /* 「前往流媒体」改深色玻璃（2026-11-14 用户双站对图亲点）：UhdButton 的
    secondary+dark 基础配方是 transparent 底、无 backdrop-filter——空心描边，
    钮内直接透出背景条纹原色。本页用专属钩子 .hero-btn-stream 覆盖成深色
    玻璃（压暗＋模糊＋白亮边＋内高光＋柔影），不动共享组件，同 variant 的
    「查看定价」等他处次钮不受影响。字重走 .uhd-btn 基础 semibold，与左钮同级。 */
-.hero-actions :deep(.uhd-btn--secondary.hero-btn-stream) {
+/* 描边与底色按 2026-11-18 实测收淡：描边极淡（原 0.32 白边偏亮）、底向
+   rgb(11,15,17)；同槽位的未登录态幽灵钮（.hero-btn-pricing）同配方对齐。 */
+.hero-actions :deep(.uhd-btn--secondary.hero-btn-stream),
+.hero-actions :deep(.uhd-btn--secondary.hero-btn-pricing) {
   color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.32);
-  background: rgba(10, 13, 26, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(11, 15, 17, 0.5);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
     0 12px 32px -12px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(14px) saturate(1.4);
   -webkit-backdrop-filter: blur(14px) saturate(1.4);
@@ -1289,14 +1311,17 @@ const year = new Date().getFullYear()
   flex-wrap: wrap;
   align-items: flex-start;
   max-width: min(720px, 58%);
-  margin-top: 0;
+  /* 芯片行沉底（固定阶梯末段：钮→芯片约 304px 由文案组 margin-top 反推） */
+  margin-top: auto;
 }
-/* 卖点：图标在左，主词在上、说明在下。只改本页规格 chip，不动共享 UhdChip。 */
+/* 卖点：图标在左，主词在上、说明在下。只改本页规格 chip，不动共享 UhdChip。
+   缩进与行距按 2026-11-18 实测：副文缩进 22＋2＝24px（实测 23–26）、
+   标签底→副文顶 13px（原 2px 偏紧）。 */
 .hero-specs :deep(.uhd-chip--spec) {
   display: grid;
   grid-template-columns: 22px auto;
-  column-gap: 10px;
-  row-gap: 2px;
+  column-gap: 2px;
+  row-gap: 13px;
   align-items: center;
   white-space: normal;
 }
@@ -1318,24 +1343,31 @@ const year = new Date().getFullYear()
 }
 
 /* ---------- 流媒体伙伴（文字字标行，2026-11-15） ----------
-   节题沿用 .eyebrow 居中口径；字标一行等距、弱化白，桌面字高约 30px。 */
+   节题沿用 .eyebrow 居中口径。2026-11-18 按友站 1919 桌面实测改两行排布：
+   字高 22px 级（原 30px 偏大）、项间距约 236px、行距约 79px（行高 22＋
+   row-gap 57）、单色浅灰（最亮向 rgb(230,229,231)）、两端渐隐遮罩；
+   容器收窄至 760px 使三枚字标按 2＋1 落两行。内容仍为本站既有平台名。 */
 .partners-sec {
   padding: 88px 28px 4px;
 }
 .partners-row {
   display: flex;
   align-items: center;
-  justify-content: space-evenly;
-  flex-wrap: nowrap;
-  max-width: var(--uhd-container-marketing);
+  justify-content: center;
+  flex-wrap: wrap;
+  column-gap: 236px;
+  row-gap: 57px;
+  max-width: 760px;
   margin: 10px auto 0;
+  -webkit-mask-image: linear-gradient(90deg, transparent, black 12%, black 88%, transparent);
+  mask-image: linear-gradient(90deg, transparent, black 12%, black 88%, transparent);
 }
 .partner {
   font-family: var(--uhd-font-display);
-  font-size: 30px;
+  font-size: 22px;
   line-height: 1;
   white-space: nowrap;
-  color: rgba(255, 255, 255, 0.52);
+  color: rgba(255, 255, 255, 0.88);
 }
 .partner--netflix {
   font-weight: var(--uhd-fw-extrabold);
@@ -1418,16 +1450,21 @@ const year = new Date().getFullYear()
   inset: 0;
   will-change: transform;
 }
-/* 极光色带本体（2026-11-15 替换原 8 根细光柱）：4 条竖向宽带整屏铺底，每条约 25% 宽，
-   横向负边距交叠＋单条 blur(16px) 做带间大模糊柔边；纵向 mask 把带头带尾羽化进黑底；
-   整层 saturate 提色，缓慢呼吸漂移沿用原光柱的图层级自发运动口径（离屏暂停）。 */
+/* 光柱阵列本体（2026-11-18 友站 1919 桌面实测改版，替换原 4 条 25% 宽带）：
+   5 条窄柱＋2 条细线居中成簇，柱宽按采样 x 跨度（蓝 80/青 190/奶油黄 130/
+   粉橙 100/紫 80）、柱内垂直渐变按采样色序；纵向 mask 羽化约 56px 可见段
+   （实测 40–80px）；整层 saturate 提色，缓慢呼吸漂移沿用图层级自发运动
+   口径（离屏暂停）。蓝/紫仅有单点采样，按原色平铺不虚构渐变。 */
 .pin-bands {
   position: absolute;
   inset: -4% 0;
   display: flex;
+  justify-content: center;
+  align-items: stretch;
+  gap: 36px;
   filter: saturate(1.12) brightness(0.92);
-  -webkit-mask-image: linear-gradient(180deg, transparent, black 9%, black 91%, transparent);
-  mask-image: linear-gradient(180deg, transparent, black 9%, black 91%, transparent);
+  -webkit-mask-image: linear-gradient(180deg, transparent, black 96px, black calc(100% - 96px), transparent);
+  mask-image: linear-gradient(180deg, transparent, black 96px, black calc(100% - 96px), transparent);
   animation: pin-bands-breathe 26s ease-in-out infinite alternate;
   will-change: transform;
 }
@@ -1437,14 +1474,19 @@ const year = new Date().getFullYear()
   to { transform: translateX(5px) scale(1.03); }
 }
 .pin-band {
-  flex: 1 1 0;
-  margin: 0 -14px;
-  filter: blur(12px) saturate(1.18);
+  flex: none;
+  filter: blur(6px) saturate(1.18);
 }
-.pin-band--1 { background: linear-gradient(180deg, #5fd8c2 0%, #0e9a8a 46%, #043d38 100%); }
-.pin-band--2 { background: linear-gradient(180deg, #f5d76e 0%, #e8930c 46%, #8f2f0d 100%); }
-.pin-band--3 { background: linear-gradient(180deg, #f2a7bf 0%, #e5547e 46%, #8c1d42 100%); }
-.pin-band--4 { background: linear-gradient(180deg, #b78ae8 0%, #7434b8 46%, #2c1052 100%); }
+.pin-band--1 { width: 80px; background: rgb(0, 81, 164); }
+.pin-band--2 { width: 190px; background: linear-gradient(180deg, rgb(0, 205, 238) 0%, rgb(0, 66, 166) 100%); }
+.pin-band--3 { width: 130px; background: linear-gradient(180deg, rgb(255, 232, 120) 0%, rgb(255, 244, 172) 45%, rgb(229, 153, 8) 100%); }
+.pin-band--4 { width: 100px; background: linear-gradient(180deg, rgb(255, 196, 154) 0%, rgb(223, 113, 190) 100%); }
+.pin-band--5 { width: 80px; background: rgb(47, 15, 122); }
+.pin-line {
+  flex: none;
+  width: 2px;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.4) 32%, rgba(255, 255, 255, 0.4) 68%, transparent);
+}
 /* 玻璃光感层（口径六件齐：blur＋saturate＋半透底＋内高光＋边缘光＋大柔影）：
    压在色带之上、文案之下，给整幅色带一层玻璃质感与上下边缘光。 */
 .pin-glass {
@@ -1614,8 +1656,9 @@ const year = new Date().getFullYear()
   margin: 0 0 14px;
   max-width: 100%;
   font-family: var(--uhd-font-display);
-  /* 原站 --text-landing-immersive-title: clamp(2.25rem, 4.8vw, 5.4rem) */
-  font-size: clamp(32px, 4.8vw, 86.4px);
+  /* 原站 --text-landing-immersive-title: clamp(2.25rem, 4.8vw, 5.4rem)；
+     2026-11-18 实测推断约 80px，上限由 86.4 收至 80 */
+  font-size: clamp(32px, 4.8vw, 80px);
   font-weight: var(--uhd-fw-black);
   line-height: 1.15;
   overflow-wrap: anywhere;
@@ -1643,8 +1686,11 @@ const year = new Date().getFullYear()
 }
 .ess-card {
   position: relative;
-  padding: var(--uhd-card-pad);
-  border: var(--uhd-border-w) solid var(--uhd-d-border);
+  /* 内边距与描边按 2026-11-18 友站实测（E8）：内边距 40px（原令牌档 30 偏小，
+     本页覆盖、不动令牌）；描边改极淡 #141518（原 #222222 实线过重，友站顶缘
+     采样近隐形） */
+  padding: 40px;
+  border: var(--uhd-border-w) solid #141518;
   border-radius: var(--uhd-radius-card-lg);
   background:
     var(--uhd-grid-tex) 0 0 / var(--uhd-grid-tex-size) var(--uhd-grid-tex-size),
@@ -1695,8 +1741,9 @@ const year = new Date().getFullYear()
 .ess-h3 {
   margin: 0 0 12px;
   font-family: var(--uhd-font-display);
-  /* 原站 --text-landing-service-title: clamp(1.6rem, 2.4vw, 2.4rem) */
-  font-size: clamp(25.6px, 2.4vw, 38.4px);
+  /* 原站 --text-landing-service-title: clamp(1.6rem, 2.4vw, 2.4rem)；
+     2026-11-18 实测推断约 32px，上限由 38.4 收至 32 */
+  font-size: clamp(25.6px, 2.4vw, 32px);
   font-weight: var(--uhd-fw-extrabold);
   line-height: 1.2;
 }
@@ -1989,9 +2036,11 @@ const year = new Date().getFullYear()
   max-width: var(--uhd-container-marketing);
   margin: 0 auto;
   padding: 22px 28px 30px;
-  border-top: var(--uhd-border-w) solid var(--uhd-d-border);
+  /* 分隔线与副文色按 2026-11-18 友站实测校准：分隔线 rgb(50,51,56)（原
+     #222222 偏暗）、副文最亮向 rgb(100,104,113)（原 #9ca3af 偏亮） */
+  border-top: var(--uhd-border-w) solid rgb(50, 51, 56);
   font-size: var(--uhd-fs-aux);
-  color: var(--uhd-d-text-2);
+  color: rgb(100, 104, 113);
 }
 .landing-foot-disclaimer {
   margin: 0;
@@ -2014,7 +2063,7 @@ const year = new Date().getFullYear()
   gap: 22px;
 }
 .landing-foot-links a {
-  color: var(--uhd-d-text-2);
+  color: rgb(100, 104, 113);
   text-decoration: none;
 }
 .landing-foot-links a:hover { color: var(--uhd-d-text); }
@@ -2275,8 +2324,9 @@ const year = new Date().getFullYear()
     display: none;
   }
 
-  /* ---- 流媒体伙伴：字标收小、一行排下不换行 ---- */
+  /* ---- 流媒体伙伴：字标收小；间距按窄屏收拢（桌面 236/57 为 1919 实测口径） ---- */
   .partners-sec { padding: 56px 20px 0; }
+  .partners-row { column-gap: 56px; row-gap: 24px; }
   .partner { font-size: 19px; }
 
   /* ---- 跑马灯：收紧字距行距与区块留白（返工单⑥）；
@@ -2305,6 +2355,13 @@ const year = new Date().getFullYear()
     -webkit-mask-image: linear-gradient(180deg, transparent, black 7%, black 93%, transparent);
     mask-image: linear-gradient(180deg, transparent, black 7%, black 93%, transparent);
   }
+  /* 光柱窄屏等比收拢（桌面 px 宽为 1919 实测口径，窄屏按 vw 比例） */
+  .pin-bands { gap: 4vw; }
+  .pin-band--1 { width: 9vw; }
+  .pin-band--2 { width: 22vw; }
+  .pin-band--3 { width: 15vw; }
+  .pin-band--4 { width: 12vw; }
+  .pin-band--5 { width: 9vw; }
   .pin-copy {
     bottom: 14vh;
     bottom: 14svh;
@@ -2313,6 +2370,9 @@ const year = new Date().getFullYear()
 
   /* ---- 一份订阅：卡片区收紧留白、补移动设备示意、片库砖墙换彩谱渐变（返工单④） ---- */
   .essentials { padding: 84px 20px 76px; }
+  /* 卡内边距 40px 为桌面实测口径，窄屏维持原 30px 档 */
+  .ess-card { padding: 30px; }
+  .ess-card--library { padding-top: 0; }
   /* 字号按友站小尺度收（2026-11-15 录屏帧量值）：总起主标题约 30px、钉住区眉题 12px */
   .essentials .sec-title { font-size: 30px; }
   .pin-copy .eyebrow { font-size: 12px; }
