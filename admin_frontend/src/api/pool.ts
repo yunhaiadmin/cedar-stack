@@ -184,8 +184,6 @@ export interface PoolRewardConfig {
   pool_reward_min_counted_plays: number
   pool_reward_play_dedupe_window_sec: number
   pool_reward_daily_play_freeze: number
-  pool_reward_welfare_days: number
-  pool_reward_welfare_min_plays: number
   pool_reward_xp_per_play: number
   pool_reward_xp_cap: number
   pool_reward_subscription_enabled: boolean
@@ -261,7 +259,6 @@ export interface PoolRewardDetail {
   active_days: number
   raw_plays: number
   transfer_bytes: number
-  points: number
   xp: number
   amount_usd: string
   credited_usd: string
@@ -269,7 +266,6 @@ export interface PoolRewardDetail {
   welfare_days: number
   status: string
   reason: string | null
-  points_log_id: number | null
   granted_at: string | null
   released_by: number | null
   released_at: string | null

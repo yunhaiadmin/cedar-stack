@@ -21,7 +21,7 @@ import {
 } from '@/api/welfare'
 
 const statusMap: Record<string, string> = { open: '进行中', drawing: '开奖中', done: '已结束', cancelled: '已取消' }
-const prizeTypeMap: Record<string, string> = { days: '会员天数', points: '积分', whitelist: '白名单' }
+const prizeTypeMap: Record<string, string> = { days: '会员天数', whitelist: '白名单' }
 const statusTagType = (s?: string): 'success' | 'warning' | 'info' | 'danger' =>
   (({ open: 'success', drawing: 'warning', done: 'info', cancelled: 'danger' } as Record<string, 'success' | 'warning' | 'info' | 'danger'>)[s ?? ''] ?? 'info')
 

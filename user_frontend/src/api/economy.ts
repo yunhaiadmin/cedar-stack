@@ -500,7 +500,7 @@ export interface CouponQuote {
   list_price: number
   discount_amount: number
   paid_amount: number
-  discount_type: 'percent' | 'fixed' | 'points'
+  discount_type: 'percent' | 'fixed'
   value: number
   /** 后端同口径附带下发：会员等级折扣（订阅+付费服才有），已含在 discount_amount 内 */
   member_discount_pct?: number

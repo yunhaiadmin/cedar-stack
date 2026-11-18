@@ -30,9 +30,6 @@ const routes: RouteRecordRaw[] = [
       { path: 'subscriptions', name: 'Subscriptions', component: () => import('@/views/Subscriptions.vue'), meta: { title: '订阅与权益' } },
       { path: 'goods', name: 'Goods', component: () => import('@/views/Goods.vue'), meta: { title: '订阅套餐' } },
       { path: 'orders', name: 'Orders', component: () => import('@/views/Orders.vue'), meta: { title: '订单' } },
-      // 会员卡码在「码管理」（Codes.vue）：旧地址跳过去，收藏不会落到仪表盘
-      { path: 'exchange-codes', redirect: '/codes' },
-      { path: 'registration-codes', redirect: '/codes' },
       // 优惠券（v2.10.0）：与卡码分工不同——卡码不花钱拿东西，优惠券是付费时抵扣
       { path: 'coupons', name: 'Coupons', component: () => import('@/views/Coupons.vue'), meta: { title: '优惠券' } },
       { path: 'invitations', name: 'Invitations', component: () => import('@/views/Invitations.vue'), meta: { title: '邀请管理' } },
@@ -51,11 +48,6 @@ const routes: RouteRecordRaw[] = [
       // 群抽奖（Welfare.vue，历史文件名）：抽奖轮次 + 提案黑名单标签；
       // 公益配置标签已随公益资格整族于 2026-11-14 删除
       { path: 'welfare-lottery-rounds', name: 'WelfareLotteryRounds', component: () => import('@/views/Welfare.vue'), meta: { title: '群抽奖' } },
-      // 旧抽奖页（WelfareLottery.vue）/ 公益用户 / 求片审核已删除或合并：旧地址跳到新页
-      { path: 'welfare-lottery', redirect: '/welfare-lottery-rounds' },
-      { path: 'welfare-users', redirect: '/users' },
-      { path: 'welfare-requests', redirect: '/media-seek' },
-      { path: 'welfare-points', redirect: '/welfare-lottery-rounds' },
       // 代理分销（2026-11-06 完整版）：等级 / 指定 / 余额 / 统计一页三标签
       { path: 'agents', name: 'Agents', component: () => import('@/views/Agents.vue'), meta: { title: '代理分销' } },
       // 团队管理（2026-11-18 重建批 3）：购买制团队列表＋开通播放权限＋配置
@@ -78,12 +70,6 @@ const routes: RouteRecordRaw[] = [
       // 原「上游源」页的观测标签（存储绑定）：
       // 上游源页已随上游全清删除，本页恢复独立路由（地址不变）。
       { path: 'storage-bindings', name: 'StorageBindings', component: () => import('@/views/StorageBindings.vue'), meta: { title: '存储绑定' } },
-      // 「存储来源」独立页已于 v2.42.15 撒销：挂载建在「添加服务器」弹窗里（按服务器配置），
-      // 目录浏览 / 体检 / 编辑都已搬过去。旧地址跳到服务器页，别人的书签不至于 404。
-      { path: 'mounts', redirect: '/servers' },
-      // v2.18.0：转存任务下线，页面只保留 115 账号；旧地址保留为跳转，收藏不会 404
-      { path: 'pan115', alias: 'transfer-115', redirect: { path: '/servers', query: { tab: 'storage', subtab: 'pan115' } } },
-      { path: 'gdrive', redirect: { path: '/servers', query: { tab: 'storage', subtab: 'gdrive' } } },
       { path: 'settings', name: 'Settings', component: () => import('@/views/Settings.vue'), meta: { title: '系统设置' } },
       // v2.26.0：管理员与权限（角色 super / operator / viewer）与播放、客户端策略
       { path: 'admins', name: 'Admins', component: () => import('@/views/Admins.vue'), meta: { title: '管理员与权限' } },
@@ -105,9 +91,6 @@ const routes: RouteRecordRaw[] = [
       // 线路管理（2026-11-19 独立成页）：按大类（服）分组管全部播放线路的配额/用量
       { path: '/lines', name: 'Lines', component: () => import('@/views/Lines.vue'), meta: { title: '线路管理' } },
       { path: 'servers', name: 'Servers', component: () => import('@/views/Servers.vue'), meta: { title: '服务器' } },
-      // 「Emby 服务入口」已并入「服务器」页（同一个清单里就能加 EA / Emby 并管理），
-      // 旧地址保留为跳转，收藏与外部链接不会落到 404
-      { path: 'emby-servers', redirect: '/servers' },
     ],
   },
   { path: '/:pathMatch(.*)*', redirect: '/' },

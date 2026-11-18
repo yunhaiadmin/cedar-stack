@@ -65,14 +65,12 @@ const ACTION_LABELS: Record<string, string> = {
   economy_create_exchange_codes: '生成兑换码',
   economy_update_exchange_code: '修改兑换码',
   economy_mark_order_paid: '人工补单',
-  economy_adjust_points: '调整积分',
   economy_update_settings: '修改经济设置',
 }
 
 /** 高频操作作为快捷筛选项，其余可在下拉中搜索 */
 const QUICK_ACTIONS = [
   'economy_mark_order_paid',
-  'economy_adjust_points',
   'grant_subscription',
   'update_user',
 ]
@@ -140,7 +138,6 @@ const DETAIL_KEY_LABEL: Record<string, string> = {
   count: '数量',
   amount: '金额',
   price: '价格',
-  points_price: '积分价',
   max_uses: '最大使用次数',
   affected: '影响条数',
   ok: '成功',
