@@ -6,18 +6,6 @@
         <p class="sv-sub">连接、任务、媒体库和入库趋势</p>
       </header>
 
-      <!-- 播放账号直达：找播放账号的人常从服务器页进来，入口常驻、不随状态加载成败 -->
-      <section class="sv-sec sv-sec--entry">
-        <RouterLink class="sv-entry" to="/game/operator">
-          <MonitorPlay :size="25" class="sv-entry__icon" aria-hidden="true" />
-          <span class="sv-entry__main">
-            <span class="sv-entry__title">播放账号</span>
-            <span class="sv-entry__sub">服务器地址、用户名、播放密码和一键导入都在这里</span>
-          </span>
-          <ChevronRight :size="18" class="sv-entry__chev" aria-hidden="true" />
-        </RouterLink>
-      </section>
-
       <!-- 顶层错误卡：失败时各区收起，只留这一张 -->
       <div v-if="server.error" class="sv-sec">
         <div class="sv-err" role="alert">
@@ -168,7 +156,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
-import { Activity, ChevronRight, HeartPulse, LibraryBig, ListTodo, MonitorPlay, Tag } from 'lucide-vue-next'
+import { Activity, HeartPulse, LibraryBig, ListTodo, Tag } from 'lucide-vue-next'
 import { usePanelStore } from '@/stores/panel'
 import BrandMark from '@/components/BrandMark.vue'
 import type { ServerData } from '@/composables/usePanelApi'
@@ -310,7 +298,6 @@ const growthFoot = computed(() => {
 
 /* 分区：H2 24px/800 领起（说明书 2.6 分组口径） */
 .sv-sec { margin-top: 34px; }
-.sv-sec--entry { margin-top: 22px; }
 .sv-sec-title {
   margin: 0;
   font-family: var(--uhd-font-sans);
@@ -321,31 +308,6 @@ const growthFoot = computed(() => {
 .sv-sec-sub { margin: 6px 0 0; font-size: 14px; color: var(--sv-text-2); }
 .sv-lead { margin: 14px 0 0; font-size: 15px; font-weight: var(--uhd-fw-medium); }
 .sv-foot { margin: 12px 2px 0; font-size: 13px; color: var(--sv-text-2); }
-
-/* 播放账号直达行（状态行形态：图标＋两行＋chevron） */
-.sv-entry {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-height: 68px;
-  padding: 10px 2px;
-  border-top: 1px solid var(--sv-divider);
-  border-bottom: 1px solid var(--sv-divider);
-  color: var(--sv-text);
-  text-decoration: none;
-}
-.sv-entry__icon { flex: none; }
-.sv-entry__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.sv-entry__title { font-size: 16px; font-weight: var(--uhd-fw-semibold); }
-.sv-entry__sub {
-  font-size: 14px;
-  color: var(--sv-text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sv-entry__chev { flex: none; color: var(--sv-text-2); }
-.sv-entry:focus-visible { outline: 2px solid var(--uhd-l-link); outline-offset: 2px; }
 
 /* 服务器卡：会员卡模具（说明书 2.5/§3 行 23）——圆角 28、斜向光带＋细斜纹、
    左上品牌＋状态小胶囊、右上彩虹三角、底部大字状态＋说明行。
@@ -522,6 +484,5 @@ html[data-theme='light'] .sv-retry { background: #ffffff; }
 
 @media (max-width: 480px) {
   .sv-card__big { font-size: 28px; }
-  .sv-entry__sub { white-space: normal; }
 }
 </style>

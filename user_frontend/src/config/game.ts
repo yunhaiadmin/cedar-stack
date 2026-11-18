@@ -48,18 +48,6 @@ export const gameFacilityGroups: {
 /** 全部游戏设施（营地设施）—— order 即数组顺序，0 起 */
 export const gameFacilities: GameFacility[] = [
   {
-    key: 'operator',
-    name: '播放账号',
-    path: '/game/operator',
-    icon: '🔌',
-    desc: '买完会员来这儿接线 —— 拿账号密码，去播放器里连上就能看。',
-    stamp: '营地 · 接线处',
-    group: 'daily',
-    order: 0,
-    enabled: true,
-    guideTip: '刚买完会员？先来这儿拿账号密码，再去播放器里登录。',
-  },
-  {
     key: 'requests',
     name: '求片反馈',
     path: '/game/requests',
