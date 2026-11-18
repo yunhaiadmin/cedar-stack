@@ -58,7 +58,9 @@
             class="am-row"
           >
             <span class="am-row__name">{{ item.label }}</span>
-            <ChevronRight :size="16" class="am-row__chev" aria-hidden="true" />
+            <!-- 外链统一 ↗（2026-11-18 自查 M-3）：与概览常用区「使用说明」
+                 同口径；站内路由行仍用 › -->
+            <ArrowUpRight :size="16" class="am-row__chev" aria-hidden="true" />
           </a>
           <button v-else type="button" class="am-row" @click="item.action?.()">
             <span class="am-row__name">{{ item.label }}</span>
@@ -89,7 +91,7 @@
  */
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { ChevronRight, Copy } from 'lucide-vue-next'
+import { ChevronRight, Copy, ArrowUpRight } from 'lucide-vue-next'
 import { useUserStore } from '@/stores/user'
 import { useSubscriptionStore } from '@/stores/subscription'
 import { useTheme } from '@/composables/useTheme'
@@ -194,7 +196,7 @@ const groups = computed<MenuGroup[]>(() => {
       key: 'wallet',
       label: '我的钱包',
       to: '/wallet',
-      value: walletBalance.value != null ? `$ ${walletBalance.value}` : undefined,
+      value: walletBalance.value != null ? `$${walletBalance.value}` : undefined,
     },
   ]
   const account: MenuItem[] = [

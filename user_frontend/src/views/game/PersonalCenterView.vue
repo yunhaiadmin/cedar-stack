@@ -66,7 +66,7 @@
           <div class="ov-bar__fill" :style="{ width: `${trafficRemainPct}%` }"></div>
         </div>
         <div class="ov-quota__meta">
-          <span>已用 {{ trafficUsedText }} / 共 {{ trafficQuotaText }} GB</span>
+          <span>已用 {{ trafficUsedText }} / {{ trafficQuotaText }} GB</span>
           <span>{{ trafficResetText }}</span>
         </div>
         <p v-if="traffic.exhausted" class="ov-quota__meta-line">
@@ -96,7 +96,8 @@
       <!-- 「最近动态」整区已删（2026-11-15）：订阅记录页已有动态可查；
            账户余额降为下方「常用」里的一行（行尾金额＋箭头），不再独立大区 -->
 
-      <!-- Emby 段：图标＋两行＋chevron（弹幕 API 本站无此业务，整项省略） -->
+      <!-- Emby 段：图标＋两行＋chevron；弹幕 API 行照友站 f0001（第二行），
+           点进设置页活跃会话组（ApiKeysPanel 含弹幕 Token 创建） -->
       <section class="ov-sec">
         <div class="ov-sec__head">
           <h2 class="ov-sec__title">Emby</h2>
@@ -109,6 +110,20 @@
           </span>
           <ChevronRight :size="18" class="ov-row__chev" aria-hidden="true" />
         </button>
+        <!-- 弹幕 API 行（2026-11-18 自查 M-1，照友站 Emby 组第二行）：
+             副文案照友站原文；落点为设置页活跃会话组 #api-keys
+             （ApiKeysPanel 内创建弹幕 Token） -->
+        <RouterLink
+          class="ov-irow"
+          :to="{ path: '/game/account/settings', hash: '#api-keys' }"
+        >
+          <Captions :size="25" class="ov-irow__icon" aria-hidden="true" />
+          <span class="ov-irow__main">
+            <span class="ov-irow__name">弹幕 API</span>
+            <span class="ov-irow__sub">生成 Token，填入播放器的弹幕设置</span>
+          </span>
+          <ChevronRight :size="18" class="ov-row__chev" aria-hidden="true" />
+        </RouterLink>
         <!-- 我的网盘行：未绑定时点开绑盘弹层就地绑（2026-11-14 用户
              亲点，与线路弹层同形态）；已绑定/不可用维持进设置页管理 -->
         <button
@@ -141,7 +156,7 @@
       <!-- 登录设备卡：数据源＝用户侧设备接口（deviceApi.mine），拿不到整段不渲染 -->
       <section v-if="devicesData" class="ov-sec">
         <div class="ov-sec__head">
-          <h2 class="ov-sec__title">登录设备</h2>
+          <h2 class="ov-sec__title">设备</h2>
           <RouterLink class="ov-sec__more" to="/game/account/settings">
             {{ deviceCountText }}
           </RouterLink>
@@ -165,7 +180,7 @@
         <!-- 子账号没有钱包：余额行隐藏（钱包页的购买/兑换后端同步 403） -->
         <RouterLink v-if="walletInfo && !isSubAccount" class="ov-trow" to="/wallet">
           <span class="ov-trow__name">账户余额</span>
-          <span class="ov-trow__value">$ {{ walletInfo.balance }}</span>
+          <span class="ov-trow__value">${{ walletInfo.balance }}</span>
           <ChevronRight :size="18" class="ov-row__chev" aria-hidden="true" />
         </RouterLink>
         <RouterLink class="ov-trow" to="/game/account/invite">
@@ -293,9 +308,10 @@
  * 所有数字/条目只用现有接口数据：订阅（subscriptionApi）、账号卡
  * （embyApi.getAccountCard）、设备（deviceApi.mine，用户侧设备接口，
  * 含在线状态与最后活跃时间）。（原公益资格状态已随福利服役族删除。）
+ * 弹幕 API 行（2026-11-18 自查 M-1）：照友站 Emby 组第二行，落点为
+ * 设置页活跃会话组 #api-keys（ApiKeysPanel 内创建弹幕 Token）。
  * 流量额度（2026-11-13 一期）：套餐声明月额度时才出现流量区＋
- * 购流量弹窗（trafficApi）；没声明整段不渲染。原站有而本站没有
- * 的（弹幕 API）整项省略。
+ * 购流量弹窗（trafficApi）；没声明整段不渲染。
  * 2026-11-14 订阅重做（概览承担「我的订阅」，照友站）：套餐卡加
  * 「切换线路>」；流量改圆环卡；新增自动续费开关行（后端引擎真
  * 扣款）、账户余额卡、最近动态（真实订阅记录）、邀请横幅；
@@ -314,7 +330,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
-  Apple, ArrowUpRight, ChevronRight, HardDrive, Monitor, MonitorPlay, Route, Smartphone, Tv, Users,
+  Apple, ArrowUpRight, Captions, ChevronRight, HardDrive, Monitor, MonitorPlay, Route, Smartphone, Tv, Users,
   type LucideIcon,
 } from 'lucide-vue-next'
 import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
@@ -415,7 +431,7 @@ const trafficRemainPct = computed(() => {
   const pct = 100 - (traffic.value?.used_pct ?? 0)
   return Math.min(100, Math.max(0, Math.round(pct)))
 })
-/* meta 行照友站帧：已用/共都按 GB（一单位收尾「0.3 / 500 GB」），
+/* meta 行照友站帧：已用/总量都按 GB（一单位收尾「0.3 / 500 GB」，无「共」字），
  * 不许 formatBytes 在 <1GB 时跳成 MB（2026-11-15 对帧实证） */
 const trafficUsedText = computed(() => formatGbValue(traffic.value?.used_bytes))
 const trafficQuotaText = computed(() => formatGbValue(traffic.value?.quota_bytes))
@@ -477,18 +493,38 @@ const deviceCountText = computed(() => {
     ? `${d.active_count} / ${d.limit} 台 · 管理`
     : `${d.active_count} 台 · 管理`
 })
+function devicePlatform(d: MyDevice): string | null {
+  // 2026-11-18 自查 O-3：后端 device_dto 只下发 name（Emby Device 头，
+  // 如 iPhone 16 / Chrome）与 client（Emby Client 头，如 Safari /
+  // Chrome），没有平台/OS 字段、也没有 UA 串；平台只能从 name+client
+  // 文本关键字推断。推断不出（如桌面 Chrome 的 name/client 都是
+  // "Chrome"，不含任何 OS 信息）时回落设备名，不编造平台。
+  const tag = `${d.name ?? ''} ${d.client ?? ''}`.toLowerCase()
+  if (/tv|television|tvos/.test(tag)) return null
+  if (/iphone|ipad|ios/.test(tag)) return 'iOS'
+  if (/mac|macos/.test(tag)) return 'macOS'
+  if (/android/.test(tag)) return 'Android'
+  if (/windows|win32|win64/.test(tag)) return 'Windows'
+  if (/linux/.test(tag)) return 'Linux'
+  return null
+}
 function deviceIcon(d: MyDevice): LucideIcon {
+  const platform = devicePlatform(d)
+  if (platform === 'iOS' || platform === 'macOS') return Apple
+  if (platform === 'Android') return Smartphone
+  if (platform === 'Windows' || platform === 'Linux') return Monitor
   const tag = `${d.client ?? ''} ${d.name ?? ''}`.toLowerCase()
   if (/tv|television/.test(tag)) return Tv
-  // 苹果系设备/浏览器用 Apple 图标（照友站设备行：iOS/Safari 带苹果标）
-  if (/ios|iphone|ipad|mac|safari|apple/.test(tag)) return Apple
   if (/android|phone|mobile|infuse/.test(tag)) return Smartphone
   return Monitor
 }
 function deviceLabel(d: MyDevice): string {
-  // 照友站「平台 / 客户端」形态（如 iOS / Safari）：name 与 client
-  // 都有且不同才拼，数据取现有字段、不新造口径
-  const parts = [d.name, d.client].filter(
+  // 照友站「平台 / 客户端」形态（如 iOS / Safari）：平台能推断出就用
+  // 平台，推断不出回落设备名；name 与 client 都有且不同才拼，数据取
+  // 现有字段、不新造口径
+  const platform = devicePlatform(d)
+  const first = platform ?? d.name
+  const parts = [first, d.client].filter(
     (v, i, a): v is string => !!v && a.indexOf(v) === i,
   )
   return parts.length ? parts.join(' / ') : '未知设备'
@@ -774,8 +810,12 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* 实测钮高约 43、圆角约 21、字 14–15px */
-  height: 43px;
+  /* 2026-11-18 自查 O-2：友站 f0001 原帧逐行实测两钮高 57–58 帧px，
+     ÷1.3846（390pt 机 3x 帧）≈ 42 CSS px；本处 height 与 min-height
+     同值——mobile.css 全局 button/a{min-height:44px} 会把 43px 的钮
+     顶成 44px（旧实测值），只改 height 不中和 min-height 无效 */
+  height: 42px;
+  min-height: 42px;
   padding: 0 24px;
   border-radius: 21px;
   background: #17181c;
