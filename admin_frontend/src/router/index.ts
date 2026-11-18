@@ -58,6 +58,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'welfare-points', redirect: '/welfare-lottery-rounds' },
       // 代理分销（2026-11-06 完整版）：等级 / 指定 / 余额 / 统计一页三标签
       { path: 'agents', name: 'Agents', component: () => import('@/views/Agents.vue'), meta: { title: '代理分销' } },
+      // 团队管理（2026-11-18 重建批 3）：购买制团队列表＋开通播放权限＋配置
+      { path: 'teams', name: 'Teams', component: () => import('@/views/Teams.vue'), meta: { title: '团队管理' } },
       { path: 'wallet', name: 'WalletAdmin', component: () => import('@/views/WalletAdmin.vue'), meta: { title: '钱包管理' } },
       { path: 'emby', name: 'EmbyAdmin', component: () => import('@/views/EmbyAdmin.vue'), meta: { title: '媒体库' } },
       { path: 'media-library', name: 'MediaLibraryAdmin', component: () => import('@/views/MediaLibraryAdmin.vue'), meta: { title: '图片与顺序' } },

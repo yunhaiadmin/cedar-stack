@@ -184,6 +184,8 @@ const navGroups: NavGroup[] = [
       { path: '/coupons', label: '优惠券', icon: TicketPercent },
       { path: '/invitations', label: '邀请管理', icon: UserPlus },
       { path: '/agents', label: '代理分销', icon: HandCoins },
+      // 团队管理（2026-11-18 重建批 3）：购买制团队列表＋开通＋配置
+      { path: '/teams', label: '团队管理', icon: Users },
       { path: '/wallet', label: '钱包管理', icon: Wallet },
       { path: '/codes', label: '码管理', icon: KeySquare },
     ],
