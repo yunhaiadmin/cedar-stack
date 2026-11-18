@@ -14,19 +14,8 @@
             <ChevronLeft :size="24" aria-hidden="true" />
           </button>
           <span class="rmd-topbar__title">求片反馈</span>
-          <RouterLink to="/library" class="rmd-watch">
-            <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
-              <defs>
-                <linearGradient id="wp-g-rmd" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0" stop-color="#2f8fe0" />
-                  <stop offset="0.5" stop-color="#e8766f" />
-                  <stop offset="1" stop-color="#ecd04f" />
-                </linearGradient>
-              </defs>
-              <path d="M7 4.2v15.6c0 .8.9 1.3 1.6.9l11.6-7.8c.6-.4.6-1.3 0-1.7L8.6 3.3C7.9 2.9 7 3.4 7 4.2Z" fill="url(#wp-g-rmd)" />
-            </svg>
-            网页观影
-          </RouterLink>
+          <!-- 观影胶囊已删（2026-11-18 去重单）：账户区由 App.vue 统一
+               顶栏 UhdTopBar 常驻承接，本页不再自带，避免叠出两颗。 -->
         </div>
 
         <button type="button" class="rmd-backpill" @click="goBack">
@@ -355,33 +344,7 @@ onMounted(() => { void loadAll() })
 }
 .rmd-back:active { background: rgba(255, 255, 255, 0.08); }
 .rmd-topbar__title { flex: 1; min-width: 0; font-size: 17px; font-weight: 800; color: #fbfcfd; }
-.rmd-watch {
-  position: relative;
-  flex: none; display: inline-flex; align-items: center; gap: 8px;
-  height: 40px; padding: 0 16px; border-radius: 999px;
-  border: 1.5px solid transparent;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
-  color: #ffffff;
-  box-shadow: var(--uhd-shadow-sheet);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
-  font-size: 14px; font-weight: 700; text-decoration: none; white-space: nowrap;
-}
-/* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
-   钮面只留玻璃层；浅色覆盖只换面背景，环由本处继承。 */
-.rmd-watch::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: var(--uhd-rainbow-border-w);
-  background: var(--uhd-rainbow);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  pointer-events: none;
-}
+/* 观影胶囊样式已随标记删除（2026-11-18 去重单）：统一顶栏承接 */
 .rmd-backpill {
   display: inline-flex; align-items: center; gap: 2px;
   height: 36px; padding: 0 16px 0 10px; margin-bottom: 16px;
@@ -523,11 +486,6 @@ html[data-theme='light'] .rmd-page { background: #f8f8f8; }
 html[data-theme='light'] .rmd-topbar__title { color: #111111; }
 html[data-theme='light'] .rmd-back { color: #111111; }
 html[data-theme='light'] .rmd-back:active { background: rgba(0, 0, 0, 0.05); }
-html[data-theme='light'] .rmd-watch {
-  background: var(--uhd-rainbow-soft);
-  color: #111111;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--uhd-shadow-card-l);
-}
 html[data-theme='light'] .rmd-backpill { border-color: #d4d4d8; color: #111111; }
 html[data-theme='light'] .rmd-media { background: #ffffff; border-color: #e5e5e5; }
 html[data-theme='light'] .rmd-media__poster, html[data-theme='light'] .rmd-media__ph { background: #f0f0f1; }
