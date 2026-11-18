@@ -6,13 +6,20 @@
  * - 尺寸：aspect-ratio 1.586（宽由容器定、框 max-width 425 不动）、圆角 40px（专用令牌
  *   --uhd-radius-member，不动多卡共用的 --uhd-radius-card-lg）、padding 32px（友站像素
  *   实测内容偏移左 31/上 34/下 32 的约值）。
- * - 层（自下而上）：卡面（155deg 半透底＋backdrop blur/saturate＋1px 边＋slab/face 合并
- *   阴影走 --uhd-shadow-member-l/d 令牌）→ reflection（卡面 ::before）→ sheen → foil
- *   （4px 周期白条纹＋prism 彩虹、115deg 斜带遮罩、彩虹层静态居中）→ bevel（1.5px
+ * - 层（自下而上）：卡面（全幅渐变＋backdrop blur/saturate＋1px 边＋slab/face 合并
+ *   阴影走 --uhd-shadow-member-l/d 令牌）→ reflection（卡面 ::before）→ sheen（弱化，
+ *   白覆膜 alpha ≤.25）→ foil（全幅细斜纹，5.5px 周期，无遮罩带）→ bevel（1.5px
  *   mask 环切、145deg 渐变）。指针倾斜/glare 跟随/halo 光晕不在本单范围。
- * - prism 基参 --prism-l/--prism-c 定义在 uhd-tokens.css（深 .82/.13、浅 .66/.15）。
+ * - 质感（2026-11-18 用户上传友站卡截图、parent 逐点实测后重做）：此前浅色卡面是
+ *   半透明白玻璃、彩虹只在 foil 一条斜带里，看着是「白玻璃＋一道彩虹带」；友站是
+ *   整张粉彩渐变卡＋全幅细斜纹。浅色卡面改 115deg 全幅粉彩渐变（八色标为截图网格
+ *   采样真值）；深色卡面用 prism 色相序（62→24→302→258→232→175）低明度全幅渐变
+ *   （L .38→.50 左深右亮、C .13–.14），斜纹全幅（深色白线 alpha .12）。
  * 右上只放彩虹三角标（BrandMark play 变体，无 A 字母）：盒 24×23、深浅同尺寸，
- * 2026-11-18 按友站干净帧实测量值定版（见 .uhd-member__logo 注）；卡名约 28px 粗体（沿用此前实测）。
+ * 2026-11-18 按友站干净帧实测量值定版（见 .uhd-member__logo 注）；卡名 37px/900
+ * （标题字宽占卡宽：34px/800 时我方实测 58.5%，改后实测 64.2%）；
+ * 用户行普通无衬线 13.5px（友站同为 sans，此前误用 mono），浅色字形色
+ * #32313A 为友站原图采样真值。
  * 深色判定：data-theme 缺省即深（useTheme 只在浅色时写 data-theme="light"）；
  * .ov-dark 为概览页主题竞态兜底（与 PersonalCenterView 的 .ov-dark 回滚块同口径）。
  * 数据全部由调用方传入（订阅/资格接口），组件不写死任何数字。
@@ -75,7 +82,9 @@ withDefaults(
   flex-direction: column;
   justify-content: space-between;
   padding: 32px;
-  background: linear-gradient(155deg, #ffffffbd 0%, #ffffff94 40%, #ffffff85 100%);
+  /* 全幅粉彩渐变（115deg 左→右；八色标为友站卡截图网格采样真值插值，
+     不再以半透明白玻璃为底，玻璃感靠 sheen/bevel 与 1px 边呈现） */
+  background: linear-gradient(115deg, #FDFCF8 0%, #FBEFE4 16%, #F0DCEC 30%, #B3AEEA 45%, #8CA9F2 60%, #93D4F8 75%, #BDEEE9 88%, #F4FBF4 100%);
   backdrop-filter: blur(24px) saturate(160%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
   border: var(--uhd-border-w) solid #ffffff4d;
@@ -95,23 +104,17 @@ withDefaults(
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(160deg, #fffffff2 0%, #ffffff4d 22%, #fff0 42%), radial-gradient(120% 70% at 100% 100%, #ffffff73, #fff0 60%);
+  /* 弱化：白覆膜 alpha 一律 ≤.25，不许把卡面渐变洗白（旧版左上 .95 起手已废） */
+  background: linear-gradient(160deg, #ffffff3d 0%, #ffffff1a 22%, #fff0 42%), radial-gradient(120% 70% at 100% 100%, #ffffff2e, #fff0 60%);
   pointer-events: none;
 }
-/* foil：4px 周期白条纹＋prism 彩虹，115deg 斜带遮罩（38%→46%–58%→66%）；
-   彩虹层 background-size 200%、友站位置随指针动，静态取 50% 居中等效位 */
+/* foil：全幅细斜纹（115deg，周期 5.5px＝4.5px 空＋1px 白线 .45，覆盖整卡、
+   无遮罩带；彩虹已并入卡面渐变、不再单独成层——旧版斜带遮罩版已废） */
 .uhd-member__foil {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  opacity: 0.6;
-  background:
-    repeating-linear-gradient(115deg, transparent 0 3px, #ffffff80 3px 4px),
-    linear-gradient(115deg, oklch(calc(var(--prism-l) + .04) var(--prism-c) 62), oklch(var(--prism-l) var(--prism-c) 24), oklch(var(--prism-l) var(--prism-c) 302), oklch(var(--prism-l) var(--prism-c) 258), oklch(var(--prism-l) var(--prism-c) 232), oklch(var(--prism-l) var(--prism-c) 175));
-  background-size: auto, 200% 200%;
-  background-position: 0 0, 50% 50%;
-  -webkit-mask-image: linear-gradient(115deg, #0000 38%, #000 46% 58%, #0000 66%);
-  mask-image: linear-gradient(115deg, #0000 38%, #000 46% 58%, #0000 66%);
+  background: repeating-linear-gradient(115deg, transparent 0 4.5px, rgba(255, 255, 255, .45) 4.5px 5.5px);
   pointer-events: none;
 }
 /* bevel：1.5px mask 环切斜光环（145deg） */
@@ -150,7 +153,9 @@ withDefaults(
    56 图像 px ≈ 30 CSS px、距卡顶 54 ≈ 29，顶边与左上站名文字顶（53 图像
    px）齐平——本组件 padding 32＋顶行 flex-start 的既有口径与之吻合，不动。
    我方三角字形宽高比 431:390 ≠ 友站约 0.90，盒按高对齐取 24×23，
-   字形实渲染 ≈24×21.7；三角为固定彩虹渐变、深浅两态同尺寸同色。 */
+   字形实渲染 ≈24×21.7；三角为固定彩虹渐变、深浅两态同尺寸同色。
+   卡名后经并排图复量改 37px/900（字宽比 58.5%→64.2%）；
+   浅色用户行字形色改 #32313A（友站原图采样真值）。 */
 .uhd-member__logo {
   width: 24px;
   height: 23px;
@@ -159,16 +164,23 @@ withDefaults(
 .uhd-member__bottom { position: relative; }
 .uhd-member__plan {
   font-family: var(--uhd-font-display);
+  /* 28px/900：友站原图逐行扫描复核——标题墨迹块宽 ≈505、卡宽 ≈1081，
+     宽比 ≈46.7%（先前 64.7% 系把用户行算进标题的量测污染，已作废）；
+     字重 900 对齐友站标题笔画粗重，28px 渲染实测宽比见本单验收记录 */
   font-size: 28px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--uhd-fw-black);
   color: var(--uhd-l-text);
   letter-spacing: -0.01em;
 }
 .uhd-member__user {
   margin-top: 6px;
-  font-family: var(--uhd-font-mono);
-  font-size: var(--uhd-fs-aux);
-  color: var(--uhd-l-text-2);
+  /* 友站用户行为普通无衬线（旧版误用 mono）；13.5px 为截图实测约值。
+     浅色态字形色：友站原图采样 #32313A（深石板灰、近黑），旧版走
+     --uhd-l-text-2（#6b7280）渲染实测 #6C7381、明显偏淡，故本行单独定色；
+     深色态由下方深色块覆盖为白 .55，不受此处影响 */
+  font-family: var(--uhd-font-sans);
+  font-size: 13.5px;
+  color: #32313A;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -191,10 +203,10 @@ withDefaults(
 /* ---------- 深色态（data-theme 缺省即深；.ov-dark 为概览页主题竞态兜底） ---------- */
 html:not([data-theme='light']) .uhd-member__card,
 .ov-dark .uhd-member__card {
-  /* .ov-dark 兜底时 :root 可能是浅色档，卡内强制深色 prism 基参 */
-  --prism-l: .82;
-  --prism-c: .13;
-  background: linear-gradient(155deg, #ffffff14 0%, #ffffff0a 30%, #ffffff08 75%, #ffffff0a 100%);
+  /* 全幅深色渐变：prism 色相序（62→24→302→258→232→175）低明度版，
+     L .38（左端最深）→.50（右端略亮）、C .13–.14，与浅色同一构图逻辑；
+     旧版半透明白玻璃底＋foil 斜带彩虹已废 */
+  background: linear-gradient(115deg, oklch(.38 .13 62) 0%, oklch(.40 .14 24) 22%, oklch(.43 .14 302) 42%, oklch(.45 .14 258) 60%, oklch(.48 .14 232) 78%, oklch(.50 .13 175) 100%);
   backdrop-filter: blur(20px) saturate(160%);
   -webkit-backdrop-filter: blur(20px) saturate(160%);
   border-color: #ffffff0a;
@@ -210,8 +222,8 @@ html:not([data-theme='light']) .uhd-member__sheen,
 }
 html:not([data-theme='light']) .uhd-member__foil,
 .ov-dark .uhd-member__foil {
-  opacity: 0.55;
-  mix-blend-mode: screen;
+  /* 深色斜纹同浅色全幅同周期，白线 alpha 降至 .12（旧版 screen 混合＋斜带彩虹已废） */
+  background: repeating-linear-gradient(115deg, transparent 0 4.5px, rgba(255, 255, 255, .12) 4.5px 5.5px);
 }
 html:not([data-theme='light']) .uhd-member__bevel,
 .ov-dark .uhd-member__bevel {
