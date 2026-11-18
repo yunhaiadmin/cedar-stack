@@ -653,6 +653,47 @@ def activate_team(db: Session, team: models.Team) -> models.Team:
     return team
 
 
+# ==================== 播放 / 流量资格（批 4 接线） ====================
+
+def play_eligible_team(db: Session, user_id: int) -> Optional[models.Team]:
+    """用户当前可凭团队套餐获得播放/流量资格的团队，无则 None。
+
+    资格来源＝团队套餐：本人是团长或成员、团队 ``active``
+    （``pending_activation`` 是已付款未开通播放权限，不可播，与
+    管理端开通状态机一致）、``plan_expires_at`` 未过期；
+    dissolved/过期一律不算。``subscriptions.can_play`` 与
+    ``traffic_quota.usage_summary`` 共用这一口，不许各判一份；
+    与 ``usage_attribution_user_id`` 的 active＋在期口径一致
+    （那边只认成员行，本人归账落点不同，结论同向）。
+    ``user_id`` 可传 id 或 WebUser 对象（与 usage_attribution
+    同约定：usage_summary 的存量调用方有传对象的）。
+    """
+    uid = user_id.id if isinstance(user_id, models.WebUser) else int(user_id)
+    team, _role = get_user_team(db, uid)
+    if team is None or team.status != "active":
+        return None
+    if (team.plan_expires_at is None
+            or team.plan_expires_at <= datetime.now()):
+        return None
+    return team
+
+
+def team_pool_user_ids(db: Session, team: models.Team) -> list[int]:
+    """团队池归属 id 全集：团长＋全部成员行。
+
+    池口径按归属行算：成员被软禁用后行还在（禁用只释放建号
+    名额），其历史用量仍是池里花掉的字节，必须继续计入；
+    行被删除（移除成员）后才退出池。
+    """
+    rows = (db.query(models.TeamMember)
+            .filter(models.TeamMember.team_id == int(team.id))
+            .all())
+    ids = [int(row.user_id) for row in rows]
+    if int(team.owner_id) not in ids:
+        ids.append(int(team.owner_id))
+    return ids
+
+
 # ==================== 计量归账 ====================
 
 def _resolve_user_id(user) -> Optional[int]:

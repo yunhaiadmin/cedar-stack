@@ -218,6 +218,54 @@ def current_period(db: Session, user_id: int,
 # 汇总（概览流量区）
 # ---------------------------------------------------------------------------
 
+def _team_usage_summary(db: Session, team, now: datetime) -> dict:
+    """团队池口径的 usage_summary（返回形状与个人口径逐字一致）。
+
+    配额＝团队套餐 ``plan_traffic_bytes``；已用＝团队池全员
+    （团长＋成员行，teams.team_pool_user_ids）在团队周期
+    （teams.team_period，锚点＝套餐起始日）内的计量日账合计——
+    计量落账侧已由 teams.usage_attribution_user_id 把 active
+    团队成员的字节记到成员本人（团队池），此处按池求和才对得
+    上账。个人抵扣（时间换流量/余额购流量）是个人订阅的经济
+    动作，不进团队池（credit 恒 0）。
+    """
+    from backend import teams as teams_service
+
+    quota = team.plan_traffic_bytes
+    quota = int(quota) if quota is not None else None
+    start, end = teams_service.team_period(team, now)
+    pool_ids = teams_service.team_pool_user_ids(db, team)
+    rows = (db.query(em.TrafficUsageDaily)
+            .filter(em.TrafficUsageDaily.user_id.in_(pool_ids),
+                    em.TrafficUsageDaily.day >= start,
+                    em.TrafficUsageDaily.day < end)
+            .all())
+    relay = sum(int(r.relay_bytes or 0) for r in rows)
+    local = sum(int(r.local_bytes or 0) for r in rows)
+    plays = sum(int(r.direct_plays or 0) for r in rows)
+    used = relay + local
+    enabled = quota is not None
+    remaining = max(0, quota - used) if enabled else None
+    return {
+        "enabled": enabled,
+        "quota_bytes": quota,
+        "used_bytes": used,
+        "gross_used_bytes": used,
+        "relay_bytes": relay,
+        "local_bytes": local,
+        "direct_plays": plays,
+        "credit_bytes": 0,
+        "credit_applied_bytes": 0,
+        "remaining_bytes": remaining,
+        "used_pct": (round(used * 100.0 / quota, 1)
+                     if enabled and quota else 0.0),
+        "exhausted": bool(enabled and used >= quota),
+        "period_start": start.isoformat(),
+        "period_end": end.isoformat(),
+        "reset_date": end.isoformat(),
+    }
+
+
 def usage_summary(db: Session, user_id: int,
                   now: Optional[datetime] = None) -> dict:
     """概览流量区数据（纯读，不写库）。
@@ -228,8 +276,17 @@ def usage_summary(db: Session, user_id: int,
     抵扣自动留给本周期后续用量（读时现算，不回写）。
     家庭子账号按主账号算：子账号的概览流量区展示主账号的额度与
     已用（计量落账时已归到主账号，见 traffic_meter 归账点解析）。
+    团队成员/团长按团队池算（2026-11-18 团队批 4）：所属团队
+    active 且未过期时走 _team_usage_summary（配额＝团队套餐
+    流量、已用＝全池合计），资格单口 teams.play_eligible_team，
+    与 can_play 同一口径；团队未开通/过期则回落个人口径。
     """
     now = now or datetime.now()
+    from backend import teams as teams_service  # 懒引：teams 顶层反向引本模块
+
+    team = teams_service.play_eligible_team(db, user_id)
+    if team is not None:
+        return _team_usage_summary(db, team, now)
     user_id = sub_accounts.effective_user_id(db, user_id)
     quota = quota_bytes_for(db, user_id)
     start, end, _sub = current_period(db, user_id, now)
