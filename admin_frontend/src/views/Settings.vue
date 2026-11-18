@@ -1068,6 +1068,9 @@ async function saveDanmakuCore(): Promise<boolean> {
 const danmuLines = ref<DanmuApiLine[]>([])
 const danmuLinesOriginal = ref('')
 const danmuLinesLoading = ref(false)
+/** 外部弹幕源两项（与线路同卡同存）：开关 + 上游 base 地址。 */
+const danmuExternal = reactive({ enabled: false, url: '' })
+const danmuExternalOriginal = ref('')
 
 function danmuLinesSnapshot(): DanmuApiLine[] {
   return danmuLines.value.map((ln) => ({
@@ -1079,8 +1082,19 @@ function danmuLinesSnapshot(): DanmuApiLine[] {
   }))
 }
 
-function applyDanmuLines(lines: DanmuApiLine[]) {
-  danmuLines.value = (lines || []).map((ln) => ({
+function danmuExternalSnapshot(): string {
+  return JSON.stringify({
+    enabled: danmuExternal.enabled,
+    url: danmuExternal.url.trim(),
+  })
+}
+
+function applyDanmuLines(config: {
+  lines: DanmuApiLine[]
+  external_enabled?: boolean
+  external_url?: string
+}) {
+  danmuLines.value = (config.lines || []).map((ln) => ({
     id: ln.id ?? '',
     name: ln.name ?? '',
     note: ln.note ?? '',
@@ -1089,12 +1103,15 @@ function applyDanmuLines(lines: DanmuApiLine[]) {
     enabled: ln.enabled !== false,
   }))
   danmuLinesOriginal.value = JSON.stringify(danmuLinesSnapshot())
+  danmuExternal.enabled = config.external_enabled ?? false
+  danmuExternal.url = config.external_url ?? ''
+  danmuExternalOriginal.value = danmuExternalSnapshot()
 }
 
 async function loadDanmuLines() {
   danmuLinesLoading.value = true
   try {
-    applyDanmuLines((await fetchDanmuApiLines()).lines)
+    applyDanmuLines(await fetchDanmuApiLines())
   } catch {
     // 错误提示由 HTTP 拦截器统一处理
   } finally {
@@ -1104,8 +1121,10 @@ async function loadDanmuLines() {
 
 const danmuLinesDirty = computed(
   () =>
-    danmuLinesOriginal.value !== ''
-    && JSON.stringify(danmuLinesSnapshot()) !== danmuLinesOriginal.value,
+    (danmuLinesOriginal.value !== ''
+      && JSON.stringify(danmuLinesSnapshot()) !== danmuLinesOriginal.value)
+    || (danmuExternalOriginal.value !== ''
+      && danmuExternalSnapshot() !== danmuExternalOriginal.value),
 )
 
 function addDanmuLine() {
@@ -1115,7 +1134,12 @@ function addDanmuLine() {
 /** 弹幕 API 线路保存核心：返回是否成功，失败时拦截器已提示（含后端校验原文）。 */
 async function saveDanmuLinesCore(): Promise<boolean> {
   try {
-    applyDanmuLines((await updateDanmuApiLines(danmuLinesSnapshot())).lines)
+    applyDanmuLines(
+      await updateDanmuApiLines(danmuLinesSnapshot(), {
+        external_enabled: danmuExternal.enabled,
+        external_url: danmuExternal.url.trim(),
+      }),
+    )
     return true
   } catch {
     // 拦截器已提示
@@ -2897,7 +2921,7 @@ watch(
             id="group-danmu-api-lines"
             title="弹幕 API 线路"
             :icon="Network"
-            description="给第三方播放器填的弹幕 API 地址可选的线路：用户在概览页生成弹幕 Token、选一条线路，地址就是这条线路的域名加上固定路径和他的 Token——线路只换域名。改完保存立即对新读取生效；删掉一条线路后，已选该线路的用户会回到未选状态。至少保留一条。每行开关可暂停一条线路：暂停后用户端仍能看到这条线路并标注「暂停服务」，但选不了、也拼不出地址。"
+            description="给第三方播放器填的弹幕 API 地址可选的线路：用户在概览页生成弹幕 Token、选一条线路，地址就是这条线路的域名加上固定路径和他的 Token——线路只换域名。改完保存立即对新读取生效；删掉一条线路后，已选该线路的用户会回到未选状态。至少保留一条。每行开关可暂停一条线路：暂停后用户端仍能看到这条线路并标注「暂停服务」，但选不了、也拼不出地址。下方外部弹幕源开启后，播放器来取弹幕时后端会去上游（LogVar 弹幕 API）匹配取回、与站内弹幕合并下发；上游地址只存在这里，用户看不到。"
             :tone="danmuLinesDirty ? 'accent' : 'default'"
             class="group-card"
           >
@@ -2925,6 +2949,26 @@ watch(
                     <el-button size="small" @click="addDanmuLine">＋ 新增线路</el-button>
                     <span class="field-hint">ID 只用小写字母、数字、连字符、下划线（1–32 位）且不能重复；域名只填裸域名，不带 https://、路径和端口。保存时整批校验，有一条不合法整批不存。</span>
                   </div>
+                </div>
+              </el-form-item>
+              <el-form-item label="外部弹幕源">
+                <div class="field-stack">
+                  <div class="field-control">
+                    <el-switch v-model="danmuExternal.enabled" />
+                    <span class="field-suffix">{{ danmuExternal.enabled ? '已开启' : '已关闭' }}</span>
+                  </div>
+                  <span class="field-hint">开：取弹幕时去上游匹配、与站内弹幕合并下发；上游超时或没匹配上就只发站内弹幕，不影响播放。默认关</span>
+                </div>
+              </el-form-item>
+              <el-form-item label="外部源地址">
+                <div class="field-stack">
+                  <el-input
+                    v-model="danmuExternal.url"
+                    placeholder="如 https://dm.example.com/令牌路径"
+                    maxlength="512"
+                    clearable
+                  />
+                  <span class="field-hint">上游 LogVar 弹幕 API 的 base 地址（含它的令牌路径），只存在后台、用户不可见；留空 = 未配置，开关打开也不会去取。</span>
                 </div>
               </el-form-item>
             </el-form>
