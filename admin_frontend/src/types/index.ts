@@ -957,7 +957,7 @@ export interface RealmSubscriptionsResponse extends SubscriptionOverview {
 }
 
 export interface EconomyOverview {
-  orders: { pending: number; revenue: number }
+  orders: { pending: number; revenue: number; today_paid_count: number }
   invitations: number
 }
 

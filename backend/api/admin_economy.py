@@ -595,9 +595,26 @@ def economy_stats(
     paid_sub = db.query(_func.coalesce(_func.sum(models.SubscriptionOrder.amount), 0)).filter(
         models.SubscriptionOrder.status == "paid").scalar() or 0
 
+    # 今日已支付订单笔数：与 get_stats_trend 的今日营收同一口径——paid_at
+    # 是 UTC-naive 存储，上海自然日窗口换算回 UTC 帧即
+    # [今日 00:00 CST − 8h, 次日 00:00 CST − 8h)，只数 status == "paid"。
+    from zoneinfo import ZoneInfo as _ZoneInfo
+    try:
+        _now_sh = datetime.now(_ZoneInfo("Asia/Shanghai")).replace(tzinfo=None)
+    except Exception:  # noqa: BLE001
+        _now_sh = datetime.now()
+    _today_start_utc = _now_sh.replace(
+        hour=0, minute=0, second=0, microsecond=0) - timedelta(hours=8)
+    today_paid_sub = db.query(models.SubscriptionOrder).filter(
+        models.SubscriptionOrder.status == "paid",
+        models.SubscriptionOrder.paid_at >= _today_start_utc,
+        models.SubscriptionOrder.paid_at < _today_start_utc + timedelta(days=1),
+    ).count()
+
     return {
         "orders": {"pending": pending_sub,
-                   "revenue": round(float(paid_sub), 2)},
+                   "revenue": round(float(paid_sub), 2),
+                   "today_paid_count": today_paid_sub},
         "invitations": db.query(models.InvitationRecord).count(),
     }
 
