@@ -751,10 +751,9 @@ def _auto_migrate():
             # 网页播放器设置同步（2026-11-15 ⚠️11）：老库补列后为 NULL
             # = 从未保存过，与新列缺省一致（见 backend/player_prefs.py）。
             ("player_preferences", "JSON", "NULL"),
-            # 连签断签保护用量（2026-11-09）：老库补列后 ym=NULL（从未
-            # 用过）、used=0，与新列缺省一致（口径见 models.WebUser）。
-            ("streak_forgive_ym", "VARCHAR(6)", "NULL"),
-            ("streak_forgive_used", "INTEGER", "0"),
+            # 连签断签保护用量两列（streak_forgive_ym /
+            # streak_forgive_used）已随模型定义删除（2026-11-19），
+            # 不再补列，生产由配套 DDL 删列。
             # 公开 ID（2026-11-15）：老库补列后为 NULL（存量由
             # scripts/backfill_user_public_ids.py 回填）；唯一索引在
             # 下方单独补（与 alert_rules 同一口径）。
@@ -856,8 +855,8 @@ def _auto_migrate():
         # v2.6.20 多服运营：订阅、套餐、卡码、求片、挂载都归属到某个服
         ("subscription_plans", [
             ("realm_id", "INTEGER", "NULL"),
-            # P2 统一货币体系：套餐积分价。老库补列后为 NULL（不支持积分购买），与升级前行为一致。
-            ("points_price", "NUMERIC(10, 2)", "NULL"),
+            # 套餐积分价列（points_price）已随模型定义删除
+            # （2026-11-19），不再补列，生产由配套 DDL 删列。
         ]),
         # 订阅分档权益表（PR-1）：与上一条同表分开追加（本函数的列表纪律）。
         # 老库补列后为 NULL（未声明任何权益），全部权益回退现行全局配置，
@@ -1144,14 +1143,9 @@ def _auto_migrate():
         ("drive_oauth_states", [
             ("oauth_client", "VARCHAR(20)", "NULL"),
         ]),
-        # 发言奖励小数累计（2026-10-31）：余数（分）＋当日累计（分）＋
-        # 当日日期（上海）。老库补列后 frac/day_cents=0、chat_day=NULL，
-        # 读侧按「日期不符」从今日已结算流水折算当日计数，无缝衔接。
-        ("web_users", [
-            ("chat_frac_cents", "INTEGER", "0"),
-            ("chat_day_cents", "INTEGER", "0"),
-            ("chat_day", "VARCHAR(10)", "NULL"),
-        ]),
+        # 发言奖励小数累计三列（chat_frac_cents / chat_day_cents /
+        # chat_day）已随模型定义删除（2026-11-19），不再补列，
+        # 生产由配套 DDL 删列。
         # 苹果 CMS 媒体库类型（2026-11-02）：库类型判别 + CMS 来源 +
         # 分类映射。老库补列后 kind='local'、来源为空、映射为 NULL，
         # 与升级前行为逐字一致（见 emby_server.applecms_library）。

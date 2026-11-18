@@ -44,10 +44,9 @@ def _realm(db, access_mode="paid"):
     return r
 
 
-def _plan(db, realm_id, name="月卡", price="18.00", points_price="400", days=30):
+def _plan(db, realm_id, name="月卡", price="18.00", days=30):
     p = models.SubscriptionPlan(
         name=name, price=Decimal(price),
-        points_price=Decimal(points_price) if points_price is not None else None,
         duration_days=days, is_active=True, realm_id=realm_id)
     db.add(p)
     db.commit()

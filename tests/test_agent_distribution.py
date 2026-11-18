@@ -45,7 +45,7 @@ def admin(db):
 @pytest.fixture()
 def plan(db):
     row = models.SubscriptionPlan(
-        name="月卡", price=Decimal("100.00"), points_price=None,
+        name="月卡", price=Decimal("100.00"),
         duration_days=30, realm_id=1, is_active=True)
     db.add(row)
     db.commit()

@@ -260,7 +260,7 @@ def test_agent_purchase_register_code_rejected(db, admin_user):
     db.add(agent_user)
     db.commit()
     plan = models.SubscriptionPlan(
-        name="月卡", price=100, points_price=None,
+        name="月卡", price=100,
         duration_days=30, realm_id=1, is_active=True)
     db.add(plan)
     db.commit()
