@@ -164,10 +164,10 @@ withDefaults(
 .uhd-member__bottom { position: relative; }
 .uhd-member__plan {
   font-family: var(--uhd-font-display);
-  /* 37px/900：同一字符串「Global 家庭版」像素量测标题字宽占卡宽，34px/800
-     时我方仅 58.5%，按目标比例放大＋字重加一档（37.6 为纯比例值、900 另
-     贡献约 2% 宽度，故取 37/900），改后实测 64.2% */
-  font-size: 37px;
+  /* 28px/900：友站原图逐行扫描复核——标题墨迹块宽 ≈505、卡宽 ≈1081，
+     宽比 ≈46.7%（先前 64.7% 系把用户行算进标题的量测污染，已作废）；
+     字重 900 对齐友站标题笔画粗重，28px 渲染实测宽比见本单验收记录 */
+  font-size: 28px;
   font-weight: var(--uhd-fw-black);
   color: var(--uhd-l-text);
   letter-spacing: -0.01em;
