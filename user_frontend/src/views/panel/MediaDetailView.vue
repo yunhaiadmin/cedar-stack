@@ -645,9 +645,12 @@ watch(itemId, () => {
               {{ resumeText }}
             </p>
 
-            <!-- 按钮行高 52：「立即播放」主胶囊 + 收藏 + 追剧订阅 + 状态。
-                 追剧订阅原在概览「我的片子」组，2026-11-13 按用户令
-                 摘组后归位到详情页动作区（显隐口径见脚本
+            <!-- 按钮行高 52：「立即播放」主胶囊 + 收藏 + 第二副钮 + 状态。
+                 第二副钮互斥状态机（2026-11-18 垃圾桶语义族定案 G-103/G-105）：
+                 有观看记录→垃圾桶（移除观看记录）、无记录→追剧订阅铃铛，
+                 二者永不同时出现；电影无铃铛（追剧是剧集专属），无记录时
+                 只剩收藏一枚。追剧订阅原在概览「我的片子」组，2026-11-13
+                 按用户令摘组后归位到详情页动作区（显隐口径见脚本
                  loadFollowState：拿不到数据整钮不显示）。「想看」钮
                  已随想看商店删除。
                  2026-11-13 用户新口径：页面组织/交互可按 UHDNow 打破重排，
@@ -669,7 +672,7 @@ watch(itemId, () => {
                 {{ item.UserData?.IsFavorite ? '已收藏' : '加入收藏' }}
               </button>
               <button
-                v-if="followVisible"
+                v-if="followVisible && !canRemoveRecord"
                 type="button"
                 class="md-btn md-btn--fav"
                 :class="{ 'md-btn--fav-on': followSubscribed }"

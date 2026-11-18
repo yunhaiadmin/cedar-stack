@@ -12,8 +12,9 @@
      字幕压成一行胶囊 + 向上弹选单（#134 能力不删）；版本卡复制钮改
      复制该版本播放链接；展开态改两列信息网格 + 音轨行（音轨只展示：
      网页播放器无选音轨能力，不做假选择），展开时版本区自动滚动把
-     展开内容带进视口；头图右下加眼睛钮（标记已看，PlayedItems 真
-     接口）；开始播放下的说明文案按 58 条总账 7-10/7-12「多余」裁定
+     展开内容带进视口；头图右下加双态钮（未看＝眼睛标记已看、已看＝
+     垃圾桶移除观看记录，PlayedItems 真接口，垃圾桶语义族 G-140）；
+     开始播放下的说明文案按 58 条总账 7-10/7-12「多余」裁定
      撤除。「用播放器打开」第三方播放器行已按 2026-11-14 09:39 用户
      亲点删除（友站弹层没有这一行；该能力在详情页的入口保持不动）。
      D3-05 旧裁定（省略播放线路段）已被 2026-11-13 用户亲点推翻：
@@ -41,9 +42,10 @@
         <button type="button" class="psp-x" aria-label="关闭" @click="close">
           <X :size="17" />
         </button>
-        <!-- 头图区（仅手机显示）：右下眼睛钮 = 标记已看/取消（Emby
-             PlayedItems 真接口，与详情页移除记录同一口径；剧集时标记
-             的是本次起播的那一集，与起播目标一致） -->
+        <!-- 头图区（仅手机显示）：右下双态钮（垃圾桶语义族 G-140）——
+             未看＝眼睛（标记已看）、已看＝垃圾桶（移除观看记录，先
+             二次确认，移除后变回眼睛）；Emby PlayedItems 真接口，与
+             详情页移除记录同一口径；剧集时对象是本次起播的那一集 -->
         <div class="psp-hero-wrap">
           <div class="psp-hero">
             <img v-if="heroImg" :src="heroImg" alt="" class="psp-hero__img" />
@@ -55,17 +57,26 @@
             </div>
           </div>
           <button
-            v-if="canMarkPlayed"
+            v-if="canMarkPlayed && playedState"
+            type="button"
+            class="psp-eye psp-eye--on"
+            aria-label="移除观看记录"
+            title="移除观看记录"
+            :disabled="playedBusy"
+            @click="playedRemoveOpen = true"
+          >
+            <Trash2 :size="19" />
+          </button>
+          <button
+            v-else-if="canMarkPlayed"
             type="button"
             class="psp-eye"
-            :class="{ 'psp-eye--on': playedState }"
-            :aria-pressed="playedState"
-            :aria-label="playedState ? '取消已看标记' : '标记为已看'"
+            aria-label="标记为已看"
+            title="标记为已看"
             :disabled="playedBusy"
-            @click="togglePlayed"
+            @click="markPlayed"
           >
-            <EyeOff v-if="playedState" :size="19" />
-            <Eye v-else :size="19" />
+            <Eye :size="19" />
           </button>
         </div>
 
@@ -308,6 +319,29 @@
           </div>
         </div>
       </div>
+
+      <!-- 移除观看记录二次确认（G-140）：只清观看记录，不删片源 -->
+      <Modal v-model="playedRemoveOpen" size="sm">
+        <template #header>
+          <h3 class="modal-title">移除观看记录</h3>
+        </template>
+        <p class="psp-confirm-text">
+          把{{ playedRemoveKind }}的观看记录清掉？播放进度和「已看完」标记都会清除，只清观看记录，不删片源。
+        </p>
+        <template #footer>
+          <div class="psp-confirm-actions">
+            <button type="button" class="psp-confirm-btn" @click="playedRemoveOpen = false">再想想</button>
+            <button
+              type="button"
+              class="psp-confirm-btn psp-confirm-btn--danger"
+              :disabled="playedRemoveBusy"
+              @click="confirmRemovePlayed"
+            >
+              {{ playedRemoveBusy ? '移除中…' : '确定移除' }}
+            </button>
+          </div>
+        </template>
+      </Modal>
     </div>
   </Teleport>
 </template>
@@ -315,8 +349,9 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronDown, Copy, Eye, EyeOff, Play, RotateCcw, X } from 'lucide-vue-next'
+import { ChevronDown, Copy, Eye, Play, RotateCcw, Trash2, X } from 'lucide-vue-next'
 import BindDriveGuide from '@/components/panel/BindDriveGuide.vue'
+import Modal from '@/components/ui/Modal.vue'
 import { useToast } from '@/composables/useToast'
 import PlayStatusBar from '@/components/panel/PlayStatusBar.vue'
 import '../../styles/modal-glass.css'
@@ -790,9 +825,10 @@ const heroSub = computed(() => {
   return parts.join(' · ')
 })
 
-/* ---------- 头图眼睛钮：标记已看（Emby PlayedItems 真接口，与详情页
-   「移除观看记录」同一口径的反向）。标记对象 = 本次起播目标（电影是
-   本条目、剧集是续看/首集那一集），不整剧乱标。 ---------- */
+/* ---------- 头图右下双态钮（垃圾桶语义族 G-140）：未看＝眼睛（标记
+   已看）、已看＝垃圾桶（移除观看记录，先二次确认）。两态同走 Emby
+   PlayedItems 真接口，与详情页「移除观看记录」同一口径。对象 = 本次
+   起播目标（电影是本条目、剧集是续看/首集那一集），不整剧乱标。 --- */
 const playedState = ref(false)
 const playedBusy = ref(false)
 const playedTargetId = computed(() =>
@@ -800,25 +836,59 @@ const playedTargetId = computed(() =>
 )
 const canMarkPlayed = computed(() => !!playedTargetId.value && !!itemDetail.value && !loading.value)
 
-async function togglePlayed() {
-  const id = playedTargetId.value
-  if (!id || playedBusy.value) return
-  playedBusy.value = true
-  const next = !playedState.value
-  try {
-    await embyProtocol.setPlayed(id, next)
-    playedState.value = next
-    if (versionSource.value && String(versionSource.value.Id) === id) {
-      versionSource.value = {
-        ...versionSource.value,
-        UserData: { ...versionSource.value.UserData, Played: next },
-      }
+/** 标记/移除后把目标条目的本地 UserData 同步掉，免等重新拉取 */
+function syncTargetUserData(played: boolean) {
+  if (versionSource.value && String(versionSource.value.Id) === playedTargetId.value) {
+    versionSource.value = {
+      ...versionSource.value,
+      UserData: {
+        ...versionSource.value.UserData,
+        Played: played,
+        ...(played ? {} : { PlaybackPositionTicks: 0 }),
+      },
     }
-    toast.success(next ? '已标记为看过' : '已取消看过标记')
+  }
+}
+
+async function markPlayed() {
+  const id = playedTargetId.value
+  if (!id || playedBusy.value || playedState.value) return
+  playedBusy.value = true
+  try {
+    await embyProtocol.setPlayed(id, true)
+    playedState.value = true
+    syncTargetUserData(true)
+    toast.success('已标记为看过')
   } catch {
     toast.info('标记没改成，请稍后再试')
   } finally {
     playedBusy.value = false
+  }
+}
+
+const playedRemoveOpen = ref(false)
+const playedRemoveBusy = ref(false)
+/** 确认弹窗里的对象称谓：按起播目标类型给人话，不写死条目名 */
+const playedRemoveKind = computed(() => {
+  const t = itemDetail.value?.Type
+  if (t === 'Episode') return '这一集'
+  if (t === 'Movie') return '这部片'
+  return '这个条目'
+})
+async function confirmRemovePlayed() {
+  const id = playedTargetId.value
+  if (!id || playedRemoveBusy.value) return
+  playedRemoveBusy.value = true
+  try {
+    await embyProtocol.setPlayed(id, false)
+    playedState.value = false
+    syncTargetUserData(false)
+    playedRemoveOpen.value = false
+    toast.success('观看记录已移除')
+  } catch {
+    toast.info('移除没成功，请稍后再试')
+  } finally {
+    playedRemoveBusy.value = false
   }
 }
 
@@ -1120,6 +1190,39 @@ async function start() {
 }
 .psp-eye:disabled {
   opacity: 0.6;
+  cursor: wait;
+}
+/* 移除观看记录确认弹窗（G-140；与详情页 md-confirm 同值，作用域独立一份） */
+.psp-confirm-text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--uhd-s-text, #27251e);
+}
+.psp-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.psp-confirm-btn {
+  height: 42px;
+  padding: 0 20px;
+  border-radius: 21px;
+  border: 1px solid var(--uhd-s-border, #e5e5e5);
+  background: transparent;
+  color: var(--uhd-s-text, #27251e);
+  font-size: 14.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.psp-confirm-btn--danger {
+  background: var(--uhd-danger, #d92d20);
+  border-color: var(--uhd-danger, #d92d20);
+  color: #fff;
+}
+.psp-confirm-btn--danger:disabled {
+  opacity: 0.55;
   cursor: wait;
 }
 /* 弹层主体：滚动区（版本） + 固定区（字幕/线路/播放器/开始播放） */
