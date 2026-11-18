@@ -5,8 +5,10 @@
  * 两层形态（照友站）：大类 = 服（如「国际线路」），每个大类下面挂
  * 多条线路（如一条「主线路」＋一条「副线路」）。本页按大类分组，
  * 每组列出该大类的全部线路——名称（主/副）、地址、已用/配额/剩余/
- * 状态；线路的增、删、改（名称/地址/配额/排序/启停）与逐线重置
- * 用量都在这页办。服管理页只留线路摘要与到本页的入口。
+ * 状态；线路的增、删、改（名称/地址/配额/排序/启停/所属大类）与
+ * 逐线重置用量都在这页办。改选所属大类 = 把线路挪到那个大类：
+ * 线路 id 不变，流量记录与配额随线路走。服管理页只留线路摘要
+ * 与到本页的入口。
  *
  * 配额口径（后端 backend/line_quota）：配额、用量、重置都按线路
  * 计；用量按请求实际进来的入口 host 归属（线路地址的 host 相同
@@ -71,6 +73,7 @@ const editing = ref<{ realmId: number; lineId: number | null }>({
   realmId: 0, lineId: null,
 })
 const form = reactive({
+  realm_id: 0,
   name: '',
   url: '',
   quota_gb: 0,
@@ -82,6 +85,7 @@ const saving = ref(false)
 function openCreate(row: RealmRow) {
   editing.value = { realmId: row.id, lineId: null }
   Object.assign(form, {
+    realm_id: row.id,
     name: '',
     url: '',
     quota_gb: 0,
@@ -94,6 +98,7 @@ function openCreate(row: RealmRow) {
 function openEdit(row: RealmRow, line: RealmLine) {
   editing.value = { realmId: row.id, lineId: line.id }
   Object.assign(form, {
+    realm_id: row.id,
     name: line.name || '',
     url: line.url || '',
     quota_gb: bytesToGb(line.traffic?.quota_bytes ?? 0),
@@ -109,19 +114,27 @@ async function save() {
     ElMessage.warning('请填写线路地址')
     return
   }
+  if (!form.realm_id) {
+    ElMessage.warning('请选择所属大类')
+    return
+  }
   saving.value = true
   try {
     if (editing.value.lineId) {
+      const moved = form.realm_id !== editing.value.realmId
       await updateRealmLine(editing.value.realmId, editing.value.lineId, {
         name: form.name.trim(),
         url,
         quota_bytes: gbToBytes(form.quota_gb),
         sort_order: form.sort_order,
         is_active: form.is_active,
+        realm_id: form.realm_id,
       })
-      ElMessage.success('线路已保存')
+      ElMessage.success(moved
+        ? `线路已保存，并已移到「${realms.value.find((r) => r.id === form.realm_id)?.name ?? '目标大类'}」`
+        : '线路已保存')
     } else {
-      await createRealmLine(editing.value.realmId, {
+      await createRealmLine(form.realm_id, {
         name: form.name.trim(),
         url,
         quota_bytes: gbToBytes(form.quota_gb),
@@ -325,6 +338,15 @@ function trafficPct(line: RealmLine): number {
       append-to-body
     >
       <el-form label-width="110px">
+        <el-form-item label="所属大类">
+          <el-select v-model="form.realm_id" placeholder="选择这条线路属于哪个大类" style="width: 100%">
+            <el-option v-for="r in realms" :key="r.id" :label="r.name" :value="r.id" />
+          </el-select>
+          <p class="field-help">
+            这条线路挂在哪个大类（服）下面。编辑时改选就是把线路挪到
+            那个大类：线路不变，流量记录、配额与已用都跟着线路走。
+          </p>
+        </el-form-item>
         <el-form-item label="名称">
           <el-input v-model="form.name" placeholder="留空自动给：首条主线路、其后副线路" maxlength="80" />
         </el-form-item>

@@ -759,7 +759,13 @@ def update_line(db: Session, line: models.ServerRealmLine, *,
                 name: Optional[str] = None, url: Optional[str] = None,
                 quota_bytes: Optional[int] = None,
                 sort_order: Optional[int] = None,
-                is_active: Optional[bool] = None) -> models.ServerRealmLine:
+                is_active: Optional[bool] = None,
+                realm_id: Optional[int] = None) -> models.ServerRealmLine:
+    if realm_id is not None and int(realm_id) != int(line.realm_id):
+        # 挪组：只改归属一列。线路 id 不变，流量日账按 line_id 记、
+        # 配额与周期字段都在线路行本身，天然随线路走；主/副按两边
+        # 各自的启用线路排序自动成立。目标大类存在性由调用方校验。
+        line.realm_id = int(realm_id)
     if name is not None:
         name = name.strip()
         if not name:
