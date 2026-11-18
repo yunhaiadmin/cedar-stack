@@ -21,6 +21,34 @@ import pytest
 from backend.emby_server import drive_changes as dc
 
 
+def _patch_test_sleep(sleeps=None):
+    """只截获本用例线程的 time.sleep，其它线程的 sleep 走真实等待。
+
+    ``dc.time`` 就是标准库 ``time`` 模块：``mock.patch.object(dc.time,
+    "sleep")`` 是进程全局补丁。全量套件（xdist --dist loadfile）同一
+    worker 里常驻着 2 秒一拍的刷盘守护线程（playback_risk 的
+    playback-risk-flush、scan_queue 的 scan-progress-flusher），它们在
+    补丁窗口内醒来时，mock 会把 sleep 变成空转——循环体只剩一次 flush
+    判断，几毫秒内就能调用成千上万次，次数全灌进断言的 sleeps 列表
+    （#299 attempt 1/2 三次红：sleeps 被 2.0 淹没到 4,900~141,886 条，
+    复现脚本见 ~/workspace/tmp/repro_429_race3.py）。
+    本 helper 沿用 test_premint_fail_silent.py 的 _patch_premint_sleep
+    同款口径：按调用线程过滤，本线程才记录且不真等；外来线程走真实
+    sleep（既不污染断言，也不被 mock 成空转抢 GIL）。
+    """
+    real_sleep = dc.time.sleep
+    me = threading.get_ident()
+
+    def _sleep(seconds):
+        if threading.get_ident() == me:
+            if sleeps is not None:
+                sleeps.append(seconds)
+            return
+        return real_sleep(seconds)
+
+    return mock.patch.object(dc.time, "sleep", side_effect=_sleep)
+
+
 # ---------------------------------------------------------------------------
 # 退避数学
 # ---------------------------------------------------------------------------
@@ -108,7 +136,7 @@ class TestApiGet:
             calls.append(1)
             return _resp(503) if len(calls) < 3 else _resp(200, {}, {"ok": 1})
         with mock.patch.object(dc.httpx, "get", side_effect=fake_get), \
-             mock.patch.object(dc.time, "sleep"), \
+             _patch_test_sleep(), \
              mock.patch.object(dc, "_api_limiter"):
             assert dc._api_get("http://x", "t", {}) == {"ok": 1}
             assert len(calls) == 3
@@ -119,7 +147,7 @@ class TestApiGet:
         def fake_get(url, headers, params, timeout):
             return _resp(503)
         with mock.patch.object(dc.httpx, "get", side_effect=fake_get), \
-             mock.patch.object(dc.time, "sleep", side_effect=lambda s: sleeps.append(s)), \
+             _patch_test_sleep(sleeps), \
              mock.patch.object(dc._random, "uniform", return_value=1.0), \
              mock.patch.object(dc, "_api_limiter"):
             with pytest.raises(Exception):
@@ -131,7 +159,7 @@ class TestApiGet:
         def fake_get(url, headers, params, timeout):
             return _resp(503)
         with mock.patch.object(dc.httpx, "get", side_effect=fake_get), \
-             mock.patch.object(dc.time, "sleep"), \
+             _patch_test_sleep(), \
              mock.patch.object(dc, "_api_limiter"):
             with pytest.raises(Exception) as ei:
                 dc._api_get("http://x", "t", {})
@@ -168,7 +196,7 @@ class TestApiGet:
                 return _resp(429, {"Retry-After": "10"})
             return _resp(200, {}, {})
         with mock.patch.object(dc.httpx, "get", side_effect=fake_get), \
-             mock.patch.object(dc.time, "sleep", side_effect=lambda s: sleeps.append(s)), \
+             _patch_test_sleep(sleeps), \
              mock.patch.object(dc._random, "uniform", return_value=1.0), \
              mock.patch.object(dc, "_api_limiter"):
             dc._api_get("http://x", "t", {})
@@ -179,13 +207,52 @@ class TestApiGet:
         def fake_get(url, headers, params, timeout):
             return _resp(429)
         with mock.patch.object(dc.httpx, "get", side_effect=fake_get), \
-             mock.patch.object(dc.time, "sleep", side_effect=lambda s: sleeps.append(s)), \
+             _patch_test_sleep(sleeps), \
              mock.patch.object(dc._random, "uniform", return_value=1.0), \
              mock.patch.object(dc, "_api_limiter"):
             with pytest.raises(Exception):
                 dc._api_get("http://x", "t", {})
         # 2 倍退避：4, 8, 16, 32, 60(cap)
         assert sleeps == [4.0, 8.0, 16.0, 32.0, 60.0], sleeps
+
+    def test_429_retry_after_ignores_foreign_thread_sleeps(self):
+        """回归：后台刷盘线程的 sleep 不得灌进本用例的断言（#299 冒烟
+        attempt 1/2 三次红的根因）。
+
+        全量套件同一 xdist worker 里常驻 2 秒一拍的刷盘守护线程
+        （playback_risk / scan_queue）；旧写法用全局 mock 换掉
+        time.sleep，线程醒来即空转，sleeps 被 2.0 淹没到
+        4,900~141,886 条。本用例起一个同款高速空转线程（sleep(0)
+        紧循环，旧写法下几毫秒就能灌进成千条）作证：修后 sleeps
+        必须仍恰为 [10.0]。
+        """
+        stop = threading.Event()
+
+        def _foreign_sleeper():
+            while not stop.is_set():
+                dc.time.sleep(0)
+
+        t = threading.Thread(target=_foreign_sleeper, daemon=True)
+        t.start()
+        try:
+            sleeps = []
+            calls = []
+
+            def fake_get(url, headers, params, timeout):
+                calls.append(1)
+                if len(calls) == 1:
+                    return _resp(429, {"Retry-After": "10"})
+                return _resp(200, {}, {})
+
+            with mock.patch.object(dc.httpx, "get", side_effect=fake_get), \
+                 _patch_test_sleep(sleeps), \
+                 mock.patch.object(dc._random, "uniform", return_value=1.0), \
+                 mock.patch.object(dc, "_api_limiter"):
+                dc._api_get("http://x", "t", {})
+            assert sleeps == [10.0], sleeps
+        finally:
+            stop.set()
+            t.join(timeout=2)
 
     def test_network_error_retried(self):
         calls = []
@@ -195,7 +262,7 @@ class TestApiGet:
                 raise dc.httpx.ConnectError("connection reset")
             return _resp(200, {}, {"ok": 1})
         with mock.patch.object(dc.httpx, "get", side_effect=fake_get), \
-             mock.patch.object(dc.time, "sleep"), \
+             _patch_test_sleep(), \
              mock.patch.object(dc, "_api_limiter"):
             assert dc._api_get("http://x", "t", {}) == {"ok": 1}
             assert dc.get_last_retry_count() == 2
@@ -204,7 +271,7 @@ class TestApiGet:
         def fake_get(url, headers, params, timeout):
             raise dc.httpx.TimeoutException("read timed out")
         with mock.patch.object(dc.httpx, "get", side_effect=fake_get), \
-             mock.patch.object(dc.time, "sleep"), \
+             _patch_test_sleep(), \
              mock.patch.object(dc, "_api_limiter"):
             with pytest.raises(dc.httpx.TimeoutException):
                 dc._api_get("http://x", "t", {})
@@ -229,7 +296,7 @@ class TestApiGet:
             calls.append(1)
             return _resp(503) if len(calls) < 2 else _resp(200, {}, {})
         with mock.patch.object(dc.httpx, "get", side_effect=fake_get), \
-             mock.patch.object(dc.time, "sleep"), \
+             _patch_test_sleep(), \
              mock.patch.object(dc, "_api_limiter", lim):
             dc._api_get("http://x", "t", {})
         # 每次请求前都过速率限制器（含重试）
