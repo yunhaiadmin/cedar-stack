@@ -1,15 +1,72 @@
 <template>
   <UhdAccountLayout title="账号与设置" eyebrow="账号">
   <div class="uhd-shell-scope settings-page">
-    <!-- 安全 -->
+    <!-- 账户：用户名/公开 ID 行＋复制账户信息（2026-11-18 照友站账号安全页分组重组） -->
     <section class="set-group">
-      <h2 class="set-gtitle">安全</h2>
-      <p class="set-gsub">发现不是自己登的，先改密码再清设备</p>
+      <div class="set-ghead">
+        <h2 class="set-gtitle">账户</h2>
+        <button type="button" class="set-copy-all" @click="copyAccountInfo">
+          <Copy :size="14" aria-hidden="true" /> 复制账户信息
+        </button>
+      </div>
       <div class="set-rows">
-        <PcEntryRow :icon="Lock" name="修改登录密码" @click="pwdOpen = true" />
+        <div class="set-row">
+          <span class="set-row-name">用户名</span>
+          <span class="set-row-value">{{ username }}</span>
+          <button type="button" class="set-copy-btn" aria-label="复制用户名" @click="copyUsername">
+            <Copy :size="16" aria-hidden="true" />
+          </button>
+        </div>
+        <div v-if="publicId" class="set-row">
+          <span class="set-row-name">用户 ID</span>
+          <span class="set-row-value">{{ publicId }}</span>
+          <button type="button" class="set-copy-btn" aria-label="复制用户 ID" @click="copyPublicId">
+            <Copy :size="16" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 登录与恢复：密码/Telegram/动态验证码，行＝名＋副文＋胶囊钮 -->
+    <section class="set-group">
+      <h2 class="set-gtitle">登录与恢复</h2>
+      <p class="set-gsub">管理登录验证与找回渠道。</p>
+      <div class="set-rows">
+        <button type="button" class="set-rowbtn" @click="pwdOpen = true">
+          <span class="set-row-ic" aria-hidden="true"><Lock :size="22" /></span>
+          <span class="set-rowbtn-main">
+            <span class="set-row-name">密码</span>
+            <span class="set-row-sub">8-64 字符，修改时验证恢复渠道</span>
+          </span>
+          <span class="set-capsule">修改</span>
+        </button>
+        <button type="button" class="set-rowbtn" @click="tgBindOpen = true">
+          <span class="set-row-ic" aria-hidden="true"><Send :size="22" /></span>
+          <span class="set-rowbtn-main">
+            <span class="set-row-name">Telegram</span>
+            <span class="set-row-sub">辅助恢复渠道，由 Bot 发送验证码</span>
+          </span>
+          <span class="set-capsule">{{ tgBound ? '已添加' : '添加' }}</span>
+        </button>
+        <TotpPanel />
+      </div>
+    </section>
+
+    <!-- Passkeys：独立组（组副文/添加胶囊/空状态在面板内，随后端上限渲染） -->
+    <section class="set-group">
+      <h2 class="set-gtitle">Passkeys</h2>
+      <div class="set-rows">
+        <PasskeysPanel />
+      </div>
+    </section>
+
+    <!-- 活跃会话：创建 API Key 胶囊（面板内）＋既有设备/登录记录入口，内容与数据口径不变 -->
+    <section class="set-group">
+      <h2 class="set-gtitle">活跃会话</h2>
+      <div class="set-rows">
+        <ApiKeysPanel />
         <DevicesEntry />
         <LoginHistoryEntry />
-        <SecurityTrioPanel />
       </div>
     </section>
 
@@ -136,6 +193,7 @@
     </section>
 
     <ChangePasswordModal v-model:open="pwdOpen" />
+    <TgBindModal v-model="tgBindOpen" @bound="onTgBound" />
   </div>
   </UhdAccountLayout>
 </template>
@@ -143,11 +201,14 @@
 <script setup lang="ts">
 /**
  * 账号设置页（/game/account/settings）：个人中心重做后设置类功能的家。
- * 六组——安全（改密码 / 我的设备 / 登录记录）、绑定（谷歌盘管理 + 已
+ * 安全相关内容 2026-11-18 照友站账号安全页重组为四组——账户（用户名 /
+ * 公开 ID 行 + 复制账户信息）、登录与恢复（密码 / Telegram / 动态验证
+ * 码）、Passkeys（独立组）、活跃会话（创建 API Key + 我的设备 / 登录
+ * 记录）；其余组不变——绑定（谷歌盘管理 + 已
  * 下线绑定解绑）、追剧订阅（订阅列表 / 搜片名订阅 / 分集转存状态，
  * 面板原家；概览归组摘除后归位）、通
  * 知（TG 私聊偏好开关）、展示与隐私（观影排行榜上榜开关）、账号（退出登录）。各块逻辑都在 components/profile/ 的对应组件里（自旧
- * 账号页原样抽出，行为口径不变）；本页只留退出登录。原「展示与隐私」组
+ * 账号页原样抽出，行为口径不变）；本页只留退出登录与账户组复制。原「展示与隐私」组
  * （发现页卡片展示 / 观影碑上榜开关）已随发现页删除与榜单下架定版整组
  * 摘除（2026-11-13 残留入口清理单）；2026-11-15 用户令恢复其中「观影
  * 排行榜上榜开关」一行（排行榜为活功能，用户须能关掉自己的展示），
@@ -156,18 +217,23 @@
  * 自动展开谷歌盘并滚到位。点播引导带 bind_return 参数进来时，绑好
  * （列表出现可用绑定）自动回跳来源页并让其重开播放器选择。
  */
-import { nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Bell, Eye, Lock, LogOut } from 'lucide-vue-next'
+import { Bell, Copy, Eye, Lock, LogOut, Send } from 'lucide-vue-next'
 import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 import PcEntryRow from '@/components/profile/PcEntryRow.vue'
 import ChangePasswordModal from '@/components/profile/ChangePasswordModal.vue'
 import DevicesEntry from '@/components/profile/DevicesEntry.vue'
 import LoginHistoryEntry from '@/components/profile/LoginHistoryEntry.vue'
-import SecurityTrioPanel from '@/components/profile/SecurityTrioPanel.vue'
+import TotpPanel from '@/components/profile/TotpPanel.vue'
+import PasskeysPanel from '@/components/profile/PasskeysPanel.vue'
+import ApiKeysPanel from '@/components/profile/ApiKeysPanel.vue'
+import TgBindModal from '@/components/TgBindModal.vue'
+import { tgApi } from '@/api/tg'
 import DriveBindingsPanel from '@/components/profile/DriveBindingsPanel.vue'
 import SeriesFollowsPanel from '@/components/profile/SeriesFollowsPanel.vue'
 import { panelApi, humanizeError } from '@/composables/usePanelApi'
+import { useClipboard } from '@/composables/useClipboard'
 import {
   BIND_RETURN_QUERY,
   BIND_TITLE_QUERY,
@@ -183,6 +249,36 @@ const userStore = useUserStore()
 const toast = useToast()
 
 const pwdOpen = ref(false)
+
+// ── 账户组：用户名/公开 ID 行与复制（公开 ID 缺失回落不显示，不拿数字 id 兜底） ──
+const clipboard = useClipboard()
+const username = computed(() => userStore.user?.username || '')
+const publicId = computed(() => userStore.user?.public_id || null)
+function copyUsername() {
+  if (username.value) void clipboard.copy(username.value, '用户名')
+}
+function copyPublicId() {
+  if (publicId.value) void clipboard.copy(publicId.value, '用户 ID')
+}
+function copyAccountInfo() {
+  const lines = [`用户名：${username.value}`]
+  if (publicId.value) lines.push(`用户 ID：${publicId.value}`)
+  void clipboard.copy(lines.join('\n'), '账户信息')
+}
+
+// ── 登录与恢复组·Telegram 行：状态查 tgApi，落点接既有 TgBindModal 绑定流程 ──
+const tgBindOpen = ref(false)
+const tgBound = ref(false)
+async function loadTgStatus() {
+  try {
+    tgBound.value = (await tgApi.status()).bound
+  } catch {
+    // 状态拿不到时按未添加呈现；点开弹窗内会再查并给出准确状态
+  }
+}
+function onTgBound() {
+  tgBound.value = true
+}
 
 // ── 绑定组门控（providers 结论由 DriveBindingsPanel 回报） ──
 const drivePanel = ref<InstanceType<typeof DriveBindingsPanel> | null>(null)
@@ -309,6 +405,7 @@ async function handleLogout() {
 onMounted(() => {
   void loadNotifyPrefs()
   void loadPrivacy()
+  void loadTgStatus()
 })
 </script>
 
@@ -406,6 +503,97 @@ onMounted(() => {
 .set-switch.is-on::before { background: var(--uhd-l-text); }
 .set-switch.is-on::after { left: 26px; }
 .set-switch:disabled { opacity: 0.5; cursor: not-allowed; }
+/* 账户组组头：标题＋右侧「复制账户信息」文字钮 */
+.set-ghead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.set-copy-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 36px;
+  padding: 0 6px;
+  margin-bottom: 6px;
+  background: none;
+  border: none;
+  color: var(--uhd-l-text-2);
+  font-size: var(--uhd-fs-caption);
+  font-weight: var(--uhd-fw-medium);
+  cursor: pointer;
+}
+/* 账户组信息行：名左、值右＋复制小钮 */
+.set-row-value {
+  margin-left: auto;
+  font-size: var(--uhd-fs-caption);
+  color: var(--uhd-l-text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.set-copy-btn {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: var(--uhd-radius-pill);
+  background: none;
+  color: var(--uhd-l-text-2);
+  cursor: pointer;
+}
+/* 副文行模具（登录与恢复组）：图标＋名/副文两行＋右侧胶囊钮，整行可点 */
+.set-rowbtn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 68px;
+  padding: 10px 2px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--uhd-l-text);
+  font: inherit;
+  font-family: var(--uhd-font-sans);
+  text-align: left;
+  box-sizing: border-box;
+}
+.set-rowbtn:active { background: var(--uhd-l-input-bg); }
+.set-rowbtn-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.set-row-sub {
+  font-size: var(--uhd-fs-caption);
+  color: var(--uhd-l-text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.set-capsule {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 16px;
+  border-radius: var(--uhd-radius-pill);
+  border: var(--uhd-border-w) solid var(--uhd-l-border);
+  background: var(--uhd-l-surface);
+  color: var(--uhd-l-text);
+  font-size: var(--uhd-fs-caption);
+  font-weight: var(--uhd-fw-medium);
+  white-space: nowrap;
+}
 .set-note {
   margin: 0;
   padding: 12px 2px 0;
