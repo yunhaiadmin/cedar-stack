@@ -6,7 +6,7 @@ downloadQuotaExceeded / rateLimitExceeded 等）在代码多处被
 解析用于分类判定（drive_changes 的 403 配额识别、drive_share
 的退避判定、池熔断计数），但算完即弃、全站没有任何一张表
 落下来——撞限时只知道「撞了几次」，分不清撞的是哪种限额，
-后续削减调用（沉淀预算/探测复用等）改完也无从验收。
+后续削减调用（探测复用等）改完也无从验收。
 
 本模块是 reason 的唯一落点（照 transfer_decisions 的单落点
 纪律，不许第二处另建统计）：

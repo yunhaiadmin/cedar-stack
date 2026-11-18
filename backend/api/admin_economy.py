@@ -358,26 +358,6 @@ class TransferConfigRequest(BaseModel):
     # 类别；默认 "[]" = 不暂停、现行行为不变。结构校验在
     # transfer_variant.coerce_paused_categories（保存侧 strict）。
     transfer_paused_categories: str = "[]"
-    # 指纹沉淀（2026-11-01 转存等待压缩期三）：总开关默认开；
-    # 需求/追剧档默认开，热门/新入库档默认关（本期只有开关位、
-    # 不选片）；日预算默认 200 GiB；fused 是转化率熔断运行时
-    # 状态（默认未熔断，管理员清回 False 即恢复沉淀）。校验与
-    # 读写实现在 transfer_sediment + config_schema transfer 家族。
-    transfer_sediment_enabled: bool = True
-    transfer_sediment_tier_demand_enabled: bool = True
-    transfer_sediment_tier_watching_enabled: bool = True
-    transfer_sediment_tier_hot_enabled: bool = False
-    transfer_sediment_tier_new_enabled: bool = False
-    transfer_sediment_daily_budget_gib: int = 200
-    transfer_sediment_interval_sec: int = 1800
-    transfer_sediment_max_items_per_round: int = 20
-    transfer_sediment_fuse_window_days: int = 30
-    transfer_sediment_fuse_unconsumed_ratio: float = 0.7
-    # 晚高峰静默窗（上海整点，起含止不含）：默认 19→23，
-    # 起==止 = 关闭；窗内沉淀整轮跳过，不与播放抢 Drive 额度。
-    transfer_sediment_quiet_start_hour: int = 19
-    transfer_sediment_quiet_end_hour: int = 23
-    transfer_sediment_fused: bool = False
 
 
 @admin_router.get("/transfer-config")
@@ -386,11 +366,9 @@ def transfer_get_config(
     db: Session = Depends(get_db),
 ):
     """转存配置读取：跨 provider 总开关 + 三个并发上限 + 115 秒传/分片上传开关（含默认值）。"""
-    from backend.emby_server import transfer_sediment, transfer_variant
+    from backend.emby_server import transfer_variant
 
-    payload = transfer_variant.transfer_config_payload(db)
-    payload.update(transfer_sediment.sediment_config_payload(db))
-    return payload
+    return transfer_variant.transfer_config_payload(db)
 
 
 @admin_router.put("/transfer-config")
@@ -400,38 +378,9 @@ def transfer_update_config(
     db: Session = Depends(get_db),
 ):
     """转存配置写入：范围非法时 400（中文信息），写完即失效热缓存。"""
-    from backend.emby_server import transfer_sediment, transfer_variant
+    from backend.emby_server import transfer_variant
 
     try:
-        # 沉淀段先写：其校验先行，非法时整段不落库且不牵动其余
-        # 转存键；两段各自走 config_service 整批校验。
-        sediment_payload = transfer_sediment.write_sediment_config(
-            db,
-            transfer_sediment_enabled=request.transfer_sediment_enabled,
-            transfer_sediment_tier_demand_enabled=(
-                request.transfer_sediment_tier_demand_enabled),
-            transfer_sediment_tier_watching_enabled=(
-                request.transfer_sediment_tier_watching_enabled),
-            transfer_sediment_tier_hot_enabled=(
-                request.transfer_sediment_tier_hot_enabled),
-            transfer_sediment_tier_new_enabled=(
-                request.transfer_sediment_tier_new_enabled),
-            transfer_sediment_daily_budget_gib=(
-                request.transfer_sediment_daily_budget_gib),
-            transfer_sediment_interval_sec=(
-                request.transfer_sediment_interval_sec),
-            transfer_sediment_max_items_per_round=(
-                request.transfer_sediment_max_items_per_round),
-            transfer_sediment_fuse_window_days=(
-                request.transfer_sediment_fuse_window_days),
-            transfer_sediment_fuse_unconsumed_ratio=(
-                request.transfer_sediment_fuse_unconsumed_ratio),
-            transfer_sediment_quiet_start_hour=(
-                request.transfer_sediment_quiet_start_hour),
-            transfer_sediment_quiet_end_hour=(
-                request.transfer_sediment_quiet_end_hour),
-            transfer_sediment_fused=request.transfer_sediment_fused,
-        )
         result = transfer_variant.write_transfer_config(
             db,
             cross_provider_transfer_enabled=(
@@ -483,30 +432,7 @@ def transfer_update_config(
             "transfer_rebind_waiver_max_uses":
             request.transfer_rebind_waiver_max_uses,
             "transfer_paused_categories":
-            request.transfer_paused_categories,
-            "transfer_sediment_enabled":
-            request.transfer_sediment_enabled,
-            "transfer_sediment_tier_demand_enabled":
-            request.transfer_sediment_tier_demand_enabled,
-            "transfer_sediment_tier_watching_enabled":
-            request.transfer_sediment_tier_watching_enabled,
-            "transfer_sediment_tier_hot_enabled":
-            request.transfer_sediment_tier_hot_enabled,
-            "transfer_sediment_tier_new_enabled":
-            request.transfer_sediment_tier_new_enabled,
-            "transfer_sediment_daily_budget_gib":
-            request.transfer_sediment_daily_budget_gib,
-            "transfer_sediment_interval_sec":
-            request.transfer_sediment_interval_sec,
-            "transfer_sediment_max_items_per_round":
-            request.transfer_sediment_max_items_per_round,
-            "transfer_sediment_fuse_window_days":
-            request.transfer_sediment_fuse_window_days,
-            "transfer_sediment_fuse_unconsumed_ratio":
-            request.transfer_sediment_fuse_unconsumed_ratio,
-            "transfer_sediment_fused":
-            request.transfer_sediment_fused})
-    result.update(sediment_payload)
+            request.transfer_paused_categories})
     db.commit()
     return result
 
