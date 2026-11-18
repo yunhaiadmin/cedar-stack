@@ -201,6 +201,30 @@ export const fetchDanmakuConfig = () => get<DanmakuConfig>('/danmaku/config')
 export const updateDanmakuConfig = (data: DanmakuConfig) =>
   put<DanmakuConfig>('/danmaku/config', data)
 
+/** 弹幕 API 线路（2026-11-18）：后端 /api/admin/danmu-api/config
+ * 用户在概览页生成弹幕 Token 后选的线路表：只换 host，路径与 token 不变。
+ * GET 回当前生效值（未配置时后端代入默认两条）；PUT 整批校验，
+ * id 为小写 slug 且全表唯一、名称非空、host 为裸域名，非法 400 不落库。 */
+export interface DanmuApiLine {
+  /** 线路 id：小写字母/数字/连字符/下划线，1–32 位，全表唯一 */
+  id: string
+  /** 线路名称（用户端选项标题） */
+  name: string
+  /** 线路说明（用户端选项副文案，可空） */
+  note: string
+  /** 裸域名（不带协议/路径/端口） */
+  host: string
+}
+
+export interface DanmuApiLinesConfig {
+  lines: DanmuApiLine[]
+}
+
+export const fetchDanmuApiLines = () => get<DanmuApiLinesConfig>('/danmu-api/config')
+
+export const updateDanmuApiLines = (lines: DanmuApiLine[]) =>
+  put<DanmuApiLinesConfig>('/danmu-api/config', { lines })
+
 /** 登录失败锁定（2026-11-18，F4/F8 补项）：后端 /api/admin/login-lockout/config */
 export interface LoginLockoutConfig {
   /** 总开关，默认开 */

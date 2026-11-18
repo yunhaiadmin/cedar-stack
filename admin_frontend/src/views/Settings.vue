@@ -35,6 +35,7 @@ import {
   fetchRegistrationSettings, updateRegistrationSettings,
   fetchSoftdecodeConfig, updateSoftdecodeConfig, type SoftdecodeConfig,
   fetchDanmakuConfig, updateDanmakuConfig, type DanmakuConfig,
+  fetchDanmuApiLines, updateDanmuApiLines, type DanmuApiLine,
   fetchLoginLockoutConfig, updateLoginLockoutConfig, type LoginLockoutConfig,
   fetchSiteDrawerConfig, updateSiteDrawerConfig,
   type SiteDrawerConfig, type SiteDrawerConfigResponse,
@@ -576,7 +577,7 @@ async function load() {
 }
 
 onMounted(async () => {
-  await Promise.all([load(), loadCapabilities(), loadHotlink(), loadInstallApp(), loadItemsDedupCache(), loadTransfer(), loadMountServing(), loadDriveApi(), loadSoftdecode(), loadDanmaku(), loadLoginLockout(), loadSiteDrawer(), loadLicense(), loadPool()])
+  await Promise.all([load(), loadCapabilities(), loadHotlink(), loadInstallApp(), loadItemsDedupCache(), loadTransfer(), loadMountServing(), loadDriveApi(), loadSoftdecode(), loadDanmaku(), loadDanmuLines(), loadLoginLockout(), loadSiteDrawer(), loadLicense(), loadPool()])
   // Batch D 入口收敛：邀请页 / 客户端策略等用 hash 深链跳进来（如 #group-invitation）
   // R40：querySelector 直接塞 hash 会在畸形值时抛 SyntaxError；改用 getElementById
   if (route.hash) {
@@ -1056,6 +1057,67 @@ async function saveDanmakuCore(): Promise<boolean> {
   }
 }
 
+/** ==================== 弹幕 API 线路卡片（独立 endpoint，非通用分组） ====================
+ * 给第三方播放器用的弹幕 API 线路表（后端 SystemConfig 家族 danmu_api 的
+ * danmu_api_lines）：用户在概览页生成弹幕 Token 后选一条线路拼地址，
+ * 线路只换 host。GET 回的就是当前生效值（未配置时后端代入默认两条）；
+ * 保存整批校验——至少一条、id 小写 slug 且全表唯一、名称非空、
+ * host 为裸域名（不带协议/路径/端口），非法整批 400 不落库。 */
+const danmuLines = ref<DanmuApiLine[]>([])
+const danmuLinesOriginal = ref('')
+const danmuLinesLoading = ref(false)
+
+function danmuLinesSnapshot(): DanmuApiLine[] {
+  return danmuLines.value.map((ln) => ({
+    id: ln.id.trim(),
+    name: ln.name.trim(),
+    note: ln.note.trim(),
+    host: ln.host.trim().toLowerCase(),
+  }))
+}
+
+function applyDanmuLines(lines: DanmuApiLine[]) {
+  danmuLines.value = (lines || []).map((ln) => ({
+    id: ln.id ?? '',
+    name: ln.name ?? '',
+    note: ln.note ?? '',
+    host: ln.host ?? '',
+  }))
+  danmuLinesOriginal.value = JSON.stringify(danmuLinesSnapshot())
+}
+
+async function loadDanmuLines() {
+  danmuLinesLoading.value = true
+  try {
+    applyDanmuLines((await fetchDanmuApiLines()).lines)
+  } catch {
+    // 错误提示由 HTTP 拦截器统一处理
+  } finally {
+    danmuLinesLoading.value = false
+  }
+}
+
+const danmuLinesDirty = computed(
+  () =>
+    danmuLinesOriginal.value !== ''
+    && JSON.stringify(danmuLinesSnapshot()) !== danmuLinesOriginal.value,
+)
+
+function addDanmuLine() {
+  danmuLines.value.push({ id: '', name: '', note: '', host: '' })
+}
+
+/** 弹幕 API 线路保存核心：返回是否成功，失败时拦截器已提示（含后端校验原文）。 */
+async function saveDanmuLinesCore(): Promise<boolean> {
+  try {
+    applyDanmuLines((await updateDanmuApiLines(danmuLinesSnapshot())).lines)
+    return true
+  } catch {
+    // 拦截器已提示
+    return false
+  }
+}
+
 /** ==================== 登录锁定卡片（独立 endpoint，非通用分组） ====================
  * 门户 / Emby / 管理端三处密码登录共用的失败锁定（后端 SystemConfig 家族
  * login_lockout，#286 执法）：总开关默认开；账号维度窗口内失败达阈值
@@ -1366,6 +1428,7 @@ async function reloadAll() {
   loadDriveApi()
   loadSoftdecode()
   loadDanmaku()
+  loadDanmuLines()
   loadLoginLockout()
   loadSiteDrawer()
 }
@@ -1514,6 +1577,10 @@ async function saveAll() {
       if (await saveDanmakuCore()) saved += 1
       else failed.push('弹幕设置')
     }
+    if (danmuLinesDirty.value) {
+      if (await saveDanmuLinesCore()) saved += 1
+      else failed.push('弹幕 API 线路')
+    }
     if (loginLockoutDirty.value) {
       if (await saveLoginLockoutCore()) saved += 1
       else failed.push('登录锁定')
@@ -1557,6 +1624,7 @@ async function discardAll() {
   loadDriveApi()
   loadSoftdecode()
   loadDanmaku()
+  loadDanmuLines()
   loadLoginLockout()
   loadSiteDrawer()
 }
@@ -1830,6 +1898,16 @@ watch(
               >
                 <MessageSquareText :size="13" />弹幕设置
                 <span v-if="danmakuDirty" class="chip-dot" aria-label="有未保存的改动" />
+              </button>
+              <button
+                v-if="sec.id === 'playback'"
+                type="button"
+                class="group-chip"
+                :class="{ 'is-dirty': danmuLinesDirty }"
+                @click="scrollToGroup('danmu-api-lines')"
+              >
+                <Network :size="13" />弹幕 API 线路
+                <span v-if="danmuLinesDirty" class="chip-dot" aria-label="有未保存的改动" />
               </button>
               <button
                 v-if="sec.id === 'playback'"
@@ -2808,6 +2886,40 @@ watch(
               </el-form-item>
             </el-form>
           </SectionCard>
+          <!-- 弹幕 API 线路：独立卡片，归「播放与风控」段 -->
+          <SectionCard
+            v-if="sec.id === 'playback'"
+            id="group-danmu-api-lines"
+            title="弹幕 API 线路"
+            :icon="Network"
+            description="给第三方播放器填的弹幕 API 地址可选的线路：用户在概览页生成弹幕 Token、选一条线路，地址就是这条线路的域名加上固定路径和他的 Token——线路只换域名。改完保存立即对新读取生效；删掉一条线路后，已选该线路的用户会回到未选状态。至少保留一条。"
+            :tone="danmuLinesDirty ? 'accent' : 'default'"
+            class="group-card"
+          >
+            <template v-if="danmuLinesDirty" #actions>
+              <span class="au-badge au-badge-amber">未保存</span>
+            </template>
+
+            <el-form label-position="top" class="field-form">
+              <el-form-item label="线路列表">
+                <div class="field-stack sd-stack">
+                  <div v-for="(line, idx) in danmuLines" :key="idx" class="sd-row">
+                    <el-input v-model="line.id" class="dl-id" placeholder="ID，如 intl" maxlength="32" />
+                    <el-input v-model="line.name" class="dl-name" placeholder="名称，如 国际方向" maxlength="40" />
+                    <el-input v-model="line.note" class="dl-note" placeholder="说明（可空），如 CDN 加速线路" maxlength="80" />
+                    <el-input v-model="line.host" class="dl-host" placeholder="域名，如 cdn.example.com" maxlength="253" />
+                    <span class="sd-ops">
+                      <el-button size="small" type="danger" plain @click="danmuLines.splice(idx, 1)">删除</el-button>
+                    </span>
+                  </div>
+                  <div>
+                    <el-button size="small" @click="addDanmuLine">＋ 新增线路</el-button>
+                    <span class="field-hint">ID 只用小写字母、数字、连字符、下划线（1–32 位）且不能重复；域名只填裸域名，不带 https://、路径和端口。保存时整批校验，有一条不合法整批不存。</span>
+                  </div>
+                </div>
+              </el-form-item>
+            </el-form>
+          </SectionCard>
           <!-- 登录锁定：独立卡片，归「播放与风控」段 -->
           <SectionCard
             v-if="sec.id === 'playback'"
@@ -3233,6 +3345,10 @@ watch(
 .sd-row .sd-label { width: 170px; flex: none; }
 .sd-row .sd-url { flex: 1 1 220px; min-width: 180px; }
 .sd-row .sd-check { display: inline-flex; align-items: center; font-size: 13px; color: var(--au-text-2); }
+.sd-row .dl-id { width: 130px; flex: none; }
+.sd-row .dl-name { width: 150px; flex: none; }
+.sd-row .dl-note { flex: 1 1 200px; min-width: 160px; }
+.sd-row .dl-host { flex: 1 1 220px; min-width: 180px; }
 .sd-row .sd-ops { display: inline-flex; gap: 4px; margin-left: auto; }
 .field-control { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .field-suffix { font-size: 12px; color: var(--au-text-3); white-space: nowrap; }
