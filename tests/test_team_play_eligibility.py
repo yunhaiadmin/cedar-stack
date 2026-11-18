@@ -333,9 +333,7 @@ def test_team_owner_view_grant_via_team(db):
     _buy_team(db, owner, activate=True)
     # 资格来源只能是团队：个人订阅已被抵扣置到期
     assert subscriptions.has_active_subscription(db, owner.id) is False
-    granted, unlock = subscriptions.view_grant(db, owner)
-    assert granted is True
-    assert unlock is None
+    assert subscriptions.view_grant(db, owner) is True
 
 
 def test_team_member_view_grant_via_team(db):
@@ -343,9 +341,7 @@ def test_team_member_view_grant_via_team(db):
     _buy_team(db, owner, activate=True)
     member = teams_service.create_member(
         db, owner, username="tmember1", password=PW)
-    granted, unlock = subscriptions.view_grant(db, member)
-    assert granted is True
-    assert unlock is None
+    assert subscriptions.view_grant(db, member) is True
 
 
 def test_pending_team_no_view_grant(db):
@@ -353,8 +349,8 @@ def test_pending_team_no_view_grant(db):
     _buy_team(db, owner, activate=False)
     member = teams_service.create_member(
         db, owner, username="tmember1", password=PW)
-    assert subscriptions.view_grant(db, owner) == (False, None)
-    assert subscriptions.view_grant(db, member) == (False, None)
+    assert subscriptions.view_grant(db, owner) is False
+    assert subscriptions.view_grant(db, member) is False
 
 
 def test_expired_team_no_view_grant(db):
@@ -362,21 +358,21 @@ def test_expired_team_no_view_grant(db):
     team = _buy_team(db, owner, activate=True)
     member = teams_service.create_member(
         db, owner, username="tmember1", password=PW)
-    assert subscriptions.view_grant(db, member)[0] is True
+    assert subscriptions.view_grant(db, member) is True
     team.plan_expires_at = datetime.now() - timedelta(days=1)
     db.commit()
-    assert subscriptions.view_grant(db, owner) == (False, None)
-    assert subscriptions.view_grant(db, member) == (False, None)
+    assert subscriptions.view_grant(db, owner) is False
+    assert subscriptions.view_grant(db, member) is False
 
 
 def test_no_team_user_view_grant_unchanged(db):
     """无团队用户行为不变：无订阅不放行、有个人订阅放行。"""
     bystander = _user(db, "bystander")
-    assert subscriptions.view_grant(db, bystander) == (False, None)
+    assert subscriptions.view_grant(db, bystander) is False
     solo = _user(db, "solo")
     # view_grant 走 _scoped 口径（面板当前服=1），存量用例同口径绑服造数
     _personal_sub(db, solo, realm_id=1)
-    assert subscriptions.view_grant(db, solo) == (True, None)
+    assert subscriptions.view_grant(db, solo) is True
 
 
 def test_pending_team_grants_no_traffic_quota(db):

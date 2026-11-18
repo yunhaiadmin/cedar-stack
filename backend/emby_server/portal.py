@@ -28,7 +28,7 @@ from sqlalchemy import and_, case, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
-from backend import config_service, line_quota, models, realms, subscriptions
+from backend import line_quota, models, realms, subscriptions
 from backend.usernames import username_conflict
 from backend.database import get_db, SessionLocal
 
@@ -264,54 +264,8 @@ admin_emby_router = APIRouter(prefix="/api/admin/emby", tags=["管理后台-自�
 
 # ==================== 用户端 ====================
 
-# 公益服查看权限有效期键名及出厂默认值（积分价格已随货币下线，
-# 查看购买写口早于 2026-11-09 资格合并时退役，见 unlock_emby_view）。
-# 配置自愈（backend/config_self_heal.py）引用这里 —— 默认值只许在这里定义一次。
-VIEW_UNLOCK_DAYS_KEY = "emby_view_unlock_days"
-VIEW_UNLOCK_DAYS_DEFAULT = 365  # 0=永久
-
-
-def _get_int_config(db: Session, key: str, default: int) -> int:
-    row = db.query(models.SystemConfig).filter(models.SystemConfig.key == key).first()
-    try:
-        return int(row.value) if row and row.value is not None else default
-    except (TypeError, ValueError):
-        return default
-
-
-def _view_unlock_days(db: Session) -> int:
-    """公益服查看行有效期（天，0=永久），后台 SystemConfig 可调。"""
-    return max(_get_int_config(db, VIEW_UNLOCK_DAYS_KEY, VIEW_UNLOCK_DAYS_DEFAULT), 0)
-
-
-class ViewUnlockSettingsIn(BaseModel):
-    days: int
-
-
-@admin_emby_router.get("/view-unlock")
-def admin_view_unlock_get(db: Session = Depends(get_db)):
-    """管理后台：读公益服查看行有效期。"""
-    return {"days": _view_unlock_days(db)}
-
-
-@admin_emby_router.put("/view-unlock")
-def admin_view_unlock_put(body: ViewUnlockSettingsIn, db: Session = Depends(get_db)):
-    """管理后台：改公益服查看行有效期（days=0 为永久）。"""
-    if body.days < 0:
-        raise HTTPException(status_code=400, detail="days 不能为负")
-    # 配置瘦身第 4 批 4-4：走统一写入通道（校验→落库→写时失效）；
-    # store.write_values 内部已按 store 纪律失效，4-1 的失效覆盖由正统通道承接。
-    config_service.save_config(
-        db,
-        {VIEW_UNLOCK_DAYS_KEY: body.days},
-        schema="view_unlock",
-    )
-    db.commit()
-    return {"days": body.days}
-
-
 def _realm_view_granted(db: Session, user: models.WebUser, realm_id: int | None
-                        ) -> tuple[bool, models.EmbyViewUnlock | None]:
+                        ) -> bool:
     """用户是否有权查看某服的 Emby 账号/线路（口径见 ``subscriptions.view_grant``）。
 
     规则：有效订阅即权限，团队套餐是并列的资格来源。
@@ -423,8 +377,7 @@ def _account_card(user: models.WebUser, db: Session, realm_id: int | None = None
     mode = emby_active_mode(db, realm_id)
     external = mode == "external"
     realm = realms.realm_snapshot(db, realm_id)
-    granted, unlock = _realm_view_granted(db, user, realm_id)
-    price_days = _view_unlock_days(db)
+    granted = _realm_view_granted(db, user, realm_id)
     # 未设置接线用户名时是空串，不是 null：账号卡这个字段一直是字符串。
     emby_username = (user.emby_username or "") if granted else ""
     # 服务器显示名走唯一解析口径（配置键 > env > 默认），与 System/Info 同源
@@ -455,8 +408,6 @@ def _account_card(user: models.WebUser, db: Session, realm_id: int | None = None
         },
         "view_permission": {
             "granted": granted,
-            "unlock_days": price_days,
-            "expires_at": unlock.expires_at.isoformat() if unlock and unlock.expires_at else None,
             # 放行来源（前端按它展示状态）：subscription＝订阅/团队资格
             # 放行；None＝未放行。
             "source": "subscription" if granted else None,
@@ -516,7 +467,7 @@ def _user_realm_cards(user: models.WebUser, db: Session,
         if sub is None and realm.id != realms.legacy_realm_id(db):
             continue  # 没订阅的服不往用户面前推（默认服保留，兼容老前端）
         mode = emby_active_mode(db, realm.id)
-        granted, _ = _realm_view_granted(db, user, realm.id)
+        granted = _realm_view_granted(db, user, realm.id)
         cards.append({
             "id": realm.id,
             "name": realm.name,

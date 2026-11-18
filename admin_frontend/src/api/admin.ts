@@ -361,13 +361,12 @@ export const patchRegistrationCode = (id: number, data: { is_active?: boolean; n
 export const deleteRegistrationCode = (id: number) =>
   del<{ success: boolean; message: string }>(`/registration-codes/${id}`)
 
-/** 白名单账号：核销过白名单码的账号与两处永久状态 */
+/** 白名单账号：核销过白名单码的账号与长期订阅状态 */
 export interface WhitelistAccount {
   user_id: number
   username: string
   code: string | null
   redeemed_at: string | null
-  view_permanent: boolean
   subscription_longterm: boolean
   is_permanent_active: boolean
 }

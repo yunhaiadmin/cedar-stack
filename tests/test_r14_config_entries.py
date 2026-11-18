@@ -87,26 +87,12 @@ def _make_portal_app(db, admin_user):
     return app
 
 
-# view-unlock 接口已随 #127 改为只剩 days（积分价格随货币下线，
-# 见 backend/emby_server/portal.py ViewUnlockSettingsIn 与前端 admin.ts 注释）。
-def test_portal_view_unlock_get_default(db, admin_user):
+# view-unlock 接口已随公益服删除整套下线（配置家族 view_unlock 同步
+# 摘除）：GET/PUT 一律 404，不再有读写入口。
+def test_portal_view_unlock_endpoints_removed(db, admin_user):
     app = _make_portal_app(db, admin_user)
     client = TestClient(app)
     r = client.get("/api/admin/emby/view-unlock")
-    assert r.status_code == 200
-    assert r.json() == {"days": 365}
-
-
-def test_portal_view_unlock_put_roundtrip(db, admin_user):
-    app = _make_portal_app(db, admin_user)
-    client = TestClient(app)
-
+    assert r.status_code == 404
     r = client.put("/api/admin/emby/view-unlock", json={"days": 30})
-    assert r.status_code == 200
-
-    r = client.get("/api/admin/emby/view-unlock")
-    assert r.status_code == 200
-    assert r.json() == {"days": 30}
-
-    r = client.put("/api/admin/emby/view-unlock", json={"days": -1})
-    assert r.status_code == 400
+    assert r.status_code == 404

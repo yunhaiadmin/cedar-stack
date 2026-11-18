@@ -135,7 +135,6 @@ const flowColumns: DataColumn[] = [
 const whitelistColumns: DataColumn[] = [
   { key: 'username', label: '账号', minWidth: 140, mobile: 'title' },
   { key: 'code', label: '核销的白名单码', minWidth: 170 },
-  { key: 'view_permanent', label: '查看凭证', width: 100 },
   { key: 'subscription_longterm', label: '会员订阅', width: 100 },
   { key: 'state', label: '状态', width: 100 },
   { key: 'actions', label: '操作', width: 100 },
@@ -208,7 +207,7 @@ async function loadWhitelist() {
 async function onRevokeWhitelist(row: WhitelistAccount) {
   try {
     await ElMessageBox.confirm(
-      `回收「${row.username}」的永久资格？公益资格、查看凭证与长期订阅会一并到期；` +
+      `回收「${row.username}」的永久资格？其长期订阅会到期；` +
       '该账号自己购买/续费的有限期权益不受影响。',
       '回收白名单',
       { type: 'warning', confirmButtonText: '回收', cancelButtonText: '取消' },
@@ -711,8 +710,8 @@ function usedByNames(row: RegistrationCode): string {
 
     <SectionCard title="白名单账号" :icon="ShieldAlert">
       <p class="whitelist-hint">
-        核销过白名单码的账号：查看凭证与会员订阅均为长期有效、不用续费。
-        回收后两处一并到期（账号自己购买/续费的有限期权益不受影响）。
+        核销过白名单码的账号：会员订阅为长期有效、不用续费。
+        回收后长期订阅到期（账号自己购买/续费的有限期权益不受影响）。
       </p>
       <DataTable
         :rows="whitelistAccounts"
@@ -721,7 +720,6 @@ function usedByNames(row: RegistrationCode): string {
         row-key="user_id"
         empty="暂无白名单账号"
       >
-        <template #cell-view_permanent="{ row }">{{ row.view_permanent ? '永久' : '—' }}</template>
         <template #cell-subscription_longterm="{ row }">{{ row.subscription_longterm ? '长期' : '—' }}</template>
         <template #cell-state="{ row }">{{ row.is_permanent_active ? '永久生效中' : '已回收' }}</template>
         <template #cell-actions="{ row }">

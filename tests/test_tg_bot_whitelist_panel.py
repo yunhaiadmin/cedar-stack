@@ -3,8 +3,8 @@
 
 口径：
 - 白名单判定只复用 backend.codes.is_whitelist_account（#1668 名单／
-  #1670 活力豁免同一口：核销痕迹＋三处永久现算），面板不另立名单；
-  夹具按该口径的输入面造数（白名单码核销痕迹＋资格/查看/订阅三处永久），
+  #1670 活力豁免同一口：核销痕迹＋订阅长期现算），面板不另立名单；
+  夹具按该口径的输入面造数（白名单码核销痕迹＋长期订阅），
   并先断言判定函数认账，夹具漂移会先红在这里。
 - 白名单用户：/me、/account 账号中心与 /start 精简 dashboard（user_panel）
   换专属版式——专属问候标题＋👑专属称号行（＋创世编号行，编号落地后才有）。
@@ -68,7 +68,7 @@ def _user(db, tg, name, **kw):
 
 
 def _make_whitelist(db, user):
-    """按 codes 口径造生效中的白名单：核销痕迹＋三处永久，并断言判定认账。"""
+    """按 codes 口径造生效中的白名单：核销痕迹＋订阅长期，并断言判定认账。"""
     realm = ensure_default_realm(db)
     code = models.RegistrationCode(
         code=f"VIP-{user.username.upper()}", max_uses=1, use_count=1,
@@ -79,8 +79,6 @@ def _make_whitelist(db, user):
     db.add(models.CodeRedemption(
         code_kind=codes.REDEMPTION_KIND_REG, code_id=code.id,
         user_id=user.id))
-    db.add(models.EmbyViewUnlock(
-        user_id=user.id, realm_id=realm.id, expires_at=None))
     plan = models.SubscriptionPlan(
         name="白名单永久", price=0, duration_days=36500)
     db.add(plan)
@@ -203,9 +201,10 @@ def test_account_plain_user_unchanged(db):
 
 def test_revoked_whitelist_falls_back_to_plain_layout(db):
     vip = _make_whitelist(db, _user(db, TG_VIP, "vip"))
-    unlock = (db.query(models.EmbyViewUnlock)
-              .filter(models.EmbyViewUnlock.user_id == vip.id).first())
-    unlock.expires_at = datetime.now() + timedelta(days=30)
+    # 回收的等价形态：长期订阅被置成有限期（低于长期阈值）
+    sub = (db.query(models.UserSubscription)
+           .filter(models.UserSubscription.user_id == vip.id).first())
+    sub.end_date = datetime.now() + timedelta(days=30)
     db.commit()
     assert codes.is_whitelist_account(db, vip) is False
     text = features.user_panel(db, vip)

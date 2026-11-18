@@ -419,42 +419,6 @@ REWARD_WELFARE = "welfare"
 REWARD_BALANCE = "balance"
 
 
-def _grant_bundled_view_unlock(db: Session, user: models.WebUser,
-                               realm_id: int, days: int) -> None:
-    """打包查看行：给该用户在该服写/续一条 EmbyViewUnlock（不提交）。
-
-    口径与全站查看行写入一致：同一 (user_id, realm_id) 只保留一条——
-    已有未过期行在原到期上叠加天数，过期行从现在重算，无行新建；
-    ``points_spent=0`` 标记赠送。
-    ``days<=0`` 按永久处理（expires_at=None）。提交由调用方完成
-    （同一事务）。
-    """
-    now = datetime.now()
-    row = (
-        db.query(models.EmbyViewUnlock)
-        .filter(models.EmbyViewUnlock.user_id == user.id,
-                models.EmbyViewUnlock.realm_id == realm_id)
-        .first()
-    )
-    if row is None:
-        db.add(models.EmbyViewUnlock(
-            user_id=user.id,
-            realm_id=realm_id,
-            unlocked_at=now,
-            expires_at=None if days <= 0 else now + timedelta(days=days),
-            points_spent=0,
-        ))
-        return
-    if row.expires_at is None:
-        return  # 已是永久查看行，不动
-    if days <= 0:
-        row.expires_at = None
-    elif row.expires_at > now:
-        row.expires_at = row.expires_at + timedelta(days=days)
-    else:
-        row.expires_at = now + timedelta(days=days)
-
-
 # 核销失败机器码（error_code）：随失败结果一起返回，供端点/前端区分
 # 「码本身明确无效」与限流、系统错误。用户侧文案仍走 message/detail 人话。
 CODE_ERROR_USED_UP = "CODE_USED_UP"        # 已被用尽 / 并发抢占失败（已被别人使用）
@@ -730,14 +694,11 @@ def _redeem_found_code(db: Session, user: models.WebUser,
     # 中间崩溃会一起回滚，不会出现「码烧了、会员没到账」
     if code.code_type == CODE_TYPE_WHITELIST:
         # 白名单码（2026-11-01 修复）：语义是「账号置为长期有效」，与
-        # reward_type 无关。此前按 reward_type 分派只永久化其中一处——
-        # subscription 型只有订阅（资格照旧到期、查看行根本不发）、
-        # welfare 型没有订阅、points/discount 型白名单语义全丢——
-        # 用户实测没生效。两处一起落：该服订阅长期（days=-1 →
-        # PERMANENT_DAYS）＋查看行永久。（公益资格永久一处已随公益
-        # 资格整族于 2026-11-14 删除，白名单语义不再含资格。）
+        # reward_type 无关。此前按 reward_type 分派只永久化其中一处、
+        # 其余型白名单语义全丢——用户实测没生效。现行口径只落一处：
+        # 该服订阅长期（days=-1 → PERMANENT_DAYS）。（公益资格与查看
+        # 凭证两处均已下线，白名单语义不再含资格与凭证。）
         grant_membership_days(db, user, days, target)
-        _grant_bundled_view_unlock(db, user, target, 0)
         db.flush()
         # 创世编号：成为白名单即按先后落号（存量未落号的一并按痕迹
         # 顺序补齐，见 ensure_whitelist_serials）。编号是展示向加分项，
@@ -750,7 +711,7 @@ def _redeem_found_code(db: Session, user: models.WebUser,
         type_name = CODE_TYPE_NAMES.get(code.code_type, "卡码")
         return {
             "success": True,
-            "message": f"{type_name}核销成功，账号已置为长期有效（查看凭证与会员均长期有效）",
+            "message": f"{type_name}核销成功，账号已置为长期有效（会员长期有效）",
             "code_type": code.code_type,
             "reward_type": reward_type,
             "days": days,
@@ -830,16 +791,9 @@ def _whitelist_status(db: Session, user: models.WebUser, now: datetime) -> dict:
     """某账号当前「永久」状态（判定与全站各口径一致，只读组装）。
 
     历史上是三处（公益资格/查看行/订阅）；公益资格已随福利服役族于
-    2026-11-14 删除（四列已删）、白名单核销不再发放资格，故
-    is_permanent_active 只看剩余两处（查看行永久＋订阅长期），
-    原 welfare_permanent 输出字段随之一并摘除。
+    2026-11-14 删除、查看凭证已随公益服删除下线，白名单核销只落
+    订阅长期一处，故 is_permanent_active 只看订阅长期。
     """
-    view_permanent = (
-        db.query(models.EmbyViewUnlock.id)
-        .filter(models.EmbyViewUnlock.user_id == user.id,
-                models.EmbyViewUnlock.expires_at.is_(None))
-        .first() is not None
-    )
     sub_longterm = (
         db.query(models.UserSubscription.id)
         .filter(models.UserSubscription.user_id == user.id,
@@ -849,9 +803,8 @@ def _whitelist_status(db: Session, user: models.WebUser, now: datetime) -> dict:
         .first() is not None
     )
     return {
-        "view_permanent": view_permanent,
         "subscription_longterm": sub_longterm,
-        "is_permanent_active": view_permanent and sub_longterm,
+        "is_permanent_active": sub_longterm,
     }
 
 
@@ -891,8 +844,8 @@ def is_whitelist_account(db: Session, user: models.WebUser) -> bool:
     """该账号当前是否为生效中的白名单（永久）账号。
 
     与 whitelist_accounts 名单同一口径：有白名单码核销痕迹（_whitelist_traces），
-    且 _whitelist_status 现算永久仍在位（is_permanent_active，现为查看行
-    永久＋订阅长期两处，公益资格一处于 2026-11-14 删除）。
+    且 _whitelist_status 现算永久仍在位（is_permanent_active，现为订阅
+    长期一处；公益资格与查看凭证两处于此前已先后删除）。
     管理端回收后永久被置到期，本判定随即为 False。「谁是永久账号」
     全站只此一份定义，其他机制只许复用本函数，不许另立名单。
     """
@@ -949,11 +902,10 @@ def whitelist_accounts(db: Session) -> list:
 
 
 def revoke_whitelist_account(db: Session, user_id: int) -> Optional[dict]:
-    """回收某账号的永久资格：两处「永久」表示一并到期（不提交，调用方提交）。
+    """回收某账号的永久资格：长期订阅一并到期（不提交，调用方提交）。
 
-    只动永久形态的那几行：查看行 expires 为空才填到期、订阅只处理
-    长期（>50 年）的那条；用户正常购买/续费的有限期权益不在回收范围。
-    （原公益资格一处已随福利服役族于 2026-11-14 删除。）
+    只动长期（>50 年）的那条订阅；用户正常购买/续费的有限期权益
+    不在回收范围。（原公益资格与查看凭证两处均已下线。）
     返回回收后的名单行；用户不存在返回 None。
     """
     user = db.query(models.WebUser).filter(
@@ -962,10 +914,6 @@ def revoke_whitelist_account(db: Session, user_id: int) -> Optional[dict]:
         return None
     now = datetime.now()
     past = now - timedelta(seconds=1)
-    for row in (db.query(models.EmbyViewUnlock)
-                .filter(models.EmbyViewUnlock.user_id == user_id,
-                        models.EmbyViewUnlock.expires_at.is_(None)).all()):
-        row.expires_at = past
     for sub in (db.query(models.UserSubscription)
                 .filter(models.UserSubscription.user_id == user_id,
                         models.UserSubscription.status == "active",

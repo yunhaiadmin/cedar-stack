@@ -1,5 +1,6 @@
-"""配置简化第 4 批 4-4：reminders/coupons/welfare/registration/view_unlock
+"""配置简化第 4 批 4-4：reminders/coupons/welfare/registration
 迁移到 config_service.save_config 的回环测试。
+（view_unlock 家族已随公益服删除整套下线，不再迁移。）
 
 每个家族的测试都验证三件事（迁移的核心承诺）：
 1. 写后经 store 立读到新值（失效覆盖不回退）；
@@ -148,24 +149,13 @@ def test_registration_mode_enum_rejects(db):
     assert _row(db, "registration_mode") is None
 
 
-# ---------- view_unlock：int 键 ----------
+# ---------- view_unlock 家族已下线：写该家族/键一律拒绝 ----------
 
-def test_view_unlock_roundtrip(db):
-    # emby_view_unlock_points 已随货币于 2026-11-13 下线，查看解锁只剩天数
-    config_service.save_config(
-        db,
-        {"emby_view_unlock_days": 0},
-        schema="view_unlock",
-    )
-    db.commit()
-    assert _row(db, "emby_view_unlock_days").value == "0"
-
-
-def test_view_unlock_rejects_negative_atomic(db):
+def test_view_unlock_family_removed(db):
     with pytest.raises(config_schema.ConfigValueError):
         config_service.save_config(
             db,
-            {"emby_view_unlock_days": -1},
+            {"emby_view_unlock_days": 0},
             schema="view_unlock",
         )
     db.rollback()

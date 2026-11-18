@@ -1,24 +1,23 @@
 # -*- coding: utf-8 -*-
-"""TG Bot /kk 管理员面板（二期）：翻页子视图＋封禁/赠送写操作。
+"""TG Bot /kk 管理员面板（二期）：翻页子视图＋封禁/解封写操作。
 
 口径（用户 2026-11-02 二期定夺）：
 - /kk 面板第一页 = 现行精简卡（render_whois_lite 字段一字不改），
-  带按钮翻页：绑定详情页（provider＋状态＋最近验证）、资格与凭证页
-  （资格到期、凭证状态）；面板只经回复/带参定位到具体用户时出现。
-- 写操作只有封禁/解封与赠送两项（资格 +7/+30 天、
-  凭证 +30 天，预设档位按钮、无自由输入），不做删号。
-  （赠能量 +50/+100/+500 三档已随积分删除摘除，2026-11-13。）
+  带按钮翻页：绑定详情页（provider＋状态＋最近验证）；面板只经
+  回复/带参定位到具体用户时出现。
+- 写操作只有封禁/解封两项，不做删号。（赠送整族已先后摘除：
+  赠能量随积分删除，2026-11-13；赠资格随公益资格删除，2026-11-14；
+  赠凭证 gv30 随公益服删除，查看行写口下线。）
 - 封禁必须走与网站管理端同一服务 backend.user_lifecycle.set_user_active
-  （停用同事务吊销 Emby 令牌＋抬 token_version，PA-002 链）；赠送分别走
-  portal.grant_welfare、
-  codes._grant_bundled_view_unlock 现行口径，并写治理审计留痕。
+  （停用同事务吊销 Emby 令牌＋抬 token_version，PA-002 链），
+  并写治理审计留痕。
 - 每个写操作二次确认：点动作只出确认页（状态不变），点确认才执行；
   每次点击都校验点击者是管理员，非管理员点击直接拒绝、不带目标数据。
 """
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pytest
 
@@ -29,7 +28,6 @@ from sqlalchemy.orm import sessionmaker
 
 from backend import models
 from backend.emby_server import models as em
-from backend.realms import ensure_default_realm
 from backend.tg_bot import callbacks, handlers, sender
 
 STAFF_TG = 700001
@@ -112,20 +110,15 @@ def test_whois_group_opens_panel_with_buttons(db):
     datas = _datas(markup)
     assert f"whois:bind:{target.id}" in datas
     assert not any(d.startswith("whois:cred") for d in datas)  # 资格页已删
-    assert f"whois:gift:{target.id}" in datas
+    assert not any(d.startswith("whois:gift") for d in datas)  # 赠送入口已删
     assert f"whois:ask:{target.id}:ban" in datas  # 正常账号出封禁入口
 
 
 def test_whois_panel_bindings_page_and_cred_removed(db, monkeypatch):
     _staff, target = _panel(db)
-    realm = ensure_default_realm(db)
     db.add(em.UserStorageBinding(
         user_id=target.id, provider="drive", account_label="主号",
         credential_id=1, status="active", last_verified_at=datetime(2026, 11, 1, 8, 0)))
-    db.add(models.EmbyViewUnlock(
-        user_id=target.id, realm_id=realm.id,
-        unlocked_at=datetime(2026, 10, 20),
-        expires_at=datetime(2026, 12, 1), points_spent=0))
     db.commit()
     edited = _click(db, monkeypatch, f"whois:bind:{target.id}")
     assert edited
@@ -202,41 +195,24 @@ def test_admin_cannot_ban_self_via_panel(db, monkeypatch):
     assert staff.is_active is True  # 不能封自己（与网站管理端口径一致）
 
 
-# ---------- 赠送两项：预设档位落账 ----------
+# ---------- 赠送（gv30 查看权）已随公益服删除整套下线 ----------
 
-def _do_data_from_ask(db, monkeypatch, target, op):
-    """走 ask 确认页取 do 回调（含一次性 nonce），贴近真实点击链路。"""
-    edited = _click(db, monkeypatch, f"whois:ask:{target.id}:{op}")
-    assert edited
-    datas = [d for d in _datas(edited[0][1])
-             if d.startswith(f"whois:do:{target.id}:{op}")]
-    assert datas, "确认页须带 do 回调"
-    return datas[0]
-
-
-def test_gift_page_offers_view_only(db, monkeypatch):
-    """赠送页只剩查看凭证档位：资格档位（gw7/gw30）已随福利族删除。"""
+def test_gift_entry_removed_and_old_callbacks_fall_back(db, monkeypatch):
+    """赠送页/档位/写口全删：旧 gift 页与 gv30 回调按未知页/未知 op
+    回落主面板，不落任何查看行（EmbyViewUnlock 写口已不存在）。"""
+    from backend.tg_bot import whois_panel
+    assert "gv30" not in whois_panel.OPS
+    assert not hasattr(whois_panel, "gift_page")
     _staff, target = _panel(db)
     edited = _click(db, monkeypatch, f"whois:gift:{target.id}")
     assert edited
     datas = _datas(edited[0][1])
-    assert f"whois:ask:{target.id}:gv30" in datas
-    assert not any(":gw7" in d or ":gw30" in d for d in datas)
-
-
-def test_gift_view_unlock_lands(db, monkeypatch):
-    _staff, target = _panel(db)
-    realm = ensure_default_realm(db)
-    edited = _click(db, monkeypatch,
-                    _do_data_from_ask(db, monkeypatch, target, "gv30"))
+    assert not any(":gv30" in d for d in datas)
+    edited = _click(db, monkeypatch, f"whois:do:{target.id}:gv30")
     assert edited
-    row = (db.query(models.EmbyViewUnlock)
-           .filter(models.EmbyViewUnlock.user_id == target.id,
-                   models.EmbyViewUnlock.realm_id == realm.id).first())
-    assert row is not None
-    assert int(row.points_spent or 0) == 0  # 赠送标记，不扣能量
-    assert row.expires_at is not None
-    assert row.expires_at > datetime.now() + timedelta(days=29)
+    assert (db.query(models.EmbyViewUnlock)
+            .filter(models.EmbyViewUnlock.user_id == target.id)
+            .count()) == 0
 
 
 # ---------- PA-057：拒绝分支只弹 toast，绝不改写共享面板 ----------
@@ -348,44 +324,6 @@ def test_pa056_super_ban_super_with_two_active_allowed(db, monkeypatch):
     db.refresh(sup2)
     assert sup2.is_active is False  # 还有另一名可登录超管，允许
     assert "已封禁" in edited[0][0]
-
-# ---------- PA-058：赠送确认一次性 nonce，同一 ask 双击只发一次 ----------
-
-def test_pa058_double_click_gifts_once(db, monkeypatch):
-    # 赠送档位只剩查看凭证 gv30（资格档位已随福利族删除，2026-11-14）；
-    # PA-058 一次性 nonce 幂等口径对剩余赠送档位不变。
-    _staff, target = _panel(db)
-    realm = ensure_default_realm(db)
-    do_data = _do_data_from_ask(db, monkeypatch, target, "gv30")
-    edited = _click(db, monkeypatch, do_data)
-    assert edited
-
-    def _unlock_row():
-        return (db.query(models.EmbyViewUnlock)
-                .filter(models.EmbyViewUnlock.user_id == target.id,
-                        models.EmbyViewUnlock.realm_id == realm.id).first())
-
-    row = _unlock_row()
-    assert row is not None
-    first_expiry = row.expires_at
-    # 同一 ask 的 do 回调第二次到达：不再重复发放，只回已执行提示
-    edited = _click(db, monkeypatch, do_data)
-    assert edited
-    db.expire_all()
-    assert _unlock_row().expires_at == first_expiry
-    assert "已经执行过" in edited[0][0]
-
-
-def test_pa058_do_without_nonce_refused(db, monkeypatch):
-    _staff, target = _panel(db)
-    # 不经 ask、直接拼旧格式 do 回调：无有效 nonce，拒绝落账
-    edited = _click(db, monkeypatch, f"whois:do:{target.id}:gv30")
-    assert edited
-    rows = (db.query(models.EmbyViewUnlock)
-            .filter(models.EmbyViewUnlock.user_id == target.id).count())
-    assert rows == 0
-    assert "已失效" in edited[0][0]
-
 
 # ---------- 结构守卫：网站管理端与面板共用同一封禁服务 ----------
 
