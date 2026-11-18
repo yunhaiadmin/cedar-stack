@@ -219,8 +219,8 @@ onMounted(() => {
 
     <SectionCard title="自动补集（MoviePilot 手动通道）">
       <p class="dim fill-note">
-        开启后，系统按这张缺集清单自动去 MoviePilot 搜种、发起下载（不走订阅，
-        不受云海库存影响）。下好的集入库后会自动从清单划掉。总开关默认关着。
+        开启后，系统按这张缺集清单自动去 MoviePilot 搜种、发起下载（不走订阅）。
+        下好的集入库后会自动从清单划掉。总开关默认关着。
       </p>
       <div v-if="fillCfg" class="fill-grid">
         <label class="fill-field">
