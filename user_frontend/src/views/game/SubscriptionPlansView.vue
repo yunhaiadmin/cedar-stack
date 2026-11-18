@@ -172,6 +172,14 @@
           </p>
         </section>
       </div>
+
+      <!-- 团队方案提示条（照友站订阅页底部第二入口，2026-11-18 团队批 2）：
+           起订量读团队配置、不写死；团队接口不可用时整条不渲染 -->
+      <p v-if="!loading && teamHintMinGb != null" class="sub-team-hint">
+        需要更多流量或子账户？团体方案起订 {{ formatGb(teamHintMinGb) }} 流量，
+        子账户数量按流量自动计算，适合家庭、工作室或团队共享。
+        <button type="button" class="sub-team-hint__link" @click="goTeam">了解团体方案</button>
+      </p>
     </main>
 
     <!-- 吸底结算栏（照友站 f039/f036）：常驻底部——左已选套餐·时长＋总价，
@@ -290,6 +298,7 @@ import {
 } from '@/api/economy'
 import { formatBytes } from '@/api/traffic'
 import { walletApi, newWalletKey } from '@/api/wallet'
+import { teamsApi, formatGb } from '@/api/team'
 import { subscriptionApi, type MySubscription } from '@/api'
 
 const toast = useToast()
@@ -663,8 +672,21 @@ async function loadAll() {
   void refreshQuote()
 }
 
+/* ---------- 团队方案提示条（底部第二入口） ---------- */
+const teamHintMinGb = ref<number | null>(null)
+async function loadTeamHint() {
+  try {
+    const d = await teamsApi.detail()
+    teamHintMinGb.value = d.config.team_global_min_traffic_gb
+  } catch { /* 团队接口不可用（批 1 未上线等）时不渲染提示条 */ }
+}
+function goTeam() {
+  void router.push('/game/account/team')
+}
+
 onMounted(() => {
   void loadAll()
+  void loadTeamHint()
 })
 </script>
 
@@ -747,6 +769,24 @@ onMounted(() => {
   cursor: pointer;
 }
 .sub-note { margin: -12px 0 0; color: var(--uhd-l-text-2); font-size: 13px; line-height: 1.55; }
+
+/* 团队方案提示条（订阅页底部第二入口） */
+.sub-team-hint {
+  margin: 28px 0 0;
+  color: var(--uhd-l-text-2);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.sub-team-hint__link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--uhd-l-link);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
 
 /* 线路分段（友站 f039：浅灰胶囊高约 40（含 3px 内边距）、段高 34、选中白底轻阴影） */
 .sub-seg {

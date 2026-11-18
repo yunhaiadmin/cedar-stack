@@ -17,10 +17,11 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Briefcase, CreditCard, Gauge,
-  Megaphone, Settings, Sun, Moon, User, Wallet,
+  Megaphone, Settings, Sun, Moon, User, Users, Wallet,
 } from 'lucide-vue-next'
 import UhdSidebar, { type UhdSidebarGroup } from './UhdSidebar.vue'
 import { getAgentMe } from '@/api/agent'
+import { teamsApi } from '@/api/team'
 import { useTheme } from '@/composables/useTheme'
 import { useUserStore } from '@/stores/user'
 
@@ -58,8 +59,31 @@ function checkAgent(): Promise<boolean> {
   return agentChecked
 }
 const showAgent = ref(false)
+
+/* 团队入口可见性（同代理口径，会话内只查一次）：普通用户与团长
+   直接显示；子账号分两类——团队成员（凭团队详情 my_role）要能
+   回团队页看自己的团队，家庭子账号则隐藏入口（其权益全量归
+   主账号，团队页对其无意义，后端写口同步 403）。 */
+let teamEntryChecked: Promise<boolean> | null = null
+function checkTeamEntry(): Promise<boolean> {
+  if (!teamEntryChecked) {
+    teamEntryChecked = (async () => {
+      if (!userStore.user?.is_sub_account) return true
+      try {
+        const d = await teamsApi.detail()
+        return d.my_role != null
+      } catch {
+        return false
+      }
+    })()
+  }
+  return teamEntryChecked
+}
+const showTeam = ref(false)
+
 onMounted(async () => {
   showAgent.value = await checkAgent()
+  showTeam.value = await checkTeamEntry()
 })
 
 const groups = computed<UhdSidebarGroup[]>(() => {
@@ -71,6 +95,12 @@ const groups = computed<UhdSidebarGroup[]>(() => {
         { key: '/wallet', label: '我的钱包', icon: Wallet },
         { key: '/game/account/subscribe', label: '订阅服务', icon: CreditCard },
         { key: '/game/account/settings', label: '账号安全', icon: Settings },
+        // 团队管理（2026-11-18 重建批 2）：照友站侧栏「账户」组尾位
+        // （账号安全/邀请好友/团队管理）；本壳「我的」组即账户组，
+        // 邀请好友的侧栏位由侧栏统一单另行落位，本项先随账号安全之后。
+        ...(showTeam.value
+          ? [{ key: '/game/account/team', label: '团队管理', icon: Users }]
+          : []),
       ],
     },
     {

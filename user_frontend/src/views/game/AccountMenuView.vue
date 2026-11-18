@@ -97,6 +97,7 @@ import { useToast } from '@/composables/useToast'
 import { communityLinks, initCommunityLinks } from '@/composables/useCommunityLinks'
 import { authApi } from '@/api'
 import { getAgentMe } from '@/api/agent'
+import { teamsApi } from '@/api/team'
 import { walletApi } from '@/api/wallet'
 
 interface MenuItem {
@@ -131,6 +132,9 @@ const subStore = useSubscriptionStore()
 const subsLoaded = computed(() => subStore.loaded)
 const activeSub = computed(() => subStore.activeSub)
 const isAgent = ref(false)
+/** 团队入口可见性（与桌面侧栏同口径）：普通用户/团长显示；
+ * 团队成员（子账号形态）凭 my_role 显示，家庭子账号隐藏 */
+const showTeam = ref(false)
 /** 钱包余额（现有钱包接口；拿不到钱包行就不显金额，不假造） */
 const walletBalance = ref<string | null>(null)
 
@@ -201,6 +205,11 @@ const groups = computed<MenuGroup[]>(() => {
     { key: 'settings', label: '账号安全', to: '/game/account/settings' },
     { key: 'invite', label: '邀请好友', to: '/game/account/invite' },
   ]
+  // 团队管理（2026-11-18 重建批 2）：照友站「我的 · 账户」组序，
+  // 紧随邀请好友；可见性与桌面侧栏同口径（见 showTeam）
+  if (showTeam.value) {
+    account.push({ key: 'team', label: '团队管理', to: '/game/account/team' })
+  }
   if (isAgent.value) {
     account.push({ key: 'agent', label: '代理中心', to: '/game/agent' })
   }
@@ -255,6 +264,15 @@ onMounted(async () => {
   // 失败时回 { is_agent: false }，不能用「请求成功」当可见判据）
   const me = await getAgentMe()
   isAgent.value = me.is_agent === true
+  // 团队入口：非子账号直接显示；子账号查团队归属（成员显示、其余隐藏）
+  if (!userStore.user?.is_sub_account) {
+    showTeam.value = true
+  } else {
+    try {
+      const d = await teamsApi.detail()
+      showTeam.value = d.my_role != null
+    } catch { /* 团队接口不可用时不显示入口 */ }
+  }
 })
 </script>
 
