@@ -17,6 +17,10 @@ import {
   AlertTriangle, Brush, Coins, Database, Flag, HardDrive, Play, RefreshCw, Users,
 } from 'lucide-vue-next'
 import { PageHeader, SectionCard, StatTile, EmptyState } from '@/components/ui'
+import DataTable from '@/components/DataTable.vue'
+import type { DataColumn } from '@/components/DataTable.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import type { FilterConfig } from '@/components/FilterBar.vue'
 import {
   approvePoolMember, clearPoolMemberViolation, ejectPoolMember,
   fetchPoolCopies, fetchPoolJanitorConfig, fetchPoolMembers,
@@ -402,6 +406,51 @@ const REWARD_REASON_LABELS: Record<string, string> = {
   user_missing: '账号不存在',
   sub_account: '子账号不参与',
 }
+
+/** 批 2 收编：激励预览 / 结算批次 / 批次明细 / 条目副本四张表一律 DataTable，
+ * 列序、列宽与文案沿原裸表口径（原 stripe 斑马纹随收编退场，模具无斑马纹）。 */
+const previewColumns: DataColumn[] = [
+  { key: 'contributor', label: '贡献者', minWidth: 120, mobile: 'title' },
+  { key: 'plays', label: '计奖起播 / 原始', minWidth: 120 },
+  { key: 'active_days', label: '有效在线天', width: 100 },
+  { key: 'amount_usd', label: '应发金额（$）', width: 110 },
+  { key: 'cap_usd', label: '月封顶（$）', width: 100 },
+  { key: 'would_status', label: '预计走向', minWidth: 130 },
+]
+
+const settlementColumns: DataColumn[] = [
+  { key: 'period_key', label: '周期', width: 110, mobile: 'title' },
+  { key: 'status', label: '批次状态', width: 110 },
+  { key: 'counts', label: '成员 / 已发 / 冻结 / 不结', minWidth: 170 },
+  { key: 'paid_amount_total', label: '已发金额（$）', width: 110 },
+  { key: 'created_at', label: '建批时间', minWidth: 120 },
+  { key: 'actions', label: '操作', width: 100 },
+]
+
+const detailColumns: DataColumn[] = [
+  { key: 'contributor', label: '贡献者', minWidth: 120, mobile: 'title' },
+  { key: 'counted_plays', label: '计奖起播', width: 90 },
+  { key: 'active_days', label: '在线天', width: 80 },
+  { key: 'amount', label: '应发 / 实发（$）', width: 130 },
+  { key: 'transfer_bytes', label: '转存（对账）', width: 110 },
+  { key: 'status', label: '状态', minWidth: 140 },
+  { key: 'actions', label: '操作', width: 100 },
+]
+
+const copyColumns: DataColumn[] = [
+  { key: 'id', label: '副本 ID', width: 90, mobile: 'title' },
+  { key: 'item', label: '条目', minWidth: 160 },
+  { key: 'member_id', label: '成员', width: 90 },
+  { key: 'status', label: '状态', width: 100 },
+  { key: 'size_bytes', label: '大小', width: 110 },
+  { key: 'last_played_at', label: '最近播放', minWidth: 120 },
+  { key: 'actions', label: '操作', width: 100 },
+]
+
+/** 按条目查副本：FilterBar 自定义控件（条目 ID 输入框沿原口径，回车即查） */
+const copiesFilterConfigs = computed<FilterConfig[]>(() => [
+  { key: 'item_id', label: '条目 ID', type: 'custom', value: copiesItemId.value },
+])
 
 function normalizeRewardCfg(cfg: PoolRewardConfig): PoolRewardConfig {
   // 美金额键后端按字符串下发（Decimal 落库口径），表单要数字。
@@ -789,140 +838,104 @@ onMounted(() => {
             激励总开关{{ preview.reward_enabled ? '开' : '关' }}、真发{{ preview.payout_enabled ? '开' : '关（影子）' }}。
             预览只算账、不落行。
           </p>
-          <el-table :data="preview.rows" stripe class="pool-table">
-            <el-table-column label="贡献者" min-width="120">
-              <template #default="{ row }">{{ row.username ?? `#${row.user_id}` }}</template>
-            </el-table-column>
-            <el-table-column label="计奖起播 / 原始" min-width="120">
-              <template #default="{ row }">{{ row.counted_plays }} / {{ row.raw_plays }}</template>
-            </el-table-column>
-            <el-table-column label="有效在线天" width="100">
-              <template #default="{ row }">{{ row.active_days }}</template>
-            </el-table-column>
-            <el-table-column label="应发金额（$）" width="110">
-              <template #default="{ row }">{{ row.amount_usd }}</template>
-            </el-table-column>
-            <el-table-column label="月封顶（$）" width="100">
-              <template #default="{ row }">{{ row.cap_usd }}</template>
-            </el-table-column>
-            <el-table-column label="预计走向" min-width="130">
-              <template #default="{ row }">
-                {{ REWARD_STATUS_LABELS[row.would_status] ?? row.would_status }}
-                <span v-if="row.reason" class="pool-cell-sub">（{{ REWARD_REASON_LABELS[row.reason] ?? row.reason }}）</span>
-              </template>
-            </el-table-column>
-          </el-table>
+          <DataTable
+            v-if="preview.rows.length"
+            :rows="preview.rows"
+            :columns="previewColumns"
+            row-key="member_id"
+            class="pool-table"
+          >
+            <template #cell-contributor="{ row }">{{ row.username ?? `#${row.user_id}` }}</template>
+            <template #cell-plays="{ row }">{{ row.counted_plays }} / {{ row.raw_plays }}</template>
+            <template #cell-would_status="{ row }">
+              {{ REWARD_STATUS_LABELS[row.would_status] ?? row.would_status }}
+              <span v-if="row.reason" class="pool-cell-sub">（{{ REWARD_REASON_LABELS[row.reason] ?? row.reason }}）</span>
+            </template>
+          </DataTable>
           <EmptyState
             v-if="!preview.rows.length"
             compact :icon="Coins" title="这一期没有可结算的成员"
             description="还没有成员真正进过池，或本期没有任何起播计量。"
           />
         </template>
-        <el-table v-if="settlements.length" :data="settlements" stripe class="pool-table" style="margin-top: 14px">
-          <el-table-column label="周期" width="110">
-            <template #default="{ row }">{{ row.period_key }}</template>
-          </el-table-column>
-          <el-table-column label="批次状态" width="110">
-            <template #default="{ row }">
-              {{ row.status }}{{ row.shadow ? '（影子建批）' : '' }}
-            </template>
-          </el-table-column>
-          <el-table-column label="成员 / 已发 / 冻结 / 不结" min-width="170">
-            <template #default="{ row }">
-              {{ row.members }} / {{ row.paid }} / {{ row.frozen }} / {{ row.skipped }}
-            </template>
-          </el-table-column>
-          <el-table-column label="已发金额（$）" width="110">
-            <template #default="{ row }">{{ row.paid_amount_total }}</template>
-          </el-table-column>
-          <el-table-column label="建批时间" min-width="120">
-            <template #default="{ row }">{{ fmtTime(row.created_at) }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="100">
-            <template #default="{ row }">
-              <el-button size="small" :loading="detailsLoading" @click="viewDetails(row)">明细</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+        <DataTable
+          v-if="settlements.length"
+          :rows="settlements"
+          :columns="settlementColumns"
+          class="pool-table"
+          style="margin-top: 14px"
+        >
+          <template #cell-status="{ row }">
+            {{ row.status }}{{ row.shadow ? '（影子建批）' : '' }}
+          </template>
+          <template #cell-counts="{ row }">
+            {{ row.members }} / {{ row.paid }} / {{ row.frozen }} / {{ row.skipped }}
+          </template>
+          <template #cell-created_at="{ row }">{{ fmtTime(row.created_at) }}</template>
+          <template #cell-actions="{ row }">
+            <el-button size="small" :loading="detailsLoading" @click="viewDetails(row)">明细</el-button>
+          </template>
+        </DataTable>
         <template v-if="detailSettlementId != null">
           <p class="pool-dialog-text" style="margin-top: 12px">
             批次 #{{ detailSettlementId }} 明细：冻结行核对后可放行（按已计封顶数发）。
           </p>
-          <el-table :data="rewardDetails" stripe class="pool-table">
-            <el-table-column label="贡献者" min-width="120">
-              <template #default="{ row }">{{ row.username ?? `#${row.user_id}` }}</template>
-            </el-table-column>
-            <el-table-column label="计奖起播" width="90">
-              <template #default="{ row }">{{ row.counted_plays }}</template>
-            </el-table-column>
-            <el-table-column label="在线天" width="80">
-              <template #default="{ row }">{{ row.active_days }}</template>
-            </el-table-column>
-            <el-table-column label="应发 / 实发（$）" width="130">
-              <template #default="{ row }">{{ row.amount_usd }} / {{ row.credited_usd }}</template>
-            </el-table-column>
-            <el-table-column label="转存（对账）" width="110">
-              <template #default="{ row }">{{ fmtBytes(row.transfer_bytes) }}</template>
-            </el-table-column>
-            <el-table-column label="状态" min-width="140">
-              <template #default="{ row }">
-                {{ REWARD_STATUS_LABELS[row.status] ?? row.status }}
-                <span v-if="row.reason" class="pool-cell-sub">（{{ REWARD_REASON_LABELS[row.reason] ?? row.reason }}）</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="100">
-              <template #default="{ row }">
-                <el-button
-                  v-if="row.status === 'frozen'"
-                  size="small" type="primary" :loading="releasingId === row.id"
-                  @click="doReleaseDetail(row)"
-                >放行</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
+          <DataTable :rows="rewardDetails" :columns="detailColumns" class="pool-table">
+            <template #cell-contributor="{ row }">{{ row.username ?? `#${row.user_id}` }}</template>
+            <template #cell-amount="{ row }">{{ row.amount_usd }} / {{ row.credited_usd }}</template>
+            <template #cell-transfer_bytes="{ row }">{{ fmtBytes(row.transfer_bytes) }}</template>
+            <template #cell-status="{ row }">
+              {{ REWARD_STATUS_LABELS[row.status] ?? row.status }}
+              <span v-if="row.reason" class="pool-cell-sub">（{{ REWARD_REASON_LABELS[row.reason] ?? row.reason }}）</span>
+            </template>
+            <template #cell-actions="{ row }">
+              <el-button
+                v-if="row.status === 'frozen'"
+                size="small" type="primary" :loading="releasingId === row.id"
+                @click="doReleaseDetail(row)"
+              >放行</el-button>
+            </template>
+          </DataTable>
         </template>
       </SectionCard>
 
       <SectionCard title="按条目查副本" :icon="HardDrive" description="看某个条目的池副本都在哪些盘上；可单份手动下线（停发 + 尝试删文件）。">
-        <div class="pool-grant">
-          <el-input-number
-            v-model="copiesItemId"
-            :min="1"
-            :controls="false"
-            placeholder="条目 ID"
-            class="pool-grant-input"
-          />
-          <el-button :loading="copiesLoading" @click="loadCopies">查询</el-button>
-        </div>
-        <el-table v-if="copiesQueried" :data="copies" stripe class="pool-table">
-          <el-table-column label="副本 ID" width="90">
-            <template #default="{ row }">#{{ row.id }}</template>
-          </el-table-column>
-          <el-table-column label="条目" min-width="160">
-            <template #default="{ row }">{{ row.item_name ?? `#${row.item_id}` }}</template>
-          </el-table-column>
-          <el-table-column label="成员" width="90">
-            <template #default="{ row }">{{ row.member_id ?? '—' }}</template>
-          </el-table-column>
-          <el-table-column label="状态" width="100">
-            <template #default="{ row }">{{ row.status }}</template>
-          </el-table-column>
-          <el-table-column label="大小" width="110">
-            <template #default="{ row }">{{ fmtBytes(row.size_bytes) }}</template>
-          </el-table-column>
-          <el-table-column label="最近播放" min-width="120">
-            <template #default="{ row }">{{ fmtTime(row.last_played_at) }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="100">
-            <template #default="{ row }">
-              <el-button
-                v-if="row.status === 'ready' || row.status === 'orphan'"
-                size="small" type="danger" plain
-                @click="doReleaseCopy(row)"
-              >下线</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+        <FilterBar
+          :filters="copiesFilterConfigs"
+          :loading="copiesLoading"
+          query-button
+          @query="loadCopies"
+        >
+          <template #filter-item_id>
+            <el-input-number
+              v-model="copiesItemId"
+              :min="1"
+              :controls="false"
+              placeholder="条目 ID"
+              class="pool-grant-input"
+              @keyup.enter="loadCopies"
+            />
+          </template>
+        </FilterBar>
+        <DataTable
+          v-if="copiesQueried && copies.length"
+          :rows="copies"
+          :columns="copyColumns"
+          class="pool-table"
+        >
+          <template #cell-id="{ row }">#{{ row.id }}</template>
+          <template #cell-item="{ row }">{{ row.item_name ?? `#${row.item_id}` }}</template>
+          <template #cell-member_id="{ row }">{{ row.member_id ?? '—' }}</template>
+          <template #cell-size_bytes="{ row }">{{ fmtBytes(row.size_bytes) }}</template>
+          <template #cell-last_played_at="{ row }">{{ fmtTime(row.last_played_at) }}</template>
+          <template #cell-actions="{ row }">
+            <el-button
+              v-if="row.status === 'ready' || row.status === 'orphan'"
+              size="small" type="danger" plain
+              @click="doReleaseCopy(row)"
+            >下线</el-button>
+          </template>
+        </DataTable>
         <EmptyState
           v-if="copiesQueried && !copies.length"
           compact :icon="HardDrive" title="这个条目没有池副本"

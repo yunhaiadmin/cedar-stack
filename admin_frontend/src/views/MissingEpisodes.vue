@@ -9,10 +9,12 @@
  */
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { RefreshCw, Search } from 'lucide-vue-next'
+import { RefreshCw } from 'lucide-vue-next'
 import { PageHeader, SectionCard } from '@/components/ui'
 import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import type { FilterConfig } from '@/components/FilterBar.vue'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import { parseServerTime } from '@/utils/serverTime'
 import { toAdminError } from '@/utils/errorMessage'
@@ -115,6 +117,30 @@ async function load() {
 function search() {
   offset.value = 0
   void load()
+}
+
+/** 筛选一律 FilterBar（统一标准第 4 条）：剧名搜索是提交型（回车/点查询才查），
+ * 库与排序是草稿（改了不查、点查询才生效）；「重置」仍留在 FilterBar 旁。 */
+const missingFilterConfigs = computed<FilterConfig[]>(() => [
+  {
+    key: 'library', label: '媒体库', type: 'select', value: filters.libraryId, placeholder: '全部媒体库',
+    options: (summary.value?.libraries ?? []).map((lib) => ({
+      value: lib.id,
+      label: `${lib.name}（缺 ${lib.open_series} 部）`,
+    })),
+  },
+  {
+    key: 'sort', label: '排序', type: 'select', value: filters.sort, placeholder: '排序',
+    options: [
+      { value: 'missing_count', label: '缺得多的在前' },
+      { value: 'first_detected_at', label: '缺得最久的在前' },
+    ],
+  },
+])
+
+function onFilterChange(key: string, value: string | number | boolean) {
+  if (key === 'library') filters.libraryId = value === '' ? undefined : Number(value)
+  else if (key === 'sort') filters.sort = String(value) as typeof filters.sort
 }
 
 function resetFilters() {
@@ -253,37 +279,19 @@ onMounted(() => {
     </SectionCard>
 
     <SectionCard title="筛选">
-      <div class="filter-grid">
-        <el-input
-          v-model="filters.q"
-          placeholder="按剧名搜"
-          clearable
-          @keyup.enter="search"
-        />
-        <el-select
-          v-model="filters.libraryId"
-          placeholder="全部媒体库"
-          clearable
-        >
-          <el-option
-            v-for="lib in summary?.libraries ?? []"
-            :key="lib.id"
-            :label="`${lib.name}（缺 ${lib.open_series} 部）`"
-            :value="lib.id"
-          />
-        </el-select>
-        <el-select v-model="filters.sort" placeholder="排序">
-          <el-option label="缺得多的在前" value="missing_count" />
-          <el-option label="缺得最久的在前" value="first_detected_at" />
-        </el-select>
-        <div class="filter-actions">
-          <el-button type="primary" :loading="loading" @click="search">
-            <Search :size="14" /> 查询
-          </el-button>
-          <el-button @click="resetFilters">
-            <RefreshCw :size="14" /> 重置
-          </el-button>
-        </div>
+      <FilterBar
+        :search="{ value: filters.q, placeholder: '按剧名搜', mode: 'submit' }"
+        :filters="missingFilterConfigs"
+        :loading="loading"
+        @update:search="filters.q = $event"
+        @search-submit="search"
+        @query="search"
+        @filter-change="onFilterChange"
+      />
+      <div class="filter-actions">
+        <el-button @click="resetFilters">
+          <RefreshCw :size="14" /> 重置
+        </el-button>
       </div>
     </SectionCard>
 
@@ -340,16 +348,10 @@ onMounted(() => {
   line-height: 1.2;
 }
 
-.filter-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  align-items: center;
-}
-
 .filter-actions {
   display: flex;
   gap: 8px;
+  margin-top: 12px;
 }
 
 .mono {

@@ -3,6 +3,8 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Activity, AlertTriangle, Bell, Bot, Cpu, Database, Film, HardDrive, KeyRound, Radar, RefreshCw, Radio, ScanLine, Sparkles, Users, Zap } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard, StatTile } from '@/components/ui'
+import DataTable from '@/components/DataTable.vue'
+import type { DataColumn } from '@/components/DataTable.vue'
 import { fetchEmbyOverview, fetchMounts, fetchPanelHealth, fetchSessions, fetchTgBotStatus } from '@/api/admin'
 import {
   fetchAlertRules,
@@ -185,6 +187,18 @@ const alertTestSending = ref(false)
 const alertRules = ref<AlertRule[]>([])
 const alertAllowedChannels = ref<string[]>([])
 const alertRulesLoading = ref(false)
+
+/** 告警规则表（批 2 收编 DataTable：列序/列宽沿原裸表口径，操作列固定右） */
+const alertRuleColumns: DataColumn[] = [
+  { key: 'event_type', label: '事件', minWidth: 140, mobile: 'title' },
+  { key: 'name', label: '名称', minWidth: 120 },
+  { key: 'threshold', label: '阈值', width: 90 },
+  { key: 'severity', label: '严重度', width: 80 },
+  { key: 'channels', label: '渠道', minWidth: 120 },
+  { key: 'cooldown_sec', label: '冷却', width: 90 },
+  { key: 'is_active', label: '启用', width: 70 },
+  { key: 'actions', label: '操作', width: 80, fixed: 'right' },
+]
 const alertRuleDialogVisible = ref(false)
 const alertRuleSaving = ref(false)
 const alertEditingRule = ref<AlertRule | null>(null)
@@ -644,35 +658,26 @@ onUnmounted(() => {
       <!-- 规则 -->
       <div class="alert-block">
         <div class="alert-block-title">告警规则</div>
-        <el-table v-if="alertRules.length" :data="alertRules" size="small" class="alert-table">
-          <el-table-column prop="event_type" label="事件" min-width="140">
-            <template #default="{ row }">{{ alertEventTypeLabel(row.event_type) }}</template>
-          </el-table-column>
-          <el-table-column prop="name" label="名称" min-width="120" />
-          <el-table-column label="阈值" width="90">
-            <template #default="{ row }">{{ row.threshold }}</template>
-          </el-table-column>
-          <el-table-column label="严重度" width="80">
-            <template #default="{ row }">
-              <span :class="['sev-tag', `sev-tag--${row.severity}`]">{{ alertSeverityLabel(row.severity) }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="渠道" min-width="120">
-            <template #default="{ row }">{{ alertChannelLabels(row.channels) }}</template>
-          </el-table-column>
-          <el-table-column label="冷却" width="90">
-            <template #default="{ row }">{{ alertCooldownLabel(row.cooldown_sec) }}</template>
-          </el-table-column>
-          <el-table-column label="启用" width="70">
-            <template #default="{ row }">{{ row.is_active ? '开' : '关' }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="80" fixed="right">
-            <template #default="{ row }">
-              <el-button link type="primary" @click="openAlertRuleDialog(row)">编辑</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-        <EmptyState v-else-if="!alertRulesLoading" compact :icon="Bell" title="暂无告警规则" description="系统会自动生成一套默认告警规则，点右上角「重新检查」就能看到。" />
+        <DataTable
+          :rows="alertRules"
+          :columns="alertRuleColumns"
+          :loading="alertRulesLoading"
+          class="alert-table"
+        >
+          <template #cell-event_type="{ row }">{{ alertEventTypeLabel(row.event_type) }}</template>
+          <template #cell-severity="{ row }">
+            <span :class="['sev-tag', `sev-tag--${row.severity}`]">{{ alertSeverityLabel(row.severity) }}</span>
+          </template>
+          <template #cell-channels="{ row }">{{ alertChannelLabels(row.channels) }}</template>
+          <template #cell-cooldown_sec="{ row }">{{ alertCooldownLabel(row.cooldown_sec) }}</template>
+          <template #cell-is_active="{ row }">{{ row.is_active ? '开' : '关' }}</template>
+          <template #cell-actions="{ row }">
+            <el-button link type="primary" @click="openAlertRuleDialog(row)">编辑</el-button>
+          </template>
+          <template #empty>
+            <EmptyState compact :icon="Bell" title="暂无告警规则" description="系统会自动生成一套默认告警规则，点右上角「重新检查」就能看到。" />
+          </template>
+        </DataTable>
       </div>
 
       <!-- 记录 -->

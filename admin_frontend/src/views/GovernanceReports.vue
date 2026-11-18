@@ -17,6 +17,8 @@ import { EmptyState, PageHeader, SectionCard } from '@/components/ui'
 import { parseServerTime } from '@/utils/serverTime'
 import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import type { FilterConfig } from '@/components/FilterBar.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useQueryFilter } from '@/composables/useQueryFilter'
 import {
@@ -80,6 +82,11 @@ const loadError = ref('')
 const statusFilter = ref('')
 // 深链：/governance?status=accepted 直接落到对应筛选
 useQueryFilter(statusFilter, 'status', load)
+
+/** 筛选一律 FilterBar（统一标准第 4 条）：状态单选钮走自定义控件原样保留 */
+const reportFilterConfigs = computed<FilterConfig[]>(() => [
+  { key: 'status', label: '按状态筛选', type: 'custom', value: statusFilter.value },
+])
 
 const drawerVisible = ref(false)
 const current = ref<GovernanceReportRow | null>(null)
@@ -219,9 +226,13 @@ async function submitDecision() {
 
     <SectionCard :title="sectionTitle" :icon="Flag" :meta="loading ? '' : `${list.length} 条`" flush>
       <div class="list-bar">
-        <el-radio-group v-model="statusFilter" aria-label="按状态筛选" @change="load">
-          <el-radio-button v-for="t in STATUS_TABS" :key="t.value" :value="t.value">{{ t.label }}</el-radio-button>
-        </el-radio-group>
+        <FilterBar :filters="reportFilterConfigs">
+          <template #filter-status>
+            <el-radio-group v-model="statusFilter" aria-label="按状态筛选" @change="load">
+              <el-radio-button v-for="t in STATUS_TABS" :key="t.value" :value="t.value">{{ t.label }}</el-radio-button>
+            </el-radio-group>
+          </template>
+        </FilterBar>
         <span v-if="!canWrite" class="muted">当前为只读角色：可以查看，不能判定</span>
       </div>
 

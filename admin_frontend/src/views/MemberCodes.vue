@@ -23,10 +23,10 @@
  * （模式＋关闭提示＋注册限流），同一配置键只留一处写入口；本页只留一行跳转提示。
  * 生成弹窗改为两步向导：「你想送什么」→「码的用途」，机械项收进「高级」折叠。
  */
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  AlertTriangle, CalendarPlus, Copy, KeySquare, Layers, Plus, RefreshCw, Search, ShieldAlert, TimerOff, Trash2,
+  AlertTriangle, CalendarPlus, Copy, KeySquare, Layers, Plus, RefreshCw, ShieldAlert, TimerOff, Trash2,
 } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard, StatTile } from '@/components/ui'
 import {
@@ -44,6 +44,8 @@ import type { CodeStats, RegistrationCode } from '@/types'
 import { useRealmStore } from '@/stores/realm'
 import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import type { AppliedFilter, FilterConfig } from '@/components/FilterBar.vue'
 
 // 本组件原是「注册码 / 会员卡码」双变体共用（variant prop）；注册码
 // 分区已随注册码下线（2026-11-15）取消，只剩会员卡码一态：列表整体
@@ -122,6 +124,22 @@ const columns = computed<DataColumn[]>(() => [
   { key: 'used_by', label: '使用者', minWidth: 150, mobile: 'hide' },
   { key: 'actions', label: '操作', width: 210, fixed: 'right', align: 'right' },
 ])
+
+/** 核销流水小表（批 2 收编 DataTable：列与空态文案沿原裸表口径） */
+const flowColumns: DataColumn[] = [
+  { key: 'username', label: '使用者', minWidth: 160, mobile: 'title' },
+  { key: 'redeemed_at', label: '核销时间', minWidth: 160 },
+]
+
+/** 白名单账号表（批 2 收编 DataTable：状态列由 is_permanent_active 派生，见模板插槽） */
+const whitelistColumns: DataColumn[] = [
+  { key: 'username', label: '账号', minWidth: 140, mobile: 'title' },
+  { key: 'code', label: '核销的白名单码', minWidth: 170 },
+  { key: 'view_permanent', label: '查看凭证', width: 100 },
+  { key: 'subscription_longterm', label: '会员订阅', width: 100 },
+  { key: 'state', label: '状态', width: 100 },
+  { key: 'actions', label: '操作', width: 100 },
+]
 
 /** 归属服展示名（未标注 = 升级前的老会员卡码，按当前服算） */
 function realmLabel(row: RegistrationCode): string {
@@ -213,30 +231,70 @@ onMounted(() => {
   loadWhitelist()
 })
 
-// 关键字搜索防抖：输入停 400ms 自动查询（回车 / 「查询」按钮仍然立即查）
-let keywordTimer: ReturnType<typeof setTimeout> | undefined
-watch(
-  () => filters.value.keyword,
-  (kw) => {
-    clearTimeout(keywordTimer)
-    // 清空 / 重置 / 回车已经立即按这个关键字查过了：不再补一次
-    if (kw === lastKeyword) return
-    keywordTimer = setTimeout(load, 400)
-  },
-)
-onUnmounted(() => clearTimeout(keywordTimer))
-
 const hasFilter = computed(() => !!(filters.value.code_type || filters.value.state || filters.value.keyword))
 
 function resetFilters() {
   filters.value = { code_type: 0, state: '', keyword: '' }
-  clearTimeout(keywordTimer)
   load()
 }
 
-/** 回车 / 清空 / 点「查询」：立即查，并取消还在等的防抖 */
-function searchNow() {
-  clearTimeout(keywordTimer)
+/** 筛选一律 FilterBar（统一标准第 4 条）：关键字 400ms 防抖自动查（组件内防抖），
+ * 点「查询」立即按当前草稿查；chips 只反映已提交条件（load 时落定的 filters）。 */
+const codeFilterConfigs = computed<FilterConfig[]>(() => [
+  {
+    key: 'code_type', label: '类型', type: 'select', value: filters.value.code_type, placeholder: '全部类型',
+    options: [
+      { value: 0, label: '全部类型' },
+      { value: 2, label: '续期码' },
+      { value: 3, label: '白名单码' },
+    ],
+  },
+  {
+    key: 'state', label: '状态', type: 'select', value: filters.value.state, placeholder: '全部状态',
+    options: [
+      { value: '', label: '全部状态' },
+      { value: 'active', label: '可用' },
+      { value: 'disabled', label: '已停用' },
+      { value: 'expired', label: '已过期' },
+      { value: 'used_up', label: '已用尽' },
+    ],
+  },
+])
+
+const appliedFilters = computed<AppliedFilter[]>(() => {
+  const items: AppliedFilter[] = []
+  if (filters.value.keyword) {
+    items.push({ key: 'keyword', label: '关键词', text: filters.value.keyword })
+  }
+  if (filters.value.code_type) {
+    items.push({
+      key: 'code_type', label: '类型',
+      text: TYPE_META[filters.value.code_type]?.label ?? String(filters.value.code_type),
+    })
+  }
+  if (filters.value.state) {
+    items.push({ key: 'state', label: '状态', text: STATE_LABEL[filters.value.state] ?? filters.value.state })
+  }
+  return items
+})
+
+function onSearchUpdate(value: string) {
+  filters.value.keyword = value
+  if (value !== lastKeyword) load()
+}
+
+function onFilterChange(key: string, value: string | number | boolean) {
+  if (key === 'code_type') filters.value.code_type = value === '' ? 0 : Number(value)
+  else if (key === 'state') filters.value.state = String(value)
+  else return
+  load()
+}
+
+function onRemoveChip(key: string) {
+  if (key === 'keyword') filters.value.keyword = ''
+  else if (key === 'code_type') filters.value.code_type = 0
+  else if (key === 'state') filters.value.state = ''
+  else return
   load()
 }
 
@@ -540,34 +598,18 @@ function usedByNames(row: RegistrationCode): string {
       flush
     >
       <div class="view-toolbar">
-        <div class="view-toolbar__filters">
-          <el-input
-            v-model="filters.keyword"
-            class="f-search"
-            placeholder="搜索会员卡码 / 备注 / 指名账号"
-            clearable
-            @keyup.enter="searchNow"
-            @clear="searchNow"
-          >
-            <template #prefix><Search :size="14" /></template>
-          </el-input>
-          <el-select v-model="filters.code_type" class="f-select" placeholder="全部类型" @change="load">
-            <el-option :value="0" label="全部类型" />
-            <el-option :value="2" label="续期码" />
-            <el-option :value="3" label="白名单码" />
-          </el-select>
-          <el-select v-model="filters.state" class="f-select" placeholder="全部状态" @change="load">
-            <el-option value="" label="全部状态" />
-            <el-option value="active" label="可用" />
-            <el-option value="disabled" label="已停用" />
-            <el-option value="expired" label="已过期" />
-            <el-option value="used_up" label="已用尽" />
-          </el-select>
-        </div>
-        <div class="view-toolbar__actions">
-          <el-button v-if="hasFilter" text @click="resetFilters">清空筛选</el-button>
-          <el-button type="primary" :icon="Search" @click="searchNow">查询</el-button>
-        </div>
+        <FilterBar
+          :search="{ value: filters.keyword, placeholder: '搜索会员卡码 / 备注 / 指名账号', mode: 'debounced', debounceMs: 400 }"
+          :filters="codeFilterConfigs"
+          :applied-filters="appliedFilters"
+          :loading="loading"
+          query-button
+          @update:search="onSearchUpdate"
+          @query="load"
+          @filter-change="onFilterChange"
+          @remove-chip="onRemoveChip"
+          @clear="resetFilters"
+        />
       </div>
 
       <EmptyState v-if="loadError && !codes.length" :icon="AlertTriangle" title="会员卡码加载失败" description="网络或服务暂时不可用，稍后重试。">
@@ -653,12 +695,15 @@ function usedByNames(row: RegistrationCode): string {
 
     <!-- 核销流水：谁在何时核销了这张码 -->
     <el-dialog v-model="flowVisible" :title="`核销流水 · ${flowCode}`" width="min(480px, 92vw)">
-      <el-table v-loading="flowLoading" :data="flowItems" size="small" empty-text="还没有人用过这张码">
-        <el-table-column prop="username" label="使用者" min-width="160" />
-        <el-table-column label="核销时间" min-width="160">
-          <template #default="{ row }">{{ fmtDateTime(row.redeemed_at) }}</template>
-        </el-table-column>
-      </el-table>
+      <DataTable
+        :rows="flowItems"
+        :columns="flowColumns"
+        :loading="flowLoading"
+        row-key="user_id"
+        empty="还没有人用过这张码"
+      >
+        <template #cell-redeemed_at="{ row }">{{ fmtDateTime(row.redeemed_at) }}</template>
+      </DataTable>
       <template #footer>
         <el-button type="primary" @click="flowVisible = false">关闭</el-button>
       </template>
@@ -669,33 +714,29 @@ function usedByNames(row: RegistrationCode): string {
         核销过白名单码的账号：查看凭证与会员订阅均为长期有效、不用续费。
         回收后两处一并到期（账号自己购买/续费的有限期权益不受影响）。
       </p>
-      <el-table v-loading="whitelistLoading" :data="whitelistAccounts" size="small" empty-text="暂无白名单账号">
-        <el-table-column prop="username" label="账号" min-width="140" />
-        <el-table-column prop="code" label="核销的白名单码" min-width="170" />
-        <el-table-column label="查看凭证" width="100">
-          <template #default="{ row }">{{ row.view_permanent ? '永久' : '—' }}</template>
-        </el-table-column>
-        <el-table-column label="会员订阅" width="100">
-          <template #default="{ row }">{{ row.subscription_longterm ? '长期' : '—' }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="100">
-          <template #default="{ row }">{{ row.is_permanent_active ? '永久生效中' : '已回收' }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="100">
-          <template #default="{ row }">
-            <el-button
-              v-if="row.is_permanent_active"
-              size="small"
-              type="danger"
-              plain
-              :loading="revokeBusyId === row.user_id"
-              @click="onRevokeWhitelist(row)"
-            >
-              回收
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+      <DataTable
+        :rows="whitelistAccounts"
+        :columns="whitelistColumns"
+        :loading="whitelistLoading"
+        row-key="user_id"
+        empty="暂无白名单账号"
+      >
+        <template #cell-view_permanent="{ row }">{{ row.view_permanent ? '永久' : '—' }}</template>
+        <template #cell-subscription_longterm="{ row }">{{ row.subscription_longterm ? '长期' : '—' }}</template>
+        <template #cell-state="{ row }">{{ row.is_permanent_active ? '永久生效中' : '已回收' }}</template>
+        <template #cell-actions="{ row }">
+          <el-button
+            v-if="row.is_permanent_active"
+            size="small"
+            type="danger"
+            plain
+            :loading="revokeBusyId === row.user_id"
+            @click="onRevokeWhitelist(row)"
+          >
+            回收
+          </el-button>
+        </template>
+      </DataTable>
     </SectionCard>
   </div>
 </template>
@@ -742,18 +783,9 @@ function usedByNames(row: RegistrationCode): string {
 
 /* ---------- 工具条：筛选在左、动作在右 ---------- */
 .view-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px 12px;
-  flex-wrap: wrap;
   padding: 4px 20px 14px;
   border-bottom: 1px solid var(--au-border);
 }
-.view-toolbar__filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
-.view-toolbar__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.f-search { width: 240px; }
-.f-select { width: 130px; }
 
 .flush-table :deep(.dt-cards) { padding: 12px 12px 8px; }
 
@@ -808,9 +840,6 @@ function usedByNames(row: RegistrationCode): string {
 
 @media (max-width: 768px) {
   .view-toolbar { padding: 2px 16px 12px; }
-  .view-toolbar__filters > .f-search { flex: 1 1 100%; width: auto; }
-  .view-toolbar__filters > .f-select { flex: 1 1 120px; width: auto; }
-  .view-toolbar__actions { width: 100%; justify-content: flex-end; }
   .type-row { padding: 10px 16px; }
 }
 </style>

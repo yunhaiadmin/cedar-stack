@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /** 工单管理：列表筛选/回复/关闭，回复联动站内通知 */
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Inbox, RefreshCw, Send, Ticket } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard } from '@/components/ui'
@@ -9,6 +9,8 @@ import type { TicketMessageRow, TicketRow } from '@/types'
 import { useQueryFilter } from '@/composables/useQueryFilter'
 import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import type { FilterConfig } from '@/components/FilterBar.vue'
 
 /** 工单分类中文名：后端 category 原值 → 展示名；
  * emby/account/subscription/payment/other 是「其他反馈」的问题类型，
@@ -45,6 +47,11 @@ const loadError = ref('')
 const statusFilter = ref('')
 // 深链：仪表盘「待处理工单」/ 命令面板跳过来时带的就是这个筛选（Phase 5）
 useQueryFilter(statusFilter, 'status', load)
+
+/** 筛选一律 FilterBar（统一标准第 4 条）：状态单选钮走自定义控件原样保留 */
+const ticketFilterConfigs = computed<FilterConfig[]>(() => [
+  { key: 'status', label: '按状态筛选', type: 'custom', value: statusFilter.value },
+])
 
 const drawerVisible = ref(false)
 const current = ref<TicketRow | null>(null)
@@ -177,11 +184,13 @@ function statusBadge(status: string): string {
 
     <SectionCard title="工单列表" :icon="Ticket" :meta="loading ? '' : `${list.length} 条`" flush>
       <div class="list-bar">
-        <div class="toolbar">
-          <el-radio-group v-model="statusFilter" aria-label="按状态筛选" @change="load">
-            <el-radio-button v-for="t in STATUS_TABS" :key="t.value" :value="t.value">{{ t.label }}</el-radio-button>
-          </el-radio-group>
-        </div>
+        <FilterBar :filters="ticketFilterConfigs">
+          <template #filter-status>
+            <el-radio-group v-model="statusFilter" aria-label="按状态筛选" @change="load">
+              <el-radio-button v-for="t in STATUS_TABS" :key="t.value" :value="t.value">{{ t.label }}</el-radio-button>
+            </el-radio-group>
+          </template>
+        </FilterBar>
       </div>
 
       <DataTable

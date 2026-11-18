@@ -13,10 +13,12 @@
  */
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { RefreshCw, Search } from 'lucide-vue-next'
+import { RefreshCw } from 'lucide-vue-next'
 import { PageHeader, SectionCard } from '@/components/ui'
 import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import type { FilterConfig } from '@/components/FilterBar.vue'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import { parseServerTime } from '@/utils/serverTime'
 import { toAdminError } from '@/utils/errorMessage'
@@ -162,6 +164,27 @@ function search() {
   void load()
 }
 
+/** 筛选一律 FilterBar（统一标准第 4 条）：本页是草稿型——下拉/输入只改草稿，
+ * 点「查询」才发请求（不挂 chips，chips 只反映已提交条件）；「重置」仍留在
+ * FilterBar 旁，口径与原来一致（清草稿 + 立即查）。 */
+const auditFilterConfigs = computed<FilterConfig[]>(() => [
+  { key: 'source', label: '来源', type: 'select', value: filters.source, placeholder: '全部来源', options: SOURCE_OPTIONS },
+  { key: 'category', label: '动作', type: 'select', value: filters.category, placeholder: '全部动作', options: CATEGORY_OPTIONS },
+  { key: 'outcome', label: '结果', type: 'select', value: filters.outcome, placeholder: '全部结果', options: OUTCOME_OPTIONS },
+  { key: 'userId', label: '用户 ID', type: 'custom', value: filters.userId },
+  { key: 'memberId', label: '池成员 ID', type: 'custom', value: filters.memberId },
+  { key: 'bindingId', label: '绑定 ID', type: 'custom', value: filters.bindingId },
+  { key: 'itemId', label: '条目 ID', type: 'custom', value: filters.itemId },
+  { key: 'start', label: '开始时间', type: 'custom', value: filters.start },
+  { key: 'end', label: '结束时间', type: 'custom', value: filters.end },
+])
+
+function onFilterChange(key: string, value: string | number | boolean) {
+  if (key === 'source') filters.source = String(value)
+  else if (key === 'category') filters.category = String(value)
+  else if (key === 'outcome') filters.outcome = String(value)
+}
+
 function resetFilters() {
   filters.source = ''
   filters.category = ''
@@ -196,55 +219,48 @@ onMounted(() => void load())
     />
 
     <SectionCard title="筛选">
-      <div class="filter-grid">
-        <el-select v-model="filters.source" placeholder="全部来源">
-          <el-option
-            v-for="opt in SOURCE_OPTIONS"
-            :key="opt.value"
-            :label="opt.label"
-            :value="opt.value"
+      <FilterBar
+        :filters="auditFilterConfigs"
+        :loading="loading"
+        query-button
+        @filter-change="onFilterChange"
+        @query="search"
+      >
+        <template #filter-userId>
+          <el-input v-model="filters.userId" placeholder="用户 ID" clearable class="f-id" />
+        </template>
+        <template #filter-memberId>
+          <el-input v-model="filters.memberId" placeholder="池成员 ID" clearable class="f-id" />
+        </template>
+        <template #filter-bindingId>
+          <el-input v-model="filters.bindingId" placeholder="绑定 ID" clearable class="f-id" />
+        </template>
+        <template #filter-itemId>
+          <el-input v-model="filters.itemId" placeholder="条目 ID" clearable class="f-id" />
+        </template>
+        <template #filter-start>
+          <el-date-picker
+            v-model="filters.start"
+            type="datetime"
+            value-format="YYYY-MM-DDTHH:mm:ss"
+            placeholder="开始时间"
+            class="f-date"
           />
-        </el-select>
-        <el-select v-model="filters.category" placeholder="全部动作">
-          <el-option
-            v-for="opt in CATEGORY_OPTIONS"
-            :key="opt.value"
-            :label="opt.label"
-            :value="opt.value"
+        </template>
+        <template #filter-end>
+          <el-date-picker
+            v-model="filters.end"
+            type="datetime"
+            value-format="YYYY-MM-DDTHH:mm:ss"
+            placeholder="结束时间（不含）"
+            class="f-date"
           />
-        </el-select>
-        <el-select v-model="filters.outcome" placeholder="全部结果">
-          <el-option
-            v-for="opt in OUTCOME_OPTIONS"
-            :key="opt.value"
-            :label="opt.label"
-            :value="opt.value"
-          />
-        </el-select>
-        <el-input v-model="filters.userId" placeholder="用户 ID" clearable />
-        <el-input v-model="filters.memberId" placeholder="池成员 ID" clearable />
-        <el-input v-model="filters.bindingId" placeholder="绑定 ID" clearable />
-        <el-input v-model="filters.itemId" placeholder="条目 ID" clearable />
-        <el-date-picker
-          v-model="filters.start"
-          type="datetime"
-          value-format="YYYY-MM-DDTHH:mm:ss"
-          placeholder="开始时间"
-        />
-        <el-date-picker
-          v-model="filters.end"
-          type="datetime"
-          value-format="YYYY-MM-DDTHH:mm:ss"
-          placeholder="结束时间（不含）"
-        />
-        <div class="filter-actions">
-          <el-button type="primary" :loading="loading" @click="search">
-            <Search :size="14" /> 查询
-          </el-button>
-          <el-button @click="resetFilters">
-            <RefreshCw :size="14" /> 重置
-          </el-button>
-        </div>
+        </template>
+      </FilterBar>
+      <div class="filter-actions">
+        <el-button @click="resetFilters">
+          <RefreshCw :size="14" /> 重置
+        </el-button>
       </div>
     </SectionCard>
 
@@ -296,16 +312,13 @@ onMounted(() => void load())
   gap: 16px;
 }
 
-.filter-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  align-items: center;
-}
+.f-id { width: 140px; }
+.f-date { width: 210px; }
 
 .filter-actions {
   display: flex;
   gap: 8px;
+  margin-top: 12px;
 }
 
 .mono {
