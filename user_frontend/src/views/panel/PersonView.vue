@@ -7,9 +7,7 @@
         {{ error }}<br />
         <button type="button" class="pv-retry" :disabled="loading" @click="load">{{ loading ? '正在重试…' : '重试' }}</button>
       </div>
-      <div v-else-if="loading" class="pv-loading" role="status">正在加载…</div>
-
-      <template v-else-if="detail">
+      <template v-else-if="detail && !loading">
         <header class="pv-head">
           <span class="pv-avatar">
             <img v-if="detail.image && !avatarBroken" :src="detail.image" alt="" @error="avatarBroken = true" />
@@ -159,8 +157,7 @@ onMounted(load)
   font-weight: var(--uhd-fw-bold);
   color: var(--uhd-s-text-2);
 }
-.pv-error,
-.pv-loading {
+.pv-error {
   margin-top: 36px;
   font-size: 15px;
   color: var(--uhd-s-text-2);
