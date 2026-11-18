@@ -31,8 +31,10 @@ const props = withDefaults(
     themeFollow?: boolean
     /** 滚动收窄（D1-11，原站实测）：开启后整条容器 max-width 1360，滚动 >40px 收窄到 760（.5s ease-sheet）；缺省关，现有消费者零影响 */
     shrinkOnScroll?: boolean
+    /** 品牌标彩虹旋转（友站 prism-icon 6s 口径）：缺省关，仅落地页首屏开启，透传给 BrandMark 的 spin */
+    brandSpin?: boolean
   }>(),
-  { activeKey: '', brand: 'Aetrix', brandSub: 'SERVICE', ctaText: '', themeFollow: false, shrinkOnScroll: false },
+  { activeKey: '', brand: 'Aetrix', brandSub: 'SERVICE', ctaText: '', themeFollow: false, shrinkOnScroll: false, brandSpin: false },
 )
 
 const emit = defineEmits<{ select: [key: string]; cta: [] }>()
@@ -79,7 +81,7 @@ function onNavKey(event: KeyboardEvent) {
     }"
   >
     <span class="uhd-nav__brand">
-      <span class="uhd-nav__logo"><BrandMark /></span>
+      <span class="uhd-nav__logo"><BrandMark :spin="props.brandSpin" /></span>
       <span class="uhd-nav__brand-text">
         <span class="uhd-nav__brand-name">{{ props.brand }}</span>
         <span class="uhd-nav__brand-sub">{{ props.brandSub }}</span>

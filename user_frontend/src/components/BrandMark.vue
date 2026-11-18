@@ -13,8 +13,13 @@ import { useId } from 'vue'
  * variant="play"：只渲染彩虹播放三角本体（无 A 字母、无编织 clip，viewBox 收紧
  * 到三角自身 bbox），供会员卡右上用——友站同位只有一颗小三角标（2026-11-18
  * 按友站干净帧实测改版，量值见 UhdMemberCard 的 .uhd-member__logo 注）。
+ *
+ * spin：彩虹渐变 6s 匀速旋转（友站 prism-icon 的 conic 旋转口径，2026-11-18
+ * 官网首屏对齐）——本标是 SVG 线性渐变、无 CSS conic 对应件，以 SMIL
+ * animateTransform 旋转渐变向量实现等效观感；默认关，仅官网首屏的导航标
+ * 显式开启，减动效时由使用处不传 spin 降级（SMIL 不吃 CSS animation:none）。
  */
-withDefaults(defineProps<{ variant?: 'full' | 'play' }>(), { variant: 'full' })
+withDefaults(defineProps<{ variant?: 'full' | 'play'; spin?: boolean }>(), { variant: 'full', spin: false })
 const uid = useId().replace(/[^a-zA-Z0-9-]/g, '')
 const gradId = `brandmark-rainbow-${uid}`
 const clipId = `brandmark-weave-${uid}`
@@ -30,6 +35,15 @@ const clipId = `brandmark-weave-${uid}`
   >
     <defs>
       <linearGradient :id="gradId" x1="0" y1="0" x2="1" y2="0">
+        <animateTransform
+          v-if="spin"
+          attributeName="gradientTransform"
+          type="rotate"
+          from="0 0.5 0.5"
+          to="360 0.5 0.5"
+          dur="6s"
+          repeatCount="indefinite"
+        />
         <stop offset="0" stop-color="#ff2442" />
         <stop offset="0.25" stop-color="#ff8a1e" />
         <stop offset="0.45" stop-color="#ffcf00" />
