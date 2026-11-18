@@ -307,12 +307,10 @@ class WebUser(Base):
     # 管理员角色（v2.26.0，见 backend/admin_roles.py）：super / operator / viewer
     # 空值 = 升级前的老管理员 → 按 super 处理（不改权、也不会「没人进得去后台」）
     admin_role = Column(String(20), nullable=True)
-    # 遗留列，待 DROP：发言奖励小数累计三列。发言积分已随货币下线
-    # （backend/points.py 已删、points 列已摘），三列全仓无业务读写点，
-    # 列定义先保留，DROP 由后续收尾执行。
-    chat_frac_cents = Column(Integer, default=0, nullable=False, server_default="0")
-    chat_day_cents = Column(Integer, default=0, nullable=False, server_default="0")
-    chat_day = Column(String(10), nullable=True)
+    # 发言奖励小数累计三列（chat_frac_cents / chat_day_cents /
+    # chat_day）定义已于 2026-11-19 删除：发言积分已随货币下线
+    # （backend/points.py 已删、points 列已摘），三列全仓无业务
+    # 读写点，生产列 DROP 由后续收尾执行。
     # 注册渠道（v2.44.0 归因）：admin=管理员创建 / code=卡密注册 /
     # invitation=邀请码注册 / open=开放注册。
     # 空值 = 升级前的存量用户（当时没记，不硬猜），后台显示为「未记录」。
@@ -335,12 +333,10 @@ class WebUser(Base):
     # 2026-11-14 删除：资格已全量折算成订阅时间（折算执行档案在
     # 生产 /data/welfare_conversion/，防重标记 welfare_conversion_
     # executed_at 保留），不再有任何裁决读这四列。
-    # 遗留列，待 DROP：连签断签保护用量（2026-11-09 上线、同日随保号
-    # 改活力口径回滚）。streak_forgive_ym / streak_forgive_used 两列
-    # 全仓无业务读写点（economy._do_checkin_core 已撤 forgiven 分支），
-    # 列定义先保留，DROP 由后续收尾执行；老库已有数值原样留着，无副作用。
-    streak_forgive_ym = Column(String(6), nullable=True)
-    streak_forgive_used = Column(Integer, default=0, nullable=False, server_default="0")
+    # 连签断签保护用量两列（streak_forgive_ym / streak_forgive_used，
+    # 2026-11-09 上线、同日随保号改活力口径回滚）定义已于 2026-11-19
+    # 删除：两列全仓无业务读写点（economy._do_checkin_core 已撤
+    # forgiven 分支），生产列 DROP 由后续收尾执行。
     # 观影碑时长榜隐私：True=允许上榜（默认），False=不上榜
     show_on_leaderboard = Column(Boolean, default=True, nullable=False, server_default="1")
     # TG 私聊通知偏好（2026-11-08 私聊通报优化批）：四类各一个开关，
@@ -425,9 +421,8 @@ class SubscriptionPlan(Base):
     name = Column(String(100), nullable=False)
     description = Column(Text)
     price = Column(Numeric(10, 2), nullable=False)
-    # 遗留列，待 DROP：积分价（积分体系已下线），全仓无业务读写点，
-    # 列定义先保留，DROP 由后续收尾执行。
-    points_price = Column(Numeric(10, 2), nullable=True)
+    # 积分价列（points_price）定义已于 2026-11-19 删除：积分体系
+    # 已下线，全仓无业务读写点，生产列 DROP 由后续收尾执行。
     duration_days = Column(Integer, nullable=False)
     features = Column(JSON)  # 特性列表
     # 订阅分档权益表：{权益键: 值}，NULL/缺键 = 该项跟随全站默认（判定单口见 backend/entitlements.py）。
