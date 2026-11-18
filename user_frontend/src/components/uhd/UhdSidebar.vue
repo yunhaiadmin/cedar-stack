@@ -12,6 +12,9 @@ export interface UhdSidebarItem {
   key: string
   label: string
   icon?: Component
+  /** 外部链接（站内无对应路由时用，如使用说明→官网文档）：
+     点击新开标签页，不走路由、不记激活 */
+  href?: string
 }
 export interface UhdSidebarGroup {
   title?: string

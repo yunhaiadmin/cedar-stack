@@ -1,5 +1,8 @@
 <template>
-  <div class="am-page">
+  <!-- 桌面并壳（2026-11-18 侧栏统一单，M-2）：≥769px 进 UhdAccountLayout
+       侧栏壳，与其余用户中心页同壳；手机端 ShellGate 原样透传，版式不动 -->
+  <UhdAccountShellGate>
+    <div class="am-page">
     <!-- 页头品牌行已删（2026-11-14 顶栏统一单）：顶栏由 App.vue 的
          UhdTopBar 全区统一承接（本页标题传「我的」），不再自带一份 -->
 
@@ -75,7 +78,8 @@
            原先这里的 PWA 行随之摘除，PWA 安装动作在整页内保留 -->
       <button type="button" class="am-logout" @click="handleLogout">退出登录</button>
     </main>
-  </div>
+    </div>
+  </UhdAccountShellGate>
 </template>
 
 <script setup lang="ts">
@@ -92,6 +96,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { ChevronRight, Copy, ArrowUpRight } from 'lucide-vue-next'
+import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
 import { useUserStore } from '@/stores/user'
 import { useSubscriptionStore } from '@/stores/subscription'
 import { useTheme } from '@/composables/useTheme'

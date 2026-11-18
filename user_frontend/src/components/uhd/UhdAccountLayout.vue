@@ -16,12 +16,13 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  Briefcase, CreditCard, Gauge,
-  Megaphone, Settings, Sun, Moon, User, Users, Wallet,
+  BookOpen, Briefcase, CreditCard, Download, Gauge,
+  Megaphone, ReceiptText, Settings, Sun, Moon, User, UserPlus, Users, Wallet,
 } from 'lucide-vue-next'
 import UhdSidebar, { type UhdSidebarGroup } from './UhdSidebar.vue'
 import { getAgentMe } from '@/api/agent'
 import { teamsApi } from '@/api/team'
+import { communityLinks, initCommunityLinks } from '@/composables/useCommunityLinks'
 import { useTheme } from '@/composables/useTheme'
 import { useUserStore } from '@/stores/user'
 
@@ -82,6 +83,9 @@ function checkTeamEntry(): Promise<boolean> {
 const showTeam = ref(false)
 
 onMounted(async () => {
+  // 使用说明外链（后台「官网社区渠道」可配 docs_url）：模块级单次拉取，
+  // 与手机菜单同口径；未配时侧栏不渲染该行。
+  void initCommunityLinks()
   showAgent.value = await checkAgent()
   showTeam.value = await checkTeamEntry()
 })
@@ -94,10 +98,16 @@ const groups = computed<UhdSidebarGroup[]>(() => {
         { key: '/game/account', label: '我的概览', icon: User },
         { key: '/wallet', label: '我的钱包', icon: Wallet },
         { key: '/game/account/subscribe', label: '订阅服务', icon: CreditCard },
+        // 订阅记录（侧栏统一单，2026-11-18 自查 M-2）：照手机菜单
+        // 「订阅与财务」组序，紧随订阅服务。
+        { key: '/game/account/subscription-records', label: '订阅记录', icon: ReceiptText },
         { key: '/game/account/settings', label: '账号安全', icon: Settings },
+        // 邀请好友（侧栏统一单，2026-11-18 自查 M-2）：照手机菜单
+        // 「账户」组序与友站侧栏位（账号安全/邀请好友/团队管理），
+        // 位于账号安全之后、团队管理之前。
+        { key: '/game/account/invite', label: '邀请好友', icon: UserPlus },
         // 团队管理（2026-11-18 重建批 2）：照友站侧栏「账户」组尾位
-        // （账号安全/邀请好友/团队管理）；本壳「我的」组即账户组，
-        // 邀请好友的侧栏位由侧栏统一单另行落位，本项先随账号安全之后。
+        // （账号安全/邀请好友/团队管理），随邀请好友之后。
         ...(showTeam.value
           ? [{ key: '/game/account/team', label: '团队管理', icon: Users }]
           : []),
@@ -115,7 +125,16 @@ const groups = computed<UhdSidebarGroup[]>(() => {
     {
       title: '帮助',
       items: [
+        // 安装应用（侧栏统一单，2026-11-18 自查 M-2）：照手机菜单
+        // 「帮助」组序，位于线路测速之前。
+        { key: '/game/install', label: '安装应用', icon: Download },
         { key: '/game/speedtest', label: '线路测速', icon: Gauge },
+        // 使用说明（侧栏统一单，2026-11-18 自查 M-2）：照手机菜单
+        // 「帮助」组末位，指向官网文档外链（后台可配）；未配不渲染，
+        // 与手机菜单同口径。外链不走路由，见 onSelect 的 href 分支。
+        ...(communityLinks.docs_url
+          ? [{ key: 'guide-docs', label: '使用说明', icon: BookOpen, href: communityLinks.docs_url }]
+          : []),
       ],
     },
   ]
@@ -138,6 +157,14 @@ async function settleNav(key: string, emitSelect: () => void) {
   }
 }
 function onSelect(key: string) {
+  // 外链项（如使用说明→官网文档）：新开标签页，不走路由、不记激活；
+  // showcase 预览（navigate=false）只 emit，不真打开。
+  const item = groups.value.flatMap((g) => g.items).find((i) => i.key === key)
+  if (item?.href) {
+    if (props.navigate) window.open(item.href, '_blank', 'noopener')
+    else emit('select', key)
+    return
+  }
   void settleNav(key, () => emit('select', key))
 }
 function goAccount() {
@@ -463,9 +490,16 @@ html[data-theme='light'] .uhd-account .uhd-side .uhd-side__item--active {
 .uhd-account .sub-page,
 .uhd-account .sr-page,
 .uhd-account .iv-page,
-.uhd-account .ia-page {
+.uhd-account .ia-page,
+.uhd-account .am-page {
   min-height: calc(100dvh - var(--utb-h) - 148px);
 }
+/* 「我的」菜单页并壳贴合（2026-11-18 侧栏统一单，M-2）：页根自带
+   #050505/#f8f8f8 底色与 150px 底留白（为手机底坞）。壳内须透明承接
+   壳面底色，底留白收回（桌面无底坞）；特异性 (0,3,0) 压过页 scoped
+   的 (0,2,0)。 */
+.uhd-account .uhd-account__main .am-page { background: transparent; }
+.uhd-account .uhd-account__main .am-body { padding-bottom: 48px; }
 /* 特异性须压过各页 scoped 的「类+data-v 属性」（0,2,0），故选择器带页根类走（0,3,0） */
 /* 邀请页原 .iv-topbar 已于 2026-11-18 摘除（手机端改走统一顶栏子页
    返回头），不再需要壳内隐藏规则。 */
