@@ -421,7 +421,7 @@ function statusLabel(status: string): string {
     <!-- 没接好 MoviePilot / qB 时，求片批了也没法真的把片子弄进来：如实说明并给出入口 -->
     <el-alert v-if="pushChecked && noPushTarget && !loading && !loadError" type="warning" :closable="false" show-icon class="push-guide">
       <template #default>
-        还没有可以接收求片的服务：请在<RouterLink to="/servers" class="inline-link">「服务器与线路」</RouterLink>页添加
+        还没有可以接收求片的服务：请在<RouterLink to="/servers" class="inline-link">「服务器」</RouterLink>页添加
         <b>MoviePilot</b>（搜片下载与整理）或 <b>qBittorrent</b>（下载器），测试连接通过后这里就会出现转交按钮。
       </template>
     </el-alert>

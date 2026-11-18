@@ -16,7 +16,7 @@
  *
  * v2.25.0：一级导航按**交付链**重组（仪表盘 / 用户与账号 / 媒体与交付 / 求片与内容 /
  * 运营中心 / 服务支持 / 系统与审计）——“多服”不再是要先理解的一级概念：
- * 服与线路的归属关系在「服务器与线路」页按范围看，顶栏那个切换器只管当前作用域。
+ * 服与线路的归属关系在「服务器」页按范围看，顶栏那个切换器只管当前作用域。
  * 所有页面路径一个字没动（旧收藏、外部链接照旧打开），改的只是分组与名称。
  */
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
@@ -209,7 +209,7 @@ const navGroups: NavGroup[] = [
     title: '媒体',
     icon: Server,
     items: [
-      { path: '/servers', label: '服务器与线路', icon: Server },
+      { path: '/servers', label: '服务器', icon: Server },
       // 线路管理（2026-11-19）：播放线路的配额/用量按大类分组一页管完（服管理旁、同组）
       { path: '/lines', label: '线路管理', icon: Gauge },
       { path: '/emby', label: '媒体库', icon: Library },
@@ -226,7 +226,7 @@ const navGroups: NavGroup[] = [
       { path: '/storage-bindings', label: '存储绑定', icon: Database },
       // 贡献池：用户贡献盘组成的公共缓存池，成员生命周期管理（goal-33 PR-4）
       { path: '/pool', label: '贡献池', icon: Users },
-      // 重新布局批 5：115/GDrive 账号降为服务器与线路页「存储账号」标签，导航不再单列（旧路由跳到对应子标签）
+      // 重新布局批 5：115/GDrive 账号降为「服务器」页「存储账号」标签，导航不再单列（旧路由跳到对应子标签）
     ],
   },
   {
@@ -248,7 +248,7 @@ const navGroups: NavGroup[] = [
 /**
  * 不占导航位置、但仍要归属到某个分组的页面（只负责面包屑归属与分组展开）：
  * - 服管理 = 媒体里的一条支线。放进导航就会让「多服」又变成要先理解的一级概念——
- *   它的入口在「服务器与线路」页里。
+ *   它的入口在「服务器」页里。
  * - 图片与顺序 = 媒体里的支线。页保留、导航不占位，入口只剩直接地址与命令面板。
  */
 const OFF_NAV_GROUP: Record<string, string> = { '/realms': '媒体', '/media-library': '媒体' }

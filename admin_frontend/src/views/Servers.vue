@@ -16,7 +16,7 @@
  * 5. **告警**：两边不一致（EA 自称的服 ≠ 面板登记的服、NODE_KEY 对不上、挂载不可达、
  *    连接失败…）直接列出来，不用自己去比对。
  *
- * 增删改（添加 / 编辑 / 测试 / 设为当前 / 启停 / 删除）也都在这一页完成；
+ * 增删改（添加 / 编辑 / 测试 / 启停 / 删除）也都在这一页完成；
  * 内容自动化（MoviePilot / qB）与出流入口分开成两段，避免混在一起看不清谁在出流。
  */
 import { computed, defineAsyncComponent, onMounted, reactive, ref } from 'vue'
@@ -28,7 +28,6 @@ import {
   Info, Library, Pencil, Plus, RefreshCw, Route as RealmIcon, Server, Trash2, Wifi,
 } from 'lucide-vue-next'
 import {
-  activateServer,
   createServer,
   createMount,
   deleteMount,
@@ -397,7 +396,7 @@ const entryColumns: DataColumn[] = [
   { key: 'node', label: '节点 / 归属', minWidth: 200 },
   { key: 'mounts', label: '挂载体检', minWidth: 190 },
   { key: 'libraries', label: '媒体库', width: 130 },
-  // 测试 / 设为当前 / 编辑 / 停用启用 / 删除 收进「管理」弹窗：行里只留一个入口
+  // 测试 / 编辑 / 停用启用 / 删除 收进「管理」弹窗：行里只留一个入口
   { key: 'actions', label: '操作', width: 100, fixed: 'right', align: 'right' },
 ]
 
@@ -507,7 +506,7 @@ function mountText(mounts: ServerOverviewRow['mounts']): string {
  * 切换当前服：与顶栏那个切换器同一份状态（stores/realm），切完就地刷新本页
  *
  * 「多服」在导航里不再是一个模块，所以作用域的选择就放在这一页——
- * 先选服，再看这台的服务器与线路。
+ * 先选服，再看这个服下的服务器。
  */
 async function switchRealm(id: number) {
   if (!id || id === realm.activeId) return
@@ -633,7 +632,7 @@ async function save() {
 // ==================== 行操作 ====================
 
 // ==================== 服务器管理弹窗（v2.29.0） ====================
-// 入口行原本摆着 5 个按钮（测试 / 设为当前 / 编辑 / 停用启用 / 删除），而连接结论、节点认领、
+// 入口行原本摆着一排按钮（测试 / 编辑 / 停用启用 / 删除），而连接结论、节点认领、
 // 挂载体检、媒体库归属全挤在带 tooltip 的单元格里；现在一个入口，弹窗里把一台机器的事实
 // 与能做的动作放在同一处。
 const manage = ref({ visible: false, row: null as ServerOverviewRow | RemoteServerRow | null })
@@ -675,26 +674,6 @@ async function runTest(row: RemoteServerRow) {
   try {
     const res = await testServer(row.id)
     res.ok ? ElMessage.success(res.message || '连接成功') : ElMessage.warning(res.message || '连接失败')
-    await refreshManage(row.id)
-  } catch {
-    /* 拦截器已提示 */
-  } finally {
-    busyId.value = null
-  }
-}
-
-async function runActivate(row: RemoteServerRow) {
-  busyId.value = row.id
-  try {
-    const res = await activateServer(row.id)
-    if (res.success) {
-      ElMessage.success(res.message || '已设为当前使用')
-      if (res.mounts_health && res.mounts_health.ok === false) {
-        ElMessage.warning('这台 EA 上还有挂载不可达，看本页「挂载体检」列')
-      }
-    } else {
-      ElMessage.warning(res.message || '连接没通过，已保持原来的入口')
-    }
     await refreshManage(row.id)
   } catch {
     /* 拦截器已提示 */
@@ -815,8 +794,8 @@ function opsStateText(state: string): string {
   <div class="admin-page">
     <PageHeader
       eyebrow="媒体"
-      title="服务器与线路"
-      description="接了几台后端服、几台已有 Emby、当前用哪台出流、库归谁、这台机器碰不碰得到存储 —— 都在这一页（范围在「概况」右侧切，不用先理解「多服」是个什么模块）"
+      title="服务器"
+      description="接了几台后端服、几台已有 Emby、库归谁、这台机器碰不碰得到存储 —— 都在这一页（范围在「概况」右侧切，不用先理解「多服」是个什么模块）"
     >
       <template #actions>
         <el-button :loading="liveRunning" @click="runLive">
@@ -849,7 +828,7 @@ function opsStateText(state: string): string {
       </template>
     </PageHeader>
 
-    <div class="tab-bar" role="tablist" aria-label="服务器与线路">
+    <div class="tab-bar" role="tablist" aria-label="服务器">
       <button
         id="servers-tab-servers"
         type="button"
@@ -957,7 +936,7 @@ function opsStateText(state: string): string {
         <b>MoviePilot</b>＝负责搜索下载与整理，求片批准后一键提交成它的订阅。
         <b>qBittorrent</b>＝下载器，拿到磁力 / 种子链接就能直接下载（它自己不会去找片子）。
         EA / Emby 可以加多台，但**同一个服同一时间只有一台是「当前使用」**；MoviePilot 与 qB 可以多台一起接。
-        <b>入口只有一个</b>：以前那页「Emby 服务入口」已并入这里，加完点「设为当前」即可生效。
+        <b>入口只有一个</b>：以前那页「Emby 服务入口」已并入这里，服务器的添加与管理都在这一页。
       </div>
     </NoticePanel>
 
@@ -1002,10 +981,6 @@ function opsStateText(state: string): string {
             </span>
           </template>
             <div class="realm-entry">
-              <span class="mini-badge" :class="card.entry.mode === 'panel' ? 'warn' : 'ok'">
-                当前入口：{{ card.entry.label }}
-              </span>
-              <span v-if="card.entry.url" class="muted realm-url">{{ card.entry.url }}</span>
               <span class="muted">
                 媒体库 {{ card.libraries.total }} 个<template v-if="card.libraries.unassigned">
                   （未分配节点 {{ card.libraries.unassigned }}）</template>
@@ -1107,7 +1082,7 @@ function opsStateText(state: string): string {
                 plain
                 @click="openOps(row)"
               >媒体运维</el-button>
-              <!-- 一个入口：测试 / 设为当前 / 编辑 / 停用启用 / 删除 都在弹窗里（原来这行有 5 个按钮） -->
+              <!-- 一个入口：测试 / 编辑 / 停用启用 / 删除 都在弹窗里 -->
               <el-button size="small" plain @click="openManage(row)">管理</el-button>
             </template>
 
@@ -1430,9 +1405,6 @@ function opsStateText(state: string): string {
         </el-alert>
 
         <p class="mg-hint">
-          <template v-if="isEntryRow(manage.row) && manage.row.is_entry">
-            「设为当前」会让这个服的客户端改连这台（连接不通过时保持原入口）；
-          </template>
           「停用」只是不再使用它，配置与凭证都保留；删除不可恢复。改地址与密钥进「编辑」。
         </p>
 
@@ -1455,16 +1427,6 @@ function opsStateText(state: string): string {
             <template v-if="manage.row">
               <el-button :loading="busyId === manage.row.id" @click="runTest(manage.row)">
                 <Wifi :size="13" style="margin-right: 3px" />测试连接
-              </el-button>
-              <!-- 「设为当前」只给出流入口（EA / 已有 Emby）：内容自动化那两段原先也没有这个动作 -->
-              <el-button
-                v-if="isEntryRow(manage.row) && manage.row.is_entry && manage.row.activatable && !manage.row.is_current_entry"
-                type="primary"
-                plain
-                :loading="busyId === manage.row.id"
-                @click="runActivate(manage.row)"
-              >
-                <CheckCircle2 :size="13" style="margin-right: 3px" />设为当前
               </el-button>
               <el-button :loading="busyId === manage.row.id" @click="runToggle(manage.row)">
                 {{ manage.row.is_enabled ? '停用' : '启用' }}
@@ -1740,7 +1702,6 @@ function opsStateText(state: string): string {
   font-size: var(--font-size-xs); color: var(--au-text-4); letter-spacing: 0;
 }
 .realm-entry { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
-.realm-url { font-size: var(--font-size-xs); word-break: break-all; font-family: var(--font-mono); }
 .realm-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .link { font-size: var(--font-size-xs); text-decoration: none; }
 .link:hover { color: var(--au-primary); }

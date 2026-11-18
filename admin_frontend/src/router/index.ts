@@ -104,8 +104,8 @@ const routes: RouteRecordRaw[] = [
       { path: '/realms', name: 'Realms', component: () => import('@/views/Realms.vue'), meta: { title: '服管理' } },
       // 线路管理（2026-11-19 独立成页）：按大类（服）分组管全部播放线路的配额/用量
       { path: '/lines', name: 'Lines', component: () => import('@/views/Lines.vue'), meta: { title: '线路管理' } },
-      { path: 'servers', name: 'Servers', component: () => import('@/views/Servers.vue'), meta: { title: '服务器与线路' } },
-      // 「Emby 服务入口」已并入「服务器」页（同一个清单里就能加 EA / Emby 并设为当前使用），
+      { path: 'servers', name: 'Servers', component: () => import('@/views/Servers.vue'), meta: { title: '服务器' } },
+      // 「Emby 服务入口」已并入「服务器」页（同一个清单里就能加 EA / Emby 并管理），
       // 旧地址保留为跳转，收藏与外部链接不会落到 404
       { path: 'emby-servers', redirect: '/servers' },
     ],
