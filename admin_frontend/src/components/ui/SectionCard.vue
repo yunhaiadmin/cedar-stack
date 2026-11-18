@@ -92,7 +92,7 @@ withDefaults(
   gap: 8px;
   margin: 0;
   font-family: var(--au-font-serif);
-  font-size: 15px;
+  font-size: var(--uhd-fs-body);
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--au-text);
@@ -102,7 +102,7 @@ withDefaults(
 
 .au-section__meta {
   font-family: var(--au-font-sans);
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   font-weight: 400;
   letter-spacing: 0;
   color: var(--au-text-4);
@@ -110,7 +110,7 @@ withDefaults(
 
 .au-section__desc {
   margin: 4px 0 0;
-  font-size: 12.5px;
+  font-size: var(--uhd-fs-aux-sm);
   line-height: 1.55;
   color: var(--au-text-3);
 }
@@ -128,7 +128,7 @@ withDefaults(
 .au-section__foot {
   padding: 12px 20px;
   border-top: 1px solid var(--au-border);
-  font-size: 12.5px;
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-3);
 }
 
