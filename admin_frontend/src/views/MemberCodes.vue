@@ -748,14 +748,14 @@ function usedByNames(row: RegistrationCode): string {
 
 .whitelist-hint {
   margin: 0 0 10px;
-  font-size: 12.5px;
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-3);
 }
 
 /* 注册模式搬家提示：只留一行跳转，不留第二处写入口 */
 .moved-hint {
   margin: 0 0 12px;
-  font-size: 12.5px;
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-3);
 }
 .moved-hint a { color: var(--au-primary); }
@@ -772,7 +772,7 @@ function usedByNames(row: RegistrationCode): string {
   gap: 8px 12px;
   flex-wrap: wrap;
   padding: 10px 20px;
-  font-size: 12.5px;
+  font-size: var(--uhd-fs-aux-sm);
 }
 .type-row + .type-row { border-top: 1px solid var(--au-border); }
 .type-num { flex: 1 1 auto; color: var(--au-text-2); font-variant-numeric: tabular-nums; }
@@ -799,7 +799,7 @@ function usedByNames(row: RegistrationCode): string {
   gap: 6px;
   padding: 4px 10px;
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--uhd-fs-aux-sm);
   letter-spacing: 0.06em;
   color: var(--au-primary);
   background: var(--au-primary-soft);
@@ -834,7 +834,7 @@ function usedByNames(row: RegistrationCode): string {
   transition: border-color var(--au-fast) var(--au-ease), background var(--au-fast) var(--au-ease);
 }
 .gen-code:hover { border-color: var(--au-primary-border); background: var(--au-primary-soft); }
-.gen-days { font-size: 12px; color: var(--au-text-3); white-space: nowrap; }
+.gen-days { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); white-space: nowrap; }
 
 @media (max-width: 768px) {
   .view-toolbar { padding: 2px 16px 12px; }

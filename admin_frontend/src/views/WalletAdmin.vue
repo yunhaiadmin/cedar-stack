@@ -312,7 +312,7 @@ onMounted(async () => {
 .adjust-form { margin-top: 8px; }
 .amount-input { width: 220px; }
 .reason-input { width: 260px; }
-.hint { color: var(--au-text-3); font-size: 12px; }
+.hint { color: var(--au-text-3); font-size: var(--uhd-fs-aux-sm); }
 .ledger-filter { padding: 16px 16px 4px; }
 .settings-form { max-width: 720px; }
 .setting-row { display: flex; align-items: center; gap: 12px; }

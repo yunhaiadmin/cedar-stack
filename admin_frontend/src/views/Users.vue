@@ -1145,13 +1145,13 @@ function fmtCount(n: number | null | undefined): string {
   padding: 0;
   color: var(--au-text);
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--uhd-fs-caption);
   cursor: pointer;
   border-radius: var(--au-r-sm);
 }
 .user-link:hover { color: var(--au-primary); }
 .user-link:focus-visible { outline: 2px solid var(--au-border-focus); outline-offset: 2px; }
-.user-sub { font-size: 12px; color: var(--au-text-3); }
+.user-sub { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
 
 .pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 
@@ -1168,7 +1168,7 @@ function fmtCount(n: number | null | undefined): string {
   align-items: center;
   justify-content: center;
   font-family: var(--au-font-serif);
-  font-size: 22px;
+  font-size: var(--uhd-fs-h3);
   font-weight: 700;
   color: var(--au-primary);
   background: var(--au-primary-soft);
@@ -1177,8 +1177,8 @@ function fmtCount(n: number | null | undefined): string {
 }
 
 .hero-main { min-width: 0; }
-.hero-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 18px; font-weight: 600; color: var(--au-text); }
-.hero-sub { font-size: 12px; color: var(--au-text-3); margin-top: 3px; word-break: break-all; }
+.hero-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--uhd-fs-title); font-weight: 600; color: var(--au-text); }
+.hero-sub { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); margin-top: 3px; word-break: break-all; }
 
 .detail-stats {
   display: grid;
@@ -1193,7 +1193,7 @@ function fmtCount(n: number | null | undefined): string {
 .detail-actions .el-button { margin-left: 0; }
 .detail-tabs { margin-top: 6px; }
 
-.mini-summary { font-size: 12.5px; color: var(--au-text-2); margin-bottom: 10px; }
+.mini-summary { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-2); margin-bottom: 10px; }
 .ok { color: var(--au-success); }
 .bad { color: var(--au-danger); }
 
@@ -1203,18 +1203,18 @@ function fmtCount(n: number | null | undefined): string {
   gap: 10px;
   padding: 9px 0;
   border-bottom: 1px solid var(--au-border);
-  font-size: 13px;
+  font-size: var(--uhd-fs-aux);
   color: var(--au-text);
 }
 .line-row:last-child { border-bottom: none; }
 .line-tag { flex-shrink: 0; }
 .line-desc { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .line-amount { font-weight: 600; font-variant-numeric: tabular-nums; }
-.line-date { font-size: 11.5px; color: var(--au-text-3); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.line-date { font-size: var(--uhd-fs-micro); color: var(--au-text-3); flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .mono { font-family: var(--font-mono); }
 
 .dialog-user { font-weight: 600; color: var(--au-text); }
-.dialog-hint { font-size: 12px; color: var(--au-text-3); line-height: 1.6; }
+.dialog-hint { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); line-height: 1.6; }
 .dialog-hint.warn { color: var(--au-warning); }
 .range-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; width: 100%; }
 .range-num { width: 120px; }
@@ -1243,9 +1243,9 @@ function fmtCount(n: number | null | undefined): string {
 .gs-item.is-warn { border-color: var(--au-warning-border); }
 .gs-item.is-warn .gs-value { color: var(--au-warning); }
 
-.gs-label { display: block; font-size: 11.5px; color: var(--au-text-3); }
-.gs-value { display: block; margin-top: 2px; font-size: 14px; font-weight: 600; color: var(--au-text); }
-.gs-value em { font-style: normal; margin-left: 4px; font-size: 11.5px; font-weight: 400; color: var(--au-text-2); }
+.gs-label { display: block; font-size: var(--uhd-fs-micro); color: var(--au-text-3); }
+.gs-value { display: block; margin-top: 2px; font-size: var(--uhd-fs-caption); font-weight: 600; color: var(--au-text); }
+.gs-value em { font-style: normal; margin-left: 4px; font-size: var(--uhd-fs-micro); font-weight: 400; color: var(--au-text-2); }
 
 .grant-grid {
   display: grid;
@@ -1266,7 +1266,7 @@ function fmtCount(n: number | null | undefined): string {
 
 /* 状态色只落在标题行的点上，卡片本体不染色 */
 .grant-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.grant-name { font-size: 14px; font-weight: 600; color: var(--au-text); }
+.grant-name { font-size: var(--uhd-fs-caption); font-weight: 600; color: var(--au-text); }
 
 .grant-dot {
   width: 7px;
@@ -1280,7 +1280,7 @@ function fmtCount(n: number | null | undefined): string {
 
 .grant-reason {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-2);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1295,7 +1295,7 @@ function fmtCount(n: number | null | undefined): string {
   padding: 1px 7px;
   border-radius: var(--au-r-full);
   border: 1px solid transparent;
-  font-size: 11px;
+  font-size: var(--uhd-fs-micro);
   font-weight: 500;
 }
 .cap.on { background: var(--au-success-soft); color: var(--au-success); border-color: var(--au-success-border); }
@@ -1309,20 +1309,20 @@ function fmtCount(n: number | null | undefined): string {
 }
 .grant-metric { display: flex; flex-direction: column; gap: 1px; }
 .grant-metric b {
-  font-size: 16px;
+  font-size: var(--uhd-fs-lead);
   font-weight: 600;
   color: var(--au-text);
   font-variant-numeric: tabular-nums;
 }
-.grant-metric b em { font-style: normal; font-size: 11.5px; font-weight: 400; color: var(--au-text-3); }
-.grant-metric span { font-size: 11px; color: var(--au-text-3); }
+.grant-metric b em { font-style: normal; font-size: var(--uhd-fs-micro); font-weight: 400; color: var(--au-text-3); }
+.grant-metric span { font-size: var(--uhd-fs-micro); color: var(--au-text-3); }
 
 .grant-note {
   display: flex;
   align-items: flex-start;
   gap: 5px;
   margin: 0;
-  font-size: 11.5px;
+  font-size: var(--uhd-fs-micro);
   line-height: 1.5;
   color: var(--au-text-2);
 }
@@ -1331,7 +1331,7 @@ function fmtCount(n: number | null | undefined): string {
 
 .grant-scope {
   margin: 10px 0 0;
-  font-size: 11.5px;
+  font-size: var(--uhd-fs-micro);
   line-height: 1.6;
   color: var(--au-text-3);
 }
@@ -1349,7 +1349,7 @@ function fmtCount(n: number | null | undefined): string {
   .users-toolbar { padding: 10px 16px; }
   .pager { justify-content: center; }
   .detail-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .grant-metric b { font-size: 14px; }
+  .grant-metric b { font-size: var(--uhd-fs-caption); }
   .grant-reason { white-space: normal; }
   .line-row { flex-wrap: wrap; row-gap: 2px; }
   .line-desc { flex: 1 1 60%; }

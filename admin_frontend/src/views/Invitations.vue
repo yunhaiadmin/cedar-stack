@@ -1098,9 +1098,9 @@ onMounted(reloadAll)
 }
 
 .invite-anchors a {
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: var(--au-r-full);
   border: 1px solid var(--au-border);
   color: var(--au-text-3);
   background: var(--au-surface);
@@ -1140,11 +1140,11 @@ onMounted(reloadAll)
 .faint { color: var(--au-text-4); }
 .amt-in { color: var(--au-success); font-weight: 600; font-variant-numeric: tabular-nums; }
 .amt-out { color: var(--au-danger); font-weight: 600; font-variant-numeric: tabular-nums; }
-.inv-code { font-size: 13px; color: var(--au-text); letter-spacing: 0.04em; }
+.inv-code { font-size: var(--uhd-fs-aux); color: var(--au-text); letter-spacing: 0.04em; }
 .row-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .badge-warn { background: var(--au-warning-soft); color: var(--au-warning); border-color: var(--au-warning-border); }
 
-.field-suffix { font-size: 12px; color: var(--au-text-3); }
+.field-suffix { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
 
 /* ---------- 推广奖励策略 ---------- */
 .promo-policy {
@@ -1154,7 +1154,7 @@ onMounted(reloadAll)
   padding: 4px 20px 16px;
   border-bottom: 1px solid var(--au-border);
 }
-.promo-active-line { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--au-text-2); }
+.promo-active-line { display: flex; align-items: center; gap: 10px; font-size: var(--uhd-fs-aux); color: var(--au-text-2); }
 .promo-form {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -1162,7 +1162,7 @@ onMounted(reloadAll)
 }
 .promo-form :deep(.el-form-item__content) { gap: 8px; flex-wrap: nowrap; }
 .promo-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
-.promo-hint { font-size: 12px; color: var(--au-text-3); margin-right: auto; }
+.promo-hint { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); margin-right: auto; }
 
 /* ---------- 对话框 ---------- */
 .adjust-preview {
@@ -1171,7 +1171,7 @@ onMounted(reloadAll)
   background: var(--au-primary-soft);
   border: 1px solid var(--au-primary-border);
   color: var(--au-primary);
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
 }
 
 @media (max-width: 768px) {
