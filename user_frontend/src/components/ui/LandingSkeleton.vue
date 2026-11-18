@@ -34,13 +34,13 @@ defineOptions({ name: 'LandingSkeleton' })
   padding: 20px clamp(16px, 5vw, 48px) 48px;
   box-sizing: border-box;
 }
+/* 骨架块：静止渐变（纸面色族），禁脉冲/闪烁（质感批 1，2026-11-18） */
 .ld-sk__nav {
   width: min(420px, 72vw);
   height: 44px;
   margin: 0 auto;
   border-radius: 999px;
-  background: #eae3d5;
-  animation: ld-sk-pulse 1.4s ease-in-out infinite;
+  background: linear-gradient(135deg, #efe9db, #e1d8c4);
 }
 .ld-sk__hero {
   max-width: 880px;
@@ -52,8 +52,7 @@ defineOptions({ name: 'LandingSkeleton' })
 }
 .ld-sk__line {
   border-radius: 10px;
-  background: #eae3d5;
-  animation: ld-sk-pulse 1.4s ease-in-out infinite;
+  background: linear-gradient(135deg, #efe9db, #e1d8c4);
 }
 .ld-sk__line--title {
   width: min(560px, 84vw);
@@ -62,13 +61,11 @@ defineOptions({ name: 'LandingSkeleton' })
 .ld-sk__line--title2 {
   width: min(420px, 66vw);
   height: 52px;
-  animation-delay: 0.1s;
 }
 .ld-sk__line--sub {
   width: min(480px, 74vw);
   height: 18px;
   margin-top: 8px;
-  animation-delay: 0.2s;
 }
 .ld-sk__btns {
   display: flex;
@@ -79,12 +76,10 @@ defineOptions({ name: 'LandingSkeleton' })
   width: 132px;
   height: 46px;
   border-radius: 999px;
-  background: #eae3d5;
-  animation: ld-sk-pulse 1.4s ease-in-out infinite;
-  animation-delay: 0.3s;
+  background: linear-gradient(135deg, #efe9db, #e1d8c4);
 }
 .ld-sk__btn--primary {
-  background: #ddd2bd;
+  background: linear-gradient(135deg, #e3d8c0, #d2c4a6);
 }
 .ld-sk__cards {
   max-width: 1080px;
@@ -96,14 +91,7 @@ defineOptions({ name: 'LandingSkeleton' })
 .ld-sk__card {
   height: 168px;
   border-radius: 20px;
-  background: #eae3d5;
-  animation: ld-sk-pulse 1.4s ease-in-out infinite;
-}
-.ld-sk__card:nth-child(2) {
-  animation-delay: 0.12s;
-}
-.ld-sk__card:nth-child(3) {
-  animation-delay: 0.24s;
+  background: linear-gradient(135deg, #efe9db, #e1d8c4);
 }
 @media (max-width: 720px) {
   .ld-sk__cards {
@@ -111,23 +99,6 @@ defineOptions({ name: 'LandingSkeleton' })
   }
   .ld-sk__card:nth-child(n + 2) {
     display: none;
-  }
-}
-@keyframes ld-sk-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.45;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ld-sk__nav,
-  .ld-sk__line,
-  .ld-sk__btn,
-  .ld-sk__card {
-    animation: none;
   }
 }
 </style>

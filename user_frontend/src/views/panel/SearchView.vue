@@ -376,11 +376,10 @@ watch([term, filter], () => void load(), { immediate: true })
 .sv-skel__poster {
   aspect-ratio: 2 / 3;
   border-radius: 13px;
-  background: var(--uhd-s-card-soft);
+  background: var(--uhd-s-skeleton);
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: sv-pulse 1.4s ease-in-out infinite;
 }
 .sv-skel__logo {
   display: inline-flex;
@@ -393,9 +392,5 @@ watch([term, filter], () => void load(), { immediate: true })
   color: var(--uhd-s-text-2);
   font-size: 18px;
   font-weight: var(--uhd-fw-black);
-}
-@keyframes sv-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
 }
 </style>

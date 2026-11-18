@@ -482,8 +482,7 @@ onMounted(() => { void loadAll() })
 .rmd-empty p { margin: 0; }
 .rmd-err { font-size: 13px; color: #fca5a5; line-height: 1.6; }
 .rmd-retry { margin-top: 6px; padding: 3px 12px; font-size: 12px; color: #fbfcfd; background: transparent; border: 1px solid currentColor; border-radius: 999px; cursor: pointer; opacity: 0.8; }
-.rmd-skeleton { background: #1e1f21; border-radius: 10px; animation: rmd-pulse 1.4s ease-in-out infinite; }
-@keyframes rmd-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+.rmd-skeleton { background: var(--uhd-skel-bg); border-radius: 10px; }
 @media (max-width: 768px) {
   .rmd-page { margin: -20px -16px -120px; padding: 20px 16px 120px; }
 }
@@ -542,5 +541,4 @@ html[data-theme='light'] .rmd-more__note { color: #d97706; }
 html[data-theme='light'] .rmd-empty { border-color: #d4d4d8; color: #8a8f96; }
 html[data-theme='light'] .rmd-err { color: #dc2626; }
 html[data-theme='light'] .rmd-retry { color: #111111; }
-html[data-theme='light'] .rmd-skeleton { background: #f0f0f1; }
 </style>

@@ -1070,11 +1070,10 @@ onActivated(() => {
 .sl-skel__hero {
   height: min(560px, 62vh);
   border-radius: 16px;
-  background: var(--uhd-s-card-soft);
+  background: var(--uhd-s-skeleton);
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: sl-pulse 1.4s ease-in-out infinite;
 }
 .sl-skel__logo {
   display: inline-flex;
@@ -1095,7 +1094,7 @@ onActivated(() => {
   display: block;
   height: 20px;
   border-radius: 6px;
-  background: var(--uhd-s-card-soft);
+  background: var(--uhd-s-skeleton);
 }
 .sl-skel__track {
   display: flex;
@@ -1106,15 +1105,10 @@ onActivated(() => {
   flex: 0 0 260px;
   aspect-ratio: 2 / 3;
   border-radius: 13px;
-  background: var(--uhd-s-card-soft);
+  background: var(--uhd-s-skeleton);
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: sl-pulse 1.4s ease-in-out infinite;
-}
-@keyframes sl-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
 }
 @media (max-width: 767px) {
   .sl-skel {
@@ -1290,11 +1284,10 @@ onActivated(() => {
   flex: 0 0 340px;
   aspect-ratio: 16 / 9;
   border-radius: 12px;
-  background: var(--uhd-s-card-soft);
+  background: var(--uhd-s-skeleton);
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: sl-pulse 1.4s ease-in-out infinite;
 }
 .sl-rowerror {
   margin: 26px clamp(16px, 5vw, 96px) 0;

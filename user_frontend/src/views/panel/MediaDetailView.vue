@@ -1596,11 +1596,10 @@ watch(itemId, () => {
 /* 详情骨架屏 */
 .md-skel__band {
   height: 340px;
-  background: var(--uhd-s-card-soft);
+  background: var(--uhd-s-skeleton);
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: md-pulse 1.4s ease-in-out infinite;
 }
 .md-skel__body {
   display: flex;
@@ -1611,11 +1610,10 @@ watch(itemId, () => {
   flex: 0 0 220px;
   aspect-ratio: 2 / 3;
   border-radius: 16px;
-  background: var(--uhd-s-card-soft);
+  background: var(--uhd-s-skeleton);
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: md-pulse 1.4s ease-in-out infinite;
 }
 .md-skel__lines {
   flex: 1;
@@ -1627,7 +1625,7 @@ watch(itemId, () => {
 .md-skel__bar {
   height: 22px;
   border-radius: 6px;
-  background: var(--uhd-s-card-soft);
+  background: var(--uhd-s-skeleton);
 }
 .md-skel__logo {
   display: inline-flex;
@@ -1641,11 +1639,6 @@ watch(itemId, () => {
   font-size: 20px;
   font-weight: var(--uhd-fw-black);
 }
-@keyframes md-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
-}
-
 /* 手机详情 = 友站 app 形态（2026-11-14 用户截图亲点）：全幅 backdrop
    顶图（高约 40vh、底部渐隐入页底）→ 类型小字/大标题/信息行叠在渐隐
    尾上 → 全宽播放行（吸顶）→ 简介 → 演职人员 → 影片信息 → 版本/剧集

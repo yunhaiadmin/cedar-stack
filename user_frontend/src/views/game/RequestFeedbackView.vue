@@ -1109,8 +1109,7 @@ onMounted(() => {
 }
 .rf-err { font-size: 13px; color: #fca5a5; line-height: 1.6; }
 .rf-retry { margin-top: 6px; padding: 3px 12px; font-size: 12px; color: #fbfcfd; background: transparent; border: 1px solid currentColor; border-radius: 999px; cursor: pointer; opacity: 0.8; }
-.rf-skeleton { background: #1e1f21; border-radius: 10px; animation: rf-pulse 1.4s ease-in-out infinite; }
-@keyframes rf-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+.rf-skeleton { background: var(--uhd-skel-bg); border-radius: 10px; }
 @media (max-width: 768px) {
   .rf-page { margin: -20px -16px -120px; padding: 20px 16px 120px; }
   .rf-types { grid-template-columns: repeat(3, 1fr); }
@@ -1187,5 +1186,4 @@ html[data-theme='light'] .rf-pager__btn--on { background: #111111; color: #fffff
 html[data-theme='light'] .rf-empty { border-color: #d4d4d8; color: #8a8f96; }
 html[data-theme='light'] .rf-err { color: #dc2626; }
 html[data-theme='light'] .rf-retry { color: #111111; }
-html[data-theme='light'] .rf-skeleton { background: #f0f0f1; }
 </style>
