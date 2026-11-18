@@ -1266,13 +1266,11 @@ html[data-theme='light'] .tm-buy-error { color: var(--uhd-danger); }
   padding: 14px;
   box-sizing: border-box;
   background: var(--modal-scrim-dark);
-  backdrop-filter: var(--modal-scrim-dark-filter);
-  -webkit-backdrop-filter: var(--modal-scrim-dark-filter);
   animation: uhd-fade-in var(--uhd-dur-fade) var(--uhd-ease-standard);
   font-family: var(--uhd-font-sans);
 }
 .tm-sheet {
-  /* 面板作用域文字令牌随材质翻转（与 UhdModal 同法：默认深色玻璃＝浅字） */
+  /* 面板作用域文字令牌随主题翻转（默认深色实面＝浅字）；面板本体实色不透底（2026-11-18 用户令：弹窗不用玻璃） */
   --uhd-l-text: var(--modal-glass-fg);
   --uhd-l-text-2: var(--modal-glass-dim);
   --uhd-l-input-bg: rgba(255, 255, 255, 0.08);
@@ -1280,15 +1278,10 @@ html[data-theme='light'] .tm-buy-error { color: var(--uhd-danger); }
   flex-direction: column;
   width: min(720px, 100%);
   max-height: 82dvh;
-  background: var(--modal-glass-bg);
-  border: 1px solid var(--modal-glass-edge);
+  background: var(--uhd-d-surface);
+  border: 1px solid var(--uhd-d-border);
   border-radius: 24px;
-  box-shadow:
-    inset 0 1px 0 var(--modal-glass-hi),
-    inset 0 0 0 1px var(--modal-glass-ring),
-    var(--modal-glass-shadow);
-  backdrop-filter: var(--modal-glass-filter);
-  -webkit-backdrop-filter: var(--modal-glass-filter);
+  box-shadow: var(--uhd-shadow-card-d);
   animation: uhd-blur-in var(--uhd-dur-blur-in) var(--uhd-ease-pop);
   color: var(--uhd-l-text-2);
   font-size: var(--uhd-fs-body);
@@ -1297,6 +1290,9 @@ html[data-theme='light'] .tm-sheet {
   --uhd-l-text: #111111;
   --uhd-l-text-2: #6b7280;
   --uhd-l-input-bg: #f5f5f5;
+  background: var(--uhd-l-surface);
+  border-color: var(--uhd-l-border);
+  box-shadow: var(--uhd-shadow-card-l);
 }
 .tm-sheet__head {
   display: flex;
