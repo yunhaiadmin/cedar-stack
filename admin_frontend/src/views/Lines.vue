@@ -375,6 +375,7 @@ function trafficPct(line: RealmLine): number {
             </div>
           </div>
         </div>
+        </div>
       </SectionCard>
     </div>
 
