@@ -74,6 +74,7 @@ from backend.emby_server import media_routes  # noqa: F401
 from backend.emby_server import compat_routes  # noqa: F401
 from backend.emby_server import stream_routes  # noqa: F401
 from backend.emby_server.image_routes import install_image_routes
+from backend.emby_server.image_obs import ImageObsMiddleware, start_flusher as _start_image_obs_flusher
 from backend.emby_server.mount_health import panel_router as mount_health_router
 from backend.emby_server.mount_routes import install_mount_routes
 from backend.emby_server.nodes import node_router
@@ -188,6 +189,14 @@ async def lifespan(app: FastAPI):
         maintenance.start_janitor(heavy=False)
     except Exception as exc:  # noqa: BLE001 — 维护失败不影响出流
         logger.warning("启动维护失败（可忽略）: %s", exc)
+
+    # 图片流量观测 flush 线程（F5 前置观测）：进程内计数定时批量
+    # 落 emby_image_obs_daily；开关 emby_image_obs_enabled 默认开，
+    # 线程内每轮直查 DB 刷新。失败不影响出图（线程自吞异常）。
+    try:
+        _start_image_obs_flusher()
+    except Exception as exc:  # noqa: BLE001 — 观测起不来不拦服务
+        logger.warning("图片流量观测启动失败（可忽略）: %s", exc)
 
     # 配置自愈（backend/config_self_heal.py）：EM/EA 共用同一份 .env 与数据库，
     # 只补缺失、不覆盖；失败只记日志，不影响出流。
@@ -371,6 +380,12 @@ app.add_middleware(SecurityHeadersMiddleware)
 # 前台活跃打点：/emby/ 用户请求经过即记录，供 maintenance 重活（缩略图补生成）让路。
 # 纯 ASGI，不包 send，零开销；健康检查路径不在 /emby/ 下，不会被误记。
 app.add_middleware(ForegroundActivityMiddleware)
+
+# 图片流量观测（F5 前置观测，2026-11-18）：纯 ASGI，只匹配条目图片
+# 路径、响应结束后聚合计数（UA 家族/凭据有无/类型/尺寸档/状态），
+# 不改任何鉴权与放行行为；计数由 image_obs 的后台线程批量落表。
+# 注册位置在 DoubleEmbyPrefix 内层，进到这里路径已折叠完。
+app.add_middleware(ImageObsMiddleware)
 
 
 # GZip 压缩：接口 JSON / 播放列表走压缩，已压缩或大块二进制内容不再压缩。

@@ -310,6 +310,14 @@ MOUNT_SERVING_CONFIG_SCHEMA: dict[str, tuple] = {
     "mount_serving_probe_budget_ms": ("int", 100, 10000),
 }
 
+# EA 图片流量观测（F5 前置观测，2026-11-18）：只一个总开关，
+# 默认开；读取唯一实现 emby_server.image_obs（flush 线程直查 DB
+# 刷新，关 = 计数空转、零观测开销）。纯 SystemConfig 键，不进
+# env.example（#1527 先例）；观测期满随观测层一并退役。
+IMAGE_OBS_CONFIG_SCHEMA: dict[str, tuple] = {
+    "emby_image_obs_enabled": ("bool",),
+}
+
 # 播放交付编排器（换代线 step 5，2026-11-01）：(用户, 条目)
 # 交付计划预计算开关 + 计划 TTL。读取唯一实现 delivery_plan
 # .delivery_plan_enabled / plan_ttl_sec（热读、默认开/TTL 默认
