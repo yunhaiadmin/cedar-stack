@@ -50,7 +50,7 @@ const emit = defineEmits<{ click: [] }>()
   display: flex;
   align-items: center;
   gap: 14px;
-  min-height: 68px;
+  min-height: var(--uhd-row-h);
   padding: 10px 2px;
   font-family: var(--uhd-font-sans);
 }

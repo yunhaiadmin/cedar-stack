@@ -304,9 +304,7 @@ onMounted(() => {
     linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
     var(--uhd-rainbow) border-box;
   color: #ffffff;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 12px 28px -12px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--uhd-shadow-sheet);
 }
 /* 禁用：彩虹退场、中性灰 */
 .acct-btn.primary:disabled,

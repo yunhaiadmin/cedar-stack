@@ -316,9 +316,9 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: var(--modal-scrim-dark);
+  backdrop-filter: var(--modal-scrim-dark-filter);
+  -webkit-backdrop-filter: var(--modal-scrim-dark-filter);
   animation: uhd-fade-in var(--uhd-dur-fade) var(--uhd-ease-standard);
   font-family: var(--uhd-font-sans);
   -webkit-font-smoothing: antialiased;

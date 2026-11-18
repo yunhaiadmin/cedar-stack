@@ -317,9 +317,7 @@ body:has(.watch-view)::after {
     linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
     var(--uhd-rainbow) border-box;
   color: #ffffff;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 12px 28px -12px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--uhd-shadow-sheet);
   backdrop-filter: var(--uhd-glass-filter);
   -webkit-backdrop-filter: var(--uhd-glass-filter);
 }
@@ -355,7 +353,7 @@ html[data-theme='light'] .au-btn-primary {
 .au-btn-primary:hover:not(:disabled) {
   filter: brightness(1.08);
 }
-.au-btn-primary:active:not(:disabled) { transform: scale(0.98); }
+.au-btn-primary:active:not(:disabled) { transform: scale(var(--uhd-press-scale)); }
 
 .au-btn-ghost {
   background: var(--au-surface-2);

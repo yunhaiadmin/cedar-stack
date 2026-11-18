@@ -139,7 +139,7 @@ function specRows(plan: SubscriptionPlan): string[] {
   outline-offset: 2px;
 }
 
-/* 推荐角标：彩虹小胶囊（白名单位置） */
+/* 推荐角标：彩虹小胶囊（白名单位置）——填色走不透明 fill 版 */
 .uhd-plans__badge {
   position: absolute;
   top: 16px;
@@ -149,7 +149,7 @@ function specRows(plan: SubscriptionPlan): string[] {
   height: 22px;
   padding: 0 10px;
   border-radius: var(--uhd-radius-pill);
-  background: var(--uhd-rainbow);
+  background: var(--uhd-rainbow-fill);
   color: #ffffff;
   font-size: var(--uhd-fs-aux-sm);
   font-weight: var(--uhd-fw-bold);

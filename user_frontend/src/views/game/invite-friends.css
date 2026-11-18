@@ -139,7 +139,7 @@ html[data-theme='light'] .iv-page {
   background: var(--iv-chip-on);
   color: inherit;
   font-weight: var(--uhd-fw-semibold);
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--uhd-shadow-seg);
 }
 
 .iv-seg--small {
@@ -195,7 +195,7 @@ html[data-theme='light'] .iv-page {
 }
 
 .iv-btn:active {
-  transform: scale(0.98);
+  transform: scale(var(--uhd-press-scale));
 }
 
 .iv-btn:disabled {
@@ -209,9 +209,7 @@ html[data-theme='light'] .iv-page {
     linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
     var(--uhd-rainbow) border-box;
   color: #ffffff;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 10px 28px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--uhd-shadow-sheet);
 }
 
 html[data-theme='light'] .iv-btn--rainbow {
@@ -219,23 +217,17 @@ html[data-theme='light'] .iv-btn--rainbow {
     var(--uhd-rainbow-soft) padding-box,
     var(--uhd-rainbow) border-box;
   color: #111111;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    0 10px 28px rgba(17, 17, 17, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--uhd-shadow-card-l);
 }
 
 .iv-btn--glass {
   border: 1px solid var(--iv-glass-line);
   background: var(--iv-glass-bg);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    0 10px 28px rgba(0, 0, 0, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), var(--uhd-shadow-card-d);
 }
 
 html[data-theme='light'] .iv-btn--glass {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.8),
-    0 10px 28px rgba(17, 17, 17, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), var(--uhd-shadow-card-l);
 }
 
 /* ---------- 统计与规则 ---------- */
@@ -396,7 +388,7 @@ html[data-theme='light'] .iv-btn--glass {
   border-radius: 22px;
   background: var(--iv-card);
   border: 1px solid var(--iv-line);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--uhd-shadow-panel-lg);
 }
 
 .iv-modal__title {

@@ -74,17 +74,13 @@ const activeTo = computed(() => (route.path === '/game/account' ? '/game/account
   border: 1px solid rgba(255, 255, 255, 0.16);
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    0 16px 40px rgba(0, 0, 0, 0.5);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), var(--uhd-shadow-float);
 }
 /* 浅色玻璃：跟随用户外观（data-theme='light'） */
 html[data-theme='light'] .uad-pill {
   background: rgba(255, 255, 255, 0.6);
   border-color: rgba(255, 255, 255, 0.65);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.55),
-    0 16px 40px rgba(0, 0, 0, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), var(--uhd-shadow-card-l);
 }
 .uad-tab {
   display: inline-flex;

@@ -355,5 +355,5 @@ html[data-theme='light'] .gc-done__icon { color: #16a34a; }
   font-weight: 650;
   cursor: pointer;
 }
-.gc-copy:active { transform: scale(0.96); }
+.gc-copy:active { transform: scale(var(--uhd-press-scale)); }
 </style>

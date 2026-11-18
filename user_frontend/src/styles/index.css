@@ -97,17 +97,6 @@ body.theme-transition *::after {
   transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease !important;
 }
 
-/* 页面切换动画 */
-.page-enter-active,
-.page-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.page-enter-from,
-.page-leave-to {
-  opacity: 0;
-}
-
 /* ========================================
    按钮样式
    ======================================== */
@@ -140,9 +129,7 @@ body.theme-transition *::after {
     linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
     var(--uhd-rainbow) border-box;
   color: #ffffff;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 12px 28px -12px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--uhd-shadow-sheet);
   backdrop-filter: var(--uhd-glass-filter);
   -webkit-backdrop-filter: var(--uhd-glass-filter);
 }
@@ -187,7 +174,7 @@ html[data-theme='light'] .btn-primary {
 
 /* 主按钮按下态 */
 .btn-primary:active {
-  transform: scale(0.98);
+  transform: scale(var(--uhd-press-scale));
 }
 
 /* 幽灵按钮 */

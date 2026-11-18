@@ -62,24 +62,35 @@
   --uhd-blob-lilac: rgba(221, 214, 254, 0.5);
   --uhd-blob-sky: rgba(191, 219, 254, 0.45);
 
-  /* ---------- 1.2 彩虹光谱渐变（全站唯一「品牌色」；停点已按原站实测锁定） ----------
-     实测来源：原站 --brand-play-gradient（conic）八个停点与 --brand-1..4 锚点。
-     说明书原插值（紫 #7c3aed→蓝 #2563eb）经复核作废，以实测色带为准。 */
-  --uhd-rainbow: linear-gradient(90deg, #2f8fe0 0%, #6f7ad8 14%, #c46c90 22%, #e8766f 28%, #f2a45a 36%, #ecd04f 46%, #95c77d 57%, #39b3ec 75%, #2f8fe0 100%);
+  /* ---------- 1.2 彩虹光谱渐变（全站唯一「品牌色」） ----------
+     2026-11-18 真机录屏纠正（用户并排对比抓现行，优先级高于桌面采样）：
+     友站主钮边框是不对称的——鲜明段集中在左侧（左上绿/青、左下橙红），
+     顺时针向右逐渐淡出、右缘几乎看不见；底色是透光玻璃不是实底。
+     此前桌面采样读到的 rgb(49,40,24) 是钮压在深色背景上的合成色，
+     被 #305 误当作实底色做成近实底棕褐色，已作废。
+     本令牌改 135deg 对角不对称分布：鲜明段压在 0–26%（左缘），右半段
+     alpha 压到近无（70% 处 0.10、100% 处 0）；桌面采样色值只作左缘
+     鲜明段的色值参考。conic 版（Logo 三角）与 band 版（会员卡光带）不动。
+     填色用途（徽章／404 数字／彩虹填色钮）不许用本令牌——右半段透明会
+     拖垮填色，改走 --uhd-rainbow-fill（不透明九停点）。 */
+  --uhd-rainbow: linear-gradient(135deg, #a4de91 0%, #3cdce7 10%, #f5c165 18%, #e8766f 26%, rgba(159, 177, 255, 0.28) 48%, rgba(157, 124, 195, 0.10) 70%, rgba(157, 124, 195, 0) 100%);
+  /* 填色版彩虹（不透明九停点）：徽章／404 数字／彩虹填色钮专用。边框版
+     右半段透明，填色用它会右侧透底，故填色用途一律走本令牌。 */
+  --uhd-rainbow-fill: linear-gradient(90deg, #2f8fe0 0%, #6f7ad8 14%, #c46c90 22%, #e8766f 28%, #f2a45a 36%, #ecd04f 46%, #95c77d 57%, #39b3ec 75%, #2f8fe0 100%);
   --uhd-rainbow-conic: conic-gradient(at 30% 55%, #2f8fe0 0deg, #6f7ad8 50deg, #c46c90 80deg, #e8766f 100deg, #f2a45a 130deg, #ecd04f 165deg, #95c77d 205deg, #39b3ec 270deg, #2f8fe0 360deg);
   /* 主按钮淡彩渐变底（浅色面）：必须是不透明的预混白粉彩——背景分层下若用半透明色，
      border-box 的全强度彩虹层会透出来变满面彩虹（验收截图实证） */
-  --uhd-rainbow-soft: linear-gradient(90deg, #e8f3fc 0%, #eceafd 30%, #f7e8ee 52%, #fcecea 68%, #fdf7dd 84%, #e7f5fd 100%);
+  --uhd-rainbow-soft: linear-gradient(90deg, #eae7d6 0%, #f3f5f5 25%, #f6eedb 50%, #f4f6f6 75%, #eae7d6 100%);
   /* 会员卡斜向光带（115deg；实测原站为 oklch prism 六色带，此为等效施工值） */
   --uhd-rainbow-band: linear-gradient(115deg, transparent 0%, transparent 30%, rgba(47, 143, 224, 0.5) 46%, rgba(122, 116, 214, 0.5) 56%, rgba(196, 108, 144, 0.42) 66%, transparent 82%);
   /* 渐变边框的实现宽度（配合 padding hack / border-image 由组件层使用） */
   --uhd-rainbow-border-w: 1.5px;
   /* 渐变边框层本体（组件以 background 的 border-box 层引用；与 --uhd-rainbow 同值） */
-  --uhd-rainbow-border: linear-gradient(90deg, #2f8fe0 0%, #6f7ad8 14%, #c46c90 22%, #e8766f 28%, #f2a45a 36%, #ecd04f 46%, #95c77d 57%, #39b3ec 75%, #2f8fe0 100%);
+  --uhd-rainbow-border: linear-gradient(135deg, #a4de91 0%, #3cdce7 10%, #f5c165 18%, #e8766f 26%, rgba(159, 177, 255, 0.28) 48%, rgba(157, 124, 195, 0.10) 70%, rgba(157, 124, 195, 0) 100%);
   /* 渐变边框流动版：同一周期在渐变内重复两遍（停点为 --uhd-rainbow-border 的半程压缩＋镜像续程），
      组件以 background-size:200% 100% 引用并动画 background-position 0%→100% 时，
      位移恰为一个周期、无缝衔接（详情主按钮描边流动动画用，G-100） */
-  --uhd-rainbow-border-flow: linear-gradient(90deg, #2f8fe0 0%, #6f7ad8 7%, #c46c90 11%, #e8766f 14%, #f2a45a 18%, #ecd04f 23%, #95c77d 28.5%, #39b3ec 37.5%, #2f8fe0 50%, #6f7ad8 57%, #c46c90 61%, #e8766f 64%, #f2a45a 68%, #ecd04f 73%, #95c77d 78.5%, #39b3ec 87.5%, #2f8fe0 100%);
+  --uhd-rainbow-border-flow: linear-gradient(135deg, #a4de91 0%, #3cdce7 5%, #f5c165 9%, #e8766f 13%, rgba(159, 177, 255, 0.28) 24%, rgba(157, 124, 195, 0.10) 35%, rgba(157, 124, 195, 0) 50%, rgba(157, 124, 195, 0.10) 65%, rgba(159, 177, 255, 0.28) 76%, #e8766f 87%, #f5c165 91%, #3cdce7 95%, #a4de91 100%);
 
   /* ---------- 1.3 字号梯度与字重（字体栈为原站实测值） ---------- */
   --uhd-font-sans: "Inter Tight Variable", "Inter Tight", "SF Pro Display", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
@@ -126,17 +137,43 @@
   --uhd-r-lg: 28px;
   --uhd-radius-modal: 24px;
   --uhd-border-w: 1px;
+  /* 设置/会话行高（质感第二波，2026-11-18）：友站账号安全行高约 52px 实测；
+     .set-row/.set-rowbtn/.pc-row/.sec-rowbtn/.uhd-row 本体同模共用 */
+  --uhd-row-h: 52px;
   /* 白卡柔和阴影（原站浅色实测值换算） */
   --uhd-shadow-card-l: 0 1px 2px rgba(20, 22, 28, 0.06), 0 14px 32px -18px rgba(20, 22, 28, 0.28);
   --uhd-shadow-card-l-hover: 0 1px 2px rgba(20, 22, 28, 0.08), 0 20px 40px -20px rgba(20, 22, 28, 0.34);
   --uhd-shadow-seg: 0 1px 3px rgba(17, 17, 17, 0.12);
   --uhd-shadow-modal: 0 24px 64px -24px rgba(0, 0, 0, 0.35);
+  /* 阴影收编（质感第二波，2026-11-18）：全仓随手 box-shadow 按值聚类收进
+     本节。0.5 族收敛到 sheet 的 0.55、0.05 族收敛到 soft 的 0.08、
+     1px 族收敛到 seg（见契约测试 textureTokens2.test.mjs T3 豁免说明）。
+     member-l/member-d 按友站补测采样反推：浅色卡下 2px rgb(205,201,229)
+     →38px 至页底色；深色卡下 2px rgb(23,23,31)→36px 至页底 rgb(19,20,21)。 */
+  --uhd-shadow-sheet: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 12px 28px -12px rgba(0, 0, 0, 0.55);
+  --uhd-shadow-card-d: 0 10px 24px rgba(0, 0, 0, 0.32);
+  --uhd-shadow-card-lav: 0 8px 22px rgba(90, 94, 150, 0.08);
+  --uhd-shadow-member-l: 0 2px 8px rgba(205, 201, 229, 0.75), 0 16px 38px -12px rgba(205, 201, 229, 0.45);
+  --uhd-shadow-member-d: 0 2px 6px rgba(23, 23, 31, 0.8), 0 16px 36px -12px rgba(23, 23, 31, 0.5);
+  --uhd-shadow-panel-lg: 0 24px 60px rgba(0, 0, 0, 0.5);
+  --uhd-shadow-float: 0 18px 40px rgba(0, 0, 0, 0.45);
+  --uhd-shadow-soft: 0 2px 10px rgba(17, 17, 20, 0.08);
+  --uhd-shadow-knob: 0 1px 4px rgba(0, 0, 0, 0.35);
+  --uhd-shadow-thumb: 0 2px 8px rgba(17, 17, 20, 0.18);
+  --uhd-shadow-thumb-d: 0 2px 8px rgba(0, 0, 0, 0.45);
+  --uhd-shadow-focus: 0 0 0 3px rgba(37, 99, 235, 0.14);
+  --uhd-shadow-tab: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 1px 6px rgba(0, 0, 0, 0.14);
   /* 毛玻璃（实测 backdrop blur 12px 档） */
   --uhd-glass-d: rgba(24, 24, 27, 0.55);
   --uhd-glass-l: rgba(255, 255, 255, 0.72);
   --uhd-glass-border: rgba(255, 255, 255, 0.14);
-  /* 主按钮深色毛玻璃底：须近不透明，否则彩虹边框层会透成满面（验收截图实证） */
-  --uhd-glass-btn-d: rgba(18, 18, 20, 0.88);
+  /* 主按钮深色毛玻璃底（2026-11-18 真机录屏纠正）：中性深色低透明玻璃，
+     底色 alpha 0.40（0.35–0.45 区间中值），色相中性（R/B 差 8）；模糊取
+     pill 档（--uhd-glass-filter＝blur 16/saturate 150）。此前近不透明
+     rgba(18,18,20,0.88) 与「须近不透明防满面彩虹」的旧注记一并作废——
+     边框已改不对称（右半段近透明），面内仍会透出左缘鲜明段的彩虹色，
+     彻底的环形-only 透光须另改边框构造（mask 环切），见本单回报。 */
+  --uhd-glass-btn-d: rgba(10, 12, 18, 0.40);
   --uhd-glass-border-l: rgba(17, 17, 17, 0.08);
   /* 玻璃分级（批 B 地基，2026-11-14）：按构件分四档，blur/saturate 照友站
      材质原文（排查报告第二章 §2.2）——navpill 20/160、pill 16/150、
@@ -219,6 +256,12 @@
      spring 按压回弹／spring-soft 玻璃形态变化 */
   --uhd-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
   --uhd-ease-pop: cubic-bezier(0.22, 1, 0.36, 1);
+  /* 按压反馈（质感第二波，2026-11-18）：主钮与胶囊统一引用。缩放 0.97
+     取全仓 :active 众数值；亮度 0.96 只加在 UhdButton（其余钮已有
+     opacity 按压反馈，不叠加）；时长取 micro 档 0.15s。 */
+  --uhd-press-scale: 0.97;
+  --uhd-press-brightness: 0.96;
+  --uhd-press-dur: var(--uhd-dur-micro);
   --uhd-ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
   --uhd-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --uhd-ease-spring-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
@@ -414,9 +457,10 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.28),
     0 3px 10px -2px rgba(0, 0, 0, 0.35);
   --uhd-s-hero-fade: #121214;
-  /* 详情页播放主胶囊（深色）：黑毛玻璃＋白字；底色取 --uhd-glass-btn-d 同口径近不透明，
-     否则彩虹边框层会透成满面；模糊取站内毛玻璃 12px 档（--uhd-glass-filter） */
-  --uhd-s-play-bg: rgba(18, 18, 20, 0.88);
+  /* 详情页播放主胶囊（深色）：黑毛玻璃＋白字；底色取 --uhd-glass-btn-d 同口径
+     （2026-11-18 纠正后为中性深色低透明玻璃 rgba(10,12,18,0.40)）；
+     模糊取站内毛玻璃 12px 档（--uhd-glass-filter） */
+  --uhd-s-play-bg: rgba(10, 12, 18, 0.40);
   --uhd-s-play-text: #ffffff;
   --uhd-s-play-blur: 12px;
 }

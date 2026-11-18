@@ -149,7 +149,7 @@ onMounted(() => {
   align-items: center;
   gap: 14px;
   width: 100%;
-  min-height: 68px;
+  min-height: var(--uhd-row-h);
   padding: 10px 2px;
   background: none;
   border: none;

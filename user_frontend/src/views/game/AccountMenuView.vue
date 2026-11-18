@@ -433,7 +433,7 @@ html[data-theme='light'] .am-status-skel { background: #e4e4e7; }
   background: rgba(255, 255, 255, 0.2);
   color: #ffffff;
   font-weight: var(--uhd-fw-semibold);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+  box-shadow: var(--uhd-shadow-seg);
 }
 
 /* 退出登录：独立整宽胶囊 */
@@ -449,7 +449,7 @@ html[data-theme='light'] .am-status-skel { background: #e4e4e7; }
   font-size: 17px;
   font-weight: var(--uhd-fw-semibold);
   cursor: pointer;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--uhd-shadow-soft);
 }
 .am-logout:active {
   opacity: 0.78;

@@ -1071,7 +1071,7 @@ async function start() {
 </script>
 
 <style scoped>
-/* 批 3 播放前弹层（录屏形态）：手机 = 悬浮大卡（左右/底部留 12、圆角 28）；
+/* 批 3 播放前弹层（录屏形态）：手机 = 悬浮大卡（左右/底部留 12、圆角 24）；
    桌面 = 居中 610 宽、圆角 24（存档第 7 节）。头图 + 版本单选卡 +
    外挂字幕卡 + 播放线路行 + 玻璃粉彩开始播放钮（双色文案）。
    Teleport 到 body：浅色走 --uhd-l-* :root 令牌；片库面深色态由
@@ -1092,9 +1092,10 @@ async function start() {
   inset: 0;
   border: 0;
   padding: 0;
-  background: rgba(10, 10, 12, 0.45);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  /* 浅色遮罩档（选版本弹层浅色实测）：深色桥接见文末 body.uhd-stream-dark .psp-mask */
+  background: var(--modal-scrim-light);
+  backdrop-filter: var(--modal-scrim-light-filter);
+  -webkit-backdrop-filter: var(--modal-scrim-light-filter);
   cursor: pointer;
 }
 .psp-sheet {
@@ -1112,7 +1113,8 @@ async function start() {
      决定、不跟全站 data-theme，故 --modal-glass-* 在本作用域按态
      钉值：此处（缺省浅色态）钉浅色档、深色桥接块钉深色档，数值与
      styles/modal-glass.css 两档逐字一致（那边是全站真源）。
-     位置/尺寸/圆角 28 不动；卡内 --uhd-l-surface 小面照旧。 */
+     位置/尺寸不动；圆角 28→24（质感第二波，弹层大浮件收齐 24，桌面
+     本已是 24）；卡内 --uhd-l-surface 小面照旧。 */
   --modal-glass-bg: rgba(255, 255, 255, 0.72);
   --modal-glass-edge: rgba(17, 17, 17, 0.12);
   --modal-glass-hi: rgba(255, 255, 255, 0.7);
@@ -1122,7 +1124,7 @@ async function start() {
   background: var(--modal-glass-bg);
   border: 1px solid var(--modal-glass-edge);
   color: var(--uhd-l-text, #111111);
-  border-radius: 28px;
+  border-radius: 24px;
   overflow: hidden;
   font-family: var(--uhd-font-sans, sans-serif);
   box-shadow:
@@ -1683,7 +1685,7 @@ body.uhd-stream-dark .psp-failed__retry {
   cursor: pointer;
 }
 .psp-start:active {
-  transform: scale(0.99);
+  transform: scale(var(--uhd-press-scale));
 }
 /* 钮内版本名段：细体灰（与「开始播放」粗体成双色，友站形态） */
 .psp-start__ver {
@@ -1980,6 +1982,12 @@ body.uhd-stream-dark .psp-sheet {
   --modal-glass-filter: blur(24px) saturate(160%);
   color: #ffffff;
 }
+/* 深色桥接下遮罩切深色档（与面板玻璃深色档同态） */
+body.uhd-stream-dark .psp-mask {
+  background: var(--modal-scrim-dark);
+  backdrop-filter: var(--modal-scrim-dark-filter);
+  -webkit-backdrop-filter: var(--modal-scrim-dark-filter);
+}
 body.uhd-stream-dark .psp-sec-head,
 body.uhd-stream-dark .psp-sec-count,
 body.uhd-stream-dark .psp-ver__meta,
@@ -2059,9 +2067,7 @@ body.uhd-stream-dark .psp-start {
   background:
     linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
     var(--uhd-rainbow) border-box;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 12px 28px -12px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--uhd-shadow-sheet);
   color: #ffffff;
 }
 /* 深色态下不可播禁用钮仍须压过上面的玻璃彩虹配方：深灰底灰字 */

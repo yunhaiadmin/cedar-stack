@@ -2385,7 +2385,7 @@ onUnmounted(() => {
   height: 58px;
   border-radius: 29px;
   padding: 2px;
-  background: var(--uhd-rainbow, linear-gradient(90deg, #2f8fe0, #6f7ad8, #c46c90, #e8766f, #f2a45a, #ecd04f, #95c77d, #39b3ec));
+  background: var(--uhd-rainbow, linear-gradient(135deg, #a4de91 0%, #3cdce7 10%, #f5c165 18%, #e8766f 26%, rgba(159, 177, 255, 0.28) 48%, rgba(157, 124, 195, 0.10) 70%, rgba(157, 124, 195, 0) 100%));
   box-shadow: var(--uhd-glass-slab-shadow);
 }
 .wp-start-main,
@@ -2648,7 +2648,7 @@ onUnmounted(() => {
   border-radius: 50%;
   background: #fff;
   border: none;
-  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--uhd-shadow-thumb-d);
 }
 .wp-progress::-moz-range-thumb {
   width: 13px;

@@ -1278,15 +1278,11 @@ const year = new Date().getFullYear()
   gap: 16px;
   flex-wrap: wrap;
 }
-/* 本页主钮质感对齐（2026-11-18 友站 1919 桌面实测）：底改深暖 rgb(49,40,24)
-   （原令牌底为中性冷黑 rgba(18,18,20,0.88)）；边框渐变停点按边缘采样校准——
-   左缘琥珀 rgb(245,193,101)、顶缘绿→青→蓝→紫、右缘暗青 rgb(21,90,97)。
-   只覆盖本页主钮，不动 UhdButton 组件与令牌（彩虹钮全站分档在令牌单）。 */
-.hero-actions :deep(.uhd-btn--primary.uhd-btn--dark) {
-  background:
-    linear-gradient(rgba(49, 40, 24, 0.92), rgba(49, 40, 24, 0.92)) padding-box,
-    linear-gradient(90deg, rgb(245, 193, 101) 0%, rgb(164, 222, 145) 20%, rgb(60, 220, 231) 45%, rgb(159, 177, 255) 70%, rgb(157, 124, 195) 90%, rgb(21, 90, 97) 100%) border-box;
-}
+/* 本页主钮（2026-11-18 真机录屏纠正）：#305 的本页覆盖已删——此前覆盖层
+   把底色写成深暖近实底棕褐色，是把钮压在深色背景上的合成色误当实底色；
+   边框也是整圈均匀九停点。现一律走修正后的令牌：底色 --uhd-glass-btn-d
+   （中性深色低透明玻璃＋pill 档模糊），边框 --uhd-rainbow（135deg 左侧
+   鲜明、向右淡出）。本页不再覆盖。 */
 /* 「前往流媒体」改深色玻璃（2026-11-14 用户双站对图亲点）：UhdButton 的
    secondary+dark 基础配方是 transparent 底、无 backdrop-filter——空心描边，
    钮内直接透出背景条纹原色。本页用专属钩子 .hero-btn-stream 覆盖成深色
@@ -1299,9 +1295,7 @@ const year = new Date().getFullYear()
   color: #ffffff;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(11, 15, 17, 0.5);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    0 12px 32px -12px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--uhd-shadow-sheet);
   backdrop-filter: blur(14px) saturate(1.4);
   -webkit-backdrop-filter: blur(14px) saturate(1.4);
 }
@@ -1725,7 +1719,7 @@ const year = new Date().getFullYear()
       background-color 0.22s var(--uhd-ease-spring);
   }
   .ess-card.is-in:active {
-    transform: translateY(0) scale(0.99);
+    transform: translateY(0) scale(var(--uhd-press-scale));
     transition: transform 0.22s var(--uhd-ease-spring);
   }
   .ess-card:hover::after { opacity: 1; }
@@ -2101,9 +2095,9 @@ const year = new Date().getFullYear()
     inset: 0;
     z-index: 65;
     display: block;
-    background: rgba(0, 0, 0, 0.45);
-    backdrop-filter: blur(2px);
-    -webkit-backdrop-filter: blur(2px);
+    background: var(--modal-scrim-dark);
+    backdrop-filter: var(--modal-scrim-dark-filter);
+    -webkit-backdrop-filter: var(--modal-scrim-dark-filter);
     animation: m-fade-in 0.3s ease-out;
   }
   .m-scrim.is-out {

@@ -302,8 +302,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
+  background: var(--modal-scrim-dark);
+  backdrop-filter: var(--modal-scrim-dark-filter);
 }
 
 .modal-box {

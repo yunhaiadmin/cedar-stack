@@ -7,7 +7,7 @@
  * 剧集的季/集列表与缺集求补在 SeriesEpisodeList 里。
  * 版式按 /stream 详情页实机补拆（存档第 5/6 节）：居中容器约 1135、
  * 剧照带 Hero 高约 340 渐隐、海报 220×330/圆角 16、类型 chip 60×28、
- * 按钮行高 52、简介 16px/行高 28/3 行截断、右侧信息栏竖分隔线 +
+ * 按钮行高 52、简介 15px/行高 26/3 行截断、右侧信息栏竖分隔线 +
  * TMDB/IMDb chip 85×28、电影「可播放版本」卡 580×70/圆角 18。
  * Aetrix 无片名 Logo 字标图，剧集标题用文字 H1（数据驱动）。
  */
@@ -1273,15 +1273,15 @@ watch(itemId, () => {
   opacity: 0.55;
   cursor: wait;
 }
-/* 简介：16px/行高 28/3 行截断 */
+/* 简介：15px/行高 26/3 行截断（质感第二波：友站实测简介字形 14px 行距 26px、推断 15px/26px） */
 .md-overview-box {
   margin-top: 20px;
   max-width: 645px;
 }
 .md-overview {
   margin: 0;
-  font-size: 16px;
-  line-height: 28px;
+  font-size: 15px;
+  line-height: 26px;
   color: var(--uhd-s-text);
   display: -webkit-box;
   -webkit-line-clamp: 3;

@@ -11,7 +11,7 @@ withDefaults(
     variant?: 'primary' | 'secondary' | 'danger' | 'play'
     /** 深色面语境（营销面/片库面） */
     dark?: boolean
-    size?: 'md' | 'sm'
+    size?: 'md' | 'mid' | 'sm'
     block?: boolean
     disabled?: boolean
     type?: 'button' | 'submit'
@@ -48,18 +48,26 @@ withDefaults(
   cursor: pointer;
   transition:
     opacity var(--uhd-dur-ui) var(--uhd-ease-standard),
-    transform var(--uhd-dur-base) var(--uhd-ease-spring),
+    transform var(--uhd-press-dur) var(--uhd-ease-spring),
     background-color var(--uhd-dur-base) var(--uhd-ease-standard),
     box-shadow var(--uhd-dur-base) var(--uhd-ease-standard);
 }
-/* 按压回弹（批 B 微交互，报告 §2.4）：spring 缓动＋base 时长；
+/* 按压回弹（批 B 微交互，报告 §2.4）：缩放＋亮度＋时长走 --uhd-press 三值；
    禁用态不触发，松手靠 spring 曲线回弹 */
 .uhd-btn:not(:disabled):active {
-  transform: scale(0.97);
+  transform: scale(var(--uhd-press-scale));
+  filter: brightness(var(--uhd-press-brightness));
 }
 .uhd-btn--md {
   height: 48px;
   padding: 0 26px;
+  font-size: var(--uhd-fs-body);
+}
+/* 中档 42 级（质感第二波，2026-11-18）：友站片库立即播放 146×42、
+   一起看开启 265×44 均在 42–54 区间，供片库/弹层主钮用 */
+.uhd-btn--mid {
+  height: 42px;
+  padding: 0 22px;
   font-size: var(--uhd-fs-body);
 }
 .uhd-btn--sm {
@@ -89,17 +97,38 @@ withDefaults(
   backdrop-filter: var(--uhd-glass-filter);
   -webkit-backdrop-filter: var(--uhd-glass-filter);
 }
-/* 主按钮（深色面）：彩虹边框 + 深色毛玻璃底 + 白字 + 玻璃栈（内高光 + 柔影） */
+/* 主按钮（深色面）：纯透光玻璃底 + 白字 + 玻璃栈（内高光 + 柔影）；
+   彩虹只在 1.5px 细环上（::before 环切，见下）——钮面内一律是玻璃，
+   背景光束全幅透过。旧写法彩虹渐变铺满 border-box，透过半透明玻璃在
+   钮面内晕染成色块（2026-11-18 返工，hero/buttons/scrim 三图亲验打回）。 */
 .uhd-btn--primary.uhd-btn--dark {
+  position: relative;
   color: var(--uhd-d-text);
-  background:
-    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
-    var(--uhd-rainbow) border-box;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 12px 28px -12px rgba(0, 0, 0, 0.55);
+  border: var(--uhd-rainbow-border-w) solid transparent;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
+  box-shadow: var(--uhd-shadow-sheet);
   backdrop-filter: var(--uhd-glass-filter);
   -webkit-backdrop-filter: var(--uhd-glass-filter);
+}
+/* 彩虹环（环形-only）：渐变层 padding 取边框宽 1.5px，mask 剔掉 content-box
+   只剩环形；停点走 --uhd-rainbow 不对称分布（左鲜明、向右淡出），与钮面
+   玻璃层分离，钮面内不再有彩虹晕染。 */
+.uhd-btn--primary.uhd-btn--dark::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--uhd-rainbow-border-w);
+  background: var(--uhd-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+/* 禁用态彩虹退场：环随之一并隐藏 */
+.uhd-btn--primary.uhd-btn--dark:disabled::before {
+  display: none;
 }
 /* 次按钮（浅色面） */
 .uhd-btn--secondary {

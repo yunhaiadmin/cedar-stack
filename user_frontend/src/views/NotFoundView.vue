@@ -92,14 +92,14 @@ function goBack() {
   color: var(--uhd-l-text-2);
 }
 
-/* 彩虹渐变数字（白名单位置：404 数字，浅色面同样用全光谱压深色字阶） */
+/* 彩虹渐变数字（白名单位置：404 数字，浅色面同样用全光谱压深色字阶）——填色走不透明 fill 版 */
 .nf-code {
   margin: 0 0 0.75rem;
   font-family: var(--uhd-font-display);
   font-size: var(--uhd-fs-404);
   font-weight: var(--uhd-fw-black);
   line-height: 1;
-  background: var(--uhd-rainbow);
+  background: var(--uhd-rainbow-fill);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;

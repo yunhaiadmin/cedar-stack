@@ -824,9 +824,7 @@ onMounted(() => {
   border: 1px solid rgba(255, 255, 255, 0.16);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    0 10px 28px rgba(0, 0, 0, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), var(--uhd-shadow-card-d);
 }
 .auth-top__iconbtn {
   display: inline-flex;
@@ -857,7 +855,7 @@ onMounted(() => {
   border-radius: 16px;
   background: #141416;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--uhd-shadow-panel-lg);
   display: flex;
   flex-direction: column;
 }
@@ -894,7 +892,7 @@ onMounted(() => {
   background: #141416;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 20px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--uhd-shadow-panel-lg);
   animation: authColumnIn var(--uhd-dur-blur-in) var(--uhd-ease-pop) both;
 }
 @keyframes authColumnIn {
@@ -1009,7 +1007,7 @@ onMounted(() => {
 }
 .field-box:focus-within {
   border-color: var(--uhd-l-link);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+  box-shadow: var(--uhd-shadow-focus);
 }
 .field-icon {
   color: rgba(255, 255, 255, 0.4);
@@ -1168,22 +1166,20 @@ onMounted(() => {
     linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
     var(--uhd-rainbow) border-box;
   color: #ffffff;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 12px 28px -12px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--uhd-shadow-sheet);
   backdrop-filter: var(--uhd-glass-filter);
   -webkit-backdrop-filter: var(--uhd-glass-filter);
   font: inherit;
   font-size: 15px;
   font-weight: var(--uhd-fw-semibold);
   cursor: pointer;
-  transition: transform 0.15s ease, filter 0.2s ease, opacity 0.2s ease;
+  transition: transform var(--uhd-press-dur) var(--uhd-ease-spring), filter 0.2s ease, opacity 0.2s ease;
 }
 .submit-btn:hover:not(:disabled) {
   filter: brightness(1.03);
 }
 .submit-btn:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: scale(var(--uhd-press-scale));
 }
 .submit-btn:disabled {
   background: rgba(255, 255, 255, 0.08);

@@ -58,14 +58,22 @@
   --uhd-blob-lilac: rgba(221, 214, 254, 0.5);
   --uhd-blob-sky: rgba(191, 219, 254, 0.45);
 
-  /* ---------- 1.2 彩虹光谱渐变（全站唯一「品牌色」；停点已按原站实测锁定） ----------
-     实测来源：原站 --brand-play-gradient（conic）八个停点与 --brand-1..4 锚点。
-     说明书原插值（紫 #7c3aed→蓝 #2563eb）经复核作废，以实测色带为准。 */
-  --uhd-rainbow: linear-gradient(90deg, #2f8fe0 0%, #6f7ad8 14%, #c46c90 22%, #e8766f 28%, #f2a45a 36%, #ecd04f 46%, #95c77d 57%, #39b3ec 75%, #2f8fe0 100%);
+  /* ---------- 1.2 彩虹光谱渐变（全站唯一「品牌色」） ----------
+     2026-11-18 真机录屏纠正（用户并排对比抓现行，优先级高于桌面采样）：
+     友站主钮边框是不对称的——鲜明段集中在左侧（左上绿/青、左下橙红），
+     顺时针向右逐渐淡出、右缘几乎看不见；底色是透光玻璃不是实底。
+     此前桌面采样读到的 rgb(49,40,24) 是钮压在深色背景上的合成色，
+     被 #305 误当作实底色做成近实底棕褐色，已作废。
+     本令牌改 135deg 对角不对称分布：鲜明段压在 0–26%（左缘），右半段
+     alpha 压到近无（70% 处 0.10、100% 处 0）；桌面采样色值只作左缘
+     鲜明段的色值参考。conic 版（Logo 三角）与 band 版（会员卡光带）不动。
+     soft 版由四处采样内底色排布：片库 146×42 #eae7d6／选版本开始
+     #f3f5f5／定价 #f6eedb／用户中心续费 #f4f6f6。 */
+  --uhd-rainbow: linear-gradient(135deg, #a4de91 0%, #3cdce7 10%, #f5c165 18%, #e8766f 26%, rgba(159, 177, 255, 0.28) 48%, rgba(157, 124, 195, 0.10) 70%, rgba(157, 124, 195, 0) 100%);
   --uhd-rainbow-conic: conic-gradient(at 30% 55%, #2f8fe0 0deg, #6f7ad8 50deg, #c46c90 80deg, #e8766f 100deg, #f2a45a 130deg, #ecd04f 165deg, #95c77d 205deg, #39b3ec 270deg, #2f8fe0 360deg);
   /* 主按钮淡彩渐变底（浅色面）：必须是不透明的预混白粉彩——背景分层下若用半透明色，
      border-box 的全强度彩虹层会透出来变满面彩虹（验收截图实证） */
-  --uhd-rainbow-soft: linear-gradient(90deg, #e8f3fc 0%, #eceafd 30%, #f7e8ee 52%, #fcecea 68%, #fdf7dd 84%, #e7f5fd 100%);
+  --uhd-rainbow-soft: linear-gradient(90deg, #eae7d6 0%, #f3f5f5 25%, #f6eedb 50%, #f4f6f6 75%, #eae7d6 100%);
   /* 会员卡斜向光带（115deg；实测原站为 oklch prism 六色带，此为等效施工值） */
   --uhd-rainbow-band: linear-gradient(115deg, transparent 0%, transparent 30%, rgba(47, 143, 224, 0.5) 46%, rgba(122, 116, 214, 0.5) 56%, rgba(196, 108, 144, 0.42) 66%, transparent 82%);
   /* 渐变边框的实现宽度（配合 padding hack / border-image 由组件层使用） */
@@ -122,8 +130,10 @@
   --uhd-glass-d: rgba(24, 24, 27, 0.55);
   --uhd-glass-l: rgba(255, 255, 255, 0.72);
   --uhd-glass-border: rgba(255, 255, 255, 0.14);
-  /* 主按钮深色毛玻璃底：须近不透明，否则彩虹边框层会透成满面（验收截图实证） */
-  --uhd-glass-btn-d: rgba(18, 18, 20, 0.88);
+  /* 主按钮深色毛玻璃底（2026-11-18 真机录屏纠正）：中性深色低透明玻璃，
+     底色 alpha 0.40（0.35–0.45 区间中值），色相中性（R/B 差 8）；此前近
+     不透明 rgba(18,18,20,0.88) 与旧注记一并作废（与 user_frontend 同值）。 */
+  --uhd-glass-btn-d: rgba(10, 12, 18, 0.40);
   --uhd-glass-border-l: rgba(17, 17, 17, 0.08);
   /* 玻璃分级（批 B 地基，2026-11-14）：按构件分四档，blur/saturate 照友站
      材质原文（排查报告第二章 §2.2）——navpill 20/160、pill 16/150、
