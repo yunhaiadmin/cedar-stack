@@ -2315,3 +2315,36 @@ class Probe4kResult(Base):
     payload = Column(Text, nullable=False, default="")
     user_agent = Column(String(400), nullable=False, default="")
     created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
+
+
+class EmbyImageObsDaily(Base):
+    """EA 图片流量观测日聚合（F5 前置观测，2026-11-18）。
+
+    只存聚合计数、不存原始 UA / IP / 条目 GUID：维度为（自然日、
+    UA 家族、凭据有无、图片类型、尺寸档、响应状态），一行 = 一组
+    维度当天的请求数。写入由 ``emby_server.image_obs`` 的进程内计数
+    定时批量 flush（唯一约束做 upsert 键），图片请求路径不写库。
+    观测期满、C+D-lite 参数定版后本表与观测层一并退役。
+    """
+
+    __tablename__ = 'emby_image_obs_daily'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    day = Column(Date, nullable=False)
+    # UA 家族短码（reflix/lenna/yamby/emby/infuse/.../browser/other）
+    ua_family = Column(String(32), nullable=False, default="other")
+    # 请求是否带了任一凭据形态（只记有无，不记凭据内容、不验有效性）
+    has_credential = Column(Boolean, nullable=False, default=False)
+    image_type = Column(String(32), nullable=False, default="Other")
+    # 尺寸档：original（无尺寸参数）/ large（请求维度 >1280）/ standard
+    size_bucket = Column(String(16), nullable=False, default="original")
+    status = Column(Integer, nullable=False, default=0)
+    count = Column(BigInteger, nullable=False, default=0)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now,
+                        nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('day', 'ua_family', 'has_credential', 'image_type',
+                         'size_bucket', 'status',
+                         name='uq_emby_image_obs_daily_dims'),
+    )
