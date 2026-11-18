@@ -22,8 +22,15 @@ import { initLibraryStats, libraryStats } from '@/composables/useLibraryStats'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
-/* 首屏棱镜图加载态：图未到位前只露纯黑中性底（不露半张图/半成品），load 后整图淡入 */
+/* 首屏棱镜图加载态：图未到位前只露纯黑中性底（不露半张图/半成品），load 后整图淡入。
+   可见终态不许单点依赖 load 事件（2026-11-18 晚淡入调查）：缓存命中时图可能在
+   监听挂上前已 complete、load 错过就永远不显形——挂载时查 complete 兜底，
+   再加 3s 定时兜底，任何路径都必须到达可见终态（友站 hero-fade 口径：
+   入场终态完全可见，整页长时间近黑不合格）。 */
 const heroImgReady = ref(false)
+const heroBgImg = ref<HTMLImageElement | null>(null)
+const heroVisualImg = ref<HTMLImageElement | null>(null)
+let heroReadyTimer = 0
 function onHeroImgLoad() { heroImgReady.value = true }
 const userStore = useUserStore()
 
@@ -434,6 +441,8 @@ function onLandingWide() {
 }
 onMounted(() => {
   void initLibraryStats()
+  if (heroBgImg.value?.complete || heroVisualImg.value?.complete) heroImgReady.value = true
+  heroReadyTimer = window.setTimeout(() => { heroImgReady.value = true }, 3000)
   window.addEventListener('scroll', onScrollNav, { passive: true })
   window.addEventListener('keydown', onMenuKey)
   landingWide = window.matchMedia('(min-width: 901px)')
@@ -459,6 +468,7 @@ onMounted(() => {
 onDeactivated(() => forceReleaseMenu())
 onUnmounted(() => {
   if (heroTimer) clearInterval(heroTimer)
+  if (heroReadyTimer) window.clearTimeout(heroReadyTimer)
   window.removeEventListener('scroll', onScroll)
   window.removeEventListener('scroll', onScrollNav)
   window.removeEventListener('keydown', onMenuKey)
@@ -486,6 +496,7 @@ const year = new Date().getFullYear()
         brand-sub="SERVICE"
         cta-text="进入后台"
         shrink-on-scroll
+        :brand-spin="!reduceMotion"
         @select="onNav"
         @cta="goConsole"
       />
@@ -495,7 +506,7 @@ const year = new Date().getFullYear()
          未滚动时整条透明、滚动 >40px 玻璃 pill 浮起且 chip 变平；菜单为底部抽屉 -->
     <div class="m-nav" :class="{ 'is-on': navScrolled }">
       <span class="m-nav__brand">
-        <span class="m-nav__logo"><BrandMark /></span>
+        <span class="m-nav__logo"><BrandMark :spin="!reduceMotion" /></span>
         <span class="m-nav__brand-text">
           <span class="m-nav__brand-name">{{ branding.site_name }}</span>
           <span class="m-nav__brand-sub">SERVICE</span>
@@ -586,36 +597,37 @@ const year = new Date().getFullYear()
 
     <!-- ① Hero -->
     <header class="hero">
-      <!-- 移动端全幅背景（L-02 棱镜竖图，2026-11-18 晚重做：旧横图棱镜只占
-           图内角落 7%×11% 且是细线轮廓，高度撑满画布后只剩左下 105×92px
-           鬼影、又被底部渐黑压灭，等于没有。本图为竖图 1152×2048：黑底
-           星空、玻璃棱镜本体完整明亮居中下（图内 x 36–80%、y 56–77%）、
-           彩虹光束自棱镜右面扇出至右缘横贯、无入射光束、无水面，上半
-           黑场留给文案）；图与脉冲叠层同装 .hero-bg-canvas（画布与图同
-           比例 1152:2048、高度撑满首屏，叠层恒对位）；仅 ≤900px 显示，
-           桌面走 hero-visual 横图 -->
+      <!-- 移动端全幅背景（与桌面同一张宽图 2048×1152，2026-11-18 晚三轮重做：
+           前两版构图本身错了——#327/#333 的棱镜高瘦悬空、光扇只是一条小楔形；
+           友站构图是棱镜矮宽贴地、白光自左缘入射、光扇向右上炸满右半屏，
+           本图照此重生成。手机端用同一宽图 cover 式裁切：画布高度撑满首屏、
+           水平锚点把棱镜压到左下角（左缘略裁），光扇斜扫至右上角出框，
+           形态对齐友站手机图；图与脉冲叠层同装 .hero-bg-canvas（画布与图
+           同比例 2048:1152，叠层恒对位）；仅 ≤900px 显示，桌面走 hero-visual -->
       <div class="hero-bg" :class="{ 'is-ready': heroImgReady }" aria-hidden="true">
         <div class="hero-bg-canvas">
-          <img class="hero-bg-img" src="/images/hero-prism-portrait.webp" alt="" width="1152" height="2048" fetchpriority="high" @load="onHeroImgLoad" />
+          <img ref="heroBgImg" class="hero-bg-img" src="/images/hero-prism-wide.webp" alt="" width="2048" height="1152" fetchpriority="high" @load="onHeroImgLoad" @error="onHeroImgLoad" />
           <div class="hp">
             <span class="hp-flash hp-flash--prism" />
           </div>
         </div>
       </div>
-      <!-- 桌面棱镜主视觉：棱镜横图（2048×1152，2026-11-18 晚重做：玻璃
-           棱镜本体居右，图内 x 60–80%、y 9–70%，光束自右面扇出至右缘）。
-           帧与图同比例、高度撑满首屏，水平锚点把棱镜中心压到容器宽约
-           62% 处（几何见 .hero-visual-frame）。移动端不显示，走 .hero-bg。
-           不再另叠彩虹渐变。 -->
+      <!-- 桌面棱镜主视觉：与移动端同一张宽图（2048×1152）。帧与图同比例、
+           高度撑满首屏，水平锚点把棱镜中心压到容器宽 36% 处（友站桌面
+           实测棱镜 x 29.5–42.5%、y 68.3–86.2%），文案列在左 40% 内的
+           暗部上、与棱镜/光扇不重叠（几何见 .hero-visual-frame）。
+           移动端不显示，走 .hero-bg。不再另叠彩虹渐变。 -->
       <div class="hero-visual" :class="{ 'is-ready': heroImgReady }" aria-hidden="true">
         <div class="hero-visual-frame">
-          <img class="hero-visual-img" src="/images/hero-prism-beam.webp" alt="" width="2048" height="1152" @load="onHeroImgLoad" />
+          <img ref="heroVisualImg" class="hero-visual-img" src="/images/hero-prism-wide.webp" alt="" width="2048" height="1152" @load="onHeroImgLoad" @error="onHeroImgLoad" />
           <div class="hp">
             <span class="hp-flash hp-flash--prism" />
           </div>
         </div>
       </div>
-      <div class="hero-scrim" aria-hidden="true" />
+      <!-- 彩虹漏光层（友站 .prism-leak 逐字口径）：罩在背景图上、文案之下 -->
+      <div class="prism-leak" aria-hidden="true" />
+      <div class="hero-vignette" aria-hidden="true" />
       <div class="hero-inner" :style="heroInnerStyle()">
         <div class="hero-copy">
         <p class="eyebrow hero-el hero-el--eyebrow">{{ branding.site_name }} SERVICE</p>
@@ -989,7 +1001,7 @@ const year = new Date().getFullYear()
   overflow: visible;
 }
 /* 移动端全幅背景层：默认隐藏（桌面走 .hero-visual），仅 ≤900px 启用（见文末断点）。
-   .hero-bg 作尺寸容器，内层画布 .hero-bg-canvas 与竖图同比例（1152:2048）、
+   .hero-bg 作尺寸容器，内层画布 .hero-bg-canvas 与宽图同比例（2048:1152）、
    高度撑满首屏：图与脉冲叠层同画布，任意视口下叠层坐标恒与图对位。::before 压暗左上文字区、::after 轻压
    底部卖点区（z-index 抬到画布之上），保证文字压在暗部上 */
 .hero-bg {
@@ -1004,24 +1016,26 @@ const year = new Date().getFullYear()
 }
 .hero-bg-canvas {
   position: absolute;
-  /* 画布与竖图同比例（1152:2048）、高度撑满首屏：图宽＝56.25cqh
-     （390×844 下 475px）。
-     水平锚点：把棱镜中心（图 x≈58%）压到屏宽 49% 处——棱镜居中、
-     光束自其右面扇出横贯首屏；第二项兜底保证画布右缘不小于屏宽
-     （窄高屏上高度撑满的画布会窄于屏宽，不兜底光束会在右缘前
-     15px 被裁断——首版锚点实测踩过）；上半黑场留给文案。
-     纵向与屏高 1:1：棱镜图内 y 56–77% 正落在文案区（止于约 55%）与
-     卖点栅格（起于约 78.5%）之间的空带，390×844 实测棱镜落
-     x 89–294、y 473–650，不与两区重叠，光束至屏右缘 x=390 出框。
-     脉冲几何覆盖值（对现行竖图 1152×2048 视觉定位实测，图内 % 坐标）：
-     棱镜本体 bbox x 36.4–79.5、y 56.1–77.0，中心 (58, 66.5) */
+  /* 画布与宽图同比例（2048:1152）、高度撑满首屏：图宽＝177.78cqh
+     （390×844 下 1500px，恒宽于屏宽——cover 的高度贴合由此成立，
+     与 object-fit:cover 在高屏上的等价裁法）。
+     水平锚点：把棱镜顶点（图 x≈36.3%）压到屏宽 6.5% 处——棱镜落左下角、
+     左缘被裁约 77px（390 口径）、光扇自棱镜斜扫至右上角出框，形态
+     对齐友站手机图（其实测棱镜可见部 x 0–24%、顶点约 (7%, 70%)；
+     首版锚点 8% 渲染实测顶点 9.5% 偏右，本版收至 6.5%）；
+     第二项兜底保证画布右缘不小于屏宽（极端宽高比下不露黑）。
+     纵向与屏高 1:1：棱镜图内 y 69.5–88.5% 落在文案区（止于约 55%）
+     之下、卖点栅格（起于约 78.5%）之间，390×844 渲染实测棱镜可见
+     x 0–120、y 584–741、顶点 (7.5%, 70.3%)（量测见本轮对照表），
+     光扇至屏右缘出框。
+     脉冲几何覆盖值（对宽图 2048×1152 视觉定位实测，图内 % 坐标）：
+     棱镜本体 bbox x 29.5–42.6、y 69.5–88.5，顶点 (36.3, 69.8) */
   top: 0;
-  left: 0;
   height: 100%;
-  aspect-ratio: 1152 / 2048;
-  margin-left: max(calc(49cqw - 32.6cqh), calc(100cqw - 56.25cqh));
-  --hp-prism-x: 58%;
-  --hp-prism-y: 66.5%;
+  aspect-ratio: 2048 / 1152;
+  left: max(calc(6.5cqw - 64.5cqh), calc(100cqw - 177.78cqh));
+  --hp-prism-x: 36.3%;
+  --hp-prism-y: 69.8%;
 }
 .hero-bg-img {
   display: block;
@@ -1053,8 +1067,9 @@ const year = new Date().getFullYear()
      白字对比，不再压灭棱镜与光束尾 */
   background: linear-gradient(0deg, rgba(1, 1, 4, 0.52), rgba(1, 1, 4, 0.27) 24%, transparent 46%);
 }
-/* 桌面棱镜：与移动端同一张图，帧与图同比例（2048:1152）撑满首屏，
-   脉冲百分比跟图走；定位把棱镜压到左下、彩虹贴底向右下展开，左上黑部留给文案。只裁装饰层。 */
+/* 桌面棱镜：与移动端同一张宽图，帧与图同比例（2048:1152）撑满首屏，
+   脉冲百分比跟图走；定位把棱镜压到左下贴地、光扇向右上炸满右半屏，
+   左上黑部留给文案。只裁装饰层。 */
 .hero-visual {
   position: absolute;
   inset: 0;
@@ -1066,48 +1081,77 @@ const year = new Date().getFullYear()
   position: absolute;
   /* 不用 transform 定位：全站减动效会把 transform 清掉，构图不能靠它。
      帧与图同比例（2048:1152）、高度撑满首屏（超宽屏 min-width 兜底、底对齐，
-     图不拉伸不变形）；水平锚点：图比容器宽时把棱镜中心（图 x≈69.9%）压到
-     容器宽 62% 处，帧只比容器略宽时改为右对齐兜底（光束恰好出右框、
-     不露黑）。脉冲坐标按本图实测中心覆盖，与移动画布各用各图的值。
-     脉冲几何覆盖值（对现行横图 2048×1152 视觉定位实测，图内 % 坐标）：
-     棱镜本体 bbox x 59.7–79.9、y 9.1–69.9，中心 (69.9, 39.5) */
+     图不拉伸不变形）；水平锚点：图比容器宽时把棱镜中心（图 x≈36.05%）压到
+     容器宽 36% 处（友站桌面实测棱镜 x 29.5–42.5%、y 68.3–86.2%，中心
+     (36.0, 77.3)），帧只比容器略宽时改为右对齐兜底（光扇恰好出右框、
+     不露黑）。脉冲坐标按本图实测顶点覆盖，与移动画布同图同值。
+     脉冲几何覆盖值（对宽图 2048×1152 视觉定位实测，图内 % 坐标）：
+     棱镜本体 bbox x 29.5–42.6、y 69.5–88.5，顶点 (36.3, 69.8) */
   bottom: 0;
   height: 100%;
   min-width: 100%;
   aspect-ratio: 2048 / 1152;
-  left: max(min(0px, calc(100cqw - 177.78cqh)), min(0px, calc(62cqw - 124.1cqh)));
-  --hp-prism-x: 69.9%;
-  --hp-prism-y: 39.5%;
+  left: max(min(0px, calc(100cqw - 177.78cqh)), min(0px, calc(36cqw - 64.1cqh)));
+  --hp-prism-x: 36.3%;
+  --hp-prism-y: 69.8%;
 }
 .hero-visual-img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  /* 超宽屏 min-width 兜底时帧比图宽、竖向裁切自顶部起：保住贴地的
+     棱镜与地面，光扇顶部出框与宽屏构图一致（等比帧内无裁切、不生效） */
+  object-position: 50% 100%;
   opacity: 0;
   transition: opacity 0.6s ease;
 }
 .hero-visual.is-ready .hero-visual-img { opacity: 1; }
-.hero-scrim {
+/* ---------- 彩虹漏光层（友站 .prism-leak 逐字口径，2026-11-18 晚对齐） ----------
+   友站原文：position:fixed; inset:-10%，blur(48px)，opacity=--mat-leak-opacity
+   (.3)，mix-blend-mode=--mat-leak-blend（深色 normal／浅色 multiply，本页恒
+   深色取 normal），背景 118deg 彩虹带（transparent 6% → oklch 七色标
+   13–37% → transparent 44%），mask 为左上径向收束。本站落地页内以
+   absolute 贴在 hero 里（首屏构图等价，不外溢到后续区块），罩在背景图
+   之上、暗角与文案之下。 */
+.prism-leak {
+  position: absolute;
+  inset: -10%;
+  z-index: 1;
+  pointer-events: none;
+  filter: blur(48px);
+  opacity: 0.3;
+  mix-blend-mode: normal;
+  background: linear-gradient(118deg, transparent 6%, oklch(75% 0.15 25) 13%, oklch(80% 0.14 65) 17%, oklch(87% 0.14 100) 21%, oklch(80% 0.14 150) 25%, oklch(78% 0.12 205) 29%, oklch(68% 0.15 265) 33%, oklch(62% 0.16 305) 37%, transparent 44%);
+  -webkit-mask-image: radial-gradient(75% 70% at 8% 0, #000 0%, rgba(0, 0, 0, 0.5) 45%, transparent 78%);
+  mask-image: radial-gradient(75% 70% at 8% 0, #000 0%, rgba(0, 0, 0, 0.5) 45%, transparent 78%);
+}
+/* ---------- Hero 暗角（友站 .hero-vignette 逐字口径，2026-11-18 晚对齐） ----------
+   替代原 .hero-scrim 平遮罩：三层——径向（圆心 70% 42%，向外 canvas
+   4%→55%）、横向（左 canvas 80% 向右渐隐）、纵向（顶 10%、底 90% 收边）；
+   canvas 色对应本站 --uhd-d-bg（友站深色 --canvas=oklch(12% .004 265)），
+   浓度走 color-mix 同比例。遮罩只收敛不加码：棱镜/光扇主体区（右中）
+   比原平遮罩更透，浓处只在左缘文案底与上下收边。 */
+.hero-vignette {
   position: absolute;
   inset: 0;
   z-index: 1;
   pointer-events: none;
   background:
-    linear-gradient(96deg, rgba(2, 2, 10, 0.82) 0%, rgba(2, 2, 10, 0.4) 26%, rgba(2, 2, 10, 0.08) 46%, transparent 62%),
-    linear-gradient(180deg, rgba(2, 2, 10, 0.55) 0%, transparent 16%, transparent 72%, rgba(1, 1, 4, 0.5) 100%);
+    radial-gradient(circle at 70% 42%, transparent 0%, color-mix(in oklch, var(--uhd-d-bg) 4%, transparent) 36%, color-mix(in oklch, var(--uhd-d-bg) 55%, transparent) 100%),
+    linear-gradient(90deg, color-mix(in oklch, var(--uhd-d-bg) 80%, transparent) 0%, color-mix(in oklch, var(--uhd-d-bg) 40%, transparent) 32%, color-mix(in oklch, var(--uhd-d-bg) 4%, transparent) 66%, color-mix(in oklch, var(--uhd-d-bg) 15%, transparent) 100%),
+    linear-gradient(180deg, color-mix(in oklch, var(--uhd-d-bg) 10%, transparent) 0%, transparent 36%, color-mix(in oklch, var(--uhd-d-bg) 90%, transparent) 100%);
 }
 
 /* ---------- Hero 棱镜脉冲（L-02 唯一动效，2026-11-14 友站实测） ----------
    一轮 5s：棱镜本体在约 1.6s（32%）闪亮、约 2.6s（52%）衰尽，后半程
-   全静默。2026-11-18 换友站构图图后图内已无入射光束与水面，为旧图
-   入射光束编排的亮点／光束辉光／入射星芒／地板倒影四叠层一并摘除，
-   只留棱镜闪。光谱扇／出射星芒／行星光晕／画面本体零动画（实测
+   全静默。为更早旧图入射光束编排的亮点／光束辉光／入射星芒／地板倒影
+   四叠层已摘除，只留棱镜闪（现行宽图的入射光束与地面倒影都在图内，
+   不另叠）。光谱扇／出射星芒／行星光晕／画面本体零动画（实测
    90s+ 恒定，不加）。周期 5s 字面值照本文件环境动画先例（uhd-marquee
    46s linear、pin-breathe 26s）；相位 % 由实测秒数换算；几何坐标走
-   --hp-* 令牌（uhd-tokens.css §1.7 给桌面横图值兜底，现行几何在
-   .hero-visual-frame／.hero-bg-canvas 内按各自图实测中心覆盖——
-   2026-11-18 晚起两端已是两张图、两组值，不再同值）。 */
+   --hp-* 令牌（uhd-tokens.css §1.7 给宽图顶点值兜底，现行几何在
+   .hero-visual-frame／.hero-bg-canvas 内按实测顶点覆盖——两端同图同值）。 */
 .hp {
   position: absolute;
   inset: 0;
@@ -1162,20 +1206,26 @@ const year = new Date().getFullYear()
 /* Hero 入场编排（L-11）：整层一把梭改为分件交错，全走令牌入场库。
    交错步长 0.08s——与本站 .rv--dev 阶梯（0.08/0.16/0.24）的步距一致；
    取值表：眉题 uhd-fade-in（--uhd-dur-fade .52s，延迟 0s）→ 标题
-   uhd-hero-fade（--uhd-dur-hero .74s、Y16，延迟 .08s）→ 副题 uhd-fade-up
-   （.52s、Y24，延迟 .16s）→ 双钮 uhd-fade-up（延迟 .24s）→ 规格 chip
-   uhd-fade-up（延迟 .32s）；缓动一律 --uhd-ease-standard。 */
+   uhd-hero-fade（--uhd-dur-hero .74s、Y16，延迟 .08s）→ 副题 uhd-hero-fade
+   （.74s、Y16，延迟 .16s）→ 双钮 uhd-hero-fade（延迟 .24s）→ 规格 chip
+   uhd-fade-up（延迟 .32s）；标题／副题／双钮三件缓动 ease-out，
+   眉题与 chip 走 --uhd-ease-standard。
+   2026-11-18 晚按友站 --animate-hero-fade（hero-fade .74s ease-out both，
+   关键帧 0%{opacity:0; translateY(16px)}→100%{opacity:1; translateY(0)}，
+   与本站 uhd-hero-fade 逐字同构）对齐：标题／副文案／按钮组三件统一走
+   uhd-hero-fade＋ease-out、.74s 到位、终态完全可见；交错延迟保留本站
+   阶梯。眉题与规格 chip 不在友站点名三件内，维持原编排。 */
 .hero-el--eyebrow {
   animation: uhd-fade-in var(--uhd-dur-fade) var(--uhd-ease-standard) both;
 }
 .hero-el--title {
-  animation: uhd-hero-fade var(--uhd-dur-hero) var(--uhd-ease-standard) 0.08s both;
+  animation: uhd-hero-fade var(--uhd-dur-hero) ease-out 0.08s both;
 }
 .hero-el--sub {
-  animation: uhd-fade-up var(--uhd-dur-fade) var(--uhd-ease-standard) 0.16s both;
+  animation: uhd-hero-fade var(--uhd-dur-hero) ease-out 0.16s both;
 }
 .hero-el--actions {
-  animation: uhd-fade-up var(--uhd-dur-fade) var(--uhd-ease-standard) 0.24s both;
+  animation: uhd-hero-fade var(--uhd-dur-hero) ease-out 0.24s both;
 }
 .hero-el--specs {
   animation: uhd-fade-up var(--uhd-dur-fade) var(--uhd-ease-standard) 0.32s both;
@@ -1238,6 +1288,22 @@ const year = new Date().getFullYear()
   box-shadow: var(--uhd-shadow-sheet);
   backdrop-filter: blur(14px) saturate(1.4);
   -webkit-backdrop-filter: blur(14px) saturate(1.4);
+}
+/* ---------- Hero 主钮彩虹环旋转（友站 prism-icon conic 口径，2026-11-18 晚对齐） ----------
+   友站 .prism-icon：conic-gradient(from 其 --prism-angle，oklch 七色标)
+   ＋@property 注册＋@keyframes prism-spin（to 时转角 360deg），
+   6s linear infinite，减动效 animation:none。本站首屏同类元素＝主钮的彩虹
+   描边环（UhdButton 深色主钮 ::before 环切层）：仅落地页 hero 作用域把环
+   底图换成同组 oklch 色标（深色档 l=.82／c=.13）的 conic 并匀速旋转，
+   转角 --hero-prism-angle 的注册与缺省值在 uhd-tokens.css（与
+   --utb-prism-angle 同款先例）；共享组件与其他页面不动，减动效降级
+   见文末媒体查询。 */
+.hero-actions :deep(.uhd-btn--primary.uhd-btn--dark)::before {
+  background: conic-gradient(from var(--hero-prism-angle), oklch(0.82 0.13 25), oklch(0.82 0.13 70), oklch(0.88 0.13 105), oklch(0.82 0.13 155), oklch(0.82 0.13 205), oklch(0.78 0.13 265), oklch(0.78 0.13 305), oklch(0.82 0.13 25));
+  animation: hero-prism-spin 6s linear infinite;
+}
+@keyframes hero-prism-spin {
+  to { --hero-prism-angle: 360deg; }
 }
 .hero-specs {
   display: flex;
@@ -2190,7 +2256,7 @@ const year = new Date().getFullYear()
   }
   .hero-bg { display: block; }
   .hero-visual,
-  .hero-scrim { display: none; }
+  .hero-vignette { display: none; }
   .hero-copy {
     max-width: none;
     margin: 0;
@@ -2351,6 +2417,8 @@ const year = new Date().getFullYear()
 }
 @media (prefers-reduced-motion: reduce) {
   .hero-el { animation: none; }
+  /* 主钮彩虹环旋转（友站 prism-icon 减动效同口径）：停转，环保留静态 conic */
+  .hero-actions :deep(.uhd-btn--primary.uhd-btn--dark)::before { animation: none; }
   /* 棱镜脉冲（L-02）：减动效时全关，只留静态照片图 */
   .hp-flash { animation: none; }
   .marquee-track { animation: none; }

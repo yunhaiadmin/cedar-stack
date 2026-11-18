@@ -36,7 +36,7 @@ def _media(css: str, query: str) -> str:
 
 def test_desktop_hero_is_full_bleed_not_a_corner_card():
     css = _css(LANDING)
-    assert "hero-prism-beam.webp" in LANDING.read_text(encoding="utf-8")
+    assert "hero-prism-wide.webp" in LANDING.read_text(encoding="utf-8")
     assert "hero-visual-frame" in css
     assert "min(620px, 46vw)" not in css
     assert "hero-beam" not in css
@@ -50,7 +50,7 @@ def test_desktop_hero_is_full_bleed_not_a_corner_card():
 def test_hero_places_copy_left_specs_low_hint_right():
     css = _css(LANDING)
     assert ".hero-copy" in css
-    assert ".hero-scrim" in css
+    assert ".hero-vignette" in css
     hint = re.search(r"\.hero-scroll-hint\s*\{([^}]*)\}", css)
     assert hint
     body = hint.group(1)
