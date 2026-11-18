@@ -111,19 +111,16 @@
           <ChevronRight :size="18" class="ov-row__chev" aria-hidden="true" />
         </button>
         <!-- 弹幕 API 行（2026-11-18 自查 M-1，照友站 Emby 组第二行）：
-             副文案照友站原文；落点为设置页活跃会话组 #api-keys
-             （ApiKeysPanel 内创建弹幕 Token） -->
-        <RouterLink
-          class="ov-irow"
-          :to="{ path: '/game/account/settings', hash: '#api-keys' }"
-        >
+             副文案照友站原文；落点 2026-11-18 改就地专职弹层
+             （DanmuApiSheet，友站形态 1:1），不再跳设置页 #api-keys -->
+        <button type="button" class="ov-irow" @click="danmuSheetOpen = true">
           <Captions :size="25" class="ov-irow__icon" aria-hidden="true" />
           <span class="ov-irow__main">
             <span class="ov-irow__name">弹幕 API</span>
             <span class="ov-irow__sub">生成 Token，填入播放器的弹幕设置</span>
           </span>
           <ChevronRight :size="18" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
+        </button>
         <!-- 我的网盘行：未绑定时点开绑盘弹层就地绑（2026-11-14 用户
              亲点，与线路弹层同形态）；已绑定/不可用维持进设置页管理 -->
         <button
@@ -279,6 +276,14 @@
       @refresh="loadOverview"
     />
 
+    <!-- 弹幕 API 专职弹层：弹幕 API 行点开（2026-11-18 友站形态 1:1，
+         就地完成 Token 生成/线路选择/地址复制，不再跳设置页） -->
+    <DanmuApiSheet
+      :open="danmuSheetOpen"
+      :dark="themeResolved === 'dark'"
+      @close="danmuSheetOpen = false"
+    />
+
     <!-- 绑定谷歌盘弹层：我的网盘行未绑定时点开（2026-11-14 用户亲点，
          与线路弹层同形态）；绑成后刷新本行状态 -->
     <BindDriveSheet
@@ -346,6 +351,7 @@ import {
 } from '@/api/traffic'
 import ServerLinesSheet from '@/components/profile/ServerLinesSheet.vue'
 import BindDriveSheet from '@/components/profile/BindDriveSheet.vue'
+import DanmuApiSheet from '@/components/profile/DanmuApiSheet.vue'
 import {
   embyApi, subscriptionApi,
   type AccountCard,
@@ -548,6 +554,7 @@ async function loadDevices() {
 
 // ── 我的服务 ──
 const linesSheetOpen = ref(false)
+const danmuSheetOpen = ref(false)
 const driveRowVisible = ref(false)
 const driveMeta = ref('')
 const driveState = ref<'unbound' | 'bound' | 'unavailable'>('unbound')
