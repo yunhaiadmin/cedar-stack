@@ -38,7 +38,13 @@
   --au-overlay-strong: rgba(255, 255, 255, 0.3);
   --au-overlay-menu: rgba(13, 13, 13, 0.98);
   --au-chrome: rgba(5, 5, 5, 0.96);
-  --au-scrim: rgba(0, 0, 0, 0.7);
+  /* 遮罩双档令牌（批 3 · 弹层面）：与用户端 modal-glass.css 的
+     --modal-scrim-dark/--modal-scrim-light 同名同值（逐字对齐，契约
+     脚本规则 7 兜底）。两档都是固定值、不随主题变；哪档生效由
+     --au-scrim 在深/浅两档块里分别改指决定。 */
+  --modal-scrim-dark: rgba(0, 0, 0, 0.45);
+  --modal-scrim-light: rgba(247, 248, 250, 0.72);
+  --au-scrim: var(--modal-scrim-dark);
   --au-grid-line: rgba(255, 255, 255, 0.05);
   --au-track: rgba(255, 255, 255, 0.1);
 
@@ -123,7 +129,7 @@ html[data-theme='light'] {
   --au-overlay-strong: rgba(17, 17, 17, 0.3);
   --au-overlay-menu: rgba(255, 255, 255, 0.98);
   --au-chrome: rgba(248, 248, 248, 0.96);
-  --au-scrim: rgba(17, 17, 17, 0.42);
+  --au-scrim: var(--modal-scrim-light);
   --au-grid-line: rgba(17, 17, 17, 0.05);
   --au-track: rgba(17, 17, 17, 0.1);
 
@@ -258,9 +264,35 @@ html[data-theme='light'] {
 }
 .admin-layout .au-filterbar .fb-chip { border-radius: 12px; }
 
-/* ==================== 弹窗模具（说明书 2.7：圆角 24px） ==================== */
-.admin-layout .el-dialog { border-radius: 24px; }
+/* ==================== 弹窗模具（说明书 2.7：圆角引 --uhd-radius-modal＝24px） ==================== */
+.admin-layout .el-dialog { border-radius: var(--uhd-radius-modal); }
 .admin-layout .el-dialog__title {
   font-size: 17px;
   font-weight: 700;
 }
+
+/* ==================== 弹层口径兜底（批 3 · 弹层面） ====================
+   为什么要这一节：EP 组件 CSS 有两条后入级联的通道——懒加载路由 chunk
+   （el-dialog/el-drawer 的样式随页面 chunk 后加载）与 main.ts 手动引的
+   函数式样式（ElMessageBox）。同特异性下后入者胜，element-plus-theme.css
+   里 .el-overlay / .el-message-box 的主题规则会被 EP 原厂规则压过：改前
+   实测遮罩实为 --el-overlay-color-lighter（--au-overlay-soft，8% 白纱）、
+   确认框圆角实为 EP 默认 4px（量测见 reports/admin-batch3-shots）。
+   本节用 body 前缀把特异性抬到 (0,1,1)，保证弹层口径在任何引入顺序下
+   都由主题层说了算。遮罩消费 --au-scrim（已改指双档令牌，见文件头两档
+   令牌块）；圆角统一 --uhd-radius-modal（24px，与用户端弹窗同值）：
+   dialog 与确认框全角、抽屉只圆自由角（btt/ttb），rtl/ltr 贴边两角
+   保持方角（贴边圆角会露出遮罩缺口，与用户端抽屉形态不同，不强行对齐）。
+   ElMessage（toast）无遮罩，面板底 --au-overlay-menu、圆角 --au-r-md
+   本就是令牌（element-plus-theme.css 第 9 节），不在本节重复声明。 */
+body .el-overlay { background-color: var(--au-scrim); }
+body .el-dialog {
+  --el-dialog-border-radius: var(--uhd-radius-modal);
+  border-radius: var(--uhd-radius-modal);
+}
+body .el-message-box {
+  --el-messagebox-border-radius: var(--uhd-radius-modal);
+  border-radius: var(--uhd-radius-modal);
+}
+body .el-drawer.btt { border-radius: var(--uhd-radius-modal) var(--uhd-radius-modal) 0 0; }
+body .el-drawer.ttb { border-radius: 0 0 var(--uhd-radius-modal) var(--uhd-radius-modal); }
