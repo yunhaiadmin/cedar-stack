@@ -413,14 +413,6 @@ def main() -> int:
         except Exception as e:
             logger.warning(f"启动求片到货盯梢 worker 失败（可忽略）: {e}")
 
-        try:
-            from backend.emby_server import transfer_sediment
-            if transfer_sediment.start():
-                started.append("transfer_sediment")
-                logger.info("✅ 指纹沉淀 worker 已启动")
-        except Exception as e:
-            logger.warning(f"启动指纹沉淀 worker 失败（可忽略）: {e}")
-
         # 公共贡献池巡检 janitor（goal-33 PR-5）：熔断兜底扫与
         # 半开试探、死副本对账、容量淘汰、退出残留收尾、热条目
         # 补位。线程常驻、轮内现读池配置与成员状态；池关/无成员
