@@ -214,6 +214,9 @@ export interface DanmuApiLine {
   note: string
   /** 裸域名（不带协议/路径/端口） */
   host: string
+  /** 是否启用：false = 暂停服务（用户端仍列出并标注、不可选）；
+   * 后端旧配置无此字段时读回默认 true */
+  enabled: boolean
 }
 
 export interface DanmuApiLinesConfig {

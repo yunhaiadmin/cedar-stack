@@ -14,6 +14,11 @@
  * 契约取地址（GET /api/user/danmu/address?line=<id>）展示胶囊地址框。
  * 内容流尾部固定门槛文案（报告 §1.7：它是内容流最后一节）。
  *
+ * 线路暂停（2026-11-19）：后端线路带 enabled，暂停线路照常列出，
+ * 名字旁标「暂停服务」、整行灰态不可选；selectLine 再守一道，
+ * 任何路径点到暂停线路只提示改选、不发拼地址请求（后端 /address
+ * 对暂停线路回 409 兜底）。
+ *
  * 推导口径（报告标注量不到、本单按最合理行为定，PR 回报已列明）：
  * - 删除：点「删除」→ 弹层内二次确认行 → 确认后回未生成态；
  * - 深色态 radio 选中环跟随文字色（浅色为黑环，照报告帧）。
@@ -119,6 +124,12 @@ async function onCreate() {
 }
 
 async function selectLine(line: DanmuLine) {
+  // 暂停线路不可选：模板上按钮已禁用，这里再守一道（任何路径进来
+  // 都只提示改选、不发拼地址请求），不许静默拼出不可用地址。
+  if (!line.enabled) {
+    showToast('error', '该线路已暂停服务，请选择其他线路')
+    return
+  }
   if (selectedLineId.value === line.id && address.value) return
   selectedLineId.value = line.id
   address.value = ''
@@ -280,17 +291,23 @@ onBeforeUnmount(() => {
                 :key="line.id"
                 type="button"
                 class="dms-line"
+                :class="{ 'dms-line--paused': !line.enabled }"
                 role="radio"
                 :aria-checked="selectedLineId === line.id"
+                :aria-disabled="!line.enabled"
+                :disabled="!line.enabled"
                 @click="selectLine(line)"
               >
                 <span
                   class="dms-radio"
-                  :class="{ 'dms-radio--on': selectedLineId === line.id }"
+                  :class="{ 'dms-radio--on': line.enabled && selectedLineId === line.id }"
                   aria-hidden="true"
                 />
                 <span class="dms-line__main">
-                  <span class="dms-line__name">{{ line.name }}</span>
+                  <span class="dms-line__name">
+                    {{ line.name }}
+                    <span v-if="!line.enabled" class="dms-line__badge">暂停服务</span>
+                  </span>
                   <span v-if="line.note" class="dms-line__sub">{{ line.note }}</span>
                 </span>
               </button>
@@ -564,6 +581,25 @@ onBeforeUnmount(() => {
 }
 .dms-line:last-child {
   border-bottom: none;
+}
+/* 暂停服务：整行灰态、不可点，名字旁挂「暂停服务」小徽标 */
+.dms-line--paused {
+  cursor: not-allowed;
+}
+.dms-line--paused .dms-line__name,
+.dms-line--paused .dms-line__sub {
+  color: var(--dms-sub);
+}
+.dms-line__badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border: 1px solid var(--dms-addr-border);
+  border-radius: 999px;
+  font-size: var(--uhd-fs-aux);
+  font-weight: var(--uhd-fw-semibold);
+  color: var(--dms-sub);
+  vertical-align: 2px;
 }
 /* radio：未选细空心圆；选中粗环＋中心实点（报告 §1.6，环色随文字色） */
 .dms-radio {
