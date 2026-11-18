@@ -79,6 +79,18 @@
               <span class="psp-spinner" aria-hidden="true"></span> 正在获取资源和线路…
             </div>
 
+            <!-- 失败态（G-155，友站形态）：加载失败直接切此态——白字
+                 「Load failed」＋描边 pill「重新获取」，点钮重跑 refresh。
+                 此前 refresh 用 allSettled 静默吞掉失败、落到灰字注释，
+                 用户无从重试。 -->
+            <div v-else-if="loadFailed" class="psp-failed" role="alert">
+              <p class="psp-failed__text">Load failed</p>
+              <button type="button" class="psp-failed__retry" @click="refresh">
+                <RotateCcw :size="15" aria-hidden="true" />
+                重新获取
+              </button>
+            </div>
+
             <BindDriveGuide v-else-if="needsBinding" :title="title" @bound="onDriveBound" />
 
             <template v-else>
@@ -193,7 +205,7 @@
           </div>
 
           <!-- 固定区（不随版本区滚动）：字幕行 / 线路行 / 开始播放 -->
-          <div v-if="!loading && !needsBinding" class="psp-fixed">
+          <div v-if="!loading && !loadFailed && !needsBinding" class="psp-fixed">
             <!-- 外挂字幕（#134 能力保留，压成一行）：胶囊显示当前选择，
                  点开向上弹清单选轨；选中带进网页播放器，再选「不挂
                  字幕」= 本次不挂。没有外挂字幕整行不渲染 -->
@@ -303,7 +315,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronDown, Copy, Eye, EyeOff, Play, X } from 'lucide-vue-next'
+import { ChevronDown, Copy, Eye, EyeOff, Play, RotateCcw, X } from 'lucide-vue-next'
 import BindDriveGuide from '@/components/panel/BindDriveGuide.vue'
 import { useToast } from '@/composables/useToast'
 import PlayStatusBar from '@/components/panel/PlayStatusBar.vue'
@@ -332,6 +344,8 @@ const props = defineProps<{
 const toast = useToast()
 const router = useRouter()
 const loading = ref(false)
+/** 加载失败态（G-155）：条目拉取 rejected 时为 true，弹层切「Load failed」失败态 */
+const loadFailed = ref(false)
 // 播放门禁引导：名下无 active 绑定时为 true，弹层只展示绑定引导，
 // 不直接播放（播也会被服务端门禁拦下）。
 const needsBinding = ref(false)
@@ -820,6 +834,7 @@ watch(open, (now) => {
 
 async function refresh() {
   loading.value = true
+  loadFailed.value = false
   // 线路清单与条目并行拉：开始播放钮的「正在准备线路」态以它落定为准
   void loadLines()
   try {
@@ -837,6 +852,8 @@ async function refresh() {
     } else {
       needsBinding.value = false
     }
+    // 条目拉取失败不再静默吞掉：落失败态给用户重试入口（G-155）
+    loadFailed.value = itemResult.status === 'rejected'
     itemDetail.value = itemResult.status === 'fulfilled' ? itemResult.value : null
     versionSource.value = itemDetail.value
     playTargetId.value = id !== null && id !== undefined ? String(id) : ''
@@ -1142,6 +1159,38 @@ async function start() {
   border: 2px solid var(--uhd-l-border, #e5e5e5);
   border-top-color: var(--uhd-l-text, #111111);
   animation: uhd-spin 0.8s linear infinite;
+}
+/* 失败态（G-155，友站形态）：文案＋描边 pill 重试钮，纵排居中 */
+.psp-failed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 26px 0;
+}
+.psp-failed__text {
+  margin: 0;
+  font-size: 15px;
+  color: var(--uhd-l-text, #111111);
+}
+.psp-failed__retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 11px 22px;
+  border-radius: 999px;
+  border: 1px solid var(--uhd-l-border, #e5e5e5);
+  background: transparent;
+  color: var(--uhd-l-text, #111111);
+  font-size: 14px;
+  cursor: pointer;
+}
+body.uhd-stream-dark .psp-failed__text {
+  color: #ffffff;
+}
+body.uhd-stream-dark .psp-failed__retry {
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #ffffff;
 }
 /* 版本区：段头为灰字（友站形态），计数同色 */
 .psp-sec-head {
