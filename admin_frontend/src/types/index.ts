@@ -421,10 +421,12 @@ export interface RealmTraffic {
   period_started_at: string | null
 }
 
-/** 服（大类）下的一条播放线路：配额/用量/重置都按线路计 */
+/** 服下的一条播放线路：配额/用量/重置都按线路计 */
 export interface RealmLine {
   id: number
   realm_id: number
+  /** 所属大类：线路自己的分类（如「国际线路」），不是服名 */
+  category: string
   name: string
   url: string
   /** 计量归属键（url 的 host） */
@@ -444,7 +446,7 @@ export interface RealmRow {
   description: string
   is_active: boolean
   sort_order: number
-  /** 这个服（大类）下的播放线路（主线路在前）；管理在「线路管理」页 */
+  /** 这个服下的播放线路（主线路在前）；管理在「线路管理」页 */
   lines: RealmLine[]
   /** 默认服：沿用历史配置键名，不能删除 */
   is_default: boolean

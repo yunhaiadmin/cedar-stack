@@ -56,6 +56,9 @@ const planForm = ref({
   // backend/entitlements.py 的注册表为准，保存时服务端 validate 是最终裁判
   ent_seek: null as number | null,
   ent_concurrent: null as number | null,
+  // 线路大类（字符串权益 line_category）：买这个套餐的用户只看这个
+  // 大类的线路；缺省「国际线路」，与线路管理的大类同一词表
+  ent_line_category: '国际线路',
 })
 
 /** 权益数字校验：留空放行，填了必须是区间内整数（与后端注册表同口径） */
@@ -72,13 +75,27 @@ function entRangeRule(min: number, max: number, label: string) {
   }
 }
 
-/** 权益组装：两项全空 → null（不声明）；填了的才进对象 */
-function buildPlanEntitlements(f: { ent_seek: number | null; ent_concurrent: number | null }): Record<string, number> | null {
-  const out: Record<string, number> = {}
+/** 权益组装：全空 → null（不声明）；填了的才进对象 */
+function buildPlanEntitlements(f: { ent_seek: number | null; ent_concurrent: number | null; ent_line_category: string }): Record<string, number | string> | null {
+  const out: Record<string, number | string> = {}
   if (f.ent_seek != null) out.media_seek_monthly_limit = f.ent_seek
   if (f.ent_concurrent != null) out.concurrent_streams = f.ent_concurrent
+  const category = (f.ent_line_category || '').trim()
+  if (category) out.line_category = category
   return Object.keys(out).length ? out : null
 }
+
+/** 线路大类候选：预置两类 + 全站线路已在用的大类（与线路管理同一词表） */
+const lineCategoryOptions = computed(() => {
+  const seen = new Set<string>(['国际线路', '国内线路'])
+  for (const r of realm.realms) {
+    for (const l of r.lines ?? []) {
+      const c = (l.category || '').trim()
+      if (c) seen.add(c)
+    }
+  }
+  return [...seen]
+})
 const planRules: FormRules = {
   name: [
     { required: true, message: '请输入套餐名称', trigger: 'blur' },
@@ -116,6 +133,7 @@ function openPlanCreate() {
     realm_id: realm.activeId,
     ent_seek: null,
     ent_concurrent: null,
+    ent_line_category: '国际线路',
   }
   planVisible.value = true
 }
@@ -132,9 +150,17 @@ function openPlanEdit(row: PlanRowFull) {
     is_popular: row.is_popular,
     sort_order: row.sort_order,
     realm_id: row.realm_id ?? realm.activeId,
-    // 权益回填：按存量 entitlements 逐键填，缺键留空（= 不声明）
-    ent_seek: row.entitlements?.media_seek_monthly_limit ?? null,
-    ent_concurrent: row.entitlements?.concurrent_streams ?? null,
+    // 权益回填：按存量 entitlements 逐键填，缺键留空（= 不声明）；
+    // 线路大类缺键回显缺省值（后端缺省口径同为「国际线路」）
+    ent_seek: typeof row.entitlements?.media_seek_monthly_limit === 'number'
+      ? row.entitlements.media_seek_monthly_limit
+      : null,
+    ent_concurrent: typeof row.entitlements?.concurrent_streams === 'number'
+      ? row.entitlements.concurrent_streams
+      : null,
+    ent_line_category: typeof row.entitlements?.line_category === 'string' && row.entitlements.line_category
+      ? row.entitlements.line_category
+      : '国际线路',
   }
   planVisible.value = true
 }
@@ -305,8 +331,24 @@ onMounted(load)
             <el-input-number v-model="planForm.ent_concurrent" :min="1" :max="20" placeholder="留空 = 跟随全站默认" class="w-full" />
           </el-form-item>
         </div>
+        <el-form-item label="线路大类">
+          <el-select
+            v-model="planForm.ent_line_category"
+            filterable
+            allow-create
+            default-first-option
+            clearable
+            placeholder="选择或输入大类名"
+            class="w-full"
+          >
+            <el-option v-for="c in lineCategoryOptions" :key="c" :label="c" :value="c" />
+          </el-select>
+          <p class="field-help">
+            买了这个套餐的用户，用户端只显示这个大类的线路（大类在「线路管理」里给线路标注，词表与这里共用）。留空 = 按缺省大类「国际线路」。
+          </p>
+        </el-form-item>
         <p class="field-help">
-          权益：只对买了这个套餐的用户生效，商店里的权益文案会按这里的值自动生成；两项都留空 = 不做分档，跟随全站默认。同时播放路数还需在「防共享」里把处置档位切到记录/拦截才会真正限路。
+          权益：只对买了这个套餐的用户生效，商店里的权益文案会按这里的值自动生成；两项数字都留空 = 这两项不做分档，跟随全站默认。同时播放路数还需在「防共享」里把处置档位切到记录/拦截才会真正限路。
         </p>
         <el-form-item label="排序" prop="sort_order"><el-input-number v-model="planForm.sort_order" :min="0" class="w-full" /></el-form-item>
         <el-form-item label="选项">

@@ -1,8 +1,11 @@
 /**
  * 播放线路清单（弹层选线 / 播放器校验共用，与线路测速页同一真源）：
- * 两层形态——大类 = 账号卡 GET /api/user/emby/server 的 realms[]
- * （服），每个大类下挂多条线路（realms[].lines，主线路在前）。
- * 没下发线路的大类（旧数据/地址靠推断）用它的 base_url 补一条；
+ * 形态——服 = 账号卡 GET /api/user/emby/server 的 realms[]，
+ * 每条线路带自己的大类（realms[].lines[].category，如「国际
+ * 线路」，主线路在前），选线面按大类分组（group 取 category）。
+ * 账号卡下发时已按用户套餐大类在服务端过滤（买哪个大类的套餐
+ * 就只下发哪个大类的线路），前端不再二次过滤。
+ * 没下发线路的服（旧数据/地址靠推断）用它的 base_url 补一条；
  * 顶层 base_url 是当前服主线路，清单里没有时用它补一行。两组按
  * 规范化 URL 去重（去尾斜杠）。线路只是「入口地址」：选线后本次
  * 播放的 EA 请求（PlaybackInfo / 会话上报）改走该入口，流地址
@@ -22,7 +25,7 @@ export interface PlayLine {
   name: string
   url: string
   kind: 'realm'
-  /** 所属大类（服）名，选线面按它分组 */
+  /** 所属大类名（线路自己的分类），选线面按它分组 */
   group: string
   /** 主线路（同组第一条）；默认选中主线路 */
   primary: boolean
@@ -73,16 +76,17 @@ export function loadPlayLines(): Promise<PlayLinesResult> {
       const card = await embyApi.getAccountCard()
       defaultUrl = normalizeLineUrl(card.base_url ?? '')
       for (const r of card.realms ?? []) {
-        const group = r.name || ''
         const realmLines = r.lines ?? []
         if (realmLines.length) {
           for (const l of realmLines) {
+            // 分组 = 线路的大类（category）；老下发没带大类时回退服名
+            const group = (l.category || '').trim() || r.name || ''
             push(`line:${l.id}`, l.name, l.url ?? '', group,
                  !!l.is_primary, !!l.quota_exhausted)
           }
         } else if (r.base_url) {
-          // 没下发线路的大类：用它的地址补一条（主线路形态）
-          push(`realm:${r.id}`, r.name, r.base_url, group, true,
+          // 没下发线路的服：用它的地址补一条（主线路形态，不受大类过滤影响）
+          push(`realm:${r.id}`, r.name, r.base_url, r.name || '', true,
                !!r.quota_exhausted)
         }
       }

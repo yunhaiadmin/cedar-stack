@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """播放线路流量配额（2026-11-19 用户点选；粒度经用户纠正为「线路」）。
 
-两层形态：大类 = 服（ServerRealm），每个大类下挂多条线路
-（ServerRealmLine，主/副之分按排序）。配额、用量、重置都按线路计。
+形态：服（ServerRealm）是服务器本身；大类是线路自己的分类
+（ServerRealmLine.category，如「国际线路」），每个大类下挂多条
+线路（主/副之分按排序）。配额、用量、重置都按线路计。
 
 钉住的口径：
 - 计量旁路：traffic_meter 接受计量的同一笔字节（中继/本机文件腿、
@@ -24,11 +25,17 @@
   清零（不断播）；地址照常下发；
 - 管理接口：线路增删改查（负配额 422、坏地址 400、跨服线路
   404）、逐线 reset-traffic。
-- 挪组：更新线路时改选所属大类只改 realm_id——线路 id 不变，
-  流量日账（按 line_id）/配额/周期随线路走，账号卡按新分组
-  下发；目标大类不存在 404；主/副按两边各自排序自动重算；
-  原大类一条启用线路都不剩时账号卡 lines 为空、回退 base_url
+- 挪服：更新线路时改选所属服只改 realm_id——线路 id 不变，
+  流量日账（按 line_id）/配额/周期随线路走，账号卡按新归属
+  下发；目标服不存在 404；主/副按两边各自排序自动重算；
+  原服一条启用线路都不剩时账号卡 lines 为空、回退 base_url
   单行（现行口径，不动）。
+- 大类与订阅打通：线路带 category（缺省「国际线路」，可自建）；
+  套餐用 entitlements.line_category 声明大类（未声明按缺省）；
+  账号卡下发时按用户有效套餐的大类过滤——国际套餐只见国际线、
+  国内套餐只见国内线；团队资格无大类口径时回退订阅口径，再无
+  则不过滤（纯浏览全量）；过滤在服务端 payload 层，base_url
+  回退行不受影响。
 """
 import os
 
@@ -598,3 +605,165 @@ def test_card_fallback_when_realm_left_without_active_line(db):
     # 回退 base_url 单行（地址照常下发，口径不动）
     assert cards[a.id]["lines"] == []
     assert cards[a.id]["base_url"] == "https://a.example.com"
+
+
+# ---------------------------------------------------------------------------
+# 线路大类：category 字段、缺省与改类
+# ---------------------------------------------------------------------------
+
+def test_auto_line_has_default_category(db):
+    realm = _realm(db, "cat-auto", url="https://cdn.example.com")
+    lines = realms.ensure_realm_lines(db, realm)
+    # 自动生成的主线路带缺省大类；序列化（管理端/账号卡）都带 category
+    assert lines[0].category == "国际线路"
+    view = line_quota.line_view(db, lines[0], is_primary=True)
+    assert view["category"] == "国际线路"
+    card = line_quota.card_lines(db, realm)
+    assert card[0]["category"] == "国际线路"
+
+
+def test_create_and_update_line_category(db):
+    realm = _realm(db, "cat-crud", url="https://cdn.example.com")
+    realms.ensure_realm_lines(db, realm)
+    cn = realms.create_line(db, realm, url="https://cn.example.com",
+                            category="国内线路")
+    assert cn.category == "国内线路"
+    plain = realms.create_line(db, realm, url="https://www.example.com")
+    assert plain.category == "国际线路"  # 不传 = 缺省大类
+    realms.update_line(db, plain, category="国内线路")
+    db.refresh(plain)
+    assert plain.category == "国内线路"
+    # 改大类只动 category 一列，与挪服（realm_id）互不干扰
+    assert plain.realm_id == realm.id
+    with pytest.raises(ValueError):
+        realms.create_line(db, realm, url="https://x.example.com",
+                           category="长" * 81)
+
+
+def test_admin_api_line_category_roundtrip(admin_client, db):
+    realm = _realm(db, "cat-api", url="https://cdn.example.com")
+    resp = admin_client.post(
+        f"/api/admin/realms/{realm.id}/lines",
+        json={"url": "https://cn.example.com", "category": "国内线路"})
+    assert resp.status_code == 200
+    line = resp.json()["line"]
+    assert line["category"] == "国内线路"
+    resp = admin_client.put(
+        f"/api/admin/realms/{realm.id}/lines/{line['id']}",
+        json={"category": "国际线路"})
+    assert resp.status_code == 200
+    assert resp.json()["line"]["category"] == "国际线路"
+    resp = admin_client.get(f"/api/admin/realms/{realm.id}/lines")
+    by_id = {l["id"]: l for l in resp.json()["lines"]}
+    assert by_id[line["id"]]["category"] == "国际线路"
+    # 自动主线路（没经手 category）回缺省大类
+    assert {l["category"] for l in by_id.values()} == {"国际线路"}
+
+
+# ---------------------------------------------------------------------------
+# 大类与订阅打通：账号卡下发按用户套餐大类过滤
+# ---------------------------------------------------------------------------
+
+def _sub_cat(db, user, realm, category=None, days=30):
+    """带大类声明的订阅；category=None = 套餐不声明（缺省口径）。"""
+    plan = models.SubscriptionPlan(
+        name="月卡", duration_days=30, price=18,
+        entitlements=({"line_category": category} if category else None))
+    db.add(plan)
+    db.commit()
+    end = datetime.now() + timedelta(days=days)
+    sub = models.UserSubscription(
+        user_id=user.id, plan_id=plan.id, realm_id=realm.id,
+        status="active", start_date=end - timedelta(days=30), end_date=end)
+    db.add(sub)
+    db.commit()
+    return sub
+
+
+def _team(db, owner):
+    team = models.Team(
+        owner_id=owner.id, status="active", plan_line="global",
+        plan_expires_at=datetime.now() + timedelta(days=30))
+    db.add(team)
+    db.commit()
+    db.refresh(team)
+    return team
+
+
+def _two_category_realm(db, slug):
+    """一个服、两个大类各一条线：自动主线路（国际）＋自建国内线。"""
+    realm = _realm(db, slug, url="https://intl.example.com")
+    intl = realms.ensure_realm_lines(db, realm)[0]
+    cn = realms.create_line(db, realm, url="https://cn.example.com",
+                            category="国内线路")
+    return realm, intl, cn
+
+
+def test_intl_plan_user_gets_only_intl_lines(db):
+    realm, intl, cn = _two_category_realm(db, "flt-intl")
+    user = _user(db)
+    _sub_cat(db, user, realm, "国际线路")
+    lines = _cards(db, user)[realm.id]["lines"]
+    assert [l["id"] for l in lines] == [intl.id]
+    assert lines[0]["category"] == "国际线路"
+
+
+def test_domestic_plan_user_gets_only_domestic_lines(db):
+    realm, intl, cn = _two_category_realm(db, "flt-cn")
+    user = _user(db)
+    _sub_cat(db, user, realm, "国内线路")
+    lines = _cards(db, user)[realm.id]["lines"]
+    assert [l["id"] for l in lines] == [cn.id]
+    assert lines[0]["category"] == "国内线路"
+
+
+def test_undeclared_plan_defaults_to_intl_lines(db):
+    # 存量套餐不声明 line_category：按缺省大类（国际线路），现状不变
+    realm, intl, cn = _two_category_realm(db, "flt-def")
+    user = _user(db)
+    _sub(db, user, realm)
+    lines = _cards(db, user)[realm.id]["lines"]
+    assert [l["id"] for l in lines] == [intl.id]
+
+
+def test_no_plan_user_not_filtered(db):
+    realm, intl, cn = _two_category_realm(db, "flt-none")
+    user = _user(db)
+    # 纯浏览（无套餐无资格）：resolver 不给结论，下发层不过滤、全量
+    assert line_quota.user_line_category(db, user, realm.id) is None
+    all_lines = line_quota.card_lines(db, realm, category=None)
+    assert [l["id"] for l in all_lines] == [intl.id, cn.id]
+
+
+def test_team_user_without_sub_gets_all_lines(db):
+    realm, intl, cn = _two_category_realm(db, "flt-team")
+    owner = _user(db)
+    _team(db, owner)
+    # 团队套餐无大类口径、本人又无个人订阅 → 不过滤，全量下发
+    lines = _cards(db, owner)[realm.id]["lines"]
+    assert [l["id"] for l in lines] == [intl.id, cn.id]
+
+
+def test_team_fallback_to_subscription_category(db):
+    a, a_intl, a_cn = _two_category_realm(db, "flt-ta")
+    b, b_intl, b_cn = _two_category_realm(db, "flt-tb")
+    owner = _user(db)
+    _team(db, owner)
+    _sub_cat(db, owner, b, "国内线路")  # 个人订阅在 B 服、大类国内
+    cards = _cards(db, owner)
+    # A 服靠团队资格下发：团队无大类 → 回退订阅口径（国内）
+    assert [l["id"] for l in cards[a.id]["lines"]] == [a_cn.id]
+    # B 服靠本服订阅：同口径只下发国内线
+    assert [l["id"] for l in cards[b.id]["lines"]] == [b_cn.id]
+
+
+def test_card_payload_follows_category_edit(db):
+    realm, intl, cn = _two_category_realm(db, "flt-edit")
+    user = _user(db)
+    _sub_cat(db, user, realm, "国际线路")
+    assert [l["id"] for l in _cards(db, user)[realm.id]["lines"]] == [intl.id]
+    # 管理员把国内线改归国际大类 → 国际套餐用户的 payload 随之分组
+    realms.update_line(db, cn, category="国际线路")
+    got = {l["id"]: l["category"]
+           for l in _cards(db, user)[realm.id]["lines"]}
+    assert got == {intl.id: "国际线路", cn.id: "国际线路"}

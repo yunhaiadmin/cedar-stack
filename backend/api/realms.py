@@ -58,6 +58,9 @@ class RealmLinePayload(BaseModel):
     # 名字留空 = 按形态自动给（首条主线路、其后副线路）
     name: str = Field(default="", max_length=80)
     url: str = Field(..., min_length=1, max_length=500)
+    # 所属大类：线路自己的分类（如「国际线路」），不是服名；
+    # 不传/空 = 缺省大类，任意文本可自建新大类
+    category: Optional[str] = Field(default=None, max_length=80)
     # 线路流量配额（字节）：0 = 不限额；不传 = 0
     quota_bytes: Optional[int] = Field(default=None, ge=0)
     sort_order: Optional[int] = None
@@ -67,12 +70,15 @@ class RealmLinePayload(BaseModel):
 class RealmLineUpdatePayload(BaseModel):
     name: Optional[str] = Field(default=None, max_length=80)
     url: Optional[str] = Field(default=None, max_length=500)
+    # 所属大类：线路自己的分类；不传 = 不改，传空 = 回缺省大类
+    category: Optional[str] = Field(default=None, max_length=80)
     # 线路流量配额（字节）：0 = 不限额；不传 = 不改
     quota_bytes: Optional[int] = Field(default=None, ge=0)
     sort_order: Optional[int] = None
     is_active: Optional[bool] = None
-    # 所属大类（服）：传了且与当前不同 = 把线路挪到那个大类
-    # （线路 id 不变，流量日账/配额/周期随线路走）；不传 = 不挪
+    # 所属服：传了且与当前不同 = 把线路挪到那个服
+    # （线路 id 不变，流量日账/配额/周期随线路走）；不传 = 不挪。
+    # 与 category（大类）是两个独立字段，别混。
     realm_id: Optional[int] = None
 
 
@@ -314,7 +320,7 @@ def list_realm_lines(
     _: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """某个服（大类）的全部线路（含配额/已用/剩余/主副标记）。"""
+    """某个服的全部线路（含大类/配额/已用/剩余/主副标记）。"""
     realm = _realm_or_404(db, realm_id)
     return {"realm_id": realm.id, "realm_name": realm.name,
             "lines": realms.serialize_lines(db, realm)}
@@ -332,11 +338,12 @@ def create_realm_line(
         line = realms.create_line(
             db, realm, name=payload.name, url=payload.url,
             quota_bytes=payload.quota_bytes, sort_order=payload.sort_order,
-            is_active=payload.is_active)
+            is_active=payload.is_active, category=payload.category)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     _audit(db, admin, "create_realm_line", "realm_line", line.id,
            {"realm_id": realm.id, "name": line.name, "url": line.url,
+            "category": line.category,
             "quota_bytes": int(line.quota_bytes or 0)})
     db.commit()
     return {"success": True, "line": _line_view(db, realm, line),
@@ -353,7 +360,8 @@ def update_realm_line(
 ):
     realm = _realm_or_404(db, realm_id)
     line = _line_or_404(db, realm, line_id)
-    # 改选所属大类 = 挪组：目标大类必须存在（口径同服不存在 404）
+    # 改选所属服 = 挪服：目标服必须存在（口径同服不存在 404）；
+    # category（大类）是另一个字段，只改线路自己的分类
     target = realm
     if payload.realm_id is not None and payload.realm_id != realm.id:
         target = _realm_or_404(db, payload.realm_id)
@@ -361,10 +369,12 @@ def update_realm_line(
         line = realms.update_line(
             db, line, name=payload.name, url=payload.url,
             quota_bytes=payload.quota_bytes, sort_order=payload.sort_order,
-            is_active=payload.is_active, realm_id=target.id)
+            is_active=payload.is_active, realm_id=target.id,
+            category=payload.category)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     facts = {"realm_id": target.id, "name": line.name, "url": line.url,
+             "category": line.category,
              "quota_bytes": int(line.quota_bytes or 0),
              "is_active": bool(line.is_active)}
     if target.id != realm.id:

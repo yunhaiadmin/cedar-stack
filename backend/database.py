@@ -1243,6 +1243,12 @@ def _auto_migrate():
         ("user_devices", [
             ("locked", "BOOLEAN", "0"),
         ]),
+        # 线路大类（2026-11-19）：大类是线路自己的分类（category，
+        # 如「国际线路」），不是服名。存量线路补列后一律「国际线路」，
+        # 与现行在售套餐的缺省大类一致、行为不变。末尾追加。
+        ("server_realm_lines", [
+            ("category", "VARCHAR(80)", "'国际线路'"),
+        ]),
     ]
 
     _newly_added_columns: list[tuple[str, str]] = []

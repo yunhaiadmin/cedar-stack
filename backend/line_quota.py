@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """播放线路流量配额：判定侧（按线路计，2026-11-19 用户纠正粒度）。
 
-两层形态（照友站）：大类 = 服（``ServerRealm``），每个大类下面挂
-多条线路（``ServerRealmLine``，如一条「主线路」＋一条「副线路」）。
+三个维度分清（用户 2026-11-19 二次纠正）：服（``ServerRealm``）是
+服务器本身；**大类是线路自己的分类**（``ServerRealmLine.category``，
+如「国际线路」「国内线路」），每个大类下面挂多条线路（如一条
+「主线路」＋一条「副线路」）。
 配额、用量、重置都按最底层的**线路**计——配额与统计起点在线路行
 上（``server_realm_lines.quota_bytes`` / ``period_started_at``），
 用量在计量旁路日账 ``line_traffic_usage_daily``（记录侧见
@@ -58,6 +60,70 @@ logger = logging.getLogger(__name__)
 _USAGE_CACHE = store.TtlSnapshotCache()
 _HOSTMAP_CACHE = store.TtlSnapshotCache()
 _HOSTMAP_KEY = "hostmap"
+
+#: 线路缺省大类：线路未标注、套餐未声明时都按它算（现行在售套餐
+#: 与存量线路均为国际线路，缺省不得改变现状）。大类名本身不写死
+#: 枚举——管理员可自建任意大类，这里只是「没写时算哪个」的缺省。
+DEFAULT_CATEGORY = "国际线路"
+
+
+# ==================== 线路大类 ====================
+
+def category_of(line) -> str:
+    """一条线路的大类名（空/脏值回退缺省大类）。"""
+    value = (getattr(line, "category", None) or "").strip()
+    return value or DEFAULT_CATEGORY
+
+
+def normalize_category(value) -> str:
+    """写路径的大类名收敛：去空白、空 = 缺省大类、超长拒绝。"""
+    text = (value or "").strip() if isinstance(value, str) else ""
+    if not text:
+        return DEFAULT_CATEGORY
+    if len(text) > 80:
+        raise ValueError("大类名过长（≤80 字符）")
+    return text
+
+
+def _category_of_plan(db: Session, plan_id) -> Optional[str]:
+    """订阅行指向套餐的大类（套餐已删/无从判定 → None）。"""
+    if plan_id is None:
+        return None
+    plan = (db.query(models.SubscriptionPlan)
+            .filter(models.SubscriptionPlan.id == plan_id).first())
+    if plan is None:
+        return None
+    from backend import entitlements
+
+    return entitlements.plan_line_category(plan)
+
+
+def user_line_category(db: Session, user, realm_id: Optional[int] = None
+                       ) -> Optional[str]:
+    """该用户下发线路时应按哪个大类过滤；None = 不过滤、全显示。
+
+    口径（用户 2026-11-19 亲令：大类与订阅打通）：
+    1. 本服有效订阅 → 其套餐的大类（套餐未声明按缺省大类）；
+    2. 团队播放资格 → 团队套餐的大类——团队套餐目前**没有**大类
+       口径（``Team.plan_line`` 是 global/premium 线路等级，不是
+       大类），故回退订阅口径：任意一份有效订阅套餐的大类；
+    3. 两样都没有（纯浏览）→ None 不过滤（播放门禁另有拦截）。
+    """
+    from backend import subscriptions
+    from backend import teams as teams_service
+
+    user_id = user if isinstance(user, int) else user.id
+    sub = subscriptions.active_subscription(db, user_id, realm_id)
+    category = _category_of_plan(db, sub.plan_id if sub else None)
+    if category:
+        return category
+    if teams_service.play_eligible_team(db, user_id) is not None:
+        # 团队套餐无大类口径 → 回退订阅口径（任意有效订阅）
+        sub = subscriptions.active_subscription(db, user_id, None)
+        category = _category_of_plan(db, sub.plan_id if sub else None)
+        if category:
+            return category
+    return None
 
 
 # ==================== host 归属键 ====================
@@ -183,6 +249,7 @@ def line_view(db: Session, line, *, is_primary: bool) -> dict:
     return {
         "id": line.id,
         "realm_id": line.realm_id,
+        "category": category_of(line),
         "name": line.name or "",
         "url": line.url or "",
         "host": host_key_of_url(line.url or ""),
@@ -193,20 +260,30 @@ def line_view(db: Session, line, *, is_primary: bool) -> dict:
     }
 
 
-def card_lines(db: Session, realm) -> list[dict]:
-    """账号卡里某个服（大类）下发的线路清单（按序、主线路在前）。
+def card_lines(db: Session, realm, *, category: Optional[str] = None
+               ) -> list[dict]:
+    """账号卡里某个服下发的线路清单（按序、主线路在前）。
 
-    每条带 quota_exhausted 初值（单线口径）；全线用尽回落由
-    ``apply_card_flags`` 在整卡组装完后统一修正。
+    每条带 category（所属大类）与 quota_exhausted 初值（单线口径）；
+    全线用尽回落由 ``apply_card_flags`` 在整卡组装完后统一修正。
+
+    ``category`` 非空时按大类过滤（订阅打通口径，见
+    ``user_line_category``）：只下发该大类的线路；过滤后一条不剩
+    时返回空清单，用户端按现行口径回退 base_url 单行——回退行
+    本身不受大类过滤影响。
     """
     from backend import realms
 
     lines = realms.ensure_realm_lines(db, realm)
     active = [line for line in lines if line.is_active]
+    if category:
+        active = [line for line in active
+                  if category_of(line) == category]
     out = []
     for idx, line in enumerate(active):
         out.append({
             "id": line.id,
+            "category": category_of(line),
             "name": line.name or "",
             "url": (line.url or "").strip().rstrip("/"),
             "is_primary": idx == 0,
@@ -312,17 +389,21 @@ def match_line_id(db: Session, entry_host: str) -> Optional[int]:
 
 
 __all__ = [
+    "DEFAULT_CATEGORY",
     "apply_card_flags",
     "card_lines",
+    "category_of",
     "host_key_of_url",
     "hostmap",
     "invalidate",
     "is_exhausted",
     "line_view",
     "match_line_id",
+    "normalize_category",
     "normalize_entry_host",
     "quota_bytes_of",
     "quota_view",
     "reset_period",
     "used_bytes",
+    "user_line_category",
 ]

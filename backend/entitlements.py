@@ -3,7 +3,8 @@
 设计：``reports/subscription-tier-design-20261024.md``（订阅分档 PR-1）。
 
 套餐（``subscription_plans``）可以带一张权益表（``entitlements`` JSON 列：
-``{权益键: 整数值}``），声明「买这个套餐的人，这项额度是多少」。全站任何
+``{权益键: 值}``，绝大多数键是整数值、``line_category`` 是字符串），
+声明「买这个套餐的人，这项额度是多少」。全站任何
 地方要问「这个用户的某项权益是多少」，只许调本模块的
 ``get_user_entitlement``——不许私自读 ``plan.entitlements``，更不许私自判
 「用户买的哪个套餐」。
@@ -79,6 +80,17 @@ ENTITLEMENT_SPECS: dict[str, dict] = {
     "sub_account_limit": {
         "min": 0, "max": 20, "fallback": "无声明按 0（不可建）",
     },
+    # 线路大类（2026-11-19，订阅与线路打通）：买这个套餐的用户，
+    # 用户端只下发这个大类的线路（消费方 backend/line_quota 的
+    # user_line_category / card_lines 过滤）。与其它键不同，本键是
+    # **字符串**（大类名由管理员在线路侧自建，不写死枚举），且缺键
+    # 不是「无声明回退全局配置」，而是产品口径定的缺省大类
+    # （line_quota.DEFAULT_CATEGORY，现行在售套餐均为国际线路，
+    # 缺省不得改变现状）——归一口径见 plan_line_category。
+    "line_category": {
+        "type": "str", "max_len": 80,
+        "fallback": "缺键按缺省大类（line_quota.DEFAULT_CATEGORY）",
+    },
 }
 
 #: 进程内缓存 TTL（秒），与 integrations.store 的 60 秒口径对齐（设计 §2.3）。
@@ -93,37 +105,48 @@ _USER_PLAN_CACHE: dict[tuple[int, Optional[int]], tuple[float, Optional[int], Op
 
 
 def _is_valid_value(key: str, value) -> bool:
-    """值是否合法：真整数（bool 不算整数）、落在注册表安全区间内。"""
+    """值是否合法：整数键要真整数（bool 不算）且落在安全区间内；
+    字符串键（line_category）要非空字符串且不超长。"""
+    spec = ENTITLEMENT_SPECS[key]
+    if spec.get("type") == "str":
+        return (isinstance(value, str)
+                and 1 <= len(value.strip()) <= int(spec["max_len"]))
     if isinstance(value, bool) or not isinstance(value, int):
         return False
-    spec = ENTITLEMENT_SPECS[key]
     return spec["min"] <= value <= spec["max"]
 
 
 def parse_entitlements(raw) -> dict:
-    """把套餐行上的原始 JSON 归一成 ``{已登记键: 合法整数}``（纯函数）。
+    """把套餐行上的原始 JSON 归一成 ``{已登记键: 合法值}``（纯函数）。
 
     读路径专用：未登记键/非法值逐项剔除并 warning；raw 非 dict（含
     None、被人工改坏的 JSON）整体按「无声明」处理。永不抛、永不回写 raw。
+    字符串键（line_category）归一为去空白后的字符串。
     """
     if raw is None:
         return {}
     if not isinstance(raw, dict):
         logger.warning("entitlements 不是对象，按无声明处理: %r", raw)
         return {}
-    parsed: dict[str, int] = {}
+    parsed: dict = {}
     for key, value in raw.items():
         if key not in ENTITLEMENT_SPECS:
             logger.warning("entitlements 含未登记键 %r，已忽略", key)
             continue
         if not _is_valid_value(key, value):
             spec = ENTITLEMENT_SPECS[key]
-            logger.warning(
-                "entitlements[%r]=%r 非法（需 %d–%d 的整数），按缺键处理",
-                key, value, spec["min"], spec["max"],
-            )
+            if spec.get("type") == "str":
+                logger.warning(
+                    "entitlements[%r]=%r 非法（需 1–%d 字的字符串），按缺键处理",
+                    key, value, spec["max_len"],
+                )
+            else:
+                logger.warning(
+                    "entitlements[%r]=%r 非法（需 %d–%d 的整数），按缺键处理",
+                    key, value, spec["min"], spec["max"],
+                )
             continue
-        parsed[key] = value
+        parsed[key] = value.strip() if isinstance(value, str) else value
     return parsed
 
 
@@ -139,15 +162,24 @@ def validate_entitlements(raw) -> dict:
         raise ValueError(
             f"entitlements 必须是对象（键值对），收到 {type(raw).__name__}"
         )
-    validated: dict[str, int] = {}
+    validated: dict = {}
     for key, value in raw.items():
         if key not in ENTITLEMENT_SPECS:
             raise ValueError(
                 f"未知权益键: {key}（已登记: {', '.join(sorted(ENTITLEMENT_SPECS))}）"
             )
+        spec = ENTITLEMENT_SPECS[key]
+        if spec.get("type") == "str":
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(
+                    f"权益 {key} 的值必须是非空字符串，收到 {value!r}")
+            if len(value.strip()) > int(spec["max_len"]):
+                raise ValueError(
+                    f"权益 {key} 的值过长（≤{spec['max_len']} 字）")
+            validated[key] = value.strip()
+            continue
         if isinstance(value, bool) or not isinstance(value, int):
             raise ValueError(f"权益 {key} 的值必须是整数，收到 {value!r}")
-        spec = ENTITLEMENT_SPECS[key]
         if not (spec["min"] <= value <= spec["max"]):
             raise ValueError(
                 f"权益 {key} 的值 {value} 超出允许区间 {spec['min']}–{spec['max']}"
@@ -173,6 +205,23 @@ def current_plan(
         .filter(models.SubscriptionPlan.id == sub.plan_id)
         .first()
     )
+
+
+def plan_line_category(plan: Optional[models.SubscriptionPlan]) -> str:
+    """套餐的线路大类：声明了用声明值，没声明按缺省大类。
+
+    与整数权益「缺键 = 无声明、消费方回退全局配置」不同：大类是
+    产品口径定的缺省（现行在售套餐均为国际线路），有套餐就恒有
+    大类。``plan`` 为 None（订阅指向的套餐已删）时同样返回缺省
+    大类——调用方若要区分「根本没套餐」，先判订阅/套餐本身
+    （line_quota.user_line_category 就是这么判的）。
+    """
+    from backend import line_quota
+
+    if plan is None:
+        return line_quota.DEFAULT_CATEGORY
+    declared = parse_entitlements(plan.entitlements).get("line_category")
+    return declared or line_quota.DEFAULT_CATEGORY
 
 
 def _resolve_user_plan(db: Session, user_id: int, realm_id: Optional[int]):
@@ -235,6 +284,9 @@ def get_user_entitlement(
     """
     if key not in ENTITLEMENT_SPECS:
         raise KeyError(f"未登记的权益键: {key}")
+    if ENTITLEMENT_SPECS[key].get("type") == "str":
+        raise KeyError(
+            f"权益键 {key} 是字符串型，请用 plan_line_category 读套餐大类")
     user_id = user if isinstance(user, int) else user.id
     plan_id, _end_date = _resolve_user_plan(db, user_id, realm_id)
     if plan_id is None:

@@ -398,7 +398,9 @@ function listPriceFor(plan: SubscriptionPlan, m: number): number {
   return round2(m === 12 ? mo * 11 : mo * m)
 }
 function trafficText(plan: SubscriptionPlan): string {
-  const b = plan.entitlements?.monthly_traffic_bytes
+  // entitlements 含字符串键（line_category），数字键读取先窄化类型
+  const raw = plan.entitlements?.monthly_traffic_bytes
+  const b = typeof raw === 'number' ? raw : null
   return b ? `${formatBytes(b)} / 月` : '—'
 }
 
@@ -416,7 +418,8 @@ const compareRows = computed(() => {
     {
       label: '子账号',
       cells: list.map((p) => {
-        const n = p.entitlements?.sub_account_limit
+        const raw = p.entitlements?.sub_account_limit
+        const n = typeof raw === 'number' ? raw : null
         return n == null ? '—' : n > 0 ? `${n} 个` : '无'
       }),
     },

@@ -826,6 +826,8 @@ export interface RealmLinePayload {
   /** 名字留空 = 按形态自动给（首条主线路、其后副线路） */
   name?: string
   url: string
+  /** 所属大类：线路自己的分类（如「国际线路」），可自建；缺省「国际线路」 */
+  category?: string
   /** 线路流量配额（字节）：0 = 不限额 */
   quota_bytes?: number
   sort_order?: number
@@ -835,10 +837,12 @@ export interface RealmLinePayload {
 export interface RealmLineUpdateData {
   name?: string
   url?: string
+  /** 所属大类：线路自己的分类；不传 = 不改 */
+  category?: string
   quota_bytes?: number
   sort_order?: number
   is_active?: boolean
-  /** 所属大类（服）id：与当前不同 = 把线路挪到那个大类（id/流量/配额随线走） */
+  /** 所属服 id：与当前不同 = 把线路挪到那个服（id/流量/配额随线走） */
   realm_id?: number
 }
 
