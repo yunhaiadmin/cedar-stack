@@ -494,7 +494,7 @@ function discardAll() {
   gap: 12px;
 }
 /* 值是短文字（可用 / 面板自己）：字号收一档 */
-.text-tile :deep(.au-stat__value) { font-size: 1.05rem; }
+.text-tile :deep(.au-stat__value) { font-size: var(--uhd-fs-lead); }
 
 /* ===== 表单行：左说明、右控件 ===== */
 .cp-field {
@@ -509,12 +509,12 @@ function discardAll() {
 .cp-field:last-child { border-bottom: none; padding-bottom: 0; }
 .cp-field.is-column { flex-direction: column; align-items: stretch; gap: 8px; }
 .cp-field-main { min-width: 0; flex: 1 1 auto; }
-.cp-label { font-size: 13.5px; font-weight: 500; color: var(--au-text); }
-.cp-hint { margin: 4px 0 0; font-size: 12px; color: var(--au-text-3); line-height: 1.7; }
+.cp-label { font-size: var(--uhd-fs-aux); font-weight: 500; color: var(--au-text); }
+.cp-hint { margin: 4px 0 0; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); line-height: 1.7; }
 .cp-lead { margin: 0 0 14px; color: var(--au-text-2); }
 .cp-stats-foot { margin: 10px 0 6px; }
-.cp-value { font-size: 12px; color: var(--au-text-2); text-align: right; word-break: break-all; }
-.cp-unit { font-size: 12px; color: var(--au-text-3); white-space: nowrap; }
+.cp-value { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-2); text-align: right; word-break: break-all; }
+.cp-unit { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); white-space: nowrap; }
 .cp-num { width: 140px; flex: none; }
 .cp-input { width: 280px; flex: none; }
 
@@ -534,17 +534,17 @@ function discardAll() {
   border-radius: var(--au-r-md);
   background: var(--au-primary-soft);
 }
-.savebar-text { font-size: 13px; color: var(--au-text-2); }
+.savebar-text { font-size: var(--uhd-fs-aux); color: var(--au-text-2); }
 .savebar-text strong { color: var(--au-primary); }
 .savebar-actions { display: flex; align-items: center; gap: 8px; flex: none; }
 /* Batch D 入口收敛：页内互链（UA 两处 / 下载与设备只读提示） */
-.cp-link { color: var(--au-accent, #b45309); font-weight: 700; text-decoration: none; }
+.cp-link { color: var(--au-accent); font-weight: 700; text-decoration: none; }
 .cp-link:hover { text-decoration: underline; }
 .cp-inline-icon { display: inline-flex; align-items: center; gap: 6px; }
 .danger-jump {
   color: var(--au-text-3);
   text-decoration: none;
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
 }
 .danger-jump:hover { color: var(--au-danger); text-decoration: underline; }
 
@@ -559,7 +559,7 @@ function discardAll() {
   background: var(--au-bg-soft);
 }
 .line-head { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
-.line-summary { margin: 0; flex: 1 1 240px; font-size: 12.5px; color: var(--au-text-2); line-height: 1.7; }
+.line-summary { margin: 0; flex: 1 1 240px; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-2); line-height: 1.7; }
 .line-ready {
   display: flex;
   flex-direction: column;
@@ -567,7 +567,7 @@ function discardAll() {
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   line-height: 1.7;
   color: var(--au-text-3);
 }
@@ -586,7 +586,7 @@ function discardAll() {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12.5px;
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-2);
 }
 .risk-row.is-stacked .risk-name { color: var(--au-text); font-weight: 600; }
@@ -601,7 +601,7 @@ function discardAll() {
   padding-top: 14px;
   border-top: 1px solid var(--au-border);
 }
-.cache-list-head { font-size: 12px; color: var(--au-text-3); margin-bottom: 2px; }
+.cache-list-head { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); margin-bottom: 2px; }
 .cache-item {
   display: flex;
   align-items: center;
@@ -617,7 +617,7 @@ function discardAll() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: var(--uhd-fs-aux);
   color: var(--au-text);
 }
 .cache-item .ci-meta {
@@ -625,7 +625,7 @@ function discardAll() {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-3);
   font-variant-numeric: tabular-nums;
 }
@@ -635,14 +635,14 @@ code {
   border-radius: var(--au-r-sm);
   background: var(--au-surface-2);
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--uhd-fs-micro);
 }
 .readonly-foot {
   display: flex;
   align-items: center;
   gap: 6px;
   margin: 0;
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-warning);
 }
 

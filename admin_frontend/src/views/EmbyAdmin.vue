@@ -2990,7 +2990,7 @@ function typeLabel(t: string): string {
   border-radius: var(--au-r-full);
   background: var(--au-violet-soft);
   color: var(--au-text-3);
-  font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+  font-size: var(--uhd-fs-micro); font-weight: 600; font-variant-numeric: tabular-nums;
 }
 .tab-count.is-live { background: var(--au-primary-soft); color: var(--au-primary); }
 
@@ -2999,9 +2999,9 @@ function typeLabel(t: string): string {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; flex-wrap: wrap;
 }
-.lib-toolbar-meta { font-size: var(--font-size-sm); color: var(--au-text-3); }
+.lib-toolbar-meta { font-size: var(--uhd-fs-aux); color: var(--au-text-3); }
 .lib-toolbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.scan-help { display: flex; flex-direction: column; gap: 6px; font-size: var(--font-size-xs); line-height: 1.7; color: var(--au-text-2); }
+.scan-help { display: flex; flex-direction: column; gap: 6px; font-size: var(--uhd-fs-aux-sm); line-height: 1.7; color: var(--au-text-2); }
 
 .lib-grid {
   display: grid;
@@ -3025,15 +3025,15 @@ function typeLabel(t: string): string {
 .lib-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: nowrap; }
 .lib-name {
   font-family: var(--au-font-serif);
-  font-weight: 700; font-size: var(--font-size-lg); color: var(--au-text);
+  font-weight: 700; font-size: var(--uhd-fs-body); color: var(--au-text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.lib-meta { flex-shrink: 0; font-size: var(--font-size-xs); color: var(--au-text-3); }
-.lib-time { font-size: var(--font-size-xs); color: var(--au-text-4); }
+.lib-meta { flex-shrink: 0; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
+.lib-time { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-4); }
 
 .fact {
   display: inline-flex; align-items: center; gap: 5px;
-  font-size: var(--font-size-xs); color: var(--au-text-2);
+  font-size: var(--uhd-fs-aux-sm); color: var(--au-text-2);
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .fact.warn { color: var(--au-warning); }
@@ -3052,14 +3052,14 @@ function typeLabel(t: string): string {
   border: 1px solid var(--au-warning-border);
   border-radius: var(--au-r-md);
   background: var(--au-warning-soft);
-  font-size: var(--font-size-sm);
+  font-size: var(--uhd-fs-aux);
   color: var(--au-text-2);
   line-height: 1.6;
 }
 .legacy-mount-note b { color: var(--au-warning); }
-.legacy-mount-note p { margin: 6px 0 0; font-size: var(--font-size-xs); color: var(--au-text-3); }
+.legacy-mount-note p { margin: 6px 0 0; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
 
-.drawer-hint { margin: 0 0 12px; font-size: var(--font-size-xs); color: var(--au-text-3); line-height: 1.7; }
+.drawer-hint { margin: 0 0 12px; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); line-height: 1.7; }
 .drawer-hint--after { margin: 6px 0 0; }
 .drawer-hint--tight { margin: 4px 0 0; }
 .text-danger { color: var(--au-danger); }
@@ -3070,7 +3070,7 @@ function typeLabel(t: string): string {
   border: 1px solid var(--au-danger-border);
   border-radius: var(--au-r-md);
   background: var(--au-danger-soft);
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   line-height: 1.7;
   color: var(--au-text-2);
 }
@@ -3084,14 +3084,14 @@ function typeLabel(t: string): string {
   margin: 10px 0 0;
   padding-top: 10px;
   border-top: 1px solid var(--au-border);
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
 }
 .chase-facts > div { display: flex; gap: 10px; min-width: 0; }
 .chase-facts dt { flex: 0 0 9em; color: var(--au-text-3); }
 .chase-facts dd { flex: 1; min-width: 0; margin: 0; color: var(--au-text-2); overflow-wrap: anywhere; }
 .chase-state { color: var(--au-text-3); }
 .chase-state.is-on { color: var(--au-success); }
-.chase-runs { margin-top: 8px; font-size: var(--font-size-xs); color: var(--au-text-3); }
+.chase-runs { margin-top: 8px; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
 .chase-runs summary { cursor: pointer; color: var(--au-text-2); }
 .chase-runs summary:focus-visible { outline: 2px solid var(--au-border-focus); outline-offset: 2px; }
 .chase-runs ul { list-style: none; margin: 6px 0 0; padding: 0; line-height: 1.8; }
@@ -3118,18 +3118,18 @@ function typeLabel(t: string): string {
   border-radius: var(--au-r-md);
   background: var(--au-bg-soft);
 }
-.scrape-block h3 { margin: 0 0 6px; font-size: var(--font-size-sm); font-weight: 700; color: var(--au-text); }
+.scrape-block h3 { margin: 0 0 6px; font-size: var(--uhd-fs-aux); font-weight: 700; color: var(--au-text); }
 .scrape-block .drawer-hint { margin-bottom: 10px; }
 .scrape-subblock { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--au-border); }
-.scrape-subblock h4 { margin: 0 0 6px; font-size: var(--font-size-sm); font-weight: 600; color: var(--au-text); }
+.scrape-subblock h4 { margin: 0 0 6px; font-size: var(--uhd-fs-aux); font-weight: 600; color: var(--au-text); }
 .scrape-subblock .drawer-hint { margin-bottom: 10px; }
 .scrape-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .scrape-skeleton { height: 32px; border-radius: var(--au-r-md); }
 /* 刮削性能参数：每行 标签 / 输入 / 说明 / 标记 */
 .tuning-list { display: flex; flex-direction: column; gap: 10px; }
 .tuning-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.tuning-label { min-width: 118px; font-size: var(--font-size-sm); font-weight: 600; color: var(--au-text); }
-.tuning-readonly { display: inline-flex; align-items: center; gap: 8px; font-size: var(--font-size-sm); font-weight: 600; color: var(--au-text); }
+.tuning-label { min-width: 118px; font-size: var(--uhd-fs-aux); font-weight: 600; color: var(--au-text); }
+.tuning-readonly { display: inline-flex; align-items: center; gap: 8px; font-size: var(--uhd-fs-aux); font-weight: 600; color: var(--au-text); }
 .tuning-row .tuning-desc { margin-bottom: 0; flex: 1 1 220px; }
 
 /* ==================== 扫描状态（卡片 + 记录抽屉） ==================== */
@@ -3140,14 +3140,14 @@ function typeLabel(t: string): string {
 .scan-dot.is-running { background: var(--au-info); }
 .scan-dot.is-queued { background: var(--au-text-3); }
 .scan-error, .scan-hint {
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-warning);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 /* 实时状态一行（排队原因 / 扫描进度）：与「最近一次结果」分层，后者是落库的历史 */
 .lib-live {
   display: flex; align-items: center; gap: 6px;
-  font-size: var(--font-size-xs); color: var(--au-info);
+  font-size: var(--uhd-fs-aux-sm); color: var(--au-info);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
@@ -3163,8 +3163,8 @@ function typeLabel(t: string): string {
 .reach-row-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .reach-row-title { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; color: var(--au-text); }
 .reach-name { font-weight: 700; color: var(--au-text); }
-.reach-node { font-size: var(--font-size-xs); color: var(--au-text-3); }
-.reach-row-fix { font-size: var(--font-size-xs); color: var(--au-text-2); }
+.reach-node { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
+.reach-row-fix { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-2); }
 
 /* ==================== 扫描队列：正在跑 / 排队中 / 最近完成 ==================== */
 .queue-facts { display: flex; flex-wrap: wrap; gap: 6px 14px; }
@@ -3174,7 +3174,7 @@ function typeLabel(t: string): string {
   gap: 12px;
 }
 .queue-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.queue-col-title { font-size: var(--font-size-xs); color: var(--au-text-3); letter-spacing: 0.04em; }
+.queue-col-title { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); letter-spacing: 0.04em; }
 .queue-col-title--split { display: flex; align-items: center; justify-content: space-between; }
 .queue-row {
   display: flex; flex-direction: column; gap: 4px;
@@ -3186,12 +3186,12 @@ function typeLabel(t: string): string {
 }
 .queue-row-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .queue-name {
-  font-size: var(--font-size-sm); font-weight: 500; color: var(--au-text);
+  font-size: var(--uhd-fs-aux); font-weight: 500; color: var(--au-text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .queue-row-head :deep(.el-button) { margin-left: auto; padding: 0 4px; }
 .queue-row-sub {
-  font-size: var(--font-size-xs); color: var(--au-text-3);
+  font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .queue-row-sub.warn { color: var(--au-warning); }
@@ -3201,7 +3201,7 @@ function typeLabel(t: string): string {
   border: 1px dashed var(--au-border);
   border-radius: var(--au-r-md);
   text-align: center;
-  font-size: var(--font-size-xs); color: var(--au-text-4);
+  font-size: var(--uhd-fs-aux-sm); color: var(--au-text-4);
 }
 
 /* ==================== 手机（≤768px） ==================== */

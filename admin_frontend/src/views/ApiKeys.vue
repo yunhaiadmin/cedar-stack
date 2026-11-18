@@ -338,7 +338,7 @@ onMounted(load)
 .is-down { color: var(--au-danger); }
 .key-name {
   font-weight: 600;
-  font-size: 15px;
+  font-size: var(--uhd-fs-body);
   color: var(--au-text);
 }
 .key-id {
@@ -347,7 +347,7 @@ onMounted(load)
   gap: 6px;
   margin-top: 2px;
   font-family: monospace;
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-2);
 }
 .key-id .ic { width: 14px; height: 14px; }
@@ -357,14 +357,14 @@ onMounted(load)
   flex-wrap: wrap;
 }
 .scope-pill {
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   padding: 2px 10px;
-  border-radius: 999px;
+  border-radius: var(--au-r-full);
   border: 1px solid currentColor;
 }
 .usage-text {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--uhd-fs-aux);
   color: var(--au-text-2);
   line-height: 1.8;
 }
@@ -376,7 +376,7 @@ onMounted(load)
 }
 .scope-desc {
   color: var(--au-text-2);
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
 }
 .plaintext-box {
   margin-top: 16px;
@@ -394,7 +394,7 @@ onMounted(load)
 .plaintext-key {
   display: block;
   font-family: monospace;
-  font-size: 14px;
+  font-size: var(--uhd-fs-caption);
   word-break: break-all;
   padding: 12px;
   margin-bottom: 12px;

@@ -46,7 +46,7 @@
 /* 手动绑定的步骤小标题：琥珀眉题 */
 .ms-step {
   margin-top: 4px;
-  font-size: 11.5px;
+  font-size: var(--uhd-fs-micro);
   font-weight: 600;
   letter-spacing: 0.16em;
   color: var(--au-primary);
@@ -67,7 +67,7 @@
 
 .ms-hint {
   margin: 0;
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-3);
   line-height: 1.8;
 }
@@ -80,12 +80,12 @@
 .ms-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
 }
 
 .ms-table th {
   text-align: left;
-  font-size: 11.5px;
+  font-size: var(--uhd-fs-micro);
   letter-spacing: 0.04em;
   font-weight: var(--font-weight-medium);
   color: var(--au-text-3);
@@ -108,7 +108,7 @@
   margin-top: 4px;
   padding-top: 8px;
   border-top: 1px solid var(--au-border);
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-2);
   font-weight: var(--font-weight-medium);
 }
@@ -140,7 +140,7 @@
   margin: 12px 0;
 }
 .ms-field-label {
-  font-size: var(--font-size-sm);
+  font-size: var(--uhd-fs-aux);
   font-weight: 500;
   color: var(--au-text-2);
 }
@@ -161,7 +161,7 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   line-height: 1.7;
 }
 
@@ -177,7 +177,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-2);
 }
 
@@ -226,7 +226,7 @@
 }
 
 .ms-switch-title {
-  font-size: var(--font-size-sm);
+  font-size: var(--uhd-fs-aux);
   font-weight: var(--font-weight-medium);
   color: var(--au-text);
 }
@@ -242,12 +242,12 @@
   display: inline-block;
   margin-left: 8px;
   padding: 1px 8px;
-  font-size: 11px;
+  font-size: var(--uhd-fs-micro);
   font-weight: var(--font-weight-medium);
   color: var(--au-text-2);
   background: var(--au-primary-soft);
   border: 1px solid var(--au-border);
-  border-radius: 999px;
+  border-radius: var(--au-r-full);
   vertical-align: 1px;
 }
 
@@ -282,7 +282,7 @@
   border-radius: var(--au-r-sm);
   background: var(--au-primary-soft);
   color: var(--au-text);
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   font-weight: var(--font-weight-semibold);
 }
 
@@ -319,7 +319,7 @@
 /* 表格单元格里的一行说明：不能拿 .ms-sub（有分隔线），单独一个类 */
 .ms-note {
   margin-top: 2px;
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-3);
   line-height: 1.7;
   white-space: normal;
@@ -343,7 +343,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-2);
   font-weight: var(--font-weight-medium);
 }
@@ -353,7 +353,7 @@
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
 }
 
 /* 试采集结果 */
@@ -452,7 +452,7 @@
 
   .ms-cell-label {
     display: block;
-    font-size: 11px;
+    font-size: var(--uhd-fs-micro);
     color: var(--au-text-3);
     line-height: 1.4;
   }
@@ -468,7 +468,7 @@
   }
   /* 密钥状态文字：不截断，宁可换行 */
   .ms-keys-cell {
-    font-size: var(--font-size-xs);
+    font-size: var(--uhd-fs-aux-sm);
     line-height: 1.6;
   }
   /* 操作按钮：宁可换行也不截字（「去密钥池」四个字必须看得全） */
@@ -540,7 +540,7 @@
     min-height: 44px;
     min-width: 44px;
     padding: 8px 14px;
-    font-size: 14px;
+    font-size: var(--uhd-fs-caption);
   }
 }
 /* 手动绑定 TMDB · 第二步：TMDB 候选卡片墙（Emby 式手动识别） */
@@ -583,7 +583,7 @@
   border-radius: calc(var(--au-r-sm) / 2);
   background: var(--au-violet-soft);
   color: var(--au-text-3);
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   text-align: center;
 }
 
@@ -596,20 +596,20 @@
 }
 
 .tmdb-title {
-  font-size: var(--font-size-sm);
+  font-size: var(--uhd-fs-aux);
   font-weight: 600;
   line-height: 1.4;
 }
 
 .tmdb-meta {
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-3);
 }
 
 /* 简介只露两行，hover 显示全文（title 属性兜底） */
 .tmdb-overview {
   margin: 0;
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   line-height: 1.6;
   color: var(--au-text-2);
   display: -webkit-box;
@@ -647,5 +647,5 @@
 }
 
 /* Batch D 入口收敛：卡片内互链 */
-.ms-link { color: var(--au-accent, #b45309); font-weight: 700; text-decoration: none; }
+.ms-link { color: var(--au-accent); font-weight: 700; text-decoration: none; }
 .ms-link:hover { text-decoration: underline; }

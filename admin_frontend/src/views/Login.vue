@@ -156,7 +156,7 @@ async function submit() {
 
 /* 站名：衬线（base.css 的 h1），字距收进 0.04em 以内，不再 uppercase */
 .brand-title {
-  font-size: 1.5rem;
+  font-size: var(--uhd-fs-h3);
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--au-text);
@@ -164,14 +164,14 @@ async function submit() {
 }
 
 .brand-subtitle {
-  font-size: 0.8125rem;
+  font-size: var(--uhd-fs-aux);
   color: var(--au-text-3);
   margin: 0;
   line-height: 1.5;
 }
 
 .auth-hint {
-  font-size: 0.8125rem;
+  font-size: var(--uhd-fs-aux);
   color: var(--au-text-2);
   background: var(--au-primary-soft);
   border: 1px solid var(--au-primary-border);
@@ -194,7 +194,7 @@ async function submit() {
 }
 
 .field-label {
-  font-size: 0.8125rem;
+  font-size: var(--uhd-fs-aux);
   font-weight: 500;
   color: var(--au-text-3);
 }
@@ -233,7 +233,7 @@ async function submit() {
   border: none;
   outline: none;
   color: var(--au-text);
-  font-size: 0.875rem;
+  font-size: var(--uhd-fs-caption);
 }
 
 .field-box input::placeholder { color: var(--au-text-4); }
@@ -245,7 +245,7 @@ async function submit() {
   background: var(--au-danger-soft);
   border: 1px solid var(--au-danger-border);
   color: var(--au-danger);
-  font-size: 0.8125rem;
+  font-size: var(--uhd-fs-aux);
   line-height: 1.4;
 }
 
@@ -260,7 +260,7 @@ async function submit() {
   border: none;
   border-radius: var(--au-r-md);
   color: var(--au-on-primary);
-  font-size: 0.9375rem;
+  font-size: var(--uhd-fs-body);
   font-weight: 600;
   cursor: pointer;
   transition: filter var(--au-fast) var(--au-ease), transform var(--au-fast) var(--au-ease);
@@ -287,7 +287,7 @@ async function submit() {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  font-size: 0.75rem;
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-4);
   margin: 1.25rem 0 0;
 }
@@ -296,6 +296,6 @@ async function submit() {
 @media (max-width: 480px) {
   .auth-page { padding: 14px; align-items: flex-start; padding-top: max(28px, env(safe-area-inset-top)); }
   .auth-card { padding: 1.625rem 1.25rem 1.25rem; }
-  .brand-title { font-size: 1.25rem; }
+  .brand-title { font-size: var(--uhd-fs-title); }
 }
 </style>
