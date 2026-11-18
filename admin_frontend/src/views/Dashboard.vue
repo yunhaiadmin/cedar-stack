@@ -477,20 +477,20 @@ a.glance-card:hover { border-color: var(--au-border-strong); background: var(--a
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 12.5px;
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-3);
 }
 .glance-head svg { color: var(--au-text-3); flex-shrink: 0; }
 .glance-value {
   font-family: var(--au-font-serif);
-  font-size: 1.3rem;
+  font-size: var(--uhd-fs-title);
   font-weight: 700;
   color: var(--au-text);
   line-height: 1.25;
   font-variant-numeric: tabular-nums;
 }
 .glance-hint {
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-3);
   line-height: 1.5;
   overflow: hidden;
@@ -523,7 +523,7 @@ a.glance-card:hover { border-color: var(--au-border-strong); background: var(--a
   gap: 8px;
   padding-right: 6px;
   font-family: var(--au-font-serif);
-  font-size: 14px;
+  font-size: var(--uhd-fs-caption);
   font-weight: 700;
   color: var(--au-text);
 }
@@ -537,7 +537,7 @@ a.glance-card:hover { border-color: var(--au-border-strong); background: var(--a
   color: var(--au-danger);
   border-radius: var(--au-r-full);
   padding: 0 8px;
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   line-height: 20px;
 }
 
@@ -551,13 +551,13 @@ a.glance-card:hover { border-color: var(--au-border-strong); background: var(--a
   border: 1px solid var(--au-border);
   background: var(--au-surface-2);
   color: var(--au-text-2);
-  font-size: 12.5px;
+  font-size: var(--uhd-fs-aux-sm);
   text-decoration: none;
   transition: border-color var(--au-fast) var(--au-ease), color var(--au-fast) var(--au-ease);
 }
 
 .todo-pill:hover { border-color: var(--au-border-strong); color: var(--au-text); }
-.todo-pill strong { color: var(--au-text); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.todo-pill strong { color: var(--au-text); font-size: var(--uhd-fs-aux); font-variant-numeric: tabular-nums; }
 .todo-pill.zero { opacity: 0.55; }
 .todo-pill.zero strong { color: var(--au-text-3); }
 .todo-pill.danger:not(.zero) strong { color: var(--au-danger); }
@@ -579,7 +579,7 @@ a.glance-card:hover { border-color: var(--au-border-strong); background: var(--a
   border: 1px solid transparent;
   background: transparent;
   color: var(--au-text-3);
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   cursor: pointer;
   transition: color var(--au-fast) var(--au-ease), border-color var(--au-fast) var(--au-ease),
     background var(--au-fast) var(--au-ease);
@@ -592,8 +592,8 @@ a.glance-card:hover { border-color: var(--au-border-strong); background: var(--a
 .metric-tab:focus-visible { outline: 2px solid var(--au-border-focus); outline-offset: 2px; }
 
 .trend-total { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
-.trend-total-label { font-size: 12px; color: var(--au-text-3); }
-.trend-total-value { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.trend-total-label { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
+.trend-total-value { font-size: var(--uhd-fs-h3); font-weight: 700; font-variant-numeric: tabular-nums; }
 
 .chart-wrap { position: relative; }
 .chart { width: 100%; height: 160px; display: block; }
@@ -601,7 +601,7 @@ a.glance-card:hover { border-color: var(--au-border-strong); background: var(--a
 .chart-axis {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: var(--uhd-fs-micro);
   color: var(--au-text-4);
   margin-top: 6px;
   font-variant-numeric: tabular-nums;
@@ -617,9 +617,9 @@ a.glance-card:hover { border-color: var(--au-border-strong); background: var(--a
   .chart { height: 132px; }
   /* 7-30 个日期标签在窄屏会挤成一团，隔一个显示一个 */
   .chart-axis span:nth-child(even) { display: none; }
-  .trend-total-value { font-size: 1.25rem; }
+  .trend-total-value { font-size: var(--uhd-fs-title); }
   .glance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .glance-card { padding: 11px 12px; }
-  .glance-value { font-size: 1.1rem; }
+  .glance-value { font-size: var(--uhd-fs-title); }
 }
 </style>
