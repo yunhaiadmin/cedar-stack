@@ -102,7 +102,7 @@ def _fund(db, user, dollars):
 
 
 def _personal_sub(db, user, *, price="36.00", started_days_ago=15,
-                  total_days=30):
+                  total_days=30, realm_id=None):
     """生效中的个人订阅＋已支付订单（团队购买抵扣的输入，同 #322）。"""
     plan = models.SubscriptionPlan(
         name="个人版", price=Decimal(price), duration_days=total_days,
@@ -111,7 +111,7 @@ def _personal_sub(db, user, *, price="36.00", started_days_ago=15,
     db.commit()
     now = datetime.now()
     sub = models.UserSubscription(
-        user_id=user.id, plan_id=plan.id, realm_id=None,
+        user_id=user.id, plan_id=plan.id, realm_id=realm_id,
         start_date=now - timedelta(days=started_days_ago),
         end_date=now + timedelta(days=total_days - started_days_ago),
         status="active")
@@ -321,6 +321,61 @@ def test_team_traffic_quota_is_team_pool(db):
     assert traffic_quota.usage_summary(db, owner.id)["exhausted"] is True
     assert traffic_gate.user_traffic_exhausted(db, member.id) is True
     assert traffic_gate.user_traffic_exhausted(db, owner.id) is True
+
+
+# ---------------- 查看资格（view_grant）：团队 ----------------
+
+def test_team_owner_view_grant_via_team(db):
+    """购团把旧个人订阅置到期后，团长凭团队套餐仍可查看 Emby 账号/线路。"""
+    owner = _user(db, "towner")
+    _personal_sub(db, owner)
+    _buy_team(db, owner, activate=True)
+    # 资格来源只能是团队：个人订阅已被抵扣置到期
+    assert subscriptions.has_active_subscription(db, owner.id) is False
+    granted, unlock = subscriptions.view_grant(db, owner)
+    assert granted is True
+    assert unlock is None
+
+
+def test_team_member_view_grant_via_team(db):
+    owner = _user(db, "towner")
+    _buy_team(db, owner, activate=True)
+    member = teams_service.create_member(
+        db, owner, username="tmember1", password=PW)
+    granted, unlock = subscriptions.view_grant(db, member)
+    assert granted is True
+    assert unlock is None
+
+
+def test_pending_team_no_view_grant(db):
+    owner = _user(db, "towner")
+    _buy_team(db, owner, activate=False)
+    member = teams_service.create_member(
+        db, owner, username="tmember1", password=PW)
+    assert subscriptions.view_grant(db, owner) == (False, None)
+    assert subscriptions.view_grant(db, member) == (False, None)
+
+
+def test_expired_team_no_view_grant(db):
+    owner = _user(db, "towner")
+    team = _buy_team(db, owner, activate=True)
+    member = teams_service.create_member(
+        db, owner, username="tmember1", password=PW)
+    assert subscriptions.view_grant(db, member)[0] is True
+    team.plan_expires_at = datetime.now() - timedelta(days=1)
+    db.commit()
+    assert subscriptions.view_grant(db, owner) == (False, None)
+    assert subscriptions.view_grant(db, member) == (False, None)
+
+
+def test_no_team_user_view_grant_unchanged(db):
+    """无团队用户行为不变：无订阅不放行、有个人订阅放行。"""
+    bystander = _user(db, "bystander")
+    assert subscriptions.view_grant(db, bystander) == (False, None)
+    solo = _user(db, "solo")
+    # view_grant 走 _scoped 口径（面板当前服=1），存量用例同口径绑服造数
+    _personal_sub(db, solo, realm_id=1)
+    assert subscriptions.view_grant(db, solo) == (True, None)
 
 
 def test_pending_team_grants_no_traffic_quota(db):
