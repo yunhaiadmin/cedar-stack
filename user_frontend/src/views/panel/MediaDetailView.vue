@@ -13,7 +13,7 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, BellPlus, Captions, ChevronRight, Clapperboard, Heart, MessagesSquare, Play, Trash2 } from 'lucide-vue-next'
+import { ArrowLeft, ArrowUpRight, BellPlus, Captions, ChevronRight, Clapperboard, Heart, MessagesSquare, Play, Trash2 } from 'lucide-vue-next'
 import Modal from '@/components/ui/Modal.vue'
 import {
   embyApi as embyProtocol,
@@ -90,14 +90,27 @@ function onHeroError() {
 const isSeries = computed(() => item.value?.Type === 'Series')
 const typeLabel = computed(() => (isSeries.value ? '剧集' : item.value?.Type === 'Movie' ? '电影' : item.value?.Type || ''))
 
+/** 详情页专用时长文案（友站口径「2 小时 19 分」，数字与单位带空格）。
+    不动共享 formatDuration：选集弹层与集行还在用旧文案（StreamHomeView
+    注释先例——只改本面格式，不动共享函数）。 */
+function formatDurationSpaced(seconds: number): string {
+  if (!seconds || seconds <= 0) return '--'
+  const h = Math.floor(seconds / 3600)
+  const m = Math.round((seconds % 3600) / 60)
+  return h > 0 ? `${h} 小时 ${m} 分` : `${m} 分钟`
+}
+
+/** 元信息行顺序（友站口径）：年份 →「N 季」→ 电影时长 → ★评分；
+    剧集时长（若有）仍压尾，不抢评分前的位置 */
 const metaParts = computed(() => {
   const it = item.value
   if (!it) return [] as string[]
   const parts: string[] = []
   if (it.ProductionYear) parts.push(String(it.ProductionYear))
-  if (isSeries.value && it.ChildCount) parts.push(`${it.ChildCount}季`)
+  if (isSeries.value && it.ChildCount) parts.push(`${it.ChildCount} 季`)
+  if (!isSeries.value && it.RunTimeTicks) parts.push(formatDurationSpaced(ticksToSeconds(it.RunTimeTicks)))
   if (it.CommunityRating) parts.push(`★ ${it.CommunityRating.toFixed(1)}`)
-  if (it.RunTimeTicks) parts.push(formatDuration(ticksToSeconds(it.RunTimeTicks)))
+  if (isSeries.value && it.RunTimeTicks) parts.push(formatDurationSpaced(ticksToSeconds(it.RunTimeTicks)))
   return parts
 })
 
@@ -208,10 +221,10 @@ function audioChipOf(streams: NonNullable<EmbyItem['MediaSources']>[number]['Med
   if (audios.some((s) => /atmos/i.test(`${s.DisplayTitle || ''} ${s.Title || ''}`))) return '杜比全景声'
   const a = audios.find((s) => s.IsDefault) || audios[0]
   const layout = (a.ChannelLayout || '').toLowerCase()
-  if (layout.includes('7.1')) return '7.1声道'
-  if (layout.includes('5.1')) return '5.1声道'
-  if (layout === 'stereo' || layout === '2.0') return '2.0声道'
-  const byChannels: Record<number, string> = { 8: '7.1声道', 6: '5.1声道', 2: '2.0声道', 1: '1.0声道' }
+  if (layout.includes('7.1')) return '7.1 声道'
+  if (layout.includes('5.1')) return '5.1 声道'
+  if (layout === 'stereo' || layout === '2.0') return '2.0 声道'
+  const byChannels: Record<number, string> = { 8: '7.1 声道', 6: '5.1 声道', 2: '2.0 声道', 1: '1.0 声道' }
   return a.Channels ? byChannels[a.Channels] || '' : ''
 }
 
@@ -251,12 +264,26 @@ const specChips = computed(() => {
   return chips
 })
 
-/** 影片信息「主演」行：People 按后端 sort_order 排，前 5 位即主演序。
-    导演无数据面：后端 _people_dto 只下发 Actor、库里没有导演字段，
-    不渲染导演行（不许拿演员冒充）。 */
-const leadActors = computed(() =>
-  (item.value?.People || []).slice(0, 5).map((p) => p.Name).filter(Boolean),
+/** 类型胶囊（与规格胶囊同流同款描边，见模板 md-chips 区） */
+const genreChips = computed(() => (item.value?.Genres || []).slice(0, 4))
+
+/** 信息表「链接」行外链（友站形态：描边胶囊钮 TMDB ↗ / IMDb ↗） */
+const tmdbUrl = computed(() => {
+  if (!tmdbId.value) return ''
+  return isSeries.value
+    ? `https://www.themoviedb.org/tv/${tmdbId.value}`
+    : `https://www.themoviedb.org/movie/${tmdbId.value}`
+})
+const imdbUrl = computed(() =>
+  imdbId.value ? `https://www.imdb.com/title/${imdbId.value}/` : '',
 )
+
+/** 推荐卡元信息（友站口径：年份 · 类型，评分由卡内粗体段拼） */
+function recMeta(rec: EmbyItem): string {
+  return [rec.ProductionYear ? String(rec.ProductionYear) : '', (rec.Genres || [])[0] || '']
+    .filter(Boolean)
+    .join(' · ')
+}
 
 interface VersionCard {
   key: string
@@ -601,13 +628,13 @@ watch(itemId, () => {
           </div>
 
           <div class="md-info">
-            <!-- 信息行（友站形态）：年份 · 季数 · ★评分 · 时长纯文字，
-                 其后接类型描边胶囊同行；右侧信息栏不再重复摆评分 -->
+            <!-- 信息行（友站形态）：年份 · 季数 · 时长 · ★评分纯文字一行；
+                 其下类型与规格描边胶囊同流排布、同款 .md-chip（友站形态） -->
             <p class="md-meta">
               <template v-for="(p, i) in metaParts" :key="i">{{ i ? ' · ' : '' }}{{ p }}</template>
-              <span v-for="g in (item.Genres || []).slice(0, 4)" :key="`g-${g}`" class="md-chip md-chip--genre">{{ g }}</span>
             </p>
-            <div v-if="specChips.length" class="md-chips md-chips--spec">
+            <div v-if="genreChips.length || specChips.length" class="md-chips">
+              <span v-for="g in genreChips" :key="`g-${g}`" class="md-chip">{{ g }}</span>
               <span v-for="c in specChips" :key="c" class="md-chip">{{ c }}</span>
             </div>
             <p v-if="resumeText" class="md-resume">
@@ -675,36 +702,45 @@ watch(itemId, () => {
             <p class="md-note">点「立即播放」选个播放器就能看；本页也能看这部片齐不齐，缺的集可以直接求补，补齐后会通知你。</p>
           </div>
 
-          <!-- 右侧信息栏（移动端排在演职人员之后）：竖分隔线 + TMDB/IMDb chip -->
+          <!-- 右侧信息栏（移动端排在演职人员之后）：竖分隔线 + 键值表。
+               键集照友站：剧集＝剧名/首播/季数/类型/链接，
+               电影＝片名/原名/上映/片长/类型/链接（「最近播出」无数据面，
+               属 G-125 待定项，本批不造） -->
           <aside class="md-rail" :class="{ 'md-rail--series': isSeries }" aria-label="条目信息">
             <h2 class="md-rail__title">{{ isSeries ? '剧集信息' : '影片信息' }}</h2>
             <dl class="md-rail__list">
-              <div v-if="leadActors.length" class="md-rail__row">
-                <dt>主演</dt><dd>{{ leadActors.join(' / ') }}</dd>
+              <div v-if="isSeries" class="md-rail__row">
+                <dt>剧名</dt><dd>{{ item.Name }}</dd>
               </div>
-              <div v-if="item.ProductionYear" class="md-rail__row">
-                <dt>年份</dt><dd>{{ item.ProductionYear }}</dd>
+              <div v-if="!isSeries" class="md-rail__row">
+                <dt>片名</dt><dd>{{ item.Name }}</dd>
               </div>
-              <div v-if="item.PremiereDate" class="md-rail__row">
+              <div v-if="!isSeries && item.OriginalTitle && item.OriginalTitle !== item.Name" class="md-rail__row">
+                <dt>原名</dt><dd>{{ item.OriginalTitle }}</dd>
+              </div>
+              <div v-if="isSeries && item.PremiereDate" class="md-rail__row">
+                <dt>首播</dt><dd>{{ item.PremiereDate.slice(0, 10) }}</dd>
+              </div>
+              <div v-if="!isSeries && item.PremiereDate" class="md-rail__row">
                 <dt>上映</dt><dd>{{ item.PremiereDate.slice(0, 10) }}</dd>
               </div>
-              <div v-if="item.RunTimeTicks" class="md-rail__row">
-                <dt>片长</dt><dd>{{ formatDuration(ticksToSeconds(item.RunTimeTicks)) }}</dd>
+              <div v-if="isSeries && item.ChildCount" class="md-rail__row">
+                <dt>季数</dt><dd>{{ item.ChildCount }} 季</dd>
+              </div>
+              <div v-if="!isSeries && item.RunTimeTicks" class="md-rail__row">
+                <dt>片长</dt><dd>{{ formatDurationSpaced(ticksToSeconds(item.RunTimeTicks)) }}</dd>
               </div>
               <div v-if="item.Genres?.length" class="md-rail__row">
                 <dt>类型</dt><dd>{{ item.Genres.join(' / ') }}</dd>
               </div>
-              <div v-if="item.OfficialRating" class="md-rail__row">
-                <dt>分级</dt><dd>{{ item.OfficialRating }}</dd>
-              </div>
-              <div v-if="item.Studios?.length" class="md-rail__row">
-                <dt>出品</dt><dd>{{ item.Studios.slice(0, 2).join(' / ') }}</dd>
+              <div v-if="tmdbId || imdbId" class="md-rail__row">
+                <dt>链接</dt>
+                <dd class="md-rail__links">
+                  <a v-if="tmdbId" class="md-idchip" :href="tmdbUrl" target="_blank" rel="noopener noreferrer">TMDB <ArrowUpRight :size="12" /></a>
+                  <a v-if="imdbId" class="md-idchip" :href="imdbUrl" target="_blank" rel="noopener noreferrer">IMDb <ArrowUpRight :size="12" /></a>
+                </dd>
               </div>
             </dl>
-            <div class="md-rail__ids">
-              <span v-if="tmdbId" class="md-idchip">TMDB {{ tmdbId }}</span>
-              <span v-if="imdbId" class="md-idchip">IMDb {{ imdbId }}</span>
-            </div>
           </aside>
         </div>
 
@@ -805,7 +841,7 @@ watch(itemId, () => {
           v-for="rec in recommendations"
           :key="rec.Id"
           :title="rec.Name"
-          :meta="rec.ProductionYear ? String(rec.ProductionYear) : ''"
+          :meta="recMeta(rec)"
           :rating="rec.CommunityRating ?? null"
           :image="posterUrl(rec, 520)"
           :to="`/media/${rec.Id}`"
@@ -1020,17 +1056,6 @@ watch(itemId, () => {
   font-size: 13px;
   color: var(--uhd-s-text-2);
 }
-/* 信息行内的类型胶囊：描边小胶囊、与年份/时长同行（友站形态） */
-.md-chip--genre {
-  min-width: 0;
-  height: 24px;
-  margin-left: 10px;
-  padding: 0 11px;
-  border-radius: 999px;
-  font-size: 12.5px;
-  font-weight: var(--uhd-fw-semibold);
-  vertical-align: 2px;
-}
 /* 底部留白：桌面给页脚让位，移动端另在媒体查询里加高避开玻璃坞 */
 .md-tail {
   height: 48px;
@@ -1090,7 +1115,11 @@ watch(itemId, () => {
   border: 2px solid transparent;
   background:
     var(--uhd-rainbow-soft) padding-box,
-    var(--uhd-rainbow-border) border-box;
+    var(--uhd-rainbow-border-flow) border-box;
+  /* 描边流动（G-100）：flow 令牌一图含两周期，200% 宽下位移 0%→100%
+     恰为一个周期、无缝衔接；底色层 size auto 不受位移影响 */
+  background-size: auto, 200% 100%;
+  animation: md-rainbow-flow 6s linear infinite;
   color: #111111;
   cursor: pointer;
   min-width: 135px;
@@ -1101,11 +1130,25 @@ watch(itemId, () => {
   backdrop-filter: var(--uhd-glass-filter);
   -webkit-backdrop-filter: var(--uhd-glass-filter);
 }
+@keyframes md-rainbow-flow {
+  from {
+    background-position: 0 0, 0% 0;
+  }
+  to {
+    background-position: 0 0, 100% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .md-btn--play {
+    animation: none;
+  }
+}
 /* 深色版：黑毛玻璃底 + 白字（同 StreamHero .sh-play 深色口径） */
 .stream-scope[data-stream-theme="dark"] .md-btn--play {
   background:
     linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
-    var(--uhd-rainbow-border) border-box;
+    var(--uhd-rainbow-border-flow) border-box;
+  background-size: auto, 200% 100%;
   color: #ffffff;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
@@ -1243,21 +1286,23 @@ watch(itemId, () => {
   margin: 0;
   color: var(--uhd-s-text);
 }
-.md-rail__ids {
+/* 「链接」行：TMDB/IMDb 描边胶囊外链（友站形态） */
+.md-rail__links {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 14px;
 }
 .md-idchip {
   display: inline-flex;
   align-items: center;
+  gap: 3px;
   height: 28px;
   padding: 0 10px;
   border-radius: 14px;
   border: 1px solid var(--uhd-s-border);
   font-size: 12px;
   color: var(--uhd-s-text-2);
+  text-decoration: none;
 }
 .md-sec-title {
   margin: 0;
@@ -1660,23 +1705,6 @@ watch(itemId, () => {
   .md-sec-sub {
     font-size: 13.5px;
   }
-  /* 规格胶囊（截图形态）：实心深底（浅色为浅灰底）粗字小方角胶囊 */
-  .md-chips--spec {
-    gap: 7px;
-    margin-top: 12px;
-  }
-  .md-chips--spec .md-chip {
-    min-width: 0;
-    height: 27px;
-    padding: 0 10px;
-    border-radius: 8px;
-    border-color: transparent;
-    background: var(--uhd-s-card-soft);
-    color: var(--uhd-s-text);
-    font-size: 12.5px;
-    font-weight: var(--uhd-fw-bold);
-    letter-spacing: 0.02em;
-  }
   /* 简介收小到友站量级（14.5px/23px，仍 3 行截断） */
   .md-overview-box {
     margin-top: 16px;
@@ -1787,7 +1815,8 @@ watch(itemId, () => {
     border: 2px solid transparent;
     background:
       var(--uhd-rainbow-soft) padding-box,
-      var(--uhd-rainbow) border-box;
+      var(--uhd-rainbow-border-flow) border-box;
+    background-size: auto, 200% 100%;
     color: var(--uhd-s-pill-active-text);
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.65),
@@ -1802,7 +1831,8 @@ watch(itemId, () => {
   .stream-scope[data-stream-theme="dark"] .md-actions .md-btn--play {
     background:
       linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
-      var(--uhd-rainbow) border-box;
+      var(--uhd-rainbow-border-flow) border-box;
+    background-size: auto, 200% 100%;
     color: #ffffff;
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.22),
