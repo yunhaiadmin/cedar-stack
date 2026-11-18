@@ -8,6 +8,10 @@
     <!-- 移动端浏览器工具栏跟随页面底色（不是品牌色），滚动时不会出现一条亮青色带 -->
     <meta name="theme-color" content="#0c0a09">
     <meta name="color-scheme" content="dark">
+    <!-- 版本守卫：%BUILD_ID% 由 vite 构建期注入（vite.config.ts 的 buildId
+         插件，CI 提交 SHA 优先、构建时间戳兜底）。运行时 utils/versionGuard
+         读这份值与服务器上的壳比对，长开标签页跑旧构建时据此提示刷新。 -->
+    <meta name="build-id" content="%BUILD_ID%">
     <meta name="description" content="Aetrix —— 自建影音媒体服务平台：在线播放、多服订阅与客户端接入。">
     <link rel="icon" href="/favicon.ico">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">

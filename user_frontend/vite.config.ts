@@ -26,11 +26,39 @@ function auCustomMedia(): Plugin {
   }
 }
 
+// 构建标识（版本守卫）：优先 CI 传入的提交 SHA（BUILD_ID / VITE_BUILD_ID /
+// GITHUB_SHA / GIT_COMMIT 任一有值即可），取不到用构建时间戳。经
+// transformIndexHtml 写进 index.html 的 <meta name="build-id">，运行时
+// utils/versionGuard 读 document 的 meta 与服务器上的壳比对——长开的
+// 标签页跑旧构建时据此提示刷新（2026-11-18 事故：旧标签页留着已删的
+// 入口、旧 CSS chunk 已被新部署替换）。每次构建都必须得到新值，所以
+// 兜底用构建时刻，不用包版本之类的常量。
+function resolveBuildId(): string {
+  return (
+    process.env.BUILD_ID ||
+    process.env.VITE_BUILD_ID ||
+    process.env.GITHUB_SHA ||
+    process.env.GIT_COMMIT ||
+    new Date().toISOString()
+  )
+}
+
+function buildId(): Plugin {
+  const id = resolveBuildId()
+  return {
+    name: 'build-id',
+    transformIndexHtml(html) {
+      return html.replace(/%BUILD_ID%/g, () => id)
+    },
+  }
+}
+
 // 生产环境禁用 DevTools
 const isProduction = process.env.NODE_ENV === 'production'
 export default defineConfig({
   plugins: [
     auCustomMedia(),
+    buildId(),
     vue(),
   ].filter(Boolean),
   resolve: {
