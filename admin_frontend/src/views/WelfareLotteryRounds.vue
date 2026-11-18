@@ -75,11 +75,11 @@ const prizes = ref<{ name: string; type: string; value: number; quantity: number
 
 const openCreate = () => {
   form.value = { title: '', draw_at: null, max_participants: 0, lottery_type: 'button', password_keyword: '' }
-  prizes.value = [{ name: '', type: 'days', value: 0, quantity: 1 }]
+  prizes.value = [{ name: '', type: 'whitelist', value: 0, quantity: 1 }]
   dlgVisible.value = true
 }
 const addPrize = () => {
-  prizes.value.push({ name: '', type: 'days', value: 0, quantity: 1 })
+  prizes.value.push({ name: '', type: 'whitelist', value: 0, quantity: 1 })
 }
 const creating = ref(false)
 const submitCreate = async () => {
@@ -409,12 +409,10 @@ onMounted(() => {
           <div v-for="(p, i) in prizes" :key="i" class="prize-row">
             <el-input v-model="p.name" placeholder="奖品名" class="prize-name" />
             <el-select v-model="p.type" class="prize-type">
-              <el-option label="公益天数" value="days" />
-              <el-option label="积分" value="points" />
               <el-option label="白名单" value="whitelist" />
             </el-select>
             <div class="prize-field">
-              <span class="prize-label">{{ p.type === 'days' ? '天数' : p.type === 'points' ? '积分' : '奖品值' }}</span>
+              <span class="prize-label">奖品值</span>
               <el-input-number v-model="p.value" :min="0" controls-position="right" class="prize-num" aria-label="奖品值" />
             </div>
             <div class="prize-field">

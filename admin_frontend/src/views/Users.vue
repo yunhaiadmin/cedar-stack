@@ -43,7 +43,7 @@ const drawerSize = computed(() => (isPhone.value ? '100%' : '620px'))
 /** 用户列表：手机端用户名做标题，注册时间隐藏（详情抽屉里有） */
 const columns: DataColumn[] = [
   { key: 'username', label: '用户', minWidth: 200, mobile: 'title' },
-  // 用户类型（v2.55 公益服并入用户管理）：公益服 / 付费 / 普通
+  // 用户类型（v2.55 免费服并入用户管理）：免费服 / 付费 / 普通
   { key: 'user_type', label: '类型', width: 150 },
   { key: 'tg_bound', label: 'TG', width: 70 },
   { key: 'emby_username', label: 'Emby 账号', minWidth: 130 },
@@ -893,7 +893,7 @@ function fmtCount(n: number | null | undefined): string {
                       <b class="grant-name">{{ card.realm_name }}</b>
                       <span class="au-badge" :class="BADGE_BY_STATE[grantState(card).cls] || 'au-badge-muted'">{{ grantState(card).text }}</span>
                       <span v-if="card.is_default" class="au-badge au-badge-muted">默认服</span>
-                      <span v-if="card.is_free" class="au-badge au-badge-info">公益服</span>
+                      <span v-if="card.is_free" class="au-badge au-badge-info">免费服</span>
                       <span v-if="!card.is_active" class="au-badge au-badge-rose">已停用</span>
                     </div>
 
@@ -941,7 +941,7 @@ function fmtCount(n: number | null | undefined): string {
                       <CircleSlash :size="12" />到「订阅套餐」授予该服会员，或用该服的会员卡码开通
                     </p>
                     <p v-else-if="card.is_free && !card.unlock?.unlocked" class="grant-note">
-                      <MonitorSmartphone :size="12" />能看全库，但客户端账号地址需公益资格在期（或存量凭证在效）才下发
+                      <MonitorSmartphone :size="12" />能看全库，但客户端账号地址需查看资格在期（或存量凭证在效）才下发
                     </p>
                   </div>
                 </div>

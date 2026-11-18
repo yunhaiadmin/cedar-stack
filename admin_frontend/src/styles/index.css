@@ -286,7 +286,7 @@
 .mini-badge.warning,
 .mini-badge.scanning { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); }
 
-/* 公益服（v2.7.0）：免费开放，用主色区分于付费服与状态类徽标 */
+/* 免费服（v2.7.0）：免费开放，用主色区分于付费服与状态类徽标 */
 .mini-badge.free { background: var(--primary-bg); color: var(--primary); border-color: var(--primary-border); }
 
 .mini-badge.danger,
