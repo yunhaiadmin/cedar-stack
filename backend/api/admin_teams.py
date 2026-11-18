@@ -70,6 +70,8 @@ def put_team_config(
             db, values, schema="team",
             descriptions={
                 "team_purchase_enabled": "团队购买总开关（默认开）",
+                "team_premium_enabled":
+                    "团队 Premium 线是否开售（默认关＝暂停服务）",
                 "team_global_min_traffic_gb": "团队 Global 线起订流量（GB）",
                 "team_premium_min_traffic_gb": "团队 Premium 线起订流量（GB）",
                 "team_max_traffic_gb": "团队可购流量上限（GB）",

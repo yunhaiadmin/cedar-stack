@@ -326,6 +326,7 @@ IMAGE_OBS_CONFIG_SCHEMA: dict[str, tuple] = {
 #   （schema 层只管是字符串），非法表在管理端保存口整批拒绝、不落库。
 TEAM_CONFIG_SCHEMA: dict[str, tuple] = {
     "team_purchase_enabled": ("bool",),
+    "team_premium_enabled": ("bool",),
     "team_global_min_traffic_gb": ("int", 1, 10**6),
     "team_premium_min_traffic_gb": ("int", 1, 10**6),
     "team_max_traffic_gb": ("int", 1, 10**7),

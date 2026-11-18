@@ -188,6 +188,7 @@ def test_quote_global_interpolation(db, users):
 
 
 def test_quote_premium_linear_and_months(db, users):
+    _set_config(db, "team_premium_enabled", "true")
     owner = users["owner"]
     q = teams_service.quote(db, owner, line="premium", traffic_gb=5000,
                             months=1)
@@ -199,7 +200,8 @@ def test_quote_premium_linear_and_months(db, users):
     assert q["list_price_fen"] == 12000  # 时长线性、无折扣
 
 
-def test_preview_validation_ranges(client, users):
+def test_preview_validation_ranges(db, client, users):
+    _set_config(db, "team_premium_enabled", "true")
     c, current = client
     owner = users["owner"]
     assert _preview(c, current, owner, traffic_gb=9999).status_code == 400
@@ -331,6 +333,7 @@ def _small_team(db, client, users):
     """Premium 起订改 100GB → 子账户上限 1，方便测上限。"""
     c, current = client
     owner = users["owner"]
+    _set_config(db, "team_premium_enabled", "true")
     _set_config(db, "team_premium_min_traffic_gb", "100")
     _fund(db, owner, 10)
     resp = _buy(c, current, owner, line="premium", traffic_gb=100,
@@ -478,9 +481,12 @@ def test_admin_config_roundtrip(db, client, users):
     cfg = resp.json()["config"]
     assert cfg["team_premium_price_per_1000gb_fen"] == 400
     assert cfg["team_global_price_anchors"][0]["per_1000gb_fen"] == 100
+    # Premium 开售开关默认关（暂停服务，2026-11-19 用户亲点）
+    assert cfg["team_premium_enabled"] is False
 
     resp = c.put("/api/admin/teams/config",
-                 json={"team_premium_price_per_1000gb_fen": 500})
+                 json={"team_premium_price_per_1000gb_fen": 500,
+                       "team_premium_enabled": True})
     assert resp.status_code == 200, resp.text
     q = teams_service.quote(db, owner, line="premium", traffic_gb=5000,
                             months=1)
@@ -656,3 +662,76 @@ def test_admin_config_rejects_bad_values(db, client, users):
     assert cfg["team_global_price_anchors"][0]["per_1000gb_fen"] == 100
     resp = c.get("/api/admin/teams/config")
     assert resp.json()["config"]["team_sub_account_divisor"] == 50
+
+
+# ==================== Premium 暂停服务（2026-11-19） ====================
+
+def test_premium_paused_by_default_blocks_new_sales(db, client, users):
+    """默认暂停：Premium 预览/购买被拒（403＋premium_line_paused），
+    Global 不受影响，详情 config 带 team_premium_enabled=False。"""
+    c, current = client
+    owner = users["owner"]
+    _fund(db, owner, 100)
+
+    resp = _preview(c, current, owner, line="premium", traffic_gb=5000)
+    assert resp.status_code == 403, resp.text
+    detail = resp.json()["detail"]
+    assert detail["code"] == "premium_line_paused"
+    assert detail["message"] == "Premium 线路暂停服务"
+
+    resp = _buy(c, current, owner, line="premium", traffic_gb=5000,
+                idempotency_key="paused-1")
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["detail"]["code"] == "premium_line_paused"
+    assert _balance(db, owner) == Decimal("100")
+
+    # Global 照常预览，用户端详情里能看到暂停标记
+    resp = _preview(c, current, owner)
+    assert resp.status_code == 200, resp.text
+    current["user"] = owner
+    resp = c.get("/api/user/teams")
+    assert resp.json()["config"]["team_premium_enabled"] is False
+
+
+def test_premium_paused_existing_team_renewal_still_works(
+        db, client, users):
+    """存量 Premium 团队：暂停后团长预览/续费仍放行（同口续费），
+    无 Premium 团队的人仍被拒。"""
+    c, current = client
+    owner = users["owner"]
+    other = users["other"]
+    _set_config(db, "team_premium_enabled", "true")
+    _fund(db, owner, 200)
+    resp = _buy(c, current, owner, line="premium", traffic_gb=5000,
+                idempotency_key="renew-1")
+    assert resp.status_code == 200, resp.text
+    assert _balance(db, owner) == Decimal("180")
+
+    _set_config(db, "team_premium_enabled", "false")
+    resp = _preview(c, current, owner, line="premium", traffic_gb=5000)
+    assert resp.status_code == 200, resp.text
+    resp = _buy(c, current, owner, line="premium", traffic_gb=5000,
+                idempotency_key="renew-2")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["team"]["plan_line"] == "premium"
+    assert _balance(db, owner) == Decimal("160")
+
+    _fund(db, other, 200)
+    resp = _preview(c, current, other, line="premium", traffic_gb=5000)
+    assert resp.status_code == 403, resp.text
+
+
+def test_premium_reenabled_restores_sales(db, client, users):
+    """重新开售后 Premium 恢复可买。"""
+    c, current = client
+    owner = users["owner"]
+    _fund(db, owner, 100)
+    resp = _preview(c, current, owner, line="premium", traffic_gb=5000)
+    assert resp.status_code == 403, resp.text
+    _set_config(db, "team_premium_enabled", "true")
+    resp = _preview(c, current, owner, line="premium", traffic_gb=5000)
+    assert resp.status_code == 200, resp.text
+    resp = _buy(c, current, owner, line="premium", traffic_gb=5000,
+                idempotency_key="reenabled-1")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["team"]["plan_line"] == "premium"

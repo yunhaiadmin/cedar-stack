@@ -93,7 +93,8 @@
               </div>
               <div class="tm-stat">
                 <p class="tm-stat__label">Premium 最低起订</p>
-                <p class="tm-stat__value">{{ formatGb(config.team_premium_min_traffic_gb) }}</p>
+                <p v-if="premiumPaused" class="tm-stat__value tm-stat__value--off">暂停服务</p>
+                <p v-else class="tm-stat__value">{{ formatGb(config.team_premium_min_traffic_gb) }}</p>
               </div>
               <div class="tm-stat">
                 <p class="tm-stat__label">成员配额</p>
@@ -339,12 +340,13 @@
                 <button
                   type="button"
                   class="tm-plan-card"
-                  :class="{ 'tm-plan-card--on': form.line === 'premium' }"
+                  :class="{ 'tm-plan-card--on': form.line === 'premium', 'tm-plan-card--off': premiumPaused }"
                   :aria-pressed="form.line === 'premium'"
+                  :disabled="premiumPaused"
                   @click="setLine('premium')"
                 >
                   <span class="tm-plan-card__name">Premium</span>
-                  <span class="tm-plan-card__sub">高级线路</span>
+                  <span class="tm-plan-card__sub">{{ premiumPaused ? '暂停服务' : '高级线路' }}</span>
                 </button>
               </div>
 
@@ -629,6 +631,8 @@ const loadError = ref('')
 const detail = ref<TeamDetail | null>(null)
 
 const config = computed(() => detail.value!.config)
+/** Premium 线暂停服务（后台 team_premium_enabled 关）：卡片置灰不可选 */
+const premiumPaused = computed(() => !config.value.team_premium_enabled)
 const team = computed(() => detail.value?.team ?? null)
 const myRole = computed(() => detail.value?.my_role ?? null)
 const isSubAccount = computed(() => !!userStore.user?.is_sub_account)
@@ -936,6 +940,7 @@ function clampTraffic() {
 }
 
 function setLine(line: TeamLine) {
+  if (line === 'premium' && premiumPaused.value) return
   form.value.line = line
   clampTraffic()
 }
@@ -943,7 +948,8 @@ function setLine(line: TeamLine) {
 function openBuy() {
   const t = team.value
   form.value = {
-    line: t?.plan_line === 'premium' ? 'premium' : 'global',
+    // Premium 暂停时即使存量团队预填 premium 也回落 global（卡不可选）
+    line: !premiumPaused.value && t?.plan_line === 'premium' ? 'premium' : 'global',
     traffic_gb: t?.plan_traffic_gb ?? config.value.team_global_min_traffic_gb,
     months: 1,
     // 家庭版升级场景：套餐声明了同时播放路数时预填现值（友站升级
@@ -1244,6 +1250,9 @@ onMounted(() => {
   margin: 0;
   font-size: var(--uhd-fs-lead);
   font-weight: var(--uhd-fw-bold);
+}
+.tm-stat__value--off {
+  color: var(--tm-text-2);
 }
 .tm-pending {
   margin: 16px 0 0;
@@ -1789,6 +1798,10 @@ html[data-theme='light'] .tm-sheet {
   line-height: 1.3;
 }
 .tm-plan-card__sub { font-size: 12px; line-height: 1.3; }
+.tm-plan-card--off {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .tm-plan-card--on {
   background: rgba(255, 255, 255, 0.16);
   border-color: rgba(255, 255, 255, 0.9);
