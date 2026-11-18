@@ -112,20 +112,16 @@
       <p v-if="bitrateText" class="wp-spec-bit">{{ bitrateText }}</p>
     </div>
 
-    <!-- 准备态步骤卡 -->
-    <div v-if="phase === 'preparing'" class="wp-prep" role="status">
-      <div class="wp-prep-head">
-        <LoaderCircle :size="17" class="wp-spin" />
-        <strong>准备播放</strong>
-      </div>
-      <p class="wp-prep-step">{{ currentStepLabel }}</p>
-      <p class="wp-prep-sub">{{ prepSub }}</p>
-      <div class="wp-prep-dots">
-        <span
-          v-for="(s, i) in PREP_STEPS"
-          :key="s.key"
-          :class="{ on: i <= prepStepIndex, now: i === prepStepIndex }"
-        />
+    <!-- 准备态中央卡（照友站：居中状态卡，首行＋状态行＋恒定末行，
+         无副行、无进度条；文案序列见 utils/prepStatus.ts） -->
+    <div v-if="phase === 'preparing'" class="wp-prep-wrap">
+      <div class="wp-prep" role="status">
+        <div class="wp-prep-head">
+          <LoaderCircle :size="19" class="wp-spin" />
+          <strong>准备播放</strong>
+        </div>
+        <p v-if="prepStatusText" class="wp-prep-step">{{ prepStatusText }}</p>
+        <p class="wp-prep-hint">{{ PREP_DECODER_HINT }}</p>
       </div>
     </div>
 
@@ -385,6 +381,7 @@ import {
   SOFT_UHD_BLOCK_MESSAGE,
   type SoftPlayerHandle,
 } from '@/utils/softDecode'
+import { prepStatusText as prepStatusTextFor, PREP_DECODER_HINT } from '@/utils/prepStatus'
 import PlayerDanmakuSheet, { type DanmakuSettings } from '@/components/player/PlayerDanmakuSheet.vue'
 import PlayerSubtitleSheet, {
   type SubtitleFontSize,
@@ -429,12 +426,6 @@ interface StreamLike {
 
 /** 浏览器基本播不动的容器：先尝试，失败/超时落到不支持提示，不黑屏装死 */
 const RISKY_CONTAINERS = new Set(['mkv', 'avi', 'wmv', 'flv', 'rmvb', 'asf', 'ts', 'm2ts', 'vob'])
-const PREP_STEPS = [
-  { key: 'resolve', label: '正在解析版本与线路' },
-  { key: 'open', label: '正在打开源' },
-  { key: 'probe', label: '正在分析容器' },
-  { key: 'ready', label: '就绪，正在起播' },
-] as const
 // 弹幕设置默认值：必须声明在 danmaku ref（loadDanmaku 调用点）之前，
 // 放函数体外靠后会 TDZ（loadDanmaku 在 setup 前段就被调用）。
 const DANMAKU_DEFAULTS: DanmakuSettings = {
@@ -461,6 +452,12 @@ const currentSource = ref<EmbyMediaSource | null>(null)
 const episodes = ref<EmbyItem[]>([])
 const prepStepIndex = ref(0)
 const prepSlow = ref(false)
+/** 准备卡慢文案的已接收字节：只来自播放器真实计数（libmedia
+ * bufferReceiveBytes / Chromium webkit 解码字节），无源时为 null，
+ * 文案不带数值，不编数（G-172） */
+const prepReceivedBytes = ref<number | null>(null)
+/** libmedia load() 已返回（容器分析完、等首帧）：准备卡阶段判定用 */
+const softLoadDone = ref(false)
 const noticeText = ref('')
 /** 软解失败的人话原因（回落提示卡小字）：软解试过又失败时才有值，不许再静默吞掉 */
 const softFailReason = ref('')
@@ -549,6 +546,8 @@ let progressTimer: number | undefined
 let toastTimer: number | undefined
 let probeTimer: number | undefined
 let probeTimer2: number | undefined
+/** 原生路径已接收字节轮询（Chromium webkit 解码字节计数） */
+let prepByteTimer: number | undefined
 let lastOpenAt = 0
 let startedFromResume = false
 let reportedPlayingFor = ''
@@ -798,16 +797,18 @@ const bitrateText = computed(() => {
   return `${(total / 1_000_000).toFixed(1)} Mbps`
 })
 
-const currentStepLabel = computed(() => PREP_STEPS[prepStepIndex.value]?.label || '')
-const prepSub = computed(() => {
-  const src = currentSource.value
-  if (softHandle.value) return '浏览器硬解不支持，正在用站内软解播放（首次加载解码器约需几秒）'
-  if (prepSlow.value) return '源响应有点慢，仍在尝试打开（网盘源第一次打开经常要等）'
-  if (prepStepIndex.value === 0) return '正在向服务器确认可播放的版本'
-  if (prepStepIndex.value === 1 && src) return src.Name || '正在连接播放地址'
-  if (prepStepIndex.value === 2 && src?.Container) return `容器 ${src.Container.toUpperCase()}，正在读取媒体信息`
-  return '马上就好'
-})
+/** 准备卡状态行（照友站序列，决策逻辑在 utils/prepStatus.ts）：
+ * 空行→正在打开源→慢态（带真实已接收字节）→正在分析容器（容器小写） */
+const prepStatusText = computed(() =>
+  prepStatusTextFor({
+    step: prepStepIndex.value,
+    slow: prepSlow.value,
+    receivedBytes: prepReceivedBytes.value,
+    container: currentSource.value?.Container,
+    softActive: softActive.value,
+    softLoadDone: softLoadDone.value,
+  }),
+)
 
 const chromeVisible = computed(
   () => phase.value !== 'playing' || (controlsVisible.value && !locked.value),
@@ -1032,6 +1033,10 @@ async function start(restart: boolean): Promise<void> {
   startedFromResume = !restart && resumeSeconds.value > 5
   phase.value = 'preparing'
   prepStepIndex.value = 0
+  // 准备态从零开始：初始阶段无状态行，上一轮的慢标记/字节数不许串入
+  prepSlow.value = false
+  prepReceivedBytes.value = null
+  softLoadDone.value = false
   try {
     await ensureLineBase()
     if (!playbackInfo.value) {
@@ -1099,6 +1104,25 @@ async function openSource(source: EmbyMediaSource, atSeconds: number): Promise<v
       failWithDiagnosis(source, '视频数据迟迟没到')
     }
   }, 30000)
+  // 已接收字节（原生路径）：Chromium 的 webkit 解码字节计数是真实
+  // 计数（已解码≈已接收）；Safari/Firefox 没有这个口径就不轮询、
+  // 慢文案不带数值，不编数（G-172）。loadedmetadata/canplay/出错时
+  // 随 probeTimer 一起清掉。
+  window.clearInterval(prepByteTimer)
+  prepByteTimer = window.setInterval(() => {
+    const vv = videoEl.value as
+      | (HTMLVideoElement & {
+          webkitVideoDecodedByteCount?: number
+          webkitAudioDecodedByteCount?: number
+        })
+      | null
+    if (!vv) return
+    const vb = vv.webkitVideoDecodedByteCount
+    const ab = vv.webkitAudioDecodedByteCount
+    if (typeof vb === 'number' || typeof ab === 'number') {
+      prepReceivedBytes.value = (vb || 0) + (ab || 0)
+    }
+  }, 500)
   v.src = url
   v.playbackRate = rate.value
   if (atSeconds > 0) {
@@ -1125,6 +1149,12 @@ async function openSource(source: EmbyMediaSource, atSeconds: number): Promise<v
  * 不行再按现行口径（硬拦的出解码提示卡，其余先试着播）。
  */
 async function playSource(source: EmbyMediaSource, atSeconds: number): Promise<void> {
+  // 每次起播尝试都从干净的准备态开始：慢标记、已接收字节、软解
+  // load 完成标记不许串到下一个版本/下一集
+  prepSlow.value = false
+  prepReceivedBytes.value = null
+  softLoadDone.value = false
+  window.clearInterval(prepByteTimer)
   // 切版本：旧的软解实例先停掉，新版本再按决策重建（软解/原生二选一）
   if (softHandle.value) await destroySoft()
   softFailReason.value = ''
@@ -1200,6 +1230,14 @@ async function startSoftDecode(
   softFailedFor.value = source.Id
   phase.value = 'preparing'
   prepStepIndex.value = 2
+  // 慢态口径与原生一致：12 秒还没出首帧就亮慢文案（字节数走
+  // libmedia 真实计数，见 createSoftPlayer 的 onReceivedBytes）；
+  // 失败判死由 createSoftPlayer 的起播守卫负责，这里不设 30 秒闸
+  window.clearTimeout(probeTimer)
+  window.clearTimeout(probeTimer2)
+  probeTimer = window.setTimeout(() => {
+    if (phase.value === 'preparing') prepSlow.value = true
+  }, 12000)
   // 软解取流地址：优先同条目的中继兄弟源（本人转存副本等场景下，
   // 选中源是无 CORS 的直链、机械换标记又换到不可用的变体，只有
   // 清单里的中继兄弟源能出字节）；没有兄弟源时用选中源原地址，
@@ -1219,6 +1257,9 @@ async function startSoftDecode(
       url,
       {
         onFirstVideo: () => {
+          window.clearTimeout(probeTimer)
+          window.clearTimeout(probeTimer2)
+          prepSlow.value = false
           const h = softHandle.value
           if (!h) return
           const d = h.durationSeconds()
@@ -1274,6 +1315,9 @@ async function startSoftDecode(
       {
         ext: (source.Container || '').toLowerCase() || undefined,
         mse: mseAttempt,
+        onReceivedBytes: (bytes: number) => {
+          prepReceivedBytes.value = bytes
+        },
       },
     )
   } catch (e) {
@@ -1297,6 +1341,8 @@ async function startSoftDecode(
   }
   // 实例已接管 softActive，起播中标记可以撤了
   softStarting.value = false
+  // load() 已返回：容器分析完成，准备卡阶段切「正在分析容器」
+  softLoadDone.value = true
   started = true
   return true
 }
@@ -1400,6 +1446,7 @@ function onLoadedMetadata(): void {
   if (!v) return
   window.clearTimeout(probeTimer)
   window.clearTimeout(probeTimer2)
+  window.clearInterval(prepByteTimer)
   prepSlow.value = false
   duration.value = v.duration || ticksToSeconds(item.value?.RunTimeTicks)
   if (phase.value === 'preparing') prepStepIndex.value = 3
@@ -1407,6 +1454,7 @@ function onLoadedMetadata(): void {
 function onCanPlay(): void {
   window.clearTimeout(probeTimer)
   window.clearTimeout(probeTimer2)
+  window.clearInterval(prepByteTimer)
   prepSlow.value = false
   if (phase.value === 'preparing') {
     phase.value = 'playing'
@@ -1448,6 +1496,7 @@ function onVideoError(): void {
   lastVideoErrorAt = now
   window.clearTimeout(probeTimer)
   window.clearTimeout(probeTimer2)
+  window.clearInterval(prepByteTimer)
   if (currentSource.value) failWithDiagnosis(currentSource.value, '浏览器拒绝了这个视频流')
 }
 
@@ -2084,6 +2133,7 @@ onUnmounted(() => {
   window.clearTimeout(controlsTimer)
   window.clearTimeout(probeTimer)
   window.clearTimeout(probeTimer2)
+  window.clearInterval(prepByteTimer)
   window.clearInterval(progressTimer)
   window.clearInterval(wtStateTimer)
   resetDanmakuData()
@@ -2369,24 +2419,33 @@ onUnmounted(() => {
   background: rgba(0, 0, 0, 0.35);
 }
 
-.wp-prep {
+/* 准备播放中央卡（照友站逐帧量测，视口 390 CSS px 换算）：
+   卡宽 = 屏宽 − 两侧各 20px 边距（实测占比 89.8%），圆角 20px，
+   内边距 16px 20px，垂直居中、状态行出现时上下对称长高。
+   包裹层不拦截点击：准备态下顶栏「一起看」等控件仍可操作。 */
+.wp-prep-wrap {
   position: absolute;
-  left: 16px;
-  bottom: calc(96px + env(safe-area-inset-bottom));
+  inset: 0;
   z-index: 14;
-  width: min(400px, calc(100% - 32px));
-  background: rgba(20, 20, 23, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 18px;
-  padding: 14px 16px;
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.wp-prep {
+  width: calc(100% - 40px);
+  max-width: 480px;
+  background: rgba(22, 22, 25, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 20px;
+  padding: 16px 20px;
 }
 .wp-prep-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 15px;
+  gap: 10px;
+  font-size: 17px;
+  line-height: 1.3;
 }
 .wp-spin {
   animation: wp-rot 1s linear infinite;
@@ -2397,31 +2456,16 @@ onUnmounted(() => {
   }
 }
 .wp-prep-step {
-  margin: 8px 0 0;
-  font-size: 13.5px;
-  color: rgba(255, 255, 255, 0.88);
+  margin: 9px 0 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.92);
 }
-.wp-prep-sub {
-  margin: 3px 0 0;
-  font-size: 12px;
+.wp-prep-hint {
+  margin: 7px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
   color: rgba(255, 255, 255, 0.45);
-}
-.wp-prep-dots {
-  display: flex;
-  gap: 5px;
-  margin-top: 12px;
-}
-.wp-prep-dots span {
-  height: 3px;
-  flex: 1;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.15);
-}
-.wp-prep-dots span.on {
-  background: rgba(255, 255, 255, 0.85);
-}
-.wp-prep-dots span.now {
-  background: var(--uhd-rainbow, linear-gradient(90deg, #2f8fe0, #e8766f, #ecd04f, #39b3ec));
 }
 
 .wp-lock {
@@ -2740,10 +2784,6 @@ onUnmounted(() => {
   }
   .wp-meta-title {
     font-size: 28px;
-  }
-  .wp-prep {
-    left: 28px;
-    bottom: 110px;
   }
 }
 </style>
