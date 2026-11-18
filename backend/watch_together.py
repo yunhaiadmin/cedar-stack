@@ -21,8 +21,9 @@ REDIS_URL 的异步客户端），Redis 未启用 / 不可达 / 中途故障时�
 
 协议（在既有 WS 连接上以 action 区分）：
 - 客户端 → 服务端：``wt.create`` / ``wt.join`` / ``wt.leave`` /
-  ``wt.dissolve`` / ``wt.event``（play|pause|seek）/ ``wt.state``
-  （房主周期锚点，只有房主的会被采纳）。
+  ``wt.dissolve`` / ``wt.event``（play|pause|seek，房主独控 G-189：
+  只有房主的会被采纳，成员的回 ``wt.error`` not_host、不广播、
+  不改房间播放态）/ ``wt.state``（房主周期锚点，只有房主的会被采纳）。
 - 服务端 → 客户端：``wt.created`` / ``wt.joined`` /
   ``wt.member_joined`` / ``wt.member_left`` / ``wt.host_changed`` /
   ``wt.event`` / ``wt.sync`` / ``wt.ended`` / ``wt.error``。
@@ -55,6 +56,7 @@ ROOM_NOT_FOUND_MESSAGE = "房间不存在或已结束，核对邀请链接再试
 ROOM_FULL_MESSAGE = "这个房间人满了，下次早点来。"
 NOT_IN_ROOM_MESSAGE = "你还不在这个房间里。"
 ALREADY_IN_ROOM_MESSAGE = "你已经在一个一起看房间里了，先退出再试。"
+NOT_HOST_CONTROL_MESSAGE = "只有房主能控制播放。"
 
 
 class WatchError(Exception):
@@ -398,6 +400,12 @@ class WatchTogetherHub:
         if room is None:
             self._detach(ws)
             raise WatchError("room_not_found", ROOM_NOT_FOUND_MESSAGE)
+        if room.get("host_id") != user_id:
+            # 房主独控（G-189）：成员的控制信号不采纳、不广播、不改
+            # 房间播放态，只给发送方回 wt.error（与 dissolve 的
+            # not_host 同一口径）；房主身份以 room.host_id 为准，
+            # 房主转移后新房主自动可控。
+            raise WatchError("not_host", NOT_HOST_CONTROL_MESSAGE)
         event = str(data.get("event") or "")
         if event not in ("play", "pause", "seek"):
             raise WatchError("bad_event", "不支持的同步事件。")

@@ -16,8 +16,8 @@
         </button>
       </template>
       <template v-else>
-        <!-- 副行与主钮照友站邀请卡（G-188/G-190）：副行只作形态呈现，
-             「房主控制播放」的权限语义另行待定（G-189），此处不改控制逻辑 -->
+        <!-- 副行与主钮照友站邀请卡（G-188/G-190）；「房主控制播放」
+             已定版为房主独控（G-189）：服务端只采纳房主的控制信号 -->
         <p class="wt-sub">最多 10 人，房主控制播放</p>
         <button
           type="button"
@@ -57,6 +57,11 @@
             </span>
           </div>
         </div>
+
+        <!-- 房主独控（G-189）：成员视角明示控制权归房主 -->
+        <p v-if="!isHost" class="wt-note wt-guest-note">
+          只有房主能控制播放，你的进度会自动和房主同步。
+        </p>
 
         <!-- 结束钮仅房主视角照友站改（G-206）；非房主「退出一起看」
              友站报告未覆盖，保持原样 -->
@@ -193,6 +198,9 @@ async function copyLink(): Promise<void> {
   line-height: 1.65;
   color: rgba(255, 255, 255, 0.72);
   margin: 6px 0 16px;
+}
+.wt-guest-note {
+  margin: 14px 0 0;
 }
 .wt-sub {
   font-size: 13.5px;

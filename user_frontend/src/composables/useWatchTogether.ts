@@ -247,7 +247,9 @@ export function useWatchTogether(handlers: Handlers) {
   }
 
   function sendEvent(event: 'play' | 'pause' | 'seek', position: number, playing?: boolean): void {
-    if (!inRoom.value) return
+    // 房主独控（G-189）：成员的控制信号客户端就不发（与 sendState
+    // 的房主门控同口径）；服务端也会拒，双保险。
+    if (!inRoom.value || !isHost.value) return
     const payload: Record<string, unknown> = { action: 'wt.event', event, position }
     if (playing !== undefined) payload.playing = playing
     send(payload)

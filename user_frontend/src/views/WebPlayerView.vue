@@ -173,6 +173,7 @@
             step="1"
             :value="progressPermille"
             :style="{ background: progressBackground }"
+            :disabled="wtGuestLocked"
             aria-label="播放进度"
             @input="onSeekInput"
             @change="onSeekCommit"
@@ -184,7 +185,7 @@
             <button type="button" class="wp-icon" aria-label="上一集" :disabled="!prevEpisode" @click="goEpisode(prevEpisode)">
               <SkipBack :size="20" />
             </button>
-            <button type="button" class="wp-icon" :aria-label="isPaused ? '播放' : '暂停'" @click="togglePlay">
+            <button type="button" class="wp-icon" :class="{ 'wp-icon--locked': wtGuestLocked }" :aria-label="isPaused ? '播放' : '暂停'" @click="togglePlay">
               <Play v-if="isPaused" :size="22" />
               <Pause v-else :size="22" />
             </button>
@@ -670,6 +671,10 @@ const wtInviteLink = computed(() =>
     ? `${window.location.origin}/play/${itemId.value}?wt=${wtCode.value}`
     : '',
 )
+
+/** 房主独控（G-189）：在房且非房主时，播放/暂停/拖动不可操作，
+ *  本地播放由同步引擎跟随房主；音量/退出等个人操作不受影响 */
+const wtGuestLocked = computed(() => wtInRoom.value && !wtIsHost.value)
 
 function wtSafeSeek(pos: number): void {
   const v = videoEl.value
@@ -1670,6 +1675,11 @@ function pokeControls(): void {
   }, 3500)
 }
 function togglePlay(): void {
+  if (wtGuestLocked.value) {
+    showToast('只有房主能控制播放')
+    pokeControls()
+    return
+  }
   const soft = softHandle.value
   if (soft) {
     if (isPaused.value) void soft.play()
@@ -1684,11 +1694,13 @@ function togglePlay(): void {
   pokeControls()
 }
 function onSeekInput(e: Event): void {
+  if (wtGuestLocked.value) return
   seeking.value = true
   const val = Number((e.target as HTMLInputElement).value)
   seekPreview.value = (val / 1000) * (duration.value || 0)
 }
 function onSeekCommit(e: Event): void {
+  if (wtGuestLocked.value) return
   const val = Number((e.target as HTMLInputElement).value)
   const target = (val / 1000) * (duration.value || 0)
   const soft = softHandle.value
@@ -2173,9 +2185,11 @@ function onKeydown(e: KeyboardEvent): void {
     e.preventDefault()
     togglePlay()
   } else if (e.key === 'ArrowRight') {
+    if (wtGuestLocked.value) return
     v.currentTime = Math.min((v.duration || 0), v.currentTime + 10)
     wtBroadcast('seek')
   } else if (e.key === 'ArrowLeft') {
+    if (wtGuestLocked.value) return
     v.currentTime = Math.max(0, v.currentTime - 10)
     wtBroadcast('seek')
   }
@@ -2657,6 +2671,11 @@ onUnmounted(() => {
   background: #fff;
   border: none;
 }
+/* 房主独控（G-189）：成员视角进度条不可拖，置灰 */
+.wp-progress:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 .wp-bar-row {
   display: flex;
   align-items: center;
@@ -2687,6 +2706,11 @@ onUnmounted(() => {
 .wp-icon:disabled {
   opacity: 0.3;
   cursor: default;
+}
+/* 房主独控（G-189）：成员视角播放/暂停钮不可操作态（点击给提示，
+   不用 disabled 是为了保留点击反馈） */
+.wp-icon--locked {
+  opacity: 0.35;
 }
 .wp-icon:disabled:hover {
   background: transparent;
