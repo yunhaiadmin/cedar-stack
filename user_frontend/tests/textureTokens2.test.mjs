@@ -243,7 +243,8 @@ check('T14 浅色主钮不动（淡彩底＋彩虹边框整面写法保留）',
 /* ---------- 一手写深色钮全站环切（texture-tokens-3，2026-11-18） ---------- */
 // 根因与 T14 同病：半透玻璃底（--uhd-glass-btn-d／--utb-pill-fill）下
 // padding-box ＋ 彩虹 border-box 双层写法会把整面彩虹晕染进钮面。
-// 全站 25 处一手写钮（含 UhdWatchPill 胶囊）已按 #309 同款改 ::before mask 环切；
+// 全站 23 处一手写钮（含 UhdWatchPill 胶囊）已按 #309 同款改 ::before mask 环切；
+// 另 2 处（.rf-watch／.rmd-watch）已随 2026-11-18 去重单删除，不在环切集内。
 // 浅色面（--uhd-rainbow-soft 不透明）与 --uhd-rainbow-fill 填色用途不在缺陷集内。
 // 另：PersonalCenterView 的 .ov-invite 邀请横幅是同病非钮（rgba 半透面＋彩虹边），
 // 本批不动，留 parent 定夺（见任务报告）。
@@ -258,10 +259,8 @@ const RING_SITES = [
   ['src/components/profile/TrafficPurchaseModal.vue', '.tq-confirm'],
   ['src/components/requests/RequestSubmitModal.vue', '.rsm-confirm'],
   ['src/components/requests/WorkSearchResults.vue', '.wsr-btn--go'],
-  ['src/views/game/RequestFeedbackView.vue', '.rf-watch'],
   ['src/views/game/RequestFeedbackView.vue', '.rf-submit'],
   ['src/views/game/RequestFeedbackView.vue', '.rf-searchbar__btn'],
-  ['src/views/game/RequestMediaDetailView.vue', '.rmd-watch'],
   ['src/views/game/RequestMediaDetailView.vue', '.rmd-media__watch'],
   ['src/views/game/invite-friends.css', '.iv-btn--rainbow'],
   ['src/views/game/InstallAppView.vue', '.ia-copy'],
@@ -287,7 +286,7 @@ for (const f of walk(join(ROOT, 'src'))) {
   }
 }
 if (washBad.length) console.log('  残留：\n  ' + washBad.join('\n  '))
-check('T15 全仓不再有半透钮面＋彩虹 border-box 双层写法（25 处已环切）', washBad.length === 0)
+check('T15 全仓不再有半透钮面＋彩虹 border-box 双层写法（23 处已环切）', washBad.length === 0)
 for (const [f, sel] of RING_SITES) {
   const text = read(f)
   const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
