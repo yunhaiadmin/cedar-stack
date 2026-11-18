@@ -11,14 +11,8 @@
   ``emby_server/nodes.py`` 与 ``emby_api/main.py``）；
 - 都没有时用**当前服**（EM 面板上的门户请求；解析不到服时才退回「不做服过滤」）。
 
-**接入方式（v2.7.0 公益服）**：一个服可以是
-
-- ``paid``（付费服，缺省）：按下面的付费墙判定；
-- ``free``（公益服）：**免费开放**，不需要订阅就能看（会员与否不影响播放），
-  但默认禁止下载（可用该服的下载策略覆盖）。
-
 做任何与「能不能看」相关的判断都走 ``can_play`` / ``ensure_playback_allowed``，
-不要在业务代码里自己写 ``has_active_subscription``——否则公益服会到处漏出付费墙。
+不要在业务代码里自己写 ``has_active_subscription``——否则付费墙会到处漏。
 
 付费墙开关：
 - SystemConfig["subscription_required"]（布尔，默认 true）是否要求有效订阅才能播放
@@ -33,7 +27,6 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Callable, Optional
 
 from fastapi import HTTPException
-from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from backend import models, realms
@@ -69,7 +62,7 @@ def _scoped_realm_id(db: Session, realm_id: Optional[int] = None) -> Optional[in
     """把「没指定服」解析成具体服：本进程的服 → 面板当前服
 
     EM（面板）上的用户端请求没有进程级服，此时按面板当前服判定，
-    否则公益服/付费墙会因“解析不到服”而退回跨服口径。
+    否则付费墙会因“解析不到服”而退回跨服口径。
     """
     target = resolve_realm_id(realm_id)
     if target is not None:
@@ -81,34 +74,16 @@ def _scoped_realm_id(db: Session, realm_id: Optional[int] = None) -> Optional[in
         return None
 
 
-def realm_access_mode(db: Session, realm_id: Optional[int] = None) -> str:
-    """该服（默认本进程/当前服）的接入方式：paid / free"""
-    return realms.access_mode_of(db, _scoped_realm_id(db, realm_id))
-
-
-def is_free_realm(db: Session, realm_id: Optional[int] = None) -> bool:
-    """这个服是不是公益服（免费开放，不需要订阅）"""
-    return realm_access_mode(db, realm_id) == realms.ACCESS_FREE
-
-
-def realm_access_note(db: Session, realm_id: Optional[int] = None) -> str:
-    """该服的规则文案（公益服没写时给缺省提示；付费服为空串）"""
-    return realms.access_note_of(db, _scoped_realm_id(db, realm_id))
-
-
 def view_grant(db: Session, user: models.WebUser,
                realm_id: Optional[int] = None) -> tuple[bool, Optional[models.EmbyViewUnlock]]:
     """用户有没有权限查看某服的 Emby 账号 / 线路（**全站单一事实来源**）
 
-    规则：付费服 = 有效订阅即权限，团队套餐是与个人订阅并列的资格
-    来源（active 且未过期的团队，团长与成员凭团队套餐可查看，判定
+    规则：有效订阅即权限，团队套餐是与个人订阅并列的资格来源
+    （active 且未过期的团队，团长与成员凭团队套餐可查看，判定
     单口 ``teams.play_eligible_team``，与 ``can_play`` 同一口径；团队
-    无服维度，不做服过滤）；公益服 = 持有未到期的存量查看行
-    （``EmbyViewUnlock``）。公益资格已随福利服役族于 2026-11-14 删除
-    （资格全量折算成订阅时间），不再有「资格在期自动带查看」；
-    存量查看行继续有效到期为止，行到期即停。返回的第二项是命中的
-    存量行（未放行时为 None），供调用方展示到期日。
-    判定一律按 ``end_date`` / ``expires_at`` **现算**，不信行上的 status 字段
+    无服维度，不做服过滤）。第二项返回值（存量查看行）为历史签名
+    保留，恒为 None——公益服删除后 ``EmbyViewUnlock`` 不再参与判定。
+    判定一律按 ``end_date`` **现算**，不信行上的 status 字段
     （它不会随时间自动翻转，见本模块开头）。
 
     ``backend/emby_server/portal.py`` 的账号卡与服卡片都调这里——以前那段逻辑
@@ -116,20 +91,6 @@ def view_grant(db: Session, user: models.WebUser,
     两份迟早会漂。
     """
     target = _scoped_realm_id(db, realm_id)
-    if realms.is_free_realm(db, target):
-        now = datetime.now()
-        unlock = (
-            db.query(models.EmbyViewUnlock)
-            .filter(
-                models.EmbyViewUnlock.user_id == user.id,
-                models.EmbyViewUnlock.realm_id == target,
-                or_(models.EmbyViewUnlock.expires_at.is_(None),
-                    models.EmbyViewUnlock.expires_at > now),
-            )
-            .order_by(models.EmbyViewUnlock.unlocked_at.desc())
-            .first()
-        )
-        return (unlock is not None), unlock
     if has_active_subscription(db, user.id, target):  # r49: 用 _scoped 口径（此前 resolve_realm_id；现有调用方下等价）
         return True, None
     from backend import teams as teams_service
@@ -142,7 +103,6 @@ CONFIG_ALLOW_DOWNLOAD = "allow_download"
 
 DEFAULT_GATE_MESSAGE = "需要有效的会员订阅才能播放，请先开通会员"
 DOWNLOAD_GATE_MESSAGE = "当前站点已关闭下载，仅支持在线观看"
-FREE_REALM_DOWNLOAD_MESSAGE = realms.DEFAULT_FREE_DOWNLOAD_NOTE
 
 
 def has_active_subscription(db: Session, user_id: int, realm_id: Optional[int] = None) -> bool:
@@ -185,9 +145,7 @@ def subscription_required(db: Session) -> bool:
 
 
 def realm_requires_subscription(db: Session, realm_id: Optional[int] = None) -> bool:
-    """这个服是否要会员才能看：公益服永远不要（即使全局付费墙开着）"""
-    if is_free_realm(db, realm_id):
-        return False
+    """是否要会员才能看：全站统一走全局付费墙开关（``realm_id`` 仅为签名兼容保留）"""
     return subscription_required(db)
 
 
@@ -198,10 +156,9 @@ def gate_message(db: Session) -> str:
 
 
 def can_play(db: Session, user: models.WebUser, realm_id: Optional[int] = None) -> bool:
-    """是否放行播放：管理员始终放行；公益服免费开放；付费墙关闭时全员放行
+    """是否放行播放：管理员始终放行；付费墙关闭时全员放行
 
-    订阅判定保持原有口径（显式服 / 本进程的服，不拿面板当前服去做回退），
-    所以付费服的行为与升级前完全一致；公益服是新增的一层判断。
+    订阅判定保持原有口径（显式服 / 本进程的服，不拿面板当前服去做回退）。
     家庭子账号看主账号的订阅（子账号没有自己的订阅）：经
     backend/sub_accounts 的有效账号解析后仍走本函数的同一判定，
     不另立标准（懒引防循环导入）；另对子账号追加一条权益判定——
@@ -213,10 +170,6 @@ def can_play(db: Session, user: models.WebUser, realm_id: Optional[int] = None) 
     不接这条团长本人都会断播。
     """
     if getattr(user, "is_staff", False):
-        return True
-    target = _scoped_realm_id(db, realm_id)
-    if realms.access_mode_of(db, target) == realms.ACCESS_FREE:
-        # 公益服：免费开放，不是「白票」——这是这个服自己选的运营方式
         return True
     if not subscription_required(db):
         return True
@@ -254,8 +207,7 @@ def download_allowed(db: Session, realm_id: Optional[int] = None) -> bool:
     """本站点是否允许下载（缺省允许；关闭后第三方播放器触发的下载一并拦下）
 
     两层：全局开关（``allow_download`` 配置）与**该服的下载策略**——
-    公益服没单独配策略时默认禁止下载（公益服靠免费开放引流，不能让整库被拖走）；
-    付费服没单独配策略时跟随全局开关（与升级前完全一致）。
+    该服单独配了策略时以策略为准，没配时跟随全局开关。
     """
     raw = _config_value(db, CONFIG_ALLOW_DOWNLOAD)
     global_allowed = True if raw is None or str(raw).strip() == "" else str(raw).strip().lower() == "true"
@@ -265,7 +217,7 @@ def download_allowed(db: Session, realm_id: Optional[int] = None) -> bool:
     policy = realms.download_policy_of(db, target)
     if policy is not None:
         return bool(policy)
-    return not realms.is_free_realm(db, target)
+    return True
 
 
 def ensure_download_allowed(db: Session, user: models.WebUser,
@@ -288,10 +240,7 @@ def ensure_download_allowed(db: Session, user: models.WebUser,
 
 
 def download_gate_message(db: Session, realm_id: Optional[int] = None) -> str:
-    """下载被拦时的提示：公益服说清「只提供在线观看」，其余沿用站点文案"""
-    target = _scoped_realm_id(db, realm_id)
-    if realms.is_free_realm(db, target) and realms.download_policy_of(db, target) is None:
-        return FREE_REALM_DOWNLOAD_MESSAGE
+    """下载被拦时的提示文案（``realm_id`` 仅为签名兼容保留）"""
     return DOWNLOAD_GATE_MESSAGE
 
 
@@ -301,13 +250,9 @@ __all__ = [
     "CONFIG_ALLOW_DOWNLOAD",
     "DEFAULT_GATE_MESSAGE",
     "DOWNLOAD_GATE_MESSAGE",
-    "FREE_REALM_DOWNLOAD_MESSAGE",
     "active_subscription",
     "has_active_subscription",
-    "is_free_realm",
     "process_realm_id",
-    "realm_access_mode",
-    "realm_access_note",
     "realm_requires_subscription",
     "resolve_realm_id",
     "set_process_realm_resolver",

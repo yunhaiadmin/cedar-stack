@@ -801,11 +801,7 @@ export interface RealmPayload {
   url?: string
   description?: string
   is_active?: boolean
-  /** paid（付费服，需要订阅）/ free（免费服，免费开放） */
-  access_mode?: 'paid' | 'free'
-  /** 免费服规则文案（用户端展示） */
-  access_note?: string
-  /** 下载策略：不传 = 跟随全局（免费服默认禁止下载） */
+  /** 下载策略：不传 = 跟随全局 */
   allow_download?: boolean | null
 }
 
@@ -818,8 +814,6 @@ export interface RealmUpdateData {
   description?: string
   is_active?: boolean
   sort_order?: number
-  access_mode?: 'paid' | 'free'
-  access_note?: string
   /** 三态：follow = 跟随全局 / allow / deny */
   download_policy?: 'follow' | 'allow' | 'deny'
 }
@@ -1085,19 +1079,6 @@ export const fetchPlaybackStats = () => get<PlaybackStats>('/stats/playback')
 const E = '/emby'
 
 export const fetchEmbyOverview = () => get<{ total_items: number; total_libraries: number; active_sessions: number; total_users: number }>(`${E}/overview`)
-
-/**
- * 免费服查看行有效期（后端 /api/admin/emby/view-unlock，view_unlock 家族：
- * emby_view_unlock_days；积分价格已随货币下线，接口只剩 days）。
- */
-export interface ViewUnlockSettings {
-  days: number
-}
-
-export const fetchViewUnlockSettings = () => get<ViewUnlockSettings>(`${E}/view-unlock`)
-
-export const updateViewUnlockSettings = (data: ViewUnlockSettings) =>
-  put<ViewUnlockSettings>(`${E}/view-unlock`, data)
 
 /** 封面自动生成的配置：样式 + 标题文字（都支持 {library}{type}{year} 变量） */
 export interface LibraryCoverConfig {

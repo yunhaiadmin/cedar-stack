@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 公益服 · 抽奖黑名单（三重门·资格门）
+ * 抽奖黑名单（三重门·资格门）
  *
  * 被拉黑的用户无法参加任何群抽奖（参加时 backend/lottery.py::is_blacklisted 拦截，
  * 已参加、已中奖的历史记录不受影响）。后端以站内用户 ID（web_users.id）为准：

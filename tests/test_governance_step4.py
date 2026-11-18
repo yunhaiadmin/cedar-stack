@@ -26,8 +26,8 @@ def db():
         engine.dispose()
 
 
-def seed_free_realm(db):
-    db.add(models.ServerRealm(name="公益服", slug="main", access_mode="free", is_active=True))
+def seed_realm(db):
+    db.add(models.ServerRealm(name="主服", slug="main", is_active=True))
     db.commit()
 
 
@@ -47,7 +47,7 @@ def test_govlog_denied_for_all_without_level_source(db):
     # getattr(user, "member_level", 1) 兜底，等级列删除后无人能达到 Lv.6，
     # 即便审计日志有行也一律「仅 Lv.6」拒绝、内容不泄露（原断言为 Lv.6
     # 用户可读最近记录且按时间倒序渲染「降级」在「停权」之前）。
-    seed_free_realm(db)
+    seed_realm(db)
     admin = user(db, 900000, "admin", level=6, xp=20000)
     lv6 = user(db, 900001, "legend", level=6, xp=16000)
     target = user(db, 900002, "target", level=1, xp=0)
@@ -63,16 +63,20 @@ def test_govlog_denied_for_all_without_level_source(db):
     assert "刷榜" not in text and "恶意举报" not in text
 
 
-def test_govlog_denies_unbound_below_lv6_and_paid_realm(db):
-    seed_free_realm(db)
+def test_govlog_denies_unbound_and_below_lv6(db):
+    seed_realm(db)
     user(db, 900001, "lv5", level=5, xp=6000)
     assert "仅 Lv.6" in features.handle_govlog(db, {"id": 900001}, 900001, "")
     assert "绑定" in features.handle_govlog(db, {"id": 999999}, 999999, "")
 
 
-def test_govlog_denied_in_paid_realm(db):
+def test_govlog_without_realm_still_level_gated(db):
+    # 公益服门已删：无服时 handle_govlog 不再回「仅在公益服开放」，
+    # 只剩绑定与 Lv.6 门（等级列删除后恒 Lv.1，必然被 Lv.6 门拦）。
     user(db, 900001, "legend", level=6, xp=16000)
-    assert "仅在公益服开放" in features.handle_govlog(db, {"id": 900001}, 900001, "")
+    text = features.handle_govlog(db, {"id": 900001}, 900001, "")
+    assert "仅 Lv.6" in text
+    assert "公益服" not in text
 
 
 def test_freeze_release_expiry_and_validation(db):
@@ -123,7 +127,7 @@ def test_admin_endpoints_and_route_registration(db):
     from backend.api import governance_admin as ga
     from backend.api.admin_core import admin_router
 
-    seed_free_realm(db)
+    seed_realm(db)
     admin = user(db, 900000, "admin")
     target = user(db, 900001, "target", level=3, xp=600)
     db.commit()
@@ -168,17 +172,15 @@ def test_admin_endpoints_and_route_registration(db):
     assert governance.is_governance_frozen(db, target.id) is False
 
 
-def test_admin_endpoints_reject_paid_realm(db):
-    from fastapi import HTTPException
+def test_admin_endpoints_work_without_realm_gate(db):
+    # 公益服门已删：治理管理端全站统一生效，不再按服 403。
     from backend.api import governance_admin as ga
 
     admin = user(db, 900000, "admin")
     target = user(db, 900001, "target")
     db.commit()
-    with pytest.raises(HTTPException) as exc:
-        ga.governance_freeze(ga.FreezeRequest(user_id=target.id, reason="x", days=None),
-                             current_admin=admin, db=db)
-    assert exc.value.status_code == 403
-    with pytest.raises(HTTPException) as exc:
-        ga.governance_audit_logs(limit=50, current_admin=admin, db=db)
-    assert exc.value.status_code == 403
+    out = ga.governance_freeze(ga.FreezeRequest(user_id=target.id, reason="x", days=None),
+                               current_admin=admin, db=db)
+    assert out["success"] is True
+    logs = ga.governance_audit_logs(limit=50, current_admin=admin, db=db)
+    assert any(item["action"] == "freeze" for item in logs["items"])

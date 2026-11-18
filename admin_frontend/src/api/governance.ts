@@ -1,5 +1,5 @@
 /**
- * 等级公益服活动治理·管理端 API（Step 2：举报终审队列 + 治理停权）。
+ * 活动治理·管理端 API（Step 2：举报终审队列 + 治理停权）。
  *
  * 端点与后端逐字对应：backend/api/governance_report.py 的 admin_router
  * （前缀 /api/admin/governance；axios baseURL 已是 /api/admin，这里只写余下部分）。

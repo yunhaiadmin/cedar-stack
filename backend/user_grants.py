@@ -7,7 +7,7 @@
 | 问题 | 口径（单一事实来源） |
 |---|---|
 | 这个服**有什么资源** | ``realms.stats``（媒体库 / 条目 / 挂载 / 节点） |
-| 他在这个服**被授权到什么程度** | 付费服看订阅、公益服看资格（存量查看行） → ``subscriptions.view_grant`` |
+| 他在这个服**被授权到什么程度** | 看订阅 → ``subscriptions.view_grant`` |
 | 授权**能做什么** | ``can_play`` / ``view_grant`` / ``download_allowed``（``backend/subscriptions.py``） |
 
 所以这里**一个服一张卡**，而不是把「订阅记录」再抄一遍表格：订阅记录回答
@@ -20,10 +20,6 @@
    「生效中 / 即将到期 / 已过期」全部按 ``end_date`` 与当下比较得出。
 2. **判定必须带服**。多服部署下同一个用户在每个服各有一份互不影响的订阅
    （``realm_id``），拿「最近一条订阅」当成通用结论就是错的。
-3. **公益服不需要订阅**。free 服 ``can_play`` 恒为真；**查看 Emby 账号/线路**
-   只认存量查看行（``EmbyViewUnlock``，购买写口已退役）在效，记
-   ``GRANT_UNLOCK`` 并注明来源是存量行。（原公益资格来源已随福利
-   服役族于 2026-11-14 删除，资格已折算成订阅。）
 
 ## 不做的事
 
@@ -47,20 +43,14 @@ logger = logging.getLogger(__name__)
 EXPIRING_DAYS = 7
 
 #: 授权来源（前端按 grant 选文案与图标，按 state 选配色）
-GRANT_SUBSCRIPTION = "subscription"   # 付费服：有效订阅
-GRANT_EXPIRED = "expired"             # 付费服：有过订阅但已到期 / 已取消
-GRANT_NONE = "none"                   # 付费服：从来没有订阅
-GRANT_UNLOCK = "unlock"               # 公益服：存量查看行在效（购买已退役）
-GRANT_FREE_OPEN = "free_open"         # 公益服：无存量行（账号卡不下发地址）
-# 公益资格来源（原 GRANT_WELFARE）已随福利服役族于 2026-11-14 删除：
-# 资格全量折算成订阅，公益服查看只剩存量查看行一轨。
+GRANT_SUBSCRIPTION = "subscription"   # 有效订阅
+GRANT_EXPIRED = "expired"             # 有过订阅但已到期 / 已取消
+GRANT_NONE = "none"                   # 从来没有订阅
 
 GRANT_LABELS = {
     GRANT_SUBSCRIPTION: "订阅生效中",
     GRANT_EXPIRED: "订阅已到期",
     GRANT_NONE: "未授权",
-    GRANT_UNLOCK: "存量查看凭证在效",
-    GRANT_FREE_OPEN: "查看未开通",
 }
 
 #: 退款撤销（orders_admin 关单时会把订阅翻成 cancelled）——与「自然到期」分开说，
@@ -152,20 +142,7 @@ def _resources(db: Session, realm_id: int) -> dict:
 
 def _grant_of(db: Session, user: models.WebUser, realm: models.ServerRealm,
               now: datetime) -> tuple[str, dict]:
-    """这个服上的授权来源 + 随附的说明块（订阅 / 解锁记录）"""
-    free = realms.is_free_realm(db, realm.id)
-    if free:
-        granted, unlock = subscriptions.view_grant(db, user, realm.id)
-        unlock_payload = {
-            "unlocked": bool(granted),
-            "unlocked_at": unlock.unlocked_at.isoformat() if unlock and unlock.unlocked_at else None,
-            "expires_at": unlock.expires_at.isoformat() if unlock and unlock.expires_at else None,
-            "points_spent": int(unlock.points_spent) if unlock else 0,
-        }
-        # 公益服查看只剩存量查看行一轨（公益资格来源已随福利服役族
-        # 于 2026-11-14 删除，资格已折算成订阅、不再单独记来源）。
-        return (GRANT_UNLOCK if granted else GRANT_FREE_OPEN), {"unlock": unlock_payload}
-
+    """这个服上的授权来源 + 随附的说明块（订阅记录）"""
     sub = _latest_subscription(db, user.id, realm.id)
     if sub is not None and sub.status == "active" and sub.end_date and sub.end_date > now:
         return GRANT_SUBSCRIPTION, {"subscription": _subscription_payload(sub, now)}
@@ -187,14 +164,13 @@ def realm_card(db: Session, user: models.WebUser,
     """一个服 = 一张授权卡片"""
     grant, detail = _grant_of(db, user, realm, now)
     sub = detail.get("subscription") or {}
-    free = realms.is_free_realm(db, realm.id)
     can_play = subscriptions.can_play(db, user, realm.id)
     view_granted, _unlock = subscriptions.view_grant(db, user, realm.id)
     expiring = _expiringSoon(grant, detail)
 
     if expiring:
         state = "warn"
-    elif grant in (GRANT_SUBSCRIPTION, GRANT_UNLOCK):
+    elif grant == GRANT_SUBSCRIPTION:
         state = "ok"
     else:
         state = "off"
@@ -205,9 +181,6 @@ def realm_card(db: Session, user: models.WebUser,
         "slug": realm.slug,
         "is_default": realm.id == realms.legacy_realm_id(db),
         "is_active": bool(realm.is_active),
-        "access_mode": realms.normalize_access_mode(realm.access_mode),
-        "is_free": free,
-        "access_note": realms.access_note_of(db, realm.id),
         # ---- 授权 ----
         "grant": grant,
         "grant_label": (
@@ -273,12 +246,10 @@ def cards(db: Session, user: models.WebUser) -> dict:
 __all__ = [
     "EXPIRING_DAYS",
     "GRANT_EXPIRED",
-    "GRANT_FREE_OPEN",
     "GRANT_LABEL_CANCELLED",
     "GRANT_LABELS",
     "GRANT_NONE",
     "GRANT_SUBSCRIPTION",
-    "GRANT_UNLOCK",
     "cards",
     "realm_card",
     "summary",

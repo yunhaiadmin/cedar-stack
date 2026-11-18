@@ -8,8 +8,9 @@
    所以「已到期」必须按 ``end_date`` 与当下比较得出（这里造一条 status='active'
    但 end_date 在过去的行，不钉住这点以后就会有人改回读 status 字段）。
 2. **判定带服**：同一用户在甲服有订阅、在乙服没有，两张卡必须给不同结论。
-3. **公益服资格合并（2026-11-09）**：能看（不需要订阅）与能看账号地址
-   （公益资格在期，或存量查看行在效）是两回事。
+3. **存量查看行不再放行（公益服已于 2026-11-19 删除）**：能看与能看
+   账号地址都只认有效订阅（或团队资格），EmbyViewUnlock 存量行在效
+   也不再单独构成任何授权。
 """
 from __future__ import annotations
 
@@ -32,9 +33,9 @@ def db():
     session.close()
 
 
-def _realm(db, name="主服", slug="main", access_mode="paid", active=True):
+def _realm(db, name="主服", slug="main", active=True):
     realm = models.ServerRealm(
-        name=name, slug=slug, access_mode=access_mode, is_active=active,
+        name=name, slug=slug, is_active=active,
     )
     db.add(realm)
     db.commit()
@@ -213,23 +214,23 @@ def test_subscription_gate_off_lets_everyone_play_without_subscription(db):
 
 
 # ---------------------------------------------------------------------------
-# 3. 公益服：能看 ≠ 能看账号地址
+# 3. 无订阅口径：存量查看行不再放行（公益服已删除）
 # ---------------------------------------------------------------------------
 
-def test_free_realm_needs_no_subscription_but_needs_unlock_for_account(db):
-    realm = _realm(db, name="公益服", slug="free", access_mode="free")
+def test_no_subscription_card_is_plain_paid_caliber(db):
+    realm = _realm(db, name="乙服", slug="b")
     user = _user(db)
 
     card = _card(db, user, realm.id)
-    assert card["is_free"] is True
-    assert card["grant"] == user_grants.GRANT_FREE_OPEN
-    assert card["can_play"] is True          # 免费开放：不需要订阅
-    assert card["view_granted"] is False     # 无资格、无存量行时账号地址不下发
-    assert card["access_note"]              # 公益服规则文案下发给管理员看
+    assert "is_free" not in card          # 公益服三键已随机制删除
+    assert "access_note" not in card
+    assert card["grant"] == user_grants.GRANT_NONE
+    assert card["can_play"] is False      # 无订阅撞付费墙
+    assert card["view_granted"] is False  # 账号地址不下发
 
 
-def test_free_realm_unlock_grants_view_permission(db):
-    realm = _realm(db, name="公益服", slug="free", access_mode="free")
+def test_unlock_row_no_longer_grants_view_permission(db):
+    realm = _realm(db, name="乙服", slug="b")
     user = _user(db)
     db.add(models.EmbyViewUnlock(
         user_id=user.id, realm_id=realm.id, points_spent=50,
@@ -238,15 +239,14 @@ def test_free_realm_unlock_grants_view_permission(db):
     db.commit()
 
     card = _card(db, user, realm.id)
-    assert card["grant"] == user_grants.GRANT_UNLOCK
-    assert card["state"] == "ok"
-    assert card["view_granted"] is True
-    assert card["unlock"]["points_spent"] == 50
-    assert card["unlock"]["expires_at"] is not None
+    assert card["grant"] == user_grants.GRANT_NONE
+    assert card["state"] == "off"
+    assert card["view_granted"] is False
+    assert "unlock" not in card
 
 
-def test_expired_unlock_does_not_grant_view_permission(db):
-    realm = _realm(db, name="公益服", slug="free", access_mode="free")
+def test_expired_unlock_row_also_grants_nothing(db):
+    realm = _realm(db, name="乙服", slug="b")
     user = _user(db)
     db.add(models.EmbyViewUnlock(
         user_id=user.id, realm_id=realm.id, points_spent=50,
@@ -255,13 +255,13 @@ def test_expired_unlock_does_not_grant_view_permission(db):
     db.commit()
 
     card = _card(db, user, realm.id)
-    assert card["grant"] == user_grants.GRANT_FREE_OPEN
+    assert card["grant"] == user_grants.GRANT_NONE
     assert card["view_granted"] is False
-    assert card["can_play"] is True      # 公益服照看不误
+    assert card["can_play"] is False
 
 
-def test_free_realm_download_follows_realm_policy(db):
-    realm = _realm(db, name="公益服", slug="free", access_mode="free")
+def test_realm_download_follows_realm_policy(db):
+    realm = _realm(db, name="乙服", slug="b")
     realm.allow_download = False
     db.commit()
     user = _user(db)
@@ -378,14 +378,14 @@ def test_card_reports_realm_resources(db):
 def test_view_grant_matches_card_verdict(db):
     """卡片与用户端账号卡读同一份判定（subscriptions.view_grant）"""
     paid = _realm(db, name="甲服", slug="a")
-    free = _realm(db, name="公益服", slug="free", access_mode="free")
+    other = _realm(db, name="乙服", slug="b")
     user = _user(db)
     _sub(db, user, paid, _plan(db, paid))
 
     assert subscriptions.view_grant(db, user, paid.id)[0] is True
-    assert subscriptions.view_grant(db, user, free.id)[0] is False
+    assert subscriptions.view_grant(db, user, other.id)[0] is False
     assert _card(db, user, paid.id)["view_granted"] is True
-    assert _card(db, user, free.id)["view_granted"] is False
+    assert _card(db, user, other.id)["view_granted"] is False
 
 
 def test_no_realms_returns_empty_cards(db):

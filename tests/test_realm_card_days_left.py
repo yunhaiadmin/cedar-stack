@@ -46,8 +46,8 @@ def _make_user(db, username="u1"):
     return u
 
 
-def _make_realm(db, slug="paid", access_mode="paid"):
-    r = models.ServerRealm(name=f"服-{slug}", slug=slug, access_mode=access_mode)
+def _make_realm(db, slug="main"):
+    r = models.ServerRealm(name=f"服-{slug}", slug=slug)
     db.add(r)
     db.commit()
     return r
@@ -97,7 +97,7 @@ def test_days_left_last_day_is_zero(db):
 def test_days_left_none_without_subscription(db):
     """没订阅的服卡片 days_left 为 None，前端据此不显示天数。"""
     user = _make_user(db)
-    realm = _make_realm(db, slug="free", access_mode="free")
+    realm = _make_realm(db, slug="nosub")
     card = _card_for(db, user, realm)
     assert card is not None
     assert card["days_left"] is None

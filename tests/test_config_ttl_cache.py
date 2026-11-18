@@ -5,7 +5,7 @@ server_realms 按 id 点查约 52 万次——都是极少变的配置小表，�
 本文件钉住新口径：
 
 - ``mounts.load_mount`` 与 ``realms.realm_snapshot``（及经它的
-  ``access_mode_of`` 等单口助手）命中进程内 TTL 缓存（与 integrations.store
+  ``download_policy_of`` 等单口助手）命中进程内 TTL 缓存（与 integrations.store
   同一套口径，TTL 60 秒），重复读不再打数据库；
 - 返回的是脱离 session 的只读快照：改它不落库、跨 session 安全；
 - 写路径（create/update/delete）提交后显式失效，同进程立即读到新值；
@@ -163,8 +163,7 @@ def _realm(Session, **kw):
     db = Session()
     try:
         realm = realms.create_realm(
-            db, name=kw.get("name", "测试服"), slug=kw.get("slug", "testrealm"),
-            access_mode=kw.get("access_mode", "free"))
+            db, name=kw.get("name", "测试服"), slug=kw.get("slug", "testrealm"))
         return realm.id
     finally:
         db.close()
@@ -177,8 +176,7 @@ def test_realm_helpers_hit_cache(env):
     for _ in range(3):
         db = Session()
         try:
-            assert realms.access_mode_of(db, rid) == "free"
-            assert realms.is_free_realm(db, rid) is True
+            assert realms.realm_snapshot(db, rid).name == "测试服"
             assert realms.download_policy_of(db, rid) is None
         finally:
             db.close()
@@ -206,11 +204,11 @@ def test_realm_update_invalidates_cache(env):
     rid = _realm(Session)
     db = Session()
     try:
-        assert realms.access_mode_of(db, rid) == "free"
+        assert realms.realm_snapshot(db, rid).name == "测试服"
         persistent = realms.get_realm(db, rid)
-        realms.update_realm(db, persistent, access_mode="paid")
+        realms.update_realm(db, persistent, name="改名服")
         # 写路径已失效：同进程立即读到新值，不等 TTL
-        assert realms.access_mode_of(db, rid) == "paid"
+        assert realms.realm_snapshot(db, rid).name == "改名服"
     finally:
         db.close()
 

@@ -88,7 +88,7 @@ class DownloadGuardMiddleware:
 
             if _is_privileged(user):
                 return True, None
-            # 文案按「本机这个服」取：公益服要说清只提供在线观看（见 subscriptions）
+            # 拦截文案走 subscriptions 的统一口径
             return False, download_gate_message(db)
         except Exception:  # pragma: no cover
             logger.exception("下载策略兜底判定失败，已放行")

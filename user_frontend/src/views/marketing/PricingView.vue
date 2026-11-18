@@ -3,8 +3,7 @@
  * 官网定价（UHD 换皮批 1）——说明书逐页对照表第 19 行、第 5 节③
  * 深色营销面外壳（悬浮胶囊导航 + 定价 Hero）+ 与站内订阅共用的单选对比表组件
  * （UhdPlanCompare，官网版去掉结算栏，按钮「立即开通」跳登录后订阅）。
- * 套餐与价格全部走公开接口 paymentApi.plans() 实时读取，不写死任何价格；
- * 公益服（is_free）时不卖套餐，按后端下发口径展示免费开放说明。
+ * 套餐与价格全部走公开接口 paymentApi.plans() 实时读取，不写死任何价格。
  */
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -33,8 +32,6 @@ const loading = ref(true)
 const failed = ref(false)
 const plans = ref<SubscriptionPlan[]>([])
 const plansEnabled = ref(true)
-const isFree = ref(false)
-const accessNote = ref('')
 
 async function loadPlans() {
   loading.value = true
@@ -43,8 +40,6 @@ async function loadPlans() {
     const res = await paymentApi.plans()
     plans.value = res.plans || []
     plansEnabled.value = res.enabled !== false
-    isFree.value = res.is_free === true || res.access_mode === 'free'
-    accessNote.value = res.access_note || ''
   } catch {
     failed.value = true
   } finally {
@@ -63,10 +58,6 @@ const faqs = [
   {
     q: '套餐怎么开通？',
     a: '注册账号并登录后，在站内订阅页选择套餐即可开通。官网价格由同一套餐配置实时读取，与站内完全一致。',
-  },
-  {
-    q: '公益服和付费服有什么区别？',
-    a: '公益服免费开放，注册账号即可使用；付费服按套餐订阅开通。两者是同一套服务的不同运营口径，可按自己的情况选择。',
   },
   {
     q: '支持哪些客户端？',
@@ -114,11 +105,6 @@ const year = new Date().getFullYear()
       <div v-else-if="failed" class="pricing-state">
         <p>套餐加载失败，稍后再试。</p>
         <button type="button" class="retry-btn" @click="loadPlans">重试</button>
-      </div>
-
-      <div v-else-if="isFree" class="pricing-note">
-        <h2 class="pricing-note-title">当前为公益服，免费开放</h2>
-        <p class="pricing-note-text">{{ accessNote || '开放注册即可使用，无需购买套餐。' }}</p>
       </div>
 
       <div v-else-if="!plansEnabled || plans.length === 0" class="pricing-note">

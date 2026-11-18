@@ -447,7 +447,7 @@ def handle_admin(db, tg_user: dict, chat_id: int, args: str) -> str:
             layout.row("🛡️", "权限",
                        admin_roles.role_label(admin_roles.role_of(user))),
             layout.row("🌐", "服务器", "可从下方按钮查看机器人状态"),
-            layout.row("📋", "治理审计", "私聊发送 /govlog（仅 Lv.6 且公益服）"),
+            layout.row("📋", "治理审计", "私聊发送 /govlog（仅 Lv.6）"),
         ],
     )
 
@@ -611,7 +611,7 @@ def handle_help(db, tg_user: dict, chat_id: int, args: str) -> str:
     return layout.card(
         layout.title("使用帮助"),
         [
-            layout.row("🤖", "主要用途", "公益服快捷操作：接收求片进度、订阅到期等通知"),
+            layout.row("🤖", "主要用途", "站内快捷操作：接收求片进度、订阅到期等通知"),
             layout.row("📋", "全部命令", "点左下角的 / 菜单查看"),
             layout.row("💬", "遇到问题", "请在网页端联系客服"),
         ],
@@ -667,13 +667,6 @@ def handle_report(db, tg_user, chat_id, args):
     from backend.tg_bot.features import handle_report as _impl
     return _impl(db, tg_user, chat_id, args)
 
-def handle_propose(db, tg_user, chat_id, args):
-    from backend.tg_bot.features import handle_propose as _impl
-    return _impl(db, tg_user, chat_id, args)
-
-def handle_direct_launch(db, tg_user, chat_id, args):
-    from backend.tg_bot.features import handle_direct_launch as _impl
-    return _impl(db, tg_user, chat_id, args)
 # ---- P1 自助查询（只读）：统一先拦群聊、再验绑定，最后调 queries 只读渲染 ----
 # 群聊里查个人数据会把结果公开给全群：一律只许私聊（私聊 chat_id == tg id）。
 def _p1_user(db, tg_user: dict, chat_id: int):

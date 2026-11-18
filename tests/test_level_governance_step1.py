@@ -2,8 +2,9 @@
 """等级公益服活动治理 Step 1 加权附议测试
 
 覆盖（设计稿 Step 1＋Q1／Q3／Q11；等级体系删除后按新口径收口）：
-1. 权重快照：等级列已删、无等级来源，公益服与付费服权重恒为 1
-   （原口径：公益服按投票时刻等级 Lv.1–Lv.6 → 1–6，封顶 6）
+1. 权重快照：等级列已删、无等级来源，全站权重恒为 1
+   （原口径：公益服按投票时刻等级 Lv.1–Lv.6 → 1–6，封顶 6；
+   公益服已于 2026-11-19 删除，加权机制随之退役）
 2. 快照不追溯：投票后等级属性变化，历史票权重不变；取消删行即扣减该票权重
 3. 加权排序：无等级来源后加权和恒等于原始票数，排序与人数序一致
    （原口径：1 张 Lv.6 票（和 6）排在 3 张 Lv.1 票（和 3）之前）
@@ -46,8 +47,8 @@ def _user(db, username, level=None):
     return user
 
 
-def _realm(db, slug, access_mode):
-    realm = models.ServerRealm(name=slug, slug=slug, access_mode=access_mode)
+def _realm(db, slug):
+    realm = models.ServerRealm(name=slug, slug=slug)
     db.add(realm)
     db.commit()
     db.refresh(realm)
@@ -84,10 +85,10 @@ def _vote_row(db, request_id, user_id):
 
 # ==================== 权重快照 ====================
 
-def test_weight_snapshot_free_realm_by_level(db):
-    # 等级体系删除后无等级来源：公益服权重不再按 Lv.1–Lv.6 分档，
+def test_weight_snapshot_always_one(db):
+    # 等级体系删除后无等级来源：附议权重不再按 Lv.1–Lv.6 分档，
     # 旧 Lv.1/Lv.3/Lv.6 三名投票人快照恒为 1（原断言 1/3/6、加权和 10）。
-    realm = _realm(db, "free1", "free")
+    realm = _realm(db, "free1")
     creator = _user(db, "creator")
     req = _req(db, creator, realm_id=realm.id)
     voter1 = _user(db, "v1", level=1)
@@ -102,8 +103,8 @@ def test_weight_snapshot_free_realm_by_level(db):
     assert media_seek.weighted_votes_for(db, [req.id])[req.id] == 3
 
 
-def test_weight_snapshot_paid_realm_always_one(db):
-    realm = _realm(db, "paid1", "paid")
+def test_weight_snapshot_other_realm_always_one(db):
+    realm = _realm(db, "paid1")
     creator = _user(db, "creator")
     req = _req(db, creator, realm_id=realm.id)
     voter6 = _user(db, "v6", level=6)
@@ -114,7 +115,7 @@ def test_weight_snapshot_paid_realm_always_one(db):
 
 def test_weight_snapshot_legacy_realm_when_request_has_no_realm(db):
     # 老行 realm_id 为空 → 归默认服（id 最小）；默认服是公益服则按等级计
-    _realm(db, "main", "free")
+    _realm(db, "main")
     creator = _user(db, "creator")
     req = _req(db, creator, realm_id=None)
     voter3 = _user(db, "v3", level=3)
@@ -123,8 +124,8 @@ def test_weight_snapshot_legacy_realm_when_request_has_no_realm(db):
     assert _vote_row(db, req.id, voter3.id).weight_snapshot == 1
 
 
-def test_weight_snapshot_no_realm_falls_back_to_paid(db):
-    # 全站无服 → 安全默认 paid，权重恒为 1
+def test_weight_snapshot_no_realm_still_one(db):
+    # 全站无服 → 权重恒为 1
     creator = _user(db, "creator")
     req = _req(db, creator, realm_id=None)
     voter6 = _user(db, "v6", level=6)
@@ -133,7 +134,7 @@ def test_weight_snapshot_no_realm_falls_back_to_paid(db):
 
 
 def test_weight_snapshot_cap_and_missing_level(db):
-    realm = _realm(db, "free1", "free")
+    realm = _realm(db, "free1")
     creator = _user(db, "creator")
     req = _req(db, creator, realm_id=realm.id)
     voter99 = _user(db, "v99", level=99)
@@ -148,7 +149,7 @@ def test_weight_snapshot_cap_and_missing_level(db):
 # ==================== 快照不追溯 ====================
 
 def test_snapshot_immutable_on_level_change_and_cancel_subtracts(db):
-    realm = _realm(db, "free1", "free")
+    realm = _realm(db, "free1")
     creator = _user(db, "creator")
     req = _req(db, creator, realm_id=realm.id)
     a = _user(db, "a", level=1)
@@ -171,7 +172,7 @@ def test_snapshot_immutable_on_level_change_and_cancel_subtracts(db):
 # ==================== 加权排序 ====================
 
 def test_weighted_ordering_beats_raw_count(db):
-    realm = _realm(db, "free1", "free")
+    realm = _realm(db, "free1")
     creator = _user(db, "creator")
     low = _req(db, creator, name="三票片", realm_id=realm.id)
     high = _req(db, creator, name="一票高权重片", realm_id=realm.id)
@@ -192,7 +193,7 @@ def test_weighted_ordering_beats_raw_count(db):
 # ==================== 原始票数展示 ====================
 
 def test_record_carries_both_raw_and_weighted(db):
-    realm = _realm(db, "free1", "free")
+    realm = _realm(db, "free1")
     creator = _user(db, "creator")
     req = _req(db, creator, realm_id=realm.id)
     media_seek.toggle_vote(db, _user(db, "v1", level=1), req.id)
@@ -249,7 +250,7 @@ def test_daily_vote_limit_configurable_and_dirty_fallback(db):
 
 
 def test_toggle_vote_return_includes_weighted(db):
-    realm = _realm(db, "free1", "free")
+    realm = _realm(db, "free1")
     creator = _user(db, "creator")
     req = _req(db, creator, realm_id=realm.id)
     voter = _user(db, "voter", level=3)

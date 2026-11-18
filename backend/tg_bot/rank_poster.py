@@ -231,7 +231,7 @@ def render_rank_poster(period: str, rows: list[dict], window_start: datetime,
     _draw_spaced_text(
         draw,
         (content_left, ticket_top + 40),
-        "AETRIX CINEMA · 公益服",
+        "AETRIX CINEMA",
         f_kicker,
         _TAN,
     )

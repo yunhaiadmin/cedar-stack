@@ -1,10 +1,9 @@
-"""等级公益服活动治理 Step 4：管理端接口（停权工具＋审计日志只读）。
+"""活动治理 Step 4：管理端接口（停权工具＋审计日志只读）。
 
 挂在既有 ``admin_router``（/api/admin 前缀）上，由 ``backend/api/__init__.py``
 导入注册。写操作同时写两条审计：既有管理审计（``_audit``）与治理审计
 日志（Lv.6 可见，``record_governance_audit``），同一事务一次提交。
 
-范围：仅公益服生效（``subscriptions.is_free_realm``），付费服下一律 403；
 审计日志只有读接口，没有写／改／删接口。
 """
 
@@ -21,14 +20,6 @@ from sqlalchemy.orm import Session
 from backend import governance, models
 from backend.api.admin_core import admin_router, get_current_admin, _audit
 from backend.database import get_db
-from backend.subscriptions import is_free_realm
-
-
-def _require_free_realm(db: Session) -> None:
-    if not is_free_realm(db):
-        raise HTTPException(status_code=403, detail="治理功能仅在公益服开放")
-
-
 def _audit_row(row: models.GovernanceAuditLog, names: dict) -> dict:
     try:
         detail = json.loads(row.detail) if row.detail else {}
@@ -57,7 +48,6 @@ def governance_audit_logs(
     db: Session = Depends(get_db),
 ):
     """治理审计日志只读查询（管理员全量）。"""
-    _require_free_realm(db)
     rows = governance.list_audit_logs(
         db, limit=limit, action=action or None,
         actor_user_id=actor_id, target_user_id=target_id,
@@ -77,7 +67,6 @@ def governance_freezes(
     db: Session = Depends(get_db),
 ):
     """当前生效中的治理停权列表。"""
-    _require_free_realm(db)
     now = datetime.now()
     rows = (
         db.query(models.GovernanceFreeze)
@@ -119,7 +108,6 @@ def governance_freeze(
     db: Session = Depends(get_db),
 ):
     """冻结指定用户的治理特权（不扣经验、不影响核心权益）。"""
-    _require_free_realm(db)
     user = db.query(models.WebUser).filter(models.WebUser.id == req.user_id).first()
     if user is None:
         raise HTTPException(status_code=404, detail="用户不存在")
@@ -150,7 +138,6 @@ def governance_freeze_release(
     db: Session = Depends(get_db),
 ):
     """解封指定用户的治理停权。"""
-    _require_free_realm(db)
     if governance.active_freeze(db, req.user_id) is None:
         raise HTTPException(status_code=404, detail="该用户没有生效中的治理停权")
     row = governance.release_governance_freeze(

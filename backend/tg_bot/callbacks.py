@@ -292,11 +292,11 @@ def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,
 
             text = bot_perms.render_card(db)
             markup = handlers.admin_back_markup()
-    elif action in ("account", "request", "myrequests", "requestboard", "rules", "login", "govlog", "level", "report", "propose", "launch"):
+    elif action in ("account", "request", "myrequests", "requestboard", "rules", "login", "govlog", "level", "report"):
         # 凭据类与求片类仍私聊限定；账号展示（account/level）群里放行
         # （2026-10-28 用户亲定、2026-11-02 重申）：落下面正常渲染分支
         # 出点击者本人的账号卡，与命令层 /me 口径一致。
-        if not is_private and action in ("request", "myrequests", "login", "govlog", "report", "propose", "launch"):
+        if not is_private and action in ("request", "myrequests", "login", "govlog", "report"):
             text = layout.card(
                 layout.title("私聊使用"),
                 [layout.row("🔒", "使用方式", "这个功能请私聊机器人使用")])
@@ -312,8 +312,6 @@ def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,
                 "govlog": handlers.handle_govlog,
                 "level": handlers.handle_account,
                 "report": handlers.handle_report,
-                "propose": handlers.handle_propose,
-                "launch": handlers.handle_direct_launch,
             }[action]
             reply = fn(db, tg_user, chat_id, "")
             if isinstance(reply, tuple):

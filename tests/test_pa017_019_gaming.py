@@ -50,16 +50,6 @@ def _set_config(db, key, value):
     db.commit()
 
 
-def _make_free_realm(db):
-    realm = models.ServerRealm(name="公益服", slug="free", url="",
-                               access_mode="free")
-    db.add(realm)
-    db.commit()
-    db.refresh(realm)
-    _set_config(db, "active_realm_id", realm.id)
-    return realm
-
-
 # ---------- PA-018：开奖私聊须分发奖成败 ----------
 
 def _make_round_with_two_winners(db, monkeypatch):

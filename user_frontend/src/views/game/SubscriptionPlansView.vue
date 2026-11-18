@@ -17,12 +17,6 @@
         <button type="button" class="sub-retry" @click="loadAll">重试</button>
       </div>
 
-      <!-- 公益服：不卖套餐，给免费开放说明 -->
-      <div v-else-if="isFreeRealm" class="sub-state">
-        <p>当前为公益服，全片库免费开放，无需购买订阅</p>
-        <p v-if="realmNote" class="sub-state__note">{{ realmNote }}</p>
-      </div>
-
       <div v-else-if="!plansEnabled && !walletEnabled" class="sub-state">
         <p>订阅购买暂未开启，稍后再来看看</p>
         <button type="button" class="sub-retry" @click="loadAll">刷新看看</button>
@@ -48,7 +42,6 @@
             @click="selectedRealm = opt.value"
           >{{ opt.label }}</button>
         </div>
-        <p v-if="realmNote" class="sub-note">{{ realmNote }}</p>
 
         <!-- 套餐纵向全宽卡片列表（照友站 f039/f036）：一档一卡；
              选中档白卡＋轻阴影，未选档无卡底；卡头单选圈＋档名＋右侧价格，
@@ -309,8 +302,6 @@ const loadError = ref(false)
 const plans = ref<SubscriptionPlan[]>([])
 const plansEnabled = ref(true)
 const walletEnabled = ref(false)
-const isFreeRealm = ref(false)
-const realmNote = ref('')
 const deviceLimit = ref(0)
 const downloadAllowed = ref(true)
 const walletBalance = ref(0)
@@ -634,7 +625,6 @@ async function loadAll() {
     couponEnabled.value = true
     deviceLimit.value = 10
     downloadAllowed.value = true
-    realmNote.value = '夹具说明，不是生产套餐'
     walletBalance.value = 0
     loading.value = false
     return
@@ -653,8 +643,6 @@ async function loadAll() {
     plans.value = pls.value.plans || []
     plansEnabled.value = pls.value.enabled !== false
     walletEnabled.value = pls.value.wallet_purchase_enabled === true
-    isFreeRealm.value = pls.value.is_free === true || pls.value.access_mode === 'free'
-    realmNote.value = pls.value.access_note || ''
     deviceLimit.value = pls.value.device_limit ?? 0
     downloadAllowed.value = pls.value.download_allowed !== false
   } else {
@@ -758,7 +746,6 @@ onMounted(() => {
   font-size: 14px;
 }
 .sub-state p { margin: 0; }
-.sub-state__note { color: var(--uhd-l-text-3); font-size: 12.5px; }
 .sub-retry {
   padding: 8px 16px;
   border-radius: 999px;
@@ -768,7 +755,6 @@ onMounted(() => {
   font-size: 13px;
   cursor: pointer;
 }
-.sub-note { margin: -12px 0 0; color: var(--uhd-l-text-2); font-size: 13px; line-height: 1.55; }
 
 /* 团队方案提示条（订阅页底部第二入口） */
 .sub-team-hint {

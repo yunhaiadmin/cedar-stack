@@ -38,8 +38,6 @@ from backend.emby_server.auth import ensure_emby_credentials
 from backend.subscriptions import (
     download_allowed,
     has_active_subscription,
-    is_free_realm,
-    realm_access_note,
     realm_requires_subscription,
 )
 from backend.ratelimit import (
@@ -133,16 +131,11 @@ class UserOut(BaseModel):
     is_active: bool = True
     # 是否管理员：用户端据此显示「管理后台」入口（管理后台与门户同一套 JWT）
     is_staff: bool = False
-    # 付费墙是否开启（开启且非会员时播放会被拦截）；公益服恒为 false
+    # 付费墙是否开启（开启且非会员时播放会被拦截）
     subscription_required: bool = False
     # 站点是否允许下载 + 每用户设备上限（0 表示不限）
     download_allowed: bool = True
     device_limit: int = 0
-    # 接入方式（v2.7.0 公益服）：free = 本服免费开放，不需要订阅
-    realm_access_mode: str = "paid"
-    is_free_realm: bool = False
-    # 公益服规则文案（用户端展示；付费服为空串）
-    realm_access_note: str = ""
     # 白名单专属身份（创世编号+专属称号）；判定走 codes 唯一口径，
     # 非生效白名单为 None，用户端不渲染任何相关元素
     whitelist_identity: WhitelistIdentityOut | None = None
@@ -172,9 +165,7 @@ class AuthResponse(BaseModel):
 def _user_out(user: models.WebUser, db: Session | None = None) -> UserOut:
     """用户信息出参：is_vip 由生效中的订阅派生（无 db 时回退到库内标记）
 
-    ``subscription_required`` 告知前端「这个服要不要会员才能看」，用于提前展示开通引导——
-    公益服（``realm_access_mode='free'``）恒为 false，前端据此换一套「免费开放」的文案，
-    而不是把一个不需要付费的服宣传成付费墙。
+    ``subscription_required`` 告知前端「要不要会员才能看」，用于提前展示开通引导。
     """
     # 家庭子账号的 VIP 派生看主账号订阅（子账号没有自己的订阅）：
     # 经 backend/sub_accounts 有效账号解析，异常按本人处理不拖垮登录。
@@ -194,7 +185,6 @@ def _user_out(user: models.WebUser, db: Session | None = None) -> UserOut:
             _effective_id, _is_sub, _parent_username = user.id, False, None
     is_vip = has_active_subscription(db, _effective_id) if db is not None else bool(user.is_vip)
     requires_sub = realm_requires_subscription(db) if db is not None else False
-    free_realm = is_free_realm(db) if db is not None else False
     # 白名单专属身份同为纯展示：判定/编号走 codes 唯一口径，异常一律 None
     whitelist_identity = None
     if db is not None:
@@ -230,9 +220,6 @@ def _user_out(user: models.WebUser, db: Session | None = None) -> UserOut:
         subscription_required=requires_sub,
         download_allowed=download_allowed(db) if db is not None else True,
         device_limit=device_limit(db) if db is not None else 0,
-        realm_access_mode="free" if free_realm else "paid",
-        is_free_realm=free_realm,
-        realm_access_note=realm_access_note(db) if db is not None else "",
         whitelist_identity=whitelist_identity,
         pool_identity=pool_identity,
         is_sub_account=_is_sub,

@@ -142,39 +142,6 @@ def _bindings_line(db, user_id: int) -> str:
     return "网盘：" + "、".join(names)
 
 
-def _vitality_renew_min(db) -> int:
-    """活力保号线：SystemConfig welfare_vitality_renew_min，默认 3。"""
-    try:
-        row = (
-            db.query(models.SystemConfig)
-            .filter_by(key="welfare_vitality_renew_min")
-            .first()
-        )
-        return int(row.value) if row and row.value is not None else 3
-    except Exception:
-        return 3
-
-
-def _vitality_renew_enabled(db) -> bool:
-    """活力保号总开关：SystemConfig welfare_vitality_renew_enabled，默认开。
-
-    与 welfare_expiry 的读口一致（只认 "true"，缺行默认开）。开关关闭时
-    连签行不再宣称「自动续公益资格」——功能在到期 tick 侧同样被门控，
-    文案不许继续承诺一个已关掉的功能。
-    """
-    try:
-        row = (
-            db.query(models.SystemConfig)
-            .filter_by(key="welfare_vitality_renew_enabled")
-            .first()
-        )
-        if row is None or row.value is None:
-            return True
-        return str(row.value).strip().lower() == "true"
-    except Exception:
-        return True
-
-
 def _bar(frac: float, width: int) -> str:
     """进度条：█ 已完成／░ 未完成；frac 钳制 0–1，格数四舍五入。"""
     try:
@@ -196,24 +163,16 @@ _DEFAULT_LEVEL_ROWS = [(1, "初幕", 0), (2, "影迷", 100), (3, "鉴赏家", 50
 def _level_info(db, user) -> dict:
     """会员等级只读快照：等级名／经验／下一级阈值与差值；不写库。
 
-    等级数按内置阈值纯算（复用 lottery_governance.user_level）；经验
-    已无落库来源（member_xp 列已删，getattr 兜底恒 0，现实际恒 Lv.1）。
+    等级数按内置阈值纯算；经验已无落库来源（member_xp 列已删，
+    getattr 兜底恒 0，现实际恒 Lv.1）。
     本函数只用于只读展示路径（治理展示／管理员查人卡）。
     """
-    from backend.lottery_governance import user_level as _user_level
-
-    try:
-        level = _user_level(db, user.id)
-    except Exception:
-        db.rollback()
-        level = None
     levels = list(_DEFAULT_LEVEL_ROWS)
     xp = int(getattr(user, "member_xp", 0) or 0)
-    if level is None:
-        level = 1
-        for lv, _name, threshold in levels:
-            if xp >= threshold:
-                level = lv
+    level = 1
+    for lv, _name, threshold in levels:
+        if xp >= threshold:
+            level = lv
     cur = None
     for lv, name, threshold in levels:
         if lv == level:
@@ -528,19 +487,16 @@ _GOVLOG_ACTION_TEXT = {
 
 
 def handle_govlog(db, tg_user: dict, chat_id: int, args: str) -> str:
-    """治理审计日志只读查看（等级公益服活动治理 Step 4）。
+    """治理审计日志只读查看（活动治理 Step 4）。
 
-    仅私聊（群聊由 router 的 private_only 拦）、仅公益服、仅 Lv.6 传奇；
-    未绑定／非公益服／低于 Lv.6 一律只回提示、不泄露日志内容。
+    仅私聊（群聊由 router 的 private_only 拦）、仅 Lv.6 传奇；
+    未绑定／低于 Lv.6 一律只回提示、不泄露日志内容。
     """
     from backend import governance as _governance
-    from backend.subscriptions import is_free_realm as _is_free_realm
 
     user = _bound_user(db, tg_user)
     if user is None:
         return "请先绑定账号后再查看治理审计日志。"
-    if not _is_free_realm(db):
-        return "治理审计日志仅在公益服开放。"
     if (getattr(user, "member_level", 1) or 1) < 6:
         return "治理审计日志仅 Lv.6 传奇可见。"
     entries = _governance.list_audit_logs(db, limit=10)
@@ -573,22 +529,14 @@ def handle_govlog(db, tg_user: dict, chat_id: int, args: str) -> str:
 # ---------- 等级治理 bot 补完（Step 0–4＋停权接线，bot 侧入口） ----------
 
 def handle_level(db, tg_user: dict, chat_id: int, args: str) -> str:
-    """会员等级：等级＋经验进度＋治理权表（公益服）；付费服只显等级。
+    """会员等级：等级＋经验进度＋治理权表。
 
     群里可放行（同 /account：只展示个人等级与通用权表，不含凭据）。
+    附议恒 1 票（等级加权已随公益服删除退役）；活动提案／直接发起
+    支线已随公益服删除下线，权表不再展示这两项。
     """
-    from datetime import datetime as _dt
-
     from backend import governance as _governance
-    from backend import media_seek as _media_seek
     from backend.governance_report import review_weight as _review_weight
-    from backend.lottery_governance import (
-        direct_cap_for_level as _direct_cap,
-        direct_count_this_month as _direct_count,
-        proposal_cap_for_level as _proposal_cap,
-        proposal_count_this_month as _proposal_count,
-    )
-    from backend.subscriptions import is_free_realm as _is_free_realm
 
     user = _bound_user(db, tg_user)
     if user is None:
@@ -611,30 +559,11 @@ def handle_level(db, tg_user: dict, chat_id: int, args: str) -> str:
     frozen = _governance.is_governance_frozen(db, user.id)
     if frozen:
         rows.append(layout.row(
-            "⚠️", "治理状态", "治理特权已被冻结（附议仍按 1 票计，提案／举报／复核暂停）"))
-    if not _is_free_realm(db):
-        rows.append(layout.row("🏛️", "治理权限", "治理权表仅公益服开放，付费服等级仅展示"))
-        return layout.card(layout.title("会员等级！", user.username), rows)
-    weight = 1 if frozen else _media_seek.vote_weight_for_level(level)
-    if level >= 2:
-        p_used = _proposal_count(db, user.id, _dt.now())
-        p_cap = _proposal_cap(db, level)
-        propose_line = f"本月提案：{p_used}／{p_cap} 次"
-    else:
-        propose_line = "本月提案：Lv.2 起开放"
-    if level >= 5:
-        d_used = _direct_count(db, user.id, _dt.now())
-        d_cap = _direct_cap(db, level)
-        direct_line = f"本月直接发起：{d_used}／{d_cap} 次"
-    else:
-        direct_line = "本月直接发起：Lv.5 起开放"
+            "⚠️", "治理状态", "治理特权已被冻结（附议仍按 1 票计，举报／复核暂停）"))
     rw = _review_weight(level)
     rw_text = str(rw) if rw else "无（Lv.3 起获得）"
     rows += [
-        layout.row("🗳️", "活动额度", propose_line + " · " + direct_line),
-        layout.row("⚖️", "附议权重", f"附议权重：Lv.1–Lv.6 ＝ 1–6 票（我的权重：{weight} 票）"),
-        layout.row("📝", "活动提案", "活动提案：Lv.2+ 可提案，Lv.2/3 每月 1 次、Lv.4+ 每月 2 次"),
-        layout.row("🚀", "直接发起", "直接发起：Lv.5 每月 1 次、Lv.6 每月 2 次（事后审计）"),
+        layout.row("⚖️", "附议权重", "附议权重：每人 1 票"),
         layout.row("🚩", "举报复核", f"举报复核：Lv.3 权重 1、Lv.4 权重 2、Lv.5 权重 2、Lv.6 权重 3（我的权重：{rw_text}）"),
         layout.row("📋", "治理审计", "治理审计日志：Lv.6 可用 /govlog 只读查看" if level >= 6 else "治理审计日志：仅 Lv.6 可见（/govlog）"),
     ]
@@ -701,155 +630,5 @@ def handle_report(db, tg_user: dict, chat_id: int, args: str) -> str:
             layout.row("🔢", "举报编号", f"<code>#{row['id']}</code>"),
             layout.row("📝", "举报原因", _REPORT_REASON_NAMES[reason]),
             layout.row("⚖️", "处理进度", "进入复核流程，结果会在复核后更新"),
-        ],
-    )
-
-
-_PRIZE_TYPE_ALIASES = {
-    "days": "days", "天数": "days",
-    "whitelist": "whitelist", "白名单": "whitelist",
-}
-
-
-def _parse_prize_spec(spec: str) -> list[dict]:
-    """奖品段：逗号分隔，每项 类型:价值[x数量]，如 天数:30x1,白名单:1x1。"""
-    prizes = []
-    for chunk in spec.split(","):
-        chunk = chunk.strip()
-        if not chunk:
-            continue
-        if ":" not in chunk:
-            raise ValueError("奖品格式应为 类型:价值[x数量]，如 天数:30x1")
-        ptype_raw, rest = chunk.split(":", 1)
-        ptype = _PRIZE_TYPE_ALIASES.get(ptype_raw.strip())
-        if ptype is None:
-            raise ValueError("奖品类型只能是 天数／白名单")
-        if "x" in rest:
-            value_raw, qty_raw = rest.split("x", 1)
-        else:
-            value_raw, qty_raw = rest, "1"
-        try:
-            value = int(value_raw.strip())
-            qty = int(qty_raw.strip())
-        except ValueError:
-            raise ValueError("奖品价值与数量须为整数")
-        prizes.append({"type": ptype, "value": value, "quantity": qty, "name": ""})
-    if not prizes:
-        raise ValueError("至少需要配置 1 个奖品")
-    return prizes
-
-
-def _parse_lottery_args(args: str) -> dict:
-    """提案／直接发起参数：标题 | 奖品 | 群组ID [| 开奖时间] [| 人数上限] [| 口令]。
-
-    群组ID 可空（仅当允许群恰好一个时服务端自动取）；开奖时间如 2026-11-01 20:00，
-    为空则开奖时间待定；人数上限为空则不限；口令给出时为口令抽奖，否则为按钮抽奖。
-    """
-    segments = [s.strip() for s in (args or "").split("|")]
-    if len(segments) < 2 or not segments[0] or not segments[1]:
-        raise ValueError("参数不足")
-    title = segments[0]
-    prizes = _parse_prize_spec(segments[1])
-    chat_id = None
-    if len(segments) > 2 and segments[2]:
-        try:
-            chat_id = int(segments[2])
-        except ValueError:
-            raise ValueError("群组ID 须为整数")
-    draw_at = segments[3] if len(segments) > 3 and segments[3] else None
-    max_participants = None
-    if len(segments) > 4 and segments[4]:
-        try:
-            max_participants = int(segments[4])
-        except ValueError:
-            raise ValueError("人数上限须为整数")
-    keyword = segments[5] if len(segments) > 5 and segments[5] else None
-    return {
-        "title": title,
-        "prizes": prizes,
-        "chat_id": chat_id,
-        "draw_at": draw_at,
-        "max_participants": max_participants,
-        "lottery_type": "password" if keyword else "button",
-        "password_keyword": keyword,
-    }
-
-
-def _propose_help(direct: bool) -> str:
-    verb = "直接发起" if direct else "活动提案"
-    cmd = "/launch" if direct else "/propose"
-    level = "Lv.5+" if direct else "Lv.2+"
-    return layout.card(
-        layout.title(verb),
-        [
-            layout.row("🎲", "开放范围", f"仅公益服、{level}"),
-            layout.row("📝", "提交方式", f"私聊发送 <code>{cmd} 标题 | 奖品 | 群组ID | 开奖时间 | 人数上限 | 口令</code>"),
-            layout.row("🎁", "奖品格式", "逗号分隔，类型:价值[x数量]，类型为 天数／白名单，如 <code>天数:30x1,白名单:1x1</code>"),
-            layout.row("💡", "填写说明", "群组ID 可空（仅当允许群恰好一个时自动取）；开奖时间如 2026-11-01 20:00，为空则待定；人数上限为空则不限；口令给出时为口令抽奖，否则为按钮抽奖"),
-            layout.row("💡", "示例", "<code>/propose 周末观影趴 | 天数:30x2 | -1001234567890</code>"),
-        ],
-    )
-
-
-def handle_propose(db, tg_user: dict, chat_id: int, args: str) -> str:
-    """活动提案：复用 Step 3 submit_proposal，门禁文案由服务端原样返回。"""
-    from backend.lottery_governance import LotteryGovernanceError, submit_proposal
-
-    user = _bound_user(db, tg_user)
-    if user is None:
-        return layout.card(layout.title("活动提案"), [layout.row("🔒", "账号状态", "活动提案需要先绑定网站账号")], ["发送 /bind 查看绑定方法。"])
-    if not (args or "").strip():
-        return _propose_help(direct=False)
-    try:
-        payload = _parse_lottery_args(args)
-    except ValueError as exc:
-        return f"{_esc(exc)}\n\n" + _propose_help(direct=False)
-    try:
-        proposal = submit_proposal(db, user.id, payload)
-    except LotteryGovernanceError as exc:
-        db.rollback()
-        return f"⛔ {_esc(exc.detail)}"
-    except Exception:
-        db.rollback()
-        logger.exception("TG 活动提案提交失败 user=%s", user.id)
-        return "活动提案提交失败，请稍后再试。"
-    return layout.card(
-        layout.title("活动提案已提交"),
-        [
-            layout.row("📌", "活动", _esc(proposal.title)),
-            layout.row("🔢", "提案编号", f"<code>#{proposal.id}</code>"),
-            layout.row("⏳", "处理进度", "等待管理员批准，批准后开奖"),
-        ],
-    )
-
-
-def handle_direct_launch(db, tg_user: dict, chat_id: int, args: str) -> str:
-    """直接发起活动：复用 Step 3 direct_launch，门禁文案由服务端原样返回。"""
-    from backend.lottery_governance import LotteryGovernanceError, direct_launch
-
-    user = _bound_user(db, tg_user)
-    if user is None:
-        return layout.card(layout.title("直接发起活动"), [layout.row("🔒", "账号状态", "直接发起活动需要先绑定网站账号")], ["发送 /bind 查看绑定方法。"])
-    if not (args or "").strip():
-        return _propose_help(direct=True)
-    try:
-        payload = _parse_lottery_args(args)
-    except ValueError as exc:
-        return f"{_esc(exc)}\n\n" + _propose_help(direct=True)
-    try:
-        round_obj, _record = direct_launch(db, user.id, payload)
-    except LotteryGovernanceError as exc:
-        db.rollback()
-        return f"⛔ {_esc(exc.detail)}"
-    except Exception:
-        db.rollback()
-        logger.exception("TG 直接发起活动失败 user=%s", user.id)
-        return "直接发起活动失败，请稍后再试。"
-    return layout.card(
-        layout.title("活动已直接发起"),
-        [
-            layout.row("📌", "活动", _esc(round_obj.title)),
-            layout.row("🔢", "轮次编号", f"<code>#{round_obj.id}</code>"),
-            layout.row("📋", "审计", "直接发起已记入事后审计，管理员可复核"),
         ],
     )

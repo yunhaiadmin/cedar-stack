@@ -1,4 +1,7 @@
-"""TG Bot 等级治理 bot 补完：/level、/report、/propose、/launch 与新版 dashboard。
+"""TG Bot 等级治理 bot 补完：/level、/report 与新版 dashboard。
+
+/propose、/launch 已随公益服删除于 2026-11-19 整条下线（命令映射、
+菜单注册与 handler 一并摘除），本文件只钉它们不再出现。
 
 只测本模块：DB 用内存 SQLite；Telegram 发送全部 patch 掉，不发真实请求。
 版式依据：用户 2026-10-29 08:44 亲批 dashboard 样例（逐字结构）与
@@ -50,8 +53,8 @@ def _tg(tg=TG, first_name="Alice"):
     return {"id": tg, "first_name": first_name}
 
 
-def _free_realm(db):
-    realm = models.ServerRealm(name="公益服", slug="main", access_mode="free")
+def _realm(db):
+    realm = models.ServerRealm(name="主服", slug="main")
     db.add(realm)
     db.commit()
     db.add(models.SystemConfig(key="active_realm_id", value=str(realm.id)))
@@ -149,35 +152,37 @@ def test_dashboard_sample_layout_exact(db):
     assert text == expected
 
 
-def test_level_free_realm(db):
-    _free_realm(db)
+def test_level_rights_table(db):
+    _realm(db)
     row = _user(db)
     text = features.handle_level(db, _tg(), TG, "")
     # member_xp 已删、等级恒 Lv.1（_level_info 兼容口径）
     assert "⭐ Lv.1 初幕" in text
     assert "经验 0／100" in text
     assert "距 Lv.2 影迷还差 100 经验" in text
-    assert "本月提案：Lv.2 起开放" in text
-    assert "本月直接发起：Lv.5 起开放" in text
-    assert "附议权重" in text and "我的权重：1 票" in text
+    # 提案／直接发起支线已随公益服删除下线，权表不再展示这两项
+    assert "本月提案" not in text
+    assert "本月直接发起" not in text
+    assert "附议权重" in text and "每人 1 票" in text
     assert "举报复核" in text and "我的权重：无（Lv.3 起获得）" in text
 
 
-def test_level_paid_realm_no_rights_table(db):
+def test_level_no_realm_still_shows_rights_table(db):
+    # 公益服门已删：无服时权表照常展示，不再有「仅公益服开放」分支
     row = _user(db)
     text = features.handle_level(db, _tg(), TG, "")
     assert "⭐ Lv.1 初幕" in text
-    assert "治理权表仅公益服开放" in text
-    assert "附议权重" not in text
+    assert "治理权表仅公益服开放" not in text
+    assert "附议权重" in text
 
 
 def test_level_frozen(db):
-    _free_realm(db)
+    _realm(db)
     row = _user(db)
     _freeze(db, row.id)
     text = features.handle_level(db, _tg(), TG, "")
     assert "治理特权已被冻结" in text
-    assert "我的权重：1 票" in text
+    assert "附议仍按 1 票计" in text
 
 
 def test_level_unbound(db):
@@ -187,7 +192,7 @@ def test_level_unbound(db):
 # ---------- /report ----------
 
 def test_report_success_and_duplicate(db):
-    realm = _free_realm(db)
+    realm = _realm(db)
     reporter = _user(db)
     seek = _seek(db, reporter.id, realm_id=realm.id)
     text = features.handle_report(db, _tg(), TG, f"{seek.id} 刷屏 重复发了好几次")
@@ -197,66 +202,47 @@ def test_report_success_and_duplicate(db):
 
 
 def test_report_bad_reason_and_missing_args(db):
-    _free_realm(db)
+    _realm(db)
     _user(db)
     assert "刷屏、重复、违规" in features.handle_report(db, _tg(), TG, "1 不知道")
     assert "/report 求片编号" in features.handle_report(db, _tg(), TG, "")
 
 
 def test_report_frozen(db):
-    realm = _free_realm(db)
+    realm = _realm(db)
     reporter = _user(db)
     _freeze(db, reporter.id)
     seek = _seek(db, reporter.id, realm_id=realm.id)
     assert "治理特权已被冻结" in features.handle_report(db, _tg(), TG, f"{seek.id} 违规")
 
 
-# ---------- /propose /launch ----------
+# ---------- /propose /launch 已下线 ----------
 
-def test_propose_points_prize_rejected(db):
-    """积分（能量）奖品已随货币删除下线（2026-11-13）：提案在
-    治理核心处被拒，只收 days/whitelist。"""
-    _free_realm(db)
+def test_propose_launch_handlers_removed(db):
+    _realm(db)
     _user(db)
-    text = features.handle_propose(db, _tg(), TG, "周末观影趴 | 能量:100x2 | -100123")
-    assert "奖品类型只能是" in text
-    assert "活动提案已提交" not in text
-
-
-def test_propose_level_gate_and_bad_prize(db):
-    _free_realm(db)
-    _user(db)
-    # 等级门用例须用合法奖品（天数）：能量奖品已下线，会先被奖品解析拒掉、到不了等级门
-    gated = features.handle_propose(db, _tg(), TG, "周末趴 | 天数:30x1 | -100123")
-    assert "Lv.2" in gated
-    bad = features.handle_propose(db, _tg(), TG, "周末趴 | 金币:100x1 | -100123")
-    assert "奖品类型只能是" in bad
-
-
-def test_launch_gate(db):
-    # member_xp 已删、等级恒 Lv.1：直接发起的 Lv.5 门恒挡（成功路径
-    # 随等级体系删除不可达，本例只钉门禁口径）
-    _free_realm(db)
-    low = _user(db, tg=TG + 1, name="low")
-    gated = features.handle_direct_launch(db, _tg(TG + 1), TG + 1, "周末趴 | 天数:30x1 | -100123")
-    assert "Lv.5" in gated
+    assert not hasattr(features, "handle_propose")
+    assert not hasattr(features, "handle_direct_launch")
+    assert not hasattr(handlers, "handle_propose")
+    assert not hasattr(handlers, "handle_direct_launch")
 
 
 # ---------- 路由与菜单 ----------
 
-def test_level_renders_card_in_group_report_propose_private_only(db, monkeypatch):
+def test_level_renders_card_in_group_report_private_only(db, monkeypatch):
     # /level 是账号卡别名、账号展示群里放行（2026-10-28 定、2026-11-02
-    # 重申）：群里直接回账号卡；report/propose 仍私聊限定、只回提示。
+    # 重申）：群里直接回账号卡；report 仍私聊限定、只回提示。
     _user(db)
     monkeypatch.setattr("backend.tg_bot.router._user_cmd_limits", {})
     sent = _dispatch(db, monkeypatch, "/level", chat_id=GROUP, chat_type="group")
     assert sent and "账号名称" in sent[0] and "请私聊" not in sent[0]
-    for cmd in ("/report 1 违规", "/propose 标题 | 能量:10x1 | -100123"):
-        sent = _dispatch(db, monkeypatch, cmd, chat_id=GROUP, chat_type="group")
-        assert sent and "请私聊" in sent[0], cmd
+    sent = _dispatch(db, monkeypatch, "/report 1 违规", chat_id=GROUP, chat_type="group")
+    assert sent and "请私聊" in sent[0]
 
 
 def test_bot_commands_cover_new_commands():
     registered = {cmd for cmd, _desc in poller.BOT_COMMANDS}
-    assert {"report", "propose", "launch"} <= registered
+    assert "report" in registered
+    assert "propose" not in registered  # 已随公益服删除下线
+    assert "launch" not in registered   # 已随公益服删除下线
     assert "level" not in registered  # /level 已摘出菜单（手输别名保留）

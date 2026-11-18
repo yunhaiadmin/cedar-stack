@@ -120,7 +120,7 @@ def require_tg_bound(
     current_user: models.WebUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> models.WebUser:
-    """公益服写接口门禁：未绑定 Telegram 且不在宽限期则 403。"""
+    """写接口 TG 绑定门禁：未绑定 Telegram 且不在宽限期则 403。"""
     if not is_require_enabled(db):
         return current_user
     if current_user.telegram_id:
@@ -129,7 +129,7 @@ def require_tg_bound(
         return current_user
     raise HTTPException(
         status_code=403,
-        detail={"code": "TG_NOT_BOUND", "message": "公益服功能需要绑定 Telegram，防小号，1 分钟搞定"},
+        detail={"code": "TG_NOT_BOUND", "message": "该功能需要绑定 Telegram，防小号，1 分钟搞定"},
     )
 
 

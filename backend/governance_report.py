@@ -1,12 +1,11 @@
-"""等级公益服活动治理 Step 2：举报＋复核投票＋管理员终审队列（后端服务层）。
+"""活动治理 Step 2：举报＋复核投票＋管理员终审队列（后端服务层）。
 
 设计稿：~/workspace/reports/等级公益服活动治理设计-20261029.md（Step 2、Q4/Q5/Q7/Q8/Q9/Q10）。
 本单只做 Step 2：举报（v1 仅求片条目）＋复核投票（quorum＋阈值升级终审）
 ＋管理员终审队列（受理／驳回）＋恶意举报停权（自动＋手动冻结）。
 
 硬线（违反即打回）：
-- 仅 free realm 生效（用 subscriptions.is_free_realm 同一信号，按举报目标的服判定，
-  目标无服时按当前服判定）；付费服下创建／复核一律 403。
+- 全站统一生效（原「仅公益服」门已随公益服删除于 2026-11-19 摘除）。
 - 举报／复核动作不产生经验；经验绝不换积分／活力。
 - 不卡核心权益：举报与复核不影响任何人的播放／查看／基础求片额度；
   也不碰、不绕过想看商店会员锁（去留悬置）。
@@ -35,7 +34,6 @@ from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from backend import governance, models
-from backend.subscriptions import is_free_realm
 
 logger = logging.getLogger(__name__)
 
@@ -145,11 +143,6 @@ def _require_enabled(db: Session) -> None:
         raise GovernanceError(403, "举报功能已关闭")
 
 
-def _require_free_realm(db: Session, realm_id: int | None) -> None:
-    if not is_free_realm(db, realm_id):
-        raise GovernanceError(403, "治理举报仅公益服开放")
-
-
 def active_suspension(
     db: Session, user_id: int, now: datetime | None = None
 ) -> models.GovernanceSuspension | None:
@@ -252,18 +245,6 @@ def _report_dict(
     return out
 
 
-def _target_realm_id(db: Session, report: models.GovernanceReport) -> int | None:
-    """举报目标的服：求片行的 realm_id（老行无服时 None，走当前服判定）。"""
-    if report.target_type != REPORT_TARGET_MEDIA_SEEK:
-        return None
-    target = (
-        db.query(models.MovieRequest)
-        .filter(models.MovieRequest.id == report.target_id)
-        .first()
-    )
-    return target.realm_id if target is not None else None
-
-
 def create_report(
     db: Session, user, target_id: int, reason: str, detail: str | None = None
 ) -> dict:
@@ -276,7 +257,6 @@ def create_report(
     )
     if target is None:
         raise GovernanceError(404, "求片不存在")
-    _require_free_realm(db, target.realm_id)
     _require_not_suspended(db, user.id)
     _require_not_frozen(db, user.id)
     if reason not in REPORT_REASONS:
@@ -373,7 +353,6 @@ def cast_review_vote(
         raise GovernanceError(404, "举报不存在")
     if report.status != REPORT_STATUS_PENDING:
         raise GovernanceError(409, "该举报已不在复核中")
-    _require_free_realm(db, _target_realm_id(db, report))
     _require_not_suspended(db, user.id)
     _require_not_frozen(db, user.id)
     if decision not in ("agree", "disagree"):

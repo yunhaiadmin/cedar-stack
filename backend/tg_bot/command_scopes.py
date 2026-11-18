@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 # 管理员级命令（不带斜杠）：绝不进 default 菜单，只随管理员 scope 全量下发。
 # - govlog：现行命令，治理审计日志查看（features.handle_govlog：仅私聊、
-#   仅公益服、仅 Lv.6），属特权查看，按更严一级归管理员级；
+#   仅 Lv.6），属特权查看，按更严一级归管理员级；
 # - kk / reconcile / rankpush / playrank：管理员命令（审计反查 /
 #   群号对账 / 观影榜手动推送 / 每日播放排行榜手动推送），均已合入
 #   BOT_COMMANDS 并归管理员级。
@@ -50,8 +50,8 @@ ADMIN_ONLY_COMMANDS: frozenset[str] = frozenset({
 
 # 群内可执行命令（不带斜杠）：逐条对 router.dispatch 的现行群内拦截口径——
 # 不在 private_only、不在 _P1_COMMANDS、且不被群内专门拒执行。
-# 排除项（15)：private_only 11 (request/myrequests/login/renew/govlog/
-# report/propose/launch/reconcile/rankpush/playrank) + P1 私人查询 4 (bindings/
+# 排除项（13)：private_only 9 (request/myrequests/login/renew/govlog/
+# report/reconcile/rankpush/playrank) + P1 私人查询 4 (bindings/
 # transfers/whyplay/wants)。
 # me/account/level（账号展示一家，指向同一张账号卡）在群里放行
 # （2026-10-28 用户亲定、2026-11-02 重申），在下面集合里；其中

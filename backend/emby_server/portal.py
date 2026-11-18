@@ -314,9 +314,8 @@ def _realm_view_granted(db: Session, user: models.WebUser, realm_id: int | None
                         ) -> tuple[bool, models.EmbyViewUnlock | None]:
     """用户是否有权查看某服的 Emby 账号/线路（口径见 ``subscriptions.view_grant``）。
 
-    规则：付费服 = 有效订阅即权限；公益服 = 公益资格在期自动放行，
-    或持有未到期的存量查看行（资格与凭证已合并，购买写口已退役，
-    见 unlock_emby_view）。没权限时账号卡不下发地址，前端也不展示。
+    规则：有效订阅即权限，团队套餐是并列的资格来源。
+    没权限时账号卡不下发地址，前端也不展示。
 
     判定本身在 ``backend/subscriptions.py``——它是全站唯一口径，管理端的
     「用户授权资源卡片」（backend/user_grants.py）读同一份，两边不会漂。
@@ -411,9 +410,9 @@ def _account_card(user: models.WebUser, db: Session, realm_id: int | None = None
     多服部署下同一个用户可能在多个服都有订阅，所以账号卡会带上 **每个服的地址与订阅**
     （``realms``），让客户端知道该连哪一台；顶层字段保持默认服的口径不变。
 
-    查看权限：付费服要求有效订阅，公益服要求资格在期或存量查看行在效（见 ``_realm_view_granted``）。
+    查看权限：要求有效订阅或团队播放资格（见 ``_realm_view_granted``）。
     没权限时 ``base_url`` / ``import_schemes`` / ``emby_username`` 置空不下发，
-    前端据 ``view_permission`` 展示解锁入口。
+    前端据 ``view_permission`` 展示开通入口。
 
     没有接线用户名时同样不下发导入 scheme（空用户名的链接没有用）。
     本接口从不把密码拼进 scheme；密码只在前端内存里拼接。
@@ -442,10 +441,6 @@ def _account_card(user: models.WebUser, db: Session, realm_id: int | None = None
         "has_password": bool(user.emby_password),
         "realm_id": realm.id if realm else None,
         "realm_name": realm.name if realm else "",
-        # 接入方式：free = 公益服（免费开放，不需要订阅）；用户端据此换一套文案
-        "access_mode": realms.normalize_access_mode(realm.access_mode) if realm else "paid",
-        "is_free": realms.is_free_realm(db, realm_id),
-        "access_note": realms.access_note_of(db, realm_id),
         "allow_download": subscriptions.download_allowed(db, realm_id),
         # 没用户名时不发 scheme。密码参数留给前端：这里绝不传入 password。
         "import_schemes": {} if (external or not granted or not emby_username) else {
@@ -457,18 +452,11 @@ def _account_card(user: models.WebUser, db: Session, realm_id: int | None = None
         },
         "view_permission": {
             "granted": granted,
-            "realm_free": realms.is_free_realm(db, realm_id),
             "unlock_days": price_days,
             "expires_at": unlock.expires_at.isoformat() if unlock and unlock.expires_at else None,
-            # 放行来源（前端按它展示状态，不再有购买动作）：
-            # unlock＝存量查看行在效；subscription＝付费服订阅；
-            # None＝未放行。（原 welfare＝公益资格来源已随福利服役族
-            # 于 2026-11-14 删除，资格已折算成订阅。）
-            "source": (
-                "unlock" if unlock is not None
-                else "subscription" if granted
-                else None
-            ),
+            # 放行来源（前端按它展示状态）：subscription＝订阅/团队资格
+            # 放行；None＝未放行。
+            "source": "subscription" if granted else None,
         },
     }
     # PA-036：图片端点加鉴权后，网页端 <img> 只能靠 URL 里的 api_key 带凭据，
@@ -506,8 +494,7 @@ def _user_realm_cards(user: models.WebUser, db: Session,
                       request: Request | None = None) -> list[dict]:
     """用户在各服的地址与订阅状态（多服时前端按卡片列出）
 
-    **公益服不管有没有订阅都下发**：免费开放本身就是这个服对用户的承诺，
-    没订阅不等于“不能看”（见 ``backend/subscriptions.py``）。
+    没订阅的服不下发（默认服保留，兼容老前端）。
     """
     now = datetime.now()
     subs = (db.query(models.UserSubscription)
@@ -523,9 +510,8 @@ def _user_realm_cards(user: models.WebUser, db: Session,
     cards: list[dict] = []
     for realm in realms.list_realms(db, include_disabled=False):
         sub = by_realm.get(realm.id)
-        free = realms.is_free_realm(db, realm.id)
-        if sub is None and not free and realm.id != realms.legacy_realm_id(db):
-            continue  # 没订阅的付费服不往用户面前推（默认服保留，兼容老前端）
+        if sub is None and realm.id != realms.legacy_realm_id(db):
+            continue  # 没订阅的服不往用户面前推（默认服保留，兼容老前端）
         mode = emby_active_mode(db, realm.id)
         granted, _ = _realm_view_granted(db, user, realm.id)
         cards.append({
@@ -538,10 +524,6 @@ def _user_realm_cards(user: models.WebUser, db: Session,
             "mode": mode,
             "external": mode == "external",
             "subscribed": sub is not None,
-            # free = 公益服：不需要订阅也能看；"access" 是给前端的一句话口径
-            "access_mode": realms.normalize_access_mode(realm.access_mode),
-            "is_free": free,
-            "access_note": realms.access_note_of(db, realm.id),
             "end_date": sub.end_date.isoformat() if sub and sub.end_date else None,
             # 剩余天数由后端按下发口径算好（与 api/user.py 的 days_left 同公式：
             # 精确差向下取整），前端直接显示不许自算——前端曾用「补到当天
@@ -594,24 +576,17 @@ def unlock_emby_view(
     request_user: models.WebUser = Depends(get_admin_or_emby_user),
     db: Session = Depends(get_db),
 ):
-    """【已下线】公益服查看权限购买写口（2026-11-09 资格与凭证合并）。
+    """【已下线】查看权限购买写口（墓碑端点）。
 
-    公益服查看已改为随公益资格自动开通（见 ``subscriptions.view_grant``），
-    不再单独购买：本路由保留以便旧前端明确得到下线答复而不是 404，
-    前置闸照旧先行（服不存在 404、付费服 400 的口径不变），公益服一律
-    410。存量 EmbyViewUnlock 行继续有效到期为止，与本口无关；历史上
-    这里的原子扣费/原地续开/PA-022 口径随购买语义一并退役。
+    查看权限来自有效订阅或团队资格（见 ``subscriptions.view_grant``），
+    从不单独购买：本路由保留以便旧前端明确得到下线答复而不是 404——
+    服不存在 404，其余一律 400。
     """
     realm_id = req.realm_id or realms.active_realm_id(db)
     realm = realms.realm_snapshot(db, realm_id)
     if realm is None:
         raise HTTPException(status_code=404, detail="服不存在")
-    if not realms.is_free_realm(db, realm_id):
-        raise HTTPException(status_code=400, detail="当前服为付费服，查看权限来自有效订阅，无需能量解锁")
-    raise HTTPException(
-        status_code=410,
-        detail="公益服查看已随公益资格自动开通，不用再单独买凭证",
-    )
+    raise HTTPException(status_code=400, detail="查看权限来自有效订阅，无需单独解锁")
 
 
 class SetPasswordRequest(BaseModel):

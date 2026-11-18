@@ -200,7 +200,7 @@ const navGroups: NavGroup[] = [
       { path: '/tickets', label: '工单', icon: Ticket },
       // 等级治理：举报终审队列 + 治理停权（复核达标的举报在这里受理 / 驳回）
       { path: '/governance', label: '举报与停权', icon: Flag },
-      // 群抽奖：轮次配置与提案黑名单（公益配置已随公益资格整族删除）
+      // 群抽奖：轮次配置与黑名单（活动提案已随公益服删除下线）
       { path: '/welfare-lottery-rounds', label: '群抽奖', icon: Trophy },
     ],
   },

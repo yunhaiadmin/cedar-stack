@@ -203,9 +203,9 @@ def oauth2_entry_description() -> str:
 def user_holds_view_credential(db: Session, user_id: int) -> bool:
     """用户是否持有查看凭证（第二入口门禁的唯一判定口）。
 
-    复用全站唯一口径 subscriptions.view_grant（付费服 = 有效
-    订阅、公益服 = 未过期查看解锁行，一律按到期时间现算、不信
-    行上状态字段），不另造第二套判定。用户行不存在按未持有。
+    复用全站唯一口径 subscriptions.view_grant（有效订阅或团队
+    播放资格，一律按到期时间现算、不信行上状态字段），
+    不另造第二套判定。用户行不存在按未持有。
     """
     from backend import models as base_models
     from backend import subscriptions
