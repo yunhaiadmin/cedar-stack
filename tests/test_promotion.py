@@ -48,7 +48,7 @@ def db():
 @pytest.fixture()
 def realm(db):
     """先建好当前服：``realms.claim`` 兜底建服时会 commit，别把发奖事务截断"""
-    row = models.ServerRealm(name="主服", slug="main", access_mode="paid", is_active=True)
+    row = models.ServerRealm(name="主服", slug="main", is_active=True)
     db.add(row)
     db.commit()
     db.refresh(row)

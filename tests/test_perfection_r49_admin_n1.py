@@ -76,8 +76,8 @@ def _user(db, username, is_staff=False):
     return u
 
 
-def _realm(db, name="主服", slug="main", access_mode="paid"):
-    r = models.ServerRealm(name=name, slug=slug, access_mode=access_mode,
+def _realm(db, name="主服", slug="main"):
+    r = models.ServerRealm(name=name, slug=slug,
                            is_active=True)
     db.add(r)
     db.commit()
@@ -146,7 +146,7 @@ def test_create_coupons_random_batch_ok(db):
 # ---------------------------------------------------------------------------
 
 def test_view_grant_paid_realm_parity(db):
-    realm = _realm(db, access_mode="paid")
+    realm = _realm(db)
     plan = models.SubscriptionPlan(name="月卡", price=10, duration_days=30,
                                    realm_id=realm.id, is_active=True)
     db.add(plan)

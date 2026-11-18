@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from backend import models, realms, subscriptions, user_grants
@@ -73,6 +73,27 @@ def _sub(db, user, realm, plan, *, end_in_days=30, status="active", auto_renew=F
 def _card(db, user, realm_id):
     payload = user_grants.cards(db, user)
     return next(c for c in payload["cards"] if c["realm_id"] == realm_id)
+
+
+# 遗留表 emby_view_unlocks 的模型定义已删（2026-11-19）：存量行改走
+# 原生 SQL 建表/写行，断言口径不变（卡片判定不读该表）。
+_LEGACY_UNLOCK_DDL = (
+    "CREATE TABLE IF NOT EXISTS emby_view_unlocks ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "user_id INTEGER NOT NULL, realm_id INTEGER NOT NULL, "
+    "unlocked_at DATETIME, expires_at DATETIME, "
+    "points_spent INTEGER DEFAULT 0, UNIQUE (user_id, realm_id))")
+
+
+def _add_legacy_unlock(db, user, realm, expires_at):
+    db.execute(text(_LEGACY_UNLOCK_DDL))
+    db.execute(
+        text("INSERT INTO emby_view_unlocks"
+             " (user_id, realm_id, expires_at, points_spent)"
+             " VALUES (:user_id, :realm_id, :expires_at, 50)"),
+        {"user_id": user.id, "realm_id": realm.id,
+         "expires_at": expires_at})
+    db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -232,11 +253,8 @@ def test_no_subscription_card_is_plain_paid_caliber(db):
 def test_unlock_row_no_longer_grants_view_permission(db):
     realm = _realm(db, name="乙服", slug="b")
     user = _user(db)
-    db.add(models.EmbyViewUnlock(
-        user_id=user.id, realm_id=realm.id, points_spent=50,
-        expires_at=datetime.now() + timedelta(days=30),
-    ))
-    db.commit()
+    _add_legacy_unlock(db, user, realm,
+                       datetime.now() + timedelta(days=30))
 
     card = _card(db, user, realm.id)
     assert card["grant"] == user_grants.GRANT_NONE
@@ -248,11 +266,8 @@ def test_unlock_row_no_longer_grants_view_permission(db):
 def test_expired_unlock_row_also_grants_nothing(db):
     realm = _realm(db, name="乙服", slug="b")
     user = _user(db)
-    db.add(models.EmbyViewUnlock(
-        user_id=user.id, realm_id=realm.id, points_spent=50,
-        expires_at=datetime.now() - timedelta(days=1),
-    ))
-    db.commit()
+    _add_legacy_unlock(db, user, realm,
+                       datetime.now() - timedelta(days=1))
 
     card = _card(db, user, realm.id)
     assert card["grant"] == user_grants.GRANT_NONE

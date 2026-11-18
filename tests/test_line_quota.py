@@ -80,8 +80,7 @@ _seq = [0]
 def _realm(db, slug, url=""):
     _seq[0] += 1
     r = models.ServerRealm(
-        name=f"大类-{slug}-{_seq[0]}", slug=f"{slug}{_seq[0]}", url=url,
-        access_mode="paid")
+        name=f"大类-{slug}-{_seq[0]}", slug=f"{slug}{_seq[0]}", url=url)
     db.add(r)
     db.commit()
     db.refresh(r)

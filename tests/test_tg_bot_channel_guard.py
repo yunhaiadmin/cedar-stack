@@ -22,7 +22,7 @@ os.environ.setdefault("REDIS_ENABLED", "false")
 sys.path.insert(0, ".")
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -35,6 +35,31 @@ OTHER_GROUP_ID = -100555
 CHAN_ID = -100999888
 ANON_ID = 1087968824
 USER_TG = 700001
+
+# 遗留表 emby_view_unlocks 的模型定义已删（2026-11-19）：存量行改走
+# 原生 SQL 建表/写行/计数，断言口径不变（退群处置不读不写该表）。
+_LEGACY_UNLOCK_DDL = (
+    "CREATE TABLE IF NOT EXISTS emby_view_unlocks ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "user_id INTEGER NOT NULL, realm_id INTEGER NOT NULL, "
+    "unlocked_at DATETIME, expires_at DATETIME, "
+    "points_spent INTEGER DEFAULT 0, UNIQUE (user_id, realm_id))")
+
+
+def _add_legacy_unlock(db, user_id, realm_id, expires_at):
+    db.execute(text(_LEGACY_UNLOCK_DDL))
+    db.execute(
+        text("INSERT INTO emby_view_unlocks"
+             " (user_id, realm_id, expires_at, points_spent)"
+             " VALUES (:user_id, :realm_id, :expires_at, 50)"),
+        {"user_id": user_id, "realm_id": realm_id,
+         "expires_at": expires_at})
+
+
+def _legacy_unlock_count(db):
+    db.execute(text(_LEGACY_UNLOCK_DDL))
+    return db.execute(
+        text("SELECT COUNT(*) FROM emby_view_unlocks")).scalar()
 
 
 @pytest.fixture()
@@ -204,13 +229,12 @@ def test_private_chat_unaffected(db, sent, deleted):
 
 def test_leave_noop(db, sent):
     u = _make_user(db)
-    db.add(models.EmbyViewUnlock(
-        user_id=u.id, realm_id=1,
-        expires_at=datetime.now() + timedelta(days=10), points_spent=50))
+    _add_legacy_unlock(db, u.id, 1,
+                       datetime.now() + timedelta(days=10))
     db.commit()
     router.dispatch(db, _member_update())
     db.refresh(u)
-    assert db.query(models.EmbyViewUnlock).count() == 1
+    assert _legacy_unlock_count(db) == 1
     assert sent == []
 
 

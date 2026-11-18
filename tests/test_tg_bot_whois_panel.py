@@ -23,7 +23,7 @@ import pytest
 
 sys.path.insert(0, ".")
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from backend import models
@@ -47,6 +47,24 @@ def db():
     finally:
         session.close()
         engine.dispose()
+
+
+# 遗留表 emby_view_unlocks 的模型定义已删（2026-11-19）：原生 SQL 计数，
+# 断言口径不变（写口已不存在，查到行即失败）。
+_LEGACY_UNLOCK_DDL = (
+    "CREATE TABLE IF NOT EXISTS emby_view_unlocks ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "user_id INTEGER NOT NULL, realm_id INTEGER NOT NULL, "
+    "unlocked_at DATETIME, expires_at DATETIME, "
+    "points_spent INTEGER DEFAULT 0, UNIQUE (user_id, realm_id))")
+
+
+def _legacy_unlock_count(db, user_id):
+    db.execute(text(_LEGACY_UNLOCK_DDL))
+    return db.execute(
+        text("SELECT COUNT(*) FROM emby_view_unlocks"
+             " WHERE user_id = :user_id"),
+        {"user_id": user_id}).scalar()
 
 
 def _user(db, tg, name, staff=False, **kw):
@@ -210,9 +228,7 @@ def test_gift_entry_removed_and_old_callbacks_fall_back(db, monkeypatch):
     assert not any(":gv30" in d for d in datas)
     edited = _click(db, monkeypatch, f"whois:do:{target.id}:gv30")
     assert edited
-    assert (db.query(models.EmbyViewUnlock)
-            .filter(models.EmbyViewUnlock.user_id == target.id)
-            .count()) == 0
+    assert _legacy_unlock_count(db, target.id) == 0
 
 
 # ---------- PA-057：拒绝分支只弹 toast，绝不改写共享面板 ----------

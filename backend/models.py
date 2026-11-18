@@ -96,8 +96,8 @@ class ServerRealm(Base):
 
     播放/下载判定统一收口在 ``backend/subscriptions.py``（``can_play`` /
     ``ensure_download_allowed``）：全站只做付费服，需要生效中的订阅才能播放，
-    卖套餐、走付费墙。``access_mode`` / ``access_note`` 两列是已删除的
-    公益服机制遗留，代码不再读写，留列待后续收口。
+    卖套餐、走付费墙。原公益服机制的 ``access_mode`` / ``access_note``
+    两列已删定义（生产列 DROP 另行收口）。
     """
 
     __tablename__ = 'server_realms'
@@ -113,9 +113,6 @@ class ServerRealm(Base):
     # 该服对外的 Emby 地址（用户端账号卡用；留空则回退全局 EMBY_PUBLIC_URL）
     url = Column(String(500), default='')
     description = Column(String(300), default='')
-    # 已删除的公益服机制遗留列（代码不再读写，删列另行收口）
-    access_mode = Column(String(10), default='paid')
-    access_note = Column(String(500), default='')
     # 该服下载策略：None=跟随全局 / True=允许 / False=禁止
     allow_download = Column(Boolean, nullable=True, default=None)
     is_active = Column(Boolean, default=True)
@@ -710,30 +707,10 @@ class Announcement(Base):
 
 # ==================== 经济系统（积分/兑换码） ====================
 
-class EmbyViewUnlock(Base):
-    """Emby 账号/线路查看权限存量行（公益服遗留表）
-
-    公益服历史上靠花积分购买在这里留行，另有资格码打包赠送与管理员
-    赠送两条写口。公益服删除后查看权限只认有效订阅/团队资格
-    （见 subscriptions.view_grant），本表的写口（白名单码打包、whois
-    赠送）与读口均已下线，代码不再读写；表与列暂留，
-    待部署亲验后另行 DROP。
-    """
-    __tablename__ = 'emby_view_unlocks'
-
-    __table_args__ = (
-        UniqueConstraint('user_id', 'realm_id', name='uq_emby_view_unlock_user_realm'),
-        Index('idx_emby_view_unlock_user', 'user_id'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
-    realm_id = Column(Integer, ForeignKey('server_realms.id'), nullable=False)
-    unlocked_at = Column(DateTime, default=datetime.now)
-    expires_at = Column(DateTime, nullable=True)  # NULL = 永久有效
-    points_spent = Column(Integer, default=0)  # 本次解锁花费的积分
-
-    user = relationship("WebUser")
+# Emby 查看权限存量行（emby_view_unlocks）模型定义已于 2026-11-19
+# 删除：公益服删除后查看权限只认有效订阅/团队资格（见
+# subscriptions.view_grant），本表写口与读口均已下线、全仓零消费方；
+# 生产表 DROP 由后续收尾执行（测试需存量行时改走原生 SQL 建行）。
 
 
 class ExchangeDiscountCredit(Base):

@@ -20,7 +20,7 @@ os.environ.setdefault("SECRET_KEY", "test-open-reg-key-32chars-minimum")
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from starlette.requests import Request
@@ -50,6 +50,24 @@ def db():
         session.close()
         engine.dispose()
         store.invalidate()
+
+
+# 遗留表 emby_view_unlocks 的模型定义已删（2026-11-19）：原生 SQL 计数，
+# 断言口径不变（注册不发查看行，查到即失败）。
+_LEGACY_UNLOCK_DDL = (
+    "CREATE TABLE IF NOT EXISTS emby_view_unlocks ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "user_id INTEGER NOT NULL, realm_id INTEGER NOT NULL, "
+    "unlocked_at DATETIME, expires_at DATETIME, "
+    "points_spent INTEGER DEFAULT 0, UNIQUE (user_id, realm_id))")
+
+
+def _legacy_unlock_count(db, user_id):
+    db.execute(text(_LEGACY_UNLOCK_DDL))
+    return db.execute(
+        text("SELECT COUNT(*) FROM emby_view_unlocks"
+             " WHERE user_id = :user_id"),
+        {"user_id": user_id}).scalar()
 
 
 def _scope(ip="1.2.3.4"):
@@ -152,8 +170,7 @@ def test_register_grants_no_view_unlock_even_when_gift_switch_on(db):
     _register(db, "newbie")
     user = _user(db, "newbie")
     assert user is not None
-    assert db.query(models.EmbyViewUnlock).filter_by(
-        user_id=user.id).count() == 0
+    assert _legacy_unlock_count(db, user.id) == 0
     assert db.query(models.UserSubscription).filter_by(
         user_id=user.id).count() == 0
 

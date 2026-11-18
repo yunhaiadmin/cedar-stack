@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, ".")
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from backend.database import Base
@@ -31,8 +31,15 @@ def db():
     # 播放会话/条目表（排行等查询需要）
     em.PlaybackSession.__table__.create(engine, checkfirst=True)
     em.MediaItem.__table__.create(engine, checkfirst=True)
-    # /start 详细版 dashboard：网盘绑定
-    models.EmbyViewUnlock.__table__.create(engine, checkfirst=True)
+    # /start 详细版 dashboard：网盘绑定。遗留查看行表 emby_view_unlocks
+    # 的模型定义已删（2026-11-19），原生 SQL 建表。
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS emby_view_unlocks ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "user_id INTEGER NOT NULL, realm_id INTEGER NOT NULL, "
+            "unlocked_at DATETIME, expires_at DATETIME, "
+            "points_spent INTEGER DEFAULT 0, UNIQUE (user_id, realm_id))"))
     em.UserStorageBinding.__table__.create(engine, checkfirst=True)
     Session = sessionmaker(bind=engine)
     session = Session()

@@ -16,7 +16,7 @@ os.environ.setdefault("REDIS_ENABLED", "false")
 import pytest
 from datetime import datetime
 from fastapi import HTTPException
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -61,9 +61,21 @@ def _make_code(db, code_str, **kw):
     return c
 
 
+# 遗留表 emby_view_unlocks 的模型定义已删（2026-11-19）：原生 SQL 查行，
+# 断言口径不变（核销不建查看行，查到即失败）。
+_LEGACY_UNLOCK_DDL = (
+    "CREATE TABLE IF NOT EXISTS emby_view_unlocks ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "user_id INTEGER NOT NULL, realm_id INTEGER NOT NULL, "
+    "unlocked_at DATETIME, expires_at DATETIME, "
+    "points_spent INTEGER DEFAULT 0, UNIQUE (user_id, realm_id))")
+
+
 def _unlock(db, user_id):
-    return db.query(models.EmbyViewUnlock).filter(
-        models.EmbyViewUnlock.user_id == user_id).first()
+    db.execute(text(_LEGACY_UNLOCK_DDL))
+    return db.execute(
+        text("SELECT id FROM emby_view_unlocks WHERE user_id = :user_id"),
+        {"user_id": user_id}).first()
 
 
 # ==================== 核销：资格码已下线 ====================
