@@ -75,14 +75,13 @@ def _scoped_realm_id(db: Session, realm_id: Optional[int] = None) -> Optional[in
 
 
 def view_grant(db: Session, user: models.WebUser,
-               realm_id: Optional[int] = None) -> tuple[bool, Optional[models.EmbyViewUnlock]]:
+               realm_id: Optional[int] = None) -> bool:
     """用户有没有权限查看某服的 Emby 账号 / 线路（**全站单一事实来源**）
 
     规则：有效订阅即权限，团队套餐是与个人订阅并列的资格来源
     （active 且未过期的团队，团长与成员凭团队套餐可查看，判定
     单口 ``teams.play_eligible_team``，与 ``can_play`` 同一口径；团队
-    无服维度，不做服过滤）。第二项返回值（存量查看行）为历史签名
-    保留，恒为 None——公益服删除后 ``EmbyViewUnlock`` 不再参与判定。
+    无服维度，不做服过滤）。
     判定一律按 ``end_date`` **现算**，不信行上的 status 字段
     （它不会随时间自动翻转，见本模块开头）。
 
@@ -92,10 +91,10 @@ def view_grant(db: Session, user: models.WebUser,
     """
     target = _scoped_realm_id(db, realm_id)
     if has_active_subscription(db, user.id, target):  # r49: 用 _scoped 口径（此前 resolve_realm_id；现有调用方下等价）
-        return True, None
+        return True
     from backend import teams as teams_service
 
-    return teams_service.play_eligible_team(db, user.id) is not None, None
+    return teams_service.play_eligible_team(db, user.id) is not None
 
 CONFIG_REQUIRED = "subscription_required"
 CONFIG_MESSAGE = "subscription_gate_message"

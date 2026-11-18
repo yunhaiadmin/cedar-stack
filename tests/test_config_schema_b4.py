@@ -72,14 +72,6 @@ class TestFamilySchemas:
         with pytest.raises(ConfigValueError):
             normalize("register_ratelimit_window", s["register_ratelimit_window"], 59)
 
-    def test_view_unlock_schema(self):
-        # emby_view_unlock_points 已随货币于 2026-11-13 下线（查看解锁只剩天数）
-        s = config_schema.VIEW_UNLOCK_CONFIG_SCHEMA
-        assert "emby_view_unlock_points" not in s
-        assert normalize("emby_view_unlock_days", s["emby_view_unlock_days"], 0) == "0"
-        with pytest.raises(ConfigValueError):
-            normalize("emby_view_unlock_days", s["emby_view_unlock_days"], -1)
-
     def test_welfare_gap_keys_registered(self):
         # 4-2 补登记：之前漏掉的 3 个 lottery 键
         s = config_schema.WELFARE_CONFIG_SCHEMA

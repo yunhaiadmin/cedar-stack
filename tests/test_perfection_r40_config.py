@@ -3,6 +3,8 @@
 F1: emby_view_unlock_* 两键此前有后端读写接口但管理后台无入口
     （本轮在 WelfarePoints.vue 补「查看权限解锁」卡片；后端接口行为不变，
     此处锁定 view_unlock 家族注册与接口读写回环）。
+    【后续】view_unlock 家族与接口已随公益服删除整套下线，
+    test_view_unlock_family_removed 改为锁定「已摘除」。
 F2: max_pending_orders_per_user 已在白名单+schema，前端 Settings.vue 补字段
     （此处锁定后端读写通道完整）。
 F3: TG 一键登录 build_login_url 改读正统键 site_url（历史键 site_base_url
@@ -136,11 +138,10 @@ def test_code_default_plan_id_empty_means_unset(db):
 
 # ---------- F1/F2：后端通道完整（前端入口由 type-check 覆盖） ----------
 
-def test_view_unlock_family_registered(db):
-    assert "view_unlock" in config_service.SCHEMAS
-    # emby_view_unlock_points 已随货币于 2026-11-13 下线
-    assert "emby_view_unlock_points" not in config_schema.VIEW_UNLOCK_CONFIG_SCHEMA
-    assert "emby_view_unlock_days" in config_schema.VIEW_UNLOCK_CONFIG_SCHEMA
+def test_view_unlock_family_removed(db):
+    # view_unlock 家族已随公益服删除整套下线（F1 的注册锁定随之翻转）
+    assert "view_unlock" not in config_service.SCHEMAS
+    assert not hasattr(config_schema, "VIEW_UNLOCK_CONFIG_SCHEMA")
 
 
 def test_max_pending_orders_roundtrip(db):

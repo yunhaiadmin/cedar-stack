@@ -382,8 +382,8 @@ def test_view_grant_matches_card_verdict(db):
     user = _user(db)
     _sub(db, user, paid, _plan(db, paid))
 
-    assert subscriptions.view_grant(db, user, paid.id)[0] is True
-    assert subscriptions.view_grant(db, user, other.id)[0] is False
+    assert subscriptions.view_grant(db, user, paid.id) is True
+    assert subscriptions.view_grant(db, user, other.id) is False
     assert _card(db, user, paid.id)["view_granted"] is True
     assert _card(db, user, other.id)["view_granted"] is False
 

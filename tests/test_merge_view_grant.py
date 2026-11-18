@@ -65,34 +65,28 @@ NOW = datetime.now()
 def test_without_subscription_or_row_denied(db):
     realm = _realm(db)
     u = _user(db)
-    granted, unlock = subscriptions.view_grant(db, u, realm.id)
-    assert granted is False
-    assert unlock is None
+    assert subscriptions.view_grant(db, u, realm.id) is False
 
 
 def test_valid_unlock_row_no_longer_grants(db):
     realm = _realm(db)
     u = _user(db)
     _unlock(db, u, realm, NOW + timedelta(days=5))
-    granted, unlock = subscriptions.view_grant(db, u, realm.id)
-    assert granted is False
-    assert unlock is None
+    assert subscriptions.view_grant(db, u, realm.id) is False
 
 
 def test_permanent_unlock_row_no_longer_grants(db):
     realm = _realm(db)
     u = _user(db)
     _unlock(db, u, realm, None)
-    granted, _ = subscriptions.view_grant(db, u, realm.id)
-    assert granted is False
+    assert subscriptions.view_grant(db, u, realm.id) is False
 
 
 def test_expired_unlock_row_denied(db):
     realm = _realm(db)
     u = _user(db)
     _unlock(db, u, realm, NOW - timedelta(days=1))
-    granted, _ = subscriptions.view_grant(db, u, realm.id)
-    assert granted is False
+    assert subscriptions.view_grant(db, u, realm.id) is False
 
 
 # ---------------------------------------------------------------------------
@@ -111,16 +105,13 @@ def test_subscription_still_grants(db):
         start_date=NOW - timedelta(days=1),
         end_date=NOW + timedelta(days=29), status="active"))
     db.commit()
-    granted, unlock = subscriptions.view_grant(db, u, realm.id)
-    assert granted is True
-    assert unlock is None
+    assert subscriptions.view_grant(db, u, realm.id) is True
 
 
 def test_without_subscription_denied(db):
     realm = _realm(db)
     u = _user(db)
-    granted, _ = subscriptions.view_grant(db, u, realm.id)
-    assert granted is False
+    assert subscriptions.view_grant(db, u, realm.id) is False
 
 
 # ---------------------------------------------------------------------------

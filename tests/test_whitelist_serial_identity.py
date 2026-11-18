@@ -70,12 +70,8 @@ def _redeem(db, user, code_str):
 
 
 def _make_permanent(db, user):
-    """不走核销、直接把三处永久摆好（模拟存量白名单用户）。"""
-    user.is_welfare = True
-    user.welfare_expires_at = None
-    db.add(models.EmbyViewUnlock(
-        user_id=user.id, realm_id=1, unlocked_at=datetime.now(),
-        expires_at=None, points_spent=0))
+    """不走核销、直接把永久摆好（模拟存量白名单用户；现行口径只剩
+    订阅长期一处，资格/查看行两处均已下线）。"""
     plan = db.query(models.SubscriptionPlan).first()
     if plan is None:
         plan = models.SubscriptionPlan(name="t", price=0, duration_days=30)

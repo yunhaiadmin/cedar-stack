@@ -5,7 +5,7 @@
 - 存量资格码核销直接拒绝、不烧码（与能量码同口径），不发资格、不打包
   查看行；生成端同样拒绝（400）。
 - 白名单码与 reward_type 无关：welfare 型白名单码仍按 code_type 走
-  长期有效（订阅＋查看行永久），只是不再含公益资格一处。
+  长期有效（长期订阅，查看权限由订阅派生），只是不再含公益资格一处。
 - 其余奖励类型（subscription/points）行为不变。
 """
 import os
@@ -14,12 +14,13 @@ os.environ.setdefault("DATABASE_TYPE", "sqlite")
 os.environ.setdefault("REDIS_ENABLED", "false")
 
 import pytest
+from datetime import datetime
 from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend import codes, models
+from backend import codes, models, subscriptions
 from backend.api import admin_ops as ops
 
 
@@ -84,7 +85,8 @@ def test_welfare_code_rejected_without_burning(db):
 
 def test_whitelist_code_with_welfare_flavor_still_permanent(db):
     """白名单码语义只看 code_type：welfare 型白名单码照常置长期有效
-    （订阅＋查看行永久），但不再发公益资格。"""
+    （长期订阅）；查看权限现由订阅派生（view_grant），不再建
+    EmbyViewUnlock 行，也不发公益资格。"""
     user = _make_user(db, "bob")
     _make_code(db, "VIP-AAAA", code_type=codes.CODE_TYPE_WHITELIST)
     result = codes.redeem_code(db, user, "VIP-AAAA")
@@ -93,9 +95,11 @@ def test_whitelist_code_with_welfare_flavor_still_permanent(db):
     sub = db.query(models.UserSubscription).filter(
         models.UserSubscription.user_id == user.id).first()
     assert sub is not None
-    unlock = _unlock(db, user.id)
-    assert unlock is not None
-    assert unlock.expires_at is None
+    assert sub.status == "active"
+    assert sub.end_date is not None
+    assert (sub.end_date - datetime.now()).days > 30000
+    assert subscriptions.view_grant(db, user) is True
+    assert _unlock(db, user.id) is None
     db.refresh(user)
     assert not hasattr(user, "is_welfare")
 

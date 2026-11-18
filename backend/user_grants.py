@@ -165,7 +165,7 @@ def realm_card(db: Session, user: models.WebUser,
     grant, detail = _grant_of(db, user, realm, now)
     sub = detail.get("subscription") or {}
     can_play = subscriptions.can_play(db, user, realm.id)
-    view_granted, _unlock = subscriptions.view_grant(db, user, realm.id)
+    view_granted = subscriptions.view_grant(db, user, realm.id)
     expiring = _expiringSoon(grant, detail)
 
     if expiring:

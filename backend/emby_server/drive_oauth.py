@@ -217,8 +217,7 @@ def user_holds_view_credential(db: Session, user_id: int) -> bool:
     )
     if user is None:
         return False
-    granted, _unlock = subscriptions.view_grant(db, user, None)
-    return bool(granted)
+    return bool(subscriptions.view_grant(db, user, None))
 
 
 def oauth2_entry_status(db: Session, user_id: int) -> dict:

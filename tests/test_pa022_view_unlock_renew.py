@@ -6,7 +6,7 @@
 公益服删除后口径统一：查看权限来自有效订阅或团队资格，从不单独
 购买——unlock-view 对任何存在的服一律 400、不落行、存量行原样
 不动（过期行不被续开、有效行不被改动）；服不存在 404。
-价格/天数配置键（emby_view_unlock_points/days）保留可查，与本口无关。
+（价格/天数配置键与 view_unlock 配置家族已随后整套删除，与本口无关。）
 """
 
 import os
@@ -39,8 +39,6 @@ def db():
 
 
 def _setup(db, row_expires="absent"):
-    db.add(models.SystemConfig(key="emby_view_unlock_points", value="200"))
-    db.add(models.SystemConfig(key="emby_view_unlock_days", value="30"))
     realm = models.ServerRealm(name="主服", slug="pa022main")
     db.add(realm)
     u = models.WebUser(username="pa022user", password_hash="x",

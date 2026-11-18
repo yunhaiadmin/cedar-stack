@@ -276,11 +276,6 @@ LOGIN_LOCKOUT_CONFIG_SCHEMA: dict[str, tuple] = {
     "login_lockout_lock_sec": ("int", 60, _BIG),
 }
 
-# 查看解锁（portal.admin_view_unlock_put；days≥0，0=永久；积分价格已随货币下线）
-VIEW_UNLOCK_CONFIG_SCHEMA: dict[str, tuple] = {
-    "emby_view_unlock_days": ("int", 0, _BIG),
-}
-
 # Emby 服务器显示名（backend.servers.server_display_name 唯一解析口径）：
 # 客户端 System/Info 的 ServerName 与用户端账号卡 server_name 都读它。
 # 空 = 回落 env EMBY_SERVER_NAME，再回落内置默认；只改显示名，
@@ -288,7 +283,6 @@ VIEW_UNLOCK_CONFIG_SCHEMA: dict[str, tuple] = {
 EMBY_DISPLAY_CONFIG_SCHEMA: dict[str, tuple] = {
     "emby_server_name": ("str",),
 }
-
 # 防盗链（r36：play_sign.write_config / write_allowed_referers 迁移到
 # config_service 统一编排层。用户 2026-10-17 18:29 拍板：防盗链保留，
 # 此前搁置的 play_sign config_service 迁移恢复排期。）

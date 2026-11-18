@@ -11,19 +11,15 @@ callbacks 的 whois:* 回调，每次点击都重新校验点击者 is_staff。
 - bind：绑定详情（各 provider 的状态与最近验证时间；绑定表无到期
   字段，不编造）；
 - cred：公益资格页已随福利服役族于 2026-11-14 删除（按钮与页一并摘除）；
-- gift：赠送菜单（预设档位按钮，无自由输入）；
 - ask/do：写操作二次确认——ask 只出确认页（写明对谁、做什么、
-  多少），do 才真正执行；执行后回 main 页并回显最新状态。赠送类
-  do 回调带一次性 nonce（PA-058）：ask 生成、执行后失效，同一 ask
-  双击只发放一次，第二次回已执行提示；封禁/解封因 changed 标志
-  本就幂等，不走 nonce。
+  多少），do 才真正执行；执行后回 main 页并回显最新状态。封禁/解封
+  因 changed 标志本就幂等，不走 nonce。
 
-写操作只许三类（用户 2026-11-02 点选），全部复用现行服务、不另
+写操作只许两类（用户 2026-11-02 点选），全部复用现行服务、不另
 写一套：封禁/解封走 backend.user_lifecycle.set_user_active（与网站
-管理端同一实现，停用同事务吊销 Emby 令牌＋抬 token_version）；
-赠凭证走
-backend.codes._grant_bundled_view_unlock（points_spent=0 赠送口径）。
-（赠资格两档已随公益资格发放删除摘除，2026-11-14：其依赖的
+管理端同一实现，停用同事务吊销 Emby 令牌＋抬 token_version）。
+（赠凭证已随公益服删除摘除：其依赖的查看行写口已下线。赠资格两档
+已随公益资格发放删除摘除，2026-11-14：其依赖的
 portal.grant_welfare 已删。赠能量三档已随积分删除摘除，2026-11-13。）
 每次写操作另写一条治理审计（governance.record_governance_audit）。
 不做删号。
@@ -32,10 +28,7 @@ from __future__ import annotations
 
 import html
 import logging
-import secrets
-from datetime import datetime
 
-from backend import models
 from backend.tg_bot import layout, role_gate, whois
 
 logger = logging.getLogger(__name__)
@@ -44,36 +37,7 @@ logger = logging.getLogger(__name__)
 OPS: dict[str, tuple[str, str]] = {
     "ban": ("封禁账号", "停用账号并吊销其全部 Emby 令牌"),
     "unban": ("解封账号", "恢复账号启用状态"),
-    "gv30": ("赠送查看权", "+30 天"),
 }
-
-_GIFT_OPS = ("gv30",)
-
-#: 赠送确认一次性 nonce（PA-058）：ask 生成、do 执行后失效。
-#: 进程内存放（poller 单进程；进程重启后旧确认页失效，须重新打开
-#: 确认页）。已执行集合只记最近 1000 条防无界增长。
-_DO_NONCES: dict[str, tuple[int, str]] = {}
-_DONE_NONCES: set[str] = set()
-_MAX_DONE_NONCES = 1000
-
-
-def _consume_gift_nonce(target_id: int, op: str,
-                        nonce: str | None) -> str:
-    """消费赠送确认 nonce：ok＝首次有效、done＝已执行过、expired＝失效/不匹配。"""
-    if nonce is None:
-        return "expired"
-    pending = _DO_NONCES.get(nonce)
-    if pending is not None:
-        if pending != (target_id, op):
-            return "expired"
-        del _DO_NONCES[nonce]
-        _DONE_NONCES.add(nonce)
-        while len(_DONE_NONCES) > _MAX_DONE_NONCES:
-            _DONE_NONCES.remove(next(iter(_DONE_NONCES)))
-        return "ok"
-    if nonce in _DONE_NONCES:
-        return "done"
-    return "expired"
 
 
 def _esc(value) -> str:
@@ -94,7 +58,6 @@ def main_markup(user) -> dict:
         ],
         [
             ban_btn,
-            {"text": "🎁 赠送", "callback_data": f"whois:gift:{uid}"},
         ],
     ]}
 
@@ -143,25 +106,6 @@ def bindings_page(db, user) -> tuple[str, dict]:
     return text, _back_markup(user)
 
 
-def gift_page(db, user) -> tuple[str, dict]:
-    """赠送菜单页：两类赠送的预设档位按钮（点档位先进确认页）。"""
-    uid = user.id
-    text = layout.card(
-        layout.title("赠送", f"{user.username}（#{user.id}）"),
-        [
-            layout.row("🎁", "赠送对象", f"<b>{_esc(user.username)}</b>（#{uid}）"),
-            layout.row("👇", "选择档位", "点下方按钮选档位，下一步还要确认"),
-        ],
-    )
-    markup = {"inline_keyboard": [
-        [
-            {"text": "🎟️ 凭证 +30 天", "callback_data": f"whois:ask:{uid}:gv30"},
-        ],
-        [{"text": "⬅️ 返回面板", "callback_data": f"whois:main:{uid}"}],
-    ]}
-    return text, markup
-
-
 def confirm_page(db, user, op: str) -> tuple[str, dict]:
     """写操作确认页：写明对谁、做什么、多少；确认按钮才执行。"""
     action_name, detail = OPS[op]
@@ -175,16 +119,9 @@ def confirm_page(db, user, op: str) -> tuple[str, dict]:
             layout.row("⚠️", "提示说明", "点「确认执行」才会真正生效"),
         ],
     )
-    back_page = "gift" if op in _GIFT_OPS else "main"
-    nonce = ""
-    if op in _GIFT_OPS:
-        # PA-058：赠送确认带一次性 nonce，do 回调形如 whois:do:{uid}:{op}:{nonce}。
-        nonce = secrets.token_hex(8)
-        _DO_NONCES[nonce] = (uid, op)
-    do_data = f"whois:do:{uid}:{op}" + (f":{nonce}" if nonce else "")
     markup = {"inline_keyboard": [
-        [{"text": "✅ 确认执行", "callback_data": do_data}],
-        [{"text": "⬅️ 取消", "callback_data": f"whois:{back_page}:{uid}"}],
+        [{"text": "✅ 确认执行", "callback_data": f"whois:do:{uid}:{op}"}],
+        [{"text": "⬅️ 取消", "callback_data": f"whois:main:{uid}"}],
     ]}
     return text, markup
 
@@ -220,28 +157,20 @@ def _manage_guard_refusal(db, admin, target, op: str) -> str | None:
     return None
 
 
-def execute(db, admin, target, op: str, nonce: str | None = None) -> str:
+def execute(db, admin, target, op: str) -> str:
     """执行已确认的写操作，返回结果回显文案（面板 main 页展示）。
 
     全部走现行服务（见模块头注），本函数只做编排＋审计＋提交。
     封禁/解封前先过管理员目标守卫（PA-056，见 _manage_guard_refusal）。
-    赠送类先消费一次性 nonce（PA-058）：已执行/失效一律不落账。
     """
     from backend.user_lifecycle import set_user_active
 
-    # 角色门（执行层）：只读审计角色一律拒绝写、只许读。落在最前面
-    # （消费赠送 nonce 之前），viewer 的尝试不烧掉一次性确认。
+    # 角色门（执行层）：只读审计角色一律拒绝写、只许读，落在最前面。
     refusal = role_gate.readonly_refusal(admin)
     if refusal:
         return refusal
 
     name = _esc(target.username)
-    if op in _GIFT_OPS:
-        state = _consume_gift_nonce(target.id, op, nonce)
-        if state == "done":
-            return "ℹ️ 该赠送已经执行过，未重复发放。"
-        if state != "ok":
-            return "ℹ️ 该确认已失效，请重新打开确认页再操作。"
     if op == "ban":
         if target.id == admin.id:
             return "⛔ 不能封禁自己的账号（与网站管理端口径一致）。"
@@ -264,39 +193,17 @@ def execute(db, admin, target, op: str, nonce: str | None = None) -> str:
             db.commit()
             return f"✅ 已解封 <b>{name}</b>：账号恢复启用（旧令牌不自动恢复）。"
         return f"ℹ️ <b>{name}</b> 已经是启用状态，未做变更。"
-    if op == "gv30":
-        from backend import codes, realms
-
-        realm_id = realms.legacy_realm_id(db)
-        if realm_id is None:
-            realm_id = realms.ensure_default_realm(db).id
-        codes._grant_bundled_view_unlock(db, target, realm_id, 30)
-        _audit(db, "whois_gift_view", admin, target,
-               {"days": 30, "realm_id": realm_id})
-        db.commit()
-        row = (
-            db.query(models.EmbyViewUnlock)
-            .filter(models.EmbyViewUnlock.user_id == target.id,
-                    models.EmbyViewUnlock.realm_id == realm_id)
-            .first())
-        exp_text = (
-            row.expires_at.strftime("%Y-%m-%d")
-            if row is not None and row.expires_at else "永久")
-        return f"✅ 已给 <b>{name}</b> 赠送查看权 30 天，到期 {exp_text}。"
     return "未知操作。"
 
 
-def render(db, admin, user, page: str, op: str | None = None,
-           nonce: str | None = None) -> tuple[str, dict]:
+def render(db, admin, user, page: str, op: str | None = None) -> tuple[str, dict]:
     """面板翻页统一渲染口（callbacks 调用；admin 已过 is_staff 校验）。"""
     if page == "bind":
         return bindings_page(db, user)
-    if page == "gift":
-        return gift_page(db, user)
     if page == "ask" and op in OPS:
         return confirm_page(db, user, op)
     if page == "do" and op in OPS:
-        note = execute(db, admin, user, op, nonce=nonce)
+        note = execute(db, admin, user, op)
         db.refresh(user)
         return main_page(db, user, note=note)
     return main_page(db, user)

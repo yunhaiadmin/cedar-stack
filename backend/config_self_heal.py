@@ -409,12 +409,6 @@ def collect_system_config_defaults() -> list[tuple[str, str, str]]:
          play_sign.DESCRIPTIONS[play_sign.CONFIG_PLAY_SIGN_TTL_UNKNOWN]),
     ])
 
-    # 8. 公益服查看权限价格
-    from backend.emby_server import portal
-    items.extend([
-        (portal.VIEW_UNLOCK_DAYS_KEY, str(portal.VIEW_UNLOCK_DAYS_DEFAULT), "公益服查看权限有效期（天，0=永久）"),
-    ])
-
     # 去重（key 首次出现为准）
     seen: set[str] = set()
     uniq = []

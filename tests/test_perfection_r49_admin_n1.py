@@ -159,8 +159,7 @@ def test_view_grant_paid_realm_parity(db):
         status="active"))
     db.commit()
 
-    granted, unlock = subscriptions.view_grant(db, user, realm.id)
-    assert granted is True and unlock is None
+    assert subscriptions.view_grant(db, user, realm.id) is True
     # 无订阅用户仍无权限
     bob = _user(db, "bob")
-    assert subscriptions.view_grant(db, bob, realm.id)[0] is False
+    assert subscriptions.view_grant(db, bob, realm.id) is False
