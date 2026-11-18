@@ -1120,6 +1120,34 @@ class PasswordResetToken(Base):
     request_ip = Column(String(64))
 
 
+class EmailVerificationCode(Base):
+    """邮箱 6 位验证码（G-53/G-54，2026-11-18 定案）：改密验恢复邮箱、
+    更换恢复邮箱验新邮箱共用这一套，不另造第二套发码/验码。
+
+    与 password_reset_tokens 同口径：原始码只出现在发给用户的邮件里，
+    库里只存 SHA256（哈希输入带 user_id 与 purpose，防跨用户/跨用途
+    撞码）；10 分钟过期（6 位码口径同 tg_bind 现行实现）、单次使用，
+    重新申请时同用户同用途的旧未用码一律作废。target_email 仅
+    change_email 用途落值，码与目标邮箱绑定，换个邮箱提交即验不过。
+    """
+    __tablename__ = 'email_verification_codes'
+
+    __table_args__ = (
+        Index('idx_emailvc_user_purpose', 'user_id', 'purpose'),
+        Index('idx_emailvc_hash', 'code_hash'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
+    purpose = Column(String(32), nullable=False)  # change_password / change_email
+    target_email = Column(String(255), nullable=True)  # change_email 时的新邮箱
+    code_hash = Column(String(64), nullable=False)  # SHA256 hex，非明文
+    created_at = Column(DateTime, default=datetime.now)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)  # 已消费或被新申请作废时落值
+    request_ip = Column(String(64))
+
+
 class AdminMagicLink(Base):
     """管理员免登录链接（2026-11-17 用户亲点）：站长凭一条专属链接直进管理后台。
 

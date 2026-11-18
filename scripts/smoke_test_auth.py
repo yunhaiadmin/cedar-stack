@@ -136,10 +136,43 @@ r = client.post("/api/user/auth/refresh", json={"refresh_token": "garbage"})
 assert r.status_code == 401
 print("OK invalid refresh rejected (401)")
 
-# ==================== 7. 改密 ====================
+# ==================== 7. 改密（G-53：有恢复邮箱须带邮箱验证码） ====================
+# 本进程内把邮件渠道换成假渠道截码（与单测同口径），走完整带码流程。
+import re as _re  # noqa: E402
+
+from backend.integrations import mail as _integrations_mail  # noqa: E402
+
+
+class _SmokeChannel:
+    def __init__(self):
+        self.sent = []
+
+    def _deliver(self, to_email, title, content):
+        self.sent.append((to_email, title, content))
+        return True, None
+
+
+_smoke_channel = _SmokeChannel()
+_integrations_mail.build_channel = lambda db: _smoke_channel
+
+r = client.post("/api/user/auth/change-password/send-code",
+                headers={"Authorization": f"Bearer {new_access}"})
+assert r.status_code == 200, (r.status_code, r.text)
+assert r.json()["verification"] == "email_code", r.json()
+assert _smoke_channel.sent and _smoke_channel.sent[-1][0] == "newuser@example.com"
+_code = _re.search(r"(?<!\d)(\d{6})(?!\d)", _smoke_channel.sent[-1][2]).group(1)
+
+# 不带码改密应被拒
 r = client.post("/api/user/auth/change-password",
                 headers={"Authorization": f"Bearer {new_access}"},
                 json={"old_password": "secret123", "new_password": "newpass456"})
+assert r.status_code == 400, (r.status_code, r.text)
+print("OK change-password requires email code")
+
+r = client.post("/api/user/auth/change-password",
+                headers={"Authorization": f"Bearer {new_access}"},
+                json={"old_password": "secret123", "new_password": "newpass456",
+                      "email_code": _code})
 assert r.status_code == 200, (r.status_code, r.text)
 print("OK change-password")
 

@@ -265,8 +265,26 @@ export const authApi = {
 
   logout: () => api.post('/api/user/auth/logout'),
 
-  changePassword: (data: { old_password: string; new_password: string }) =>
+  changePassword: (data: { old_password: string; new_password: string; email_code?: string }) =>
     api.post('/api/user/auth/change-password', data),
+
+  /** G-53 改密发码：向恢复邮箱发 6 位验证码；无邮箱账号回 400 明示 password_only */
+  sendChangePasswordCode: () =>
+    api.post<never, { success: boolean; verification: string; email_masked: string; expires_in: number }>(
+      '/api/user/auth/change-password/send-code',
+    ),
+
+  /** G-54 换邮箱发码：先验当前密码，再向新邮箱发 6 位验证码 */
+  sendChangeEmailCode: (data: { current_password: string; new_email: string }) =>
+    api.post<never, { success: boolean; email_masked: string; expires_in: number }>(
+      '/api/user/auth/change-email/send-code', data,
+    ),
+
+  /** G-54 更换恢复邮箱：当前密码＋新邮箱验证码确认，后端同时通知旧邮箱 */
+  changeEmail: (data: { current_password: string; new_email: string; code: string }) =>
+    api.post<never, { success: boolean; email: string; email_masked: string }>(
+      '/api/user/auth/change-email', data,
+    ),
 
   /** 本人登录记录（只读，只查自己，分页倒序） */
   getLoginHistory: (params?: { limit?: number; offset?: number }) =>

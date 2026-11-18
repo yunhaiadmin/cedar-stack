@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from backend import account_security as sec
 from backend import models
-from backend.api.emby_portal import get_current_user_jwt
+from backend.api.emby_portal import get_current_user_jwt, mask_email
 from backend.database import get_db
 from backend.ratelimit import check_rate_limit
 from backend.security import verify_password
@@ -100,6 +100,8 @@ def security_overview(
             "items": [_api_key_out(r) for r in keys],
         },
         "has_recovery_email": bool(current_user.email),
+        # G-54：恢复邮箱行脱敏展示（全址只在本人会话的 /auth/me 里给本人）
+        "recovery_email_masked": mask_email(current_user.email),
     }
 
 
