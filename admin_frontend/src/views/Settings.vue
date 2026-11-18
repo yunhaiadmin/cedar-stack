@@ -3439,8 +3439,6 @@ watch(
   border-color: var(--au-danger);
   outline: 3px solid var(--au-danger-soft);
 }
-.danger-guard { border-color: var(--au-success-border); }
-.danger-guard-meta { margin: 6px 0 0; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); line-height: 1.6; }
 .danger-effect {
   margin: 0;
   font-size: var(--uhd-fs-aux-sm);
@@ -3448,15 +3446,6 @@ watch(
   color: var(--au-text-2);
 }
 .danger-effect strong { color: var(--au-text); font-weight: 600; }
-/* 危险区隔离带：整份清空这类动作单独隔离，不跟轻量清理同排（Batch B） */
-.danger-isolate {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-  padding: 12px 14px; margin-top: 4px;
-  border: 1px solid var(--danger-border); border-left: 3px solid var(--danger-border);
-  border-radius: var(--au-r-md); background: var(--danger-bg);
-}
-.danger-isolate-text strong { display: block; font-size: var(--uhd-fs-aux); color: var(--danger); margin-bottom: 4px; }
-.danger-isolate-text span { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-2); line-height: 1.7; }
 .purge-input { width: 120px; }
 
 /* ==================== 能力卡片 ==================== */
@@ -3556,7 +3545,6 @@ watch(
   .cap-flow .cap-card { margin-bottom: 10px; }
   .cap-drawer-footer { justify-content: stretch; }
   .cap-drawer-footer :deep(.el-button) { flex: 1; margin-left: 0; }
-  .danger-guard :deep(.au-section__head) { flex-wrap: wrap; }
 }
 
 </style>
