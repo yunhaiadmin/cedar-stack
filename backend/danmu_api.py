@@ -24,9 +24,14 @@ Id 取弹幕。契约要点：
   额度的套餐不算耗尽，与 traffic_gate 不拦同口径）。不达标按
   协议回空文档（播放器视为「没弹幕」）；弹幕请求不扣流量——
   本模块不写任何计量表（校验点：serve_item_danmaku 全程只读）。
-- 内容来源：站内弹幕存量（danmaku_comments，按条目匹配）；
-  外部弹幕源只留适配接口（fetch_external_danmaku），开关
-  danmu_api_external_enabled 默认关，本期不接真外部源。
+- 内容来源：站内弹幕存量（danmaku_comments，按条目匹配）与
+  外部弹幕源合并下发。外部源（2026-11-19 接入）是 LogVar 弹幕
+  API（弹弹play 兼容协议）：开关 danmu_api_external_enabled
+  默认关，上游 base 地址走 danmu_api_external_url（默认空 =
+  未配置，只存后台、用户不可见）；取弹幕链路是「文件名 match
+  → episodeId → 整集 comment」，结果归一后与站内弹幕按时间轴
+  合并。上游超时/报错/无匹配一律回落站内结果，错误不透传；
+  结果带短 TTL 进程缓存，避免每次播放都打上游。
 """
 
 from __future__ import annotations
@@ -35,9 +40,13 @@ import json
 import logging
 import re
 import secrets
+import threading
+import time
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 from xml.sax.saxutils import escape as xml_escape
 
+import httpx
 from sqlalchemy.orm import Session
 
 from backend import models as core
@@ -50,6 +59,7 @@ logger = logging.getLogger(__name__)
 
 KEY_LINES = "danmu_api_lines"
 KEY_EXTERNAL_ENABLED = "danmu_api_external_enabled"
+KEY_EXTERNAL_URL = "danmu_api_external_url"
 
 TOKEN_VALIDITY_DAYS = 365
 _TOKEN_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -235,15 +245,256 @@ def external_enabled(db: Session) -> bool:
     return store.get_value(db, KEY_EXTERNAL_ENABLED, "false") == "true"
 
 
-def fetch_external_danmaku(db: Session, item_id: int) -> list[dict]:
-    """外部弹幕源适配接口：返回 [{position_seconds, text}]。
+def validate_external_url(raw) -> str:
+    """外部源地址形状校验（管理端保存侧）：空 = 未配置（合法）；
+    非空必须是 http(s) 绝对地址（可带 token 路径），归一去尾斜杠。"""
+    value = str(raw or "").strip().rstrip("/")
+    if not value:
+        return ""
+    parsed = urlparse(value)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError("外部弹幕源地址必须是 http(s) 绝对地址")
+    if parsed.username or parsed.password:
+        raise ValueError("外部弹幕源地址不许带账号密码")
+    return value
 
-    本期不接真外部源：开关关或未接源时一律空。后续接源时在此
-    实现（按条目向外部源取弹幕并归一到同一形态），下发口不变。
+
+def external_url(db: Session) -> str:
+    """当前生效的外部源 base 地址；未配置/非法 = ""（读侧不抛错）。
+
+    地址形如 https://<host>/<token 路径>——路径本身即上游凭据，
+    只存后台配置，不进任何用户端响应与日志。
+    """
+    raw = str(store.get_value(db, KEY_EXTERNAL_URL, "") or "").strip()
+    if not raw:
+        return ""
+    try:
+        return validate_external_url(raw)
+    except ValueError:
+        logger.warning("danmu_api_external_url 配置非法，外部源停用")
+        return ""
+
+
+# 外部源短 TTL 进程内缓存：键 = 条目 id，值 = (过期时刻, 归一弹幕)。
+# 命中 10 分钟、无匹配 5 分钟、上游失败 1 分钟——避免每次播放都
+# 打上游，也避免上游故障时每个请求都等一遍超时。
+_EXT_TTL_OK = 600.0
+_EXT_TTL_NOMATCH = 300.0
+_EXT_TTL_FAIL = 60.0
+_EXT_CACHE_MAX = 512
+_ext_cache: dict[int, tuple[float, list[dict]]] = {}
+_ext_cache_lock = threading.Lock()
+
+_UPSTREAM_TIMEOUT = httpx.Timeout(4.0, connect=2.0)
+_MAX_EXTERNAL_ITEMS = 30000
+
+
+def _ext_cache_get(item_id: int) -> list[dict] | None:
+    now = time.monotonic()
+    with _ext_cache_lock:
+        hit = _ext_cache.get(item_id)
+        if hit is None:
+            return None
+        expires, rows = hit
+        if expires <= now:
+            _ext_cache.pop(item_id, None)
+            return None
+        return rows
+
+
+def _ext_cache_put(item_id: int, rows: list[dict], ttl: float) -> None:
+    with _ext_cache_lock:
+        if len(_ext_cache) >= _EXT_CACHE_MAX:
+            _ext_cache.clear()
+        _ext_cache[item_id] = (time.monotonic() + ttl, rows)
+
+
+def _upstream_json(op: str, method: str, url: str,
+                   json_body: dict | None = None) -> dict | None:
+    """打上游一发：任何失败（超时/连接/HTTP 非 200/坏 JSON）回 None。
+
+    日志只记操作名与异常类型：上游地址含 token 路径，不落日志。
+    """
+    try:
+        # trust_env=False：服务端取上游不看部署环境代理变量（no_proxy
+        # 里带 [::1] 这类写法会让 httpx 解析代理表时直接抛 InvalidURL，
+        # 2026-11-19 本机实测）；直连口径与站内其它出网调用一致。
+        with httpx.Client(timeout=_UPSTREAM_TIMEOUT,
+                          trust_env=False) as client:
+            resp = client.request(method, url, json=json_body)
+        if resp.status_code != 200:
+            logger.warning("danmu external %s: http %s",
+                           op, resp.status_code)
+            return None
+        data = resp.json()
+    except Exception as exc:  # 上游不可控：一切异常都回落，不许透传
+        logger.warning("danmu external %s failed: %s",
+                       op, type(exc).__name__)
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _match_episode(base: str, item: em.MediaItem,
+                   filename: str) -> tuple[tuple[int, float] | None, bool]:
+    """按文件名 POST /api/v2/match 匹配：回 ((episodeId, shift 秒), False)。
+
+    未命中回 (None, False)；传输层失败回 (None, True)——两者缓存
+    TTL 不同（失败短缓存，防上游故障期反复等超时）。
+    """
+    body = {
+        "fileName": filename,
+        "fileHash": "",
+        "fileSize": int(getattr(item, "size", 0) or 0),
+        "videoDuration": int(
+            (getattr(item, "duration_ticks", 0) or 0) // 10_000_000),
+        "matchMode": "fileNameOnly",
+    }
+    data = _upstream_json("match", "POST", f"{base}/api/v2/match",
+                          json_body=body)
+    if data is None:
+        return None, True
+    if not data.get("success") or not data.get("isMatched"):
+        return None, False
+    matches = data.get("matches") or []
+    if not matches or not isinstance(matches[0], dict):
+        return None, False
+    try:
+        episode_id = int(matches[0]["episodeId"])
+        shift = float(matches[0].get("shift") or 0.0)
+    except (KeyError, TypeError, ValueError):
+        return None, False
+    return (episode_id, shift), False
+
+
+def _fetch_comments(base: str, episode_id: int,
+                    shift: float) -> list[dict] | None:
+    """GET /api/v2/comment/<episodeId> 取整集弹幕并归一；失败回 None。
+
+    上游每条 {p: "时间,模式,颜色,[来源]", m: 文本, t: 时间}，映射
+    到下发形态 {position_seconds, text, mode, color}：时间加 shift
+    偏移并钳到 >= 0；模式（1 滚动/4 底部/5 顶部）与十进制颜色
+    原样带入，解析不出回退滚动/白色；cid、来源标签、点赞数在
+    bilibili XML 里无对应字段，丢弃。
+    """
+    data = _upstream_json("comment", "GET",
+                          f"{base}/api/v2/comment/{episode_id}")
+    if data is None:
+        return None
+    rows: list[dict] = []
+    for entry in data.get("comments") or []:
+        if not isinstance(entry, dict):
+            continue
+        text = str(entry.get("m") or "").strip()
+        if not text:
+            continue
+        parts = str(entry.get("p") or "").split(",")
+        try:
+            position = float(parts[0])
+        except (IndexError, TypeError, ValueError):
+            try:
+                position = float(entry.get("t"))
+            except (TypeError, ValueError):
+                continue
+        mode, color = 1, 16777215
+        if len(parts) >= 3:
+            try:
+                mode = int(parts[1])
+            except ValueError:
+                pass
+            try:
+                color = int(parts[2])
+            except ValueError:
+                pass
+            if not 0 <= color <= 16777215:
+                color = 16777215
+        rows.append({
+            "position_seconds": max(0.0, position + shift),
+            "text": text,
+            "mode": mode,
+            "color": color,
+        })
+        if len(rows) >= _MAX_EXTERNAL_ITEMS:
+            break
+    rows.sort(key=lambda r: r["position_seconds"])
+    return rows
+
+
+def _candidate_filenames(db: Session, item: em.MediaItem) -> list[str]:
+    """给上游 match 的候选文件名：真实文件基名优先，其次元数据拼名。
+
+    上游按文件名解析标题/季/集：真实基名信息最全；拼名口径——
+    单集用「剧名 SxxExx」、电影用「片名 年份」/「片名」。
+    """
+    names: list[str] = []
+
+    def _push(name: str) -> None:
+        name = (name or "").strip()
+        if name and name not in names:
+            names.append(name)
+
+    file_path = str(getattr(item, "file_path", "") or "")
+    if file_path:
+        _push(file_path.replace("\\", "/").rsplit("/", 1)[-1])
+    item_type = getattr(item, "item_type", "")
+    if item_type == "episode":
+        title = ""
+        series_id = getattr(item, "series_id", None)
+        if series_id:
+            series = (db.query(em.MediaItem)
+                      .filter(em.MediaItem.id == series_id).first())
+            if series is not None:
+                title = series.name or ""
+        title = title or (item.name or "")
+        season = getattr(item, "season_number", None)
+        episode = getattr(item, "episode_number", None)
+        if title and season is not None and episode is not None:
+            _push(f"{title} S{int(season):02d}E{int(episode):02d}.mp4")
+        elif title:
+            _push(f"{title}.mp4")
+    elif item_type == "movie":
+        if item.name and getattr(item, "production_year", None):
+            _push(f"{item.name} {int(item.production_year)}.mp4")
+        if item.name:
+            _push(f"{item.name}.mp4")
+    return names
+
+
+def fetch_external_danmaku(db: Session, item: em.MediaItem) -> list[dict]:
+    """外部弹幕源取弹幕：归一形态 [{position_seconds, text, mode, color}]。
+
+    开关关 / 未配地址 / 条目不是可播类型（movie/episode）→ 空，
+    不打上游。命中流程：候选文件名逐个 match → 首个命中的
+    episodeId 取整集 comment。匹配不到、上游超时/报错一律回空
+    （下发侧回落站内结果）。门槛校验在 api 层 _serve 已先行，
+    不过关根本走不到这里——本函数不重复判门槛。
     """
     if not external_enabled(db):
         return []
-    return []
+    base = external_url(db)
+    if not base:
+        return []
+    if getattr(item, "item_type", "") not in ("movie", "episode"):
+        return []
+    cached = _ext_cache_get(item.id)
+    if cached is not None:
+        return cached
+    matched: tuple[int, float] | None = None
+    failed = False
+    for filename in _candidate_filenames(db, item):
+        matched, failed = _match_episode(base, item, filename)
+        if matched is not None:
+            break
+    if matched is None:
+        _ext_cache_put(item.id, [],
+                       _EXT_TTL_FAIL if failed else _EXT_TTL_NOMATCH)
+        return []
+    episode_id, shift = matched
+    rows = _fetch_comments(base, episode_id, shift)
+    if rows is None:
+        _ext_cache_put(item.id, [], _EXT_TTL_FAIL)
+        return []
+    _ext_cache_put(item.id, rows, _EXT_TTL_OK)
+    return rows
 
 
 def _resolve_item(db: Session, item_ref: str) -> em.MediaItem | None:
@@ -258,28 +509,33 @@ def _resolve_item(db: Session, item_ref: str) -> em.MediaItem | None:
 
 def render_item_danmaku_xml(db: Session, item: em.MediaItem,
                             owner_id: int) -> str:
-    """按条目拼 bilibili 风格弹幕 XML：站内弹幕（时间轴升序）+ 外部源合并。
+    """按条目拼 bilibili 风格弹幕 XML：站内弹幕 + 外部源按时间轴合并。
 
-    <d> 的 p 属性沿用 Danmu 插件约定：时间(秒),模式(1=滚动),
-    字号(25),颜色(十进制白),发送时间戳,弹幕池,发送者,行 id。
+    <d> 的 p 属性沿用 Danmu 插件约定：时间(秒),模式,字号(25),
+    颜色(十进制),发送时间戳,弹幕池,发送者,行 id。站内弹幕恒为
+    滚动/白色；外部源条目带自己的模式与颜色（上游归一时已处理）。
     """
     rows = list_danmaku(db, item.id, 0.0, float(7 * 24 * 3600),
                         _MAX_DELIVERY_ITEMS, current_user_id=owner_id)
-    merged = [(float(r["position_seconds"]), str(r["text"])) for r in rows]
-    for ext in fetch_external_danmaku(db, item.id):
+    merged = [(float(r["position_seconds"]), str(r["text"]), 1, 16777215)
+              for r in rows]
+    for ext in fetch_external_danmaku(db, item):
         try:
-            merged.append((float(ext["position_seconds"]),
-                           str(ext["text"])))
+            color = ext.get("color")
+            merged.append((
+                float(ext["position_seconds"]), str(ext["text"]),
+                int(ext.get("mode") or 1),
+                int(color) if color is not None else 16777215))
         except (KeyError, TypeError, ValueError):
             continue
     merged.sort(key=lambda pair: pair[0])
     if not merged:
         return _EMPTY_XML
     parts = ['<?xml version="1.0" encoding="utf-8"?><i>']
-    for idx, (position, text) in enumerate(merged):
+    for idx, (position, text, mode, color) in enumerate(merged):
         pos = f"{position:.3f}".rstrip("0").rstrip(".")
         parts.append(
-            f'<d p="{pos},1,25,16777215,0,0,danmu,{idx}">'
+            f'<d p="{pos},{mode},25,{color},0,0,danmu,{idx}">'
             f"{xml_escape(text)}</d>")
     parts.append("</i>")
     return "".join(parts)

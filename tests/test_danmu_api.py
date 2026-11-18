@@ -32,14 +32,17 @@ from backend import models as core  # noqa: E402
 from backend.emby_server import models as em  # noqa: E402
 
 GB = 1024 ** 3
-_KEYS = ("danmu_api_lines", "danmu_api_external_enabled")
+_KEYS = ("danmu_api_lines", "danmu_api_external_enabled",
+         "danmu_api_external_url")
 
 
 def _invalidate():
+    from backend import danmu_api as _dm
     from backend import entitlements as ent
     from backend.integrations import store
 
     store.invalidate(*_KEYS)
+    _dm._ext_cache.clear()
     ent._USER_PLAN_CACHE.clear()
     ent._PLAN_SNAPSHOT_CACHE.clear()
 
@@ -442,8 +445,13 @@ def test_delivery_gate_traffic_exhausted_returns_empty(client, scene):
 def test_external_adapter_default_off(db):
     from backend import danmu_api as core_api
 
+    item = SimpleNamespace(id=1, item_type="movie", name="电影Y",
+                           file_path=None, series_id=None,
+                           season_number=None, episode_number=None,
+                           production_year=None, size=0,
+                           duration_ticks=0)
     assert core_api.external_enabled(db) is False
-    assert core_api.fetch_external_danmaku(db, item_id=1) == []
+    assert core_api.fetch_external_danmaku(db, item) == []
 
 
 # ------------------------------------------------------------ 管理端线路配置
@@ -487,3 +495,336 @@ def test_admin_lines_roundtrip_and_validation(db):
                 "host": "https://dm.example.com/path"}]),
             _request(), admin, db)
     assert exc.value.status_code == 400
+
+
+# ------------------------------------------------------------ 外部弹幕源
+
+
+class _FakeResp:
+    def __init__(self, payload, status=200):
+        self._payload = payload
+        self.status_code = status
+
+    def json(self):
+        return self._payload
+
+
+class _FakeUpstream:
+    """假上游（LogVar 弹幕 API）：记录请求、按路径回预设响应。
+
+    fail: None | "timeout"（全部请求超时）| "comment500"（取弹幕 500）。
+    """
+
+    def __init__(self, match_payload=None, comment_payload=None,
+                 fail=None):
+        self.calls = []  # [(method, url, json_body)]
+        self.match_payload = match_payload
+        self.comment_payload = comment_payload
+        self.fail = fail
+
+    def install(self, monkeypatch):
+        from types import SimpleNamespace as _NS
+
+        from backend import danmu_api as _dm
+
+        monkeypatch.setattr(_dm, "httpx", _NS(Client=self._client))
+
+    def _client(self, **kwargs):
+        outer = self
+
+        class _Client:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def request(self, method, url, json=None):
+                outer.calls.append((method, url, json))
+                if outer.fail == "timeout":
+                    import httpx
+
+                    raise httpx.ConnectTimeout("boom")
+                if "/api/v2/comment/" in url:
+                    if outer.fail == "comment500":
+                        return _FakeResp({}, status=500)
+                    return _FakeResp(outer.comment_payload or {})
+                if url.endswith("/api/v2/match"):
+                    return _FakeResp(outer.match_payload or {})
+                return _FakeResp({}, status=404)
+
+        return _Client()
+
+    def calls_to(self, suffix):
+        return [c for c in self.calls if suffix in c[1]]
+
+
+_MATCH_OK = {
+    "errorCode": 0, "success": True, "errorMessage": "",
+    "isMatched": True,
+    "matches": [{"episodeId": 41557690, "animeId": 2208394,
+                 "episodeTitle": "第1话", "shift": 2.0}],
+}
+_COMMENT_OK = {
+    "count": 4,
+    "comments": [
+        {"cid": 1, "p": "10.00,1,16711680,[bilibili1]",
+         "m": "外部红字", "t": 10.0},
+        {"cid": 2, "p": "3.50,5,255,[bilibili1]",
+         "m": "顶部蓝字", "t": 3.5},
+        {"cid": 3, "p": "坏格式", "m": "坏p兜底", "t": 7.25},
+        {"cid": 4, "p": "1.00,1,16777215,[bilibili1]",
+         "m": "   ", "t": 1.0},
+    ],
+}
+_UPSTREAM_BASE = "http://upstream.test/base"
+
+
+def _enable_external(db, url=_UPSTREAM_BASE):
+    from backend import config_service
+
+    config_service.save_config(
+        db, {"danmu_api_external_enabled": True,
+             "danmu_api_external_url": url},
+        schema="danmu_api")
+    db.commit()
+    _invalidate()
+
+
+def test_external_merges_into_delivery(client, scene, monkeypatch):
+    fake = _FakeUpstream(match_payload=_MATCH_OK,
+                         comment_payload=_COMMENT_OK)
+    fake.install(monkeypatch)
+    _enable_external(scene.db)
+    c, app = client
+    _gen_token(c, app, scene.user)
+    _give_plan(scene.db, scene.user)
+    _add_danmaku(scene.db, scene.item, scene.poster, 5.0, "站内弹幕")
+    token = _token_value(scene.db, scene.user)
+
+    r = c.get(f"/api/v1/danmu/{token}/{scene.item.guid}")
+    assert r.status_code == 200, r.text
+    items = _xml_items(r.text)
+    by_text = {d.text: d.get("p").split(",") for d in items}
+    # 站内 + 外部按时间轴合并；空白文本条被丢弃
+    assert [d.text for d in items] == [
+        "站内弹幕", "顶部蓝字", "坏p兜底", "外部红字"]
+    assert by_text["站内弹幕"][:4] == ["5", "1", "25", "16777215"]
+    # 外部：时间 + shift(2.0)，模式/颜色原样带入
+    assert by_text["顶部蓝字"][:4] == ["5.5", "5", "25", "255"]
+    assert by_text["外部红字"][:4] == ["12", "1", "25", "16711680"]
+    # p 坏掉时回退 t 字段 + 滚动/白色
+    assert by_text["坏p兜底"][:4] == ["9.25", "1", "25", "16777215"]
+    # 上游调用形状：先 match（文件名拼名）后 comment
+    match_calls = fake.calls_to("/api/v2/match")
+    assert len(match_calls) == 1
+    assert match_calls[0][1] == f"{_UPSTREAM_BASE}/api/v2/match"
+    assert match_calls[0][2]["fileName"] == "电影Y.mp4"
+    assert match_calls[0][2]["matchMode"] == "fileNameOnly"
+    comment_calls = fake.calls_to("/api/v2/comment/41557690")
+    assert len(comment_calls) == 1
+
+
+def test_external_disabled_never_calls_upstream(client, scene,
+                                                 monkeypatch):
+    fake = _FakeUpstream(match_payload=_MATCH_OK,
+                         comment_payload=_COMMENT_OK)
+    fake.install(monkeypatch)
+    c, app = client
+    _gen_token(c, app, scene.user)
+    _give_plan(scene.db, scene.user)
+    _add_danmaku(scene.db, scene.item, scene.poster, 5.0, "站内弹幕")
+    token = _token_value(scene.db, scene.user)
+
+    r = c.get(f"/api/v1/danmu/{token}/{scene.item.guid}")
+    assert r.status_code == 200, r.text
+    assert [d.text for d in _xml_items(r.text)] == ["站内弹幕"]
+    assert fake.calls == []
+
+
+def test_external_enabled_without_url_never_calls(db, monkeypatch):
+    from backend import danmu_api as core_api
+    from backend import config_service
+
+    fake = _FakeUpstream(match_payload=_MATCH_OK,
+                         comment_payload=_COMMENT_OK)
+    fake.install(monkeypatch)
+    config_service.save_config(
+        db, {"danmu_api_external_enabled": True}, schema="danmu_api")
+    db.commit()
+    _invalidate()
+    assert core_api.external_enabled(db) is True
+    assert core_api.external_url(db) == ""
+    item = _mk_item(db)
+    db.commit()
+    assert core_api.fetch_external_danmaku(db, item) == []
+    assert fake.calls == []
+
+
+def test_external_gate_blocks_before_upstream(client, scene, monkeypatch):
+    fake = _FakeUpstream(match_payload=_MATCH_OK,
+                         comment_payload=_COMMENT_OK)
+    fake.install(monkeypatch)
+    _enable_external(scene.db)
+    c, app = client
+    _gen_token(c, app, scene.user)  # 不给套餐：门槛不过
+    _add_danmaku(scene.db, scene.item, scene.poster, 5.0, "站内弹幕")
+    token = _token_value(scene.db, scene.user)
+
+    r = c.get(f"/api/v1/danmu/{token}/{scene.item.guid}")
+    assert r.status_code == 200, r.text
+    assert _xml_items(r.text) == []
+    assert fake.calls == []  # 门槛在前：一次上游都不许打
+
+
+def test_external_upstream_failures_fall_back(client, scene, monkeypatch):
+    c, app = client
+    _gen_token(c, app, scene.user)
+    _give_plan(scene.db, scene.user)
+    _add_danmaku(scene.db, scene.item, scene.poster, 5.0, "站内弹幕")
+    token = _token_value(scene.db, scene.user)
+    _enable_external(scene.db)
+
+    for fail in ("timeout", "comment500"):
+        _invalidate()  # 清缓存与配置缓存，配置行仍在、重读仍生效
+        fake = _FakeUpstream(match_payload=_MATCH_OK,
+                             comment_payload=_COMMENT_OK, fail=fail)
+        fake.install(monkeypatch)
+        r = c.get(f"/api/v1/danmu/{token}/{scene.item.guid}")
+        assert r.status_code == 200, r.text
+        assert [d.text for d in _xml_items(r.text)] == ["站内弹幕"]
+
+
+def test_external_cache_hit_single_fetch(client, scene, monkeypatch):
+    fake = _FakeUpstream(match_payload=_MATCH_OK,
+                         comment_payload=_COMMENT_OK)
+    fake.install(monkeypatch)
+    _enable_external(scene.db)
+    c, app = client
+    _gen_token(c, app, scene.user)
+    _give_plan(scene.db, scene.user)
+    token = _token_value(scene.db, scene.user)
+
+    for _ in range(2):
+        r = c.get(f"/api/v1/danmu/{token}/{scene.item.guid}")
+        assert r.status_code == 200, r.text
+        assert len(_xml_items(r.text)) == 3
+    assert len(fake.calls_to("/api/v2/match")) == 1
+    assert len(fake.calls_to("/api/v2/comment/")) == 1
+
+
+def test_external_no_match_falls_back(client, scene, monkeypatch):
+    fake = _FakeUpstream(
+        match_payload={"errorCode": 0, "success": True,
+                       "isMatched": False, "matches": []},
+        comment_payload=_COMMENT_OK)
+    fake.install(monkeypatch)
+    _enable_external(scene.db)
+    c, app = client
+    _gen_token(c, app, scene.user)
+    _give_plan(scene.db, scene.user)
+    _add_danmaku(scene.db, scene.item, scene.poster, 5.0, "站内弹幕")
+    token = _token_value(scene.db, scene.user)
+
+    for _ in range(2):
+        r = c.get(f"/api/v1/danmu/{token}/{scene.item.guid}")
+        assert r.status_code == 200, r.text
+        assert [d.text for d in _xml_items(r.text)] == ["站内弹幕"]
+    # 无匹配也进短缓存：第二次不再打上游
+    assert len(fake.calls_to("/api/v2/match")) == 1
+    assert fake.calls_to("/api/v2/comment/") == []
+
+
+def _mk_episode(db, file_path=None):
+    import uuid
+
+    lib = em.Library(guid=uuid.uuid4().hex, name="剧集库",
+                     collection_type="tvshows", paths="")
+    db.add(lib)
+    db.flush()
+    series = em.MediaItem(
+        guid=uuid.uuid4().hex[:32], library_id=lib.id,
+        item_type="series", name="凡人修仙传", sort_name="凡人修仙传",
+        is_hidden=False)
+    db.add(series)
+    db.flush()
+    episode = em.MediaItem(
+        guid=uuid.uuid4().hex[:32], library_id=lib.id,
+        item_type="episode", name="凡人风起天南", sort_name="凡人风起天南",
+        series_id=series.id, season_number=1, episode_number=2,
+        file_path=file_path, is_hidden=False)
+    db.add(episode)
+    db.flush()
+    return episode
+
+
+def test_external_episode_filename_candidates(db, monkeypatch):
+    from backend import danmu_api as core_api
+
+    fake = _FakeUpstream(match_payload=_MATCH_OK,
+                         comment_payload=_COMMENT_OK)
+    fake.install(monkeypatch)
+    _enable_external(db)
+
+    episode = _mk_episode(db)
+    db.commit()
+    rows = core_api.fetch_external_danmaku(db, episode)
+    assert [r["text"] for r in rows] == ["顶部蓝字", "坏p兜底", "外部红字"]
+    match_calls = fake.calls_to("/api/v2/match")
+    assert match_calls[0][2]["fileName"] == "凡人修仙传 S01E02.mp4"
+
+    # 真实文件基名优先于拼名
+    _invalidate()
+    fake2 = _FakeUpstream(match_payload=_MATCH_OK,
+                          comment_payload=_COMMENT_OK)
+    fake2.install(monkeypatch)
+    _enable_external(db)
+    episode2 = _mk_episode(db, file_path="/data/剧集/某文件.mkv")
+    db.commit()
+    core_api.fetch_external_danmaku(db, episode2)
+    match_calls2 = fake2.calls_to("/api/v2/match")
+    assert match_calls2[0][2]["fileName"] == "某文件.mkv"
+
+
+def test_admin_external_roundtrip_and_validation(db):
+    from fastapi import HTTPException
+
+    from backend.api.admin_danmu_api import (
+        DanmuLinesRequest,
+        danmu_lines_get_config,
+        danmu_lines_update_config,
+    )
+
+    admin = _mk_user(db, "dmu_admin2", is_staff=True)
+    db.commit()
+    out = danmu_lines_get_config(admin, db)
+    assert out["external_enabled"] is False
+    assert out["external_url"] == ""
+
+    lines = [{"id": "intl", "name": "国际方向", "note": "",
+              "host": "cdn.aetrix.love"}]
+    out = danmu_lines_update_config(
+        DanmuLinesRequest(
+            lines=lines, external_enabled=True,
+            external_url="https://dm.example.com/tok123/"),
+        _request(), admin, db)
+    # 尾斜杠归一；开关与地址都落库
+    assert out["external_enabled"] is True
+    assert out["external_url"] == "https://dm.example.com/tok123"
+    _invalidate()
+    assert danmu_lines_get_config(admin, db) == out
+
+    # 不带外部两项的保存不动它们（兼容只存线路）
+    out = danmu_lines_update_config(
+        DanmuLinesRequest(lines=lines), _request(), admin, db)
+    assert out["external_enabled"] is True
+    assert out["external_url"] == "https://dm.example.com/tok123"
+
+    for bad in ("ftp://dm.example.com/x",
+                "https://user:pass@dm.example.com/x",
+                "dm.example.com/x"):
+        with pytest.raises(HTTPException) as exc:
+            danmu_lines_update_config(
+                DanmuLinesRequest(lines=lines, external_url=bad),
+                _request(), admin, db)
+        assert exc.value.status_code == 400

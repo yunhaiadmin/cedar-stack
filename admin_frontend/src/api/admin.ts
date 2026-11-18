@@ -218,12 +218,18 @@ export interface DanmuApiLine {
 
 export interface DanmuApiLinesConfig {
   lines: DanmuApiLine[]
+  /** 外部弹幕源开关（后端 danmu_api_external_enabled，默认关） */
+  external_enabled: boolean
+  /** 外部弹幕源 base 地址（后端 danmu_api_external_url，含 token 路径，只在后台可见） */
+  external_url: string
 }
 
 export const fetchDanmuApiLines = () => get<DanmuApiLinesConfig>('/danmu-api/config')
 
-export const updateDanmuApiLines = (lines: DanmuApiLine[]) =>
-  put<DanmuApiLinesConfig>('/danmu-api/config', { lines })
+export const updateDanmuApiLines = (
+  lines: DanmuApiLine[],
+  external: { external_enabled: boolean; external_url: string },
+) => put<DanmuApiLinesConfig>('/danmu-api/config', { lines, ...external })
 
 /** 登录失败锁定（2026-11-18，F4/F8 补项）：后端 /api/admin/login-lockout/config */
 export interface LoginLockoutConfig {

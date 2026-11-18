@@ -6,12 +6,18 @@ danmu_api_lines（整份 JSON），后台本口读写：读回当前生效值
 config_service 统一校验通道，逐项形状校验在本层
 （validate_lines），非法 400、整批不落库。写时失效，用户端
 下次读取即生效。审计只记线路 id/host，不涉及任何 token。
+
+2026-11-19 起本口同时承载外部弹幕源两项（同家族的
+danmu_api_external_enabled / danmu_api_external_url）：GET 一并
+回当前值；PUT 带这两项才改（不带 = 不动，兼容只存线路的旧
+调用）。上游地址含 token 路径，审计只记 host、不记全址。
 """
 
 from __future__ import annotations
 
 import json
 import logging
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -37,6 +43,17 @@ class DanmuLineIn(BaseModel):
 
 class DanmuLinesRequest(BaseModel):
     lines: list[DanmuLineIn]
+    # 外部弹幕源两项：None = 本次不改（兼容只存线路的调用）。
+    external_enabled: bool | None = None
+    external_url: str | None = None
+
+
+def _config_payload(db: Session) -> dict:
+    return {
+        "lines": danmu_api_core.get_lines(db),
+        "external_enabled": danmu_api_core.external_enabled(db),
+        "external_url": danmu_api_core.external_url(db),
+    }
 
 
 @admin_danmu_api_router.get("/config")
@@ -44,8 +61,8 @@ def danmu_lines_get_config(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """读取当前生效线路（默认值已代入，与用户端一致）。"""
-    return {"lines": danmu_api_core.get_lines(db)}
+    """读取当前生效线路（默认值已代入，与用户端一致）+ 外部源两项。"""
+    return _config_payload(db)
 
 
 @admin_danmu_api_router.put("/config")
@@ -55,28 +72,48 @@ def danmu_lines_update_config(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """保存线路表：形状非法 400；保存后即时生效（store 写时失效）。"""
+    """保存线路表（+ 带了才改的外部源两项）：形状非法 400、整批
+    不落库；保存后即时生效（store 写时失效）。"""
     try:
         lines = danmu_api_core.validate_lines(
             [ln.model_dump() for ln in request.lines])
+        external_url = None
+        if request.external_url is not None:
+            external_url = danmu_api_core.validate_external_url(
+                request.external_url)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    values = {danmu_api_core.KEY_LINES: json.dumps(
+        lines, ensure_ascii=False)}
+    descriptions = {
+        danmu_api_core.KEY_LINES: "弹幕 API 线路表（JSON 数组）",
+    }
+    if request.external_enabled is not None:
+        values[danmu_api_core.KEY_EXTERNAL_ENABLED] = (
+            request.external_enabled)
+        descriptions[danmu_api_core.KEY_EXTERNAL_ENABLED] = (
+            "弹幕 API 外部弹幕源开关")
+    if external_url is not None:
+        values[danmu_api_core.KEY_EXTERNAL_URL] = external_url
+        descriptions[danmu_api_core.KEY_EXTERNAL_URL] = (
+            "弹幕 API 外部弹幕源地址（LogVar 弹幕 API base）")
     try:
         config_service.save_config(
-            db, {danmu_api_core.KEY_LINES: json.dumps(
-                lines, ensure_ascii=False)},
-            schema="danmu_api",
-            descriptions={
-                danmu_api_core.KEY_LINES: "弹幕 API 线路表（JSON 数组）",
-            },
-        )
+            db, values, schema="danmu_api", descriptions=descriptions)
     except ConfigValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     db.commit()
-    payload = {"lines": danmu_api_core.get_lines(db)}
+    payload = _config_payload(db)
+    audit_detail = {"lines": [{"id": ln["id"], "host": ln["host"]}
+                              for ln in payload["lines"]]}
+    if request.external_enabled is not None:
+        audit_detail["external_enabled"] = payload["external_enabled"]
+    if external_url is not None:
+        # 地址含 token 路径：审计只记 host，不落全址。
+        audit_detail["external_url_host"] = urlparse(
+            payload["external_url"]).netloc or "(未配置)"
     _audit(db, current_admin, "danmu_api_update_lines", "system", None,
-           {"lines": [{"id": ln["id"], "host": ln["host"]}
-                      for ln in payload["lines"]]},
+           audit_detail,
            ip=raw_request.client.host if raw_request.client else None)
     db.commit()
     return payload
