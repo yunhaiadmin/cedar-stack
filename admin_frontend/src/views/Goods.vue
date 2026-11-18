@@ -330,7 +330,7 @@ onMounted(load)
 .w-full { width: 100%; }
 
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
-.field-help { color: var(--au-text-3); font-size: 12px; margin: 5px 0 0; line-height: 1.6; }
+.field-help { color: var(--au-text-3); font-size: var(--uhd-fs-aux-sm); margin: 5px 0 0; line-height: 1.6; }
 
 @media (max-width: 640px) {
   .form-grid { grid-template-columns: 1fr; }

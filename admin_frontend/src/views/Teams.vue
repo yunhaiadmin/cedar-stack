@@ -512,13 +512,13 @@ onMounted(() => {
 <style scoped>
 .cfg-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .row-actions { margin-top: 12px; display: flex; align-items: center; gap: 12px; }
-.hint { font-size: 12.5px; color: var(--au-text-3); }
+.hint { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
 .list-head { padding: 8px 16px 0; }
 .list-error { margin: 8px 0 12px; }
-.sub-line { display: block; font-size: 12px; color: var(--au-text-3); }
+.sub-line { display: block; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
 .detail-body { padding: 12px 16px 16px; }
 .detail-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .detail-head .hint { margin-left: 8px; }
-.detail-sub { margin: 16px 0 8px; font-size: 14px; font-weight: 600; color: var(--au-text); }
+.detail-sub { margin: 16px 0 8px; font-size: var(--uhd-fs-caption); font-weight: 600; color: var(--au-text); }
 @media (max-width: 900px) { .cfg-grid { grid-template-columns: 1fr; } }
 </style>

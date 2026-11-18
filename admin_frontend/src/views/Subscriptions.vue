@@ -586,22 +586,22 @@ async function submit() {
   flex-wrap: wrap;
 }
 
-.field-label { display: block; margin-bottom: 6px; font-size: 12px; color: var(--au-text-3); }
+.field-label { display: block; margin-bottom: 6px; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
 .reminder-input { display: flex; align-items: center; gap: 8px; }
 .days-input { width: 140px; }
-.field-hint { margin: 6px 0 0; font-size: 12px; color: var(--au-text-3); }
+.field-hint { margin: 6px 0 0; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
 
 .reminder-stats { display: flex; gap: 8px 24px; flex-wrap: wrap; margin: 0; }
 .reminder-stat { display: flex; flex-direction: column; gap: 2px; }
-.reminder-stat dt { font-size: 12px; color: var(--au-text-3); }
-.reminder-stat dd { margin: 0; font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--au-text); }
+.reminder-stat dt { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
+.reminder-stat dd { margin: 0; font-size: var(--uhd-fs-lead); font-weight: 700; font-variant-numeric: tabular-nums; color: var(--au-text); }
 
 .reminder-recent { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; }
 .rr-label { color: var(--au-text-3); }
 .rr-kind { font-style: normal; color: var(--au-text-4); margin-left: 4px; }
 
 .dialog-user { font-weight: 600; }
-.dialog-user em { font-style: normal; font-size: 12px; color: var(--au-text-3); font-weight: 400; }
+.dialog-user em { font-style: normal; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); font-weight: 400; }
 
 @media (max-width: 768px) {
   .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }

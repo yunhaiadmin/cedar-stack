@@ -9,7 +9,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { HandCoins, RefreshCw } from 'lucide-vue-next'
-import { PageHeader, SectionCard } from '@/components/ui'
+import { PageHeader, SectionCard, StatTile } from '@/components/ui'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
@@ -445,12 +445,12 @@ onMounted(async () => {
       <el-tab-pane label="销售统计" name="stats">
         <div v-loading="statsLoading">
           <div v-if="overview" class="stat-grid">
-            <div class="stat-card"><div class="stat-label">在册代理</div><div class="stat-value">{{ overview.agent_count }}</div></div>
-            <div class="stat-card"><div class="stat-label">累计进货</div><div class="stat-value">{{ overview.purchase_quantity }} 张</div><div class="stat-sub">{{ money(overview.purchase_cost_total) }}</div></div>
-            <div class="stat-card"><div class="stat-label">累计销售</div><div class="stat-value">{{ overview.sales_count }} 单</div><div class="stat-sub">面值 {{ money(overview.sales_face_total) }}</div></div>
-            <div class="stat-card"><div class="stat-label">累计毛利</div><div class="stat-value">{{ money(overview.sales_face_total - overview.sales_cost_total) }}</div></div>
-            <div class="stat-card"><div class="stat-label">管理员累计注入</div><div class="stat-value">{{ money(overview.topped_up_total) }}</div></div>
-            <div class="stat-card"><div class="stat-label">代理余额池</div><div class="stat-value">{{ money(overview.balance_pool_total) }}</div></div>
+            <StatTile label="在册代理" :value="overview.agent_count" />
+            <StatTile label="累计进货" :value="overview.purchase_quantity" suffix="张" :hint="money(overview.purchase_cost_total)" />
+            <StatTile label="累计销售" :value="overview.sales_count" suffix="单" :hint="`面值 ${money(overview.sales_face_total)}`" />
+            <StatTile label="累计毛利" :value="money(overview.sales_face_total - overview.sales_cost_total)" />
+            <StatTile label="管理员累计注入" :value="money(overview.topped_up_total)" />
+            <StatTile label="代理余额池" :value="money(overview.balance_pool_total)" />
           </div>
 
           <SectionCard title="最近销售记录" flush>
@@ -534,7 +534,7 @@ onMounted(async () => {
       :title="`${detailDlg.agent?.username ?? ''} 的明细`"
       width="min(860px, 94vw)"
     >
-      <el-tabs v-model="detailDlg.tab" @tab-change="loadDetail">
+      <el-tabs v-model="detailDlg.tab" class="detail-tabs" @tab-change="loadDetail">
         <el-tab-pane label="余额流水" name="ledger">
           <DataTable :columns="ledgerColumns" :rows="detailDlg.logs" :loading="detailDlg.loading">
             <template #cell-created_at="{ row }">{{ fmtTime(row.created_at) }}</template>
@@ -595,22 +595,15 @@ onMounted(async () => {
 .form-hint {
   flex-basis: 100%;
   color: var(--au-text-3);
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   line-height: 1.5;
 }
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
-.stat-card {
-  background: var(--au-surface, #fff);
-  border: 1px solid var(--au-border, #e5e7eb);
-  border-radius: 10px;
-  padding: 14px 16px;
-}
-.stat-label { font-size: 12px; color: var(--au-text-3); margin-bottom: 6px; }
-.stat-value { font-size: 20px; font-weight: 600; }
-.stat-sub { font-size: 12px; color: var(--au-text-3); margin-top: 2px; }
+/* 详情弹窗页签与 Users 360° 弹层同口径（Users.vue .detail-tabs） */
+.detail-tabs { margin-top: 6px; }
 </style>
