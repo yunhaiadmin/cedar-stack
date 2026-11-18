@@ -2314,8 +2314,8 @@ onUnmounted(() => {
   min-width: 0;
 }
 /* 返回钮（差距 #1/#2）：手机＝文字胶囊——高 40、圆角 20、与 .wp-together
-   同款玻璃（白 14% 边框＋rgba(18,18,20,.55)＋blur 14px）、白字 14px；
-   ≥768px 变 Ø40 玻璃圆钮、文字隐藏，顶栏不再另置标题 */
+   同款玻璃（pill 档令牌：--uhd-glass-d 底＋pill-filter＋pill-shadow）、
+   白字 14px；≥768px 变 Ø40 玻璃圆钮、文字隐藏，顶栏不再另置标题 */
 .wp-back {
   flex: none;
   display: inline-flex;
@@ -2325,10 +2325,11 @@ onUnmounted(() => {
   max-width: min(52vw, 320px);
   padding: 0 16px 0 10px;
   border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(18, 18, 20, 0.55);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--uhd-glass-border);
+  background: var(--uhd-glass-d);
+  backdrop-filter: var(--uhd-glass-pill-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-pill-filter);
+  box-shadow: var(--uhd-glass-pill-shadow);
   color: #fff;
   font-size: 14px;
   cursor: pointer;
@@ -2349,10 +2350,11 @@ onUnmounted(() => {
   height: 40px;
   padding: 0 16px;
   border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(18, 18, 20, 0.55);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--uhd-glass-border);
+  background: var(--uhd-glass-d);
+  backdrop-filter: var(--uhd-glass-pill-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-pill-filter);
+  box-shadow: var(--uhd-glass-pill-shadow);
   color: #fff;
   font-size: 14px;
   cursor: pointer;
@@ -2384,14 +2386,15 @@ onUnmounted(() => {
   border-radius: 29px;
   padding: 2px;
   background: var(--uhd-rainbow, linear-gradient(90deg, #2f8fe0, #6f7ad8, #c46c90, #e8766f, #f2a45a, #ecd04f, #95c77d, #39b3ec));
+  box-shadow: var(--uhd-glass-slab-shadow);
 }
 .wp-start-main,
 .wp-start-restart {
   height: 100%;
   border: none;
-  background: rgba(10, 10, 12, 0.78);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: var(--uhd-glass-btn-d);
+  backdrop-filter: var(--uhd-glass-slab-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-slab-filter);
   color: #fff;
   font-size: 16px;
   font-weight: 600;
@@ -2433,9 +2436,10 @@ onUnmounted(() => {
   margin: 0;
   padding: 10px 12px;
   border-radius: 12px;
-  background: rgba(10, 10, 12, 0.55);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: var(--uhd-glass-d);
+  backdrop-filter: var(--uhd-glass-pill-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-pill-filter);
+  box-shadow: var(--uhd-glass-pill-shadow);
   font-size: 12px;
   line-height: 1.55;
   pointer-events: none;
@@ -2521,8 +2525,12 @@ onUnmounted(() => {
 }
 
 /* 准备播放中央卡（照友站逐帧量测，视口 390 CSS px 换算）：
-   卡宽 = 屏宽 − 两侧各 20px 边距（实测占比 89.8%），圆角 20px，
-   内边距 16px 20px，垂直居中、状态行出现时上下对称长高。
+   卡宽 = 屏宽 − 两侧各 20px 边距（实测占比 89.8%），内边距 16px 20px，
+   垂直居中、状态行出现时上下对称长高。
+   质感口径（2026-11-18 友站桌面补测实测改定）：圆角 20px、近黑实底
+   （内底采样 rgb 3–6，非透底玻璃）＋顶部渐变高光＋底部亮线，
+   仅保留 float 档外阴影束（辉光/投影）；实底下 backdrop 无视觉
+   作用，已摘除。
    包裹层不拦截点击：准备态下顶栏「一起看」等控件仍可操作。 */
 .wp-prep-wrap {
   position: absolute;
@@ -2536,10 +2544,16 @@ onUnmounted(() => {
 .wp-prep {
   width: calc(100% - 40px);
   max-width: 480px;
-  background: rgba(22, 22, 25, 0.94);
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  /* 近黑实底 α 0.96（原玻璃底再压深）＋首层顶部渐变高光（亮度自上而下衰减） */
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 45%),
+    rgba(10, 10, 13, 0.96);
+  border: 1px solid var(--uhd-glass-border);
+  /* 底部亮线：底边色亮于其余三边（--uhd-glass-border 为 0.14） */
+  border-bottom-color: rgba(255, 255, 255, 0.3);
   border-radius: 20px;
   padding: 16px 20px;
+  box-shadow: var(--uhd-glass-float-shadow);
 }
 .wp-prep-head {
   display: flex;
@@ -2578,10 +2592,11 @@ onUnmounted(() => {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(18, 18, 20, 0.55);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--uhd-glass-border);
+  background: var(--uhd-glass-d);
+  backdrop-filter: var(--uhd-glass-pill-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-pill-filter);
+  box-shadow: var(--uhd-glass-pill-shadow);
   color: #fff;
   display: inline-flex;
   align-items: center;
@@ -2596,12 +2611,13 @@ onUnmounted(() => {
   bottom: calc(14px + env(safe-area-inset-bottom));
   z-index: 20;
   width: min(680px, calc(100% - 24px));
-  background: rgba(22, 22, 25, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--uhd-glass-d);
+  border: 1px solid var(--uhd-glass-border);
   border-radius: 20px;
   padding: 10px 16px 12px;
-  backdrop-filter: blur(22px);
-  -webkit-backdrop-filter: blur(22px);
+  backdrop-filter: var(--uhd-glass-slab-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-slab-filter);
+  box-shadow: var(--uhd-glass-slab-shadow);
 }
 .wp-bar-progress {
   display: flex;
@@ -2749,12 +2765,13 @@ onUnmounted(() => {
   width: min(680px, calc(100% - 24px));
   display: flex;
   gap: 8px;
-  background: rgba(22, 22, 25, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--uhd-glass-d);
+  border: 1px solid var(--uhd-glass-border);
   border-radius: 999px;
   padding: 6px 6px 6px 16px;
-  backdrop-filter: blur(22px);
-  -webkit-backdrop-filter: blur(22px);
+  backdrop-filter: var(--uhd-glass-slab-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-slab-filter);
+  box-shadow: var(--uhd-glass-slab-shadow);
 }
 .wp-dm-input {
   flex: 1;
@@ -2845,10 +2862,13 @@ onUnmounted(() => {
   transform: translateX(-50%);
   z-index: 30;
   margin: 0;
-  background: rgba(20, 20, 23, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--uhd-glass-d);
+  border: 1px solid var(--uhd-glass-border);
   border-radius: 999px;
   padding: 8px 16px;
+  backdrop-filter: var(--uhd-glass-pill-filter);
+  -webkit-backdrop-filter: var(--uhd-glass-pill-filter);
+  box-shadow: var(--uhd-glass-pill-shadow);
   font-size: 13px;
   white-space: nowrap;
   max-width: calc(100% - 32px);

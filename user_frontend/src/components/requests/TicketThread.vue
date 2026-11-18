@@ -173,8 +173,7 @@ onUnmounted(() => { alive = false })
 <style scoped>
 /* 工单线程：缺省深色，html[data-theme='light'] 时换浅。 */
 .rf-thread { margin-top: 10px; border-top: 1px dotted #333336; padding-top: 10px; }
-.rf-skeleton { background: #1e1f21; border-radius: 10px; animation: rf-pulse 1.4s ease-in-out infinite; }
-@keyframes rf-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+.rf-skeleton { background: var(--uhd-skel-bg); border-radius: 10px; }
 .rf-err { font-size: 13px; color: #fca5a5; line-height: 1.6; }
 .rf-retry { margin-top: 6px; padding: 3px 12px; font-size: 12px; color: #fbfcfd; background: transparent; border: 1px solid currentColor; border-radius: 999px; cursor: pointer; opacity: 0.8; }
 .rf-messages { display: flex; flex-direction: column; gap: 12px; max-height: 320px; overflow-y: auto; }
@@ -218,7 +217,6 @@ onUnmounted(() => { alive = false })
 }
 .rf-closed-hint { font-size: 12px; color: #9ca3af; margin: 10px 0 0; text-align: center; }
 html[data-theme='light'] .rf-thread { border-top-color: #e5e5e5; }
-html[data-theme='light'] .rf-skeleton { background: #f0f0f1; }
 html[data-theme='light'] .rf-err { color: #dc2626; }
 html[data-theme='light'] .rf-retry { color: #111111; }
 html[data-theme='light'] .rf-messages__empty { color: #6b7280; }

@@ -513,11 +513,10 @@ onMounted(() => {
 .fv-skel__poster {
   aspect-ratio: 2 / 3;
   border-radius: 13px;
-  background: var(--uhd-s-card-soft);
+  background: var(--uhd-s-skeleton);
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: fv-pulse 1.4s ease-in-out infinite;
 }
 .fv-skel__logo {
   display: inline-flex;
@@ -530,9 +529,5 @@ onMounted(() => {
   color: var(--uhd-s-text-2);
   font-size: 18px;
   font-weight: var(--uhd-fw-black);
-}
-@keyframes fv-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
 }
 </style>

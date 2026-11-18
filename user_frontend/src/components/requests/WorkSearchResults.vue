@@ -186,14 +186,11 @@ function toWork(c: MediaSeekCandidate): SubmitWork {
 .wsr-empty__s { margin: 0; font-size: 12px; color: #9ca3af; line-height: 1.6; }
 .wsr-sk__row { display: flex; align-items: center; gap: 12px; padding: 12px 0; }
 .wsr-sk__row + .wsr-sk__row { border-top: 1px solid #26262a; }
-.wsr-sk__poster { flex: none; width: 43px; height: 60px; border-radius: 8px; background: #232326; }
+.wsr-sk__poster { flex: none; width: 43px; height: 60px; border-radius: 8px; background: var(--uhd-skel-bg); }
 .wsr-sk__lines { flex: 1; display: flex; flex-direction: column; gap: 8px; }
-.wsr-sk__bar { height: 12px; border-radius: 6px; background: #232326; }
+.wsr-sk__bar { height: 12px; border-radius: 6px; background: var(--uhd-skel-bg); }
 .wsr-sk__bar--long { width: 62%; }
 .wsr-sk__bar--short { width: 38%; }
-.wsr-sk__poster, .wsr-sk__bar { animation: wsr-pulse 1.2s ease-in-out infinite; }
-@keyframes wsr-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
-
 html[data-theme='light'] .wsr-degraded { color: #55575c; }
 html[data-theme='light'] .wsr-box { background: #ffffff; border-color: #e5e5e5; }
 html[data-theme='light'] .wsr-row + .wsr-row, html[data-theme='light'] .wsr-sk__row + .wsr-sk__row { border-top-color: #e5e5e5; }
@@ -210,5 +207,4 @@ html[data-theme='light'] .wsr-btn--go {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--uhd-shadow-card-l);
 }
 html[data-theme='light'] .wsr-btn--ghost { color: #111111; border-color: #c9ccd1; }
-html[data-theme='light'] .wsr-sk__poster, html[data-theme='light'] .wsr-sk__bar { background: #ececec; }
 </style>
