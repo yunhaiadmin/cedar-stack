@@ -698,11 +698,13 @@ html[data-theme='light'] .ov-loading__text { color: #8a8d93; }
   gap: 8px 36px;
   align-items: start;
 }
-/* 手机端卡片区外扩（2026-11-18 用户对照截图 parent 实测）：页内边距 20px 时
-   卡宽仅约 89% 视口；外扩 7px/侧后卡宽约 93%（390 宽下每侧约 13px），与友站一致；
+/* 手机端卡片区外扩（2026-11-18 parent 按双站对照录屏逐帧复测修正）：友站概览页
+   会员卡左右边距各约 3.9% 屏宽（390 宽下约 15px/侧）、卡宽约 92.2%（约 360px）、
+   卡高约 228px、宽高比 1.586。此前外扩 7px/侧时有效边距仅 13px、卡 364×229.5，
+   整列比友站宽约 2%；外扩改 5px/侧后有效边距 15px、卡 360×227，落回友站口径。
    卡＋有效期行＋流量区同在 hero 内，左右缘仍对齐；其余分组与平板/桌面布局不动。 */
 @media (max-width: 768px) {
-  .ov-hero { margin: 0 -7px; }
+  .ov-hero { margin: 0 -5px; }
 }
 .ov-hero__card,
 .ov-hero__meter { min-width: 0; }
