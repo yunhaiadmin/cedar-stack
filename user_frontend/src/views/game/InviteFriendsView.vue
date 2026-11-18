@@ -8,7 +8,7 @@
         <ChevronLeft :size="22" aria-hidden="true" />
         <span>邀请好友</span>
       </RouterLink>
-      <!-- 「网页观影」钮已删（2026-11-14 顶栏统一单）：由 App.vue 统一
+      <!-- 「前往流媒体」钮已删（2026-11-14 顶栏统一单）：由 App.vue 统一
            顶栏的常驻胶囊承接，本页不再自带一份（原 42px，与全站 54px 不一致） -->
     </header>
 

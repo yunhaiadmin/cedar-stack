@@ -7,7 +7,7 @@
  * 且全部随页面滚走。本组件收口为一套：
  * - sticky 固定在顶部（占文档流，不遮挡首屏内容），玻璃底；
  * - 左：站标 + 标题（默认站名；「我的」页传 title="我的"，照友站两页口径）；
- * - 右：UhdWatchPill「网页观影」常驻。
+ * - 右：UhdWatchPill「前往流媒体」常驻。
  * 挂载点只有三处：App.vue（账户区）、StreamShell（片库面手机端；
  * 桌面走批 3 双胶囊顶栏）、AppHeader 只复用胶囊不复用整条。
  * 令牌见 styles/uhd-topbar.css。
@@ -113,7 +113,8 @@ const themeLabel = computed(() => {
   gap: 8px;
   flex: none;
 }
-/* 外观钮：与观影胶囊同高（--utb-pill-h）的圆玻璃钮，配方同顶栏令牌 */
+/* 外观钮：边长 --utb-pill-h（33）的圆玻璃钮，配方同顶栏令牌；
+   观影胶囊自真值定版后走 --utb-pill-height（36），两者不再同高 */
 .uhd-topbar__theme {
   display: inline-flex;
   align-items: center;
