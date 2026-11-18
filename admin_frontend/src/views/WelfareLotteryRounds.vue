@@ -497,12 +497,12 @@ onMounted(() => {
 .prize-type { width: 120px; }
 .prize-num { width: 110px; }
 .prize-field { display: inline-flex; align-items: center; gap: 6px; flex: none; }
-.prize-label { font-size: 12px; line-height: 1; color: var(--au-text-2); white-space: nowrap; user-select: none; }
+.prize-label { font-size: var(--uhd-fs-aux-sm); line-height: 1; color: var(--au-text-2); white-space: nowrap; user-select: none; }
 .detail-loading { min-height: 160px; }
 .detail-title { display: flex; align-items: center; gap: 6px; margin: 16px 0 8px; font-weight: 600; color: var(--au-text); }
 .detail-title svg { color: var(--au-primary); }
-.mono { font-family: var(--font-mono); font-size: 12px; }
-.entry-row { padding: 2px 0; font-size: 13px; color: var(--au-text-2); }
+.mono { font-family: var(--font-mono); font-size: var(--uhd-fs-aux-sm); }
+.entry-row { padding: 2px 0; font-size: var(--uhd-fs-aux); color: var(--au-text-2); }
 .entry-time { color: var(--au-text-3); }
 .field-suffix {
   margin-left: 8px;
@@ -512,7 +512,7 @@ onMounted(() => {
 .field-hint {
   flex-basis: 100%;
   color: var(--au-text-3);
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   line-height: 1.5;
 }
 :deep(.el-form-item__content) { flex-wrap: wrap; row-gap: 4px; }

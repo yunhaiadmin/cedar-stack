@@ -242,7 +242,7 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.ml-note { opacity: 0.75; font-size: 13px; margin: 0 0 12px; }
-.ml-note-inline { opacity: 0.75; font-size: 13px; }
+.ml-note { opacity: 0.75; font-size: var(--uhd-fs-aux); margin: 0 0 12px; }
+.ml-note-inline { opacity: 0.75; font-size: var(--uhd-fs-aux); }
 .ml-form { max-width: 560px; }
 </style>

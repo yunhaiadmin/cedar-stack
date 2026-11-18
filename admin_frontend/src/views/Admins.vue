@@ -449,12 +449,12 @@ function fmtDate(value: string | null): string {
   color: var(--au-primary);
 }
 
-.role-key { margin-left: auto; font-size: 12px; color: var(--au-text-4); }
-.role-hint { margin: 0; font-size: 12.5px; color: var(--au-text-3); line-height: 1.6; }
+.role-key { margin-left: auto; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-4); }
+.role-hint { margin: 0; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); line-height: 1.6; }
 
 .who-cell { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .who-name { font-weight: 600; color: var(--au-text); }
-.who-mail { font-size: 12px; color: var(--au-text-3); }
+.who-mail { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
 
 .role-tag { display: inline-flex; align-items: center; gap: 6px; color: var(--au-text-2); }
 .role-tag :deep(svg) { color: var(--au-text-4); flex-shrink: 0; }
@@ -473,11 +473,11 @@ function fmtDate(value: string | null): string {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--uhd-fs-aux);
   color: var(--au-text-2);
 }
 .tips li :deep(svg) { color: var(--au-success); flex-shrink: 0; margin-top: 3px; }
-.tips-foot { margin: 12px 0 0; font-size: 12px; color: var(--au-text-3); }
+.tips-foot { margin: 12px 0 0; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
 
 @media (max-width: 640px) {
   .stat-row { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
