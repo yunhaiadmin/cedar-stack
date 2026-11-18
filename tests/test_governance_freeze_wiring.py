@@ -6,7 +6,7 @@
   weight_snapshot 强制为 1，不按等级权重；取消附议不受停权影响；历史票不追溯。
 - Step 2 举报与复核：被停权用户新建举报、参与复核投票均被拒绝（403）；
   与 Step 2 自身的自动暂停（GovernanceSuspension）是两套独立机制，互不替代。
-- Step 3 提案与直接发起：被停权用户提交提案、直接发起均被拒绝（403）。
+- Step 3 提案与直接发起已随公益服删除整条下线，本文件不再覆盖。
 - 不动项：管理端审批、只读路径、tg_bot /request 均不在本文件覆盖（无接线）。
 
 全部用隔离的内存 SQLite＋全量建表；fixture 在 setup/teardown 双向失效
@@ -18,7 +18,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend import governance, governance_report as report_svc
-from backend import lottery_governance as lottery_gov
 from backend import media_seek, models, subscriptions
 from backend.integrations import store
 
@@ -62,9 +61,9 @@ def _freeze(db, admin, user):
     db.commit()
 
 
-def _free_realm(db):
+def _realm(db):
     realm = models.ServerRealm(
-        name="公益服", slug="main", access_mode="free", is_active=True,
+        name="主服", slug="main", is_active=True,
     )
     db.add(realm)
     db.commit()
@@ -99,33 +98,11 @@ def _vote_row(db, request_id, user_id):
     ).first()
 
 
-def _lottery_payload(**over):
-    p = {
-        "title": "接线测试活动",
-        "chat_id": 999,
-        "prizes": [{"name": "天数奖", "type": "days", "value": 30, "quantity": 1}],
-        "draw_at": None,
-        "max_participants": None,
-        "lottery_type": "button",
-        "password_keyword": None,
-    }
-    p.update(over)
-    return p
-
-
-def _lottery_setup_free(db):
-    realm = _free_realm(db)
-    _set_config(db, "active_realm_id", realm.id)
-    _set_config(db, "lottery_enabled", "1")
-    _set_config(db, "lottery_group_ids", "999")
-    return realm
-
-
 # ==================== Step 1 附议 ====================
 
 
 def test_vote_frozen_user_weight_forced_to_one(db):
-    realm = _free_realm(db)
+    realm = _realm(db)
     owner = _user(db, "owner")
     voter = _user(db, "voter6", level=6)
     admin = _admin(db)
@@ -140,7 +117,7 @@ def test_vote_frozen_user_weight_forced_to_one(db):
 def test_vote_unfrozen_user_weight_by_level(db):
     # 无等级来源恒 Lv.1：未停权用户附议权重同样为 1
     # （原断言按 Lv.6 得加权 6、快照 6）。
-    realm = _free_realm(db)
+    realm = _realm(db)
     owner = _user(db, "owner")
     voter = _user(db, "voter6", level=6)
     seek = _seek(db, owner, realm.id)
@@ -150,7 +127,7 @@ def test_vote_unfrozen_user_weight_by_level(db):
 
 
 def test_vote_cancel_not_blocked_by_freeze(db):
-    realm = _free_realm(db)
+    realm = _realm(db)
     owner = _user(db, "owner")
     voter = _user(db, "voter6", level=6)
     admin = _admin(db)
@@ -163,7 +140,7 @@ def test_vote_cancel_not_blocked_by_freeze(db):
 
 
 def test_vote_history_not_rewritten_by_freeze(db):
-    realm = _free_realm(db)
+    realm = _realm(db)
     owner = _user(db, "owner")
     voter = _user(db, "voter6", level=6)
     admin = _admin(db)
@@ -180,7 +157,7 @@ def test_vote_history_not_rewritten_by_freeze(db):
 
 
 def test_report_frozen_reporter_forbidden(db):
-    realm = _free_realm(db)
+    realm = _realm(db)
     owner = _user(db, "owner")
     reporter = _user(db, "reporter")
     admin = _admin(db)
@@ -193,7 +170,7 @@ def test_report_frozen_reporter_forbidden(db):
 
 
 def test_report_unfrozen_reporter_ok(db):
-    realm = _free_realm(db)
+    realm = _realm(db)
     owner = _user(db, "owner")
     reporter = _user(db, "reporter")
     seek = _seek(db, owner, realm.id)
@@ -202,7 +179,7 @@ def test_report_unfrozen_reporter_ok(db):
 
 
 def test_review_vote_frozen_reviewer_forbidden(db):
-    realm = _free_realm(db)
+    realm = _realm(db)
     owner = _user(db, "owner")
     reporter = _user(db, "reporter")
     reviewer = _user(db, "reviewer", level=3)
@@ -220,7 +197,7 @@ def test_review_vote_unfrozen_reviewer_blocked_by_level_gate(db):
     # 原 test_review_vote_unfrozen_reviewer_ok：未停权 Lv.3 复核员可投票。
     # 等级列删除后权重恒 0，未停权复核员同样在权重门 403——与停权 403 的
     # 区别在文案（Lv.3 门槛，而非「冻结」）。
-    realm = _free_realm(db)
+    realm = _realm(db)
     owner = _user(db, "owner")
     reporter = _user(db, "reporter")
     reviewer = _user(db, "reviewer", level=3)
@@ -231,54 +208,3 @@ def test_review_vote_unfrozen_reviewer_blocked_by_level_gate(db):
     assert ei.value.status_code == 403
     assert "Lv.3" in ei.value.detail
     assert "冻结" not in ei.value.detail
-
-
-# ==================== Step 3 提案与直接发起 ====================
-
-
-def test_submit_proposal_frozen_forbidden(db):
-    _lottery_setup_free(db)
-    user = _user(db, "lv2", xp=100)
-    admin = _admin(db)
-    _freeze(db, admin, user)
-    with pytest.raises(lottery_gov.LotteryGovernanceError) as ei:
-        lottery_gov.submit_proposal(db, user.id, _lottery_payload())
-    assert ei.value.status_code == 403
-    assert "冻结" in ei.value.detail
-    assert db.query(models.LotteryActivityProposal).count() == 0
-
-
-def test_submit_proposal_unfrozen_blocked_by_level_gate(db):
-    # 原 test_submit_proposal_unfrozen_ok：未停权 Lv.2 用户可提交（快照 2）。
-    # 现恒 Lv.1，未停权用户同样在等级门 403、不落提案行。
-    _lottery_setup_free(db)
-    user = _user(db, "lv2", xp=100)
-    with pytest.raises(lottery_gov.LotteryGovernanceError) as ei:
-        lottery_gov.submit_proposal(db, user.id, _lottery_payload())
-    assert ei.value.status_code == 403
-    assert "等级不足" in ei.value.detail
-    assert db.query(models.LotteryActivityProposal).count() == 0
-
-
-def test_direct_launch_frozen_forbidden(db):
-    _lottery_setup_free(db)
-    user = _user(db, "lv5", xp=5000)
-    admin = _admin(db)
-    _freeze(db, admin, user)
-    with pytest.raises(lottery_gov.LotteryGovernanceError) as ei:
-        lottery_gov.direct_launch(db, user.id, _lottery_payload())
-    assert ei.value.status_code == 403
-    assert "冻结" in ei.value.detail
-    assert db.query(models.LotteryRound).count() == 0
-
-
-def test_direct_launch_unfrozen_blocked_by_level_gate(db):
-    # 原 test_direct_launch_unfrozen_ok：未停权 Lv.5 用户可直接发起。
-    # 现恒 Lv.1，未停权用户同样在等级门 403、不建轮次。
-    _lottery_setup_free(db)
-    user = _user(db, "lv5", xp=5000)
-    with pytest.raises(lottery_gov.LotteryGovernanceError) as ei:
-        lottery_gov.direct_launch(db, user.id, _lottery_payload())
-    assert ei.value.status_code == 403
-    assert "等级不足" in ei.value.detail
-    assert db.query(models.LotteryRound).count() == 0

@@ -415,7 +415,7 @@ ADMIN_FILTERBAR_REQUIRED = (
     "views/PoolAdmin.vue",
     "views/Subscriptions.vue",
     "views/Tickets.vue",
-    "views/WelfareLotteryProposals.vue",
+    # WelfareLotteryProposals.vue 已随公益服删除于 2026-11-19 下线
     # —— 团队重建批 3 新增 ——
     "views/Teams.vue",
 )

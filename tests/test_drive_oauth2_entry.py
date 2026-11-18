@@ -15,7 +15,7 @@ Google / Drive 网络全部用桩替身，不碰真实上游。
 """
 
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -128,22 +128,26 @@ def _web_user(db, user_id):
 
 
 def _grant_view_credential(db, user_id):
-    """给用户在当前服（公益服）落一条永久查看凭证（EmbyViewUnlock）。
+    """给用户在当前服落一份有效订阅（查看资格的现行唯一来源）。
 
-    判定走 subscriptions.view_grant：公益服 = 未过期解锁行即凭证。
-    本帮手同时把该公益服设为面板当前服（view_grant 无 realm 参数
-    时的解析口径），保证判定命中的就是这条行。
+    判定走 subscriptions.view_grant：有效订阅即资格（公益服删除后
+    EmbyViewUnlock 存量行不再参与判定）。本帮手同时把该服设为面板
+    当前服（view_grant 无 realm 参数时的解析口径）。
     """
     user = _web_user(db, user_id)
     realm = base_models.ServerRealm(
-        name="公益服", slug=f"free-{user_id}", access_mode="free",
-        is_active=True)
+        name="主服", slug=f"main-{user_id}", is_active=True)
     db.add(realm)
     db.commit()
     realms.set_active_realm(db, realm.id)
-    db.add(base_models.EmbyViewUnlock(
-        user_id=user_id, realm_id=realm.id, unlocked_at=datetime.now(),
-        expires_at=None, points_spent=0))
+    plan = base_models.SubscriptionPlan(
+        name="月卡", price=10, duration_days=30, realm_id=realm.id)
+    db.add(plan)
+    db.commit()
+    db.add(base_models.UserSubscription(
+        user_id=user_id, plan_id=plan.id, realm_id=realm.id,
+        start_date=datetime.now() - timedelta(days=1),
+        end_date=datetime.now() + timedelta(days=29), status="active"))
     db.commit()
     return user
 
@@ -267,9 +271,9 @@ def test_callback_rechecks_view_credential(db, oauth2_env):
     _grant_view_credential(db, 7)
     started = do.start_drive_oauth(db, 7, "新盘", client=do.CLIENT_OAUTH2)
     state = _state_of(started)
-    # 发起后凭证被收回：回调端必须复核，不能只信发起时判过
-    (db.query(base_models.EmbyViewUnlock)
-     .filter(base_models.EmbyViewUnlock.user_id == 7).delete())
+    # 发起后资格被收回：回调端必须复核，不能只信发起时判过
+    (db.query(base_models.UserSubscription)
+     .filter(base_models.UserSubscription.user_id == 7).delete())
     db.commit()
     with pytest.raises(do.DriveOAuthError) as exc:
         do.complete_drive_oauth(

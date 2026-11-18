@@ -2,26 +2,26 @@
 /**
  * 群抽奖（历史文件名 Welfare.vue）：抽奖相关标签页的壳
  *
- * 群抽奖活动 + 活动提案 + 抽奖黑名单通过标签页切换，统一入口管理。
+ * 群抽奖活动 + 抽奖黑名单通过标签页切换，统一入口管理。
  * 各标签页各自是一整页：按需加载。原「公益配置」标签（WelfarePoints.vue）
- * 已随公益资格整族于 2026-11-14 删除。
+ * 已随公益资格整族于 2026-11-14 删除；「活动提案」标签已随公益服删除
+ * 于 2026-11-19 下线（用户提案支线整体退役）。
  */
 import { computed, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 // 各标签页各自是一整页：按需加载
 const WelfareLotteryRounds = defineAsyncComponent(() => import('./WelfareLotteryRounds.vue'))
-const WelfareLotteryProposals = defineAsyncComponent(() => import('./WelfareLotteryProposals.vue'))
 const WelfareLotteryBlacklist = defineAsyncComponent(() => import('./WelfareLotteryBlacklist.vue'))
 
-type WelfareTab = 'lottery' | 'proposals' | 'blacklist'
-const TABS: WelfareTab[] = ['lottery', 'proposals', 'blacklist']
+type WelfareTab = 'lottery' | 'blacklist'
+const TABS: WelfareTab[] = ['lottery', 'blacklist']
 
 const route = useRoute()
 const router = useRouter()
 
 /**
- * 当前标签与 ?tab= 同步：?tab=proposals / ?tab=blacklist 可直达，刷新不丢。
+ * 当前标签与 ?tab= 同步：?tab=blacklist 可直达，刷新不丢。
  */
 const activeTab = computed<WelfareTab>({
   get: () => (TABS.includes(route.query.tab as WelfareTab) ? (route.query.tab as WelfareTab) : 'lottery'),
@@ -50,19 +50,6 @@ const activeTab = computed<WelfareTab>({
         <span class="tab-hint">活动创建 / 开奖 / 发放</span>
       </button>
       <button
-        id="welfare-tab-proposals"
-        type="button"
-        role="tab"
-        class="tab-btn"
-        :class="{ active: activeTab === 'proposals' }"
-        :aria-selected="activeTab === 'proposals'"
-        aria-controls="welfare-panel"
-        @click="activeTab = 'proposals'"
-      >
-        活动提案
-        <span class="tab-hint">用户提案审批</span>
-      </button>
-      <button
         id="welfare-tab-blacklist"
         type="button"
         role="tab"
@@ -86,7 +73,6 @@ const activeTab = computed<WelfareTab>({
       <!-- KeepAlive：来回切标签不重拉数据、不丢筛选 -->
       <KeepAlive>
         <WelfareLotteryRounds v-if="activeTab === 'lottery'" />
-        <WelfareLotteryProposals v-else-if="activeTab === 'proposals'" />
         <WelfareLotteryBlacklist v-else />
       </KeepAlive>
     </div>

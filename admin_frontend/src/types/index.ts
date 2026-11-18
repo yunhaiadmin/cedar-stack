@@ -448,13 +448,7 @@ export interface RealmRow {
   lines: RealmLine[]
   /** 默认服：沿用历史配置键名，不能删除 */
   is_default: boolean
-  /** 接入方式（v2.7.0）：paid = 付费服（需要订阅）/ free = 免费服（免费开放） */
-  access_mode: 'paid' | 'free'
-  /** 是不是免费服（= access_mode === 'free'，前后端同一口径） */
-  is_free: boolean
-  /** 免费服规则文案（用户端展示；付费服为空串） */
-  access_note: string
-  /** 下载策略：null = 跟随全局（免费服默认禁止）/ true = 允许 / false = 禁止 */
+  /** 下载策略：null = 跟随全局 / true = 允许 / false = 禁止 */
   allow_download: boolean | null
   /** 用户端该连的地址（服自己的地址 → 该服 Emby 入口 → 全局环境变量） */
   public_url: string
@@ -466,9 +460,6 @@ export interface RealmRow {
 export interface RealmSummary {
   total_realms: number
   enabled_realms: number
-  /** 免费服 / 付费服的服数（面板顶部与概览页展示） */
-  free_realms: number
-  paid_realms: number
   libraries: number
   items: number
   plans: number
@@ -494,9 +485,6 @@ export interface RealmOverview {
     url: string
     is_active: boolean
     is_default: boolean
-    /** 接入方式（v2.7.0）：free = 免费服（免费开放） */
-    access_mode: 'paid' | 'free'
-    is_free: boolean
     public_url: string
     stats: RealmStats
   }[]
@@ -877,14 +865,6 @@ export interface UserGrantSubscription {
   cancelled: boolean
 }
 
-/** 免费服的存量查看行记录（付费服恒为 undefined） */
-export interface UserGrantUnlock {
-  unlocked: boolean
-  unlocked_at: string | null
-  expires_at: string | null
-  points_spent: number
-}
-
 export interface UserGrantCard {
   realm_id: number
   realm_name: string
@@ -892,11 +872,8 @@ export interface UserGrantCard {
   is_default: boolean
   /** 服本身是否启用（停用不改变播放判定，只提示管理员该清理） */
   is_active: boolean
-  access_mode: 'paid' | 'free'
-  is_free: boolean
-  access_note: string
-  /** 授权来源：subscription / expired / none / unlock / free_open */
-  grant: 'subscription' | 'expired' | 'none' | 'unlock' | 'free_open'
+  /** 授权来源：subscription / expired / none */
+  grant: 'subscription' | 'expired' | 'none'
   grant_label: string
   /** 配色语义：ok 生效 / warn 即将到期 / off 未授权或已过期 */
   state: 'ok' | 'warn' | 'off'
@@ -915,7 +892,6 @@ export interface UserGrantCard {
     nodes_online: number | null
   }
   subscription?: UserGrantSubscription
-  unlock?: UserGrantUnlock
 }
 
 export interface UserGrants {

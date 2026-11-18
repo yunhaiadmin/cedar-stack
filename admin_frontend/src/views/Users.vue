@@ -14,8 +14,8 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   CircleCheck, CircleSlash, Crown, Download, Eye, EyeOff, Film, Gift,
-  History, KeyRound, Mail, Megaphone, MonitorSmartphone, MoreHorizontal, PlayCircle, RefreshCw,
-  Server, ShieldCheck, Smartphone, UserX, Users as UsersIcon, Wallet, Waypoints,
+  History, KeyRound, Mail, Megaphone, MoreHorizontal, PlayCircle, RefreshCw,
+  Server, ShieldCheck, Smartphone, UserX, Users as UsersIcon, Wallet,
 } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard, StatTile } from '@/components/ui'
 import { useBreakpoint } from '@/composables/useBreakpoint'
@@ -616,12 +616,7 @@ function grantReason(card: UserGrantCard): string {
     if (sub?.cancelled) return `${sub.plan_name || '会员'} 已退款取消`
     return `${sub?.plan_name || '会员'} 已于 ${fmtDay(sub?.end_date ?? null)} 到期`
   }
-  if (card.grant === 'unlock') {
-    const u = card.unlock
-    return u?.expires_at ? `存量查看凭证 · ${fmtDay(u.expires_at)} 到期` : '存量查看凭证 · 永久有效'
-  }
-  if (card.grant === 'free_open') return '没有存量查看凭证'
-  return '付费服未开通会员，播放会被付费墙拦下'
+  return '未开通会员，播放会被付费墙拦下'
 }
 
 /** 资源数字：条目数常在十万级，给个千分位比堆 6 位数字好读；null 显示「—」而不是 0 */
@@ -893,7 +888,6 @@ function fmtCount(n: number | null | undefined): string {
                       <b class="grant-name">{{ card.realm_name }}</b>
                       <span class="au-badge" :class="BADGE_BY_STATE[grantState(card).cls] || 'au-badge-muted'">{{ grantState(card).text }}</span>
                       <span v-if="card.is_default" class="au-badge au-badge-muted">默认服</span>
-                      <span v-if="card.is_free" class="au-badge au-badge-info">免费服</span>
                       <span v-if="!card.is_active" class="au-badge au-badge-rose">已停用</span>
                     </div>
 
@@ -934,14 +928,8 @@ function fmtCount(n: number | null | undefined): string {
                       </div>
                     </div>
 
-                    <p v-if="card.is_free && card.access_note" class="grant-note">
-                      <Waypoints :size="12" />{{ card.access_note }}
-                    </p>
-                    <p v-else-if="!card.can_play" class="grant-note muted">
+                    <p v-if="!card.can_play" class="grant-note muted">
                       <CircleSlash :size="12" />到「订阅套餐」授予该服会员，或用该服的会员卡码开通
-                    </p>
-                    <p v-else-if="card.is_free && !card.unlock?.unlocked" class="grant-note">
-                      <MonitorSmartphone :size="12" />能看全库，但客户端账号地址需查看资格在期（或存量凭证在效）才下发
                     </p>
                   </div>
                 </div>

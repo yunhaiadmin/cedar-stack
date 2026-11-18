@@ -75,8 +75,7 @@ def _assert_one_log(db, admin, action, target_type, target_id):
 # ---------------------------------------------------------------- governance
 
 def _seed_governance(db):
-    realm = models.ServerRealm(name="公益服", slug="main",
-                               access_mode="free", is_active=True)
+    realm = models.ServerRealm(name="主服", slug="main", is_active=True)
     db.add(realm)
     db.commit()
     db.add(models.SystemConfig(key="active_realm_id", value=str(realm.id)))

@@ -51,7 +51,6 @@ export interface ServerLinesRealm {
   name: string
   base_url: string
   is_default: boolean
-  is_free?: boolean
   /** 这个大类下的线路（主线路在前）；缺省时用 base_url 补一条 */
   lines?: ServerLinesLine[]
   /** 主线路的配额用尽标记（补行时用） */
@@ -62,7 +61,6 @@ export interface ServerLinesCard {
   base_url: string
   server_name: string
   realm_name?: string | null
-  is_free?: boolean
   quota_exhausted?: boolean
   realms?: ServerLinesRealm[]
 }
@@ -89,7 +87,6 @@ interface ServerLineGroup {
   key: string
   /** 组标题 = 大类（服）名 */
   title: string
-  free: boolean
   lines: ServerLine[]
 }
 
@@ -135,7 +132,7 @@ const groups = computed<ServerLineGroup[]>(() => {
       }
     }
     if (rows.length) {
-      out.push({ key: `realm-${r.id}`, title: r.name || '', free: !!r.is_free, lines: rows })
+      out.push({ key: `realm-${r.id}`, title: r.name || '', lines: rows })
     }
   }
   if (!out.length) {
@@ -144,7 +141,6 @@ const groups = computed<ServerLineGroup[]>(() => {
       out.push({
         key: 'top',
         title: card.realm_name || card.server_name || '',
-        free: !!card.is_free,
         lines: [{
           key: 'top',
           name: '',
@@ -246,7 +242,6 @@ onBeforeUnmount(() => {
           <div v-for="g in groups" :key="g.key" class="sls-group-block">
             <p v-if="g.title" class="sls-group-name">
               {{ g.title }}
-              <span v-if="g.free" class="sls-line__free">公益服</span>
             </p>
             <div class="sls-lines">
               <div v-for="line in g.lines" :key="line.key" class="sls-line" :class="{ 'sls-line--off': line.exhausted }">
@@ -510,11 +505,6 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.sls-line__free {
-  flex: none;
-  font-size: var(--uhd-fs-micro);
-  color: var(--sls-sub);
 }
 /* 配额用尽：整行灰态、暂停服务标记、复制钮禁用 */
 .sls-line--off .sls-line__main {

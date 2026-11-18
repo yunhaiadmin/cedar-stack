@@ -17,9 +17,8 @@
 /**
  * 「我的」页状态预警条：只吃父页（PersonalCenterView）已经加载好的账号
  * 数据，不自己发请求。触发口径：
- * - 付费会员 7 天内到期：黄色提醒到期日与续费入口（订阅服务页现行续费
+ * - 会员 7 天内到期：黄色提醒到期日与续费入口（订阅服务页现行续费
  *   口径，不在这里新造逻辑）。
- * 活力预警与公益资格到期提醒已随活力/公益资格整族于 2026-11-14 删除。
  * 数据拿不到就不出条，不触发时整块不渲染。
  */
 import { computed } from 'vue'
@@ -28,7 +27,6 @@ import { TriangleAlert } from 'lucide-vue-next'
 import type { MySubscription } from '@/api'
 
 const props = defineProps<{
-  isFreeRealm: boolean
   activeSub: MySubscription | null
 }>()
 
@@ -43,8 +41,7 @@ interface AlertItem {
 const alerts = computed<AlertItem[]>(() => {
   const out: AlertItem[] = []
   // ── 订阅到期（7 天内） ──
-  if (!props.isFreeRealm && props.activeSub && props.activeSub.days_left <= 7) {
-    // 公益服下 legacy 订阅记录不作数（与会员页同款设门）：只在付费服提醒
+  if (props.activeSub && props.activeSub.days_left <= 7) {
     const sub = props.activeSub
     out.push({
       key: 'sub-expiry',

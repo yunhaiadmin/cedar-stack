@@ -350,9 +350,6 @@ def payment_plans(realm_id: Optional[int] = None, db: Session = Depends(get_db))
 
     套餐是一个服一个的：默认只展示**当前服**的可购套餐（``realm_id=0`` 看全部服）。
     用户买哪一份，会员就开在哪个服。
-
-    同时下发该服的**接入方式**：公益服（``is_free``）不需要卖会员，用户端的钱包页
-    据此把「开通会员」换成「公益服 · 免费开放」的说明，不再推付费引导。
     """
     from backend import entitlements as _entitlements
 
@@ -377,7 +374,6 @@ def payment_plans(realm_id: Optional[int] = None, db: Session = Depends(get_db))
     plans = query.filter(
         models.SubscriptionPlan.is_active == True  # noqa: E712
     ).order_by(models.SubscriptionPlan.sort_order).all()
-    free = realms.is_free_realm(db, scope_id) if scope_id else False
     # 对比表口径行（2026-11-14 订阅重做）：登录设备上限与下载开关是
     # 全站口径（非套餐级配置），随套餐列表一并下发，前端不写死数值。
     from backend import devices as _devices
@@ -411,9 +407,6 @@ def payment_plans(realm_id: Optional[int] = None, db: Session = Depends(get_db))
         "enabled": purchase_enabled,
         "wallet_purchase_enabled": wallet_purchase_enabled,
         "realm_id": scope_id,
-        "access_mode": "free" if free else "paid",
-        "is_free": free,
-        "access_note": realms.access_note_of(db, scope_id) if scope_id else "",
         "device_limit": _devices.device_limit(db),
         "download_allowed": _subscriptions.download_allowed(db, scope_id),
         "plans": [

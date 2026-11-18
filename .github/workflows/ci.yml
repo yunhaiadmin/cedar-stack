@@ -380,11 +380,6 @@ jobs:
         timeout-minutes: 5
         run: python scripts/smoke_test_realms.py
 
-      # 一个面板同时运营付费服与公益服：免费开放按服判定、默认禁下载、切回付费服立刻恢复付费墙
-      - name: 公益服冒烟（免费开放 / 按服判定 / 下载策略 / 面板口径）
-        timeout-minutes: 5
-        run: python scripts/smoke_test_free_realm.py
-
       # 会员到期前要有人提醒（否则续费只能指望用户自己想起来）：档位窗口、
       # 一档只发一次、档位推进会补发、到期通知、开关与自定义档位、面板口径与鉴权
       - name: 到期提醒冒烟（窗口 / 去重幂等 / 档位推进 / 面板口径）

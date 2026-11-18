@@ -541,10 +541,9 @@ export const discountCreditApi = {
 
 export const paymentApi = {
   methods: () => api.get<never, PaymentMethod[]>('/api/user/economy/payment/methods'),
-  // is_free / access_mode = 当前服是公益服（免费开放）：此时不展示套餐与购买引导
   // realmId 传 0 = 拉全部服套餐（后端按 realm 分组下发 realm_name）；不传只回当前服
   plans: (realmId?: number) =>
-    api.get<never, { enabled: boolean; wallet_purchase_enabled?: boolean; plans: SubscriptionPlan[]; access_mode?: 'paid' | 'free'; is_free?: boolean; access_note?: string; device_limit?: number; download_allowed?: boolean }>(
+    api.get<never, { enabled: boolean; wallet_purchase_enabled?: boolean; plans: SubscriptionPlan[]; device_limit?: number; download_allowed?: boolean }>(
       '/api/user/economy/payment/plans',
       realmId != null ? { params: { realm_id: realmId } } : undefined,
     ),

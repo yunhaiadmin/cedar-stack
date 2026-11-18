@@ -13,7 +13,7 @@ Google / Drive 网络全部用桩替身，不碰真实上游。
 """
 
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -124,16 +124,23 @@ def _web_user(db, user_id):
 
 
 def _grant_view_credential(db, user_id):
+    """给用户在当前服落一份有效订阅（查看资格的现行唯一来源，
+    判定走 subscriptions.view_grant；公益服删除后存量查看行不再
+    参与判定）。同时把该服设为面板当前服。"""
     user = _web_user(db, user_id)
     realm = base_models.ServerRealm(
-        name="公益服", slug=f"free-hide-{user_id}", access_mode="free",
-        is_active=True)
+        name="主服", slug=f"main-hide-{user_id}", is_active=True)
     db.add(realm)
     db.commit()
     realms.set_active_realm(db, realm.id)
-    db.add(base_models.EmbyViewUnlock(
-        user_id=user_id, realm_id=realm.id, unlocked_at=datetime.now(),
-        expires_at=None, points_spent=0))
+    plan = base_models.SubscriptionPlan(
+        name="月卡", price=10, duration_days=30, realm_id=realm.id)
+    db.add(plan)
+    db.commit()
+    db.add(base_models.UserSubscription(
+        user_id=user_id, plan_id=plan.id, realm_id=realm.id,
+        start_date=datetime.now() - timedelta(days=1),
+        end_date=datetime.now() + timedelta(days=29), status="active"))
     db.commit()
     return user
 

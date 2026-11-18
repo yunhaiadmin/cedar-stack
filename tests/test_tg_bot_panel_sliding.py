@@ -78,7 +78,7 @@ def db():
     models.Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
     session.add(models.ServerRealm(
-        name="公益服", slug="main", access_mode="free"))
+        name="主服", slug="main"))
     session.commit()
     store.invalidate()
     try:

@@ -210,7 +210,7 @@ ANON_ADMIN_TEXT = (
 _IDENTITY_COMMANDS = {
     "/start", "/bind",
     "/account", "/me", "/request", "/myrequests", "/login", "/renew",
-    "/govlog", "/level", "/report", "/propose", "/launch",
+    "/govlog", "/level", "/report",
     "/bindings", "/transfers", "/whyplay", "/wants", "/reconcile",
     "/rankpush", "/playrank",
     "/kk",
@@ -501,8 +501,6 @@ def dispatch(db, update: dict) -> None:
             "/govlog": handlers.handle_govlog,
             "/level": handlers.handle_account,
             "/report": handlers.handle_report,
-            "/propose": handlers.handle_propose,
-            "/launch": handlers.handle_direct_launch,
             "/requestboard": handlers.handle_request_board,
             "/rules": handlers.handle_rules,
             "/login": handlers.handle_login,
@@ -537,7 +535,7 @@ def dispatch(db, update: dict) -> None:
         # 的管理员精简卡模式（is_staff 门禁 + 字段白名单，无审计痕迹），
         # 私聊仍出审计全卡；见 handlers.handle_whois 的 in_group 路径。
         private_only = {"/request", "/myrequests", "/login", "/renew", "/govlog",
-                        "/report", "/propose", "/launch", "/reconcile", "/rankpush",
+                        "/report", "/reconcile", "/rankpush",
                         "/playrank"}
         if cmd in private_only and in_group:
             _reply_private_only(db, chat_id, msg)

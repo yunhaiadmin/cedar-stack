@@ -90,9 +90,9 @@ def _user(db, username, level=1, staff=False):
     return user
 
 
-def _realm(db, name, slug, access_mode, active=True):
+def _realm(db, name, slug, active=True):
     realm = models.ServerRealm(
-        name=name, slug=slug, access_mode=access_mode, is_active=active
+        name=name, slug=slug, is_active=active
     )
     db.add(realm)
     db.commit()
@@ -100,16 +100,16 @@ def _realm(db, name, slug, access_mode, active=True):
     return realm
 
 
-def _free_realm(db):
-    """公益服设为当前服（active_realm_id 指向它）。"""
-    realm = _realm(db, "公益服", "main", "free")
+def _main_realm(db):
+    """主服设为当前服（active_realm_id 指向它）。"""
+    realm = _realm(db, "主服", "main")
     db.add(models.SystemConfig(key="active_realm_id", value=str(realm.id)))
     db.commit()
     return realm
 
 
-def _paid_realm(db):
-    return _realm(db, "付费服", "paid", "paid")
+def _other_realm(db):
+    return _realm(db, "另一服", "other")
 
 
 def _seek(db, user, name, realm_id=None):
@@ -185,10 +185,10 @@ def _decide(client, admin, report_id, decision, note=None):
     )
 
 
-def _setup_free(db, client):
-    """公益服＋管理员＋举报人＋3 名复核员（旧口径 Lv.3/Lv.4/Lv.5，等级列
+def _setup_main(db, client):
+    """主服＋管理员＋举报人＋3 名复核员（旧口径 Lv.3/Lv.4/Lv.5，等级列
     删除后三人权重恒 0）＋一条求片。"""
-    realm = _free_realm(db)
+    realm = _main_realm(db)
     admin = _user(db, "admin", level=6, staff=True)
     reporter = _user(db, "reporter", level=1)
     reviewers = [
@@ -204,7 +204,7 @@ def _setup_free(db, client):
 
 
 def test_create_report_ok(db, client):
-    _, _, reporter, _, seek = _setup_free(db, client)
+    _, _, reporter, _, seek = _setup_main(db, client)
     body = _report(client, reporter, seek.id, reason="spam", detail="刷屏")
     assert body["status"] == "pending"
     assert body["reporter_id"] == reporter.id
@@ -217,7 +217,7 @@ def test_create_report_ok(db, client):
 
 
 def test_create_report_invalid_reason(db, client):
-    _, _, reporter, _, seek = _setup_free(db, client)
+    _, _, reporter, _, seek = _setup_main(db, client)
     resp = _as(client, reporter).post(
         "/api/user/governance/reports",
         json={"target_id": seek.id, "reason": "rude"},
@@ -226,7 +226,7 @@ def test_create_report_invalid_reason(db, client):
 
 
 def test_create_report_target_missing(db, client):
-    _, _, reporter, _, _ = _setup_free(db, client)
+    _, _, reporter, _, _ = _setup_main(db, client)
     resp = _as(client, reporter).post(
         "/api/user/governance/reports",
         json={"target_id": 99999, "reason": "spam"},
@@ -235,7 +235,7 @@ def test_create_report_target_missing(db, client):
 
 
 def test_create_report_duplicate(db, client):
-    _, _, reporter, _, seek = _setup_free(db, client)
+    _, _, reporter, _, seek = _setup_main(db, client)
     _report(client, reporter, seek.id)
     resp = _as(client, reporter).post(
         "/api/user/governance/reports",
@@ -244,20 +244,21 @@ def test_create_report_duplicate(db, client):
     assert resp.status_code == 409
 
 
-def test_create_report_paid_realm_forbidden(db, client):
-    _free_realm(db)
-    paid = _paid_realm(db)
+def test_create_report_other_realm_allowed(db, client):
+    # 公益服门已删：举报治理全站统一生效，非当前服的求片也可举报。
+    _main_realm(db)
+    other = _other_realm(db)
     reporter = _user(db, "reporter", level=1)
-    seek = _seek(db, reporter, "付费服求片", realm_id=paid.id)
+    seek = _seek(db, reporter, "另一服求片", realm_id=other.id)
     resp = _as(client, reporter).post(
         "/api/user/governance/reports",
         json={"target_id": seek.id, "reason": "spam"},
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 201, resp.text
 
 
 def test_create_report_switch_off(db, client):
-    _, _, reporter, _, seek = _setup_free(db, client)
+    _, _, reporter, _, seek = _setup_main(db, client)
     _set_config(db, "governance_report_enabled", "0")
     resp = _as(client, reporter).post(
         "/api/user/governance/reports",
@@ -267,7 +268,7 @@ def test_create_report_switch_off(db, client):
 
 
 def test_create_report_suspended_forbidden(db, client):
-    _, admin, reporter, _, seek = _setup_free(db, client)
+    _, admin, reporter, _, seek = _setup_main(db, client)
     resp = _as_admin(client, admin).post(
         "/api/admin/governance/suspensions",
         json={"user_id": reporter.id, "days": 30, "note": "手动停权"},
@@ -284,7 +285,7 @@ def test_create_report_suspended_forbidden(db, client):
 
 
 def test_my_reports_only_mine(db, client):
-    _, _, reporter, _, seek = _setup_free(db, client)
+    _, _, reporter, _, seek = _setup_main(db, client)
     other = _user(db, "other", level=1)
     _report(client, reporter, seek.id)
     _report(client, other, seek.id)
@@ -294,7 +295,7 @@ def test_my_reports_only_mine(db, client):
 
 
 def test_report_detail_visibility(db, client):
-    _, admin, reporter, reviewers, seek = _setup_free(db, client)
+    _, admin, reporter, reviewers, seek = _setup_main(db, client)
     body = _report(client, reporter, seek.id)
     report_id = body["id"]
     # 举报人可看，无 votes 明细
@@ -322,7 +323,7 @@ def test_report_detail_visibility(db, client):
 
 
 def test_review_vote_low_level_forbidden(db, client):
-    _, _, reporter, _, seek = _setup_free(db, client)
+    _, _, reporter, _, seek = _setup_main(db, client)
     low = _user(db, "low", level=2)
     body = _report(client, reporter, seek.id)
     resp = _vote(client, low, body["id"], "agree")
@@ -330,7 +331,7 @@ def test_review_vote_low_level_forbidden(db, client):
 
 
 def test_review_vote_self_forbidden(db, client):
-    _, _, reporter, _, seek = _setup_free(db, client)
+    _, _, reporter, _, seek = _setup_main(db, client)
     # 保留属性赋值（非构造 kwarg）：复核权重走 getattr(user, "member_level")
     # 兜底 seam，赋 6 后权重门可过、才能测到其后的自投禁令 403。
     reporter.member_level = 6
@@ -343,7 +344,7 @@ def test_review_vote_self_forbidden(db, client):
 def test_review_vote_duplicate(db, client):
     # 原口径：首票 200、重票 409。等级列删除后权重恒 0，两次投票都在
     # 权重门 403、不落票行（重复票校验已不可达）。
-    _, _, reporter, reviewers, seek = _setup_free(db, client)
+    _, _, reporter, reviewers, seek = _setup_main(db, client)
     body = _report(client, reporter, seek.id)
     assert _vote(client, reviewers[0], body["id"], "agree").status_code == 403
     resp = _vote(client, reviewers[0], body["id"], "disagree")
@@ -352,26 +353,28 @@ def test_review_vote_duplicate(db, client):
 
 
 def test_review_vote_bad_decision(db, client):
-    _, _, reporter, reviewers, seek = _setup_free(db, client)
+    _, _, reporter, reviewers, seek = _setup_main(db, client)
     body = _report(client, reporter, seek.id)
     resp = _vote(client, reviewers[0], body["id"], "maybe")
     assert resp.status_code == 400
 
 
 def test_review_vote_switch_off(db, client):
-    _, _, reporter, reviewers, seek = _setup_free(db, client)
+    _, _, reporter, reviewers, seek = _setup_main(db, client)
     body = _report(client, reporter, seek.id)
     _set_config(db, "governance_report_enabled", "0")
     resp = _vote(client, reviewers[0], body["id"], "agree")
     assert resp.status_code == 403
 
 
-def test_review_vote_paid_realm_forbidden(db, client):
-    _free_realm(db)
-    paid = _paid_realm(db)
+def test_review_vote_other_realm_blocked_by_level_gate(db, client):
+    # 公益服门已删：复核入口不再按目标服判定；本例 403 来自复核
+    # 等级门（等级列删除后权重恒 0），与服无关。
+    _main_realm(db)
+    other = _other_realm(db)
     reporter = _user(db, "reporter", level=1)
-    seek = _seek(db, reporter, "付费服求片", realm_id=paid.id)
-    # 绕过创建门控直接插举报行，复核入口仍须按目标服判定
+    seek = _seek(db, reporter, "另一服求片", realm_id=other.id)
+    # 直接插举报行，复核入口只剩等级门
     row = models.GovernanceReport(
         reporter_id=reporter.id,
         target_type="media_seek",
@@ -393,7 +396,7 @@ def test_escalation_all_agree(db, client):
     # 原口径：3 名复核员（Lv.3/4/5，权重 1+2+2=5）全同意达 quorum 升级、
     # 进终审队列。等级列删除后复核权重恒 0（getattr 兜底 None→Lv.1），
     # 所有复核投票都在权重门 403、不落票行，举报恒 pending、不进队列。
-    _, admin, reporter, reviewers, seek = _setup_free(db, client)
+    _, admin, reporter, reviewers, seek = _setup_main(db, client)
     body = _report(client, reporter, seek.id)
     for reviewer in reviewers:
         resp = _vote(client, reviewer, body["id"], "agree")
@@ -411,7 +414,7 @@ def test_quorum_counts_people_not_weight(db, client):
     # 原口径：两名 Lv.6 同意（权重 6）人数不足 quorum 仍 pending，
     # 第三人否决后按权重比升级。现无等级来源：三票全在权重门 403，
     # quorum/权重计票已不可达，举报恒 pending。
-    _, _, reporter, _, seek = _setup_free(db, client)
+    _, _, reporter, _, seek = _setup_main(db, client)
     lv6a = _user(db, "lv6a", level=6)
     lv6b = _user(db, "lv6b", level=6)
     lv3 = _user(db, "lv3", level=3)
@@ -427,7 +430,7 @@ def test_quorum_counts_people_not_weight(db, client):
 def test_disagree_majority_closes(db, client):
     # 原口径：3 名复核员全否决 → review_rejected 关闭、再投 409。
     # 现否决票同样恒 403 在权重门，举报不关闭、恒 pending。
-    _, _, reporter, reviewers, seek = _setup_free(db, client)
+    _, _, reporter, reviewers, seek = _setup_main(db, client)
     body = _report(client, reporter, seek.id)
     for reviewer in reviewers:
         resp = _vote(client, reviewer, body["id"], "disagree")
@@ -443,7 +446,7 @@ def test_weight_snapshot_survives_level_change(db, client):
     # 原口径：复核员投票后升 Lv.6，其快照权重仍为投票时刻的 1，
     # 三票加权和 5 升级。现投票恒 403 在权重门、无票行可快照，
     # 管理员详情 votes 为空、举报恒 pending。
-    _, admin, reporter, reviewers, seek = _setup_free(db, client)
+    _, admin, reporter, reviewers, seek = _setup_main(db, client)
     body = _report(client, reporter, seek.id)
     resp = _vote(client, reviewers[0], body["id"], "agree")
     assert resp.status_code == 403
@@ -462,7 +465,7 @@ def test_weight_snapshot_survives_level_change(db, client):
 def test_config_custom_quorum(db, client):
     # 原口径：quorum 配置改 2 后两票即升级。现投票恒 403 在权重门，
     # quorum 配置不再能改变结果，举报恒 pending。
-    _, _, reporter, reviewers, seek = _setup_free(db, client)
+    _, _, reporter, reviewers, seek = _setup_main(db, client)
     _set_config(db, "governance_review_quorum", "2")
     body = _report(client, reporter, seek.id)
     for reviewer in reviewers[:2]:
@@ -476,7 +479,7 @@ def test_config_custom_quorum(db, client):
 
 
 def test_decide_accept(db, client):
-    _, admin, reporter, reviewers, seek = _setup_free(db, client)
+    _, admin, reporter, reviewers, seek = _setup_main(db, client)
     body = _report(client, reporter, seek.id)
     _escalate(client, db, body["id"], reviewers)
     resp = _decide(client, admin, body["id"], "accepted", note="属实")
@@ -493,7 +496,7 @@ def test_decide_accept(db, client):
 
 
 def test_decide_reject(db, client):
-    _, admin, reporter, reviewers, seek = _setup_free(db, client)
+    _, admin, reporter, reviewers, seek = _setup_main(db, client)
     body = _report(client, reporter, seek.id)
     _escalate(client, db, body["id"], reviewers)
     resp = _decide(client, admin, body["id"], "rejected", note="不属实")
@@ -503,14 +506,14 @@ def test_decide_reject(db, client):
 
 
 def test_decide_non_escalated_rejected(db, client):
-    _, admin, reporter, _, seek = _setup_free(db, client)
+    _, admin, reporter, _, seek = _setup_main(db, client)
     body = _report(client, reporter, seek.id)
     resp = _decide(client, admin, body["id"], "accepted")
     assert resp.status_code == 409
 
 
 def test_decide_bad_decision(db, client):
-    _, admin, reporter, reviewers, seek = _setup_free(db, client)
+    _, admin, reporter, reviewers, seek = _setup_main(db, client)
     body = _report(client, reporter, seek.id)
     _escalate(client, db, body["id"], reviewers)
     resp = _decide(client, admin, body["id"], "maybe")
@@ -534,7 +537,7 @@ def _reject_five(db, client, admin, reporter, reviewers):
 
 
 def test_abuse_auto_suspension_on_fifth_reject(db, client):
-    _, admin, reporter, reviewers, _ = _setup_free(db, client)
+    _, admin, reporter, reviewers, _ = _setup_main(db, client)
     last = _reject_five(db, client, admin, reporter, reviewers)
     # 第 5 次驳回触发自动停权，随响应返回
     assert "auto_suspension" in last.json()
@@ -554,7 +557,7 @@ def test_abuse_auto_suspension_on_fifth_reject(db, client):
 
 
 def test_abuse_no_double_suspension(db, client):
-    _, admin, reporter, reviewers, _ = _setup_free(db, client)
+    _, admin, reporter, reviewers, _ = _setup_main(db, client)
     _reject_five(db, client, admin, reporter, reviewers)
     # 已有生效停权时再驳回，不重复建、不顺延
     seek = _seek(db, reporter, "求片X", realm_id=None)
@@ -579,7 +582,7 @@ def test_abuse_no_double_suspension(db, client):
 
 
 def test_abuse_window_excludes_old_rejects(db, client):
-    _, admin, reporter, reviewers, _ = _setup_free(db, client)
+    _, admin, reporter, reviewers, _ = _setup_main(db, client)
     # 4 次旧驳回（decided_at 回拨 31 天）＋1 次新驳回：窗口内仅 1 次，不触发
     for i in range(4):
         seek = _seek(db, reporter, f"旧求片{i}", realm_id=None)
@@ -603,7 +606,7 @@ def test_abuse_window_excludes_old_rejects(db, client):
 
 
 def test_suspension_expiry_recovers(db, client):
-    _, admin, reporter, _, seek = _setup_free(db, client)
+    _, admin, reporter, _, seek = _setup_main(db, client)
     resp = _as_admin(client, admin).post(
         "/api/admin/governance/suspensions",
         json={"user_id": reporter.id, "days": 30},
@@ -626,7 +629,7 @@ def test_suspension_expiry_recovers(db, client):
 
 
 def test_manual_suspend_unsuspend(db, client):
-    _, admin, reporter, _, seek = _setup_free(db, client)
+    _, admin, reporter, _, seek = _setup_main(db, client)
     resp = _as_admin(client, admin).post(
         "/api/admin/governance/suspensions",
         json={"user_id": reporter.id, "days": 7, "note": "手动"},
@@ -655,7 +658,7 @@ def test_manual_suspend_unsuspend(db, client):
 
 
 def test_manual_suspend_missing_user(db, client):
-    _, admin, _, _, _ = _setup_free(db, client)
+    _, admin, _, _, _ = _setup_main(db, client)
     resp = _as_admin(client, admin).post(
         "/api/admin/governance/suspensions",
         json={"user_id": 99999, "days": 7},
@@ -664,7 +667,7 @@ def test_manual_suspend_missing_user(db, client):
 
 
 def test_admin_suspension_list(db, client):
-    _, admin, reporter, reviewers, _ = _setup_free(db, client)
+    _, admin, reporter, reviewers, _ = _setup_main(db, client)
     _reject_five(db, client, admin, reporter, reviewers)
     rows = _as_admin(client, admin).get(
         "/api/admin/governance/suspensions",
@@ -679,7 +682,7 @@ def test_admin_suspension_list(db, client):
 
 
 def test_admin_queue_default_and_filter(db, client):
-    _, admin, reporter, reviewers, seek = _setup_free(db, client)
+    _, admin, reporter, reviewers, seek = _setup_main(db, client)
     pending = _report(client, reporter, seek.id)
     seek2 = _seek(db, reporter, "求片B", realm_id=None)
     escalated = _report(client, reporter, seek2.id)
@@ -696,7 +699,7 @@ def test_admin_queue_default_and_filter(db, client):
 
 
 def test_governance_actions_do_not_grant_xp(db, client):
-    _, _, reporter, reviewers, seek = _setup_free(db, client)
+    _, _, reporter, reviewers, seek = _setup_main(db, client)
     body = _report(client, reporter, seek.id)
     _vote(client, reviewers[0], body["id"], "agree")
     db.expire_all()

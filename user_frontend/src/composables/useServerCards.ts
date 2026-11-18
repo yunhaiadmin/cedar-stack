@@ -16,9 +16,9 @@ import { subscriptionUsedPercent } from '@/utils/subscription'
 
 const ROUTES = { store: '/game/account/subscribe' } as const
 const COPY = {
-  badgeActive: '生效中', badgeExpiring: '临期', badgeExpired: '已过期', badgeFree: '免费开放',
+  badgeActive: '生效中', badgeExpiring: '临期', badgeExpired: '已过期',
   footerOpen: '立即开通', footerRenew: '续费',
-  descMember: '会员权益全库通用', descFree: '免费开放 · 无需会员看全库',
+  descMember: '会员权益全库通用',
 } as const
 
 /** 服务卡视图模型 */
@@ -26,14 +26,13 @@ export interface ServerCardItem {
   id: number
   name: string
   slug: string
-  accessMode: 'paid' | 'free'
   subscribed: boolean
   planName: string
   endDate: string | null
   daysLeft: number | null
   progress: number | null
   badge: string | null
-  state: 'active' | 'expiring' | 'expired' | 'unsubscribed' | 'free_open'
+  state: 'active' | 'expiring' | 'expired' | 'unsubscribed'
   footer: string
   to: string
   desc: string
@@ -76,7 +75,7 @@ function parseEndOfDay(value: string | null | undefined): number | null {
   return Number.isNaN(ts) ? null : ts
 }
 
-/** 付费服卡片 */
+/** 服务卡片 */
 function buildPaidCard(
   realm: AccountRealmCard,
   sub: MySubscription | null,
@@ -146,7 +145,6 @@ function buildPaidCard(
     id: realm.id,
     name: realm.name,
     slug: realm.slug,
-    accessMode: 'paid',
     subscribed,
     planName,
     endDate,
@@ -164,33 +162,10 @@ function buildPaidCard(
   }
 }
 
-/** 公益服（免费）卡片 */
-function buildFreeCard(realm: AccountRealmCard): ServerCardItem {
-  return {
-    id: realm.id,
-    name: realm.name,
-    slug: realm.slug,
-    accessMode: 'free',
-    subscribed: !!realm.subscribed,
-    planName: realm.plan_name ?? '',
-    endDate: realm.end_date ?? null,
-    daysLeft: null,
-    progress: null,
-    badge: COPY.badgeFree,
-    state: 'free_open',
-    footer: COPY.footerOpen,
-    to: ROUTES.store,
-    desc: COPY.descFree,
-    expiringSoon: false,
-  }
-}
-
-/** 按 access_mode 分发 */
 function buildRealmCard(
   realm: AccountRealmCard,
   subs: MySubscription[],
 ): ServerCardItem {
-  if (realm.access_mode === 'free') return buildFreeCard(realm)
   // 用 home/summary 里的订阅明细按 realm_id 对上该服，拿 start_date 算进度
   const sub = subs.find((s) => s.realm_id === realm.id && s.status === 'active') ?? null
   return buildPaidCard(realm, sub)

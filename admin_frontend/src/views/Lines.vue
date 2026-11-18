@@ -238,8 +238,6 @@ function trafficPct(line: RealmLine): number {
           <div class="group-badges">
             <span v-if="row.id === activeId" class="au-badge au-badge-amber">当前服</span>
             <span v-if="row.is_default" class="au-badge au-badge-info">默认服</span>
-            <span v-if="row.is_free" class="au-badge au-badge-green">免费服</span>
-            <span v-else class="au-badge au-badge-muted">付费服</span>
             <span v-if="!row.is_active" class="au-badge au-badge-rose">已停用</span>
             <el-button size="small" type="primary" :icon="Plus" @click="openCreate(row)">
               新增线路

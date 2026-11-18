@@ -44,8 +44,6 @@ BOT_COMMANDS: list[tuple[str, str]] = [
     ("myrequests", "[私聊] 我的求片"),
     ("govlog", "[私聊] 治理审计日志"),
     ("report", "[私聊] 举报求片"),
-    ("propose", "[私聊] 活动提案"),
-    ("launch", "[私聊] 直接发起活动"),
     ("requestboard", "[群/私聊] 求片榜"),
     ("rules", "[群/私聊] 群规"),
     ("login", "[私聊] 快捷登录"),

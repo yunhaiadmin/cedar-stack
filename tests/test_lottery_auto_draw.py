@@ -227,7 +227,7 @@ def test_notify_shows_username_when_tg_name_unavailable(db, monkeypatch):
     entry = db.query(models.LotteryRoundEntry).filter(models.LotteryRoundEntry.round_id == rnd.id).first()
     user = db.query(models.WebUser).filter(models.WebUser.id == entry.user_id).first()
     assert user.username in group_text
-    assert "天数奖：公益7天" in group_text
+    assert "天数奖：会员7天" in group_text
     assert "****" not in group_text
     assert str(entry.telegram_id) not in group_text
 

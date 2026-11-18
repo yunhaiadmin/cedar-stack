@@ -89,7 +89,6 @@
 
       <!-- 状态预警（订阅临期；数据复用本页已加载状态，不触发时整块不渲染） -->
       <StatusAlertBar
-        :is-free-realm="isFreeRealm"
         :active-sub="activeSub"
       />
 
@@ -382,7 +381,6 @@ const userStore = useUserStore()
 const { resolved: themeResolved } = useTheme()
 
 const displayName = computed(() => userStore.user?.username || '我的')
-const isFreeRealm = computed(() => userStore.isFreeRealm)
 const whitelistIdentity = computed(() => userStore.user?.whitelist_identity ?? null)
 // 家庭子账号（2026-11-15）：身份来自登录态下发（authApi 的 user），
 // 订阅/流量展示本就按主账号下发，这里只决定标识与入口显隐
@@ -392,9 +390,7 @@ const parentUsername = computed(() => userStore.user?.parent_username ?? '')
 // ── 总览数据 ──
 // 订阅改走单一数据源 useSubscriptionStore（2026-11-15）：与「我的」页
 // 同源同拍；loaded 落定前整页不渲染（见模板 v-if="subsLoaded"），
-// 不再先按空数组渲染「未开通」。公益资格状态已随福利服役族于
-// 2026-11-14 删除（资格已折算成订阅）：公益服（free 服）免费开放，
-// 会员卡在公益服恒显「生效中」，到期日无数据源。
+// 不再先按空数组渲染「未开通」。
 const subStore = useSubscriptionStore()
 const subsLoaded = computed(() => subStore.loaded)
 const activeSub = computed(() => subStore.activeSub)
@@ -402,7 +398,6 @@ const accountCard = ref<AccountCard | null>(null)
 /** 会员卡文案：套餐名 / 用户名·公开 ID / 状态（全部真实数据；
  * 公开 ID 缺失时只剩用户名，不许拿数字 id 兜底） */
 const memberPlanName = computed(() => {
-  if (isFreeRealm.value) return '公益资格'
   return activeSub.value?.plan_name ?? '未开通'
 })
 const memberUserLine = computed(() => {
@@ -411,12 +406,10 @@ const memberUserLine = computed(() => {
 })
 const memberStatusText = computed(() => {
   if (whitelistIdentity.value) return '白名单'
-  if (isFreeRealm.value) return '生效中'
   return activeSub.value ? '生效中' : '未开通'
 })
-/** 有效期文案（YYYY.MM.DD）：付费取订阅到期；公益服免费开放无到期 */
+/** 有效期文案（YYYY.MM.DD）：取订阅到期 */
 const expiryText = computed(() => {
-  if (isFreeRealm.value) return ''
   return activeSub.value ? activeSub.value.end_date.slice(0, 10).replace(/-/g, '.') : ''
 })
 

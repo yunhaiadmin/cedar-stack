@@ -3,7 +3,7 @@ import { RouterLink, useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import {
-  LogOut, Crown, Sparkles,
+  LogOut, Crown,
   Sun, Moon, MonitorSmartphone,
   ChevronRight, ShieldCheck,
   Globe, MessageSquare, Receipt, Settings,
@@ -78,7 +78,7 @@ const activeSub = ref<MySubscription | null>(null)
 
 const subPillExpiring = computed(() => (activeSub.value ? isExpiringSoon(activeSub.value) : false))
 
-/** 菜单头部的状态徽章：会员金 / 公益服青，与资产卡同一套色彩编码 */
+/** 菜单头部的状态徽章：会员金，与资产卡同一套色彩编码 */
 const menuBadge = computed(() => {
   if (activeSub.value) {
     return {
@@ -86,9 +86,6 @@ const menuBadge = computed(() => {
       text: subPillExpiring.value ? `剩 ${activeSub.value.days_left} 天` : '会员生效中',
       cls: 'gold',
     }
-  }
-  if (userStore.isFreeRealm) {
-    return { icon: Sparkles, text: '公益服 · 免费', cls: 'cyan' }
   }
   return { icon: Crown, text: '未开通会员', cls: 'muted' }
 })

@@ -1052,7 +1052,7 @@ def _prize_unit_text(p) -> str:
     name = html.escape(str(p.name or ""))
     ptype = str(p.type or "").lower()
     if ptype == "days":
-        return f"{name}：公益{p.value}天"
+        return f"{name}：会员{p.value}天"
     elif ptype == "whitelist":
         return f"{name}：白名单"
     return name

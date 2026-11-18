@@ -184,7 +184,6 @@ const themeTitle = computed(
 const displayName = computed(() => userStore.user?.username || '我的')
 const avatarInitial = computed(() => (userStore.user?.username || '账').slice(0, 1).toUpperCase())
 const accountSub = computed(() => {
-  if (userStore.isFreeRealm) return '公益服'
   if (userStore.isVIP) return '会员'
   return '普通用户'
 })

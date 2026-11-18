@@ -37,10 +37,8 @@ logger = logging.getLogger(__name__)
 CONFIG_DAILY_LIMIT = "media_seek_daily_limit"
 DEFAULT_DAILY_LIMIT = 5
 
-# Step 1 加权附议：权重表为固定表（Lv.1–Lv.6 → 1–6，封顶 6，设计稿 Q1＋Q11），
-# 不走管理端配置；每日附议上限走 SystemConfig（后台「系统设置 → 经济」可改）
-VOTE_WEIGHTS = {1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6}
-VOTE_WEIGHT_CAP = 6
+# 附议：每人 1 票（等级加权已随公益服删除退役，历史票的 weight_snapshot
+# 不动、汇总时照旧计入）；每日附议上限走 SystemConfig（后台「系统设置 → 经济」可改）
 CONFIG_DAILY_VOTE_LIMIT = "media_seek_daily_vote_limit"
 DEFAULT_DAILY_VOTE_LIMIT = 20
 
@@ -629,7 +627,7 @@ def fulfill_interval_minutes(db: Session) -> int:
     return min(1440, max(1, int(raw)))
 
 
-# ==================== Step 1 加权附议 ====================
+# ==================== 附议 ====================
 
 def daily_vote_limit(db: Session) -> int:
     """每日附议上限：SystemConfig 覆盖，缺省/脏值回默认值（绝不让脏配置把附议打死）"""
@@ -642,33 +640,13 @@ def daily_vote_limit(db: Session) -> int:
     return max(1, int(raw))
 
 
-def vote_weight_for_level(level) -> int:
-    """等级 → 附议权重：Lv.1–Lv.6 对应 1–6，超界钳制（等级缺失按 Lv.1）"""
-    try:
-        lv = int(level or 1)
-    except (TypeError, ValueError):
-        lv = 1
-    lv = max(1, min(VOTE_WEIGHT_CAP, lv))
-    return VOTE_WEIGHTS[lv]
-
-
-def _request_is_free_realm(db: Session, req) -> bool:
-    """这条求片所属的服是不是公益服：行有 realm_id 用它；老行 realm_id 为空
-    时归默认服（id 最小）；全站无服时按 paid 处理（与 realms.access_mode_of
-    同口径的安全默认）。realms 懒导入：防循环导入。"""
-    from backend import realms
-    realm_id = getattr(req, "realm_id", None)
-    if realm_id is None:
-        legacy = realms.legacy_realm(db)
-        realm_id = legacy.id if legacy is not None else None
-    return realms.is_free_realm(db, realm_id)
-
-
 def vote_weight_for_user(db: Session, user, req) -> int:
-    """投票人本次附议的权重：仅公益服按投票时刻等级快照；付费服恒为 1"""
-    if not _request_is_free_realm(db, req):
-        return 1
-    return vote_weight_for_level(getattr(user, "member_level", None) or 1)
+    """投票人本次附议的权重：全站恒为 1（等级加权已随公益服删除退役）。
+
+    签名保留给既有调用方（``_cast_vote_locked`` 等）；历史票的
+    ``weight_snapshot`` 不动，``weighted_votes_for`` 汇总时照旧计入。
+    """
+    return 1
 
 
 def weighted_votes_for(db: Session, request_ids: list) -> dict:
@@ -780,15 +758,14 @@ def toggle_vote(db: Session, user, request_id: int) -> dict:
     """附议 / 取消附议一条求片。返回 {"voted": bool, "vote_count": int,
     "weighted_vote_count": int}
 
-    规则（Step 1 加权附议）：
+    规则（附议）：
     - 附议开关关闭 → ValueError（路由转 403）
     - 求片不存在 → ValueError
     - 只能对 pending 的求片附议
     - 不能给自己的求片附议
     - 已附议 → 取消；未附议 → 附议（vote_count 行锁更新，防并发）
-    - 新附议带投票时刻等级权重快照（公益服按等级，付费服恒为 1）；
-      被停权用户仍保留基础附议 1 票（快照强制为 1），不按等级权重；
-      取消删行即自动扣减该票权重，升降级不追溯历史票；取消附议不受停权影响
+    - 新附议恒为 1 票（weight_snapshot 记 1）；历史票的权重快照不动，
+      取消删行即自动扣减该票权重；取消附议不受停权影响
     - 新附议受每日上限管（默认 20 次，按当日现存附议行计；取消删行即释放
       名额）；取消永远放行
     """
@@ -1239,14 +1216,12 @@ __all__ = [
     "work_detail",
     "CONFIG_DAILY_VOTE_LIMIT",
     "DEFAULT_DAILY_VOTE_LIMIT",
-    "VOTE_WEIGHTS",
     "daily_vote_limit",
     "daily_votes_used",
     "ensure_vote",
     "toggle_vote",
     "used_today",
     "vote_enabled",
-    "vote_weight_for_level",
     "vote_weight_for_user",
     "voted_ids",
     "voter_ids",

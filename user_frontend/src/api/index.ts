@@ -166,14 +166,14 @@ api.interceptors.response.use(
       }
     }
 
-    // 公益服 TG 门禁：后端 403 + TG_NOT_BOUND → 全局事件，App.vue 统一引导去绑定
+    // TG 绑定门禁：后端 403 + TG_NOT_BOUND → 全局事件，App.vue 统一引导去绑定
     if (error.response?.status === 403 && !originalRequest._tgNotified) {
       const detail = error.response?.data?.detail
       const code = detail && typeof detail === 'object' ? (detail as { code?: string }).code : null
       if (code === 'TG_NOT_BOUND') {
         originalRequest._tgNotified = true
         window.dispatchEvent(new CustomEvent('tg-not-bound', {
-          detail: { message: (detail as { message?: string })?.message || '公益服功能需要绑定 Telegram，防小号，1 分钟搞定' },
+          detail: { message: (detail as { message?: string })?.message || '该功能需要绑定 Telegram，防小号，1 分钟搞定' },
         }))
       }
     }
@@ -205,13 +205,8 @@ export interface AuthUser {
   is_active: boolean
   /** 管理员：用户端据此显示「管理后台」入口（两端同源同 JWT，无需二次登录） */
   is_staff?: boolean
-  /** 付费墙是否开启：开启且非会员时播放会被拦截；公益服恒为 false */
+  /** 付费墙是否开启：开启且非会员时播放会被拦截 */
   subscription_required?: boolean
-  /** 接入方式：free = 本服是公益服（免费开放，不需要会员） */
-  realm_access_mode?: 'paid' | 'free'
-  is_free_realm?: boolean
-  /** 公益服规则文案（付费服为空串） */
-  realm_access_note?: string
   /** 白名单专属身份（创世编号+专属称号）；非白名单为 null */
   whitelist_identity?: WhitelistIdentity | null
   /** 家庭子账号（2026-11-15）：本号是子账号时为 true，订阅/流量/门禁
@@ -405,10 +400,6 @@ export interface AccountRealmCard {
   mode: string
   external: boolean
   subscribed: boolean
-  /** 公益服：不需要订阅也能看（没订阅也会下发这张卡） */
-  access_mode?: 'paid' | 'free'
-  is_free?: boolean
-  access_note?: string
   end_date: string | null
   /** 后端统一口径算好的剩余天数（与「我的」页 days_left 同公式）；前端直接用，不自算 */
   days_left?: number | null
@@ -425,8 +416,6 @@ export interface AccountRealmCard {
 /** Emby 账号/线路查看权限（没权限时地址类字段置空不下发） */
 export interface ViewPermission {
   granted: boolean
-  /** 当前服是否为公益服（公益服查看随资格开通，付费服用订阅） */
-  realm_free: boolean
   /** 解锁需要的余额（历史字段，积分时代口径） */
   unlock_points: number
   /** 解锁有效期天数（0=永久） */
@@ -454,12 +443,7 @@ export interface AccountCard {
   /** 当前卡片对应的服（顶层字段是它的口径，兼容老前端） */
   realm_id?: number | null
   realm_name?: string
-  /** 接入方式：free = 公益服（免费开放，不需要会员） */
-  access_mode?: 'paid' | 'free'
-  is_free?: boolean
-  /** 公益服规则文案 */
-  access_note?: string
-  /** 该服是否允许下载（公益服默认不允许） */
+  /** 该服是否允许下载 */
   allow_download?: boolean
   /** 我在这几个服各自的地址与会员（多服时客户端该连哪台一目了然） */
   realms?: AccountRealmCard[]

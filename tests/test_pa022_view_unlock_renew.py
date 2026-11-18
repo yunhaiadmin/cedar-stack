@@ -1,14 +1,11 @@
 # -*- coding: utf-8 -*-
-"""PA-022 后续：公益服查看购买写口退役（2026-11-09 资格与凭证合并）。
+"""PA-022 后续：查看购买写口墓碑（公益服已于 2026-11-19 整套删除）。
 
-历史：PA-022 钉的是「过期行再次解锁＝原地续开」一类购买口径。
-2026-11-09 用户定版资格与凭证合并后，公益服查看随公益资格自动
-开通（subscriptions.view_grant），购买写口整体退役。本文件改钉
-下线口径：
-
-1. 任何人调 unlock-view（公益服）：一律 410 Gone，不落行、不扣分、
-   存量行原样不动（过期行不被续开、有效行不被改动）。
-2. 付费服：保持原 400 口径（查看来自订阅），不进 410 分支。
+历史：PA-022 钉的是「过期行再次解锁＝原地续开」一类购买口径；
+2026-11-09 资格与凭证合并后写口退役（公益服 410 / 付费服 400）。
+公益服删除后口径统一：查看权限来自有效订阅或团队资格，从不单独
+购买——unlock-view 对任何存在的服一律 400、不落行、存量行原样
+不动（过期行不被续开、有效行不被改动）；服不存在 404。
 价格/天数配置键（emby_view_unlock_points/days）保留可查，与本口无关。
 """
 
@@ -41,11 +38,10 @@ def db():
     session.close()
 
 
-def _setup(db, points=1000, row_expires="absent", access_mode="free"):
+def _setup(db, row_expires="absent"):
     db.add(models.SystemConfig(key="emby_view_unlock_points", value="200"))
     db.add(models.SystemConfig(key="emby_view_unlock_days", value="30"))
-    realm = models.ServerRealm(name="公益服", slug="pa022free",
-                               access_mode=access_mode)
+    realm = models.ServerRealm(name="主服", slug="pa022main")
     db.add(realm)
     u = models.WebUser(username="pa022user", password_hash="x",
                        is_active=True)
@@ -73,40 +69,35 @@ def _call(db, u, realm):
     return exc.value
 
 
-def test_retired_no_row_no_charge(db):
+def test_tombstone_no_row_created(db):
     realm, u = _setup(db)
     exc = _call(db, u, realm)
-    assert exc.status_code == 410
+    assert exc.status_code == 400
     db.refresh(u)
     assert _row(db, u, realm) is None
 
 
-def test_retired_expired_row_untouched(db):
+def test_tombstone_expired_row_untouched(db):
     expired = datetime.now() - timedelta(days=1)
     realm, u = _setup(db, row_expires=expired)
     exc = _call(db, u, realm)
-    assert exc.status_code == 410
+    assert exc.status_code == 400
     db.refresh(u)
     row = _row(db, u, realm)
     assert row is not None and row.expires_at == expired  # 没被续开
 
 
-def test_retired_valid_row_untouched(db):
+def test_tombstone_valid_row_untouched(db):
     valid = datetime.now() + timedelta(days=10)
     realm, u = _setup(db, row_expires=valid)
     exc = _call(db, u, realm)
-    assert exc.status_code == 410
+    assert exc.status_code == 400
     row = _row(db, u, realm)
     assert row is not None and row.expires_at == valid
 
 
-def test_retired_insufficient_points_still_410(db):
-    realm, u = _setup(db, points=0)
-    exc = _call(db, u, realm)
-    assert exc.status_code == 410  # 下线与余额无关，不再有「能量不足」
-
-
-def test_paid_realm_keeps_400(db):
-    realm, u = _setup(db, access_mode="paid")
-    exc = _call(db, u, realm)
-    assert exc.status_code == 400
+def test_tombstone_missing_realm_404(db):
+    realm, u = _setup(db)
+    with pytest.raises(HTTPException) as exc:
+        unlock_emby_view(UnlockViewRequest(realm_id=987654), u, db)
+    assert exc.value.status_code == 404

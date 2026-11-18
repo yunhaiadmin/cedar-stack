@@ -125,8 +125,8 @@ def test_winner_lines_show_tg_name_and_own_amount(db, monkeypatch):
         111111111: {"user": {"first_name": "小明", "last_name": ""}, "status": "member"},
         222222222: {"user": {"first_name": "阿花", "last_name": "陈"}, "status": "member"},
     })
-    assert "🥇 小明 — 天数奖：公益7天" in text
-    assert "🥇 阿花 陈 — 公益月卡：公益30天" in text
+    assert "🥇 小明 — 天数奖：会员7天" in text
+    assert "🥇 阿花 陈 — 公益月卡：会员30天" in text
     # 旧的打码名单不许再出现，完整 TG 号不许泄漏
     assert "****" not in text
     assert "111111111" not in text
@@ -139,16 +139,16 @@ def test_winner_lines_fallback_to_username_when_tg_name_missing(db, monkeypatch)
         111111111: None,
         222222222: None,
     })
-    assert "🥇 site_user_a — 天数奖：公益7天" in text
-    assert "🥇 site_user_b — 公益月卡：公益30天" in text
+    assert "🥇 site_user_a — 天数奖：会员7天" in text
+    assert "🥇 site_user_b — 公益月卡：会员30天" in text
     assert "111111111" not in text
 
 
 def test_winner_lines_fallback_when_fetch_raises(db, monkeypatch):
     """取名单接口抛异常也不能拖垮开奖公告：兜底站内名、函数不抛。"""
     _, text = _make_round_with_winners(db, monkeypatch, {}, raise_on_fetch=True)
-    assert "🥇 site_user_a — 天数奖：公益7天" in text
-    assert "🥇 site_user_b — 公益月卡：公益30天" in text
+    assert "🥇 site_user_a — 天数奖：会员7天" in text
+    assert "🥇 site_user_b — 公益月卡：会员30天" in text
 
 
 def test_winner_name_html_escaped(db, monkeypatch):
@@ -174,7 +174,7 @@ def test_name_fetch_budget_exhausted_means_no_fetch(db, monkeypatch):
     _, text = _make_round_with_winners(db, monkeypatch, {},
                                         fetch_override=counting_get_member)
     assert calls == []
-    assert "🥇 site_user_a — 天数奖：公益7天" in text
+    assert "🥇 site_user_a — 天数奖：会员7天" in text
     assert "不该被取到" not in text
 
 
@@ -185,12 +185,12 @@ def test_prize_label_unchanged_and_winner_text_same_source(db):
         def __init__(self, name, type_, value, quantity):
             self.name, self.type, self.value, self.quantity = name, type_, value, quantity
 
-    assert lottery._prize_label(P("天数奖", "days", 7, 88)) == "🎁 天数奖：公益7天 ×88"
-    assert lottery._prize_label(P("公益月卡", "days", 30, 2)) == "🎁 公益月卡：公益30天 ×2"
+    assert lottery._prize_label(P("天数奖", "days", 7, 88)) == "🎁 天数奖：会员7天 ×88"
+    assert lottery._prize_label(P("公益月卡", "days", 30, 2)) == "🎁 公益月卡：会员30天 ×2"
     assert lottery._prize_label(P("白名单", "whitelist", 0, 1)) == "🎁 白名单：白名单 ×1"
     assert lottery._prize_label(P("神秘奖", "other", 0, 3)) == "🎁 神秘奖 ×3"
     # points 型已随货币下线：文案层不再折算金额，只剩裸名（创建层已 400 拦截）
     assert lottery._prize_label(P("能量奖励", "points", 500, 88)) == "🎁 能量奖励 ×88"
-    assert lottery._prize_unit_text(P("天数奖", "days", 7, 88)) == "天数奖：公益7天"
-    assert lottery._prize_unit_text(P("公益月卡", "days", 30, 2)) == "公益月卡：公益30天"
+    assert lottery._prize_unit_text(P("天数奖", "days", 7, 88)) == "天数奖：会员7天"
+    assert lottery._prize_unit_text(P("公益月卡", "days", 30, 2)) == "公益月卡：会员30天"
     assert lottery._prize_unit_text(P("能量奖励", "points", 500, 88)) == "能量奖励"

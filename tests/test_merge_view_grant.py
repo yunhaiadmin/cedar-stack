@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""查看放行口径回归（公益资格来源已随福利服役族于 2026-11-14 删除）。
+"""查看放行口径回归（公益服已于 2026-11-19 整套删除）。
 
-现行口径：公益服查看放行 = 持有未到期查看行（subscriptions.view_grant
-全站唯一口径）。原「公益资格在期自动带查看」已删除——资格已全量折算
-成订阅时间（2026-11-13 执行完毕）；存量查看行继续有效到期为止；
-购买写口退役（410、不落行、不扣分）。付费服口径不变（有效订阅即权限）。
+现行口径：查看放行只认有效订阅或团队播放资格
+（subscriptions.view_grant 全站唯一口径）。存量查看行
+（EmbyViewUnlock）不再参与判定——有效 / 永久 / 过期行都一样；
+购买写口为墓碑（服不存在 404、其余恒 400、不落行）。
 """
 
 import os
@@ -31,8 +31,8 @@ def db():
     session.close()
 
 
-def _realm(db, name="公益服", slug="free", access_mode="free"):
-    realm = models.ServerRealm(name=name, slug=slug, access_mode=access_mode)
+def _realm(db, name="主服", slug="main"):
+    realm = models.ServerRealm(name=name, slug=slug)
     db.add(realm)
     db.commit()
     return realm
@@ -59,10 +59,10 @@ NOW = datetime.now()
 
 
 # ---------------------------------------------------------------------------
-# view_grant：公益服现行口径（只认存量查看行）
+# view_grant：存量查看行不再放行（公益服删除后的新口径）
 # ---------------------------------------------------------------------------
 
-def test_free_realm_without_unlock_row_denied(db):
+def test_without_subscription_or_row_denied(db):
     realm = _realm(db)
     u = _user(db)
     granted, unlock = subscriptions.view_grant(db, u, realm.id)
@@ -70,24 +70,24 @@ def test_free_realm_without_unlock_row_denied(db):
     assert unlock is None
 
 
-def test_free_realm_with_valid_row_grants(db):
+def test_valid_unlock_row_no_longer_grants(db):
     realm = _realm(db)
     u = _user(db)
-    row = _unlock(db, u, realm, NOW + timedelta(days=5))
+    _unlock(db, u, realm, NOW + timedelta(days=5))
     granted, unlock = subscriptions.view_grant(db, u, realm.id)
-    assert granted is True
-    assert unlock is not None and unlock.id == row.id
+    assert granted is False
+    assert unlock is None
 
 
-def test_free_realm_with_permanent_row_grants(db):
+def test_permanent_unlock_row_no_longer_grants(db):
     realm = _realm(db)
     u = _user(db)
     _unlock(db, u, realm, None)
     granted, _ = subscriptions.view_grant(db, u, realm.id)
-    assert granted is True
+    assert granted is False
 
 
-def test_free_realm_with_expired_row_denied(db):
+def test_expired_unlock_row_denied(db):
     realm = _realm(db)
     u = _user(db)
     _unlock(db, u, realm, NOW - timedelta(days=1))
@@ -96,11 +96,11 @@ def test_free_realm_with_expired_row_denied(db):
 
 
 # ---------------------------------------------------------------------------
-# view_grant：付费服回归不变
+# view_grant：有效订阅即放行（付费口径照常）
 # ---------------------------------------------------------------------------
 
-def test_paid_realm_subscription_still_grants(db):
-    realm = _realm(db, name="付费服", slug="paid", access_mode="paid")
+def test_subscription_still_grants(db):
+    realm = _realm(db)
     plan = models.SubscriptionPlan(name="月卡", price=10, duration_days=30,
                                    realm_id=realm.id)
     db.add(plan)
@@ -116,25 +116,25 @@ def test_paid_realm_subscription_still_grants(db):
     assert unlock is None
 
 
-def test_paid_realm_without_subscription_denied(db):
-    realm = _realm(db, name="付费服", slug="paid", access_mode="paid")
+def test_without_subscription_denied(db):
+    realm = _realm(db)
     u = _user(db)
     granted, _ = subscriptions.view_grant(db, u, realm.id)
     assert granted is False
 
 
 # ---------------------------------------------------------------------------
-# 管理端资源卡：公益服查看只认存量行来源
+# 管理端资源卡：授权来源只剩订阅口径
 # ---------------------------------------------------------------------------
 
-def test_admin_card_with_row_marks_unlock_source(db):
+def test_admin_card_unlock_row_alone_not_granted(db):
     realm = _realm(db)
     u = _user(db)
     _unlock(db, u, realm, NOW + timedelta(days=5))
     payload = user_grants.cards(db, u)
     card = next(c for c in payload["cards"] if c["realm_id"] == realm.id)
-    assert card["grant"] == user_grants.GRANT_UNLOCK
-    assert card["view_granted"] is True
+    assert card["grant"] == user_grants.GRANT_NONE
+    assert card["view_granted"] is False
 
 
 def test_admin_card_without_row_not_granted(db):
@@ -142,33 +142,33 @@ def test_admin_card_without_row_not_granted(db):
     u = _user(db)
     payload = user_grants.cards(db, u)
     card = next(c for c in payload["cards"] if c["realm_id"] == realm.id)
-    assert card["grant"] != user_grants.GRANT_UNLOCK
+    assert card["grant"] == user_grants.GRANT_NONE
     assert card["view_granted"] is False
 
 
 # ---------------------------------------------------------------------------
-# 购买写口退役：410、不落行、不扣分
+# 购买写口墓碑：400、不落行、存量行不动
 # ---------------------------------------------------------------------------
 
-def test_unlock_endpoint_retired_410_no_charge_no_row(db):
+def test_unlock_endpoint_tombstone_400_no_row(db):
     from backend.emby_server.portal import UnlockViewRequest, unlock_emby_view
     realm = _realm(db)
     u = _user(db)
     with pytest.raises(HTTPException) as exc:
         unlock_emby_view(UnlockViewRequest(realm_id=realm.id), u, db)
-    assert exc.value.status_code == 410
+    assert exc.value.status_code == 400
     db.refresh(u)
     assert db.query(models.EmbyViewUnlock).count() == 0
 
 
-def test_unlock_endpoint_retired_even_with_expired_row(db):
+def test_unlock_endpoint_tombstone_keeps_existing_row(db):
     from backend.emby_server.portal import UnlockViewRequest, unlock_emby_view
     realm = _realm(db)
     u = _user(db)
     row = _unlock(db, u, realm, NOW - timedelta(days=1))
     with pytest.raises(HTTPException) as exc:
         unlock_emby_view(UnlockViewRequest(realm_id=realm.id), u, db)
-    assert exc.value.status_code == 410
+    assert exc.value.status_code == 400
     db.refresh(u)
     db.refresh(row)
     assert row.expires_at < NOW  # 存量行原样不动，没被续开
