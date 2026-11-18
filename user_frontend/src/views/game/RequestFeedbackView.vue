@@ -187,14 +187,11 @@
           <option value="feedback">其他反馈</option>
         </select>
 
-        <div v-if="mineLoading" class="rf-loading">
-          <div v-for="i in 3" :key="i" class="rf-skeleton" style="height: 76px; margin-bottom: 10px"></div>
-        </div>
-        <div v-else-if="mineError" class="rf-err">
+        <div v-if="mineError" class="rf-err">
           请求记录读取失败：{{ mineError }}<br />
           <button class="rf-retry" @click="() => loadMine()">重试</button>
         </div>
-        <div v-else-if="filteredMine.length === 0" class="rf-empty">暂无符合条件的请求</div>
+        <div v-else-if="!mineLoading && filteredMine.length === 0" class="rf-empty">暂无符合条件的请求</div>
         <template v-else>
           <div class="rf-minebox">
             <div
@@ -278,14 +275,11 @@
           <option value="chase">追新</option>
         </select>
 
-        <div v-if="plazaLoading" class="rf-loading">
-          <div v-for="i in 3" :key="i" class="rf-skeleton" style="height: 76px; margin-bottom: 10px"></div>
-        </div>
-        <div v-else-if="plazaError" class="rf-err">
+        <div v-if="plazaError" class="rf-err">
           广场加载失败：{{ plazaError }}<br />
           <button class="rf-retry" @click="loadPlaza">重试</button>
         </div>
-        <div v-else-if="plazaGroups.length === 0" class="rf-empty">暂无符合条件的请求</div>
+        <div v-else-if="!plazaLoading && plazaGroups.length === 0" class="rf-empty">暂无符合条件的请求</div>
         <div v-else class="rf-minebox">
           <article v-for="g in plazaGroups" :key="g.key" class="rf-mrow">
             <div class="rf-mrow__head rf-mrow__head--static">
@@ -1121,7 +1115,6 @@ onMounted(() => {
 }
 .rf-err { font-size: 13px; color: #fca5a5; line-height: 1.6; }
 .rf-retry { margin-top: 6px; padding: 3px 12px; font-size: 12px; color: #fbfcfd; background: transparent; border: 1px solid currentColor; border-radius: 999px; cursor: pointer; opacity: 0.8; }
-.rf-skeleton { background: var(--uhd-skel-bg); border-radius: 10px; }
 @media (max-width: 768px) {
   .rf-page { margin: -20px -16px -120px; padding: 20px 16px 120px; }
   .rf-types { grid-template-columns: repeat(3, 1fr); }

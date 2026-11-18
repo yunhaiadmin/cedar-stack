@@ -657,15 +657,12 @@ function retryCategories() {
            不许先露出「全部 · 0 部」再跳成真实数字（2026-11-15 通用口径） -->
       <p v-if="!loading || items.length" class="lb-count">{{ activeCatName }} · {{ total }} 部</p>
 
-      <!-- 骨架屏（录屏形态）：海报灰块 + 居中站标，网格与真实网格同列数 -->
-      <div v-if="loading" class="lb-skel" role="status" aria-label="正在加载">
-        <div v-for="i in 14" :key="i" class="lb-skel__poster"><span class="lb-skel__logo">A</span></div>
-      </div>
-      <div v-else-if="error" class="lb-error">
+      <!-- 加载中不渲染占位（骨架已删，2026-11-18），空态须等加载落定才出 -->
+      <div v-if="error" class="lb-error">
         {{ heading }}没加载出来：{{ error }}<br />
         <button type="button" class="lb-retry" @click="load(true)">重试</button>
       </div>
-      <div v-else-if="items.length === 0" class="lb-empty">
+      <div v-else-if="!loading && items.length === 0" class="lb-empty">
         <template v-if="activeFilterCount">
           没有符合筛选条件的{{ heading }}<br />
           <button type="button" class="lb-retry" @click="clearFilters">清除筛选</button>
@@ -1018,37 +1015,5 @@ function retryCategories() {
 .lb-more__btn:disabled {
   opacity: 0.55;
   cursor: wait;
-}
-
-/* 骨架屏网格（与 .lb-grid 同步列数） */
-.lb-skel {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 34px 21px;
-  margin-top: 26px;
-}
-@media (max-width: 1599px) { .lb-skel { grid-template-columns: repeat(6, 1fr); } }
-@media (max-width: 1279px) { .lb-skel { grid-template-columns: repeat(5, 1fr); } }
-@media (max-width: 1023px) { .lb-skel { grid-template-columns: repeat(4, 1fr); } }
-@media (max-width: 767px) { .lb-skel { grid-template-columns: repeat(3, 1fr); gap: 22px 12px; } }
-.lb-skel__poster {
-  aspect-ratio: 2 / 3;
-  border-radius: 13px;
-  background: var(--uhd-s-skeleton);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.lb-skel__logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: var(--uhd-s-border);
-  color: var(--uhd-s-text-2);
-  font-size: 18px;
-  font-weight: var(--uhd-fw-black);
 }
 </style>

@@ -32,9 +32,7 @@
       <div v-if="loadError" class="sr-err">
         {{ loadError }}<button type="button" class="sr-retry" @click="load">重试</button>
       </div>
-      <div v-else-if="loading" class="sr-skeleton" aria-hidden="true"></div>
-
-      <p v-else-if="!records.length" class="sr-empty">
+      <p v-else-if="!loading && !records.length" class="sr-empty">
         还没有订阅记录。购买订阅、或用兑换码开通之后，每一笔都会记在这里，方便你随时对账。
       </p>
 

@@ -159,15 +159,12 @@ watch([term, filter], () => void load(), { immediate: true })
         </div>
         <p class="sv-count">共找到 {{ total }} 条结果</p>
 
-        <!-- 骨架屏（录屏形态）：海报灰块 + 居中站标 -->
-        <div v-if="loading" class="sv-skel" role="status" aria-label="正在搜索">
-          <div v-for="i in 14" :key="i" class="sv-skel__poster"><span class="sv-skel__logo">A</span></div>
-        </div>
-        <div v-else-if="error" class="sv-note">
+        <!-- 加载中不渲染占位（骨架已删，2026-11-18），空态须等加载落定才出 -->
+        <div v-if="error" class="sv-note">
           搜索没完成：{{ error }}<br />
           <button type="button" class="sv-back" @click="load(true)">重试</button>
         </div>
-        <div v-else-if="items.length === 0" class="sv-note">没有找到和『{{ term }}』相关的片子</div>
+        <div v-else-if="!loading && items.length === 0" class="sv-note">没有找到和『{{ term }}』相关的片子</div>
         <template v-else>
           <div class="sv-grid">
             <StreamPosterCard
@@ -360,37 +357,5 @@ watch([term, filter], () => void load(), { immediate: true })
 .sv-more__btn--ghost {
   background: transparent;
   color: var(--uhd-s-text-2);
-}
-
-/* 骨架屏网格（与 .sv-grid 同步列数） */
-.sv-skel {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 34px 21px;
-  margin-top: 26px;
-}
-@media (max-width: 1599px) { .sv-skel { grid-template-columns: repeat(6, 1fr); } }
-@media (max-width: 1279px) { .sv-skel { grid-template-columns: repeat(5, 1fr); } }
-@media (max-width: 1023px) { .sv-skel { grid-template-columns: repeat(4, 1fr); } }
-@media (max-width: 767px) { .sv-skel { grid-template-columns: repeat(3, 1fr); gap: 22px 12px; } }
-.sv-skel__poster {
-  aspect-ratio: 2 / 3;
-  border-radius: 13px;
-  background: var(--uhd-s-skeleton);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.sv-skel__logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: var(--uhd-s-border);
-  color: var(--uhd-s-text-2);
-  font-size: 18px;
-  font-weight: var(--uhd-fw-black);
 }
 </style>

@@ -4,23 +4,13 @@
        行动分化（2.2/2.5）：求片态——在库纯文字「媒体库已有」、已有未完成
        求片描边「查看已有请求」、其余彩虹「发起求片」；追新态——暂无纯
        文字、在库彩虹「发起追新」、已有未完成追新描边「查看已有请求 ›」
-       并在行下写明已有请求。搜索中出同容器骨架屏。 -->
+       并在行下写明已有请求。搜索中不渲染占位（骨架已删，2026-11-18）。 -->
   <div class="wsr">
     <p v-if="status === 'done' && degraded" class="wsr-degraded">
       搜索源暂时连不上，这次只按站内有没有来标状态。
     </p>
 
-    <div v-if="searching && candidates.length === 0" class="wsr-box wsr-sk" aria-hidden="true">
-      <div v-for="i in 3" :key="i" class="wsr-sk__row">
-        <span class="wsr-sk__poster"></span>
-        <span class="wsr-sk__lines">
-          <span class="wsr-sk__bar wsr-sk__bar--long"></span>
-          <span class="wsr-sk__bar wsr-sk__bar--short"></span>
-        </span>
-      </div>
-    </div>
-
-    <div v-else-if="status === 'done' && candidates.length > 0" class="wsr-box">
+    <div v-if="status === 'done' && candidates.length > 0" class="wsr-box">
       <div v-for="c in candidates" :key="c.tmdb_id" class="wsr-row">
         <div class="wsr-row__main">
           <img v-if="c.poster_url" :src="imageAuthUrl(c.poster_url, 120)" :alt="c.name" class="wsr-poster" />
@@ -200,16 +190,9 @@ function toWork(c: MediaSeekCandidate): SubmitWork {
 .wsr-empty { padding: 16px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .wsr-empty__t { margin: 0; font-size: 14px; font-weight: 700; }
 .wsr-empty__s { margin: 0; font-size: 12px; color: #9ca3af; line-height: 1.6; }
-.wsr-sk__row { display: flex; align-items: center; gap: 12px; padding: 12px 0; }
-.wsr-sk__row + .wsr-sk__row { border-top: 1px solid #26262a; }
-.wsr-sk__poster { flex: none; width: 43px; height: 60px; border-radius: 8px; background: var(--uhd-skel-bg); }
-.wsr-sk__lines { flex: 1; display: flex; flex-direction: column; gap: 8px; }
-.wsr-sk__bar { height: 12px; border-radius: 6px; background: var(--uhd-skel-bg); }
-.wsr-sk__bar--long { width: 62%; }
-.wsr-sk__bar--short { width: 38%; }
 html[data-theme='light'] .wsr-degraded { color: #55575c; }
 html[data-theme='light'] .wsr-box { background: #ffffff; border-color: #e5e5e5; }
-html[data-theme='light'] .wsr-row + .wsr-row, html[data-theme='light'] .wsr-sk__row + .wsr-sk__row { border-top-color: #e5e5e5; }
+html[data-theme='light'] .wsr-row + .wsr-row { border-top-color: #e5e5e5; }
 html[data-theme='light'] .wsr-poster { background: #f0f0f1; }
 html[data-theme='light'] .wsr-poster--ph { color: #9ca3af; }
 html[data-theme='light'] .wsr-kind { background: #f0f0f1; color: #55575c; }

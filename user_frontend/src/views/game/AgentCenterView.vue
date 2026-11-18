@@ -7,8 +7,7 @@
         <p>用进货余额按你的等级折扣进货卡码，卖出后销售自动记在你名下。</p>
       </header>
 
-      <div v-if="loading" class="v4-skeleton" style="height:160px;border-radius:14px"></div>
-      <div v-else-if="error" class="v4-err">
+      <div v-if="error" class="v4-err">
         {{ error }}<br>
         <button class="v4-retry" @click="reload">重试</button>
       </div>

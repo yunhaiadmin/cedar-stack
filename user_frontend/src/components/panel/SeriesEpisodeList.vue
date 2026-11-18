@@ -9,12 +9,11 @@
       <span v-else-if="fillState === 'others'" class="miss-done">已有 {{ (missingInfo.request?.vote_count || 0) + 1 }} 人求补</span>
     </div>
 
-    <div v-if="loading" class="v4-skeleton" aria-hidden="true" style="height: 180px"></div>
-    <div v-else-if="error" class="v4-err" role="alert">
+    <div v-if="error" class="v4-err" role="alert">
       季集没加载出来：{{ error }}<br />
       <button type="button" class="v4-retry" :disabled="loading" @click="loadAll">重试</button>
     </div>
-    <div v-else-if="sections.length === 0" class="v4-empty">这部剧还没有入库的集</div>
+    <div v-else-if="!loading && sections.length === 0" class="v4-empty">这部剧还没有入库的集</div>
 
     <section v-for="sec in sections" :key="sec.key" class="season-sec">
       <div class="season-head">

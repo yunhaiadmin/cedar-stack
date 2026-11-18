@@ -47,11 +47,11 @@ const userStore = useUserStore()
 const router = useRouter()
 
 /* ---------- 渐进渲染状态：五条腿各自 pending → ready / error，先到先画 ----------
-   旧版 load() 两段瀑布全 settle 才撤骨架：任一条腿慢（全局超时 30s）整页
-   骨架最长挂约 60s，数据到手也不先画（2026-11-14 用户真机截图实锤）。
-   现每条腿独立落画：hero / 继续观看 / 分区 / 逐库行各有自己的小骨架，
-   整页大骨架只在「什么都还没到」时出现；部分失败给行级重试，只有全部
-   为空 / 全失败才出整页错误态。 */
+   旧版 load() 两段瀑布全 settle 才撤占位：任一条腿慢（全局超时 30s）整页
+   占位最长挂约 60s，数据到手也不先画（2026-11-14 用户真机截图实锤）。
+   现每条腿独立落画：hero / 继续观看 / 分区 / 逐库行数据到位各自直接出
+   （加载占位已按用户口径全删，2026-11-18）；部分失败给行级重试，只有
+   全部为空 / 全失败才出整页错误态。 */
 type LegStatus = 'pending' | 'ready' | 'error'
 
 interface RowEntry {
@@ -81,15 +81,6 @@ const viewRows = ref<RowEntry[]>([])
     列表本身失败才置 error（单库失败是 entry 级 error，不算整腿失败） */
 const viewsStatus = ref<LegStatus>('pending')
 
-/** 整页大骨架只在五条腿全 pending（什么都还没到）时出现 */
-const showFullSkeleton = computed(
-  () =>
-    heroStatus.value === 'pending' &&
-    resumeStatus.value === 'pending' &&
-    nextUpStatus.value === 'pending' &&
-    sectionsStatus.value === 'pending' &&
-    viewsStatus.value === 'pending',
-)
 const allSettled = computed(
   () =>
     heroStatus.value !== 'pending' &&
@@ -786,51 +777,18 @@ onActivated(() => {
 
 <template>
   <StreamShell>
-    <!-- 骨架屏（录屏形态）：灰色圆角块 + 居中站标占位，尺寸与真实卡一致，
-         内容到位后整体淡入替换，不白屏不跳动 -->
-    <div v-if="showFullSkeleton" class="sl-skel" role="status" aria-label="正在加载">
-      <div class="sl-skel__hero"><span class="sl-skel__logo">A</span></div>
-      <div class="sl-skel__rowhead"><span class="sl-skel__bar" style="width: 120px"></span></div>
-      <div class="sl-skel__track">
-        <div v-for="i in 5" :key="`p${i}`" class="sl-skel__poster">
-          <span class="sl-skel__logo">A</span>
-        </div>
-      </div>
-      <div class="sl-skel__rowhead"><span class="sl-skel__bar" style="width: 88px"></span></div>
-      <div class="sl-skel__track">
-        <div v-for="i in 5" :key="`q${i}`" class="sl-skel__poster">
-          <span class="sl-skel__logo">A</span>
-        </div>
-      </div>
-    </div>
-    <div v-else class="sl-content">
-      <!-- Hero：pending 显示同尺寸骨架块；失败给行级重试（不挡其他行） -->
-      <div
-        v-if="heroStatus === 'pending'"
-        class="sl-skel sl-skel--heroonly"
-        role="status"
-        aria-label="正在加载"
-      >
-        <div class="sl-skel__hero"><span class="sl-skel__logo">A</span></div>
-      </div>
-      <StreamHero v-else-if="heroItems.length" :items="heroItems" @play="onHeroPlay" />
+    <!-- 加载中不渲染任何占位（骨架屏已按用户口径删除，2026-11-18）：
+         五条腿各自数据到位各自出，失败给行级重试（不挡其他行） -->
+    <div class="sl-content">
+      <StreamHero v-if="heroItems.length" :items="heroItems" @play="onHeroPlay" />
       <div v-else-if="heroStatus === 'error' && !showFatalError" class="sl-rowerror">
         <span>推荐内容加载失败</span>
         <button type="button" class="sl-retry" @click="retryHero">重试</button>
       </div>
 
-      <!-- 继续观看：pending 显示 16:9 行骨架；失败给行级重试 -->
-      <div v-if="resumeStatus === 'pending'" class="sl-rowskel" role="status" aria-label="正在加载">
-        <div class="sl-skel__rowhead"><span class="sl-skel__bar" style="width: 120px"></span></div>
-        <div class="sl-rowskel__track">
-          <div v-for="i in 3" :key="`c${i}`" class="sl-skel__ccard">
-            <span class="sl-skel__logo">A</span>
-          </div>
-        </div>
-      </div>
       <!-- 继续观看：16:9 卡约 340×191、圆角 12、无进度条（存档第 3 节）；
            录屏补充：标题带总数、卡面右上垃圾桶（隐藏）、进度文字行 -->
-      <section v-else-if="resumeItems.length" class="sl-continue">
+      <section v-if="resumeItems.length" class="sl-continue">
         <div class="sl-continue__head">
           <h2 class="sl-continue__title">
             继续观看 <span class="sl-continue__count">{{ resumeItems.length }} 部</span>
@@ -889,16 +847,7 @@ onActivated(() => {
         <button type="button" class="sl-retry" @click="retryResume">重试</button>
       </div>
 
-      <!-- 下一集：pending 显示 16:9 行骨架；失败给行级重试（与继续观看同模） -->
-      <div v-if="nextUpStatus === 'pending'" class="sl-rowskel" role="status" aria-label="正在加载">
-        <div class="sl-skel__rowhead"><span class="sl-skel__bar" style="width: 120px"></span></div>
-        <div class="sl-rowskel__track">
-          <div v-for="i in 3" :key="`n${i}`" class="sl-skel__ccard">
-            <span class="sl-skel__logo">A</span>
-          </div>
-        </div>
-      </div>
-      <section v-else-if="nextUpItems.length" class="sl-continue">
+      <section v-if="nextUpItems.length" class="sl-continue">
         <div class="sl-continue__head">
           <h2 class="sl-continue__title">
             下一集 <span class="sl-continue__count">{{ nextUpItems.length }} 部</span>
@@ -957,16 +906,8 @@ onActivated(() => {
         <button type="button" class="sl-retry" @click="retryNextUp">重试</button>
       </div>
 
-      <!-- 分区行：pending 显示一行海报骨架；失败给行级重试 -->
-      <div v-if="sectionsStatus === 'pending'" class="sl-rowskel" role="status" aria-label="正在加载">
-        <div class="sl-skel__rowhead"><span class="sl-skel__bar" style="width: 120px"></span></div>
-        <div class="sl-skel__track">
-          <div v-for="i in 5" :key="`s${i}`" class="sl-skel__poster">
-            <span class="sl-skel__logo">A</span>
-          </div>
-        </div>
-      </div>
-      <template v-else-if="sectionsStatus === 'ready'">
+      <!-- 分区行：失败给行级重试 -->
+      <template v-if="sectionsStatus === 'ready'">
         <template v-for="entry in sectionRows" :key="entry.key">
           <StreamRow
             v-if="entry.row"
@@ -986,36 +927,15 @@ onActivated(() => {
           </StreamRow>
         </template>
       </template>
-      <div v-else-if="sectionsStatus === 'error' && !showFatalError" class="sl-rowerror">
+      <div v-if="sectionsStatus === 'error' && !showFatalError" class="sl-rowerror">
         <span>分区内容加载失败</span>
         <button type="button" class="sl-retry" @click="retrySections">重试</button>
       </div>
 
-      <!-- 逐库行：Views 未到先一行骨架占位；到后每库一行，各自骨架 / 内容 / 重试 -->
-      <div
-        v-if="viewsStatus === 'pending' && !viewRows.length"
-        class="sl-rowskel"
-        role="status"
-        aria-label="正在加载"
-      >
-        <div class="sl-skel__rowhead"><span class="sl-skel__bar" style="width: 88px"></span></div>
-        <div class="sl-skel__track">
-          <div v-for="i in 5" :key="`p${i}`" class="sl-skel__poster">
-            <span class="sl-skel__logo">A</span>
-          </div>
-        </div>
-      </div>
+      <!-- 逐库行：每库一行，各自内容 / 重试 -->
       <template v-for="entry in viewRows" :key="entry.key">
-        <div v-if="entry.status === 'pending'" class="sl-rowskel" role="status" aria-label="正在加载">
-          <div class="sl-skel__rowhead"><span class="sl-skel__bar" style="width: 88px"></span></div>
-          <div class="sl-skel__track">
-            <div v-for="i in 5" :key="`v${i}`" class="sl-skel__poster">
-              <span class="sl-skel__logo">A</span>
-            </div>
-          </div>
-        </div>
         <StreamRow
-          v-else-if="entry.status === 'ready' && entry.row"
+          v-if="entry.status === 'ready' && entry.row"
           :title="entry.row.title"
           :count="entry.row.count"
           :more-to="entry.row.moreTo"
@@ -1063,65 +983,6 @@ onActivated(() => {
 /* 内容不做整块入场淡入：0.45s 的半透明中间帧会被看成封面重影
    （2026-11-13 录屏逐帧实证），骨架→内容直接切换。
    契约 scripts/check_no_ghost_entrance.py 守住，不许加回。 */
-/* 骨架屏：灰块尺寸与真实卡一致（Hero 占位 + 海报行占位） */
-.sl-skel {
-  padding: 76px clamp(16px, 5vw, 96px) 40px;
-}
-.sl-skel__hero {
-  height: min(560px, 62vh);
-  border-radius: 16px;
-  background: var(--uhd-s-skeleton);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.sl-skel__logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: var(--uhd-s-border);
-  color: var(--uhd-s-text-2);
-  font-size: 20px;
-  font-weight: var(--uhd-fw-black);
-}
-.sl-skel__rowhead {
-  margin: 34px 0 14px;
-}
-.sl-skel__bar {
-  display: block;
-  height: 20px;
-  border-radius: 6px;
-  background: var(--uhd-s-skeleton);
-}
-.sl-skel__track {
-  display: flex;
-  gap: 25px;
-  overflow: hidden;
-}
-.sl-skel__poster {
-  flex: 0 0 260px;
-  aspect-ratio: 2 / 3;
-  border-radius: 16px; /* 质感第二波（2026-11-18）：与海报卡同步 16 */
-  background: var(--uhd-s-skeleton);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-@media (max-width: 767px) {
-  .sl-skel {
-    /* 手机端首页已无整条顶栏（浮动胶囊不占流），骨架不再让 76px */
-    padding-top: 20px;
-  }
-  .sl-skel__poster {
-    flex-basis: 152px;
-  }
-  .sl-skel__hero {
-    height: 300px;
-  }
-}
 .sl-continue {
   margin-top: 8px;
 }
@@ -1264,31 +1125,7 @@ onActivated(() => {
   margin-right: 10px;
   text-decoration: none;
 }
-/* 渐进渲染：行级骨架与行级错误（单条腿 pending / 失败时只占自己那一行，
-   不再整页遮挡） */
-.sl-skel--heroonly {
-  padding-bottom: 0;
-}
-.sl-rowskel {
-  padding: 0 clamp(16px, 5vw, 96px);
-}
-.sl-rowskel .sl-skel__rowhead {
-  margin: 26px 0 14px;
-}
-.sl-rowskel__track {
-  display: flex;
-  gap: 12px;
-  overflow: hidden;
-}
-.sl-skel__ccard {
-  flex: 0 0 340px;
-  aspect-ratio: 16 / 9;
-  border-radius: 12px;
-  background: var(--uhd-s-skeleton);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+/* 渐进渲染：行级错误（单条腿失败时只占自己那一行，不再整页遮挡） */
 .sl-rowerror {
   margin: 26px clamp(16px, 5vw, 96px) 0;
   display: flex;
@@ -1301,12 +1138,6 @@ onActivated(() => {
   margin-top: 0;
 }
 @media (max-width: 767px) {
-  .sl-rowskel {
-    padding: 0 16px;
-  }
-  .sl-skel__ccard {
-    flex-basis: 220px;
-  }
   .sl-rowerror {
     margin-left: 16px;
     margin-right: 16px;

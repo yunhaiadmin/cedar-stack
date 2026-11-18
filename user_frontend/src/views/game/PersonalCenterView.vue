@@ -9,13 +9,10 @@
            本页不再自带一份（原实现无彩虹边框、且不固定） -->
 
       <!-- 加载态（2026-11-15 假空态根治，照友站 f030）：订阅数据未落定前
-           整页只给中性加载态（转圈＋「正在加载概览...」），会员卡/按钮行/
-           徽章一律等数据到位再一起出现，不许先渲染「未开通」等结论 -->
-      <div v-if="!subsLoaded" class="ov-loading" role="status" aria-live="polite">
-        <span class="ov-loading__spin" aria-hidden="true"></span>
-        <p class="ov-loading__text">正在加载概览...</p>
-      </div>
-      <template v-else>
+           整页不渲染任何占位（全页加载层已按用户口径删除，2026-11-18），
+           会员卡/按钮行/徽章一律等数据到位再一起出现，不许先渲染
+           「未开通」等结论 -->
+      <template v-if="subsLoaded">
       <!-- 页头大标题已删（2026-11-15 照友站 t90 帧）：友站概览顶栏下直接是
            会员卡、没有「概览」大标题，本页 H1 一并摘除（仅本页） -->
       <!-- 桌面双栏：左会员卡（有效期＋自动续费），右本月流量。
@@ -59,17 +56,9 @@
 
       <div class="ov-hero__meter">
 
-      <!-- 流量区加载骨架：数据回来前先占位；未启用时骨架消失 -->
-      <section v-if="trafficLoading" class="ov-quota" aria-hidden="true">
-        <div class="ov-skel ov-skel--label"></div>
-        <div class="ov-skel ov-skel--big"></div>
-        <div class="ov-skel ov-skel--remain"></div>
-        <div class="ov-skel ov-skel--bar"></div>
-        <div class="ov-skel ov-skel--meta"></div>
-      </section>
-
-      <!-- 有月额度才显示流量大数字。单位和重置日来自接口，不写死 GB 数。 -->
-      <section v-else-if="traffic?.enabled" class="ov-quota" aria-label="本月剩余流量">
+      <!-- 有月额度才显示流量大数字。单位和重置日来自接口，不写死 GB 数。
+           加载中不渲染占位（骨架已删，2026-11-18），数据到位直接出。 -->
+      <section v-if="traffic?.enabled" class="ov-quota" aria-label="本月剩余流量">
         <p class="ov-quota__label">本月剩余流量</p>
         <p class="ov-quota__big">{{ trafficRemainGb }}<span class="ov-quota__unit">GB</span></p>
         <p class="ov-quota__remain">剩余 {{ trafficRemainPct }}%</p>
@@ -312,7 +301,7 @@
  * 扣款）、账户余额卡、最近动态（真实订阅记录）、邀请横幅；
  * 按钮收敛为每卡最多一个本卡动作。
  * 2026-11-15 假空态根治＋对照友站收口：订阅改走单一数据源
- * useSubscriptionStore，落定前整页中性加载态（转圈＋正在加载概览），
+ * useSubscriptionStore，落定前整页不渲染（全页加载层已删，2026-11-18），
  * 不再先渲染「未开通」；删「订阅剩余 N 天」大字块（到期只留卡下
  * 「有效期至」）与「最近动态」整区；账户余额降为「常用」段一行
  * （行尾金额＋箭头），邀请横幅并入「常用」；设备计数改有效设备数
@@ -380,7 +369,7 @@ const parentUsername = computed(() => userStore.user?.parent_username ?? '')
 
 // ── 总览数据 ──
 // 订阅改走单一数据源 useSubscriptionStore（2026-11-15）：与「我的」页
-// 同源同拍；loaded 落定前整页只显示中性加载态（见模板 ov-loading），
+// 同源同拍；loaded 落定前整页不渲染（见模板 v-if="subsLoaded"），
 // 不再先按空数组渲染「未开通」。公益资格状态已随福利服役族于
 // 2026-11-14 删除（资格已折算成订阅）：公益服（free 服）免费开放，
 // 会员卡在公益服恒显「生效中」，到期日无数据源。
@@ -420,8 +409,6 @@ const serverAddressSub = computed(() => {
 
 // ── 流量段（trafficApi：套餐声明月额度才 enabled；拿不到整段不渲染） ──
 const traffic = ref<TrafficOverview | null>(null)
-/** 首屏加载态：骨架占位用，请求落定（成功/失败/未启用）即收 */
-const trafficLoading = ref(true)
 const trafficModalOpen = ref(false)
 const trafficRemainGb = computed(() => formatGbValue(traffic.value?.remaining_bytes))
 const trafficRemainPct = computed(() => {
@@ -436,12 +423,8 @@ const trafficResetText = computed(() =>
   traffic.value ? formatResetDate(traffic.value.reset_date) : '',
 )
 async function loadTraffic() {
-  try {
-    const res = await getTraffic()
-    if (res) traffic.value = res
-  } finally {
-    trafficLoading.value = false
-  }
+  const res = await getTraffic()
+  if (res) traffic.value = res
 }
 function onTrafficExchanged(summary: TrafficSummary) {
   // 成交后后端回了最新汇总：就地合并（保留 rule 等概览字段）
@@ -609,7 +592,7 @@ async function removeSubAccount(item: SubAccountItem) {
 
 // ── 总览数据 ──
 async function loadOverview() {
-  // 订阅走单一数据源 store（落定前模板只显示中性加载态）
+  // 订阅走单一数据源 store（落定前模板不渲染内容）
   void subStore.ensureLoaded()
   try {
     accountCard.value = await embyApi.getAccountCard()
@@ -658,39 +641,6 @@ onMounted(() => {
   /* 顶部安全区已由统一顶栏（App.vue UhdTopBar）垫付，这里只留常规间距 */
   padding: 14px 20px 150px;
   box-sizing: border-box;
-}
-/* 整页中性加载态（照友站）：居中转圈＋一句加载文案，无任何结论性内容 */
-.ov-loading {
-  min-height: 52dvh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-}
-.ov-loading__spin {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: 3px solid rgba(255, 255, 255, 0.16);
-  border-top-color: rgba(255, 255, 255, 0.75);
-  animation: ov-spin 0.8s linear infinite;
-}
-.ov-loading__text {
-  margin: 0;
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.55);
-}
-@keyframes ov-spin {
-  to { transform: rotate(360deg); }
-}
-html[data-theme='light'] .ov-loading__spin {
-  border-color: rgba(17, 17, 17, 0.14);
-  border-top-color: rgba(17, 17, 17, 0.65);
-}
-html[data-theme='light'] .ov-loading__text { color: #8a8d93; }
-@media (prefers-reduced-motion: reduce) {
-  .ov-loading__spin { animation-duration: 1.6s; }
 }
 .ov-hero {
   display: grid;
@@ -817,42 +767,7 @@ html[data-theme='light'] .ov-loading__text { color: #8a8d93; }
 .ov-actions--traffic .ov-btn {
   transition: transform var(--uhd-press-dur) var(--uhd-ease-spring), opacity 0.12s ease;
 }
-/* 流量区骨架：与真实区同版式占位，微光扫过表示加载中 */
-.ov-skel {
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.12);
-  position: relative;
-  overflow: hidden;
-}
-.ov-skel::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    100deg, transparent 30%, rgba(255, 255, 255, 0.14) 50%, transparent 70%);
-  animation: ov-skel-sweep 1.3s ease-in-out infinite;
-}
-@keyframes ov-skel-sweep {
-  from { transform: translateX(-100%); }
-  to { transform: translateX(100%); }
-}
-.ov-skel--label { width: 96px; height: 15px; }
-.ov-skel--big { width: 150px; height: 52px; margin-top: 12px; border-radius: 10px; }
-.ov-skel--remain { width: 72px; height: 19px; margin-top: 12px; }
-.ov-skel--bar { width: 100%; height: 6px; margin-top: 14px; border-radius: 999px; }
-.ov-skel--meta { width: 62%; height: 13px; margin-top: 12px; }
-html[data-theme='light'] .ov-skel { background: #e8e8ea; }
-html[data-theme='light'] .ov-skel::after {
-  background: linear-gradient(
-    100deg, transparent 30%, rgba(255, 255, 255, 0.55) 50%, transparent 70%);
-}
-html[data-theme='light'] .ov-page.ov-dark .ov-skel { background: rgba(255, 255, 255, 0.12); }
-html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
-  background: linear-gradient(
-    100deg, transparent 30%, rgba(255, 255, 255, 0.14) 50%, transparent 70%);
-}
 @media (prefers-reduced-motion: reduce) {
-  .ov-skel::after { animation: none; }
   .ov-actions--traffic .ov-btn { transition: none; }
 }
 .ov-btn {

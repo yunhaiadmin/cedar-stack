@@ -234,7 +234,6 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-else-if="loading" class="tg-loading" role="status" aria-label="正在生成绑定码">
-        <div class="au-skeleton tg-code-skeleton"></div>
         <p>正在生成绑定码…</p>
       </div>
 
@@ -469,11 +468,6 @@ onBeforeUnmount(() => {
   border-radius: var(--paper-r-full, 50%);
   background: rgba(61, 220, 151, 0.12);
   color: var(--au-success, #3ddc97);
-}
-
-.tg-code-skeleton {
-  height: 48px;
-  width: 100%;
 }
 
 /* R37 P3-C1：纸色确认层正文（Modal Teleport 到 body，纸色 token 走字面量 fallback） */

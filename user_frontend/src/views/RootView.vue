@@ -10,18 +10,16 @@
  * 旧发现页 DiscoveryView 已连根删除，本组件不再渲染任何旧页。
  */
 import { defineAsyncComponent } from 'vue'
-import LandingSkeleton from '@/components/ui/LandingSkeleton.vue'
 import { handleChunkLoadError } from '@/utils/chunkRecovery'
 
 defineOptions({ name: 'RootView' })
 
 // 懒加载口径与原路由分片一致：官网仍自成 chunk，不进首包。
-// 加载中先出纸面骨架不许白屏；加载失败先自重试一次，仍失败交给
-// chunk 统一恢复（部署换包时 chunk 被删是最常见形态，见 utils/chunkRecovery）。
+// 加载中不渲染任何占位（骨架屏已按用户口径删除，2026-11-18），只留底色
+// 空白；加载失败先自重试一次，仍失败交给 chunk 统一恢复（部署换包时
+// chunk 被删是最常见形态，见 utils/chunkRecovery）。
 const LandingView = defineAsyncComponent({
   loader: () => import('@/views/marketing/LandingView.vue'),
-  loadingComponent: LandingSkeleton,
-  delay: 150,
   onError(error, retry, fail, attempts) {
     if (attempts <= 1) {
       retry()

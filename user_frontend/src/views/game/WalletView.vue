@@ -118,8 +118,7 @@
             </div>
           </div>
 
-          <div v-if="giftLoading && giftCodes.length === 0" class="w-skeleton" aria-hidden="true"></div>
-          <p v-else-if="giftCodes.length === 0" class="w-empty">没有符合条件的兑换码</p>
+          <p v-if="!giftLoading && giftCodes.length === 0" class="w-empty">没有符合条件的兑换码</p>
           <ul v-else class="w-code-list">
             <li v-for="item in giftCodes" :key="item.id" class="w-code-row">
               <div class="w-code-main">
@@ -142,8 +141,7 @@
 
       <!-- ============ 资金明细 ============ -->
       <div v-show="tab === 'ledger'" class="w-tab">
-        <div v-if="ledgerLoading && ledger.length === 0" class="w-skeleton" aria-hidden="true"></div>
-        <p v-else-if="ledger.length === 0" class="w-empty">暂无资金明细</p>
+        <p v-if="!ledgerLoading && ledger.length === 0" class="w-empty">暂无资金明细</p>
         <template v-else>
           <ul class="w-led-list">
             <li v-for="row in ledger" :key="row.id" class="w-led-row">
@@ -452,7 +450,6 @@ html[data-theme='light'] .w-seg__btn--on {
 .w-err { margin: 10px 0 0; font-size: 12.5px; color: #f87171; }
 html[data-theme='light'] .w-err { color: #dc2626; }
 .w-empty { margin: 16px 0 0; font-size: 13px; color: var(--ink2); }
-.w-skeleton { height: 96px; margin-top: 14px; border-radius: 14px; background: var(--paper-card); opacity: 0.6; }
 
 /* 使用兑换码 */
 .w-redeem-row { display: flex; gap: 10px; align-items: stretch; }

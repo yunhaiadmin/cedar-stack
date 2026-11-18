@@ -199,8 +199,6 @@
   --radius-lg: var(--au-r-lg);
   /* 原 design-tokens.css 里仍有引用的几项（其余别名与上面重复或无人使用，文件已删） */
   --font-size-small: 13px;   /* 暗房影院：正文下限 13px */
-  --skeleton-base: var(--au-surface-2);
-  --skeleton-highlight: var(--au-surface-3);
   --z-tooltip: var(--neo-z-toast);
 }
 
@@ -413,25 +411,6 @@ html[data-theme='light'] .au-btn-primary {
   letter-spacing: 0.02em;
 }
 .au-badge-cyan { background: var(--au-primary-soft); color: var(--au-primary); border: 1px solid var(--au-primary-border); }
-
-/* ==================== 骨架屏 / 加载 ==================== */
-
-.au-skeleton {
-  background: linear-gradient(90deg, var(--au-surface) 25%, var(--au-surface-2) 50%, var(--au-surface) 75%);
-  background-size: 200% 100%;
-  animation: au-shimmer 1.4s infinite;
-  border-radius: var(--au-r-md);
-}
-
-@keyframes au-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
-/* R27：减少动态偏好下骨架屏动画停掉 */
-@media (prefers-reduced-motion: reduce) {
-  .au-skeleton { animation: none; }
-}
 
 /* ==================== 动画 ==================== */
 

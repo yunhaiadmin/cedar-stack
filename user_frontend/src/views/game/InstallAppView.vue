@@ -131,9 +131,7 @@
         <p>客户端那部分没加载出来，检查一下网络再重试。</p>
         <button type="button" class="ia-retry" @click="load">重试</button>
       </div>
-      <div v-else-if="loading" class="ia-skeleton" aria-hidden="true"></div>
-
-      <template v-else>
+      <template v-else-if="!loading">
         <!-- 服务器地址卡：对外地址只有一个口径（后端下发），带复制 -->
         <section class="ia-sec" aria-label="服务器地址">
           <h2 class="ia-sec__title">服务器地址</h2>
@@ -897,17 +895,5 @@ html[data-theme='light'] .ia-retry {
   border-color: rgba(17, 18, 20, 0.09);
   background: #ffffff;
   color: #111214;
-}
-.ia-skeleton {
-  margin-top: 28px;
-  height: 320px;
-  border-radius: 16px;
-  background: #101013;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  opacity: 0.6;
-}
-html[data-theme='light'] .ia-skeleton {
-  background: #ffffff;
-  border-color: rgba(17, 18, 20, 0.09);
 }
 </style>

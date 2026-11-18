@@ -10,9 +10,7 @@
       <div v-if="loadError" class="iv-err">
         {{ loadError }}<button type="button" class="iv-retry" @click="load">重试</button>
       </div>
-      <div v-else-if="loading" class="iv-skeleton" aria-hidden="true"></div>
-
-      <template v-else>
+      <template v-else-if="!loading">
         <p v-if="!inviteEnabled" class="iv-empty">邀请功能暂时关闭，过段时间再来看看。</p>
 
         <template v-else>
