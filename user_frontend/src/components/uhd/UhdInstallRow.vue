@@ -120,13 +120,13 @@ async function onTap() {
   position: absolute;
   inset: 0;
   background: rgba(10, 10, 14, 0.55);
-  backdrop-filter: blur(10px) saturate(150%);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
 }
-/* 居中玻璃浮窗（2026-11-15 弹层形态批 1，与购流量弹窗同一口径）：
-   宽 92%、max 420px、四角圆角 26；玻璃五件走全站 --uhd-glass-*
-   令牌（半透底 d/l 双态＋slab 档 blur(24px) saturate(160%)＋边缘
-   亮光＋内高光＋大柔影阴影束），不写死颜色；浅色变体见文末覆盖。 */
+/* 居中实色浮窗（2026-11-18 用户亲令改实色；2026-11-15 弹层形态
+   批 1 曾为玻璃浮窗，与购流量弹窗同一口径）：宽 92%、max 420px、
+   四角圆角 26；面板底改实色 surface（深
+   var(--uhd-d-surface-raised)、浅 var(--uhd-l-surface)）、阴影走
+   --uhd-shadow-modal、遮罩与面板均无 backdrop；浅色变体见
+   文末覆盖。 */
 .uir-sheet {
   position: relative;
   width: 92%;
@@ -134,11 +134,9 @@ async function onTap() {
   margin: 0 auto;
   padding: 22px 22px 24px;
   border-radius: 26px;
-  background: var(--uhd-glass-d);
+  background: var(--uhd-d-surface-raised);
   border: 1px solid var(--uhd-glass-border);
-  box-shadow: var(--uhd-glass-slab-shadow);
-  backdrop-filter: var(--uhd-glass-slab-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-slab-filter);
+  box-shadow: var(--uhd-shadow-modal);
   color: var(--uhd-d-text);
   font-family: var(--uhd-font-sans);
   animation: uir-pop-in 0.28s cubic-bezier(0.32, 0.72, 0.28, 1) both;
@@ -237,7 +235,7 @@ async function onTap() {
 /* 浅色变体（批 1 补齐）：面板换浅色玻璃底/边，文字与抬升面
    换 --uhd-l-* 一套，与深色一一对应，不再写死深色。 */
 html[data-theme='light'] .uir-sheet {
-  background: var(--uhd-glass-l);
+  background: var(--uhd-l-surface);
   border-color: var(--uhd-glass-border-l);
   color: var(--uhd-l-text);
 }

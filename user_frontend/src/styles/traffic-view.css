@@ -1,14 +1,15 @@
 /* 购流量弹窗令牌（TrafficPurchaseModal.vue 引用）。
- * 弹窗跟随用户外观三态：默认（无 data-theme）＝深色玻璃，
- * html[data-theme='light']＝浅色纸面；组件内一律引令牌，
+ * 弹窗跟随用户外观三态：默认（无 data-theme）＝深色实色面，
+ * html[data-theme='light']＝浅色实色面；组件内一律引令牌，
  * 不许再写死底色/字色（2026-11-15 对齐单：旧版写死白底黑字，
  * 深色外观下突兀，已改）。
  * 由 TrafficPurchaseModal.vue 直接 import；令牌契约要求定义必须
  * 落在被引入的独立样式表里，scoped 样式里的定义不算数。 */
 :root {
-  /* 2026-11-15 逐帧修复：弹窗改居中玻璃浮窗——深色半透底
-     rgba(28,28,30,0.55)＋亮边 --tq-edge，blur/saturate 在组件里组装 */
-  --tq-bg: rgba(28, 28, 30, 0.55);
+  /* 2026-11-18 用户亲令弹窗改实色：面板底由半透玻璃底
+     rgba(28,28,30,0.55) 改引全站实色深面令牌＋亮边 --tq-edge
+     （2026-11-15 逐帧修复时曾为居中玻璃浮窗） */
+  --tq-bg: var(--uhd-d-surface-raised);
   --tq-edge: rgba(255, 255, 255, 0.24);
   --tq-fg: #f4f4f6;
   --tq-dim: rgba(244, 244, 246, 0.55);
@@ -27,7 +28,7 @@
   --tq-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
 }
 html[data-theme='light'] {
-  --tq-bg: rgba(255, 255, 255, 0.72);
+  --tq-bg: var(--uhd-l-surface);
   --tq-edge: rgba(17, 17, 17, 0.12);
   --tq-fg: #16161a;
   --tq-dim: rgba(22, 22, 26, 0.55);

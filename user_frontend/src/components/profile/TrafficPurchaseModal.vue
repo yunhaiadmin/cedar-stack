@@ -385,7 +385,6 @@ async function onBalanceConfirmClick() {
   inset: 0;
   z-index: 1200;
   background: rgba(10, 10, 14, 0.55);
-  backdrop-filter: blur(10px) saturate(150%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -395,9 +394,10 @@ async function onBalanceConfirmClick() {
   from { opacity: 0; }
   to { opacity: 1; }
 }
-/* 居中玻璃浮窗（2026-11-15 逐帧修复，照友站帧）：宽 92%、四角
-   圆角 26；玻璃五件＝半透底 --tq-bg＋blur 24/saturate 160＋顶部
-   内高光（inset 白）＋边缘亮光 --tq-edge＋大柔影 --tq-shadow */
+/* 居中实色浮窗（2026-11-18 用户亲令改实色；2026-11-15 逐帧修复
+   曾为玻璃浮窗，照友站帧）：宽 92%、四角圆角 26；面板底 --tq-bg
+   现引实色 surface、去 backdrop 与顶部内高光，只留边缘
+   --tq-edge＋大柔影 --tq-shadow */
 .tq-modal {
   width: 92%;
   max-width: 420px;
@@ -408,19 +408,9 @@ async function onBalanceConfirmClick() {
   border: 1px solid var(--tq-edge);
   border-radius: 26px;
   padding: 22px 22px 24px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
-    var(--tq-shadow);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: var(--tq-shadow);
   /* app 式浮窗：轻缩放＋上浮入场 */
   animation: tq-pop-in 0.28s cubic-bezier(0.32, 0.72, 0.28, 1) both;
-}
-html[data-theme='light'] .tq-modal {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.7),
-    var(--tq-shadow);
 }
 @keyframes tq-pop-in {
   from { transform: translateY(12px) scale(0.97); opacity: 0; }

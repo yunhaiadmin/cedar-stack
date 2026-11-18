@@ -4,20 +4,19 @@
    与 StreamShell 浮层同口径。定义放在独立样式表供设计令牌契约
    核查，由 BindDriveSheet.vue 引入；组件 scoped 样式只引用不定义
    （契约只认被引入的 .css）。数值与 server-lines-sheet.css 同源。
-   面板材质（2026-11-15 弹窗收尾批）：原 --bds-card 实心面退役，
-   改在本作用域按本弹层自己的双态（--dark 类/body 桥接，不跟全站
-   data-theme）钉 --modal-glass-* 令牌，数值与 styles/modal-glass.css
-   两档逐字一致（那边是全站真源；这里必须按桥接态钉，是因为片库面
-   外观与全站 data-theme 独立、令牌自身的 data-theme 开关够不到），
-   .bds-card 只用 --modal-glass-* 令牌组装玻璃五件。 */
+   面板材质（2026-11-18 用户亲令改实色；2026-11-15 曾玻璃化）：
+   在本作用域按本弹层自己的双态（--dark 类/body 桥接，不跟全站
+   data-theme）钉 --modal-glass-bg/edge/shadow 三件，底色引全站
+   实色 surface 令牌（浅 var(--uhd-l-surface)、深
+   var(--uhd-d-surface-raised)），与 styles/modal-glass.css 同口径
+   （这里必须按桥接态钉，是因为片库面外观与全站 data-theme
+   独立、令牌自身的 data-theme 开关够不到）；.bds-card 不再用
+   backdrop/内高光等玻璃件。 */
 
 .bds-overlay {
-  --modal-glass-bg: rgba(255, 255, 255, 0.72);
+  --modal-glass-bg: var(--uhd-l-surface);
   --modal-glass-edge: rgba(17, 17, 17, 0.12);
-  --modal-glass-hi: rgba(255, 255, 255, 0.7);
-  --modal-glass-ring: rgba(255, 255, 255, 0);
   --modal-glass-shadow: 0 24px 56px rgba(30, 32, 60, 0.25);
-  --modal-glass-filter: blur(24px) saturate(160%);
   --bds-text: #111111;
   --bds-sub: #9a9da3;
   --bds-divider: #e5e5e7;
@@ -31,12 +30,9 @@
 
 .bds-overlay.bds--dark,
 body.uhd-stream-dark .bds-overlay {
-  --modal-glass-bg: rgba(28, 28, 30, 0.55);
+  --modal-glass-bg: var(--uhd-d-surface-raised);
   --modal-glass-edge: rgba(255, 255, 255, 0.24);
-  --modal-glass-hi: rgba(255, 255, 255, 0.28);
-  --modal-glass-ring: rgba(255, 255, 255, 0.04);
   --modal-glass-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
-  --modal-glass-filter: blur(24px) saturate(160%);
   --bds-text: #ffffff;
   --bds-sub: rgba(255, 255, 255, 0.42);
   --bds-divider: #26262a;

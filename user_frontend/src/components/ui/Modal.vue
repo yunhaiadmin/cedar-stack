@@ -235,23 +235,18 @@ export default {
 }
 
 /* ==================== 内容卡片 ==================== */
-/* 2026-11-15 弹窗玻璃化（全站排查批 2）：实心面 --au-surface 换玻璃
-   五件（半透底＋blur/saturate＋亮边＋内高光＋大柔影），令牌在
-   styles/modal-glass.css（#233 购流量弹窗标尺，深浅双主题）；
-   尺寸/圆角/动画/遮罩不动。contentClass 自定义外观（如工单
-   .rf-confirm 的全局覆盖）仍按原级联生效。 */
+/* 2026-11-15 曾玻璃化（全站排查批 2）；2026-11-18 用户亲令弹窗
+   改实色：面板底用实色面（styles/modal-glass.css 的
+   --modal-glass-bg 现引实色 surface 令牌，深浅双主题）、去
+   backdrop 与内高光；尺寸/圆角/动画/遮罩不动。contentClass
+   自定义外观（如工单 .rf-confirm 的全局覆盖）仍按原级联生效。 */
 .modal-content-wrapper {
   position: relative;
   width: 100%;
   background: var(--modal-glass-bg);
   border: 1px solid var(--modal-glass-edge);
   border-radius: var(--neo-radius-lg, 18px);
-  box-shadow:
-    inset 0 1px 0 var(--modal-glass-hi),
-    inset 0 0 0 1px var(--modal-glass-ring),
-    var(--modal-glass-shadow);
-  backdrop-filter: var(--modal-glass-filter);
-  -webkit-backdrop-filter: var(--modal-glass-filter);
+  box-shadow: var(--modal-glass-shadow);
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - 2rem);

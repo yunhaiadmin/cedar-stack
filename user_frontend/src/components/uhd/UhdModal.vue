@@ -2,13 +2,15 @@
 /**
  * UhdModal —— 弹窗（说明书 2.8）
  * 居中卡约 400px 宽、圆角 24px、内边距 32px、标题 24px、右上 × 关闭；
- * 遮罩黑 40% + 背景模糊；入场淡入 + 模糊→清晰。
+ * 遮罩黑 45%（无模糊）；入场淡入 + 模糊→清晰。
  * 公告、线路、确认类弹窗同模具。
- * 2026-11-15 弹窗玻璃化（全站排查批 2）：面板由实心 --uhd-l-surface
- * 换玻璃五件（styles/modal-glass.css，#233 购流量弹窗标尺，深浅
- * 双主题）；几何/内边距/动画/遮罩不动。面板 Teleport 到 body、
- * --uhd-l-* 只剩 :root 值，故面板作用域内把文字令牌随材质翻转
- * （深色玻璃＝浅字、浅色玻璃＝恢复 :root 深字），插槽内容同受益。
+ * 2026-11-15 曾玻璃化（全站排查批 2）；2026-11-18 用户亲令弹窗
+ * 改实色：面板底用实色面（styles/modal-glass.css 的
+ * --modal-glass-bg 现引实色 surface 令牌）、去 backdrop 与
+ * 内高光，遮罩去 blur；几何/内边距/动画不动。面板 Teleport
+ * 到 body、--uhd-l-* 只剩 :root 值，故面板作用域内把文字
+ * 令牌随面色翻转（深色面＝浅字、浅色面＝恢复 :root 深字），
+ * 插槽内容同受益。
  */
 import { onBeforeUnmount, watch } from 'vue'
 import '../../styles/modal-glass.css'
@@ -68,30 +70,23 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   justify-content: center;
   padding: 16px;
   background: var(--modal-scrim-dark);
-  backdrop-filter: var(--modal-scrim-dark-filter);
-  -webkit-backdrop-filter: var(--modal-scrim-dark-filter);
   animation: uhd-fade-in var(--uhd-dur-fade) var(--uhd-ease-standard);
   font-family: var(--uhd-font-sans);
 }
 .uhd-modal {
   position: relative;
-  /* 面板作用域文字令牌随材质翻转（默认深色玻璃＝浅字） */
+  /* 面板作用域文字令牌随面色翻转（默认深色面＝浅字） */
   --uhd-l-text: var(--modal-glass-fg);
   --uhd-l-text-2: var(--modal-glass-dim);
   --uhd-l-input-bg: rgba(255, 255, 255, 0.08);
   background: var(--modal-glass-bg);
   border: 1px solid var(--modal-glass-edge);
   border-radius: var(--uhd-radius-modal);
-  box-shadow:
-    inset 0 1px 0 var(--modal-glass-hi),
-    inset 0 0 0 1px var(--modal-glass-ring),
-    var(--modal-glass-shadow);
-  backdrop-filter: var(--modal-glass-filter);
-  -webkit-backdrop-filter: var(--modal-glass-filter);
+  box-shadow: var(--modal-glass-shadow);
   padding: 32px;
   animation: uhd-blur-in var(--uhd-dur-blur-in) var(--uhd-ease-pop);
 }
-/* 浅色玻璃：文字令牌恢复 :root 浅面值（深字） */
+/* 浅色面：文字令牌恢复 :root 浅面值（深字） */
 html[data-theme='light'] .uhd-modal {
   --uhd-l-text: #111111;
   --uhd-l-text-2: #6b7280;

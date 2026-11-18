@@ -39,9 +39,9 @@ const emit = defineEmits<{ 'update:open': [boolean] }>()
   width: min(430px, 100%);
   max-height: 78%;
   overflow-y: auto;
-  background: rgba(24, 24, 27, 0.92);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  /* 面板实色（2026-11-18 用户亲令）：原 rgba(24,24,27,0.92)＋
+     blur(24px) 玻璃底改实色深面令牌、去 backdrop */
+  background: var(--uhd-d-surface-raised);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 24px 24px 0 0;
   color: #fff;

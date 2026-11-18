@@ -205,15 +205,13 @@ async function submit() {
   max-height: calc(100dvh - 48px);
   overflow-y: auto;
   padding: 20px;
+  /* 面板实色（2026-11-18 用户亲令）：底用实色面，令牌
+     styles/modal-glass.css（--modal-glass-bg 现引实色 surface）；
+     去 backdrop 与内高光，圆角/尺寸不动。 */
   background: var(--modal-glass-bg);
   border: 1px solid var(--modal-glass-edge);
   border-radius: 14px;
-  box-shadow:
-    inset 0 1px 0 var(--modal-glass-hi),
-    inset 0 0 0 1px var(--modal-glass-ring),
-    var(--modal-glass-shadow);
-  backdrop-filter: var(--modal-glass-filter);
-  -webkit-backdrop-filter: var(--modal-glass-filter);
+  box-shadow: var(--modal-glass-shadow);
 }
 .acct-modal-title {
   margin: 0 0 14px;

@@ -1,26 +1,31 @@
-/* 共享弹窗玻璃令牌（ui/Modal 与 UhdModal 两套共享原语共用）。
- * 数值真源＝购流量弹窗 #233 逐帧标尺（styles/traffic-view.css 的
- * --tq-* 面板令牌）：深色半透底 rgba(28,28,30,0.55)＋blur 24 /
- * saturate 160＋亮边 0.24＋顶部内高光＋大柔影 0 24px 64px；
- * 浅色按站内既有浅色玻璃写法（--tq-* 浅色档）：近白半透底
- * rgba(255,255,255,0.72)＋深边 0.12＋内高光 0.7＋柔影带蓝灰。
- * 弹窗跟随用户外观：默认（无 data-theme）＝深色玻璃，
- * html[data-theme='light']＝浅色玻璃；组件内一律引令牌组装
- * 玻璃五件（半透底／backdrop blur·saturate／亮边／内高光／大柔影），
+/* 共享弹窗面令牌（ui/Modal 与 UhdModal 两套共享原语共用）。
+ * 2026-11-18 用户亲令：弹窗一律实色、无玻璃感——面板底改实色
+ * surface（深色 var(--uhd-d-surface-raised)、浅色
+ * var(--uhd-l-surface)，与普通卡片同面），不用半透底＋backdrop
+ * blur；遮罩只留普通半透暗色、无 blur。沿革：原玻璃配方真源为
+ * 购流量弹窗 #233 逐帧标尺（深 rgba(28,28,30,0.55)＋blur 24 /
+ * saturate 160＋亮边＋内高光＋大柔影），本轮只换底色并去掉
+ * 玻璃件（backdrop／内高光），边框与阴影分档不变；
+ * --modal-glass-filter／--modal-glass-hi／--modal-scrim-light-filter
+ * 自本轮起无组件再引用（保留定义防外部旧引用断裂）；
+ * --modal-scrim-dark-filter 仅剩官网导航抽屉遮罩在引（导航、
+ * 非弹窗，不在本轮范围）。
+ * 弹窗跟随用户外观：默认（无 data-theme）＝深色面，
+ * html[data-theme='light']＝浅色面；组件内一律引令牌，
  * 不许再写死面板底色。
  * 由 components/ui/Modal.vue 与 components/uhd/UhdModal.vue 直接
  * import；令牌契约要求定义必须落在被引入的独立样式表里，
  * scoped 样式里的定义不算数。 */
 :root {
-  --modal-glass-bg: rgba(28, 28, 30, 0.55);
+  --modal-glass-bg: var(--uhd-d-surface-raised);
   --modal-glass-edge: rgba(255, 255, 255, 0.24);
   --modal-glass-hi: rgba(255, 255, 255, 0.28);
   --modal-glass-ring: rgba(255, 255, 255, 0.04);
   --modal-glass-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
   --modal-glass-filter: blur(24px) saturate(160%);
-  /* 遮罩两档（质感第二波，2026-11-18）：深色约 45% 黑＋blur 6（友站 Emby
-     线路弹层实测）；浅色强模糊 rgb(247,248,250)＋blur 16（选版本弹层
-     浅色实测采样 rgb(247–248,248–250)）。两档均为固定值、不跟随
+  /* 遮罩两档：深色约 45% 黑（友站 Emby 线路弹层实测）；浅色
+     rgb(247,248,250) 0.72（选版本弹层浅色实测采样
+     rgb(247–248,248–250)）。两档均为固定值、不跟随
      data-theme——组件按自身面的明暗显式选档（选版本弹层以
      body.uhd-stream-dark 桥接切档）。 */
   --modal-scrim-dark: rgba(0, 0, 0, 0.45);
@@ -33,7 +38,7 @@
   --modal-glass-dim: rgba(244, 244, 246, 0.55);
 }
 html[data-theme='light'] {
-  --modal-glass-bg: rgba(255, 255, 255, 0.72);
+  --modal-glass-bg: var(--uhd-l-surface);
   --modal-glass-edge: rgba(17, 17, 17, 0.12);
   --modal-glass-hi: rgba(255, 255, 255, 0.7);
   --modal-glass-ring: rgba(255, 255, 255, 0);

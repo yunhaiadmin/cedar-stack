@@ -302,7 +302,6 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   background: var(--modal-scrim-dark);
-  backdrop-filter: var(--modal-scrim-dark-filter);
 }
 
 .modal-box {
@@ -310,17 +309,13 @@ onBeforeUnmount(() => {
   width: min(420px, calc(100vw - 32px));
   padding: 28px 24px 24px;
   border-radius: var(--paper-r-xl, 16px);
-  /* 面板玻璃化（2026-11-15 弹窗收尾批）：实心 --au-surface 换玻璃
-     五件，令牌 styles/modal-glass.css（深浅随 data-theme）；
+  /* 面板实色（2026-11-18 用户亲令）：底用实色面，令牌
+     styles/modal-glass.css（--modal-glass-bg 现引实色 surface，
+     深浅随 data-theme）、去 backdrop 与内高光；
      尺寸/圆角/内边距不动。 */
   background: var(--modal-glass-bg);
   border: 1px solid var(--modal-glass-edge);
-  box-shadow:
-    inset 0 1px 0 var(--modal-glass-hi),
-    inset 0 0 0 1px var(--modal-glass-ring),
-    var(--modal-glass-shadow);
-  backdrop-filter: var(--modal-glass-filter);
-  -webkit-backdrop-filter: var(--modal-glass-filter);
+  box-shadow: var(--modal-glass-shadow);
   color: var(--text-primary, #ececf1);
 }
 

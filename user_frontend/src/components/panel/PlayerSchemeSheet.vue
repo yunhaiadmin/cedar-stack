@@ -1092,10 +1092,9 @@ async function start() {
   inset: 0;
   border: 0;
   padding: 0;
-  /* 浅色遮罩档（选版本弹层浅色实测）：深色桥接见文末 body.uhd-stream-dark .psp-mask */
+  /* 浅色遮罩档（选版本弹层浅色实测；2026-11-18 起遮罩无 blur）：
+     深色桥接见文末 body.uhd-stream-dark .psp-mask */
   background: var(--modal-scrim-light);
-  backdrop-filter: var(--modal-scrim-light-filter);
-  -webkit-backdrop-filter: var(--modal-scrim-light-filter);
   cursor: pointer;
 }
 .psp-sheet {
@@ -1108,31 +1107,24 @@ async function start() {
   bottom: calc(env(safe-area-inset-bottom) + 12px);
   display: flex;
   flex-direction: column;
-  /* 面板玻璃化（2026-11-15 弹窗收尾批）：实心 --uhd-l-surface 换玻璃
-     五件。本弹层深浅由片库面自有外观（body.uhd-stream-dark 桥接）
-     决定、不跟全站 data-theme，故 --modal-glass-* 在本作用域按态
-     钉值：此处（缺省浅色态）钉浅色档、深色桥接块钉深色档，数值与
-     styles/modal-glass.css 两档逐字一致（那边是全站真源）。
-     位置/尺寸不动；圆角 28→24（质感第二波，弹层大浮件收齐 24，桌面
-     本已是 24）；卡内 --uhd-l-surface 小面照旧。 */
-  --modal-glass-bg: rgba(255, 255, 255, 0.72);
+  /* 面板实色（2026-11-18 用户亲令；2026-11-15 曾玻璃化）：底用
+     实色面。本弹层深浅由片库面自有外观（body.uhd-stream-dark
+     桥接）决定、不跟全站 data-theme，故 --modal-glass-bg/edge/
+     shadow 在本作用域按态钉值：此处（缺省浅色态）钉浅色档
+     （底引 var(--uhd-l-surface)）、深色桥接块钉深色档，口径与
+     styles/modal-glass.css 一致（那边是全站真源）。去 backdrop
+     与内高光；位置/尺寸不动；圆角 24；卡内 --uhd-l-surface
+     小面照旧。 */
+  --modal-glass-bg: var(--uhd-l-surface);
   --modal-glass-edge: rgba(17, 17, 17, 0.12);
-  --modal-glass-hi: rgba(255, 255, 255, 0.7);
-  --modal-glass-ring: rgba(255, 255, 255, 0);
   --modal-glass-shadow: 0 24px 56px rgba(30, 32, 60, 0.25);
-  --modal-glass-filter: blur(24px) saturate(160%);
   background: var(--modal-glass-bg);
   border: 1px solid var(--modal-glass-edge);
   color: var(--uhd-l-text, #111111);
   border-radius: 24px;
   overflow: hidden;
   font-family: var(--uhd-font-sans, sans-serif);
-  box-shadow:
-    inset 0 1px 0 var(--modal-glass-hi),
-    inset 0 0 0 1px var(--modal-glass-ring),
-    var(--modal-glass-shadow);
-  backdrop-filter: var(--modal-glass-filter);
-  -webkit-backdrop-filter: var(--modal-glass-filter);
+  box-shadow: var(--modal-glass-shadow);
 }
 /* 头图区 */
 .psp-hero-wrap {
@@ -1972,21 +1964,17 @@ body.uhd-stream-dark .psp-failed__retry {
 <style>
 /* 片库面深色态（body 标记桥接） */
 body.uhd-stream-dark .psp-sheet {
-  /* 深色态把玻璃令牌钉成深色档（数值同 styles/modal-glass.css
-     深色档），面板组装在 .psp-sheet 本体、此处只换令牌值 */
-  --modal-glass-bg: rgba(28, 28, 30, 0.55);
+  /* 深色态把面令牌钉成深色档（口径同 styles/modal-glass.css
+     深色档；底引片库面弹层实色 --uhd-s-modal-bg），面板组装在
+     .psp-sheet 本体、此处只换令牌值 */
+  --modal-glass-bg: var(--uhd-s-modal-bg, #1c1c1c);
   --modal-glass-edge: rgba(255, 255, 255, 0.24);
-  --modal-glass-hi: rgba(255, 255, 255, 0.28);
-  --modal-glass-ring: rgba(255, 255, 255, 0.04);
   --modal-glass-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
-  --modal-glass-filter: blur(24px) saturate(160%);
   color: #ffffff;
 }
-/* 深色桥接下遮罩切深色档（与面板玻璃深色档同态） */
+/* 深色桥接下遮罩切深色档（与面板深色档同态；无 blur） */
 body.uhd-stream-dark .psp-mask {
   background: var(--modal-scrim-dark);
-  backdrop-filter: var(--modal-scrim-dark-filter);
-  -webkit-backdrop-filter: var(--modal-scrim-dark-filter);
 }
 body.uhd-stream-dark .psp-sec-head,
 body.uhd-stream-dark .psp-sec-count,
