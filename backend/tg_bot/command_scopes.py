@@ -88,7 +88,6 @@ def admin_commands(commands: list[tuple[str, str]]) -> list[tuple[str, str]]:
 WRITE_ONLY_ADMIN_COMMANDS: frozenset[str] = frozenset({
     "rankpush",
     "playrank",
-    "rain",
 })
 
 

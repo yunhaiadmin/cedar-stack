@@ -182,8 +182,6 @@ WELFARE_CONFIG_SCHEMA: dict[str, tuple] = {
     "bot_group_ids": ("str",),
     # 观影榜海报日推（tg_bot.rankpush 读侧宽容解析）：开关 word 风格存 true/false
     "bot_rankpush_enabled": ("bool",),
-    "bot_rankpush_reward_enabled": ("bool",),
-    "bot_rankpush_reward_table": ("int_list", 0, _BIG),
     # 更新入库播报（tg_bot.updatedigest 读侧宽容解析）：总开关 + 攒批间隔分钟
     # + 发送目标（空=发群，填频道 @用户名或 -100 ID 则发频道，原文直存）
     "bot_update_digest_enabled": ("bool",),
@@ -488,9 +486,6 @@ POOL_REWARD_CONFIG_SCHEMA: dict[str, tuple] = {
     "pool_reward_min_counted_plays": ("int", 0, _BIG),
     "pool_reward_play_dedupe_window_sec": ("int", 0, 604800),
     "pool_reward_daily_play_freeze": ("int", 0, _BIG),
-    # 公益天数：一期关闭（默认 0 不发），键位按 design 留。
-    "pool_reward_welfare_days": ("int", 0, 365),
-    "pool_reward_welfare_min_plays": ("int", 0, _BIG),
     "pool_reward_xp_per_play": ("int", 0, _BIG),
     "pool_reward_xp_cap": ("int", 0, _BIG),
     # 订阅延期：一期恒关（二期能力），键位按 design 留。

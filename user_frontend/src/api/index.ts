@@ -416,12 +416,8 @@ export interface AccountRealmCard {
 /** Emby 账号/线路查看权限（没权限时地址类字段置空不下发） */
 export interface ViewPermission {
   granted: boolean
-  /** 解锁需要的余额（历史字段，积分时代口径） */
-  unlock_points: number
   /** 解锁有效期天数（0=永久） */
   unlock_days: number
-  /** 用户当前余额（历史字段，积分时代口径） */
-  points_balance: number
   /** 已解锁的到期时间（ISO，未解锁/永久为 null） */
   expires_at: string | null
   /** 放行来源：unlock＝存量凭证在效 / subscription＝付费订阅 / null＝未放行 */

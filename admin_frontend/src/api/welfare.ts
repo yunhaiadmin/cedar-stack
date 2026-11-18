@@ -38,7 +38,7 @@ export interface LotteryRoundPrizeRow {
   id: number
   round_id: number
   name: string
-  type: 'days' | 'points' | 'whitelist'
+  type: 'days' | 'whitelist'
   value: number
   quantity: number
   sort: number
@@ -74,7 +74,7 @@ export interface CreateRoundPayload {
   chat_id: number
   prizes: Array<{
     name: string
-    type: 'days' | 'points' | 'whitelist'
+    type: 'days' | 'whitelist'
     value: number
     quantity: number
   }>

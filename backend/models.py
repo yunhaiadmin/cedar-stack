@@ -2025,7 +2025,7 @@ class LotteryActivityProposal(Base):
     chat_id = Column(BigInteger, nullable=False)
     lottery_type = Column(String(20), nullable=False, default='button')
     password_keyword = Column(String(100), nullable=True)
-    # 奖品清单 JSON：[{name, type(days/points/whitelist), value, quantity}]，与
+    # 奖品清单 JSON：[{name, type(days/whitelist), value, quantity}]，与
     # 管理端 RoundCreateRequest.PrizeItem 同形，批准时原样交给 lottery.create_round。
     prizes_json = Column(Text, nullable=False, default='[]')
     draw_at = Column(DateTime, nullable=True)

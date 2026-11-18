@@ -113,8 +113,6 @@ export interface RefundResult {
   order_id: string
   kind: 'subscription'
   status: string
-  /** 历史字段：积分回滚已下线，恒 0 */
-  revoked_points: number
   /** 实际回滚的会员天数（订阅时） */
   revoked_days: number
   /** 同时撤回的邀请人返利（美元） */

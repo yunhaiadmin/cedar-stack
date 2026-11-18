@@ -162,8 +162,6 @@ POOL_REWARD_CONFIG_DEFAULTS: dict = {
     "pool_reward_min_counted_plays": 10,
     "pool_reward_play_dedupe_window_sec": 1800,
     "pool_reward_daily_play_freeze": 1500,
-    "pool_reward_welfare_days": 0,
-    "pool_reward_welfare_min_plays": 50,
     "pool_reward_xp_per_play": 1,
     "pool_reward_xp_cap": 500,
     "pool_reward_subscription_enabled": False,

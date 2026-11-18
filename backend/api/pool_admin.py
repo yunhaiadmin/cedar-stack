@@ -530,7 +530,6 @@ def _detail_payload(db: Session, detail) -> dict:
         "active_days": detail.active_days,
         "raw_plays": detail.raw_plays,
         "transfer_bytes": detail.transfer_bytes,
-        "points": detail.points,
         "xp": detail.xp,
         "amount_usd": f"{Decimal(str(detail.amount_usd or 0)):.4f}",
         "credited_usd": f"{Decimal(str(detail.credited_usd or 0)):.2f}",
@@ -538,7 +537,6 @@ def _detail_payload(db: Session, detail) -> dict:
         "welfare_days": detail.welfare_days,
         "status": detail.status,
         "reason": detail.reason,
-        "points_log_id": detail.points_log_id,
         "granted_at": (detail.granted_at.isoformat()
                        if detail.granted_at else None),
         "released_by": detail.released_by,

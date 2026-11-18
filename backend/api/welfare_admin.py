@@ -41,10 +41,8 @@ WELFARE_CONFIG_KEYS = {
     "bot_group_ids": "",
     "bot_rate_limit_seconds": "3",
     "bot_group_rate_limit": "20",
-    # 观影榜海报日推：总开关默认开 / 发分开关默认关 / 名次发分表（逗号分隔）
+    # 观影榜海报日推：总开关默认开（名次发分已随积分删除摘除，旧键已删）
     "bot_rankpush_enabled": "true",
-    "bot_rankpush_reward_enabled": "false",
-    "bot_rankpush_reward_table": "10,8,6,5,4,3,2,1,1,1",
     # 更新入库播报：总开关默认开 / 攒批间隔默认 30 分钟 / 发送目标默认空（发群）
     "bot_update_digest_enabled": "true",
     "bot_update_digest_interval_minutes": "30",

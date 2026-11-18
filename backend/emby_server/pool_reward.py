@@ -32,8 +32,8 @@
 日界一律换算成 UTC naive 再与 created_at 比较（沿 economy
 ._today_start_utc_naive 的帧口径）。
 
-一期边界（定版）：公益天数不发（pool_reward_welfare_days
-默认 0、执行器不走 grant_welfare 通道）；订阅延期不进菜单；
+一期边界（定版）：公益天数不发（执行器不走 grant_welfare
+通道，留位键已删）；订阅延期不进菜单；
 不达门槛不结且不累计到下期（每期独立按本期事件计量，design
 §11 未写顺延口径，按不累计实现）。
 """
@@ -78,8 +78,6 @@ _SNAPSHOT_KEYS = (
     "pool_reward_min_counted_plays",
     "pool_reward_play_dedupe_window_sec",
     "pool_reward_daily_play_freeze",
-    "pool_reward_welfare_days",
-    "pool_reward_welfare_min_plays",
     "pool_reward_xp_per_play",
     "pool_reward_xp_cap",
 )
@@ -560,7 +558,6 @@ def _settle_member(db: Session, batch, member, cfg: dict,
     detail.active_days = meter.active_days
     detail.raw_plays = meter.raw_plays
     detail.transfer_bytes = transfer_bytes
-    detail.points = 0  # 积分已下线：新行不再写影子积分（历史行保留）
     detail.amount_usd = amount
     detail.xp = xp
     detail.welfare_days = 0

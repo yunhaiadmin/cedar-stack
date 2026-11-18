@@ -79,8 +79,6 @@ class PoolRewardConfigRequest(BaseModel):
     pool_reward_min_counted_plays: Optional[int] = None
     pool_reward_play_dedupe_window_sec: Optional[int] = None
     pool_reward_daily_play_freeze: Optional[int] = None
-    pool_reward_welfare_days: Optional[int] = None
-    pool_reward_welfare_min_plays: Optional[int] = None
     pool_reward_xp_per_play: Optional[int] = None
     pool_reward_xp_cap: Optional[int] = None
     pool_reward_subscription_enabled: Optional[bool] = None
@@ -101,7 +99,7 @@ def pool_get_reward_config(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """激励配置生效值：pool_reward_* 16 键（存量行优先，缺行回
+    """激励配置生效值：pool_reward_* 14 键（存量行优先，缺行回
     代码默认；总开关与真发开关默认关）。"""
     return pool_gate.reward_config_payload(db)
 
