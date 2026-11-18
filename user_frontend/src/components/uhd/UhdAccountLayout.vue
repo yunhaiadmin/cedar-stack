@@ -17,7 +17,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Briefcase, CreditCard, Gauge,
-  Megaphone, Plug, Settings, Sun, Moon, User, Wallet,
+  Megaphone, Settings, Sun, Moon, User, Wallet,
 } from 'lucide-vue-next'
 import UhdSidebar, { type UhdSidebarGroup } from './UhdSidebar.vue'
 import { getAgentMe } from '@/api/agent'
@@ -80,12 +80,6 @@ const groups = computed<UhdSidebarGroup[]>(() => {
         ...(showAgent.value
           ? [{ key: '/game/agent', label: '代理中心', icon: Briefcase }]
           : []),
-      ],
-    },
-    {
-      title: '探险设施',
-      items: [
-        { key: '/game/operator', label: '接线员', icon: Plug },
       ],
     },
     {
