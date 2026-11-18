@@ -182,7 +182,7 @@ onMounted(load)
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 1rem;
+  font-size: var(--uhd-fs-lead);
 }
 
 .gd-list {
@@ -210,7 +210,7 @@ onMounted(load)
 .gd-name {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--uhd-fs-aux);
   color: var(--au-text-2);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -224,11 +224,11 @@ onMounted(load)
   border-radius: var(--au-r-full);
   background: var(--au-success-soft);
   color: var(--au-success);
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
 }
 .gd-hint {
   margin: 12px 0 0;
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-3);
 }
 .gd-skeleton { display: flex; flex-direction: column; gap: 10px; }

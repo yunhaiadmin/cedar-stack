@@ -580,9 +580,9 @@ async function removeOverride(row: { username: string; user_id: number }) {
 
 .scope-body { display: flex; flex-direction: column; gap: 12px; }
 
-.ls-hint { display: block; margin: 0; font-size: 12.5px; line-height: 1.8; color: var(--au-text-3); }
+.ls-hint { display: block; margin: 0; font-size: var(--uhd-fs-aux-sm); line-height: 1.8; color: var(--au-text-3); }
 .ls-hint strong { color: var(--au-text-2); }
-span.ls-hint { margin-top: 6px; font-size: 12px; } /* 对话框里跟在控件下面的提示 */
+span.ls-hint { margin-top: 6px; font-size: var(--uhd-fs-aux-sm); } /* 对话框里跟在控件下面的提示 */
 .ls-switch-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
 .ls-pick { display: flex; flex-direction: column; gap: 10px; }
@@ -607,13 +607,13 @@ span.ls-hint { margin-top: 6px; font-size: 12px; } /* 对话框里跟在控件�
   padding: 6px 0;
 }
 .ls-pick-item + .ls-pick-item { border-top: 1px solid var(--au-border); }
-.ls-lib-name { font-size: 13px; color: var(--au-text); word-break: break-all; }
+.ls-lib-name { font-size: var(--uhd-fs-aux); color: var(--au-text); word-break: break-all; }
 .ls-lib-meta { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
-.ls-count { font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--au-text-4); }
-.ls-empty { padding: 10px 4px; font-size: 12px; line-height: 1.7; color: var(--au-text-3); }
+.ls-count { font-size: var(--uhd-fs-micro); font-variant-numeric: tabular-nums; color: var(--au-text-4); }
+.ls-empty { padding: 10px 4px; font-size: var(--uhd-fs-aux-sm); line-height: 1.7; color: var(--au-text-3); }
 
 .ls-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.ls-actions-hint { flex: 1 1 260px; font-size: 12px; line-height: 1.6; color: var(--au-text-3); }
+.ls-actions-hint { flex: 1 1 260px; font-size: var(--uhd-fs-aux-sm); line-height: 1.6; color: var(--au-text-3); }
 .ls-actions-hint strong { color: var(--au-text-2); }
 
 .flush-table :deep(.dt-cards) { padding: 12px 12px 8px; }

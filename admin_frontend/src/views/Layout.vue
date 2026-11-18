@@ -1022,7 +1022,7 @@ onUnmounted(() => {
 .nav::-webkit-scrollbar-track { background: transparent; }
 .nav::-webkit-scrollbar-thumb {
   background: var(--au-border-strong);
-  border-radius: 999px;
+  border-radius: var(--au-r-full);
   border: 2px solid transparent;
   background-clip: content-box;
 }

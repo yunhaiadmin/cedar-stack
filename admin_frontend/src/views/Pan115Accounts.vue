@@ -532,7 +532,7 @@ function currentPath(): string {
 /* ---------- 单元格 ---------- */
 .num { font-variant-numeric: tabular-nums; }
 .faint { color: var(--au-text-4); }
-.sub { font-size: 12px; color: var(--au-text-3); }
+.sub { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
 .ok-text { margin-left: 6px; font-weight: 600; color: var(--au-success); }
 .bad-text { margin-left: 6px; font-weight: 600; color: var(--au-danger); }
 
@@ -555,7 +555,7 @@ function currentPath(): string {
 .crumb-item {
   padding: 2px 4px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-primary);
   background: none;
   border: 0;
@@ -567,7 +567,7 @@ function currentPath(): string {
 .crumb-item:focus-visible { outline: 2px solid var(--au-border-focus); outline-offset: 1px; }
 
 .browser-path {
-  font-size: 11.5px;
+  font-size: var(--uhd-fs-micro);
   color: var(--au-text-4);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -590,7 +590,7 @@ function currentPath(): string {
   width: 100%;
   padding: 8px 10px;
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--uhd-fs-aux-sm);
   text-align: left;
   color: var(--au-text-2);
   background: none;
@@ -613,7 +613,7 @@ function currentPath(): string {
 .mg-hint {
   margin: 0;
   padding: 10px 12px;
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   line-height: 1.7;
   color: var(--au-text-3);
   background: var(--au-surface-2);

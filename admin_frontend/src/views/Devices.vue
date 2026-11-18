@@ -404,10 +404,10 @@ function ago(s: string | null): string {
 
 .user-name { font-weight: 600; color: var(--au-text); }
 .badge-gap { margin-left: 6px; }
-.dev-name { font-size: 13px; color: var(--au-text); }
+.dev-name { font-size: var(--uhd-fs-aux); color: var(--au-text); }
 .dev-id {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--uhd-fs-micro);
   color: var(--au-text-3);
   word-break: break-all;
 }
@@ -418,10 +418,10 @@ function ago(s: string | null): string {
 /* 弹窗里的键值行靠左：值与值之间会很长（设备 ID / 提示文案），右对齐读不动 */
 .dev-detail .kv-row .kv-value { text-align: left; }
 .dev-ver,
-.dev-ago { margin-left: 6px; font-size: 12px; color: var(--au-text-3); }
+.dev-ago { margin-left: 6px; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
 .dev-actions-hint {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--uhd-fs-aux-sm);
   line-height: 1.7;
   color: var(--au-text-2);
   background: var(--au-surface-2);
