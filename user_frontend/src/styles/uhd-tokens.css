@@ -148,13 +148,14 @@
   /* 阴影收编（质感第二波，2026-11-18）：全仓随手 box-shadow 按值聚类收进
      本节。0.5 族收敛到 sheet 的 0.55、0.05 族收敛到 soft 的 0.08、
      1px 族收敛到 seg（见契约测试 textureTokens2.test.mjs T3 豁免说明）。
-     member-l/member-d 按友站补测采样反推：浅色卡下 2px rgb(205,201,229)
-     →38px 至页底色；深色卡下 2px rgb(23,23,31)→36px 至页底 rgb(19,20,21)。 */
+     member-l/member-d 取 #307 会员卡实测值（pages-2 契约 M7/M8 锁定，与卡片完全一致）：
+     浅色卡下 2px rgb(205,201,229)→38px 至页底色；深色顶部高光 rgb(130,125,159)
+     ＋卡下 2px rgb(23,23,31)→36px 至页底 rgb(19,20,21)。 */
   --uhd-shadow-sheet: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 12px 28px -12px rgba(0, 0, 0, 0.55);
   --uhd-shadow-card-d: 0 10px 24px rgba(0, 0, 0, 0.32);
   --uhd-shadow-card-lav: 0 8px 22px rgba(90, 94, 150, 0.08);
-  --uhd-shadow-member-l: 0 2px 8px rgba(205, 201, 229, 0.75), 0 16px 38px -12px rgba(205, 201, 229, 0.45);
-  --uhd-shadow-member-d: 0 2px 6px rgba(23, 23, 31, 0.8), 0 16px 36px -12px rgba(23, 23, 31, 0.5);
+  --uhd-shadow-member-l: 0 2px 8px -2px rgb(205, 201, 229), 0 24px 38px -20px rgba(205, 201, 229, 0.45);
+  --uhd-shadow-member-d: inset 0 1px 0 rgb(130, 125, 159), 0 2px 8px -2px rgb(23, 23, 31), 0 20px 36px -18px rgba(23, 23, 31, 0.6);
   --uhd-shadow-panel-lg: 0 24px 60px rgba(0, 0, 0, 0.5);
   --uhd-shadow-float: 0 18px 40px rgba(0, 0, 0, 0.45);
   --uhd-shadow-soft: 0 2px 10px rgba(17, 17, 20, 0.08);

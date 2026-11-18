@@ -892,15 +892,31 @@ onMounted(() => {
 /* 「网页观影」胶囊：彩虹描边＋玻璃底（照友站同钮，配方同订阅页 .sub-head-link／
    .btn-primary 的浅深两态）：深色＝深玻璃底＋白字，浅色＝粉彩底＋黑字 */
 .rf-watch {
+  position: relative;
   flex: none; display: inline-flex; align-items: center; gap: 8px;
   height: 40px; padding: 0 16px; border-radius: 999px;
   border: 1.5px solid transparent;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box, var(--uhd-rainbow) border-box;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
   color: #ffffff;
   box-shadow: var(--uhd-shadow-sheet);
   backdrop-filter: var(--uhd-glass-filter);
   -webkit-backdrop-filter: var(--uhd-glass-filter);
   font-size: 14px; font-weight: 700; text-decoration: none; white-space: nowrap;
+}
+/* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
+   钮面只留玻璃层；浅色覆盖只换面背景，环由本处继承。 */
+.rf-watch::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--uhd-rainbow-border-w);
+  background: var(--uhd-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
 }
 .rf-tabs { display: flex; gap: 28px; border-bottom: 1px solid #26262a; margin-bottom: 20px; }
 .rf-tabs__btn {
@@ -945,15 +961,35 @@ onMounted(() => {
 .rf-type.on { border-color: #fbfcfd; background: #1e1f21; }
 /* 主按钮：招牌配方（彩虹边＋玻璃栈，同 .btn-primary 浅深两态），替代旧实色底 */
 .rf-submit {
+  position: relative;
   width: 100%; height: 50px; border-radius: 25px; cursor: pointer;
   font-size: 15px; font-weight: 800; color: #ffffff;
   border: 1.5px solid transparent;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box, var(--uhd-rainbow) border-box;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
   box-shadow: var(--uhd-shadow-sheet);
   backdrop-filter: var(--uhd-glass-filter);
   -webkit-backdrop-filter: var(--uhd-glass-filter);
 }
+/* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
+   钮面只留玻璃层；浅色覆盖只换面背景，环由本处继承。 */
+.rf-submit::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--uhd-rainbow-border-w);
+  background: var(--uhd-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
 .rf-submit:disabled { opacity: 0.5; cursor: default; }
+/* 禁用态彩虹退场：环随之一并隐藏 */
+.rf-submit:disabled::before {
+  display: none;
+}
 
 /* 作品搜索框（照友站 2.1）：50 高圆角 25 输入（内左放大镜）＋50×50 圆形
    彩虹描边搜索钮；搜索中钮内转 spinner */
@@ -1000,7 +1036,22 @@ onMounted(() => {
   position: absolute; right: 5px; top: 5px; height: 40px; padding: 0 20px; border-radius: 20px;
   font-size: 14px; font-weight: 700; color: #fbfcfd; cursor: pointer; font-family: inherit;
   border: 1.5px solid transparent;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box, var(--uhd-rainbow) border-box;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
+}
+/* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
+   钮面只留玻璃层；浅色覆盖只换面背景，环由本处继承。 */
+.rf-searchbar__btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--uhd-rainbow-border-w);
+  background: var(--uhd-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
 }
 /* 筛选容器条（照友站 2.6/2.7）：chips 装在圆角容器里，全部＝填充 pill、
    其余＝文字＋色点；一行放不下横向滚动 */
@@ -1137,12 +1188,12 @@ html[data-theme='light'] .rf-form__input:focus, html[data-theme='light'] .rf-for
 html[data-theme='light'] .rf-type { background: #ffffff; border-color: #e5e5e5; color: #111111; }
 html[data-theme='light'] .rf-type.on { border-color: #111111; background: #f9f9f9; }
 html[data-theme='light'] .rf-submit {
-  background: var(--uhd-rainbow-soft) padding-box, var(--uhd-rainbow) border-box;
+  background: var(--uhd-rainbow-soft);
   color: #111111;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--uhd-shadow-card-l);
 }
 html[data-theme='light'] .rf-watch {
-  background: var(--uhd-rainbow-soft) padding-box, var(--uhd-rainbow) border-box;
+  background: var(--uhd-rainbow-soft);
   color: #111111;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--uhd-shadow-card-l);
 }
@@ -1154,7 +1205,7 @@ html[data-theme='light'] .rf-searchbar__input { background: #f0f0f1; border-colo
 html[data-theme='light'] .rf-searchbar__input::placeholder { color: #9ca3af; }
 html[data-theme='light'] .rf-searchbar__input:focus { border-color: #9ca3af; }
 html[data-theme='light'] .rf-searchbar__btn {
-  background: var(--uhd-rainbow-soft) padding-box, var(--uhd-rainbow) border-box;
+  background: var(--uhd-rainbow-soft);
   color: #111111;
 }
 html[data-theme='light'] .rf-filterbar { background: #ffffff; border-color: #e5e5e5; }

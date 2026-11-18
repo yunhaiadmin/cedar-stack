@@ -60,11 +60,15 @@ for (const n of NEW_SHADOWS) {
   check(`T1 阴影令牌 --uhd-shadow-${n} 已定义`, tokens.includes(`--uhd-shadow-${n}:`))
 }
 const memberL = tokens.match(/--uhd-shadow-member-l:\s*([^;]+);/)
-check('T2 会员卡浅色阴影含补测采样 rgb(205,201,229)',
-  !!memberL && memberL[1].includes('205, 201, 229'))
+check('T2 会员卡浅色阴影＝#307 卡片实测值（与 UhdMemberCard 完全一致）',
+  !!memberL && memberL[1].trim() === '0 2px 8px -2px rgb(205, 201, 229), 0 24px 38px -20px rgba(205, 201, 229, 0.45)')
 const memberD = tokens.match(/--uhd-shadow-member-d:\s*([^;]+);/)
-check('T2 会员卡深色阴影含补测采样 rgb(23,23,31)，注释记页底 rgb(19,20,21)',
-  !!memberD && memberD[1].includes('23, 23, 31') && tokens.includes('rgb(19,20,21)'))
+check('T2 会员卡深色阴影＝#307 卡片实测值（顶部高光＋两档，注释记页底 rgb(19,20,21)）',
+  !!memberD && memberD[1].trim() === 'inset 0 1px 0 rgb(130, 125, 159), 0 2px 8px -2px rgb(23, 23, 31), 0 20px 36px -18px rgba(23, 23, 31, 0.6)' && tokens.includes('rgb(19,20,21)'))
+const memberCard = read('src/components/uhd/UhdMemberCard.vue')
+check('T2 会员卡两态改引 member 令牌（视觉零变化）',
+  memberCard.includes('box-shadow: var(--uhd-shadow-member-l)') &&
+  memberCard.includes('box-shadow: var(--uhd-shadow-member-d)'))
 
 /* ---------- 阴影随手值清零（全 src 扫描） ---------- */
 const SHADOW_ALLOW = [
@@ -72,13 +76,8 @@ const SHADOW_ALLOW = [
   ['LandingView.vue', '0 -18px 50px', '上向辉光无对应令牌'],
   ['LandingView.vue', 'inset 0 48px 90px', 'pin-glass 玻璃辉光'],
   ['v4-paper.css', '3px 3px 0 rgba(42, 38, 32, 0.12)', '纸面硬影冻结体系'],
-  // rebase 到 main 1c2c063e（#307）后新增：UhdMemberCard 是 #307 收敛后的唯一会员卡实现，
-  // 其阴影是 #307 自家实测值（pages-2 契约 M7/M8 锁定），与 tokens-2 的 member-l/member-d
-  // 令牌值数位不同（浅：0 2px 8px -2px＋0 24px 38px -20px；深：0 2px 8px -2px＋0 20px 36px -18px
-  // ＋顶部高光 rgb(130,125,159)）；.ov-card 已随 #307 删除，两枚令牌暂无引用方。
-  // 两套值以哪套为准须 parent 定夺，rebase 时不许静默改任一已验值，故此处豁免。
-  ['UhdMemberCard.vue', '0 2px 8px -2px rgb(205, 201, 229)', '会员卡浅色阴影 #307 实测值，与 member-l 令牌值不同'],
-  ['UhdMemberCard.vue', 'inset 0 1px 0 rgb(130, 125, 159)', '会员卡深色阴影＋顶部高光 #307 实测值，与 member-d 令牌值不同'],
+  // texture-tokens-3：UhdMemberCard 两处临时豁免已删——member-l/member-d 令牌值已改成
+  // 与 #307 卡片实测值完全一致，卡片改引令牌，视觉零变化。
 ]
 function shadowOk(file, val) {
   const v = val.replace(/\s+/g, ' ').trim()
@@ -240,6 +239,64 @@ check('T14 禁用态彩虹环一并退场',
 check('T14 浅色主钮不动（淡彩底＋彩虹边框整面写法保留）',
   blockOf(btn, 'uhd-btn--primary').includes('var(--uhd-rainbow-soft) padding-box') &&
   blockOf(btn, 'uhd-btn--primary').includes('var(--uhd-rainbow) border-box'))
+
+/* ---------- 一手写深色钮全站环切（texture-tokens-3，2026-11-18） ---------- */
+// 根因与 T14 同病：半透玻璃底（--uhd-glass-btn-d／--utb-pill-fill）下
+// padding-box ＋ 彩虹 border-box 双层写法会把整面彩虹晕染进钮面。
+// 全站 25 处一手写钮（含 UhdWatchPill 胶囊）已按 #309 同款改 ::before mask 环切；
+// 浅色面（--uhd-rainbow-soft 不透明）与 --uhd-rainbow-fill 填色用途不在缺陷集内。
+// 另：PersonalCenterView 的 .ov-invite 邀请横幅是同病非钮（rgba 半透面＋彩虹边），
+// 本批不动，留 parent 定夺（见任务报告）。
+const DARK_FACE = /var\(--uhd-glass-btn-d\)|var\(--utb-pill-fill\)/
+const RING_SITES = [
+  ['src/styles/index.css', '.btn-primary'],
+  ['src/styles/aurora.css', '.au-btn-primary'],
+  ['src/views/TgBindGuideView.vue', '.btn-primary'],
+  ['src/views/LoginView.vue', '.submit-btn'],
+  ['src/views/game/PersonalCenterView.vue', '.ov-btn--primary'],
+  ['src/components/profile/TrafficPurchaseModal.vue', '.tq-preview-btn'],
+  ['src/components/profile/TrafficPurchaseModal.vue', '.tq-confirm'],
+  ['src/components/requests/RequestSubmitModal.vue', '.rsm-confirm'],
+  ['src/components/requests/WorkSearchResults.vue', '.wsr-btn--go'],
+  ['src/views/game/RequestFeedbackView.vue', '.rf-watch'],
+  ['src/views/game/RequestFeedbackView.vue', '.rf-submit'],
+  ['src/views/game/RequestFeedbackView.vue', '.rf-searchbar__btn'],
+  ['src/views/game/RequestMediaDetailView.vue', '.rmd-watch'],
+  ['src/views/game/RequestMediaDetailView.vue', '.rmd-media__watch'],
+  ['src/views/game/invite-friends.css', '.iv-btn--rainbow'],
+  ['src/views/game/InstallAppView.vue', '.ia-copy'],
+  ['src/views/game/InstallAppView.vue', '.ia-dl'],
+  ['src/components/uhd/UhdWatchPill.vue', '.utb-pill'],
+  ['src/components/profile/SeriesFollowsPanel.vue', '.ov-page.ov-dark .acct-btn.primary'],
+  ['src/components/stream/StreamHero.vue', '.stream-scope[data-stream-theme="dark"] .sh-play'],
+  ['src/views/game/SubscriptionPlansView.vue', "html:not([data-theme='light']) .sub-sticky__cta"],
+  ['src/components/panel/PlayerSchemeSheet.vue', 'body.uhd-stream-dark .psp-start'],
+  ['src/components/profile/ServerLinesSheet.vue', '.sls--dark .sls-badge--primary'],
+  ['src/components/player/PlayerTogetherSheet.vue', '.wt-create'],
+  ['src/views/panel/MediaDetailView.vue', '.md-btn--play'],
+]
+// 缺陷写法扫描：同一 background 声明里同时出现半透钮面＋padding-box＋彩虹 border-box。
+const washBad = []
+for (const f of walk(join(ROOT, 'src'))) {
+  const text = read(f.slice(ROOT.length + 1)).replace(/\/\*[\s\S]*?\*\//g, '')
+  for (const m of text.matchAll(/background\s*:\s*([^;]+);/g)) {
+    const decl = m[1]
+    if (DARK_FACE.test(decl) && decl.includes('padding-box') && decl.includes('border-box') && /var\(--uhd-rainbow/.test(decl)) {
+      washBad.push(`${f.replace(ROOT + '/', '')}: ${decl.replace(/\s+/g, ' ').slice(0, 100)}`)
+    }
+  }
+}
+if (washBad.length) console.log('  残留：\n  ' + washBad.join('\n  '))
+check('T15 全仓不再有半透钮面＋彩虹 border-box 双层写法（25 处已环切）', washBad.length === 0)
+for (const [f, sel] of RING_SITES) {
+  const text = read(f)
+  const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const rm = text.match(new RegExp(esc + '::before\\s*\\{([^}]*)\\}'))
+  const ringBody = rm ? rm[1] : ''
+  check(`T15 ${f.split('/').pop()} ${sel} 有 ::before 彩虹环（mask 环切）`,
+    ringBody.includes('var(--uhd-rainbow') && ringBody.includes('content-box') &&
+    (ringBody.includes('mask-composite: exclude') || ringBody.includes('-webkit-mask-composite: xor')))
+}
 
 /* ---------- 按压反馈立档 ---------- */
 check('T10 按压三值已立（缩放 0.97／亮度 0.96／时长 micro）',

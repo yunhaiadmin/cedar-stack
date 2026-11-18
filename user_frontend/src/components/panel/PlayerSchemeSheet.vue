@@ -2064,11 +2064,25 @@ body.uhd-stream-dark .psp-emb__row--on .psp-emb__radio::after {
 }
 /* 深色开始播放：深色玻璃填充＋弱化彩虹边（与 .btn-primary 深色配方同口径） */
 body.uhd-stream-dark .psp-start {
-  background:
-    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
-    var(--uhd-rainbow) border-box;
+  position: relative;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
   box-shadow: var(--uhd-shadow-sheet);
   color: #ffffff;
+}
+/* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
+   钮面只留玻璃层；浅色基规则不动。 */
+body.uhd-stream-dark .psp-start::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--uhd-rainbow-border-w);
+  background: var(--uhd-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
 }
 /* 深色态下不可播禁用钮仍须压过上面的玻璃彩虹配方：深灰底灰字 */
 body.uhd-stream-dark .psp-start--none,
@@ -2077,6 +2091,10 @@ body.uhd-stream-dark .psp-start--none:disabled {
   border-color: rgba(255, 255, 255, 0.08);
   box-shadow: none;
   color: #8e8e93;
+}
+/* 不可播禁用钮彩虹退场：环随之一并隐藏 */
+body.uhd-stream-dark .psp-start--none::before {
+  display: none;
 }
 body.uhd-stream-dark .psp-subrow__pill,
 body.uhd-stream-dark .psp-line-pill {

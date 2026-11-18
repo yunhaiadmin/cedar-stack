@@ -31,10 +31,11 @@ import { RouterLink } from 'vue-router'
 
 <style scoped>
 /* 玻璃六要素：blur + saturate（--utb-glass-filter）、半透底（--utb-pill-fill）、
-   内高光（inset 0 1px 0 白）、边缘光（彩虹 border-box 描边 + 内亮边）、
-   大柔影（--utb-shadow）。彩虹描边用 padding-box 填充 + border-box 描边的
-   双背景写法（与全站彩虹钮同配方）。 */
+   内高光（inset 0 1px 0 白）、边缘光（彩虹 ::before mask 环切 + 内亮边）、
+   大柔影（--utb-shadow）。彩虹只走 1.5px 细环，不再整面铺底（texture-tokens-3，
+   与全站彩虹钮同配方）。 */
 .utb-pill {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -45,9 +46,7 @@ import { RouterLink } from 'vue-router'
   padding: 0 var(--utb-pill-px);
   border: 1.5px solid transparent;
   border-radius: 999px;
-  background:
-    linear-gradient(var(--utb-pill-fill), var(--utb-pill-fill)) padding-box,
-    var(--uhd-rainbow) border-box;
+  background: linear-gradient(var(--utb-pill-fill), var(--utb-pill-fill));
   backdrop-filter: var(--utb-glass-filter);
   -webkit-backdrop-filter: var(--utb-glass-filter);
   box-shadow:
@@ -61,6 +60,21 @@ import { RouterLink } from 'vue-router'
   white-space: nowrap;
   flex: none;
   transition: transform var(--uhd-press-dur) var(--uhd-ease-standard, ease);
+}
+/* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
+   胶囊面只留半透底。 */
+.utb-pill::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--uhd-rainbow-border-w);
+  background: var(--uhd-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
 }
 .utb-pill:active {
   transform: scale(var(--uhd-press-scale));

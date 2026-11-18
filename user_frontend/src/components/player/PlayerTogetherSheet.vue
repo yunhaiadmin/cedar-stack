@@ -200,18 +200,31 @@ async function copyLink(): Promise<void> {
   margin: 2px 0 16px;
 }
 /* 邀请卡主钮（G-190）：彩虹描边长胶囊＋文字左对齐，配方与深色主钮同口径
-   （深玻璃 padding-box ＋ --uhd-rainbow border-box） */
+   （深玻璃面＋ ::before mask 彩虹环切，texture-tokens-3） */
 .wt-create {
   position: relative;
   overflow: hidden;
   border: 1.5px solid transparent;
   border-radius: 999px;
-  background:
-    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
-    var(--uhd-rainbow) border-box;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
   color: #fff;
   text-align: left;
   padding: 0 22px;
+}
+/* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
+   钮面只留玻璃层。 */
+.wt-create::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--uhd-rainbow-border-w);
+  background: var(--uhd-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
 }
 /* 开启中态（G-191）：不置灰，钮面覆一层扇形旋转光效 */
 .wt-primary.wt-primary--busy:disabled {

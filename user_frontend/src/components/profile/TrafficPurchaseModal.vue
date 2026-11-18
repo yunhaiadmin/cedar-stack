@@ -553,27 +553,43 @@ html[data-theme='light'] .tq-modal {
 .tq-input__suffix { font-size: 13px; color: var(--tq-dim); flex: none; }
 /* 预览钮：彩虹边 + 玻璃（与站内 .btn-primary 同一套配方） */
 .tq-preview-btn {
+  position: relative;
   flex: none;
   height: 44px;
   padding: 0 20px;
   border-radius: 999px;
   border: 1.5px solid transparent;
-  background:
-    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
-    var(--uhd-rainbow) border-box;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
   color: #ffffff;
   font-size: 14.5px;
   font-weight: 600;
   cursor: pointer;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
+/* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
+   钮面只留玻璃层；浅色覆盖只换面背景，环由本处继承。 */
+.tq-preview-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--uhd-rainbow-border-w);
+  background: var(--uhd-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
 html[data-theme='light'] .tq-preview-btn {
-  background:
-    var(--uhd-rainbow-soft) padding-box,
-    var(--uhd-rainbow) border-box;
+  background: var(--uhd-rainbow-soft);
   color: #111111;
 }
 .tq-preview-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* 禁用态彩虹退场：环随之一并隐藏 */
+.tq-preview-btn:disabled::before {
+  display: none;
+}
 .tq-chips { display: flex; gap: 8px; margin-top: 12px; }
 .tq-chip {
   flex: 1;
@@ -662,6 +678,7 @@ html:not([data-theme='light']) .tq-error { color: #f87171; }
 
 /* 确认主按钮：彩虹边 + 玻璃（与站内 .btn-primary 同一套配方） */
 .tq-confirm {
+  position: relative;
   width: 100%;
   margin-top: 16px;
   border: 1.5px solid transparent;
@@ -671,9 +688,7 @@ html:not([data-theme='light']) .tq-error { color: #f87171; }
   font-weight: 700;
   color: #ffffff;
   cursor: pointer;
-  background:
-    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
-    var(--uhd-rainbow) border-box;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
   box-shadow: var(--uhd-shadow-sheet);
   backdrop-filter: var(--uhd-glass-filter);
   -webkit-backdrop-filter: var(--uhd-glass-filter);
@@ -683,10 +698,23 @@ html:not([data-theme='light']) .tq-error { color: #f87171; }
   gap: 8px;
   transition: transform 0.12s ease, opacity 0.12s ease;
 }
+/* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
+   钮面只留玻璃层；浅色覆盖只换面背景，环由本处继承。 */
+.tq-confirm::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--uhd-rainbow-border-w);
+  background: var(--uhd-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
 html[data-theme='light'] .tq-confirm {
-  background:
-    var(--uhd-rainbow-soft) padding-box,
-    var(--uhd-rainbow) border-box;
+  background: var(--uhd-rainbow-soft);
   color: #111111;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.65),
@@ -694,6 +722,10 @@ html[data-theme='light'] .tq-confirm {
 }
 .tq-preview .tq-confirm { margin-top: 12px; }
 .tq-confirm:disabled { opacity: 0.45; cursor: not-allowed; }
+/* 禁用态彩虹退场：环随之一并隐藏 */
+.tq-confirm:disabled::before {
+  display: none;
+}
 /* 按压反馈态（app 口径：点下去立刻有反应） */
 .tq-confirm:active:not(:disabled),
 .tq-pkg:active:not(:disabled),

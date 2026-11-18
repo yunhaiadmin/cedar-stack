@@ -698,6 +698,12 @@ html[data-theme='light'] .ov-loading__text { color: #8a8d93; }
   gap: 8px 36px;
   align-items: start;
 }
+/* 手机端卡片区外扩（2026-11-18 用户对照截图 parent 实测）：页内边距 20px 时
+   卡宽仅约 89% 视口；外扩 7px/侧后卡宽约 93%（390 宽下每侧约 13px），与友站一致；
+   卡＋有效期行＋流量区同在 hero 内，左右缘仍对齐；其余分组与平板/桌面布局不动。 */
+@media (max-width: 768px) {
+  .ov-hero { margin: 0 -7px; }
+}
 .ov-hero__card,
 .ov-hero__meter { min-width: 0; }
 @media (min-width: 1100px) {
@@ -866,14 +872,28 @@ html[data-theme='light'] .ov-page.ov-dark .ov-skel::after {
 /* 主钮：深色面＝深色毛玻璃底＋彩虹渐变边框＋玻璃栈（内高光＋柔影＋backdrop，2026-11-13 补齐玻璃）；
    浅色面＝淡彩粉彩底＋彩虹边框（见浅色覆盖） */
 .ov-btn--primary {
+  position: relative;
   border: 1.5px solid transparent;
-  background:
-    linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box,
-    var(--uhd-rainbow) border-box;
+  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
   color: #ffffff;
   box-shadow: var(--uhd-shadow-sheet);
   backdrop-filter: var(--uhd-glass-filter);
   -webkit-backdrop-filter: var(--uhd-glass-filter);
+}
+/* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
+   钮面只留玻璃层；两处浅色覆盖只换面背景，环由本处继承。 */
+.ov-btn--primary::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--uhd-rainbow-border-w);
+  background: var(--uhd-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
 }
 .ov-btn:active {
   opacity: 0.8;
@@ -1273,7 +1293,7 @@ html[data-theme='light'] .ov-bar__fill { background: #111111; }
 html[data-theme='light'] .ov-quota__meta { color: #9a9da3; }
 html[data-theme='light'] .ov-quota__meta-line { color: #9a9da3; }
 html[data-theme='light'] .ov-btn { background: #ffffff; border-color: #e7e7e7; color: #111111; }
-html[data-theme='light'] .ov-btn--primary { background: var(--uhd-rainbow-soft) padding-box, var(--uhd-rainbow) border-box; border-color: transparent; color: #111111; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--uhd-shadow-card-l); backdrop-filter: var(--uhd-glass-filter); -webkit-backdrop-filter: var(--uhd-glass-filter); }
+html[data-theme='light'] .ov-btn--primary { background: var(--uhd-rainbow-soft); border-color: transparent; color: #111111; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--uhd-shadow-card-l); backdrop-filter: var(--uhd-glass-filter); -webkit-backdrop-filter: var(--uhd-glass-filter); }
 html[data-theme='light'] .ov-sec__head { border-bottom-color: #e5e5e7; }
 html[data-theme='light'] .ov-sec__title { color: #111111; }
 html[data-theme='light'] .ov-sec__more { color: #55575c; }
@@ -1329,7 +1349,7 @@ html[data-theme='light'] .ov-page.ov-dark .ov-bar__fill { background: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-quota__meta { color: rgba(255, 255, 255, 0.42); }
 html[data-theme='light'] .ov-page.ov-dark .ov-quota__meta-line { color: rgba(255, 255, 255, 0.42); }
 html[data-theme='light'] .ov-page.ov-dark .ov-btn { background: #17181c; color: #ffffff; }
-html[data-theme='light'] .ov-page.ov-dark .ov-btn--primary { background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)) padding-box, var(--uhd-rainbow) border-box; color: #ffffff; box-shadow: var(--uhd-shadow-sheet); backdrop-filter: var(--uhd-glass-filter); -webkit-backdrop-filter: var(--uhd-glass-filter); }
+html[data-theme='light'] .ov-page.ov-dark .ov-btn--primary { background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)); color: #ffffff; box-shadow: var(--uhd-shadow-sheet); backdrop-filter: var(--uhd-glass-filter); -webkit-backdrop-filter: var(--uhd-glass-filter); }
 html[data-theme='light'] .ov-page.ov-dark .ov-sec__title { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-sec__more { color: rgba(255, 255, 255, 0.62); }
 html[data-theme='light'] .ov-page.ov-dark .ov-row__chev { color: rgba(255, 255, 255, 0.42); }
