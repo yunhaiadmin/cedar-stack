@@ -30,6 +30,8 @@ import { initSiteDrawer } from './composables/useSiteDrawer'
 import { captureInstallPrompt } from './composables/useInstallPrompt'
 // chunk 加载失败恢复（与 router.onError 共用唯一实现 utils/chunkRecovery）
 import { handleChunkLoadError } from './utils/chunkRecovery'
+// 版本守卫：长开标签页跑旧构建时提示刷新（utils/versionGuard）
+import { handlePreloadError, startVersionGuard } from './utils/versionGuard'
 
 // iOS Safari 要求页面有 touchstart 监听器才会触发 :active 伪类
 // 空函数即可，passive 避免滚动性能问题
@@ -44,7 +46,12 @@ window.addEventListener('vite:preloadError', (event: Event) => {
   // vite 把失败原因挂在事件的 payload 扩展属性上（非标准类型，源码实锤）；
   // preventDefault 不做的话 vite 会把原错误再抛出来。
   event.preventDefault()
-  handleChunkLoadError((event as Event & { payload?: unknown }).payload)
+  const payload = (event as Event & { payload?: unknown }).payload
+  // 先过版本守卫的时间窗闸门：10 分钟内已自动重载过就不再自动重载
+  // （防新构建本身有问题时无限刷新），改走新版本提示胶囊；闸门放行
+  // 才交给同一套恢复（计数/闩锁在 chunkRecovery 内统一）。
+  if (handlePreloadError(payload)) return
+  handleChunkLoadError(payload)
 })
 
 const app = createApp(App)
@@ -52,6 +59,10 @@ const pinia = createPinia()
 
 app.use(pinia)
 app.use(router)
+
+// 版本守卫启动：定时/切回可见/路由切换时拉壳比对 build-id，
+// 发现新版本只提示不强刷（用户可能在看片/填表）
+startVersionGuard(router)
 
 app.mount('#app')
 void initBranding()
