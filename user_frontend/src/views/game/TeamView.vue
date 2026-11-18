@@ -221,152 +221,205 @@
       </template>
     </div>
 
-    <!-- 创建 / 升级弹窗（两步：配置 → 结算预览，照友站 §8.3） -->
-    <UhdModal v-model="buyOpen" title="开通/升级团队方案" :width="720">
-      <!-- 预览加载态（友站文案原样） -->
-      <div v-if="buyStep === 'loading'" class="tm-buy-loading" role="status" aria-live="polite">
-        <span class="tm-spin" aria-hidden="true"></span>
-        <p>结算金额计算中…</p>
-      </div>
+    <!-- 创建 / 升级弹窗（两步：配置 → 结算预览，照友站 §8.3；手机端紧凑卡
+         版式照友站录屏实测：浮动卡＋头部＋五块卡＋底部栏常驻，弹层封顶
+         82dvh、只在内部滚动。专职 sheet 而非 UhdModal：UhdModal 无高度
+         封顶，长内容会溢出屏幕、底部按钮被挤出（用户真机实证）。 -->
+    <Teleport to="body">
+      <div v-if="buyOpen" class="tm-sheet__overlay" @click.self="closeBuy">
+        <div class="tm-sheet" role="dialog" aria-modal="true" aria-label="开通 / 升级团队方案">
+          <div class="tm-sheet__head">
+            <template v-if="buyStep === 2">
+              <button type="button" class="tm-sheet__nav-btn" aria-label="返回配置" @click="buyStep = 1">
+                <ArrowLeft :size="20" aria-hidden="true" />
+              </button>
+              <div class="tm-sheet__titles">
+                <h3 class="tm-sheet__title">结算预览</h3>
+                <p class="tm-sheet__sub">请确认以下结算信息无误</p>
+              </div>
+            </template>
+            <template v-else>
+              <span class="tm-sheet__zap"><Zap :size="20" aria-hidden="true" /></span>
+              <div class="tm-sheet__titles">
+                <h3 class="tm-sheet__title">开通 / 升级团队方案</h3>
+              </div>
+            </template>
+            <button type="button" class="tm-sheet__nav-btn tm-sheet__close" aria-label="关闭" @click="closeBuy">×</button>
+          </div>
 
-      <!-- 第 1 步：配置 -->
-      <div v-else-if="buyStep === 1" class="tm-buy">
-        <p v-if="buyError" class="tm-buy-error" role="alert">{{ buyError }}</p>
-        <div class="tm-buy__grid">
-          <div class="tm-buy__form">
-            <p class="tm-field-label">线路类型</p>
-            <div class="tm-line-btns" role="group" aria-label="线路类型">
-              <button
-                type="button"
-                class="tm-line-btn"
-                :class="{ 'tm-line-btn--on': form.line === 'global' }"
-                :aria-pressed="form.line === 'global'"
-                @click="setLine('global')"
-              >Global 全球线路</button>
-              <button
-                type="button"
-                class="tm-line-btn"
-                :class="{ 'tm-line-btn--on': form.line === 'premium' }"
-                :aria-pressed="form.line === 'premium'"
-                @click="setLine('premium')"
-              >Premium 高级线路</button>
+          <div class="tm-sheet__body">
+            <!-- 预览加载态（友站文案原样） -->
+            <div v-if="buyStep === 'loading'" class="tm-buy-loading" role="status" aria-live="polite">
+              <span class="tm-spin" aria-hidden="true"></span>
+              <p>结算金额计算中…</p>
             </div>
 
-            <p class="tm-field-label">同时播放路数</p>
-            <input
-              v-model.number="form.streams"
-              type="number"
-              class="tm-input"
-              min="0"
-              step="1"
-              aria-label="同时播放路数"
-            />
+            <!-- 第 1 步：配置 -->
+            <div v-else-if="buyStep === 1" class="tm-buy">
+              <p v-if="buyError" class="tm-buy-error" role="alert">{{ buyError }}</p>
 
-            <p class="tm-field-label">订购流量</p>
-            <div class="tm-traffic-row">
+              <p class="tm-buy__label">方案类型</p>
+              <div class="tm-plan-cards" role="group" aria-label="方案类型">
+                <button
+                  type="button"
+                  class="tm-plan-card"
+                  :class="{ 'tm-plan-card--on': form.line === 'global' }"
+                  :aria-pressed="form.line === 'global'"
+                  @click="setLine('global')"
+                >
+                  <span class="tm-plan-card__name">Global</span>
+                  <span class="tm-plan-card__sub">常规线路</span>
+                </button>
+                <button
+                  type="button"
+                  class="tm-plan-card"
+                  :class="{ 'tm-plan-card--on': form.line === 'premium' }"
+                  :aria-pressed="form.line === 'premium'"
+                  @click="setLine('premium')"
+                >
+                  <span class="tm-plan-card__name">Premium</span>
+                  <span class="tm-plan-card__sub">高级线路</span>
+                </button>
+              </div>
+
+              <section class="tm-buy-card">
+                <div class="tm-buy-card__row">
+                  <div class="tm-buy-card__main">
+                    <p class="tm-buy-card__label">同时播放</p>
+                    <p class="tm-buy-card__desc">团队通用值，修改时同步现有成员；新成员默认使用，0 表示不限</p>
+                  </div>
+                  <label class="tm-capsule tm-capsule--sm">
+                    <input
+                      v-model.number="form.streams"
+                      type="number"
+                      min="0"
+                      step="1"
+                      aria-label="同时播放路数"
+                    />
+                    <span class="tm-capsule__unit">路</span>
+                  </label>
+                </div>
+              </section>
+
+              <section class="tm-buy-card">
+                <div class="tm-buy-card__row">
+                  <div class="tm-buy-card__main">
+                    <p class="tm-buy-card__label">团队总流量</p>
+                    <p class="tm-buy-card__conv">{{ formatGb(form.traffic_gb || 0) }}</p>
+                  </div>
+                  <label class="tm-capsule tm-capsule--lg">
+                    <input
+                      v-model.number="form.traffic_gb"
+                      type="number"
+                      :min="lineMin"
+                      :max="config.team_max_traffic_gb"
+                      step="100"
+                      aria-label="订购流量（GB）"
+                    />
+                    <span class="tm-capsule__unit">GB</span>
+                  </label>
+                </div>
+                <input
+                  v-model.number="form.traffic_gb"
+                  type="range"
+                  class="tm-range"
+                  :min="lineMin"
+                  :max="config.team_max_traffic_gb"
+                  step="100"
+                  aria-label="订购流量滑块"
+                />
+                <div class="tm-slider-caps">
+                  <span>最低 {{ lineMin.toLocaleString() }} GB</span>
+                  <span>最高 {{ config.team_max_traffic_gb.toLocaleString() }} GB</span>
+                </div>
+              </section>
+
+              <section class="tm-buy-card">
+                <div class="tm-buy-card__row">
+                  <p class="tm-buy-card__label">订购时长</p>
+                  <p class="tm-buy-card__value">{{ form.months }}个月</p>
+                </div>
+                <input
+                  v-model.number="form.months"
+                  type="range"
+                  class="tm-range"
+                  min="1"
+                  max="12"
+                  step="1"
+                  aria-label="订购时长（月）"
+                />
+              </section>
+
+              <div class="tm-mini-summary" aria-label="配置摘要">
+                <div class="tm-mini-card">
+                  <Zap :size="14" aria-hidden="true" />
+                  <span class="tm-mini-card__label">类型</span>
+                  <b class="tm-mini-card__value">{{ form.line === 'global' ? 'Global' : 'Premium' }}</b>
+                </div>
+                <div class="tm-mini-card">
+                  <Gauge :size="14" aria-hidden="true" />
+                  <span class="tm-mini-card__label">流量</span>
+                  <b class="tm-mini-card__value">{{ (form.traffic_gb || 0).toLocaleString() }} GB</b>
+                </div>
+                <div class="tm-mini-card">
+                  <CalendarDays :size="14" aria-hidden="true" />
+                  <span class="tm-mini-card__label">时长</span>
+                  <b class="tm-mini-card__value">{{ form.months }}个月</b>
+                </div>
+              </div>
+            </div>
+
+            <!-- 第 2 步：结算预览 -->
+            <div v-else-if="buyStep === 2 && preview" class="tm-settle">
+              <p class="tm-field-label">团队名称</p>
               <input
-                v-model.number="form.traffic_gb"
-                type="number"
+                v-model="teamName"
+                type="text"
                 class="tm-input"
-                :min="lineMin"
-                :max="config.team_max_traffic_gb"
-                step="100"
-                aria-label="订购流量（GB）"
+                maxlength="100"
+                placeholder="请输入团队名称（可选）"
+                aria-label="团队名称（可选）"
               />
-              <span class="tm-traffic-conv">{{ formatGb(form.traffic_gb || 0) }}</span>
-            </div>
-            <input
-              v-model.number="form.traffic_gb"
-              type="range"
-              class="tm-slider"
-              :min="lineMin"
-              :max="config.team_max_traffic_gb"
-              step="100"
-              aria-label="订购流量滑块"
-            />
-            <div class="tm-slider-caps">
-              <span>最低{{ lineMin.toLocaleString() }}GB</span>
-              <span>最高{{ config.team_max_traffic_gb.toLocaleString() }}GB</span>
-            </div>
 
-            <p class="tm-field-label">订购时长</p>
-            <input
-              v-model.number="form.months"
-              type="range"
-              class="tm-slider"
-              min="1"
-              max="12"
-              step="1"
-              aria-label="订购时长（月）"
-            />
-            <div class="tm-slider-caps">
-              <span>1 个月</span>
-              <span>12 个月</span>
+              <section class="tm-buy-card tm-settle__card" aria-label="套餐信息">
+                <div class="tm-sum-row"><span>类型</span><b>{{ TEAM_LINE_NAMES[preview.line] }}</b></div>
+                <div class="tm-sum-row"><span>流量</span><b>{{ preview.traffic_gb.toLocaleString() }} GB</b></div>
+                <div class="tm-sum-row"><span>时长</span><b>{{ preview.months }} 个月</b></div>
+                <div class="tm-sum-row"><span>子账户数量</span><b>{{ preview.sub_account_limit }}</b></div>
+              </section>
+
+              <section class="tm-buy-card tm-settle__card" aria-label="费用明细">
+                <div class="tm-sum-row"><span>套餐费用</span><b>{{ formatFen(preview.list_price_fen) }}</b></div>
+                <div class="tm-sum-row tm-sum-row--cut">
+                  <span>旧套餐抵扣<small class="tm-sum-note">当前套餐剩余价值抵扣</small></span>
+                  <b>−{{ formatFen(preview.switch_credit_fen) }}</b>
+                </div>
+                <div class="tm-sum-row tm-sum-row--total"><span>总计</span><b>{{ formatFen(preview.total_fen) }}</b></div>
+                <div class="tm-sum-row"><span>钱包余额</span><b>{{ formatFen(preview.balance_fen) }}</b></div>
+              </section>
+
+              <p v-if="!preview.balance_sufficient" class="tm-buy-error" role="alert">
+                钱包余额不足，还差 {{ formatFen(preview.total_fen - preview.balance_fen) }}，充值后即可购买。
+              </p>
+              <p v-if="buyError" class="tm-buy-error" role="alert">{{ buyError }}</p>
             </div>
           </div>
 
-          <aside class="tm-buy__summary" aria-label="配置摘要">
-            <div class="tm-sum-row"><span>类型</span><b>{{ TEAM_LINE_NAMES[form.line] }}</b></div>
-            <div class="tm-sum-row"><span>流量</span><b>{{ (form.traffic_gb || 0).toLocaleString() }} GB</b></div>
-            <div class="tm-sum-row"><span>时长</span><b>{{ form.months }} 个月</b></div>
-            <div class="tm-sum-row"><span>子账户数量</span><b>{{ subCountPreview }}</b></div>
-          </aside>
-        </div>
-      </div>
-
-      <!-- 第 2 步：结算预览 -->
-      <div v-else-if="buyStep === 2 && preview" class="tm-settle">
-        <button type="button" class="tm-back-config" @click="buyStep = 1">
-          <ChevronLeft :size="16" aria-hidden="true" />返回配置
-        </button>
-        <p class="tm-settle__sub">请确认以下结算信息无误</p>
-
-        <p class="tm-field-label">团队名称</p>
-        <input
-          v-model="teamName"
-          type="text"
-          class="tm-input"
-          maxlength="100"
-          placeholder="请输入团队名称（可选）"
-          aria-label="团队名称（可选）"
-        />
-
-        <div class="tm-settle__rows">
-          <div class="tm-sum-row"><span>类型</span><b>{{ TEAM_LINE_NAMES[preview.line] }}</b></div>
-          <div class="tm-sum-row"><span>流量</span><b>{{ preview.traffic_gb.toLocaleString() }} GB</b></div>
-          <div class="tm-sum-row"><span>时长</span><b>{{ preview.months }} 个月</b></div>
-          <div class="tm-sum-row"><span>子账户数量</span><b>{{ preview.sub_account_limit }}</b></div>
-        </div>
-
-        <div class="tm-settle__rows">
-          <div class="tm-sum-row"><span>套餐费用</span><b>{{ formatFen(preview.list_price_fen) }}</b></div>
-          <div class="tm-sum-row tm-sum-row--cut">
-            <span>旧套餐抵扣<small class="tm-sum-note">当前套餐剩余价值抵扣</small></span>
-            <b>−{{ formatFen(preview.switch_credit_fen) }}</b>
+          <div v-if="buyStep !== 'loading'" class="tm-sheet__foot">
+            <template v-if="buyStep === 1">
+              <button type="button" class="tm-btn tm-btn--ghost" @click="closeBuy">取消</button>
+              <UhdButton variant="primary" :dark="themeResolved === 'dark'" @click="doPreview">预览结算金额</UhdButton>
+            </template>
+            <template v-else-if="buyStep === 2">
+              <button type="button" class="tm-btn tm-btn--ghost" :disabled="buying" @click="buyStep = 1">取消</button>
+              <UhdButton variant="primary" :dark="themeResolved === 'dark'" :disabled="buying" @click="doPurchase">
+                {{ buying ? '处理中…' : '确认并支付' }}
+              </UhdButton>
+            </template>
           </div>
-          <div class="tm-sum-row tm-sum-row--total"><span>总计</span><b>{{ formatFen(preview.total_fen) }}</b></div>
-          <div class="tm-sum-row"><span>钱包余额</span><b>{{ formatFen(preview.balance_fen) }}</b></div>
         </div>
-
-        <p v-if="!preview.balance_sufficient" class="tm-buy-error" role="alert">
-          钱包余额不足，还差 {{ formatFen(preview.total_fen - preview.balance_fen) }}，充值后即可购买。
-        </p>
-        <p v-if="buyError" class="tm-buy-error" role="alert">{{ buyError }}</p>
       </div>
-
-      <template #footer>
-        <template v-if="buyStep === 1">
-          <button type="button" class="tm-btn tm-btn--ghost" @click="buyOpen = false">取消</button>
-          <UhdButton variant="primary" :dark="themeResolved === 'dark'" @click="doPreview">预览结算金额</UhdButton>
-        </template>
-        <template v-else-if="buyStep === 2">
-          <button type="button" class="tm-btn tm-btn--ghost" :disabled="buying" @click="buyStep = 1">取消</button>
-          <UhdButton variant="primary" :dark="themeResolved === 'dark'" :disabled="buying" @click="doPurchase">
-            {{ buying ? '处理中…' : '确认并支付' }}
-          </UhdButton>
-        </template>
-      </template>
-    </UhdModal>
+    </Teleport>
 
     <!-- 添加成员弹窗 -->
     <UhdModal v-model="memberOpen" title="添加成员" :width="420">
@@ -450,16 +503,17 @@
  * 时空态「请先开通团队套餐」且控件禁用）→ 创建两步弹窗（选线路/
  * 流量/时长 → 结算预览：套餐费/旧套餐抵扣/总计 → 确认并支付）。
  * 数据走批 1 后端 /api/user/teams：价格全由 preview 返回，前端不
- * 自算价；子账户数摘要＝流量/除数（配置下发）仅作实时展示。
+ * 自算价；子账户数由 preview 返回（流量/除数），第 1 步摘要不展示。
  *
  * 友站走查未到达的有团后管理动作（添加成员/改名/移除）按接口
  * 形状＋最合理行为推导：成员＝团长创建的子账号（用户名+密码，
  * 与家庭子账号同校验口径）；移除＝二次确认，文案明示账号停用；
  * 成员本人无自助退出接口，页面只给「联系团长」说明。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import './team-view.css'
-import { ChevronLeft, Plus, Search, ShieldCheck, UserPlus } from 'lucide-vue-next'
+import '../../styles/modal-glass.css'
+import { ArrowLeft, CalendarDays, Gauge, Plus, Search, ShieldCheck, UserPlus, Zap } from 'lucide-vue-next'
 import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
 import UhdButton from '@/components/uhd/UhdButton.vue'
 import UhdEmptyState from '@/components/uhd/UhdEmptyState.vue'
@@ -574,6 +628,19 @@ function goPage(next: number) {
 
 const buyOpen = ref(false)
 const buyStep = ref<1 | 2 | 'loading'>(1)
+
+/** 购买 sheet 关闭（× / 遮罩 / Esc 三路同口径，与 UhdModal 一致） */
+function closeBuy() {
+  buyOpen.value = false
+}
+function onBuyKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') closeBuy()
+}
+watch(buyOpen, (open) => {
+  if (open) document.addEventListener('keydown', onBuyKeydown)
+  else document.removeEventListener('keydown', onBuyKeydown)
+})
+onBeforeUnmount(() => document.removeEventListener('keydown', onBuyKeydown))
 const buyError = ref('')
 const buying = ref(false)
 const form = ref<{ line: TeamLine; traffic_gb: number; months: number; streams: number }>({
@@ -590,9 +657,6 @@ const lineMin = computed(() =>
   form.value.line === 'global'
     ? config.value.team_global_min_traffic_gb
     : config.value.team_premium_min_traffic_gb,
-)
-const subCountPreview = computed(() =>
-  Math.floor((form.value.traffic_gb || 0) / Math.max(1, config.value.team_sub_account_divisor)),
 )
 
 function clampTraffic() {
@@ -1191,7 +1255,101 @@ html[data-theme='light'] .tm-buy-error { color: var(--uhd-danger); }
   line-height: var(--uhd-lh-body);
 }
 
-/* ---------- 购买弹窗 ---------- */
+/* ---------- 购买 sheet（专职壳：封顶 82dvh＋内部滚动＋底部栏常驻） ---------- */
+.tm-sheet__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  box-sizing: border-box;
+  background: var(--modal-scrim-dark);
+  animation: uhd-fade-in var(--uhd-dur-fade) var(--uhd-ease-standard);
+  font-family: var(--uhd-font-sans);
+}
+.tm-sheet {
+  /* 面板作用域文字令牌随主题翻转（默认深色实面＝浅字）；面板本体实色不透底（2026-11-18 用户令：弹窗不用玻璃） */
+  --uhd-l-text: var(--modal-glass-fg);
+  --uhd-l-text-2: var(--modal-glass-dim);
+  --uhd-l-input-bg: rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 100%);
+  max-height: 82dvh;
+  background: var(--uhd-d-surface);
+  border: 1px solid var(--uhd-d-border);
+  border-radius: 24px;
+  box-shadow: var(--uhd-shadow-card-d);
+  animation: uhd-blur-in var(--uhd-dur-blur-in) var(--uhd-ease-pop);
+  color: var(--uhd-l-text-2);
+  font-size: var(--uhd-fs-body);
+}
+html[data-theme='light'] .tm-sheet {
+  --uhd-l-text: #111111;
+  --uhd-l-text-2: #6b7280;
+  --uhd-l-input-bg: #f5f5f5;
+  background: var(--uhd-l-surface);
+  border-color: var(--uhd-l-border);
+  box-shadow: var(--uhd-shadow-card-l);
+}
+.tm-sheet__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 18px 20px 4px;
+}
+.tm-sheet__zap {
+  display: inline-flex;
+  flex: none;
+  margin-top: 1px;
+  color: #f59e0b;
+}
+.tm-sheet__titles { flex: 1; min-width: 0; }
+.tm-sheet__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: var(--uhd-fw-extrabold);
+  line-height: 1.35;
+  color: var(--uhd-l-text);
+}
+.tm-sheet__sub {
+  margin: 3px 0 0;
+  font-size: var(--uhd-fs-caption);
+  color: var(--uhd-l-text-2);
+}
+.tm-sheet__nav-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-top: -3px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--uhd-l-text);
+  cursor: pointer;
+  padding: 0;
+}
+.tm-sheet__nav-btn:hover { background: var(--uhd-l-input-bg); }
+.tm-sheet__close { font-size: 20px; line-height: 1; color: var(--uhd-l-text-2); }
+.tm-sheet__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 20px 14px;
+}
+.tm-sheet__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 10px 20px 18px;
+}
+
+/* ---------- 购买第 1 步：紧凑卡版式（友站录屏实测） ---------- */
 .tm-buy-loading {
   min-height: 220px;
   display: flex;
@@ -1203,69 +1361,229 @@ html[data-theme='light'] .tm-buy-error { color: var(--uhd-danger); }
   font-size: var(--uhd-fs-caption);
 }
 .tm-buy-loading p { margin: 0; }
-.tm-buy__grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 220px;
-  gap: 24px;
-  align-items: start;
+.tm-buy {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
 }
-@media (max-width: 640px) {
-  .tm-buy__grid { grid-template-columns: minmax(0, 1fr); }
+.tm-buy .tm-buy-error { margin: 0; }
+.tm-buy__label {
+  margin: 2px 0 -3px;
+  font-size: 13px;
+  color: var(--uhd-l-text-2);
 }
-.tm-line-btns { display: flex; gap: 10px; }
-.tm-line-btn {
+.tm-plan-cards { display: flex; gap: 10px; }
+.tm-plan-card {
   flex: 1;
   min-width: 0;
-  height: 44px;
-  padding: 0 8px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  border: 1px solid rgba(128, 128, 140, 0.35);
-  border-radius: 12px;
-  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
   color: var(--uhd-l-text-2);
-  /* 13px：14px 时 "Premium 高级线路" 在 390 宽下实测宽 122.77px，超出按钮内容宽 121px */
-  font-size: 13px;
-  font-weight: var(--uhd-fw-semibold);
   font-family: var(--uhd-font-sans);
+  text-align: left;
   cursor: pointer;
 }
-.tm-line-btn--on {
-  border-color: var(--uhd-l-link);
-  color: var(--uhd-l-text);
-  background: rgba(128, 128, 140, 0.16);
+.tm-plan-card__name {
+  font-size: 15px;
+  font-weight: var(--uhd-fw-bold);
+  line-height: 1.3;
 }
-.tm-traffic-row {
+.tm-plan-card__sub { font-size: 12px; line-height: 1.3; }
+.tm-plan-card--on {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.9);
+  color: var(--uhd-l-text);
+}
+html[data-theme='light'] .tm-plan-card {
+  background: #ffffff;
+  border-color: rgba(17, 17, 17, 0.1);
+}
+html[data-theme='light'] .tm-plan-card--on {
+  background: #ececf0;
+  border-color: #16161a;
+}
+.tm-buy-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 18px;
+  padding: 14px 16px;
+}
+html[data-theme='light'] .tm-buy-card {
+  background: #f4f4f6;
+  border-color: rgba(17, 17, 17, 0.04);
+}
+.tm-buy-card__row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 12px;
 }
-.tm-traffic-conv {
-  flex: none;
-  font-size: var(--uhd-fs-caption);
+.tm-buy-card__main { flex: 1; min-width: 0; }
+.tm-buy-card__label {
+  margin: 0;
+  font-size: 14px;
   font-weight: var(--uhd-fw-semibold);
+  line-height: 1.4;
   color: var(--uhd-l-text);
 }
-.tm-slider {
+.tm-buy-card__desc {
+  margin: 5px 0 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--uhd-l-text-2);
+}
+.tm-buy-card__conv {
+  margin: 5px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--uhd-l-text-2);
+}
+.tm-buy-card__value {
+  margin: 0;
+  font-size: 16px;
+  font-weight: var(--uhd-fw-bold);
+  line-height: 1.4;
+  color: var(--uhd-l-text);
+}
+.tm-capsule {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: var(--uhd-radius-pill);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--uhd-l-text);
+  padding: 0 14px;
+  box-sizing: border-box;
+}
+html[data-theme='light'] .tm-capsule {
+  background: #ffffff;
+  border-color: rgba(17, 17, 17, 0.14);
+  color: #16161a;
+}
+.tm-capsule--sm { width: 108px; height: 36px; margin-top: 2px; }
+.tm-capsule--lg { width: 168px; height: 44px; }
+.tm-capsule input {
+  flex: 1;
+  min-width: 0;
   width: 100%;
-  margin: 12px 0 4px;
-  accent-color: var(--uhd-l-link);
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font-family: var(--uhd-font-sans);
+  font-size: 16px;
+  font-weight: var(--uhd-fw-bold);
+  text-align: right;
+  padding: 0;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.tm-capsule input::-webkit-outer-spin-button,
+.tm-capsule input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.tm-capsule__unit {
+  flex: none;
+  font-size: 12px;
+  color: var(--uhd-l-text-2);
+}
+html[data-theme='light'] .tm-capsule__unit { color: #6b7280; }
+/* 滑块：细轨＋白色圆环钮（友站实测形态，两主题同形） */
+.tm-range {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 22px;
+  margin: 8px 0 2px;
+  background: transparent;
+  cursor: pointer;
+}
+.tm-range::-webkit-slider-runnable-track {
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(128, 128, 140, 0.35);
+}
+.tm-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -7.5px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2px solid rgba(22, 22, 26, 0.9);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+.tm-range::-moz-range-track {
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(128, 128, 140, 0.35);
+}
+.tm-range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2px solid rgba(22, 22, 26, 0.9);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 .tm-slider-caps {
   display: flex;
   justify-content: space-between;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: 11px;
   color: var(--uhd-l-text-2);
 }
-.tm-buy__summary {
-  padding: 16px;
-  border: 1px solid rgba(128, 128, 140, 0.35);
+.tm-mini-summary { display: flex; gap: 10px; }
+.tm-mini-card {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 12px;
   border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  color: var(--uhd-l-text-2);
+}
+html[data-theme='light'] .tm-mini-card {
+  background: #f4f4f6;
+  border-color: rgba(17, 17, 17, 0.04);
+}
+.tm-mini-card__label { font-size: 11px; line-height: 1.35; }
+.tm-mini-card__value {
+  font-size: 14px;
+  font-weight: var(--uhd-fw-bold);
+  line-height: 1.35;
+  color: var(--uhd-l-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- 购买第 2 步：结算预览 ---------- */
+.tm-settle {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.tm-settle .tm-field-label { margin: 0 0 -4px; }
+.tm-settle__card {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
+.tm-settle .tm-buy-error { margin: 0; }
 .tm-sum-row {
   display: flex;
   align-items: baseline;
@@ -1284,32 +1602,6 @@ html[data-theme='light'] .tm-buy-error { color: var(--uhd-danger); }
   display: block;
   font-size: var(--uhd-fs-aux-sm);
   color: var(--uhd-l-text-2);
-}
-.tm-back-config {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  border: none;
-  background: transparent;
-  color: var(--uhd-l-text);
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-semibold);
-  cursor: pointer;
-  padding: 0;
-  margin-bottom: 6px;
-}
-.tm-settle__sub {
-  margin: 0 0 6px;
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-l-text-2);
-}
-.tm-settle__rows {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid rgba(128, 128, 140, 0.35);
 }
 .tm-member-note {
   margin: 16px 0 0;
