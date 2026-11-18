@@ -301,9 +301,9 @@ class WebUser(Base):
     # 管理员角色（v2.26.0，见 backend/admin_roles.py）：super / operator / viewer
     # 空值 = 升级前的老管理员 → 按 super 处理（不改权、也不会「没人进得去后台」）
     admin_role = Column(String(20), nullable=True)
-    # 发言奖励小数累计遗留列（2026-10-31）：发言积分已随货币下线
-    # （backend/points.py 已删、points 列已摘），三列不再读写。
-    # chat_day（上海日期）+ chat_day_cents 记当日已累计（含已结算部分）。
+    # 遗留列，待 DROP：发言奖励小数累计三列。发言积分已随货币下线
+    # （backend/points.py 已删、points 列已摘），三列全仓无业务读写点，
+    # 列定义先保留，DROP 由后续收尾执行。
     chat_frac_cents = Column(Integer, default=0, nullable=False, server_default="0")
     chat_day_cents = Column(Integer, default=0, nullable=False, server_default="0")
     chat_day = Column(String(10), nullable=True)
@@ -329,10 +329,10 @@ class WebUser(Base):
     # 2026-11-14 删除：资格已全量折算成订阅时间（折算执行档案在
     # 生产 /data/welfare_conversion/，防重标记 welfare_conversion_
     # executed_at 保留），不再有任何裁决读这四列。
-    # 连签断签保护用量（2026-11-09 上线、同日随保号改活力口径回滚）：
-    # streak_forgive_ym / streak_forgive_used 两列保留不用——不再有任何
-    # 读写点（economy._do_checkin_core 已撤 forgiven 分支），不写 drop
-    # 列迁移；老库已有数值原样留着，无副作用。
+    # 遗留列，待 DROP：连签断签保护用量（2026-11-09 上线、同日随保号
+    # 改活力口径回滚）。streak_forgive_ym / streak_forgive_used 两列
+    # 全仓无业务读写点（economy._do_checkin_core 已撤 forgiven 分支），
+    # 列定义先保留，DROP 由后续收尾执行；老库已有数值原样留着，无副作用。
     streak_forgive_ym = Column(String(6), nullable=True)
     streak_forgive_used = Column(Integer, default=0, nullable=False, server_default="0")
     # 观影碑时长榜隐私：True=允许上榜（默认），False=不上榜
@@ -419,7 +419,8 @@ class SubscriptionPlan(Base):
     name = Column(String(100), nullable=False)
     description = Column(Text)
     price = Column(Numeric(10, 2), nullable=False)
-    # 积分价（P2 货币体系双轨）：NULL=不支持积分购买；用户端可二选一（人民币 price 或积分 points_price）
+    # 遗留列，待 DROP：积分价（积分体系已下线），全仓无业务读写点，
+    # 列定义先保留，DROP 由后续收尾执行。
     points_price = Column(Numeric(10, 2), nullable=True)
     duration_days = Column(Integer, nullable=False)
     features = Column(JSON)  # 特性列表
@@ -703,44 +704,8 @@ class Announcement(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
-class ThemeActivity(Base):
-    """主题观影活动表"""
-    __tablename__ = 'theme_activities'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(200), nullable=False)
-    description = Column(Text)
-    activity_type = Column(String(50), nullable=False)
-    filter_genre = Column(String)
-    filter_director = Column(String)
-    filter_series = Column(String)
-    target_count = Column(Integer)
-    reward_mp = Column(Integer)
-    reward_title = Column(String)
-    is_active = Column(Boolean, default=True)
-    start_date = Column(DateTime)
-    end_date = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.now)
-
-
-class ThemeActivityProgress(Base):
-    """活动进度表"""
-    __tablename__ = 'theme_activity_progress'
-
-    __table_args__ = (
-        Index('idx_actprog_user', 'user_id'),
-        Index('idx_actprog_activity', 'activity_id'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    activity_id = Column(Integer, ForeignKey('theme_activities.id'), nullable=False)
-    user_id = Column(BigInteger, nullable=False)
-    progress = Column(Integer, default=0)
-    watched_items = Column(Text, default='')
-    completed = Column(Boolean, default=False)
-    reward_claimed = Column(Boolean, default=False)
-    claimed_at = Column(DateTime)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+# 主题观影活动两表（theme_activities / theme_activity_progress）模型定义
+# 已于 2026-11-19 删除：全仓零消费方的孤儿表，生产表 DROP 由后续收尾执行。
 
 
 # ==================== 经济系统（积分/兑换码） ====================
@@ -1882,8 +1847,8 @@ __all__ = [
     "EmbyServer", "PlanServerRelation", "UserEmbyAccount", "EmbySession", "MovieBookmark",
     # 工单
     "Ticket", "TicketMessage",
-    # 公告和活动
-    "Announcement", "ThemeActivity", "ThemeActivityProgress",
+    # 公告
+    "Announcement",
     # 邀请
     "InvitationCode", "InvitationRecord",
     # 优惠券

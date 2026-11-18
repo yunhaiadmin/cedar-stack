@@ -1016,17 +1016,8 @@ class TrafficExchangeLog(Base):
     created_at = Column(DateTime, default=datetime.now, nullable=False)
 
 
-class WorldWallPost(Base):
-    """探险世界 · 到此一游留言墙"""
-    __tablename__ = "world_wall_posts"
-    __table_args__ = (Index("ix_world_wall_posts_created", "created_at"),)
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("web_users.id"), nullable=False, index=True)
-    nickname = Column(String(50))  # 留言时的用户名快照（展示用）
-    content = Column(String(200), nullable=False)
-    is_hidden = Column(Boolean, default=False, nullable=False, server_default="0")  # 后台删除=隐藏
-    created_at = Column(DateTime, default=datetime.now)
+# 探险留言墙表（world_wall_posts）模型定义已于 2026-11-19 删除：
+# 孤儿表（唯一消费方是已下线的管理端点），生产表 DROP 由后续收尾执行。
 
 
 class ItemFacet(Base):
