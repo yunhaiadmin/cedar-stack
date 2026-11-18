@@ -64,6 +64,10 @@ DEFAULT_GLOBAL_ANCHORS: list[dict] = [
 
 TEAM_CONFIG_DEFAULTS: dict[str, str] = {
     "team_purchase_enabled": "true",
+    # Premium 线开售开关：默认关＝暂停服务（2026-11-19 用户亲点：
+    # 目前只有一条线路）；关时只拦新购/新预览，已有 Premium 团队
+    # 的续费在 _quote_full 里按 plan_line 放行。
+    "team_premium_enabled": "false",
     "team_global_min_traffic_gb": "10000",
     "team_premium_min_traffic_gb": "5000",
     "team_max_traffic_gb": "1000000",
@@ -150,6 +154,9 @@ def team_config(db: Session) -> dict:
         "purchase_enabled": _parse_bool(
             raw["team_purchase_enabled"],
             TEAM_CONFIG_DEFAULTS["team_purchase_enabled"] == "true"),
+        "premium_enabled": _parse_bool(
+            raw["team_premium_enabled"],
+            TEAM_CONFIG_DEFAULTS["team_premium_enabled"] == "true"),
         "global_min_gb": _parse_int(raw["team_global_min_traffic_gb"], 10000),
         "premium_min_gb": _parse_int(raw["team_premium_min_traffic_gb"], 5000),
         "max_gb": _parse_int(raw["team_max_traffic_gb"], 1000000),
@@ -166,6 +173,7 @@ def config_payload(db: Session) -> dict:
     cfg = team_config(db)
     return {
         "team_purchase_enabled": cfg["purchase_enabled"],
+        "team_premium_enabled": cfg["premium_enabled"],
         "team_global_min_traffic_gb": cfg["global_min_gb"],
         "team_premium_min_traffic_gb": cfg["premium_min_gb"],
         "team_max_traffic_gb": cfg["max_gb"],
@@ -213,6 +221,13 @@ def _quote_full(db: Session, user: Optional[models.WebUser], *,
     cfg = team_config(db)
     if line not in LINES:
         raise TeamError("线路不正确", "bad_line")
+    if line == "premium" and not cfg["premium_enabled"]:
+        # Premium 暂停服务：只拦新购/新预览；已有 Premium 团队的
+        # 团长续费（名下团队 plan_line 已是 premium）放行，口径不变。
+        owned = (get_owned_team(db, user.id)
+                 if user is not None else None)
+        if owned is None or owned.plan_line != "premium":
+            raise TeamError("Premium 线路暂停服务", "premium_line_paused")
     if (not isinstance(traffic_gb, int) or isinstance(traffic_gb, bool)
             or not isinstance(months, int) or isinstance(months, bool)):
         raise TeamError("流量与时长必须是整数", "bad_input")

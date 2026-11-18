@@ -19,6 +19,8 @@ export type TeamLine = 'global' | 'premium'
 
 export interface TeamConfig {
   team_purchase_enabled: boolean
+  /** Premium 线是否开售：false＝暂停服务（存量团队续费不受影响） */
+  team_premium_enabled: boolean
   team_global_min_traffic_gb: number
   team_premium_min_traffic_gb: number
   team_max_traffic_gb: number

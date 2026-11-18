@@ -111,6 +111,7 @@ const orderColumns: DataColumn[] = [
 const config = ref<TeamConfig | null>(null)
 const cfgForm = reactive({
   purchaseEnabled: true,
+  premiumEnabled: false,
   globalMinGb: 10000,
   premiumMinGb: 5000,
   maxGb: 1000000,
@@ -124,6 +125,7 @@ const cfgMsg = ref('')
 const configDesc = computed(() => {
   if (!config.value) return '购买开关、起订量、单价与锚点表——数值在本卡里改，保存即生效。'
   return `当前：购买${config.value.team_purchase_enabled ? '开启' : '关闭'}、` +
+    `Premium ${config.value.team_premium_enabled ? '开售' : '暂停服务'}、` +
     `Global 起订 ${config.value.team_global_min_traffic_gb} GB、` +
     `Premium 起订 ${config.value.team_premium_min_traffic_gb} GB、` +
     `Premium 单价 $${(config.value.team_premium_price_per_1000gb_fen / 100).toFixed(2)}/千GB。`
@@ -248,6 +250,7 @@ async function loadConfig() {
     const res = await getTeamConfig()
     config.value = res.config
     cfgForm.purchaseEnabled = res.config.team_purchase_enabled
+    cfgForm.premiumEnabled = res.config.team_premium_enabled
     cfgForm.globalMinGb = res.config.team_global_min_traffic_gb
     cfgForm.premiumMinGb = res.config.team_premium_min_traffic_gb
     cfgForm.maxGb = res.config.team_max_traffic_gb
@@ -272,6 +275,7 @@ async function saveConfig() {
   try {
     const saved = await updateTeamConfig({
       team_purchase_enabled: cfgForm.purchaseEnabled,
+      team_premium_enabled: cfgForm.premiumEnabled,
       team_global_min_traffic_gb: cfgForm.globalMinGb || 0,
       team_premium_min_traffic_gb: cfgForm.premiumMinGb || 0,
       team_max_traffic_gb: cfgForm.maxGb || 0,
@@ -348,6 +352,10 @@ onMounted(() => {
           <el-form-item label="团队购买总开关">
             <el-switch v-model="cfgForm.purchaseEnabled" />
             <span class="hint">{{ cfgForm.purchaseEnabled ? '开启：允许新建团队购买' : '关闭：暂停新建团队购买' }}</span>
+          </el-form-item>
+          <el-form-item label="Premium 线开售">
+            <el-switch v-model="cfgForm.premiumEnabled" />
+            <span class="hint">{{ cfgForm.premiumEnabled ? '开启：Premium 线路可购买' : '关闭：Premium 线路暂停服务（存量 Premium 团队续费不受影响）' }}</span>
           </el-form-item>
           <el-form-item label="Global 起订流量（GB）">
             <el-input v-model.number="cfgForm.globalMinGb" type="number" min="1" step="1" />
