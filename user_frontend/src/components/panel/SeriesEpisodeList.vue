@@ -22,6 +22,18 @@
         <span class="season-count">
           已有 {{ sec.existingCount }} 集<template v-if="sec.missingNums.length"> · 缺 {{ sec.missingNums.length }} 集</template>
         </span>
+        <!-- 移除整季（垃圾桶语义族 G-111）：清本季全部观看记录（进度＋
+             已看标记），只清记录不删片源，先二次确认；本季没有任何
+             记录时整钮不出现。与整季求补天然互斥（整季都缺＝无已有集） -->
+        <button
+          v-if="seasonHasRecord(sec)"
+          type="button"
+          class="season-remove-btn"
+          @click="seasonRemoveSec = sec"
+        >
+          <Trash2 :size="14" />
+          移除整季
+        </button>
         <!-- 整季都缺：季标题处给汇总入口（落单仍是整剧一单，与逐集按钮同口） -->
         <template v-if="sec.wholeMissing && missingInfo?.has_missing">
           <button
@@ -83,17 +95,28 @@
               <span v-if="rowDate(row)" class="ep-date">{{ rowDate(row) }}</span>
               <span v-if="row.item?.Overview" class="ep-overview">{{ row.item.Overview }}</span>
             </span>
-            <!-- 圆形眼睛钮（录屏形态）：已看标记开关，走现行 setPlayed 口径 -->
+            <!-- 圆形右钮双态（垃圾桶语义族 G-119）：已看集＝垃圾桶
+                 （移除该集观看记录，先二次确认）；未看集＝眼睛
+                 （点按标记已看）。两态同走 setPlayed 真接口 -->
             <button
+              v-if="row.played"
+              type="button"
+              class="ep-eye ep-eye--trash"
+              aria-label="移除观看记录"
+              title="移除观看记录"
+              @click="epRemoveRow = row"
+            >
+              <Trash2 :size="17" />
+            </button>
+            <button
+              v-else
               type="button"
               class="ep-eye"
-              :class="{ 'ep-eye--on': row.played }"
-              :aria-label="row.played ? '标为未看' : '标为已看'"
-              :title="row.played ? '标为未看' : '标为已看'"
+              aria-label="标为已看"
+              title="标为已看"
               @click="togglePlayed(row)"
             >
-              <Eye v-if="row.played" :size="17" />
-              <EyeOff v-else :size="17" />
+              <EyeOff :size="17" />
             </button>
           </template>
           <template v-else>
@@ -121,6 +144,60 @@
         </li>
       </ol>
     </section>
+
+    <!-- 逐集移除观看记录二次确认（G-119）：只清记录，不删片源 -->
+    <Modal
+      :model-value="epRemoveRow !== null"
+      size="sm"
+      @update:model-value="closeEpRemove"
+    >
+      <template #header>
+        <h3 class="modal-title">移除观看记录</h3>
+      </template>
+      <p class="sel-confirm-text">
+        把{{ epRemoveRow?.num != null ? `第 ${epRemoveRow.num} 集` : '这一集' }}的观看记录清掉？播放进度和「已看完」标记都会清除，只清观看记录，不删片源。
+      </p>
+      <template #footer>
+        <div class="sel-confirm-actions">
+          <button type="button" class="sel-confirm-btn" @click="epRemoveRow = null">再想想</button>
+          <button
+            type="button"
+            class="sel-confirm-btn sel-confirm-btn--danger"
+            :disabled="epRemoveBusy"
+            @click="confirmRemoveEpisode"
+          >
+            {{ epRemoveBusy ? '移除中…' : '确定移除' }}
+          </button>
+        </div>
+      </template>
+    </Modal>
+
+    <!-- 整季移除观看记录二次确认（G-111）：只清观看记录，不删片源 -->
+    <Modal
+      :model-value="seasonRemoveSec !== null"
+      size="sm"
+      @update:model-value="closeSeasonRemove"
+    >
+      <template #header>
+        <h3 class="modal-title">移除整季观看记录</h3>
+      </template>
+      <p class="sel-confirm-text">
+        把「{{ seasonRemoveSec?.title }}」的观看记录清掉？本季各集的播放进度和「已看完」标记都会清除，只清观看记录，不删片源。
+      </p>
+      <template #footer>
+        <div class="sel-confirm-actions">
+          <button type="button" class="sel-confirm-btn" @click="seasonRemoveSec = null">再想想</button>
+          <button
+            type="button"
+            class="sel-confirm-btn sel-confirm-btn--danger"
+            :disabled="seasonRemoveBusy"
+            @click="confirmRemoveSeason"
+          >
+            {{ seasonRemoveBusy ? '移除中…' : '确定移除' }}
+          </button>
+        </div>
+      </template>
+    </Modal>
   </div>
 </template>
 
@@ -137,9 +214,14 @@
  *   这些集」同一落单口：一剧一单、快照整剧缺集、他人已求时转附议。
  *   所以本页每个「求补这集 / 求补本季缺集」按钮提交的都是那一单，
  *   提交后全页按钮一起变「已求补 / 已附议」，状态一律回读后端为准。
+ * - 移除观看记录（垃圾桶语义族 G-119/G-111）：已看集行右钮＝垃圾桶、
+ *   季头「移除整季」钮，都走真接口 setPlayed(false)（DELETE PlayedItems，
+ *   清已看标记/播放次数/断点），只清记录、不删条目不删文件，先二次确认；
+ *   未看集行右钮＝眼睛，点按 setPlayed(true) 标记已看。
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import { Clapperboard, Eye, EyeOff } from 'lucide-vue-next'
+import { Clapperboard, EyeOff, Trash2 } from 'lucide-vue-next'
+import Modal from '@/components/ui/Modal.vue'
 import {
   embyApi as embyProtocol,
   formatDuration,
@@ -258,7 +340,7 @@ function rowVersions(row: EpRow): number {
 function rowDate(row: EpRow): string {
   return row.item?.PremiereDate ? row.item.PremiereDate.slice(0, 10) : ''
 }
-/** 已看标记开关（现行 setPlayed 口；失败静默回滚状态由服务端下次拉取校正） */
+/** 标记已看（未看集眼睛钮；现行 setPlayed 口；失败静默回滚状态由服务端下次拉取校正） */
 const playedBusy = ref(false)
 async function togglePlayed(row: EpRow) {
   if (!row.item || playedBusy.value) return
@@ -272,6 +354,83 @@ async function togglePlayed(row: EpRow) {
     /* 标记失败不打断浏览；状态保持原样 */
   } finally {
     playedBusy.value = false
+  }
+}
+
+/* ---------- 垃圾桶语义族：移除观看记录（G-119 逐集 / G-111 整季） ----------
+   与详情页同族口径：setPlayed(false) 真接口清已看标记、播放次数与断点，
+   条目随之离开继续观看；只清记录、不删条目不删文件，一律先二次确认。 */
+const epRemoveRow = ref<EpRow | null>(null)
+const epRemoveBusy = ref(false)
+function closeEpRemove(v: boolean) {
+  if (!v) epRemoveRow.value = null
+}
+async function confirmRemoveEpisode() {
+  const row = epRemoveRow.value
+  if (!row?.item || epRemoveBusy.value) return
+  epRemoveBusy.value = true
+  try {
+    await embyProtocol.setPlayed(row.item.Id, false)
+    row.played = false
+    if (row.item.UserData) {
+      row.item.UserData = { ...row.item.UserData, Played: false, PlaybackPositionTicks: 0 }
+    }
+    epRemoveRow.value = null
+    toast.success('观看记录已移除')
+  } catch {
+    toast.error('移除失败，请稍后再试')
+  } finally {
+    epRemoveBusy.value = false
+  }
+}
+
+/** 本季留有记录的已有集（已看或有断点）：整季移除的对象集 */
+function seasonRecordRows(sec: SeasonSection): EpRow[] {
+  return sec.rows.filter(
+    (r) =>
+      r.kind === 'have' &&
+      r.item &&
+      (r.played || (r.item.UserData?.PlaybackPositionTicks || 0) > 0),
+  )
+}
+function seasonHasRecord(sec: SeasonSection): boolean {
+  return seasonRecordRows(sec).length > 0
+}
+const seasonRemoveSec = ref<SeasonSection | null>(null)
+const seasonRemoveBusy = ref(false)
+function closeSeasonRemove(v: boolean) {
+  if (!v) seasonRemoveSec.value = null
+}
+async function confirmRemoveSeason() {
+  const sec = seasonRemoveSec.value
+  if (!sec || seasonRemoveBusy.value) return
+  const rows = seasonRecordRows(sec)
+  if (!rows.length) {
+    seasonRemoveSec.value = null
+    return
+  }
+  seasonRemoveBusy.value = true
+  try {
+    const results = await Promise.allSettled(
+      rows.map((r) => embyProtocol.setPlayed(r.item!.Id, false)),
+    )
+    let failed = 0
+    results.forEach((res, i) => {
+      if (res.status === 'fulfilled') {
+        const row = rows[i]
+        row.played = false
+        if (row.item?.UserData) {
+          row.item.UserData = { ...row.item.UserData, Played: false, PlaybackPositionTicks: 0 }
+        }
+      } else {
+        failed += 1
+      }
+    })
+    seasonRemoveSec.value = null
+    if (failed) toast.error(`有 ${failed} 集没移除成功，请稍后再试`)
+    else toast.success('本季观看记录已移除')
+  } finally {
+    seasonRemoveBusy.value = false
   }
 }
 
@@ -654,6 +813,59 @@ watch(
 .ep-eye--on {
   color: var(--uhd-s-text, #111111);
   border-color: var(--uhd-s-text, #111111);
+}
+/* 已看集垃圾桶态（G-119）：与详情页移除钮同危险色口径 */
+.ep-eye--trash {
+  color: var(--uhd-danger, #d92d20);
+}
+/* 移除整季钮（G-111）：描边胶囊，与求补钮同几何（13px/600/6px 14px/999px） */
+.season-remove-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--uhd-s-text, #111111);
+  background: transparent;
+  border: 1px solid var(--uhd-s-border, #e5e5e5);
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-family: inherit;
+}
+/* 移除确认弹窗（与详情页 md-confirm 同值，作用域独立一份） */
+.sel-confirm-text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--uhd-s-text, #27251e);
+}
+.sel-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.sel-confirm-btn {
+  height: 42px;
+  padding: 0 20px;
+  border-radius: 21px;
+  border: 1px solid var(--uhd-s-border, #e5e5e5);
+  background: transparent;
+  color: var(--uhd-s-text, #27251e);
+  font-size: 14.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.sel-confirm-btn--danger {
+  background: var(--uhd-danger, #d92d20);
+  border-color: var(--uhd-danger, #d92d20);
+  color: #fff;
+}
+.sel-confirm-btn--danger:disabled {
+  opacity: 0.55;
+  cursor: wait;
 }
 .ep-row.missing {
   opacity: 0.85;
