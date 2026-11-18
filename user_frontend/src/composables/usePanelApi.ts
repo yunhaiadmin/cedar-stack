@@ -80,15 +80,6 @@ async function put<T>(url: string, body?: unknown): Promise<T> {
 }
 
 export const panelApi = {
-  /** 观影碑榜单：board=hot/duration，period=day/week */
-  leaderboard: (board: 'hot' | 'duration', period: 'day' | 'week') =>
-    get<{
-      board: string
-      period: string
-      window_start: string
-      items: Array<Record<string, unknown>>
-      my_rank: number | null
-    }>(`/api/user/emby/leaderboard?board=${board}&period=${period}`),
   /** 隐私：是否允许上榜 */
   privacyGet: () => get<{ show_on_leaderboard: boolean }>('/api/panel/privacy'),
   /** 隐私：设置是否允许上榜 */
