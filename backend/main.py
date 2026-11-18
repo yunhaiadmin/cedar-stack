@@ -793,6 +793,21 @@ async def health_check(request: Request):
             _obs_snapshot = {"enabled": False}
     except Exception:  # noqa: BLE001
         _obs_snapshot = {"enabled": False, "error": "snapshot_failed"}
+    # 服务器显示名与 System/Info 同口径（配置键 > env > 默认）；读不到回落 env
+    try:
+        from backend import servers as _server_registry
+        from backend.database import SessionLocal as _HealthSession
+
+        def _read_server_name() -> str:
+            _s = _HealthSession()
+            try:
+                return _server_registry.server_display_name(_s)
+            finally:
+                _s.close()
+
+        _emby_server_name = await run_in_threadpool(_read_server_name)
+    except Exception:  # noqa: BLE001
+        _emby_server_name = os.getenv("EMBY_SERVER_NAME", "Aetrix Media Server")
     return {
         "status": health["status"],
         "health_level": health["level"],
@@ -802,7 +817,7 @@ async def health_check(request: Request):
         "timestamp": datetime.now().isoformat(),
         "database": DATABASE_TYPE,
         "online_users": manager.get_online_count(),
-        "emby_server": os.getenv("EMBY_SERVER_NAME", "Aetrix Media Server"),
+        "emby_server": _emby_server_name,
         "service": "em",
         "version": app.version,
         "emby_gateway": _ENABLE_EMBY_GATEWAY,

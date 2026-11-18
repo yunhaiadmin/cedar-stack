@@ -202,6 +202,18 @@
   object-fit: cover;
   display: block;
 }
+.lib-cover-upload {
+  flex: 1;
+  min-width: 220px;
+}
+.lib-cover-upload-btns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.lib-cover-upload-input {
+  display: none;
+}
 
 /* 表单底栏：左边一句状态，右边按钮 */
 .lib-form-foot {
