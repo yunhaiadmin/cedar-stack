@@ -212,6 +212,28 @@ check('T9 填色用途全走 --uhd-rainbow-fill（徽章／404／确认钮／当
    'src/views/NotFoundView.vue', 'src/views/game/SubscriptionPlansView.vue']
     .every((f) => read(f).includes('var(--uhd-rainbow-fill')))
 
+/* ---------- 深色主钮环形-only 透光（返工，2026-11-18） ---------- */
+// 根因：旧写法彩虹渐变铺满 border-box，透过 alpha 0.40 玻璃在钮面内晕染成色块；
+// 友站是钮面全透光、彩虹只在 1.5px 细环。环切：::before 渐变层 padding=边框宽，
+// mask 剔掉 content-box，只剩环形；钮面背景只剩玻璃层。浅色主钮不动。
+const btnDark = blockOf(btn, 'uhd-btn--primary.uhd-btn--dark')
+const ringM = btn.match(/\.uhd-btn--primary\.uhd-btn--dark::before\s*\{([^}]*)\}/)
+const ring = ringM ? ringM[1] : ''
+check('T14 深色主钮钮面背景只剩玻璃层（无彩虹 border-box 整面铺底）',
+  btnDark.includes('var(--uhd-glass-btn-d)') && !btnDark.includes('var(--uhd-rainbow)') && !btnDark.includes('border-box'))
+check('T14 深色主钮保留玻璃底＋pill 档模糊',
+  btnDark.includes('var(--uhd-glass-btn-d)') && btnDark.includes('backdrop-filter: var(--uhd-glass-filter)'))
+check('T14 彩虹环在 ::before 上（渐变层＋mask 环切＋边框宽 padding）',
+  ring.includes('background: var(--uhd-rainbow)') &&
+  ring.includes('padding: var(--uhd-rainbow-border-w)') &&
+  ring.includes('content-box') &&
+  (ring.includes('mask-composite: exclude') || ring.includes('-webkit-mask-composite: xor')))
+check('T14 禁用态彩虹环一并退场',
+  /\.uhd-btn--primary\.uhd-btn--dark:disabled::before\s*\{[^}]*display:\s*none/.test(btn))
+check('T14 浅色主钮不动（淡彩底＋彩虹边框整面写法保留）',
+  blockOf(btn, 'uhd-btn--primary').includes('var(--uhd-rainbow-soft) padding-box') &&
+  blockOf(btn, 'uhd-btn--primary').includes('var(--uhd-rainbow) border-box'))
+
 /* ---------- 按压反馈立档 ---------- */
 check('T10 按压三值已立（缩放 0.97／亮度 0.96／时长 micro）',
   tokens.includes('--uhd-press-scale: 0.97') && tokens.includes('--uhd-press-brightness: 0.96') && tokens.includes('--uhd-press-dur: var(--uhd-dur-micro)'))
