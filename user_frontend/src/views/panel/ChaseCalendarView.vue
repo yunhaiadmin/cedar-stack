@@ -209,12 +209,11 @@ onMounted(() => {
 
       <p v-if="!loading || days.length" class="cc-count">本月新增 {{ totalInMonth }} 条</p>
 
-      <div v-if="loading" class="cc-loading" role="status">正在加载…</div>
-      <div v-else-if="error" class="cc-error">
+      <div v-if="!loading && error" class="cc-error">
         日历没加载出来：{{ error }}<br />
         <button type="button" class="cc-retry" @click="load">重试</button>
       </div>
-      <template v-else>
+      <template v-else-if="!loading">
         <div class="cc-week" aria-hidden="true">
           <span v-for="w in ['一', '二', '三', '四', '五', '六', '日']" :key="w">{{ w }}</span>
         </div>
@@ -369,7 +368,6 @@ onMounted(() => {
   font-size: 14px;
   color: var(--uhd-s-text-2);
 }
-.cc-loading,
 .cc-error,
 .cc-empty {
   margin-top: 28px;
