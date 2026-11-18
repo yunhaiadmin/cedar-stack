@@ -16,8 +16,51 @@
       </div>
 
       <template v-else-if="detail">
+        <!-- 家庭版已购态：套餐名＋剩余名额＋更改为团队＋统计四格＋下载权限行（照友站家庭版页 f1） -->
+        <section v-if="familyMode && family" class="tm-family">
+          <h2 class="tm-family__title">{{ family.planName }}</h2>
+          <p class="tm-family__sub">{{ family.subLine }}</p>
+          <div class="tm-family__actions">
+            <button type="button" class="tm-family__refresh" aria-label="刷新" @click="loadDetail">
+              <RefreshCw :size="18" aria-hidden="true" />
+            </button>
+            <UhdButton variant="primary" size="sm" :dark="themeResolved === 'dark'" @click="openBuy">
+              更改为团队 <ArrowRight :size="16" aria-hidden="true" />
+            </UhdButton>
+          </div>
+
+          <div class="tm-family__stats">
+            <div class="tm-fam-stat">
+              <p class="tm-fam-stat__label">成员</p>
+              <p class="tm-fam-stat__value">{{ family.memberUsed }} <span class="tm-fam-stat__unit">/ {{ family.memberLimit }}</span></p>
+            </div>
+            <div class="tm-fam-stat">
+              <p class="tm-fam-stat__label">团队总流量</p>
+              <p class="tm-fam-stat__value">{{ quotaGbNumber(family.trafficQuotaBytes) }} <span class="tm-fam-stat__unit">GB</span></p>
+            </div>
+            <div class="tm-fam-stat">
+              <p class="tm-fam-stat__label">同时播放</p>
+              <p class="tm-fam-stat__value">{{ family.streams ?? '—' }} <span v-if="family.streams != null" class="tm-fam-stat__unit">路</span></p>
+            </div>
+            <div class="tm-fam-stat">
+              <p class="tm-fam-stat__label">套餐到期</p>
+              <p class="tm-fam-stat__value">{{ family.expiresDate }} <span v-if="family.expiresTime" class="tm-fam-stat__unit">{{ family.expiresTime }}</span></p>
+            </div>
+          </div>
+
+          <div v-if="family.downloadAllowed != null" class="tm-family__dl">
+            <div class="tm-family__dl-text">
+              <p class="tm-family__dl-title">套餐默认下载权限</p>
+              <p class="tm-family__dl-desc">仅用于新家庭成员的初始权限。</p>
+            </div>
+            <span class="tm-family__dl-value" :class="{ 'tm-family__dl-value--off': !family.downloadAllowed }">
+              {{ family.downloadAllowed ? '已允许' : '未允许' }}
+            </span>
+          </div>
+        </section>
+
         <!-- 介绍卡：标题＋副文＋三列数据＋客服审核提示＋彩虹创建钮（照友站 §8.2） -->
-        <section class="tm-card tm-intro">
+        <section v-else class="tm-card tm-intro">
           <div class="tm-intro__head">
             <span class="tm-intro__icon" aria-hidden="true">
               <ShieldCheck :size="26" />
@@ -113,9 +156,18 @@
         <!-- 成员账号区（常驻）：搜索/筛选/成员表；无团队时空态＋控件禁用（照友站 §8.2） -->
         <section class="tm-members">
           <div class="tm-members__head">
-            <h2 class="tm-sec-title">成员账号</h2>
+            <h2 class="tm-sec-title">成员账号<span v-if="familyMode" class="tm-members__count">{{ membersTotal }} 个</span></h2>
+            <UhdButton
+              v-if="familyMode && canManage"
+              variant="primary"
+              size="sm"
+              :dark="themeResolved === 'dark'"
+              @click="openMember"
+            >
+              <UserPlus :size="16" aria-hidden="true" />添加成员
+            </UhdButton>
             <button
-              v-if="canManage"
+              v-else-if="canManage"
               type="button"
               class="tm-add-btn"
               :disabled="!team"
@@ -127,13 +179,16 @@
           <p v-if="team && canManage && atLimit" class="tm-limit-note">
             成员已达上限（{{ team.plan_member_limit }} 个子账号），移除一个后可以再添加。
           </p>
+          <p v-else-if="familyMode && canManage && familyAtLimit" class="tm-limit-note">
+            成员已达上限（{{ family?.memberLimit }} 个子账号），移除一个后可以再添加。
+          </p>
           <p v-if="myRole === 'member'" class="tm-limit-note">
             你由团长 @{{ team?.owner_username || '—' }} 创建，订阅与流量按团队套餐计算；如需退出请联系团长。
           </p>
 
           <div class="tm-toolbar">
             <label class="tm-tool">
-              <select v-model="searchField" class="tm-select" :disabled="!team" aria-label="搜索方式">
+              <select v-model="searchField" class="tm-select" :disabled="!membersEnabled" aria-label="搜索方式">
                 <option value="name">按名称</option>
               </select>
             </label>
@@ -144,30 +199,38 @@
                 class="tm-input"
                 placeholder="输入成员名称"
                 aria-label="输入成员名称"
-                :disabled="!team"
+                :disabled="!membersEnabled"
                 @keyup.enter="applySearch"
               />
             </label>
             <label class="tm-tool">
-              <select v-model="statusFilter" class="tm-select" :disabled="!team" aria-label="全部状态" @change="applySearch">
+              <select v-model="statusFilter" class="tm-select" :disabled="!membersEnabled" aria-label="全部状态" @change="applySearch">
                 <option value="all">全部状态</option>
                 <option value="active">正常</option>
                 <option value="disabled">已禁用</option>
               </select>
             </label>
-            <button type="button" class="tm-search-btn" :disabled="!team" @click="applySearch">
+            <button type="button" class="tm-search-btn" :disabled="!membersEnabled" @click="applySearch">
               <Search :size="15" aria-hidden="true" />搜索
             </button>
           </div>
 
           <div class="tm-card tm-table-card">
-            <div v-if="team && membersLoading" class="tm-table-loading">
+            <div v-if="membersEnabled && membersLoading" class="tm-table-loading">
               <span class="tm-spin tm-spin--sm" aria-hidden="true"></span>正在加载…
             </div>
             <UhdEmptyState
-              v-else-if="!team"
+              v-else-if="!membersEnabled"
               title="请先开通团队套餐"
             />
+            <UhdEmptyState
+              v-else-if="familyMode && !members.length"
+              title="还没有成员账号"
+            >
+              <template #action>
+                <button type="button" class="tm-fam-empty-btn" @click="openMember">添加成员</button>
+              </template>
+            </UhdEmptyState>
             <UhdEmptyState
               v-else-if="!members.length"
               title="还没有成员"
@@ -195,13 +258,16 @@
                     <td>{{ formatTeamDate(row.expires_at) }}</td>
                     <td>{{ formatBytes(row.traffic_quota_bytes) }}</td>
                     <td>
-                      <span class="tm-usage-text">
-                        {{ formatBytes(row.traffic_used_bytes) }} / {{ formatBytes(row.traffic_quota_bytes) }}
-                        <template v-if="row.traffic_used_pct != null">（{{ row.traffic_used_pct }}%）</template>
-                      </span>
-                      <span class="tm-usage-bar" aria-hidden="true">
-                        <span class="tm-usage-bar__fill" :style="{ width: `${Math.min(100, row.traffic_used_pct ?? 0)}%` }"></span>
-                      </span>
+                      <span v-if="familyMode" class="tm-usage-text">与主账号共享</span>
+                      <template v-else>
+                        <span class="tm-usage-text">
+                          {{ formatBytes(row.traffic_used_bytes) }} / {{ formatBytes(row.traffic_quota_bytes) }}
+                          <template v-if="row.traffic_used_pct != null">（{{ row.traffic_used_pct }}%）</template>
+                        </span>
+                        <span class="tm-usage-bar" aria-hidden="true">
+                          <span class="tm-usage-bar__fill" :style="{ width: `${Math.min(100, row.traffic_used_pct ?? 0)}%` }"></span>
+                        </span>
+                      </template>
                     </td>
                     <td>{{ formatTeamDate(row.reset_date) }}</td>
                     <td v-if="canManage">
@@ -211,7 +277,7 @@
                 </tbody>
               </table>
             </div>
-            <div v-if="team && membersTotal > pageSize" class="tm-pager">
+            <div v-if="membersEnabled && membersTotal > pageSize" class="tm-pager">
               <button type="button" class="tm-mini-btn" :disabled="page <= 1 || membersLoading" @click="goPage(page - 1)">上一页</button>
               <span class="tm-pager__info">第 {{ page }} 页 · 共 {{ membersTotal }} 人</span>
               <button type="button" class="tm-mini-btn" :disabled="page * pageSize >= membersTotal || membersLoading" @click="goPage(page + 1)">下一页</button>
@@ -443,7 +509,9 @@
           aria-label="成员密码"
         />
         <p class="tm-member-note">
-          成员账号由你创建、用上面的用户名密码登录，订阅与流量按团队套餐计算；移除成员会停用该账号。
+          {{ familyMode
+            ? '成员账号由你创建、用上面的用户名密码登录，订阅与流量按主账号家庭套餐计算；移除成员会停用该账号。'
+            : '成员账号由你创建、用上面的用户名密码登录，订阅与流量按团队套餐计算；移除成员会停用该账号。' }}
         </p>
         <p v-if="memberError" class="tm-buy-error" role="alert">{{ memberError }}</p>
       </form>
@@ -509,11 +577,22 @@
  * 形状＋最合理行为推导：成员＝团长创建的子账号（用户名+密码，
  * 与家庭子账号同校验口径）；移除＝二次确认，文案明示账号停用；
  * 成员本人无自助退出接口，页面只给「联系团长」说明。
+ *
+ * 家庭版已购态（2026-11-18 团队页家庭版状态对齐）：无 Team 行时，
+ * 若主账号当前套餐声明了子账号权益（sub_account_limit > 0），
+ * 本页即以家庭版为当前团队展示（友站同款：套餐名/剩余名额/统计
+ * 四格/下载权限行/成员区），「更改为团队 →」进同一购买弹窗。
+ * 数据全部来自既有读口，不新增后端字段——套餐名与到期走
+ * /api/user/subscriptions，成员上限/在用/清单走
+ * /api/user/sub-accounts，团队总流量与重置日走 /api/user/traffic，
+ * 同时播放路数与下载开关走 /api/user/economy/payment/plans
+ * （逐套餐 entitlements.concurrent_streams；下载开关为该接口
+ * 顶层 download_allowed，即全局＋服策略的既有判定）。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import './team-view.css'
 import '../../styles/modal-glass.css'
-import { ArrowLeft, CalendarDays, Gauge, Plus, Search, ShieldCheck, UserPlus, Zap } from 'lucide-vue-next'
+import { ArrowLeft, ArrowRight, CalendarDays, Gauge, Plus, RefreshCw, Search, ShieldCheck, UserPlus, Zap } from 'lucide-vue-next'
 import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
 import UhdButton from '@/components/uhd/UhdButton.vue'
 import UhdEmptyState from '@/components/uhd/UhdEmptyState.vue'
@@ -521,7 +600,10 @@ import UhdModal from '@/components/uhd/UhdModal.vue'
 import { useTheme } from '@/composables/useTheme'
 import { useToast } from '@/composables/useToast'
 import { useUserStore } from '@/stores/user'
-import { formatBytes } from '@/api/traffic'
+import { formatBytes, getTraffic } from '@/api/traffic'
+import { paymentApi, type SubscriptionPlan } from '@/api/economy'
+import { subscriptionApi, type MySubscription } from '@/api'
+import { subAccountsApi, type SubAccountItem } from '@/api/subAccounts'
 import { newWalletKey } from '@/api/wallet'
 import {
   teamsApi,
@@ -549,7 +631,6 @@ const detail = ref<TeamDetail | null>(null)
 const config = computed(() => detail.value!.config)
 const team = computed(() => detail.value?.team ?? null)
 const myRole = computed(() => detail.value?.my_role ?? null)
-const canManage = computed(() => myRole.value === 'owner')
 const isSubAccount = computed(() => !!userStore.user?.is_sub_account)
 const atLimit = computed(() => {
   const t = team.value
@@ -568,6 +649,183 @@ const ctaMode = computed<'buy' | 'sub' | 'closed' | 'none'>(() => {
   return 'buy'
 })
 
+/* ---------------- 家庭版已购态 ---------------- */
+
+/** 家庭版当前团队状态：字段全部来自既有读口的实值（见文件头注释）。
+ * streams 为 null＝套餐未声明 concurrent_streams，页面显示 '—'，
+ * 不编造数字；downloadAllowed 为 null＝套餐表读口不可用，下载权限
+ * 行整行隐藏，不猜默认值。流量按 1024³ 换算成 GB 整数展示
+ * （生产家庭版实值 1,649,267,441,664 字节＝1,536 GB；友站帧图的
+ * 1,500 GB 是对方十进制口径，不照抄）。 */
+interface FamilyState {
+  planName: string
+  subLine: string
+  memberLimit: number
+  memberUsed: number
+  remaining: number
+  trafficQuotaBytes: number | null
+  streams: number | null
+  expiresAt: string | null
+  expiresDate: string
+  expiresTime: string | null
+  downloadAllowed: boolean | null
+  resetDate: string | null
+  periodStart: string | null
+  periodEnd: string | null
+  items: SubAccountItem[]
+}
+
+const family = ref<FamilyState | null>(null)
+/** 家庭版形态：无 Team 行且主账号当前套餐有子账号权益 */
+const familyMode = computed(() => !team.value && !!family.value)
+/** 成员区可用：有团队，或家庭版已购态 */
+const membersEnabled = computed(() => !!team.value || familyMode.value)
+/** 成员区可管理：团队团长，或家庭版主账号（family 只在主账号加载） */
+const canManageFamily = computed(() => familyMode.value)
+const canManage = computed(() => myRole.value === 'owner' || canManageFamily.value)
+const familyAtLimit = computed(() =>
+  !!family.value && family.value.memberUsed >= family.value.memberLimit)
+
+/** 「家庭版 · Global · 剩余 2 个成员名额」：套餐名按空白切分，
+ * 首段为线路、余段为短名（"Global 家庭版" → "家庭版 · Global"）；
+ * 无空白的套餐名不切分，直接用全名＋剩余名额。 */
+function familySubLine(planName: string, remaining: number): string {
+  const parts = planName.trim().split(/\s+/)
+  if (parts.length >= 2) {
+    const [line, ...rest] = parts
+    return `${rest.join(' ')} · ${line} · 剩余 ${remaining} 个成员名额`
+  }
+  return `${planName} · 剩余 ${remaining} 个成员名额`
+}
+
+/** ISO 时间 → "2026.12.18 20:09"（友站到期格形）：日期走
+ * formatTeamDate，时间直接取 ISO 的 HH:mm 原值，不经 Date 解析，
+ * 避免时区转换改写后端存的墙上时间。 */
+function formatFamilyDateTime(iso: string | null | undefined): { date: string; time: string | null } {
+  if (!iso) return { date: '—', time: null }
+  const m = iso.match(/T(\d{2}):(\d{2})/)
+  return { date: formatTeamDate(iso), time: m ? `${m[1]}:${m[2]}` : null }
+}
+
+/** 字节 → GB 整数（1,649,267,441,664 → "1,536"）；空值回 '—' */
+function quotaGbNumber(bytes: number | null | undefined): string {
+  if (bytes == null || !Number.isFinite(bytes)) return '—'
+  return Math.round(bytes / 1024 ** 3).toLocaleString('en-US')
+}
+
+async function loadFamily() {
+  family.value = null
+  const [subsRes, mgmtRes, trafficRes, plansRes] = await Promise.allSettled([
+    subscriptionApi.getMine(),
+    subAccountsApi.get(),
+    getTraffic(),
+    paymentApi.plans(),
+  ])
+  // 两项核心读口任一失败，或当前套餐无子账号权益 → 不是家庭版已购态，
+  // 保持现行未开通态（不报错吓人，团队详情本身已加载成功）。
+  if (subsRes.status !== 'fulfilled' || mgmtRes.status !== 'fulfilled') return
+  const mgmt = mgmtRes.value
+  if (mgmt.is_sub_account || mgmt.limit <= 0) return
+  const plans: SubscriptionPlan[] = plansRes.status === 'fulfilled'
+    ? plansRes.value.plans ?? []
+    : []
+  // 当前生效的家庭订阅：active 且未过期；套餐表可读时优先取名字能对上
+  // 声明了子账号权益的那一份（多服多订阅时不拿错档）；套餐表不可读时
+  // 取第一份 active 订阅（limit > 0 本身已证明当前套餐有该权益）。
+  const activeSubs = subsRes.value.filter(
+    (s: MySubscription) => s.status === 'active' && s.days_left > 0)
+  const sub = activeSubs.find((s: MySubscription) =>
+    plans.some((p) => p.name === s.plan_name
+      && (p.entitlements?.sub_account_limit ?? 0) > 0))
+    ?? activeSubs[0]
+  if (!sub) return
+  const matchedPlan = plans.find((p) => p.name === sub.plan_name)
+  const traffic = trafficRes.status === 'fulfilled' ? trafficRes.value : null
+  const expiry = formatFamilyDateTime(sub.end_date)
+  family.value = {
+    planName: sub.plan_name,
+    subLine: familySubLine(sub.plan_name, Math.max(0, mgmt.limit - mgmt.used)),
+    memberLimit: mgmt.limit,
+    memberUsed: mgmt.used,
+    remaining: Math.max(0, mgmt.limit - mgmt.used),
+    trafficQuotaBytes: traffic?.quota_bytes ?? null,
+    streams: matchedPlan?.entitlements?.concurrent_streams ?? null,
+    expiresAt: sub.end_date,
+    expiresDate: expiry.date,
+    expiresTime: expiry.time,
+    downloadAllowed: plansRes.status === 'fulfilled'
+      ? (plansRes.value.download_allowed ?? null)
+      : null,
+    resetDate: traffic?.reset_date ?? null,
+    periodStart: traffic?.period_start ?? null,
+    periodEnd: traffic?.period_end ?? null,
+    items: mgmt.items ?? [],
+  }
+}
+
+/** 家庭成员行 → 团队成员表行：有效期＝主账号订阅到期（全家共享）、
+ * 流量＝团队总流量按子账户上限均分（与团队 member_payload 同款
+ * 「配额自动计算」展示口径，实际用量走主账号共享池）；每人用量
+ * 后端不分账，traffic_used_bytes 恒为 null，页面显示 '—'，不编数。 */
+function familyMemberRows(): TeamMemberRow[] {
+  const f = family.value
+  if (!f) return []
+  const quota = f.trafficQuotaBytes != null && f.memberLimit > 0
+    ? Math.floor(f.trafficQuotaBytes / f.memberLimit)
+    : 0
+  return f.items.map((it): TeamMemberRow => ({
+    id: it.id,
+    user_id: it.id,
+    username: it.username,
+    public_id: null,
+    role: 'member',
+    is_active: it.is_active,
+    joined_at: it.created_at,
+    expires_at: f.expiresAt,
+    traffic_quota_bytes: quota,
+    traffic_used_bytes: null,
+    traffic_used_pct: null,
+    period_start: f.periodStart ?? '',
+    period_end: f.periodEnd ?? '',
+    reset_date: f.resetDate ?? '',
+  }))
+}
+
+/** 家庭成员列表：客户端过滤＋分页（子账号管理口一次性下发全量，
+ * limit 上限 20，无需服务端分页）。 */
+function applyFamilyMembers() {
+  const f = family.value
+  if (!f) {
+    members.value = []
+    membersTotal.value = 0
+    return
+  }
+  const q = qApplied.value.trim().toLowerCase()
+  let list = familyMemberRows()
+  if (q) {
+    list = list.filter((row) => (row.username ?? '').toLowerCase().includes(q))
+  }
+  if (statusFilter.value === 'active') list = list.filter((row) => row.is_active)
+  else if (statusFilter.value === 'disabled') list = list.filter((row) => !row.is_active)
+  membersTotal.value = list.length
+  // 删到整页空时回退到最后一页有数据的页（家庭成员增删后刷新会走到这里）
+  const lastPage = Math.max(1, Math.ceil(list.length / pageSize))
+  if (page.value > lastPage) page.value = lastPage
+  const start = (page.value - 1) * pageSize
+  members.value = list.slice(start, start + pageSize)
+}
+
+/** 家庭数据重载（成员增删后）：只刷家庭读口，不动团队详情与整页加载态 */
+async function refreshFamily() {
+  membersLoading.value = true
+  try {
+    await loadFamily()
+    applyFamilyMembers()
+  } finally {
+    membersLoading.value = false
+  }
+}
+
 const members = ref<TeamMemberRow[]>([])
 const membersTotal = ref(0)
 const membersLoading = ref(false)
@@ -583,9 +841,13 @@ async function loadDetail() {
   loadError.value = ''
   try {
     detail.value = await teamsApi.detail()
+    page.value = 1
     if (detail.value.team) {
-      page.value = 1
       await loadMembers()
+    } else if (!isSubAccount.value) {
+      // 无团队时补读家庭版已购态（读不到即保持未开通态，见 loadFamily）
+      await loadFamily()
+      if (family.value) applyFamilyMembers()
     }
   } catch (err) {
     loadError.value = teamErrorMessage(err, '团队信息加载失败，请稍后重试')
@@ -595,6 +857,10 @@ async function loadDetail() {
 }
 
 async function loadMembers() {
+  if (familyMode.value) {
+    applyFamilyMembers()
+    return
+  }
   if (!team.value) return
   membersLoading.value = true
   try {
@@ -616,12 +882,14 @@ async function loadMembers() {
 function applySearch() {
   qApplied.value = qDraft.value.trim()
   page.value = 1
-  void loadMembers()
+  if (familyMode.value) applyFamilyMembers()
+  else void loadMembers()
 }
 
 function goPage(next: number) {
   page.value = next
-  void loadMembers()
+  if (familyMode.value) applyFamilyMembers()
+  else void loadMembers()
 }
 
 /* ---------------- 创建 / 升级（两步弹窗） ---------------- */
@@ -678,7 +946,9 @@ function openBuy() {
     line: t?.plan_line === 'premium' ? 'premium' : 'global',
     traffic_gb: t?.plan_traffic_gb ?? config.value.team_global_min_traffic_gb,
     months: 1,
-    streams: t?.plan_streams ?? 0,
+    // 家庭版升级场景：套餐声明了同时播放路数时预填现值（友站升级
+    // 弹窗同款），未声明回落 0
+    streams: t?.plan_streams ?? family.value?.streams ?? 0,
   }
   clampTraffic()
   preview.value = null
@@ -749,7 +1019,12 @@ const memberError = ref('')
 const memberForm = ref({ username: '', password: '' })
 
 function openMember() {
-  if (atLimit.value) {
+  if (familyMode.value) {
+    if (familyAtLimit.value) {
+      toast.error(`成员已达上限（${family.value?.memberLimit} 个子账号）`)
+      return
+    }
+  } else if (atLimit.value) {
     toast.error(`成员已达上限（${team.value?.plan_member_limit} 个子账号）`)
     return
   }
@@ -763,14 +1038,24 @@ async function doCreateMember() {
   memberBusy.value = true
   memberError.value = ''
   try {
-    await teamsApi.createMember({
-      username: memberForm.value.username.trim(),
-      password: memberForm.value.password,
-    })
+    if (familyMode.value) {
+      // 家庭成员走家庭子账号口（与团队成员口同为用户名+密码创建，
+      // 但名额与归属算家庭侧，不占团队 plan_member_limit）
+      await subAccountsApi.create({
+        username: memberForm.value.username.trim(),
+        password: memberForm.value.password,
+      })
+    } else {
+      await teamsApi.createMember({
+        username: memberForm.value.username.trim(),
+        password: memberForm.value.password,
+      })
+    }
     memberOpen.value = false
     toast.success('成员已创建')
     page.value = 1
-    await loadDetail()
+    if (familyMode.value) await refreshFamily()
+    else await loadDetail()
   } catch (err) {
     memberError.value = teamErrorMessage(err, '创建成员失败，请稍后重试')
   } finally {
@@ -794,10 +1079,16 @@ async function doRemoveMember() {
   removeBusy.value = true
   removeError.value = ''
   try {
-    await teamsApi.removeMember(removeTarget.value.user_id)
+    if (familyMode.value) {
+      // 家庭成员移除＝家庭子账号软禁用（与团队成员移除同为停用账号）
+      await subAccountsApi.remove(removeTarget.value.user_id)
+    } else {
+      await teamsApi.removeMember(removeTarget.value.user_id)
+    }
     removeOpen.value = false
     toast.success('成员已移除')
-    await loadDetail()
+    if (familyMode.value) await refreshFamily()
+    else await loadDetail()
   } catch (err) {
     removeError.value = teamErrorMessage(err, '移除成员失败，请稍后重试')
   } finally {
@@ -998,6 +1289,109 @@ onMounted(() => {
   .tm-stats { grid-template-columns: minmax(0, 1fr); }
   .tm-review { flex-direction: column; align-items: stretch; }
   .tm-cta-note { white-space: normal; }
+}
+
+/* ---------- 家庭版已购态（照友站家庭版页 f1：无卡片底，直接铺在页面底色上） ---------- */
+.tm-family { margin-top: 2px; }
+.tm-family__title {
+  margin: 0;
+  font-size: var(--uhd-fs-h1-app);
+  font-weight: var(--uhd-fw-extrabold);
+  letter-spacing: -0.01em;
+  line-height: var(--uhd-lh-tight);
+}
+.tm-family__sub {
+  margin: 8px 0 0;
+  font-size: var(--uhd-fs-caption);
+  color: var(--tm-text-2);
+}
+.tm-family__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+.tm-family__refresh {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--tm-line);
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.tm-family__stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 20px;
+  border-top: 1px solid var(--tm-line);
+}
+.tm-fam-stat { padding: 14px 0; }
+.tm-fam-stat:nth-child(n+3) { border-top: 1px solid var(--tm-line); }
+.tm-fam-stat__label {
+  margin: 0 0 6px;
+  font-size: var(--uhd-fs-aux);
+  color: var(--tm-text-2);
+}
+.tm-fam-stat__value {
+  margin: 0;
+  font-size: var(--uhd-fs-h3);
+  font-weight: var(--uhd-fw-bold);
+}
+.tm-fam-stat__unit {
+  font-size: var(--uhd-fs-caption);
+  font-weight: var(--uhd-fw-medium);
+  color: var(--tm-text-2);
+}
+.tm-family__dl {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 6px;
+  padding: 16px 0 4px;
+  border-top: 1px solid var(--tm-line);
+}
+.tm-family__dl-title {
+  margin: 0;
+  font-size: var(--uhd-fs-body);
+  font-weight: var(--uhd-fw-semibold);
+}
+.tm-family__dl-desc {
+  margin: 4px 0 0;
+  font-size: var(--uhd-fs-aux);
+  color: var(--tm-text-2);
+}
+.tm-family__dl-value {
+  flex: none;
+  font-size: var(--uhd-fs-body);
+  font-weight: var(--uhd-fw-semibold);
+  color: var(--uhd-success);
+  white-space: nowrap;
+}
+.tm-family__dl-value--off { color: var(--tm-text-2); }
+.tm-members__count {
+  margin-left: 6px;
+  font-size: var(--uhd-fs-caption);
+  font-weight: var(--uhd-fw-medium);
+  color: var(--tm-text-2);
+}
+/* 家庭空态卡里的白钮（友站同款）：浅色/深色两态均为实色白底＋深字 */
+.tm-fam-empty-btn {
+  height: 40px;
+  padding: 0 20px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: var(--uhd-radius-pill);
+  background: #ffffff;
+  color: #17181c;
+  font-size: var(--uhd-fs-caption);
+  font-weight: var(--uhd-fw-semibold);
+  font-family: var(--uhd-font-sans);
+  cursor: pointer;
 }
 
 /* ---------- 团队信息条 ---------- */

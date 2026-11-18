@@ -62,7 +62,8 @@ export type TeamMemberRow = {
   joined_at: string | null
   expires_at: string | null
   traffic_quota_bytes: number
-  traffic_used_bytes: number
+  /** 本周期已用字节：团队行由后端计量；家庭版成员行无分账用量，恒为 null（页面显示 '—'） */
+  traffic_used_bytes: number | null
   traffic_used_pct: number | null
   period_start: string
   period_end: string
