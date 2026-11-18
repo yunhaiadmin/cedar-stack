@@ -24,7 +24,7 @@
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { ArrowUpRight, Check, Copy, RefreshCw, X } from 'lucide-vue-next'
+import { ArrowUpRight, Check, RefreshCw, X } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
 import './server-lines-sheet.css'
 import '../../styles/modal-glass.css'
@@ -202,9 +202,10 @@ onBeforeUnmount(() => {
               </span>
               <span class="sls-line__url">{{ line.url }}</span>
             </span>
+            <!-- 复制钮照友站 f0004：纯文字深色玻璃胶囊（无常驻图标）；
+                 已复制态才换 ✓ 图标＋「已复制」（toast 同步提示） -->
             <button type="button" class="sls-copy" @click="copyLine(line)">
-              <Check v-if="copiedKey === line.key" :size="14" aria-hidden="true" />
-              <Copy v-else :size="14" aria-hidden="true" />
+              <Check v-if="copiedKey === line.key" :size="13" aria-hidden="true" />
               {{ copiedKey === line.key ? '已复制' : '复制' }}
             </button>
           </div>
@@ -455,12 +456,18 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 36px;
-  min-height: 36px;
-  padding: 0 16px;
-  border: none;
+  /* 2026-11-18 自查 O-5：友站 f0004 原帧逐行实测复制钮 71×41 帧px，
+     ÷1.3846（390pt 机 3x 帧）≈ 51×30 CSS px；深色玻璃胶囊（半透底＋
+     细边＋模糊）取代旧黑/白实心钮；min-height 中和 mobile.css 全局
+     button{min-height:44px}，只改 height 会被顶回 44px */
+  height: 30px;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--sls-copy-border);
   border-radius: 999px;
   background: var(--sls-copy-bg);
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
   color: var(--sls-copy-text);
   font-family: inherit;
   font-size: var(--uhd-fs-aux);

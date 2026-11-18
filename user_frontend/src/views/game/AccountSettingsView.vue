@@ -70,8 +70,10 @@
     </section>
 
     <!-- 活跃会话：合并列表（G-60/G-62~G-66）——网页登录＋媒体客户端设备＋
-         弹幕 Token 三类一表；创建 API Key 胶囊（面板内）＋登录记录入口保留 -->
-    <section class="set-group">
+         弹幕 Token 三类一表；创建 API Key 胶囊（面板内）＋登录记录入口保留。
+         id="api-keys" 供概览「弹幕 API」行深链直达（2026-11-18 自查 M-1，
+         与 #my-drive 同口径） -->
+    <section class="set-group" id="api-keys">
       <h2 class="set-gtitle">活跃会话</h2>
       <div class="set-rows">
         <ApiKeysPanel />
@@ -363,6 +365,13 @@ async function handleLogout() {
 onMounted(() => {
   void loadNotifyPrefs()
   void loadTgStatus()
+  // 概览「弹幕 API」行带 #api-keys 进来时滚到活跃会话组（与 #my-drive
+  // 同口径；本组常驻渲染，无需等面板回报）
+  if (route.hash === '#api-keys') {
+    void nextTick(() => {
+      document.getElementById('api-keys')?.scrollIntoView({ block: 'start' })
+    })
+  }
 })
 </script>
 

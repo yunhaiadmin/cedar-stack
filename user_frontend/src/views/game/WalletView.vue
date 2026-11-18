@@ -1,7 +1,7 @@
 <template>
   <UhdAccountLayout>
     <div class="uhd-shell-scope wallet-page">
-      <h1 class="w-title">钱包</h1>
+      <h1 class="w-title">我的钱包</h1>
 
       <!-- 余额区：标签 + 大数字 + 充值钮（照友站钱包页截图） -->
       <p class="w-balance-label">账户余额</p>
