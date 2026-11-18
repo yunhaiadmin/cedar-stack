@@ -535,3 +535,380 @@ def verify_platform_api_key(db: Session, plaintext: str) -> Optional[models.User
                 db.rollback()
             return row
     return None
+
+
+# ---------------------------------------------------------------------------
+# 活跃会话合并模型（G-60/G-62~G-66，2026-11-18）
+# ---------------------------------------------------------------------------
+# 三类合并列表：①网页登录会话（refresh 家族行 user_web_sessions）
+# ②媒体客户端设备（user_devices）③弹幕 Token（平台 API Key
+# user_platform_api_keys——唯一满足 G-66 的既有 Token 体系：有效期默认
+# 365 天、可改名、可作废；站内没有单独的「弹幕 Token」表，G-19 盘点已
+# 确认「弹幕 API 本站无此业务」，故第三类落到平台 Key，不新造业务）。
+# 上限 N 读全站 device_limit_per_user（代码里没有套餐级设备上限权益键；
+# 订阅页已明文「登录设备上限是全站口径」，定案「套餐 10」在代码里无此
+# 口径，故以现行全站配置为准）。
+
+SESSION_KIND_WEB = "web"
+SESSION_KIND_DEVICE = "device"
+SESSION_KIND_DANMAKU = "danmaku"
+
+
+def _iso(dt):
+    return dt.isoformat() if dt else None
+
+
+def record_web_session(db: Session, user: models.WebUser, fid: str,
+                       user_agent=None, ip=None) -> Optional[models.UserWebSession]:
+    """登录时建网页会话行（一次登录＝一个 refresh 家族＝一行）。
+
+    失败不抛：会话登记绝不能把登录本身弄坏。调用方（emby_portal
+    _issue_auth_response）另有 try/except 双保险。
+    """
+    if not fid:
+        return None
+    try:
+        from backend.security import REFRESH_TOKEN_EXPIRE_DAYS
+        now = datetime.now()
+        row = (
+            db.query(models.UserWebSession)
+            .filter(models.UserWebSession.user_id == user.id,
+                    models.UserWebSession.fid == fid)
+            .first()
+        )
+        if row is None:
+            row = models.UserWebSession(
+                user_id=user.id, fid=fid,
+                user_agent=(user_agent or "")[:300] or None,
+                ip=(ip or "")[:64] or None,
+                created_at=now, last_seen_at=now,
+                expires_at=now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+                token_version=int(getattr(user, "token_version", 0) or 0),
+            )
+            db.add(row)
+        else:
+            row.last_seen_at = now
+            row.expires_at = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+        db.commit()
+        db.refresh(row)
+        return row
+    except Exception:  # noqa: BLE001 — 登记失败只记日志，不阻塞登录
+        db.rollback()
+        logger.exception("record_web_session 失败 user_id=%s", user.id)
+        return None
+
+
+def touch_web_session(db: Session, user_id: int, fid: str) -> None:
+    """refresh 轮换成功后刷新该家族行的最近活动与到期（登录＋30 天）。"""
+    if not fid:
+        return
+    try:
+        from backend.security import REFRESH_TOKEN_EXPIRE_DAYS
+        row = (
+            db.query(models.UserWebSession)
+            .filter(models.UserWebSession.user_id == user_id,
+                    models.UserWebSession.fid == fid)
+            .first()
+        )
+        if row is None:
+            return
+        now = datetime.now()
+        row.last_seen_at = now
+        row.expires_at = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+        db.commit()
+    except Exception:  # noqa: BLE001 — 刷新失败不阻塞换票
+        db.rollback()
+        logger.exception("touch_web_session 失败 user_id=%s", user_id)
+
+
+def clear_web_sessions(db: Session, user_id: int) -> None:
+    """登出后清掉该用户全部网页会话行（登出 bump token_version，全家族已死）。"""
+    try:
+        db.query(models.UserWebSession).filter(
+            models.UserWebSession.user_id == user_id).delete(
+            synchronize_session=False)
+        db.commit()
+    except Exception:  # noqa: BLE001 — 清理失败不阻塞登出
+        db.rollback()
+        logger.exception("clear_web_sessions 失败 user_id=%s", user_id)
+
+
+def _prune_stale_web_sessions(db: Session, user: models.WebUser) -> None:
+    """剪掉已失效的网页会话行：家族已吊销 / token_version 已 bump（改密/
+    登出）/ 已过期。列表每次读前剪一次，行不堆积。"""
+    from backend.security import is_family_revoked
+    now = datetime.now()
+    current_tv = int(getattr(user, "token_version", 0) or 0)
+    rows = db.query(models.UserWebSession).filter(
+        models.UserWebSession.user_id == user.id).all()
+    stale_ids = []
+    for row in rows:
+        stale = (
+            row.expires_at is not None and row.expires_at < now
+        ) or int(row.token_version or 0) != current_tv
+        if not stale and row.fid:
+            try:
+                stale = is_family_revoked(db, row.fid)
+            except Exception:  # noqa: BLE001 — 吊销表查不到时不剪（fail-open 于剪枝）
+                stale = False
+        if stale:
+            stale_ids.append(row.id)
+    if stale_ids:
+        db.query(models.UserWebSession).filter(
+            models.UserWebSession.id.in_(stale_ids)).delete(
+            synchronize_session=False)
+        db.commit()
+
+
+def _device_expires_at(db: Session, user_id: int, device_id: str):
+    """设备到期＝其最新未吊销 Emby 令牌的 expires_at；无令牌/无到期＝None
+    （历史令牌视为永不过期，与 EmbyApiToken 列注释同口径）。"""
+    from backend.emby_server import models as em
+    row = (
+        db.query(em.EmbyApiToken)
+        .filter(em.EmbyApiToken.user_id == user_id,
+                em.EmbyApiToken.device_id == device_id,
+                em.EmbyApiToken.is_revoked == False)  # noqa: E712
+        .order_by(em.EmbyApiToken.last_used_at.desc())
+        .first()
+    )
+    return row.expires_at if row is not None else None
+
+
+def list_active_sessions(db: Session, user: models.WebUser) -> dict:
+    """会话聚合列表（G-60/G-62/G-64）：三类合并，按最近活动倒序。
+
+    返回 {"limit", "total", "counts": {"all","web","danmaku"}, "items": [...]}。
+    行字段：id（web:<fid> / device:<device_id> / token:<id>）、kind、
+    display_name、user_agent（仅网页）、client/app_version（仅设备）、ip、
+    created_at/last_seen_at/expires_at（ISO）、locked、can_lock。
+    已禁用设备照常列出（带 is_blocked 标记）但不计入 total；过期 Token 不列。
+    """
+    from backend import devices as _devices
+    _prune_stale_web_sessions(db, user)
+    limit = _devices.device_limit(db)
+    items: list[dict] = []
+
+    for row in (
+        db.query(models.UserWebSession)
+        .filter(models.UserWebSession.user_id == user.id)
+        .order_by(models.UserWebSession.last_seen_at.desc())
+        .all()
+    ):
+        items.append({
+            "id": f"{SESSION_KIND_WEB}:{row.fid}",
+            "kind": SESSION_KIND_WEB,
+            "display_name": row.display_name,
+            "user_agent": row.user_agent,
+            "client": None,
+            "app_version": None,
+            "ip": row.ip,
+            "created_at": _iso(row.created_at),
+            "last_seen_at": _iso(row.last_seen_at),
+            "expires_at": _iso(row.expires_at),
+            "locked": bool(row.locked),
+            "can_lock": True,
+        })
+
+    for dev in _devices.list_devices(db, user.id):
+        items.append({
+            "id": f"{SESSION_KIND_DEVICE}:{dev.device_id}",
+            "kind": SESSION_KIND_DEVICE,
+            "display_name": dev.name,
+            "user_agent": None,
+            "client": dev.client,
+            "app_version": dev.app_version,
+            "ip": dev.ip,
+            "created_at": _iso(dev.first_seen_at),
+            "last_seen_at": _iso(dev.last_seen_at),
+            "expires_at": _iso(_device_expires_at(db, user.id, dev.device_id)),
+            "locked": bool(getattr(dev, "locked", False)),
+            "can_lock": True,
+            "is_blocked": bool(dev.is_blocked),
+        })
+
+    now = datetime.now()
+    for key in list_platform_api_keys(db, user.id):
+        if not key.is_active:
+            continue
+        if key.expires_at is not None and key.expires_at < now:
+            continue
+        items.append({
+            "id": f"{SESSION_KIND_DANMAKU}:{key.id}",
+            "kind": SESSION_KIND_DANMAKU,
+            "display_name": key.name,
+            "user_agent": None,
+            "client": None,
+            "app_version": None,
+            "ip": None,
+            "created_at": _iso(key.created_at),
+            "last_seen_at": _iso(key.last_used_at),
+            "expires_at": _iso(key.expires_at),
+            "locked": False,
+            "can_lock": False,  # G-66：弹幕 Token 无锁定
+        })
+
+    items.sort(key=lambda it: it["last_seen_at"] or "", reverse=True)
+    total = sum(
+        1 for it in items
+        if not (it["kind"] == SESSION_KIND_DEVICE and it.get("is_blocked"))
+    )
+    return {
+        "limit": limit,
+        "total": total,
+        "counts": {
+            "all": len(items),
+            "web": sum(1 for it in items if it["kind"] == SESSION_KIND_WEB),
+            "danmaku": sum(1 for it in items if it["kind"] == SESSION_KIND_DANMAKU),
+        },
+        "items": items,
+    }
+
+
+def _split_session_id(session_id: str) -> tuple[str, str]:
+    """opaque 会话 id 拆回 (kind, 原始标识)；格式不对抛 ValueError。"""
+    kind, sep, raw = (session_id or "").partition(":")
+    if not sep or not raw or kind not in (
+        SESSION_KIND_WEB, SESSION_KIND_DEVICE, SESSION_KIND_DANMAKU,
+    ):
+        raise ValueError("会话不存在")
+    return kind, raw
+
+
+def set_session_lock(db: Session, user: models.WebUser, session_id: str,
+                     locked: bool) -> Optional[dict]:
+    """锁定开关（G-65）：只改防淘汰标记。弹幕 Token 无锁定，400 级拒绝
+    （调用方转 ValueError→400）。返回更新后的行字典，未命中返回 None。"""
+    kind, raw = _split_session_id(session_id)
+    if kind == SESSION_KIND_DANMAKU:
+        raise ValueError("弹幕 Token 没有锁定")
+    if kind == SESSION_KIND_WEB:
+        row = (
+            db.query(models.UserWebSession)
+            .filter(models.UserWebSession.user_id == user.id,
+                    models.UserWebSession.fid == raw)
+            .first()
+        )
+        if row is None:
+            return None
+        row.locked = bool(locked)
+        db.commit()
+        return {"id": session_id, "locked": bool(row.locked)}
+    row = (
+        db.query(models.UserDevice)
+        .filter(models.UserDevice.user_id == user.id,
+                models.UserDevice.device_id == raw)
+        .first()
+    )
+    if row is None:
+        return None
+    row.locked = bool(locked)
+    db.commit()
+    return {"id": session_id, "locked": bool(row.locked)}
+
+
+def rename_session(db: Session, user: models.WebUser, session_id: str,
+                   display_name: str) -> Optional[dict]:
+    """改名（G-65）：网页会话改备注名、设备改设备名、Token 改 Key 名。"""
+    name = (display_name or "").strip()[:100]
+    if not name:
+        raise ValueError("名称不能为空")
+    kind, raw = _split_session_id(session_id)
+    if kind == SESSION_KIND_WEB:
+        row = (
+            db.query(models.UserWebSession)
+            .filter(models.UserWebSession.user_id == user.id,
+                    models.UserWebSession.fid == raw)
+            .first()
+        )
+        if row is None:
+            return None
+        row.display_name = name
+        db.commit()
+        return {"id": session_id, "display_name": name}
+    if kind == SESSION_KIND_DEVICE:
+        row = (
+            db.query(models.UserDevice)
+            .filter(models.UserDevice.user_id == user.id,
+                    models.UserDevice.device_id == raw)
+            .first()
+        )
+        if row is None:
+            return None
+        row.name = name
+        db.commit()
+        return {"id": session_id, "display_name": name}
+    row = (
+        db.query(models.UserPlatformApiKey)
+        .filter(models.UserPlatformApiKey.user_id == user.id,
+                models.UserPlatformApiKey.id == int(raw))
+        .first()
+    )
+    if row is None:
+        return None
+    row.name = name
+    db.commit()
+    return {"id": session_id, "display_name": name}
+
+
+def revoke_session(db: Session, user: models.WebUser, session_id: str) -> bool:
+    """删除＝立即吊销（G-65）：网页会话吊销整个 refresh 家族＋删行；
+    设备移除＋吊销其 Emby 令牌（复用 devices.remove_device）；
+    Token 作废（复用 revoke_platform_api_key）。未命中返回 False。"""
+    from backend import devices as _devices
+    kind, raw = _split_session_id(session_id)
+    if kind == SESSION_KIND_WEB:
+        from backend.security import revoke_token_family
+        row = (
+            db.query(models.UserWebSession)
+            .filter(models.UserWebSession.user_id == user.id,
+                    models.UserWebSession.fid == raw)
+            .first()
+        )
+        if row is None:
+            return False
+        revoke_token_family(db, raw, user.id, reason="session_revoked")
+        db.query(models.UserWebSession).filter(
+            models.UserWebSession.id == row.id).delete(
+            synchronize_session=False)
+        db.commit()
+        return True
+    if kind == SESSION_KIND_DEVICE:
+        return _devices.remove_device(db, user.id, raw, revoke_tokens=True)
+    try:
+        key_id = int(raw)
+    except (TypeError, ValueError):
+        return False
+    return revoke_platform_api_key(db, user.id, key_id)
+
+
+def evict_for_new_session(db: Session, user: models.WebUser,
+                          exclude_fid: Optional[str] = None) -> list[str]:
+    """新登录超限时淘汰（G-60）：上限>0 且活跃会话数已达上限时，逐个淘汰
+    最久未活动的未锁定会话（跨三类），直到腾出位置或无可淘汰者。
+    管理员（is_staff）沿用设备上限的放行口径，不淘汰。返回被淘汰的会话 id。
+    """
+    from backend import devices as _devices
+    if getattr(user, "is_staff", False):
+        return []
+    limit = _devices.device_limit(db)
+    if not limit:
+        return []
+    evicted: list[str] = []
+    while True:
+        body = list_active_sessions(db, user)
+        if body["total"] <= limit:
+            break
+        candidates = [
+            it for it in body["items"]
+            if not it["locked"] and it["id"] != f"{SESSION_KIND_WEB}:{exclude_fid}"
+            and not (it["kind"] == SESSION_KIND_DEVICE and it.get("is_blocked"))
+        ]
+        if not candidates:
+            break
+        oldest = min(candidates, key=lambda it: it["last_seen_at"] or "")
+        if revoke_session(db, user, oldest["id"]):
+            evicted.append(oldest["id"])
+        else:
+            break
+    return evicted

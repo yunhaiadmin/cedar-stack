@@ -37,6 +37,31 @@ export interface LoginFactors {
   passkey_available: boolean
 }
 
+export type ActiveSessionKind = 'web' | 'device' | 'danmaku'
+
+export interface ActiveSessionItem {
+  id: string
+  kind: ActiveSessionKind
+  display_name: string | null
+  user_agent: string | null
+  client: string | null
+  app_version: string | null
+  ip: string | null
+  created_at: string | null
+  last_seen_at: string | null
+  expires_at: string | null
+  locked: boolean
+  can_lock: boolean
+  is_blocked?: boolean
+}
+
+export interface ActiveSessionsResponse {
+  limit: number
+  total: number
+  counts: { all: number; web: number; danmaku: number }
+  items: ActiveSessionItem[]
+}
+
 export const securityApi = {
   overview: () => api.get<never, SecurityOverview>('/api/user/security/overview'),
 
@@ -69,6 +94,25 @@ export const securityApi = {
 
   apiKeyDelete: (id: number) =>
     api.delete<never, { success: boolean }>(`/api/user/security/api-keys/${id}`),
+
+  /** 活跃会话合并列表（G-60/G-62~G-66）：三类合并＋锁定/改名/吊销 */
+  sessionsList: () =>
+    api.get<never, ActiveSessionsResponse>('/api/user/security/sessions'),
+
+  sessionLock: (id: string, locked: boolean) =>
+    api.post<never, { id: string; locked: boolean }>(
+      `/api/user/security/sessions/${encodeURIComponent(id)}/lock`, { locked },
+    ),
+
+  sessionRename: (id: string, display_name: string) =>
+    api.patch<never, { id: string; display_name: string }>(
+      `/api/user/security/sessions/${encodeURIComponent(id)}`, { display_name },
+    ),
+
+  sessionRevoke: (id: string) =>
+    api.delete<never, { revoked: boolean }>(
+      `/api/user/security/sessions/${encodeURIComponent(id)}`,
+    ),
 }
 
 /** 登录页因素探测与 Passkey 登录（公开端点，挂在 auth_router 下） */
