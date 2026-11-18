@@ -1001,26 +1001,26 @@ onMounted(() => {
   color: var(--au-text);
 }
 .pool-cell-sub {
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-3);
 }
 .pool-status {
   font-weight: 600;
 }
 .pool-status.is-active {
-  color: var(--au-success, #2e9e5b);
+  color: var(--au-success);
 }
 .pool-status.is-pending,
 .pool-status.is-candidate {
-  color: var(--au-warning, #c07f13);
+  color: var(--au-warning);
 }
 .pool-status.is-suspended,
 .pool-status.is-ejected {
-  color: var(--au-danger, #c0392b);
+  color: var(--au-danger);
 }
 .pool-viol {
-  font-size: 12px;
-  color: var(--au-danger, #c0392b);
+  font-size: var(--uhd-fs-aux-sm);
+  color: var(--au-danger);
 }
 .pool-actions {
   display: flex;
@@ -1049,7 +1049,7 @@ onMounted(() => {
   flex-wrap: wrap;
   gap: 4px 10px;
   margin: 0;
-  font-size: 13px;
+  font-size: var(--uhd-fs-aux);
   line-height: 1.55;
   color: var(--au-text-2);
 }
@@ -1090,14 +1090,14 @@ onMounted(() => {
   min-width: 0;
 }
 .pool-group-name {
-  font-size: 15px;
+  font-size: var(--uhd-fs-body);
   font-weight: 700;
   color: var(--au-text);
   overflow-wrap: anywhere;
 }
 .pool-chip {
   padding: 2px 8px;
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   font-weight: 600;
   color: var(--au-text-2);
   background: var(--au-surface-3);
@@ -1105,14 +1105,14 @@ onMounted(() => {
 }
 .pool-badge-pending {
   padding: 2px 10px;
-  font-size: 12px;
+  font-size: var(--uhd-fs-aux-sm);
   font-weight: 700;
   color: var(--au-on-warning);
   background: var(--au-warning);
   border-radius: var(--au-r-full);
 }
 .pool-group-summary {
-  font-size: 12.5px;
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-3);
   overflow-wrap: anywhere;
 }
@@ -1152,12 +1152,12 @@ onMounted(() => {
   min-width: 0;
 }
 .pool-meta-item dt {
-  font-size: 11.5px;
+  font-size: var(--uhd-fs-micro);
   color: var(--au-text-4);
 }
 .pool-meta-item dd {
   margin: 2px 0 0;
-  font-size: 12.5px;
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-2);
   overflow-wrap: anywhere;
 }
