@@ -2,13 +2,19 @@
 /**
  * 线路管理（2026-11-19 用户亲点独立成页）：全站播放线路一页看完。
  *
- * 两层形态（照友站）：大类 = 服（如「国际线路」），每个大类下面挂
- * 多条线路（如一条「主线路」＋一条「副线路」）。本页按大类分组，
- * 每组列出该大类的全部线路——名称（主/副）、地址、已用/配额/剩余/
- * 状态；线路的增、删、改（名称/地址/配额/排序/启停/所属大类）与
- * 逐线重置用量都在这页办。改选所属大类 = 把线路挪到那个大类：
- * 线路 id 不变，流量记录与配额随线路走。服管理页只留线路摘要
- * 与到本页的入口。
+ * 三个维度分清（用户二次纠正）：服是服务器本身（如 Aetrix）；
+ * 大类是线路自己的分类（category，如「国际线路」「国内线路」，
+ * 可自建）；每个大类下面挂多条线路（如一条「主线路」＋一条
+ * 「副线路」）。本页按「服 → 大类」两级分组列出全部线路——
+ * 名称（主/副）、地址、已用/配额/剩余/状态；线路的增、删、改
+ * （名称/地址/配额/排序/启停/所属大类/所属服）与逐线重置用量
+ * 都在这页办。改所属大类只改线路的分类；改所属服才是把线路
+ * 挪到另一个服（线路 id 不变，流量记录与配额随线路走）——
+ * 两个字段互不相干。服管理页只留线路摘要与到本页的入口。
+ *
+ * 大类与订阅打通：套餐在「商品管理」里声明大类
+ * （entitlements.line_category），买了哪个大类的套餐，用户端就
+ * 只下发那个大类的线路（服务端过滤，口径见 backend/line_quota）。
  *
  * 配额口径（后端 backend/line_quota）：配额、用量、重置都按线路
  * 计；用量按请求实际进来的入口 host 归属（线路地址的 host 相同
@@ -66,6 +72,33 @@ const exhaustedCount = computed(
 const totalUsed = computed(
   () => allLines.value.reduce((sum, l) => sum + (l.traffic?.used_bytes ?? 0), 0))
 
+/** 大类缺省名（与后端 line_quota.DEFAULT_CATEGORY 同口径） */
+const DEFAULT_CATEGORY = '国际线路'
+/** 大类候选词表：预置两类 + 全站线路已在用的大类（与商品管理的套餐大类同一词表） */
+const categoryOptions = computed(() => {
+  const seen = new Set<string>(['国际线路', '国内线路'])
+  for (const l of allLines.value) {
+    const c = (l.category || '').trim()
+    if (c) seen.add(c)
+  }
+  return [...seen]
+})
+
+/** 一个服的线路按大类分组（组内保持线路原序，组按首次出现排序） */
+function categoryGroups(row: RealmRow): { category: string; lines: RealmLine[] }[] {
+  const groups: { category: string; lines: RealmLine[] }[] = []
+  const byCategory = new Map<string, RealmLine[]>()
+  for (const line of row.lines ?? []) {
+    const category = (line.category || '').trim() || DEFAULT_CATEGORY
+    if (!byCategory.has(category)) {
+      byCategory.set(category, [])
+      groups.push({ category, lines: byCategory.get(category)! })
+    }
+    byCategory.get(category)!.push(line)
+  }
+  return groups
+}
+
 // ==================== 线路编辑 ====================
 
 const dialogVisible = ref(false)
@@ -74,6 +107,7 @@ const editing = ref<{ realmId: number; lineId: number | null }>({
 })
 const form = reactive({
   realm_id: 0,
+  category: DEFAULT_CATEGORY,
   name: '',
   url: '',
   quota_gb: 0,
@@ -82,10 +116,11 @@ const form = reactive({
 })
 const saving = ref(false)
 
-function openCreate(row: RealmRow) {
+function openCreate(row: RealmRow, category: string = DEFAULT_CATEGORY) {
   editing.value = { realmId: row.id, lineId: null }
   Object.assign(form, {
     realm_id: row.id,
+    category,
     name: '',
     url: '',
     quota_gb: 0,
@@ -99,6 +134,7 @@ function openEdit(row: RealmRow, line: RealmLine) {
   editing.value = { realmId: row.id, lineId: line.id }
   Object.assign(form, {
     realm_id: row.id,
+    category: (line.category || '').trim() || DEFAULT_CATEGORY,
     name: line.name || '',
     url: line.url || '',
     quota_gb: bytesToGb(line.traffic?.quota_bytes ?? 0),
@@ -115,9 +151,10 @@ async function save() {
     return
   }
   if (!form.realm_id) {
-    ElMessage.warning('请选择所属大类')
+    ElMessage.warning('请选择所属服')
     return
   }
+  const category = form.category.trim() || DEFAULT_CATEGORY
   saving.value = true
   try {
     if (editing.value.lineId) {
@@ -125,18 +162,20 @@ async function save() {
       await updateRealmLine(editing.value.realmId, editing.value.lineId, {
         name: form.name.trim(),
         url,
+        category,
         quota_bytes: gbToBytes(form.quota_gb),
         sort_order: form.sort_order,
         is_active: form.is_active,
         realm_id: form.realm_id,
       })
       ElMessage.success(moved
-        ? `线路已保存，并已移到「${realms.value.find((r) => r.id === form.realm_id)?.name ?? '目标大类'}」`
+        ? `线路已保存，并已移到「${realms.value.find((r) => r.id === form.realm_id)?.name ?? '目标服'}」`
         : '线路已保存')
     } else {
       await createRealmLine(form.realm_id, {
         name: form.name.trim(),
         url,
+        category,
         quota_bytes: gbToBytes(form.quota_gb),
         sort_order: form.sort_order,
         is_active: form.is_active,
@@ -212,7 +251,7 @@ function trafficPct(line: RealmLine): number {
     <PageHeader
       eyebrow="媒体"
       title="线路管理"
-      description="全站播放线路一页看完：按大类（服）分组，每个大类下面挂多条线路。配额、用量、重置都按线路计——用量按用户实际进来的入口域名归属，用尽的线路在用户端显示「暂停服务」、新播放自动避开，全部用尽时自动回落正常分配，不断播。"
+      description="全站播放线路一页看完：按服 → 大类（线路自己的分类，如国际线路/国内线路）分组，每个大类下面挂多条线路。配额、用量、重置都按线路计——用量按用户实际进来的入口域名归属，用尽的线路在用户端显示「暂停服务」、新播放自动避开，全部用尽时自动回落正常分配，不断播。买了哪个大类的套餐，用户端就只显示那个大类的线路。"
     >
       <template #actions>
         <el-button :icon="RefreshCw" :loading="loading" @click="load">刷新</el-button>
@@ -220,14 +259,14 @@ function trafficPct(line: RealmLine): number {
     </PageHeader>
 
     <section class="stat-row" aria-label="线路总览">
-      <StatTile label="线路" :value="allLines.length" :icon="Route" :hint="`分布在 ${realms.length} 个大类下`" />
+      <StatTile label="线路" :value="allLines.length" :icon="Route" :hint="`分布在 ${realms.length} 个服下`" />
       <StatTile label="已用尽" :value="exhaustedCount" :icon="Gauge" :tone="exhaustedCount ? 'warn' : 'plain'" hint="这些线路在用户端显示「暂停服务」" />
       <StatTile label="全站线路已用" :value="fmtBytes(totalUsed)" :icon="Gauge" hint="各线路当前周期已用合计（不限额线路也计）" />
     </section>
 
     <EmptyState
       v-if="!loading && !realms.length"
-      title="还没有大类（服）"
+      title="还没有服"
       description="先去服管理新建一个服，再回到这里给它加线路。"
     />
 
@@ -259,16 +298,25 @@ function trafficPct(line: RealmLine): number {
         </template>
 
         <p v-if="!(row.lines && row.lines.length)" class="group-empty">
-          这个大类还没有线路：用户端拿不到这个服的连接地址。点「新增线路」加第一条（主线路）。
+          这个服还没有线路：用户端拿不到这个服的连接地址。点「新增线路」加第一条（主线路）。
         </p>
 
-        <div v-else class="line-list">
-          <div
-            v-for="line in row.lines"
-            :key="line.id"
-            class="line-row"
-            :class="{ 'is-exhausted': line.traffic?.exhausted, 'is-off': !line.is_active }"
-          >
+        <div v-else class="cat-groups">
+          <div v-for="g in categoryGroups(row)" :key="g.category" class="cat-group">
+            <div class="cat-head">
+              <span class="cat-name">{{ g.category }}</span>
+              <span class="cat-count">{{ g.lines.length }} 条</span>
+              <el-button size="small" text :icon="Plus" @click="openCreate(row, g.category)">
+                新增线路
+              </el-button>
+            </div>
+            <div class="line-list">
+              <div
+                v-for="line in g.lines"
+                :key="line.id"
+                class="line-row"
+                :class="{ 'is-exhausted': line.traffic?.exhausted, 'is-off': !line.is_active }"
+              >
             <div class="line-main">
               <div class="line-head">
                 <span
@@ -323,8 +371,10 @@ function trafficPct(line: RealmLine): number {
               >
                 删除
               </el-button>
+              </div>
             </div>
           </div>
+        </div>
         </div>
       </SectionCard>
     </div>
@@ -337,12 +387,30 @@ function trafficPct(line: RealmLine): number {
     >
       <el-form label-width="110px">
         <el-form-item label="所属大类">
-          <el-select v-model="form.realm_id" placeholder="选择这条线路属于哪个大类" style="width: 100%">
+          <el-select
+            v-model="form.category"
+            placeholder="选择或输入大类名"
+            filterable
+            allow-create
+            default-first-option
+            style="width: 100%"
+          >
+            <el-option v-for="c in categoryOptions" :key="c" :label="c" :value="c" />
+          </el-select>
+          <p class="field-help">
+            大类是线路自己的分类（如国际线路/国内线路），不是服名。
+            可以直接输入新名字自建大类。买了哪个大类的套餐，用户端
+            就只显示那个大类的线路（套餐大类在「商品管理」里设）。
+          </p>
+        </el-form-item>
+        <el-form-item label="所属服">
+          <el-select v-model="form.realm_id" placeholder="选择这条线路属于哪个服" style="width: 100%">
             <el-option v-for="r in realms" :key="r.id" :label="r.name" :value="r.id" />
           </el-select>
           <p class="field-help">
-            这条线路挂在哪个大类（服）下面。编辑时改选就是把线路挪到
-            那个大类：线路不变，流量记录、配额与已用都跟着线路走。
+            这条线路挂在哪个服（服务器）下面。编辑时改选就是把线路挪到
+            那个服：线路不变，流量记录、配额与已用都跟着线路走。
+            与上面的「所属大类」是两回事。
           </p>
         </el-form-item>
         <el-form-item label="名称">
@@ -405,6 +473,14 @@ function trafficPct(line: RealmLine): number {
 .group-badges { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .group-empty { margin: 0; font-size: 13px; color: var(--au-text-3); }
 
+.cat-groups { display: flex; flex-direction: column; gap: 14px; }
+.cat-head {
+  display: flex; align-items: center; gap: 8px;
+  padding-bottom: 2px;
+}
+.cat-name { font-size: 13.5px; font-weight: 600; color: var(--au-text); }
+.cat-count { font-size: 12px; color: var(--au-text-4); }
+.cat-head .el-button { margin-left: auto; }
 .line-list { display: flex; flex-direction: column; }
 .line-row {
   display: flex; align-items: flex-start; gap: 12px;

@@ -462,12 +462,19 @@ def _user_realm_cards(user: models.WebUser, db: Session,
         if sub.realm_id and sub.realm_id not in by_realm:
             by_realm[sub.realm_id] = sub
     cards: list[dict] = []
+    # 线路大类过滤口径（订阅打通）：用户有效套餐的大类决定他能看到
+    # 哪个大类的线路（判定单口 line_quota.user_line_category：本服
+    # 订阅 → 团队资格回退订阅口径 → 无资格不过滤）。全卡共用一个
+    # 用户级结论：卡间差异只在本服订阅那一档，由 resolver 按
+    # realm_id 逐卡判——这里逐卡调，避免跨服订阅串味。
     for realm in realms.list_realms(db, include_disabled=False):
         sub = by_realm.get(realm.id)
         if sub is None and realm.id != realms.legacy_realm_id(db):
             continue  # 没订阅的服不往用户面前推（默认服保留，兼容老前端）
         mode = emby_active_mode(db, realm.id)
         granted = _realm_view_granted(db, user, realm.id)
+        line_category = (line_quota.user_line_category(db, user, realm.id)
+                         if granted else None)
         cards.append({
             "id": realm.id,
             "name": realm.name,
@@ -485,14 +492,19 @@ def _user_realm_cards(user: models.WebUser, db: Session,
             "days_left": max(0, (sub.end_date - now).days) if sub and sub.end_date else None,
             "plan_name": (sub.plan.name if sub and sub.plan else ""),
             "is_default": realm.id == realms.legacy_realm_id(db),
-            # 播放线路（2026-11-19）：这个服（大类）下的线路清单
-            # （主线路在前），每条带 quota_exhausted 初值；循环后
-            # apply_card_flags 做「全线用尽回落」修正（全用尽 =
-            # 全部清零，不断播）并回填本卡 quota_exhausted（主线路
-            # 的标记）。地址照常下发——已连线路的外部客户端不受
-            # 影响，标记只供用户端在选线面显示「暂停服务」与网页
-            # 播放器分流。没查看权限不下发线路（与 base_url 同口径）。
-            "lines": line_quota.card_lines(db, realm) if granted else [],
+            # 播放线路（2026-11-19）：这个服下的线路清单
+            # （主线路在前），每条带 category（大类）与
+            # quota_exhausted 初值；循环后 apply_card_flags 做
+            # 「全线用尽回落」修正（全用尽 = 全部清零，不断播）并
+            # 回填本卡 quota_exhausted（主线路的标记）。地址照常
+            # 下发——已连线路的外部客户端不受影响，标记只供用户端
+            # 在选线面显示「暂停服务」与网页播放器分流。没查看权限
+            # 不下发线路（与 base_url 同口径）。按用户套餐大类过滤
+            # （line_category 非空才过滤；过滤后为空时用户端回退
+            # base_url 单行，回退行不受大类过滤影响）。
+            "lines": (line_quota.card_lines(db, realm,
+                                            category=line_category)
+                      if granted else []),
             "quota_exhausted": False,
         })
     line_quota.apply_card_flags(cards)

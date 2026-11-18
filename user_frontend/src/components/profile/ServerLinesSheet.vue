@@ -7,10 +7,11 @@
  * 整页；用户 2026-11-13 23:15 亲点改弹层，本组件即该弹层。
  * （播放账号页已随 2026-11-18 删除单整页删除。）
  *
- * 线路数据只用账号卡现行口径（与线路测速页同源）：两层形态——
- * 大类 = realms[]（服），每个大类下挂多条线路（realms[].lines，
- * 主线路在前）；按大类分组渲染（组标题 = 大类名），组内主、副
- * 依次。没下发线路的大类用它的 base_url 补一条主线路；realms
+ * 线路数据只用账号卡现行口径（与线路测速页同源）：服 =
+ * realms[]，每条线路带自己的大类（realms[].lines[].category，
+ * 如「国际线路」，主线路在前）；按大类分组渲染（组标题 = 大类
+ * 名），组内主、副依次。账号卡下发时已按用户套餐大类在服务端
+ * 过滤。没下发线路的服用它的 base_url 补一条主线路；realms
  * 为空时回退顶层 base_url。够格看到几条渲染几条：只有一条就只
  * 显示一条，不假造备用线路。主/副徽标按后端下发的 is_primary。
  * 客户端区只指站内已有去处（安装应用页含客户端下载与分步教程），
@@ -39,6 +40,8 @@ import '../../styles/modal-glass.css'
  */
 export interface ServerLinesLine {
   id: number
+  /** 所属大类：线路自己的分类（如「国际线路」），不是服名 */
+  category?: string
   name: string
   url: string
   is_primary: boolean
@@ -51,7 +54,7 @@ export interface ServerLinesRealm {
   name: string
   base_url: string
   is_default: boolean
-  /** 这个大类下的线路（主线路在前）；缺省时用 base_url 补一条 */
+  /** 这个服下的线路（主线路在前）；缺省时用 base_url 补一条 */
   lines?: ServerLinesLine[]
   /** 主线路的配额用尽标记（补行时用） */
   quota_exhausted?: boolean
@@ -85,12 +88,12 @@ interface ServerLine {
 
 interface ServerLineGroup {
   key: string
-  /** 组标题 = 大类（服）名 */
+  /** 组标题 = 大类名（线路自己的分类） */
   title: string
   lines: ServerLine[]
 }
 
-/** 线路分组：按大类（服）分组、组内主副依次，默认服在前、按地址去重 */
+/** 线路分组：按大类分组、组内主副依次，默认服在前、按地址去重 */
 const groups = computed<ServerLineGroup[]>(() => {
   const card = props.card
   if (!card) return []
@@ -100,16 +103,19 @@ const groups = computed<ServerLineGroup[]>(() => {
     (a, b) => Number(b.is_default) - Number(a.is_default),
   )
   for (const r of realms) {
-    const rows: ServerLine[] = []
     const realmLines = r.lines ?? []
     if (realmLines.length) {
+      // 同服内按大类拆组（大类缺失的老下发回退服名成组）
+      const byCategory = new Map<string, ServerLine[]>()
       for (const l of realmLines) {
         const url = (l.url ?? '').trim()
         if (!url || seen.has(url)) continue
         seen.add(url)
         const primary = !!l.is_primary
         const rawName = (l.name || '').trim()
-        rows.push({
+        const title = (l.category || '').trim() || r.name || ''
+        if (!byCategory.has(title)) byCategory.set(title, [])
+        byCategory.get(title)!.push({
           key: `line-${l.id}`,
           // 默认名与主/副徽标同文时不重复展示（徽标已表达主副）
           name: rawName === (primary ? '主线路' : '副线路') ? '' : rawName,
@@ -118,21 +124,26 @@ const groups = computed<ServerLineGroup[]>(() => {
           exhausted: !!l.quota_exhausted,
         })
       }
+      for (const [title, rows] of byCategory) {
+        out.push({ key: `realm-${r.id}:${title}`, title, lines: rows })
+      }
     } else {
+      // 没下发线路的服：base_url 补一条（回退行不受大类过滤影响）
       const url = (r.base_url ?? '').trim()
       if (url && !seen.has(url)) {
         seen.add(url)
-        rows.push({
+        out.push({
           key: `realm-${r.id}`,
-          name: '',
-          url,
-          primary: true,
-          exhausted: !!r.quota_exhausted,
+          title: r.name || '',
+          lines: [{
+            key: `realm-${r.id}`,
+            name: '',
+            url,
+            primary: true,
+            exhausted: !!r.quota_exhausted,
+          }],
         })
       }
-    }
-    if (rows.length) {
-      out.push({ key: `realm-${r.id}`, title: r.name || '', lines: rows })
     }
   }
   if (!out.length) {

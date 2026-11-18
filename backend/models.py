@@ -125,12 +125,16 @@ class ServerRealm(Base):
 
 
 class ServerRealmLine(Base):
-    """服（大类）下的一条播放线路（2026-11-19 用户纠正粒度后定版）。
+    """服下的一条播放线路（2026-11-19 用户纠正粒度后定版）。
 
-    两层形态（照友站）：大类 = 服（``ServerRealm``，如「国际线路」），
-    每个大类下面挂多条线路（如一条「主线路」＋一条「副线路」）。用户
-    在客户端里填的入口地址就是线路的 ``url``；同一服的线路只是不同
-    入口（CDN / 主站域名 / 源站域名…），内容与订阅同属这个服。
+    三个维度分清（用户 2026-11-19 二次纠正）：**服**（``ServerRealm``）
+    是服务器本身（如 Aetrix）；**大类**是线路自己的分类（``category``，
+    如「国际线路」「国内线路」，管理员可自建、任意文本）；每条大类下面
+    挂多条线路（如一条「主线路」＋一条「副线路」）。用户在客户端里填
+    的入口地址就是线路的 ``url``；同一服的线路只是不同入口
+    （CDN / 主站域名 / 源站域名…），内容与订阅同属这个服。大类与
+    订阅打通：套餐声明的大类（entitlements.line_category）决定买家
+    在用户端能看到哪个大类的线路（下发过滤口径见 line_quota）。
 
     流量配额、用量、重置都按**线路**计（不是按服）：``quota_bytes``
     0 = 不限额；用量按线路按日汇总在 ``line_traffic_usage_daily``
@@ -155,6 +159,11 @@ class ServerRealmLine(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     realm_id = Column(Integer, nullable=False)
+    # 所属大类：线路自己的分类（如「国际线路」），不是服名；管理员
+    # 可自建任意大类名（不写死枚举）。存量行迁移默认「国际线路」
+    # （_auto_migrate 补列同口径），与现行在售套餐的缺省大类一致。
+    category = Column(String(80), nullable=False, default='国际线路',
+                      server_default='国际线路')
     name = Column(String(80), default='')
     # 线路入口地址（完整 URL）；计量归属键 = 从它解析出的 host
     url = Column(String(500), nullable=False, default='')

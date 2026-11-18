@@ -648,7 +648,8 @@ def ensure_realm_lines(db: Session, realm: models.ServerRealm) -> list[models.Se
     if not url:
         return []
     line = models.ServerRealmLine(
-        realm_id=realm.id, name="主线路", url=url, sort_order=0)
+        realm_id=realm.id, name="主线路", url=url, sort_order=0,
+        category=line_quota.DEFAULT_CATEGORY)
     db.add(line)
     db.commit()
     db.refresh(line)
@@ -679,8 +680,13 @@ def validate_line_url(url: str) -> str:
 def create_line(db: Session, realm: models.ServerRealm, *, name: str = "",
                 url: str = "", quota_bytes: Optional[int] = None,
                 sort_order: Optional[int] = None,
-                is_active: bool = True) -> models.ServerRealmLine:
-    """给服新增一条线路。名字留空时按形态给：首条「主线路」、其后「副线路」。"""
+                is_active: bool = True,
+                category: Optional[str] = None) -> models.ServerRealmLine:
+    """给服新增一条线路。名字留空时按形态给：首条「主线路」、其后「副线路」。
+
+    ``category`` 是线路的大类（线路自己的分类，不是服名）；不传/
+    空 = 缺省大类，任意文本可自建（收敛口径 line_quota.normalize_category）。
+    """
     url = validate_line_url(url)
     existing = list_lines(db, realm.id)
     name = (name or "").strip()
@@ -691,6 +697,7 @@ def create_line(db: Session, realm: models.ServerRealm, *, name: str = "",
                          default=-1) + 1
     line = models.ServerRealmLine(
         realm_id=realm.id, name=name, url=url,
+        category=line_quota.normalize_category(category),
         quota_bytes=(_validate_quota_bytes(quota_bytes)
                      if quota_bytes is not None else 0),
         sort_order=int(sort_order), is_active=bool(is_active),
@@ -709,12 +716,16 @@ def update_line(db: Session, line: models.ServerRealmLine, *,
                 quota_bytes: Optional[int] = None,
                 sort_order: Optional[int] = None,
                 is_active: Optional[bool] = None,
-                realm_id: Optional[int] = None) -> models.ServerRealmLine:
+                realm_id: Optional[int] = None,
+                category: Optional[str] = None) -> models.ServerRealmLine:
     if realm_id is not None and int(realm_id) != int(line.realm_id):
-        # 挪组：只改归属一列。线路 id 不变，流量日账按 line_id 记、
+        # 挪服：只改归属一列。线路 id 不变，流量日账按 line_id 记、
         # 配额与周期字段都在线路行本身，天然随线路走；主/副按两边
-        # 各自的启用线路排序自动成立。目标大类存在性由调用方校验。
+        # 各自的启用线路排序自动成立。目标服存在性由调用方校验。
+        # 注意与 category（大类，线路自己的分类）是两个独立字段。
         line.realm_id = int(realm_id)
+    if category is not None:
+        line.category = line_quota.normalize_category(category)
     if name is not None:
         name = name.strip()
         if not name:

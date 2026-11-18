@@ -23,7 +23,7 @@
  *
  * 线路清单只来自现行配置下发，不写死任何线路名/地址：
  *   - 播放线路：账号卡 GET /api/user/emby/server 的 realms[].lines[]
- *     （大类下的线路，主副依次；无线路下发时回退 realms[].base_url）。
+ *     （每条带大类 category，主副依次；无线路下发时回退 realms[].base_url）。
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
@@ -164,8 +164,9 @@ async function loadLines() {
     const card = await embyApi.getAccountCard()
     cardOk = true
     for (const r of card.realms ?? []) {
-      // 两层形态（2026-11-19）：大类（服）下逐条线路展开，选项名
-      // 「大类名 · 线路名」；配额用尽的线路已暂停服务，不进测速清单。
+      // 逐条线路展开，选项名「大类名 · 线路名」（大类 = 线路自己的
+      // category，不是服名；老下发没带大类时回退服名）；配额用尽的
+      // 线路已暂停服务，不进测速清单。
       const realmLines = r.lines ?? []
       if (realmLines.length) {
         for (const l of realmLines) {
@@ -173,7 +174,8 @@ async function loadLines() {
           if (!url || seen.has(url)) continue
           seen.add(url)
           if (l.quota_exhausted) continue
-          rows.push(makeOption(r.name ? `${r.name} · ${l.name}` : l.name, url))
+          const group = (l.category || '').trim() || r.name
+          rows.push(makeOption(group ? `${group} · ${l.name}` : l.name, url))
         }
         continue
       }

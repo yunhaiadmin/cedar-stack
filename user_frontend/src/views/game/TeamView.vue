@@ -740,7 +740,9 @@ async function loadFamily() {
     (s: MySubscription) => s.status === 'active' && s.days_left > 0)
   const sub = activeSubs.find((s: MySubscription) =>
     plans.some((p) => p.name === s.plan_name
-      && (p.entitlements?.sub_account_limit ?? 0) > 0))
+      && (typeof p.entitlements?.sub_account_limit === 'number'
+        ? p.entitlements.sub_account_limit
+        : 0) > 0))
     ?? activeSubs[0]
   if (!sub) return
   const matchedPlan = plans.find((p) => p.name === sub.plan_name)
@@ -753,7 +755,9 @@ async function loadFamily() {
     memberUsed: mgmt.used,
     remaining: Math.max(0, mgmt.limit - mgmt.used),
     trafficQuotaBytes: traffic?.quota_bytes ?? null,
-    streams: matchedPlan?.entitlements?.concurrent_streams ?? null,
+    streams: typeof matchedPlan?.entitlements?.concurrent_streams === 'number'
+      ? matchedPlan.entitlements.concurrent_streams
+      : null,
     expiresAt: sub.end_date,
     expiresDate: expiry.date,
     expiresTime: expiry.time,

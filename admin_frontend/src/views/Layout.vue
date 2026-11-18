@@ -210,7 +210,7 @@ const navGroups: NavGroup[] = [
     icon: Server,
     items: [
       { path: '/servers', label: '服务器', icon: Server },
-      // 线路管理（2026-11-19）：播放线路的配额/用量按大类分组一页管完（服管理旁、同组）
+      // 线路管理（2026-11-19）：播放线路的配额/用量按大类（线路分类）分组一页管完（服管理旁、同组）
       { path: '/lines', label: '线路管理', icon: Gauge },
       { path: '/emby', label: '媒体库', icon: Library },
       // 谁能看到哪些库（服务器默认范围 + 指定用户覆盖）：默认关闭，不改现有行为

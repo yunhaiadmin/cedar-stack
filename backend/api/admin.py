@@ -1941,9 +1941,10 @@ class PlanUpsertRequest(BaseModel):
     sort_order: int = 0
     # 套餐一个服一个：留空时归到面板当前服
     realm_id: Optional[int] = None
-    # 订阅分档权益表 {权益键: 整数值}；键与合法区间以 backend/entitlements.py
-    # 的注册表为准（写路径 validate 校验）。None / 空对象 = 不声明任何权益，
-    # 该套餐用户全部回退现行全站默认，落库存 NULL 不存空对象。
+    # 订阅分档权益表 {权益键: 值}（整数键为主，line_category 是字符串）；
+    # 键与合法区间以 backend/entitlements.py 的注册表为准（写路径
+    # validate 校验）。None / 空对象 = 不声明任何权益，该套餐用户
+    # 全部回退现行全站默认，落库存 NULL 不存空对象。
     entitlements: Optional[dict] = None
 
 

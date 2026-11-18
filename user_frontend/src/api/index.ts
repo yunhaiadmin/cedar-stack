@@ -378,9 +378,11 @@ export const libraryStatsApi = {
 }
 // ==================== 自建 Emby 门户 API（backend/emby_server/portal.py） ====================
 
-/** 一个服（大类）下的一条播放线路（账号卡下发；配额按线路计） */
+/** 一个服下的一条播放线路（账号卡下发；配额按线路计） */
 export interface AccountLineCard {
   id: number
+  /** 所属大类：线路自己的分类（如「国际线路」），不是服名 */
+  category?: string
   /** 线路名（如「主线路」「副线路」，管理员可改） */
   name: string
   url: string
@@ -407,7 +409,7 @@ export interface AccountRealmCard {
   is_default: boolean
   /** 该服的查看权限（没权限时 base_url 置空） */
   view_granted?: boolean
-  /** 这个服（大类）下的线路清单（主线路在前）；没查看权限时为空 */
+  /** 这个服下的线路清单（主线路在前，已按用户套餐大类过滤）；没查看权限时为空 */
   lines?: AccountLineCard[]
   /** 主线路的配额用尽标记（口径同 lines[].quota_exhausted） */
   quota_exhausted?: boolean

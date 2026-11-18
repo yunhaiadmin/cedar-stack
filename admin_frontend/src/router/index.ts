@@ -88,7 +88,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'api-keys', name: 'ApiKeys', component: () => import('@/views/ApiKeys.vue'), meta: { title: 'API Key' } },
       // 服管理以绝对路径声明：跳转契约检查要求跳转目标与声明的 path 完全一致
       { path: '/realms', name: 'Realms', component: () => import('@/views/Realms.vue'), meta: { title: '服管理' } },
-      // 线路管理（2026-11-19 独立成页）：按大类（服）分组管全部播放线路的配额/用量
+      // 线路管理（2026-11-19 独立成页）：按服 → 大类（线路分类）分组管全部播放线路的配额/用量
       { path: '/lines', name: 'Lines', component: () => import('@/views/Lines.vue'), meta: { title: '线路管理' } },
       { path: 'servers', name: 'Servers', component: () => import('@/views/Servers.vue'), meta: { title: '服务器' } },
     ],

@@ -45,7 +45,7 @@ export interface SubscriptionPlan {
   base_months?: number
   features: string[] | null
   /** 订阅分档权益（后端经 parse 归一下发，未声明为 {}）；商店权益文案行据此自动生成 */
-  entitlements?: Record<string, number> | null
+  entitlements?: Record<string, number | string> | null
   is_popular: boolean
   /** 套餐属于哪个服（一个服一个）：买哪份就开哪个服的会员 */
   realm_id?: number | null

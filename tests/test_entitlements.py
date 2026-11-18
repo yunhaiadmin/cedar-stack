@@ -336,3 +336,37 @@ def test_orders_rollback_invalidates_resolution_cache(db):
     orders_admin._rollback_subscription(db, order, plan, datetime.now())
     db.commit()
     assert (user.id, None) not in entitlements._USER_PLAN_CACHE
+
+
+# ---------------- 线路大类（字符串键，2026-11-19 订阅打通） ----------------
+
+def test_line_category_validate_and_parse(db):
+    # 写路径：合法字符串过、去空白；空/非字符串/超长一律拒绝
+    out = entitlements.validate_entitlements({"line_category": " 国内线路 "})
+    assert out == {"line_category": "国内线路"}
+    for bad in ("", "  ", 5, None, "长" * 81):
+        with pytest.raises(ValueError):
+            entitlements.validate_entitlements({"line_category": bad})
+    # 读路径：合法值归一保留，坏值剔除按缺键（不抛）
+    plan = _make_plan(db, entitlements_value={"line_category": "国内线路"})
+    assert entitlements.parse_entitlements(
+        plan.entitlements)["line_category"] == "国内线路"
+    bad_plan = _make_plan(db, name="坏值",
+                          entitlements_value={"line_category": 7})
+    assert "line_category" not in entitlements.parse_entitlements(
+        bad_plan.entitlements)
+
+
+def test_plan_line_category_declared_and_default(db):
+    declared = _make_plan(db, entitlements_value={"line_category": "国内线路"})
+    assert entitlements.plan_line_category(declared) == "国内线路"
+    # 未声明（存量套餐）→ 缺省大类，与现行在售套餐口径一致
+    plain = _make_plan(db, name="存量", entitlements_value=None)
+    assert entitlements.plan_line_category(plain) == "国际线路"
+    assert entitlements.plan_line_category(None) == "国际线路"
+
+
+def test_line_category_not_readable_via_int_helper(db):
+    user = _make_user(db)
+    with pytest.raises(KeyError):
+        entitlements.get_user_entitlement(db, user, "line_category")
