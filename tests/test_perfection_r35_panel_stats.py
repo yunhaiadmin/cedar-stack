@@ -15,6 +15,8 @@ F4: 管理后台 /stats/playback「今日播放次数/今日观看用户数」�
 F5: 观影碑日榜/周榜 —— 旧注释"假定 naive 时间本身就是上海本地时间"不成立
     （start_time 是 UTC-naive 入库），00:00–08:00 的播放被排除在榜外。
     比较改用 UTC 帧，对外 window_start 仍报上海口径。
+    （后续：站内网页观影排行榜已于 2026-11-18 整删，F5 用例随之删除，
+    此条仅作历史记录；TG 榜保留，窗口函数 leaderboard_window 仍在。）
 F6: 追新日历 —— 当月界/分组按上海自然日（既有 test_chase_calendar.py 已按
     新口径更新，这里只补 00:00–08:00 边界用例）。
 
@@ -147,25 +149,6 @@ def test_admin_playback_stats_today_uses_shanghai_day(db):
     stats = admin_api.get_playback_stats(current_admin=admin, db=db)
     assert stats["today"]["plays"] == 1, "上海今天 02:00 的播放应计入今日"
     assert stats["today"]["users"] == 1
-
-
-# ==================== F5：观影碑榜单 ====================
-
-def test_leaderboard_day_counts_shanghai_boundary_and_reports_shanghai_window(db):
-    lib = _library(db, "r35rank")
-    user = _user(db, username="r35ranker")
-    item = _item(db, lib, "榜单片", added=datetime(2026, 1, 1, 0, 0))
-    # 上海今天 02:00 开播：旧口径下日榜漏掉这一播
-    _session(db, user, "r35-r1", _shanghai_today_0200_utc(), item_id=item.id)
-
-    payload = portal.get_leaderboard(
-        board="hot", period="day", request_user=user, db=db)
-    assert payload["items"], "上海今天 02:00 的开播应计入日榜"
-    assert payload["items"][0]["count"] == 1
-    # 对外仍报上海口径的窗口起点（前端照此画榜单日期），不能变成 UTC 值
-    assert payload["window_start"].endswith("T00:00:00")
-    from backend.api.panel import _now_local_naive
-    assert payload["window_start"][:10] == _now_local_naive().strftime("%Y-%m-%d")
 
 
 # ==================== F6：追新日历边界 ====================
