@@ -54,6 +54,14 @@ class ApiKeyCreateRequest(BaseModel):
     name: str = Field(default="", max_length=100)
 
 
+class SessionLockRequest(BaseModel):
+    locked: bool
+
+
+class SessionRenameRequest(BaseModel):
+    display_name: str = Field(..., min_length=1, max_length=100)
+
+
 # ==================== 序列化 ====================
 
 def _passkey_out(row: models.UserPasskey) -> dict:
@@ -251,6 +259,75 @@ def api_key_revoke(
     _rate_guard(request, current_user.id, "apikey_revoke")
     if not sec.revoke_platform_api_key(db, current_user.id, key_row_id):
         raise HTTPException(status_code=404, detail="API Key 不存在")
+    return {"revoked": True}
+
+
+# ==================== 活跃会话合并列表（G-60/G-62~G-66） ====================
+
+@security_router.get("/sessions")
+def sessions_list(
+    current_user: models.WebUser = Depends(get_current_user_jwt),
+    db: Session = Depends(get_db),
+):
+    """三类合并列表：网页登录（refresh 家族）＋媒体客户端设备＋弹幕 Token
+    （平台 API Key）。上限 N 与计数随聚合逻辑一并下发。"""
+    return sec.list_active_sessions(db, current_user)
+
+
+@security_router.post("/sessions/{session_id}/lock")
+def session_lock(
+    session_id: str,
+    req: SessionLockRequest,
+    request: Request,
+    current_user: models.WebUser = Depends(get_current_user_jwt),
+    db: Session = Depends(get_db),
+):
+    """锁定开关：防淘汰标记。弹幕 Token 无锁定，400。"""
+    _rate_guard(request, current_user.id, "session_lock")
+    try:
+        out = sec.set_session_lock(db, current_user, session_id, req.locked)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if out is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    return out
+
+
+@security_router.patch("/sessions/{session_id}")
+def session_rename(
+    session_id: str,
+    req: SessionRenameRequest,
+    request: Request,
+    current_user: models.WebUser = Depends(get_current_user_jwt),
+    db: Session = Depends(get_db),
+):
+    """改名：网页会话改备注名、设备改设备名、Token 改 Key 名。"""
+    _rate_guard(request, current_user.id, "session_rename")
+    try:
+        out = sec.rename_session(db, current_user, session_id, req.display_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if out is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    return out
+
+
+@security_router.delete("/sessions/{session_id}")
+def session_revoke(
+    session_id: str,
+    request: Request,
+    current_user: models.WebUser = Depends(get_current_user_jwt),
+    db: Session = Depends(get_db),
+):
+    """删除＝立即吊销：网页会话吊销整个 refresh 家族、设备移除＋吊销令牌、
+    Token 作废。"""
+    _rate_guard(request, current_user.id, "session_revoke")
+    try:
+        ok = sec.revoke_session(db, current_user, session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not ok:
+        raise HTTPException(status_code=404, detail="会话不存在")
     return {"revoked": True}
 
 

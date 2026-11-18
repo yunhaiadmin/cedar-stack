@@ -242,7 +242,8 @@ def _user_out(user: models.WebUser, db: Session | None = None) -> UserOut:
 
 
 def _issue_auth_response(
-    user: models.WebUser, db: Session, plain_password: str | None = None
+    user: models.WebUser, db: Session, plain_password: str | None = None,
+    request: Request | None = None,
 ) -> AuthResponse:
     """签发 access + refresh token。
 
@@ -262,6 +263,18 @@ def _issue_auth_response(
                                   token_version=user.token_version or 0, fid=fid)
     refresh = create_refresh_token(user.id, token_version=user.token_version or 0,
                                    fid=fid)
+    # G-60 活跃会话：登录即建网页会话行（UA/IP/到期），超限时淘汰最久未
+    # 活动的未锁定会话。登记/淘汰失败绝不阻塞登录（逻辑层内已吞异常）。
+    if request is not None:
+        try:
+            from backend import account_security as _sec
+            from backend.authlog import client_ip, user_agent
+            _sec.record_web_session(db, user, fid,
+                                    user_agent=user_agent(request),
+                                    ip=client_ip(request))
+            _sec.evict_for_new_session(db, user, exclude_fid=fid)
+        except Exception:  # noqa: BLE001 — 会话登记失败不阻塞登录
+            logger.exception("登录会话登记失败 user_id=%s", user.id)
 
     return AuthResponse(
         access_token=access,
@@ -513,7 +526,7 @@ def register(request: Request, req: RegisterRequest, db: Session = Depends(get_d
     # 一个人注册成功，就把同出口后来者的 5 次/小时额度白白烧掉一格。
     if rl_enabled:
         reset_rate_limit(rl_key)
-    return _issue_auth_response(user, db, plain_password=req.password)
+    return _issue_auth_response(user, db, plain_password=req.password, request=request)
 
 
 @auth_router.post("/login", response_model=AuthResponse)
@@ -612,7 +625,7 @@ def login(request: Request, req: LoginRequest, db: Session = Depends(get_db)):
     # 没有接线用户名的新用户什么都不写，去接线员页自己设。
     # F4：登录全程成功，清零该账号的失败计数（IP 维度保留不清）。
     login_lockout_record_success("portal", user.username)
-    return _issue_auth_response(user, db, plain_password=req.password)
+    return _issue_auth_response(user, db, plain_password=req.password, request=request)
 
 
 # E1（P2-6）：refresh 轮换容忍窗口——客户端成功换新后因网络重试/并发双发再次携带
@@ -704,6 +717,12 @@ def refresh(req: RefreshRequest, db: Session = Depends(get_db)):
 
     # 轮换保持家族不变；存量无 fid 的 token 从本次起成链（新签一族）。
     new_fid = fid or secrets.token_hex(16)
+    # G-60：refresh 成功＝该家族最近一次活动，刷新会话行的最近活动与到期。
+    try:
+        from backend import account_security as _sec
+        _sec.touch_web_session(db, user_id, new_fid)
+    except Exception:  # noqa: BLE001 — 刷新失败不阻塞换票
+        logger.exception("refresh 会话刷新失败 user_id=%s", user_id)
     return {
         "access_token": create_access_token(user.id, {"username": user.username},
                                           token_version=user.token_version or 0,
@@ -793,6 +812,12 @@ def logout(request: Request,
     except Exception:
         db.rollback()
         raise
+    # G-60：登出后全部网页会话行随之失效，直接清掉（列表剪枝是第二道）。
+    try:
+        from backend import account_security as _sec
+        _sec.clear_web_sessions(db, current_user.id)
+    except Exception:  # noqa: BLE001 — 清理失败不阻塞登出
+        logger.exception("登出会话清理失败 user_id=%s", current_user.id)
     return {"success": True, "message": "已登出"}
 
 
@@ -828,7 +853,7 @@ def tg_login(request: Request, req: TgLoginRequest, db: Session = Depends(get_db
             status_code=403,
             detail="检测到该账号在短时间内于多个城市登录，已被暂停使用，请联系管理员",
         )
-    return _issue_auth_response(user, db)
+    return _issue_auth_response(user, db, request=request)
 
 
 # ==================== 账号安全三件套：登录侧接入 ====================
@@ -944,7 +969,7 @@ def passkey_login_verify(
             status_code=403,
             detail="检测到该账号在短时间内于多个城市登录，已被暂停使用，请联系管理员",
         )
-    return _issue_auth_response(user, db)
+    return _issue_auth_response(user, db, request=request)
 
 
 def _apply_password_change(db: Session, user: models.WebUser, new_password: str) -> None:

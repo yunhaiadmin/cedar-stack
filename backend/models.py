@@ -1067,6 +1067,9 @@ class UserDevice(Base):
     first_seen_at = Column(DateTime, default=datetime.now)
     last_seen_at = Column(DateTime, default=datetime.now)
     is_blocked = Column(Boolean, default=False)
+    # G-60 活跃会话合并模型：防淘汰标记（锁定者不被新登录挤掉）。
+    # 列由 _auto_migrate 末尾补（见 backend/database.py）。
+    locked = Column(Boolean, default=False)
 
     user = relationship("WebUser")
 
@@ -2188,6 +2191,40 @@ class RevokedJwt(Base):
     reason = Column(String(50), nullable=False, default="logout")
     revoked_at = Column(DateTime, default=datetime.now, nullable=False)
     expires_at = Column(DateTime, nullable=False, index=True)
+
+
+class UserWebSession(Base):
+    """网页登录会话（G-60，2026-11-18 活跃会话合并模型）：一次门户登录 =
+    一条 refresh token 家族（fid），一行即一个会话。
+
+    JWT 本身不落库（refresh 家族只有吊销表），列表、最近活动、锁定标记
+    必须有地方记——本表就是该地方：登录时建行（见 emby_portal
+    _issue_auth_response）、refresh 轮换时刷新 last_seen_at/expires_at、
+    登出/改密 bump token_version 后旧行由列表剪枝、家族吊销后行随之消失。
+    新表由 create_all 建，不走 _auto_migrate 补列。
+    """
+
+    __tablename__ = 'user_web_sessions'
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'fid', name='uq_web_session_user_fid'),
+        Index('idx_web_session_user', 'user_id'),
+        Index('idx_web_session_last_seen', 'last_seen_at'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
+    fid = Column(String(64), nullable=False)  # refresh 家族 id，与 JWT 的 fid 同值
+    display_name = Column(String(100), nullable=True)  # 用户改的备注名
+    user_agent = Column(String(300))
+    ip = Column(String(64))
+    created_at = Column(DateTime, default=datetime.now)
+    last_seen_at = Column(DateTime, default=datetime.now)
+    expires_at = Column(DateTime, nullable=False)  # 登录＋30 天（refresh 有效期）
+    token_version = Column(Integer, default=0)  # 签发时的用户 token_version，bump 后行失效
+    locked = Column(Boolean, default=False)  # 防淘汰标记（G-60）
+
+    user = relationship("WebUser")
 
 
 class RevokedTokenFamily(Base):

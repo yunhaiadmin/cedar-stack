@@ -69,12 +69,13 @@
       </div>
     </section>
 
-    <!-- 活跃会话：创建 API Key 胶囊（面板内）＋既有设备/登录记录入口，内容与数据口径不变 -->
+    <!-- 活跃会话：合并列表（G-60/G-62~G-66）——网页登录＋媒体客户端设备＋
+         弹幕 Token 三类一表；创建 API Key 胶囊（面板内）＋登录记录入口保留 -->
     <section class="set-group">
       <h2 class="set-gtitle">活跃会话</h2>
       <div class="set-rows">
         <ApiKeysPanel />
-        <DevicesEntry />
+        <ActiveSessionsPanel />
         <LoginHistoryEntry />
       </div>
     </section>
@@ -213,8 +214,8 @@
  * 账号设置页（/game/account/settings）：个人中心重做后设置类功能的家。
  * 安全相关内容 2026-11-18 照友站账号安全页重组为四组——账户（用户名 /
  * 公开 ID 行 + 复制账户信息）、登录与恢复（密码 / Telegram / 动态验证
- * 码）、Passkeys（独立组）、活跃会话（创建 API Key + 我的设备 / 登录
- * 记录）；其余组不变——绑定（谷歌盘管理 + 已
+ * 码）、Passkeys（独立组）、活跃会话（创建 API Key + 合并会话列表 /
+ * 登录记录）；其余组不变——绑定（谷歌盘管理 + 已
  * 下线绑定解绑）、追剧订阅（订阅列表 / 搜片名订阅 / 分集转存状态，
  * 面板原家；概览归组摘除后归位）、通
  * 知（TG 私聊偏好开关）、展示与隐私（观影排行榜上榜开关）、账号（退出登录）。各块逻辑都在 components/profile/ 的对应组件里（自旧
@@ -235,7 +236,7 @@ import PcEntryRow from '@/components/profile/PcEntryRow.vue'
 import ChangePasswordModal from '@/components/profile/ChangePasswordModal.vue'
 import ChangeEmailModal from '@/components/profile/ChangeEmailModal.vue'
 import { maskEmail } from '@/utils/maskEmail'
-import DevicesEntry from '@/components/profile/DevicesEntry.vue'
+import ActiveSessionsPanel from '@/components/profile/ActiveSessionsPanel.vue'
 import LoginHistoryEntry from '@/components/profile/LoginHistoryEntry.vue'
 import TotpPanel from '@/components/profile/TotpPanel.vue'
 import PasskeysPanel from '@/components/profile/PasskeysPanel.vue'

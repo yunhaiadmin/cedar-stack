@@ -1234,6 +1234,12 @@ def _auto_migrate():
         ("emby_items", [
             ("last_content_added_at", "DATETIME", "NULL"),
         ]),
+        # G-60 活跃会话合并模型（2026-11-18）：媒体客户端设备的防淘汰
+        # 标记。老行补 0＝未锁定，与升级前行为一致。末尾追加（见本函数
+        # 顶部的 _LEGACY_INDEXES 教训：新增条目必须末尾追加）。
+        ("user_devices", [
+            ("locked", "BOOLEAN", "0"),
+        ]),
     ]
 
     _newly_added_columns: list[tuple[str, str]] = []
