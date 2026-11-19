@@ -3,6 +3,7 @@
 覆盖任务书点名项（金额口径 2026-11-19 改定：美元计价）：
 - 创建校验：低于 $1 拒、三键缺失 503、子账号 403、qqpay 门禁；
 - 回调：验签失败不入账、金额对不上不入账、重复回调只入账一次；
+- 状态查询：本人 pending/paid 可查、他人单与不存在单 404、未登录 401；
 - 汇率快照：下单后改价不影响已下单的应付与入账额；
 - 返利计提：source=wallet_topup 被计提并入账邀请人；
 - 汇率解析：主源/备源/旧缓存/手填兜底/强制覆盖/缓冲计算（HTTP 全 mock，
@@ -444,3 +445,70 @@ def test_wallet_info_topup_disabled_without_gateway(db):
     user = _user(db, "u-info2")
     resp = wallet_api.get_wallet(user, db)
     assert resp["topup"]["enabled"] is False
+
+
+# ==================== 充值单状态查询（等待屏轮询） ====================
+
+def test_get_topup_order_pending(db):
+    user, order_no = _paid_setup(db, "u-get-pending")
+    resp = wallet_api.get_topup_order(order_no, user, db)
+    assert resp["ok"] is True
+    assert resp["order_no"] == order_no
+    assert resp["status"] == "pending"
+    # 金额与下单口径一致：$9.80 @7.344 → 应付 ¥71.97、到账全额 $9.80
+    assert resp["amount_usd"] == "9.80"
+    assert resp["amount_usd_fen"] == 980
+    assert resp["amount_cny"] == "71.97"
+    assert resp["amount_cny_fen"] == 7197
+    assert resp["credit_usd"] == "9.80"
+    assert resp["credit_usd_fen"] == 980
+    assert resp["payment_method"] == "alipay"
+    assert resp["paid_at"] is None
+    assert resp["created_at"] is not None
+
+
+def test_get_topup_order_paid(db):
+    user, order_no = _paid_setup(db, "u-get-paid")
+    reply, _ = wallet_api._topup_notify_core(db, _notify_raw(order_no))
+    assert reply == "success"
+    resp = wallet_api.get_topup_order(order_no, user, db)
+    assert resp["status"] == "paid"
+    assert resp["paid_at"] is not None
+
+
+def test_get_topup_order_other_user_404(db):
+    _owner, order_no = _paid_setup(db, "u-get-owner")
+    other = _user(db, "u-get-other")
+    with pytest.raises(HTTPException) as exc:
+        wallet_api.get_topup_order(order_no, other, db)
+    assert exc.value.status_code == 404
+
+
+def test_get_topup_order_missing_404(db):
+    user = _user(db, "u-get-missing")
+    with pytest.raises(HTTPException) as exc:
+        wallet_api.get_topup_order("WT-DOES-NOT-EXIST", user, db)
+    assert exc.value.status_code == 404
+
+
+def test_get_topup_order_http_auth(db):
+    """HTTP 层：路由真实挂上、未登录 401、本人带 token 200。"""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from backend.database import get_db
+    from backend.security import create_access_token
+
+    user, order_no = _paid_setup(db, "u-get-http")
+    app = FastAPI()
+    app.include_router(wallet_api.wallet_router)
+    app.dependency_overrides[get_db] = lambda: db
+    client = TestClient(app, raise_server_exceptions=False)
+    url = f"/api/user/wallet/topup/orders/{order_no}"
+    assert client.get(url).status_code == 401
+    token = create_access_token(
+        user.id, {"username": user.username},
+        token_version=user.token_version or 0)
+    resp = client.get(url, headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "pending"
