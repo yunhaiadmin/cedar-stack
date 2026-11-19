@@ -219,55 +219,28 @@ def test_p1b2_withdraw_logic(tmp_path):
         engine.dispose()
 
 
-# ---------- A-P1-3：明文密码迁移 ----------
+# ---------- A-P1-3：明文密码迁移（已随账号统一退役） ----------
 
-def test_p1b2_verify_and_migrate_exists():
-    """A-P1-3: 收敛 helper 存在。"""
+def test_p1b2_emby_credential_helpers_removed():
+    """账号统一（2026-11-19）：接线凭据三 helper 已删除，不许复活。
+
+    原 A-P1-3 的「校验+透明迁移」收敛点随 emby_password 停用整体下线；
+    客户端登录改验 password_hash（见 test_account_unify_client_login）。
+    """
     from backend.emby_server import auth
-    assert callable(auth.verify_and_migrate_emby_password)
+    assert not hasattr(auth, "verify_and_migrate_emby_password")
+    assert not hasattr(auth, "verify_emby_password")
+    assert not hasattr(auth, "ensure_emby_credentials")
 
 
-def test_p1b2_plaintext_migrates_on_login(tmp_path):
-    """A-P1-3: 明文密码登录成功后升级为 bcrypt-sha256。"""
-    from backend.emby_server import auth
-    Session, engine = _make_session(tmp_path)
-    db = Session()
-    try:
-        cols = {c.name for c in models.WebUser.__table__.columns}
-        kwargs = {"username": "plainuser"}
-        if "password_hash" in cols:
-            from backend.security import hash_password
-            kwargs["password_hash"] = hash_password("x")
-        user = models.WebUser(**kwargs)
-        user.emby_password = "plain123"
-        db.add(user)
-        db.commit()
-        uid = user.id
-
-        ok = auth.verify_and_migrate_emby_password(db, user, "plain123")
-        assert ok is True
-        db.refresh(user)
-        assert user.emby_password.startswith("$bcrypt-sha256$")
-        # 错误密码不升级
-        user.emby_password = "plain123"
-        db.commit()
-        ok2 = auth.verify_and_migrate_emby_password(db, user, "wrong")
-        assert ok2 is False
-        db.refresh(user)
-        assert user.emby_password == "plain123"
-    finally:
-        db.close()
-        engine.dispose()
-
-
-def test_p1b2_api_uses_converged_helper():
-    """A-P1-3: api.py 不再手写 startswith 分支。"""
+def test_p1b2_api_verifies_portal_password_hash():
+    """账号统一：api.py 的 AuthenticateByName 只验 password_hash。"""
     import inspect
     from backend.emby_server import api as emby_api
     src = inspect.getsource(emby_api)
-    assert "verify_and_migrate_emby_password" in src
-    # 旧的冗余分支已删除
-    assert 'not user.emby_password.startswith(("$2", "$bcrypt-sha256$"))' not in src
+    assert "verify_password(password, user.password_hash)" in src
+    assert "verify_and_migrate_emby_password" not in src
+    assert "verify_emby_password" not in src
 
 
 # ---------- F-P1-17 / F-P1-24：单事务 ----------

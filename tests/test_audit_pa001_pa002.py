@@ -1,7 +1,11 @@
-"""前后端完美审计 R1·B1：PA-001（P1）接线员页改播放密码不吊销 Emby 令牌；
+"""前后端完美审计 R1·B1：PA-001（P1）改密不吊销 Emby 令牌；
 PA-002（P2）管理员停用用户不吊销令牌，恢复启用后旧会话复活。
 
 先红后绿：本文件在旧码上应红（吊销断言失败），修复后全绿。
+
+账号统一（2026-11-19）后 PA-001 的载体由「接线员页改播放密码」
+（端点已删）改为唯一的改密路径 ``_apply_password_change``：
+改密必须吊销全部 Emby 令牌并 bump 门户 token_version。
 """
 import os
 from datetime import datetime, timedelta
@@ -17,16 +21,14 @@ from fastapi.security import HTTPAuthorizationCredentials
 from backend import models, security
 from backend.api.admin import UserUpdateRequest, update_user
 from backend.api.admins_admin import UpdateAdminRequest, update_admin
-from backend.api.emby_portal import get_current_user_jwt
+from backend.api.emby_portal import _apply_password_change, get_current_user_jwt
 from backend.database import SessionLocal, init_db
 from backend.emby_server import models as emby_models
 from backend.emby_server.api import authenticate_by_name
 from backend.emby_server.auth import (
-    ensure_emby_credentials,
     hash_emby_token,
     resolve_token,
 )
-from backend.emby_server.portal import SetPasswordRequest, set_emby_password
 
 init_db()
 
@@ -48,7 +50,7 @@ def _req(client_ip="127.0.0.1", headers=None):
 
 
 def _make_user(username, password="old-pass-123", is_staff=False,
-               admin_role=None, emby_username=None):
+               admin_role=None):
     db = SessionLocal()
     try:
         old = db.query(models.WebUser).filter(models.WebUser.username == username).first()
@@ -62,7 +64,6 @@ def _make_user(username, password="old-pass-123", is_staff=False,
             is_staff=is_staff,
             admin_role=admin_role,
             token_version=0,
-            emby_username=emby_username,
         )
         db.add(u)
         db.commit()
@@ -107,54 +108,44 @@ def _fresh_user(uid):
 
 # ---------------- PA-001 ----------------
 
-def test_pa001_set_emby_password_revokes_emby_tokens():
-    """接线员页改播放密码后，旧 Emby 令牌（含 expires_at 为空的历史令牌）必须全部吊销。"""
-    uid = _make_user("pa001_main", emby_username="pa001_emby")
-    db = SessionLocal()
-    try:
-        user = db.query(models.WebUser).filter(models.WebUser.id == uid).first()
-        ensure_emby_credentials(db, user, password="old-play-123")
-    finally:
-        db.close()
+def test_pa001_password_change_revokes_emby_tokens():
+    """网站改密后，旧 Emby 令牌（含 expires_at 为空的历史令牌）必须全部吊销。"""
+    uid = _make_user("pa001_main")
     legacy = _emby_token(uid, "pa001-legacy", None)
     fresh = _emby_token(uid, "pa001-fresh", datetime.now() + timedelta(days=30))
     db = SessionLocal()
     try:
         user = db.query(models.WebUser).filter(models.WebUser.id == uid).first()
-        out = set_emby_password(SetPasswordRequest(password="new-play-999"), user, db)
-        assert out["success"] is True
+        _apply_password_change(db, user, "new-pass-999")
+        db.commit()
     finally:
         db.close()
     m = _revoked_map(uid)
     assert m[legacy] is True and m[fresh] is True
 
 
-def test_pa001_new_play_password_authenticates_and_portal_jwt_kept():
-    """改播放密码后：门户 JWT 仍有效；新播放密码经 AuthenticateByName 能拿新令牌；旧 Emby 令牌已失效。"""
-    uid = _make_user("pa001_login", emby_username="pa001_login_emby")
-    db = SessionLocal()
-    try:
-        user = db.query(models.WebUser).filter(models.WebUser.id == uid).first()
-        ensure_emby_credentials(db, user, password="old-play-123")
-    finally:
-        db.close()
+def test_pa001_new_password_authenticates_and_old_jwt_dies():
+    """改密后：旧门户 JWT 失效（tv bump）；新密码经 AuthenticateByName（网站名）
+    能拿新令牌；旧 Emby 令牌已失效、旧密码不再通过。"""
+    uid = _make_user("pa001_login")
     old_plain = "pa001-old-token"
     _emby_token(uid, old_plain, datetime.now() + timedelta(days=30))
     portal_token = security.create_access_token(uid, token_version=0)
     db = SessionLocal()
     try:
         user = db.query(models.WebUser).filter(models.WebUser.id == uid).first()
-        set_emby_password(SetPasswordRequest(password="new-play-999"), user, db)
+        _apply_password_change(db, user, "new-pass-999")
+        db.commit()
     finally:
         db.close()
     user = _fresh_user(uid)
-    assert int(user.token_version or 0) == 0, "只改播放密码不应 bump 门户 token_version"
-    # 门户 JWT 仍有效
+    assert int(user.token_version or 0) == 1, "改密必须 bump 门户 token_version"
+    # 旧门户 JWT 已失效
     db = SessionLocal()
     try:
-        got = get_current_user_jwt(
-            _req(), HTTPAuthorizationCredentials(scheme="Bearer", credentials=portal_token), db)
-        assert got.id == uid
+        with pytest.raises(HTTPException):
+            get_current_user_jwt(
+                _req(), HTTPAuthorizationCredentials(scheme="Bearer", credentials=portal_token), db)
     finally:
         db.close()
     # 旧 Emby 令牌已失效
@@ -163,12 +154,12 @@ def test_pa001_new_play_password_authenticates_and_portal_jwt_kept():
         assert resolve_token(db, _req(headers=[(b"x-emby-token", old_plain.encode())])) is None
     finally:
         db.close()
-    # 新播放密码经 AuthenticateByName 能拿新令牌；旧播放密码不再通过
+    # 新密码经 AuthenticateByName 能拿新令牌；旧密码不再通过
     db = SessionLocal()
     try:
         out = authenticate_by_name(
             _req(client_ip="10.1.0.1", headers=[(b"user-agent", b"pa-test")]),
-            {"Username": "pa001_login_emby", "Pw": "new-play-999"}, db)
+            {"Username": "pa001_login", "Pw": "new-pass-999"}, db)
     finally:
         db.close()
     assert isinstance(out, dict) and out.get("AccessToken"), out
@@ -183,7 +174,7 @@ def test_pa001_new_play_password_authenticates_and_portal_jwt_kept():
     try:
         fail = authenticate_by_name(
             _req(client_ip="10.1.0.2", headers=[(b"user-agent", b"pa-test")]),
-            {"Username": "pa001_login_emby", "Pw": "old-play-123"}, db)
+            {"Username": "pa001_login", "Pw": "old-pass-123"}, db)
     finally:
         db.close()
     assert getattr(fail, "status_code", None) == 401

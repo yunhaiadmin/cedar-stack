@@ -34,7 +34,6 @@ from backend.authlog import REASONS as AUTHLOG_REASONS, client_ip as log_ip, rec
 from backend import share_guard
 from backend.database import get_db
 from backend.devices import device_limit
-from backend.emby_server.auth import ensure_emby_credentials
 from backend.subscriptions import (
     download_allowed,
     has_active_subscription,
@@ -126,7 +125,6 @@ class UserOut(BaseModel):
     public_id: str | None = None
     username: str
     email: str | None = None
-    emby_username: str | None = None
     is_vip: bool = False
     is_active: bool = True
     # 是否管理员：用户端据此显示「管理后台」入口（管理后台与门户同一套 JWT）
@@ -213,7 +211,6 @@ def _user_out(user: models.WebUser, db: Session | None = None) -> UserOut:
         public_id=getattr(user, "public_id", None),
         username=user.username,
         email=user.email,
-        emby_username=user.emby_username,
         is_vip=is_vip,
         is_active=user.is_active,
         is_staff=bool(user.is_staff),
@@ -234,15 +231,9 @@ def _issue_auth_response(
 ) -> AuthResponse:
     """签发 access + refresh token。
 
-    不再自动生成接线用户名，也不为还没有接线用户名的用户把门户密码写成播放密码。
-    用户去接线员页自行设置（``POST /api/user/emby/password``）。
-
-    兼容：已经有 ``emby_username``、但还没有 ``emby_password`` 的老用户，
-    登录时用本次已验证的门户密码补一次（fill_only）。已有播放密码的不被覆盖。
-    没带明文密码的路径（刷新后的换票、Telegram 免密登录）什么都不补。
+    账号统一（2026-11-19）后登录不碰任何接线凭据：客户端登录直接验
+    网站密码，``plain_password`` 参数保留只为调用点签名兼容，不再使用。
     """
-    if plain_password:
-        ensure_emby_credentials(db, user, password=plain_password, fill_only=True)
     # F8：一次登录 = 一个 token 家族（fid）。access 与 refresh 同家族，
     # refresh 轮换保持家族不变；复用检测按家族吊销，不误杀同用户其它设备。
     fid = secrets.token_hex(16)
@@ -962,16 +953,15 @@ def passkey_login_verify(
 def _apply_password_change(db: Session, user: models.WebUser, new_password: str) -> None:
     """改密落地：change_password 与邮箱找回重置共用同一套副作用，只改字段不提交。
 
-    1. 门户密码哈希换新；
-    2. 同步自建 Emby 播放密码（bcrypt 哈希存储），保持两端一致；
-    3. token_version +1，旧门户 JWT 全部作废（P3 修复：防盗号后持续登录）；
-    4. 吊销该用户全部 Emby 客户端令牌（A-085，360° 审计第二遍 R25-01）——
+    1. 门户密码哈希换新（账号统一后客户端登录验的就是这份哈希，
+       不再有第二份播放密码需要同步）；
+    2. token_version +1，旧门户 JWT 全部作废（P3 修复：防盗号后持续登录）；
+    3. 吊销该用户全部 Emby 客户端令牌（A-085，360° 审计第二遍 R25-01）——
        只 bump 门户 JWT 的话，被盗的播放器令牌（历史令牌 expires_at 为空、
        永不过期）改密后仍可播放。复用 share_guard._disable_user 的现成写法。
     提交时机由调用方负责（与上面的 JWT bump 同一事务）。
     """
     user.password_hash = hash_password(new_password)
-    user.emby_password = hash_password(new_password)
     user.token_version = int(user.token_version or 0) + 1
     from backend.emby_server import models as emby_models
     db.query(emby_models.EmbyApiToken).filter(

@@ -58,10 +58,9 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 # ==================== 播种数据 ====================
 
 with SessionLocal() as db:
-    # 接线用户名不再由账号卡顺手生成；scheme 断言需要库里已经有用户名。
+    # 账号统一后账号卡 scheme 用网站用户名拼（sec-alice）。
     alice = models.WebUser(
         username="sec-alice", password_hash=hash_password("alice-pw"), is_active=True,
-        emby_username="sec_alice",
     )
     bob = models.WebUser(username="sec-bob", password_hash=hash_password("bob-pw"), is_active=True)
     staff = models.WebUser(

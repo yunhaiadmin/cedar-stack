@@ -55,10 +55,9 @@ def seed():
                     models.WebUser.id == old.id).delete()
                 db.commit()
             user = models.WebUser(
-                username=uname, password_hash="x", is_active=True,
-                is_staff=False, emby_username=uname,
+                username=uname, password_hash=hash_password(PW), is_active=True,
+                is_staff=False,
             )
-            user.emby_password = hash_password(PW)
             db.add(user)
             db.commit()
             ids[uname] = user.id

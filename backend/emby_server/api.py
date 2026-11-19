@@ -2007,7 +2007,7 @@ def authenticate_by_name(
     # F4（黑盒审计）：失败锁定。上面的请求数限流只数总量，把尝试摊开
     # 慢慢猜、或换 IP 横扫都能绕；这里与门户/管理端共用同一守卫，按
     # 账号＋IP 双维度只数失败，达阈值临时锁定（scope=emby 独立计数，
-    # 播放密码与门户密码不互通，不跨口串扰）。
+    # 不跨口串扰；账号统一后与门户验同一密码，锁定口径仍按口分开）。
     from backend.ratelimit import (
         login_lockout_check,
         login_lockout_config,
@@ -2026,18 +2026,14 @@ def authenticate_by_name(
 
     user = None
     if username:
-        # 优先自建 Emby 凭据，其次门户账号
+        # 账号统一（2026-11-19）：只认网站账号。查名保留过渡别名——
+        # 历史接线名（emby_username）仍可命中同一行，删列收口时去掉；
+        # 验的密码一律是网站密码（password_hash），接线密码不再有效。
         user = db.query(models.WebUser).filter(
             or_(models.WebUser.emby_username == username, models.WebUser.username == username)
         ).first()
 
-    # 日志用：这次登录名命中的是自建 Emby 用户名还是门户用户名（只记类型不记值）。
-    # 此前日志恒记门户用户名，「接线员随机账号登录异常」类报告无法用日志定案（2026-10-23）
-    matched_via = None
-    if user is not None:
-        matched_via = "emby_username" if user.emby_username == username else "username"
-
-    from backend.emby_server.auth import issue_token, verify_and_migrate_emby_password
+    from backend.emby_server.auth import issue_token
 
     def _auth_fail(detail: str = "用户名或密码错误"):
         from backend.authlog import record_event
@@ -2049,7 +2045,7 @@ def authenticate_by_name(
             db, username=username, user_id=user.id if user else None, ip=ip,
             agent=request.headers.get("user-agent"), success=False,
             reason="emby_login_failed",
-            detail=f"{detail}（via={matched_via}）" if matched_via else detail,
+            detail=detail,
         )
         # 对齐官方 Emby：认证失败返回 401 空 body。
         # 曾返回 {"error": "InvalidUsernameOrPassword"} JSON，官方 iOS 客户端会尝试
@@ -2067,10 +2063,9 @@ def authenticate_by_name(
     if not user.is_active or not password:
         return _auth_fail()
 
-    # 密码校验：支持哈希与明文；明文/旧格式在成功后透明升级为 bcrypt-sha256。
-    # A-P1-3："校验+升级"收敛到 verify_and_migrate_emby_password 一处，
-    # 不再手写 startswith 分支（ensure 内已含 needs_password_rehash 判断）。
-    if not verify_and_migrate_emby_password(db, user, password):
+    # 密码校验（账号统一，2026-11-19）：只验网站密码 password_hash，
+    # 与门户登录同一口径；接线密码（emby_password）不再参与校验。
+    if not verify_password(password, user.password_hash):
         return _auth_fail()
 
     # 设备数上限：超限时拒绝签发（管理员不受限），并落安全日志
@@ -2110,7 +2105,7 @@ def authenticate_by_name(
     record_event(
         db, username=user.username, user_id=user.id, ip=ip,
         agent=request.headers.get("user-agent"), success=True, reason="emby_login",
-        detail=f"{auth.get('Client') or 'Emby Client'} / {token_row.device_id} / via={matched_via}",
+        detail=f"{auth.get('Client') or 'Emby Client'} / {token_row.device_id}",
     )
     # 防共享·跨城市轨迹（默认 off，不判定也不写库）。命中 enforce 时账号已被停用、
     # 刚签发的令牌也已吊销，所以直接拒绝本次登录而不是「登进去发现不能用」
@@ -2142,9 +2137,8 @@ def authenticate_by_name(
         "ServerId": server_id,
         "SessionInfo": {
             "UserId": str(user.id),
-            # r50 口径统一：与 _user_dto 的 Name 一致（emby_username 优先），
-            # 官方两者一致；此前一个用 username、一个用 emby_username。
-            "UserName": user.emby_username or user.username,
+            # 账号统一（2026-11-19）：与 _user_dto 的 Name 一致，一律网站用户名。
+            "UserName": user.username,
             "Client": auth.get("Client") or "Emby",
             "DeviceName": auth.get("Device") or "Unknown Device",
             "DeviceId": token_row.device_id,
@@ -2440,7 +2434,7 @@ def _user_dto(user: models.WebUser, db: Session) -> dict:
     }
     return {
         "Id": str(user.id),
-        "Name": user.emby_username or user.username,
+        "Name": user.username,
         "ServerId": SERVER_ID,
         "HasPassword": True,
         "HasConfiguredPassword": True,

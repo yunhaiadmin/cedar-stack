@@ -33,11 +33,9 @@ admin = models.AdminUser(username="admin", password_hash="x", role="super_admin"
 db.add(admin)
 user = models.WebUser(
     username="alice",
-    password_hash="x",
+    password_hash=hash_password("alice-play-pw"),
     is_active=True,
     is_staff=True, admin_role="super",
-    emby_username="emby_alice",
-    emby_password=hash_password("alice-play-pw"),
 )
 db.add(user)
 db.commit()

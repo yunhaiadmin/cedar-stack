@@ -107,8 +107,8 @@ def seed(tmp_path_factory):
     db = SessionLocal()
     try:
         user = models.WebUser(
-            username=UNAME, password_hash="x", is_active=True, is_staff=False,
-            emby_username=UNAME, emby_password=hash_password(PW))
+            username=UNAME, password_hash=hash_password(PW), is_active=True, is_staff=False,
+            )
         db.add(user)
         db.flush()
 

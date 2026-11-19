@@ -255,8 +255,7 @@ def seed():
     db.commit()
 
     user = models.WebUser(username=UNAME, password_hash=hash_password(PW),
-                          is_active=True, is_staff=True, emby_username=UNAME,
-                          emby_password=hash_password(PW))
+                          is_active=True, is_staff=True)
     db.add(user)
     host = _lib(db, f"{SEED}-host")
     real_with_cover = _lib(db, f"{SEED}-real-cover",

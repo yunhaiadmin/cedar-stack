@@ -92,8 +92,7 @@ def seed():
     users = {}
     for uname in (BOUND, FREE):
         u = models.WebUser(username=uname, password_hash=hash_password(PW),
-                           is_active=True, is_staff=True, emby_username=uname,
-                           emby_password=hash_password(PW))
+                           is_active=True, is_staff=True)
         db.add(u)
         db.flush()
         users[uname] = u.id

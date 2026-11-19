@@ -36,11 +36,9 @@ def seed():
             db.query(models.WebUser).filter(models.WebUser.id == old.id).delete()
     db.commit()
     alice = models.WebUser(username="review_alice", password_hash="x",
-                           is_active=True, emby_username="review_alice",
-                           emby_password="p")
+                           is_active=True)
     bob = models.WebUser(username="review_bob", password_hash="x",
-                         is_active=True, emby_username="review_bob",
-                         emby_password="p")
+                         is_active=True)
     db.add_all([alice, bob])
     db.flush()
 

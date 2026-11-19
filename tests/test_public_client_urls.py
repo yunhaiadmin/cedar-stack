@@ -296,8 +296,7 @@ def seed():
         db.query(em.Library).filter(em.Library.id == lib.id).delete()
     db.commit()
     user = models.WebUser(
-        username=UNAME, password_hash="x", is_active=True, is_staff=True,
-        emby_username=UNAME, emby_password=hash_password(PW),
+        username=UNAME, password_hash=hash_password(PW), is_active=True, is_staff=True,
     )
     db.add(user)
     lib = em.Library(guid=_guid(), name="公开地址测试库", collection_type="movies", is_enabled=True)

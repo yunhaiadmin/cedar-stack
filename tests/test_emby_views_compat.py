@@ -93,12 +93,10 @@ def seed():
     db.commit()
     user = models.WebUser(
         username=UNAME,
-        password_hash="x",
+        password_hash=hash_password(PW),
         is_active=True,
         # 管理员绕过付费墙，才能覆盖 PlaybackInfo（CanDelete 恒为 False，不受身份影响）
         is_staff=True,
-        emby_username=UNAME,
-        emby_password=hash_password(PW),
     )
     db.add(user)
     lib = em.Library(guid=_guid(), name="兼容测试库", collection_type="movies",

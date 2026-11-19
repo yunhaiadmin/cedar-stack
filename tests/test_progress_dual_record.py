@@ -22,6 +22,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend import models
+from backend.security import hash_password
 from backend.database import SessionLocal, init_db
 from backend.emby_server import models as em
 from backend.emby_server.api import _user_data_dto, mark_played, mark_unplayed
@@ -62,9 +63,8 @@ def seed():
                 synchronize_session=False)
         db.query(em.Library).filter(em.Library.id == stale.id).delete()
     db.commit()
-    user = models.WebUser(username=UNAME, password_hash="x", is_active=True,
-                          is_staff=True, emby_username="pd_emby_alice",
-                          emby_password=PW)
+    user = models.WebUser(username=UNAME, password_hash=hash_password(PW), is_active=True,
+                          is_staff=True)
     db.add(user)
     lib = em.Library(guid=_guid(), name="pd双记库", collection_type="movies",
                      is_enabled=True)

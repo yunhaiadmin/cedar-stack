@@ -718,7 +718,6 @@ def get_user_detail(
             "email": user.email,
             "is_active": user.is_active,
             "is_staff": user.is_staff,
-            "emby_username": user.emby_username,
             "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
             "created_at": user.created_at.isoformat() if user.created_at else None,
         },

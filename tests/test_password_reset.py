@@ -235,10 +235,12 @@ def test_confirm_happy_path_and_side_effects(db, mail_channel):
     db.refresh(other)
     used = db.query(models.PasswordResetToken).filter_by(
         token_hash=hashlib.sha256(raw.encode()).hexdigest()).one()
-    # 与 change_password 同口径：门户密码 + Emby 播放密码都换新
+    # 与 change_password 同口径：只换门户密码一份（账号统一后客户端
+    # 登录验的就是它）；历史接线密码列不再被改密触碰、保持原值。
     assert verify_password("New-pass-9", user.password_hash)
     assert not verify_password("Old-pass-1", user.password_hash)
-    assert verify_password("New-pass-9", user.emby_password)
+    assert verify_password("Old-pass-1", user.emby_password)
+    assert not verify_password("New-pass-9", user.emby_password)
     # JWT 版本 +1（旧门户令牌作废）、Emby 客户端令牌全吊销
     assert user.token_version == 4
     db.refresh(token_row)

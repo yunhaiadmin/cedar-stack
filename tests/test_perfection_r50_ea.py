@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 from backend import models
+from backend.security import hash_password
 from backend.database import SessionLocal, init_db
 from backend.emby_server import models as em
 from backend.emby_server.auth import _token_from_request, issue_token
@@ -66,10 +67,9 @@ def seed():
                 synchronize_session=False)
         db.query(em.Library).filter(em.Library.id == stale.id).delete()
     db.commit()
-    user = models.WebUser(username=UNAME, password_hash="x", is_active=True,
-                          is_staff=True,  # 管理员绕过付费墙，覆盖 PlaybackInfo
-                          emby_username="r50_emby_alice",
-                          emby_password=PW)  # 明文：verify_emby_password 兼容明文
+    # 账号统一后客户端登录验 password_hash，不再有接线凭据夹具。
+    user = models.WebUser(username=UNAME, password_hash=hash_password(PW), is_active=True,
+                          is_staff=True)  # 管理员绕过付费墙，覆盖 PlaybackInfo
     db.add(user)
     lib = em.Library(guid=_guid(), name="r50兼容库", collection_type="movies",
                      is_enabled=True)

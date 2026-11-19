@@ -219,9 +219,8 @@ from backend import models as _web_models  # noqa: E402
 from backend.security import hash_password as _hash_pw  # noqa: E402
 
 _viewer = _web_models.WebUser(
-    username="imglocalize_viewer", password_hash="x", is_active=True,
-    emby_username="emby_imglocalize_viewer",
-    emby_password=_hash_pw("imglocalize-pw"))
+    username="imglocalize_viewer", password_hash=_hash_pw("imglocalize-pw"),
+    is_active=True)
 db.add(_viewer)
 db.commit()
 _auth = client.post(

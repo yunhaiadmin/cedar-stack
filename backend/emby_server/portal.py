@@ -25,11 +25,9 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import and_, case, func, or_
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
 from backend import line_quota, models, realms, subscriptions
-from backend.usernames import username_conflict
 from backend.database import get_db, SessionLocal
 
 from backend.emby_server import models as em
@@ -42,7 +40,6 @@ from backend.emby_server.api import (
     season_poster_url,
 )
 from backend.emby_server.auth import (
-    ensure_emby_credentials,
     get_admin_or_emby_user,
 )
 from backend.emby_server.facets import count_virtual_items  # 索引版（虚拟库条目数）
@@ -368,7 +365,8 @@ def _account_card(user: models.WebUser, db: Session, realm_id: int | None = None
     没权限时 ``base_url`` / ``import_schemes`` / ``emby_username`` 置空不下发，
     前端据 ``view_permission`` 展示开通入口。
 
-    没有接线用户名时同样不下发导入 scheme（空用户名的链接没有用）。
+    账号统一（2026-11-19）：``emby_username`` 字段下发的就是网站用户名
+    （客户端与网站共用一套账号），导入 scheme 同样用网站名拼。
     本接口从不把密码拼进 scheme；密码只在前端内存里拼接。
     """
     if realm_id is None:
@@ -378,8 +376,8 @@ def _account_card(user: models.WebUser, db: Session, realm_id: int | None = None
     external = mode == "external"
     realm = realms.realm_snapshot(db, realm_id)
     granted = _realm_view_granted(db, user, realm_id)
-    # 未设置接线用户名时是空串，不是 null：账号卡这个字段一直是字符串。
-    emby_username = (user.emby_username or "") if granted else ""
+    # 账号卡这个字段一直是字符串：下发网站用户名，没权限时空串。
+    card_username = (user.username or "") if granted else ""
     # 服务器显示名走唯一解析口径（配置键 > env > 默认），与 System/Info 同源
     from backend import servers as server_registry
 
@@ -390,21 +388,22 @@ def _account_card(user: models.WebUser, db: Session, realm_id: int | None = None
         "mode": mode,
         "external": external,
         "account_managed_by": "external" if external else "portal",
-        "emby_username": emby_username,
+        "emby_username": card_username,
+        # 兼容字段：账号统一后不再有独立的接线密码，恒 null。
         "emby_password": None,
-        # has_password 不 gate：它只是用户自己的密码设置状态，不泄露服务器信息；
-        # 冒烟测试也依赖它（set-password 后断言为 True）
-        "has_password": bool(user.emby_password),
+        # has_password 不 gate：它只是用户自己的密码设置状态，不泄露服务器信息。
+        # 账号统一后看网站密码（password_hash 恒有值，本站用户恒 True）。
+        "has_password": bool(user.password_hash),
         "realm_id": realm.id if realm else None,
         "realm_name": realm.name if realm else "",
         "allow_download": subscriptions.download_allowed(db, realm_id),
         # 没用户名时不发 scheme。密码参数留给前端：这里绝不传入 password。
-        "import_schemes": {} if (external or not granted or not emby_username) else {
+        "import_schemes": {} if (external or not granted or not card_username) else {
             # Rex 播放器一键导入（2026-10-10 用户要求替换 forward）。
-            "Rex": _rex_import_link(url, emby_username),
-            "senplayer": _senplayer_import_link(url, emby_username),
+            "Rex": _rex_import_link(url, card_username),
+            "senplayer": _senplayer_import_link(url, card_username),
             # VidHub 播放器一键导入（2026-10-15 用户要求新增，参数格式与 Rex 同）。
-            "VidHub": _vidhub_import_link(url, emby_username),
+            "VidHub": _vidhub_import_link(url, card_username),
         },
         "view_permission": {
             "granted": granted,
@@ -515,14 +514,14 @@ def _user_realm_cards(user: models.WebUser, db: Session,
 async def get_server_info(request: Request,
                           request_user: models.WebUser = Depends(get_admin_or_emby_user),
                           db: Session = Depends(get_db)):
-    """返回账号卡信息：服务器地址 + 接线用户名 + 播放器导入 scheme
+    """返回账号卡信息：服务器地址 + 网站用户名 + 播放器导入 scheme
 
     ``?realm_id=`` 可以指定要哪个服的地址（多服部署下同一个用户可能持有几个服的会员），
     不传则用面板当前服。
 
-    只读：不创建接线用户名，也不写入播放密码。未设置时 ``emby_username`` 为空串、
-    ``has_password`` 为 false，且不下发 ``import_schemes``。响应里的
-    ``emby_password`` 恒为 null，明文密码不会出现在 scheme 里。
+    只读。账号统一后 ``emby_username`` 下发网站用户名（没权限时为空串、
+    且不下发 ``import_schemes``）；``has_password`` 看网站密码（恒 True）。
+    响应里的 ``emby_password`` 恒为 null，明文密码不会出现在 scheme 里。
     """
     user = request_user
     realm_id = None
@@ -553,76 +552,6 @@ def unlock_emby_view(
     if realm is None:
         raise HTTPException(status_code=404, detail="服不存在")
     raise HTTPException(status_code=400, detail="查看权限来自有效订阅，无需单独解锁")
-
-
-class SetPasswordRequest(BaseModel):
-    password: str
-    # 首次设置必填；用户名写好之后可省略。与当前值相同也可以，不同则拒绝。
-    username: str | None = None
-
-
-def _emby_username_taken(db: Session, user: models.WebUser, username: str) -> bool:
-    """接线用户名不能跟别人的接线用户名或门户用户名撞车。
-
-    客户端登录同时认这两个字段（``AuthenticateByName`` 用 OR 查询）。
-    撞上别人的门户用户名时，``.first()`` 会不确定命中谁。大小写不敏感
-    口径与注册一致（``username_conflict``）：仅大小写不同也算撞车。
-    """
-    return username_conflict(db, username, exclude_user_id=user.id) is not None
-
-
-@user_emby_router.post("/password")
-def set_emby_password(
-    req: SetPasswordRequest,
-    request_user: models.WebUser = Depends(get_admin_or_emby_user),
-    db: Session = Depends(get_db),
-):
-    """设置接线账号（用户名 + 播放密码）或只改播放密码。
-
-    首次（还没有 ``emby_username``）：``username`` 和 ``password`` 都必填。
-    用户名规则与门户注册相同（字母 / 数字 / 下划线，3-32 位），且不能与
-    其他用户的门户用户名或接线用户名重复。写好后不可修改。
-
-    之后：只提交 ``password`` 即可。``username`` 省略，或与当前值相同，都接受；
-    提交了不同的用户名则 400「用户名设好后不可修改」。
-
-    密码 bcrypt 存储。响应只有 ``success`` 和 ``emby_username``，不回明文密码。
-    """
-    if not (3 <= len(req.password) <= 64):
-        raise HTTPException(status_code=400, detail="密码长度需为 3-64 位")
-
-    supplied = req.username.strip() if isinstance(req.username, str) else None
-    current = request_user.emby_username or ""
-    if not current:
-        if not supplied:
-            raise HTTPException(status_code=400, detail="首次设置接线账号需要同时提供用户名和密码")
-        from backend.api.emby_portal import USERNAME_RE
-
-        if not USERNAME_RE.match(supplied):
-            raise HTTPException(
-                status_code=400,
-                detail="用户名只能包含字母、数字、下划线，长度 3-32 位",
-            )
-        if _emby_username_taken(db, request_user, supplied):
-            raise HTTPException(status_code=409, detail="用户名已被占用")
-        request_user.emby_username = supplied
-    elif supplied is not None and supplied != current:
-        raise HTTPException(status_code=400, detail="用户名设好后不可修改")
-
-    try:
-        ensure_emby_credentials(db, request_user, password=req.password)
-        # PA-001（完美审计 R1·B1）：接线员页改播放密码必须同时吊销该用户全部
-        # Emby 客户端令牌——与自助改密/管理员重置/管理员自改密同口径（A-085）。
-        # 只改播放密码，不 bump 门户 token_version，门户 JWT 会话保持。
-        db.query(em.EmbyApiToken).filter(
-            em.EmbyApiToken.user_id == request_user.id
-        ).update({em.EmbyApiToken.is_revoked: True}, synchronize_session=False)
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(status_code=409, detail="用户名已被占用")
-    db.refresh(request_user)
-    return {"success": True, "emby_username": request_user.emby_username}
 
 
 @user_emby_router.get("/play-line")

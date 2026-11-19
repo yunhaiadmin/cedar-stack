@@ -47,8 +47,8 @@ def ok(msg: str) -> None:
 # ---- 造数据 ----
 db = Session()
 user = models.WebUser(
-    username="alice", password_hash="x", is_active=True, is_staff=True, admin_role="super",
-    emby_username="emby_alice", emby_password=hash_password("alice-play-pw"),
+    username="alice", password_hash=hash_password("alice-play-pw"),
+    is_active=True, is_staff=True, admin_role="super",
 )
 db.add(user)
 db.commit()
@@ -366,8 +366,8 @@ ok("Library/Refresh 未认证 401")
 # ---- 付费墙同样覆盖新端点（字幕不能成为绕过播放收费的入口）----
 db2 = Session()
 bob = models.WebUser(
-    username="bob", password_hash="x", is_active=True, is_staff=False,
-    emby_username="emby_bob", emby_password=hash_password("bob-play-pw"),
+    username="bob", password_hash=hash_password("bob-play-pw"),
+    is_active=True, is_staff=False,
 )
 db2.add(bob)
 db2.commit()

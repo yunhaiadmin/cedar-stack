@@ -86,7 +86,7 @@ def find_users(db, keyword: str) -> list:
 
     IP：login_logs.ip 精确 + emby_playback_sessions.remote_addr 精确；
     TG：web_users.telegram_id 精确；
-    文本：web_users.username / emby_username 模糊 + 播放 device_id 精确、
+    文本：web_users.username 模糊 + 播放 device_id 精确、
     device_name / client_name 模糊 + login_logs.user_agent 模糊。
     login_logs 里 user_id 为空的失败登录行按 username 尽力归户。
     """
@@ -130,8 +130,7 @@ def find_users(db, keyword: str) -> list:
     else:
         like = f"%{keyword}%"
         for u in db.query(models.WebUser).filter(
-                models.WebUser.username.ilike(like)
-                | models.WebUser.emby_username.ilike(like)).all():
+                models.WebUser.username.ilike(like)).all():
             _collect(found, u, "name")
         device_uids = {
             uid for (uid,) in db.query(em.PlaybackSession.user_id)
@@ -242,8 +241,6 @@ def _user_rows(db, user, hits: set) -> list[str]:
         layout.row("🎯", "命中", hit_text),
         layout.row("✈️", "TG 绑定",
                    str(user.telegram_id) if user.telegram_id else "未绑定"),
-        layout.row("🎬", "Emby 名",
-                   html.escape(str(user.emby_username)) if user.emby_username else "—"),
         layout.row("🕐", "最近登录", "\n".join(logins) if logins else "暂无记录"),
         layout.row("▶️", "最近播放", "\n".join(plays) if plays else "暂无记录"),
         layout.row("🔗", "网盘绑定", _binding_line(db, user.id)),
@@ -294,7 +291,7 @@ def render_whois(db, keyword: str) -> str:
 
 def find_lite_user(db, keyword: str):
     """精简卡带参定位：纯数字→telegram_id 精确；文本→username 精确
-    优先，其次 username / emby_username 模糊（取最早一条）。"""
+    优先，其次 username 模糊（取最早一条）。"""
     keyword = (keyword or "").strip()
     if not keyword:
         return None
@@ -314,8 +311,7 @@ def find_lite_user(db, keyword: str):
     like = f"%{keyword}%"
     return (
         db.query(models.WebUser)
-        .filter(models.WebUser.username.ilike(like)
-                | models.WebUser.emby_username.ilike(like))
+        .filter(models.WebUser.username.ilike(like))
         .order_by(models.WebUser.id)
         .first()
     )

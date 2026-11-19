@@ -154,7 +154,6 @@ def preflight(media_dir: str) -> tuple[int, str, str]:
         warn("本机没有 ffprobe", "媒体探测会退化为按文件大小建档（部署环境建议装 ffmpeg）")
 
     from backend import models
-    from backend.emby_server.auth import ensure_emby_credentials
     from backend.security import hash_password
 
     suffix = random.randint(100000, 999999)
@@ -166,13 +165,11 @@ def preflight(media_dir: str) -> tuple[int, str, str]:
     db.add(user)
     db.commit()
     db.refresh(user)
-    # 写入播放密码哈希，不自动生成 emby_username。没有接线用户名时，
-    # AuthenticateByName 仍按门户用户名命中（emby_username OR username）。
-    # 只有门户密码、没有 emby_password 时 EA 会正确地回 401。
-    ensure_emby_credentials(db, user, password=password)
+    # 账号统一（2026-11-19）：客户端登录直接验门户密码，自检账号
+    # 只写 password_hash 一份即可登 EA，不再有第二份播放密码。
     user_id = user.id
     db.close()
-    check("自检账号已创建（含 Emby 客户端凭据）", True, username)
+    check("自检账号已创建（门户密码即客户端密码）", True, username)
 
     with open(os.path.join(media_dir, MEDIA_NAME), "wb") as fh:
         fh.write(b"\x00" * 4096)
@@ -556,7 +553,7 @@ def run_split_checks(em_base: str, ea_base: str, username: str, password: str,
     if not ea_token:
         return
 
-    # Name：设了接线用户名就用它，否则回落门户用户名。自检账号不自动生成接线用户名。
+    # Name：一律门户用户名（账号统一后无接线用户名）。
     status, text, _ = request("GET", f"{ea_base}/emby/Users/Me", emby_token=ea_token)
     me = as_json(text) or {}
     check("EA 接受该 token 并读出同一用户的身份",

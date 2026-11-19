@@ -21,7 +21,6 @@ def _stub_user(**overrides):
         id=7,
         username="u7",
         email=None,
-        emby_username=None,
         is_vip=False,
         is_active=True,
         is_staff=False,
@@ -33,6 +32,13 @@ def _stub_user(**overrides):
 
 def test_user_out_has_no_is_welfare_field():
     assert "is_welfare" not in portal_mod.UserOut.model_fields
+
+
+def test_user_out_has_no_emby_username_field():
+    # 账号统一（2026-11-19）：UserOut 不再下发接线名。
+    assert "emby_username" not in portal_mod.UserOut.model_fields
+    out = portal_mod._user_out(_stub_user(), db=None)
+    assert "emby_username" not in out.model_dump()
 
 
 def test_user_out_serialization_excludes_is_welfare():
