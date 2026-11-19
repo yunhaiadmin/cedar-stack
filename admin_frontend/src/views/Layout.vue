@@ -229,6 +229,8 @@ const navGroups: NavGroup[] = [
       { path: '/metadata-sources', label: '元数据来源', icon: Database },
       // 识别审查：自动刮削认不准（有候选没过置信线）的条目带证据排队，人工在这里处置
       { path: '/identify-review', label: '识别审查', icon: ListChecks },
+      // 人物条目管理：同一个人被刮成两份时在这里改名 / 合并（源人物关联改指目标）
+      { path: '/people', label: '人物管理', icon: Users },
       // 缺集清单：哪部剧缺哪几集、缺了多久、几个人在求补
       { path: '/missing-episodes', label: '缺集清单', icon: ListChecks },
       // 存储绑定观测：原「上游源」页的标签页，

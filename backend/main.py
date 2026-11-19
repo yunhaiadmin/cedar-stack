@@ -87,6 +87,7 @@ from backend.api.admin_site_drawer import admin_site_drawer_router
 from backend.api.admin_landing import admin_landing_router
 from backend.api.admin_totp import admin_totp_router
 from backend.api.admin_user_favorites import admin_user_favorites_router
+from backend.api.admin_people import admin_people_router
 from backend.api.danmaku import router as danmaku_router
 from backend.api.admin_danmu_api import admin_danmu_api_router
 from backend.api.danmu_api import public_router as danmu_api_public_router
@@ -994,6 +995,9 @@ app.include_router(admin_totp_router)
 # 用户收藏查看（二期缺口项 6，2026-11-19）：按用户只读查看作品＋人员收藏，
 # 见 backend/api/admin_user_favorites.py
 app.include_router(admin_user_favorites_router)
+# 人物条目管理（二期部分缺，2026-11-19）：credits 聚合人物的列表 / 改名 / 合并，
+# 见 backend/api/admin_people.py
+app.include_router(admin_people_router)
 app.include_router(danmaku_router)
 # 弹幕 API（2026-11-18）：专职 Token/线路/地址用户端 + 公开下发口 +
 # 管理端线路配置，见 backend/api/danmu_api.py 与 admin_danmu_api.py
