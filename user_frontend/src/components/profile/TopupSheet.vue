@@ -40,7 +40,7 @@
             inputmode="decimal"
             placeholder="1.00"
             autocomplete="off"
-            :size="Math.max(4, amountText.length)"
+            :size="Math.max(1, amountText.length)"
             :disabled="submitting"
             aria-label="充值金额（美元）"
             @input="onAmountInput"
@@ -321,7 +321,7 @@ async function submit() {
   background: var(--uhd-d-surface-raised);
   border: 1px solid var(--uhd-glass-border);
   border-radius: 16px;
-  padding: 22px 22px 24px;
+  padding: 22px 22px calc(16px + env(safe-area-inset-bottom, 0px));
   color: var(--tq-fg);
   box-shadow: var(--uhd-shadow-modal);
   animation: tp-pop-in 0.28s cubic-bezier(0.32, 0.72, 0.28, 1) both;
@@ -352,7 +352,7 @@ html[data-theme='light'] .tp-sheet {
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  border: 1px solid var(--tq-border);
+  border: none;
   background: transparent;
   color: var(--tq-dim);
   cursor: pointer;
@@ -378,7 +378,9 @@ html[data-theme='light'] .tp-sheet {
   background: transparent;
   color: inherit;
   font-family: inherit;
-  font-size: 36px;
+  /* mobile.css 移动端有 input{font-size:16px !important} 防 iOS 聚焦缩放，
+     该规则只要求 ≥16px，本处 36px 本就满足，但会被它压小，故带 !important 覆盖 */
+  font-size: 36px !important;
   font-weight: 800;
   text-align: center;
   outline: none;
