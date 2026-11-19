@@ -29,6 +29,7 @@ import type { AdminUserRow, DeviceRow, UserDetail, UserGrantCard, UserGrants } f
 import { useAuthStore } from '@/stores/auth'
 import DataTable from '@/components/DataTable.vue'
 import UserTotpPanel from '@/components/UserTotpPanel.vue'
+import UserPasskeyPanel from '@/components/UserPasskeyPanel.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import type { AppliedFilter, FilterConfig } from '@/components/FilterBar.vue'
@@ -1031,6 +1032,14 @@ function fmtCount(n: number | null | undefined): string {
                   <el-button size="small" text type="danger" @click="removeUserDevice(row)">踢下线</el-button>
                 </template>
               </DataTable>
+            </el-tab-pane>
+
+            <!-- 账号安全（二期 · 项 3）：Passkey 凭据查看/吊销，账号恢复场景 -->
+            <el-tab-pane label="账号安全" name="security">
+              <template #label>
+                <span class="tab-label"><KeyRound :size="13" />账号安全</span>
+              </template>
+              <UserPasskeyPanel v-if="detailTab === 'security'" :user-id="detail.profile.id" />
             </el-tab-pane>
           </el-tabs>
         </template>
