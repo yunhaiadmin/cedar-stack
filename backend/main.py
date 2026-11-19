@@ -83,6 +83,7 @@ from backend.api.admin_watch_together import admin_watch_together_router
 from backend.api.admin_probe_4k import admin_probe_4k_router
 from backend.api.admin_passkeys import admin_passkeys_router
 from backend.api.admin_series_follows import admin_series_follows_router
+from backend.api.admin_search import admin_search_router
 from backend.api.admin_subtitles import admin_subtitles_router
 from backend.api.admin_site_drawer import admin_site_drawer_router
 from backend.api.admin_landing import admin_landing_router
@@ -989,6 +990,9 @@ app.include_router(admin_passkeys_router)
 # 追剧订阅管理（二期缺口项 2，2026-11-19）：全站订阅列表＋管理员代取消，
 # 见 backend/api/admin_series_follows.py
 app.include_router(admin_series_follows_router)
+# 热搜管理（二期缺口「搜索排序/热搜管理」，2026-11-19）：生效榜预览＋
+# 置顶/下榜/删词，见 backend/api/admin_search.py
+app.include_router(admin_search_router)
 # 官网菜单抽屉配置（见 backend/api/admin_site_drawer.py）
 app.include_router(admin_site_drawer_router)
 # 官网落地页文案编辑（见 backend/api/admin_landing.py）

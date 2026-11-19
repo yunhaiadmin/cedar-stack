@@ -51,6 +51,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'watch-together', name: 'WatchTogether', component: () => import('@/views/WatchTogether.vue'), meta: { title: '一起看管理' } },
       // 追剧订阅管理（二期缺口项 2）：全站追剧订阅列表＋管理员代取消
       { path: 'series-follows', name: 'SeriesFollows', component: () => import('@/views/SeriesFollows.vue'), meta: { title: '追剧订阅' } },
+      // 热搜管理（二期缺口「搜索排序/热搜管理」）：生效榜预览＋置顶/下榜/删词
+      { path: 'search-hot', name: 'SearchHot', component: () => import('@/views/SearchHot.vue'), meta: { title: '热搜管理' } },
       // 弹幕治理（内容治理面）：弹幕列表/删除＋用户禁言；规则设置仍在系统设置的弹幕设置组
       { path: 'danmaku-admin', name: 'DanmakuAdmin', component: () => import('@/views/DanmakuAdmin.vue'), meta: { title: '弹幕治理' } },
       // 群抽奖（Welfare.vue，历史文件名）：抽奖轮次 + 提案黑名单标签；
