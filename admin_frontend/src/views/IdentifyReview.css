@@ -1,5 +1,9 @@
 /* 识别审查页（批二 #15）：类名与口径照同组「元数据来源」页的 MetadataSources.css，
-   前缀 ir-；次级文字用 --au-text-2，只用 aurora.css 既有令牌，不自创变量。 */
+   前缀 ir-；次级文字用 --au-text-2，只用 aurora.css 既有令牌，不自创变量。
+   受控例外登记（后台一期批 4）：本文件登记为页面级 CSS 受控例外，不收编进
+   styles/ 全局层——照元数据来源页同组口径，全局表全挂 .ir-* 前缀。约束与
+   登记表见 scripts/check_frontend_tokens.py 的 ADMIN_PAGE_CSS_REGISTERED，
+   结论见 docs/design/20261119-admin-page-css-exceptions.md。 */
 
 .ir-card > .au-section__body {
   display: flex;
