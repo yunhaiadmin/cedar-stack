@@ -749,6 +749,43 @@ def create_topup_order(req: WalletTopupCreateRequest,
     }
 
 
+@wallet_router.get("/wallet/topup/orders/{order_no}")
+def get_topup_order(order_no: str,
+                    current_user: models.WebUser = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    """查询本人充值单状态（充值等待屏轮询到账用，只读）。
+
+    只许查本人订单：按 order_no + user_id 双条件查，订单不存在
+    或不属于当前用户一律 404，不泄露他人订单存在性。金额字段与
+    下单返回同名同口径（美元/人民币各给字符串与美分/分两份），
+    status 原样透出订单状态机口径（pending / paid / failed /
+    expired），paid_at 为回调入账时间（未支付为 None）。
+    """
+    order = (
+        db.query(models.WalletTopupOrder).filter(
+            models.WalletTopupOrder.order_no == order_no,
+            models.WalletTopupOrder.user_id == current_user.id,
+        ).first()
+    )
+    if order is None:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    return {
+        "ok": True,
+        "order_no": order.order_no,
+        "status": order.status,
+        "amount_usd": f"{Decimal(order.amount_usd_fen) / Decimal(100):.2f}",
+        "amount_usd_fen": order.amount_usd_fen,
+        "amount_cny": f"{Decimal(order.amount_cny_fen) / Decimal(100):.2f}",
+        "amount_cny_fen": order.amount_cny_fen,
+        "credit_usd": f"{Decimal(order.credit_usd_fen) / Decimal(100):.2f}",
+        "credit_usd_fen": order.credit_usd_fen,
+        "payment_method": order.payment_method,
+        "paid_at": order.paid_at.isoformat() if order.paid_at else None,
+        "created_at": (order.created_at.isoformat()
+                       if order.created_at else None),
+    }
+
+
 def _topup_notify_core(db: Session, raw: dict) -> tuple:
     """充值回调同步核：验签 → 查单 → 金额核对 → 抢单 → 入账 → 返利。
 
