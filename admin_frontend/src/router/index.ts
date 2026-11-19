@@ -27,6 +27,8 @@ const routes: RouteRecordRaw[] = [
       // 页面标题与侧边栏分组保持一致（v2.25.0 按交付链重组信息架构）
       { path: '', name: 'Dashboard', component: () => import('@/views/Dashboard.vue'), meta: { title: '仪表盘' } },
       { path: 'users', name: 'Users', component: () => import('@/views/Users.vue'), meta: { title: '用户' } },
+      // 用户收藏查看（二期缺口项 6）：按用户只读查看作品＋人员收藏
+      { path: 'user-favorites', name: 'UserFavorites', component: () => import('@/views/UserFavorites.vue'), meta: { title: '用户收藏' } },
       { path: 'subscriptions', name: 'Subscriptions', component: () => import('@/views/Subscriptions.vue'), meta: { title: '订阅与权益' } },
       { path: 'goods', name: 'Goods', component: () => import('@/views/Goods.vue'), meta: { title: '订阅套餐' } },
       { path: 'orders', name: 'Orders', component: () => import('@/views/Orders.vue'), meta: { title: '订单' } },

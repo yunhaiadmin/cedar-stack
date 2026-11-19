@@ -81,6 +81,7 @@ from backend.api.admin_danmaku import admin_danmaku_router
 from backend.api.admin_login_lockout import admin_login_lockout_router
 from backend.api.admin_series_follows import admin_series_follows_router
 from backend.api.admin_site_drawer import admin_site_drawer_router
+from backend.api.admin_user_favorites import admin_user_favorites_router
 from backend.api.danmaku import router as danmaku_router
 from backend.api.admin_danmu_api import admin_danmu_api_router
 from backend.api.danmu_api import public_router as danmu_api_public_router
@@ -971,6 +972,9 @@ app.include_router(admin_login_lockout_router)
 app.include_router(admin_series_follows_router)
 # 官网菜单抽屉配置（见 backend/api/admin_site_drawer.py）
 app.include_router(admin_site_drawer_router)
+# 用户收藏查看（二期缺口项 6，2026-11-19）：按用户只读查看作品＋人员收藏，
+# 见 backend/api/admin_user_favorites.py
+app.include_router(admin_user_favorites_router)
 app.include_router(danmaku_router)
 # 弹幕 API（2026-11-18）：专职 Token/线路/地址用户端 + 公开下发口 +
 # 管理端线路配置，见 backend/api/danmu_api.py 与 admin_danmu_api.py
