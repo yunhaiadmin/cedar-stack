@@ -49,6 +49,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'media-seek', name: 'MediaSeek', component: () => import('@/views/MediaSeek.vue'), meta: { title: '求片管理' } },
       // 追剧订阅管理（二期缺口项 2）：全站追剧订阅列表＋管理员代取消
       { path: 'series-follows', name: 'SeriesFollows', component: () => import('@/views/SeriesFollows.vue'), meta: { title: '追剧订阅' } },
+      // 热搜管理（二期缺口「搜索排序/热搜管理」）：生效榜预览＋置顶/下榜/删词
+      { path: 'search-hot', name: 'SearchHot', component: () => import('@/views/SearchHot.vue'), meta: { title: '热搜管理' } },
       // 群抽奖（Welfare.vue，历史文件名）：抽奖轮次 + 提案黑名单标签；
       // 公益配置标签已随公益资格整族于 2026-11-14 删除
       { path: 'welfare-lottery-rounds', name: 'WelfareLotteryRounds', component: () => import('@/views/Welfare.vue'), meta: { title: '群抽奖' } },

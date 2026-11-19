@@ -3321,3 +3321,35 @@ class SearchTermStat(Base):
     day = Column(Date, nullable=False)
     count = Column(Integer, nullable=False, default=0)
     last_seen_at = Column(DateTime)
+
+
+class SearchTermOverride(Base):
+    """热搜榜人工干预（管理端置顶 / 下榜，二期缺口「搜索排序/热搜管理」）。
+
+    与 SearchTermStat 分工：统计表是用户搜出来的事实数据，本表是
+    管理员的干预决定，一词一行：
+
+    - ``pin``：置顶——按 ``pin_order`` 升序排在生效榜最前（统计次数
+      照实带出，无统计的词次数为 0）；
+    - ``block``：下榜——统计照记，但该词永不上生效榜。
+
+    读口 ``search_stats.hot_search_terms`` 合并两边出最终榜；
+    删除某词的统计数据不走本表（管理口直接删统计行，pin 行随删、
+    block 行保留）。写口只在 api/admin_search.py，全部记 AdminLog。
+    """
+
+    __tablename__ = "emby_search_term_overrides"
+    __table_args__ = (
+        UniqueConstraint("term_key", name="uq_search_term_override_key"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    # 归一化词（与 SearchTermStat.term_key 同一口径）
+    term_key = Column(String(200), nullable=False)
+    # 榜上展示写法（无统计的置顶词靠它展示；有统计时以统计的最近写法为准）
+    display_term = Column(String(200), nullable=False)
+    mode = Column(String(10), nullable=False, default="pin")  # pin / block
+    # 置顶区内顺序（越小越前）；block 行不用，恒 0
+    pin_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
