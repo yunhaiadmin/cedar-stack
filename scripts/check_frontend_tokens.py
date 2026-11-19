@@ -33,6 +33,12 @@ CSS 规范里这是循环引用，变量会变成 invalid at computed-value time
      uhd-admin.css 里只许引 --uhd-radius-modal，不许写数值字面量、
      不许再引 --au-r-lg（16px）；uhd-admin.css 必须保留 body 前缀的
      弹层兜底规则（EP 组件 CSS 后入级联，靠特异性保证口径生效）。
+  8. 管理端页面级 CSS 只许登记内的受控例外（后台一期批 4 收口，2026-11-19）：
+     views/ 下独立 .css 文件的集合必须与 ADMIN_PAGE_CSS_REGISTERED 登记表
+     逐一相等（多一件未登记、或登记了文件却已删除，都失败）；每件登记
+     文件的文件头必须带「受控例外登记（后台一期批 4）」标记注释，且其
+     font-size 声明只许引 --uhd-fs-* 梯队。处置结论见
+     docs/design/20261119-admin-page-css-exceptions.md。
 
 样式表集合从入口（main.ts / index.html 的 <style>）出发，沿 @import 与 import 语句递归收集，
 所以「文件存在但没接进应用」不会被误判成已定义。
@@ -529,6 +535,55 @@ def check_admin_overlay() -> None:
         )
 
 
+# 后台一期批 4 收口（2026-11-19）：页面级 CSS 受控例外登记表（规则 8）。
+# views/ 下的独立 .css 不收编进 styles/ 全局层，逐件登记在此：键是相对
+# admin_frontend/src 的路径，值是保留页面级全局表的理由。新增页面级 CSS
+# 必须先登记并在文件头带标记注释，否则检查失败；文件删除时同步删行。
+# 处置结论：docs/design/20261119-admin-page-css-exceptions.md。
+ADMIN_PAGE_CSS_REGISTERED = {
+    "views/EmbyAdmin.css": "下拉面板 teleport 到 body、scoped 盖不到，且 .lib-* 规则被 components/emby 子组件共用",
+    "views/MetadataSources.css": "全局表全挂 .ms-* 前缀，须以特异性压过 SectionCard 的 scoped 样式",
+    "views/IdentifyReview.css": "照元数据来源页同组口径，全局表全挂 .ir-* 前缀",
+}
+ADMIN_PAGE_CSS_MARKER = "受控例外登记（后台一期批 4）"
+PAGE_FONT_SIZE_RE = re.compile(r"font-size\s*:\s*([^;]+);")
+
+
+def check_admin_page_css() -> None:
+    """规则 8 断言：页面级 CSS 集合与登记表逐一相等，且登记文件头带标记、字号只引梯队"""
+    global checks
+    src = ROOT / "admin_frontend" / "src"
+    views = src / "views"
+
+    checks += 1
+    actual = {f"views/{p.name}" for p in views.glob("*.css")}
+    registered = set(ADMIN_PAGE_CSS_REGISTERED)
+    if actual != registered:
+        failures.append(
+            "admin_frontend: views/ 下页面级 CSS 与受控例外登记表不一致"
+            "（后台一期批 4：页面级 CSS 只许登记内例外，新增先登记、删除同步删行）："
+        )
+        for f in sorted(actual - registered):
+            failures.append(f"    未登记：{f}")
+        for f in sorted(registered - actual):
+            failures.append(f"    登记失效（文件已不存在）：{f}")
+
+    checks += 1
+    bad = []
+    for rel in sorted(registered & actual):
+        text = (src / rel).read_text(encoding="utf-8")
+        if ADMIN_PAGE_CSS_MARKER not in text:
+            bad.append(f"    {rel} 文件头缺登记标记「{ADMIN_PAGE_CSS_MARKER}」")
+        body = COMMENT_RE.sub("", text)
+        for i, line in enumerate(body.splitlines(), 1):
+            for m in PAGE_FONT_SIZE_RE.finditer(line):
+                if "var(--uhd-fs-" not in m.group(1):
+                    bad.append(f"    {rel}:{i}  font-size 未引 --uhd-fs-* 梯队：{line.strip()[:80]}")
+    if bad:
+        failures.append("admin_frontend: 页面级 CSS 受控例外登记不完整（后台一期批 4）：")
+        failures.extend(bad)
+
+
 for frontend in FRONTENDS:
     check_frontend(frontend)
     check_freeze(frontend)
@@ -537,10 +592,11 @@ check_uhd_tokens_sync()
 check_admin_shell()
 check_admin_filterbar()
 check_admin_overlay()
+check_admin_page_css()
 
 print(f"设计令牌契约检查：{checks} 项")
 if failures:
     print("\n".join(failures))
     print("❌ 设计令牌契约检查失败")
     sys.exit(1)
-print("✅ 设计令牌契约检查通过（引用的令牌都有定义 · 无循环引用 · 没有孤立样式表 · 主题引入冻结 · neo 冻结 · 两端 uhd-tokens 逐字同步 · 壳字号走令牌 · 裸表白名单 · 筛选走 FilterBar · 弹层遮罩/圆角走令牌）")
+print("✅ 设计令牌契约检查通过（引用的令牌都有定义 · 无循环引用 · 没有孤立样式表 · 主题引入冻结 · neo 冻结 · 两端 uhd-tokens 逐字同步 · 壳字号走令牌 · 裸表白名单 · 筛选走 FilterBar · 弹层遮罩/圆角走令牌 · 页面级 CSS 受控例外登记）")
