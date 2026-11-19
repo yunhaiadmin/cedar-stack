@@ -325,7 +325,9 @@ class WebUser(Base):
     public_id = Column(String(16), unique=True, index=True,
                        default=generate_public_id)
 
-    # 自建 Emby 凭据（完全自建模式下，Emby 客户端用此账号密码登录）
+    # 自建 Emby 凭据（历史遗留两列）：账号统一（2026-11-19）后客户端登录
+    # 只验 username + password_hash，这两列已停写停读，仅 AuthenticateByName
+    # 查名别名与 GET /Users/{id} 还过渡引用；代码部署收口后 DROP 两列。
     emby_username = Column(String(64), unique=True, nullable=True)
     emby_password = Column(String(128), nullable=True)
     # 公益服身份与资格四列（is_welfare / welfare_expires_at /

@@ -398,7 +398,6 @@ def list_users(
             "email": u.email,
             "is_active": u.is_active,
             "is_staff": u.is_staff,
-            "emby_username": u.emby_username,
             # TG 绑定状态：只暴露是否绑定，不暴露具体 ID
             "tg_bound": bool(u.telegram_id),
             "user_type": "paid" if active_sub is not None else "normal",
@@ -526,9 +525,7 @@ def reset_user_password(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """重置用户密码（门户密码同步为 Emby 播放密码）"""
-    from backend.emby_server.auth import ensure_emby_credentials
-
+    """重置用户密码（账号统一后客户端登录验的也是这份密码，无第二份需同步）"""
     user = db.query(models.WebUser).filter(models.WebUser.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
@@ -548,22 +545,9 @@ def reset_user_password(
     ).update({emby_models.EmbyApiToken.is_revoked: True}, synchronize_session=False)
     db.commit()
 
-    # 同步 Emby 播放密码哈希。不自动生成接线用户名。
-    # r46：同步失败是"部分成功"，不能报成全成功——管理员需知道用户用新密码登 Emby 会失败
-    emby_synced = True
-    try:
-        ensure_emby_credentials(db, user, password=request.new_password)
-    except Exception:  # noqa: BLE001 — Emby 凭据同步失败不阻塞密码重置
-        emby_synced = False
-        logger.warning("重置密码后同步 Emby 凭据失败: user_id=%s", user_id, exc_info=True)
-
-    _audit(db, current_admin, "reset_user_password", "user", user.id,
-           {"emby_synced": emby_synced})
+    _audit(db, current_admin, "reset_user_password", "user", user.id, {})
     db.commit()
-    return {"success": True,
-            "message": "密码已重置" if emby_synced else
-                       "密码已重置，但 Emby 播放密码同步失败（已记日志），用户用新密码登录 Emby 可能失败",
-            "emby_synced": emby_synced}
+    return {"success": True, "message": "密码已重置"}
 
 
 @admin_router.post("/users/{user_id}/messages")

@@ -40,9 +40,9 @@ assert data["user"]["username"] == "newuser"
 assert data["user"]["id"] > 0
 print("OK register -> token + user:", data["user"])
 
-# 注册不再自动生成接线用户名或播放密码
-assert data["user"]["emby_username"] is None, data["user"]
-print("OK register does not invent emby_username")
+# 账号统一：注册出参不再带接线名字段
+assert "emby_username" not in data["user"], data["user"]
+print("OK register response has no emby_username field")
 
 # ==================== 2. 重复注册拒绝 ====================
 r = client.post("/api/user/auth/register", json={"username": "newuser", "password": "secret123"})
@@ -70,7 +70,7 @@ r = client.post("/api/user/auth/login", json={"username": "newuser", "password":
 assert r.status_code == 200, (r.status_code, r.text)
 login_data = r.json()
 assert login_data["access_token"] and login_data["user"]["username"] == "newuser"
-assert login_data["user"]["emby_username"] is None, "登录不应发明接线用户名"
+assert "emby_username" not in login_data["user"], "登录出参不应带接线名字段"
 access = login_data["access_token"]
 print("OK login -> token")
 
@@ -182,12 +182,12 @@ assert r.status_code == 401
 # 改密前的 token 留作"旧 token 应作废"的断言
 stale_access = new_access
 stale_refresh = new_refresh
-# 新密码登录成功，且 Emby 密码已同步
+# 新密码登录成功
 r = client.post("/api/user/auth/login", json={"username": "newuser", "password": "newpass456"})
 assert r.status_code == 200
 new_access = r.json()["access_token"]
 assert new_access and new_access != stale_access, "改密后应签发新 token"
-assert r.json()["user"]["emby_username"] is None, "改密后重新登录仍不应发明接线用户名"
+assert "emby_username" not in r.json()["user"], "登录出参不应带接线名字段"
 print("OK relogin with new password")
 
 # 审查第八批 P2/P3：改密后旧 access / 旧 refresh 必须作废（后续步骤改用新 token）
@@ -198,22 +198,24 @@ r = client.post("/api/user/auth/refresh", json={"refresh_token": stale_refresh})
 assert r.status_code == 401, f"改密后旧 refresh 应被拒绝, got {r.status_code}"
 print("OK stale refresh token rejected after password change")
 
-# 门户改密仍会把播放密码同步成 bcrypt 哈希（既有行为），但不会发明用户名
+# 账号统一：门户改密不再写接线凭据两列（客户端登录直接验门户密码）
 db = sqlite3.connect(DB)
 row = db.execute(
     "SELECT emby_username, emby_password FROM web_users WHERE username='newuser'"
 ).fetchone()
 db.close()
-assert row and row[0] is None, f"改密不应发明接线用户名, got {row}"
-assert row[1] and row[1].startswith(("$2", "$bcrypt-sha256$")), f"Emby 密码应为 bcrypt 哈希, got {row}"
-print("OK emby play password stored as bcrypt hash without inventing username")
+assert row == (None, None), f"改密不应再写接线凭据, got {row}"
+print("OK password change leaves emby credential columns untouched")
 
-# 账号卡不再返回明文密码
+# 账号卡：emby_username 字段下发网站用户名（本用户无查看权限，
+# 按门禁口径置空）；不返回明文密码。带权限时的下发值由
+# tests/test_account_unify_client_login.py 覆盖。
 r = client.get("/api/user/emby/server", headers={"Authorization": f"Bearer {new_access}"})
 assert r.status_code == 200
 assert not r.json().get("emby_password"), "账号卡不应返回明文密码"
 assert r.json().get("has_password") is True
-print("OK account card hides plaintext password")
+assert r.json().get("emby_username") == "", r.json()
+print("OK account card hides plaintext password and gates username")
 
 # ==================== 8. 旧数字 token 默认已禁用（防 ID 枚举冒充）====================
 user_id = data["user"]["id"]
@@ -226,46 +228,23 @@ r = client.get("/api/user/emby/server", headers={"Authorization": f"Bearer {new_
 assert r.status_code == 200
 print("OK JWT works on /api/user/emby/server")
 
-# ==================== 9. 接线账号：首次设用户名+密码，之后只改密码 ====================
-PLAY_USER = "newuser_play"
+# ==================== 9. 接线账号端点已随账号统一删除 ====================
 r = client.post("/api/user/emby/password",
                 headers={"Authorization": f"Bearer {new_access}"},
-                json={"password": "playpass1"})
-assert r.status_code == 400, (r.status_code, r.text)
-assert "用户名" in r.json()["detail"]
-print("OK password-only rejected before username exists")
+                json={"username": "newuser_play", "password": "playpass1"})
+assert r.status_code == 404, (r.status_code, r.text)
+print("OK legacy set-emby-password endpoint is gone (404)")
 
-r = client.post("/api/user/emby/password",
-                headers={"Authorization": f"Bearer {new_access}"},
-                json={"username": PLAY_USER, "password": "playpass1"})
-assert r.status_code == 200, (r.status_code, r.text)
-body = r.json()
-assert body["success"] is True and body["emby_username"] == PLAY_USER
-assert "playpass1" not in r.text and body.get("emby_password") is None
-print("OK first-time credentials set without returning plaintext")
-
-r = client.post("/api/user/emby/password",
-                headers={"Authorization": f"Bearer {new_access}"},
-                json={"username": "other_name", "password": "playpass2"})
-assert r.status_code == 400 and r.json()["detail"] == "用户名设好后不可修改", (r.status_code, r.text)
-print("OK username change rejected")
-
-r = client.post("/api/user/emby/password",
-                headers={"Authorization": f"Bearer {new_access}"},
-                json={"password": "newpass456"})
-assert r.status_code == 200 and r.json()["emby_username"] == PLAY_USER, (r.status_code, r.text)
-print("OK password-only update after username exists")
-
-# ==================== 10. Emby 协议认证（bcrypt 哈希密码）====================
+# ==================== 10. Emby 协议认证（网站名+网站密码）====================
 r = client.post("/emby/Users/AuthenticateByName",
-                json={"Username": PLAY_USER, "Pw": "newpass456"},
+                json={"Username": "newuser", "Pw": "newpass456"},
                 headers={"X-Emby-Authorization": 'MediaBrowser Client="T", Device="T", DeviceId="t1", Version="1"'})
 assert r.status_code == 200, (r.status_code, r.text)
-print("OK Emby AuthenticateByName with bcrypt-hashed credentials")
+print("OK Emby AuthenticateByName with portal credentials")
 
 # 错误密码必须被拒绝（此前空存储时任意密码可通过）
 r = client.post("/emby/Users/AuthenticateByName",
-                json={"Username": PLAY_USER, "Pw": "wrong-password"},
+                json={"Username": "newuser", "Pw": "wrong-password"},
                 headers={"X-Emby-Authorization": 'MediaBrowser Client="T", Device="T", DeviceId="t2", Version="1"'})
 assert r.status_code == 401, f"错误密码应被拒绝, got {r.status_code}"
 print("OK Emby AuthenticateByName rejects wrong password")

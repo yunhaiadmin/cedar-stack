@@ -69,9 +69,8 @@ def _cleanup(db, lib_name):
 def seed():
     db = SessionLocal()
     _cleanup(db, "隐藏路径测试库")
-    user = models.WebUser(username=UNAME, password_hash="x", is_active=True,
-                          is_staff=True, emby_username=UNAME,
-                          emby_password=hash_password(PW))
+    user = models.WebUser(username=UNAME, password_hash=hash_password(PW), is_active=True,
+                          is_staff=True)
     db.add(user)
     lib = em.Library(guid=_guid(), name="隐藏路径测试库", collection_type="tvshows",
                      is_enabled=True)

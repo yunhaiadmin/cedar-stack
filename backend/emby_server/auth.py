@@ -22,7 +22,6 @@ def hash_emby_token(token_value: str) -> str:
 from backend import models
 from backend.database import get_db
 from backend.emby_server import models as emby_models
-from backend.security import hash_password, needs_password_rehash, verify_password
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -68,65 +67,6 @@ def parse_emby_authorization(header_value: Optional[str]) -> dict:
             if key:
                 result[key] = value
     return result
-
-
-def verify_emby_password(plain: str, stored: str) -> bool:
-    """校验 Emby 播放密码：新 bcrypt 摘要、旧 bcrypt 与历史明文均兼容。"""
-    if not stored:
-        return False
-    if stored.startswith(("$2", "$bcrypt-sha256$")):
-        return verify_password(plain, stored)
-    try:
-        return secrets.compare_digest(plain.encode("utf-8"), stored.encode("utf-8"))
-    except UnicodeEncodeError:
-        return False
-
-
-def verify_and_migrate_emby_password(db: Session, user: models.WebUser, password: str) -> bool:
-    """校验 Emby 播放密码；成功时若为明文/旧格式则透明升级为 bcrypt-sha256（A-P1-3）。
-
-    把"校验+升级"收敛到这一处：调用方不再需要手写 startswith 分支判断，
-    避免将来只改一处导致的升级遗漏。ensure_emby_credentials 内部已含
-    needs_password_rehash 判断，明文/旧 $2 格式会在成功登录后被升级，
-    已是新格式时为无操作。
-    """
-    if not verify_emby_password(password, user.emby_password or ""):
-        return False
-    ensure_emby_credentials(db, user, password=password)
-    return True
-
-
-def ensure_emby_credentials(db: Session, user: models.WebUser, password: Optional[str] = None,
-                            fill_only: bool = False) -> Optional[str]:
-    """按需写入 Emby 播放密码。从不自动生成 ``emby_username``。
-
-    接线用户名只能由用户在 ``POST /api/user/emby/password`` 首次提交时写入，
-    写好后不可改。本函数不创建、不修改用户名。
-
-    fill_only=True（门户登录专用）：
-    - 没有 ``emby_username``：什么都不做。新用户去接线员页自己设账号，
-      登录不再把门户密码当成播放密码。
-    - 已有用户名但还没有播放密码：用本次门户密码补一次（老数据兼容）。
-    - 已有播放密码：绝不覆盖。接线员页自设的密码曾被每次网站登录顶掉，
-      播放器攥着旧凭据拿 401（2026-10-23 修）。
-
-    fill_only=False（显式改密 / 管理员重置 / 登录后透明升级哈希）：
-    传入 ``password`` 时写入哈希（相同且已是新格式则跳过）。
-    没有用户名时仍允许写入密码哈希，供管理员重置、建号脚本和部署自检使用；
-    用户端接口在调用前自行拒绝「还没有用户名就只改密码」。
-    """
-    changed = False
-    # 没有接线用户名时，登录路径不能顺手补密码；显式调用不受这条限制。
-    if password is not None and not (fill_only and (not user.emby_username or user.emby_password)):
-        # 门户登录会频繁调用本函数：相同的新格式哈希不应每次都重新 bcrypt，
-        # 否则登录一次就产生一次昂贵哈希并迫使所有旧客户端重新走同步。
-        same = bool(user.emby_password) and verify_emby_password(password, user.emby_password)
-        if not same or needs_password_rehash(user.emby_password or ""):
-            user.emby_password = hash_password(password)
-            changed = True
-    if changed:
-        db.commit()
-    return user.emby_password if password is not None else None
 
 
 def issue_token(db: Session, user: models.WebUser, request: Request) -> tuple[str, emby_models.EmbyApiToken]:

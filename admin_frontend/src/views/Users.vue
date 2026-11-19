@@ -48,7 +48,6 @@ const columns: DataColumn[] = [
   // 用户类型（v2.55 免费服并入用户管理）：免费服 / 付费 / 普通
   { key: 'user_type', label: '类型', width: 150 },
   { key: 'tg_bound', label: 'TG', width: 70 },
-  { key: 'emby_username', label: 'Emby 账号', minWidth: 130 },
   { key: 'subscription', label: '会员', minWidth: 160 },
   // 注册渠道（v2.44.0 归因）：一眼看出这个号是哪来的
   { key: 'register_channel_label', label: '来源', width: 105 },
@@ -525,7 +524,7 @@ async function submitPwd() {
   pwdSaving.value = true
   try {
     await resetUserPassword(u.id, pwdDialog.value)
-    ElMessage.success('密码已重置并同步 Emby')
+    ElMessage.success('密码已重置')
     pwdDialog.visible = false
   } catch {
     // 拦截器已提示
@@ -762,8 +761,6 @@ function fmtCount(n: number | null | undefined): string {
           <div class="user-sub">{{ row.email || '未绑定邮箱' }}</div>
         </template>
 
-        <template #cell-emby_username="{ row }">{{ row.emby_username || '—' }}</template>
-
         <template #cell-subscription="{ row }">
           <template v-if="row.has_subscription">
             <span class="au-badge au-badge-green">生效中</span>
@@ -842,8 +839,7 @@ function fmtCount(n: number | null | undefined): string {
                 <span v-if="!detail.profile.is_active" class="au-badge au-badge-rose">已禁用</span>
               </div>
               <div class="hero-sub">
-                ID {{ detail.profile.id }} · {{ detail.profile.email || '未绑定邮箱' }} ·
-                Emby {{ detail.profile.emby_username || '—' }}
+                ID {{ detail.profile.id }} · {{ detail.profile.email || '未绑定邮箱' }}
               </div>
               <div class="hero-sub">注册 {{ fmtDate(detail.profile.created_at) }} · 最近登录 {{ fmtDate(detail.profile.last_login_at) }}</div>
             </div>
@@ -1154,7 +1150,7 @@ function fmtCount(n: number | null | undefined): string {
           <span class="dialog-user">{{ pwdDialog.user?.username }}</span>
         </el-form-item>
         <el-form-item label="新密码">
-          <el-input v-model="pwdDialog.value" type="password" show-password placeholder="6-64 位，将同步为 Emby 密码" />
+          <el-input v-model="pwdDialog.value" type="password" show-password placeholder="6-64 位" />
         </el-form-item>
       </el-form>
       <template #footer>

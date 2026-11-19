@@ -2,7 +2,7 @@
 
 ``scripts/create_admin.py``（命令行建/升级管理员）与
 ``POST /api/admin/setup``（首次运行向导建第一个管理员）都走这里，
-不要再写第二套（建账号口径：用户名规则 / 密码强度 / Emby 播放凭据同步）。
+不要再写第二套（建账号口径：用户名规则 / 密码强度）。
 """
 
 from __future__ import annotations
@@ -56,14 +56,12 @@ def upsert_admin(db, username: str, password: str | None = None,
     - 账号不存在：必须给密码（``password`` 或 ``reset_password=True`` 自动生成），否则报错；
     - 账号已存在：只升级 ``is_staff`` / ``is_active``；``password`` 给了就改，
       ``reset_password=True`` 则重置为新的随机密码，两者都没有则**不动密码**；
-    - 不自动生成接线用户名（``emby_username``）。用户在接线员页自己设，设好后不可改。
-      本次如果写了门户密码，会同步 ``emby_password``（bcrypt）。没有接线用户名时，
-      客户端仍可用门户用户名 + 这份播放密码登录（``AuthenticateByName`` 两个字段都认）。
+    - 账号统一（2026-11-19）：只写门户密码一份，客户端登录验的也是它，
+      不再有接线凭据需要同步。
 
     ``applied_password`` 是本次真正写进库的密码（没有改密码时为 None）。
     """
     from backend import models, register_channel
-    from backend.emby_server.auth import ensure_emby_credentials
     from backend.security import hash_password
     from backend.usernames import username_conflict
 
@@ -113,9 +111,6 @@ def upsert_admin(db, username: str, password: str | None = None,
             user.token_version = int(user.token_version or 0) + 1
 
     db.commit()
-    db.refresh(user)
-    # 给了密码就同步播放密码哈希。不在这里发明接线用户名。
-    ensure_emby_credentials(db, user, password=applied)
     db.refresh(user)
     return user, created, applied
 

@@ -6,7 +6,8 @@
   F1 post-commit 通知统一 quiet 守卫（11 个裸调点 + 2 处内联保护并入）
   F2 _derive_activity 数据源异常不再谎报"一切正常"
   F3 gdrive_sa_status 读失败与真空值区分（仅静态断言，见 test_sa_status_flags_present）
-  F4 重置密码 Emby 同步失败诚实返回 emby_synced
+  F4 重置密码不再同步 Emby（账号统一口径：客户端登录验的也是网站密码，
+      无第二份密码可同步，响应不含 emby_synced、emby_password 列原样不动）
   F5 streaming._drive_403_error_reason 函数恢复（NameError 回归）
 """
 import asyncio
@@ -162,21 +163,67 @@ def test_sa_status_flags_present():
     assert src.count("logger.warning") >= 2
 
 
-# ---------------- F4：重置密码部分成功（静态口径） ----------------
+# ---------------- F4：重置密码不再同步 Emby（账号统一口径） ----------------
 
-def test_reset_password_returns_emby_synced_flag():
-    """reset_user_password 响应必须带 emby_synced，失败时 message 诚实。"""
+def test_reset_password_returns_no_emby_synced_flag(db):
+    """账号统一后：管理员重置密码只改网站密码，不再同步/返回 emby_synced。
+
+    旧口径（r46 F4）：reset 响应带 emby_synced，失败时 message 诚实。
+    新口径：客户端登录验的也是这份网站密码，无第二份密码可同步——
+    响应不含 emby_synced 字段，emby_password 列原样不动，
+    只改 password_hash + bump token_version + 吊销全部客户端令牌。
+    """
     import inspect
     from backend.api import admin as admin_api
-    # 找到 reset 密码的路由函数（按函数名定位，避免行号漂移）
-    fn = None
-    for name in ("reset_user_password",):
-        if hasattr(admin_api, name):
-            fn = getattr(admin_api, name)
+    from backend.emby_server import models as emby_models
+    from backend.security import hash_password, verify_password
+
+    # 静态锁定：源码里不许再出现同步字段/文案
+    fn = getattr(admin_api, "reset_user_password", None)
     assert fn is not None, "reset_user_password 路由函数不存在"
     src = inspect.getsource(fn)
-    assert '"emby_synced"' in src
-    assert "Emby 播放密码同步失败" in src
+    assert '"emby_synced"' not in src
+    assert "emby_password" not in src
+    assert "Emby 播放密码同步失败" not in src
+
+    # 行为：建一个带旧接线密码 + 未吊销令牌的用户，走一次重置
+    emby_models.Base.metadata.create_all(db.get_bind())
+    old_emby_pw = hash_password("old-emby-pw")
+    user = models.WebUser(
+        username="f4user", password_hash=hash_password("old-portal-pw"),
+        emby_username="f4emby", emby_password=old_emby_pw,
+        is_active=True, token_version=3,
+    )
+    db.add(user)
+    db.commit()
+    token = emby_models.EmbyApiToken(
+        token="a" * 64, user_id=user.id, device_id="d1",
+        is_revoked=False,
+    )
+    db.add(token)
+    db.commit()
+
+    admin = models.WebUser(
+        username="f4admin", password_hash=hash_password("admin-pw"),
+        is_active=True, is_staff=True,
+    )
+    db.add(admin)
+    db.commit()
+
+    req = admin_api.UserResetPasswordRequest(new_password="new-portal-pw")
+    resp = admin_api.reset_user_password(user.id, req, admin, db)
+
+    assert resp == {"success": True, "message": "密码已重置"}
+    assert "emby_synced" not in resp
+
+    db.expire_all()
+    fresh = db.query(models.WebUser).filter(models.WebUser.id == user.id).first()
+    assert verify_password("new-portal-pw", fresh.password_hash)
+    assert fresh.emby_password == old_emby_pw, "重置不许碰接线密码列"
+    assert fresh.token_version == 4
+    tok = db.query(emby_models.EmbyApiToken).filter(
+        emby_models.EmbyApiToken.id == token.id).first()
+    assert tok.is_revoked is True
 
 
 # ---------------- F5：_drive_403_error_reason 恢复 ----------------

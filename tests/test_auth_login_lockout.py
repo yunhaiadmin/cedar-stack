@@ -278,25 +278,23 @@ def test_emby_login_lockout_and_success_clears(db):
 
     _set_config(db)
     user = _user(db)
-    user.emby_username = "emby_" + uuid.uuid4().hex[:8]
-    user.emby_password = hash_password("Emby-Pass-123")
-    db.commit()
 
     def attempt(pw):
         ratelimit._limiter._hits.clear()
+        # 账号统一后客户端登录用网站名+网站密码（_user 的 PASSWORD）。
         return emby_api.authenticate_by_name(
-            _emby_req(), {"Username": user.emby_username, "Pw": pw}, db)
+            _emby_req(), {"Username": user.username, "Pw": pw}, db)
 
     # 两次失败 → 成功（清零）→ 两次失败仍不锁
     assert attempt("bad-password").status_code == 401
     assert attempt("bad-password").status_code == 401
-    ok = attempt("Emby-Pass-123")
+    ok = attempt(PASSWORD)
     assert isinstance(ok, dict) and ok.get("AccessToken"), ok
     assert attempt("bad-password").status_code == 401
     assert attempt("bad-password").status_code == 401
     # 第三次失败触发锁定，下一次（正确密码）回 429 TooManyAttempts
     assert attempt("bad-password").status_code == 401
-    locked = attempt("Emby-Pass-123")
+    locked = attempt(PASSWORD)
     assert locked.status_code == 429
     assert b"TooManyAttempts" in locked.body
 

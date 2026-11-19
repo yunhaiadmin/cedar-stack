@@ -100,7 +100,6 @@ def main() -> int:
             "id": user.id,
             "is_staff": bool(user.is_staff),
             "is_active": bool(user.is_active),
-            "emby_username": user.emby_username,
         }
     except AdminAccountError as exc:
         print(f"❌ {exc}")
@@ -120,10 +119,7 @@ def main() -> int:
     print(f"   用户 id  : {summary['id']}（is_staff={summary['is_staff']}, "
           f"is_active={summary['is_active']}）")
     print(f"   数据库   : {DATABASE_TYPE} ({DATABASE_URL})")
-    if summary["emby_username"]:
-        print(f"   Emby 账号: {summary['emby_username']}")
-    else:
-        print("   Emby 账号: 未设置（在接线员页自行创建；用户名设好后不可修改）")
+    print("   客户端   : Emby 客户端同样用上面的账号密码登录（账号统一，无第二套凭据）")
     print("\n   登录入口 : 门户 / 登录后后台免登进 /admin/，或直接到 /admin/ 用上面的账号密码登录")
     return 0
 

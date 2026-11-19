@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
 """A-002 回归：用户名大小写唯一性与不敏感查找的唯一性。
 
-旧行为：注册/接线名/AuthenticateByName 全是大小写敏感，Foo 与 foo 可并存；
+旧行为：注册/AuthenticateByName 全是大小写敏感，Foo 与 foo 可并存；
 转账与指名码却按大小写不敏感匹配并 .first() 任选一个，能量/指名码可能
 落到异壳账号。修复口径：
-- 新建账号（注册、upsert_admin）与设置接线名时，大小写不敏感撞名一律拒绝；
+- 新建账号（注册、upsert_admin）时，大小写不敏感撞名一律拒绝；
 - 转账收款人、指名码 target 按不敏感匹配命中多个时明确拒绝，恰好一个时不变。
+
+账号统一（2026-11-19）：设置接线名端点已删，其大小写撞名用例整节下线；
+注册撞存量接线名的拦截保留（usernames.username_conflict 仍含接线名
+条件，随删列收口一并去掉）。
 """
 import os
 
@@ -24,7 +28,6 @@ from backend import codes, models
 from backend.admin_accounts import AdminAccountError, upsert_admin
 from backend.api import admin_ops as ops
 from backend.api import emby_portal
-from backend.emby_server.portal import SetPasswordRequest, set_emby_password
 
 
 @pytest.fixture()
@@ -100,37 +103,10 @@ def test_register_normal_new_name_still_works(db):
     assert db.query(models.WebUser).filter_by(username="Bar_9").count() == 1
 
 
-# ==================== 接线名：大小写撞名拒绝 ====================
-
-def test_set_emby_username_rejects_case_variants(db):
-    _make_user(db, "Foo")
-    other_emby = _make_user(db, "someone")
-    other_emby.emby_username = "PlayName"
-    db.commit()
-    user = _make_user(db, "newbie")
-    for name in ("foo", "FOO", "playname", "PLAYNAME"):
-        with pytest.raises(HTTPException) as exc:
-            set_emby_password(SetPasswordRequest(username=name, password="secret123"), user, db)
-        assert exc.value.status_code == 409
-        assert exc.value.detail == "用户名已被占用"
-    db.refresh(user)
-    assert user.emby_username is None
-
-
-def test_set_emby_username_unique_name_still_works(db):
-    _make_user(db, "Foo")
-    user = _make_user(db, "newbie")
-    body = set_emby_password(
-        SetPasswordRequest(username="newbie_play", password="secret123"), user, db)
-    assert body["emby_username"] == "newbie_play"
-
-
-def test_set_emby_username_may_match_own_portal_name_case_variant(db):
-    # 同一账号自己的门户名大小写变体不是跨账号冲突，不应误伤。
-    user = _make_user(db, "Carol")
-    body = set_emby_password(
-        SetPasswordRequest(username="carol", password="secret123"), user, db)
-    assert body["emby_username"] == "carol"
+# ==================== 接线名设置：端点已随账号统一删除 ====================
+# 原三用例（大小写撞名拒绝/唯一名可用/自家门户名变体放行）测的是
+# POST /api/user/emby/password 设置接线名，该端点 2026-11-19 已删，
+# 用例整节下线；端点 404 由 test_account_unify_client_login 覆盖。
 
 
 # ==================== upsert_admin：新建路径同样拦截 ====================
@@ -155,7 +131,7 @@ def test_upsert_admin_exact_existing_user_still_upgrades(db):
 # ==================== 转账：已随货币删除 ====================
 # transfer_points_core 在 #127（19b9507a“删除能量/积分/活力货币体系”）中删除，
 # 用户间转积分入口已不存在、无载体可测，本节两用例整段删除；
-# 大小写不敏感歧义防护仍由注册/接线名/指名码三路测试覆盖。
+# 大小写不敏感歧义防护仍由注册/指名码两路测试覆盖。
 
 
 # ==================== 指名码：生成与核销同口径 ====================

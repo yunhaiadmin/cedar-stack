@@ -56,8 +56,8 @@ PASSWORD = "BossPass!2345"
 user, created, applied = create_admin.upsert_admin(db, "boss", password=PASSWORD)
 check("新建管理员账号", created and applied == PASSWORD, f"created={created}")
 check("新账号 is_staff / is_active", bool(user.is_staff) and bool(user.is_active))
-check("不自动生成 Emby 用户名；给了密码则写入播放密码哈希",
-      not user.emby_username and (user.emby_password or "").startswith(("$2", "$bcrypt-sha256$")),
+check("不生成接线凭据（账号统一：客户端登录共用门户密码）",
+      not user.emby_username and not user.emby_password,
       f"emby_username={user.emby_username!r}")
 
 # ==================== 2. 真实登录管理后台 ====================

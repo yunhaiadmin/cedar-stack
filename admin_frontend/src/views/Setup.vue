@@ -165,7 +165,7 @@ async function submit() {
         </button>
       </form>
 
-      <p class="auth-foot"><ShieldCheck :size="13" /> 账号与门户共用同一套体系，密码即 Emby 播放密码</p>
+      <p class="auth-foot"><ShieldCheck :size="13" /> 网站账号与客户端共用同一套账号密码</p>
     </div>
   </div>
 </template>

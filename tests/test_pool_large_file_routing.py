@@ -159,8 +159,7 @@ def seed():
     for uname in (BOUND, FREE, CONTRIB):
         u = models.WebUser(
             username=uname, password_hash=hash_password(PW),
-            is_active=True, is_staff=True, emby_username=uname,
-            emby_password=hash_password(PW))
+            is_active=True, is_staff=True)
         db.add(u)
         db.flush()
         users[uname] = u.id
@@ -544,8 +543,7 @@ def test_route_orphan_subscription_not_inherited(seed):
             username="poolroute_orphan",
             password_hash=hash_password(PW),
             is_active=True, is_staff=True,
-            emby_username="poolroute_orphan",
-            emby_password=hash_password(PW))
+            )
         db.add(u)
         db.flush()
         assert u.id == next_id

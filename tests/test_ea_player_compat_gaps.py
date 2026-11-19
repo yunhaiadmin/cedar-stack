@@ -71,8 +71,7 @@ def seed():
     db.commit()
 
     user = models.WebUser(
-        username=UNAME, password_hash="x", is_active=True, is_staff=True,
-        emby_username=UNAME, emby_password=hash_password(PW),
+        username=UNAME, password_hash=hash_password(PW), is_active=True, is_staff=True,
     )
     db.add(user)
     lib = em.Library(guid=_guid(), name="缺口测试库", collection_type="mixed",

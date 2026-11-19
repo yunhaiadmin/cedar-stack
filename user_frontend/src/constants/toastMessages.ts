@@ -24,7 +24,7 @@ export const toastCopy = {
   /** 设备移除 */
   deviceRemoved: () => '设备已移除',
   /** 密码修改（改密码不掉登录，无需"请重新登录"） */
-  passwordChanged: () => '密码已修改，播放密码已同步',
+  passwordChanged: () => '密码已修改',
 }
 
 /** 系统级文案（登录过期 / 网络 / 支付状态 / 权限…，供拦截器与 toUserMessage 使用） */

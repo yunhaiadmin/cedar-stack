@@ -91,7 +91,7 @@ def seed():
     _cleanup(db)
     user = models.WebUser(username=BOUND, password_hash=hash_password(PW),
                           is_active=True, is_staff=True,
-                          emby_username=BOUND, emby_password=PW)
+                          )
     db.add(user)
     db.flush()
     cred = em.MountCredential(mount_id=None, scope="user",

@@ -196,15 +196,19 @@ def test_ip_hit_lists_all_accounts(db):
     assert "9.9.9.9" in out
 
 
-def test_username_fuzzy_and_emby_name_hit(db):
+def test_username_fuzzy_hit_and_emby_name_no_longer_hits(db):
     _staff(db)
+    # emby_username 是存量遗留列：账号统一后查人不再按接线名命中、
+    # 卡片也不再展示接线名（列本身随部署后收口删除）。
     u = _user(db, "moviefan88", tg_id=700501, emby_username="emby_shadow")
     _login(db, u)
     # 二期面板口径：定位到具体用户 → 面板第一页（精简卡＋按钮）
     out, _markup = handlers.handle_whois(db, {"id": STAFF_TG}, STAFF_TG, "moviefan")
     assert "moviefan88" in out
-    out2, _markup2 = handlers.handle_whois(db, {"id": STAFF_TG}, STAFF_TG, "emby_shadow")
-    assert "moviefan88" in out2
+    assert "emby_shadow" not in out
+    out2 = handlers.handle_whois(db, {"id": STAFF_TG}, STAFF_TG, "emby_shadow")
+    text2 = out2[0] if isinstance(out2, tuple) else out2
+    assert "没查到" in text2
 
 
 def test_tg_id_hit(db):

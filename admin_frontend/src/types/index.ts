@@ -170,7 +170,6 @@ export interface AdminUserRow {
   email: string | null
   is_active: boolean
   is_staff: boolean
-  emby_username: string | null
   has_subscription: boolean
   subscription_id: number | null
   subscription_end: string | null
@@ -827,7 +826,6 @@ export interface UserDetailProfile {
   email: string | null
   is_active: boolean
   is_staff: boolean
-  emby_username: string | null
   last_login_at: string | null
   created_at: string | null
 }

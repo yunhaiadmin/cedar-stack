@@ -125,8 +125,6 @@ def test_a001_admin_reset_password_invalidates_victim_sessions(db):
 def test_a001_upsert_admin_reset_bumps_token_version(db, monkeypatch):
     from backend import admin_accounts
 
-    monkeypatch.setattr("backend.emby_server.auth.ensure_emby_credentials",
-                        lambda *a, **k: None)
     keeper = _user(db, "keeper", "keeper-pass-123", is_staff=True, admin_role="super")
 
     user, created, applied = admin_accounts.upsert_admin(db, "keeper", "Brand-New-Pass-123")
@@ -210,16 +208,15 @@ def _admin_client(db, ip):
 def test_a003_emby_authenticate_unknown_user_still_verifies(db, monkeypatch):
     from backend.emby_server import api as emby_api
 
-    u = _user(db, "playeruser", "portal-pass-123")
-    u.emby_username = "player1"
-    u.emby_password = hash_password("player-pass-123")
-    db.commit()
+    # 账号统一后客户端登录验网站名+网站密码（password_hash）。
+    _user(db, "playeruser", "portal-pass-123")
 
     counter = _VerifyCounter(verify_password)
-    # 不存在用户路径走 handler 内对 backend.security.verify_password 的调用；
-    # 存在用户路径走 emby_server.auth.verify_emby_password → 其模块内 verify_password。
+    # 存在与不存在两条路径都走 authenticate_by_name 内局部 import 的
+    # backend.security.verify_password（账号统一前存在用户路径走
+    # emby_server.auth.verify_emby_password → 其模块内 verify_password，
+    # 现已收敛到同一函数）。
     monkeypatch.setattr("backend.security.verify_password", counter)
-    monkeypatch.setattr("backend.emby_server.auth.verify_password", counter)
     client = _client(db, "10.12.0.3", emby_api.emby_router)
 
     r = client.post("/Users/AuthenticateByName",
@@ -229,7 +226,7 @@ def test_a003_emby_authenticate_unknown_user_still_verifies(db, monkeypatch):
 
     counter.calls = 0
     r = client.post("/Users/AuthenticateByName",
-                    json={"Username": "player1", "Pw": "wrong-pass-1"})
+                    json={"Username": "playeruser", "Pw": "wrong-pass-1"})
     assert r.status_code == 401, r.text
     assert counter.calls == 1
 

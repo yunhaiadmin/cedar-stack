@@ -31,7 +31,6 @@ from backend import admin_roles, models  # noqa: E402
 from backend.database import SessionLocal, init_db  # noqa: E402
 from backend.main import app  # noqa: E402
 from backend.security import create_access_token, hash_password  # noqa: E402
-from backend.emby_server.auth import ensure_emby_credentials  # noqa: E402
 
 init_db()
 client = TestClient(app)
@@ -57,10 +56,8 @@ def make_user(username: str, *, is_staff: bool = False, role: str | None = None,
         )
         db.add(user)
         db.commit()
-        # Emby 侧门用例要走 AuthenticateByName：直建用户没有 emby_password，
-        # Emby 登录只验 emby_password（不回落 password_hash）。这里只补密码哈希，
-        # 不生成接线用户名；认证用门户用户名命中。
-        ensure_emby_credentials(db, user, password="pass12345")
+        # Emby 侧门用例走 AuthenticateByName：账号统一后验门户用户名+
+        # password_hash，上面的 password_hash 即够，不再补接线凭据。
         return user.id
 
 

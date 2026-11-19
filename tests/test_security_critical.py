@@ -143,11 +143,9 @@ def test_s1_self_heal_when_no_super(db):
     assert admin_roles.ensure_legacy_admin_roles(db)["healed"] is None
 
 
-def test_s1_cli_and_setup_admin_is_explicit_super(db, monkeypatch):
+def test_s1_cli_and_setup_admin_is_explicit_super(db):
     from backend import admin_accounts
 
-    monkeypatch.setattr("backend.emby_server.auth.ensure_emby_credentials",
-                        lambda *a, **k: None)
     user, created, _ = admin_accounts.upsert_admin(db, "siteowner", "Str0ng-Passw0rd!x")
     assert created and user.admin_role == "super"
 
@@ -175,9 +173,7 @@ def test_s2_operator_cannot_disable_or_demote_admins(db, admin_client):
     assert boss.is_active and boss.is_staff
 
 
-def test_s2_operator_can_still_manage_ordinary_users(db, admin_client, monkeypatch):
-    monkeypatch.setattr("backend.emby_server.auth.ensure_emby_credentials",
-                        lambda *a, **k: None)
+def test_s2_operator_can_still_manage_ordinary_users(db, admin_client):
     op = _user(db, "op", is_staff=True, role="operator")
     alice = _user(db, "alice")
     r = admin_client.put(f"/api/admin/users/{alice.id}", json={"is_active": False}, headers=_bearer(op))

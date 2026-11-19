@@ -200,7 +200,6 @@ export interface AuthUser {
   public_id?: string | null
   username: string
   email?: string | null
-  emby_username?: string | null
   is_vip: boolean
   is_active: boolean
   /** 管理员：用户端据此显示「管理后台」入口（两端同源同 JWT，无需二次登录） */
@@ -496,7 +495,7 @@ export interface AccountCard {
   server_id: string
   server_name: string
   base_url: string
-  /** 未自建时为空串。接口不会再发明 emby_ 用户名，也不用 null 表示未设置。 */
+  /** 账号统一后下发的就是网站用户名；没查看权限时为空串。 */
   emby_username: string
   /** 明文永不下发，恒为 null */
   emby_password: null
