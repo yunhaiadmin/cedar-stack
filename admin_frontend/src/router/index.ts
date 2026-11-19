@@ -27,6 +27,8 @@ const routes: RouteRecordRaw[] = [
       // 页面标题与侧边栏分组保持一致（v2.25.0 按交付链重组信息架构）
       { path: '', name: 'Dashboard', component: () => import('@/views/Dashboard.vue'), meta: { title: '仪表盘' } },
       { path: 'users', name: 'Users', component: () => import('@/views/Users.vue'), meta: { title: '用户' } },
+      // 用户收藏查看（二期缺口项 6）：按用户只读查看作品＋人员收藏
+      { path: 'user-favorites', name: 'UserFavorites', component: () => import('@/views/UserFavorites.vue'), meta: { title: '用户收藏' } },
       { path: 'subscriptions', name: 'Subscriptions', component: () => import('@/views/Subscriptions.vue'), meta: { title: '订阅与权益' } },
       { path: 'goods', name: 'Goods', component: () => import('@/views/Goods.vue'), meta: { title: '订阅套餐' } },
       { path: 'orders', name: 'Orders', component: () => import('@/views/Orders.vue'), meta: { title: '订单' } },
@@ -47,6 +49,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'media-seek', name: 'MediaSeek', component: () => import('@/views/MediaSeek.vue'), meta: { title: '求片管理' } },
       // 一起看管理（二期缺口）：房间列表/详情（只读）+ 强制关房
       { path: 'watch-together', name: 'WatchTogether', component: () => import('@/views/WatchTogether.vue'), meta: { title: '一起看管理' } },
+      // 追剧订阅管理（二期缺口项 2）：全站追剧订阅列表＋管理员代取消
+      { path: 'series-follows', name: 'SeriesFollows', component: () => import('@/views/SeriesFollows.vue'), meta: { title: '追剧订阅' } },
       // 群抽奖（Welfare.vue，历史文件名）：抽奖轮次 + 提案黑名单标签；
       // 公益配置标签已随公益资格整族于 2026-11-14 删除
       { path: 'welfare-lottery-rounds', name: 'WelfareLotteryRounds', component: () => import('@/views/Welfare.vue'), meta: { title: '群抽奖' } },
@@ -78,6 +82,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'client-policy', name: 'ClientPolicy', component: () => import('@/views/ClientPolicy.vue'), meta: { title: '客户端策略' } },
       { path: 'logs', name: 'Logs', component: () => import('@/views/Logs.vue'), meta: { title: '操作日志' } },
       { path: 'health', name: 'SystemHealth', component: () => import('@/views/SystemHealth.vue'), meta: { title: '系统健康' } },
+      // 4K 探针结果（二期缺口）：探针页真机回传记录的只读查看面
+      { path: 'probe-4k', name: 'Probe4kResults', component: () => import('@/views/Probe4kResults.vue'), meta: { title: '4K 探针结果' } },
       // v2.56.0：任务总览——所有后台任务一页看完（状态/进度/开关）
       { path: 'tasks', name: 'TaskOverview', component: () => import('@/views/TaskOverview.vue'), meta: { title: '任务总览' } },
       // 专线 B 第二阶段 · 只读观测口（GET，仅展示）

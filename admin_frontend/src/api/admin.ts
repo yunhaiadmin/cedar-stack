@@ -235,6 +235,25 @@ export const updateDanmuApiLines = (
   external: { external_enabled: boolean; external_url: string },
 ) => put<DanmuApiLinesConfig>('/danmu-api/config', { lines, ...external })
 
+/** 用户 TOTP 管理（二期缺口 · 项 4）：后端 /api/admin/users/{id}/totp。
+ *  状态口只回启用态与时间戳，后端不下发任何密钥材料（secret/密封值）。 */
+export interface AdminUserTotpStatus {
+  user_id: number
+  username: string
+  enabled: boolean
+  /** 已生成密钥但未输码确认（设置进行中，登录不要求验证码） */
+  pending_setup: boolean
+  confirmed_at: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export const fetchUserTotp = (userId: number) =>
+  get<AdminUserTotpStatus>(`/users/${userId}/totp`)
+
+export const resetUserTotp = (userId: number) =>
+  post<{ success: boolean }>(`/users/${userId}/totp/reset`, {})
+
 /** 登录失败锁定（2026-11-18，F4/F8 补项）：后端 /api/admin/login-lockout/config */
 export interface LoginLockoutConfig {
   /** 总开关，默认开 */
@@ -253,6 +272,30 @@ export const fetchLoginLockoutConfig = () => get<LoginLockoutConfig>('/login-loc
 
 export const updateLoginLockoutConfig = (data: LoginLockoutConfig) =>
   put<LoginLockoutConfig>('/login-lockout/config', data)
+
+/** 用户 Passkey 管理（二期缺口 · 项 3）：后端 /api/admin/users/{id}/passkeys。
+ *  列表只含展示字段，后端不下发凭据材料（credential_id / public_key）。 */
+export interface AdminUserPasskey {
+  id: number
+  device_name: string | null
+  transports: string | null
+  sign_count: number
+  created_at: string | null
+  last_used_at: string | null
+}
+
+export interface AdminUserPasskeys {
+  user_id: number
+  username: string
+  max_per_user: number
+  items: AdminUserPasskey[]
+}
+
+export const fetchUserPasskeys = (userId: number) =>
+  get<AdminUserPasskeys>(`/users/${userId}/passkeys`)
+
+export const revokeUserPasskey = (userId: number, passkeyId: number) =>
+  del<{ success: boolean }>(`/users/${userId}/passkeys/${passkeyId}`)
 
 /** 官网菜单抽屉（2026-11-18）：后端 /api/admin/site-drawer/config */
 export interface SiteDrawerNavItem {
