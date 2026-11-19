@@ -153,6 +153,34 @@ class RoomStore:
                 self._drop_redis(exc)
         self._mem.pop(code, None)
 
+    async def list_rooms(self) -> list[dict]:
+        """枚举全部活房间记录（管理面用）：Redis SCAN ``wt:room:*``，
+        降级时读进程内字典并顺手清过期项。坏记录跳过不报错。"""
+        await self._ensure_redis()
+        if self._redis is not None:
+            try:
+                rooms: list[dict] = []
+                async for key in self._redis.scan_iter(
+                        match="wt:room:*", count=100):
+                    raw = await self._redis.get(key)
+                    if not raw:
+                        continue
+                    try:
+                        rooms.append(json.loads(raw))
+                    except (TypeError, ValueError):
+                        continue
+                return rooms
+            except Exception as exc:  # noqa: BLE001
+                self._drop_redis(exc)
+        now = time.time()
+        rooms = []
+        for code, (room, expire_at) in list(self._mem.items()):
+            if expire_at <= now:
+                self._mem.pop(code, None)
+            else:
+                rooms.append(room)
+        return rooms
+
 
 # ==================== 门禁校验 ====================
 
@@ -496,6 +524,64 @@ class WatchTogetherHub:
             await self._send(ws, {
                 "type": "wt.error", "error": "internal",
                 "message": "一起看出了点问题，稍后再试。"})
+
+    # ---------- 管理面（后台大改造二期：一起看管理） ----------
+
+    def admin_room_view(self, room: dict) -> dict:
+        """管理面房间视图：房间记录 + 本进程连接成员 + 外推进度。
+
+        红线不变：只含控制面信息（条目 guid / 房主 / 成员名单 /
+        播放态），**不含任何流地址、play_sign 或令牌**。成员名单只
+        来自本进程连接表——记录在 Redis 而连接不在本进程时（如刚
+        重启）成员为空、``member_count`` 为 0，不编造名单。
+        """
+        code = str(room.get("code") or "")
+        snapshot = self._snapshot(code, room)
+        return {
+            "code": code,
+            "item_id": room.get("item_id"),
+            "host_id": room.get("host_id"),
+            "created_at": room.get("created_at"),
+            "members": snapshot["members"],
+            "member_count": len(snapshot["members"]),
+            "state": snapshot["state"],
+            "max_members": MAX_MEMBERS,
+            "ttl_seconds": ROOM_TTL_SECONDS,
+        }
+
+    async def list_rooms_admin(self) -> list[dict]:
+        """全部活房间的管理视图，按创建时间倒序。"""
+        views = [self.admin_room_view(room)
+                 for room in await self.store.list_rooms()]
+        views.sort(key=lambda v: v.get("created_at") or 0, reverse=True)
+        return views
+
+    async def get_room_admin(self, code: str) -> Optional[dict]:
+        code = (code or "").strip().upper()
+        room = await self.store.get(code)
+        if room is None:
+            return None
+        return self.admin_room_view(room)
+
+    async def force_close_room(self, code: str) -> Optional[dict]:
+        """管理员强制关房：全房广播 ``wt.ended``（reason=admin_closed，
+        与房主解散的 dissolved 区分）、摘掉全部连接、删房间记录。
+
+        返回关房前的管理视图（供审计与回执）；房间不存在返回 None。
+        这是管理动作，不经播放门禁——它只终止同步会话，不下发、
+        不接触任何播放凭证，成员各自的播放页不受影响。
+        """
+        code = (code or "").strip().upper()
+        room = await self.store.get(code)
+        if room is None:
+            return None
+        view = self.admin_room_view(room)
+        await self._broadcast(code, {
+            "type": "wt.ended", "reason": "admin_closed"})
+        for member_ws in list(self._conns.get(code, {})):
+            self._detach(member_ws)
+        await self.store.delete(code)
+        return view
 
     async def handle_disconnect(self, ws, user_id: int) -> None:
         """连接断开即离房（房主转让 / 房间回收在 _leave_room 里）。"""

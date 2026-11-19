@@ -45,6 +45,8 @@ const routes: RouteRecordRaw[] = [
       // 等级治理 Step 2：举报终审队列 + 治理停权（一页两标签，?tab=suspensions 落到停权）
       { path: 'governance', name: 'Governance', component: () => import('@/views/Governance.vue'), meta: { title: '举报与停权' } },
       { path: 'media-seek', name: 'MediaSeek', component: () => import('@/views/MediaSeek.vue'), meta: { title: '求片管理' } },
+      // 一起看管理（二期缺口）：房间列表/详情（只读）+ 强制关房
+      { path: 'watch-together', name: 'WatchTogether', component: () => import('@/views/WatchTogether.vue'), meta: { title: '一起看管理' } },
       // 群抽奖（Welfare.vue，历史文件名）：抽奖轮次 + 提案黑名单标签；
       // 公益配置标签已随公益资格整族于 2026-11-14 删除
       { path: 'welfare-lottery-rounds', name: 'WelfareLotteryRounds', component: () => import('@/views/Welfare.vue'), meta: { title: '群抽奖' } },
