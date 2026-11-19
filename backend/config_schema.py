@@ -532,6 +532,10 @@ POOL_RETRY_CONFIG_SCHEMA: dict[str, tuple] = {
     # 源自愈开关（2026-11-12）：池单 copy_forbidden 时先经 SA
     # 给源文件补 anyone-reader 再重试一次；默认开（代码默认）。
     "pool_source_heal_enabled": ("bool",),
+    # 换源上限（2026-11-19）：单条目 copy_forbidden 换盘穷尽后
+    # 最多再换几个同作品替代源重试；0 = 关换源（回旧口径）。
+    # 上限 16 防同作品重复行很多时无界换源。
+    "pool_copy_forbidden_source_max_swaps": ("int", 0, 16),
 }
 
 # 缺集补集通道（2026-11-11 B 方案）：绕开 MP 订阅判存，按缺集

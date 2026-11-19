@@ -6819,10 +6819,11 @@ def _after_pool_copy_forbidden(db, job, item):
     - 本行 cooldown_until 改按 pool_retry 子家族键
       pool_copy_forbidden_cooldown_sec（默认 3600 秒）落字；
       _note_job_terminal_cooldown 对这类行不再回刷 24h。
-    - 立刻换盘：经 pool_gate.try_pool_forbidden_swap 排除已
-      forbidden 的盘重建一单，不等观众下次点播才触发；无盘
-      可换/限额命中是常态结果（门禁下次点播还会兜底），只记
-      日志。本函数永不抛异常——后事失败不许污染已落的终态。
+    - 立刻换盘→换源：经 pool_gate.try_pool_forbidden_recover
+      先排除已 forbidden 的盘重建一单，换盘穷尽再换同作品替
+      代源，不等观众下次点播才触发；无盘/无源可换/限额命中
+      是常态结果（门禁下次点播还会兜底），只记日志。本函数
+      永不抛异常——后事失败不许污染已落的终态。
     """
     from backend.emby_server import pool_gate as _pg
 
@@ -6840,19 +6841,20 @@ def _after_pool_copy_forbidden(db, job, item):
         except Exception:  # noqa: BLE001
             pass
     try:
-        new_job = _pg.try_pool_forbidden_swap(db, item)
+        new_job, how = _pg.try_pool_forbidden_recover(db, item)
         if new_job is not None:
-            logger.info("池 copy_forbidden 换盘重建 job=%s -> %s",
+            logger.info("池 copy_forbidden %s重建 job=%s -> %s",
+                        "换源" if how == "source" else "换盘",
                         getattr(job, "id", None), new_job.id)
     except TransferError as exc:
-        logger.info("池 copy_forbidden 换盘未建单 job=%s kind=%s",
+        logger.info("池 copy_forbidden 换盘/换源未建单 job=%s kind=%s",
                     getattr(job, "id", None), exc.kind)
         try:
             db.rollback()
         except Exception:  # noqa: BLE001
             pass
-    except Exception:  # noqa: BLE001 — 换盘失败门禁下次点播兜底
-        logger.warning("池 copy_forbidden 换盘重建异常 job=%s",
+    except Exception:  # noqa: BLE001 — 换盘/换源失败门禁下次点播兜底
+        logger.warning("池 copy_forbidden 换盘/换源重建异常 job=%s",
                        getattr(job, "id", None), exc_info=True)
         try:
             db.rollback()
@@ -6933,9 +6935,12 @@ def _run_drive_pool_job(db, job, item, drive_api):
     - 不走 Path B：成员令牌看不见源（_CopyForbidden）时先走源
       自愈（SA 给源文件补 anyone-reader 后原地重试一次，
       2026-11-12，见 _try_pool_source_heal），仍被拒才本单终态
-      copy_forbidden，不静默转 SA 中转；但池路径不止这一块盘——
-      终态后由 _after_pool_copy_forbidden 换其他成员盘重建一单
-      （2026-11-10 定案，个人盘路径无此语义、逐字不动）；
+      copy_forbidden，不静默转 SA 中转；但池路径不止这一块盘、
+      不止一个源——终态后由 _after_pool_copy_forbidden 先换其
+      他成员盘、穷尽再换同作品替代源重建一单（2026-11-10 换
+      盘定案 + 2026-11-19 换源兜底，个人盘路径无此语义、逐
+      字不动）；本单 source_item_id 非空时拷的是替代源行的
+      文件（见函数内换源解析），副本仍登记在原条目名下；
     - 不腾地方：copy 中途配额不足时直接终态 insufficient_space，
       绝不调用 ensure_space_for_transfer——那会清掉贡献者自己的
       用户副本给池让路；
@@ -6969,9 +6974,24 @@ def _run_drive_pool_job(db, job, item, drive_api):
     from backend.emby_server import pool_gate as _pg
     user_client = UserDriveApiClient(db, binding)
     member_drive = f"myDrive:{member.user_id}"
-    orig_fid = item.drive_file_id.strip()
-    name = _copy_name_for_item(item)
-    _file_size = _to_int(getattr(item, "size", None))
+    # 换源单（2026-11-19）：job.source_item_id 非空时实际拷源
+    # 取替代源行的 fid/文件名/大小（目录核对按名找副本，必须
+    # 用真拷的那份的名字），副本仍登记在 job.item_id 条目名
+    # 下。替代行已删/无 fid 时回落本行条目源（与普通单同口
+    # 径），不因换源标记失效把单打死。
+    source_item = item
+    _src_item_id = getattr(job, "source_item_id", None)
+    if _src_item_id:
+        _alt_item = (db.query(em.MediaItem)
+                     .filter(em.MediaItem.id == _src_item_id,
+                             em.MediaItem.deleted_at.is_(None))
+                     .first())
+        if _alt_item is not None and (
+                getattr(_alt_item, "drive_file_id", "") or "").strip():
+            source_item = _alt_item
+    orig_fid = source_item.drive_file_id.strip()
+    name = _copy_name_for_item(source_item)
+    _file_size = _to_int(getattr(source_item, "size", None))
     # copy 尝试（至多两轮）：首轮被拒（copy_forbidden）先走源
     # 自愈——SA 给源文件补 anyone-reader 后原地重试一次（见
     # _try_pool_source_heal）；补不上/重试仍拒才落终态。其余
@@ -7049,16 +7069,19 @@ def _run_drive_pool_job(db, job, item, drive_api):
             variant_drive_id=f"pooldrive:{member.id}",
             owner_scope="pool", owner_ref=str(member.id), status="orphan",
             size_bytes=_to_int((copied or {}).get("size"))
-            or _to_int(getattr(item, "size", None)))
+            or _to_int(getattr(source_item, "size", None)))
         db.add(row)
         return _fail_job(db, job, "orphan", str(exc))
-    row = _register_ready_variant(db, job, item, variant_fid,
+    # 登记传 source_item：变体行 item_id 取 job.item_id（原条
+    # 目），source_file_id 取实际拷源行的 fid（换源单如实记
+    # 替代源，不冒充原源）。
+    row = _register_ready_variant(db, job, source_item, variant_fid,
                                   f"pooldrive:{member.id}",
                                   size=(copied or {}).get("size"))
     _pg._bump_pool_usage(
         db, member.id,
         bytes_=(_to_int((copied or {}).get("size"))
-                or _to_int(getattr(item, "size", None)) or 0))
+                or _to_int(getattr(source_item, "size", None)) or 0))
     db.commit()
     return {"job_id": job.id, "outcome": "done", "variant_id": row.id}
 
