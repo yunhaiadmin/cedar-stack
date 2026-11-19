@@ -179,6 +179,7 @@
         :info="topupInfo"
         :balance="balance"
         @close="topupOpen = false"
+        @paid="onTopupPaid"
       />
     </div>
   </UhdAccountLayout>
@@ -362,6 +363,13 @@ async function doRedeem() {
 function onGiftCreated(res: GiftCodeCreateResult) {
   balance.value = res.balance
   void loadGiftCodes()
+  if (ledgerLoaded.value) void loadLedger(true)
+}
+
+/** 充值到账：等待屏轮询到 paid 后通知，刷新余额与流水（余额已由
+ * 弹层内的成功态展示，这里只刷新数据） */
+function onTopupPaid() {
+  void loadWallet()
   if (ledgerLoaded.value) void loadLedger(true)
 }
 

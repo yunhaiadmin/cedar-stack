@@ -11,6 +11,12 @@ declare module 'qrcode/lib/browser.js' {
     width?: number
     margin?: number
     scale?: number
+    /** 运行时支持（qrcode 的 QRCodeRenderersOptions 原生字段）：
+     * dark 为码点色、light 为底色；TopupWaiting 用橙码配白底 */
+    color?: {
+      dark?: string
+      light?: string
+    }
   }
   const QRCode: {
     toCanvas(

@@ -58,6 +58,21 @@ export interface WalletTopupCreateResult {
   message: string
 }
 
+export interface WalletTopupOrder {
+  ok: boolean
+  order_no: string
+  status: 'pending' | 'paid' | 'failed' | 'expired'
+  amount_usd: string
+  amount_usd_fen: number
+  amount_cny: string
+  amount_cny_fen: number
+  credit_usd: string
+  credit_usd_fen: number
+  payment_method: string
+  paid_at: string | null
+  created_at: string | null
+}
+
 export interface WalletLedgerPage {
   items: WalletLedgerRow[]
   total: number
@@ -161,6 +176,11 @@ export const walletApi = {
     api.post<never, WalletTopupCreateResult>(
       '/api/user/wallet/topup/orders',
       data,
+    ),
+  /** 查询本人充值单状态（等待屏轮询到账用，只读；非本人/不存在 404） */
+  getTopupOrder: (orderNo: string) =>
+    api.get<never, WalletTopupOrder>(
+      `/api/user/wallet/topup/orders/${encodeURIComponent(orderNo)}`,
     ),
 }
 
