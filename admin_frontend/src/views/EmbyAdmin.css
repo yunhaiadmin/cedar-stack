@@ -1,3 +1,11 @@
+/* 媒体库页页面级全局样式表（EmbyAdmin.vue import）。
+   受控例外登记（后台一期批 4）：本文件登记为页面级 CSS 受控例外，不收编进
+   styles/ 全局层——下拉面板 teleport 到 body、scoped 盖不到，且 .lib-* 等规则
+   被 components/emby 子组件共用。约束：规则只挂页面族前缀、字号只引
+   --uhd-fs-* 梯队、颜色只走令牌；登记表在 scripts/check_frontend_tokens.py
+   的 ADMIN_PAGE_CSS_REGISTERED，结论见
+   docs/design/20261119-admin-page-css-exceptions.md。 */
+
 .lib-grid {
   grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
   gap: 16px;
