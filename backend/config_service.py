@@ -77,6 +77,8 @@ SCHEMAS: dict[str, dict[str, tuple]] = {
     "danmu_api": config_schema.DANMU_API_CONFIG_SCHEMA,
     # 官网菜单抽屉（2026-11-18）：整抽屉一份 JSON（导航/渠道/底按钮）
     "site_drawer": config_schema.SITE_DRAWER_CONFIG_SCHEMA,
+    # 官网落地页文案（2026-11-19 二期）：整页可编辑文本一份 JSON
+    "landing": config_schema.LANDING_CONTENT_SCHEMA,
     # 安装应用页（2026-11-13）：6 平台官方客户端下载链接
     "install_app": config_schema.INSTALL_APP_CONFIG_SCHEMA,
     "welfare": config_schema.WELFARE_CONFIG_SCHEMA,

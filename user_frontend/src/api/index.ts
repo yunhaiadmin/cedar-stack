@@ -376,6 +376,65 @@ export const libraryStatsApi = {
   /** 公开端点：官网首页片库数据行（后端缓存 10 分钟，回全 0 表示后端故障兜底） */
   get: () => api.get<never, LibraryStats>('/api/site/library-stats'),
 }
+
+// ==================== 官网落地页文案（backend/api/site.py） ====================
+
+export interface LandingSpec {
+  value: string
+  sub: string
+}
+
+export interface LandingPoint {
+  title: string
+  text: string
+}
+
+export interface LandingCard {
+  eyebrow: string
+  title_lines: string[]
+  desc: string
+  chips: string[]
+  points: LandingPoint[]
+}
+
+export interface LandingContent {
+  hero: {
+    title_lines: string[]
+    /** 副文案轮换（至少 1 条） */
+    subs: string[]
+    scroll_hint: string
+    /** 规格 chip（图标按位序固定，文案可配，最多 4 条） */
+    specs: LandingSpec[]
+  }
+  partners: {
+    eyebrow: string
+    /** 平台名单（顺序即显示顺序；空数组 = 整行不渲染） */
+    names: string[]
+  }
+  devices: {
+    eyebrow: string
+    title_lines: string[]
+    sub: string
+    marquee_clients: string[]
+    marquee_specs: string[]
+  }
+  showcase: {
+    cinema: { eyebrow: string; title: string; sub: string }
+    audio: { eyebrow: string; title: string; sub: string }
+  }
+  essentials: {
+    eyebrow: string
+    title: string
+    sub: string
+    /** 卖点卡恒 3 张（版式固定，只改文案） */
+    cards: LandingCard[]
+  }
+}
+
+export const landingApi = {
+  /** 公开端点：官网落地页整份文案（后台「官网内容」页配置，未配时后端下发默认 = 现行写死文案） */
+  get: () => api.get<never, LandingContent>('/api/site/landing'),
+}
 // ==================== 自建 Emby 门户 API（backend/emby_server/portal.py） ====================
 
 /** 一个服下的一条播放线路（账号卡下发；配额按线路计） */
