@@ -235,6 +235,25 @@ export const updateDanmuApiLines = (
   external: { external_enabled: boolean; external_url: string },
 ) => put<DanmuApiLinesConfig>('/danmu-api/config', { lines, ...external })
 
+/** 用户 TOTP 管理（二期缺口 · 项 4）：后端 /api/admin/users/{id}/totp。
+ *  状态口只回启用态与时间戳，后端不下发任何密钥材料（secret/密封值）。 */
+export interface AdminUserTotpStatus {
+  user_id: number
+  username: string
+  enabled: boolean
+  /** 已生成密钥但未输码确认（设置进行中，登录不要求验证码） */
+  pending_setup: boolean
+  confirmed_at: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export const fetchUserTotp = (userId: number) =>
+  get<AdminUserTotpStatus>(`/users/${userId}/totp`)
+
+export const resetUserTotp = (userId: number) =>
+  post<{ success: boolean }>(`/users/${userId}/totp/reset`, {})
+
 /** 登录失败锁定（2026-11-18，F4/F8 补项）：后端 /api/admin/login-lockout/config */
 export interface LoginLockoutConfig {
   /** 总开关，默认开 */

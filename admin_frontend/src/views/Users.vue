@@ -28,6 +28,7 @@ import { parseServerTime } from '@/utils/serverTime'
 import type { AdminUserRow, DeviceRow, UserDetail, UserGrantCard, UserGrants } from '@/types'
 import { useAuthStore } from '@/stores/auth'
 import DataTable from '@/components/DataTable.vue'
+import UserTotpPanel from '@/components/UserTotpPanel.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import type { AppliedFilter, FilterConfig } from '@/components/FilterBar.vue'
@@ -825,6 +826,18 @@ function fmtCount(n: number | null | undefined): string {
           </div>
 
           <el-tabs v-model="detailTab" class="detail-tabs">
+            <!-- 动态验证码（二期 · 项 4）：TOTP 状态查看/强制重置，账号恢复场景 -->
+            <el-tab-pane label="动态验证码" name="totp">
+              <template #label>
+                <span class="tab-label"><ShieldCheck :size="13" />动态验证码</span>
+              </template>
+              <UserTotpPanel
+                v-if="detailTab === 'totp'"
+                :user-id="detail.profile.id"
+                :username="detail.profile.username"
+              />
+            </el-tab-pane>
+
             <!-- 授权资源：一个服一张卡（Phase 4） -->
             <el-tab-pane label="授权资源" name="grants">
               <template #label>
