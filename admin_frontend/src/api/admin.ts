@@ -254,6 +254,30 @@ export const fetchLoginLockoutConfig = () => get<LoginLockoutConfig>('/login-loc
 export const updateLoginLockoutConfig = (data: LoginLockoutConfig) =>
   put<LoginLockoutConfig>('/login-lockout/config', data)
 
+/** 用户 Passkey 管理（二期缺口 · 项 3）：后端 /api/admin/users/{id}/passkeys。
+ *  列表只含展示字段，后端不下发凭据材料（credential_id / public_key）。 */
+export interface AdminUserPasskey {
+  id: number
+  device_name: string | null
+  transports: string | null
+  sign_count: number
+  created_at: string | null
+  last_used_at: string | null
+}
+
+export interface AdminUserPasskeys {
+  user_id: number
+  username: string
+  max_per_user: number
+  items: AdminUserPasskey[]
+}
+
+export const fetchUserPasskeys = (userId: number) =>
+  get<AdminUserPasskeys>(`/users/${userId}/passkeys`)
+
+export const revokeUserPasskey = (userId: number, passkeyId: number) =>
+  del<{ success: boolean }>(`/users/${userId}/passkeys/${passkeyId}`)
+
 /** 官网菜单抽屉（2026-11-18）：后端 /api/admin/site-drawer/config */
 export interface SiteDrawerNavItem {
   icon: string
