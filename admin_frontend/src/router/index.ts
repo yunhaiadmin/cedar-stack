@@ -27,6 +27,8 @@ const routes: RouteRecordRaw[] = [
       // 页面标题与侧边栏分组保持一致（v2.25.0 按交付链重组信息架构）
       { path: '', name: 'Dashboard', component: () => import('@/views/Dashboard.vue'), meta: { title: '仪表盘' } },
       { path: 'users', name: 'Users', component: () => import('@/views/Users.vue'), meta: { title: '用户' } },
+      // 用户收藏查看（二期缺口项 6）：按用户只读查看作品＋人员收藏
+      { path: 'user-favorites', name: 'UserFavorites', component: () => import('@/views/UserFavorites.vue'), meta: { title: '用户收藏' } },
       { path: 'subscriptions', name: 'Subscriptions', component: () => import('@/views/Subscriptions.vue'), meta: { title: '订阅与权益' } },
       { path: 'goods', name: 'Goods', component: () => import('@/views/Goods.vue'), meta: { title: '订阅套餐' } },
       { path: 'orders', name: 'Orders', component: () => import('@/views/Orders.vue'), meta: { title: '订单' } },
@@ -45,6 +47,8 @@ const routes: RouteRecordRaw[] = [
       // 等级治理 Step 2：举报终审队列 + 治理停权（一页两标签，?tab=suspensions 落到停权）
       { path: 'governance', name: 'Governance', component: () => import('@/views/Governance.vue'), meta: { title: '举报与停权' } },
       { path: 'media-seek', name: 'MediaSeek', component: () => import('@/views/MediaSeek.vue'), meta: { title: '求片管理' } },
+      // 追剧订阅管理（二期缺口项 2）：全站追剧订阅列表＋管理员代取消
+      { path: 'series-follows', name: 'SeriesFollows', component: () => import('@/views/SeriesFollows.vue'), meta: { title: '追剧订阅' } },
       // 群抽奖（Welfare.vue，历史文件名）：抽奖轮次 + 提案黑名单标签；
       // 公益配置标签已随公益资格整族于 2026-11-14 删除
       { path: 'welfare-lottery-rounds', name: 'WelfareLotteryRounds', component: () => import('@/views/Welfare.vue'), meta: { title: '群抽奖' } },
