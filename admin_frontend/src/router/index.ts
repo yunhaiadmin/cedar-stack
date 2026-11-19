@@ -66,6 +66,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'metadata-sources', name: 'MetadataSources', component: () => import('@/views/MetadataSources.vue'), meta: { title: '元数据来源' } },
       // 识别审查（批二 #15）：低置信识别的人工处置队列，与元数据来源同组
       { path: 'identify-review', name: 'IdentifyReview', component: () => import('@/views/IdentifyReview.vue'), meta: { title: '识别审查' } },
+      // 人物条目管理（二期部分缺）：credits 聚合人物的改名 / 合并，与元数据来源同组
+      { path: 'people', name: 'PeopleAdmin', component: () => import('@/views/PeopleAdmin.vue'), meta: { title: '人物管理' } },
       // 缺集清单（缺集全套）：核算工人台账的只读面，管理员对着清单补源
       { path: 'missing-episodes', name: 'MissingEpisodes', component: () => import('@/views/MissingEpisodes.vue'), meta: { title: '缺集清单' } },
       { path: 'pool', name: 'PoolAdmin', component: () => import('@/views/PoolAdmin.vue'), meta: { title: '贡献池' } },
