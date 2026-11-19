@@ -9,6 +9,7 @@
       @focusin="onSheetFocusIn"
       @focusout="onSheetFocusOut"
     >
+      <template v-if="phase === 'form'">
       <div class="tp-head">
         <h3 class="tp-title">账户充值</h3>
         <button type="button" class="tp-close" aria-label="关闭" @click="close">
@@ -111,6 +112,18 @@
           <template v-else>{{ confirmText }}</template>
         </button>
       </template>
+      </template>
+      <!-- 等待屏：与表单共用同一张卡片，同卡片内切换 -->
+      <TopupWaiting
+        v-else
+        :phase="waitPhase"
+        :fail-kind="failKind"
+        :amount-cny="payCny"
+        :credit-usd="creditUsd"
+        :pay-url="payUrl"
+        @close="close"
+        @retry="retryTopup"
+      />
     </div>
   </div>
 </template>
@@ -128,12 +141,15 @@
  * 不留假入口）；确认钮文案「确认支付 ¥X.XX」、提交中只剩转圈。
  * 金额校验、费率、汇率、限额全读 info（钱包信息接口的 topup
  * 块），前端不写死；应付预览与后端同一公式（美元 × 生效汇率 ×
- * (1+费率%)，到分取整），入账以后端订单为准。下单成功整页跳转
- * pay_url（后端暂无充值订单状态查询接口，不做等待屏轮询）。
+ * (1+费率%)，到分取整），入账以后端订单为准。下单成功后在同卡片内切等待屏
+ * （TopupWaiting）：新窗口开支付页（iOS Safari 下 window.open 须在点击手势
+ * 同步调用，故先同步开空白页再写地址）、二维码扫码同付、每 3 秒轮询订单状态
+ * 到账/失败/10 分钟超时；paid 即停轮询并通知钱包页刷新余额。
  */
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
 import { walletApi, type WalletTopupInfo } from '@/api/wallet'
+import TopupWaiting from '@/components/profile/TopupWaiting.vue'
 import '../../styles/traffic-view.css'
 import { toUserMessage } from '@/utils/toUserMessage'
 
@@ -146,6 +162,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
+  /** 到账：带入账美元串，钱包页据此刷新余额与流水 */
+  paid: [creditUsd: string]
 }>()
 
 const tiers = [10, 30, 50, 70]
@@ -157,6 +175,100 @@ const submitting = ref(false)
 const sheetRef = ref<HTMLElement | null>(null)
 /** 焦点是否落在弹窗内的输入框上（iOS 遮罩误关守卫用，见 onMaskClick） */
 const inputFocused = ref(false)
+
+/** 等待屏状态机：form 表单 / waiting 等付款 / paid 到账 / failed 失败 */
+type WaitPhase = 'form' | 'waiting' | 'paid' | 'failed'
+type WaitFailKind = 'failed' | 'expired' | 'timeout'
+const phase = ref<WaitPhase>('form')
+const failKind = ref<WaitFailKind>('failed')
+/** 传给 TopupWaiting 的 phase（表单态不渲染它，'form' 收窄掉） */
+const waitPhase = computed<'waiting' | 'paid' | 'failed'>(() =>
+  phase.value === 'paid' ? 'paid' : phase.value === 'failed' ? 'failed' : 'waiting')
+/** 本次订单：单号 / 应付人民币（下单返回权威值）/ 支付地址 / 到账美元 */
+const orderNo = ref('')
+const payCny = ref('')
+const payUrl = ref('')
+const creditUsd = ref('')
+/** 轮询：3 秒一轮、10 分钟墙钟截止；组件已卸载/弹窗已关即不启动 */
+const POLL_MS = 3000
+const POLL_TIMEOUT_MS = 10 * 60 * 1000
+const pollTimer = ref<number | null>(null)
+let pollDeadline = 0
+let alive = true
+
+function stopPolling() {
+  if (pollTimer.value !== null) {
+    window.clearInterval(pollTimer.value)
+    pollTimer.value = null
+  }
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+}
+
+function onVisibilityChange() {
+  if (phase.value !== 'waiting') return
+  if (document.hidden) {
+    // 切后台只停轮询、不停墙钟截止（10 分钟是网关付款窗口，按墙钟算）
+    if (pollTimer.value !== null) {
+      window.clearInterval(pollTimer.value)
+      pollTimer.value = null
+    }
+  } else if (pollTimer.value === null) {
+    void pollOnce()
+    pollTimer.value = window.setInterval((): void => {
+      void pollOnce()
+    }, POLL_MS)
+  }
+}
+
+async function pollOnce() {
+  if (!orderNo.value || phase.value !== 'waiting') return
+  if (Date.now() > pollDeadline) {
+    stopPolling()
+    failKind.value = 'timeout'
+    phase.value = 'failed'
+    return
+  }
+  let order
+  try {
+    order = await walletApi.getTopupOrder(orderNo.value)
+  } catch (e) {
+    // 404＝订单找不到了（不该发生，发生了就诚实报错不再等）
+    const status = (e as { response?: { status?: number } })?.response?.status
+    if (status === 404) {
+      stopPolling()
+      failKind.value = 'failed'
+      phase.value = 'failed'
+    }
+    // 其余瞬时失败（断网/抖动）等下一轮，不报错、不停轮询
+    return
+  }
+  if (order.status === 'paid') {
+    stopPolling()
+    creditUsd.value = order.credit_usd
+    phase.value = 'paid'
+    emit('paid', order.credit_usd)
+  } else if (order.status === 'failed' || order.status === 'expired') {
+    stopPolling()
+    failKind.value = order.status
+    phase.value = 'failed'
+  }
+  // pending：继续等
+}
+
+function startPolling() {
+  stopPolling()
+  if (!alive || !props.open || !orderNo.value) return
+  pollDeadline = Date.now() + POLL_TIMEOUT_MS
+  pollTimer.value = window.setInterval((): void => {
+    void pollOnce()
+  }, POLL_MS)
+  document.addEventListener('visibilitychange', onVisibilityChange)
+}
+
+onUnmounted(() => {
+  alive = false
+  stopPolling()
+})
 
 /** 当前金额（美分）；输入非法（空/非数字/超两位小数）时为 null */
 const usdFen = computed<number | null>(() => {
@@ -219,6 +331,14 @@ watch(
       amountText.value = ''
       formError.value = ''
       inputFocused.value = false
+      // 重开即全新一单：阶段回表单、订单状态清掉、轮询停掉
+      stopPolling()
+      phase.value = 'form'
+      failKind.value = 'failed'
+      orderNo.value = ''
+      payCny.value = ''
+      payUrl.value = ''
+      creditUsd.value = ''
       const methods = props.info?.methods ?? []
       method.value = methods.includes('alipay') ? 'alipay' : (methods[0] ?? 'alipay')
       // 打开即聚焦金额框、键盘随起（友站帧口径）
@@ -250,7 +370,18 @@ function focusCustom() {
 }
 
 function close() {
+  stopPolling()
   emit('close')
+}
+
+/** 「重新充值」：回表单重下一单，金额保留（用户只用再点一次确认） */
+function retryTopup() {
+  phase.value = 'form'
+  failKind.value = 'failed'
+  orderNo.value = ''
+  payCny.value = ''
+  payUrl.value = ''
+  creditUsd.value = ''
 }
 
 /** 金额输入清洗（支付输入口径）：只留数字与最多一个小数点、
@@ -278,9 +409,10 @@ function onSheetFocusOut(e: FocusEvent) {
 
 /** 遮罩点击关闭加聚焦守卫：iOS Safari 在 fixed 浮层里聚焦输入框时
  * 点位会错位，点击可能被打到遮罩上误关弹窗（关后键盘残留还会吞掉
- * 下一次点击）；焦点还在输入框里时遮罩点击不关，X 钮照常关。 */
+ * 下一次点击）；焦点还在输入框里时遮罩点击不关，X 钮照常关。
+ * 提交中也不许遮罩关（等下单结果出来再切等待屏）。 */
 function onMaskClick() {
-  if (inputFocused.value) return
+  if (inputFocused.value || submitting.value) return
   close()
 }
 
@@ -288,13 +420,27 @@ async function submit() {
   if (!canSubmit.value || usdFen.value === null) return
   formError.value = ''
   submitting.value = true
+  // iOS Safari：window.open 必须在点击手势里同步调用才不被拦截。
+  // 先同步开一个空白页，下单成功后再把支付地址写进去；失败则关掉。
+  // （不加 noopener：加了会拿不到窗口句柄、写不进地址。）
+  const payWin = window.open('about:blank', '_blank')
   try {
     const res = await walletApi.createTopupOrder({
       amount_usd: (usdFen.value / 100).toFixed(2),
       payment_method: method.value,
     })
-    window.location.href = res.pay_url
+    if (payWin && !payWin.closed) payWin.location.href = res.pay_url
+    submitting.value = false
+    // 组件已卸载（提交中用户关了弹窗）就不切等待屏：支付页已开，
+    // 回来走 /wallet?topup=1 的既有落点
+    if (!alive || !props.open) return
+    payCny.value = res.amount_cny
+    payUrl.value = res.pay_url
+    orderNo.value = res.order_no
+    phase.value = 'waiting'
+    startPolling()
   } catch (e) {
+    if (payWin && !payWin.closed) payWin.close()
     formError.value = toUserMessage(e)
     submitting.value = false
   }
