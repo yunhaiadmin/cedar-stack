@@ -24,6 +24,7 @@ from backend.emby_server.portal import resolve_emby_base_url
 from backend.emby_server.public_url import client_base_url, configured_public_url
 from backend.integrations import branding as branding_capability
 from backend.integrations import community as community_capability
+from backend.integrations import landing_content as landing_capability
 from backend.integrations import site_drawer as site_drawer_capability
 from backend.integrations import store
 from backend.tg_bind import get_bot_username
@@ -80,6 +81,21 @@ def get_site_drawer(db: Session = Depends(get_db)) -> dict:
     except Exception:
         logger.warning("读取官网菜单抽屉配置失败，按默认处理", exc_info=True)
         return _DRAWER_FALLBACK
+
+
+@site_router.get("/landing")
+def get_landing_content(db: Session = Depends(get_db)) -> dict:
+    """官网落地页文案（公开）：首屏/合作方/设备/展示/卖点整份文本。
+
+    值来自 landing_content 能力（后台「官网内容」页编辑，未配时
+    回落现行写死文案的逐字转写）。恒下发完整结构，前端直接渲染；
+    读取异常回落默认文案——公开端点绝不能 500 拖垮官网首页。
+    """
+    try:
+        return landing_capability.public_info(db)
+    except Exception:
+        logger.warning("读取官网落地页文案失败，按默认文案处理", exc_info=True)
+        return landing_capability.default_config()
 
 
 @site_router.get("/community")

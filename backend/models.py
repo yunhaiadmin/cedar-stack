@@ -1499,16 +1499,20 @@ class CouponCode(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     code = Column(String(32), unique=True, nullable=False, index=True)
-    # 适用范围：subscription 只能买会员 / recharge 只能充值 / all 两者皆可
+    # 适用范围：subscription 只能买会员 / all 订阅购买通用。recharge（仅充值）
+    # 已下线（在线充值暂未开放、无消费路径）：新建/改券不再接受，存量行保留原值。
     kind = Column(String(20), default='all')
-    # percent 百分比（value=85 即 85 折、实付 85%）；fixed 直接减免（value=单位元）
+    # percent 百分比（value=85 即 85 折、实付 85%）；fixed 直接减免（value=减免金额，美元，可带分）
     discount_type = Column(String(20), default='percent')
-    value = Column(Integer, default=0)
+    value = Column(Numeric(10, 2), default=0)
     # 满多少可用（0 = 不设门槛）；百分比券的封顶减免（0 = 不封顶）
     min_amount = Column(Numeric(10, 2), default=0)
     max_discount = Column(Numeric(10, 2), default=0)
     # 只对某个服的套餐可用（多服运营下避免 A 服的券在 B 服用）
     realm_id = Column(Integer, ForeignKey('server_realms.id'), nullable=True)
+    # 只对某个套餐可用（NULL = 全部套餐可用）：现行在售套餐就两档，
+    # 按套餐发券比按服更贴运营口径（与 realm_id 并存，两个限定同时生效）
+    plan_id = Column(Integer, ForeignKey('subscription_plans.id'), nullable=True)
     max_uses = Column(Integer, default=0)      # 总次数上限，0 = 不限
     use_count = Column(Integer, default=0)     # 当前占用（reserved + consumed）
     per_user_limit = Column(Integer, default=1)  # 每人最多用几次，0 = 不限
@@ -1521,6 +1525,7 @@ class CouponCode(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     realm = relationship("ServerRealm")
+    plan = relationship("SubscriptionPlan")
 
 
 class CouponUsage(Base):
