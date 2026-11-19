@@ -82,6 +82,7 @@ from backend.api.admin_login_lockout import admin_login_lockout_router
 from backend.api.admin_probe_4k import admin_probe_4k_router
 from backend.api.admin_passkeys import admin_passkeys_router
 from backend.api.admin_series_follows import admin_series_follows_router
+from backend.api.admin_chase_calendar import admin_chase_calendar_router
 from backend.api.admin_site_drawer import admin_site_drawer_router
 from backend.api.admin_totp import admin_totp_router
 from backend.api.admin_user_favorites import admin_user_favorites_router
@@ -979,6 +980,9 @@ app.include_router(admin_passkeys_router)
 # 追剧订阅管理（二期缺口项 2，2026-11-19）：全站订阅列表＋管理员代取消，
 # 见 backend/api/admin_series_follows.py
 app.include_router(admin_series_follows_router)
+# 追新日历（二期缺口项，2026-11-19）：与用户端同一 date_added 口径的
+# 管理视图（按日分组＋条目详情，只读），见 backend/api/admin_chase_calendar.py
+app.include_router(admin_chase_calendar_router)
 # 官网菜单抽屉配置（见 backend/api/admin_site_drawer.py）
 app.include_router(admin_site_drawer_router)
 # 用户 TOTP 管理（二期缺口 · 项 4）：按用户查看状态/强制重置，
