@@ -27,7 +27,7 @@ import {
   Coins, Globe, KeyRound, Layers, Mail, MapPin, Network, Palette, RefreshCw, Save,
   ShieldCheck, Send, Sparkles, TicketCheck, UserPlus, Wallet, Lock, Zap,
   History, TriangleAlert, SlidersHorizontal, PlugZap, Rocket, HardDrive, Gauge,
-  Download, Cpu, MessageSquareText, PanelBottom,
+  Download, Cpu, MessageSquareText, PanelBottom, ScrollText,
 } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard } from '@/components/ui'
 import { useBreakpoint } from '@/composables/useBreakpoint'
@@ -39,6 +39,7 @@ import {
   fetchLoginLockoutConfig, updateLoginLockoutConfig, type LoginLockoutConfig,
   fetchSiteDrawerConfig, updateSiteDrawerConfig,
   type SiteDrawerConfig, type SiteDrawerConfigResponse,
+  fetchPrivacyPolicy, updatePrivacyPolicy, type PrivacyPolicyResponse,
 } from '@/api/admin'
 import { useAuthStore } from '@/stores/auth'
 import { useQueryFilter } from '@/composables/useQueryFilter'
@@ -577,7 +578,7 @@ async function load() {
 }
 
 onMounted(async () => {
-  await Promise.all([load(), loadCapabilities(), loadHotlink(), loadInstallApp(), loadItemsDedupCache(), loadTransfer(), loadMountServing(), loadDriveApi(), loadSoftdecode(), loadDanmaku(), loadDanmuLines(), loadLoginLockout(), loadSiteDrawer(), loadLicense(), loadPool()])
+  await Promise.all([load(), loadCapabilities(), loadHotlink(), loadInstallApp(), loadItemsDedupCache(), loadTransfer(), loadMountServing(), loadDriveApi(), loadSoftdecode(), loadDanmaku(), loadDanmuLines(), loadLoginLockout(), loadSiteDrawer(), loadPrivacyPolicy(), loadLicense(), loadPool()])
   // Batch D 入口收敛：邀请页 / 客户端策略等用 hash 深链跳进来（如 #group-invitation）
   // R40：querySelector 直接塞 hash 会在畸形值时抛 SyntaxError；改用 getElementById
   if (route.hash) {
@@ -1284,6 +1285,51 @@ function addDrawerChannel() {
   siteDrawer.channels.push({ icon: 'message', title: '', subtitle: '', url: '', enabled: true })
 }
 
+/** ==================== 隐私政策卡片（独立 endpoint，非通用分组） ====================
+ * 用户端公开页 /privacy 的正文（后端 SystemConfig 单键
+ * privacy_policy_md，整份 Markdown）。未存自定义正文时编辑器预填
+ * 现行内置正文的 Markdown 转写起稿——起稿不落库，改完保存才生效；
+ * 把正文清空再保存 = 删配置行，用户端回落内置正文。 */
+const privacyMd = ref('')
+const privacyOriginal = ref('')
+const privacyHasCustom = ref(false)
+const privacyLoaded = ref(false)
+const privacyLoading = ref(false)
+
+function applyPrivacyPolicy(data: PrivacyPolicyResponse) {
+  privacyHasCustom.value = data.has_custom
+  privacyMd.value = data.has_custom ? data.content : data.default_markdown
+  privacyOriginal.value = privacyMd.value
+  privacyLoaded.value = true
+}
+
+async function loadPrivacyPolicy() {
+  privacyLoading.value = true
+  try {
+    applyPrivacyPolicy(await fetchPrivacyPolicy())
+  } catch {
+    // 错误提示由 HTTP 拦截器统一处理
+  } finally {
+    privacyLoading.value = false
+  }
+}
+
+const privacyPolicyDirty = computed(
+  () => privacyLoaded.value && privacyMd.value !== privacyOriginal.value,
+)
+
+/** 隐私政策保存核心：只在真改动（dirty）时被 saveAll 调用，直接
+ * 整份提交：清空正文提交空串，后端删行、用户端回落内置正文。 */
+async function savePrivacyPolicyCore(): Promise<boolean> {
+  try {
+    applyPrivacyPolicy(await updatePrivacyPolicy(privacyMd.value))
+    return true
+  } catch {
+    // 拦截器已提示
+    return false
+  }
+}
+
 /** ==================== 软件授权卡片（独立 endpoint，非通用分组） ====================
  * 发行版授权校验的运营面：看状态（档位/到期/绑定/宽限/到期提醒）、
  * 填授权码与绑定域名、立即校验。总开关 AETRIX_LICENSE_ENFORCE 走
@@ -1460,6 +1506,7 @@ async function reloadAll() {
   loadDanmuLines()
   loadLoginLockout()
   loadSiteDrawer()
+  loadPrivacyPolicy()
 }
 
 function isDirty(group: Group): boolean {
@@ -1488,7 +1535,7 @@ const dirtyCount = computed(() =>
   dirtyGroups.value.length + (regDirty.value ? 1 : 0) + (hotlinkDirty.value ? 1 : 0)
   + (itemsDedupCacheDirty.value ? 1 : 0) + (transferDirty.value ? 1 : 0) + (mountServingDirty.value ? 1 : 0)
   + (driveApiDirty.value ? 1 : 0) + (softdecodeDirty.value ? 1 : 0) + (danmakuDirty.value ? 1 : 0) + (loginLockoutDirty.value ? 1 : 0) + (installAppDirty.value ? 1 : 0)
-  + (siteDrawerDirty.value ? 1 : 0),
+  + (siteDrawerDirty.value ? 1 : 0) + (privacyPolicyDirty.value ? 1 : 0),
 )
 const anyDirty = computed(() => dirtyCount.value > 0)
 const savingAll = ref(false)
@@ -1618,6 +1665,10 @@ async function saveAll() {
       if (await saveSiteDrawerCore()) saved += 1
       else failed.push('官网菜单抽屉')
     }
+    if (privacyPolicyDirty.value) {
+      if (await savePrivacyPolicyCore()) saved += 1
+      else failed.push('隐私政策')
+    }
   } finally {
     savingAll.value = false
   }
@@ -1656,6 +1707,7 @@ async function discardAll() {
   loadDanmuLines()
   loadLoginLockout()
   loadSiteDrawer()
+  loadPrivacyPolicy()
 }
 
 // ==================== 危险操作（Phase 5） ====================
@@ -1957,6 +2009,16 @@ watch(
               >
                 <PanelBottom :size="13" />官网菜单抽屉
                 <span v-if="siteDrawerDirty" class="chip-dot" aria-label="有未保存的改动" />
+              </button>
+              <button
+                v-if="sec.id === 'site'"
+                type="button"
+                class="group-chip"
+                :class="{ 'is-dirty': privacyPolicyDirty }"
+                @click="scrollToGroup('privacy-policy')"
+              >
+                <ScrollText :size="13" />隐私政策
+                <span v-if="privacyPolicyDirty" class="chip-dot" aria-label="有未保存的改动" />
               </button>
             </div>
           </nav>
@@ -3142,6 +3204,38 @@ watch(
                 </div>
               </el-form-item>
             </el-form>
+          </SectionCard>
+          <!-- 隐私政策：独立卡片，归「站点与官网」段 -->
+          <SectionCard
+            v-if="sec.id === 'site'"
+            id="group-privacy-policy"
+            title="隐私政策"
+            :icon="ScrollText"
+            description="用户端公开页 /privacy 的正文（Markdown）。保存后立即生效；把正文清空再保存，用户端回落到随版本发布的内置正文。"
+            :tone="privacyPolicyDirty ? 'accent' : 'default'"
+            class="group-card"
+          >
+            <template v-if="privacyPolicyDirty" #actions>
+              <span class="au-badge au-badge-amber">未保存</span>
+            </template>
+            <template v-else #actions>
+              <span class="au-badge">{{ privacyHasCustom ? '自定义正文生效中' : '当前用内置正文' }}</span>
+            </template>
+
+            <div v-loading="privacyLoading" class="field-stack">
+              <el-input
+                v-model="privacyMd"
+                type="textarea"
+                :rows="18"
+                maxlength="50000"
+                placeholder="在此编辑隐私政策正文（Markdown）…"
+              />
+              <span class="field-hint">
+                支持 Markdown：# / ## 标题、1. 有序列表、- 无序列表、**加粗**、[文字](链接)。
+                <template v-if="!privacyHasCustom">当前还没存过自定义正文，框里预填的是现行内置正文的转写稿，改完点「全部保存」才生效。</template>
+                正文涉及对用户的承诺（尤其是谷歌盘数据口径），改动会记入管理员审计日志。
+              </span>
+            </div>
           </SectionCard>
           </template>
 

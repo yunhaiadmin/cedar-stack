@@ -87,6 +87,7 @@ from backend.api.admin_search import admin_search_router
 from backend.api.admin_subtitles import admin_subtitles_router
 from backend.api.admin_site_drawer import admin_site_drawer_router
 from backend.api.admin_landing import admin_landing_router
+from backend.api.admin_privacy import admin_privacy_router
 from backend.api.admin_totp import admin_totp_router
 from backend.api.admin_user_favorites import admin_user_favorites_router
 from backend.api.admin_people import admin_people_router
@@ -995,6 +996,8 @@ app.include_router(admin_series_follows_router)
 app.include_router(admin_search_router)
 # 官网菜单抽屉配置（见 backend/api/admin_site_drawer.py）
 app.include_router(admin_site_drawer_router)
+# 隐私政策正文编辑（见 backend/api/admin_privacy.py）
+app.include_router(admin_privacy_router)
 # 官网落地页文案编辑（见 backend/api/admin_landing.py）
 app.include_router(admin_landing_router)
 # 用户 TOTP 管理（二期缺口 · 项 4）：按用户查看状态/强制重置，

@@ -25,6 +25,7 @@ from backend.emby_server.public_url import client_base_url, configured_public_ur
 from backend.integrations import branding as branding_capability
 from backend.integrations import community as community_capability
 from backend.integrations import landing_content as landing_capability
+from backend.integrations import privacy_policy as privacy_policy_capability
 from backend.integrations import site_drawer as site_drawer_capability
 from backend.integrations import store
 from backend.tg_bind import get_bot_username
@@ -81,6 +82,20 @@ def get_site_drawer(db: Session = Depends(get_db)) -> dict:
     except Exception:
         logger.warning("读取官网菜单抽屉配置失败，按默认处理", exc_info=True)
         return _DRAWER_FALLBACK
+
+
+@site_router.get("/privacy-policy")
+def get_privacy_policy(db: Session = Depends(get_db)) -> dict:
+    """隐私政策正文（公开）：后台「隐私政策」卡片保存的 Markdown。
+
+    未配（markdown 为空）时前端回落 PrivacyView 内置的现行写死
+    正文。读取异常同样回落空——公开端点绝不能 500 拖垮政策页。
+    """
+    try:
+        return privacy_policy_capability.public_info(db)
+    except Exception:
+        logger.warning("读取隐私政策正文失败，按内置正文处理", exc_info=True)
+        return {"markdown": "", "has_custom": False}
 
 
 @site_router.get("/landing")
