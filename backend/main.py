@@ -84,6 +84,7 @@ from backend.api.admin_probe_4k import admin_probe_4k_router
 from backend.api.admin_passkeys import admin_passkeys_router
 from backend.api.admin_series_follows import admin_series_follows_router
 from backend.api.admin_site_drawer import admin_site_drawer_router
+from backend.api.admin_landing import admin_landing_router
 from backend.api.admin_totp import admin_totp_router
 from backend.api.admin_user_favorites import admin_user_favorites_router
 from backend.api.danmaku import router as danmaku_router
@@ -985,6 +986,8 @@ app.include_router(admin_passkeys_router)
 app.include_router(admin_series_follows_router)
 # 官网菜单抽屉配置（见 backend/api/admin_site_drawer.py）
 app.include_router(admin_site_drawer_router)
+# 官网落地页文案编辑（见 backend/api/admin_landing.py）
+app.include_router(admin_landing_router)
 # 用户 TOTP 管理（二期缺口 · 项 4）：按用户查看状态/强制重置，
 # 见 backend/api/admin_totp.py
 app.include_router(admin_totp_router)

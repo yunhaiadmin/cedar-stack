@@ -203,6 +203,8 @@ const navGroups: NavGroup[] = [
       // 追剧订阅管理（二期缺口项 2）：全站订阅列表＋管理员代取消
       { path: '/series-follows', label: '追剧订阅', icon: Clapperboard },
       { path: '/announcements', label: '公告管理', icon: Megaphone },
+      // 官网内容（二期缺口）：落地页整页文案编辑（首屏/合作方/卖点），存 landing_content
+      { path: '/landing-content', label: '官网内容', icon: MonitorSmartphone },
       { path: '/tickets', label: '工单', icon: Ticket },
       // 等级治理：举报终审队列 + 治理停权（复核达标的举报在这里受理 / 驳回）
       { path: '/governance', label: '举报与停权', icon: Flag },
