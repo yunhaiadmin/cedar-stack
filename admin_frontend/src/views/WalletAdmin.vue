@@ -168,8 +168,12 @@ function clearLedgerFilters() {
 // ---------- 钱包配置 ----------
 const SETTING_FIELDS = [
   { key: 'wallet_enabled', label: '钱包总开关', type: 'bool', hint: '关了之后余额兑换与后续余额支付入口全灭，只读余额仍可查' },
-  { key: 'wallet_min_topup_amount', label: '最低充值额（美分）', type: 'int', hint: '默认 1000 ＝ $10，在线充值（批 3）用' },
-  { key: 'wallet_topup_fee_pct', label: '充值手续费比例（%）', type: 'int', hint: '默认 0，批 3 再议' },
+  { key: 'wallet_min_topup_amount', label: '最低充值额（美分）', type: 'int', hint: '默认 100 ＝ $1，在线充值（批 3）用' },
+  { key: 'wallet_topup_fee_pct', label: '充值手续费比例（%）', type: 'int', hint: '默认 0，在线充值入账时按订单快照扣' },
+  { key: 'wallet_topup_cny_rate', label: '充值汇率（人民币/美元）', type: 'str', hint: '手填价，默认 7.2：自动抓市场价失败时的兜底；开强制覆盖后以此为准' },
+  { key: 'wallet_topup_rate_buffer_pct', label: '汇率缓冲（%）', type: 'int', hint: '默认 2，生效汇率 ＝ 市场价 ×（1＋缓冲%）' },
+  { key: 'wallet_topup_rate_manual_override', label: '手填汇率强制覆盖', type: 'bool', hint: '默认关；开后充值只用手填汇率，不再自动抓取市场价' },
+  { key: 'wallet_topup_max_amount', label: '单笔充值上限（美分）', type: 'int', hint: '默认 7000 ＝ $70，0 为不限；法币单笔上限' },
   { key: 'wallet_invite_rebate_percent', label: '邀请返利比例（%）', type: 'int', hint: '默认 5，好友充值到账后返给邀请人（批 2 计提）' },
   { key: 'wallet_invite_rebate_cap', label: '单人返利上限（美分）', type: 'int', hint: '默认 0 ＝ 不限' },
   { key: 'wallet_invite_rebate_mode', label: '返利模式', type: 'str', hint: '默认 tiered ＝ 分档（门槛内按返利比例、超出按二档比例）；flat ＝ 全程统一比例；只填 tiered 或 flat' },

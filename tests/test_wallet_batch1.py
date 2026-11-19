@@ -289,8 +289,13 @@ def test_wallet_config_defaults(db):
     config = wallet_service.wallet_config(db)
     assert config == {
         "wallet_enabled": True,
-        "wallet_min_topup_amount": 1000,
+        "wallet_min_topup_amount": 100,
+        "wallet_topup_max_amount": 7000,
         "wallet_topup_fee_pct": 0,
+        # 钱包批 3：充值汇率三键（手填价/缓冲/强制覆盖，解析见 wallet_topup）
+        "wallet_topup_cny_rate": 7.2,
+        "wallet_topup_rate_buffer_pct": 2,
+        "wallet_topup_rate_manual_override": False,
         "wallet_invite_rebate_percent": 5,
         "wallet_invite_rebate_cap": 0,
         # 返利分档三键：与 #175 invite_rebate 的 DEFAULT_* 逐字一致
