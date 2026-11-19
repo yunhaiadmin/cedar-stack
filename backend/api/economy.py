@@ -542,10 +542,17 @@ class CreateOrderRequest(BaseModel):
 
 
 def _yipay_sign(params: dict, key: str) -> str:
-    """易支付 MD5 签名：按 key ASCII 升序拼接 a=b&...&<key>"""
+    """易支付 MD5 签名：原始值拼串后 MD5（易支付标准算法）。
+
+    过滤空值与 sign / sign_type，按 key ASCII 升序以 ``k=v`` 用 & 连接
+    （值用原始字符串，不做 URL 编码），末尾直接拼商户 key（不加 &），
+    MD5 小写。URL 编码只发生在构造 pay_url 的传输层，不进签名串——
+    2026-11-19 前的实现先 urlencode 再签名，网关一律回「MD5签名校验
+    失败」，本站易支付从未成功过一笔。
+    """
     filtered = {k: v for k, v in params.items()
                 if v not in (None, "") and k != "sign" and k != "sign_type"}
-    qs = urlencode(sorted(filtered.items()))
+    qs = "&".join(f"{k}={v}" for k, v in sorted(filtered.items()))
     return hashlib.md5(f"{qs}{key}".encode("utf-8")).hexdigest()
 
 
