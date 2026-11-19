@@ -80,6 +80,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'client-policy', name: 'ClientPolicy', component: () => import('@/views/ClientPolicy.vue'), meta: { title: '客户端策略' } },
       { path: 'logs', name: 'Logs', component: () => import('@/views/Logs.vue'), meta: { title: '操作日志' } },
       { path: 'health', name: 'SystemHealth', component: () => import('@/views/SystemHealth.vue'), meta: { title: '系统健康' } },
+      // 4K 探针结果（二期缺口）：探针页真机回传记录的只读查看面
+      { path: 'probe-4k', name: 'Probe4kResults', component: () => import('@/views/Probe4kResults.vue'), meta: { title: '4K 探针结果' } },
       // v2.56.0：任务总览——所有后台任务一页看完（状态/进度/开关）
       { path: 'tasks', name: 'TaskOverview', component: () => import('@/views/TaskOverview.vue'), meta: { title: '任务总览' } },
       // 专线 B 第二阶段 · 只读观测口（GET，仅展示）
