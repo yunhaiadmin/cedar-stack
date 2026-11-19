@@ -40,7 +40,7 @@
             inputmode="decimal"
             placeholder="1.00"
             autocomplete="off"
-            :size="Math.max(1, amountText.length)"
+            :style="{ width: amountWidthCh + 'ch' }"
             :disabled="submitting"
             aria-label="充值金额（美元）"
             @input="onAmountInput"
@@ -166,6 +166,12 @@ const usdFen = computed<number | null>(() => {
   if (!Number.isFinite(v) || v <= 0) return null
   return Math.round(v * 100)
 })
+
+/** 输入框宽度（ch）：不用 size 属性（浏览器换算的字符宽带内部余量，
+ * 盒子会被撑宽、数字与 $ 之间空出一截）；按内容长度用 ch 定宽紧贴文字。
+ * 空时 4ch 容纳 placeholder「1.00」不被裁 */
+const amountWidthCh = computed(() =>
+  amountText.value.length === 0 ? 4 : Math.max(1, amountText.value.length))
 
 /** 档位高亮：输入金额正好等于某档时亮该档，否则亮「自定义」 */
 const activeTier = computed<number | 'custom'>(() => {
