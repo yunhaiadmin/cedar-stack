@@ -2,6 +2,10 @@
   <main class="privacy-page">
     <div class="privacy-inner">
       <p class="au-eyebrow privacy-eyebrow">Aetrix</p>
+      <!-- 后台存了自定义正文（Markdown）时按配置渲染；未存 / 读取
+           失败时回落下面这份内置正文（现行原文，一字不动）。 -->
+      <div v-if="customHtml" class="privacy-md" v-html="customHtml" />
+      <template v-else>
       <h1 class="privacy-title">隐私政策</h1>
       <p class="privacy-note">
         以下内容适用于你通过 Aetrix 绑定自己的谷歌盘的情形。
@@ -103,9 +107,30 @@
           your Drive.
         </li>
       </ol>
+      </template>
     </div>
   </main>
 </template>
+
+<script setup lang="ts">
+import { onMounted, ref } from 'vue'
+import { privacyPolicyApi } from '@/api'
+import { renderMarkdown } from '@/utils/markdown'
+
+/** 自定义正文渲染结果；空 = 用内置正文（模板 v-else 分支）。 */
+const customHtml = ref('')
+
+onMounted(async () => {
+  try {
+    const data = await privacyPolicyApi.get()
+    if (data?.has_custom && data.markdown?.trim()) {
+      customHtml.value = renderMarkdown(data.markdown)
+    }
+  } catch {
+    // 读取失败保持内置正文：政策页绝不能白屏
+  }
+})
+</script>
 
 <style scoped>
 /* 文档面排版（说明书 §2.12 文章卡：最大宽 740、内边距 48、正文 15–16/1.8、H2 约 28）：
@@ -231,5 +256,75 @@ html[data-theme='light'] .privacy-list li::marker {
     font-size: 24px;
     margin-top: 36px;
   }
+}
+</style>
+
+<style>
+/* 自定义正文（Markdown 渲染）：内容经 v-html 注入、不带 scoped 属性，
+   后代规则必须放非 scoped 块；与内置正文同一套文档面排版 */
+.privacy-md h1 {
+  margin: 0 0 16px;
+  font-size: var(--uhd-fs-h2);
+  font-weight: var(--uhd-fw-extrabold);
+  line-height: 1.2;
+}
+
+.privacy-md h2 {
+  margin: 44px 0 14px;
+  font-size: var(--uhd-fs-h3);
+  font-weight: var(--uhd-fw-extrabold);
+  line-height: 1.3;
+}
+
+.privacy-md h3 {
+  margin: 28px 0 10px;
+  font-size: var(--uhd-fs-title);
+  font-weight: var(--uhd-fw-bold);
+  line-height: 1.3;
+}
+
+.privacy-md p {
+  margin: 0 0 20px;
+  font-size: var(--uhd-fs-body);
+  line-height: var(--uhd-lh-doc);
+}
+
+.privacy-md ol,
+.privacy-md ul {
+  margin: 0 0 20px;
+  padding-left: 24px;
+  font-size: var(--uhd-fs-body);
+  line-height: var(--uhd-lh-doc);
+}
+/* 全局 reset 抹掉了列表记号，自定义正文里显式恢复 */
+.privacy-md ol {
+  list-style: decimal;
+}
+.privacy-md ul {
+  list-style: disc;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.privacy-md li::marker {
+  color: var(--uhd-d-text-3);
+}
+
+.privacy-md strong {
+  font-weight: var(--uhd-fw-bold);
+}
+
+.privacy-md a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.privacy-md code {
+  font-family: var(--uhd-font-mono);
+}
+
+html[data-theme='light'] .privacy-md li::marker {
+  color: var(--uhd-l-text-3);
 }
 </style>

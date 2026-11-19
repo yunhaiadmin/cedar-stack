@@ -290,6 +290,22 @@ export const fetchSiteDrawerConfig = () =>
 export const updateSiteDrawerConfig = (data: SiteDrawerConfig) =>
   put<SiteDrawerConfigResponse>('/site-drawer/config', data)
 
+/** 隐私政策正文（2026-11-19）：后端 /api/admin/privacy-policy/content */
+export interface PrivacyPolicyResponse {
+  /** 已保存的自定义正文（Markdown）；空串 = 未存过 */
+  content: string
+  /** 是否已存自定义正文（false 时用户端用内置现行正文） */
+  has_custom: boolean
+  /** 现行内置正文的 Markdown 转写，仅供编辑器起稿 */
+  default_markdown: string
+}
+
+export const fetchPrivacyPolicy = () =>
+  get<PrivacyPolicyResponse>('/privacy-policy/content')
+
+export const updatePrivacyPolicy = (content: string) =>
+  put<PrivacyPolicyResponse>('/privacy-policy/content', { content })
+
 /** 类型化会员卡码生成（续期码 / 白名单码 / 诱饵码 / 指名码） */
 export const generateCodes = (data: {
   code_type: number

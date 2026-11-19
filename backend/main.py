@@ -80,6 +80,7 @@ from backend.api.admin_softdecode import admin_softdecode_router
 from backend.api.admin_danmaku import admin_danmaku_router
 from backend.api.admin_login_lockout import admin_login_lockout_router
 from backend.api.admin_site_drawer import admin_site_drawer_router
+from backend.api.admin_privacy import admin_privacy_router
 from backend.api.danmaku import router as danmaku_router
 from backend.api.admin_danmu_api import admin_danmu_api_router
 from backend.api.danmu_api import public_router as danmu_api_public_router
@@ -967,6 +968,8 @@ app.include_router(admin_danmaku_router)
 app.include_router(admin_login_lockout_router)
 # 官网菜单抽屉配置（见 backend/api/admin_site_drawer.py）
 app.include_router(admin_site_drawer_router)
+# 隐私政策正文编辑（见 backend/api/admin_privacy.py）
+app.include_router(admin_privacy_router)
 app.include_router(danmaku_router)
 # 弹幕 API（2026-11-18）：专职 Token/线路/地址用户端 + 公开下发口 +
 # 管理端线路配置，见 backend/api/danmu_api.py 与 admin_danmu_api.py

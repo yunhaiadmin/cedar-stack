@@ -809,6 +809,15 @@ SITE_DRAWER_CONFIG_SCHEMA: dict[str, tuple] = {
     "site_drawer_config": ("json_drawer",),
 }
 
+# 隐私政策正文（2026-11-19 二期缺口项 8）：整份 Markdown 存单键
+# privacy_policy_md，后台「系统设置 → 隐私政策」卡片编辑，公开端点
+# /api/site/privacy-policy 下发；("str",) 口径——空串/None = 未设置
+# （删行），用户端回落现行写死正文。纯 SystemConfig 键，不进
+# env.example（#1527 先例）。
+PRIVACY_POLICY_CONFIG_SCHEMA: dict[str, tuple] = {
+    "privacy_policy_md": ("str",),
+}
+
 # 网页软解开关（2026-11-14 批 2）：浏览器硬解失败时是否用站内自编
 # LGPL wasm 解码器兜底。默认关（无行 = 关），纯 SystemConfig 键，
 # 不进 env.example（#1527 先例）。开关只影响网页播放路径。

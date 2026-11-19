@@ -359,6 +359,17 @@ export const siteDrawerApi = {
   get: () => api.get<never, SiteDrawer>('/api/site/drawer'),
 }
 
+export interface PrivacyPolicy {
+  /** 后台保存的正文（Markdown）；空串 = 未配，页面回落内置正文 */
+  markdown: string
+  has_custom: boolean
+}
+
+export const privacyPolicyApi = {
+  /** 公开端点：隐私政策正文（后台「系统设置 → 隐私政策」配置） */
+  get: () => api.get<never, PrivacyPolicy>('/api/site/privacy-policy'),
+}
+
 // ==================== 官网片库数字（backend/api/site.py） ====================
 
 export interface LibraryStats {
