@@ -1,6 +1,14 @@
 <template>
-  <div v-if="open" class="gc-mask" @click.self="close">
-    <div class="gc-sheet" role="dialog" aria-modal="true" aria-label="生成礼品卡">
+  <div v-if="open" class="gc-mask" @click.self="onMaskClick">
+    <div
+      ref="sheetRef"
+      class="gc-sheet"
+      role="dialog"
+      aria-modal="true"
+      aria-label="生成礼品卡"
+      @focusin="onSheetFocusIn"
+      @focusout="onSheetFocusOut"
+    >
       <div class="gc-head">
         <h3 class="gc-title">生成礼品卡</h3>
         <button type="button" class="gc-close" aria-label="关闭" @click="close">
@@ -98,6 +106,9 @@ const emit = defineEmits<{
 }>()
 
 const toast = useToast()
+const sheetRef = ref<HTMLElement | null>(null)
+/** 焦点是否落在弹窗内的输入框上（iOS 遮罩误关守卫用，见 onMaskClick） */
+const inputFocused = ref(false)
 
 const dayOptions = [1, 3, 7]
 const amountText = ref('')
@@ -114,12 +125,31 @@ watch(
       validDays.value = 7
       formError.value = ''
       created.value = null
+      inputFocused.value = false
     }
   },
 )
 
 function close() {
   emit('close')
+}
+
+function onSheetFocusIn(e: FocusEvent) {
+  if ((e.target as HTMLElement | null)?.tagName === 'INPUT') inputFocused.value = true
+}
+
+function onSheetFocusOut(e: FocusEvent) {
+  const next = e.relatedTarget as HTMLElement | null
+  inputFocused.value =
+    !!next && next.tagName === 'INPUT' && (sheetRef.value?.contains(next) ?? false)
+}
+
+/** 遮罩点击关闭加聚焦守卫（与 TopupSheet 同口径）：iOS Safari 在
+ * fixed 浮层里聚焦输入框时点位会错位，点击可能被打到遮罩上误关
+ * 弹窗；焦点还在输入框里时遮罩点击不关，X 钮照常关。 */
+function onMaskClick() {
+  if (inputFocused.value) return
+  close()
 }
 
 async function submit() {

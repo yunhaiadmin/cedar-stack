@@ -1,6 +1,14 @@
 <template>
-  <div v-if="open" class="tq-mask" @click.self="close">
-    <div class="tq-modal" role="dialog" aria-modal="true" aria-label="购买流量包">
+  <div v-if="open" class="tq-mask" @click.self="onMaskClick">
+    <div
+      ref="sheetRef"
+      class="tq-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="购买流量包"
+      @focusin="onSheetFocusIn"
+      @focusout="onSheetFocusOut"
+    >
       <div class="tq-head">
         <span class="tq-head__icon" aria-hidden="true">
           <TrendingUp :size="20" />
@@ -58,10 +66,8 @@
             <input
               v-model="gbInput"
               class="tq-input__field"
-              type="number"
+              type="text"
               inputmode="numeric"
-              min="100"
-              step="1"
               aria-label="购买流量 GB 数"
               @input="onGbInput"
             />
@@ -203,6 +209,9 @@ const emit = defineEmits<{
 
 const toast = useToast()
 const tab = ref<'balance' | 'time'>('balance')
+const sheetRef = ref<HTMLElement | null>(null)
+/** 焦点是否落在弹窗内的输入框上（iOS 遮罩误关守卫用，见 onMaskClick） */
+const inputFocused = ref(false)
 
 /** 当前流量卡：剩余百分比（整数，照帧「100% 剩余」） */
 const remainPct = computed(() => {
@@ -276,6 +285,7 @@ watch(
       balanceConfirming.value = false
       balanceSubmitting.value = false
       balanceError.value = ''
+      inputFocused.value = false
       idempotencyKey.value = newKey()
     }
   },
@@ -293,7 +303,12 @@ function invalidatePreview() {
   balanceError.value = ''
 }
 
-function onGbInput() {
+function onGbInput(e: Event) {
+  // GB 输入清洗：只留数字（最低 100GB 的业务校验仍在 showPreview）
+  const el = e.target as HTMLInputElement
+  const cleaned = el.value.replace(/[^\d]/g, '')
+  gbInput.value = cleaned
+  if (el.value !== cleaned) el.value = cleaned
   inputError.value = ''
   invalidatePreview()
 }
@@ -323,6 +338,24 @@ function showPreview() {
 function close() {
   if (submitting.value || balanceSubmitting.value) return // 提交在途不许关，防结果丢失
   emit('update:open', false)
+}
+
+function onSheetFocusIn(e: FocusEvent) {
+  if ((e.target as HTMLElement | null)?.tagName === 'INPUT') inputFocused.value = true
+}
+
+function onSheetFocusOut(e: FocusEvent) {
+  const next = e.relatedTarget as HTMLElement | null
+  inputFocused.value =
+    !!next && next.tagName === 'INPUT' && (sheetRef.value?.contains(next) ?? false)
+}
+
+/** 遮罩点击关闭加聚焦守卫（与 TopupSheet 同口径）：iOS Safari 在
+ * fixed 浮层里聚焦输入框时点位会错位，点击可能被打到遮罩上误关
+ * 弹窗；焦点还在输入框里时遮罩点击不关，× 钮照常关。 */
+function onMaskClick() {
+  if (inputFocused.value) return
+  close()
 }
 
 async function onConfirmClick() {

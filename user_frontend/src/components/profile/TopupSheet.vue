@@ -1,6 +1,14 @@
 <template>
-  <div v-if="open" class="tp-mask" @click.self="close">
-    <div class="tp-sheet" role="dialog" aria-modal="true" aria-label="账户充值">
+  <div v-if="open" class="tp-mask" @click.self="onMaskClick">
+    <div
+      ref="sheetRef"
+      class="tp-sheet"
+      role="dialog"
+      aria-modal="true"
+      aria-label="账户充值"
+      @focusin="onSheetFocusIn"
+      @focusout="onSheetFocusOut"
+    >
       <div class="tp-head">
         <h3 class="tp-title">账户充值</h3>
         <button type="button" class="tp-close" aria-label="关闭" @click="close">
@@ -44,15 +52,13 @@
           <input
             v-model="customText"
             class="tp-amount"
-            type="number"
+            type="text"
             inputmode="decimal"
-            :min="info.min_usd"
-            :max="info.max_usd_epay ?? undefined"
-            step="0.01"
             placeholder="1.00"
             autocomplete="off"
             :disabled="submitting"
             aria-label="自定义金额（美元）"
+            @input="onCustomInput"
           />
         </div>
 
@@ -127,6 +133,9 @@ const customText = ref('')
 const method = ref('alipay')
 const formError = ref('')
 const submitting = ref(false)
+const sheetRef = ref<HTMLElement | null>(null)
+/** 焦点是否落在弹窗内的输入框上（iOS 遮罩误关守卫用，见 onMaskClick） */
+const inputFocused = ref(false)
 
 /** 当前选定金额（美分）；自定义输入非法（空/非数字/超两位小数）时为 null */
 const usdFen = computed<number | null>(() => {
@@ -168,6 +177,7 @@ watch(
       tier.value = 10
       customText.value = ''
       formError.value = ''
+      inputFocused.value = false
       const methods = props.info?.methods ?? []
       method.value = methods.includes('alipay') ? 'alipay' : (methods[0] ?? 'alipay')
     }
@@ -180,6 +190,37 @@ function methodLabel(m: string): string {
 
 function close() {
   emit('close')
+}
+
+/** 自定义金额输入清洗（支付输入口径）：只留数字与最多一个小数点、
+ * 小数至多 2 位；usdFen 的正则校验仍作兜底。 */
+function onCustomInput(e: Event) {
+  const el = e.target as HTMLInputElement
+  let v = el.value.replace(/[^\d.]/g, '')
+  const dot = v.indexOf('.')
+  if (dot >= 0) {
+    v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, '').slice(0, 2)
+  }
+  customText.value = v
+  if (el.value !== v) el.value = v
+}
+
+function onSheetFocusIn(e: FocusEvent) {
+  if ((e.target as HTMLElement | null)?.tagName === 'INPUT') inputFocused.value = true
+}
+
+function onSheetFocusOut(e: FocusEvent) {
+  const next = e.relatedTarget as HTMLElement | null
+  inputFocused.value =
+    !!next && next.tagName === 'INPUT' && (sheetRef.value?.contains(next) ?? false)
+}
+
+/** 遮罩点击关闭加聚焦守卫：iOS Safari 在 fixed 浮层里聚焦输入框时
+ * 点位会错位，点击可能被打到遮罩上误关弹窗（关后键盘残留还会吞掉
+ * 下一次点击）；焦点还在输入框里时遮罩点击不关，X 钮照常关。 */
+function onMaskClick() {
+  if (inputFocused.value) return
+  close()
 }
 
 async function submit() {
