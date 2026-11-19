@@ -1,5 +1,9 @@
 /* 元数据来源页：v2.54 暗房影院——卡片换成 SectionCard，颜色 / 圆角只走 --au-* 令牌。
-   注意这是**全局**样式表（被 MetadataSources.vue import），所有规则都挂在 .ms-* 前缀下。 */
+   注意这是**全局**样式表（被 MetadataSources.vue import），所有规则都挂在 .ms-* 前缀下。
+   受控例外登记（后台一期批 4）：本文件登记为页面级 CSS 受控例外，不收编进
+   styles/ 全局层——须以特异性压过 SectionCard 的 scoped 样式。约束与登记表
+   见 scripts/check_frontend_tokens.py 的 ADMIN_PAGE_CSS_REGISTERED，结论见
+   docs/design/20261119-admin-page-css-exceptions.md。 */
 .ms-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
