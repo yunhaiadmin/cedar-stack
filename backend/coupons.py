@@ -110,8 +110,8 @@ def user_use_count(db: Session, coupon_id: int, user_id: int) -> int:
     ).count()
 
 
-def resolve_item(db: Session, kind: str, item_id: int) -> tuple[Decimal, Optional[int], str]:
-    """把 (kind, item_id) 解析成 (原价, 适用服, 名称) —— 预览与下单必须同一套口径"""
+def resolve_item(db: Session, kind: str, item_id: int) -> tuple[Decimal, Optional[int], str, Optional[int]]:
+    """把 (kind, item_id) 解析成 (原价, 适用服, 名称, 套餐 id) —— 预览与下单必须同一套口径"""
     if kind == "subscription":
         plan = db.query(models.SubscriptionPlan).filter(
             models.SubscriptionPlan.id == item_id,
@@ -119,7 +119,7 @@ def resolve_item(db: Session, kind: str, item_id: int) -> tuple[Decimal, Optiona
         ).first()
         if not plan:
             raise HTTPException(status_code=404, detail="套餐不存在")
-        return _money(plan.price), plan.realm_id, plan.name
+        return _money(plan.price), plan.realm_id, plan.name, plan.id
     raise HTTPException(status_code=400, detail="kind 必须是 subscription")
 
 
@@ -129,6 +129,7 @@ def _invalid(message: str) -> HTTPException:
 
 def validate(db: Session, coupon: models.CouponCode, *, user: models.WebUser,
              kind: str, realm_id: Optional[int], amount: Decimal,
+             plan_id: Optional[int] = None,
              now: Optional[datetime] = None) -> None:
     """校验这张券能不能用于这次购买，不能则抛 400 并说明原因（文案直接给用户看）"""
     now = now or datetime.now()
@@ -145,12 +146,17 @@ def validate(db: Session, coupon: models.CouponCode, *, user: models.WebUser,
         raise _invalid("该优惠券不适用于此商品" if coupon.kind != "all" else "券类型无效")
 
     if coupon.realm_id is not None:
-        # 指定了服的券只用于该服的会员购买：充值是全站的，跨服会把折扣用错地方
+        # 指定了服的券只用于该服的会员购买：跨服会把折扣用错地方
         if kind != "subscription" or realm_id != coupon.realm_id:
             raise _invalid("该优惠券仅适用于指定服的会员购买")
 
+    if coupon.plan_id is not None:
+        # 限定套餐的券只适用于该套餐的订阅购买（现行在售套餐按档发券的口径）
+        if kind != "subscription" or plan_id != coupon.plan_id:
+            raise _invalid("该优惠券仅适用于指定套餐")
+
     if coupon.min_amount and amount < _money(coupon.min_amount):
-        raise _invalid(f"该券满 {_money(coupon.min_amount)} 元可用，当前金额不足")
+        raise _invalid(f"该券满 ${_money(coupon.min_amount)} 可用，当前金额不足")
 
     if coupon.per_user_limit and user_use_count(db, coupon.id, user.id) >= coupon.per_user_limit:
         raise _invalid(f"该券每人限用 {coupon.per_user_limit} 次，你已用完")
@@ -199,9 +205,9 @@ def quote(db: Session, *, user: models.WebUser, code: str, kind: str, item_id: i
     if coupon is None:
         raise _invalid("优惠码不存在")
 
-    list_price, realm_id, item_name = resolve_item(db, kind, item_id)
+    list_price, realm_id, item_name, plan_id = resolve_item(db, kind, item_id)
     validate(db, coupon, user=user, kind=kind, realm_id=realm_id,
-             amount=list_price, now=now)
+             amount=list_price, plan_id=plan_id, now=now)
     discount, paid = compute(list_price, coupon)
     return {
         "valid": True,
@@ -212,7 +218,9 @@ def quote(db: Session, *, user: models.WebUser, code: str, kind: str, item_id: i
         "discount_amount": float(discount),
         "paid_amount": float(paid),
         "discount_type": coupon.discount_type,
-        "value": coupon.value,
+        # percent 按整数下发（85 = 八五折），fixed 按美元金额（两位小数）
+        "value": int(coupon.value or 0) if coupon.discount_type == PERCENT
+        else float(_money(coupon.value)),
     }
 
 

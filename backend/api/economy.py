@@ -439,7 +439,7 @@ def coupon_config(db: Session = Depends(get_db)):
 class CouponQuoteRequest(BaseModel):
     code: str = Field(default="", description="用户填写的优惠码（可空；空时按「没填码自动用最优兑换码折扣权益」口径试算，与下单一致）")
     kind: str = Field(..., description="subscription")
-    item_id: int = Field(..., description="充值套餐ID 或 套餐ID")
+    item_id: int = Field(..., description="套餐ID")
     # 按月售卖（2026-11-14）：带 months 时按月价口径试算，并附带
     # 换套餐抵扣（switch_credit / switch_type / payable_amount）
     months: int = Field(default=0, ge=0, le=12, description="购买月数（1–12）")
@@ -470,7 +470,7 @@ def coupon_quote(
         # 空码试算：充值没有「自动权益」一说，仍要求填码；订阅走自动权益口径。
         if req.kind != "subscription":
             raise HTTPException(status_code=400, detail="请填写优惠码")
-        list_price, _, item_name = coupons.resolve_item(db, req.kind, req.item_id)
+        list_price, _, item_name, _plan_id = coupons.resolve_item(db, req.kind, req.item_id)
         result = {
             "valid": True,
             "code": "",
