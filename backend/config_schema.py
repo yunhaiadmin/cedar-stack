@@ -547,6 +547,24 @@ POOL_RETRY_CONFIG_SCHEMA: dict[str, tuple] = {
     "pool_bad_combo_ttl_days": ("int", 1, 90),
 }
 
+# 起播状态 ETA 分位数（等待优化第三层·进度可见）：池/本人转存耗时
+# p50/p90 兜底值与分位数缓存秒数。代码默认值在 play_status
+# .PLAY_STATUS_ETA_CONFIG_DEFAULTS（2026-11-19 生产 7 天实测值），
+# 本表只做范围校验；纯 SystemConfig 键，不进 env.example。
+PLAY_STATUS_ETA_CONFIG_SCHEMA: dict[str, tuple] = {
+    # 池转存耗时 p50（秒）：实测 23；下限 1 防 0 秒假精确，上限
+    # 3600 防误配成天文数字。
+    "pool_eta_p50_sec": ("int", 1, 3600),
+    # 池转存耗时 p90（秒）：实测 34。
+    "pool_eta_p90_sec": ("int", 1, 3600),
+    # 本人转存耗时 p50（秒）：实测 6。
+    "user_eta_p50_sec": ("int", 1, 3600),
+    # 本人转存耗时 p90（秒）：实测 26。
+    "user_eta_p90_sec": ("int", 1, 3600),
+    # 分位数缓存秒数：默认 600（10 分钟）。
+    "play_status_eta_cache_sec": ("int", 60, 3600),
+}
+
 # 缺集补集通道（2026-11-11 B 方案）：绕开 MP 订阅判存，按缺集
 # 台账走 MP 搜索＋手动下载接口补集。默认值在 mp_episode_fill
 # .MP_FILL_CONFIG_DEFAULTS，消费方是 emby_server.mp_episode_fill

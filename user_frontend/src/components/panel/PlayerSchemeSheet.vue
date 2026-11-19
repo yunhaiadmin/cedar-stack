@@ -28,7 +28,7 @@
      本弹层不传、播放器用续看位置），路由未落地时点按给诚实提示。 -->
 <template>
   <Teleport to="body">
-    <div v-if="open" class="psp" @keydown.esc.prevent="close">
+    <div v-if="open" class="psp" @keydown.esc.prevent="close" @click.capture="cancelAutoOpen">
       <button type="button" class="psp-mask" aria-label="关闭" @click="close"></button>
       <div
         ref="panelEl"
@@ -84,7 +84,12 @@
           <!-- 滚动区：状态条 + 版本卡（版本多/展开时只许这里内部滚动，
                弹层本体与底部固定区不动——2026-11-14 用户亲点「固定的」） -->
           <div ref="scrollEl" class="psp-scroll">
-            <PlayStatusBar v-if="!needsBinding && itemId !== null && itemId !== undefined" :item-id="itemId" />
+            <PlayStatusBar
+              v-if="!needsBinding && itemId !== null && itemId !== undefined"
+              :item-id="itemId"
+              :auto-opening="autoOpening"
+              @ready="onPlayStatusReady"
+            />
 
             <div v-if="loading" class="psp-loading" role="status">
               <span class="psp-spinner" aria-hidden="true"></span> 正在获取资源和线路…
@@ -352,7 +357,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChevronDown, Copy, Eye, Play, RotateCcw, Trash2, X } from 'lucide-vue-next'
 import BindDriveGuide from '@/components/panel/BindDriveGuide.vue'
@@ -929,13 +934,30 @@ async function confirmRemovePlayed() {
 }
 
 watch(open, (now) => {
-  if (!now) return
+  if (!now) {
+    cancelAutoOpen()
+    return
+  }
   expandedId.value = ''
   audioOpenId.value = ''
   subPickerOpen.value = false
   linePickerOpen.value = false
   void refresh()
   void nextTick(() => panelEl.value?.focus())
+})
+
+/** 版本加载落定：ready 翻转时若版本还在加载，自动开播先挂起；
+ *  落定后再起 600ms 计时（版本未落定前绝不自动进播放器，免得
+ *  用错版本；无可播版本时不触发）。 */
+watch(loading, (now) => {
+  if (!now && autoOpenPending) {
+    autoOpenPending = false
+    if (!noPlayableVersion.value) armAutoOpen()
+  }
+})
+
+onBeforeUnmount(() => {
+  cancelAutoOpen()
 })
 
 async function refresh() {
@@ -1001,7 +1023,49 @@ async function refresh() {
 }
 
 function close() {
+  cancelAutoOpen()
   open.value = false
+}
+
+/** 自动开播（等待优化第三层）：起播状态从 preparing 翻成 ready 时，
+ *  先给「已备好，正在为你打开…」600ms，再按当前选中版本自动进
+ *  播放器（与点「开始播放」同一路由 start()）。只触发一次；窗口内
+ *  用户任何交互（根部 @click.capture）即取消；版本加载中不触发
+ *  （等 loading 落定再起计时）；弹层关闭/卸载即停。不自动播放
+ *  声音/全屏——只是替用户点了一次开始播放。 */
+const AUTO_OPEN_DELAY_MS = 600
+/** 正在 600ms 提示窗口内（状态条据此改显示已备好提示） */
+const autoOpening = ref(false)
+/** ready 翻转时版本还在加载：挂起，等 loading 落定再起计时 */
+let autoOpenPending = false
+let autoOpenTimer = 0
+
+function cancelAutoOpen() {
+  if (autoOpenTimer) {
+    window.clearTimeout(autoOpenTimer)
+    autoOpenTimer = 0
+  }
+  autoOpenPending = false
+  autoOpening.value = false
+}
+
+function armAutoOpen() {
+  cancelAutoOpen()
+  autoOpening.value = true
+  autoOpenTimer = window.setTimeout(() => {
+    autoOpenTimer = 0
+    autoOpening.value = false
+    void start()
+  }, AUTO_OPEN_DELAY_MS)
+}
+
+function onPlayStatusReady() {
+  if (loading.value) {
+    autoOpenPending = true
+    return
+  }
+  if (noPlayableVersion.value) return
+  armAutoOpen()
 }
 
 /** 绑盘弹层里绑成后回到选播放器流程：就地重查绑定与条目
