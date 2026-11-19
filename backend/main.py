@@ -79,6 +79,7 @@ from backend.api.admin_player_blacklist import admin_player_blacklist_router
 from backend.api.admin_softdecode import admin_softdecode_router
 from backend.api.admin_danmaku import admin_danmaku_router
 from backend.api.admin_login_lockout import admin_login_lockout_router
+from backend.api.admin_passkeys import admin_passkeys_router
 from backend.api.admin_series_follows import admin_series_follows_router
 from backend.api.admin_site_drawer import admin_site_drawer_router
 from backend.api.admin_user_favorites import admin_user_favorites_router
@@ -967,6 +968,9 @@ app.include_router(admin_danmaku_router)
 # 登录失败锁定（2026-11-18，F4/F8 补项）：管理端设置读写，
 # 见 backend/api/admin_login_lockout.py
 app.include_router(admin_login_lockout_router)
+# 用户 Passkey 管理（二期缺口 · 项 3）：按用户查看/吊销凭据（账号恢复），
+# 见 backend/api/admin_passkeys.py
+app.include_router(admin_passkeys_router)
 # 追剧订阅管理（二期缺口项 2，2026-11-19）：全站订阅列表＋管理员代取消，
 # 见 backend/api/admin_series_follows.py
 app.include_router(admin_series_follows_router)
