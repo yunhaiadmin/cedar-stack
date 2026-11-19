@@ -536,7 +536,7 @@ check("诱饵码核销后用户被封并落风控日志",
 
 set_config("registration_mode", None)
 
-# ==================== 七、公告广播与通知渠道的"真投递" ====================
+# ==================== 七、公告与通知渠道的"真投递" ====================
 
 # 7.1 公告必须给**每个启用中的用户**落站内消息（不只是当时在线的人）。
 # 这里两个用户都没有建立 WebSocket 连接，正是「离线用户」。
@@ -579,25 +579,6 @@ inbox = r.json() if isinstance(r.json(), list) else (r.json() or {}).get("messag
 check("用户能在收件箱里读到公告消息",
       r.status_code == 200 and any((m.get("title") or "").endswith(title) for m in inbox),
       f"HTTP {r.status_code} inbox={len(inbox)}")
-
-# 7.1b 后台「站内消息 → 广播」走的是同一条链路（/api/admin/messages/broadcast）
-bcast_title = f"全员广播{suf}"
-r = client.post("/api/admin/messages/broadcast",
-                json={"title": bcast_title, "content": "广播正文", "message_type": "system"},
-                headers=staff_h)
-body = r.json() if r.status_code == 200 else {}
-check("管理端广播接口可用且回报真实人数",
-      r.status_code == 200 and isinstance(body.get("notified_users"), int)
-      and body["notified_users"] >= 2, r.text[:120])
-
-db = SessionLocal()
-bcast_to = {m.to_user_id for m in db.query(models.StationMessage).filter(
-    models.StationMessage.title == bcast_title).all()}
-check("广播同样落到离线用户", offline_id in bcast_to, f"recipients={sorted(bcast_to)}")
-check("广播不投递禁用账号", disabled_id not in bcast_to)
-db.query(models.StationMessage).filter(models.StationMessage.title == bcast_title).delete()
-db.commit()
-db.close()
 
 db = SessionLocal()
 db.query(models.StationMessage).filter(models.StationMessage.title == f"📢 {title}").delete()

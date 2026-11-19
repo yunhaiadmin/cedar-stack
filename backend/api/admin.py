@@ -41,7 +41,6 @@ from backend.notifications import (
     notify_admin_event,
     notify_admin_event_quiet,
     notify_all_users,
-    notify_users,
 )
 from backend.security import hash_password
 from backend.db_retry import commit_with_retry
@@ -121,24 +120,6 @@ class UserMessageSendRequest(BaseModel):
     title: str
     content: str
     message_type: str = "system"
-
-
-class BroadcastMessageRequest(BaseModel):
-    title: str
-    content: str
-    # 人群发送（2026-11-19）：all 全部 / subscribed 在订 / plan 指定套餐 /
-    # expiring 即将到期 / expired 已过期未续费 / none 从未订阅。
-    # 缺省 all = 原全站广播口径，旧调用方不传新字段行为不变。
-    audience: str = "all"
-    plan_id: Optional[int] = None
-    days: int = Field(default=7, ge=1, le=30)
-
-
-class BroadcastPreviewRequest(BaseModel):
-    """广播人群预览：与发送同人群字段，只回人数、不落库不推送"""
-    audience: str = "all"
-    plan_id: Optional[int] = None
-    days: int = Field(default=7, ge=1, le=30)
 
 
 class SubscriptionGrantRequest(BaseModel):
@@ -581,139 +562,6 @@ async def send_user_message(
     if not results.get("in_app", False):
         raise HTTPException(status_code=500, detail="消息发送失败")
     return {"success": True, "message": "消息发送成功"}
-
-
-BROADCAST_AUDIENCES = ("all", "subscribed", "plan", "expiring", "expired", "none")
-
-_BROADCAST_AUDIENCE_LABELS = {
-    "all": "全部用户",
-    "subscribed": "在订用户",
-    "plan": "指定套餐",
-    "expiring": "即将到期",
-    "expired": "已过期未续费",
-    "none": "从未订阅",
-}
-
-
-def _resolve_broadcast_audience(
-    db: Session,
-    audience: str,
-    plan_id: Optional[int],
-    days: int,
-) -> list[int]:
-    """解析广播人群 → 启用中用户 id 列表（同步函数，调用方下放线程池）
-
-    基准与全站广播一致：只含 ``is_active`` 的用户。「有效订阅」与
-    backend/subscriptions.py 同一口径：``status == "active"`` 且
-    ``end_date > now``（订阅行 status 不随时间自动翻转，一律按 end_date 现算）。
-
-    - all：全部启用中用户（原全站广播行为）
-    - subscribed：有有效订阅
-    - plan：有有效订阅且其 plan_id = plan_id（plan_id 必填，缺了 400）
-    - expiring：有有效订阅且到期日在 days 天内
-    - expired：有过订阅记录、当前无有效订阅、最近到期日已过
-    - none：从没有任何订阅记录
-    """
-    if audience not in BROADCAST_AUDIENCES:
-        raise HTTPException(status_code=400, detail=f"未知的人群类型：{audience}")
-    if audience == "plan" and not plan_id:
-        raise HTTPException(status_code=400, detail="人群为「指定套餐」时必须选择套餐")
-
-    active_ids = {
-        row[0] for row in db.query(models.WebUser.id).filter(
-            models.WebUser.is_active == True  # noqa: E712
-        ).all()
-    }
-    if audience == "all":
-        return sorted(active_ids)
-    if not active_ids:
-        return []
-
-    now = datetime.now()
-    valid_rows = db.query(
-        models.UserSubscription.user_id,
-        models.UserSubscription.plan_id,
-        models.UserSubscription.end_date,
-    ).filter(
-        models.UserSubscription.status == "active",
-        models.UserSubscription.end_date > now,
-    ).all()
-    valid_users = {row[0] for row in valid_rows}
-
-    if audience == "subscribed":
-        return sorted(active_ids & valid_users)
-    if audience == "plan":
-        return sorted(active_ids & {row[0] for row in valid_rows if row[1] == plan_id})
-    if audience == "expiring":
-        deadline = now + timedelta(days=days)
-        return sorted(active_ids & {row[0] for row in valid_rows if row[2] <= deadline})
-
-    ever_rows = db.query(
-        models.UserSubscription.user_id,
-        models.UserSubscription.end_date,
-    ).all()
-    ever_users = {row[0] for row in ever_rows}
-    if audience == "none":
-        return sorted(active_ids - ever_users)
-
-    # expired：有过记录、当前无有效订阅，且最近一次到期日已过
-    latest_end: dict[int, datetime] = {}
-    for uid, end in ever_rows:
-        if uid not in latest_end or end > latest_end[uid]:
-            latest_end[uid] = end
-    return sorted(
-        uid for uid in (active_ids & ever_users - valid_users)
-        if latest_end[uid] <= now
-    )
-
-
-@admin_router.post("/messages/broadcast/preview")
-async def broadcast_preview(
-    request: BroadcastPreviewRequest,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """广播人群预览：只解析并计数，不落库、不推送（纯探测，审计豁免见
-    scripts/check_admin_audit_coverage.py 的 EXCEPTIONS 登记）"""
-    user_ids = await run_in_threadpool(
-        _resolve_broadcast_audience, db, request.audience,
-        request.plan_id, request.days)
-    return {"count": len(user_ids)}
-
-
-@admin_router.post("/messages/broadcast")
-async def broadcast_message(
-    request: BroadcastMessageRequest,
-    current_admin: models.WebUser = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-):
-    """广播消息（可按人群发送；人群解析与审计下放线程池，广播本身给目标
-    人群每人落站内信 + 在线实时推送）"""
-    admin_id = current_admin.id
-
-    def _prepare() -> list[int]:
-        user_ids = _resolve_broadcast_audience(
-            db, request.audience, request.plan_id, request.days)
-        _audit(db, admin_id, "broadcast_message", "all_users", None,
-               {"title": request.title, "audience": request.audience,
-                "plan_id": request.plan_id, "days": request.days,
-                "audience_count": len(user_ids)})
-        db.commit()
-        return user_ids
-
-    user_ids = await run_in_threadpool(_prepare)
-
-    count = await notify_users(
-        event_type="system.broadcast",
-        title=request.title,
-        content=request.content,
-        user_ids=user_ids,
-    )
-    # count = 真正落了站内消息的用户数（目标人群中的启用账号；在线的那部分
-    # 同时做了实时推送），旧文案写成「在线用户」与现在的行为不符
-    label = _BROADCAST_AUDIENCE_LABELS.get(request.audience, request.audience)
-    return {"success": True, "notified_users": count,
-            "message": f"广播已发送（{label}），已为 {count} 位用户生成站内消息"}
 
 
 # ---------- Google Drive SA 账号管理（Fix 6） ----------

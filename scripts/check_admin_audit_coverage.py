@@ -166,9 +166,6 @@ EXCEPTIONS: dict[tuple[str, str], str] = {
         "首次运行向导建第一个管理员：没有「管理员身份」可归属（未通过鉴权），而且它已经落在"
         "**登录日志**里（authlog.record_event，reason=admin_setup/admin_setup_failed，含 IP 与 UA）；"
         "操作日志再记一份只会把真正的写操作冲淡",
-    ("POST", "/api/admin/messages/broadcast/preview"):
-        "广播发送前的人群预览：只解析人群并回人数，不落库、不推送、不发消息；"
-        "真正发送走 /api/admin/messages/broadcast 并在那里写审计",
 }
 
 
