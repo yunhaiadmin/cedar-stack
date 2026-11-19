@@ -144,33 +144,33 @@ function onOrderChange() {
 .lib-cover-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--el-text-color-secondary); }
 /* P2-1：删除 scoped .lib-cover-shade 复写，沿用全局 EmbyAdmin.css 的顶部保护层 */
 .lib-cover-badges { position: absolute; top: 8px; left: 8px; right: 8px; display: flex; gap: 4px; flex-wrap: wrap; }
-.mini-badge { padding: 2px 6px; border-radius: 4px; font-size: 11px; background: rgba(0,0,0,.55); color: #fff; }
+.mini-badge { padding: 2px 6px; border-radius: 4px; font-size: var(--uhd-fs-micro); background: rgba(0,0,0,.55); color: #fff; }
 .mini-badge.ok { background: var(--el-color-success); }
 .mini-badge.off { background: var(--el-color-info); }
 /* 封面处顺序小控件：左下角半透明条，不挡左上徽标 */
 .lib-cover-order { position: absolute; left: 8px; bottom: 8px; display: flex; align-items: center; gap: 4px; background: rgba(0,0,0,.55); border-radius: 4px; padding: 2px 4px 2px 6px; }
-.lib-cover-order-label { font-size: 11px; color: #fff; white-space: nowrap; }
+.lib-cover-order-label { font-size: var(--uhd-fs-micro); color: #fff; white-space: nowrap; }
 .lib-cover-order :deep(.el-input-number--small) { width: 76px; }
 .lib-body { padding: 12px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
 .lib-head { display: flex; justify-content: space-between; align-items: center; }
 /* P2-5：旧规则全文（衬线标题 + 单行省略） */
 .lib-name {
   font-family: var(--au-font-serif);
-  font-weight: 700; font-size: var(--font-size-lg); color: var(--au-text);
+  font-weight: 700; font-size: var(--uhd-fs-body); color: var(--au-text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.lib-meta { font-size: 12px; color: var(--el-text-color-secondary); }
-.lib-facts { display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; }
+.lib-meta { font-size: var(--uhd-fs-aux-sm); color: var(--el-text-color-secondary); }
+.lib-facts { display: flex; flex-wrap: wrap; gap: 8px; font-size: var(--uhd-fs-aux-sm); }
 /* P2-9：.fact 基类旧规则全文 */
 .fact {
   display: inline-flex; align-items: center; gap: 5px;
-  font-size: var(--font-size-xs); color: var(--au-text-2);
+  font-size: var(--uhd-fs-aux-sm); color: var(--au-text-2);
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .fact.warn { color: var(--el-color-warning); }
 /* P2-6：旧全局芯片规则全文（scoped 覆盖全局，故写完整） */
 .lib-summary {
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   font-family: var(--font-mono);
   color: var(--au-text-3);
   padding: 5px 8px;
@@ -188,12 +188,12 @@ function onOrderChange() {
 /* P2-7：旧 .lib-live 规则全文 */
 .lib-live {
   display: flex; align-items: center; gap: 6px;
-  font-size: var(--font-size-xs); color: var(--au-info);
+  font-size: var(--uhd-fs-aux-sm); color: var(--au-info);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 /* P2-8：旧 .lib-time 规则全文 */
-.lib-time { font-size: var(--font-size-xs); color: var(--au-text-4); }
-.scan-error { font-size: 12px; color: var(--el-color-danger); }
+.lib-time { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-4); }
+.scan-error { font-size: var(--uhd-fs-aux-sm); color: var(--el-color-danger); }
 .scan-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--el-color-success); margin-right: 4px; }
 .scan-dot.is-queued { background: var(--el-color-warning); }
 </style>

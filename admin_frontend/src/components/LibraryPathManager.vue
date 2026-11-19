@@ -199,7 +199,7 @@ function removeAt(index: number) {
 .lpm-main { flex: 1; min-width: 0; }
 .lpm-path {
   display: block;
-  font-size: var(--font-size-sm);
+  font-size: var(--uhd-fs-aux);
   font-family: var(--font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -212,7 +212,7 @@ function removeAt(index: number) {
   margin-top: 4px;
 }
 .lpm-hint, .lpm-hint-block {
-  font-size: var(--font-size-xs);
+  font-size: var(--uhd-fs-aux-sm);
   color: var(--au-text-3);
 }
 .lpm-hint-block { margin: 8px 0 0; line-height: 1.6; }

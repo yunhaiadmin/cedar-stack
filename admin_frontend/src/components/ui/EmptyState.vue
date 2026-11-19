@@ -61,18 +61,18 @@ withDefaults(
 .au-empty-state__title {
   margin: 0;
   font-family: var(--au-font-serif);
-  font-size: 15px;
+  font-size: var(--uhd-fs-body);
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--au-text-2);
 }
 
-.is-compact .au-empty-state__title { font-size: 13.5px; }
+.is-compact .au-empty-state__title { font-size: var(--uhd-fs-aux); }
 
 .au-empty-state__desc {
   margin: 0;
   max-width: 46ch;
-  font-size: 12.5px;
+  font-size: var(--uhd-fs-aux-sm);
   line-height: 1.6;
   color: var(--au-text-3);
 }

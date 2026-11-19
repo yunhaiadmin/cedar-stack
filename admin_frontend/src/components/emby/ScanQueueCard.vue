@@ -101,14 +101,14 @@ const emit = defineEmits<{
    scoped 里，跨组件失效）。与 LibraryCard 的 P2-9 同一条旧规则。 */
 .fact {
   display: inline-flex; align-items: center; gap: 5px;
-  font-size: var(--font-size-xs); color: var(--au-text-2);
+  font-size: var(--uhd-fs-aux-sm); color: var(--au-text-2);
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .queue-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 /* P2-11：旧 .queue-col 规则全文 */
 .queue-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 /* P2-11：旧 .queue-col-title 规则全文 */
-.queue-col-title { font-size: var(--font-size-xs); color: var(--au-text-3); letter-spacing: 0.04em; }
+.queue-col-title { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); letter-spacing: 0.04em; }
 /* P2-11：旧 .queue-col-title--split 规则全文 */
 .queue-col-title--split { display: flex; align-items: center; justify-content: space-between; }
 /* P2-11：旧圆角卡片行规则全文 */
@@ -130,7 +130,7 @@ const emit = defineEmits<{
 }
 /* P2-11：旧 .queue-row-sub 规则 + warn/danger 变体（模板在用） */
 .queue-row-sub {
-  font-size: 12px; color: var(--el-text-color-secondary);
+  font-size: var(--uhd-fs-aux-sm); color: var(--el-text-color-secondary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .queue-row-sub.warn { color: var(--au-warning); }
@@ -141,9 +141,9 @@ const emit = defineEmits<{
   border: 1px dashed var(--au-border);
   border-radius: var(--au-r-md);
   text-align: center;
-  font-size: var(--font-size-xs); color: var(--au-text-4);
+  font-size: var(--uhd-fs-aux-sm); color: var(--au-text-4);
 }
-.mini-badge { padding: 1px 6px; border-radius: 4px; font-size: 11px; background: var(--el-fill-color); }
+.mini-badge { padding: 1px 6px; border-radius: 4px; font-size: var(--uhd-fs-micro); background: var(--el-fill-color); }
 .mini-badge.scanning { background: var(--el-color-primary-light-9); color: var(--el-color-primary); }
 @media (max-width: 900px) { .queue-grid { grid-template-columns: 1fr; } }
 </style>
