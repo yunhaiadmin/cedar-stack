@@ -31,7 +31,7 @@ import {
   Image as ImageIcon,
   Database, Megaphone, Receipt, Trophy, TicketPercent, UserPlus, KeySquare,
   UserCog, Activity, HandCoins,
-  Sun, Moon, MonitorSmartphone, ListChecks, Flag, Gauge,
+  Sun, Moon, MonitorSmartphone, ListChecks, Flag, Gauge, Clapperboard,
   PanelLeftClose, PanelLeftOpen,
 } from 'lucide-vue-next'
 import {
@@ -196,6 +196,8 @@ const navGroups: NavGroup[] = [
     icon: MessageSquareDashed,
     items: [
       { path: '/media-seek', label: '求片管理', icon: MessageSquareDashed },
+      // 追剧订阅管理（二期缺口项 2）：全站订阅列表＋管理员代取消
+      { path: '/series-follows', label: '追剧订阅', icon: Clapperboard },
       { path: '/announcements', label: '公告管理', icon: Megaphone },
       { path: '/tickets', label: '工单', icon: Ticket },
       // 等级治理：举报终审队列 + 治理停权（复核达标的举报在这里受理 / 驳回）
