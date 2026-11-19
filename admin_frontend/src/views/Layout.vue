@@ -32,7 +32,7 @@ import {
   Database, Megaphone, Receipt, Trophy, TicketPercent, UserPlus, KeySquare,
   UserCog, Activity, HandCoins,
   Sun, Moon, MonitorSmartphone, ListChecks, Flag, Gauge, Heart, Clapperboard, CalendarDays,
-  PanelLeftClose, PanelLeftOpen,
+  PanelLeftClose, PanelLeftOpen, MonitorPlay,
 } from 'lucide-vue-next'
 import {
   changePassword,
@@ -198,6 +198,8 @@ const navGroups: NavGroup[] = [
     icon: MessageSquareDashed,
     items: [
       { path: '/media-seek', label: '求片管理', icon: MessageSquareDashed },
+      // 一起看管理（二期缺口）：活房间观测 + 强制关房（写审计）
+      { path: '/watch-together', label: '一起看管理', icon: MonitorPlay },
       // 追剧订阅管理（二期缺口项 2）：全站订阅列表＋管理员代取消
       { path: '/series-follows', label: '追剧订阅', icon: Clapperboard },
       // 追新日历（二期缺口项）：与用户端同一入库日口径的管理视图（只读）

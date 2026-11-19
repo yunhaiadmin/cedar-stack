@@ -47,6 +47,8 @@ const routes: RouteRecordRaw[] = [
       // 等级治理 Step 2：举报终审队列 + 治理停权（一页两标签，?tab=suspensions 落到停权）
       { path: 'governance', name: 'Governance', component: () => import('@/views/Governance.vue'), meta: { title: '举报与停权' } },
       { path: 'media-seek', name: 'MediaSeek', component: () => import('@/views/MediaSeek.vue'), meta: { title: '求片管理' } },
+      // 一起看管理（二期缺口）：房间列表/详情（只读）+ 强制关房
+      { path: 'watch-together', name: 'WatchTogether', component: () => import('@/views/WatchTogether.vue'), meta: { title: '一起看管理' } },
       // 追剧订阅管理（二期缺口项 2）：全站追剧订阅列表＋管理员代取消
       { path: 'series-follows', name: 'SeriesFollows', component: () => import('@/views/SeriesFollows.vue'), meta: { title: '追剧订阅' } },
       { path: 'chase-calendar', name: 'ChaseCalendar', component: () => import('@/views/ChaseCalendar.vue'), meta: { title: '追新日历' } },
