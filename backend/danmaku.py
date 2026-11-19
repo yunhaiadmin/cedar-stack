@@ -8,6 +8,9 @@
   代码里只有默认值，词表内容绝不写死在代码里。
 - 存取只认 emby_server.models.DanmakuComment；user_id 记发言者本人
   （子账号按本人记——弹幕是发言行为，不是权益消费，不走有效账号解析）。
+- 禁言（内容治理）存 emby_server.models.DanmakuMute，判定唯一实现
+  是本文件的 get_active_mute / mute_is_active；管理面在
+  backend/api/admin_danmaku.py 的治理端点。
 - 第三方客户端的空弹幕兼容口（emby_server.compat_routes 的
   /api/danmu/*）与本站内弹幕无关，不经过这里。
 """
@@ -15,6 +18,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -121,3 +125,26 @@ def create_danmaku(db: Session, user_id: int, item_id: int,
     db.commit()
     db.refresh(row)
     return row
+
+
+def mute_is_active(row: em.DanmakuMute | None,
+                   now: datetime | None = None) -> bool:
+    """禁言是否生效中：无行 = 否；muted_until 为 NULL（永久）= 是；
+    有值时严格大于 now 才算生效（等于 now = 已到期）。"""
+    if row is None:
+        return False
+    if row.muted_until is None:
+        return True
+    return row.muted_until > (now or datetime.now())
+
+
+def get_active_mute(db: Session, user_id: int,
+                    now: datetime | None = None) -> em.DanmakuMute | None:
+    """取该用户当前生效的禁言行，没被禁言（或已到期）返回 None。
+
+    这是禁言判定的唯一实现：发送口（api/danmaku.py）真查，
+    管理端列表的 active 标记也走 mute_is_active 同一口径。
+    """
+    row = (db.query(em.DanmakuMute)
+           .filter(em.DanmakuMute.user_id == user_id).first())
+    return row if mute_is_active(row, now) else None

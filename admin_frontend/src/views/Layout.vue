@@ -202,6 +202,8 @@ const navGroups: NavGroup[] = [
       { path: '/watch-together', label: '一起看管理', icon: MonitorPlay },
       // 追剧订阅管理（二期缺口项 2）：全站订阅列表＋管理员代取消
       { path: '/series-follows', label: '追剧订阅', icon: Clapperboard },
+      // 弹幕治理（内容治理面）：弹幕列表/删除＋用户禁言（发送口真查）
+      { path: '/danmaku-admin', label: '弹幕治理', icon: Ban },
       { path: '/announcements', label: '公告管理', icon: Megaphone },
       // 官网内容（二期缺口）：落地页整页文案编辑（首屏/合作方/卖点），存 landing_content
       { path: '/landing-content', label: '官网内容', icon: MonitorSmartphone },
