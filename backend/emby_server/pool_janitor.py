@@ -44,12 +44,18 @@
    retention_reason 标记收口，不再重复处理（文件在贡献者
    自己盘里，删不掉不阻塞任何事，design §7 风险 3）。
 
-热条目补位（refill，补充节 S4）在淘汰之后单独一步（仅池开
-且转存队列闲置时）：近 7 天有起播、因成员失效/副本下线跌破
-pool_item_max_copies 份的条目，按「24h 起播多 → 7 天起播多
-→ 体积小」排序走 create_pool_job(trigger="refill") 补到
-目标份数；补位单照常吃选盘打分与单盘日限额，优先级低于
-观众当场点播的进池单（闲置门 + 每轮上限双保险）。
+热门预热补位（refill，补充节 S4 + 等待优化第二层）在淘汰
+之后单独一步（仅池开且转存队列闲置时）：候选三路信号按
+追剧订阅 > 求片待办 > 热播丢副本排序（见 _refill_candidates；
+求片指到剧行时只取首集 + 最新集，不整季扫），走
+create_pool_job(trigger="refill") 备到目标份数——预热项
+（追剧/求片）目标 pool_refill_prefetch_target_copies 份
+（默认 1）、丢副本热播项目标 pool_item_max_copies 份；
+每轮上限 pool_refill_max_per_round（默认 10）。补位单照
+常吃选盘打分与单盘日限额，优先级低于观众当场点播的进池
+单（闲置门 + 每轮上限双保险）；选盘时跳过失败记忆里的
+成员×源盘组合（pool_gate 失败记忆），单条目建单失败只记
+blocked、不拖垮整步。
 
 主链路资源纪律（后台红线）：本 janitor 不抢播放/API 的
 CPU 与 DB 连接——单线程顺序执行、每步有批量上限（对账 40
@@ -98,9 +104,9 @@ JANITOR_GET_FILE_BUDGET = 40
 #: 死副本对账每行最短复验间隔（秒）：6 小时——同一份副本 6 小时内
 #: 只验一次，刚验过的不重复打 get_file（Drive 砍减第 6 项）。
 RECONCILE_CHECK_INTERVAL_SEC = 6 * 3600
-#: 每轮补位建单上限。
-REFILL_MAX_PER_ROUND = 3
 #: 补位热度窗（天）：近窗内有起播才算热条目（补充节 S4）。
+#: 每轮补位上限已改为 janitor 配置键 pool_refill_max_per_round
+#: （等待优化第二层，默认 10），不再是模块常量。
 REFILL_HOT_WINDOW_DAYS = 7
 #: 残留收尾完成标记（写 retention_reason，防每轮重复核对）：
 #: cleaned = 文件已删或已确认不存在；closed = 绑定已死、无
@@ -659,14 +665,176 @@ def _sweep_leftover_cleanup(db, now, *, client_factory=None,
 # ------------------------------------------------------------ 8 热条目补位
 
 
-def _sweep_refill(db, cfg, now, *, quota_fn=None) -> dict:
-    stats = {"created": 0, "blocked": 0, "skipped_busy": 0}
-    queue = _tv.queue_stats(db, now=now)
-    if int(queue.get("due_count") or 0) > 0 or \
-            int(queue.get("running") or 0) > 0:
-        # 只吃闲置产能：转存队列有人在等/在跑时补位整步跳过。
-        stats["skipped_busy"] = 1
-        return stats
+def _lost_pool_copy(db, item_id) -> bool:
+    """该条目是否「因下线丢过副本」：有不可下发的池行（stale/
+    released/orphan），或有 ready 行挂在不可下发的成员名下
+    （暂停/熔断/失效），才算丢过；从没满过份数的热片不归
+    丢副本补位（§6.4 下线条目不自动重进的边界，S4 例外只限
+    成员失效跌破这一种）。"""
+    holders = pool_gate._servable_pool_holder_ids(db, item_id)
+    all_rows = (db.query(em.TransferVariant)
+                .filter(em.TransferVariant.item_id == item_id,
+                        em.TransferVariant.owner_scope == "pool")
+                .all())
+    for row in all_rows:
+        if row.status in ("stale", "released", "orphan"):
+            return True
+        if row.status == "ready":
+            try:
+                owner_id = int((row.owner_ref or "").strip())
+            except (TypeError, ValueError):
+                owner_id = None
+            if owner_id not in holders:
+                return True
+    return False
+
+
+def _live_item(db, item_id):
+    """活条目（未软删、未合并）或 None。"""
+    if item_id is None:
+        return None
+    return (db.query(em.MediaItem)
+            .filter(em.MediaItem.id == item_id,
+                    em.MediaItem.deleted_at.is_(None),
+                    em.MediaItem.merged_into_id.is_(None))
+            .first())
+
+
+def _series_first_latest_episodes(db, series_id):
+    """某剧的首集 + 最新集（live 集）：求片指到剧行时只预热
+    这两集（生产实测待办剧集级缺口 6,417 集，整季预热不可
+    行）；首集是入坑点、最新集是追更点。无 live 集回 []。"""
+    eps = (db.query(em.MediaItem)
+           .filter(em.MediaItem.item_type == "episode",
+                   em.MediaItem.series_id == series_id,
+                   em.MediaItem.deleted_at.is_(None),
+                   em.MediaItem.merged_into_id.is_(None))
+           .all())
+    if not eps:
+        return []
+    first = min(
+        eps,
+        key=lambda e: (getattr(e, "season_number", None) or 0,
+                       getattr(e, "episode_number", None) or 0,
+                       int(e.id)))
+    dated = [e for e in eps if getattr(e, "date_added", None)]
+    latest = (max(dated, key=lambda e: (e.date_added, int(e.id)))
+              if dated else first)
+    return [first] if first.id == latest.id else [first, latest]
+
+
+def _seek_request_items(db, req) -> list:
+    """一条求片待办行 → 待预热的库内条目（movie/episode 行）。
+
+    - missing_episodes：先按 request_detail 的缺集明细
+      （季 → 集号）精确定位到单集行；
+    - emby_item_id：电影/单集直接取行；剧行展开为首集 +
+      最新集（见 _series_first_latest_episodes）；
+    - 对不上库内活行回 []（片还没入库，等入库后再说）。"""
+    from backend import missing_episodes as _me
+
+    out = []
+    if (req.request_kind or "") == "missing_episodes":
+        detail = _me.parse_request_detail(req.request_detail)
+        series_id = detail.get("series_item_id")
+        missing = _me.normalize_missing_detail(detail.get("missing"))
+        for season_no, ep_nos in sorted(missing.items()):
+            for ep_no in ep_nos:
+                try:
+                    season_no = int(season_no)
+                    ep_no = int(ep_no)
+                except (TypeError, ValueError):
+                    continue
+                ep = (db.query(em.MediaItem)
+                      .filter(em.MediaItem.item_type == "episode",
+                              em.MediaItem.series_id == series_id,
+                              em.MediaItem.season_number == season_no,
+                              em.MediaItem.episode_number == ep_no,
+                              em.MediaItem.deleted_at.is_(None),
+                              em.MediaItem.merged_into_id.is_(None))
+                      .first())
+                if ep is not None:
+                    out.append(ep)
+        if out:
+            return out
+    try:
+        item_id = int((req.emby_item_id or "").strip())
+    except (TypeError, ValueError):
+        return out
+    item = _live_item(db, item_id)
+    if item is None:
+        return out
+    if item.item_type == "series":
+        return _series_first_latest_episodes(db, item.id)
+    return [item]
+
+
+def _follow_candidates(db, target) -> list:
+    """追剧信号：各 active 订阅下订阅后到货的新集（最新集在前）。
+    生产实测有效订阅仅 1 个，量小但意图最强（用户明确要追的
+    剧，新集一到就可能点），排第一优先级。"""
+    from backend.emby_server import series_follow as _sf
+
+    out = []
+    follows = (db.query(em.SeriesFollow)
+               .filter(em.SeriesFollow.status == "active")
+               .order_by(em.SeriesFollow.id.asc()).all())
+    for follow in follows:
+        try:
+            eps, _unknown = _sf._episodes_after_follow(db, follow)
+        except Exception:  # noqa: BLE001 — 单剧失败跳过不杀整步
+            logger.warning("预热追剧取集失败 follow=%s",
+                           getattr(follow, "id", None), exc_info=True)
+            continue
+        eps = sorted(
+            eps,
+            key=lambda e: (getattr(e, "date_added", None)
+                           or datetime.min, int(e.id)),
+            reverse=True)
+        for ep in eps:
+            if getattr(ep, "deleted_at", None) is not None:
+                continue
+            out.append({"signal": "follow", "item": ep,
+                        "target": target,
+                        "detail": f"follow={follow.id}"})
+    return out
+
+
+def _seek_candidates(db, target) -> list:
+    """求片信号：pending/approved 待办行映射到的库内条目，
+    附议多 → 早提交的在前。生产实测 177 条待办映射 193 个
+    库内条目、100% 无池副本，是缺口最大的信号；但这是「想
+    要」而非「在播」，只做窄切口（剧行首集 + 最新集）。"""
+    from backend import models as base_models
+
+    out = []
+    reqs = (db.query(base_models.MovieRequest)
+            .filter(base_models.MovieRequest.status.in_(
+                ("pending", "approved")),
+                base_models.MovieRequest.request_kind.in_(
+                    ("seek", "missing_episodes")))
+            .order_by(base_models.MovieRequest.vote_count.desc(),
+                      base_models.MovieRequest.created_at.asc())
+            .all())
+    for req in reqs:
+        try:
+            items = _seek_request_items(db, req)
+        except Exception:  # noqa: BLE001 — 单行失败跳过不杀整步
+            logger.warning("预热求片映射失败 request=%s",
+                           getattr(req, "id", None), exc_info=True)
+            continue
+        for item in items:
+            out.append({"signal": "seek", "item": item,
+                        "target": target,
+                        "detail": f"request={req.id}"})
+    return out
+
+
+def _hot_candidates(db, cfg, now, max_copies) -> list:
+    """热播信号（补充节 S4 原口径）：近 7 天有池起播、且因下线
+    跌破份数的条目，按「24h 起播多 → 7 天起播多 → 体积小」
+    排序；目标份数是 pool_item_max_copies（与预热项的 1 份
+    目标不同：丢过副本的热片要补满冗余）。"""
     from sqlalchemy import case, func
 
     since7 = now - timedelta(days=REFILL_HOT_WINDOW_DAYS)
@@ -680,58 +848,86 @@ def _sweep_refill(db, cfg, now, *, quota_fn=None) -> dict:
         .filter(em.PoolPlayEvent.created_at >= since7)
         .group_by(em.PoolPlayEvent.item_id)
         .all())
-    max_copies = max(1, int(cfg["pool_item_max_copies"]))
     enriched = []
     for item_id, plays_7d, plays_24h in hot:
-        item = (db.query(em.MediaItem)
-                .filter(em.MediaItem.id == item_id,
-                        em.MediaItem.deleted_at.is_(None))
-                .first())
+        item = _live_item(db, item_id)
         if item is None:
             continue
         enriched.append((
             -int(plays_24h or 0), -int(plays_7d or 0),
             int(getattr(item, "size", None) or 0), item,
             int(plays_7d or 0), int(plays_24h or 0)))
-    # S4 补位排序：24h 起播降序 → 7 天起播降序 → 体积升序。
     enriched.sort(key=lambda t: (t[0], t[1], t[2]))
+    out = []
     for _n24, _n7, _size, item, plays_7d, plays_24h in enriched:
-        if stats["created"] >= REFILL_MAX_PER_ROUND:
+        if not _lost_pool_copy(db, item.id):
+            continue
+        out.append({"signal": "hot", "item": item,
+                    "target": max_copies,
+                    "detail": (f"plays_24h={plays_24h} "
+                               f"plays_7d={plays_7d}")})
+    return out
+
+
+def _refill_candidates(db, cfg, now) -> list:
+    """本轮补位候选（已排好序、已按条目去重，取最先的信号）：
+    追剧 > 求片 > 热播（丢副本补位）。同一条目多信号命中时
+    只保留最高优先级那一次。"""
+    jcfg = pool_gate.janitor_config_payload(db)
+    prefetch_target = max(1, int(
+        jcfg["pool_refill_prefetch_target_copies"]))
+    max_copies = max(1, int(cfg["pool_item_max_copies"]))
+    ordered = []
+    seen = set()
+    for cand in (_follow_candidates(db, prefetch_target)
+                 + _seek_candidates(db, prefetch_target)
+                 + _hot_candidates(db, cfg, now, max_copies)):
+        item_id = int(cand["item"].id)
+        if item_id in seen:
+            continue
+        seen.add(item_id)
+        ordered.append(cand)
+    return ordered
+
+
+def _sweep_refill(db, cfg, now, *, quota_fn=None) -> dict:
+    stats = {"created": 0, "blocked": 0, "skipped_busy": 0,
+             "skipped_bad_combo": 0,
+             "by_signal": {"follow": 0, "seek": 0, "hot": 0}}
+    queue = _tv.queue_stats(db, now=now)
+    if int(queue.get("due_count") or 0) > 0 or \
+            int(queue.get("running") or 0) > 0:
+        # 只吃闲置产能：转存队列有人在等/在跑时补位整步跳过。
+        stats["skipped_busy"] = 1
+        return stats
+    jcfg = pool_gate.janitor_config_payload(db)
+    max_per_round = max(0, int(jcfg["pool_refill_max_per_round"]))
+    for cand in _refill_candidates(db, cfg, now):
+        if stats["created"] >= max_per_round:
             break
+        item = cand["item"]
+        target = cand["target"]
         servable = (pool_gate._servable_pool_copy_count(db, item.id)
                     + pool_gate._pool_inflight_for_item(db, item.id))
-        if servable >= max_copies:
+        if servable >= target:
             continue
-        # 只补「因下线跌破份数」的：有不可下发的池行（stale/
-        # released/orphan），或有 ready 行挂在不可下发的成员
-        # 名下（暂停/熔断/失效），才算丢过副本；从没满过份数
-        # 的热片走观众点播进池，不归补位（§6.4 下线条目不
-        # 自动重进的边界，S4 例外只限成员失效跌破这一种）。
         holders = pool_gate._servable_pool_holder_ids(db, item.id)
-        all_rows = (db.query(em.TransferVariant)
-                    .filter(em.TransferVariant.item_id == item.id,
-                            em.TransferVariant.owner_scope == "pool")
-                    .all())
-        lost = False
-        for row in all_rows:
-            if row.status in ("stale", "released", "orphan"):
-                lost = True
-                break
-            if row.status == "ready":
-                try:
-                    owner_id = int((row.owner_ref or "").strip())
-                except (TypeError, ValueError):
-                    owner_id = None
-                if owner_id not in holders:
-                    lost = True
-                    break
-        if not lost:
-            continue
         try:
             job = pool_gate.create_pool_job(
                 db, item, trigger="refill", quota_fn=quota_fn,
                 exclude_member_ids=holders)
-        except _tv.TransferError:
+        except _tv.TransferError as exc:
+            # 全员都被失败记忆挡住才记 skipped_bad_combo（选盘
+            # 已无可用成员）；其余建单拒绝只记 blocked。
+            if (exc.kind == "no_member"
+                    and pool_gate.bad_combo_member_ids_for_item(
+                        db, item)):
+                stats["skipped_bad_combo"] += 1
+            stats["blocked"] += 1
+            continue
+        except Exception:  # noqa: BLE001 — 单条目失败不杀整步
+            logger.warning("补位建单失败 item=%s",
+                           getattr(item, "id", None), exc_info=True)
             stats["blocked"] += 1
             continue
         from backend.emby_server import transfer_decisions as _decisions
@@ -739,11 +935,12 @@ def _sweep_refill(db, cfg, now, *, quota_fn=None) -> dict:
         _decisions.note_decision(
             scope="pool_pick", resource_key=f"item:{item.id}",
             decision=f"member:{job.owner_ref}",
-            reason=(f"refill plays_24h={plays_24h} "
-                    f"plays_7d={plays_7d} servable={servable}"
-                    f"<max={max_copies}"),
+            reason=(f"refill signal={cand['signal']} "
+                    f"{cand['detail']} servable={servable}"
+                    f"<target={target}"),
             candidates=[])
         stats["created"] += 1
+        stats["by_signal"][cand["signal"]] += 1
     return stats
 
 

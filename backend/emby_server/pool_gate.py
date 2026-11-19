@@ -230,6 +230,18 @@ POOL_JANITOR_CONFIG_DEFAULTS: dict = {
     # 容量触发，闲置超 pool_copy_idle_evict_days 天的 ready
     # 副本直接清；默认开。
     "pool_idle_evict_proactive_enabled": True,
+    # 热门预热每轮补位上限（等待优化第二层）：0 = 关预热补位
+    # （只保留丢副本补位？不——0 时整步仍跑但建 0 单，等于关）；
+    # 默认 10：10 单/轮 × 48 轮/天可在约一日内清掉实测约 200
+    # 项的求片缺口，又远低于成员日字节上限；队列忙时整步跳
+    # 过（闲置产能门），上限只是闲时节流。
+    "pool_refill_max_per_round": 10,
+    # 热门预热目标份数（等待优化第二层）：追剧/求片这类「从没
+    # 有过副本」的预热项备到几份可下发副本；默认 1：1 份即消
+    # 除首播等待，第二份由丢副本补位按 pool_item_max_copies
+    # 另行补（丢过副本的热播项仍以 pool_item_max_copies 为
+    # 目标，不走本键）。
+    "pool_refill_prefetch_target_copies": 1,
 }
 
 
@@ -284,6 +296,12 @@ POOL_RETRY_CONFIG_DEFAULTS: dict = {
     # transfer_variant._try_pool_source_heal）；补不上/重试仍
     # 拒才落终态归源熔断。默认开；关 = 直接走熔断口径。
     "pool_source_heal_enabled": True,
+    # 成员×源盘失败记忆 TTL（天，等待优化第二层）：池单
+    # copy_forbidden 失败后，该（成员，源盘）组合在 TTL 内不
+    # 再被 refill 派单；成功登记 ready 即清，不用等 TTL。
+    # 默认 7：覆盖生产实测的跨天重复派单窗口（同一组合 7 天
+    # 内失败 263 次），又不永久拉黑（权限重授后每周重探）。
+    "pool_bad_combo_ttl_days": 7,
 }
 
 
@@ -1192,7 +1210,8 @@ def _serve_score(db: Session, member, *, quota_fn=None) -> float:
 
 
 def pick_pool_member(db: Session, item, *, force=False, quota_fn=None,
-                     exclude_member_ids=None):
+                     exclude_member_ids=None,
+                     apply_bad_combo_memory=False):
     """选盘（design §6.1）：返回 (member|None, candidates)。
 
     candidates：每位 active 成员一行 {member_id, eligible, score,
@@ -1203,6 +1222,11 @@ def pick_pool_member(db: Session, item, *, force=False, quota_fn=None,
     记一笔 decision=none 的留痕；有可用盘时留痕记在建单成功处。
     exclude_member_ids（PR-5 补位用）：调用方明示排除的成员
     （如已持有该条目可下发副本的盘，补位不许再往同一盘打）。
+    apply_bad_combo_memory（等待优化第二层，仅 refill 传
+    True）：该条目源盘上已记失败记忆的成员不参与（reason=
+    bad_drive_combo），防补位跨天反复派给已知读不了某源盘
+    的成员；点播建单不传（换源流程另有 forbidden 换盘口径
+    管点播侧，点播必须穷尽成员才判死）。
 
     副本分散（选盘 v2 硬规矩，优先于打分）：该条目已有池副本
     （可下发 ready 或在途池单，_pool_copy_holder_users 口径）
@@ -1215,6 +1239,8 @@ def pick_pool_member(db: Session, item, *, force=False, quota_fn=None,
     """
     cfg = pool_config_payload(db)
     excluded = {int(mid) for mid in (exclude_member_ids or ())}
+    bad_combo = (bad_combo_member_ids_for_item(db, item)
+                 if apply_bad_combo_memory else set())
     members = (db.query(em.PoolMember)
                .filter(em.PoolMember.status == "active")
                .order_by(em.PoolMember.id.asc()).all())
@@ -1225,6 +1251,11 @@ def pick_pool_member(db: Session, item, *, force=False, quota_fn=None,
             candidates.append({"member_id": int(member.id),
                                "eligible": False, "score": 0.0,
                                "reason": "excluded_by_caller"})
+            continue
+        if int(member.id) in bad_combo:
+            candidates.append({"member_id": int(member.id),
+                               "eligible": False, "score": 0.0,
+                               "reason": "bad_drive_combo"})
             continue
         if not force and _tv._recent_job_exists(
                 db, getattr(item, "id", None), "pool", str(member.id)):
@@ -1371,6 +1402,136 @@ def _forbidden_tried_source_keys(db: Session, item_id) -> set:
     for job in inflight:
         keys.add(_job_source_key(job, item_id))
     return keys
+
+
+#: 记失败记忆的失败类别（等待优化第二层）：只有 copy_forbidden
+#: 说明「该成员读不了该源盘」（源没分享给这块成员盘）；源文件
+#: 没了/过期等类别是条目级问题，记了会毒化整条源盘，不记。
+BAD_COMBO_ERROR_KINDS = ("copy_forbidden",)
+
+
+def record_bad_drive_combo(db: Session, member_id, source_drive_id,
+                           error_kind, item_id=None, now=None) -> bool:
+    """记一条成员×源盘失败记忆（upsert，失败即记）。
+
+    成功 True；参数不全/写库异常回 False 且不抛（调用方是
+    工人终态钩子，记忆写不上不许拖垮任务落态）。每次失败刷新
+    last_* 与 expires_at（TTL 自最新一次失败起算）。
+    """
+    try:
+        member_id = int(member_id)
+    except (TypeError, ValueError):
+        return False
+    source_drive_id = (source_drive_id or "").strip()
+    if not source_drive_id or error_kind not in BAD_COMBO_ERROR_KINDS:
+        return False
+    now = now or datetime.now()
+    try:
+        ttl_days = max(1, int(retry_config_payload(db)
+                              ["pool_bad_combo_ttl_days"]))
+    except Exception:  # noqa: BLE001 — 配置读不出回默认 7 天
+        ttl_days = 7
+    try:
+        row = (db.query(em.PoolBadDriveCombo)
+               .filter(em.PoolBadDriveCombo.member_id == member_id,
+                       em.PoolBadDriveCombo.source_drive_id
+                       == source_drive_id)
+               .first())
+        if row is None:
+            row = em.PoolBadDriveCombo(
+                member_id=member_id, source_drive_id=source_drive_id,
+                failure_count=0, first_failure_at=now)
+            db.add(row)
+        row.failure_count = int(row.failure_count or 0) + 1
+        row.last_failure_at = now
+        row.expires_at = now + timedelta(days=ttl_days)
+        row.last_error_kind = error_kind
+        if item_id is not None:
+            row.last_item_id = int(item_id)
+        db.commit()
+    except Exception:  # noqa: BLE001 — 记忆写失败不拖垮调用方
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return False
+    _decisions.note_decision(
+        scope="pool_bad_combo",
+        resource_key=f"member:{member_id} drive:{source_drive_id}",
+        decision="recorded",
+        reason=(f"failures={row.failure_count} "
+                f"kind={error_kind} item={item_id}"),
+        execution_ref=(str(item_id) if item_id is not None else None))
+    return True
+
+
+def clear_bad_drive_combo(db: Session, member_id,
+                          source_drive_id) -> bool:
+    """成功清记忆：该组合任一池单成功登记 ready 后删行。
+
+    无行回 False；写库异常回 False 且不抛。"""
+    try:
+        member_id = int(member_id)
+    except (TypeError, ValueError):
+        return False
+    source_drive_id = (source_drive_id or "").strip()
+    if not source_drive_id:
+        return False
+    try:
+        row = (db.query(em.PoolBadDriveCombo)
+               .filter(em.PoolBadDriveCombo.member_id == member_id,
+                       em.PoolBadDriveCombo.source_drive_id
+                       == source_drive_id)
+               .first())
+        if row is None:
+            return False
+        db.delete(row)
+        db.commit()
+    except Exception:  # noqa: BLE001
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return False
+    _decisions.note_decision(
+        scope="pool_bad_combo",
+        resource_key=f"member:{member_id} drive:{source_drive_id}",
+        decision="cleared",
+        reason="pool job succeeded for this combo")
+    return True
+
+
+def bad_drive_combo_member_ids(db: Session, source_drive_id,
+                               now=None) -> set:
+    """某源盘上仍在记忆期内的坏成员 id 集合（过期行不算）。"""
+    source_drive_id = (source_drive_id or "").strip()
+    if not source_drive_id:
+        return set()
+    now = now or datetime.now()
+    rows = (db.query(em.PoolBadDriveCombo)
+            .filter(em.PoolBadDriveCombo.source_drive_id
+                    == source_drive_id,
+                    em.PoolBadDriveCombo.expires_at > now)
+            .all())
+    out = set()
+    for row in rows:
+        try:
+            out.add(int(row.member_id))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def bad_combo_member_ids_for_item(db: Session, item,
+                                  now=None) -> set:
+    """某条目源盘上的坏成员集合（refill 统计与选盘共用）：
+    先解 provider 与源盘，解不出回空集（不猜盘）。"""
+    try:
+        provider = _tv._item_provider(db, item)
+        source_drive_id = _tv._source_drive_id(db, item, provider)
+    except Exception:  # noqa: BLE001 — 解不出按无记忆处理
+        return set()
+    return bad_drive_combo_member_ids(db, source_drive_id, now=now)
 
 
 def pool_alternate_source_items(db: Session, item):
@@ -1826,7 +1987,10 @@ def create_pool_job(db: Session, item, *, trigger="playback",
             "可以绑定自己的网盘立刻看，或稍后再试")
     member, candidates = pick_pool_member(
         db, item, force=force, quota_fn=quota_fn,
-        exclude_member_ids=exclude_member_ids)
+        exclude_member_ids=exclude_member_ids,
+        # 仅补位过滤失败记忆：点播建单必须穷尽成员（见
+        # pick_pool_member docstring），换源流程另行兜底。
+        apply_bad_combo_memory=(trigger == "refill"))
     if member is None:
         # 24h 节流挡住全部候选（design §6.2 第 6 步）→ throttled，
         # 与“根本无可用盘”（no_member）区分：前者是限流、后者是缺盘。
