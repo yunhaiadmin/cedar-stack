@@ -56,12 +56,13 @@ class PaymentGatewayNotConfigured(PaymentGatewayError):
 def _epay_sign(params: dict, key: str) -> str:
     """易支付 MD5 签名：与 economy._yipay_sign 同款算法（独立实现）。
 
-    过滤空值与 sign / sign_type 字段，按 key ASCII 升序拼接
-    ``a=b&...&<key>`` 后 MD5。比较一律用 hmac.compare_digest。
+    过滤空值与 sign / sign_type 字段，按 key ASCII 升序以 ``k=v`` 用 &
+    连接原始值（不做 URL 编码）、末尾直接拼商户 key 后 MD5。比较一律
+    用 hmac.compare_digest。
     """
     filtered = {k: v for k, v in params.items()
                 if v not in (None, "") and k != "sign" and k != "sign_type"}
-    qs = urlencode(sorted(filtered.items()))
+    qs = "&".join(f"{k}={v}" for k, v in sorted(filtered.items()))
     return hashlib.md5(f"{qs}{key}".encode("utf-8")).hexdigest()
 
 
