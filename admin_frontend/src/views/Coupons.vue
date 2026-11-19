@@ -33,15 +33,29 @@ import {
   fetchCouponSettings,
   fetchCouponUsages,
   fetchCoupons,
+  fetchEconomyPlans,
   updateCoupon,
   updateCouponSettings,
   type CouponCreatePayload,
   type CouponRow,
   type CouponUsageRow,
+  type PlanRowFull,
 } from '@/api/economy'
 
 const realm = useRealmStore()
 const realms = computed(() => realm.realms)
+
+/** 限定套餐下拉的数据：只列启用中的套餐（下线套餐不该再被新券限定） */
+const plans = ref<PlanRowFull[]>([])
+
+async function loadPlans() {
+  try {
+    const res = await fetchEconomyPlans(undefined, { only_active: true })
+    plans.value = res.plans
+  } catch {
+    // 拉不到就只有「不限」可选，建券本身不受影响
+  }
+}
 
 function scrollToFirstError() {
   requestAnimationFrame(() => {
@@ -59,7 +73,7 @@ const settingsSaving = ref(false)
 const loadError = ref(false)
 
 // 筛选
-const filters = ref({ kind: '', active: '', search: '' })
+const filters = ref({ active: '', search: '' })
 
 const columns: DataColumn[] = [
   { key: 'code', label: '优惠码', width: 150, mobile: 'title' },
@@ -96,7 +110,6 @@ async function loadList() {
   loadError.value = false
   try {
     const list = await fetchCoupons({
-      kind: filters.value.kind || undefined,
       active: filters.value.active || undefined,
       search: filters.value.search || undefined,
       limit: 300,
@@ -136,14 +149,6 @@ async function load() {
  * 点「查询」立即按当前草稿查；chips 只反映已提交条件（loadList 落定的 filters）。 */
 const couponFilterConfigs = computed<FilterConfig[]>(() => [
   {
-    key: 'kind', label: '适用范围', type: 'select', value: filters.value.kind, placeholder: '适用范围',
-    options: [
-      { value: 'all', label: '全部商品' },
-      { value: 'subscription', label: '仅会员' },
-      { value: 'recharge', label: '仅充值' },
-    ],
-  },
-  {
     key: 'active', label: '状态', type: 'select', value: filters.value.active, placeholder: '状态',
     options: [
       { value: 'true', label: '启用' },
@@ -157,10 +162,6 @@ const appliedFilters = computed<AppliedFilter[]>(() => {
   if (filters.value.search) {
     items.push({ key: 'search', label: '关键词', text: filters.value.search })
   }
-  if (filters.value.kind) {
-    const opt = couponFilterConfigs.value[0].options?.find((o) => o.value === filters.value.kind)
-    items.push({ key: 'kind', label: '适用范围', text: opt?.label ?? filters.value.kind })
-  }
   if (filters.value.active) {
     items.push({ key: 'active', label: '状态', text: filters.value.active === 'true' ? '启用' : '停用' })
   }
@@ -173,24 +174,22 @@ function onSearchUpdate(value: string) {
 }
 
 function onFilterChange(key: string, value: string | number | boolean) {
-  if (key === 'kind') filters.value.kind = String(value)
-  else if (key === 'active') filters.value.active = String(value)
+  if (key === 'active') filters.value.active = String(value)
   else return
   loadList()
 }
 
 function onRemoveChip(key: string) {
   if (key === 'search') filters.value.search = ''
-  else if (key === 'kind') filters.value.kind = ''
   else if (key === 'active') filters.value.active = ''
   else return
   loadList()
 }
 
-const hasFilter = computed(() => !!(filters.value.kind || filters.value.active || filters.value.search))
+const hasFilter = computed(() => !!(filters.value.active || filters.value.search))
 
 function resetFilters() {
-  filters.value = { kind: '', active: '', search: '' }
+  filters.value = { active: '', search: '' }
   loadList()
 }
 
@@ -198,12 +197,17 @@ function resetFilters() {
 function discountText(row: CouponRow): string {
   return row.discount_type === 'percent'
     ? `${(row.value / 10).toFixed(1).replace(/\.0$/, '')} 折（实付 ${row.value}%）`
-    : `立减 $${row.value.toFixed(2)}`
+    : `减 $${row.value.toFixed(2)}`
 }
 
 function scopeText(row: CouponRow): string {
-  const kind = row.kind === 'all' ? '全部商品' : row.kind === 'subscription' ? '仅会员' : '仅充值'
-  return row.realm_name ? `${kind} · ${row.realm_name}` : kind
+  // 适用范围按套餐限定讲：限定了套餐就报套餐名，没限定就是全部套餐；
+  // 存量 recharge 券是已下线口径，单独标注（它没有任何消费路径可用）。
+  let scope: string
+  if (row.kind === 'recharge') scope = '仅充值（已下线）'
+  else if (row.plan_id) scope = `仅限 ${row.plan_name || '指定套餐'}`
+  else scope = '全部套餐'
+  return row.realm_name ? `${scope} · ${row.realm_name}` : scope
 }
 
 function validText(row: CouponRow): string {
@@ -234,12 +238,13 @@ const createFormRef = ref<FormInstance>()
 const createForm = ref<CouponCreatePayload & { validMode: 'days' | 'until'; valid_until_text: string }>({
   count: 1,
   code: '',
-  kind: 'all',
+  kind: 'subscription',
   discount_type: 'percent',
   value: 90,
   min_amount: 0,
   max_discount: 0,
   realm_id: null,
+  plan_id: null,
   max_uses: 0,
   per_user_limit: 1,
   validMode: 'days',
@@ -249,8 +254,8 @@ const createForm = ref<CouponCreatePayload & { validMode: 'days' | 'until'; vali
 })
 
 const createRules: FormRules = {
-  kind: [
-    { required: true, message: '请选择适用范围', trigger: 'change' },
+  plan_id: [
+    { type: 'number', message: '请选择有效的限定套餐', trigger: 'change' },
   ],
   realm_id: [
     { type: 'number', message: '请选择有效的限定服', trigger: 'change' },
@@ -330,8 +335,8 @@ const createRules: FormRules = {
 
 function resetCreateForm() {
   createForm.value = {
-    count: 1, code: '', kind: 'all', discount_type: 'percent', value: 90,
-    min_amount: 0, max_discount: 0, realm_id: null, max_uses: 0, per_user_limit: 1,
+    count: 1, code: '', kind: 'subscription', discount_type: 'percent', value: 90,
+    min_amount: 0, max_discount: 0, realm_id: null, plan_id: null, max_uses: 0, per_user_limit: 1,
     validMode: 'days', valid_days: 30, valid_until_text: '', note: '',
   }
 }
@@ -356,6 +361,7 @@ async function handleCreate() {
       min_amount: Number(f.min_amount || 0),
       max_discount: Number(f.max_discount || 0),
       realm_id: f.realm_id || null,
+      plan_id: f.plan_id || null,
       max_uses: Number(f.max_uses || 0),
       per_user_limit: Number(f.per_user_limit || 0),
       note: f.note || undefined,
@@ -391,12 +397,12 @@ const editing = ref(false)
 const editTarget = ref<CouponRow | null>(null)
 const editFormRef = ref<FormInstance>()
 const editForm = ref({
-  kind: 'all' as CouponRow['kind'],
   discount_type: 'percent' as CouponRow['discount_type'],
   value: 90,
   min_amount: 0,
   max_discount: 0,
   realm_id: null as number | null,
+  plan_id: null as number | null,
   max_uses: 0,
   per_user_limit: 1,
   valid_until_text: '',
@@ -405,8 +411,8 @@ const editForm = ref({
 })
 
 const editRules: FormRules = {
-  kind: [
-    { required: true, message: '请选择适用范围', trigger: 'change' },
+  plan_id: [
+    { type: 'number', message: '请选择有效的限定套餐', trigger: 'change' },
   ],
   realm_id: [
     { type: 'number', message: '请选择有效的限定服', trigger: 'change' },
@@ -460,12 +466,12 @@ const editRules: FormRules = {
 function openEdit(row: CouponRow) {
   editTarget.value = row
   editForm.value = {
-    kind: row.kind,
     discount_type: row.discount_type,
     value: row.value,
     min_amount: row.min_amount,
     max_discount: row.max_discount,
     realm_id: row.realm_id,
+    plan_id: row.plan_id,
     max_uses: row.max_uses,
     per_user_limit: row.per_user_limit,
     valid_until_text: row.valid_until ? row.valid_until.slice(0, 16).replace('T', ' ') : '',
@@ -488,12 +494,13 @@ async function handleUpdate() {
   try {
     const f = editForm.value
     await updateCoupon(editTarget.value.id, {
-      kind: f.kind,
       discount_type: f.discount_type,
       value: Number(f.value),
       min_amount: Number(f.min_amount || 0),
       max_discount: Number(f.max_discount || 0),
       realm_id: f.realm_id || null,
+      // 显式传 plan_id（含 null）：后端据此区分「取消限定」与「未改动」
+      plan_id: f.plan_id || null,
       max_uses: Number(f.max_uses || 0),
       per_user_limit: Number(f.per_user_limit || 0),
       valid_until: f.valid_until_text || undefined,
@@ -645,6 +652,7 @@ function fmtTime(iso?: string | null) {
 
 onMounted(() => {
   if (!realm.realms.length) realm.load().catch(() => {})
+  loadPlans()
   load()
 })
 </script>
@@ -787,11 +795,9 @@ onMounted(() => {
     <el-dialog v-model="createVisible" title="新建优惠券" width="min(560px, 92vw)">
       <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-position="top">
         <div class="form-grid">
-          <el-form-item label="适用范围" prop="kind">
-            <el-select v-model="createForm.kind" style="width: 100%">
-              <el-option label="全部商品（充值 + 会员）" value="all" />
-              <el-option label="仅会员" value="subscription" />
-              <el-option label="仅充值" value="recharge" />
+          <el-form-item label="限定套餐（可选）" prop="plan_id">
+            <el-select v-model="createForm.plan_id" clearable placeholder="不限（全部套餐可用）" style="width: 100%">
+              <el-option v-for="p in plans" :key="p.id" :label="p.name" :value="p.id" />
             </el-select>
           </el-form-item>
           <el-form-item label="限定服（可选）" prop="realm_id">
@@ -880,11 +886,9 @@ onMounted(() => {
       />
       <el-form ref="editFormRef" :model="editForm" :rules="editRules" label-position="top">
         <div class="form-grid">
-          <el-form-item label="适用范围" prop="kind">
-            <el-select v-model="editForm.kind" style="width: 100%">
-              <el-option label="全部商品" value="all" />
-              <el-option label="仅会员" value="subscription" />
-              <el-option label="仅充值" value="recharge" />
+          <el-form-item label="限定套餐" prop="plan_id">
+            <el-select v-model="editForm.plan_id" clearable placeholder="不限（全部套餐可用）" style="width: 100%">
+              <el-option v-for="p in plans" :key="p.id" :label="p.name" :value="p.id" />
             </el-select>
           </el-form-item>
           <el-form-item label="限定服" prop="realm_id">

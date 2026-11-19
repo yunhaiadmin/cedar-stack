@@ -154,6 +154,7 @@ export const fetchRefundRecords = (limit = 20) =>
 export interface CouponRow {
   id: number
   code: string
+  /** recharge 为存量已下线值（新建不再产生），列表里标注「已下线」 */
   kind: 'all' | 'subscription' | 'recharge'
   discount_type: 'percent' | 'fixed'
   /** percent: 实付百分比（90 = 九折）；fixed: 减免金额（美元） */
@@ -162,6 +163,9 @@ export interface CouponRow {
   max_discount: number
   realm_id: number | null
   realm_name: string
+  /** 限定套餐，null = 全部套餐可用 */
+  plan_id: number | null
+  plan_name: string
   /** 总次数上限，0 = 不限 */
   max_uses: number
   /** 已占用（预订 + 已消费） */
@@ -204,12 +208,14 @@ export interface CouponSettings {
 export interface CouponCreatePayload {
   count: number
   code?: string
-  kind: 'all' | 'subscription' | 'recharge'
+  kind: 'all' | 'subscription'
   discount_type: 'percent' | 'fixed'
   value: number
   min_amount?: number
   max_discount?: number
   realm_id?: number | null
+  /** 限定套餐，null = 全部套餐可用 */
+  plan_id?: number | null
   max_uses?: number
   per_user_limit?: number
   valid_until?: string

@@ -105,11 +105,15 @@ def serialize(coupon: models.CouponCode, stats: dict[str, int] | None = None) ->
         "code": coupon.code,
         "kind": coupon.kind or "all",
         "discount_type": coupon.discount_type,
-        "value": int(coupon.value or 0),
+        # percent 按整数下发（85 = 八五折），fixed 按美元金额（两位小数）
+        "value": int(coupon.value or 0) if coupon.discount_type == coupons.PERCENT
+        else _money_str(coupon.value),
         "min_amount": _money_str(coupon.min_amount),
         "max_discount": _money_str(coupon.max_discount),
         "realm_id": coupon.realm_id,
         "realm_name": (coupon.realm.name if coupon.realm else ""),
+        "plan_id": coupon.plan_id,
+        "plan_name": (coupon.plan.name if coupon.plan else ""),
         "max_uses": int(coupon.max_uses or 0),
         "use_count": int(coupon.use_count or 0),
         "per_user_limit": int(coupon.per_user_limit or 0),
@@ -130,12 +134,13 @@ class CouponCreateRequest(BaseModel):
 
     count: int = Field(default=1, ge=1, le=200)
     code: str = Field(default="", description="指定优惠码（留空 = 随机生成）")
-    kind: str = Field(default="all", description="all / subscription / recharge")
+    kind: str = Field(default="all", description="all / subscription（recharge 已下线）")
     discount_type: str = Field(default="percent", description="percent=打折 / fixed=减钱")
-    value: int = Field(default=90, description="percent: 实付百分比（90 = 九折）；fixed: 减免金额（元）")
+    value: float = Field(default=90, description="percent: 实付百分比（90 = 九折，须为整数）；fixed: 减免金额（美元，可带分）")
     min_amount: float = Field(default=0, ge=0)
     max_discount: float = Field(default=0, ge=0, description="百分比券的封顶减免，0 = 不封顶")
     realm_id: Optional[int] = None
+    plan_id: Optional[int] = Field(default=None, description="限定套餐（空 = 全部套餐可用）")
     max_uses: int = Field(default=0, ge=0, description="总次数上限，0 = 不限")
     per_user_limit: int = Field(default=1, ge=0, description="每人限用次数，0 = 不限")
     valid_from: Optional[str] = None
@@ -147,10 +152,12 @@ class CouponCreateRequest(BaseModel):
 class CouponUpdateRequest(BaseModel):
     kind: Optional[str] = None
     discount_type: Optional[str] = None
-    value: Optional[int] = None
+    value: Optional[float] = None
     min_amount: Optional[float] = None
     max_discount: Optional[float] = None
     realm_id: Optional[int] = None
+    # plan_id 用 model_fields_set 区分「未传」与「传了 null（取消限定）」
+    plan_id: Optional[int] = None
     max_uses: Optional[int] = None
     per_user_limit: Optional[int] = None
     valid_from: Optional[str] = None
@@ -167,18 +174,32 @@ class CouponSettingsRequest(BaseModel):
 
 
 def _validate_kind(kind: str) -> str:
-    if kind not in ("all", "subscription", "recharge"):
-        raise HTTPException(status_code=400, detail="适用范围必须是 all / subscription / recharge")
+    # recharge 已下线：在线充值暂未开放、没有任何消费路径能用充值券，
+    # 继续让人建出来只会得到一张永远用不出去的券（生产存量那张正是如此）。
+    if kind == "recharge":
+        raise HTTPException(
+            status_code=400,
+            detail="充值类优惠券已下线：在线充值暂未开放，优惠券目前仅适用于订阅购买")
+    if kind not in ("all", "subscription"):
+        raise HTTPException(status_code=400, detail="适用范围必须是 all / subscription")
     return kind
 
 
-def _validate_discount(discount_type: str, value: int) -> None:
+def _validate_discount(discount_type: str, value: float) -> None:
     if discount_type not in (coupons.PERCENT, coupons.FIXED):
         raise HTTPException(status_code=400, detail="折扣类型必须是 percent 或 fixed")
-    if discount_type == coupons.PERCENT and not (1 <= int(value) <= 100):
-        raise HTTPException(status_code=400, detail="百分比折扣的 value 必须在 1~100 之间（90 = 九折）")
-    if discount_type == coupons.FIXED and int(value) <= 0:
-        raise HTTPException(status_code=400, detail="固定减免的 value 必须大于 0（单位：元）")
+    if discount_type == coupons.PERCENT:
+        if float(value) != int(value) or not (1 <= int(value) <= 100):
+            raise HTTPException(status_code=400, detail="百分比折扣的 value 必须在 1~100 之间（90 = 九折）")
+    if discount_type == coupons.FIXED and Decimal(str(value)) <= 0:
+        raise HTTPException(status_code=400, detail="固定减免的 value 必须大于 0（单位：美元）")
+
+
+def _value_for_storage(discount_type: str, value: float) -> Decimal:
+    """落库口径：percent 存整数，fixed 存美元金额（两位小数）"""
+    if discount_type == coupons.PERCENT:
+        return Decimal(int(value))
+    return Decimal(str(value)).quantize(Decimal("0.01"))
 
 
 # ==================== 开关 ====================
@@ -348,6 +369,12 @@ def create_coupons(
         if realm is None:
             raise HTTPException(status_code=404, detail="指定的服不存在")
 
+    if request.plan_id:
+        plan = db.query(models.SubscriptionPlan).filter(
+            models.SubscriptionPlan.id == request.plan_id).first()
+        if plan is None:
+            raise HTTPException(status_code=404, detail="指定的套餐不存在")
+
     valid_from = _parse_dt(request.valid_from)
     valid_until = _parse_dt(request.valid_until)
     if valid_until is None and request.valid_days:
@@ -381,10 +408,11 @@ def create_coupons(
             code=code,
             kind=request.kind,
             discount_type=request.discount_type,
-            value=int(request.value),
+            value=_value_for_storage(request.discount_type, request.value),
             min_amount=Decimal(str(request.min_amount or 0)),
             max_discount=Decimal(str(request.max_discount or 0)),
             realm_id=request.realm_id,
+            plan_id=request.plan_id,
             max_uses=int(request.max_uses or 0),
             use_count=0,
             per_user_limit=int(request.per_user_limit or 0),
@@ -404,6 +432,7 @@ def create_coupons(
         "value": request.value, "max_uses": request.max_uses,
         "per_user_limit": request.per_user_limit,
         "realm_id": request.realm_id,
+        "plan_id": request.plan_id,
     })
     db.commit()
     logger.info("创建优惠券 %s 张（管理员 %s）", len(created), current_admin.id)
@@ -431,13 +460,13 @@ def update_coupon(
         changed["kind"] = coupon.kind
 
     discount_type = request.discount_type if request.discount_type is not None else coupon.discount_type
-    value = int(request.value) if request.value is not None else int(coupon.value or 0)
+    value = float(request.value) if request.value is not None else float(coupon.value or 0)
     if request.discount_type is not None or request.value is not None:
         _validate_discount(discount_type, value)
         coupon.discount_type = discount_type
-        coupon.value = value
+        coupon.value = _value_for_storage(discount_type, value)
         changed["discount_type"] = discount_type
-        changed["value"] = value
+        changed["value"] = _money_str(coupon.value)
 
     if request.min_amount is not None:
         coupon.min_amount = Decimal(str(max(0, request.min_amount)))
@@ -454,6 +483,17 @@ def update_coupon(
                 raise HTTPException(status_code=404, detail="指定的服不存在")
         coupon.realm_id = request.realm_id or None
         changed["realm_id"] = coupon.realm_id
+
+    if "plan_id" in request.model_fields_set:
+        # 传了才改（含传 null = 取消限定）；未传则保留原限定——
+        # 存量券编辑其它字段时不能被顺手清掉套餐限定。
+        if request.plan_id:
+            plan = db.query(models.SubscriptionPlan).filter(
+                models.SubscriptionPlan.id == request.plan_id).first()
+            if plan is None:
+                raise HTTPException(status_code=404, detail="指定的套餐不存在")
+        coupon.plan_id = request.plan_id or None
+        changed["plan_id"] = coupon.plan_id
 
     if request.max_uses is not None:
         # 不能改到已占用之下：否则券立即变成超发状态，先停用或另建一张
