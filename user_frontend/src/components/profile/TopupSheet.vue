@@ -24,41 +24,45 @@
       </template>
 
       <template v-else>
-        <!-- 金额档位：$10 / $30 / $50 / $70 / 自定义（单选一排） -->
+        <!-- 余额行（钱包余额由钱包页透传） -->
+        <p class="tp-balance">余额 <b>${{ balance }}</b></p>
+
+        <!-- 金额档位：点了把金额填进大输入框；「自定义」只聚焦输入框 -->
         <div class="tp-tiers" role="radiogroup" aria-label="充值金额">
           <button
             v-for="t in tiers"
             :key="t"
             type="button"
             class="tp-tier"
-            :class="{ 'tp-tier--on': tier === t }"
+            :class="{ 'tp-tier--on': activeTier === t }"
             role="radio"
-            :aria-checked="tier === t"
-            @click="tier = t"
+            :aria-checked="activeTier === t"
+            @click="pickTier(t)"
           >${{ t }}</button>
           <button
             type="button"
             class="tp-tier"
-            :class="{ 'tp-tier--on': tier === 'custom' }"
+            :class="{ 'tp-tier--on': activeTier === 'custom' }"
             role="radio"
-            :aria-checked="tier === 'custom'"
-            @click="tier = 'custom'"
+            :aria-checked="activeTier === 'custom'"
+            @click="focusCustom"
           >自定义</button>
         </div>
 
-        <!-- 自定义金额：大号 $ 输入框（限额全按 info 下发） -->
-        <div v-if="tier === 'custom'" class="tp-amount-row">
+        <!-- 常驻大输入框：金额唯一来源（限额全按 info 下发） -->
+        <div class="tp-amount-row">
           <span class="tp-amount-sign" aria-hidden="true">$</span>
           <input
-            v-model="customText"
+            ref="amountInputRef"
+            v-model="amountText"
             class="tp-amount"
             type="text"
             inputmode="decimal"
             placeholder="1.00"
             autocomplete="off"
             :disabled="submitting"
-            aria-label="自定义金额（美元）"
-            @input="onCustomInput"
+            aria-label="充值金额（美元）"
+            @input="onAmountInput"
           />
         </div>
 
@@ -71,23 +75,25 @@
         </p>
         <p v-else class="tp-hint">最低充值 ${{ info.min_usd }}</p>
 
-        <!-- 支付通道：本期只有法币支付（数字货币不留假入口） -->
-        <div class="tp-seg" role="group" aria-label="支付通道">
-          <span class="tp-seg-on">法币支付</span>
-        </div>
-
-        <!-- 支付方式（按服务端下发列表渲染） -->
+        <!-- 支付方式（按服务端下发列表渲染）：单选行＝品牌徽标 +
+             名称 + radio 圆圈，整行可点；本期只有法币方式，
+             数字货币不做、不留假入口 -->
         <span class="tp-label">支付方式</span>
-        <div class="tp-chips" role="group" aria-label="支付方式">
+        <div class="tp-methods" role="radiogroup" aria-label="支付方式">
           <button
             v-for="m in info.methods"
             :key="m"
             type="button"
-            class="tp-chip"
-            :class="{ 'tp-chip--on': method === m }"
-            :aria-pressed="method === m"
+            class="tp-method"
+            :class="{ 'tp-method--on': method === m }"
+            role="radio"
+            :aria-checked="method === m"
             @click="method = m"
-          >{{ methodLabel(m) }}</button>
+          >
+            <span class="tp-method__badge" :class="`tp-method__badge--${m}`" aria-hidden="true">{{ methodBadge(m) }}</span>
+            <span class="tp-method__name">{{ methodLabel(m) }}</span>
+            <span class="tp-method__radio" aria-hidden="true"></span>
+          </button>
         </div>
 
         <p v-if="formError" class="tp-err" role="alert">{{ formError }}</p>
@@ -96,7 +102,10 @@
           class="btn-primary tp-confirm"
           :disabled="!canSubmit"
           @click="submit"
-        >{{ submitting ? '正在跳转…' : '确认充值' }}</button>
+        >
+          <span v-if="submitting" class="tp-spinner" aria-hidden="true"></span>
+          {{ submitting ? '正在跳转…' : confirmText }}
+        </button>
       </template>
     </div>
   </div>
@@ -105,12 +114,15 @@
 <script setup lang="ts">
 /**
  * TopupSheet —— 在线充值弹窗（钱包批 3，形态照友站 recharge-dialog
- * 实测口径）：标题「账户充值」+ 退款提示副文；金额档位 $10/$30/$50/
- * $70/自定义 单选；提示行三态（最低额 / 超限红字 / ≈¥折算行）；
- * 支付通道只有法币（数字货币不做、不留假入口）；支付方式按服务端
- * info 下发列表渲染。金额校验、费率、汇率、限额全读 info（钱包信息
- * 接口的 topup 块），前端不写死；应付预览与后端同一公式
- * （美元 × 生效汇率 × (1+费率%)，到分取整），入账以后端订单为准。
+ * 实测口径）：标题「账户充值」+ 退款提示副文；余额行 + 常驻大金额
+ * 输入框（金额唯一来源），档位 $10/$30/$50/$70 点了把金额填进输入
+ * 框、「自定义」只聚焦输入框；提示行三态（最低额 / 超限红字 /
+ * ≈¥折算行）；支付方式按服务端 info 下发列表渲染成单选行（本期
+ * 只有法币方式，数字货币不做、不留假入口）；确认钮文案「确认支付
+ * ¥X.XX」。金额校验、费率、汇率、限额全读 info（钱包信息接口的
+ * topup 块），前端不写死；应付预览与后端同一公式（美元 × 生效
+ * 汇率 × (1+费率%)，到分取整），入账以后端订单为准。下单成功整页
+ * 跳转 pay_url（后端暂无充值订单状态查询接口，不做等待屏轮询）。
  */
 import { computed, ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
@@ -121,6 +133,8 @@ import { toUserMessage } from '@/utils/toUserMessage'
 const props = defineProps<{
   open: boolean
   info: WalletTopupInfo | null
+  /** 当前钱包余额（字符串，两位小数，钱包页透传） */
+  balance: string
 }>()
 
 const emit = defineEmits<{
@@ -128,8 +142,8 @@ const emit = defineEmits<{
 }>()
 
 const tiers = [10, 30, 50, 70]
-const tier = ref<number | 'custom'>(10)
-const customText = ref('')
+const amountText = ref('')
+const amountInputRef = ref<HTMLInputElement | null>(null)
 const method = ref('alipay')
 const formError = ref('')
 const submitting = ref(false)
@@ -137,14 +151,19 @@ const sheetRef = ref<HTMLElement | null>(null)
 /** 焦点是否落在弹窗内的输入框上（iOS 遮罩误关守卫用，见 onMaskClick） */
 const inputFocused = ref(false)
 
-/** 当前选定金额（美分）；自定义输入非法（空/非数字/超两位小数）时为 null */
+/** 当前金额（美分）；输入非法（空/非数字/超两位小数）时为 null */
 const usdFen = computed<number | null>(() => {
-  if (tier.value !== 'custom') return tier.value * 100
-  const raw = customText.value.trim()
+  const raw = amountText.value.trim()
   if (!/^\d+(\.\d{1,2})?$/.test(raw)) return null
   const v = Number(raw)
   if (!Number.isFinite(v) || v <= 0) return null
   return Math.round(v * 100)
+})
+
+/** 档位高亮：输入金额正好等于某档时亮该档，否则亮「自定义」 */
+const activeTier = computed<number | 'custom'>(() => {
+  if (usdFen.value !== null && tiers.includes(usdFen.value / 100)) return usdFen.value / 100
+  return 'custom'
 })
 
 type HintState = 'default' | 'over' | 'valid'
@@ -170,12 +189,15 @@ const canSubmit = computed(() =>
   !!props.info && usdFen.value !== null && hintState.value !== 'over'
   && usdFen.value >= props.info.min_usd_fen && !submitting.value)
 
+/** 确认钮文案：金额有效时带应付人民币预览，无效时只留「确认支付」 */
+const confirmText = computed(() =>
+  canSubmit.value && payableText.value ? `确认支付 ¥${payableText.value}` : '确认支付')
+
 watch(
   () => props.open,
   (open) => {
     if (open) {
-      tier.value = 10
-      customText.value = ''
+      amountText.value = ''
       formError.value = ''
       inputFocused.value = false
       const methods = props.info?.methods ?? []
@@ -188,20 +210,35 @@ function methodLabel(m: string): string {
   return { alipay: '支付宝', wxpay: '微信支付', qqpay: 'QQ 钱包' }[m] ?? m
 }
 
+/** 品牌徽标字（仓内无品牌图标资源，用首字徽标与站内文字片口径一致） */
+function methodBadge(m: string): string {
+  return { alipay: '支', wxpay: '微', qqpay: 'Q' }[m] ?? m.slice(0, 1).toUpperCase()
+}
+
+/** 点档位：把金额填进大输入框 */
+function pickTier(t: number) {
+  amountText.value = String(t)
+}
+
+/** 点「自定义」：只聚焦大输入框（内容由用户自行改/清空） */
+function focusCustom() {
+  amountInputRef.value?.focus()
+}
+
 function close() {
   emit('close')
 }
 
-/** 自定义金额输入清洗（支付输入口径）：只留数字与最多一个小数点、
+/** 金额输入清洗（支付输入口径）：只留数字与最多一个小数点、
  * 小数至多 2 位；usdFen 的正则校验仍作兜底。 */
-function onCustomInput(e: Event) {
+function onAmountInput(e: Event) {
   const el = e.target as HTMLInputElement
   let v = el.value.replace(/[^\d.]/g, '')
   const dot = v.indexOf('.')
   if (dot >= 0) {
     v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, '').slice(0, 2)
   }
-  customText.value = v
+  amountText.value = v
   if (el.value !== v) el.value = v
 }
 
@@ -279,6 +316,7 @@ html[data-theme='light'] .tp-sheet {
 }
 @media (prefers-reduced-motion: reduce) {
   .tp-mask, .tp-sheet { animation: none; }
+  .tp-spinner { animation-duration: 1.6s; }
 }
 
 .tp-head {
@@ -301,7 +339,10 @@ html[data-theme='light'] .tp-sheet {
 }
 .tp-sub { margin: 8px 0 0; font-size: 13px; line-height: 1.6; color: var(--tq-dim); }
 
-.tp-tiers { display: flex; gap: 8px; margin-top: 18px; }
+.tp-balance { margin: 16px 0 0; font-size: 13px; color: var(--tq-dim); }
+.tp-balance b { color: var(--tq-fg); font-weight: 700; }
+
+.tp-tiers { display: flex; gap: 8px; margin-top: 12px; }
 .tp-tier {
   flex: 1;
   padding: 11px 0;
@@ -352,25 +393,6 @@ html[data-theme='light'] .tp-sheet {
 .tp-hint--over { color: #f87171; }
 html[data-theme='light'] .tp-hint--over { color: #dc2626; }
 
-.tp-seg {
-  display: flex;
-  margin-top: 18px;
-  padding: 4px;
-  border-radius: 999px;
-  background: var(--tq-card);
-  border: 1px solid var(--tq-border);
-}
-.tp-seg-on {
-  flex: 1;
-  text-align: center;
-  padding: 9px 0;
-  border-radius: 999px;
-  background: var(--tq-seg-on);
-  font-size: 14px;
-  font-weight: 650;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
-}
-
 .tp-label {
   display: block;
   font-size: 13px;
@@ -378,24 +400,58 @@ html[data-theme='light'] .tp-hint--over { color: #dc2626; }
   color: var(--tq-dim);
   margin: 16px 0 8px;
 }
-.tp-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.tp-chip {
-  padding: 9px 16px;
-  border-radius: 999px;
+/* 支付方式单选行：品牌首字徽标 + 名称 + radio 圆圈，整行可点 */
+.tp-methods { display: flex; flex-direction: column; gap: 8px; }
+.tp-method {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 14px;
   border: 1px solid var(--tq-border);
-  background: transparent;
-  color: var(--tq-dim);
+  background: var(--tq-card);
+  color: inherit;
   font-family: inherit;
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: 600;
+  text-align: left;
   cursor: pointer;
 }
-.tp-chip--on {
-  background: var(--tq-seg-on);
-  border-color: var(--tq-border);
-  color: inherit;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+.tp-method--on { background: var(--tq-seg-on); }
+.tp-method__badge {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #8a8f98;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
 }
+.tp-method__badge--alipay { background: #1677ff; }
+.tp-method__badge--wxpay { background: #07c160; }
+.tp-method__badge--qqpay { background: #12b7f5; }
+.tp-method__name { flex: 1; min-width: 0; }
+.tp-method__radio {
+  position: relative;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid var(--tq-dim);
+}
+.tp-method__radio::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+}
+.tp-method--on .tp-method__radio { border-color: var(--tq-fg); }
+.tp-method--on .tp-method__radio::after { background: var(--tq-fg); }
 
 .tp-err { margin: 12px 0 0; font-size: 13px; color: #f87171; }
 html[data-theme='light'] .tp-err { color: #dc2626; }
@@ -407,6 +463,22 @@ html[data-theme='light'] .tp-err { color: #dc2626; }
   font-size: 15.5px;
   font-weight: 750;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.tp-spinner {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #ffffff;
+  animation: tp-spin 0.7s linear infinite;
+  flex: none;
+}
+@keyframes tp-spin {
+  to { transform: rotate(360deg); }
 }
 .tp-note { margin: 12px 0 0; font-size: 12.5px; line-height: 1.6; color: var(--tq-dim); }
 .tp-note--lead { margin-top: 14px; font-size: 13.5px; }

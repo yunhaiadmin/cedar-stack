@@ -177,6 +177,7 @@
       <TopupSheet
         :open="topupOpen"
         :info="topupInfo"
+        :balance="balance"
         @close="topupOpen = false"
       />
     </div>
