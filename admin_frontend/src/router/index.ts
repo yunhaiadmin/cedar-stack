@@ -51,6 +51,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'watch-together', name: 'WatchTogether', component: () => import('@/views/WatchTogether.vue'), meta: { title: '一起看管理' } },
       // 追剧订阅管理（二期缺口项 2）：全站追剧订阅列表＋管理员代取消
       { path: 'series-follows', name: 'SeriesFollows', component: () => import('@/views/SeriesFollows.vue'), meta: { title: '追剧订阅' } },
+      // 弹幕治理（内容治理面）：弹幕列表/删除＋用户禁言；规则设置仍在系统设置的弹幕设置组
+      { path: 'danmaku-admin', name: 'DanmakuAdmin', component: () => import('@/views/DanmakuAdmin.vue'), meta: { title: '弹幕治理' } },
       // 群抽奖（Welfare.vue，历史文件名）：抽奖轮次 + 提案黑名单标签；
       // 公益配置标签已随公益资格整族于 2026-11-14 删除
       { path: 'welfare-lottery-rounds', name: 'WelfareLotteryRounds', component: () => import('@/views/Welfare.vue'), meta: { title: '群抽奖' } },
@@ -68,8 +70,12 @@ const routes: RouteRecordRaw[] = [
       { path: 'metadata-sources', name: 'MetadataSources', component: () => import('@/views/MetadataSources.vue'), meta: { title: '元数据来源' } },
       // 识别审查（批二 #15）：低置信识别的人工处置队列，与元数据来源同组
       { path: 'identify-review', name: 'IdentifyReview', component: () => import('@/views/IdentifyReview.vue'), meta: { title: '识别审查' } },
+      // 人物条目管理（二期部分缺）：credits 聚合人物的改名 / 合并，与元数据来源同组
+      { path: 'people', name: 'PeopleAdmin', component: () => import('@/views/PeopleAdmin.vue'), meta: { title: '人物管理' } },
       // 缺集清单（缺集全套）：核算工人台账的只读面，管理员对着清单补源
       { path: 'missing-episodes', name: 'MissingEpisodes', component: () => import('@/views/MissingEpisodes.vue'), meta: { title: '缺集清单' } },
+      // 字幕管理（二期全缺第 7 项）：已入库字幕轨的只读盘点面
+      { path: 'subtitles', name: 'Subtitles', component: () => import('@/views/Subtitles.vue'), meta: { title: '字幕管理' } },
       { path: 'pool', name: 'PoolAdmin', component: () => import('@/views/PoolAdmin.vue'), meta: { title: '贡献池' } },
       // 双盘审计台账已并入「操作日志」页的双盘审计标签（Logs.vue ?tab=audit）：旧地址跳到对应标签，收藏不会 404
       { path: 'audit', redirect: { path: '/logs', query: { tab: 'audit' } } },
@@ -84,6 +90,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'health', name: 'SystemHealth', component: () => import('@/views/SystemHealth.vue'), meta: { title: '系统健康' } },
       // 4K 探针结果（二期缺口）：探针页真机回传记录的只读查看面
       { path: 'probe-4k', name: 'Probe4kResults', component: () => import('@/views/Probe4kResults.vue'), meta: { title: '4K 探针结果' } },
+      { path: 'landing-content', name: 'LandingContent', component: () => import('@/views/LandingContent.vue'), meta: { title: '官网内容' } },
       // v2.56.0：任务总览——所有后台任务一页看完（状态/进度/开关）
       { path: 'tasks', name: 'TaskOverview', component: () => import('@/views/TaskOverview.vue'), meta: { title: '任务总览' } },
       // 专线 B 第二阶段 · 只读观测口（GET，仅展示）

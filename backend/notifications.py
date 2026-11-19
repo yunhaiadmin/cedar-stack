@@ -932,21 +932,39 @@ def _persist_broadcast_messages(
     content: str,
     message_type: str,
     related_id: Optional[int],
+    user_ids: Optional[List[int]] = None,
 ) -> List[int]:
-    """同步落库：给每个启用中的用户写一条站内消息，返回用户 id 列表（失败返回空）
+    """同步落库：给目标用户每人写一条站内消息，返回实际落库的用户 id 列表（失败返回空）
 
     自己开一个会话（不在路由的会话上跑），整段放进线程池——广播要一次写几万行，
     正是最不能占着事件循环的写。失败按「没通知到」处理，由调用方决定怎么回。
+
+    ``user_ids=None`` = 全部启用中的用户（全站广播的原口径）；给了名单则只落
+    名单里仍启用中的账号（人群发送：名单由调用方按人群解析，这里再兜一层
+    is_active，保证「广播只落启用中的用户」这条在落库层也成立）。
     """
     db = next(get_db())
     try:
-        user_ids = [
-            row[0] for row in db.query(models.WebUser.id).filter(
-                models.WebUser.is_active == True  # noqa: E712
-            ).all()
-        ]
-        if not user_ids:
+        if user_ids is None:
+            target_ids = [
+                row[0] for row in db.query(models.WebUser.id).filter(
+                    models.WebUser.is_active == True  # noqa: E712
+                ).all()
+            ]
+        else:
+            wanted = list(dict.fromkeys(int(uid) for uid in user_ids))
+            if not wanted:
+                return []
+            active = {
+                row[0] for row in db.query(models.WebUser.id).filter(
+                    models.WebUser.id.in_(wanted),
+                    models.WebUser.is_active == True,  # noqa: E712
+                ).all()
+            }
+            target_ids = [uid for uid in wanted if uid in active]
+        if not target_ids:
             return []
+        user_ids = target_ids
 
         db.bulk_save_objects([
             models.StationMessage(
@@ -968,6 +986,61 @@ def _persist_broadcast_messages(
         return []
     finally:
         db.close()
+
+
+async def _push_broadcast_online(
+    user_ids: List[int],
+    event_type: str,
+    message_type: str,
+    title: str,
+    content: str,
+    data: Optional[dict] = None,
+) -> None:
+    """广播的在线实时推送段（notify_all_users / notify_users 共用）
+
+    只推当时在线的人；推送失败不影响已落库的站内消息。
+    """
+    online = set(manager.get_online_users())
+    for uid in user_ids:
+        if uid not in online:
+            continue
+        try:
+            await send_notification(
+                notification_type=f"station.{message_type}",
+                user_id=uid,
+                title=title,
+                message=content,
+                data=data or {"event_type": event_type},
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("广播实时推送失败（用户 %s）: %s", uid, exc)
+
+
+async def notify_users(
+    event_type: str,
+    title: str,
+    content: str,
+    user_ids: List[int],
+    data: Optional[dict] = None
+) -> int:
+    """广播通知给**指定的一批用户**（人群发送）
+
+    与 notify_all_users 同一套落库/推送：给名单里启用中的用户每人落一条
+    站内消息，再对其中在线的人做实时推送，返回值是实际收到站内消息的用户数。
+    人群口径由调用方解析（本函数只认 id 名单）。
+    """
+    message_type = event_type.split(".")[0]
+    related_id = (data or {}).get("announcement_id")
+    persisted_ids = await run_in_threadpool(
+        _persist_broadcast_messages, title, content, message_type, related_id,
+        list(user_ids),
+    )
+    if not persisted_ids:
+        return 0
+
+    await _push_broadcast_online(
+        persisted_ids, event_type, message_type, title, content, data)
+    return len(persisted_ids)
 
 
 async def notify_all_users(
@@ -997,21 +1070,8 @@ async def notify_all_users(
         return 0
 
     # 在线用户的实时推送（失败不影响已落库的站内消息）
-    online = set(manager.get_online_users())
-    for uid in user_ids:
-        if uid not in online:
-            continue
-        try:
-            await send_notification(
-                notification_type=f"station.{message_type}",
-                user_id=uid,
-                title=title,
-                message=content,
-                data=data or {"event_type": event_type},
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("广播实时推送失败（用户 %s）: %s", uid, exc)
-
+    await _push_broadcast_online(
+        user_ids, event_type, message_type, title, content, data)
     return len(user_ids)
 
 
@@ -1049,6 +1109,7 @@ __all__ = [
     "refresh_channels",
     "notify_admin_event",
     "notify_all_users",
+    "notify_users",
     "notify_staff_users",
     "AdminEvent",
 ]

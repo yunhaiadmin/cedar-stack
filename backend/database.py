@@ -1241,6 +1241,11 @@ def _auto_migrate():
         ("server_realm_lines", [
             ("category", "VARCHAR(80)", "'国际线路'"),
         ]),
+        # 优惠券限定套餐（2026-11-19）：plan_id 非空 = 只适用于该套餐；
+        # 老库补列后为 NULL = 全部套餐可用，与升级前行为一致。末尾追加。
+        ("coupon_codes", [
+            ("plan_id", "INTEGER", "NULL"),
+        ]),
     ]
 
     _newly_added_columns: list[tuple[str, str]] = []
@@ -1308,6 +1313,7 @@ def _auto_migrate():
 
     _widen_code_column(existing_tables, inspector)
     _widen_bitrate_column(existing_tables, inspector)
+    _widen_coupon_value_column(existing_tables)
     _fix_station_message_from_user_fk(existing_tables, inspector)
     _widen_stream_title_columns(existing_tables, inspector)
     _backfill_orm_columns(existing_tables)
@@ -2082,6 +2088,33 @@ def _ensure_default_realm() -> None:
                 "VALUES ('active_realm_id', :value, :desc, :now)"
             ), {"value": str(default_id), "desc": "面板当前操作的服（多服运营）", "now": datetime.now()})
             logger.info(f"  🔧 已设置当前服: active_realm_id={default_id}")
+
+
+def _widen_coupon_value_column(existing_tables: set) -> None:
+    """优惠券 value 列 Integer → NUMERIC(10,2)（仅 PG 老库）。
+
+    固定减免要支持到分（现行套餐 $1.20 / $3.60，减 $0.50 这类券必须能建）：
+    模型已改 Numeric，老库的 integer 列不改类型的话，写小数会被 PG 拒掉。
+    幂等：先查 information_schema 的列类型，仍是 integer 才 ALTER；
+    SQLite 跳过（新鲜库由 create_all 按模型建表，类型亲和不受影响）。
+    """
+    from sqlalchemy import text
+
+    if "coupon_codes" not in existing_tables:
+        return
+    if engine.dialect.name != "postgresql":
+        return
+    with engine.begin() as conn:
+        data_type = conn.execute(text(
+            "SELECT data_type FROM information_schema.columns "
+            "WHERE table_name='coupon_codes' AND column_name='value'"
+        )).scalar()
+        if data_type == "integer":
+            conn.execute(text(
+                "ALTER TABLE coupon_codes "
+                "ALTER COLUMN value TYPE NUMERIC(10,2) USING value::numeric(10,2)"
+            ))
+            logger.info("  🔧 已迁移: coupon_codes.value → NUMERIC(10,2)（固定减免支持到分）")
 
 
 def _widen_bitrate_column(existing_tables: set, inspector) -> None:

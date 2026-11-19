@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import copy
 import json
 
 from decimal import Decimal, InvalidOperation
@@ -83,6 +84,10 @@ def normalize(key: str, spec: tuple, value: Any, bool_style: str = "word") -> Op
         # 官网菜单抽屉的整份结构（导航/渠道/底按钮）：入参可为 JSON 文本
         # 或已解析的 dict，归一化为 canonical JSON 文本落库。
         return normalize_site_drawer_config(value)
+    if kind == "json_landing":
+        # 官网落地页的整份文案结构（首屏/合作方/设备/展示/卖点）：入参
+        # 可为 JSON 文本或已解析的 dict，归一化为 canonical JSON 文本落库。
+        return normalize_landing_content(value)
     lo, hi = spec[1], spec[2]
     if kind == "int":
         if isinstance(value, bool):
@@ -816,6 +821,416 @@ SITE_DRAWER_CONFIG_SCHEMA: dict[str, tuple] = {
 # env.example（#1527 先例）。
 PRIVACY_POLICY_CONFIG_SCHEMA: dict[str, tuple] = {
     "privacy_policy_md": ("str",),
+}
+
+
+# ---------------------------------------------------------------------------
+# 官网落地页文案（2026-11-19 二期部分缺）：落地页全部可编辑文本一份
+# JSON 存 landing_content，结构与 user_frontend LandingView 的渲染
+# 形状一一对应：hero（主标题行/轮换副文案/滚动提示/规格 chip）、
+# partners（节眉题/平台名单）、devices（节头/跑马灯词表）、showcase
+# （影院/音频两块）、essentials（节头/卖点三卡）。
+#
+# 版式骨架不是文案、不进配置：卖点卡恒 3 张（宽卡＋两卡的栅格与各自
+# 的插图/数据行位置写死在前端），卡内设备示意/时间轴标注是插图家具，
+# 数据行走 /api/site/library-stats 实时统计——都不在这份结构里。
+# LANDING_DEFAULT_CONTENT 是现行写死文案的逐字转写：未存配置时后端
+# 默认下发与前端内置回落都用它，改文案只能经后台保存，不许改默认值
+# 偷换现行文案。
+# ---------------------------------------------------------------------------
+LANDING_CARD_COUNT = 3
+LANDING_MAX_TITLE_LINES = 3
+LANDING_MAX_SUBS = 8
+LANDING_MAX_SPECS = 4
+LANDING_MAX_PARTNERS = 10
+LANDING_MAX_MARQUEE = 24
+LANDING_MAX_CHIPS = 8
+LANDING_MAX_POINTS = 5
+
+LANDING_DEFAULT_CONTENT: dict[str, Any] = {
+    "hero": {
+        "title_lines": ["你的私人影院", "随时随地开场"],
+        "subs": [
+            "无广告干扰，沉浸观影从按下播放开始",
+            "手机、电视、电脑，观看进度多端同步",
+            "新片自动入库，追剧更新不用催",
+        ],
+        "scroll_hint": "↓ 向下探索更多精彩",
+        "specs": [
+            {"value": "4K", "sub": "超高清"},
+            {"value": "HDR10+", "sub": "高动态范围"},
+            {"value": "Dolby Vision", "sub": "杜比视界"},
+            {"value": "无广告干扰", "sub": "沉浸体验"},
+        ],
+    },
+    "partners": {
+        "eyebrow": "STREAMING PARTNERS",
+        "names": ["Netflix", "Disney+", "HBO Max"],
+    },
+    "devices": {
+        "eyebrow": "CLIENTS & SPECS",
+        "title_lines": ["在你顺手的设备上，", "以它最好的规格播放"],
+        "sub": "播放交给专业客户端，服务器只做整理与供给——手机、电视、电脑，打开就能看。",
+        "marquee_clients": [
+            "Emby", "Infuse", "Kodi", "Apple TV", "Android TV",
+            "Samsung TV", "LG webOS", "Windows", "macOS", "iOS", "Android",
+        ],
+        "marquee_specs": [
+            "4K Ultra HD", "HDR10+", "Dolby Vision", "Dolby Atmos",
+            "DTS:X", "H.265 / HEVC", "Hi-Res Audio", "空间音频",
+        ],
+    },
+    "showcase": {
+        "cinema": {
+            "eyebrow": "CINEMA EXPERIENCE",
+            "title": "影院级画面",
+            "sub": "4K Ultra HD · HDR10+ · Dolby Vision",
+        },
+        "audio": {
+            "eyebrow": "AUDIO EXPERIENCE",
+            "title": "影院级声音",
+            "sub": "Dolby Atmos · Hi-Res Audio · 空间音频 · DTS:X 全兼容",
+        },
+    },
+    "essentials": {
+        "eyebrow": "SERVICE ESSENTIALS",
+        "title": "一份订阅，全部搞定",
+        "sub": "一个账号打通所有设备与服务，不用为每块屏幕单独折腾。",
+        "cards": [
+            {
+                "eyebrow": "MULTI-DEVICE SYNC",
+                "title_lines": ["一部片子，", "所有屏幕接着看"],
+                "desc": "在电视上看到一半，出门用手机继续。播放进度、收藏与观看记录，在你的所有设备间自动同步。",
+                "chips": ["TV", "Computer", "Tablet", "手机"],
+                "points": [],
+            },
+            {
+                "eyebrow": "ZERO INTERRUPTION",
+                "title_lines": ["没有广告，", "只有电影"],
+                "desc": "从按下播放到片尾字幕，全程无插播、无贴片，沉浸感不被打断。",
+                "chips": [],
+                "points": [],
+            },
+            {
+                "eyebrow": "EVER-GROWING LIBRARY",
+                "title_lines": ["片库自己长大"],
+                "desc": "新片自动扫描入库、刮削补齐海报与资料；追的剧更新了，自动出现在你的片库里。",
+                "chips": [],
+                "points": [
+                    {"title": "自动入库", "text": "新片到盘，自动扫描进片库"},
+                    {"title": "资料补齐", "text": "海报、简介与评分自动刮削归位"},
+                    {"title": "追剧更新", "text": "追的剧一出新集，自动跟上"},
+                ],
+            },
+        ],
+    },
+}
+
+def _lc_section(raw: Any, *, strict: bool, field: str) -> dict:
+    """分区对象归一：缺失 = 空对象（字段级再回落默认）；类型不对
+    strict 抛错、读侧按空对象处理。"""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        if strict:
+            raise ConfigValueError(f"landing_content.{field} 必须是对象")
+        return {}
+    return raw
+
+
+def _lc_text(raw: dict, key: str, default: str, limit: int, *,
+             strict: bool, field: str, required: bool = False) -> str:
+    """单段文本归一。缺失（None）回落默认；显式空串在非必填时保留
+    （管理员可主动清空眉题这类装饰文本）；必填空串 strict 抛错、
+    读侧回落默认。超长 strict 抛错、读侧回落默认（不截断成半句话）。"""
+    value = raw.get(key)
+    if value is None:
+        if required and strict:
+            raise ConfigValueError(f"landing_content.{field} 不能为空")
+        return default
+    if not isinstance(value, str):
+        if strict:
+            raise ConfigValueError(f"landing_content.{field} 必须是文本")
+        return default
+    text = value.strip()
+    if not text:
+        if required:
+            if strict:
+                raise ConfigValueError(f"landing_content.{field} 不能为空")
+            return default
+        return ""
+    if len(text) > limit:
+        if strict:
+            raise ConfigValueError(f"landing_content.{field} 最多 {limit} 字")
+        return default
+    return text
+
+
+def _lc_lines(raw: dict, key: str, default: list, *, strict: bool,
+              field: str, limit_each: int, max_items: int,
+              min_items: int = 0) -> list:
+    """短文本数组归一（标题行/轮换副文案/名单/词表/chip）：空条目
+    两侧都丢弃；条数越界 strict 抛错、读侧截断或整表回落默认。"""
+    value = raw.get(key)
+    if value is None:
+        if min_items and strict:
+            raise ConfigValueError(
+                f"landing_content.{field} 至少 {min_items} 条")
+        return copy.deepcopy(default)
+    if not isinstance(value, list):
+        if strict:
+            raise ConfigValueError(f"landing_content.{field} 必须是数组")
+        return copy.deepcopy(default)
+    out: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            if strict:
+                raise ConfigValueError(
+                    f"landing_content.{field} 每条必须是文本")
+            continue
+        text = item.strip()
+        if not text:
+            continue
+        if len(text) > limit_each:
+            if strict:
+                raise ConfigValueError(
+                    f"landing_content.{field} 每条最多 {limit_each} 字")
+            continue
+        out.append(text)
+    if len(out) > max_items:
+        if strict:
+            raise ConfigValueError(
+                f"landing_content.{field} 最多 {max_items} 条")
+        out = out[:max_items]
+    if len(out) < min_items:
+        if strict:
+            raise ConfigValueError(
+                f"landing_content.{field} 至少 {min_items} 条")
+        return copy.deepcopy(default)
+    return out
+
+
+def _lc_pairs(raw: dict, key: str, default: list, *, strict: bool,
+              field: str, keys: tuple[str, str], limit_each: int,
+              max_items: int) -> list:
+    """双字段对象数组归一（hero 规格 chip 的 value/sub、卖点卡要点的
+    title/text）：两字段都必填非空，坏条目 strict 抛错、读侧跳过。"""
+    value = raw.get(key)
+    if value is None:
+        return copy.deepcopy(default)
+    if not isinstance(value, list):
+        if strict:
+            raise ConfigValueError(f"landing_content.{field} 必须是数组")
+        return copy.deepcopy(default)
+    if len(value) > max_items:
+        if strict:
+            raise ConfigValueError(
+                f"landing_content.{field} 最多 {max_items} 条")
+        value = value[:max_items]
+    out: list[dict] = []
+    for item in value:
+        if not isinstance(item, dict):
+            if strict:
+                raise ConfigValueError(
+                    f"landing_content.{field} 每条必须是对象")
+            continue
+        pair: dict[str, str] = {}
+        bad = False
+        for k in keys:
+            v = item.get(k)
+            if not isinstance(v, str) or not v.strip():
+                if strict:
+                    raise ConfigValueError(
+                        f"landing_content.{field} 每条的 {k} 不能为空")
+                bad = True
+                break
+            if len(v.strip()) > limit_each:
+                if strict:
+                    raise ConfigValueError(
+                        f"landing_content.{field} 每条的 {k} 最多 {limit_each} 字")
+                bad = True
+                break
+            pair[k] = v.strip()
+        if not bad:
+            out.append(pair)
+    return out
+
+
+def _lc_showcase_block(raw: Any, default: dict, *, strict: bool,
+                       field: str) -> dict:
+    block = _lc_section(raw, strict=strict, field=field)
+    return {
+        "eyebrow": _lc_text(block, "eyebrow", default["eyebrow"], 40,
+                            strict=strict, field=f"{field}.eyebrow"),
+        "title": _lc_text(block, "title", default["title"], 30,
+                          strict=strict, field=f"{field}.title",
+                          required=True),
+        "sub": _lc_text(block, "sub", default["sub"], 80,
+                        strict=strict, field=f"{field}.sub"),
+    }
+
+
+def _lc_card(raw: Any, default: dict, *, strict: bool, field: str) -> dict:
+    if not isinstance(raw, dict):
+        if strict:
+            raise ConfigValueError(f"landing_content.{field} 必须是对象")
+        return copy.deepcopy(default)
+    return {
+        "eyebrow": _lc_text(raw, "eyebrow", default["eyebrow"], 40,
+                            strict=strict, field=f"{field}.eyebrow",
+                            required=True),
+        "title_lines": _lc_lines(
+            raw, "title_lines", default["title_lines"], strict=strict,
+            field=f"{field}.title_lines", limit_each=40,
+            max_items=LANDING_MAX_TITLE_LINES, min_items=1),
+        "desc": _lc_text(raw, "desc", default["desc"], 200,
+                         strict=strict, field=f"{field}.desc",
+                         required=True),
+        "chips": _lc_lines(
+            raw, "chips", default["chips"], strict=strict,
+            field=f"{field}.chips", limit_each=24,
+            max_items=LANDING_MAX_CHIPS),
+        "points": _lc_pairs(
+            raw, "points", default["points"], strict=strict,
+            field=f"{field}.points", keys=("title", "text"),
+            limit_each=80, max_items=LANDING_MAX_POINTS),
+    }
+
+
+def coerce_landing_content(value: Any, *, strict: bool) -> Optional[dict]:
+    """落地页文案整份结构归一。strict=True（保存校验）：结构问题抛
+    ConfigValueError；strict=False（运行时读已存值）：整体坏掉返回
+    None 由调用方回落默认，单字段坏掉回落该字段的现行默认文案——
+    一条坏配置不许让官网开天窗。"""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            if strict:
+                raise ConfigValueError("landing_content 必须是合法的 JSON")
+            return None
+    if not isinstance(value, dict):
+        if strict:
+            raise ConfigValueError("landing_content 必须是对象")
+        return None
+
+    d = LANDING_DEFAULT_CONTENT
+
+    hero_raw = _lc_section(value.get("hero"), strict=strict, field="hero")
+    hero = {
+        "title_lines": _lc_lines(
+            hero_raw, "title_lines", d["hero"]["title_lines"],
+            strict=strict, field="hero.title_lines", limit_each=40,
+            max_items=LANDING_MAX_TITLE_LINES, min_items=1),
+        "subs": _lc_lines(
+            hero_raw, "subs", d["hero"]["subs"], strict=strict,
+            field="hero.subs", limit_each=80,
+            max_items=LANDING_MAX_SUBS, min_items=1),
+        "scroll_hint": _lc_text(
+            hero_raw, "scroll_hint", d["hero"]["scroll_hint"], 40,
+            strict=strict, field="hero.scroll_hint"),
+        "specs": _lc_pairs(
+            hero_raw, "specs", d["hero"]["specs"], strict=strict,
+            field="hero.specs", keys=("value", "sub"), limit_each=24,
+            max_items=LANDING_MAX_SPECS),
+    }
+
+    partners_raw = _lc_section(
+        value.get("partners"), strict=strict, field="partners")
+    partners = {
+        "eyebrow": _lc_text(
+            partners_raw, "eyebrow", d["partners"]["eyebrow"], 40,
+            strict=strict, field="partners.eyebrow"),
+        "names": _lc_lines(
+            partners_raw, "names", d["partners"]["names"], strict=strict,
+            field="partners.names", limit_each=32,
+            max_items=LANDING_MAX_PARTNERS),
+    }
+
+    devices_raw = _lc_section(
+        value.get("devices"), strict=strict, field="devices")
+    devices = {
+        "eyebrow": _lc_text(
+            devices_raw, "eyebrow", d["devices"]["eyebrow"], 40,
+            strict=strict, field="devices.eyebrow"),
+        "title_lines": _lc_lines(
+            devices_raw, "title_lines", d["devices"]["title_lines"],
+            strict=strict, field="devices.title_lines", limit_each=40,
+            max_items=LANDING_MAX_TITLE_LINES, min_items=1),
+        "sub": _lc_text(
+            devices_raw, "sub", d["devices"]["sub"], 160,
+            strict=strict, field="devices.sub"),
+        "marquee_clients": _lc_lines(
+            devices_raw, "marquee_clients", d["devices"]["marquee_clients"],
+            strict=strict, field="devices.marquee_clients", limit_each=32,
+            max_items=LANDING_MAX_MARQUEE),
+        "marquee_specs": _lc_lines(
+            devices_raw, "marquee_specs", d["devices"]["marquee_specs"],
+            strict=strict, field="devices.marquee_specs", limit_each=32,
+            max_items=LANDING_MAX_MARQUEE),
+    }
+
+    showcase_raw = _lc_section(
+        value.get("showcase"), strict=strict, field="showcase")
+    showcase = {
+        "cinema": _lc_showcase_block(
+            showcase_raw.get("cinema"), d["showcase"]["cinema"],
+            strict=strict, field="showcase.cinema"),
+        "audio": _lc_showcase_block(
+            showcase_raw.get("audio"), d["showcase"]["audio"],
+            strict=strict, field="showcase.audio"),
+    }
+
+    ess_raw = _lc_section(
+        value.get("essentials"), strict=strict, field="essentials")
+    cards_raw = ess_raw.get("cards")
+    card_defaults = d["essentials"]["cards"]
+    if not isinstance(cards_raw, list) or len(cards_raw) != LANDING_CARD_COUNT:
+        if strict:
+            raise ConfigValueError(
+                f"landing_content.essentials.cards 必须恰好 {LANDING_CARD_COUNT} 张"
+                "（版式固定三卡，只改文案）")
+        cards = copy.deepcopy(card_defaults)
+    else:
+        cards = [
+            _lc_card(item, card_defaults[i], strict=strict,
+                     field=f"essentials.cards[{i}]")
+            for i, item in enumerate(cards_raw)
+        ]
+    essentials = {
+        "eyebrow": _lc_text(
+            ess_raw, "eyebrow", d["essentials"]["eyebrow"], 40,
+            strict=strict, field="essentials.eyebrow"),
+        "title": _lc_text(
+            ess_raw, "title", d["essentials"]["title"], 40,
+            strict=strict, field="essentials.title", required=True),
+        "sub": _lc_text(
+            ess_raw, "sub", d["essentials"]["sub"], 160,
+            strict=strict, field="essentials.sub"),
+        "cards": cards,
+    }
+
+    return {
+        "hero": hero,
+        "partners": partners,
+        "devices": devices,
+        "showcase": showcase,
+        "essentials": essentials,
+    }
+
+
+def normalize_landing_content(value: Any) -> str:
+    """保存侧校验入口：JSON 文本或已解析 dict → canonical JSON 文本。"""
+    coerced = coerce_landing_content(value, strict=True)
+    return json.dumps(coerced, ensure_ascii=False)
+
+
+# 官网落地页文案（2026-11-19 二期）：整页可编辑文本一份 JSON
+# （首屏/合作方/设备/展示/卖点），后台「官网内容」页编辑，公开端点
+# /api/site/landing 下发整份（未存时下发默认 = 现行写死文案）。
+# 纯 SystemConfig 键，不进 env.example。
+LANDING_CONTENT_SCHEMA: dict[str, tuple] = {
+    "landing_content": ("json_landing",),
 }
 
 # 网页软解开关（2026-11-14 批 2）：浏览器硬解失败时是否用站内自编

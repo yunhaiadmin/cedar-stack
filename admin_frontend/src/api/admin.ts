@@ -160,8 +160,21 @@ export const resetUserPassword = (id: number, new_password: string) =>
 export const sendUserMessage = (id: number, data: { title: string; content: string }) =>
   post<{ success: boolean }>(`/users/${id}/messages`, data)
 
-export const broadcastMessage = (data: { title: string; content: string }) =>
-  post<{ success: boolean }>('/messages/broadcast', data)
+/** 广播人群：all 全部 / subscribed 在订 / plan 指定套餐 / expiring 即将到期 / expired 已过期未续费 / none 从未订阅 */
+export interface BroadcastPayload {
+  title: string
+  content: string
+  audience?: string
+  plan_id?: number | null
+  days?: number
+}
+
+export const broadcastMessage = (data: BroadcastPayload) =>
+  post<{ success: boolean; notified_users?: number; message?: string }>('/messages/broadcast', data)
+
+/** 广播人群预览：只回人数，不落库不推送 */
+export const previewBroadcast = (data: { audience: string; plan_id?: number | null; days?: number }) =>
+  post<{ count: number }>('/messages/broadcast/preview', data)
 
 // ==================== 会员卡码体系 =============
 /** 注册门禁设置 */

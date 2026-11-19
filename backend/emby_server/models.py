@@ -749,6 +749,32 @@ class DanmakuComment(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
+class DanmakuMute(Base):
+    """站内弹幕禁言（内容治理，2026-11-19）。
+
+    一行 = 对一个用户当前生效的一次禁言（user_id 唯一，重复禁言
+    更新同一行）。muted_until 为 NULL = 永久禁言；有值且已过 = 禁言
+    自然到期，发送侧按未禁言处理（行保留作治理记录，解禁才删行）。
+    禁言只管站内弹幕发言，不影响观看与其它功能；判定唯一实现在
+    backend/danmaku.py 的 get_active_mute，发送口真查。新表由
+    create_all 建，不走 _auto_migrate。
+    """
+
+    __tablename__ = "danmaku_mutes"
+    __table_args__ = (
+        Index("idx_danmaku_mute_user", "user_id", unique=True),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("web_users.id"), nullable=False)
+    muted_until = Column(DateTime, nullable=True)  # NULL = 永久
+    reason = Column(String(255), nullable=False, default="")
+    created_by = Column(Integer, nullable=True)  # 操作管理员 WebUser.id
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now,
+                        onupdate=datetime.now)
+
+
 class PlaybackSession(Base):
     """播放会话"""
 

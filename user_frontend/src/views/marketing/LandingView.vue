@@ -5,9 +5,10 @@
  * → 客户端/规格跑马灯 → 钉住滚动影院/音频展示（钉住只此一处，说明书第 5 节①）
  * → 一份订阅三卡 → 页脚（免责声明＋单行信息）。
  * 文案为 Aetrix 自有口径；营销数字一律不编造：片库数据行读 /api/site/library-stats 实时统计取整呈现，接口不可用时回落快照（见 useLibraryStats）。
+ * 页面文本（首屏/合作方/设备/展示/卖点）走 landingContent 配置（后台「官网内容」页可配，见 useLandingContent），初始值即现行文案、拉取失败保持内置。
  * 页面独立于应用壳（App.vue 对 landing 路由名不渲染全局顶栏/底坞），自带悬浮胶囊导航。
  */
-import { computed, nextTick, onDeactivated, onMounted, onUnmounted, ref, type Component } from 'vue'
+import { computed, nextTick, onDeactivated, onMounted, onUnmounted, ref, watch, type Component } from 'vue'
 import { useRouter } from 'vue-router'
 import { Monitor, Sparkles, Film, Ban, Menu, X, RefreshCw, Bell, Home, Tag, BookOpen, ExternalLink, Users, Bot, MessageCircle, Send, Globe, LogIn, ArrowRight } from 'lucide-vue-next'
 import UhdNavPill, { type UhdNavItem } from '@/components/uhd/UhdNavPill.vue'
@@ -19,6 +20,7 @@ import { branding } from '@/composables/useBranding'
 import { siteDrawer } from '@/composables/useSiteDrawer'
 import type { SiteDrawerNavItem } from '@/api'
 import { initLibraryStats, libraryStats } from '@/composables/useLibraryStats'
+import { initLandingContent, landingContent } from '@/composables/useLandingContent'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
@@ -241,13 +243,31 @@ function goPricing() {
   router.push('/pricing')
 }
 
-/* Hero 副文案轮换（仅营销面，说明书 1.6 / 第 5 节⑦） */
-const heroSubs = [
-  '无广告干扰，沉浸观影从按下播放开始',
-  '手机、电视、电脑，观看进度多端同步',
-  '新片自动入库，追剧更新不用催',
-]
+/* Hero 副文案轮换（仅营销面，说明书 1.6 / 第 5 节⑦）：文案走
+   landingContent（后台「官网内容」可配），下标对当前条数取模，
+   配置换成更短的列表时不越界 */
+const heroSubs = computed(() => landingContent.hero.subs)
 const heroSubIdx = ref(0)
+const heroSubCurrent = computed(
+  () => heroSubs.value[heroSubIdx.value % heroSubs.value.length] ?? '',
+)
+
+/* Hero 规格 chip 图标按位序固定（文案可配、图标与版式成套不配） */
+const HERO_SPEC_ICONS: Component[] = [Monitor, Sparkles, Film, Ban]
+
+/* 合作方字标：纯排版文字（无 logo 图资产）；三家现行品牌的专属
+   字重/字距按名称匹配保留，新加平台走 .partner 基础字标样式 */
+const PARTNER_CLASSES: Record<string, string> = {
+  Netflix: 'partner--netflix',
+  'Disney+': 'partner--disney',
+  'HBO Max': 'partner--hbo',
+}
+function partnerClass(name: string): string {
+  return PARTNER_CLASSES[name] ?? ''
+}
+
+/* 卖点卡 3 要点图标按位序固定（文案可配） */
+const ESS_POINT_ICONS: Component[] = [RefreshCw, Sparkles, Bell]
 let heroTimer: ReturnType<typeof setInterval> | null = null
 
 /* 钉住滚动展示：滚动进度驱动两态模糊交叉淡入（动态返工，原站 GSAP 时间线逐项实测，
@@ -367,20 +387,29 @@ const platformsTitle = ref<HTMLElement | null>(null)
 let revealIO: IntersectionObserver | null = null
 let pinRevealIO: IntersectionObserver | null = null
 let pinIO: IntersectionObserver | null = null
+/* 设备区标题逐字拆分：数据源是 landingContent 的标题行（不再读
+   DOM 子节点）——配置加载后标题变了要能按新文本重拆；dataset
+   里记的是已拆分的文本本身，watcher 据此判断要不要重拆 */
+const platformsTitleInView = ref(false)
 function splitTitleChars() {
   const el = platformsTitle.value
-  if (!el || el.dataset.splitDone) return
-  el.dataset.splitDone = '1'
-  const nodes = [...el.childNodes]
+  if (!el) return
+  const lines = landingContent.devices.title_lines
+  el.dataset.splitDone = lines.join('\n')
   const scope = [...el.attributes].find((attr) => attr.name.startsWith('data-v-'))
   el.textContent = ''
   let idx = 0
+  const nodes: Array<{ text: string } | 'BR'> = []
+  lines.forEach((line, li) => {
+    if (li > 0) nodes.push('BR')
+    nodes.push({ text: line })
+  })
   for (const node of nodes) {
-    if (node.nodeName === 'BR') {
+    if (node === 'BR') {
       el.appendChild(document.createElement('br'))
       continue
     }
-    for (const ch of node.textContent ?? '') {
+    for (const ch of node.text) {
       const wrap = document.createElement('span')
       wrap.className = 'pt-char-wrap'
       const inner = document.createElement('span')
@@ -397,6 +426,18 @@ function splitTitleChars() {
     }
   }
 }
+watch(
+  () => landingContent.devices.title_lines.join('\n'),
+  (text) => {
+    const el = platformsTitle.value
+    if (!el || el.dataset.splitDone === undefined || el.dataset.splitDone === text) return
+    splitTitleChars()
+    /* 已在屏内（或减动效）时新字直接落到可见终态，不等下一次相交 */
+    if (reduceMotion.value || platformsTitleInView.value) {
+      el.querySelectorAll('.pt-char').forEach((c) => c.classList.add('is-in'))
+    }
+  },
+)
 function setupReveal() {
   const root = landingRoot.value
   if (!root) return
@@ -412,6 +453,7 @@ function setupReveal() {
     (entries) => {
       for (const en of entries) {
         if (en.target === platformsTitle.value) {
+          platformsTitleInView.value = en.isIntersecting
           en.target.querySelectorAll('.pt-char').forEach((c) => c.classList.toggle('is-in', en.isIntersecting))
         } else {
           en.target.classList.toggle('is-in', en.isIntersecting)
@@ -441,6 +483,7 @@ function onLandingWide() {
 }
 onMounted(() => {
   void initLibraryStats()
+  void initLandingContent()
   if (heroBgImg.value?.complete || heroVisualImg.value?.complete) heroImgReady.value = true
   heroReadyTimer = window.setTimeout(() => { heroImgReady.value = true }, 3000)
   window.addEventListener('scroll', onScrollNav, { passive: true })
@@ -459,7 +502,7 @@ onMounted(() => {
   }
   if (!reduceMotion.value) {
     heroTimer = setInterval(() => {
-      heroSubIdx.value = (heroSubIdx.value + 1) % heroSubs.length
+      heroSubIdx.value = (heroSubIdx.value + 1) % heroSubs.value.length
     }, 4200)
   }
   window.addEventListener('scroll', onScroll, { passive: true })
@@ -479,9 +522,10 @@ onUnmounted(() => {
   forceReleaseMenu()
 })
 
-/* 跑马灯内容：Aetrix 自有口径——支持的客户端与规格字标，纯文字白标（第 5 节②） */
-const marqueeClients = ['Emby', 'Infuse', 'Kodi', 'Apple TV', 'Android TV', 'Samsung TV', 'LG webOS', 'Windows', 'macOS', 'iOS', 'Android']
-const marqueeSpecs = ['4K Ultra HD', 'HDR10+', 'Dolby Vision', 'Dolby Atmos', 'DTS:X', 'H.265 / HEVC', 'Hi-Res Audio', '空间音频']
+/* 跑马灯内容：Aetrix 自有口径——支持的客户端与规格字标，纯文字白标（第 5 节②）；
+   词表走 landingContent（后台「官网内容」可配） */
+const marqueeClients = computed(() => landingContent.devices.marquee_clients)
+const marqueeSpecs = computed(() => landingContent.devices.marquee_specs)
 
 const year = new Date().getFullYear()
 </script>
@@ -631,10 +675,10 @@ const year = new Date().getFullYear()
       <div class="hero-inner" :style="heroInnerStyle()">
         <div class="hero-copy">
         <p class="eyebrow hero-el hero-el--eyebrow">{{ branding.site_name }} SERVICE</p>
-        <h1 class="hero-title hero-el hero-el--title">你的私人影院<br />随时随地开场</h1>
+        <h1 class="hero-title hero-el hero-el--title"><template v-for="(line, i) in landingContent.hero.title_lines" :key="i">{{ line }}<br v-if="i < landingContent.hero.title_lines.length - 1" /></template></h1>
         <p class="hero-sub hero-el hero-el--sub" aria-live="polite">
           <Transition name="hero-sub-ticker">
-            <span :key="heroSubIdx" class="hero-sub-line">{{ heroSubs[heroSubIdx] }}</span>
+            <span :key="heroSubCurrent" class="hero-sub-line">{{ heroSubCurrent }}</span>
           </Transition>
         </p>
         <div class="hero-actions hero-el hero-el--actions">
@@ -653,43 +697,31 @@ const year = new Date().getFullYear()
         </div>
         </div>
         <div class="hero-specs hero-el hero-el--specs">
-          <UhdChip variant="spec" sub="超高清">
-            <template #icon><Monitor :size="20" aria-hidden="true" /></template>
-            4K
-          </UhdChip>
-          <UhdChip variant="spec" sub="高动态范围">
-            <template #icon><Sparkles :size="20" aria-hidden="true" /></template>
-            HDR10+
-          </UhdChip>
-          <UhdChip variant="spec" sub="杜比视界">
-            <template #icon><Film :size="20" aria-hidden="true" /></template>
-            Dolby Vision
-          </UhdChip>
-          <UhdChip variant="spec" sub="沉浸体验">
-            <template #icon><Ban :size="20" aria-hidden="true" /></template>
-            无广告干扰
+          <UhdChip v-for="(spec, i) in landingContent.hero.specs" :key="i" variant="spec" :sub="spec.sub">
+            <template #icon><component :is="HERO_SPEC_ICONS[i % HERO_SPEC_ICONS.length]" :size="20" aria-hidden="true" /></template>
+            {{ spec.value }}
           </UhdChip>
         </div>
       </div>
-      <p class="hero-scroll-hint" :style="heroHintStyle()" aria-hidden="true">↓ 向下探索更多精彩</p>
+      <p class="hero-scroll-hint" :style="heroHintStyle()" aria-hidden="true">{{ landingContent.hero.scroll_hint }}</p>
     </header>
 
-    <!-- ② 流媒体伙伴（2026-11-15 用户亲点，照友站结构）：英文节题＋一行三平台
-         文字字标（排版实现，不用官方 logo 图），弱化白、等距排列 -->
-    <section class="partners-sec">
-      <p class="eyebrow eyebrow--center rv" data-reveal>STREAMING PARTNERS</p>
+    <!-- ② 流媒体伙伴（2026-11-15 用户亲点，照友站结构）：英文节题＋平台
+         文字字标（排版实现，不用官方 logo 图），弱化白、等距排列；
+         名单走 landingContent（后台「官网内容」可配增删排序），
+         名单为空时整节不渲染 -->
+    <section v-if="landingContent.partners.names.length" class="partners-sec">
+      <p class="eyebrow eyebrow--center rv" data-reveal>{{ landingContent.partners.eyebrow }}</p>
       <div class="partners-row rv" data-reveal>
-        <span class="partner partner--netflix">Netflix</span>
-        <span class="partner partner--disney">Disney+</span>
-        <span class="partner partner--hbo">HBO Max</span>
+        <span v-for="(name, i) in landingContent.partners.names" :key="i" class="partner" :class="partnerClass(name)">{{ name }}</span>
       </div>
     </section>
 
     <!-- ③ 跑马灯 -->
     <section class="marquee-sec">
-      <p class="eyebrow eyebrow--center rv" data-reveal>CLIENTS &amp; SPECS</p>
-      <h2 id="platforms-heading" ref="platformsTitle" class="sec-title sec-title--platforms">在你顺手的设备上，<br />以它最好的规格播放</h2>
-      <p class="sec-sub rv rv--lede" data-reveal>播放交给专业客户端，服务器只做整理与供给——手机、电视、电脑，打开就能看。</p>
+      <p class="eyebrow eyebrow--center rv" data-reveal>{{ landingContent.devices.eyebrow }}</p>
+      <h2 id="platforms-heading" ref="platformsTitle" class="sec-title sec-title--platforms"><template v-for="(line, i) in landingContent.devices.title_lines" :key="i">{{ line }}<br v-if="i < landingContent.devices.title_lines.length - 1" /></template></h2>
+      <p class="sec-sub rv rv--lede" data-reveal>{{ landingContent.devices.sub }}</p>
       <div class="marquee rv rv--marquee" data-reveal aria-hidden="true">
         <div class="marquee-track marquee-track--a">
           <span v-for="(w, i) in [...marqueeClients, ...marqueeClients]" :key="`a-${i}`" class="marquee-word">{{ w }}</span>
@@ -725,35 +757,32 @@ const year = new Date().getFullYear()
           <span v-for="i in 3" :key="i" class="pin-ring" :class="`pin-ring--${i}`" :style="ringStyle(i - 1)" />
         </div>
         <div class="pin-copy" :style="cinemaCopyStyle()">
-          <p class="eyebrow eyebrow--center rv rv--pin-eyebrow" data-reveal-pin>CINEMA EXPERIENCE</p>
-          <h2 class="pin-title rv rv--pin-title" data-reveal-pin>影院级画面</h2>
-          <p class="pin-sub rv rv--pin-lede" data-reveal-pin>4K Ultra HD · HDR10+ · Dolby Vision</p>
+          <p class="eyebrow eyebrow--center rv rv--pin-eyebrow" data-reveal-pin>{{ landingContent.showcase.cinema.eyebrow }}</p>
+          <h2 class="pin-title rv rv--pin-title" data-reveal-pin>{{ landingContent.showcase.cinema.title }}</h2>
+          <p class="pin-sub rv rv--pin-lede" data-reveal-pin>{{ landingContent.showcase.cinema.sub }}</p>
         </div>
         <div class="pin-copy pin-copy--audio">
-          <p class="eyebrow eyebrow--center" :style="audioPartStyle(0)">AUDIO EXPERIENCE</p>
-          <h2 class="pin-title" :style="audioPartStyle(1)">影院级声音</h2>
-          <p class="pin-sub" :style="audioPartStyle(2)">Dolby Atmos · Hi-Res Audio · 空间音频 · DTS:X 全兼容</p>
+          <p class="eyebrow eyebrow--center" :style="audioPartStyle(0)">{{ landingContent.showcase.audio.eyebrow }}</p>
+          <h2 class="pin-title" :style="audioPartStyle(1)">{{ landingContent.showcase.audio.title }}</h2>
+          <p class="pin-sub" :style="audioPartStyle(2)">{{ landingContent.showcase.audio.sub }}</p>
         </div>
       </div>
     </section>
 
     <!-- ⑤ 一份订阅 -->
     <section class="essentials">
-      <p class="eyebrow eyebrow--center rv" data-reveal>SERVICE ESSENTIALS</p>
-      <h2 class="sec-title rv rv--sectitle" data-reveal>一份订阅，全部搞定</h2>
-      <p class="sec-sub rv rv--lede2" data-reveal>一个账号打通所有设备与服务，不用为每块屏幕单独折腾。</p>
+      <p class="eyebrow eyebrow--center rv" data-reveal>{{ landingContent.essentials.eyebrow }}</p>
+      <h2 class="sec-title rv rv--sectitle" data-reveal>{{ landingContent.essentials.title }}</h2>
+      <p class="sec-sub rv rv--lede2" data-reveal>{{ landingContent.essentials.sub }}</p>
 
       <div class="ess-grid">
         <article class="ess-card ess-card--wide rv rv--card" data-reveal @pointermove="onSpotlight">
           <div class="ess-card-text">
-            <p class="eyebrow">MULTI-DEVICE SYNC</p>
-            <h3 class="ess-h3">一部片子，<br />所有屏幕接着看</h3>
-            <p class="ess-desc">在电视上看到一半，出门用手机继续。播放进度、收藏与观看记录，在你的所有设备间自动同步。</p>
-            <div class="ess-chips">
-              <UhdChip variant="mini">TV</UhdChip>
-              <UhdChip variant="mini">Computer</UhdChip>
-              <UhdChip variant="mini">Tablet</UhdChip>
-              <UhdChip variant="mini">手机</UhdChip>
+            <p class="eyebrow">{{ landingContent.essentials.cards[0].eyebrow }}</p>
+            <h3 class="ess-h3"><template v-for="(line, i) in landingContent.essentials.cards[0].title_lines" :key="i">{{ line }}<br v-if="i < landingContent.essentials.cards[0].title_lines.length - 1" /></template></h3>
+            <p class="ess-desc">{{ landingContent.essentials.cards[0].desc }}</p>
+            <div v-if="landingContent.essentials.cards[0].chips.length" class="ess-chips">
+              <UhdChip v-for="(chip, i) in landingContent.essentials.cards[0].chips" :key="i" variant="mini">{{ chip }}</UhdChip>
             </div>
           </div>
           <div class="ess-devices" aria-hidden="true">
@@ -776,9 +805,9 @@ const year = new Date().getFullYear()
         </article>
 
         <article class="ess-card rv rv--card rv--d1" data-reveal @pointermove="onSpotlight">
-          <p class="eyebrow">ZERO INTERRUPTION</p>
-          <h3 class="ess-h3">没有广告，<br />只有电影</h3>
-          <p class="ess-desc">从按下播放到片尾字幕，全程无插播、无贴片，沉浸感不被打断。</p>
+          <p class="eyebrow">{{ landingContent.essentials.cards[1].eyebrow }}</p>
+          <h3 class="ess-h3"><template v-for="(line, i) in landingContent.essentials.cards[1].title_lines" :key="i">{{ line }}<br v-if="i < landingContent.essentials.cards[1].title_lines.length - 1" /></template></h3>
+          <p class="ess-desc">{{ landingContent.essentials.cards[1].desc }}</p>
           <div class="ess-timeline" aria-hidden="true">
             <div class="ess-timeline-meta"><span>00:00</span><span class="ess-timeline-mid">100% 主内容</span><span>02:15</span></div>
             <div class="ess-timeline-bar"><i /></div>
@@ -801,9 +830,9 @@ const year = new Date().getFullYear()
               data-reveal
             />
           </div>
-          <p class="eyebrow">EVER-GROWING LIBRARY</p>
-          <h3 class="ess-h3">片库自己长大</h3>
-          <p class="ess-desc">新片自动扫描入库、刮削补齐海报与资料；追的剧更新了，自动出现在你的片库里。</p>
+          <p class="eyebrow">{{ landingContent.essentials.cards[2].eyebrow }}</p>
+          <h3 class="ess-h3"><template v-for="(line, i) in landingContent.essentials.cards[2].title_lines" :key="i">{{ line }}<br v-if="i < landingContent.essentials.cards[2].title_lines.length - 1" /></template></h3>
+          <p class="ess-desc">{{ landingContent.essentials.cards[2].desc }}</p>
           <!-- 数据行：读 /api/site/library-stats 实时统计（ORM 口径：deleted_at IS NULL
                AND merged_into_id IS NULL），取整呈现；接口不可用时回落 useLibraryStats 里的
                2026-11-15 生产快照。排版照友站大数据行（大数字＋小标签横排）；
@@ -814,18 +843,10 @@ const year = new Date().getFullYear()
             <div class="ess-stat"><span class="ess-stat-num">{{ statsTotal }}</span><span class="ess-stat-label">条目总计</span></div>
           </div>
           <p class="ess-stats-note">覆盖 {{ libraryStats.libraries }} 个媒体库，持续更新中</p>
-          <ul class="ess-points">
-            <li>
-              <RefreshCw :size="18" aria-hidden="true" />
-              <span><b>自动入库</b>新片到盘，自动扫描进片库</span>
-            </li>
-            <li>
-              <Sparkles :size="18" aria-hidden="true" />
-              <span><b>资料补齐</b>海报、简介与评分自动刮削归位</span>
-            </li>
-            <li>
-              <Bell :size="18" aria-hidden="true" />
-              <span><b>追剧更新</b>追的剧一出新集，自动跟上</span>
+          <ul v-if="landingContent.essentials.cards[2].points.length" class="ess-points">
+            <li v-for="(pt, i) in landingContent.essentials.cards[2].points" :key="i">
+              <component :is="ESS_POINT_ICONS[i % ESS_POINT_ICONS.length]" :size="18" aria-hidden="true" />
+              <span><b>{{ pt.title }}</b>{{ pt.text }}</span>
             </li>
           </ul>
         </article>
