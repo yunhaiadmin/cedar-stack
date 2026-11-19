@@ -21,7 +21,7 @@ import { EmptyState, PageHeader, SectionCard, StatTile } from '@/components/ui'
 import { useBreakpoint } from '@/composables/useBreakpoint'
 import {
   broadcastMessage, extendSubscription, fetchDevices, fetchPlans, fetchUserDetail, fetchUsers,
-  fetchUserGrants, grantSubscription, removeDevice, resetUserPassword, sendUserMessage, setDeviceBlocked,
+  fetchUserGrants, grantSubscription, previewBroadcast, removeDevice, resetUserPassword, sendUserMessage, setDeviceBlocked,
   updateUser, type PlanRow,
 } from '@/api/admin'
 import { parseServerTime } from '@/utils/serverTime'
@@ -566,15 +566,77 @@ const broadcastVisible = ref(false)
 const broadcastForm = reactive({ title: '系统广播', content: '' })
 const broadcastSaving = ref(false)
 
+/** 广播人群（与后端 _resolve_broadcast_audience 同口径的六档） */
+const broadcastAudienceOptions = [
+  { value: 'all', label: '全部用户' },
+  { value: 'subscribed', label: '在订用户' },
+  { value: 'plan', label: '指定套餐' },
+  { value: 'expiring', label: '即将到期' },
+  { value: 'expired', label: '已过期未续费' },
+  { value: 'none', label: '从未订阅' },
+]
+const broadcastAudience = ref('all')
+const broadcastPlanId = ref<number | null>(null)
+const broadcastDays = ref(7)
+/** 预览人数：null = 还没查到（不禁用发送以外的判断先按未知处理） */
+const broadcastCount = ref<number | null>(null)
+const broadcastPreviewing = ref(false)
+let broadcastPreviewTimer: ReturnType<typeof setTimeout> | null = null
+let broadcastPreviewSeq = 0
+
+const broadcastAudienceLabel = computed(() =>
+  broadcastAudienceOptions.find((o) => o.value === broadcastAudience.value)?.label ?? '')
+
+async function refreshBroadcastPreview() {
+  const seq = ++broadcastPreviewSeq
+  broadcastPreviewing.value = true
+  try {
+    const res = await previewBroadcast({
+      audience: broadcastAudience.value,
+      plan_id: broadcastAudience.value === 'plan' ? broadcastPlanId.value : null,
+      days: broadcastDays.value,
+    })
+    if (seq !== broadcastPreviewSeq) return
+    broadcastCount.value = res.count
+  } catch {
+    if (seq !== broadcastPreviewSeq) return
+    broadcastCount.value = null
+  } finally {
+    if (seq === broadcastPreviewSeq) broadcastPreviewing.value = false
+  }
+}
+
+/** 人群 / 套餐 / 天数变化后防抖刷新预览人数 */
+function scheduleBroadcastPreview() {
+  broadcastCount.value = null
+  if (broadcastPreviewTimer) clearTimeout(broadcastPreviewTimer)
+  broadcastPreviewTimer = setTimeout(() => { void refreshBroadcastPreview() }, 300)
+}
+
+watch(broadcastVisible, (open) => {
+  if (open) void refreshBroadcastPreview()
+})
+
 async function submitBroadcast() {
   if (!broadcastForm.content.trim()) {
     ElMessage.warning('请输入广播内容')
     return
   }
+  if (broadcastAudience.value === 'plan' && !broadcastPlanId.value) {
+    ElMessage.warning('请选择套餐')
+    return
+  }
+  if (broadcastCount.value === 0) return
   broadcastSaving.value = true
   try {
-    await broadcastMessage({ title: broadcastForm.title || '系统广播', content: broadcastForm.content })
-    ElMessage.success('广播已发送给全部用户')
+    const res = await broadcastMessage({
+      title: broadcastForm.title || '系统广播',
+      content: broadcastForm.content,
+      audience: broadcastAudience.value,
+      plan_id: broadcastAudience.value === 'plan' ? broadcastPlanId.value : null,
+      days: broadcastDays.value,
+    })
+    ElMessage.success(res.message || '广播已发送')
     broadcastVisible.value = false
     broadcastForm.content = ''
   } catch {
@@ -638,7 +700,7 @@ function fmtCount(n: number | null | undefined): string {
     >
       <template #actions>
         <el-button @click="broadcastVisible = true">
-          <Megaphone :size="14" class="btn-ico" />全站广播
+          <Megaphone :size="14" class="btn-ico" />广播消息
         </el-button>
         <el-button :loading="loading" @click="load">
           <RefreshCw :size="14" class="btn-ico" />刷新
@@ -1120,22 +1182,59 @@ function fmtCount(n: number | null | undefined): string {
       </template>
     </el-dialog>
 
-    <!-- ==================== 全站广播 ==================== -->
-    <el-dialog v-model="broadcastVisible" title="全站广播" width="min(460px, 92vw)">
+    <!-- ==================== 广播（可按人群发送） ==================== -->
+    <el-dialog v-model="broadcastVisible" title="广播消息" width="min(460px, 92vw)">
       <el-form label-width="90px">
+        <el-form-item label="人群">
+          <el-select v-model="broadcastAudience" style="width: 100%" @change="scheduleBroadcastPreview">
+            <el-option
+              v-for="o in broadcastAudienceOptions"
+              :key="o.value"
+              :label="o.label"
+              :value="o.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="broadcastAudience === 'plan'" label="套餐">
+          <el-select
+            v-model="broadcastPlanId"
+            placeholder="选择套餐"
+            style="width: 100%"
+            @change="scheduleBroadcastPreview"
+          >
+            <el-option v-for="p in plans" :key="p.id" :label="p.name" :value="p.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="broadcastAudience === 'expiring'" label="到期天数">
+          <el-input-number
+            v-model="broadcastDays"
+            :min="1"
+            :max="30"
+            style="width: 100%"
+            @change="scheduleBroadcastPreview"
+          />
+        </el-form-item>
         <el-form-item label="标题">
           <el-input v-model="broadcastForm.title" />
         </el-form-item>
         <el-form-item label="内容">
-          <el-input v-model="broadcastForm.content" type="textarea" :rows="4" placeholder="将推送给全部用户…" />
+          <el-input v-model="broadcastForm.content" type="textarea" :rows="4" placeholder="输入广播内容…" />
         </el-form-item>
         <el-form-item label=" ">
-          <span class="dialog-hint warn">会推送给全部用户，发出后无法撤回。</span>
+          <span v-if="broadcastCount !== null" class="dialog-hint">
+            将发送给 {{ broadcastCount }} 位用户（{{ broadcastAudienceLabel }}），发出后无法撤回。
+          </span>
+          <span v-else class="dialog-hint">{{ broadcastPreviewing ? '正在统计人数…' : '人数统计失败，发送时以后端解析为准。' }}</span>
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="broadcastVisible = false">取消</el-button>
-        <el-button type="primary" :loading="broadcastSaving" @click="submitBroadcast">发送广播</el-button>
+        <el-button
+          type="primary"
+          :loading="broadcastSaving"
+          :disabled="broadcastCount === 0"
+          @click="submitBroadcast"
+        >发送广播</el-button>
       </template>
     </el-dialog>
   </div>

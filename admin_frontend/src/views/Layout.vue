@@ -31,7 +31,7 @@ import {
   Image as ImageIcon,
   Database, Megaphone, Receipt, Trophy, TicketPercent, UserPlus, KeySquare,
   UserCog, Activity, HandCoins,
-  Sun, Moon, MonitorSmartphone, ListChecks, Flag, Gauge, Heart, Clapperboard, CalendarDays,
+  Sun, Moon, MonitorSmartphone, ListChecks, Flag, Gauge, Heart, Clapperboard, CalendarDays, Captions,
   PanelLeftClose, PanelLeftOpen, MonitorPlay,
 } from 'lucide-vue-next'
 import {
@@ -204,7 +204,11 @@ const navGroups: NavGroup[] = [
       { path: '/series-follows', label: '追剧订阅', icon: Clapperboard },
       // 追新日历（二期缺口项）：与用户端同一入库日口径的管理视图（只读）
       { path: '/chase-calendar', label: '追新日历', icon: CalendarDays },
+      // 弹幕治理（内容治理面）：弹幕列表/删除＋用户禁言（发送口真查）
+      { path: '/danmaku-admin', label: '弹幕治理', icon: Ban },
       { path: '/announcements', label: '公告管理', icon: Megaphone },
+      // 官网内容（二期缺口）：落地页整页文案编辑（首屏/合作方/卖点），存 landing_content
+      { path: '/landing-content', label: '官网内容', icon: MonitorSmartphone },
       { path: '/tickets', label: '工单', icon: Ticket },
       // 等级治理：举报终审队列 + 治理停权（复核达标的举报在这里受理 / 驳回）
       { path: '/governance', label: '举报与停权', icon: Flag },
@@ -227,8 +231,12 @@ const navGroups: NavGroup[] = [
       { path: '/metadata-sources', label: '元数据来源', icon: Database },
       // 识别审查：自动刮削认不准（有候选没过置信线）的条目带证据排队，人工在这里处置
       { path: '/identify-review', label: '识别审查', icon: ListChecks },
+      // 人物条目管理：同一个人被刮成两份时在这里改名 / 合并（源人物关联改指目标）
+      { path: '/people', label: '人物管理', icon: Users },
       // 缺集清单：哪部剧缺哪几集、缺了多久、几个人在求补
       { path: '/missing-episodes', label: '缺集清单', icon: ListChecks },
+      // 字幕管理（二期全缺第 7 项）：已入库字幕轨（内嵌＋外挂）的只读盘点
+      { path: '/subtitles', label: '字幕管理', icon: Captions },
       // 存储绑定观测：原「上游源」页的标签页，
       // 上游源随上游全清删除后恢复独立入口（批 3 合并入上游源页的布局随之撤销）
       { path: '/storage-bindings', label: '存储绑定', icon: Database },
