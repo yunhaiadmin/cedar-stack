@@ -2541,6 +2541,55 @@ class PoolItemSourceBlock(Base):
                         onupdate=datetime.now)
 
 
+class PoolBadDriveCombo(Base):
+    """公共贡献池成员×源盘失败记忆（等待优化第二层）：
+    一行 = 一个成员读不了一个源盘的记忆。
+
+    产生：池单 copy_forbidden 终态失败时记（transfer_variant
+    ._fail_job 钩子，只记这一种——源文件没了是条目级问题，
+    不毒化整条源盘；用户盘单不记）。为什么要成员×源盘粒度：
+    条目级源熔断（PoolItemSourceBlock）只拦单个条目，而同一
+    源盘下的几百个条目会被 refill 跨天反复派给同一个读不了
+    该盘的成员（生产 7 天实测：263 次池失败 100% 来自成员 40
+    × 源盘 0AERUVu4kfWEfUk9PVA 这一个组合，225 个不同条目）。
+
+    语义：
+    - ``expires_at``：记忆到期时刻；期内 refill 选盘跳过该
+      组合，过期后可再探（权限可能已被重新授予）。默认 TTL
+      7 天（pool_retry 子家族 pool_bad_combo_ttl_days）：覆盖
+      跨天重复派单的观测窗口，又不永久拉黑。
+    - 成功即清：该组合任一池单成功登记 ready 后整行删除
+      （transfer_variant._register_ready_variant 钩子），
+      修好的权限不用等 TTL。
+    - ``failure_count`` / ``last_error_kind`` /
+      ``last_item_id``：留痕对账用；每次失败刷新 last_* 与
+      expires_at（按最新一次失败起算 TTL）。
+    无外键（照本文件池表先例）；新表由 create_all 建出。
+    """
+
+    __tablename__ = "pool_bad_drive_combos"
+
+    __table_args__ = (
+        UniqueConstraint("member_id", "source_drive_id",
+                         name="uq_pool_bad_drive_combos_member_drive"),
+        Index("ix_pool_bad_drive_combos_member", "member_id"),
+        Index("ix_pool_bad_drive_combos_drive", "source_drive_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    member_id = Column(Integer, nullable=False)
+    source_drive_id = Column(String(191), nullable=False)
+    failure_count = Column(Integer, nullable=False, default=0)
+    first_failure_at = Column(DateTime, nullable=True)
+    last_failure_at = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    last_error_kind = Column(String(40), nullable=True)
+    last_item_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now,
+                        onupdate=datetime.now)
+
+
 class PoolRewardSettlement(Base):
     """公共贡献池激励结算批次（goal-33 PR-6，钩子 H3）。
 

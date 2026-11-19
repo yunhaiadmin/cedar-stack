@@ -135,14 +135,20 @@ def test_get_janitor_config_returns_default_on(client):
     resp = client.get(JANITOR_URL)
     assert resp.status_code == 200, resp.text
     # 闲置主动清理默认开（用户 2026-11-09 亲点）。
-    assert resp.json() == {"pool_idle_evict_proactive_enabled": True}
+    assert resp.json() == {
+        "pool_idle_evict_proactive_enabled": True,
+        "pool_refill_max_per_round": 10,
+        "pool_refill_prefetch_target_copies": 1}
 
 
 def test_put_janitor_config_roundtrips(client, db):
     resp = client.put(JANITOR_URL, json={
         "pool_idle_evict_proactive_enabled": False})
     assert resp.status_code == 200, resp.text
-    assert resp.json() == {"pool_idle_evict_proactive_enabled": False}
+    assert resp.json() == {
+        "pool_idle_evict_proactive_enabled": False,
+        "pool_refill_max_per_round": 10,
+        "pool_refill_prefetch_target_copies": 1}
     row = db.query(models.SystemConfig).filter_by(
         key="pool_idle_evict_proactive_enabled").one()
     assert row.value == "false"

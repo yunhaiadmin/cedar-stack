@@ -506,6 +506,12 @@ POOL_REWARD_CONFIG_SCHEMA: dict[str, tuple] = {
 # .POOL_JANITOR_CONFIG_DEFAULTS，唯一消费方是 pool_janitor。
 POOL_JANITOR_CONFIG_SCHEMA: dict[str, tuple] = {
     "pool_idle_evict_proactive_enabled": ("bool",),
+    # 热门预热每轮补位上限（等待优化第二层）：0 = 关预热补位，
+    # 上限 200 防误配成单轮洪水。
+    "pool_refill_max_per_round": ("int", 0, 200),
+    # 热门预热目标份数（等待优化第二层）：1–8，与
+    # pool_item_max_copies 同上限。
+    "pool_refill_prefetch_target_copies": ("int", 1, 8),
 }
 
 # 重试子家族（copy_forbidden 换盘重试，2026-11-10 生产定案）：
@@ -536,6 +542,9 @@ POOL_RETRY_CONFIG_SCHEMA: dict[str, tuple] = {
     # 最多再换几个同作品替代源重试；0 = 关换源（回旧口径）。
     # 上限 16 防同作品重复行很多时无界换源。
     "pool_copy_forbidden_source_max_swaps": ("int", 0, 16),
+    # 成员×源盘失败记忆 TTL（天，等待优化第二层）：下限 1 防
+    # 0 天记忆当天即过期失去意义，上限 90 防误配成长锁。
+    "pool_bad_combo_ttl_days": ("int", 1, 90),
 }
 
 # 缺集补集通道（2026-11-11 B 方案）：绕开 MP 订阅判存，按缺集

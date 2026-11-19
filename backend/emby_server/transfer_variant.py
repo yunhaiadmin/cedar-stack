@@ -6499,6 +6499,20 @@ def _fail_job(db, job, kind, detail):
     job.error_detail = (detail or "")[:500]
     _note_proactive_terminal(db, job)
     db.commit()
+    # 成员×源盘失败记忆（等待优化第二层）：池单 copy_forbidden
+    # 即记，refill 不再反复派给已知读不了该源盘的成员；记忆
+    # 写不上不许拖垮任务落态（本函数已提交，钩子独立 try）。
+    if (getattr(job, "owner_scope", "") or "") == "pool":
+        try:
+            from backend.emby_server import pool_gate as _pg
+
+            _pg.record_bad_drive_combo(
+                db, (job.owner_ref or "").strip(),
+                (job.drive_id or "").strip(), kind,
+                getattr(job, "item_id", None))
+        except Exception:  # noqa: BLE001 — 记忆失败只丢这次记录
+            logger.warning("坏组合记忆记录失败 job=%s",
+                           getattr(job, "id", None), exc_info=True)
     return {"job_id": job.id, "outcome": "failed", "error_kind": kind}
 
 
@@ -6564,6 +6578,18 @@ def _register_ready_variant(db, job, item, variant_fid, variant_drive_id,
     job.next_retry_at = None
     _note_proactive_terminal(db, job)
     db.commit()
+    # 成功清失败记忆（等待优化第二层）：该（成员，源盘）组合
+    # 既然拷通了，旧记忆立即作废，不用等 TTL。
+    if (getattr(job, "owner_scope", "") or "") == "pool":
+        try:
+            from backend.emby_server import pool_gate as _pg
+
+            _pg.clear_bad_drive_combo(
+                db, (job.owner_ref or "").strip(),
+                (job.drive_id or "").strip())
+        except Exception:  # noqa: BLE001 — 清记忆失败不影响登记
+            logger.warning("坏组合记忆清除失败 job=%s",
+                           getattr(job, "id", None), exc_info=True)
     # 登记 ready 后预填存在性正缓存（只对 Drive 副本；115 副本的
     # variant_file_id 不是 Drive fid，不进 Drive 存在性命名空间）。
     # 预填失败不影响登记（publish 内部永不抛错）。
