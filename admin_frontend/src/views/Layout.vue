@@ -31,7 +31,7 @@ import {
   Image as ImageIcon,
   Database, Megaphone, Receipt, Trophy, TicketPercent, UserPlus, KeySquare,
   UserCog, Activity, HandCoins,
-  Sun, Moon, MonitorSmartphone, ListChecks, Flag, Gauge, Heart, Clapperboard, CalendarDays, Captions,
+  Sun, Moon, MonitorSmartphone, ListChecks, Flag, Gauge, Heart, Clapperboard, CalendarDays, Flame, Captions,
   PanelLeftClose, PanelLeftOpen, MonitorPlay,
 } from 'lucide-vue-next'
 import {
@@ -204,6 +204,8 @@ const navGroups: NavGroup[] = [
       { path: '/series-follows', label: '追剧订阅', icon: Clapperboard },
       // 追新日历（二期缺口项）：与用户端同一入库日口径的管理视图（只读）
       { path: '/chase-calendar', label: '追新日历', icon: CalendarDays },
+      // 热搜管理（二期缺口「搜索排序/热搜管理」）：热搜榜置顶/下榜/删词
+      { path: '/search-hot', label: '热搜管理', icon: Flame },
       // 弹幕治理（内容治理面）：弹幕列表/删除＋用户禁言（发送口真查）
       { path: '/danmaku-admin', label: '弹幕治理', icon: Ban },
       { path: '/announcements', label: '公告管理', icon: Megaphone },
