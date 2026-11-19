@@ -79,8 +79,13 @@ from backend.api.admin_player_blacklist import admin_player_blacklist_router
 from backend.api.admin_softdecode import admin_softdecode_router
 from backend.api.admin_danmaku import admin_danmaku_router
 from backend.api.admin_login_lockout import admin_login_lockout_router
+from backend.api.admin_probe_4k import admin_probe_4k_router
+from backend.api.admin_passkeys import admin_passkeys_router
+from backend.api.admin_series_follows import admin_series_follows_router
 from backend.api.admin_site_drawer import admin_site_drawer_router
 from backend.api.admin_privacy import admin_privacy_router
+from backend.api.admin_totp import admin_totp_router
+from backend.api.admin_user_favorites import admin_user_favorites_router
 from backend.api.danmaku import router as danmaku_router
 from backend.api.admin_danmu_api import admin_danmu_api_router
 from backend.api.danmu_api import public_router as danmu_api_public_router
@@ -966,10 +971,25 @@ app.include_router(admin_danmaku_router)
 # 登录失败锁定（2026-11-18，F4/F8 补项）：管理端设置读写，
 # 见 backend/api/admin_login_lockout.py
 app.include_router(admin_login_lockout_router)
+# 4K 探针结果查看（二期缺口）：管理端只读列表/详情，
+# 见 backend/api/admin_probe_4k.py
+app.include_router(admin_probe_4k_router)
+# 用户 Passkey 管理（二期缺口 · 项 3）：按用户查看/吊销凭据（账号恢复），
+# 见 backend/api/admin_passkeys.py
+app.include_router(admin_passkeys_router)
+# 追剧订阅管理（二期缺口项 2，2026-11-19）：全站订阅列表＋管理员代取消，
+# 见 backend/api/admin_series_follows.py
+app.include_router(admin_series_follows_router)
 # 官网菜单抽屉配置（见 backend/api/admin_site_drawer.py）
 app.include_router(admin_site_drawer_router)
 # 隐私政策正文编辑（见 backend/api/admin_privacy.py）
 app.include_router(admin_privacy_router)
+# 用户 TOTP 管理（二期缺口 · 项 4）：按用户查看状态/强制重置，
+# 见 backend/api/admin_totp.py
+app.include_router(admin_totp_router)
+# 用户收藏查看（二期缺口项 6，2026-11-19）：按用户只读查看作品＋人员收藏，
+# 见 backend/api/admin_user_favorites.py
+app.include_router(admin_user_favorites_router)
 app.include_router(danmaku_router)
 # 弹幕 API（2026-11-18）：专职 Token/线路/地址用户端 + 公开下发口 +
 # 管理端线路配置，见 backend/api/danmu_api.py 与 admin_danmu_api.py

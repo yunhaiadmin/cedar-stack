@@ -31,7 +31,7 @@ import {
   Image as ImageIcon,
   Database, Megaphone, Receipt, Trophy, TicketPercent, UserPlus, KeySquare,
   UserCog, Activity, HandCoins,
-  Sun, Moon, MonitorSmartphone, ListChecks, Flag, Gauge,
+  Sun, Moon, MonitorSmartphone, ListChecks, Flag, Gauge, Heart, Clapperboard,
   PanelLeftClose, PanelLeftOpen,
 } from 'lucide-vue-next'
 import {
@@ -155,6 +155,8 @@ const navGroups: NavGroup[] = [
     icon: Users,
     items: [
       { path: '/users', label: '用户', icon: Users },
+      // 用户收藏查看（二期缺口项 6）：按用户只读查看收藏
+      { path: '/user-favorites', label: '用户收藏', icon: Heart },
       { path: '/subscriptions', label: '订阅与权益', icon: Crown },
       { path: '/devices', label: '设备与安全', icon: Smartphone },
       { path: '/login-logs', label: '登录日志', icon: ScrollText },
@@ -196,6 +198,8 @@ const navGroups: NavGroup[] = [
     icon: MessageSquareDashed,
     items: [
       { path: '/media-seek', label: '求片管理', icon: MessageSquareDashed },
+      // 追剧订阅管理（二期缺口项 2）：全站订阅列表＋管理员代取消
+      { path: '/series-follows', label: '追剧订阅', icon: Clapperboard },
       { path: '/announcements', label: '公告管理', icon: Megaphone },
       { path: '/tickets', label: '工单', icon: Ticket },
       // 等级治理：举报终审队列 + 治理停权（复核达标的举报在这里受理 / 驳回）
@@ -238,6 +242,8 @@ const navGroups: NavGroup[] = [
       { path: '/logs', label: '操作日志', icon: ScrollText },
       // Batch E（健康体系合并）：「服务健康」＋「健康总览」合并为一页「系统健康」，导航只留一个入口
       { path: '/health', label: '系统健康', icon: Activity },
+      // 4K 探针结果（二期缺口）：真机探针回传记录只读查看
+      { path: '/probe-4k', label: '4K 探针结果', icon: Gauge },
       // v2.56.0：任务总览——所有后台任务一页看完（状态/进度/开关）
       { path: '/tasks', label: '任务总览', icon: ListChecks },
       { path: '/api-keys', label: 'API Key', icon: KeyRound, superOnly: true },
