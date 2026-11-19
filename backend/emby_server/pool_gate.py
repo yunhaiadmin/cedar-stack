@@ -259,6 +259,12 @@ POOL_RETRY_CONFIG_DEFAULTS: dict = {
     # 为界（试完所有可用盘即终态）；>0 时达到即终态，防成员
     # 名单 churn 让同一条目无界换盘。
     "pool_copy_forbidden_max_attempts": 0,
+    # 单条目 copy_forbidden 换源上限（2026-11-19 失败等待优化
+    # 第一层）：换盘穷尽后，最多再换几个同作品替代源重试
+    # （节流窗内计已试替代源数）；0 = 关换源（回旧口径：换盘
+    # 穷尽即终态/源熔断）。默认 3：生产同作品替代行多为 1–2
+    # 个，3 足够覆盖，又不给重复行多的条目无界烧单。
+    "pool_copy_forbidden_source_max_swaps": 3,
     # 条目级源熔断（2026-11-12）：换盘的「已试过」集合只活在
     # 每条失败行的短冷却窗里，窗一过全员重开整轮（《奥德赛》
     # 24h 236 单实证）。窗口内 failed/copy_forbidden 池单数达
@@ -1306,15 +1312,141 @@ def _forbidden_failed_jobs(db: Session, item_id):
             .all())
 
 
+def _job_source_key(job, item_id):
+    """任务行实际拷源的条目 id：换源单取 source_item_id，
+    普通单即条目自身（原源）。"""
+    src = getattr(job, "source_item_id", None)
+    return int(src) if src else int(item_id)
+
+
+def _current_forbidden_source_key(db: Session, item_id):
+    """当前源 key：节流窗内最新一条 forbidden 失败单的实际
+    拷源（无失败单时即条目自身）。"""
+    jobs = _forbidden_failed_jobs(db, item_id)
+    if not jobs:
+        return int(item_id) if item_id is not None else None
+    latest = max(jobs, key=lambda j: j.id)
+    return _job_source_key(latest, item_id)
+
+
 def pool_forbidden_tried_member_ids(db: Session, item_id) -> set:
-    """已对该条目 copy_forbidden 过的成员 id 集合（换盘排除集）。"""
+    """已对该条目当前源 copy_forbidden 过的成员 id 集合
+    （换盘排除集）。
+
+    按当前源口径（2026-11-19 换源后修订）：换源后旧源上失败
+    过的成员对新源不算「试过」——forbidden 是（成员 × 源）
+    的组合判定，排除集只数当前源上的失败行。无换源单时与
+    旧口径逐字一致（全部失败行的源 key 都是条目自身）。
+    """
     tried = set()
+    if item_id is None:
+        return tried
+    current = _current_forbidden_source_key(db, item_id)
     for job in _forbidden_failed_jobs(db, item_id):
+        if _job_source_key(job, item_id) != current:
+            continue
         try:
             tried.add(int((job.owner_ref or "").strip()))
         except (TypeError, ValueError):
             continue
     return tried
+
+
+def _forbidden_tried_source_keys(db: Session, item_id) -> set:
+    """节流窗内已试过的源 key 集合（含条目自身 = 原源）：
+    forbidden 失败行实际拷源 + 在途换源单的源（同一源不许
+    并发两单）。换源挑源时排除本集合。"""
+    keys = set()
+    if item_id is None:
+        return keys
+    keys.add(int(item_id))
+    for job in _forbidden_failed_jobs(db, item_id):
+        keys.add(_job_source_key(job, item_id))
+    inflight = (db.query(em.TransferJob)
+                .filter(em.TransferJob.item_id == item_id,
+                        em.TransferJob.owner_scope == "pool",
+                        em.TransferJob.status.in_(("pending", "running")),
+                        em.TransferJob.source_item_id.isnot(None))
+                .all())
+    for job in inflight:
+        keys.add(_job_source_key(job, item_id))
+    return keys
+
+
+def pool_alternate_source_items(db: Session, item):
+    """同作品替代源行（换源候选，纯读无副作用）。
+
+    活行（deleted_at 为空）、有 drive_file_id 且与本行不同、
+    provider 同为 drive 的条目行。「同作品」关系口径与货架
+    合并/版本口径一致，不新造：① 合并家族——merged_into_id
+    指向本行、本行指向的主行、与本行同主行的兄弟行；
+    ② 同剧同季同集（episode）；③ 同 tmdb_id 同类型。
+    排序：源盘与本行不同者优先（整盘分享坏死时跨盘源更可能
+    可读；同盘不同文件是 anyone-reader 逐文件口径，同样是
+    真换源），其次 id 升序——确定性可复现。
+    """
+    item_id = getattr(item, "id", None)
+    if item_id is None:
+        return []
+    if _tv._item_provider(db, item) != "drive":
+        return []
+    own_fid = (getattr(item, "drive_file_id", "") or "").strip()
+    found = {}
+
+    def _collect(rows):
+        for row in rows:
+            rid = getattr(row, "id", None)
+            if rid is None or int(rid) == int(item_id):
+                continue
+            fid = (getattr(row, "drive_file_id", "") or "").strip()
+            if not fid or fid == own_fid:
+                continue
+            found[int(rid)] = row
+
+    base = (db.query(em.MediaItem)
+            .filter(em.MediaItem.deleted_at.is_(None),
+                    em.MediaItem.drive_file_id.isnot(None)))
+    primary_id = getattr(item, "merged_into_id", None) or item_id
+    _collect(base.filter(
+        (em.MediaItem.id == primary_id)
+        | (em.MediaItem.merged_into_id == primary_id)).all())
+    if getattr(item, "series_id", None) is not None:
+        _collect(base.filter(
+            em.MediaItem.series_id == item.series_id,
+            em.MediaItem.season_number == item.season_number,
+            em.MediaItem.episode_number == item.episode_number).all())
+    if getattr(item, "tmdb_id", None):
+        _collect(base.filter(
+            em.MediaItem.tmdb_id == item.tmdb_id,
+            em.MediaItem.item_type == item.item_type).all())
+    own_drive = _tv._source_drive_id(db, item, "drive")
+    out = [row for row in found.values()
+           if _tv._item_provider(db, row) == "drive"]
+    out.sort(key=lambda r: (
+        0 if _tv._source_drive_id(db, r, "drive") != own_drive else 1,
+        int(r.id)))
+    return out
+
+
+def _next_alternate_source(db: Session, item):
+    """下一个可换的替代源行：未在节流窗内试过、且已试替代
+    源数未达 pool_copy_forbidden_source_max_swaps 上限
+    （0 = 换源关）。无则 None（换源穷尽/关闭的唯一判定口，
+    源熔断评估与换源口共用，不许两处各判）。"""
+    item_id = getattr(item, "id", None)
+    if item_id is None:
+        return None
+    cfg = retry_config_payload(db)
+    max_swaps = int(cfg["pool_copy_forbidden_source_max_swaps"])
+    if max_swaps <= 0:
+        return None
+    tried = _forbidden_tried_source_keys(db, item_id)
+    if len({k for k in tried if k != int(item_id)}) >= max_swaps:
+        return None
+    for alt in pool_alternate_source_items(db, item):
+        if int(alt.id) not in tried:
+            return alt
+    return None
 
 
 # ---------------------------------------------------------------- 条目级源熔断（2026-11-12）
@@ -1477,7 +1609,17 @@ def _maybe_trip_source_block(db: Session, item_id, now=None) -> bool:
             except (TypeError, ValueError):
                 continue
         if active_ids and active_ids <= tried_ids:
-            reason = f"all_members_tried={len(active_ids)}"
+            # 换源兜底（2026-11-19）：全员读不到的是当前源，
+            # 不等于同作品的其它源也读不到。库里还有没试过的
+            # 替代源时不许提前判「源已死」——换源口会推进到
+            # 新源，新源再全灭时本口按新一轮失败重新评估。
+            # 阈值分支（failures>=N）不受此限，仍是防 churn
+            # 的硬兜底。
+            item_row = (db.query(em.MediaItem)
+                        .filter(em.MediaItem.id == item_id).first())
+            if item_row is None or _next_alternate_source(
+                    db, item_row) is None:
+                reason = f"all_members_tried={len(active_ids)}"
     if reason is None:
         return False
     _trip_source_block(db, item_id, failures=len(rows), now=now,
@@ -1520,6 +1662,87 @@ def try_pool_forbidden_swap(db: Session, item, *, quota_fn=None):
         exclude_member_ids=pool_forbidden_tried_member_ids(db, item_id))
 
 
+def try_pool_forbidden_source_swap(db: Session, item, *, quota_fn=None):
+    """copy_forbidden 换源重建（2026-11-19）：换盘穷尽后换
+    同作品替代源建新单（新单 source_item_id 落替代源行，副本
+    仍登记在原条目名下，落点仍是池成员盘）。
+
+    返回新任务行；无可换源（无替代行 / 已全试过 / 换源上限
+    到顶 / 换源关 / 非 drive 条目 / 源熔断探测在飞）时返回
+    None（调用方落终态）。create_pool_job 的限额命中抛
+    TransferError 透传（throttled = 全局并发满，调用方可继
+    续报 preparing；no_member = 替代源也没有可用盘）。
+
+    源熔断相位：blocked 且有未试替代源 → 阻断是按旧源的失
+    败累积判的，清行放行换源（decision 留痕
+    cleared_for_source_swap），新源再全灭由熔断按新一轮失败
+    重新判；probing → 探测单在飞，不叠加建单，返回 None；
+    half_open → 本单即探测单（create_pool_job 既有口径），
+    拷的是新源——探测语义仍成立（源可读即解阻）。
+    """
+    item_id = getattr(item, "id", None)
+    if item_id is None:
+        return None
+    alt = _next_alternate_source(db, item)
+    if alt is None:
+        return None
+    state, row = _resolve_source_block(db, item_id)
+    if state == "probing":
+        return None
+    if state == "blocked":
+        db.delete(row)
+        db.commit()
+        _decisions.note_decision(
+            scope="pool_source_breaker",
+            resource_key=f"item:{item_id}",
+            decision="cleared_for_source_swap",
+            reason=f"next_source={alt.id}", candidates=[])
+    job = create_pool_job(db, item, force=True, quota_fn=quota_fn,
+                          source_item=alt)
+    _decisions.note_decision(
+        scope="pool_source_swap", resource_key=f"item:{item_id}",
+        decision=f"source:{alt.id}",
+        reason=f"from_source={item_id} job={job.id}",
+        candidates=[{"source_item_id": int(alt.id)}],
+        execution_ref=str(job.id))
+    return job
+
+
+def try_pool_forbidden_recover(db: Session, item, *, quota_fn=None):
+    """copy_forbidden 恢复总口（门禁与池执行器共用一份，不许
+    两处各写）：先换盘（try_pool_forbidden_swap），穷尽再
+    换源（try_pool_forbidden_source_swap）。
+
+    返回 (新任务行|None, how)，how ∈ {"member", "source",
+    None}。异常口径与旧换盘口一致：throttled 透传（真有单
+    在飞/并发满）；no_member / source_blocked 先压住试换源，
+    换源也无路时才把压住的异常抛回（调用方照旧映射终态）；
+    其余 kind 立即透传。换源建单自身的新异常（限额类）以
+    换源口的为准抛出（更新鲜的判定）。
+    """
+    pending_exc = None
+    try:
+        job = try_pool_forbidden_swap(db, item, quota_fn=quota_fn)
+        if job is not None:
+            return job, "member"
+    except _tv.TransferError as exc:
+        if exc.kind in ("no_member", "source_blocked"):
+            pending_exc = exc
+        else:
+            raise
+    try:
+        job = try_pool_forbidden_source_swap(db, item, quota_fn=quota_fn)
+    except _tv.TransferError as exc:
+        if pending_exc is not None and exc.kind == "no_member":
+            raise pending_exc
+        raise
+    if job is not None:
+        return job, "source"
+    if pending_exc is not None:
+        raise pending_exc
+    return None, None
+
+
 def _pool_failed_detail(db: Session, item, job) -> str:
     """池失败透传文案：带任务行上的人话原因，不只给笼统失败。
 
@@ -1535,8 +1758,14 @@ def _pool_failed_detail(db: Session, item, job) -> str:
 
 
 def create_pool_job(db: Session, item, *, trigger="playback",
-                    force=False, quota_fn=None, exclude_member_ids=None):
+                    force=False, quota_fn=None, exclude_member_ids=None,
+                    source_item=None):
     """建池单（design §6.2）：选盘 → 限额 → 落行 → 留痕 → 唤醒。
+
+    source_item（2026-11-19 换源单）：非空时本单实际拷源取
+    该行（同作品替代源）的 provider/源盘/fid，任务行
+    source_item_id 落该行 id；副本归属、副本数口径、源熔断
+    与选盘仍按 item（观众点的条目）计——换的是源，不是作品。
 
     限额（任一命中抛 TransferError，不落行；错误优先级沿
     create_user_job：节流 → 源校验 → 绑定校验）：
@@ -1563,12 +1792,13 @@ def create_pool_job(db: Session, item, *, trigger="playback",
         raise _tv.TransferError("pool_disabled", "公共贡献池未开启")
     if not _tv.master_enabled():
         raise _tv.TransferError("master_off", "转存变体总闸未开")
-    provider = _tv._item_provider(db, item)
+    eff_item = source_item if source_item is not None else item
+    provider = _tv._item_provider(db, eff_item)
     if provider is None or provider not in _enabled_providers(cfg):
         raise _tv.TransferError(
             "pool_provider_unsupported",
             f"条目 provider={provider} 不在池启用列表")
-    source_drive_id = _tv._source_drive_id(db, item, provider)
+    source_drive_id = _tv._source_drive_id(db, eff_item, provider)
     if provider == "drive" and not source_drive_id:
         raise _tv.TransferError("no_drive", "Drive 条目取不到源盘标识")
     if _pool_inflight_count(db) >= max(1, int(cfg["pool_global_concurrency"])):
@@ -1620,6 +1850,8 @@ def create_pool_job(db: Session, item, *, trigger="playback",
         item_id=item.id, trigger=trigger, drive_id=source_drive_id,
         provider=provider, owner_scope="pool", owner_ref=str(member.id),
         dest_drive_id=f"pooldrive:{member.id}", status="pending",
+        source_item_id=(int(source_item.id)
+                        if source_item is not None else None),
         next_retry_at=(datetime.now() + timedelta(
             seconds=random.uniform(0, jitter_sec))) if jitter_sec > 0 else None)
     db.add(job)
@@ -1746,9 +1978,9 @@ def _ensure_pool_copy_gate_impl(db: Session, item, user, request=None, *,
        serve 态不再映射 failed）；
     ④ 在途池单 → preparing/job_in_flight；
     ⑤ 最新池单失败 → retriable 预算内重触发 / copy_forbidden
-       换盘重触发（排除已试盘，试完或到上限落终态）/ 其余终态
-       一律透传原因如实 failed（未归类 kind 不再冒充 preparing，
-       2026-11-10 定案）；
+       换盘→换源两级重触发（排除已试盘/已试源，试完或到上限
+       落终态）/ 其余终态一律透传原因如实 failed（未归类 kind
+       不再冒充 preparing，2026-11-10 定案）；
     ⑥ done 单无 ready 副本 → 预算内重建 job_rebuilt；
     ⑦ 无在途/失败 → create_pool_job → preparing/job_created，
        限额命中 → preparing/throttled。
@@ -1800,12 +2032,14 @@ def _ensure_pool_copy_gate_impl(db: Session, item, user, request=None, *,
                     "detail": _pool_failed_detail(db, item, failed),
                     "pool": True}
         if kind == "copy_forbidden":
-            # 换盘重试（2026-11-10 生产定案）：单盘 forbidden 只
-            # 说明这块盘读不到源，不说明别的盘不行。排除已试过
-            # 的盘重建一单；无盘可换/尝试上限到顶 → 如实终态，
-            # 不许再拿死单冒充 preparing 让观众无限吃 409。
+            # 两级恢复（2026-11-10 换盘定案 + 2026-11-19 换源
+            # 兜底）：单盘 forbidden 只说明这块盘读不到这个源，
+            # 先排除已试过的盘换盘重建；换盘穷尽再换同作品替
+            # 代源。两路皆穷尽/上限到顶 → 如实终态，不许再拿
+            # 死单冒充 preparing 让观众无限吃 409。总口
+            # try_pool_forbidden_recover 与工人后事共用一份。
             try:
-                new_job = try_pool_forbidden_swap(
+                new_job, how = try_pool_forbidden_recover(
                     db, item, quota_fn=quota_fn)
             except _tv.TransferError as exc:
                 if exc.kind == "throttled":
@@ -1830,7 +2064,9 @@ def _ensure_pool_copy_gate_impl(db: Session, item, user, request=None, *,
                         "detail": _pool_failed_detail(db, item, failed),
                         "pool": True}
             return {"verdict": "preparing",
-                    "reason": "job_retriggered_forbidden",
+                    "reason": ("job_retriggered_source_swap"
+                               if how == "source" else
+                               "job_retriggered_forbidden"),
                     "job_id": new_job.id, "pool": True,
                     "detail": POOL_PREPARING_DETAIL}
         if (kind in _tv._TERMINAL_JOB_KINDS

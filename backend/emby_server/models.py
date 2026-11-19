@@ -1814,6 +1814,13 @@ class TransferJob(Base):
     # 后不再回队（仿 enrich_failed_reschedules 口径）。老库补列后
     # 可能为 NULL，读取方一律按 0 处理。
     reschedule_count = Column(Integer, nullable=False, default=0)
+    # 池单换源标记（2026-11-19 失败等待优化第一层）：NULL = 按
+    # 本行 item_id 条目自身的 drive_file_id 拷源；非空 = 本单是
+    # copy_forbidden 换源单，实际拷源取该条目行（同作品替代源）
+    # 的 drive_file_id，副本仍登记在 item_id 条目名下。只对
+    # owner_scope=pool 的 Drive 单有意义，用户 scope 恒 NULL。
+    # 老库由 auto-migrate 补列（NULL）。
+    source_item_id = Column(Integer)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 

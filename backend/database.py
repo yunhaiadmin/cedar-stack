@@ -1120,6 +1120,12 @@ def _auto_migrate():
         ("emby_transfer_jobs", [
             ("gate_rebuild", "BOOLEAN", "NULL"),
         ]),
+        # 池单换源标记（2026-11-19）：copy_forbidden 换源单实际
+        # 拷源条目 id。老库补列后为 NULL（= 按本行条目自身源读，
+        # 与 models.py 注释口径一致）。
+        ("emby_transfer_jobs", [
+            ("source_item_id", "INTEGER", "NULL"),
+        ]),
         # PanSave A 线 PR-2：转存副本保留期两列。老库补列后为
         # NULL（= 无保留，清理器照旧删）。
         ("emby_transfer_variants", [
