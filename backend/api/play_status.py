@@ -7,9 +7,15 @@
   可下发副本（source=pool）、或条目本身可直读（source=direct）。
 - ``preparing``：有转存单在跑——stage=queued（pending）/
   working（running）；有落盘交付行且知道总大小时带
-  progress_pct，没有可靠进度就不带（不编数字，更不给预计时间）。
+  progress_pct，没有字节进度时给时间型预计 eta_seconds
+  （近 7 天 done 单 p50 减去已等秒，下限 5 秒、上限 120 秒），
+  绝不按 elapsed/p90 编百分比假进度条；elapsed > p90 时
+  eta=null 且 slow=true（比平时慢）。
 - ``failed``：最近一张本人转存单失败——reason 是稳定类别键
-  （space/auth/source_dead/no_binding/generic），人话文案在前端。
+  （space/auth/source_dead/no_binding/generic），人话文案在前端；
+  本人单无失败时，未绑盘且池 eligible 的用户补查最新池失败单
+  （copy_forbidden → pool_source，no_member/pool_disabled →
+  pool_no_member，insufficient_space → space，其余 → generic）。
 - ``idle``：从没准备过（首播会现转存，前端不额外渲染）。
 
 纪律：本模块纯读——不建单、不写库、不碰播放门禁与主链路逻辑。
@@ -23,6 +29,10 @@
 from __future__ import annotations
 
 import logging
+import math
+import threading
+import time
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -31,6 +41,7 @@ from backend import models
 from backend.database import get_db
 from backend.api.user import get_current_user
 from backend.emby_server import models as em
+from backend.integrations import store
 
 logger = logging.getLogger("aetrix.play_status")
 
@@ -53,6 +64,170 @@ _REASON_BY_KIND = {
 }
 
 _INFLIGHT_STATUSES = ("pending", "running")
+
+#: 池失败单 error_kind → 前端人话类别键。copy_forbidden 与
+#: no_member/pool_disabled 映成不同键：两句副文不一样（源盘读不
+#: 到 vs 池里没可用成员盘），合一个键保不住两句文案——这是对
+#: 设计稿的微小纠偏（设计稿 §4 把两者同映 pool_source）。
+_POOL_REASON_BY_KIND = {
+    "copy_forbidden": "pool_source",
+    "no_member": "pool_no_member",
+    "pool_disabled": "pool_no_member",
+    "insufficient_space": "space",
+}
+
+#: 起播 ETA 配置默认值（SystemConfig 键，见 config_schema
+#: .PLAY_STATUS_ETA_CONFIG_SCHEMA）。值是 2026-11-19 生产近 7 天
+#: done 单实测：池单 1601 条 p50 23 秒 / p90 34 秒；本人单 940 条
+#: p50 6 秒 / p90 26 秒。分位数缓存默认 600 秒（10 分钟）。
+PLAY_STATUS_ETA_CONFIG_DEFAULTS: dict[str, int] = {
+    "pool_eta_p50_sec": 23,
+    "pool_eta_p90_sec": 34,
+    "user_eta_p50_sec": 6,
+    "user_eta_p90_sec": 26,
+    "play_status_eta_cache_sec": 600,
+}
+
+#: 近 7 天 done 单分位数的进程内缓存（route → (p50, p90) 秒）。
+#: 单飞刷新：第一把锁 fast-path 读，第二把锁内复核再算。
+_ETA_QUANTILES_CACHE: dict = {"at": None, "data": None}
+_ETA_CACHE_LOCK = threading.Lock()
+
+
+def _eta_config(db: Session) -> dict[str, int]:
+    """读 ETA 配置（SystemConfig，经 store 缓存读）；非法值回
+    代码默认。"""
+    try:
+        raw = store.get_values(
+            db, list(PLAY_STATUS_ETA_CONFIG_DEFAULTS),
+            {k: str(v) for k, v in PLAY_STATUS_ETA_CONFIG_DEFAULTS.items()})
+    except Exception:  # noqa: BLE001 — 配置读失败就用实测默认
+        logger.warning("play_status eta config read failed, "
+                       "using defaults", exc_info=True)
+        return dict(PLAY_STATUS_ETA_CONFIG_DEFAULTS)
+    out: dict[str, int] = {}
+    for key, default in PLAY_STATUS_ETA_CONFIG_DEFAULTS.items():
+        try:
+            out[key] = int(str(raw.get(key, "")).strip())
+        except (TypeError, ValueError):
+            out[key] = default
+    return out
+
+
+def _percentile(sorted_values: list[float], pct: float) -> int:
+    """nearest-rank 分位数（与设计稿 §2 口径一致）。"""
+    n = len(sorted_values)
+    if n == 0:
+        return 0
+    rank = max(1, math.ceil(pct / 100.0 * n))
+    return int(sorted_values[min(n, rank) - 1])
+
+
+def _compute_eta_quantiles(db: Session) -> dict[str, tuple[int, int]]:
+    """近 7 天 done 单按 route（owner_scope）算耗时分位数。
+
+    耗时 = updated_at − created_at（秒）。返回 route → (p50, p90)，
+    某 route 无 done 单时该 route 缺席（调用方用配置兜底）。
+    """
+    since = datetime.now() - timedelta(days=7)
+    rows = (db.query(em.TransferJob.owner_scope,
+                     em.TransferJob.created_at,
+                     em.TransferJob.updated_at)
+            .filter(em.TransferJob.status == "done",
+                    em.TransferJob.created_at >= since,
+                    em.TransferJob.updated_at.isnot(None))
+            .all())
+    grouped: dict[str, list[float]] = {}
+    for scope, created, updated in rows:
+        if created is None or updated is None:
+            continue
+        secs = (updated - created).total_seconds()
+        if secs < 0:
+            continue
+        grouped.setdefault(scope, []).append(secs)
+    out: dict[str, tuple[int, int]] = {}
+    for scope, values in grouped.items():
+        if not values:
+            continue
+        values.sort()
+        out[scope] = (_percentile(values, 50), _percentile(values, 90))
+    return out
+
+
+def _eta_quantiles(db: Session) -> dict[str, tuple[int, int]]:
+    """带 TTL 的分位数读：命中缓存直接回，过期单飞重算。"""
+    ttl = _eta_config(db)["play_status_eta_cache_sec"]
+    cached = _ETA_QUANTILES_CACHE
+    if cached["at"] is not None and time.monotonic() - cached["at"] < ttl:
+        return cached["data"]
+    with _ETA_CACHE_LOCK:
+        if cached["at"] is not None \
+                and time.monotonic() - cached["at"] < ttl:
+            return cached["data"]
+        try:
+            data = _compute_eta_quantiles(db)
+        except Exception:  # noqa: BLE001 — 聚合失败就走配置兜底
+            logger.warning("play_status eta quantiles failed",
+                           exc_info=True)
+            data = {}
+        cached["at"] = time.monotonic()
+        cached["data"] = data
+        return data
+
+
+def _reset_eta_cache() -> None:
+    """清空分位数缓存（测试用；生产不调）。"""
+    with _ETA_CACHE_LOCK:
+        _ETA_QUANTILES_CACHE["at"] = None
+        _ETA_QUANTILES_CACHE["data"] = None
+
+
+def _eta_for(route: str, elapsed: int,
+             db: Session) -> tuple[int | None, bool]:
+    """(route, 已等秒) → (eta_seconds, slow)。
+
+    remaining = p50_route − elapsed，下限 5 秒、上限 120 秒；
+    elapsed > p90 时 eta=null 且 slow=true。无历史分位数时用
+    配置兜底值（实测 p50/p90）。
+    """
+    cfg = _eta_config(db)
+    quantiles = _eta_quantiles(db)
+    if route == "pool":
+        p50, p90 = quantiles.get(
+            "pool", (cfg["pool_eta_p50_sec"], cfg["pool_eta_p90_sec"]))
+    else:
+        p50, p90 = quantiles.get(
+            "user", (cfg["user_eta_p50_sec"], cfg["user_eta_p90_sec"]))
+    if elapsed > p90:
+        return None, True
+    return max(5, min(120, p50 - elapsed)), False
+
+
+def _job_wait_fields(db: Session, job, route: str) -> dict:
+    """正在等的单 → route/job_id/elapsed_seconds/eta_seconds/slow。
+
+    fail-open：created_at 缺失或 ETA 算不出时只给 route/job_id，
+    elapsed/eta 留 null、slow 留 False，绝不让等待字段拖垮状态
+    端点。
+    """
+    fields = {"route": route, "job_id": job.id,
+              "elapsed_seconds": None, "eta_seconds": None, "slow": False}
+    created = getattr(job, "created_at", None)
+    if created is None:
+        return fields
+    try:
+        elapsed = int((datetime.now() - created).total_seconds())
+    except Exception:  # noqa: BLE001
+        return fields
+    fields["elapsed_seconds"] = max(0, elapsed)
+    try:
+        eta, slow = _eta_for(route, fields["elapsed_seconds"], db)
+    except Exception:  # noqa: BLE001
+        logger.warning("play_status eta compute failed", exc_info=True)
+        return fields
+    fields["eta_seconds"] = eta
+    fields["slow"] = slow
+    return fields
 
 
 def _follow_live(db: Session, item):
@@ -124,6 +299,19 @@ def _newest_user_job(db: Session, user_id: int, item_ids: list[int],
             .first())
 
 
+def _newest_pool_job(db: Session, item_ids: list[int], statuses):
+    """池在某组条目上最新的一张转存单（指定状态集内），与
+    _newest_user_job 对称（owner_scope=pool，不分成员）。"""
+    if not item_ids:
+        return None
+    return (db.query(em.TransferJob)
+            .filter(em.TransferJob.item_id.in_(item_ids),
+                    em.TransferJob.owner_scope == "pool",
+                    em.TransferJob.status.in_(statuses))
+            .order_by(em.TransferJob.id.desc())
+            .first())
+
+
 def _job_progress_pct(db: Session, job) -> int | None:
     """转存单的落盘进度（与 delivery_plan 制备中探针同口径：
     有交付行且总大小已知才给百分比，否则 None——不编造）。"""
@@ -152,6 +340,13 @@ def compute_play_status(db: Session, user, item) -> dict:
         "stage": None,
         "progress_pct": None,
         "reason": None,
+        # 等待可见字段（第三层）：只在 preparing/failed 时有值，
+        # ready/idle 全 null/False（见 test_idle_fields_contract）。
+        "route": None,
+        "job_id": None,
+        "elapsed_seconds": None,
+        "eta_seconds": None,
+        "slow": False,
     }
 
     # 1) 本人 ready 副本（单条目走 delivery_plan 探针原口；剧集按集
@@ -230,6 +425,12 @@ def compute_play_status(db: Session, user, item) -> dict:
                     stage=("queued" if leg.get("job_status") == "pending"
                            else "working"),
                     progress_pct=leg.get("progress_pct"))
+                own_job = _newest_user_job(db, user_id, [item.id],
+                                           _INFLIGHT_STATUSES)
+                if own_job is not None:
+                    out.update(_job_wait_fields(db, own_job, "own"))
+                else:
+                    out["route"] = "own"
                 return out
     except Exception:  # noqa: BLE001
         logger.warning("play_status preparing probe failed item=%s",
@@ -240,15 +441,23 @@ def compute_play_status(db: Session, user, item) -> dict:
             state="preparing",
             stage="queued" if job.status == "pending" else "working",
             progress_pct=_job_progress_pct(db, job))
+        out.update(_job_wait_fields(db, job, "own"))
         return out
     try:
         from backend.emby_server import playback_gate
         if not playback_gate.has_active_binding(db, user_id) \
-                and pool_gate.pool_eligible(db, user, item) == "eligible" \
-                and any(pool_gate._pool_inflight_for_item(db, iid) > 0
-                        for iid in item_ids):
-            out.update(state="preparing", stage="working")
-            return out
+                and pool_gate.pool_eligible(db, user, item) == "eligible":
+            pool_job = _newest_pool_job(db, item_ids, _INFLIGHT_STATUSES)
+            if pool_job is not None:
+                # 池 preparing 的 stage 按最新池单行真实 status 给
+                # （pending→queued、running→working），不再恒 working。
+                out.update(
+                    state="preparing",
+                    stage=("queued" if pool_job.status == "pending"
+                           else "working"),
+                    progress_pct=None)
+                out.update(_job_wait_fields(db, pool_job, "pool"))
+                return out
     except Exception:  # noqa: BLE001
         logger.warning("play_status pool-inflight probe failed item=%s",
                        item.id, exc_info=True)
@@ -263,8 +472,29 @@ def compute_play_status(db: Session, user, item) -> dict:
     if failed is not None:
         kind = (getattr(failed, "error_kind", "") or "").strip()
         out.update(state="failed",
-                   reason=_REASON_BY_KIND.get(kind, "generic"))
+                   reason=_REASON_BY_KIND.get(kind, "generic"),
+                   route="own", job_id=failed.id)
         return out
+
+    # 5b) 池失败单：本人单无失败时，未绑盘且池 eligible 的用户补查
+    #     最新池失败单，给出池版失败人话类别（见模块头 failed）。
+    #     已绑盘用户不查——池失败与他无关，别吓他。
+    try:
+        from backend.emby_server import playback_gate
+        if not playback_gate.has_active_binding(db, user_id) \
+                and pool_gate.pool_eligible(db, user, item) == "eligible":
+            pool_failed = _newest_pool_job(db, item_ids, ("failed",))
+            if pool_failed is not None:
+                kind = (getattr(pool_failed, "error_kind", "")
+                        or "").strip()
+                out.update(
+                    state="failed",
+                    reason=_POOL_REASON_BY_KIND.get(kind, "generic"),
+                    route="pool", job_id=pool_failed.id)
+                return out
+    except Exception:  # noqa: BLE001
+        logger.warning("play_status pool-failed probe failed item=%s",
+                       item.id, exc_info=True)
 
     return out
 

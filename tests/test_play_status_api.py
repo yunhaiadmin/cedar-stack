@@ -290,3 +290,282 @@ def test_status_unknown_guid_404(client):
     res = client.get(
         "/api/play/items/00000000000000000000000000000000/status")
     assert res.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# 等待优化第三层·进度可见（设计稿 ~/workspace/goals/v2/plans/
+# layer3-progress-visibility.md）：play_status 扩展字段 route /
+# job_id / elapsed_seconds / eta_seconds / slow，池 preparing 按最新
+# 池单行给 stage，failed 分支补查最新池失败单。
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _reset_eta_cache():
+    # ETA 分位数是进程内缓存：每个用例前后复位，避免上一个内存库的
+    # 旧值漏进下一个用例。
+    ps_api._reset_eta_cache()
+    yield
+    ps_api._reset_eta_cache()
+
+
+def _pool_job(db, item_id, status, error_kind=None, created_at=None,
+              owner_ref="member-1"):
+    from datetime import datetime
+    from backend.emby_server import models as em
+    j = em.TransferJob(item_id=item_id, trigger="play", provider="drive",
+                       owner_scope="pool", owner_ref=owner_ref,
+                       status=status, error_kind=error_kind)
+    if created_at is not None:
+        j.created_at = created_at
+        j.updated_at = created_at
+    db.add(j)
+    db.commit()
+    db.refresh(j)
+    return j
+
+
+def _pool_context(monkeypatch):
+    from backend.emby_server import pool_gate, playback_gate
+    monkeypatch.setattr(pool_gate, "pool_eligible",
+                        lambda db_, u, i: "eligible")
+    monkeypatch.setattr(pool_gate, "_servable_pool_copy_count",
+                        lambda db_, iid: 0)
+    monkeypatch.setattr(playback_gate, "has_active_binding",
+                        lambda db_, uid: False)
+
+
+def _fixed_quantiles(monkeypatch):
+    monkeypatch.setattr(
+        ps_api, "_eta_quantiles",
+        lambda db: {"pool": (23, 34), "user": (6, 26)})
+
+
+def test_idle_fields_contract(db, user, client):
+    it = _item(db)
+    data = _get(client, it.id)
+    assert data["state"] == "idle"
+    assert data["route"] is None
+    assert data["job_id"] is None
+    assert data["elapsed_seconds"] is None
+    assert data["eta_seconds"] is None
+    assert data["slow"] is False
+
+
+def test_pool_preparing_queued(db, user, client, monkeypatch):
+    from datetime import datetime, timedelta
+    _pool_context(monkeypatch)
+    _fixed_quantiles(monkeypatch)
+    it = _item(db)
+    job = _pool_job(db, it.id, "pending",
+                    created_at=datetime.now() - timedelta(seconds=10))
+    data = _get(client, it.id)
+    assert data["state"] == "preparing"
+    assert data["stage"] == "queued"
+    assert data["route"] == "pool"
+    assert data["job_id"] == job.id
+    assert data["progress_pct"] is None
+    assert 9 <= data["elapsed_seconds"] <= 11
+    assert 12 <= data["eta_seconds"] <= 14
+    assert data["slow"] is False
+
+
+def test_pool_preparing_working(db, user, client, monkeypatch):
+    from datetime import datetime, timedelta
+    _pool_context(monkeypatch)
+    _fixed_quantiles(monkeypatch)
+    it = _item(db)
+    _pool_job(db, it.id, "running",
+              created_at=datetime.now() - timedelta(seconds=5))
+    data = _get(client, it.id)
+    assert data["state"] == "preparing"
+    assert data["stage"] == "working"
+    assert data["route"] == "pool"
+    assert 17 <= data["eta_seconds"] <= 19
+
+
+def test_pool_preparing_no_inflight_not_preparing(
+        db, user, client, monkeypatch):
+    _pool_context(monkeypatch)
+    it = _item(db)
+    data = _get(client, it.id)
+    assert data["state"] == "idle"
+
+
+def test_own_preparing_eta_fields(db, user, client, monkeypatch):
+    from datetime import datetime, timedelta
+    _fixed_quantiles(monkeypatch)
+    it = _item(db)
+    job = _job(db, it.id, user.id, "running")
+    # 把建单时间拨到 2 秒前：本人 p50=6，remaining=4，下限 5。
+    job.created_at = datetime.now() - timedelta(seconds=2)
+    db.commit()
+    data = _get(client, it.id)
+    assert data["state"] == "preparing"
+    assert data["route"] == "own"
+    assert data["job_id"] == job.id
+    assert data["eta_seconds"] == 5
+    assert data["slow"] is False
+
+
+def test_eta_slow_when_elapsed_beyond_p90(db, user, client, monkeypatch):
+    from datetime import datetime, timedelta
+    _pool_context(monkeypatch)
+    _fixed_quantiles(monkeypatch)
+    it = _item(db)
+    _pool_job(db, it.id, "running",
+              created_at=datetime.now() - timedelta(seconds=40))
+    data = _get(client, it.id)
+    assert data["state"] == "preparing"
+    assert data["eta_seconds"] is None
+    assert data["slow"] is True
+
+
+def test_eta_fallback_to_config_when_no_history(
+        db, user, client, monkeypatch):
+    from datetime import datetime, timedelta
+    _pool_context(monkeypatch)
+    monkeypatch.setattr(ps_api, "_compute_eta_quantiles", lambda db: {})
+    it = _item(db)
+    _pool_job(db, it.id, "running",
+              created_at=datetime.now() - timedelta(seconds=10))
+    data = _get(client, it.id)
+    # 无历史分位数时用配置兜底（池 23/34）：eta = 23 - 10 = 13。
+    assert 12 <= data["eta_seconds"] <= 14
+    assert data["slow"] is False
+
+
+def test_eta_quantiles_computed_from_done_jobs(db):
+    from datetime import datetime, timedelta
+    base = datetime.now() - timedelta(days=1)
+    for secs in (10, 20, 30, 40):
+        # 池 done 单：持续 secs 秒（updated_at - created_at）
+        j = _pool_job(db, 9001, "done", created_at=base,
+                      owner_ref="m-%d" % secs)
+        j.updated_at = base + timedelta(seconds=secs)
+        db.commit()
+    for secs in (2, 4, 6):
+        j = _job(db, 9002, 1, "done")
+        j.created_at = base
+        j.updated_at = base + timedelta(seconds=secs)
+        db.commit()
+    got = ps_api._compute_eta_quantiles(db)
+    assert got["pool"] == (20, 40)
+    assert got["user"] == (4, 6)
+
+
+def test_eta_quantiles_cached_within_ttl(db, monkeypatch):
+    calls = {"n": 0}
+
+    def _counting(db_):
+        calls["n"] += 1
+        return {"pool": (23, 34), "user": (6, 26)}
+
+    monkeypatch.setattr(ps_api, "_compute_eta_quantiles", _counting)
+    ps_api._reset_eta_cache()
+    ps_api._eta_quantiles(db)
+    ps_api._eta_quantiles(db)
+    assert calls["n"] == 1
+    ps_api._reset_eta_cache()
+    ps_api._eta_quantiles(db)
+    assert calls["n"] == 2
+
+
+def test_pool_failed_copy_forbidden(db, user, client, monkeypatch):
+    _pool_context(monkeypatch)
+    it = _item(db)
+    job = _pool_job(db, it.id, "failed", error_kind="copy_forbidden")
+    data = _get(client, it.id)
+    assert data["state"] == "failed"
+    assert data["reason"] == "pool_source"
+    assert data["route"] == "pool"
+    assert data["job_id"] == job.id
+
+
+def test_pool_failed_space_uses_pool_route(db, user, client, monkeypatch):
+    _pool_context(monkeypatch)
+    it = _item(db)
+    _pool_job(db, it.id, "failed", error_kind="insufficient_space")
+    data = _get(client, it.id)
+    assert data["state"] == "failed"
+    assert data["reason"] == "space"
+    assert data["route"] == "pool"
+
+
+def test_pool_failed_no_member(db, user, client, monkeypatch):
+    _pool_context(monkeypatch)
+    it = _item(db)
+    _pool_job(db, it.id, "failed", error_kind="no_member")
+    data = _get(client, it.id)
+    assert data["state"] == "failed"
+    assert data["reason"] == "pool_no_member"
+    assert data["route"] == "pool"
+
+
+def test_own_failed_beats_pool_failed(db, user, client, monkeypatch):
+    _pool_context(monkeypatch)
+    it = _item(db)
+    _job(db, it.id, user.id, "failed", error_kind="dead")
+    _pool_job(db, it.id, "failed", error_kind="copy_forbidden")
+    data = _get(client, it.id)
+    assert data["state"] == "failed"
+    assert data["reason"] == "source_dead"
+    assert data["route"] == "own"
+
+
+def test_pool_failed_hidden_for_bound_user(db, user, client, monkeypatch):
+    from backend.emby_server import pool_gate, playback_gate
+    monkeypatch.setattr(pool_gate, "pool_eligible",
+                        lambda db_, u, i: "eligible")
+    monkeypatch.setattr(pool_gate, "_servable_pool_copy_count",
+                        lambda db_, iid: 0)
+    monkeypatch.setattr(playback_gate, "has_active_binding",
+                        lambda db_, uid: True)
+    monkeypatch.setattr(pool_gate, "large_file_pool_route",
+                        lambda db_, u, i: False)
+    it = _item(db)
+    _pool_job(db, it.id, "failed", error_kind="copy_forbidden")
+    data = _get(client, it.id)
+    assert data["state"] == "idle"
+
+
+def test_pool_failed_other_item_does_not_leak(
+        db, user, client, monkeypatch):
+    _pool_context(monkeypatch)
+    it_a = _item(db)
+    it_b = _item(db)
+    _pool_job(db, it_a.id, "failed", error_kind="copy_forbidden")
+    data = _get(client, it_b.id)
+    assert data["state"] == "idle"
+
+
+def test_series_aggregates_episode_pool_preparing(
+        db, user, client, monkeypatch):
+    from datetime import datetime, timedelta
+    _pool_context(monkeypatch)
+    _fixed_quantiles(monkeypatch)
+    series = _item(db, item_type="series", name="测试剧3")
+    ep = _item(db, item_type="episode", series_id=series.id, name="E1")
+    _pool_job(db, ep.id, "running",
+              created_at=datetime.now() - timedelta(seconds=5))
+    data = _get(client, series.id)
+    assert data["state"] == "preparing"
+    assert data["stage"] == "working"
+    assert data["route"] == "pool"
+    assert 17 <= data["eta_seconds"] <= 19
+
+
+def test_pool_eta_config_family_registered():
+    from backend import config_service
+
+    specs = config_service.SCHEMAS.get("play_status_eta")
+    assert specs is not None
+    assert set(specs) == {
+        "pool_eta_p50_sec", "pool_eta_p90_sec",
+        "user_eta_p50_sec", "user_eta_p90_sec",
+        "play_status_eta_cache_sec",
+    }
+    assert specs["pool_eta_p50_sec"] == ("int", 1, 3600)
+    assert specs["pool_eta_p90_sec"] == ("int", 1, 3600)
+    assert specs["user_eta_p50_sec"] == ("int", 1, 3600)
+    assert specs["user_eta_p90_sec"] == ("int", 1, 3600)
+    assert specs["play_status_eta_cache_sec"] == ("int", 60, 3600)

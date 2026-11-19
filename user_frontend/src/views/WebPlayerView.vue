@@ -385,6 +385,11 @@ import {
   type SoftPlayerHandle,
 } from '@/utils/softDecode'
 import { prepStatusText as prepStatusTextFor, PREP_DECODER_HINT } from '@/utils/prepStatus'
+import {
+  failCopyFor,
+  fetchPlayStatus,
+  type PlayStatus,
+} from '@/api/playStatus'
 import PlayerDanmakuSheet, { type DanmakuSettings } from '@/components/player/PlayerDanmakuSheet.vue'
 import PlayerSubtitleSheet, {
   type SubtitleFontSize,
@@ -902,16 +907,19 @@ const bitrateText = computed(() => {
 
 /** 准备卡状态行（照友站序列，决策逻辑在 utils/prepStatus.ts）：
  * 空行→正在打开源→慢态（带真实已接收字节）→正在分析容器（容器小写） */
-const prepStatusText = computed(() =>
-  prepStatusTextFor({
+const prepStatusText = computed(() => {
+  // 等转存子态：准备卡复用同一形态，step 0 位置写等转存文案
+  // （预计约 X 秒 / 比平时慢），不加进度条（G-172）。
+  if (waitActive.value) return waitEtaText.value
+  return prepStatusTextFor({
     step: prepStepIndex.value,
     slow: prepSlow.value,
     receivedBytes: prepReceivedBytes.value,
     container: currentSource.value?.Container,
     softActive: softActive.value,
     softLoadDone: softLoadDone.value,
-  }),
-)
+  })
+})
 
 const chromeVisible = computed(
   () => phase.value !== 'playing' || (controlsVisible.value && !locked.value),
@@ -1130,6 +1138,109 @@ function applyRouteSub(): void {
 
 // ---------- 起播 ----------
 
+/** 等转存子态（等待优化第三层）：PI 409 或无 DirectStreamUrl 且
+ *  play-status 判定 preparing 时，不直接报错，留在准备卡里等转存
+ *  （每 3 秒轮询 play-status，上限 180 秒；ready 后重取 PI 自动续
+ *  播，failed 显示人话，超时留手动重试）。预算以首次进入等待态的
+ *  wall-clock 起算，跨 start() 重试不重置；超时/手动重试/备好后是
+ *  新一轮等待，预算才重置。切后台停轮询但预算照走；卸载/重试时
+ *  token+1 使旧循环静默退出。不与现有 12 秒慢提示/30 秒判失败
+ *  计时器混用（等转存期间 openSource 没跑，那两个计时器没武装）。 */
+const WAIT_POLL_MS = 3000
+const WAIT_BUDGET_MS = 180000
+const waitActive = ref(false)
+const waitEtaText = ref('')
+let waitStartedAt = 0
+let waitToken = 0
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+function applyWaitStatus(s: PlayStatus) {
+  waitEtaText.value = s.slow
+    ? '比平时慢，还在备'
+    : s.eta_seconds !== null && s.eta_seconds !== undefined
+      ? `正在准备片源，预计约 ${s.eta_seconds} 秒`
+      : '正在准备片源，请稍等'
+}
+
+function stopWait(resetBudget: boolean) {
+  waitToken++
+  waitActive.value = false
+  if (resetBudget) waitStartedAt = 0
+}
+
+async function waitForPreparing(first: PlayStatus): Promise<void> {
+  // 预算只在新一轮等待开始时起算；同一轮内 start() 重进不重置。
+  if (waitStartedAt === 0) waitStartedAt = Date.now()
+  waitActive.value = true
+  phase.value = 'preparing'
+  prepStepIndex.value = 0
+  prepSlow.value = false
+  prepReceivedBytes.value = null
+  applyWaitStatus(first)
+  const token = ++waitToken
+  while (token === waitToken && waitActive.value) {
+    if (Date.now() - waitStartedAt > WAIT_BUDGET_MS) {
+      stopWait(true)
+      noticeText.value =
+        '等了 3 分钟还没备好，可能是池子正忙，点「再试一次」会重新排队'
+      phase.value = 'error'
+      return
+    }
+    // 切后台停轮询（预算照走），回来继续等。
+    if (!document.hidden) {
+      try {
+        const s = await fetchPlayStatus(item.value?.Id ?? '')
+        if (token !== waitToken || !waitActive.value) return
+        if (s.state === 'ready') {
+          stopWait(true)
+          // 先清 playbackInfo 缓存再重取 PI，免得用旧的无地址结果
+          playbackInfo.value = null
+          await start(false)
+          return
+        }
+        if (s.state === 'failed') {
+          stopWait(true)
+          const copy = failCopyFor(s.reason, s.route)
+          noticeText.value = `${copy.title}。${copy.sub}`
+          phase.value = 'error'
+          return
+        }
+        if (s.state === 'preparing') applyWaitStatus(s)
+        // idle：转存单还没建，继续等（不判死）。
+      } catch {
+        // 轮询失败不中断等待（网络抖动不该直接判死），下次继续。
+      }
+    }
+    await sleep(WAIT_POLL_MS)
+  }
+}
+
+/** PI 没给可播地址时：以 play-status 为准——preparing 就进等转存
+ *  子态，failed 就显示人话，都处理了返回 true；否则回 false，
+ *  调用方走原有报错路径。不解析 PI 错误文案。 */
+async function maybeWaitForPreparing(): Promise<boolean> {
+  let s: PlayStatus
+  try {
+    s = await fetchPlayStatus(item.value?.Id ?? '')
+  } catch {
+    return false
+  }
+  if (s.state === 'preparing') {
+    await waitForPreparing(s)
+    return true
+  }
+  if (s.state === 'failed') {
+    const copy = failCopyFor(s.reason, s.route)
+    noticeText.value = `${copy.title}。${copy.sub}`
+    phase.value = 'error'
+    return true
+  }
+  return false
+}
+
 async function start(restart: boolean): Promise<void> {
   const v = videoEl.value
   if (!v || !item.value) return
@@ -1149,6 +1260,9 @@ async function start(restart: boolean): Promise<void> {
     const wanted = String(route.query.ms || '') || undefined
     const source = pickSource(info, currentSource.value?.Id || wanted)
     if (!source?.DirectStreamUrl) {
+      // 没下发可播地址：先问 play-status——正在准备就等转存，
+      // 不是准备中才报原有错误。
+      if (await maybeWaitForPreparing()) return
       noticeText.value = '服务器没有下发可播放的地址，可能正在准备中，过一会儿再试。'
       phase.value = 'error'
       return
@@ -1174,6 +1288,10 @@ async function start(restart: boolean): Promise<void> {
       wtStartAt ?? (startedFromResume ? resumeSeconds.value : 0),
     )
   } catch (e) {
+    // PI 409（转存中）：以 play-status 判定 preparing 就等转存，
+    // 不是准备中才走原有 409 文案。
+    const status = (e as { response?: { status?: number } })?.response?.status
+    if (status === 409 && (await maybeWaitForPreparing())) return
     noticeText.value = errorText(e, '取播放地址失败，稍后再试。')
     phase.value = 'error'
   }
@@ -1534,8 +1652,10 @@ function failByContainer(source: EmbyMediaSource, why: string): void {
 }
 
 async function retry(): Promise<void> {
-  // 用户明确点「再试一次」：清掉软解失败标记，给软解一次新的尝试机会；
+  // 用户明确点「再试一次」：先停掉可能还在跑的等转存循环（新一轮
+  // 等待预算重置），再清软解失败标记，给软解一次新的尝试机会；
   // 失败本身仍只回落一次，不会自动重试循环。
+  stopWait(true)
   await destroySoft()
   softFailedFor.value = ''
   playbackInfo.value = null
@@ -2241,6 +2361,7 @@ onMounted(() => {
   wtRestartAlignTimer()
 })
 onUnmounted(() => {
+  stopWait(true)
   document.body.style.overflow = ''
   document.removeEventListener('keydown', onKeydown)
   document.removeEventListener('visibilitychange', onVisibility)
