@@ -24,42 +24,23 @@
       </template>
 
       <template v-else>
-        <!-- 余额行（钱包余额由钱包页透传） -->
-        <p class="tp-balance">余额 <b>${{ balance }}</b></p>
+        <!-- 余额行（钱包余额由钱包页透传，居中灰字） -->
+        <p class="tp-balance">余额 ${{ balance }}</p>
 
-        <!-- 金额档位：点了把金额填进大输入框；「自定义」只聚焦输入框 -->
-        <div class="tp-tiers" role="radiogroup" aria-label="充值金额">
-          <button
-            v-for="t in tiers"
-            :key="t"
-            type="button"
-            class="tp-tier"
-            :class="{ 'tp-tier--on': activeTier === t }"
-            role="radio"
-            :aria-checked="activeTier === t"
-            @click="pickTier(t)"
-          >${{ t }}</button>
-          <button
-            type="button"
-            class="tp-tier"
-            :class="{ 'tp-tier--on': activeTier === 'custom' }"
-            role="radio"
-            :aria-checked="activeTier === 'custom'"
-            @click="focusCustom"
-          >自定义</button>
-        </div>
-
-        <!-- 常驻大输入框：金额唯一来源（限额全按 info 下发） -->
+        <!-- 常驻金额行：居中成组（$ + 大号数字），金额唯一来源；
+             无边框无底色，输入框就是这行本身（限额全按 info 下发） -->
         <div class="tp-amount-row">
           <span class="tp-amount-sign" aria-hidden="true">$</span>
           <input
             ref="amountInputRef"
             v-model="amountText"
             class="tp-amount"
+            :class="{ 'tp-amount--dim': hintState !== 'valid' }"
             type="text"
             inputmode="decimal"
             placeholder="1.00"
             autocomplete="off"
+            :size="Math.max(4, amountText.length)"
             :disabled="submitting"
             aria-label="充值金额（美元）"
             @input="onAmountInput"
@@ -74,6 +55,28 @@
           ≈ ¥{{ payableText }} · 含 {{ info.fee_rate }}% 手续费 · 汇率 {{ info.usd2cny }}
         </p>
         <p v-else class="tp-hint">最低充值 ${{ info.min_usd }}</p>
+
+        <!-- 金额档位：点了把金额填进输入框并收起键盘；无常驻选中态，
+             仅金额有效且不等于任一档位时「自定义」呈浅灰填充 -->
+        <div class="tp-tiers" role="radiogroup" aria-label="充值金额">
+          <button
+            v-for="t in tiers"
+            :key="t"
+            type="button"
+            class="tp-tier"
+            role="radio"
+            :aria-checked="activeTier === t"
+            @click="pickTier(t)"
+          >${{ t }}</button>
+          <button
+            type="button"
+            class="tp-tier"
+            :class="{ 'tp-tier--on': customTierOn }"
+            role="radio"
+            :aria-checked="activeTier === 'custom'"
+            @click="focusCustom"
+          >自定义</button>
+        </div>
 
         <!-- 支付方式（按服务端下发列表渲染）：单选行＝品牌徽标 +
              名称 + radio 圆圈，整行可点；本期只有法币方式，
@@ -90,9 +93,9 @@
             :aria-checked="method === m"
             @click="method = m"
           >
+            <span class="tp-method__radio" aria-hidden="true"></span>
             <span class="tp-method__badge" :class="`tp-method__badge--${m}`" aria-hidden="true">{{ methodBadge(m) }}</span>
             <span class="tp-method__name">{{ methodLabel(m) }}</span>
-            <span class="tp-method__radio" aria-hidden="true"></span>
           </button>
         </div>
 
@@ -100,11 +103,12 @@
         <button
           type="button"
           class="btn-primary tp-confirm"
+          :class="{ 'tp-confirm--busy': submitting }"
           :disabled="!canSubmit"
           @click="submit"
         >
           <span v-if="submitting" class="tp-spinner" aria-hidden="true"></span>
-          {{ submitting ? '正在跳转…' : confirmText }}
+          <template v-else>{{ confirmText }}</template>
         </button>
       </template>
     </div>
@@ -114,17 +118,20 @@
 <script setup lang="ts">
 /**
  * TopupSheet —— 在线充值弹窗（钱包批 3，形态照友站 recharge-dialog
- * 实测口径）：标题「账户充值」+ 退款提示副文；余额行 + 常驻大金额
- * 输入框（金额唯一来源），档位 $10/$30/$50/$70 点了把金额填进输入
- * 框、「自定义」只聚焦输入框；提示行三态（最低额 / 超限红字 /
- * ≈¥折算行）；支付方式按服务端 info 下发列表渲染成单选行（本期
- * 只有法币方式，数字货币不做、不留假入口）；确认钮文案「确认支付
- * ¥X.XX」。金额校验、费率、汇率、限额全读 info（钱包信息接口的
- * topup 块），前端不写死；应付预览与后端同一公式（美元 × 生效
- * 汇率 × (1+费率%)，到分取整），入账以后端订单为准。下单成功整页
- * 跳转 pay_url（后端暂无充值订单状态查询接口，不做等待屏轮询）。
+ * 录屏逐帧量测口径）：底部浮卡；标题「账户充值」+ 退款提示副文；
+ * 余额行（居中）+ 常驻金额行（居中成组、打开即聚焦，金额唯一
+ * 来源），档位 $10/$30/$50/$70 点了把金额填进输入框并收起键盘、
+ * 「自定义」只聚焦输入框（无常驻选中态，仅金额有效且不等于任一
+ * 档位时「自定义」浅灰填充）；提示行三态（最低额 / 超限红字 /
+ * ≈¥折算行，居中）；支付方式按服务端 info 下发列表渲染成单选行
+ * （列表上下细线、radio 在左；本期只有法币方式，数字货币不做、
+ * 不留假入口）；确认钮文案「确认支付 ¥X.XX」、提交中只剩转圈。
+ * 金额校验、费率、汇率、限额全读 info（钱包信息接口的 topup
+ * 块），前端不写死；应付预览与后端同一公式（美元 × 生效汇率 ×
+ * (1+费率%)，到分取整），入账以后端订单为准。下单成功整页跳转
+ * pay_url（后端暂无充值订单状态查询接口，不做等待屏轮询）。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
 import { walletApi, type WalletTopupInfo } from '@/api/wallet'
 import '../../styles/traffic-view.css'
@@ -166,6 +173,8 @@ const activeTier = computed<number | 'custom'>(() => {
   return 'custom'
 })
 
+
+
 type HintState = 'default' | 'over' | 'valid'
 const hintState = computed<HintState>(() => {
   const info = props.info
@@ -193,6 +202,10 @@ const canSubmit = computed(() =>
 const confirmText = computed(() =>
   canSubmit.value && payableText.value ? `确认支付 ¥${payableText.value}` : '确认支付')
 
+/** 「自定义」胶囊填充态（友站帧口径）：金额有效且不等于任一档位
+ * 时才浅灰填充；金额无效（如 0）不填充，数字档位永不填充 */
+const customTierOn = computed(() => hintState.value === 'valid' && activeTier.value === 'custom')
+
 watch(
   () => props.open,
   (open) => {
@@ -202,6 +215,10 @@ watch(
       inputFocused.value = false
       const methods = props.info?.methods ?? []
       method.value = methods.includes('alipay') ? 'alipay' : (methods[0] ?? 'alipay')
+      // 打开即聚焦金额框、键盘随起（友站帧口径）
+      if (props.info?.enabled) {
+        void nextTick(() => amountInputRef.value?.focus())
+      }
     }
   },
 )
@@ -215,9 +232,10 @@ function methodBadge(m: string): string {
   return { alipay: '支', wxpay: '微', qqpay: 'Q' }[m] ?? m.slice(0, 1).toUpperCase()
 }
 
-/** 点档位：把金额填进大输入框 */
+/** 点档位：把金额填进输入框并收起键盘（友站帧口径） */
 function pickTier(t: number) {
   amountText.value = String(t)
+  amountInputRef.value?.blur()
 }
 
 /** 点「自定义」：只聚焦大输入框（内容由用户自行改/清空） */
@@ -278,15 +296,17 @@ async function submit() {
 </script>
 
 <style scoped>
-/* 居中实色浮窗：与 GiftCodeSheet 同一形态/令牌（2026-11-18 弹窗实色令）。 */
+/* 底部实色浮卡（2026-11-19 友站录屏逐帧量测口径：左右/底部
+   间距 10、圆角 16、遮罩黑 50%；深色底走我方令牌对应面）。 */
 .tp-mask {
   position: fixed;
   inset: 0;
   z-index: 120;
-  background: rgba(10, 10, 14, 0.55);
+  background: rgba(0, 0, 0, 0.5);
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
+  padding: 0 10px 10px;
   animation: tp-fade-in 0.22s ease both;
 }
 @keyframes tp-fade-in {
@@ -294,13 +314,13 @@ async function submit() {
   to { opacity: 1; }
 }
 .tp-sheet {
-  width: 92%;
+  width: 100%;
   max-width: 420px;
   max-height: 88vh;
   overflow-y: auto;
   background: var(--uhd-d-surface-raised);
   border: 1px solid var(--uhd-glass-border);
-  border-radius: 26px;
+  border-radius: 16px;
   padding: 22px 22px 24px;
   color: var(--tq-fg);
   box-shadow: var(--uhd-shadow-modal);
@@ -311,8 +331,8 @@ html[data-theme='light'] .tp-sheet {
   border-color: var(--uhd-glass-border-l);
 }
 @keyframes tp-pop-in {
-  from { transform: translateY(12px) scale(0.97); opacity: 0; }
-  to { transform: translateY(0) scale(1); opacity: 1; }
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
   .tp-mask, .tp-sheet { animation: none; }
@@ -324,7 +344,7 @@ html[data-theme='light'] .tp-sheet {
   align-items: center;
   justify-content: space-between;
 }
-.tp-title { margin: 0; font-size: 18px; font-weight: 750; }
+.tp-title { margin: 0; font-size: 24px; font-weight: 800; }
 .tp-close {
   display: inline-flex;
   align-items: center;
@@ -337,61 +357,58 @@ html[data-theme='light'] .tp-sheet {
   color: var(--tq-dim);
   cursor: pointer;
 }
-.tp-sub { margin: 8px 0 0; font-size: 13px; line-height: 1.6; color: var(--tq-dim); }
+.tp-sub { margin: 8px 0 0; font-size: 13.5px; line-height: 1.6; color: var(--tq-dim); }
 
-.tp-balance { margin: 16px 0 0; font-size: 13px; color: var(--tq-dim); }
-.tp-balance b { color: var(--tq-fg); font-weight: 700; }
+.tp-balance { margin: 14px 0 0; font-size: 12px; text-align: center; color: var(--tq-dim); }
 
-.tp-tiers { display: flex; gap: 8px; margin-top: 12px; }
+/* 金额行：居中成组、无边框无底色（友站帧口径）；$ 灰 20/700，
+   数字 36/800，无效（0/低于最低/超限）时数字变灰 */
+.tp-amount-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 10px;
+}
+.tp-amount-sign { font-size: 20px; font-weight: 700; color: var(--tq-dim); }
+.tp-amount {
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 36px;
+  font-weight: 800;
+  text-align: center;
+  outline: none;
+}
+.tp-amount--dim { color: var(--tq-dim); }
+.tp-amount::placeholder { color: var(--tq-dim); }
+
+.tp-hint { margin: 8px 0 0; font-size: 12px; text-align: center; color: var(--tq-dim); }
+.tp-hint--over { color: #f87171; }
+html[data-theme='light'] .tp-hint--over { color: #dc2626; }
+
+/* 档位胶囊：整行高 ≈43、白底细边全圆角；无常驻选中态，仅
+   「自定义」在金额有效且不等于任一档位时浅灰填充（友站帧口径） */
+.tp-tiers { display: flex; gap: 8px; margin-top: 16px; }
 .tp-tier {
   flex: 1;
   padding: 11px 0;
   border-radius: 999px;
   border: 1px solid var(--tq-border);
-  background: transparent;
-  color: var(--tq-dim);
+  background: var(--tq-card);
+  color: inherit;
   font-family: inherit;
-  font-size: 14.5px;
+  font-size: 15px;
   font-weight: 650;
   cursor: pointer;
   white-space: nowrap;
 }
-/* 选中片＝微亮玻璃（与礼品卡弹层同口径，不用实心反色块） */
-.tp-tier--on {
-  background: var(--tq-seg-on);
-  border-color: var(--tq-border);
-  color: inherit;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
-}
-
-.tp-amount-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 60px;
-  padding: 0 18px;
-  margin-top: 12px;
-  border-radius: 14px;
-  background: var(--tq-card);
-  border: 1px solid var(--tq-border);
-}
-.tp-amount-sign { font-size: 22px; font-weight: 750; color: var(--tq-dim); }
-.tp-amount {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  background: transparent;
-  color: inherit;
-  font-family: inherit;
-  font-size: 24px;
-  font-weight: 700;
-  outline: none;
-}
-.tp-amount::placeholder { color: var(--tq-dim); }
-
-.tp-hint { margin: 12px 0 0; font-size: 13px; color: var(--tq-dim); }
-.tp-hint--over { color: #f87171; }
-html[data-theme='light'] .tp-hint--over { color: #dc2626; }
+html[data-theme='light'] .tp-tier { background: #ffffff; }
+.tp-tier--on { background: var(--tq-seg-on); }
+html[data-theme='light'] .tp-tier--on { background: rgba(17, 17, 20, 0.07); }
 
 .tp-label {
   display: block;
@@ -400,36 +417,39 @@ html[data-theme='light'] .tp-hint--over { color: #dc2626; }
   color: var(--tq-dim);
   margin: 16px 0 8px;
 }
-/* 支付方式单选行：品牌首字徽标 + 名称 + radio 圆圈，整行可点 */
-.tp-methods { display: flex; flex-direction: column; gap: 8px; }
+/* 支付方式单选行：列表上下各一条细线，行高 54；左 radio 圆 +
+   品牌首字徽标 + 名称，整行可点；选中只看 radio、不变底色字重 */
+.tp-methods {
+  border-top: 1px solid var(--tq-border);
+  border-bottom: 1px solid var(--tq-border);
+}
 .tp-method {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
-  padding: 11px 14px;
-  border-radius: 14px;
-  border: 1px solid var(--tq-border);
-  background: var(--tq-card);
+  height: 54px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
   color: inherit;
   font-family: inherit;
-  font-size: 14.5px;
-  font-weight: 600;
+  font-size: 15.5px;
+  font-weight: 500;
   text-align: left;
   cursor: pointer;
 }
-.tp-method--on { background: var(--tq-seg-on); }
 .tp-method__badge {
   flex: none;
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: #8a8f98;
   color: #fff;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
 }
 .tp-method__badge--alipay { background: #1677ff; }
@@ -461,13 +481,15 @@ html[data-theme='light'] .tp-err { color: #dc2626; }
   margin-top: 20px;
   border-radius: 25px;
   font-size: 15.5px;
-  font-weight: 750;
+  font-weight: 700;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
 }
+/* 提交中：只剩居中转圈、整钮变淡禁用（友站帧口径） */
+.tp-confirm--busy { opacity: 0.55; }
 .tp-spinner {
   width: 15px;
   height: 15px;
