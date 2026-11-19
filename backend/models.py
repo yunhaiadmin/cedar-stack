@@ -977,6 +977,48 @@ class WalletLedger(Base):
     user = relationship("WebUser", foreign_keys=[user_id])
 
 
+class WalletTopupOrder(Base):
+    """钱包在线充值单（钱包批 3，易支付收人民币、按汇率入账美元余额）。
+
+    金额口径（美元计价）：amount_usd_fen 是用户选定的充值额（美元
+    美分）；amount_cny_fen 是应付人民币（分）＝ amount_usd_fen ×
+    rate_snapshot × (1+费率%) 取整（手续费加在应付侧），易支付实际
+    收款额；credit_usd_fen 是实际入账美元（美分）＝ amount_usd_fen
+    全额（手续费不扣到账）；
+    rate_snapshot 是下单时点的生效汇率快照（人民币/美元，已含缓冲）
+    ——下单后市场价或配置再变，本单只认快照，回调履约按
+    credit_usd_fen 入账、不重算。
+    status：pending 待支付 / paid 已入账（failed / expired 预留，
+    本批不做自动关单，pending 堆积由每用户待支付上限兜底，与订阅单
+    同口径）。履约幂等：订单状态机（条件 UPDATE 抢单）+ 钱包流水
+    idempotency_key=order_no 双保险，重复回调只入账一次。
+    """
+    __tablename__ = 'wallet_topup_orders'
+
+    __table_args__ = (
+        Index('idx_topup_user', 'user_id'),
+        Index('idx_topup_status', 'status'),
+        Index('idx_topup_order_no', 'order_no'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_no = Column(String(64), unique=True, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
+    amount_usd_fen = Column(Integer, nullable=False)      # 选定充值额（美元美分）
+    amount_cny_fen = Column(Integer, nullable=False)      # 应付人民币（分，汇率快照折算）
+    credit_usd_fen = Column(Integer, nullable=False)      # 入账美元（美分，＝选定额全额）
+    rate_snapshot = Column(Numeric(16, 8), nullable=False)  # 生效汇率快照（元/美元，含缓冲）
+    fee_pct_snapshot = Column(Integer, nullable=False, default=0)  # 手续费比例快照 %
+    payment_method = Column(String(20))                   # alipay / wxpay / qqpay
+    status = Column(String(20), default='pending')        # pending / paid / failed / expired
+    payment_url = Column(String(1024))
+    trade_no = Column(String(64))                         # 网关交易号（回调回填，对账用）
+    paid_at = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.now)
+
+    user = relationship("WebUser")
+
+
 class AgentPurchase(Base):
     """代理进货单（一次进货 = 一批同套餐的卡码）
 

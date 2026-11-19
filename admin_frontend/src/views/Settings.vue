@@ -186,8 +186,12 @@ const GROUPS: Group[] = [
       // 钱包（批 1，2026-11-14）：余额/流水在「钱包管理」页，这里只放配置；
       // 无库行时按代码默认生效（开/$10/0/5%/不限/分档·门槛$50·二档1%/$0.30/开/关，见钱包管理页）
       { key: 'wallet_enabled', label: '启用钱包', type: 'bool', hint: '钱包总开关；关闭后余额兑换与后续余额支付入口全灭，只读余额仍可查' },
-      { key: 'wallet_min_topup_amount', label: '最低充值额（美分）', type: 'int', suffix: '美分', hint: '默认 1000 ＝ $10，在线充值（批 3）用' },
+      { key: 'wallet_min_topup_amount', label: '最低充值额（美分）', type: 'int', suffix: '美分', hint: '默认 100 ＝ $1，在线充值（批 3）用' },
       { key: 'wallet_topup_fee_pct', label: '充值手续费比例（%）', type: 'int', suffix: '%', hint: '默认 0' },
+      { key: 'wallet_topup_cny_rate', label: '充值汇率（人民币/美元）', type: 'str', hint: '手填价：自动抓市场价失败时的兜底；开启下方强制覆盖后以此为准。默认 7.2' },
+      { key: 'wallet_topup_rate_buffer_pct', label: '汇率缓冲（%）', type: 'int', suffix: '%', hint: '生效汇率 ＝ 市场价 ×（1＋缓冲%），默认 2' },
+      { key: 'wallet_topup_rate_manual_override', label: '手填汇率强制覆盖', type: 'bool', hint: '开启后充值只用上面的手填汇率，不再自动抓取市场价' },
+      { key: 'wallet_topup_max_amount', label: '单笔充值上限（美分）', type: 'int', suffix: '美分', hint: '默认 7000 ＝ $70，0 为不限；法币单笔上限，下单接口同样拦截' },
       { key: 'wallet_invite_rebate_percent', label: '邀请返利比例（%）', type: 'int', suffix: '%', hint: '默认 5，好友充值到账后返给邀请人（批 2 计提）' },
       { key: 'wallet_invite_rebate_cap', label: '单人返利上限（美分）', type: 'int', suffix: '美分', hint: '默认 0 ＝ 不限' },
       {

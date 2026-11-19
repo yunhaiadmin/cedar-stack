@@ -51,8 +51,15 @@ LEDGER_KINDS = {
 #: 钱包配置默认值（§10 定版口径；DB 无行时按此生效，管理端可改）
 WALLET_CONFIG_DEFAULTS = {
     "wallet_enabled": True,                    # 钱包总开关
-    "wallet_min_topup_amount": 1000,           # 最低充值额（美分）＝$10
-    "wallet_topup_fee_pct": 0,                 # 充值手续费比例（批 3 再议）
+    "wallet_min_topup_amount": 100,            # 最低充值额（美元美分）＝$1（批 3 美元计价）
+    "wallet_topup_max_amount": 7000,           # 单笔充值上限（美元美分）＝$70，0＝不限（批 3）
+    "wallet_topup_fee_pct": 0,                 # 充值手续费比例（批 3 已接：下单快照、入账时扣）
+    # 在线充值汇率（批 3）：手填价是自动抓价（backend/wallet_topup）的
+    # 最终兜底（默认 7.2 仅供出厂/测试，生产由自动抓价覆盖）；缓冲在
+    # 市场价之上加价；强制覆盖开时只用手填价。解析顺序见 wallet_topup。
+    "wallet_topup_cny_rate": 7.2,              # 手填汇率（人民币/美元）
+    "wallet_topup_rate_buffer_pct": 2,         # 汇率缓冲 %（生效汇率＝市场价×(1+缓冲%)）
+    "wallet_topup_rate_manual_override": False,  # 手填汇率强制覆盖（开＝不用自动抓价）
     "wallet_invite_rebate_percent": 5,         # 邀请返利比例（批 2 计提）
     "wallet_invite_rebate_cap": 0,             # 返利上限（美分），0=不限
     # 返利分档三键与 #175 invite_rebate 的 DEFAULT_* 逐字一致（同文件
@@ -66,7 +73,9 @@ WALLET_CONFIG_DEFAULTS = {
 }
 
 _BOOL_KEYS = {"wallet_enabled", "wallet_refund_to_balance",
-              "wallet_auto_renew_enabled"}
+              "wallet_auto_renew_enabled", "wallet_topup_rate_manual_override"}
+
+_FLOAT_KEYS = {"wallet_topup_cny_rate"}
 
 
 class WalletError(ValueError):
@@ -100,12 +109,17 @@ def _config_raw(db: Session, key: str) -> str:
 
 
 def wallet_config(db: Session) -> dict:
-    """钱包 11 键的生效值（DB 行优先，缺行/坏值回代码默认）。"""
+    """钱包配置键的生效值（DB 行优先，缺行/坏值回代码默认）。"""
     result = {}
     for key, default in WALLET_CONFIG_DEFAULTS.items():
         raw = _config_raw(db, key)
         if key in _BOOL_KEYS:
             result[key] = str(raw).strip().lower() in ("1", "true", "yes", "on")
+        elif key in _FLOAT_KEYS:
+            try:
+                result[key] = float(str(raw).strip())
+            except (TypeError, ValueError):
+                result[key] = default
         elif isinstance(default, str):
             # 字符串键（如返利模式）：原样取库值，空/缺行回默认
             result[key] = str(raw).strip() or default

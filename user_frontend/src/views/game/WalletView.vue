@@ -174,6 +174,11 @@
         @close="giftOpen = false"
         @created="onGiftCreated"
       />
+      <TopupSheet
+        :open="topupOpen"
+        :info="topupInfo"
+        @close="topupOpen = false"
+      />
     </div>
   </UhdAccountLayout>
 </template>
@@ -186,32 +191,43 @@
  * （自生成 balance 兑换码，GiftCodeSheet 弹层）+ 我生成的码列表
  * （状态筛选；过期未用的面值由后端在列表查询时惰性退回）。
  * 资金明细：钱包流水分页加载更多。
- * 在线充值仍未接网关（批 3 未到）：充值钮只给诚实提示，不假接支付。
- * 支付回调落点：易支付 return_url 指到 /wallet?paid=1——进页时
- * 识别该参数，刷新余额并提示到账结果（不再 404）。
+ * 在线充值（钱包批 3）：充值钮先查邮箱绑定（未绑定提示并跳账号
+ * 安全页，照友站口径），已绑定开 TopupSheet——美元计价、易支付收
+ * 人民币，回调到账后入账美元余额；未开通时弹层给诚实提示。
+ * 支付回调落点：易支付 return_url 指到 /wallet?paid=1（订阅）与
+ * /wallet?topup=1（充值）——进页时识别参数，刷新余额并提示到账结果。
  */
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ChevronDown, RefreshCw } from 'lucide-vue-next'
 import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
 import GiftCodeSheet from '@/components/profile/GiftCodeSheet.vue'
+import TopupSheet from '@/components/profile/TopupSheet.vue'
+import { useUserStore } from '@/stores/user'
 import {
   walletApi,
   walletLedgerLabel,
   type GiftCodeCreateResult,
   type GiftCodeItem,
   type WalletLedgerRow,
+  type WalletTopupInfo,
 } from '@/api/wallet'
 import { useToast } from '@/composables/useToast'
 import { toUserMessage } from '@/utils/toUserMessage'
 
 const toast = useToast()
 const route = useRoute()
+const router = useRouter()
+const userStore = useUserStore()
 
 const loading = ref(true)
 const loadError = ref(false)
 const balance = ref('0.00')
 const walletEnabled = ref(true)
+
+/* ---------- 在线充值 ---------- */
+const topupOpen = ref(false)
+const topupInfo = ref<WalletTopupInfo | null>(null)
 
 const tab = ref<'codes' | 'ledger'>('codes')
 
@@ -265,6 +281,7 @@ async function loadWallet() {
     const info = await walletApi.get()
     balance.value = info.balance
     walletEnabled.value = info.wallet_enabled
+    topupInfo.value = info.topup ?? null
   } catch {
     loadError.value = true
   } finally {
@@ -348,7 +365,13 @@ function onGiftCreated(res: GiftCodeCreateResult) {
 }
 
 function onRecharge() {
-  toast.info('在线充值即将上线，可先通过兑换码入账')
+  // 前置拦截（照友站口径）：未绑定邮箱先去账号安全页绑定，不开弹窗
+  if (!userStore.user?.email) {
+    toast.info('请先绑定邮箱后再充值')
+    router.push('/game/account/settings')
+    return
+  }
+  topupOpen.value = true
 }
 
 async function copyGiftCode(code: string) {
@@ -367,6 +390,10 @@ onMounted(() => {
   // 余额并给到账提示；order 参数同理（网关同步跳转带订单号）。
   if (route.query.paid === '1' || route.query.order) {
     toast.success('支付已完成，余额与订阅已更新')
+  }
+  // 充值回调落点（/wallet?topup=1）：余额已在进页时重新拉过
+  if (route.query.topup === '1') {
+    toast.success('支付已完成，余额已更新')
   }
 })
 </script>

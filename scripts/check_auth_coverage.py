@@ -169,6 +169,9 @@ PRE_AUTH: dict[tuple[str, str], str] = {
         "（10 次/分钟）+ 登录日志（成功与失败都记，reason 沿用 portal_login 口径）",
     ("POST", "/api/user/economy/payment/notify"):
         "支付网关回调：拿不到管理员身份（是网关在调），靠 HMAC 验签 + 金额与订单实付核对 + 订单幂等",
+    ("POST", "/api/user/wallet/topup/notify"):
+        "钱包充值网关回调：拿不到用户身份（是网关在调），靠易支付 MD5 验签（复用 economy 唯一实现）"
+        " + 回调金额与订单应付核对 + 订单状态机抢单与钱包幂等键双保险（重复回调只入账一次）",
     ("POST", "/api/admin/auth/login"):
         "管理员登录：还没通过鉴权就没有身份可归属；限流（8 次/分钟/IP）+ 人机验证 + 登录日志",
     ("POST", "/api/admin/auth/magic-exchange"):

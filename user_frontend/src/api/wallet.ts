@@ -23,6 +23,39 @@ export interface WalletInfo {
   wallet_enabled: boolean
   ledger: WalletLedgerRow[]
   ledger_total: number
+  /** 在线充值信息（钱包批 3）：后端未下发时为 undefined（旧后端兼容） */
+  topup?: WalletTopupInfo
+}
+
+/**
+ * 在线充值信息（口径对应友站 pay/info，随钱包信息接口下发）：
+ * usd2cny 是含缓冲的生效汇率（字符串防 float）；fee_rate 手续费率 %；
+ * min/max 是单笔限额（美元串给展示、美分给校验，max_usd_fen=0 为不限）；
+ * 前端金额校验与提示全按本块走，不写死。
+ */
+export interface WalletTopupInfo {
+  enabled: boolean
+  usd2cny: string | null
+  fee_rate: number
+  min_usd_fen: number
+  max_usd_fen: number
+  min_usd: string
+  max_usd_epay: string | null
+  methods: string[]
+}
+
+export interface WalletTopupCreateResult {
+  ok: boolean
+  order_no: string
+  amount_usd: string
+  amount_usd_fen: number
+  amount_cny: string
+  amount_cny_fen: number
+  credit_usd: string
+  rate: string
+  fee_pct: number
+  pay_url: string
+  message: string
 }
 
 export interface WalletLedgerPage {
@@ -122,6 +155,12 @@ export const walletApi = {
     api.get<never, { items: GiftCodeItem[]; total: number }>(
       '/api/user/wallet/gift-codes',
       { params: { status } },
+    ),
+  /** 在线充值下单：amount_usd 为美元金额字符串（两位小数），返回支付跳转地址 */
+  createTopupOrder: (data: { amount_usd: string; payment_method: string }) =>
+    api.post<never, WalletTopupCreateResult>(
+      '/api/user/wallet/topup/orders',
+      data,
     ),
 }
 

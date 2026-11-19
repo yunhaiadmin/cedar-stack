@@ -82,8 +82,12 @@ ECONOMY_CONFIG_KEYS = {
     "subscription_line_name": "str",  # 订阅线路展示名（按服配置，如「国际线路」；未配回退服名，读侧在 api/economy.py 的 payment_plans）
     # 钱包（批 1，2026-11-14）：默认值见 backend/wallet.WALLET_CONFIG_DEFAULTS
     "wallet_enabled": "bool",  # 钱包总开关（默认开）
-    "wallet_min_topup_amount": "int",  # 最低充值额（美分，默认 1000＝$10）
-    "wallet_topup_fee_pct": "int",  # 充值手续费比例 %（默认 0，批 3 再议）
+    "wallet_min_topup_amount": "int",  # 最低充值额（美元美分，默认 100＝$1）
+    "wallet_topup_max_amount": "int",  # 单笔充值上限（美元美分，默认 7000＝$70，0＝不限）
+    "wallet_topup_fee_pct": "int",  # 充值手续费比例 %（默认 0，批 3 已接）
+    "wallet_topup_cny_rate": "float",  # 手填充值汇率（人民币/美元，默认 7.2；自动抓价兜底/覆盖值，批 3）
+    "wallet_topup_rate_buffer_pct": "int",  # 汇率缓冲 %（默认 2，生效汇率＝市场价×(1+缓冲%)，批 3）
+    "wallet_topup_rate_manual_override": "bool",  # 手填汇率强制覆盖（开＝不用自动抓价，批 3）
     "wallet_invite_rebate_percent": "int",  # 邀请返利比例 %（默认 5，批 2 计提）
     "wallet_invite_rebate_cap": "int",  # 单人返利上限（美分，默认 0＝不限）
     "wallet_invite_rebate_mode": "str",  # 返利模式 tiered/flat（默认 tiered；两值校验在 config_schema 的 enum）

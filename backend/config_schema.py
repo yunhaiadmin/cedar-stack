@@ -1321,7 +1321,13 @@ ECONOMY_CONFIG_SCHEMA: dict[str, tuple] = {
     # *_fen 类键名为历史命名、语义即美分）。
     "wallet_enabled": ("bool",),
     "wallet_min_topup_amount": ("int", 0, _BIG),
+    "wallet_topup_max_amount": ("int", 0, _BIG),
     "wallet_topup_fee_pct": ("int", 0, 100),
+    # 在线充值汇率（钱包批 3）：手填价 float（自动抓价的兜底/覆盖值，
+    # 解析顺序见 backend/wallet_topup）；缓冲 %；手填强制覆盖开关。
+    "wallet_topup_cny_rate": ("float", 0.0001, 1000000),
+    "wallet_topup_rate_buffer_pct": ("int", 0, 100),
+    "wallet_topup_rate_manual_override": ("bool",),
     "wallet_invite_rebate_percent": ("int", 0, 100),
     "wallet_invite_rebate_cap": ("int", 0, _BIG),
     # 返利分档三键（#175 invite_rebate 读取，2026-11-14 用户分档定版）：
