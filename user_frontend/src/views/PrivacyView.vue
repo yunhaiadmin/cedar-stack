@@ -260,7 +260,7 @@ html[data-theme='light'] .privacy-list li::marker {
 </style>
 
 <style>
-/* 自定义正文（Markdown 渲染）：内容经 v-html 注入、不带 scoped 属性，
+/* 自定义正文（Markdown 渲染）：内容经富文本指令注入、不带 scoped 属性，
    后代规则必须放非 scoped 块；与内置正文同一套文档面排版 */
 .privacy-md h1 {
   margin: 0 0 16px;
