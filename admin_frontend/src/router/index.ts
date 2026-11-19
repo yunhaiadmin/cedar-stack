@@ -49,6 +49,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'media-seek', name: 'MediaSeek', component: () => import('@/views/MediaSeek.vue'), meta: { title: '求片管理' } },
       // 追剧订阅管理（二期缺口项 2）：全站追剧订阅列表＋管理员代取消
       { path: 'series-follows', name: 'SeriesFollows', component: () => import('@/views/SeriesFollows.vue'), meta: { title: '追剧订阅' } },
+      // 弹幕治理（内容治理面）：弹幕列表/删除＋用户禁言；规则设置仍在系统设置的弹幕设置组
+      { path: 'danmaku-admin', name: 'DanmakuAdmin', component: () => import('@/views/DanmakuAdmin.vue'), meta: { title: '弹幕治理' } },
       // 群抽奖（Welfare.vue，历史文件名）：抽奖轮次 + 提案黑名单标签；
       // 公益配置标签已随公益资格整族于 2026-11-14 删除
       { path: 'welfare-lottery-rounds', name: 'WelfareLotteryRounds', component: () => import('@/views/Welfare.vue'), meta: { title: '群抽奖' } },

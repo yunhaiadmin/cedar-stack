@@ -7,9 +7,11 @@
   发一条弹幕：记登录者本人（子账号按本人记），落 danmaku_comments。
 
 站点开关 danmaku_enabled 默认关：关时两口一律 404（前端据此隐藏
-弹幕入口）。校验顺序：开关 → 条目存在 → 文本非空/字数 → 敏感词 →
-发送间隔限流 → 落库；限流走 backend.ratelimit 既有滑动窗口，
-间隔值从配置读、不写死。核心存取在 backend/danmaku.py（唯一实现）。
+弹幕入口）。校验顺序：开关 → 条目存在 → 禁言（内容治理，管理员
+在后台「弹幕治理」页设置，命中回 403 并写明到期/永久）→ 文本
+非空/字数 → 敏感词 → 发送间隔限流 → 落库；限流走
+backend.ratelimit 既有滑动窗口，间隔值从配置读、不写死。
+核心存取在 backend/danmaku.py（唯一实现）。
 """
 
 from __future__ import annotations
@@ -91,6 +93,16 @@ def post_danmaku(
     """发一条弹幕：校验全过才落库，命中敏感词明确拒绝、不落库。"""
     settings = _require_enabled(db)
     item = _resolve_item(db, item_guid)
+
+    mute = danmaku_core.get_active_mute(db, user.id)
+    if mute is not None:
+        if mute.muted_until is None:
+            raise HTTPException(
+                status_code=403, detail="你已被永久禁言，无法发送弹幕")
+        raise HTTPException(
+            status_code=403,
+            detail=f"你已被禁言至 {mute.muted_until:%Y-%m-%d %H:%M}，"
+                   "期间无法发送弹幕")
 
     position = body.position_seconds
     if not math.isfinite(position) or position < 0 or position > _MAX_POSITION_SECONDS:
