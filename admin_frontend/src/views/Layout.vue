@@ -238,6 +238,8 @@ const navGroups: NavGroup[] = [
       { path: '/logs', label: '操作日志', icon: ScrollText },
       // Batch E（健康体系合并）：「服务健康」＋「健康总览」合并为一页「系统健康」，导航只留一个入口
       { path: '/health', label: '系统健康', icon: Activity },
+      // 4K 探针结果（二期缺口）：真机探针回传记录只读查看
+      { path: '/probe-4k', label: '4K 探针结果', icon: Gauge },
       // v2.56.0：任务总览——所有后台任务一页看完（状态/进度/开关）
       { path: '/tasks', label: '任务总览', icon: ListChecks },
       { path: '/api-keys', label: 'API Key', icon: KeyRound, superOnly: true },
