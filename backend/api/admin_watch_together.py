@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from backend import models
@@ -114,12 +115,18 @@ async def close_watch_together_room(
     view = await watch_together_hub.force_close_room(code)
     if view is None:
         raise HTTPException(status_code=404, detail="房间不存在或已结束")
-    _audit(db, admin_id, "watch_together_force_close",
-           "watch_together_room", None,
-           {"code": view["code"], "item_id": view.get("item_id"),
-            "host_id": view.get("host_id"),
-            "member_count": view.get("member_count")},
-           ip=raw_request.client.host if raw_request.client else None)
-    db.commit()
+
+    def _audit_and_commit() -> None:
+        # 同步 DB 写必须走线程池：async 路由里直接 commit() 会阻塞
+        # 事件循环（阻塞路由契约 check_blocking_routes.py）。
+        _audit(db, admin_id, "watch_together_force_close",
+               "watch_together_room", None,
+               {"code": view["code"], "item_id": view.get("item_id"),
+                "host_id": view.get("host_id"),
+                "member_count": view.get("member_count")},
+               ip=raw_request.client.host if raw_request.client else None)
+        db.commit()
+
+    await run_in_threadpool(_audit_and_commit)
     return {"ok": True, "code": view["code"],
             "member_count": view.get("member_count")}
