@@ -68,6 +68,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'identify-review', name: 'IdentifyReview', component: () => import('@/views/IdentifyReview.vue'), meta: { title: '识别审查' } },
       // 缺集清单（缺集全套）：核算工人台账的只读面，管理员对着清单补源
       { path: 'missing-episodes', name: 'MissingEpisodes', component: () => import('@/views/MissingEpisodes.vue'), meta: { title: '缺集清单' } },
+      // 字幕管理（二期全缺第 7 项）：已入库字幕轨的只读盘点面
+      { path: 'subtitles', name: 'Subtitles', component: () => import('@/views/Subtitles.vue'), meta: { title: '字幕管理' } },
       { path: 'pool', name: 'PoolAdmin', component: () => import('@/views/PoolAdmin.vue'), meta: { title: '贡献池' } },
       // 双盘审计台账已并入「操作日志」页的双盘审计标签（Logs.vue ?tab=audit）：旧地址跳到对应标签，收藏不会 404
       { path: 'audit', redirect: { path: '/logs', query: { tab: 'audit' } } },

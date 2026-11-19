@@ -31,7 +31,7 @@ import {
   Image as ImageIcon,
   Database, Megaphone, Receipt, Trophy, TicketPercent, UserPlus, KeySquare,
   UserCog, Activity, HandCoins,
-  Sun, Moon, MonitorSmartphone, ListChecks, Flag, Gauge, Heart, Clapperboard,
+  Sun, Moon, MonitorSmartphone, ListChecks, Flag, Gauge, Heart, Clapperboard, Captions,
   PanelLeftClose, PanelLeftOpen,
 } from 'lucide-vue-next'
 import {
@@ -225,6 +225,8 @@ const navGroups: NavGroup[] = [
       { path: '/identify-review', label: '识别审查', icon: ListChecks },
       // 缺集清单：哪部剧缺哪几集、缺了多久、几个人在求补
       { path: '/missing-episodes', label: '缺集清单', icon: ListChecks },
+      // 字幕管理（二期全缺第 7 项）：已入库字幕轨（内嵌＋外挂）的只读盘点
+      { path: '/subtitles', label: '字幕管理', icon: Captions },
       // 存储绑定观测：原「上游源」页的标签页，
       // 上游源随上游全清删除后恢复独立入口（批 3 合并入上游源页的布局随之撤销）
       { path: '/storage-bindings', label: '存储绑定', icon: Database },
