@@ -31,7 +31,7 @@ import {
   Image as ImageIcon,
   Database, Megaphone, Receipt, Trophy, TicketPercent, UserPlus, KeySquare,
   UserCog, Activity, HandCoins,
-  Sun, Moon, MonitorSmartphone, ListChecks, Flag, Gauge,
+  Sun, Moon, MonitorSmartphone, ListChecks, Flag, Gauge, Heart,
   PanelLeftClose, PanelLeftOpen,
 } from 'lucide-vue-next'
 import {
@@ -155,6 +155,8 @@ const navGroups: NavGroup[] = [
     icon: Users,
     items: [
       { path: '/users', label: '用户', icon: Users },
+      // 用户收藏查看（二期缺口项 6）：按用户只读查看收藏
+      { path: '/user-favorites', label: '用户收藏', icon: Heart },
       { path: '/subscriptions', label: '订阅与权益', icon: Crown },
       { path: '/devices', label: '设备与安全', icon: Smartphone },
       { path: '/login-logs', label: '登录日志', icon: ScrollText },
