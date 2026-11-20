@@ -45,9 +45,12 @@
    自己盘里，删不掉不阻塞任何事，design §7 风险 3）。
 
 热门预热补位（refill，补充节 S4 + 等待优化第二层）在淘汰
-之后单独一步（仅池开且转存队列闲置时）：候选三路信号按
-追剧订阅 > 求片待办 > 热播丢副本排序（见 _refill_candidates；
-求片指到剧行时只取首集 + 最新集，不整季扫），走
+之后单独一步（仅池开且转存队列闲置时）：候选四路信号按
+追剧订阅 > 求片待办 > 热播丢副本 > 点播排行补缺排序（见
+_refill_candidates；求片指到剧行时只取首集 + 最新集，不
+整季扫；点播排行一路 2026-11-21 追加：按 emby_play_start_
+events 近 7 天排行给从没进过池的热门条目补缺，走 janitor
+键 pool_refill_playrank_* 控制），走
 create_pool_job(trigger="refill") 备到目标份数——预热项
 （追剧/求片）目标 pool_refill_prefetch_target_copies 份
 （默认 1）、丢副本热播项目标 pool_item_max_copies 份；
@@ -869,10 +872,50 @@ def _hot_candidates(db, cfg, now, max_copies) -> list:
     return out
 
 
+def _playrank_candidates(db, cfg, now, target) -> list:
+    """点播排行信号（2026-11-21 池优化）：近 7 天起播排行
+    （emby_play_start_events 全口径，含走用户盘/挂载的起播）
+    前 N 的条目，按点播数降序。既有 hot 信号只认池起播且
+    「丢过副本」的条目——从没进过池的热门片（观众一直在吃
+    现转存长链）不在其内，本信号补的就是这块缺口：让热门
+    片在池里提前有现成副本，点播链缩到「池里有 → 直接播」。
+    取数上限走 janitor 键 pool_refill_playrank_top_n，开关
+    pool_refill_playrank_enabled（默认开）。目标份数与追剧/
+    求片同为预热目标（默认 1 份）。"""
+    from sqlalchemy import func
+
+    jcfg = pool_gate.janitor_config_payload(db)
+    if not jcfg["pool_refill_playrank_enabled"]:
+        return []
+    top_n = int(jcfg["pool_refill_playrank_top_n"])
+    if top_n <= 0:
+        return []
+    since = now - timedelta(days=REFILL_HOT_WINDOW_DAYS)
+    rows = (db.query(
+        em.PlayStartEvent.item_id,
+        func.count(em.PlayStartEvent.id).label("plays"))
+        .filter(em.PlayStartEvent.created_at >= since,
+                em.PlayStartEvent.item_id.isnot(None))
+        .group_by(em.PlayStartEvent.item_id)
+        .order_by(func.count(em.PlayStartEvent.id).desc(),
+                  em.PlayStartEvent.item_id.asc())
+        .limit(top_n).all())
+    out = []
+    for item_id, plays in rows:
+        item = _live_item(db, item_id)
+        if item is None:
+            continue
+        out.append({"signal": "playrank", "item": item,
+                    "target": target,
+                    "detail": f"plays_7d={int(plays or 0)}"})
+    return out
+
+
 def _refill_candidates(db, cfg, now) -> list:
     """本轮补位候选（已排好序、已按条目去重，取最先的信号）：
-    追剧 > 求片 > 热播（丢副本补位）。同一条目多信号命中时
-    只保留最高优先级那一次。"""
+    追剧 > 求片 > 热播（丢副本补位）> 点播排行（从没进过池
+    的热门补缺）。同一条目多信号命中时只保留最高优先级
+    那一次。"""
     jcfg = pool_gate.janitor_config_payload(db)
     prefetch_target = max(1, int(
         jcfg["pool_refill_prefetch_target_copies"]))
@@ -881,7 +924,9 @@ def _refill_candidates(db, cfg, now) -> list:
     seen = set()
     for cand in (_follow_candidates(db, prefetch_target)
                  + _seek_candidates(db, prefetch_target)
-                 + _hot_candidates(db, cfg, now, max_copies)):
+                 + _hot_candidates(db, cfg, now, max_copies)
+                 + _playrank_candidates(db, cfg, now,
+                                         prefetch_target)):
         item_id = int(cand["item"].id)
         if item_id in seen:
             continue
@@ -893,7 +938,8 @@ def _refill_candidates(db, cfg, now) -> list:
 def _sweep_refill(db, cfg, now, *, quota_fn=None) -> dict:
     stats = {"created": 0, "blocked": 0, "skipped_busy": 0,
              "skipped_bad_combo": 0,
-             "by_signal": {"follow": 0, "seek": 0, "hot": 0}}
+             "by_signal": {"follow": 0, "seek": 0, "hot": 0,
+                           "playrank": 0}}
     queue = _tv.queue_stats(db, now=now)
     if int(queue.get("due_count") or 0) > 0 or \
             int(queue.get("running") or 0) > 0:
