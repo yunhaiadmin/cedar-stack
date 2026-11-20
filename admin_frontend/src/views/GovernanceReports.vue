@@ -406,8 +406,17 @@ async function submitDecision() {
   padding: 12px 14px;
   margin-bottom: 16px;
   border-radius: var(--au-r-md);
-  border: 1px solid var(--au-border);
-  background: var(--au-surface-2);
+  /* ax 口径 · 玻璃栈（同 SectionCard）：半透底 + blur/saturate + 玻璃边 + 内高光 + 柔影 */
+  border: 1px solid var(--ax-glass-border);
+  background: var(--ax-glass-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .meta-box {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .meta-grid {
   display: grid;
@@ -439,9 +448,19 @@ async function submitDecision() {
   gap: 10px;
   flex-wrap: wrap;
   padding: 8px 12px;
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈（同 SectionCard）：半透底 + blur/saturate + 玻璃边 + 内高光 + 柔影 */
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-md);
+  background: var(--ax-glass-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   font-size: var(--ax-fs-aux);
+}
+html[data-theme='light'] .vote {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .vote-time { margin-left: auto; }
 

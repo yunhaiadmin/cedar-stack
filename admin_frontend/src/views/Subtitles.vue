@@ -293,11 +293,21 @@ onMounted(() => {
 
 .track {
   padding: 8px 12px;
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈（同 SectionCard）：半透底 + blur/saturate + 玻璃边 + 内高光 + 柔影 */
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-md);
+  background: var(--ax-glass-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+html[data-theme='light'] .track {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 
 .track-head {

@@ -1035,9 +1035,17 @@ onMounted(() => {
   gap: 10px;
   padding: 12px 16px;
   margin-bottom: 16px;
-  background: var(--au-warning-soft);
+  /* ax 口径 · 玻璃栈：底走玻璃、描边保留警告色（语义不变） */
+  background: var(--ax-glass-d);
   border: 1px solid var(--au-warning-border);
   border-radius: var(--au-r-lg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .pool-pending-banner {
+  background: var(--ax-glass-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .pool-pending-banner__icon {
   flex-shrink: 0;
@@ -1065,10 +1073,19 @@ onMounted(() => {
 }
 .pool-group {
   min-width: 0;
-  background: var(--au-surface-2);
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈（同 SectionCard）：半透底 + blur/saturate + 玻璃边 + 内高光 + 柔影 */
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-lg);
   overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .pool-group {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .pool-group.has-pending {
   border-color: var(--au-warning-border);
@@ -1100,8 +1117,18 @@ onMounted(() => {
   font-size: var(--ax-fs-aux-sm);
   font-weight: 600;
   color: var(--au-text-2);
-  background: var(--au-surface-3);
+  /* ax 口径 · 玻璃胶囊（同 SectionCard 玻璃栈）：半透底 + blur/saturate + 玻璃边 + 内高光 */
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-full);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .pool-chip {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
 }
 .pool-badge-pending {
   padding: 2px 10px;
