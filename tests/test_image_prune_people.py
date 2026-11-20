@@ -128,6 +128,7 @@ class TestReferencedBasenamesPeople:
         _add_person(s, it.id, "演员乙", url)
         s.commit()
         avatar_path = image_store.local_path(url)
+        os.makedirs(os.path.dirname(avatar_path), exist_ok=True)
         with open(avatar_path, "wb") as fh:
             fh.write(b"fake-avatar-bytes")
         # 造一个同名缩略图变体
