@@ -242,6 +242,14 @@ POOL_JANITOR_CONFIG_DEFAULTS: dict = {
     # 另行补（丢过副本的热播项仍以 pool_item_max_copies 为
     # 目标，不走本键）。
     "pool_refill_prefetch_target_copies": 1,
+    # 点播排行补池（2026-11-21 池优化）：开＝补位信号追加一路
+    # 「近 7 天起播排行靠前、但从没进过池」的条目（emby_play_
+    # start_events 口径，含非池起播——既有 hot 信号只认池起播
+    # 且丢过副本的条目，覆盖不到这类缺口）；默认开。
+    "pool_refill_playrank_enabled": True,
+    # 点播排行补池取数上限：每轮只看排行前 N 个条目；默认
+    # 100 覆盖实测热门量级，0 = 不取（等价关本信号）。
+    "pool_refill_playrank_top_n": 100,
 }
 
 
@@ -271,6 +279,13 @@ POOL_RETRY_CONFIG_DEFAULTS: dict = {
     # 为界（试完所有可用盘即终态）；>0 时达到即终态，防成员
     # 名单 churn 让同一条目无界换盘。
     "pool_copy_forbidden_max_attempts": 0,
+    # 单条目 insufficient_space 换盘总尝试上限（2026-11-21 池
+    # 优化，节流窗内计 failed/insufficient_space 行数）：口径
+    # 与 copy_forbidden 换盘上限同——0 = 以「每块可用成员盘
+    # 最多试一次」为界（试完所有可用盘即终态）；>0 时达到
+    # 即终态。空间不足是落盘单盘的问题、不是源的问题，故
+    # 只换盘不换源。
+    "pool_insufficient_space_max_attempts": 0,
     # 单条目 copy_forbidden 换源上限（2026-11-19 失败等待优化
     # 第一层）：换盘穷尽后，最多再换几个同作品替代源重试
     # （节流窗内计已试替代源数）；0 = 关换源（回旧口径：换盘
@@ -1902,6 +1917,70 @@ def try_pool_forbidden_recover(db: Session, item, *, quota_fn=None):
     if pending_exc is not None:
         raise pending_exc
     return None, None
+
+
+def _space_failed_jobs(db: Session, item_id):
+    """该条目节流窗内 failed/insufficient_space 的池单行
+    （空间换盘口径；窗口与 _forbidden_failed_jobs 同走
+    _throttle_window_filter，窗外旧失败不再算「试过」，
+    成员盘腾出空间后可再被选中）。"""
+    if item_id is None:
+        return []
+    now = datetime.now()
+    return (db.query(em.TransferJob)
+            .filter(em.TransferJob.item_id == item_id,
+                    em.TransferJob.owner_scope == "pool",
+                    em.TransferJob.status == "failed",
+                    em.TransferJob.error_kind == "insufficient_space",
+                    _tv._throttle_window_filter(now))
+            .all())
+
+
+def pool_space_tried_member_ids(db: Session, item_id) -> set:
+    """已对该条目 insufficient_space 过的成员 id 集合（空间
+    换盘排除集）。与 forbidden 的（成员 × 源）组合口径不同：
+    空间是落盘单盘的属性，与拷源无关，故不按源 key 过滤。"""
+    tried = set()
+    for job in _space_failed_jobs(db, item_id):
+        try:
+            tried.add(int((job.owner_ref or "").strip()))
+        except (TypeError, ValueError):
+            continue
+    return tried
+
+
+def try_pool_space_swap(db: Session, item, *, quota_fn=None):
+    """insufficient_space 换盘重建（2026-11-21 池优化）：排除
+    已满盘、换一个成员盘建新单——与 copy_forbidden 的
+    try_pool_forbidden_swap 同形，但只换盘不换源（空间不足
+    是落盘的问题，不是源的问题）。
+
+    返回新任务行；尝试上限（pool_insufficient_space_max_
+    attempts，0 = 以可用盘试完为界）已达、或已试盘覆盖全部
+    active 成员时返回 None（调用方落终态）；create_pool_job
+    的限额命中抛 TransferError 透传（口径与换盘口一致）。
+    消费方是 transfer_variant 池执行器终态后事
+    （_after_pool_insufficient_space）；门禁不走本口——工人
+    后事已在失败当场重建，门禁下次点播见到的或是在途单、
+    或是已穷尽的终态，如实透传即可。
+    """
+    item_id = getattr(item, "id", None)
+    if item_id is None:
+        return None
+    cfg = retry_config_payload(db)
+    max_attempts = int(cfg["pool_insufficient_space_max_attempts"])
+    if max_attempts > 0 and len(
+            _space_failed_jobs(db, item_id)) >= max_attempts:
+        return None
+    tried = pool_space_tried_member_ids(db, item_id)
+    active_ids = {int(m.id) for m in (db.query(em.PoolMember)
+                                      .filter(em.PoolMember.status
+                                              == "active").all())}
+    if active_ids and tried >= active_ids:
+        return None
+    return create_pool_job(
+        db, item, force=True, quota_fn=quota_fn,
+        exclude_member_ids=tried)
 
 
 def _pool_failed_detail(db: Session, item, job) -> str:

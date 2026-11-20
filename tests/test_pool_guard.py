@@ -677,13 +677,17 @@ def test_idle_proactive_default_on_and_payload(db):
     assert pool_gate.janitor_config_payload(db) == {
         "pool_idle_evict_proactive_enabled": True,
         "pool_refill_max_per_round": 10,
-        "pool_refill_prefetch_target_copies": 1}
+        "pool_refill_prefetch_target_copies": 1,
+        "pool_refill_playrank_enabled": True,
+        "pool_refill_playrank_top_n": 100}
     # 存量行覆盖默认。
     _set_janitor(db, pool_idle_evict_proactive_enabled=False)
     assert pool_gate.janitor_config_payload(db) == {
         "pool_idle_evict_proactive_enabled": False,
         "pool_refill_max_per_round": 10,
-        "pool_refill_prefetch_target_copies": 1}
+        "pool_refill_prefetch_target_copies": 1,
+        "pool_refill_playrank_enabled": True,
+        "pool_refill_playrank_top_n": 100}
 
 
 def test_idle_proactive_evicts_without_capacity_pressure(db):

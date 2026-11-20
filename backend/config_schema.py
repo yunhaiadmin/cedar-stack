@@ -520,6 +520,10 @@ POOL_JANITOR_CONFIG_SCHEMA: dict[str, tuple] = {
     # 热门预热目标份数（等待优化第二层）：1–8，与
     # pool_item_max_copies 同上限。
     "pool_refill_prefetch_target_copies": ("int", 1, 8),
+    # 点播排行补池开关（2026-11-21 池优化）：默认开（代码默认）。
+    "pool_refill_playrank_enabled": ("bool",),
+    # 点播排行补池取数上限：0 = 不取；上限 1000 防误配成整库扫。
+    "pool_refill_playrank_top_n": ("int", 0, 1000),
 }
 
 # 重试子家族（copy_forbidden 换盘重试，2026-11-10 生产定案）：
@@ -534,6 +538,9 @@ POOL_RETRY_CONFIG_SCHEMA: dict[str, tuple] = {
     # 单条目换盘总尝试上限：0 = 以可用成员盘试完为界；>0 达到
     # 即终态。上限 64 防误配成无界重试。
     "pool_copy_forbidden_max_attempts": ("int", 0, 64),
+    # 单条目 insufficient_space 换盘总尝试上限（2026-11-21 池
+    # 优化）：0 = 以可用成员盘试完为界；上限 64 同上。
+    "pool_insufficient_space_max_attempts": ("int", 0, 64),
     # 条目级源熔断（2026-11-12）：窗口内 forbidden 失败数阈值，
     # 0 = 关阈值条件（只按全员试过触发）；上限 1000 防误配。
     "pool_source_block_max_failures": ("int", 0, 1000),

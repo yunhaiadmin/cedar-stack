@@ -6888,6 +6888,42 @@ def _after_pool_copy_forbidden(db, job, item):
             pass
 
 
+def _after_pool_insufficient_space(db, job, item):
+    """池单 insufficient_space 终态后事：换盘重建（2026-11-21
+    池优化）。
+
+    与 copy_forbidden 后事的差别：空间不足是落盘这块成员盘
+    满了，只说明这块盘装不下，不说明源有问题、更不说明别的
+    盘装不下——旧口径直接终态，观众只能等下次点播在门禁吃
+    到如实 failed。本后事经 pool_gate.try_pool_space_swap
+    排除已满盘、当场换一个成员盘重建一单（尝试上限与穷尽
+    判定在 pool_gate 口内）；无盘可换/限额命中是常态结果，
+    只记日志。本函数永不抛异常——后事失败不许污染已落的
+    终态。个人盘路径不动（用户盘空间不足另有腾挪口径）。
+    """
+    from backend.emby_server import pool_gate as _pg
+
+    try:
+        new_job = _pg.try_pool_space_swap(db, item)
+        if new_job is not None:
+            logger.info("池 insufficient_space 换盘重建 job=%s -> %s",
+                        getattr(job, "id", None), new_job.id)
+    except TransferError as exc:
+        logger.info("池 insufficient_space 换盘未建单 job=%s kind=%s",
+                    getattr(job, "id", None), exc.kind)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+    except Exception:  # noqa: BLE001 — 换盘失败不许污染终态
+        logger.warning("池 insufficient_space 换盘重建异常 job=%s",
+                       getattr(job, "id", None), exc_info=True)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def _try_pool_source_heal(db, job, item, drive_api, orig_fid) -> bool:
     """池源自愈（2026-11-12）：成员令牌读不到源时，经 SA 通道
     给源文件补 anyone-reader，补上返回 True（调用方原地重试
@@ -6969,7 +7005,9 @@ def _run_drive_pool_job(db, job, item, drive_api):
       文件（见函数内换源解析），副本仍登记在原条目名下；
     - 不腾地方：copy 中途配额不足时直接终态 insufficient_space，
       绝不调用 ensure_space_for_transfer——那会清掉贡献者自己的
-      用户副本给池让路；
+      用户副本给池让路；终态后由 _after_pool_insufficient_space
+      排除已满盘换一个成员盘重建（2026-11-21 池优化，空间是
+      单盘问题、换盘不换源）；
     - 用量记账：完成记 transfer_bytes、配额失败记 quota_hits
       （pool_usage_daily，PR-5 熔断的数据面）。
     drive_api 参数只为与 run_transfer_job_once 同签名，池执行不
@@ -7055,10 +7093,12 @@ def _run_drive_pool_job(db, job, item, drive_api):
             _pg.maybe_trip_member_breaker(db, member)
             free, shortfall = _fresh_quota_numbers(
                 user_client, member_drive, _file_size)
-            return _fail_job(db, job, "insufficient_space",
-                             f"成员盘空间不足：文件 {_file_size} 字节，"
-                             f"剩余 {free} 字节，还差 {shortfall} 字节，"
-                             "未静默回落共享")
+            result = _fail_job(db, job, "insufficient_space",
+                               f"成员盘空间不足：文件 {_file_size} 字节，"
+                               f"剩余 {free} 字节，还差 {shortfall} 字节，"
+                               "未静默回落共享")
+            _after_pool_insufficient_space(db, job, item)
+            return result
         except DriveOAuthError as exc:
             return _fail_job(db, job, "no_binding",
                              f"成员 Drive 令牌失效：{exc}")

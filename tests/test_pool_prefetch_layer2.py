@@ -388,7 +388,8 @@ def test_refill_signal_order_follow_seek_hot(db):
         db, pool_gate.pool_config_payload(db), datetime.now(),
         quota_fn=_quota_ok)
     assert stats["created"] == 3
-    assert stats["by_signal"] == {"follow": 1, "seek": 1, "hot": 1}
+    assert stats["by_signal"] == {"follow": 1, "seek": 1, "hot": 1,
+                                  "playrank": 0}
     assert [j.item_id for j in _refill_jobs(db)] == [
         follow_ep.id, seek_item.id, hot.id]
 

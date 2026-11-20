@@ -138,7 +138,9 @@ def test_get_janitor_config_returns_default_on(client):
     assert resp.json() == {
         "pool_idle_evict_proactive_enabled": True,
         "pool_refill_max_per_round": 10,
-        "pool_refill_prefetch_target_copies": 1}
+        "pool_refill_prefetch_target_copies": 1,
+        "pool_refill_playrank_enabled": True,
+        "pool_refill_playrank_top_n": 100}
 
 
 def test_put_janitor_config_roundtrips(client, db):
@@ -148,7 +150,9 @@ def test_put_janitor_config_roundtrips(client, db):
     assert resp.json() == {
         "pool_idle_evict_proactive_enabled": False,
         "pool_refill_max_per_round": 10,
-        "pool_refill_prefetch_target_copies": 1}
+        "pool_refill_prefetch_target_copies": 1,
+        "pool_refill_playrank_enabled": True,
+        "pool_refill_playrank_top_n": 100}
     row = db.query(models.SystemConfig).filter_by(
         key="pool_idle_evict_proactive_enabled").one()
     assert row.value == "false"
