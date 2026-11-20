@@ -2,7 +2,7 @@
 /**
  * 运营管理：经济总览 + 订单管理 + 人工补单
  *
- * v2.54（暗房影院）：PageHeader + StatTile 总览（待支付 > 0 才染警示、可点进带筛选的列表）+
+ * v2.54（ax 口径）：PageHeader + StatTile 总览（待支付 > 0 才染警示、可点进带筛选的列表）+
  * flush SectionCard 订单表（筛选在左、查询在右，分页收进卡片底栏）；加载失败给可重试的错误态。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -495,7 +495,7 @@ onMounted(() => {
       </template>
     </PageHeader>
 
-    <!-- 经济总览：数字走正文色，只有「待支付 > 0」染警示；累计营收是全页唯一的琥珀数字 -->
+    <!-- 经济总览：数字走正文色，只有「待支付 > 0」染警示；累计营收是全页唯一的主色数字 -->
     <section v-if="stats" class="stat-row" aria-label="经济总览">
       <StatTile label="累计营收" :value="stats.orders.revenue.toFixed(2)" suffix="$" :icon="Wallet" tone="accent" />
       <StatTile
@@ -794,9 +794,18 @@ onMounted(() => {
   font-size: var(--ax-fs-aux-sm);
   line-height: 1.7;
   color: var(--au-text-3);
-  background: var(--au-surface-2);
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈（弹窗内提示块，弹窗本体仍实色） */
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-md);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .od-hint {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 
 /* ---------- 退款 / 关单记录：贴边列表，发丝线分行 ---------- */

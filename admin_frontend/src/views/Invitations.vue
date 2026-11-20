@@ -1374,11 +1374,20 @@ onMounted(reloadAll)
   font-size: var(--ax-fs-aux-sm);
   padding: 6px 12px;
   border-radius: var(--au-r-full);
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃胶囊（同侧栏激活态玻璃胶囊配方） */
+  border: 1px solid var(--ax-glass-border);
   color: var(--au-text-3);
-  background: var(--au-surface);
+  background: var(--ax-glass-d);
   text-decoration: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   transition: border-color 0.2s ease, color 0.2s ease;
+}
+html[data-theme='light'] .invite-anchors a {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 
 .invite-anchors a:hover {

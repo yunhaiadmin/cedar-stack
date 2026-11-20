@@ -424,10 +424,19 @@ function ago(s: string | null): string {
   font-size: var(--ax-fs-aux-sm);
   line-height: 1.7;
   color: var(--au-text-2);
-  background: var(--au-surface-2);
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈（弹窗内提示块，弹窗本体仍实色） */
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-md);
   padding: 10px 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .dev-actions-hint {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .dev-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .dev-footer-right { display: flex; gap: 8px; }

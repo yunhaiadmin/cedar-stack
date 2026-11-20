@@ -15,7 +15,7 @@
  * v2.6.24：会员卡码是**一个服一个**的——一张会员卡码开的是它所属服的会员（乙服的卡码
  * 在乙服的 EA 上才生效）。默认只看当前服，可切「全部服」汇总；生成时可以指定归属服。
  *
- * v2.54（暗房影院）：PageHeader（范围切换 + 生成入口）· StatTile 总览（诱饵命中才染危险色）·
+ * v2.54（ax 口径）：PageHeader（范围切换 + 生成入口）· StatTile 总览（诱饵命中才染危险色）·
  * 「按类型」SectionCard · 码表 flush + 统一工具条（筛选左、计数与查询右）；
  * 加载失败给可重试的错误态。
  *
@@ -827,11 +827,20 @@ function usedByNames(row: RegistrationCode): string {
   letter-spacing: 0.06em;
   text-align: left;
   color: var(--au-text);
-  background: var(--au-surface-2);
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈（弹窗内码行，弹窗本体仍实色） */
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-md);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   cursor: pointer;
   transition: border-color var(--au-fast) var(--au-ease), background var(--au-fast) var(--au-ease);
+}
+html[data-theme='light'] .gen-code {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .gen-code:hover { border-color: var(--au-primary-border); background: var(--au-primary-soft); }
 .gen-days { font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); white-space: nowrap; }
