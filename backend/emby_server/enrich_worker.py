@@ -6180,6 +6180,17 @@ def _process_item(db, item: Any, holder: Optional[dict] = None,
                 db.commit()
         except Exception as exc:  # noqa: BLE001
             logger.warning("去重缓存版本号 bump 失败（补全写库）: %s", exc)
+        # 图文解耦：文字刮削已落库提交，封面下载交给独立图片队列
+        # （emby_server.image_queue）后台落盘——下载慢/失败/队列满都
+        # 不回滚、不改 enrich_status；队列漏掉的条目仍有 janitor
+        # 补下载巡检（播放信号门）与取图时按需自愈兜底。
+        try:
+            if (fresh.primary_image_url and not fresh.poster_path) or \
+                    (fresh.backdrop_image_url and not fresh.backdrop_path):
+                from backend.emby_server import image_queue as _image_queue
+                _image_queue.enqueue_item_images(item_id)
+        except Exception:  # noqa: BLE001 — 入队绝不影响刮削结果
+            pass
         _maybe_flip_inherit_children(db, fetched)
         return outcome
     except Exception as exc:  # noqa: BLE001

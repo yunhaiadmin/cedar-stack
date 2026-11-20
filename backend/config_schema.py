@@ -323,6 +323,14 @@ IMAGE_OBS_CONFIG_SCHEMA: dict[str, tuple] = {
     "emby_image_obs_enabled": ("bool",),
 }
 
+# 封面图片队列（图文解耦）：文字刮削落库后，封面下载走独立队列
+# 后台落盘（emby_server.image_queue）；本键是队列 worker 数，读取
+# 唯一实现在 image_queue（热读、60 秒进程内缓存、代码默认 4）。
+# 纯 SystemConfig 键，不进 env.example（#1527 先例）。
+IMAGE_QUEUE_CONFIG_SCHEMA: dict[str, tuple] = {
+    "image_queue_concurrency": ("int", 1, 16),
+}
+
 # 团队（2026-11-18 重建批 1，用户拍板：定价＝友站三分之一、全部可配）：
 # 读取唯一实现 backend/teams.team_config（热读 ttl=0、带代码默认回退）。
 # 纯 SystemConfig 键，不进 env.example（#1527 先例）。
