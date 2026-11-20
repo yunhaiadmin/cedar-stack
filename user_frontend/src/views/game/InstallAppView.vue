@@ -1,7 +1,7 @@
 <template>
   <!-- 桌面并壳（2026-11-14 统一壳单）：≥769px 经闸门进用户中心壳
        （壳内隐藏返回钮、页根内边距由布局承接）；手机原样 -->
-  <UhdAccountShellGate>
+  <AxAccountShellGate>
   <div class="ia-page">
     <header class="ia-head">
       <RouterLink to="/game/account/menu" class="ia-back" aria-label="返回我的">
@@ -58,7 +58,7 @@
         <!-- 一键安装动作（组件由 PWA 单提供：支持的浏览器直接调起安装提示，
              iOS 走说明弹层；已在应用内打开时自动隐藏） -->
         <div class="ia-rows ia-pwa">
-          <UhdInstallRow />
+          <AxInstallRow />
         </div>
       </section>
 
@@ -198,14 +198,14 @@
       </template>
     </main>
   </div>
-  </UhdAccountShellGate>
+  </AxAccountShellGate>
 </template>
 
 <script setup lang="ts">
 /**
  * 「安装应用」（/game/install）——用户中心「帮助」组的整页。
  * 2026-11-13 新建：服务器地址卡＋平台客户端下载＋分步教程。
- * 2026-11-14 补全（用户发 UHDNow 安装页截图亲点）：前半按友站结构补齐
+ * 2026-11-14 补全（用户发 参考站 安装页截图亲点）：前半按友站结构补齐
  * 网页应用（PWA）安装指南——身份行（图标＋应用名＋UA 真识别的当前
  * 设备/浏览器）、按浏览器分段的安装步骤、其他设备折叠、卸载与重新
  * 安装、说明；文案为本站自有口径，步骤按各系统/浏览器的真实操作写。
@@ -220,8 +220,8 @@ import {
   Check, ChevronDown, ChevronLeft, Copy, Download, Ellipsis, EllipsisVertical,
   MonitorDown, Plus, Share, SquarePlus,
 } from 'lucide-vue-next'
-import UhdInstallRow from '@/components/uhd/UhdInstallRow.vue'
-import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
+import AxInstallRow from '@/components/ax/AxInstallRow.vue'
+import AxAccountShellGate from '@/components/ax/AxAccountShellGate.vue'
 import { getInstallApp, type InstallAppPayload } from '@/api/installApp'
 import { writeToClipboard } from '@/composables/useClipboard'
 import { isStandalone } from '@/composables/useInstallPrompt'
@@ -429,7 +429,7 @@ onMounted(() => {
   min-height: 100dvh;
   background: #050505;
   color: #ffffff;
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
   padding: 20px 16px 48px;
   box-sizing: border-box;
 }
@@ -563,7 +563,7 @@ html[data-theme='light'] .ia-seg__btn { color: rgba(17, 18, 20, 0.55); }
 html[data-theme='light'] .ia-seg__btn.is-on {
   background: #ffffff;
   color: #111214;
-  box-shadow: var(--uhd-shadow-seg);
+  box-shadow: var(--ax-shadow-seg);
 }
 
 /* 编号步骤：圆形图标钮＋文案（关键动作加粗），发丝线分隔 */
@@ -723,7 +723,7 @@ html[data-theme='light'] .ia-addr-card {
   padding: 0 16px;
   border-radius: 999px;
   border: 1.5px solid transparent;
-  background: var(--uhd-glass-btn-d);
+  background: var(--ax-glass-btn-d);
   color: #ffffff;
   font-size: 13px;
   font-weight: 600;
@@ -737,8 +737,8 @@ html[data-theme='light'] .ia-addr-card {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: var(--uhd-rainbow-border-w);
-  background: var(--uhd-rainbow);
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -746,7 +746,7 @@ html[data-theme='light'] .ia-addr-card {
   pointer-events: none;
 }
 html[data-theme='light'] .ia-copy {
-  background: var(--uhd-rainbow-soft);
+  background: var(--ax-rainbow-soft);
   color: #171717;
 }
 .ia-notes {
@@ -798,7 +798,7 @@ html[data-theme='light'] .ia-row__sub { color: rgba(17, 18, 20, 0.42); }
   padding: 0 14px;
   border-radius: 999px;
   border: 1.5px solid transparent;
-  background: var(--uhd-glass-btn-d);
+  background: var(--ax-glass-btn-d);
   color: #ffffff;
   font-size: 13px;
   font-weight: 600;
@@ -812,8 +812,8 @@ html[data-theme='light'] .ia-row__sub { color: rgba(17, 18, 20, 0.42); }
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: var(--uhd-rainbow-border-w);
-  background: var(--uhd-rainbow);
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -821,7 +821,7 @@ html[data-theme='light'] .ia-row__sub { color: rgba(17, 18, 20, 0.42); }
   pointer-events: none;
 }
 html[data-theme='light'] .ia-dl {
-  background: var(--uhd-rainbow-soft);
+  background: var(--ax-rainbow-soft);
   color: #171717;
 }
 
@@ -861,7 +861,7 @@ html[data-theme='light'] .ia-step__no {
   line-height: 1.6;
 }
 
-/* PWA 行（UhdInstallRow 自带深色行样式）：在本页里跟随页面主题 */
+/* PWA 行（AxInstallRow 自带深色行样式）：在本页里跟随页面主题 */
 .ia-pwa { margin-top: 14px; }
 .ia-pwa :deep(.uir-row) { color: #ffffff; }
 html[data-theme='light'] .ia-pwa :deep(.uir-row) { color: #111214; }

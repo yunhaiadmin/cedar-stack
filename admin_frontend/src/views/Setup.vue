@@ -227,7 +227,7 @@ async function submit() {
 
 /* 站名：与登录页同一口径，字距 ≤0.04em，不再 uppercase */
 .brand-title {
-  font-size: var(--uhd-fs-h3);
+  font-size: var(--ax-fs-h3);
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--au-text);
@@ -235,14 +235,14 @@ async function submit() {
 }
 
 .brand-subtitle {
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   color: var(--au-text-3);
   margin: 0;
   line-height: 1.5;
 }
 
 .auth-hint {
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   color: var(--au-text-2);
   background: var(--au-primary-soft);
   border: 1px solid var(--au-primary-border);
@@ -265,7 +265,7 @@ async function submit() {
 }
 
 .field-label {
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   font-weight: 500;
   color: var(--au-text-3);
 }
@@ -304,7 +304,7 @@ async function submit() {
   border: none;
   outline: none;
   color: var(--au-text);
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
 }
 
 .field-box input::placeholder { color: var(--au-text-4); }
@@ -316,7 +316,7 @@ async function submit() {
   background: var(--au-danger-soft);
   border: 1px solid var(--au-danger-border);
   color: var(--au-danger);
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   line-height: 1.4;
 }
 
@@ -331,7 +331,7 @@ async function submit() {
   border: none;
   border-radius: var(--au-r-md);
   color: var(--au-on-primary);
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   font-weight: 600;
   cursor: pointer;
   transition: filter var(--au-fast) var(--au-ease), transform var(--au-fast) var(--au-ease);
@@ -358,7 +358,7 @@ async function submit() {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-4);
   margin: 1.25rem 0 0;
 }
@@ -367,7 +367,7 @@ async function submit() {
 @media (max-width: 480px) {
   .auth-page { padding: 14px; align-items: flex-start; padding-top: max(28px, env(safe-area-inset-top)); }
   .auth-card { padding: 1.625rem 1.25rem 1.25rem; }
-  .brand-title { font-size: var(--uhd-fs-title); }
+  .brand-title { font-size: var(--ax-fs-title); }
 }
 
 /* ---------- 初始化向导独有：步骤条 / 检查中 / 完成态 / 字段提示 ---------- */
@@ -386,7 +386,7 @@ async function submit() {
   gap: 8px;
   min-width: 0;
   padding: 8px 10px;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   color: var(--au-text-4);
   background: var(--au-surface-2);
   border: 1px solid var(--au-border);
@@ -406,7 +406,7 @@ async function submit() {
   border-radius: var(--au-r-full);
   background: var(--au-surface-3);
   color: var(--au-text-3);
-  font-size: var(--uhd-fs-micro);
+  font-size: var(--ax-fs-micro);
   font-weight: 700;
 }
 
@@ -419,7 +419,7 @@ async function submit() {
   justify-content: center;
   gap: 10px;
   padding: 2.5rem 0;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   color: var(--au-text-3);
 }
 
@@ -437,11 +437,11 @@ async function submit() {
   color: var(--au-success);
 }
 
-.setup-done h2 { font-size: var(--uhd-fs-title); margin: 0.75rem 0 0.5rem; color: var(--au-text); }
-.setup-done p { font-size: var(--uhd-fs-aux); color: var(--au-text-3); line-height: 1.7; margin: 0; }
+.setup-done h2 { font-size: var(--ax-fs-title); margin: 0.75rem 0 0.5rem; color: var(--au-text); }
+.setup-done p { font-size: var(--ax-fs-aux); color: var(--au-text-3); line-height: 1.7; margin: 0; }
 .setup-done strong { color: var(--au-text); }
 
 .field-box.is-warn { border-color: var(--au-warning-border); }
-.field-hint { font-size: var(--uhd-fs-aux-sm); line-height: 1.5; color: var(--au-text-3); }
+.field-hint { font-size: var(--ax-fs-aux-sm); line-height: 1.5; color: var(--au-text-3); }
 .field-hint.warn { color: var(--au-warning); }
 </style>

@@ -342,7 +342,7 @@ onMounted(() => {
 }
 
 .stat-num {
-  font-size: var(--uhd-fs-h3);
+  font-size: var(--ax-fs-h3);
   font-weight: 700;
   color: var(--au-text);
   line-height: 1.2;
@@ -356,7 +356,7 @@ onMounted(() => {
 
 .mono {
   font-family: var(--font-mono);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
 }
 
 .dim {
@@ -366,7 +366,7 @@ onMounted(() => {
 .detail-pre {
   margin: 0;
   padding: 8px 12px;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   white-space: pre-wrap;
   word-break: break-all;
   color: var(--au-text-2);
@@ -374,7 +374,7 @@ onMounted(() => {
 
 .fill-note {
   margin: 0 0 12px;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
 }
 
 .fill-grid {
@@ -388,7 +388,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   color: var(--au-text-2);
 }
 

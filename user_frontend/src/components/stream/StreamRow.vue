@@ -61,22 +61,22 @@ function nextGroup() {
 .sr-title {
   margin: 0;
   font-size: 29px;
-  font-weight: var(--uhd-fw-extrabold);
-  color: var(--uhd-s-text);
+  font-weight: var(--ax-fw-extrabold);
+  color: var(--ax-s-text);
   letter-spacing: -0.01em;
 }
 .sr-count {
   margin-left: 10px;
   font-size: 14px;
-  font-weight: var(--uhd-fw-normal);
-  color: var(--uhd-s-text-2);
+  font-weight: var(--ax-fw-normal);
+  color: var(--ax-s-text-2);
 }
 /* 「查看全部 →」：仅手机端显示（录屏形态）；桌面用圆形下一组钮 */
 .sr-more {
   display: none;
   flex: none;
   font-size: 14px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   text-decoration: none;
 }
 .sr-next {
@@ -87,9 +87,9 @@ function nextGroup() {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  border: 1px solid var(--uhd-s-pill-border);
-  background: var(--uhd-s-pill-bg);
-  color: var(--uhd-s-text);
+  border: 1px solid var(--ax-s-pill-border);
+  background: var(--ax-s-pill-bg);
+  color: var(--ax-s-text);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   cursor: pointer;

@@ -99,7 +99,7 @@
 
 <script setup lang="ts">
 /**
- * 活跃会话合并列表（2026-11-18 UHDNow 差异定案 G-60/G-62~G-66）：
+ * 活跃会话合并列表（2026-11-18 参考站 差异定案 G-60/G-62~G-66）：
  * 网页登录（refresh 家族）＋媒体客户端设备＋弹幕 Token（平台 API Key）
  * 三类一表；筛选「全部／网页登录／弹幕 Token」带计数（媒体客户端只进全部）；
  * 行头＝平台图标＋系统/浏览器＋类型标签＋锁定虚线胶囊；最近活动/到期均
@@ -265,9 +265,9 @@ onMounted(() => {
    锁定胶囊用虚线边框区分于类型标签（G-63）。 */
 .as-sub {
   margin: 0 0 10px;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   line-height: 1.6;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 .as-filters {
   display: flex;
@@ -279,25 +279,25 @@ onMounted(() => {
   min-height: 36px;
   padding: 0 12px;
   border: none;
-  border-radius: var(--uhd-radius-pill);
+  border-radius: var(--ax-radius-pill);
   background: none;
-  color: var(--uhd-l-text-2);
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-medium);
+  color: var(--ax-l-text-2);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-medium);
   cursor: pointer;
   font-variant-numeric: tabular-nums;
 }
 .as-filter.is-on {
   padding: 0 16px;
-  background: var(--uhd-l-text);
-  border-color: var(--uhd-l-text);
-  color: var(--uhd-l-surface);
+  background: var(--ax-l-text);
+  border-color: var(--ax-l-text);
+  color: var(--ax-l-surface);
 }
 /* S-3 行：上部＝图标＋名/标签/锁定＋逐行 meta，下部＝操作行右对齐 */
 .as-row {
   padding: 12px 0 10px;
 }
-.as-row + .as-row { border-top: var(--uhd-border-w) solid var(--uhd-l-divider); }
+.as-row + .as-row { border-top: var(--ax-border-w) solid var(--ax-l-divider); }
 .as-row-top {
   display: flex;
   align-items: flex-start;
@@ -310,7 +310,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
 }
 .as-main {
   display: flex;
@@ -327,9 +327,9 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 .as-name {
-  font-size: var(--uhd-fs-body);
-  font-weight: var(--uhd-fw-semibold);
-  color: var(--uhd-l-text);
+  font-size: var(--ax-fs-body);
+  font-weight: var(--ax-fw-semibold);
+  color: var(--ax-l-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -337,11 +337,11 @@ onMounted(() => {
 .as-tag {
   flex: none;
   padding: 2px 8px;
-  border-radius: var(--uhd-radius-pill);
-  background: var(--uhd-l-input-bg);
-  color: var(--uhd-l-text-2);
-  font-size: var(--uhd-fs-aux);
-  font-weight: var(--uhd-fw-medium);
+  border-radius: var(--ax-radius-pill);
+  background: var(--ax-l-input-bg);
+  color: var(--ax-l-text-2);
+  font-size: var(--ax-fs-aux);
+  font-weight: var(--ax-fw-medium);
   white-space: nowrap;
 }
 .as-lock {
@@ -350,24 +350,24 @@ onMounted(() => {
   align-items: center;
   gap: 3px;
   padding: 2px 8px;
-  border-radius: var(--uhd-radius-pill);
-  border: 1px dashed var(--uhd-l-border);
-  color: var(--uhd-l-text-2);
-  font-size: var(--uhd-fs-aux);
-  font-weight: var(--uhd-fw-medium);
+  border-radius: var(--ax-radius-pill);
+  border: 1px dashed var(--ax-l-border);
+  color: var(--ax-l-text-2);
+  font-size: var(--ax-fs-aux);
+  font-weight: var(--ax-fw-medium);
   white-space: nowrap;
 }
 .as-lock.is-locked {
   border-style: solid;
-  border-color: var(--uhd-l-text);
-  color: var(--uhd-l-text);
+  border-color: var(--ax-l-text);
+  color: var(--ax-l-text);
 }
 /* S-3：IP／最近活动／到期各占一行，不再拼一行截断 */
 .as-meta {
   display: block;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   line-height: 1.6;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
   font-variant-numeric: tabular-nums;
 }
 /* S-3：操作行——锁定文字钮＋铅笔／垃圾桶图标钮，右对齐在行底部 */
@@ -386,10 +386,10 @@ onMounted(() => {
   padding: 0 10px;
   background: none;
   border: none;
-  border-radius: var(--uhd-radius-pill);
-  color: var(--uhd-l-text);
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-medium);
+  border-radius: var(--ax-radius-pill);
+  color: var(--ax-l-text);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-medium);
   cursor: pointer;
 }
 .as-op-ic {
@@ -404,24 +404,24 @@ onMounted(() => {
   padding: 0 8px;
   background: none;
   border: none;
-  border-radius: var(--uhd-radius-pill);
-  color: var(--uhd-l-text-2);
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-medium);
+  border-radius: var(--ax-radius-pill);
+  color: var(--ax-l-text-2);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-medium);
   cursor: pointer;
 }
 .as-op-text:disabled, .as-op-ic:disabled { opacity: 0.5; cursor: not-allowed; }
 .as-op-ic.as-del.confirming {
-  color: var(--uhd-danger);
-  font-weight: var(--uhd-fw-semibold);
+  color: var(--ax-danger);
+  font-weight: var(--ax-fw-semibold);
 }
 .as-tip {
   margin: 12px 0 0;
   padding-top: 12px;
-  border-top: var(--uhd-border-w) solid var(--uhd-l-divider);
-  font-size: var(--uhd-fs-aux);
+  border-top: var(--ax-border-w) solid var(--ax-l-divider);
+  font-size: var(--ax-fs-aux);
   line-height: 1.6;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 .sx-mini-btn {
   display: inline-flex;
@@ -430,12 +430,12 @@ onMounted(() => {
   height: 36px;
   min-height: 36px;
   padding: 0 16px;
-  background: var(--uhd-l-surface);
-  border: var(--uhd-border-w) solid var(--uhd-l-border);
-  border-radius: var(--uhd-radius-pill);
-  color: var(--uhd-l-text);
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-medium);
+  background: var(--ax-l-surface);
+  border: var(--ax-border-w) solid var(--ax-l-border);
+  border-radius: var(--ax-radius-pill);
+  color: var(--ax-l-text);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-medium);
   cursor: pointer;
 }
 .sx-mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -444,17 +444,17 @@ onMounted(() => {
   align-items: center;
   gap: 10px;
   padding: 18px 0;
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-caption);
+  color: var(--ax-l-text-2);
 }
 .sx-spin {
   width: 18px;
   height: 18px;
   flex: none;
   border-radius: 50%;
-  border: 2px solid var(--uhd-l-divider);
-  border-top-color: var(--uhd-l-text-2);
-  animation: uhd-spin 0.8s linear infinite;
+  border: 2px solid var(--ax-l-divider);
+  border-top-color: var(--ax-l-text-2);
+  animation: ax-spin 0.8s linear infinite;
 }
 .sx-err {
   display: flex;
@@ -464,30 +464,30 @@ onMounted(() => {
   padding: 14px 16px;
   border: 1px dashed #d4d4d8;
   border-radius: 16px;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   line-height: 1.6;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 .sx-empty {
   padding: 26px 20px;
   border: 1px dashed #d4d4d8;
   border-radius: 16px;
   text-align: center;
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   line-height: 1.6;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 .sx-status {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   flex: none;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   white-space: nowrap;
 }
 .sx-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.sx-status--bad { color: var(--uhd-danger); }
-.sx-status--bad .sx-dot { background: var(--uhd-dot-bad); }
+.sx-status--bad { color: var(--ax-danger); }
+.sx-status--bad .sx-dot { background: var(--ax-dot-bad); }
 /* 改名小弹窗：居中浮层＋半透明遮罩 */
 .as-modal-backdrop {
   position: fixed;
@@ -504,24 +504,24 @@ onMounted(() => {
   max-width: 360px;
   padding: 20px;
   border-radius: 20px;
-  background: var(--uhd-l-surface);
-  box-shadow: var(--uhd-shadow-seg);
+  background: var(--ax-l-surface);
+  box-shadow: var(--ax-shadow-seg);
 }
 .as-modal-title {
   margin: 0 0 12px;
-  font-size: var(--uhd-fs-lead);
-  font-weight: var(--uhd-fw-semibold);
-  color: var(--uhd-l-text);
+  font-size: var(--ax-fs-lead);
+  font-weight: var(--ax-fw-semibold);
+  color: var(--ax-l-text);
 }
 .as-modal-input {
   width: 100%;
   height: 44px;
   padding: 0 14px;
   border-radius: 12px;
-  border: var(--uhd-border-w) solid var(--uhd-l-border);
-  background: var(--uhd-l-input-bg);
-  color: var(--uhd-l-text);
-  font-size: var(--uhd-fs-body);
+  border: var(--ax-border-w) solid var(--ax-l-border);
+  background: var(--ax-l-input-bg);
+  color: var(--ax-l-text);
+  font-size: var(--ax-fs-body);
   box-sizing: border-box;
 }
 .as-modal-ops {

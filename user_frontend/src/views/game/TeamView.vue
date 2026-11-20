@@ -1,6 +1,6 @@
 <template>
   <!-- 桌面并壳（2026-11-14 统一壳单）：≥769px 经闸门进用户中心壳；手机原样 -->
-  <UhdAccountShellGate>
+  <AxAccountShellGate>
   <div class="tm-page">
     <div class="tm-inner">
       <header class="tm-head">
@@ -24,9 +24,9 @@
             <button type="button" class="tm-family__refresh" aria-label="刷新" @click="loadDetail">
               <RefreshCw :size="18" aria-hidden="true" />
             </button>
-            <UhdButton variant="primary" size="sm" :dark="themeResolved === 'dark'" @click="openBuy">
+            <AxButton variant="primary" size="sm" :dark="themeResolved === 'dark'" @click="openBuy">
               更改为团队 <ArrowRight :size="16" aria-hidden="true" />
-            </UhdButton>
+            </AxButton>
           </div>
 
           <div class="tm-family__stats">
@@ -118,14 +118,14 @@
                 购买成功后还需联系客服开通播放权限，否则无法使用。
               </p>
             </div>
-            <UhdButton
+            <AxButton
               v-if="ctaMode === 'buy'"
               variant="primary"
               :dark="themeResolved === 'dark'"
               @click="openBuy"
             >
               <Plus :size="16" aria-hidden="true" />{{ team ? '升级 / 续订团队套餐' : '创建团队套餐' }}
-            </UhdButton>
+            </AxButton>
             <p v-else-if="ctaMode === 'sub'" class="tm-cta-note">
               子账号不能创建团队套餐，请用主账号操作。
             </p>
@@ -158,7 +158,7 @@
         <section class="tm-members">
           <div class="tm-members__head">
             <h2 class="tm-sec-title">成员账号<span v-if="familyMode" class="tm-members__count">{{ membersTotal }} 个</span></h2>
-            <UhdButton
+            <AxButton
               v-if="familyMode && canManage"
               variant="primary"
               size="sm"
@@ -166,7 +166,7 @@
               @click="openMember"
             >
               <UserPlus :size="16" aria-hidden="true" />添加成员
-            </UhdButton>
+            </AxButton>
             <button
               v-else-if="canManage"
               type="button"
@@ -220,19 +220,19 @@
             <div v-if="membersEnabled && membersLoading" class="tm-table-loading">
               <span class="tm-spin tm-spin--sm" aria-hidden="true"></span>正在加载…
             </div>
-            <UhdEmptyState
+            <AxEmptyState
               v-else-if="!membersEnabled"
               title="请先开通团队套餐"
             />
-            <UhdEmptyState
+            <AxEmptyState
               v-else-if="familyMode && !members.length"
               title="还没有成员账号"
             >
               <template #action>
                 <button type="button" class="tm-fam-empty-btn" @click="openMember">添加成员</button>
               </template>
-            </UhdEmptyState>
-            <UhdEmptyState
+            </AxEmptyState>
+            <AxEmptyState
               v-else-if="!members.length"
               title="还没有成员"
               desc="点右上角「添加成员」，用用户名和密码创建第一个成员账号。"
@@ -290,7 +290,7 @@
 
     <!-- 创建 / 升级弹窗（两步：配置 → 结算预览，照友站 §8.3；手机端紧凑卡
          版式照友站录屏实测：浮动卡＋头部＋五块卡＋底部栏常驻，弹层封顶
-         82dvh、只在内部滚动。专职 sheet 而非 UhdModal：UhdModal 无高度
+         82dvh、只在内部滚动。专职 sheet 而非 AxModal：AxModal 无高度
          封顶，长内容会溢出屏幕、底部按钮被挤出（用户真机实证）。 -->
     <Teleport to="body">
       <div v-if="buyOpen" class="tm-sheet__overlay" @click.self="closeBuy">
@@ -476,13 +476,13 @@
           <div v-if="buyStep !== 'loading'" class="tm-sheet__foot">
             <template v-if="buyStep === 1">
               <button type="button" class="tm-btn tm-btn--ghost" @click="closeBuy">取消</button>
-              <UhdButton variant="primary" :dark="themeResolved === 'dark'" @click="doPreview">预览结算金额</UhdButton>
+              <AxButton variant="primary" :dark="themeResolved === 'dark'" @click="doPreview">预览结算金额</AxButton>
             </template>
             <template v-else-if="buyStep === 2">
               <button type="button" class="tm-btn tm-btn--ghost" :disabled="buying" @click="buyStep = 1">取消</button>
-              <UhdButton variant="primary" :dark="themeResolved === 'dark'" :disabled="buying" @click="doPurchase">
+              <AxButton variant="primary" :dark="themeResolved === 'dark'" :disabled="buying" @click="doPurchase">
                 {{ buying ? '处理中…' : '确认并支付' }}
-              </UhdButton>
+              </AxButton>
             </template>
           </div>
         </div>
@@ -490,7 +490,7 @@
     </Teleport>
 
     <!-- 添加成员弹窗 -->
-    <UhdModal v-model="memberOpen" title="添加成员" :width="420">
+    <AxModal v-model="memberOpen" title="添加成员" :width="420">
       <form class="tm-member-form" @submit.prevent="doCreateMember">
         <p class="tm-field-label">成员用户名</p>
         <input
@@ -519,14 +519,14 @@
       </form>
       <template #footer>
         <button type="button" class="tm-btn tm-btn--ghost" :disabled="memberBusy" @click="memberOpen = false">取消</button>
-        <UhdButton variant="primary" :dark="themeResolved === 'dark'" :disabled="memberBusy" @click="doCreateMember">
+        <AxButton variant="primary" :dark="themeResolved === 'dark'" :disabled="memberBusy" @click="doCreateMember">
           {{ memberBusy ? '创建中…' : '创建成员' }}
-        </UhdButton>
+        </AxButton>
       </template>
-    </UhdModal>
+    </AxModal>
 
     <!-- 移除成员确认 -->
-    <UhdModal v-model="removeOpen" title="移除成员" :width="400">
+    <AxModal v-model="removeOpen" title="移除成员" :width="400">
       <p class="tm-confirm-text">
         确认移除成员 @{{ removeTarget?.username }}？移除后该账号将被停用、无法再登录。
       </p>
@@ -537,10 +537,10 @@
           {{ removeBusy ? '处理中…' : '确认移除' }}
         </button>
       </template>
-    </UhdModal>
+    </AxModal>
 
     <!-- 改名弹窗 -->
-    <UhdModal v-model="renameOpen" title="修改团队名" :width="400">
+    <AxModal v-model="renameOpen" title="修改团队名" :width="400">
       <div class="tm-rename">
         <input
           v-model="renameValue"
@@ -555,13 +555,13 @@
       <p v-if="renameError" class="tm-buy-error" role="alert">{{ renameError }}</p>
       <template #footer>
         <button type="button" class="tm-btn tm-btn--ghost" :disabled="renameBusy" @click="renameOpen = false">取消</button>
-        <UhdButton variant="primary" :dark="themeResolved === 'dark'" :disabled="renameBusy" @click="doRename">
+        <AxButton variant="primary" :dark="themeResolved === 'dark'" :disabled="renameBusy" @click="doRename">
           {{ renameBusy ? '保存中…' : '保存' }}
-        </UhdButton>
+        </AxButton>
       </template>
-    </UhdModal>
+    </AxModal>
   </div>
-  </UhdAccountShellGate>
+  </AxAccountShellGate>
 </template>
 
 <script setup lang="ts">
@@ -595,10 +595,10 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import './team-view.css'
 import '../../styles/modal-glass.css'
 import { ArrowLeft, ArrowRight, CalendarDays, Gauge, Plus, RefreshCw, Search, ShieldCheck, UserPlus, Zap } from 'lucide-vue-next'
-import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
-import UhdButton from '@/components/uhd/UhdButton.vue'
-import UhdEmptyState from '@/components/uhd/UhdEmptyState.vue'
-import UhdModal from '@/components/uhd/UhdModal.vue'
+import AxAccountShellGate from '@/components/ax/AxAccountShellGate.vue'
+import AxButton from '@/components/ax/AxButton.vue'
+import AxEmptyState from '@/components/ax/AxEmptyState.vue'
+import AxModal from '@/components/ax/AxModal.vue'
 import { useTheme } from '@/composables/useTheme'
 import { useToast } from '@/composables/useToast'
 import { useUserStore } from '@/stores/user'
@@ -905,7 +905,7 @@ function goPage(next: number) {
 const buyOpen = ref(false)
 const buyStep = ref<1 | 2 | 'loading'>(1)
 
-/** 购买 sheet 关闭（× / 遮罩 / Esc 三路同口径，与 UhdModal 一致） */
+/** 购买 sheet 关闭（× / 遮罩 / Esc 三路同口径，与 AxModal 一致） */
 function closeBuy() {
   buyOpen.value = false
 }
@@ -1140,7 +1140,7 @@ onMounted(() => {
 
 <style scoped>
 /* 团队页版式：主题变量在 team-view.css（令牌契约要求独立样式表）；
-   字阶/圆角/动效走 --uhd-* 令牌。 */
+   字阶/圆角/动效走 --ax-* 令牌。 */
 .tm-inner {
   max-width: 760px;
   margin: 0 auto;
@@ -1154,10 +1154,10 @@ onMounted(() => {
 .tm-head { margin: 10px 0 18px; }
 .tm-title {
   margin: 0;
-  font-size: var(--uhd-fs-h1-app);
-  font-weight: var(--uhd-fw-extrabold);
+  font-size: var(--ax-fs-h1-app);
+  font-weight: var(--ax-fw-extrabold);
   letter-spacing: -0.01em;
-  line-height: var(--uhd-lh-tight);
+  line-height: var(--ax-lh-tight);
 }
 .tm-err {
   display: flex;
@@ -1167,16 +1167,16 @@ onMounted(() => {
   border: 1px solid var(--tm-line);
   border-radius: 16px;
   color: var(--tm-text-2);
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
 }
 .tm-retry {
   border: 1px solid var(--tm-line);
   background: transparent;
   color: inherit;
-  border-radius: var(--uhd-radius-pill);
+  border-radius: var(--ax-radius-pill);
   padding: 6px 14px;
   cursor: pointer;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
 }
 .tm-loading {
   min-height: 40dvh;
@@ -1186,7 +1186,7 @@ onMounted(() => {
   justify-content: center;
   gap: 14px;
 }
-.tm-loading__text { margin: 0; font-size: var(--uhd-fs-caption); color: var(--tm-text-3); }
+.tm-loading__text { margin: 0; font-size: var(--ax-fs-caption); color: var(--tm-text-3); }
 .tm-spin {
   width: 30px;
   height: 30px;
@@ -1225,14 +1225,14 @@ onMounted(() => {
 }
 .tm-intro__title {
   margin: 2px 0 6px;
-  font-size: var(--uhd-fs-title);
-  font-weight: var(--uhd-fw-bold);
+  font-size: var(--ax-fs-title);
+  font-weight: var(--ax-fw-bold);
 }
 .tm-intro__desc {
   margin: 0;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   color: var(--tm-text-2);
-  line-height: var(--uhd-lh-body);
+  line-height: var(--ax-lh-body);
 }
 .tm-stats {
   display: grid;
@@ -1247,13 +1247,13 @@ onMounted(() => {
 }
 .tm-stat__label {
   margin: 0 0 6px;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   color: var(--tm-text-2);
 }
 .tm-stat__value {
   margin: 0;
-  font-size: var(--uhd-fs-lead);
-  font-weight: var(--uhd-fw-bold);
+  font-size: var(--ax-fs-lead);
+  font-weight: var(--ax-fw-bold);
 }
 .tm-stat__value--off {
   color: var(--tm-text-2);
@@ -1264,12 +1264,12 @@ onMounted(() => {
   border-radius: 12px;
   background: var(--tm-warn-bg);
   color: var(--tm-warn-text);
-  font-size: var(--uhd-fs-caption);
-  line-height: var(--uhd-lh-body);
+  font-size: var(--ax-fs-caption);
+  line-height: var(--ax-lh-body);
 }
 .tm-active-line {
   margin: 16px 0 0;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   color: var(--tm-text-2);
 }
 .tm-review {
@@ -1283,18 +1283,18 @@ onMounted(() => {
 .tm-review__text { flex: 1; min-width: 0; }
 .tm-review__title {
   margin: 0 0 4px;
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-semibold);
 }
 .tm-review__desc {
   margin: 0;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   color: var(--tm-text-2);
-  line-height: var(--uhd-lh-body);
+  line-height: var(--ax-lh-body);
 }
 .tm-cta-note {
   margin: 0;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   color: var(--tm-text-2);
   white-space: nowrap;
 }
@@ -1308,14 +1308,14 @@ onMounted(() => {
 .tm-family { margin-top: 2px; }
 .tm-family__title {
   margin: 0;
-  font-size: var(--uhd-fs-h1-app);
-  font-weight: var(--uhd-fw-extrabold);
+  font-size: var(--ax-fs-h1-app);
+  font-weight: var(--ax-fw-extrabold);
   letter-spacing: -0.01em;
-  line-height: var(--uhd-lh-tight);
+  line-height: var(--ax-lh-tight);
 }
 .tm-family__sub {
   margin: 8px 0 0;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   color: var(--tm-text-2);
 }
 .tm-family__actions {
@@ -1347,17 +1347,17 @@ onMounted(() => {
 .tm-fam-stat:nth-child(n+3) { border-top: 1px solid var(--tm-line); }
 .tm-fam-stat__label {
   margin: 0 0 6px;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   color: var(--tm-text-2);
 }
 .tm-fam-stat__value {
   margin: 0;
-  font-size: var(--uhd-fs-h3);
-  font-weight: var(--uhd-fw-bold);
+  font-size: var(--ax-fs-h3);
+  font-weight: var(--ax-fw-bold);
 }
 .tm-fam-stat__unit {
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-medium);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-medium);
   color: var(--tm-text-2);
 }
 .tm-family__dl {
@@ -1371,26 +1371,26 @@ onMounted(() => {
 }
 .tm-family__dl-title {
   margin: 0;
-  font-size: var(--uhd-fs-body);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-body);
+  font-weight: var(--ax-fw-semibold);
 }
 .tm-family__dl-desc {
   margin: 4px 0 0;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   color: var(--tm-text-2);
 }
 .tm-family__dl-value {
   flex: none;
-  font-size: var(--uhd-fs-body);
-  font-weight: var(--uhd-fw-semibold);
-  color: var(--uhd-success);
+  font-size: var(--ax-fs-body);
+  font-weight: var(--ax-fw-semibold);
+  color: var(--ax-success);
   white-space: nowrap;
 }
 .tm-family__dl-value--off { color: var(--tm-text-2); }
 .tm-members__count {
   margin-left: 6px;
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-medium);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-medium);
   color: var(--tm-text-2);
 }
 /* 家庭空态卡里的白钮（友站同款）：浅色/深色两态均为实色白底＋深字 */
@@ -1398,12 +1398,12 @@ onMounted(() => {
   height: 40px;
   padding: 0 20px;
   border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: var(--uhd-radius-pill);
+  border-radius: var(--ax-radius-pill);
   background: #ffffff;
   color: #17181c;
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-semibold);
-  font-family: var(--uhd-font-sans);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-semibold);
+  font-family: var(--ax-font-sans);
   cursor: pointer;
 }
 
@@ -1418,29 +1418,29 @@ onMounted(() => {
 .tm-teambar__main { flex: 1; min-width: 0; }
 .tm-teambar__name {
   margin: 0;
-  font-size: var(--uhd-fs-lead);
-  font-weight: var(--uhd-fw-bold);
+  font-size: var(--ax-fs-lead);
+  font-weight: var(--ax-fw-bold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .tm-teambar__sub {
   margin: 4px 0 0;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   color: var(--tm-text-2);
 }
 .tm-chip {
   flex: none;
   padding: 4px 10px;
-  border-radius: var(--uhd-radius-pill);
+  border-radius: var(--ax-radius-pill);
   background: var(--tm-warn-bg);
   color: var(--tm-warn-text);
-  font-size: var(--uhd-fs-aux-sm);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-aux-sm);
+  font-weight: var(--ax-fw-semibold);
 }
 .tm-chip--ok {
   background: rgba(22, 163, 74, 0.14);
-  color: var(--uhd-success);
+  color: var(--ax-success);
 }
 .tm-chip--off {
   margin-left: 8px;
@@ -1452,9 +1452,9 @@ onMounted(() => {
   border: 1px solid var(--tm-line);
   background: transparent;
   color: inherit;
-  border-radius: var(--uhd-radius-pill);
+  border-radius: var(--ax-radius-pill);
   padding: 7px 14px;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   cursor: pointer;
 }
 .tm-mini-btn:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -1470,8 +1470,8 @@ onMounted(() => {
 }
 .tm-sec-title {
   margin: 0;
-  font-size: var(--uhd-fs-h3);
-  font-weight: var(--uhd-fw-extrabold);
+  font-size: var(--ax-fs-h3);
+  font-weight: var(--ax-fw-extrabold);
   letter-spacing: -0.01em;
 }
 .tm-add-btn {
@@ -1481,17 +1481,17 @@ onMounted(() => {
   border: 1px solid var(--tm-line);
   background: var(--tm-card);
   color: inherit;
-  border-radius: var(--uhd-radius-pill);
+  border-radius: var(--ax-radius-pill);
   height: 38px;
   padding: 0 16px;
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-semibold);
   cursor: pointer;
 }
 .tm-add-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .tm-limit-note {
   margin: 0 0 12px;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   color: var(--tm-text-2);
 }
 .tm-toolbar {
@@ -1507,14 +1507,14 @@ onMounted(() => {
   height: 40px;
   padding: 0 14px;
   border: 1px solid var(--tm-line);
-  border-radius: var(--uhd-radius-pill);
+  border-radius: var(--ax-radius-pill);
   background: var(--tm-input);
   color: inherit;
-  font-size: var(--uhd-fs-caption);
-  font-family: var(--uhd-font-sans);
+  font-size: var(--ax-fs-caption);
+  font-family: var(--ax-font-sans);
   box-sizing: border-box;
 }
-.tm-tool .tm-input { width: 100%; border-radius: var(--uhd-radius-pill); }
+.tm-tool .tm-input { width: 100%; border-radius: var(--ax-radius-pill); }
 .tm-select:disabled,
 .tm-input:disabled { opacity: 0.5; }
 .tm-search-btn {
@@ -1524,11 +1524,11 @@ onMounted(() => {
   height: 40px;
   padding: 0 18px;
   border: none;
-  border-radius: var(--uhd-radius-pill);
+  border-radius: var(--ax-radius-pill);
   background: var(--tm-text-2);
   color: var(--tm-card);
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-semibold);
   cursor: pointer;
 }
 .tm-search-btn:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -1539,7 +1539,7 @@ onMounted(() => {
   justify-content: center;
   gap: 10px;
   padding: 48px 0;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   color: var(--tm-text-2);
 }
 .tm-table-wrap { overflow-x: auto; }
@@ -1551,23 +1551,23 @@ onMounted(() => {
 .tm-table th {
   padding: 12px 16px 10px 2px;
   text-align: left;
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-medium);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-medium);
   color: var(--tm-text-2);
   border-bottom: 1px solid var(--tm-line);
   white-space: nowrap;
 }
 .tm-table td {
   padding: 12px 16px 12px 2px;
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   border-bottom: 1px solid var(--tm-line);
   vertical-align: middle;
 }
 .tm-table tbody tr:last-child td { border-bottom: none; }
-.tm-member-name { font-weight: var(--uhd-fw-semibold); }
+.tm-member-name { font-weight: var(--ax-fw-semibold); }
 .tm-member-id {
   display: block;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--tm-text-3);
 }
 .tm-usage-text { display: block; white-space: nowrap; }
@@ -1584,13 +1584,13 @@ onMounted(() => {
   display: block;
   height: 100%;
   border-radius: 3px;
-  background: var(--uhd-l-link);
+  background: var(--ax-l-link);
 }
 .tm-remove-btn {
   border: none;
   background: transparent;
   color: var(--tm-danger);
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   cursor: pointer;
   padding: 4px 6px;
 }
@@ -1601,14 +1601,14 @@ onMounted(() => {
   gap: 14px;
   padding-top: 12px;
 }
-.tm-pager__info { font-size: var(--uhd-fs-caption); color: var(--tm-text-2); }
+.tm-pager__info { font-size: var(--ax-fs-caption); color: var(--tm-text-2); }
 
 /* ---------- 弹窗内通用 ---------- */
 .tm-field-label {
   margin: 18px 0 8px;
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-semibold);
-  color: var(--uhd-l-text);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-semibold);
+  color: var(--ax-l-text);
 }
 .tm-field-label:first-child { margin-top: 0; }
 .tm-buy .tm-input,
@@ -1618,28 +1618,28 @@ onMounted(() => {
   width: 100%;
   border-radius: 12px;
   /* 弹窗经 Teleport 出 .tm-page 作用域，--tm-* 不可达：边框/底色用
-     中性字面值＋弹窗作用域翻转的 --uhd-l-input-bg（与订阅确认弹窗同法） */
+     中性字面值＋弹窗作用域翻转的 --ax-l-input-bg（与订阅确认弹窗同法） */
   border-color: rgba(128, 128, 140, 0.35);
-  background: var(--uhd-l-input-bg);
-  color: var(--uhd-l-text);
+  background: var(--ax-l-input-bg);
+  color: var(--ax-l-text);
 }
 .tm-btn {
   height: 44px;
   padding: 0 20px;
-  border-radius: var(--uhd-radius-pill);
-  font-size: var(--uhd-fs-body);
-  font-weight: var(--uhd-fw-semibold);
-  font-family: var(--uhd-font-sans);
+  border-radius: var(--ax-radius-pill);
+  font-size: var(--ax-fs-body);
+  font-weight: var(--ax-fw-semibold);
+  font-family: var(--ax-font-sans);
   cursor: pointer;
 }
 .tm-btn--ghost {
   border: 1px solid rgba(128, 128, 140, 0.35);
   background: transparent;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
 }
 .tm-btn--danger {
   border: none;
-  background: var(--uhd-danger);
+  background: var(--ax-danger);
   color: #fff;
 }
 .tm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -1650,16 +1650,16 @@ onMounted(() => {
   background: rgba(220, 38, 38, 0.12);
   /* 只在弹窗内用（Teleport 出页面作用域）：深色玻璃上用亮红，浅色翻深红 */
   color: #f87171;
-  font-size: var(--uhd-fs-caption);
-  line-height: var(--uhd-lh-body);
+  font-size: var(--ax-fs-caption);
+  line-height: var(--ax-lh-body);
 }
-html[data-theme='light'] .tm-buy-error { color: var(--uhd-danger); }
+html[data-theme='light'] .tm-buy-error { color: var(--ax-danger); }
 .tm-settle .tm-buy-error,
 .tm-member-form .tm-buy-error { margin-top: 14px; }
 .tm-confirm-text {
   margin: 0;
-  font-size: var(--uhd-fs-body);
-  line-height: var(--uhd-lh-body);
+  font-size: var(--ax-fs-body);
+  line-height: var(--ax-lh-body);
 }
 
 /* ---------- 购买 sheet（专职壳：封顶 82dvh＋内部滚动＋底部栏常驻） ---------- */
@@ -1673,33 +1673,33 @@ html[data-theme='light'] .tm-buy-error { color: var(--uhd-danger); }
   padding: 14px;
   box-sizing: border-box;
   background: var(--modal-scrim-dark);
-  animation: uhd-fade-in var(--uhd-dur-fade) var(--uhd-ease-standard);
-  font-family: var(--uhd-font-sans);
+  animation: ax-fade-in var(--ax-dur-fade) var(--ax-ease-standard);
+  font-family: var(--ax-font-sans);
 }
 .tm-sheet {
   /* 面板作用域文字令牌随主题翻转（默认深色实面＝浅字）；面板本体实色不透底（2026-11-18 用户令：弹窗不用玻璃） */
-  --uhd-l-text: var(--modal-glass-fg);
-  --uhd-l-text-2: var(--modal-glass-dim);
-  --uhd-l-input-bg: rgba(255, 255, 255, 0.08);
+  --ax-l-text: var(--modal-glass-fg);
+  --ax-l-text-2: var(--modal-glass-dim);
+  --ax-l-input-bg: rgba(255, 255, 255, 0.08);
   display: flex;
   flex-direction: column;
   width: min(720px, 100%);
   max-height: 82dvh;
-  background: var(--uhd-d-surface);
-  border: 1px solid var(--uhd-d-border);
+  background: var(--ax-d-surface);
+  border: 1px solid var(--ax-d-border);
   border-radius: 24px;
-  box-shadow: var(--uhd-shadow-card-d);
-  animation: uhd-blur-in var(--uhd-dur-blur-in) var(--uhd-ease-pop);
-  color: var(--uhd-l-text-2);
-  font-size: var(--uhd-fs-body);
+  box-shadow: var(--ax-shadow-card-d);
+  animation: ax-blur-in var(--ax-dur-blur-in) var(--ax-ease-pop);
+  color: var(--ax-l-text-2);
+  font-size: var(--ax-fs-body);
 }
 html[data-theme='light'] .tm-sheet {
-  --uhd-l-text: #111111;
-  --uhd-l-text-2: #6b7280;
-  --uhd-l-input-bg: #f5f5f5;
-  background: var(--uhd-l-surface);
-  border-color: var(--uhd-l-border);
-  box-shadow: var(--uhd-shadow-card-l);
+  --ax-l-text: #111111;
+  --ax-l-text-2: #6b7280;
+  --ax-l-input-bg: #f5f5f5;
+  background: var(--ax-l-surface);
+  border-color: var(--ax-l-border);
+  box-shadow: var(--ax-shadow-card-l);
 }
 .tm-sheet__head {
   display: flex;
@@ -1717,14 +1717,14 @@ html[data-theme='light'] .tm-sheet {
 .tm-sheet__title {
   margin: 0;
   font-size: 16px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   line-height: 1.35;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
 }
 .tm-sheet__sub {
   margin: 3px 0 0;
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-caption);
+  color: var(--ax-l-text-2);
 }
 .tm-sheet__nav-btn {
   flex: none;
@@ -1737,12 +1737,12 @@ html[data-theme='light'] .tm-sheet {
   border: none;
   border-radius: 50%;
   background: transparent;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
   cursor: pointer;
   padding: 0;
 }
-.tm-sheet__nav-btn:hover { background: var(--uhd-l-input-bg); }
-.tm-sheet__close { font-size: 20px; line-height: 1; color: var(--uhd-l-text-2); }
+.tm-sheet__nav-btn:hover { background: var(--ax-l-input-bg); }
+.tm-sheet__close { font-size: 20px; line-height: 1; color: var(--ax-l-text-2); }
 .tm-sheet__body {
   flex: 1;
   min-height: 0;
@@ -1764,8 +1764,8 @@ html[data-theme='light'] .tm-sheet {
   align-items: center;
   justify-content: center;
   gap: 14px;
-  color: var(--uhd-l-text-2);
-  font-size: var(--uhd-fs-caption);
+  color: var(--ax-l-text-2);
+  font-size: var(--ax-fs-caption);
 }
 .tm-buy-loading p { margin: 0; }
 .tm-buy {
@@ -1777,7 +1777,7 @@ html[data-theme='light'] .tm-sheet {
 .tm-buy__label {
   margin: 2px 0 -3px;
   font-size: 13px;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 .tm-plan-cards { display: flex; gap: 10px; }
 .tm-plan-card {
@@ -1791,14 +1791,14 @@ html[data-theme='light'] .tm-sheet {
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.05);
-  color: var(--uhd-l-text-2);
-  font-family: var(--uhd-font-sans);
+  color: var(--ax-l-text-2);
+  font-family: var(--ax-font-sans);
   text-align: left;
   cursor: pointer;
 }
 .tm-plan-card__name {
   font-size: 15px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
   line-height: 1.3;
 }
 .tm-plan-card__sub { font-size: 12px; line-height: 1.3; }
@@ -1809,7 +1809,7 @@ html[data-theme='light'] .tm-sheet {
 .tm-plan-card--on {
   background: rgba(255, 255, 255, 0.16);
   border-color: rgba(255, 255, 255, 0.9);
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
 }
 html[data-theme='light'] .tm-plan-card {
   background: #ffffff;
@@ -1839,38 +1839,38 @@ html[data-theme='light'] .tm-buy-card {
 .tm-buy-card__label {
   margin: 0;
   font-size: 14px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   line-height: 1.4;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
 }
 .tm-buy-card__desc {
   margin: 5px 0 0;
   font-size: 11.5px;
   line-height: 1.55;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 .tm-buy-card__conv {
   margin: 5px 0 0;
   font-size: 13px;
   line-height: 1.4;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 .tm-buy-card__value {
   margin: 0;
   font-size: 16px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
   line-height: 1.4;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
 }
 .tm-capsule {
   flex: none;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border-radius: var(--uhd-radius-pill);
+  border-radius: var(--ax-radius-pill);
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.16);
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
   padding: 0 14px;
   box-sizing: border-box;
 }
@@ -1889,9 +1889,9 @@ html[data-theme='light'] .tm-capsule {
   outline: none;
   background: transparent;
   color: inherit;
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
   font-size: 16px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
   text-align: right;
   padding: 0;
   -moz-appearance: textfield;
@@ -1905,7 +1905,7 @@ html[data-theme='light'] .tm-capsule {
 .tm-capsule__unit {
   flex: none;
   font-size: 12px;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 html[data-theme='light'] .tm-capsule__unit { color: #6b7280; }
 /* 滑块：细轨＋白色圆环钮（友站实测形态，两主题同形） */
@@ -1952,7 +1952,7 @@ html[data-theme='light'] .tm-capsule__unit { color: #6b7280; }
   display: flex;
   justify-content: space-between;
   font-size: 11px;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 .tm-mini-summary { display: flex; gap: 10px; }
 .tm-mini-card {
@@ -1965,7 +1965,7 @@ html[data-theme='light'] .tm-capsule__unit { color: #6b7280; }
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.07);
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 html[data-theme='light'] .tm-mini-card {
   background: #f4f4f6;
@@ -1974,9 +1974,9 @@ html[data-theme='light'] .tm-mini-card {
 .tm-mini-card__label { font-size: 11px; line-height: 1.35; }
 .tm-mini-card__value {
   font-size: 14px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
   line-height: 1.35;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2000,24 +2000,24 @@ html[data-theme='light'] .tm-mini-card {
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
 }
-.tm-sum-row span { color: var(--uhd-l-text-2); }
-.tm-sum-row b { color: var(--uhd-l-text); font-weight: var(--uhd-fw-semibold); text-align: right; }
+.tm-sum-row span { color: var(--ax-l-text-2); }
+.tm-sum-row b { color: var(--ax-l-text); font-weight: var(--ax-fw-semibold); text-align: right; }
 .tm-sum-row--total {
   padding-top: 10px;
   border-top: 1px solid rgba(128, 128, 140, 0.35);
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
 }
 .tm-sum-note {
   display: block;
-  font-size: var(--uhd-fs-aux-sm);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-aux-sm);
+  color: var(--ax-l-text-2);
 }
 .tm-member-note {
   margin: 16px 0 0;
-  font-size: var(--uhd-fs-aux);
-  color: var(--uhd-l-text-2);
-  line-height: var(--uhd-lh-body);
+  font-size: var(--ax-fs-aux);
+  color: var(--ax-l-text-2);
+  line-height: var(--ax-lh-body);
 }
 </style>

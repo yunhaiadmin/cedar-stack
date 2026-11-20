@@ -242,7 +242,7 @@ onMounted(() => {
 
 .mono {
   font-family: var(--font-mono);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
 }
 
 .dim {
@@ -264,7 +264,7 @@ onMounted(() => {
 .detail-row {
   display: flex;
   gap: 12px;
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   color: var(--au-text);
 }
 
@@ -272,25 +272,25 @@ onMounted(() => {
   flex: none;
   width: 64px;
   color: var(--au-text-3);
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
 }
 
 .ua {
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-2);
   word-break: break-all;
 }
 
 .detail-sub {
   margin: 14px 0 4px;
-  font-size: var(--uhd-fs-lead);
+  font-size: var(--ax-fs-lead);
   color: var(--au-text);
 }
 
 .detail-pre {
   margin: 0;
   padding: 8px 12px;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   white-space: pre-wrap;
   word-break: break-all;
   color: var(--au-text-2);

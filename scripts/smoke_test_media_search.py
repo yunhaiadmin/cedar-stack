@@ -134,16 +134,16 @@ langs = {os.path.basename(p): lang for lang, p in found}
 check("字幕语言 简体 → chi", langs.get("Show.S01E01.简体.srt") == "chi", str(langs))
 check("字幕语言 sidecar .zh → chi", langs.get("Show.S01E01.mkv.zh.srt") == "chi", str(langs))
 
-# 多版本：同一目录下 UHD 版与普通版各带自己的字幕
+# 多版本：同一目录下 2160p 版与普通版各带自己的字幕
 multi_dir = os.path.join(tmp_root, "multi")
 touch(os.path.join(multi_dir, "Movie.2024.1080p.mkv"))
 touch(os.path.join(multi_dir, "Movie.2024.1080p.chs.ass"))
 touch(os.path.join(multi_dir, "Movie.2024.2160p.mkv"))
 touch(os.path.join(multi_dir, "Movie.2024.2160p.eng.srt"))
 hd = {os.path.basename(p) for _l, p in sc.find_external_subtitles(os.path.join(multi_dir, "Movie.2024.1080p.mkv"))}
-uhd = {os.path.basename(p) for _l, p in sc.find_external_subtitles(os.path.join(multi_dir, "Movie.2024.2160p.mkv"))}
+v2160 = {os.path.basename(p) for _l, p in sc.find_external_subtitles(os.path.join(multi_dir, "Movie.2024.2160p.mkv"))}
 check("多版本媒体：1080p 只配自己的字幕", hd == {"Movie.2024.1080p.chs.ass"}, str(hd))
-check("多版本媒体：2160p 只配自己的字幕", uhd == {"Movie.2024.2160p.eng.srt"}, str(uhd))
+check("多版本媒体：2160p 只配自己的字幕", v2160 == {"Movie.2024.2160p.eng.srt"}, str(v2160))
 
 # ==================== 4. 刮削策略与探测缓存 ====================
 print("\n=== 刮削策略与探测缓存 ===")

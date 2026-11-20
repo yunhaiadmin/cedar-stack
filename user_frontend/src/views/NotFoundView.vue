@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
  * 404（浅色版，2026-11-13 全页面 1:1 总令收口）——总兑现清单 404 行：
- * 友站是「彩虹光晕浅色整页」；旧版误做深色（背景 --uhd-d-bg），本单改浅：
- * 浅底（--uhd-l-bg）+ 四团粉彩光晕整页 + 深色字 + 约 180px 彩虹渐变 404 数字
+ * 友站是「彩虹光晕浅色整页」；旧版误做深色（背景 --ax-d-bg），本单改浅：
+ * 浅底（--ax-l-bg）+ 四团粉彩光晕整页 + 深色字 + 约 180px 彩虹渐变 404 数字
  * （白名单位置）+ 双胶囊按钮（返回上一页＝次按钮 / 回到首页＝主按钮，
  * 主钮走招牌口径：彩虹边框＋粉彩底）+「进入用户后台」文字链。
  * 页面独立于应用壳（App.vue 对 not-found 路由名不渲染全局顶栏/底坞）。
@@ -10,7 +10,7 @@
  */
 import { RouterLink, useRouter } from 'vue-router'
 import { ArrowLeft, Home, Compass } from 'lucide-vue-next'
-import UhdButton from '@/components/uhd/UhdButton.vue'
+import AxButton from '@/components/ax/AxButton.vue'
 
 const router = useRouter()
 
@@ -32,14 +32,14 @@ function goBack() {
         也许它换了地址，或者从来就没有存在过。
       </p>
       <div class="nf-actions">
-        <UhdButton variant="secondary" @click="goBack">
+        <AxButton variant="secondary" @click="goBack">
           <ArrowLeft :size="16" aria-hidden="true" />
           <span>返回上一页</span>
-        </UhdButton>
-        <UhdButton variant="primary" @click="router.push('/')">
+        </AxButton>
+        <AxButton variant="primary" @click="router.push('/')">
           <Home :size="16" aria-hidden="true" />
           <span>回到首页</span>
-        </UhdButton>
+        </AxButton>
       </div>
       <RouterLink to="/game/account" class="nf-account-link">
         <Compass :size="15" aria-hidden="true" />
@@ -58,9 +58,9 @@ function goBack() {
   align-items: center;
   justify-content: center;
   padding: 5rem 1rem 3rem;
-  background: var(--uhd-l-bg);
-  color: var(--uhd-l-text);
-  font-family: var(--uhd-font-sans);
+  background: var(--ax-l-bg);
+  color: var(--ax-l-text);
+  font-family: var(--ax-font-sans);
   overflow: hidden;
   isolation: isolate;
 }
@@ -72,34 +72,34 @@ function goBack() {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(560px 380px at 18% 12%, var(--uhd-blob-lilac), transparent 70%),
-    radial-gradient(520px 360px at 85% 20%, var(--uhd-blob-sky), transparent 70%),
-    radial-gradient(620px 420px at 70% 88%, var(--uhd-blob-peach), transparent 70%),
-    radial-gradient(480px 340px at 12% 85%, var(--uhd-blob-mint), transparent 70%);
+    radial-gradient(560px 380px at 18% 12%, var(--ax-blob-lilac), transparent 70%),
+    radial-gradient(520px 360px at 85% 20%, var(--ax-blob-sky), transparent 70%),
+    radial-gradient(620px 420px at 70% 88%, var(--ax-blob-peach), transparent 70%),
+    radial-gradient(480px 340px at 12% 85%, var(--ax-blob-mint), transparent 70%);
   filter: blur(10px);
 }
 
 .nf-inner {
   text-align: center;
-  animation: uhd-blur-in var(--uhd-dur-blur-in) var(--uhd-ease-pop) both;
+  animation: ax-blur-in var(--ax-dur-blur-in) var(--ax-ease-pop) both;
 }
 
 .nf-eyebrow {
   margin: 0 0 0.75rem;
-  font-size: var(--uhd-fs-aux);
-  font-weight: var(--uhd-fw-semibold);
-  letter-spacing: var(--uhd-ls-eyebrow);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-aux);
+  font-weight: var(--ax-fw-semibold);
+  letter-spacing: var(--ax-ls-eyebrow);
+  color: var(--ax-l-text-2);
 }
 
 /* 彩虹渐变数字（白名单位置：404 数字，浅色面同样用全光谱压深色字阶）——填色走不透明 fill 版 */
 .nf-code {
   margin: 0 0 0.75rem;
-  font-family: var(--uhd-font-display);
-  font-size: var(--uhd-fs-404);
-  font-weight: var(--uhd-fw-black);
+  font-family: var(--ax-font-display);
+  font-size: var(--ax-fs-404);
+  font-weight: var(--ax-fw-black);
   line-height: 1;
-  background: var(--uhd-rainbow-fill);
+  background: var(--ax-rainbow-fill);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -108,16 +108,16 @@ function goBack() {
 .nf-title {
   margin: 0 0 0.75rem;
   font-size: 36px;
-  font-weight: var(--uhd-fw-extrabold);
-  color: var(--uhd-l-text);
+  font-weight: var(--ax-fw-extrabold);
+  color: var(--ax-l-text);
 }
 
 .nf-desc {
   max-width: 28rem;
   margin: 0 auto 2rem;
-  font-size: var(--uhd-fs-lead);
-  line-height: var(--uhd-lh-body);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-lead);
+  line-height: var(--ax-lh-body);
+  color: var(--ax-l-text-2);
 }
 
 .nf-actions {
@@ -132,12 +132,12 @@ function goBack() {
   align-items: center;
   gap: 6px;
   margin-top: 1.75rem;
-  font-size: var(--uhd-fs-body);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-body);
+  color: var(--ax-l-text-2);
   text-decoration: none;
 }
 .nf-account-link:hover {
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
 }
 
 @media (max-width: 560px) {

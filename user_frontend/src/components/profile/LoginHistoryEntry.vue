@@ -84,11 +84,11 @@ async function loadLoginHistory(reset: boolean) {
 
 <style scoped>
 /* 展开面板与记录行：状态行模具（说明书 2.6）——状态=圆点+文字、
-   行间 1px --uhd-l-divider；加载态=旋转圈+灰字（1.6）、空态=虚线卡（2.7） */
+   行间 1px --ax-l-divider；加载态=旋转圈+灰字（1.6）、空态=虚线卡（2.7） */
 .pc-expand {
-  border-top: var(--uhd-border-w) solid var(--uhd-l-divider);
+  border-top: var(--ax-border-w) solid var(--ax-l-divider);
   padding: 14px 2px 18px;
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
 }
 .sx-mini-btn {
   display: inline-flex;
@@ -97,12 +97,12 @@ async function loadLoginHistory(reset: boolean) {
   height: 36px;
   min-height: 36px;
   padding: 0 16px;
-  background: var(--uhd-l-surface);
-  border: var(--uhd-border-w) solid var(--uhd-l-border);
-  border-radius: var(--uhd-radius-pill);
-  color: var(--uhd-l-text);
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-medium);
+  background: var(--ax-l-surface);
+  border: var(--ax-border-w) solid var(--ax-l-border);
+  border-radius: var(--ax-radius-pill);
+  color: var(--ax-l-text);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-medium);
   cursor: pointer;
 }
 .sx-mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -111,17 +111,17 @@ async function loadLoginHistory(reset: boolean) {
   align-items: center;
   gap: 10px;
   padding: 18px 0;
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-caption);
+  color: var(--ax-l-text-2);
 }
 .sx-spin {
   width: 18px;
   height: 18px;
   flex: none;
   border-radius: 50%;
-  border: 2px solid var(--uhd-l-divider);
-  border-top-color: var(--uhd-l-text-2);
-  animation: uhd-spin 0.8s linear infinite;
+  border: 2px solid var(--ax-l-divider);
+  border-top-color: var(--ax-l-text-2);
+  animation: ax-spin 0.8s linear infinite;
 }
 .sx-err {
   display: flex;
@@ -131,18 +131,18 @@ async function loadLoginHistory(reset: boolean) {
   padding: 14px 16px;
   border: 1px dashed #d4d4d8;
   border-radius: 16px;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   line-height: 1.6;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 .sx-empty {
   padding: 26px 20px;
   border: 1px dashed #d4d4d8;
   border-radius: 16px;
   text-align: center;
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   line-height: 1.6;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 .sx-status {
   display: inline-flex;
@@ -151,25 +151,25 @@ async function loadLoginHistory(reset: boolean) {
   flex: none;
   width: 58px;
   padding-top: 3px;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   white-space: nowrap;
 }
 .sx-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.sx-status--ok { color: var(--uhd-success); }
-.sx-status--ok .sx-dot { background: var(--uhd-dot-ok); }
-.sx-status--bad { color: var(--uhd-danger); }
-.sx-status--bad .sx-dot { background: var(--uhd-dot-bad); }
+.sx-status--ok { color: var(--ax-success); }
+.sx-status--ok .sx-dot { background: var(--ax-dot-ok); }
+.sx-status--bad { color: var(--ax-danger); }
+.sx-status--bad .sx-dot { background: var(--ax-dot-bad); }
 .lh-list { list-style: none; margin: 0; padding: 0; }
 .lh-row {
   display: flex; gap: 12px; align-items: flex-start;
-  padding: 11px 0; border-top: var(--uhd-border-w) solid var(--uhd-l-divider);
+  padding: 11px 0; border-top: var(--ax-border-w) solid var(--ax-l-divider);
 }
 .lh-row:first-child { border-top: none; padding-top: 2px; }
 .lh-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.lh-line1 { font-size: var(--uhd-fs-caption); color: var(--uhd-l-text); }
-.lh-line2 { font-size: var(--uhd-fs-aux); color: var(--uhd-l-text-2); }
+.lh-line1 { font-size: var(--ax-fs-caption); color: var(--ax-l-text); }
+.lh-line2 { font-size: var(--ax-fs-aux); color: var(--ax-l-text-2); }
 .lh-ua {
-  font-size: var(--uhd-fs-aux-sm); color: var(--uhd-l-text-3);
+  font-size: var(--ax-fs-aux-sm); color: var(--ax-l-text-3);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
 }
 .lh-more { text-align: center; margin-top: 12px; }

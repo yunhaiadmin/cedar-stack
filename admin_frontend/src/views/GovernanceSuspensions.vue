@@ -286,9 +286,9 @@ async function submitCreate() {
 }
 .user-filter { display: inline-flex; align-items: center; gap: 8px; }
 .w-user { width: 160px; }
-.muted { color: var(--au-text-4); font-size: var(--uhd-fs-aux-sm); }
-.note { font-size: var(--uhd-fs-aux); color: var(--au-text-2); overflow-wrap: anywhere; white-space: pre-wrap; }
-.hint { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); margin: 0; line-height: 1.6; }
+.muted { color: var(--au-text-4); font-size: var(--ax-fs-aux-sm); }
+.note { font-size: var(--ax-fs-aux); color: var(--au-text-2); overflow-wrap: anywhere; white-space: pre-wrap; }
+.hint { font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); margin: 0; line-height: 1.6; }
 
 @media (max-width: 768px) {
   .list-bar { padding: 4px 16px 12px; }

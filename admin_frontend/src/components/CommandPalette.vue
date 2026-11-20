@@ -248,7 +248,7 @@ function onKeydown(e: KeyboardEvent) {
   outline: none;
   background: transparent;
   color: var(--au-text);
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   font-family: inherit;
 }
 .cmd-input::placeholder { color: var(--au-text-3); }
@@ -260,7 +260,7 @@ function onKeydown(e: KeyboardEvent) {
   background: var(--au-bg-soft);
   color: var(--au-text-3);
   font-family: var(--font-mono);
-  font-size: var(--uhd-fs-micro);
+  font-size: var(--ax-fs-micro);
   line-height: 1.6;
 }
 
@@ -268,7 +268,7 @@ function onKeydown(e: KeyboardEvent) {
 
 .cmd-group-name {
   padding: 8px 10px 4px;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-3);
   letter-spacing: var(--tracking-wide);
 }
@@ -284,7 +284,7 @@ function onKeydown(e: KeyboardEvent) {
   background: transparent;
   color: var(--au-text-2);
   font: inherit;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   text-align: left;
   cursor: pointer;
 }
@@ -304,7 +304,7 @@ function onKeydown(e: KeyboardEvent) {
   flex: 1;
   min-width: 0;
   text-align: right;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -315,13 +315,13 @@ function onKeydown(e: KeyboardEvent) {
 .cmd-empty {
   padding: 28px 16px;
   text-align: center;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   color: var(--au-text-2);
 }
 .cmd-empty span {
   display: block;
   margin-top: 6px;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-3);
 }
 
@@ -331,7 +331,7 @@ function onKeydown(e: KeyboardEvent) {
   padding: 8px 14px;
   border-top: 1px solid var(--au-border);
   background: var(--au-bg-soft);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-3);
 }
 .cmd-foot kbd { margin-right: 3px; }
@@ -345,7 +345,7 @@ function onKeydown(e: KeyboardEvent) {
     border-radius: 0;
     border: none;
   }
-  .cmd-input { font-size: var(--uhd-fs-caption); }
+  .cmd-input { font-size: var(--ax-fs-caption); }
   .cmd-item-hint { display: none; }
 }
 </style>

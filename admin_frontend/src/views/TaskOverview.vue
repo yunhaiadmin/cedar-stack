@@ -410,7 +410,7 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.checked-at { color: var(--au-text-3); font-size: var(--uhd-fs-aux-sm); }
+.checked-at { color: var(--au-text-3); font-size: var(--ax-fs-aux-sm); }
 
 .task-grid {
   display: grid;
@@ -455,7 +455,7 @@ onMounted(() => {
 
 .task-title {
   margin: 0;
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   font-weight: 700;
   color: var(--au-text);
   flex: 1;
@@ -466,7 +466,7 @@ onMounted(() => {
 }
 
 .task-status {
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-2);
   border: 1px solid var(--au-border);
   border-radius: var(--au-r-sm);
@@ -478,7 +478,7 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-primary);
   text-decoration: none;
   flex-shrink: 0;
@@ -486,7 +486,7 @@ onMounted(() => {
 
 .task-summary {
   margin: 0;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   color: var(--au-text-2);
   line-height: 1.6;
 }
@@ -505,7 +505,7 @@ onMounted(() => {
   gap: 10px;
   padding: 7px 0;
   border-bottom: 1px solid var(--au-border);
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
 }
 
 .metric-row:last-child { border-bottom: 0; }
@@ -536,7 +536,7 @@ onMounted(() => {
   gap: 8px;
   padding: 7px 0;
   border-bottom: 1px solid var(--au-border);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
 }
 
 .lib-row:last-child { border-bottom: 0; }
@@ -552,7 +552,7 @@ onMounted(() => {
 
 .lib-chip {
   flex-shrink: 0;
-  font-size: var(--uhd-fs-micro);
+  font-size: var(--ax-fs-micro);
   padding: 2px 8px;
   border-radius: var(--au-r-sm);
   border: 1px solid var(--au-border);
@@ -593,7 +593,7 @@ onMounted(() => {
   gap: 10px;
 }
 
-.muted { color: var(--au-text-3); font-size: var(--uhd-fs-aux-sm); }
+.muted { color: var(--au-text-3); font-size: var(--ax-fs-aux-sm); }
 .mono { font-variant-numeric: tabular-nums; }
 
 @media (max-width: 1200px) {

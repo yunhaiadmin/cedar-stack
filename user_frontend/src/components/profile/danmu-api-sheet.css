@@ -3,8 +3,8 @@
    定义放在独立样式表供设计令牌契约核查，由 DanmuApiSheet.vue 引入；
    组件 scoped 样式只引用不定义（契约只认被引入的 .css 定义）。
    面板本体实色不透底（2026-11-18 用户令：弹窗一律实色、不用玻璃，
-   与团队购买 .tm-sheet 同改法）：浅色 var(--uhd-l-surface) 白面、
-   深色 var(--uhd-d-surface) 实色深面在组件 scoped 样式里按双态钉，
+   与团队购买 .tm-sheet 同改法）：浅色 var(--ax-l-surface) 白面、
+   深色 var(--ax-d-surface) 实色深面在组件 scoped 样式里按双态钉，
    本表只管文字／描边／反馈类随态变量。 */
 
 .dms-overlay {

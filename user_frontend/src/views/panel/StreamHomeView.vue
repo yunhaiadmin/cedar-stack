@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 片库首页（/library，批 3 —— UHDNow /stream 首页对应面）
+ * 片库首页（/library，批 3 —— 参考站 /stream 首页对应面）
  * 骨架：全幅 Hero 轮播 + 继续观看 16:9 卡行 + 海报横滑行（数据驱动）。
  * 数据口径全部复用现行接口，不新造：
  * - Hero / 海报行：Emby 协议口 getLatest + getViews 逐库 getItems；
@@ -998,8 +998,8 @@ onActivated(() => {
 .sl-continue__title {
   margin: 0;
   font-size: 29px;
-  font-weight: var(--uhd-fw-extrabold);
-  color: var(--uhd-s-text);
+  font-weight: var(--ax-fw-extrabold);
+  color: var(--ax-s-text);
 }
 .sl-continue__track {
   display: flex;
@@ -1020,7 +1020,7 @@ onActivated(() => {
   flex: 0 0 340px;
   width: 340px;
   text-decoration: none;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
 }
 .sl-ccard__thumb {
   position: relative;
@@ -1028,7 +1028,7 @@ onActivated(() => {
   aspect-ratio: 16 / 9;
   border-radius: 12px;
   overflow: hidden;
-  background: var(--uhd-s-card-soft);
+  background: var(--ax-s-card-soft);
 }
 /* 卡面右上垃圾桶（录屏形态）：半透明深色圆钮，Ø 按 f047 量测收至 34 */
 .sl-ccard__trash {
@@ -1067,14 +1067,14 @@ onActivated(() => {
 }
 .sl-continue__count {
   font-size: 14px;
-  font-weight: var(--uhd-fw-regular);
-  color: var(--uhd-s-text-2);
+  font-weight: var(--ax-fw-regular);
+  color: var(--ax-s-text-2);
 }
 .sl-ccard__prog {
   display: block;
   margin-top: 2px;
   font-size: 13px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .sl-ccard__thumb img {
   width: 100%;
@@ -1086,13 +1086,13 @@ onActivated(() => {
   position: absolute;
   inset: 0;
   margin: auto;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .sl-ccard__title {
   display: block;
   margin-top: 12px;
   font-size: 17px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1101,7 +1101,7 @@ onActivated(() => {
   display: block;
   margin-top: 3px;
   font-size: 14px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1109,16 +1109,16 @@ onActivated(() => {
 .sl-error {
   margin: 60px clamp(16px, 5vw, 96px);
   font-size: 15px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   text-align: center;
 }
 .sl-retry {
   margin-top: 12px;
   padding: 8px 22px;
   border-radius: 999px;
-  border: 1px solid var(--uhd-s-border);
-  background: var(--uhd-s-pill-active-bg);
-  color: var(--uhd-s-text);
+  border: 1px solid var(--ax-s-border);
+  background: var(--ax-s-pill-active-bg);
+  color: var(--ax-s-text);
   font-size: 14px;
   cursor: pointer;
 }
@@ -1138,7 +1138,7 @@ onActivated(() => {
   align-items: center;
   gap: 12px;
   font-size: 14px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .sl-rowerror .sl-retry {
   margin-top: 0;

@@ -6,14 +6,14 @@ import './styles/index.css'
 import './styles/mobile.css'
 // v4「探险家日志」面板纸色设计系统（PR-2）
 import './styles/v4-paper.css'
-// UHD 换皮令牌（批 0 地基，《Aetrix × UHDNow 设计说明书 v1》）：只定义 --uhd-* 新变量，
+// ax 换皮令牌（批 0 地基，《Aetrix × 参考站 设计说明书 v1》）：只定义 --ax-* 新变量，
 // 不改现有变量的值、未被任何现有页面引用；已按 U0 冻结流程同步登记
 // scripts/check_frontend_tokens.py 的 MAIN_CSS_ALLOWLIST。
-import './styles/uhd-tokens.css'
-// UHD 统一顶栏令牌（2026-11-14）：只定义 --utb-* 新变量（顶栏/观影胶囊作用域），
+import './styles/ax-tokens.css'
+// ax 统一顶栏令牌（2026-11-14）：只定义 --utb-* 新变量（顶栏/观影胶囊作用域），
 // 不改现有变量的值；已按 U0 冻结流程同步登记
 // scripts/check_frontend_tokens.py 的 MAIN_CSS_ALLOWLIST。
-import './styles/uhd-topbar.css'
+import './styles/ax-topbar.css'
 
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'

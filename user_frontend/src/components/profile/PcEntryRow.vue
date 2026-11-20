@@ -24,7 +24,7 @@
 /**
  * 个人中心 / 账号设置共用的入口行（说明书 2.6 状态行模具）：
  * 左图标 22px + 名称 16px/600 + 右侧状态小字（14px 灰）+ 箭头，
- * 行高 68px，行间分隔由父级分组的 1px --uhd-l-divider 承担。
+ * 行高 68px，行间分隔由父级分组的 1px --ax-l-divider 承担。
  * to 有值渲染 RouterLink（整行跳转），否则渲染 button（点击/展开由父级处理）。
  * meta 只传现有接口拿得到的真实摘要，拿不到就别传（不编造）。
  */
@@ -51,19 +51,19 @@ const emit = defineEmits<{ (e: 'click'): void }>()
   align-items: center;
   gap: 14px;
   width: 100%;
-  min-height: var(--uhd-row-h);
+  min-height: var(--ax-row-h);
   padding: 10px 2px;
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
   font: inherit;
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
   text-align: left;
   text-decoration: none;
   box-sizing: border-box;
 }
-.pc-row:active { background: var(--uhd-l-input-bg); }
+.pc-row:active { background: var(--ax-l-input-bg); }
 .pc-row-ic {
   width: 22px;
   height: 22px;
@@ -71,22 +71,22 @@ const emit = defineEmits<{ (e: 'click'): void }>()
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
 }
-.pc-row-name { font-size: var(--uhd-fs-lead); font-weight: var(--uhd-fw-semibold); white-space: nowrap; }
+.pc-row-name { font-size: var(--ax-fs-lead); font-weight: var(--ax-fw-semibold); white-space: nowrap; }
 .pc-row-meta {
   margin-left: auto;
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-caption);
+  color: var(--ax-l-text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   font-variant-numeric: tabular-nums;
 }
-.pc-chev { margin-left: auto; color: var(--uhd-l-text-3); flex: none; }
+.pc-chev { margin-left: auto; color: var(--ax-l-text-3); flex: none; }
 .pc-row:has(.pc-row-meta) .pc-chev { margin-left: 0; }
-.pc-chev-down { transition: transform var(--uhd-dur-ui) var(--uhd-ease-standard); }
+.pc-chev-down { transition: transform var(--ax-dur-ui) var(--ax-ease-standard); }
 .pc-chev-down.open { transform: rotate(180deg); }
-.pc-row.danger .pc-row-name { color: var(--uhd-danger); }
-.pc-row.danger .pc-row-ic { color: var(--uhd-danger); }
+.pc-row.danger .pc-row-name { color: var(--ax-danger); }
+.pc-row.danger .pc-row-ic { color: var(--ax-danger); }
 </style>

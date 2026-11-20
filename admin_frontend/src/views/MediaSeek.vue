@@ -700,20 +700,20 @@ function statusLabel(status: string): string {
 .list-bar .head-actions { width: auto; justify-content: flex-end; }
 
 .movie-name { font-weight: 600; color: var(--au-text); }
-.movie-year { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); margin-left: 6px; }
+.movie-year { font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); margin-left: 6px; }
 .movie-season { margin-left: 6px; }
 .in-lib-badge { margin-left: 6px; }
-.movie-note { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); margin-top: 3px; }
+.movie-note { font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); margin-top: 3px; }
 /* v2 附议数：有附议的高亮 */
-.vote-count { font-size: var(--uhd-fs-aux); color: var(--au-text-3); white-space: nowrap; }
+.vote-count { font-size: var(--ax-fs-aux); color: var(--au-text-3); white-space: nowrap; }
 .vote-count.vote-hot { color: var(--au-primary); font-weight: 600; }
-.muted { color: var(--au-text-4); font-size: var(--uhd-fs-aux-sm); }
+.muted { color: var(--au-text-4); font-size: var(--ax-fs-aux-sm); }
 
 .push-guide { line-height: 1.7; }
 .inline-link { color: var(--au-primary); text-decoration: underline; text-underline-offset: 2px; }
 .push-cell { display: flex; flex-direction: column; gap: 3px; }
 .push-cell .au-badge { align-self: flex-start; }
-.push-msg { display: block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--uhd-fs-aux-sm); }
+.push-msg { display: block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--ax-fs-aux-sm); }
 
 /* 处理弹窗：详情用全局 .kv-list 原语，只补两处专有间距 */
 .handle-body { display: flex; flex-direction: column; gap: 14px; }
@@ -721,7 +721,7 @@ function statusLabel(status: string): string {
 .handle-body .kv-row .kv-value { text-align: left; }
 .handle-form { margin-top: 2px; }
 .handle-form :deep(.el-form-item) { margin-bottom: 12px; }
-.push-msg-line { display: block; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); margin-top: 2px; }
+.push-msg-line { display: block; font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); margin-top: 2px; }
 .handle-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .handle-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 

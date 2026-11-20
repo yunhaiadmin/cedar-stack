@@ -1,7 +1,7 @@
 <template>
   <!-- 桌面并壳（2026-11-14 统一壳单）：≥769px 经闸门进用户中心壳；
        手机端页头走统一顶栏子页模式（2026-11-18，见下方注释） -->
-  <UhdAccountShellGate>
+  <AxAccountShellGate>
   <div class="iv-page">
     <!-- 页头（2026-11-18 对齐友站子页头）：手机端由 App.vue 统一顶栏的
          子页模式承接（‹ 返回＋邀请好友＋胶囊同一行），本页原自带返回行
@@ -249,12 +249,12 @@
       </div>
     </div>
   </div>
-  </UhdAccountShellGate>
+  </AxAccountShellGate>
 </template>
 
 <script setup lang="ts">
 /**
- * 邀请好友（/game/account/invite）——2026-11-14 照 UHDNow 邀请页截图重做。
+ * 邀请好友（/game/account/invite）——2026-11-14 照 参考站 邀请页截图重做。
  * 形态：大标题＋换码钮、普通/福利双页签、码面、彩虹玻璃双钮、战绩大数字、
  * 规则段（文案由后端配置生成，金额不写死）、记录双子页签。
  * 口径：普通邀请 = 好友付费按配置返利进钱包余额（默认分档：每位好友累计
@@ -275,7 +275,7 @@ import {
 } from '@/api/economy'
 import { useToast } from '@/composables/useToast'
 import { useUserStore } from '@/stores/user'
-import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
+import AxAccountShellGate from '@/components/ax/AxAccountShellGate.vue'
 import './invite-friends.css'
 
 const toast = useToast()

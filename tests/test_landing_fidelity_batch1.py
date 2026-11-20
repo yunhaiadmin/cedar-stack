@@ -10,8 +10,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LANDING = ROOT / "user_frontend/src/views/marketing/LandingView.vue"
-NAV = ROOT / "user_frontend/src/components/uhd/UhdNavPill.vue"
-ACCOUNT = ROOT / "user_frontend/src/components/uhd/UhdAccountLayout.vue"
+NAV = ROOT / "user_frontend/src/components/ax/AxNavPill.vue"
+ACCOUNT = ROOT / "user_frontend/src/components/ax/AxAccountLayout.vue"
 
 
 def _css(path: Path) -> str:
@@ -101,11 +101,11 @@ def test_account_sidebar_has_no_mobile_nav_button():
     src = ACCOUNT.read_text(encoding="utf-8")
     css = _css(ACCOUNT)
     narrow = _media(css, "@media (max-width: 768px)")
-    assert "uhd-account__navbtn" not in src
-    assert "uhd-account__scrim" not in src
+    assert "ax-account__navbtn" not in src
+    assert "ax-account__scrim" not in src
     assert "is-nav-open" not in src
     assert "toggleNav" not in src
-    assert "UhdSidebar" in src
+    assert "AxSidebar" in src
     assert "display: none" in narrow
 
 
@@ -119,7 +119,7 @@ def test_shared_nav_escape_and_focus():
 
 def test_scrolled_nav_becomes_one_capsule_without_transform():
     css = _css(NAV)
-    shrunk = css.split(".uhd-nav--shrink.is-shrunk .uhd-nav__pill", 1)[1]
+    shrunk = css.split(".ax-nav--shrink.is-shrunk .ax-nav__pill", 1)[1]
     block = shrunk.split("}", 1)[0]
     assert "position: static" in block
     assert "transform: none" in block

@@ -639,7 +639,7 @@ watch(
 </script>
 
 <style scoped>
-/* 批 3 片库面皮：颜色/底走 --uhd-s-* 令牌（详情页在 StreamShell 内渲染）；
+/* 批 3 片库面皮：颜色/底走 --ax-s-* 令牌（详情页在 StreamShell 内渲染）；
    在非片库面语境（如旧引用）下令牌有字面兜底，不破版。 */
 .sel-wrap {
   margin-top: 12px;
@@ -650,19 +650,19 @@ watch(
   align-items: center;
   gap: 6px 10px;
   padding: 10px 12px;
-  border: 1px dashed var(--uhd-s-border, #e5e5e5);
+  border: 1px dashed var(--ax-s-border, #e5e5e5);
   border-radius: 12px;
-  background: var(--uhd-s-card-soft, #f5f5f5);
+  background: var(--ax-s-card-soft, #f5f5f5);
   margin-bottom: 14px;
 }
 .miss-text {
   font-size: 13px;
   line-height: 1.5;
-  color: var(--uhd-s-text, #27251e);
+  color: var(--ax-s-text, #27251e);
 }
 .miss-done {
   font-size: 12.5px;
-  color: var(--uhd-s-text, #016a71);
+  color: var(--ax-s-text, #016a71);
   font-weight: 600;
 }
 .season-sec {
@@ -681,12 +681,12 @@ watch(
 .season-title {
   font-size: 17px;
   font-weight: 700;
-  color: var(--uhd-s-text, #27251e);
+  color: var(--ax-s-text, #27251e);
   margin: 0;
 }
 .season-count {
   font-size: 13px;
-  color: var(--uhd-s-text-2, #6f6a5e);
+  color: var(--ax-s-text-2, #6f6a5e);
 }
 .season-head .fill-btn,
 .season-head .fill-done {
@@ -703,7 +703,7 @@ watch(
   height: 50px;
   padding: 0 8px 0 10px;
   border-radius: 25px;
-  background: var(--uhd-s-strip-bg, #f0f0f0);
+  background: var(--ax-s-strip-bg, #f0f0f0);
   margin-bottom: 16px;
   position: sticky;
   top: 76px;
@@ -737,16 +737,16 @@ watch(
   border: none;
   border-radius: 18px;
   background: transparent;
-  color: var(--uhd-s-text-2, #6f6a5e);
+  color: var(--ax-s-text-2, #6f6a5e);
   font-size: 13.5px;
   font-family: inherit;
   cursor: pointer;
 }
 .ep-seg button.on {
-  background: var(--uhd-s-pill-active-bg, #ffffff);
-  color: var(--uhd-s-text, #111111);
+  background: var(--ax-s-pill-active-bg, #ffffff);
+  color: var(--ax-s-text, #111111);
   font-weight: 600;
-  box-shadow: var(--uhd-shadow-seg, 0 1px 4px rgba(0, 0, 0, 0.12));
+  box-shadow: var(--ax-shadow-seg, 0 1px 4px rgba(0, 0, 0, 0.12));
 }
 .ep-strip__num {
   flex: 0 0 36px;
@@ -754,15 +754,15 @@ watch(
   height: 36px;
   border-radius: 50%;
   border: none;
-  background: var(--uhd-s-strip-num-bg, transparent);
-  color: var(--uhd-s-strip-num-text, #111111);
+  background: var(--ax-s-strip-num-bg, transparent);
+  color: var(--ax-s-strip-num-text, #111111);
   font-size: 14px;
   font-family: inherit;
   cursor: pointer;
 }
 .ep-strip__num--on {
-  background: var(--uhd-s-strip-current-bg, #111111);
-  color: var(--uhd-s-strip-current-text, #ffffff);
+  background: var(--ax-s-strip-current-bg, #111111);
+  color: var(--ax-s-strip-current-text, #ffffff);
   font-weight: 700;
 }
 /* 集数卡 2 列：行高约 145、缩略图 208×117/圆角 12 */
@@ -779,7 +779,7 @@ watch(
   gap: 16px;
   padding: 14px 4px;
   min-width: 0;
-  border-bottom: 1px solid var(--uhd-s-divider, #eeeeee);
+  border-bottom: 1px solid var(--ax-s-divider, #eeeeee);
   scroll-margin-top: 140px;
   animation: ep-in 0.4s ease both;
 }
@@ -800,9 +800,9 @@ watch(
   width: 38px;
   height: 38px;
   border-radius: 50%;
-  border: 1px solid var(--uhd-s-border, #e5e5e5);
+  border: 1px solid var(--ax-s-border, #e5e5e5);
   background: transparent;
-  color: var(--uhd-s-text-2, #6f6a5e);
+  color: var(--ax-s-text-2, #6f6a5e);
   align-items: center;
   justify-content: center;
   cursor: pointer;
@@ -810,12 +810,12 @@ watch(
   align-self: center;
 }
 .ep-eye--on {
-  color: var(--uhd-s-text, #111111);
-  border-color: var(--uhd-s-text, #111111);
+  color: var(--ax-s-text, #111111);
+  border-color: var(--ax-s-text, #111111);
 }
 /* 已看集垃圾桶态（G-119）：与详情页移除钮同危险色口径 */
 .ep-eye--trash {
-  color: var(--uhd-danger, #d92d20);
+  color: var(--ax-danger, #d92d20);
 }
 /* 移除整季钮（G-111）：描边胶囊，与求补钮同几何（13px/600/6px 14px/999px） */
 .season-remove-btn {
@@ -825,9 +825,9 @@ watch(
   gap: 5px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--uhd-s-text, #111111);
+  color: var(--ax-s-text, #111111);
   background: transparent;
-  border: 1px solid var(--uhd-s-border, #e5e5e5);
+  border: 1px solid var(--ax-s-border, #e5e5e5);
   border-radius: 999px;
   padding: 6px 14px;
   cursor: pointer;
@@ -838,7 +838,7 @@ watch(
   margin: 0;
   font-size: 15px;
   line-height: 1.65;
-  color: var(--uhd-s-text, #27251e);
+  color: var(--ax-s-text, #27251e);
 }
 .sel-confirm-actions {
   display: flex;
@@ -849,17 +849,17 @@ watch(
   height: 42px;
   padding: 0 20px;
   border-radius: 21px;
-  border: 1px solid var(--uhd-s-border, #e5e5e5);
+  border: 1px solid var(--ax-s-border, #e5e5e5);
   background: transparent;
-  color: var(--uhd-s-text, #27251e);
+  color: var(--ax-s-text, #27251e);
   font-size: 14.5px;
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
 }
 .sel-confirm-btn--danger {
-  background: var(--uhd-danger, #d92d20);
-  border-color: var(--uhd-danger, #d92d20);
+  background: var(--ax-danger, #d92d20);
+  border-color: var(--ax-danger, #d92d20);
   color: #fff;
 }
 .sel-confirm-btn--danger:disabled {
@@ -876,7 +876,7 @@ watch(
   aspect-ratio: 16 / 9;
   border-radius: 12px;
   overflow: hidden;
-  background: var(--uhd-s-card-soft, #f5f5f5);
+  background: var(--ax-s-card-soft, #f5f5f5);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -887,10 +887,10 @@ watch(
   object-fit: cover;
 }
 .ep-thumb__fallback {
-  color: var(--uhd-s-text-2, #a8a29a);
+  color: var(--ax-s-text-2, #a8a29a);
 }
 .ep-thumb--missing {
-  border: 1px dashed var(--uhd-s-border, #e5e5e5);
+  border: 1px dashed var(--ax-s-border, #e5e5e5);
   background: transparent;
 }
 /* 「N版本」角标：52×22/圆角 11/黑半透明/白字 12px（两模式无差异） */
@@ -902,7 +902,7 @@ watch(
   height: 22px;
   padding: 0 8px;
   border-radius: 11px;
-  background: var(--uhd-s-badge-bg, rgba(0, 0, 0, 0.55));
+  background: var(--ax-s-badge-bg, rgba(0, 0, 0, 0.55));
   color: #ffffff;
   font-size: 12px;
   line-height: 22px;
@@ -926,14 +926,14 @@ watch(
   flex: 0 0 auto;
   font-size: 15px;
   font-weight: 600;
-  color: var(--uhd-s-text-2, #6f6a5e);
+  color: var(--ax-s-text-2, #6f6a5e);
 }
 .ep-name {
   flex: 1 1 auto;
   min-width: 0;
   font-size: 16px;
   font-weight: 600;
-  color: var(--uhd-s-text, #27251e);
+  color: var(--ax-s-text, #27251e);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -941,24 +941,24 @@ watch(
 .ep-dur {
   flex: 0 0 auto;
   font-size: 14px;
-  color: var(--uhd-s-text-2, #6f6a5e);
+  color: var(--ax-s-text-2, #6f6a5e);
 }
 .ep-played {
   flex: 0 0 auto;
   font-size: 11px;
-  color: var(--uhd-s-text-2, #6f6a5e);
+  color: var(--ax-s-text-2, #6f6a5e);
   border: 1px solid currentColor;
   border-radius: 999px;
   padding: 1px 7px;
 }
 .ep-date {
   font-size: 14px;
-  color: var(--uhd-s-text-2, #6f6a5e);
+  color: var(--ax-s-text-2, #6f6a5e);
 }
 .ep-overview {
   font-size: 14px;
   line-height: 1.55;
-  color: var(--uhd-s-text-2, #6f6a5e);
+  color: var(--ax-s-text-2, #6f6a5e);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -968,7 +968,7 @@ watch(
   flex: 1 1 auto;
   min-width: 0;
   font-size: 15px;
-  color: var(--uhd-s-text-2, #6f6a5e);
+  color: var(--ax-s-text-2, #6f6a5e);
 }
 .ep-missing-action {
   margin-top: 6px;
@@ -978,7 +978,7 @@ watch(
   font-size: 12px;
   font-weight: 700;
   color: #fff;
-  background: var(--uhd-s-text-2, #a8a29a);
+  background: var(--ax-s-text-2, #a8a29a);
   border-radius: 6px;
   padding: 2px 8px;
 }
@@ -986,9 +986,9 @@ watch(
   flex: 0 0 auto;
   font-size: 13px;
   font-weight: 600;
-  color: var(--uhd-s-text, #111111);
-  background: var(--uhd-s-pill-active-bg, #ffffff);
-  border: 1px solid var(--uhd-s-border, #e5e5e5);
+  color: var(--ax-s-text, #111111);
+  background: var(--ax-s-pill-active-bg, #ffffff);
+  border: 1px solid var(--ax-s-border, #e5e5e5);
   border-radius: 999px;
   padding: 6px 14px;
   cursor: pointer;
@@ -1002,7 +1002,7 @@ watch(
   flex: 0 0 auto;
   font-size: 13px;
   font-weight: 600;
-  color: var(--uhd-s-text, #016a71);
+  color: var(--ax-s-text, #016a71);
 }
 @media (max-width: 900px) {
   .ep-list {
@@ -1024,8 +1024,8 @@ watch(
     width: 46px;
     height: 46px;
     border-radius: 50%;
-    background: var(--uhd-s-card-soft, #f5f5f5);
-    color: var(--uhd-s-text-2, #6f6a5e);
+    background: var(--ax-s-card-soft, #f5f5f5);
+    color: var(--ax-s-text-2, #6f6a5e);
     font-size: 17px;
     font-weight: 700;
     align-items: center;

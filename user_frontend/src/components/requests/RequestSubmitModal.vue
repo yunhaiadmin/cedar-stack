@@ -287,10 +287,10 @@ async function submit(): Promise<void> {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   font-size: 15px; font-weight: 800; color: #ffffff; font-family: inherit;
   border: 1.5px solid transparent;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
-  box-shadow: var(--uhd-shadow-sheet);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
+  box-shadow: var(--ax-shadow-sheet);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
 }
 /* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
    钮面只留玻璃层；浅色覆盖只换面背景，环由本处继承。 */
@@ -299,8 +299,8 @@ async function submit(): Promise<void> {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: var(--uhd-rainbow-border-w);
-  background: var(--uhd-rainbow);
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -336,9 +336,9 @@ html[data-theme='light'] .rsm-seasons__err { color: #dc2626; }
 html[data-theme='light'] .rsm-area { background: #f8f8f8; border-color: #e5e5e5; color: #111111; }
 html[data-theme='light'] .rsm-area:focus { border-color: #9ca3af; }
 html[data-theme='light'] .rsm-confirm {
-  background: var(--uhd-rainbow-soft);
+  background: var(--ax-rainbow-soft);
   color: #111111;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--uhd-shadow-card-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 html[data-theme='light'] .rsm-spinner { border-color: rgba(0, 0, 0, 0.25); border-top-color: #111111; }
 html[data-theme='light'] .rsm-cancel { background: #f5f5f5; border-color: #e5e5e5; color: #111111; }

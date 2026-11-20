@@ -102,7 +102,7 @@ const chevronCls = computed(() => ({ 'is-open': open.value }))
 }
 
 .au-advanced__title {
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   font-weight: 600;
   letter-spacing: 0.02em;
   display: flex;
@@ -111,7 +111,7 @@ const chevronCls = computed(() => ({ 'is-open': open.value }))
 }
 
 .au-advanced__count {
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   font-weight: 400;
   color: var(--au-text-4);
 }
@@ -128,7 +128,7 @@ const chevronCls = computed(() => ({ 'is-open': open.value }))
 .au-advanced__desc {
   margin: -6px 0 0;
   padding: 0 16px 10px;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   line-height: 1.55;
   color: var(--au-text-3);
 }

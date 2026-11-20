@@ -4,7 +4,7 @@
  * 全幅剧照、高约 880（窄屏按视口收）、底部约 65% 起向页面底渐隐；
  * 眉题「首页推荐 · 0X/05」13px 大字距；元信息 15px、评分粗体；
  * 「▶ 立即播放」白胶囊 145×44–45/圆角 22 + 约 2px 彩虹边框（白名单位置），
- * 深色版自动转黑底毛玻璃 + 白字（令牌 --uhd-s-hero-play-* 不另设，
+ * 深色版自动转黑底毛玻璃 + 白字（令牌 --ax-s-hero-play-* 不另设，
  * 由 [data-stream-theme] 下的覆盖规则处理）；右下双圆箭头 48 + 5 段式指示 28×4。
  * Aetrix 无片名 Logo 字标图数据，标题用文字 H1（数据驱动，不搬对方素材）。
  * 「立即播放」沿发现页现行口径：打开 PlayerSchemeSheet 选播放器，
@@ -171,13 +171,13 @@ function onBgError() {
   object-fit: cover;
 }
 .sh-bg--empty {
-  background: var(--uhd-s-card-soft);
+  background: var(--ax-s-card-soft);
 }
 /* 底部渐隐：约 65% 高度起向页面底色渐隐（深色终点随令牌转近黑） */
 .sh-fade-bottom {
   position: absolute;
   inset: 0;
-  background: linear-gradient(to bottom, transparent 55%, var(--uhd-s-hero-fade) 96%);
+  background: linear-gradient(to bottom, transparent 55%, var(--ax-s-hero-fade) 96%);
 }
 .sh-content {
   position: absolute;
@@ -190,16 +190,16 @@ function onBgError() {
   margin: 0 0 14px;
   font-size: 13px;
   letter-spacing: 4px;
-  color: var(--uhd-s-text-2);
-  font-weight: var(--uhd-fw-semibold);
+  color: var(--ax-s-text-2);
+  font-weight: var(--ax-fw-semibold);
 }
 .sh-title {
   margin: 0;
   font-size: clamp(40px, 4.6vw, 72px);
-  font-weight: var(--uhd-fw-black);
+  font-weight: var(--ax-fw-black);
   line-height: 1.08;
   letter-spacing: -0.01em;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -208,16 +208,16 @@ function onBgError() {
 .sh-meta {
   margin: 16px 0 0;
   font-size: 15px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .sh-rating {
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
 }
 .sh-overview {
   margin: 10px 0 0;
   font-size: 15px;
   line-height: 1.65;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -236,16 +236,16 @@ function onBgError() {
   border: 2px solid transparent;
   /* 浅色版（2026-11-13 补齐七彩＋玻璃）：淡彩粉彩底 + 玻璃栈（内高光 + 柔影 + backdrop，压在 Hero 图上验透感） */
   background:
-    var(--uhd-rainbow-soft) padding-box,
-    var(--uhd-rainbow) border-box;
-  color: var(--uhd-s-pill-active-text);
+    var(--ax-rainbow-soft) padding-box,
+    var(--ax-rainbow) border-box;
+  color: var(--ax-s-pill-active-text);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    var(--uhd-s-shadow-pill);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
+    var(--ax-s-shadow-pill);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   font-size: 15px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
   font-family: inherit;
   cursor: pointer;
 }
@@ -256,12 +256,12 @@ function onBgError() {
 /* 深色版：黑底毛玻璃 + 同一彩虹边框 + 白字 + 玻璃栈（内高光 + 柔影，尺寸不变） */
 .stream-scope[data-stream-theme="dark"] .sh-play {
   position: relative;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    var(--uhd-s-shadow-pill);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
+    var(--ax-s-shadow-pill);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
 }
 /* 彩虹环切（texture-tokens-3）：彩虹只走 2px 细环（::before mask 环切，
    padding 取本钮边框宽 2px），钮面只留玻璃层；浅色基规则不动。 */
@@ -271,7 +271,7 @@ function onBgError() {
   inset: 0;
   border-radius: inherit;
   padding: 2px;
-  background: var(--uhd-rainbow);
+  background: var(--ax-rainbow);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -299,9 +299,9 @@ function onBgError() {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  border: 1px solid var(--uhd-s-pill-border);
-  background: var(--uhd-s-pill-bg);
-  color: var(--uhd-s-text);
+  border: 1px solid var(--ax-s-pill-border);
+  background: var(--ax-s-pill-bg);
+  color: var(--ax-s-text);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   cursor: pointer;
@@ -316,7 +316,7 @@ function onBgError() {
   width: 28px;
   height: 4px;
   border-radius: 2px;
-  background: var(--uhd-s-text-2);
+  background: var(--ax-s-text-2);
   opacity: 0.35;
 }
 /* 激活段：底色作轨道，填充自左向右 6s（与自动轮播间隔一致） */
@@ -327,7 +327,7 @@ function onBgError() {
   position: absolute;
   inset: 0;
   border-radius: 2px;
-  background: var(--uhd-s-text);
+  background: var(--ax-s-text);
   transform-origin: left center;
   animation: sh-fill 6s linear forwards;
 }
@@ -342,7 +342,7 @@ function onBgError() {
 }
 .sh-fade-enter-active,
 .sh-fade-leave-active {
-  transition: opacity 0.5s var(--uhd-ease-standard);
+  transition: opacity 0.5s var(--ax-ease-standard);
 }
 .sh-fade-enter-from,
 .sh-fade-leave-to {

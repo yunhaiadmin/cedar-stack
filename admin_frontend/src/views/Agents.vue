@@ -595,7 +595,7 @@ onMounted(async () => {
 .form-hint {
   flex-basis: 100%;
   color: var(--au-text-3);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   line-height: 1.5;
 }
 .stat-grid {

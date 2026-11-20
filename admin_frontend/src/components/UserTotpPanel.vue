@@ -124,7 +124,7 @@ watch(() => props.userId, load)
 .totp-status .au-badge { flex: none; margin-top: 2px; }
 .totp-note {
   color: var(--el-text-color-secondary);
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   line-height: 1.6;
 }
 .totp-actions {
@@ -133,6 +133,6 @@ watch(() => props.userId, load)
   gap: 12px;
   margin-top: 14px;
 }
-.totp-meta { color: var(--el-text-color-secondary); font-size: var(--uhd-fs-aux-sm); }
+.totp-meta { color: var(--el-text-color-secondary); font-size: var(--ax-fs-aux-sm); }
 .btn-ico { margin-right: 4px; vertical-align: -2px; }
 </style>

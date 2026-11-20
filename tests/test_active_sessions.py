@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""活跃会话合并模型测试（2026-11-18 UHDNow 差异定案 G-60/G-62~G-66）。
+"""活跃会话合并模型测试（2026-11-18 参考站 差异定案 G-60/G-62~G-66）。
 
 隔离：内存 SQLite + 最小 FastAPI 应用（auth_router + security_router），
 不碰开发库/生产库。限流滑窗在 fixture 里清零防用例互踩。

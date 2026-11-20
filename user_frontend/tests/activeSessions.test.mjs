@@ -1,4 +1,4 @@
-// 活跃会话合并模型测试（2026-11-18 UHDNow 差异定案 G-60/G-62~G-66）：
+// 活跃会话合并模型测试（2026-11-18 参考站 差异定案 G-60/G-62~G-66）：
 // 运行：cd user_frontend && node tests/activeSessions.test.mjs
 // 测法：纯函数活在 src/utils/userAgent.ts 里（UA 解析＋会话时间绝对格式），
 // 本测试直接 import 真执行；面板接线另加源码契约断言。

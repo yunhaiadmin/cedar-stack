@@ -35,6 +35,6 @@ const MemberCodes = defineAsyncComponent(() => import('./MemberCodes.vue'))
 <style scoped>
 /* 外层间距交给 .admin-content（不再自带 padding / max-width，否则手机上左右各多出 16px） */
 .division-alert { margin-bottom: 14px; }
-.division-list { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: var(--uhd-fs-aux-sm); line-height: 1.6; }
+.division-list { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: var(--ax-fs-aux-sm); line-height: 1.6; }
 .division-list a { color: var(--au-primary); }
 </style>

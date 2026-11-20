@@ -281,29 +281,29 @@ onMounted(() => {
   white-space: nowrap;
 }
 .follow-card .acct-btn { margin-top: 0; }
-/* 主钮 UHD 口径（2026-11-13 补齐七彩＋玻璃）：彩虹边框 + 玻璃栈；
+/* 主钮 ax 口径（2026-11-13 补齐七彩＋玻璃）：彩虹边框 + 玻璃栈；
    浅色面＝淡彩粉彩底 + 黑字，深色面＝深色毛玻璃底 + 白字（下方 .ov-dark 覆盖）。
    本面板挂在概览页（跟随用户外观），两态都会真实出现。 */
 .acct-btn.primary {
   border: 1.5px solid transparent;
   background:
-    var(--uhd-rainbow-soft) padding-box,
-    var(--uhd-rainbow) border-box;
+    var(--ax-rainbow-soft) padding-box,
+    var(--ax-rainbow) border-box;
   color: #111111;
   font-weight: 600;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    var(--uhd-shadow-card-l);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
+    var(--ax-shadow-card-l);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
 }
 /* 深色配方：以概览页自带的解析结果类 .ov-dark 为信号（页面 themeResolved，
    不单靠 html[data-theme]——守卫在该页走 restoreUserTheme，属性口径与解析结果可能不一致） */
 .ov-page.ov-dark .acct-btn.primary {
   position: relative;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
   color: #ffffff;
-  box-shadow: var(--uhd-shadow-sheet);
+  box-shadow: var(--ax-shadow-sheet);
 }
 /* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
    钮面只留玻璃层；浅色基规则不动。 */
@@ -312,8 +312,8 @@ onMounted(() => {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: var(--uhd-rainbow-border-w);
-  background: var(--uhd-rainbow);
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);

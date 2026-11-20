@@ -55,7 +55,7 @@ const mode = ref<'login' | 'register'>('login')
 const loginForm = reactive({ username: '', password: '', totpCode: '' })
 
 // 登录因素探测（账号安全三件套）：用户名失焦时问后端该账号启用了什么——
-// 动态验证码字段仅在已启用时出现、Passkey 按钮仅在已绑定时出现（照 UHDNow 口径）。
+// 动态验证码字段仅在已启用时出现、Passkey 按钮仅在已绑定时出现（照 参考站 口径）。
 // 探测失败静默（字段不出现，用户输完密码提交后后端会以明确文案提示补码）。
 const loginFactors = ref<LoginFactors>({ totp_required: false, passkey_available: false })
 const passkeyLoginLoading = ref(false)
@@ -342,7 +342,7 @@ async function handleRegister() {
 // 缺省深色面用同色系低透明粉彩光晕；认证逻辑与主题机制一字未动。
 
 // 注：旧皮的海报拼贴背景（PosterCollage + fetchLoginPosters 延迟拉取）已随
-// UHD 换皮批 1 固定浅色卡式退场，相关状态与拉取一并移除；那是纯装饰背景，
+// ax 换皮批 1 固定浅色卡式退场，相关状态与拉取一并移除；那是纯装饰背景，
 // 不属于登录/注册业务逻辑，后端接口本身未动。
 
 // TG 登录入口：站点机器人用户名（公开接口下发）；为空=未配置机器人，不渲染入口
@@ -390,7 +390,7 @@ onMounted(() => {
 
 <template>
   <div class="auth-page">
-    <!-- UHD 换皮批 1：固定浅色卡式——粉彩光斑底 + 居中白卡；
+    <!-- ax 换皮批 1：固定浅色卡式——粉彩光斑底 + 居中白卡；
          原海报拼贴背景与网格层随旧皮退场（海报数据拉取逻辑保留在脚本中，未渲染） -->
     <!-- 页头行（原站形态）：左品牌字标，右外观＋菜单一颗玻璃胶囊 -->
     <header class="auth-top">
@@ -736,7 +736,7 @@ onMounted(() => {
 
 <style scoped>
 /* ============================================================
-   UHD 换皮 · 登录/注册（2026-11-13 按原站 1:1 返工）
+   ax 换皮 · 登录/注册（2026-11-13 按原站 1:1 返工）
    页头行（品牌字标＋玻璃胶囊）＋居中卡：桌面圆角约 20（实测清单第 3 节；
    移动端未测到，保留圆角 30）；输入桌面高 46、圆角约 23（移动保留
    54px 全胶囊），标签 15px 在框上方；主按钮实测淡彩虹渐变填充＋
@@ -762,7 +762,7 @@ onMounted(() => {
     radial-gradient(520px 380px at 6% 92%, rgba(175, 230, 205, 0.1), transparent 70%),
     #070708;
   color: #ffffff;
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
 }
 
 /* 页头行 */
@@ -802,13 +802,13 @@ onMounted(() => {
 }
 .auth-top__name {
   font-size: 17px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   letter-spacing: 0.01em;
   white-space: nowrap;
 }
 .auth-top__sub {
   font-size: 9px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   letter-spacing: 0.32em;
   color: rgba(255, 255, 255, 0.4);
 }
@@ -824,7 +824,7 @@ onMounted(() => {
   border: 1px solid rgba(255, 255, 255, 0.16);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), var(--uhd-shadow-card-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), var(--ax-shadow-card-d);
 }
 .auth-top__iconbtn {
   display: inline-flex;
@@ -855,7 +855,7 @@ onMounted(() => {
   border-radius: 16px;
   background: #141416;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: var(--uhd-shadow-panel-lg);
+  box-shadow: var(--ax-shadow-panel-lg);
   display: flex;
   flex-direction: column;
 }
@@ -864,7 +864,7 @@ onMounted(() => {
   border-radius: 10px;
   color: #ffffff;
   font-size: 15px;
-  font-weight: var(--uhd-fw-medium);
+  font-weight: var(--ax-fw-medium);
   text-decoration: none;
 }
 .auth-menu a:hover {
@@ -892,8 +892,8 @@ onMounted(() => {
   background: #141416;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 20px;
-  box-shadow: var(--uhd-shadow-panel-lg);
-  animation: authColumnIn var(--uhd-dur-blur-in) var(--uhd-ease-pop) both;
+  box-shadow: var(--ax-shadow-panel-lg);
+  animation: authColumnIn var(--ax-dur-blur-in) var(--ax-ease-pop) both;
 }
 @keyframes authColumnIn {
   /* 入场只做淡入＋上浮，不对整卡做 blur：卡里全是文字与输入框，blur 动画期间
@@ -904,9 +904,9 @@ onMounted(() => {
 }
 .auth-title {
   margin: 0 0 1.6rem;
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
   font-size: 30px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   letter-spacing: -0.01em;
   line-height: 1.2;
   color: #ffffff;
@@ -933,10 +933,10 @@ onMounted(() => {
   padding: 0 0.75rem;
   border: none;
   background: transparent;
-  border-radius: var(--uhd-radius-pill);
+  border-radius: var(--ax-radius-pill);
   font: inherit;
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-medium);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-medium);
   line-height: 1;
   color: rgba(255, 255, 255, 0.62);
   cursor: pointer;
@@ -951,7 +951,7 @@ onMounted(() => {
 }
 .mode-btn.active {
   color: #ffffff;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
 }
 .mode-indicator {
   position: absolute;
@@ -959,9 +959,9 @@ onMounted(() => {
   left: 4px;
   width: calc(50% - 4px);
   height: calc(100% - 8px);
-  border-radius: var(--uhd-radius-pill);
+  border-radius: var(--ax-radius-pill);
   background: #141416;
-  box-shadow: var(--uhd-shadow-seg);
+  box-shadow: var(--ax-shadow-seg);
   pointer-events: none;
   transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -983,15 +983,15 @@ onMounted(() => {
 }
 .field-label {
   font-size: 15px;
-  font-weight: var(--uhd-fw-medium);
+  font-weight: var(--ax-fw-medium);
   line-height: 1.5;
   color: #ffffff;
 }
 .optional {
   margin-left: 0.25rem;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   font-style: normal;
-  font-weight: var(--uhd-fw-normal);
+  font-weight: var(--ax-fw-normal);
   color: rgba(255, 255, 255, 0.4);
 }
 .field-box {
@@ -1006,8 +1006,8 @@ onMounted(() => {
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 .field-box:focus-within {
-  border-color: var(--uhd-l-link);
-  box-shadow: var(--uhd-shadow-focus);
+  border-color: var(--ax-l-link);
+  box-shadow: var(--ax-shadow-focus);
 }
 .field-icon {
   color: rgba(255, 255, 255, 0.4);
@@ -1076,7 +1076,7 @@ onMounted(() => {
 .eye-btn:focus-visible,
 .submit-btn:focus-visible,
 .auth-top__iconbtn:focus-visible {
-  outline: 2px solid var(--uhd-l-link);
+  outline: 2px solid var(--ax-l-link);
   outline-offset: 3px;
 }
 
@@ -1091,22 +1091,22 @@ onMounted(() => {
   flex: 1;
   height: 3px;
   background: rgba(255, 255, 255, 0.08);
-  border-radius: var(--uhd-radius-pill);
+  border-radius: var(--ax-radius-pill);
   overflow: hidden;
 }
 .strength-fill {
   height: 100%;
   width: 100%;
-  border-radius: var(--uhd-radius-pill);
+  border-radius: var(--ax-radius-pill);
   transform: scaleX(0);
   transform-origin: left center;
   transition: transform 0.3s ease, background-color 0.3s ease;
 }
-.strength-fill.lv-1 { transform: scaleX(0.33); background: var(--uhd-danger); }
-.strength-fill.lv-2 { transform: scaleX(0.66); background: var(--uhd-dot-doing); }
-.strength-fill.lv-3 { transform: scaleX(1); background: var(--uhd-success); }
+.strength-fill.lv-1 { transform: scaleX(0.33); background: var(--ax-danger); }
+.strength-fill.lv-2 { transform: scaleX(0.66); background: var(--ax-dot-doing); }
+.strength-fill.lv-3 { transform: scaleX(1); background: var(--ax-success); }
 .strength-text {
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   color: rgba(255, 255, 255, 0.4);
   min-width: 16px;
 }
@@ -1115,22 +1115,22 @@ onMounted(() => {
 .form-error {
   margin: 0;
   padding: 0.75rem 1rem;
-  border-radius: var(--uhd-radius-base);
+  border-radius: var(--ax-radius-base);
   background: rgba(220, 38, 38, 0.06);
   border: 1px solid rgba(220, 38, 38, 0.28);
-  color: var(--uhd-danger);
-  font-size: var(--uhd-fs-aux);
+  color: var(--ax-danger);
+  font-size: var(--ax-fs-aux);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
 .closed-notice {
   margin: 0;
   padding: 0.75rem 1rem;
-  border-radius: var(--uhd-radius-base);
-  background: var(--uhd-warn-bg-2);
+  border-radius: var(--ax-radius-base);
+  background: var(--ax-warn-bg-2);
   border: 1px solid rgba(217, 119, 6, 0.35);
-  color: var(--uhd-warn-text);
-  font-size: var(--uhd-fs-caption);
+  color: var(--ax-warn-text);
+  font-size: var(--ax-fs-caption);
   line-height: 1.5;
   text-align: center;
 }
@@ -1139,15 +1139,15 @@ onMounted(() => {
   border: none;
   padding: 0 8px;
   min-height: 44px;
-  color: var(--uhd-l-link);
+  color: var(--ax-l-link);
   font: inherit;
   text-decoration: underline;
   cursor: pointer;
 }
 
-/* 主按钮：高 46、圆角约 23，走全站统一配方（UHD 口径，与 .btn-primary/UhdButton 同一套）：
-   彩虹细边（--uhd-rainbow）+ 玻璃栈（backdrop blur+saturate + 内高光 + 柔影）；
-   缺省（深色面）＝深色毛玻璃底 + 白字，浅色面＝淡彩粉彩底（--uhd-rainbow-soft）+ 黑字（见浅色覆盖）。
+/* 主按钮：高 46、圆角约 23，走全站统一配方（ax 口径，与 .btn-primary/AxButton 同一套）：
+   彩虹细边（--ax-rainbow）+ 玻璃栈（backdrop blur+saturate + 内高光 + 柔影）；
+   缺省（深色面）＝深色毛玻璃底 + 白字，浅色面＝淡彩粉彩底（--ax-rainbow-soft）+ 黑字（见浅色覆盖）。
    旧版自带的光谱采样填充（满饱和色带、无玻璃栈）已于 2026-11-13 用户真机对比图打回后废弃。 */
 .submit-btn {
   position: relative;
@@ -1163,16 +1163,16 @@ onMounted(() => {
   padding: 0 24px;
   border: 1.5px solid transparent;
   border-radius: 23px;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
   color: #ffffff;
-  box-shadow: var(--uhd-shadow-sheet);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
+  box-shadow: var(--ax-shadow-sheet);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   font: inherit;
   font-size: 15px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   cursor: pointer;
-  transition: transform var(--uhd-press-dur) var(--uhd-ease-spring), filter 0.2s ease, opacity 0.2s ease;
+  transition: transform var(--ax-press-dur) var(--ax-ease-spring), filter 0.2s ease, opacity 0.2s ease;
 }
 /* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
    钮面只留玻璃层；浅色覆盖只换面背景，环由本处继承。 */
@@ -1181,8 +1181,8 @@ onMounted(() => {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: var(--uhd-rainbow-border-w);
-  background: var(--uhd-rainbow);
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -1193,7 +1193,7 @@ onMounted(() => {
   filter: brightness(1.03);
 }
 .submit-btn:active:not(:disabled) {
-  transform: scale(var(--uhd-press-scale));
+  transform: scale(var(--ax-press-scale));
 }
 .submit-btn:disabled {
   background: rgba(255, 255, 255, 0.08);
@@ -1220,9 +1220,9 @@ onMounted(() => {
   border: none;
   padding: 4px 2px;
   min-height: 32px;
-  color: var(--uhd-l-link);
+  color: var(--ax-l-link);
   font: inherit;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
@@ -1242,18 +1242,18 @@ onMounted(() => {
 .forgot-ok {
   margin: 0;
   padding: 0.75rem 1rem;
-  border-radius: var(--uhd-radius-base);
+  border-radius: var(--ax-radius-base);
   background: rgba(34, 197, 94, 0.08);
   border: 1px solid rgba(34, 197, 94, 0.32);
   color: #4ade80;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
 .forgot-hint,
 .reset-note {
   margin: 0;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   line-height: 1.5;
   color: rgba(255, 255, 255, 0.4);
 }
@@ -1261,7 +1261,7 @@ onMounted(() => {
 .auth-footnote {
   margin: 1.5rem 0 0;
   text-align: center;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   color: rgba(255, 255, 255, 0.4);
   line-height: 1.6;
 }
@@ -1311,7 +1311,7 @@ onMounted(() => {
   align-items: center;
   gap: 0.75rem;
   color: rgba(255, 255, 255, 0.4);
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
 }
 .tg-login-divider::before,
 .tg-login-divider::after {
@@ -1333,8 +1333,8 @@ onMounted(() => {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 23px;
   color: #ffffff;
-  font-size: var(--uhd-fs-body);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-body);
+  font-weight: var(--ax-fw-semibold);
   text-decoration: none;
   transition: filter 0.2s ease, border-color 0.2s ease;
 }
@@ -1342,12 +1342,12 @@ onMounted(() => {
   filter: brightness(0.98);
 }
 .tg-login-btn:focus-visible {
-  outline: 2px solid var(--uhd-l-link);
+  outline: 2px solid var(--ax-l-link);
   outline-offset: 2px;
 }
 .tg-login-hint {
   margin: 0;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   line-height: 1.5;
   color: rgba(255, 255, 255, 0.4);
   text-align: center;
@@ -1364,74 +1364,74 @@ onMounted(() => {
 /* 浅色覆盖：跟随用户外观（html[data-theme='light']） */
 html[data-theme='light'] .auth-page {
   background:
-    radial-gradient(600px 420px at 12% 4%, var(--uhd-blob-peach), transparent 70%),
-    radial-gradient(560px 400px at 88% 10%, var(--uhd-blob-sky), transparent 70%),
-    radial-gradient(640px 460px at 80% 96%, var(--uhd-blob-lilac), transparent 70%),
-    radial-gradient(520px 380px at 6% 92%, var(--uhd-blob-mint), transparent 70%),
-    var(--uhd-l-bg);
-  color: var(--uhd-l-text);
+    radial-gradient(600px 420px at 12% 4%, var(--ax-blob-peach), transparent 70%),
+    radial-gradient(560px 400px at 88% 10%, var(--ax-blob-sky), transparent 70%),
+    radial-gradient(640px 460px at 80% 96%, var(--ax-blob-lilac), transparent 70%),
+    radial-gradient(520px 380px at 6% 92%, var(--ax-blob-mint), transparent 70%),
+    var(--ax-l-bg);
+  color: var(--ax-l-text);
 }
-html[data-theme='light'] .auth-top__brand { color: var(--uhd-l-text); }
-html[data-theme='light'] .auth-top__sub { color: var(--uhd-l-text-3); }
+html[data-theme='light'] .auth-top__brand { color: var(--ax-l-text); }
+html[data-theme='light'] .auth-top__sub { color: var(--ax-l-text-3); }
 html[data-theme='light'] .auth-top__glass {
   background: rgba(255, 255, 255, 0.6);
   border-color: rgba(255, 255, 255, 0.65);
 }
-html[data-theme='light'] .auth-top__iconbtn { color: var(--uhd-l-text); }
-html[data-theme='light'] .auth-top__divider { background: var(--uhd-l-border); }
+html[data-theme='light'] .auth-top__iconbtn { color: var(--ax-l-text); }
+html[data-theme='light'] .auth-top__divider { background: var(--ax-l-border); }
 html[data-theme='light'] .auth-menu {
-  background: var(--uhd-l-surface);
-  border-color: var(--uhd-l-border);
-  box-shadow: var(--uhd-shadow-card-l);
+  background: var(--ax-l-surface);
+  border-color: var(--ax-l-border);
+  box-shadow: var(--ax-shadow-card-l);
 }
-html[data-theme='light'] .auth-menu a { color: var(--uhd-l-text); }
-html[data-theme='light'] .auth-menu a:hover { background: var(--uhd-l-seg-bg); }
+html[data-theme='light'] .auth-menu a { color: var(--ax-l-text); }
+html[data-theme='light'] .auth-menu a:hover { background: var(--ax-l-seg-bg); }
 html[data-theme='light'] .auth-column {
-  background: var(--uhd-l-surface);
-  border-color: var(--uhd-l-border);
-  box-shadow: var(--uhd-shadow-card-l);
+  background: var(--ax-l-surface);
+  border-color: var(--ax-l-border);
+  box-shadow: var(--ax-shadow-card-l);
 }
-html[data-theme='light'] .auth-title { color: var(--uhd-l-text); }
-html[data-theme='light'] .mode-switch { background: var(--uhd-l-seg-bg); }
-html[data-theme='light'] .mode-btn { color: var(--uhd-l-text-2); }
-html[data-theme='light'] .mode-btn.active { color: var(--uhd-l-text); }
-html[data-theme='light'] .mode-indicator { background: var(--uhd-l-surface); }
-html[data-theme='light'] .field-label { color: var(--uhd-l-text); }
-html[data-theme='light'] .optional { color: var(--uhd-l-text-3); }
+html[data-theme='light'] .auth-title { color: var(--ax-l-text); }
+html[data-theme='light'] .mode-switch { background: var(--ax-l-seg-bg); }
+html[data-theme='light'] .mode-btn { color: var(--ax-l-text-2); }
+html[data-theme='light'] .mode-btn.active { color: var(--ax-l-text); }
+html[data-theme='light'] .mode-indicator { background: var(--ax-l-surface); }
+html[data-theme='light'] .field-label { color: var(--ax-l-text); }
+html[data-theme='light'] .optional { color: var(--ax-l-text-3); }
 /* 输入框底/边按实测清单第 3 节字面值（#f4f4f5 / #e4e4e7），不用共享令牌近似值 */
 html[data-theme='light'] .field-box { background: #f4f4f5; border-color: #e4e4e7; }
-html[data-theme='light'] .field-icon { color: var(--uhd-l-text-3); }
-html[data-theme='light'] .field-box:focus-within .field-icon { color: var(--uhd-l-text-2); }
-html[data-theme='light'] .field-box input { color: var(--uhd-l-text); }
-html[data-theme='light'] .field-box input::placeholder { color: var(--uhd-l-text-3); }
+html[data-theme='light'] .field-icon { color: var(--ax-l-text-3); }
+html[data-theme='light'] .field-box:focus-within .field-icon { color: var(--ax-l-text-2); }
+html[data-theme='light'] .field-box input { color: var(--ax-l-text); }
+html[data-theme='light'] .field-box input::placeholder { color: var(--ax-l-text-3); }
 html[data-theme='light'] .field-box input:-webkit-autofill {
-  -webkit-text-fill-color: var(--uhd-l-text);
+  -webkit-text-fill-color: var(--ax-l-text);
   -webkit-box-shadow: 0 0 0 1000px #f4f4f5 inset;
 }
-html[data-theme='light'] .eye-btn { color: var(--uhd-l-text-3); }
-html[data-theme='light'] .eye-btn:hover { color: var(--uhd-l-text); background: var(--uhd-l-seg-bg); }
-html[data-theme='light'] .strength-track { background: var(--uhd-l-divider); }
-html[data-theme='light'] .strength-text { color: var(--uhd-l-text-3); }
+html[data-theme='light'] .eye-btn { color: var(--ax-l-text-3); }
+html[data-theme='light'] .eye-btn:hover { color: var(--ax-l-text); background: var(--ax-l-seg-bg); }
+html[data-theme='light'] .strength-track { background: var(--ax-l-divider); }
+html[data-theme='light'] .strength-text { color: var(--ax-l-text-3); }
 html[data-theme='light'] .submit-btn {
-  background: var(--uhd-rainbow-soft);
+  background: var(--ax-rainbow-soft);
   color: #111111;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    var(--uhd-shadow-card-l);
+    var(--ax-shadow-card-l);
 }
-html[data-theme='light'] .submit-btn:disabled { background: var(--uhd-l-input-bg); color: var(--uhd-l-text-3); box-shadow: none; }
-html[data-theme='light'] .forgot-box { background: var(--uhd-l-seg-bg); border-color: var(--uhd-l-border); }
+html[data-theme='light'] .submit-btn:disabled { background: var(--ax-l-input-bg); color: var(--ax-l-text-3); box-shadow: none; }
+html[data-theme='light'] .forgot-box { background: var(--ax-l-seg-bg); border-color: var(--ax-l-border); }
 html[data-theme='light'] .forgot-ok { color: #15803d; }
 html[data-theme='light'] .forgot-hint,
-html[data-theme='light'] .reset-note { color: var(--uhd-l-text-3); }
-html[data-theme='light'] .auth-footnote { color: var(--uhd-l-text-3); }
-html[data-theme='light'] .tg-login-divider { color: var(--uhd-l-text-3); }
+html[data-theme='light'] .reset-note { color: var(--ax-l-text-3); }
+html[data-theme='light'] .auth-footnote { color: var(--ax-l-text-3); }
+html[data-theme='light'] .tg-login-divider { color: var(--ax-l-text-3); }
 html[data-theme='light'] .tg-login-divider::before,
-html[data-theme='light'] .tg-login-divider::after { background: var(--uhd-l-border); }
+html[data-theme='light'] .tg-login-divider::after { background: var(--ax-l-border); }
 html[data-theme='light'] .tg-login-btn {
-  background: var(--uhd-l-surface);
-  border-color: var(--uhd-l-border);
-  color: var(--uhd-l-text);
+  background: var(--ax-l-surface);
+  border-color: var(--ax-l-border);
+  color: var(--ax-l-text);
 }
-html[data-theme='light'] .tg-login-hint { color: var(--uhd-l-text-3); }
+html[data-theme='light'] .tg-login-hint { color: var(--ax-l-text-3); }
 </style>

@@ -44,7 +44,7 @@ const router = createRouter({
             component: () => import('@/views/panel/FavoritesView.vue'),
             meta: { title: '我的收藏', requiresAuth: true },
           },
-          // UHD 换皮批 3（片库面）：/library 片库首页 + 电影/剧集分类页 + 搜索结果页。
+          // ax 换皮批 3（片库面）：/library 片库首页 + 电影/剧集分类页 + 搜索结果页。
           // 2026-11-13 登录落点修复：旧 '/' 发现页（DiscoveryView）已删除；
           // 登录默认落点为用户中心概览 /game/account（同日用户改定），
           // 本页经底坞/顶栏「首页」进入。页面自带双胶囊顶栏与手机玻璃底坞，
@@ -152,7 +152,7 @@ const router = createRouter({
             component: () => import('@/views/game/AccountSettingsView.vue'),
             meta: { title: '账号设置', requiresAuth: true },
           },
-          // 订阅服务：按 UHDNow 订阅逻辑重做的购买页（深色 app 单列流＋吸底结算条）
+          // 订阅服务：按 参考站 订阅逻辑重做的购买页（深色 app 单列流＋吸底结算条）
           {
             path: '/game/account/subscribe',
             name: 'game-account-subscribe',
@@ -279,7 +279,7 @@ const router = createRouter({
       component: () => import('@/views/LicensesView.vue'),
       meta: { title: '开源许可' },
     },
-    // UHD 换皮批 1（营销面）：官网定价，公开页不带 requiresAuth，自带悬浮胶囊导航，
+    // ax 换皮批 1（营销面）：官网定价，公开页不带 requiresAuth，自带悬浮胶囊导航，
     // App.vue 按路由名（pricing）不渲染全局顶栏/底坞。
     // 官网首页已按 2026-11-13 定版绑到根路径 '/'（RootView 未登录分支渲染
     // LandingView），/welcome 只留旧链接/书签重定向，不再单独渲染。
@@ -299,7 +299,7 @@ const router = createRouter({
     // 这些入口不再有对应页面，全部落到兜底 404 页（页面里会给「回首页」的出口）。
     // 例外：/media/:id 已按新口径复活为条目详情页（见上 panelV4 路由：
     // 只做信息 + 季集 + 缺集求补，不恢复浏览/播放）；
-    // /library 与 /search 已由 UHD 换皮批 3 按片库面口径复活为真实页面
+    // /library 与 /search 已由 ax 换皮批 3 按片库面口径复活为真实页面
     // （见上 panelV4 路由：海报墙 + 顶栏搜索，只浏览、不做网页播放）。
     // 注意：/profile 的承接入口是 /game/account（账号设置设施）。
     // 网页播放器（2026-11-13 用户改规矩立项）：全屏播放页，自带覆盖层，
@@ -340,7 +340,7 @@ router.beforeEach(async (to) => {
     initialized = true
   }
 
-  // 落点分场景（2026-11-13 21:22 用户亲定最终版，照友站 UHDNow）：
+  // 落点分场景（2026-11-13 21:22 用户亲定最终版，照友站）：
   // ① 登录动作成功 → 概览 /game/account（由 LoginView 的 postAuthTarget
   //    在提交成功时直落，不经本守卫转发）；
   // ② 已登录直接打开 '/'（含冷启动）→ 停官网宣传页，本守卫不跳转
@@ -380,14 +380,14 @@ router.beforeEach(async (to) => {
 
 // v4 面板第一版只做纸色浅色：在 v4 路由下强制 light，离开时恢复
 // （v4 视图自带 .v4-scope 纸色变量，这里只处理 html data-theme 与浏览器工具栏色）
-// 例外（2026-11-13 UHD 1:1 跟进）：/game/account（概览）已自带主题跟随，
+// 例外（2026-11-13 ax 1:1 跟进）：/game/account（概览）已自带主题跟随，
 // 不再钉 light——本集合摘除该路径后守卫对它走 restoreUserTheme；
 // /game/account/menu（我的）本就不在集合内，同样跟随用户外观。
 // 例外（2026-11-14 桌面统一壳单）：/game/account/settings
-// 已摘掉 .v4-scope 纸面嵌套（页根改挂 .uhd-shell-scope 承接壳内令牌），
+// 已摘掉 .v4-scope 纸面嵌套（页根改挂 .ax-shell-scope 承接壳内令牌），
 // 不再是纸面页，一并摘除钉 light，外观跟随用户三态（与概览同口径）。
 // 「我的订阅」页（/game/account/member）已随 2026-11-14 删除单整页删除，路由已注销。
-// 例外（2026-11-13 二级页重做组 A）：/server 已换 UHD 布局，一并摘除——
+// 例外（2026-11-13 二级页重做组 A）：/server 已换 ax 布局，一并摘除——
 // /server 页内自带三态主题跟随，不再由守卫钉 light。
 // 播放账号页（原 /game/operator）已随 2026-11-18 删除单整页删除，路由已注销。
 // 批 1+2 删除后：'/collections'（合集）路由已删，一并摘除。
@@ -395,7 +395,7 @@ router.beforeEach(async (to) => {
 export const V4_PATHS = new Set(['/', '/want', '/store-requests'])
 // FE-27 收口（2026-11-17）：/favorites 与 /media/:id、/person/:key 都是
 // 片库面（StreamShell）页面，全页只用 .stream-scope 色板 C 令牌
-// （--uhd-s-*），实际深浅由 data-stream-theme 决定（已并回全站
+// （--ax-s-*），实际深浅由 data-stream-theme 决定（已并回全站
 // aetrix-theme 主口径）。此前把它们钉 light 会让 html data-theme 与
 // theme-color 恒为浅色、与深色页面互相打架，故一并摘除钉 light，
 // 这三页与其它页面一样走 restoreUserTheme。

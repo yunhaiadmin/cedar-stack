@@ -1,5 +1,5 @@
 <template>
-  <UhdAccountLayout>
+  <AxAccountLayout>
     <!-- 作品请求详情（2026-11-15 按作品组织重做，照友站 2.4）：作品头卡
          （标题上方状态徽标＋TMDB 外链）＋该作品全部请求（后端
          GET /media-seek/work 按作品汇集：求片/追新计数、我的未完结指针、
@@ -15,7 +15,7 @@
           </button>
           <span class="rmd-topbar__title">求片反馈</span>
           <!-- 观影胶囊已删（2026-11-18 去重单）：账户区由 App.vue 统一
-               顶栏 UhdTopBar 常驻承接，本页不再自带，避免叠出两颗。 -->
+               顶栏 AxTopBar 常驻承接，本页不再自带，避免叠出两颗。 -->
         </div>
 
         <button type="button" class="rmd-backpill" @click="goBack">
@@ -142,14 +142,14 @@
         />
       </div>
     </div>
-  </UhdAccountLayout>
+  </AxAccountLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ChevronLeft } from 'lucide-vue-next'
-import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
+import AxAccountLayout from '@/components/ax/AxAccountLayout.vue'
 import RequestSubmitModal, { type SubmitWork } from '@/components/requests/RequestSubmitModal.vue'
 import {
   mediaSeekApi,
@@ -368,11 +368,11 @@ onMounted(() => { void loadAll() })
   position: relative;
   height: 36px; padding: 0 16px; border-radius: 999px; cursor: pointer; font-family: inherit;
   border: 1.5px solid transparent;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
   color: #ffffff; font-size: 13px; font-weight: 800;
-  box-shadow: var(--uhd-shadow-sheet);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
+  box-shadow: var(--ax-shadow-sheet);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
 }
 /* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
    钮面只留玻璃层；浅色覆盖只换面背景，环由本处继承。 */
@@ -381,8 +381,8 @@ onMounted(() => { void loadAll() })
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: var(--uhd-rainbow-border-w);
-  background: var(--uhd-rainbow);
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -489,9 +489,9 @@ html[data-theme='light'] .rmd-media__name { color: #111111; }
 html[data-theme='light'] .rmd-media__meta { color: #6b7280; }
 html[data-theme='light'] .rmd-media__tmdb { color: #2563eb; }
 html[data-theme='light'] .rmd-media__watch {
-  background: var(--uhd-rainbow-soft);
+  background: var(--ax-rainbow-soft);
   color: #111111;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--uhd-shadow-card-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 html[data-theme='light'] .rmd-pill { border-color: #e5e5e5; color: #6b7280; }
 html[data-theme='light'] .rmd-pill--green { background: #e6f4ea; color: #16a34a; border-color: #16a34a; }

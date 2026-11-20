@@ -381,7 +381,7 @@ import {
   softDecodePipelineDecision,
   softDecodeResolutionGate,
   SOFTDECODE_MSE_ENABLED,
-  SOFT_UHD_BLOCK_MESSAGE,
+  SOFT_4K_BLOCK_MESSAGE,
   type SoftPlayerHandle,
 } from '@/utils/softDecode'
 import { prepStatusText as prepStatusTextFor, PREP_DECODER_HINT } from '@/utils/prepStatus'
@@ -1442,7 +1442,7 @@ async function startSoftDecode(
     ) {
       mseAttempt = true
     } else {
-      showSoftUhdBlocked(source, verdict)
+      showSoft4kBlocked(source, verdict)
       return true
     }
   }
@@ -1528,7 +1528,7 @@ async function startSoftDecode(
           // 回落解码提示卡。都只落一次，不重试。
           void destroySoft().then(() =>
             mseAttempt
-              ? showSoftUhdBlocked(source, verdict)
+              ? showSoft4kBlocked(source, verdict)
               : showDecodeUnsupported(source, verdict),
           )
         },
@@ -1555,7 +1555,7 @@ async function startSoftDecode(
       // MSE 试播起播失败：实例已由 createSoftPlayer 内部销毁，这里
       // 直接回落 #260 的 4K 提示卡（返回 true＝已处理），不让调用
       // 方再走原生试播，不重试。
-      showSoftUhdBlocked(source, verdict)
+      showSoft4kBlocked(source, verdict)
       return true
     }
     return false
@@ -1609,13 +1609,13 @@ function showDecodeUnsupported(source: EmbyMediaSource, verdict: DecodeVerdict):
 
 /** 4K 软解护栏命中：与解码提示卡同一套样式与出路（能播的替代版本/
     返回详情），正文换成护栏的人话文案，不让用户对着崩溃页循环重进 */
-function showSoftUhdBlocked(source: EmbyMediaSource, verdict: DecodeVerdict): void {
+function showSoft4kBlocked(source: EmbyMediaSource, verdict: DecodeVerdict): void {
   const alt = (playbackInfo.value?.MediaSources || []).find(
     (s) => s.Id !== source.Id && verdictCache.value.get(s.Id)?.status === 'supported',
   )
   decodeVerdict.value = verdict
   decodeAlt.value = alt || null
-  noticeText.value = SOFT_UHD_BLOCK_MESSAGE
+  noticeText.value = SOFT_4K_BLOCK_MESSAGE
   phase.value = 'unsupported'
 }
 
@@ -2449,7 +2449,7 @@ onUnmounted(() => {
   min-width: 0;
 }
 /* 返回钮（差距 #1/#2）：手机＝文字胶囊——高 40、圆角 20、与 .wp-together
-   同款玻璃（pill 档令牌：--uhd-glass-d 底＋pill-filter＋pill-shadow）、
+   同款玻璃（pill 档令牌：--ax-glass-d 底＋pill-filter＋pill-shadow）、
    白字 14px；≥768px 变 Ø40 玻璃圆钮、文字隐藏，顶栏不再另置标题 */
 .wp-back {
   flex: none;
@@ -2460,11 +2460,11 @@ onUnmounted(() => {
   max-width: min(52vw, 320px);
   padding: 0 16px 0 10px;
   border-radius: 20px;
-  border: 1px solid var(--uhd-glass-border);
-  background: var(--uhd-glass-d);
-  backdrop-filter: var(--uhd-glass-pill-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-pill-filter);
-  box-shadow: var(--uhd-glass-pill-shadow);
+  border: 1px solid var(--ax-glass-border);
+  background: var(--ax-glass-d);
+  backdrop-filter: var(--ax-glass-pill-filter);
+  -webkit-backdrop-filter: var(--ax-glass-pill-filter);
+  box-shadow: var(--ax-glass-pill-shadow);
   color: #fff;
   font-size: 14px;
   cursor: pointer;
@@ -2485,11 +2485,11 @@ onUnmounted(() => {
   height: 40px;
   padding: 0 16px;
   border-radius: 20px;
-  border: 1px solid var(--uhd-glass-border);
-  background: var(--uhd-glass-d);
-  backdrop-filter: var(--uhd-glass-pill-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-pill-filter);
-  box-shadow: var(--uhd-glass-pill-shadow);
+  border: 1px solid var(--ax-glass-border);
+  background: var(--ax-glass-d);
+  backdrop-filter: var(--ax-glass-pill-filter);
+  -webkit-backdrop-filter: var(--ax-glass-pill-filter);
+  box-shadow: var(--ax-glass-pill-shadow);
   color: #fff;
   font-size: 14px;
   cursor: pointer;
@@ -2520,16 +2520,16 @@ onUnmounted(() => {
   height: 58px;
   border-radius: 29px;
   padding: 2px;
-  background: var(--uhd-rainbow, linear-gradient(135deg, #a4de91 0%, #3cdce7 10%, #f5c165 18%, #e8766f 26%, rgba(159, 177, 255, 0.28) 48%, rgba(157, 124, 195, 0.10) 70%, rgba(157, 124, 195, 0) 100%));
-  box-shadow: var(--uhd-glass-slab-shadow);
+  background: var(--ax-rainbow, linear-gradient(135deg, #a4de91 0%, #3cdce7 10%, #f5c165 18%, #e8766f 26%, rgba(159, 177, 255, 0.28) 48%, rgba(157, 124, 195, 0.10) 70%, rgba(157, 124, 195, 0) 100%));
+  box-shadow: var(--ax-glass-slab-shadow);
 }
 .wp-start-main,
 .wp-start-restart {
   height: 100%;
   border: none;
-  background: var(--uhd-glass-btn-d);
-  backdrop-filter: var(--uhd-glass-slab-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-slab-filter);
+  background: var(--ax-glass-btn-d);
+  backdrop-filter: var(--ax-glass-slab-filter);
+  -webkit-backdrop-filter: var(--ax-glass-slab-filter);
   color: #fff;
   font-size: 16px;
   font-weight: 600;
@@ -2571,10 +2571,10 @@ onUnmounted(() => {
   margin: 0;
   padding: 10px 12px;
   border-radius: 12px;
-  background: var(--uhd-glass-d);
-  backdrop-filter: var(--uhd-glass-pill-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-pill-filter);
-  box-shadow: var(--uhd-glass-pill-shadow);
+  background: var(--ax-glass-d);
+  backdrop-filter: var(--ax-glass-pill-filter);
+  -webkit-backdrop-filter: var(--ax-glass-pill-filter);
+  box-shadow: var(--ax-glass-pill-shadow);
   font-size: 12px;
   line-height: 1.55;
   pointer-events: none;
@@ -2683,12 +2683,12 @@ onUnmounted(() => {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 45%),
     rgba(10, 10, 13, 0.96);
-  border: 1px solid var(--uhd-glass-border);
-  /* 底部亮线：底边色亮于其余三边（--uhd-glass-border 为 0.14） */
+  border: 1px solid var(--ax-glass-border);
+  /* 底部亮线：底边色亮于其余三边（--ax-glass-border 为 0.14） */
   border-bottom-color: rgba(255, 255, 255, 0.3);
   border-radius: 20px;
   padding: 16px 20px;
-  box-shadow: var(--uhd-glass-float-shadow);
+  box-shadow: var(--ax-glass-float-shadow);
 }
 .wp-prep-head {
   display: flex;
@@ -2727,11 +2727,11 @@ onUnmounted(() => {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  border: 1px solid var(--uhd-glass-border);
-  background: var(--uhd-glass-d);
-  backdrop-filter: var(--uhd-glass-pill-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-pill-filter);
-  box-shadow: var(--uhd-glass-pill-shadow);
+  border: 1px solid var(--ax-glass-border);
+  background: var(--ax-glass-d);
+  backdrop-filter: var(--ax-glass-pill-filter);
+  -webkit-backdrop-filter: var(--ax-glass-pill-filter);
+  box-shadow: var(--ax-glass-pill-shadow);
   color: #fff;
   display: inline-flex;
   align-items: center;
@@ -2746,13 +2746,13 @@ onUnmounted(() => {
   bottom: calc(14px + env(safe-area-inset-bottom));
   z-index: 20;
   width: min(680px, calc(100% - 24px));
-  background: var(--uhd-glass-d);
-  border: 1px solid var(--uhd-glass-border);
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: 20px;
   padding: 10px 16px 12px;
-  backdrop-filter: var(--uhd-glass-slab-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-slab-filter);
-  box-shadow: var(--uhd-glass-slab-shadow);
+  backdrop-filter: var(--ax-glass-slab-filter);
+  -webkit-backdrop-filter: var(--ax-glass-slab-filter);
+  box-shadow: var(--ax-glass-slab-shadow);
 }
 .wp-bar-progress {
   display: flex;
@@ -2783,7 +2783,7 @@ onUnmounted(() => {
   border-radius: 50%;
   background: #fff;
   border: none;
-  box-shadow: var(--uhd-shadow-thumb-d);
+  box-shadow: var(--ax-shadow-thumb-d);
 }
 .wp-progress::-moz-range-thumb {
   width: 13px;
@@ -2910,13 +2910,13 @@ onUnmounted(() => {
   width: min(680px, calc(100% - 24px));
   display: flex;
   gap: 8px;
-  background: var(--uhd-glass-d);
-  border: 1px solid var(--uhd-glass-border);
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: 999px;
   padding: 6px 6px 6px 16px;
-  backdrop-filter: var(--uhd-glass-slab-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-slab-filter);
-  box-shadow: var(--uhd-glass-slab-shadow);
+  backdrop-filter: var(--ax-glass-slab-filter);
+  -webkit-backdrop-filter: var(--ax-glass-slab-filter);
+  box-shadow: var(--ax-glass-slab-shadow);
 }
 .wp-dm-input {
   flex: 1;
@@ -3007,13 +3007,13 @@ onUnmounted(() => {
   transform: translateX(-50%);
   z-index: 30;
   margin: 0;
-  background: var(--uhd-glass-d);
-  border: 1px solid var(--uhd-glass-border);
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: 999px;
   padding: 8px 16px;
-  backdrop-filter: var(--uhd-glass-pill-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-pill-filter);
-  box-shadow: var(--uhd-glass-pill-shadow);
+  backdrop-filter: var(--ax-glass-pill-filter);
+  -webkit-backdrop-filter: var(--ax-glass-pill-filter);
+  box-shadow: var(--ax-glass-pill-shadow);
   font-size: 13px;
   white-space: nowrap;
   max-width: calc(100% - 32px);

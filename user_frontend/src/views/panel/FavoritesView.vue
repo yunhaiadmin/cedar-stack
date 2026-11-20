@@ -303,26 +303,26 @@ onMounted(() => {
 .fv-eyebrow {
   margin: 0;
   font-size: 14px;
-  font-weight: var(--uhd-fw-bold);
-  color: var(--uhd-s-text-2);
+  font-weight: var(--ax-fw-bold);
+  color: var(--ax-s-text-2);
 }
 .fv-h1 {
   margin: 8px 0 0;
   font-size: 56px;
-  font-weight: var(--uhd-fw-black);
+  font-weight: var(--ax-fw-black);
   line-height: 1.05;
   letter-spacing: -0.01em;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
 }
 /* 统计行：标题下小字，数字加重（照友站形态，色随令牌走、明暗两态同构） */
 .fv-stats {
   margin: 10px 0 0;
   font-size: 15px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .fv-stats strong {
-  color: var(--uhd-s-text);
-  font-weight: var(--uhd-fw-bold);
+  color: var(--ax-s-text);
+  font-weight: var(--ax-fw-bold);
 }
 .fv-tabs {
   display: flex;
@@ -335,32 +335,32 @@ onMounted(() => {
   border-radius: 20px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   font-size: 15px;
   font-family: inherit;
   cursor: pointer;
 }
 .fv-tab--on {
-  background: var(--uhd-s-pill-active-bg);
-  color: var(--uhd-s-pill-active-text);
-  font-weight: var(--uhd-fw-semibold);
-  box-shadow: var(--uhd-shadow-seg);
-  border-color: var(--uhd-s-pill-border);
+  background: var(--ax-s-pill-active-bg);
+  color: var(--ax-s-pill-active-text);
+  font-weight: var(--ax-fw-semibold);
+  box-shadow: var(--ax-shadow-seg);
+  border-color: var(--ax-s-pill-border);
 }
 .fv-error,
 .fv-loading {
   margin-top: 36px;
   font-size: 15px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .fv-spinner {
   display: inline-block;
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: 2px solid var(--uhd-s-border);
-  border-top-color: var(--uhd-s-text);
-  animation: uhd-spin 0.8s linear infinite;
+  border: 2px solid var(--ax-s-border);
+  border-top-color: var(--ax-s-text);
+  animation: ax-spin 0.8s linear infinite;
   vertical-align: -3px;
   margin-right: 8px;
 }
@@ -369,11 +369,11 @@ onMounted(() => {
   height: 44px;
   padding: 0 26px;
   border-radius: 22px;
-  border: 1px solid var(--uhd-s-border);
-  background: var(--uhd-s-pill-active-bg);
-  color: var(--uhd-s-text);
+  border: 1px solid var(--ax-s-border);
+  background: var(--ax-s-pill-active-bg);
+  color: var(--ax-s-text);
   font-size: 15px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   font-family: inherit;
   cursor: pointer;
 }
@@ -385,10 +385,10 @@ onMounted(() => {
   min-height: 230px;
   margin-top: 26px;
   padding: 24px;
-  border: 1.5px dashed var(--uhd-s-border);
+  border: 1.5px dashed var(--ax-s-border);
   border-radius: 12px;
   font-size: 15px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   text-align: center;
 }
 /* 网格与分类页同款：7 列 228×343 口径，窄屏递减 */
@@ -418,7 +418,7 @@ onMounted(() => {
   position: relative;
   aspect-ratio: 2 / 3;
   border-radius: 13px;
-  background: var(--uhd-s-card-soft);
+  background: var(--ax-s-card-soft);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -443,10 +443,10 @@ onMounted(() => {
   aspect-ratio: 1;
   border-radius: 50%;
   overflow: hidden;
-  background: var(--uhd-s-card-soft);
-  color: var(--uhd-s-text-2);
+  background: var(--ax-s-card-soft);
+  color: var(--ax-s-text-2);
   font-size: 30px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
 }
 .fv-avatar img {
   width: 100%;
@@ -454,7 +454,7 @@ onMounted(() => {
   object-fit: cover;
 }
 .fv-fallback {
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .fv-link {
   position: absolute;
@@ -469,10 +469,10 @@ onMounted(() => {
   right: 8px;
   width: 32px;
   height: 32px;
-  border: 1px solid var(--uhd-s-pill-border);
+  border: 1px solid var(--ax-s-pill-border);
   border-radius: 999px;
-  background: var(--uhd-s-pill-bg);
-  color: var(--uhd-s-text);
+  background: var(--ax-s-pill-bg);
+  color: var(--ax-s-text);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -491,9 +491,9 @@ onMounted(() => {
 .fv-name {
   display: block;
   font-size: 17px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
   line-height: 1.3;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
   text-decoration: none;
   white-space: nowrap;
   overflow: hidden;
@@ -502,6 +502,6 @@ onMounted(() => {
 .fv-meta {
   margin-top: 4px;
   font-size: 14px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 </style>

@@ -20,7 +20,7 @@
 
 <style scoped>
 /* 文档面排版与 PrivacyView 同口径（说明书 §2.12 文章卡）：
-   缺省深色面、html[data-theme='light'] 换浅，只引用 --uhd-* 令牌。 */
+   缺省深色面、html[data-theme='light'] 换浅，只引用 --ax-* 令牌。 */
 .licenses-page {
   min-height: 100vh;
   min-height: 100dvh;
@@ -28,41 +28,41 @@
   justify-content: center;
   align-items: flex-start;
   padding: 64px 16px calc(48px + var(--au-dock-space));
-  background: var(--uhd-d-bg);
-  color: var(--uhd-d-text);
-  font-family: var(--uhd-font-sans);
+  background: var(--ax-d-bg);
+  color: var(--ax-d-text);
+  font-family: var(--ax-font-sans);
 }
 
 .licenses-inner {
   width: 100%;
-  max-width: var(--uhd-doc-article-w);
-  background: var(--uhd-d-surface);
-  border: 1px solid var(--uhd-d-border);
-  border-radius: var(--uhd-radius-doc);
+  max-width: var(--ax-doc-article-w);
+  background: var(--ax-d-surface);
+  border: 1px solid var(--ax-d-border);
+  border-radius: var(--ax-radius-doc);
   padding: 48px;
 }
 
 .licenses-eyebrow {
   margin: 0 0 16px;
-  font-size: var(--uhd-fs-aux-sm);
-  font-weight: var(--uhd-fw-semibold);
-  letter-spacing: var(--uhd-ls-eyebrow);
+  font-size: var(--ax-fs-aux-sm);
+  font-weight: var(--ax-fw-semibold);
+  letter-spacing: var(--ax-ls-eyebrow);
   text-transform: uppercase;
-  color: var(--uhd-d-text-2);
+  color: var(--ax-d-text-2);
 }
 
 .licenses-title {
   margin: 0 0 16px;
-  font-size: var(--uhd-fs-h2);
-  font-weight: var(--uhd-fw-extrabold);
+  font-size: var(--ax-fs-h2);
+  font-weight: var(--ax-fw-extrabold);
   line-height: 1.2;
 }
 
 .licenses-note {
   margin: 0 0 28px;
-  font-size: var(--uhd-fs-lead);
-  line-height: var(--uhd-lh-doc);
-  color: var(--uhd-d-text-2);
+  font-size: var(--ax-fs-lead);
+  line-height: var(--ax-lh-doc);
+  color: var(--ax-d-text-2);
 }
 
 .licenses-list {
@@ -71,12 +71,12 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  font-size: var(--uhd-fs-body);
-  line-height: var(--uhd-lh-doc);
+  font-size: var(--ax-fs-body);
+  line-height: var(--ax-lh-doc);
 }
 
 .licenses-list li::marker {
-  color: var(--uhd-d-text-3);
+  color: var(--ax-d-text-3);
 }
 
 .licenses-list a {
@@ -91,26 +91,26 @@
 
 /* 浅色文档面：跟随用户外观（html[data-theme='light']） */
 html[data-theme='light'] .licenses-page {
-  background: var(--uhd-l-bg);
-  color: var(--uhd-l-text);
+  background: var(--ax-l-bg);
+  color: var(--ax-l-text);
 }
 
 html[data-theme='light'] .licenses-inner {
-  background: var(--uhd-l-surface);
-  border-color: var(--uhd-l-border);
-  box-shadow: var(--uhd-shadow-card-l);
+  background: var(--ax-l-surface);
+  border-color: var(--ax-l-border);
+  box-shadow: var(--ax-shadow-card-l);
 }
 
 html[data-theme='light'] .licenses-eyebrow {
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 
 html[data-theme='light'] .licenses-note {
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 
 html[data-theme='light'] .licenses-list li::marker {
-  color: var(--uhd-l-text-3);
+  color: var(--ax-l-text-3);
 }
 
 @media (max-width: 640px) {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * UhdPlanCompare —— 订阅单选对比表（说明书 2.11 的共用组件）
+ * AxPlanCompare —— 订阅单选对比表（说明书 2.11 的共用组件）
  * 官网定价（批 1）与站内订阅（批 2）共用同一套版式，全站只维护一份：
  * - 套餐横向并列，每列列头单选圆圈 20px + 套餐名 18px 粗 + 价格大字 + 计价注；
  * - 选中列 = 白卡（圆角 16px + 阴影），未选中列灰字半透明；
@@ -9,7 +9,7 @@
  * 官网版不带结算栏：底部按钮只 emit('select')，由页面决定跳转/下单动作。
  */
 import { computed, ref, watch } from 'vue'
-import UhdButton from './UhdButton.vue'
+import AxButton from './AxButton.vue'
 import type { SubscriptionPlan } from '@/api/economy'
 
 const props = withDefaults(
@@ -56,12 +56,12 @@ function specRows(plan: SubscriptionPlan): string[] {
 </script>
 
 <template>
-  <div class="uhd-plans">
+  <div class="ax-plans">
     <div
       v-for="plan in plans"
       :key="plan.id"
-      class="uhd-plans__col"
-      :class="{ 'uhd-plans__col--selected': plan.id === selectedId }"
+      class="ax-plans__col"
+      :class="{ 'ax-plans__col--selected': plan.id === selectedId }"
       role="radio"
       :aria-checked="plan.id === selectedId"
       tabindex="0"
@@ -69,78 +69,78 @@ function specRows(plan: SubscriptionPlan): string[] {
       @keydown.enter.prevent="selectedId = plan.id"
       @keydown.space.prevent="selectedId = plan.id"
     >
-      <span v-if="plan.is_popular" class="uhd-plans__badge">推荐</span>
+      <span v-if="plan.is_popular" class="ax-plans__badge">推荐</span>
 
-      <div class="uhd-plans__head">
-        <span class="uhd-plans__radio" :class="{ 'uhd-plans__radio--on': plan.id === selectedId }" aria-hidden="true" />
-        <span class="uhd-plans__name">{{ plan.name }}</span>
+      <div class="ax-plans__head">
+        <span class="ax-plans__radio" :class="{ 'ax-plans__radio--on': plan.id === selectedId }" aria-hidden="true" />
+        <span class="ax-plans__name">{{ plan.name }}</span>
       </div>
-      <p v-if="showRealm && (plan.line_name || plan.realm_name)" class="uhd-plans__realm">{{ plan.line_name || plan.realm_name }}</p>
+      <p v-if="showRealm && (plan.line_name || plan.realm_name)" class="ax-plans__realm">{{ plan.line_name || plan.realm_name }}</p>
 
-      <p class="uhd-plans__price">
-        <span class="uhd-plans__price-num">${{ plan.price }}</span>
-        <span class="uhd-plans__price-per">/ {{ plan.duration_days }} 天</span>
+      <p class="ax-plans__price">
+        <span class="ax-plans__price-num">${{ plan.price }}</span>
+        <span class="ax-plans__price-per">/ {{ plan.duration_days }} 天</span>
       </p>
-      <p v-if="plan.description" class="uhd-plans__desc">{{ plan.description }}</p>
+      <p v-if="plan.description" class="ax-plans__desc">{{ plan.description }}</p>
 
-      <ul class="uhd-plans__specs">
-        <li v-for="row in specRows(plan)" :key="row" class="uhd-plans__spec">{{ row }}</li>
+      <ul class="ax-plans__specs">
+        <li v-for="row in specRows(plan)" :key="row" class="ax-plans__spec">{{ row }}</li>
       </ul>
 
-      <UhdButton
+      <AxButton
         :variant="plan.id === selectedId ? 'primary' : 'secondary'"
         block
         size="sm"
-        class="uhd-plans__cta"
+        class="ax-plans__cta"
         @click.stop="emit('select', plan)"
       >
         {{ ctaText }}
-      </UhdButton>
+      </AxButton>
     </div>
   </div>
 </template>
 
 <style scoped>
-.uhd-plans {
+.ax-plans {
   display: grid;
   /* 质感第二波（2026-11-18）：列宽 287px、间距 24px（友站实测卡 287×454），居中排列 */
   grid-template-columns: repeat(auto-fit, 287px);
   justify-content: center;
   gap: 24px;
-  max-width: var(--uhd-container-pricing);
+  max-width: var(--ax-container-pricing);
   margin: 0 auto;
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
 }
 
-.uhd-plans__col {
+.ax-plans__col {
   position: relative;
   display: flex;
   flex-direction: column;
   min-height: 454px;
   padding: 26px 24px;
-  border: var(--uhd-border-w) solid transparent;
+  border: var(--ax-border-w) solid transparent;
   border-radius: 24px;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
   opacity: 0.72;
   cursor: pointer;
   transition:
-    opacity var(--uhd-dur-ui) var(--uhd-ease-standard),
-    box-shadow var(--uhd-dur-ui) var(--uhd-ease-standard);
+    opacity var(--ax-dur-ui) var(--ax-ease-standard),
+    box-shadow var(--ax-dur-ui) var(--ax-ease-standard);
 }
-.uhd-plans__col--selected {
-  background: var(--uhd-l-surface);
-  border-color: var(--uhd-l-border);
-  box-shadow: var(--uhd-shadow-card-l);
-  color: var(--uhd-l-text);
+.ax-plans__col--selected {
+  background: var(--ax-l-surface);
+  border-color: var(--ax-l-border);
+  box-shadow: var(--ax-shadow-card-l);
+  color: var(--ax-l-text);
   opacity: 1;
 }
-.uhd-plans__col:focus-visible {
-  outline: 2px solid var(--uhd-l-link);
+.ax-plans__col:focus-visible {
+  outline: 2px solid var(--ax-l-link);
   outline-offset: 2px;
 }
 
 /* 推荐角标：彩虹小胶囊（白名单位置）——填色走不透明 fill 版 */
-.uhd-plans__badge {
+.ax-plans__badge {
   position: absolute;
   top: 16px;
   right: 16px;
@@ -148,85 +148,85 @@ function specRows(plan: SubscriptionPlan): string[] {
   align-items: center;
   height: 22px;
   padding: 0 10px;
-  border-radius: var(--uhd-radius-pill);
-  background: var(--uhd-rainbow-fill);
+  border-radius: var(--ax-radius-pill);
+  background: var(--ax-rainbow-fill);
   color: #ffffff;
-  font-size: var(--uhd-fs-aux-sm);
-  font-weight: var(--uhd-fw-bold);
+  font-size: var(--ax-fs-aux-sm);
+  font-weight: var(--ax-fw-bold);
   line-height: 1;
 }
 
-.uhd-plans__head {
+.ax-plans__head {
   display: flex;
   align-items: center;
   gap: 10px;
 }
-.uhd-plans__radio {
+.ax-plans__radio {
   width: 20px;
   height: 20px;
   flex: none;
   border-radius: 50%;
-  border: 2px solid var(--uhd-l-text-3);
+  border: 2px solid var(--ax-l-text-3);
   position: relative;
 }
-.uhd-plans__radio--on {
-  border-color: var(--uhd-l-text);
+.ax-plans__radio--on {
+  border-color: var(--ax-l-text);
 }
-.uhd-plans__radio--on::after {
+.ax-plans__radio--on::after {
   content: '';
   position: absolute;
   inset: 3px;
   border-radius: 50%;
-  background: var(--uhd-l-text);
+  background: var(--ax-l-text);
 }
-.uhd-plans__name {
-  font-size: var(--uhd-fs-title);
-  font-weight: var(--uhd-fw-bold);
+.ax-plans__name {
+  font-size: var(--ax-fs-title);
+  font-weight: var(--ax-fw-bold);
 }
-.uhd-plans__realm {
+.ax-plans__realm {
   margin: 6px 0 0 30px;
-  font-size: var(--uhd-fs-aux);
-  color: var(--uhd-l-text-3);
+  font-size: var(--ax-fs-aux);
+  color: var(--ax-l-text-3);
 }
 
-.uhd-plans__price {
+.ax-plans__price {
   display: flex;
   align-items: baseline;
   gap: 6px;
   margin: 18px 0 4px;
 }
-.uhd-plans__price-num {
-  font-family: var(--uhd-font-display);
-  font-size: var(--uhd-fs-price);
-  font-weight: var(--uhd-fw-black);
+.ax-plans__price-num {
+  font-family: var(--ax-font-display);
+  font-size: var(--ax-fs-price);
+  font-weight: var(--ax-fw-black);
   line-height: 1;
   color: inherit;
 }
-.uhd-plans__price-per {
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-l-text-3);
+.ax-plans__price-per {
+  font-size: var(--ax-fs-caption);
+  color: var(--ax-l-text-3);
 }
-.uhd-plans__desc {
+.ax-plans__desc {
   margin: 4px 0 0;
-  font-size: var(--uhd-fs-caption);
-  line-height: var(--uhd-lh-body);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-caption);
+  line-height: var(--ax-lh-body);
+  color: var(--ax-l-text-2);
 }
 
-.uhd-plans__specs {
+.ax-plans__specs {
   list-style: none;
   margin: 14px 0 22px;
   padding: 0;
   flex: 1;
 }
-.uhd-plans__spec {
+.ax-plans__spec {
   padding: 12px 0;
-  border-top: var(--uhd-border-w) solid var(--uhd-l-divider);
-  font-size: var(--uhd-fs-body);
+  border-top: var(--ax-border-w) solid var(--ax-l-divider);
+  font-size: var(--ax-fs-body);
   line-height: 1.45;
 }
 
-.uhd-plans__cta {
+.ax-plans__cta {
   margin-top: auto;
 }
 </style>

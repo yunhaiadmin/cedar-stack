@@ -942,7 +942,7 @@ onUnmounted(() => {
   border-radius: var(--au-r-full);
   background: var(--au-primary);
   color: var(--au-on-primary);
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   font-weight: 700;
 }
 
@@ -1007,7 +1007,7 @@ onUnmounted(() => {
 
 .brand-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
 
-/* 品牌字：字号/字重/字距/大小写口径在 uhd-admin.css 壳模具（无衬线 16px/800），
+/* 品牌字：字号/字重/字距/大小写口径在 ax-admin.css 壳模具（无衬线 16px/800），
    此处只管字体族（--au-font-serif 已被模具层重映射为无衬线栈）、颜色与溢出 */
 .brand-name {
   font-family: var(--au-font-serif);
@@ -1019,7 +1019,7 @@ onUnmounted(() => {
 
 .brand-sub {
   margin-top: 2px;
-  font-size: var(--uhd-fs-micro);
+  font-size: var(--ax-fs-micro);
   font-weight: 600;
   letter-spacing: 0.24em;
   color: var(--au-primary);
@@ -1047,7 +1047,7 @@ onUnmounted(() => {
 
 .nav-section { padding-top: 14px; }
 
-/* 分区眉题：字号/字重/字距/颜色口径在 uhd-admin.css 壳模具（13px/600/三级字），
+/* 分区眉题：字号/字重/字距/颜色口径在 ax-admin.css 壳模具（13px/600/三级字），
    此处只管边距与字体族 */
 .nav-eyebrow {
   margin: 0 0 4px;
@@ -1123,8 +1123,8 @@ onUnmounted(() => {
 .who-avatar { width: 34px; height: 34px; flex-shrink: 0; }
 
 .who-info { flex: 1; min-width: 0; }
-.who-name { font-size: var(--uhd-fs-aux); font-weight: 600; color: var(--au-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.who-role { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
+.who-name { font-size: var(--ax-fs-aux); font-weight: 600; color: var(--au-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who-role { font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); }
 
 .foot-links { display: flex; flex-direction: column; gap: 1px; }
 
@@ -1138,7 +1138,7 @@ onUnmounted(() => {
   border-radius: var(--au-r-md);
   background: transparent;
   color: var(--au-text-3);
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   text-align: left;
   text-decoration: none;
   transition: background var(--au-fast) var(--au-ease), color var(--au-fast) var(--au-ease);
@@ -1150,7 +1150,7 @@ onUnmounted(() => {
 .foot-version {
   margin-top: 8px;
   padding: 0 12px;
-  font-size: var(--uhd-fs-micro);
+  font-size: var(--ax-fs-micro);
   color: var(--au-text-4);
   letter-spacing: 0.06em;
 }
@@ -1194,7 +1194,7 @@ onUnmounted(() => {
 
 .topbar-title { display: flex; flex-direction: column; justify-content: center; min-width: 0; line-height: 1.2; }
 
-/* 顶栏标题：字号/字重/字距口径在 uhd-admin.css 壳模具（20px/800），此处只管
+/* 顶栏标题：字号/字重/字距口径在 ax-admin.css 壳模具（20px/800），此处只管
    字体族（--au-font-serif 已重映射为无衬线栈）、颜色与溢出 */
 .topbar-title h1 {
   margin: 0;
@@ -1207,7 +1207,7 @@ onUnmounted(() => {
 
 /* 面包屑：眉题样式，压在标题上方 */
 .topbar-crumb {
-  font-size: var(--uhd-fs-micro);
+  font-size: var(--ax-fs-micro);
   font-weight: 600;
   letter-spacing: 0.2em;
   color: var(--au-primary);
@@ -1229,7 +1229,7 @@ onUnmounted(() => {
   background: var(--au-input-bg);
   color: var(--au-text-4);
   font: inherit;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   cursor: pointer;
   transition: border-color var(--au-fast) var(--au-ease), color var(--au-fast) var(--au-ease);
 }
@@ -1243,7 +1243,7 @@ onUnmounted(() => {
   background: var(--au-surface);
   color: var(--au-text-3);
   font-family: var(--font-mono);
-  font-size: var(--uhd-fs-micro);
+  font-size: var(--ax-fs-micro);
   line-height: 1.8;
 }
 
@@ -1258,7 +1258,7 @@ onUnmounted(() => {
   border: 1px solid var(--au-border);
   background: var(--au-surface);
   color: var(--au-text-2);
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   font-weight: 500;
   transition: border-color var(--au-fast) var(--au-ease), color var(--au-fast) var(--au-ease);
 }
@@ -1266,7 +1266,7 @@ onUnmounted(() => {
 .realm-chip:hover { border-color: var(--au-primary-border); color: var(--au-text); }
 .realm-chip-name { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip-chev { color: var(--au-text-4); }
-.realm-off { color: var(--au-text-4); font-size: var(--uhd-fs-aux-sm); }
+.realm-off { color: var(--au-text-4); font-size: var(--ax-fs-aux-sm); }
 
 /* 管理员菜单头（下拉是 Teleport 出去的，这里用 :global 才能命中） */
 :global(.admin-menu-head) {
@@ -1276,8 +1276,8 @@ onUnmounted(() => {
   padding: 12px 18px 8px;
   border-bottom: 1px solid var(--au-border);
 }
-:global(.admin-menu-name) { font-family: var(--au-font-serif); font-weight: 700; color: var(--au-text); font-size: var(--uhd-fs-caption); }
-:global(.admin-menu-role) { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
+:global(.admin-menu-name) { font-family: var(--au-font-serif); font-weight: 700; color: var(--au-text); font-size: var(--ax-fs-caption); }
+:global(.admin-menu-role) { font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); }
 
 .content {
   flex: 1;
@@ -1355,7 +1355,7 @@ onUnmounted(() => {
 /* 手机 */
 @media (max-width: 768px) {
   .topbar { padding: 0 12px; padding-top: env(safe-area-inset-top); gap: 8px; min-height: 56px; }
-  /* 顶栏标题字号由 uhd-admin.css 壳模具统一管（20px，含手机宽——原 scoped
+  /* 顶栏标题字号由 ax-admin.css 壳模具统一管（20px，含手机宽——原 scoped
      17px 覆盖因特异性低于模具从未生效，批 1 实测 computed 20px 后删除） */
   .topbar-crumb { display: none; }
   .topbar-actions { gap: 6px; }

@@ -323,7 +323,7 @@ onMounted(() => void load())
 
 .mono {
   font-family: var(--font-mono);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
 }
 
 .dim {
@@ -333,7 +333,7 @@ onMounted(() => void load())
 .detail-pre {
   margin: 0;
   padding: 8px 12px;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   white-space: pre-wrap;
   word-break: break-all;
   color: var(--au-text-2);

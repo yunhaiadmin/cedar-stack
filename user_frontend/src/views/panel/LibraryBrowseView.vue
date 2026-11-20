@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 片库分类页（/library/movies、/library/series —— UHDNow 分类页对应面）
+ * 片库分类页（/library/movies、/library/series —— 参考站 分类页对应面）
  * 骨架（存档第 10 节＋用户真机截图）：无 Hero；H1 56–60px 超粗
  * （手机 32px——2026-11-15 录屏 f052/f054 逐帧量测修订，此前 40 偏大）；
  * 分类行：片库分类胶囊（激活 = 白胶囊高 40/圆角 20 + 阴影，内含「名称＋计数」；
@@ -714,8 +714,8 @@ function retryCategories() {
 .lb-eyebrow {
   margin: 0;
   font-size: 14px;
-  font-weight: var(--uhd-fw-bold);
-  color: var(--uhd-s-text-2);
+  font-weight: var(--ax-fw-bold);
+  color: var(--ax-s-text-2);
 }
 .lb-head {
   display: flex;
@@ -727,10 +727,10 @@ function retryCategories() {
 .lb-h1 {
   margin: 8px 0 0;
   font-size: 58px;
-  font-weight: var(--uhd-fw-black);
+  font-weight: var(--ax-fw-black);
   line-height: 1.05;
   letter-spacing: -0.01em;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
 }
 /* 分类行：分类胶囊左、排序单胶囊右（存档第 10 节） */
 .lb-catrow {
@@ -754,7 +754,7 @@ function retryCategories() {
   border-radius: 20px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   font-size: 15px;
   font-family: inherit;
   cursor: pointer;
@@ -762,24 +762,24 @@ function retryCategories() {
 }
 .lb-pill__count {
   font-size: 13px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .lb-pill--on {
-  background: var(--uhd-s-pill-active-bg);
-  color: var(--uhd-s-pill-active-text);
-  font-weight: var(--uhd-fw-semibold);
-  box-shadow: var(--uhd-shadow-seg);
-  border-color: var(--uhd-s-pill-border);
+  background: var(--ax-s-pill-active-bg);
+  color: var(--ax-s-pill-active-text);
+  font-weight: var(--ax-fw-semibold);
+  box-shadow: var(--ax-shadow-seg);
+  border-color: var(--ax-s-pill-border);
 }
 .lb-pill--on .lb-pill__count {
   color: inherit;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
 }
 /* 分类加载失败时的行级重试（只影响分类行，不挡正文） */
 .lb-pill--warn {
-  border-color: var(--uhd-s-border);
-  color: var(--uhd-s-text);
-  font-weight: var(--uhd-fw-semibold);
+  border-color: var(--ax-s-border);
+  color: var(--ax-s-text);
+  font-weight: var(--ax-fw-semibold);
 }
 /* 排序单胶囊 + 下拉（约 135×40/圆角 20 口径，宽度随当前排序名） */
 .lb-sortwrap {
@@ -794,11 +794,11 @@ function retryCategories() {
   height: 40px;
   padding: 0 16px;
   border-radius: 20px;
-  border: 1px solid var(--uhd-s-pill-border);
-  background: var(--uhd-s-pill-bg);
-  color: var(--uhd-s-text);
+  border: 1px solid var(--ax-s-pill-border);
+  background: var(--ax-s-pill-bg);
+  color: var(--ax-s-text);
   font-size: 14px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   font-family: inherit;
   cursor: pointer;
   white-space: nowrap;
@@ -816,9 +816,9 @@ function retryCategories() {
   min-width: 176px;
   padding: 6px;
   border-radius: 16px;
-  border: 1px solid var(--uhd-s-pill-border);
-  background: var(--uhd-s-pill-active-bg);
-  box-shadow: var(--uhd-s-shadow-pill);
+  border: 1px solid var(--ax-s-pill-border);
+  background: var(--ax-s-pill-active-bg);
+  box-shadow: var(--ax-s-shadow-pill);
 }
 .lb-sortmenu__item {
   display: flex;
@@ -831,20 +831,20 @@ function retryCategories() {
   border: none;
   border-radius: 10px;
   background: transparent;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   font-size: 14px;
   font-family: inherit;
   cursor: pointer;
   text-align: left;
 }
 .lb-sortmenu__item--on {
-  color: var(--uhd-s-text);
-  font-weight: var(--uhd-fw-semibold);
+  color: var(--ax-s-text);
+  font-weight: var(--ax-fw-semibold);
 }
 .lb-sortmenu__sep {
   height: 1px;
   margin: 5px 8px;
-  background: var(--uhd-s-border);
+  background: var(--ax-s-border);
 }
 /* 追新日历入口：页头右侧小胶囊，与排序胶囊同口径。
    2026-11-18 用户亲点：桌面端删掉这颗钮，手机端保持原样——
@@ -856,11 +856,11 @@ function retryCategories() {
   height: 40px;
   padding: 0 16px;
   border-radius: 20px;
-  border: 1px solid var(--uhd-s-pill-border);
-  background: var(--uhd-s-pill-bg);
-  color: var(--uhd-s-text);
+  border: 1px solid var(--ax-s-pill-border);
+  background: var(--ax-s-pill-bg);
+  color: var(--ax-s-text);
   font-size: 14px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   text-decoration: none;
   white-space: nowrap;
 }
@@ -885,19 +885,19 @@ function retryCategories() {
   height: 36px;
   padding: 0 14px;
   border-radius: 18px;
-  border: 1px solid var(--uhd-s-pill-border);
-  background: var(--uhd-s-pill-bg);
-  color: var(--uhd-s-text-2);
+  border: 1px solid var(--ax-s-pill-border);
+  background: var(--ax-s-pill-bg);
+  color: var(--ax-s-text-2);
   font-size: 13.5px;
   font-family: inherit;
   cursor: pointer;
   white-space: nowrap;
 }
 .lb-filterbtn--on {
-  background: var(--uhd-s-pill-active-bg);
-  color: var(--uhd-s-pill-active-text);
-  font-weight: var(--uhd-fw-semibold);
-  box-shadow: var(--uhd-shadow-seg);
+  background: var(--ax-s-pill-active-bg);
+  color: var(--ax-s-pill-active-text);
+  font-weight: var(--ax-fw-semibold);
+  box-shadow: var(--ax-shadow-seg);
 }
 .lb-filtermenu {
   position: absolute;
@@ -909,16 +909,16 @@ function retryCategories() {
   overflow-y: auto;
   padding: 6px;
   border-radius: 16px;
-  border: 1px solid var(--uhd-s-pill-border);
-  background: var(--uhd-s-pill-active-bg);
-  box-shadow: var(--uhd-s-shadow-pill);
+  border: 1px solid var(--ax-s-pill-border);
+  background: var(--ax-s-pill-active-bg);
+  box-shadow: var(--ax-s-shadow-pill);
 }
 .lb-filterclear {
   height: 36px;
   padding: 0 6px;
   border: none;
   background: transparent;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   font-size: 13.5px;
   font-family: inherit;
   cursor: pointer;
@@ -928,7 +928,7 @@ function retryCategories() {
 .lb-count {
   margin: 18px 0 0;
   font-size: 14px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 /* 网格：7 列（≥1600px）、海报 228×343 口径；窄屏按列数递减（断点为推断，见说明书未覆盖项） */
 .lb-grid {
@@ -978,14 +978,14 @@ function retryCategories() {
     display: inline-flex;
     align-items: center;
     padding-left: 10px;
-    border-left: 1px solid var(--uhd-s-border);
+    border-left: 1px solid var(--ax-s-border);
   }
 }
 .lb-error,
 .lb-empty {
   margin-top: 40px;
   font-size: 15px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .lb-retry,
 .lb-more__btn {
@@ -993,11 +993,11 @@ function retryCategories() {
   height: 44px;
   padding: 0 26px;
   border-radius: 22px;
-  border: 1px solid var(--uhd-s-border);
-  background: var(--uhd-s-pill-active-bg);
-  color: var(--uhd-s-text);
+  border: 1px solid var(--ax-s-border);
+  background: var(--ax-s-pill-active-bg);
+  color: var(--ax-s-text);
   font-size: 15px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   font-family: inherit;
   cursor: pointer;
 }
@@ -1012,7 +1012,7 @@ function retryCategories() {
 }
 .lb-more__btn--ghost {
   background: transparent;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .lb-more__btn:disabled {
   opacity: 0.55;

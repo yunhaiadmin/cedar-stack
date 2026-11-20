@@ -135,7 +135,7 @@ onMounted(async () => {
 <style scoped>
 /* 文档面排版（说明书 §2.12 文章卡：最大宽 740、内边距 48、正文 15–16/1.8、H2 约 28）：
    正文文字一字未动，只换版式。缺省深色面、html[data-theme='light'] 换浅，
-   跟随用户外观三态（与 LoginView / AccountMenuView 同口径）。只引用 --uhd-* 令牌。 */
+   跟随用户外观三态（与 LoginView / AccountMenuView 同口径）。只引用 --ax-* 令牌。 */
 .privacy-page {
   min-height: 100vh;
   min-height: 100dvh;
@@ -143,41 +143,41 @@ onMounted(async () => {
   justify-content: center;
   align-items: flex-start;
   padding: 64px 16px calc(48px + var(--au-dock-space));
-  background: var(--uhd-d-bg);
-  color: var(--uhd-d-text);
-  font-family: var(--uhd-font-sans);
+  background: var(--ax-d-bg);
+  color: var(--ax-d-text);
+  font-family: var(--ax-font-sans);
 }
 
 .privacy-inner {
   width: 100%;
-  max-width: var(--uhd-doc-article-w);
-  background: var(--uhd-d-surface);
-  border: 1px solid var(--uhd-d-border);
-  border-radius: var(--uhd-radius-doc);
+  max-width: var(--ax-doc-article-w);
+  background: var(--ax-d-surface);
+  border: 1px solid var(--ax-d-border);
+  border-radius: var(--ax-radius-doc);
   padding: 48px;
 }
 
 .privacy-eyebrow {
   margin: 0 0 16px;
-  font-size: var(--uhd-fs-aux-sm);
-  font-weight: var(--uhd-fw-semibold);
-  letter-spacing: var(--uhd-ls-eyebrow);
+  font-size: var(--ax-fs-aux-sm);
+  font-weight: var(--ax-fw-semibold);
+  letter-spacing: var(--ax-ls-eyebrow);
   text-transform: uppercase;
-  color: var(--uhd-d-text-2);
+  color: var(--ax-d-text-2);
 }
 
 .privacy-title {
   margin: 0 0 16px;
-  font-size: var(--uhd-fs-h2);
-  font-weight: var(--uhd-fw-extrabold);
+  font-size: var(--ax-fs-h2);
+  font-weight: var(--ax-fw-extrabold);
   line-height: 1.2;
 }
 
 .privacy-note {
   margin: 0 0 28px;
-  font-size: var(--uhd-fs-lead);
-  line-height: var(--uhd-lh-doc);
-  color: var(--uhd-d-text-2);
+  font-size: var(--ax-fs-lead);
+  line-height: var(--ax-lh-doc);
+  color: var(--ax-d-text-2);
 }
 
 .privacy-list {
@@ -186,22 +186,22 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  font-size: var(--uhd-fs-body);
-  line-height: var(--uhd-lh-doc);
+  font-size: var(--ax-fs-body);
+  line-height: var(--ax-lh-doc);
 }
 
 .privacy-list li::marker {
-  color: var(--uhd-d-text-3);
+  color: var(--ax-d-text-3);
 }
 
 .privacy-list strong {
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
 }
 
 .privacy-subtitle {
   margin: 44px 0 14px;
   font-size: 28px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   line-height: 1.3;
 }
 
@@ -211,32 +211,32 @@ onMounted(async () => {
 
 .privacy-en-lead {
   margin: 0 0 20px;
-  font-size: var(--uhd-fs-body);
-  line-height: var(--uhd-lh-doc);
+  font-size: var(--ax-fs-body);
+  line-height: var(--ax-lh-doc);
 }
 
 /* 浅色文档面：跟随用户外观（html[data-theme='light']） */
 html[data-theme='light'] .privacy-page {
-  background: var(--uhd-l-bg);
-  color: var(--uhd-l-text);
+  background: var(--ax-l-bg);
+  color: var(--ax-l-text);
 }
 
 html[data-theme='light'] .privacy-inner {
-  background: var(--uhd-l-surface);
-  border-color: var(--uhd-l-border);
-  box-shadow: var(--uhd-shadow-card-l);
+  background: var(--ax-l-surface);
+  border-color: var(--ax-l-border);
+  box-shadow: var(--ax-shadow-card-l);
 }
 
 html[data-theme='light'] .privacy-eyebrow {
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 
 html[data-theme='light'] .privacy-note {
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 
 html[data-theme='light'] .privacy-list li::marker {
-  color: var(--uhd-l-text-3);
+  color: var(--ax-l-text-3);
 }
 
 @media (max-width: 640px) {
@@ -264,37 +264,37 @@ html[data-theme='light'] .privacy-list li::marker {
    后代规则必须放非 scoped 块；与内置正文同一套文档面排版 */
 .privacy-md h1 {
   margin: 0 0 16px;
-  font-size: var(--uhd-fs-h2);
-  font-weight: var(--uhd-fw-extrabold);
+  font-size: var(--ax-fs-h2);
+  font-weight: var(--ax-fw-extrabold);
   line-height: 1.2;
 }
 
 .privacy-md h2 {
   margin: 44px 0 14px;
-  font-size: var(--uhd-fs-h3);
-  font-weight: var(--uhd-fw-extrabold);
+  font-size: var(--ax-fs-h3);
+  font-weight: var(--ax-fw-extrabold);
   line-height: 1.3;
 }
 
 .privacy-md h3 {
   margin: 28px 0 10px;
-  font-size: var(--uhd-fs-title);
-  font-weight: var(--uhd-fw-bold);
+  font-size: var(--ax-fs-title);
+  font-weight: var(--ax-fw-bold);
   line-height: 1.3;
 }
 
 .privacy-md p {
   margin: 0 0 20px;
-  font-size: var(--uhd-fs-body);
-  line-height: var(--uhd-lh-doc);
+  font-size: var(--ax-fs-body);
+  line-height: var(--ax-lh-doc);
 }
 
 .privacy-md ol,
 .privacy-md ul {
   margin: 0 0 20px;
   padding-left: 24px;
-  font-size: var(--uhd-fs-body);
-  line-height: var(--uhd-lh-doc);
+  font-size: var(--ax-fs-body);
+  line-height: var(--ax-lh-doc);
 }
 /* 全局 reset 抹掉了列表记号，自定义正文里显式恢复 */
 .privacy-md ol {
@@ -308,11 +308,11 @@ html[data-theme='light'] .privacy-list li::marker {
 }
 
 .privacy-md li::marker {
-  color: var(--uhd-d-text-3);
+  color: var(--ax-d-text-3);
 }
 
 .privacy-md strong {
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
 }
 
 .privacy-md a {
@@ -321,10 +321,10 @@ html[data-theme='light'] .privacy-list li::marker {
 }
 
 .privacy-md code {
-  font-family: var(--uhd-font-mono);
+  font-family: var(--ax-font-mono);
 }
 
 html[data-theme='light'] .privacy-md li::marker {
-  color: var(--uhd-l-text-3);
+  color: var(--ax-l-text-3);
 }
 </style>

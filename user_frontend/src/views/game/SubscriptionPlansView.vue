@@ -1,6 +1,6 @@
 <template>
   <!-- 桌面并壳（2026-11-14 统一壳单）：≥769px 经闸门进用户中心壳；手机原样 -->
-  <UhdAccountShellGate>
+  <AxAccountShellGate>
   <div class="sub-page">
     <header class="sub-head">
       <button type="button" class="sub-back" aria-label="返回" @click="goBack">
@@ -193,7 +193,7 @@
     </footer>
 
     <!-- 确认弹窗（照友站）：先算明细账，确认才扣钱包余额 -->
-    <UhdModal v-model="confirmOpen" :title="selectedPlan ? `订阅 ${selectedPlan.name}` : '订阅'" :width="420">
+    <AxModal v-model="confirmOpen" :title="selectedPlan ? `订阅 ${selectedPlan.name}` : '订阅'" :width="420">
       <div v-if="selectedPlan" class="cfm">
         <div class="cfm-row">
           <span>流量限额</span>
@@ -247,14 +247,14 @@
           @click="confirmBuy"
         >{{ orderBusy ? '处理中…' : '确认支付' }}</button>
       </template>
-    </UhdModal>
+    </AxModal>
   </div>
-  </UhdAccountShellGate>
+  </AxAccountShellGate>
 </template>
 
 <script setup lang="ts">
 /**
- * 订阅服务（/game/account/subscribe）——2026-11-14 照友站（UHDNow）
+ * 订阅服务（/game/account/subscribe）——2026-11-14 照友站
  * 实测形态重做（用户 22:03 亲令，四处口径全部按友站）：
  * - 时长：滑杆选 1–12 个月＋分段「1 个月/3 个月/6 个月/年付」双
  *   控件联动；3/6 个月无折扣，仅年付＝11×月价。我方套餐仍以
@@ -279,8 +279,8 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChevronLeft, Tag } from 'lucide-vue-next'
-import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
-import UhdModal from '@/components/uhd/UhdModal.vue'
+import AxAccountShellGate from '@/components/ax/AxAccountShellGate.vue'
+import AxModal from '@/components/ax/AxModal.vue'
 import { useToast } from '@/composables/useToast'
 import { humanizeError } from '@/composables/usePanelApi'
 import {
@@ -688,9 +688,9 @@ onMounted(() => {
    吸底栏名 12.5·总价 19·主钮 16。桌面同结构居中收窄，不另做一套。 ============ */
 .sub-page {
   min-height: 100dvh;
-  background: var(--uhd-l-bg);
-  color: var(--uhd-l-text);
-  font-family: var(--uhd-font-sans);
+  background: var(--ax-l-bg);
+  color: var(--ax-l-text);
+  font-family: var(--ax-font-sans);
   -webkit-font-smoothing: antialiased;
 }
 .sub-head {
@@ -712,7 +712,7 @@ onMounted(() => {
   border: none;
   border-radius: 999px;
   background: transparent;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
   cursor: pointer;
 }
 .sub-back:active { background: rgba(17, 17, 20, 0.06); }
@@ -720,9 +720,9 @@ onMounted(() => {
   flex: 1 1 auto;
   margin: 0;
   font-size: 19px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   letter-spacing: -0.01em;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
 }
 .sub-body {
   max-width: 760px;
@@ -743,18 +743,18 @@ onMounted(() => {
   gap: 12px;
   padding: 24px 20px;
   border-radius: 20px;
-  background: var(--uhd-l-surface);
-  border: 1px solid var(--uhd-l-border);
-  color: var(--uhd-l-text-2);
+  background: var(--ax-l-surface);
+  border: 1px solid var(--ax-l-border);
+  color: var(--ax-l-text-2);
   font-size: 14px;
 }
 .sub-state p { margin: 0; }
 .sub-retry {
   padding: 8px 16px;
   border-radius: 999px;
-  border: 1px solid var(--uhd-l-border);
+  border: 1px solid var(--ax-l-border);
   background: transparent;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
   font-size: 13px;
   cursor: pointer;
 }
@@ -762,7 +762,7 @@ onMounted(() => {
 /* 团队方案提示条（订阅页底部第二入口） */
 .sub-team-hint {
   margin: 28px 0 0;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
   font-size: 13px;
   line-height: 1.55;
 }
@@ -770,7 +770,7 @@ onMounted(() => {
   border: none;
   background: transparent;
   padding: 0;
-  color: var(--uhd-l-link);
+  color: var(--ax-l-link);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -783,7 +783,7 @@ onMounted(() => {
   gap: 2px;
   padding: 3px;
   border-radius: 999px;
-  background: var(--uhd-l-seg-bg);
+  background: var(--ax-l-seg-bg);
   max-width: 100%;
   overflow-x: auto;
 }
@@ -791,7 +791,7 @@ onMounted(() => {
   flex: 1 1 0;
   border: none;
   background: transparent;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
   border-radius: 999px;
   height: 34px;
   min-height: 34px; /* 压过全站移动端 button{min-height:44px}，照友站胶囊高 34 */
@@ -803,9 +803,9 @@ onMounted(() => {
 }
 .sub-seg__item--on {
   background: #ffffff;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
   font-weight: 600;
-  box-shadow: var(--uhd-shadow-soft);
+  box-shadow: var(--ax-shadow-soft);
 }
 
 /* 套餐卡片列表（友站 f039：选中白卡圆角 20/内边距 17/轻阴影；未选无卡底） */
@@ -820,8 +820,8 @@ onMounted(() => {
   cursor: pointer;
 }
 .plan-card--on {
-  background: var(--uhd-l-surface);
-  box-shadow: var(--uhd-shadow-card-l);
+  background: var(--ax-l-surface);
+  box-shadow: var(--ax-shadow-card-l);
 }
 .plan-card__head {
   display: flex;
@@ -838,7 +838,7 @@ onMounted(() => {
   background: transparent;
   position: relative;
 }
-.plan-radio--on { border-color: var(--uhd-l-text); background: var(--uhd-l-text); }
+.plan-radio--on { border-color: var(--ax-l-text); background: var(--ax-l-text); }
 .plan-radio--on::after {
   content: '';
   position: absolute;
@@ -851,7 +851,7 @@ onMounted(() => {
   font-size: 19px;
   font-weight: 700;
   letter-spacing: -0.01em;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
   line-height: 1.3;
 }
 .plan-current {
@@ -861,7 +861,7 @@ onMounted(() => {
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 999px;
-  background: var(--uhd-rainbow-fill, linear-gradient(100deg, #2f8fe0, #c46c90 55%, #f2a45a));
+  background: var(--ax-rainbow-fill, linear-gradient(100deg, #2f8fe0, #c46c90 55%, #f2a45a));
   color: #fff;
 }
 .plan-card__pricebox {
@@ -874,10 +874,10 @@ onMounted(() => {
 }
 .plan-card__price {
   font-size: 29px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   letter-spacing: -0.03em;
   line-height: 1.05;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -885,17 +885,17 @@ onMounted(() => {
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0;
-  color: var(--uhd-l-text-3);
+  color: var(--ax-l-text-3);
 }
 .plan-card__annual {
   font-size: 12.5px;
-  color: var(--uhd-l-text-3);
+  color: var(--ax-l-text-3);
   font-variant-numeric: tabular-nums;
 }
 .plan-specs {
   margin-top: 13px;
   padding-top: 12px;
-  border-top: 1px solid var(--uhd-l-divider);
+  border-top: 1px solid var(--ax-l-divider);
   display: flex;
   flex-direction: column;
   gap: 11px;
@@ -908,12 +908,12 @@ onMounted(() => {
 .plan-spec__label {
   flex: 0 0 64px;
   font-size: 13px;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 .plan-spec__value {
   font-size: 14px;
   font-weight: 500;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
 }
 
 /* 时长（友站 f036：页内平铺；滑杆浅灰轨＋白拇指黑描边，禁止黑轨） */
@@ -924,9 +924,9 @@ onMounted(() => {
   justify-content: space-between;
   margin-bottom: 10px;
 }
-.sub-dur__label { font-size: 14px; color: var(--uhd-l-text-2); }
-.sub-dur__value { font-size: 14px; color: var(--uhd-l-text-2); }
-.sub-dur__value b { font-size: 18px; color: var(--uhd-l-text); }
+.sub-dur__label { font-size: 14px; color: var(--ax-l-text-2); }
+.sub-dur__value { font-size: 14px; color: var(--ax-l-text-2); }
+.sub-dur__value b { font-size: 18px; color: var(--ax-l-text); }
 .sub-slider {
   width: 100%;
   appearance: none;
@@ -936,7 +936,7 @@ onMounted(() => {
   margin: 0;
   border: none;
   border-radius: 999px;
-  background: linear-gradient(to right, var(--uhd-l-text-3) var(--fill, 0%), var(--uhd-l-border) var(--fill, 0%)) center / 100% 6px no-repeat;
+  background: linear-gradient(to right, var(--ax-l-text-3) var(--fill, 0%), var(--ax-l-border) var(--fill, 0%)) center / 100% 6px no-repeat;
   outline: none;
   cursor: pointer;
 }
@@ -946,16 +946,16 @@ onMounted(() => {
   height: 22px;
   border-radius: 50%;
   background: #ffffff;
-  border: 2px solid var(--uhd-l-text);
-  box-shadow: var(--uhd-shadow-thumb);
+  border: 2px solid var(--ax-l-text);
+  box-shadow: var(--ax-shadow-thumb);
 }
 .sub-slider::-moz-range-thumb {
   width: 22px;
   height: 22px;
   border-radius: 50%;
   background: #ffffff;
-  border: 2px solid var(--uhd-l-text);
-  box-shadow: var(--uhd-shadow-thumb);
+  border: 2px solid var(--ax-l-text);
+  box-shadow: var(--ax-shadow-thumb);
 }
 .sub-dur__caps {
   display: flex;
@@ -967,23 +967,23 @@ onMounted(() => {
   height: 38px;
   min-height: 38px; /* 同上：压过全站 44px 触控下限，照友站分段高 */
   border-radius: 999px;
-  border: 1px solid var(--uhd-l-border);
+  border: 1px solid var(--ax-l-border);
   background: #ffffff;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
 }
 .sub-cap--on {
-  background: var(--uhd-l-text);
-  border-color: var(--uhd-l-text);
+  background: var(--ax-l-text);
+  border-color: var(--ax-l-text);
   color: #ffffff;
   font-weight: 600;
 }
 .sub-dur__hint {
   margin: 10px 0 0;
   font-size: 12.5px;
-  color: var(--uhd-l-text-3);
+  color: var(--ax-l-text-3);
 }
 
 /* 优惠码（友站 f036：圆角输入框＋应用钮同行） */
@@ -996,9 +996,9 @@ onMounted(() => {
   padding: 0 14px;
   height: 46px;
   border-radius: 14px;
-  border: 1px solid var(--uhd-l-border);
+  border: 1px solid var(--ax-l-border);
   background: #ffffff;
-  color: var(--uhd-l-text-3);
+  color: var(--ax-l-text-3);
   min-width: 0;
 }
 .sub-coupon__input {
@@ -1006,7 +1006,7 @@ onMounted(() => {
   min-width: 0;
   border: none;
   background: transparent;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
   font-size: 14px;
   outline: none;
 }
@@ -1014,20 +1014,20 @@ onMounted(() => {
   flex: 0 0 auto;
   padding: 0 18px;
   border-radius: 14px;
-  border: 1px solid var(--uhd-l-border);
+  border: 1px solid var(--ax-l-border);
   background: #ffffff;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
 }
 .sub-coupon__apply:disabled { opacity: 0.45; cursor: not-allowed; }
-.sub-coupon__ok { margin: 8px 0 0; font-size: 12.5px; color: var(--uhd-l-text-2); }
+.sub-coupon__ok { margin: 8px 0 0; font-size: 12.5px; color: var(--ax-l-text-2); }
 .sub-coupon__err { margin: 8px 0 0; font-size: 12.5px; color: #d92d20; }
 
 /* 结算明细（页内小字） */
 .sub-summary {
-  border-top: 1px solid var(--uhd-l-divider);
+  border-top: 1px solid var(--ax-l-divider);
   padding-top: 14px;
   display: flex;
   flex-direction: column;
@@ -1039,9 +1039,9 @@ onMounted(() => {
   justify-content: space-between;
   gap: 12px;
   font-size: 13px;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
-.sum-row b { color: var(--uhd-l-text); font-weight: 600; }
+.sum-row b { color: var(--ax-l-text); font-weight: 600; }
 .sum-row--cut b { color: #e07b39; }
 .sum-note { margin: 0; font-size: 12.5px; color: #e07b39; }
 
@@ -1055,7 +1055,7 @@ onMounted(() => {
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(14px) saturate(1.4);
   -webkit-backdrop-filter: blur(14px) saturate(1.4);
-  border-top: 1px solid var(--uhd-l-divider);
+  border-top: 1px solid var(--ax-l-divider);
   padding-bottom: env(safe-area-inset-bottom);
 }
 .sub-sticky__inner {
@@ -1076,7 +1076,7 @@ onMounted(() => {
 }
 .sub-sticky__name {
   font-size: 12.5px;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1086,25 +1086,25 @@ onMounted(() => {
   align-items: baseline;
   gap: 8px;
   font-size: 19px;
-  font-weight: var(--uhd-fw-extrabold);
-  color: var(--uhd-l-text);
+  font-weight: var(--ax-fw-extrabold);
+  color: var(--ax-l-text);
   font-variant-numeric: tabular-nums;
 }
-.sub-sticky__total s { font-size: 12.5px; font-weight: 500; color: var(--uhd-l-text-3); }
+.sub-sticky__total s { font-size: 12.5px; font-weight: 500; color: var(--ax-l-text-3); }
 .sub-sticky__cta {
   flex: 0 0 auto;
   height: 46px;
   padding: 0 34px;
   border-radius: 999px;
   border: 1.5px solid transparent;
-  background: var(--uhd-rainbow-soft) padding-box, var(--uhd-rainbow) border-box;
+  background: var(--ax-rainbow-soft) padding-box, var(--ax-rainbow) border-box;
   color: #111111;
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
-  transition: transform var(--uhd-press-dur) var(--uhd-ease-spring), opacity 0.12s ease;
+  transition: transform var(--ax-press-dur) var(--ax-ease-spring), opacity 0.12s ease;
 }
-.sub-sticky__cta:active:not(:disabled) { transform: scale(var(--uhd-press-scale)); }
+.sub-sticky__cta:active:not(:disabled) { transform: scale(var(--ax-press-scale)); }
 .sub-sticky__cta:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* 确认弹窗明细 */
@@ -1115,9 +1115,9 @@ onMounted(() => {
   justify-content: space-between;
   gap: 12px;
   font-size: 13.5px;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
-.cfm-row b { color: var(--uhd-l-text); font-weight: 600; }
+.cfm-row b { color: var(--ax-l-text); font-weight: 600; }
 .cfm-row--cut b { color: #e07b39; }
 .cfm-row--total {
   border-top: 1px solid rgba(128, 128, 140, 0.25);
@@ -1135,35 +1135,35 @@ onMounted(() => {
   cursor: pointer;
   border: 1px solid rgba(128, 128, 140, 0.35);
   background: transparent;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
 }
 .cfm-btn--main {
   border: none;
   color: #fff;
-  background: var(--uhd-rainbow-fill, linear-gradient(100deg, #2f8fe0, #c46c90 55%, #f2a45a));
+  background: var(--ax-rainbow-fill, linear-gradient(100deg, #2f8fe0, #c46c90 55%, #f2a45a));
 }
 .cfm-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* 深色主题：全站口径是「深色＝html 无 data-theme、只有浅色才写 data-theme='light'」
    （useTheme.ts 的 applyTheme）。此前整段挂在 html[data-theme='dark'] 上——该属性
    永远不会出现，深色覆盖成死代码，深色下整页落回 :root 浅色令牌变白底（2026-11-15 修）。
-   令牌值与用户中心壳 UhdAccountLayout 的深色套同源（页底 #09090b／卡面 #111214），
+   令牌值与用户中心壳 AxAccountLayout 的深色套同源（页底 #09090b／卡面 #111214），
    骨架/滑杆/吸底栏同步跟随；浅色态不进本段、保持原样。 */
 html:not([data-theme='light']) .sub-page {
   background: #09090b;
   color: #fbfcfd;
-  --uhd-l-bg: #09090b;
-  --uhd-l-surface: #111214;
-  --uhd-l-border: #26262a;
-  --uhd-l-divider: #26262a;
-  --uhd-l-text: #fbfcfd;
-  --uhd-l-text-2: var(--uhd-d-text-2);
-  --uhd-l-text-3: var(--uhd-d-text-3);
-  --uhd-l-seg-bg: #1b1c1e;
-  --uhd-l-input-bg: #242526;
-  --uhd-l-active: #2d2d2f;
+  --ax-l-bg: #09090b;
+  --ax-l-surface: #111214;
+  --ax-l-border: #26262a;
+  --ax-l-divider: #26262a;
+  --ax-l-text: #fbfcfd;
+  --ax-l-text-2: var(--ax-d-text-2);
+  --ax-l-text-3: var(--ax-d-text-3);
+  --ax-l-seg-bg: #1b1c1e;
+  --ax-l-input-bg: #242526;
+  --ax-l-active: #2d2d2f;
 }
-html:not([data-theme='light']) .plan-card--on { box-shadow: var(--uhd-shadow-card-d); }
+html:not([data-theme='light']) .plan-card--on { box-shadow: var(--ax-shadow-card-d); }
 html:not([data-theme='light']) .sub-back:active { background: rgba(255, 255, 255, 0.08); }
 html:not([data-theme='light']) .sub-seg__item--on { background: #2d2d2f; color: #fbfcfd; box-shadow: none; }
 html:not([data-theme='light']) .sub-cap,
@@ -1171,12 +1171,12 @@ html:not([data-theme='light']) .sub-coupon__box,
 html:not([data-theme='light']) .sub-coupon__apply { background: #111214; }
 html:not([data-theme='light']) .sub-cap--on { background: #fbfcfd; border-color: #fbfcfd; color: #111214; }
 html:not([data-theme='light']) .plan-radio--on::after { background: #111214; }
-html:not([data-theme='light']) .sub-slider::-webkit-slider-thumb { background: #2e2e33; box-shadow: var(--uhd-shadow-thumb-d); }
-html:not([data-theme='light']) .sub-slider::-moz-range-thumb { background: #2e2e33; box-shadow: var(--uhd-shadow-thumb-d); }
+html:not([data-theme='light']) .sub-slider::-webkit-slider-thumb { background: #2e2e33; box-shadow: var(--ax-shadow-thumb-d); }
+html:not([data-theme='light']) .sub-slider::-moz-range-thumb { background: #2e2e33; box-shadow: var(--ax-shadow-thumb-d); }
 html:not([data-theme='light']) .sub-sticky { background: rgba(13, 13, 15, 0.92); }
 html:not([data-theme='light']) .sub-sticky__cta {
   position: relative;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
   color: #ffffff;
 }
 /* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
@@ -1186,8 +1186,8 @@ html:not([data-theme='light']) .sub-sticky__cta::before {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: var(--uhd-rainbow-border-w);
-  background: var(--uhd-rainbow);
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);

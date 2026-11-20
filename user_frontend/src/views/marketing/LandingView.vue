@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 官网 www 首页（UHD 换皮批 1 · 深色营销面）——说明书逐页对照表第 18 行
+ * 官网 www 首页（ax 换皮批 1 · 深色营销面）——说明书逐页对照表第 18 行
  * 六区块骨架：100vh Hero（棱镜光束 + 文案轮换 + 规格 chip）→ 流媒体伙伴字标行
  * → 客户端/规格跑马灯 → 钉住滚动影院/音频展示（钉住只此一处，说明书第 5 节①）
  * → 一份订阅三卡 → 页脚（免责声明＋单行信息）。
@@ -11,10 +11,10 @@
 import { computed, nextTick, onDeactivated, onMounted, onUnmounted, ref, watch, type Component } from 'vue'
 import { useRouter } from 'vue-router'
 import { Monitor, Sparkles, Film, Ban, Menu, X, RefreshCw, Bell, Home, Tag, BookOpen, ExternalLink, Users, Bot, MessageCircle, Send, Globe, LogIn, ArrowRight } from 'lucide-vue-next'
-import UhdNavPill, { type UhdNavItem } from '@/components/uhd/UhdNavPill.vue'
+import AxNavPill, { type AxNavItem } from '@/components/ax/AxNavPill.vue'
 import { engageModalIsolation, lockModalOverflow, trapTabKey, unlockModalOverflow } from '@/composables/useModalIsolation'
-import UhdButton from '@/components/uhd/UhdButton.vue'
-import UhdChip from '@/components/uhd/UhdChip.vue'
+import AxButton from '@/components/ax/AxButton.vue'
+import AxChip from '@/components/ax/AxChip.vue'
 import BrandMark from '@/components/BrandMark.vue'
 import { branding } from '@/composables/useBranding'
 import { siteDrawer } from '@/composables/useSiteDrawer'
@@ -48,7 +48,7 @@ const statsWorks = computed(() => fmtThousandsPlus(libraryStats.works))
 const statsEpisodes = computed(() => fmtWanPlus(libraryStats.episodes))
 const statsTotal = computed(() => fmtWanPlus(libraryStats.total_items))
 
-const navItems: UhdNavItem[] = [
+const navItems: AxNavItem[] = [
   { key: 'home', label: '首页' },
   { key: 'pricing', label: '定价' },
   { key: 'login', label: '登录' },
@@ -533,7 +533,7 @@ const year = new Date().getFullYear()
 <template>
   <div ref="landingRoot" class="landing">
     <div class="landing-nav">
-      <UhdNavPill
+      <AxNavPill
         :items="navItems"
         active-key="home"
         :brand="branding.site_name"
@@ -633,7 +633,7 @@ const year = new Date().getFullYear()
       <template v-if="siteDrawer.cta">
         <div class="m-sheet__divider" aria-hidden="true" />
         <div class="m-sheet__cta">
-          <UhdButton variant="primary" dark block @click="onDrawerCta">{{ siteDrawer.cta.label }}</UhdButton>
+          <AxButton variant="primary" dark block @click="onDrawerCta">{{ siteDrawer.cta.label }}</AxButton>
         </div>
       </template>
     </div>
@@ -684,23 +684,23 @@ const year = new Date().getFullYear()
         <div class="hero-actions hero-el hero-el--actions">
           <!-- Hero 双钮分态（业务入口不动）：已登录＝「进入后台」＋「前往流媒体」；
                未登录＝「免费注册」＋「查看定价」。箭头只是主钮的视觉收束。 -->
-          <UhdButton v-if="userStore.isLoggedIn" variant="primary" dark @click="goConsole">
+          <AxButton v-if="userStore.isLoggedIn" variant="primary" dark @click="goConsole">
             进入后台 <ArrowRight :size="18" aria-hidden="true" />
-          </UhdButton>
-          <UhdButton v-else variant="primary" dark @click="goRegister">
+          </AxButton>
+          <AxButton v-else variant="primary" dark @click="goRegister">
             免费注册 <ArrowRight :size="18" aria-hidden="true" />
-          </UhdButton>
-          <UhdButton v-if="userStore.isLoggedIn" variant="secondary" dark class="hero-btn-stream" @click="goStream">
+          </AxButton>
+          <AxButton v-if="userStore.isLoggedIn" variant="secondary" dark class="hero-btn-stream" @click="goStream">
             前往流媒体 <ArrowRight :size="18" aria-hidden="true" />
-          </UhdButton>
-          <UhdButton v-else variant="secondary" dark class="hero-btn-pricing" @click="goPricing">查看定价</UhdButton>
+          </AxButton>
+          <AxButton v-else variant="secondary" dark class="hero-btn-pricing" @click="goPricing">查看定价</AxButton>
         </div>
         </div>
         <div class="hero-specs hero-el hero-el--specs">
-          <UhdChip v-for="(spec, i) in landingContent.hero.specs" :key="i" variant="spec" :sub="spec.sub">
+          <AxChip v-for="(spec, i) in landingContent.hero.specs" :key="i" variant="spec" :sub="spec.sub">
             <template #icon><component :is="HERO_SPEC_ICONS[i % HERO_SPEC_ICONS.length]" :size="20" aria-hidden="true" /></template>
             {{ spec.value }}
-          </UhdChip>
+          </AxChip>
         </div>
       </div>
       <p class="hero-scroll-hint" :style="heroHintStyle()" aria-hidden="true">{{ landingContent.hero.scroll_hint }}</p>
@@ -782,7 +782,7 @@ const year = new Date().getFullYear()
             <h3 class="ess-h3"><template v-for="(line, i) in landingContent.essentials.cards[0].title_lines" :key="i">{{ line }}<br v-if="i < landingContent.essentials.cards[0].title_lines.length - 1" /></template></h3>
             <p class="ess-desc">{{ landingContent.essentials.cards[0].desc }}</p>
             <div v-if="landingContent.essentials.cards[0].chips.length" class="ess-chips">
-              <UhdChip v-for="(chip, i) in landingContent.essentials.cards[0].chips" :key="i" variant="mini">{{ chip }}</UhdChip>
+              <AxChip v-for="(chip, i) in landingContent.essentials.cards[0].chips" :key="i" variant="mini">{{ chip }}</AxChip>
             </div>
           </div>
           <div class="ess-devices" aria-hidden="true">
@@ -874,9 +874,9 @@ const year = new Date().getFullYear()
 <style scoped>
 .landing {
   min-height: 100vh;
-  background: var(--uhd-d-bg);
-  color: var(--uhd-d-text);
-  font-family: var(--uhd-font-sans);
+  background: var(--ax-d-bg);
+  color: var(--ax-d-text);
+  font-family: var(--ax-font-sans);
   /* 必须用 clip 不能用 hidden：hidden 会把本元素变成滚动容器、令 .pin-stage 的 sticky 失效
      （动态返工实测：hidden 下 stage 随页面滚走、钉住从未生效）。
      clip 只收住跑马灯轨道的横向溢出，标题本身必须在视口内换行，不许靠裁切藏字。 */
@@ -890,7 +890,7 @@ const year = new Date().getFullYear()
   z-index: 50;
 }
 
-/* ---------- 移动端顶栏与底部抽屉（仅 ≤900px 启用，桌面走 UhdNavPill）
+/* ---------- 移动端顶栏与底部抽屉（仅 ≤900px 启用，桌面走 AxNavPill）
    字标尺寸照友站真机截图（2026-11-14）：站名约 21px/800 字距 .05em、SERVICE 11px 字距 .38em；
    玻璃 pill 层滚动 >40px 才浮起（opacity .5s ease-sheet），汉堡 chip 同步变平 ---------- */
 .m-modal { display: contents; }
@@ -904,7 +904,7 @@ const year = new Date().getFullYear()
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  color: var(--uhd-d-text);
+  color: var(--ax-d-text);
 }
 .m-nav__logo {
   width: 26px;
@@ -917,26 +917,26 @@ const year = new Date().getFullYear()
   line-height: 1;
 }
 .m-nav__brand-name {
-  font-family: var(--uhd-font-display);
+  font-family: var(--ax-font-display);
   font-size: 21px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   letter-spacing: 0.05em;
 }
 .m-nav__brand-sub {
   margin-top: 5px;
   font-size: 11px;
   letter-spacing: 0.38em;
-  color: var(--uhd-d-text-2);
+  color: var(--ax-d-text-2);
 }
 .m-nav__chip {
   position: relative;
   display: inline-flex;
   padding: 4px;
-  border: var(--uhd-border-w) solid var(--uhd-glass-border);
+  border: var(--ax-border-w) solid var(--ax-glass-border);
   border-radius: 9999px;
-  background: var(--uhd-glass-d);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
+  background: var(--ax-glass-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   transition:
     background-color 0.5s cubic-bezier(0.32, 0.72, 0, 1),
     border-color 0.5s cubic-bezier(0.32, 0.72, 0, 1);
@@ -955,7 +955,7 @@ const year = new Date().getFullYear()
   border: none;
   border-radius: 50%;
   background: transparent;
-  color: var(--uhd-d-text);
+  color: var(--ax-d-text);
   cursor: pointer;
 }
 .m-nav__burger:focus-visible,
@@ -973,26 +973,26 @@ const year = new Date().getFullYear()
   to { opacity: 1; }
 }
 /* Hero 入场已收编令牌入场库（L-11）：本页私有的 landing-hero-fade 与令牌
-   uhd-hero-fade（Y16＋淡入、--uhd-dur-hero .74s）数值重复，删除私有件，
+   ax-hero-fade（Y16＋淡入、--ax-dur-hero .74s）数值重复，删除私有件，
    入场编排改为分件交错（见 .hero-el 系列规则）。 */
 
 .eyebrow {
   margin: 0 0 18px;
-  font-size: var(--uhd-fs-aux);
-  font-weight: var(--uhd-fw-semibold);
-  letter-spacing: var(--uhd-ls-eyebrow);
+  font-size: var(--ax-fs-aux);
+  font-weight: var(--ax-fw-semibold);
+  letter-spacing: var(--ax-ls-eyebrow);
   text-transform: uppercase;
-  color: var(--uhd-d-text-2);
+  color: var(--ax-d-text-2);
 }
 .eyebrow--center { text-align: center; }
 .sec-title {
   margin: 0 auto 16px;
   max-width: min(920px, calc(100% - 32px));
   text-align: center;
-  font-family: var(--uhd-font-display);
+  font-family: var(--ax-font-display);
   /* 原站 --text-landing-service-hero: clamp(2rem, 4.4vw, 4.4rem) */
   font-size: clamp(32px, 4.4vw, 70.4px);
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   line-height: 1.28;
   overflow-wrap: anywhere;
 }
@@ -1006,9 +1006,9 @@ const year = new Date().getFullYear()
   margin: 0 auto;
   max-width: 640px;
   text-align: center;
-  font-size: var(--uhd-fs-lead);
-  line-height: var(--uhd-lh-body);
-  color: var(--uhd-d-text-2);
+  font-size: var(--ax-fs-lead);
+  line-height: var(--ax-lh-body);
+  color: var(--ax-d-text-2);
 }
 
 /* ---------- Hero ---------- */
@@ -1150,7 +1150,7 @@ const year = new Date().getFullYear()
 /* ---------- Hero 暗角（友站 .hero-vignette 逐字口径，2026-11-18 晚对齐） ----------
    替代原 .hero-scrim 平遮罩：三层——径向（圆心 70% 42%，向外 canvas
    4%→55%）、横向（左 canvas 80% 向右渐隐）、纵向（顶 10%、底 90% 收边）；
-   canvas 色对应本站 --uhd-d-bg（友站深色 --canvas=oklch(12% .004 265)），
+   canvas 色对应本站 --ax-d-bg（友站深色 --canvas=oklch(12% .004 265)），
    浓度走 color-mix 同比例。遮罩只收敛不加码：棱镜/光扇主体区（右中）
    比原平遮罩更透，浓处只在左缘文案底与上下收边。 */
 .hero-vignette {
@@ -1159,9 +1159,9 @@ const year = new Date().getFullYear()
   z-index: 1;
   pointer-events: none;
   background:
-    radial-gradient(circle at 70% 42%, transparent 0%, color-mix(in oklch, var(--uhd-d-bg) 4%, transparent) 36%, color-mix(in oklch, var(--uhd-d-bg) 55%, transparent) 100%),
-    linear-gradient(90deg, color-mix(in oklch, var(--uhd-d-bg) 80%, transparent) 0%, color-mix(in oklch, var(--uhd-d-bg) 40%, transparent) 32%, color-mix(in oklch, var(--uhd-d-bg) 4%, transparent) 66%, color-mix(in oklch, var(--uhd-d-bg) 15%, transparent) 100%),
-    linear-gradient(180deg, color-mix(in oklch, var(--uhd-d-bg) 10%, transparent) 0%, transparent 36%, color-mix(in oklch, var(--uhd-d-bg) 90%, transparent) 100%);
+    radial-gradient(circle at 70% 42%, transparent 0%, color-mix(in oklch, var(--ax-d-bg) 4%, transparent) 36%, color-mix(in oklch, var(--ax-d-bg) 55%, transparent) 100%),
+    linear-gradient(90deg, color-mix(in oklch, var(--ax-d-bg) 80%, transparent) 0%, color-mix(in oklch, var(--ax-d-bg) 40%, transparent) 32%, color-mix(in oklch, var(--ax-d-bg) 4%, transparent) 66%, color-mix(in oklch, var(--ax-d-bg) 15%, transparent) 100%),
+    linear-gradient(180deg, color-mix(in oklch, var(--ax-d-bg) 10%, transparent) 0%, transparent 36%, color-mix(in oklch, var(--ax-d-bg) 90%, transparent) 100%);
 }
 
 /* ---------- Hero 棱镜脉冲（L-02 唯一动效，2026-11-14 友站实测） ----------
@@ -1169,9 +1169,9 @@ const year = new Date().getFullYear()
    全静默。为更早旧图入射光束编排的亮点／光束辉光／入射星芒／地板倒影
    四叠层已摘除，只留棱镜闪（现行宽图的入射光束与地面倒影都在图内，
    不另叠）。光谱扇／出射星芒／行星光晕／画面本体零动画（实测
-   90s+ 恒定，不加）。周期 5s 字面值照本文件环境动画先例（uhd-marquee
+   90s+ 恒定，不加）。周期 5s 字面值照本文件环境动画先例（ax-marquee
    46s linear、pin-breathe 26s）；相位 % 由实测秒数换算；几何坐标走
-   --hp-* 令牌（uhd-tokens.css §1.7 给宽图顶点值兜底，现行几何在
+   --hp-* 令牌（ax-tokens.css §1.7 给宽图顶点值兜底，现行几何在
    .hero-visual-frame／.hero-bg-canvas 内按实测顶点覆盖——两端同图同值）。 */
 .hp {
   position: absolute;
@@ -1205,7 +1205,7 @@ const year = new Date().getFullYear()
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: var(--uhd-container-marketing);
+  max-width: var(--ax-container-marketing);
   margin: 0 auto;
   min-height: 100vh;
   min-height: 100svh;
@@ -1226,38 +1226,38 @@ const year = new Date().getFullYear()
 }
 /* Hero 入场编排（L-11）：整层一把梭改为分件交错，全走令牌入场库。
    交错步长 0.08s——与本站 .rv--dev 阶梯（0.08/0.16/0.24）的步距一致；
-   取值表：眉题 uhd-fade-in（--uhd-dur-fade .52s，延迟 0s）→ 标题
-   uhd-hero-fade（--uhd-dur-hero .74s、Y16，延迟 .08s）→ 副题 uhd-hero-fade
-   （.74s、Y16，延迟 .16s）→ 双钮 uhd-hero-fade（延迟 .24s）→ 规格 chip
-   uhd-fade-up（延迟 .32s）；标题／副题／双钮三件缓动 ease-out，
-   眉题与 chip 走 --uhd-ease-standard。
+   取值表：眉题 ax-fade-in（--ax-dur-fade .52s，延迟 0s）→ 标题
+   ax-hero-fade（--ax-dur-hero .74s、Y16，延迟 .08s）→ 副题 ax-hero-fade
+   （.74s、Y16，延迟 .16s）→ 双钮 ax-hero-fade（延迟 .24s）→ 规格 chip
+   ax-fade-up（延迟 .32s）；标题／副题／双钮三件缓动 ease-out，
+   眉题与 chip 走 --ax-ease-standard。
    2026-11-18 晚按友站 --animate-hero-fade（hero-fade .74s ease-out both，
    关键帧 0%{opacity:0; translateY(16px)}→100%{opacity:1; translateY(0)}，
-   与本站 uhd-hero-fade 逐字同构）对齐：标题／副文案／按钮组三件统一走
-   uhd-hero-fade＋ease-out、.74s 到位、终态完全可见；交错延迟保留本站
+   与本站 ax-hero-fade 逐字同构）对齐：标题／副文案／按钮组三件统一走
+   ax-hero-fade＋ease-out、.74s 到位、终态完全可见；交错延迟保留本站
    阶梯。眉题与规格 chip 不在友站点名三件内，维持原编排。 */
 .hero-el--eyebrow {
-  animation: uhd-fade-in var(--uhd-dur-fade) var(--uhd-ease-standard) both;
+  animation: ax-fade-in var(--ax-dur-fade) var(--ax-ease-standard) both;
 }
 .hero-el--title {
-  animation: uhd-hero-fade var(--uhd-dur-hero) ease-out 0.08s both;
+  animation: ax-hero-fade var(--ax-dur-hero) ease-out 0.08s both;
 }
 .hero-el--sub {
-  animation: uhd-hero-fade var(--uhd-dur-hero) ease-out 0.16s both;
+  animation: ax-hero-fade var(--ax-dur-hero) ease-out 0.16s both;
 }
 .hero-el--actions {
-  animation: uhd-hero-fade var(--uhd-dur-hero) ease-out 0.24s both;
+  animation: ax-hero-fade var(--ax-dur-hero) ease-out 0.24s both;
 }
 .hero-el--specs {
-  animation: uhd-fade-up var(--uhd-dur-fade) var(--uhd-ease-standard) 0.32s both;
+  animation: ax-fade-up var(--ax-dur-fade) var(--ax-ease-standard) 0.32s both;
 }
 .hero-title {
   margin: 0 0 44px;
   max-width: 100%;
-  font-family: var(--uhd-font-display);
+  font-family: var(--ax-font-display);
   /* 原站 --text-landing-hero: clamp(2.1rem, 4.1vw, 3.9rem) */
   font-size: clamp(33.6px, 4.1vw, 62.4px);
-  font-weight: var(--uhd-fw-black);
+  font-weight: var(--ax-fw-black);
   /* 行距按实测放宽：两行顶距约 75px（62.4×1.2≈74.9），原 1.1 约 68.6 偏紧 */
   line-height: 1.2;
   overflow-wrap: anywhere;
@@ -1267,22 +1267,22 @@ const year = new Date().getFullYear()
   overflow: hidden;
   margin: 0 0 48px;
   min-height: 1.6em;
-  font-size: var(--uhd-fs-lead);
-  color: var(--uhd-d-text-2);
+  font-size: var(--ax-fs-lead);
+  color: var(--ax-d-text-2);
 }
-/* 副标题轮换（L-01）：纯淡入淡出改为整行竖滑 ticker——新句 uhd-ticker-in
-   （Y100%→0）自下滑入、旧句 uhd-ticker-out（→Y-100%）向上滑出，各
-   --uhd-dur-ticker .36s＋--uhd-ease-standard，与友站 ticker-in/out 同帧
+/* 副标题轮换（L-01）：纯淡入淡出改为整行竖滑 ticker——新句 ax-ticker-in
+   （Y100%→0）自下滑入、旧句 ax-ticker-out（→Y-100%）向上滑出，各
+   --ax-dur-ticker .36s＋--ax-ease-standard，与友站 ticker-in/out 同帧
    交叉口径一致；容器 overflow:hidden 裁切竖滑轨道，离场句绝对定位脱流，
-   与入场句同一 .36s 内交叉更替。关键帧本体在 uhd-tokens.css 入场库。 */
+   与入场句同一 .36s 内交叉更替。关键帧本体在 ax-tokens.css 入场库。 */
 .hero-sub-line { display: block; }
 .hero-sub-ticker-enter-active {
-  animation: uhd-ticker-in var(--uhd-dur-ticker) var(--uhd-ease-standard) both;
+  animation: ax-ticker-in var(--ax-dur-ticker) var(--ax-ease-standard) both;
 }
 .hero-sub-ticker-leave-active {
   position: absolute;
   inset: 0;
-  animation: uhd-ticker-out var(--uhd-dur-ticker) var(--uhd-ease-standard) both;
+  animation: ax-ticker-out var(--ax-dur-ticker) var(--ax-ease-standard) both;
 }
 .hero-actions {
   display: flex;
@@ -1291,22 +1291,22 @@ const year = new Date().getFullYear()
 }
 /* 本页主钮（2026-11-18 真机录屏纠正）：#305 的本页覆盖已删——此前覆盖层
    把底色写成深暖近实底棕褐色，是把钮压在深色背景上的合成色误当实底色；
-   边框也是整圈均匀九停点。现一律走修正后的令牌：底色 --uhd-glass-btn-d
-   （中性深色低透明玻璃＋pill 档模糊），边框 --uhd-rainbow（135deg 左侧
+   边框也是整圈均匀九停点。现一律走修正后的令牌：底色 --ax-glass-btn-d
+   （中性深色低透明玻璃＋pill 档模糊），边框 --ax-rainbow（135deg 左侧
    鲜明、向右淡出）。本页不再覆盖。 */
-/* 「前往流媒体」改深色玻璃（2026-11-14 用户双站对图亲点）：UhdButton 的
+/* 「前往流媒体」改深色玻璃（2026-11-14 用户双站对图亲点）：AxButton 的
    secondary+dark 基础配方是 transparent 底、无 backdrop-filter——空心描边，
    钮内直接透出背景条纹原色。本页用专属钩子 .hero-btn-stream 覆盖成深色
    玻璃（压暗＋模糊＋白亮边＋内高光＋柔影），不动共享组件，同 variant 的
-   「查看定价」等他处次钮不受影响。字重走 .uhd-btn 基础 semibold，与左钮同级。 */
+   「查看定价」等他处次钮不受影响。字重走 .ax-btn 基础 semibold，与左钮同级。 */
 /* 描边与底色按 2026-11-18 实测收淡：描边极淡（原 0.32 白边偏亮）、底向
    rgb(11,15,17)；同槽位的未登录态幽灵钮（.hero-btn-pricing）同配方对齐。 */
-.hero-actions :deep(.uhd-btn--secondary.hero-btn-stream),
-.hero-actions :deep(.uhd-btn--secondary.hero-btn-pricing) {
+.hero-actions :deep(.ax-btn--secondary.hero-btn-stream),
+.hero-actions :deep(.ax-btn--secondary.hero-btn-pricing) {
   color: #ffffff;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(11, 15, 17, 0.5);
-  box-shadow: var(--uhd-shadow-sheet);
+  box-shadow: var(--ax-shadow-sheet);
   backdrop-filter: blur(14px) saturate(1.4);
   -webkit-backdrop-filter: blur(14px) saturate(1.4);
 }
@@ -1314,12 +1314,12 @@ const year = new Date().getFullYear()
    友站 .prism-icon：conic-gradient(from 其 --prism-angle，oklch 七色标)
    ＋@property 注册＋@keyframes prism-spin（to 时转角 360deg），
    6s linear infinite，减动效 animation:none。本站首屏同类元素＝主钮的彩虹
-   描边环（UhdButton 深色主钮 ::before 环切层）：仅落地页 hero 作用域把环
+   描边环（AxButton 深色主钮 ::before 环切层）：仅落地页 hero 作用域把环
    底图换成同组 oklch 色标（深色档 l=.82／c=.13）的 conic 并匀速旋转，
-   转角 --hero-prism-angle 的注册与缺省值在 uhd-tokens.css（与
+   转角 --hero-prism-angle 的注册与缺省值在 ax-tokens.css（与
    --utb-prism-angle 同款先例）；共享组件与其他页面不动，减动效降级
    见文末媒体查询。 */
-.hero-actions :deep(.uhd-btn--primary.uhd-btn--dark)::before {
+.hero-actions :deep(.ax-btn--primary.ax-btn--dark)::before {
   background: conic-gradient(from var(--hero-prism-angle), oklch(0.82 0.13 25), oklch(0.82 0.13 70), oklch(0.88 0.13 105), oklch(0.82 0.13 155), oklch(0.82 0.13 205), oklch(0.78 0.13 265), oklch(0.78 0.13 305), oklch(0.82 0.13 25));
   animation: hero-prism-spin 6s linear infinite;
 }
@@ -1335,10 +1335,10 @@ const year = new Date().getFullYear()
   /* 芯片行沉底（固定阶梯末段：钮→芯片约 304px 由文案组 margin-top 反推） */
   margin-top: auto;
 }
-/* 卖点：图标在左，主词在上、说明在下。只改本页规格 chip，不动共享 UhdChip。
+/* 卖点：图标在左，主词在上、说明在下。只改本页规格 chip，不动共享 AxChip。
    缩进与行距按 2026-11-18 实测：副文缩进 22＋2＝24px（实测 23–26）、
    标签底→副文顶 13px（原 2px 偏紧）。 */
-.hero-specs :deep(.uhd-chip--spec) {
+.hero-specs :deep(.ax-chip--spec) {
   display: grid;
   grid-template-columns: 22px auto;
   column-gap: 2px;
@@ -1346,20 +1346,20 @@ const year = new Date().getFullYear()
   align-items: center;
   white-space: normal;
 }
-.hero-specs :deep(.uhd-chip__icon) {
+.hero-specs :deep(.ax-chip__icon) {
   grid-row: 1 / span 2;
 }
-.hero-specs :deep(.uhd-chip__sub) {
+.hero-specs :deep(.ax-chip__sub) {
   grid-column: 2;
 }
 .hero-scroll-hint {
   position: absolute;
   z-index: 2;
-  right: max(28px, calc((100vw - var(--uhd-container-marketing)) / 2));
+  right: max(28px, calc((100vw - var(--ax-container-marketing)) / 2));
   bottom: 28px;
   margin: 0;
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-d-text-2);
+  font-size: var(--ax-fs-caption);
+  color: var(--ax-d-text-2);
   text-shadow: 0 1px 10px rgba(0, 0, 0, 0.72);
 }
 
@@ -1384,23 +1384,23 @@ const year = new Date().getFullYear()
   mask-image: linear-gradient(90deg, transparent, black 12%, black 88%, transparent);
 }
 .partner {
-  font-family: var(--uhd-font-display);
+  font-family: var(--ax-font-display);
   font-size: 22px;
   line-height: 1;
   white-space: nowrap;
   color: rgba(255, 255, 255, 0.88);
 }
 .partner--netflix {
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 .partner--disney {
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
   letter-spacing: 0.01em;
 }
 .partner--hbo {
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -1424,22 +1424,22 @@ const year = new Date().getFullYear()
   gap: 165px;
   width: max-content;
   padding-right: 165px;
-  animation: uhd-marquee 46s linear infinite;
+  animation: ax-marquee 46s linear infinite;
 }
 .marquee-track--b {
   animation-direction: reverse;
   animation-duration: 52s;
 }
 .marquee-word {
-  font-family: var(--uhd-font-display);
+  font-family: var(--ax-font-display);
   font-size: 22px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
   letter-spacing: 0.04em;
   white-space: nowrap;
-  color: var(--uhd-d-text);
+  color: var(--ax-d-text);
   opacity: 0.8;
 }
-@keyframes uhd-marquee {
+@keyframes ax-marquee {
   from { transform: translateX(0); }
   to { transform: translateX(-50%); }
 }
@@ -1676,18 +1676,18 @@ const year = new Date().getFullYear()
 .pin-title {
   margin: 0 0 14px;
   max-width: 100%;
-  font-family: var(--uhd-font-display);
+  font-family: var(--ax-font-display);
   /* 原站 --text-landing-immersive-title: clamp(2.25rem, 4.8vw, 5.4rem)；
      2026-11-18 实测推断约 80px，上限由 86.4 收至 80 */
   font-size: clamp(32px, 4.8vw, 80px);
-  font-weight: var(--uhd-fw-black);
+  font-weight: var(--ax-fw-black);
   line-height: 1.15;
   overflow-wrap: anywhere;
 }
 .pin-sub {
   margin: 0 auto;
   max-width: min(920px, 100%);
-  font-size: var(--uhd-fs-lead);
+  font-size: var(--ax-fs-lead);
   line-height: 1.55;
   color: #cfd8e3;
   overflow-wrap: anywhere;
@@ -1696,13 +1696,13 @@ const year = new Date().getFullYear()
 /* ---------- 一份订阅 ---------- */
 .essentials {
   padding: 130px 28px 120px;
-  max-width: var(--uhd-container-marketing);
+  max-width: var(--ax-container-marketing);
   margin: 0 auto;
 }
 .ess-grid {
   display: grid;
   grid-template-columns: 1fr 2fr;
-  gap: var(--uhd-card-gap);
+  gap: var(--ax-card-gap);
   margin-top: 56px;
 }
 .ess-card {
@@ -1711,18 +1711,18 @@ const year = new Date().getFullYear()
      本页覆盖、不动令牌）；描边改极淡 #141518（原 #222222 实线过重，友站顶缘
      采样近隐形） */
   padding: 40px;
-  border: var(--uhd-border-w) solid #141518;
-  border-radius: var(--uhd-radius-card-lg);
+  border: var(--ax-border-w) solid #141518;
+  border-radius: var(--ax-radius-card-lg);
   background:
-    var(--uhd-grid-tex) 0 0 / var(--uhd-grid-tex-size) var(--uhd-grid-tex-size),
-    var(--uhd-d-surface);
+    var(--ax-grid-tex) 0 0 / var(--ax-grid-tex-size) var(--ax-grid-tex-size),
+    var(--ax-d-surface);
   overflow: hidden;
 }
 /* 三卡 hover（L-10）：spotlight 聚光灯＋background/transform .22s spring
    （友站原文过渡配方：background-color 走 base 档时长＋transform .22s
-   spring 缓动；本站映射为 .22s＋--uhd-ease-spring，聚光灯坐标 --mx/--my
-   的初值在 uhd-tokens.css 1.7 组件运行态，运行时由 onSpotlight 写 px 值）。
-   ::after 径向高光以 --mx/--my 为圆心跟随指针，opacity 走 --uhd-dur-base
+   spring 缓动；本站映射为 .22s＋--ax-ease-spring，聚光灯坐标 --mx/--my
+   的初值在 ax-tokens.css 1.7 组件运行态，运行时由 onSpotlight 写 px 值）。
+   ::after 径向高光以 --mx/--my 为圆心跟随指针，opacity 走 --ax-dur-base
    淡入；hover 的 transform/background 过渡只挂在 :hover/:active 态上，
    不改 .ess-card 的常态 transition——避免顶掉 .rv 入场过渡（.9s）的
    时序（入场仍走 .rv，进入 hover 时才按 .22s spring 接管）。
@@ -1734,20 +1734,20 @@ const year = new Date().getFullYear()
   border-radius: inherit;
   background: radial-gradient(340px circle at var(--mx) var(--my), rgba(255, 255, 255, 0.1), transparent 70%);
   opacity: 0;
-  transition: opacity var(--uhd-dur-base) var(--uhd-ease-standard);
+  transition: opacity var(--ax-dur-base) var(--ax-ease-standard);
   pointer-events: none;
 }
 @media (hover: hover) and (pointer: fine) {
   .ess-card.is-in:hover {
     transform: translateY(-2px);
-    background-color: var(--uhd-d-surface-2);
+    background-color: var(--ax-d-surface-2);
     transition:
-      transform 0.22s var(--uhd-ease-spring),
-      background-color 0.22s var(--uhd-ease-spring);
+      transform 0.22s var(--ax-ease-spring),
+      background-color 0.22s var(--ax-ease-spring);
   }
   .ess-card.is-in:active {
-    transform: translateY(0) scale(var(--uhd-press-scale));
-    transition: transform 0.22s var(--uhd-ease-spring);
+    transform: translateY(0) scale(var(--ax-press-scale));
+    transition: transform 0.22s var(--ax-ease-spring);
   }
   .ess-card:hover::after { opacity: 1; }
 }
@@ -1761,11 +1761,11 @@ const year = new Date().getFullYear()
 }
 .ess-h3 {
   margin: 0 0 12px;
-  font-family: var(--uhd-font-display);
+  font-family: var(--ax-font-display);
   /* 原站 --text-landing-service-title: clamp(1.6rem, 2.4vw, 2.4rem)；
      2026-11-18 实测推断约 32px，上限由 38.4 收至 32 */
   font-size: clamp(25.6px, 2.4vw, 32px);
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   line-height: 1.2;
 }
 .ess-card--wide .ess-h3 {
@@ -1775,9 +1775,9 @@ const year = new Date().getFullYear()
 .ess-desc {
   margin: 0;
   max-width: 460px;
-  font-size: var(--uhd-fs-body);
-  line-height: var(--uhd-lh-body);
-  color: var(--uhd-d-text-2);
+  font-size: var(--ax-fs-body);
+  line-height: var(--ax-lh-body);
+  color: var(--ax-d-text-2);
 }
 .ess-chips {
   display: flex;
@@ -1798,7 +1798,7 @@ const year = new Date().getFullYear()
 .dev {
   position: relative;
   flex: none;
-  border: 1.5px solid var(--uhd-d-chip-border);
+  border: 1.5px solid var(--ax-d-chip-border);
   border-radius: 10px;
   display: flex;
   align-items: center;
@@ -1815,13 +1815,13 @@ const year = new Date().getFullYear()
   top: calc(100% + 8px);
   text-align: center;
   font-size: 13px;
-  color: var(--uhd-d-text-2);
+  color: var(--ax-d-text-2);
 }
 .dev-play {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  border: 1.5px solid var(--uhd-d-text-2);
+  border: 1.5px solid var(--ax-d-text-2);
   position: relative;
 }
 .dev-play::after {
@@ -1832,7 +1832,7 @@ const year = new Date().getFullYear()
   transform: translate(-50%, -50%);
   border-style: solid;
   border-width: 5px 0 5px 8px;
-  border-color: transparent transparent transparent var(--uhd-d-text);
+  border-color: transparent transparent transparent var(--ax-d-text);
 }
 .dev-play--sm { width: 20px; height: 20px; }
 .dev-bar {
@@ -1848,20 +1848,20 @@ const year = new Date().getFullYear()
   display: block;
   height: 100%;
   border-radius: 2px;
-  background: var(--uhd-d-text);
+  background: var(--ax-d-text);
   /* 同步进度线（L-05）：宽度不再写死——初始 0，设备框 reveal 落定
      （.dev.is-in）后生长到 --bar-w 目标宽（现行 60% 口径，模板内联给值）；
-     时长走 --uhd-dur-slow 档＋0.2s 延迟，让线跟在设备框入场之后生长。 */
+     时长走 --ax-dur-slow 档＋0.2s 延迟，让线跟在设备框入场之后生长。 */
   width: 0;
-  transition: width var(--uhd-dur-slow) var(--uhd-ease-standard) 0.2s;
+  transition: width var(--ax-dur-slow) var(--ax-ease-standard) 0.2s;
 }
 .dev.is-in .dev-bar i { width: var(--bar-w, 60%); }
 .dev-note {
   flex: 1 0 100%;
   margin: 36px 0 0;
   text-align: center;
-  font-size: var(--uhd-fs-aux-sm);
-  color: var(--uhd-d-text-2);
+  font-size: var(--ax-fs-aux-sm);
+  color: var(--ax-d-text-2);
 }
 /* 移动端设备示意条：桌面不显示，仅 ≤900px（见文末断点） */
 .ess-devices-m {
@@ -1881,12 +1881,12 @@ const year = new Date().getFullYear()
   top: calc(100% + 6px);
   text-align: center;
   font-size: 12px;
-  color: var(--uhd-d-text-2);
+  color: var(--ax-d-text-2);
 }
 .dm {
   position: relative;
   flex: none;
-  border: 1.5px solid var(--uhd-d-chip-border);
+  border: 1.5px solid var(--ax-d-chip-border);
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -1900,7 +1900,7 @@ const year = new Date().getFullYear()
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  border: 1.5px solid var(--uhd-d-text-2);
+  border: 1.5px solid var(--ax-d-text-2);
   position: relative;
 }
 .dm-play::after {
@@ -1911,7 +1911,7 @@ const year = new Date().getFullYear()
   transform: translate(-50%, -50%);
   border-style: solid;
   border-width: 3.5px 0 3.5px 6px;
-  border-color: transparent transparent transparent var(--uhd-d-text);
+  border-color: transparent transparent transparent var(--ax-d-text);
 }
 .dm-play--sm { width: 15px; height: 15px; }
 .dm-play--sm::after { border-width: 2.5px 0 2.5px 4px; }
@@ -1928,27 +1928,27 @@ const year = new Date().getFullYear()
   display: block;
   height: 100%;
   border-radius: 2px;
-  background: var(--uhd-d-text);
+  background: var(--ax-d-text);
   /* 同步进度线（L-05）：与桌面 .dev-bar 同口径——初始 0，宽卡 reveal
      落定（.ess-card.is-in，移动设备条无独立 .rv）后生长到 --bar-w。 */
   width: 0;
-  transition: width var(--uhd-dur-slow) var(--uhd-ease-standard) 0.2s;
+  transition: width var(--ax-dur-slow) var(--ax-ease-standard) 0.2s;
 }
 .ess-card.is-in .dm-bar i { width: var(--bar-w, 60%); }
 .dm-note {
   margin: 14px 0 0;
   text-align: center;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   letter-spacing: 0.14em;
-  color: var(--uhd-d-text-2);
+  color: var(--ax-d-text-2);
 }
 /* 左窄卡时间轴 */
 .ess-timeline { margin-top: 34px; }
 .ess-timeline-meta {
   display: flex;
   justify-content: space-between;
-  font-size: var(--uhd-fs-aux);
-  color: var(--uhd-d-text-2);
+  font-size: var(--ax-fs-aux);
+  color: var(--ax-d-text-2);
   margin-bottom: 10px;
 }
 .ess-timeline-bar {
@@ -1961,24 +1961,24 @@ const year = new Date().getFullYear()
   width: 100%;
   height: 100%;
   border-radius: 2px;
-  background: var(--uhd-d-text);
+  background: var(--ax-d-text);
 }
 .ess-timeline-mid {
-  font-weight: var(--uhd-fw-semibold);
-  color: var(--uhd-d-text);
+  font-weight: var(--ax-fw-semibold);
+  color: var(--ax-d-text);
 }
 .ess-timeline-marks {
   display: flex;
   justify-content: space-between;
   gap: 10px;
   margin-top: 10px;
-  font-size: var(--uhd-fs-aux-sm);
-  color: var(--uhd-d-text-2);
+  font-size: var(--ax-fs-aux-sm);
+  color: var(--ax-d-text-2);
   white-space: nowrap;
 }
 .ess-timeline-marks b {
-  color: var(--uhd-d-text);
-  font-weight: var(--uhd-fw-semibold);
+  color: var(--ax-d-text);
+  font-weight: var(--ax-fw-semibold);
 }
 /* 右宽卡海报砖墙占位 */
 .ess-card--library { padding-top: 0; }
@@ -1991,8 +1991,8 @@ const year = new Date().getFullYear()
 }
 .ess-tile {
   height: 62px;
-  border-radius: var(--uhd-radius-navitem);
-  background: var(--uhd-d-surface-2);
+  border-radius: var(--ax-radius-navitem);
+  background: var(--ax-d-surface-2);
 }
 .ess-tile--2 { background: #151515; }
 .ess-tile--3 { background: #101010; }
@@ -2009,19 +2009,19 @@ const year = new Date().getFullYear()
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  font-size: var(--uhd-fs-body);
-  line-height: var(--uhd-lh-body);
-  color: var(--uhd-d-text-2);
+  font-size: var(--ax-fs-body);
+  line-height: var(--ax-lh-body);
+  color: var(--ax-d-text-2);
 }
 .ess-points li svg {
   flex: none;
   margin-top: 3px;
-  color: var(--uhd-d-text-2);
+  color: var(--ax-d-text-2);
 }
 .ess-points b {
   margin-right: 10px;
-  color: var(--uhd-d-text);
-  font-weight: var(--uhd-fw-semibold);
+  color: var(--ax-d-text);
+  font-weight: var(--ax-fw-semibold);
 }
 
 /* 片库数据行：照友站大数据行——大数字（28px）＋小标签（12px）横排，数字收小量级 */
@@ -2033,20 +2033,20 @@ const year = new Date().getFullYear()
 }
 .ess-stat { display: flex; flex-direction: column; }
 .ess-stat-num {
-  font-family: var(--uhd-font-display);
+  font-family: var(--ax-font-display);
   font-size: 28px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   line-height: 1.15;
 }
 .ess-stat-label {
   margin-top: 4px;
   font-size: 12px;
-  color: var(--uhd-d-text-2);
+  color: var(--ax-d-text-2);
 }
 .ess-stats-note {
   margin: 10px 0 0;
   font-size: 11px;
-  color: var(--uhd-d-text-2);
+  color: var(--ax-d-text-2);
 }
 
 /* ---------- 页脚 ---------- */
@@ -2054,13 +2054,13 @@ const year = new Date().getFullYear()
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-width: var(--uhd-container-marketing);
+  max-width: var(--ax-container-marketing);
   margin: 0 auto;
   padding: 22px 28px 30px;
   /* 分隔线与副文色按 2026-11-18 友站实测校准：分隔线 rgb(50,51,56)（原
      #222222 偏暗）、副文最亮向 rgb(100,104,113)（原 #9ca3af 偏亮） */
-  border-top: var(--uhd-border-w) solid rgb(50, 51, 56);
-  font-size: var(--uhd-fs-aux);
+  border-top: var(--ax-border-w) solid rgb(50, 51, 56);
+  font-size: var(--ax-fs-aux);
   color: rgb(100, 104, 113);
 }
 .landing-foot-disclaimer {
@@ -2069,7 +2069,7 @@ const year = new Date().getFullYear()
   line-height: 1.7;
 }
 .landing-foot-disclaimer a {
-  color: var(--uhd-d-text);
+  color: var(--ax-d-text);
   text-decoration: none;
 }
 .landing-foot-disclaimer a:hover { text-decoration: underline; }
@@ -2087,7 +2087,7 @@ const year = new Date().getFullYear()
   color: rgb(100, 104, 113);
   text-decoration: none;
 }
-.landing-foot-links a:hover { color: var(--uhd-d-text); }
+.landing-foot-links a:hover { color: var(--ax-d-text); }
 
 @media (max-width: 900px) {
   /* ---- 顶栏：原站形态——未滚动整条透明、滚动后玻璃 pill 浮起；菜单为底部抽屉 ---- */
@@ -2107,11 +2107,11 @@ const year = new Date().getFullYear()
     content: '';
     position: absolute;
     inset: 0;
-    border: var(--uhd-border-w) solid var(--uhd-glass-border);
+    border: var(--ax-border-w) solid var(--ax-glass-border);
     border-radius: 9999px;
-    background: var(--uhd-glass-d);
-    backdrop-filter: var(--uhd-glass-filter);
-    -webkit-backdrop-filter: var(--uhd-glass-filter);
+    background: var(--ax-glass-d);
+    backdrop-filter: var(--ax-glass-filter);
+    -webkit-backdrop-filter: var(--ax-glass-filter);
     opacity: 0;
     transition: opacity 0.5s cubic-bezier(0.32, 0.72, 0, 1);
     pointer-events: none;
@@ -2138,7 +2138,7 @@ const year = new Date().getFullYear()
     bottom: 0;
     z-index: 66;
     display: block;
-    border-top: var(--uhd-border-w) solid var(--uhd-glass-border);
+    border-top: var(--ax-border-w) solid var(--ax-glass-border);
     border-radius: 28px 28px 0 0;
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 32%, rgba(255, 255, 255, 0) 62%),
@@ -2179,9 +2179,9 @@ const year = new Date().getFullYear()
     border: none;
     border-radius: 16px;
     background: transparent;
-    color: var(--uhd-d-text);
+    color: var(--ax-d-text);
     font-size: 18px;
-    font-weight: var(--uhd-fw-medium);
+    font-weight: var(--ax-fw-medium);
     text-align: left;
     cursor: pointer;
   }
@@ -2208,7 +2208,7 @@ const year = new Date().getFullYear()
   .m-sheet__channels-title {
     margin: 0 0 12px;
     font-size: 12px;
-    font-weight: var(--uhd-fw-medium);
+    font-weight: var(--ax-fw-medium);
     letter-spacing: 0.04em;
     color: rgba(255, 255, 255, 0.45);
   }
@@ -2224,7 +2224,7 @@ const year = new Date().getFullYear()
     border: 1px solid rgba(255, 255, 255, 0.07);
     border-radius: 20px;
     background: rgba(255, 255, 255, 0.045);
-    color: var(--uhd-d-text);
+    color: var(--ax-d-text);
     text-decoration: none;
   }
   .m-card:active { background: rgba(255, 255, 255, 0.09); }
@@ -2241,7 +2241,7 @@ const year = new Date().getFullYear()
   }
   .m-card__title {
     font-size: 17px;
-    font-weight: var(--uhd-fw-semibold);
+    font-weight: var(--ax-fw-semibold);
     line-height: 1.3;
   }
   .m-card__sub {
@@ -2259,7 +2259,7 @@ const year = new Date().getFullYear()
   .m-sheet__cta {
     padding: 14px 16px max(20px, env(safe-area-inset-bottom));
   }
-  .m-sheet__cta :deep(.uhd-btn) {
+  .m-sheet__cta :deep(.ax-btn) {
     height: 44px;
     padding-top: 0;
     padding-bottom: 0;
@@ -2305,10 +2305,10 @@ const year = new Date().getFullYear()
     margin-bottom: 30px;
   }
   /* 双钮照截图量值：高 52px、字 16px、左右垫 20px、间距 14px 并排
-     （主钮配方在 UhdButton，玻璃次钮等高对齐；2026-11-14 截图复核后已登录态两颗都显示） */
+     （主钮配方在 AxButton，玻璃次钮等高对齐；2026-11-14 截图复核后已登录态两颗都显示） */
   .hero-actions { gap: 14px; }
-  .hero-actions :deep(.uhd-btn--primary),
-  .hero-actions :deep(.uhd-btn--secondary) {
+  .hero-actions :deep(.ax-btn--primary),
+  .hero-actions :deep(.ax-btn--secondary) {
     height: 52px;
     padding: 0 20px;
     font-size: 16px;
@@ -2323,7 +2323,7 @@ const year = new Date().getFullYear()
     max-width: none;
     margin-top: auto;
   }
-  .hero-specs :deep(.uhd-chip--spec) {
+  .hero-specs :deep(.ax-chip--spec) {
     /* 沿用桌面 grid 分列（图标列＋文案列）：图标列收 24px、列距 13px，
        说明与主标题同列左缘对齐。旧写法在 grid 之上残留 flex 的
        padding-left:37px，副标题被多推 37px（真机量值：主标题 x=51、
@@ -2333,11 +2333,11 @@ const year = new Date().getFullYear()
     row-gap: 6px;
     font-size: 21px;
   }
-  .hero-specs :deep(.uhd-chip__icon svg) {
+  .hero-specs :deep(.ax-chip__icon svg) {
     width: 24px;
     height: 24px;
   }
-  .hero-specs :deep(.uhd-chip__sub) {
+  .hero-specs :deep(.ax-chip__sub) {
     font-size: 13.5px;
   }
   /* 友站首屏底部无滚动提示（卖点之下只有背景地板），移动端隐藏 */
@@ -2417,12 +2417,12 @@ const year = new Date().getFullYear()
 @media (max-width: 420px) {
   /* 390 档：跑马灯标题与钉住区副题整句落在视口内。靠换行和字号，不靠把 overflow 全藏掉。 */
   .hero-actions { gap: 10px; }
-  .hero-actions :deep(.uhd-btn--primary),
-  .hero-actions :deep(.uhd-btn--secondary) {
+  .hero-actions :deep(.ax-btn--primary),
+  .hero-actions :deep(.ax-btn--secondary) {
     padding: 0 14px;
   }
   .hero-specs { gap: 14px 12px; }
-  .hero-specs :deep(.uhd-chip--spec) { font-size: 16px; }
+  .hero-specs :deep(.ax-chip--spec) { font-size: 16px; }
   .sec-title,
   .sec-title--platforms,
   .pin-title,
@@ -2439,7 +2439,7 @@ const year = new Date().getFullYear()
 @media (prefers-reduced-motion: reduce) {
   .hero-el { animation: none; }
   /* 主钮彩虹环旋转（友站 prism-icon 减动效同口径）：停转，环保留静态 conic */
-  .hero-actions :deep(.uhd-btn--primary.uhd-btn--dark)::before { animation: none; }
+  .hero-actions :deep(.ax-btn--primary.ax-btn--dark)::before { animation: none; }
   /* 棱镜脉冲（L-02）：减动效时全关，只留静态照片图 */
   .hp-flash { animation: none; }
   .marquee-track { animation: none; }

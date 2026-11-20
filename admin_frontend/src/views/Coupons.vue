@@ -1044,7 +1044,7 @@ onMounted(() => {
 
 <style scoped>
 /* 四种码分工说明已收敛到「码管理」页顶；这里只留一行跳转提示 */
-.division-pointer { margin: 0 0 12px; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
+.division-pointer { margin: 0 0 12px; font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); }
 .division-pointer a { color: var(--au-primary); }
 .stat-row {
   display: grid;
@@ -1066,8 +1066,8 @@ onMounted(() => {
 .setting:first-child { padding-top: 0; }
 .setting:last-child { padding-bottom: 0; }
 .setting-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 260px; }
-.setting-label { font-size: var(--uhd-fs-aux); font-weight: 600; color: var(--au-text); }
-.setting-hint { font-size: var(--uhd-fs-aux-sm); line-height: 1.5; color: var(--au-text-3); }
+.setting-label { font-size: var(--ax-fs-aux); font-weight: 600; color: var(--au-text); }
+.setting-hint { font-size: var(--ax-fs-aux-sm); line-height: 1.5; color: var(--au-text-3); }
 
 /* ---------- 工具条：筛选在左、动作在右 ---------- */
 .view-toolbar {
@@ -1081,9 +1081,9 @@ onMounted(() => {
 .code { letter-spacing: 0.06em; font-weight: 600; color: var(--au-primary); }
 .discount { font-weight: 600; color: var(--au-text); }
 .num { font-variant-numeric: tabular-nums; }
-.sub { margin-top: 2px; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
+.sub { margin-top: 2px; font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); }
 .faint { color: var(--au-text-4); }
-.usage-table :deep(.muted) { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
+.usage-table :deep(.muted) { font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); }
 
 /* ---------- 弹窗 ---------- */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
@@ -1092,11 +1092,11 @@ onMounted(() => {
 .mg-body { display: flex; flex-direction: column; gap: 12px; }
 .mg-body .kv-row .kv-value { text-align: left; }
 .mg-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.mg-discount { font-size: var(--uhd-fs-lead); font-weight: 700; color: var(--au-text); }
+.mg-discount { font-size: var(--ax-fs-lead); font-weight: 700; color: var(--au-text); }
 .mg-hint {
   margin: 0;
   padding: 10px 12px;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   line-height: 1.7;
   color: var(--au-text-3);
   background: var(--au-surface-2);

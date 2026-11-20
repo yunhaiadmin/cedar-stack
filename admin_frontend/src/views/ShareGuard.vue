@@ -581,7 +581,7 @@ const emptyText = computed(() => {
   gap: 6px;
   margin: 0 0 6px;
   font-family: var(--au-font-serif);
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   font-weight: 600;
   color: var(--au-text);
 }
@@ -589,7 +589,7 @@ const emptyText = computed(() => {
 .sg-hint {
   display: block;
   margin: 0 0 8px;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-3);
   line-height: 1.8;
 }
@@ -608,7 +608,7 @@ const emptyText = computed(() => {
   margin-top: 16px;
 }
 .sg-keep-label {
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   color: var(--au-text-2);
   white-space: nowrap;
 }
@@ -625,7 +625,7 @@ const emptyText = computed(() => {
 /* 下拉里的选项：标题 + 一行「点下去会发生什么」 */
 .sg-option { display: flex; flex-direction: column; gap: 2px; }
 .sg-option-hint {
-  font-size: var(--uhd-fs-micro);
+  font-size: var(--ax-fs-micro);
   color: var(--au-text-3);
   line-height: 1.5;
 }
@@ -644,13 +644,13 @@ const emptyText = computed(() => {
 .sg-table-hint { padding: 8px 20px 4px; margin: 0; }
 .sg-region {
   display: block;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-2);
 }
 .sg-ip {
   display: block;
   font-family: var(--font-mono);
-  font-size: var(--uhd-fs-micro);
+  font-size: var(--ax-fs-micro);
   color: var(--au-text-3);
 }
 .sg-muted { color: var(--au-text-4); }

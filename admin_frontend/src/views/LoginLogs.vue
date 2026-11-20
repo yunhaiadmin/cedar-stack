@@ -372,7 +372,7 @@ function riskLevel(row: LoginLogRow): string {
 .danger-jump {
   color: var(--au-text-3);
   text-decoration: none;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   padding: 0 4px;
 }
 .danger-jump:hover { color: var(--au-danger); text-decoration: underline; }
@@ -383,12 +383,12 @@ function riskLevel(row: LoginLogRow): string {
 
 .region {
   display: block;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-3);
 }
 
 .ua {
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-3);
   display: inline-block;
   max-width: 320px;

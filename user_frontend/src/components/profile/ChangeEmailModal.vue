@@ -274,15 +274,15 @@ async function submit() {
 .acct-btn.primary {
   border: 1.5px solid transparent;
   background:
-    var(--uhd-rainbow-soft) padding-box,
-    var(--uhd-rainbow) border-box;
+    var(--ax-rainbow-soft) padding-box,
+    var(--ax-rainbow) border-box;
   color: #111111;
   font-weight: 600;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    var(--uhd-shadow-card-l);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
+    var(--ax-shadow-card-l);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
 }
 .acct-btn.primary:disabled {
   background: var(--paper2);

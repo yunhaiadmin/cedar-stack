@@ -1001,7 +1001,7 @@ onMounted(() => {
   color: var(--au-text);
 }
 .pool-cell-sub {
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-3);
 }
 .pool-status {
@@ -1019,7 +1019,7 @@ onMounted(() => {
   color: var(--au-danger);
 }
 .pool-viol {
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-danger);
 }
 .pool-actions {
@@ -1049,7 +1049,7 @@ onMounted(() => {
   flex-wrap: wrap;
   gap: 4px 10px;
   margin: 0;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   line-height: 1.55;
   color: var(--au-text-2);
 }
@@ -1090,14 +1090,14 @@ onMounted(() => {
   min-width: 0;
 }
 .pool-group-name {
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   font-weight: 700;
   color: var(--au-text);
   overflow-wrap: anywhere;
 }
 .pool-chip {
   padding: 2px 8px;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   font-weight: 600;
   color: var(--au-text-2);
   background: var(--au-surface-3);
@@ -1105,14 +1105,14 @@ onMounted(() => {
 }
 .pool-badge-pending {
   padding: 2px 10px;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   font-weight: 700;
   color: var(--au-on-warning);
   background: var(--au-warning);
   border-radius: var(--au-r-full);
 }
 .pool-group-summary {
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-3);
   overflow-wrap: anywhere;
 }
@@ -1152,12 +1152,12 @@ onMounted(() => {
   min-width: 0;
 }
 .pool-meta-item dt {
-  font-size: var(--uhd-fs-micro);
+  font-size: var(--ax-fs-micro);
   color: var(--au-text-4);
 }
 .pool-meta-item dd {
   margin: 2px 0 0;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-2);
   overflow-wrap: anywhere;
 }

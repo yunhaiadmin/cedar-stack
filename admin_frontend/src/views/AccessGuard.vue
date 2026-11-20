@@ -465,7 +465,7 @@ const testSummary = computed(() => {
 .sk-tile { height: 96px; border-radius: var(--au-r-lg); }
 .sk-wide { grid-column: 1 / -1; height: 280px; border-radius: var(--au-r-lg); }
 /* 状态瓦片的值是短文字，不是数字：字号收一档 */
-.text-tile :deep(.au-stat__value) { font-size: var(--uhd-fs-title); }
+.text-tile :deep(.au-stat__value) { font-size: var(--ax-fs-title); }
 
 .ag-alert { margin: 0 0 16px; }
 
@@ -489,7 +489,7 @@ const testSummary = computed(() => {
   gap: 6px;
   margin: 0;
   font-family: var(--au-font-serif);
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   font-weight: 600;
   color: var(--au-text);
 }
@@ -502,7 +502,7 @@ const testSummary = computed(() => {
 .ag-hint {
   display: block;
   margin: 0 0 10px;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-2);
   line-height: 1.8;
 }
@@ -530,7 +530,7 @@ const testSummary = computed(() => {
 }
 .ag-note {
   margin: 4px 0 0;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   line-height: 1.7;
 }
 .ag-note.is-warn { color: var(--au-warning); }
@@ -567,7 +567,7 @@ const testSummary = computed(() => {
   gap: 10px;
   flex-wrap: wrap;
   margin-bottom: 8px;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   color: var(--au-text);
 }
 .ag-result-list {
@@ -575,7 +575,7 @@ const testSummary = computed(() => {
   grid-template-columns: 72px 1fr;
   gap: 4px 10px;
   margin: 0;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
 }
 .ag-result-list dt { color: var(--au-text-2); }
 .ag-result-list dd { margin: 0; color: var(--au-text-2); word-break: break-all; }
@@ -584,7 +584,7 @@ const testSummary = computed(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-3);
 }
 

@@ -373,7 +373,7 @@ onMounted(() => {
 
 .mono {
   font-family: var(--font-mono);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
 }
 
 .dim {
@@ -382,11 +382,11 @@ onMounted(() => {
 
 .badge-pin {
   color: var(--au-success, #2f9e44);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
 }
 
 .badge-block {
   color: var(--au-danger, #d6336c);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
 }
 </style>

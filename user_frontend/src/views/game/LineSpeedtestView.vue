@@ -2,7 +2,7 @@
 /**
  * LineSpeedtestView.vue —— 线路测速（用户中心 · 帮助组）
  *
- * 结构照 UHDNow 测速页 1:1（2026-11-13 用户发图亲点）：
+ * 结构照 参考站 测速页 1:1（2026-11-13 用户发图亲点）：
  *   卡一 测试：线路下拉（选项来自站内真实线路记录）＋文件大小
  *        三档胶囊（32M/64M/100M）＋整宽彩虹「开始测速」；
  *   卡二 Download：大字当前速度（平均 Mbps）＋峰值/实时/下载速率/
@@ -30,9 +30,9 @@ import {
   Check, ChevronDown, Copy, Gauge, Globe, HardDrive,
   Info, LoaderCircle, MapPin, Radio, Wifi,
 } from 'lucide-vue-next'
-import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
-import UhdButton from '@/components/uhd/UhdButton.vue'
-import UhdEmptyState from '@/components/uhd/UhdEmptyState.vue'
+import AxAccountLayout from '@/components/ax/AxAccountLayout.vue'
+import AxButton from '@/components/ax/AxButton.vue'
+import AxEmptyState from '@/components/ax/AxEmptyState.vue'
 import { embyApi } from '@/api'
 import { getMyNetworkInfo, type MyNetworkInfo } from '@/api/user'
 import {
@@ -324,13 +324,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <UhdAccountLayout title="线路测速" eyebrow="帮助">
+  <AxAccountLayout title="线路测速" eyebrow="帮助">
     <div class="st-page">
       <p class="st-lede">测试当前网络到各条线路的下载速度，结果更接近实际观看体验。</p>
 
       <p v-if="loading" class="st-hint">正在读取线路…</p>
 
-      <UhdEmptyState
+      <AxEmptyState
         v-else-if="loadFailed"
         variant="icon"
         title="线路读取失败"
@@ -338,18 +338,18 @@ onBeforeUnmount(() => {
       >
         <template #icon><Gauge :size="24" /></template>
         <template #action>
-          <UhdButton variant="primary" @click="loadLines">重试</UhdButton>
+          <AxButton variant="primary" @click="loadLines">重试</AxButton>
         </template>
-      </UhdEmptyState>
+      </AxEmptyState>
 
-      <UhdEmptyState
+      <AxEmptyState
         v-else-if="!lines.length"
         variant="icon"
         title="暂无可用线路"
         desc="你的账号下暂无服务器地址，绑定或开通后这里会列出可测的线路。"
       >
         <template #icon><Gauge :size="24" /></template>
-      </UhdEmptyState>
+      </AxEmptyState>
 
       <template v-else>
         <!-- 卡一 · 测试 -->
@@ -391,7 +391,7 @@ onBeforeUnmount(() => {
             </button>
           </div>
 
-          <UhdButton
+          <AxButton
             v-if="!testing"
             variant="primary"
             block
@@ -399,8 +399,8 @@ onBeforeUnmount(() => {
             @click="runTest"
           >
             开始测速
-          </UhdButton>
-          <UhdButton
+          </AxButton>
+          <AxButton
             v-else
             variant="primary"
             block
@@ -408,7 +408,7 @@ onBeforeUnmount(() => {
             @click="stopTest"
           >
             <LoaderCircle :size="16" class="st-spin" />测速中 · 点此停止
-          </UhdButton>
+          </AxButton>
         </section>
 
         <!-- 卡二 · Download -->
@@ -540,31 +540,31 @@ onBeforeUnmount(() => {
         </p>
       </section>
     </div>
-  </UhdAccountLayout>
+  </AxAccountLayout>
 </template>
 
 <style scoped>
-/* 用户中心框架（UhdAccountLayout）内容面为浅色令牌面（框架统一，
-   与同框架页面同口径）；本页卡片/数值排版照 UHDNow 测速页截图。 */
+/* 用户中心框架（AxAccountLayout）内容面为浅色令牌面（框架统一，
+   与同框架页面同口径）；本页卡片/数值排版照 参考站 测速页截图。 */
 .st-page {
-  font-family: var(--uhd-font-sans);
-  color: var(--uhd-l-text);
+  font-family: var(--ax-font-sans);
+  color: var(--ax-l-text);
   max-width: 720px;
 }
 .st-lede {
   margin: 0 0 20px;
-  font-size: var(--uhd-fs-body);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-body);
+  color: var(--ax-l-text-2);
 }
 .st-hint {
   margin: 0;
-  font-size: var(--uhd-fs-body);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-body);
+  color: var(--ax-l-text-2);
 }
 .st-card {
-  background: var(--uhd-l-surface);
-  border: 1px solid var(--uhd-l-border);
-  border-radius: var(--uhd-radius-card);
+  background: var(--ax-l-surface);
+  border: 1px solid var(--ax-l-border);
+  border-radius: var(--ax-radius-card);
   padding: 20px;
   margin-bottom: 20px;
 }
@@ -573,9 +573,9 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   margin: 0 0 14px;
-  font-size: var(--uhd-fs-title);
-  font-weight: var(--uhd-fw-bold);
-  color: var(--uhd-l-text);
+  font-size: var(--ax-fs-title);
+  font-weight: var(--ax-fw-bold);
+  color: var(--ax-l-text);
 }
 
 /* 卡一 */
@@ -584,8 +584,8 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 7px;
   margin: 0 0 10px;
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-caption);
+  color: var(--ax-l-text-2);
 }
 .st-field-label:not(:first-child) {
   margin-top: 20px;
@@ -597,12 +597,12 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 48px;
   padding: 0 40px 0 14px;
-  border: 1px solid var(--uhd-l-border);
-  border-radius: var(--uhd-radius-input);
-  background: var(--uhd-l-input-bg);
-  color: var(--uhd-l-text);
-  font-size: var(--uhd-fs-lead);
-  font-weight: var(--uhd-fw-semibold);
+  border: 1px solid var(--ax-l-border);
+  border-radius: var(--ax-radius-input);
+  background: var(--ax-l-input-bg);
+  color: var(--ax-l-text);
+  font-size: var(--ax-fs-lead);
+  font-weight: var(--ax-fw-semibold);
   appearance: none;
   -webkit-appearance: none;
   cursor: pointer;
@@ -616,32 +616,32 @@ onBeforeUnmount(() => {
   right: 14px;
   top: 50%;
   transform: translateY(-50%);
-  color: var(--uhd-l-text-3);
+  color: var(--ax-l-text-3);
   pointer-events: none;
 }
 .st-seg {
   display: inline-flex;
   gap: 4px;
   padding: 4px;
-  border-radius: var(--uhd-radius-pill);
-  background: var(--uhd-l-seg-bg);
+  border-radius: var(--ax-radius-pill);
+  background: var(--ax-l-seg-bg);
 }
 .st-seg__btn {
   min-width: 76px;
   height: 38px;
   padding: 0 18px;
   border: none;
-  border-radius: var(--uhd-radius-pill);
+  border-radius: var(--ax-radius-pill);
   background: transparent;
-  color: var(--uhd-l-text-2);
-  font-size: var(--uhd-fs-lead);
-  font-weight: var(--uhd-fw-semibold);
+  color: var(--ax-l-text-2);
+  font-size: var(--ax-fs-lead);
+  font-weight: var(--ax-fw-semibold);
   cursor: pointer;
 }
 .st-seg__btn.is-active {
-  background: var(--uhd-l-surface);
-  color: var(--uhd-l-text);
-  box-shadow: var(--uhd-shadow-seg);
+  background: var(--ax-l-surface);
+  color: var(--ax-l-text);
+  box-shadow: var(--ax-shadow-seg);
 }
 .st-seg__btn:disabled {
   opacity: 0.55;
@@ -666,12 +666,12 @@ onBeforeUnmount(() => {
   gap: 7px;
 }
 .st-dl-title {
-  font-size: var(--uhd-fs-lead);
-  font-weight: var(--uhd-fw-bold);
-  color: var(--uhd-l-text);
+  font-size: var(--ax-fs-lead);
+  font-weight: var(--ax-fw-bold);
+  color: var(--ax-l-text);
 }
 .st-dl-info {
-  color: var(--uhd-l-text-3);
+  color: var(--ax-l-text-3);
 }
 .st-big {
   display: flex;
@@ -682,15 +682,15 @@ onBeforeUnmount(() => {
 .st-big__num {
   font-size: 64px;
   line-height: 1;
-  font-weight: var(--uhd-fw-bold);
-  color: var(--uhd-l-text);
+  font-weight: var(--ax-fw-bold);
+  color: var(--ax-l-text);
   font-variant-numeric: tabular-nums;
   letter-spacing: -1px;
 }
 .st-big__unit {
-  font-size: var(--uhd-fs-h3);
-  font-weight: var(--uhd-fw-semibold);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-h3);
+  font-weight: var(--ax-fw-semibold);
+  color: var(--ax-l-text-2);
 }
 .st-stats {
   display: grid;
@@ -704,18 +704,18 @@ onBeforeUnmount(() => {
   gap: 3px;
 }
 .st-stat__label {
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-caption);
+  color: var(--ax-l-text-2);
 }
 .st-stat__value {
-  font-size: var(--uhd-fs-lead);
-  font-weight: var(--uhd-fw-bold);
-  color: var(--uhd-l-text);
+  font-size: var(--ax-fs-lead);
+  font-weight: var(--ax-fw-bold);
+  color: var(--ax-l-text);
   font-variant-numeric: tabular-nums;
 }
 .st-chart {
   position: relative;
-  border-top: 1px solid var(--uhd-l-divider);
+  border-top: 1px solid var(--ax-l-divider);
   padding-top: 8px;
 }
 .st-chart__svg {
@@ -724,14 +724,14 @@ onBeforeUnmount(() => {
   height: auto;
 }
 .st-chart__grid {
-  stroke: var(--uhd-l-divider);
+  stroke: var(--ax-l-divider);
   stroke-width: 1;
   stroke-dasharray: 3 4;
 }
 .st-chart__ylabel,
 .st-chart__xlabel {
   font-size: 10px;
-  fill: var(--uhd-l-text-3);
+  fill: var(--ax-l-text-3);
 }
 .st-chart__area {
   fill: rgba(107, 114, 128, 0.12);
@@ -749,25 +749,25 @@ onBeforeUnmount(() => {
   top: 46%;
   transform: translate(-50%, -50%);
   padding: 8px 16px;
-  border: 1px solid var(--uhd-l-border);
-  border-radius: var(--uhd-radius-pill);
-  background: var(--uhd-l-surface);
-  box-shadow: var(--uhd-shadow-soft);
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-l-text-2);
+  border: 1px solid var(--ax-l-border);
+  border-radius: var(--ax-radius-pill);
+  background: var(--ax-l-surface);
+  box-shadow: var(--ax-shadow-soft);
+  font-size: var(--ax-fs-caption);
+  color: var(--ax-l-text-2);
   white-space: nowrap;
 }
 .st-error {
   margin: 12px 0 0;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   line-height: 1.7;
   color: #dc2626;
 }
 .st-note {
   margin: 12px 0 0;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   line-height: 1.7;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 
 /* 卡三 */
@@ -782,7 +782,7 @@ onBeforeUnmount(() => {
   padding: 10px 0;
 }
 .st-net-row + .st-net-row {
-  border-top: 1px solid var(--uhd-l-divider);
+  border-top: 1px solid var(--ax-l-divider);
 }
 .st-net-row__icon {
   display: inline-flex;
@@ -791,10 +791,10 @@ onBeforeUnmount(() => {
   width: 38px;
   height: 38px;
   flex-shrink: 0;
-  border: 1px solid var(--uhd-l-border);
-  border-radius: var(--uhd-radius-navitem);
-  background: var(--uhd-l-input-bg);
-  color: var(--uhd-l-text-2);
+  border: 1px solid var(--ax-l-border);
+  border-radius: var(--ax-radius-navitem);
+  background: var(--ax-l-input-bg);
+  color: var(--ax-l-text-2);
 }
 .st-net-row__main {
   display: flex;
@@ -803,13 +803,13 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 .st-net-row__label {
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-caption);
+  color: var(--ax-l-text-2);
 }
 .st-net-row__value {
-  font-size: var(--uhd-fs-lead);
-  font-weight: var(--uhd-fw-bold);
-  color: var(--uhd-l-text);
+  font-size: var(--ax-fs-lead);
+  font-weight: var(--ax-fw-bold);
+  color: var(--ax-l-text);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
@@ -820,17 +820,17 @@ onBeforeUnmount(() => {
 .st-hintbar {
   margin: 0 0 16px;
   padding: 12px 14px;
-  border: 1px solid var(--uhd-l-border);
-  border-radius: var(--uhd-radius-base);
-  background: var(--uhd-l-input-bg);
-  font-size: var(--uhd-fs-caption);
+  border: 1px solid var(--ax-l-border);
+  border-radius: var(--ax-radius-base);
+  background: var(--ax-l-input-bg);
+  font-size: var(--ax-fs-caption);
   line-height: 1.7;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
 }
 .st-rule {
-  border: 1px solid var(--uhd-l-border);
-  border-radius: var(--uhd-radius-base);
-  background: var(--uhd-l-surface);
+  border: 1px solid var(--ax-l-border);
+  border-radius: var(--ax-radius-base);
+  background: var(--ax-l-surface);
   padding: 12px 14px;
 }
 .st-rule + .st-rule {
@@ -844,8 +844,8 @@ onBeforeUnmount(() => {
   margin-bottom: 8px;
 }
 .st-rule__title {
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-caption);
+  color: var(--ax-l-text-2);
 }
 .st-copy {
   display: inline-flex;
@@ -853,30 +853,30 @@ onBeforeUnmount(() => {
   gap: 4px;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--uhd-l-border);
-  border-radius: var(--uhd-radius-pill);
-  background: var(--uhd-l-surface);
-  color: var(--uhd-l-text-2);
-  font-size: var(--uhd-fs-aux-sm);
+  border: 1px solid var(--ax-l-border);
+  border-radius: var(--ax-radius-pill);
+  background: var(--ax-l-surface);
+  color: var(--ax-l-text-2);
+  font-size: var(--ax-fs-aux-sm);
   cursor: pointer;
   flex-shrink: 0;
 }
 .st-rule__body {
   margin: 0;
   padding: 10px 12px;
-  border-radius: var(--uhd-radius-navitem);
-  background: var(--uhd-l-input-bg);
+  border-radius: var(--ax-radius-navitem);
+  background: var(--ax-l-input-bg);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   line-height: 1.7;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
   white-space: pre-wrap;
   word-break: break-all;
 }
 .st-foot-note {
   margin: 14px 0 0;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   line-height: 1.7;
-  color: var(--uhd-l-text-3);
+  color: var(--ax-l-text-3);
 }
 </style>

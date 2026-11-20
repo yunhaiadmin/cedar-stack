@@ -93,12 +93,12 @@ export function shouldSoftDecode(
 
 // ---------- 软解分辨率护栏（4K 不许软解） ----------
 
-/** 4K（UHD）判定线：宽达此值或高达 SOFT_UHD_MIN_HEIGHT 任一命中即按 4K 算 */
-export const SOFT_UHD_MIN_WIDTH = 3840
-export const SOFT_UHD_MIN_HEIGHT = 2160
+/** 4K判定线：宽达此值或高达 SOFT_4K_MIN_HEIGHT 任一命中即按 4K 算 */
+export const SOFT_4K_MIN_WIDTH = 3840
+export const SOFT_4K_MIN_HEIGHT = 2160
 
 /** 护栏命中时提示卡的文案（人话，指出路：客户端 App 自带解码） */
-export const SOFT_UHD_BLOCK_MESSAGE =
+export const SOFT_4K_BLOCK_MESSAGE =
   '这部片子是 4K 画质，手机浏览器放不动，请用客户端 App 观看'
 
 export interface SoftResolutionGateResult {
@@ -120,7 +120,7 @@ export interface SoftResolutionGateResult {
  * WebContent 进程被系统反复杀，页面循环崩溃（2026-11-17《多喜
  * 一家人》第 1 集 3840×2160 HEVC＋EAC3 事故：Safari 报「重复
  * 出现问题」、同窗 6 次 PlaybackInfo 重入）。命中时调用方不得
- * 实例化 AVPlayer，直接出提示卡（SOFT_UHD_BLOCK_MESSAGE）。
+ * 实例化 AVPlayer，直接出提示卡（SOFT_4K_BLOCK_MESSAGE）。
  *
  * 口径：宽高只取 PlaybackInfo 实际所选 MediaSource 的视频流
  * Width/Height，不许用条目级字段凑；原生路径（softPipeline=
@@ -136,10 +136,10 @@ export function softDecodeResolutionGate(
   const height = vs?.Height || 0
   if (!softPipeline) return { blocked: false, width, height, reason: 'native-pipeline' }
   if (!vs) return { blocked: false, width, height, reason: 'no-video-stream' }
-  if (width >= SOFT_UHD_MIN_WIDTH || height >= SOFT_UHD_MIN_HEIGHT) {
-    return { blocked: true, width, height, reason: 'uhd-soft-decode' }
+  if (width >= SOFT_4K_MIN_WIDTH || height >= SOFT_4K_MIN_HEIGHT) {
+    return { blocked: true, width, height, reason: 'ax-soft-decode' }
   }
-  return { blocked: false, width, height, reason: 'below-uhd' }
+  return { blocked: false, width, height, reason: 'below-4k' }
 }
 
 // ---------- 4K MSE 原生管线（2026-11-17 晚，真机探针验通） ----------
@@ -194,7 +194,7 @@ export function softDecodePipelineDecision(
   if (!mse.supported) {
     return { pipeline: 'blocked', width: gate.width, height: gate.height, reason: 'mse-unsupported' }
   }
-  return { pipeline: 'mse', width: gate.width, height: gate.height, reason: 'uhd-mse' }
+  return { pipeline: 'mse', width: gate.width, height: gate.height, reason: 'ax-mse' }
 }
 
 // ---------- MSE 预检（移植探针页 #279 已真机验证的逻辑） ----------

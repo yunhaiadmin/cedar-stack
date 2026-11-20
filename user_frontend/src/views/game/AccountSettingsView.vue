@@ -2,8 +2,8 @@
   <!-- S-1（2026-11-18 用户中心自查）：标题与入口名统一为「账号安全」；
        友站账号安全页 H1 上方无眉题，本页 eyebrow 随之摘除；手机端子页
        返回头由 App.vue 统一顶栏子页模式承接（路由 game-account-settings） -->
-  <UhdAccountLayout title="账号安全">
-  <div class="uhd-shell-scope settings-page">
+  <AxAccountLayout title="账号安全">
+  <div class="ax-shell-scope settings-page">
     <!-- 账户：用户名/公开 ID 行＋复制账户信息（2026-11-18 照友站账号安全页分组重组） -->
     <section class="set-group">
       <div class="set-ghead">
@@ -187,7 +187,7 @@
     <ChangeEmailModal v-model:open="emailOpen" />
     <TgBindModal v-model="tgBindOpen" @bound="onTgBound" />
   </div>
-  </UhdAccountLayout>
+  </AxAccountLayout>
 </template>
 
 <script setup lang="ts">
@@ -213,7 +213,7 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Bell, Copy, LogOut } from 'lucide-vue-next'
-import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
+import AxAccountLayout from '@/components/ax/AxAccountLayout.vue'
 import PcEntryRow from '@/components/profile/PcEntryRow.vue'
 import ChangePasswordModal from '@/components/profile/ChangePasswordModal.vue'
 import ChangeEmailModal from '@/components/profile/ChangeEmailModal.vue'
@@ -383,40 +383,40 @@ onMounted(() => {
 <style scoped>
 /* 状态行模具（说明书 2.6 / §3 行 8 友站 /user/security）：
    分组 H2 24px/800 领起 + 平面状态行（图标 22 + 标题 16/600 + 右侧状态/开关），
-   行间 1px --uhd-l-divider，不再套卡片容器。单列堆叠（与友站同构），
+   行间 1px --ax-l-divider，不再套卡片容器。单列堆叠（与友站同构），
    分组与行序与旧版一致（旧桌面两栏在单列下即此顺序）。 */
 .settings-page {
-  max-width: var(--uhd-container-app);
+  max-width: var(--ax-container-app);
   margin: 0 auto;
   padding-bottom: 34px;
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
   /* 2026-11-14 统一壳单：摘掉 .v4-scope 纸面嵌套，文字色由页根自承
      （与原纸面 --ink 的壳内覆盖值 #111 一致）；子面板的纸面令牌改由
-     页根 .uhd-shell-scope（布局全局样式）供给，值不变。 */
-  color: var(--uhd-l-text);
+     页根 .ax-shell-scope（布局全局样式）供给，值不变。 */
+  color: var(--ax-l-text);
 }
 .set-group { margin-top: 36px; }
 .set-group:first-child { margin-top: 4px; }
 .set-gtitle {
   margin: 0 0 6px;
-  font-family: var(--uhd-font-sans);
-  font-size: var(--uhd-fs-h3);
-  font-weight: var(--uhd-fw-extrabold);
+  font-family: var(--ax-font-sans);
+  font-size: var(--ax-fs-h3);
+  font-weight: var(--ax-fw-extrabold);
   letter-spacing: -0.01em;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
 }
 .set-gsub {
   margin: 0 0 6px;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   line-height: 1.55;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
-.set-rows > :not(:last-child) { border-bottom: var(--uhd-border-w) solid var(--uhd-l-divider); }
+.set-rows > :not(:last-child) { border-bottom: var(--ax-border-w) solid var(--ax-l-divider); }
 .set-row {
   display: flex;
   align-items: center;
   gap: 14px;
-  min-height: var(--uhd-row-h);
+  min-height: var(--ax-row-h);
   padding: 10px 2px;
 }
 .set-row-ic {
@@ -426,12 +426,12 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
 }
 .set-row-name {
-  font-size: var(--uhd-fs-lead);
-  font-weight: var(--uhd-fw-semibold);
-  color: var(--uhd-l-text);
+  font-size: var(--ax-fs-lead);
+  font-weight: var(--ax-fw-semibold);
+  color: var(--ax-l-text);
   white-space: nowrap;
 }
 /* 开关模具：44×24 黑体轨道 + 20px 白钮（友站开关形态），
@@ -455,9 +455,9 @@ onMounted(() => {
   top: 10px;
   width: 44px;
   height: 24px;
-  border-radius: var(--uhd-radius-pill);
-  background: var(--uhd-l-border);
-  transition: background var(--uhd-dur-ui) var(--uhd-ease-standard);
+  border-radius: var(--ax-radius-pill);
+  background: var(--ax-l-border);
+  transition: background var(--ax-dur-ui) var(--ax-ease-standard);
 }
 .set-switch::after {
   content: '';
@@ -467,11 +467,11 @@ onMounted(() => {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--uhd-l-surface);
-  box-shadow: var(--uhd-shadow-seg);
-  transition: left var(--uhd-dur-ui) var(--uhd-ease-standard);
+  background: var(--ax-l-surface);
+  box-shadow: var(--ax-shadow-seg);
+  transition: left var(--ax-dur-ui) var(--ax-ease-standard);
 }
-.set-switch.is-on::before { background: var(--uhd-l-text); }
+.set-switch.is-on::before { background: var(--ax-l-text); }
 .set-switch.is-on::after { left: 26px; }
 .set-switch:disabled { opacity: 0.5; cursor: not-allowed; }
 /* 账户组组头：标题＋右侧「复制账户信息」文字钮 */
@@ -489,16 +489,16 @@ onMounted(() => {
   margin-bottom: 6px;
   background: none;
   border: none;
-  color: var(--uhd-l-text-2);
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-medium);
+  color: var(--ax-l-text-2);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-medium);
   cursor: pointer;
 }
 /* 账户组信息行：名左、值右＋复制小钮 */
 .set-row-value {
   margin-left: auto;
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-caption);
+  color: var(--ax-l-text-2);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
@@ -514,9 +514,9 @@ onMounted(() => {
   min-height: 36px;
   padding: 0;
   border: none;
-  border-radius: var(--uhd-radius-pill);
+  border-radius: var(--ax-radius-pill);
   background: none;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
   cursor: pointer;
 }
 /* 副文行模具（登录与恢复组）：图标＋名/副文两行＋右侧胶囊钮，整行可点 */
@@ -525,18 +525,18 @@ onMounted(() => {
   align-items: center;
   gap: 14px;
   width: 100%;
-  min-height: var(--uhd-row-h);
+  min-height: var(--ax-row-h);
   padding: 10px 2px;
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
   font: inherit;
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
   text-align: left;
   box-sizing: border-box;
 }
-.set-rowbtn:active { background: var(--uhd-l-input-bg); }
+.set-rowbtn:active { background: var(--ax-l-input-bg); }
 .set-rowbtn-main {
   display: flex;
   flex-direction: column;
@@ -545,8 +545,8 @@ onMounted(() => {
   flex: 1;
 }
 .set-row-sub {
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-caption);
+  color: var(--ax-l-text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -557,20 +557,20 @@ onMounted(() => {
   align-items: center;
   min-height: 36px;
   padding: 0 16px;
-  border-radius: var(--uhd-radius-pill);
-  border: var(--uhd-border-w) solid var(--uhd-l-border);
-  background: var(--uhd-l-surface);
-  color: var(--uhd-l-text);
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-medium);
+  border-radius: var(--ax-radius-pill);
+  border: var(--ax-border-w) solid var(--ax-l-border);
+  background: var(--ax-l-surface);
+  color: var(--ax-l-text);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-medium);
   white-space: nowrap;
 }
 .set-note {
   margin: 0;
   padding: 12px 2px 0;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   line-height: 1.6;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 .set-errline {
   display: flex;
@@ -578,21 +578,21 @@ onMounted(() => {
   gap: 12px;
   margin: 0;
   padding: 12px 2px 0;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   line-height: 1.6;
-  color: var(--uhd-danger);
+  color: var(--ax-danger);
 }
 .set-retry {
   flex: none;
   height: 36px;
   min-height: 36px;
   padding: 0 16px;
-  border-radius: var(--uhd-radius-pill);
-  border: var(--uhd-border-w) solid var(--uhd-l-border);
-  background: var(--uhd-l-surface);
-  color: var(--uhd-l-text);
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-medium);
+  border-radius: var(--ax-radius-pill);
+  border: var(--ax-border-w) solid var(--ax-l-border);
+  background: var(--ax-l-surface);
+  color: var(--ax-l-text);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-medium);
   cursor: pointer;
 }
 </style>

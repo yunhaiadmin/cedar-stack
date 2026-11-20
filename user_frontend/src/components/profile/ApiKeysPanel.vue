@@ -155,18 +155,18 @@ onMounted(() => {
   gap: 5px;
   min-height: 36px;
   padding: 0 16px;
-  border-radius: var(--uhd-radius-pill);
-  border: var(--uhd-border-w) solid var(--uhd-l-border);
-  background: var(--uhd-l-surface);
-  color: var(--uhd-l-text);
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-medium);
+  border-radius: var(--ax-radius-pill);
+  border: var(--ax-border-w) solid var(--ax-l-border);
+  background: var(--ax-l-surface);
+  color: var(--ax-l-text);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-medium);
   white-space: nowrap;
   cursor: pointer;
 }
 .ak-count {
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-caption);
+  color: var(--ax-l-text-2);
   font-variant-numeric: tabular-nums;
 }
 .sec-block { padding: 6px 14px 14px; }

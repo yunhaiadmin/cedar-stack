@@ -1,6 +1,6 @@
 <template>
-  <UhdAccountLayout>
-    <div class="uhd-shell-scope wallet-page">
+  <AxAccountLayout>
+    <div class="ax-shell-scope wallet-page">
       <h1 class="w-title">我的钱包</h1>
 
       <!-- 余额区：标签 + 大数字 + 充值钮（照友站钱包页截图） -->
@@ -166,7 +166,7 @@
         </template>
       </div>
 
-      <!-- 弹层必须留在 .uhd-shell-scope 内继承壳面令牌（挪出即落到
+      <!-- 弹层必须留在 .ax-shell-scope 内继承壳面令牌（挪出即落到
            v4-paper 暖纸令牌、整层变暖棕色，2026-11-15 QA 实证） -->
       <GiftCodeSheet
         :open="giftOpen"
@@ -182,12 +182,12 @@
         @paid="onTopupPaid"
       />
     </div>
-  </UhdAccountLayout>
+  </AxAccountLayout>
 </template>
 
 <script setup lang="ts">
 /**
- * 钱包（/wallet，2026-11-15 照 UHDNow 钱包页整页重做，旧实现已删）：
+ * 钱包（/wallet，2026-11-15 照 参考站 钱包页整页重做，旧实现已删）：
  * 余额 + 充值钮 → 分段页签（我的兑换码 / 资金明细）。
  * 我的兑换码：用兑换码入账（既有 redeem 口）+ 把余额做成礼品卡
  * （自生成 balance 兑换码，GiftCodeSheet 弹层）+ 我生成的码列表
@@ -202,7 +202,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ChevronDown, RefreshCw } from 'lucide-vue-next'
-import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
+import AxAccountLayout from '@/components/ax/AxAccountLayout.vue'
 import GiftCodeSheet from '@/components/profile/GiftCodeSheet.vue'
 import TopupSheet from '@/components/profile/TopupSheet.vue'
 import { useUserStore } from '@/stores/user'
@@ -408,7 +408,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* 钱包页（UHD 重做）：令牌走用户中心壳面（--paper/--paper2/--paper-card/
+/* 钱包页（ax 重做）：令牌走用户中心壳面（--paper/--paper2/--paper-card/
    --ink/--ink2/--line），深色为默认、浅色随 html[data-theme='light']，
    与友站截图的深色形态同值（卡 #17181a / 输入 #242526 / 边 #26262a）。 */
 .wallet-page { padding-bottom: 40px; }
@@ -422,9 +422,9 @@ onMounted(() => {
 }
 .w-balance {
   margin: 0;
-  font-family: var(--uhd-font-display);
+  font-family: var(--ax-font-display);
   font-size: 40px;
-  font-weight: var(--uhd-fw-black, 900);
+  font-weight: var(--ax-fw-black, 900);
   letter-spacing: -0.02em;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
@@ -441,7 +441,7 @@ onMounted(() => {
   font-weight: 700;
   cursor: pointer;
 }
-.w-recharge:active { transform: scale(var(--uhd-press-scale)); }
+.w-recharge:active { transform: scale(var(--ax-press-scale)); }
 .w-alert { margin: 12px 0 0; font-size: 12.5px; color: #f87171; }
 html[data-theme='light'] .w-alert { color: #dc2626; }
 
@@ -472,10 +472,10 @@ html[data-theme='light'] .w-alert { color: #dc2626; }
   background: var(--paper2);
   border-color: var(--line);
   color: var(--ink);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--uhd-shadow-soft);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-soft);
 }
 html[data-theme='light'] .w-seg__btn--on {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--uhd-shadow-seg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-seg);
 }
 
 .w-tab { margin-top: 26px; display: flex; flex-direction: column; gap: 32px; }
@@ -534,7 +534,7 @@ html[data-theme='light'] .w-err { color: #dc2626; }
   cursor: pointer;
 }
 .w-outline-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.w-outline-btn:active:not(:disabled) { transform: scale(var(--uhd-press-scale)); }
+.w-outline-btn:active:not(:disabled) { transform: scale(var(--ax-press-scale)); }
 
 /* 我生成的兑换码：标题行 + 筛选 */
 .w-list-head { display: flex; align-items: center; gap: 8px; }
@@ -585,7 +585,7 @@ html[data-theme='light'] .w-err { color: #dc2626; }
   background: var(--paper-card);
   border: 1px solid var(--line);
   border-radius: 14px;
-  box-shadow: var(--uhd-shadow-float);
+  box-shadow: var(--ax-shadow-float);
 }
 .w-filter__opt {
   width: 100%;

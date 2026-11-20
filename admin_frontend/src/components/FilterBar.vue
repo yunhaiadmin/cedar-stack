@@ -415,7 +415,7 @@ onBeforeUnmount(cancelSearchTimer)
   border-radius: var(--au-r-lg);
   background: var(--au-surface-2);
   color: var(--au-text-2);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
 }
 
 .fb-chip-text {
@@ -451,7 +451,7 @@ onBeforeUnmount(cancelSearchTimer)
 
 .fb-clear {
   color: var(--au-text-2);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
 }
 
 .fb-clear:hover {
@@ -467,7 +467,7 @@ onBeforeUnmount(cancelSearchTimer)
 .fb-count {
   margin-inline-start: auto;
   color: var(--au-text-3);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
 }
 
 .fb-chip-enter-active,

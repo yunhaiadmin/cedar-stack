@@ -1,4 +1,4 @@
-// 播放面形态契约测试（2026-11-18 UHDNow 逐帧盘点差异批·播放面形态组）：
+// 播放面形态契约测试（2026-11-18 参考站 逐帧盘点差异批·播放面形态组）：
 // 运行：cd user_frontend && node tests/playerForms.test.mjs
 // 覆盖两处：
 //  A) 选集/选版本弹窗（PlayerSchemeSheet）加载失败态 G-155：

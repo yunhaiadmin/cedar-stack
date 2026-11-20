@@ -214,7 +214,7 @@ async function copyLink(): Promise<void> {
   overflow: hidden;
   border: 1.5px solid transparent;
   border-radius: 999px;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
   color: #fff;
   text-align: left;
   padding: 0 22px;
@@ -226,8 +226,8 @@ async function copyLink(): Promise<void> {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: var(--uhd-rainbow-border-w);
-  background: var(--uhd-rainbow);
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -261,7 +261,7 @@ async function copyLink(): Promise<void> {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 20px;
-  box-shadow: var(--uhd-shadow-float);
+  box-shadow: var(--ax-shadow-float);
   padding: 16px 14px 14px;
 }
 /* 全宽深灰胶囊钮（G-202 复制钮／G-206 房主结束钮共用） */

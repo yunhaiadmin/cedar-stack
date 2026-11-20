@@ -71,7 +71,7 @@ async function onTap() {
 </script>
 
 <style scoped>
-/* 行式与 AccountMenuView 的 .am-row 对齐：同一套 UHD 深色语言 */
+/* 行式与 AccountMenuView 的 .am-row 对齐：同一套 ax 深色语言 */
 .uir-row {
   width: 100%;
   display: flex;
@@ -80,19 +80,19 @@ async function onTap() {
   padding: 15px 16px;
   border: none;
   background: transparent;
-  color: var(--uhd-d-text);
-  font-family: var(--uhd-font-sans);
-  font-size: var(--uhd-fs-body);
+  color: var(--ax-d-text);
+  font-family: var(--ax-font-sans);
+  font-size: var(--ax-fs-body);
   text-align: left;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 .uir-row:active {
-  background: var(--uhd-d-surface-2);
+  background: var(--ax-d-surface-2);
 }
 .uir-row__icon {
   flex: 0 0 auto;
-  color: var(--uhd-d-text-2);
+  color: var(--ax-d-text-2);
 }
 .uir-row__name {
   flex: 1 1 auto;
@@ -100,12 +100,12 @@ async function onTap() {
 }
 .uir-row__value {
   flex: 0 0 auto;
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-d-text-3);
+  font-size: var(--ax-fs-caption);
+  color: var(--ax-d-text-3);
 }
 .uir-row__chev {
   flex: 0 0 auto;
-  color: var(--uhd-d-text-3);
+  color: var(--ax-d-text-3);
 }
 
 .uir-sheet-wrap {
@@ -124,8 +124,8 @@ async function onTap() {
 /* 居中实色浮窗（2026-11-18 用户亲令改实色；2026-11-15 弹层形态
    批 1 曾为玻璃浮窗，与购流量弹窗同一口径）：宽 92%、max 420px、
    四角圆角 26；面板底改实色 surface（深
-   var(--uhd-d-surface-raised)、浅 var(--uhd-l-surface)）、阴影走
-   --uhd-shadow-modal、遮罩与面板均无 backdrop；浅色变体见
+   var(--ax-d-surface-raised)、浅 var(--ax-l-surface)）、阴影走
+   --ax-shadow-modal、遮罩与面板均无 backdrop；浅色变体见
    文末覆盖。 */
 .uir-sheet {
   position: relative;
@@ -134,11 +134,11 @@ async function onTap() {
   margin: 0 auto;
   padding: 22px 22px 24px;
   border-radius: 26px;
-  background: var(--uhd-d-surface-raised);
-  border: 1px solid var(--uhd-glass-border);
-  box-shadow: var(--uhd-shadow-modal);
-  color: var(--uhd-d-text);
-  font-family: var(--uhd-font-sans);
+  background: var(--ax-d-surface-raised);
+  border: 1px solid var(--ax-glass-border);
+  box-shadow: var(--ax-shadow-modal);
+  color: var(--ax-d-text);
+  font-family: var(--ax-font-sans);
   animation: uir-pop-in 0.28s cubic-bezier(0.32, 0.72, 0.28, 1) both;
 }
 @keyframes uir-pop-in {
@@ -157,7 +157,7 @@ async function onTap() {
 .uir-sheet__title {
   margin: 0;
   font-size: 17px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
 }
 .uir-sheet__close {
   display: inline-flex;
@@ -167,8 +167,8 @@ async function onTap() {
   height: 30px;
   border: none;
   border-radius: 50%;
-  background: var(--uhd-d-surface-raised);
-  color: var(--uhd-d-text-2);
+  background: var(--ax-d-surface-raised);
+  color: var(--ax-d-text-2);
   cursor: pointer;
 }
 .uir-steps {
@@ -192,31 +192,31 @@ async function onTap() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--uhd-d-surface-raised);
-  color: var(--uhd-d-text);
+  background: var(--ax-d-surface-raised);
+  color: var(--ax-d-text);
   font-size: 12px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
 }
 .uir-step__icon {
   flex: 0 0 auto;
-  color: var(--uhd-d-text-2);
+  color: var(--ax-d-text-2);
 }
 .uir-step__text {
   margin: 0;
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   line-height: 1.55;
-  color: var(--uhd-d-text-2);
+  color: var(--ax-d-text-2);
 }
 .uir-step__text strong,
 .uir-hint strong {
-  color: var(--uhd-d-text);
-  font-weight: var(--uhd-fw-bold);
+  color: var(--ax-d-text);
+  font-weight: var(--ax-fw-bold);
 }
 .uir-hint {
   margin: 0;
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   line-height: 1.6;
-  color: var(--uhd-d-text-2);
+  color: var(--ax-d-text-2);
 }
 .uir-sheet__ok {
   width: 100%;
@@ -224,44 +224,44 @@ async function onTap() {
   padding: 13px 16px;
   border: none;
   border-radius: 999px;
-  background: var(--uhd-d-surface-raised);
-  color: var(--uhd-d-text);
-  font-family: var(--uhd-font-sans);
-  font-size: var(--uhd-fs-body);
-  font-weight: var(--uhd-fw-bold);
+  background: var(--ax-d-surface-raised);
+  color: var(--ax-d-text);
+  font-family: var(--ax-font-sans);
+  font-size: var(--ax-fs-body);
+  font-weight: var(--ax-fw-bold);
   cursor: pointer;
 }
 
 /* 浅色变体（批 1 补齐）：面板换浅色玻璃底/边，文字与抬升面
-   换 --uhd-l-* 一套，与深色一一对应，不再写死深色。 */
+   换 --ax-l-* 一套，与深色一一对应，不再写死深色。 */
 html[data-theme='light'] .uir-sheet {
-  background: var(--uhd-l-surface);
-  border-color: var(--uhd-glass-border-l);
-  color: var(--uhd-l-text);
+  background: var(--ax-l-surface);
+  border-color: var(--ax-glass-border-l);
+  color: var(--ax-l-text);
 }
 html[data-theme='light'] .uir-sheet__close {
-  background: var(--uhd-l-seg-bg);
-  color: var(--uhd-l-text-2);
+  background: var(--ax-l-seg-bg);
+  color: var(--ax-l-text-2);
 }
 html[data-theme='light'] .uir-step__no {
-  background: var(--uhd-l-seg-bg);
-  color: var(--uhd-l-text);
+  background: var(--ax-l-seg-bg);
+  color: var(--ax-l-text);
 }
 html[data-theme='light'] .uir-step__icon {
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 html[data-theme='light'] .uir-step__text {
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 html[data-theme='light'] .uir-step__text strong,
 html[data-theme='light'] .uir-hint strong {
-  color: var(--uhd-l-text);
+  color: var(--ax-l-text);
 }
 html[data-theme='light'] .uir-hint {
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 html[data-theme='light'] .uir-sheet__ok {
-  background: var(--uhd-l-seg-bg);
-  color: var(--uhd-l-text);
+  background: var(--ax-l-seg-bg);
+  color: var(--ax-l-text);
 }
 </style>

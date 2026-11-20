@@ -1,11 +1,11 @@
 <template>
-  <!-- 桌面并壳（2026-11-14 统一壳单）：≥769px 经闸门进 UhdAccountLayout
+  <!-- 桌面并壳（2026-11-14 统一壳单）：≥769px 经闸门进 AxAccountLayout
        与其余用户中心页同壳同侧栏；≤768px 透传，本页 app 形态一字不动 -->
-  <UhdAccountShellGate>
+  <AxAccountShellGate>
   <div class="ov-page" :class="{ 'ov-dark': themeResolved === 'dark' }">
     <div class="ov-inner">
       <!-- 页头品牌行已删（2026-11-14 顶栏统一单）：顶栏由 App.vue 的
-           UhdTopBar 全区统一承接（sticky 玻璃条＋「前往流媒体」胶囊），
+           AxTopBar 全区统一承接（sticky 玻璃条＋「前往流媒体」胶囊），
            本页不再自带一份（原实现无彩虹边框、且不固定） -->
 
       <!-- 加载态（2026-11-15 假空态根治，照友站 f030）：订阅数据未落定前
@@ -19,10 +19,10 @@
            窄屏改成上下排，不把右栏裁出视口。没有月流量额度时右栏用真实剩余天数，不写假的 GB。 -->
       <div class="ov-hero">
       <div class="ov-hero__card">
-      <!-- 会员卡：全站唯一实现 UhdMemberCard（质感第二波 2026-11-18 收敛，
+      <!-- 会员卡：全站唯一实现 AxMemberCard（质感第二波 2026-11-18 收敛，
            原实现已删）；卡面右上为全站统一新标 BrandMark，线路切换
            走下方 Emby「服务器地址」行开弹层 -->
-      <UhdMemberCard
+      <AxMemberCard
         :brand="branding.site_name"
         :plan-name="memberPlanName"
         :user-line="memberUserLine"
@@ -292,12 +292,12 @@
       @bound="onDriveBound"
     />
   </div>
-  </UhdAccountShellGate>
+  </AxAccountShellGate>
 </template>
 
 <script setup lang="ts">
 /**
- * 概览（/game/account）：2026-11-13 按 UHDNow 原站用户中心首页 1:1 返工——
+ * 概览（/game/account）：2026-11-13 按 参考站 原站用户中心首页 1:1 返工——
  * 页头（品牌＋前往流媒体胶囊）＋会员卡（斜向粉彩渐变＋细斜纹）＋有效期行
  * ＋大数字区（剩余天数映射）＋双按钮＋Emby/设备/常用平面段，页面到
  * 常用段结束；「我的权益」「账号」两段与退出登录按钮已按用户
@@ -337,8 +337,8 @@ import {
   Apple, ArrowUpRight, Captions, ChevronRight, HardDrive, Monitor, MonitorPlay, Route, Smartphone, Tv, Users,
   type LucideIcon,
 } from 'lucide-vue-next'
-import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
-import UhdMemberCard from '@/components/uhd/UhdMemberCard.vue'
+import AxAccountShellGate from '@/components/ax/AxAccountShellGate.vue'
+import AxMemberCard from '@/components/ax/AxMemberCard.vue'
 import StatusAlertBar from '@/components/profile/StatusAlertBar.vue'
 import TrafficPurchaseModal from '@/components/profile/TrafficPurchaseModal.vue'
 import {
@@ -668,13 +668,13 @@ onMounted(() => {
   min-height: 100dvh;
   background: #050505;
   color: #ffffff;
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
   -webkit-font-smoothing: antialiased;
 }
 .ov-inner {
   max-width: 760px;
   margin: 0 auto;
-  /* 顶部安全区已由统一顶栏（App.vue UhdTopBar）垫付，这里只留常规间距 */
+  /* 顶部安全区已由统一顶栏（App.vue AxTopBar）垫付，这里只留常规间距 */
   padding: 14px 20px 150px;
   box-sizing: border-box;
 }
@@ -727,14 +727,14 @@ onMounted(() => {
   margin: 0;
   /* 2026-11-15 对照友站「本月剩余流量」标签收小：19px → 16px */
   font-size: 16px;
-  font-weight: var(--uhd-fw-medium);
+  font-weight: var(--ax-fw-medium);
   color: #ffffff;
 }
 .ov-quota__big {
   margin: 10px 0 0;
   /* 实测大数字 56–60px/800 */
   font-size: 58px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   letter-spacing: -0.02em;
   line-height: 1.02;
   color: #ffffff;
@@ -747,13 +747,13 @@ onMounted(() => {
   margin-left: 10px;
   /* 实测单位字约 24px（原站为 GB，本站单位为「天」，只对齐字号档） */
   font-size: 24px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   color: rgba(255, 255, 255, 0.62);
 }
 .ov-quota__remain {
   margin: 14px 0 0;
   font-size: 20px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
   color: #ffffff;
 }
 .ov-bar {
@@ -797,11 +797,11 @@ onMounted(() => {
 }
 /* 购买流量钮按压反馈（app 口径：点下去要有明确反馈态） */
 .ov-actions--traffic .ov-btn:active {
-  transform: scale(var(--uhd-press-scale));
+  transform: scale(var(--ax-press-scale));
   opacity: 0.85;
 }
 .ov-actions--traffic .ov-btn {
-  transition: transform var(--uhd-press-dur) var(--uhd-ease-spring), opacity 0.12s ease;
+  transition: transform var(--ax-press-dur) var(--ax-ease-spring), opacity 0.12s ease;
 }
 @media (prefers-reduced-motion: reduce) {
   .ov-actions--traffic .ov-btn { transition: none; }
@@ -822,20 +822,20 @@ onMounted(() => {
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #ffffff;
   font-size: 14.5px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   text-decoration: none;
-  box-shadow: var(--uhd-shadow-soft);
+  box-shadow: var(--ax-shadow-soft);
 }
 /* 主钮：深色面＝深色毛玻璃底＋彩虹渐变边框＋玻璃栈（内高光＋柔影＋backdrop，2026-11-13 补齐玻璃）；
    浅色面＝淡彩粉彩底＋彩虹边框（见浅色覆盖） */
 .ov-btn--primary {
   position: relative;
   border: 1.5px solid transparent;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
   color: #ffffff;
-  box-shadow: var(--uhd-shadow-sheet);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
+  box-shadow: var(--ax-shadow-sheet);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
 }
 /* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
    钮面只留玻璃层；两处浅色覆盖只换面背景，环由本处继承。 */
@@ -844,8 +844,8 @@ onMounted(() => {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: var(--uhd-rainbow-border-w);
-  background: var(--uhd-rainbow);
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -870,10 +870,10 @@ onMounted(() => {
 }
 .ov-sec__title {
   margin: 0;
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
   /* 2026-11-15 对照友站帧（设备/常用标题）收小一个量级：26px → 20px */
   font-size: 20px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
   letter-spacing: -0.01em;
   color: #ffffff;
 }
@@ -928,7 +928,7 @@ onMounted(() => {
 .ov-irow__name {
   /* 2026-11-15 对照友站行标题收小：16px → 15px（副标题 13px 不动） */
   font-size: 15px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   color: #ffffff;
 }
 .ov-irow__sub {
@@ -958,7 +958,7 @@ onMounted(() => {
   flex: 1 1 auto;
   min-width: 0;
   font-size: 15px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   color: #ffffff;
   white-space: nowrap;
   overflow: hidden;
@@ -972,7 +972,7 @@ onMounted(() => {
 }
 .ov-drow__status--on {
   color: #4ade80;
-  font-weight: var(--uhd-fw-medium);
+  font-weight: var(--ax-fw-medium);
 }
 
 /* 子账号段：说明文字 / 删除钮 / 新建表单（沿用段内发丝线与弱化色） */
@@ -1049,7 +1049,7 @@ onMounted(() => {
 .ov-trow__name {
   flex: 1 1 auto;
   font-size: 15px;
-  font-weight: var(--uhd-fw-medium);
+  font-weight: var(--ax-fw-medium);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1099,13 +1099,13 @@ onMounted(() => {
   justify-content: center;
   gap: 1px;
 }
-.ov-ring__center b { font-size: 19px; font-weight: var(--uhd-fw-extrabold); color: #ffffff; }
+.ov-ring__center b { font-size: 19px; font-weight: var(--ax-fw-extrabold); color: #ffffff; }
 .ov-ring__center span { font-size: 11px; color: rgba(255, 255, 255, 0.5); }
 .ov-ring-meta { min-width: 0; }
 .ov-ring-meta__big {
   margin: 0;
   font-size: 30px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   color: #ffffff;
 }
 .ov-ring-meta__line {
@@ -1126,7 +1126,7 @@ onMounted(() => {
 .ov-renew__title {
   margin: 0;
   font-size: 16px;
-  font-weight: var(--uhd-fw-medium);
+  font-weight: var(--ax-fw-medium);
   color: #ffffff;
 }
 /* 自动续费开关（2026-11-15 照友站 t90 帧收小）：36×22 小胶囊；
@@ -1155,7 +1155,7 @@ onMounted(() => {
   height: 18px;
   border-radius: 50%;
   background: #ffffff;
-  box-shadow: var(--uhd-shadow-knob);
+  box-shadow: var(--ax-shadow-knob);
   transition: transform 0.2s ease;
 }
 .ov-switch--on { background: #e8e8ec; }
@@ -1166,7 +1166,7 @@ onMounted(() => {
 .ov-balance {
   margin: 2px 0 4px;
   font-size: 30px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   color: #ffffff;
 }
 
@@ -1189,7 +1189,7 @@ onMounted(() => {
 }
 .ov-rrow__name {
   font-size: 15px;
-  font-weight: var(--uhd-fw-medium);
+  font-weight: var(--ax-fw-medium);
   color: #ffffff;
   white-space: nowrap;
   overflow: hidden;
@@ -1199,7 +1199,7 @@ onMounted(() => {
 .ov-rrow__amount {
   flex: 0 0 auto;
   font-size: 15px;
-  font-weight: var(--uhd-fw-medium);
+  font-weight: var(--ax-fw-medium);
   color: #ffffff;
 }
 
@@ -1215,7 +1215,7 @@ onMounted(() => {
   color: #ffffff;
   background:
     linear-gradient(rgba(20, 20, 24, 0.55), rgba(20, 20, 24, 0.55)) padding-box,
-    var(--uhd-rainbow) border-box;
+    var(--ax-rainbow) border-box;
   border: 1.5px solid transparent;
   box-sizing: border-box;
 }
@@ -1227,7 +1227,7 @@ onMounted(() => {
   flex-direction: column;
   gap: 3px;
 }
-.ov-invite__title { font-size: 16px; font-weight: var(--uhd-fw-bold); }
+.ov-invite__title { font-size: 16px; font-weight: var(--ax-fw-bold); }
 .ov-invite__sub { font-size: 13px; color: rgba(255, 255, 255, 0.65); }
 /* 浅色覆盖：跟随用户外观（html[data-theme='light']） */
 html[data-theme='light'] .ov-page {
@@ -1250,7 +1250,7 @@ html[data-theme='light'] .ov-bar__fill { background: #111111; }
 html[data-theme='light'] .ov-quota__meta { color: #9a9da3; }
 html[data-theme='light'] .ov-quota__meta-line { color: #9a9da3; }
 html[data-theme='light'] .ov-btn { background: #ffffff; border-color: #e7e7e7; color: #111111; }
-html[data-theme='light'] .ov-btn--primary { background: var(--uhd-rainbow-soft); border-color: transparent; color: #111111; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--uhd-shadow-card-l); backdrop-filter: var(--uhd-glass-filter); -webkit-backdrop-filter: var(--uhd-glass-filter); }
+html[data-theme='light'] .ov-btn--primary { background: var(--ax-rainbow-soft); border-color: transparent; color: #111111; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l); backdrop-filter: var(--ax-glass-filter); -webkit-backdrop-filter: var(--ax-glass-filter); }
 html[data-theme='light'] .ov-sec__head { border-bottom-color: #e5e5e7; }
 html[data-theme='light'] .ov-sec__title { color: #111111; }
 html[data-theme='light'] .ov-sec__more { color: #55575c; }
@@ -1286,7 +1286,7 @@ html[data-theme='light'] .ov-invite {
   color: #111111;
   background:
     linear-gradient(rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.72)) padding-box,
-    var(--uhd-rainbow) border-box;
+    var(--ax-rainbow) border-box;
 }
 html[data-theme='light'] .ov-invite__sub { color: #55575c; }
 html[data-theme='light'] .ov-sub-note { color: #55575c; border-bottom-color: #e5e5e7; }
@@ -1306,7 +1306,7 @@ html[data-theme='light'] .ov-page.ov-dark .ov-bar__fill { background: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-quota__meta { color: rgba(255, 255, 255, 0.42); }
 html[data-theme='light'] .ov-page.ov-dark .ov-quota__meta-line { color: rgba(255, 255, 255, 0.42); }
 html[data-theme='light'] .ov-page.ov-dark .ov-btn { background: #17181c; color: #ffffff; }
-html[data-theme='light'] .ov-page.ov-dark .ov-btn--primary { background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d)); color: #ffffff; box-shadow: var(--uhd-shadow-sheet); backdrop-filter: var(--uhd-glass-filter); -webkit-backdrop-filter: var(--uhd-glass-filter); }
+html[data-theme='light'] .ov-page.ov-dark .ov-btn--primary { background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d)); color: #ffffff; box-shadow: var(--ax-shadow-sheet); backdrop-filter: var(--ax-glass-filter); -webkit-backdrop-filter: var(--ax-glass-filter); }
 html[data-theme='light'] .ov-page.ov-dark .ov-sec__title { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-sec__more { color: rgba(255, 255, 255, 0.62); }
 html[data-theme='light'] .ov-page.ov-dark .ov-row__chev { color: rgba(255, 255, 255, 0.42); }
@@ -1319,7 +1319,7 @@ html[data-theme='light'] .ov-page.ov-dark .ov-drow__name { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-drow__status { color: rgba(255, 255, 255, 0.42); }
 html[data-theme='light'] .ov-page.ov-dark .ov-drow__status--on { color: #4ade80; }
 html[data-theme='light'] .ov-page.ov-dark .ov-trow__value { color: rgba(255, 255, 255, 0.42); }
-html[data-theme='light'] .ov-page.ov-dark :deep(.uad-pill) { background: rgba(30, 30, 33, 0.55); border-color: rgba(255, 255, 255, 0.16); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), var(--uhd-shadow-float); }
+html[data-theme='light'] .ov-page.ov-dark :deep(.uad-pill) { background: rgba(30, 30, 33, 0.55); border-color: rgba(255, 255, 255, 0.16); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), var(--ax-shadow-float); }
 html[data-theme='light'] .ov-page.ov-dark :deep(.uad-tab) { color: rgba(255, 255, 255, 0.55); }
 html[data-theme='light'] .ov-page.ov-dark :deep(.uad-tab--on) { background: rgba(255, 255, 255, 0.13); color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-expiry { color: rgba(255, 255, 255, 0.62); }

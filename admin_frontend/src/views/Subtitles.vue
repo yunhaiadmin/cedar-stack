@@ -238,7 +238,7 @@ onMounted(() => {
 
 .mono {
   font-family: var(--font-mono);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
 }
 
 .dim {
@@ -255,7 +255,7 @@ onMounted(() => {
 }
 
 .item-sub {
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-3);
 }
 
@@ -274,7 +274,7 @@ onMounted(() => {
 .detail-row {
   display: flex;
   gap: 12px;
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   color: var(--au-text);
 }
 
@@ -282,12 +282,12 @@ onMounted(() => {
   flex: none;
   width: 64px;
   color: var(--au-text-3);
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
 }
 
 .detail-sub {
   margin: 14px 0 4px;
-  font-size: var(--uhd-fs-lead);
+  font-size: var(--ax-fs-lead);
   color: var(--au-text);
 }
 
@@ -305,7 +305,7 @@ onMounted(() => {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   color: var(--au-text);
 }
 
@@ -314,7 +314,7 @@ onMounted(() => {
 }
 
 .track-flag {
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-2);
   border: 1px solid var(--au-border);
   border-radius: var(--au-r-sm);
@@ -322,7 +322,7 @@ onMounted(() => {
 }
 
 .track-title {
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   color: var(--au-text-2);
   word-break: break-all;
 }

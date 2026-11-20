@@ -780,18 +780,18 @@ onMounted(() => {
 
 .amount { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--au-text); }
 .dialog-order { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.dialog-order em { font-style: normal; font-size: var(--uhd-fs-aux-sm); }
-.opt-hint { margin: 2px 0 0; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); line-height: 1.5; }
+.dialog-order em { font-style: normal; font-size: var(--ax-fs-aux-sm); }
+.opt-hint { margin: 2px 0 0; font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); line-height: 1.5; }
 
 /* ---------- 订单详情弹窗：详情用全局 .kv-list，只补金额行与说明 ---------- */
 .od-body { display: flex; flex-direction: column; gap: 12px; }
 .od-body .kv-row .kv-value { text-align: left; }
 .od-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.od-amount { font-size: var(--uhd-fs-title); font-weight: 700; font-variant-numeric: tabular-nums; color: var(--au-text); }
+.od-amount { font-size: var(--ax-fs-title); font-weight: 700; font-variant-numeric: tabular-nums; color: var(--au-text); }
 .od-hint {
   margin: 0;
   padding: 10px 12px;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   line-height: 1.7;
   color: var(--au-text-3);
   background: var(--au-surface-2);
@@ -807,7 +807,7 @@ onMounted(() => {
   gap: 10px;
   flex-wrap: wrap;
   padding: 10px 20px;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-2);
 }
 .record + .record { border-top: 1px solid var(--au-border); }

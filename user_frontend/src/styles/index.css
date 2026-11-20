@@ -120,17 +120,17 @@ body.theme-transition *::after {
   white-space: nowrap;
 }
 
-/* 主按钮 —— UHD 口径（2026-11-13 用户亲点补齐七彩＋玻璃，与 .au-btn-primary 同一套外观）：
+/* 主按钮 —— ax 口径（2026-11-13 用户亲点补齐七彩＋玻璃，与 .au-btn-primary 同一套外观）：
    彩虹渐变边框 + 玻璃栈（backdrop blur+saturate + 内高光 + 柔影）。
    默认（深色面）：深色毛玻璃底 + 白字；浅色面（html[data-theme='light']）：淡彩粉彩底 + 黑字。 */
 .btn-primary {
   position: relative;
   border: 1.5px solid transparent;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
   color: #ffffff;
-  box-shadow: var(--uhd-shadow-sheet);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
+  box-shadow: var(--ax-shadow-sheet);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
 }
 /* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
    钮面只留玻璃层；浅色覆盖只换面背景，环由本处继承。 */
@@ -139,8 +139,8 @@ body.theme-transition *::after {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: var(--uhd-rainbow-border-w);
-  background: var(--uhd-rainbow);
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -149,24 +149,24 @@ body.theme-transition *::after {
 }
 
 html[data-theme='light'] .btn-primary {
-  background: var(--uhd-rainbow-soft);
+  background: var(--ax-rainbow-soft);
   color: #111111;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    var(--uhd-shadow-card-l);
+    var(--ax-shadow-card-l);
 }
 
 /* v4 纸面页：.v4-scope 自带恒浅色纸面变量、不依赖 html 主题（守卫的 data-theme
    在这些页上不作数，实测会员页 html 无 data-theme 而页面为浅色纸面）——一律浅色配方 */
 .v4-scope .btn-primary {
-  background: var(--uhd-rainbow-soft);
+  background: var(--ax-rainbow-soft);
   color: #111111;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    var(--uhd-shadow-card-l);
+    var(--ax-shadow-card-l);
 }
 
-/* 禁用：彩虹退场、中性灰（同 UhdButton :disabled 口径） */
+/* 禁用：彩虹退场、中性灰（同 AxButton :disabled 口径） */
 .btn-primary:disabled {
   background: var(--au-surface-2);
   color: var(--au-text-3);
@@ -188,7 +188,7 @@ html[data-theme='light'] .btn-primary {
 
 /* 主按钮按下态 */
 .btn-primary:active {
-  transform: scale(var(--uhd-press-scale));
+  transform: scale(var(--ax-press-scale));
 }
 
 /* 幽灵按钮 */

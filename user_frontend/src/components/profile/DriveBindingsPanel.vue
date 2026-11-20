@@ -156,9 +156,9 @@
             <p class="dev-tip">{{ driveOauth2.description }}</p>
           </div>
           <p v-if="!driveOauth2.eligible" class="acct-error" role="alert">{{ driveOauth2.reason }}</p>
-          <UhdButton variant="primary" :disabled="!driveOauth2.eligible || drive2Starting" @click="handleBindDrive2">
+          <AxButton variant="primary" :disabled="!driveOauth2.eligible || drive2Starting" @click="handleBindDrive2">
             {{ drive2Starting ? '正在打开授权…' : '绑定谷歌盘' }}
-          </UhdButton>
+          </AxButton>
           <p class="dev-tip">用上面填的名字绑定：点绑定后会在新窗口打开 Google 授权页，点同意后关掉那个窗口、回到本页，列表会自动刷新，没出现再点“刷新列表”。授权页本身不是本站页面，账号密码只交给 Google。</p>
         </template>
       </div>
@@ -218,7 +218,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { HardDrive, Layers, RefreshCw } from 'lucide-vue-next'
 import PcEntryRow from './PcEntryRow.vue'
-import UhdButton from '@/components/uhd/UhdButton.vue'
+import AxButton from '@/components/ax/AxButton.vue'
 import {
   poolContributionApi,
   storageBindingApi,
@@ -563,15 +563,15 @@ defineExpose({
 </script>
 
 <style scoped>
-/* 展开面板与行：状态行模具（说明书 2.6）——1px --uhd-l-divider 分隔、
-   状态=圆点+文字、操作=白底灰边小胶囊、主按钮=UhdButton 彩虹边框胶囊；
+/* 展开面板与行：状态行模具（说明书 2.6）——1px --ax-l-divider 分隔、
+   状态=圆点+文字、操作=白底灰边小胶囊、主按钮=AxButton 彩虹边框胶囊；
    加载态=旋转圈+灰字（1.6）、空态=虚线卡（2.7） */
 .pc-expand {
-  border-top: var(--uhd-border-w) solid var(--uhd-l-divider);
+  border-top: var(--ax-border-w) solid var(--ax-l-divider);
   padding: 14px 2px 18px;
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
 }
-.bind-sep { border-top: var(--uhd-border-w) solid var(--uhd-l-divider); }
+.bind-sep { border-top: var(--ax-border-w) solid var(--ax-l-divider); }
 .prov-tools {
   display: flex;
   align-items: flex-start;
@@ -581,9 +581,9 @@ defineExpose({
 }
 .prov-desc {
   margin: 0;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   line-height: 1.6;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 .sx-mini-btn {
   display: inline-flex;
@@ -593,12 +593,12 @@ defineExpose({
   height: 36px;
   min-height: 36px;
   padding: 0 16px;
-  background: var(--uhd-l-surface);
-  border: var(--uhd-border-w) solid var(--uhd-l-border);
-  border-radius: var(--uhd-radius-pill);
-  color: var(--uhd-l-text);
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-medium);
+  background: var(--ax-l-surface);
+  border: var(--ax-border-w) solid var(--ax-l-border);
+  border-radius: var(--ax-radius-pill);
+  color: var(--ax-l-text);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-medium);
   cursor: pointer;
 }
 .sx-mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -607,17 +607,17 @@ defineExpose({
   align-items: center;
   gap: 10px;
   padding: 18px 0;
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-caption);
+  color: var(--ax-l-text-2);
 }
 .sx-spin {
   width: 18px;
   height: 18px;
   flex: none;
   border-radius: 50%;
-  border: 2px solid var(--uhd-l-divider);
-  border-top-color: var(--uhd-l-text-2);
-  animation: uhd-spin 0.8s linear infinite;
+  border: 2px solid var(--ax-l-divider);
+  border-top-color: var(--ax-l-text-2);
+  animation: ax-spin 0.8s linear infinite;
 }
 .sx-err {
   display: flex;
@@ -628,19 +628,19 @@ defineExpose({
   padding: 14px 16px;
   border: 1px dashed #d4d4d8;
   border-radius: 16px;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   line-height: 1.6;
-  color: var(--uhd-l-text-2);
-  font-family: var(--uhd-font-sans);
+  color: var(--ax-l-text-2);
+  font-family: var(--ax-font-sans);
 }
 .sx-empty {
   padding: 26px 20px;
   border: 1px dashed #d4d4d8;
   border-radius: 16px;
   text-align: center;
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   line-height: 1.6;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 .sx-empty--left { text-align: left; }
 .sx-empty p { margin: 0 0 8px; }
@@ -652,7 +652,7 @@ defineExpose({
   min-height: 64px;
   padding: 10px 0;
 }
-.dev-row + .dev-row { border-top: var(--uhd-border-w) solid var(--uhd-l-divider); }
+.dev-row + .dev-row { border-top: var(--ax-border-w) solid var(--ax-l-divider); }
 .dev-main {
   display: flex;
   flex-direction: column;
@@ -661,16 +661,16 @@ defineExpose({
   flex: 1;
 }
 .dev-name {
-  font-size: var(--uhd-fs-body);
-  font-weight: var(--uhd-fw-semibold);
-  color: var(--uhd-l-text);
+  font-size: var(--ax-fs-body);
+  font-weight: var(--ax-fw-semibold);
+  color: var(--ax-l-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .dev-meta {
-  font-size: var(--uhd-fs-aux);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-aux);
+  color: var(--ax-l-text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -681,73 +681,73 @@ defineExpose({
   align-items: center;
   gap: 7px;
   flex: none;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   white-space: nowrap;
 }
 .sx-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.sx-status--ok { color: var(--uhd-success); }
-.sx-status--ok .sx-dot { background: var(--uhd-dot-ok); }
-.sx-status--idle { color: var(--uhd-l-text-2); }
-.sx-status--idle .sx-dot { background: var(--uhd-dot-idle); }
-.sx-status--warn { color: var(--uhd-warn-text-2); }
-.sx-status--warn .sx-dot { background: var(--uhd-dot-doing); }
-.sx-status--bad { color: var(--uhd-danger); }
-.sx-status--bad .sx-dot { background: var(--uhd-dot-bad); }
+.sx-status--ok { color: var(--ax-success); }
+.sx-status--ok .sx-dot { background: var(--ax-dot-ok); }
+.sx-status--idle { color: var(--ax-l-text-2); }
+.sx-status--idle .sx-dot { background: var(--ax-dot-idle); }
+.sx-status--warn { color: var(--ax-warn-text-2); }
+.sx-status--warn .sx-dot { background: var(--ax-dot-doing); }
+.sx-status--bad { color: var(--ax-danger); }
+.sx-status--bad .sx-dot { background: var(--ax-dot-bad); }
 .dev-remove {
   flex: none;
   height: 36px;
   min-height: 36px;
   padding: 0 16px;
-  background: var(--uhd-l-surface);
-  border: var(--uhd-border-w) solid var(--uhd-l-border);
-  border-radius: var(--uhd-radius-pill);
-  color: var(--uhd-l-text);
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-medium);
+  background: var(--ax-l-surface);
+  border: var(--ax-border-w) solid var(--ax-l-border);
+  border-radius: var(--ax-radius-pill);
+  color: var(--ax-l-text);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-medium);
   white-space: nowrap;
   cursor: pointer;
 }
 .dev-remove:disabled { opacity: 0.5; cursor: not-allowed; }
-.dev-remove.confirming { color: var(--uhd-danger); border-color: var(--uhd-danger); font-weight: var(--uhd-fw-semibold); }
+.dev-remove.confirming { color: var(--ax-danger); border-color: var(--ax-danger); font-weight: var(--ax-fw-semibold); }
 .dev-tip {
   margin: 12px 0 0;
   padding-top: 12px;
-  border-top: var(--uhd-border-w) solid var(--uhd-l-divider);
-  font-size: var(--uhd-fs-aux);
+  border-top: var(--ax-border-w) solid var(--ax-l-divider);
+  font-size: var(--ax-fs-aux);
   line-height: 1.6;
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
-.dev-tip a { color: var(--uhd-l-link); }
+.dev-tip a { color: var(--ax-l-link); }
 .acct-field { margin-top: 16px; }
 .acct-label {
   display: block;
   margin-bottom: 8px;
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-l-text-2);
+  font-size: var(--ax-fs-caption);
+  color: var(--ax-l-text-2);
 }
 .acct-field input {
   width: 100%;
   height: 46px;
   padding: 0 14px;
-  background: var(--uhd-l-input-bg);
-  border: var(--uhd-border-w) solid var(--uhd-l-border);
-  border-radius: var(--uhd-radius-input);
-  color: var(--uhd-l-text);
+  background: var(--ax-l-input-bg);
+  border: var(--ax-border-w) solid var(--ax-l-border);
+  border-radius: var(--ax-radius-input);
+  color: var(--ax-l-text);
   font-size: 16px;
   outline: none;
   box-sizing: border-box;
 }
-.acct-field input:focus { border-color: var(--uhd-l-text-3); }
+.acct-field input:focus { border-color: var(--ax-l-text-3); }
 .acct-error {
   margin: 12px 0 0;
   padding: 10px 14px;
   background: rgba(220, 38, 38, 0.07);
   border-radius: 12px;
-  color: var(--uhd-danger);
-  font-size: var(--uhd-fs-aux);
+  color: var(--ax-danger);
+  font-size: var(--ax-fs-aux);
   line-height: 1.6;
 }
-.pc-expand :deep(.uhd-btn) { margin-top: 14px; }
+.pc-expand :deep(.ax-btn) { margin-top: 14px; }
 /* 公共贡献池块（PR-4）：挂在每个绑定行下方 */
 .pool-block {
   margin: 4px 0 12px;
@@ -761,17 +761,17 @@ defineExpose({
   gap: 10px;
   flex-wrap: wrap;
 }
-.pool-text { flex: 1; min-width: 200px; font-size: var(--uhd-fs-aux); color: var(--uhd-l-text-2); line-height: 1.6; }
-.pool-note { font-size: var(--uhd-fs-aux); color: var(--uhd-l-text-3); }
+.pool-text { flex: 1; min-width: 200px; font-size: var(--ax-fs-aux); color: var(--ax-l-text-2); line-height: 1.6; }
+.pool-note { font-size: var(--ax-fs-aux); color: var(--ax-l-text-3); }
 .pool-faq-toggle {
   margin-top: 8px;
   padding: 0;
   background: none;
   border: none;
-  font-size: var(--uhd-fs-aux);
-  color: var(--uhd-l-link);
+  font-size: var(--ax-fs-aux);
+  color: var(--ax-l-link);
   cursor: pointer;
 }
-.pool-faq { margin-top: 6px; font-size: var(--uhd-fs-aux); color: var(--uhd-l-text-3); line-height: 1.6; }
+.pool-faq { margin-top: 6px; font-size: var(--ax-fs-aux); color: var(--ax-l-text-3); line-height: 1.6; }
 .pool-faq p { margin: 0; }
 </style>

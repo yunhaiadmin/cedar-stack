@@ -170,7 +170,7 @@
 
 <script setup lang="ts">
 /**
- * 购流量弹窗（2026-11-15 照 UHDNow 录屏逐帧对齐）：
+ * 购流量弹窗（2026-11-15 照 参考站 录屏逐帧对齐）：
  * - 头部：琥珀图标 +「购买流量包 / 临时补充流量」；当前流量卡
  *   （剩余 % + 已用/共 GB 两位小数）；分段页签默认「余额购买」。
  * - 余额购买：自由输入 GB（最低 100）+ 快捷 chips → 预览（本次
@@ -536,7 +536,7 @@ async function onBalanceConfirmClick() {
   background: var(--tq-seg-on);
   border-color: var(--tq-seg-on-edge);
   opacity: 1;
-  box-shadow: var(--uhd-shadow-tab);
+  box-shadow: var(--ax-shadow-tab);
 }
 .tq-body { padding-top: 12px; }
 
@@ -582,7 +582,7 @@ async function onBalanceConfirmClick() {
   padding: 0 20px;
   border-radius: 999px;
   border: 1.5px solid transparent;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
   color: #ffffff;
   font-size: 14.5px;
   font-weight: 600;
@@ -596,8 +596,8 @@ async function onBalanceConfirmClick() {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: var(--uhd-rainbow-border-w);
-  background: var(--uhd-rainbow);
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -605,7 +605,7 @@ async function onBalanceConfirmClick() {
   pointer-events: none;
 }
 html[data-theme='light'] .tq-preview-btn {
-  background: var(--uhd-rainbow-soft);
+  background: var(--ax-rainbow-soft);
   color: #111111;
 }
 .tq-preview-btn:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -711,10 +711,10 @@ html:not([data-theme='light']) .tq-error { color: #f87171; }
   font-weight: 700;
   color: #ffffff;
   cursor: pointer;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
-  box-shadow: var(--uhd-shadow-sheet);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
+  box-shadow: var(--ax-shadow-sheet);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -728,8 +728,8 @@ html:not([data-theme='light']) .tq-error { color: #f87171; }
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: var(--uhd-rainbow-border-w);
-  background: var(--uhd-rainbow);
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -737,11 +737,11 @@ html:not([data-theme='light']) .tq-error { color: #f87171; }
   pointer-events: none;
 }
 html[data-theme='light'] .tq-confirm {
-  background: var(--uhd-rainbow-soft);
+  background: var(--ax-rainbow-soft);
   color: #111111;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    var(--uhd-shadow-card-l);
+    var(--ax-shadow-card-l);
 }
 .tq-preview .tq-confirm { margin-top: 12px; }
 .tq-confirm:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -756,11 +756,11 @@ html[data-theme='light'] .tq-confirm {
 .tq-chip:active,
 .tq-preview-btn:active:not(:disabled),
 .tq-close:active {
-  transform: scale(var(--uhd-press-scale));
+  transform: scale(var(--ax-press-scale));
   opacity: 0.88;
 }
 .tq-pkg, .tq-tab, .tq-chip, .tq-preview-btn, .tq-close {
-  transition: transform var(--uhd-press-dur) var(--uhd-ease-spring), opacity 0.12s ease;
+  transition: transform var(--ax-press-dur) var(--ax-ease-spring), opacity 0.12s ease;
 }
 .tq-spinner {
   width: 15px;
