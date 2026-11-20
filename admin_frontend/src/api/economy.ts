@@ -41,7 +41,9 @@ export interface OrderRow {
 export interface InvitationRow {
   id: number
   inviter: string
+  inviter_id?: number
   invitee: string
+  invitee_id?: number
   created_at: string | null
 }
 
@@ -245,8 +247,8 @@ export const updateCouponSettings = (data: { reserve_hours?: number }) =>
 
 // ==================== 邀请 ====================
 
-export const fetchInvitations = (params: { limit?: number } = {}) =>
-  get<{ records: InvitationRow[] }>('/economy/invitations', params)
+export const fetchInvitations = (params: { limit?: number; inviter_id?: number } = {}) =>
+  get<{ total?: number; records: InvitationRow[] }>('/economy/invitations', params)
 
 // ==================== 经济设置 ====================
 

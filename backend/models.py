@@ -1462,6 +1462,37 @@ class InviteRebateAccrual(Base):
     invitee = relationship("WebUser", foreign_keys=[invitee_id])
 
 
+class InvitePromoterProfile(Base):
+    """推广者档案（AFF 后台管理，2026-11-20）：按 user_id 一人一行。
+
+    只收三件事：专属返利比例覆盖、停用标记、管理员备注。没有档案行
+    （或覆盖为空）＝ 完全走全局口径，存量用户行为不变。
+
+    - ``rebate_percent_override``：非空时返利计提以它替代全局
+      tiered/flat 的比例口径（整笔一律按覆盖比例，封顶照旧），
+      读/写两侧在 backend/invite_promoter.py 与 invite_rebate.py；
+    - ``is_disabled``：停用后其邀请码不再接受新注册绑定，且此后
+      被邀请人付费不再计提返利；已入账不追回，可恢复；
+    - ``updated_by``：最后保存的管理员 WebUser.id（审计另走 AdminLog）。
+    """
+    __tablename__ = 'invite_promoter_profiles'
+
+    __table_args__ = (
+        Index('idx_invite_promoter_user', 'user_id', unique=True),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
+    rebate_percent_override = Column(Integer, nullable=True)
+    is_disabled = Column(Boolean, default=False, nullable=False)
+    note = Column(Text, default="")
+    updated_by = Column(Integer)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    user = relationship("WebUser")
+
+
 class InviteTrialCode(Base):
     """福利试用码（2026-11-15 机制改版，照友站「生成试用码」）：邀请人
     主动生成、好友凭码领取试用订阅。

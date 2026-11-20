@@ -1,7 +1,8 @@
 /** 邀请总览 API（全部走 /api/admin/invite/*，2026-11-14 邀请全套单新增）
  * 返利比例/模式/分档阈值等钱包键在「系统设置 → 钱包」里改（钱包批 1），
- * 本文件只管总览、返利明细、补入账与福利邀请（送试用）策略。 */
-import { get, post, put } from '@/utils/request'
+ * 本文件只管总览、返利明细、补入账与福利邀请（送试用）策略。
+ * 2026-11-20 补推广者（AFF）汇总/档案/导出（/promoters*）。 */
+import { get, getBlob, post, put } from '@/utils/request'
 
 const E = '/invite'
 
@@ -86,3 +87,53 @@ export const updateTrialPolicy = (data: {
   invite_welfare_monthly_limit?: number
   invite_welfare_min_paid_fen?: number
 }) => put<{ success: boolean; applied: Record<string, string>; policy: InviteTrialPolicy }>(`${E}/trial-policy`, data)
+
+// ==================== 推广者（AFF） ====================
+
+/** 推广者汇总行：金额为美元字符串（两位小数），口径见后端 invite_promoter */
+export interface InvitePromoterRow {
+  user_id: number
+  username: string
+  invited_count: number
+  paid_invitees: number
+  total_paid: string
+  rebate_credited: string
+  rebate_pending: string
+  rebate_total: string
+  /** 当前生效费率（%）：专属覆盖优先，否则全局基础比例 */
+  rate_percent: number
+  rate_source: 'promoter' | 'global'
+  rate_mode: 'flat' | 'tiered'
+  rebate_percent_override: number | null
+  is_disabled: boolean
+  note: string
+  updated_at: string | null
+}
+
+export interface PromoterQuery {
+  search?: string
+  sort?: string
+  order?: string
+  page?: number
+  page_size?: number
+  [key: string]: unknown
+}
+
+export const fetchInvitePromoters = (params: PromoterQuery = {}) =>
+  get<{ total: number; page: number; page_size: number; promoters: InvitePromoterRow[] }>(
+    `${E}/promoters`, params)
+
+export const updateInvitePromoter = (
+  userId: number,
+  data: { rebate_percent_override: number | null; is_disabled: boolean; note: string },
+) => put<{ success: boolean; promoter: InvitePromoterRow }>(`${E}/promoters/${userId}`, data)
+
+/** 汇总 CSV 导出：按当前筛选/排序导出全部（getBlob 不带 params，手拼查询串） */
+export const exportInvitePromotersCsv = (params: PromoterQuery = {}) => {
+  const qs = new URLSearchParams()
+  if (params.search) qs.set('search', params.search)
+  if (params.sort) qs.set('sort', params.sort)
+  if (params.order) qs.set('order', params.order)
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return getBlob(`${E}/promoters/export${suffix}`)
+}

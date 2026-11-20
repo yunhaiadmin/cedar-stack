@@ -37,11 +37,20 @@ from backend.notifications import notify_admin_event_quiet
 @admin_router.get("/economy/invitations")
 def economy_list_invitations(
     limit: int = 100,
+    inviter_id: int | None = None,
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """邀请记录列表（谁邀请了谁、奖励多少）"""
-    records = db.query(models.InvitationRecord).order_by(
+    """邀请记录列表（谁邀请了谁、奖励多少）。
+
+    ``inviter_id`` 可选过滤：推广者汇总下钻看某个邀请人的明细用；
+    不传与既有行为一致。``total`` 为过滤后的记录总数（不受 limit 截断）。
+    """
+    q = db.query(models.InvitationRecord)
+    if inviter_id is not None:
+        q = q.filter(models.InvitationRecord.inviter_id == inviter_id)
+    total = q.count()
+    records = q.order_by(
         models.InvitationRecord.created_at.desc()
     ).limit(min(limit, 200)).all()
 
@@ -49,11 +58,13 @@ def economy_list_invitations(
     users = {u.id: u.username for u in db.query(models.WebUser).filter(
         models.WebUser.id.in_(user_ids)).all()} if user_ids else {}
 
-    return {"records": [
+    return {"total": total, "records": [
         {
             "id": r.id,
             "inviter": users.get(r.inviter_id, "未知"),
+            "inviter_id": r.inviter_id,
             "invitee": users.get(r.invitee_id, "未知"),
+            "invitee_id": r.invitee_id,
             "created_at": r.created_at.isoformat() if r.created_at else None,
         }
         for r in records
