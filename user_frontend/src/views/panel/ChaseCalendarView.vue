@@ -12,6 +12,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import StreamShell from '@/components/stream/StreamShell.vue'
 import StreamPosterCard from '@/components/stream/StreamPosterCard.vue'
+import { posterBlurHashOf } from '@/utils/blurhash'
 import { posterUrl } from '@/api/emby'
 import {
   chaseCalendarApi,
@@ -258,6 +259,7 @@ onMounted(() => {
               :meta="metaOf(item)"
               :rating="item.CommunityRating ?? null"
               :image="posterUrl(item, 456)"
+              :blur-hash="posterBlurHashOf(item)"
               :to="`/media/${item.Id}`"
             />
           </div>

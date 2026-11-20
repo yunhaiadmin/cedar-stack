@@ -1252,6 +1252,15 @@ def _auto_migrate():
         ("coupon_codes", [
             ("plan_id", "INTEGER", "NULL"),
         ]),
+        # BlurHash 占位（2026-11-20 封面三项之三）：emby_items 加
+        # poster_blur_hash / backdrop_blur_hash。老库补列后为 NULL
+        # （= 还没算），janitor 的 blurhash_patrol 从本地图逐批补算；
+        # 补齐前列表接口下发 null、前端不渲染占位，行为与升级前一致。
+        # 末尾追加。
+        ("emby_items", [
+            ("poster_blur_hash", "VARCHAR(64)", "NULL"),
+            ("backdrop_blur_hash", "VARCHAR(64)", "NULL"),
+        ]),
     ]
 
     _newly_added_columns: list[tuple[str, str]] = []

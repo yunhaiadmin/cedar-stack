@@ -563,6 +563,8 @@ export interface RecentAddedItem {
   item_type: string
   production_year?: number | null
   poster_url?: string | null
+  /** BlurHash 占位（后端落盘时算出，未算/无图为 null） */
+  poster_blur_hash?: string | null
   date_added?: string | null
 }
 

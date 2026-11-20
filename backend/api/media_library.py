@@ -107,6 +107,7 @@ def _serialize_cursor_item(item, db) -> dict:
         "item_type": item.item_type,
         "production_year": item.production_year,
         "poster_url": portal_poster_url(item, db),
+        "poster_blur_hash": getattr(item, "poster_blur_hash", None) or None,
         "date_added": item.date_added.isoformat() if getattr(item, "date_added", None) else None,
     }
 
@@ -362,6 +363,7 @@ def hidden_resume_items(
             "season_number": item.season_number,
             "episode_number": item.episode_number,
             "poster_url": portal_poster_url(display, db),
+            "poster_blur_hash": getattr(display, "poster_blur_hash", None) or None,
             "last_played_at": umd.last_played_at.isoformat() if umd.last_played_at else None,
         })
     return {"items": out}
@@ -468,6 +470,7 @@ def hidden_next_up_items(
             "season_number": cur.season_number,
             "episode_number": cur.episode_number,
             "poster_url": portal_poster_url(series, db),
+            "poster_blur_hash": getattr(series, "poster_blur_hash", None) or None,
             "dismissed_at": row.created_at.isoformat() if row.created_at else None,
         })
     return {"items": out}

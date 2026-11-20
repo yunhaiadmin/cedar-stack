@@ -20,6 +20,7 @@ import StreamShell from '@/components/stream/StreamShell.vue'
 import StreamHero, { type StreamHeroItem } from '@/components/stream/StreamHero.vue'
 import StreamRow from '@/components/stream/StreamRow.vue'
 import StreamPosterCard from '@/components/stream/StreamPosterCard.vue'
+import { posterBlurHashOf } from '@/utils/blurhash'
 import PlayerSchemeSheet from '@/components/panel/PlayerSchemeSheet.vue'
 import { embyApi, type HomeSection, type PortalResumeItem } from '@/api'
 import {
@@ -36,7 +37,7 @@ interface PosterRowData {
   title: string
   count: number | null
   moreTo?: string
-  items: Array<{ id: string; title: string; meta: string; rating: number | null; image: string }>
+  items: Array<{ id: string; title: string; meta: string; rating: number | null; image: string; blurHash?: string | null }>
 }
 
 /* KeepAlive include 按组件 name 匹配：显式声明，保活命中不靠文件名推断 */
@@ -224,6 +225,7 @@ function toPoster(item: EmbyItem) {
     meta: metaOf(item),
     rating: item.CommunityRating ?? null,
     image: posterUrl(item, 520),
+    blurHash: posterBlurHashOf(item),
   }
 }
 
@@ -376,6 +378,7 @@ function applySections(res: { sections: HomeSection[] } | undefined) {
       name: string
       production_year?: number | null
       poster_url?: string | null
+      poster_blur_hash?: string | null
     }>
     if (!items.length) continue
     out.push({
@@ -391,6 +394,7 @@ function applySections(res: { sections: HomeSection[] } | undefined) {
           meta: it.production_year ? String(it.production_year) : '',
           rating: null,
           image: it.poster_url ? imageAuthUrl(it.poster_url, 520) : '',
+          blurHash: it.poster_blur_hash ?? null,
         })).filter((it) => it.id),
       },
     })
@@ -922,6 +926,7 @@ onActivated(() => {
               :meta="item.meta"
               :rating="item.rating"
               :image="item.image"
+              :blur-hash="item.blurHash ?? null"
               :to="`/media/${item.id}`"
             />
           </StreamRow>
@@ -947,6 +952,7 @@ onActivated(() => {
             :meta="item.meta"
             :rating="item.rating"
             :image="item.image"
+            :blur-hash="item.blurHash ?? null"
             :to="`/media/${item.id}`"
           />
         </StreamRow>

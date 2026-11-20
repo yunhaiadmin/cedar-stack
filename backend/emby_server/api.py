@@ -781,6 +781,45 @@ def _provider_ids(item):
     }
 
 
+def _image_blur_hashes(item: em.MediaItem, db: Session) -> dict:
+    """ImageBlurHashes 下发（封面三项之三）：有哈希才填，tag 恒 "1"
+    （与 ImageTags 对齐）。取哈希的回退链与出图链（_image_chain）
+    同口径：条目自身 → 季 → 剧——自身没图的那类才取父行哈希，保证
+    占位色与最终真图一致；自身有图但哈希还没算（巡检未跑到）时
+    不拿父行凑数。父行走 db.get（列表预取后命中 identity map、
+    零额外 SQL）＋软删除可见性判定，与 _image_chain 一致。
+    """
+    poster_hash = getattr(item, "poster_blur_hash", None)
+    backdrop_hash = getattr(item, "backdrop_blur_hash", None)
+    if db is not None and item.item_type in ("episode", "season"):
+        need_poster = not poster_hash and not (
+            item.poster_path or item.primary_image_url)
+        need_backdrop = not backdrop_hash and not (
+            item.backdrop_path or item.backdrop_image_url)
+        if need_poster or need_backdrop:
+            parents: list = []
+            if item.parent_id:
+                parent = db.get(em.MediaItem, item.parent_id)
+                if parent is not None and _visible_in_session(parent):
+                    parents.append(parent)
+            series = item.series
+            if series is not None and series not in parents:
+                parents.append(series)
+            for parent in parents:
+                if need_poster and not poster_hash:
+                    poster_hash = getattr(parent, "poster_blur_hash", None)
+                if need_backdrop and not backdrop_hash:
+                    backdrop_hash = getattr(parent, "backdrop_blur_hash", None)
+                if poster_hash and backdrop_hash:
+                    break
+    out: dict = {}
+    if poster_hash:
+        out["Primary"] = {"1": poster_hash}
+    if backdrop_hash:
+        out["Backdrop"] = {"1": backdrop_hash}
+    return out
+
+
 def _item_dto(item: em.MediaItem, base: str, user_id: int, db: Session, full: bool = False,
               api_key: str = "", auth_qs: str = "",
               series_names: dict | None = None) -> dict:
@@ -840,8 +879,9 @@ def _item_dto(item: em.MediaItem, base: str, user_id: int, db: Session, full: bo
         } if (item.poster_path or item.primary_image_url
                or (item.item_type in ("episode", "season")
                    and _first_image(item, "Primary", db))) else {},
-        # 官方 AttachBasicFields 无条件置空字典（有模糊图时才填）；三方客户端裸读
-        "ImageBlurHashes": {},
+        # 官方 AttachBasicFields 无条件置空字典（有模糊图时才填）；三方客户端裸读。
+        # 本仓已落 BlurHash（落盘时算、巡检补齐），按 _image_blur_hashes 对齐下发。
+        "ImageBlurHashes": _image_blur_hashes(item, db),
         "ProviderIds": _provider_ids(item),
         "UserData": _user_data_dto(umd, item.guid, _run_time_ticks(item)),
         "MediaSources": [],

@@ -4507,6 +4507,16 @@ def _janitor_loop() -> None:
                     nib = 0
                 if nib:
                     logger.info("补全 janitor 图片补下载 %d 条", nib)
+                # BlurHash 补算（封面三项之三）：图落盘后占位哈希的存量
+                # 补齐，纯本地 CPU 不下载；稳态下候选为零、几乎零开销。
+                try:
+                    nbh = blurhash_patrol(db)
+                except Exception:
+                    logger.warning("补全 janitor BlurHash 补算巡检异常",
+                                   exc_info=True)
+                    nbh = 0
+                if nbh:
+                    logger.info("补全 janitor BlurHash 补算 %d 条", nbh)
                 # Drive 链接分享巡检（2026-10-19 播放事故治本）：主路径漏网/失败兜底。
                 # 默认开、无面板开关；每 120 轮（约 2 小时）一次、单轮硬上限 150 文件。
                 if patrol_round % _DRIVE_SHARE_PATROL_EVERY_ROUNDS == 0:
@@ -5341,6 +5351,8 @@ def image_backlog_patrol(db) -> int:
         if row.backdrop_image_url and not row.backdrop_path:
             urls.append(row.backdrop_image_url)
     image_store.prewarm(urls)
+    from backend.emby_server import blurhash_util
+
     filled = 0
     for row in batch:
         got = False
@@ -5350,12 +5362,19 @@ def image_backlog_patrol(db) -> int:
             if local:
                 row.poster_path = local
                 got = True
+                # 落盘即算占位哈希（算不出不影响落盘结果）
+                blur = blurhash_util.encode_from_file(local)
+                if blur:
+                    row.poster_blur_hash = blur
         if row.backdrop_image_url and not row.backdrop_path:
             local = image_store.localize(row.backdrop_image_url,
                                          allow_download=False)
             if local:
                 row.backdrop_path = local
                 got = True
+                blur = blurhash_util.encode_from_file(local)
+                if blur:
+                    row.backdrop_blur_hash = blur
         if got:
             filled += 1
         else:
@@ -5363,6 +5382,57 @@ def image_backlog_patrol(db) -> int:
     if filled:
         db.commit()
     return filled
+
+
+#: BlurHash 补算巡检单轮上限：纯本地 CPU（小图 DCT），与补下载同量级。
+_BLURHASH_PATROL_PER_ROUND = 60
+
+
+def blurhash_patrol(db) -> int:
+    """BlurHash 补算巡检：有本地图、缺哈希的条目逐批从本地文件算哈希回写。
+
+    与 image_backlog_patrol 分工：那支管「图落盘」（带播放信号门），
+    这支管「哈希补齐」——纯本地读文件算 DCT，不下载、不看信号，
+    覆盖所有落盘路径（预热/巡检/取图自愈/定向修复）留下的存量。
+    新入库优先（id 倒序），单轮上限 ``_BLURHASH_PATROL_PER_ROUND`` 条；
+    本地文件缺失的行跳过不写（取图自愈重新落盘后下一轮再算）。
+    返回本轮实际补上哈希的条数。
+    """
+    from sqlalchemy import and_, or_
+
+    from backend.emby_server import blurhash_util
+
+    poster_missing = and_(em.MediaItem.poster_path.isnot(None),
+                           em.MediaItem.poster_path != "",
+                           em.MediaItem.poster_blur_hash.is_(None))
+    backdrop_missing = and_(em.MediaItem.backdrop_path.isnot(None),
+                             em.MediaItem.backdrop_path != "",
+                             em.MediaItem.backdrop_blur_hash.is_(None))
+    rows = (db.query(em.MediaItem)
+            .filter(em.MediaItem.deleted_at.is_(None),
+                    em.MediaItem.merged_into_id.is_(None),
+                    or_(poster_missing, backdrop_missing))
+            .order_by(em.MediaItem.id.desc())
+            .limit(_BLURHASH_PATROL_PER_ROUND)
+            .all())
+    hashed = 0
+    for row in rows:
+        got = False
+        if row.poster_path and row.poster_blur_hash is None:
+            blur = blurhash_util.encode_from_file(row.poster_path)
+            if blur:
+                row.poster_blur_hash = blur
+                got = True
+        if row.backdrop_path and row.backdrop_blur_hash is None:
+            blur = blurhash_util.encode_from_file(row.backdrop_path)
+            if blur:
+                row.backdrop_blur_hash = blur
+                got = True
+        if got:
+            hashed += 1
+    if hashed:
+        db.commit()
+    return hashed
 
 
 def none_stock_stats(db) -> dict:

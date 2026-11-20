@@ -355,6 +355,12 @@ class MediaItem(Base):
     backdrop_path = Column(String(1024))
     primary_image_url = Column(String(1024))  # TMDB 刮削到的远程图
     backdrop_image_url = Column(String(1024))
+    # BlurHash 占位（落盘时由 blurhash_util 从本地文件算出，随列表
+    # 接口下发，前端/EA 客户端在真图加载前渲染模糊占位）。NULL = 还
+    # 没算（janitor 的 blurhash_patrol 会补），与「无图」靠 poster_path
+    # 是否为空区分，本列不单独表达有无图。
+    poster_blur_hash = Column(String(64))
+    backdrop_blur_hash = Column(String(64))
 
     # 状态
     last_probed_at = Column(DateTime)  # 上次 ffprobe 时间，供刮削策略判断是否重探
