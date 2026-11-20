@@ -578,13 +578,13 @@ function shortDate(s: string | null): string {
   color: var(--au-primary);
 }
 .realm-title { display: inline-flex; flex-direction: column; min-width: 0; line-height: 1.3; }
-.realm-name { font-size: var(--uhd-fs-lead); color: var(--au-text); overflow-wrap: anywhere; }
-.realm-slug { font-size: var(--uhd-fs-micro); font-weight: 400; letter-spacing: 0; color: var(--au-text-4); }
+.realm-name { font-size: var(--ax-fs-lead); color: var(--au-text); overflow-wrap: anywhere; }
+.realm-slug { font-size: var(--ax-fs-micro); font-weight: 400; letter-spacing: 0; color: var(--au-text-4); }
 .realm-badges { display: flex; gap: 6px; flex-wrap: wrap; }
 
 .realm-body { display: flex; flex-direction: column; gap: 12px; }
-.realm-desc { margin: 0; font-size: var(--uhd-fs-aux); line-height: 1.6; color: var(--au-text-2); }
-.realm-url { margin: 0; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); word-break: break-all; }
+.realm-desc { margin: 0; font-size: var(--ax-fs-aux); line-height: 1.6; color: var(--au-text-2); }
+.realm-url { margin: 0; font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); word-break: break-all; }
 .realm-url code { color: var(--au-text-2); }
 .realm-url-missing { color: var(--au-warning); }
 
@@ -599,40 +599,40 @@ function shortDate(s: string | null): string {
   border-radius: var(--au-r-md);
 }
 .realm-stats div { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
-.realm-stats dt { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
-.realm-stats dd { margin: 0; font-size: var(--uhd-fs-aux); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--au-text); }
+.realm-stats dt { font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); }
+.realm-stats dd { margin: 0; font-size: var(--ax-fs-aux); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--au-text); }
 
 /* 线路摘要行：只报条数与入口，管理动作都在「线路管理」页 */
 .realm-lines-summary {
   display: flex; align-items: center; gap: 6px;
-  margin: 0; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-2);
+  margin: 0; font-size: var(--ax-fs-aux-sm); color: var(--au-text-2);
 }
 .realm-lines-link {
-  margin-left: auto; font-size: var(--uhd-fs-aux-sm); font-weight: 600;
+  margin-left: auto; font-size: var(--ax-fs-aux-sm); font-weight: 600;
   color: var(--au-primary); text-decoration: none;
 }
 .realm-lines-link:hover { text-decoration: underline; }
 
 .realm-nodes { display: flex; flex-direction: column; gap: 6px; }
-.nodes-head { display: flex; align-items: center; gap: 6px; font-size: var(--uhd-fs-aux-sm); font-weight: 500; color: var(--au-text-3); }
+.nodes-head { display: flex; align-items: center; gap: 6px; font-size: var(--ax-fs-aux-sm); font-weight: 500; color: var(--au-text-3); }
 .node-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.node-list li { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-2); }
+.node-list li { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--ax-fs-aux-sm); color: var(--au-text-2); }
 .node-icon { color: var(--au-text-4); flex-shrink: 0; }
 .node-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--au-text); }
 .node-time { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--au-text-4); }
-.nodes-empty { margin: 0; font-size: var(--uhd-fs-aux-sm); line-height: 1.65; color: var(--au-text-3); }
+.nodes-empty { margin: 0; font-size: var(--ax-fs-aux-sm); line-height: 1.65; color: var(--au-text-3); }
 
 .realm-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .realm-actions__right { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
 .realm-actions .el-button + .el-button { margin-left: 0; }
-.current-hint { font-size: var(--uhd-fs-aux-sm); font-weight: 600; color: var(--au-primary); }
+.current-hint { font-size: var(--ax-fs-aux-sm); font-weight: 600; color: var(--au-primary); }
 
 .badge-warn { background: var(--au-warning-soft); color: var(--au-warning); border-color: var(--au-warning-border); }
 
 /* ---------- 弹窗 ---------- */
-.field-help { margin: 5px 0 0; font-size: var(--uhd-fs-aux-sm); line-height: 1.6; color: var(--au-text-3); }
+.field-help { margin: 5px 0 0; font-size: var(--ax-fs-aux-sm); line-height: 1.6; color: var(--au-text-3); }
 
-.sync-lead, .delete-lead { margin: 0 0 10px; font-size: var(--uhd-fs-aux); line-height: 1.7; color: var(--au-text-2); }
+.sync-lead, .delete-lead { margin: 0 0 10px; font-size: var(--ax-fs-aux); line-height: 1.7; color: var(--au-text-2); }
 .sync-lead code, .delete-lead code { color: var(--au-text); }
 .sync-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .sync-list li {
@@ -647,9 +647,9 @@ function shortDate(s: string | null): string {
 }
 .sync-list li.ok { border-color: var(--au-success-border); }
 .sync-list li.bad { border-color: var(--au-danger-border); }
-.sync-name { font-size: var(--uhd-fs-aux); font-weight: 500; color: var(--au-text); }
-.sync-url { font-size: var(--uhd-fs-aux-sm); word-break: break-all; color: var(--au-text-3); }
-.sync-warn, .sync-msg { flex-basis: 100%; display: flex; align-items: center; gap: 6px; font-size: var(--uhd-fs-aux-sm); line-height: 1.6; }
+.sync-name { font-size: var(--ax-fs-aux); font-weight: 500; color: var(--au-text); }
+.sync-url { font-size: var(--ax-fs-aux-sm); word-break: break-all; color: var(--au-text-3); }
+.sync-warn, .sync-msg { flex-basis: 100%; display: flex; align-items: center; gap: 6px; font-size: var(--ax-fs-aux-sm); line-height: 1.6; }
 .sync-warn { color: var(--au-danger); }
 .sync-msg { color: var(--au-text-3); }
 .delete-stats { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }

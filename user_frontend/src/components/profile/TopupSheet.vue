@@ -470,17 +470,17 @@ async function submit() {
   max-width: 420px;
   max-height: 88vh;
   overflow-y: auto;
-  background: var(--uhd-d-surface-raised);
-  border: 1px solid var(--uhd-glass-border);
+  background: var(--ax-d-surface-raised);
+  border: 1px solid var(--ax-glass-border);
   border-radius: 16px;
   padding: 22px 22px calc(16px + env(safe-area-inset-bottom, 0px));
   color: var(--tq-fg);
-  box-shadow: var(--uhd-shadow-modal);
+  box-shadow: var(--ax-shadow-modal);
   animation: tp-pop-in 0.28s cubic-bezier(0.32, 0.72, 0.28, 1) both;
 }
 html[data-theme='light'] .tp-sheet {
-  background: var(--uhd-l-surface);
-  border-color: var(--uhd-glass-border-l);
+  background: var(--ax-l-surface);
+  border-color: var(--ax-glass-border-l);
 }
 @keyframes tp-pop-in {
   from { transform: translateY(24px); opacity: 0; }

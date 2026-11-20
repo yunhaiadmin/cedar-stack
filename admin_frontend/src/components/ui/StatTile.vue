@@ -112,7 +112,7 @@ const tag = computed(() => (props.to ? RouterLink : 'div'))
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   font-weight: 500;
   letter-spacing: 0.04em;
   color: var(--au-text-3);
@@ -122,7 +122,7 @@ const tag = computed(() => (props.to ? RouterLink : 'div'))
 
 .au-stat__value {
   margin-top: 6px;
-  font-size: var(--uhd-fs-h3);
+  font-size: var(--ax-fs-h3);
   font-weight: 700;
   line-height: 1.1;
   letter-spacing: -0.02em;
@@ -133,7 +133,7 @@ const tag = computed(() => (props.to ? RouterLink : 'div'))
 
 .au-stat__suffix {
   margin-left: 4px;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   font-weight: 500;
   letter-spacing: 0;
   color: var(--au-text-3);
@@ -141,7 +141,7 @@ const tag = computed(() => (props.to ? RouterLink : 'div'))
 
 .au-stat__hint {
   margin-top: 6px;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   line-height: 1.45;
   color: var(--au-text-3);
   overflow-wrap: anywhere;
@@ -170,6 +170,6 @@ const tag = computed(() => (props.to ? RouterLink : 'div'))
 
 @media (max-width: 640px) {
   .au-stat { padding: 14px; gap: 10px; }
-  .au-stat__value { font-size: var(--uhd-fs-h3); }
+  .au-stat__value { font-size: var(--ax-fs-h3); }
 }
 </style>

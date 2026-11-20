@@ -1,7 +1,7 @@
-/* 共享弹窗面令牌（ui/Modal 与 UhdModal 两套共享原语共用）。
+/* 共享弹窗面令牌（ui/Modal 与 AxModal 两套共享原语共用）。
  * 2026-11-18 用户亲令：弹窗一律实色、无玻璃感——面板底改实色
- * surface（深色 var(--uhd-d-surface-raised)、浅色
- * var(--uhd-l-surface)，与普通卡片同面），不用半透底＋backdrop
+ * surface（深色 var(--ax-d-surface-raised)、浅色
+ * var(--ax-l-surface)，与普通卡片同面），不用半透底＋backdrop
  * blur；遮罩只留普通半透暗色、无 blur。沿革：原玻璃配方真源为
  * 购流量弹窗 #233 逐帧标尺（深 rgba(28,28,30,0.55)＋blur 24 /
  * saturate 160＋亮边＋内高光＋大柔影），本轮只换底色并去掉
@@ -13,11 +13,11 @@
  * 弹窗跟随用户外观：默认（无 data-theme）＝深色面，
  * html[data-theme='light']＝浅色面；组件内一律引令牌，
  * 不许再写死面板底色。
- * 由 components/ui/Modal.vue 与 components/uhd/UhdModal.vue 直接
+ * 由 components/ui/Modal.vue 与 components/ax/AxModal.vue 直接
  * import；令牌契约要求定义必须落在被引入的独立样式表里，
  * scoped 样式里的定义不算数。 */
 :root {
-  --modal-glass-bg: var(--uhd-d-surface-raised);
+  --modal-glass-bg: var(--ax-d-surface-raised);
   --modal-glass-edge: rgba(255, 255, 255, 0.24);
   --modal-glass-hi: rgba(255, 255, 255, 0.28);
   --modal-glass-ring: rgba(255, 255, 255, 0.04);
@@ -27,18 +27,18 @@
      rgb(247,248,250) 0.72（选版本弹层浅色实测采样
      rgb(247–248,248–250)）。两档均为固定值、不跟随
      data-theme——组件按自身面的明暗显式选档（选版本弹层以
-     body.uhd-stream-dark 桥接切档）。 */
+     body.ax-stream-dark 桥接切档）。 */
   --modal-scrim-dark: rgba(0, 0, 0, 0.45);
   --modal-scrim-dark-filter: blur(6px);
   --modal-scrim-light: rgba(247, 248, 250, 0.72);
   --modal-scrim-light-filter: blur(16px);
-  /* 面板内文字（UhdModal 作用域翻转 --uhd-l-text 系时引用，
+  /* 面板内文字（AxModal 作用域翻转 --ax-l-text 系时引用，
      与 --tq-fg / --tq-dim 同值） */
   --modal-glass-fg: #f4f4f6;
   --modal-glass-dim: rgba(244, 244, 246, 0.55);
 }
 html[data-theme='light'] {
-  --modal-glass-bg: var(--uhd-l-surface);
+  --modal-glass-bg: var(--ax-l-surface);
   --modal-glass-edge: rgba(17, 17, 17, 0.12);
   --modal-glass-hi: rgba(255, 255, 255, 0.7);
   --modal-glass-ring: rgba(255, 255, 255, 0);

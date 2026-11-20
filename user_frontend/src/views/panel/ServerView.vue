@@ -267,14 +267,14 @@ const growthFoot = computed(() => {
 </script>
 
 <style scoped>
-/* 服务器页（UHD 办事面）：平面分组＋发丝线＋状态行组＋会员卡式服务器卡。
+/* 服务器页（ax 办事面）：平面分组＋发丝线＋状态行组＋会员卡式服务器卡。
    本地主题令牌（--sv-*）定义在同目录 server-view.css（由本文件引入）：
    契约检查只认被引入的样式表，scoped 样式里的定义不作数。 */
 .sv-page {
   min-height: 100dvh;
   background: linear-gradient(180deg, #111213 0%, #09090b 100%);
   color: var(--sv-text);
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
   -webkit-font-smoothing: antialiased;
 }
 .sv-inner {
@@ -288,11 +288,11 @@ const growthFoot = computed(() => {
 .sv-head { padding-bottom: 6px; }
 .sv-title {
   margin: 0;
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
   font-size: 32px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   letter-spacing: -0.01em;
-  line-height: var(--uhd-lh-tight);
+  line-height: var(--ax-lh-tight);
 }
 .sv-sub { margin: 8px 0 0; font-size: 14px; color: var(--sv-text-2); }
 
@@ -300,13 +300,13 @@ const growthFoot = computed(() => {
 .sv-sec { margin-top: 34px; }
 .sv-sec-title {
   margin: 0;
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
   font-size: 24px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   letter-spacing: -0.01em;
 }
 .sv-sec-sub { margin: 6px 0 0; font-size: 14px; color: var(--sv-text-2); }
-.sv-lead { margin: 14px 0 0; font-size: 15px; font-weight: var(--uhd-fw-medium); }
+.sv-lead { margin: 14px 0 0; font-size: 15px; font-weight: var(--ax-fw-medium); }
 .sv-foot { margin: 12px 2px 0; font-size: 13px; color: var(--sv-text-2); }
 
 /* 服务器卡：会员卡模具（说明书 2.5/§3 行 23）——圆角 28、斜向光带＋细斜纹、
@@ -324,7 +324,7 @@ const growthFoot = computed(() => {
   flex-direction: column;
   background:
     linear-gradient(115deg, #2b2d2f 0%, #252629 6%, #2e2e34 12%, #35333d 18%, #3e3e45 24%, #433e4d 29%, #484255 34%, #4f4a5e 39%, #605a76 43%, #655f7d 46%, #716b8e 49%, #79769c 52%, #74759a 57%, #6d7599 62%, #697498 67%, #677598 72%, #5f7898 77%, #4e6781 82%, #445a70 86%, #3f5367 90%, #354556 93%, #313e4c 96%, #1e2328 98%, #161522 100%);
-  box-shadow: var(--uhd-shadow-card-d);
+  box-shadow: var(--ax-shadow-card-d);
   color: #ffffff;
 }
 .sv-card__shine {
@@ -347,7 +347,7 @@ const growthFoot = computed(() => {
   align-items: center;
   gap: 10px;
   font-size: 16px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
 }
 .sv-card__chip {
   display: inline-flex;
@@ -357,7 +357,7 @@ const growthFoot = computed(() => {
   border-radius: 999px;
   background: var(--sv-chip-bg);
   font-size: 12px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
 }
 .sv-card__logo {
   flex: none;
@@ -367,7 +367,7 @@ const growthFoot = computed(() => {
 .sv-card__bottom { position: relative; margin-top: auto; padding-top: 48px; }
 .sv-card__big {
   font-size: 32px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   letter-spacing: -0.01em;
   line-height: 1.15;
 }
@@ -389,7 +389,7 @@ const growthFoot = computed(() => {
 .sv-row__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .sv-row__title {
   font-size: 16px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -397,16 +397,16 @@ const growthFoot = computed(() => {
 .sv-row__desc { font-size: 14px; color: var(--sv-text-2); }
 .sv-row__status { display: inline-flex; align-items: center; gap: 7px; flex: none; font-size: 14px; }
 .sv-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.sv-dot--ok { background: var(--uhd-dot-ok); }
-.sv-dot--idle { background: var(--uhd-dot-idle); }
-.sv-dot--warn { background: var(--uhd-dot-doing); }
-.sv-dot--bad { background: var(--uhd-dot-bad); }
+.sv-dot--ok { background: var(--ax-dot-ok); }
+.sv-dot--idle { background: var(--ax-dot-idle); }
+.sv-dot--warn { background: var(--ax-dot-doing); }
+.sv-dot--bad { background: var(--ax-dot-bad); }
 .sv-row__status-text--ok { color: var(--sv-ok); }
-.sv-row__status-text--warn { color: var(--uhd-warn-text-2); }
-.sv-row__status-text--bad { color: var(--uhd-danger); }
+.sv-row__status-text--warn { color: var(--ax-warn-text-2); }
+.sv-row__status-text--bad { color: var(--ax-danger); }
 .sv-row__status-text--idle,
 .sv-row__status-text--plain { color: var(--sv-text-2); }
-.sv-mono { font-family: var(--uhd-font-mono); font-size: 13px; }
+.sv-mono { font-family: var(--ax-font-mono); font-size: 13px; }
 
 /* 加载态（说明书 1.6：旋转圈＋「正在加载…」灰字） */
 .sv-loading {
@@ -424,7 +424,7 @@ const growthFoot = computed(() => {
   border-radius: 50%;
   border: 2px solid var(--sv-divider);
   border-top-color: var(--sv-text-2);
-  animation: uhd-spin 0.8s linear infinite;
+  animation: ax-spin 0.8s linear infinite;
 }
 
 /* 空态虚线卡（说明书 2.7 形态：虚线边框、圆角 16、居中灰字＋动作钮） */
@@ -461,13 +461,13 @@ const growthFoot = computed(() => {
   border: 1px solid var(--sv-divider);
   background: transparent;
   color: var(--sv-text);
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
   font-size: 14px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   cursor: pointer;
 }
 .sv-retry:disabled { opacity: 0.55; cursor: not-allowed; }
-.sv-retry:focus-visible { outline: 2px solid var(--uhd-l-link); outline-offset: 2px; }
+.sv-retry:focus-visible { outline: 2px solid var(--ax-l-link); outline-offset: 2px; }
 
 /* 浅色覆盖：跟随用户外观（html[data-theme='light']，实测清单 §1） */
 html[data-theme='light'] .sv-page {
@@ -476,7 +476,7 @@ html[data-theme='light'] .sv-page {
 html[data-theme='light'] .sv-card {
   background:
     linear-gradient(115deg, #fcfcfc 0%, #f4f0fa 14%, #ede7f7 25%, #e4dbf5 34%, #d7cdf2 42%, #c9bfef 48%, #c2b9ee 54%, #bdb6ee 59%, #b7b5ef 63%, #b0b6f0 67%, #a8b9f0 70%, #a0bbf1 73%, #d0dff9 76%, #a6c4f4 79%, #d7e6fa 82%, #b7d1f6 85%, #bed7f7 88%, #e1edfb 91%, #ccdff9 94%, #dae8fa 96%, #f2f7fd 98%, #fbfcfd 100%);
-  box-shadow: var(--uhd-shadow-card-lav);
+  box-shadow: var(--ax-shadow-card-lav);
   color: #111111;
 }
 html[data-theme='light'] .sv-card__line { color: #55575c; }

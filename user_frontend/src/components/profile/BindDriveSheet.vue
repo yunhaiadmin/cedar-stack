@@ -24,7 +24,7 @@
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { Check, X } from 'lucide-vue-next'
-import UhdButton from '@/components/uhd/UhdButton.vue'
+import AxButton from '@/components/ax/AxButton.vue'
 import {
   storageBindingApi,
   type DriveOAuth2EntryStatus,
@@ -38,7 +38,7 @@ const props = withDefaults(
   defineProps<{
     open: boolean
     /** 深色面语境（概览页按主题解析值传入）；片库面另由
-     *  body.uhd-stream-dark 桥接，见 bind-drive-sheet.css */
+     *  body.ax-stream-dark 桥接，见 bind-drive-sheet.css */
     dark?: boolean
   }>(),
   { dark: false },
@@ -249,7 +249,7 @@ onBeforeUnmount(() => {
               {{ oauth2.reason }}
             </p>
             <p v-if="formError" class="bds-error" role="alert">{{ formError }}</p>
-            <UhdButton
+            <AxButton
               variant="primary"
               block
               :dark="dark"
@@ -257,7 +257,7 @@ onBeforeUnmount(() => {
               @click="handleBind"
             >
               {{ starting ? '正在打开授权…' : '绑定谷歌盘' }}
-            </UhdButton>
+            </AxButton>
             <p class="bds-tip">
               点绑定后会在新窗口打开 Google 授权页，点同意后关掉那个窗口、回到这里，绑定会自动完成。授权页本身不是本站页面，账号密码只交给 Google。
             </p>
@@ -293,9 +293,9 @@ onBeforeUnmount(() => {
           <p class="bds-desc">
             等了几分钟还没等到绑定。已经在 Google 点了同意的话，关掉这个弹层再打开就会生效；还没同意，可以关掉重来。
           </p>
-          <UhdButton variant="secondary" block :dark="dark" @click="emit('close')">
+          <AxButton variant="secondary" block :dark="dark" @click="emit('close')">
             关闭
-          </UhdButton>
+          </AxButton>
         </template>
       </div>
     </div>
@@ -307,7 +307,7 @@ onBeforeUnmount(() => {
    模糊 6px、卡 max 400、圆角 24、标题 24、右上 × 关闭）；--bds-*
    主题变量定义在同目录 bind-drive-sheet.css（契约只认被引入的
    .css），本块只引用。表单元素数值照设置页绑定表单（输入 46 高 /
-   圆角 --uhd-radius-input、错误=浅红底圆角块）。 */
+   圆角 --ax-radius-input、错误=浅红底圆角块）。 */
 .bds-overlay {
   position: fixed;
   inset: 0;
@@ -317,8 +317,8 @@ onBeforeUnmount(() => {
   justify-content: center;
   padding: 16px;
   background: var(--modal-scrim-dark);
-  animation: uhd-fade-in var(--uhd-dur-fade) var(--uhd-ease-standard);
-  font-family: var(--uhd-font-sans);
+  animation: ax-fade-in var(--ax-dur-fade) var(--ax-ease-standard);
+  font-family: var(--ax-font-sans);
   -webkit-font-smoothing: antialiased;
 }
 .bds-card {
@@ -334,10 +334,10 @@ onBeforeUnmount(() => {
   background: var(--modal-glass-bg);
   border: 1px solid var(--modal-glass-edge);
   color: var(--bds-text);
-  border-radius: var(--uhd-radius-modal);
+  border-radius: var(--ax-radius-modal);
   box-shadow: var(--modal-glass-shadow);
   padding: 28px;
-  animation: uhd-fade-in var(--uhd-dur-fade) var(--uhd-ease-standard);
+  animation: ax-fade-in var(--ax-dur-fade) var(--ax-ease-standard);
 }
 .bds-head {
   display: flex;
@@ -347,8 +347,8 @@ onBeforeUnmount(() => {
 }
 .bds-title {
   margin: 0;
-  font-size: var(--uhd-fs-h3);
-  font-weight: var(--uhd-fw-bold);
+  font-size: var(--ax-fs-h3);
+  font-weight: var(--ax-fw-bold);
   letter-spacing: -0.01em;
   color: var(--bds-text);
 }
@@ -372,7 +372,7 @@ onBeforeUnmount(() => {
 }
 .bds-desc {
   margin: 16px 0 0;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   line-height: 1.7;
   color: var(--bds-sub);
 }
@@ -382,7 +382,7 @@ onBeforeUnmount(() => {
 .bds-label {
   display: block;
   margin-bottom: 8px;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   color: var(--bds-sub);
 }
 .bds-field input {
@@ -390,8 +390,8 @@ onBeforeUnmount(() => {
   height: 46px;
   padding: 0 14px;
   background: var(--bds-input-bg);
-  border: var(--uhd-border-w) solid var(--bds-input-border);
-  border-radius: var(--uhd-radius-input);
+  border: var(--ax-border-w) solid var(--bds-input-border);
+  border-radius: var(--ax-radius-input);
   color: var(--bds-text);
   font-size: 16px;
   outline: none;
@@ -410,7 +410,7 @@ onBeforeUnmount(() => {
   background: var(--bds-error-bg);
   border-radius: 12px;
   color: var(--bds-error-text);
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   line-height: 1.6;
 }
 .bds-retry {
@@ -419,22 +419,22 @@ onBeforeUnmount(() => {
   min-height: 30px;
   padding: 0 14px;
   background: transparent;
-  border: var(--uhd-border-w) solid currentColor;
+  border: var(--ax-border-w) solid currentColor;
   border-radius: 999px;
   color: inherit;
-  font-size: var(--uhd-fs-aux);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-aux);
+  font-weight: var(--ax-fw-semibold);
   cursor: pointer;
 }
 .bds-tip {
   margin: 12px 0 0;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   line-height: 1.6;
   color: var(--bds-sub);
 }
 .bds-tip a {
   color: var(--bds-text);
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -444,7 +444,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 10px;
   margin: 16px 0 0;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   line-height: 1.6;
   color: var(--bds-sub);
 }
@@ -455,15 +455,15 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   border: 2px solid var(--bds-divider);
   border-top-color: var(--bds-sub);
-  animation: uhd-spin 0.8s linear infinite;
+  animation: ax-spin 0.8s linear infinite;
 }
 .bds-success {
   display: flex;
   align-items: center;
   gap: 12px;
   margin: 20px 0 4px;
-  font-size: var(--uhd-fs-body);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-body);
+  font-weight: var(--ax-fw-semibold);
   color: var(--bds-text);
 }
 .bds-success__icon {
@@ -477,7 +477,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
 }
-.bds-card :deep(.uhd-btn) {
+.bds-card :deep(.ax-btn) {
   margin-top: 16px;
 }
 </style>

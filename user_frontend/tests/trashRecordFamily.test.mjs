@@ -1,6 +1,6 @@
-// 垃圾桶语义族契约测试（2026-11-18 UHDNow 差异定案·垃圾桶语义族批）：
+// 垃圾桶语义族契约测试（2026-11-18 参考站 差异定案·垃圾桶语义族批）：
 // 运行：cd user_frontend && node tests/trashRecordFamily.test.mjs
-// 定案（reports/uhdnow-gap-decisions-20261118.md 垃圾桶族总纲）：四处垃圾桶
+// 定案（reports/参考站-gap-decisions-20261118.md 垃圾桶族总纲）：四处垃圾桶
 // 统一语义＝「移除观看记录」——只清播放进度与已看标记、不删条目不删文件、
 // 点按二次确认；移除必须走真接口 Emby DELETE PlayedItems（setPlayed(false)），
 // 不许拿门户 hide 冒充。覆盖五条：

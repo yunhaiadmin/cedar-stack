@@ -154,24 +154,24 @@ onMounted(load)
 .pv-eyebrow {
   margin: 0;
   font-size: 14px;
-  font-weight: var(--uhd-fw-bold);
-  color: var(--uhd-s-text-2);
+  font-weight: var(--ax-fw-bold);
+  color: var(--ax-s-text-2);
 }
 .pv-error {
   margin-top: 36px;
   font-size: 15px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .pv-retry {
   margin-top: 12px;
   height: 44px;
   padding: 0 26px;
   border-radius: 22px;
-  border: 1px solid var(--uhd-s-border);
-  background: var(--uhd-s-pill-active-bg);
-  color: var(--uhd-s-text);
+  border: 1px solid var(--ax-s-border);
+  background: var(--ax-s-pill-active-bg);
+  color: var(--ax-s-text);
   font-size: 15px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   font-family: inherit;
   cursor: pointer;
 }
@@ -190,10 +190,10 @@ onMounted(load)
   flex: 0 0 96px;
   border-radius: 50%;
   overflow: hidden;
-  background: var(--uhd-s-card-soft);
-  color: var(--uhd-s-text-2);
+  background: var(--ax-s-card-soft);
+  color: var(--ax-s-text-2);
   font-size: 34px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
 }
 .pv-avatar img {
   width: 100%;
@@ -207,15 +207,15 @@ onMounted(load)
 .pv-h1 {
   margin: 0;
   font-size: 44px;
-  font-weight: var(--uhd-fw-black);
+  font-weight: var(--ax-fw-black);
   line-height: 1.1;
   letter-spacing: -0.01em;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
 }
 .pv-sub {
   margin: 8px 0 0;
   font-size: 15px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .pv-fav {
   display: inline-flex;
@@ -224,19 +224,19 @@ onMounted(load)
   height: 44px;
   padding: 0 22px;
   border-radius: 22px;
-  border: 1px solid var(--uhd-s-pill-border);
-  background: var(--uhd-s-pill-bg);
-  color: var(--uhd-s-text);
+  border: 1px solid var(--ax-s-pill-border);
+  background: var(--ax-s-pill-bg);
+  color: var(--ax-s-text);
   font-size: 15px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   font-family: inherit;
   cursor: pointer;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
 .pv-fav--on {
-  background: var(--uhd-s-pill-active-bg);
-  color: var(--uhd-s-pill-active-text);
+  background: var(--ax-s-pill-active-bg);
+  color: var(--ax-s-pill-active-text);
 }
 .pv-fav:disabled {
   opacity: 0.55;
@@ -245,8 +245,8 @@ onMounted(load)
 .pv-sec {
   margin: 40px 0 0;
   font-size: 22px;
-  font-weight: var(--uhd-fw-bold);
-  color: var(--uhd-s-text);
+  font-weight: var(--ax-fw-bold);
+  color: var(--ax-s-text);
 }
 .pv-empty {
   display: flex;
@@ -255,10 +255,10 @@ onMounted(load)
   min-height: 230px;
   margin-top: 26px;
   padding: 24px;
-  border: 1.5px dashed var(--uhd-s-border);
+  border: 1.5px dashed var(--ax-s-border);
   border-radius: 12px;
   font-size: 15px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   text-align: center;
 }
 /* 作品网格与收藏页同款：7 列口径，窄屏递减 */
@@ -289,7 +289,7 @@ onMounted(load)
   position: relative;
   aspect-ratio: 2 / 3;
   border-radius: 13px;
-  background: var(--uhd-s-card-soft);
+  background: var(--ax-s-card-soft);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -303,7 +303,7 @@ onMounted(load)
   object-fit: cover;
 }
 .pv-fallback {
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .pv-link {
   position: absolute;
@@ -316,9 +316,9 @@ onMounted(load)
 .pv-name {
   display: block;
   font-size: 17px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
   line-height: 1.3;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
   text-decoration: none;
   white-space: nowrap;
   overflow: hidden;
@@ -327,7 +327,7 @@ onMounted(load)
 .pv-meta {
   margin-top: 4px;
   font-size: 14px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

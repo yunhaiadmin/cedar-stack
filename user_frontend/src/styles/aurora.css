@@ -6,7 +6,7 @@
 
 /* ⚠ 动效令牌冻结宣告（2026-11-14 批 B）：本文件的动效令牌（--au-ease、
    --au-dur-* 一族与 au-* 关键帧）自即日起冻结：存量引用保留，新代码
-   禁止新增引用；全站动效统一走 uhd-tokens.css 第 1.6 节动效手册。
+   禁止新增引用；全站动效统一走 ax-tokens.css 第 1.6 节动效手册。
    存量逐页收编是批 C 的事。本宣告只冻动效，颜色/字体/布局令牌不在内。 */
 
 /* ==================== 命名断点（全项目唯一真源，home-refactor §3） ====================
@@ -241,7 +241,7 @@ body:has(.watch-view)::after {
 
 /* ==================== 排版：衬线标题 ====================
    片名 / 页标题 / 区块标题 / 大数字说明走衬线（宋体系），正文仍是系统无衬线。
-   2026-11-13（D1-09）：裸 h1/h2/h3 元素不再被全局压成衬线——UHD 换皮后全站标题
+   2026-11-13（D1-09）：裸 h1/h2/h3 元素不再被全局压成衬线——ax 换皮后全站标题
    走无衬线特粗，裸标题回退继承的无衬线；显式类名（.pane-title 等）保留衬线。 */
 .pane-title,
 .modal-title,
@@ -310,17 +310,17 @@ body:has(.watch-view)::after {
   display: none;
 }
 
-/* 主按钮 —— UHD 口径（2026-11-13 用户亲点补齐七彩＋玻璃，与 .btn-primary 同一套外观）：
+/* 主按钮 —— ax 口径（2026-11-13 用户亲点补齐七彩＋玻璃，与 .btn-primary 同一套外观）：
    彩虹渐变边框 + 玻璃栈（backdrop blur+saturate + 内高光 + 柔影）。
    默认（深色面）：深色毛玻璃底 + 白字；浅色面（html[data-theme='light']）：淡彩粉彩底 + 黑字。 */
 .au-btn-primary {
   position: relative;
   border: 1.5px solid transparent;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
   color: #ffffff;
-  box-shadow: var(--uhd-shadow-sheet);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
+  box-shadow: var(--ax-shadow-sheet);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
 }
 /* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
    钮面只留玻璃层；浅色覆盖只换面背景，环由本处继承。 */
@@ -329,8 +329,8 @@ body:has(.watch-view)::after {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: var(--uhd-rainbow-border-w);
-  background: var(--uhd-rainbow);
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -339,20 +339,20 @@ body:has(.watch-view)::after {
 }
 
 html[data-theme='light'] .au-btn-primary {
-  background: var(--uhd-rainbow-soft);
+  background: var(--ax-rainbow-soft);
   color: #111111;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    var(--uhd-shadow-card-l);
+    var(--ax-shadow-card-l);
 }
 
 /* v4 纸面页（.v4-scope 恒浅色纸面、不依赖 html 主题）：一律浅色配方，同 .btn-primary */
 .v4-scope .au-btn-primary {
-  background: var(--uhd-rainbow-soft);
+  background: var(--ax-rainbow-soft);
   color: #111111;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    var(--uhd-shadow-card-l);
+    var(--ax-shadow-card-l);
 }
 /* v4 内禁用仍须压过上面的浅色配方（同特异性靠顺序，这里再钉一遍中性灰） */
 .v4-scope .au-btn-primary:disabled {
@@ -365,7 +365,7 @@ html[data-theme='light'] .au-btn-primary {
 .au-btn-primary:hover:not(:disabled) {
   filter: brightness(1.08);
 }
-.au-btn-primary:active:not(:disabled) { transform: scale(var(--uhd-press-scale)); }
+.au-btn-primary:active:not(:disabled) { transform: scale(var(--ax-press-scale)); }
 
 .au-btn-ghost {
   background: var(--au-surface-2);

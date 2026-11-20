@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * UhdWatchPill —— 「前往流媒体」常驻入口胶囊（全站唯一一份实现）
+ * AxWatchPill —— 「前往流媒体」常驻入口胶囊（全站唯一一份实现）
  *
  * 质感真源：友站 .pill-primary／.btn-glass 逐字值（2026-11-18 抓取，
  * 见 reports/member-card-friend-css-20261118.md 附节）：玻璃 lens 底
@@ -12,11 +12,11 @@
  * medium、图标 16、gap 8、padding-inline 12。沿革：#321 曾照大钮
  * .btn-glass 放大到高 44／字 15 被用户打回，#330 先收回旧配方
  * 33／13，本次按真值定版；高由 --utb-pill-height 钉死
- * （--utb-pill-h 33 只余 UhdTopBar 外观钮用）。
+ * （--utb-pill-h 33 只余 AxTopBar 外观钮用）。
  * 落点 /library：网页播放器没有独立入口页（/play/:id 须带具体条目），
  * 片库首页是网页点播的起点，且与此前概览/我的/邀请/记录四处既有
  * 入口的落点口径一致。
- * 尺寸/填充/玻璃令牌见 styles/uhd-topbar.css（--utb-*），不许在别处
+ * 尺寸/填充/玻璃令牌见 styles/ax-topbar.css（--utb-*），不许在别处
  * 再写第二份观影钮样式（此前全站曾有四份不同写法，本组件即收口）。
  */
 import { RouterLink } from 'vue-router'
@@ -50,7 +50,7 @@ import { RouterLink } from 'vue-router'
    shadow 柔影）；彩虹环走 conic 弧段（prism 色环带透明缺口），
    ::before 1.75px mask 环切、::after 同渐变 blur 5px 作环外光晕。
    图标三角的色标按友站 --brand-play-gradient 的 conic 色序校准
-   （与 --uhd-rainbow-fill 同停点），图标本体不换。 */
+   （与 --ax-rainbow-fill 同停点），图标本体不换。 */
 .utb-pill {
   position: relative;
   z-index: 0;
@@ -73,16 +73,16 @@ import { RouterLink } from 'vue-router'
     var(--utb-pill-shadow);
   color: var(--utb-pill-fg);
   font-size: 14px;
-  font-weight: var(--uhd-fw-medium);
+  font-weight: var(--ax-fw-medium);
   letter-spacing: -0.025em;
   line-height: 20px;
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
   text-decoration: none;
   white-space: nowrap;
   flex: none;
   --utb-prism-angle: 0deg;
   transition:
-    transform var(--uhd-press-dur) var(--uhd-ease-standard, ease),
+    transform var(--ax-press-dur) var(--ax-ease-standard, ease),
     background-color .3s ease,
     --utb-prism-angle .5s ease;
 }
@@ -148,7 +148,7 @@ import { RouterLink } from 'vue-router'
   opacity: calc(var(--utb-prism-glow) * 1.8);
 }
 .utb-pill:active {
-  transform: scale(var(--uhd-press-scale));
+  transform: scale(var(--ax-press-scale));
 }
 .utb-pill__icon {
   flex: none;

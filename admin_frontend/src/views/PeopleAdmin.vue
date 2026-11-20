@@ -397,19 +397,19 @@ onMounted(() => {
   justify-content: center;
   background: var(--au-bg-soft);
   color: var(--au-text-3);
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   font-weight: 600;
 }
 .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .avatar-sm { width: 30px; height: 30px; }
 .person-main { display: flex; flex-direction: column; min-width: 0; }
 .person-name { font-weight: 600; color: var(--au-text); }
-.person-key { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
+.person-key { font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); }
 
-.mono { font-family: var(--font-mono); font-size: var(--uhd-fs-aux-sm); }
+.mono { font-family: var(--font-mono); font-size: var(--ax-fs-aux-sm); }
 .dim { color: var(--au-text-3); }
-.key-note { margin-left: 8px; font-size: var(--uhd-fs-aux-sm); }
-.dialog-hint { font-size: var(--uhd-fs-aux); color: var(--au-text-3); line-height: 1.7; }
+.key-note { margin-left: 8px; font-size: var(--ax-fs-aux-sm); }
+.dialog-hint { font-size: var(--ax-fs-aux); color: var(--au-text-3); line-height: 1.7; }
 
 .merge-body { display: flex; flex-direction: column; gap: 12px; }
 .merge-line { margin: 0; line-height: 1.7; }

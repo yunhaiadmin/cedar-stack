@@ -1,6 +1,6 @@
 // 质感令牌级第二批契约测试（2026-11-18）：阴影收编＋弹层收敛＋彩虹钮分档＋按压立档＋转场字阶收敛。
 // 运行：cd user_frontend && node tests/textureTokens2.test.mjs
-// 真源：reports/uhdnow-texture-gap-table-20261118.md §1 #4/#5/#9/#12/#16/#17/#18/#19、§3 R3/R5/R6、§5 补测回填。
+// 真源：reports/参考站-texture-gap-table-20261118.md §1 #4/#5/#9/#12/#16/#17/#18/#19、§3 R3/R5/R6、§5 补测回填。
 // 口径：
 //  #1 阴影：随手 box-shadow 全迁令牌。新立 13 档（sheet/card-d/card-lav/
 //     member-l/member-d/panel-lg/float/soft/knob/thumb/thumb-d/focus/tab），
@@ -8,23 +8,23 @@
 //     豁免（非阴影或冻结体系）：1px 环形描边（inset 0 0 0 1px，描边替代）、
 //     焦点环（体系令牌）、box-shadow:none、-webkit-box-shadow 自动填充 hack、
 //     纸面硬影（v4-paper 冻结体系）、各体系自有令牌（modal-glass/tq/paper/utb）、
-//     裸 inset 高光线（UhdTopBar/GiftCodeSheet/TrafficPurchaseModal）、
+//     裸 inset 高光线（AxTopBar/GiftCodeSheet/TrafficPurchaseModal）、
 //     BindDriveGuide 硬底边（0 2px 0）、LandingView pin-glass 光晕与上向辉光。
 //  #2 弹层：遮罩两档（深 45% 黑＋blur 6 / 浅 rgb(247,248,250)＋blur 16），
-//     大浮件圆角收齐 24（准备卡 20 除外，已落 #306）；入场统一 UhdModal
+//     大浮件圆角收齐 24（准备卡 20 除外，已落 #306）；入场统一 AxModal
 //     一套（fade .52s＋blur-in .56s＋ease-pop），ui/Modal 迁令牌。
 //     ui/Modal 遮罩 var(--au-scrim) 是暗房影院 0.7 刻意深档，不动。
-//  #3 彩虹钮：UhdButton 增 42 级中档；--uhd-rainbow 按 2026-11-18 真机录屏
+//  #3 彩虹钮：AxButton 增 42 级中档；--ax-rainbow 按 2026-11-18 真机录屏
 //     纠正改 135deg 不对称（左侧鲜明、向右淡出；桌面采样色只作左缘参考），
-//     --uhd-rainbow-border 同值、flow 版双周期再生；conic 版（Logo 三角）不动。
+//     --ax-rainbow-border 同值、flow 版双周期再生；conic 版（Logo 三角）不动。
 //     底色改中性深色低透明玻璃（alpha ≤0.5、中性色相）；填色单立不透明
-//     --uhd-rainbow-fill；LandingView 深暖覆盖清零；幽灵钮已合规锁死。
-//  #4 按压：--uhd-press 三值（缩放 0.97／亮度 0.96／时长 micro 0.15s），
+//     --ax-rainbow-fill；LandingView 深暖覆盖清零；幽灵钮已合规锁死。
+//  #4 按压：--ax-press 三值（缩放 0.97／亮度 0.96／时长 micro 0.15s），
 //     主钮与胶囊统一引用；位移类 :active（translateY）与背景类 :active 不动；
 //     v4-paper 冻结体系与 :focus 缩放不动。
 //  #5 转场字阶：删 index.css 重复页面转场定义（走 App.vue 一处）；
-//     详情简介 15px/26px；设置行高 --uhd-row-h 52px（.set-row/.set-rowbtn/
-//     .pc-row/.sec-rowbtn/.uhd-row 本体；会话 90px 与步骤 56px 变体不动）。
+//     详情简介 15px/26px；设置行高 --ax-row-h 52px（.set-row/.set-rowbtn/
+//     .pc-row/.sec-rowbtn/.ax-row 本体；会话 90px 与步骤 56px 变体不动）。
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -52,25 +52,25 @@ function walk(dir, out = []) {
   return out
 }
 
-/* ---------- 阴影新令牌（uhd-tokens.css） ---------- */
-const tokens = read('src/styles/uhd-tokens.css')
+/* ---------- 阴影新令牌（ax-tokens.css） ---------- */
+const tokens = read('src/styles/ax-tokens.css')
 const NEW_SHADOWS = ['sheet', 'card-d', 'card-lav', 'member-l', 'member-d',
   'panel-lg', 'float', 'soft', 'knob', 'thumb', 'thumb-d', 'focus', 'tab']
 for (const n of NEW_SHADOWS) {
-  check(`T1 阴影令牌 --uhd-shadow-${n} 已定义`, tokens.includes(`--uhd-shadow-${n}:`))
+  check(`T1 阴影令牌 --ax-shadow-${n} 已定义`, tokens.includes(`--ax-shadow-${n}:`))
 }
-const memberL = tokens.match(/--uhd-shadow-member-l:\s*([^;]+);/)
+const memberL = tokens.match(/--ax-shadow-member-l:\s*([^;]+);/)
 // 2026-11-18 外观重做：阴影改钉友站公开样式表真值（slab＋face 两段合并，
 // reports/member-card-friend-css-20261118.md）；旧 #307 采样值已作废。
-check('T2 会员卡浅色阴影＝友站真值（slab＋face 合并，与 UhdMemberCard 完全一致）',
+check('T2 会员卡浅色阴影＝友站真值（slab＋face 合并，与 AxMemberCard 完全一致）',
   !!memberL && memberL[1].trim() === 'inset 1px 1px 0 -0.25px #fffffff2, inset -1px -1px 0 -0.25px #ffffff73, 0 0 0 1px #14161c12, 0 1px 2px #14161c0d, 0 12px 28px -18px #14161c29, inset 0 -14px 26px -16px #14161c33, 0 1px 2px #14161c0f, 0 28px 50px -26px oklch(55% .2 285/.38), 0 10px 20px -14px #14161c40')
-const memberD = tokens.match(/--uhd-shadow-member-d:\s*([^;]+);/)
-check('T2 会员卡深色阴影＝友站真值（slab＋face 合并，与 UhdMemberCard 完全一致）',
+const memberD = tokens.match(/--ax-shadow-member-d:\s*([^;]+);/)
+check('T2 会员卡深色阴影＝友站真值（slab＋face 合并，与 AxMemberCard 完全一致）',
   !!memberD && memberD[1].trim() === 'inset 1px 1px 0 -0.25px #ffffff38, inset -1px -1px 0 -0.25px #ffffff0f, 0 0 0 1px #0006, 0 1px 2px #0003, 0 12px 28px -18px #0006, inset 0 -16px 30px -18px #000000a6, 0 30px 58px -26px oklch(55% .2 285/.5), 0 12px 24px -14px #000000b3')
-const memberCard = read('src/components/uhd/UhdMemberCard.vue')
+const memberCard = read('src/components/ax/AxMemberCard.vue')
 check('T2 会员卡两态改引 member 令牌（视觉零变化）',
-  memberCard.includes('box-shadow: var(--uhd-shadow-member-l)') &&
-  memberCard.includes('box-shadow: var(--uhd-shadow-member-d)'))
+  memberCard.includes('box-shadow: var(--ax-shadow-member-l)') &&
+  memberCard.includes('box-shadow: var(--ax-shadow-member-d)'))
 
 /* ---------- 阴影随手值清零（全 src 扫描） ---------- */
 const SHADOW_ALLOW = [
@@ -78,7 +78,7 @@ const SHADOW_ALLOW = [
   ['LandingView.vue', '0 -18px 50px', '上向辉光无对应令牌'],
   ['LandingView.vue', 'inset 0 48px 90px', 'pin-glass 玻璃辉光'],
   ['v4-paper.css', '3px 3px 0 rgba(42, 38, 32, 0.12)', '纸面硬影冻结体系'],
-  // texture-tokens-3：UhdMemberCard 两处临时豁免已删——member-l/member-d 令牌值与
+  // texture-tokens-3：AxMemberCard 两处临时豁免已删——member-l/member-d 令牌值与
   // 卡片完全一致，卡片改引令牌（2026-11-18 起令牌值＝友站样式表真值，见 T2）。
 ]
 function shadowOk(file, val) {
@@ -115,7 +115,7 @@ check('T4 深色遮罩令牌 45% 黑＋blur 6',
 check('T4 浅色遮罩令牌 rgb(247,248,250)＋blur 16',
   mg.includes('--modal-scrim-light: rgba(247, 248, 250, 0.72)') && mg.includes('--modal-scrim-light-filter: blur(16px)'))
 const scrimDark = [
-  ['src/components/uhd/UhdModal.vue', 'uhd-modal__overlay'],
+  ['src/components/ax/AxModal.vue', 'ax-modal__overlay'],
   ['src/components/profile/BindDriveSheet.vue', 'bds-overlay'],
   ['src/components/profile/ServerLinesSheet.vue', 'sls-overlay'],
   ['src/components/TgBindModal.vue', 'modal-mask'],
@@ -135,25 +135,25 @@ const psp = read('src/components/panel/PlayerSchemeSheet.vue')
 check('T5 选版本弹层浅色态引浅色遮罩档',
   blockOf(psp, 'psp-mask').includes('var(--modal-scrim-light)') && blockOf(psp, 'psp-mask').includes('var(--modal-scrim-light-filter)'))
 check('T5 选版本弹层深色桥接引深色遮罩档',
-  psp.includes('body.uhd-stream-dark .psp-mask') && /body\.uhd-stream-dark \.psp-mask\s*\{[^}]*var\(--modal-scrim-dark\)/.test(psp))
+  psp.includes('body.ax-stream-dark .psp-mask') && /body\.ax-stream-dark \.psp-mask\s*\{[^}]*var\(--modal-scrim-dark\)/.test(psp))
 check('T5 ui/Modal 遮罩暗房深档 var(--au-scrim) 不动',
   read('src/components/ui/Modal.vue').includes('background: var(--au-scrim)'))
 
-/* ---------- 弹层入场统一 UhdModal 令牌 ---------- */
+/* ---------- 弹层入场统一 AxModal 令牌 ---------- */
 const modal = read('src/components/ui/Modal.vue')
 const modalStyle = modal.slice(modal.indexOf('<style'))
-check('T6 ui/Modal 遮罩进出走 --uhd-dur-fade/--uhd-ease-standard',
-  modalStyle.includes('var(--uhd-dur-fade)') && modalStyle.includes('var(--uhd-ease-standard)'))
-check('T6 ui/Modal 内容进场走 --uhd-dur-blur-in/--uhd-ease-pop',
-  modalStyle.includes('var(--uhd-dur-blur-in)') && modalStyle.includes('var(--uhd-ease-pop)'))
-check('T6 ui/Modal 内容离场走 --uhd-dur-base（0.2s，与原值一致）',
-  modalStyle.includes('var(--uhd-dur-base)'))
+check('T6 ui/Modal 遮罩进出走 --ax-dur-fade/--ax-ease-standard',
+  modalStyle.includes('var(--ax-dur-fade)') && modalStyle.includes('var(--ax-ease-standard)'))
+check('T6 ui/Modal 内容进场走 --ax-dur-blur-in/--ax-ease-pop',
+  modalStyle.includes('var(--ax-dur-blur-in)') && modalStyle.includes('var(--ax-ease-pop)'))
+check('T6 ui/Modal 内容离场走 --ax-dur-base（0.2s，与原值一致）',
+  modalStyle.includes('var(--ax-dur-base)'))
 const modalAnim = modalStyle.slice(modalStyle.indexOf('/* ==================== 动画'),
   modalStyle.indexOf('/* ==================== 动效降级'))
 check('T6 ui/Modal 入场动画段内 neo 时长清零（关闭钮 150ms 微交互不在此段）',
   !modalAnim.includes('--neo-duration'))
-check('T6 UhdModal 仍为基准（fade .52s＋blur-in .56s＋ease-pop）',
-  read('src/components/uhd/UhdModal.vue').includes('var(--uhd-dur-fade)') && read('src/components/uhd/UhdModal.vue').includes('var(--uhd-dur-blur-in)'))
+check('T6 AxModal 仍为基准（fade .52s＋blur-in .56s＋ease-pop）',
+  read('src/components/ax/AxModal.vue').includes('var(--ax-dur-fade)') && read('src/components/ax/AxModal.vue').includes('var(--ax-dur-blur-in)'))
 
 /* ---------- 大浮件圆角收齐 24（准备卡 20 除外） ---------- */
 check('T7 选版本弹层 .psp-sheet 圆角 24',
@@ -163,11 +163,11 @@ check('T7 准备播放卡圆角 20 不动（#306 落定）',
   /border-radius:\s*20px/.test(blockOf(read('src/views/WebPlayerView.vue'), 'wp-prep')))
 
 /* ---------- 彩虹钮分档与停点校准 ---------- */
-const btn = read('src/components/uhd/UhdButton.vue')
-check('T8 UhdButton 增 mid 档（42 级）',
-  btn.includes("'mid'") && /height:\s*42px/.test(blockOf(btn, 'uhd-btn--mid')))
+const btn = read('src/components/ax/AxButton.vue')
+check('T8 AxButton 增 mid 档（42 级）',
+  btn.includes("'mid'") && /height:\s*42px/.test(blockOf(btn, 'ax-btn--mid')))
 check('T8 mid 档内边距 0 22px、字号 body 级',
-  blockOf(btn, 'uhd-btn--mid').includes('padding: 0 22px') && blockOf(btn, 'uhd-btn--mid').includes('var(--uhd-fs-body)'))
+  blockOf(btn, 'ax-btn--mid').includes('padding: 0 22px') && blockOf(btn, 'ax-btn--mid').includes('var(--ax-fs-body)'))
 /* ---------- 彩虹钮分档与停点校准（2026-11-18 真机录屏纠正） ---------- */
 function stopsOf(grad) {
   return [...grad.matchAll(/((?:rgba?\([^)]+\)|#[0-9a-f]{6}))\s+([\d.]+)%/gi)]
@@ -179,8 +179,8 @@ function alphaOf(color) {
   const parts = m[1].split(',').map((s) => Number(s.trim()))
   return parts.length === 4 ? parts[3] : 1
 }
-const rainbow = tokens.match(/--uhd-rainbow:\s*([^;]+);/)
-check('T9 --uhd-rainbow 为 135deg 不对称分布（左鲜明、右淡出）',
+const rainbow = tokens.match(/--ax-rainbow:\s*([^;]+);/)
+check('T9 --ax-rainbow 为 135deg 不对称分布（左鲜明、右淡出）',
   !!rainbow && rainbow[1].includes('135deg'))
 check('T9 左缘鲜明段含采样色（绿／青／琥珀／橙红）',
   !!rainbow && ['#a4de91', '#3cdce7', '#f5c165', '#e8766f'].every((h) => rainbow[1].includes(h)))
@@ -189,23 +189,23 @@ check('T9 右半段停点 alpha 均 ≤0.30 且含透明停点',
   rStops.filter((s) => s.pos >= 50).length >= 2 &&
   rStops.filter((s) => s.pos >= 50).every((s) => alphaOf(s.color) <= 0.30) &&
   rStops.some((s) => s.pos >= 50 && alphaOf(s.color) === 0))
-const rainbowBorder = tokens.match(/--uhd-rainbow-border:\s*([^;]+);/)
-check('T9 --uhd-rainbow-border 与 --uhd-rainbow 同值',
+const rainbowBorder = tokens.match(/--ax-rainbow-border:\s*([^;]+);/)
+check('T9 --ax-rainbow-border 与 --ax-rainbow 同值',
   !!rainbow && !!rainbowBorder && rainbow[1].trim() === rainbowBorder[1].trim())
-const flow = tokens.match(/--uhd-rainbow-border-flow:\s*([^;]+);/)
+const flow = tokens.match(/--ax-rainbow-border-flow:\s*([^;]+);/)
 const fStops = flow ? stopsOf(flow[1]) : []
 check('T9 flow 版双周期再生（透明居中 50%、绿收尾与 0% 同色无缝）',
   !!flow && fStops.some((s) => s.pos === 50 && alphaOf(s.color) === 0) &&
   flow[1].includes('#a4de91 100%'))
-const fill = tokens.match(/--uhd-rainbow-fill:\s*([^;]+);/)
+const fill = tokens.match(/--ax-rainbow-fill:\s*([^;]+);/)
 check('T9 fill 版为不透明九停点（填色专用）',
   !!fill && !/rgba\(/.test(fill[1]) && fill[1].includes('#2f8fe0 0%'))
-const soft = tokens.match(/--uhd-rainbow-soft:\s*([^;]+);/)
+const soft = tokens.match(/--ax-rainbow-soft:\s*([^;]+);/)
 check('T9 soft 版为四处采样内底色的近白洗色',
   !!soft && ['#eae7d6', '#f3f5f5', '#f6eedb', '#f4f6f6'].every((h) => soft[1].includes(h)))
 check('T9 conic 版（Logo 三角）不动',
-  tokens.includes('--uhd-rainbow-conic:') && /--uhd-rainbow-conic:[^;]*#2f8fe0/.test(tokens))
-const btnD = tokens.match(/--uhd-glass-btn-d:\s*rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/)
+  tokens.includes('--ax-rainbow-conic:') && /--ax-rainbow-conic:[^;]*#2f8fe0/.test(tokens))
+const btnD = tokens.match(/--ax-glass-btn-d:\s*rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/)
 check('T9 主钮底色 alpha ≤0.5 且色相中性（R/B 差 ≤12）',
   !!btnD && Number(btnD[4]) <= 0.5 && Math.abs(Number(btnD[1]) - Number(btnD[3])) <= 12)
 const landingV = read('src/views/marketing/LandingView.vue')
@@ -215,45 +215,45 @@ check('T9 幽灵钮为中性透光玻璃＋细亮边＋模糊（已合规，锁�
   landingV.includes('background: rgba(11, 15, 17, 0.5)') &&
   landingV.includes('border: 1px solid rgba(255, 255, 255, 0.14)') &&
   landingV.includes('backdrop-filter: blur(14px) saturate(1.4)'))
-check('T9 填色用途全走 --uhd-rainbow-fill（徽章／404／确认钮／当前套餐）',
-  ['src/components/uhd/UhdChip.vue', 'src/components/uhd/UhdPlanCompare.vue',
+check('T9 填色用途全走 --ax-rainbow-fill（徽章／404／确认钮／当前套餐）',
+  ['src/components/ax/AxChip.vue', 'src/components/ax/AxPlanCompare.vue',
    'src/views/NotFoundView.vue', 'src/views/game/SubscriptionPlansView.vue']
-    .every((f) => read(f).includes('var(--uhd-rainbow-fill')))
+    .every((f) => read(f).includes('var(--ax-rainbow-fill')))
 
 /* ---------- 深色主钮环形-only 透光（返工，2026-11-18） ---------- */
 // 根因：旧写法彩虹渐变铺满 border-box，透过 alpha 0.40 玻璃在钮面内晕染成色块；
 // 友站是钮面全透光、彩虹只在 1.5px 细环。环切：::before 渐变层 padding=边框宽，
 // mask 剔掉 content-box，只剩环形；钮面背景只剩玻璃层。浅色主钮不动。
-const btnDark = blockOf(btn, 'uhd-btn--primary.uhd-btn--dark')
-const ringM = btn.match(/\.uhd-btn--primary\.uhd-btn--dark::before\s*\{([^}]*)\}/)
+const btnDark = blockOf(btn, 'ax-btn--primary.ax-btn--dark')
+const ringM = btn.match(/\.ax-btn--primary\.ax-btn--dark::before\s*\{([^}]*)\}/)
 const ring = ringM ? ringM[1] : ''
 check('T14 深色主钮钮面背景只剩玻璃层（无彩虹 border-box 整面铺底）',
-  btnDark.includes('var(--uhd-glass-btn-d)') && !btnDark.includes('var(--uhd-rainbow)') && !btnDark.includes('border-box'))
+  btnDark.includes('var(--ax-glass-btn-d)') && !btnDark.includes('var(--ax-rainbow)') && !btnDark.includes('border-box'))
 check('T14 深色主钮保留玻璃底＋pill 档模糊',
-  btnDark.includes('var(--uhd-glass-btn-d)') && btnDark.includes('backdrop-filter: var(--uhd-glass-filter)'))
+  btnDark.includes('var(--ax-glass-btn-d)') && btnDark.includes('backdrop-filter: var(--ax-glass-filter)'))
 check('T14 彩虹环在 ::before 上（渐变层＋mask 环切＋边框宽 padding）',
-  ring.includes('background: var(--uhd-rainbow)') &&
-  ring.includes('padding: var(--uhd-rainbow-border-w)') &&
+  ring.includes('background: var(--ax-rainbow)') &&
+  ring.includes('padding: var(--ax-rainbow-border-w)') &&
   ring.includes('content-box') &&
   (ring.includes('mask-composite: exclude') || ring.includes('-webkit-mask-composite: xor')))
 check('T14 禁用态彩虹环一并退场',
-  /\.uhd-btn--primary\.uhd-btn--dark:disabled::before\s*\{[^}]*display:\s*none/.test(btn))
+  /\.ax-btn--primary\.ax-btn--dark:disabled::before\s*\{[^}]*display:\s*none/.test(btn))
 check('T14 浅色主钮不动（淡彩底＋彩虹边框整面写法保留）',
-  blockOf(btn, 'uhd-btn--primary').includes('var(--uhd-rainbow-soft) padding-box') &&
-  blockOf(btn, 'uhd-btn--primary').includes('var(--uhd-rainbow) border-box'))
+  blockOf(btn, 'ax-btn--primary').includes('var(--ax-rainbow-soft) padding-box') &&
+  blockOf(btn, 'ax-btn--primary').includes('var(--ax-rainbow) border-box'))
 
 /* ---------- 一手写深色钮全站环切（texture-tokens-3，2026-11-18） ---------- */
-// 根因与 T14 同病：半透玻璃底（--uhd-glass-btn-d／--utb-pill-fill）下
+// 根因与 T14 同病：半透玻璃底（--ax-glass-btn-d／--utb-pill-fill）下
 // padding-box ＋ 彩虹 border-box 双层写法会把整面彩虹晕染进钮面。
-// 全站 23 处一手写钮（含 UhdWatchPill 胶囊）已按 #309 同款改 ::before mask 环切；
+// 全站 23 处一手写钮（含 AxWatchPill 胶囊）已按 #309 同款改 ::before mask 环切；
 // 另 2 处（.rf-watch／.rmd-watch）已随 2026-11-18 去重单删除，不在环切集内。
-// 浅色面（--uhd-rainbow-soft 不透明）与 --uhd-rainbow-fill 填色用途不在缺陷集内。
+// 浅色面（--ax-rainbow-soft 不透明）与 --ax-rainbow-fill 填色用途不在缺陷集内。
 // 例外（2026-11-18）：观影胶囊的环已按友站 .pill-primary 真值换成 prism
 // conic 弧段（仍是 ::before mask 环切，另有 ::after 光晕），不再走
-// --uhd-rainbow 线性环，故从 RING_SITES 摘出、由下方 T15b 单列断言。
+// --ax-rainbow 线性环，故从 RING_SITES 摘出、由下方 T15b 单列断言。
 // 另：PersonalCenterView 的 .ov-invite 邀请横幅是同病非钮（rgba 半透面＋彩虹边），
 // 本批不动，留 parent 定夺（见任务报告）。
-const DARK_FACE = /var\(--uhd-glass-btn-d\)|var\(--utb-pill-fill\)/
+const DARK_FACE = /var\(--ax-glass-btn-d\)|var\(--utb-pill-fill\)/
 const RING_SITES = [
   ['src/styles/index.css', '.btn-primary'],
   ['src/styles/aurora.css', '.au-btn-primary'],
@@ -273,7 +273,7 @@ const RING_SITES = [
   ['src/components/profile/SeriesFollowsPanel.vue', '.ov-page.ov-dark .acct-btn.primary'],
   ['src/components/stream/StreamHero.vue', '.stream-scope[data-stream-theme="dark"] .sh-play'],
   ['src/views/game/SubscriptionPlansView.vue', "html:not([data-theme='light']) .sub-sticky__cta"],
-  ['src/components/panel/PlayerSchemeSheet.vue', 'body.uhd-stream-dark .psp-start'],
+  ['src/components/panel/PlayerSchemeSheet.vue', 'body.ax-stream-dark .psp-start'],
   ['src/components/profile/ServerLinesSheet.vue', '.sls--dark .sls-badge--primary'],
   ['src/components/player/PlayerTogetherSheet.vue', '.wt-create'],
   ['src/views/panel/MediaDetailView.vue', '.md-btn--play'],
@@ -284,7 +284,7 @@ for (const f of walk(join(ROOT, 'src'))) {
   const text = read(f.slice(ROOT.length + 1)).replace(/\/\*[\s\S]*?\*\//g, '')
   for (const m of text.matchAll(/background\s*:\s*([^;]+);/g)) {
     const decl = m[1]
-    if (DARK_FACE.test(decl) && decl.includes('padding-box') && decl.includes('border-box') && /var\(--uhd-rainbow/.test(decl)) {
+    if (DARK_FACE.test(decl) && decl.includes('padding-box') && decl.includes('border-box') && /var\(--ax-rainbow/.test(decl)) {
       washBad.push(`${f.replace(ROOT + '/', '')}: ${decl.replace(/\s+/g, ' ').slice(0, 100)}`)
     }
   }
@@ -297,11 +297,11 @@ for (const [f, sel] of RING_SITES) {
   const rm = text.match(new RegExp(esc + '::before\\s*\\{([^}]*)\\}'))
   const ringBody = rm ? rm[1] : ''
   check(`T15 ${f.split('/').pop()} ${sel} 有 ::before 彩虹环（mask 环切）`,
-    ringBody.includes('var(--uhd-rainbow') && ringBody.includes('content-box') &&
+    ringBody.includes('var(--ax-rainbow') && ringBody.includes('content-box') &&
     (ringBody.includes('mask-composite: exclude') || ringBody.includes('-webkit-mask-composite: xor')))
 }
 /* ---------- 观影胶囊 prism 环（友站 .pill-primary 真值，2026-11-18） ---------- */
-const pillText = read('src/components/uhd/UhdWatchPill.vue')
+const pillText = read('src/components/ax/AxWatchPill.vue')
 const pillRing = (pillText.match(/\.utb-pill::before\s*\{([^}]*)\}/) || [])[1] || ''
 check('T15b 观影胶囊彩虹环为 conic 弧段（1.75px／inset -1px／mask 环切）',
   pillRing.includes('conic-gradient(from calc(var(--utb-prism-angle) + 225deg)') &&
@@ -318,16 +318,16 @@ check('T15b 观影胶囊环外光晕（同 conic 渐变＋blur 5px＋--utb-prism
 
 /* ---------- 按压反馈立档 ---------- */
 check('T10 按压三值已立（缩放 0.97／亮度 0.96／时长 micro）',
-  tokens.includes('--uhd-press-scale: 0.97') && tokens.includes('--uhd-press-brightness: 0.96') && tokens.includes('--uhd-press-dur: var(--uhd-dur-micro)'))
-check('T10 UhdButton 按压引缩放＋亮度令牌',
-  /\.uhd-btn[^{]*:active[^{]*\{[^}]*scale\(var\(--uhd-press-scale\)\)[^}]*brightness\(var\(--uhd-press-brightness\)\)/.test(btn))
+  tokens.includes('--ax-press-scale: 0.97') && tokens.includes('--ax-press-brightness: 0.96') && tokens.includes('--ax-press-dur: var(--ax-dur-micro)'))
+check('T10 AxButton 按压引缩放＋亮度令牌',
+  /\.ax-btn[^{]*:active[^{]*\{[^}]*scale\(var\(--ax-press-scale\)\)[^}]*brightness\(var\(--ax-press-brightness\)\)/.test(btn))
 const PRESS_SITES = [
   ['src/components/AppHeader.vue', 'nav-link'],
   ['src/components/AppHeader.vue', 'round-btn'],
   ['src/components/AppHeader.vue', 'dropdown-facility'],
   ['src/components/panel/PlayerSchemeSheet.vue', 'psp-start'],
   ['src/components/profile/GiftCodeSheet.vue', 'gc-copy'],
-  ['src/components/uhd/UhdWatchPill.vue', 'utb-pill'],
+  ['src/components/ax/AxWatchPill.vue', 'utb-pill'],
   ['src/views/game/SubscriptionPlansView.vue', 'sub-sticky__cta'],
   ['src/views/game/WalletView.vue', 'w-recharge'],
   ['src/views/game/WalletView.vue', 'w-outline-btn'],
@@ -335,15 +335,15 @@ const PRESS_SITES = [
 ]
 for (const [f, sel] of PRESS_SITES) {
   const text = read(f)
-  const re = new RegExp(`\\.${sel}:active[^\\{]*\\{[^}]*scale\\(var\\(--uhd-press-scale\\)\\)`)
+  const re = new RegExp(`\\.${sel}:active[^\\{]*\\{[^}]*scale\\(var\\(--ax-press-scale\\)\\)`)
   check(`T10 ${f.split('/').pop()} .${sel}:active 引按压缩放令牌`, re.test(text))
 }
 for (const [f, re] of [
-  ['src/components/profile/TrafficPurchaseModal.vue', /\.tq-[\w-]+:active[^{]*\{[^}]*scale\(var\(--uhd-press-scale\)\)/],
-  ['src/views/LoginView.vue', /\.submit-btn:active[^{]*\{[^}]*scale\(var\(--uhd-press-scale\)\)/],
-  ['src/views/game/PersonalCenterView.vue', /\.ov-btn:active[^{]*\{[^}]*scale\(var\(--uhd-press-scale\)\)/],
-  ['src/styles/index.css', /\.btn-primary:active[^{]*\{[^}]*scale\(var\(--uhd-press-scale\)\)/],
-  ['src/styles/aurora.css', /\.au-btn-primary:active[^{]*\{[^}]*scale\(var\(--uhd-press-scale\)\)/],
+  ['src/components/profile/TrafficPurchaseModal.vue', /\.tq-[\w-]+:active[^{]*\{[^}]*scale\(var\(--ax-press-scale\)\)/],
+  ['src/views/LoginView.vue', /\.submit-btn:active[^{]*\{[^}]*scale\(var\(--ax-press-scale\)\)/],
+  ['src/views/game/PersonalCenterView.vue', /\.ov-btn:active[^{]*\{[^}]*scale\(var\(--ax-press-scale\)\)/],
+  ['src/styles/index.css', /\.btn-primary:active[^{]*\{[^}]*scale\(var\(--ax-press-scale\)\)/],
+  ['src/styles/aurora.css', /\.au-btn-primary:active[^{]*\{[^}]*scale\(var\(--ax-press-scale\)\)/],
 ]) {
   check(`T10 ${f.split('/').pop()} 按压引缩放令牌`, re.test(read(f)))
 }
@@ -378,19 +378,19 @@ check('T11 App.vue 保留页面转场（enter-only 180ms 淡入）',
 const mdv = read('src/views/panel/MediaDetailView.vue')
 check('T12 详情简介收 15px/26px',
   /font-size:\s*15px/.test(blockOf(mdv, 'md-overview')) && /line-height:\s*26px/.test(blockOf(mdv, 'md-overview')))
-check('T13 设置行高令牌 --uhd-row-h: 52px 已立', tokens.includes('--uhd-row-h: 52px'))
+check('T13 设置行高令牌 --ax-row-h: 52px 已立', tokens.includes('--ax-row-h: 52px'))
 for (const [f, sel] of [
   ['src/views/game/AccountSettingsView.vue', 'set-row'],
   ['src/views/game/AccountSettingsView.vue', 'set-rowbtn'],
   ['src/components/profile/PcEntryRow.vue', 'pc-row'],
   ['src/components/profile/TotpPanel.vue', 'sec-rowbtn'],
-  ['src/components/uhd/UhdStatusRow.vue', 'uhd-row'],
+  ['src/components/ax/AxStatusRow.vue', 'ax-row'],
 ]) {
-  check(`T13 ${f.split('/').pop()} .${sel} 行高引 --uhd-row-h`,
-    blockOf(read(f), sel).includes('min-height: var(--uhd-row-h)'))
+  check(`T13 ${f.split('/').pop()} .${sel} 行高引 --ax-row-h`,
+    blockOf(read(f), sel).includes('min-height: var(--ax-row-h)'))
 }
-const usr = read('src/components/uhd/UhdStatusRow.vue')
-check('T13 会话行 90px 变体不动', /min-height:\s*90px/.test(blockOf(usr, 'uhd-row--session')))
-check('T13 步骤行 56px 变体不动', /min-height:\s*56px/.test(blockOf(usr, 'uhd-row--step')))
+const usr = read('src/components/ax/AxStatusRow.vue')
+check('T13 会话行 90px 变体不动', /min-height:\s*90px/.test(blockOf(usr, 'ax-row--session')))
+check('T13 步骤行 56px 变体不动', /min-height:\s*56px/.test(blockOf(usr, 'ax-row--step')))
 
 console.log(`\n${passed} passed`)

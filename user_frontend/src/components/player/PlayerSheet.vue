@@ -1,5 +1,5 @@
 <template>
-  <!-- 播放器弹层外壳：照 UHDNow 录屏——窄屏底部升起的大圆角玻璃卡，
+  <!-- 播放器弹层外壳：照 参考站 录屏——窄屏底部升起的大圆角玻璃卡，
        宽屏/横屏为居中卡。点遮罩关闭。 -->
   <Transition name="wp-sheet">
     <div v-if="open" class="wp-sheet-root" @click.self="emit('update:open', false)">
@@ -41,7 +41,7 @@ const emit = defineEmits<{ 'update:open': [boolean] }>()
   overflow-y: auto;
   /* 面板实色（2026-11-18 用户亲令）：原 rgba(24,24,27,0.92)＋
      blur(24px) 玻璃底改实色深面令牌、去 backdrop */
-  background: var(--uhd-d-surface-raised);
+  background: var(--ax-d-surface-raised);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 24px 24px 0 0;
   color: #fff;

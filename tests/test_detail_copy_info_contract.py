@@ -25,7 +25,7 @@ import pathlib
 REPO = pathlib.Path(__file__).resolve().parent.parent
 MDV = REPO / "user_frontend/src/views/panel/MediaDetailView.vue"
 EMBY_TS = REPO / "user_frontend/src/api/emby.ts"
-TOKENS = REPO / "user_frontend/src/styles/uhd-tokens.css"
+TOKENS = REPO / "user_frontend/src/styles/ax-tokens.css"
 
 
 def _mdv() -> str:
@@ -63,13 +63,13 @@ def test_g100_rainbow_flow_animation():
     assert "@keyframes md-rainbow-flow" in src, "主按钮应有彩虹描边流动动画 keyframes"
     assert "animation: md-rainbow-flow" in src, ".md-btn--play 应挂流动动画"
     tokens = TOKENS.read_text(encoding="utf-8")
-    assert "--uhd-rainbow-border-flow" in tokens, "uhd-tokens 应有双周期彩虹描边 flow 令牌"
+    assert "--ax-rainbow-border-flow" in tokens, "ax-tokens 应有双周期彩虹描边 flow 令牌"
     # 描边层引用 flow 令牌：#310（texture-tokens-3）起描边层由钮面分层背景
     # （…border-box）改为 .md-btn--play::before 的 mask 环切层（textureTokens2
     # T15 钉死此形态，旧分层写法会把彩虹晕染进深色玻璃钮面）。环切层即描边层，
     # 仍引用同一 flow 令牌并挂同一流动画，与旧断言等价，故按新形态钉环切层。
     ring = _block(src, ".md-btn--play::before", "}")
-    assert "background: var(--uhd-rainbow-border-flow)" in ring, "主按钮描边层（::before 环切）应引用 flow 令牌"
+    assert "background: var(--ax-rainbow-border-flow)" in ring, "主按钮描边层（::before 环切）应引用 flow 令牌"
     assert "mask-composite: exclude" in ring, "主按钮描边层应为 mask 环切形态"
 
 

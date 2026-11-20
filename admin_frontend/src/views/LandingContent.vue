@@ -374,7 +374,7 @@ onMounted(load)
 
 .landing-status {
   margin: 0;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   color: var(--el-text-color-secondary);
 }
 
@@ -390,7 +390,7 @@ onMounted(load)
 }
 
 .fld-label {
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   font-weight: 600;
   color: var(--el-text-color-regular);
 }
@@ -424,7 +424,7 @@ onMounted(load)
 
 .card-block-title {
   margin: 0 0 14px;
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   font-weight: 600;
 }
 

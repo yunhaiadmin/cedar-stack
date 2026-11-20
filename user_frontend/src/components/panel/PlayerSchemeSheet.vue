@@ -1152,8 +1152,8 @@ async function start() {
 /* 批 3 播放前弹层（录屏形态）：手机 = 悬浮大卡（左右/底部留 12、圆角 24）；
    桌面 = 居中 610 宽、圆角 24（存档第 7 节）。头图 + 版本单选卡 +
    外挂字幕卡 + 播放线路行 + 玻璃粉彩开始播放钮（双色文案）。
-   Teleport 到 body：浅色走 --uhd-l-* :root 令牌；片库面深色态由
-   StreamShell 在 body 打 .uhd-stream-dark 标记桥接深色值。 */
+   Teleport 到 body：浅色走 --ax-l-* :root 令牌；片库面深色态由
+   StreamShell 在 body 打 .ax-stream-dark 标记桥接深色值。 */
 .psp {
   position: fixed;
   inset: 0;
@@ -1171,7 +1171,7 @@ async function start() {
   border: 0;
   padding: 0;
   /* 浅色遮罩档（选版本弹层浅色实测；2026-11-18 起遮罩无 blur）：
-     深色桥接见文末 body.uhd-stream-dark .psp-mask */
+     深色桥接见文末 body.ax-stream-dark .psp-mask */
   background: var(--modal-scrim-light);
   cursor: pointer;
 }
@@ -1186,22 +1186,22 @@ async function start() {
   display: flex;
   flex-direction: column;
   /* 面板实色（2026-11-18 用户亲令；2026-11-15 曾玻璃化）：底用
-     实色面。本弹层深浅由片库面自有外观（body.uhd-stream-dark
+     实色面。本弹层深浅由片库面自有外观（body.ax-stream-dark
      桥接）决定、不跟全站 data-theme，故 --modal-glass-bg/edge/
      shadow 在本作用域按态钉值：此处（缺省浅色态）钉浅色档
-     （底引 var(--uhd-l-surface)）、深色桥接块钉深色档，口径与
+     （底引 var(--ax-l-surface)）、深色桥接块钉深色档，口径与
      styles/modal-glass.css 一致（那边是全站真源）。去 backdrop
-     与内高光；位置/尺寸不动；圆角 24；卡内 --uhd-l-surface
+     与内高光；位置/尺寸不动；圆角 24；卡内 --ax-l-surface
      小面照旧。 */
-  --modal-glass-bg: var(--uhd-l-surface);
+  --modal-glass-bg: var(--ax-l-surface);
   --modal-glass-edge: rgba(17, 17, 17, 0.12);
   --modal-glass-shadow: 0 24px 56px rgba(30, 32, 60, 0.25);
   background: var(--modal-glass-bg);
   border: 1px solid var(--modal-glass-edge);
-  color: var(--uhd-l-text, #111111);
+  color: var(--ax-l-text, #111111);
   border-radius: 24px;
   overflow: hidden;
-  font-family: var(--uhd-font-sans, sans-serif);
+  font-family: var(--ax-font-sans, sans-serif);
   box-shadow: var(--modal-glass-shadow);
 }
 /* 头图区 */
@@ -1297,7 +1297,7 @@ async function start() {
   margin: 0;
   font-size: 15px;
   line-height: 1.65;
-  color: var(--uhd-s-text, #27251e);
+  color: var(--ax-s-text, #27251e);
 }
 .psp-confirm-actions {
   display: flex;
@@ -1308,17 +1308,17 @@ async function start() {
   height: 42px;
   padding: 0 20px;
   border-radius: 21px;
-  border: 1px solid var(--uhd-s-border, #e5e5e5);
+  border: 1px solid var(--ax-s-border, #e5e5e5);
   background: transparent;
-  color: var(--uhd-s-text, #27251e);
+  color: var(--ax-s-text, #27251e);
   font-size: 14.5px;
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
 }
 .psp-confirm-btn--danger {
-  background: var(--uhd-danger, #d92d20);
-  border-color: var(--uhd-danger, #d92d20);
+  background: var(--ax-danger, #d92d20);
+  border-color: var(--ax-danger, #d92d20);
   color: #fff;
 }
 .psp-confirm-btn--danger:disabled {
@@ -1353,15 +1353,15 @@ async function start() {
   gap: 10px;
   padding: 26px 0;
   font-size: 14px;
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
 }
 .psp-spinner {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: 2px solid var(--uhd-l-border, #e5e5e5);
-  border-top-color: var(--uhd-l-text, #111111);
-  animation: uhd-spin 0.8s linear infinite;
+  border: 2px solid var(--ax-l-border, #e5e5e5);
+  border-top-color: var(--ax-l-text, #111111);
+  animation: ax-spin 0.8s linear infinite;
 }
 /* 失败态（G-155，友站形态）：文案＋描边 pill 重试钮，纵排居中 */
 .psp-failed {
@@ -1374,7 +1374,7 @@ async function start() {
 .psp-failed__text {
   margin: 0;
   font-size: 15px;
-  color: var(--uhd-l-text, #111111);
+  color: var(--ax-l-text, #111111);
 }
 .psp-failed__retry {
   display: inline-flex;
@@ -1382,16 +1382,16 @@ async function start() {
   gap: 7px;
   padding: 11px 22px;
   border-radius: 999px;
-  border: 1px solid var(--uhd-l-border, #e5e5e5);
+  border: 1px solid var(--ax-l-border, #e5e5e5);
   background: transparent;
-  color: var(--uhd-l-text, #111111);
+  color: var(--ax-l-text, #111111);
   font-size: 14px;
   cursor: pointer;
 }
-body.uhd-stream-dark .psp-failed__text {
+body.ax-stream-dark .psp-failed__text {
   color: #ffffff;
 }
-body.uhd-stream-dark .psp-failed__retry {
+body.ax-stream-dark .psp-failed__retry {
   border-color: rgba(255, 255, 255, 0.35);
   color: #ffffff;
 }
@@ -1402,13 +1402,13 @@ body.uhd-stream-dark .psp-failed__retry {
   justify-content: space-between;
   font-size: 14px;
   font-weight: 600;
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
   margin-top: 4px;
 }
 .psp-sec-count {
   font-size: 13px;
   font-weight: 400;
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
 }
 .psp-vers {
   display: flex;
@@ -1428,13 +1428,13 @@ body.uhd-stream-dark .psp-failed__retry {
   align-items: center;
   padding: 12px 14px;
   border-radius: 18px;
-  border: 1.5px solid var(--uhd-l-border, #e5e5e5);
-  background: var(--uhd-l-input-bg, #f5f5f5);
+  border: 1.5px solid var(--ax-l-border, #e5e5e5);
+  background: var(--ax-l-input-bg, #f5f5f5);
   cursor: pointer;
 }
 .psp-ver--on {
-  border-color: var(--uhd-l-text, #111111);
-  background: var(--uhd-l-surface, #ffffff);
+  border-color: var(--ax-l-text, #111111);
+  background: var(--ax-l-surface, #ffffff);
 }
 .psp-ver__radio {
   grid-column: 1;
@@ -1446,14 +1446,14 @@ body.uhd-stream-dark .psp-failed__retry {
   position: relative;
 }
 .psp-ver--on .psp-ver__radio {
-  border-color: var(--uhd-l-text, #111111);
+  border-color: var(--ax-l-text, #111111);
 }
 .psp-ver--on .psp-ver__radio::after {
   content: '';
   position: absolute;
   inset: 3px;
   border-radius: 50%;
-  background: var(--uhd-l-text, #111111);
+  background: var(--ax-l-text, #111111);
 }
 .psp-ver__name {
   grid-column: 2;
@@ -1478,16 +1478,16 @@ body.uhd-stream-dark .psp-failed__retry {
   line-height: 1;
   padding: 3px 8px;
   border-radius: 6px;
-  border: 1px solid var(--uhd-l-border, #e5e5e5);
+  border: 1px solid var(--ax-l-border, #e5e5e5);
   background: rgba(0, 0, 0, 0.04);
-  color: var(--uhd-l-text, #111111);
+  color: var(--ax-l-text, #111111);
 }
 .psp-ver__meta {
   grid-column: 2;
   grid-row: 3;
   font-size: 13px;
   line-height: 1.5;
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
 }
 /* 码率/大小/时长逐段成粒：段内不折行，换行只落在段间分隔点上 */
 .psp-ver__metapart {
@@ -1522,9 +1522,9 @@ body.uhd-stream-dark .psp-failed__retry {
   width: 35px;
   height: 35px;
   border-radius: 50%;
-  border: 1px solid var(--uhd-l-border, #e5e5e5);
-  background: var(--uhd-l-surface, #ffffff);
-  color: var(--uhd-l-text-2, #6b7280);
+  border: 1px solid var(--ax-l-border, #e5e5e5);
+  background: var(--ax-l-surface, #ffffff);
+  color: var(--ax-l-text-2, #6b7280);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1538,7 +1538,7 @@ body.uhd-stream-dark .psp-failed__retry {
   min-width: 0;
   margin-top: 4px;
   padding-top: 12px;
-  border-top: 1px solid var(--uhd-l-border, #e5e5e5);
+  border-top: 1px solid var(--ax-l-border, #e5e5e5);
 }
 .psp-grid {
   display: grid;
@@ -1554,17 +1554,17 @@ body.uhd-stream-dark .psp-failed__retry {
 }
 .psp-grid__label {
   font-size: 12.5px;
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
 }
 .psp-grid__value {
   font-size: 15px;
   font-weight: 600;
-  color: var(--uhd-l-text, #111111);
+  color: var(--ax-l-text, #111111);
 }
 .psp-audio {
   margin-top: 12px;
   padding-top: 10px;
-  border-top: 1px solid var(--uhd-l-border, #e5e5e5);
+  border-top: 1px solid var(--ax-l-border, #e5e5e5);
 }
 .psp-audio__head {
   display: flex;
@@ -1574,7 +1574,7 @@ body.uhd-stream-dark .psp-failed__retry {
   padding: 2px 0;
   border: none;
   background: none;
-  color: var(--uhd-l-text, #111111);
+  color: var(--ax-l-text, #111111);
   font-family: inherit;
   cursor: pointer;
   text-align: left;
@@ -1585,12 +1585,12 @@ body.uhd-stream-dark .psp-failed__retry {
 }
 .psp-audio__lang {
   font-size: 13px;
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
 }
 .psp-audio__count {
   margin-left: auto;
   font-size: 13px;
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
 }
 .psp-audio__list {
   margin-top: 8px;
@@ -1603,11 +1603,11 @@ body.uhd-stream-dark .psp-failed__retry {
   gap: 10px;
   padding: 6px 0;
   font-size: 13.5px;
-  color: var(--uhd-l-text, #111111);
+  color: var(--ax-l-text, #111111);
 }
 .psp-audio__rowmeta {
   font-size: 12.5px;
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
 }
 .psp-audio__badge {
   font-size: 11px;
@@ -1615,14 +1615,14 @@ body.uhd-stream-dark .psp-failed__retry {
   padding: 2px 7px;
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.07);
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
 }
 /* 展开网格内嵌字幕行（友站形态：音轨行下方、可展开选轨）——与
    .psp-audio 同款式，行是按钮：文本轨可点选，图片轨置灰禁用 */
 .psp-emb {
   margin-top: 12px;
   padding-top: 10px;
-  border-top: 1px solid var(--uhd-l-border, #e5e5e5);
+  border-top: 1px solid var(--ax-l-border, #e5e5e5);
 }
 .psp-emb__head {
   display: flex;
@@ -1632,7 +1632,7 @@ body.uhd-stream-dark .psp-failed__retry {
   padding: 2px 0;
   border: none;
   background: none;
-  color: var(--uhd-l-text, #111111);
+  color: var(--ax-l-text, #111111);
   font-family: inherit;
   cursor: pointer;
   text-align: left;
@@ -1643,12 +1643,12 @@ body.uhd-stream-dark .psp-failed__retry {
 }
 .psp-emb__lang {
   font-size: 13px;
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
 }
 .psp-emb__count {
   margin-left: auto;
   font-size: 13px;
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
 }
 .psp-emb__list {
   margin-top: 8px;
@@ -1663,7 +1663,7 @@ body.uhd-stream-dark .psp-failed__retry {
   padding: 6px 0;
   border: none;
   background: none;
-  color: var(--uhd-l-text, #111111);
+  color: var(--ax-l-text, #111111);
   font-size: 13.5px;
   font-family: inherit;
   cursor: pointer;
@@ -1682,18 +1682,18 @@ body.uhd-stream-dark .psp-failed__retry {
   position: relative;
 }
 .psp-emb__row--on .psp-emb__radio {
-  border-color: var(--uhd-l-text, #111111);
+  border-color: var(--ax-l-text, #111111);
 }
 .psp-emb__row--on .psp-emb__radio::after {
   content: '';
   position: absolute;
   inset: 2px;
   border-radius: 50%;
-  background: var(--uhd-l-text, #111111);
+  background: var(--ax-l-text, #111111);
 }
 .psp-emb__rowmeta {
   font-size: 12.5px;
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
 }
 .psp-emb__badge {
   font-size: 11px;
@@ -1701,23 +1701,23 @@ body.uhd-stream-dark .psp-failed__retry {
   padding: 2px 7px;
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.07);
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
 }
 .psp-note {
   margin: 12px 0 0;
   font-size: 12.5px;
   line-height: 1.6;
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
 }
 .psp-note a {
-  color: var(--uhd-l-text, #111111);
+  color: var(--ax-l-text, #111111);
   font-weight: 700;
 }
 .psp-tip {
   margin: 14px 0 0;
   font-size: 12px;
   line-height: 1.65;
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
 }
 /* 开始播放 */
 .psp-start-sec {
@@ -1725,7 +1725,7 @@ body.uhd-stream-dark .psp-failed__retry {
 }
 .psp-start-label {
   font-size: 12.5px;
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
 }
 .psp-start {
   display: flex;
@@ -1741,27 +1741,27 @@ body.uhd-stream-dark .psp-failed__retry {
   border: 1.5px solid transparent;
   border-radius: 26px;
   background:
-    var(--uhd-rainbow-soft) padding-box,
-    var(--uhd-rainbow) border-box;
+    var(--ax-rainbow-soft) padding-box,
+    var(--ax-rainbow) border-box;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    var(--uhd-shadow-card-l);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
-  color: var(--uhd-l-text, #111111);
+    var(--ax-shadow-card-l);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+  color: var(--ax-l-text, #111111);
   font-size: 16px;
   font-weight: 700;
   font-family: inherit;
   cursor: pointer;
 }
 .psp-start:active {
-  transform: scale(var(--uhd-press-scale));
+  transform: scale(var(--ax-press-scale));
 }
 /* 钮内版本名段：细体灰（与「开始播放」粗体成双色，友站形态） */
 .psp-start__ver {
   font-size: 15px;
   font-weight: 500;
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
 }
 /* 准备态（线路未落定）：形态不变，只换钮内文案，指针示意等待 */
 .psp-start--prep {
@@ -1793,7 +1793,7 @@ body.uhd-stream-dark .psp-failed__retry {
 .psp-subrow__label {
   font-size: 13px;
   font-weight: 600;
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
 }
 .psp-subrow__pill {
   display: inline-flex;
@@ -1804,10 +1804,10 @@ body.uhd-stream-dark .psp-failed__retry {
   max-width: 68%;
   min-height: 38px;
   padding: 7px 13px;
-  border: 1.5px solid var(--uhd-l-border, #e5e5e5);
+  border: 1.5px solid var(--ax-l-border, #e5e5e5);
   border-radius: 12px;
-  background: var(--uhd-l-input-bg, #f5f5f5);
-  color: var(--uhd-l-text, #111111);
+  background: var(--ax-l-input-bg, #f5f5f5);
+  color: var(--ax-l-text, #111111);
   font-size: 14px;
   font-weight: 600;
   font-family: inherit;
@@ -1822,7 +1822,7 @@ body.uhd-stream-dark .psp-failed__retry {
   flex: none;
   font-size: 12.5px;
   font-weight: 400;
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
 }
 /* 向上弹出的选单（字幕/线路共用）：浮在固定区上方，不撑动布局 */
 .psp-pop {
@@ -1836,9 +1836,9 @@ body.uhd-stream-dark .psp-failed__retry {
   overscroll-behavior: contain;
   padding: 6px;
   border-radius: 16px;
-  border: 1px solid var(--uhd-l-border, #e5e5e5);
-  background: var(--uhd-l-surface, #ffffff);
-  box-shadow: var(--uhd-shadow-modal, 0 24px 64px -24px rgba(0, 0, 0, 0.35));
+  border: 1px solid var(--ax-l-border, #e5e5e5);
+  background: var(--ax-l-surface, #ffffff);
+  box-shadow: var(--ax-shadow-modal, 0 24px 64px -24px rgba(0, 0, 0, 0.35));
 }
 .psp-pop__opt {
   display: flex;
@@ -1849,14 +1849,14 @@ body.uhd-stream-dark .psp-failed__retry {
   border: none;
   border-radius: 10px;
   background: transparent;
-  color: var(--uhd-l-text, #111111);
+  color: var(--ax-l-text, #111111);
   font-size: 14px;
   font-family: inherit;
   cursor: pointer;
   text-align: left;
 }
 .psp-pop__opt:hover {
-  background: var(--uhd-l-input-bg, #f5f5f5);
+  background: var(--ax-l-input-bg, #f5f5f5);
 }
 .psp-pop__radio {
   flex: none;
@@ -1867,14 +1867,14 @@ body.uhd-stream-dark .psp-failed__retry {
   position: relative;
 }
 .psp-pop__opt--on .psp-pop__radio {
-  border-color: var(--uhd-l-text, #111111);
+  border-color: var(--ax-l-text, #111111);
 }
 .psp-pop__opt--on .psp-pop__radio::after {
   content: '';
   position: absolute;
   inset: 2.5px;
   border-radius: 50%;
-  background: var(--uhd-l-text, #111111);
+  background: var(--ax-l-text, #111111);
 }
 .psp-pop__main {
   display: flex;
@@ -1884,7 +1884,7 @@ body.uhd-stream-dark .psp-failed__retry {
 }
 .psp-pop__file {
   font-size: 12px;
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1902,7 +1902,7 @@ body.uhd-stream-dark .psp-failed__retry {
 .psp-line-label {
   font-size: 13px;
   font-weight: 600;
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
 }
 .psp-line-pill {
   display: inline-flex;
@@ -1913,10 +1913,10 @@ body.uhd-stream-dark .psp-failed__retry {
   max-width: 68%;
   min-height: 38px;
   padding: 7px 13px;
-  border: 1.5px solid var(--uhd-l-border, #e5e5e5);
+  border: 1.5px solid var(--ax-l-border, #e5e5e5);
   border-radius: 12px;
-  background: var(--uhd-l-input-bg, #f5f5f5);
-  color: var(--uhd-l-text, #111111);
+  background: var(--ax-l-input-bg, #f5f5f5);
+  color: var(--ax-l-text, #111111);
   font-size: 14px;
   font-weight: 600;
   font-family: inherit;
@@ -1944,7 +1944,7 @@ body.uhd-stream-dark .psp-failed__retry {
   padding: 9px 11px;
 }
 .psp-pop--line .psp-line-opt:hover {
-  background: var(--uhd-l-input-bg, #f5f5f5);
+  background: var(--ax-l-input-bg, #f5f5f5);
 }
 .psp-line-opt {
   display: flex;
@@ -1952,16 +1952,16 @@ body.uhd-stream-dark .psp-failed__retry {
   gap: 12px;
   width: 100%;
   padding: 10px 14px;
-  border: 1.5px solid var(--uhd-l-border, #e5e5e5);
+  border: 1.5px solid var(--ax-l-border, #e5e5e5);
   border-radius: 14px;
-  background: var(--uhd-l-surface, #ffffff);
-  color: var(--uhd-l-text, #111111);
+  background: var(--ax-l-surface, #ffffff);
+  color: var(--ax-l-text, #111111);
   font-family: inherit;
   cursor: pointer;
   text-align: left;
 }
 .psp-line-opt--on {
-  border-color: var(--uhd-l-text, #111111);
+  border-color: var(--ax-l-text, #111111);
 }
 /* 配额用尽：灰态不可选，副行显示「暂停服务」（与弹幕线路暂停同口径） */
 .psp-line-opt--off {
@@ -1977,14 +1977,14 @@ body.uhd-stream-dark .psp-failed__retry {
   position: relative;
 }
 .psp-line-opt--on .psp-line-opt__radio {
-  border-color: var(--uhd-l-text, #111111);
+  border-color: var(--ax-l-text, #111111);
 }
 .psp-line-opt--on .psp-line-opt__radio::after {
   content: '';
   position: absolute;
   inset: 3px;
   border-radius: 50%;
-  background: var(--uhd-l-text, #111111);
+  background: var(--ax-l-text, #111111);
 }
 .psp-line-opt__main {
   display: flex;
@@ -1998,7 +1998,7 @@ body.uhd-stream-dark .psp-failed__retry {
 }
 .psp-line-opt__host {
   font-size: 12px;
-  color: var(--uhd-l-text-2, #6b7280);
+  color: var(--ax-l-text-2, #6b7280);
 }
 .psp-sheet:focus-visible,
 .psp-x:focus-visible,
@@ -2012,7 +2012,7 @@ body.uhd-stream-dark .psp-failed__retry {
 .psp-line-pill:focus-visible,
 .psp-line-opt:focus-visible,
 .psp-start:focus-visible {
-  outline: 2px solid var(--uhd-l-link, #2563eb);
+  outline: 2px solid var(--ax-l-link, #2563eb);
   outline-offset: 2px;
 }
 @media (min-width: 768px) {
@@ -2046,109 +2046,109 @@ body.uhd-stream-dark .psp-failed__retry {
 
 <style>
 /* 片库面深色态（body 标记桥接） */
-body.uhd-stream-dark .psp-sheet {
+body.ax-stream-dark .psp-sheet {
   /* 深色态把面令牌钉成深色档（口径同 styles/modal-glass.css
-     深色档；底引片库面弹层实色 --uhd-s-modal-bg），面板组装在
+     深色档；底引片库面弹层实色 --ax-s-modal-bg），面板组装在
      .psp-sheet 本体、此处只换令牌值 */
-  --modal-glass-bg: var(--uhd-s-modal-bg, #1c1c1c);
+  --modal-glass-bg: var(--ax-s-modal-bg, #1c1c1c);
   --modal-glass-edge: rgba(255, 255, 255, 0.24);
   --modal-glass-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
   color: #ffffff;
 }
 /* 深色桥接下遮罩切深色档（与面板深色档同态；无 blur） */
-body.uhd-stream-dark .psp-mask {
+body.ax-stream-dark .psp-mask {
   background: var(--modal-scrim-dark);
 }
-body.uhd-stream-dark .psp-sec-head,
-body.uhd-stream-dark .psp-sec-count,
-body.uhd-stream-dark .psp-ver__meta,
-body.uhd-stream-dark .psp-note,
-body.uhd-stream-dark .psp-loading,
-body.uhd-stream-dark .psp-start-label,
-body.uhd-stream-dark .psp-grid__label,
-body.uhd-stream-dark .psp-audio__lang,
-body.uhd-stream-dark .psp-audio__count,
-body.uhd-stream-dark .psp-audio__rowmeta,
-body.uhd-stream-dark .psp-emb__lang,
-body.uhd-stream-dark .psp-emb__count,
-body.uhd-stream-dark .psp-emb__rowmeta,
-body.uhd-stream-dark .psp-subrow__label,
-body.uhd-stream-dark .psp-subrow__count,
-body.uhd-stream-dark .psp-start__ver,
-body.uhd-stream-dark .psp-pop__file {
+body.ax-stream-dark .psp-sec-head,
+body.ax-stream-dark .psp-sec-count,
+body.ax-stream-dark .psp-ver__meta,
+body.ax-stream-dark .psp-note,
+body.ax-stream-dark .psp-loading,
+body.ax-stream-dark .psp-start-label,
+body.ax-stream-dark .psp-grid__label,
+body.ax-stream-dark .psp-audio__lang,
+body.ax-stream-dark .psp-audio__count,
+body.ax-stream-dark .psp-audio__rowmeta,
+body.ax-stream-dark .psp-emb__lang,
+body.ax-stream-dark .psp-emb__count,
+body.ax-stream-dark .psp-emb__rowmeta,
+body.ax-stream-dark .psp-subrow__label,
+body.ax-stream-dark .psp-subrow__count,
+body.ax-stream-dark .psp-start__ver,
+body.ax-stream-dark .psp-pop__file {
   color: #9ca3af;
 }
-body.uhd-stream-dark .psp-ver {
+body.ax-stream-dark .psp-ver {
   background: #222222;
   border-color: rgba(255, 255, 255, 0.14);
   color: #ffffff;
 }
-body.uhd-stream-dark .psp-ver--on {
+body.ax-stream-dark .psp-ver--on {
   border-color: #ffffff;
 }
-body.uhd-stream-dark .psp-ver__radio {
+body.ax-stream-dark .psp-ver__radio {
   border-color: rgba(255, 255, 255, 0.4);
 }
-body.uhd-stream-dark .psp-ver--on .psp-ver__radio {
+body.ax-stream-dark .psp-ver--on .psp-ver__radio {
   border-color: #ffffff;
 }
-body.uhd-stream-dark .psp-ver--on .psp-ver__radio::after {
+body.ax-stream-dark .psp-ver--on .psp-ver__radio::after {
   background: #ffffff;
 }
-body.uhd-stream-dark .psp-ver__chip {
+body.ax-stream-dark .psp-ver__chip {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.16);
   color: #ffffff;
 }
-body.uhd-stream-dark .psp-tool {
+body.ax-stream-dark .psp-tool {
   background: #262626;
   border-color: rgba(255, 255, 255, 0.14);
   color: #ffffff;
 }
-body.uhd-stream-dark .psp-ver__detail,
-body.uhd-stream-dark .psp-audio,
-body.uhd-stream-dark .psp-emb {
+body.ax-stream-dark .psp-ver__detail,
+body.ax-stream-dark .psp-audio,
+body.ax-stream-dark .psp-emb {
   border-top-color: rgba(255, 255, 255, 0.12);
 }
-body.uhd-stream-dark .psp-grid__value {
+body.ax-stream-dark .psp-grid__value {
   color: #ffffff;
 }
-body.uhd-stream-dark .psp-audio__head,
-body.uhd-stream-dark .psp-audio__row,
-body.uhd-stream-dark .psp-emb__head,
-body.uhd-stream-dark .psp-emb__row {
+body.ax-stream-dark .psp-audio__head,
+body.ax-stream-dark .psp-audio__row,
+body.ax-stream-dark .psp-emb__head,
+body.ax-stream-dark .psp-emb__row {
   color: #ffffff;
 }
-body.uhd-stream-dark .psp-audio__badge,
-body.uhd-stream-dark .psp-emb__badge {
+body.ax-stream-dark .psp-audio__badge,
+body.ax-stream-dark .psp-emb__badge {
   background: rgba(255, 255, 255, 0.12);
   color: #9ca3af;
 }
-body.uhd-stream-dark .psp-emb__radio {
+body.ax-stream-dark .psp-emb__radio {
   border-color: rgba(255, 255, 255, 0.4);
 }
-body.uhd-stream-dark .psp-emb__row--on .psp-emb__radio {
+body.ax-stream-dark .psp-emb__row--on .psp-emb__radio {
   border-color: #ffffff;
 }
-body.uhd-stream-dark .psp-emb__row--on .psp-emb__radio::after {
+body.ax-stream-dark .psp-emb__row--on .psp-emb__radio::after {
   background: #ffffff;
 }
 /* 深色开始播放：深色玻璃填充＋弱化彩虹边（与 .btn-primary 深色配方同口径） */
-body.uhd-stream-dark .psp-start {
+body.ax-stream-dark .psp-start {
   position: relative;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
-  box-shadow: var(--uhd-shadow-sheet);
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
+  box-shadow: var(--ax-shadow-sheet);
   color: #ffffff;
 }
 /* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
    钮面只留玻璃层；浅色基规则不动。 */
-body.uhd-stream-dark .psp-start::before {
+body.ax-stream-dark .psp-start::before {
   content: "";
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: var(--uhd-rainbow-border-w);
-  background: var(--uhd-rainbow);
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -2156,77 +2156,77 @@ body.uhd-stream-dark .psp-start::before {
   pointer-events: none;
 }
 /* 深色态下不可播禁用钮仍须压过上面的玻璃彩虹配方：深灰底灰字 */
-body.uhd-stream-dark .psp-start--none,
-body.uhd-stream-dark .psp-start--none:disabled {
+body.ax-stream-dark .psp-start--none,
+body.ax-stream-dark .psp-start--none:disabled {
   background: #333338;
   border-color: rgba(255, 255, 255, 0.08);
   box-shadow: none;
   color: #8e8e93;
 }
 /* 不可播禁用钮彩虹退场：环随之一并隐藏 */
-body.uhd-stream-dark .psp-start--none::before {
+body.ax-stream-dark .psp-start--none::before {
   display: none;
 }
-body.uhd-stream-dark .psp-subrow__pill,
-body.uhd-stream-dark .psp-line-pill {
+body.ax-stream-dark .psp-subrow__pill,
+body.ax-stream-dark .psp-line-pill {
   background: #262626;
   border-color: rgba(255, 255, 255, 0.14);
   color: #ffffff;
 }
-body.uhd-stream-dark .psp-pop {
+body.ax-stream-dark .psp-pop {
   background: #26262b;
   border-color: rgba(255, 255, 255, 0.14);
 }
-body.uhd-stream-dark .psp-pop__opt {
+body.ax-stream-dark .psp-pop__opt {
   color: #ffffff;
 }
-body.uhd-stream-dark .psp-pop__opt:hover,
-body.uhd-stream-dark .psp-pop--line .psp-line-opt:hover {
+body.ax-stream-dark .psp-pop__opt:hover,
+body.ax-stream-dark .psp-pop--line .psp-line-opt:hover {
   background: rgba(255, 255, 255, 0.06);
 }
-body.uhd-stream-dark .psp-pop__radio {
+body.ax-stream-dark .psp-pop__radio {
   border-color: rgba(255, 255, 255, 0.4);
 }
-body.uhd-stream-dark .psp-pop__opt--on .psp-pop__radio {
+body.ax-stream-dark .psp-pop__opt--on .psp-pop__radio {
   border-color: #ffffff;
 }
-body.uhd-stream-dark .psp-pop__opt--on .psp-pop__radio::after {
+body.ax-stream-dark .psp-pop__opt--on .psp-pop__radio::after {
   background: #ffffff;
 }
-body.uhd-stream-dark .psp-line-opt {
+body.ax-stream-dark .psp-line-opt {
   background: #222222;
   border-color: rgba(255, 255, 255, 0.14);
   color: #ffffff;
 }
-body.uhd-stream-dark .psp-pop--line .psp-line-opt {
+body.ax-stream-dark .psp-pop--line .psp-line-opt {
   background: transparent;
   border-color: transparent;
 }
-body.uhd-stream-dark .psp-line-opt--on {
+body.ax-stream-dark .psp-line-opt--on {
   border-color: #ffffff;
 }
-body.uhd-stream-dark .psp-pop--line .psp-line-opt--on {
+body.ax-stream-dark .psp-pop--line .psp-line-opt--on {
   border-color: transparent;
 }
-body.uhd-stream-dark .psp-line-opt__host {
+body.ax-stream-dark .psp-line-opt__host {
   color: #9ca3af;
 }
-body.uhd-stream-dark .psp-line-label {
+body.ax-stream-dark .psp-line-label {
   color: #9ca3af;
 }
-body.uhd-stream-dark .psp-line-opt__radio {
+body.ax-stream-dark .psp-line-opt__radio {
   border-color: rgba(255, 255, 255, 0.4);
 }
-body.uhd-stream-dark .psp-line-opt--on .psp-line-opt__radio {
+body.ax-stream-dark .psp-line-opt--on .psp-line-opt__radio {
   border-color: #ffffff;
 }
-body.uhd-stream-dark .psp-line-opt--on .psp-line-opt__radio::after {
+body.ax-stream-dark .psp-line-opt--on .psp-line-opt__radio::after {
   background: #ffffff;
 }
-body.uhd-stream-dark .psp-note a {
+body.ax-stream-dark .psp-note a {
   color: #ffffff;
 }
-body.uhd-stream-dark .psp-spinner {
+body.ax-stream-dark .psp-spinner {
   border-color: rgba(255, 255, 255, 0.25);
   border-top-color: #ffffff;
 }

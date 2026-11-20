@@ -6,13 +6,13 @@
  * 外观偏好并回全站主口径（FE-27 收口）：与全站共用 useTheme 的同一份
  * 状态与 aetrix-theme 键——在任何一面切的外观都互相生效，不再有片库面
  * 自己的第二套独立口径。深浅仍只改 .stream-scope 上的 data-stream-theme，
- * 令牌见 uhd-tokens.css 色板 C。
+ * 令牌见 ax-tokens.css 色板 C。
  */
 import { computed, onBeforeUnmount, onMounted, provide, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import StreamTopbar from './StreamTopbar.vue'
 import StreamBottomNav from './StreamBottomNav.vue'
-import UhdTopBar from '@/components/uhd/UhdTopBar.vue'
+import AxTopBar from '@/components/ax/AxTopBar.vue'
 import DetailTopPill from '@/components/panel/DetailTopPill.vue'
 import { useTheme } from '@/composables/useTheme'
 
@@ -23,10 +23,10 @@ function cycleTheme() {
 }
 
 /* Teleport 到 body 的浮层（如 PlayerSchemeSheet）拿不到 .stream-scope 的
-   令牌级联，用 body 标记桥接片库面深色态，浮层 CSS 按 body.uhd-stream-dark 取深色值。 */
+   令牌级联，用 body 标记桥接片库面深色态，浮层 CSS 按 body.ax-stream-dark 取深色值。 */
 watch(
   resolved,
-  (v) => document.body.classList.toggle('uhd-stream-dark', v === 'dark'),
+  (v) => document.body.classList.toggle('ax-stream-dark', v === 'dark'),
   { immediate: true },
 )
 
@@ -37,15 +37,15 @@ onMounted(() => {
   } catch { /* 隐私模式清不掉就算了 */ }
 })
 onBeforeUnmount(() => {
-  document.body.classList.remove('uhd-stream-dark')
+  document.body.classList.remove('ax-stream-dark')
 })
 
 provide('stream-theme', { pref, resolved, cycleTheme })
 
 /* 统一顶栏（2026-11-14）：片库面手机端原先整组无顶栏（D2-01 按原站
    形态隐藏双胶囊），与账户区「前往流媒体」常驻钮不统一、用户亲点整改。
-   手机端改挂全站同一套 UhdTopBar（sticky 玻璃条 + 观影胶囊，样式由
-   .stream-scope 作用域令牌重映射，见 uhd-topbar.css）；桌面 ≥768px
+   手机端改挂全站同一套 AxTopBar（sticky 玻璃条 + 观影胶囊，样式由
+   .stream-scope 作用域令牌重映射，见 ax-topbar.css）；桌面 ≥768px
    仍走批 3 双胶囊 StreamTopbar，本条由下方 CSS 隐藏。
    详情页（media-detail）有自己的头部（详情页对齐单），不在此挂。
    片库首页（library）例外（2026-11-14 红圈对照改定，用户放大亲验）：
@@ -66,7 +66,7 @@ const showUnifiedTopbar = computed(
 <template>
   <div class="stream-scope" :data-stream-theme="resolved">
     <div class="stream-halo" aria-hidden="true"></div>
-    <UhdTopBar v-if="showUnifiedTopbar" class="stream-utb" />
+    <AxTopBar v-if="showUnifiedTopbar" class="stream-utb" />
     <!-- 片库首页右上胶囊：与详情页同一颗 DetailTopPill，浮在 Hero 海报上。
          2026-11-15 录屏核查修订：友站此页点 X 弹用户小菜单（f057），
          故首页传 menu 模式（用户中心/线路测速/退出登录在菜单内），
@@ -86,10 +86,10 @@ const showUnifiedTopbar = computed(
   position: relative;
   min-height: 100vh;
   min-height: 100dvh;
-  background: var(--uhd-s-bg);
-  color: var(--uhd-s-text);
-  font-family: var(--uhd-font-sans);
-  transition: background-color var(--uhd-dur-ui) var(--uhd-ease-standard);
+  background: var(--ax-s-bg);
+  color: var(--ax-s-text);
+  font-family: var(--ax-font-sans);
+  transition: background-color var(--ax-dur-ui) var(--ax-ease-standard);
 }
 /* 顶部柔和彩虹光晕：固定在页面顶部、内容之下（原站实测：极淡粉/绿/蓝辉光） */
 .stream-halo {
@@ -98,7 +98,7 @@ const showUnifiedTopbar = computed(
   left: 0;
   right: 0;
   height: 560px;
-  background: var(--uhd-s-halo);
+  background: var(--ax-s-halo);
   pointer-events: none;
   z-index: 0;
 }

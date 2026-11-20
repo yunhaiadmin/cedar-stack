@@ -76,7 +76,7 @@ const toastIcons = {
 .toast-message {
   flex: 1;
   min-width: 0;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }

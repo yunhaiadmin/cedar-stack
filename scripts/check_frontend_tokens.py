@@ -15,29 +15,29 @@ CSS 规范里这是循环引用，变量会变成 invalid at computed-value time
   2. 不允许 `--x: var(--x)` 自引用；
   3. 不允许纯别名构成的循环（`--a: var(--b)` + `--b: var(--a)`）；
   4. src 下不允许存在「谁都没引入」的样式表（上面那次事故的根源）。
-  5. 两端 uhd-tokens.css 必须逐字一致：user_frontend 那份是唯一真源，
+  5. 两端 ax-tokens.css 必须逐字一致：user_frontend 那份是唯一真源，
      admin_frontend 是同值副本（后台重设计批 0，2026-11-18）。历史上副本
      曾漂移成过期版（344 行 vs 真源 487 行、缺 29 个令牌）且无人察觉——
-     改 --uhd-* 令牌时只许改真源，再把副本同步成逐字相同，否则 CI 失败。
-  6. 管理端壳（Layout.vue / CommandPalette.vue / uhd-admin.css 壳模具）的
+     改 --ax-* 令牌时只许改真源，再把副本同步成逐字相同，否则 CI 失败。
+  6. 管理端壳（Layout.vue / CommandPalette.vue / ax-admin.css 壳模具）的
      字号只许引令牌（后台重设计批 1，2026-11-18）：壳文件里曾散着 13.5px /
-     11.5px / 10.5px 这类不在 --uhd-fs-* 梯队里的分数值与逐处手写的整数值，
+     11.5px / 10.5px 这类不在 --ax-fs-* 梯队里的分数值与逐处手写的整数值，
      改一处漏一处；壳模具的导航项圆角/字号、品牌字、眉题钉死引
-     --uhd-radius-navitem / --uhd-fs-body / --uhd-fs-lead / --uhd-fs-aux。
+     --ax-radius-navitem / --ax-fs-body / --ax-fs-lead / --ax-fs-aux。
   7. 管理端弹层遮罩/圆角只许引令牌（后台重设计批 3，2026-11-19）：
-     遮罩双档令牌 --modal-scrim-dark / --modal-scrim-light 在 uhd-admin.css
+     遮罩双档令牌 --modal-scrim-dark / --modal-scrim-light 在 ax-admin.css
      定义、与用户端 modal-glass.css 同名同值，--au-scrim 深/浅两档必须
      分别改指这两枚令牌、不许再写字面量；EP 弹层（.el-overlay /
      .el-dialog / .el-message-box / .el-drawer）的 border-radius 与
      --el-dialog/messagebox-border-radius 在 element-plus-theme.css 与
-     uhd-admin.css 里只许引 --uhd-radius-modal，不许写数值字面量、
-     不许再引 --au-r-lg（16px）；uhd-admin.css 必须保留 body 前缀的
+     ax-admin.css 里只许引 --ax-radius-modal，不许写数值字面量、
+     不许再引 --au-r-lg（16px）；ax-admin.css 必须保留 body 前缀的
      弹层兜底规则（EP 组件 CSS 后入级联，靠特异性保证口径生效）。
   8. 管理端页面级 CSS 只许登记内的受控例外（后台一期批 4 收口，2026-11-19）：
      views/ 下独立 .css 文件的集合必须与 ADMIN_PAGE_CSS_REGISTERED 登记表
      逐一相等（多一件未登记、或登记了文件却已删除，都失败）；每件登记
      文件的文件头必须带「受控例外登记（后台一期批 4）」标记注释，且其
-     font-size 声明只许引 --uhd-fs-* 梯队。处置结论见
+     font-size 声明只许引 --ax-fs-* 梯队。处置结论见
      docs/design/20261119-admin-page-css-exceptions.md。
 
 样式表集合从入口（main.ts / index.html 的 <style>）出发，沿 @import 与 import 语句递归收集，
@@ -211,8 +211,8 @@ def check_frontend(frontend: str) -> None:
 # U0 冻结（UI 统一 LC-09/LC-10）：main.ts 全量引入的主题 CSS 不许新增；
 # R40：用相对 src 的相对路径登记+比对（原来只比文件名，同名 CSS 可绕过冻结）。
 MAIN_CSS_ALLOWLIST = {
-    "user_frontend": {"styles/aurora.css", "styles/neo-noir-tokens.css", "styles/index.css", "styles/mobile.css", "styles/v4-paper.css", "styles/uhd-tokens.css", "styles/uhd-topbar.css"},
-    "admin_frontend": {"styles/aurora.css", "styles/tokens.css", "styles/base.css", "styles/index.css", "styles/element-plus-theme.css", "styles/responsive.css", "styles/uhd-tokens.css", "styles/uhd-admin.css"},
+    "user_frontend": {"styles/aurora.css", "styles/neo-noir-tokens.css", "styles/index.css", "styles/mobile.css", "styles/v4-paper.css", "styles/ax-tokens.css", "styles/ax-topbar.css"},
+    "admin_frontend": {"styles/aurora.css", "styles/tokens.css", "styles/base.css", "styles/index.css", "styles/element-plus-theme.css", "styles/responsive.css", "styles/ax-tokens.css", "styles/ax-admin.css"},
 }
 NEO_FREEZE = {
     "user_frontend": {
@@ -311,21 +311,21 @@ def check_admin_structure() -> None:
             failures.append(f"    {f}")
 
 
-def check_uhd_tokens_sync() -> None:
-    """规则 5：admin 的 uhd-tokens.css 副本必须与用户端真源逐字一致（批 0 地基）"""
+def check_ax_tokens_sync() -> None:
+    """规则 5：admin 的 ax-tokens.css 副本必须与用户端真源逐字一致（批 0 地基）"""
     global checks
     checks += 1
-    source = ROOT / "user_frontend" / "src" / "styles" / "uhd-tokens.css"
-    copy = ROOT / "admin_frontend" / "src" / "styles" / "uhd-tokens.css"
+    source = ROOT / "user_frontend" / "src" / "styles" / "ax-tokens.css"
+    copy = ROOT / "admin_frontend" / "src" / "styles" / "ax-tokens.css"
     if not source.exists() or not copy.exists():
-        failures.append("uhd-tokens 同步检查：两端 uhd-tokens.css 必须都存在")
+        failures.append("ax-tokens 同步检查：两端 ax-tokens.css 必须都存在")
         return
     if source.read_bytes() == copy.read_bytes():
         return
     src_lines = source.read_text(encoding="utf-8").splitlines()
     copy_lines = copy.read_text(encoding="utf-8").splitlines()
     failures.append(
-        "uhd-tokens 两端不一致：admin_frontend/src/styles/uhd-tokens.css 是用户端真源的"
+        "ax-tokens 两端不一致：admin_frontend/src/styles/ax-tokens.css 是用户端真源的"
         "同值副本，不许漂移（改令牌只改 user_frontend 那份，再逐字同步副本）"
         f"（真源 {len(src_lines)} 行 / 副本 {len(copy_lines)} 行）"
     )
@@ -342,7 +342,7 @@ def check_uhd_tokens_sync() -> None:
 
 # 后台重设计批 1（2026-11-18）：壳字号口径。Layout.vue / CommandPalette.vue 是
 # 壳本体（侧栏/顶栏/抽屉/命令面板），font-size 不许再写数值字面量，一律引
-# --uhd-fs-*（分数值归相邻档）；uhd-admin.css 壳模具的导航项/品牌字/眉题同理
+# --ax-fs-*（分数值归相邻档）；ax-admin.css 壳模具的导航项/品牌字/眉题同理
 # 钉死引统一令牌，防止模具与真源再次漂移。
 SHELL_FONT_LITERAL_RE = re.compile(r"font-size:\s*\d+(?:\.\d+)?(?:px|rem|em)\b")
 SHELL_FONT_FRACTION_RE = re.compile(r"font-size:\s*\d+\.\d+(?:px|rem|em)\b")
@@ -350,12 +350,12 @@ ADMIN_SHELL_VUE = (
     "admin_frontend/src/views/Layout.vue",
     "admin_frontend/src/components/CommandPalette.vue",
 )
-ADMIN_SHELL_FILES = ADMIN_SHELL_VUE + ("admin_frontend/src/styles/uhd-admin.css",)
+ADMIN_SHELL_FILES = ADMIN_SHELL_VUE + ("admin_frontend/src/styles/ax-admin.css",)
 ADMIN_SHELL_MOLD_TOKENS = (
-    "var(--uhd-radius-navitem)",
-    "var(--uhd-fs-body)",
-    "var(--uhd-fs-lead)",
-    "var(--uhd-fs-aux)",
+    "var(--ax-radius-navitem)",
+    "var(--ax-fs-body)",
+    "var(--ax-fs-lead)",
+    "var(--ax-fs-aux)",
 )
 
 
@@ -372,7 +372,7 @@ def check_admin_shell() -> None:
     if bad:
         failures.append(
             "admin_frontend: 壳文件（Layout.vue / CommandPalette.vue）里还有 font-size "
-            "数值字面量（后台重设计批 1：壳字号一律引 --uhd-fs-* 令牌）："
+            "数值字面量（后台重设计批 1：壳字号一律引 --ax-fs-* 令牌）："
         )
         failures.extend(bad)
 
@@ -385,18 +385,18 @@ def check_admin_shell() -> None:
                 bad.append(f"    {rel}:{i}  {line.strip()[:80]}")
     if bad:
         failures.append(
-            "admin_frontend: 壳文件里还有分数值 font-size（--uhd-fs-* 梯队没有分数档，"
+            "admin_frontend: 壳文件里还有分数值 font-size（--ax-fs-* 梯队没有分数档，"
             "须归入相邻档）："
         )
         failures.extend(bad)
 
     checks += 1
-    mold = (ROOT / "admin_frontend/src/styles/uhd-admin.css").read_text(encoding="utf-8")
+    mold = (ROOT / "admin_frontend/src/styles/ax-admin.css").read_text(encoding="utf-8")
     missing = [t for t in ADMIN_SHELL_MOLD_TOKENS if t not in mold]
     if missing:
         failures.append(
-            "admin_frontend: uhd-admin.css 壳模具没有引统一令牌（后台重设计批 1："
-            "导航项圆角/字号、品牌字、眉题走 --uhd-*）：缺少 " + ", ".join(missing)
+            "admin_frontend: ax-admin.css 壳模具没有引统一令牌（后台重设计批 1："
+            "导航项圆角/字号、品牌字、眉题走 --ax-*）：缺少 " + ", ".join(missing)
         )
 
 
@@ -456,12 +456,12 @@ def check_admin_filterbar() -> None:
 
 
 # 后台重设计批 3（2026-11-19）：弹层遮罩/圆角口径（规则 7，见文件头）。
-# aurora.css 里 --au-scrim 的字面量是被 uhd-admin.css 覆盖的基线层，
+# aurora.css 里 --au-scrim 的字面量是被 ax-admin.css 覆盖的基线层，
 # 与批 0 的重映射做法一致，不在本规则范围内；本规则只钉消费层
-# （uhd-admin.css 的改指与两份主题样式表的弹层圆角）。
+# （ax-admin.css 的改指与两份主题样式表的弹层圆角）。
 OVERLAY_RADIUS_FILES = (
     "admin_frontend/src/styles/element-plus-theme.css",
-    "admin_frontend/src/styles/uhd-admin.css",
+    "admin_frontend/src/styles/ax-admin.css",
 )
 OVERLAY_SELECTOR_RE = re.compile(r"\.el-(?:overlay|dialog|message-box|drawer)(?![\w-])")
 RADIUS_DECL_RE = re.compile(
@@ -476,7 +476,7 @@ SCRIM_TOKEN_VALUES = {
 
 def check_admin_overlay() -> None:
     global checks
-    admin_css = (ROOT / "admin_frontend/src/styles/uhd-admin.css").read_text(encoding="utf-8")
+    admin_css = (ROOT / "admin_frontend/src/styles/ax-admin.css").read_text(encoding="utf-8")
     admin_body = COMMENT_RE.sub("", admin_css)
 
     checks += 1
@@ -514,13 +514,13 @@ def check_admin_overlay() -> None:
             for m in RADIUS_DECL_RE.finditer(decls):
                 value = " ".join(m.group(1).split())
                 if RADIUS_LITERAL_RE.search(value) or (
-                    "var(--uhd-radius-modal)" not in value and value.strip("0 ") != ""
+                    "var(--ax-radius-modal)" not in value and value.strip("0 ") != ""
                 ):
                     bad.append(f"    {rel}  {selector.strip()[:50]} → {m.group(0)[:70]}")
     if bad:
         failures.append(
             "admin_frontend: 弹层圆角还有非令牌写法（后台重设计批 3：dialog/抽屉/确认框"
-            "圆角只许引 --uhd-radius-modal，不许数值字面量、不许 --au-r-lg）："
+            "圆角只许引 --ax-radius-modal，不许数值字面量、不许 --au-r-lg）："
         )
         failures.extend(bad)
 
@@ -529,7 +529,7 @@ def check_admin_overlay() -> None:
                if s not in admin_css]
     if missing:
         failures.append(
-            "admin_frontend: uhd-admin.css 缺弹层兜底规则（后台重设计批 3：EP 组件 CSS "
+            "admin_frontend: ax-admin.css 缺弹层兜底规则（后台重设计批 3：EP 组件 CSS "
             "后入级联，须以 body 前缀特异性保证遮罩/圆角口径生效）：缺少 "
             + ", ".join(missing)
         )
@@ -577,8 +577,8 @@ def check_admin_page_css() -> None:
         body = COMMENT_RE.sub("", text)
         for i, line in enumerate(body.splitlines(), 1):
             for m in PAGE_FONT_SIZE_RE.finditer(line):
-                if "var(--uhd-fs-" not in m.group(1):
-                    bad.append(f"    {rel}:{i}  font-size 未引 --uhd-fs-* 梯队：{line.strip()[:80]}")
+                if "var(--ax-fs-" not in m.group(1):
+                    bad.append(f"    {rel}:{i}  font-size 未引 --ax-fs-* 梯队：{line.strip()[:80]}")
     if bad:
         failures.append("admin_frontend: 页面级 CSS 受控例外登记不完整（后台一期批 4）：")
         failures.extend(bad)
@@ -588,7 +588,7 @@ for frontend in FRONTENDS:
     check_frontend(frontend)
     check_freeze(frontend)
 check_admin_structure()
-check_uhd_tokens_sync()
+check_ax_tokens_sync()
 check_admin_shell()
 check_admin_filterbar()
 check_admin_overlay()
@@ -599,4 +599,4 @@ if failures:
     print("\n".join(failures))
     print("❌ 设计令牌契约检查失败")
     sys.exit(1)
-print("✅ 设计令牌契约检查通过（引用的令牌都有定义 · 无循环引用 · 没有孤立样式表 · 主题引入冻结 · neo 冻结 · 两端 uhd-tokens 逐字同步 · 壳字号走令牌 · 裸表白名单 · 筛选走 FilterBar · 弹层遮罩/圆角走令牌 · 页面级 CSS 受控例外登记）")
+print("✅ 设计令牌契约检查通过（引用的令牌都有定义 · 无循环引用 · 没有孤立样式表 · 主题引入冻结 · neo 冻结 · 两端 ax-tokens 逐字同步 · 壳字号走令牌 · 裸表白名单 · 筛选走 FilterBar · 弹层遮罩/圆角走令牌 · 页面级 CSS 受控例外登记）")

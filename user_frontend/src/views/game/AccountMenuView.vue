@@ -1,10 +1,10 @@
 <template>
-  <!-- 桌面并壳（2026-11-18 侧栏统一单，M-2）：≥769px 进 UhdAccountLayout
+  <!-- 桌面并壳（2026-11-18 侧栏统一单，M-2）：≥769px 进 AxAccountLayout
        侧栏壳，与其余用户中心页同壳；手机端 ShellGate 原样透传，版式不动 -->
-  <UhdAccountShellGate>
+  <AxAccountShellGate>
     <div class="am-page">
     <!-- 页头品牌行已删（2026-11-14 顶栏统一单）：顶栏由 App.vue 的
-         UhdTopBar 全区统一承接（本页标题传「我的」），不再自带一份 -->
+         AxTopBar 全区统一承接（本页标题传「我的」），不再自带一份 -->
 
     <!-- 身份区：头像 64 圆＋名 24/800＋状态副行（真实文案） -->
     <div class="am-identity">
@@ -79,13 +79,13 @@
       <button type="button" class="am-logout" @click="handleLogout">退出登录</button>
     </main>
     </div>
-  </UhdAccountShellGate>
+  </AxAccountShellGate>
 </template>
 
 <script setup lang="ts">
 /**
  * 「我的」（/game/account/menu）——用户中心移动端底坞的第二个页签页。
- * 2026-11-13 按 UHDNow 原站 1:1 返工：平面列表（分组粗标题＋发丝线，
+ * 2026-11-13 按 参考站 原站 1:1 返工：平面列表（分组粗标题＋发丝线，
  * 无卡片、无行图标）＋页头「前往流媒体」胶囊＋外观三档内嵌分段，
  * 页面跟随用户外观（浅/深两套本地变量，不再强制深色）。
  * 2026-11-13 跟进（用户定调）：功能改名（补给站→商店、能量账本→能量明细、
@@ -96,7 +96,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { ChevronRight, Copy, ArrowUpRight } from 'lucide-vue-next'
-import UhdAccountShellGate from '@/components/uhd/UhdAccountShellGate.vue'
+import AxAccountShellGate from '@/components/ax/AxAccountShellGate.vue'
 import { useUserStore } from '@/stores/user'
 import { useSubscriptionStore } from '@/stores/subscription'
 import { useTheme } from '@/composables/useTheme'
@@ -310,7 +310,7 @@ onMounted(async () => {
   min-height: 100dvh;
   background: #050505;
   color: #ffffff;
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -334,7 +334,7 @@ onMounted(async () => {
   background: #232329;
   color: #ffffff;
   font-size: 26px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
 }
 .am-identity__text {
   min-width: 0;
@@ -342,7 +342,7 @@ onMounted(async () => {
 .am-username {
   margin: 0;
   font-size: 24px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   letter-spacing: -0.01em;
   color: #ffffff;
   white-space: nowrap;
@@ -391,10 +391,10 @@ onMounted(async () => {
 }
 .am-group__title {
   margin: 30px 0 6px;
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
   /* 2026-11-15 对照友站分组标题收小一个量级：20px → 17px */
   font-size: 17px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   color: #ffffff;
 }
 .am-row {
@@ -424,7 +424,7 @@ onMounted(async () => {
 }
 .am-row__name {
   flex: 1 1 auto;
-  font-weight: var(--uhd-fw-medium);
+  font-weight: var(--ax-fw-medium);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -461,15 +461,15 @@ onMounted(async () => {
   color: rgba(255, 255, 255, 0.62);
   font-family: inherit;
   font-size: 13.5px;
-  font-weight: var(--uhd-fw-medium);
+  font-weight: var(--ax-fw-medium);
   cursor: pointer;
   transition: background 0.2s ease, color 0.2s ease;
 }
 .am-seg__btn--on {
   background: rgba(255, 255, 255, 0.2);
   color: #ffffff;
-  font-weight: var(--uhd-fw-semibold);
-  box-shadow: var(--uhd-shadow-seg);
+  font-weight: var(--ax-fw-semibold);
+  box-shadow: var(--ax-shadow-seg);
 }
 
 /* 退出登录：独立整宽胶囊 */
@@ -480,12 +480,12 @@ onMounted(async () => {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 999px;
   background: #17181c;
-  color: var(--uhd-danger);
+  color: var(--ax-danger);
   font-family: inherit;
   font-size: 17px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   cursor: pointer;
-  box-shadow: var(--uhd-shadow-soft);
+  box-shadow: var(--ax-shadow-soft);
 }
 .am-logout:active {
   opacity: 0.78;

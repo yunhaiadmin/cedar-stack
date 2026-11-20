@@ -80,7 +80,7 @@
 
 <script setup lang="ts">
 /**
- * GiftCodeSheet —— 把余额做成礼品卡的居中玻璃浮窗（钱包页 UHD 重做，
+ * GiftCodeSheet —— 把余额做成礼品卡的居中玻璃浮窗（钱包页 ax 重做，
  * 2026-11-15；弹层形态 2026-11-15 批 1 改居中玻璃浮窗，与购流量弹窗
  * 同口径）。面额输入（带可用余额提示）+ 有效期胶囊（1/3/7 天，上限 7）
  * + 确认生成；成功后弹层内展示码 + 复制钮 + 用途说明。
@@ -204,8 +204,8 @@ async function copyCode() {
 <style scoped>
 /* 居中实色浮窗（2026-11-18 用户亲令改实色；2026-11-15 弹层形态
    批 1 曾为玻璃浮窗，与购流量弹窗同一口径）：宽 92%、max 420px、
-   四角圆角 26；面板底改实色 surface（深 var(--uhd-d-surface-raised)、
-   浅 var(--uhd-l-surface)）、阴影走 --uhd-shadow-modal、遮罩与
+   四角圆角 26；面板底改实色 surface（深 var(--ax-d-surface-raised)、
+   浅 var(--ax-l-surface)）、阴影走 --ax-shadow-modal、遮罩与
    面板均无 backdrop；内层填充/描边走 --tq-* 弹窗令牌，
    深浅双态自动跟随。 */
 .gc-mask {
@@ -227,17 +227,17 @@ async function copyCode() {
   max-width: 420px;
   max-height: 88vh;
   overflow-y: auto;
-  background: var(--uhd-d-surface-raised);
-  border: 1px solid var(--uhd-glass-border);
+  background: var(--ax-d-surface-raised);
+  border: 1px solid var(--ax-glass-border);
   border-radius: 26px;
   padding: 22px 22px 24px;
   color: var(--tq-fg);
-  box-shadow: var(--uhd-shadow-modal);
+  box-shadow: var(--ax-shadow-modal);
   animation: gc-pop-in 0.28s cubic-bezier(0.32, 0.72, 0.28, 1) both;
 }
 html[data-theme='light'] .gc-sheet {
-  background: var(--uhd-l-surface);
-  border-color: var(--uhd-glass-border-l);
+  background: var(--ax-l-surface);
+  border-color: var(--ax-glass-border-l);
 }
 @keyframes gc-pop-in {
   from { transform: translateY(12px) scale(0.97); opacity: 0; }
@@ -382,5 +382,5 @@ html[data-theme='light'] .gc-done__icon { color: #16a34a; }
   font-weight: 650;
   cursor: pointer;
 }
-.gc-copy:active { transform: scale(var(--uhd-press-scale)); }
+.gc-copy:active { transform: scale(var(--ax-press-scale)); }
 </style>

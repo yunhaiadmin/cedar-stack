@@ -100,7 +100,7 @@ const activeTab = computed<WelfareTab>({
   border-bottom: 2px solid transparent;
   color: var(--au-text-2);
   font: inherit;
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   font-weight: 500;
   cursor: pointer;
   margin-bottom: -1px;
@@ -113,7 +113,7 @@ const activeTab = computed<WelfareTab>({
   border-bottom-color: var(--au-primary);
 }
 .tab-hint {
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-3);
   font-weight: 400;
   white-space: nowrap;
@@ -122,7 +122,7 @@ const activeTab = computed<WelfareTab>({
 .tab-panel { min-width: 0; }
 
 @media (max-width: 640px) {
-  .tab-btn { padding: 8px 12px; font-size: var(--uhd-fs-caption); }
-  .tab-hint { font-size: var(--uhd-fs-micro); }
+  .tab-btn { padding: 8px 12px; font-size: var(--ax-fs-caption); }
+  .tab-hint { font-size: var(--ax-fs-micro); }
 }
 </style>

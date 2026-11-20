@@ -1,6 +1,6 @@
 """账号安全三件套 API：TOTP / Passkey / 平台 API Key（用户端，前缀 /api/user/security）。
 
-形态照 UHDNow 账号安全页：登录与恢复区的动态验证码行、Passkeys 区块、
+形态照 参考站 账号安全页：登录与恢复区的动态验证码行、Passkeys 区块、
 活跃会话区的「创建 API Key」（创建前置＝已绑 TOTP 或 Passkey，后端硬校验）。
 纯逻辑在 backend/account_security.py；登录链的接入（密码登录带码校验、
 Passkey 登录、login-factors）在 backend/api/emby_portal.py。

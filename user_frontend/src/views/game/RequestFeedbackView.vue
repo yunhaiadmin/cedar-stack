@@ -1,9 +1,9 @@
 <template>
-  <UhdAccountLayout>
+  <AxAccountLayout>
     <!-- 求片反馈（2026-11-13 合并页；2026-11-15 按作品组织重做）：许愿池＋
          求救信号合并为一页。三页签（发起请求/我的请求/请求广场），每页签一句
          副标题；发起请求是三档分段（求片/追新/资源反馈）＋每档一套须知卡组。
-         2026-11-15 重做（照友站录屏逐帧形态，任务书 uhd-request-flow-frame-study）：
+         2026-11-15 重做（照友站录屏逐帧形态，任务书 ax-request-flow-frame-study）：
          求片/追新共用搜索、先搜后发、提交走弹层、成功跳作品请求详情页；
          我的请求与广场改单容器分隔行＋海报＋分页；追新落 movie_requests
          （kind=chase），旧追新工单仍在我的请求里展开线程看管理员回复。
@@ -11,7 +11,7 @@
     <div class="rf-page">
       <div class="rf-inner">
       <!-- 顶栏（照友站：返回＋小标题）。观影胶囊已删（2026-11-18 去重单）：
-           账户区由 App.vue 统一顶栏 UhdTopBar 常驻承接，本页不再自带，
+           账户区由 App.vue 统一顶栏 AxTopBar 常驻承接，本页不再自带，
            避免与统一顶栏叠出两颗（同 2026-11-14 顶栏统一单口径）。 -->
       <div class="rf-topbar">
         <button type="button" class="rf-back" aria-label="返回" @click="goBack">
@@ -312,14 +312,14 @@
       </section>
       </div>
     </div>
-  </UhdAccountLayout>
+  </AxAccountLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ChevronLeft } from 'lucide-vue-next'
-import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
+import AxAccountLayout from '@/components/ax/AxAccountLayout.vue'
 import NoticeCards from '@/components/requests/NoticeCards.vue'
 import RequestSubmitModal, { type SubmitWork } from '@/components/requests/RequestSubmitModal.vue'
 import TicketThread from '@/components/requests/TicketThread.vue'
@@ -333,7 +333,7 @@ import { useToast } from '@/composables/useToast'
 import { humanizeError } from '@/composables/usePanelApi'
 
 type TabKey = 'create' | 'mine' | 'plaza'
-/* 五类型（2026-11-13 用户亲定，照 UHDNow）：影片求片=seek 走 mediaSeek；
+/* 五类型（2026-11-13 用户亲定，照 参考站）：影片求片=seek 走 mediaSeek；
    电影/剧集追新、修正信息、其他反馈走工单 category（chase_movie/chase_series/correction/问题类型值） */
 type ReqType = 'seek' | 'chase_movie' | 'chase_series' | 'correction' | 'feedback'
 /* 列表行类型比提交类型多一个存量值：旧追新工单 category='chase' 未区分电影/剧集 */
@@ -852,8 +852,8 @@ onMounted(() => {
    数值来源：实测清单 §10（H1 30–32px/800、页签下划线 2px、类型分段 211×36–40
    圆角 19–20、搜索框 50 高圆角 25、筛选胶囊 481×38–40、状态圆点 6px、
    空态虚线卡 1006×210 圆角 16、底部留白 200px+；列表行未测到，按同构推定）。 */
-/* 页面自带深色底（PersonalCenterView #91 模式）：UhdAccountLayout 外壳恒为浅色
-   （--uhd-l-bg），嵌套页不自带底就会白字落浅底；.rf-page 以负边距漫过布局
+/* 页面自带深色底（PersonalCenterView #91 模式）：AxAccountLayout 外壳恒为浅色
+   （--ax-l-bg），嵌套页不自带底就会白字落浅底；.rf-page 以负边距漫过布局
    main 的内边距（桌面 28px 32px 120px），把深色铺满整块内容区；浅色时与外壳
    同色 #f8f8f8 融合。内容宽度仍由 .rf-inner 的 1006px 约束。 */
 .rf-page { margin: -28px -32px -120px; padding: 28px 32px 220px; background: #08080a; min-height: 100dvh; }
@@ -920,10 +920,10 @@ onMounted(() => {
   width: 100%; height: 50px; border-radius: 25px; cursor: pointer;
   font-size: 15px; font-weight: 800; color: #ffffff;
   border: 1.5px solid transparent;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
-  box-shadow: var(--uhd-shadow-sheet);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
+  box-shadow: var(--ax-shadow-sheet);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
 }
 /* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
    钮面只留玻璃层；浅色覆盖只换面背景，环由本处继承。 */
@@ -932,8 +932,8 @@ onMounted(() => {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: var(--uhd-rainbow-border-w);
-  background: var(--uhd-rainbow);
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -966,7 +966,7 @@ onMounted(() => {
   color: #111111; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
   border: 1.5px solid transparent;
-  background: linear-gradient(#ffffff, #ffffff) padding-box, var(--uhd-rainbow-border) border-box;
+  background: linear-gradient(#ffffff, #ffffff) padding-box, var(--ax-rainbow-border) border-box;
 }
 .rf-search__btn:disabled { opacity: 0.6; cursor: default; }
 .rf-search__spinner {
@@ -991,7 +991,7 @@ onMounted(() => {
   position: absolute; right: 5px; top: 5px; height: 40px; padding: 0 20px; border-radius: 20px;
   font-size: 14px; font-weight: 700; color: #fbfcfd; cursor: pointer; font-family: inherit;
   border: 1.5px solid transparent;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
 }
 /* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
    钮面只留玻璃层；浅色覆盖只换面背景，环由本处继承。 */
@@ -1000,8 +1000,8 @@ onMounted(() => {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: var(--uhd-rainbow-border-w);
-  background: var(--uhd-rainbow);
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -1134,7 +1134,7 @@ html[data-theme='light'] .rf-back { color: #111111; }
 html[data-theme='light'] .rf-back:active { background: rgba(0, 0, 0, 0.05); }
 html[data-theme='light'] .rf-seg { background: #f5f5f6; border-color: #e3e3e6; }
 html[data-theme='light'] .rf-seg__btn { color: #6b7280; }
-html[data-theme='light'] .rf-seg__btn--on { background: #ffffff; color: #111111; box-shadow: var(--uhd-shadow-seg); }
+html[data-theme='light'] .rf-seg__btn--on { background: #ffffff; color: #111111; box-shadow: var(--ax-shadow-seg); }
 html[data-theme='light'] .rf-form__label { color: #111111; }
 html[data-theme='light'] .rf-form__input, html[data-theme='light'] .rf-form__area { background: #f5f5f5; border-color: #e5e5e5; color: #111111; }
 html[data-theme='light'] .rf-form__input::placeholder, html[data-theme='light'] .rf-form__area::placeholder { color: #9ca3af; }
@@ -1142,9 +1142,9 @@ html[data-theme='light'] .rf-form__input:focus, html[data-theme='light'] .rf-for
 html[data-theme='light'] .rf-type { background: #ffffff; border-color: #e5e5e5; color: #111111; }
 html[data-theme='light'] .rf-type.on { border-color: #111111; background: #f9f9f9; }
 html[data-theme='light'] .rf-submit {
-  background: var(--uhd-rainbow-soft);
+  background: var(--ax-rainbow-soft);
   color: #111111;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--uhd-shadow-card-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 html[data-theme='light'] .rf-quota { color: #6b7280; }
 html[data-theme='light'] .rf-hint--err { color: #dc2626; }
@@ -1154,7 +1154,7 @@ html[data-theme='light'] .rf-searchbar__input { background: #f0f0f1; border-colo
 html[data-theme='light'] .rf-searchbar__input::placeholder { color: #9ca3af; }
 html[data-theme='light'] .rf-searchbar__input:focus { border-color: #9ca3af; }
 html[data-theme='light'] .rf-searchbar__btn {
-  background: var(--uhd-rainbow-soft);
+  background: var(--ax-rainbow-soft);
   color: #111111;
 }
 html[data-theme='light'] .rf-filterbar { background: #ffffff; border-color: #e5e5e5; }

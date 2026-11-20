@@ -79,11 +79,11 @@ async function key(name, shift = false) {
 }
 
 const stateExpr = `(() => {
-  const btn = document.querySelector('.uhd-account__navbtn')
-  const side = document.querySelector('.uhd-side')
-  const drawer = document.querySelector('.uhd-account__drawer')
-  const modal = document.querySelector('.uhd-account__modal')
-  const main = document.querySelector('.uhd-account__main')
+  const btn = document.querySelector('.ax-account__navbtn')
+  const side = document.querySelector('.ax-side')
+  const drawer = document.querySelector('.ax-account__drawer')
+  const modal = document.querySelector('.ax-account__modal')
+  const main = document.querySelector('.ax-account__main')
   const box = (el) => {
     if (!el) return null
     const r = el.getBoundingClientRect()
@@ -91,7 +91,7 @@ const stateExpr = `(() => {
     return { w: Math.round(r.width), x: Math.round(r.x), y: Math.round(r.y), display: s.display, position: s.position }
   }
   const active = document.activeElement
-  const labelCount = document.querySelectorAll('.uhd-side__item-label').length
+  const labelCount = document.querySelectorAll('.ax-side__item-label').length
   return JSON.stringify({
     path: location.pathname,
     btn: btn ? { display: getComputedStyle(btn).display, expanded: btn.getAttribute('aria-expanded') } : null,
@@ -109,12 +109,12 @@ const stateExpr = `(() => {
     sheetInert: !!document.querySelector('.m-sheet')?.inert,
     menuModalInert: !!document.querySelector('.m-modal')?.inert,
     active: active?.getAttribute?.('aria-label') || (active?.id || active?.innerText || '').trim().slice(0, 24),
-    activeIsMain: active === document.querySelector('.uhd-account__main'),
+    activeIsMain: active === document.querySelector('.ax-account__main'),
     activeInDrawer: !!(drawer && active && drawer.contains(active)),
     activeInSheet: !!(document.querySelector('.m-modal') && active && document.querySelector('.m-modal').contains(active)),
     overflow: document.documentElement.style.overflow,
     labels: labelCount,
-    hasOverview: [...document.querySelectorAll('.uhd-side__item-label')].some((el) => el.textContent.includes('我的概览')),
+    hasOverview: [...document.querySelectorAll('.ax-side__item-label')].some((el) => el.textContent.includes('我的概览')),
   })
 })()`
 
@@ -126,7 +126,7 @@ check('1440 nav button hidden', s.btn?.display === 'none', s.btn?.display)
 check('1440 sidebar about 250', s.side && s.side.w >= 240 && s.side.w <= 260, JSON.stringify(s.side))
 check('1440 main starts after sidebar', s.main && s.main.x >= 240, JSON.stringify(s.main))
 check('1440 labels visible', s.hasOverview === true, String(s.labels))
-await act(`document.querySelector('.uhd-side__collapse').click()`)
+await act(`document.querySelector('.ax-side__collapse').click()`)
 await sleep(350)
 s = await evalJson(stateExpr)
 check('1440 collapsed about 68', s.side && s.side.w >= 60 && s.side.w <= 80, JSON.stringify(s.side))
@@ -139,7 +139,7 @@ s = await evalJson(stateExpr)
 check('390 button shown after desktop collapse', s.btn?.display === 'inline-flex')
 check('390 closed drawer not shown', !s.dialog && (s.drawer?.display === 'none' || s.drawer?.w === 0))
 check('390 main full width closed', s.main?.w === 390, String(s.main?.w))
-await act(`document.querySelector('.uhd-account__navbtn').click()`)
+await act(`document.querySelector('.ax-account__navbtn').click()`)
 await sleep(250)
 s = await evalJson(stateExpr)
 check('390 open is dialog', s.dialog && s.btn?.expanded === 'true')
@@ -169,31 +169,31 @@ check('390 esc restores prior inert', s.already === true)
 check('390 esc restores overflow', s.overflow === '', JSON.stringify(s.overflow))
 await snap('regress-390-after-esc')
 
-await act(`document.querySelector('.uhd-account__navbtn').click()`)
+await act(`document.querySelector('.ax-account__navbtn').click()`)
 await sleep(200)
-await act(`document.querySelector('.uhd-account__scrim').click()`)
+await act(`document.querySelector('.ax-account__scrim').click()`)
 await sleep(150)
 s = await evalJson(stateExpr)
 check('390 scrim closes and restores', s.btn?.expanded === 'false' && !s.mainInert && s.overflow === '' && s.active === '导航')
 
-await act(`document.querySelector('.uhd-account__navbtn').click()`)
+await act(`document.querySelector('.ax-account__navbtn').click()`)
 await sleep(200)
-await act(`[...document.querySelectorAll('.uhd-side__item')].find((el) => el.innerText.includes('我的概览')).click()`)
+await act(`[...document.querySelectorAll('.ax-side__item')].find((el) => el.innerText.includes('我的概览')).click()`)
 await sleep(250)
 s = await evalJson(stateExpr)
 check('same route closes to opener', s.path === '/game/account' && !s.dialog && s.active === '导航', s.path + ' ' + s.active)
 
-await act(`document.querySelector('.uhd-account__navbtn').click()`)
+await act(`document.querySelector('.ax-account__navbtn').click()`)
 await sleep(200)
 await act(`window.__blockSubscribe = true`)
-await act(`[...document.querySelectorAll('.uhd-side__item')].find((el) => el.innerText.includes('订阅服务')).click()`)
+await act(`[...document.querySelectorAll('.ax-side__item')].find((el) => el.innerText.includes('订阅服务')).click()`)
 await sleep(300)
 s = await evalJson(stateExpr)
 check('cancelled navigation keeps drawer', s.path === '/game/account' && s.dialog && s.btn?.expanded === 'true', s.path + ' ' + s.active)
 check('cancelled focus stays in drawer', s.activeInDrawer, s.active)
 await act(`window.__blockSubscribe = false`)
 
-await act(`[...document.querySelectorAll('.uhd-side__item')].find((el) => el.innerText.includes('我的钱包')).click()`)
+await act(`[...document.querySelectorAll('.ax-side__item')].find((el) => el.innerText.includes('我的钱包')).click()`)
 await sleep(300)
 s = await evalJson(stateExpr)
 check('successful navigation focuses main', s.path === '/wallet' && !s.dialog && s.activeIsMain, s.path + ' ' + s.active)
@@ -209,7 +209,7 @@ check('769 desktop control hidden', s.btn?.display === 'none')
 check('769 collapse preference restored to 68', s.side && s.side.w >= 60 && s.side.w <= 80, JSON.stringify(s.side))
 check('769 labels hidden again', s.hasOverview === false)
 
-await act(`document.querySelector('.uhd-side__collapse').click()`)
+await act(`document.querySelector('.ax-side__collapse').click()`)
 await sleep(350)
 s = await evalJson(stateExpr)
 check('769 expand restores wide sidebar', s.side && s.side.w >= 240, JSON.stringify(s.side))
@@ -280,7 +280,7 @@ async function gapState() {
       topInert: !!document.querySelector('.fake-top')?.inert,
       dockInert: !!document.querySelector('.fake-dock')?.inert,
       already: !!document.getElementById('already-inert')?.inert,
-      mainInert: !!document.querySelector('.uhd-account__main')?.inert,
+      mainInert: !!document.querySelector('.ax-account__main')?.inert,
       active: active?.getAttribute?.('aria-label') || active?.id || active?.tagName || '',
       activeIsBurger: active === burger,
       activeInDialog: !!(dialog && active && dialog.contains(active)),
@@ -306,11 +306,11 @@ if (g.dialog) {
   await sleep(200)
 }
 await act(`document.documentElement.style.overflow = 'clip'`)
-await act(`document.querySelector('.uhd-account__navbtn').click()`)
+await act(`document.querySelector('.ax-account__navbtn').click()`)
 await sleep(250)
 await act(`window.__lastNavError = ''`)
 await act(`window.__blockSubscribe = true`)
-await clickText('.uhd-side__item', '订阅服务')
+await clickText('.ax-side__item', '订阅服务')
 await sleep(300)
 g = await gapState()
 routerCases.guardReturnFalse = {
@@ -326,7 +326,7 @@ check('gap guard-return-false does not throw', g.err === '', g.err)
 await act(`window.__blockSubscribe = false`)
 
 await act(`window.__lastNavError = ''`)
-await clickText('.uhd-side__item', '线路测速')
+await clickText('.ax-side__item', '线路测速')
 await sleep(350)
 g = await gapState()
 routerCases.routerThrow = {
@@ -352,7 +352,7 @@ g = await gapState()
 check('gap overflow restores initial clip', g.overflow === 'clip', JSON.stringify(g.overflow))
 
 const lifeBefore = await gapState()
-await act(`document.querySelector('.uhd-account__navbtn').click()`)
+await act(`document.querySelector('.ax-account__navbtn').click()`)
 await sleep(250)
 g = await gapState()
 check('gap account open locks overflow from clip', g.overflow === 'hidden' && g.mainInert && g.already, g.overflow)
@@ -366,7 +366,7 @@ await act(`window.__fixtureGo('/game/once')`)
 await sleep(400)
 await size(390, 844)
 await act(`document.documentElement.style.overflow = 'clip'`)
-await act(`document.querySelector('.uhd-account__navbtn').click()`)
+await act(`document.querySelector('.ax-account__navbtn').click()`)
 await sleep(250)
 g = await gapState()
 check('gap once drawer open', g.dialog && g.overflow === 'hidden', g.overflow)

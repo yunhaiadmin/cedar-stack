@@ -1,6 +1,6 @@
 <template>
-  <UhdAccountLayout>
-  <div class="uhd-shell-scope">
+  <AxAccountLayout>
+  <div class="ax-shell-scope">
     <div class="v4-page">
       <header class="v4-loghead">
         <h1>代理中心</h1>
@@ -43,7 +43,7 @@
         <section class="v4-sec" aria-label="进货">
           <div class="v4-sec-title">进货</div>
           <div class="v4-sec-sub">选套餐和数量，生成后卡码归你所有；用户核销时自动算作你的销售。</div>
-          <UhdEmptyState v-if="!products.length" title="暂无可进货的套餐" />
+          <AxEmptyState v-if="!products.length" title="暂无可进货的套餐" />
           <div v-else class="v4-card">
             <div v-for="p in products" :key="p.plan_id" class="acct-row">
               <span class="acct-row-main">
@@ -58,7 +58,7 @@
         <!-- 我的卡码 -->
         <section class="v4-sec" aria-label="我的卡码">
           <div class="v4-sec-title">我的卡码</div>
-          <UhdEmptyState v-if="!codes.length" title="还没有进过货" />
+          <AxEmptyState v-if="!codes.length" title="还没有进过货" />
           <div v-else class="v4-card">
             <div v-for="c in codes" :key="c.id" class="acct-row">
               <span class="acct-row-main">
@@ -73,7 +73,7 @@
         <!-- 销售统计 -->
         <section class="v4-sec" aria-label="销售统计">
           <div class="v4-sec-title">销售统计</div>
-          <UhdEmptyState v-if="!sales.length" title="还没有销售记录" />
+          <AxEmptyState v-if="!sales.length" title="还没有销售记录" />
           <div v-else class="v4-card">
             <div v-for="s in sales" :key="s.id" class="acct-row">
               <span class="acct-row-main">
@@ -97,7 +97,7 @@
         <!-- 余额流水 -->
         <section class="v4-sec" aria-label="余额流水">
           <div class="v4-sec-title">余额流水</div>
-          <UhdEmptyState v-if="!logs.length" title="还没有流水" />
+          <AxEmptyState v-if="!logs.length" title="还没有流水" />
           <div v-else class="v4-card">
             <div v-for="l in logs" :key="l.id" class="acct-row">
               <span class="acct-row-main">
@@ -155,12 +155,12 @@
       </div>
     </div>
   </div>
-  </UhdAccountLayout>
+  </AxAccountLayout>
 </template>
 
 <script setup lang="ts">
-import UhdAccountLayout from '@/components/uhd/UhdAccountLayout.vue'
-import UhdEmptyState from '@/components/uhd/UhdEmptyState.vue'
+import AxAccountLayout from '@/components/ax/AxAccountLayout.vue'
+import AxEmptyState from '@/components/ax/AxEmptyState.vue'
 import { computed, onMounted, ref } from 'vue'
 import { useToast } from '@/composables/useToast'
 import {
@@ -347,20 +347,20 @@ onMounted(reload)
   color: inherit; cursor: pointer;
 }
 /* 本页 .v4-mini-btn 无 base 定义（其他页面的 base 是各自 scoped 副本，不覆盖本页），
-   .primary 直接落全套 UHD 口径（2026-11-13 补齐七彩＋玻璃）：彩虹边框 + 淡彩粉彩底 + 玻璃栈。
-   本页令牌由 .uhd-shell-scope 供给浅色值（2026-11-14 摘 .v4-scope 嵌套），只需浅色配方 */
+   .primary 直接落全套 ax 口径（2026-11-13 补齐七彩＋玻璃）：彩虹边框 + 淡彩粉彩底 + 玻璃栈。
+   本页令牌由 .ax-shell-scope 供给浅色值（2026-11-14 摘 .v4-scope 嵌套），只需浅色配方 */
 .v4-mini-btn.primary {
   font-weight: 700;
   border: 1.5px solid transparent;
   background:
-    var(--uhd-rainbow-soft) padding-box,
-    var(--uhd-rainbow) border-box;
+    var(--ax-rainbow-soft) padding-box,
+    var(--ax-rainbow) border-box;
   color: #111111;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    var(--uhd-shadow-card-l);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
+    var(--ax-shadow-card-l);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
 }
 /* 禁用：彩虹退场、中性灰 */
 .v4-mini-btn.primary:disabled {

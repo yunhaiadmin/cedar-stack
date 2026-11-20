@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * StreamTopbar —— 片库面双胶囊顶栏（批 3，说明书 2.1 片库面变体）
- * 实测数值（uhdnow-stream-reverse 第 1/9 节）：
+ * 实测数值（参考站逆向存档 第 1/9 节）：
  * 左胶囊高 46/圆角 23 毛玻璃，内含标志 + 首页/电影/剧集/收藏，
  * 激活项为内嵌胶囊高 34/圆角 17；右胶囊高 46，含搜索/外观/头像 28。
  * 搜索：点放大镜向左展开宽约 560、高 46 的搜索条；下拉面板 480×490、
@@ -259,17 +259,17 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 }
 /* 双胶囊：高 46、圆角 23、毛玻璃 + 柔光阴影 + 细边框
    质感第二波（2026-11-18）：由 12px 单层柔影升 slab 档（blur 24px saturate 160%＋阴影束），
-   与友站顶栏透色强度对齐；底/边/选中白胶囊形态沿用 --uhd-s-* 片库面令牌，不动。 */
+   与友站顶栏透色强度对齐；底/边/选中白胶囊形态沿用 --ax-s-* 片库面令牌，不动。 */
 .st-capsule {
   display: flex;
   align-items: center;
   height: 46px;
   border-radius: 23px;
-  background: var(--uhd-s-pill-bg);
-  border: 1px solid var(--uhd-s-pill-border);
-  box-shadow: var(--uhd-glass-slab-shadow);
-  backdrop-filter: var(--uhd-glass-slab-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-slab-filter);
+  background: var(--ax-s-pill-bg);
+  border: 1px solid var(--ax-s-pill-border);
+  box-shadow: var(--ax-glass-slab-shadow);
+  backdrop-filter: var(--ax-glass-slab-filter);
+  -webkit-backdrop-filter: var(--ax-glass-slab-filter);
 }
 .st-capsule--nav {
   gap: 2px;
@@ -281,7 +281,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   justify-content: center;
   width: 34px;
   height: 34px;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
   text-decoration: none;
   flex: none;
 }
@@ -297,16 +297,16 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   padding: 0 19px;
   border-radius: 17px;
   font-size: 15px;
-  font-weight: var(--uhd-fw-medium);
-  color: var(--uhd-s-text-2);
+  font-weight: var(--ax-fw-medium);
+  color: var(--ax-s-text-2);
   text-decoration: none;
   white-space: nowrap;
 }
 .st-nav-item--on {
-  background: var(--uhd-s-pill-active-bg);
-  color: var(--uhd-s-pill-active-text);
-  font-weight: var(--uhd-fw-semibold);
-  box-shadow: var(--uhd-shadow-seg);
+  background: var(--ax-s-pill-active-bg);
+  color: var(--ax-s-pill-active-text);
+  font-weight: var(--ax-fw-semibold);
+  box-shadow: var(--ax-shadow-seg);
 }
 .st-right {
   display: flex;
@@ -327,7 +327,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   border: none;
   border-radius: 50%;
   background: transparent;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
   cursor: pointer;
 }
 .st-avatar {
@@ -338,10 +338,10 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   height: 28px;
   margin-left: 4px;
   border-radius: 50%;
-  background: var(--uhd-s-text);
-  color: var(--uhd-s-bg);
+  background: var(--ax-s-text);
+  color: var(--ax-s-bg);
   font-size: 13px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
   text-decoration: none;
   flex: none;
   align-self: center;
@@ -356,14 +356,14 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   height: 46px;
   padding: 0 8px 0 16px;
   border-radius: 23px;
-  background: var(--uhd-s-pill-bg);
-  border: 1px solid var(--uhd-s-pill-border);
-  box-shadow: var(--uhd-s-shadow-pill);
+  background: var(--ax-s-pill-bg);
+  border: 1px solid var(--ax-s-pill-border);
+  box-shadow: var(--ax-s-shadow-pill);
   backdrop-filter: blur(12px) saturate(160%);
   -webkit-backdrop-filter: blur(12px) saturate(160%);
 }
 .st-searchbar__icon {
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   flex: none;
 }
 .st-searchbar__input {
@@ -372,12 +372,12 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   border: none;
   outline: none;
   background: transparent;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
   font: inherit;
   font-size: 15px;
 }
 .st-searchbar__input::placeholder {
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .st-searchbar__x {
   display: inline-flex;
@@ -388,7 +388,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   border: none;
   border-radius: 50%;
   background: transparent;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   cursor: pointer;
   flex: none;
 }
@@ -401,9 +401,9 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   max-height: 490px;
   overflow: hidden auto;
   border-radius: 20px;
-  background: var(--uhd-s-panel-bg);
-  border: 1px solid var(--uhd-s-border);
-  box-shadow: var(--uhd-shadow-modal);
+  background: var(--ax-s-panel-bg);
+  border: 1px solid var(--ax-s-border);
+  box-shadow: var(--ax-shadow-modal);
   padding: 10px;
   z-index: 70;
 }
@@ -413,9 +413,9 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   padding: 8px 10px;
   border: none;
   background: transparent;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
   font-size: 14px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   text-align: left;
   cursor: pointer;
 }
@@ -423,7 +423,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   margin: 0;
   padding: 0 10px 6px;
   font-size: 13px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .st-panel__row {
   display: flex;
@@ -433,10 +433,10 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   padding: 0 10px;
   border-radius: 12px;
   text-decoration: none;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
 }
 .st-panel__row:hover {
-  background: var(--uhd-s-highlight);
+  background: var(--ax-s-highlight);
 }
 .st-panel__thumb {
   flex: none;
@@ -444,11 +444,11 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   height: 60px;
   border-radius: 6px;
   overflow: hidden;
-  background: var(--uhd-s-card-soft);
+  background: var(--ax-s-card-soft);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .st-panel__thumb img {
   width: 100%;
@@ -464,20 +464,20 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 }
 .st-panel__title {
   font-size: 15px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .st-hit {
-  background: var(--uhd-s-highlight);
+  background: var(--ax-s-highlight);
   color: inherit;
   border-radius: 3px;
   padding: 0 1px;
 }
 .st-panel__meta {
   font-size: 13px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -485,16 +485,16 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 .st-panel__type {
   flex: none;
   padding: 2px 8px;
-  border: 1px solid var(--uhd-s-border);
+  border: 1px solid var(--ax-s-border);
   border-radius: 10px;
   font-size: 12px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .st-panel__empty {
   margin: 0;
   padding: 18px 10px;
   font-size: 14px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   text-align: center;
 }
 /* 猜你想看面板：只留面板内边距，卡片样式在 StreamGuessRow 内 */

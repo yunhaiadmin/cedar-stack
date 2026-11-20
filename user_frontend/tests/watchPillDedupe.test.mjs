@@ -1,5 +1,5 @@
 // 「前往流媒体」胶囊去重契约（2026-11-18）：账户区胶囊由 App.vue 的
-// UhdTopBar（内挂 UhdWatchPill）全区统一承接，各页不得再自带手写胶囊。
+// AxTopBar（内挂 AxWatchPill）全区统一承接，各页不得再自带手写胶囊。
 // 文案沿革：胶囊原名「网页观影」，2026-11-18 用户亲定按友站入口名
 // 改为「前往流媒体」（友站侧栏卡片同名；我方落地页 hero 次钮已同名）。
 // 运行：cd user_frontend && node tests/watchPillDedupe.test.mjs
@@ -12,7 +12,7 @@
 // （剥注释后）不再出现旧名「网页观影」字样（防旧名以手写胶囊复活）。
 // 新名「前往流媒体」不做视图层全扫：落地页 hero 次钮是另一个合法
 // 入口、本就用同名文案，全扫会误伤；新名的唯一持有靠下方正向断言
-// 锁在 UhdWatchPill 本体＋类名/直达链接两道旧检查兜底。
+// 锁在 AxWatchPill 本体＋类名/直达链接两道旧检查兜底。
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -64,10 +64,10 @@ for (const f of walk(join(ROOT, 'src/views'))) {
 
 // 保留方仍在：统一顶栏挂载点与胶囊组件本体不动
 const app = read('src/App.vue')
-check('App.vue 账户区仍挂 UhdTopBar', app.includes('<UhdTopBar') && app.includes('isAccountArea'))
-check('UhdTopBar 仍挂 UhdWatchPill', read('src/components/uhd/UhdTopBar.vue').includes('<UhdWatchPill'))
+check('App.vue 账户区仍挂 AxTopBar', app.includes('<AxTopBar') && app.includes('isAccountArea'))
+check('AxTopBar 仍挂 AxWatchPill', read('src/components/ax/AxTopBar.vue').includes('<AxWatchPill'))
 // 胶囊本体持有新名文案（可见文案＋aria-label，2026-11-18 改名单锁死）
-const pill = read('src/components/uhd/UhdWatchPill.vue')
+const pill = read('src/components/ax/AxWatchPill.vue')
 check('胶囊可见文案为「前往流媒体」', pill.includes('<span>前往流媒体</span>'))
 check('胶囊 aria-label 为「前往流媒体：前往片库」', pill.includes('aria-label="前往流媒体：前往片库"'))
 

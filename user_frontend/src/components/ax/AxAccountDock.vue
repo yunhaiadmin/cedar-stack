@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * UhdAccountDock —— 用户中心底部导航（手机，UHD app 形态）
+ * AxAccountDock —— 用户中心底部导航（手机，ax app 形态）
  *
  * 只在 ≤768px 且用户中心区域（/game/* 与 /shop）出现：单个居中悬浮的
  * 液态玻璃胶囊，内含两个页签（图标在上、文字在下）——
@@ -74,13 +74,13 @@ const activeTo = computed(() => (route.path === '/game/account' ? '/game/account
   border: 1px solid rgba(255, 255, 255, 0.16);
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), var(--uhd-shadow-float);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), var(--ax-shadow-float);
 }
 /* 浅色玻璃：跟随用户外观（data-theme='light'） */
 html[data-theme='light'] .uad-pill {
   background: rgba(255, 255, 255, 0.6);
   border-color: rgba(255, 255, 255, 0.65);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), var(--uhd-shadow-card-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), var(--ax-shadow-card-l);
 }
 .uad-tab {
   display: inline-flex;
@@ -93,7 +93,7 @@ html[data-theme='light'] .uad-pill {
   border-radius: 28px;
   color: rgba(255, 255, 255, 0.55);
   text-decoration: none;
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
   transition: background 0.25s ease, color 0.25s ease, transform 0.25s ease;
 }
 html[data-theme='light'] .uad-tab {
@@ -101,7 +101,7 @@ html[data-theme='light'] .uad-tab {
 }
 .uad-tab__label {
   font-size: 12px;
-  font-weight: var(--uhd-fw-medium);
+  font-weight: var(--ax-fw-medium);
   line-height: 1.15;
 }
 /* 激活段：整段胶囊浅填充（原站口径），不用实心块 */
@@ -110,7 +110,7 @@ html[data-theme='light'] .uad-tab {
   color: #ffffff;
 }
 .uad-tab--on .uad-tab__label {
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
 }
 html[data-theme='light'] .uad-tab--on {
   background: rgba(0, 0, 0, 0.07);

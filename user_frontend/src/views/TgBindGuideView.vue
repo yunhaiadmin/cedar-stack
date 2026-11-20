@@ -299,9 +299,9 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* UHD 办事面重排（说明书 §2.6 步骤行变体 56px）：浅色办事面令牌为本面口径，
+/* ax 办事面重排（说明书 §2.6 步骤行变体 56px）：浅色办事面令牌为本面口径，
    缺省深色面、html[data-theme='light'] 换浅，跟随用户外观三态
-   （与 LoginView / AccountMenuView 同口径）。只引用 --uhd-* 令牌。 */
+   （与 LoginView / AccountMenuView 同口径）。只引用 --ax-* 令牌。 */
 .tg-guide-page {
   min-height: 100vh;
   min-height: 100dvh; /* 移动端地址栏收放高度不跳 */
@@ -310,9 +310,9 @@ onUnmounted(() => {
   justify-content: center;
   padding: 24px;
   padding-bottom: calc(24px + env(safe-area-inset-bottom)); /* iOS 底部安全区 */
-  background: var(--uhd-d-bg);
-  color: var(--uhd-d-text);
-  font-family: var(--uhd-font-sans);
+  background: var(--ax-d-bg);
+  color: var(--ax-d-text);
+  font-family: var(--ax-font-sans);
 }
 
 .tg-guide-card {
@@ -322,9 +322,9 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 24px;
   padding: 32px;
-  background: var(--uhd-d-surface);
-  border: 1px solid var(--uhd-d-border);
-  border-radius: var(--uhd-radius-card);
+  background: var(--ax-d-surface);
+  border: 1px solid var(--ax-d-border);
+  border-radius: var(--ax-radius-card);
 }
 
 .guide-header {
@@ -339,8 +339,8 @@ onUnmounted(() => {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: var(--uhd-d-surface-2);
-  color: var(--uhd-d-text);
+  background: var(--ax-d-surface-2);
+  color: var(--ax-d-text);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -348,16 +348,16 @@ onUnmounted(() => {
 
 .guide-header h1 {
   margin: 0;
-  font-size: var(--uhd-fs-h3);
-  font-weight: var(--uhd-fw-extrabold);
+  font-size: var(--ax-fs-h3);
+  font-weight: var(--ax-fw-extrabold);
   line-height: 1.25;
 }
 
 .header-sub {
   margin: 0;
-  font-size: var(--uhd-fs-caption);
-  line-height: var(--uhd-lh-body);
-  color: var(--uhd-d-text-2);
+  font-size: var(--ax-fs-caption);
+  line-height: var(--ax-lh-body);
+  color: var(--ax-d-text-2);
 }
 
 /* 加载态：说明书 1.6 统一口径——旋转圈＋「正在加载…」灰字（禁骨架屏占位） */
@@ -373,28 +373,28 @@ onUnmounted(() => {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  border: 2px solid var(--uhd-d-border-2);
-  border-top-color: var(--uhd-d-text-2);
-  animation: uhd-spin 0.8s linear infinite;
+  border: 2px solid var(--ax-d-border-2);
+  border-top-color: var(--ax-d-text-2);
+  animation: ax-spin 0.8s linear infinite;
 }
 
 .loading-text {
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-d-text-2);
+  font-size: var(--ax-fs-caption);
+  color: var(--ax-d-text-2);
 }
 
 .warn-box {
   padding: 16px;
-  border-radius: var(--uhd-radius-card-sm);
+  border-radius: var(--ax-radius-card-sm);
   background: rgba(220, 38, 38, 0.07);
   border: 1px solid rgba(220, 38, 38, 0.32);
   color: #fca5a5;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
 }
 
 .warn-box p {
   margin: 0 0 12px;
-  line-height: var(--uhd-lh-body);
+  line-height: var(--ax-lh-body);
 }
 
 .warn-box .btn {
@@ -425,7 +425,7 @@ onUnmounted(() => {
 }
 
 .step-row + .step-row {
-  border-top: 1px solid var(--uhd-d-border);
+  border-top: 1px solid var(--ax-d-border);
 }
 
 .step-num {
@@ -433,10 +433,10 @@ onUnmounted(() => {
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: var(--uhd-d-surface-raised);
-  color: var(--uhd-d-text);
+  background: var(--ax-d-surface-raised);
+  color: var(--ax-d-text);
   font-size: 13px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -453,22 +453,22 @@ onUnmounted(() => {
 
 .step-title {
   margin: 0;
-  font-size: var(--uhd-fs-lead);
-  font-weight: var(--uhd-fw-bold);
+  font-size: var(--ax-fs-lead);
+  font-weight: var(--ax-fw-bold);
   line-height: 1.4;
 }
 
 .step-desc {
   margin: 0;
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-d-text-2);
+  font-size: var(--ax-fs-caption);
+  color: var(--ax-d-text-2);
   display: flex;
   align-items: center;
 }
 
 .mono-ellipsis {
   min-width: 0;
-  font-family: var(--uhd-font-mono);
+  font-family: var(--ax-font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -482,25 +482,25 @@ onUnmounted(() => {
   height: 48px;
   min-height: 44px;
   padding: 0 26px;
-  border-radius: var(--uhd-radius-pill);
-  font-family: var(--uhd-font-sans);
-  font-size: var(--uhd-fs-body);
-  font-weight: var(--uhd-fw-semibold);
+  border-radius: var(--ax-radius-pill);
+  font-family: var(--ax-font-sans);
+  font-size: var(--ax-fs-body);
+  font-weight: var(--ax-fw-semibold);
   white-space: nowrap;
   cursor: pointer;
-  transition: opacity var(--uhd-dur-ui) var(--uhd-ease-standard);
+  transition: opacity var(--ax-dur-ui) var(--ax-ease-standard);
 }
 
 .btn-sm {
   height: 38px;
   min-height: 38px;
   padding: 0 18px;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
 }
 
 .btn:focus-visible,
 .link-btn:focus-visible {
-  outline: 2px solid var(--uhd-l-link);
+  outline: 2px solid var(--ax-l-link);
   outline-offset: 2px;
 }
 
@@ -512,13 +512,13 @@ onUnmounted(() => {
 .btn-primary {
   position: relative;
   width: 100%;
-  color: var(--uhd-d-text);
-  border: var(--uhd-rainbow-border-w) solid transparent;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
+  color: var(--ax-d-text);
+  border: var(--ax-rainbow-border-w) solid transparent;
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
   /* 玻璃栈补齐（2026-11-13 主要按钮统一单）：内高光 + 柔影 + backdrop 毛玻璃 */
-  box-shadow: var(--uhd-shadow-sheet);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
+  box-shadow: var(--ax-shadow-sheet);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
 }
 /* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
    钮面只留玻璃层；浅色覆盖只换面背景，环由本处继承。 */
@@ -527,8 +527,8 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: var(--uhd-rainbow-border-w);
-  background: var(--uhd-rainbow);
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -550,17 +550,17 @@ onUnmounted(() => {
 }
 
 .btn-secondary {
-  color: var(--uhd-d-text);
-  border: 1px solid var(--uhd-d-border-2);
+  color: var(--ax-d-text);
+  border: 1px solid var(--ax-d-border-2);
   background: transparent;
 }
 
 .command-box {
-  background: var(--uhd-d-surface-2);
-  border: 1px solid var(--uhd-d-border);
-  border-radius: var(--uhd-radius-input);
-  font-family: var(--uhd-font-mono);
-  font-size: var(--uhd-fs-lead);
+  background: var(--ax-d-surface-2);
+  border: 1px solid var(--ax-d-border);
+  border-radius: var(--ax-radius-input);
+  font-family: var(--ax-font-mono);
+  font-size: var(--ax-fs-lead);
   padding: 12px 16px;
   /* 长指令允许横向滚动看全，不截断 */
   overflow-x: auto;
@@ -576,8 +576,8 @@ onUnmounted(() => {
 
 .copy-hint {
   margin: 0;
-  font-size: var(--uhd-fs-aux);
-  color: var(--uhd-success);
+  font-size: var(--ax-fs-aux);
+  color: var(--ax-success);
 }
 
 .code-panel {
@@ -586,20 +586,20 @@ onUnmounted(() => {
   align-items: center;
   gap: 12px;
   padding: 24px;
-  background: var(--uhd-d-surface-2);
-  border: 1px solid var(--uhd-d-border);
-  border-radius: var(--uhd-radius-card-sm);
+  background: var(--ax-d-surface-2);
+  border: 1px solid var(--ax-d-border);
+  border-radius: var(--ax-radius-card-sm);
 }
 
 .code-label {
-  font-size: var(--uhd-fs-aux);
-  color: var(--uhd-d-text-2);
+  font-size: var(--ax-fs-aux);
+  color: var(--ax-d-text-2);
 }
 
 .code-big {
-  font-family: var(--uhd-font-mono);
+  font-family: var(--ax-font-mono);
   font-size: 40px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
   letter-spacing: 10px;
   padding-left: 10px;
   text-align: center;
@@ -610,13 +610,13 @@ onUnmounted(() => {
 }
 
 .countdown-row {
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-d-text-2);
+  font-size: var(--ax-fs-caption);
+  color: var(--ax-d-text-2);
   white-space: nowrap;
 }
 
 .expired-text {
-  color: var(--uhd-danger);
+  color: var(--ax-danger);
   white-space: nowrap;
 }
 
@@ -625,12 +625,12 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  font-size: var(--uhd-fs-caption);
-  color: var(--uhd-d-text-2);
+  font-size: var(--ax-fs-caption);
+  color: var(--ax-d-text-2);
 }
 
 .check-icon {
-  color: var(--uhd-success);
+  color: var(--ax-success);
   flex-shrink: 0;
 }
 
@@ -644,14 +644,14 @@ onUnmounted(() => {
   background: transparent;
   border: none;
   cursor: pointer;
-  font-family: var(--uhd-font-sans);
-  font-size: var(--uhd-fs-caption);
+  font-family: var(--ax-font-sans);
+  font-size: var(--ax-fs-caption);
 }
 
 /* 退出＝红色文字按钮，不做填充（§2.2） */
 .logout-btn {
-  color: var(--uhd-danger);
-  font-weight: var(--uhd-fw-medium);
+  color: var(--ax-danger);
+  font-weight: var(--ax-fw-medium);
 }
 
 .logout-btn:disabled {
@@ -661,32 +661,32 @@ onUnmounted(() => {
 
 /* 浅色办事面：跟随用户外观（html[data-theme='light']） */
 html[data-theme='light'] .tg-guide-page {
-  background: var(--uhd-l-bg);
-  color: var(--uhd-l-text);
+  background: var(--ax-l-bg);
+  color: var(--ax-l-text);
 }
 
 html[data-theme='light'] .tg-guide-card {
-  background: var(--uhd-l-surface);
-  border-color: var(--uhd-l-border);
-  box-shadow: var(--uhd-shadow-card-l);
+  background: var(--ax-l-surface);
+  border-color: var(--ax-l-border);
+  box-shadow: var(--ax-shadow-card-l);
 }
 
 html[data-theme='light'] .header-icon {
-  background: var(--uhd-l-input-bg);
-  color: var(--uhd-l-text);
+  background: var(--ax-l-input-bg);
+  color: var(--ax-l-text);
 }
 
 html[data-theme='light'] .header-sub {
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 
 html[data-theme='light'] .loading-spinner {
-  border-color: var(--uhd-l-border);
-  border-top-color: var(--uhd-l-text-2);
+  border-color: var(--ax-l-border);
+  border-top-color: var(--ax-l-text-2);
 }
 
 html[data-theme='light'] .loading-text {
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 
 html[data-theme='light'] .warn-box {
@@ -697,24 +697,24 @@ html[data-theme='light'] .warn-box {
 }
 
 html[data-theme='light'] .step-row + .step-row {
-  border-top-color: var(--uhd-l-divider);
+  border-top-color: var(--ax-l-divider);
 }
 
 html[data-theme='light'] .step-num {
-  background: var(--uhd-l-text);
-  color: var(--uhd-l-surface);
+  background: var(--ax-l-text);
+  color: var(--ax-l-surface);
 }
 
 html[data-theme='light'] .step-desc {
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 
 html[data-theme='light'] .btn-primary {
-  color: var(--uhd-l-text);
-  background: var(--uhd-rainbow-soft);
+  color: var(--ax-l-text);
+  background: var(--ax-rainbow-soft);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    var(--uhd-shadow-card-l);
+    var(--ax-shadow-card-l);
 }
 
 html[data-theme='light'] .btn-primary:disabled {
@@ -726,31 +726,31 @@ html[data-theme='light'] .btn-primary:disabled {
 }
 
 html[data-theme='light'] .btn-secondary {
-  color: var(--uhd-l-text);
-  border-color: var(--uhd-l-border);
-  background: var(--uhd-l-surface);
+  color: var(--ax-l-text);
+  border-color: var(--ax-l-border);
+  background: var(--ax-l-surface);
 }
 
 html[data-theme='light'] .command-box {
-  background: var(--uhd-l-input-bg);
-  border-color: var(--uhd-l-border);
+  background: var(--ax-l-input-bg);
+  border-color: var(--ax-l-border);
 }
 
 html[data-theme='light'] .code-panel {
-  background: var(--uhd-l-input-bg);
-  border-color: var(--uhd-l-border);
+  background: var(--ax-l-input-bg);
+  border-color: var(--ax-l-border);
 }
 
 html[data-theme='light'] .code-label {
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 
 html[data-theme='light'] .countdown-row {
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 
 html[data-theme='light'] .auto-hint {
-  color: var(--uhd-l-text-2);
+  color: var(--ax-l-text-2);
 }
 
 @media (prefers-reduced-motion: reduce) {

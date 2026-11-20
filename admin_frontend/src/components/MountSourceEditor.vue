@@ -79,7 +79,7 @@ const placeholder = computed(() => TYPES.find((x) => x.value === props.type)?.pl
 .mount-source-editor { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 .ms-hint {
   color: var(--au-text-3);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   margin: 0;
   line-height: 1.6;
 }

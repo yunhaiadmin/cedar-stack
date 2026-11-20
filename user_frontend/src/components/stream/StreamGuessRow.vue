@@ -48,8 +48,8 @@ function onPosterError(id: string) {
   margin: 0;
   padding: 0 2px 10px;
   font-size: 14px;
-  font-weight: var(--uhd-fw-semibold);
-  color: var(--uhd-s-text);
+  font-weight: var(--ax-fw-semibold);
+  color: var(--ax-s-text);
 }
 /* 横排：桌面面板内宽 460 = 5×84 + 4×10 正好放满；窄屏横滑 */
 .sg__row {
@@ -68,18 +68,18 @@ function onPosterError(id: string) {
   flex-direction: column;
   gap: 4px;
   text-decoration: none;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
 }
 .sg__poster {
   width: 84px;
   height: 126px;
   border-radius: 8px;
   overflow: hidden;
-  background: var(--uhd-s-card-soft);
+  background: var(--ax-s-card-soft);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .sg__poster img {
   width: 100%;
@@ -88,14 +88,14 @@ function onPosterError(id: string) {
 }
 .sg__name {
   font-size: 13px;
-  font-weight: var(--uhd-fw-medium);
+  font-weight: var(--ax-fw-medium);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .sg__meta {
   font-size: 12px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

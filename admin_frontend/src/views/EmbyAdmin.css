@@ -2,7 +2,7 @@
    受控例外登记（后台一期批 4）：本文件登记为页面级 CSS 受控例外，不收编进
    styles/ 全局层——下拉面板 teleport 到 body、scoped 盖不到，且 .lib-* 等规则
    被 components/emby 子组件共用。约束：规则只挂页面族前缀、字号只引
-   --uhd-fs-* 梯队、颜色只走令牌；登记表在 scripts/check_frontend_tokens.py
+   --ax-fs-* 梯队、颜色只走令牌；登记表在 scripts/check_frontend_tokens.py
    的 ADMIN_PAGE_CSS_REGISTERED，结论见
    docs/design/20261119-admin-page-css-exceptions.md。 */
 
@@ -40,7 +40,7 @@
   justify-content: center;
   gap: 8px;
   color: var(--au-text-3);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
 }
 
 /* 压图叠加层：只在封面顶部压一道遮罩，保证徽标在任意图片下可读。
@@ -143,7 +143,7 @@
   border-bottom: 1px solid var(--au-border);
   color: var(--au-text);
   font-family: var(--au-font-serif);
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -156,13 +156,13 @@
 
 .settings-paths > span {
   color: var(--au-text-3);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
 }
 
 .settings-paths p {
   margin: 5px 0 0;
   color: var(--au-text-2);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   line-height: 1.6;
   word-break: break-all;
 }
@@ -170,14 +170,14 @@
 /* 表单里每一项下面那句人话说明（与 Servers.vue 的 .field-help 同一套值） */
 .field-help {
   color: var(--au-text-3);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   margin: 5px 0 0;
   line-height: 1.6;
 }
 
 /* 卡片上的一句话策略摘要：一行、溢出省略，悬停出全文 */
 .lib-summary {
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   font-family: var(--font-mono);
   color: var(--au-text-3);
   padding: 5px 8px;
@@ -232,7 +232,7 @@
   flex-wrap: wrap;
 }
 .lib-form-dirty {
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-3);
 }
 .lib-form-foot-btns {
@@ -289,15 +289,15 @@
   padding-bottom: 6px;
 }
 .lib-opt-popper .opt-label {
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   color: var(--au-text);
 }
 .lib-opt-popper .opt-rec {
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-3);
 }
 .lib-opt-popper .opt-hint {
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-3);
   white-space: normal;
   line-height: 1.5;
@@ -306,7 +306,7 @@
 /* 监听降级提示：橙色实心会像报错，这里只说“已降级为定时扫描”，不是故障 */
 .field-warn {
   color: var(--au-warning);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   margin: 4px 0 0;
 }
 
@@ -323,7 +323,7 @@
 }
 /* 注意：这是全局样式表，:deep() 在这里无效（之前写的是 :deep，规则整条被丢弃） */
 .lpm-advanced .el-collapse-item__header {
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-3);
   border-bottom: none;
 }
@@ -363,7 +363,7 @@
   padding: 16px;
   text-align: center;
   color: var(--au-text-3);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   line-height: 1.6;
 }
 

@@ -30,12 +30,12 @@ defineProps<{ title?: string }>()
 const emit = defineEmits<{ (e: 'bound'): void }>()
 
 const sheetOpen = ref(false)
-// 片库面深浅由 StreamShell 在 body 打的 .uhd-stream-dark 标记桥接
+// 片库面深浅由 StreamShell 在 body 打的 .ax-stream-dark 标记桥接
 // （浮层既有口径）；打开弹层时取一次，给弹层内主按钮定深浅面
 const sheetDark = ref(false)
 
 function goBind() {
-  sheetDark.value = document.body.classList.contains('uhd-stream-dark')
+  sheetDark.value = document.body.classList.contains('ax-stream-dark')
   sheetOpen.value = true
 }
 </script>

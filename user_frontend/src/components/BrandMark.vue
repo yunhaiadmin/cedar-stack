@@ -12,7 +12,7 @@ import { useId } from 'vue'
  *
  * variant="play"：只渲染彩虹播放三角本体（无 A 字母、无编织 clip，viewBox 收紧
  * 到三角自身 bbox），供会员卡右上用——友站同位只有一颗小三角标（2026-11-18
- * 按友站干净帧实测改版，量值见 UhdMemberCard 的 .uhd-member__logo 注）。
+ * 按友站干净帧实测改版，量值见 AxMemberCard 的 .ax-member__logo 注）。
  *
  * spin：彩虹渐变 6s 匀速旋转（友站 prism-icon 的 conic 旋转口径，2026-11-18
  * 官网首屏对齐）——本标是 SVG 线性渐变、无 CSS conic 对应件，以 SMIL

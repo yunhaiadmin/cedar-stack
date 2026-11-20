@@ -8,7 +8,7 @@
   （claim_code 原子占位 + 蜜罐 + 指名 + 每人每码一次），非余额码
   在占位前分流拒绝、不烧码。
 - POST /api/user/wallet/gift-codes：把余额做成礼品卡——扣款 + 建
-  source='gift' 的 balance 兑换码，同一事务（钱包页 UHD 重做，
+  source='gift' 的 balance 兑换码，同一事务（钱包页 ax 重做，
   2026-11-15）。
 - GET  /api/user/wallet/gift-codes：我生成的礼品卡列表；查询时
   惰性退款（过期未用且未退过的，面值退回并停用码，只退一次）。

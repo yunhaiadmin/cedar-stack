@@ -497,7 +497,7 @@ function onPageChange(page: number) {
   border-radius: var(--au-r-md);
   background: var(--au-warning-soft);
   color: var(--au-warning);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
 }
 .dt-stale-text { flex: 1; min-width: 0; color: var(--au-text-2); overflow-wrap: anywhere; }
 .dt-stale :deep(.el-button) { flex-shrink: 0; }
@@ -510,7 +510,7 @@ function onPageChange(page: number) {
 .dt-sk-line.is-short { width: 70%; }
 
 .dt-title {
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   font-weight: 600;
   color: var(--au-text);
   line-height: 1.5;
@@ -570,7 +570,7 @@ function onPageChange(page: number) {
 
 .dt-bulk-count {
   flex-shrink: 0;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   white-space: nowrap;
 }
 

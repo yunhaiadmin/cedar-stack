@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * UhdSidebar —— 左栏框架（说明书 2.10，办事面框架；管理后台复用同模具）
+ * AxSidebar —— 左栏框架（说明书 2.10，办事面框架；管理后台复用同模具）
  * 约 250px、白底、右 1px 分隔；分组小标题 13px 灰；菜单项高 44px、圆角 12px、
  * 图标 18px + 文字 15px，激活态 = 白底胶囊 + 边框 + 轻阴影；栏顶右可收起；
  * 底部预留「账号胶囊位」（account 插槽）。无页脚。
@@ -8,7 +8,7 @@
 import { computed, onMounted, onUnmounted, ref, type Component } from 'vue'
 import BrandMark from '@/components/BrandMark.vue'
 
-export interface UhdSidebarItem {
+export interface AxSidebarItem {
   key: string
   label: string
   icon?: Component
@@ -16,13 +16,13 @@ export interface UhdSidebarItem {
      点击新开标签页，不走路由、不记激活 */
   href?: string
 }
-export interface UhdSidebarGroup {
+export interface AxSidebarGroup {
   title?: string
-  items: UhdSidebarItem[]
+  items: AxSidebarItem[]
 }
 
 const props = defineProps<{
-  groups: UhdSidebarGroup[]
+  groups: AxSidebarGroup[]
   activeKey: string
   brand?: string
   /** 窄屏覆盖层打开时，顶上的钮只负责关闭，不把栏宽收成图标条 */
@@ -53,15 +53,15 @@ function onCollapse() {
 </script>
 
 <template>
-  <aside class="uhd-side" :class="{ 'uhd-side--collapsed': collapsedVisual }">
-    <div class="uhd-side__head">
-      <span class="uhd-side__brand">
-        <span class="uhd-side__logo"><BrandMark /></span>
-        <span v-if="labelsVisible" class="uhd-side__brand-name">{{ brand ?? 'Aetrix' }}</span>
+  <aside class="ax-side" :class="{ 'ax-side--collapsed': collapsedVisual }">
+    <div class="ax-side__head">
+      <span class="ax-side__brand">
+        <span class="ax-side__logo"><BrandMark /></span>
+        <span v-if="labelsVisible" class="ax-side__brand-name">{{ brand ?? 'Aetrix' }}</span>
       </span>
       <button
         type="button"
-        class="uhd-side__collapse"
+        class="ax-side__collapse"
         :aria-label="dismissible ? '关闭导航' : collapsed ? '展开侧栏' : '收起侧栏'"
         @click="onCollapse"
       >
@@ -69,86 +69,86 @@ function onCollapse() {
       </button>
     </div>
 
-    <nav class="uhd-side__nav">
-      <div v-for="(group, gi) in groups" :key="gi" class="uhd-side__group">
-        <div v-if="group.title && labelsVisible" class="uhd-side__group-title">{{ group.title }}</div>
+    <nav class="ax-side__nav">
+      <div v-for="(group, gi) in groups" :key="gi" class="ax-side__group">
+        <div v-if="group.title && labelsVisible" class="ax-side__group-title">{{ group.title }}</div>
         <button
           v-for="item in group.items"
           :key="item.key"
           type="button"
-          class="uhd-side__item"
-          :class="{ 'uhd-side__item--active': item.key === activeKey }"
+          class="ax-side__item"
+          :class="{ 'ax-side__item--active': item.key === activeKey }"
           :title="collapsedVisual ? item.label : undefined"
           @click="emit('select', item.key)"
         >
-          <component :is="item.icon" v-if="item.icon" class="uhd-side__item-icon" aria-hidden="true" />
-          <span v-if="labelsVisible" class="uhd-side__item-label">{{ item.label }}</span>
+          <component :is="item.icon" v-if="item.icon" class="ax-side__item-icon" aria-hidden="true" />
+          <span v-if="labelsVisible" class="ax-side__item-label">{{ item.label }}</span>
         </button>
       </div>
     </nav>
 
-    <div v-if="$slots.account" class="uhd-side__account">
+    <div v-if="$slots.account" class="ax-side__account">
       <slot name="account" />
     </div>
   </aside>
 </template>
 
 <style scoped>
-.uhd-side {
+.ax-side {
   display: flex;
   flex-direction: column;
-  width: var(--uhd-sidebar-w);
+  width: var(--ax-sidebar-w);
   flex: none;
-  background: var(--uhd-l-surface);
-  border-right: var(--uhd-border-w) solid var(--uhd-l-divider);
-  font-family: var(--uhd-font-sans);
-  transition: width var(--uhd-dur-ui) var(--uhd-ease-standard);
+  background: var(--ax-l-surface);
+  border-right: var(--ax-border-w) solid var(--ax-l-divider);
+  font-family: var(--ax-font-sans);
+  transition: width var(--ax-dur-ui) var(--ax-ease-standard);
 }
-.uhd-side--collapsed { width: 68px; }
-.uhd-side__head {
+.ax-side--collapsed { width: 68px; }
+.ax-side__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 16px 14px 10px 18px;
 }
-.uhd-side__brand {
+.ax-side__brand {
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  font-size: var(--uhd-fs-lead);
-  font-weight: var(--uhd-fw-bold);
-  color: var(--uhd-l-text);
+  font-size: var(--ax-fs-lead);
+  font-weight: var(--ax-fw-bold);
+  color: var(--ax-l-text);
 }
 /* Aetrix 品牌标（2026-11-16 定版，BrandMark 组件，A 色随当前文字色） */
-.uhd-side__logo {
+.ax-side__logo {
   width: 20px;
   height: 20px;
   flex: none;
 }
-.uhd-side__collapse {
+.ax-side__collapse {
   width: 26px;
   height: 26px;
   border: none;
   border-radius: 50%;
   background: transparent;
-  color: var(--uhd-l-text-3);
+  color: var(--ax-l-text-3);
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
 }
-.uhd-side__collapse:hover { background: var(--uhd-l-input-bg); }
-.uhd-side__nav {
+.ax-side__collapse:hover { background: var(--ax-l-input-bg); }
+.ax-side__nav {
   flex: 1;
   overflow-y: auto;
   padding: 4px 12px 12px;
 }
-.uhd-side__group { margin-bottom: 14px; }
-.uhd-side__group-title {
+.ax-side__group { margin-bottom: 14px; }
+.ax-side__group-title {
   padding: 8px 10px 6px;
-  font-size: var(--uhd-fs-aux);
-  color: var(--uhd-l-text-3);
+  font-size: var(--ax-fs-aux);
+  color: var(--ax-l-text-3);
 }
-.uhd-side__item {
+.ax-side__item {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -156,31 +156,31 @@ function onCollapse() {
   height: 44px;
   padding: 0 10px;
   margin-bottom: 2px;
-  border: var(--uhd-border-w) solid transparent;
-  border-radius: var(--uhd-radius-navitem);
+  border: var(--ax-border-w) solid transparent;
+  border-radius: var(--ax-radius-navitem);
   background: transparent;
-  color: var(--uhd-l-text);
-  font-size: var(--uhd-fs-body);
-  font-weight: var(--uhd-fw-medium);
+  color: var(--ax-l-text);
+  font-size: var(--ax-fs-body);
+  font-weight: var(--ax-fw-medium);
   cursor: pointer;
   text-align: left;
-  transition: background var(--uhd-dur-ui) var(--uhd-ease-standard);
+  transition: background var(--ax-dur-ui) var(--ax-ease-standard);
 }
-.uhd-side__item:hover { background: var(--uhd-l-input-bg); }
-.uhd-side__item--active {
-  background: var(--uhd-l-surface);
-  border-color: var(--uhd-l-border);
-  box-shadow: var(--uhd-shadow-seg);
-  font-weight: var(--uhd-fw-semibold);
+.ax-side__item:hover { background: var(--ax-l-input-bg); }
+.ax-side__item--active {
+  background: var(--ax-l-surface);
+  border-color: var(--ax-l-border);
+  box-shadow: var(--ax-shadow-seg);
+  font-weight: var(--ax-fw-semibold);
 }
-.uhd-side__item--active:hover { background: var(--uhd-l-surface); }
-.uhd-side__item-icon {
+.ax-side__item--active:hover { background: var(--ax-l-surface); }
+.ax-side__item-icon {
   width: 18px;
   height: 18px;
   flex: none;
 }
-.uhd-side__account {
+.ax-side__account {
   padding: 12px;
-  border-top: var(--uhd-border-w) solid var(--uhd-l-divider);
+  border-top: var(--ax-border-w) solid var(--ax-l-divider);
 }
 </style>

@@ -283,8 +283,8 @@ onMounted(() => {
 .cc-eyebrow {
   margin: 0;
   font-size: 14px;
-  font-weight: var(--uhd-fw-bold);
-  color: var(--uhd-s-text-2);
+  font-weight: var(--ax-fw-bold);
+  color: var(--ax-s-text-2);
 }
 .cc-head {
   display: flex;
@@ -296,10 +296,10 @@ onMounted(() => {
 .cc-h1 {
   margin: 8px 0 0;
   font-size: 58px;
-  font-weight: var(--uhd-fw-black);
+  font-weight: var(--ax-fw-black);
   line-height: 1.05;
   letter-spacing: -0.01em;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
 }
 .cc-nav {
   display: inline-flex;
@@ -308,8 +308,8 @@ onMounted(() => {
 }
 .cc-month {
   font-size: 15px;
-  font-weight: var(--uhd-fw-semibold);
-  color: var(--uhd-s-text);
+  font-weight: var(--ax-fw-semibold);
+  color: var(--ax-s-text);
   min-width: 118px;
   text-align: center;
 }
@@ -320,9 +320,9 @@ onMounted(() => {
   width: 40px;
   height: 40px;
   border-radius: 20px;
-  border: 1px solid var(--uhd-s-pill-border);
-  background: var(--uhd-s-pill-bg);
-  color: var(--uhd-s-text);
+  border: 1px solid var(--ax-s-pill-border);
+  background: var(--ax-s-pill-bg);
+  color: var(--ax-s-text);
   cursor: pointer;
 }
 .cc-navbtn:disabled {
@@ -344,7 +344,7 @@ onMounted(() => {
   border-radius: 20px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   font-size: 15px;
   font-family: inherit;
   cursor: pointer;
@@ -352,38 +352,38 @@ onMounted(() => {
 }
 .cc-tab__count {
   font-size: 13px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .cc-tab--on {
-  background: var(--uhd-s-pill-active-bg);
-  color: var(--uhd-s-pill-active-text);
-  font-weight: var(--uhd-fw-semibold);
-  box-shadow: var(--uhd-shadow-seg);
-  border-color: var(--uhd-s-pill-border);
+  background: var(--ax-s-pill-active-bg);
+  color: var(--ax-s-pill-active-text);
+  font-weight: var(--ax-fw-semibold);
+  box-shadow: var(--ax-shadow-seg);
+  border-color: var(--ax-s-pill-border);
 }
 .cc-tab--on .cc-tab__count {
   color: inherit;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
 }
 .cc-count {
   margin: 18px 0 0;
   font-size: 14px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .cc-error,
 .cc-empty {
   margin-top: 28px;
   font-size: 14.5px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .cc-retry {
   margin-top: 10px;
   height: 36px;
   padding: 0 16px;
   border-radius: 18px;
-  border: 1px solid var(--uhd-s-pill-border);
-  background: var(--uhd-s-pill-bg);
-  color: var(--uhd-s-text);
+  border: 1px solid var(--ax-s-pill-border);
+  background: var(--ax-s-pill-bg);
+  color: var(--ax-s-text);
   font-size: 14px;
   font-family: inherit;
   cursor: pointer;
@@ -397,7 +397,7 @@ onMounted(() => {
 .cc-week span {
   text-align: center;
   font-size: 12.5px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   padding: 2px 0;
 }
 .cc-grid {
@@ -415,30 +415,30 @@ onMounted(() => {
   min-height: 86px;
   padding: 7px 8px;
   border-radius: 12px;
-  border: 1px solid var(--uhd-s-border);
+  border: 1px solid var(--ax-s-border);
   background: transparent;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
   font-family: inherit;
   text-align: left;
   cursor: default;
 }
 .cc-cell--has {
   cursor: pointer;
-  background: var(--uhd-s-pill-bg);
+  background: var(--ax-s-pill-bg);
 }
 .cc-cell--out {
   opacity: 0.38;
 }
 .cc-cell--today {
-  border-color: var(--uhd-s-text);
+  border-color: var(--ax-s-text);
 }
 .cc-cell--sel {
-  border-color: var(--uhd-s-text);
-  box-shadow: var(--uhd-shadow-seg);
+  border-color: var(--ax-s-text);
+  box-shadow: var(--ax-shadow-seg);
 }
 .cc-cell__day {
   font-size: 13.5px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
 }
 .cc-cell__covers {
   display: flex;
@@ -449,7 +449,7 @@ onMounted(() => {
   width: 22px;
   height: 32px;
   border-radius: 4px;
-  background: var(--uhd-s-pill-bg);
+  background: var(--ax-s-pill-bg);
 }
 .cc-cell__covers img {
   object-fit: cover;
@@ -459,17 +459,17 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   font-size: 11px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .cc-cell__count {
   font-size: 11.5px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .cc-daytitle {
   margin: 30px 0 0;
   font-size: 19px;
-  font-weight: var(--uhd-fw-bold);
-  color: var(--uhd-s-text);
+  font-weight: var(--ax-fw-bold);
+  color: var(--ax-s-text);
 }
 .cc-daygrid {
   display: grid;
@@ -480,7 +480,7 @@ onMounted(() => {
 .cc-more {
   margin: 16px 0 0;
   font-size: 13px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 @media (max-width: 1599px) { .cc-daygrid { grid-template-columns: repeat(6, 1fr); } }
 @media (max-width: 1279px) { .cc-daygrid { grid-template-columns: repeat(5, 1fr); } }

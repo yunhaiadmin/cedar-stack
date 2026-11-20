@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 搜索结果页（/search?q=，批 3 —— UHDNow 搜索结果页对应面，存档第 9 节）
+ * 搜索结果页（/search?q=，批 3 —— 参考站 搜索结果页对应面，存档第 9 节）
  * H1「『xxx』的搜索结果」36–40px；筛选 pill（全部/电影/剧集，
  * 激活白胶囊约 65×40/圆角 20）；网格与分类页同款（7 列 228×343）。
  * 数据走现行 Emby 协议搜索口 getItems(searchTerm)，与顶栏下拉同一口径。
@@ -222,8 +222,8 @@ watch([term, filter], () => void load(), { immediate: true })
 .sv-h1 {
   margin: 0;
   font-size: 38px;
-  font-weight: var(--uhd-fw-extrabold);
-  color: var(--uhd-s-text);
+  font-weight: var(--ax-fw-extrabold);
+  color: var(--ax-s-text);
   letter-spacing: -0.01em;
 }
 .sv-pills {
@@ -238,22 +238,22 @@ watch([term, filter], () => void load(), { immediate: true })
   border-radius: 20px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   font-size: 15px;
   font-family: inherit;
   cursor: pointer;
 }
 .sv-pill--on {
-  background: var(--uhd-s-pill-active-bg);
-  color: var(--uhd-s-pill-active-text);
-  font-weight: var(--uhd-fw-semibold);
-  box-shadow: var(--uhd-shadow-seg);
-  border-color: var(--uhd-s-pill-border);
+  background: var(--ax-s-pill-active-bg);
+  color: var(--ax-s-pill-active-text);
+  font-weight: var(--ax-fw-semibold);
+  box-shadow: var(--ax-shadow-seg);
+  border-color: var(--ax-s-pill-border);
 }
 .sv-count {
   margin: 14px 0 0;
   font-size: 14px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .sv-grid {
   display: grid;
@@ -280,20 +280,20 @@ watch([term, filter], () => void load(), { immediate: true })
   gap: 10px;
   margin-top: 40px;
   font-size: 14px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .sv-spinner {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: 2px solid var(--uhd-s-border);
-  border-top-color: var(--uhd-s-text);
-  animation: uhd-spin 0.8s linear infinite;
+  border: 2px solid var(--ax-s-border);
+  border-top-color: var(--ax-s-text);
+  animation: ax-spin 0.8s linear infinite;
 }
 .sv-note {
   margin-top: 28px;
   font-size: 15px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .sv-hot {
   display: flex;
@@ -304,17 +304,17 @@ watch([term, filter], () => void load(), { immediate: true })
 }
 .sv-hot__label {
   font-size: 14px;
-  font-weight: var(--uhd-fw-semibold);
-  color: var(--uhd-s-text-2);
+  font-weight: var(--ax-fw-semibold);
+  color: var(--ax-s-text-2);
   margin-right: 2px;
 }
 .sv-hot__chip {
   height: 34px;
   padding: 0 14px;
   border-radius: 17px;
-  border: 1px solid var(--uhd-s-pill-border);
-  background: var(--uhd-s-card-soft);
-  color: var(--uhd-s-text);
+  border: 1px solid var(--ax-s-pill-border);
+  background: var(--ax-s-card-soft);
+  color: var(--ax-s-text);
   font-size: 14px;
   font-family: inherit;
   cursor: pointer;
@@ -328,11 +328,11 @@ watch([term, filter], () => void load(), { immediate: true })
   height: 44px;
   padding: 0 24px;
   border-radius: 22px;
-  border: 1px solid var(--uhd-s-border);
-  background: var(--uhd-s-pill-active-bg);
-  color: var(--uhd-s-text);
+  border: 1px solid var(--ax-s-border);
+  background: var(--ax-s-pill-active-bg);
+  color: var(--ax-s-text);
   font-size: 15px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   font-family: inherit;
   cursor: pointer;
 }
@@ -348,16 +348,16 @@ watch([term, filter], () => void load(), { immediate: true })
   height: 44px;
   padding: 0 26px;
   border-radius: 22px;
-  border: 1px solid var(--uhd-s-border);
-  background: var(--uhd-s-pill-active-bg);
-  color: var(--uhd-s-text);
+  border: 1px solid var(--ax-s-border);
+  background: var(--ax-s-pill-active-bg);
+  color: var(--ax-s-text);
   font-size: 15px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   font-family: inherit;
   cursor: pointer;
 }
 .sv-more__btn--ghost {
   background: transparent;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 </style>

@@ -26,7 +26,7 @@ const {
   mseMimeCandidates,
   SOFTDECODE_MSE_ENABLED,
   SOFT_START_TIMEOUT_MS,
-  SOFT_UHD_BLOCK_MESSAGE,
+  SOFT_4K_BLOCK_MESSAGE,
 } = await import('../src/utils/softDecode.ts')
 
 let passed = 0
@@ -451,12 +451,12 @@ const sizedSrc = (w, h, video = 'hevc', audio = 'eac3') => ({
 check(
   'gate: 4K hevc soft pipeline => blocked',
   softDecodeResolutionGate(sizedSrc(3840, 2160), true),
-  { blocked: true, width: 3840, height: 2160, reason: 'uhd-soft-decode' },
+  { blocked: true, width: 3840, height: 2160, reason: 'ax-soft-decode' },
 )
 check(
   'gate: 1080p hevc soft pipeline => allowed',
   softDecodeResolutionGate(sizedSrc(1920, 1080), true),
-  { blocked: false, width: 1920, height: 1080, reason: 'below-uhd' },
+  { blocked: false, width: 1920, height: 1080, reason: 'below-4k' },
 )
 check(
   'gate: 4K hevc native pipeline => allowed',
@@ -496,7 +496,7 @@ check(
 check(
   'gate: missing dimensions soft => allowed',
   softDecodeResolutionGate(sizedSrc(null, null), true),
-  { blocked: false, width: 0, height: 0, reason: 'below-uhd' },
+  { blocked: false, width: 0, height: 0, reason: 'below-4k' },
 )
 check(
   'gate: no video stream soft => allowed',
@@ -508,7 +508,7 @@ check(
 )
 check(
   'gate: block message copy',
-  SOFT_UHD_BLOCK_MESSAGE,
+  SOFT_4K_BLOCK_MESSAGE,
   '这部片子是 4K 画质，手机浏览器放不动，请用客户端 App 观看',
 )
 
@@ -551,7 +551,7 @@ check(
 )
 check(
   'player shows gate block message on the notice card',
-  wpvSrc.includes('SOFT_UHD_BLOCK_MESSAGE'),
+  wpvSrc.includes('SOFT_4K_BLOCK_MESSAGE'),
   true,
 )
 
@@ -563,7 +563,7 @@ check(
 check(
   'pipeline: 4K + switch on + mse supported => mse',
   softDecodePipelineDecision(sizedSrc(3840, 2160), true, { enabled: true, supported: true }),
-  { pipeline: 'mse', width: 3840, height: 2160, reason: 'uhd-mse' },
+  { pipeline: 'mse', width: 3840, height: 2160, reason: 'ax-mse' },
 )
 check(
   'pipeline: 4K + mse unsupported => blocked',
@@ -578,12 +578,12 @@ check(
 check(
   'pipeline: 1080p + mse supported => wasm unchanged',
   softDecodePipelineDecision(sizedSrc(1920, 1080), true, { enabled: true, supported: true }),
-  { pipeline: 'wasm', width: 1920, height: 1080, reason: 'below-uhd' },
+  { pipeline: 'wasm', width: 1920, height: 1080, reason: 'below-4k' },
 )
 check(
   'pipeline: 1080p + switch off => wasm unchanged',
   softDecodePipelineDecision(sizedSrc(1920, 1080), true, { enabled: false, supported: false }),
-  { pipeline: 'wasm', width: 1920, height: 1080, reason: 'below-uhd' },
+  { pipeline: 'wasm', width: 1920, height: 1080, reason: 'below-4k' },
 )
 check(
   'pipeline: 4K native pipeline => wasm decision (never consulted)',
@@ -689,12 +689,12 @@ check(
 )
 
 // --- MSE 接线契约：视图只在 4K 分流命中时把 mse 标志交给构造， ---
-// 起播失败与播后报错都回落 #260 提示卡（showSoftUhdBlocked 出现于
+// 起播失败与播后报错都回落 #260 提示卡（showSoft4kBlocked 出现于
 // 分流拦截、起播 catch、播后 onError 三处调用点）；构造侧以
 // checkUseMSE 改判 + useMSE 看门狗保证真走 MSE，被否回解码管线
 // 立刻销毁回落；WebCodecs 硬解路径整段退役、不许留作可选项。
 check(
-  'player probes MSE support for UHD sources',
+  'player probes MSE support for 4K sources',
   wpvSrc.includes('probeSoftMseSupport(source)'),
   true,
 )
@@ -704,8 +704,8 @@ check(
   true,
 )
 check(
-  'player falls back to UHD block card on mse failure (3 call sites)',
-  wpvSrc.split('showSoftUhdBlocked(source, verdict)').length - 1 >= 3,
+  'player falls back to 4K block card on mse failure (3 call sites)',
+  wpvSrc.split('showSoft4kBlocked(source, verdict)').length - 1 >= 3,
   true,
 )
 check(

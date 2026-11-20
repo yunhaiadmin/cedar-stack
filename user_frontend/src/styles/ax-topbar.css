@@ -1,15 +1,15 @@
 /* ============================================================
- * UHD 统一顶栏令牌（顶栏统一固定＋「前往流媒体」常驻入口单，2026-11-14）
+ * ax 统一顶栏令牌（顶栏统一固定＋「前往流媒体」常驻入口单，2026-11-14）
  *
- * 登录后用户区只许一套顶栏（components/uhd/UhdTopBar.vue）与一颗
- * 「前往流媒体」胶囊（components/uhd/UhdWatchPill.vue）：形态、尺寸、
+ * 登录后用户区只许一套顶栏（components/ax/AxTopBar.vue）与一颗
+ * 「前往流媒体」胶囊（components/ax/AxWatchPill.vue）：形态、尺寸、
  * 玻璃配方全部在此一处定义，各页不许再自写顶栏/观影钮。
  * 本文件只定义 --utb-* 变量（顶栏作用域），不改任何既有变量的值；
  * 已按 U0 冻结流程同步登记 scripts/check_frontend_tokens.py 的
- * MAIN_CSS_ALLOWLIST（与 uhd-tokens.css 同例）。
+ * MAIN_CSS_ALLOWLIST（与 ax-tokens.css 同例）。
  * ============================================================ */
 :root {
-  /* 顶栏总高：胶囊 40 + 上下内距 8×2。侧栏（UhdAccountLayout）吸顶
+  /* 顶栏总高：胶囊 40 + 上下内距 8×2。侧栏（AxAccountLayout）吸顶
      偏移与内容让位都读这个值，不许别处再写死一份高度。
      尺寸口径（2026-11-14 用户红圈对照亲斥「我们那么大」后实测改定）：
      友站办事面胶囊按截图比例折算约 37–40、片库面浮动胶囊组约 45，
@@ -20,7 +20,7 @@
      --utb-pill-height 钉死、字 14、padding-inline 12（--utb-pill-px）、
      图标 16、gap 8（后两项在组件内）。沿革：#321 曾照友站大钮
      .btn-glass 把胶囊放大到高 44／字 15 被用户打回，#330 先收回旧
-     配方 33／13，本次按真值定版。--utb-pill-h 33 自此只供 UhdTopBar
+     配方 33／13，本次按真值定版。--utb-pill-h 33 自此只供 AxTopBar
      外观钮（圆钮边长），胶囊不再共用；#321 的彩虹环与 lens 玻璃
      配方保留不动。 */
   --utb-pill-h: 33px;
@@ -36,7 +36,7 @@
      无阴影带。此前取旧纸面暖白色系 (250,248,246)/(15,14,17)，与账户面
      页底 #09090b 异色，栏下还有边线＋外阴影洇出色带（用户真机亲指）。
      --utb-shadow 自 2026-11-18 胶囊改走 lens 三件套（--utb-pill-shadow）
-     后已无引用，保留定义待后续清理；顶栏本体不取它（见 UhdTopBar.vue）。 */
+     后已无引用，保留定义待后续清理；顶栏本体不取它（见 AxTopBar.vue）。 */
   /* 深色底（默认）：账户面页底 #09090b 的半透版 */
   --utb-bg: rgba(9, 9, 11, 0.8);
   --utb-fg: #ffffff;
@@ -83,7 +83,7 @@ html[data-theme='light'] {
 .stream-scope[data-stream-theme='dark'] {
   /* 片库面页底 #121214 的半透版（同色无缝，口径见 :root 注） */
   --utb-bg: rgba(18, 18, 20, 0.8);
-  --utb-fg: var(--uhd-s-text);
+  --utb-fg: var(--ax-s-text);
   --utb-edge: transparent;
   --utb-shadow: 0 12px 32px rgba(0, 0, 0, 0.26);
   /* 胶囊 lens 三件套（深色，与 :root 同值） */
@@ -100,7 +100,7 @@ html[data-theme='light'] {
 .stream-scope[data-stream-theme='light'] {
   /* 片库面页底 #ffffff 的半透版（同色无缝，口径见 :root 注） */
   --utb-bg: rgba(255, 255, 255, 0.82);
-  --utb-fg: var(--uhd-s-text);
+  --utb-fg: var(--ax-s-text);
   --utb-edge: transparent;
   --utb-shadow: 0 12px 28px rgba(90, 94, 150, 0.12);
   /* 胶囊 lens 三件套（浅色，与 html[data-theme='light'] 同值） */

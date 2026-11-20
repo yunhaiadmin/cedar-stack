@@ -1,7 +1,7 @@
 /* 邀请好友页本地主题变量（--iv-*）：缺省深色，html[data-theme='light'] 时
    整套换浅（与「我的」页/团队页同口径）。定义放在独立样式表供设计令牌
    契约核查，由 InviteFriendsView.vue 引入。
-   版式照 UHDNow 邀请页截图（2026-11-14 定版）：扁平排布、无卡片，
+   版式照 参考站 邀请页截图（2026-11-14 定版）：扁平排布、无卡片，
    大标题＋换码钮、双页签分段、码面大字、彩虹玻璃双钮、统计大数字、
    规则段、记录双子页签。 */
 
@@ -18,7 +18,7 @@
   min-height: 100dvh;
   background: #050505;
   color: #ffffff;
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -66,7 +66,7 @@ html[data-theme='light'] .iv-page {
   margin: 0;
   font-size: 28px;
   line-height: 1.15;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   letter-spacing: 0.01em;
 }
 
@@ -127,7 +127,7 @@ html[data-theme='light'] .iv-page {
   font-family: inherit;
   font-size: 14px;
   line-height: 20px;
-  font-weight: var(--uhd-fw-medium);
+  font-weight: var(--ax-fw-medium);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -135,8 +135,8 @@ html[data-theme='light'] .iv-page {
 .iv-seg__item--on {
   background: var(--iv-chip-on);
   color: inherit;
-  font-weight: var(--uhd-fw-semibold);
-  box-shadow: var(--uhd-shadow-seg);
+  font-weight: var(--ax-fw-semibold);
+  box-shadow: var(--ax-shadow-seg);
 }
 
 .iv-seg--small {
@@ -160,7 +160,7 @@ html[data-theme='light'] .iv-page {
   margin: 12px 0 0;
   font-size: 34px;
   line-height: 1.1;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   letter-spacing: 0.06em;
   word-break: break-all;
 }
@@ -185,15 +185,15 @@ html[data-theme='light'] .iv-page {
   border-radius: 999px;
   font-family: inherit;
   font-size: 16px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   color: inherit;
   cursor: pointer;
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
 }
 
 .iv-btn:active {
-  transform: scale(var(--uhd-press-scale));
+  transform: scale(var(--ax-press-scale));
 }
 
 .iv-btn:disabled {
@@ -204,9 +204,9 @@ html[data-theme='light'] .iv-page {
 .iv-btn--rainbow {
   position: relative;
   border: 1.5px solid transparent;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
   color: #ffffff;
-  box-shadow: var(--uhd-shadow-sheet);
+  box-shadow: var(--ax-shadow-sheet);
 }
 /* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
    钮面只留玻璃层；浅色覆盖只换面背景，环由本处继承。 */
@@ -215,8 +215,8 @@ html[data-theme='light'] .iv-page {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: var(--uhd-rainbow-border-w);
-  background: var(--uhd-rainbow);
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -229,19 +229,19 @@ html[data-theme='light'] .iv-page {
 }
 
 html[data-theme='light'] .iv-btn--rainbow {
-  background: var(--uhd-rainbow-soft);
+  background: var(--ax-rainbow-soft);
   color: #111111;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--uhd-shadow-card-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 
 .iv-btn--glass {
   border: 1px solid var(--iv-glass-line);
   background: var(--iv-glass-bg);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), var(--uhd-shadow-card-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), var(--ax-shadow-card-d);
 }
 
 html[data-theme='light'] .iv-btn--glass {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), var(--uhd-shadow-card-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), var(--ax-shadow-card-l);
 }
 
 /* ---------- 统计与规则 ---------- */
@@ -266,12 +266,12 @@ html[data-theme='light'] .iv-btn--glass {
 .iv-stat__value {
   font-size: 26px;
   line-height: 1.1;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
 }
 
 .iv-stat__value small {
   font-size: 14px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
 }
 
 .iv-note {
@@ -311,7 +311,7 @@ html[data-theme='light'] .iv-btn--glass {
 .iv-rec-title {
   margin: 0;
   font-size: 20px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
 }
 
 .iv-rec-sub {
@@ -350,7 +350,7 @@ html[data-theme='light'] .iv-btn--glass {
 .iv-row__name {
   flex: 1 1 auto;
   min-width: 0;
-  font-weight: var(--uhd-fw-medium);
+  font-weight: var(--ax-fw-medium);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -378,7 +378,7 @@ html[data-theme='light'] .iv-btn--glass {
 
 .iv-row__amt {
   flex: 0 0 auto;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   white-space: nowrap;
 }
 
@@ -402,13 +402,13 @@ html[data-theme='light'] .iv-btn--glass {
   border-radius: 22px;
   background: var(--iv-card);
   border: 1px solid var(--iv-line);
-  box-shadow: var(--uhd-shadow-panel-lg);
+  box-shadow: var(--ax-shadow-panel-lg);
 }
 
 .iv-modal__title {
   margin: 0;
   font-size: 19px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
 }
 
 .iv-modal__text {
@@ -460,7 +460,7 @@ html[data-theme='light'] .iv-btn--glass {
   background: transparent;
   color: inherit;
   font: inherit;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   text-decoration: underline;
   cursor: pointer;
 }
@@ -475,7 +475,7 @@ html[data-theme='light'] .iv-btn--glass {
   margin: 0;
   font-size: 26px;
   line-height: 1.2;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   letter-spacing: 0.01em;
 }
 
@@ -499,7 +499,7 @@ html[data-theme='light'] .iv-btn--glass {
 .iv-wcount__num {
   font-size: 30px;
   line-height: 1;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
 }
 
 .iv-wcount__dim {
@@ -537,7 +537,7 @@ html[data-theme='light'] .iv-btn--glass {
 .iv-tcard__name {
   margin: 0;
   font-size: 19px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
 }
 
 .iv-tcard__desc {
@@ -572,7 +572,7 @@ html[data-theme='light'] .iv-btn--glass {
 .iv-gen__code {
   margin: 0;
   font-size: 30px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   letter-spacing: 0.12em;
   word-break: break-all;
 }
@@ -582,7 +582,7 @@ html[data-theme='light'] .iv-btn--glass {
 }
 
 .iv-row__code {
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   letter-spacing: 0.08em;
   word-break: break-all;
 }

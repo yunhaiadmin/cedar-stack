@@ -853,7 +853,7 @@ class PasskeyLoginVerifyRequest(BaseModel):
 def login_factors(request: Request, username: str, db: Session = Depends(get_db)):
     """登录页因素探测：该用户名是否要显示动态验证码字段 / Passkey 登录按钮。
 
-    与 UHDNow 同口径（字段仅在已启用时出现）。按 IP 限流防批量探测；
+    与 参考站 同口径（字段仅在已启用时出现）。按 IP 限流防批量探测；
     用户名不存在时返回全 false，与「存在但未启用」不可区分的只有时序——
     本端点不查密码、无 bcrypt，时序差不构成枚举面（用户名本身可由注册接口探测）。
     """

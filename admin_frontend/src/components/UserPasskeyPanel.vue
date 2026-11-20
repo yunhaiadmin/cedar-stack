@@ -120,7 +120,7 @@ watch(() => props.userId, load)
 .pk-summary {
   margin: 0 0 12px;
   color: var(--el-text-color-secondary);
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   line-height: 1.6;
 }
 .pk-list { display: flex; flex-direction: column; gap: 8px; }
@@ -134,7 +134,7 @@ watch(() => props.userId, load)
   border-radius: 10px;
 }
 .pk-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.pk-name { font-size: var(--uhd-fs-caption); font-weight: 600; }
-.pk-meta { color: var(--el-text-color-secondary); font-size: var(--uhd-fs-aux-sm); }
+.pk-name { font-size: var(--ax-fs-caption); font-weight: 600; }
+.pk-meta { color: var(--el-text-color-secondary); font-size: var(--ax-fs-aux-sm); }
 .btn-ico { margin-right: 4px; vertical-align: -2px; }
 </style>

@@ -1,21 +1,21 @@
 <script setup lang="ts">
 /**
- * 官网定价（UHD 换皮批 1）——说明书逐页对照表第 19 行、第 5 节③
+ * 官网定价（ax 换皮批 1）——说明书逐页对照表第 19 行、第 5 节③
  * 深色营销面外壳（悬浮胶囊导航 + 定价 Hero）+ 与站内订阅共用的单选对比表组件
- * （UhdPlanCompare，官网版去掉结算栏，按钮「立即开通」跳登录后订阅）。
+ * （AxPlanCompare，官网版去掉结算栏，按钮「立即开通」跳登录后订阅）。
  * 套餐与价格全部走公开接口 paymentApi.plans() 实时读取，不写死任何价格。
  */
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Check } from 'lucide-vue-next'
-import UhdNavPill, { type UhdNavItem } from '@/components/uhd/UhdNavPill.vue'
-import UhdPlanCompare from '@/components/uhd/UhdPlanCompare.vue'
+import AxNavPill, { type AxNavItem } from '@/components/ax/AxNavPill.vue'
+import AxPlanCompare from '@/components/ax/AxPlanCompare.vue'
 import { paymentApi, type SubscriptionPlan } from '@/api/economy'
 import { branding } from '@/composables/useBranding'
 
 const router = useRouter()
 
-const navItems: UhdNavItem[] = [
+const navItems: AxNavItem[] = [
   { key: 'home', label: '首页' },
   { key: 'pricing', label: '定价' },
   { key: 'login', label: '登录' },
@@ -78,7 +78,7 @@ const year = new Date().getFullYear()
 <template>
   <div class="pricing">
     <div class="pricing-nav">
-      <UhdNavPill
+      <AxNavPill
         :items="navItems"
         active-key="pricing"
         :brand="branding.site_name"
@@ -113,7 +113,7 @@ const year = new Date().getFullYear()
       </div>
 
       <template v-else>
-        <UhdPlanCompare :plans="plans" cta-text="立即开通" @select="onSelectPlan" />
+        <AxPlanCompare :plans="plans" cta-text="立即开通" @select="onSelectPlan" />
 
         <p class="pricing-includes-title">所有套餐都包含</p>
         <ul class="pricing-includes">
@@ -154,23 +154,23 @@ const year = new Date().getFullYear()
 <style scoped>
 /* 全页跟随用户主题（D5-01 核销）：原站定价页不强制深色，根用 bg-canvas 主题令牌，
    只有落地页 data-force-dark。此前写死「上深下浅」与原站不符，改主题翻转变量。 */
-/* --p-* 主题别名定义在 styles/uhd-tokens.css（令牌契约只认被引入样式表里的定义）。 */
+/* --p-* 主题别名定义在 styles/ax-tokens.css（令牌契约只认被引入样式表里的定义）。 */
 .pricing {
   min-height: 100vh;
-  background: var(--uhd-d-bg);
+  background: var(--ax-d-bg);
   color: var(--p-text);
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
 }
 :root[data-theme='light'] .pricing {
   /* 顶部 250px 淡彩虹洗色（友站定价页实测三色：粉 rgb(249,227,222)／薄荷 rgb(222,242,237)／
      淡紫白 rgb(252,251,254)，顶部最浓、250px 处溶入页底白；横向三色＋纵向淡出两层叠加）。
      深色态无洗色（友站实测为浅色页），保持原底色。 */
   background:
-    linear-gradient(180deg, rgba(252, 251, 254, 0) 0%, var(--uhd-l-bg) 250px),
+    linear-gradient(180deg, rgba(252, 251, 254, 0) 0%, var(--ax-l-bg) 250px),
     linear-gradient(90deg, rgb(249, 227, 222) 0%, rgb(222, 242, 237) 50%, rgb(252, 251, 254) 100%);
   background-size: 100% 250px, 100% 250px;
   background-repeat: no-repeat;
-  background-color: var(--uhd-l-bg);
+  background-color: var(--ax-l-bg);
 }
 .pricing-nav {
   position: fixed;
@@ -181,9 +181,9 @@ const year = new Date().getFullYear()
 }
 .eyebrow {
   margin: 0 0 18px;
-  font-size: var(--uhd-fs-aux);
-  font-weight: var(--uhd-fw-semibold);
-  letter-spacing: var(--uhd-ls-eyebrow);
+  font-size: var(--ax-fs-aux);
+  font-weight: var(--ax-fw-semibold);
+  letter-spacing: var(--ax-ls-eyebrow);
   text-transform: uppercase;
   color: var(--p-text-2);
 }
@@ -192,20 +192,20 @@ const year = new Date().getFullYear()
 .pricing-hero {
   padding: 150px 28px 54px;
   text-align: center;
-  animation: uhd-blur-in var(--uhd-dur-hero) var(--uhd-ease-pop);
+  animation: ax-blur-in var(--ax-dur-hero) var(--ax-ease-pop);
 }
 .pricing-title {
   margin: 0 0 16px;
-  font-family: var(--uhd-font-display);
+  font-family: var(--ax-font-display);
   font-size: clamp(40px, 5.6vw, 68px);
-  font-weight: var(--uhd-fw-black);
+  font-weight: var(--ax-fw-black);
   line-height: 1.1;
 }
 .pricing-sub {
   margin: 0 auto;
   max-width: 560px;
-  font-size: var(--uhd-fs-lead);
-  line-height: var(--uhd-lh-body);
+  font-size: var(--ax-fs-lead);
+  line-height: var(--ax-lh-body);
   color: var(--p-text-2);
 }
 
@@ -220,7 +220,7 @@ const year = new Date().getFullYear()
   justify-content: center;
   gap: 12px;
   min-height: 210px;
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   color: var(--p-text-2);
 }
 .spinner {
@@ -229,18 +229,18 @@ const year = new Date().getFullYear()
   border-radius: 50%;
   border: 2px solid var(--p-border);
   border-top-color: var(--p-text-2);
-  animation: uhd-spin 0.8s linear infinite;
+  animation: ax-spin 0.8s linear infinite;
 }
 .retry-btn {
   height: 38px;
   padding: 0 18px;
-  border: var(--uhd-border-w) solid var(--p-border);
-  border-radius: var(--uhd-radius-pill);
+  border: var(--ax-border-w) solid var(--p-border);
+  border-radius: var(--ax-radius-pill);
   background: var(--p-surface);
   color: var(--p-text);
   font: inherit;
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-semibold);
   cursor: pointer;
 }
 .pricing-note {
@@ -250,33 +250,33 @@ const year = new Date().getFullYear()
   text-align: center;
   /* 深色主题下改琥珀暗玻璃（原浅黄实块在深底上成贴片）；浅色主题恢复浅黄块 */
   background: rgba(245, 158, 11, 0.1);
-  border: var(--uhd-border-w) solid rgba(245, 158, 11, 0.35);
-  border-radius: var(--uhd-radius-card-sm);
+  border: var(--ax-border-w) solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--ax-radius-card-sm);
 }
 :root[data-theme='light'] .pricing-note {
-  background: var(--uhd-warn-bg-2);
-  border-color: var(--uhd-warn-bg);
+  background: var(--ax-warn-bg-2);
+  border-color: var(--ax-warn-bg);
 }
 .pricing-note-title {
   margin: 0 0 10px;
-  font-family: var(--uhd-font-display);
-  font-size: var(--uhd-fs-h3);
-  font-weight: var(--uhd-fw-extrabold);
+  font-family: var(--ax-font-display);
+  font-size: var(--ax-fs-h3);
+  font-weight: var(--ax-fw-extrabold);
   color: var(--p-warn);
 }
 .pricing-note-text {
   margin: 0;
-  font-size: var(--uhd-fs-body);
-  line-height: var(--uhd-lh-body);
+  font-size: var(--ax-fs-body);
+  line-height: var(--ax-lh-body);
   color: var(--p-warn);
 }
 
 .pricing-includes-title {
   margin: 54px 0 18px;
   text-align: center;
-  font-family: var(--uhd-font-display);
-  font-size: var(--uhd-fs-title);
-  font-weight: var(--uhd-fw-bold);
+  font-family: var(--ax-font-display);
+  font-size: var(--ax-fs-title);
+  font-weight: var(--ax-fw-bold);
 }
 .pricing-includes {
   list-style: none;
@@ -286,15 +286,15 @@ const year = new Date().getFullYear()
   flex-wrap: wrap;
   margin: 0 auto;
   padding: 0;
-  max-width: var(--uhd-container-pricing);
-  font-size: var(--uhd-fs-body);
+  max-width: var(--ax-container-pricing);
+  font-size: var(--ax-fs-body);
 }
 .pricing-includes li {
   display: inline-flex;
   align-items: center;
   gap: 7px;
 }
-.includes-check { color: var(--uhd-success); }
+.includes-check { color: var(--ax-success); }
 
 /* FAQ：单列展开式（原站口径） */
 .pricing-faq {
@@ -304,26 +304,26 @@ const year = new Date().getFullYear()
 .faq-title {
   margin: 0 0 26px;
   text-align: center;
-  font-family: var(--uhd-font-display);
-  font-size: var(--uhd-fs-h2);
-  font-weight: var(--uhd-fw-extrabold);
+  font-family: var(--ax-font-display);
+  font-size: var(--ax-fs-h2);
+  font-weight: var(--ax-fw-extrabold);
 }
 .faq-card {
   background: var(--p-surface);
-  border: var(--uhd-border-w) solid var(--p-border);
-  border-radius: var(--uhd-radius-card-sm);
+  border: var(--ax-border-w) solid var(--p-border);
+  border-radius: var(--ax-radius-card-sm);
   padding: 28px;
   margin-bottom: 16px;
 }
 .faq-q {
   margin: 0 0 8px;
-  font-family: var(--uhd-font-display);
+  font-family: var(--ax-font-display);
   font-size: 17px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
 }
 .faq-a {
   margin: 0;
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   line-height: 1.7;
   color: var(--p-text-2);
 }
@@ -335,22 +335,22 @@ const year = new Date().getFullYear()
   justify-content: space-between;
   gap: 24px;
   flex-wrap: wrap;
-  max-width: var(--uhd-container-pricing);
+  max-width: var(--ax-container-pricing);
   margin: 56px auto 0;
   padding: 28px 30px;
   background: var(--p-surface);
-  border: var(--uhd-border-w) solid var(--p-border);
-  border-radius: var(--uhd-radius-card);
+  border: var(--ax-border-w) solid var(--p-border);
+  border-radius: var(--ax-radius-card);
 }
 .team-title {
   margin: 0 0 6px;
-  font-family: var(--uhd-font-display);
+  font-family: var(--ax-font-display);
   font-size: 20px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
 }
 .team-text {
   margin: 0;
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   color: var(--p-text-2);
 }
 .team-btn {
@@ -358,12 +358,12 @@ const year = new Date().getFullYear()
   align-items: center;
   height: 44px;
   padding: 0 24px;
-  border: var(--uhd-border-w) solid var(--p-border);
-  border-radius: var(--uhd-radius-pill);
+  border: var(--ax-border-w) solid var(--p-border);
+  border-radius: var(--ax-radius-pill);
   background: var(--p-surface);
   color: var(--p-text);
-  font-size: var(--uhd-fs-body);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-body);
+  font-weight: var(--ax-fw-semibold);
   text-decoration: none;
   white-space: nowrap;
 }
@@ -373,10 +373,10 @@ const year = new Date().getFullYear()
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
-  max-width: var(--uhd-container-marketing);
+  max-width: var(--ax-container-marketing);
   margin: 0 auto;
   padding: 22px 28px 30px;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   color: var(--p-text-2);
 }
 .pricing-foot-links {

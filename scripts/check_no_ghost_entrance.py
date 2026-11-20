@@ -4,8 +4,8 @@
 事故史（都发生在 user_frontend，用户真机录屏/截图实证）：
   - #101（2026-11-13）：LoginView 入场关键帧含 `filter: blur(6px)→0`，0.56s 内
     整卡文字被涂抹成双份（用户读作「文字重影」）。当时只摘了登录页自己的
-    authColumnIn，共享关键帧 `uhd-blur-in` 里的 blur 没清——它还被
-    NotFoundView、OperatorView、UhdModal、UhdNavPill、PricingView 用着，
+    authColumnIn，共享关键帧 `ax-blur-in` 里的 blur 没清——它还被
+    NotFoundView、OperatorView、AxModal、AxNavPill、PricingView 用着，
     同机制残留全站。
   - 片库首页重影（2026-11-13）：StreamHomeView 的 `.sl-content` 挂
     `animation: sl-in 0.45s ease both`，整块内容（Hero＋继续观看整排封面）

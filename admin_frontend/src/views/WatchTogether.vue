@@ -246,7 +246,7 @@ onMounted(() => {
 
 .mono {
   font-family: var(--font-mono);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
 }
 
 .dim {
@@ -280,7 +280,7 @@ onMounted(() => {
 .detail-row {
   display: flex;
   gap: 12px;
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   color: var(--au-text);
 }
 
@@ -288,12 +288,12 @@ onMounted(() => {
   flex: none;
   width: 72px;
   color: var(--au-text-3);
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
 }
 
 .detail-sub {
   margin: 14px 0 4px;
-  font-size: var(--uhd-fs-lead);
+  font-size: var(--ax-fs-lead);
   color: var(--au-text);
 }
 
@@ -310,7 +310,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   color: var(--au-text);
 }
 
@@ -319,7 +319,7 @@ onMounted(() => {
   border-radius: var(--au-r-full);
   background: var(--au-surface-2);
   color: var(--au-text-2);
-  font-size: var(--uhd-fs-micro);
+  font-size: var(--ax-fs-micro);
 }
 
 .detail-actions {

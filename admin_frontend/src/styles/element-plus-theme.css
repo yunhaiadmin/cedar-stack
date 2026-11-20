@@ -113,12 +113,12 @@ html:root {
   --el-component-size-small: 30px;
 
   --el-font-family: var(--au-font-sans);
-  /* EP 全局字号走统一字阶 --uhd-fs-*（批 0 地基，2026-11-18；值与原字面量逐档相同） */
-  --el-font-size-base: var(--uhd-fs-caption);
-  --el-font-size-small: var(--uhd-fs-aux);
-  --el-font-size-extra-small: var(--uhd-fs-aux-sm);
-  --el-font-size-medium: var(--uhd-fs-caption);
-  --el-font-size-large: var(--uhd-fs-lead);
+  /* EP 全局字号走统一字阶 --ax-fs-*（批 0 地基，2026-11-18；值与原字面量逐档相同） */
+  --el-font-size-base: var(--ax-fs-caption);
+  --el-font-size-small: var(--ax-fs-aux);
+  --el-font-size-extra-small: var(--ax-fs-aux-sm);
+  --el-font-size-medium: var(--ax-fs-caption);
+  --el-font-size-large: var(--ax-fs-lead);
 
   /* ---- 阴影 / 遮罩 ---- */
   --el-box-shadow: var(--au-shadow-2);
@@ -776,19 +776,19 @@ html .el-table__footer-wrapper tr td.el-table__fixed-right-patch {
 .el-tag .el-tag__close:hover { background: var(--au-track); color: var(--au-text); }
 
 /* ==================== 8. 弹层：弹窗 / 抽屉 / 消息框 ==================== */
-/* 遮罩与圆角的最终口径在 uhd-admin.css「弹层口径兜底（批 3）」节：
+/* 遮罩与圆角的最终口径在 ax-admin.css「弹层口径兜底（批 3）」节：
    EP 组件 CSS 后入级联会压过本节同特异性规则，那边用 body 前缀兜底。
    本节声明保持同值令牌，作在位口径与非 EP 通道的回退。 */
 .el-overlay { background-color: var(--au-scrim); }
 
 .el-dialog {
   --el-dialog-bg-color: var(--au-surface);
-  --el-dialog-border-radius: var(--uhd-radius-modal);
+  --el-dialog-border-radius: var(--ax-radius-modal);
   --el-dialog-padding-primary: 20px;
   --el-dialog-title-font-size: 17px;
   background: var(--au-surface);
   border: 1px solid var(--au-border-strong);
-  border-radius: var(--uhd-radius-modal);
+  border-radius: var(--ax-radius-modal);
   box-shadow: var(--au-shadow-2);
   padding: 0;
   overflow: hidden;
@@ -831,7 +831,7 @@ html .el-table__footer-wrapper tr td.el-table__fixed-right-patch {
 
 .el-drawer.rtl { border-left: 1px solid var(--au-border-strong); }
 .el-drawer.ltr { border-right: 1px solid var(--au-border-strong); }
-.el-drawer.btt { border-top: 1px solid var(--au-border-strong); border-radius: var(--uhd-radius-modal) var(--uhd-radius-modal) 0 0; }
+.el-drawer.btt { border-top: 1px solid var(--au-border-strong); border-radius: var(--ax-radius-modal) var(--ax-radius-modal) 0 0; }
 .el-drawer.ttb { border-bottom: 1px solid var(--au-border-strong); }
 
 .el-drawer__header {
@@ -850,10 +850,10 @@ html .el-table__footer-wrapper tr td.el-table__fixed-right-patch {
   --el-messagebox-title-color: var(--au-text);
   --el-messagebox-content-color: var(--au-text-2);
   --el-messagebox-width: 420px;
-  --el-messagebox-border-radius: var(--uhd-radius-modal);
+  --el-messagebox-border-radius: var(--ax-radius-modal);
   background: var(--au-surface);
   border: 1px solid var(--au-border-strong);
-  border-radius: var(--uhd-radius-modal);
+  border-radius: var(--ax-radius-modal);
   box-shadow: var(--au-shadow-2);
   padding: 20px 22px;
 }

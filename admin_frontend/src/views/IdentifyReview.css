@@ -13,7 +13,7 @@
 
 .ir-hint {
   margin: 0;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-2);
   line-height: 1.8;
 }
@@ -49,12 +49,12 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   line-height: 1.7;
 }
 
 .ir-result-name {
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   font-weight: 600;
   color: var(--au-text);
 }
@@ -74,7 +74,7 @@
 }
 
 .ir-detail-name {
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   font-weight: 700;
   color: var(--au-text);
 }
@@ -83,13 +83,13 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px 14px;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-2);
 }
 
 .ir-step {
   margin-top: 16px;
-  font-size: var(--uhd-fs-micro);
+  font-size: var(--ax-fs-micro);
   font-weight: 600;
   letter-spacing: 0.16em;
   color: var(--au-primary);
@@ -135,7 +135,7 @@
   border-radius: calc(var(--au-r-sm) / 2);
   background: var(--au-violet-soft);
   color: var(--au-text-2);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
 }
 
 .ir-candidate-info {
@@ -147,14 +147,14 @@
 }
 
 .ir-candidate-title {
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   font-weight: 600;
   line-height: 1.4;
   color: var(--au-text);
 }
 
 .ir-candidate-meta {
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-2);
 }
 

@@ -8,7 +8,7 @@ import {
   ChevronRight, ShieldCheck,
   Globe, MessageSquare, Receipt, Settings,
 } from 'lucide-vue-next'
-import UhdWatchPill from '@/components/uhd/UhdWatchPill.vue'
+import AxWatchPill from '@/components/ax/AxWatchPill.vue'
 import BrandMark from '@/components/BrandMark.vue'
 import { isExpiringSoon, subscriptionApi } from '@/api'
 import type { MySubscription } from '@/api'
@@ -320,7 +320,7 @@ onBeforeUnmount(() => {
         <template v-if="userStore.isLoggedIn">
           <!-- 「前往流媒体」常驻胶囊：与账户区/片库面同一颗组件（顶栏统一单，
                2026-11-14），落点片库 /library；本栏已有的 sticky 玻璃形态不动 -->
-          <UhdWatchPill />
+          <AxWatchPill />
           <div ref="userMenuRef" class="user-menu">
             <button
               ref="userBtnRef"
@@ -518,7 +518,7 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   color: var(--paper-ink-3);
   text-decoration: none;
-  transition: color var(--paper-fast) var(--paper-ease), transform var(--uhd-press-dur) var(--uhd-ease-spring);
+  transition: color var(--paper-fast) var(--paper-ease), transform var(--ax-press-dur) var(--ax-ease-spring);
 }
 
 /* 触点 44px：::before 透明扩展，安静纯文字导航视觉不变（::after 留给当前页圆点） */
@@ -530,7 +530,7 @@ onBeforeUnmount(() => {
   color: var(--paper-ink);
 }
 
-.nav-link:active { transform: scale(var(--uhd-press-scale)); }
+.nav-link:active { transform: scale(var(--ax-press-scale)); }
 
 .nav-link-active,
 .nav-link-active:hover {
@@ -585,7 +585,7 @@ onBeforeUnmount(() => {
   transition: background var(--paper-fast) var(--paper-ease),
     border-color var(--paper-fast) var(--paper-ease),
     color var(--paper-fast) var(--paper-ease),
-    transform var(--uhd-press-dur) var(--uhd-ease-spring);
+    transform var(--ax-press-dur) var(--ax-ease-spring);
 }
 
 .round-btn:hover {
@@ -594,7 +594,7 @@ onBeforeUnmount(() => {
   border-color: var(--paper-line-strong);
 }
 
-.round-btn:active { transform: scale(var(--uhd-press-scale)); }
+.round-btn:active { transform: scale(var(--ax-press-scale)); }
 
 .round-btn:focus-visible {
   outline: 2px solid var(--paper-border-focus);
@@ -893,10 +893,10 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   text-decoration: none;
   color: var(--ink);
-  transition: transform var(--uhd-press-dur) var(--uhd-ease-spring), border-color var(--paper-fast);
+  transition: transform var(--ax-press-dur) var(--ax-ease-spring), border-color var(--paper-fast);
 }
 .dropdown-facility:hover { border-color: var(--ink); }
-.dropdown-facility:active { transform: scale(var(--uhd-press-scale)); }
+.dropdown-facility:active { transform: scale(var(--ax-press-scale)); }
 /* 纸色风键盘焦点环：设施卡片 / 退出登录（与顶栏其余焦点环同配方，颜色取纸色墨色） */
 .dropdown-facility:focus-visible,
 .dropdown-logout:focus-visible {

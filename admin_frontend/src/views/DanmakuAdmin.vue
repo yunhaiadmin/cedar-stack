@@ -387,7 +387,7 @@ onMounted(() => {
 
 .mono {
   font-family: var(--font-mono);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
 }
 
 .dim {
@@ -402,7 +402,7 @@ onMounted(() => {
 .dialog-hint {
   margin: 4px 0 0;
   color: var(--au-text-3);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   line-height: 1.6;
 }
 </style>

@@ -4,7 +4,7 @@ import { ref, type Ref } from 'vue'
  * 「保存到桌面＝一个 app」的安装能力：
  * - Android / 桌面 Chrome：beforeinstallprompt 事件暂存，入口点击时调起原生安装提示；
  * - iOS Safari：没有程序化安装 API，只能引导用户走分享菜单「添加到主屏幕」
- *   （UhdInstallRow 负责弹层说明）；
+ *   （AxInstallRow 负责弹层说明）；
  * - 已以独立窗口（standalone）打开时，安装入口整体隐藏。
  *
  * beforeinstallprompt 可能在应用挂载前就触发，所以监听注册放在

@@ -3,9 +3,9 @@ import { RouterView, useRoute, useRouter } from 'vue-router'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import Toast from '@/components/Toast.vue'
 import AppHeader from '@/components/AppHeader.vue'
-import UhdTopBar from '@/components/uhd/UhdTopBar.vue'
+import AxTopBar from '@/components/ax/AxTopBar.vue'
 import PanelTabbar from '@/components/panel/PanelTabbar.vue'
-import UhdAccountDock from '@/components/uhd/UhdAccountDock.vue'
+import AxAccountDock from '@/components/ax/AxAccountDock.vue'
 import TgBindModal from '@/components/TgBindModal.vue'
 import { useToast } from '@/composables/useToast'
 import { useUserStore } from '@/stores/user'
@@ -43,7 +43,7 @@ const route = useRoute()
  * 页面底部留白用 --au-dock-space 跟着坞的高度走：≥769px 为 0，≤768px 给坞让位。
  */
 const showChrome = computed(
-  // 登录页、UHD 营销面（官网/定价，自带悬浮胶囊导航）与 404 页为独立全幅版式，
+  // 登录页、ax 营销面（官网/定价，自带悬浮胶囊导航）与 404 页为独立全幅版式，
   // 不渲染全局顶栏/底坞；其余页面照旧。
   // 根路径恒为官网宣传页（RootView 分发，自带导航）：未登录与已登录
   // 进站都停这里（分场景定版），一律不叠全局壳，否则宣传页会出现
@@ -54,18 +54,18 @@ const showChrome = computed(
 )
 
 /**
- * UHD 换皮批 2：办事面（/game/* 与 /shop）走 UhdAccountLayout 左栏框架，
+ * ax 换皮批 2：办事面（/game/* 与 /shop）走 AxAccountLayout 左栏框架，
  * 全局顶栏在这些路由下不再渲染（导航由左栏承担）。
  *
- * UHD 订阅/用户中心单（2026-11-13）：手机底部坞按路由区域分两套——
- * 用户中心区域渲染玻璃双页签 UhdAccountDock（概览/我的），不再渲染
+ * ax 订阅/用户中心单（2026-11-13）：手机底部坞按路由区域分两套——
+ * 用户中心区域渲染玻璃双页签 AxAccountDock（概览/我的），不再渲染
  * PanelTabbar；片库区域（批 3 的 isStreamArea）渲染它自己的双玻璃块，
  * 两区域路径不重叠、条件互斥，不会并存。订阅页自身有吸底结算条占底，
  * 双页签在该页隐藏（isSubscribePage）。
  * 变基对齐批 3 后，PanelTabbar 的条件应为 showChrome && !isAccountArea && !isStreamArea。
  */
 /* 钱包页路径是顶层 /wallet（易支付 return_url 落点，路径不能挪），但
-   形态属账号区：视图自带 UhdAccountLayout，若按非账号区再叠全局顶栏与
+   形态属账号区：视图自带 AxAccountLayout，若按非账号区再叠全局顶栏与
    PanelTabbar 就是三层壳（2026-11-15 用户真机亲指），故一并算账号区。 */
 const isAccountArea = computed(
   () => route.path.startsWith('/game') || route.path === '/wallet',
@@ -73,7 +73,7 @@ const isAccountArea = computed(
 const isSubscribePage = computed(() => route.name === 'game-account-subscribe')
 
 /**
- * UHD 换皮批 3：片库面（/library*、/search、/media/*、/favorites）自带
+ * ax 换皮批 3：片库面（/library*、/search、/media/*、/favorites）自带
  * 双胶囊顶栏与手机液态玻璃底部导航（StreamShell），全局顶栏与
  * PanelTabbar 在这些路由下都不再渲染，避免双导航并存。
  * 变基 2026-11-13：/play 也计入片库面（播放页隐藏全局顶栏/底坞，
@@ -93,7 +93,7 @@ const showHeader = computed(() => showChrome.value && !isAccountArea.value && !i
 
 /**
  * 统一顶栏（2026-11-14 用户亲点「没固定，没统一」）：账户区在此一处
- * 挂 UhdTopBar（sticky 玻璃条 + 右上「前往流媒体」常驻胶囊），各页不再
+ * 挂 AxTopBar（sticky 玻璃条 + 右上「前往流媒体」常驻胶囊），各页不再
  * 自带页头品牌行——概览/我的原先各写一份（一处有彩虹边框、一处没有、
  * 都不固定）已删。标题口径照友站两页：概览用站名、「我的」页用
  * 「我的」，其余账户页一律站名（页内自有 H1，不在顶栏重复）。
@@ -114,7 +114,7 @@ const accountBarTitle = computed(() =>
         : '',
 )
 /* 子页返回头（2026-11-18 邀请页对齐友站）：邀请页手机端顶栏出
-   「‹ 邀请好友」返回头（UhdTopBar 子页模式），页内原返回行随之摘除；
+   「‹ 邀请好友」返回头（AxTopBar 子页模式），页内原返回行随之摘除；
    桌面端顶栏维持站标口径（子页模式只在 ≤768px 生效）。
    账号设置页同款（S-1）：手机端出「‹ 账号安全」返回头，回「我的」
    菜单页（/game/account/menu）。 */
@@ -249,7 +249,7 @@ watch(
 <template>
   <div class="app-shell">
     <AppHeader v-if="showHeader" />
-    <UhdTopBar v-if="showChrome && isAccountArea" :title="accountBarTitle" :back-to="accountBarBackTo" />
+    <AxTopBar v-if="showChrome && isAccountArea" :title="accountBarTitle" :back-to="accountBarBackTo" />
     <RouterView v-slot="{ Component }">
       <!-- max=12：key 按登录会话隔离，登出/换号后旧实例不再命中，攒多了自动淘汰最旧的 -->
       <!-- 嵌套顺序必须是 Transition 在外、KeepAlive 在内（Vue 官方组合形态）：
@@ -264,7 +264,7 @@ watch(
       </Transition>
     </RouterView>
     <PanelTabbar v-if="showChrome && !isAccountArea && !isStreamArea" />
-    <UhdAccountDock v-if="showChrome && isAccountArea && !isSubscribePage" />
+    <AxAccountDock v-if="showChrome && isAccountArea && !isSubscribePage" />
     <Toast :messages="messages" @remove="remove" />
     <!-- 全局 TG 绑定自动弹窗：新用户注册后自动弹出，已绑定不弹 -->
     <TgBindModal v-model="showGlobalTgBind" @bound="handleGlobalTgBound" />

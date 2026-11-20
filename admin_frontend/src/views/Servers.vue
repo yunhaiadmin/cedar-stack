@@ -1641,7 +1641,7 @@ function opsStateText(state: string): string {
 
 .display-name-hint {
   margin: 8px 0 0;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--el-text-color-secondary);
 }
 
@@ -1665,7 +1665,7 @@ function opsStateText(state: string): string {
   border-bottom: 2px solid transparent;
   color: var(--au-text-2);
   font: inherit;
-  font-size: var(--uhd-fs-body);
+  font-size: var(--ax-fs-body);
   font-weight: 500;
   cursor: pointer;
   margin-bottom: -1px;
@@ -1678,7 +1678,7 @@ function opsStateText(state: string): string {
   border-bottom-color: var(--au-primary);
 }
 .tab-hint {
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-3);
   font-weight: 400;
   white-space: nowrap;
@@ -1687,18 +1687,18 @@ function opsStateText(state: string): string {
 .tab-panel { min-width: 0; }
 
 @media (max-width: 640px) {
-  .tab-btn { padding: 8px 12px; font-size: var(--uhd-fs-caption); }
-  .tab-hint { font-size: var(--uhd-fs-micro); }
+  .tab-btn { padding: 8px 12px; font-size: var(--ax-fs-caption); }
+  .tab-hint { font-size: var(--ax-fs-micro); }
 }
 /* 管理弹窗：详情用全局 .kv-list，只补告警列表与页脚布局 */
 .mg-body { display: flex; flex-direction: column; gap: 12px; }
 .mg-body .kv-row .kv-value { text-align: left; }
 .mg-gap { margin-left: 6px; }
-.mg-msg { display: block; margin-top: 3px; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
-.mg-warn { margin: 0; padding-left: 18px; font-size: var(--uhd-fs-aux-sm); line-height: 1.8; }
+.mg-msg { display: block; margin-top: 3px; font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); }
+.mg-warn { margin: 0; padding-left: 18px; font-size: var(--ax-fs-aux-sm); line-height: 1.8; }
 .mg-hint {
   margin: 0;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   line-height: 1.8;
   color: var(--au-text-3);
   background: var(--au-bg-soft);
@@ -1714,8 +1714,8 @@ function opsStateText(state: string): string {
   border: 1px solid var(--danger-border); border-left: 3px solid var(--danger-border);
   border-radius: var(--au-r-md); background: var(--danger-bg);
 }
-.mg-danger-text strong { font-size: var(--uhd-fs-aux); color: var(--danger); }
-.mg-danger-text p { margin: 4px 0 0; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-2); line-height: 1.6; }
+.mg-danger-text strong { font-size: var(--ax-fs-aux); color: var(--danger); }
+.mg-danger-text p { margin: 4px 0 0; font-size: var(--ax-fs-aux-sm); color: var(--au-text-2); line-height: 1.6; }
 
 /* ==================== 概况（StatTile + 范围切换） ==================== */
 .ov-grid {
@@ -1724,7 +1724,7 @@ function opsStateText(state: string): string {
   gap: 12px;
 }
 .ov-scope { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.ov-scope-label { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); }
+.ov-scope-label { font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); }
 .scope-realm { width: 150px; }
 
 /* ==================== 类型卡片 ==================== */
@@ -1756,13 +1756,13 @@ function opsStateText(state: string): string {
   width: 30px; height: 30px; display: grid; place-items: center;
   border-radius: var(--au-r-sm); background: var(--au-primary-soft); color: var(--au-primary);
 }
-.kind-label { color: var(--au-text-2); font-size: var(--uhd-fs-aux); }
+.kind-label { color: var(--au-text-2); font-size: var(--ax-fs-aux); }
 .kind-count {
-  margin-left: auto; font-size: var(--uhd-fs-h3); font-weight: 700; color: var(--au-text);
+  margin-left: auto; font-size: var(--ax-fs-h3); font-weight: 700; color: var(--au-text);
   font-variant-numeric: tabular-nums;
 }
 .kind-line { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-.kind-current { color: var(--au-text-3); font-size: var(--uhd-fs-aux-sm); }
+.kind-current { color: var(--au-text-3); font-size: var(--ax-fs-aux-sm); }
 
 .guide { line-height: 1.75; }
 
@@ -1773,11 +1773,11 @@ function opsStateText(state: string): string {
 }
 .realm-slug {
   font-family: var(--au-font-sans); font-style: normal; font-weight: 400;
-  font-size: var(--uhd-fs-aux-sm); color: var(--au-text-4); letter-spacing: 0;
+  font-size: var(--ax-fs-aux-sm); color: var(--au-text-4); letter-spacing: 0;
 }
 .realm-entry { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .realm-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.link { font-size: var(--uhd-fs-aux-sm); text-decoration: none; }
+.link { font-size: var(--ax-fs-aux-sm); text-decoration: none; }
 .link:hover { color: var(--au-primary); }
 .link:focus-visible { outline: 2px solid var(--au-border-focus); outline-offset: 2px; border-radius: var(--au-r-sm); }
 
@@ -1796,7 +1796,7 @@ function opsStateText(state: string): string {
   border-radius: var(--au-r-md);
   background: var(--au-danger-soft);
   color: var(--au-danger);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   line-height: 1.6;
 }
 .warn-line svg { flex-shrink: 0; margin-top: 2px; }
@@ -1805,12 +1805,12 @@ function opsStateText(state: string): string {
 .name-cell { display: flex; flex-direction: column; gap: 3px; }
 .name-cell .name { color: var(--au-text); font-weight: var(--font-weight-medium); }
 .badges { display: flex; flex-wrap: wrap; gap: 4px; }
-.remark { font-size: var(--uhd-fs-aux-sm); }
-.url { color: var(--au-text-2); word-break: break-all; font-size: var(--uhd-fs-aux); }
+.remark { font-size: var(--ax-fs-aux-sm); }
+.url { color: var(--au-text-2); word-break: break-all; font-size: var(--ax-fs-aux); }
 .state-cell { display: flex; flex-direction: column; gap: 3px; }
-.sub { font-size: var(--uhd-fs-aux-sm); }
+.sub { font-size: var(--ax-fs-aux-sm); }
 .ellipsis { display: block; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.field-help { color: var(--au-text-3); font-size: var(--uhd-fs-aux-sm); margin: 5px 0 0; line-height: 1.6; }
+.field-help { color: var(--au-text-3); font-size: var(--ax-fs-aux-sm); margin: 5px 0 0; line-height: 1.6; }
 .rclone-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
 .server-mounts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
 .server-mount-row {
@@ -1819,9 +1819,9 @@ function opsStateText(state: string): string {
 }
 .server-mount-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .server-mount-ops { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
-.server-mount-main code { font-size: var(--uhd-fs-aux-sm); word-break: break-all; }
+.server-mount-main code { font-size: var(--ax-fs-aux-sm); word-break: break-all; }
 .legacy-note {
-  color: var(--au-danger); font-size: var(--uhd-fs-aux-sm); line-height: 1.6; margin-top: 2px;
+  color: var(--au-danger); font-size: var(--ax-fs-aux-sm); line-height: 1.6; margin-top: 2px;
 }
 .add-mount { display: flex; flex-direction: column; gap: 8px; }
 .add-mount-ops { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -1834,7 +1834,7 @@ function opsStateText(state: string): string {
 .probe {
   display: flex; align-items: center; gap: 6px;
   padding: 9px 11px; border: 1px solid transparent; border-radius: var(--au-r-md);
-  font-size: var(--uhd-fs-aux); margin-top: 4px;
+  font-size: var(--ax-fs-aux); margin-top: 4px;
 }
 .probe svg { flex-shrink: 0; }
 .probe.ok { color: var(--au-success); background: var(--au-success-soft); border-color: var(--au-success-border); }
@@ -1843,7 +1843,7 @@ function opsStateText(state: string): string {
 /* ==================== 媒体运维抽屉 ==================== */
 .ops { display: flex; flex-direction: column; gap: 14px; }
 .ops-head { display: flex; flex-direction: column; gap: 8px; }
-.ops-hint { margin: 0; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); line-height: 1.8; }
+.ops-hint { margin: 0; font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); line-height: 1.8; }
 .ops-hint.bad { color: var(--au-danger); }
 .ops-scope { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .ops-notes {
@@ -1852,15 +1852,15 @@ function opsStateText(state: string): string {
 }
 .ops-note {
   display: flex; align-items: flex-start; gap: 6px;
-  font-size: var(--uhd-fs-aux-sm); color: var(--au-text-2); line-height: 1.7;
+  font-size: var(--ax-fs-aux-sm); color: var(--au-text-2); line-height: 1.7;
 }
 .ops-note svg { flex-shrink: 0; margin-top: 3px; color: var(--au-text-3); }
 .ops-card :deep(.au-section__body) { display: flex; flex-direction: column; gap: 10px; }
 .ops-sub {
-  font-size: var(--uhd-fs-aux-sm); color: var(--au-text-2); font-weight: var(--font-weight-medium);
+  font-size: var(--ax-fs-aux-sm); color: var(--au-text-2); font-weight: var(--font-weight-medium);
   margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--au-border);
 }
-.ops-table { width: 100%; border-collapse: collapse; font-size: var(--uhd-fs-aux-sm); }
+.ops-table { width: 100%; border-collapse: collapse; font-size: var(--ax-fs-aux-sm); }
 .ops-table th {
   text-align: left; font-weight: var(--font-weight-medium); color: var(--au-text-3); letter-spacing: 0.04em;
   padding: 6px 8px; border-bottom: 1px solid var(--au-border); white-space: nowrap;
@@ -1869,13 +1869,13 @@ function opsStateText(state: string): string {
 .ops-table tr:last-child td { border-bottom: none; }
 .ops-err { color: var(--au-danger); margin-top: 3px; }
 .ops-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-.ops-foot .muted { font-size: var(--uhd-fs-aux-sm); }
+.ops-foot .muted { font-size: var(--ax-fs-aux-sm); }
 
 @media (max-width: 1100px) { .kind-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 768px) {
   .kind-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .filter-card { padding: 12px; }
-  .kind-count { font-size: var(--uhd-fs-title); }
+  .kind-count { font-size: var(--ax-fs-title); }
   .ov-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .ov-scope { width: 100%; }
   .scope-realm { flex: 1 1 120px; width: auto; }

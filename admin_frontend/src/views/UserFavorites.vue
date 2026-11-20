@@ -180,12 +180,12 @@ const TYPE_LABELS: Record<string, string> = {
 
 .mono {
   font-family: var(--font-mono);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
 }
 
 .st-deleted {
   margin-left: 8px;
   color: var(--au-danger, #e03131);
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
 }
 </style>

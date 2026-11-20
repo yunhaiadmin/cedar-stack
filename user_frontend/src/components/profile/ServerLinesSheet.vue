@@ -323,8 +323,8 @@ onBeforeUnmount(() => {
   justify-content: center;
   padding: 16px;
   background: var(--modal-scrim-dark);
-  animation: uhd-fade-in var(--uhd-dur-fade) var(--uhd-ease-standard);
-  font-family: var(--uhd-font-sans);
+  animation: ax-fade-in var(--ax-dur-fade) var(--ax-ease-standard);
+  font-family: var(--ax-font-sans);
   -webkit-font-smoothing: antialiased;
 }
 .sls-card {
@@ -340,10 +340,10 @@ onBeforeUnmount(() => {
   background: var(--modal-glass-bg);
   border: 1px solid var(--modal-glass-edge);
   color: var(--sls-text);
-  border-radius: var(--uhd-radius-modal);
+  border-radius: var(--ax-radius-modal);
   box-shadow: var(--modal-glass-shadow);
   padding: 28px;
-  animation: uhd-fade-in var(--uhd-dur-fade) var(--uhd-ease-standard);
+  animation: ax-fade-in var(--ax-dur-fade) var(--ax-ease-standard);
 }
 .sls-head {
   display: flex;
@@ -353,8 +353,8 @@ onBeforeUnmount(() => {
 }
 .sls-title {
   margin: 0;
-  font-size: var(--uhd-fs-h3);
-  font-weight: var(--uhd-fw-bold);
+  font-size: var(--ax-fs-h3);
+  font-weight: var(--ax-fw-bold);
   letter-spacing: -0.01em;
   color: var(--sls-text);
 }
@@ -378,13 +378,13 @@ onBeforeUnmount(() => {
 }
 .sls-group {
   margin: 22px 0 4px;
-  font-size: var(--uhd-fs-aux);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-aux);
+  font-weight: var(--ax-fw-semibold);
   color: var(--sls-sub);
 }
 .sls-intro {
   margin: 10px 0 0;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   line-height: 1.7;
   color: var(--sls-sub);
 }
@@ -434,8 +434,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: var(--uhd-fs-body);
-  font-weight: var(--uhd-fw-bold);
+  font-size: var(--ax-fs-body);
+  font-weight: var(--ax-fw-bold);
   color: var(--sls-text);
 }
 .sls-group-block:first-child .sls-group-name {
@@ -476,18 +476,18 @@ onBeforeUnmount(() => {
   height: 22px;
   padding: 0 9px;
   border-radius: 999px;
-  font-size: var(--uhd-fs-micro);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-micro);
+  font-weight: var(--ax-fw-semibold);
   white-space: nowrap;
 }
 .sls-badge--primary {
   border: 1.5px solid transparent;
-  background: var(--uhd-rainbow-soft) padding-box, var(--uhd-rainbow) border-box;
+  background: var(--ax-rainbow-soft) padding-box, var(--ax-rainbow) border-box;
   color: #111111;
 }
 .sls--dark .sls-badge--primary {
   position: relative;
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
   color: #ffffff;
 }
 /* 彩虹环切（texture-tokens-3）：彩虹只走 1.5px 细环（::before mask 环切），
@@ -497,8 +497,8 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: var(--uhd-rainbow-border-w);
-  background: var(--uhd-rainbow);
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -510,8 +510,8 @@ onBeforeUnmount(() => {
   color: var(--sls-badge-text);
 }
 .sls-line__name {
-  font-size: var(--uhd-fs-body);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-body);
+  font-weight: var(--ax-fw-semibold);
   color: var(--sls-text);
   white-space: nowrap;
   overflow: hidden;
@@ -523,8 +523,8 @@ onBeforeUnmount(() => {
 }
 .sls-line__paused {
   flex: none;
-  font-size: var(--uhd-fs-micro);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-micro);
+  font-weight: var(--ax-fw-semibold);
   color: var(--sls-sub);
 }
 .sls-copy:disabled {
@@ -532,8 +532,8 @@ onBeforeUnmount(() => {
   cursor: not-allowed;
 }
 .sls-line__url {
-  font-family: var(--uhd-font-mono);
-  font-size: var(--uhd-fs-aux);
+  font-family: var(--ax-font-mono);
+  font-size: var(--ax-fs-aux);
   color: var(--sls-sub);
   white-space: nowrap;
   overflow: hidden;
@@ -558,8 +558,8 @@ onBeforeUnmount(() => {
   -webkit-backdrop-filter: blur(12px) saturate(150%);
   color: var(--sls-copy-text);
   font-family: inherit;
-  font-size: var(--uhd-fs-aux);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-aux);
+  font-weight: var(--ax-fw-semibold);
   cursor: pointer;
 }
 .sls-copy:active {
@@ -568,7 +568,7 @@ onBeforeUnmount(() => {
 .sls-empty {
   margin: 0;
   padding: 12px 0 4px;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   line-height: 1.7;
   color: var(--sls-sub);
 }
@@ -596,12 +596,12 @@ onBeforeUnmount(() => {
   gap: 2px;
 }
 .sls-link__name {
-  font-size: var(--uhd-fs-body);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-body);
+  font-weight: var(--ax-fw-semibold);
   color: var(--sls-text);
 }
 .sls-link__sub {
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   color: var(--sls-sub);
   white-space: nowrap;
   overflow: hidden;
@@ -613,13 +613,13 @@ onBeforeUnmount(() => {
 }
 .sls-foot {
   margin: 20px 0 0;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   line-height: 1.7;
   color: var(--sls-sub);
 }
 .sls-foot__link {
   color: var(--sls-text);
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   text-decoration: underline;
   text-underline-offset: 3px;
 }

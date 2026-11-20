@@ -9,7 +9,7 @@
   /* 2026-11-18 用户亲令弹窗改实色：面板底由半透玻璃底
      rgba(28,28,30,0.55) 改引全站实色深面令牌＋亮边 --tq-edge
      （2026-11-15 逐帧修复时曾为居中玻璃浮窗） */
-  --tq-bg: var(--uhd-d-surface-raised);
+  --tq-bg: var(--ax-d-surface-raised);
   --tq-edge: rgba(255, 255, 255, 0.24);
   --tq-fg: #f4f4f6;
   --tq-dim: rgba(244, 244, 246, 0.55);
@@ -28,7 +28,7 @@
   --tq-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
 }
 html[data-theme='light'] {
-  --tq-bg: var(--uhd-l-surface);
+  --tq-bg: var(--ax-l-surface);
   --tq-edge: rgba(17, 17, 17, 0.12);
   --tq-fg: #16161a;
   --tq-dim: rgba(22, 22, 26, 0.55);

@@ -32,7 +32,7 @@
  */
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { Check, Copy, KeyRound, LoaderCircle, Trash2, X } from 'lucide-vue-next'
-import UhdButton from '@/components/uhd/UhdButton.vue'
+import AxButton from '@/components/ax/AxButton.vue'
 import { toUserMessage } from '@/utils/toUserMessage'
 import {
   createDanmuToken,
@@ -228,7 +228,7 @@ onBeforeUnmount(() => {
               class="dms-primary-wrap"
               :class="{ 'dms-primary-wrap--busy': phase === 'creating' }"
             >
-              <UhdButton
+              <AxButton
                 variant="primary"
                 size="mid"
                 block
@@ -243,7 +243,7 @@ onBeforeUnmount(() => {
                 />
                 <KeyRound v-else :size="17" aria-hidden="true" />
                 {{ phase === 'creating' ? '正在生成...' : '生成弹幕 Token' }}
-              </UhdButton>
+              </AxButton>
             </div>
           </template>
 
@@ -331,7 +331,7 @@ onBeforeUnmount(() => {
                 地址包含你的专属 Token，请勿分享；切换线路后需重新复制。
               </p>
               <div class="dms-primary-wrap">
-                <UhdButton
+                <AxButton
                   variant="primary"
                   size="mid"
                   block
@@ -341,7 +341,7 @@ onBeforeUnmount(() => {
                 >
                   <Copy :size="17" aria-hidden="true" />
                   复制弹幕 API 地址
-                </UhdButton>
+                </AxButton>
               </div>
             </template>
 
@@ -381,8 +381,8 @@ onBeforeUnmount(() => {
   justify-content: center;
   padding: 16px;
   background: var(--modal-scrim-dark);
-  animation: uhd-fade-in var(--uhd-dur-fade) var(--uhd-ease-standard);
-  font-family: var(--uhd-font-sans);
+  animation: ax-fade-in var(--ax-dur-fade) var(--ax-ease-standard);
+  font-family: var(--ax-font-sans);
   -webkit-font-smoothing: antialiased;
 }
 .dms-card {
@@ -393,18 +393,18 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
   /* 实色面（2026-11-18 用户令：弹窗不用玻璃）：浅色白面、深色实色深面，
      边框/阴影走普通卡片口径，与团队购买 .tm-sheet 同改法 */
-  background: var(--uhd-l-surface);
-  border: 1px solid var(--uhd-l-border);
+  background: var(--ax-l-surface);
+  border: 1px solid var(--ax-l-border);
   color: var(--dms-text);
-  border-radius: var(--uhd-radius-modal);
-  box-shadow: var(--uhd-shadow-card-l);
+  border-radius: var(--ax-radius-modal);
+  box-shadow: var(--ax-shadow-card-l);
   padding: 28px;
-  animation: uhd-fade-in var(--uhd-dur-fade) var(--uhd-ease-standard);
+  animation: ax-fade-in var(--ax-dur-fade) var(--ax-ease-standard);
 }
 .dms--dark .dms-card {
-  background: var(--uhd-d-surface);
-  border-color: var(--uhd-d-border);
-  box-shadow: var(--uhd-shadow-card-d);
+  background: var(--ax-d-surface);
+  border-color: var(--ax-d-border);
+  box-shadow: var(--ax-shadow-card-d);
 }
 .dms-head {
   display: flex;
@@ -414,8 +414,8 @@ onBeforeUnmount(() => {
 }
 .dms-title {
   margin: 0;
-  font-size: var(--uhd-fs-h3);
-  font-weight: var(--uhd-fw-bold);
+  font-size: var(--ax-fs-h3);
+  font-weight: var(--ax-fw-bold);
   letter-spacing: -0.01em;
   color: var(--dms-text);
 }
@@ -439,7 +439,7 @@ onBeforeUnmount(() => {
 }
 .dms-intro {
   margin: 10px 0 0;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   line-height: 1.7;
   color: var(--dms-sub);
 }
@@ -448,7 +448,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   margin: 22px 0 4px;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   color: var(--dms-sub);
 }
 .dms-spin {
@@ -462,8 +462,8 @@ onBeforeUnmount(() => {
 }
 .dms-group {
   margin: 22px 0 0;
-  font-size: var(--uhd-fs-aux);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-aux);
+  font-weight: var(--ax-fw-semibold);
   color: var(--dms-sub);
 }
 .dms-divider {
@@ -472,13 +472,13 @@ onBeforeUnmount(() => {
 }
 .dms-status {
   margin: 14px 0 0;
-  font-size: var(--uhd-fs-lead);
-  font-weight: var(--uhd-fw-bold);
+  font-size: var(--ax-fs-lead);
+  font-weight: var(--ax-fw-bold);
   color: var(--dms-text);
 }
 .dms-note {
   margin: 6px 0 0;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   line-height: 1.7;
   color: var(--dms-sub);
 }
@@ -518,8 +518,8 @@ onBeforeUnmount(() => {
   background: transparent;
   color: var(--dms-sub);
   font-family: inherit;
-  font-size: var(--uhd-fs-aux);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-aux);
+  font-weight: var(--ax-fw-semibold);
   cursor: pointer;
 }
 .dms-delete:hover {
@@ -530,7 +530,7 @@ onBeforeUnmount(() => {
 }
 .dms-confirm__text {
   margin: 0;
-  font-size: var(--uhd-fs-caption);
+  font-size: var(--ax-fs-caption);
   line-height: 1.7;
   color: var(--dms-text);
 }
@@ -549,8 +549,8 @@ onBeforeUnmount(() => {
   background: transparent;
   color: var(--dms-text);
   font-family: inherit;
-  font-size: var(--uhd-fs-aux);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-aux);
+  font-weight: var(--ax-fw-semibold);
   cursor: pointer;
 }
 .dms-confirm__btn--danger {
@@ -596,8 +596,8 @@ onBeforeUnmount(() => {
   padding: 1px 8px;
   border: 1px solid var(--dms-addr-border);
   border-radius: 999px;
-  font-size: var(--uhd-fs-aux);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-aux);
+  font-weight: var(--ax-fw-semibold);
   color: var(--dms-sub);
   vertical-align: 2px;
 }
@@ -610,7 +610,7 @@ onBeforeUnmount(() => {
   border: 1.5px solid var(--dms-radio-idle);
   box-sizing: border-box;
   position: relative;
-  transition: border-color var(--uhd-dur-ui) var(--uhd-ease-standard);
+  transition: border-color var(--ax-dur-ui) var(--ax-ease-standard);
 }
 .dms-radio--on {
   border: 2.5px solid var(--dms-radio-ring);
@@ -633,12 +633,12 @@ onBeforeUnmount(() => {
   gap: 2px;
 }
 .dms-line__name {
-  font-size: var(--uhd-fs-body);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-body);
+  font-weight: var(--ax-fw-semibold);
   color: var(--dms-text);
 }
 .dms-line__sub {
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   color: var(--dms-sub);
   white-space: nowrap;
   overflow: hidden;
@@ -658,15 +658,15 @@ onBeforeUnmount(() => {
 .dms-addr__text {
   flex: 1 1 auto;
   min-width: 0;
-  font-family: var(--uhd-font-mono);
-  font-size: var(--uhd-fs-aux);
+  font-family: var(--ax-font-mono);
+  font-size: var(--ax-fs-aux);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .dms-foot {
   margin: 20px 0 0;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   line-height: 1.7;
   color: var(--dms-sub);
 }
@@ -689,7 +689,7 @@ onBeforeUnmount(() => {
   box-shadow: var(--dms-toast-shadow);
   backdrop-filter: blur(20px) saturate(160%);
   -webkit-backdrop-filter: blur(20px) saturate(160%);
-  animation: dms-toast-in 0.3s var(--uhd-ease-standard);
+  animation: dms-toast-in 0.3s var(--ax-ease-standard);
   pointer-events: none;
 }
 @keyframes dms-toast-in {
@@ -713,8 +713,8 @@ onBeforeUnmount(() => {
   background: #e5484d;
 }
 .dms-toast__text {
-  font-size: var(--uhd-fs-caption);
-  font-weight: var(--uhd-fw-semibold);
+  font-size: var(--ax-fs-caption);
+  font-weight: var(--ax-fw-semibold);
   line-height: 1.4;
 }
 @media (prefers-reduced-motion: reduce) {

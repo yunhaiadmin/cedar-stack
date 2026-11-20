@@ -112,7 +112,7 @@ const title = computed(() => `浏览：${props.mount?.name || ''}`)
 <style scoped>
 .browse-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .browse-path {
-  flex: 1; font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); font-family: var(--font-mono);
+  flex: 1; font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); font-family: var(--font-mono);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .browse-list {
@@ -121,7 +121,7 @@ const title = computed(() => `浏览：${props.mount?.name || ''}`)
 }
 .browse-item {
   display: flex; align-items: center; gap: 8px; padding: 7px 8px;
-  border-radius: var(--au-r-sm); cursor: pointer; font-size: var(--uhd-fs-aux);
+  border-radius: var(--au-r-sm); cursor: pointer; font-size: var(--ax-fs-aux);
 }
 .browse-item { transition: background-color var(--au-fast) var(--au-ease); }
 .browse-item:hover { background: var(--au-violet-soft); }
@@ -129,7 +129,7 @@ const title = computed(() => `浏览：${props.mount?.name || ''}`)
 .browse-item.dir { font-weight: 500; }
 .browse-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .browse-id, .browse-size {
-  font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); flex-shrink: 0; font-variant-numeric: tabular-nums;
+  font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); flex-shrink: 0; font-variant-numeric: tabular-nums;
 }
-.form-hint { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); margin-right: 8px; }
+.form-hint { font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); margin-right: 8px; }
 </style>

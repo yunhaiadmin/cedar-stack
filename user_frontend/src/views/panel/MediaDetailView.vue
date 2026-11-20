@@ -2,7 +2,7 @@
 /**
  * 条目详情页（/media/:id）—— 批 3 片库面：
  * 「信息 + 季集齐全度 + 播放主入口」——2026-11-13 用户新口径下
- * 页面组织按 UHDNow 打破重排：播放主按钮走现行 PlayerSchemeSheet
+ * 页面组织按 参考站 打破重排：播放主按钮走现行 PlayerSchemeSheet
  * （门禁/绑盘引导/起播口径都在弹层内，不在本页另起逻辑）；
  * 剧集的季/集列表与缺集求补在 SeriesEpisodeList 里。
  * 版式按 /stream 详情页实机补拆（存档第 5/6 节）：居中容器约 1135、
@@ -130,7 +130,7 @@ async function loadResume(my: number) {
 }
 
 // === G-99 playButtonKindOf 开始 ===
-/* 主钮三态纯判定（2026-11-18 UHDNow 差异定案 G-99；tests/playButtonState
+/* 主钮三态纯判定（2026-11-18 参考站 差异定案 G-99；tests/playButtonState
    .test.mjs 抽取本段真执行，勿改段首/段尾标记、勿在本段引用段外变量）。
    判定边界：
    ① hasResumePoint → 'resume'「继续播放」：有未看完的续播点；优先于②——
@@ -690,7 +690,7 @@ watch(itemId, () => {
                  按用户令摘组后归位到详情页动作区（显隐口径见脚本
                  loadFollowState：拿不到数据整钮不显示）。「想看」钮
                  已随想看商店删除。
-                 2026-11-13 用户新口径：页面组织/交互可按 UHDNow 打破重排，
+                 2026-11-13 用户新口径：页面组织/交互可按 参考站 打破重排，
                  详情页恢复播放主入口；播放走现行 PlayerSchemeSheet，
                  选播放器/起播状态/未绑盘引导都在弹层内，门禁口径不变。 -->
             <div class="md-actions">
@@ -938,7 +938,7 @@ watch(itemId, () => {
   padding-top: 120px;
   padding-bottom: 80px;
   font-size: 15px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   text-align: center;
 }
 .md-spinner {
@@ -946,9 +946,9 @@ watch(itemId, () => {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: 2px solid var(--uhd-s-border);
-  border-top-color: var(--uhd-s-text);
-  animation: uhd-spin 0.8s linear infinite;
+  border: 2px solid var(--ax-s-border);
+  border-top-color: var(--ax-s-text);
+  animation: ax-spin 0.8s linear infinite;
   vertical-align: -3px;
   margin-right: 8px;
 }
@@ -957,11 +957,11 @@ watch(itemId, () => {
   height: 44px;
   padding: 0 26px;
   border-radius: 22px;
-  border: 1px solid var(--uhd-s-border);
-  background: var(--uhd-s-pill-active-bg);
-  color: var(--uhd-s-text);
+  border: 1px solid var(--ax-s-border);
+  background: var(--ax-s-pill-active-bg);
+  color: var(--ax-s-text);
   font-size: 15px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   font-family: inherit;
   cursor: pointer;
 }
@@ -980,12 +980,12 @@ watch(itemId, () => {
 }
 /* 顶图全失败的空态（FE-15）：只留剧照带底色，不出破图 */
 .md-hero__img--empty {
-  background: var(--uhd-s-card-soft);
+  background: var(--ax-s-card-soft);
 }
 .md-hero__fade {
   position: absolute;
   inset: 0;
-  background: linear-gradient(to bottom, transparent 30%, var(--uhd-s-hero-fade) 98%);
+  background: linear-gradient(to bottom, transparent 30%, var(--ax-s-hero-fade) 98%);
 }
 /* 返回圆钮 48、白色毛玻璃
    质感第二波（2026-11-18）：由裸写 blur(12px) 升 pill 档（blur 16px saturate 150%＋阴影束） */
@@ -999,20 +999,20 @@ watch(itemId, () => {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  border: 1px solid var(--uhd-s-pill-border);
-  background: var(--uhd-s-pill-bg);
-  color: var(--uhd-s-text);
-  backdrop-filter: var(--uhd-glass-pill-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-pill-filter);
-  box-shadow: var(--uhd-glass-pill-shadow);
+  border: 1px solid var(--ax-s-pill-border);
+  background: var(--ax-s-pill-bg);
+  color: var(--ax-s-text);
+  backdrop-filter: var(--ax-glass-pill-filter);
+  -webkit-backdrop-filter: var(--ax-glass-pill-filter);
+  box-shadow: var(--ax-glass-pill-shadow);
   cursor: pointer;
   z-index: 2;
 }
 .md-type {
   margin: 10px 0 0;
   font-size: 14px;
-  font-weight: var(--uhd-fw-semibold);
-  color: var(--uhd-s-text-2);
+  font-weight: var(--ax-fw-semibold);
+  color: var(--ax-s-text-2);
 }
 .md-main {
   display: flex;
@@ -1027,8 +1027,8 @@ watch(itemId, () => {
   aspect-ratio: 2 / 3;
   border-radius: 16px;
   overflow: hidden;
-  background: var(--uhd-s-card-soft);
-  box-shadow: var(--uhd-shadow-card-l);
+  background: var(--ax-s-card-soft);
+  box-shadow: var(--ax-shadow-card-l);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1040,9 +1040,9 @@ watch(itemId, () => {
 }
 /* 无海报/加载失败占位：片名首字大字 */
 .md-poster__fallback {
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   font-size: 76px;
-  font-weight: var(--uhd-fw-black);
+  font-weight: var(--ax-fw-black);
   line-height: 1;
 }
 .md-info {
@@ -1052,9 +1052,9 @@ watch(itemId, () => {
 .md-title {
   margin: 0;
   font-size: 40px;
-  font-weight: var(--uhd-fw-black);
+  font-weight: var(--ax-fw-black);
   line-height: 1.12;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
   letter-spacing: -0.01em;
 }
 /* 电影版 H1 约 56px 特粗 */
@@ -1075,11 +1075,11 @@ watch(itemId, () => {
 .md-meta {
   margin: 12px 0 0;
   font-size: 15px;
-  font-weight: var(--uhd-fw-semibold);
-  color: var(--uhd-s-text);
+  font-weight: var(--ax-fw-semibold);
+  color: var(--ax-s-text);
 }
 .md-rating {
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
 }
 .md-chips {
   display: flex;
@@ -1095,9 +1095,9 @@ watch(itemId, () => {
   height: 28px;
   padding: 0 12px;
   border-radius: 14px;
-  border: 1px solid var(--uhd-s-border);
+  border: 1px solid var(--ax-s-border);
   font-size: 13px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 /* 底部留白：桌面给页脚让位，移动端另在媒体查询里加高避开玻璃坞 */
 .md-tail {
@@ -1111,10 +1111,10 @@ watch(itemId, () => {
   margin: 16px 0 0;
   max-width: 100%;
   padding: 8px 16px;
-  border: 1px solid var(--uhd-s-border);
+  border: 1px solid var(--ax-s-border);
   border-radius: 18px;
   font-size: 14px;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1148,7 +1148,7 @@ watch(itemId, () => {
   padding: 0 26px;
   border-radius: 26px;
   font-size: 16px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   font-family: inherit;
 }
 /* 播放主胶囊：高 52/圆角 26 + 彩虹渐变边框 + 玻璃栈（2026-11-13 补齐七彩＋玻璃，
@@ -1156,16 +1156,16 @@ watch(itemId, () => {
 .md-btn--play {
   position: relative;
   border: 2px solid transparent;
-  background: var(--uhd-rainbow-soft);
+  background: var(--ax-rainbow-soft);
   color: #111111;
   cursor: pointer;
   min-width: 135px;
   padding: 0 22px;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    var(--uhd-s-shadow-pill);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
+    var(--ax-s-shadow-pill);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
 }
 /* 彩虹环切（texture-tokens-3）：彩虹只走 2px 细环（::before mask 环切，
    padding 取本钮边框宽 2px），流光位移改走 ::before；钮面只留淡彩底。
@@ -1176,7 +1176,7 @@ watch(itemId, () => {
   inset: 0;
   border-radius: inherit;
   padding: 2px;
-  background: var(--uhd-rainbow-border-flow);
+  background: var(--ax-rainbow-border-flow);
   /* 描边流动（G-100）：flow 令牌一图含两周期，200% 宽下位移 0%→100%
      恰为一个周期、无缝衔接 */
   background-size: 200% 100%;
@@ -1205,51 +1205,51 @@ watch(itemId, () => {
 }
 /* 深色版：黑毛玻璃底 + 白字（同 StreamHero .sh-play 深色口径） */
 .stream-scope[data-stream-theme="dark"] .md-btn--play {
-  background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
   color: #ffffff;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    var(--uhd-s-shadow-pill);
+    var(--ax-s-shadow-pill);
 }
 .md-btn--fav {
-  border: 1px solid var(--uhd-s-border);
-  background: var(--uhd-s-pill-active-bg);
-  color: var(--uhd-s-text);
+  border: 1px solid var(--ax-s-border);
+  background: var(--ax-s-pill-active-bg);
+  color: var(--ax-s-text);
   cursor: pointer;
   min-width: 148px;
 }
 .md-btn--fav-on {
-  border-color: var(--uhd-s-text);
+  border-color: var(--ax-s-text);
 }
 .md-btn--fav:disabled {
   opacity: 0.55;
   cursor: wait;
 }
 .md-btn--state {
-  background: var(--uhd-s-card-soft);
-  color: var(--uhd-s-text-2);
+  background: var(--ax-s-card-soft);
+  color: var(--ax-s-text-2);
   border: 1px solid transparent;
   flex: none;
   white-space: nowrap;
 }
 /* 移除观看记录：幽灵钮 + 危险色字，不与播放/收藏抢视觉 */
 .md-btn--remove {
-  border: 1px solid var(--uhd-s-border);
+  border: 1px solid var(--ax-s-border);
   background: transparent;
-  color: var(--uhd-danger);
+  color: var(--ax-danger);
   cursor: pointer;
   flex: none;
   white-space: nowrap;
 }
 .md-btn--remove:hover {
-  border-color: var(--uhd-danger);
+  border-color: var(--ax-danger);
 }
 /* 移除确认弹窗（ui/Modal 槽内） */
 .md-confirm-text {
   margin: 0;
   font-size: 15px;
   line-height: 1.65;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
 }
 .md-confirm-actions {
   display: flex;
@@ -1260,17 +1260,17 @@ watch(itemId, () => {
   height: 42px;
   padding: 0 20px;
   border-radius: 21px;
-  border: 1px solid var(--uhd-s-border);
+  border: 1px solid var(--ax-s-border);
   background: transparent;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
   font-size: 14.5px;
-  font-weight: var(--uhd-fw-semibold);
+  font-weight: var(--ax-fw-semibold);
   font-family: inherit;
   cursor: pointer;
 }
 .md-confirm-btn--danger {
-  background: var(--uhd-danger);
-  border-color: var(--uhd-danger);
+  background: var(--ax-danger);
+  border-color: var(--ax-danger);
   color: #fff;
 }
 .md-confirm-btn--danger:disabled {
@@ -1286,7 +1286,7 @@ watch(itemId, () => {
   margin: 0;
   font-size: 15px;
   line-height: 26px;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -1300,7 +1300,7 @@ watch(itemId, () => {
   padding: 4px 0;
   border: none;
   background: none;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   font-size: 14px;
   font-family: inherit;
   cursor: pointer;
@@ -1309,20 +1309,20 @@ watch(itemId, () => {
   margin: 14px 0 0;
   font-size: 13px;
   line-height: 1.6;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   max-width: 645px;
 }
 /* 右侧信息栏：竖分隔线 */
 .md-rail {
   flex: 0 0 240px;
-  border-left: 1px solid var(--uhd-s-divider);
+  border-left: 1px solid var(--ax-s-divider);
   padding-left: 24px;
 }
 .md-rail__title {
   margin: 4px 0 12px;
   font-size: 15px;
-  font-weight: var(--uhd-fw-bold);
-  color: var(--uhd-s-text);
+  font-weight: var(--ax-fw-bold);
+  color: var(--ax-s-text);
 }
 .md-rail__list {
   margin: 0;
@@ -1336,12 +1336,12 @@ watch(itemId, () => {
 }
 .md-rail__row dt {
   flex: 0 0 44px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   font-size: 14px;
 }
 .md-rail__row dd {
   margin: 0;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
 }
 /* 「链接」行：TMDB/IMDb 描边胶囊外链（友站形态） */
 .md-rail__links {
@@ -1356,16 +1356,16 @@ watch(itemId, () => {
   height: 28px;
   padding: 0 10px;
   border-radius: 14px;
-  border: 1px solid var(--uhd-s-border);
+  border: 1px solid var(--ax-s-border);
   font-size: 12px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   text-decoration: none;
 }
 .md-sec-title {
   margin: 0;
   font-size: 28px;
-  font-weight: var(--uhd-fw-extrabold);
-  color: var(--uhd-s-text);
+  font-weight: var(--ax-fw-extrabold);
+  color: var(--ax-s-text);
 }
 .md-versions {
   margin-top: 44px;
@@ -1386,8 +1386,8 @@ watch(itemId, () => {
   min-height: 70px;
   padding: 12px 20px;
   border-radius: 18px;
-  background: var(--uhd-s-card-soft);
-  border: 1px solid var(--uhd-s-border);
+  background: var(--ax-s-card-soft);
+  border: 1px solid var(--ax-s-border);
 }
 .md-version__body {
   display: flex;
@@ -1397,20 +1397,20 @@ watch(itemId, () => {
 }
 .md-version__label {
   font-size: 15px;
-  font-weight: var(--uhd-fw-semibold);
-  color: var(--uhd-s-text);
+  font-weight: var(--ax-fw-semibold);
+  color: var(--ax-s-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .md-version__sub {
   font-size: 12px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .md-version__size {
   flex: none;
   font-size: 14px;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
 }
 .md-episodes {
   margin-top: 44px;
@@ -1440,8 +1440,8 @@ watch(itemId, () => {
   min-height: 70px;
   padding: 12px 20px;
   border-radius: 18px;
-  background: var(--uhd-s-card-soft);
-  border: 1px solid var(--uhd-s-border);
+  background: var(--ax-s-card-soft);
+  border: 1px solid var(--ax-s-border);
 }
 .md-av__body {
   display: flex;
@@ -1454,17 +1454,17 @@ watch(itemId, () => {
   align-items: center;
   gap: 7px;
   font-size: 15px;
-  font-weight: var(--uhd-fw-semibold);
-  color: var(--uhd-s-text);
+  font-weight: var(--ax-fw-semibold);
+  color: var(--ax-s-text);
 }
 .md-av__count {
   font-size: 12px;
   font-weight: 400;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .md-av__sub {
   font-size: 12px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .md-av__go {
   flex: none;
@@ -1474,9 +1474,9 @@ watch(itemId, () => {
   height: 36px;
   padding: 0 14px;
   border-radius: 18px;
-  border: 1px solid var(--uhd-s-border);
+  border: 1px solid var(--ax-s-border);
   background: transparent;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
   font-size: 13px;
   font-family: inherit;
   cursor: pointer;
@@ -1503,17 +1503,17 @@ watch(itemId, () => {
   line-height: 18px;
   padding: 0 8px;
   border-radius: 10px;
-  border: 1px solid var(--uhd-s-border);
-  color: var(--uhd-s-text-2);
+  border: 1px solid var(--ax-s-border);
+  color: var(--ax-s-text-2);
 }
 .md-av__tlabel {
   flex: none;
-  font-weight: var(--uhd-fw-semibold);
-  color: var(--uhd-s-text);
+  font-weight: var(--ax-fw-semibold);
+  color: var(--ax-s-text);
   white-space: nowrap;
 }
 .md-av__tmeta {
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1554,10 +1554,10 @@ watch(itemId, () => {
   height: 48px;
   border-radius: 50%;
   overflow: hidden;
-  background: var(--uhd-s-card-soft);
-  color: var(--uhd-s-text-2);
+  background: var(--ax-s-card-soft);
+  color: var(--ax-s-text-2);
   font-size: 17px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
 }
 .md-cast__avatar img {
   width: 100%;
@@ -1567,8 +1567,8 @@ watch(itemId, () => {
 .md-cast__name {
   margin-top: 6px;
   font-size: 15px;
-  font-weight: var(--uhd-fw-semibold);
-  color: var(--uhd-s-text);
+  font-weight: var(--ax-fw-semibold);
+  color: var(--ax-s-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1576,7 +1576,7 @@ watch(itemId, () => {
 }
 .md-cast__role {
   font-size: 13px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1589,15 +1589,15 @@ watch(itemId, () => {
   .md-rail {
     flex: 1 1 100%;
     border-left: none;
-    border-top: 1px solid var(--uhd-s-divider);
+    border-top: 1px solid var(--ax-s-divider);
     padding-left: 0;
     padding-top: 18px;
   }
 }
 .md-sec-sub {
   font-size: 15px;
-  font-weight: var(--uhd-fw-regular);
-  color: var(--uhd-s-text-2);
+  font-weight: var(--ax-fw-regular);
+  color: var(--ax-s-text-2);
 }
 /* 手机详情 = 友站 app 形态（2026-11-14 用户截图亲点）：全幅 backdrop
    顶图（高约 40vh、底部渐隐入页底）→ 类型小字/大标题/信息行叠在渐隐
@@ -1670,7 +1670,7 @@ watch(itemId, () => {
   .md-rail {
     order: 3;
     border-left: none;
-    border-top: 1px solid var(--uhd-s-divider);
+    border-top: 1px solid var(--ax-s-divider);
     padding-left: 0;
     margin-top: 28px;
     width: auto;
@@ -1807,7 +1807,7 @@ watch(itemId, () => {
     margin-left: -20px;
     margin-right: -20px;
     padding: 8px 20px;
-    background: var(--uhd-s-pill-bg);
+    background: var(--ax-s-pill-bg);
     backdrop-filter: blur(18px) saturate(160%);
     -webkit-backdrop-filter: blur(18px) saturate(160%);
   }
@@ -1817,24 +1817,24 @@ watch(itemId, () => {
     flex: 1 1 auto;
     min-width: 0;
     border: 2px solid transparent;
-    background: var(--uhd-rainbow-soft);
-    color: var(--uhd-s-pill-active-text);
+    background: var(--ax-rainbow-soft);
+    color: var(--ax-s-pill-active-text);
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.65),
-      var(--uhd-s-shadow-pill);
-    backdrop-filter: var(--uhd-glass-filter);
-    -webkit-backdrop-filter: var(--uhd-glass-filter);
+      var(--ax-s-shadow-pill);
+    backdrop-filter: var(--ax-glass-filter);
+    -webkit-backdrop-filter: var(--ax-glass-filter);
     white-space: normal;
     line-height: 1.25;
     text-align: center;
   }
   /* 手机深色版：黑毛玻璃底 + 白字 */
   .stream-scope[data-stream-theme="dark"] .md-actions .md-btn--play {
-    background: linear-gradient(var(--uhd-glass-btn-d), var(--uhd-glass-btn-d));
+    background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
     color: #ffffff;
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.22),
-      var(--uhd-s-shadow-pill);
+      var(--ax-s-shadow-pill);
   }
   .md-btn--fav {
     flex: 0 0 48px;

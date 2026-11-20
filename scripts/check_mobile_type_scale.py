@@ -3,19 +3,19 @@
 
 事故史：
   - 2026-11-13 22:59（用户真机截图亲点）：「移动端字体全局偏大」——
-    「团队管理」「订阅与财务」等标题明显比友站 UHDNow 大。根因是全站
-    从来没有移动端字号层：uhd-tokens.css 的桌面阶梯（页题 34 / 分组 24 /
+    「团队管理」「订阅与财务」等标题明显比友站 大。根因是全站
+    从来没有移动端字号层：ax-tokens.css 的桌面阶梯（页题 34 / 分组 24 /
     展示 48 / 价格 56）原样落到 390px 手机，各页写死的标题字号
     （概览套餐名 40、流量数字 58、团队页题 30、菜单组题 20/行 17、
     片库 Hero 标题 clamp 下限 40）也没有移动收紧。
 
 修复只走全局层（本检查钉住这三处，值以 390px 真渲染实测为准）：
-  1. user_frontend/src/styles/uhd-tokens.css 末尾的移动阶梯块
-     （@media max-width:768px 只重定义上半段 8 个 --uhd-fs-* 令牌），
+  1. user_frontend/src/styles/ax-tokens.css 末尾的移动阶梯块
+     （@media max-width:768px 只重定义上半段 8 个 --ax-fs-* 令牌），
      且桌面 :root 原值一字不许动（桌面与手机设施 1:1，只许移动断点内收）；
   2. user_frontend/src/styles/mobile.css 的「写死字号收紧层」
      （各页写死字号的全局移动覆盖，含 !important 终局口径）；
-  3. admin_frontend/src/styles/uhd-tokens.css 的 @keyframes uhd-blur-in
+  3. admin_frontend/src/styles/ax-tokens.css 的 @keyframes ax-blur-in
      不许带 blur（与 user 端重影修复 #144 同口径：入场只许淡入/位移，
      blur 揭示会把整段文字/封面涂抹成重影）。
 
@@ -29,30 +29,30 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-USER_TOKENS = ROOT / "user_frontend/src/styles/uhd-tokens.css"
+USER_TOKENS = ROOT / "user_frontend/src/styles/ax-tokens.css"
 MOBILE_CSS = ROOT / "user_frontend/src/styles/mobile.css"
-ADMIN_TOKENS = ROOT / "admin_frontend/src/styles/uhd-tokens.css"
+ADMIN_TOKENS = ROOT / "admin_frontend/src/styles/ax-tokens.css"
 
 # 桌面阶梯原值（不许动）与移动阶梯目标值（≤768px）
 DESKTOP_TOKENS = {
-    "--uhd-fs-title": "18px",
-    "--uhd-fs-h3": "24px",
-    "--uhd-fs-h3-lg": "32px",
-    "--uhd-fs-h1-app": "34px",
-    "--uhd-fs-h2": "40px",
-    "--uhd-fs-display": "48px",
-    "--uhd-fs-price": "56px",
-    "--uhd-fs-h1": "72px",
+    "--ax-fs-title": "18px",
+    "--ax-fs-h3": "24px",
+    "--ax-fs-h3-lg": "32px",
+    "--ax-fs-h1-app": "34px",
+    "--ax-fs-h2": "40px",
+    "--ax-fs-display": "48px",
+    "--ax-fs-price": "56px",
+    "--ax-fs-h1": "72px",
 }
 MOBILE_TOKENS = {
-    "--uhd-fs-title": "17px",
-    "--uhd-fs-h3": "20px",
-    "--uhd-fs-h3-lg": "26px",
-    "--uhd-fs-h1-app": "28px",
-    "--uhd-fs-h2": "30px",
-    "--uhd-fs-display": "34px",
-    "--uhd-fs-price": "40px",
-    "--uhd-fs-h1": "40px",
+    "--ax-fs-title": "17px",
+    "--ax-fs-h3": "20px",
+    "--ax-fs-h3-lg": "26px",
+    "--ax-fs-h1-app": "28px",
+    "--ax-fs-h2": "30px",
+    "--ax-fs-display": "34px",
+    "--ax-fs-price": "40px",
+    "--ax-fs-h1": "40px",
 }
 # mobile.css 收紧层：选择器 -> 移动目标值（390px 真渲染实测口径）
 MOBILE_OVERRIDES = {
@@ -130,7 +130,7 @@ def main() -> int:
 
     # 2) 移动阶梯块存在且 8 个令牌值对
     ladder = media_block(user_css)
-    check(bool(ladder), "uhd-tokens.css 缺移动端字号阶梯块（@media max-width:768px）")
+    check(bool(ladder), "ax-tokens.css 缺移动端字号阶梯块（@media max-width:768px）")
     for name, want in MOBILE_TOKENS.items():
         got = token_value(ladder, name)
         check(got == want, f"移动令牌 {name} 应为 {want}，实际 {got}")
@@ -144,9 +144,9 @@ def main() -> int:
     m = re.search(r"\.sub-settle__price\s+b\s*\{[^}]*font-size:\s*([0-9.]+px)\s*!important", layer)
     check(m and m.group(1) == "20px", "mobile.css 收紧层缺 .sub-settle__price b -> 20px !important")
 
-    # 4) admin uhd-blur-in 关键帧不许带 blur（按花括号配平取块，避免越界误报）
-    kidx = admin_css.find("@keyframes uhd-blur-in")
-    check(kidx >= 0, "admin uhd-tokens.css 缺 @keyframes uhd-blur-in")
+    # 4) admin ax-blur-in 关键帧不许带 blur（按花括号配平取块，避免越界误报）
+    kidx = admin_css.find("@keyframes ax-blur-in")
+    check(kidx >= 0, "admin ax-tokens.css 缺 @keyframes ax-blur-in")
     if kidx >= 0:
         start = admin_css.find("{", kidx)
         depth = 0
@@ -159,7 +159,7 @@ def main() -> int:
                 if depth == 0:
                     kend = i
                     break
-        check("blur" not in admin_css[start : kend + 1], "admin @keyframes uhd-blur-in 又带回了 blur（重影口径，只许淡入）")
+        check("blur" not in admin_css[start : kend + 1], "admin @keyframes ax-blur-in 又带回了 blur（重影口径，只许淡入）")
 
     if failures:
         print("❌ 移动端字号阶梯契约检查失败：")

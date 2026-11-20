@@ -266,7 +266,7 @@
   border: 1px solid transparent;
   background: var(--au-violet-soft);
   color: var(--text-secondary);
-  font-size: var(--uhd-fs-micro);
+  font-size: var(--ax-fs-micro);
   font-weight: var(--font-weight-semibold);
   line-height: 1;
   white-space: nowrap;

@@ -1,25 +1,25 @@
 <script setup lang="ts">
 /**
- * UhdTopBar —— 登录后用户区统一顶栏（全站唯一一份实现）
+ * AxTopBar —— 登录后用户区统一顶栏（全站唯一一份实现）
  *
  * 用户 2026-11-14 亲点「你没固定，没统一」：此前概览/我的各写一份
  * 页头（一处有彩虹边框、一处没有）、其余页面或小字钮或干脆没有，
  * 且全部随页面滚走。本组件收口为一套：
  * - sticky 固定在顶部（占文档流，不遮挡首屏内容），玻璃底；
  * - 左：站标 + 标题（默认站名；「我的」页传 title="我的"，照友站两页口径）；
- * - 右：UhdWatchPill「前往流媒体」常驻。
+ * - 右：AxWatchPill「前往流媒体」常驻。
  * 子页模式（2026-11-18 邀请页对齐友站）：传 backTo 时，手机端（≤768px）
  * 左侧换成「‹ 返回 + 页标题」（友站子页头形态：返回/标题/胶囊同一行），
  * 页内不再另设返回行；桌面端维持站标 + 标题原样（壳顶栏口径不动）。
  * 挂载点只有三处：App.vue（账户区）、StreamShell（片库面手机端；
  * 桌面走批 3 双胶囊顶栏）、AppHeader 只复用胶囊不复用整条。
- * 令牌见 styles/uhd-topbar.css。
+ * 令牌见 styles/ax-topbar.css。
  */
 import { computed, inject, type ComputedRef, type Ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { ChevronLeft, MonitorSmartphone, Moon, Sun } from 'lucide-vue-next'
 import { branding } from '@/composables/useBranding'
-import UhdWatchPill from './UhdWatchPill.vue'
+import AxWatchPill from './AxWatchPill.vue'
 import BrandMark from '@/components/BrandMark.vue'
 
 const props = withDefaults(defineProps<{ title?: string; backTo?: string }>(), { title: '', backTo: '' })
@@ -56,39 +56,39 @@ const themeLabel = computed(() => {
 </script>
 
 <template>
-  <header class="uhd-topbar" :class="{ 'uhd-topbar--sub': !!props.backTo }">
-    <RouterLink v-if="props.backTo" :to="props.backTo" class="uhd-topbar__back" aria-label="返回我的">
+  <header class="ax-topbar" :class="{ 'ax-topbar--sub': !!props.backTo }">
+    <RouterLink v-if="props.backTo" :to="props.backTo" class="ax-topbar__back" aria-label="返回我的">
       <ChevronLeft :size="22" aria-hidden="true" />
-      <span class="uhd-topbar__back-title">{{ barTitle }}</span>
+      <span class="ax-topbar__back-title">{{ barTitle }}</span>
     </RouterLink>
-    <div class="uhd-topbar__brand">
+    <div class="ax-topbar__brand">
       <img
         v-if="branding.logo_url"
-        class="uhd-topbar__logo"
+        class="ax-topbar__logo"
         :src="branding.logo_url"
         :alt="branding.site_name"
       />
-      <span v-else class="uhd-topbar__mark"><BrandMark /></span>
-      <span class="uhd-topbar__title">{{ brandTitle }}</span>
+      <span v-else class="ax-topbar__mark"><BrandMark /></span>
+      <span class="ax-topbar__title">{{ brandTitle }}</span>
     </div>
-    <div class="uhd-topbar__actions">
+    <div class="ax-topbar__actions">
       <button
         v-if="streamTheme"
         type="button"
-        class="uhd-topbar__theme"
+        class="ax-topbar__theme"
         :title="themeLabel"
         :aria-label="themeLabel"
         @click="streamTheme.cycleTheme()"
       >
         <component :is="themeIcon" :size="17" aria-hidden="true" />
       </button>
-      <UhdWatchPill />
+      <AxWatchPill />
     </div>
   </header>
 </template>
 
 <style scoped>
-.uhd-topbar {
+.ax-topbar {
   position: sticky;
   top: 0;
   z-index: 80;
@@ -99,7 +99,7 @@ const themeLabel = computed(() => {
   height: calc(var(--utb-h) + env(safe-area-inset-top));
   padding: env(safe-area-inset-top) 16px 0;
   box-sizing: border-box;
-  /* 玻璃底：半透（底色取自本面页底、同色无缝，见 uhd-topbar.css 口径注）
+  /* 玻璃底：半透（底色取自本面页底、同色无缝，见 ax-topbar.css 口径注）
      + blur/saturate + 顶部内高光。2026-11-15 颜色对齐单：去掉外柔影——
      它在栏下方洇出一条异色带（浅色为蓝灰、友站顶栏无此带）；--utb-shadow
      只剩浮动观影胶囊在用。底部边线由 --utb-edge 控制（现 transparent）。 */
@@ -109,15 +109,15 @@ const themeLabel = computed(() => {
   border-bottom: 1px solid var(--utb-edge);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
   color: var(--utb-fg);
-  font-family: var(--uhd-font-sans);
+  font-family: var(--ax-font-sans);
 }
-.uhd-topbar__brand {
+.ax-topbar__brand {
   display: flex;
   align-items: center;
   gap: 9px;
   min-width: 0;
 }
-.uhd-topbar__actions {
+.ax-topbar__actions {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -125,7 +125,7 @@ const themeLabel = computed(() => {
 }
 /* 外观钮：边长 --utb-pill-h（33）的圆玻璃钮，配方同顶栏令牌；
    观影胶囊自真值定版后走 --utb-pill-height（36），两者不再同高 */
-.uhd-topbar__theme {
+.ax-topbar__theme {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -139,23 +139,23 @@ const themeLabel = computed(() => {
   font-family: inherit;
   cursor: pointer;
 }
-.uhd-topbar__theme:active {
+.ax-topbar__theme:active {
   opacity: 0.75;
 }
-.uhd-topbar__logo {
+.ax-topbar__logo {
   width: 24px;
   height: 24px;
   object-fit: contain;
   flex: none;
 }
-.uhd-topbar__mark {
+.ax-topbar__mark {
   width: 24px;
   height: 23px;
   flex: none;
 }
-.uhd-topbar__title {
+.ax-topbar__title {
   font-size: 18px;
-  font-weight: var(--uhd-fw-extrabold);
+  font-weight: var(--ax-fw-extrabold);
   letter-spacing: -0.01em;
   white-space: nowrap;
   overflow: hidden;
@@ -164,14 +164,14 @@ const themeLabel = computed(() => {
 /* 子页返回头：默认（桌面）不渲染，维持站标行；仅手机端在子页模式下
    顶替站标行（友站实测：标题 16px semibold、标题墨迹左缘距屏左 ≈56px，
    = 栏边距 16 + 箭头 22 + 间隔 18）。 */
-.uhd-topbar__back {
+.ax-topbar__back {
   display: none;
 }
 @media (max-width: 768px) {
-  .uhd-topbar--sub .uhd-topbar__brand {
+  .ax-topbar--sub .ax-topbar__brand {
     display: none;
   }
-  .uhd-topbar--sub .uhd-topbar__back {
+  .ax-topbar--sub .ax-topbar__back {
     display: inline-flex;
     align-items: center;
     gap: 18px;
@@ -179,9 +179,9 @@ const themeLabel = computed(() => {
     color: inherit;
     text-decoration: none;
   }
-  .uhd-topbar__back-title {
+  .ax-topbar__back-title {
     font-size: 16px;
-    font-weight: var(--uhd-fw-semibold);
+    font-weight: var(--ax-fw-semibold);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

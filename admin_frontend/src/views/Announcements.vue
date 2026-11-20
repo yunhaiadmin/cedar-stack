@@ -329,7 +329,7 @@ function fmtDate(s: string): string {
 .ann-name { font-weight: 600; color: var(--au-text); }
 
 .ann-content {
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-3);
   margin-top: 4px;
   line-height: 1.5;
@@ -343,11 +343,11 @@ function fmtDate(s: string): string {
 .manage-body { display: flex; flex-direction: column; gap: 12px; }
 .manage-body .kv-row .kv-value { text-align: left; }
 .mg-gap { margin-left: 6px; }
-.mg-content-label { font-size: var(--uhd-fs-aux-sm); color: var(--au-text-3); margin-bottom: 6px; }
+.mg-content-label { font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); margin-bottom: 6px; }
 .mg-content-body {
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: var(--uhd-fs-aux);
+  font-size: var(--ax-fs-aux);
   line-height: 1.7;
   color: var(--au-text);
   background: var(--au-surface-2);
@@ -360,7 +360,7 @@ function fmtDate(s: string): string {
 .mg-hints {
   margin: 0;
   padding-left: 18px;
-  font-size: var(--uhd-fs-aux-sm);
+  font-size: var(--ax-fs-aux-sm);
   color: var(--au-text-3);
   line-height: 1.8;
 }

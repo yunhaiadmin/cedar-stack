@@ -153,14 +153,14 @@ async function onLogout() {
   /* 录屏实测胶囊约 90×38–40：内距与钮尺寸按此配平（32 外观钮 + 28 X 圆片） */
   padding: 3px 9px;
   border-radius: 999px;
-  border: 1px solid var(--uhd-s-pill-border);
-  background: var(--uhd-s-pill-bg);
-  color: var(--uhd-s-text);
+  border: 1px solid var(--ax-s-pill-border);
+  background: var(--ax-s-pill-bg);
+  color: var(--ax-s-text);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    var(--uhd-s-shadow-pill);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
+    var(--ax-s-shadow-pill);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
 }
 /* 全局 mobile.css 的 button{min-height:44px} 会撑高胶囊内小钮，本作用域中和 */
 .dtp button,
@@ -209,19 +209,19 @@ async function onLogout() {
   width: 272px;
   padding: 8px;
   border-radius: 20px;
-  border: 1px solid var(--uhd-s-border);
-  background: var(--uhd-s-panel-bg);
-  box-shadow: var(--uhd-shadow-modal);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
-  color: var(--uhd-s-text);
+  border: 1px solid var(--ax-s-border);
+  background: var(--ax-s-panel-bg);
+  box-shadow: var(--ax-shadow-modal);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+  color: var(--ax-s-text);
 }
 .dtp-menu__head {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 10px 10px 12px;
-  border-bottom: 1px solid var(--uhd-s-border);
+  border-bottom: 1px solid var(--ax-s-border);
   margin-bottom: 6px;
 }
 .dtp-menu__avatar {
@@ -232,10 +232,10 @@ async function onLogout() {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: var(--uhd-s-text);
-  color: var(--uhd-s-bg);
+  background: var(--ax-s-text);
+  color: var(--ax-s-bg);
   font-size: 18px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
 }
 .dtp-menu__who {
   min-width: 0;
@@ -245,7 +245,7 @@ async function onLogout() {
 }
 .dtp-menu__name {
   font-size: 16px;
-  font-weight: var(--uhd-fw-bold);
+  font-weight: var(--ax-fw-bold);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -255,7 +255,7 @@ async function onLogout() {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
   white-space: nowrap;
 }
 .dtp-menu__dot {
@@ -275,20 +275,20 @@ async function onLogout() {
   border: none;
   border-radius: 12px;
   background: transparent;
-  color: var(--uhd-s-text);
+  color: var(--ax-s-text);
   font-size: 15px;
   font-family: inherit;
   cursor: pointer;
   text-align: left;
 }
 .dtp-menu__row:active {
-  background: var(--uhd-s-highlight);
+  background: var(--ax-s-highlight);
 }
 .dtp-menu__label {
   flex: 1;
 }
 .dtp-menu__chev {
-  color: var(--uhd-s-text-2);
+  color: var(--ax-s-text-2);
 }
 .dtp-menu__row--danger {
   color: #e5484d;

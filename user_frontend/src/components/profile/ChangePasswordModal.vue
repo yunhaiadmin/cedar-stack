@@ -285,20 +285,20 @@ async function submit() {
   border: 1px solid var(--line);
   color: var(--ink2);
 }
-/* 主钮 UHD 口径（2026-11-13 补齐七彩＋玻璃）：彩虹边框 + 淡彩粉彩底 + 玻璃栈。
+/* 主钮 ax 口径（2026-11-13 补齐七彩＋玻璃）：彩虹边框 + 淡彩粉彩底 + 玻璃栈。
    本面板只挂账号设置页（.v4-scope 恒浅色纸面），只需浅色配方 */
 .acct-btn.primary {
   border: 1.5px solid transparent;
   background:
-    var(--uhd-rainbow-soft) padding-box,
-    var(--uhd-rainbow) border-box;
+    var(--ax-rainbow-soft) padding-box,
+    var(--ax-rainbow) border-box;
   color: #111111;
   font-weight: 600;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    var(--uhd-shadow-card-l);
-  backdrop-filter: var(--uhd-glass-filter);
-  -webkit-backdrop-filter: var(--uhd-glass-filter);
+    var(--ax-shadow-card-l);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
 }
 /* 禁用：彩虹退场、中性灰 */
 .acct-btn.primary:disabled {

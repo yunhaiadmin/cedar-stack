@@ -355,14 +355,14 @@ export default {
 }
 
 /* ==================== 动画 ==================== */
-/* 入场统一走 UhdModal 一套令牌时长/曲线（质感第二波，2026-11-18）：
+/* 入场统一走 AxModal 一套令牌时长/曲线（质感第二波，2026-11-18）：
    遮罩 fade .52s＋standard、内容 blur-in .56s＋pop、离场 base .2s（与原值一致）。
-   起止态 scale(0.95)＋translateY(10px) 保持（与 UhdModal 的纯淡入不同，
+   起止态 scale(0.95)＋translateY(10px) 保持（与 AxModal 的纯淡入不同，
    此处保留轻微收放，见 #17 口径）。 */
 /* 背景进入/离开动画 */
 .modal-backdrop-enter-active,
 .modal-backdrop-leave-active {
-  transition: opacity var(--uhd-dur-fade) var(--uhd-ease-standard);
+  transition: opacity var(--ax-dur-fade) var(--ax-ease-standard);
 }
 
 .modal-backdrop-enter-from,
@@ -372,11 +372,11 @@ export default {
 
 /* 内容进入/离开动画 */
 .modal-content-enter-active {
-  transition: opacity var(--uhd-dur-blur-in) var(--uhd-ease-pop), transform var(--uhd-dur-blur-in) var(--uhd-ease-pop);
+  transition: opacity var(--ax-dur-blur-in) var(--ax-ease-pop), transform var(--ax-dur-blur-in) var(--ax-ease-pop);
 }
 
 .modal-content-leave-active {
-  transition: opacity var(--uhd-dur-base) ease-in, transform var(--uhd-dur-base) ease-in;
+  transition: opacity var(--ax-dur-base) ease-in, transform var(--ax-dur-base) ease-in;
 }
 
 .modal-content-enter-from {
