@@ -196,6 +196,18 @@ def apply_invitation(db: Session, user: models.WebUser, invite_code: str) -> dic
     if not inviter:
         return {"applied": False}
 
+    # 推广者停用（AFF 后台，2026-11-20）：被停用的推广者，其邀请码
+    # 不再接受新注册绑定。注册主流程对邀请失败历来静默（不阻塞注册），
+    # 明确文案落在返回值 reason/message 与日志里；拒绝发生在占位之前，
+    # 不消耗码名额。已建立的邀请关系与已入账返利不受影响。
+    from backend import invite_promoter
+
+    if invite_promoter.is_disabled(db, inviter.id):
+        logger.info("邀请码所属推广者已停用，拒绝绑定: inviter=%s code_id=%s",
+                    inviter.id, code.id)
+        return {"applied": False, "reason": "inviter_disabled",
+                "message": "该邀请码已被停用，无法使用"}
+
     # 幂等：同一个被邀请人只能建立一次关系（重试/重复调用不得重复发奖）
     existing = db.query(models.InvitationRecord).filter(
         models.InvitationRecord.invitee_id == user.id
