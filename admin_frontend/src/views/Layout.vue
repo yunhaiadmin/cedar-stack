@@ -5,11 +5,11 @@
  * 结构：固定侧边栏（≤1024px 变抽屉）+ 顶栏（页面标题 / 刷新 / 管理员菜单）+ 内容区。
  * 手机上抽屉打开时锁背景滚动、Esc / 点遮罩 / 切路由都能关。
  *
- * v2.54（暗房影院）：外壳与用户端 AppHeader 同一套语言——不透明暖黑顶栏 + 发丝线、
- * 衬线大写拉字距的品牌字、琥珀放映机标、三枚同配方的圆形图标按钮。侧边栏不再是
- * 「可折叠手风琴」：分区标题是常驻的小眉题，每一项带自己的图标，当前页 = 正文色 +
- * 实色表面 + 右侧一颗琥珀指示灯。分区按重新布局为 7 组（概览 / 用户 / 安全与准入 /
- * 经营 / 内容 / 媒体 / 系统），所有路径与权限标记一个没少。
+ * v2.54（ax 口径，批 1 重设计）：外壳与用户端 AxTopBar 同一套语言——玻璃侧边栏 /
+ * 玻璃顶栏 + 顶部淡彩光晕、无衬线品牌字、彩虹品牌标、三枚同配方的圆形图标按钮。
+ * 侧边栏不再是「可折叠手风琴」：分区标题是常驻的小眉题，每一项带自己的图标，
+ * 当前页 = 玻璃胶囊 + 左侧一颗彩虹指示点。分区按重新布局为 7 组（概览 / 用户 /
+ * 安全与准入 / 经营 / 内容 / 媒体 / 系统），所有路径与权限标记一个没少。
  *
  * v2.55：桌面侧边栏可折叠成 68px 图标条（顶栏按钮切换、localStorage 记住状态、
  * 折叠时文字靠 title 悬停提示；≤1024px 抽屉形态一字未动）。
@@ -622,7 +622,7 @@ onUnmounted(() => {
       :aria-modal="isTablet ? 'true' : undefined"
       aria-label="管理导航"
     >
-      <!-- 品牌：与用户端 AppHeader 同一套——琥珀放映机标 + 衬线大写拉字距的站名 -->
+      <!-- 品牌：与用户端 AppHeader 同一套——彩虹品牌标 + 无衬线站名（ax 口径） -->
       <div class="brand">
         <RouterLink to="/" class="brand-link">
           <span class="brand-mark">
@@ -684,7 +684,7 @@ onUnmounted(() => {
 
     <!-- 主区域 -->
     <div class="main">
-      <!-- 顶栏：不透明暖黑实底 + 一根发丝线（同用户端 .app-header），不再有毛玻璃 -->
+      <!-- 顶栏：玻璃壳（批 1 · ax 口径，同用户端 AxTopBar 玻璃底） -->
       <header class="topbar">
         <button class="round-btn menu-btn" aria-label="打开菜单" @click="drawerOpen = true">
           <Menu :size="18" />
@@ -750,7 +750,7 @@ onUnmounted(() => {
           </el-dropdown>
 
           <!-- 外观：图标即当前档（跟随系统 / 白日 / 黑暗），点一下轮换一档；
-               手动指定档 = 琥珀实底，跟随系统 = 中性底 + 琥珀细环（同用户端顶栏） -->
+               手动指定档 = 彩虹主按钮缩小版，跟随系统 = 中性底 + 主色细环 -->
           <button
             class="round-btn theme-btn"
             :class="{ auto: themePreference === 'system' }"
@@ -880,7 +880,19 @@ onUnmounted(() => {
   display: flex;
   min-height: 100vh;
   min-height: 100dvh;
-  background: var(--au-bg);
+  background-color: var(--au-bg);
+  /* 顶部彩虹光晕（批 1 · ax 口径）：用户端 LoginView 同配方——四角淡彩径向光，
+     壳里只留顶部两枚（粉＋天蓝），fixed 附着视口、随滚动钉在顶部；底色仍是
+     --au-bg，background-image 只叠光晕层，不盖底色。 */
+  background-image:
+    radial-gradient(600px 420px at 12% 4%, rgba(246, 205, 190, 0.13), transparent 70%),
+    radial-gradient(560px 400px at 88% 10%, rgba(160, 195, 245, 0.13), transparent 70%);
+  background-attachment: fixed;
+}
+html[data-theme='light'] .shell {
+  background-image:
+    radial-gradient(600px 420px at 12% 4%, var(--ax-blob-peach), transparent 70%),
+    radial-gradient(560px 400px at 88% 10%, var(--ax-blob-sky), transparent 70%);
 }
 
 /* ==================== 圆形图标按钮（同用户端 AppHeader .round-btn） ==================== */
@@ -916,23 +928,50 @@ onUnmounted(() => {
   outline-offset: 2px;
 }
 
-/* 外观按钮：手动档 = 琥珀实底；跟随系统 = 中性底 + 琥珀细环 */
+/* 外观按钮：手动档 = 彩虹主按钮缩小版（细彩虹环＋玻璃底，同 .au-btn-primary
+   配方）；跟随系统 = 中性底 + 主色细环 */
 .theme-btn.auto { border-color: var(--au-primary-border); }
 .theme-btn.auto:hover { border-color: var(--au-primary); }
 
 .round-btn.theme-btn:not(.auto) {
-  background: var(--au-primary);
-  border-color: var(--au-primary);
-  color: var(--au-on-primary);
+  position: relative;
+  border: 1.5px solid transparent;
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
+  color: #ffffff;
+  box-shadow: var(--ax-shadow-sheet);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+.round-btn.theme-btn:not(.auto)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+html[data-theme='light'] .round-btn.theme-btn:not(.auto) {
+  background: var(--ax-rainbow-soft);
+  color: #111111;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    var(--ax-shadow-card-l);
 }
 
 .round-btn.theme-btn:not(.auto):hover {
-  background: var(--au-primary-strong);
-  border-color: var(--au-primary-strong);
-  color: var(--au-on-primary);
+  filter: brightness(1.08);
+  color: #ffffff;
+}
+html[data-theme='light'] .round-btn.theme-btn:not(.auto):hover {
+  color: #111111;
 }
 
-/* 头像：琥珀实底 + 深棕墨字母（同用户端 .avatar） */
+/* 头像：主色实底 + 白字（--au-primary 已是 ax 链接蓝，见 ax-admin.css） */
 .avatar {
   display: inline-flex;
   align-items: center;
@@ -949,17 +988,26 @@ onUnmounted(() => {
 .admin-btn { padding: 0; }
 
 /* ==================== 侧边栏 ==================== */
+/* 侧边栏：玻璃壳（批 1 · ax 口径，同用户端 AxNavPill 玻璃胶囊配方：
+   半透底 + blur/saturate + 玻璃边；内高光与柔影由 --ax-glass-* 令牌层给，
+   抽屉态（≤1024px）同配方，阴影仍走 --au-shadow-2） */
 .sidebar {
   position: fixed;
   inset: 0 auto 0 0;
   width: var(--sidebar-w);
   display: flex;
   flex-direction: column;
-  background: var(--au-bg);
-  border-right: 1px solid var(--au-border);
+  background: var(--ax-glass-d);
+  border-right: 1px solid var(--ax-glass-border);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   z-index: var(--z-sticky);
   /* 桌面折叠 / 展开时宽度平滑过渡（≤1024 的抽屉过渡在响应式段里覆盖本条） */
   transition: width var(--au-med) var(--au-ease);
+}
+html[data-theme='light'] .sidebar {
+  background: var(--ax-glass-l);
+  border-right-color: var(--ax-glass-border-l);
 }
 
 .brand {
@@ -1032,7 +1080,7 @@ onUnmounted(() => {
   padding: 6px 10px 12px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  /* ui/beautify-20261018：侧栏细滚动条（暗房影院发丝线质感） */
+  /* 侧栏细滚动条（玻璃质感） */
   scrollbar-width: thin;
   scrollbar-color: var(--au-border-strong) transparent;
 }
@@ -1073,7 +1121,9 @@ onUnmounted(() => {
 
 .nav-icon { flex-shrink: 0; color: var(--au-text-4); transition: color var(--au-fast) var(--au-ease); }
 
-.nav-item:hover { color: var(--au-text); background: var(--au-surface); }
+/* 悬停：淡白罩（同用户端 AxNavPill 导航项悬停口径） */
+.nav-item:hover { color: var(--au-text); background: rgba(255, 255, 255, 0.08); }
+html[data-theme='light'] .nav-item:hover { background: rgba(17, 17, 17, 0.06); }
 .nav-item:hover .nav-icon { color: var(--au-text-2); }
 
 .nav-item:focus-visible {
@@ -1081,12 +1131,11 @@ onUnmounted(() => {
   outline-offset: -2px;
 }
 
-/* 当前页：正文色 + 实色表面 + 发丝描边 + 右侧一颗琥珀指示灯（同用户端主导航的小圆点） */
+/* 当前页：正文色 + 玻璃胶囊 + 彩虹指示点（底色/描边/点的颜色口径在
+   ax-admin.css 壳模具，见该文件「激活态」一节；此处只管字色/字重与点的尺寸位置） */
 .nav-item.active {
   color: var(--au-text);
   font-weight: 600;
-  background: var(--au-surface);
-  border-color: var(--au-border);
 }
 
 .nav-item.active .nav-icon { color: var(--au-primary); }
@@ -1100,7 +1149,6 @@ onUnmounted(() => {
   height: 5px;
   margin-top: -2.5px;
   border-radius: 50%;
-  background: var(--au-primary);
 }
 
 .nav-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1169,7 +1217,8 @@ onUnmounted(() => {
 /* 折叠切换按钮只在桌面出现（≤1024 是抽屉，用 menu-btn） */
 .collapse-btn { display: none; }
 
-/* 顶栏：不透明暖黑实底 + 发丝线（同用户端 .app-header：滚过去的内容不透字） */
+/* 顶栏：玻璃壳（批 1 · ax 口径，同用户端 AxTopBar 玻璃底）：半透底 +
+   blur/saturate + 玻璃底边；滚过去的内容透过毛玻璃仍可读、字不糊。 */
 .topbar {
   position: sticky;
   top: 0;
@@ -1180,12 +1229,15 @@ onUnmounted(() => {
   min-height: 62px;
   padding: 0 24px;
   padding-top: env(safe-area-inset-top);
-  background: var(--au-bg);
-  border-bottom: 1px solid var(--au-border);
-  /* ui/beautify-20261018：滚动模糊 + 边框色过渡（底色不透明，blur 仅为未来半透明底色备） */
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: var(--ax-glass-d);
+  border-bottom: 1px solid var(--ax-glass-border);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   transition: border-color var(--au-fast) var(--au-ease);
+}
+html[data-theme='light'] .topbar {
+  background: var(--ax-glass-l);
+  border-bottom-color: var(--ax-glass-border-l);
 }
 /* ui/beautify-20261018：滚动态钩子——当前无 JS 接线（<script> 不许动），类暂不会被切换 */
 .topbar.is-scrolled {
@@ -1216,7 +1268,7 @@ onUnmounted(() => {
 
 .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 
-/* 命令搜索入口：一条安静的输入框外观，宽屏展开文字 + ⌘K 提示 */
+/* 命令搜索入口：玻璃胶囊（批 1 · ax 口径，同用户端 AxNavPill 玻璃胶囊配方） */
 .cmd-btn {
   display: inline-flex;
   align-items: center;
@@ -1224,14 +1276,20 @@ onUnmounted(() => {
   height: 38px;
   min-width: 220px;
   padding: 0 8px 0 12px;
-  border: 1px solid var(--au-border);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-full);
-  background: var(--au-input-bg);
+  background: var(--ax-glass-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   color: var(--au-text-4);
   font: inherit;
   font-size: var(--ax-fs-aux);
   cursor: pointer;
   transition: border-color var(--au-fast) var(--au-ease), color var(--au-fast) var(--au-ease);
+}
+html[data-theme='light'] .cmd-btn {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
 }
 .cmd-btn:hover { border-color: var(--au-border-strong); color: var(--au-text-2); }
 .cmd-btn:focus-visible { outline: 2px solid var(--au-border-focus); outline-offset: 2px; }
@@ -1247,7 +1305,7 @@ onUnmounted(() => {
   line-height: 1.8;
 }
 
-/* 当前服：一眼看出“现在运营的是哪个服”，点开就能切 */
+/* 当前服：玻璃胶囊（批 1 · ax 口径，同 .cmd-btn） */
 .realm-chip {
   display: flex;
   align-items: center;
@@ -1255,12 +1313,18 @@ onUnmounted(() => {
   height: 38px;
   padding: 0 12px;
   border-radius: var(--au-r-full);
-  border: 1px solid var(--au-border);
-  background: var(--au-surface);
+  border: 1px solid var(--ax-glass-border);
+  background: var(--ax-glass-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   color: var(--au-text-2);
   font-size: var(--ax-fs-aux);
   font-weight: 500;
   transition: border-color var(--au-fast) var(--au-ease), color var(--au-fast) var(--au-ease);
+}
+html[data-theme='light'] .realm-chip {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
 }
 .realm-chip svg:first-child { color: var(--au-primary); }
 .realm-chip:hover { border-color: var(--au-primary-border); color: var(--au-text); }

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
- * 区块卡片（暗房影院 .au-card）：实色表面 + 发丝线 + 14px 圆角，可选衬线标题行。
+ * 区块卡片（ax 口径 · 玻璃栈）：半透底 + blur/saturate + 玻璃边 + 内高光 + 柔影
+ * （同用户端玻璃卡配方，见 AxMemberCard / AxNavPill 下拉），可选无衬线标题行。
  *
- * - 标题行：icon（lucide 组件）+ 衬线 title + 灰色 meta（「近 7 天」之类）+ 右侧 actions 插槽
- * - tone="accent"：琥珀发丝描边（同用户端 .au-card-accent），给「需要注意」的块用
+ * - 标题行：icon（lucide 组件）+ 标题 + 灰色 meta（「近 7 天」之类）+ 右侧 actions 插槽
+ * - tone="accent"：主色描边（同用户端 .au-card-accent），给「需要注意」的块用
  * - flush：内容区不留内边距（里面直接放 el-table / 列表时用，表格自己有单元格内距）
  * 用法见 ./README.md。
  */
@@ -55,21 +56,30 @@ withDefaults(
 <style scoped>
 .au-section {
   min-width: 0;
-  background: var(--au-surface);
-  border: 1px solid var(--au-border);
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-lg);
-  /* ui/beautify-20261018：同 StatTile 的质感（顶缘高光 + 悬停提升） */
-  box-shadow: var(--au-card-highlight);
+  /* 玻璃六件：半透底 + blur/saturate + 内高光 + 柔影（同用户端玻璃卡） */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   transition: transform var(--au-fast) var(--au-ease), border-color var(--au-fast) var(--au-ease),
     box-shadow var(--au-fast) var(--au-ease);
+}
+html[data-theme='light'] .au-section {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 /* P3：悬停提升只在桌面（hover 可用 + 精确指针）生效，避免移动端触摸 :hover 粘滞 */
 @media (hover: hover) and (pointer: fine) {
   .au-section:hover {
     border-color: var(--au-border-strong);
     transform: translateY(-1px);
-    /* P3-2：提升阴影走 --au-lift-shadow 单源（A1/A4 裁定保留令牌） */
-    box-shadow: var(--au-card-highlight), var(--au-lift-shadow);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--au-lift-shadow);
+  }
+  html[data-theme='light'] .au-section:hover {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--au-lift-shadow);
   }
 }
 

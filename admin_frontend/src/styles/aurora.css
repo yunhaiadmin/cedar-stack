@@ -1,14 +1,15 @@
 /* ========================================
-   Aurora 设计系统 v4 —— 管理端移植（暗房影院）
+   Aurora 设计系统 v4 —— 管理端移植
 
-   与用户端 user_frontend/src/styles/aurora.css **同名同值**：暖黑底 · 实色表面 ·
-   放映机琥珀单一强调色 · 衬线标题 · 发丝线边框；白日模式是独立调过的奶油纸色。
-   改这里的值之前先改用户端那份——两端必须是同一套令牌，UI 才统一。
+   本文件是基线层：--au-* 令牌的初始值（历史暗房影院口径）与 .au-btn / .au-card 等
+   原子类。管理端的实际视觉口径由 styles/ax-admin.css 在后重映射 --au-*（ax 链接蓝、
+   深/浅两档令牌）并叠加壳/表格/弹层模具——改主色、改底色先看 ax-admin.css，
+   不要只改这里的值。主按钮 .au-btn-primary 已是 ax 口径（细彩虹环＋玻璃，见下）。
 
-   管理端只消费 --au-*：tokens.css 把历史变量（--bg-card / --primary / --text-muted …）
-   全部映射到这里（别名层，同用户端 neo-noir-tokens.css 的做法），页面零改动跟着换肤。
-   主题切换只改 html[data-theme]（见 composables/useTheme.ts），品牌主题色由
-   composables/branding.ts 注入覆盖 --au-primary 一族。
+   管理端只消费 --au-* / --ax-*：tokens.css 把历史变量（--bg-card / --primary /
+   --text-muted …）全部映射到这里（别名层，同用户端 neo-noir-tokens.css 的做法），
+   页面零改动跟着换肤。主题切换只改 html[data-theme]（见 composables/useTheme.ts），
+   品牌主题色由 composables/branding.ts 注入覆盖 --au-primary 一族。
    ======================================== */
 
 :root {
@@ -210,7 +211,7 @@ html[data-theme='light'] {
 
 .au-num { font-variant-numeric: tabular-nums; }
 
-/* 小号眉题：琥珀色，字距收到 0.1em */
+/* 小号眉题：主色，字距收到 0.1em */
 .au-eyebrow {
   font-size: 0.75rem;
   font-weight: 500;
@@ -241,9 +242,59 @@ html[data-theme='light'] {
   white-space: nowrap;
 }
 .au-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.au-btn-primary { background: var(--au-primary); color: var(--au-on-primary); }
-.au-btn-primary:hover:not(:disabled) { filter: brightness(1.08); color: var(--au-on-primary); }
-.au-btn-primary:active:not(:disabled) { transform: scale(0.98); }
+
+/* 主按钮 —— ax 口径（与用户端 user_frontend/src/styles/aurora.css .au-btn-primary
+   同一套外观，逐字照搬）：彩虹渐变边框 + 玻璃栈（backdrop blur+saturate + 内高光 + 柔影）。
+   默认（深色面）：深色毛玻璃底 + 白字；浅色面（html[data-theme='light']）：淡彩粉彩底 + 黑字。 */
+.au-btn-primary {
+  position: relative;
+  border: 1.5px solid transparent;
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
+  color: #ffffff;
+  box-shadow: var(--ax-shadow-sheet);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+/* 彩虹环切：彩虹只走 1.5px 细环（::before mask 环切），钮面只留玻璃层；
+   浅色覆盖只换面背景，环由本处继承。 */
+.au-btn-primary::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+html[data-theme='light'] .au-btn-primary {
+  background: var(--ax-rainbow-soft);
+  color: #111111;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    var(--ax-shadow-card-l);
+}
+
+/* 主按钮的禁用态：不做「褪色主色」，统一成中性表面 + 三级字 */
+.au-btn-primary:disabled {
+  opacity: 1;
+  background: var(--au-surface-2);
+  color: var(--au-text-3);
+  box-shadow: inset 0 0 0 1px var(--au-border);
+  filter: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+/* 禁用态彩虹退场：环随之一并隐藏 */
+.au-btn-primary:disabled::before {
+  display: none;
+}
+.au-btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+.au-btn-primary:active:not(:disabled) { transform: scale(var(--ax-press-scale)); }
 .au-btn-ghost { background: var(--au-surface-2); border: 1px solid var(--au-border); color: var(--au-text); }
 .au-btn-ghost:hover:not(:disabled) { background: var(--au-surface-3); border-color: var(--au-border-strong); color: var(--au-text); }
 .au-btn-danger { background: var(--au-danger-soft); border: 1px solid var(--au-danger-border); color: var(--au-danger); }

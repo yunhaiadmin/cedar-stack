@@ -1,7 +1,8 @@
-# 管理端共享原语（暗房影院）
+# 管理端共享原语（ax 口径 · 玻璃＋彩虹）
 
-管理端从 v2.54 起与用户端共用「暗房影院」设计系统：暖黑底 · 实色表面 · 放映机琥珀单一强调色 ·
-衬线标题 · 发丝线边框；白日模式是奶油纸色。本目录是**改造其它页面时唯一应该用的积木**，
+管理端从 2026-11-21 全套重设计批 1 起与用户端共用 ax 设计系统：玻璃栈（blur＋saturate＋
+半透底＋内高光＋边缘光＋大柔影）· 细彩虹环主按钮 · 链接蓝主色 · 无衬线标题 · 小尺度；
+弹窗/对话框一律实色。深浅双主题都成立。本目录是**改造其它页面时唯一应该用的积木**，
 `views/Dashboard.vue` 是参考实现——改页面前先读它。
 
 ```ts
@@ -18,37 +19,43 @@ import { PageHeader, SectionCard, StatTile, EmptyState } from '@/components/ui'
 | 用途 | 令牌 |
 | --- | --- |
 | 画布 / 次级画布 | `--au-bg` / `--au-bg-soft` |
-| 卡片 / 抬起一层 / 再抬一层 | `--au-surface` / `--au-surface-2` / `--au-surface-3` |
+| 卡片（玻璃栈） | `--ax-glass-d`（深）/ `--ax-glass-l`（浅）＋ `--ax-glass-filter` ＋ `--ax-glass-border` / `--ax-glass-border-l` |
 | 正文 / 次级 / 说明 / 占位与禁用 | `--au-text` / `--au-text-2` / `--au-text-3` / `--au-text-4` |
 | 发丝线 / 加重线 / 焦点描边 | `--au-border` / `--au-border-strong` / `--au-border-focus` |
-| 琥珀主色 / 悬停压深 / 更深 | `--au-primary` / `--au-primary-strong` / `--au-primary-deep` |
-| 琥珀浅底 / 中间档 / 描边 | `--au-primary-soft` / `--au-primary-mid` / `--au-primary-border` |
-| 琥珀底上的字 | `--au-on-primary` |
+| 链接蓝主色 / 悬停压深 / 更深 | `--au-primary` / `--au-primary-strong` / `--au-primary-deep` |
+| 主色浅底 / 中间档 / 描边 | `--au-primary-soft` / `--au-primary-mid` / `--au-primary-border` |
+| 主色底上的字 | `--au-on-primary` |
 | 语义色（各带 `-soft` 底、`-border` 描边） | `--au-success` / `--au-warning` / `--au-danger` / `--au-info` |
 | 中性悬停底 | `--au-violet-soft`（名字是历史遗留，值是中性暖灰） |
 | 输入框底 / 聚焦底 / 描边 | `--au-input-bg` / `--au-input-bg-focus` / `--au-input-border` |
 | 遮罩 / 浮层底 | `--au-scrim` / `--au-overlay-menu` |
 | 圆角 | `--au-r-sm` 8 · `--au-r-md` 10（控件）· `--au-r-lg` 14（卡片）· `--au-r-full` |
-| 阴影 | `--au-shadow-1`（几乎不用）/ `--au-shadow-2`（只给浮层：弹窗、下拉、抽屉） |
-| 字体 | `--au-font-serif`（标题）/ `--au-font-sans`（正文）；等宽仍是 `--font-mono` |
+| 阴影 | `--ax-shadow-card-d` / `--ax-shadow-card-l`（卡片）· `--ax-shadow-sheet`（主按钮）· `--au-shadow-2`（只给实色弹窗） |
+| 字体 | `--au-font-serif`（已重映射为无衬线栈，标题与正文同栈）/ `--au-font-sans`（正文）；等宽仍是 `--font-mono` |
 | 动效 | `--au-ease` · `--au-fast` .16s · `--au-med` .26s |
+| 彩虹 | `--ax-rainbow`（细环）· `--ax-rainbow-fill`（不透明九停点）· `--ax-rainbow-soft`（浅色主钮底）· `--ax-rainbow-border-w` 1.5px |
 
 - 定义在 `src/styles/aurora.css`，与 `user_frontend/src/styles/aurora.css` **同名同值**；改值先改用户端。
 - `src/styles/tokens.css` 现在只是**别名层**：`--bg-card`、`--primary`、`--text-muted`、`--radius-lg`…
   全部指向 `--au-*`，老页面零改动就换了肤。**新代码不要再用这些旧名字。**
 - 深浅主题只靠 `html[data-theme='light']` 切换（`composables/useTheme.ts`），
   **不要**在页面里写 `html[data-theme='light'] .xxx { … }` 分叉——用令牌就自动跟着切。
-- 品牌主题色由 `composables/branding.ts` 注入覆盖 `--au-primary` 一族，所以**别写死琥珀色值**。
+  例外：玻璃底的深/浅是两个不同令牌（`--ax-glass-d` / `--ax-glass-l`），
+  共享原语与主题层里用 `html[data-theme='light']` 分叉是允许的，页面仍不许写。
+- 品牌主题色由 `composables/branding.ts` 注入覆盖 `--au-primary` 一族，所以**别写死主色色值**。
 
 ## 2. 设计规则（与用户端一致）
 
-1. **一支强调色**：只有琥珀。不要青色、紫色、渐变、发光阴影（`--gradient-brand` 现在就是纯琥珀）。
+1. **一支主色＋彩虹点缀**：主色是链接蓝；彩虹只走主按钮的 1.5px 细环、激活态指示点与
+   顶部淡彩光晕，不铺大面积渐变、不做发光阴影。
 2. **数字走正文色**：颜色只用来提示「有没有要看的」（警告 / 危险），不做装饰；`tone="accent"` 一页最多一两处。
-3. **分层靠发丝线，不靠阴影**：卡片 = `--au-surface` + `1px --au-border` + `--au-r-lg`，无 box-shadow。
-4. **标题走衬线**：`h1/h2/h3` 已全局衬线（`base.css`）；写成 div 的标题加 `.au-serif`。正文保持无衬线。
-5. **小眉题**：分组名 / 页面归属用 `.au-eyebrow`（琥珀、11–12px、字距 .1em）。
+3. **卡片走玻璃栈**：卡片 = `--ax-glass-d` / `--ax-glass-l` + `1px --ax-glass-border` +
+   `blur/saturate` + 内高光 + `--ax-shadow-card-*`；弹窗/对话框一律实色（见第 8 节）。
+4. **标题走无衬线**：`--au-font-serif` 已重映射为无衬线栈，`h1/h2/h3` 与正文同栈；
+   写成 div 的标题加 `.au-serif`。不要再写衬线/宋体。
+5. **小眉题**：分组名 / 页面归属用 `.au-eyebrow`（主色、11–12px、字距 .1em）。
 6. **焦点**：`outline: 2px solid var(--au-border-focus)` 或输入框的 `0 0 0 3px var(--au-primary-soft)` 光环。
-7. **动效**：只淡入（透明度），不上浮、不缩放（按下 `scale(.98)` 除外）。
+7. **动效**：只淡入（透明度），不上浮、不缩放（按下 `scale(var(--ax-press-scale))` 除外）。
 
 ## 3. 组件
 
@@ -66,7 +73,7 @@ import { PageHeader, SectionCard, StatTile, EmptyState } from '@/components/ui'
 | prop | 类型 | 说明 |
 | --- | --- | --- |
 | `title` | string（必填） | 衬线大标题 |
-| `eyebrow` | string | 标题上方的琥珀眉题，通常写侧边栏分组名 |
+| `eyebrow` | string | 标题上方的主色眉题，通常写侧边栏分组名 |
 | `description` | string | 一两行说明：这页做什么 / 数据口径 |
 | `as` | `'h1' \| 'h2' \| 'h3'` | 默认 `h2`（顶栏已有 h1） |
 
@@ -94,9 +101,9 @@ import { PageHeader, SectionCard, StatTile, EmptyState } from '@/components/ui'
 | --- | --- | --- |
 | `title` | string | 衬线标题；不传且没有 `actions` 插槽就不渲染标题行 |
 | `meta` | string | 标题后的灰色小字（范围、计数） |
-| `icon` | lucide 组件 | 标题前琥珀图标，传组件本身：`:icon="TrendingUp"` |
+| `icon` | lucide 组件 | 标题前主色图标，传组件本身：`:icon="TrendingUp"` |
 | `description` | string | 标题下一行说明 |
-| `tone` | `'default' \| 'accent'` | `accent` = 琥珀发丝描边（需要注意的块） |
+| `tone` | `'default' \| 'accent'` | `accent` = 主色描边（需要注意的块） |
 | `flush` | boolean | 内容区不留内边距（表格 / 贴边列表） |
 | `as` | string | 根元素标签，默认 `section` |
 
@@ -156,8 +163,8 @@ import { PageHeader, SectionCard, StatTile, EmptyState } from '@/components/ui'
 `styles/element-plus-theme.css` 已把 button / input / select / table / dialog / drawer / tabs / tag /
 pagination / form / message / notification / dropdown / menu / switch / date picker / card …
 全部映射到 `--au-*`。页面里**不要再覆盖 EP 的颜色**；只在需要时调尺寸 / 布局。
-语义按钮（success / warning / danger / info）是「浅底 + 同色描边 + 同色字」，只有 `type="primary"` 是实心琥珀——
-一个区域只放一个 primary。
+语义按钮（success / warning / danger / info）是「浅底 + 同色描边 + 同色字」，只有 `type="primary"` 是
+彩虹环＋玻璃主按钮（细彩虹边＋深色毛玻璃底 / 浅色淡彩粉彩底）——一个区域只放一个 primary。
 
 ## 6. 改造一个页面的清单
 
@@ -165,8 +172,10 @@ pagination / form / message / notification / dropdown / menu / switch / date pic
 2. `.admin-card` + `.card-header` → `SectionCard`；表格卡片加 `flush`。
 3. `.stat-tile` / 自写 KPI 卡 → `StatTile`；手写的空提示 → `EmptyState`。
 4. scoped 样式里：删掉写死的颜色（`#22d3ee`、`#7fe6f6`、`rgba(34,211,238,…)`、`#a78bfa`、`#6ee7b7`…）、
-   `box-shadow` 装饰、`linear-gradient` 背景、`backdrop-filter`；旧变量名换成 `--au-*`。
-5. 删除页面里的 `html[data-theme='light']` 分叉规则（令牌自己会切）。
+   自造的 `box-shadow` 装饰与 `linear-gradient` 背景；玻璃只许走共享配方（`--ax-glass-*` 令牌），
+   不许在页面里自写 `backdrop-filter`；旧变量名换成 `--au-*` / `--ax-*`。
+5. 删除页面里的 `html[data-theme='light']` 分叉规则（令牌自己会切；玻璃深/浅两档的分叉只许写在
+   共享原语与主题层里）。
 6. `npm run type-check && npm run build`，再跑 `python3 scripts/check_frontend_tokens.py`。
 7. 深色 / 白日两档各看一眼，窄屏（≤768px）看一眼。
 
@@ -211,9 +220,10 @@ pagination / form / message / notification / dropdown / menu / switch / date pic
     【验收】空数据时页面出现 EmptyState/DataTable 空态而非空白或自绘提示行。
 11. **KPI/统计行**：一律 `StatTile`（icon-left 布局用于页顶），数字走正文色，tone 只用于异常提示。
     【验收】页顶统计区由 StatTile 渲染，无自绘 KPI 卡类名。
-12. **令牌与样式**：只用 `--au-*`；禁止写死 hex、linear-gradient、装饰 box-shadow、backdrop-filter；
-    禁止页面内 `html[data-theme='light']` 分叉；scoped 样式只写布局/尺寸，不覆写 EP 颜色；
-    交卷必过 `scripts/check_frontend_tokens.py` ＋ type-check ＋ build，深/浅两档各看一眼。
+12. **令牌与样式**：只用 `--au-*` / `--ax-*`；禁止写死 hex、自造 linear-gradient、装饰 box-shadow；
+    玻璃只许走共享配方（`--ax-glass-*` 令牌），页面不许自写 `backdrop-filter`；
+    禁止页面内 `html[data-theme='light']` 分叉（共享原语与主题层除外）；scoped 样式只写布局/尺寸，
+    不覆写 EP 颜色；交卷必过 `scripts/check_frontend_tokens.py` ＋ type-check ＋ build，深/浅两档各看一眼。
 13. **字号间距**：标题走全局 h1/h2/h3（base.css 已统一）；卡片圆角 `--au-r-lg`、控件 `--au-r-md`；
     间距节奏 `--space-*`（16px 为卡间距基准）。
     【验收】页面不自设标题字号/字族；卡片圆角不写死数值。

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 页头（暗房影院）：琥珀眉题 + 衬线大标题 + 一行说明 + 右侧操作区。
+ * 页头（ax 口径）：主色眉题 + 无衬线大标题 + 一行说明 + 右侧操作区。
  *
  * 顶栏已经显示了路由标题（meta.title），所以页面里的 PageHeader 通常用来写
  * **这一页在干什么**（description）和放主操作（actions 插槽）；标题可以与顶栏
@@ -10,7 +10,7 @@ withDefaults(
   defineProps<{
     /** 衬线大标题 */
     title: string
-    /** 标题上方的琥珀小眉题（分组名 / 「概览」之类），可省 */
+    /** 标题上方的主色小眉题（分组名 / 「概览」之类），可省 */
     eyebrow?: string
     /** 标题下一行说明：说这一页做什么、数据口径，别超过两行 */
     description?: string

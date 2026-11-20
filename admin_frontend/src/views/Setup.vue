@@ -5,9 +5,11 @@
  * 页面加载时再向后端确认一次（已完成则直接去登录页）。
  * 成功后跳登录页（?initialized=1），向导入口永久关闭。
  *
- * 暗房影院：与 Login.vue 同一张「认证卡」——暖黑底 + 胶片颗粒、实色卡片 + 发丝线、
- * 琥珀放映机标、衬线大写拉字距的站名、带图标的输入框（聚焦琥珀光环）、琥珀实心提交按钮；
- * 眉题写「初始化向导」，并多一条两步的步骤条。
+ * ax 口径（批 1 · 与 Login.vue / 用户端 LoginView 同一张「认证卡」）：
+ * 四角淡彩光晕底、实色卡片 + 20px 圆角 + panel 大柔影、彩虹品牌标、
+ * 无衬线站名、带图标的输入框（全胶囊圆角、聚焦主色光环）、彩虹主按钮
+ * （细彩虹环＋玻璃底、高 46、全胶囊）；眉题写「初始化向导」，并多一条
+ * 两步的步骤条。
  */
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -89,7 +91,7 @@ async function submit() {
 
 <template>
   <div class="auth-page">
-    <!-- 暗房影院：背景只有暖黑底 + 全局胶片颗粒（base.css），不再有光斑 -->
+    <!-- ax 口径：背景是四角淡彩光晕（见下方 .auth-page，与用户端 LoginView 同配方） -->
     <div class="auth-card">
       <div class="auth-brand">
         <div class="brand-mark">
@@ -178,7 +180,22 @@ async function submit() {
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
-  background: var(--au-bg);
+  /* 四角淡彩光晕（与用户端 LoginView .auth-page 同配方）：深色低透明同色；
+     浅色走 --ax-blob-* 令牌、底色 --ax-l-bg。 */
+  background:
+    radial-gradient(600px 420px at 12% 4%, rgba(246, 205, 190, 0.13), transparent 70%),
+    radial-gradient(560px 400px at 88% 10%, rgba(160, 195, 245, 0.13), transparent 70%),
+    radial-gradient(640px 460px at 80% 96%, rgba(205, 190, 245, 0.11), transparent 70%),
+    radial-gradient(520px 380px at 6% 92%, rgba(175, 230, 205, 0.1), transparent 70%),
+    var(--au-bg);
+}
+html[data-theme='light'] .auth-page {
+  background:
+    radial-gradient(600px 420px at 12% 4%, var(--ax-blob-peach), transparent 70%),
+    radial-gradient(560px 400px at 88% 10%, var(--ax-blob-sky), transparent 70%),
+    radial-gradient(640px 460px at 80% 96%, var(--ax-blob-lilac), transparent 70%),
+    radial-gradient(520px 380px at 6% 92%, var(--ax-blob-mint), transparent 70%),
+    var(--au-bg);
 }
 
 .auth-card {
@@ -186,9 +203,10 @@ async function submit() {
   max-width: 420px;
   background: var(--au-surface);
   border: 1px solid var(--au-border);
-  border-radius: var(--au-r-lg);
+  /* 用户端认证卡实测圆角约 20 + panel 大柔影 */
+  border-radius: 20px;
   padding: 2rem 1.75rem 1.5rem;
-  box-shadow: var(--au-shadow-2);
+  box-shadow: var(--ax-shadow-panel-lg);
   animation: au-fade-up var(--au-fade-in) var(--au-ease) both;
 }
 
@@ -276,7 +294,8 @@ async function submit() {
   height: 44px;
   background: var(--au-input-bg);
   border: 1px solid var(--au-input-border);
-  border-radius: var(--au-r-md);
+  /* 用户端登录输入实测全胶囊圆角（约 23px = 高 46 的一半）；本框高 44，pill 同效 */
+  border-radius: var(--ax-radius-pill);
   padding: 0 0.75rem;
   transition: border-color var(--au-fast) var(--au-ease), box-shadow var(--au-fast) var(--au-ease),
     background var(--au-fast) var(--au-ease);
@@ -320,32 +339,63 @@ async function submit() {
   line-height: 1.4;
 }
 
+/* 主按钮 —— ax 口径（与用户端 .au-btn-primary 同一套外观）：细彩虹环＋玻璃底；
+   高 46、全胶囊圆角（用户端登录主钮实测约 23px）；深色白字、浅色淡彩粉彩底＋黑字。 */
 .submit-btn {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
   height: 46px;
   margin-top: 0.25rem;
-  background: var(--au-primary);
-  border: none;
-  border-radius: var(--au-r-md);
-  color: var(--au-on-primary);
+  border: 1.5px solid transparent;
+  border-radius: var(--ax-radius-pill);
+  background: linear-gradient(var(--ax-glass-btn-d), var(--ax-glass-btn-d));
+  color: #ffffff;
+  box-shadow: var(--ax-shadow-sheet);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   font-size: var(--ax-fs-body);
   font-weight: 600;
   cursor: pointer;
   transition: filter var(--au-fast) var(--au-ease), transform var(--au-fast) var(--au-ease);
 }
+.submit-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+html[data-theme='light'] .submit-btn {
+  background: var(--ax-rainbow-soft);
+  color: #111111;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    var(--ax-shadow-card-l);
+}
 
 .submit-btn:hover:not(:disabled) { filter: brightness(1.08); }
-.submit-btn:active:not(:disabled) { transform: scale(0.98); }
+.submit-btn:active:not(:disabled) { transform: scale(var(--ax-press-scale)); }
 
-/* 禁用态：中性表面 + 三级字（不做「褪色琥珀」，同用户端 .au-btn-primary:disabled） */
+/* 禁用态：中性表面 + 三级字（不做「褪色主色」），彩虹环随之隐藏 */
 .submit-btn:disabled {
   background: var(--au-surface-2);
   color: var(--au-text-3);
   box-shadow: inset 0 0 0 1px var(--au-border);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   cursor: not-allowed;
+}
+.submit-btn:disabled::before {
+  display: none;
 }
 
 .submit-btn:focus-visible { outline: 2px solid var(--au-border-focus); outline-offset: 2px; }

@@ -378,21 +378,12 @@ onBeforeUnmount(cancelSearchTimer)
   max-width: 100%;
 }
 
+/* 查询按钮：type="primary"，主按钮口径由 element-plus-theme.css 的
+   .el-button--primary ax 配方统一给（细彩虹环＋玻璃），这里不再写死主色变量，
+   只留尺寸/圆角（FilterBar 模具：控件 40px 高、12px 圆角，见 ax-admin.css）。 */
 .fb-query {
   flex: 0 0 auto;
   margin: 0;
-  --el-button-bg-color: var(--au-primary);
-  --el-button-border-color: var(--au-primary);
-  --el-button-text-color: var(--au-surface-2);
-  --el-button-hover-bg-color: var(--au-primary);
-  --el-button-hover-border-color: var(--au-primary);
-  --el-button-hover-text-color: var(--au-surface-2);
-  --el-button-active-bg-color: var(--au-primary);
-  --el-button-active-border-color: var(--au-primary);
-  --el-button-active-text-color: var(--au-surface-2);
-  --el-button-disabled-bg-color: var(--au-surface-2);
-  --el-button-disabled-border-color: var(--au-border);
-  --el-button-disabled-text-color: var(--au-text-4);
 }
 
 .fb-chips {

@@ -461,11 +461,19 @@ function onPageChange(page: number) {
 
 .dt-card {
   min-width: 0;
-  background: var(--au-surface);
-  border: 1px solid var(--au-border);
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-md);
   padding: 12px 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   transition: border-color var(--au-fast) var(--au-ease), background var(--au-fast) var(--au-ease);
+}
+html[data-theme='light'] .dt-card {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 
 .dt-card.is-clickable { cursor: pointer; }
@@ -502,7 +510,7 @@ function onPageChange(page: number) {
 .dt-stale-text { flex: 1; min-width: 0; color: var(--au-text-2); overflow-wrap: anywhere; }
 .dt-stale :deep(.el-button) { flex-shrink: 0; }
 :deep(.el-table__append-wrapper) .dt-stale { margin: 8px 12px; }
-.dt-card.is-clickable:active { background: var(--au-surface-2); }
+.dt-card.is-clickable:active { filter: brightness(1.12); }
 
 .dt-card--skeleton { display: flex; flex-direction: column; gap: 10px; }
 .dt-sk-title { display: block; height: 16px; width: 55%; border-radius: var(--au-r-sm); }
@@ -560,12 +568,19 @@ function onPageChange(page: number) {
   min-width: 0;
   box-sizing: border-box;
   padding: 8px 12px;
-  background: var(--au-surface);
-  border: 1px solid var(--au-border);
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-md);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   color: var(--au-text-2);
   pointer-events: none;
+}
+html[data-theme='light'] .dt-bulkbar {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 
 .dt-bulk-count {

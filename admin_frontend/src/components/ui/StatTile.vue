@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /**
- * 数据瓦片（暗房影院）：小标签 + 大数字 + 一行脚注，可整块点进明细页。
+ * 数据瓦片（ax 口径 · 玻璃栈）：小标签 + 大数字 + 一行脚注，可整块点进明细页。
+ * 卡面同 SectionCard（半透底 + blur/saturate + 玻璃边 + 内高光 + 柔影）。
  *
  * 配色口径（同用户端资产卡）：数字一律走正文色，**颜色只用来提示「有没有要看的」**——
  * tone=warn / danger 时数字与图标染警示色、描边加一档；ok / info 只染图标；accent 让数字
- * 走琥珀（全页最多一两个，比如「累计营收」）。
+ * 走主色（全页最多一两个，比如「累计营收」）。
  * 传 to 就渲染成 RouterLink（悬停描边提亮），否则是静态 div。用法见 ./README.md。
  */
 import { computed } from 'vue'
@@ -68,15 +69,22 @@ const tag = computed(() => (props.to ? RouterLink : 'div'))
   gap: 12px;
   min-width: 0;
   padding: 16px 18px;
-  background: var(--au-surface);
-  border: 1px solid var(--au-border);
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-lg);
   color: var(--au-text);
   text-decoration: none;
-  /* ui/beautify-20261018：顶缘高光；动效只走 transform / border-color / box-shadow */
-  box-shadow: var(--au-card-highlight);
+  /* 玻璃六件：半透底 + blur/saturate + 内高光 + 柔影；动效只走 transform / border-color / box-shadow */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   transition: transform var(--au-fast) var(--au-ease), border-color var(--au-fast) var(--au-ease),
     background var(--au-fast) var(--au-ease), box-shadow var(--au-fast) var(--au-ease);
+}
+html[data-theme='light'] .au-stat {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 
 .au-stat.is-link { cursor: pointer; }
@@ -84,11 +92,14 @@ const tag = computed(() => (props.to ? RouterLink : 'div'))
 @media (hover: hover) and (pointer: fine) {
   .au-stat.is-link:hover {
     border-color: var(--au-border-strong);
-    background: var(--au-surface-2);
-    /* ui/beautify-20261018：悬停抬升（与验收「无阴影」行的口径冲突见 PR 正文，暂按任务条文实现） */
+    /* 悬停仍走抬升面（玻璃底 + 柔影不变，只换面色） */
+    background: var(--ax-glass-d);
     transform: translateY(-2px);
-    /* P3-2：提升阴影走 --au-lift-shadow 单源（A1/A4 裁定保留令牌） */
-    box-shadow: var(--au-card-highlight), var(--au-lift-shadow);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--au-lift-shadow);
+  }
+  html[data-theme='light'] .au-stat.is-link:hover {
+    background: var(--ax-glass-l);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--au-lift-shadow);
   }
 }
 .au-stat.is-link:focus-visible { outline: 2px solid var(--au-border-focus); outline-offset: 2px; }
