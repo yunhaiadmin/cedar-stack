@@ -317,9 +317,19 @@ onMounted(() => {
 .host-tag {
   padding: 1px 8px;
   border-radius: var(--au-r-full);
-  background: var(--au-surface-2);
+  /* ax 口径 · 玻璃胶囊（同 SectionCard 玻璃栈）：半透底 + blur/saturate + 玻璃边 + 内高光 */
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   color: var(--au-text-2);
   font-size: var(--ax-fs-micro);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .host-tag {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
 }
 
 .detail-actions {
