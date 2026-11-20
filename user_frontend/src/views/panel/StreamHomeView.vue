@@ -378,6 +378,7 @@ function applySections(res: { sections: HomeSection[] } | undefined) {
       name: string
       production_year?: number | null
       poster_url?: string | null
+      poster_blur_hash?: string | null
     }>
     if (!items.length) continue
     out.push({
