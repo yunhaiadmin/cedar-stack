@@ -10,15 +10,19 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
-  AlertTriangle, Coins, Gift, Megaphone, Plus, QrCode, RefreshCw, Save, TrendingUp, UserPlus,
+  AlertTriangle, Coins, Download, Gift, Megaphone, Plus, QrCode, RefreshCw, Save, TrendingUp, UserPlus, Users,
 } from 'lucide-vue-next'
 import {
+  exportInvitePromotersCsv,
   fetchInviteOverview,
+  fetchInvitePromoters,
   fetchInviteRebates,
   fetchInviteTrialCodes,
   settleInviteRebates,
+  updateInvitePromoter,
   updateTrialPolicy,
   type InviteOverview,
+  type InvitePromoterRow,
   type InviteRebateRow,
   type InviteTrialCodeRow,
   type InviteTrialPolicy,
@@ -88,21 +92,41 @@ async function searchUsers(keyword: string) {
 
 const inviteTotal = computed(() => invitations.value.length)
 
-/** 邀请记录 + 经济总览：与流水的翻页 / 类型筛选无关，不随翻页重复请求 */
-async function loadOverview() {
+/** 推广者下钻过滤：非空时邀请记录只看这个邀请人的（后端 inviter_id 过滤） */
+const recordsInviter = ref<{ id: number; username: string } | null>(null)
+const recordsTotal = ref(0)
+
+async function loadRecords() {
   loading.value = true
   invError.value = false
   try {
-    const [inv, econ] = await Promise.all([
-      fetchInvitations({ limit: 100 }).catch(() => null),
-      fetchEconomyStats().catch(() => null),
-    ])
-    if (inv) invitations.value = inv.records
-    else invError.value = true
-    if (econ) stats.value = econ
+    const inv = await fetchInvitations({
+      limit: 100,
+      inviter_id: recordsInviter.value?.id,
+    }).catch(() => null)
+    if (inv) {
+      invitations.value = inv.records
+      recordsTotal.value = inv.total ?? inv.records.length
+    } else {
+      invError.value = true
+    }
   } finally {
     loading.value = false
   }
+}
+
+function clearRecordsFilter() {
+  recordsInviter.value = null
+  loadRecords()
+}
+
+/** 邀请记录 + 经济总览：与流水的翻页 / 类型筛选无关，不随翻页重复请求 */
+async function loadOverview() {
+  const [, econ] = await Promise.all([
+    loadRecords(),
+    fetchEconomyStats().catch(() => null),
+  ])
+  if (econ) stats.value = econ
 }
 
 async function load() {
@@ -486,6 +510,129 @@ function codeBadge(state: string): string {
   return 'badge-warn'
 }
 
+// ===== 推广者（AFF）汇总与档案（2026-11-20） =====
+// 汇总口径锚定计提台账（与返利总览同源）；档案三件事：专属费率覆盖
+// （只影响之后的新计提）、停用（拦新绑定 + 停新计提）、备注。
+const promoters = ref<InvitePromoterRow[]>([])
+const promoterTotal = ref(0)
+const promoterLoading = ref(false)
+const promoterError = ref(false)
+const promoterSearch = ref('')
+const promoterSort = ref('total_paid')
+const promoterOrder = ref<'desc' | 'asc'>('desc')
+const promoterPage = ref(1)
+const promoterPageSize = 20
+const exporting = ref(false)
+
+const promoterColumns: DataColumn[] = [
+  { key: 'username', label: '推广者', width: 130, mobile: 'title' },
+  { key: 'invited_count', label: '邀请人数', width: 90 },
+  { key: 'paid_invitees', label: '付费人数', width: 90 },
+  { key: 'total_paid', label: '累计付费（$）', width: 120 },
+  { key: 'rebate_credited', label: '已入账返利（$）', width: 125 },
+  { key: 'rebate_pending', label: '待入账返利（$）', width: 125 },
+  { key: 'rate', label: '生效费率', width: 140 },
+  { key: 'state', label: '状态', width: 90 },
+  { key: 'note', label: '备注' },
+  { key: 'actions', label: '操作', width: 150 },
+]
+
+async function loadPromoters() {
+  promoterLoading.value = true
+  promoterError.value = false
+  try {
+    const res = await fetchInvitePromoters({
+      search: promoterSearch.value || undefined,
+      sort: promoterSort.value,
+      order: promoterOrder.value,
+      page: promoterPage.value,
+      page_size: promoterPageSize,
+    }).catch(() => null)
+    if (res) {
+      promoters.value = res.promoters
+      promoterTotal.value = res.total
+    } else {
+      promoterError.value = true
+    }
+  } finally {
+    promoterLoading.value = false
+  }
+}
+
+function onPromoterQuery() {
+  promoterPage.value = 1
+  loadPromoters()
+}
+
+function onPromoterPage(page: number) {
+  promoterPage.value = page
+  loadPromoters()
+}
+
+function viewPromoterRecords(row: InvitePromoterRow) {
+  recordsInviter.value = { id: row.user_id, username: row.username }
+  loadRecords()
+  document.querySelector('#invite-records')?.scrollIntoView({ behavior: 'smooth' })
+}
+
+async function exportPromoters() {
+  exporting.value = true
+  try {
+    const blob = await exportInvitePromotersCsv({
+      search: promoterSearch.value || undefined,
+      sort: promoterSort.value,
+      order: promoterOrder.value,
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'invite-promoters.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    ElMessage.error('导出失败，请重试')
+  } finally {
+    exporting.value = false
+  }
+}
+
+const promoterEditVisible = ref(false)
+const promoterSaving = ref(false)
+const promoterForm = reactive({
+  user_id: 0,
+  username: '',
+  rebate_percent_override: null as number | null,
+  is_disabled: false,
+  note: '',
+})
+
+function openPromoterEdit(row: InvitePromoterRow) {
+  promoterForm.user_id = row.user_id
+  promoterForm.username = row.username
+  promoterForm.rebate_percent_override = row.rebate_percent_override
+  promoterForm.is_disabled = row.is_disabled
+  promoterForm.note = row.note
+  promoterEditVisible.value = true
+}
+
+async function savePromoter() {
+  promoterSaving.value = true
+  try {
+    await updateInvitePromoter(promoterForm.user_id, {
+      rebate_percent_override: promoterForm.rebate_percent_override,
+      is_disabled: promoterForm.is_disabled,
+      note: promoterForm.note,
+    })
+    ElMessage.success('推广者档案已保存')
+    promoterEditVisible.value = false
+    await loadPromoters()
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    promoterSaving.value = false
+  }
+}
+
 // ===== 返利与福利邀请总览（2026-11-14 邀请全套单） =====
 // 返利比例/模式/分档阈值是钱包键，在「系统设置 → 钱包」改，本页只读展示
 // 当前口径；本页能写的是福利邀请（送试用）策略与待入账返利的补入账。
@@ -632,6 +779,7 @@ function reloadAll() {
   loadCodes()
   loadPromotion()
   loadInviteMoney()
+  loadPromoters()
 }
 
 onMounted(reloadAll)
@@ -666,6 +814,7 @@ onMounted(reloadAll)
     <nav class="invite-anchors" aria-label="本页导航">
       <a href="#invite-codes">邀请码</a>
       <a href="#invite-records">邀请记录</a>
+      <a href="#invite-promoters">推广者</a>
       <a href="#invite-promo">推广奖励</a>
       <a href="#invite-rebate">返利与福利</a>
     </nav>
@@ -751,6 +900,13 @@ onMounted(reloadAll)
 
     <!-- 邀请记录 -->
       <SectionCard id="invite-records" title="邀请记录" :icon="UserPlus" :meta="`最新 ${invitations.length} 条`" flush>
+        <div v-if="recordsInviter" class="promo-policy">
+          <div class="promo-active-line">
+            <span class="au-badge au-badge-info">下钻中</span>
+            <span>只看推广者「{{ recordsInviter.username }}」的邀请记录（共 {{ recordsTotal }} 条）</span>
+            <el-button size="small" @click="clearRecordsFilter">清除过滤</el-button>
+          </div>
+        </div>
         <EmptyState v-if="invError && !invitations.length" :icon="AlertTriangle" title="邀请记录加载失败" compact>
           <template #actions><el-button size="small" :loading="loading" @click="loadOverview">重试</el-button></template>
         </EmptyState>
@@ -765,6 +921,89 @@ onMounted(reloadAll)
           </template>
         </DataTable>
       </SectionCard>
+
+    <!-- 推广者（AFF）汇总：按邀请人聚合 + 专属费率 / 停用 / 备注档案 -->
+    <SectionCard
+      id="invite-promoters"
+      title="推广者（AFF）"
+      :icon="Users"
+      :meta="`共 ${promoterTotal} 人`"
+      description="按邀请人汇总对账：累计付费与返利锚定计提台账（已撤回的不计），与上方总览同源。专属费率只影响保存之后的新计提；停用后邀请码不再接受新绑定、付费不再计提，已入账不追回。"
+      flush
+    >
+      <div class="view-toolbar">
+        <div class="promoter-filters">
+          <el-input
+            v-model="promoterSearch"
+            placeholder="搜推广者用户名"
+            clearable
+            style="width: 200px"
+            @keyup.enter="onPromoterQuery"
+            @clear="onPromoterQuery"
+          />
+          <el-select v-model="promoterSort" style="width: 130px" @change="onPromoterQuery">
+            <el-option label="累计付费" value="total_paid" />
+            <el-option label="返利合计" value="rebate_total" />
+            <el-option label="邀请人数" value="invited_count" />
+            <el-option label="付费人数" value="paid_invitees" />
+          </el-select>
+          <el-select v-model="promoterOrder" style="width: 110px" @change="onPromoterQuery">
+            <el-option label="从高到低" value="desc" />
+            <el-option label="从低到高" value="asc" />
+          </el-select>
+          <el-button @click="onPromoterQuery">查询</el-button>
+        </div>
+        <div class="view-toolbar__actions">
+          <el-button :icon="Download" :loading="exporting" @click="exportPromoters">导出 CSV</el-button>
+        </div>
+      </div>
+
+      <EmptyState v-if="promoterError && !promoters.length" :icon="AlertTriangle" title="推广者汇总加载失败" compact>
+        <template #actions><el-button size="small" :loading="promoterLoading" @click="loadPromoters">重试</el-button></template>
+      </EmptyState>
+      <DataTable
+        v-else
+        class="flush-table"
+        :rows="promoters"
+        :columns="promoterColumns"
+        :loading="promoterLoading"
+        empty="还没有推广者"
+        empty-description="有人通过邀请码拉来新用户，或管理员给用户建了推广者档案，就会出现在这里。"
+        :pagination="{ page: promoterPage, pageSize: promoterPageSize, total: promoterTotal }"
+        @page-change="onPromoterPage"
+      >
+        <template #cell-username="{ row }">
+          <span class="user-name">{{ row.username }}</span>
+        </template>
+        <template #cell-invited_count="{ row }"><span class="num">{{ row.invited_count }}</span></template>
+        <template #cell-paid_invitees="{ row }"><span class="num">{{ row.paid_invitees }}</span></template>
+        <template #cell-total_paid="{ row }"><span class="num">{{ row.total_paid }}</span></template>
+        <template #cell-rebate_credited="{ row }"><span class="amt-in">{{ row.rebate_credited }}</span></template>
+        <template #cell-rebate_pending="{ row }"><span class="num">{{ row.rebate_pending }}</span></template>
+        <template #cell-rate="{ row }">
+          <span class="num">{{ row.rate_percent }}%</span>
+          <span class="au-badge" :class="row.rate_source === 'promoter' ? 'au-badge-info' : 'au-badge-muted'">
+            {{ row.rate_source === 'promoter' ? '专属' : '全局' }}
+          </span>
+          <span v-if="row.rate_source === 'global' && row.rate_mode === 'tiered'" class="faint">分档</span>
+        </template>
+        <template #cell-state="{ row }">
+          <span class="au-badge" :class="row.is_disabled ? 'au-badge-rose' : 'au-badge-green'">
+            {{ row.is_disabled ? '已停用' : '正常' }}
+          </span>
+        </template>
+        <template #cell-note="{ row }">
+          <span v-if="row.note">{{ row.note }}</span>
+          <span v-else class="faint">—</span>
+        </template>
+        <template #cell-actions="{ row }">
+          <div class="row-actions">
+            <el-button size="small" @click="viewPromoterRecords(row)">明细</el-button>
+            <el-button size="small" :disabled="!canWrite" @click="openPromoterEdit(row)">编辑</el-button>
+          </div>
+        </template>
+      </DataTable>
+    </SectionCard>
 
     <!-- 推广奖励：当前策略（可编辑，PUT /promotion/policy）+ 发放记录台账 -->
     <SectionCard
@@ -1074,6 +1313,40 @@ onMounted(reloadAll)
       </template>
     </el-dialog>
 
+    <!-- 推广者档案：专属费率 / 停用 / 备注 -->
+    <el-dialog v-model="promoterEditVisible" :title="`推广者设置 · ${promoterForm.username}`" width="min(460px, 92vw)">
+      <el-form label-position="top" :disabled="!canWrite || promoterSaving" @submit.prevent>
+        <el-form-item label="专属返利比例（%）">
+          <el-input-number
+            v-model="promoterForm.rebate_percent_override"
+            :min="0"
+            :max="100"
+            :precision="0"
+            style="width: 100%"
+            placeholder="留空 = 走全局"
+          />
+          <div class="form-hint">留空走全局口径；填了之后，他的新计提整笔按这个比例算（返利封顶等其他规则不变），已入账返利不受影响。</div>
+        </el-form-item>
+        <el-form-item label="停用">
+          <el-switch v-model="promoterForm.is_disabled" active-text="已停用" inactive-text="正常" />
+          <div class="form-hint">停用后：他的邀请码不再接受新注册绑定，被邀请人之后的付费也不再给他计提返利；已入账不追回，可随时恢复。</div>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input
+            v-model="promoterForm.note"
+            type="textarea"
+            :rows="3"
+            maxlength="1000"
+            placeholder="如：渠道合作、联系方式、结算约定"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="promoterEditVisible = false">取消</el-button>
+        <el-button type="primary" :loading="promoterSaving" :disabled="!canWrite" @click="savePromoter">保存</el-button>
+      </template>
+    </el-dialog>
+
   </div>
 </template>
 
@@ -1130,6 +1403,7 @@ onMounted(reloadAll)
 
 .view-toolbar .fb-grow { flex: 1 1 auto; min-width: 0; }
 .view-toolbar__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.promoter-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 .flush-table :deep(.dt-cards) { padding: 12px 12px 8px; }
 .card-pager { display: flex; justify-content: flex-end; flex-wrap: wrap; row-gap: 8px; }

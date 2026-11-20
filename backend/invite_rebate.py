@@ -268,14 +268,30 @@ def record_payment_rebate(
     if relation is None:
         return None
 
-    percent = rebate_percent(db)
-    if rebate_mode(db) == MODE_TIERED:
-        prior = _invitee_prior_paid(db, relation.inviter_id, payer.id)
-        rebate = compute_rebate_tiered(
-            paid_amount, percent, tier_percent(db), prior,
-            Decimal(tier_threshold_fen(db)) / Decimal(100))
+    # 推广者档案（AFF 后台，2026-11-20）：停用 → 不再计提（已计提/
+    # 已入账的不动）；专属费率覆盖 → 以覆盖值替代全局 tiered/flat
+    # 的比例口径（整笔一律按覆盖比例算），只替代比例——封顶等其余
+    # 规则照旧走下面的既有逻辑。懒导入避免与 invite_promoter 循环依赖。
+    from backend import invite_promoter
+
+    if invite_promoter.is_disabled(db, relation.inviter_id):
+        logger.info("推广者已停用，跳过返利计提: inviter=%s",
+                    relation.inviter_id)
+        return None
+    override = invite_promoter.percent_override(db, relation.inviter_id)
+
+    if override is not None:
+        percent = override  # 计提行 percent 快照记覆盖值
+        rebate = compute_rebate(paid_amount, override)
     else:
-        rebate = compute_rebate(paid_amount, percent)
+        percent = rebate_percent(db)
+        if rebate_mode(db) == MODE_TIERED:
+            prior = _invitee_prior_paid(db, relation.inviter_id, payer.id)
+            rebate = compute_rebate_tiered(
+                paid_amount, percent, tier_percent(db), prior,
+                Decimal(tier_threshold_fen(db)) / Decimal(100))
+        else:
+            rebate = compute_rebate(paid_amount, percent)
     if rebate <= 0:
         return None
 

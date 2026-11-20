@@ -8,6 +8,10 @@ Settings 经济分组。本模块只补「钱与转化」的总览：
 - GET  /api/admin/invite/overview     邀请规模/付费转化/返利总额/待入账
                                       + 异常聚集提示（单邀请人短期大量拉新）
 - GET  /api/admin/invite/rebates      返利计提明细（可按状态筛）
+- GET  /api/admin/invite/promoters    推广者（AFF）汇总：按邀请人聚合
+                                      邀请/付费/返利（口径在 invite_promoter）
+- GET  /api/admin/invite/promoters/export  推广者汇总 CSV 导出
+- PUT  /api/admin/invite/promoters/{user_id}  推广者档案（专属费率/停用/备注）
 - POST /api/admin/invite/rebates/settle  把待入账返利补入账（钱包就绪后用）
 - GET/PUT /api/admin/invite/trial-policy 福利邀请（送试用）策略读写
 - GET  /api/admin/invite/trial-codes  福利试用码只读列表（2026-11-15 改版）
@@ -17,14 +21,16 @@ Settings 经济分组。本模块只补「钱与转化」的总览：
 """
 from __future__ import annotations
 
+import csv
+import io
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend import invite_rebate, invite_trial, models
+from backend import invite_promoter, invite_rebate, invite_trial, models
 from backend.api.admin_core import _audit, get_current_admin
 from backend.database import get_db
 
@@ -147,6 +153,113 @@ def invite_rebates_settle(
         .count()
     )
     return {"settled": settled, "pending_remaining": remaining}
+
+
+# ==================== 推广者（AFF）管理 ====================
+# 汇总聚合口径在 backend/invite_promoter.py（与上方总览同源）；
+# 档案写入走 AdminLog 审计（_audit），与本模块其他写操作同法。
+
+@router.get("/promoters")
+def invite_promoters(
+    search: str | None = None,
+    sort: str = "total_paid",
+    order: str = "desc",
+    page: int = 1,
+    page_size: int = 20,
+    current_admin: models.WebUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """推广者汇总：按邀请人聚合邀请/付费/返利，可搜索、排序、分页。"""
+    total, rows = invite_promoter.promoter_summaries(
+        db, search=search, sort=sort, order=order,
+        page=page, page_size=page_size)
+    return {"total": total, "page": max(1, page),
+            "page_size": max(1, min(page_size, 200)), "promoters": rows}
+
+
+@router.get("/promoters/export")
+def invite_promoters_export(
+    search: str | None = None,
+    sort: str = "total_paid",
+    order: str = "desc",
+    current_admin: models.WebUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """推广者汇总 CSV：按当前筛选/排序导出全部（不限本页）。
+
+    列与管理端汇总表一致；金额列为美元数值，单位写在表头里。
+    """
+    rows = invite_promoter.summary_rows(db, search=search, sort=sort, order=order)
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "推广者ID", "用户名", "邀请人数", "付费人数",
+        "累计付费（美元）", "返利已入账（美元）", "返利待入账（美元）",
+        "返利合计（美元）", "生效费率（%）", "费率来源", "状态", "备注",
+    ])
+    for r in rows:
+        writer.writerow([
+            r["user_id"], r["username"], r["invited_count"], r["paid_invitees"],
+            r["total_paid"], r["rebate_credited"], r["rebate_pending"],
+            r["rebate_total"], r["rate_percent"],
+            "专属" if r["rate_source"] == "promoter" else "全局",
+            "已停用" if r["is_disabled"] else "正常",
+            r["note"],
+        ])
+    return Response(
+        content="\ufeff" + buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition":
+                 'attachment; filename="invite-promoters.csv"'},
+    )
+
+
+class PromoterProfileUpdate(BaseModel):
+    # 全量保存口径：三个字段即档案全貌；覆盖为 None = 清空、走全局
+    rebate_percent_override: int | None = None
+    is_disabled: bool = False
+    note: str = ""
+
+
+@router.put("/promoters/{user_id}")
+def update_invite_promoter(
+    user_id: int,
+    payload: PromoterProfileUpdate,
+    current_admin: models.WebUser = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """保存推广者档案：专属费率覆盖 / 停用 / 备注（upsert，一人一行）。"""
+    user = db.query(models.WebUser).filter(models.WebUser.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    if (payload.rebate_percent_override is not None
+            and not 0 <= payload.rebate_percent_override <= 100):
+        raise HTTPException(status_code=400, detail="专属返利比例须在 0–100 之间")
+    note = (payload.note or "").strip()
+    if len(note) > 1000:
+        raise HTTPException(status_code=400, detail="备注过长（上限 1000 字）")
+
+    profile = invite_promoter.get_profile(db, user_id)
+    if profile is None:
+        profile = models.InvitePromoterProfile(user_id=user_id)
+        db.add(profile)
+    profile.rebate_percent_override = payload.rebate_percent_override
+    profile.is_disabled = bool(payload.is_disabled)
+    profile.note = note
+    profile.updated_by = current_admin.id
+    db.flush()
+    _audit(db, current_admin, "invite_promoter_update", "invite_promoter",
+           user_id, {
+               "rebate_percent_override": payload.rebate_percent_override,
+               "is_disabled": bool(payload.is_disabled),
+               "note": note,
+           })
+    db.commit()
+    dto = next(
+        (r for r in invite_promoter.summary_rows(db) if r["user_id"] == user_id),
+        None,
+    )
+    return {"success": True, "promoter": dto}
 
 
 class TrialPolicyUpdate(BaseModel):
