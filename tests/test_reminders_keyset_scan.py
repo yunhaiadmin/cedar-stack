@@ -62,8 +62,8 @@ def _build(model, **kwargs):
     return model(**{k: v for k, v in kwargs.items() if k in cols})
 
 
-def _mk_sub(db, end_date, *, user_id=1, status="active", plan_id):
-    """建一条订阅；realm_id 传 None（避免外键表），flush 后拿到 id。
+def _mk_sub(db, end_date, *, user_id=1, status="active", plan_id, realm_id=None):
+    """建一条订阅；realm_id 默认 None（避免外键表），flush 后拿到 id。
 
     注意：user_subscriptions.plan_id / end_date 都是 NOT NULL，
     所以 plan 缺失用「指向不存在套餐的 plan_id」模拟（SQLite 默认不强制外键），
@@ -76,7 +76,7 @@ def _mk_sub(db, end_date, *, user_id=1, status="active", plan_id):
     sub = _build(
         models.UserSubscription,
         user_id=user_id,
-        realm_id=None,
+        realm_id=realm_id,
         plan_id=plan_id,
         status=status,
         start_date=start_date,
@@ -123,17 +123,19 @@ def test_sent_kinds_batched(db, engine):
 
     now = datetime.now()
     plan = _mk_plan(db, "批量计划")
+    # 每条订阅分属不同用户：接续静默口径下，同用户同 realm 的多份有效订阅会
+    # 互相构成「接续」而整体静默，本用例测的是分页/查询次数，须先隔离用户。
     subs = [
         _build(
             models.UserSubscription,
-            user_id=1,
+            user_id=i + 1,
             realm_id=None,
             plan_id=plan.id,
             status="active",
             start_date=now - timedelta(days=30),
             end_date=now + timedelta(days=2),
         )
-        for _ in range(1200)
+        for i in range(1200)
     ]
     db.add_all(subs)
     db.flush()
@@ -163,31 +165,33 @@ def test_collect_due_semantics_unchanged(db):
     now = datetime.now()
     plan = _mk_plan(db, "专业版")
 
+    # 每个用例分属不同用户：接续静默口径下，同用户同 realm 的有效订阅会让
+    # 旧订阅整体静默，本用例测的是单份订阅的分档/剪枝/去重语义，须先隔离。
     # ① 剩余 2 天 → "3d" 档，plan_name 取套餐名
-    s_3d = _mk_sub(db, now + timedelta(days=2), plan_id=plan.id)
+    s_3d = _mk_sub(db, now + timedelta(days=2), user_id=11, plan_id=plan.id)
     # ② 剩余 8 天 → 超出 horizon，被剪枝
-    s_far = _mk_sub(db, now + timedelta(days=8), plan_id=plan.id)
+    s_far = _mk_sub(db, now + timedelta(days=8), user_id=12, plan_id=plan.id)
     # ③ 昨天过期 → expired
-    s_yesterday = _mk_sub(db, now - timedelta(days=1), plan_id=plan.id)
+    s_yesterday = _mk_sub(db, now - timedelta(days=1), user_id=13, plan_id=plan.id)
     # ④ 30 天前过期，但已经发过 "expired"
-    s_old_sent = _mk_sub(db, now - timedelta(days=30), plan_id=plan.id)
+    s_old_sent = _mk_sub(db, now - timedelta(days=30), user_id=14, plan_id=plan.id)
     db.add(
         models.SubscriptionReminder(
-            subscription_id=s_old_sent.id, user_id=1, kind="expired"
+            subscription_id=s_old_sent.id, user_id=14, kind="expired"
         )
     )
     # ⑤ 剩余 2 天，但已经发过 "3d"
-    s_3d_sent = _mk_sub(db, now + timedelta(days=2), plan_id=plan.id)
+    s_3d_sent = _mk_sub(db, now + timedelta(days=2), user_id=15, plan_id=plan.id)
     db.add(
         models.SubscriptionReminder(
-            subscription_id=s_3d_sent.id, user_id=1, kind="3d"
+            subscription_id=s_3d_sent.id, user_id=15, kind="3d"
         )
     )
     # ⑥ 已取消的订阅不参与
-    s_canceled = _mk_sub(db, now + timedelta(days=2), plan_id=plan.id, status="canceled")
+    s_canceled = _mk_sub(db, now + timedelta(days=2), user_id=16, plan_id=plan.id, status="canceled")
     # ⑦ plan_id 指向不存在的套餐 → plan_name 回退为 "会员"
     #     （plan_id 列 NOT NULL，用悬空外键模拟「套餐被删」）
-    s_no_plan = _mk_sub(db, now + timedelta(days=2), plan_id=999999)
+    s_no_plan = _mk_sub(db, now + timedelta(days=2), user_id=17, plan_id=999999)
 
     db.flush()
 
@@ -247,3 +251,91 @@ def test_collect_due_empty(db):
     """空库：结构完整、阈值默认 [7, 3, 1]。"""
     result = collect_due(db, now=datetime.now())
     assert result == {"reminders": [], "expired": [], "thresholds": [7, 3, 1]}
+
+
+# --------------------------------------------------------------------------
+# 接续静默（2026-11-21 误发修复）：同用户同 realm 另有有效订阅时，
+# 旧订阅既不发「已到期」也不发任何「即将到期」档位。
+# 生产实证：用户换套餐后新订阅已生效，旧订阅到期仍误发「会员已到期」。
+# --------------------------------------------------------------------------
+def test_successor_suppresses_expired(db):
+    """① 旧订阅已过期＋同 realm 新订阅有效 → 旧订阅不进 expired。"""
+    now = datetime.now()
+    plan = _mk_plan(db, "国际版")
+    old = _mk_sub(db, now - timedelta(days=1), user_id=802, realm_id=1, plan_id=plan.id)
+    new = _mk_sub(db, now + timedelta(days=365), user_id=802, realm_id=1, plan_id=plan.id)
+
+    result = collect_due(db, now=now)
+    assert not any(_sid(e) == old.id for e in result["expired"])
+    assert not any(_sid(e) == old.id for e in result["reminders"])
+    # 新订阅远在 horizon 外，本身也不该出现在任何桶里
+    assert not any(_sid(e) == new.id for e in result["reminders"] + result["expired"])
+
+
+def test_successor_suppresses_expiring_tiers(db):
+    """② 旧订阅 2 天后到期＋同 realm 新订阅有效 → 任何档位都不发。"""
+    now = datetime.now()
+    plan = _mk_plan(db, "国际版")
+    old = _mk_sub(db, now + timedelta(days=2), user_id=803, realm_id=1, plan_id=plan.id)
+    _mk_sub(db, now + timedelta(days=365), user_id=803, realm_id=1, plan_id=plan.id)
+
+    result = collect_due(db, now=now)
+    assert not any(_sid(e) == old.id for e in result["reminders"])
+    assert not any(_sid(e) == old.id for e in result["expired"])
+
+
+def test_successor_none_realm_grouped(db):
+    """realm_id 为空的老行按同组处理：同为 None 的有效新订阅同样算接续。"""
+    now = datetime.now()
+    plan = _mk_plan(db, "国际版")
+    old = _mk_sub(db, now - timedelta(days=1), user_id=804, realm_id=None, plan_id=plan.id)
+    _mk_sub(db, now + timedelta(days=365), user_id=804, realm_id=None, plan_id=plan.id)
+
+    result = collect_due(db, now=now)
+    assert not any(_sid(e) == old.id for e in result["expired"])
+    assert not any(_sid(e) == old.id for e in result["reminders"])
+
+
+def test_single_expired_still_notified(db):
+    """③ 只有一份已过期订阅（同 realm 无接续）→ 照常进 expired。"""
+    now = datetime.now()
+    plan = _mk_plan(db, "国际版")
+    old = _mk_sub(db, now - timedelta(days=1), user_id=805, realm_id=1, plan_id=plan.id)
+
+    result = collect_due(db, now=now)
+    assert any(_sid(e) == old.id for e in result["expired"])
+
+
+def test_both_expired_still_notified(db):
+    """④ 同用户同 realm 两份都过期 → 没有有效接续，照常进 expired。"""
+    now = datetime.now()
+    plan = _mk_plan(db, "国际版")
+    a = _mk_sub(db, now - timedelta(days=1), user_id=806, realm_id=1, plan_id=plan.id)
+    b = _mk_sub(db, now - timedelta(days=30), user_id=806, realm_id=1, plan_id=plan.id)
+
+    result = collect_due(db, now=now)
+    expired_ids = {_sid(e) for e in result["expired"]}
+    assert a.id in expired_ids
+    assert b.id in expired_ids
+
+
+def test_other_realm_successor_does_not_suppress(db):
+    """⑤ 另一个 realm 的有效订阅不算接续 → 旧订阅照常进 expired。"""
+    now = datetime.now()
+    plan = _mk_plan(db, "国际版")
+    old = _mk_sub(db, now - timedelta(days=1), user_id=807, realm_id=1, plan_id=plan.id)
+    _mk_sub(db, now + timedelta(days=365), user_id=807, realm_id=2, plan_id=plan.id)
+
+    result = collect_due(db, now=now)
+    assert any(_sid(e) == old.id for e in result["expired"])
+
+
+def test_other_users_successor_does_not_suppress(db):
+    """别人的有效订阅不算接续 → 照常进 expired。"""
+    now = datetime.now()
+    plan = _mk_plan(db, "国际版")
+    old = _mk_sub(db, now - timedelta(days=1), user_id=808, realm_id=1, plan_id=plan.id)
+    _mk_sub(db, now + timedelta(days=365), user_id=809, realm_id=1, plan_id=plan.id)
+
+    result = collect_due(db, now=now)
+    assert any(_sid(e) == old.id for e in result["expired"])
