@@ -13,8 +13,10 @@
     </clipPath>
   </defs>
   <rect width="1000" height="1000" fill="#101014"/>
-  <path d="M438 188 H562 L820 813 H708 L500 313 L295 813 H180 Z" fill="#ffffff"/>
-  <g clip-path="url(#aetrix-weave)">
-    <path d="M420 400 L280 790 L711 546 Z" fill="url(#aetrix-rainbow)"/>
+  <g transform="translate(-125.00 -125.62) scale(1.250000)">
+    <path d="M438 188 H562 L820 813 H708 L500 313 L295 813 H180 Z" fill="#ffffff"/>
+    <g clip-path="url(#aetrix-weave)">
+      <path d="M420 400 L280 790 L711 546 Z" fill="url(#aetrix-rainbow)"/>
+    </g>
   </g>
 </svg>
