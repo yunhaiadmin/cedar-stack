@@ -119,6 +119,31 @@ def _sent_kinds_batch(db: Session, subscription_ids: list[int]) -> dict[int, set
     return sent_map
 
 
+def _successor_ids_batch(db: Session, user_ids: list[int], now: datetime) -> dict:
+    """批量取回这批用户的「有效接续」订阅，返回 ``{(user_id, realm_id): {sub_id, ...}}``。
+
+    接续＝同用户、同 realm（含 realm_id 同为 None 的老行）另有一份
+    ``status == "active"`` 且 ``end_date > now`` 的订阅。按页一次查回，
+    避免逐条查库（N+1）；接续订阅本身可能不在当前页里，所以按 user_id
+    全表查，不能只看本页。
+    """
+    if not user_ids:
+        return {}
+    rows = db.query(
+        models.UserSubscription.id,
+        models.UserSubscription.user_id,
+        models.UserSubscription.realm_id,
+    ).filter(
+        models.UserSubscription.user_id.in_(user_ids),
+        models.UserSubscription.status == "active",
+        models.UserSubscription.end_date > now,
+    ).all()
+    live_map: dict = {}
+    for sub_id, user_id, realm_id in rows:
+        live_map.setdefault((user_id, realm_id), set()).add(sub_id)
+    return live_map
+
+
 def _record(db: Session, item: dict, kind: str) -> bool:
     """登记一条发送记录；已被别的进程/上一轮记过则返回 False
 
@@ -162,6 +187,11 @@ def collect_due(db: Session, now: Optional[datetime] = None) -> dict:
     """算出「这一轮该发什么」，不改任何数据（干跑 / 面板预览都用它）
 
     返回 ``{"reminders": [...], "expired": [...]}``，元素都带好文案所需的字段。
+
+    接续静默：某份订阅若其用户在同一 realm 另有一份有效订阅（active 且
+    end_date > now），说明会员资格已被新订阅接续，这份旧订阅整体不发——
+    既不发「已到期」，也不发任何「即将到期」档位（2026-11-21 误发修复：
+    换套餐后旧订阅到期仍给持有有效新订阅的用户发了「会员已到期」）。
     """
     now = now or datetime.now()
     thresholds = parse_thresholds(db)
@@ -185,6 +215,8 @@ def collect_due(db: Session, now: Optional[datetime] = None) -> dict:
 
         # 本页已发送 kind 一次取回，循环里不再逐条查库
         sent_map = _sent_kinds_batch(db, [s.id for s in page])
+        # 本页用户的有效接续一次取回（按 user 全表查，接续可能在别的页）
+        successor_map = _successor_ids_batch(db, list({s.user_id for s in page}), now)
         plan_ids = [s.plan_id for s in page if s.plan_id]
         plan_names = {
             p.id: p.name for p in db.query(models.SubscriptionPlan).filter(
@@ -195,6 +227,10 @@ def collect_due(db: Session, now: Optional[datetime] = None) -> dict:
         for sub in page:
             end = sub.end_date
             if end is None:
+                continue
+            # 已被同 realm 的新订阅接续：整份静默（见 collect_due docstring）
+            live_ids = successor_map.get((sub.user_id, sub.realm_id), set())
+            if any(other_id != sub.id for other_id in live_ids):
                 continue
             sent = sent_map.get(sub.id, set())
             # days_left 按「整天」算：今天 23:59 到期就是 0 天，与用户端 `days_left` 口径一致
