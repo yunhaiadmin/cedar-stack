@@ -1742,10 +1742,19 @@ function opsStateText(state: string): string {
   font: inherit;
   color: inherit;
   cursor: pointer;
-  background: var(--au-surface);
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈（同 SectionCard）：半透底 + blur/saturate + 玻璃边 + 内高光 + 柔影 */
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-lg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   transition: border-color var(--au-fast) var(--au-ease), background-color var(--au-fast) var(--au-ease);
+}
+html[data-theme='light'] .filter-card {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .filter-card:hover { border-color: var(--au-border-strong); }
 .filter-card:focus-visible { outline: 2px solid var(--au-border-focus); outline-offset: 2px; }
@@ -1794,10 +1803,18 @@ function opsStateText(state: string): string {
   padding: 7px 10px;
   border: 1px solid var(--au-danger-border);
   border-radius: var(--au-r-md);
-  background: var(--au-danger-soft);
+  /* ax 口径 · 玻璃栈：底走玻璃、描边保留危险色（语义不变） */
+  background: var(--ax-glass-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   color: var(--au-danger);
   font-size: var(--ax-fs-aux-sm);
   line-height: 1.6;
+}
+html[data-theme='light'] .warn-line {
+  background: var(--ax-glass-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .warn-line svg { flex-shrink: 0; margin-top: 2px; }
 
@@ -1847,8 +1864,22 @@ function opsStateText(state: string): string {
 .ops-hint.bad { color: var(--au-danger); }
 .ops-scope { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .ops-notes {
-  display: flex; flex-direction: column; gap: 6px;
-  padding: 10px 12px; border-radius: var(--au-r-md); background: var(--au-bg-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--au-r-md);
+  /* ax 口径 · 玻璃栈（同 SectionCard）：半透底 + blur/saturate + 玻璃边 + 内高光 + 柔影 */
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .ops-notes {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .ops-note {
   display: flex; align-items: flex-start; gap: 6px;

@@ -532,7 +532,15 @@ function discardAll() {
   padding: 10px 12px;
   border: 1px solid var(--au-primary-border);
   border-radius: var(--au-r-md);
-  background: var(--au-primary-soft);
+  /* ax 口径 · 玻璃栈：底走玻璃、描边保留主色（语义不变） */
+  background: var(--ax-glass-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .savebar {
+  background: var(--ax-glass-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .savebar-text { font-size: var(--ax-fs-aux); color: var(--au-text-2); }
 .savebar-text strong { color: var(--au-primary); }
@@ -554,9 +562,18 @@ function discardAll() {
   flex-direction: column;
   gap: 12px;
   padding: 14px;
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈（同 SectionCard）：半透底 + blur/saturate + 玻璃边 + 内高光 + 柔影 */
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-md);
-  background: var(--au-bg-soft);
+  background: var(--ax-glass-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .line-card {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .line-head { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
 .line-summary { margin: 0; flex: 1 1 240px; font-size: var(--ax-fs-aux-sm); color: var(--au-text-2); line-height: 1.7; }
@@ -608,9 +625,18 @@ function discardAll() {
   justify-content: space-between;
   gap: 12px;
   padding: 8px 10px;
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈（同 SectionCard）：半透底 + blur/saturate + 玻璃边 + 内高光 + 柔影 */
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-sm);
-  background: var(--au-surface-2);
+  background: var(--ax-glass-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .cache-item {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .cache-item .ci-name {
   min-width: 0;

@@ -776,9 +776,18 @@ onUnmounted(() => {
   gap: 5px;
   min-width: 0;
   padding: 12px 14px;
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈（同 SectionCard）：半透底 + blur/saturate + 玻璃边 + 内高光 + 柔影 */
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-md);
-  background: var(--au-surface-2);
+  background: var(--ax-glass-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .runtime-grid div {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .runtime-grid dt { font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); }
 .runtime-grid dd {
@@ -834,10 +843,20 @@ onUnmounted(() => {
   gap: 10px;
   margin-bottom: 16px;
   padding: 12px 16px;
-  background: var(--au-surface-2);
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈：底走玻璃、左侧状态色条保留（语义不变） */
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-left: 3px solid var(--au-success);
   border-radius: var(--au-r-md);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .lamp-overall {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  border-left-color: var(--au-success);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 
 .lamp-overall.is-warn { border-left-color: var(--au-warning); }
@@ -868,11 +887,21 @@ onUnmounted(() => {
 
 .lamp {
   padding: 14px 16px;
-  background: var(--au-surface);
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈：底走玻璃、左侧状态色条保留（语义不变） */
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-left: 3px solid var(--au-success);
   border-radius: var(--au-r-md);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   min-width: 0;
+}
+html[data-theme='light'] .lamp {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  border-left-color: var(--au-success);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 
 .lamp.is-warn { border-left-color: var(--au-warning); }

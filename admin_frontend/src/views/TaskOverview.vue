@@ -420,14 +420,23 @@ onMounted(() => {
 }
 
 .task-card {
-  background: var(--au-bg-soft);
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈（同 SectionCard）：半透底 + blur/saturate + 玻璃边 + 内高光 + 柔影 */
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-lg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+}
+html[data-theme='light'] .task-card {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 
 /* SectionCard 正文恢复原任务卡的纵向节奏（摘要 / 指标 / 库列表之间 12px） */

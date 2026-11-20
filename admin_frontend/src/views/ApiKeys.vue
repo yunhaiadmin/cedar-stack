@@ -381,10 +381,18 @@ onMounted(load)
 .plaintext-box {
   margin-top: 16px;
   padding: 16px;
-  background: var(--au-bg);
+  /* ax 口径 · 玻璃栈：底走玻璃、虚线危险描边保留（语义不变） */
+  background: var(--ax-glass-d);
   border: 1px dashed var(--au-danger);
   border-radius: var(--au-r-lg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   text-align: center;
+}
+html[data-theme='light'] .plaintext-box {
+  background: var(--ax-glass-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .plaintext-name {
   font-weight: 600;
@@ -398,9 +406,19 @@ onMounted(load)
   word-break: break-all;
   padding: 12px;
   margin-bottom: 12px;
-  background: var(--au-surface);
+  /* ax 口径 · 玻璃栈（同 SectionCard）：半透底 + blur/saturate + 玻璃边 + 内高光 + 柔影 */
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--radius-sm, 8px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   color: var(--au-text);
   user-select: all;
+}
+html[data-theme='light'] .plaintext-key {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 </style>
