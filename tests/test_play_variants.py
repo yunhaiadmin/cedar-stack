@@ -173,8 +173,10 @@ def test_drive_item_variants_direct_first(db, monkeypatch):
     item = _drive_item("guid-on-drive")
     resp = _call_pi(monkeypatch, db, _user(), item, variants_on=True)
     sources = resp["MediaSources"]
+    # 默认源 Id 恒为 guid 本身（与详情 DTO 同值，按 Id 认源的客户端
+    # 如 Reflix 靠它对齐；2026-11-20 定案），其余变体源带后缀。
     assert [s["Id"] for s in sources] == [
-        f"{item.guid}:drive_direct",
+        item.guid,
         f"{item.guid}:drive_relay",
     ]
     first = sources[0]
@@ -244,7 +246,7 @@ def test_no_transcode_variant_ever(db, monkeypatch):
     resp = _call_pi(monkeypatch, db, user, item, variants_on=True)
     sources = resp["MediaSources"]
     assert [s["Id"] for s in sources] == [
-        f"{item.guid}:drive_direct", f"{item.guid}:drive_relay"]
+        item.guid, f"{item.guid}:drive_relay"]
     for src in sources:
         assert src["SupportsTranscoding"] is False
         assert "TranscodingUrl" not in src

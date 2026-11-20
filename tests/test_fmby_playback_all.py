@@ -91,7 +91,8 @@ def test_build_media_sources_default_readiness_ready():
         base, _variants(), guid="g", stream_url="http://x/stream",
         direct_stream_ok=True)
     assert all(s["Readiness"] == "ready" for s in out)
-    assert out[0]["Id"] == "g:drive_relay"
+    # 默认源 Id 恒为 guid 本身（与详情 DTO 同值，2026-11-20 定案）。
+    assert out[0]["Id"] == "g"
     assert out[1]["Id"] == "g:drive_direct"
 
 

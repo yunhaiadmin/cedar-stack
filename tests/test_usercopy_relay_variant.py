@@ -218,8 +218,10 @@ def test_playback_info_user_copy_two_sources(db, monkeypatch):
     item = _pi_item("guid-uc-pi")
     resp = _call_pi(monkeypatch, db, item, copy_row=_copy_row())
     sources = resp["MediaSources"]
+    # 默认源 Id 恒为 guid 本身（与详情 DTO 同值，2026-11-20 定案），
+    # 其余变体源带后缀。
     assert [s["Id"] for s in sources] == [
-        f"{item.guid}:drive_direct",
+        item.guid,
         f"{item.guid}:usercopy_relay",
     ]
     assert "variant=usercopy_relay" in sources[1]["DirectStreamUrl"]
