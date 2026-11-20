@@ -519,7 +519,15 @@ const testSummary = computed(() => {
   padding: 8px 12px;
   border-radius: var(--au-r-md);
   border: 1px solid var(--au-warning-border);
-  background: var(--au-warning-soft);
+  /* ax 口径 · 玻璃栈：底走玻璃、描边保留警告色（语义不变） */
+  background: var(--ax-glass-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .ag-risk {
+  background: var(--ax-glass-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .ag-hint-inline { margin: 0; }
 .ag-mode {
@@ -556,9 +564,18 @@ const testSummary = computed(() => {
 .ag-result {
   margin-top: 12px;
   padding: 12px 14px;
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈（同 SectionCard）：半透底 + blur/saturate + 玻璃边 + 内高光 + 柔影 */
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-md);
-  background: var(--au-bg-soft);
+  background: var(--ax-glass-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .ag-result {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .ag-result.is-blocked { border-color: var(--au-danger-border); }
 .ag-result-head {

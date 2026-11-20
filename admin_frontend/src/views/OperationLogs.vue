@@ -440,9 +440,20 @@ function detailText(log: AdminLogRow): string {
 .error-hint {
   margin-top: 6px;
   padding: 8px 10px;
+  /* ax 口径 · 玻璃栈：底走玻璃、左侧主色条保留（语义不变） */
+  border: 1px solid var(--ax-glass-border);
   border-left: 2px solid var(--au-primary);
-  background: var(--au-primary-soft);
+  background: var(--ax-glass-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   border-radius: 0 var(--au-r-sm) var(--au-r-sm) 0;
+}
+html[data-theme='light'] .error-hint {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  border-left-color: var(--au-primary);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 
 .error-hint-title {

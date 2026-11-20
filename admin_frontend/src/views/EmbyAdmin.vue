@@ -3010,17 +3010,35 @@ function typeLabel(t: string): string {
 }
 .lib-card {
   display: flex; flex-direction: column; gap: 0; overflow: hidden; min-width: 0;
-  background: var(--au-surface);
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈（同 SectionCard）：半透底 + blur/saturate + 玻璃边 + 内高光 + 柔影 */
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-lg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   transition: border-color var(--au-fast) var(--au-ease);
+}
+html[data-theme='light'] .lib-card {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .lib-card:hover { border-color: var(--au-border-strong); }
 .lib-skeleton { height: 320px; border-radius: var(--au-r-lg); }
 .lib-empty {
-  background: var(--au-surface);
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈（同 SectionCard）：半透底 + blur/saturate + 玻璃边 + 内高光 + 柔影 */
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-lg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .lib-empty {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .lib-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: nowrap; }
 .lib-name {
@@ -3051,10 +3069,18 @@ function typeLabel(t: string): string {
   padding: 10px 14px;
   border: 1px solid var(--au-warning-border);
   border-radius: var(--au-r-md);
-  background: var(--au-warning-soft);
+  /* ax 口径 · 玻璃栈：底走玻璃、描边保留警告色（语义不变） */
+  background: var(--ax-glass-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   font-size: var(--ax-fs-aux);
   color: var(--au-text-2);
   line-height: 1.6;
+}
+html[data-theme='light'] .legacy-mount-note {
+  background: var(--ax-glass-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .legacy-mount-note b { color: var(--au-warning); }
 .legacy-mount-note p { margin: 6px 0 0; font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); }
@@ -3069,10 +3095,18 @@ function typeLabel(t: string): string {
   padding: 8px 10px;
   border: 1px solid var(--au-danger-border);
   border-radius: var(--au-r-md);
-  background: var(--au-danger-soft);
+  /* ax 口径 · 玻璃栈：底走玻璃、描边保留危险色（语义不变） */
+  background: var(--ax-glass-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   font-size: var(--ax-fs-aux-sm);
   line-height: 1.7;
   color: var(--au-text-2);
+}
+html[data-theme='light'] .chase-alert {
+  background: var(--ax-glass-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .chase-alert-title { color: var(--au-danger); font-weight: 600; }
 .chase-alert-list { margin: 4px 0 0; padding-left: 16px; overflow-wrap: anywhere; }
@@ -3114,9 +3148,18 @@ function typeLabel(t: string): string {
 .scrape-block {
   display: flex; flex-direction: column;
   padding: 14px 16px;
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈（同 SectionCard）：半透底 + blur/saturate + 玻璃边 + 内高光 + 柔影 */
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-md);
-  background: var(--au-bg-soft);
+  background: var(--ax-glass-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .scrape-block {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .scrape-block h3 { margin: 0 0 6px; font-size: var(--ax-fs-aux); font-weight: 700; color: var(--au-text); }
 .scrape-block .drawer-hint { margin-bottom: 10px; }
@@ -3156,9 +3199,18 @@ function typeLabel(t: string): string {
 .reach-row {
   display: flex; align-items: flex-start; gap: 10px;
   padding: 8px 10px;
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈（同 SectionCard）：半透底 + blur/saturate + 玻璃边 + 内高光 + 柔影 */
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-md);
-  background: var(--au-bg-soft);
+  background: var(--ax-glass-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .reach-row {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .reach-row-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .reach-row-title { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; color: var(--au-text); }
@@ -3179,10 +3231,19 @@ function typeLabel(t: string): string {
 .queue-row {
   display: flex; flex-direction: column; gap: 4px;
   padding: 8px 10px;
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈（同 SectionCard）：半透底 + blur/saturate + 玻璃边 + 内高光 + 柔影 */
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-md);
-  background: var(--au-bg-soft);
+  background: var(--ax-glass-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   min-width: 0;
+}
+html[data-theme='light'] .queue-row {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .queue-row-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .queue-name {
