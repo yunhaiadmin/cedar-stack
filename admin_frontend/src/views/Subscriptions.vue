@@ -8,8 +8,8 @@
  * v2.6.20：会员是**一个服一个**的。默认只看面板当前服（会员开在哪个服、能在哪台 EA 上播
  * 都由它决定），顶部可以切到「全部服」做跨服汇总——这时列表会多一列归属服。
  *
- * v2.54（暗房影院）：PageHeader（范围切换 + 刷新）· 四个 StatTile 兼作状态筛选按钮
- * （外面包一层 button，选中走琥珀描边）· 到期提醒与订阅清单都换成 SectionCard，
+ * v2.54（ax 口径）：PageHeader（范围切换 + 刷新）· 四个 StatTile 兼作状态筛选按钮
+ * （外面包一层 button，选中走主色描边）· 到期提醒与订阅清单都换成 SectionCard，
  * 清单是 flush 表格 + 统一工具条；加载失败给可重试的错误态。
  */
 import { computed, onMounted, reactive, ref } from 'vue'
@@ -557,7 +557,10 @@ async function submit() {
 }
 
 .tile-btn :deep(.au-stat) { height: 100%; transition: border-color var(--au-fast) var(--au-ease), background var(--au-fast) var(--au-ease); }
-.tile-btn:hover :deep(.au-stat) { border-color: var(--au-border-strong); background: var(--au-surface-2); }
+/* 悬停：StatTile 本体已是玻璃栈，这里只换玻璃底色档（不回实色面） */
+.tile-btn:hover :deep(.au-stat) { border-color: var(--au-border-strong); background: var(--ax-glass-d); }
+html[data-theme='light'] .tile-btn:hover :deep(.au-stat) { background: var(--ax-glass-l); }
+/* 选中：主色描边＋主色淡底（筛选态提示色，保留淡底不玻璃化，避免与悬停混同） */
 .tile-btn.is-active :deep(.au-stat) { border-color: var(--au-primary-border); background: var(--au-primary-soft); }
 .tile-btn:focus-visible { outline: 2px solid var(--au-border-focus); outline-offset: 2px; }
 

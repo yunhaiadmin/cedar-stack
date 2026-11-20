@@ -10,7 +10,7 @@
  * 面板上必须能看见「占用中」这一档——它可能随时变成已用，也可能超时被自动清理，
  * 只看 `use_count` 会说不清「这张券到底还能不能发」。
  *
- * v2.54（暗房影院）：PageHeader + StatTile（总数 / 可用 / 占用中 / 已核销）+
+ * v2.54（ax 口径）：PageHeader + StatTile（总数 / 可用 / 占用中 / 已核销）+
  * 「功能设置」SectionCard（两行设置，保存在标题行右侧）+ flush 券表（筛选左、查询右）；
  * 加载失败给可重试的错误态。弹窗结构不变，只把写死的颜色 / 圆角换成 --au-* 令牌。
  */
@@ -1099,9 +1099,18 @@ onMounted(() => {
   font-size: var(--ax-fs-aux-sm);
   line-height: 1.7;
   color: var(--au-text-3);
-  background: var(--au-surface-2);
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈（弹窗内提示块，弹窗本体仍实色） */
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-md);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .mg-hint {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .mg-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .mg-footer-right { display: flex; gap: 8px; flex-wrap: wrap; }

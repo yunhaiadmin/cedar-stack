@@ -1142,7 +1142,7 @@ function fmtCount(n: number | null | undefined): string {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--au-font-serif);
+  /* ax 口径：标题一律无衬线（--au-font-serif 已由 ax-admin.css 重映射为无衬线栈） */
   font-size: var(--ax-fs-h3);
   font-weight: 700;
   color: var(--au-primary);
@@ -1210,10 +1210,19 @@ function fmtCount(n: number | null | undefined): string {
 }
 
 .gs-item {
-  background: var(--au-surface-2);
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈（同 SectionCard）：半透底 + blur/saturate + 玻璃边 + 内高光 + 柔影 */
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-sm);
   padding: 8px 10px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .gs-item {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 .gs-item.is-warn { border-color: var(--au-warning-border); }
 .gs-item.is-warn .gs-value { color: var(--au-warning); }
@@ -1233,10 +1242,18 @@ function fmtCount(n: number | null | undefined): string {
   flex-direction: column;
   gap: 7px;
   padding: 12px;
-  border: 1px solid var(--au-border);
+  /* ax 口径 · 玻璃栈（同 SectionCard）：抽屉本体已是实色面，卡片走玻璃拉开层次 */
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-md);
-  /* 抽屉底色是表面色，卡片用次级画布拉开层次（发丝线分层，不靠阴影） */
-  background: var(--au-bg-soft);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .grant-card {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 
 /* 状态色只落在标题行的点上，卡片本体不染色 */
