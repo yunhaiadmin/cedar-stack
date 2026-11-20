@@ -473,8 +473,16 @@ def build_media_sources(base_source: dict, variants: list[Variant], *,
     """把 ``_media_source`` 基础体按变体清单复制成多条 MediaSource。
 
     基础体（含真实探测轨道/章节）每变体深拷贝一份，只改身份与申报
-    字段：``Id`` = ``{guid}:{variant}`` 互不相同、``Name`` 带变体
-    可读名、Protocol/IsRemote 按变体元数据、URL 按变体打标。
+    字段：``Name`` 带变体可读名、Protocol/IsRemote 按变体元数据、
+    URL 按变体打标。``Id`` 的口径是身份契约，不许全员后缀化：
+    第一条（默认源）保持条目 guid 本身——详情 DTO 的 MediaSource
+    Id 恒为 guid，按 Id 对齐「详情源 ↔ PlaybackInfo 源」的客户端
+    （聚合类如 Reflix）靠它认源；全员 ``{guid}:{variant}`` 时
+    PlaybackInfo 里没有一条能与详情源对上，这类客户端会整服判
+    无可播源、零拉流跳走（2026-11-20 生产实证）。其余变体源用
+    ``{guid}:{variant}`` 保持互不相同；变体选路靠 URL 上的
+    variant 参数与 MediaSourceId 后缀（parse_requested_variant
+    双保险），默认源 URL 的标记逐字保留，不因 Id 回正受影响。
     服务端转码已删除：``SupportsTranscoding`` 每条恒 False，
     不再下发 ``TranscodingUrl``。
     ``transfer_status`` 为 preparing/failed 时建完即覆盖准备中态
@@ -482,9 +490,9 @@ def build_media_sources(base_source: dict, variants: list[Variant], *,
     """
     base_name = base_source.get("Name") or ""
     out: list[dict] = []
-    for v in variants:
+    for i, v in enumerate(variants):
         src = copy.deepcopy(base_source)
-        src["Id"] = f"{guid}:{v.name}"
+        src["Id"] = guid if i == 0 else f"{guid}:{v.name}"
         src["Name"] = f"{base_name} · {v.label}" if base_name else v.label
         src["Protocol"] = v.protocol
         src["IsRemote"] = v.is_remote
