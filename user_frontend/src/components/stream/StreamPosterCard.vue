@@ -9,9 +9,10 @@
  * 轻缩放＋海报框影深（数值走 uhd 动效手册）；图片加载完成淡入，
  * 不再整块硬切出现。
  */
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Clapperboard } from 'lucide-vue-next'
+import { blurHashDataUrl } from '@/utils/blurhash'
 
 const props = withDefaults(
   defineProps<{
@@ -20,12 +21,17 @@ const props = withDefaults(
     meta?: string
     rating?: number | null
     image?: string
+    /** BlurHash 占位：真图加载完成前渲染模糊图，不留空白块 */
+    blurHash?: string | null
     to: string
     /** 横滑行大卡 260 宽 / 网格卡 228 宽，两档共用同一模具 */
     size?: 'row' | 'grid'
   }>(),
-  { meta: '', rating: null, image: '', size: 'row' },
+  { meta: '', rating: null, image: '', blurHash: null, size: 'row' },
 )
+
+/** 占位图 data URL（解码结果在 utils 层按哈希缓存） */
+const placeholder = computed(() => blurHashDataUrl(props.blurHash))
 
 /** 图片加载失败（个别条目图 404 等）：撤下 img 换占位，不留浏览器裂图图标 */
 const broken = ref(false)
@@ -43,6 +49,7 @@ watch(
 <template>
   <RouterLink class="sp-card" :class="`sp-card--${size}`" :to="to">
     <span class="sp-poster">
+      <img v-if="placeholder && image && !broken && !loaded" :src="placeholder" alt="" aria-hidden="true" class="sp-blur" />
       <img v-if="image && !broken" :src="image" alt="" loading="lazy" decoding="async" class="sp-img" :class="{ 'sp-img--loaded': loaded }" @load="loaded = true" @error="broken = true" />
       <Clapperboard v-else :size="30" :stroke-width="1.5" class="sp-fallback" aria-hidden="true" />
     </span>
@@ -69,6 +76,7 @@ watch(
   width: 100%;
 }
 .sp-poster {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -77,6 +85,14 @@ watch(
   overflow: hidden;
   background: var(--uhd-s-card-soft);
   transition: box-shadow var(--uhd-dur-base) var(--uhd-ease-standard);
+}
+/* BlurHash 占位：铺满海报框，真图淡入后由 loaded 切换撤下 */
+.sp-blur {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .sp-img {
   width: 100%;

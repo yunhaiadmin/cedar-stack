@@ -11,6 +11,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import StreamShell from '@/components/stream/StreamShell.vue'
 import StreamPosterCard from '@/components/stream/StreamPosterCard.vue'
+import { posterBlurHashOf } from '@/utils/blurhash'
 import {
   embyApi as embyProtocol,
   posterUrl,
@@ -175,6 +176,7 @@ watch([term, filter], () => void load(), { immediate: true })
               :meta="metaOf(item)"
               :rating="item.CommunityRating ?? null"
               :image="posterUrl(item, 456)"
+              :blur-hash="posterBlurHashOf(item)"
               :to="`/media/${item.Id}`"
             />
           </div>

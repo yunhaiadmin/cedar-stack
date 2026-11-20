@@ -34,6 +34,7 @@ import DetailTopPill from '@/components/panel/DetailTopPill.vue'
 import StreamShell from '@/components/stream/StreamShell.vue'
 import StreamRow from '@/components/stream/StreamRow.vue'
 import StreamPosterCard from '@/components/stream/StreamPosterCard.vue'
+import { posterBlurHashOf } from '@/utils/blurhash'
 import { useToast } from '@/composables/useToast'
 
 const route = useRoute()
@@ -883,6 +884,7 @@ watch(itemId, () => {
           :meta="recMeta(rec)"
           :rating="rec.CommunityRating ?? null"
           :image="posterUrl(rec, 520)"
+          :blur-hash="posterBlurHashOf(rec)"
           :to="`/media/${rec.Id}`"
         />
       </StreamRow>

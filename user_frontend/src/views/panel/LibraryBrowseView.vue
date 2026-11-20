@@ -26,6 +26,7 @@ import { useUserStore } from '@/stores/user'
 import { ArrowDown, ArrowUp, ArrowUpDown, Check } from 'lucide-vue-next'
 import StreamShell from '@/components/stream/StreamShell.vue'
 import StreamPosterCard from '@/components/stream/StreamPosterCard.vue'
+import { posterBlurHashOf } from '@/utils/blurhash'
 import {
   embyApi as embyProtocol,
   posterUrl,
@@ -679,6 +680,7 @@ function retryCategories() {
             :meta="metaOf(item)"
             :rating="item.CommunityRating ?? null"
             :image="posterUrl(item, 456)"
+            :blur-hash="posterBlurHashOf(item)"
             :to="`/media/${item.Id}`"
           />
         </div>

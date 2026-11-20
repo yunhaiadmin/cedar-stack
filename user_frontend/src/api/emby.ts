@@ -213,6 +213,11 @@ export interface EmbyItem {
   IndexNumber?: number | null
   ImageTags?: Record<string, string>
   BackdropImageTags?: string[]
+  /** BlurHash 占位（后端落盘时算出）：Primary/Backdrop → tag → 哈希 */
+  ImageBlurHashes?: {
+    Primary?: Record<string, string>
+    Backdrop?: Record<string, string>
+  }
   UserData: EmbyUserData
   RunTimeTicks?: number | null
   /** 媒体库类型：movies / tvshows / mixed …（Views 接口返回） */
