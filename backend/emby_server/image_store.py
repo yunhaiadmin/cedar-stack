@@ -5,6 +5,9 @@
 整个媒体库的封面就跟着抖；条件请求（304）只省了带宽，冷启动与缓存穿透的延迟还是压在用户身上。
 
 本地化之后图片走本机磁盘：客户端到本服务器一次往返拿到，不依赖第三方可达性。
+落盘布局按内容哈希分片（``<缓存目录>/<sha1 前 2 位>/<sha1>``，见
+``local_path``），避免十万级文件平铺单目录；分片前的平铺存量文件读取侧
+继续认（``existing_local_path``），不要求一次性搬迁。
 磁盘上的那份是**缓存**，不是唯一副本：
 
 - 条目上仍然留着远程图地址，缓存文件被清掉/被删掉都能自愈（取图时按需再落一份，见
@@ -621,13 +624,40 @@ def is_cached_path(path: Optional[str]) -> bool:
     return os.path.abspath(path).startswith(root + os.sep)
 
 
-def local_path(url: str) -> str:
-    """远程图的本地文件路径（内容寻址：同一张图只落一份）"""
+def _url_digest_ext(url: str) -> tuple:
     digest = hashlib.sha1(url.encode("utf-8", "ignore")).hexdigest()[:24]
     ext = os.path.splitext(url.split("?", 1)[0])[1].lower()
     if ext not in _IMAGE_EXTS:
         ext = ".jpg"
+    return digest, ext
+
+
+def local_path(url: str) -> str:
+    """远程图的本地文件路径（内容寻址：同一张图只落一份）
+
+    **分片布局**（借鉴 Jellyfin 按条目哈希分片存图）：``<image_dir>/<digest
+    前 2 位>/<digest><ext>``。平铺时代全库原图＋三档缩略图挤在一个目录里
+    （十万级文件），prune/stats 的目录扫描与文件系统查找都随文件数线性变
+    慢；按 digest 前两位分 256 个子目录后，单目录文件数降两个量级。
+    新写入一律走这里；分片前的存量文件位置见 ``legacy_local_path``，
+    读取侧用 ``existing_local_path`` 两处都认，不要求一次性搬迁。
+    """
+    digest, ext = _url_digest_ext(url)
+    return os.path.join(image_dir(), digest[:2], digest + ext)
+
+
+def legacy_local_path(url: str) -> str:
+    """分片前的平铺路径（存量文件所在位置）：只读识别用，不再写入。"""
+    digest, ext = _url_digest_ext(url)
     return os.path.join(image_dir(), digest + ext)
+
+
+def existing_local_path(url: str) -> str:
+    """这张图已经落盘的位置（分片优先、平铺存量兜底）；没落盘返回空串。"""
+    for candidate in (local_path(url), legacy_local_path(url)):
+        if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
+            return candidate
+    return ""
 
 
 def _download_attempts() -> int:
@@ -756,8 +786,9 @@ def localize(url: Optional[str], allow_download: bool = True,
     if not url or not url.startswith("http") or not enabled():
         return ""
     path = local_path(url)
-    if os.path.isfile(path) and os.path.getsize(path) > 0:
-        return path
+    existing = existing_local_path(url)
+    if existing:
+        return existing
     if not allow_download:
         return ""
     with _LOCKS_LOCK:
@@ -765,8 +796,9 @@ def localize(url: Optional[str], allow_download: bool = True,
         _LOCKS[path] = lock
     with lock:
         try:
-            if os.path.isfile(path) and os.path.getsize(path) > 0:
-                return path
+            existing = existing_local_path(url)
+            if existing:
+                return existing
             # 非阻塞抢下载名额：抢不到就退回远程地址（调用方本来就支持），
             # 绝不攥着请求线程排队——下载超时 15s，排队会把整个线程池拖死
             if not _DL_SEMAPHORE.acquire(blocking=False):
@@ -779,7 +811,7 @@ def localize(url: Optional[str], allow_download: bool = True,
             if not content:
                 _STATS["failed"] += 1
                 return ""
-            os.makedirs(image_dir(), exist_ok=True)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
             tmp = f"{path}.part{os.getpid()}"
             with open(tmp, "wb") as fh:
                 fh.write(content)
@@ -905,6 +937,33 @@ def _thumb_digest(name: str) -> Optional[str]:
     return base.split("_", 1)[0]
 
 
+_SHARD_DIR_RE = re.compile(r"^[0-9a-f]{2}$")
+
+
+def _iter_cache_files(root: str):
+    """枚举图片缓存里的全部文件，产出 (文件名, 完整路径)。
+
+    覆盖两处：根目录（平铺存量原图 + 全部缩略图）与 2 位十六进制命名的
+    分片子目录（``local_path`` 的现行布局）。只下探分片目录——
+    ``library-covers``、cover mirror 等其它子目录不是内容寻址缓存，
+    不归本模块管理，绝不枚举、绝不删除。
+    """
+    try:
+        entries = list(os.scandir(root))
+    except OSError:
+        return
+    for entry in entries:
+        try:
+            if entry.is_file():
+                yield entry.name, entry.path
+            elif entry.is_dir() and _SHARD_DIR_RE.match(entry.name):
+                for sub in os.scandir(entry.path):
+                    if sub.is_file():
+                        yield sub.name, sub.path
+        except OSError:
+            continue
+
+
 def prune(db) -> dict:
     """维护周期的图片缓存清理：先删没被引用的，再按上限从旧到新淘汰
 
@@ -918,17 +977,19 @@ def prune(db) -> dict:
     if not os.path.isdir(root):
         return result
     referenced = referenced_basenames(db)
+    # 文件清单一次物化（含分片子目录）：本轮新落盘的文件不在清单里，
+    # 天然落在保护期外也删不到，下一轮再处理——方向是安全的。
+    cache_files = list(_iter_cache_files(root))
+    path_of = {name: path for name, path in cache_files}
     # 下面两段是缩略图感知的清理：
     # - 被引用的原图的缩略图同样受保护（不删）；
     # - 删掉原图时，它的缩略图一起删（不留孤儿小图）。
     referenced_digests = {name.rsplit(".", 1)[0] for name in referenced}
     thumbs_of: dict[str, list[str]] = {}
-    for entry in os.scandir(root):
-        if not entry.is_file():
-            continue
-        digest = _thumb_digest(entry.name)
+    for name, _path in cache_files:
+        digest = _thumb_digest(name)
         if digest:
-            thumbs_of.setdefault(digest, []).append(entry.name)
+            thumbs_of.setdefault(digest, []).append(name)
     # 读事务到此为止：下面要删的是磁盘文件（可能几万个 os.remove，走网络挂载更慢），
     # 不能让一次长事务陪着它挂着——SQLite 的 WAL 检查点会被挂着的事务挡住，
     # 表现就是 WAL 文件长期不收敛（见 docs/performance.md 的「事务范围」）。
@@ -952,9 +1013,12 @@ def prune(db) -> dict:
         digest = name.rsplit(".", 1)[0]
         candidates.extend(n for n in thumbs_of.get(digest, []) if n != name)
         for cname in candidates:
+            cpath = path_of.get(cname)
+            if not cpath:
+                continue
             try:
-                st = os.stat(os.path.join(root, cname))
-                os.remove(os.path.join(root, cname))
+                st = os.stat(cpath)
+                os.remove(cpath)
                 thumb_mem_drop(cname)  # 内存里那份也清掉（key 是文件名，内容寻址）
                 freed += st.st_size
                 result["removed"] += 1
@@ -963,44 +1027,42 @@ def prune(db) -> dict:
                 logger.info("删除图片缓存失败 %s: %s", cname, exc)
         return freed
 
-    for entry in os.scandir(root):
-        if not entry.is_file():
-            continue
-        digest = _thumb_digest(entry.name)
-        if entry.name in referenced or (digest and digest in referenced_digests):
+    for name, path in cache_files:
+        digest = _thumb_digest(name)
+        if name in referenced or (digest and digest in referenced_digests):
             # 只保护「原图自身 + 配置档位的缩略图」，非档位的现生成变体照常淘汰
-            if digest and digest in referenced_digests and entry.name not in referenced:
-                base = entry.name.rsplit(".", 1)[0]
+            if digest and digest in referenced_digests and name not in referenced:
+                base = name.rsplit(".", 1)[0]
                 if any(tag in base for tag in _cfg_tags):
-                    protected.add(entry.name)
+                    protected.add(name)
             try:
-                stat = entry.stat()
+                stat = os.stat(path)
             except OSError:
                 continue
-            kept.append((entry.name, stat.st_size, stat.st_mtime))
+            kept.append((name, stat.st_size, stat.st_mtime))
             continue
         if digest and digest not in referenced_digests:
             # 孤儿缩略图（原图早被删了）：直接清掉，不占保护期
             try:
-                stat = entry.stat()
-                os.remove(entry.path)
-                thumb_mem_drop(entry.name)
+                stat = os.stat(path)
+                os.remove(path)
+                thumb_mem_drop(name)
                 result["removed"] += 1
                 result["freed_bytes"] += stat.st_size
             except OSError as exc:
-                logger.info("删除图片缓存失败 %s: %s", entry.path, exc)
+                logger.info("删除图片缓存失败 %s: %s", path, exc)
             continue
         try:
-            stat = entry.stat()
+            stat = os.stat(path)
         except OSError:
             continue
         if grace and now - stat.st_mtime < grace:
-            kept.append((entry.name, stat.st_size, stat.st_mtime))
+            kept.append((name, stat.st_size, stat.st_mtime))
             continue
         freed_before = result["freed_bytes"]
-        _remove_file(entry.name)
+        _remove_file(name)
         if result["freed_bytes"] == freed_before:
-            kept.append((entry.name, stat.st_size, stat.st_mtime))
+            kept.append((name, stat.st_size, stat.st_mtime))
 
     total = sum(size for _n, size, _m in kept)
     cap = env_int("EMBY_IMAGE_CACHE_MB", 2048, 0) * 1024 * 1024
@@ -1015,7 +1077,7 @@ def prune(db) -> dict:
                 continue
             attempted.add(name)
             try:
-                os.remove(os.path.join(root, name))
+                os.remove(path_of[name])
                 thumb_mem_drop(name)  # 内存里那份也得清，否则白占 LRU 配额再也发不出去
             except OSError:
                 continue
@@ -1033,7 +1095,7 @@ def prune(db) -> dict:
                     continue        # 原图非缩略图，第二轮绝不淘汰
                 attempted.add(name)
                 try:
-                    os.remove(os.path.join(root, name))
+                    os.remove(path_of[name])
                     thumb_mem_drop(name)
                 except OSError:
                     continue
@@ -1044,9 +1106,14 @@ def prune(db) -> dict:
         if result["over_limit"]:
             logger.info("图片缓存仍超出上限（被引用的图不淘汰）：%.0f MB",
                         total / 1024 / 1024)
-    result["files"] = sum(1 for entry in os.scandir(root) if entry.is_file())
-    result["bytes"] = sum(entry.stat().st_size for entry in os.scandir(root)
-                          if entry.is_file())
+    remaining = list(_iter_cache_files(root))
+    result["files"] = len(remaining)
+    result["bytes"] = 0
+    for _name, path in remaining:
+        try:
+            result["bytes"] += os.path.getsize(path)
+        except OSError:
+            pass
     return result
 
 
@@ -1057,14 +1124,12 @@ def stats() -> dict:
     size = 0
     thumbs = 0
     if os.path.isdir(root):
-        for entry in os.scandir(root):
-            if not entry.is_file():
-                continue
+        for name, path in _iter_cache_files(root):
             files += 1
-            if _thumb_digest(entry.name):
+            if _thumb_digest(name):
                 thumbs += 1
             try:
-                size += entry.stat().st_size
+                size += os.path.getsize(path)
             except OSError:
                 pass
     return {"enabled": enabled(), "dir": root, "files": files, "thumbs": thumbs,
