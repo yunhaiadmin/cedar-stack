@@ -10,8 +10,9 @@
   生成即占当月次数：本月口径 = 当月生成数（待使用/已使用都算，
   过期不返还）；好友经分享链接注册后**凭码领取** ``invite_trial_days``
   天试用订阅（体验权益、不可变现，与返利「只挂真实付费」不冲突）；
-- 邀请人资格门槛：累计实付（已支付订阅订单额合计）≥
-  ``invite_welfare_min_paid_fen``（默认 1000 美分 = $10，友站原值，
+- 邀请人资格门槛：累计成功充值（已支付钱包充值订单入账额
+  credit_usd_fen 合计）≥ ``invite_welfare_min_paid_fen``
+  （默认 1000 美分 = $10，友站原值，
   管理端可改；0 = 无门槛）；
 - 次数上限：每位邀请人每月最多生成 ``invite_welfare_monthly_limit``
   个码（默认 2；0 = 福利试用关闭）；
@@ -48,7 +49,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend import models
-from backend.agents import money
 from backend.integrations import store
 
 logger = logging.getLogger(__name__)
@@ -154,14 +154,15 @@ def write_policy(db: Session, values: dict) -> dict:
 # ==================== 资格与用量 ====================
 
 def inviter_paid_total_fen(db: Session, inviter_id: int) -> int:
-    """邀请人累计实付（美分）：已支付订阅订单 amount 合计（美元 → 美分）。"""
+    """邀请人累计成功充值（美分）：已支付钱包充值订单入账额
+    credit_usd_fen 合计（status == "paid" 才算，pending 不计）。"""
     total = (
-        db.query(func.coalesce(func.sum(models.SubscriptionOrder.amount), 0))
-        .filter(models.SubscriptionOrder.user_id == inviter_id,
-                models.SubscriptionOrder.status == "paid")
+        db.query(func.coalesce(func.sum(models.WalletTopupOrder.credit_usd_fen), 0))
+        .filter(models.WalletTopupOrder.user_id == inviter_id,
+                models.WalletTopupOrder.status == "paid")
         .scalar()
     )
-    return int(money(total or 0) * 100)
+    return int(total or 0)
 
 
 def _month_start(now: datetime) -> datetime:

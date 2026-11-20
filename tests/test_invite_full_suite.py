@@ -324,9 +324,24 @@ def test_settle_without_wallet_keeps_pending(db):
 
 # ==================== 福利试用（见面礼） ====================
 
+def _paid_topup(db, user, credit_fen, ref, status="paid"):
+    """一笔钱包充值单：credit_usd_fen 是实际入账额（美分）。"""
+    order = models.WalletTopupOrder(
+        order_no=ref, user_id=user.id, amount_usd_fen=credit_fen,
+        amount_cny_fen=credit_fen * 7, credit_usd_fen=credit_fen,
+        rate_snapshot=Decimal("7"), fee_pct_snapshot=0,
+        payment_method="alipay", status=status)
+    db.add(order)
+    db.commit()
+    return order
+
+
 def _eligible_inviter(db, name="inviter-t", paid="45"):
+    """累计成功充值达标（默认门槛 $10）的邀请人（资格口径 = 已支付
+    钱包充值单入账额合计，见 invite_trial.inviter_paid_total_fen）。"""
     inviter = _user(db, name)
-    _paid_sub_order(db, inviter, paid, f"PAY-{name}")
+    _plan(db)
+    _paid_topup(db, inviter, int(Decimal(paid) * 100), f"WT-{name}")
     return inviter
 
 
@@ -359,7 +374,7 @@ def test_trial_skipped_when_days_zero(db):
 
 def test_trial_skipped_below_threshold(db):
     _set(db, "invite_trial_days", "7")
-    inviter = _user(db, "inviter-poor")  # 没有任何已付订单
+    inviter = _user(db, "inviter-poor")  # 没有任何成功充值
     invitee = _user(db, "invitee-poor")
     code = _code(db, inviter, "CODEPOOR")
     assert invitation_api.apply_invitation(db, invitee, code.code)

@@ -2,7 +2,7 @@
 
 口径锚点（照友站「生成试用邀请码」机制，我方数值全走配置键）：
 - 生成即占当月次数：月度计数 = 当月生成数（pending/used 都算，
-  expired 不返还）；资格 = 累计实付 ≥ 门槛（默认 $10）；
+  expired 不返还）；资格 = 累计成功充值 ≥ 门槛（默认 $10）；
 - 码面快照：天数/套餐按生成时配置快照，领取按快照发放；
 - 码生成后 30 天未用过期；领取一人一份、码不可重复领、不能领自己的码；
 - 邀请注册不再自动发试用：只建关系/记返利，发放只走凭码领取
@@ -82,15 +82,27 @@ def _plan(db, name="测试套餐"):
     return plan
 
 
-def _eligible_inviter(db, name="inviter-c", paid="45"):
-    """累计实付达标（默认门槛 $10）的邀请人；付费订单顺带建出默认套餐。"""
-    inviter = _user(db, name)
-    plan = _plan(db)
-    order = models.SubscriptionOrder(
-        order_id=f"PAY-{name}", user_id=inviter.id, plan_id=plan.id,
-        amount=Decimal(paid), status="paid")
+def _topup(db, user, credit_fen, ref, status="paid"):
+    """一笔钱包充值单：credit_usd_fen 是实际入账额（美分）。"""
+    order = models.WalletTopupOrder(
+        order_no=ref, user_id=user.id, amount_usd_fen=credit_fen,
+        amount_cny_fen=credit_fen * 7, credit_usd_fen=credit_fen,
+        rate_snapshot=Decimal("7"), fee_pct_snapshot=0,
+        payment_method="alipay", status=status)
     db.add(order)
     db.commit()
+    return order
+
+
+def _eligible_inviter(db, name="inviter-c", paid="45"):
+    """累计成功充值达标（默认门槛 $10）的邀请人：充值分两笔入账、
+    合计达标（验证合计口径）；顺带建出默认套餐。"""
+    inviter = _user(db, name)
+    _plan(db)
+    total_fen = int(Decimal(paid) * 100)
+    first = total_fen // 2
+    _topup(db, inviter, first, f"WT-{name}-1")
+    _topup(db, inviter, total_fen - first, f"WT-{name}-2")
     return inviter
 
 
@@ -134,12 +146,56 @@ def test_generate_rejected_when_trial_inactive(db):
 
 def test_generate_rejected_below_threshold(db):
     _set(db, "invite_trial_days", "7")
-    poor = _user(db, "inviter-poor-c")  # 无任何已付订单
+    poor = _user(db, "inviter-poor-c")  # 无任何成功充值
     with pytest.raises(invite_trial.TrialCodeError) as exc:
         invite_trial.generate_trial_code(db, poor)
     assert exc.value.code == "below_threshold"
     db.rollback()
     assert db.query(models.InviteTrialCode).count() == 0
+
+
+def test_paid_topups_sum_counts_toward_threshold(db):
+    """资格口径 = 累计成功充值：两笔 paid 充值合计达标即可生成、
+    状态 eligible（单笔都不足门槛、合计才够，锚合计口径）。"""
+    _set(db, "invite_trial_days", "7")
+    inviter = _user(db, "inviter-topup-sum")
+    _topup(db, inviter, 600, "WT-SUM-1")   # $6
+    _topup(db, inviter, 500, "WT-SUM-2")   # $5，合计 $11 ≥ $10
+    assert invite_trial.inviter_paid_total_fen(db, inviter.id) == 1100
+    status = invite_trial.welfare_status(db, inviter)
+    assert status["inviter_paid_fen"] == 1100
+    assert status["eligible"] is True
+    row = _generate(db, inviter)
+    assert row.status == "pending"
+
+
+def test_pending_topup_not_counted(db):
+    """pending（未支付）充值不计入：金额再大也不达标。"""
+    _set(db, "invite_trial_days", "7")
+    inviter = _user(db, "inviter-topup-pending")
+    _topup(db, inviter, 5000, "WT-PEND-1", status="pending")  # $50 未支付
+    assert invite_trial.inviter_paid_total_fen(db, inviter.id) == 0
+    with pytest.raises(invite_trial.TrialCodeError) as exc:
+        invite_trial.generate_trial_code(db, inviter)
+    assert exc.value.code == "below_threshold"
+    db.rollback()
+
+
+def test_paid_subscription_order_alone_not_counted(db):
+    """只有已支付订阅订单、没有成功充值时，不再因此达标
+    （旧口径数订阅订单额，已退役）。"""
+    _set(db, "invite_trial_days", "7")
+    inviter = _user(db, "inviter-subonly")
+    plan = _plan(db)
+    db.add(models.SubscriptionOrder(
+        order_id="PAY-SUBONLY", user_id=inviter.id, plan_id=plan.id,
+        amount=Decimal("45"), status="paid"))
+    db.commit()
+    assert invite_trial.inviter_paid_total_fen(db, inviter.id) == 0
+    with pytest.raises(invite_trial.TrialCodeError) as exc:
+        invite_trial.generate_trial_code(db, inviter)
+    assert exc.value.code == "below_threshold"
+    db.rollback()
 
 
 def test_generate_endpoint_rejects_sub_account(db):
