@@ -210,15 +210,26 @@ html[data-theme='light'] {
 }
 .admin-layout .nav .nav-item .nav-icon { color: var(--au-text-3); }
 
-/* 激活态：白底胶囊＋边框＋轻阴影（浅色）；深色档同配方走抬升面。
+/* 激活态：玻璃胶囊（同用户端 AxNavPill 配方：半透底 + blur/saturate + 玻璃边）+
+   左侧一颗彩虹指示点（取代旧琥珀实心点，与用户端主导航小圆点同位）。
    阴影保留字面量：--ax-shadow-* 里没有同值档（最接近的 --ax-shadow-knob
    是 rgba(0,0,0,0.35)，alpha 不同，换了会改两档观感），不在本批动。 */
 .admin-layout .nav .nav-item.active {
-  background: var(--au-surface);
-  border-color: var(--au-border);
+  background: var(--ax-glass-d);
+  border-color: var(--ax-glass-border);
   box-shadow: 0 1px 4px rgba(17, 17, 17, 0.08);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .admin-layout .nav .nav-item.active {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
 }
 .admin-layout .nav .nav-item.active .nav-icon { color: var(--au-primary); }
+/* 彩虹指示点：--ax-rainbow-fill 是不透明九停点渐变，5px 点上取一格彩色切片 */
+.admin-layout .nav .nav-item.active::after {
+  background: var(--ax-rainbow-fill);
+}
 
 /* 顶栏标题：无衬线 20px 超粗（壳标题，不是内容区 H1）；20px 无 --ax-fs 同档，留字面量 */
 .admin-layout .topbar .topbar-title h1 {

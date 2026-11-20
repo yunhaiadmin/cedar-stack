@@ -1,10 +1,11 @@
 /**
- * Element Plus 主题覆盖 v6（暗房影院）
+ * Element Plus 主题覆盖 v6（ax 口径 · 玻璃＋彩虹）
  *
  * 目标：管理端的每一个 EP 控件看起来都像用户端的 .au-btn / .au-input / .au-card ——
- * 暖黑实色表面、发丝线边框、放映机琥珀单一强调色、10px 控件圆角 / 14px 卡片圆角、
- * 琥珀 3px 焦点光环、弹窗 / 抽屉标题走衬线。**只消费 --au-* 令牌**（见 aurora.css），
- * 深 / 浅两套主题由令牌自己切，本文件不再按主题分叉写颜色。
+ * 玻璃栈（半透底＋blur/saturate＋玻璃边＋内高光＋柔影）、链接蓝主色、10px 控件圆角 /
+ * 14px 卡片圆角、主色 3px 焦点光环、弹窗 / 抽屉标题走无衬线。**只消费 --au-* /
+ * --ax-* 令牌**（见 aurora.css），深 / 浅两套主题由令牌自己切，玻璃深/浅两档
+ * 在 `html[data-theme='light']` 分叉（--ax-glass-d / --ax-glass-l 是两个令牌）。
  *
  * 保留下来的三条「踩过的坑」（v5 起就有，改之前先读）：
  *
@@ -22,7 +23,7 @@
 
 /* ==================== 1. 全局变量 ==================== */
 html:root {
-  /* ---- 主色：放映机琥珀 ---- */
+  /* ---- 主色：ax 链接蓝 ---- */
   --el-color-primary: var(--au-primary);
   --el-color-primary-light-3: color-mix(in srgb, var(--au-primary) 70%, var(--au-bg));
   --el-color-primary-light-5: color-mix(in srgb, var(--au-primary) 50%, var(--au-bg));
@@ -141,7 +142,7 @@ html:root {
   --el-form-label-font-size: 13px;
 }
 
-/* 主色的 rgb 三元组只在少数 rgba() 里用到，跟着白日深琥珀走 */
+/* 主色的 rgb 三元组只在少数 rgba() 里用到，跟着白日深主色走 */
 html[data-theme='light'] {
   --el-color-primary-rgb: 185, 128, 47;
 }
@@ -173,27 +174,74 @@ html[data-theme='light'] {
 }
 
 .el-button + .el-button { margin-left: 8px; }
-.el-button:not(.is-disabled):active { transform: scale(0.98); }
+.el-button:not(.is-disabled):active { transform: scale(var(--ax-press-scale)); }
 
-/* 实心主按钮：琥珀底 + 深棕墨字（同 .au-btn-primary；悬停提亮不换色） */
-.el-button.el-button--primary {
-  --el-button-text-color: var(--au-on-primary);
-  --el-button-bg-color: var(--au-primary);
-  --el-button-border-color: var(--au-primary);
-  --el-button-hover-text-color: var(--au-on-primary);
-  --el-button-hover-bg-color: var(--au-primary);
-  --el-button-hover-border-color: var(--au-primary);
-  --el-button-active-text-color: var(--au-on-primary);
-  --el-button-active-bg-color: var(--au-primary-strong);
-  --el-button-active-border-color: var(--au-primary-strong);
+/* 主按钮 —— ax 口径（与用户端 .au-btn-primary / .btn-primary 同一套外观，
+   2026-11-21 后台全套重设计批 1）：彩虹渐变边框（::before mask 环切 1.5px 细环）
+   + 玻璃栈（backdrop blur+saturate + 内高光 + 柔影）。
+   默认（深色面）：深色毛玻璃底 + 白字；浅色面（html[data-theme='light']）：淡彩粉彩底 + 黑字。
+   只作用于实心主按钮；plain / text / link 变体走下面的浅底口径，不套彩虹环。 */
+.el-button.el-button--primary:not(.is-plain):not(.is-text):not(.is-link) {
+  position: relative;
+  border: 1.5px solid transparent;
+  --el-button-text-color: #ffffff;
+  --el-button-bg-color: var(--ax-glass-btn-d);
+  --el-button-border-color: transparent;
+  --el-button-hover-text-color: #ffffff;
+  --el-button-hover-bg-color: var(--ax-glass-btn-d);
+  --el-button-hover-border-color: transparent;
+  --el-button-active-text-color: #ffffff;
+  --el-button-active-bg-color: var(--ax-glass-btn-d);
+  --el-button-active-border-color: transparent;
+  box-shadow: var(--ax-shadow-sheet);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+.el-button.el-button--primary:not(.is-plain):not(.is-text):not(.is-link)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--ax-rainbow-border-w);
+  background: var(--ax-rainbow);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+html[data-theme='light'] .el-button.el-button--primary:not(.is-plain):not(.is-text):not(.is-link) {
+  --el-button-text-color: #111111;
+  --el-button-bg-color: var(--ax-rainbow-soft);
+  --el-button-hover-text-color: #111111;
+  --el-button-hover-bg-color: var(--ax-rainbow-soft);
+  --el-button-active-text-color: #111111;
+  --el-button-active-bg-color: var(--ax-rainbow-soft);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    var(--ax-shadow-card-l);
+}
+
+/* 主按钮禁用态：彩虹退场（环隐藏）+ 中性表面 + 四级字，同 .au-btn-primary:disabled。
+   通用禁用规则（后文）已把底色写回中性面，这里只补阴影/滤镜/环三项。 */
+.el-button.el-button--primary:disabled:not(.is-plain):not(.is-text):not(.is-link),
+.el-button.el-button--primary.is-disabled:not(.is-plain):not(.is-text):not(.is-link) {
+  box-shadow: inset 0 0 0 1px var(--au-border);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.el-button.el-button--primary:disabled:not(.is-plain):not(.is-text):not(.is-link)::before,
+.el-button.el-button--primary.is-disabled:not(.is-plain):not(.is-text):not(.is-link)::before {
+  display: none;
 }
 
 .el-button.el-button--primary:not(.is-plain):not(.is-text):not(.is-link):not(.is-disabled):hover {
   filter: brightness(1.08);
 }
 
-/* ui/beautify-20261018：按钮悬停上浮 1px（文本/链接型按钮除外——transform 已在 .el-button 的 transition 里；P2-2 加 :not(:active)，避免悬停覆盖按压的 scale(0.98)） */
-.el-button:hover:not(:active):not(.is-text):not(.is-link):not(.is-disabled):not(:disabled) {
+/* ui/beautify-20261018：按钮悬停上浮 1px（文本/链接型与主按钮除外——主按钮走用户端
+   ax 口径：悬停只提亮不位移；P2-2 加 :not(:active)，避免悬停覆盖按压的 scale） */
+.el-button:hover:not(:active):not(.is-text):not(.is-link):not(.el-button--primary):not(.is-disabled):not(:disabled) {
   transform: translateY(-1px);
 }
 
@@ -365,7 +413,7 @@ html[data-theme='light'] {
   color: var(--au-text);
 }
 
-/* 键盘焦点环：琥珀描边（同用户端 :focus-visible） */
+/* 键盘焦点环：主色描边（同用户端 :focus-visible） */
 .el-button:focus-visible,
 .el-button.el-tooltip__trigger:focus-visible {
   outline: 2px solid var(--au-border-focus);
@@ -408,7 +456,7 @@ html[data-theme='light'] {
 .el-select__wrapper:hover,
 .el-textarea__inner:hover { box-shadow: 0 0 0 1px var(--au-border-strong) inset; }
 
-/* 聚焦：琥珀描边 + 3px 琥珀柔光环 + 底色压深一档（同 .au-input:focus） */
+/* 聚焦：主色描边 + 3px 主色柔光环 + 底色压深一档（同 .au-input:focus） */
 .el-input__wrapper.is-focus,
 .el-input__wrapper:focus-within,
 .el-select__wrapper.is-focused,
@@ -522,7 +570,7 @@ html[data-theme='light'] {
   box-shadow: 0 0 0 1px var(--au-danger-border) inset;
 }
 
-/* 开关：开 = 琥珀，关 = 中性轨道 */
+/* 开关：开 = 主色，关 = 中性轨道 */
 .el-switch {
   --el-switch-on-color: var(--au-primary);
   --el-switch-off-color: var(--au-surface-3);
@@ -588,7 +636,7 @@ html[data-theme='light'] {
 
 .el-radio__input.is-checked .el-radio__inner::after { background-color: var(--au-on-primary); }
 
-/* 单选按钮组：做成用户端的分段切换器（中性表面，选中 = 琥珀底） */
+/* 单选按钮组：做成用户端的分段切换器（中性表面，选中 = 主色底） */
 .el-radio-button__inner {
   background-color: var(--au-surface-2);
   border-color: var(--au-border);
@@ -866,16 +914,28 @@ html .el-table__footer-wrapper tr td.el-table__fixed-right-patch {
 .el-message-box__status.el-message-box-icon--success { color: var(--au-success); }
 .el-message-box__status.el-message-box-icon--info { color: var(--au-info); }
 
-/* ==================== 9. 消息 / 通知（toast）==================== */
+/* ==================== 9. 消息 / 通知（toast）====================
+   ax 口径（批 1）：浮层类非弹窗元素走玻璃——半透底 + blur/saturate + 玻璃边 + 柔影。
+   语义色只染图标与描边，正文走正文色（与自定义 Toast.vue 同口径）。 */
 .el-message {
-  --el-message-bg-color: var(--au-overlay-menu);
-  --el-message-border-color: var(--au-border-strong);
+  --el-message-bg-color: var(--ax-glass-d);
+  --el-message-border-color: var(--ax-glass-border);
   --el-message-text-color: var(--au-text);
-  border: 1px solid var(--au-border-strong);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-md);
-  box-shadow: var(--au-shadow-2);
+  background: var(--ax-glass-d);
+  box-shadow: var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   padding: 11px 16px;
   min-width: 260px;
+}
+html[data-theme='light'] .el-message {
+  --el-message-bg-color: var(--ax-glass-l);
+  --el-message-border-color: var(--ax-glass-border-l);
+  border: 1px solid var(--ax-glass-border-l);
+  background: var(--ax-glass-l);
+  box-shadow: var(--ax-shadow-card-l);
 }
 
 .el-message__content { font-size: 13px; font-weight: 500; color: var(--au-text); }
@@ -889,16 +949,26 @@ html .el-table__footer-wrapper tr td.el-table__fixed-right-patch {
 .el-message--info .el-message__icon { color: var(--au-info); }
 
 .el-notification {
-  --el-notification-bg-color: var(--au-overlay-menu);
-  --el-notification-border-color: var(--au-border-strong);
+  --el-notification-bg-color: var(--ax-glass-d);
+  --el-notification-border-color: var(--ax-glass-border);
   --el-notification-title-color: var(--au-text);
   --el-notification-content-color: var(--au-text-2);
   --el-notification-radius: var(--au-r-lg);
-  --el-notification-shadow: var(--au-shadow-2);
-  background: var(--au-overlay-menu);
-  border: 1px solid var(--au-border-strong);
+  --el-notification-shadow: var(--ax-shadow-card-d);
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-lg);
-  box-shadow: var(--au-shadow-2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .el-notification {
+  --el-notification-bg-color: var(--ax-glass-l);
+  --el-notification-border-color: var(--ax-glass-border-l);
+  --el-notification-shadow: var(--ax-shadow-card-l);
+  background: var(--ax-glass-l);
+  border: 1px solid var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 
 .el-notification__title { font-family: var(--au-font-serif); font-weight: 700; }
@@ -1041,7 +1111,7 @@ html .el-table__footer-wrapper tr td.el-table__fixed-right-patch {
 .el-month-table td.current:not(.disabled) .cell,
 .el-year-table td.current:not(.disabled) .cell { color: var(--au-primary); font-weight: 700; }
 
-/* ==================== 11. 选项卡（同用户端主导航：安静文字 + 琥珀指示） ==================== */
+/* ==================== 11. 选项卡（同用户端主导航：安静文字 + 主色指示） ==================== */
 .el-tabs { --el-tabs-header-height: 42px; }
 
 .el-tabs__header { margin-bottom: 16px; }
@@ -1109,16 +1179,29 @@ html .el-table__footer-wrapper tr td.el-table__fixed-right-patch {
 .el-menu--horizontal > .el-menu-item.is-active { border-bottom-color: var(--au-primary); background: transparent; }
 .el-menu--popup { background: var(--au-overlay-menu); border: 1px solid var(--au-border-strong); border-radius: var(--au-r-md); padding: 6px; }
 
-/* ==================== 13. 卡片 ==================== */
+/* ==================== 13. 卡片 ====================
+   ax 口径（2026-11-21 后台全套重设计批 1）：玻璃栈——半透底 + blur/saturate +
+   玻璃边 + 内高光 + 柔影（同用户端玻璃卡配方，见 AxMemberCard / AxNavPill 下拉）。
+   弹窗（.el-dialog）不在此列：对话框一律实色，见第 8 节。 */
 .el-card {
-  --el-card-bg-color: var(--au-surface);
-  --el-card-border-color: var(--au-border);
+  --el-card-bg-color: var(--ax-glass-d);
+  --el-card-border-color: var(--ax-glass-border);
   --el-card-border-radius: var(--au-r-lg);
   --el-card-padding: 20px;
-  background: var(--au-surface);
-  border: 1px solid var(--au-border);
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-lg);
   color: var(--au-text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .el-card {
+  --el-card-bg-color: var(--ax-glass-l);
+  --el-card-border-color: var(--ax-glass-border-l);
+  background: var(--ax-glass-l);
+  border: 1px solid var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 
 .el-card.is-always-shadow,

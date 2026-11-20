@@ -3,8 +3,8 @@
  * 高级设置折叠容器（配置瘦身第 3 批）。
  *
  * 低频调优项的统一收纳：默认收起，展开后才渲染表单项（v-if 懒渲染，
- * 避免初始化一堆隐藏的表单控件）。风格跟随暗房影院设计系统：
- * 实色表面 + 发丝线 + 14px 圆角，只用 --au-* 令牌。
+ * 避免初始化一堆隐藏的表单控件）。风格跟随 ax 设计系统：
+ * 玻璃面 + 玻璃边 + 14px 圆角，只用 --au-* / --ax-* 令牌。
  *
  * - title：折叠头标题，默认「高级设置」
  * - description：头下一行小字说明
@@ -77,9 +77,15 @@ const chevronCls = computed(() => ({ 'is-open': open.value }))
 <style scoped>
 .au-advanced {
   margin-top: 12px;
-  background: var(--au-surface-2);
-  border: 1px solid var(--au-border);
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-radius: var(--au-r-lg);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .au-advanced {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
 }
 
 .au-advanced__head {

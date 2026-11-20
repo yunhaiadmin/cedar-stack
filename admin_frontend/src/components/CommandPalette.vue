@@ -219,16 +219,26 @@ function onKeydown(e: KeyboardEvent) {
   backdrop-filter: blur(3px);
 }
 
+/* 面板：浮层类非弹窗元素走玻璃（批 1 · ax 口径，同用户端 AxNavPill 下拉配方：
+   半透底 + slab 级 blur/saturate + 玻璃边 + 柔影；圆角 20 与该下拉同值）。
+   遮罩仍是 --au-scrim 实色遮罩（对话框口径不适用——本面板不是 el-dialog）。 */
 .cmd-panel {
   width: min(620px, 100%);
   max-height: 70vh;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--au-border);
-  border-radius: var(--au-r-lg);
-  background: var(--au-surface-2);
-  box-shadow: var(--au-shadow-2);
+  border: 1px solid var(--ax-glass-border);
+  border-radius: 20px;
+  background: var(--ax-glass-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-slab-filter);
+  -webkit-backdrop-filter: var(--ax-glass-slab-filter);
   overflow: hidden;
+}
+html[data-theme='light'] .cmd-panel {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 
 .cmd-head {

@@ -23,12 +23,14 @@ body {
   margin: 0;
   padding: 0;
   height: 100%;
-  background: var(--color-bg-primary, #0a0a0a);
+  /* 批 1：跟随 ax 主题底色（--au-bg 深/浅两档），不再写死 #0a0a0a，
+     否则浅色主题下 html 底边仍露深色。 */
+  background: var(--au-bg);
 }
 
 #app {
   height: 100%;
   font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  color: var(--color-text-primary, #fff);
+  color: var(--au-text);
 }
 </style>

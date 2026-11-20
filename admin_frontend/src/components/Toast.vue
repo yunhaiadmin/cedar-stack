@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 全局轻提示（暗房影院）：实色浮层 + 发丝线 + 左侧语义色细条，只淡入不横滑。
+ * 全局轻提示（ax 口径 · 玻璃）：玻璃浮层 + 玻璃边 + 左侧语义色细条，只淡入不横滑。
  * 语义色只染图标与左侧细条，正文走正文色（与 el-message 同口径）。
  */
 import { CheckCircle, XCircle, AlertCircle, Info, X } from 'lucide-vue-next'
@@ -56,12 +56,23 @@ const toastIcons = {
   min-width: 280px;
   max-width: 440px;
   padding: 12px 12px 12px 14px;
-  background: var(--au-surface-2);
-  border: 1px solid var(--au-border-strong);
+  background: var(--ax-glass-d);
+  border: 1px solid var(--ax-glass-border);
   border-left: 3px solid var(--au-info);
   border-radius: var(--au-r-md);
-  box-shadow: var(--au-shadow-2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   color: var(--au-text);
+}
+html[data-theme='light'] .toast {
+  background: var(--ax-glass-l);
+  /* 只改三边：左边框是语义色细条（.is-success/.is-error/.is-warning 在后文钉死），
+     不能被 border-color 整组覆盖。 */
+  border-top-color: var(--ax-glass-border-l);
+  border-right-color: var(--ax-glass-border-l);
+  border-bottom-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 
 .toast.is-success { border-left-color: var(--au-success); }

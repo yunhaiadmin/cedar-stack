@@ -16,7 +16,7 @@
  * - 趋势图：近 7/14/30 天的新增用户 / 播放 / 营收（纯 SVG，无额外依赖）
  * - 播放榜：用户榜 + 热门内容榜
  *
- * v2.54（暗房影院）：整页改用 components/ui 的共享原语（PageHeader / SectionCard /
+ * v2.54（ax 口径）：整页改用 components/ui 的共享原语（PageHeader / SectionCard /
  * StatTile / EmptyState），是其它页面改造的参考实现——见 components/ui/README.md。
  *
  * v2.55（方便优先重排）：页首新增「全站状态」一眼区（站点健康 / 队列积压 /
@@ -75,7 +75,7 @@ const failedParts = ref<string[]>([])
 const days = ref(14)
 type Metric = 'new_users' | 'plays' | 'revenue'
 const metric = ref<Metric>('new_users')
-// 趋势图指标色（暗房影院）：走 --au-* 令牌，随深浅主题与品牌色切换。
+// 趋势图指标色（ax 口径）：走 --au-* 令牌，随深浅主题与品牌色切换。
 // SVG 的 stroke / stop-color **属性**不认 var()，所以模板里一律写进 style（CSS 属性认）。
 const metricTabs: { key: Metric; label: string; color: string }[] = [
   { key: 'new_users', label: '新增用户', color: 'var(--au-primary)' },
@@ -465,14 +465,22 @@ function fmtMoney(v: number): string {
   gap: 5px;
   padding: 13px 16px;
   border-radius: var(--au-r-lg);
-  border: 1px solid var(--au-border);
-  background: var(--au-surface);
+  border: 1px solid var(--ax-glass-border);
+  background: var(--ax-glass-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   color: inherit;
   text-decoration: none;
   min-width: 0;
 }
+html[data-theme='light'] .glance-card {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
+}
 a.glance-card { transition: border-color var(--au-fast) var(--au-ease), background var(--au-fast) var(--au-ease); }
-a.glance-card:hover { border-color: var(--au-border-strong); background: var(--au-surface-2); }
+a.glance-card:hover { border-color: var(--au-border-strong); }
 .glance-head {
   display: flex;
   align-items: center;
@@ -503,7 +511,7 @@ a.glance-card:hover { border-color: var(--au-border-strong); background: var(--a
   .glance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-/* ===== 待办条 ===== */
+/* ===== 待办条（玻璃栈，同 SectionCard 配方） ===== */
 .todo-bar {
   display: flex;
   align-items: center;
@@ -511,8 +519,16 @@ a.glance-card:hover { border-color: var(--au-border-strong); background: var(--a
   flex-wrap: wrap;
   padding: 12px 16px;
   border-radius: var(--au-r-lg);
-  border: 1px solid var(--au-border);
-  background: var(--au-surface);
+  border: 1px solid var(--ax-glass-border);
+  background: var(--ax-glass-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .todo-bar {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
 }
 
 .todo-bar.clear { border-color: var(--au-success-border); }
@@ -587,7 +603,19 @@ a.glance-card:hover { border-color: var(--au-border-strong); background: var(--a
 
 .metric-dot { width: 6px; height: 6px; border-radius: 50%; opacity: 0.5; }
 .metric-tab:hover { color: var(--au-text); }
-.metric-tab.active { color: var(--au-text); border-color: var(--au-border); background: var(--au-surface-2); font-weight: 600; }
+/* 激活的指标签：玻璃胶囊（同 AxNavPill 导航项配方） */
+.metric-tab.active {
+  color: var(--au-text);
+  border-color: var(--ax-glass-border);
+  background: var(--ax-glass-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+  font-weight: 600;
+}
+html[data-theme='light'] .metric-tab.active {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+}
 .metric-tab.active .metric-dot { opacity: 1; }
 .metric-tab:focus-visible { outline: 2px solid var(--au-border-focus); outline-offset: 2px; }
 

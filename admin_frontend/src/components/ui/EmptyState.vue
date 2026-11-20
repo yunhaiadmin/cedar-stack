@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /**
- * 空状态（暗房影院 .au-empty）：淡色图标 + 衬线一句话 + 灰色说明 + 可选操作。
+ * 空状态（ax 口径）：淡色图标 + 一句话 + 灰色说明 + 可选操作。
+ * 图标盘走玻璃（半透底 + blur + 玻璃边，与玻璃卡同配方）。
  * compact：嵌在卡片 / 表格里用（上下留白收小）。用法见 ./README.md。
  */
 withDefaults(
@@ -51,9 +52,15 @@ withDefaults(
   height: 52px;
   margin-bottom: 6px;
   border-radius: var(--au-r-full);
-  border: 1px solid var(--au-border);
-  background: var(--au-surface-2);
+  border: 1px solid var(--ax-glass-border);
+  background: var(--ax-glass-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
   color: var(--au-text-4);
+}
+html[data-theme='light'] .au-empty-state__icon {
+  border-color: var(--ax-glass-border-l);
+  background: var(--ax-glass-l);
 }
 
 .is-compact .au-empty-state__icon { width: 40px; height: 40px; margin-bottom: 2px; }
