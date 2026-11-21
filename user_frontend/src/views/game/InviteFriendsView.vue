@@ -362,9 +362,9 @@ const welfareHintText = computed(() => {
   if (!w || !welfareActive.value) return '福利邀请暂未开启，管理员开启后即可生成试用邀请码。'
   if (w.used_this_month >= w.monthly_limit) return '本月福利次数已用完，下个月再来送好友试用。'
   if (w.inviter_paid_fen < w.min_paid_fen) {
-    return `累计成功充值须大于 $${yuanText(w.min_paid_fen)}，还差 $${yuanText(w.min_paid_fen - w.inviter_paid_fen)}。`
+    return `累计成功充值满 $${yuanText(w.min_paid_fen)} 可送好友试用，还差 $${yuanText(w.min_paid_fen - w.inviter_paid_fen)}。`
   }
-  if (w.min_paid_fen > 0) return `累计成功充值须大于 $${yuanText(w.min_paid_fen)}，你已达标。`
+  if (w.min_paid_fen > 0) return `累计成功充值满 $${yuanText(w.min_paid_fen)}，你已达标。`
   return '你已符合福利邀请资格。'
 })
 
