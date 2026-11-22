@@ -270,6 +270,20 @@ def test_graceful_degradation_on_unwritable_dir(tmp_path, monkeypatch):
     assert calls, "降级后必须照常真的发请求"
 
 
+def test_cfg_dir_prefers_tmdb_cache_dir_over_cache_root(tmp_path, monkeypatch):
+    """目录解析（S5）：EMBY_TMDB_CACHE_DIR 优先于 EMBY_CACHE_DIR 默认拼接。
+
+    生产 compose 靠这一条把缓存从容器 /tmp（部署重建清零）指到持久卷
+    /data/tmdb-cache；优先级若反了，compose 写了也白写、每次部署仍冷启动。
+    配置是动态读 env（见 tmdb_cache 模块注释），monkeypatch 后直接读即可。
+    """
+    monkeypatch.setenv("EMBY_CACHE_DIR", str(tmp_path / "root"))
+    monkeypatch.delenv("EMBY_TMDB_CACHE_DIR", raising=False)
+    assert tmdb_cache._cfg_dir() == os.path.join(str(tmp_path / "root"), "tmdb")
+    monkeypatch.setenv("EMBY_TMDB_CACHE_DIR", str(tmp_path / "persistent"))
+    assert tmdb_cache._cfg_dir() == str(tmp_path / "persistent")
+
+
 def test_cache_disabled_by_env(cache_dir, monkeypatch):
     """EMBY_TMDB_CACHE=0：磁盘读写全部短路，API 照常（每次新实例都真的请求）"""
     monkeypatch.setenv("EMBY_TMDB_CACHE", "0")
