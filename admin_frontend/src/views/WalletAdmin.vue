@@ -10,7 +10,7 @@
  */
 import { computed, onMounted, reactive, ref } from 'vue'
 import { formatServerTime } from '@/utils/serverTime'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { walletApi, type WalletBalanceResponse, type WalletLedgerRow } from '@/api/wallet'
 import { PageHeader, SectionCard } from '@/components/ui'
 import DataTable from '@/components/DataTable.vue'
@@ -62,6 +62,17 @@ async function submitAdjust() {
   }
   if (!adjustForm.reason.trim()) {
     ElMessage.warning('调账必须填写原因')
+    return
+  }
+  const amountNum = Number(adjustForm.amount)
+  const signedAmount = amountNum > 0 ? `+$${Math.abs(amountNum)}` : `-$${Math.abs(amountNum)}`
+  try {
+    await ElMessageBox.confirm(
+      `确认给用户「${balanceInfo.value.username}（ID ${balanceInfo.value.user_id}）」调账 ${signedAmount} 美元？\n原因：${adjustForm.reason.trim()}\n当前余额 $${balanceInfo.value.balance}，调账会写流水并记操作人。`,
+      '确认手工调账',
+      { type: 'warning', confirmButtonText: '确认调账', cancelButtonText: '取消' },
+    )
+  } catch {
     return
   }
   adjustLoading.value = true

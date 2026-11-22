@@ -112,6 +112,18 @@ async function doAssign() {
 
 // ===== 改等级 / 取消 =====
 async function doChangeLevel(row: AgentRow, levelId: number) {
+  if (levelId === row.level_id) return
+  const target = levels.value.find((lv) => lv.id === levelId)
+  try {
+    await ElMessageBox.confirm(
+      `将代理「${row.username}」的等级改为「${target?.name ?? `#${levelId}`}」？等级会影响进货折扣与佣金口径。`,
+      '修改代理等级',
+      { type: 'warning', confirmButtonText: '确认修改', cancelButtonText: '取消' },
+    )
+  } catch {
+    await loadAgents()
+    return
+  }
   try {
     await updateAgent(row.id, { level_id: levelId })
     ElMessage.success('等级已更新')
@@ -123,6 +135,18 @@ async function doChangeLevel(row: AgentRow, levelId: number) {
 }
 
 async function doToggleAgent(row: AgentRow, active: boolean) {
+  try {
+    await ElMessageBox.confirm(
+      active
+        ? `恢复代理「${row.username}」？恢复后可继续进货与销售。`
+        : `取消代理「${row.username}」？取消后不能再进货，历史账目会保留。`,
+      active ? '恢复代理' : '取消代理',
+      { type: 'warning', confirmButtonText: active ? '确认恢复' : '确认取消代理', cancelButtonText: '取消' },
+    )
+  } catch {
+    await loadAgents()
+    return
+  }
   try {
     await updateAgent(row.id, { is_active: active })
     ElMessage.success(active ? '代理已恢复' : '代理已取消（账目保留）')

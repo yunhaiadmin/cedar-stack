@@ -146,6 +146,9 @@ const invStates = ref<{ value: string; label: string }[]>([])
 const invKeyword = ref('')
 const codesError = ref(false)
 const invState = ref('')
+const codesPage = ref(1)
+const CODES_PAGE_SIZE = 20
+const codesTotal = ref(0)
 
 const invColumns: DataColumn[] = [
   { key: 'code', label: '邀请码', width: 130, mobile: 'title' },
@@ -166,9 +169,11 @@ async function loadCodes() {
     const res = await fetchInvitationCodes({
       keyword: invKeyword.value || undefined,
       state: invState.value || undefined,
-      limit: 300,
+      limit: CODES_PAGE_SIZE,
+      offset: (codesPage.value - 1) * CODES_PAGE_SIZE,
     })
     invCodes.value = res.codes
+    codesTotal.value = typeof res.total === 'number' ? res.total : res.codes.length
     invSummary.value = res.summary
     invStates.value = res.states
   } catch {
@@ -200,7 +205,14 @@ function onCodesFilter() {
   // 筛选变化清空选择：老选择对应的行可能已不在结果里。
   // 不要在 loadCodes 内部清——批量作废后也要调 loadCodes()，在那里清会误清失败项
   selection.clear()
+  codesPage.value = 1
   loadCodes()
+}
+
+function onCodesPageChange(p: number) {
+  codesPage.value = p
+  selection.clear()
+  void loadCodes()
 }
 
 /** v2.59 空状态"清除筛选"：清空邀请码筛选条件 */
@@ -867,6 +879,8 @@ onMounted(reloadAll)
         selectable
         v-model:selectedKeys="selectedKeys"
         :is-row-selectable="(row: InvitationCodeRow) => row.is_active"
+        :pagination="{ total: codesTotal, page: codesPage, pageSize: CODES_PAGE_SIZE }"
+        @page-change="onCodesPageChange"
         @clear-filters="clearCodesFilters"
       >
         <template #bulk-bar>

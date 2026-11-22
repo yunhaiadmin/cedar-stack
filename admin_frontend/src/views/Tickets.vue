@@ -46,8 +46,28 @@ const list = ref<TicketRow[]>([])
 const loading = ref(false)
 const loadError = ref('')
 const statusFilter = ref('')
+const keyword = ref('')
+const page = ref(1)
+const PAGE_SIZE = 20
+const total = ref(0)
+let lastKeyword = ''
 // 深链：仪表盘「待处理工单」/ 命令面板跳过来时带的就是这个筛选（Phase 5）
-useQueryFilter(statusFilter, 'status', load)
+useQueryFilter(statusFilter, 'status', () => { page.value = 1; void load() })
+
+function onKeywordUpdate(value: string) {
+  keyword.value = value
+  if (value.trim() !== lastKeyword) { page.value = 1; void load() }
+}
+
+function onPageChange(p: number) {
+  page.value = p
+  void load()
+}
+
+function onStatusChange() {
+  page.value = 1
+  void load()
+}
 
 /** 筛选一律 FilterBar（统一标准第 4 条）：状态单选钮走自定义控件原样保留 */
 const ticketFilterConfigs = computed<FilterConfig[]>(() => [
@@ -69,8 +89,24 @@ const metaSaving = ref(false)
 async function load() {
   loading.value = true
   loadError.value = ''
+  lastKeyword = keyword.value.trim()
   try {
-    list.value = await fetchTickets(statusFilter.value ? { status_filter: statusFilter.value } : {})
+    const res: unknown = await fetchTickets({
+      ...(statusFilter.value ? { status_filter: statusFilter.value } : {}),
+      ...(keyword.value.trim() ? { keyword: keyword.value.trim() } : {}),
+      limit: PAGE_SIZE,
+      offset: (page.value - 1) * PAGE_SIZE,
+    })
+    // 容错解析：新后端回信封 {total, tickets}（#438 定版），旧后端回数组；
+    // 中间形状 {items} 一并兜底，保证单独合并也不白屏
+    if (Array.isArray(res)) {
+      list.value = res as TicketRow[]
+      total.value = (res as TicketRow[]).length
+    } else {
+      const env = res as { tickets?: TicketRow[]; items?: TicketRow[]; total?: number }
+      list.value = env.tickets ?? env.items ?? []
+      total.value = typeof env.total === 'number' ? env.total : list.value.length
+    }
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : '加载失败'
   } finally {
@@ -183,11 +219,16 @@ function statusBadge(status: string): string {
       </template>
     </PageHeader>
 
-    <SectionCard title="工单列表" :icon="Ticket" :meta="loading ? '' : `${list.length} 条`" flush>
+    <SectionCard title="工单列表" :icon="Ticket" :meta="loading ? '' : `共 ${total} 条`" flush>
       <div class="list-bar">
-        <FilterBar :filters="ticketFilterConfigs">
+        <FilterBar
+          :filters="ticketFilterConfigs"
+          :search="{ value: keyword, placeholder: '按标题 / 用户搜索', mode: 'debounced', debounceMs: 350 }"
+          :loading="loading"
+          @update:search="onKeywordUpdate"
+        >
           <template #filter-status>
-            <el-radio-group v-model="statusFilter" aria-label="按状态筛选" @change="load">
+            <el-radio-group v-model="statusFilter" aria-label="按状态筛选" @change="onStatusChange">
               <el-radio-button v-for="t in STATUS_TABS" :key="t.value" :value="t.value">{{ t.label }}</el-radio-button>
             </el-radio-group>
           </template>
@@ -202,6 +243,8 @@ function statusBadge(status: string): string {
         :empty="statusFilter ? `没有${statusLabel(statusFilter)}的工单` : '还没有工单'"
         :empty-description="statusFilter ? '切到「全部」看看其它状态。' : '用户提交的工单会出现在这里。'"
         clickable
+        :pagination="{ total, page, pageSize: PAGE_SIZE }"
+        @page-change="onPageChange"
         @row-click="openDetail"
         @retry="load"
       >

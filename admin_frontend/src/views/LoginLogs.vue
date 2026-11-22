@@ -136,6 +136,9 @@ const committedHasFilter = computed(() =>
   ),
 )
 
+const page = ref(1)
+const PAGE_SIZE = 50
+
 async function load() {
   loading.value = true
   loadError.value = ''
@@ -145,7 +148,8 @@ async function load() {
       ip: committed.value.ip || undefined,
       reason: committed.value.reason || undefined,
       success: committed.value.success === '' ? undefined : committed.value.success === 'true',
-      limit: 300,
+      limit: PAGE_SIZE,
+      offset: (page.value - 1) * PAGE_SIZE,
     })
   } catch (e) {
     // 查询失败拦截器不弹提示，由表格错误态兜底（保留上一次的数据与统计）
@@ -175,6 +179,12 @@ function commitQuery() {
   }
 
   committed.value = next
+  page.value = 1
+  void load()
+}
+
+function onPageChange(p: number) {
+  page.value = p
   void load()
 }
 
@@ -238,7 +248,7 @@ function riskLevel(row: LoginLogRow): string {
     <PageHeader
       eyebrow="用户"
       title="登录日志"
-      description="登录成功 / 失败、设备超限、诱饵码触发等风控事件；最多加载最近 300 条。"
+      description="登录成功 / 失败、设备超限、诱饵码触发等风控事件。"
     >
       <template #actions>
         <RouterLink class="danger-jump" :to="{ name: 'Settings', query: { tab: 'danger', op: 'logs' } }">
@@ -269,7 +279,7 @@ function riskLevel(row: LoginLogRow): string {
       />
     </div>
 
-    <SectionCard title="登录事件" :icon="ScrollText" :meta="data ? `${data.logs.length} 条` : ''" flush>
+    <SectionCard title="登录事件" :icon="ScrollText" :meta="data ? `共 ${data.total} 条` : ''" flush>
       <div class="list-bar">
         <!-- 多输入框且无主搜索的页面也需要统一查询按钮，因此只启用 queryButton，不传 search。 -->
         <FilterBar
@@ -311,6 +321,8 @@ function riskLevel(row: LoginLogRow): string {
         :error="loadError"
         empty="暂无登录记录"
         :has-active-filters="committedHasFilter"
+        :pagination="{ total: data?.total ?? 0, page, pageSize: PAGE_SIZE }"
+        @page-change="onPageChange"
         @retry="load"
         @clear-filters="clearFilters"
       >

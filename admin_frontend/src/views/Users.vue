@@ -364,6 +364,18 @@ function fmtDeviceDate(value: string | null): string {
 }
 
 async function toggleUserDevice(device: DeviceRow) {
+  const action = device.is_blocked ? '解封' : '封禁'
+  try {
+    await ElMessageBox.confirm(
+      device.is_blocked
+        ? `确认解封 ${device.username} 的设备「${device.name || device.device_id}」？`
+        : `封禁后该设备已签发的令牌会被吊销，且无法再次登录。确认封禁 ${device.username} 的设备「${device.name || device.device_id}」？`,
+      `${action}设备`,
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
   deviceLoading.value = true
   try {
     const nextBlocked = !device.is_blocked

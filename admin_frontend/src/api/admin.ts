@@ -221,8 +221,10 @@ export interface DanmuApiLinesConfig {
   lines: DanmuApiLine[]
   /** 外部弹幕源开关（后端 danmu_api_external_enabled，默认关） */
   external_enabled: boolean
-  /** 外部弹幕源 base 地址（后端 danmu_api_external_url，含 token 路径，只在后台可见） */
+  /** 外部弹幕源 base 地址：已配置时 GET 回掩码 "******"（真值不下发），PUT 回传 "******" 表示不修改 */
   external_url: string
+  /** 是否已配置外部源地址（与掩码口径配套下发） */
+  external_url_set?: boolean
 }
 
 export const fetchDanmuApiLines = () => get<DanmuApiLinesConfig>('/danmu-api/config')
@@ -771,8 +773,16 @@ export const updateAnnouncement = (id: number, data: Partial<{ title: string; co
 export const deleteAnnouncement = (id: number) => del<{ success: boolean }>(`/announcements/${id}`)
 
 // ==================== 工单 =============
-export const fetchTickets = (params: { status_filter?: string } = {}) =>
-  get<TicketRow[]>('/tickets', params)
+/** 工单分页信封（后端 #438 定版，与 list_users 同形状）：{total, tickets} */
+export interface TicketsPage {
+  total: number
+  tickets: TicketRow[]
+  limit?: number
+  offset?: number
+}
+
+export const fetchTickets = (params: { status_filter?: string; keyword?: string; limit?: number; offset?: number } = {}) =>
+  get<TicketsPage | TicketRow[]>('/tickets', params)
 
 /** 工单状态 / 优先级调整 */
 export const updateTicket = (id: number, data: { status?: string; priority?: string; category?: string }) =>
@@ -1043,8 +1053,16 @@ export const refreshServerMounts = () =>
   )
 
 // ==================== 日志与统计 =============
-export const fetchLogs = (params: { limit?: number; action_filter?: string } = {}) =>
-  get<AdminLogRow[]>('/logs', params)
+/** 操作日志分页信封（后端 #438 定版）：{items, total} */
+export interface AdminLogsPage {
+  items: AdminLogRow[]
+  total: number
+  limit?: number
+  offset?: number
+}
+
+export const fetchLogs = (params: { limit?: number; offset?: number; action_filter?: string } = {}) =>
+  get<AdminLogsPage | AdminLogRow[]>('/logs', params)
 
 export const fetchOverview = () => get<OverviewStats>('/stats/overview')
 
@@ -2621,8 +2639,9 @@ export interface ArtworkOverrideRow {
   created_at?: string | null
 }
 
-export const fetchArtworkOverrides = () =>
-  get<{ items: ArtworkOverrideRow[] }>('/media-library/artwork-overrides')
+export const fetchArtworkOverrides = (params: { limit?: number; offset?: number } = {}) =>
+  get<{ items: ArtworkOverrideRow[]; total?: number; limit?: number; offset?: number } | ArtworkOverrideRow[]>(
+    '/media-library/artwork-overrides', params)
 export const setArtworkOverride = (data: { item_id: number; kind: string; image_url: string }) =>
   post<{ ok: boolean }>('/media-library/artwork-overrides', data)
 export const deleteArtworkOverride = (itemId: number, kind: string) =>

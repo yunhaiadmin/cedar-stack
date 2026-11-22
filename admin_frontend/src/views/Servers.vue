@@ -289,6 +289,17 @@ async function testOneMount(m: StorageMount) {
 }
 
 async function toggleMount(m: StorageMount) {
+  try {
+    await ElMessageBox.confirm(
+      m.is_enabled
+        ? `停用挂载「${m.name}」后，引用它的媒体库将不再从这个挂载读文件（重扫后生效）。确认停用？`
+        : `启用挂载「${m.name}」？启用后引用它的媒体库可重新从这个挂载读文件（重扫后生效）。`,
+      m.is_enabled ? '停用挂载' : '启用挂载',
+      { type: 'warning', confirmButtonText: m.is_enabled ? '确认停用' : '确认启用', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
   await updateMount(m.id, { is_enabled: !m.is_enabled })
   ElMessage.success(m.is_enabled ? `「${m.name}」已停用（重扫后生效）` : `「${m.name}」已启用（重扫后生效）`)
   loadServerMounts()

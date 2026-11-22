@@ -25,7 +25,9 @@ const logs = ref<AdminLogRow[]>([])
 const loading = ref(false)
 const loadError = ref('')
 const actionFilter = ref('')
-const limit = ref(100)
+const page = ref(1)
+const PAGE_SIZE = 100
+const total = ref(0)
 const keyword = ref('')
 
 /** 前端筛选：按操作人 / 目标 / 详情关键字（后端只提供 action 过滤） */
@@ -197,9 +199,18 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    const params: Record<string, unknown> = { limit: limit.value }
+    const params: Record<string, unknown> = { limit: PAGE_SIZE, offset: (page.value - 1) * PAGE_SIZE }
     if (actionFilter.value) params.action_filter = actionFilter.value
-    logs.value = await fetchLogs(params)
+    const res: unknown = await fetchLogs(params)
+    // 容错解析：新后端回信封 {items, total}（#438 定版），旧后端回数组
+    if (Array.isArray(res)) {
+      logs.value = res as AdminLogRow[]
+      total.value = (res as AdminLogRow[]).length
+    } else {
+      const env = res as { items?: AdminLogRow[]; total?: number }
+      logs.value = env.items ?? []
+      total.value = typeof env.total === 'number' ? env.total : logs.value.length
+    }
   } catch (e) {
     // 查询失败拦截器不弹提示（见 utils/request.ts），由表格错误态兜底
     loadError.value = e instanceof Error ? e.message : '加载失败'
@@ -209,11 +220,21 @@ async function load() {
   }
 }
 
+function loadFromStart() {
+  page.value = 1
+  void load()
+}
+
+function onPageChange(p: number) {
+  page.value = p
+  void load()
+}
+
 onMounted(load)
 
 function toggleQuick(a: string) {
   actionFilter.value = actionFilter.value === a ? '' : a
-  load()
+  loadFromStart()
 }
 
 /**
@@ -245,7 +266,7 @@ function clearOpFilters() {
   keyword.value = ''
   if (actionFilter.value) {
     actionFilter.value = ''
-    load()
+    loadFromStart()
   }
 }
 
@@ -254,12 +275,14 @@ function removeOpFilterChip(key: string) {
     keyword.value = ''
   } else if (key === 'action') {
     actionFilter.value = ''
-    load()
+    loadFromStart()
   }
 }
 
 const metaText = computed(() =>
-  keyword.value.trim() ? `筛出 ${visibleLogs.value.length} / ${logs.value.length} 条` : `最近 ${logs.value.length} 条`,
+  keyword.value.trim()
+    ? `本页筛出 ${visibleLogs.value.length} / ${logs.value.length} 条 · 共 ${total.value} 条`
+    : `共 ${total.value} 条`,
 )
 
 function fmtDate(s: string): string {
@@ -281,7 +304,7 @@ function detailText(log: AdminLogRow): string {
     <PageHeader
       eyebrow="系统"
       title="操作日志"
-      :description="`每一次管理操作都会留下审计记录；后端按操作类型筛选，关键字在已加载的最近 ${limit} 条里查。`"
+      description="每一次管理操作都会留下审计记录；后端按操作类型筛选并分页，关键字只在当前页已加载的记录里查。"
     >
       <template #actions>
         <el-button :loading="loading" @click="load" :icon="RefreshCw">刷新</el-button>
@@ -312,19 +335,12 @@ function detailText(log: AdminLogRow): string {
               placeholder="全部操作类型"
               clearable
               filterable
-              @change="load"
+              @change="loadFromStart"
             >
               <el-option v-for="(label, key) in ACTION_LABELS" :key="key" :label="label" :value="key" />
             </el-select>
           </template>
         </FilterBar>
-        <div class="head-actions">
-          <el-select v-model="limit" class="w-limit" aria-label="加载条数" @change="load">
-            <el-option :label="'最近 100 条'" :value="100" />
-            <el-option :label="'最近 300 条'" :value="300" />
-            <el-option :label="'最近 500 条'" :value="500" />
-          </el-select>
-        </div>
       </div>
 
       <div class="quick-filters" role="group" aria-label="常用操作快捷筛选">
@@ -348,6 +364,8 @@ function detailText(log: AdminLogRow): string {
         :empty="keyword || actionFilter ? '没有匹配的日志' : '暂无操作日志'"
         :empty-description="keyword || actionFilter ? '换个关键字或清空操作类型再试。' : '管理员的每次改动都会记录在这里。'"
         :has-active-filters="!!(keyword || actionFilter)"
+        :pagination="{ total, page, pageSize: PAGE_SIZE }"
+        @page-change="onPageChange"
         @retry="load"
         @clear-filters="clearOpFilters"
       >

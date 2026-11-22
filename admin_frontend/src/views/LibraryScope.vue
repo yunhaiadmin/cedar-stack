@@ -23,7 +23,7 @@
  * 操作列改用 actions 键，手机卡片里按钮落到底部操作区。首屏骨架 + 加载失败可重试。
  */
 import { computed, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   AlertTriangle, Eye, Library, RefreshCw, Save, Plus, ShieldCheck, TriangleAlert, Trash2, UserCog,
 } from 'lucide-vue-next'
@@ -255,8 +255,20 @@ async function saveUserScope() {
   }
 }
 
-async function toggleOverride(row: { user_id: number; _override: LibraryScopeOverride }) {
+async function toggleOverride(row: { user_id: number; username?: string; _override: LibraryScopeOverride }) {
   if (!canWrite.value) return
+  const enabling = !row._override.enabled
+  try {
+    await ElMessageBox.confirm(
+      enabling
+        ? `为「${row.username ?? `用户 #${row.user_id}`}」开启单独覆盖？开启后该用户只看覆盖名单里的媒体库。`
+        : `让「${row.username ?? `用户 #${row.user_id}`}」恢复跟随服务器默认？该用户的单独覆盖将被关闭。`,
+      enabling ? '开启单独覆盖' : '恢复跟随默认',
+      { type: 'warning', confirmButtonText: enabling ? '确认开启' : '确认恢复', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
   try {
     const res = await saveLibraryScopeUser(row.user_id, {
       enabled: !row._override.enabled,

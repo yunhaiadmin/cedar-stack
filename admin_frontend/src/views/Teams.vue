@@ -16,6 +16,7 @@ import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import type { AppliedFilter, FilterConfig } from '@/components/FilterBar.vue'
+import { toAdminError } from '@/utils/errorMessage'
 import {
   activateTeam,
   getTeamConfig,
@@ -178,8 +179,7 @@ function statusTagType(s: TeamStatus): 'warning' | 'success' | 'info' {
 }
 
 function errText(e: unknown, fallback: string): string {
-  const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-  return typeof detail === 'string' && detail ? detail : fallback
+  return toAdminError(e, fallback)
 }
 
 async function load() {
