@@ -10,7 +10,6 @@ from backend.api import admin_economy, admin_scrape
 from backend.emby_server import auto_scan, change_watcher, enrich_worker
 from backend.emby_server.metasources import config as ms_config
 from backend.integrations import store
-from backend.lottery import is_enabled
 
 
 @pytest.fixture()
@@ -29,7 +28,6 @@ def db(monkeypatch):
     enrich_worker._ep_fields_cfg_cache["at"] = 0.0
     enrich_worker._ep_fields_cfg_cache["cfg"] = None
     saved = os.environ.pop("ENRICH_EPISODE_NIGHT_ONLY", None)
-    saved_lottery = os.environ.pop("LOTTERY_ENABLED", None)
     try:
         yield session
     finally:
@@ -38,10 +36,6 @@ def db(monkeypatch):
             os.environ.pop("ENRICH_EPISODE_NIGHT_ONLY", None)
         else:
             os.environ["ENRICH_EPISODE_NIGHT_ONLY"] = saved
-        if saved_lottery is None:
-            os.environ.pop("LOTTERY_ENABLED", None)
-        else:
-            os.environ["LOTTERY_ENABLED"] = saved_lottery
         store.invalidate()
         enrich_worker._night_cfg_cache["at"] = 0.0
         enrich_worker._night_cfg_cache["cfg"] = None
@@ -77,30 +71,6 @@ def test_night_only_ignores_env(db):
     cfg = enrich_worker._episode_night_config(db)
     assert cfg["enabled"] is False
     assert cfg["from_env"] is False
-
-
-def test_lottery_enabled_env_takeover(db):
-    # env 接管（审计 A-114）：LOTTERY_ENABLED 显式设置即压过 DB 与默认值，
-    # 与 tests/test_audit_a114_lottery_env.py 同口径。
-    os.environ["LOTTERY_ENABLED"] = "0"
-    assert is_enabled(db) is False
-    db.add(base_models.SystemConfig(key="lottery_enabled", value="1"))
-    db.commit()
-    assert is_enabled(db) is False
-
-    # env 未设 → 回落 DB 配置口径；没有行视为开。
-    del os.environ["LOTTERY_ENABLED"]
-    assert is_enabled(db) is True
-    row = db.query(base_models.SystemConfig).filter_by(key="lottery_enabled").one()
-    row.value = "0"
-    db.commit()
-    os.environ["LOTTERY_ENABLED"] = "1"
-    assert is_enabled(db) is True
-    del os.environ["LOTTERY_ENABLED"]
-    assert is_enabled(db) is False
-    db.delete(row)
-    db.commit()
-    assert is_enabled(db) is True
 
 
 def test_omitted_enabled_preserves_stored_value(db):

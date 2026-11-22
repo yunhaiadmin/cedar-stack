@@ -37,7 +37,6 @@ from backend.api import panel as panel_api
 from backend.api import pool_admin
 from backend.api import welfare_admin
 from backend import governance_report as gov
-from backend import lottery
 from backend.emby_server import models as em
 from backend.emby_server import new_media_notify as nmn
 from backend.tg_bot import features, proactive
@@ -394,82 +393,6 @@ def test_subscription_reminder_pref_drops_telegram(db, reminder_calls):
     subs = [c for c in reminder_calls
             if str(c["event_type"]).startswith("subscription.")]
     assert subs and subs[0]["channels"] == ["in_app"]
-
-
-def _lottery_round_with_winner(db, user, distributed=False):
-    rnd = models.LotteryRound(
-        title="测试抽奖", chat_id=-100999, status="done",
-        drawn_at=datetime.now(),
-    )
-    db.add(rnd)
-    db.commit()
-    db.refresh(rnd)
-    prize = models.LotteryRoundPrize(
-        round_id=rnd.id, name="月卡", type="days", value=30, quantity=1,
-    )
-    entry = models.LotteryRoundEntry(
-        round_id=rnd.id, user_id=user.id, telegram_id=user.telegram_id,
-    )
-    db.add_all([prize, entry])
-    db.commit()
-    db.refresh(prize)
-    db.refresh(entry)
-    winner = models.LotteryRoundWinner(
-        round_id=rnd.id, entry_id=entry.id, prize_id=prize.id,
-        distributed=distributed,
-    )
-    db.add(winner)
-    db.commit()
-    db.refresh(winner)
-    return rnd, winner
-
-
-def test_lottery_redistribute_sends_arrival_dm(db, sent, monkeypatch):
-    user = _user(db, "win", telegram_id=6001)
-    rnd, winner = _lottery_round_with_winner(db, user, distributed=False)
-
-    def _fake_distribute(db_, round_id):
-        db_.query(models.LotteryRoundWinner).filter(
-            models.LotteryRoundWinner.round_id == round_id,
-        ).update({"distributed": True}, synchronize_session=False)
-        db_.commit()
-        return {"distributed": 1, "errors": []}
-
-    monkeypatch.setattr(lottery, "distribute_round", _fake_distribute)
-    retried = lottery.retry_pending_distributions(db)
-    assert retried == [rnd.id]
-    dms = [c for c in sent if c["chat_id"] == 6001]
-    assert len(dms) == 1
-    assert "已发放到账" in dms[0]["text"]
-
-
-def test_lottery_redistribute_respects_pref(db, sent, monkeypatch):
-    user = _user(db, "win2", telegram_id=6002)
-    user.tg_notify_lottery = False
-    db.commit()
-    rnd, winner = _lottery_round_with_winner(db, user, distributed=False)
-
-    def _fake_distribute(db_, round_id):
-        db_.query(models.LotteryRoundWinner).filter(
-            models.LotteryRoundWinner.round_id == round_id,
-        ).update({"distributed": True}, synchronize_session=False)
-        db_.commit()
-        return {"distributed": 1, "errors": []}
-
-    monkeypatch.setattr(lottery, "distribute_round", _fake_distribute)
-    lottery.retry_pending_distributions(db)
-    assert [c for c in sent if c["chat_id"] == 6002] == []
-
-
-def test_lottery_draw_dm_respects_pref(db, sent):
-    user = _user(db, "win3", telegram_id=6003)
-    user.tg_notify_lottery = False
-    db.commit()
-    rnd, winner = _lottery_round_with_winner(db, user, distributed=True)
-    result = lottery.notify_draw_results(db, rnd.id, [winner])
-    assert result["group"] is True
-    assert result["dm_sent"] == 0
-    assert [c for c in sent if c["chat_id"] == 6003] == []
 
 
 def test_pool_review_notifies_applicant(db, event_calls, monkeypatch):

@@ -142,7 +142,6 @@ from backend.api.economy import router as economy_router
 from backend.api.invitation import router as invitation_router
 from backend.api.admin_invitation import router as admin_invitation_router
 from backend.api.tg_bind import router as tg_bind_router
-from backend.api.lottery import router as lottery_router
 from backend.emby_server.env_util import env_float
 
 # 配置日志
@@ -1146,9 +1145,6 @@ app.include_router(economy_router)
 app.include_router(invitation_router)
 app.include_router(admin_invitation_router)
 app.include_router(tg_bind_router)
-
-# 群抽奖公开核验（无需登录，纯只读）
-app.include_router(lottery_router)
 
 
 # ==================== 根路径 ====================

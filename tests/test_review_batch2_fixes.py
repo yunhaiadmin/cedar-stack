@@ -1,4 +1,7 @@
-"""审查修复回归（第二批）：lottery seed 门控、签名头、转码缓存 LRU。"""
+"""审查修复回归（第二批）：签名头、转码缓存 LRU。
+
+（lottery seed 门控两用例已随群抽奖整族于 2026-11-23 下线删除。）
+"""
 import os
 
 os.environ.setdefault("DATABASE_TYPE", "sqlite")
@@ -14,43 +17,6 @@ from backend.database import SessionLocal, init_db
 from backend import models
 
 init_db()
-
-
-def test_lottery_seed_gated_before_draw():
-    """开奖前 verify_round 不得返回 seed 明文，只给 seed_hash。"""
-    from backend import lottery
-    db = SessionLocal()
-    try:
-        r = models.LotteryRound(title="review-seed-test", status="open", chat_id=-100123,
-                                seed="SECRET_SEED_123", seed_hash="hash_abc")
-        db.add(r)
-        db.commit()
-        out = lottery.verify_round(db, r.id)
-        assert out["seed"] is None, "开奖前 seed 明文泄露！"
-        assert out["seed_hash"] == "hash_abc"
-    finally:
-        db.query(models.LotteryRound).filter(
-            models.LotteryRound.title == "review-seed-test").delete()
-        db.commit()
-        db.close()
-
-
-def test_lottery_seed_visible_after_draw():
-    """开奖后 seed 明文可公开（供外部复算验证）。"""
-    from backend import lottery
-    db = SessionLocal()
-    try:
-        r = models.LotteryRound(title="review-seed-test2", status="done", chat_id=-100124,
-                                seed="SECRET_SEED_456", seed_hash="hash_def")
-        db.add(r)
-        db.commit()
-        out = lottery.verify_round(db, r.id)
-        assert out["seed"] == "SECRET_SEED_456"
-    finally:
-        db.query(models.LotteryRound).filter(
-            models.LotteryRound.title == "review-seed-test2").delete()
-        db.commit()
-        db.close()
 
 
 def test_verify_signed_headers_accepts_valid(monkeypatch):

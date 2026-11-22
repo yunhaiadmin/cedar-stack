@@ -55,9 +55,6 @@ const routes: RouteRecordRaw[] = [
       { path: 'search-hot', name: 'SearchHot', component: () => import('@/views/SearchHot.vue'), meta: { title: '热搜管理' } },
       // 弹幕治理（内容治理面）：弹幕列表/删除＋用户禁言；规则设置仍在系统设置的弹幕设置组
       { path: 'danmaku-admin', name: 'DanmakuAdmin', component: () => import('@/views/DanmakuAdmin.vue'), meta: { title: '弹幕治理' } },
-      // 群抽奖（Welfare.vue，历史文件名）：抽奖轮次 + 提案黑名单标签；
-      // 公益配置标签已随公益资格整族于 2026-11-14 删除
-      { path: 'welfare-lottery-rounds', name: 'WelfareLotteryRounds', component: () => import('@/views/Welfare.vue'), meta: { title: '群抽奖' } },
       // 代理分销（2026-11-06 完整版）：等级 / 指定 / 余额 / 统计一页三标签
       { path: 'agents', name: 'Agents', component: () => import('@/views/Agents.vue'), meta: { title: '代理分销' } },
       // 团队管理（2026-11-18 重建批 3）：购买制团队列表＋开通播放权限＋配置
