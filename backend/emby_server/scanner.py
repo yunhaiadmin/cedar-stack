@@ -42,7 +42,7 @@ import threading
 import time
 import traceback
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as _dataclass_replace
 from functools import lru_cache
 from datetime import datetime, timedelta
 from typing import Any, Iterator, Optional
@@ -2184,6 +2184,10 @@ class LibrarySnapshot:
     # 为空 = 正常全库扫描。
     limit_prefixes: tuple = ()
     targeted: bool = False
+    # 对账降频轮次（谷歌盘调用削减 P3）：本轮在对账间隔内，挂载来源不做
+    # 全量 walk（见 _full_walk_due / _scan_library_body 的判定与清理跳过）。
+    # 只由 _scan_library_body 在开扫时按对账时钟填写，缺省 False = 照常 walk。
+    walk_deferred: bool = False
     # L10 库级扫描预设策略（默认 None/空 = 无策略，走现行口径）：
     # policy_parse_type 覆盖 collection_type 的解析口径；
     # policy_extensions 与 VIDEO_EXTS 取交集后的白名单（None = 不限）；
@@ -2636,6 +2640,10 @@ def iter_scan_sources(snap: "LibrarySnapshot", library, db: Session,
     ``(标签, 文件迭代器)``，不读库的现行来源——绑定扫描只认调用方按
     绑定选好的源，绝不顺带扫共享挂载（顺带读就是跨绑定/跨源串数据）。
     缺省 None 时行为逐字不变。
+
+    对账降频轮次（快照上带 ``walk_deferred``，判定见 ``_full_walk_due``）：
+    挂载来源只产出空流（零列举调用），本机来源照常遍历；调用方必须
+    据此整轮跳过清理阶段（看不到 ≠ 已删除）。
     """
     if source_override is not None:
         # 计数明细由主循环的 _attribute_source 按来源收尾时算差值（与现行
@@ -2678,6 +2686,14 @@ def iter_scan_sources(snap: "LibrarySnapshot", library, db: Session,
                     src.label, src,
                     _prefix_filter(local_files, prefixes),
                     db, library.id, failed_roots, check_empty))
+                continue
+
+            if getattr(snap, "walk_deferred", False):
+                # 对账降频轮次（见 _full_walk_due）：挂载来源不 walk、
+                # 零列举调用。本轮看不到挂载文件是刻意的——不走
+                # _watch_empty_source 的空产出判定（那会误报来源不可用），
+                # 清理阶段由调用方整轮跳过，条目不会被当成已删除。
+                yield src.label, _WalkMeter(iter(()), src.provider)
                 continue
 
             def _guarded(src=src, check_empty=check_empty):
@@ -3020,6 +3036,104 @@ def _schedule_dir(ctx: "_ScanContext", dir_key: str, decision: str,
         due_at if due_at is not None else datetime.now() + _dir_recheck_after(),
         decision,
     )
+
+
+# ==================== 全量 walk 对账降频（谷歌盘调用削减 P3）====================
+# 挂载库每轮整库扫描都逐目录全量 walk（rclone operations/list 实测
+# 8,522 次/日），是挂载侧最大的列举面。新片发现的主线早已不是 walk：
+# Drive Changes 增量（定向扫描，snap.targeted）+ 上面的目录指纹到期
+# 复核（SCAN_DIR_RECHECK_SEC）都在跑；全量 walk 只剩「对账兜底」一个
+# 职责——捡增量漏检的边角（改名/删除/跨盘移动、page token 过期窗口
+# 遗漏的变化）。所以把它降为低频对账：
+#
+#   - 间隔 SCAN_FULL_WALK_RECONCILE_SEC（默认 7 天）内，普通整库扫描
+#     不再 walk 挂载来源（iter_scan_sources 对挂载来源产出空流），本机
+#     来源不受影响（os.walk 不耗 Drive 调用）；
+#   - 过了间隔、从没 walk 过（首次基线）、管理员手动全量扫描
+#     （force_full）→ 照常全量 walk，walk 真跑完后刷新对账时钟；
+#   - 定向扫描不参与本闸门（它只走变化子树，成本与收益都对得上）；
+#   - 总开关 SCAN_FULL_WALK_LOW_FREQ=0 关掉降频，回到每轮全量 walk。
+#
+# 红线（不许破）：对账只是降频、绝不取消；降频轮次看不到挂载文件，
+# 清理阶段必须整轮跳过（与定向扫描同口径）——seen 不完整时做清理
+# 会把没看到的条目当成已删除误删。对账时钟只在 walk 真跑完（无来源
+# 失败）后推进：失败轮次不推进，否则一次抖动会被降频掩盖一整周。
+#
+# 时钟落点：SystemConfig 键 ``scan_full_walk_last_at:<library_id>``
+# （与 auto_scan_last_run / enrich 游标同一套 store 口径，不新建表）。
+
+def _full_walk_low_freq_enabled() -> bool:
+    """全量 walk 降频总开关：1=开（默认）。运行时读环境变量，供测试中途开关。"""
+    return (os.getenv("SCAN_FULL_WALK_LOW_FREQ", "1") or "1").strip().lower() \
+        not in {"0", "false", "no", "off"}
+
+
+def _full_walk_reconcile_after() -> timedelta:
+    """对账间隔：全量 walk 跑完后，隔多久再做下一次对账 walk。
+
+    默认 7 天；钳制 1 小时～90 天（env_int 统一口径，非法值回落默认）。
+    """
+    return timedelta(seconds=env_int(
+        "SCAN_FULL_WALK_RECONCILE_SEC", 7 * 86400, 3600, 90 * 86400))
+
+
+def _full_walk_key(library_id) -> str:
+    return f"scan_full_walk_last_at:{int(library_id)}"
+
+
+def _last_full_walk_at(db: Session, library_id) -> Optional[datetime]:
+    """上次对账 walk 真跑完的时刻；没记过/读不出来返回 None（按到期处理，
+    宁可多 walk 一次也不许把基线当成刚走过）。"""
+    try:
+        from backend.integrations import store as _store
+        raw = (_store.read_value(db, _full_walk_key(library_id), "") or "").strip()
+    except Exception as exc:  # noqa: BLE001 — 时钟读不到按到期处理，不挡扫描
+        logger.warning("读对账 walk 时钟失败（库 %s，按到期处理）: %s",
+                       library_id, exc)
+        return None
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _note_full_walk(db: Session, library_id, when: Optional[datetime] = None) -> None:
+    """记下「对账 walk 已真跑完」并立即提交（时钟是调度状态，丢一轮最多
+    多 walk 一次；写失败只记日志，绝不拖累扫描本身）。"""
+    try:
+        from backend.integrations import store as _store
+        _store.write_values(
+            db,
+            {_full_walk_key(library_id): (when or datetime.now()).isoformat()},
+            {_full_walk_key(library_id): "上次全量 walk 对账跑完时刻（降频调度）"})
+        db.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("写对账 walk 时钟失败（库 %s）: %s", library_id, exc)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _full_walk_due(db: Session, snap, library_id,
+                   now: Optional[datetime] = None) -> bool:
+    """本轮整库扫描要不要真走全量 walk（对账判定）。
+
+    恒 True 的情形（不被降频挡住）：降频关、定向扫描（Changes 主线，
+    本来就只走变化子树）、手动 force_full、从没 walk 过、已过对账间隔。
+    """
+    if not _full_walk_low_freq_enabled():
+        return True
+    if snap is not None and getattr(snap, "targeted", False):
+        return True
+    if snap is not None and getattr(snap, "force_full", False):
+        return True
+    last = _last_full_walk_at(db, library_id)
+    if last is None:
+        return True
+    return (now or datetime.now()) - last >= _full_walk_reconcile_after()
 
 
 # 分层扫描 L1/L2 总开关（v2.40.0）：1=开（默认）。
@@ -5810,6 +5924,9 @@ SCAN_STATS_KEYS = ("added", "updated", "removed", "probed", "probe_queued", "scr
                    # 定向扫描标记：清理跳过是预期行为，finish_scan 据此不判 partial
                    #（v2.56.x 修复"没有可用来源"误报）
                    "targeted_scan",
+                   # 对账降频标记（P3）：本轮没做挂载全量 walk、清理跳过是
+                   # 预期行为，finish_scan 据此不判 partial（与 targeted 同口径）
+                   "walk_deferred",
                    # 定向扫描的范围（limit_prefixes）：begin_scan 开跑时记下，
                    # 被重启打断后自动续扫据它定向续、不放大成整库遍历；
                    # 只在流水 stats 里流转，_scan_metrics 不提取、不对外
@@ -6032,6 +6149,8 @@ def _scan_metrics(stats: dict) -> dict:
         "failed_roots": list(stats.get("failed_roots") or []),
         # v2.56.x：定向扫描标记（预期跳过清理，前端可据此不显示警告）
         "targeted_scan": bool(stats.get("targeted_scan")),
+        # 对账降频标记（P3）：本轮跳过了挂载全量 walk（前端可据此不显示警告）
+        "walk_deferred": bool(stats.get("walk_deferred")),
         # 删除保护拦截原因（v2.55.x）：本轮没删任何东西是因为被拦了，而不是
         # "库里本来就空"。finish_scan() 已把该原因写进 error 兜底链，这里单独
         # 暴露给排障/接口调用方，避免再出现"有写入、零读取"的死字段。
@@ -6432,8 +6551,9 @@ def finish_scan(db: Session, library: emby_models.Library, stats: Optional[dict]
     """
     stats = stats or {}
     removal_skipped = bool(stats.get("removal_skipped"))
-    # 定向扫描 + 无真实失败 = 预期内的跳过，不算问题
-    _is_expected_skip = bool(stats.get("targeted_scan")) and not (
+    # 定向扫描 / 对账降频轮次 + 无真实失败 = 预期内的跳过，不算问题
+    _is_expected_skip = (bool(stats.get("targeted_scan"))
+                         or bool(stats.get("walk_deferred"))) and not (
         stats.get("failed_roots") or stats.get("removal_guard")
     )
     status = SCAN_STATUS_PARTIAL if (removal_skipped and not _is_expected_skip) \
@@ -6935,6 +7055,7 @@ def _scan_library_body(db: Session, library: emby_models.Library,
         "repaired": 0, "removal_skipped": False, "failed_roots": [],
         "sources": [],  # 按来源记账（虚拟库没有来源，保持空列表）
         "targeted_scan": False,  # v2.56.x：定向扫描标记（预期跳过清理，不误报）
+        "walk_deferred": False,  # 对账降频：本轮没做挂载全量 walk（预期跳过清理）
     }
     clear_dir_cache()  # 新的一轮扫描不复用上一轮的目录列表
     ctx = _ScanContext(snap=snap, lib_id=library.id, stats=stats)
@@ -6947,6 +7068,24 @@ def _scan_library_body(db: Session, library: emby_models.Library,
             library.item_count = count_virtual_items(db, library)
             db.commit()
             return stats
+
+        # 对账降频判定（谷歌盘调用削减 P3，见 _full_walk_due）：只管
+        # 「整库扫描 × 无定向来源覆盖」这一条线——定向扫描（Changes
+        # 主线）与 BYOS 绑定线都不参与。降频轮次挂载来源产出空流
+        # （iter_scan_sources 读快照上的 walk_deferred），本机来源照常。
+        walk_deferred = False
+        if source_override is None and not getattr(snap, "targeted", False):
+            walk_deferred = not _full_walk_due(db, snap, library.id)
+        if walk_deferred:
+            # 快照是 frozen dataclass：按仓库既有口径 replace 出新快照，
+            # ctx 与后续 iter_scan_sources 都认新对象。
+            snap = _dataclass_replace(snap, walk_deferred=True)
+            ctx.snap = snap
+            stats["walk_deferred"] = True
+            logger.info(
+                "媒体库「%s」距上次全量 walk 未满对账间隔，本轮跳过挂载"
+                "全量 walk（新片走 Changes 增量与目录指纹复核，清理跳过）",
+                snap.name)
 
         # 并行 IO 线程池：ffprobe / 目录列举 / TMDB 搜索都在这里跑，写库仍在当前线程按顺序进行
         pool = ThreadPoolExecutor(max_workers=SCAN_WORKERS, thread_name_prefix="scan-io")
@@ -7460,7 +7599,13 @@ def _scan_library_body(db: Session, library: emby_models.Library,
             db.rollback()
 
     stats["failed_roots"] = failed_roots
-    if getattr(snap, "targeted", False):
+    if walk_deferred:
+        # 对账降频轮次：挂载来源根本没 walk，seen_guids 不含挂载条目——
+        # 做清理会把它们全当成已删除误删。整轮跳过清理（与定向扫描
+        # 同口径的预期跳过，finish_scan 据 walk_deferred 不判 partial）。
+        stats["removal_skipped"] = True
+        logger.info("媒体库「%s」对账降频轮次，跳过清理阶段", snap.name)
+    elif getattr(snap, "targeted", False):
         # v2.52.0 定向扫描（Drive Changes）：只看了部分目录，看不到的不能当成
         # "文件已删除"，跳过清理阶段。删除检测留给整库扫描做。
         # v2.56.x：标记为预期的跳过——finish_scan 据此不判 partial、不报
@@ -7485,6 +7630,15 @@ def _scan_library_body(db: Session, library: emby_models.Library,
             stats["removal_skipped"] = True
         if _CLEANUP_LAST.get("credibility_guarded"):
             stats["credibility_guard"] = _CLEANUP_LAST["credibility_guarded"]
+
+    # 对账时钟推进（P3）：本轮真走了全量 walk（非降频、非定向、无
+    # 定向来源覆盖）且没有任何来源失败、且库里确实有挂载来源时才记
+    # 「刚对完账」。失败轮次不推进——下轮照常重试 walk，不让一次抖动
+    # 被降频掩盖一整个对账间隔；纯本机库不记（时钟只管挂载 walk）。
+    if (not walk_deferred and source_override is None
+            and not getattr(snap, "targeted", False)
+            and not failed_roots and getattr(snap, "mount_ids", ())):
+        _note_full_walk(db, library.id)
 
     # WS1：显式可见口径 —— merged_into_id 无全局过滤，必须显式剔除合并副本
     #（与 portal.admin_overview 同类；索引齐全，仍是单条 COUNT 查询）
