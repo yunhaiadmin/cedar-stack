@@ -349,4 +349,4 @@ def test_admin_sa_rotate_endpoint_passes_sa_dir():
         out = admin_api.gdrive_sa_rotate(current_admin=mock.MagicMock(),
                                          db=mock.MagicMock())
     assert out["success"] is True and out["sa_file"] == "/x/a.json"
-    assert str(m.call_args[0][1]) == "/opt/rclone-sa"
+    assert str(m.call_args[0][1]) == "/sa-accounts"

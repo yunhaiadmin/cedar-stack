@@ -356,7 +356,10 @@ def _sa_access_token(sa: dict, min_remaining: float = 60) -> str | None:
                     client_email, token, expires_in)
             return token
     except Exception as exc:
-        logger.warning("Drive Changes: SA 换 token 失败 %s: %s", client_email, exc)
+        logger.warning(
+            "Drive Changes: SA 换 token 失败 %s: %s",
+            drive_auth.sa_log_id(client_email) if drive_auth is not None else "-",
+            exc)
     return None
 
 

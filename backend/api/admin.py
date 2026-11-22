@@ -21,6 +21,7 @@ v2.21.0 起按域拆分成同目录的兄弟模块（导入即注册同一个 ``
 """
 from datetime import datetime, timedelta
 import json
+import os
 import re
 from decimal import Decimal
 from typing import Optional
@@ -566,6 +567,19 @@ async def send_user_message(
 
 # ---------- Google Drive SA 账号管理（Fix 6） ----------
 
+def _rclone_sa_dir():
+    """SA JSON 目录：env RCLONE_SA_DIR 可配，缺省 /sa-accounts
+    （与 drive_changes.SA_DIR 同键同缺省，横切只许一套）。"""
+    from pathlib import Path
+    return Path(os.getenv("RCLONE_SA_DIR", "/sa-accounts"))
+
+
+def _rclone_conf_path() -> str:
+    """rclone 配置路径：env MOUNT_RCLONE_CONF 可配，缺省
+    /config/rclone/rclone.conf（与 drive_changes.RCLONE_CONF 同键同缺省）。"""
+    return os.getenv("MOUNT_RCLONE_CONF", "/config/rclone/rclone.conf")
+
+
 @admin_router.get("/gdrive/sa-status")
 def gdrive_sa_status(
     current_admin: models.WebUser = Depends(get_current_admin),
@@ -577,7 +591,7 @@ def gdrive_sa_status(
     import shutil
     from backend.emby_server import playback_tune
 
-    sa_dir = Path("/opt/rclone-sa")
+    sa_dir = _rclone_sa_dir()
     sa_files = sorted(sa_dir.glob("*.json")) if sa_dir.exists() else []
     # 轮换状态
     state_file = sa_dir / ".sa_rotation.json"
@@ -630,11 +644,11 @@ def gdrive_sa_rotate(
     from pathlib import Path
     from backend.emby_server import playback_tune
 
-    sa_dir = Path("/opt/rclone-sa")
+    sa_dir = _rclone_sa_dir()
     if not sa_dir.exists():
         raise HTTPException(status_code=404, detail="SA 目录不存在")
     # sa_dir 是必填参数：以前漏传，这个接口每次都 TypeError → 500，手动轮换从没生效过
-    result = playback_tune.ensure_sa_rotation("/root/.config/rclone/rclone.conf", sa_dir)
+    result = playback_tune.ensure_sa_rotation(_rclone_conf_path(), sa_dir)
     _audit(db, current_admin, "gdrive_sa_rotate", "gdrive_sa", 0, {"sa_file": result.get("sa_file")})
     db.commit()
     # 轮换只改了 rclone.conf：SA 在挂载/rcd 启动时加载，代码库里没有应用内重挂能力，
