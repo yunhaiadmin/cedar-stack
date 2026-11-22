@@ -23,10 +23,15 @@ def test_registration_code_table_args_contains_all_expected_indexes():
     assert "idx_reg_code" in names
     assert "idx_reg_code_type" in names
     assert "idx_reg_code_agent" in names
+    # #443（一人一批一码）加在第二遍声明里的批次索引，合并时一并保留
+    assert "idx_reg_code_batch" in names
 
 
 def test_registration_code_table_indexes_match_declaration():
     table_indexes = {i.name for i in RegistrationCode.__table__.indexes}
-    # 声明的三条都应进表索引集合；code 列 index=True 的唯一索引也在
-    assert {"idx_reg_code", "idx_reg_code_type", "idx_reg_code_agent"} <= table_indexes
+    # 声明的四条都应进表索引集合；code 列 index=True 的唯一索引也在
+    assert {
+        "idx_reg_code", "idx_reg_code_type",
+        "idx_reg_code_agent", "idx_reg_code_batch",
+    } <= table_indexes
     assert "ix_registration_codes_code" in table_indexes

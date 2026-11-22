@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -146,6 +147,15 @@ def render_code(
     else:
         code = f"{code}-{random_part(algorithm)}"
     return code[:64].upper()
+
+
+def new_batch_id() -> str:
+    """一次批量生成动作的批次标识：整批共用一个，核销时一人一批只许一张。
+
+    生成入口（管理端生成 / 代理进货 / 用户礼品卡）在建码循环前取一个，
+    写进这批每张码的 ``batch_id``。单个生成的码自成一批，限制不触发。
+    """
+    return uuid.uuid4().hex
 
 
 # ==================== 会员天数授予 ====================
@@ -355,6 +365,64 @@ def record_redemption(db: Session, kind: str, code_id: int, user_id: int) -> boo
     return True
 
 
+def user_already_redeemed_batch(db: Session, code: models.RegistrationCode,
+                                user_id: int) -> bool:
+    """这个用户是否已经领过**这一批**的任一张码（一人一批一码，2026-11-23）
+
+    存量码 ``batch_id`` 为空 = 各自成批，恒 False、不追溯。判定双查：
+    核销流水（按 batch 反查同批码的核销记录）＋批次占位表——两者都在
+    核销的同一事务里写入，正常不会分开，占位表是纵深兜底。
+
+    只认「同批的**另一张**码」：本张码自己的记录由每码一次的判定负责，
+    也避免 claim 失败复查时把本事务未提交的登记行误判成已领过同批。
+    """
+    batch_id = getattr(code, "batch_id", None)
+    if not batch_id or user_id is None:
+        return False
+    hit = (
+        db.query(models.CodeRedemption.id)
+        .join(models.RegistrationCode,
+              models.RegistrationCode.id == models.CodeRedemption.code_id)
+        .filter(
+            models.CodeRedemption.code_kind == REDEMPTION_KIND_REG,
+            models.CodeRedemption.user_id == user_id,
+            models.CodeRedemption.code_id != code.id,
+            models.RegistrationCode.batch_id == batch_id,
+        )
+        .first()
+    )
+    if hit is not None:
+        return True
+    claim = db.query(models.CodeBatchClaim.id).filter(
+        models.CodeBatchClaim.batch_id == batch_id,
+        models.CodeBatchClaim.user_id == user_id,
+        models.CodeBatchClaim.code_id != code.id,
+    ).first()
+    return claim is not None
+
+
+def claim_batch(db: Session, code: models.RegistrationCode, user_id: int) -> bool:
+    """在当前事务里占位「这个人领过这一批」；唯一约束冲突返回 False
+
+    与 ``record_redemption`` 同一写法：同批两张不同的码被同一用户同时
+    提交时，预检查会双双通过，只有 ``code_batch_claims`` 的
+    ``(batch_id, user_id)`` 唯一约束能在数据库层挡住第二个。冲突时
+    ``rollback`` 整个事务，调用方拿到 False 必须直接拒绝。
+    无批次（存量码）直接 True，不占位。
+    """
+    batch_id = getattr(code, "batch_id", None)
+    if not batch_id:
+        return True
+    db.add(models.CodeBatchClaim(batch_id=batch_id, user_id=user_id,
+                                 code_id=code.id))
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        return False
+    return True
+
+
 def claim_code(db: Session, code: models.RegistrationCode, user_id: int) -> bool:
     """**原子占位**一次卡码消耗：抢不到（已停用 / 过期 / 用尽）返回 False
 
@@ -370,6 +438,12 @@ def claim_code(db: Session, code: models.RegistrationCode, user_id: int) -> bool
     """
     # H5：同一个人同一张码最多一次——先在本事务里登记（唯一约束），冲突即拒绝
     if user_already_redeemed(db, REDEMPTION_KIND_REG, code, user_id):
+        return False
+    # 一人一批一码（2026-11-23）：同批只许一张——先查再占位，唯一约束兜底并发。
+    # 占位排在每码登记之前：它冲突时 rollback 不会误伤已登记的核销记录。
+    if user_already_redeemed_batch(db, code, user_id):
+        return False
+    if not claim_batch(db, code, user_id):
         return False
     if not record_redemption(db, REDEMPTION_KIND_REG, code.id, user_id):
         return False
@@ -426,6 +500,7 @@ CODE_ERROR_DISABLED = "CODE_DISABLED"      # 已停用
 CODE_ERROR_EXPIRED = "CODE_EXPIRED"          # 已过期
 CODE_ERROR_NOT_FOUND = "CODE_NOT_FOUND"      # 不存在
 CODE_ERROR_SELF_USED = "CODE_SELF_USED"      # 自己已使用过（每个账号每张码限用一次）
+CODE_ERROR_BATCH_LIMIT = "CODE_BATCH_LIMIT"  # 自己已领过同批的码（每个账号每批限领一张）
 CODE_ERROR_NAMED_OTHER = "CODE_NAMED_OTHER"  # 指名码，限指定账号使用
 CODE_ERROR_REGISTER_ONLY = "CODE_REGISTER_ONLY"  # 存量注册码（已停用）走兑换入口
 
@@ -438,12 +513,17 @@ REGISTER_CODE_ONLY_MESSAGE = "注册码已停止使用"
 CLEARLY_INVALID_CODE_ERRORS = frozenset({
     CODE_ERROR_USED_UP, CODE_ERROR_DISABLED, CODE_ERROR_EXPIRED,
     CODE_ERROR_NOT_FOUND, CODE_ERROR_SELF_USED, CODE_ERROR_NAMED_OTHER,
+    CODE_ERROR_BATCH_LIMIT,
 })
 
 # 已用尽 / 已被使用的统一用户文案。旧文案有「卡码已用尽」（预检/reg_code_error）
 # 与「卡码已被使用」（并发抢占失败）两种说法，用户分不清是不是一回事，统一到这句。
 # （2026-11-15：原文案误称「注册码」，本句是全卡码通用文案，改回「卡码」。）
 CODE_USED_UP_MESSAGE = "该卡码已被使用"
+
+# 一人一批一码的用户文案（2026-11-23）：与「每张码限用一次」分开说，
+# 用户要能分清是「这张用过了」还是「这批领过了」。
+CODE_BATCH_LIMIT_MESSAGE = "这批卡码每人只能领一个，你已经领过了"
 
 
 def reg_code_error(code: models.RegistrationCode) -> Optional[str]:
@@ -678,7 +758,15 @@ def _redeem_found_code(db: Session, user: models.WebUser,
     if user_already_redeemed(db, REDEMPTION_KIND_REG, code, user.id):
         return {"success": False, "message": "你已经使用过这张卡码（每个账号每张码限用一次）",
                 "error_code": CODE_ERROR_SELF_USED}
+    if user_already_redeemed_batch(db, code, user.id):
+        return {"success": False, "message": CODE_BATCH_LIMIT_MESSAGE,
+                "error_code": CODE_ERROR_BATCH_LIMIT}
     if not claim_code(db, code, user.id):
+        # 并发下输给同批另一张码时，claim 只报「用尽」口径——复查一次批次
+        # 状态，给用户准确原因（对方事务尚未提交时查不到，退回用尽文案）。
+        if user_already_redeemed_batch(db, code, user.id):
+            return {"success": False, "message": CODE_BATCH_LIMIT_MESSAGE,
+                    "error_code": CODE_ERROR_BATCH_LIMIT}
         return {"success": False, "message": CODE_USED_UP_MESSAGE,
                 "error_code": CODE_ERROR_USED_UP}
 
