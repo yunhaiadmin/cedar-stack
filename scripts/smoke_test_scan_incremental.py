@@ -22,6 +22,7 @@
 
 用法：python scripts/smoke_test_scan_incremental.py
 """
+import dataclasses
 import os
 import sys
 import tempfile
@@ -484,9 +485,23 @@ r_second = sc.scan_library_sync(db, remote_lib)
 check("远程库未变动重扫同样全部跳过",
       r_second.get("added", 0) == 0 and counters["side"] == 0,
       f"unchanged={r_second.get('unchanged')} side={counters['side']} added={r_second.get('added')}")
-check("远程重扫仍然只列目录一次（没有为指纹多打网络）",
-      len(remote_provider.listed) == REMOTE_DIRS + 1,
-      f"列举了 {sorted(remote_provider.listed)}")
+# 对账降频（谷歌盘调用削减 P3）后的口径：对账间隔内的普通重扫是降频轮，
+# 挂载零列举、带 walk_deferred 标记；「指纹不许多打网络」改由紧接着的
+# 全量对账轮继续锁：真 walk 时每个目录仍然只列一次。
+check("远程重扫在对账间隔内降频：零列举（没有为指纹多打网络）",
+      len(remote_provider.listed) == 0 and bool(r_second.get("walk_deferred")),
+      f"列举了 {sorted(remote_provider.listed)} "
+      f"walk_deferred={r_second.get('walk_deferred')}")
+
+remote_provider.listed.clear()
+counters.update(sql=0, probe=0, side=0)
+snap_full = dataclasses.replace(sc.LibrarySnapshot.of(remote_lib),
+                                force_full=True)
+r_full = sc.scan_library_sync(db, remote_lib, snapshot=snap_full)
+check("远程全量对账仍然只列目录一次（没有为指纹多打网络）",
+      len(remote_provider.listed) == REMOTE_DIRS + 1
+      and r_full.get("added", 0) == 0,
+      f"列举了 {sorted(remote_provider.listed)} added={r_full.get('added')}")
 
 # 目录列举失败时不能当成「目录没变」
 def remote_items() -> int:
