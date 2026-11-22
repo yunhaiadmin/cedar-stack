@@ -120,13 +120,14 @@ def test_a088_failover_records_tried_before_cooldown(
     旧码：冷却清掉缓存后记录得 None，已试集为空，次轮接受抽回的
     同 SA（TOK1B），且日志 sa= 退化为 "-"，两断言皆红。
     新码：记录时 TOK1 仍可反查，已试集非空，次轮排除 TOK1B 改取
-    TOK2，日志 sa= 为记下的邮箱。
+    TOK2，日志 sa= 为记下邮箱的短哈希（2026-11-22 日志脱敏后口径，
+    sa_log_id = sha256(邮箱) 前 8 位，不再出现邮箱全称）。
     """
     rig = _FailoverRig(monkeypatch, [first_outcome, "RESP"])
     with caplog.at_level(logging.WARNING):
         assert rig.relay() == "RESP"
     assert rig.mount_auth == ["Bearer TOK1", "Bearer TOK2"]
-    assert "sa=sa-01@example.test" in caplog.text
+    assert "sa=" + drive_auth.sa_log_id("sa-01@example.test") in caplog.text
 
 
 # ---------------- A-089：带 Range 的 Quota 嗅探 ----------------
@@ -251,7 +252,8 @@ def test_a088_a089_range_quota_pages_rotate_then_exhaust(
     assert [c[0] for c in upstream.calls] == [
         "Bearer TOK1", "Bearer TOK2", "Bearer TOK3"]
     assert all(c[1] == "bytes=0-" for c in upstream.calls)
-    assert "sa=sa-01@example.test" in caplog.text
+    # sa= 为短哈希（2026-11-22 日志脱敏口径，见 test_drive_sa_cooldown）
+    assert "sa=" + drive_auth.sa_log_id("sa-01@example.test") in caplog.text
 
 
 def test_a089_range_403_still_fails_over(monkeypatch):
