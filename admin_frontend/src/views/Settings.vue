@@ -1076,6 +1076,9 @@ const danmuLinesLoading = ref(false)
 /** 外部弹幕源两项（与线路同卡同存）：开关 + 上游 base 地址。 */
 const danmuExternal = reactive({ enabled: false, url: '' })
 const danmuExternalOriginal = ref('')
+/** 外部源地址是否已配置：后端掩码口径下 GET 只回 "******" + external_url_set，
+ * 真值不回填输入框；保存时留空且已配置 → 回传 "******" 表示不修改。 */
+const danmuExternalConfigured = ref(false)
 
 function danmuLinesSnapshot(): DanmuApiLine[] {
   return danmuLines.value.map((ln) => ({
@@ -1098,6 +1101,7 @@ function applyDanmuLines(config: {
   lines: DanmuApiLine[]
   external_enabled?: boolean
   external_url?: string
+  external_url_set?: boolean
 }) {
   danmuLines.value = (config.lines || []).map((ln) => ({
     id: ln.id ?? '',
@@ -1109,7 +1113,15 @@ function applyDanmuLines(config: {
   }))
   danmuLinesOriginal.value = JSON.stringify(danmuLinesSnapshot())
   danmuExternal.enabled = config.external_enabled ?? false
-  danmuExternal.url = config.external_url ?? ''
+  const rawExternalUrl = config.external_url ?? ''
+  if (rawExternalUrl === '******' || config.external_url_set) {
+    // 掩码口径：已配置但真值不下发，输入框留空（占位提示已配置），不回填掩码串
+    danmuExternalConfigured.value = true
+    danmuExternal.url = ''
+  } else {
+    danmuExternalConfigured.value = !!rawExternalUrl
+    danmuExternal.url = rawExternalUrl
+  }
   danmuExternalOriginal.value = danmuExternalSnapshot()
 }
 
@@ -1142,7 +1154,9 @@ async function saveDanmuLinesCore(): Promise<boolean> {
     applyDanmuLines(
       await updateDanmuApiLines(danmuLinesSnapshot(), {
         external_enabled: danmuExternal.enabled,
-        external_url: danmuExternal.url.trim(),
+        // 输入了新地址传新地址；留空且原本已配置传掩码表示不修改；未配置留空传空
+        external_url: danmuExternal.url.trim()
+          || (danmuExternalConfigured.value ? '******' : ''),
       }),
     )
     return true
@@ -3030,11 +3044,12 @@ watch(
                 <div class="field-stack">
                   <el-input
                     v-model="danmuExternal.url"
-                    placeholder="如 https://dm.example.com/令牌路径"
+                    :placeholder="danmuExternalConfigured ? '已配置，留空表示不修改；输入新地址可替换' : '如 https://dm.example.com/令牌路径'"
                     maxlength="512"
                     clearable
                   />
-                  <span class="field-hint">上游 LogVar 弹幕 API 的 base 地址（含它的令牌路径），只存在后台、用户不可见；留空 = 未配置，开关打开也不会去取。</span>
+                  <span v-if="danmuExternalConfigured" class="field-hint">已配置（地址不回显）：留空保存表示不修改，输入新地址则替换。</span>
+                  <span v-else class="field-hint">上游 LogVar 弹幕 API 的 base 地址（含它的令牌路径），只存在后台、用户不可见；留空 = 未配置，开关打开也不会去取。</span>
                 </div>
               </el-form-item>
             </el-form>

@@ -61,6 +61,8 @@ const codes = ref<RegistrationCode[]>([])
 const stats = ref<CodeStats | null>(null)
 const loading = ref(false)
 const total = ref(0)
+const page = ref(1)
+const PAGE_SIZE = 50
 /** 码表加载失败（区别于「还没有生成过会员卡码」） */
 const loadError = ref(false)
 
@@ -171,7 +173,8 @@ async function load() {
         state: filters.value.state || undefined,
         keyword: filters.value.keyword || undefined,
         realm_id: scopeId,
-        limit: 200,
+        limit: PAGE_SIZE,
+        offset: (page.value - 1) * PAGE_SIZE,
       }),
       fetchCodeStats(scopeId),
     ])
@@ -234,7 +237,13 @@ const hasFilter = computed(() => !!(filters.value.code_type || filters.value.sta
 
 function resetFilters() {
   filters.value = { code_type: 0, state: '', keyword: '' }
+  page.value = 1
   load()
+}
+
+function onPageChange(p: number) {
+  page.value = p
+  void load()
 }
 
 /** 筛选一律 FilterBar（统一标准第 4 条）：关键字 400ms 防抖自动查（组件内防抖），
@@ -279,13 +288,14 @@ const appliedFilters = computed<AppliedFilter[]>(() => {
 
 function onSearchUpdate(value: string) {
   filters.value.keyword = value
-  if (value !== lastKeyword) load()
+  if (value !== lastKeyword) { page.value = 1; load() }
 }
 
 function onFilterChange(key: string, value: string | number | boolean) {
   if (key === 'code_type') filters.value.code_type = value === '' ? 0 : Number(value)
   else if (key === 'state') filters.value.state = String(value)
   else return
+  page.value = 1
   load()
 }
 
@@ -294,6 +304,7 @@ function onRemoveChip(key: string) {
   else if (key === 'code_type') filters.value.code_type = 0
   else if (key === 'state') filters.value.state = ''
   else return
+  page.value = 1
   load()
 }
 
@@ -343,6 +354,17 @@ async function generate() {
 }
 
 async function toggle(row: RegistrationCode) {
+  try {
+    await ElMessageBox.confirm(
+      row.is_active
+        ? `停用会员卡码 ${row.code}？停用后该码不能再被核销。`
+        : `启用会员卡码 ${row.code}？启用后该码可重新被核销。`,
+      row.is_active ? '停用会员卡码' : '启用会员卡码',
+      { type: 'warning', confirmButtonText: row.is_active ? '确认停用' : '确认启用', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
   rowBusyId.value = row.id
   try {
     await patchRegistrationCode(row.id, { is_active: !row.is_active })
@@ -430,7 +452,7 @@ function usedByNames(row: RegistrationCode): string {
       description="续期码 / 白名单码 / 诱饵码 / 指名码——生成与审计。会员卡码开的是它所属服的会员。"
     >
       <template #actions>
-        <el-radio-group v-model="scope" @change="load">
+        <el-radio-group v-model="scope" @change="() => { page = 1; load() }">
           <el-radio-button value="realm">当前服</el-radio-button>
           <el-radio-button value="all">全部服</el-radio-button>
         </el-radio-group>
@@ -615,7 +637,7 @@ function usedByNames(row: RegistrationCode): string {
         <template #actions><el-button :loading="loading" @click="load">重试</el-button></template>
       </EmptyState>
 
-      <DataTable v-else class="flush-table" :rows="codes" :columns="columns" :loading="loading" empty="还没有生成过会员卡码">
+      <DataTable v-else class="flush-table" :rows="codes" :columns="columns" :loading="loading" empty="还没有生成过会员卡码" :pagination="{ total, page, pageSize: PAGE_SIZE }" @page-change="onPageChange">
         <template #cell-code="{ row }">
           <div class="code-cell">
             <button type="button" class="code-chip" title="点击复制" @click.stop="copyText(row.code)">

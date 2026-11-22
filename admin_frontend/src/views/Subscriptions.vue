@@ -58,13 +58,22 @@ const statusFilter = ref<string>('')
 const search = ref('')
 /** 清单加载失败（区别于「没有符合条件的记录」） */
 const loadError = ref(false)
+const page = ref(1)
+const PAGE_SIZE = 20
+const total = ref(0)
 // 深链：仪表盘 / 命令面板带筛选过来（Phase 5，如 /subscriptions?status=expiring）
-useQueryFilter(statusFilter, 'status', load)
+useQueryFilter(statusFilter, 'status', () => { page.value = 1; void load() })
 
 /** 顶部四个数字块 = 四个筛选入口（点一下就把下面的清单筛成这个状态） */
 function filterBy(status: string) {
   statusFilter.value = statusFilter.value === status ? '' : status
+  page.value = 1
   load()
+}
+
+function onPageChange(p: number) {
+  page.value = p
+  void load()
 }
 const plans = ref<PlanRow[]>([])
 
@@ -79,7 +88,7 @@ async function load() {
   loading.value = true
   loadError.value = false
   try {
-    const params: Record<string, unknown> = { limit: 200 }
+    const params: Record<string, unknown> = { limit: PAGE_SIZE, offset: (page.value - 1) * PAGE_SIZE }
     if (statusFilter.value) params.status_filter = statusFilter.value
     if (search.value.trim()) params.search = search.value.trim()
     // realm_id=0 → 全部服；其余按服过滤（后端 `active_realm_id` 作为兜底）
@@ -87,6 +96,7 @@ async function load() {
     if (seq !== loadSeq) return
     rows.value = res.subscriptions
     summary.value = res.summary
+    total.value = typeof res.total === 'number' ? res.total : res.summary?.total ?? res.subscriptions.length
     scopeRealmName.value = res.realm_name
   } catch {
     if (seq !== loadSeq) return
@@ -128,12 +138,13 @@ const appliedFilters = computed<AppliedFilter[]>(() => {
 
 function onSearchUpdate(value: string) {
   search.value = value
-  if (value.trim() !== lastSearch) load()
+  if (value.trim() !== lastSearch) { page.value = 1; load() }
 }
 
 function onFilterChange(key: string, value: string | number | boolean) {
   if (key !== 'status') return
   statusFilter.value = String(value)
+  page.value = 1
   load()
 }
 
@@ -141,6 +152,7 @@ function onRemoveChip(key: string) {
   if (key === 'search') search.value = ''
   else if (key === 'status') statusFilter.value = ''
   else return
+  page.value = 1
   load()
 }
 
@@ -161,6 +173,7 @@ onMounted(() => {
 })
 
 function onScopeChange() {
+  page.value = 1
   load()
   loadPlans()
 }
@@ -172,6 +185,7 @@ const hasFilter = computed(() => !!(statusFilter.value || search.value.trim()))
 function resetFilters() {
   statusFilter.value = ''
   search.value = ''
+  page.value = 1
   load()
 }
 
@@ -425,7 +439,7 @@ async function submit() {
     </SectionCard>
 
     <!-- 订阅清单：筛选在左、清空在右；桌面表格 / 手机卡片 -->
-    <SectionCard title="订阅清单" :icon="ListChecks" :meta="rows.length ? `${rows.length} 条` : ''" flush>
+    <SectionCard title="订阅清单" :icon="ListChecks" :meta="total ? `共 ${total} 条` : ''" flush>
       <div class="view-toolbar">
         <FilterBar
           :search="{ value: search, placeholder: '搜索用户名', mode: 'debounced', debounceMs: 350 }"
@@ -434,7 +448,7 @@ async function submit() {
           :loading="loading"
           query-button
           @update:search="onSearchUpdate"
-          @query="load"
+          @query="() => { page = 1; load() }"
           @filter-change="onFilterChange"
           @remove-chip="onRemoveChip"
           @clear="resetFilters"
@@ -450,7 +464,7 @@ async function submit() {
         <template #actions><el-button :loading="loading" @click="load">重试</el-button></template>
       </EmptyState>
 
-      <DataTable v-else class="flush-table" :rows="rows" :columns="columns" :loading="loading" empty="没有符合条件的订阅记录">
+      <DataTable v-else class="flush-table" :rows="rows" :columns="columns" :loading="loading" empty="没有符合条件的订阅记录" :pagination="{ total, page, pageSize: PAGE_SIZE }" @page-change="onPageChange">
         <template #cell-username="{ row }">
           <span class="user-name">{{ row.username }}</span>
         </template>

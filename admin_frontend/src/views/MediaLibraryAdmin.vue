@@ -17,7 +17,7 @@
  * 分组呈现，不另起导航入口与新页面。
  */
 import { onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown, ArrowUp, Image as ImageIcon } from 'lucide-vue-next'
 import { PageHeader, SectionCard } from '@/components/ui'
 import DataTable from '@/components/DataTable.vue'
@@ -65,6 +65,9 @@ const strategyBorrowEnabled = ref(false)
 
 const overrideRows = ref<ArtworkOverrideRow[]>([])
 const overrideLoading = ref(false)
+const overridePage = ref(1)
+const OVERRIDE_PAGE_SIZE = 20
+const overrideTotal = ref(0)
 const formItemId = ref<number | null>(null)
 const formKind = ref('Primary')
 const formUrl = ref('')
@@ -128,13 +131,29 @@ async function saveStrategy() {
 async function loadOverrides() {
   overrideLoading.value = true
   try {
-    const d = await fetchArtworkOverrides()
-    overrideRows.value = d.items
+    const d: unknown = await fetchArtworkOverrides({
+      limit: OVERRIDE_PAGE_SIZE,
+      offset: (overridePage.value - 1) * OVERRIDE_PAGE_SIZE,
+    })
+    // 容错解析：新后端回信封 {items,total}，旧后端只回 {items} 或数组
+    if (Array.isArray(d)) {
+      overrideRows.value = d as ArtworkOverrideRow[]
+      overrideTotal.value = (d as ArtworkOverrideRow[]).length
+    } else {
+      const env = d as { items?: ArtworkOverrideRow[]; total?: number }
+      overrideRows.value = env.items ?? []
+      overrideTotal.value = typeof env.total === 'number' ? env.total : overrideRows.value.length
+    }
   } catch {
     ElMessage.error('覆盖列表加载失败')
   } finally {
     overrideLoading.value = false
   }
+}
+
+function onOverridePageChange(p: number) {
+  overridePage.value = p
+  void loadOverrides()
 }
 
 async function submitOverride() {
@@ -160,6 +179,15 @@ async function submitOverride() {
 }
 
 async function removeOverride(row: ArtworkOverrideRow) {
+  try {
+    await ElMessageBox.confirm(
+      `删除条目「${row.item_name || `#${row.item_id}`}」的${row.kind === 'Backdrop' ? '背景图' : '海报'}人工覆盖？删除后将恢复按旁挂 / 刮削出图。`,
+      '删除条目图覆盖',
+      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
   try {
     await deleteArtworkOverride(row.item_id, row.kind)
     ElMessage.success('覆盖已取消')
@@ -232,6 +260,8 @@ onMounted(() => {
         :columns="overrideColumns"
         :rows="overrideRows"
         :loading="overrideLoading"
+        :pagination="{ total: overrideTotal, page: overridePage, pageSize: OVERRIDE_PAGE_SIZE }"
+        @page-change="onOverridePageChange"
       >
         <template #cell-actions="{ row }">
           <el-button type="danger" link @click="removeOverride(row)">取消</el-button>
