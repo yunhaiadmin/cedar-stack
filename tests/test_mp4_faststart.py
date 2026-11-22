@@ -324,14 +324,13 @@ def test_script_disabled_exits_without_touching_db(monkeypatch):
     assert mod.main([]) == 0
 
 
-def test_scanner_only_enqueues_new_items():
+def test_scanner_has_no_faststart_entry():
+    # 入口关停（2026-11-22）：扫描不再调用 faststart 本体，
+    # 细节见 tests/test_mp4_faststart_entry_closed.py。
     import inspect
 
     from backend.emby_server.scanner import _scan_library_body
 
     text = inspect.getsource(_scan_library_body)
-    idx = text.index("note_new_ingest")
-    # drive-share 注释夹在 commit 和入队之间，窗口要盖住这段说明。
-    window = text[max(0, idx - 2500):idx]
-    assert "if is_new:" in window
-    assert window.rfind("db.commit()") >= 0
+    assert "note_new_ingest" not in text
+    assert "mp4_faststart" not in text

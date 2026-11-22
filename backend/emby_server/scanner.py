@@ -7321,22 +7321,9 @@ def _scan_library_body(db: Session, library: emby_models.Library,
                     except Exception:
                         logger.warning("drive-share 入队失败（巡检会兜底）",
                                        exc_info=True)
-                # 大 MP4 faststart：只对新条目入队，提交之后异步做，失败不挡入库。
-                # 默认关；打开后也不改已经在库里的文件（存量走独立脚本）。
-                if is_new:
-                    try:
-                        from backend.emby_server import mp4_faststart as _mp4fs
-                        _mp4fs.note_new_ingest(
-                            item_id=item.id,
-                            file_path=full_path or "",
-                            size=getattr(item, "size", None) or getattr(scan_file, "size", 0) or 0,
-                            container=getattr(scan_file, "container", "") or "",
-                            moov_position=getattr(item, "moov_position", None),
-                            drive_file_id=(_fid or "") if _fid else "",
-                        )
-                    except Exception:
-                        logger.warning("[mp4-faststart] 入队失败（不挡入库）",
-                                       exc_info=True)
+                # 大 MP4 moov 前置入口已关停（2026-11-22，谷歌盘调用削减）：
+                # 生产复核零触发后摘除本钩子，扫描不再触发整文件下载/回写；
+                # 本体代码保留，重启入口须改代码走 PR，不许只翻 env 复活。
             counted = _FileCounter(source_files)
             _iter_prepared(ctx, counted, pool, db, _process_one,
                             label, counted, stats, failed_roots)
