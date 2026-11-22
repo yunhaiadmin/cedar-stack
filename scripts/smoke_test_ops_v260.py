@@ -126,6 +126,14 @@ with SessionLocal() as _db2:
                                        status="active"))
     _db2.flush()
     # 播放门禁（2026-11-22 改版）：资格看订阅——两人各补一条有效订阅。
+    if db.query(models.ServerRealm).filter_by(id=1).first() is None:
+        db.add(models.ServerRealm(
+            id=1, name="默认", slug="default", is_active=True))
+        db.flush()
+    if _db2.query(models.ServerRealm).filter_by(id=1).first() is None:
+        _db2.add(models.ServerRealm(
+            id=1, name="默认", slug="default", is_active=True))
+        _db2.flush()
     _gate_plan = models.SubscriptionPlan(
         name="冒烟门禁套餐", price=100, duration_days=30, is_active=True)
     _db2.add(_gate_plan)
@@ -135,7 +143,7 @@ with SessionLocal() as _db2:
         _u = _db2.query(models.WebUser).filter(models.WebUser.username == _name).first()
         _db2.add(models.UserSubscription(
             user_id=_u.id, plan_id=_gate_plan.id,
-            start_date=_gate_now - timedelta(days=1),
+            realm_id=1, start_date=_gate_now - timedelta(days=1),
             end_date=_gate_now + timedelta(days=30), status="active"))
     _db2.commit()
 

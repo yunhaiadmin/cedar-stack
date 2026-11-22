@@ -52,13 +52,17 @@ db.add(em.UserStorageBinding(user_id=user.id, provider="drive",
 db.commit()
 # 播放门禁（2026-11-22 改版）：资格看订阅——alice 补一条有效订阅。
 from datetime import datetime as _dt, timedelta as _td
+if db.query(models.ServerRealm).filter_by(id=1).first() is None:
+    db.add(models.ServerRealm(
+        id=1, name="默认", slug="default", is_active=True))
+    db.flush()
 _gate_plan = models.SubscriptionPlan(
     name="冒烟门禁套餐", price=100, duration_days=30, is_active=True)
 db.add(_gate_plan)
 db.flush()
 db.add(models.UserSubscription(
     user_id=user.id, plan_id=_gate_plan.id,
-    start_date=_dt.now() - _td(days=1),
+    realm_id=1, start_date=_dt.now() - _td(days=1),
     end_date=_dt.now() + _td(days=30), status="active"))
 db.commit()
 
