@@ -193,19 +193,17 @@
  * （自生成 balance 兑换码，GiftCodeSheet 弹层）+ 我生成的码列表
  * （状态筛选；过期未用的面值由后端在列表查询时惰性退回）。
  * 资金明细：钱包流水分页加载更多。
- * 在线充值（钱包批 3）：充值钮先查邮箱绑定（未绑定提示并跳账号
- * 安全页，照友站口径），已绑定开 TopupSheet——美元计价、易支付收
+ * 在线充值（钱包批 3）：充值钮直接开 TopupSheet——美元计价、易支付收
  * 人民币，回调到账后入账美元余额；未开通时弹层给诚实提示。
  * 支付回调落点：易支付 return_url 指到 /wallet?paid=1（订阅）与
  * /wallet?topup=1（充值）——进页时识别参数，刷新余额并提示到账结果。
  */
 import { computed, onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { ChevronDown, RefreshCw } from 'lucide-vue-next'
 import AxAccountLayout from '@/components/ax/AxAccountLayout.vue'
 import GiftCodeSheet from '@/components/profile/GiftCodeSheet.vue'
 import TopupSheet from '@/components/profile/TopupSheet.vue'
-import { useUserStore } from '@/stores/user'
 import {
   walletApi,
   walletLedgerLabel,
@@ -219,8 +217,6 @@ import { toUserMessage } from '@/utils/toUserMessage'
 
 const toast = useToast()
 const route = useRoute()
-const router = useRouter()
-const userStore = useUserStore()
 
 const loading = ref(true)
 const loadError = ref(false)
@@ -374,12 +370,6 @@ function onTopupPaid() {
 }
 
 function onRecharge() {
-  // 前置拦截（照友站口径）：未绑定邮箱先去账号安全页绑定，不开弹窗
-  if (!userStore.user?.email) {
-    toast.info('请先绑定邮箱后再充值')
-    router.push('/game/account/settings')
-    return
-  }
   topupOpen.value = true
 }
 
