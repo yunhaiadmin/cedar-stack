@@ -5111,6 +5111,21 @@ def _note_drive_error_resp(resp, account) -> None:
         pass
 
 
+def _acquire_drive_api_rate() -> None:
+    """实发 Drive 请求前过全局限速（drive_changes 同一令牌桶，横切只许一套）。
+
+    全局限速收口（2026-11-22 审计 P5）：本模块此前全部绕行令牌桶。
+    转存是工人线程、非播放热路径，用阻塞型 acquire_api_token
+    （与 _api_get 同语义，排队等令）。只接线不改业务语义：限速器
+    自身异常吞掉照常发，绝不让限速接线变成新的转存失败源。
+    """
+    try:
+        from backend.emby_server import drive_changes as _dc_tv_rl
+        _dc_tv_rl.acquire_api_token()
+    except Exception:  # noqa: BLE001 — 限速接线永不打挂转存
+        pass
+
+
 class DriveApiClient:
     """转存工人用的 Drive API 客户端。
 
@@ -5130,6 +5145,7 @@ class DriveApiClient:
     def _request(self, method, url, drive_id, **kwargs):
         """一次请求 + 401 刷新重试一次；网络异常转 _Retriable。"""
         kwargs.setdefault("timeout", 60)
+        _acquire_drive_api_rate()
         try:
             resp = httpx.request(method, url,
                                  headers=self._headers(drive_id), **kwargs)
@@ -5137,6 +5153,7 @@ class DriveApiClient:
                 httpx.RemoteProtocolError, httpx.ReadError) as exc:
             raise _Retriable(f"Drive 网络异常：{type(exc).__name__}") from exc
         if resp.status_code == 401:
+            _acquire_drive_api_rate()
             try:
                 resp = httpx.request(
                     method, url,
@@ -5390,6 +5407,7 @@ class DriveApiClient:
         params = {"supportsAllDrives": "true", "alt": "media"}
         headers = dict(self._headers(drive_id))
         headers["Range"] = f"bytes={start}-{end}"
+        _acquire_drive_api_rate()
         try:
             resp = httpx.request("GET", url, params=params,
                                  headers=headers, timeout=120)
@@ -5400,6 +5418,7 @@ class DriveApiClient:
         if resp.status_code == 401:
             headers = dict(self._headers(drive_id, force_refresh=True))
             headers["Range"] = f"bytes={start}-{end}"
+            _acquire_drive_api_rate()
             try:
                 resp = httpx.request("GET", url, params=params,
                                      headers=headers, timeout=120)
@@ -5494,6 +5513,7 @@ class _RawTokenClient(DriveApiClient):
 
     def _request(self, method, url, drive_id, **kwargs):
         kwargs.setdefault("timeout", 60)
+        _acquire_drive_api_rate()
         resp = httpx.request(
             method, url,
             headers={"Authorization": f"Bearer {self._raw_token}"}, **kwargs)
@@ -5613,6 +5633,7 @@ class UserDriveApiClient(DriveApiClient):
                 q_headers = dict(self._headers(drive_id))
                 q_headers["Content-Range"] = f"bytes */{size}"
                 q_headers["Content-Length"] = "0"
+                _acquire_drive_api_rate()
                 try:
                     q = httpx.request("PUT", resume_uri,
                                       headers=q_headers, content=b"",
@@ -5667,6 +5688,7 @@ class UserDriveApiClient(DriveApiClient):
             headers = dict(self._headers(drive_id))
             headers["X-Upload-Content-Type"] = "application/octet-stream"
             headers["X-Upload-Content-Length"] = str(size)
+            _acquire_drive_api_rate()
             try:
                 resp = httpx.request("POST", _DRIVE_UPLOAD_URL,
                                      params=params, json=meta,
@@ -5681,6 +5703,7 @@ class UserDriveApiClient(DriveApiClient):
                                              force_refresh=True))
                 headers["X-Upload-Content-Type"] = "application/octet-stream"
                 headers["X-Upload-Content-Length"] = str(size)
+                _acquire_drive_api_rate()
                 try:
                     resp = httpx.request("POST", _DRIVE_UPLOAD_URL,
                                          params=params, json=meta,
@@ -5716,6 +5739,7 @@ class UserDriveApiClient(DriveApiClient):
             put_headers = dict(self._headers(drive_id))
             put_headers["Content-Range"] = f"bytes {pos}-{end}/{size}"
             put_headers["Content-Length"] = str(len(chunk))
+            _acquire_drive_api_rate()
             try:
                 put = httpx.request("PUT", session_uri, headers=put_headers,
                                     content=chunk, timeout=300)

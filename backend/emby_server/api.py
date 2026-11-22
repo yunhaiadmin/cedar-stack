@@ -5178,7 +5178,19 @@ def _drive_exists_client() -> httpx.Client:
 
 
 def _drive_exists_http_get(url, *, params, headers, timeout):
-    """经共享 client 的 files.get（线程安全；测试桩点）。"""
+    """经共享 client 的 files.get（线程安全；测试桩点）。
+
+    全局限速收口（2026-11-22 审计 P5）：实发前过 drive_changes 的
+    同一令牌桶（快速失败型 try_acquire_api_token，横切只许一套）。
+    本函数在播放热路径的独立执行器里跑：拿不到令牌也照常直发
+    （返回值有意忽略）——限速防多路径叠加打爆单 SA，不是播放
+    门禁，绝不许阻塞/拒绝起播校验；限速器自身异常同样吞掉直发。
+    """
+    try:
+        from backend.emby_server import drive_changes as _dc_exists_rl
+        _dc_exists_rl.try_acquire_api_token()
+    except Exception:  # noqa: BLE001 — 限速接线永不挡播放热路径
+        pass
     return _drive_exists_client().get(
         url, params=params, headers=headers, timeout=timeout)
 

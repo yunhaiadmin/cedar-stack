@@ -471,6 +471,21 @@ def rewrite_drive_file(file_id: str, *, size_hint: int = 0, token: str | None = 
         shutil.rmtree(work, ignore_errors=True)
 
 
+def _acquire_drive_api_rate() -> None:
+    """实发 Drive 请求前过全局限速（drive_changes 同一令牌桶，横切只许一套）。
+
+    全局限速收口（2026-11-22 审计 P5）：本模块 peek/download/upload
+    此前全部绕行。faststart 是管理/维护侧的同步非热路径，用阻塞型
+    acquire_api_token。只接线不改业务语义：限速器自身异常吞掉
+    照常发，绝不让限速接线变成新的重写失败源。
+    """
+    try:
+        from backend.emby_server import drive_changes as _dc_fs_rl
+        _dc_fs_rl.acquire_api_token()
+    except Exception:  # noqa: BLE001 — 限速接线永不打挂 faststart
+        pass
+
+
 def peek_drive_moov(file_id: str, token: str, file_size: int = 0) -> str:
     """只拉文件头，判断 moov 是否已经在前。失败返回 unknown。"""
     import httpx
@@ -480,6 +495,7 @@ def peek_drive_moov(file_id: str, token: str, file_size: int = 0) -> str:
         "Authorization": f"Bearer {token}",
         "Range": f"bytes=0-{_PEEK_BYTES - 1}",
     }
+    _acquire_drive_api_rate()
     try:
         with httpx.stream(
             "GET", url,
@@ -503,6 +519,7 @@ def download_drive_file(file_id: str, token: str, dest: str) -> None:
 
     url = f"https://www.googleapis.com/drive/v3/files/{file_id}"
     headers = {"Authorization": f"Bearer {token}"}
+    _acquire_drive_api_rate()
     with httpx.stream(
         "GET", url,
         params={"alt": "media", "supportsAllDrives": "true"},
@@ -522,6 +539,7 @@ def upload_drive_replace(file_id: str, token: str, src_path: str, *,
 
     request_fn = request or httpx.request
     size = os.path.getsize(src_path)
+    _acquire_drive_api_rate()
     init = request_fn(
         "PATCH",
         f"https://www.googleapis.com/upload/drive/v3/files/{file_id}",
@@ -548,6 +566,7 @@ def upload_drive_replace(file_id: str, token: str, src_path: str, *,
             if not chunk:
                 raise FaststartError("short read")
             end = pos + len(chunk) - 1
+            _acquire_drive_api_rate()
             put = request_fn(
                 "PUT", location,
                 headers={
