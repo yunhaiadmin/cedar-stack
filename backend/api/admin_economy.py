@@ -964,6 +964,14 @@ def economy_list_subscriptions(
         for u in db.query(models.WebUser).filter(models.WebUser.id.in_(user_ids)).all()
     } if user_ids else {}
 
+    # 批量取套餐名（原列表推导逐行 r.plan 懒加载 = 每行一次查询的 N+1）。
+    plan_ids = {r.plan_id for r in rows}
+    plan_names = {
+        p.id: p.name
+        for p in db.query(models.SubscriptionPlan)
+        .filter(models.SubscriptionPlan.id.in_(plan_ids)).all()
+    } if plan_ids else {}
+
     active_count = db.query(models.UserSubscription).filter(
         models.UserSubscription.status == "active", models.UserSubscription.end_date > now
     ).count()
@@ -989,7 +997,7 @@ def economy_list_subscriptions(
                 "id": r.id,
                 "user_id": r.user_id,
                 "username": users.get(r.user_id, "未知"),
-                "plan_name": r.plan.name if r.plan else f"套餐 #{r.plan_id}",
+                "plan_name": plan_names[r.plan_id] if r.plan_id in plan_names else f"套餐 #{r.plan_id}",
                 "start_date": r.start_date.isoformat() if r.start_date else None,
                 "end_date": r.end_date.isoformat() if r.end_date else None,
                 "days_left": _days_left(r.end_date, now),

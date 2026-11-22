@@ -37,18 +37,28 @@ class OverrideIn(BaseModel):
 @router.get("/artwork-overrides")
 def list_overrides(
     limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
-    """覆盖列表：只 join 活条目出数（条目已删的孤行不展示、不影响出图）。"""
-    rows = (
+    """覆盖列表：只 join 活条目出数（条目已删的孤行不展示、不影响出图）。
+
+    分页信封 ``{items, total}``：total 为同一 join/过滤口径下的总数。
+    """
+    base = (
         db.query(em.MediaItemArtworkOverride, em.MediaItem)
         .join(em.MediaItem, em.MediaItem.id == em.MediaItemArtworkOverride.item_id)
         .filter(em.MediaItem.deleted_at.is_(None), em.MediaItem.merged_into_id.is_(None))
-        .order_by(em.MediaItemArtworkOverride.updated_at.desc())
+    )
+    total = base.count()
+    rows = (
+        base.order_by(em.MediaItemArtworkOverride.updated_at.desc(),
+                      em.MediaItemArtworkOverride.id.desc())
+        .offset(offset)
         .limit(limit)
         .all()
     )
     return {
+        "total": total,
         "items": [
             {
                 "id": row.id,

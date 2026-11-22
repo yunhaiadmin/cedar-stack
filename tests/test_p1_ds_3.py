@@ -246,7 +246,8 @@ def test_admin_logs_single_user_query():
 
     user_query_count = [0]
     fake_query = mock.MagicMock()
-    fake_query.order_by.return_value.limit.return_value.all.return_value = logs
+    fake_query.order_by.return_value.offset.return_value.limit \
+        .return_value.all.return_value = logs
     fake_query.filter.return_value.all.return_value = [fake_op]
 
     def _counting_filter(*args, **kwargs):
@@ -262,6 +263,8 @@ def test_admin_logs_single_user_query():
 
     assert user_query_count[0] == 1, \
         f"WebUser 应恰好查 1 次（批量 IN），实际 {user_query_count[0]} 次"
-    assert len(result) == 3
+    # 响应已改分页信封 {items, total}（admin-fix-b）
+    items = result["items"]
+    assert len(items) == 3
     # admin_user_id=1 的两条映射到 admin1；None 的那条回退"未知"
-    assert [r["admin_name"] for r in result] == ["admin1", "admin1", "未知"]
+    assert [r["admin_name"] for r in items] == ["admin1", "admin1", "未知"]

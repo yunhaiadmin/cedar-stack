@@ -939,19 +939,42 @@ def delete_announcement(
 def get_tickets(
     status_filter: Optional[str] = None,
     category_filter: Optional[str] = None,
+    keyword: str = "",
+    limit: int = 50,
+    offset: int = 0,
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
+    """工单列表：状态/分类筛选 + keyword（标题 / 发起人用户名）+ 真分页。
+
+    响应改分页信封 ``{total, tickets}``（与 list_users 同形状）。
+    最新消息只取每单一条：子查询 max(id) 后 join 回消息表，不再把
+    这些工单的全部消息拉回 Python（max(id) 口径 SQLite/PG 通用）。
+    """
     query = db.query(models.Ticket)
     if status_filter:
         query = query.filter(models.Ticket.status == status_filter)
     if category_filter:
         query = query.filter(models.Ticket.category == category_filter)
+    if keyword and keyword.strip():
+        like = f"%{keyword.strip()}%"
+        matched_users = (
+            db.query(models.WebUser.id)
+            .filter(models.WebUser.username.ilike(like))
+        )
+        query = query.filter(or_(
+            models.Ticket.title.ilike(like),
+            models.Ticket.user_id.in_(matched_users),
+        ))
 
-    tickets = query.order_by(models.Ticket.created_at.desc()).limit(200).all()
+    limit, offset = pagination_params(limit, offset)
+    total = query.count()
+    tickets = (
+        query.order_by(models.Ticket.created_at.desc(), models.Ticket.id.desc())
+        .offset(offset).limit(limit).all()
+    )
 
     # F-P1-1：批量取用户与各工单最新消息（原 2N+1 次查询）。
-    # 最新消息：一次查出这些工单的全部消息（按时间倒序），Python 里按工单取第一条。
     ticket_ids = [t.id for t in tickets]
     user_ids = {t.user_id for t in tickets}
     users = {
@@ -961,13 +984,16 @@ def get_tickets(
     } if user_ids else {}
     latest_map: dict = {}
     if ticket_ids:
-        for m in (
-            db.query(models.TicketMessage)
+        latest_ids = (
+            db.query(func.max(models.TicketMessage.id))
             .filter(models.TicketMessage.ticket_id.in_(ticket_ids))
-            .order_by(models.TicketMessage.created_at.desc())
-            .all()
-        ):
-            latest_map.setdefault(m.ticket_id, m)
+            .group_by(models.TicketMessage.ticket_id)
+        )
+        latest_map = {
+            m.ticket_id: m
+            for m in db.query(models.TicketMessage)
+            .filter(models.TicketMessage.id.in_(latest_ids)).all()
+        }
 
     result = []
     for ticket in tickets:
@@ -984,7 +1010,7 @@ def get_tickets(
             "updated_at": ticket.updated_at.isoformat() if ticket.updated_at else "",
             "latest_message": latest_message.message[:100] if latest_message else "",
         })
-    return result
+    return {"total": total, "tickets": result}
 
 
 @admin_router.get("/tickets/{ticket_id}/messages")
@@ -1685,16 +1711,23 @@ def get_admin_logs(
     action_filter: Optional[str] = None,
     target_type_filter: Optional[str] = None,
     limit: int = 100,
+    offset: int = 0,
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
+    """操作日志：筛选 + 真分页，响应改信封 ``{items, total}``（上限保持 500）。"""
     query = db.query(models.AdminLog)
     if action_filter:
         query = query.filter(models.AdminLog.action == action_filter)
     if target_type_filter:
         query = query.filter(models.AdminLog.target_type == target_type_filter)
 
-    logs = query.order_by(models.AdminLog.created_at.desc()).limit(min(limit, 500)).all()
+    limit, offset = pagination_params(limit, offset, default_limit=100,
+                                      max_limit=500)
+    total = query.count()
+    logs = (query.order_by(models.AdminLog.created_at.desc(),
+                           models.AdminLog.id.desc())
+            .offset(offset).limit(limit).all())
 
     # F-P1-1: 批量预加载操作人，修复 N+1（原实现循环内每条日志查一次 WebUser，最多 501 次 DB 往返）
     # 去重并排除 None，避免无效 id 进入 IN 条件
@@ -1740,7 +1773,7 @@ def get_admin_logs(
                 and log.details.get("actor") == "system" else "未知"),
             "error_hint": error_hint,
         })
-    return result
+    return {"items": result, "total": total}
 
 
 # ==================== 统计数据 API ====================

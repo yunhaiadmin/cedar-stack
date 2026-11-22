@@ -27,7 +27,7 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from backend import invite_promoter, invite_rebate, invite_trial, models
@@ -283,24 +283,38 @@ def invite_trial_codes(
     expired 算。本端点只读，不提供作废/补发等处置动作（口径未定）。
     """
     q = db.query(models.InviteTrialCode)
-    rows_all = q.order_by(models.InviteTrialCode.id.desc()).limit(500).all()
+    # 状态过滤下推 SQL（旧实现先 limit(500) 再在 Python 里按展示状态过滤，
+    # 500 条窗口外的符合项会被漏掉）。过滤口径与 invite_trial.effective_status
+    # 完全一致：pending 且 expires_at 已过按 expired 算。
+    if status in (invite_trial.STATUS_PENDING, invite_trial.STATUS_USED,
+                  invite_trial.STATUS_EXPIRED):
+        now = datetime.now()
+        code = models.InviteTrialCode
+        if status == invite_trial.STATUS_PENDING:
+            q = q.filter(code.status == invite_trial.STATUS_PENDING,
+                         or_(code.expires_at.is_(None), code.expires_at > now))
+        elif status == invite_trial.STATUS_USED:
+            q = q.filter(code.status == invite_trial.STATUS_USED)
+        else:  # expired：已落库 expired + pending 惰性过期
+            q = q.filter(or_(
+                code.status == invite_trial.STATUS_EXPIRED,
+                (code.status == invite_trial.STATUS_PENDING)
+                & code.expires_at.isnot(None) & (code.expires_at <= now),
+            ))
+    rows_all = (q.order_by(models.InviteTrialCode.id.desc())
+                .limit(min(max(limit, 1), 200)).all())
     user_ids = {r.creator_id for r in rows_all} | {
         r.used_by for r in rows_all if r.used_by}
     users = {
         u.id: u.username for u in db.query(models.WebUser)
         .filter(models.WebUser.id.in_(user_ids)).all()
     } if user_ids else {}
-    items = []
-    for r in rows_all:
-        dto = invite_trial.trial_code_dto(
+    items = [
+        invite_trial.trial_code_dto(
             r, creator_name=users.get(r.creator_id, "未知"),
             claimer_name=users.get(r.used_by) if r.used_by else None)
-        if status in (invite_trial.STATUS_PENDING, invite_trial.STATUS_USED,
-                      invite_trial.STATUS_EXPIRED) and dto["status"] != status:
-            continue
-        items.append(dto)
-        if len(items) >= min(max(limit, 1), 200):
-            break
+        for r in rows_all
+    ]
     return {"total": len(items), "codes": items}
 
 
