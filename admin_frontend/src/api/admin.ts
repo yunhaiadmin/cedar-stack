@@ -773,9 +773,10 @@ export const updateAnnouncement = (id: number, data: Partial<{ title: string; co
 export const deleteAnnouncement = (id: number) => del<{ success: boolean }>(`/announcements/${id}`)
 
 // ==================== 工单 =============
+/** 工单分页信封（后端 #438 定版，与 list_users 同形状）：{total, tickets} */
 export interface TicketsPage {
-  items: TicketRow[]
   total: number
+  tickets: TicketRow[]
   limit?: number
   offset?: number
 }
@@ -1052,6 +1053,7 @@ export const refreshServerMounts = () =>
   )
 
 // ==================== 日志与统计 =============
+/** 操作日志分页信封（后端 #438 定版）：{items, total} */
 export interface AdminLogsPage {
   items: AdminLogRow[]
   total: number

@@ -201,7 +201,7 @@ async function load() {
     const params: Record<string, unknown> = { limit: PAGE_SIZE, offset: (page.value - 1) * PAGE_SIZE }
     if (actionFilter.value) params.action_filter = actionFilter.value
     const res: unknown = await fetchLogs(params)
-    // 容错解析：新后端回信封 {items,total,limit,offset}，旧后端回数组
+    // 容错解析：新后端回信封 {items, total}（#438 定版），旧后端回数组
     if (Array.isArray(res)) {
       logs.value = res as AdminLogRow[]
       total.value = (res as AdminLogRow[]).length

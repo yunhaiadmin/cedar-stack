@@ -96,13 +96,14 @@ async function load() {
       limit: PAGE_SIZE,
       offset: (page.value - 1) * PAGE_SIZE,
     })
-    // 容错解析：新后端回信封 {items,total,limit,offset}，旧后端回数组
+    // 容错解析：新后端回信封 {total, tickets}（#438 定版），旧后端回数组；
+    // 中间形状 {items} 一并兜底，保证单独合并也不白屏
     if (Array.isArray(res)) {
       list.value = res as TicketRow[]
       total.value = (res as TicketRow[]).length
     } else {
-      const env = res as { items?: TicketRow[]; total?: number }
-      list.value = env.items ?? []
+      const env = res as { tickets?: TicketRow[]; items?: TicketRow[]; total?: number }
+      list.value = env.tickets ?? env.items ?? []
       total.value = typeof env.total === 'number' ? env.total : list.value.length
     }
   } catch (e) {
