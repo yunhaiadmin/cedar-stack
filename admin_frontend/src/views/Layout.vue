@@ -28,7 +28,7 @@ import {
   LayoutDashboard, Users, Package, Ticket, Settings, Server,
   Menu, X, ChevronDown, RefreshCw, LogOut, KeyRound, ExternalLink,
   CheckCircle2, Route as RealmIcon, Lock, Search, Wallet, Crown, MessageSquareDashed, Link2,
-  TriangleAlert, ScrollText, Smartphone, MonitorCog, ShieldAlert, Ban, Library, Eye,
+  TriangleAlert, ScrollText, Smartphone, MonitorCog, MonitorOff, ShieldAlert, Ban, Library, Eye,
   Image as ImageIcon,
   Database, Megaphone, Receipt, TicketPercent, UserPlus, KeySquare,
   UserCog, Activity, HandCoins,
@@ -176,6 +176,8 @@ const navGroups: NavGroup[] = [
       { path: '/share-guard', label: '防共享', icon: ShieldAlert, superOnly: true },
       // 访问拦截：UA 关键词 + IP 归属地。默认全关，但一旦打开就直接影响所有人能否访问 → 仅超管可改
       { path: '/access-guard', label: '访问拦截', icon: Ban, superOnly: true },
+      // 播放器登录黑名单：命中的播放器在客户端登录环节被拒。后端未收超管名单，运营可改，故不标 superOnly
+      { path: '/player-blacklist', label: '播放器黑名单', icon: MonitorOff },
     ],
   },
   {
