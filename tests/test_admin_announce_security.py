@@ -33,7 +33,7 @@ from backend.api.admin_core import admin_router
 from backend.database import get_db
 from backend.security import hash_password
 
-PASSWORD = "announce-sec-pass-123"
+PASSWORD = "test-admin-password"  # 夹具用假密码，仅测试库内使用
 GROUP_ID = -1009876543210
 REAL_URL = "https://dm.example.com/tok123secret"
 NEW_URL = "https://dm2.example.com/newtok456"
