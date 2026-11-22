@@ -26,6 +26,7 @@ services:
       # WS1: enrich_workers/enrich_batch/db_pool_size 改由管理面板接管（system_configs），此处不再设 env
       EMBY_IMAGE_DIR: /data/images
       EMBY_TRANSCODE_DIR: /data/transcode
+      EMBY_TMDB_CACHE_DIR: /data/tmdb-cache
       FRONTEND_DIST: /nonexistent-frontend
       MOUNT_RCLONE_BIN: ${MOUNT_RCLONE_BIN:-rclone}
       MOUNT_RCLONE_CONF: /config/rclone/rclone.conf
@@ -91,6 +92,7 @@ services:
       EMBY_API_PORT: 8001
       EMBY_IMAGE_DIR: /data/images
       EMBY_TRANSCODE_DIR: /data/transcode
+      EMBY_TMDB_CACHE_DIR: /data/tmdb-cache
       FRONTEND_DIST: /nonexistent-frontend
       MOUNT_RCLONE_BIN: ${MOUNT_RCLONE_BIN:-rclone}
       MOUNT_RCLONE_CONF: /config/rclone/rclone.conf
@@ -154,6 +156,7 @@ services:
       # WS1: enrich_workers/enrich_batch/db_pool_size 改由管理面板接管（system_configs），此处不再设 env
       EMBY_IMAGE_DIR: /data/images
       EMBY_TRANSCODE_DIR: /data/transcode
+      EMBY_TMDB_CACHE_DIR: /data/tmdb-cache
       FRONTEND_DIST: /nonexistent-frontend
       MOUNT_RCLONE_BIN: ${MOUNT_RCLONE_BIN:-rclone}
       MOUNT_RCLONE_CONF: /config/rclone/rclone.conf
