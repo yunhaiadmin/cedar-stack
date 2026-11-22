@@ -12,6 +12,7 @@
  * --au-* 令牌。
  */
 import { computed, onMounted, ref } from 'vue'
+import { formatServerTime, formatServerDate } from '@/utils/serverTime'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   AlertTriangle, Brush, Coins, Database, Flag, HardDrive, Play, RefreshCw, Users,
@@ -154,7 +155,7 @@ function fmtBytes(n: number | null | undefined): string {
 }
 
 function fmtTime(s: string | null): string {
-  return s ? s.replace('T', ' ').slice(0, 16) : '—'
+  return formatServerTime(s) || '—'
 }
 
 async function load() {
@@ -834,7 +835,7 @@ onMounted(() => {
         </div>
         <template v-if="preview">
           <p class="pool-dialog-text" style="margin-top: 12px">
-            周期 {{ preview.period_key }}（{{ preview.period_start.slice(0, 10) }} 至 {{ preview.period_end.slice(0, 10) }}）；
+            周期 {{ preview.period_key }}（{{ formatServerDate(preview.period_start) }} 至 {{ formatServerDate(preview.period_end) }}）；
             激励总开关{{ preview.reward_enabled ? '开' : '关' }}、真发{{ preview.payout_enabled ? '开' : '关（影子）' }}。
             预览只算账、不落行。
           </p>

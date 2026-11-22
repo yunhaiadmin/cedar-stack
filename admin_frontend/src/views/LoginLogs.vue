@@ -6,6 +6,7 @@
  * 供风控审查；支持按保留天数清理，避免表无限增长。
  */
 import { computed, onMounted, ref } from 'vue'
+import { formatServerTime } from '@/utils/serverTime'
 import { RefreshCw, Trash2, ShieldAlert, ScrollText, KeyRound, Database } from 'lucide-vue-next'
 import { fetchLoginLogs } from '@/api/admin'
 import { PageHeader, SectionCard, StatTile } from '@/components/ui'
@@ -217,7 +218,7 @@ async function purge(preset: number) {
 
 function fmt(s: string | null): string {
   if (!s) return '—'
-  return s.slice(0, 19).replace('T', ' ')
+  return formatServerTime(s, true) || '—'
 }
 
 function riskBadge(row: LoginLogRow): string {

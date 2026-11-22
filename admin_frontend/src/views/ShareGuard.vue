@@ -16,6 +16,7 @@
  * 判定与处置逻辑在后端 `backend/share_guard.py`，本页只做配置与展示。
  */
 import { computed, onMounted, ref } from 'vue'
+import { formatServerTime } from '@/utils/serverTime'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   CalendarClock, Eraser, History, MapPin, MonitorPlay, RefreshCw, Save, ShieldAlert, ShieldCheck,
@@ -233,7 +234,7 @@ async function purge() {
 }
 
 function fmt(ts: string | null): string {
-  return ts ? ts.slice(0, 19).replace('T', ' ') : '—'
+  return formatServerTime(ts, true) || '—'
 }
 
 /** 空态要说清「为什么空」：两个开关全关时，压根不会有判定发生 */

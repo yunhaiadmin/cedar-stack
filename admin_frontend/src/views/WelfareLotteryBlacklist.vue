@@ -8,6 +8,7 @@
  * 添加时可按用户名 / 邮箱搜索（复用用户管理的 /users 列表口），也可直接输入用户 ID。
  */
 import { computed, onMounted, ref } from 'vue'
+import { formatServerTime } from '@/utils/serverTime'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Ban, Plus, RefreshCw } from 'lucide-vue-next'
 import { PageHeader, SectionCard } from '@/components/ui'
@@ -25,7 +26,7 @@ import {
 } from '@/api/welfare'
 
 const REASON_MAX = 200 // 后端 LotteryBlacklistAdd.reason max_length=200
-const fmtTime = (v?: string | null) => (v ? String(v).replace('T', ' ').slice(0, 19) : '—')
+const fmtTime = (v?: string | null) => formatServerTime(v, true) || '—'
 
 const { isPhone } = useBreakpoint()
 const auth = useAuthStore()

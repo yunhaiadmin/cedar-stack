@@ -9,6 +9,7 @@
  * 本身只改草稿）、表格与自带分页换 DataTable。功能与接口口径零变化。
  */
 import { computed, onMounted, reactive, ref } from 'vue'
+import { formatServerTime } from '@/utils/serverTime'
 import { ElMessage } from 'element-plus'
 import { walletApi, type WalletBalanceResponse, type WalletLedgerRow } from '@/api/wallet'
 import { PageHeader, SectionCard } from '@/components/ui'
@@ -204,7 +205,7 @@ async function saveSettings() {
 }
 
 function fmtTime(value: string | null) {
-  return value ? value.replace('T', ' ').slice(0, 19) : '-'
+  return formatServerTime(value, true) || '-'
 }
 
 onMounted(async () => {

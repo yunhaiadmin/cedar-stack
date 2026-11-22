@@ -20,6 +20,7 @@
  * 内容自动化（MoviePilot / qB）与出流入口分开成两段，避免混在一起看不清谁在出流。
  */
 import { computed, defineAsyncComponent, onMounted, reactive, ref } from 'vue'
+import { formatServerTime } from '@/utils/serverTime'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { toAdminError } from '@/utils/errorMessage'
@@ -488,7 +489,7 @@ onMounted(load)
 // ==================== 展示辅助 ====================
 
 function fmtDate(s: string | null): string {
-  return s ? s.slice(0, 16).replace('T', ' ') : '未测试'
+  return formatServerTime(s) || '未测试'
 }
 
 function stateBadge(s: RemoteServerRow): string {
