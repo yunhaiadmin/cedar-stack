@@ -124,6 +124,19 @@ with SessionLocal() as _db2:
         _db2.add(em.UserStorageBinding(user_id=_u.id, provider="drive",
                                        account_label="冒烟盘", credential_id=_cred.id,
                                        status="active"))
+    _db2.flush()
+    # 播放门禁（2026-11-22 改版）：资格看订阅——两人各补一条有效订阅。
+    _gate_plan = models.SubscriptionPlan(
+        name="冒烟门禁套餐", price=100, duration_days=30, is_active=True)
+    _db2.add(_gate_plan)
+    _db2.flush()
+    _gate_now = datetime.now()
+    for _name in (a_name, staff_name):
+        _u = _db2.query(models.WebUser).filter(models.WebUser.username == _name).first()
+        _db2.add(models.UserSubscription(
+            user_id=_u.id, plan_id=_gate_plan.id,
+            start_date=_gate_now - timedelta(days=1),
+            end_date=_gate_now + timedelta(days=30), status="active"))
     _db2.commit()
 
 

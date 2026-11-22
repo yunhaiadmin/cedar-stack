@@ -742,6 +742,18 @@ db.add(em.UserStorageBinding(user_id=staff_row.id, provider="drive",
 # 必须 commit：mounted_item_file 的装饰器每次调用后会关闭 session，
 # 只 flush 不提交的绑定行会在第一次调用后被回滚，后续调用又会 403。
 db.commit()
+# 播放门禁（2026-11-22 改版）：资格看订阅——staff 补一条有效订阅，
+# 否则 mounted_item_file 在门禁处即 403。
+from datetime import datetime as _dt, timedelta as _td
+_gate_plan = models.SubscriptionPlan(
+    name="冒烟门禁套餐", price=100, duration_days=30, is_active=True)
+db.add(_gate_plan)
+db.flush()
+db.add(models.UserSubscription(
+    user_id=staff_row.id, plan_id=_gate_plan.id,
+    start_date=_dt.now() - _td(days=1),
+    end_date=_dt.now() + _td(days=30), status="active"))
+db.commit()
 
 
 def call_endpoint(value):

@@ -173,10 +173,14 @@ check("自定义拦截文案生效", r.status_code == 403 and r.json().get("deta
       str(r.json().get("detail")))
 set_config("subscription_gate_message", None)
 
-# ---------- 关闭付费墙：全员放行 ----------
+# ---------- 关闭付费墙：非会员仍被播放门禁拦（2026-11-22 改版） ----------
+# 播放资格已与付费墙解耦：关付费墙只关 can_play 一道门，播放门禁
+# （playback_gate）独立看订阅——无订阅的非会员照样 403，文案为
+# 门禁的订阅引导；会员不受影响（上一节已验放行）。
 set_config("subscription_required", "false")
 r = client.post(f"/emby/Items/{item_guid}/PlaybackInfo", headers=free_e, json={})
-check("关闭付费墙后非会员放行", r.status_code == 200, str(r.status_code))
+check("关闭付费墙后非会员仍被播放门禁拦", r.status_code == 403 and r.json().get("detail") == "开通订阅后即可播放",
+      str(r.status_code) + " " + str(r.json().get("detail")))
 r = client.get("/api/user/auth/me", headers=free_h)
 check("/auth/me 同步反映关闭状态", r.json().get("subscription_required") is False,
       str(r.json().get("subscription_required")))
