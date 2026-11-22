@@ -96,25 +96,9 @@ with SessionLocal() as _db:
                                   account_label="冒烟盘", credential_id=_cred.id,
                                   status="active"))
     _db.commit()
-    # 播放门禁（2026-11-22 改版）：资格看订阅——playuser 补一条有效订阅。
-    from datetime import datetime as _dt, timedelta as _td
-    if db.query(models.ServerRealm).filter_by(id=1).first() is None:
-        db.add(models.ServerRealm(
-            id=1, name="默认", slug="default", is_active=True))
-        db.flush()
-    if _db.query(models.ServerRealm).filter_by(id=1).first() is None:
-        _db.add(models.ServerRealm(
-            id=1, name="默认", slug="default", is_active=True))
-        _db.flush()
-    _gate_plan = models.SubscriptionPlan(
-        name="冒烟门禁套餐", price=100, duration_days=30, is_active=True)
-    _db.add(_gate_plan)
-    _db.flush()
-    _db.add(models.UserSubscription(
-        user_id=user_id, plan_id=_gate_plan.id,
-        realm_id=1, start_date=_dt.now() - _td(days=1),
-        end_date=_dt.now() + _td(days=30), status="active"))
-    _db.commit()
+    # 播放门禁（2026-11-22 改版）：资格看订阅——本脚本第 2 节用
+    # grant_membership_days 正式发会员，发的就是真订阅，新门禁直接
+    # 认它，这里不预种订阅（预种会破坏第 1 节的非会员前提）。
 H_EMBY = {"X-Emby-Token": _raw}
 
 # ==================== 1. 付费墙默认开启 ====================

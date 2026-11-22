@@ -126,10 +126,6 @@ with SessionLocal() as _db2:
                                        status="active"))
     _db2.flush()
     # 播放门禁（2026-11-22 改版）：资格看订阅——两人各补一条有效订阅。
-    if db.query(models.ServerRealm).filter_by(id=1).first() is None:
-        db.add(models.ServerRealm(
-            id=1, name="默认", slug="default", is_active=True))
-        db.flush()
     if _db2.query(models.ServerRealm).filter_by(id=1).first() is None:
         _db2.add(models.ServerRealm(
             id=1, name="默认", slug="default", is_active=True))
