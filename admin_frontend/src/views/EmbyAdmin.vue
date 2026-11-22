@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ScanQueueCard from '@/components/emby/ScanQueueCard.vue'
+import { formatServerTime } from '@/utils/serverTime'
 import LibraryCard from '@/components/emby/LibraryCard.vue'
 /**
  * 媒体库管理：库列表/创建/扫描/删除 + 刮削策略 + 平台虚拟媒体库 + 图片修复队列
@@ -1009,7 +1010,7 @@ const chaseNewError = ref(false)
 
 /** 运行记录里的 ISO 时间 → 「YYYY-MM-DD HH:MM:SS」 */
 function fmtRunTime(s: string | null | undefined): string {
-  return s ? s.slice(0, 19).replace('T', ' ') : '—'
+  return formatServerTime(s, true) || '—'
 }
 
 /** 接口响应 → 页面状态：老后端没有 drive_changes / recent_runs / alerts 时补默认值（三处共用） */
@@ -1476,7 +1477,7 @@ async function removeLib(l: EmbyLibrary) {
 
 function fmtDate(s: string | null): string {
   if (!s) return '—'
-  return s.slice(0, 16).replace('T', ' ')
+  return formatServerTime(s) || '—'
 }
 
 // ---- 最近一次扫描的结果（后端已落库，刷新页面也还在）----

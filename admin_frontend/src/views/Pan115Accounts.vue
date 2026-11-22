@@ -15,6 +15,7 @@
  * 空 / 错态用 EmptyState；目录浏览弹窗改成发丝线列表（文件夹图标代替 emoji、面包屑是可聚焦按钮）。
  */
 import { computed, onMounted, reactive, ref } from 'vue'
+import { formatServerTime } from '@/utils/serverTime'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   AlertTriangle, ChevronRight, Cloud, CircleCheck, Folder, FolderOpen, KeyRound, Plus, RefreshCw, ShieldAlert, ShieldCheck, Trash2,
@@ -78,7 +79,7 @@ onMounted(load)
 
 function fmtDate(s: string | null): string {
   if (!s) return '—'
-  return s.slice(0, 16).replace('T', ' ')
+  return formatServerTime(s) || '—'
 }
 
 // ==================== 账号配置档 ====================

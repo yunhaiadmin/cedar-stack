@@ -13,6 +13,7 @@
  * 清单是 flush 表格 + 统一工具条；加载失败给可重试的错误态。
  */
 import { computed, onMounted, reactive, ref } from 'vue'
+import { formatServerDate } from '@/utils/serverTime'
 import { ElMessage } from 'element-plus'
 import {
   AlertTriangle, BellRing, CalendarClock, Crown, ListChecks, RefreshCw, TimerOff, Users,
@@ -207,7 +208,7 @@ function statusText(row: SubscriptionOverviewRow): string {
 }
 
 function fmtDay(s: string | null): string {
-  return s ? s.slice(0, 10) : '—'
+  return formatServerDate(s) || '—'
 }
 
 // ==================== 到期续费提醒（v2.8.0） ====================

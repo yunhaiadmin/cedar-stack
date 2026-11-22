@@ -15,6 +15,7 @@
  * 首次加载有骨架、加载失败 / 没有服时给 EmptyState。
  */
 import { computed, onMounted, reactive, ref } from 'vue'
+import { formatServerTime } from '@/utils/serverTime'
 import { RouterLink } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -269,7 +270,7 @@ function nodeText(node: RealmRow['nodes'][number]): string {
 }
 
 function shortDate(s: string | null): string {
-  return s ? s.slice(0, 16).replace('T', ' ') : '未体检'
+  return formatServerTime(s) || '未体检'
 }
 </script>
 

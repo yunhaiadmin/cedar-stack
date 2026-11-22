@@ -13,6 +13,7 @@
  * 角色说明直接来自后端下发的元数据，不在前端再维护一份。
  */
 import { computed, onMounted, ref } from 'vue'
+import { formatServerTime } from '@/utils/serverTime'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { toAdminError } from '@/utils/errorMessage'
 import {
@@ -184,7 +185,7 @@ async function revokeFromDialog() {
 
 function fmtDate(value: string | null): string {
   if (!value) return '—'
-  return value.slice(0, 16).replace('T', ' ')
+  return formatServerTime(value) || '—'
 }
 </script>
 

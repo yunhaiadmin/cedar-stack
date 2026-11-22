@@ -10,7 +10,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { RefreshCw, Ban, CircleCheck, LogOut, Smartphone, Activity, Gauge } from 'lucide-vue-next'
 import { PageHeader, SectionCard, StatTile } from '@/components/ui'
 import { fetchDeviceStats, fetchDevices, removeDevice, setDeviceBlocked } from '@/api/admin'
-import { parseServerTime } from '@/utils/serverTime'
+import { parseServerTime, formatServerTime } from '@/utils/serverTime'
 import type { DeviceRow, DeviceStats } from '@/types'
 import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
@@ -182,7 +182,7 @@ async function kick(row: DeviceRow) {
 
 function fmt(s: string | null): string {
   if (!s) return '—'
-  return s.slice(0, 16).replace('T', ' ')
+  return formatServerTime(s) || '—'
 }
 
 function ago(s: string | null): string {

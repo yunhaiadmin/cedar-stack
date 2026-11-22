@@ -6,6 +6,7 @@
  * flush SectionCard 订单表（筛选在左、查询在右，分页收进卡片底栏）；加载失败给可重试的错误态。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { formatServerTime } from '@/utils/serverTime'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { toAdminError } from '@/utils/errorMessage'
 import {
@@ -473,7 +474,7 @@ async function handleMarkPaid(row: OrderRow) {
 }
 
 function fmtTime(iso?: string | null) {
-  return iso ? iso.slice(0, 19).replace('T', ' ') : '—'
+  return formatServerTime(iso, true) || '—'
 }
 
 onMounted(() => {

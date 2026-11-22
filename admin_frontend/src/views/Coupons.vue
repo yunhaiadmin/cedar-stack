@@ -15,6 +15,7 @@
  * 加载失败给可重试的错误态。弹窗结构不变，只把写死的颜色 / 圆角换成 --au-* 令牌。
  */
 import { computed, onMounted, ref } from 'vue'
+import { formatServerTime, formatServerDate } from '@/utils/serverTime'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { toAdminError } from '@/utils/errorMessage'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -212,8 +213,8 @@ function scopeText(row: CouponRow): string {
 
 function validText(row: CouponRow): string {
   if (!row.valid_from && !row.valid_until) return '长期有效'
-  const from = row.valid_from ? row.valid_from.slice(0, 10) : '即日'
-  const until = row.valid_until ? row.valid_until.slice(0, 10) : '不限'
+  const from = row.valid_from ? formatServerDate(row.valid_from) || '即日' : '即日'
+  const until = row.valid_until ? formatServerDate(row.valid_until) || '不限' : '不限'
   return `${from} → ${until}`
 }
 
@@ -647,7 +648,7 @@ async function saveSettings() {
 
 function fmtTime(iso?: string | null) {
   if (!iso) return '—'
-  return iso.slice(0, 16).replace('T', ' ')
+  return formatServerTime(iso) || '—'
 }
 
 onMounted(() => {

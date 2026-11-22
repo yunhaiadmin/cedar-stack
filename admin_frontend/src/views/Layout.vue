@@ -20,6 +20,7 @@
  * 所有页面路径一个字没动（旧收藏、外部链接照旧打开），改的只是分组与名称。
  */
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { formatServerTime } from '@/utils/serverTime'
 import { RouterView, RouterLink, useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { toAdminError } from '@/utils/errorMessage'
@@ -490,7 +491,7 @@ const magicCanManage = computed(() => !!auth.admin?.is_super)
 
 function fmtMagicTime(raw: string | null | undefined): string {
   if (!raw) return '从未'
-  return raw.replace('T', ' ').slice(0, 19)
+  return formatServerTime(raw, true) || '从未'
 }
 
 async function loadMagicStatus() {

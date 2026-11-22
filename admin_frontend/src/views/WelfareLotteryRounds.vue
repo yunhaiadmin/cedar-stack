@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { formatServerTime } from '@/utils/serverTime'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { toAdminError } from '@/utils/errorMessage'
 import { Gift, History, Plus, RefreshCw, Trophy, Settings2, Delete } from 'lucide-vue-next'
@@ -25,7 +26,7 @@ const prizeTypeMap: Record<string, string> = { days: '会员天数', whitelist: 
 const statusTagType = (s?: string): 'success' | 'warning' | 'info' | 'danger' =>
   (({ open: 'success', drawing: 'warning', done: 'info', cancelled: 'danger' } as Record<string, 'success' | 'warning' | 'info' | 'danger'>)[s ?? ''] ?? 'info')
 
-const fmtTime = (v?: string | null) => (v ? String(v).replace('T', ' ').slice(0, 19) : '—')
+const fmtTime = (v?: string | null) => formatServerTime(v, true) || '—'
 /** Batch G：本地 errDetail 收敛为 toAdminError（同口径错误翻译） */
 const errDetail = (e: unknown) => toAdminError(e, '操作失败')
 

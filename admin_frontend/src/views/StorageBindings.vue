@@ -5,6 +5,7 @@
  * 凭据只出 has_credential，本页不展示、不请求任何凭据原文；只有刷新（重新 GET）。
  */
 import { computed, onMounted, ref } from 'vue'
+import { formatServerTime } from '@/utils/serverTime'
 import { RefreshCw, HardDrive } from 'lucide-vue-next'
 import { fetchStorageBindings } from '@/api/admin'
 import type { StorageBindingRow } from '@/types'
@@ -99,7 +100,7 @@ function clearFilters() {
 
 function fmt(v: string | null): string {
   if (!v) return '—'
-  return v.slice(0, 19).replace('T', ' ')
+  return formatServerTime(v, true) || '—'
 }
 
 onMounted(load)

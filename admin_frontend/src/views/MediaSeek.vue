@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** 求片管理：审核批准/拒绝/标记完成，联动用户通知 */
 import { computed, onMounted, ref } from 'vue'
+import { formatServerTime } from '@/utils/serverTime'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { toAdminError } from '@/utils/errorMessage'
 import { Check, CloudDownload, Download, MessageSquareDashed, RefreshCw, X } from 'lucide-vue-next'
@@ -382,7 +383,7 @@ onMounted(() => {
 })
 
 function fmtDate(s: string): string {
-  return s.slice(0, 16).replace('T', ' ')
+  return formatServerTime(s)
 }
 
 function statusBadge(status: string): string {

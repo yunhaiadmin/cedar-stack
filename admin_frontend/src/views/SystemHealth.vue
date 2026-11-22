@@ -16,7 +16,7 @@ import {
   sendTestAlert,
 } from '@/api/admin'
 import type { EmbySessionRow, StorageMount } from '@/types'
-import { parseServerTime } from '@/utils/serverTime'
+import { parseServerTime, formatServerTime } from '@/utils/serverTime'
 import type { PanelHealth } from '@/api/admin'
 import type { TgBotStatus } from '@/api/admin'
 import type {
@@ -305,7 +305,7 @@ async function load() {
 }
 
 function fmtDate(value: string | null): string {
-  return value ? value.slice(0, 16).replace('T', ' ') : '—'
+  return formatServerTime(value) || '—'
 }
 
 // ---------- 告警通知 ----------

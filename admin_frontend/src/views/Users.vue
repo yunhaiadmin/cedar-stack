@@ -24,7 +24,7 @@ import {
   fetchUserGrants, grantSubscription, removeDevice, resetUserPassword, sendUserMessage, setDeviceBlocked,
   updateUser, type PlanRow,
 } from '@/api/admin'
-import { parseServerTime } from '@/utils/serverTime'
+import { parseServerTime, formatServerTime, formatServerDate, formatLocalDate } from '@/utils/serverTime'
 import type { AdminUserRow, DeviceRow, UserDetail, UserGrantCard, UserGrants } from '@/types'
 import { useAuthStore } from '@/stores/auth'
 import DataTable from '@/components/DataTable.vue'
@@ -295,11 +295,11 @@ onMounted(async () => {
 
 function fmtDate(s: string | null): string {
   if (!s) return '—'
-  return s.slice(0, 16).replace('T', ' ')
+  return formatServerTime(s) || '—'
 }
 
 function fmtDay(s: string | null): string {
-  return s ? s.slice(0, 10) : '—'
+  return formatServerDate(s) || '—'
 }
 
 // ==================== 套餐 ====================
@@ -360,7 +360,7 @@ async function refreshDetail() {
 }
 
 function fmtDeviceDate(value: string | null): string {
-  return value ? value.slice(0, 16).replace('T', ' ') : '—'
+  return formatServerTime(value) || '—'
 }
 
 async function toggleUserDevice(device: DeviceRow) {
@@ -415,7 +415,7 @@ const grantPreview = computed(() => {
   const base = u.has_subscription && u.subscription_end ? parseServerTime(u.subscription_end) : new Date()
   const from = base.getTime() > Date.now() ? base : new Date()
   const end = new Date(from.getTime() + subDialog.days * 86400000)
-  return `${from.toISOString().slice(0, 10)} → ${end.toISOString().slice(0, 10)}`
+  return `${formatLocalDate(from)} → ${formatLocalDate(end)}`
 })
 
 function openGrant(u: AdminUserRow) {
