@@ -189,6 +189,9 @@ def purchase_codes(db: Session, agent: models.Agent,
     db.flush()
 
     days = plan.duration_days
+    # 一人一批一码（2026-11-23）：一次进货整批共用一个 batch_id，
+    # 核销时同一用户只许领其中一张（见 codes.claim_code）。
+    batch_id = codes.new_batch_id()
     created = []
     for index in range(1, quantity + 1):
         raw = ""
@@ -206,7 +209,8 @@ def purchase_codes(db: Session, agent: models.Agent,
             created_by=agent.user_id, code_type=code_type, days=days,
             source="agent", realm_id=target_realm,
             reward_type="subscription",
-            agent_id=agent.id, agent_purchase_id=purchase.id)
+            agent_id=agent.id, agent_purchase_id=purchase.id,
+            batch_id=batch_id)
         db.add(code)
         created.append(code)
     db.flush()

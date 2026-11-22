@@ -112,6 +112,9 @@ def test_spec_table_covers_all_seven_in_restored_order():
         # 2026-11-17（BE-26）：DateLastContentAdded 物化列排序索引
         # （emby_items.last_content_added_at，models.py 同名声明，末尾追加）
         "idx_item_last_content_added",
+        # 2026-11-23：一人一批一码按批查码（registration_codes.batch_id，
+        # models.py 同名声明，spec 表末尾追加）
+        "idx_reg_code_batch",
     ]
 
 

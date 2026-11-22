@@ -467,6 +467,9 @@ def generate_codes(
         raise HTTPException(status_code=400, detail=f"服不存在: #{target_realm}")
 
     expires_at = datetime.now() + timedelta(days=request.expires_days)
+    # 一人一批一码（2026-11-23）：本次生成整批共用一个 batch_id，
+    # 核销时同一用户只许领其中一张（见 codes.claim_code）。
+    batch_id = codes.new_batch_id()
     created = []
     for index in range(1, request.count + 1):
         raw = ""
@@ -526,6 +529,7 @@ def generate_codes(
             balance_value=balance_amount if balance_amount is not None else 0,
             discount_pct=request.discount_pct,
             welfare_include_view=bool(request.welfare_include_view),
+            batch_id=batch_id,
         )
         db.add(code)
         created.append(code)
@@ -541,6 +545,7 @@ def generate_codes(
            {"count": request.count, "code_type": request.code_type, "days": days,
             "is_decoy": request.is_decoy, "target_username": target_username or None,
             "realm_id": target_realm, "reward_type": request.reward_type,
+            "batch_id": batch_id,
             "welfare_include_view": bool(request.welfare_include_view)})
     db.commit()
 
