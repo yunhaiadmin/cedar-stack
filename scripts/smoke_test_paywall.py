@@ -76,8 +76,19 @@ for row in (staff, member, free, plan):
     db.refresh(row)
 
 now = datetime.now()
+# 2026-11-22 播放门禁改版：view_grant 按当前服（realm 1）过滤订阅，
+# 会员订阅须带 realm_id=1 才被门禁认；管理员不豁免——staff 的放行
+# 项同样先给一条订阅（付费墙对 staff 的豁免断言不受影响）。
+if db.query(models.ServerRealm).filter_by(id=1).first() is None:
+    db.add(models.ServerRealm(
+        id=1, name="默认", slug="default", is_active=True))
+    db.flush()
 db.add(models.UserSubscription(
-    user_id=member.id, plan_id=plan.id,
+    user_id=member.id, plan_id=plan.id, realm_id=1,
+    start_date=now - timedelta(days=1), end_date=now + timedelta(days=29), status="active",
+))
+db.add(models.UserSubscription(
+    user_id=staff.id, plan_id=plan.id, realm_id=1,
     start_date=now - timedelta(days=1), end_date=now + timedelta(days=29), status="active",
 ))
 library = em.Library(guid=f"pwlib{suf}", name=f"付费墙库{suf}", collection_type="movies")
