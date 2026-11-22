@@ -228,6 +228,11 @@ from backend.security import create_access_token  # noqa: E402
 
 db2 = Session()
 alice_id = db2.query(models.WebUser).filter(models.WebUser.username == "alice").first().id
+# 本节前提是「alice 无订阅」：前段播放冒烟按 2026-11-22 新门禁给她种的
+# 订阅须先删净，否则查看权限 gating 的置空断言无从成立（下方会再发）。
+db2.query(models.UserSubscription).filter(
+    models.UserSubscription.user_id == alice_id).delete(
+    synchronize_session=False)
 bob = models.WebUser(username="bob", password_hash="x", is_active=True, is_staff=False)
 db2.add(bob)
 db2.commit()
