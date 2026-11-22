@@ -390,8 +390,8 @@ def _get_register_ratelimit(db: Session) -> tuple[bool, int, int]:
 def register(request: Request, req: RegisterRequest, db: Session = Depends(get_db)):
     """注册新用户（用户名唯一，密码 bcrypt 存储）。
 
-    不自动生成接线用户名或播放密码；用户在接线员页自行设置。
-    门户用户名也不能与别人已有的接线用户名相同：客户端登录两个字段都认。
+    账号统一后只建网站账号，客户端登录也用网站账号与密码。
+    门户用户名也不能与别人已有的接线用户名相同（过渡期兼容）：客户端登录两个字段都认。
     """
     rl_enabled, rl_max, rl_window = _get_register_ratelimit(db)
     rl_key = f"register:{client_ip(request)}"
@@ -599,8 +599,7 @@ def login(request: Request, req: LoginRequest, db: Session = Depends(get_db)):
             status_code=403,
             detail="检测到该账号在短时间内于多个城市登录，已被暂停使用，请联系管理员",
         )
-    # 已有接线用户名但还没有播放密码的老用户：登录成功后用已验证的门户密码补一次。
-    # 没有接线用户名的新用户什么都不写，去接线员页自己设。
+    # 账号统一后登录不补写任何接线凭据（见 _issue_auth_response）。
     # F4：登录全程成功，清零该账号的失败计数（IP 维度保留不清）。
     login_lockout_record_success("portal", user.username)
     return _issue_auth_response(user, db, plain_password=req.password, request=request)
