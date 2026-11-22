@@ -35,7 +35,17 @@ DEFAULTS_SENTINEL = object()
 
 # ---------------------------------------------------------------------------
 # A 类开关摘面板（2026-10-21 施工，用户 2026-10-19「功能开关从简」原则）：
-# 以下 42 个键管理后台不再提供开关（UI 与各面板写路径已同步摘除）。
+# 以下 53 个键管理后台不再提供开关（首批 37 个，2026-11-23 第二批 16 个：
+# 求片自动批准/订阅购买/QQ 钱包/钱包四键/跨 provider 转存/剧集预热/
+# 池大文件分流/挂载直读/Drive 绑定/网页软解/站内弹幕/弹幕外部源/
+# 登录锁定；UI 已同步摘除）。仍留在面板的：池总开关 pool_enabled 与
+# 订阅门禁 subscription_required（运营必需，审计 K-01 建议保留）、
+# promotion_reward_enabled / stream_accel_enabled（服主 2026-10-21
+# 明确要求留在面板）。第二批保值口径与首批一致：生产现值（2026-11-23
+# 只读查 system_configs）已逐键核对——多数键代码缺省即生产生效值；
+# media_seek_auto_approve_enabled（生产 true）与
+# wallet_auto_renew_enabled（生产 false）缺省不同，靠 DB 存量行保值
+# （行不删、本表口径 env > 存量行 > 代码缺省，行为一字不变）。
 # 不在本表、仍走「DB 行 > 代码缺省」的键：
 # - 缺省=关、留在面板（服主 2026-10-21 口径）：签到 / 群发言积分 / 系统告警 /
 #   访问守卫两项 / 邮件 / 代理 / 媒体库默认范围；
@@ -92,6 +102,23 @@ PANEL_REMOVED_SWITCHES: tuple[tuple[str, str], ...] = (
     ("teaser_enabled", "TEASER_ENABLED"),
     ("tg_bind_guide_enabled", "TG_BIND_GUIDE_ENABLED"),
     ("vitality_enabled", "VITALITY_ENABLED"),
+    # 第二批（2026-11-23，审计 K-01）：env 名逐个写明，同首批口径
+    ("cross_provider_transfer_enabled", "CROSS_PROVIDER_TRANSFER_ENABLED"),
+    ("danmaku_enabled", "DANMAKU_ENABLED"),
+    ("danmu_api_external_enabled", "DANMU_API_EXTERNAL_ENABLED"),
+    ("drive_binding_enabled", "DRIVE_BINDING_ENABLED"),
+    ("login_lockout_enabled", "LOGIN_LOCKOUT_ENABLED"),
+    ("media_seek_auto_approve_enabled", "MEDIA_SEEK_AUTO_APPROVE_ENABLED"),
+    ("mount_serving_enabled", "MOUNT_SERVING_ENABLED"),
+    ("payment_qqpay_enabled", "PAYMENT_QQPAY_ENABLED"),
+    ("pool_large_file_routing_enabled", "POOL_LARGE_FILE_ROUTING_ENABLED"),
+    ("subscription_purchase_enabled", "SUBSCRIPTION_PURCHASE_ENABLED"),
+    ("transfer_series_preheat_enabled", "TRANSFER_SERIES_PREHEAT_ENABLED"),
+    ("wallet_auto_renew_enabled", "WALLET_AUTO_RENEW_ENABLED"),
+    ("wallet_enabled", "WALLET_ENABLED"),
+    ("wallet_refund_to_balance", "WALLET_REFUND_TO_BALANCE"),
+    ("wallet_topup_rate_manual_override", "WALLET_TOPUP_RATE_MANUAL_OVERRIDE"),
+    ("web_softdecode_enabled", "WEB_SOFTDECODE_ENABLED"),
 )
 
 #: 已摘面板开关的 DB 键集合（消费方判定用）

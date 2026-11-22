@@ -68,6 +68,22 @@ INDIRECT_READS = {
     "TEASER_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-10-21 A 类开关摘面板）",
     "TG_BIND_GUIDE_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-10-21 A 类开关摘面板）",
     "VITALITY_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-10-21 A 类开关摘面板）",
+    "CROSS_PROVIDER_TRANSFER_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
+    "DANMAKU_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
+    "DANMU_API_EXTERNAL_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
+    "DRIVE_BINDING_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
+    "LOGIN_LOCKOUT_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
+    "MEDIA_SEEK_AUTO_APPROVE_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
+    "MOUNT_SERVING_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
+    "PAYMENT_QQPAY_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
+    "POOL_LARGE_FILE_ROUTING_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
+    "SUBSCRIPTION_PURCHASE_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
+    "TRANSFER_SERIES_PREHEAT_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
+    "WALLET_AUTO_RENEW_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
+    "WALLET_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
+    "WALLET_REFUND_TO_BALANCE": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
+    "WALLET_TOPUP_RATE_MANUAL_OVERRIDE": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
+    "WEB_SOFTDECODE_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
 }
 
 # 部署/编排专用键：代码不直接读，但 docker-compose / 部署脚本 / 授权版部署消费
