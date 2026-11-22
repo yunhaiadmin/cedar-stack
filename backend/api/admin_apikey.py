@@ -115,12 +115,19 @@ def create_api_key(
 
 @router.get("/api-keys")
 def list_api_keys(
+    limit: int = 200,
+    offset: int = 0,
     db: Session = Depends(get_db),
     current_admin: models.WebUser = Depends(get_current_admin),
 ):
-    """API Key 列表（不返回明文）。"""
-    recs = db.query(models.ApiKey).order_by(models.ApiKey.id.desc()).all()
-    return {"items": [_key_to_dict(r) for r in recs], "total": len(recs)}
+    """API Key 列表（不返回明文）：limit/offset 分页（默认 200、上限 500），
+    total 为全量计数；响应形状 ``{items, total}`` 不变。"""
+    limit = max(1, min(int(limit), 500))
+    offset = max(0, int(offset))
+    query = db.query(models.ApiKey).order_by(models.ApiKey.id.desc())
+    total = query.count()
+    recs = query.offset(offset).limit(limit).all()
+    return {"items": [_key_to_dict(r) for r in recs], "total": total}
 
 
 @router.put("/api-keys/{key_id}")

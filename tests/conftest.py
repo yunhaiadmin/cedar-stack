@@ -81,7 +81,11 @@ def _reset_worker_db_leaks():
     ③ user_id 或 item_id 无对应行的孤儿 UserMediaData 行（2026-11-13
        #147/#153 冒烟：残留 (2, 8) 占着唯一约束，sqlite id 复用让后跑
        文件的种子新建同一对 id 即撞约束）。
-    只清这三类泄漏行，不动用户表与其他配置；DB 未建表时静默跳过。
+    ④ user_id 无对应 WebUser 的孤儿 UserSubscription 行（2026-11-22
+       #438 冒烟：播放门禁改看订阅后，孤儿订阅会让 id 复用的新建用户
+       误判有订阅——test_detail_mediasource_stream_url 的 FREE 用户
+       因此拿到签名地址。只删真孤儿，模块内断言不受影响）。
+    只清这四类泄漏行，不动用户表与其他配置；DB 未建表时静默跳过。
     """
     _reset_leaked_worker_state()
     yield
@@ -109,6 +113,13 @@ def _reset_leaked_worker_state() -> None:
         db.query(em.UserMediaData).filter(
             ~em.UserMediaData.user_id.in_(db.query(models.WebUser.id))
             | ~em.UserMediaData.item_id.in_(db.query(em.MediaItem.id))
+        ).delete(synchronize_session=False)
+        # 孤儿订阅行：前序文件删用户未删订阅，残留行被后跑文件的新建用户
+        # 经 sqlite id 复用撞上；2026-11-22 起播放门禁看订阅，孤儿订阅会
+        # 让新建用户误判有订阅（#438 冒烟：FREE 用户因此拿到签名地址）。
+        # 只删 user_id 已不存在的行（真孤儿），与上方同口径。
+        db.query(models.UserSubscription).filter(
+            ~models.UserSubscription.user_id.in_(db.query(models.WebUser.id))
         ).delete(synchronize_session=False)
         db.query(models.SystemConfig).filter(
             models.SystemConfig.key.startswith("pool_")

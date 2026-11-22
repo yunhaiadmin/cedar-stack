@@ -186,7 +186,7 @@ def test_system_audit_row_renders_as_system(db):
         admin_user_id=admin.id, action="admin_row", target_type="test",
         details={}))
     db.commit()
-    rows = get_admin_logs(current_admin=admin, db=db)
+    rows = get_admin_logs(current_admin=admin, db=db)["items"]
     by_action = {r["action"]: r["admin_name"] for r in rows}
     assert by_action["sys_row"] == "系统"
     assert by_action["unknown_row"] == "未知"

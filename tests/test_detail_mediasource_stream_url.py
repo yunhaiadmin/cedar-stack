@@ -54,6 +54,11 @@ def _cleanup(db):
         old = db.query(models.WebUser).filter(
             models.WebUser.username == uname).first()
         if old:
+            # 删用户先删其订阅：否则订阅成孤儿，sqlite id 复用后会被
+            # 新建同 id 用户继承，FREE 会误判有订阅（#438 冒烟实证）。
+            db.query(models.UserSubscription).filter(
+                models.UserSubscription.user_id == old.id).delete(
+                synchronize_session=False)
             cred_ids = [r[0] for r in db.query(em.UserStorageBinding.credential_id)
                         .filter(em.UserStorageBinding.user_id == old.id).all()]
             db.query(em.UserStorageBinding).filter(

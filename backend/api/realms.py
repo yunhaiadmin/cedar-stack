@@ -136,19 +136,23 @@ def list_realms(_: models.WebUser = Depends(get_current_admin), db: Session = De
 def realms_overview(_: models.WebUser = Depends(get_current_admin), db: Session = Depends(get_db)):
     """只有各服的运营数据：给「数据概览」的服卡片用（不重复下发节点明细）"""
     rows = realms.list_realms(db)
+    # 与 list_realms 同口径复用：每服 stats 只算一遍，summary 吃同一份
+    # （旧实现逐服算一遍后 _summary() 再对所有服重算一遍）。
+    legacy_id = realms.legacy_realm_id(db)
+    all_stats = {r.id: realms.stats(db, r.id) for r in rows}
     return {
         "realms": [
             {
                 "id": r.id, "name": r.name, "slug": r.slug, "url": r.url or "",
                 "is_active": bool(r.is_active),
-                "is_default": r.id == realms.legacy_realm_id(db),
+                "is_default": r.id == legacy_id,
                 "public_url": realms.realm_public_url(db, r.id),
-                "stats": realms.stats(db, r.id),
+                "stats": all_stats[r.id],
             }
             for r in rows
         ],
         "active_realm_id": realms.active_realm_id(db),
-        "summary": _summary(db),
+        "summary": _summary(db, rows=rows, all_stats=all_stats),
     }
 
 
@@ -229,6 +233,20 @@ def realm_subscriptions(
         for u in db.query(models.WebUser).filter(models.WebUser.id.in_(user_ids)).all()
     } if user_ids else {}
 
+    # 批量取套餐名 / 服名（原列表推导逐行 r.plan / r.realm 懒加载 = N+1）。
+    plan_ids = {r.plan_id for r in rows}
+    plan_names = {
+        p.id: p.name
+        for p in db.query(models.SubscriptionPlan)
+        .filter(models.SubscriptionPlan.id.in_(plan_ids)).all()
+    } if plan_ids else {}
+    realm_ids = {r.realm_id for r in rows if r.realm_id}
+    realm_names = {
+        x.id: x.name
+        for x in db.query(models.ServerRealm)
+        .filter(models.ServerRealm.id.in_(realm_ids)).all()
+    } if realm_ids else {}
+
     def _scoped():
         return realms.scope(db.query(models.UserSubscription),
                             models.UserSubscription.realm_id, scope_id)
@@ -253,9 +271,9 @@ def realm_subscriptions(
                 "id": r.id,
                 "user_id": r.user_id,
                 "username": users.get(r.user_id, "未知"),
-                "plan_name": r.plan.name if r.plan else f"套餐 #{r.plan_id}",
+                "plan_name": plan_names[r.plan_id] if r.plan_id in plan_names else f"套餐 #{r.plan_id}",
                 "realm_id": r.realm_id,
-                "realm_name": (r.realm.name if r.realm else ""),
+                "realm_name": realm_names.get(r.realm_id, ""),
                 "start_date": r.start_date.isoformat() if r.start_date else None,
                 "end_date": r.end_date.isoformat() if r.end_date else None,
                 "days_left": max(0, (r.end_date - now).days) if r.end_date else 0,
