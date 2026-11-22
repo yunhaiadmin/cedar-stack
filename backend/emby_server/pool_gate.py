@@ -2550,6 +2550,31 @@ def pool_sign_allowed(db: Session, user_id, item) -> bool:
         return False
 
 
+def stream_sign_pool_mode(db: Session, user, item) -> bool:
+    """取流端点 issued_sign 消费的池分流判定（与签发侧同一口径）。
+
+    已下发签名被消费时，取流是否拽进池分支：观众未绑盘且
+    ``pool_sign_allowed`` 三齐（订阅资格＋eligible＋ready 副本）
+    才 True。2026-11-22 生产实证：取流侧旧判定只看 pool_eligible，
+    无 ready 副本的挂载条目被误拽进池分支建单——池里没副本先回
+    409 准备中、转存总闸关时更直接撞 master_off，未绑订阅用户
+    点开主库条目全灭；签发侧 #432 已按三齐签普通流地址，本判定
+    与之共用 pool_sign_allowed，不许各判一套。异常一律 False
+    （不进池是安全侧：回落本人链现行路线）。
+    """
+    try:
+        user_id = getattr(user, "id", None)
+        if user_id is None:
+            return False
+        if _gate.has_active_binding(db, user_id):
+            return False
+        return pool_sign_allowed(db, user_id, item)
+    except Exception:  # noqa: BLE001 — 判定异常不许拽进池
+        logger.warning("取流 sign 池分流判定异常，按不进池处理",
+                       exc_info=True)
+        return False
+
+
 # ---------------------------------------------------------------- 成员生命周期（PR-4）
 # design §2.4 状态机 + §6.4 下线连带 + §11.5 钩子 H2。
 #

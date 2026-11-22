@@ -7700,15 +7700,17 @@ async def video_stream(
     _rotate_on_quota = True
     _on_user_copy = False
     # 公共池分流（goal-33 PR-3，design §5.2）：裁决为 pool，
-    # 或已下发签名消费但观众是池 eligible 的未绑用户（签名只
-    # 可能由 PlaybackInfo 在池副本 ready 时按 §4.1 新规签发）
-    # 时，转存门禁段由池门禁替换——选路只许落池副本。
+    # 或已下发签名消费但观众是未绑用户且池条件三齐（资格＋
+    # eligible＋ready 副本，与 PlaybackInfo 签发侧 pool_sign_allowed
+    # 同一判定，不许各判一套）时，转存门禁段由池门禁替换——选路
+    # 只许落池副本。2026-11-22 生产实证：#432 后签发侧按三齐给
+    # 无副本条目签普通流地址，本处旧判定只看 eligible，有签名、
+    # 无绑定的订阅用户被误拽进池分支建单——池里没副本先撞 409
+    # 准备中、转存总闸关时更直接撞 master_off，挂载条目全灭。
     _pool_stream_mode = _vs_decision.kind == "pool" or (
         _vs_decision.kind == "issued_sign"
-        and not await run_db(_gate.has_active_binding, db, user.id)
         and await run_db(
-            _pool_gate_vs.pool_eligible, db, user, item)
-        == "eligible")
+            _pool_gate_vs.stream_sign_pool_mode, db, user, item))
     # 大文件分流（2026-11-10）：已绑用户借池捷径——本地二值
     # 门禁把这类观众拼成 bound（签名消费不算，已下发链接不
     # 追溯改道），这里用同一决策点 pool_gate
