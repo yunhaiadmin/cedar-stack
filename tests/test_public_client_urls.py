@@ -280,6 +280,9 @@ def seed():
                 em.MountCredential.id.in_(cred_ids)).delete(synchronize_session=False)
         db.query(em.EmbyApiToken).filter(em.EmbyApiToken.user_id == old.id).delete(
             synchronize_session=False)
+        db.query(models.UserSubscription).filter(
+            models.UserSubscription.user_id == old.id).delete(
+            synchronize_session=False)
         db.query(models.WebUser).filter(models.WebUser.id == old.id).delete()
     # 孤儿绑定无条件清掉（旧用户已被删、只剩孤儿行时 old 为空，正是最需要
     # 清孤儿的时候；否则新种子用户复用 id 时撞唯一约束）。
@@ -311,6 +314,22 @@ def seed():
     db.add(em.UserStorageBinding(user_id=user.id, provider="drive",
                                  account_label="种子盘", credential_id=cred.id,
                                  status="active"))
+    db.flush()
+    # 播放门禁（2026-11-22 改版）：资格看订阅——种子用户补一条 realm 1
+    # 有效订阅，否则 PlaybackInfo 用例在门禁处即 403。
+    from datetime import datetime as _dt, timedelta as _td
+    if db.query(models.ServerRealm).filter_by(id=1).first() is None:
+        db.add(models.ServerRealm(
+            id=1, name="默认", slug="default", is_active=True))
+        db.flush()
+    if db.query(models.SubscriptionPlan).filter_by(id=1).first() is None:
+        db.add(models.SubscriptionPlan(
+            id=1, name="测试套餐", price=100, duration_days=30, realm_id=1))
+        db.flush()
+    db.add(models.UserSubscription(
+        user_id=user.id, plan_id=1, realm_id=1,
+        start_date=_dt.now() - _td(days=1),
+        end_date=_dt.now() + _td(days=30), status="active"))
     db.flush()
     movie = em.MediaItem(
         guid=_guid(), library_id=lib.id, item_type="movie", name="公开地址电影",

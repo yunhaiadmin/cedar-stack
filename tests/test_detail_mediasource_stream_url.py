@@ -105,6 +105,21 @@ def seed():
     db.add(em.UserStorageBinding(user_id=users[BOUND], provider="drive",
                                  account_label="种子盘", credential_id=cred.id,
                                  status="active"))
+    # 播放门禁（2026-11-22 改版）：资格看订阅——BOUND 用户补 realm 1 订阅
+    # （FREE 保持无订阅，其详情地址不签名＋流端点被门禁拦的断言不变）。
+    from datetime import datetime as _dt, timedelta as _td
+    if db.query(models.ServerRealm).filter_by(id=1).first() is None:
+        db.add(models.ServerRealm(
+            id=1, name="默认", slug="default", is_active=True))
+        db.flush()
+    if db.query(models.SubscriptionPlan).filter_by(id=1).first() is None:
+        db.add(models.SubscriptionPlan(
+            id=1, name="测试套餐", price=100, duration_days=30, realm_id=1))
+        db.flush()
+    db.add(models.UserSubscription(
+        user_id=users[BOUND], plan_id=1, realm_id=1,
+        start_date=_dt.now() - _td(days=1),
+        end_date=_dt.now() + _td(days=30), status="active"))
     lib = em.Library(guid=_guid(), name=LIB_NAME, collection_type="tvshows",
                      is_enabled=True)
     db.add(lib)
@@ -262,9 +277,10 @@ def test_unbound_user_detail_url_unsigned_and_stream_blocked(
     # 未绑定用户拿到的地址不带签名轨（凭证不许在详情面先发）
     q = _qs(url)
     assert "sign" not in q and "uid" not in q and "exp" not in q
-    # 拿这个地址打流端点：播放门禁现场 403 + 去绑定引导
+    # 拿这个地址打流端点：播放门禁现场 403 + 订阅引导
+    # （2026-11-22 改版：门禁看订阅，FREE 无订阅——文案随之改版）
     parts = urlsplit(url)
     target = parts.path + "?" + parts.query
     r2 = client.get(target, headers=_h(free_token))
     assert r2.status_code == 403, r2.text
-    assert "请先绑定自己的网盘账号才能点播" in r2.text
+    assert "开通订阅后即可播放" in r2.text

@@ -6375,10 +6375,11 @@ async def playback_info(
     item = await run_db(_require_visible_item, db, user, item_id)
     # 付费墙：未订阅不发放播放地址（网页端据此展示开通引导，客户端同样不能绕过）
     await run_db(ensure_playback_allowed, db, user)
-    # 播放门禁（2026-10-26 用户亲定硬规矩，无开关）：名下无 active 绑定
-    # 的用户不发放播放地址；浏览、搜索、详情页不受影响（本函数只管下发）。
+    # 播放门禁（2026-11-22 改版，无开关）：无订阅资格（有效订阅或
+    # 团队资格，判定走 playback_gate.has_play_grant）的用户不发放
+    # 播放地址；浏览、搜索、详情页不受影响（本函数只管下发）。
     # 判定走 playback_gate 的 binding_required_for_item 单一入口。
-    # goal-33 PR-2：改调池判定入口——未绑用户且池 eligible 时同样
+    # goal-33 PR-2：改调池判定入口——有资格的未绑用户且池 eligible 时同样
     # 放行到下面的池门禁（播出是 PR-3 的活；本单 serve 态在下面
     # 映射为 failed 明示）。裁决存 _pi_decision 供下面复用。
     from backend.emby_server import pool_gate as _pool_gate_pi
@@ -7401,11 +7402,12 @@ async def _try_fastpath_relay(request: Request, db: Session, user,
       （playback_gate._request_uses_issued_play_sign，内含签名与
       有效期校验）复核；验不过绝不凭缓存出流。get_play_user
       依赖层在进本函数前已先验过一次，这里是第二道。
-    - 无签名（Emby token 直调）时，便宜校验＝has_active_binding
-      （active 绑定关系仍在）；不在此列的形态（池观众等）回全链
-      由门禁段裁决。缓存键含用户维度，跨用户天然不串。
-    - drive_sa 描述符（共享原件腿）额外复核绑定：签名模式下未绑
-      观众（池观众）一律回全链，绝不凭缓存下发共享原件。
+    - 无签名（Emby token 直调）时，便宜校验＝has_play_grant
+      （订阅资格仍在；2026-11-22 门禁改版前的口径是查绑定关系）；
+      不在此列的形态回全链由门禁段裁决。缓存键含用户维度，
+      跨用户天然不串。
+    - drive_sa 描述符（共享原件腿）额外复核订阅资格：签名模式下
+      无资格者一律回全链，绝不凭缓存下发共享原件。
     - 缓存的只是解析结果、不是授权：门禁/付费墙/转存门禁已在
       首次请求全量执行；描述符 TTL ≤ 签名剩余有效期且 ≤ 配置
       上限（分钟量级），窗口内状态变化由 TTL 与失败失效兜底。
@@ -7426,22 +7428,22 @@ async def _try_fastpath_relay(request: Request, db: Session, user,
     if not desc:
         return None
     qs = getattr(request, "query_params", None) or {}
-    _bound_ok = False
+    _grant_ok = False
     if qs.get("sign"):
         if not await run_db(
                 _gate_fp._request_uses_issued_play_sign, request, db):
             return None
     else:
-        _bound_ok = bool(await run_db(
-            _gate_fp.has_active_binding, db, user_id))
-        if not _bound_ok:
+        _grant_ok = bool(await run_db(
+            _gate_fp.has_play_grant, db, user))
+        if not _grant_ok:
             return None
     kind = desc.get("kind")
-    if kind == "drive_sa" and not _bound_ok:
-        # 共享 SA 腿播的是共享原件：签名模式下也必须复核绑定关系
-        # 仍在——未绑的池观众即便持有效签名，也绝不许凭缓存吃到
+    if kind == "drive_sa" and not _grant_ok:
+        # 共享 SA 腿播的是共享原件：签名模式下也必须复核订阅资格
+        # 仍在——无资格者即便持有效签名，也绝不许凭缓存吃到
         # 共享原件（池门禁口径），回全链由池门禁段裁决。
-        if not await run_db(_gate_fp.has_active_binding, db, user_id):
+        if not await run_db(_gate_fp.has_play_grant, db, user):
             return None
     _fp_t0 = time.perf_counter()
     media_type = (f"video/{item.container}" if getattr(
@@ -7542,14 +7544,15 @@ async def video_stream(
             return _fp_resp
     # 授权已由 get_play_user 依赖完成（短期签名优先，回退 Emby token）
     await run_db(ensure_playback_allowed, db, user)
-    # 播放门禁（2026-10-26 用户亲定硬规矩）：Emby token 直接调流是新播放，
-    # 必须过门禁；带有效 play_sign 的请求是在消费已下发的链接，不追溯。
+    # 播放门禁（2026-11-22 改版）：Emby token 直接调流是新播放，
+    # 必须过门禁（订阅资格）；带有效 play_sign 的请求是在消费已下发的链接，不追溯。
     # goal-33 PR-3（design §5.2）：§4.1 新判定入口（按条目）接管
     # 本端点的门禁裁决——组合方式保旧口径逐字不变：二值门禁先行，
-    # 它放行的情形（已绑 / 签名消费）新入口必同判放行；它抛 403
-    # 时才问新入口复核（池 eligible → 放行到下方池门禁段；CMS 免
-    # 门禁 → 放行；其余新入口自己抛同文案 403，含下线 provider
-    # 专用文案）。裁决存 _vs_decision 供门禁段分流。
+    # 它放行的情形（有资格 / 签名消费）新入口必同判放行；它抛 403
+    # 时问新入口复核（其余新入口自己抛同文案 403）。2026-11-22
+    # 改版后二值门禁放行也要问入口拿裁决：未绑有资格用户的池
+    # 分流只在入口里（见下方 _vs_decision 补算）。裁决存
+    # _vs_decision 供门禁段分流。
     from backend.emby_server import playback_gate as _gate
     from backend.emby_server import pool_gate as _pool_gate_vs
     _vs_decision = None
@@ -7577,11 +7580,15 @@ async def video_stream(
                     reason=str(_vs_gate_exc.detail or ""))
             raise
     if _vs_decision is None:
-        _vs_sign_consumed = await run_db(
-            _gate._request_uses_issued_play_sign, request, db)
-        _vs_decision = _pool_gate_vs.PoolDecision(
-            allowed=True,
-            kind="issued_sign" if _vs_sign_consumed else "bound")
+        # 二值门禁已放行（有订阅资格或签名消费）：裁决仍须问判定
+        # 入口拿分流（2026-11-22 改版起，未绑的有资格用户靠入口
+        # 判 pool/bound——旧合成 bound 会把池观众误送本人链、吃到
+        # 共享原件或挂载直读，绕过池门禁）。入口与二值门禁同口径，
+        # 此处调用只产裁决不抛 403（放行条件已由二值门禁成立：
+        # 签名消费入口同判 issued_sign、有资格入口同判放行）。
+        _vs_decision = await run_db(
+            _pool_gate_vs.ensure_playback_allowed_for_item,
+            db, user, item, request)
     _pt.mark("auth_playback")
     # 三层路径授权门禁（FMBY 挂载-7，#1240 落库、本 PR 接线）：放在占租约
     # 之前，拒绝的请求不占播放路数；非挂载路径 / 无授权行时放行，

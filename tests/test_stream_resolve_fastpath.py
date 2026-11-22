@@ -147,12 +147,22 @@ def _setup_stream(monkeypatch, *, sign_ok=False, bound=True):
                         lambda req, db: sign_ok)
     monkeypatch.setattr(_gate, "has_active_binding",
                         lambda db, uid: bound)
+    # 2026-11-22 门禁改版：快速通道无签名时改复核订阅资格
+    # （has_play_grant），假 DB 跑不动真判定——资格同样由 bound 代表。
+    monkeypatch.setattr(_gate, "has_play_grant",
+                        lambda db, u: bound)
     monkeypatch.setattr(_psh, "item_source_available",
                         lambda db, it: True)
     monkeypatch.setattr(_dp, "plan_ready_leg",
                         lambda db, it, u: None)
     monkeypatch.setattr(_pool_gate, "large_file_pool_route",
                         lambda db, u, it: False)
+    # 2026-11-22 门禁改版：video_stream 放行分支改走池决策入口拿分流
+    # 裁决，本文件不测门禁，决策入口桩成 bound 放行。
+    monkeypatch.setattr(
+        _pool_gate, "ensure_playback_allowed_for_item",
+        lambda db, u, it, request=None: SimpleNamespace(
+            allowed=True, kind="bound", pool_routed=False))
     monkeypatch.setattr(api, "_drive_mount_id_for_item",
                         lambda db, it: "drive-x")
     monkeypatch.setattr(api, "_user_drive_byos_available",
@@ -365,10 +375,11 @@ def test_fastpath_drive_sa_descriptor_passes_failover_args(monkeypatch):
          "rotate_on_quota": False, "max_attempts": 5})
     monkeypatch.setattr(_gate, "_request_uses_issued_play_sign",
                         lambda req, db: True)
-    # drive_sa 腿在签名模式下也要复核绑定关系（防池观众吃共享
-    # 原件）；本用例是绑定用户，桩成 True。
-    monkeypatch.setattr(_gate, "has_active_binding",
-                        lambda db, uid: True)
+    # drive_sa 腿在签名模式下也要复核订阅资格（防无资格者吃共享
+    # 原件）；本用例是有资格用户，桩成 True。（2026-11-22 门禁
+    # 改版：复核口径由绑定关系改为 has_play_grant 订阅资格。）
+    monkeypatch.setattr(_gate, "has_play_grant",
+                        lambda db, u: True)
     calls = []
 
     async def fake_relay(request, drive_id, file_id, media_type="video/mp4",

@@ -7,9 +7,9 @@
   api_key 或令牌**——每个成员在自己的播放页走各自账号的现行签名
   链路（PlaybackInfo）取流，互不可见。
 - 建房 / 进房时服务端按现行播放门禁逐人校验，走单一入口
-  ``playback_gate.sign_allowed_for_item``（绑定盘 / 公共池同一
-  口径），不过门禁不许建房、不许进房；房间本身不下发任何
-  播放凭证，校验只是「这个人自己能不能播这部片」。
+  ``playback_gate.sign_allowed_for_item``（2026-11-22 改版后为
+  订阅资格口径，池副本不绕资格），不过门禁不许建房、不许进房；
+  房间本身不下发任何播放凭证，校验只是「这个人自己能不能播这部片」。
 
 通道：复用 ``backend/websocket.py`` 的 ``/ws/{user_id}`` 连接与 JWT
 鉴权（ConnectionManager），不新开第二套 WS / 鉴权。房间连接成员表
@@ -50,7 +50,7 @@ _CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 _CODE_LENGTH = 6
 
 GATE_DENIED_MESSAGE = (
-    "还没过播放门禁：先绑定自己的网盘，或等公共池副本就绪后再来一起看。")
+    "还没过播放门禁：开通订阅后即可一起看。")
 ITEM_NOT_FOUND_MESSAGE = "这部片不存在，或不在可播范围内。"
 ROOM_NOT_FOUND_MESSAGE = "房间不存在或已结束，核对邀请链接再试。"
 ROOM_FULL_MESSAGE = "这个房间人满了，下次早点来。"
@@ -189,9 +189,10 @@ def db_access_checker(db, user_id: int, item_guid: str):
     """解析用户 / 条目并按现行播放门禁判定（单一入口，不下发任何凭证）。
 
     返回 (username, item_found, allowed)：item_found=False 表示条目
-    不存在；allowed 走 ``playback_gate.sign_allowed_for_item``——已
-    绑定恒可、公共池有 ready 副本可，其余不可。与取流时现场裁决
-    同一口径，不另写一份判定。
+    不存在；allowed 走 ``playback_gate.sign_allowed_for_item``——
+    2026-11-22 改版后为订阅资格口径（有有效订阅或团队资格才可，
+    池 ready 副本不再单独放行）。与取流时现场裁决同一口径，
+    不另写一份判定。
     """
     from backend import models
     from backend.emby_server import models as em

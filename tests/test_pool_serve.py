@@ -35,6 +35,7 @@ os.environ.setdefault("REDIS_ENABLED", "false")
 
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
@@ -93,6 +94,9 @@ def _cleanup(db):
             db.query(em.EmbyApiToken).filter(
                 em.EmbyApiToken.user_id == old.id).delete(
                 synchronize_session=False)
+            db.query(models.UserSubscription).filter(
+                models.UserSubscription.user_id == old.id).delete(
+                synchronize_session=False)
             db.query(models.WebUser).filter(
                 models.WebUser.id == old.id).delete()
     db.query(em.PoolPlayEvent).delete(synchronize_session=False) \
@@ -146,6 +150,23 @@ def seed():
         db.add(u)
         db.flush()
         users[uname] = u.id
+    # 2026-11-22 门禁改版：种子用户各带有效订阅（realm 1），否则新订阅
+    # 门会先于池取流判定把请求拦下。
+    if db.query(models.ServerRealm).filter_by(id=1).first() is None:
+        db.add(models.ServerRealm(
+            id=1, name="默认", slug="default", is_active=True))
+        db.flush()
+    if db.query(models.SubscriptionPlan).filter_by(id=1).first() is None:
+        db.add(models.SubscriptionPlan(
+            id=1, name="测试套餐", price=100, duration_days=30, realm_id=1))
+        db.flush()
+    _now = datetime.now(timezone.utc)
+    for _uid in users.values():
+        db.add(models.UserSubscription(
+            user_id=_uid, plan_id=1, realm_id=1,
+            start_date=_now - timedelta(days=1),
+            end_date=_now + timedelta(days=30), status="active"))
+    db.flush()
     cred = em.MountCredential(mount_id=None, scope="user",
                               owner_user_id=users[CONTRIB],
                               sealed_credential="", key_id="fernet-v1",
@@ -480,25 +501,40 @@ def test_pool_member_access_token(seed, monkeypatch):
 
 
 def test_sign_allowed_pool_matrix(seed):
+    """2026-11-22 门禁改版后的签发矩阵：资格＝订阅（view_grant），
+    池副本不再是签发前提、更不能绕过资格。"""
     db = SessionLocal()
     try:
         item = db.query(em.MediaItem).filter(
             em.MediaItem.id == seed["movie_id"]).one()
         free = seed["free_id"]
-        # 无池副本：不可签（与 PR-3 前一致）
-        assert playback_gate.sign_allowed_for_item(db, free, item) is False
-        _add_pool_variant(db, seed)
-        # 池开 + ready 池副本：可签
+        # 有订阅无池副本：可签（订阅即资格，与池无关）
         assert playback_gate.sign_allowed_for_item(db, free, item) is True
-        # 已绑用户恒可签（与池无关）
+        _add_pool_variant(db, seed)
+        # 池开 + ready 池副本：仍可签
+        assert playback_gate.sign_allowed_for_item(db, free, item) is True
+        # 已绑＋订阅用户恒可签（与池无关）
         assert playback_gate.sign_allowed_for_item(
             db, seed["bound_id"], item) is True
-        # 池关：回到不可签
+        # 无订阅用户：哪怕池有 ready 副本也不可签（池不绕资格）
+        nosub = models.WebUser(username="poolsrv_nosub",
+                               password_hash=hash_password(PW),
+                               is_active=True)
+        db.add(nosub)
+        db.commit()
+        try:
+            assert playback_gate.sign_allowed_for_item(
+                db, nosub.id, item) is False
+        finally:
+            db.query(models.WebUser).filter(
+                models.WebUser.id == nosub.id).delete()
+            db.commit()
+        # 池关：订阅用户仍可签（资格不依赖池）
         config_service.save_config(db, {"pool_enabled": False},
                                    schema="pool")
         db.commit()
         store.invalidate()
-        assert playback_gate.sign_allowed_for_item(db, free, item) is False
+        assert playback_gate.sign_allowed_for_item(db, free, item) is True
     finally:
         db.close()
 
@@ -919,6 +955,9 @@ def test_playbackinfo_pool_quota_fallback_url_stamped_pool_variant(
 
 
 def test_stream_pool_off_403(client, free_token, seed):
+    """池关时订阅用户不再被绑盘门禁拦（2026-11-22 改版）：未绑订阅
+    用户直达条目本身的播放路线（本例 Drive 主线 302）。函数名保留
+    历史命名，断言已按新口径改。"""
     db = SessionLocal()
     try:
         _add_pool_variant(db, seed)
@@ -929,8 +968,7 @@ def test_stream_pool_off_403(client, free_token, seed):
         db.close()
     store.invalidate()
     r = _stream(client, free_token, seed["movie"])
-    assert r.status_code == 403, r.text
-    assert playback_gate.GATE_MESSAGE in r.text
+    assert r.status_code == 302, r.text
 
 
 def test_stream_pool_quota_no_fallback_409(

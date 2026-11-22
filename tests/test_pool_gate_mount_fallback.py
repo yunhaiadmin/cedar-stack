@@ -22,6 +22,10 @@ failed 形态覆盖清单、不下发任何可播地址，取流按门禁原判 
 不出字节。已绑用户（含大文件分流 pool_routed 回落本人门禁的
 现行纪律）与池 serve 链逐字不动。
 
+（2026-11-22 播放门禁改版注：池观众的资格前提已变为「有订阅」，
+本文件种子里 FREE/CONTRIB 均带订阅；未绑/已绑只剩分流意义，
+下列钉死项的分流与回落口径逐字不变。）
+
 钉死：
 1. 未绑 + rclone 挂载 + 直读可接管 → 仍 409、不出字节（F1 回归）；
 2. 同上但直读未配（白名单无此挂载）→ 仍 409、不下发原件 fid；
@@ -88,6 +92,9 @@ def _cleanup(db):
         old = db.query(models.WebUser).filter(
             models.WebUser.username == uname).first()
         if old:
+            db.query(models.UserSubscription).filter(
+                models.UserSubscription.user_id == old.id).delete(
+                synchronize_session=False)
             cred_ids = [r[0] for r in db.query(
                 em.UserStorageBinding.credential_id)
                 .filter(em.UserStorageBinding.user_id == old.id).all()]
@@ -156,6 +163,22 @@ def seed():
         db.add(u)
         db.flush()
         users[uname] = u.id
+    # 2026-11-22 播放门禁改版：池观众/已绑用户的播放资格一律来自
+    # 订阅（绑盘不再是资格）——本文件的 FREE（未绑池观众）与
+    # CONTRIB（已绑贡献者）都补订阅，池分流/回落口径本身不变。
+    from datetime import datetime, timedelta
+
+    _plan = models.SubscriptionPlan(
+        name="池挂载回落测试套餐", price=1, duration_days=30)
+    db.add(_plan)
+    db.flush()
+    _now = datetime.now()
+    for _uid in users.values():
+        db.add(models.UserSubscription(
+            user_id=_uid, plan_id=_plan.id, realm_id=1,
+            start_date=_now - timedelta(days=1),
+            end_date=_now + timedelta(days=30), status="active"))
+    db.flush()
     cred = em.MountCredential(mount_id=None, scope="user",
                               owner_user_id=users[CONTRIB],
                               sealed_credential="", key_id="fernet-v1",

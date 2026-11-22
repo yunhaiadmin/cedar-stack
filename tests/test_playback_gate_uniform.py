@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
-"""播放绑定门禁无豁免（2026-11-14 CMS 无界片库下线后定版）。
+"""播放门禁无豁免（2026-11-14 定版 + 2026-11-22 改版）。
 
 2026-11-03 的「无界（CMS）片库免绑定」随 CMS 来源删除一并撤销：
-- 全部条目一律过绑定门禁（``binding_required_for_item`` 恒 True），
+- 全部条目一律过门禁（``binding_required_for_item`` 恒 True），
   包括存量旧 CMS 库形态的条目（库行 ``upstream_source_ids`` 非空
   也不再免门禁）；
-- 本地/挂载库口径不变：未绑定 403 + 原文案；
+- 2026-11-22 改版：门禁判定对象由绑盘换成订阅资格
+  （has_play_grant → view_grant）——无订阅 403 + 订阅引导文案，
+  有绑盘也一样；有订阅（含本文件 BOUND 种子）放行；
 - 判定只放 playback_gate 一处（binding_required_for_item /
   sign_allowed_for_item）；
 - 查不到库 / 条目无 library_id → 需要门禁（fail-closed）。
@@ -47,6 +49,9 @@ def db():
     base_models.Base.metadata.create_all(engine)
     em.Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
+    session.add(base_models.ServerRealm(
+        id=1, name="默认服", slug="main", is_active=True))
+    session.commit()
     yield session
     session.close()
 
@@ -70,6 +75,23 @@ def _binding(db, user_id, status="active", provider="drive"):
     db.add(binding)
     db.commit()
     return binding
+
+
+def _subscription(db, user_id):
+    from datetime import datetime, timedelta
+
+    plan = base_models.SubscriptionPlan(
+        name=f"plan-{user_id}", price=1, duration_days=30)
+    db.add(plan)
+    db.flush()
+    now = datetime.now()
+    sub = base_models.UserSubscription(
+        user_id=user_id, plan_id=plan.id, realm_id=1,
+        start_date=now - timedelta(days=1),
+        end_date=now + timedelta(days=30), status="active")
+    db.add(sub)
+    db.commit()
+    return sub
 
 
 def _library(db, name, upstream_source_ids=""):
@@ -134,10 +156,12 @@ def test_ensure_for_item_unbound_local_blocked_same_message(db):
 
 
 def test_ensure_for_item_bound_local_passes(db):
+    # 2026-11-22 改版：放行看订阅资格（该用户同时有绑盘与订阅）。
     lib = _library(db, "本地库")
     item = _item(db, lib.id)
     user = _user(db, "bound")
     _binding(db, user.id)
+    _subscription(db, user.id)
     gate.ensure_binding_playback_allowed_for_item(db, user, item)
 
 
@@ -146,7 +170,17 @@ def test_ensure_for_item_bound_former_cms_passes(db):
     item = _item(db, lib.id)
     user = _user(db, "bound")
     _binding(db, user.id)
+    _subscription(db, user.id)
     gate.ensure_binding_playback_allowed_for_item(db, user, item)
+
+
+def test_ensure_for_item_bound_without_subscription_blocked(db):
+    # 改版核心：只有绑盘、没有订阅 → 403（绑盘不再是资格）。
+    lib = _library(db, "本地库")
+    item = _item(db, lib.id)
+    user = _user(db, "boundonly")
+    _binding(db, user.id)
+    _blocked(gate.ensure_binding_playback_allowed_for_item, db, user, item)
 
 
 def test_ensure_for_item_keeps_play_sign_consumption(db, monkeypatch):
@@ -172,10 +206,15 @@ def test_sign_allowed_matrix(db):
     local_item = _item(db, local_lib.id)
     bound = _user(db, "bound")
     _binding(db, bound.id)
+    _subscription(db, bound.id)
+    bound_only = _user(db, "boundonly")
+    _binding(db, bound_only.id)
     free = _user(db, "free")
     assert gate.sign_allowed_for_item(db, bound.id, local_item) is True
     assert gate.sign_allowed_for_item(db, bound.id, cms_item) is True
-    # 未绑定：旧 CMS 条目不再免门禁可签（池未开时 False）
+    # 2026-11-22 改版：只有绑盘没有订阅 → 不可签（绑盘不再是资格）
+    assert gate.sign_allowed_for_item(db, bound_only.id, local_item) is False
+    # 未绑定无订阅：旧 CMS 条目不再免门禁可签（池未开时 False）
     assert gate.sign_allowed_for_item(db, free.id, cms_item) is False
     assert gate.sign_allowed_for_item(db, free.id, local_item) is False
     assert gate.sign_allowed_for_item(db, None, cms_item) is False
@@ -221,6 +260,8 @@ def _cleanup(db: Session) -> None:
         u = db.query(models.WebUser).filter(
             models.WebUser.username == uname).first()
         if u is not None:
+            db.query(models.UserSubscription).filter(
+                models.UserSubscription.user_id == u.id).delete()
             db.query(em.UserStorageBinding).filter(
                 em.UserStorageBinding.user_id == u.id).delete()
             db.query(em.MountCredential).filter(
@@ -253,6 +294,18 @@ def seed():
     db.add(em.UserStorageBinding(
         user_id=users[BOUND], provider="drive", account_label="种子盘",
         credential_id=cred.id, status="active"))
+    # 2026-11-22 改版：BOUND 的放行资格来自订阅（绑盘只作并存事实）
+    from datetime import datetime, timedelta
+
+    _plan = models.SubscriptionPlan(
+        name="门禁统一测试套餐", price=1, duration_days=30)
+    db.add(_plan)
+    db.flush()
+    _now = datetime.now()
+    db.add(models.UserSubscription(
+        user_id=users[BOUND], plan_id=_plan.id, realm_id=1,
+        start_date=_now - timedelta(days=1),
+        end_date=_now + timedelta(days=30), status="active"))
     local_lib = em.Library(
         guid=_guid(), name=LOCAL_LIB_NAME, collection_type="movies",
         is_enabled=True)

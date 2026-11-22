@@ -401,6 +401,21 @@ def test_gate_layer_license_blocks_bound_user(db, monkeypatch, server_key):
     enforce 关时同一用户照常通过（零行为变化）。"""
     user = _user(db, "buyer")
     _binding(db, user.id)
+    # 2026-11-22 门禁改版：enforce 关时要验证「授权层不拦」，用户须先
+    # 过订阅门——补一条有效订阅（realm 1），断言焦点仍只在授权层。
+    if db.query(base_models.ServerRealm).filter_by(id=1).first() is None:
+        db.add(base_models.ServerRealm(
+            id=1, name="默认", slug="default", is_active=True))
+        db.flush()
+    if db.query(base_models.SubscriptionPlan).filter_by(id=1).first() is None:
+        db.add(base_models.SubscriptionPlan(
+            id=1, name="测试套餐", price=100, duration_days=30, realm_id=1))
+        db.flush()
+    db.add(base_models.UserSubscription(
+        user_id=user.id, plan_id=1, realm_id=1,
+        start_date=NOW - timedelta(days=1),
+        end_date=NOW + timedelta(days=30), status="active"))
+    db.commit()
     _seed_config(db)
     _seed_valid_token(db, server_key, issued=NOW - timedelta(days=40),
                       expires_days=30)  # 过宽限

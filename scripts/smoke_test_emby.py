@@ -50,6 +50,21 @@ db.add(em.UserStorageBinding(user_id=user.id, provider="drive",
                              account_label="冒烟盘", credential_id=cred.id,
                              status="active"))
 db.commit()
+# 播放门禁（2026-11-22 改版）：资格看订阅——alice 补一条有效订阅。
+from datetime import datetime as _dt, timedelta as _td
+if db.query(models.ServerRealm).filter_by(id=1).first() is None:
+    db.add(models.ServerRealm(
+        id=1, name="默认", slug="default", is_active=True))
+    db.flush()
+_gate_plan = models.SubscriptionPlan(
+    name="冒烟门禁套餐", price=100, duration_days=30, is_active=True)
+db.add(_gate_plan)
+db.flush()
+db.add(models.UserSubscription(
+    user_id=user.id, plan_id=_gate_plan.id,
+    realm_id=1, start_date=_dt.now() - _td(days=1),
+    end_date=_dt.now() + _td(days=30), status="active"))
+db.commit()
 
 lib_dir = tempfile.mkdtemp(prefix="medialib_")
 os.makedirs(os.path.join(lib_dir, "Movie A (2019)"), exist_ok=True)
@@ -213,6 +228,11 @@ from backend.security import create_access_token  # noqa: E402
 
 db2 = Session()
 alice_id = db2.query(models.WebUser).filter(models.WebUser.username == "alice").first().id
+# 本节前提是「alice 无订阅」：前段播放冒烟按 2026-11-22 新门禁给她种的
+# 订阅须先删净，否则查看权限 gating 的置空断言无从成立（下方会再发）。
+db2.query(models.UserSubscription).filter(
+    models.UserSubscription.user_id == alice_id).delete(
+    synchronize_session=False)
 bob = models.WebUser(username="bob", password_hash="x", is_active=True, is_staff=False)
 db2.add(bob)
 db2.commit()

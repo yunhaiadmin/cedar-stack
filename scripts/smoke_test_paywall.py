@@ -76,8 +76,19 @@ for row in (staff, member, free, plan):
     db.refresh(row)
 
 now = datetime.now()
+# 2026-11-22 播放门禁改版：view_grant 按当前服（realm 1）过滤订阅，
+# 会员订阅须带 realm_id=1 才被门禁认；管理员不豁免——staff 的放行
+# 项同样先给一条订阅（付费墙对 staff 的豁免断言不受影响）。
+if db.query(models.ServerRealm).filter_by(id=1).first() is None:
+    db.add(models.ServerRealm(
+        id=1, name="默认", slug="default", is_active=True))
+    db.flush()
 db.add(models.UserSubscription(
-    user_id=member.id, plan_id=plan.id,
+    user_id=member.id, plan_id=plan.id, realm_id=1,
+    start_date=now - timedelta(days=1), end_date=now + timedelta(days=29), status="active",
+))
+db.add(models.UserSubscription(
+    user_id=staff.id, plan_id=plan.id, realm_id=1,
     start_date=now - timedelta(days=1), end_date=now + timedelta(days=29), status="active",
 ))
 library = em.Library(guid=f"pwlib{suf}", name=f"付费墙库{suf}", collection_type="movies")
@@ -173,10 +184,14 @@ check("自定义拦截文案生效", r.status_code == 403 and r.json().get("deta
       str(r.json().get("detail")))
 set_config("subscription_gate_message", None)
 
-# ---------- 关闭付费墙：全员放行 ----------
+# ---------- 关闭付费墙：非会员仍被播放门禁拦（2026-11-22 改版） ----------
+# 播放资格已与付费墙解耦：关付费墙只关 can_play 一道门，播放门禁
+# （playback_gate）独立看订阅——无订阅的非会员照样 403，文案为
+# 门禁的订阅引导；会员不受影响（上一节已验放行）。
 set_config("subscription_required", "false")
 r = client.post(f"/emby/Items/{item_guid}/PlaybackInfo", headers=free_e, json={})
-check("关闭付费墙后非会员放行", r.status_code == 200, str(r.status_code))
+check("关闭付费墙后非会员仍被播放门禁拦", r.status_code == 403 and r.json().get("detail") == "开通订阅后即可播放",
+      str(r.status_code) + " " + str(r.json().get("detail")))
 r = client.get("/api/user/auth/me", headers=free_h)
 check("/auth/me 同步反映关闭状态", r.json().get("subscription_required") is False,
       str(r.json().get("subscription_required")))

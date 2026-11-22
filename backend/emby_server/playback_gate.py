@@ -1,26 +1,32 @@
-"""播放门禁（2026-10-26 用户亲定硬规矩，无开关）。
+"""播放门禁（2026-11-22 改版：有订阅就能播，不再要求绑盘）。
 
-规矩：用户只有绑定了自己的网盘账号才能点播；没绑定的用户只能浏览
-片库、不能点播。管理员与普通用户一视同仁，不设豁免。
+历史：2026-10-26 用户亲定「只有绑定自己网盘账号才能点播」的绑盘
+门禁；2026-11-22 用户亲令改版——绑定网盘已下线，播放资格改为
+订阅：有有效订阅（或团队播放资格）即可播，无资格 403 给订阅
+引导；管理员与普通用户一视同仁，不设豁免。判定本体走
+``subscriptions.view_grant``（全站单一事实来源），本模块只做
+执法点收口，不另立标准；原绑盘判定 ``has_active_binding`` 保留
+为归属/分流原语（池大文件分流、起播状态等仍在用），不再是门禁
+判定本身。
 
 2026-11-14 CMS 无界片库下线（全删除令）：2026-11-03 的「无界片库
-免绑定」改定随之撤销——CMS 来源已删，不再有免绑定的条目人群，
-全部条目一律过绑定门禁（回到 2026-10-26 硬规矩「无豁免」）。
-判定只许走本模块的 ``binding_required_for_item`` 单一入口，
-调用点不许各写一份。
+免绑定」改定随之撤销——CMS 来源已删，不再有免门禁的条目人群，
+全部条目一律过门禁。判定只许走本模块的 ``binding_required_for_item``
+单一入口，调用点不许各写一份。
 
 执行口径：
 - 只拦播放，不拦浏览：片库浏览、搜索、详情页一律不调本模块；本模块
   只在播放链接/变体下发处与直接流端点被调用。
-- 判定标准：请求播放的用户（WebUser.id）名下至少有一条 status 为
-  ``active`` 的用户存储绑定。2026-11-02 起夸克/115 用户绑定线已
-  下线，只认 drive 绑定（存量夸克/115 行视为不存在，见删除单）；
-  无 Drive 绑定、或绑定全是 invalid / expired，一律 403。
+- 判定标准：``has_play_grant``——有效订阅，或团队套餐播放资格。
+  家庭子账号自己没有订阅行，资格随主账号（经 sub_accounts 有效
+  账号解析，与 subscriptions.can_play 的子账号口径一致）。
 - 只拦新下发的播放，不追溯已下发的链接：请求带有效的 play_sign 时，
   该签名本身就是 PlaybackInfo 门禁后下发的凭证（门禁上线前下发的在
   TTL 内自然过期），本次消费不拦截；无签名、签名无效、或走 Emby token
   直接调流端点时，视为新播放，必须过门禁。
-- 被拦时返回 403 + 大白话原因，前端点播处据此展示去“我的”页绑定的引导。
+- 池 ready 副本不再是资格例外：池播同样过订阅门（签发与播出两处
+  都查），没订阅的用户池副本也播不了。
+- 被拦时返回 403 + 大白话原因，前端点播处据此展示开通订阅的引导。
 - 下载、字幕、浏览类接口不在本模块管辖内（点播 ≠ 下载）。
 """
 
@@ -32,13 +38,14 @@ from sqlalchemy.orm import Session
 from backend import models
 from backend.emby_server import models as em
 
-# 被拦时返回给客户端的大白话（前端点播处据此展示去“我的”页绑定的引导）。
-GATE_MESSAGE = "请先绑定自己的网盘账号才能点播"
+# 被拦时返回给客户端的大白话（前端点播处据此展示开通订阅的引导）。
+GATE_MESSAGE = "开通订阅后即可播放"
 
-# 名下存在已下线绑定（115 / 夸克存量行）的人被拦时的专用大白话：
-# 这批人不是“没绑”，是绑的线被下线了——必须明说已下线、改绑
-# Drive 才能播，不许与从未绑定的人混用上面那句笼统提示
-# （2026-11-03 存量收敛单；选文案仍在本模块单一入口里做）。
+# 历史保留（2026-11-22 改版起门禁不再选用此文案）：绑盘门禁时代，
+# 名下存在已下线绑定（115 / 夸克存量行）的人被拦时的专用大白话。
+# 改版后门禁只看订阅资格、与绑定无关，403 一律出上面 GATE_MESSAGE；
+# 常量与 has_removed_provider_binding 作为绑定域原语保留，不再是
+# 门禁文案分支。
 GATE_MESSAGE_REMOVED_PROVIDER = (
     "你之前绑定的 115 / 夸克网盘已下线，请改绑 Google Drive 才能点播")
 
@@ -51,8 +58,10 @@ def has_active_binding(db: Session, user_id: int) -> bool:
     绝不跨无关用户——唯一例外是家庭子账号：子账号自己不绑盘，
     绑定按主账号计（2026-11-15 家庭子账号单，经 backend/
     sub_accounts 的有效账号解析：主账号有 active 绑盘即算已绑）。
-    本函数是全站绑定判定的单点（门禁/签名/池分流/起播状态都走
-    这里），归属解析收在这里一处，各调用点不许自己再判归属。
+    本函数是全站绑定判定的单点（池分流/起播状态/快速通道分流等
+    绑定归属判定都走这里；2026-11-22 改版后播放门禁本体不再以
+    绑定为判定，见 has_play_grant），归属解析收在这里一处，
+    各调用点不许自己再判归属。
     """
     from backend import sub_accounts
 
@@ -67,6 +76,34 @@ def has_active_binding(db: Session, user_id: int) -> bool:
         .first()
         is not None
     )
+
+
+def has_play_grant(db: Session, user) -> bool:
+    """订阅播放资格（2026-11-22 改版的门禁判定单点）。
+
+    判定本体走 ``subscriptions.view_grant``（有效订阅或团队播放
+    资格，全站单一事实来源、无 staff 豁免）。家庭子账号自己没有
+    订阅行、资格随主账号：先判本人（本人订阅/本人团队资格在此
+    命中），未命中再经 sub_accounts 有效账号解析判归属主账号
+    （与 subscriptions.can_play 的子账号口径一致）。user 取不到
+    id 时 False（fail-closed）。
+    """
+    from backend import sub_accounts, subscriptions
+
+    user_id = getattr(user, "id", None)
+    if user_id is None:
+        return False
+    if subscriptions.view_grant(db, user):
+        return True
+    effective_id = sub_accounts.effective_user_id(db, user)
+    if effective_id == user_id:
+        return False
+    main = (
+        db.query(models.WebUser)
+        .filter(models.WebUser.id == effective_id)
+        .first()
+    )
+    return main is not None and subscriptions.view_grant(db, main)
 
 
 def has_removed_provider_binding(db: Session, user_id: int) -> bool:
@@ -161,22 +198,20 @@ def _ensure_license_playback_allowed(db: Session) -> None:
 def ensure_binding_playback_allowed(
     db: Session, user: models.WebUser, request: Request | None = None
 ) -> None:
-    """播放门禁：无 active 绑定时抛 403。
+    """播放门禁：无订阅资格时抛 403（函数名是历史名，判定已改版）。
 
+    资格判定走 ``has_play_grant``（view_grant 本体：有效订阅或
+    团队播放资格，子账号随主账号；与绑盘有无无关）。
     ``request`` 为空时无条件判定（PlaybackInfo / 上游兜底口：本次调用
     本身就是新下发）；传了 ``request`` 且请求带有效 play_sign 时放行
-    （消费已下发的链接，不追溯）。用户对象取不到 id 时按无绑定处理
+    （消费已下发的链接，不追溯）。用户对象取不到 id 时按无资格处理
     （fail-closed：403 而不是 500）。
     """
     _ensure_license_playback_allowed(db)
     if request is not None and _request_uses_issued_play_sign(request, db):
         return
-    user_id = getattr(user, "id", None)
-    if user_id is not None and has_active_binding(db, user_id):
+    if has_play_grant(db, user):
         return
-    if user_id is not None and has_removed_provider_binding(db, user_id):
-        raise HTTPException(
-            status_code=403, detail=GATE_MESSAGE_REMOVED_PROVIDER)
     raise HTTPException(status_code=403, detail=GATE_MESSAGE)
 
 
@@ -200,19 +235,27 @@ def ensure_binding_playback_allowed_for_item(
 def sign_allowed_for_item(db: Session, user_id, item) -> bool:
     """详情/清单面给该条目下发 play_sign 签名轨的判定（单一入口）。
 
-    播放签名是「已过门禁才下发」的凭证：已绑定用户恒可签；未绑定
-    用户只剩池放行一条签发路径（见下）。user_id 为空恒 False
-    （与既有 ``bool(user_id)`` 前置同口径）。
+    播放签名是「已过门禁才下发」的凭证：有订阅资格的用户恒可签
+    （``has_play_grant``，含团队资格、子账号随主账号），与绑盘
+    有无无关；user_id 为空恒 False（与既有 ``bool(user_id)``
+    前置同口径）。
 
-    goal-33 PR-3（design §4.1）新增池分支：未绑定用户池
-    eligible 且该条目有 ready 池副本时也可签（池播出已接通，
-    签名消费时由流端点现场走池门禁选路到池副本）；不 ready
-    不签。池判定实现在 pool_gate.pool_sign_allowed（本模块不
-    反向持有池逻辑，懒引防循环）。
+    池分支（goal-33 PR-3，design §4.1）：池 eligible 且该条目有
+    ready 池副本时也可签（池播出已接通，签名消费时由流端点现场
+    走池门禁选路到池副本）；不 ready 不签。2026-11-22 改版起池
+    不再是资格例外：池判定本体 pool_gate.pool_sign_allowed 内
+    同口径复核订阅资格，无资格恒不可签。池判定实现在
+    pool_gate.pool_sign_allowed（本模块不反向持有池逻辑，懒引
+    防循环）。
     """
     if not user_id:
         return False
-    if has_active_binding(db, user_id):
+    user = (
+        db.query(models.WebUser)
+        .filter(models.WebUser.id == user_id)
+        .first()
+    )
+    if user is not None and has_play_grant(db, user):
         return True
     if not binding_required_for_item(db, item):
         return True

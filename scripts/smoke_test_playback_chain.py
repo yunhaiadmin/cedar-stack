@@ -96,6 +96,9 @@ with SessionLocal() as _db:
                                   account_label="冒烟盘", credential_id=_cred.id,
                                   status="active"))
     _db.commit()
+    # 播放门禁（2026-11-22 改版）：资格看订阅——本脚本第 2 节用
+    # grant_membership_days 正式发会员，发的就是真订阅，新门禁直接
+    # 认它，这里不预种订阅（预种会破坏第 1 节的非会员前提）。
 H_EMBY = {"X-Emby-Token": _raw}
 
 # ==================== 1. 付费墙默认开启 ====================

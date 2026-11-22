@@ -407,6 +407,28 @@ def _free_user(db):
     return _user(db, "free")
 
 
+def _subscription(db, user_id):
+    """有效订阅（realm 1）：2026-11-22 播放门禁改版后池判定同样先过订阅门。"""
+    from datetime import datetime, timedelta, timezone
+
+    from backend.models import ServerRealm, SubscriptionPlan, UserSubscription
+    if db.query(ServerRealm).filter_by(id=1).first() is None:
+        db.add(ServerRealm(id=1, name="默认", slug="default", is_active=True))
+        db.flush()
+    if db.query(SubscriptionPlan).filter_by(id=1).first() is None:
+        db.add(SubscriptionPlan(
+            id=1, name="测试套餐", price=100, duration_days=30, realm_id=1))
+        db.flush()
+    sub = UserSubscription(
+        user_id=user_id, plan_id=1, realm_id=1,
+        start_date=datetime.now(timezone.utc) - timedelta(days=1),
+        end_date=datetime.now(timezone.utc) + timedelta(days=30),
+        status="active")
+    db.add(sub)
+    db.commit()
+    return sub
+
+
 def test_gate_creates_job_when_no_copy(db):
     item = _item(db)
     _member(db, 11)
@@ -568,6 +590,7 @@ def test_bound_user_still_kind_bound(db):
     item = _item(db)
     viewer = _user(db, "viewer")
     _binding(db, viewer.id)
+    _subscription(db, viewer.id)
     decision = pool_gate.ensure_playback_allowed_for_item(db, viewer, item)
     assert decision.allowed is True
     assert decision.kind == "bound"
@@ -578,6 +601,7 @@ def test_unbound_user_pool_decision(db):
     _member(db, 11)
     _enable_pool(db)
     user = _free_user(db)
+    _subscription(db, user.id)
     decision = pool_gate.ensure_playback_allowed_for_item(db, user, item)
     assert decision.allowed is True
     assert decision.kind == "pool"

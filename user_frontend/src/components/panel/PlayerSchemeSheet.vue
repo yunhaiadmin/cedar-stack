@@ -85,7 +85,7 @@
                弹层本体与底部固定区不动——2026-11-14 用户亲点「固定的」） -->
           <div ref="scrollEl" class="psp-scroll">
             <PlayStatusBar
-              v-if="!needsBinding && itemId !== null && itemId !== undefined"
+              v-if="itemId !== null && itemId !== undefined"
               :item-id="itemId"
               :auto-opening="autoOpening"
               @ready="onPlayStatusReady"
@@ -106,8 +106,6 @@
                 重新获取
               </button>
             </div>
-
-            <BindDriveGuide v-else-if="needsBinding" :title="title" @bound="onDriveBound" />
 
             <template v-else>
               <!-- 影片版本（单选） -->
@@ -225,7 +223,7 @@
           </div>
 
           <!-- 固定区（不随版本区滚动）：字幕行 / 线路行 / 开始播放 -->
-          <div v-if="!loading && !loadFailed && !needsBinding" class="psp-fixed">
+          <div v-if="!loading && !loadFailed" class="psp-fixed">
             <!-- 外挂字幕（#134 能力保留，压成一行）：胶囊显示当前选择，
                  点开向上弹清单选轨；选中带进网页播放器，再选「不挂
                  字幕」= 本次不挂。没有外挂字幕整行不渲染 -->
@@ -360,12 +358,10 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChevronDown, Copy, Eye, Play, RotateCcw, Trash2, X } from 'lucide-vue-next'
-import BindDriveGuide from '@/components/panel/BindDriveGuide.vue'
 import Modal from '@/components/ui/Modal.vue'
 import { useToast } from '@/composables/useToast'
 import PlayStatusBar from '@/components/panel/PlayStatusBar.vue'
 import '../../styles/modal-glass.css'
-import { storageBindingApi } from '@/api/economy'
 import { audioLangLabel, embeddedSubLabel, subLangLabel } from '@/utils/subtitleLabels'
 import {
   embyApi as embyProtocol,
@@ -391,9 +387,6 @@ const router = useRouter()
 const loading = ref(false)
 /** 加载失败态（G-155）：条目拉取 rejected 时为 true，弹层切「Load failed」失败态 */
 const loadFailed = ref(false)
-// 播放门禁引导：名下无 active 绑定时为 true，弹层只展示绑定引导，
-// 不直接播放（播也会被服务端门禁拦下）。
-const needsBinding = ref(false)
 const panelEl = ref<HTMLElement | null>(null)
 /** 版本区滚动容器：展开版本卡/音轨时自动滚动，把展开内容带进视口 */
 const scrollEl = ref<HTMLElement | null>(null)
@@ -967,19 +960,13 @@ async function refresh() {
   void loadLines()
   try {
     const id = props.itemId
-    const [bindingsResult, itemResult] = await Promise.allSettled([
-      storageBindingApi.list(),
+    // 2026-11-22 播放门禁改版：播放不再要求绑盘（有订阅即可播，
+    // 服务端门禁判定），本弹层不再按绑定列表拦人、不再展示绑盘引导。
+    const [itemResult] = await Promise.allSettled([
       id !== null && id !== undefined && String(id) !== ''
         ? embyProtocol.getItem(String(id))
         : Promise.resolve(null),
     ])
-    // 绑定列表拉取失败时保持旧行为（服务端门禁仍会拦截），引导只是尽力而为。
-    if (bindingsResult.status === 'fulfilled') {
-      const bindings = bindingsResult.value?.bindings ?? []
-      needsBinding.value = !bindings.some((b) => b.status === 'active')
-    } else {
-      needsBinding.value = false
-    }
     // 条目拉取失败不再静默吞掉：落失败态给用户重试入口（G-155）
     loadFailed.value = itemResult.status === 'rejected'
     itemDetail.value = itemResult.status === 'fulfilled' ? itemResult.value : null
@@ -1068,15 +1055,9 @@ function onPlayStatusReady() {
   armAutoOpen()
 }
 
-/** 绑盘弹层里绑成后回到选播放器流程：就地重查绑定与条目
- *  （refresh 内 needsBinding 按最新绑定列表落定），不再跳设置页 */
-function onDriveBound() {
-  void refresh()
-}
-
 /** 版本卡复制钮（友站形态 = 复制链接）：复制该版本的网页播放链接
     （站内 /play 路由 + 版本参数）。链接不带任何凭据，打开仍走登录与
-    绑盘门禁，不外泄流地址/令牌。 */
+    订阅门禁，不外泄流地址/令牌。 */
 async function copyVersionLink(v: VersionCard) {
   const target = playedTargetId.value
   const path =

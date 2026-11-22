@@ -282,20 +282,35 @@ def test_delete_others_child_is_404(db):
 # ---------------- 播放门禁随主账号 ----------------
 
 def test_binding_gate_follows_parent(db):
+    """2026-11-22 门禁改版：播放门跟主账号订阅走（子账号经归属解析），
+    不再跟绑定走；绑定归属解析本身（has_active_binding）口径不变。"""
     parent, _ = _family(db)
     child = sub_accounts.create_sub_account(db, parent, "kid1", PASSWORD)
-    # 主账号没绑盘：子账号同样被拦
+    # 门禁资格走 view_grant（按当前服 realm 过滤）：把主账号订阅标到
+    # realm 1，与正式发订阅写口的落点一致（本文件 _subscribe 老夹具
+    # 写的是 realm_id=None，只够 can_play 的无 scope 口径）。
+    _psub = db.query(models.UserSubscription).filter(
+        models.UserSubscription.user_id == parent.id).first()
+    _psub.realm_id = 1
+    db.commit()
+    # 主账号有生效订阅：子账号随之放行（自己不绑盘、名下无订阅行）
+    assert playback_gate.has_play_grant(db, child) is True
+    playback_gate.ensure_binding_playback_allowed(db, child)
+    # 绑定归属解析仍在（转存/池本人路用）：主账号没绑盘时子账号亦无
     assert playback_gate.has_active_binding(db, child.id) is False
-    with pytest.raises(Exception):
-        playback_gate.ensure_binding_playback_allowed(db, child)
-    # 主账号绑上 active drive 盘：子账号随之放行（自己不绑盘）
     binding = _binding(db, parent.id, "active")
     assert playback_gate.has_active_binding(db, child.id) is True
-    playback_gate.ensure_binding_playback_allowed(db, child)
-    # 主账号绑定失效：子账号同步被拦
     binding.status = "invalid"
     db.commit()
     assert playback_gate.has_active_binding(db, child.id) is False
+    # 主账号订阅过期：子账号同步被门禁拦（与绑定状态无关）
+    sub = db.query(models.UserSubscription).filter(
+        models.UserSubscription.user_id == parent.id).first()
+    sub.end_date = datetime.now() - timedelta(days=1)
+    db.commit()
+    assert playback_gate.has_play_grant(db, child) is False
+    with pytest.raises(Exception):
+        playback_gate.ensure_binding_playback_allowed(db, child)
 
 
 def test_can_play_follows_parent_subscription(db):
