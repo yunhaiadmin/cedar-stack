@@ -57,7 +57,6 @@ import type {
   UserDetail,
   UserGrants,
   UsersResponse,
-  StorageBindingsResponse,
 } from '@/types'
 
 // ==================== 认证 =============
@@ -2612,17 +2611,6 @@ export const ackAlert = (alertId: number) =>
 /** 发送测试告警（只发给当前管理员） */
 export const sendTestAlert = (channel: AlertChannel) =>
   post<{ ok: boolean; channel: string }>('/alerts/test', { channel })
-
-// ==================== 专线 B 第二阶段 · 只读观测口（GET，仅展示） =============// 全部走 get（@/utils/request，baseURL /api/admin），不新增任何写调用。
-// 字段口径见 backend/api/admin_readonly.py。
-
-/** 存储绑定列表：按用户 / 状态过滤，limit/offset 分页（id 倒序） */
-export const fetchStorageBindings = (params: {
-  user_id?: number
-  status?: string
-  limit?: number
-  offset?: number
-} = {}) => get<StorageBindingsResponse>('/storage-bindings', params)
 
 // ==================== 媒体库图片与顺序（媒体库学习 L2 / L4） =============
 export interface ArtworkOverrideRow {

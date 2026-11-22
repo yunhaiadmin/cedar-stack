@@ -78,9 +78,6 @@ const routes: RouteRecordRaw[] = [
       { path: 'pool', name: 'PoolAdmin', component: () => import('@/views/PoolAdmin.vue'), meta: { title: '贡献池' } },
       // 双盘审计台账已并入「操作日志」页的双盘审计标签（Logs.vue ?tab=audit）：旧地址跳到对应标签，收藏不会 404
       { path: 'audit', redirect: { path: '/logs', query: { tab: 'audit' } } },
-      // 原「上游源」页的观测标签（存储绑定）：
-      // 上游源页已随上游全清删除，本页恢复独立路由（地址不变）。
-      { path: 'storage-bindings', name: 'StorageBindings', component: () => import('@/views/StorageBindings.vue'), meta: { title: '存储绑定' } },
       { path: 'settings', name: 'Settings', component: () => import('@/views/Settings.vue'), meta: { title: '系统设置' } },
       // v2.26.0：管理员与权限（角色 super / operator / viewer）与播放、客户端策略
       { path: 'admins', name: 'Admins', component: () => import('@/views/Admins.vue'), meta: { title: '管理员与权限' } },
