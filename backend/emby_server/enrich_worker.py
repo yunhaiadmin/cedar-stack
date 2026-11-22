@@ -134,6 +134,15 @@ ENRICH_CLAIM_EPISODE_PARENT_READY = env_int(
 # （新 pending 插入 / 打回 pending / 修复请求）仍即时失效。
 # 0 = 关闭缓存，认领逐字走旧路径。
 ENRICH_CLAIM_GROUPS_TTL_SEC = env_int("ENRICH_CLAIM_GROUPS_TTL_SEC", 300, 0)
+# 认领向剧倾斜预留比（%，默认 50，下限 0、上限 100；S1 提速）：每批先给
+# 「含待刮父级的组」（gate=1，组内有 pending 的 series/season 行）预留
+# 该百分比名额喂闸门关键路径——单集必须等父剧刮完才能认领，闸门放行
+# 速度 = 剧完成速度，电影无下游阻塞可以等。预留未用满自动回填普通组，
+# 电影每批至少拿到剩余名额、不会被饿死；单组认领用当时真实剩余名额，
+# 允许单组吃过预留线（它本来就是闸门关键路径）。
+# 0 = 关闭预留，认领顺序与旧口径逐字一致。
+ENRICH_CLAIM_SERIES_RESERVE_PCT = env_int(
+    "ENRICH_CLAIM_SERIES_RESERVE_PCT", 50, 0, 100)
 # 等父级打回（默认开）：打回时不把 enrich_priority 抬到 0（积压是 -10，抬到 0
 # 会插到全队最前被立刻重抢），且等待次数不计入「超 20 次转 none」的上限
 # （父级还没做完就标 none 是误杀）。0 = 旧行为（抬到 0，超 20 次放行走 none）。
@@ -3884,7 +3893,9 @@ def _claim_groups_snapshot(key, fetch_groups):
 
     ``key`` = (queue, skip_episode, ban_hold)：决定组集合与排序口径的
     运行时输入只有这三样（其余都是进程级常量）。``fetch_groups()`` 只在
-    未命中时执行那条聚合查询，返回 [(gid, latest, lib), ...]。
+    未命中时执行那条聚合查询，返回 [(gid, latest, lib, gate), ...]
+    （S1 起快照元组为 4 元，gate 见 _claim_batch 的 groups_q 注释；
+    全仓只有 _claim_batch 消费该元组）。
     """
     now_mono = time.monotonic()
     with _CLAIM_GROUPS_LOCK:
@@ -4203,7 +4214,14 @@ def _claim_batch(db, limit: int, queue: Optional[str] = None) -> list:
     # FOR UPDATE（PG 限制），所以是「选组」与「抢行」两步。
     groups_q = (db.query(group_key.label("g"),
                          _func.max(em.MediaItem.date_added).label("latest"),
-                         em.MediaItem.library_id.label("lib"))
+                         em.MediaItem.library_id.label("lib"),
+                         # S1 gate：组内是否存在待刮父级行。本查询已限定
+                         # enrich_status='pending'，组内有 pending 的
+                         # series/season 行即 gate=1；单集组父级已终态时
+                         # 组内只有 episode → gate=0；电影组 gate=0。
+                         _func.max(_case(
+                             (em.MediaItem.item_type.in_(("series", "season")), 1),
+                             else_=0)).label("gate"))
                 .filter(em.MediaItem.enrich_status == "pending", due, unlocked,
                         not_episode, not_merged, not_ban_backfill, queue_pred,
                         parent_ready)
@@ -4250,6 +4268,20 @@ def _claim_batch(db, limit: int, queue: Optional[str] = None) -> list:
         return _claim_group_atomic(db, q, now)
 
     claimed: list = []
+    # S1 两段认领（快照路径与 A2 单查路径口径一致）：第一段只遍历
+    # gate=1 的组、认领到预留线 ceil(limit * pct / 100) 为止，喂闸门
+    # 关键路径；第二段按原顺序遍历全部组填满 limit，预留未用满自动
+    # 回填。gate 只影响段的划分，不改 groups_q 的 order_by（库轮转 /
+    # 新鲜窗口的组间排序不变），不改 parent_ready 谓词、组内排序与
+    # 原子认领。pct=0 时跳过第一段，行为与旧口径逐字一致。
+    try:
+        _reserve_pct = int(ENRICH_CLAIM_SERIES_RESERVE_PCT)
+    except (TypeError, ValueError):
+        _reserve_pct = 0
+    _reserve_pct = max(0, min(100, _reserve_pct))
+    _reserve_limit = (-(-limit * _reserve_pct // 100)
+                      if _reserve_pct > 0 else 0)
+    _tried_limit = max(_CLAIM_GROUPS_SNAPSHOT_SIZE, limit)
     if ENRICH_CLAIM_GROUPS_TTL_SEC > 0:
         # 减负 A1：候选组快照路径。聚合只在快照未命中时打一次（上限
         # 取 A2 的 max(_CLAIM_GROUPS_FETCH, limit)，与旧递增分页的
@@ -4260,13 +4292,17 @@ def _claim_batch(db, limit: int, queue: Optional[str] = None) -> list:
             lambda: _order_with_fairness(groups_q).limit(
                 max(_CLAIM_GROUPS_FETCH, limit)).all())
         tried = 0
-        for gid, _latest, _lib in entry["groups"]:
-            if (len(claimed) >= limit
-                    or tried >= max(_CLAIM_GROUPS_SNAPSHOT_SIZE, limit)):
-                break
+        tried_gids: set = set()
+
+        def _try_snapshot_group(gid) -> None:
+            nonlocal tried
             if gid in entry["consumed"]:
-                continue
-            tried += 1
+                return
+            if gid not in tried_gids:
+                # tried 上限跨两段共享计数：第一段试过的组在第二段
+                # 再试不重复计 tried（已试集合去重）。
+                tried_gids.add(gid)
+                tried += 1
             remaining = limit - len(claimed)
             rows = _claim_group_members(gid, remaining)
             claimed.extend(rows)
@@ -4274,15 +4310,59 @@ def _claim_batch(db, limit: int, queue: Optional[str] = None) -> list:
                 # 认领数 < 当时余量 = 这组当前可抢的行已抽干，TTL 内
                 # 不再重试；恰好装满（==）不标，可能还有余量。
                 entry["consumed"].add(gid)
+
+        if _reserve_pct > 0:
+            for gid, _latest, _lib, gate in entry["groups"]:
+                if len(claimed) >= _reserve_limit or len(claimed) >= limit:
+                    break
+                if gid not in tried_gids and tried >= _tried_limit:
+                    break
+                if not gate:
+                    continue
+                if gid in entry["consumed"]:
+                    continue
+                # 单组用当时真实 remaining（limit - len(claimed)，
+                # 见 _try_snapshot_group），允许吃过预留线。
+                _try_snapshot_group(gid)
+        for gid, _latest, _lib, _gate in entry["groups"]:
+            if len(claimed) >= limit:
+                break
+            if gid not in tried_gids and tried >= _tried_limit:
+                break
+            if gid in entry["consumed"]:
+                continue
+            _try_snapshot_group(gid)
     else:
         # A2 单查：快照关掉时直接聚合一次取组（上限
         # max(_CLAIM_GROUPS_FETCH, limit)），不再递增重查。
         groups = (_order_with_fairness(groups_q)
                   .limit(max(_CLAIM_GROUPS_FETCH, limit)).all())
-        for gid, _latest, _lib in groups:
+        tried_a2: set = set()
+        exhausted_a2: set = set()
+
+        def _try_a2_group(gid) -> None:
+            remaining = limit - len(claimed)
+            rows = _claim_group_members(gid, remaining)
+            claimed.extend(rows)
+            tried_a2.add(gid)
+            if len(rows) < remaining:
+                exhausted_a2.add(gid)
+
+        if _reserve_pct > 0:
+            for gid, _latest, _lib, gate in groups:
+                if len(claimed) >= _reserve_limit or len(claimed) >= limit:
+                    break
+                if not gate:
+                    continue
+                _try_a2_group(gid)
+        for gid, _latest, _lib, _gate in groups:
             if len(claimed) >= limit:
                 break
-            claimed.extend(_claim_group_members(gid, limit - len(claimed)))
+            if gid in tried_a2:
+                # 第一段已试过的组：已抽干（exhausted）或已装满批次，
+                # 第二段不重复试（与快照路径 tried 去重同口径）。
+                continue
+            _try_a2_group(gid)
     if claimed:
         db.commit()
         if ENRICH_LIBRARY_FAIRNESS:
