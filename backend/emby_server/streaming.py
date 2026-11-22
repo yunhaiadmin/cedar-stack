@@ -336,8 +336,10 @@ def _env_flag(name: str, default: bool) -> bool:
     return default
 
 
-#: 同时保持的上游连接数（S2）。每个正在播放的远程流在整个播放期间占一个连接，
-#: 旧默认 24 在第 25 路并发播放时就排队；默认提到 200，``RELAY_MAX_CONNECTIONS`` 可调。
+#: 上游连接池上限不在这里：挂载池见 _mount_relay_client（env
+#: RELAY_MAX_CONNECTIONS / RELAY_MAX_KEEPALIVE_CONNECTIONS），Drive
+#: 池见 _drive_relay_client（env DRIVE_RELAY_MAX_CONNECTIONS /
+#: DRIVE_RELAY_MAX_KEEPALIVE_CONNECTIONS），各有独立读取器与默认值。
 async def _follow_redirects(
     client,
     start_url: str,
@@ -698,6 +700,50 @@ def _drive_pool_note_transport_failure() -> None:
                 _drive_pool_breaker_cooldown())
 
 
+def _pool_limit_value(name: str, raw: str, default: int,
+                      lo: int, hi: int) -> int:
+    """池上限 env 值解析：非法回默认并告警，合法钳 [lo, hi]。"""
+    if not str(raw).strip():
+        return default
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        logger.warning("环境变量 %s=%r 不是整数，使用默认值 %d",
+                       name, raw, default)
+        return default
+    return min(max(value, lo), hi)
+
+
+def _mount_pool_limits() -> tuple:
+    """挂载中继池上限 (max_connections, max_keepalive_connections)。
+
+    env RELAY_MAX_CONNECTIONS（默认 32，钳 [1, 512]）/
+    RELAY_MAX_KEEPALIVE_CONNECTIONS（默认 16，钳 [0, 512] 且不超
+    max_connections）。共享池太小会让并发拉流互相等池（PoolTimeout
+    的既有 503 口径不变）。
+    """
+    max_conn = _pool_limit_value(
+        "RELAY_MAX_CONNECTIONS",
+        os.getenv("RELAY_MAX_CONNECTIONS", ""), 32, 1, 512)
+    keepalive = _pool_limit_value(
+        "RELAY_MAX_KEEPALIVE_CONNECTIONS",
+        os.getenv("RELAY_MAX_KEEPALIVE_CONNECTIONS", ""), 16, 0, 512)
+    return max_conn, min(keepalive, max_conn)
+
+
+def _drive_pool_limits() -> tuple:
+    """Drive 中继池上限：env DRIVE_RELAY_MAX_CONNECTIONS（默认 32）/
+    DRIVE_RELAY_MAX_KEEPALIVE_CONNECTIONS（默认 16），钳制口径同
+    挂载池，与挂载池独立演进。"""
+    max_conn = _pool_limit_value(
+        "DRIVE_RELAY_MAX_CONNECTIONS",
+        os.getenv("DRIVE_RELAY_MAX_CONNECTIONS", ""), 32, 1, 512)
+    keepalive = _pool_limit_value(
+        "DRIVE_RELAY_MAX_KEEPALIVE_CONNECTIONS",
+        os.getenv("DRIVE_RELAY_MAX_KEEPALIVE_CONNECTIONS", ""), 16, 0, 512)
+    return max_conn, min(keepalive, max_conn)
+
+
 #: Drive 中继客户端按 event loop 共享（与挂载池分开的独立一份）。
 _DRIVE_RELAY_CLIENTS: dict = {}
 
@@ -725,11 +771,12 @@ def _drive_relay_client() -> "httpx.AsyncClient":
         client = _DRIVE_RELAY_CLIENTS.get(loop)
         if client is not None and not client.is_closed:
             return client
+    _dmax, _dkeep = _drive_pool_limits()
     client = httpx.AsyncClient(
         transport=PinnedAsyncHTTPTransport(
             _PINNING_CACHE.lookup,
-            limits=httpx.Limits(max_connections=32,
-                                max_keepalive_connections=16,
+            limits=httpx.Limits(max_connections=_dmax,
+                                max_keepalive_connections=_dkeep,
                                 keepalive_expiry=30.0),
         ),
         timeout=httpx.Timeout(
@@ -765,14 +812,21 @@ class _DriveLegScope:
     capture（可选）：调用方给的 dict，跟随成功后回填终点 URL
     （capture["final_url"]），供 video_stream 快速通道落
     drive_final 描述符；不给时无任何回填动作。
+
+    hot_identity（可选）：热缓存文件身份（relay_hot_cache 用，
+    ``drive:{drive_id}:{file_id}``）；serve_drive_relay_async 对
+    SA 腿与令牌腿都设（身份是文件、不是凭据，字节只经已授权的
+    serve 路径出）。不设时热缓存完全不介入，行为逐字不变。
     """
 
-    __slots__ = ("cache_key", "capture")
+    __slots__ = ("cache_key", "capture", "hot_identity")
 
     def __init__(self, cache_key: Optional[str] = None,
-                 capture: Optional[dict] = None):
+                 capture: Optional[dict] = None,
+                 hot_identity: Optional[str] = None):
         self.cache_key = cache_key
         self.capture = capture
+        self.hot_identity = hot_identity
 
     def acquire(self):
         return _acquire_drive_client()
@@ -1057,11 +1111,13 @@ def _mount_relay_client() -> "httpx.AsyncClient":
         client = _MOUNT_RELAY_CLIENTS.get(loop)
         if client is not None and not client.is_closed:
             return client
+    _mmax, _mkeep = _mount_pool_limits()
     client = httpx.AsyncClient(
         transport=PinnedAsyncHTTPTransport(
             _PINNING_CACHE.lookup,
-            limits=httpx.Limits(max_connections=32,
-                                max_keepalive_connections=16),
+            limits=httpx.Limits(max_connections=_mmax,
+                                max_keepalive_connections=_mkeep,
+                                keepalive_expiry=30.0),
         ),
         timeout=httpx.Timeout(
             connect=_MOUNT_RELAY_TIMEOUT_CONNECT,
@@ -1074,6 +1130,331 @@ def _mount_relay_client() -> "httpx.AsyncClient":
     if loop is not None:
         _MOUNT_RELAY_CLIENTS[loop] = client
     return client
+
+
+# ---------------------------------------------------------------------------
+# 中继热缓存接线（2026-11-22 智能中继＋热缓存阶段 1；存储本体在
+# relay_hot_cache，本节只做 serve 路径上的命中出流 / 写穿 / 预读）
+# ---------------------------------------------------------------------------
+# 只对带 hot_identity 的 Drive 腿生效（serve_drive_relay_async 设）：
+# - 全命中：开流前查缓存，请求区间被分段完全覆盖 → 本地出字节、
+#   不回源；
+# - 未全命中：现行透传逐字不变，只在流上旁路写穿——流过的完整
+#   分段投递给缓存写线程落盘，下次同区间才转全命中；
+# - 跨请求预读：一次出流后，后台把请求区间之后的 N 个分段提前
+#   读进缓存（有界并发、已缓存/在途去重、失败自吞）。
+# 任何缓存异常一律 fail-open：回现行透传，播放不受影响。
+
+
+def _try_hot_cache_response(identity, range_header, media_type, pt):
+    """热缓存全命中出流：命中返回 StreamingResponse，未命中/任何
+    问题返回 None（调用方走现行透传，逐字不变）。"""
+    opened = None
+    try:
+        from backend.emby_server import relay_hot_cache as _hc
+        if not _hc.enabled() or _hc.max_bytes() <= 0:
+            return None
+        meta = _hc.get_meta(identity)
+        if not meta:
+            _hc.note_miss()
+            return None
+        rng = _hc.parse_range(range_header, int(meta["total_size"]))
+        if rng is None:
+            return None
+        start, end = rng
+        opened = _hc.open_segments(identity, meta, start, end)
+        if opened is None:
+            _hc.note_miss()
+            return None
+        total = int(meta["total_size"])
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(end - start + 1),
+            "X-Accel-Buffering": "no",
+        }
+        if range_header:
+            headers["Content-Range"] = f"bytes {start}-{end}/{total}"
+        if meta.get("etag"):
+            headers["ETag"] = meta["etag"]
+        if meta.get("last_modified"):
+            headers["Last-Modified"] = meta["last_modified"]
+        _hc.note_hit(end - start + 1)
+        logger.info("relay_hot_cache 全命中出流 identity=%s "
+                    "range=%d-%d bytes=%d",
+                    identity, start, end, end - start + 1)
+        if pt is not None:
+            pt.mark("ttfb")
+            pt.done()
+
+        async def _hit_body():
+            try:
+                for fobj, length in opened:
+                    remaining = length
+                    while remaining > 0:
+                        chunk = await asyncio.to_thread(
+                            fobj.read, min(remaining, READ_CHUNK))
+                        if not chunk:
+                            break
+                        remaining -= len(chunk)
+                        yield chunk
+            finally:
+                for fobj, _length in opened:
+                    try:
+                        fobj.close()
+                    except Exception:  # noqa: BLE001
+                        pass
+
+        return StreamingResponse(
+            _hit_body(),
+            status_code=206 if range_header else 200,
+            media_type=meta.get("content_type") or media_type,
+            headers=headers)
+    except Exception:  # noqa: BLE001 — 缓存层任何异常都不许挡播放
+        logger.warning("relay_hot_cache 命中路径异常，回现行透传",
+                       exc_info=True)
+        if opened:
+            for fobj, _length in opened:
+                try:
+                    fobj.close()
+                except Exception:  # noqa: BLE001
+                    pass
+        return None
+
+
+def _hot_cache_tee_plan(identity, resp):
+    """按上游响应头算写穿计划：定出流起始绝对偏移与文件总长，并把
+    校验器登记进热缓存（大小/校验器变化即整身份失效旧分段）。
+    算不出/未启用/登记失败回 None（本次不写穿）。永不抛。"""
+    try:
+        from backend.emby_server import relay_hot_cache as _hc
+        if not _hc.enabled() or _hc.max_bytes() <= 0:
+            return None
+        # 异常 HTML 页（额度页之外的错误页）绝不写穿：把错误页当
+        # 文件字节落盘会污染缓存，还会因总长不符连带失效好分段。
+        if (resp.headers.get("content-type") or "") \
+                .lower().startswith("text/html"):
+            return None
+        total = None
+        start = 0
+        if resp.status_code == 206:
+            cr = (resp.headers.get("content-range") or "").strip()
+            m = re.match(r"bytes (\d+)-(\d+)/(\d+)", cr)
+            if not m:
+                return None
+            start = int(m.group(1))
+            total = int(m.group(3))
+        elif resp.status_code == 200:
+            cl = resp.headers.get("content-length")
+            if not cl:
+                return None
+            total = int(str(cl).strip())
+            start = 0
+        else:
+            return None
+        if total <= 0:
+            return None
+        meta = _hc.note_validators(
+            identity, total, resp.headers.get("etag"),
+            resp.headers.get("last-modified"),
+            resp.headers.get("content-type"))
+        if meta is None:
+            return None
+        # 代际绑定：本流字节属于登记这一刻的校验器；流期间身份被
+        # 失效（文件被换）→ 提交时按代际丢弃，不许落进新一代。
+        return {"identity": identity, "start": start, "total": total,
+                "gen": _hc.current_generation(identity)}
+    except Exception:  # noqa: BLE001 — 算不出就不缓存，播放照常
+        return None
+
+
+async def _hot_cache_tee(source, plan):
+    """写穿旁路：字节原样透传，同时按绝对偏移攒分段——流完整覆盖
+    的分段投递落盘（从段中间进入的首段不完整、永不投递）。记账
+    异常立即停记账（防偏移脱轨写错字节），透传本身不受影响。"""
+    from backend.emby_server import relay_hot_cache as _hc
+    seg = _hc.SEGMENT_SIZE
+    total = plan["total"]
+    pos = plan["start"]
+    buf = bytearray()
+    buf_seg = pos // seg
+    buf_from = pos - buf_seg * seg
+    dead = False
+    async for chunk in source:
+        yield chunk
+        if dead or not chunk:
+            continue
+        try:
+            view = memoryview(chunk)
+            while len(view):
+                idx = pos // seg
+                if idx != buf_seg:
+                    buf = bytearray()
+                    buf_seg = idx
+                    buf_from = 0
+                in_seg = pos - idx * seg
+                exp_len = _hc.segment_expected_len(total, idx)
+                if exp_len <= 0:
+                    dead = True
+                    break
+                take = min(exp_len - in_seg, len(view))
+                buf += view[:take]
+                view = view[take:]
+                pos += take
+                if in_seg + take == exp_len:
+                    if buf_from == 0 and len(buf) == exp_len:
+                        _hc.submit_segment(
+                            plan["identity"], idx, bytes(buf), total,
+                            gen=plan.get("gen"))
+                    buf = bytearray()
+        except Exception:  # noqa: BLE001 — 记账坏掉就停，字节已透传
+            dead = True
+
+
+#: 跨请求预读的在途任务与分段去重集（进程内）：任务上限防突发
+#: 请求把预读放大成上游洪水；信号量限并发，绝不占满连接池。
+_HOT_PREFETCH_TASKS: set = set()
+_HOT_PREFETCH_INFLIGHT: set = set()
+_HOT_PREFETCH_SEMS: dict = {}
+_HOT_PREFETCH_MAX_TASKS = 16
+_HOT_PREFETCH_CONCURRENCY = 2
+
+
+def _hot_prefetch_sem() -> "asyncio.Semaphore":
+    loop = asyncio.get_running_loop()
+    sem = _HOT_PREFETCH_SEMS.get(loop)
+    if sem is None:
+        sem = asyncio.Semaphore(_HOT_PREFETCH_CONCURRENCY)
+        _HOT_PREFETCH_SEMS[loop] = sem
+    return sem
+
+
+async def _hot_prefetch_run(identity, range_header, fetcher) -> None:
+    """预读主体：把请求区间之后 N 个未缓存分段取回落盘。
+
+    fetcher(seg_start, seg_end) -> bytes | None 由调用方按腿构造。
+    已缓存/在途的分段跳过（去重）；任何失败自吞，绝不外抛。
+    """
+    try:
+        from backend.emby_server import relay_hot_cache as _hc
+        meta = _hc.get_meta(identity)
+        if not meta:
+            return
+        gen = _hc.current_generation(identity)
+        total = int(meta["total_size"])
+        rng = _hc.parse_range(range_header, total)
+        if rng is None:
+            return
+        seg = _hc.SEGMENT_SIZE
+        last_seg = (total - 1) // seg
+        cur_last = rng[1] // seg
+        n = _hc.prefetch_segments()
+        sem = _hot_prefetch_sem()
+        for idx in range(cur_last + 1,
+                         min(last_seg, cur_last + n) + 1):
+            key = (identity, idx)
+            if key in _HOT_PREFETCH_INFLIGHT:
+                continue
+            if _hc.segment_present(identity, meta, idx):
+                continue
+            _HOT_PREFETCH_INFLIGHT.add(key)
+            try:
+                s = idx * seg
+                e = min(s + seg, total) - 1
+                async with sem:
+                    data = await fetcher(s, e)
+                if data and len(data) == e - s + 1:
+                    if _hc.submit_segment(identity, idx, data, total,
+                                          gen=gen):
+                        _hc.note_prefetch_fetched()
+            except Exception:  # noqa: BLE001 — 预读失败自吞
+                pass
+            finally:
+                _HOT_PREFETCH_INFLIGHT.discard(key)
+    except Exception:  # noqa: BLE001 — 预读绝不外抛
+        pass
+
+
+def _schedule_hot_prefetch(identity, range_header, fetcher) -> None:
+    """把预读挂成后台任务（不阻塞出流）。无缓存元数据（本次没走
+    写穿/命中）时不挂——没有总长锚点，预读无从算起。永不抛。"""
+    try:
+        from backend.emby_server import relay_hot_cache as _hc
+        if not _hc.enabled() or _hc.prefetch_segments() <= 0:
+            return
+        if not _hc.get_meta(identity):
+            return
+        if len(_HOT_PREFETCH_TASKS) >= _HOT_PREFETCH_MAX_TASKS:
+            return
+        task = asyncio.get_running_loop().create_task(
+            _hot_prefetch_run(identity, range_header, fetcher))
+        _HOT_PREFETCH_TASKS.add(task)
+        task.add_done_callback(_HOT_PREFETCH_TASKS.discard)
+    except Exception:  # noqa: BLE001 — 调度失败就算了
+        pass
+
+
+async def _fetch_drive_segment_bytes(drive_id, file_id, access_token,
+                                     seg_start, seg_end):
+    """预读用：取 Drive 文件一个字节区间（走 Drive 池/熔断口径，
+    跳转逐跳校验同主腿）。任何失败回 None。"""
+    from backend.emby_server.drive_auth import (
+        drive_api_media_url,
+        drive_usercontent_download_url,
+    )
+    token = access_token
+    if token is None:
+        from backend.emby_server.drive_changes import get_token_for_drive
+        token = await asyncio.to_thread(get_token_for_drive, drive_id, False)
+    if not token:
+        return None
+    url = drive_api_media_url(drive_usercontent_download_url(file_id))
+    client, one_shot = _acquire_drive_client()
+    resp = None
+    try:
+        resp, _cur, _hops = await _follow_redirects(
+            client, url,
+            {"Authorization": f"Bearer {token}",
+             "Range": f"bytes={seg_start}-{seg_end}"},
+            silent=True)
+        if resp is None or resp.status_code != 206:
+            return None
+        chunks = []
+        async for c in resp.aiter_bytes(READ_CHUNK):
+            chunks.append(c)
+        return b"".join(chunks)
+    except Exception:  # noqa: BLE001 — 预读取段失败回 None
+        return None
+    finally:
+        if resp is not None:
+            try:
+                await resp.aclose()
+            except Exception:  # noqa: BLE001
+                pass
+        if one_shot:
+            try:
+                await client.aclose()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def _schedule_drive_hot_prefetch(drive_id, file_id, access_token,
+                                 request) -> None:
+    """Drive 腿出流后的跨请求预读调度：fetcher 按腿构造（SA 腿现取
+    轮换凭据、令牌腿用本次令牌）。永不抛。"""
+    try:
+        range_header = None
+        headers = getattr(request, "headers", None)
+        if headers is not None:
+            range_header = headers.get("range")
+        identity = f"drive:{drive_id}:{file_id}"
+
+        async def _fetcher(seg_start, seg_end):
+            return await _fetch_drive_segment_bytes(
+                drive_id, file_id, access_token, seg_start, seg_end)
+
+        _schedule_hot_prefetch(identity, range_header, _fetcher)
+    except Exception:  # noqa: BLE001 — 调度失败就算了
+        pass
 
 
 async def serve_mount_relay_async(
@@ -1115,6 +1496,16 @@ async def serve_mount_relay_async(
     # Drive 专用池 + 最终 URL 缓存 + 熔断记账。挂载调用无上下文，
     # 客户端与行为逐字不变。
     _leg = _DRIVE_LEG.get()
+    # 热缓存全命中（仅带 hot_identity 的 Drive 腿）：请求区间被缓存
+    # 分段完全覆盖时本地出字节、不回源；未命中回 None，走下面现行
+    # 透传逐字不变。挂载腿无身份，不到这里。
+    _hot_identity = getattr(_leg, "hot_identity", None) \
+        if _leg is not None else None
+    if _hot_identity:
+        _hit_resp = _try_hot_cache_response(
+            _hot_identity, range_header, media_type, pt)
+        if _hit_resp is not None:
+            return _hit_resp
     client = _mount_relay_client()
     _one_shot = False
     _start_url = url
@@ -1260,6 +1651,13 @@ async def serve_mount_relay_async(
             pass
         content_type = resp.headers.get("content-type") or media_type
 
+        # 热缓存写穿计划（仅带 hot_identity 的 Drive 腿）：按上游
+        # 响应头定起始偏移/总长并登记校验器（变化即失效旧分段）；
+        # 算不出为 None、本次不写穿。Quota 嗅探在本段之前，额度页
+        # 抛错时根本到不了这里，不会被写进缓存。
+        _tee_plan = _hot_cache_tee_plan(_hot_identity, resp) \
+            if _hot_identity else None
+
         # 服务端预读（2026-11-17 中继取流优化）：只对 Drive 中继腿
         # （_leg 在位）生效——生产者先读后续块进有界队列，抹平上游
         # 抖动；挂载腿（_leg 为 None）维持下面的直通迭代逐字不变。
@@ -1280,6 +1678,8 @@ async def serve_mount_relay_async(
 
         async def iter_mount():
             _source = _raw_chunks()
+            if _tee_plan is not None:
+                _source = _hot_cache_tee(_source, _tee_plan)
             if _prefetch_ahead > 0:
                 _source = _prefetch_stream_chunks(_source, _prefetch_ahead)
             try:
@@ -1395,15 +1795,20 @@ async def serve_drive_relay_async(
     _leg = _DriveLegScope(
         cache_key=None if access_token is not None
         else f"relay:{drive_id}:{file_id}",
-        capture=_RELAY_FINAL_CAPTURE.get())
+        capture=_RELAY_FINAL_CAPTURE.get(),
+        hot_identity=f"drive:{drive_id}:{file_id}")
     _leg_token = _DRIVE_LEG.set(_leg)
     try:
-        return await _serve_drive_relay_async_inner(
+        _resp = await _serve_drive_relay_async_inner(
             request, drive_id, file_id, media_type=media_type, pt=pt,
             access_token=access_token, rotate_on_quota=rotate_on_quota,
             max_attempts=max_attempts)
     finally:
         _DRIVE_LEG.reset(_leg_token)
+    # 跨请求预读：本次出流（全命中或写穿透传）后，把请求区间之后
+    # 的 N 个分段提前读进热缓存；调度永不抛、不影响本次响应。
+    _schedule_drive_hot_prefetch(drive_id, file_id, access_token, request)
+    return _resp
 
 
 async def _serve_drive_relay_async_inner(
