@@ -439,10 +439,11 @@ def test_details_uses_language_in_cache_key(monkeypatch):
     def fake_get(self, path, params):
         calls.append((path, params))
         # _has_credits：v2.51.0 起 details 载荷必须带 credits 键才算有效缓存
-        return {"id": 7, "title": "t", "credits": {"cast": []}}
+        # S6 起 details() 走 _get_with_status（要拿 404 状态码），桩点随迁、返回 (data, 200)
+        return {"id": 7, "title": "t", "credits": {"cast": []}}, 200
 
     client = tmdb_mod.TmdbClient.__new__(tmdb_mod.TmdbClient)
-    monkeypatch.setattr(tmdb_mod.TmdbClient, "_get", fake_get)
+    monkeypatch.setattr(tmdb_mod.TmdbClient, "_get_with_status", fake_get)
     monkeypatch.setattr("backend.emby_server.scan_progress.stage_timer",
                         lambda name: _null_ctx())
     # 磁盘缓存关掉，只看 L1 行为

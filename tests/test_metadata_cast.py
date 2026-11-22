@@ -1,7 +1,7 @@
 """演员数据刮削与 EA 返回（v2.51.0）：TMDB credits → emby_people → EA People。
 
 - 全部在隔离临时 SQLite 里跑，不连生产库；
-- 不测真实 TMDB 网络（mock ``TmdbClient._get`` / ``details``）。
+- 不测真实 TMDB 网络（mock ``TmdbClient._get_with_status`` / ``details``）。
 """
 import os
 import tempfile
@@ -154,8 +154,9 @@ def test_credits_reuses_details_single_request():
     payload = _cast_payload(3)
     payload["title"] = "测试"
     with mock.patch.object(
-        TmdbClient, "_get",
-        return_value=dict(payload),
+        # S6 起 details() 走 _get_with_status（要拿 404 状态码落阴性标记），桩点随迁
+        TmdbClient, "_get_with_status",
+        return_value=(dict(payload), 200),
     ) as m_get, mock.patch(
         "backend.emby_server.tmdb.tmdb_cache"
     ) as m_cache:
@@ -174,7 +175,7 @@ def test_details_refetches_stale_cache_without_credits():
     fresh = dict(_cast_payload(2))
     fresh["title"] = "新载荷"
     with mock.patch.object(
-        TmdbClient, "_get", return_value=fresh
+        TmdbClient, "_get_with_status", return_value=(fresh, 200)
     ) as m_get, mock.patch(
         "backend.emby_server.tmdb.tmdb_cache"
     ) as m_cache:

@@ -43,6 +43,10 @@ def _fake_client(monkeypatch, api_results=None):
                              "title": query}]}
 
     monkeypatch.setattr(client, "_get", fake_get)
+    # S6 起 details() 走 _get_with_status（要拿 404 状态码落阴性标记）：
+    # 同一份 fake 派生出带状态码的版本（成功口径 200），calls 计数共用一份
+    monkeypatch.setattr(client, "_get_with_status",
+                        lambda path, params: (fake_get(path, params), 200))
     client.api_keys = ["fake-key"]
     client.api_key = "fake-key"
     client.session = object()          # 非 None 即可：_ensure_session 只补记指纹
@@ -146,11 +150,12 @@ def test_client_details_hits_disk(cache_dir, monkeypatch):
     # 否则会被当成升级前的老缓存而重拉（见下个测试）。
     payload = {"id": "42", "name": "剧", "credits": {"cast": []}}
     client1, _ = _fake_client(monkeypatch)
-    with mock.patch.object(client1, "_get", return_value=dict(payload)):
+    with mock.patch.object(client1, "_get_with_status",
+                           return_value=(dict(payload), 200)):
         d1 = client1.details("42", "series")
     assert d1 == payload
     client2, _ = _fake_client(monkeypatch)
-    with mock.patch.object(client2, "_get",
+    with mock.patch.object(client2, "_get_with_status",
                            side_effect=AssertionError("不应再发请求")):
         d2 = client2.details("42", "series")
     assert d2 == payload
@@ -161,13 +166,14 @@ def test_client_details_refetches_stale_payload_without_credits(cache_dir, monke
     tmdb_cache.save_details("tv", "42", {"id": "42", "name": "老载荷"})
     client, _ = _fake_client(monkeypatch)
     fresh = {"id": "42", "name": "新载荷", "credits": {"cast": []}}
-    with mock.patch.object(client, "_get", return_value=dict(fresh)) as m_get:
+    with mock.patch.object(client, "_get_with_status",
+                           return_value=(dict(fresh), 200)) as m_get:
         got = client.details("42", "series")
     assert m_get.call_count == 1
     assert got == fresh
     # 新载荷已落盘：下一次不再请求
     client2, _ = _fake_client(monkeypatch)
-    with mock.patch.object(client2, "_get",
+    with mock.patch.object(client2, "_get_with_status",
                            side_effect=AssertionError("不应再发请求")):
         assert client2.details("42", "series") == fresh
 

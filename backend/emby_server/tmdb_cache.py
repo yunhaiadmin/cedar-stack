@@ -290,9 +290,32 @@ def save_search(endpoint: str, norm_query: str, year: int, results, lang: str = 
                  list(results or []), raw=raw)
 
 
+def is_details_negative(data) -> bool:
+    """details 载荷是不是「坏 id」阴性标记（哨兵键 ``_negative``）。
+
+    标记只由 :func:`save_details_negative` 写、且调用方只许在拿到**真实
+    HTTP 404** 时写（见 tmdb.TmdbClient.details 的口径）：TMDB 明确回 404
+    ＝该 id 不存在，可以持久标记；瞬态失败抛错不落、错误载荷
+    （200 带 success:false）不落、401 不落——防 2026-10-18 阴性缓存
+    毒化事故（错误体被当阴性）重演。真实详情载荷必带 ``id`` 等字段、
+    绝不会带 ``_negative`` 键，不会误判。
+    """
+    return isinstance(data, dict) and bool(data.get("_negative"))
+
+
+def _ttl_for_details(v) -> int:
+    """details 的 TTL 口径：阴性标记/falsy 用阴性 TTL（默认 24h），其余用详情 TTL。
+
+    与 load_search 的阴性/阳性分 TTL 同款：坏 id 可能只是 NFO 写错或 TMDB
+    侧数据迁移，给它 30 天会把「暂时查不到」固化太久；24h 后重新确认一次。
+    存量正缓存的值都带 id、不带 ``_negative``，口径不变。
+    """
+    return _cfg_ttl_negative() if (not v or is_details_negative(v)) else _cfg_ttl_details()
+
+
 def load_details(endpoint: str, tmdb_id: str, lang: str = ""):
-    """details 缓存。返回 (hit, data)。"""
-    return _load(_key_path(endpoint, str(tmdb_id), 0, lang), lambda v: _cfg_ttl_details())
+    """details 缓存。返回 (hit, data)；data 可能是阴性标记（见 is_details_negative）。"""
+    return _load(_key_path(endpoint, str(tmdb_id), 0, lang), _ttl_for_details)
 
 
 def save_details(endpoint: str, tmdb_id: str, data, lang: str = "", raw=None) -> bool:
@@ -300,6 +323,16 @@ def save_details(endpoint: str, tmdb_id: str, data, lang: str = "", raw=None) ->
     if not data:
         return False
     return _save(_key_path(endpoint, str(tmdb_id), 0, lang), data, raw=raw)
+
+
+def save_details_negative(endpoint: str, tmdb_id: str, lang: str = "") -> bool:
+    """details 阴性标记落盘：该 tmdb_id 已被 TMDB 真实 HTTP 404 确认不存在。
+
+    独立实现（不走 save_details）：save_details 拒绝空 data 的语义是
+    「请求失败不落盘」，与这里「确认不存在才落标记」是两件事，不许混。
+    标记值只有哨兵 dict ``{"_negative": True}``，读时按阴性 TTL 过期。
+    """
+    return _save(_key_path(endpoint, str(tmdb_id), 0, lang), {"_negative": True})
 
 
 def load_entry(endpoint: str, ident: str, year: int = 0, lang: str = "",
@@ -315,7 +348,7 @@ def load_entry(endpoint: str, ident: str, year: int = 0, lang: str = "",
             _key_path(endpoint, ident, int(year or 0), lang),
             lambda v: _cfg_ttl_negative() if not v else _cfg_ttl_search())
     return _load_envelope(
-        _key_path(endpoint, str(ident), 0, lang), lambda v: _cfg_ttl_details())
+        _key_path(endpoint, str(ident), 0, lang), _ttl_for_details)
 
 
 def invalidate_search(name: str, year: Optional[int], kind: str, lang: str = "",

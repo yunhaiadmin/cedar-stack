@@ -1665,7 +1665,20 @@ class TmdbClient:
         return None
 
     def _get(self, path: str, params: dict) -> Optional[dict]:
+        """薄封装：只要数据不要状态码（既有调用方零改动，口径见 _get_with_status）。"""
+        return self._get_with_status(path, params)[0]
+
+    def _get_with_status(self, path: str, params: dict) -> tuple[Optional[dict], int]:
         """带密钥轮询的 GET：限流 → 网络重试 → 429 退避/换 key（v2.42.9 收口）
+
+        返回 ``(data, status)``：成功解析 → ``(data, 200)``；4xx 阴性 →
+        ``(None, 该 4xx 码)``；全部 key 401 → ``(None, 401)``；无 session/
+        未配置 key → ``(None, 0)``。状态码是为「坏 tmdb_id 治理」加的：
+        ``details()`` 要据此区分**真实 HTTP 404**（id 不存在、可落持久
+        阴性标记）与其余阴性（401/0/其他 4xx 一律不落标记）。
+        **瞬态路径照旧抛** ``TmdbTransientError``（网络耗尽/5xx/全 key
+        429/熔断/解析失败），一字不变——瞬态绝不能被当成阴性落标记
+        （2026-10-18 阴性缓存毒化事故的教训）。
 
         旧实现的限速是「条目/秒」且只在补全那条路上：一个条目背后是 0~6 次 HTTP，
         于是「2/秒」实际打出去 4~12 请求/秒，而扫描那条路完全没限速。现在两条路都
@@ -1688,13 +1701,14 @@ class TmdbClient:
         """
         self._ensure_session()
         if not self.session:
-            return None
+            return None, 0
         if not provider_breaker.allow("tmdb"):
             raise TmdbTransientError("TMDB 熔断中（连续失败触发），暂不发请求")
         total = max(1, len(self.api_keys))
         tried: set[str] = set()
         last_wait = 0.0
         saw_429 = False
+        saw_401 = False
         while True:
             # 先跳在冷却里的 key；全都在冷却时宁可硬用一把（冷却是优化，不是锁死）
             key = self._pick_key(tried) or self._pick_key(tried, allow_cooled=True)
@@ -1716,6 +1730,7 @@ class TmdbClient:
                     saw_429 = True
                 else:
                     wait = 0.0
+                    saw_401 = True
                     self.note_key_invalid(key)
                 last_wait = max(last_wait, wait)
                 # 还有别的 key 就换一把（配额是按 key 算的，每把 key 只试一次）
@@ -1735,7 +1750,7 @@ class TmdbClient:
                 # 4xx（404/400 等）是对这条请求的阴性回答，不是源坏了：
                 # 不喂熔断；但半开名额若是这一发领的，要归还（见 breaker）
                 provider_breaker.release_probe("tmdb")
-                return None
+                return None, status
             try:
                 data = r.json()
             except Exception as exc:  # noqa: BLE001 — 200 却解析不出（多半是网关错误页）
@@ -1749,7 +1764,7 @@ class TmdbClient:
                 logger.info("TMDB 密钥 ****%s 恢复正常", key[-4:])
             self._keyed_limiter(key).note_success()
             provider_breaker.record_success("tmdb")
-            return data
+            return data, 200
         if last_wait > 0:
             # 全部 key 都撞了限流：先退避一轮再放行后续请求（这段窗口内的条目
             # 落到重试队列，而不是继续把已经超限的配额撞满）
@@ -1761,9 +1776,10 @@ class TmdbClient:
                                             error=f"全部密钥限流: {path}")
             raise TmdbTransientError(f"TMDB 全部密钥限流（HTTP 429）: {path}")
         logger.warning("TMDB 全部密钥不可用或已用尽: %s", path)
-        # 走到这里是全部 key 401（配置问题）：不喂熔断，归还半开名额
+        # 走到这里是全部 key 401（配置问题）：不喂熔断，归还半开名额；
+        # 一把 key 都没试成（未配置）时 status=0，与 401 区分开
         provider_breaker.release_probe("tmdb")
-        return None
+        return None, 401 if saw_401 else 0
 
     @property
     def configured(self) -> bool:
@@ -2114,6 +2130,11 @@ class TmdbClient:
         v2.51.0：``append_to_response`` 带上 ``credits``——演员表和详情**一次请求**
         拿全，不新增请求、不新增限流器（走同一个令牌桶）。升级前缓存的老载荷没有
         credits 键，读到时视为过期重拉一次（见 ``_has_credits``）。
+
+        S6 坏 id 治理：请求拿到**真实 HTTP 404** 时给该 id 落持久阴性标记
+        （L2，阴性 TTL 默认 24h），后续同 id 直接阴性返回、不再反复付 404
+        请求；其余阴性（401/未配置/其他 4xx）与瞬态（抛错）、错误载荷
+        （200 无 id）一律不落标记。
         """
         endpoint = "tv" if kind == "series" else "movie"
         lang = preferred_language()
@@ -2122,6 +2143,11 @@ class TmdbClient:
         if cached is not _MISS and _has_credits(cached):
             return cached
         hit, data = tmdb_cache.load_details(endpoint, str(tmdb_id), lang)
+        if hit and tmdb_cache.is_details_negative(data):
+            # 坏 id 阴性标记命中（S6）：该 id 已被真实 404 确认不存在，
+            # 直接阴性返回、不发请求；回填 L1 与既有阴性口径一致。
+            self._cache_put(key, None)
+            return None
         if hit and _has_credits(data):
             progress.note_stage("tmdb_disk_hit")
             self._cache_put(key, data)
@@ -2131,13 +2157,23 @@ class TmdbClient:
             if cached is not _MISS and _has_credits(cached):
                 return cached
             hit, data = tmdb_cache.load_details(endpoint, str(tmdb_id), lang)
+            if hit and tmdb_cache.is_details_negative(data):
+                self._cache_put(key, None)
+                return None
             if hit and _has_credits(data):
                 progress.note_stage("tmdb_disk_hit")
                 self._cache_put(key, data)
                 return data
-            data = self._get(f"/{endpoint}/{tmdb_id}",
-                             {"language": lang,
-                              "append_to_response": "alternative_titles,external_ids,credits"})
+            data, status = self._get_with_status(
+                f"/{endpoint}/{tmdb_id}",
+                {"language": lang,
+                 "append_to_response": "alternative_titles,external_ids,credits"})
+            if status == 404:
+                # 只认真实 HTTP 404 才落持久阴性标记（S6）：TMDB 明确回
+                # 404 = 该 id 不存在。瞬态在 _get_with_status 里照旧抛错、
+                # 到不了这里；错误载荷（200 带 success:false）status=200
+                # 不落；401/0/其他 4xx 不落——防 2026-10-18 阴性毒化重演。
+                tmdb_cache.save_details_negative(endpoint, str(tmdb_id), lang)
             if isinstance(data, dict) and "id" in data:
                 # 真实详情载荷必带 id：错误体 {"success": False, ...} 不写 L2，
                 # 免得磁盘积错误体——读路径虽有 _has_credits 守卫不会误服，
