@@ -263,3 +263,63 @@ def test_pool_entry_subscribed_bound_stays_bound(db):
     decision = pool_gate.ensure_playback_allowed_for_item(db, user, _item())
     assert decision.allowed is True
     assert decision.kind == "bound"
+
+
+# ---------------------------------------------------------------- 取流 sign 池分流
+
+
+def _eligible(db, monkeypatch, *, candidate=None):
+    monkeypatch.setattr(pool_gate, "pool_eligible",
+                        lambda db, u, i: "eligible")
+    monkeypatch.setattr(pool_gate, "pool_serve_candidate",
+                        lambda db, i: candidate)
+
+
+def test_stream_sign_pool_mode_no_ready_copy_not_pooled(db, monkeypatch):
+    # 2026-11-22 生产案：未绑订阅用户 + eligible 条目 + 无 ready
+    # 副本 → 不许拽进池分支。旧判定只看 eligible 会判 True，随后
+    # 池分支建单撞转存总闸关、回 409「转存变体总闸未开」，挂载
+    # 条目对未绑订阅用户全灭；签发侧 pool_sign_allowed 同场景
+    # 判 False，两层必须同口径。
+    _eligible(db, monkeypatch)
+    user = _user(db, "u1")
+    _subscription(db, user.id)
+    assert pool_gate.pool_sign_allowed(db, user.id, _item()) is False
+    assert pool_gate.stream_sign_pool_mode(db, user, _item()) is False
+
+
+def test_stream_sign_pool_mode_ready_copy_pooled(db, monkeypatch):
+    _eligible(db, monkeypatch, candidate=object())
+    user = _user(db, "u1")
+    _subscription(db, user.id)
+    assert pool_gate.stream_sign_pool_mode(db, user, _item()) is True
+
+
+def test_stream_sign_pool_mode_bound_user_not_pooled(db, monkeypatch):
+    _eligible(db, monkeypatch, candidate=object())
+    user = _user(db, "u1")
+    _subscription(db, user.id)
+    _binding(db, user.id, "active")
+    assert pool_gate.stream_sign_pool_mode(db, user, _item()) is False
+
+
+def test_stream_sign_pool_mode_unsubscribed_not_pooled(db, monkeypatch):
+    _eligible(db, monkeypatch, candidate=object())
+    user = _user(db, "u1")
+    assert pool_gate.stream_sign_pool_mode(db, user, _item()) is False
+
+
+def test_video_stream_sign_branch_uses_shared_pool_mode():
+    # 接线兜底：video_stream 的 issued_sign 分支必须经
+    # stream_sign_pool_mode 判定，不许退回只看 pool_eligible 的旧
+    # 表达式（2026-11-22 生产案的回归形态：无副本条目被误拽进
+    # 池分支、撞转存总闸关回 409）。
+    import pathlib
+
+    from backend.emby_server import api
+
+    src = pathlib.Path(api.__file__).read_text(encoding="utf-8")
+    start = src.index("async def video_stream(")
+    block = src[start:start + 30000]
+    assert "stream_sign_pool_mode" in block
+    assert '_pool_gate_vs.pool_eligible, db, user, item)\n        == "eligible"' not in block
