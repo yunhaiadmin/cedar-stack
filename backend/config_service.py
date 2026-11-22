@@ -41,6 +41,8 @@ SCHEMAS: dict[str, dict[str, tuple]] = {
     # r36：防盗链（play_sign）家族迁入（用户 2026-10-17 18:29 拍板恢复排期）
     "hotlink": config_schema.HOTLINK_CONFIG_SCHEMA,
     "mount_serving": config_schema.MOUNT_SERVING_CONFIG_SCHEMA,
+    # 中继热缓存（2026-11-22）：Drive 中继分段缓存总容量一个键
+    "relay_hot_cache": config_schema.RELAY_HOT_CACHE_CONFIG_SCHEMA,
     # EA 图片流量观测（F5 前置观测，2026-11-18）：总开关一个键
     "image_obs": config_schema.IMAGE_OBS_CONFIG_SCHEMA,
     # 封面图片队列（图文解耦）：worker 并发数一个键
