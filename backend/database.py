@@ -1330,6 +1330,7 @@ def _auto_migrate():
     _widen_bitrate_column(existing_tables, inspector)
     _widen_coupon_value_column(existing_tables)
     _fix_station_message_from_user_fk(existing_tables, inspector)
+    _fix_admin_fk_to_web_users(existing_tables, inspector)
     _widen_stream_title_columns(existing_tables, inspector)
     _backfill_orm_columns(existing_tables)
     # v2.49.0：本次刚补上 video_resolution 列的老库，用文件名解析回填已有条目
@@ -2239,6 +2240,97 @@ def _fix_station_message_from_user_fk(existing_tables: set, inspector) -> None:
             "FOREIGN KEY (from_user_id) REFERENCES web_users(id)"
         ))
     logger.info("  🔧 已迁移: station_messages.from_user_id 外键 → web_users(id)（修管理后台发消息静默失败）")
+
+
+def _fix_admin_fk_to_web_users(existing_tables: set, inspector) -> None:
+    """管理员外键纠偏：admin_logs.admin_user_id、tickets.admin_id、
+    ticket_messages.admin_id 原先指向已废弃的 admin_users(id)，实际写入的
+    一直是管理员的 web_users.id（_audit 写入方口径；工单两列现无写入方，
+    语义同为「处理管理员」）。
+
+    旧库靠 admin_users 里恰有同 id 行蒙混；2026-11-22 新机空库重建后
+    admin_users 为 0 行，PG 强校验 → admin-handoff 等一切带审计的后台
+    写操作 500（ForeignKeyViolation、整请求回滚）。新库已由模型
+    create_all 直接建对，本迁移只纠存量库。
+
+    幂等：某列上已存在指向 web_users 的 FK 时该列直接跳过；SQLite 跳过
+    （不强制 FK，新鲜库按模型建表）。admin_users 表本身不动——生产
+    止血锚点行改指后成无关数据，无害留置。
+    """
+    from sqlalchemy import text
+
+    pairs = (
+        ("admin_logs", "admin_user_id"),
+        ("tickets", "admin_id"),
+        ("ticket_messages", "admin_id"),
+    )
+    targets = [(t, c) for t, c in pairs if t in existing_tables]
+    if not targets:
+        return
+    dialect = engine.dialect.name
+    if dialect not in ("postgresql", "mysql"):
+        return
+
+    with engine.begin() as conn:
+        for table, column in targets:
+            if dialect == "postgresql":
+                # 1) 已有指向 web_users 的 FK → 该列幂等跳过
+                already = conn.execute(text(
+                    "SELECT 1 FROM pg_constraint "
+                    f"WHERE conrelid='{table}'::regclass AND contype='f' "
+                    "AND confrelid='web_users'::regclass "
+                    f"AND '{column}' = ANY (SELECT attname FROM pg_attribute "
+                    "WHERE attrelid=conrelid AND attnum = ANY (conkey))"
+                )).fetchone()
+                if already:
+                    continue
+                # 2) 删掉该列上所有指向非 web_users 表的旧 FK
+                old = conn.execute(text(
+                    "SELECT conname FROM pg_constraint "
+                    f"WHERE conrelid='{table}'::regclass AND contype='f' "
+                    "AND confrelid != 'web_users'::regclass "
+                    f"AND '{column}' = ANY (SELECT attname FROM pg_attribute "
+                    "WHERE attrelid=conrelid AND attnum = ANY (conkey))"
+                )).fetchall()
+                for (conname,) in old:
+                    safe = conname.replace('"', '""')
+                    conn.execute(text(
+                        f'ALTER TABLE {table} DROP CONSTRAINT "{safe}"'
+                    ))
+            else:  # mysql
+                already = conn.execute(text(
+                    "SELECT 1 FROM information_schema.KEY_COLUMN_USAGE "
+                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t "
+                    "AND COLUMN_NAME = :c AND REFERENCED_TABLE_NAME = 'web_users' "
+                    "LIMIT 1"
+                ), {"t": table, "c": column}).fetchone()
+                if already:
+                    continue
+                old = conn.execute(text(
+                    "SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE "
+                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t "
+                    "AND COLUMN_NAME = :c AND REFERENCED_TABLE_NAME IS NOT NULL "
+                    "AND REFERENCED_TABLE_NAME != 'web_users'"
+                ), {"t": table, "c": column}).fetchall()
+                for (conname,) in old:
+                    conn.execute(text(
+                        f"ALTER TABLE {table} DROP FOREIGN KEY `{conname}`"
+                    ))
+            # 3) 孤儿值置空：旧约束下指向 admin_users 的存量值在 web_users
+            #    里不一定有同 id（两套 id 空间独立），不清则 ADD CONSTRAINT
+            #    可能被脏数据卡住导致启动失败；置空只影响归属显示，不删行。
+            conn.execute(text(
+                f"UPDATE {table} SET {column} = NULL "
+                f"WHERE {column} IS NOT NULL "
+                f"AND {column} NOT IN (SELECT id FROM web_users)"
+            ))
+            # 4) 加新约束（名与 PG create_all 自动命名一致，新库/迁移库统一）
+            conn.execute(text(
+                f"ALTER TABLE {table} ADD CONSTRAINT {table}_{column}_fkey "
+                f"FOREIGN KEY ({column}) REFERENCES web_users(id)"
+            ))
+            logger.info(
+                f"  🔧 已迁移: {table}.{column} 外键 → web_users(id)（管理员外键纠偏）")
 
 
 def _widen_code_column(existing_tables: set, inspector) -> None:

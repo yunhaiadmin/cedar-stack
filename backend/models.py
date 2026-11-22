@@ -57,7 +57,8 @@ class AdminLog(Base):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    admin_user_id = Column(Integer, ForeignKey('admin_users.id'))
+    # 统一账号体系：存管理员的 WebUser.id（_audit 写入方口径），不指已废弃的 admin_users
+    admin_user_id = Column(Integer, ForeignKey('web_users.id'))
     action = Column(String(100), nullable=False)  # 操作类型
     target_type = Column(String(50))  # 操作目标类型
     target_id = Column(Integer)  # 操作目标ID
@@ -66,7 +67,7 @@ class AdminLog(Base):
     user_agent = Column(String(500))
     created_at = Column(DateTime, default=datetime.now)
 
-    admin_user = relationship("AdminUser")
+    admin_user = relationship("WebUser", foreign_keys=[admin_user_id])
 
 
 class SystemConfig(Base):
@@ -665,12 +666,12 @@ class Ticket(Base):
     category = Column(String(50), default='other')
     priority = Column(String(20), default='medium')
     status = Column(String(20), default='open')
-    admin_id = Column(Integer, ForeignKey('admin_users.id'))  # 处理管理员
+    admin_id = Column(Integer, ForeignKey('web_users.id'))  # 处理管理员（WebUser.id）
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
-    user = relationship("WebUser")
-    admin = relationship("AdminUser")
+    user = relationship("WebUser", foreign_keys=[user_id])
+    admin = relationship("WebUser", foreign_keys=[admin_id])
 
 
 class TicketMessage(Base):
@@ -680,15 +681,15 @@ class TicketMessage(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     ticket_id = Column(Integer, ForeignKey('tickets.id'), nullable=False)
     user_id = Column(Integer, ForeignKey('web_users.id'), nullable=True)
-    admin_id = Column(Integer, ForeignKey('admin_users.id'), nullable=True)
+    admin_id = Column(Integer, ForeignKey('web_users.id'), nullable=True)  # 管理员（WebUser.id）
     message = Column(Text, nullable=False)
     attachments = Column(JSON)
     is_admin = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
 
     ticket = relationship("Ticket")
-    user = relationship("WebUser")
-    admin = relationship("AdminUser")
+    user = relationship("WebUser", foreign_keys=[user_id])
+    admin = relationship("WebUser", foreign_keys=[admin_id])
 
 
 # ==================== 公告和活动 ====================

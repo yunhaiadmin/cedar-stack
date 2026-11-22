@@ -124,7 +124,7 @@ def _audit(
 
     ``admin`` 为 None 时记**系统身份**：面板密钥鉴权的机器口（节点扫描、流节点
     注册/注销）没有管理员可归属，绝不编一个假 id；admin_user_id 存 NULL，
-    NULL 不触发 admin_users 外键，
+    NULL 不触发 web_users 外键，
     details 里须带 ``"actor": "system"``，操作日志列表会把这类行显示为「系统」。
     """
     db.add(models.AdminLog(
