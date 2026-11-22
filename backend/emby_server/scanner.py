@@ -1187,7 +1187,15 @@ PROBE_REMOTE_RANGE_BYTES = env_int("PROBE_REMOTE_RANGE_BYTES", 1 << 20, 1 << 18)
 # 这一跳等于把整个文件下载下来，一个大文件就能烧掉一份单文件下载配额。
 # 已知大小超过此阈值的远程文件跳过第三跳、记 degraded（信息不完整但
 # 可播放），不拿配额换探测完整度。<=0 表示不设闸（回到旧行为）。
-PROBE_WHOLE_FILE_MAX_BYTES = env_int("PROBE_WHOLE_FILE_MAX_BYTES", 1 << 30)
+#
+# 阈值 2026-11-23 由 1 GiB 收紧到 200 MiB（单位 MiB，生产数据定）：
+# 已探终局成功率 200MiB–1GiB 段 99.92%（done 29,118 / failed 24）vs
+# >1GiB 段（本就无第三跳）99.94%（done 22,161 / failed 14）——第三跳对
+# 成功率没有可测贡献，失手条目照旧落 degraded 交 enrich/TMDB 补；而第
+# 三跳决策点到达并不罕见（>1GiB 段跳过日志实测约 4 次/分钟·活跃探测
+# 期），整拉流量与这点成功率不成比例。未知大小（size<=0）同样受此上
+# 限约束：走有界整拉（_bounded_whole_file_temp），不再无界整拉。
+PROBE_WHOLE_FILE_MAX_BYTES = env_int("PROBE_WHOLE_FILE_MAX_BYTES", 200 << 20)
 
 
 # 第二跳（双 Range）的**尾部**窗口。moov 原子在文件尾的 MP4/MOV，头部窗口读不到时长，
@@ -1595,6 +1603,64 @@ def _local_fetch_range(path: str, headers: Optional[dict], start: int, end: int)
         return None
 
 
+def _bounded_whole_file_temp(path: str, headers: Optional[dict],
+                             max_bytes: int) -> Optional[tuple]:
+    """未知大小远程文件的第三跳有界整拉：流式下载到临时文件，写满
+    ``max_bytes`` 立即停（硬上限，超限部分一字节不多拉）。
+
+    返回 ``(tmp_path, written, complete)``，调用方负责删 tmp：
+    - ``complete=True``：服务端把文件发完了，tmp 就是整个文件，与旧的
+      ffprobe 自由 seek 整拉等价；
+    - ``complete=False``：到上限截断，tmp 只有文件前缀（头部封装里的
+      时长/编码仍可探，但 size/bit_rate 是假的，调用方须剥掉）；
+    - ``None``：抓取失败（HTTP >= 400 / 网络异常）。不在这里翻译错误
+      语义：旧路径第三跳的 HTTP 错误本就不改判（只有拿到 format 才采
+      用），失败照旧由调用方落 degraded，等价。
+    """
+    import httpx
+
+    if max_bytes <= 0:
+        return None
+    req = {str(k): str(v) for k, v in (headers or {}).items()}
+    suffix = posixpath.splitext(path.split("?", 1)[0])[1][:8] or ".bin"
+    fd, tmp = tempfile.mkstemp(prefix="probe-whole-", suffix=suffix)
+    written = 0
+    complete = False
+    try:
+        timeout = httpx.Timeout(PROBE_HTTP_TIMEOUT, read=PROBE_REMOTE_TIMEOUT)
+        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+            with client.stream("GET", path, headers=req) as resp:
+                if resp.status_code >= 400:
+                    raise RuntimeError(f"HTTP {resp.status_code}")
+                with os.fdopen(fd, "wb") as fh:
+                    fd = -1  # fd 已由 fh 接管，异常清理别重复 close
+                    for chunk in resp.iter_bytes(1 << 20):
+                        if not chunk:
+                            continue
+                        room = int(max_bytes) - written
+                        if len(chunk) >= room:
+                            fh.write(chunk[:room])
+                            written += room
+                            break
+                        fh.write(chunk)
+                        written += len(chunk)
+                    else:
+                        complete = True
+    except Exception as exc:  # noqa: BLE001 — 抓取失败只是「这次整拉没成」
+        logger.info("未知大小有界整拉失败 %s: %s", path, exc)
+        if fd >= 0:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        return None
+    return tmp, written, complete
+
+
 def _headtail_sparse_temp(path: str, headers: Optional[dict], size: int) -> Optional[str]:
     """头尾探测：并行取「头 PROBE_HEADTAIL_HEAD_BYTES + 尾 PROBE_HEADTAIL_TAIL_BYTES」，
     写进同尺寸的稀疏临时文件（ftruncate(total) 后只在头尾两处落盘，中间全是空洞），
@@ -1961,6 +2027,29 @@ def probe_metadata(path: str, headers: Optional[dict] = None, size: int = 0,
             # data 保持无 format，下面统一记 degraded。
             logger.info("远程探测跳过整文件兜底：size=%d 超过上限 %d",
                         size, PROBE_WHOLE_FILE_MAX_BYTES)
+        elif size <= 0 and PROBE_WHOLE_FILE_MAX_BYTES > 0:
+            # 未知大小：旧行为是 ffprobe 自由 seek，文件多大拉多大，无界。
+            # 改走有界整拉（拉到上限即停）：拉全了与旧行为等价；截断了也
+            # 拿前缀试一次——时长/编码多在头部封装里，前缀够用；但截断
+            # 文件的 size/bit_rate 是假的，剥掉不许落库。
+            pulled = _bounded_whole_file_temp(path, headers,
+                                              PROBE_WHOLE_FILE_MAX_BYTES)
+            if pulled:
+                _tmp, _written, _complete = pulled
+                try:
+                    seekable = _ffprobe(path, headers, size=_written,
+                                        local_path=_tmp)
+                finally:
+                    try:
+                        os.unlink(_tmp)
+                    except OSError:  # noqa: BLE001 — 删不掉不阻断探测
+                        pass
+                if seekable and seekable.get("format"):
+                    if not _complete:
+                        _fmt = seekable.get("format") or {}
+                        _fmt.pop("size", None)
+                        _fmt.pop("bit_rate", None)
+                    data = seekable
         else:
             seekable = _ffprobe(path, headers, size=size, ranged=False)
             if seekable and seekable.get("format"):
