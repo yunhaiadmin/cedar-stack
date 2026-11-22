@@ -1117,6 +1117,39 @@ class ScanDirState(Base):
     last_decision = Column(String(32), default=None)
 
 
+class NfoParseCache(Base):
+    """NFO 解析结果的跨轮缓存（谷歌盘调用削减 P1，2026-11-22）
+
+    .nfo 经 rclone 读取是全站第二大取数面（实测 12,109 次/日）：旧实现只有
+    ``_ScanContext`` 内的内存缓存，一轮扫描结束即失效，下一轮 / enrich 重试
+    对同一个没变过的 .nfo 又发一次 GET。这里按 **NFO 文件本身**落一份
+    「指纹 → 解析结果」：列举时本来就能拿到该文件的 size / ModTime，拼成
+    指纹；指纹与上次一致就跳过 GET、直接复用 ``data_json`` 里的解析结果，
+    变了才重读重解析并覆盖本行。
+
+    为什么独立成表、不挂条目行：解析结果是 NFO 文件的属性，不是某个条目
+    的属性——``tvshow.nfo`` 被整季单集共享、一个单集要读 3 个 NFO（本集 /
+    season / tvshow），塞进 ``emby_items`` 任何一列都会串味；
+    ``external_ids`` 是身份门判据列（只增不改），更不能借住。形态与
+    ``ScanDirState`` 同族：扫描派生态、按稳定路径键索引、丢了最坏是多读
+    一次文件，不影响正确性。
+
+    ``cache_key`` 与 scanner 的 ctx 缓存键同构：
+    ``mount:<挂载 id>:<rel>`` / ``byos:<绑定 id>:<rel>`` / ``local:<绝对路径>``。
+    ``data_json`` 为 NULL = 阴性缓存（读过但解析不出可用字段），指纹未变
+    时同样不重复 GET。新表由 create_all 建出，不走 _auto_migrate 补列。
+    """
+
+    __tablename__ = "emby_nfo_caches"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    cache_key = Column(String(1200), nullable=False, unique=True, index=True)
+    # 指纹：远端 = "<size>|<ModTime 微秒>"，本机 = "<size>|<mtime_ns>"
+    fingerprint = Column(String(128), nullable=False)
+    data_json = Column(Text, default=None)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
 class ScanRun(Base):
     """一次媒体库扫描的记录（v2.23.0）
 
