@@ -1,17 +1,19 @@
-"""播放门禁（2026-10-26 用户亲定硬规矩）。
+"""播放门禁（2026-11-22 改版：有订阅就能播，不再要求绑盘）。
 
-用例三类：
-- 未绑定拒绝：无绑定 / 仅 invalid / 仅 expired / 别人的绑定，一律 403；
-- 已绑定放行：active 的 drive 或 pan115 任一都算；
-- 浏览不受影响：门禁判定只读绑定行，不碰条目/浏览状态（同一用户在
-  有路径条目与无路径条目下判定结果一致；浏览路由本身不调本模块，
-  见 PR diff：调用点只在 playback_info / video_stream / upstream_stream /
-  item_file 四处）。
-- 已下发链接不追溯：带有效 play_sign 的请求放行，签名无效/防盗链关时
-  仍按门禁判定。
+本文件钉改版后的 ensure 本体口径（判定单点见
+test_playback_gate_subscription.py 的完整矩阵，此处保留绑盘时代
+用例的回归对照）：
+- 无订阅一律 403 + 订阅引导文案：无绑盘 / 仅 invalid / 仅 expired /
+  仅已下线 provider（115/夸克）存量行 / 只有 active Drive 绑盘，
+  结论一致——绑盘不再是播放资格，文案也不再分下线专用句；
+- 有订阅放行：与名下有没有绑盘无关；
+- 浏览不受影响：门禁判定只读资格，不碰条目/浏览状态；
+- 已下发链接不追溯：带有效 play_sign 的请求放行，签名无效/防盗链
+  关时仍按门禁判定。
 """
 
 import types
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi import HTTPException
@@ -32,6 +34,9 @@ def db():
     base_models.Base.metadata.create_all(engine)
     em.Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
+    session.add(base_models.ServerRealm(
+        id=1, name="默认服", slug="main", is_active=True))
+    session.commit()
     yield session
     session.close()
 
@@ -57,6 +62,21 @@ def _binding(db, user_id, status, provider="drive", label="盘"):
     db.add(binding)
     db.commit()
     return binding
+
+
+def _subscription(db, user_id):
+    plan = base_models.SubscriptionPlan(
+        name=f"plan-{user_id}", price=1, duration_days=30)
+    db.add(plan)
+    db.flush()
+    now = datetime.now()
+    sub = base_models.UserSubscription(
+        user_id=user_id, plan_id=plan.id, realm_id=1,
+        start_date=now - timedelta(days=1),
+        end_date=now + timedelta(days=30), status="active")
+    db.add(sub)
+    db.commit()
+    return sub
 
 
 def _assert_blocked(db, user_id):
@@ -85,74 +105,38 @@ def test_gate_rejects_expired_only(db):
     _assert_blocked(db, user.id)
 
 
-def test_gate_allows_active_drive(db):
+def test_gate_blocks_active_drive_without_subscription(db):
+    # 改版核心：active Drive 绑盘不再是播放资格，无订阅照样 403。
     user = _user(db, "u1")
     _binding(db, user.id, "active", provider="drive")
-    gate.ensure_binding_playback_allowed(db, user)
+    _assert_blocked(db, user.id)
 
 
 def test_gate_blocks_active_pan115_only(db):
-    # 夸克/115 绑定线已下线（2026-11-02 删除单）：只剩 115 绑定
-    # 的用户视为无绑定，门禁拦截；文案走下线专用句（2026-11-03
-    # 收敛单：明说已下线、请改绑 Drive，不用笼统提示）。
+    # 已下线 provider 存量行：改版后与从未绑定同口径——403 且只出
+    # 订阅引导文案，不再出下线专用句（门禁已不看绑定）。
     user = _user(db, "u1")
     _binding(db, user.id, "active", provider="pan115")
-    _assert_blocked_with_removed_message(db, user.id)
+    _assert_blocked(db, user.id)
 
 
 def test_gate_blocks_active_quark_only(db):
     user = _user(db, "u1")
     _binding(db, user.id, "active", provider="quark")
-    _assert_blocked_with_removed_message(db, user.id)
-
-
-def _assert_blocked_with_removed_message(db, user_id):
-    user = db.query(base_models.WebUser).filter(
-        base_models.WebUser.id == user_id).first()
-    with pytest.raises(HTTPException) as excinfo:
-        gate.ensure_binding_playback_allowed(db, user)
-    assert excinfo.value.status_code == 403
-    assert excinfo.value.detail == gate.GATE_MESSAGE_REMOVED_PROVIDER
-    assert excinfo.value.detail != gate.GATE_MESSAGE
-
-
-def test_gate_removed_provider_message_for_active_pan115(db):
-    # 名下有已下线 115 绑定（存量 active 行）被拦时，提示必须明说
-    # 这条线已下线、请改绑 Drive，不许只给笼统的绑定提示
-    # （2026-11-03 存量收敛单）。
-    user = _user(db, "u1")
-    _binding(db, user.id, "active", provider="pan115")
-    _assert_blocked_with_removed_message(db, user.id)
-
-
-def test_gate_removed_provider_message_for_expired_quark(db):
-    # 已下线 provider 的行不论什么状态都算"存在已下线绑定"：
-    # 过期夸克行同样拿新提示。
-    user = _user(db, "u1")
-    _binding(db, user.id, "expired", provider="quark")
-    _assert_blocked_with_removed_message(db, user.id)
-
-
-def test_gate_plain_message_when_only_drive_invalid(db):
-    # 只有 Drive 失效行、没有任何已下线绑定的用户，仍拿原提示，
-    # 不许误报"115/夸克已下线"。
-    user = _user(db, "u1")
-    _binding(db, user.id, "invalid", provider="drive")
     _assert_blocked(db, user.id)
 
 
-def test_gate_removed_provider_does_not_block_active_drive(db):
-    # 有已下线绑定但同时有 active Drive 绑定的用户照常放行。
+def test_gate_allows_subscribed_without_any_binding(db):
     user = _user(db, "u1")
-    _binding(db, user.id, "active", provider="pan115", label="旧115")
-    _binding(db, user.id, "active", provider="drive", label="谷歌盘")
+    _subscription(db, user.id)
     gate.ensure_binding_playback_allowed(db, user)
 
 
-def test_gate_allows_active_among_invalid(db):
+def test_gate_allows_subscribed_with_bindings(db):
     user = _user(db, "u1")
-    _binding(db, user.id, "invalid", label="旧盘")
-    _binding(db, user.id, "active", label="新盘")
+    _subscription(db, user.id)
+    _binding(db, user.id, "active", provider="pan115", label="旧115")
+    _binding(db, user.id, "active", provider="drive", label="谷歌盘")
     gate.ensure_binding_playback_allowed(db, user)
 
 
@@ -205,7 +189,7 @@ def test_gate_rejects_when_hotlink_disabled(db, monkeypatch):
 
 
 def test_gate_ignores_item_state(db):
-    """浏览不受影响：门禁只读绑定行，条目状态不改变判定结果。"""
+    """浏览不受影响：门禁只看资格，条目状态不改变判定结果。"""
     lib = em.Library(guid="lib1", name="lib1")
     db.add(lib)
     db.commit()
@@ -217,11 +201,11 @@ def test_gate_ignores_item_state(db):
         file_path="")
     db.add_all([with_path, without_path])
     db.commit()
-    bound = _user(db, "bound")
-    _binding(db, bound.id, "active")
-    unbound = _user(db, "unbound")
-    # 同一门禁函数在两种条目状态下结论不变：只看绑定，不看条目。
-    gate.ensure_binding_playback_allowed(db, bound)
-    gate.ensure_binding_playback_allowed(db, bound)
-    _assert_blocked(db, unbound.id)
-    _assert_blocked(db, unbound.id)
+    subbed = _user(db, "subbed")
+    _subscription(db, subbed.id)
+    plain = _user(db, "plain")
+    # 同一门禁函数在两种条目状态下结论不变：只看资格，不看条目。
+    gate.ensure_binding_playback_allowed(db, subbed)
+    gate.ensure_binding_playback_allowed(db, subbed)
+    _assert_blocked(db, plain.id)
+    _assert_blocked(db, plain.id)

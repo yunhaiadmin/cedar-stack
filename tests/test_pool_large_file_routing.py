@@ -27,6 +27,7 @@ os.environ.setdefault("REDIS_ENABLED", "false")
 # test_pool_serve 文件头注释），不许导入期写死。
 
 import uuid
+from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -163,6 +164,23 @@ def seed():
         db.add(u)
         db.flush()
         users[uname] = u.id
+    # 2026-11-22 门禁改版：三名种子用户各带有效订阅（realm 1），
+    # 否则新订阅门会先于大文件分流判定把请求拦下。
+    if db.query(models.ServerRealm).filter_by(id=1).first() is None:
+        db.add(models.ServerRealm(
+            id=1, name="默认", slug="default", is_active=True))
+        db.flush()
+    if db.query(models.SubscriptionPlan).filter_by(id=1).first() is None:
+        db.add(models.SubscriptionPlan(
+            id=1, name="测试套餐", price=100, duration_days=30, realm_id=1))
+        db.flush()
+    _now = datetime.now(timezone.utc)
+    for _uid in users.values():
+        db.add(models.UserSubscription(
+            user_id=_uid, plan_id=1, realm_id=1,
+            start_date=_now - timedelta(days=1),
+            end_date=_now + timedelta(days=30), status="active"))
+    db.flush()
     cred = em.MountCredential(
         mount_id=None, scope="user", owner_user_id=users[CONTRIB],
         sealed_credential="", key_id="fernet-v1", status="active")
@@ -494,15 +512,33 @@ def test_route_unknown_size_treated_as_small(seed):
 
 
 def test_route_audience_blocked_not_routed(seed):
-    """人群不过（audience=subscribers 且本人无订阅）→ 不分流，
-    回本人路径——分流与未绑用户共用同一套人群判定。"""
+    """人群不过（audience=subscribers 且本人无订阅）→ 不分流；
+    2026-11-22 门禁改版后无订阅连播放资格都没有，决策入口直接
+    403（旧口径「回本人 bound 路径」已随绑盘门禁下线作废）。
+    本人订阅只在本用例内临时撤下，finally 原样恢复。"""
     db = SessionLocal()
     try:
         _add_pool_variant(db, seed, seed["big_id"])
         _set_config(db, "pool_audience", "subscribers")
-        assert _route(db, seed) is False
-        decision = _decision(db, seed)
-        assert decision.kind == "bound"
+        subs = db.query(models.UserSubscription).filter(
+            models.UserSubscription.user_id == seed["bound_id"]).all()
+        saved = [(x.plan_id, x.realm_id, x.start_date, x.end_date, x.status)
+                 for x in subs]
+        for x in subs:
+            db.delete(x)
+        db.commit()
+        try:
+            assert _route(db, seed) is False
+            with pytest.raises(HTTPException) as excinfo:
+                _decision(db, seed)
+            assert excinfo.value.status_code == 403
+        finally:
+            for plan_id, realm_id, sd, ed, st in saved:
+                db.add(models.UserSubscription(
+                    user_id=seed["bound_id"], plan_id=plan_id,
+                    realm_id=realm_id, start_date=sd, end_date=ed,
+                    status=st))
+            db.commit()
     finally:
         db.close()
 
@@ -564,9 +600,11 @@ def test_route_orphan_subscription_not_inherited(seed):
         item = db.query(em.MediaItem).filter(
             em.MediaItem.id == seed["big_id"]).one()
         assert pool_gate.large_file_pool_route(db, user, item) is False
-        decision = pool_gate.ensure_playback_allowed_for_item(
-            db, user, item)
-        assert decision.kind == "bound"
+        # 2026-11-22 门禁改版：已绑但无订阅 → 403（旧口径 kind=bound
+        # 已随绑盘门禁下线作废）；孤儿订阅未被继承仍由上方断言钉住。
+        with pytest.raises(HTTPException) as excinfo:
+            pool_gate.ensure_playback_allowed_for_item(db, user, item)
+        assert excinfo.value.status_code == 403
     finally:
         try:
             if tmp_user_id is not None:

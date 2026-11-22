@@ -54,7 +54,7 @@ def item_file(item_id: str, request: Request, user: models.WebUser = Depends(get
     # 此前用 get_emby_user，门户网页端凭 uid/exp/sign 播放签名会被 401。
     item = _require_visible_item(db, user, item_id)
     ensure_playback_allowed(db, user)
-    # 播放门禁（2026-10-26 用户亲定硬规矩）：Emby token 直接取文件是新播放，
+    # 播放门禁（2026-11-22 改版：订阅资格）：Emby token 直接取文件是新播放，
     # 必须过门禁；带有效 play_sign 的请求是在消费已下发的链接，不追溯。
     from backend.emby_server import playback_gate as _gate
     _gate.ensure_binding_playback_allowed(db, user, request)

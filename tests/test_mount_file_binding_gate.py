@@ -1,11 +1,13 @@
-"""挂载版 /Items/{id}/File 的绑定门禁（360° 审计 A-007）。
+"""挂载版 /Items/{id}/File 的播放门禁（360° 审计 A-007）。
 
-旧版 item_file（stream_routes）把 File 定性为「新播放」并过绑定门禁；
-挂载替换版 mounted_item_file 曾静默丢了这道门禁，未绑定用户可经此口
+旧版 item_file（stream_routes）把 File 定性为「新播放」并过门禁；
+挂载替换版 mounted_item_file 曾静默丢了这道门禁，未授权用户可经此口
 拿到共享原件 302 直链。本文件锁定三条行为＋一条路由表断言：
 
-- 未绑定用户调 mounted File → 403 绑定引导文案，拿不到 302；
-- 已绑定用户 → 正常放行（302 直链）；
+- 无订阅资格用户调 mounted File → 403 订阅引导文案，拿不到 302
+  （2026-11-22 改版：门禁判定由绑盘换成订阅资格，有绑盘无订阅
+  同样 403）；
+- 有订阅用户 → 正常放行（302 直链）；
 - 带有效 play_sign 的已下发链接消费 → 不追溯，放行；
 - 签名无效时仍按门禁判定 → 403；
 - 经 install_mount_routes 替换后，路由表上 served 的 File 端点就是
@@ -13,6 +15,7 @@
 """
 
 import types
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi import HTTPException
@@ -34,6 +37,9 @@ def db():
     base_models.Base.metadata.create_all(engine)
     em.Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
+    session.add(base_models.ServerRealm(
+        id=1, name="默认服", slug="main", is_active=True))
+    session.commit()
     yield session
     session.close()
 
@@ -85,6 +91,21 @@ def _mounted(monkeypatch):
     monkeypatch.setattr(drive_auth, "drive_usercontent_download_url", lambda fid: "https://example.invalid/dl/" + fid)
 
 
+def _subscription(db, user_id):
+    plan = base_models.SubscriptionPlan(
+        name=f"plan-{user_id}", price=1, duration_days=30)
+    db.add(plan)
+    db.flush()
+    now = datetime.now()
+    sub = base_models.UserSubscription(
+        user_id=user_id, plan_id=plan.id, realm_id=1,
+        start_date=now - timedelta(days=1),
+        end_date=now + timedelta(days=30), status="active")
+    db.add(sub)
+    db.commit()
+    return sub
+
+
 def test_unbound_user_blocked_on_mounted_file(db, _mounted):
     user = _user(db, "u1")
     with pytest.raises(HTTPException) as excinfo:
@@ -93,9 +114,19 @@ def test_unbound_user_blocked_on_mounted_file(db, _mounted):
     assert excinfo.value.detail == gate.GATE_MESSAGE
 
 
-def test_bound_user_passes_gate_to_302(db, _mounted):
+def test_bound_without_subscription_blocked_on_mounted_file(db, _mounted):
+    # 2026-11-22 改版：有绑盘、无订阅 → 同样 403。
     user = _user(db, "u1")
     _binding(db, user.id, "active")
+    with pytest.raises(HTTPException) as excinfo:
+        mount_routes.mounted_item_file("guid-1", _plain_request(), user, db)
+    assert excinfo.value.status_code == 403
+    assert excinfo.value.detail == gate.GATE_MESSAGE
+
+
+def test_subscribed_user_passes_gate_to_302(db, _mounted):
+    user = _user(db, "u1")
+    _subscription(db, user.id)
     resp = mount_routes.mounted_item_file("guid-1", _plain_request(), user, db)
     assert resp.status_code == 302
     assert resp.headers["location"].startswith("https://example.invalid/dl/")

@@ -9,7 +9,8 @@ PR-2 进池（本单）：选盘（``pick_pool_member``）、建池单
 （``create_pool_job``）、池转存门禁（``ensure_pool_copy_gate``）。
 PlaybackInfo 已接线到新判定入口（见 api.playback_info）：已绑
 用户恒走原链（``ensure_user_copy_gate`` 逐字不动）；未绑用户且
-池 eligible 时走池门禁。
+池 eligible 时走池门禁。（2026-11-22 播放门禁改版后，判定入口
+先看订阅资格：无资格一律 403，池只在有资格者内部分流。）
 
 PR-3 播出（本单）：serve 态正式接通——PlaybackInfo / video_stream
 按池门禁确认的变体行下发池副本（见 api 的池播出段）；本模块补
@@ -51,11 +52,12 @@ per_day / pool_breaker_cooldown_sec）与 pool_item_max_copies
 回归测试 test_pool_foundation
 .test_redline_existing_gate_unchanged_when_pool_enabled 钉住）。
 
-判定顺序（design §4.1，新入口内部）：
+判定顺序（design §4.1，新入口内部；2026-11-22 播放门禁改版后）：
 ① 条目免门禁 → not_applicable（CMS 下线后不再命中）；② 已下发
-play_sign 消费不追溯；③ 已绑定 → bound；④ 池 eligible → pool；
-⑤ 都不满足 → 抛原 403
-（文案选择与 playback_gate 逐字一致，含下线 provider 专用文案）。
+play_sign 消费不追溯；③ 有订阅资格（playback_gate.has_play_grant）
+→ bound（已绑且大文件分流命中改判 pool/pool_routed）；④ 有资格、
+未绑且池 eligible → pool；⑤ 都不满足 → 抛原 403
+（文案与执法点全站只此一份：playback_gate 的订阅引导文案）。
 软件授权前置：本入口在判定之首查（#1883 前置不动，已绑路径内层
 ensure_* 会再查一次，纯读无副作用）；池转存门禁
 ensure_pool_copy_gate 在判定之首同样查（直接调用方不漏）。
@@ -387,7 +389,9 @@ class PoolDecision:
 
     kind：not_applicable（条目免门禁；CMS 下线后不再命中）/
     issued_sign（消费已下发
-    链接）/ bound（已绑定）/ pool（池放行）。blocked 不返回
+    链接）/ bound（已过订阅门、走本人链；键名是绑盘门禁时代的
+    历史名，2026-11-22 改版后语义为「有资格」）/ pool（池放行，
+    同样只限有订阅资格者）。blocked 不返回
     decision——直接抛 403（与既有门禁同口径）。
 
     pool_routed：kind=pool 且观众本身是已绑用户（大文件分流
@@ -422,17 +426,24 @@ def ensure_playback_allowed_for_item(
             request, db):
         return PoolDecision(allowed=True, kind="issued_sign")
     user_id = getattr(user, "id", None)
-    if user_id is not None and _gate.has_active_binding(db, user_id):
-        # 大文件分流（用户 2026-11-10 亲点）：已绑用户播大文件
-        # 且池有就绪副本、本人尚无副本时，裁决改判 pool 并打
-        # pool_routed 标记——计划层据此走池播出链，池没判
-        # serve 时回落本人门禁（见 PoolDecision 注释）。
-        if large_file_pool_route(db, user, item):
-            return PoolDecision(allowed=True, kind="pool",
-                                pool_routed=True)
+    if user_id is not None and _gate.has_play_grant(db, user):
+        # 2026-11-22 改版：过门禁看订阅资格（has_play_grant），
+        # 绑盘只剩分流意义，不再是资格本身。
+        if _gate.has_active_binding(db, user_id):
+            # 大文件分流（用户 2026-11-10 亲点）：已绑用户播大文件
+            # 且池有就绪副本、本人尚无副本时，裁决改判 pool 并打
+            # pool_routed 标记——计划层据此走池播出链，池没判
+            # serve 时回落本人门禁（见 PoolDecision 注释）。
+            if large_file_pool_route(db, user, item):
+                return PoolDecision(allowed=True, kind="pool",
+                                    pool_routed=True)
+            return PoolDecision(allowed=True, kind="bound")
+        # 未绑但有资格：池 eligible 走池播出；不 eligible 按 bound
+        # 口径走本人链（转存门禁对无绑用户恒 proceed，不挡路，
+        # 选路直达现行播放路线）。
+        if pool_eligible(db, user, item) == "eligible":
+            return PoolDecision(allowed=True, kind="pool")
         return PoolDecision(allowed=True, kind="bound")
-    if pool_eligible(db, user, item) == "eligible":
-        return PoolDecision(allowed=True, kind="pool")
     _gate.ensure_binding_playback_allowed(db, user, request)
     return PoolDecision(allowed=True, kind="bound")
 
@@ -2510,6 +2521,10 @@ def pool_sign_allowed(db: Session, user_id, item) -> bool:
     池 eligible（人群判定要用户行，按 id 取）且该条目有 ready
     池副本才可签；不 ready 不签——客户端直打流端点时由流端点
     现场走池门禁回 409 准备中。异常一律 False（不签是安全侧）。
+
+    2026-11-22 改版：池不再是订阅资格的例外——先过
+    ``playback_gate.has_play_grant``（view_grant 本体），无订阅
+    资格恒不可签（与签发单点 sign_allowed_for_item 同口径）。
     """
     try:
         if user_id is None:
@@ -2519,6 +2534,8 @@ def pool_sign_allowed(db: Session, user_id, item) -> bool:
         user = (db.query(_web_models.WebUser)
                 .filter(_web_models.WebUser.id == int(user_id)).first())
         if user is None:
+            return False
+        if not _gate.has_play_grant(db, user):
             return False
         if pool_eligible(db, user, item) != "eligible":
             return False

@@ -92,6 +92,28 @@ def _user(db, name):
     return user
 
 
+def _subscription(db, user_id):
+    """有效订阅（realm 1）：2026-11-22 播放门禁改版后池判定同样先过订阅门。"""
+    from datetime import datetime, timedelta, timezone
+
+    from backend.models import ServerRealm, SubscriptionPlan, UserSubscription
+    if db.query(ServerRealm).filter_by(id=1).first() is None:
+        db.add(ServerRealm(id=1, name="默认", slug="default", is_active=True))
+        db.flush()
+    if db.query(SubscriptionPlan).filter_by(id=1).first() is None:
+        db.add(SubscriptionPlan(
+            id=1, name="测试套餐", price=100, duration_days=30, realm_id=1))
+        db.flush()
+    sub = UserSubscription(
+        user_id=user_id, plan_id=1, realm_id=1,
+        start_date=datetime.now(timezone.utc) - timedelta(days=1),
+        end_date=datetime.now(timezone.utc) + timedelta(days=30),
+        status="active")
+    db.add(sub)
+    db.commit()
+    return sub
+
+
 def _binding(db, user_id, status="active", provider="drive", label="盘"):
     cred = em.MountCredential(
         mount_id=None, scope="user", owner_user_id=user_id,
@@ -230,6 +252,7 @@ def test_eligible_former_cms_item_treated_as_local(db):
     lib = _library(db, "旧cms库", upstream_source_ids="7")
     item = _item(db, lib.id)
     user = _user(db, "u1")
+    _subscription(db, user.id)
     assert pool_gate.pool_eligible(db, user, item) == "eligible"
     decision = pool_gate.ensure_playback_allowed_for_item(db, user, item)
     assert decision.allowed is True
@@ -252,6 +275,7 @@ def test_eligible_pool_on_all_audience(db):
     lib = _library(db, "本地库")
     item = _item(db, lib.id)
     user = _user(db, "u3")
+    _subscription(db, user.id)
     assert pool_gate.pool_eligible(db, user, item) == "eligible"
     decision = pool_gate.ensure_playback_allowed_for_item(db, user, item)
     assert decision.allowed is True
@@ -294,19 +318,22 @@ def test_decision_bound_user_short_circuits_pool(db):
     item = _item(db, lib.id)
     user = _user(db, "u6")
     _binding(db, user.id)
+    _subscription(db, user.id)
     decision = pool_gate.ensure_playback_allowed_for_item(db, user, item)
     assert decision.allowed is True
     assert decision.kind == "bound"
 
 
 def test_decision_removed_provider_message_preserved(db):
+    # 2026-11-22 门禁改版：下线 provider 专用文案不再选用——无订阅一律
+    # 订阅引导文案（GATE_MESSAGE_REMOVED_PROVIDER 常量保留兼容、不再抛）。
     lib = _library(db, "本地库")
     item = _item(db, lib.id)
     user = _user(db, "u7")
     _binding(db, user.id, status="invalid", provider="pan115")
     with pytest.raises(HTTPException) as excinfo:
         pool_gate.ensure_playback_allowed_for_item(db, user, item)
-    assert excinfo.value.detail == gate.GATE_MESSAGE_REMOVED_PROVIDER
+    assert excinfo.value.detail == gate.GATE_MESSAGE
 
 
 def test_redline_existing_gate_unchanged_when_pool_enabled(db):
