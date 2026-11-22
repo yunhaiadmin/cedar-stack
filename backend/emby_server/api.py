@@ -6779,10 +6779,8 @@ async def playback_info(
     _pi_quota_error = None
     if sources and _pi_verdict == "proceed":
         try:
-            from backend.emby_server import first_play as _fp
             from backend.emby_server import playback_strategy as _ps_alt
             from backend.emby_server import transfer_variant as _tv_alt
-            from backend.database import CacheManager as _CM
 
             # 门禁已确认本人 ready 副本时用那一行的 fid。注意同时留住
             # 变体行：用户 Drive 副本走免凭证直链，共享原件走旧链路。
@@ -6931,57 +6929,6 @@ async def playback_info(
                         # 由 video_stream 仅以用户副本 usercontent 302；
                         # 绝不碰 SA 下载额度，绝不把 SA 头下发客户端。
                         _alt_is_user_copy = False
-                _warm = await run_db(
-                    _fp.load_warm,
-                    lambda k: _CM.get(k, domain="playback"),
-                    item.guid, user.id)
-                if (_alt_is_user_copy and not _alt_applied
-                        and _fp.warm_usable(_warm)
-                        and _warm.get("fid") == _alt_fid):
-                    # 新鲜窗口内（默认 180 秒）预热：令牌已验证过，直接复用，不再预检。
-                    _pt.mark("alt_warm_hit")
-                    _alt_applied = _apply_alt_media_direct(
-                        sources[0], _alt_fid, _warm.get("token"))
-                    if _alt_applied:
-                        sources[0]["DirectPlayUrl"] = _warm.get("url") or sources[0]["DirectPlayUrl"]
-                        sources[0]["DirectStreamUrl"] = sources[0]["DirectPlayUrl"]
-                if not _alt_applied and _alt_is_user_copy:
-                    # 详情/单条直达/选集已经在后台预热：等这一次写进缓存再复用，
-                    # 不再并行再打一遍谷歌。没有在途则立刻返回，下面走冷预检。
-                    _joined = await run_db(
-                        _fp.consume_inflight_warm,
-                        lambda k: _CM.get(k, domain="playback"),
-                        user.id, item.id, item.guid, _alt_fid,
-                        _fp.INFLIGHT_WAIT_SEC)
-                    if _joined:
-                        _pt.mark("alt_warm_hit")
-                        _alt_applied = _apply_alt_media_direct(
-                            sources[0], _alt_fid, _joined.get("token"))
-                        if _alt_applied:
-                            sources[0]["DirectPlayUrl"] = _joined.get("url") or sources[0]["DirectPlayUrl"]
-                            sources[0]["DirectStreamUrl"] = sources[0]["DirectPlayUrl"]
-                if not _alt_applied and _alt_is_user_copy:
-                    # 冷启动或预热已超出新鲜窗口（默认 180 秒）：预检 + 403 轮换 SA 再下发，
-                    # 播放器第一次拿到的必须是经验证的令牌（见 first_play）。
-                    _verified = await run_db(
-                        _fp._resolve_for_playback, db, item, user, _alt_fid)
-                    _pt.mark("alt_precheck")
-                    if _verified.get("ok"):
-                        _alt_applied = _apply_alt_media_direct(
-                            sources[0], _alt_fid, _verified.get("token"))
-                        if _alt_applied:
-                            sources[0]["DirectPlayUrl"] = _verified.get("url") or sources[0]["DirectPlayUrl"]
-                            sources[0]["DirectStreamUrl"] = sources[0]["DirectPlayUrl"]
-                    elif _verified.get("last_status") in (403, 401):
-                        # 预检全败才记错：播放器本次不会拿到坏令牌，
-                        # 回落带后缀的 /stream 旧链路（显式 fallback）。
-                        from backend.emby_server import play_events as _pe
-                        _pe.note_play_start(
-                            provider="mount", user_id=user.id, item_id=item.id,
-                            method="direct_302", variant="drive_direct",
-                            result="error",
-                            error_kind=f"alt_media_{_verified.get('last_status')}_x{_verified.get('rotations', 0)}",
-                            resolve_ms=_verified.get("precheck_ms"))
         except Exception:  # noqa: BLE001 — 本段失败只保留旧地址
             pass
     # 公共池播出（goal-33 PR-3，design §5.1）：池门禁判
