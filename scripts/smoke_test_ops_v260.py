@@ -556,10 +556,12 @@ check("诱饵码核销后用户被封并落风控日志",
 
 set_config("registration_mode", None)
 
-# ==================== 七、公告与通知渠道的"真投递" ====================
+# ==================== 七、公告与通知渠道 ====================
 
-# 7.1 公告必须给**每个启用中的用户**落站内消息（不只是当时在线的人）。
-# 这里两个用户都没有建立 WebSocket 连接，正是「离线用户」。
+# 7.1 公告不再全员站内广播（2026-11-19 定版：站内广播取消，公告改发
+# TG 正式群）。冒烟环境明确不配 bot_group_ids → tg_sent=False、请求仍
+# 成功、任何用户都不落站内消息；公告本体保留，用户端公告列表可读到。
+set_config("bot_group_ids", None)
 db = SessionLocal()
 offline = models.WebUser(
     username=f"ops_off{suf}", password_hash=hash_password("pass12345"), is_active=True
@@ -574,34 +576,29 @@ db.close()
 
 title = f"运营公告{suf}"
 r = client.post("/api/admin/announcements",
-                json={"title": title, "content": "本节用于验证公告真的送达全部用户", "type": "system"},
+                json={"title": title, "content": "本节用于验证公告不再站内广播", "type": "system"},
                 headers=staff_h)
 body = r.json() if r.status_code == 200 else {}
 ann_id = body.get("announcement_id")
 check("发布公告成功", r.status_code == 200 and bool(ann_id), r.text[:120])
-check("公告返回真实送达人数（而非无条件宣称全部用户）",
-      isinstance(body.get("notified_users"), int) and body["notified_users"] >= 3,
-      f"notified_users={body.get('notified_users')}")
+check("未配 TG 群时 tg_sent=False 且不再回 notified_users 旧口径",
+      body.get("tg_sent") is False and "notified_users" not in body,
+      f"tg_sent={body.get('tg_sent')}")
 
 db = SessionLocal()
-messages = db.query(models.StationMessage).filter(models.StationMessage.title == f"📢 {title}").all()
-recipients = {m.to_user_id for m in messages}
-check("没连 WebSocket 的用户（离线）也收到公告站内消息",
-      offline_id in recipients, f"offline_id={offline_id} recipients={sorted(recipients)}")
-check("禁用账号不会被投递", disabled_id not in recipients, f"disabled_in={disabled_id in recipients}")
-check("公告关联到具体公告 id",
-      any(m.related_id == ann_id for m in messages),
-      f"related={sorted({m.related_id for m in messages})[:4]}")
+messages = db.query(models.StationMessage).filter(
+    models.StationMessage.title.like(f"%{title}%")).all()
+check("公告不再给任何用户落站内消息（站内广播已取消）",
+      len(messages) == 0, f"messages={len(messages)}")
 db.close()
 
-r = client.get("/api/user/messages", headers=a_h)
-inbox = r.json() if isinstance(r.json(), list) else (r.json() or {}).get("messages", [])
-check("用户能在收件箱里读到公告消息",
-      r.status_code == 200 and any((m.get("title") or "").endswith(title) for m in inbox),
-      f"HTTP {r.status_code} inbox={len(inbox)}")
+r = client.get("/api/user/announcements", headers=a_h)
+ann_list = r.json() if isinstance(r.json(), list) else []
+check("公告本体保留：用户能在公告列表里读到",
+      r.status_code == 200 and any(a.get("title") == title for a in ann_list),
+      f"HTTP {r.status_code} count={len(ann_list)}")
 
 db = SessionLocal()
-db.query(models.StationMessage).filter(models.StationMessage.title == f"📢 {title}").delete()
 db.query(models.WebUser).filter(models.WebUser.id.in_([offline_id, disabled_id])).delete()
 db.commit()
 db.close()

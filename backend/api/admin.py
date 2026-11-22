@@ -41,7 +41,6 @@ from backend.notifications import (
     AdminEvent,
     notify_admin_event,
     notify_admin_event_quiet,
-    notify_all_users,
 )
 from backend.security import hash_password
 from backend.db_retry import commit_with_retry
@@ -800,6 +799,44 @@ def get_registration_mode(
 
 # ==================== 公告管理 API ====================
 
+#: 公告 TG 群消息正文上限：Telegram 单条 4096 字符，留余量截断。
+_ANNOUNCEMENT_TG_MAX_CHARS = 3500
+
+
+def _announcement_tg_text(title: str, content: str) -> str:
+    text = f"📢 {title}\n\n{content}".strip()
+    if len(text) > _ANNOUNCEMENT_TG_MAX_CHARS:
+        text = text[:_ANNOUNCEMENT_TG_MAX_CHARS - 1] + "…"
+    return text
+
+
+def _send_announcement_to_tg_group(db: Session, title: str, content: str) -> bool:
+    """公告发 TG 正式群（站内广播 2026-11-19 取消后的定版口径）。
+
+    目标群＝bot_group_ids 第一个群（tg_bot.rankpush.target_group_id，
+    与观影榜日推同一份群配置）；发送走 tg_bot.sender.send_message
+    （同步函数，由 async 调用方下放线程池）。群未配置 / 发送失败 /
+    任何异常都只记 warning 并回 False，绝不让公告保存请求跟着失败。
+    """
+    try:
+        from backend.tg_bot import rankpush, sender
+
+        group_id = rankpush.target_group_id(db)
+        if group_id is None:
+            logger.warning("公告未发送到 TG 群：bot_group_ids 未配置正式群")
+            return False
+        ok, err = sender.send_message(
+            db, group_id, _announcement_tg_text(title, content),
+            parse_mode=None)
+        if not ok:
+            logger.warning("公告发送到 TG 群失败 group=%s: %s", group_id, err)
+            return False
+        return True
+    except Exception:  # noqa: BLE001
+        logger.warning("公告发送到 TG 群异常", exc_info=True)
+        return False
+
+
 @admin_router.get("/announcements")
 def get_announcements(
     active_only: bool = False,
@@ -837,7 +874,7 @@ async def create_announcement(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """创建公告 - 联动：广播通知所有用户（落库 + 审计下放线程池）"""
+    """创建公告 - 保存后改发 TG 正式群（不再全员站内广播）"""
     admin_id = current_admin.id
 
     def _create() -> int:
@@ -860,17 +897,15 @@ async def create_announcement(
 
     announcement_id = await run_in_threadpool(_create)
 
-    # notify_all_users 现在给**每个启用中的用户**落站内消息（不只当时在线的人），
-    # 返回值就是实际收到的用户数，文案跟着这个数字走，不再无条件宣称"已推送给所有用户"
-    notified = await notify_all_users(
-        event_type=AdminEvent.ANNOUNCEMENT_PUBLISHED,
-        title=f"📢 {request.title}",
-        content=request.content,
-        data={"announcement_id": announcement_id, "type": request.type},
-    )
+    # 站内广播已取消（2026-11-19 定版）：不再给每个启用用户落站内消息，
+    # 改发一条到 TG 正式群；群未配置/发送失败不影响公告保存，tg_sent 如实回。
+    tg_sent = await run_in_threadpool(
+        _send_announcement_to_tg_group, db, request.title, request.content)
     return {"success": True, "announcement_id": announcement_id,
-            "notified_users": notified,
-            "message": f"公告创建成功，已为 {notified} 位用户生成站内消息"}
+            "tg_sent": tg_sent,
+            "message": ("公告创建成功，已发送到 Telegram 群" if tg_sent
+                        else "公告创建成功，未能发送到 Telegram 群"
+                             "（群未配置或发送失败）")}
 
 
 @admin_router.put("/announcements/{announcement_id}")
@@ -882,7 +917,7 @@ async def update_announcement(
 ):
     admin_id = current_admin.id
 
-    def _update() -> str:
+    def _update() -> tuple[str, str]:
         announcement = db.query(models.Announcement).filter(
             models.Announcement.id == announcement_id
         ).first()
@@ -894,22 +929,23 @@ async def update_announcement(
             setattr(announcement, key, value)
         announcement.updated_at = datetime.now()
         title = announcement.title or ""    # 提交后回读会隐式回查，先取成纯值
+        content = announcement.content or ""
         db.commit()
 
         _audit(db, admin_id, "update_announcement", "announcement",
                announcement_id, update_data)
         db.commit()
-        return title
+        return title, content
 
-    title = await run_in_threadpool(_update)
+    title, content = await run_in_threadpool(_update)
 
-    await notify_all_users(
-        event_type=AdminEvent.ANNOUNCEMENT_UPDATED,
-        title="公告已更新",
-        content=f"公告「{title}」已更新，请查看",
-        data={"announcement_id": announcement_id},
-    )
-    return {"success": True, "message": "公告更新成功"}
+    # 同创建口径：不再全员站内广播，改发 TG 正式群；失败不影响保存。
+    tg_sent = await run_in_threadpool(
+        _send_announcement_to_tg_group, db, title, content)
+    return {"success": True, "tg_sent": tg_sent,
+            "message": ("公告更新成功，已发送到 Telegram 群" if tg_sent
+                        else "公告更新成功，未能发送到 Telegram 群"
+                             "（群未配置或发送失败）")}
 
 
 @admin_router.delete("/announcements/{announcement_id}")
