@@ -246,7 +246,9 @@ def test_pool_entry_blocks_bound_without_subscription(db):
 
 
 def test_pool_entry_subscribed_unbound_goes_pool(db, monkeypatch):
-    monkeypatch.setattr(pool_gate, "pool_eligible", lambda db, u, i: "eligible")
+    # ready 池副本在位（pool_sign_allowed 三齐）时才判 pool。
+    monkeypatch.setattr(pool_gate, "pool_sign_allowed",
+                        lambda db, uid, i: True)
     user = _user(db, "u1")
     _subscription(db, user.id)
     decision = pool_gate.ensure_playback_allowed_for_item(db, user, _item())

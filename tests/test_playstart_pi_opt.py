@@ -559,20 +559,25 @@ def test_playbackinfo_cache_key_ignores_profile_and_bitrate(
 
 
 @pytest.mark.usefixtures("_pi_env")
-def test_playbackinfo_pool_wait_is_short(pi_client, pi_seed):
+def test_playbackinfo_unbound_no_copy_no_wait(pi_client, pi_seed):
+    """2026-11-22 二次改版：未绑订阅用户播无 ready 池副本的条目，
+    PlaybackInfo 直达本人链正常源——不再建池单、不再走池等流
+    （旧名 test_playbackinfo_pool_wait_is_short；池等流形态只剩
+    「已有在途池单」场景，由 test_pool_playbackinfo 的等流用例
+    覆盖）。"""
     token = _token(pi_client, FREE)
     start = time.monotonic()
     body = _playbackinfo(pi_client, token, pi_seed["movie2"])
     elapsed = time.monotonic() - start
     src = body["MediaSources"][0]
-    assert src["TransferStatus"] == "preparing"
-    # 旧口径等满 15 秒窗；短等分级后应在短等上限（默认 3 秒）量级返回
+    assert src.get("TransferStatus") != "preparing"
+    assert "DirectPlayUrl" in src or "DirectStreamUrl" in src
     assert elapsed < 8.0
     db = SessionLocal()
     try:
         job = (db.query(em.TransferJob)
                .filter(em.TransferJob.item_id == pi_seed["movie2_id"],
                        em.TransferJob.owner_scope == "pool").first())
-        assert job is not None and job.status == "pending"
+        assert job is None, "直达本人链不许落池单"
     finally:
         db.close()

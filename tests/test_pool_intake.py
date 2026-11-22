@@ -598,7 +598,11 @@ def test_bound_user_still_kind_bound(db):
 
 def test_unbound_user_pool_decision(db):
     item = _item(db)
-    _member(db, 11)
+    member = _member(db, 11)
+    # 2026-11-22 改版口径 #5：未绑订阅用户只有在条目有 ready 池
+    # 副本时才判 pool；无副本直达本人链（kind=bound）。本用例钉
+    # 有副本的池裁决，故补一行 ready 池副本。
+    _variant(db, item.id, member.id)
     _enable_pool(db)
     user = _free_user(db)
     _subscription(db, user.id)
