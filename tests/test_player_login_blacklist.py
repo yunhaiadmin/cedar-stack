@@ -33,9 +33,9 @@ PW = "blacklist-pw"
 # 每个用例一个独立用户名：登录限流按 (IP, 账号) 建桶（10 次/分钟），
 # 共用一个账号会让后面的用例吃 429。
 USERS = [
-    "bl_popcorn", "bl_popcorn_ua", "bl_popcorn_case", "bl_infuse",
-    "bl_infuse_direct", "bl_senplayer", "bl_browser", "bl_empty_cfg",
-    "bl_custom_cfg", "bl_logcheck",
+    "bl_popcorn", "bl_popcorn_ua", "bl_popcorn_case", "bl_filmly",
+    "bl_infuse", "bl_infuse_direct", "bl_senplayer", "bl_browser",
+    "bl_empty_cfg", "bl_custom_cfg", "bl_logcheck",
 ]
 
 
@@ -144,6 +144,16 @@ def test_popcorn_case_insensitive(client, seed):
     r = _login(client, "bl_popcorn_case", client_name="POPCORN",
                user_agent="POPCORN/9.9")
     assert r.status_code == 403, r.text
+
+
+def test_filmly_user_agent_rejected_by_default_rules(client, seed):
+    # 2026-11-01 定版：filmly 在爆米花默认名单内。本用例不写配置行
+    # （fixture 已清行），走的正是「无配置行 = 默认名单」路径——
+    # 防删掉配置行回落默认值后 filmly 静默漏网。
+    r = _login(client, "bl_filmly", client_name="SomePlayer",
+               user_agent="Filmly/5.0")
+    assert r.status_code == 403, r.text
+    assert "该播放器已被服务器停用" in r.text
 
 
 def test_infuse_library_mode_rejected(client, seed):
@@ -271,6 +281,11 @@ def test_match_blacklist_semantics():
     assert match_blacklist(DEFAULT_RULES, "Infuse", "") is not None
     assert match_blacklist(DEFAULT_RULES, "", "Infuse/8.5.8") is not None
     assert match_blacklist(DEFAULT_RULES, "爆米花", "") is not None
+    # 爆米花默认名单钉死三串（2026-11-01 定版：popcorn / 爆米花 / filmly）
+    popcorn_rule = next(r for r in DEFAULT_RULES if r["label"] == "爆米花")
+    assert popcorn_rule["match"] == ["popcorn", "爆米花", "filmly"]
+    assert match_blacklist(DEFAULT_RULES, "Filmly", "") is not None
+    assert match_blacklist(DEFAULT_RULES, "", "Filmly/5.0") is not None
     # 大小写不敏感
     assert match_blacklist(DEFAULT_RULES, "PoPcOrN", "") is not None
     assert match_blacklist(DEFAULT_RULES, "INFUSE", "") is not None
