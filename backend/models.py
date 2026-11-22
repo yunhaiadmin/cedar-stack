@@ -770,6 +770,28 @@ class CodeRedemption(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
+class CodeBatchClaim(Base):
+    """一人一批一码的原子占位（2026-11-23 用户亲令）
+
+    「每人每码一次」（CodeRedemption）挡不住同批不同码：TG 群公开发码时
+    一人抄走同批多张连兑。这里与 H5 同一写法：核销时在 ``claim_code``
+    的同一事务里先 INSERT 一行 ``(batch_id, user_id)``，唯一约束冲突
+    （已领过这批 / 并发双提交同批两码）即拒绝。只靠「先查核销流水再
+    放行」挡不住并发——两个同批不同码的请求会同时查到「没领过」。
+    ``code_id`` 记本次领走的那张，仅作审计。
+    """
+    __tablename__ = 'code_batch_claims'
+    __table_args__ = (
+        UniqueConstraint('batch_id', 'user_id', name='uq_code_batch_claim_user'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    batch_id = Column(String(36), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False, index=True)
+    code_id = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+
+
 class RegistrationCode(Base):
     """卡码表（注册码 / 续期码 / 白名单码 / 诱饵码 / 指名码）
 
@@ -821,11 +843,18 @@ class RegistrationCode(Base):
     # 管理员/邀请生成的码两列均为 NULL，行为与此前完全一致。
     agent_id = Column(Integer, ForeignKey('agents.id'), nullable=True)
     agent_purchase_id = Column(Integer, ForeignKey('agent_purchases.id'), nullable=True)
+    # ===== 一人一批一码（2026-11-23）：生成批次标识 =====
+    # 一次批量生成动作（管理端生成 / 代理进货 / 用户礼品卡）产出的码共用
+    # 同一个 batch_id，核销时同批一人只许一张（见 codes.claim_code 与
+    # CodeBatchClaim）。存量行 NULL = 各自成批，不追溯、行为不变；
+    # 老库由 database._auto_migrate 补列。
+    batch_id = Column(String(36), nullable=True)
 
     # 按代理查码（代理中心「我的卡码」）；老库由 database._LEGACY_INDEXES
     # 同名 spec 补建，两边同名保证幂等跳过、不重复建。
     __table_args__ = (
         Index('idx_reg_code_agent', 'agent_id'),
+        Index('idx_reg_code_batch', 'batch_id'),
     )
 
 

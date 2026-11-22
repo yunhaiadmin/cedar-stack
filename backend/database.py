@@ -794,6 +794,10 @@ def _auto_migrate():
             # 老行补 0 = 无面额，非 balance 型码不读此列，存量行为不变。
             # 新表 user_wallet_balances / wallet_ledger 由 create_all 建，不在此列。
             ("balance_value", "NUMERIC(12, 2)", "0"),
+            # 一人一批一码（2026-11-23）：生成批次标识。老行补 NULL =
+            # 各自成批，不追溯、存量行为不变。新表 code_batch_claims
+            # 由 create_all 建，不在此列。
+            ("batch_id", "VARCHAR(36)", "NULL"),
         ]),
         # v2.6.4 媒体库刮削策略、虚拟媒体库与搜索增强；v2.6.5 增加 115 账号绑定
         # v2.6.6 增加存储挂载绑定（storage_mounts）：媒体库的内容来源
@@ -1634,6 +1638,12 @@ _LEGACY_INDEXES: tuple[tuple[str, ...], ...] = (
     ("emby_items", "idx_item_last_content_added", "last_content_added_at",
      "last_content_added_at",
      "  🔧 已迁移: emby_items.idx_item_last_content_added（DateLastContentAdded 物化列索引）"),
+    # 一人一批一码（2026-11-23）：核销的批次校验按 batch_id 反查同批码；
+    # 列由上面的 _auto_migrate 先补上，列不存在时静默跳过（防御式）。
+    # models.py __table_args__ 已声明同名索引（新库 create_all 自带）。
+    # 回滚：DROP INDEX idx_reg_code_batch。
+    ("registration_codes", "idx_reg_code_batch", "batch_id", "batch_id",
+     "  🔧 已迁移: registration_codes.idx_reg_code_batch（一人一批一码按批查码）"),
 )
 
 

@@ -508,7 +508,10 @@ def create_gift_code(req: WalletGiftCodeCreateRequest,
         created_by=current_user.id,
         code_type=codes.CODE_TYPE_RENEW, days=0,
         source="gift", reward_type=codes.REWARD_BALANCE,
-        balance_value=amount)
+        balance_value=amount,
+        # 一人一批一码（2026-11-23）：礼品卡一次生成一张、自成一批，
+        # 与批量入口同口径打标（见 codes.claim_code）。
+        batch_id=codes.new_batch_id())
     db.add(code)
     db.flush()  # 先拿到 code.id，扣款流水 ref 要指向它
     try:
