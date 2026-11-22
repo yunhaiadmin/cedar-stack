@@ -24,6 +24,7 @@ side 图片 / NFO / TMDB 刮削全部交给本 worker 在后台补全——这�
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import random
@@ -64,6 +65,9 @@ ENRICH_BATCH = env_int("ENRICH_BATCH", 200, 10)
 # 取保守默认 4（rclone/谷歌盘往返并发同步放大，须与省额度纪律权衡）；
 # =1 时逐字走旧串行路径。下限 1。
 ENRICH_IO_WORKERS = env_int("ENRICH_IO_WORKERS", 4, 1)
+# S8：worker 阶段耗时快照的 Redis 键（janitor 每轮发布、api 进程 health
+# 在本进程统计为空时回退读取，口径见 health_report._enrich_stage_stats）。
+ENRICH_STAGE_STATS_REDIS_KEY = "aetrix:enrich:stage_stats"
 # TMDB 批量开关：1=抢单后批量调 batch_search/batch_details，0=逐条原逻辑
 ENRICH_TMDB_BATCH = os.getenv("ENRICH_TMDB_BATCH", "1") == "1"
 ENRICH_IDLE_POLL_SEC = env_int("ENRICH_IDLE_POLL_SEC", 30, 5)
@@ -4587,6 +4591,36 @@ def parity_patrol_rescue(db, limit: int = _PARITY_PATROL_PER_ROUND) -> int:
     return fixed
 
 
+def _publish_stage_stats_to_redis(redis_client=None) -> bool:
+    """S8：把本进程阶段耗时快照发布到 Redis，供 api 进程 health 回退读取。
+
+    ``scan_progress`` 的阶段统计是进程内内存：worker 进程里有数、api
+    进程恒空（health 的 enrich_stages 长期为 {}，查因只能靠日志采样）。
+    janitor 每轮顺带把 ``stage_stats()`` + ``throughput()`` 序列化成
+    JSON 写 ``aetrix:enrich:stage_stats``（含 ts 时间戳，读侧只采信
+    ≤180 秒的新鲜快照）。Redis 客户端走 backend.database 现有口径
+    （``redis_call`` 熔断封装）；整段失败只 debug 日志、返回 False，
+    绝不影响 janitor 主流程。
+    """
+    try:
+        payload = json.dumps({
+            "ts": time.time(),
+            "stages": progress.stage_stats(),
+            "throughput": progress.throughput(),
+        })
+        if redis_client is not None:
+            redis_client.set(ENRICH_STAGE_STATS_REDIS_KEY, payload)
+            return True
+        from backend.database import redis_call
+        result = redis_call(
+            lambda c: c.set(ENRICH_STAGE_STATS_REDIS_KEY, payload),
+            default=None)
+        return result is not None
+    except Exception:  # noqa: BLE001 — 发布失败绝不拖累 janitor
+        logger.debug("发布 enrich 阶段统计到 Redis 失败", exc_info=True)
+        return False
+
+
 def _janitor_loop() -> None:
     """租约 janitor 线程：周期回收停滞的 enriching 行（v2.42.9）"""
     # Step 1：租约后台可配（60s 热生效），janitor 每轮重读
@@ -4684,6 +4718,9 @@ def _janitor_loop() -> None:
                         logger.info("补全 janitor Drive 分享巡检确认 %d 个文件", nds)
             finally:
                 db.close()
+            # S8：每轮顺带发布阶段耗时快照到 Redis（函数内全兜底，
+            # 失败只 debug 日志，绝不影响 janitor 主流程）。
+            _publish_stage_stats_to_redis()
         except Exception as exc:  # noqa: BLE001 — 一轮失败不该拖垮 janitor
             logger.warning("补全 janitor 执行失败: %s", exc)
         _stop_event.wait(ENRICH_JANITOR_INTERVAL_SEC)

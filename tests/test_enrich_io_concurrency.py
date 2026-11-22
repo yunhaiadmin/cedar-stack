@@ -266,3 +266,64 @@ class TestS2ExceptionIsolation:
         assert _read_status_by_name("季海报剧") != "done"
 
 
+class _FakeRedis:
+    def __init__(self):
+        self.store = {}
+
+    def set(self, key, value):
+        self.store[key] = value
+        return True
+
+    def get(self, key):
+        return self.store.get(key)
+
+
+class TestS8StageStatsBridge:
+    def test_worker_publishes_stage_stats(self):
+        progress.reset()
+        try:
+            progress.note_stage("enrich_item", 12.0)
+            fake = _FakeRedis()
+            ok = enrich_worker._publish_stage_stats_to_redis(redis_client=fake)
+            assert ok is True
+            raw = fake.store.get("aetrix:enrich:stage_stats")
+            assert raw, "必须写入约定 Redis 键"
+            payload = json.loads(raw)
+            assert "ts" in payload and abs(payload["ts"] - time.time()) < 60
+            assert "enrich_item" in payload["stages"]
+            assert "done_per_min" in payload["throughput"]
+        finally:
+            progress.reset()
+
+    def test_health_falls_back_to_fresh_redis_snapshot(self, monkeypatch):
+        from backend import health_report
+        monkeypatch.setattr(progress, "stage_stats", lambda: {})
+        fake = _FakeRedis()
+        stages = {"enrich_item": {"label": "x", "count": 3, "ms": 30,
+                                  "avg_ms": 10, "last_at": None}}
+        fake.store["aetrix:enrich:stage_stats"] = json.dumps(
+            {"ts": time.time(), "stages": stages, "throughput": {}})
+        monkeypatch.setattr(_dbmod, "redis_client", fake)
+        assert health_report._enrich_stage_stats() == stages
+
+    def test_health_ignores_stale_redis_snapshot(self, monkeypatch):
+        from backend import health_report
+        monkeypatch.setattr(progress, "stage_stats", lambda: {})
+        fake = _FakeRedis()
+        fake.store["aetrix:enrich:stage_stats"] = json.dumps(
+            {"ts": time.time() - 181, "stages": {"enrich_item": {}}, 
+             "throughput": {}})
+        monkeypatch.setattr(_dbmod, "redis_client", fake)
+        assert health_report._enrich_stage_stats() == {}
+
+    def test_health_prefers_local_stats(self, monkeypatch):
+        from backend import health_report
+        local = {"enrich_item": {"label": "x", "count": 1, "ms": 5,
+                                 "avg_ms": 5, "last_at": None}}
+        monkeypatch.setattr(progress, "stage_stats", lambda: dict(local))
+        fake = _FakeRedis()
+        fake.store["aetrix:enrich:stage_stats"] = json.dumps(
+            {"ts": time.time() - 9999, "stages": {"other": {}}, 
+             "throughput": {}})
+        monkeypatch.setattr(_dbmod, "redis_client", fake)
+        assert health_report._enrich_stage_stats() == local
