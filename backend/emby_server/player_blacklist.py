@@ -40,11 +40,11 @@ BLOCK_MESSAGE = "该播放器已被服务器停用，请更换播放器"
 
 #: 代码级默认名单（用户 2026-10-30 亲点两条）。管理员在后台保存后以库中
 #: 值为准；删行（保存空串）即回到这份默认。
-#: 注意：爆米花在生产暂无登录样本，"popcorn"/"爆米花" 两个模式串是
-#: provisional——上线后若有漏网样本，按其设备记录里的确切 Client 名
-#: 在后台改配置补齐。
+#: 注意：爆米花在生产暂无登录样本，"popcorn"/"爆米花"/"filmly" 三个模式串是
+#: provisional（filmly 为 2026-11-01 定版补入，与生产配置行口径一致）——
+#: 上线后若有漏网样本，按其设备记录里的确切 Client 名在后台改配置补齐。
 DEFAULT_RULES: list[dict] = [
-    {"label": "爆米花", "match": ["popcorn", "爆米花"], "exclude": []},
+    {"label": "爆米花", "match": ["popcorn", "爆米花", "filmly"], "exclude": []},
     {"label": "Infuse 媒体库模式", "match": ["infuse"], "exclude": ["infuse-direct"]},
 ]
 
