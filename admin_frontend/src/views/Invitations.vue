@@ -7,6 +7,7 @@
  * 积分流水 / 手动调分 / 流水审计已随货币于 2026-11-13 下线删除。
  */
 import { computed, onMounted, reactive, ref } from 'vue'
+import { formatServerTime } from '@/utils/serverTime'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
@@ -134,7 +135,7 @@ async function load() {
 }
 
 function fmtTime(iso?: string | null) {
-  return iso ? iso.slice(0, 19).replace('T', ' ') : '—'
+  return formatServerTime(iso, true) || '—'
 }
 
 // ===== 邀请码管理（v2.44.0） =====

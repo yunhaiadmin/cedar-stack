@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** 公告管理：创建/编辑/置顶/删除，联动全站推送 */
 import { computed, onMounted, ref } from 'vue'
+import { formatServerTime } from '@/utils/serverTime'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Megaphone, Plus, RefreshCw } from 'lucide-vue-next'
 import { PageHeader, SectionCard } from '@/components/ui'
@@ -163,7 +164,7 @@ async function toggleActive(a: Announcement) {
 }
 
 function fmtDate(s: string): string {
-  return s.slice(0, 16).replace('T', ' ')
+  return formatServerTime(s)
 }
 </script>
 

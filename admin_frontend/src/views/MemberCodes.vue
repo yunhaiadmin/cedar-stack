@@ -24,6 +24,7 @@
  * 生成弹窗改为两步向导：「你想送什么」→「码的用途」，机械项收进「高级」折叠。
  */
 import { computed, onMounted, ref } from 'vue'
+import { formatServerTime } from '@/utils/serverTime'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   AlertTriangle, CalendarPlus, Copy, KeySquare, Layers, Plus, RefreshCw, ShieldAlert, TimerOff, Trash2,
@@ -432,7 +433,7 @@ async function copyText(text: string) {
 
 function fmtDate(s: string | null): string {
   if (!s) return '—'
-  return s.slice(0, 16).replace('T', ' ')
+  return formatServerTime(s) || '—'
 }
 
 function fmtDateTime(s: string | null): string {

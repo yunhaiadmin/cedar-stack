@@ -23,6 +23,7 @@
  * 回落正常分配，不断播。
  */
 import { computed, onMounted, reactive, ref } from 'vue'
+import { formatServerDate } from '@/utils/serverTime'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Gauge, Pencil, Plus, RefreshCw, RotateCcw, Route, Trash2,
@@ -48,6 +49,10 @@ function gbToBytes(gb: number): number {
 }
 
 /** 字节 → 人话（1024 进制，与后端 line_stats.format_bytes 同口径） */
+function fmtDay(v: string | null | undefined): string {
+  return formatServerDate(v) || '—'
+}
+
 function fmtBytes(bytes: number | null | undefined): string {
   let value = Math.max(0, Number(bytes || 0))
   for (const unit of ['B', 'KB', 'MB', 'GB', 'TB']) {
@@ -339,7 +344,7 @@ function trafficPct(line: RealmLine): number {
                   / 配额 {{ fmtBytes(line.traffic.quota_bytes) }}（{{ trafficPct(line) }}%）
                 </template>
                 <span v-if="line.traffic?.period_started_at" class="line-since">
-                  · 自 {{ line.traffic.period_started_at.slice(0, 10) }} 起计
+                  · 自 {{ fmtDay(line.traffic.period_started_at) }} 起计
                 </span>
               </p>
               <div v-if="line.traffic && line.traffic.quota_bytes > 0" class="line-bar" aria-hidden="true">

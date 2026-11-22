@@ -198,6 +198,30 @@ def admin_magic_exchange(
         raise HTTPException(status_code=401, detail="登录链接无效或已过期")
 
     now = datetime.now()
+    # 一次性原子认领：条件 UPDATE 只认 used_at 仍为空的本行，rowcount==1
+    # 才算抢到。旧写法「查未用行 → 置 used_at → 随后再 commit」在两个
+    # 并发请求之间留了双花窗口（都查到未用、都置位、都签发）；条件
+    # UPDATE 把判定与置位合成一条语句，第二个请求必然 rowcount==0，
+    # 与其它失败同口径回统一 401。认领与后续 last_used_at / 审计同
+    # 一事务提交，行锁（PG）/ 写锁（SQLite）持有到 commit 为止。
+    claimed = (
+        db.query(models.AdminMagicExchangeCode)
+        .filter(
+            models.AdminMagicExchangeCode.id == row.id,
+            models.AdminMagicExchangeCode.used_at.is_(None),
+        )
+        .update({models.AdminMagicExchangeCode.used_at: now},
+                synchronize_session=False)
+    )
+    if claimed != 1:
+        db.rollback()
+        record_event(
+            db, username=None, user_id=row.admin_user_id,
+            ip=log_ip(http_request), agent=user_agent(http_request),
+            success=False, reason="admin_magic_login_failed",
+            detail="免登录交换码校验未通过",
+        )
+        raise HTTPException(status_code=401, detail="登录链接无效或已过期")
     row.used_at = now
     link = db.query(models.AdminMagicLink).filter(
         models.AdminMagicLink.admin_user_id == user.id,

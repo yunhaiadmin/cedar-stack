@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** 工单管理：列表筛选/回复/关闭，回复联动站内通知 */
 import { computed, onMounted, ref } from 'vue'
+import { formatServerTime } from '@/utils/serverTime'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Inbox, RefreshCw, Send, Ticket } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard } from '@/components/ui'
@@ -196,7 +197,7 @@ const STATUS_TABS = [
 const PRIORITY_LABELS: Record<string, string> = { low: '低', medium: '中', high: '高', urgent: '紧急' }
 
 function fmtDate(s: string): string {
-  return s.slice(0, 16).replace('T', ' ')
+  return formatServerTime(s)
 }
 
 function statusLabel(status: string): string {

@@ -7,6 +7,7 @@
  * 账本，管理员手工增减必须走流水；销售记录由卡码核销自动归属。
  */
 import { computed, onMounted, ref } from 'vue'
+import { formatServerTime } from '@/utils/serverTime'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { HandCoins, RefreshCw } from 'lucide-vue-next'
 import { PageHeader, SectionCard, StatTile } from '@/components/ui'
@@ -360,7 +361,7 @@ const saleColumns = computed<DataColumn[]>(() => [
 ])
 
 function fmtTime(v: string | null) {
-  return v ? v.replace('T', ' ').slice(0, 19) : ''
+  return v ? formatServerTime(v, true) : ''
 }
 
 onMounted(async () => {

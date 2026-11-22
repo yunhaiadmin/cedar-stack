@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** 操作日志：管理员操作审计流水（Logs 外壳的默认标签子页，与「双盘审计」标签并列，?tab= 定位见 Logs.vue） */
 import { computed, onMounted, ref } from 'vue'
+import { formatServerTime } from '@/utils/serverTime'
 import { RefreshCw, ScrollText } from 'lucide-vue-next'
 import { fetchLogs } from '@/api/admin'
 import { PageHeader, SectionCard } from '@/components/ui'
@@ -285,7 +286,7 @@ const metaText = computed(() =>
 )
 
 function fmtDate(s: string): string {
-  return s.slice(0, 19).replace('T', ' ')
+  return formatServerTime(s, true)
 }
 
 function detailText(log: AdminLogRow): string {
