@@ -1,64 +1,31 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""存量大 MP4 的 moov 前置。默认不改任何文件。
+"""存量大 MP4 的 moov 前置脚本——入口已关停（2026-11-22）。
 
-新入库走扫描钩子（MP4_FASTSTART_ON_INGEST，默认关）。本脚本只处理已经在库里的
-mp4/m4v/mov，而且要同时满足：
+谷歌盘调用削减第一批第 5 项：生产复核零触发（三容器 env 无
+MP4_FASTSTART_*、日志零命中、DB 无相关任务/配置）后关停本入口。
+脚本现在无论 env 与 --apply 如何设置都只打印说明后退出，不建 DB
+会话、不下载、不调用 ffmpeg、不改网盘、不改库。
 
-1. 环境变量 ``MP4_FASTSTART_BACKFILL=1``（默认 0）
-2. 命令行带 ``--apply``
-
-缺任何一个：打印说明后退出，不下载、不调用 ffmpeg、不改网盘、不改库。
-
-示例::
-
-    python scripts/mp4_faststart_backfill.py
-    MP4_FASTSTART_BACKFILL=1 python scripts/mp4_faststart_backfill.py
-    MP4_FASTSTART_BACKFILL=1 python scripts/mp4_faststart_backfill.py --apply --limit 3
-
-失败的文件保留原件并记日志，继续下一条。生产验证要等运维打开开关并部署之后，
-对一部大 MP4 看起播，不在本脚本里做。
+本体逻辑（backend.emby_server.mp4_faststart 的 run_backfill 等）保留；
+重启本入口须改代码走 PR，不许只翻 env 复活整文件下载/回写路径。
 """
 from __future__ import annotations
 
 import argparse
-import os
-import sys
-
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
-
-from backend.emby_server.mp4_faststart import backfill_will_rewrite, run_backfill
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description="存量大 MP4 faststart。默认不改任何文件。")
+        description="存量大 MP4 faststart。入口已关停，不改任何文件。")
     parser.add_argument(
         "--apply", action="store_true",
-        help="真正重写。缺省只统计候选，不改文件。")
+        help="（已关停，保留参数兼容旧调用）真正重写。")
     parser.add_argument(
         "--limit", type=int, default=0,
-        help="最多处理多少条。0 表示不额外截断。")
-    args = parser.parse_args(argv)
-    allowed, why = backfill_will_rewrite(apply=bool(args.apply))
-    if why == "backfill_disabled":
-        print("MP4_FASTSTART_BACKFILL 默认关（0）。未改任何文件。")
-        return 0
-    from backend.database import SessionLocal
-
-    session = SessionLocal()
-    try:
-        summary = run_backfill(
-            session, apply=bool(args.apply), limit=max(0, int(args.limit or 0)))
-    finally:
-        session.close()
-    print(
-        "candidates={candidates} ran={ran} reason={reason} "
-        "processed={processed} rewritten={rewritten} kept={kept}".format(**summary))
-    if not allowed:
-        print("未传 --apply，未改任何文件。确认后加 --apply。")
+        help="（已关停，保留参数兼容旧调用）最多处理多少条。")
+    parser.parse_args(argv)
+    print("mp4 faststart 存量入口已关停（2026-11-22），未改任何文件。")
     return 0
 
 
