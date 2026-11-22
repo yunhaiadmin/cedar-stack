@@ -19,6 +19,11 @@
  * 任何路径点到暂停线路只提示改选、不发拼地址请求（后端 /address
  * 对暂停线路回 409 兜底）。
  *
+ * 查看门禁（2026-11-22）：无有效订阅/团队资格时后端四口回 403，
+ * 弹层切「开通订阅后可用」引导态（带订阅页入口），不展示 Token/
+ * 线路/地址任何内容；判定走 danmu.ts 的 isDanmuViewForbidden，
+ * 与普通失败（toast）分开。
+ *
  * 推导口径（报告标注量不到、本单按最合理行为定，PR 回报已列明）：
  * - 删除：点「删除」→ 弹层内二次确认行 → 确认后回未生成态；
  * - 深色态 radio 选中环跟随文字色（浅色为黑环，照报告帧）。
@@ -31,6 +36,7 @@
  * 同口径），调色变量定义在同目录 danmu-api-sheet.css。
  */
 import { onBeforeUnmount, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { Check, Copy, KeyRound, LoaderCircle, Trash2, X } from 'lucide-vue-next'
 import AxButton from '@/components/ax/AxButton.vue'
 import { toUserMessage } from '@/utils/toUserMessage'
@@ -40,6 +46,7 @@ import {
   fetchDanmuAddress,
   fetchDanmuLines,
   fetchDanmuTokenStatus,
+  isDanmuViewForbidden,
   type DanmuLine,
 } from '@/api/danmu'
 import './danmu-api-sheet.css'
@@ -51,6 +58,14 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{ close: [] }>()
+
+const router = useRouter()
+
+/** 引导态主钮：关弹层并跳订阅页（/game/account/subscribe） */
+function goSubscribe() {
+  emit('close')
+  void router.push('/game/account/subscribe')
+}
 
 /** 弹层内顶部胶囊 toast（成功约 2 秒，照报告 §1.5/§1.8） */
 const sheetToast = ref<{ kind: 'success' | 'error'; text: string } | null>(null)
@@ -66,7 +81,7 @@ function showToast(kind: 'success' | 'error', text: string) {
   )
 }
 
-type Phase = 'loading' | 'none' | 'creating' | 'ready'
+type Phase = 'loading' | 'none' | 'creating' | 'ready' | 'forbidden'
 const phase = ref<Phase>('loading')
 const expiresAt = ref<string | null>(null)
 const lines = ref<DanmuLine[]>([])
@@ -95,6 +110,14 @@ async function load() {
     fetchDanmuTokenStatus(),
     fetchDanmuLines(),
   ])
+  // 查看门禁 403 优先于一切内容：任一口被拦即切引导态，不落 toast
+  if (
+    (statusRes.status === 'rejected' && isDanmuViewForbidden(statusRes.reason)) ||
+    (linesRes.status === 'rejected' && isDanmuViewForbidden(linesRes.reason))
+  ) {
+    phase.value = 'forbidden'
+    return
+  }
   if (linesRes.status === 'fulfilled') lines.value = linesRes.value
   if (statusRes.status === 'fulfilled') {
     if (statusRes.value.has_token) {
@@ -118,6 +141,10 @@ async function onCreate() {
     phase.value = 'ready'
     showToast('success', '弹幕 Token 已生成')
   } catch (e) {
+    if (isDanmuViewForbidden(e)) {
+      phase.value = 'forbidden'
+      return
+    }
     phase.value = 'none'
     showToast('error', toUserMessage(e, 'saveFailed'))
   }
@@ -137,6 +164,11 @@ async function selectLine(line: DanmuLine) {
   try {
     address.value = await fetchDanmuAddress(line.id)
   } catch (e) {
+    // 资格在打开弹层后失效（订阅刚到期）：切引导态，不当普通失败
+    if (isDanmuViewForbidden(e)) {
+      phase.value = 'forbidden'
+      return
+    }
     showToast('error', toUserMessage(e, 'loadFailed'))
   } finally {
     addressLoading.value = false
@@ -214,6 +246,26 @@ onBeforeUnmount(() => {
           <LoaderCircle :size="17" class="dms-spin" aria-hidden="true" />
           正在查询弹幕 Token...
         </p>
+
+        <!-- 无查看资格（403 查看门禁）：开通订阅引导态 -->
+        <template v-else-if="phase === 'forbidden'">
+          <p class="dms-status">开通订阅后可用</p>
+          <p class="dms-note">
+            弹幕 API 需要有效订阅（或团队播放资格）。开通后即可生成专属
+            Token、查看线路并复制弹幕地址。
+          </p>
+          <div class="dms-primary-wrap">
+            <AxButton
+              variant="primary"
+              size="mid"
+              block
+              :dark="dark"
+              @click="goSubscribe"
+            >
+              去开通订阅
+            </AxButton>
+          </div>
+        </template>
 
         <template v-else>
           <!-- Token 区 -->

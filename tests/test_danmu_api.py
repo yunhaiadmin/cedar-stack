@@ -16,7 +16,11 @@
 - 公开下发：按 Danmu 插件约定（bilibili 风格 XML）回站内弹幕，
   按条目 guid 寻址、按时间轴升序；未知 token 404、未知条目空文档；
 - 门槛服务端真校验：无有效套餐 / 流量耗尽 → 回空文档（弹幕内容
-  不下发）；校验不产生流量计量（不写 TrafficUsageDaily）。
+  不下发）；校验不产生流量计量（不写 TrafficUsageDaily）；
+- 查看门禁（2026-11-22）：用户端 GET/POST /token、GET /lines、
+  GET /address 须有查看资格（subscriptions.view_grant：有效订阅
+  或团队播放资格，管理员不豁免），无资格一律 403；DELETE /token
+  不挂门禁；公开下发口不走这道门（自有 check_access 口径）。
 """
 
 import os
@@ -62,7 +66,8 @@ from backend.database import SessionLocal, init_db  # noqa: E402
 
 _TABLES = (core.DanmuApiToken, em.DanmakuComment, em.TrafficUsageDaily,
            em.MediaItem, em.Library, core.UserSubscription,
-           core.SubscriptionPlan, core.WebUser, core.SystemConfig)
+           core.SubscriptionPlan, core.TeamMember, core.Team,
+           core.WebUser, core.SystemConfig)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -155,6 +160,7 @@ def _mk_item(db, name="电影Y"):
 
 def _give_plan(db, user, quota_bytes=100 * GB, days=90):
     from backend import entitlements as ent
+    from backend import realms
 
     plan = core.SubscriptionPlan(
         name=f"plan-{user.username}", price=10, duration_days=days,
@@ -162,14 +168,47 @@ def _give_plan(db, user, quota_bytes=100 * GB, days=90):
     db.add(plan)
     db.flush()
     now = datetime.now()
+    # realm_id 钉当前服：查看门禁 view_grant 按服过滤订阅行，
+    # 不带服的订阅行在它眼里不算数（与 test_merge_view_grant 同口径）
     sub = core.UserSubscription(
         user_id=user.id, plan_id=plan.id,
+        realm_id=realms.active_realm_id(db),
         start_date=now - timedelta(days=1),
         end_date=now + timedelta(days=days), status="active")
     db.add(sub)
     db.commit()
     ent.invalidate(user.id)
     return sub
+
+
+def _give_team(db, owner, member=None):
+    """active 且在期的团队：团长（＋可选成员）凭团队资格过查看门禁
+    （teams.play_eligible_team 口径：status=active＋plan 未过期）。"""
+    now = datetime.now()
+    team = core.Team(owner_id=owner.id, status="active",
+                     plan_started_at=now - timedelta(days=1),
+                     plan_expires_at=now + timedelta(days=30))
+    db.add(team)
+    db.flush()
+    db.add(core.TeamMember(team_id=team.id, user_id=owner.id,
+                            role="owner"))
+    if member is not None:
+        db.add(core.TeamMember(team_id=team.id, user_id=member.id,
+                                role="member"))
+    db.commit()
+    return team
+
+
+def _seed_token(db, user, value="b" * 32):
+    """直插一行有效 token（绕开用户端生成口）：给「无套餐但已有
+    token」的下发门槛用例造数——查看门禁上线后无资格者已无法
+    经接口生成 token，这类存量形态只能直插。"""
+    now = datetime.now()
+    db.add(core.DanmuApiToken(
+        user_id=user.id, token=value, created_at=now,
+        expires_at=now + timedelta(days=365)))
+    db.commit()
+    return value
 
 
 def _add_danmaku(db, item, user, position, text):
@@ -227,6 +266,7 @@ class TestSchemaRegistered:
 
 def test_status_generate_singleton_and_no_plaintext(client, scene):
     c, app = client
+    _give_plan(scene.db, scene.user)
     _as_user(app, scene.user)
     r = c.get("/api/user/danmu/token")
     assert r.status_code == 200, r.text
@@ -260,9 +300,9 @@ def test_status_generate_singleton_and_no_plaintext(client, scene):
 
 def test_delete_invalidates_token(client, scene):
     c, app = client
+    _give_plan(scene.db, scene.user)
     _gen_token(c, app, scene.user)
     token = _token_value(scene.db, scene.user)
-    _give_plan(scene.db, scene.user)
 
     r = c.delete("/api/user/danmu/token")
     assert r.status_code == 200, r.text
@@ -278,6 +318,7 @@ def test_delete_invalidates_token(client, scene):
 
 def test_expired_token_treated_as_absent(client, scene):
     c, app = client
+    _give_plan(scene.db, scene.user)
     _as_user(app, scene.user)
     now = datetime.now()
     row = core.DanmuApiToken(
@@ -311,11 +352,80 @@ def test_user_endpoints_require_login(client, scene):
                  params={"line": "intl"}).status_code == 401
 
 
+# ------------------------------------------------------------ 查看门禁
+
+_GATE_DETAIL = "开通订阅后即可查看弹幕线路与连接地址"
+
+
+def test_view_gate_blocks_without_subscription(client, scene):
+    """无订阅无团队资格：看 Token 状态 / 生成 / 线路 / 地址四口
+    全 403 且 detail 为门禁文案；POST 被拦后不许真生成 token。"""
+    c, app = client
+    _as_user(app, scene.user)
+    for r in (c.get("/api/user/danmu/token"),
+              c.post("/api/user/danmu/token"),
+              c.get("/api/user/danmu/lines"),
+              c.get("/api/user/danmu/address", params={"line": "intl"})):
+        assert r.status_code == 403, r.text
+        assert r.json()["detail"] == _GATE_DETAIL
+    assert (scene.db.query(core.DanmuApiToken)
+            .filter_by(user_id=scene.user.id).count()) == 0
+
+
+def test_view_gate_delete_not_blocked(client, scene):
+    """DELETE /token 不挂门禁：无订阅照样可删（回既有空状态）。"""
+    c, app = client
+    _as_user(app, scene.user)
+    r = c.delete("/api/user/danmu/token")
+    assert r.status_code == 200, r.text
+    assert r.json()["exists"] is False
+
+
+def test_view_gate_passes_with_subscription(client, scene):
+    """有效订阅：四口全放行（地址在生成 token 后拼得出来）。"""
+    c, app = client
+    _give_plan(scene.db, scene.user)
+    _as_user(app, scene.user)
+    assert c.get("/api/user/danmu/token").status_code == 200
+    assert c.post("/api/user/danmu/token").status_code == 200
+    assert c.get("/api/user/danmu/lines").status_code == 200
+    r = c.get("/api/user/danmu/address", params={"line": "intl"})
+    assert r.status_code == 200, r.text
+
+
+def test_view_gate_passes_with_team_eligibility(client, scene):
+    """无个人订阅、凭团队资格（团长与成员）同样放行四口。"""
+    c, app = client
+    member = _mk_user(scene.db, "dmu_member")
+    scene.db.commit()
+    _give_team(scene.db, scene.user, member=member)
+    for who in (scene.user, member):
+        _as_user(app, who)
+        assert c.get("/api/user/danmu/token").status_code == 200
+        assert c.post("/api/user/danmu/token").status_code == 200
+        assert c.get("/api/user/danmu/lines").status_code == 200
+        r = c.get("/api/user/danmu/address", params={"line": "intl"})
+        assert r.status_code == 200, r.text
+
+
+def test_view_gate_staff_not_exempt(client, scene):
+    """管理员不豁免：staff 无订阅照样 403（view_grant 本无豁免）。"""
+    c, app = client
+    staff = _mk_user(scene.db, "dmu_staff", is_staff=True)
+    scene.db.commit()
+    _as_user(app, staff)
+    r = c.get("/api/user/danmu/token")
+    assert r.status_code == 403, r.text
+    assert r.json()["detail"] == _GATE_DETAIL
+    assert c.get("/api/user/danmu/lines").status_code == 403
+
+
 # ------------------------------------------------------------ 线路与地址
 
 
 def test_default_lines(client, scene):
     c, app = client
+    _give_plan(scene.db, scene.user)
     _as_user(app, scene.user)
     r = c.get("/api/user/danmu/lines")
     assert r.status_code == 200, r.text
@@ -329,6 +439,7 @@ def test_default_lines(client, scene):
 
 def test_address_assembly_and_line_switch(client, scene):
     c, app = client
+    _give_plan(scene.db, scene.user)
     _as_user(app, scene.user)
     r = c.get("/api/user/danmu/address", params={"line": "intl"})
     assert r.status_code == 409, r.text  # 未生成先 409
@@ -359,6 +470,7 @@ def test_lines_config_override(client, scene):
     _invalidate()
 
     c, app = client
+    _give_plan(scene.db, scene.user)
     _as_user(app, scene.user)
     lines = c.get("/api/user/danmu/lines").json()["lines"]
     assert [(ln["id"], ln["host"]) for ln in lines] == [
@@ -373,6 +485,7 @@ def test_lines_config_override(client, scene):
 def test_default_lines_all_enabled(client, scene):
     """默认线路恒带 enabled=True（前端据此区分启用/暂停）。"""
     c, app = client
+    _give_plan(scene.db, scene.user)
     _as_user(app, scene.user)
     lines = c.get("/api/user/danmu/lines").json()["lines"]
     assert [ln["enabled"] for ln in lines] == [True, True]
@@ -392,6 +505,7 @@ def test_lines_config_without_enabled_defaults_enabled(client, scene):
     _invalidate()
 
     c, app = client
+    _give_plan(scene.db, scene.user)
     _as_user(app, scene.user)
     lines = c.get("/api/user/danmu/lines").json()["lines"]
     assert lines[0]["enabled"] is True
@@ -422,6 +536,7 @@ def test_paused_line_listed_but_address_rejected(client, scene):
     _invalidate()
 
     c, app = client
+    _give_plan(scene.db, scene.user)
     _as_user(app, scene.user)
     lines = c.get("/api/user/danmu/lines").json()["lines"]
     assert [(ln["id"], ln["enabled"]) for ln in lines] == [
@@ -467,8 +582,8 @@ def _xml_items(text):
 
 def test_delivery_returns_internal_danmaku(client, scene):
     c, app = client
-    _gen_token(c, app, scene.user)
     _give_plan(scene.db, scene.user)
+    _gen_token(c, app, scene.user)
     _add_danmaku(scene.db, scene.item, scene.poster, 30.0, "三十秒")
     _add_danmaku(scene.db, scene.item, scene.poster, 10.5, "十秒半")
     token = _token_value(scene.db, scene.user)
@@ -489,8 +604,8 @@ def test_delivery_returns_internal_danmaku(client, scene):
 
 def test_delivery_unknown_token_and_item(client, scene):
     c, app = client
-    _gen_token(c, app, scene.user)
     _give_plan(scene.db, scene.user)
+    _gen_token(c, app, scene.user)
     token = _token_value(scene.db, scene.user)
 
     r = c.get(f"/api/v1/danmu/{'f' * 32}/{scene.item.guid}")
@@ -505,9 +620,9 @@ def test_delivery_unknown_token_and_item(client, scene):
 
 def test_delivery_gate_no_plan_returns_empty(client, scene):
     c, app = client
-    _gen_token(c, app, scene.user)  # 不给套餐
+    # 不给套餐：token 直插造数（查看门禁后无资格者无法经接口生成）
+    token = _seed_token(scene.db, scene.user)
     _add_danmaku(scene.db, scene.item, scene.poster, 5.0, "不该下发")
-    token = _token_value(scene.db, scene.user)
     r = c.get(f"/api/v1/danmu/{token}/{scene.item.guid}")
     assert r.status_code == 200, r.text
     assert _xml_items(r.text) == []
@@ -515,8 +630,8 @@ def test_delivery_gate_no_plan_returns_empty(client, scene):
 
 def test_delivery_gate_traffic_exhausted_returns_empty(client, scene):
     c, app = client
-    _gen_token(c, app, scene.user)
     _give_plan(scene.db, scene.user, quota_bytes=100)
+    _gen_token(c, app, scene.user)
     today = datetime.now().date()
     scene.db.add(em.TrafficUsageDaily(
         user_id=scene.user.id, day=today, relay_bytes=200,
@@ -689,8 +804,8 @@ def test_external_merges_into_delivery(client, scene, monkeypatch):
     fake.install(monkeypatch)
     _enable_external(scene.db)
     c, app = client
-    _gen_token(c, app, scene.user)
     _give_plan(scene.db, scene.user)
+    _gen_token(c, app, scene.user)
     _add_danmaku(scene.db, scene.item, scene.poster, 5.0, "站内弹幕")
     token = _token_value(scene.db, scene.user)
 
@@ -723,8 +838,8 @@ def test_external_disabled_never_calls_upstream(client, scene,
                          comment_payload=_COMMENT_OK)
     fake.install(monkeypatch)
     c, app = client
-    _gen_token(c, app, scene.user)
     _give_plan(scene.db, scene.user)
+    _gen_token(c, app, scene.user)
     _add_danmaku(scene.db, scene.item, scene.poster, 5.0, "站内弹幕")
     token = _token_value(scene.db, scene.user)
 
@@ -759,9 +874,9 @@ def test_external_gate_blocks_before_upstream(client, scene, monkeypatch):
     fake.install(monkeypatch)
     _enable_external(scene.db)
     c, app = client
-    _gen_token(c, app, scene.user)  # 不给套餐：门槛不过
+    # 不给套餐：token 直插造数（查看门禁后无资格者无法经接口生成）
+    token = _seed_token(scene.db, scene.user)
     _add_danmaku(scene.db, scene.item, scene.poster, 5.0, "站内弹幕")
-    token = _token_value(scene.db, scene.user)
 
     r = c.get(f"/api/v1/danmu/{token}/{scene.item.guid}")
     assert r.status_code == 200, r.text
@@ -771,8 +886,8 @@ def test_external_gate_blocks_before_upstream(client, scene, monkeypatch):
 
 def test_external_upstream_failures_fall_back(client, scene, monkeypatch):
     c, app = client
-    _gen_token(c, app, scene.user)
     _give_plan(scene.db, scene.user)
+    _gen_token(c, app, scene.user)
     _add_danmaku(scene.db, scene.item, scene.poster, 5.0, "站内弹幕")
     token = _token_value(scene.db, scene.user)
     _enable_external(scene.db)
@@ -793,8 +908,8 @@ def test_external_cache_hit_single_fetch(client, scene, monkeypatch):
     fake.install(monkeypatch)
     _enable_external(scene.db)
     c, app = client
-    _gen_token(c, app, scene.user)
     _give_plan(scene.db, scene.user)
+    _gen_token(c, app, scene.user)
     token = _token_value(scene.db, scene.user)
 
     for _ in range(2):
@@ -813,8 +928,8 @@ def test_external_no_match_falls_back(client, scene, monkeypatch):
     fake.install(monkeypatch)
     _enable_external(scene.db)
     c, app = client
-    _gen_token(c, app, scene.user)
     _give_plan(scene.db, scene.user)
+    _gen_token(c, app, scene.user)
     _add_danmaku(scene.db, scene.item, scene.poster, 5.0, "站内弹幕")
     token = _token_value(scene.db, scene.user)
 
