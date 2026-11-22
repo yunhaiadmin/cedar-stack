@@ -857,6 +857,24 @@ def _drive_redirect_client() -> "httpx.AsyncClient":
     )
 
 
+def _try_drive_api_rate() -> None:
+    """Drive 腿实发前过全局限速（drive_changes 同一令牌桶，横切只许一套）。
+
+    全局限速收口（2026-11-22 审计 P5）：中继/解析此前全部绕行。
+    本模块在事件循环里跑，只用快速失败型 try_acquire_api_token
+    （refresh=False：事件循环里不做配置 DB 读，QPS 同步靠同进程
+    同步路径兜底）——返回值有意忽略：拿不到令牌照常直发，限速防
+    多路径叠加打爆单 SA，不是播放门禁，绝不阻塞/拒绝取流；
+    限速器自身异常同样吞掉直发。计数口径：每次中继/解析请求
+    记一次（重定向跳数不另计）。挂载腿（非 Drive）不调本函数。
+    """
+    try:
+        from backend.emby_server import drive_changes as _dc_st_rl
+        _dc_st_rl.try_acquire_api_token(refresh=False)
+    except Exception:  # noqa: BLE001 — 限速接线永不挡播放热路径
+        pass
+
+
 async def resolve_drive_final_url(
     url: str,
     headers: dict | None = None,
@@ -897,6 +915,7 @@ async def resolve_drive_final_url(
         forward.pop("X-Pickcode", None)
         forward.setdefault("User-Agent", REMOTE_UA)
 
+        _try_drive_api_rate()
         try:
             resp, current, hops = await _follow_redirects(
                 client, api_url, forward, silent=True)
@@ -1410,6 +1429,7 @@ async def _fetch_drive_segment_bytes(drive_id, file_id, access_token,
     url = drive_api_media_url(drive_usercontent_download_url(file_id))
     client, one_shot = _acquire_drive_client()
     resp = None
+    _try_drive_api_rate()
     try:
         resp, _cur, _hops = await _follow_redirects(
             client, url,
@@ -1522,6 +1542,9 @@ async def serve_mount_relay_async(
                 # 签名最终 URL 自带授权：不把 SA 凭据发去终点主机
                 forward.pop("Authorization", None)
     resp = None
+    if _leg is not None:
+        # 只有 Drive 腿进 Drive 限速口径；挂载腿（_leg 为 None）逐字不碰
+        _try_drive_api_rate()
     try:
         try:
             # 跳转自己逐跳校验后跟随（内网目标拒绝、跨主机剥凭据），终态

@@ -666,6 +666,23 @@ class ApiRateLimiter:
                 wait_s = ((1.0 - self._tokens) / self._qps) * _random.uniform(0.8, 1.2)
             time.sleep(wait_s)
 
+    def try_acquire(self) -> bool:
+        """非阻塞取令：桶里有令牌就扣一个返回 True，否则立即返回 False。
+
+        只做锁内算术（微秒级），永不等待、永不抛。给播放热路径用：
+        拿不到令牌时调用方按快速失败口径直发（见 try_acquire_api_token），
+        限速器绝不成为播放链的阻塞点。
+        """
+        with self._lock:
+            now = time.monotonic()
+            elapsed = now - self._last
+            self._last = now
+            self._tokens = min(self._qps, self._tokens + elapsed * self._qps)
+            if self._tokens >= 1.0:
+                self._tokens -= 1.0
+                return True
+            return False
+
 
 #: 模块级单例（默认 8 QPS，保守值；可按需调整）
 _api_limiter = ApiRateLimiter(8.0)
@@ -765,6 +782,39 @@ def refresh_api_qps(db=None, *, force: bool = False) -> float:
         set_api_qps(target)
         logger.info("Drive API 全局限速已按配置更新: %s QPS", target)
     return _api_limiter._qps
+
+
+# ---------------------------------------------------------------------------
+# 全局限速共享入口（2026-11-22 谷歌盘调用削减 #4 / 审计 P5 收口）：
+# 令牌桶本体只有上面这一套（_api_limiter，进程内单例——与 changes
+# 既有口径一致：api/ea/worker 各进程各自一份、同参数同实现，不跨
+# 进程共享）。此前只有 _api_get（changes + mount_drive）过桶，
+# transfer / drive_exists / 中继 / mp4_faststart 全部绕行；收口后
+# 所有 Drive 请求路径一律经下面两个入口之一，不许再写第二套限速：
+# - acquire_api_token（阻塞型）：工人/维护等同步非热路径，每实发
+#   一次 Drive 请求前调一次，排队等令牌（与 _api_get 同语义）。
+# - try_acquire_api_token（快速失败型）：播放热路径（drive_exists /
+#   中继）用，非阻塞——拿到 True 表示已扣令；False 表示桶空，
+#   调用方按现状直发（限速防的是多路径叠加打爆单 SA 的尾部风险，
+#   不是播放门禁，绝不许因限速挡播放）。refresh=False 跳过配置
+#   复检：事件循环里不做 DB 读，QPS 同步靠同进程的同步路径兜底。
+# ---------------------------------------------------------------------------
+
+def acquire_api_token() -> None:
+    """阻塞型共享入口：先同步配置 QPS，再等一个令牌（_api_get 同口径）。"""
+    refresh_api_qps()
+    _api_limiter.acquire()
+
+
+def try_acquire_api_token(*, refresh: bool = True) -> bool:
+    """快速失败型共享入口：非阻塞取令，返回是否扣到令牌。永不等待。
+
+    返回 False 只表示「本请求未被计数」，调用方必须照常发请求
+    （快速失败回退），不许据此拒绝/延迟播放热路径请求。
+    """
+    if refresh:
+        refresh_api_qps()
+    return _api_limiter.try_acquire()
 
 
 def config_payload(db=None) -> dict:
