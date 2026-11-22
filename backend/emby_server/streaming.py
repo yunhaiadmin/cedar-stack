@@ -1359,15 +1359,22 @@ def _note_relay_sa_cooldown(url: str, token: str, status: int) -> None:
       403/429 走 invalidate_drive_bearer_token，本函数只分发不新造。
     失效后，该 SA 在双层缓存里的坏令牌被清掉，下次轮到它时重新换取；
     本次重试则靠 get_token_for_drive 的轮换直接换下一个 SA。
+    配额类失败（403/429）另把该 SA 登记进 drive_auth 的 per-SA 配额冷却表
+    （note_sa_cooldown，全站唯一登记表）：冷却期内选号跳过它，不再往已爆
+    配额的号上撞。邮箱须在失效前反查（A-088 同口径：失效清掉两层缓存
+    条目后反查恒得 None）。
     记账本身失败只记日志——冷却记账不能拖垮 failover。
     """
     try:
         from backend.emby_server import drive_auth
 
+        email = drive_auth.sa_email_for_token(token)
         if status == 401:
             drive_auth.note_drive_unauthorized(url, f"Bearer {token}")
         else:
             drive_auth.invalidate_drive_bearer_token(token)
+        if status in (403, 429):
+            drive_auth.note_sa_cooldown(email, status=status)
     except Exception as exc:  # noqa: BLE001 - 记账失败只记日志
         logger.warning("Drive 中继 SA 冷却记账失败 status=%s: %s",
                        status, exc)
@@ -1461,6 +1468,7 @@ async def _serve_drive_relay_async_inner(
     from backend.emby_server.drive_auth import (
         drive_api_media_url,
         drive_usercontent_download_url,
+        sa_log_id as _sa_log_id,
     )
     from backend.emby_server.drive_changes import get_token_for_drive
     from backend.emby_server.drive_changes import (
@@ -1525,7 +1533,7 @@ async def _serve_drive_relay_async_inner(
             logger.warning(
                 "drive_relay_sa_failover sa=%s failover_attempt=%d/%d "
                 "status=quota_page file_id=%s",
-                sa_email or "-", attempt + 1, total, file_id)
+                _sa_log_id(sa_email), attempt + 1, total, file_id)
         except HTTPException as exc:
             if exc.status_code not in _RELAY_SA_FAILOVER_STATUSES or last:
                 raise
@@ -1536,7 +1544,7 @@ async def _serve_drive_relay_async_inner(
             logger.warning(
                 "drive_relay_sa_failover sa=%s failover_attempt=%d/%d "
                 "status=%d file_id=%s",
-                sa_email or "-", attempt + 1, total,
+                _sa_log_id(sa_email), attempt + 1, total,
                 exc.status_code, file_id)
     raise HTTPException(status_code=502, detail="Drive 中继失败")  # pragma: no cover
 

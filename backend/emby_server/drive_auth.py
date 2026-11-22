@@ -23,7 +23,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import os
+import random
 import threading
 import time
 from types import ModuleType
@@ -43,6 +46,9 @@ __all__ = [
     "note_drive_unauthorized",
     "premint_tokens",
     "sa_count",
+    "note_sa_cooldown",
+    "sa_in_cooldown",
+    "sa_log_id",
 ]
 
 logger = logging.getLogger(__name__)
@@ -76,6 +82,105 @@ _SA_AFFINITY_MAX_ENTRIES = 4096
 # get_drive_bearer_token 内那个 `with _cache_lock:`（查缓存→换token→写缓存）之外，
 # 即选 SA 阶段，绝不嵌套持锁。
 _sa_affinity: dict[str, tuple[dict[str, Any], float]] = {}
+
+# SA 配额冷却（2026-11-22）：某 SA 撞 Drive 配额/限流（403 配额类 / 429）后，
+# 在冷却期内被选号跳过，避免全站请求继续往已爆配额的号上撞、把风控等级
+# 越撞越高。冷却时长 = 基础值 + [0, 抖动) 随机（反风控：各号恢复时刻不齐步）。
+# 登记表 client_email -> 冷却到期 monotonic 时间戳，复用 _cache_lock 保护；
+# 选号时先短锁快照冷却集，再无锁遍历 SA 文件，不把磁盘读放进临界区。
+_SA_COOLDOWN_BASE_SECONDS = 600.0
+_SA_COOLDOWN_JITTER_SECONDS = 300.0
+_sa_cooldown_until: dict[str, float] = {}
+
+#: 判定为「配额类」失败的 Drive 错误原因标记（403 响应体/异常文本含任一即算）。
+_QUOTA_ERROR_MARKERS = (
+    "downloadQuotaExceeded",
+    "userRateLimitExceeded",
+    "quotaExceeded",
+    "rateLimitExceeded",
+)
+
+
+def _env_float(name: str, default: float, lo: float, hi: float) -> float:
+    """读 float 型 env 并钳制到 [lo, hi]；缺失/非法回默认（本模块永不抛契约）。"""
+    try:
+        value = float((os.getenv(name) or "").strip())
+    except (TypeError, ValueError):
+        return default
+    return min(hi, max(lo, value))
+
+
+def _sa_cooldown_span() -> float:
+    """本次冷却时长：基础值（env DRIVE_SA_COOLDOWN_SECONDS，缺省 600）
+    + [0, 抖动)（env DRIVE_SA_COOLDOWN_JITTER_SECONDS，缺省 300）。"""
+    base = _env_float(
+        "DRIVE_SA_COOLDOWN_SECONDS", _SA_COOLDOWN_BASE_SECONDS, 0.0, 86400.0)
+    jitter = _env_float(
+        "DRIVE_SA_COOLDOWN_JITTER_SECONDS", _SA_COOLDOWN_JITTER_SECONDS,
+        0.0, 86400.0)
+    return base + (random.uniform(0.0, jitter) if jitter > 0 else 0.0)
+
+
+def sa_log_id(email: str | None) -> str:
+    """日志用 SA 短标识：sha256(client_email) 前 8 位十六进制；空邮箱回 "-"。
+
+    日志里不再出现 SA 邮箱全称；全站 SA 日志标识统一走本函数（横切只许一套）。
+    """
+    if not email:
+        return "-"
+    return hashlib.sha256(email.encode("utf-8")).hexdigest()[:8]
+
+
+def _is_quota_failure(status: int | None, detail: str = "") -> bool:
+    """失败是否属「配额类」：429 恒算；带文本时含配额标记即算；
+    无文本可查的 403 按中继 failover 口径算（调用方已把 403 归入可换号失败）。"""
+    if status == 429:
+        return True
+    if detail and any(marker in detail for marker in _QUOTA_ERROR_MARKERS):
+        return True
+    return status == 403 and not detail
+
+
+def note_sa_cooldown(email: str | None, status: int | None = None,
+                     detail: str = "") -> bool:
+    """把某 SA 登记进配额冷却表；返回是否登记。永不抛。
+
+    只对配额类失败登记（见 _is_quota_failure）；重复登记刷新到期时间。
+    """
+    try:
+        if not email or not _is_quota_failure(status, detail):
+            return False
+        span = _sa_cooldown_span()
+        with _cache_lock:
+            _sa_cooldown_until[email] = time.monotonic() + span
+        logger.info("drive_sa_cooldown sa=%s status=%s span_sec=%.0f",
+                    sa_log_id(email), status, span)
+        return True
+    except Exception:  # noqa: BLE001 — 冷却记账失败不许拖垮调用方
+        return False
+
+
+def _cooling_sa_emails_locked(now: float) -> set[str]:
+    """当前仍在冷却的 SA 邮箱集（调用方须已持有 _cache_lock）；顺手清过期条目。"""
+    expired = [e for e, until in _sa_cooldown_until.items() if until <= now]
+    for e in expired:
+        _sa_cooldown_until.pop(e, None)
+    return set(_sa_cooldown_until)
+
+
+def _cooling_sa_emails(now: float) -> set[str]:
+    """当前仍在冷却的 SA 邮箱集（自带短锁快照）。"""
+    with _cache_lock:
+        return _cooling_sa_emails_locked(now)
+
+
+def sa_in_cooldown(email: str | None) -> bool:
+    """该 SA 当前是否在配额冷却中（观测/测试用）。"""
+    if not email:
+        return False
+    with _cache_lock:
+        until = _sa_cooldown_until.get(email)
+        return bool(until and until > time.monotonic())
 
 # P2-1（2026-10-12）：_all_sa_dicts 的结果模块级缓存。
 # SA 文件在生产环境静态不变，缓存语义与 drive_changes._discover_sa_files
@@ -121,6 +226,7 @@ def _reset_state() -> None:
         _token_cache.clear()
         _sa_affinity.clear()
         _sa_mint_locks.clear()
+        _sa_cooldown_until.clear()
     with _sa_dicts_lock:
         _sa_dicts_cache = None
 
@@ -262,6 +368,12 @@ def _pick_sa() -> dict[str, Any] | None:
         start = drive_changes._sa_rotation_start(len(sa_files))
     except Exception:
         return None
+    # 配额冷却快照：冷却中的 SA 本轮跳过，流量优先给健康 SA。
+    try:
+        cooling = _cooling_sa_emails(time.monotonic())
+    except Exception:
+        cooling = set()
+    first_sa: dict[str, Any] | None = None
     for offset in range(len(sa_files)):
         entry = sa_files[(start + offset) % len(sa_files)]
         try:
@@ -269,8 +381,15 @@ def _pick_sa() -> dict[str, Any] | None:
         except Exception:
             continue
         if _is_sa_dict(sa):
+            if first_sa is None:
+                first_sa = sa
+            email = sa.get("client_email")
+            if email and email in cooling:
+                continue
             return sa
-    return None
+    # 全部可用 SA 都在冷却：回落现行行为（第一个可用 SA），
+    # 不许因为冷却表把全站打到无号可用。
+    return first_sa
 
 
 def _affinity_pick(affinity_key: str | None) -> dict[str, Any] | None:
@@ -278,8 +397,6 @@ def _affinity_pick(affinity_key: str | None) -> dict[str, Any] | None:
 
     key 为空 → 与旧行为完全一致（直接 _pick_sa()）。
     """
-    import random
-
     if not affinity_key:
         return _pick_sa()
     now = time.monotonic()
@@ -288,8 +405,13 @@ def _affinity_pick(affinity_key: str | None) -> dict[str, Any] | None:
         if entry is not None:
             sa, expire = entry
             if now < expire and _is_sa_dict(sa):
-                logger.debug("drive_sa_affinity hit key=%.32s", affinity_key)
-                return sa
+                email = sa.get("client_email")
+                if not email or email not in _cooling_sa_emails_locked(now):
+                    logger.debug("drive_sa_affinity hit key=%.32s", affinity_key)
+                    return sa
+                # 亲和的 SA 正在配额冷却：亲和作废，落到 _pick_sa 另选健康 SA。
+                logger.debug(
+                    "drive_sa_affinity drop-cooling key=%.32s", affinity_key)
             _sa_affinity.pop(affinity_key, None)
         if len(_sa_affinity) >= _SA_AFFINITY_MAX_ENTRIES:
             # 与 _redirect_cache_set 同口径：满了整体清掉（下次请求重建亲和，无正确性影响）
@@ -301,7 +423,7 @@ def _affinity_pick(affinity_key: str | None) -> dict[str, Any] | None:
             _sa_affinity[affinity_key] = (sa, now + ttl)
         logger.info(
             "drive_sa_affinity new key=%.32s sa=%s ttl=%.0f",
-            affinity_key, sa.get("client_email"), ttl,
+            affinity_key, sa_log_id(sa.get("client_email")), ttl,
         )
     return sa
 
@@ -364,7 +486,7 @@ def get_drive_bearer_token(affinity_key: str | None = None,
         except Exception as exc:
             logger.warning(
                 "drive_auth: 为 SA %s 换取 Drive Bearer token 失败，调用方降级处理: %s",
-                email,
+                sa_log_id(email),
                 exc,
             )
             return None
@@ -373,7 +495,7 @@ def get_drive_bearer_token(affinity_key: str | None = None,
             return None
         minted_at = time.monotonic()
         latency_ms = int((minted_at - now) * 1000)
-        logger.info("drive_token_mint sa=%s latency_ms=%d", email, latency_ms)
+        logger.info("drive_token_mint sa=%s latency_ms=%d", sa_log_id(email), latency_ms)
         with _cache_lock:
             # 写回前复查：等待期间若已有线程换好并写入有效缓存，丢弃本次结果，
             # 不用稍旧的 token 覆盖更新的。
