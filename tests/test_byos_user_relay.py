@@ -84,6 +84,15 @@ def _setup_video_stream(monkeypatch, item, user, binding_row,
     monkeypatch.setattr(api, "_observe_traffic", lambda resp: resp)
     monkeypatch.setattr(api.play_sign, "check_referer",
                         lambda request, db: None)
+    # 2026-11-22 门禁改版：video_stream 放行分支改走池决策入口拿分流
+    # 裁决，本文件不测门禁，决策入口桩成 bound 放行（BYOS 分支自身的
+    # 绑定校验仍是各用例的判定层）。
+    from backend.emby_server import pool_gate as _pool_gate
+    from types import SimpleNamespace as _SNS
+    monkeypatch.setattr(
+        _pool_gate, "ensure_playback_allowed_for_item",
+        lambda db, u, it, request=None: _SNS(
+            allowed=True, kind="bound", pool_routed=False))
 
     relay_calls = []
 
@@ -208,22 +217,42 @@ def test_byos_other_users_binding_403_and_no_relay(monkeypatch):
 
 
 def test_byos_missing_binding_403_gate_no_sa_fallback(monkeypatch):
-    """无绑定用户：播放门禁 403 先于 byos 分支的 409（2026-10-26 硬规矩）。
+    """无订阅用户：播放门禁 403 先于 byos 分支的 409。
 
-    门禁上线前本用例断言 409（byos 分支“绑定缺失”）；门禁上线后，
-    名下完全无绑定的用户在门禁处即被 403 拦下，不再走到 byos 分支。
-    “绝不静默回落 SA”这一核心性质不变（sa == []）；绑定不可用
-    （expired / 非 drive）时仍走 byos 分支的 409，见相邻用例。
+    门禁改版前本用例断言绑盘门禁 403；2026-11-22 改版后门禁看
+    订阅资格——名下无订阅的用户在门禁处即被 403 拦下，不再走到
+    byos 分支。“绝不静默回落 SA”这一核心性质不变（sa == []）；
+    绑定不可用（expired / 非 drive）时仍走 byos 分支的 409，
+    见相邻用例。
     """
     from backend.emby_server import api
+    from backend.emby_server import playback_gate as _gate
 
     relay, token, sa, notes = _setup_video_stream(
         monkeypatch, _byos_item(), _user(), None)
+    # 2026-11-22 门禁改版：无订阅（且无绑定）用户在订阅门禁处即被
+    # 403 拦下（旧口径为绑盘门禁）。_FakeDB 跑不动真判定，本用例
+    # 桩门禁入口抛新文案 403，钉「门禁先于 byos 分支、绝不回落 SA」。
+    def _deny(db, u, req=None):
+        raise HTTPException(status_code=403,
+                            detail=_gate.GATE_MESSAGE)
+
+    monkeypatch.setattr(_gate, "ensure_binding_playback_allowed", _deny)
+    # 二值门禁 403 后 video_stream 还会问池决策入口复核（生产同口径
+    # 同文案）——入口同样桩成拒绝，请求才算在门禁处终局被拦。
+    from backend.emby_server import pool_gate as _pool_gate
+
+    def _deny_pool(db, u, it, request=None):
+        raise HTTPException(status_code=403,
+                            detail=_gate.GATE_MESSAGE)
+
+    monkeypatch.setattr(
+        _pool_gate, "ensure_playback_allowed_for_item", _deny_pool)
     with pytest.raises(HTTPException) as ei:
         _run(api.video_stream(
             "item1", _fake_request(), _user(), _FakeDB(None)))
     assert ei.value.status_code == 403
-    assert "绑定" in ei.value.detail
+    assert "订阅" in ei.value.detail
     assert relay == [] and token == [] and sa == []
 
 

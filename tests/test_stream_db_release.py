@@ -116,6 +116,12 @@ def _patch_common(monkeypatch, api):
     monkeypatch.setattr(
         "backend.emby_server.playback_gate.ensure_binding_playback_allowed",
         lambda db, user, r=None: None)
+    # 2026-11-22 门禁改版：video_stream 放行分支改走池决策入口拿分流
+    # 裁决，同样桩成 bound 放行（_FakeDb 无 query，真跑必崩）。
+    monkeypatch.setattr(
+        "backend.emby_server.pool_gate.ensure_playback_allowed_for_item",
+        lambda db, user, it, request=None: types.SimpleNamespace(
+            allowed=True, kind="bound", pool_routed=False))
     monkeypatch.setattr(api.play_sign, "check_referer", lambda *a, **k: None)
     return item
 

@@ -397,6 +397,22 @@ def pi_seed():
         provider="drive", status="active")
     db.add(member)
     _binding(users[BOUND])
+    # 播放门禁（2026-11-22 改版）：资格看订阅——三种子用户各补 realm 1 订阅。
+    from datetime import datetime as _dt, timedelta as _td
+    if db.query(models.ServerRealm).filter_by(id=1).first() is None:
+        db.add(models.ServerRealm(
+            id=1, name="默认", slug="default", is_active=True))
+        db.flush()
+    if db.query(models.SubscriptionPlan).filter_by(id=1).first() is None:
+        db.add(models.SubscriptionPlan(
+            id=1, name="测试套餐", price=100, duration_days=30, realm_id=1))
+        db.flush()
+    for _uid in users.values():
+        db.add(models.UserSubscription(
+            user_id=_uid, plan_id=1, realm_id=1,
+            start_date=_dt.now() - _td(days=1),
+            end_date=_dt.now() + _td(days=30), status="active"))
+
     db.add(em.StorageMount(id=3, name="m3", mount_type="drive",
                            path="drive:drive1"))
     lib = em.Library(guid=_guid(), name=LIB_NAME, collection_type="movies",

@@ -92,7 +92,31 @@ def _binding(db, user_id, status="active", provider="drive"):
         credential_id=cred.id, status=status)
     db.add(binding)
     db.commit()
+    # 2026-11-22 播放门禁改版：sign_allowed 改看订阅资格——本助手造的
+    # 是「能播的用户」，绑定之外再补一条 realm 1 有效订阅（status 非
+    # active 的绑定不补，保留原夹具语义）。
+    if status == "active":
+        _subscription(db, user_id)
     return binding
+
+
+def _subscription(db, user_id):
+    from datetime import datetime, timedelta, timezone
+
+    if db.query(base_models.ServerRealm).filter_by(id=1).first() is None:
+        db.add(base_models.ServerRealm(
+            id=1, name="默认", slug="default", is_active=True))
+        db.flush()
+    if db.query(base_models.SubscriptionPlan).filter_by(id=1).first() is None:
+        db.add(base_models.SubscriptionPlan(
+            id=1, name="测试套餐", price=100, duration_days=30, realm_id=1))
+        db.flush()
+    db.add(base_models.UserSubscription(
+        user_id=user_id, plan_id=1, realm_id=1,
+        start_date=datetime.now(timezone.utc) - timedelta(days=1),
+        end_date=datetime.now(timezone.utc) + timedelta(days=30),
+        status="active"))
+    db.commit()
 
 
 def _library(db, name, upstream_source_ids=""):

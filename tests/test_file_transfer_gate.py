@@ -79,6 +79,28 @@ def _binding(db, user_id, status="active", provider="drive"):
     return binding
 
 
+def _subscription(db, user_id):
+    """有效订阅（realm 1）：2026-11-22 门禁改版后过播放门须先有订阅。"""
+    from datetime import datetime, timedelta, timezone
+
+    if db.query(base_models.ServerRealm).filter_by(id=1).first() is None:
+        db.add(base_models.ServerRealm(
+            id=1, name="默认", slug="default", is_active=True))
+        db.flush()
+    if db.query(base_models.SubscriptionPlan).filter_by(id=1).first() is None:
+        db.add(base_models.SubscriptionPlan(
+            id=1, name="测试套餐", price=100, duration_days=30, realm_id=1))
+        db.flush()
+    sub = base_models.UserSubscription(
+        user_id=user_id, plan_id=1, realm_id=1,
+        start_date=datetime.now(timezone.utc) - timedelta(days=1),
+        end_date=datetime.now(timezone.utc) + timedelta(days=30),
+        status="active")
+    db.add(sub)
+    db.commit()
+    return sub
+
+
 def _plain_request(item_id="guid-1"):
     return types.SimpleNamespace(
         query_params={}, path_params={"item_id": item_id})
@@ -157,6 +179,7 @@ def _mounted(monkeypatch):
 def test_mounted_file_preparing_blocked(db, _mounted, monkeypatch):
     user = _user(db)
     _binding(db, user.id)
+    _subscription(db, user.id)
     _patch_gate(monkeypatch, {"verdict": "preparing"})
     with pytest.raises(HTTPException) as excinfo:
         mount_routes.mounted_item_file("guid-1", _plain_request(), user, db)
@@ -167,6 +190,7 @@ def test_mounted_file_preparing_blocked(db, _mounted, monkeypatch):
 def test_mounted_file_failed_blocked(db, _mounted, monkeypatch):
     user = _user(db)
     _binding(db, user.id)
+    _subscription(db, user.id)
     _patch_gate(monkeypatch, {"verdict": "failed", "detail": "转存失败说明"})
     with pytest.raises(HTTPException) as excinfo:
         mount_routes.mounted_item_file("guid-1", _plain_request(), user, db)
@@ -177,6 +201,7 @@ def test_mounted_file_failed_blocked(db, _mounted, monkeypatch):
 def test_mounted_file_error_is_503(db, _mounted, monkeypatch):
     user = _user(db)
     _binding(db, user.id)
+    _subscription(db, user.id)
     _patch_gate(monkeypatch, {"verdict": "error"})
     with pytest.raises(HTTPException) as excinfo:
         mount_routes.mounted_item_file("guid-1", _plain_request(), user, db)
@@ -186,6 +211,7 @@ def test_mounted_file_error_is_503(db, _mounted, monkeypatch):
 def test_mounted_file_proceed_still_302(db, _mounted, monkeypatch):
     user = _user(db)
     _binding(db, user.id)
+    _subscription(db, user.id)
     _patch_gate(monkeypatch, {"verdict": "proceed"})
     resp = mount_routes.mounted_item_file("guid-1", _plain_request(), user, db)
     assert resp.status_code == 302
@@ -224,6 +250,7 @@ def _mounted_real(db, monkeypatch):
 def test_mounted_file_no_copy_blocked_and_job_created(db, _mounted_real):
     user = _user(db)
     _binding(db, user.id)
+    _subscription(db, user.id)
     with pytest.raises(HTTPException) as excinfo:
         mount_routes.mounted_item_file("guid-1", _plain_request(), user, db)
     assert excinfo.value.status_code == 409
@@ -237,6 +264,7 @@ def test_mounted_file_no_copy_blocked_and_job_created(db, _mounted_real):
 def test_mounted_file_ready_copy_passes(db, _mounted_real):
     user = _user(db)
     _binding(db, user.id)
+    _subscription(db, user.id)
     db.add(em.TransferVariant(
         item_id=_mounted_real.id, source_file_id="origfid",
         variant_file_id="copyfid",
@@ -284,6 +312,7 @@ def _local_file(tmp_path, monkeypatch):
 def test_stream_file_preparing_blocked(db, _local_file, monkeypatch):
     user = _user(db)
     _binding(db, user.id)
+    _subscription(db, user.id)
     _patch_gate(monkeypatch, {"verdict": "preparing"})
     with pytest.raises(HTTPException) as excinfo:
         stream_routes.item_file("guid-1", _plain_request(), user, db)
@@ -293,6 +322,7 @@ def test_stream_file_preparing_blocked(db, _local_file, monkeypatch):
 def test_stream_file_proceed_serves_bytes(db, _local_file, monkeypatch):
     user = _user(db)
     _binding(db, user.id)
+    _subscription(db, user.id)
     _patch_gate(monkeypatch, {"verdict": "proceed"})
     resp = stream_routes.item_file("guid-1", _plain_request(), user, db)
     assert isinstance(resp, FileResponse)
@@ -306,6 +336,7 @@ def test_stream_file_local_item_real_gate_untouched(db, _local_file,
     _local_file.drive_file_id = ""
     user = _user(db)
     _binding(db, user.id)
+    _subscription(db, user.id)
     resp = stream_routes.item_file("guid-1", _plain_request(), user, db)
     assert isinstance(resp, FileResponse)
     assert resp.status_code == 200

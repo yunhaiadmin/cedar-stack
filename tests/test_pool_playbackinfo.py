@@ -148,6 +148,22 @@ def seed():
     db.add(em.UserStorageBinding(
         user_id=users[BOUND], provider="drive", account_label="自家盘",
         credential_id=cred2.id, status="active"))
+
+    # 播放门禁（2026-11-22 改版）：资格看订阅——三种子用户各补 realm 1 订阅。
+    from datetime import datetime as _dt, timedelta as _td
+    if db.query(models.ServerRealm).filter_by(id=1).first() is None:
+        db.add(models.ServerRealm(
+            id=1, name="默认", slug="default", is_active=True))
+        db.flush()
+    if db.query(models.SubscriptionPlan).filter_by(id=1).first() is None:
+        db.add(models.SubscriptionPlan(
+            id=1, name="测试套餐", price=100, duration_days=30, realm_id=1))
+        db.flush()
+    for _uid in users.values():
+        db.add(models.UserSubscription(
+            user_id=_uid, plan_id=1, realm_id=1,
+            start_date=_dt.now() - _td(days=1),
+            end_date=_dt.now() + _td(days=30), status="active"))
     db.add(em.StorageMount(id=3, name="m3", mount_type="drive",
                            path="drive:drive1"))
     lib = em.Library(guid=_guid(), name=LIB_NAME, collection_type="movies",
@@ -410,6 +426,8 @@ def test_playbackinfo_bound_user_ready_variant_unchanged(
 
 
 def test_playbackinfo_pool_off_403(client, free_token, seed):
+    """池关时订阅用户不再被绑盘门禁拦（2026-11-22 改版）：未绑订阅
+    用户的 PlaybackInfo 正常 200 下发（函数名保留历史命名）。"""
     db = SessionLocal()
     try:
         config_service.save_config(db, {"pool_enabled": False},
@@ -420,4 +438,4 @@ def test_playbackinfo_pool_off_403(client, free_token, seed):
     store.invalidate()
     r = client.post(f"/emby/Items/{seed['movie']}/PlaybackInfo",
                     headers=_h(free_token), json={})
-    assert r.status_code == 403, r.text
+    assert r.status_code == 200, r.text
