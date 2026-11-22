@@ -77,6 +77,49 @@ def _enrich_count(db, status: str) -> int:
         return 0
 
 
+# S8：worker 阶段耗时快照的 Redis 键（与 enrich_worker 侧对齐，janitor
+# 每轮发布）；api 进程的 scan_progress 是本进程内存、恒空，故回退读它。
+ENRICH_STAGE_STATS_REDIS_KEY = "aetrix:enrich:stage_stats"
+ENRICH_STAGE_STATS_MAX_AGE_SEC = 180
+
+
+def _enrich_stage_stats() -> dict:
+    """enrich 阶段耗时：本进程统计非空用本进程；为空时回退 Redis 快照。
+
+    worker 与 api 分离部署时阶段统计只存在于 worker 进程内存里，
+    health 长期读到空（B6 观测缺口）。worker janitor 每轮把快照发布
+    到 Redis（见 enrich_worker._publish_stage_stats_to_redis）；这里
+    只采信 ts 距今 ≤180 秒的新鲜快照，解析出的 stages 填
+    ``enrich_stages``。读 Redis 全程 try/except 兜底留空，绝不让
+    健康检查自己抛。
+    """
+    try:
+        from backend.emby_server import scan_progress as _progress
+        local = _progress.stage_stats()
+    except Exception:  # noqa: BLE001 — 本进程统计拿不到就走回退
+        local = {}
+    if local:
+        return local
+    try:
+        import json as _json
+
+        from backend import database as _dbmod
+        client = _dbmod.redis_client
+        if client is None:
+            return {}
+        raw = client.get(ENRICH_STAGE_STATS_REDIS_KEY)
+        if not raw:
+            return {}
+        payload = _json.loads(raw)
+        ts = float(payload.get("ts") or 0)
+        if time.time() - ts > ENRICH_STAGE_STATS_MAX_AGE_SEC:
+            return {}
+        stages = payload.get("stages")
+        return stages if isinstance(stages, dict) else {}
+    except Exception:  # noqa: BLE001 — 快照读不到就留空，不影响判定
+        return {}
+
+
 def _enrich_recent_completed(db, minutes: int) -> int:
     """最近 ``minutes`` 分钟内完成的可见条目数（done 且 last_scraped_at 落在窗口内）。
 
@@ -301,10 +344,8 @@ def collect(db) -> dict:
             recent_done = _enrich_recent_completed(db, window_min)
             metrics["enrich_recent_done"] = recent_done
             metrics["enrich_progress_window_min"] = window_min
-            try:
-                metrics["enrich_stages"] = progress.stage_stats()
-            except Exception:  # noqa: BLE001 — 进程内统计拿不到就留空，不影响判定
-                metrics["enrich_stages"] = {}
+            # S8：本进程统计为空时回退 worker 发布的 Redis 快照
+            metrics["enrich_stages"] = _enrich_stage_stats()
             progressing = recent_done > 0 or done_per_min > 0
             if backlog >= DOWN_QUEUE_BACKLOG:
                 if progressing:

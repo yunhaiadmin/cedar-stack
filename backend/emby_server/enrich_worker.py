@@ -24,6 +24,7 @@ side 图片 / NFO / TMDB 刮削全部交给本 worker 在后台补全——这�
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import random
@@ -31,6 +32,7 @@ import re
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -58,6 +60,14 @@ ENRICH_WORKERS = _cpu_workers("ENRICH_WORKERS", io_bound=True)
 # Batch 2（2026-10-19 开关清理）：批次回到 env-only（面板不再可写），
 # 默认 200 = 生产现值（system_configs 旧行被忽略）。
 ENRICH_BATCH = env_int("ENRICH_BATCH", 200, 10)
+# S2 批量 IO 并发上限：_process_batch 的 Phase 1（pre：side/NFO 读取）与
+# Phase 3a（post 计算 + 季海报 IO）的线程池上限。后台任务别吵醒主链路，
+# 取保守默认 4（rclone/谷歌盘往返并发同步放大，须与省额度纪律权衡）；
+# =1 时逐字走旧串行路径。下限 1。
+ENRICH_IO_WORKERS = env_int("ENRICH_IO_WORKERS", 4, 1)
+# S8：worker 阶段耗时快照的 Redis 键（janitor 每轮发布、api 进程 health
+# 在本进程统计为空时回退读取，口径见 health_report._enrich_stage_stats）。
+ENRICH_STAGE_STATS_REDIS_KEY = "aetrix:enrich:stage_stats"
 # TMDB 批量开关：1=抢单后批量调 batch_search/batch_details，0=逐条原逻辑
 ENRICH_TMDB_BATCH = os.getenv("ENRICH_TMDB_BATCH", "1") == "1"
 ENRICH_IDLE_POLL_SEC = env_int("ENRICH_IDLE_POLL_SEC", 30, 5)
@@ -4581,6 +4591,36 @@ def parity_patrol_rescue(db, limit: int = _PARITY_PATROL_PER_ROUND) -> int:
     return fixed
 
 
+def _publish_stage_stats_to_redis(redis_client=None) -> bool:
+    """S8：把本进程阶段耗时快照发布到 Redis，供 api 进程 health 回退读取。
+
+    ``scan_progress`` 的阶段统计是进程内内存：worker 进程里有数、api
+    进程恒空（health 的 enrich_stages 长期为 {}，查因只能靠日志采样）。
+    janitor 每轮顺带把 ``stage_stats()`` + ``throughput()`` 序列化成
+    JSON 写 ``aetrix:enrich:stage_stats``（含 ts 时间戳，读侧只采信
+    ≤180 秒的新鲜快照）。Redis 客户端走 backend.database 现有口径
+    （``redis_call`` 熔断封装）；整段失败只 debug 日志、返回 False，
+    绝不影响 janitor 主流程。
+    """
+    try:
+        payload = json.dumps({
+            "ts": time.time(),
+            "stages": progress.stage_stats(),
+            "throughput": progress.throughput(),
+        })
+        if redis_client is not None:
+            redis_client.set(ENRICH_STAGE_STATS_REDIS_KEY, payload)
+            return True
+        from backend.database import redis_call
+        result = redis_call(
+            lambda c: c.set(ENRICH_STAGE_STATS_REDIS_KEY, payload),
+            default=None)
+        return result is not None
+    except Exception:  # noqa: BLE001 — 发布失败绝不拖累 janitor
+        logger.debug("发布 enrich 阶段统计到 Redis 失败", exc_info=True)
+        return False
+
+
 def _janitor_loop() -> None:
     """租约 janitor 线程：周期回收停滞的 enriching 行（v2.42.9）"""
     # Step 1：租约后台可配（60s 热生效），janitor 每轮重读
@@ -4678,6 +4718,9 @@ def _janitor_loop() -> None:
                         logger.info("补全 janitor Drive 分享巡检确认 %d 个文件", nds)
             finally:
                 db.close()
+            # S8：每轮顺带发布阶段耗时快照到 Redis（函数内全兜底，
+            # 失败只 debug 日志，绝不影响 janitor 主流程）。
+            _publish_stage_stats_to_redis()
         except Exception as exc:  # noqa: BLE001 — 一轮失败不该拖垮 janitor
             logger.warning("补全 janitor 执行失败: %s", exc)
         _stop_event.wait(ENRICH_JANITOR_INTERVAL_SEC)
@@ -6436,13 +6479,236 @@ def _split_batch_for_inherit(batch: list) -> list:
     return [heads, episodes]
 
 
+
+def _phase1_pre_concurrent(db, batch: list, io_workers: int) -> list:
+    """S2 Phase 1 并发版：串行预备 → 按组并发跑 ``_enrich_fetch_pre``。
+
+    预备段（主线程串行，与串行路径逐字同口径）：逐条 snapshot /
+    ``_inherit_parent_info`` / ``_folder_title_candidate``（含
+    ``db.in_transaction()`` rollback 卫生），把每条入参收好。
+    执行段：按 gkey（``series_id or id``）分组（批内原序、组内原序），
+    每组一个任务、组内逐条串行调用并共用该组自己的 holder（与串行
+    路径逐组新建 holder 的语义一致——同组 _ScanContext 的目录列举 /
+    NFO 缓存整季共享、不许串味）；组间 ThreadPoolExecutor 并发，
+    上限 ``ENRICH_IO_WORKERS``。执行段线程不碰主 db session：串行
+    路径里 pre 异常后的 ``db.rollback()`` 改由主线程在池收尾后统一
+    做一次（rollback 本是事务卫生，等价）。``_stop_event`` 在组内
+    每条前检查，置位后该组余下条目不再处理、不进 pre_results（与
+    串行 break 语义对齐）。返回顺序与批内原序一致（按下标回填，
+    不按完成序）。
+    """
+    prepared = []
+    for item in batch:
+        if _stop_event.is_set():
+            break
+        snapshot = item if isinstance(item, _EnrichItemSnapshot) else _snapshot_item(item)
+        inherit_parent = _inherit_parent_info(db, snapshot)
+        try:
+            folder_candidate = _folder_title_candidate(db, snapshot)
+        except Exception:  # noqa: BLE001 — 推导失败按无候选，不挡主链路
+            folder_candidate = None
+        if db.in_transaction():
+            db.rollback()
+        prepared.append((item, snapshot, inherit_parent, folder_candidate))
+    groups: dict = {}
+    for idx, entry in enumerate(prepared):
+        gkey = entry[1].series_id or entry[1].id
+        groups.setdefault(gkey, []).append((idx,) + entry)
+
+    def _run_group(entries):
+        holder: dict = {}
+        out = []
+        for idx, item, snapshot, inherit_parent, folder_candidate in entries:
+            if _stop_event.is_set():
+                break
+            try:
+                result, tmdb_ctx = _enrich_fetch_pre(
+                    snapshot, holder=holder, inherit_parent=inherit_parent,
+                    folder_candidate=folder_candidate)
+                pre_failed_exc = None
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("批量 pre 失败 id=%s: %s", snapshot.id, exc)
+                # pre 异常按单条失败处理，记一个失败的占位结果
+                result = {"ok": False, "error": str(exc)[:200]}
+                tmdb_ctx = None
+                pre_failed_exc = exc
+            out.append((idx, item, snapshot, result, tmdb_ctx, pre_failed_exc))
+        return out
+
+    slots: list = [None] * len(prepared)
+    with ThreadPoolExecutor(max_workers=io_workers) as pool:
+        futures = [pool.submit(_run_group, entries)
+                   for entries in groups.values()]
+        for fut in futures:
+            for rec in fut.result():
+                slots[rec[0]] = rec[1:]
+    if any(rec is not None and rec[4] is not None for rec in slots):
+        db.rollback()
+    return [rec for rec in slots if rec is not None]
+
+
+def _phase3_post_concurrent(db, pre_results: list, batch_out: dict,
+                            io_workers: int) -> None:
+    """S2 Phase 3 并发版：3a 并发算 post + 季海报 IO，3b 串行逐条处置。
+
+    3a（ThreadPoolExecutor，上限 ``ENRICH_IO_WORKERS``）：逐条算
+    「待决结果」——(a) pre 异常 → 异常待决（不调 post）；(b)
+    ``tmdb_ctx`` 为 None → fetched=result；(c) 否则调
+    ``_enrich_fetch_tmdb_post``；post 成功且 fetched.ok 后再调季
+    海报 IO，但用**每条独立的短会话**（``SessionLocal()``，只读、
+    用完 close），不再用主 session。post 异常记异常待决（连同异常
+    对象）；季海报 ``TmdbTransientError`` 单独记瞬态待决。3a 不碰
+    主 db session、不调任何写库函数。
+    3b（主线程，批内原序）：按待决结果逐条走与串行路径逐字相同的
+    处置：异常待决 → 原 except 分支（MountError 走
+    ``_requeue_mount_unavailable``、其余 ``_mark_failed``）；季海报
+    瞬态待决 → 原 TmdbTransientError 分支（``_mark_failed``）；
+    fetched 不 ok → douban_banned / ``_mark_failed`` 分支；ok →
+    原写库段。``progress.note_stage`` / ``note_completed`` 每条一次，
+    口径不变（耗时自 3a 该条开始计，与串行路径整段计时同口径）。
+    顺序语义：批内条目的 post 不读其他条目的写库结果（父子分批已
+    由 ``_split_batch_for_inherit`` 在更外层保证），3a 提前算 post
+    不改变结果；季海报 IO 改短会话只读，与主 session 读到的同一批
+    season 行等价。
+    """
+    from backend.emby_server import mounts as mount_lib
+    from backend.emby_server.tmdb import TmdbTransientError
+
+    def _compute(i, snapshot, result, tmdb_ctx, pre_exc):
+        started = time.monotonic()
+        if pre_exc is not None:
+            return i, ("exc", pre_exc, None, started)
+        try:
+            if tmdb_ctx is None:
+                fetched = result
+            else:
+                out = batch_out.get(
+                    i, {"hit": None, "details": None, "transient": False})
+                fetched = _enrich_fetch_tmdb_post(
+                    result, snapshot, tmdb_ctx, batch_out=out)
+        except Exception as exc:  # noqa: BLE001
+            return i, ("exc", exc, None, started)
+        if fetched.get("ok"):
+            sdb = None
+            try:
+                sdb = SessionLocal()
+                _enrich_season_posters_io(sdb, snapshot, fetched)
+            except TmdbTransientError as exc:
+                return i, ("season_transient", exc, fetched, started)
+            except Exception as exc:  # noqa: BLE001
+                return i, ("exc", exc, fetched, started)
+            finally:
+                if sdb is not None:
+                    try:
+                        sdb.close()
+                    except Exception:  # noqa: BLE001
+                        pass
+        return i, ("fetched", None, fetched, started)
+
+    pendings: dict = {}
+    with ThreadPoolExecutor(max_workers=io_workers) as pool:
+        futures = [
+            pool.submit(_compute, i, snapshot, result, tmdb_ctx, pre_exc)
+            for i, (_item, snapshot, result, tmdb_ctx, pre_exc)
+            in enumerate(pre_results)
+        ]
+        for fut in futures:
+            i, rec = fut.result()
+            pendings[i] = rec
+
+    for i, (item, snapshot, result, tmdb_ctx, pre_exc) in enumerate(pre_results):
+        if _stop_event.is_set():
+            break
+        kind, exc, fetched, started = pendings[i]
+        item_id = snapshot.id
+        attempts = snapshot.enrich_attempts
+        mount_id = _mount_id_of(snapshot.file_path)
+        if kind == "exc":
+            logger.warning("批量补全 IO 失败 id=%s: %s", item_id, exc)
+            db.rollback()
+            if isinstance(exc, mount_lib.MountError):
+                outcome = _requeue_mount_unavailable(
+                    db, item_id, mount_id, claim_token=snapshot.enrich_claim_token)
+            else:
+                outcome = _mark_failed(db, item_id, attempts, str(exc),
+                                       claim_token=snapshot.enrich_claim_token)
+            progress.note_stage(
+                "enrich_item", (time.monotonic() - started) * 1000.0)
+            progress.note_completed(outcome)
+            continue
+        if kind == "season_transient":
+            logger.warning("批量季海报瞬态失败，整条送回重试 id=%s: %s", item_id, exc)
+            db.rollback()
+            outcome = _mark_failed(db, item_id, attempts, str(exc),
+                                   claim_token=snapshot.enrich_claim_token)
+            progress.note_stage(
+                "enrich_item", (time.monotonic() - started) * 1000.0)
+            progress.note_completed(outcome)
+            continue
+        if not fetched.get("ok"):
+            db.rollback()
+            if fetched.get("douban_banned"):
+                outcome = _requeue_for_douban_ban(
+                    db, item_id, claim_token=snapshot.enrich_claim_token)
+            else:
+                outcome = _mark_failed(db, item_id, attempts,
+                                       fetched.get("error") or "fetch failed",
+                                       claim_token=snapshot.enrich_claim_token)
+            progress.note_stage(
+                "enrich_item", (time.monotonic() - started) * 1000.0)
+            progress.note_completed(outcome)
+            continue
+        try:
+            db.rollback()
+            fresh = db.query(em.MediaItem).filter(
+                em.MediaItem.id == item_id).first()
+            if fresh is None:
+                db.rollback()
+                outcome = "skip"
+            elif not _claim_still_ours(fresh, snapshot.enrich_claim_token):
+                # R4-4：同串行口径，僵尸 worker 迟到写库不许覆盖行的新状态。
+                logger.info("批量补全写库跳过（认领已失效）id=%s", item_id)
+                db.rollback()
+                outcome = "skip"
+            else:
+                from backend.emby_server import enrich_queues as _eq
+                _apply_write_phase(
+                    db, fresh, fetched,
+                    queue=(_eq.queue_of(fresh)
+                           if _eq.two_queue_enabled() else None))
+                _st = (fresh.enrich_status or "")
+                outcome = "done" if _st == "done" else ("failed" if _st == "failed" else "retry")
+                db.commit()
+                # 列表去重缓存：同串行口径，bump 失败只记日志不回滚业务。
+                try:
+                    from backend.emby_server import items_dedup_cache as _idc
+                    if _idc.bump_library_item_versions(db, [fresh.library_id]):
+                        db.commit()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("去重缓存版本号 bump 失败（批量补全写库）: %s", exc)
+                _maybe_flip_inherit_children(db, fetched)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("批量补全写库失败 id=%s: %s", item_id, exc)
+            db.rollback()
+            outcome = _mark_failed(db, item_id, attempts, str(exc),
+                                   claim_token=snapshot.enrich_claim_token)
+        progress.note_stage(
+            "enrich_item", (time.monotonic() - started) * 1000.0)
+        progress.note_completed(outcome)
+
+
 def _process_batch(db, batch: list) -> None:
-    """批量处理已抢到的条目：pre（逐条）→ TMDB 批量 → post+写库（逐条）。
+    """批量处理已抢到的条目：pre → TMDB 批量 → post+写库。
 
     与逐条 `_process_item` 等价，只是把 TMDB 环节换成批量：
-    1. 逐条跑 `_enrich_fetch_pre`（side/NFO），收集 tmdb_plan；
+    1. 跑 `_enrich_fetch_pre`（side/NFO），收集 tmdb_plan；
     2. `_run_tmdb_batch` 一次跑完所有 TMDB 请求；
-    3. 逐条跑 `_enrich_fetch_tmdb_post` + 写库（与 `_process_item` 写库段一致）。
+    3. 跑 `_enrich_fetch_tmdb_post` + 写库（与 `_process_item` 写库段一致）。
+
+    S2：Phase 1 与 Phase 3 的 IO 段按组/逐条并发（上限
+    ``ENRICH_IO_WORKERS``，见 ``_phase1_pre_concurrent`` /
+    ``_phase3_post_concurrent``）；``ENRICH_IO_WORKERS<=1`` 或单条
+    批次时逐字走原串行路径（本函数内保留）。
 
     批量级异常 → 回退到逐条 `_process_item`；单条 transient → 该条 ok=False 进重试。
     """
@@ -6455,40 +6721,45 @@ def _process_batch(db, batch: list) -> None:
         return
     from backend.emby_server import mounts as mount_lib
 
-    # ---- Phase 1：逐条 pre ----
-    # (item, snapshot, result, tmdb_ctx, holder)
-    pre_results = []
-    holder: Optional[dict] = None
-    current_group = None
-    for item in batch:
-        if _stop_event.is_set():
-            break
-        gkey = item.series_id or item.id
-        if gkey != current_group:
-            holder = {}
-            current_group = gkey
-        snapshot = item if isinstance(item, _EnrichItemSnapshot) else _snapshot_item(item)
-        inherit_parent = _inherit_parent_info(db, snapshot)
-        try:
-            folder_candidate = _folder_title_candidate(db, snapshot)
-        except Exception:  # noqa: BLE001 — 推导失败按无候选，不挡主链路
-            folder_candidate = None
-        if db.in_transaction():
-            db.rollback()
-        try:
-            result, tmdb_ctx = _enrich_fetch_pre(
-                snapshot, holder=holder, inherit_parent=inherit_parent,
-                folder_candidate=folder_candidate)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("批量 pre 失败 id=%s: %s", snapshot.id, exc)
-            db.rollback()
-            # pre 异常按单条失败处理，记一个失败的占位结果
-            result = {"ok": False, "error": str(exc)[:200]}
-            tmdb_ctx = None
-            pre_failed_exc = exc
-        else:
-            pre_failed_exc = None
-        pre_results.append((item, snapshot, result, tmdb_ctx, pre_failed_exc))
+    # ---- Phase 1：pre（S2：IO 段按组并发；ENRICH_IO_WORKERS<=1 或单条走原串行） ----
+    io_workers = ENRICH_IO_WORKERS
+    if io_workers <= 1 or len(batch) <= 1:
+        # ---- Phase 1：逐条 pre ----
+        # (item, snapshot, result, tmdb_ctx, holder)
+        pre_results = []
+        holder: Optional[dict] = None
+        current_group = None
+        for item in batch:
+            if _stop_event.is_set():
+                break
+            gkey = item.series_id or item.id
+            if gkey != current_group:
+                holder = {}
+                current_group = gkey
+            snapshot = item if isinstance(item, _EnrichItemSnapshot) else _snapshot_item(item)
+            inherit_parent = _inherit_parent_info(db, snapshot)
+            try:
+                folder_candidate = _folder_title_candidate(db, snapshot)
+            except Exception:  # noqa: BLE001 — 推导失败按无候选，不挡主链路
+                folder_candidate = None
+            if db.in_transaction():
+                db.rollback()
+            try:
+                result, tmdb_ctx = _enrich_fetch_pre(
+                    snapshot, holder=holder, inherit_parent=inherit_parent,
+                    folder_candidate=folder_candidate)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("批量 pre 失败 id=%s: %s", snapshot.id, exc)
+                db.rollback()
+                # pre 异常按单条失败处理，记一个失败的占位结果
+                result = {"ok": False, "error": str(exc)[:200]}
+                tmdb_ctx = None
+                pre_failed_exc = exc
+            else:
+                pre_failed_exc = None
+            pre_results.append((item, snapshot, result, tmdb_ctx, pre_failed_exc))
+    else:
+        pre_results = _phase1_pre_concurrent(db, batch, io_workers)
 
     # ---- Phase 2：TMDB 批量 ----
     indexed = []
@@ -6524,107 +6795,110 @@ def _process_batch(db, batch: list) -> None:
                 progress.note_completed(outcome)
             return
 
-    # ---- Phase 3：逐条 post + 写库 ----
-    for i, (item, snapshot, result, tmdb_ctx, pre_exc) in enumerate(pre_results):
-        if _stop_event.is_set():
-            break
-        started = time.monotonic()
-        item_id = snapshot.id
-        attempts = snapshot.enrich_attempts
-        mount_id = _mount_id_of(snapshot.file_path)
-        try:
-            if pre_exc is not None:
-                raise pre_exc
-            if tmdb_ctx is None:
-                fetched = result
-            else:
-                out = batch_out.get(
-                    i, {"hit": None, "details": None, "transient": False})
-                fetched = _enrich_fetch_tmdb_post(
-                    result, snapshot, tmdb_ctx, batch_out=out)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("批量补全 IO 失败 id=%s: %s", item_id, exc)
-            db.rollback()
-            if isinstance(exc, mount_lib.MountError):
-                outcome = _requeue_mount_unavailable(
-                    db, item_id, mount_id, claim_token=snapshot.enrich_claim_token)
-            else:
+    # ---- Phase 3：post + 写库（S2：3a IO 并发 + 3b 串行处置；<=1/单条走原串行） ----
+    if io_workers <= 1 or len(pre_results) <= 1:
+        for i, (item, snapshot, result, tmdb_ctx, pre_exc) in enumerate(pre_results):
+            if _stop_event.is_set():
+                break
+            started = time.monotonic()
+            item_id = snapshot.id
+            attempts = snapshot.enrich_attempts
+            mount_id = _mount_id_of(snapshot.file_path)
+            try:
+                if pre_exc is not None:
+                    raise pre_exc
+                if tmdb_ctx is None:
+                    fetched = result
+                else:
+                    out = batch_out.get(
+                        i, {"hit": None, "details": None, "transient": False})
+                    fetched = _enrich_fetch_tmdb_post(
+                        result, snapshot, tmdb_ctx, batch_out=out)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("批量补全 IO 失败 id=%s: %s", item_id, exc)
+                db.rollback()
+                if isinstance(exc, mount_lib.MountError):
+                    outcome = _requeue_mount_unavailable(
+                        db, item_id, mount_id, claim_token=snapshot.enrich_claim_token)
+                else:
+                    outcome = _mark_failed(db, item_id, attempts, str(exc),
+                                           claim_token=snapshot.enrich_claim_token)
+                progress.note_stage(
+                    "enrich_item", (time.monotonic() - started) * 1000.0)
+                progress.note_completed(outcome)
+                continue
+            if not fetched.get("ok"):
+                db.rollback()
+                if fetched.get("douban_banned"):
+                    outcome = _requeue_for_douban_ban(
+                        db, item_id, claim_token=snapshot.enrich_claim_token)
+                else:
+                    outcome = _mark_failed(db, item_id, attempts,
+                                          fetched.get("error") or "fetch failed",
+                                          claim_token=snapshot.enrich_claim_token)
+                progress.note_stage(
+                    "enrich_item", (time.monotonic() - started) * 1000.0)
+                progress.note_completed(outcome)
+                continue
+            # WS5 季海报：IO 阶段给剧的名下无图季拉 TMDB 季海报并预热
+            #（写库阶段由 _enrich_apply 落字段；与单条 _process_item 同口径）
+            # A-023：同单条口径，瞬态失败整条送回重试，不进写库、不杀线程。
+            from backend.emby_server.tmdb import TmdbTransientError
+            try:
+                _enrich_season_posters_io(db, snapshot, fetched)
+            except TmdbTransientError as exc:
+                logger.warning("批量季海报瞬态失败，整条送回重试 id=%s: %s", item_id, exc)
+                db.rollback()
+                outcome = _mark_failed(db, item_id, attempts, str(exc),
+                                       claim_token=snapshot.enrich_claim_token)
+                progress.note_stage(
+                    "enrich_item", (time.monotonic() - started) * 1000.0)
+                progress.note_completed(outcome)
+                continue
+            try:
+                db.rollback()
+                fresh = db.query(em.MediaItem).filter(
+                    em.MediaItem.id == item_id).first()
+                if fresh is None:
+                    db.rollback()
+                    outcome = "skip"
+                elif not _claim_still_ours(fresh, snapshot.enrich_claim_token):
+                    # R4-4：同上，僵尸 worker 迟到写库不许覆盖行的新状态。
+                    logger.info("批量补全写库跳过（认领已失效）id=%s", item_id)
+                    db.rollback()
+                    outcome = "skip"
+                else:
+                    from backend.emby_server import enrich_queues as _eq
+                    # 闭环前批量路径只认两队列开关、忽略两段开关：批量是多条
+                    # 时的真实主路径，两段开关开着却走现行写库是接线缺口。
+                    # 现经唯一分发点：两队列开时按当刻绑定状态分段，否则读
+                    # 两段开关（双开走两段，全关才现行写库）。
+                    _apply_write_phase(
+                        db, fresh, fetched,
+                        queue=(_eq.queue_of(fresh)
+                               if _eq.two_queue_enabled() else None))
+                    _st = (fresh.enrich_status or "")
+                    outcome = "done" if _st == "done" else ("failed" if _st == "failed" else "retry")
+                    db.commit()
+                    # 列表去重缓存：同上，刮削回填影响去重选主（bump 防抖）。
+                    # 非原子窗口：bump 在主 commit 之后，bump 失败只记日志不回滚业务。
+                    try:
+                        from backend.emby_server import items_dedup_cache as _idc
+                        if _idc.bump_library_item_versions(db, [fresh.library_id]):
+                            db.commit()
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("去重缓存版本号 bump 失败（批量补全写库）: %s", exc)
+                    _maybe_flip_inherit_children(db, fetched)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("批量补全写库失败 id=%s: %s", item_id, exc)
+                db.rollback()
                 outcome = _mark_failed(db, item_id, attempts, str(exc),
                                        claim_token=snapshot.enrich_claim_token)
             progress.note_stage(
                 "enrich_item", (time.monotonic() - started) * 1000.0)
             progress.note_completed(outcome)
-            continue
-        if not fetched.get("ok"):
-            db.rollback()
-            if fetched.get("douban_banned"):
-                outcome = _requeue_for_douban_ban(
-                    db, item_id, claim_token=snapshot.enrich_claim_token)
-            else:
-                outcome = _mark_failed(db, item_id, attempts,
-                                      fetched.get("error") or "fetch failed",
-                                      claim_token=snapshot.enrich_claim_token)
-            progress.note_stage(
-                "enrich_item", (time.monotonic() - started) * 1000.0)
-            progress.note_completed(outcome)
-            continue
-        # WS5 季海报：IO 阶段给剧的名下无图季拉 TMDB 季海报并预热
-        #（写库阶段由 _enrich_apply 落字段；与单条 _process_item 同口径）
-        # A-023：同单条口径，瞬态失败整条送回重试，不进写库、不杀线程。
-        from backend.emby_server.tmdb import TmdbTransientError
-        try:
-            _enrich_season_posters_io(db, snapshot, fetched)
-        except TmdbTransientError as exc:
-            logger.warning("批量季海报瞬态失败，整条送回重试 id=%s: %s", item_id, exc)
-            db.rollback()
-            outcome = _mark_failed(db, item_id, attempts, str(exc),
-                                   claim_token=snapshot.enrich_claim_token)
-            progress.note_stage(
-                "enrich_item", (time.monotonic() - started) * 1000.0)
-            progress.note_completed(outcome)
-            continue
-        try:
-            db.rollback()
-            fresh = db.query(em.MediaItem).filter(
-                em.MediaItem.id == item_id).first()
-            if fresh is None:
-                db.rollback()
-                outcome = "skip"
-            elif not _claim_still_ours(fresh, snapshot.enrich_claim_token):
-                # R4-4：同上，僵尸 worker 迟到写库不许覆盖行的新状态。
-                logger.info("批量补全写库跳过（认领已失效）id=%s", item_id)
-                db.rollback()
-                outcome = "skip"
-            else:
-                from backend.emby_server import enrich_queues as _eq
-                # 闭环前批量路径只认两队列开关、忽略两段开关：批量是多条
-                # 时的真实主路径，两段开关开着却走现行写库是接线缺口。
-                # 现经唯一分发点：两队列开时按当刻绑定状态分段，否则读
-                # 两段开关（双开走两段，全关才现行写库）。
-                _apply_write_phase(
-                    db, fresh, fetched,
-                    queue=(_eq.queue_of(fresh)
-                           if _eq.two_queue_enabled() else None))
-                _st = (fresh.enrich_status or "")
-                outcome = "done" if _st == "done" else ("failed" if _st == "failed" else "retry")
-                db.commit()
-                # 列表去重缓存：同上，刮削回填影响去重选主（bump 防抖）。
-                # 非原子窗口：bump 在主 commit 之后，bump 失败只记日志不回滚业务。
-                try:
-                    from backend.emby_server import items_dedup_cache as _idc
-                    if _idc.bump_library_item_versions(db, [fresh.library_id]):
-                        db.commit()
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("去重缓存版本号 bump 失败（批量补全写库）: %s", exc)
-                _maybe_flip_inherit_children(db, fetched)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("批量补全写库失败 id=%s: %s", item_id, exc)
-            db.rollback()
-            outcome = _mark_failed(db, item_id, attempts, str(exc),
-                                   claim_token=snapshot.enrich_claim_token)
-        progress.note_stage(
-            "enrich_item", (time.monotonic() - started) * 1000.0)
-        progress.note_completed(outcome)
+    else:
+        _phase3_post_concurrent(db, pre_results, batch_out, io_workers)
 
 
 def _worker_loop(worker_id: int) -> None:
