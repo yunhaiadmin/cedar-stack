@@ -119,6 +119,9 @@ interface Group {
   fields: Field[]
 }
 
+// 开关从简第二批（2026-11-23）：求片自动批准/订阅购买/QQ 钱包/钱包总开关/
+// 手填汇率覆盖/退款回钱包/余额自动续订 7 个 bool 已摘面板，改走文件配置
+// （env，见 backend/integrations/store.py PANEL_REMOVED_SWITCHES 第二批）。
 const GROUPS: Group[] = [
   {
     id: 'exchange',
@@ -140,12 +143,6 @@ const GROUPS: Group[] = [
         type: 'int',
         suffix: '条/天',
         hint: '用户端提交求片时的硬性限额，未设置时默认 5 条',
-      },
-      {
-        key: 'media_seek_auto_approve_enabled',
-        label: '求片自动批准',
-        type: 'bool',
-        hint: '开启后用户新提交的求片直接通过审核（落单即已批准，不再等人工点批准）；默认关',
       },
       {
         key: 'media_seek_fulfill_interval_minutes',
@@ -176,21 +173,17 @@ const GROUPS: Group[] = [
     desc: '易支付兼容网关；留空的密钥项表示保持不变',
     icon: Wallet,
     fields: [
-      { key: 'subscription_purchase_enabled', label: '启用订阅购买', type: 'bool', hint: '关闭后用户买不了新订阅，已有的订阅继续有效' },
       { key: 'payment_gateway_url', label: '网关地址', type: 'str', hint: '例如 https://pay.example.com/' },
       { key: 'payment_partner_id', label: '商户 ID', type: 'str', hint: '易支付后台「商户信息」里的商户号' },
       { key: 'payment_partner_key', label: '商户密钥', type: 'secret', hint: '已配置时显示为 ******，留空不修改' },
-      { key: 'payment_qqpay_enabled', label: '启用 QQ 钱包', type: 'bool', hint: '网关配好后才生效：多一种收款方式' },
       { key: 'site_url', label: '站点地址', type: 'str', hint: '用于支付回调，必须是外网可访问地址' },
       { key: 'max_pending_orders_per_user', label: '待支付订单上限', type: 'int', suffix: '单/人', hint: '每人同时未支付的订单上限，默认 5，r40 补后台入口' },
       // 钱包（批 1，2026-11-14）：余额/流水在「钱包管理」页，这里只放配置；
       // 无库行时按代码默认生效（开/$10/0/5%/不限/分档·门槛$50·二档1%/$0.30/开/关，见钱包管理页）
-      { key: 'wallet_enabled', label: '启用钱包', type: 'bool', hint: '钱包总开关；关闭后余额兑换与后续余额支付入口全灭，只读余额仍可查' },
       { key: 'wallet_min_topup_amount', label: '最低充值额（美分）', type: 'int', suffix: '美分', hint: '默认 100 ＝ $1，在线充值（批 3）用' },
       { key: 'wallet_topup_fee_pct', label: '充值手续费比例（%）', type: 'int', suffix: '%', hint: '默认 0' },
       { key: 'wallet_topup_cny_rate', label: '充值汇率（人民币/美元）', type: 'str', hint: '手填价：自动抓市场价失败时的兜底；开启下方强制覆盖后以此为准。默认 7.2' },
       { key: 'wallet_topup_rate_buffer_pct', label: '汇率缓冲（%）', type: 'int', suffix: '%', hint: '生效汇率 ＝ 市场价 ×（1＋缓冲%），默认 2' },
-      { key: 'wallet_topup_rate_manual_override', label: '手填汇率强制覆盖', type: 'bool', hint: '开启后充值只用上面的手填汇率，不再自动抓取市场价' },
       { key: 'wallet_topup_max_amount', label: '单笔充值上限（美分）', type: 'int', suffix: '美分', hint: '默认 7000 ＝ $70，0 为不限；法币单笔上限，下单接口同样拦截' },
       { key: 'wallet_invite_rebate_percent', label: '邀请返利比例（%）', type: 'int', suffix: '%', hint: '默认 5，好友充值到账后返给邀请人（批 2 计提）' },
       { key: 'wallet_invite_rebate_cap', label: '单人返利上限（美分）', type: 'int', suffix: '美分', hint: '默认 0 ＝ 不限' },
@@ -207,8 +200,6 @@ const GROUPS: Group[] = [
       { key: 'wallet_invite_rebate_tier_threshold', label: '分档门槛（美分）', type: 'int', suffix: '美分', hint: '默认 5000 ＝ $50，按每位好友累计付费计，仅分档模式用' },
       { key: 'wallet_invite_rebate_tier_percent', label: '二档比例（%）', type: 'int', suffix: '%', hint: '默认 1，超出分档门槛的部分按此比例返，仅分档模式用' },
       { key: 'traffic_balance_price_per_100gb', label: '余额购流量单价（美分/100GB）', type: 'int', suffix: '美分', hint: '默认 30 ＝ $0.30/100GB（批 2 启用）' },
-      { key: 'wallet_refund_to_balance', label: '退款回钱包', type: 'bool', hint: '默认开（批 2 落地）' },
-      { key: 'wallet_auto_renew_enabled', label: '余额自动续订', type: 'bool', hint: '默认关，不开' },
     ],
   },
   {
@@ -1380,7 +1371,10 @@ async function saveLicense() {
   licenseSaving.value = true
   try {
     applyLicenseStatus(await saveLicenseConfig({
-      code: licenseForm.code.trim(),
+      // 掩码 ****** 原样回填 = 不改授权码（后端同口径兜底）；清空 = 清除
+      ...(licenseForm.code.trim() === '******'
+        ? {}
+        : { code: licenseForm.code.trim() }),
       domain: licenseForm.domain.trim(),
     }))
     ElMessage.success('已保存，并完成一次校验')
@@ -2151,7 +2145,9 @@ watch(
                 <el-form-item label="授权码">
                   <el-input
                     v-model="licenseForm.code"
-                    placeholder="如 AX-XXXX-XXXX-XXXX"
+                    type="password"
+                    show-password
+                    placeholder="已配置时显示为 ******，输入新码才替换"
                     clearable
                   />
                 </el-form-item>
@@ -2467,11 +2463,7 @@ watch(
               <el-form-item label="跨 provider 转存">
                 <div class="field-stack">
                   <div class="field-control">
-                    <el-switch
-                      v-model="transfer.cross_provider_transfer_enabled"
-                      active-text="开"
-                      inactive-text="关"
-                    />
+                    <span class="au-badge">{{ transfer.cross_provider_transfer_enabled ? '已开启' : '已关闭' }}</span>
                   </div>
                   <span class="field-hint">开：只绑 115 的用户播谷歌盘的片（反之亦然）会先转存到他绑的盘再播；关：错配点播明示播不了，同 provider 转存不受影响。默认开</span>
                 </div>
@@ -2495,11 +2487,7 @@ watch(
               <el-form-item label="剧集预热">
                 <div class="field-stack">
                   <div class="field-control">
-                    <el-switch
-                      v-model="transfer.transfer_series_preheat_enabled"
-                      active-text="开"
-                      inactive-text="关"
-                    />
+                    <span class="au-badge">{{ transfer.transfer_series_preheat_enabled ? '已开启' : '已关闭' }}</span>
                   </div>
                   <span class="field-hint">开：播完一集后给同季后续集建预热（先只探针、强信号才搬字节）；关：播完不预热。默认开</span>
                 </div>
@@ -2743,7 +2731,7 @@ watch(
                 </el-form-item>
                 <el-form-item label="大文件走池副本">
                   <div class="field-stack">
-                    <el-switch v-model="poolForm.pool_large_file_routing_enabled" />
+                    <span class="au-badge">{{ poolForm.pool_large_file_routing_enabled ? '已开启' : '已关闭' }}</span>
                     <span class="field-hint">已绑盘用户播大文件时，池里有现成副本就直接播池副本，省掉转存到自己盘的等待；默认开</span>
                   </div>
                 </el-form-item>
@@ -2833,7 +2821,7 @@ watch(
               <el-form-item label="总开关">
                 <div class="field-stack">
                   <div class="field-control">
-                    <el-switch v-model="mountServing.enabled" />
+                    <span class="au-badge">{{ mountServing.enabled ? '已开启' : '已关闭' }}</span>
                   </div>
                   <span class="field-hint">关掉 = 挂载直读一行不走，完整回退现行出法</span>
                 </div>
@@ -2890,10 +2878,9 @@ watch(
               <el-form-item label="Google Drive 绑定开关">
                 <div class="field-stack">
                   <div class="field-control">
-                    <el-switch v-model="driveApi.binding_enabled" />
-                    <span class="field-suffix">{{ driveApi.binding_enabled ? '已开放新建绑定' : '已关闭新建绑定' }}</span>
+                    <span class="au-badge">{{ driveApi.binding_enabled ? '已开放新建绑定' : '已关闭新建绑定' }}</span>
                   </div>
-                  <span class="field-hint">关：用户不能新建 Drive 绑定——发起授权会被拒绝、「我的网盘」也不再显示 Drive 入口；已经绑定的用户与播放不受影响。开：恢复新建绑定入口。默认关</span>
+                  <span class="field-hint">关：用户不能新建 Drive 绑定——发起授权会被拒绝、「我的网盘」也不再显示 Drive 入口；已经绑定的用户与播放不受影响。开关已摘面板、改走文件配置（env DRIVE_BINDING_ENABLED），当前为关＝绑盘已下线口径</span>
                 </div>
               </el-form-item>
             </el-form>
@@ -2916,8 +2903,7 @@ watch(
               <el-form-item label="网页软解开关">
                 <div class="field-stack">
                   <div class="field-control">
-                    <el-switch v-model="softdecode.enabled" />
-                    <span class="field-suffix">{{ softdecode.enabled ? '已开启' : '已关闭' }}</span>
+                    <span class="au-badge">{{ softdecode.enabled ? '已开启' : '已关闭' }}</span>
                   </div>
                   <span class="field-hint">开：浏览器解不了的版本改走站内软解；关：保持现状，出解码提示卡。默认关</span>
                 </div>
@@ -2948,8 +2934,7 @@ watch(
               <el-form-item label="弹幕开关">
                 <div class="field-stack">
                   <div class="field-control">
-                    <el-switch v-model="danmaku.enabled" />
-                    <span class="field-suffix">{{ danmaku.enabled ? '已开启' : '已关闭' }}</span>
+                    <span class="au-badge">{{ danmaku.enabled ? '已开启' : '已关闭' }}</span>
                   </div>
                   <span class="field-hint">开：播放器出现弹幕按钮与发送框；关：入口隐藏、接口关闭。默认关</span>
                 </div>
@@ -3034,8 +3019,7 @@ watch(
               <el-form-item label="外部弹幕源">
                 <div class="field-stack">
                   <div class="field-control">
-                    <el-switch v-model="danmuExternal.enabled" />
-                    <span class="field-suffix">{{ danmuExternal.enabled ? '已开启' : '已关闭' }}</span>
+                    <span class="au-badge">{{ danmuExternal.enabled ? '已开启' : '已关闭' }}</span>
                   </div>
                   <span class="field-hint">开：取弹幕时去上游匹配、与站内弹幕合并下发；上游超时或没匹配上就只发站内弹幕，不影响播放。默认关</span>
                 </div>
@@ -3072,8 +3056,7 @@ watch(
               <el-form-item label="锁定总开关">
                 <div class="field-stack">
                   <div class="field-control">
-                    <el-switch v-model="loginLockout.enabled" />
-                    <span class="field-suffix">{{ loginLockout.enabled ? '已开启' : '已关闭' }}</span>
+                    <span class="au-badge">{{ loginLockout.enabled ? '已开启' : '已关闭' }}</span>
                   </div>
                   <span class="field-hint">开：失败到阈值就锁；关：三处登录都不锁定。默认开</span>
                 </div>

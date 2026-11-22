@@ -13,6 +13,11 @@ admin_player_blacklist 一致（get_current_admin + _audit；角色写
   24 小时复验或重启；
 - enforce 总开关不进后台（走 env / 发行包，遵「功能开关从简」）；
   这里只展示它当前是否生效，让管理员心里有数。
+- 授权码掩码（2026-11-23，审计 S-03，与弹幕 external_url 同款）：
+  本文件三个出口一律只回 ****** + license_code_set 布尔，真码不进
+  任何管理端响应；PUT 收到 ****** 视为不改（保留原值）。掩码只做
+  在本出口层——license_client 内部自用明文的路径（configured_code /
+  admin_status 本体 / 校验请求体）不动。
 """
 from __future__ import annotations
 
@@ -41,13 +46,29 @@ class LicenseConfigRequest(BaseModel):
     domain: Optional[str] = None
 
 
+#: 授权码掩码占位（与全仓 secret 口径一致）
+CODE_MASK = "******"
+
+
+def _masked_status(db: Session) -> dict:
+    """admin_status 的管理端出口形状：授权码只回掩码 + 是否已设置。"""
+    status = dict(lc.admin_status(db))
+    code = str(status.get("code") or "")
+    status["code"] = CODE_MASK if code else ""
+    status["license_code_set"] = bool(code)
+    return status
+
+
 @admin_license_router.get("/status")
 def license_get_status(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """授权状态全量回显：状态、档位、到期、绑定、宽限与到期提醒。"""
-    return lc.admin_status(db)
+    """授权状态回显：状态、档位、到期、绑定、宽限与到期提醒。
+
+    授权码只回掩码（******）+ license_code_set，明文不出本接口。
+    """
+    return _masked_status(db)
 
 
 @admin_license_router.put("/config")
@@ -57,9 +78,11 @@ def license_update_config(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """保存授权码 / 绑定域名并立即校验一次，返回最新状态。"""
+    """保存授权码 / 绑定域名并立即校验一次，返回最新状态（掩码）。"""
     values: dict[str, str] = {}
-    if request.code is not None:
+    # 掩码回填原样提交 = 不改：前端把 GET 回的 ****** 原样带回时，
+    # 绝不能把占位符当新码落库（与全仓 secret 保存口径一致）。
+    if request.code is not None and request.code.strip() != CODE_MASK:
         values[lc.KEY_CODE] = request.code.strip().upper()
     if request.domain is not None:
         values[lc.KEY_DOMAIN] = lc.normalize_domain(request.domain)
@@ -80,7 +103,7 @@ def license_update_config(
         lc.refresh(db, force=True)
     except Exception as exc:  # noqa: BLE001 — 校验失败不许把保存接口打挂
         logger.warning("保存授权配置后立即校验异常（可忽略）: %s", exc)
-    return lc.admin_status(db)
+    return _masked_status(db)
 
 
 @admin_license_router.post("/verify")
@@ -97,4 +120,4 @@ def license_verify_now(
     _audit(db, current_admin, "license_verify_now", "system", None, {},
            ip=raw_request.client.host if raw_request.client else None)
     db.commit()
-    return lc.admin_status(db)
+    return _masked_status(db)

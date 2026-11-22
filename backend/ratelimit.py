@@ -333,6 +333,15 @@ def login_lockout_config(db) -> LoginLockoutConfig:
         return v if v >= 1 else default
 
     raw_enabled = str(values.get("login_lockout_enabled", "")).strip().lower()
+    # 开关摘面板（2026-11-23 第二批）：env 显式设置即接管，与全仓
+    # PANEL_REMOVED_SWITCHES 同口径（本函数直查 ORM，故在此叠加）。
+    try:
+        from backend.integrations.store import switch_env_value
+        _env_v = switch_env_value("login_lockout_enabled")
+    except Exception:  # noqa: BLE001 — 配置层故障不能把登录入口打死
+        _env_v = None
+    if _env_v is not None:
+        raw_enabled = str(_env_v).strip().lower()
     return LoginLockoutConfig(
         enabled=raw_enabled not in ("false", "0", "no", "off"),
         account_max_failures=_int(

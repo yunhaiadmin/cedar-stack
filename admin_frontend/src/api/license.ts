@@ -15,7 +15,9 @@ export interface LicenseStatus {
   /** 到期提醒级别：30 / 7 / 1 天内，或 grace=已到期处于宽限期 */
   reminder: string | null
   server: string
+  /** 授权码掩码：已配置时为 ******，未配置为空串；明文永不下发 */
   code: string
+  license_code_set: boolean
   domain: string
   last_checked_at: string
   last_result: string
