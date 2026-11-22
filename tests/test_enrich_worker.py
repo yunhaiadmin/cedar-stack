@@ -523,11 +523,13 @@ def test_claim_batch_groups_series_parent_first(db):
     ]
     movie = _make_item(db, item_type="movie", name="新入库的电影",
                        enrich_status="pending",
-                       date_added=now)  # 最新 → 组排最前
+                       date_added=now)  # 最新 → 无预留时组排最前
     claimed = enrich_worker._claim_batch(db, 10)
     ids = [c.id for c in claimed]
-    # 组之间：最新的电影组在前；父级未终态时单集不进本批
-    assert ids == [movie.id, series.id]
+    # 组之间：S1 认领向剧倾斜（2026-11-23）后含待刮父级的剧组先拿预留
+    # 名额，故剧在电影之前（旧口径为最新电影组在前，认领集合不变）；
+    # 父级未终态时单集不进本批
+    assert ids == [series.id, movie.id]
     assert all(c.enrich_status == "enriching" and c.enrich_claimed_at for c in claimed)
     for ep in eps:
         db.refresh(ep)

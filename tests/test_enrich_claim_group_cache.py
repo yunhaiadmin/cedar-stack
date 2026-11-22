@@ -6,7 +6,7 @@
 线程每轮认领都把全部 pending 重新聚合一遍，而积压集合分钟级才有变化。
 
 钉死的新口径：
-① TTL 内（``ENRICH_CLAIM_GROUPS_TTL_SEC``，缺省 30 秒）同进程同口径的
+① TTL 内（``ENRICH_CLAIM_GROUPS_TTL_SEC``，缺省 300 秒，S3 提速）同进程同口径的
    认领复用候选组快照，不再重复打聚合；快照只决定「先看哪些组」，
    组员仍走实时谓词 + 原子认领，抢不重、抢不丢；
 ② 入库事件同进程即时失效：新 pending 条目插入 / 条目转回 pending /
@@ -206,3 +206,135 @@ def test_ttl_zero_aggregates_every_round(db, lib, agg_counter, monkeypatch):
     enrich_worker._claim_batch(db, 2)
     enrich_worker._claim_batch(db, 2)
     assert agg_counter["agg"] == 2, "TTL=0 必须逐字走旧路径：每轮都聚合"
+
+
+# ---------- S3：TTL 默认 300 + worker 自写不作废 ----------
+
+def test_claim_groups_ttl_default_is_300():
+    assert enrich_worker.ENRICH_CLAIM_GROUPS_TTL_SEC == 300
+
+
+def test_self_write_series_done_does_not_invalidate(db, lib, agg_counter):
+    series = _item(db, lib, "剧", item_type="series")
+    _item(db, lib, "剧 E1", item_type="episode", series_id=series.id,
+          season_number=1, episode_number=1)
+    _movies(db, lib, 6)
+    first = enrich_worker._claim_batch(db, 2)
+    assert len(first) == 2
+    assert agg_counter["agg"] == 1
+    # worker 处理段内：series pending -> done 的自写 flush 不作废快照
+    with enrich_worker._claim_snapshot_self_write():
+        row = db.query(em.MediaItem).filter(em.MediaItem.id == series.id).first()
+        # series 可能已被第一轮认领为 enriching；无论原状态如何，
+        # 置 done 都属于「series enrich_status 变为非 pending」
+        row.enrich_status = "done"
+        db.commit()
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 1, "自写标记内 series->done 不许作废快照"
+
+
+def test_self_write_new_pending_insert_invalidates(db, lib, agg_counter):
+    _movies(db, lib, 6)
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 1
+    with enrich_worker._claim_snapshot_self_write():
+        new_row = _item(db, lib, "自写期新入库")
+        db.commit()
+    second = enrich_worker._claim_batch(db, 10)
+    assert agg_counter["agg"] == 2, "自写标记内新 pending 插入仍须即时失效"
+    assert new_row.id in {r.id for r in second}
+
+
+def test_self_write_back_to_pending_invalidates(db, lib, agg_counter):
+    done_row = _item(db, lib, "已完成", enrich_status="done")
+    _movies(db, lib, 6)
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 1
+    with enrich_worker._claim_snapshot_self_write():
+        row = db.query(em.MediaItem).filter(em.MediaItem.id == done_row.id).first()
+        row.enrich_status = "pending"
+        db.commit()
+    second = enrich_worker._claim_batch(db, 10)
+    assert agg_counter["agg"] == 2, "自写标记内打回 pending 仍须即时失效"
+    assert done_row.id in {r.id for r in second}
+
+
+def test_self_write_repair_request_invalidates(db, lib, agg_counter):
+    from datetime import datetime
+    target = _item(db, lib, "待修复", enrich_status="done")
+    _movies(db, lib, 6)
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 1
+    with enrich_worker._claim_snapshot_self_write():
+        row = db.query(em.MediaItem).filter(em.MediaItem.id == target.id).first()
+        row.repair_requested_at = datetime.now()
+        db.commit()
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 2, "自写标记内新修复请求仍须即时失效"
+
+
+def test_outside_self_write_series_done_still_invalidates(db, lib, agg_counter):
+    series = _item(db, lib, "剧2", item_type="series")
+    _item(db, lib, "剧2 E1", item_type="episode", series_id=series.id,
+          season_number=1, episode_number=1)
+    db.commit()
+    enrich_worker._claim_batch(db, 10)
+    assert agg_counter["agg"] == 1
+    row = db.query(em.MediaItem).filter(em.MediaItem.id == series.id).first()
+    row.enrich_status = "done"
+    db.commit()
+    enrich_worker._claim_batch(db, 10)
+    assert agg_counter["agg"] == 2, "标记外 series 状态变化仍须失效（旧行为）"
+
+
+def test_self_write_bulk_update_non_pending_does_not_invalidate(db, lib, agg_counter):
+    movies = _movies(db, lib, 8)
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 1
+    with enrich_worker._claim_snapshot_self_write():
+        (db.query(em.MediaItem)
+         .filter(em.MediaItem.id == movies[5].id)
+         .update({"enrich_status": "done"}, synchronize_session=False))
+        db.commit()
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 1, "自写标记内批量 UPDATE 非 pending 不许作废"
+
+
+def test_self_write_bulk_update_no_status_does_not_invalidate(db, lib, agg_counter):
+    movies = _movies(db, lib, 8)
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 1
+    with enrich_worker._claim_snapshot_self_write():
+        (db.query(em.MediaItem)
+         .filter(em.MediaItem.id == movies[5].id)
+         .update({"name": "改名"}, synchronize_session=False))
+        db.commit()
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 1, "自写标记内未设置 enrich_status 的批量 UPDATE 不许作废"
+
+
+def test_self_write_bulk_update_to_pending_invalidates(db, lib, agg_counter):
+    done_row = _item(db, lib, "批量已完成", enrich_status="done")
+    _movies(db, lib, 8)
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 1
+    with enrich_worker._claim_snapshot_self_write():
+        (db.query(em.MediaItem)
+         .filter(em.MediaItem.id == done_row.id)
+         .update({"enrich_status": "pending"}, synchronize_session=False))
+        db.commit()
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 2, "自写标记内批量打回 pending 仍须失效"
+
+
+def test_self_write_bulk_delete_invalidates(db, lib, agg_counter):
+    movies = _movies(db, lib, 8)
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 1
+    with enrich_worker._claim_snapshot_self_write():
+        (db.query(em.MediaItem)
+         .filter(em.MediaItem.id == movies[5].id)
+         .delete(synchronize_session=False))
+        db.commit()
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 2, "自写标记内批量 DELETE 保守仍须失效"

@@ -31,6 +31,7 @@ import re
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Optional
@@ -120,15 +121,28 @@ ENRICH_EPISODE_INHERIT_PARENT = (os.getenv("ENRICH_EPISODE_INHERIT_PARENT", "1")
 # 0 = 回到「父级未终态也照抢」的旧抢单。
 ENRICH_CLAIM_EPISODE_PARENT_READY = env_int(
     "ENRICH_CLAIM_EPISODE_PARENT_READY", 1, 0, 1)
-# 认领候选组快照 TTL（秒，默认 30，下限 0；减负 A1）：_claim_batch 的
-# coalesce(series_id,id) GROUP BY 聚合是全站第一烧 CPU 的查询（生产
+# 认领候选组快照 TTL（秒，默认 300，下限 0；减负 A1，S3 提速）：_claim_batch
+# 的 coalesce(series_id,id) GROUP BY 聚合是全站第一烧 CPU 的查询（生产
 # pg_stat_statements 实证四变体合计约 29 万次、单次 1.2~1.6 秒），而
 # 积压集合分钟级才有变化。TTL 内同进程复用有序候选组快照（只决定
 # 「先看哪些组」，组员仍走实时谓词 + 原子认领，正确性不靠快照新鲜度）；
 # 入库事件经 Session before_flush 监听同进程即时失效（见
 # _install_claim_flush_watch），跨进程入库最长 TTL 秒收敛。
+# S3：worker 自己处理批次时的写库不作废快照（见 _claim_snapshot_self_write
+# 与 _install_claim_flush_watch 的自写分流）——快照只决定认领顺序，
+# 自写不作废最多让排序新鲜度滞后 ≤TTL，不影响正确性；新待办的产生
+# （新 pending 插入 / 打回 pending / 修复请求）仍即时失效。
 # 0 = 关闭缓存，认领逐字走旧路径。
-ENRICH_CLAIM_GROUPS_TTL_SEC = env_int("ENRICH_CLAIM_GROUPS_TTL_SEC", 30, 0)
+ENRICH_CLAIM_GROUPS_TTL_SEC = env_int("ENRICH_CLAIM_GROUPS_TTL_SEC", 300, 0)
+# 认领向剧倾斜预留比（%，默认 50，下限 0、上限 100；S1 提速）：每批先给
+# 「含待刮父级的组」（gate=1，组内有 pending 的 series/season 行）预留
+# 该百分比名额喂闸门关键路径——单集必须等父剧刮完才能认领，闸门放行
+# 速度 = 剧完成速度，电影无下游阻塞可以等。预留未用满自动回填普通组，
+# 电影每批至少拿到剩余名额、不会被饿死；单组认领用当时真实剩余名额，
+# 允许单组吃过预留线（它本来就是闸门关键路径）。
+# 0 = 关闭预留，认领顺序与旧口径逐字一致。
+ENRICH_CLAIM_SERIES_RESERVE_PCT = env_int(
+    "ENRICH_CLAIM_SERIES_RESERVE_PCT", 50, 0, 100)
 # 等父级打回（默认开）：打回时不把 enrich_priority 抬到 0（积压是 -10，抬到 0
 # 会插到全队最前被立刻重抢），且等待次数不计入「超 20 次转 none」的上限
 # （父级还没做完就标 none 是误杀）。0 = 旧行为（抬到 0，超 20 次放行走 none）。
@@ -3845,7 +3859,7 @@ _CLAIM_GROUPS_FETCH = 400
 #
 # 一致性口径：快照只决定「按什么顺序先看哪些组」，不决定「能不能抢」——
 # 组员查询带全部实时谓词、认领是带 pending 谓词的原子 UPDATE，所以快照
-# 过期最多让调度新鲜度滞后 ≤TTL（新组晚 ≤30 秒被看到、已抽干的组被多试
+# 过期最多让调度新鲜度滞后 ≤TTL（新组晚 ≤TTL 秒被看到、已抽干的组被多试
 # 一次组员查询），绝不抢重、抢丢、抢到不该抢的行。快照里的排序在生成
 # 时刻冻结（含库轮转游标 _library_turn 的当时相位），TTL 内轮转相位不
 # 推进，公平性延迟同为 ≤TTL。
@@ -3854,6 +3868,13 @@ _CLAIM_GROUPS_FETCH = 400
 # （扫描在别的进程入库）靠 TTL 兜底。组被「认领行数 < 当时剩余批次」
 # 证明已抽干后标 consumed，TTL 内不再重试它的组员查询；恰好装满批次
 # 的组不标（可能还有余量），下轮先重试它。
+#
+# S3 自写不作废：worker 处理批次期间（_claim_snapshot_self_write 标记内）
+# 自己写库产生的 flush / 批量 UPDATE 不作废快照——那些写大多是把已认领
+# 行推向 done/终态，只影响排序新鲜度（≤TTL 收敛），不产生新待办；只有
+# 新待办的产生（新 pending 插入、任意行打回 pending、repair_requested_at
+# 由空变非空、批量 DELETE、批量打回 pending）仍即时失效。标记只在
+# worker 处理线程设置，其他线程/进程恒未设置，走旧的全量失效口径。
 _CLAIM_GROUPS_SNAPSHOT_SIZE = 400  # 与旧递增分页的累计上限对齐
 _CLAIM_GROUPS_CACHE: dict = {}
 _CLAIM_GROUPS_LOCK = threading.Lock()
@@ -3872,7 +3893,9 @@ def _claim_groups_snapshot(key, fetch_groups):
 
     ``key`` = (queue, skip_episode, ban_hold)：决定组集合与排序口径的
     运行时输入只有这三样（其余都是进程级常量）。``fetch_groups()`` 只在
-    未命中时执行那条聚合查询，返回 [(gid, latest, lib), ...]。
+    未命中时执行那条聚合查询，返回 [(gid, latest, lib, gate), ...]
+    （S1 起快照元组为 4 元，gate 见 _claim_batch 的 groups_q 注释；
+    全仓只有 _claim_batch 消费该元组）。
     """
     now_mono = time.monotonic()
     with _CLAIM_GROUPS_LOCK:
@@ -3891,6 +3914,33 @@ def _claim_groups_snapshot(key, fetch_groups):
     with _CLAIM_GROUPS_LOCK:
         _CLAIM_GROUPS_CACHE[key] = entry
     return entry
+
+
+# S3：worker 自写标记（线程本地）。只在 _worker_loop 的批次处理段设置；
+# 认领段不设置（认领自身的豁免已由 _bulk_watch 的三件套规则处理）。
+# _install_claim_flush_watch 的两个监听按此标记分流：标记激活时，
+# worker 把已认领行推向终态的写库不再把快照整份作废（旧行为下 worker
+# 每批写库都经 before_flush 把快照作废、TTL 形同虚设、几乎每批重建）。
+_claim_self_write = threading.local()
+
+
+def _claim_self_write_active() -> bool:
+    return getattr(_claim_self_write, "depth", 0) > 0
+
+
+@contextmanager
+def _claim_snapshot_self_write():
+    """标记当前线程正处于 worker 批次处理段（自写不作废快照）。
+
+    可重入（depth 计数）；退出后恢复进入前状态。只影响本线程的
+    flush / ORM 执行监听判定，其他线程恒为未激活。
+    """
+    depth = getattr(_claim_self_write, "depth", 0)
+    _claim_self_write.depth = depth + 1
+    try:
+        yield
+    finally:
+        _claim_self_write.depth = depth
 
 
 _CLAIM_FLUSH_WATCH_INSTALLED = False
@@ -3916,6 +3966,19 @@ def _install_claim_flush_watch() -> None:
     更新/删除一律作废快照，唯一豁免是认领自身的那条原子 UPDATE
     （pending→enriching 且只动 enrich_status/claimed_at/token
     三件套）：它不产生新待办，豁免它快照才跨轮命中。
+
+    S3 自写分流（_claim_snapshot_self_write 标记激活时；标记只在
+    worker 处理线程设置，其他线程/进程恒未激活、行为逐字不变）：
+    - before_flush：仍然作废的只有三类——新条目以 pending 插入、
+      任意条目 enrich_status 变为 pending、repair_requested_at
+      由空变非空；跳过 series/season 的 enrich_status 变为非
+      pending 与 series/season 的 merged_into_id/deleted_at 变化。
+    - do_orm_execute：MediaItem 批量 UPDATE 的 enrich_status 不是
+      pending（含未设置 enrich_status）→ 不作废；设为 pending →
+      仍作废；DELETE → 仍作废（保守）。认领三件套豁免优先不变。
+    理由：快照只决定认领顺序、组员走实时谓词 + 原子认领，自写不
+    作废最多让排序新鲜度滞后 ≤TTL，不影响正确性；新待办的产生
+    （插入 / 打回 pending / 修复请求）仍即时失效。
 
     监听只 bump 代际、绝不抛错：整段包在 try/except 里，宁可漏失效
     （TTL 兜底）也不许拖垮任何一次正常 flush。
@@ -3947,6 +4010,7 @@ def _install_claim_flush_watch() -> None:
 
         def _watch(session, flush_context, instances):
             try:
+                self_write = _claim_self_write_active()
                 bump = False
                 for obj in session.new:
                     if (isinstance(obj, em.MediaItem)
@@ -3965,8 +4029,12 @@ def _install_claim_flush_watch() -> None:
                             if new_status == "pending":
                                 bump = True
                             elif item_type in ("series", "season"):
-                                bump = True
-                        if not bump and item_type in ("series", "season"):
+                                # S3：自写标记内跳过——worker 把父级
+                                # 推向终态不产生新待办，不作废快照。
+                                if not self_write:
+                                    bump = True
+                        if (not bump and not self_write
+                                and item_type in ("series", "season")):
                             if (_history_changed(obj, "merged_into_id")
                                     or _history_changed(obj, "deleted_at")):
                                 bump = True
@@ -3996,19 +4064,28 @@ def _install_claim_flush_watch() -> None:
                     return
                 if state.is_update:
                     values = getattr(state.statement, "_values", None)
+                    new_status = None
+                    has_status = False
                     if values:
                         keys = set()
-                        new_status = None
                         for col, val in dict(values).items():
                             key = getattr(col, "key", None)
                             keys.add(key)
                             if key == "enrich_status":
+                                has_status = True
                                 new_status = getattr(val, "value", val)
                         if (new_status == "enriching"
                                 and keys <= {"enrich_status",
                                              "enrich_claimed_at",
                                              "enrich_claim_token"}):
                             return  # 认领自身：见 docstring 豁免口径
+                    if _claim_self_write_active():
+                        # S3 自写分流：批量 UPDATE 只有把行打回
+                        # pending 才产生新待办、才作废；其余（含未
+                        # 设置 enrich_status 的更新）不作废。
+                        if has_status and new_status == "pending":
+                            invalidate_claim_groups_cache()
+                        return
                 invalidate_claim_groups_cache()
             except Exception:  # noqa: BLE001 — 监听绝不拖垮正常执行
                 pass
@@ -4137,7 +4214,14 @@ def _claim_batch(db, limit: int, queue: Optional[str] = None) -> list:
     # FOR UPDATE（PG 限制），所以是「选组」与「抢行」两步。
     groups_q = (db.query(group_key.label("g"),
                          _func.max(em.MediaItem.date_added).label("latest"),
-                         em.MediaItem.library_id.label("lib"))
+                         em.MediaItem.library_id.label("lib"),
+                         # S1 gate：组内是否存在待刮父级行。本查询已限定
+                         # enrich_status='pending'，组内有 pending 的
+                         # series/season 行即 gate=1；单集组父级已终态时
+                         # 组内只有 episode → gate=0；电影组 gate=0。
+                         _func.max(_case(
+                             (em.MediaItem.item_type.in_(("series", "season")), 1),
+                             else_=0)).label("gate"))
                 .filter(em.MediaItem.enrich_status == "pending", due, unlocked,
                         not_episode, not_merged, not_ban_backfill, queue_pred,
                         parent_ready)
@@ -4184,6 +4268,20 @@ def _claim_batch(db, limit: int, queue: Optional[str] = None) -> list:
         return _claim_group_atomic(db, q, now)
 
     claimed: list = []
+    # S1 两段认领（快照路径与 A2 单查路径口径一致）：第一段只遍历
+    # gate=1 的组、认领到预留线 ceil(limit * pct / 100) 为止，喂闸门
+    # 关键路径；第二段按原顺序遍历全部组填满 limit，预留未用满自动
+    # 回填。gate 只影响段的划分，不改 groups_q 的 order_by（库轮转 /
+    # 新鲜窗口的组间排序不变），不改 parent_ready 谓词、组内排序与
+    # 原子认领。pct=0 时跳过第一段，行为与旧口径逐字一致。
+    try:
+        _reserve_pct = int(ENRICH_CLAIM_SERIES_RESERVE_PCT)
+    except (TypeError, ValueError):
+        _reserve_pct = 0
+    _reserve_pct = max(0, min(100, _reserve_pct))
+    _reserve_limit = (-(-limit * _reserve_pct // 100)
+                      if _reserve_pct > 0 else 0)
+    _tried_limit = max(_CLAIM_GROUPS_SNAPSHOT_SIZE, limit)
     if ENRICH_CLAIM_GROUPS_TTL_SEC > 0:
         # 减负 A1：候选组快照路径。聚合只在快照未命中时打一次（上限
         # 取 A2 的 max(_CLAIM_GROUPS_FETCH, limit)，与旧递增分页的
@@ -4194,13 +4292,17 @@ def _claim_batch(db, limit: int, queue: Optional[str] = None) -> list:
             lambda: _order_with_fairness(groups_q).limit(
                 max(_CLAIM_GROUPS_FETCH, limit)).all())
         tried = 0
-        for gid, _latest, _lib in entry["groups"]:
-            if (len(claimed) >= limit
-                    or tried >= max(_CLAIM_GROUPS_SNAPSHOT_SIZE, limit)):
-                break
+        tried_gids: set = set()
+
+        def _try_snapshot_group(gid) -> None:
+            nonlocal tried
             if gid in entry["consumed"]:
-                continue
-            tried += 1
+                return
+            if gid not in tried_gids:
+                # tried 上限跨两段共享计数：第一段试过的组在第二段
+                # 再试不重复计 tried（已试集合去重）。
+                tried_gids.add(gid)
+                tried += 1
             remaining = limit - len(claimed)
             rows = _claim_group_members(gid, remaining)
             claimed.extend(rows)
@@ -4208,15 +4310,59 @@ def _claim_batch(db, limit: int, queue: Optional[str] = None) -> list:
                 # 认领数 < 当时余量 = 这组当前可抢的行已抽干，TTL 内
                 # 不再重试；恰好装满（==）不标，可能还有余量。
                 entry["consumed"].add(gid)
+
+        if _reserve_pct > 0:
+            for gid, _latest, _lib, gate in entry["groups"]:
+                if len(claimed) >= _reserve_limit or len(claimed) >= limit:
+                    break
+                if gid not in tried_gids and tried >= _tried_limit:
+                    break
+                if not gate:
+                    continue
+                if gid in entry["consumed"]:
+                    continue
+                # 单组用当时真实 remaining（limit - len(claimed)，
+                # 见 _try_snapshot_group），允许吃过预留线。
+                _try_snapshot_group(gid)
+        for gid, _latest, _lib, _gate in entry["groups"]:
+            if len(claimed) >= limit:
+                break
+            if gid not in tried_gids and tried >= _tried_limit:
+                break
+            if gid in entry["consumed"]:
+                continue
+            _try_snapshot_group(gid)
     else:
         # A2 单查：快照关掉时直接聚合一次取组（上限
         # max(_CLAIM_GROUPS_FETCH, limit)），不再递增重查。
         groups = (_order_with_fairness(groups_q)
                   .limit(max(_CLAIM_GROUPS_FETCH, limit)).all())
-        for gid, _latest, _lib in groups:
+        tried_a2: set = set()
+        exhausted_a2: set = set()
+
+        def _try_a2_group(gid) -> None:
+            remaining = limit - len(claimed)
+            rows = _claim_group_members(gid, remaining)
+            claimed.extend(rows)
+            tried_a2.add(gid)
+            if len(rows) < remaining:
+                exhausted_a2.add(gid)
+
+        if _reserve_pct > 0:
+            for gid, _latest, _lib, gate in groups:
+                if len(claimed) >= _reserve_limit or len(claimed) >= limit:
+                    break
+                if not gate:
+                    continue
+                _try_a2_group(gid)
+        for gid, _latest, _lib, _gate in groups:
             if len(claimed) >= limit:
                 break
-            claimed.extend(_claim_group_members(gid, limit - len(claimed)))
+            if gid in tried_a2:
+                # 第一段已试过的组：已抽干（exhausted）或已装满批次，
+                # 第二段不重复试（与快照路径 tried 去重同口径）。
+                continue
+            _try_a2_group(gid)
     if claimed:
         db.commit()
         if ENRICH_LIBRARY_FAIRNESS:
@@ -6530,36 +6676,41 @@ def _worker_loop(worker_id: int) -> None:
                 if not batch:
                     _stop_event.wait(ENRICH_IDLE_POLL_SEC)
                     continue
-                # v2.42.9 第 5 批（处方 1+2）：批次按组（同一部剧）聚在一起返回，
-                # 组内条目共享一份 _ScanContext——同一季的目录列举与 tvshow.nfo
-                # 只付一次网络成本；组边界上丢弃重建，缓存不随积压增长。
-                # v2.53.1 TMDB 批量：多条时走 _process_batch（pre 逐条 → TMDB 批量 →
-                # post+写库逐条），批量失败自动回退逐条。
-                if _tuning["values"][CFG_ENRICH_TMDB_BATCH] and len(batch) > 1:
-                    _process_batch(db, batch)
-                else:
-                    holder: Optional[dict] = None
-                    current_group = None
-                    for item in batch:
-                        if _stop_event.is_set():
-                            break
-                        gkey = item.series_id or item.id
-                        if gkey != current_group:
-                            holder = {}          # 新组：上一组的 ctx 缓存随之释放
-                            current_group = gkey
-                        # v2.42.9：单条计时 + 结果计数。这两项就是「单条平均耗时」与
-                        # 「近 5 分钟 done/分钟」的来源 —— 后面几批优化（纯继承 / ctx 复用 /
-                        # 终态化）到底有没有把积压量降下来，靠它们验收。
-                        started = time.monotonic()
-                        _item_queue = (_eq.queue_of(item)
-                                       if _eq.two_queue_enabled() else None)
-                        outcome = _process_item(db, item, holder,
-                                                queue=_item_queue)
-                        progress.note_stage(
-                            "enrich_item", (time.monotonic() - started) * 1000.0)
-                        progress.note_completed(outcome)
-                # 发现页实时动态流埋点：本轮批次确实补全条目时写一条（只加写入调用）
-                _note_enrich_batch_feed(db, batch)
+                # S3：批次处理段包自写标记——本段写库（剧/季完成时的
+                # ORM flush 等）不作废认领组快照；认领段（上方 _claim_batch）
+                # 不包，标记到 _note_enrich_batch_feed 结束、db.expire_all()
+                # 之前为止。
+                with _claim_snapshot_self_write():
+                    # v2.42.9 第 5 批（处方 1+2）：批次按组（同一部剧）聚在一起返回，
+                    # 组内条目共享一份 _ScanContext——同一季的目录列举与 tvshow.nfo
+                    # 只付一次网络成本；组边界上丢弃重建，缓存不随积压增长。
+                    # v2.53.1 TMDB 批量：多条时走 _process_batch（pre 逐条 → TMDB 批量 →
+                    # post+写库逐条），批量失败自动回退逐条。
+                    if _tuning["values"][CFG_ENRICH_TMDB_BATCH] and len(batch) > 1:
+                        _process_batch(db, batch)
+                    else:
+                        holder: Optional[dict] = None
+                        current_group = None
+                        for item in batch:
+                            if _stop_event.is_set():
+                                break
+                            gkey = item.series_id or item.id
+                            if gkey != current_group:
+                                holder = {}          # 新组：上一组的 ctx 缓存随之释放
+                                current_group = gkey
+                            # v2.42.9：单条计时 + 结果计数。这两项就是「单条平均耗时」与
+                            # 「近 5 分钟 done/分钟」的来源 —— 后面几批优化（纯继承 / ctx 复用 /
+                            # 终态化）到底有没有把积压量降下来，靠它们验收。
+                            started = time.monotonic()
+                            _item_queue = (_eq.queue_of(item)
+                                           if _eq.two_queue_enabled() else None)
+                            outcome = _process_item(db, item, holder,
+                                                    queue=_item_queue)
+                            progress.note_stage(
+                                "enrich_item", (time.monotonic() - started) * 1000.0)
+                            progress.note_completed(outcome)
+                    # 发现页实时动态流埋点：本轮批次确实补全条目时写一条（只加写入调用）
+                    _note_enrich_batch_feed(db, batch)
                 # 批次之间释放 session 身份映射，避免长连接内存膨胀
                 db.expire_all()
             except Exception as exc:
