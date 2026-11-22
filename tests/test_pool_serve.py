@@ -818,12 +818,15 @@ def test_stream_pool_serve_302(client, free_token, seed):
         db.close()
 
 
-def test_stream_pool_preparing_409(client, free_token, seed, monkeypatch):
+def test_stream_unbound_no_copy_direct_302(
+        client, free_token, seed, monkeypatch):
+    """2026-11-22 二次改版：未绑订阅用户播无 ready 池副本的
+    Drive 条目 → 直达 302 直链主线，不再回池备货 409 准备中
+    （改版口径 #5）。"""
     monkeypatch.setenv("TRANSFER_WAIT_STREAM_ENABLED", "0")
     r = _stream(client, free_token, seed["movie"])
-    assert r.status_code == 409, r.text
-    assert "转存准备中" in r.text
-    assert ORIG_FID not in r.text
+    assert r.status_code == 302, r.text
+    assert "usercontent" in (r.headers.get("location") or "")
 
 
 def test_stream_pool_explicit_other_variant_serves_pool_copy(
@@ -1087,15 +1090,16 @@ def test_pool_gate_preparing_detail_is_pool_wording(seed):
         db.close()
 
 
-def test_stream_pool_preparing_409_pool_wording(
+def test_stream_unbound_no_copy_direct_no_pool_wording(
         client, free_token, seed, monkeypatch):
+    """2026-11-22 二次改版：同上路线的文案面——响应是 302 主线
+    跳转，不出现池备货/绑定盘任何文案。"""
     monkeypatch.setenv("TRANSFER_WAIT_STREAM_ENABLED", "0")
     r = _stream(client, free_token, seed["movie"])
-    assert r.status_code == 409, r.text
-    # 池观众没有绑定盘：文案不许再说「转存到你的绑定盘」。
-    assert "公共池" in r.text
+    assert r.status_code == 302, r.text
+    assert "公共池" not in r.text
     assert "绑定盘" not in r.text
-    assert ORIG_FID not in r.text
+    assert "转存准备中" not in r.text
 
 
 # ------------------------------------------------------- GA-032 死副本

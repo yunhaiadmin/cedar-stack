@@ -256,7 +256,10 @@ def test_eligible_former_cms_item_treated_as_local(db):
     assert pool_gate.pool_eligible(db, user, item) == "eligible"
     decision = pool_gate.ensure_playback_allowed_for_item(db, user, item)
     assert decision.allowed is True
-    assert decision.kind == "pool"
+    # 2026-11-22 改版口径 #5：eligible 只是人群/开关资格；条目没有
+    # ready 池副本时未绑订阅用户直达本人链（kind=bound），不再判
+    # pool 去撞备货链的 409。
+    assert decision.kind == "bound"
 
 
 def test_eligible_pool_off_local_blocked_original_message(db):
@@ -279,7 +282,10 @@ def test_eligible_pool_on_all_audience(db):
     assert pool_gate.pool_eligible(db, user, item) == "eligible"
     decision = pool_gate.ensure_playback_allowed_for_item(db, user, item)
     assert decision.allowed is True
-    assert decision.kind == "pool"
+    # 2026-11-22 改版口径 #5：eligible 只是人群/开关资格；条目没有
+    # ready 池副本时未绑订阅用户直达本人链（kind=bound），不再判
+    # pool 去撞备货链的 409。
+    assert decision.kind == "bound"
 
 
 def test_eligible_whitelist_audience_outside_blocked(db, monkeypatch):

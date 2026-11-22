@@ -285,27 +285,25 @@ def _playbackinfo(client, token, guid):
     return r.json()
 
 
-def test_playbackinfo_pool_preparing_strips_urls(
+def test_playbackinfo_unbound_no_copy_direct_source(
         client, free_token, seed, monkeypatch):
-    # 本用例只钉「等流超时后的准备中形态」：关掉等流（与
-    # test_pool_serve 的 stream 准备中用例同口径），避免为一份
-    # 永远办不完的池单白等满窗。等流命中形态见下一条用例。
+    # 2026-11-22 二次改版：未绑订阅用户播无 ready 池副本的条目
+    # → PlaybackInfo 直达本人链正常源（不再池 preparing 形态、
+    # 不删地址、不建池单；改版口径 #5）。池 preparing 形态只剩
+    # 「有在途池单/副本将就绪」的等流用例（下一条）覆盖。
     monkeypatch.setenv("TRANSFER_WAIT_STREAM_ENABLED", "0")
     body = _playbackinfo(client, free_token, seed["movie"])
     assert ORIG_FID not in str(body)
     src = body["MediaSources"][0]
-    assert src["TransferStatus"] == "preparing"
-    assert src["Readiness"] == "preparing"
-    assert "DirectPlayUrl" not in src
-    assert "DirectStreamUrl" not in src
-    # 池单已建（owner_scope=pool）
+    assert src.get("TransferStatus") != "preparing"
+    assert "DirectPlayUrl" in src
+    # 不建池单（owner_scope=pool）
     db = SessionLocal()
     try:
-        job = (db.query(em.TransferJob)
-               .filter(em.TransferJob.item_id == seed["movie_id"],
-                       em.TransferJob.owner_scope == "pool").one())
-        assert job.status == "pending"
-        assert job.dest_drive_id == f"pooldrive:{seed['member_id']}"
+        jobs = (db.query(em.TransferJob)
+                .filter(em.TransferJob.item_id == seed["movie_id"],
+                        em.TransferJob.owner_scope == "pool").all())
+        assert jobs == [], "直达本人链不许落池单"
     finally:
         db.close()
 

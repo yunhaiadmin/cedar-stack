@@ -438,10 +438,15 @@ def ensure_playback_allowed_for_item(
                 return PoolDecision(allowed=True, kind="pool",
                                     pool_routed=True)
             return PoolDecision(allowed=True, kind="bound")
-        # 未绑但有资格：池 eligible 走池播出；不 eligible 按 bound
-        # 口径走本人链（转存门禁对无绑用户恒 proceed，不挡路，
-        # 选路直达现行播放路线）。
-        if pool_eligible(db, user, item) == "eligible":
+        # 未绑但有资格：条目有可下发的 ready 池副本时才走池播出
+        # （pool_sign_allowed＝资格＋eligible＋ready 副本三者齐）；
+        # 无 ready 副本一律按 bound 口径走本人链直达现行播放路线
+        # （挂载中继 / Drive 302 主线）——2026-11-22 改版口径 #5：
+        # 不许因无绑盘被池备货链挡路（无副本时池门禁只会回
+        # 409 准备中、总闸关时更直接撞 master_off，订阅用户点开
+        # 主库条目必须直接能播）。转存门禁对无绑用户恒 proceed，
+        # 本人链不挡路。
+        if pool_sign_allowed(db, user_id, item):
             return PoolDecision(allowed=True, kind="pool")
         return PoolDecision(allowed=True, kind="bound")
     _gate.ensure_binding_playback_allowed(db, user, request)

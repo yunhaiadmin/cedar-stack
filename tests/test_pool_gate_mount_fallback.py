@@ -23,18 +23,31 @@ failed 形态覆盖清单、不下发任何可播地址，取流按门禁原判 
 现行纪律）与池 serve 链逐字不动。
 
 （2026-11-22 播放门禁改版注：池观众的资格前提已变为「有订阅」，
-本文件种子里 FREE/CONTRIB 均带订阅；未绑/已绑只剩分流意义，
-下列钉死项的分流与回落口径逐字不变。）
+本文件种子里 FREE/CONTRIB 均带订阅；未绑/已绑只剩分流意义。）
+
+（2026-11-22 二次改版注，生产亲验逼出：F1 定案的前提是绑盘门禁
+——未绑用户本无资格、池是唯一例外。订阅门禁下未绑订阅用户是
+普通订阅用户：判定入口对「无 ready 池副本」的条目一律判 bound
+直达现行播放路线（改版口径 #5），不再判 pool 去撞池门禁的
+failed/preparing 409（rclone 条目在池口径下恒
+pool_provider_unsupported、drive 条目无副本时建池单又撞转存
+总闸——paul 全库与主库对未绑订阅用户都会必 409，与「有订阅
+就能播」定版冲突）。F1 的防泄漏核心保留：挂载直读 engages 而
+文件缺失时仍 503 明示、不回落共享直链（见钉死 3）。有 ready
+池副本时池 serve 优先不变（钉死 5 前半）。下列钉死按此重写。）
 
 钉死：
-1. 未绑 + rclone 挂载 + 直读可接管 → 仍 409、不出字节（F1 回归）；
-2. 同上但直读未配（白名单无此挂载）→ 仍 409、不下发原件 fid；
-3. 同上但直读 engages 而文件缺失 → 仍 409（不回落共享/谷歌直链）；
-4. PlaybackInfo 同口径：直读可接管时也照旧标 failed 并删地址；
-   直读未配时同形态；
-5. drive 挂载条目池口径逐字不变：有 ready 池副本 → 池分支
-   serve 302 池副本（即使该挂载也在直读白名单内）；无副本 →
-   照旧建池单 preparing 409；
+1. 未绑（有订阅）+ rclone 挂载 + 直读可接管 → 挂载直读出字节
+   200、不建池单、paul 私有 fid 不外泄；
+2. 同上但直读未配（白名单无此挂载）→ 落 Drive 302 主线
+   （与任何用户同链）；
+3. 同上但直读 engages 而文件缺失 → 503 明示、不回落共享/谷歌
+   直链（F1 防泄漏核心保留）；
+4. PlaybackInfo 同口径：下发正常可播源（不再标 failed、不删
+   地址），paul 私有 fid 不进清单；
+5. drive 挂载条目：有 ready 池副本 → 池分支 serve 302 池副本
+   （即使该挂载也在直读白名单内，池 serve 优先不变）；无副本
+   → 直达 Drive 302 主线、不建池单；
 6. 对照绿：已绑用户播 rclone 挂载条目照常经挂载直读出字节。
 
 种子数据用独立用户名/库名/挂载 id，模块收尾删净。
@@ -379,21 +392,18 @@ def _playbackinfo(client, token, guid):
 
 # ---------------------------------------------------------------- 取流
 
-def test_stream_unbound_rclone_mount_serving_engaged_still_409(
+def test_stream_unbound_rclone_mount_serving_engaged_served(
         client, free_token, seed):
-    """F1 回归：未绑 + rclone 挂载 + 直读可接管 → 仍 409、不出字节。
-
-    原生池观众的池门禁 failed 即终局，挂载直读在位也不许改写
-    裁决（2026-11-12 richotis 回落对这类用户已撤销）。同时钉：
-    池门禁留痕仍是 failed/pool_provider_unsupported（门禁本体没
-    改）；没有池单被建出来（provider 校验在建单前抛错，池供给
-    零污染）。
+    """2026-11-22 二次改版：未绑订阅用户 + rclone 挂载 + 直读可
+    接管 → 直达挂载直读出真字节（F1 的「池门禁 failed 即终局」
+    前提是绑盘门禁，已随订阅门禁作废）。同时钉：paul 私有 fid
+    不外泄；没有池单被建出来（不再经池备货链）。
     """
     _set_mount_serving(ids=str(RCLONE_MOUNT_ID),
                        roots=f"{RCLONE_MOUNT_ID}={seed['media_root']}")
     r = _stream(client, free_token, seed["paul"])
-    assert r.status_code == 409, r.text
-    assert r.content != DATA
+    assert r.status_code == 200, r.text
+    assert r.content == DATA
     assert not r.headers.get("location")
     assert PAUL_FID not in r.text
     assert PAUL_FID not in (r.headers.get("location") or "")
@@ -401,67 +411,60 @@ def test_stream_unbound_rclone_mount_serving_engaged_still_409(
     try:
         jobs = (db.query(em.TransferJob)
                 .filter(em.TransferJob.item_id == seed["paul_id"]).all())
-        assert jobs == [], "池供给范围外条目不许落池单"
-        rounds = (db.query(em.TransferDecisionRound)
-                  .filter(
-                      em.TransferDecisionRound.scope == "pool_gate",
-                      em.TransferDecisionRound.resource_key
-                      == f"item:{seed['paul_id']}",
-                      em.TransferDecisionRound.reason
-                      == "pool_provider_unsupported").all())
-        assert rounds, "池门禁留痕应仍记 failed/pool_provider_unsupported"
+        assert jobs == [], "直达现行路线不许落池单"
     finally:
         db.close()
 
 
-def test_stream_unbound_rclone_mount_not_whitelisted_stays_409(
+def test_stream_unbound_rclone_mount_not_whitelisted_drive_mainline(
         client, free_token, seed):
-    """直读未配（白名单无此挂载）→ 维持池门禁原判 409，不回落。"""
+    """直读未配（白名单无此挂载）→ 与任何订阅用户同链：落 Drive
+    302 直链主线（2026-11-22 改版口径 #5），不再池门禁 409。"""
     _set_mount_serving(ids=str(DRIVE_MOUNT_ID),
                        roots=f"{RCLONE_MOUNT_ID}={seed['media_root']}")
     r = _stream(client, free_token, seed["paul"])
-    assert r.status_code == 409, r.text
-    assert not r.headers.get("location")
-    assert PAUL_FID not in r.text
+    assert r.status_code == 302, r.text
+    assert "usercontent" in (r.headers.get("location") or "")
 
 
-def test_stream_unbound_rclone_mount_missing_file_stays_409(
+def test_stream_unbound_rclone_mount_missing_file_503_no_fallthrough(
         client, free_token, seed):
-    """直读 engages 但文件不在挂载点 → 仍 409，绝不掉到尾部谷歌
-    302 回落（回落会把 paul 私有 fid 的 usercontent 直链发出去）。"""
+    """直读 engages 但文件不在挂载点 → 503 明示，绝不掉到尾部
+    谷歌 302 回落（回落会把 paul 私有 fid 的 usercontent 直链
+    发出去——F1 防泄漏核心，改版后保留）。"""
     _set_mount_serving(ids=str(RCLONE_MOUNT_ID),
                        roots=f"{RCLONE_MOUNT_ID}={seed['empty_root']}")
     r = _stream(client, free_token, seed["paul"])
-    assert r.status_code == 409, r.text
+    assert r.status_code == 503, r.text
     assert not r.headers.get("location")
     assert PAUL_FID not in r.text
 
 
 # ---------------------------------------------------------------- 计划层
 
-def test_playbackinfo_unbound_rclone_mount_serving_engaged_stays_failed(
+def test_playbackinfo_unbound_rclone_mount_serving_engaged_ok(
         client, free_token, seed):
-    """F1 回归：PlaybackInfo 同口径——直读可接管时也维持池门禁
-    原判：标 failed、删一切可播地址（与直读未配时形态一致）。"""
+    """2026-11-22 二次改版：PlaybackInfo 同口径——未绑订阅用户
+    拿到正常可播源（不再标 failed、不删地址）；paul 私有 fid
+    仍不进清单。"""
     _set_mount_serving(ids=str(RCLONE_MOUNT_ID),
                        roots=f"{RCLONE_MOUNT_ID}={seed['media_root']}")
     body = _playbackinfo(client, free_token, seed["paul"])
     assert PAUL_FID not in str(body)
     src = body["MediaSources"][0]
-    assert src["TransferStatus"] == "failed"
-    assert "DirectPlayUrl" not in src
-    assert "DirectStreamUrl" not in src
+    assert src.get("TransferStatus") != "failed"
+    assert "DirectPlayUrl" in src or "DirectStreamUrl" in src
 
 
-def test_playbackinfo_unbound_rclone_mount_no_serving_stays_failed(
+def test_playbackinfo_unbound_rclone_mount_no_serving_ok(
         client, free_token, seed):
-    """直读未配时 PlaybackInfo 维持原判：标 failed、删地址。"""
+    """直读未配时 PlaybackInfo 同形态：正常可播源（订阅资格已过
+    门禁，清单层不再按池门禁标 failed）。"""
     _set_mount_serving(ids="", roots="")
     body = _playbackinfo(client, free_token, seed["paul"])
     src = body["MediaSources"][0]
-    assert src["TransferStatus"] == "failed"
-    assert "DirectPlayUrl" not in src
-    assert "DirectStreamUrl" not in src
+    assert src.get("TransferStatus") != "failed"
+    assert "DirectPlayUrl" in src or "DirectStreamUrl" in src
 
 
 # ---------------------------------------------------------------- drive 回归
@@ -509,7 +512,7 @@ def _set_probe_budget(raw):
 
 # -------------------------------------------- 有界探测（2026-11-17 定案）
 
-def test_playbackinfo_slow_mount_stat_within_budget_stays_failed(
+def test_playbackinfo_slow_mount_stat_within_budget_ok(
         client, free_token, seed, monkeypatch):
     """挂载文件 stat 冷查挂住时，PlaybackInfo 不许被堵住、清单
     维持池门禁原判 failed（#281 定案：同步等 stat 生产实测堵了
@@ -543,14 +546,16 @@ def test_playbackinfo_slow_mount_stat_within_budget_stays_failed(
         _set_probe_budget(None)
     assert elapsed < 5, f"PlaybackInfo 被挂载 stat 堵住：{elapsed:.1f}s"
     src = body["MediaSources"][0]
-    assert src["TransferStatus"] == "failed"
-    assert "DirectPlayUrl" not in src
+    # 2026-11-22 二次改版：形态为正常可播源（不再标 failed）；
+    # 本例继续钉「慢 stat 不堵请求」。
+    assert src.get("TransferStatus") != "failed"
+    assert "DirectPlayUrl" in src
 
 
-def test_stream_slow_mount_stat_unbound_still_409(
+def test_stream_slow_mount_stat_unbound_served(
         client, free_token, seed, monkeypatch):
-    """F1 后取流端对原生池观众不再做挂载探测改写裁决：stat 慢
-    （超过 PI 预算）且文件在位 → 仍按池门禁原判 409，不出字节。
+    """2026-11-22 二次改版：未绑订阅用户取流走本人链——stat 慢
+    （超过 PI 预算）且文件在位 → 挂载直读照常出字节。
     （#281 的有界探测防堵口径由 PlaybackInfo 侧用例继续钉。）"""
     import time as _time
 
@@ -571,8 +576,8 @@ def test_stream_slow_mount_stat_unbound_still_409(
         r = _stream(client, free_token, seed["paul"])
     finally:
         _set_probe_budget(None)
-    assert r.status_code == 409, r.text
-    assert r.content != DATA
+    assert r.status_code == 200, r.text
+    assert r.content == DATA
 
 
 def test_stream_bound_user_rclone_mount_still_served(
@@ -587,20 +592,20 @@ def test_stream_bound_user_rclone_mount_still_served(
     assert r.content == DATA
 
 
-def test_stream_unbound_drive_mount_preparing_unchanged(
+def test_stream_unbound_drive_mount_no_copy_direct_302(
         client, free_token, seed, monkeypatch):
-    """drive 挂载条目无副本 → 照旧建池单、preparing 409（provider
-    在池范围内，回落判定不许碰；池单必须真的建出来）。"""
+    """2026-11-22 二次改版：drive 挂载条目无 ready 池副本 →
+    未绑订阅用户直达 Drive 302 主线，不再建池单回 preparing
+    409（改版口径 #5：不许因无绑盘撞备货链）。"""
     monkeypatch.setenv("TRANSFER_WAIT_STREAM_ENABLED", "0")
     r = _stream(client, free_token, seed["drive_movie"])
-    assert r.status_code == 409, r.text
-    assert "转存准备中" in r.text
+    assert r.status_code == 302, r.text
+    assert "usercontent" in (r.headers.get("location") or "")
     db = SessionLocal()
     try:
-        job = (db.query(em.TransferJob)
-               .filter(em.TransferJob.item_id == seed["drive_movie_id"],
-                       em.TransferJob.owner_scope == "pool").one())
-        assert job.status == "pending"
-        assert job.dest_drive_id == f"pooldrive:{seed['member_id']}"
+        jobs = (db.query(em.TransferJob)
+                .filter(em.TransferJob.item_id == seed["drive_movie_id"],
+                        em.TransferJob.owner_scope == "pool").all())
+        assert jobs == [], "直达主线不许落池单"
     finally:
         db.close()
