@@ -3961,10 +3961,113 @@ def _nfo_candidates(kind: str, name: str) -> list:
     return [f"{name}.nfo", f"{stem}.nfo"]
 
 
+# ==================== NFO 指纹持久缓存（谷歌盘调用削减 P1）====================
+# ctx 级缓存只活一轮扫描：下一轮扫描 / enrich 重试时，同一个没变过的 .nfo
+# 又要经 rclone 发一次 GET（生产实测 .nfo 读 12,109 次/日，全站第二大取数
+# 面）。这里在 ctx 缓存下面再垫一层**落库**的指纹缓存（emby_nfo_caches）：
+# 列举时本来就能拿到 .nfo 的 size / ModTime，拼成指纹；指纹与上次落库的
+# 一致 → 跳过 GET、复用落库的解析结果；变了才重读重解析并覆盖落库。
+# 指纹拿不到（列举给不出 size 与 ModTime）时回落旧行为——照常读，
+# 绝不凭空跳过。缓存读写全程吞异常：缓存坏了最坏是多读一次文件，
+# 绝不能反过来把扫描 / 补全打挂。
+
+
+def _nfo_fingerprint_from_entry(entry) -> Optional[str]:
+    """列举条目 → NFO 指纹（``<size>|<ModTime 微秒>``）；元数据缺位返回 None
+
+    与 ``_file_fingerprint`` 的回落口径一致：ModTime 拿不到时只用 size，
+    两样都拿不到才算缺位。
+    """
+    if entry is None:
+        return None
+    try:
+        size = int(getattr(entry, "size", 0) or 0)
+    except (TypeError, ValueError):
+        size = 0
+    try:
+        mod_ts = float(getattr(entry, "mod_ts", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        mod_ts = 0.0
+    if size <= 0 and mod_ts <= 0:
+        return None
+    if mod_ts > 0:
+        return f"{size}|{int(round(mod_ts * 1_000_000))}"
+    return f"{size}|"
+
+
+def _nfo_local_fingerprint(local_path: str) -> Optional[str]:
+    """本机 NFO 指纹（``<size>|<mtime_ns>``，一次 os.stat）；stat 失败返回 None"""
+    try:
+        st = os.stat(local_path)
+    except OSError:
+        return None
+    return f"{st.st_size}|{st.st_mtime_ns}"
+
+
+def _nfo_cache_key_str(key: tuple) -> str:
+    """ctx 缓存键（元组）→ 落库键（字符串），与 NfoParseCache 的口径一致"""
+    return ":".join(str(part) for part in key)
+
+
+def _nfo_persistent_get(cache_key: str, fingerprint: str):
+    """查落库缓存 → (命中?, 解析结果)；任何异常都按未命中处理，绝不抛"""
+    try:
+        from backend.database import SessionLocal
+
+        db = SessionLocal()
+        try:
+            row = db.query(emby_models.NfoParseCache).filter(
+                emby_models.NfoParseCache.cache_key == cache_key).first()
+            if row is None or row.fingerprint != fingerprint:
+                return False, None
+            if not row.data_json:
+                return True, None          # 阴性缓存：读过、解析不出东西
+            try:
+                data = json.loads(row.data_json)
+            except ValueError:
+                return False, None
+            return True, data if isinstance(data, dict) else None
+        finally:
+            db.close()
+    except Exception as exc:  # noqa: BLE001 — 缓存读失败回落真读
+        logger.debug("NFO 指纹缓存查询失败（回落真读）%s: %s", cache_key, exc)
+        return False, None
+
+
+def _nfo_persistent_put(cache_key: str, fingerprint: str, data) -> None:
+    """把本轮解析结果按指纹落库（覆盖同键旧行）；失败只记日志，绝不抛"""
+    try:
+        from backend.database import SessionLocal
+
+        payload = json.dumps(data, ensure_ascii=False) if data else None
+        db = SessionLocal()
+        try:
+            row = db.query(emby_models.NfoParseCache).filter(
+                emby_models.NfoParseCache.cache_key == cache_key).first()
+            if row is None:
+                db.add(emby_models.NfoParseCache(
+                    cache_key=cache_key, fingerprint=fingerprint,
+                    data_json=payload))
+            else:
+                row.fingerprint = fingerprint
+                row.data_json = payload
+            db.commit()
+        finally:
+            db.close()
+    except Exception as exc:  # noqa: BLE001 — 缓存写失败不影响主流程
+        logger.debug("NFO 指纹缓存落库失败 %s: %s", cache_key, exc)
+
+
 def _read_nfo_cached(ctx: "_ScanContext", scan_file: "ScanFile",
                      local_path: Optional[str] = None,
-                     mount_rel: Optional[str] = None):
-    """读 + 解析一个 NFO（ctx 级缓存，含阴性缓存；异常当没有 NFO）"""
+                     mount_rel: Optional[str] = None,
+                     fingerprint: Optional[str] = None):
+    """读 + 解析一个 NFO（ctx 级缓存，含阴性缓存；异常当没有 NFO）
+
+    ``fingerprint`` 是列举时拿到的该 NFO 文件指纹（见 ``_find_nfos``）：
+    给了指纹就先查落库缓存，指纹未变直接复用上次的解析结果、不发 GET；
+    没给（旧调用方 / 列举缺位）时行为与旧版逐字一致。
+    """
     if local_path:
         key = ("local", local_path)
     else:
@@ -3974,6 +4077,13 @@ def _read_nfo_cached(ctx: "_ScanContext", scan_file: "ScanFile",
         key = (("byos", _bid, mount_rel) if _bid is not None
                else ("mount", scan_file.mount_id, mount_rel))
     if key not in ctx.nfo_cache:
+        if fingerprint:
+            hit, cached = _nfo_persistent_get(_nfo_cache_key_str(key), fingerprint)
+            if hit:
+                # 落库指纹命中：不读盘、不联网，复用上次的解析结果
+                progress.note_stage("nfo_hit")
+                ctx.nfo_cache[key] = cached
+                return ctx.nfo_cache[key]
         try:
             # v2.42.9：真的读一次才计数（耗时含 NFO 的读 + 解析）——
             # 「nfo_read 次数」与「nfo_hit 次数」的比就是 ctx 缓存的实际复用率
@@ -3990,6 +4100,9 @@ def _read_nfo_cached(ctx: "_ScanContext", scan_file: "ScanFile",
                 ctx.nfo_cache[key] = nfo_lib.parse_nfo(text)
         except Exception:  # noqa: BLE001 — 单个 NFO 读不到就当没有
             ctx.nfo_cache[key] = None
+        if fingerprint:
+            _nfo_persistent_put(_nfo_cache_key_str(key), fingerprint,
+                                ctx.nfo_cache[key])
     else:
         # ctx 缓存命中（含阴性缓存）：不读盘、不联网，只记一次命中
         progress.note_stage("nfo_hit")
@@ -4035,8 +4148,19 @@ def _find_nfos(ctx: "_ScanContext", scan_file: "ScanFile", kind: str) -> tuple:
 
     def read_nfo(d: str, fname: str):
         if is_local:
-            return _read_nfo_cached(ctx, scan_file, local_path=os.path.join(d, fname))
-        return _read_nfo_cached(ctx, scan_file, mount_rel=posixpath.join(d, fname))
+            local_path = os.path.join(d, fname)
+            return _read_nfo_cached(
+                ctx, scan_file, local_path=local_path,
+                fingerprint=_nfo_local_fingerprint(local_path))
+        # 指纹取自列举条目本身（size / ModTime 列举时本来就有，零额外往返）；
+        # 列举走 ctx 缓存，这里再取一次不会多发请求。条目找不到 / 元数据
+        # 缺位时指纹为 None，_read_nfo_cached 回落旧行为照常读。
+        entry = next(
+            (e for e in _mount_dir_entries(ctx, scan_file, d) if e.name == fname),
+            None)
+        return _read_nfo_cached(
+            ctx, scan_file, mount_rel=posixpath.join(d, fname),
+            fingerprint=_nfo_fingerprint_from_entry(entry))
 
     if is_local:
         names = set(_list_dir_cached(dirpath))
