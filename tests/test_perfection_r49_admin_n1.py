@@ -2,8 +2,7 @@
 
 F1（welfare_admin.py）：求片审核列表 `/welfare/requests` 的 N+1 修复用例
     已随该组端点于 2026-11-17 删除（A3，用户亲点）。
-F2（welfare_admin.py）：抽奖黑名单列表 `/welfare/lottery/blacklist` 循环内逐行
-    query WebUser → 每页 ≤100 条额外 SQL。修法：一次 IN 查完 user_id→username 映射。
+F2（welfare_admin.py）：抽奖黑名单列表 N+1 用例已随群抽奖整族于 2026-11-23 下线删除。
 F3（coupons_admin.py）：建券 `create_coupons` 循环内逐码查 DB 查重（count≤200）。
     修法：一次 IN 查完已存在码集，循环内只做集合命中判定，400 语义不变。
 F4（subscriptions.py）：view_grant 付费分支此前用 resolve_realm_id(realm_id)，
@@ -24,9 +23,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend import models, subscriptions
-from backend.api import welfare_admin
 from backend.api.coupons_admin import CouponCreateRequest, create_coupons
-from backend.api.welfare_admin import list_lottery_blacklist
 
 
 @pytest.fixture()
@@ -82,31 +79,6 @@ def _realm(db, name="主服", slug="main"):
     db.add(r)
     db.commit()
     return r
-
-
-# ---------------------------------------------------------------------------
-# F2：黑名单列表一次 IN 查完用户名；用户名缺失（用户已删）时保持 None 口径
-# ---------------------------------------------------------------------------
-
-def test_lottery_blacklist_batch_usernames(db):
-    admin = _user(db, "admin", is_staff=True)
-    u1 = _user(db, "u1")
-    u2 = _user(db, "u2")
-    db.add(models.LotteryBlacklist(user_id=u1.id, reason="刷奖"))
-    db.add(models.LotteryBlacklist(user_id=u2.id, reason=""))
-    db.add(models.LotteryBlacklist(user_id=999999, reason="幽灵"))  # 用户已不存在
-    db.commit()
-
-    with _count_statements(db) as c:
-        resp = list_lottery_blacklist(page=1, page_size=20,
-                                      current_admin=admin, db=db)
-    # count(1) + 列表(1) + IN 查用户名(1)；此前是 3 + 3
-    assert c.n == 3, f"期望 3 条 SQL，实际 {c.n}"
-    by_uid = {it["user_id"]: it["username"] for it in resp["items"]}
-    assert by_uid[u1.id] == "u1"
-    assert by_uid[u2.id] == "u2"
-    assert by_uid[999999] is None  # 与原 getattr(u, "username", None) 口径一致
-    assert resp["total"] == 3
 
 
 # ---------------------------------------------------------------------------

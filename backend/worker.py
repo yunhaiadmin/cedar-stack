@@ -454,15 +454,6 @@ def main() -> int:
             logger.warning(f"启动系统告警调度失败（可忽略）: {e}")
 
 
-        # 群抽奖自动开奖（daemon 线程，失败可忽略）
-        try:
-            from backend import lottery
-            if lottery.start_lottery_auto_draw_scheduler():
-                started.append("lottery_auto_draw")
-                logger.info("✅ 群抽奖自动开奖调度已启动")
-        except Exception as e:
-            logger.warning(f"启动群抽奖自动开奖调度失败（可忽略）: {e}")
-
         try:
             from backend.emby_server import auto_scan
             if auto_scan.start_auto_scan_scheduler():

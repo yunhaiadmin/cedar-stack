@@ -113,47 +113,7 @@ def test_a_p2_3_x_real_ip_valid_still_trusted():
 
 # ==================== B-P2-1：公益负天数 ==================================
 
-# ==================== B-P2-2：取消抽奖原子性 ===============================
-
-def _lottery_db(db):
-    # lottery_rounds 已在 models.Base 里（create_all 已建表），这里只清空
-    db.execute(text("DELETE FROM lottery_rounds"))
-    db.commit()
-    return db
-
-
-def test_b_p2_2_cancel_open_round_ok(db):
-    from backend.api.welfare_admin import cancel_lottery_round
-
-    _lottery_db(db)
-    db.add(models.LotteryRound(id=1, title="t", chat_id=100, status="open"))
-    db.commit()
-    out = cancel_lottery_round(1, SimpleNamespace(id=9), db)
-    assert out == {"success": True}
-    assert db.execute(text("SELECT status FROM lottery_rounds WHERE id=1")).scalar() == "cancelled"
-
-
-def test_b_p2_2_cancel_drawing_round_conflicts_not_clobbers(db):
-    from backend.api.welfare_admin import cancel_lottery_round
-
-    _lottery_db(db)
-    # 调度器已原子认领（drawing）：取消必须 409，且不能把状态打成 cancelled
-    db.add(models.LotteryRound(id=2, title="t", chat_id=100, status="drawing"))
-    db.commit()
-    with pytest.raises(HTTPException) as ei:
-        cancel_lottery_round(2, SimpleNamespace(id=9), db)
-    assert ei.value.status_code == 409
-    assert db.execute(text("SELECT status FROM lottery_rounds WHERE id=2")).scalar() == "drawing"
-
-
-def test_b_p2_2_cancel_missing_round_404(db):
-    from backend.api.welfare_admin import cancel_lottery_round
-
-    _lottery_db(db)
-    with pytest.raises(HTTPException) as ei:
-        cancel_lottery_round(999, SimpleNamespace(id=9), db)
-    assert ei.value.status_code == 404
-
+# ==================== B-P2-2：取消抽奖原子性（已随群抽奖整族于 2026-11-23 下线删除） ===============================
 
 # ==================== B-P2-3：批量延期（已随福利族于 2026-11-14 删除） ===============================
 

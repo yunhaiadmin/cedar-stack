@@ -30,7 +30,7 @@ import {
   CheckCircle2, Route as RealmIcon, Lock, Search, Wallet, Crown, MessageSquareDashed, Link2,
   TriangleAlert, ScrollText, Smartphone, MonitorCog, ShieldAlert, Ban, Library, Eye,
   Image as ImageIcon,
-  Database, Megaphone, Receipt, Trophy, TicketPercent, UserPlus, KeySquare,
+  Database, Megaphone, Receipt, TicketPercent, UserPlus, KeySquare,
   UserCog, Activity, HandCoins,
   Sun, Moon, MonitorSmartphone, ListChecks, Flag, Gauge, Heart, Clapperboard, Flame, Captions,
   PanelLeftClose, PanelLeftOpen, MonitorPlay,
@@ -213,8 +213,6 @@ const navGroups: NavGroup[] = [
       { path: '/tickets', label: '工单', icon: Ticket },
       // 等级治理：举报终审队列 + 治理停权（复核达标的举报在这里受理 / 驳回）
       { path: '/governance', label: '举报与停权', icon: Flag },
-      // 群抽奖：轮次配置与黑名单（活动提案已随公益服删除下线）
-      { path: '/welfare-lottery-rounds', label: '群抽奖', icon: Trophy },
     ],
   },
   {
