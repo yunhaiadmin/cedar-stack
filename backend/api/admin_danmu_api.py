@@ -11,6 +11,8 @@ config_service 统一校验通道，逐项形状校验在本层
 danmu_api_external_enabled / danmu_api_external_url）：GET 一并
 回当前值；PUT 带这两项才改（不带 = 不动，兼容只存线路的旧
 调用）。上游地址含 token 路径，审计只记 host、不记全址。
+2026-11-22 起 external_url 按全仓 secret 口径掩码：GET 非空只回
+"******" + external_url_set 布尔；PUT 收到 "******" 保留原值。
 """
 
 from __future__ import annotations
@@ -52,10 +54,14 @@ class DanmuLinesRequest(BaseModel):
 
 
 def _config_payload(db: Session) -> dict:
+    external_url = danmu_api_core.external_url(db)
     return {
         "lines": danmu_api_core.get_lines(db),
         "external_enabled": danmu_api_core.external_enabled(db),
-        "external_url": danmu_api_core.external_url(db),
+        # 地址含 token 路径，与全仓 secret 口径一致：非空只回掩码，
+        # 另加 external_url_set 报是否已配置，真值不进任何管理端响应。
+        "external_url": "******" if external_url else "",
+        "external_url_set": bool(external_url),
     }
 
 
@@ -81,7 +87,9 @@ def danmu_lines_update_config(
         lines = danmu_api_core.validate_lines(
             [ln.model_dump() for ln in request.lines])
         external_url = None
-        if request.external_url is not None:
+        # 掩码＝保留原值不覆盖（与全仓 secret 保存口径一致）：GET 回的
+        # "******" 被原样提交回来时，不当新地址校验、更不落库。
+        if request.external_url is not None and request.external_url != "******":
             external_url = danmu_api_core.validate_external_url(
                 request.external_url)
     except ValueError as exc:
@@ -112,9 +120,10 @@ def danmu_lines_update_config(
     if request.external_enabled is not None:
         audit_detail["external_enabled"] = payload["external_enabled"]
     if external_url is not None:
-        # 地址含 token 路径：审计只记 host，不落全址。
+        # 地址含 token 路径：审计只记 host，不落全址（payload 里的
+        # external_url 已是掩码，host 必须取本次校验后的真值算）。
         audit_detail["external_url_host"] = urlparse(
-            payload["external_url"]).netloc or "(未配置)"
+            external_url).netloc or "(未配置)"
     _audit(db, current_admin, "danmu_api_update_lines", "system", None,
            audit_detail,
            ip=raw_request.client.host if raw_request.client else None)

@@ -1095,6 +1095,7 @@ def test_admin_external_roundtrip_and_validation(db):
     out = danmu_lines_get_config(admin, db)
     assert out["external_enabled"] is False
     assert out["external_url"] == ""
+    assert out["external_url_set"] is False
 
     lines = [{"id": "intl", "name": "国际方向", "note": "",
               "host": "cdn.aetrix.love"}]
@@ -1103,17 +1104,25 @@ def test_admin_external_roundtrip_and_validation(db):
             lines=lines, external_enabled=True,
             external_url="https://dm.example.com/tok123/"),
         _request(), admin, db)
-    # 尾斜杠归一；开关与地址都落库
+    # 尾斜杠归一；开关与地址都落库。2026-11-22 起响应按 secret 口径
+    # 只回掩码 + external_url_set，真值以 danmu_api.external_url 为准。
+    from backend import danmu_api as _core_api
+
     assert out["external_enabled"] is True
-    assert out["external_url"] == "https://dm.example.com/tok123"
+    assert out["external_url"] == "******"
+    assert out["external_url_set"] is True
     _invalidate()
+    assert _core_api.external_url(db) == "https://dm.example.com/tok123"
     assert danmu_lines_get_config(admin, db) == out
 
     # 不带外部两项的保存不动它们（兼容只存线路）
     out = danmu_lines_update_config(
         DanmuLinesRequest(lines=lines), _request(), admin, db)
     assert out["external_enabled"] is True
-    assert out["external_url"] == "https://dm.example.com/tok123"
+    assert out["external_url"] == "******"
+    assert out["external_url_set"] is True
+    _invalidate()
+    assert _core_api.external_url(db) == "https://dm.example.com/tok123"
 
     for bad in ("ftp://dm.example.com/x",
                 "https://user:pass@dm.example.com/x",
