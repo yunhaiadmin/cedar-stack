@@ -665,16 +665,16 @@ const trialCodeColumns: DataColumn[] = [
   { key: 'used_at', label: '使用时间' },
 ]
 
-const yuanOfFen = (fen: number) =>
+const usdOfFen = (fen: number) =>
   Number.isInteger(fen / 100) ? String(fen / 100) : (fen / 100).toFixed(2)
 
 const rebateConfigText = computed(() => {
   const c = moneyOverview.value?.rebate_config
   if (!c) return ''
   if (c.mode === 'tiered') {
-    return `分档：每位好友累计付费前 $${yuanOfFen(c.tier_threshold_fen)} 返 ${c.percent}%，超出部分返 ${c.tier_percent}%`
+    return `分档：每位好友累计付费前 $${usdOfFen(c.tier_threshold_fen)} 返 ${c.percent}%，超出部分返 ${c.tier_percent}%`
   }
-  const cap = c.cap_fen > 0 ? `，累计上限 $${yuanOfFen(c.cap_fen)}` : ''
+  const cap = c.cap_fen > 0 ? `，累计上限 $${usdOfFen(c.cap_fen)}` : ''
   return `一律比例：按好友付费金额的 ${c.percent}% 返利${cap}`
 })
 
@@ -693,14 +693,14 @@ const rebateColumns: DataColumn[] = [
   { key: 'created_at', label: '时间' },
 ]
 
-const trialForm = reactive({ enabled: true, days: 0, monthly_limit: 2, min_paid_yuan: 10 })
+const trialForm = reactive({ enabled: true, days: 0, monthly_limit: 2, min_paid_usd: 10 })
 const trialSaving = ref(false)
 
 function fillTrialForm(p: InviteTrialPolicy) {
   trialForm.enabled = p.enabled
   trialForm.days = p.days
   trialForm.monthly_limit = p.monthly_limit
-  trialForm.min_paid_yuan = p.min_paid_fen / 100
+  trialForm.min_paid_usd = p.min_paid_fen / 100
 }
 
 const trialDirty = computed(() => {
@@ -709,7 +709,7 @@ const trialDirty = computed(() => {
   return p.enabled !== trialForm.enabled
     || p.days !== trialForm.days
     || p.monthly_limit !== trialForm.monthly_limit
-    || Math.round(trialForm.min_paid_yuan * 100) !== p.min_paid_fen
+    || Math.round(trialForm.min_paid_usd * 100) !== p.min_paid_fen
 })
 
 async function loadInviteMoney() {
@@ -757,7 +757,7 @@ async function settleRebates() {
 async function saveTrialPolicy() {
   const effect = !trialForm.enabled || trialForm.days <= 0 || trialForm.monthly_limit <= 0
     ? '保存后福利邀请不实际发放试用。'
-    : `保存后邀请人可生成 ${trialForm.days} 天试用的福利码，每位邀请人每月 ${trialForm.monthly_limit} 次，资格门槛为累计付费 $${trialForm.min_paid_yuan}。`
+    : `保存后邀请人可生成 ${trialForm.days} 天试用的福利码，每位邀请人每月 ${trialForm.monthly_limit} 次，资格门槛为累计付费 $${trialForm.min_paid_usd}。`
   try {
     await ElMessageBox.confirm(
       `${effect}只影响之后新生成的码，已发出的码按生成时快照兑现。确认保存？`,
@@ -773,7 +773,7 @@ async function saveTrialPolicy() {
       invite_trial_enabled: trialForm.enabled,
       invite_trial_days: trialForm.days,
       invite_welfare_monthly_limit: trialForm.monthly_limit,
-      invite_welfare_min_paid_fen: Math.round(trialForm.min_paid_yuan * 100),
+      invite_welfare_min_paid_fen: Math.round(trialForm.min_paid_usd * 100),
     })
     if (moneyOverview.value) {
       moneyOverview.value = { ...moneyOverview.value, trial_policy: res.policy }
@@ -1178,7 +1178,7 @@ onMounted(reloadAll)
             <span class="field-suffix">次/人</span>
           </el-form-item>
           <el-form-item label="邀请人资格门槛（累计付费）">
-            <el-input-number v-model="trialForm.min_paid_yuan" :min="0" :max="1000000" :precision="2" aria-label="福利邀请资格门槛" />
+            <el-input-number v-model="trialForm.min_paid_usd" :min="0" :max="1000000" :precision="2" aria-label="福利邀请资格门槛" />
             <span class="field-suffix">美元</span>
           </el-form-item>
         </el-form>

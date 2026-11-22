@@ -117,7 +117,7 @@ export const fetchUsers = (params: {
   offset?: number
 }) => get<UsersResponse>('/users', params)
 
-/** 用户 360° 详情：资料 / 订阅 / 积分 / 订单 / 邀请 / 签到 / 观看 */
+/** 用户 360° 详情：资料 / 订阅 / 订单 / 邀请 / 签到 / 观看 */
 export const fetchUserDetail = (id: number) => get<UserDetail>(`/users/${id}`)
 
 /** 用户授权资源卡片（Phase 4）：一个服一张，看他现在能用什么 */
@@ -363,7 +363,6 @@ export const generateCodes = (data: {
   realm_id?: number
   /** M1：奖励类型 */
   reward_type?: string
-  points_value?: number
   /** 余额型（reward_type=balance）：入账面额（美元，字符串保精度） */
   balance_value?: string
   discount_pct?: number
@@ -605,7 +604,6 @@ export interface InvitationCodeRow {
   state_label: string
   expires_at: string | null
   expires_days_left: number | null
-  reward_points: number
   created_at: string | null
 }
 
@@ -631,8 +629,6 @@ export const generateInvitationCodes = (data: {
   max_uses: number
   expires_days: number
   whitelist?: string
-  /** 本批码专属奖励（积分）；0/不填 = 跟随全局配置 */
-  reward_points?: number
 }) =>
   post<{ success: boolean; message: string; codes: InvitationCodeRow[] }>(
     '/invitation-codes', data,
@@ -640,7 +636,7 @@ export const generateInvitationCodes = (data: {
 
 export const updateInvitationCode = (
   id: number,
-  data: { max_uses?: number; expires_days?: number; whitelist?: string; is_active?: boolean; reward_points?: number },
+  data: { max_uses?: number; expires_days?: number; whitelist?: string; is_active?: boolean },
 ) => put<{ success: boolean; code: InvitationCodeRow }>(`/invitation-codes/${id}`, data)
 
 export const revokeInvitationCodes = (ids: number[]) =>

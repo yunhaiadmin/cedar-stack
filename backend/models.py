@@ -804,9 +804,13 @@ class RegistrationCode(Base):
     """
     __tablename__ = 'registration_codes'
 
+    # 索引声明只许这一份：本类曾写两遍 __table_args__、后者覆盖前者，
+    # idx_reg_code / idx_reg_code_type 实际从未生效，已合并至此。
     __table_args__ = (
         Index('idx_reg_code', 'code'),
         Index('idx_reg_code_type', 'code_type'),
+        Index('idx_reg_code_agent', 'agent_id'),
+        Index('idx_reg_code_batch', 'batch_id'),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -850,12 +854,9 @@ class RegistrationCode(Base):
     # 老库由 database._auto_migrate 补列。
     batch_id = Column(String(36), nullable=True)
 
-    # 按代理查码（代理中心「我的卡码」）；老库由 database._LEGACY_INDEXES
-    # 同名 spec 补建，两边同名保证幂等跳过、不重复建。
-    __table_args__ = (
-        Index('idx_reg_code_agent', 'agent_id'),
-        Index('idx_reg_code_batch', 'batch_id'),
-    )
+    # 按代理查码（代理中心「我的卡码」）的 idx_reg_code_agent 与按批查码的
+    # idx_reg_code_batch 已并入类首 __table_args__ 统一声明；老库由
+    # database._LEGACY_INDEXES 同名 spec 补建，两边同名保证幂等跳过、不重复建。
 
 
 class WhitelistSerial(Base):
