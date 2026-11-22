@@ -8,6 +8,10 @@
   每条带 enabled，暂停线路照常列出供前端标「暂停服务」）
 - GET    /address?line=id  为本人拼好的完整地址（唯一出现 token
   明文的响应）；未生成 409、线路不存在 404、线路已暂停 409
+- 查看门禁（2026-11-22）：GET/POST /token、GET /lines、
+  GET /address 须有查看资格（subscriptions.view_grant：有效订阅
+  或团队播放资格，只判资格不叠加流量，管理员不豁免），无资格
+  403；DELETE /token 不挂门禁（无资格也要能删掉自己的 token）。
 
 公开下发（无登录态，token 在路径，/api/v1/danmu）：
 - GET /{token}/ [{item_ref}[/raw]]  按 Danmu 插件约定回 bilibili
@@ -26,6 +30,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from backend import danmu_api as core_api
+from backend import subscriptions
 from backend.api.user import get_current_user
 from backend.database import get_db
 
@@ -39,11 +44,23 @@ _XML_MEDIA = "text/xml; charset=utf-8"
 
 # ------------------------------------------------------------ 用户端
 
+_VIEW_GATE_DETAIL = "开通订阅后即可查看弹幕线路与连接地址"
+
+
+def _require_view_grant(db: Session, user) -> None:
+    """查看门禁：无查看资格（有效订阅或团队播放资格）不许看弹幕
+    Token、线路与连接地址。判定走 subscriptions.view_grant 全站
+    唯一口径——只判资格、不叠加流量（与公开下发口 check_access
+    的「资格＋流量」口径分工不同，不许混用）；管理员不豁免。"""
+    if not subscriptions.view_grant(db, user):
+        raise HTTPException(status_code=403, detail=_VIEW_GATE_DETAIL)
+
 
 @user_router.get("/token")
 def danmu_token_status(user=Depends(get_current_user),
                        db: Session = Depends(get_db)):
     """弹幕 Token 状态：是否存在有效 token 及其到期时刻（不回明文）。"""
+    _require_view_grant(db, user)
     return core_api.token_status(db, user.id)
 
 
@@ -51,6 +68,7 @@ def danmu_token_status(user=Depends(get_current_user),
 def danmu_token_generate(user=Depends(get_current_user),
                          db: Session = Depends(get_db)):
     """生成弹幕 Token（一键，无强因子前置）；已有有效 token 不重复生成。"""
+    _require_view_grant(db, user)
     before = core_api.token_status(db, user.id)
     core_api.generate_token(db, user.id)
     after = core_api.token_status(db, user.id)
@@ -60,7 +78,10 @@ def danmu_token_generate(user=Depends(get_current_user),
 @user_router.delete("/token")
 def danmu_token_delete(user=Depends(get_current_user),
                        db: Session = Depends(get_db)):
-    """删除弹幕 Token：删除即失效，旧地址随之不可用。"""
+    """删除弹幕 Token：删除即失效，旧地址随之不可用。
+
+    不挂查看门禁：订阅到期的人也要能删掉自己的 token。
+    """
     core_api.delete_token(db, user.id)
     return {"exists": False, "expires_at": None}
 
@@ -73,6 +94,7 @@ def danmu_lines(user=Depends(get_current_user),
     暂停线路（enabled=false）照常列出：前端标「暂停服务」不可选，
     不在此过滤（过滤掉用户就不知道有这条线路暂停了）。
     """
+    _require_view_grant(db, user)
     return {"lines": core_api.get_lines(db)}
 
 
@@ -85,7 +107,9 @@ def danmu_address(line: str = Query(...),
     拒绝口径：线路不存在 404（与既有口径一致）；线路已暂停回
     409——不用 404 是因为线路存在、只是当前状态不允许拼地址，
     与「未生成 token」的 409 同属状态冲突，detail 区分两者。
+    查看门禁在最前：无资格者连线路存在与否都不许探。
     """
+    _require_view_grant(db, user)
     lines = core_api.get_lines(db)
     target = next((ln for ln in lines if ln["id"] == line), None)
     if target is None:
