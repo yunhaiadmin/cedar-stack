@@ -416,7 +416,7 @@ ADMIN_FILTERBAR_REQUIRED = (
     "views/OperationLogs.vue",
     "views/Orders.vue",
     "views/ShareGuard.vue",
-    "views/StorageBindings.vue",
+    # StorageBindings.vue 已随绑盘只读观测页删除于 2026-11-23 下线
     "views/Users.vue",
     "views/WalletAdmin.vue",
     # —— 批 2 收编 ——

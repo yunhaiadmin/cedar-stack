@@ -238,9 +238,6 @@ const navGroups: NavGroup[] = [
       { path: '/missing-episodes', label: '缺集清单', icon: ListChecks },
       // 字幕管理（二期全缺第 7 项）：已入库字幕轨（内嵌＋外挂）的只读盘点
       { path: '/subtitles', label: '字幕管理', icon: Captions },
-      // 存储绑定观测：原「上游源」页的标签页，
-      // 上游源随上游全清删除后恢复独立入口（批 3 合并入上游源页的布局随之撤销）
-      { path: '/storage-bindings', label: '存储绑定', icon: Database },
       // 贡献池：用户贡献盘组成的公共缓存池，成员生命周期管理（goal-33 PR-4）
       { path: '/pool', label: '贡献池', icon: Users },
       // 重新布局批 5：115/GDrive 账号降为「服务器」页「存储账号」标签，导航不再单列（旧路由跳到对应子标签）

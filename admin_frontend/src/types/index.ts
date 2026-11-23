@@ -1424,31 +1424,3 @@ export interface EmbySessionRow {
   is_paused: boolean
   started_at: string | null
 }
-
-
-/** 专线 B 第二阶段 · 只读观测口（字段与 backend/api/admin_readonly.py 一一对应，不自造） */
-
-/** 存储绑定行（GET /api/admin/storage-bindings；凭据只出 has_credential） */
-export interface StorageBindingRow {
-  id: number
-  user_id: number
-  provider: string
-  account_label: string | null
-  /** 来源入口（serialize_binding 同名字段）：primary=原入口 / oauth2=新入口，非 Drive 行为 null */
-  oauth_client: string | null
-  status: string
-  last_verified_at: string | null
-  last_error_kind: string | null
-  error_message: string | null
-  has_credential: boolean
-  created_at: string | null
-}
-
-export interface StorageBindingsResponse {
-  items: StorageBindingRow[]
-  total: number
-  limit: number
-  offset: number
-}
-
-
