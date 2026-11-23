@@ -1138,6 +1138,12 @@ def _auto_migrate():
         ("drive_oauth_states", [
             ("nonce_hash", "VARCHAR(64)", "NULL"),
         ]),
+        # 贡献池专属授权（2026-11-24）：state 行用途落字。老库补
+        # 列后为 NULL（= 历史行，池流按异用途拒绝，在途行 10
+        # 分钟内自然过期），与升级前行为一致。
+        ("drive_oauth_states", [
+            ("purpose", "VARCHAR(20)", "NULL"),
+        ]),
         # Drive OAuth 第二入口（新应用）：绑定行与 state 行的来源
         # 客户端标记。老库补列后为 NULL，读侧一律按 "primary"
         # （老应用）解释，与升级前行为一致；刷新按行上记录选

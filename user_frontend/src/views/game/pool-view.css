@@ -1,0 +1,26 @@
+/* 贡献池页本地主题变量（--pl-*）：缺省深色，html[data-theme='light']
+   时整套换浅（与团队页/「我的」页同口径）。定义放在独立样式表供设计
+   令牌契约核查，由 PoolView.vue 引入；其余版式在 PoolView.vue 的
+   scoped 样式里，引用此处变量。 */
+
+.pl-page {
+  --pl-line: rgba(255, 255, 255, 0.1);
+  --pl-card: #17181c;
+  --pl-text-2: rgba(255, 255, 255, 0.62);
+  --pl-text-3: rgba(255, 255, 255, 0.42);
+  --pl-input: rgba(255, 255, 255, 0.06);
+  --pl-ok: #34d399;
+  --pl-wait: #fbbf24;
+  --pl-bad: #f87171;
+}
+
+html[data-theme='light'] .pl-page {
+  --pl-line: #e7e7e7;
+  --pl-card: #ffffff;
+  --pl-text-2: #55575c;
+  --pl-text-3: #9a9da3;
+  --pl-input: #f5f5f5;
+  --pl-ok: #059669;
+  --pl-wait: #b45309;
+  --pl-bad: #dc2626;
+}
