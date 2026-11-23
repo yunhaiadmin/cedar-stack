@@ -11,9 +11,10 @@
 （``image_store.prewarm`` + ``localize`` 回读、内容寻址落盘）。
 
 口径：
-- 本地化总开关 ``EMBY_LOCALIZE_IMAGES`` 2026-11-23 起默认关（图片交付
-  改走 CF 边缘缓存、本地停增）：``--commit`` 在关态下直接退出（码 2），
-  确需回填时带 ``EMBY_LOCALIZE_IMAGES=1`` 运行；dry-run 计数不受影响；
+- 本地化总开关 ``EMBY_LOCALIZE_IMAGES`` 默认关：``--commit`` 在关态
+  下直接退出（码 2），确需回填时带 ``EMBY_LOCALIZE_IMAGES=1`` 运行；
+  dry-run 计数不受影响。CF 边缘缓存路线已于 2026-11-23 经用户亲令
+  取消，现行口径为本地图床，生产以 env ``EMBY_LOCALIZE_IMAGES=1`` 开启；
 - 目标：未软删、未合并行，海报（primary_image_url 有、poster_path
   空）或背景（backdrop_image_url 有、backdrop_path 空）缺本地图；
 - 幂等：已落盘的行天然不在候选里，可反复跑，跑完再跑报 0；
@@ -128,9 +129,8 @@ def main(argv=None) -> int:
                     help="每批条数（每批提交一次）")
     args = ap.parse_args(argv)
     if args.commit and not image_store.enabled():
-        # 2026-11-23 起本地化总开关默认关（图片交付改走 CF 边缘缓存）：
-        # --commit 在关态下只会全数 still_remote、白跑一趟，直接拦下并
-        # 指明回滚/临时开启的办法，不许静默空转
+        # 本地化总开关默认关：--commit 在关态下只会全数 still_remote、
+        # 白跑一趟，直接拦下并指明临时开启的办法，不许静默空转
         print("EMBY_LOCALIZE_IMAGES 未开启（默认关）：回填不会落任何图。"
               "确需回填时带 EMBY_LOCALIZE_IMAGES=1 再跑 --commit。")
         return 2

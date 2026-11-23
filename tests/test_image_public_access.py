@@ -36,13 +36,14 @@ Primary」扩到「公开库条目 Primary / Backdrop + 公开库封面 Primary�
 条件逐字不变（库对全体登录用户可见 + 按 IP 限流）；Art / Logo /
 Thumb、受限库、演员图无凭据仍 401/403。
 
-CF 边缘口径（2026-11-23，用户亲选 CF 方案、F5 的 C＋D-lite 提前同批）：
-无凭据成功响应改发 ``public`` 缓存头供 CF 边缘缓存（公开库图片本就对
-全体登录用户可见，权限口径不动）；无凭据失败（受限 / 未知 / 缺图 /
+F5 收口（2026-11-23，C＋D-lite）：无凭据失败（受限 / 未知 / 缺图 /
 类型不放行）统一 404 同 body，关掉存在性预言机；无凭据出图尺寸封顶
 （Primary ≤600、Backdrop ≤1280，细节见 test_image_cf_edge_cache.py）。
-本文件相应更新：无凭据成功用例改断言 public、原无凭据 401 用例改
-断言统一 404；带凭据面（401/403/private/不封顶）逐字不变。
+本文件相应更新：原无凭据 401 用例改断言统一 404；带凭据面
+（401/403/private/不封顶）逐字不变。缓存头不分面：无凭据成功响应
+与带凭据一样走下发腿自带头（``private``）。无凭据成功响应改发
+``public`` 供 CF 边缘缓存的口径曾于同日短暂上线、同日经用户亲令
+取消，图片交付现行口径为本地图床。
 
 覆盖：无凭据 401 / 坏凭据 401 / api_key 与 X-Emby-Token 两形态 200 /
 集→剧回退 / maxWidth 缩略图 / 受限库条目 403 / 库封面可见 200、受限 403 /
@@ -283,8 +284,7 @@ def test_public_library_primary_allows_no_credentials(client, seed, which):
     assert r.status_code == 200, r.text
     assert r.headers["content-type"].startswith("image/")
     assert r.content
-    # 2026-11-23 CF 边缘口径：无凭据成功响应改发 public（原断言 private）
-    assert r.headers.get("cache-control", "").startswith("public")
+    assert "private" in r.headers.get("cache-control", "")
 
 
 def test_public_library_primary_index_allows_no_credentials(client, seed):

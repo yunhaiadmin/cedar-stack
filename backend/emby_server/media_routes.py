@@ -247,14 +247,7 @@ _ANON_IMAGE_LIMIT_PER_MIN = 600
 _ANON_IMAGE_TYPES = ("Primary", "Backdrop")
 
 
-#: CF 边缘口径（2026-11-23，用户亲选）：无凭据且过 anon gate 的成功
-#: 响应改发 public——公开库图片本就对全体登录用户可见，共享缓存复用
-#: 不扩大可见面；带凭据响应维持 private 不变（各下发腿默认头不动，
-#: 只在 item_image 入口层覆盖无凭据成功响应）。浏览器侧仍是一天，
-#: 边缘侧一周：海报换图是低频事件，真要立刻换可去 CF 清缓存。
-_PUBLIC_IMAGE_CACHE_CONTROL = "public, max-age=86400, s-maxage=604800"
-
-#: F5-D-lite（2026-11-23，与 CF 方案同批提前）：无凭据出图尺寸封顶
+#: F5-D-lite（2026-11-23）：无凭据出图尺寸封顶
 #: （宽，px）。600 / 1280 已入 image_store 默认缩放档位，靠现行吸附
 #: 体系精确命中，不另造缩放路径；带凭据不封顶。
 _ANON_PRIMARY_MAX_WIDTH = 600
@@ -306,15 +299,16 @@ def item_image(item_id: str, image_type: str, request: Request,
                maxWidth: str | None = None, maxHeight: str | None = None,
                w: str | None = None, h: str | None = None):
     """条目图片（对外入口）：实现见 ``_item_image_impl``，本层只叠
-    2026-11-23 的 CF 边缘口径（用户亲选 CF 方案，F5 的 C＋D-lite 提前
-    同批落地）：
+    2026-11-23 的 F5 收口（C＋D-lite）：
 
-    - **缓存头分面**：无凭据且过 anon gate 的成功响应改发 ``public``
-      供 CF 边缘缓存；带凭据维持 ``private``（impl 与各下发腿的默认
-      头不变，只在这里覆盖无凭据成功响应）。谁能取图的权限口径不动。
     - **F5-C 失败统一**：无凭据失败在 impl 里形态各异（门禁 401 与
       两种 404 文案），在这里一律收敛成同一状态与同一 body，关掉
       存在性预言机；限流 429 与条目存在性无关，不并入。
+
+    缓存头不做覆盖：响应一律走 impl 与各下发腿自带头
+    （``private, max-age=86400``）。无凭据成功响应改发 ``public``
+    供 CF 边缘缓存的口径曾于 2026-11-23 短暂上线、同日经用户亲令
+    取消；图片交付现行口径为本地图床（``EMBY_LOCALIZE_IMAGES``）。
     """
     try:
         resp = _item_image_impl(item_id, image_type, request, db, user,
@@ -325,8 +319,6 @@ def item_image(item_id: str, image_type: str, request: Request,
             raise HTTPException(status_code=_ANON_FAILURE_STATUS,
                                 detail=_ANON_FAILURE_DETAIL) from None
         raise
-    if user is None and resp.status_code == 200:
-        resp.headers["Cache-Control"] = _PUBLIC_IMAGE_CACHE_CONTROL
     return resp
 
 
