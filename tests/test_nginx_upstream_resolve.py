@@ -28,6 +28,9 @@ NGINX_CONF = REPO / "docker" / "nginx.conf"
 def _block(text: str, header: str) -> str | None:
     """取指定块全文（花括号计数；块内注释不含花括号）。"""
     start = text.find(header)
+    if start < 0 and header.startswith("location "):
+        # A-067 起 /api/ 带 ^~ 修饰，找块兼容两种写法
+        start = text.find("location ^~ " + header[len("location "):])
     if start < 0:
         return None
     brace = text.find("{", start)
