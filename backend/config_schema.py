@@ -315,9 +315,10 @@ MOUNT_SERVING_CONFIG_SCHEMA: dict[str, tuple] = {
     "mount_serving_probe_budget_ms": ("int", 100, 10000),
 }
 
-# 中继热缓存（2026-11-22 智能中继＋热缓存阶段 1）：Drive 中继腿的
-# 字节级磁盘分段缓存总容量；读取唯一实现 emby_server.
-# relay_hot_cache（热读、60 秒进程内缓存、代码默认 50GiB、0 = 关）。
+# 中继热缓存（2026-11-22 智能中继＋热缓存阶段 1）：中继腿的
+# 字节级磁盘分段缓存总容量（两腿共享一个池）；读取唯一实现
+# emby_server.relay_hot_cache（热读、60 秒进程内缓存、代码默认
+# 20GiB——2026-11-23 按根盘容量收紧，0 = 关）。
 # 纯 SystemConfig 键，不进 env.example（#1527 先例）。
 RELAY_HOT_CACHE_CONFIG_SCHEMA: dict[str, tuple] = {
     "relay_hot_cache_max_bytes": ("int", 0, 10**15),

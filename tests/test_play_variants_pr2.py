@@ -322,7 +322,8 @@ def test_legacy_no_variant_mount_goes_mount_relay(db, monkeypatch):
             "url", "https://115.example/v.mkv", {}))
     calls = []
 
-    async def fake_mount(url, request, headers, media_type, pt=None, sniff_quota_page=False):
+    async def fake_mount(url, request, headers, media_type, pt=None,
+                         sniff_quota_page=False, hot_identity=None):
         calls.append(url)
         return Response(content=b"mount-bytes", media_type=media_type)
 
@@ -383,7 +384,8 @@ def test_forced_mount_relay_records_variant_event(db, monkeypatch):
         lambda path, db_, library=None: mount_lib.PlayTarget(
             "url", "https://115.example/v.mkv", {}))
 
-    async def fake_mount(url, request, headers, media_type, pt=None, sniff_quota_page=False):
+    async def fake_mount(url, request, headers, media_type, pt=None,
+                         sniff_quota_page=False, hot_identity=None):
         return Response(content=b"mount-bytes", media_type=media_type)
 
     monkeypatch.setattr(streaming_mod, "serve_mount_relay_async", fake_mount)

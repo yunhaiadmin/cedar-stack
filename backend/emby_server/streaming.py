@@ -1155,7 +1155,10 @@ def _mount_relay_client() -> "httpx.AsyncClient":
 # 中继热缓存接线（2026-11-22 智能中继＋热缓存阶段 1；存储本体在
 # relay_hot_cache，本节只做 serve 路径上的命中出流 / 写穿 / 预读）
 # ---------------------------------------------------------------------------
-# 只对带 hot_identity 的 Drive 腿生效（serve_drive_relay_async 设）：
+# 只对带 hot_identity 的腿生效。身份来源两条：Drive 腿经
+# _DriveLegScope（serve_drive_relay_async 设）；挂载腿经
+# serve_mount_relay_async 的 hot_identity 参数（2026-11-23 二期：
+# api.video_stream 对有 drive_file_id 的挂载条目传 mount:{fid}）：
 # - 全命中：开流前查缓存，请求区间被分段完全覆盖 → 本地出字节、
 #   不回源；
 # - 未全命中：现行透传逐字不变，只在流上旁路写穿——流过的完整
@@ -1477,6 +1480,48 @@ def _schedule_drive_hot_prefetch(drive_id, file_id, access_token,
         pass
 
 
+async def _fetch_mount_segment_bytes(url, headers, seg_start, seg_end):
+    """预读用：取挂载上游一个字节区间（共享挂载客户端，跳转逐跳
+    校验同主腿；凭据头用主腿同一份 forward、Range 换成本段区间）。
+    共享客户端只关响应、绝不关 client。任何失败回 None。"""
+    client = _mount_relay_client()
+    forward = {k: v for k, v in (headers or {}).items()}
+    forward.pop("X-Pickcode", None)
+    forward["Range"] = f"bytes={seg_start}-{seg_end}"
+    resp = None
+    try:
+        resp, _cur, _hops = await _follow_redirects(
+            client, url, forward, silent=True)
+        if resp is None or resp.status_code != 206:
+            return None
+        chunks = []
+        async for c in resp.aiter_bytes(READ_CHUNK):
+            chunks.append(c)
+        return b"".join(chunks)
+    except Exception:  # noqa: BLE001 — 预读取段失败回 None
+        return None
+    finally:
+        if resp is not None:
+            try:
+                await resp.aclose()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def _schedule_mount_hot_prefetch(identity, url, headers,
+                                 range_header) -> None:
+    """挂载腿出流后的跨请求预读调度：fetcher 按挂载上游构造（同一
+    URL＋同一份挂载凭据头，只换 Range）。永不抛。"""
+    try:
+        async def _fetcher(seg_start, seg_end):
+            return await _fetch_mount_segment_bytes(
+                url, headers, seg_start, seg_end)
+
+        _schedule_hot_prefetch(identity, range_header, _fetcher)
+    except Exception:  # noqa: BLE001 — 调度失败就算了
+        pass
+
+
 async def serve_mount_relay_async(
     url: str,
     request: Request,
@@ -1484,6 +1529,7 @@ async def serve_mount_relay_async(
     media_type: str = "video/mp4",
     pt=None,
     sniff_quota_page: bool = False,
+    hot_identity: Optional[str] = None,
 ):
     """远程挂载专用中继：服务端带挂载凭据取流、流式转发给播放器。
 
@@ -1492,6 +1538,15 @@ async def serve_mount_relay_async(
     - Range 透传：客户端的 ``Range`` 原样发给上游，上游的 200/206 与
       ``Content-Range``/``Accept-Ranges`` 等头原样透回。
     - ``pt``（可选）：播放链路计时器，只加日志不改逻辑。
+    - ``hot_identity``（可选）：热缓存文件身份（挂载腿二期接线，
+      2026-11-23）：api.video_stream 对有 drive_file_id 的挂载条目
+      传 ``mount:{drive_file_id}``——file_id 是谷歌侧不可变身份、
+      与内容绑定，写穿时按上游响应登记总长＋Last-Modified 校验器
+      把关（变化即整身份失效）。给了才启用热缓存命中出流/写穿/
+      跨请求预读（机制与 Drive 腿共用 relay_hot_cache 一套）；
+      不给时热缓存完全不介入、本函数行为逐字不变。Drive 腿的
+      SA 池/最终 URL 缓存/熔断只认 _DRIVE_LEG 上下文，本参数
+      不启用它们。
     - ``sniff_quota_page``（转存变体应急自动触发用）：只 Drive 中继传
       True；115 挂载中继不受影响。开启时，上游回 200 text/html 即预读
       首块（无论是否带 Range；A-089：带 Range 撞上 200 额度页时旧口径
@@ -1516,15 +1571,24 @@ async def serve_mount_relay_async(
     # Drive 专用池 + 最终 URL 缓存 + 熔断记账。挂载调用无上下文，
     # 客户端与行为逐字不变。
     _leg = _DRIVE_LEG.get()
-    # 热缓存全命中（仅带 hot_identity 的 Drive 腿）：请求区间被缓存
-    # 分段完全覆盖时本地出字节、不回源；未命中回 None，走下面现行
-    # 透传逐字不变。挂载腿无身份，不到这里。
-    _hot_identity = getattr(_leg, "hot_identity", None) \
-        if _leg is not None else None
+    # 热缓存身份：显式参数（挂载腿二期，api.video_stream 对有
+    # drive_file_id 的挂载条目传 mount:{fid}）优先，其次 Drive 腿
+    # 上下文。两者皆无 → 热缓存完全不介入，行为逐字不变。
+    _hot_identity = hot_identity or (
+        getattr(_leg, "hot_identity", None) if _leg is not None else None)
+    # 挂载腿的跨请求预读只在身份来自显式参数时在本函数内调度
+    # （fetcher 按挂载上游构造）；Drive 腿的预读由
+    # serve_drive_relay_async 按 Drive fetcher 调度，不重复挂。
+    _mount_prefetch = bool(hot_identity) and _leg is None
+    # 热缓存全命中：请求区间被缓存分段完全覆盖时本地出字节、
+    # 不回源；未命中回 None，走下面现行透传逐字不变。
     if _hot_identity:
         _hit_resp = _try_hot_cache_response(
             _hot_identity, range_header, media_type, pt)
         if _hit_resp is not None:
+            if _mount_prefetch:
+                _schedule_mount_hot_prefetch(
+                    _hot_identity, url, forward, range_header)
             return _hit_resp
     client = _mount_relay_client()
     _one_shot = False
@@ -1674,10 +1738,11 @@ async def serve_mount_relay_async(
             pass
         content_type = resp.headers.get("content-type") or media_type
 
-        # 热缓存写穿计划（仅带 hot_identity 的 Drive 腿）：按上游
-        # 响应头定起始偏移/总长并登记校验器（变化即失效旧分段）；
-        # 算不出为 None、本次不写穿。Quota 嗅探在本段之前，额度页
-        # 抛错时根本到不了这里，不会被写进缓存。
+        # 热缓存写穿计划（带 hot_identity 时：Drive 腿经上下文/
+        # 挂载腿经参数）：按上游响应头定起始偏移/总长并登记校验器
+        # （变化即失效旧分段）；算不出为 None、本次不写穿。Quota
+        # 嗅探在本段之前，额度页抛错时根本到不了这里，不会被
+        # 写进缓存。
         _tee_plan = _hot_cache_tee_plan(_hot_identity, resp) \
             if _hot_identity else None
 
@@ -1735,6 +1800,13 @@ async def serve_mount_relay_async(
 
         if pt is not None:
             pt.done()
+        if _mount_prefetch:
+            # 挂载腿跨请求预读：本次出流后把请求区间之后的 N 个
+            # 分段提前读进热缓存，播放器逐段请求时逐段命中（调度
+            # 永不抛、不影响本次响应）。Drive 腿不在此调度（其
+            # 预读在 serve_drive_relay_async 按 Drive fetcher 挂）。
+            _schedule_mount_hot_prefetch(
+                _hot_identity, url, forward, range_header)
         return StreamingResponse(
             _release_upstream_when_stalled(
                 iter_mount(), resp, url, _mount_relay_stall_timeout()),
