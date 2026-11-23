@@ -1,12 +1,13 @@
 # backend/tg_bind.py
 """
-公益服 Telegram 绑定核心模块
+Telegram 绑定核心模块
 
 职责：
-- 维护「公益服功能是否强制绑定 Telegram」的开关与宽限期逻辑；
-- 提供 FastAPI 依赖 require_tg_bound，未绑定且不在宽限期则 403；
 - 生成/校验 6 位数字绑定码（用户网页端生成码 -> Telegram 私信 Bot 发送码 -> 网页端校验）；
 - 查询绑定状态、解绑。
+
+原「公益服功能强制绑定」门禁（require_tg_bound/宽限期）已随公益
+整族于 2026-11-23 删除，绑定现为纯自愿的通知/TG 登录能力。
 
 约定：
 - 配置读写走 SystemConfig 表；
@@ -20,19 +21,14 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
-from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from backend import models
 from backend.integrations.store import switch_env_value as _switch_env_value
-from backend.database import get_db
 from backend.integrations import telegram as tg_integration
-from backend.api.user import get_current_user
 
 logger = logging.getLogger(__name__)
 
-# 宽限期天数
-GRACE_DAYS = 7
 # 绑定码有效期（秒）
 CODE_TTL_SECONDS = 600
 
@@ -56,12 +52,6 @@ def _set_cfg(db: Session, key: str, value: Any) -> None:
         db.add(models.SystemConfig(key=key, value=value))
     else:
         row.value = value
-
-
-def is_require_enabled(db: Session) -> bool:
-    """是否强制绑定 Telegram（welfare_require_tg_bind，默认开启）。"""
-    value = str(_cfg(db, "welfare_require_tg_bind", "1")).strip().lower()
-    return value in ("1", "true")
 
 
 def is_guide_enabled(db: Session) -> bool:
@@ -90,47 +80,6 @@ def get_bot_username(db: Session) -> str:
     except Exception as exc:  # noqa: BLE001
         logger.warning("getMe 调用失败：%s", exc)
     return ""
-
-
-def get_launch_at(db: Session) -> datetime:
-    """读取/初始化绑定功能上线时间（tg_bind_launch_at）。"""
-    raw = _cfg(db, "tg_bind_launch_at", "")
-    if raw:
-        try:
-            return datetime.fromisoformat(str(raw))
-        except (TypeError, ValueError):
-            logger.warning("tg_bind_launch_at 格式非法：%r", raw)
-    now = datetime.now()
-    _set_cfg(db, "tg_bind_launch_at", now.isoformat())
-    return now
-
-
-def in_grace_period(db: Session, user: models.WebUser) -> bool:
-    """判断用户是否处于宽限期（上线前注册的老用户，上线起 7 天内放行）。"""
-    launch_at = get_launch_at(db)
-    created_at = user.created_at
-    # created_at 为空按老用户处理
-    is_old_user = created_at is None or created_at < launch_at
-    if not is_old_user:
-        return False
-    return datetime.now() < launch_at + timedelta(days=GRACE_DAYS)
-
-
-def require_tg_bound(
-    current_user: models.WebUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> models.WebUser:
-    """写接口 TG 绑定门禁：未绑定 Telegram 且不在宽限期则 403。"""
-    if not is_require_enabled(db):
-        return current_user
-    if current_user.telegram_id:
-        return current_user
-    if in_grace_period(db, current_user):
-        return current_user
-    raise HTTPException(
-        status_code=403,
-        detail={"code": "TG_NOT_BOUND", "message": "该功能需要绑定 Telegram，防小号，1 分钟搞定"},
-    )
 
 
 def generate_bind_code(db: Session, user: models.WebUser) -> dict:
@@ -244,9 +193,7 @@ def get_bind_status(db: Session, user: models.WebUser) -> dict:
     return {
         "bound": bound,
         "telegram_id": user.telegram_id,
-        "required": is_require_enabled(db),
         "guide_enabled": is_guide_enabled(db),
-        "in_grace": (not bound) and in_grace_period(db, user),
         "bot_username": get_bot_username(db),
     }
 

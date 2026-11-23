@@ -48,7 +48,7 @@ caption；文字超 Telegram caption 上限（1024 字符）时退回图、文
 - 用户榜：复用 tg_bot.queries.watch_duration_rank（show_on_
   leaderboard 为 False 的用户不上榜，NULL 视为允许）。
 
-开关（SystemConfig，管理后台「公益服经济」页可配）：
+开关（SystemConfig）：
 - bot_playrank_enabled 总开关，**默认关**；关了手动/定时都不发。
 - bot_playrank_time 发送时间（上海时间 HH:MM），默认 21:30；
   非法值回落 21:30（原文存储、读侧校验，照 bot_rain_schedule 先例）。

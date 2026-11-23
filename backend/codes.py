@@ -481,13 +481,6 @@ def grant_days_for(code: models.RegistrationCode) -> int:
     return normalize_days(code.days)
 
 
-# ==================== 资格码（reward_type=welfare，已下线） ====================
-
-# 公益资格已随福利整族于 2026-11-14 删除：存量资格码核销时直接拒绝
-# （不烧码，见 _redeem_found_code），生成端同步关闭。常量保留仅用于
-# 识别存量码的 reward_type 值。
-REWARD_WELFARE = "welfare"
-
 # 余额码（reward_type=balance，钱包批 1，2026-11-14）：核销即钱包入账，
 # 面额在 balance_value（元），发放走 backend/wallet.py 的账本服务。
 REWARD_BALANCE = "balance"
@@ -591,11 +584,7 @@ def preview_code(db: Session, raw: str, username: Optional[str] = None) -> dict:
                                  else "该卡码限指定账号使用" if not named_ok else "卡码有效"),
         }
         # M1：非订阅奖励类型在预览中说明
-        if reward_type == REWARD_WELFARE:
-            preview["welfare_include_view"] = bool(getattr(code, 'welfare_include_view', True))
-            bundle_text = "（含查看凭证）" if preview["welfare_include_view"] else ""
-            preview["message"] = error or (f"公益资格卡码（{preview['days_text']}）{bundle_text}" if named_ok else "该卡码限指定账号使用")
-        elif reward_type == 'discount':
+        if reward_type == 'discount':
             preview["discount_pct"] = getattr(code, 'discount_pct', 0) or 0
             preview["message"] = error or (f"折扣卡码（{discount_pct_text(preview['discount_pct'])}）" if named_ok else "该卡码限指定账号使用")
         elif reward_type == REWARD_BALANCE:
@@ -650,8 +639,7 @@ def redeem_code(db: Session, user: models.WebUser, raw: str) -> dict:
     """核销卡码（已登录兑换入口）：续期码 / 白名单码
 
     - 奖励类型（reward_type）：subscription 会员天数 /
-      discount 折扣权益 / welfare 公益资格（可打包同天数查看行）/
-      balance 钱包余额入账（钱包批 1）；
+      discount 折扣权益 / balance 钱包余额入账（钱包批 1）；
       points 能量型已随货币下线，占位前直接拒绝、不烧码
     - 注册码（code_type=1）：已于 2026-11-15 整体下线——本入口
       明确拒绝并说明已停止使用，任何入口都不再核销它
@@ -733,12 +721,6 @@ def _redeem_found_code(db: Session, user: models.WebUser,
     if reward_type == 'points':
         # 能量已随货币下线（2026-11-13）：能量卡码不再核销，占位前直接拒绝、不烧码。
         return {"success": False, "message": "能量卡码已下线，无法核销，请联系管理员"}
-
-    if reward_type == REWARD_WELFARE and code.code_type != CODE_TYPE_WHITELIST:
-        # 公益资格已随福利整族下线（2026-11-14）：资格卡码不再核销，
-        # 占位前直接拒绝、不烧码（与能量码同口径）。白名单码与
-        # reward_type 无关（长期有效语义走 code_type 分支），不在此拦。
-        return {"success": False, "message": "资格卡码已下线，无法核销，请联系管理员"}
 
     if reward_type == REWARD_BALANCE:
         # 余额码面额预检：坏码（无面额）在占位前拒绝、不烧码；面额在

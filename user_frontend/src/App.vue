@@ -191,8 +191,8 @@ async function checkTgBindGuide() {
   if (sessionStorage.getItem(TG_GUIDE_SHOWN_KEY)) return
   try {
     const st = await tgApi.status()
-    // 已绑定、或后端没要求绑定、或引导被管理员关闭 → 不弹
-    if (!st.required || st.bound || !st.guide_enabled) return
+    // 已绑定、或引导被管理员关闭 → 不弹
+    if (st.bound || !st.guide_enabled) return
     sessionStorage.setItem(TG_GUIDE_SHOWN_KEY, '1')
     showGlobalTgBind.value = true
   } catch {

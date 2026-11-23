@@ -283,7 +283,7 @@ def test_watch_and_whyplay_buttons_coexist(db, sent):
 def test_notify_prefs_defaults_and_tg_allowed(db):
     user = _user(db, "u", telegram_id=3001)
     for cat in (notify_prefs.CAT_SEEK, notify_prefs.CAT_EXPIRY,
-                notify_prefs.CAT_LOTTERY):
+                notify_prefs.CAT_POOL_DIGEST):
         assert notify_prefs.tg_allowed(db, user.id, cat) is True
     # 查不到的用户按默认收（不因偏好查询失败丢通知）
     assert notify_prefs.tg_allowed(db, 999999, notify_prefs.CAT_SEEK) is True
@@ -293,8 +293,7 @@ def test_panel_notify_prefs_roundtrip(db):
     user = _user(db, "u", telegram_id=3001)
     got = panel_api.get_notify_prefs(db=db, user=user)
     assert got["data"] == {
-        "seek": True, "expiry": True, "lottery": True,
-        "pool_digest": True,
+        "seek": True, "expiry": True, "pool_digest": True,
     }
     out = panel_api.set_notify_prefs(
         panel_api.NotifyPrefsIn(seek=False), db=db, user=user)

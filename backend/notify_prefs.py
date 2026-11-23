@@ -4,12 +4,12 @@
 
 - ``seek`` 求片到货类：proactive 管道（求片到货 / 转存终态 / 管理员
   手动标记入库）与求片审批结果的 TG 份；
-- ``expiry`` 到期提醒类：订阅到期提醒、公益资格到期提醒、活力
-  归零/恢复通知的 TG 份；
-- ``lottery`` 活动中奖类：抽奖中奖私聊与补发到账私聊。
+- ``expiry`` 到期提醒类：订阅到期提醒的 TG 份；
 - ``pool_digest`` 贡献回响类：公共池贡献者每日小结私聊。
 
-存储：``web_users`` 四个布尔列（``tg_notify_seek`` 等），默认 True
+（原 ``lottery`` 活动中奖类已随群抽奖整族于 2026-11-23 删除。）
+
+存储：``web_users`` 三个布尔列（``tg_notify_seek`` 等），默认 True
 （收）。读取失败 / 用户不存在一律按「收」处理——偏好查询出问题时
 不能把通知吞掉，通知丢了比多发一条更糟。
 """
@@ -26,15 +26,13 @@ logger = logging.getLogger(__name__)
 
 CAT_SEEK = "seek"
 CAT_EXPIRY = "expiry"
-CAT_LOTTERY = "lottery"
 CAT_POOL_DIGEST = "pool_digest"
 
-CATEGORIES = (CAT_SEEK, CAT_EXPIRY, CAT_LOTTERY, CAT_POOL_DIGEST)
+CATEGORIES = (CAT_SEEK, CAT_EXPIRY, CAT_POOL_DIGEST)
 
 _FIELDS = {
     CAT_SEEK: "tg_notify_seek",
     CAT_EXPIRY: "tg_notify_expiry",
-    CAT_LOTTERY: "tg_notify_lottery",
     CAT_POOL_DIGEST: "tg_notify_pool_digest",
 }
 

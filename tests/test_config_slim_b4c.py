@@ -97,14 +97,15 @@ def test_coupons_reject_out_of_range_atomic(db):
     assert _row(db, "coupon_enabled") is None
 
 
-# ---------- welfare：digit 风格布尔必须存 "1"/"0"（与今天逐字一致） ----------
+# ---------- digit 风格布尔必须存 "1"/"0"（与今天逐字一致） ----------
 
 def test_welfare_digit_bool_style(db):
-    # 2026-10-21 A 类摘面板：lottery_enabled 已摘除，改用保留的 B 类
-    # lottery_require_group_member（同为 digit 风格）
-    config_service.save_config(db, {"lottery_require_group_member": True}, schema="welfare")
+    # welfare 家族的 digit 风格 bool 键（lottery_require_group_member 等）
+    # 已随群抽奖/公益门禁整族于 2026-11-23 删除：digit 风格向量改用
+    # alerts 家族保留键 system_alerts_enabled（同为 ("bool", "digit")）
+    config_service.save_config(db, {"system_alerts_enabled": True}, schema="alerts")
     db.commit()
-    assert _row(db, "lottery_require_group_member").value == "1"
+    assert _row(db, "system_alerts_enabled").value == "1"
 
 
 def test_welfare_word_bool_style(db):

@@ -80,11 +80,11 @@ async function put<T>(url: string, body?: unknown): Promise<T> {
 }
 
 export const panelApi = {
-  /** 通知偏好：四类 TG 私聊开关（只管 Telegram，站内信照常） */
-  notifyPrefsGet: () => get<{ seek: boolean; expiry: boolean; lottery: boolean; pool_digest: boolean }>('/api/panel/notify-prefs'),
+  /** 通知偏好：三类 TG 私聊开关（只管 Telegram，站内信照常） */
+  notifyPrefsGet: () => get<{ seek: boolean; expiry: boolean; pool_digest: boolean }>('/api/panel/notify-prefs'),
   /** 通知偏好：更新一类（其余类别不传即不变） */
-  notifyPrefsSet: (patch: Partial<{ seek: boolean; expiry: boolean; lottery: boolean; pool_digest: boolean }>) =>
-    put<{ seek: boolean; expiry: boolean; lottery: boolean; pool_digest: boolean }>('/api/panel/notify-prefs', patch),
+  notifyPrefsSet: (patch: Partial<{ seek: boolean; expiry: boolean; pool_digest: boolean }>) =>
+    put<{ seek: boolean; expiry: boolean; pool_digest: boolean }>('/api/panel/notify-prefs', patch),
   /** 服务器状态 */
   server: () => get<ServerData>('/api/panel/server'),
 }

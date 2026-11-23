@@ -9,6 +9,9 @@ register_gift_welfare_days 等）已从配置注册表摘除。
 register_gift_view_enabled）随「注册不送体验」一并摘除，注册赠送
 行为测试已删除（新口径由 test_registration_open_no_code.py 覆盖）；
 本文件改测剩余抽奖键的注册/校验/回读，并钉死已删键不得再被注册。
+2026-11-23 更新：抽奖键与 welfare_require_tg_bind 随群抽奖/公益
+门禁整族删除，本文件改测机器人 int 键（bot_update_digest_interval_
+minutes）的注册/校验/回读，抽奖键并入「不得再被注册」名单。
 """
 
 import os
@@ -61,25 +64,32 @@ def _make_user(db, username="u1", **kw):
 # ==================== 1. 注册与默认值 ====================
 
 def test_new_keys_registered_with_current_defaults():
-    # 抽奖键仍在册：默认值与 schema 口径不变
-    assert welfare_admin.WELFARE_CONFIG_KEYS["lottery_draw_interval_sec"] == "60"
-    assert config_schema.WELFARE_CONFIG_SCHEMA["lottery_draw_interval_sec"] == (
-        "int", 30, 86400)
+    # 机器人键仍在册：默认值与 schema 口径不变
+    assert welfare_admin.WELFARE_CONFIG_KEYS["bot_update_digest_interval_minutes"] == "30"
+    assert config_schema.WELFARE_CONFIG_SCHEMA["bot_update_digest_interval_minutes"] == (
+        "int", 1, 1440)
     # 公益资格整族键已摘除（2026-11-14）、注册赠送查看键已摘除
-    # （2026-11-15），两处注册表都不许再出现
+    # （2026-11-15）、抽奖键与 TG 门禁键已摘除（2026-11-23），
+    # 两处注册表都不许再出现
     for key in ("register_gift_welfare_days", "register_gift_welfare_enabled",
                 "register_gift_view_days", "register_gift_view_enabled",
                 "welfare_vitality_renew_min", "welfare_code_monthly_quota",
-                "welfare_grace_days", "welfare_inactive_days"):
+                "welfare_grace_days", "welfare_inactive_days",
+                "welfare_require_tg_bind",
+                "lottery_group_ids", "lottery_draw_interval_sec",
+                "lottery_require_group_member", "lottery_min_account_age_days",
+                "lottery_max_joins_per_day", "lottery_announce_pin_enabled",
+                "lottery_reminder_step", "lottery_final_call_minutes",
+                "lottery_announce_edit_min_interval_sec"):
         assert key not in welfare_admin.WELFARE_CONFIG_KEYS
         assert key not in config_schema.WELFARE_CONFIG_SCHEMA
 
 
 def test_preexisting_keys_for_ui_only_fields_untouched():
-    # 抽奖键：键＋校验成套保留
-    assert welfare_admin.WELFARE_CONFIG_KEYS["lottery_draw_interval_sec"] == "60"
-    assert config_schema.WELFARE_CONFIG_SCHEMA["lottery_draw_interval_sec"] == (
-        "int", 30, 86400)
+    # 机器人键：键＋校验成套保留
+    assert welfare_admin.WELFARE_CONFIG_KEYS["bot_update_digest_interval_minutes"] == "30"
+    assert config_schema.WELFARE_CONFIG_SCHEMA["bot_update_digest_interval_minutes"] == (
+        "int", 1, 1440)
     # 经济键集与注册表仍逐键对齐（config_slim_b4e 的契约）
     assert set(config_schema.ECONOMY_CONFIG_SCHEMA) == set(admin_economy.ECONOMY_CONFIG_KEYS)
 
@@ -88,27 +98,27 @@ def test_preexisting_keys_for_ui_only_fields_untouched():
 
 def test_new_keys_normalize_valid_values():
     assert config_schema.normalize(
-        "lottery_draw_interval_sec",
-        config_schema.WELFARE_CONFIG_SCHEMA["lottery_draw_interval_sec"], 45) == "45"
+        "bot_update_digest_interval_minutes",
+        config_schema.WELFARE_CONFIG_SCHEMA["bot_update_digest_interval_minutes"], 45) == "45"
 
 
 def test_new_keys_normalize_rejects_invalid():
-    # 抽奖间隔下限 30 秒：0/负数/非数字/小数/布尔一律拒绝
-    spec = config_schema.WELFARE_CONFIG_SCHEMA["lottery_draw_interval_sec"]
+    # 攒批间隔下限 1 分钟：0/负数/非数字/小数/布尔一律拒绝
+    spec = config_schema.WELFARE_CONFIG_SCHEMA["bot_update_digest_interval_minutes"]
     for bad in (0, -1, "abc", 1.5, True):
         with pytest.raises(config_schema.ConfigValueError):
-            config_schema.normalize("lottery_draw_interval_sec", spec, bad)
+            config_schema.normalize("bot_update_digest_interval_minutes", spec, bad)
 
 
 def test_welfare_keys_save_and_read_back(db):
-    save_config(db, {"lottery_draw_interval_sec": "45",
+    save_config(db, {"bot_update_digest_interval_minutes": "45",
                      "bot_rate_limit_seconds": "10"}, schema="welfare")
     db.commit()
     got = welfare_admin.welfare_config_get(db=db, current_admin=_make_user(db, "admin"))
-    assert got["lottery_draw_interval_sec"] == "45"
+    assert got["bot_update_digest_interval_minutes"] == "45"
     assert got["bot_rate_limit_seconds"] == "10"
     with pytest.raises(config_schema.ConfigValueError):
-        save_config(db, {"lottery_draw_interval_sec": "0"}, schema="welfare")
+        save_config(db, {"bot_update_digest_interval_minutes": "0"}, schema="welfare")
 
 
 def test_economy_keys_save_and_read_back(db):

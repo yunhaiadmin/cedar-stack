@@ -79,9 +79,6 @@ PANEL_REMOVED_SWITCHES: tuple[tuple[str, str], ...] = (
     ("invitation_enabled", "INVITATION_ENABLED"),
     ("items_dedup_cache_enabled", "ITEMS_DEDUP_CACHE_ENABLED"),
     ("items_list_cache_enabled", "ITEMS_LIST_CACHE_ENABLED"),
-    ("lottery_auto_draw_enabled", "LOTTERY_AUTO_DRAW_ENABLED"),
-    ("lottery_enabled", "LOTTERY_ENABLED"),
-    ("lottery_notify_winners", "LOTTERY_NOTIFY_WINNERS"),
     ("media_seek_enabled", "MEDIA_SEEK_ENABLED"),
     ("media_seek_notify_voters", "MEDIA_SEEK_NOTIFY_VOTERS"),
     ("media_seek_vote_enabled", "MEDIA_SEEK_VOTE_ENABLED"),
@@ -101,7 +98,6 @@ PANEL_REMOVED_SWITCHES: tuple[tuple[str, str], ...] = (
     ("series_merge_season_fold_enabled", "SERIES_MERGE_SEASON_FOLD_ENABLED"),
     ("teaser_enabled", "TEASER_ENABLED"),
     ("tg_bind_guide_enabled", "TG_BIND_GUIDE_ENABLED"),
-    ("vitality_enabled", "VITALITY_ENABLED"),
     # 第二批（2026-11-23，审计 K-01）：env 名逐个写明，同首批口径
     ("cross_provider_transfer_enabled", "CROSS_PROVIDER_TRANSFER_ENABLED"),
     ("danmaku_enabled", "DANMAKU_ENABLED"),

@@ -192,7 +192,7 @@ async function init() {
   clearTimers()
   try {
     const st = await tgApi.status()
-    if (st.bound || !st.required || !st.guide_enabled) {
+    if (st.bound || !st.guide_enabled) {
       router.replace(redirect)
       return
     }

@@ -36,7 +36,7 @@
 - 与「管理员新片通知」（notifications 渠道私发管理员）是两回事，
   本模块不碰它、也不由入库事件触发，只按调度攒批。
 
-开关（SystemConfig，管理后台「公益服经济」页可配）：
+开关（SystemConfig）：
 - bot_update_digest_enabled 总开关，默认开。
 - bot_update_digest_interval_minutes 攒批间隔分钟，默认 30（1~1440）。
 - bot_update_digest_chat_id 发送目标，默认空=发群；填频道则发频道。

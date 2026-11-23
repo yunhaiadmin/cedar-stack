@@ -32,8 +32,7 @@
 日界一律换算成 UTC naive 再与 created_at 比较（沿 economy
 ._today_start_utc_naive 的帧口径）。
 
-一期边界（定版）：公益天数不发（执行器不走 grant_welfare
-通道，留位键已删）；订阅延期不进菜单；
+一期边界（定版）：订阅延期不进菜单；
 不达门槛不结且不累计到下期（每期独立按本期事件计量，design
 §11 未写顺延口径，按不累计实现）。
 """
@@ -560,7 +559,6 @@ def _settle_member(db: Session, batch, member, cfg: dict,
     detail.transfer_bytes = transfer_bytes
     detail.amount_usd = amount
     detail.xp = xp
-    detail.welfare_days = 0
     if decision == "payable":
         if payout:
             db.flush()  # 先拿到 detail.id（ref_id 锚要用）

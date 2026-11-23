@@ -534,7 +534,6 @@ def _detail_payload(db: Session, detail) -> dict:
         "amount_usd": f"{Decimal(str(detail.amount_usd or 0)):.4f}",
         "credited_usd": f"{Decimal(str(detail.credited_usd or 0)):.2f}",
         "wallet_ledger_id": detail.wallet_ledger_id,
-        "welfare_days": detail.welfare_days,
         "status": detail.status,
         "reason": detail.reason,
         "granted_at": (detail.granted_at.isoformat()

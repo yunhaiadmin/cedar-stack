@@ -2684,8 +2684,7 @@ class PoolRewardDetail(Base):
     的美元额（4 位小数，封顶前）；credited_usd = 经月封顶
     （本人套餐月价 × 比例）与钱包美分精度取整后的实际入账额；
     wallet_ledger_id = 入账流水锚（未入账为空）。points/xp 是
-    2026-11-13/14 下线的旧影子数，历史行保留、新行 points 恒 0；
-    welfare_days 一期恒 0（公益天数一期关闭不发，键位与列先留）。
+    2026-11-13/14 下线的旧影子数，历史行保留、新行 points 恒 0。
 
     status：shadow 影子落行（只算账未发钱）/ pending 待发
     （发放中断的中间态，续跑补发）/ frozen 冻结待人工审
@@ -2718,7 +2717,6 @@ class PoolRewardDetail(Base):
     amount_usd = Column(Numeric(14, 4), nullable=False, default=0)
     credited_usd = Column(Numeric(12, 2), nullable=False, default=0)
     wallet_ledger_id = Column(Integer, nullable=True)
-    welfare_days = Column(Integer, nullable=False, default=0)
     status = Column(String(16), nullable=False, default="pending")
     reason = Column(String(80), nullable=True)
     points_log_id = Column(Integer, nullable=True)
