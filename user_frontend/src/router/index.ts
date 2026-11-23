@@ -196,6 +196,16 @@ const router = createRouter({
             component: () => import('@/views/game/TeamView.vue'),
             meta: { title: '团队管理', requiresAuth: true },
           },
+          // 贡献池（2026-11-24 池专属授权入口）：绑盘下线后入池
+          // 的唯一用户端入口——介绍＋Google 授权＋申请＋状态
+          // （待审批/已入池/容量不达标）全在本页；入口在手机
+          // 「我的」菜单账户组与概览「常用」段。
+          {
+            path: '/game/account/pool',
+            name: 'game-account-pool',
+            component: () => import('@/views/game/PoolView.vue'),
+            meta: { title: '贡献池', requiresAuth: true },
+          },
           // 「我的」菜单页：用户中心底坞双页签之一（全部功能列表行，一个不丢）
           {
             path: '/game/account/menu',

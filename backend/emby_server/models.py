@@ -3416,6 +3416,12 @@ class DriveOAuthState(Base):
     #: database._auto_migrate 补列；NULL = 本列上线前的在途行，
     #: 按 "primary" 读（与上线前行为一致）。
     oauth_client = Column(String(20), nullable=True)
+    #: 本次授权的用途落字（2026-11-24 池专属授权）：pool_join
+    #: = 贡献池入池授权（emby_server.pool_oauth 发起/消费）；各
+    #: 授权流只消费自己用途的行，异用途不查不断。老库由
+    #: database._auto_migrate 补列；NULL = 本列上线前的历史行，
+    #: 池流一律按异用途拒绝（在途行 10 分钟内自然过期）。
+    purpose = Column(String(20), nullable=True)
 
 
 class SearchTermStat(Base):

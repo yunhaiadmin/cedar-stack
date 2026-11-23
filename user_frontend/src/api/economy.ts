@@ -322,6 +322,13 @@ export const poolContributionApi = {
     api.post<never, { member: PoolContributionMember }>(
       '/api/user/emby/pool/contribution/withdraw',
       { member_id: memberId }),
+  // 池专属授权（2026-11-24）：绑盘下线后入池的唯一授权腿，只落
+  // 一条池用绑定行，不复活通用绑盘。返回授权地址，前端新窗口
+  // 打开，用户在 Google 完成授权后回贡献池页轮询状态接上申请。
+  startOAuth: (accountLabel: string) =>
+    api.post<never, { authorization_url: string; expires_in: number }>(
+      '/api/user/emby/pool/drive/oauth/start',
+      { account_label: accountLabel }),
 }
 
 // ==================== 追剧订阅（全自动追剧，账号页） ====================

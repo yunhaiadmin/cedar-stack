@@ -156,6 +156,10 @@
           <span class="ov-trow__name">邀请好友</span>
           <ChevronRight :size="18" class="ov-row__chev" aria-hidden="true" />
         </RouterLink>
+        <RouterLink class="ov-trow" to="/game/account/pool">
+          <span class="ov-trow__name">贡献池</span>
+          <ChevronRight :size="18" class="ov-row__chev" aria-hidden="true" />
+        </RouterLink>
         <a
           v-if="docsUrl"
           class="ov-trow"
