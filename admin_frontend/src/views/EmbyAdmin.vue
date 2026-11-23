@@ -36,7 +36,6 @@ import {
   fetchLibraryOrder,
   fetchLibraryScans,
   fetchMounts,
-  fetchPan115Accounts,
   fetchReachability,
   fetchRepairQueue,
   fetchScanQueue,
@@ -81,7 +80,6 @@ import type {
   EmbyScanSource,
   EmbyScanStatus,
   EmbyScanTask,
-  Pan115Account,
   RemoteServerRow,
   StorageMount,
   StorageBackend,
@@ -95,7 +93,6 @@ import type { DataColumn } from '@/components/DataTable.vue'
 
 const realm = useRealmStore()
 const libraries = ref<EmbyLibrary[]>([])
-const panAccounts = ref<Pan115Account[]>([])
 const mounts = ref<StorageMount[]>([])
 /** 可分配的播放节点（面板里 kind=ea 的服务器）：一个服可以有多台 */
 const nodes = ref<RemoteServerRow[]>([])
@@ -453,13 +450,6 @@ const storageBackends = ref<StorageBackend[]>([
  *  否则库会一直处于「未分配」状态（node_id 为空 vs 明确指向该节点是两种语义）。 */
 const isSingleRealm = computed(() => realmOptions.value.length <= 1)
 
-/** 这个库是不是真的需要 115？只看「有没有 115 网盘来源」——
- *  纯本机目录的库也摆个 115 账号选择器，只会让人以为要用 115（§十一 ⑨）。
- *  新建库还没加路径时不显示；等真加了一条 115 路径它自己会出现。 */
-const libraryNeeds115 = computed(() => (
-  libForm.path_entries.some((e) => e.backend === '115')
-))
-
 /** 库里的路径条目（后端已把 mount:// 拆成「挂载内路径 + 存储后端」；老后端则按前缀现推） */
 function pathEntriesOf(l: EmbyLibrary): LibraryPathEntry[] {
   if (l.path_entries?.length) return l.path_entries
@@ -798,10 +788,9 @@ async function load() {
   try {
     // 归属服下拉要用服的清单（Layout 已加载过就不重复请求）
     if (!realm.loaded) realm.load().catch(() => undefined)
-    const [l, r, a, m, srv, reach] = await Promise.all([
+    const [l, r, m, srv, reach] = await Promise.all([
       fetchLibraries(),
       fetchRepairQueue().catch(() => ({ total: 0, items: [] })),
-      fetchPan115Accounts().catch(() => ({ accounts: [], env_cookie_configured: false })),
       fetchMounts().catch(() => ({ mounts: [], mount_types: [] })),
       fetchServers().catch(() => null),
       fetchReachability().catch(() => null),
@@ -819,7 +808,6 @@ async function load() {
     void loadCoverImages(libraries.value)
     void loadLibraryOrder()
     repairCount.value = r.total
-    panAccounts.value = a.accounts
     mounts.value = m.mounts
     nodes.value = (srv?.servers || []).filter((x) => x.kind === 'ea')
     reachability.value = reach
@@ -2570,18 +2558,6 @@ function typeLabel(t: string): string {
                 </el-option>
               </el-select>
               <p class="field-help">{{ optionOf(POLICIES, libForm.scrape_policy)?.hint }}</p>
-            </el-form-item>
-
-            <el-form-item v-if="libraryNeeds115" label="115 账号">
-              <el-select
-                v-model="libForm.account_115_id"
-                clearable
-                placeholder="默认账号（面板级 PAN115_COOKIE）"
-                style="width: 100%"
-              >
-                <el-option v-for="a in panAccounts" :key="a.id" :label="a.name" :value="a.id" />
-              </el-select>
-              <p class="field-help">这个库用哪个 115 配置档转存 / 下载；留空 = 用默认账号。</p>
             </el-form-item>
 
             <div class="settings-paths">

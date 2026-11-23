@@ -1410,33 +1410,6 @@ export interface MountDirEntry {
   entry_id?: string
 }
 
-/** 115 账号配置档（Cookie 型，不回传明文） */
-export interface Pan115Account {
-  id: number
-  name: string
-  cookie_preview: string
-  has_cookie: boolean
-  /** 该配置档发 115 请求用的 UA（空 = 跟服务器级 MOUNT_UA） */
-  ua: string
-  is_default: boolean
-  is_enabled: boolean
-  remark: string
-  last_verified_at: string | null
-  last_verify_ok: boolean | null
-  last_verify_message: string | null
-  created_at: string | null
-}
-
-/** 115 目录项（目标路径选择器） */
-export interface Pan115DirEntry {
-  fid: string
-  cid: string
-  name: string
-  is_dir: boolean
-  size: number
-  pickcode: string
-}
-
 export interface EmbySessionRow {
   session_key: string
   username: string

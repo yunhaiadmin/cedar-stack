@@ -67,16 +67,14 @@ const realm = useRealmStore()
 const router = useRouter()
 
 /**
- * 重新布局批 5：115 / Google Drive 账号页降为本页「存储账号」标签
- * （沿用 Codes.vue 的 ?tab= 同步 + KeepAlive 模式；存储账号内再分两个子标签）。
+ * 重新布局批 5：Google Drive 账号页降为本页「存储账号」标签
+ * （沿用 Codes.vue 的 ?tab= 同步 + KeepAlive 模式）。
  * 服务器面板用 v-show：来回切标签不卸载列表与弹窗状态；账号面板按需加载、
  * 进过一次后 KeepAlive 缓存。
  */
-const Pan115Accounts = defineAsyncComponent(() => import('./Pan115Accounts.vue'))
 const GDriveAccounts = defineAsyncComponent(() => import('./GDriveAccounts.vue'))
 
 type ServerTab = 'servers' | 'storage'
-type StorageSubTab = 'pan115' | 'gdrive'
 
 const route = useRoute()
 
@@ -85,14 +83,6 @@ const activeTab = computed<ServerTab>({
   set: (tab) => {
     if (tab === activeTab.value) return
     router.replace({ query: { ...route.query, tab } })
-  },
-})
-
-const activeSubTab = computed<StorageSubTab>({
-  get: () => (route.query.subtab === 'gdrive' ? 'gdrive' : 'pan115'),
-  set: (subtab) => {
-    if (subtab === activeSubTab.value) return
-    router.replace({ query: { ...route.query, subtab } })
   },
 })
 
@@ -1586,51 +1576,17 @@ function opsStateText(state: string): string {
     />
     </div>
 
-    <!-- 存储账号面板：两个子页各自带 PageHeader，这里只放标签条，不再叠第二个页头 -->
+    <!-- 存储账号面板：子页自带 PageHeader，这里不再叠第二个页头 -->
     <div
       id="servers-panel"
       v-show="activeTab === 'storage'"
       class="tab-panel"
       role="tabpanel"
-      :aria-labelledby="activeTab === 'servers' ? 'servers-tab-servers' : 'servers-tab-storage'"
+      aria-labelledby="servers-tab-storage"
     >
-      <div class="tab-bar tab-bar--inner" role="tablist" aria-label="存储账号">
-        <button
-          id="storage-tab-pan115"
-          type="button"
-          role="tab"
-          class="tab-btn"
-          :class="{ active: activeSubTab === 'pan115' }"
-          :aria-selected="activeSubTab === 'pan115'"
-          aria-controls="storage-panel"
-          @click="activeSubTab = 'pan115'"
-        >
-          115 账号
-        </button>
-        <button
-          id="storage-tab-gdrive"
-          type="button"
-          role="tab"
-          class="tab-btn"
-          :class="{ active: activeSubTab === 'gdrive' }"
-          :aria-selected="activeSubTab === 'gdrive'"
-          aria-controls="storage-panel"
-          @click="activeSubTab = 'gdrive'"
-        >
-          Google Drive
-        </button>
-      </div>
-      <div
-        id="storage-panel"
-        class="tab-panel"
-        role="tabpanel"
-        :aria-labelledby="activeSubTab === 'pan115' ? 'storage-tab-pan115' : 'storage-tab-gdrive'"
-      >
-        <KeepAlive>
-          <Pan115Accounts v-if="activeSubTab === 'pan115'" />
-          <GDriveAccounts v-else />
-        </KeepAlive>
-      </div>
+      <KeepAlive>
+        <GDriveAccounts />
+      </KeepAlive>
     </div>
   </div>
 </template>

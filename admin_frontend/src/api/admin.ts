@@ -20,8 +20,6 @@ import type {
   EmbySessionRow,
   LibraryPathInput,
   StorageBackend,
-  Pan115Account,
-  Pan115DirEntry,
   StorageMount,
   MountTypeMeta,
   MountDirEntry,
@@ -2421,44 +2419,6 @@ export const fetchServerRcloneConf = (serverId: number) =>
 export const saveServerRcloneConf = (serverId: number, conf: string) =>
   post<{ success: boolean; path: string; remotes: string[]; total: number }>(
     `${S}/${serverId}/rclone-conf`, { conf })
-
-// ==================== 115 账号与直挂（/api/admin/emby/115/*） =============
-export const fetchPan115Accounts = () =>
-  get<{ accounts: Pan115Account[]; env_cookie_configured: boolean
-        ua_presets: { value: string; label: string }[] }>(`${E}/115/accounts`)
-
-export const createPan115Account = (data: {
-  name: string
-  cookie: string
-  is_default?: boolean
-  is_enabled?: boolean
-  remark?: string
-  /** 该配置档发 115 请求用的 UA（留空 = 服务器级 MOUNT_UA） */
-  ua?: string
-}) => post<{ success: boolean; account: Pan115Account }>(`${E}/115/accounts`, data)
-
-export const updatePan115Account = (
-  id: number,
-  data: { name?: string; cookie?: string; is_default?: boolean; is_enabled?: boolean
-          remark?: string; ua?: string }
-) => put<{ success: boolean; account: Pan115Account }>(`${E}/115/accounts/${id}`, data)
-
-export const deletePan115Account = (id: number) => del<{ success: boolean }>(`${E}/115/accounts/${id}`)
-
-export const verifyPan115Account = (id: number) =>
-  post<{ success: boolean; result: { ok: boolean; message?: string }; account: Pan115Account }>(
-    `${E}/115/accounts/${id}/verify`
-  )
-
-export const verifyPan115Cookie = (cookie: string) =>
-  post<{ success: boolean; result: { ok: boolean; message?: string } }>(`${E}/115/verify`, { cookie })
-
-/** 浏览 115 目录（账号可用性实测 / 直挂目录结构）：账号配置档优先，表单 Cookie 次之 */
-export const browsePan115 = (params: { cid?: string; account_id?: number; cookie?: string }) =>
-  get<{ cid: string; cookie_source: string; entries: Pan115DirEntry[]; total: number }>(
-    `${E}/115/browse`, params
-  )
-
 
 // ==================== rclone.conf（用户自己粘贴，面板只负责跑 rclone） =============// 后端只回 remote 名，不回 rclone.conf 原文——里面全是 token / secret。
 
