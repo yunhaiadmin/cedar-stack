@@ -2686,4 +2686,6 @@ export interface EpisodeMergeStats {
 
 /** 手动触发单集多版本合并；不传 libraryId = 全部启用库 */
 export const mergeEpisodeVersions = (libraryId?: number | null) =>
-  post<EpisodeMergeStats>(`/media/episode-versions/merge${libraryId ? `?library_id=${libraryId}` : ''}`)
+  post<EpisodeMergeStats>('/media/episode-versions/merge', undefined, {
+    params: libraryId != null ? { library_id: libraryId } : undefined,
+  })
