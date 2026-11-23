@@ -759,26 +759,67 @@ def _display_name(item: em.MediaItem, series_names: dict | None = None) -> str:
     return item.name or ""
 
 
+# external_ids 键 → Emby ProviderIds 键名（键集合与 identity_gate.EXTERNAL_ID_KEYS
+# 对齐；键名与 _external_urls 的 Name 一致，客户端靠名字把两处去重合并）。
+_PROVIDER_ID_KEY_MAP = (
+    ("tmdb", "Tmdb"),
+    ("imdb", "Imdb"),
+    ("tvdb", "Tvdb"),
+    ("tvmaze", "TvMaze"),
+    ("douban", "Douban"),
+    ("bangumi", "Bangumi"),
+    ("anilist", "AniList"),
+)
+
+
+def _own_provider_ids(item) -> dict:
+    """条目自身身份（不含继承）。
+
+    优先级：专列优先——tmdb_id/imdb_id 是绑定流程维护的权威值；
+    external_ids JSON 补其余空缺（豆瓣/Bangumi/Tvdb/TvMaze/AniList 的
+    身份只存在于这里：emby_items 没有对应专列，旧实现 getattr 不存在的
+    douban_id/bangumi_id 属性恒为 None、且从不解析 external_ids，
+    这批身份永远下发不出去）。解析走 identity_gate._external_ids_map
+    （全站同一口径，坏 JSON/非 dict 一律 {}）；值统一转字符串、空白跳过。
+    """
+    out: dict = {}
+    ext = identity_gate._external_ids_map(item)
+    for key, name in _PROVIDER_ID_KEY_MAP:
+        value = getattr(item, f"{key}_id", None) if key in ("tmdb", "imdb") else None
+        if value is None or (isinstance(value, str) and not value.strip()):
+            value = ext.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            out[name] = text
+    return out
+
+
 def _provider_ids(item):
-    # 单集编号下放：episode 自身无 tmdb/imdb 时继承所属剧的（供 IntroDB 查片头、
-    # 第三方客户端跨服匹配按「剧编号+季集号」定位）。
-    # 注意语义：这是「所属剧的编号」，不是单集专属编号；剧也没有则不编造。
-    tmdb = getattr(item, "tmdb_id", None)
-    imdb = getattr(item, "imdb_id", None)
-    # 按字段独立继承：自身缺哪个补哪个（自身有 imdb 不影响继承 tmdb）
-    if getattr(item, "item_type", "") == "episode" and not (tmdb and imdb):
+    # 单集编号下放：episode 自身缺的键按字段从所属剧补（供 IntroDB 查片头、
+    # 第三方客户端跨服匹配按「剧编号+季集号」定位；剧自身也走
+    # _own_provider_ids 同口径解析，external_ids 里的身份同样可继承）。
+    # 注意语义：补来的是「所属剧的编号」，不是单集专属编号；剧也没有则不编造。
+    out = _own_provider_ids(item)
+    if getattr(item, "item_type", "") == "episode":
         series = getattr(item, "series", None)  # 列表页已由 _prefetch_list_data 批量预取
         if series is not None:
-            tmdb = tmdb or getattr(series, "tmdb_id", None)
-            imdb = imdb or getattr(series, "imdb_id", None)
-    return {
-        k: v for k, v in (
-            ("Tmdb", tmdb),
-            ("Imdb", imdb),
-            ("Douban", getattr(item, "douban_id", None)),
-            ("Bangumi", getattr(item, "bangumi_id", None)),
-        ) if v
-    }
+            for name, value in _own_provider_ids(series).items():
+                out.setdefault(name, value)
+    return out
+
+
+def _genres_of(item) -> list:
+    """Genres 下发：条目自身 genres 列切分；单集自身为空时继承所属剧的
+    （与 ProviderIds/People 的集→剧继承口径对齐——旧实现只读单集自身列，
+    单集 genres 恒空，客户端在集层面永远看不到类型）。"""
+    genres = [g for g in (getattr(item, "genres", None) or "").split(",") if g]
+    if not genres and getattr(item, "item_type", "") == "episode":
+        series = getattr(item, "series", None)  # 同 _provider_ids，列表页已预取
+        if series is not None:
+            genres = [g for g in (getattr(series, "genres", None) or "").split(",") if g]
+    return genres
 
 
 def _image_blur_hashes(item: em.MediaItem, db: Session) -> dict:
@@ -852,7 +893,7 @@ def _item_dto(item: em.MediaItem, base: str, user_id: int, db: Session, full: bo
         "LockData": False,
         "LockedFields": [],
         # 数组类：必须 []，不能 null/省略
-        "Genres": [g for g in (item.genres or "").split(",") if g],
+        "Genres": _genres_of(item),
         "GenreItems": [],
         "Tags": [t for t in (item.tags or "").split(",") if t],
         "Taglines": [],
