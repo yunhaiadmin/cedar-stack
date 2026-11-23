@@ -85,6 +85,24 @@ def test_new_keys_registered_with_current_defaults():
         assert key not in config_schema.WELFARE_CONFIG_SCHEMA
 
 
+def test_pool_bot_keys_registered_with_reader_defaults():
+    # 公共池播报六键（2026-11-24 N-02 补管理入口）：此前只在
+    # config_schema 登记＋tg_bot.pool_digest/pool_report 读侧消费，
+    # 没进端点白名单，GET 读不到、PUT 存不进。默认值与读侧
+    # DEFAULT_TIME(21:00) / REPORT_DEFAULT_TIME(21:20) /
+    # HERO_DEFAULT_TIME(20:30) 逐字对齐，schema 口径不变。
+    for key, default in (
+            ("bot_pool_digest_enabled", "true"),
+            ("bot_pool_digest_time", "21:00"),
+            ("bot_pool_report_enabled", "true"),
+            ("bot_pool_report_time", "21:20"),
+            ("bot_pool_hero_enabled", "true"),
+            ("bot_pool_hero_time", "20:30")):
+        assert welfare_admin.WELFARE_CONFIG_KEYS[key] == default
+    assert config_schema.WELFARE_CONFIG_SCHEMA["bot_pool_digest_enabled"] == ("bool",)
+    assert config_schema.WELFARE_CONFIG_SCHEMA["bot_pool_report_time"] == ("str",)
+
+
 def test_preexisting_keys_for_ui_only_fields_untouched():
     # 机器人键：键＋校验成套保留
     assert welfare_admin.WELFARE_CONFIG_KEYS["bot_update_digest_interval_minutes"] == "30"
