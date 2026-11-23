@@ -4597,6 +4597,13 @@ _DRIVE_SHARE_PATROL_PER_ROUND = 150
 # 翻回 pending 让 worker 真刮。判别与翻回口径见 fake_done_patrol。
 _FAKE_DONE_PATROL_EVERY_ROUNDS = 30
 _FAKE_DONE_PATROL_PER_ROUND = 1000
+# 合并副本卡 pending 自愈巡检（2026-11-24）：merged_into_id 非空的行被
+# 认领谓词 not_merged 永久排除，合并时漏结算的 pending 只会永远卡住。
+# 默认开、无面板开关；每 30 轮（约 30 分钟）跑一次、单轮硬上限 2000
+# 条，结算为 done。判别与结算口径见 merged_pending_patrol；写入点同步
+# 结算是主防线（merge_enrich_sync），本巡检兜存量与漏网写入点。
+_MERGED_PENDING_PATROL_EVERY_ROUNDS = 30
+_MERGED_PENDING_PATROL_PER_ROUND = 2000
 _DIRTY_DONE_PATROL_EVERY_ROUNDS = 1440  # janitor 每 60s 一轮 → 约每日一次
 _DIRTY_DONE_PATROL_PER_ROUND = 200      # 单轮候选上限（details 复核抽样同此上限）
 _DIRTY_DONE_PATROL_MIN_AGE_DAYS = 7     # last_scraped_at 新于 7 天的行不动（防空转）
@@ -4753,6 +4760,14 @@ def _janitor_loop() -> None:
                     if nfd:
                         logger.info("补全 janitor 假完成巡检翻回 %d 条"
                                     "（done → pending）", nfd)
+                # 合并副本卡 pending 自愈巡检（2026-11-24）：默认开、无
+                # 面板开关；每 30 轮（约 30 分钟）一次、单轮硬上限
+                # 2000 条。写入点同步结算是主防线，这里兜存量与漏网。
+                if patrol_round % _MERGED_PENDING_PATROL_EVERY_ROUNDS == 0:
+                    nmp = merged_pending_patrol(db)
+                    if nmp:
+                        logger.info("补全 janitor 合并副本巡检结算 %d 条"
+                                    "（pending → done）", nmp)
                 # P5 存量回捞巡检（2026-11-04）：-10 撞值期误终态的 CMS 存量
                 # 翻回 pending 补一轮；每 30 轮（约 30 分钟）一次、单轮硬上限
                 # 2000 条；幂等（见 enrich_field_refill_recovery）。
@@ -5425,6 +5440,37 @@ def fake_done_patrol(db) -> int:
     if n:
         logger.info("假完成巡检：%d 条 done 无刮削证据条目翻回 pending"
                     "（priority=50）", n)
+    return n
+
+
+def merged_pending_patrol(db) -> int:
+    """合并副本卡 pending 自愈巡检：merged + pending 结算为 done（janitor 顺带）。
+
+    - 判别口径：``merged_into_id IS NOT NULL`` 且 ``enrich_status='pending'``。
+      这类行被 ``_claim_batch`` 的 ``not_merged`` 谓词永久排除（合并副本
+      元数据走主记录，设计如此），pending 只会永远计入待刮 backlog、
+      谁也不会再碰。合并写入点的同步结算是主防线
+      （``merge_enrich_sync.settle_merged_row``），本巡检兜住存量与
+      漏网写入点（生产实证 27,283 条 episode 曾全卡在此形态）。
+    - 单轮硬上限 ``_MERGED_PENDING_PATROL_PER_ROUND``（2000）：先按 id
+      取候选再按 id 更新，捞满即停，下一轮 janitor 继续（与
+      fake_done_patrol 同形态）。
+    返回本轮实际结算的条数。
+    """
+    ids = [r[0] for r in (db.query(em.MediaItem.id)
+             .filter(em.MediaItem.merged_into_id.isnot(None),
+                     em.MediaItem.enrich_status == "pending")
+             .order_by(em.MediaItem.id.asc())
+             .limit(_MERGED_PENDING_PATROL_PER_ROUND)
+             .all())]
+    if not ids:
+        return 0
+    n = (db.query(em.MediaItem).filter(em.MediaItem.id.in_(ids))
+         .update({"enrich_status": "done"}, synchronize_session=False))
+    db.commit()
+    if n:
+        logger.info("合并副本巡检：%d 条 merged+pending 结算为 done"
+                    "（副本元数据跟随主记录）", n)
     return n
 
 

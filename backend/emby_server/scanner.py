@@ -5199,6 +5199,7 @@ def _prepare_and_prefetch(db: Session, batch: list, ctx: "_ScanContext", pool) -
                 and _fast_skip_enabled()
                 and not is_new
                 and not getattr(item, "deleted_at", None)   # 下架过的条目不能秒跳
+                and not getattr(item, "merged_into_id", None)  # 合并副本不能秒跳：重扫要走 _resolve_merged_series_root 跟随挂正主；副本的 done 是合并结算来的（merge_enrich_sync）、不代表本行走过完整扫描管线——旧行为下副本卡 pending 恰好从不秒跳，结算修复后若不排除，重扫跟随会被秒跳短路（test_scan_merged_series_attach 回归）
                 and (getattr(item, "file_fingerprint", None) or None) == file_fp
                 and (getattr(item, "enrich_status", None) or "pending") == "done"
                 and not getattr(item, "repair_requested_at", None)):

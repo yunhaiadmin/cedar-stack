@@ -28,6 +28,8 @@ from datetime import datetime, timedelta
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
+from backend.emby_server import merge_enrich_sync as _mes
+
 logger = logging.getLogger(__name__)
 
 _TRUTHY = {"1", "true", "yes", "on"}
@@ -246,6 +248,8 @@ def rehome_merged_children(db, item, skip_ids=frozenset()) -> str:
     if target is not None:
         for child in children:
             child.merged_into_id = target.id
+            # 改指仍是合并副本：pending/enriching 同步结算（merge_enrich_sync）
+            _mes.settle_merged_row(child)
     else:
         # 兜底：提升最合适的分身。优先选可见且非本批待删的分身——本批待删的
         # 分身稍后由它们自己的守卫处理自己的分身；若分身全在本批，任选其一
@@ -256,9 +260,13 @@ def rehome_merged_children(db, item, skip_ids=frozenset()) -> str:
             candidates = [c for c in children if c.id not in skip_ids] or children
         best = pick_primary(candidates)
         best.merged_into_id = None
+        # 晋升为可见 root 即恢复独立：无自有元数据证据的 done 翻回
+        # pending 等重刮（merge_enrich_sync.restore_unmerged_row）
+        _mes.restore_unmerged_row(best)
         for child in children:
             if child.id != best.id:
                 child.merged_into_id = best.id
+                _mes.settle_merged_row(child)
         target, action = best, "promoted-child"
     logger.info("软删孤儿守卫：%s(id=%s) 的 %d 个分身已改指 id=%s（%s）",
                 item.item_type, item.id, len(children), target.id, action)
@@ -276,23 +284,55 @@ def detach_merged_children(db, item_ids) -> int:
     自己的删除轮次），删除本身照常进行。
 
     - 待删集合内部互相指向的行不解：它们随本批一起消失；
-    - 已软删分身同样要解：UPDATE 不走 ORM 可见性钩子（钩子只管 SELECT），
-      一条批量语句全覆盖，不需要 ``include_deleted``；
+    - 已软删分身同样要解：先在 ``include_deleted`` 下预选被解开的行 id
+      （SELECT 走可见性钩子，不挂会漏掉已软删分身、留悬空指向），
+      再按 id 批量 UPDATE，全覆盖口径与旧单语句版一致；
+    - 解开即恢复独立（2026-11-24）：合并期被结算 done、又无自有元数据
+      证据的行同步翻回 pending 等重刮（与 merge_enrich_sync 的
+      restore_unmerged_row 同判据，用等价 SQL 批量表达，保持本函数
+      的批量形态；这不是「改指」，不违背上面的只解开语义）；
     - 幂等：没有入向引用时返回 0。
 
     返回实际解开的行数。
     """
+    from sqlalchemy import or_
+
     from backend.emby_server.models import MediaItem
 
     ids = {int(i) for i in item_ids if i}
     if not ids:
         return 0
+    with include_deleted():
+        detached_ids = [r[0] for r in db.query(MediaItem.id).filter(
+            MediaItem.merged_into_id.in_(ids),
+            ~MediaItem.id.in_(ids),
+        ).all()]
+    if not detached_ids:
+        return 0
     detached = int(db.query(MediaItem).filter(
-        MediaItem.merged_into_id.in_(ids),
-        ~MediaItem.id.in_(ids),
+        MediaItem.id.in_(detached_ids),
     ).update({"merged_into_id": None}, synchronize_session=False) or 0)
+    requeued = int(db.query(MediaItem).filter(
+        MediaItem.id.in_(detached_ids),
+        MediaItem.enrich_status == "done",
+        MediaItem.last_scraped_at.is_(None),
+        or_(MediaItem.poster_path.is_(None), MediaItem.poster_path == ""),
+        or_(MediaItem.primary_image_url.is_(None),
+            MediaItem.primary_image_url == ""),
+        or_(MediaItem.overview.is_(None), MediaItem.overview == ""),
+        or_(MediaItem.metadata_source.is_(None),
+            MediaItem.metadata_source == "",
+            MediaItem.metadata_source == "none"),
+        MediaItem.metadata_locked.isnot(True),
+    ).update({"enrich_status": "pending",
+              "enrich_attempts": 0,
+              "enrich_next_retry_at": None},
+             synchronize_session=False) or 0)
     if detached:
         logger.info("物理删除兜底：解开 %d 行指向待删条目的合并引用", detached)
+    if requeued:
+        logger.info("物理删除兜底：%d 行解开后无自有元数据，翻回 pending 等重刮",
+                    requeued)
     return detached
 
 
