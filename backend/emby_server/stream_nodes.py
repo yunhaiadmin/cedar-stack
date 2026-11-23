@@ -25,9 +25,11 @@ PlaybackInfo 生成的 ``DirectStreamUrl`` / ``TranscodingUrl`` 自动改写为
 - 永远不把播放 URL 改写到内网/回环地址（``is_public_node_url`` 守卫）：
   ``node_health`` 的默认本机条目（``http://127.0.0.1:8000``）只在无配置时
   兜底，改写层直接忽略它；
-- 管理接口（``admin_router``）用节点密钥（``X-Panel-Key`` = NODE_SHARED_SECRET 或其派生值，
-  见 backend/node_auth.py；不再接受 SECRET_KEY 原文）
-  鉴权，与节点间既有机制一致（``mount_health.require_panel_key``）。
+- 管理接口（``admin_router``）的写口（register / unregister）与 bundle 同
+  口径：只认 HMAC 时效签名头（A-072，见 backend/node_auth.py），不接受
+  静态 ``X-Panel-Key``——静态键躺在每台节点的 .env / 脚本 / shell 历史
+  里，拿到就能注册假节点 / 注销真节点；只读 list 仍走
+  ``mount_health.require_panel_key``（节点密钥，不再接受 SECRET_KEY 原文）。
 """
 
 from __future__ import annotations
@@ -209,6 +211,23 @@ def _panel_auth(request: Request) -> None:
         raise HTTPException(status_code=e.status_code, detail=e.detail)
 
 
+def _signed_auth(request: Request) -> None:
+    """写口专用：只认 HMAC 时效签名头（与 bundle 同口径，A-072）。
+
+    静态 X-Panel-Key 是长期 bearer，躺在每台流节点的 .env、部署脚本与
+    shell 历史里；register/unregister 能增删节点注册表，泄露即可注册假
+    节点引流或注销真节点断流，必须用一次一签的短期凭证。
+    """
+    if not node_auth.verify_signed_headers(
+        request.headers, request.method, request.url.path
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="节点注册/注销只接受节点签名头（X-Panel-Ts/Nonce/Sign），"
+                   "不接受静态 X-Panel-Key；请用新版部署脚本",
+        )
+
+
 @admin_router.get("")
 def list_nodes(request: Request, db: Session = Depends(get_db)):
     _panel_auth(request)
@@ -219,7 +238,7 @@ def list_nodes(request: Request, db: Session = Depends(get_db)):
 
 @admin_router.post("/register")
 def api_register(request: Request, payload: dict, db: Session = Depends(get_db)):
-    _panel_auth(request)
+    _signed_auth(request)
     try:
         node = register_node(
             db,
@@ -235,21 +254,21 @@ def api_register(request: Request, payload: dict, db: Session = Depends(get_db))
     from backend.api.admin_core import _audit
 
     _audit(db, None, "stream_node_register", "stream_node", None,
-           {"actor": "system", "auth": "panel_key", "url": node["url"]})
+           {"actor": "system", "auth": "node_sign", "url": node["url"]})
     db.commit()
     return {"ok": True, "node": node, "nodes": _raw_nodes(db)}
 
 
 @admin_router.delete("")
 def api_unregister(request: Request, url: str, db: Session = Depends(get_db)):
-    _panel_auth(request)
+    _signed_auth(request)
     removed = unregister_node(db, url)
     # 机器口审计（GA-068 B 类）：记系统身份；url 是查询参数、非请求体敏感值。
     # 函数内懒导入：同上，避循环导入。
     from backend.api.admin_core import _audit
 
     _audit(db, None, "stream_node_unregister", "stream_node", None,
-           {"actor": "system", "auth": "panel_key", "url": url, "removed": removed})
+           {"actor": "system", "auth": "node_sign", "url": url, "removed": removed})
     db.commit()
     return {"ok": removed, "nodes": _raw_nodes(db)}
 
