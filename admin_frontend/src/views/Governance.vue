@@ -3,7 +3,10 @@
  * 举报与停权（活动治理 Step 2 管理端）：两页并一页
  *
  * - 举报终审：复核达标升级上来的举报（escalated）由管理员受理 / 驳回；
- * - 治理停权：恶意举报自动停权 + 管理员手动停权 / 撤销。
+ * - 治理停权：恶意举报自动停权 + 管理员手动停权 / 撤销；
+ * - 治理冻结（2026-11-24，O-02 补缺）：Step 4 的 GovernanceFreeze——
+ *   冻结治理特权 / 解冻 / 治理审计日志，与停权是两套独立机制。
+ *   后端是 governance_admin.py（/api/admin/governance/freezes 等）。
  *
  * 两个标签页各自是一整页、按需加载；当前标签与 ?tab= 同步，刷新不丢（与 Welfare.vue 同一写法）。
  * 后端：backend/api/governance_report.py 的 admin_router（/api/admin/governance）。
@@ -13,14 +16,19 @@ import { useRoute, useRouter } from 'vue-router'
 
 const GovernanceReports = defineAsyncComponent(() => import('./GovernanceReports.vue'))
 const GovernanceSuspensions = defineAsyncComponent(() => import('./GovernanceSuspensions.vue'))
+const GovernanceFreezes = defineAsyncComponent(() => import('./GovernanceFreezes.vue'))
 
-type GovernanceTab = 'reports' | 'suspensions'
+type GovernanceTab = 'reports' | 'suspensions' | 'freezes'
 
 const route = useRoute()
 const router = useRouter()
 
 const activeTab = computed<GovernanceTab>({
-  get: () => (route.query.tab === 'suspensions' ? 'suspensions' : 'reports'),
+  get: () => (route.query.tab === 'suspensions'
+    ? 'suspensions'
+    : route.query.tab === 'freezes'
+      ? 'freezes'
+      : 'reports'),
   set: (tab) => {
     if (tab === activeTab.value) return
     router.replace({ query: { ...route.query, tab } })
@@ -58,18 +66,32 @@ const activeTab = computed<GovernanceTab>({
         治理停权
         <span class="tab-hint">停权列表 / 手动停权 / 撤销</span>
       </button>
+      <button
+        id="governance-tab-freezes"
+        type="button"
+        role="tab"
+        class="tab-btn"
+        :class="{ active: activeTab === 'freezes' }"
+        :aria-selected="activeTab === 'freezes'"
+        aria-controls="governance-panel"
+        @click="activeTab = 'freezes'"
+      >
+        治理冻结
+        <span class="tab-hint">冻结治理特权 / 解冻 / 审计日志</span>
+      </button>
     </div>
 
     <div
       id="governance-panel"
       class="tab-panel"
       role="tabpanel"
-      :aria-labelledby="activeTab === 'reports' ? 'governance-tab-reports' : 'governance-tab-suspensions'"
+      :aria-labelledby="activeTab === 'reports' ? 'governance-tab-reports' : activeTab === 'suspensions' ? 'governance-tab-suspensions' : 'governance-tab-freezes'"
     >
       <!-- KeepAlive：来回切标签不重拉数据、不丢筛选 -->
       <KeepAlive>
         <GovernanceReports v-if="activeTab === 'reports'" />
-        <GovernanceSuspensions v-else />
+        <GovernanceSuspensions v-else-if="activeTab === 'suspensions'" />
+        <GovernanceFreezes v-else />
       </KeepAlive>
     </div>
   </div>
