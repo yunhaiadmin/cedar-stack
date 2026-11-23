@@ -1592,7 +1592,7 @@ function opsStateText(state: string): string {
 </template>
 
 <style scoped>
-/* 标签条（与 Codes.vue / Welfare.vue 同款；内层与外层隔 16px，不贴在一起） */
+/* 标签条（与 Codes.vue 同款；内层与外层隔 16px，不贴在一起） */
 .display-name-card {
   margin-bottom: 16px;
 }

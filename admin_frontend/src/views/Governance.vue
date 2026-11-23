@@ -5,7 +5,7 @@
  * - 举报终审：复核达标升级上来的举报（escalated）由管理员受理 / 驳回；
  * - 治理停权：恶意举报自动停权 + 管理员手动停权 / 撤销。
  *
- * 两个标签页各自是一整页、按需加载；当前标签与 ?tab= 同步，刷新不丢（与 Welfare.vue 同一写法）。
+ * 两个标签页各自是一整页、按需加载；当前标签与 ?tab= 同步，刷新不丢。
  * 后端：backend/api/governance_report.py 的 admin_router（/api/admin/governance）。
  */
 import { computed, defineAsyncComponent } from 'vue'

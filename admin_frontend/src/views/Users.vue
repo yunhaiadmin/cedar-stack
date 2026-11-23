@@ -271,7 +271,7 @@ async function load() {
     if (typeFilter.value) params.user_type = typeFilter.value
     const res = await fetchUsers(params)
     if (seq !== loadSeq) return
-    // 操作后（取消公益、禁用…）当前页可能被筛空：回退到最后一页而不是显示「没有匹配」
+    // 操作后（禁用等）当前页可能被筛空：回退到最后一页而不是显示「没有匹配」
     if (!res.users.length && res.total > 0 && page.value > 0) {
       page.value = Math.max(0, Math.ceil(res.total / PAGE_SIZE) - 1)
       void load()
@@ -1343,7 +1343,7 @@ html[data-theme='light'] .grant-card {
 /* flush 卡片里的手机卡片列表：DataTable 本身不留边距，这里补回左右内距 */
 .users-page :deep(.dt-cards) { padding: 0 12px 12px; }
 
-/* 公益弹窗里的行内提示（v2.55 公益用户页并入） */
+/* 弹窗里的行内提示 */
 .au-hint {
   margin-left: 8px;
   color: var(--au-text-2);

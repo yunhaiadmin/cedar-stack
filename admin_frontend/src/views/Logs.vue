@@ -7,7 +7,7 @@
  *   原独立页 /admin/audit 应用户布局纪律并入本页，旧地址跳到本标签）。
  *
  * 两个标签页各自是一整页、按需加载；当前标签与 ?tab= 同步，刷新不丢
- * （与 Governance.vue / Welfare.vue 同一写法）。
+ * （与 Governance.vue 同一写法）。
  */
 import { computed, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
