@@ -6401,6 +6401,26 @@ def _enrich_apply_two_stage(db, item: Any, fetched: dict,
     item.enrich_claim_token = None
 
 
+def _enqueue_item_images_after_commit(fresh) -> None:
+    """图文解耦：文字刮削落库提交后，把封面下载交给图片队列后台落盘。
+
+    三个写库路径共用同一口径（``_process_item`` / ``_process_batch``
+    串行段 / ``_phase3_post_concurrent`` 3b 段），不许各接各的——
+    2026-11-23 实证：此前只有逐条路径接了入队，批量路径（生产主
+    路径）漏接，6 小时内 5.3 万条刮完的条目海报只落盘数百张。
+    入队失败绝不影响刮削结果（不回滚、不改 ``enrich_status``）；
+    队列漏掉的条目仍有 janitor 补下载巡检（播放信号门）与取图时
+    按需自愈兜底。
+    """
+    try:
+        if (fresh.primary_image_url and not fresh.poster_path) or \
+                (fresh.backdrop_image_url and not fresh.backdrop_path):
+            from backend.emby_server import image_queue as _image_queue
+            _image_queue.enqueue_item_images(fresh.id)
+    except Exception:  # noqa: BLE001 — 入队绝不影响刮削结果
+        pass
+
+
 def _process_item(db, item: Any, holder: Optional[dict] = None,
                   queue: Optional[str] = None) -> str:
     """处理一条已抢到的条目：IO 阶段 → 写库阶段。
@@ -6499,17 +6519,9 @@ def _process_item(db, item: Any, holder: Optional[dict] = None,
                 db.commit()
         except Exception as exc:  # noqa: BLE001
             logger.warning("去重缓存版本号 bump 失败（补全写库）: %s", exc)
-        # 图文解耦：文字刮削已落库提交，封面下载交给独立图片队列
-        # （emby_server.image_queue）后台落盘——下载慢/失败/队列满都
-        # 不回滚、不改 enrich_status；队列漏掉的条目仍有 janitor
-        # 补下载巡检（播放信号门）与取图时按需自愈兜底。
-        try:
-            if (fresh.primary_image_url and not fresh.poster_path) or \
-                    (fresh.backdrop_image_url and not fresh.backdrop_path):
-                from backend.emby_server import image_queue as _image_queue
-                _image_queue.enqueue_item_images(item_id)
-        except Exception:  # noqa: BLE001 — 入队绝不影响刮削结果
-            pass
+        # 图文解耦：封面下载交给图片队列后台落盘（三写库路径共用
+        # _enqueue_item_images_after_commit 同一口径）。
+        _enqueue_item_images_after_commit(fresh)
         _maybe_flip_inherit_children(db, fetched)
         return outcome
     except Exception as exc:  # noqa: BLE001
@@ -6746,6 +6758,8 @@ def _phase3_post_concurrent(db, pre_results: list, batch_out: dict,
                         db.commit()
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("去重缓存版本号 bump 失败（批量补全写库）: %s", exc)
+                # 图文解耦：与逐条路径同一口径，提交后把封面交给图片队列。
+                _enqueue_item_images_after_commit(fresh)
                 _maybe_flip_inherit_children(db, fetched)
         except Exception as exc:  # noqa: BLE001
             logger.warning("批量补全写库失败 id=%s: %s", item_id, exc)
@@ -6948,6 +6962,8 @@ def _process_batch(db, batch: list) -> None:
                             db.commit()
                     except Exception as exc:  # noqa: BLE001
                         logger.warning("去重缓存版本号 bump 失败（批量补全写库）: %s", exc)
+                    # 图文解耦：与逐条路径同一口径，提交后把封面交给图片队列。
+                    _enqueue_item_images_after_commit(fresh)
                     _maybe_flip_inherit_children(db, fetched)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("批量补全写库失败 id=%s: %s", item_id, exc)
