@@ -6040,7 +6040,9 @@ def enqueue_details_refill(db, *, limit: int = 500,
                      em.MediaItem.community_rating.is_(None),
                      ~has_cast))
          .order_by(em.MediaItem.id))
-    total = q.with_entities(_func.count(em.MediaItem.id)).scalar() or 0
+    # ORDER BY 会随 with_entities(count) 保留进聚合查询，PG 拒收
+    # （GroupingError）；计数前先清掉，行查询仍用原 q 的排序。
+    total = q.order_by(None).with_entities(_func.count(em.MediaItem.id)).scalar() or 0
     rows = q.limit(max(0, int(limit))).all()
     by_type: dict = {}
     for it in rows:
