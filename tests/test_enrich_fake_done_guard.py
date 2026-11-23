@@ -325,3 +325,135 @@ def test_search_raw_404_still_empty(monkeypatch):
     """其余非瞬态 4xx（404）旧口径不变：返回 []（不是本次改动范围）。"""
     client = _client(monkeypatch, lambda u, p: _resp(status=404))
     assert client._search_raw("不存在的片名xyz", 2022, "series") == []
+
+
+# ---------- 复核门全拒 → honest 终态（2026-11-23 用户拍板） ----------
+#
+# 背景：#455/#464 后剩 68 条 series/movie——TMDB 搜索真跑了、返回了
+# 候选，但绑定复核门（fetch 阶段 binding_reject_reason_for_item +
+# search 标题硬门）全拒，一条身份都没拿到。拒绝标记只写在 fetched
+# （tmdb_gate_rejected / multisource_tmdb_rejected）、无下游消费；
+# 且 _searched_no_hit 的外层条件要求 not alt_hit / not multi_fields，
+# 被拒后豆瓣兜底只落文字（altmeta 不落身份）、多源只采到字段时
+# 这条路被挡死，行落进 _unearned_done 守卫 → pending→failed→
+# janitor 30 天回捞无限循环。拍板口径：被拒候选算「搜过无可用
+# 命中」，并入 _searched_no_hit 同款终态（done+none、attempts 留
+# 证据、retry_unmatched 可捞回）。
+
+def test_gate_rejected_with_douban_text_terminal(db):
+    """主门全拒 + 豆瓣兜底只落文字（无身份）：必须落 honest 终态，
+    不许再被 alt_hit 挡在终态之外走守卫循环（生产 68 条主形态）。"""
+    it = _item(db, name="富豪辩护人", production_year=2020,
+               enrich_field_refill_done=True)
+    fetched = dict(BASE_OK)
+    fetched["tmdb_gate_rejected"] = "title_mismatch"
+    fetched["douban_hit"] = {"title": "鬣狗式生存", "year": 2020}
+    _apply(db, it, fetched, configured=True)
+    assert it.enrich_status == "done", (
+        "候选被复核门全拒仍走 pending 循环，没落 honest 终态")
+    assert it.metadata_source == "none"
+    assert it.enrich_attempts >= 1, "终态必须留搜索证据（attempts>=1）"
+    assert it.tmdb_id is None
+
+
+def test_bridge_rejected_with_multisource_fields_terminal(db):
+    """多源桥 tmdb 候选被门拒 + 多源只采到文字字段（无任何编号）：
+    同样必须落终态，不许被 multi_fields 挡在外层条件之外。"""
+    it = _item(db, name="桥被拒的剧", production_year=2021,
+               enrich_field_refill_done=True)
+    fetched = dict(BASE_OK)
+    fetched["multisource_tmdb_rejected"] = "year_mismatch"
+    fetched["multisource"] = {"fields": {"overview": "多源简介"},
+                               "external_ids": {}}
+    _apply(db, it, fetched, configured=True)
+    assert it.enrich_status == "done"
+    assert it.metadata_source == "none"
+    assert it.enrich_attempts >= 1
+    assert it.tmdb_id is None
+
+
+def test_gate_rejected_alone_terminal(db):
+    """只有拒绝标记、无任何兜底产出：同款终态（钉住标记本身
+    即构成「搜过无可用命中」证据）。"""
+    it = _item(db, name="只有门拒的剧", production_year=2018,
+               enrich_field_refill_done=True)
+    fetched = dict(BASE_OK)
+    fetched["tmdb_gate_rejected"] = "year_mismatch"
+    _apply(db, it, fetched, configured=True)
+    assert it.enrich_status == "done"
+    assert it.metadata_source == "none"
+    assert it.enrich_attempts >= 1
+
+
+def test_gate_marker_with_transient_failure_not_terminal(db):
+    """门取数瞬态时 fetch 置 ok=False（没查成 ≠ 查不到）：即使
+    fetched 里带着拒绝标记也不许终态，走重试计次退避。"""
+    it = _item(db, name="瞬态失败的剧", production_year=2019)
+    fetched = dict(BASE_OK)
+    fetched["ok"] = False
+    fetched["error"] = "tmdb transient, retry later"
+    fetched["tmdb_gate_rejected"] = "title_mismatch"
+    _apply(db, it, fetched, configured=True)
+    assert it.enrich_status == "pending"
+    assert it.enrich_attempts == 1
+    assert it.enrich_next_retry_at is not None
+
+
+def test_gate_rejected_repair_not_terminal(db):
+    """repair 请求（用户在等结果）即使候选被门拒也不许终态——
+    与现 _searched_no_hit 的 repair 排除同口径。"""
+    from datetime import datetime as _dt
+    it = _item(db, name="修复中的剧", production_year=2022,
+               repair_requested_at=_dt.now(),
+               enrich_field_refill_done=True)
+    fetched = dict(BASE_OK)
+    fetched["tmdb_gate_rejected"] = "title_mismatch"
+    fetched["douban_hit"] = {"title": "修复中的剧", "year": 2022}
+    _apply(db, it, fetched, configured=True)
+    assert it.enrich_status == "pending"
+
+
+def test_gate_rejected_ban_skipped_douban_goes_backfill(db):
+    """豆瓣封禁降级期被跳过豆瓣 ≠ 搜过没有（用户 2026-10-15 明令）：
+    与现 none 口径同款先进安静补刮队列，不许被新终态误判。"""
+    it = _item(db, name="封禁期的剧", production_year=2023)
+    fetched = dict(BASE_OK)
+    fetched["tmdb_gate_rejected"] = "title_mismatch"
+    fetched["_ban_downgrade_skipped_douban"] = True
+    with mock.patch.object(enrich_worker, "_douban_backfill_candidate",
+                           return_value=True):
+        _apply(db, it, fetched, configured=True)
+    assert it.enrich_status == "pending"
+    assert it.enrich_priority == \
+        enrich_worker.ENRICH_PRIORITY_DOUBAN_BACKFILL
+    assert it.enrich_attempts == 0
+
+
+def test_gate_marker_with_nfo_tmdb_id_not_none_terminal(db):
+    """NFO 自带 tmdb_id：身份走 NFO 落库，拒绝标记不许把行推去
+    none 终态（门本身对 NFO 候选跳过，此为口径钉子）。"""
+    it = _item(db, item_type="movie", name="NFO带号又带门拒的片",
+               production_year=2019, enrich_field_refill_done=True)
+    fetched = dict(BASE_OK)
+    fetched["tmdb_gate_rejected"] = "title_mismatch"
+    fetched["nfo_data"] = {"title": "NFO带号又带门拒的片",
+                           "tmdb_id": "550", "plot": "简介"}
+    _apply(db, it, fetched, configured=True)
+    assert it.enrich_status == "done"
+    assert it.tmdb_id == "550"
+    assert it.metadata_source != "none"
+
+
+def test_bridge_rejected_but_multisource_identity_kept(db):
+    """桥 tmdb 被拒、但多源从别的源采到 imdb 编号：身份在手，
+    done 且不许被改判 none 终态。"""
+    it = _item(db, name="桥拒但有IMDb的剧", production_year=2021,
+               enrich_field_refill_done=True)
+    fetched = dict(BASE_OK)
+    fetched["multisource_tmdb_rejected"] = "title_mismatch"
+    fetched["multisource"] = {"fields": {"overview": "简介"},
+                               "external_ids": {"imdb": "tt8765432"}}
+    _apply(db, it, fetched, configured=True)
+    assert it.enrich_status == "done"
+    assert it.imdb_id == "tt8765432"
+    assert it.metadata_source != "none"
