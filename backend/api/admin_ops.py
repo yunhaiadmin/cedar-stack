@@ -148,12 +148,11 @@ def code_dto(db: Session, code: models.RegistrationCode, now: Optional[datetime]
         "created_by_name": created_by_name,
         "agent_id": code.agent_id,
         "agent_name": agent_name,
-        # M1 奖励类型 + G1 资格码打包查看标记：列表里要分得出这张码送什么
+        # M1 奖励类型：列表里要分得出这张码送什么
         "reward_type": getattr(code, "reward_type", "subscription") or "subscription",
         "balance_value": (f"{code.balance_value:.2f}"
                           if getattr(code, "balance_value", None) is not None
                           else None),
-        "welfare_include_view": bool(getattr(code, "welfare_include_view", True)),
         "max_uses": code.max_uses,
         "use_count": code.use_count or 0,
         "is_active": bool(code.is_active),
@@ -424,9 +423,6 @@ class CodeGenerateRequest(BaseModel):
     # 余额型（reward_type=balance）：入账面额（元），字符串收避免 float 丢精度
     balance_value: str = Field(default="0", max_length=32)
     discount_pct: int = Field(default=0, ge=0, le=100)
-    # 历史字段：资格码打包查看行开关（资格码已下线，本字段不再生效，
-    # 保留收参兼容存量调用方，落库值仅作记录）
-    welfare_include_view: bool = True
 
 
 @admin_ops_router.post("/registration-codes/generate")
@@ -441,9 +437,6 @@ def generate_codes(
     if (request.reward_type or "").strip().lower() == "points":
         # 能量已随货币下线（2026-11-13）：能量卡码不可核销，不许再生成。
         raise HTTPException(status_code=400, detail="能量卡码已下线，不能再生成")
-    if (request.reward_type or "").strip().lower() == codes.REWARD_WELFARE:
-        # 公益资格已随福利整族下线（2026-11-14）：资格卡码不可核销，不许再生成。
-        raise HTTPException(status_code=400, detail="资格卡码已下线，不能再生成")
     if request.code_type == codes.CODE_TYPE_REGISTER:
         # 注册码已整体下线（2026-11-15）：不再生成，存量行只留审计。
         raise HTTPException(status_code=400, detail="注册码已停用，不能再生成")
@@ -528,7 +521,6 @@ def generate_codes(
             points_value=request.points_value,
             balance_value=balance_amount if balance_amount is not None else 0,
             discount_pct=request.discount_pct,
-            welfare_include_view=bool(request.welfare_include_view),
             batch_id=batch_id,
         )
         db.add(code)
@@ -545,8 +537,7 @@ def generate_codes(
            {"count": request.count, "code_type": request.code_type, "days": days,
             "is_decoy": request.is_decoy, "target_username": target_username or None,
             "realm_id": target_realm, "reward_type": request.reward_type,
-            "batch_id": batch_id,
-            "welfare_include_view": bool(request.welfare_include_view)})
+            "batch_id": batch_id})
     db.commit()
 
     if request.reward_type == codes.REWARD_BALANCE:

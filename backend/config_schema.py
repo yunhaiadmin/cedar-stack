@@ -162,25 +162,10 @@ WELFARE_CONFIG_SCHEMA: dict[str, tuple] = {
     "bot_channel_guard_enabled": ("bool",),
     "bot_channel_whitelist": ("str",),
     "bot_leave_action": ("enum", ("none",)),  # cancel_welfare 已随福利服役族于 2026-11-14 删除
-    # 2026-10-17 第 4 批 4-4：以下 9 键在 WELFARE_CONFIG_KEYS 里的默认值是 "1"/"0"，
-    # 端点现行的 normalize 按 ("bool", "digit") 存 "1"/"0"。风格必须跟键走，
-    # 注册为 digit 才能与今天逐字一致（读侧 lottery.py 等是宽容口径，本应无感，
-    # 但存字节必须相同）。
-    "welfare_require_tg_bind": ("bool", "digit"),
-    "lottery_draw_interval_sec": ("int", 30, 86400),
     # chat_points_* 已于 2026-10-23 去重退役（机器人那套群发言积分，
     # 与 points_chat_* 重复），此处不再登记
-    # 2026-10-17 第 4 批 4-2：补上 WELFARE_CONFIG_KEYS 里漏登记的 3 个
-    # （读侧 lottery.py 有明确口径：bool 默认开、int max(0,·) 钳制）
-    "lottery_require_group_member": ("bool", "digit"),
-    "lottery_min_account_age_days": ("int", 0, _BIG),
-    "lottery_max_joins_per_day": ("int", 0, _BIG),
-    # 公告根治（2026-10-31）：置顶开关 digit 风格（读侧 lottery.py 宽容口径，
-    # 默认开）；提醒台阶/提前分钟/编辑节流为非负整数，0=关（读侧同口径钳制）。
-    "lottery_announce_pin_enabled": ("bool", "digit"),
-    "lottery_reminder_step": ("int", 0, _BIG),
-    "lottery_final_call_minutes": ("int", 0, _BIG),
-    "lottery_announce_edit_min_interval_sec": ("int", 0, 3600),
+    # welfare_require_tg_bind 与 lottery_* 9 键已随公益门禁/群抽奖整族
+    # 于 2026-11-23 删除，此处不再登记。
     # 2026-10-17 第 4 批 4-4：白名单里但此前无 spec 的群 id 列表键（端点现行按原文
     # 存字符串）。注册为 ("str",) 与今天逐字一致：原文直存，None/空串→删行
     # （读侧 _get_str_config 缺行/空行都回默认 ""，等价）。
@@ -226,8 +211,6 @@ WELFARE_CONFIG_SCHEMA: dict[str, tuple] = {
     # 默认开；驳回不发。审核私聊本身走 proactive，无独立总开关
     # （只受「贡献回响」用户偏好门控）。
     "tg_notify_group_pool_welcome_enabled": ("bool",),
-
-    "lottery_group_ids": ("str",),
 }
 
 # 告警设置（admin_alerts.update_alert_settings 的 4 个写键）。

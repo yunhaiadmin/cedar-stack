@@ -263,7 +263,6 @@ export interface PoolRewardDetail {
   amount_usd: string
   credited_usd: string
   wallet_ledger_id: number | null
-  welfare_days: number
   status: string
   reason: string | null
   granted_at: string | null

@@ -342,12 +342,11 @@ class WebUser(Base):
     # forgiven 分支），生产列 DROP 由后续收尾执行。
     # 观影碑时长榜隐私：True=允许上榜（默认），False=不上榜
     show_on_leaderboard = Column(Boolean, default=True, nullable=False, server_default="1")
-    # TG 私聊通知偏好（2026-11-08 私聊通报优化批）：四类各一个开关，
+    # TG 私聊通知偏好（2026-11-08 私聊通报优化批）：三类各一个开关，
     # 只管 Telegram 那一份，站内信不受影响。默认 True=收。
     # 语义见 backend/notify_prefs.py。
     tg_notify_seek = Column(Boolean, default=True, nullable=False, server_default="1")
     tg_notify_expiry = Column(Boolean, default=True, nullable=False, server_default="1")
-    tg_notify_lottery = Column(Boolean, default=True, nullable=False, server_default="1")
     tg_notify_pool_digest = Column(Boolean, default=True, nullable=False, server_default="1")
     # 网页播放器设置同步（2026-11-15 ⚠️11）：弹幕显示/倍速/字幕等个人
     # 偏好的整对象 JSON，原样存取、服务端不解释内部结构（上限 16KB，
@@ -833,14 +832,11 @@ class RegistrationCode(Base):
     source = Column(String(20), default='admin')  # admin 管理员发放 / invite 邀请体系生成
     # ===== M1 统一码系统：并入兑换码的奖励类型 =====
     # reward_type: subscription 会员天数（默认，原卡码行为）/ points 积分 / discount 折扣权益
-    # / welfare 公益资格（2026-10-30 G1：卡码直发资格，见 codes.redeem_code）
+    # / balance 余额入账
     reward_type = Column(String(20), default='subscription')
     points_value = Column(Integer, default=0)  # points 型：兑换积分数
     balance_value = Column(Numeric(12, 2), default=0)  # balance 型：兑换入账金额（元）
     discount_pct = Column(Integer, default=0)  # discount 型：实付百分比，85=八五折
-    # welfare 型：核销时是否打包首张查看行（EmbyViewUnlock，同天数、points_spent=0）。
-    # 老数据补列默认 1（打包），与生成表单默认开一致。
-    welfare_include_view = Column(Boolean, default=True)
     # ===== 代理分销（2026-11-06）：代理进货生成的码带出码代理标记 =====
     # 非空 = 这张码是代理用进货余额买下的（source='agent')，核销成功时
     # 按 agent_purchase_id 的进货快照落销售归属（见 backend/agents.py）。
@@ -1980,162 +1976,6 @@ class MediaRequest(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     user = relationship("WebUser")
-
-
-class LotteryRound(Base):
-    """群抽奖活动轮次：一期抽奖"""
-    __tablename__ = 'lottery_rounds'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    title = Column(String(200), nullable=False)
-    chat_id = Column(BigInteger, nullable=False)  # 群组 chat_id
-    status = Column(String(20), nullable=False, default='open')  # open/drawing/done/cancelled
-    start_at = Column(DateTime, default=datetime.now)
-    draw_at = Column(DateTime, nullable=True)      # 计划开奖时间，空=手动开奖
-    drawn_at = Column(DateTime, nullable=True)
-    drawing_at = Column(DateTime, nullable=True)  # 认领开奖时间戳：drawing 僵尸回收用
-    max_participants = Column(Integer, nullable=False, default=0)  # 0=不限
-    # 抽奖类型：button=按钮抽奖 / password=口令抽奖
-    lottery_type = Column(String(20), nullable=False, default='button', server_default='button')
-    password_keyword = Column(String(100), nullable=True)  # 口令抽奖时的关键词，button 类型时为 NULL
-    seed_hash = Column(String(64), nullable=True)  # 开奖前公布的承诺
-    seed = Column(String(64), nullable=True)       # 开奖后揭示
-    # 三重门·公信门：drand 公开随机信标（开奖时抓取，与 seed 混合成最终种子）
-    drand_round = Column(BigInteger, nullable=True)      # drand 信标轮次
-    drand_randomness = Column(String(128), nullable=True)  # drand 信标随机值（hex）
-    # 公告落库（2026-10-31 根治）：公告消息编号/发送状态/失败原因/是否置顶，
-    # 没有编号就无法置顶、无法编辑人数、失败也无从补发（round 4 实证）。
-    announce_message_id = Column(BigInteger, nullable=True)  # 群公告 message_id
-    announce_status = Column(String(20), nullable=True)      # sent/failed；NULL=未发送
-    announce_error = Column(String(500), nullable=True)      # 最近一次发送失败原因
-    announce_pinned = Column(Boolean, nullable=False, default=False, server_default='0')
-    announce_last_edit_at = Column(DateTime, nullable=True)  # 人数编辑节流时间戳
-    # 人数提醒防重（worker 轮询）：已提醒到的最高里程碑人数 / 开奖前提醒已发
-    reminder_milestone = Column(Integer, nullable=False, default=0, server_default='0')
-    final_call_sent = Column(Boolean, nullable=False, default=False, server_default='0')
-    created_by = Column(Integer, ForeignKey('web_users.id'), nullable=True)
-    created_at = Column(DateTime, default=datetime.now)
-
-
-class LotteryRoundPrize(Base):
-    """群抽奖奖品：挂在某一轮下面"""
-    __tablename__ = 'lottery_round_prizes'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    round_id = Column(Integer, ForeignKey('lottery_rounds.id', ondelete='CASCADE'), nullable=False)
-    name = Column(String(100), nullable=False)
-    type = Column(String(20), nullable=False)  # days=公益天数 / points=积分 / whitelist=白名单(永久)
-    value = Column(Integer, nullable=False, default=0)
-    quantity = Column(Integer, nullable=False, default=1)
-    sort = Column(Integer, nullable=False, default=0)
-
-
-class LotteryRoundEntry(Base):
-    """群抽奖参与记录：一人一期只能参加一次"""
-    __tablename__ = 'lottery_round_entries'
-
-    __table_args__ = (
-        UniqueConstraint('round_id', 'user_id', name='uq_lottery_round_entry'),
-        Index('idx_lottery_entry_round', 'round_id'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    round_id = Column(Integer, ForeignKey('lottery_rounds.id', ondelete='CASCADE'), nullable=False)
-    user_id = Column(Integer, ForeignKey('web_users.id'), nullable=False)
-    telegram_id = Column(BigInteger, nullable=False)
-    joined_at = Column(DateTime, default=datetime.now)
-
-
-class LotteryRoundWinner(Base):
-    """群抽奖中奖记录"""
-    __tablename__ = 'lottery_round_winners'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    round_id = Column(Integer, ForeignKey('lottery_rounds.id', ondelete='CASCADE'), nullable=False)
-    entry_id = Column(Integer, ForeignKey('lottery_round_entries.id'), nullable=False)
-    prize_id = Column(Integer, ForeignKey('lottery_round_prizes.id'), nullable=False)
-    distributed = Column(Boolean, nullable=False, default=False, server_default='0')
-    distributed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.now)
-
-
-class LotteryActivityProposal(Base):
-    """等级治理 Step 3：用户活动提案。
-
-    Lv.2+ 用户提交活动提案，管理员批准后才建轮次、拒绝则不产生任何东西。
-    本行本身就是审计记录：谁（user_id）、何时（created_at / reviewed_at）、
-    什么活动（title / chat_id / prizes_json / draw_at）、谁审批（reviewer_id）、
-    结果（status / review_note / round_id）。提案动作不产生经验。
-    新表由 init_db 的 create_all 建出，无需迁移文件（与 DriveOAuthState 同口径）。
-    """
-    __tablename__ = 'lottery_activity_proposals'
-
-    __table_args__ = (
-        Index('idx_lottery_proposal_user_created', 'user_id', 'created_at'),
-        Index('idx_lottery_proposal_status', 'status'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey('web_users.id', ondelete='CASCADE'), nullable=False)
-    title = Column(String(200), nullable=False)
-    # 群组 chat_id：与 lottery_rounds.chat_id 同为 BigInteger（TG 群 id 为整数）。
-    chat_id = Column(BigInteger, nullable=False)
-    lottery_type = Column(String(20), nullable=False, default='button')
-    password_keyword = Column(String(100), nullable=True)
-    # 奖品清单 JSON：[{name, type(days/whitelist), value, quantity}]，与
-    # 管理端 RoundCreateRequest.PrizeItem 同形，批准时原样交给 lottery.create_round。
-    prizes_json = Column(Text, nullable=False, default='[]')
-    draw_at = Column(DateTime, nullable=True)
-    max_participants = Column(Integer, nullable=False, default=0)
-    # 提交时刻的等级快照：审批与审计以它为准，不随用户后续升级/降级回改。
-    level_snapshot = Column(Integer, nullable=False)
-    # pending / approved / rejected
-    status = Column(String(20), nullable=False, default='pending')
-    reviewer_id = Column(Integer, ForeignKey('web_users.id'), nullable=True)
-    reviewed_at = Column(DateTime, nullable=True)
-    review_note = Column(String(500), nullable=True)
-    round_id = Column(Integer, ForeignKey('lottery_rounds.id', ondelete='SET NULL'), nullable=True)
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-
-
-class LotteryDirectLaunch(Base):
-    """等级治理 Step 3：用户直接发起活动记录（事后审计）。
-
-    Lv.5+ 用户不经审批直接建轮次；本行记录谁、何时、建了哪个轮次，
-    管理员事后可凭它审计，滥用时用现有的取消端点（/welfare/lottery/rounds/{id}/cancel）
-    取消轮次。直接发起动作不产生经验。
-    """
-    __tablename__ = 'lottery_direct_launches'
-
-    __table_args__ = (
-        Index('idx_lottery_direct_user_created', 'user_id', 'created_at'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey('web_users.id', ondelete='CASCADE'), nullable=False)
-    round_id = Column(Integer, ForeignKey('lottery_rounds.id', ondelete='SET NULL'), nullable=True)
-    level_snapshot = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=datetime.now)
-
-
-class LotteryBlacklist(Base):
-    """群抽奖黑名单：三重门·资格门。
-
-    被拉黑的用户无法参加任何群抽奖。由管理后台维护。
-    """
-    __tablename__ = 'lottery_blacklist'
-
-    __table_args__ = (
-        UniqueConstraint('user_id', name='uq_lottery_blacklist_user'),
-        Index('idx_lottery_blacklist_user', 'user_id'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey('web_users.id', ondelete='CASCADE'), nullable=False)
-    reason = Column(String(200), nullable=True)  # 拉黑原因
-    created_by = Column(Integer, ForeignKey('web_users.id'), nullable=True)
-    created_at = Column(DateTime, default=datetime.now)
 
 
 class Review(Base):

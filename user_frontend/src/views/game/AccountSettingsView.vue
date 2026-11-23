@@ -141,20 +141,6 @@
         </div>
         <div class="set-row">
           <span class="set-row-ic" aria-hidden="true"><Bell :size="22" /></span>
-          <span class="set-row-name">活动中奖通知</span>
-          <button
-            type="button"
-            class="set-switch"
-            :class="{ 'is-on': notifyPrefs.lottery }"
-            :disabled="notifyLoading"
-            role="switch"
-            :aria-checked="notifyPrefs.lottery"
-            aria-label="活动中奖通知"
-            @click="toggleNotifyPref('lottery')"
-          ></button>
-        </div>
-        <div class="set-row">
-          <span class="set-row-ic" aria-hidden="true"><Bell :size="22" /></span>
           <span class="set-row-name">贡献回响</span>
           <button
             type="button"
@@ -317,9 +303,9 @@ function onActiveBinding() {
 }
 
 // ── TG 私聊通知偏好（只管机器人私聊，站内信不受影响） ──
-type NotifyPrefKey = 'seek' | 'expiry' | 'lottery' | 'pool_digest'
+type NotifyPrefKey = 'seek' | 'expiry' | 'pool_digest'
 const notifyPrefs = ref<Record<NotifyPrefKey, boolean>>({
-  seek: true, expiry: true, lottery: true, pool_digest: true,
+  seek: true, expiry: true, pool_digest: true,
 })
 const notifyLoading = ref(false)
 const notifyError = ref('')
@@ -332,7 +318,6 @@ async function loadNotifyPrefs() {
     notifyPrefs.value = {
       seek: d.seek !== false,
       expiry: d.expiry !== false,
-      lottery: d.lottery !== false,
       pool_digest: d.pool_digest !== false,
     }
   } catch (e) {
@@ -350,7 +335,6 @@ async function toggleNotifyPref(key: NotifyPrefKey) {
     notifyPrefs.value = {
       seek: d.seek !== false,
       expiry: d.expiry !== false,
-      lottery: d.lottery !== false,
       pool_digest: d.pool_digest !== false,
     }
     toast.success(next ? '已打开这类私聊通知' : '已关掉这类私聊通知')

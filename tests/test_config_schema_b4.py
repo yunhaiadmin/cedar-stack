@@ -72,15 +72,14 @@ class TestFamilySchemas:
         with pytest.raises(ConfigValueError):
             normalize("register_ratelimit_window", s["register_ratelimit_window"], 59)
 
-    def test_welfare_gap_keys_registered(self):
-        # 4-2 补登记：之前漏掉的 3 个 lottery 键
+    def test_welfare_lottery_keys_unregistered(self):
+        # lottery_* 与 welfare_require_tg_bind 已随群抽奖/公益门禁整族
+        # 于 2026-11-23 删除：不得再出现在 welfare 注册表里
         s = config_schema.WELFARE_CONFIG_SCHEMA
-        assert normalize("lottery_require_group_member",
-                         s["lottery_require_group_member"], True) == "1"
-        assert normalize("lottery_min_account_age_days",
-                         s["lottery_min_account_age_days"], 30) == "30"
-        with pytest.raises(ConfigValueError):
-            normalize("lottery_min_account_age_days",
-                      s["lottery_min_account_age_days"], -1)
-        assert normalize("lottery_max_joins_per_day",
-                         s["lottery_max_joins_per_day"], 0) == "0"
+        for key in ("lottery_require_group_member", "lottery_min_account_age_days",
+                    "lottery_max_joins_per_day", "lottery_draw_interval_sec",
+                    "lottery_group_ids", "lottery_announce_pin_enabled",
+                    "lottery_reminder_step", "lottery_final_call_minutes",
+                    "lottery_announce_edit_min_interval_sec",
+                    "welfare_require_tg_bind"):
+            assert key not in s

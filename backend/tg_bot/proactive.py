@@ -1,6 +1,6 @@
 """Telegram 主动私聊提醒：求片到货、转存终态。
 
-两件事分开开关，默认开（system_configs，走公益配置注册表；
+两件事分开开关，默认开（system_configs 配置；
 2026-11-08 私聊通报优化批由默认关改默认开）：
 
 - ``tg_notify_store_arrival_enabled``：入库/扫描对上求片（判定与

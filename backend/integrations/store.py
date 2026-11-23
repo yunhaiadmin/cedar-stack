@@ -35,7 +35,8 @@ DEFAULTS_SENTINEL = object()
 
 # ---------------------------------------------------------------------------
 # A 类开关摘面板（2026-10-21 施工，用户 2026-10-19「功能开关从简」原则）：
-# 以下 53 个键管理后台不再提供开关（首批 37 个，2026-11-23 第二批 16 个：
+# 以下 49 个键管理后台不再提供开关（首批 37 个，2026-11-23 第二批 16 个，
+# 再减去 2026-11-23 公益清扫删除登记的抽奖/活力 4 键：
 # 求片自动批准/订阅购买/QQ 钱包/钱包四键/跨 provider 转存/剧集预热/
 # 池大文件分流/挂载直读/Drive 绑定/网页软解/站内弹幕/弹幕外部源/
 # 登录锁定；UI 已同步摘除）。仍留在面板的：池总开关 pool_enabled 与
@@ -79,9 +80,6 @@ PANEL_REMOVED_SWITCHES: tuple[tuple[str, str], ...] = (
     ("invitation_enabled", "INVITATION_ENABLED"),
     ("items_dedup_cache_enabled", "ITEMS_DEDUP_CACHE_ENABLED"),
     ("items_list_cache_enabled", "ITEMS_LIST_CACHE_ENABLED"),
-    ("lottery_auto_draw_enabled", "LOTTERY_AUTO_DRAW_ENABLED"),
-    ("lottery_enabled", "LOTTERY_ENABLED"),
-    ("lottery_notify_winners", "LOTTERY_NOTIFY_WINNERS"),
     ("media_seek_enabled", "MEDIA_SEEK_ENABLED"),
     ("media_seek_notify_voters", "MEDIA_SEEK_NOTIFY_VOTERS"),
     ("media_seek_vote_enabled", "MEDIA_SEEK_VOTE_ENABLED"),
@@ -101,7 +99,6 @@ PANEL_REMOVED_SWITCHES: tuple[tuple[str, str], ...] = (
     ("series_merge_season_fold_enabled", "SERIES_MERGE_SEASON_FOLD_ENABLED"),
     ("teaser_enabled", "TEASER_ENABLED"),
     ("tg_bind_guide_enabled", "TG_BIND_GUIDE_ENABLED"),
-    ("vitality_enabled", "VITALITY_ENABLED"),
     # 第二批（2026-11-23，审计 K-01）：env 名逐个写明，同首批口径
     ("cross_provider_transfer_enabled", "CROSS_PROVIDER_TRANSFER_ENABLED"),
     ("danmaku_enabled", "DANMAKU_ENABLED"),

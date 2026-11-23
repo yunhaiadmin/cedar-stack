@@ -746,7 +746,6 @@ def _auto_migrate():
             # server_default 一致（backend/notify_prefs.py）。
             ("tg_notify_seek", "BOOLEAN", "1"),
             ("tg_notify_expiry", "BOOLEAN", "1"),
-            ("tg_notify_lottery", "BOOLEAN", "1"),
             ("tg_notify_pool_digest", "BOOLEAN", "1"),
             # 网页播放器设置同步（2026-11-15 ⚠️11）：老库补列后为 NULL
             # = 从未保存过，与新列缺省一致（见 backend/player_prefs.py）。
@@ -782,8 +781,6 @@ def _auto_migrate():
             ("reward_type", "VARCHAR(20)", "'subscription'"),
             ("points_value", "INTEGER", "0"),
             ("discount_pct", "INTEGER", "0"),
-            # G1 资格码：核销打包查看行开关（老行补 1=打包，与生成默认开一致）
-            ("welfare_include_view", "BOOLEAN", "1"),
             # 代理分销（2026-11-06）：出码代理标记。老行补 NULL = 非代理码，
             # 核销归属只认非空（见 backend/agents.py），存量码行为不变。
             # 新表 agents / agent_levels / agent_balance_logs / agent_purchases /
@@ -1297,23 +1294,6 @@ def _auto_migrate():
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"  ⚠️ alert_rules event_type 唯一索引创建跳过: {exc}")
 
-    # R49：lottery_rounds 同群进行中（status='open'）唯一索引。
-    # create_lottery_round 的"同群已有进行中则拒绝"此前只在端点层读-查-写，
-    # 两管理员同群并发建活动可产生两个 open 轮次。部分唯一索引与
-    # get_active_round（只查 status='open'）口径对齐；老库有重复行时记
-    # warning 不崩启动（与上面 uq_alert_rules_event_type 同一口径），
-    # 由 create 端的 IntegrityError 兜底路径拦截新的双建。
-    if "lottery_rounds" in existing_tables:
-        try:
-            with engine.begin() as conn:
-                conn.execute(text(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_lottery_rounds_open_chat "
-                    "ON lottery_rounds (chat_id) WHERE status = 'open'"
-                ))
-            logger.info("  🔧 已迁移: lottery_rounds 同群进行中唯一索引 (chat_id WHERE open)")
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"  ⚠️ lottery_rounds 同群进行中唯一索引创建跳过: {exc}")
-
     # 公开 ID（2026-11-15）：web_users.public_id 唯一索引。老库补列后
     # 存量为 NULL，PG/SQLite 唯一索引允许多个 NULL，不挡回填脚本
     # 逐行填互不重复值；有重复非空值时记 warning 不崩启动（与上面
@@ -1342,7 +1322,6 @@ def _auto_migrate():
     if ("emby_items", "video_resolution") in _newly_added_columns:
         _backfill_filename_meta()
     _ensure_legacy_indexes(existing_tables)
-    _ensure_lottery_g1_tables(existing_tables)
     _migrate_user_storage_binding_provider_check(existing_tables)
     _migrate_scan_run_single_running(existing_tables)
     _migrate_exchange_discount_credit_fk(existing_tables)
@@ -1645,80 +1624,6 @@ _LEGACY_INDEXES: tuple[tuple[str, ...], ...] = (
     ("registration_codes", "idx_reg_code_batch", "batch_id", "batch_id",
      "  🔧 已迁移: registration_codes.idx_reg_code_batch（一人一批一码按批查码）"),
 )
-
-
-def _ensure_lottery_g1_tables(existing_tables: set) -> None:
-    """群抽奖 G1：PG/MySQL 上显式建表（幂等），SQLite 跳过。
-
-    幂等：表已存在则跳过；create 时用 checkfirst=True 双保险。
-    SQLite 由 init_db 的 create_all 建表，此处直接返回。
-    """
-    dialect = engine.dialect.name
-    if dialect not in ("postgresql", "mysql"):
-        return
-    from backend import models
-    tables = (
-        models.LotteryRound.__table__,
-        models.LotteryRoundPrize.__table__,
-        models.LotteryRoundEntry.__table__,
-        models.LotteryRoundWinner.__table__,
-        # 三重门·资格门：黑名单表
-        models.LotteryBlacklist.__table__,
-    )
-    for tbl in tables:
-        if tbl.name not in existing_tables:
-            tbl.create(bind=engine, checkfirst=True)
-            logger.info(f"  🔧 已迁移: 新建表 {tbl.name}（群抽奖）")
-
-    # 三重门·公信门：lottery_rounds 补 drand 列（老库）
-    from sqlalchemy import inspect, text
-    inspector = inspect(engine)
-    cols = {c["name"] for c in inspector.get_columns("lottery_rounds")}
-    for col_name, col_def in (
-        ("drand_round", "BIGINT"),
-        ("drand_randomness", "VARCHAR(128)"),
-    ):
-        if col_name not in cols:
-            with engine.begin() as conn:
-                conn.execute(text(f"ALTER TABLE lottery_rounds ADD COLUMN {col_name} {col_def}"))
-            logger.info(f"  🔧 已迁移: lottery_rounds 加列 {col_name}（三重门·公信门）")
-
-    # 抽奖类型：lottery_rounds 补 lottery_type / password_keyword 列（老库）
-    cols = {c["name"] for c in inspector.get_columns("lottery_rounds")}
-    for col_name, col_def in (
-        ("lottery_type", "VARCHAR(20) DEFAULT 'button'"),
-        ("password_keyword", "VARCHAR(100)"),
-    ):
-        if col_name not in cols:
-            with engine.begin() as conn:
-                conn.execute(text(f"ALTER TABLE lottery_rounds ADD COLUMN {col_name} {col_def}"))
-            logger.info(f"  🔧 已迁移: lottery_rounds 加列 {col_name}（抽奖类型）")
-    # 老库可能未回填默认值，将 NULL 的 lottery_type 统一置为 'button'
-    with engine.begin() as conn:
-        conn.execute(text("UPDATE lottery_rounds SET lottery_type = 'button' WHERE lottery_type IS NULL"))
-
-    # 僵尸 drawing 回收：lottery_rounds 补 drawing_at 列（老库）
-    cols = {c["name"] for c in inspector.get_columns("lottery_rounds")}
-    if "drawing_at" not in cols:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE lottery_rounds ADD COLUMN drawing_at TIMESTAMP"))
-        logger.info("  🔧 已迁移: lottery_rounds 加列 drawing_at（僵尸 drawing 回收）")
-
-    # 公告落库（2026-10-31 根治）：lottery_rounds 补公告/提醒列（老库）
-    cols = {c["name"] for c in inspector.get_columns("lottery_rounds")}
-    for col_name, col_def in (
-        ("announce_message_id", "BIGINT"),
-        ("announce_status", "VARCHAR(20)"),
-        ("announce_error", "VARCHAR(500)"),
-        ("announce_pinned", "BOOLEAN DEFAULT FALSE"),
-        ("announce_last_edit_at", "TIMESTAMP"),
-        ("reminder_milestone", "INTEGER DEFAULT 0"),
-        ("final_call_sent", "BOOLEAN DEFAULT FALSE"),
-    ):
-        if col_name not in cols:
-            with engine.begin() as conn:
-                conn.execute(text(f"ALTER TABLE lottery_rounds ADD COLUMN {col_name} {col_def}"))
-            logger.info(f"  🔧 已迁移: lottery_rounds 加列 {col_name}（公告落库）")
 
 
 def _ensure_index(existing_tables: set, table: str, name: str, columns: str,

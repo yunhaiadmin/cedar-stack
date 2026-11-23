@@ -320,7 +320,7 @@ async function handleRegister() {
     const redirect = postAuthTarget(route.query.redirect)
     try {
       const st = await tgApi.status()
-      if (st.required && !st.bound && st.guide_enabled) {
+      if (!st.bound && st.guide_enabled) {
         router.push({ path: '/tg-bind', query: route.query.redirect ? { redirect: safeRedirect(route.query.redirect) } : {} })
         return
       }

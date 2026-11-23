@@ -36,16 +36,17 @@ def _cfg(s, key):
 @pytest.mark.parametrize("key,value", [
     # 福利族键（welfare_vitality_renew_min / welfare_streak_renew_days）
     # 已随福利整族于 2026-11-14 删除、注册赠送键（register_gift_view_days）
-    # 已随注册不送体验于 2026-11-15 删除：改用福利配置端点现存同类
+    # 已随注册不送体验于 2026-11-15 删除、抽奖键（lottery_draw_interval_sec）
+    # 已随群抽奖整族于 2026-11-23 删除：改用福利配置端点现存同类
     # 校验键（范围/类型口径与原用例一一对应）。
-    ("lottery_draw_interval_sec", 0),
-    ("lottery_draw_interval_sec", 90000),
-    ("lottery_draw_interval_sec", "abc"),
+    ("bot_update_digest_interval_minutes", 0),
+    ("bot_update_digest_interval_minutes", 90000),
+    ("bot_update_digest_interval_minutes", "abc"),
     ("recharge_ratio", "0"),
-    ("lottery_draw_interval_sec", 1.5),
+    ("bot_update_digest_interval_minutes", 1.5),
     ("recharge_ratio", "-1"),
     ("recharge_quick_amounts", "10,abc"),
-    ("lottery_draw_interval_sec", "5"),
+    ("bot_update_digest_interval_minutes", "2000"),
 ])
 def test_welfare_config_rejects_invalid(db, key, value):
     s, admin = db
@@ -59,22 +60,22 @@ def test_welfare_config_invalid_writes_nothing(db):
     s, admin = db
     with pytest.raises(config_schema.ConfigValueError):
         welfare_admin.welfare_config_set(
-            {"bot_rate_limit_seconds": "10", "lottery_draw_interval_sec": "5"}, current_admin=admin, db=s)
+            {"bot_rate_limit_seconds": "10", "bot_update_digest_interval_minutes": "0"}, current_admin=admin, db=s)
     assert _cfg(s, "bot_rate_limit_seconds") is None
 
 
 def test_welfare_config_accepts_valid_and_empty_unsets(db):
     s, admin = db
     welfare_admin.welfare_config_set(
-        {"bot_rate_limit_seconds": 10, "welfare_require_tg_bind": True,
-         "lottery_require_group_member": False,
+        {"bot_rate_limit_seconds": 10, "bot_rankpush_enabled": True,
+         "bot_playrank_enabled": False,
          "recharge_ratio": "1.5"},
         current_admin=admin, db=s)
     assert _cfg(s, "bot_rate_limit_seconds") == "10"
-    # 2026-10-21：原 chat_points_enabled / lottery_enabled 已摘面板，
-    # 换保留的 digit 风格 bool 键（存 "1"/"0"）
-    assert _cfg(s, "welfare_require_tg_bind") == "1"
-    assert _cfg(s, "lottery_require_group_member") == "0"
+    # bool 键走 word 风格（存 "true"/"false"）：welfare 家族原 digit
+    # 风格 bool 键已随公益门禁/抽奖整族于 2026-11-23 删除
+    assert _cfg(s, "bot_rankpush_enabled") == "true"
+    assert _cfg(s, "bot_playrank_enabled") == "false"
     assert _cfg(s, "recharge_ratio") == "1.5"
     welfare_admin.welfare_config_set({"bot_rate_limit_seconds": ""}, current_admin=admin, db=s)
     assert _cfg(s, "bot_rate_limit_seconds") is None

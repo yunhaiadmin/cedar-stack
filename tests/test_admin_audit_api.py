@@ -185,7 +185,7 @@ def seeded(db):
     db.add(em.PoolRewardDetail(
         settlement_id=settlement.id, member_id=mid, user_id=7,
         counted_plays=20, active_days=9, raw_plays=22,
-        transfer_bytes=1000, points=25, xp=25, welfare_days=0,
+        transfer_bytes=1000, points=25, xp=25,
         status="paid", reason=None, points_log_id=77,
         granted_at=_at(5), created_at=_at(5)))
     db.commit()

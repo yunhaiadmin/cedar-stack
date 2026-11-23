@@ -1,5 +1,6 @@
-"""公益服 TG 绑定门禁测试
+"""TG 绑定机器测试（绑定码/状态/解绑/引导开关）。
 
+原「公益服强制绑定门禁」一组用例已随门禁整族于 2026-11-23 删除。
 全部用隔离的内存 SQLite，不碰生产库。
 """
 import os
@@ -8,8 +9,6 @@ os.environ.setdefault("DATABASE_TYPE", "sqlite")
 os.environ.setdefault("REDIS_ENABLED", "false")
 
 import pytest
-from datetime import datetime, timedelta
-from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -43,54 +42,6 @@ def _set_config(db, key, value):
     db.commit()
 
 
-def test_switch_off_bypass(db):
-    _set_config(db, "welfare_require_tg_bind", "0")
-    user = _make_user(db, "alice")
-    assert tg_bind.require_tg_bound(user, db) is user
-
-
-def test_bound_user_pass(db):
-    _set_config(db, "welfare_require_tg_bind", "1")
-    user = _make_user(db, "bob", telegram_id=12345)
-    assert tg_bind.require_tg_bound(user, db) is user
-
-
-def test_unbound_no_grace_403(db):
-    _set_config(db, "welfare_require_tg_bind", "1")
-    _set_config(db, "tg_bind_launch_at", (datetime.utcnow() - timedelta(days=30)).isoformat())
-    user = _make_user(db, "carol")
-    user.created_at = datetime.utcnow() - timedelta(days=60)
-    db.commit()
-    db.refresh(user)
-    with pytest.raises(HTTPException) as exc:
-        tg_bind.require_tg_bound(user, db)
-    assert exc.value.status_code == 403
-    assert exc.value.detail["code"] == "TG_NOT_BOUND"
-
-
-def test_old_user_in_grace_pass(db):
-    _set_config(db, "welfare_require_tg_bind", "1")
-    _set_config(db, "tg_bind_launch_at", (datetime.utcnow() - timedelta(days=1)).isoformat())
-    user = _make_user(db, "dave")
-    user.created_at = datetime.utcnow() - timedelta(days=60)
-    db.commit()
-    db.refresh(user)
-    assert tg_bind.require_tg_bound(user, db) is user
-
-
-def test_new_user_no_grace(db):
-    _set_config(db, "welfare_require_tg_bind", "1")
-    _set_config(db, "tg_bind_launch_at", (datetime.utcnow() - timedelta(days=30)).isoformat())
-    user = _make_user(db, "erin")
-    user.created_at = datetime.utcnow() - timedelta(days=1)
-    db.commit()
-    db.refresh(user)
-    with pytest.raises(HTTPException) as exc:
-        tg_bind.require_tg_bound(user, db)
-    assert exc.value.status_code == 403
-    assert exc.value.detail["code"] == "TG_NOT_BOUND"
-
-
 def test_generate_code(db):
     user = _make_user(db, "frank")
     code1 = tg_bind.generate_bind_code(db, user)
@@ -113,11 +64,10 @@ def test_unbind(db):
 
 
 def test_get_bind_status(db):
-    _set_config(db, "welfare_require_tg_bind", "1")
     user = _make_user(db, "heidi")
     status = tg_bind.get_bind_status(db, user)
     assert status["bound"] is False
-    assert status["required"] is True
+    assert "required" not in status and "in_grace" not in status
     user.telegram_id = 12345
     db.commit()
     db.refresh(user)

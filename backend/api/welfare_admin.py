@@ -4,8 +4,8 @@
 - GET/PUT /welfare/config          配置读写（机器人键）
 
 公益用户/资格发放端点已随公益资格整族于 2026-11-14 删除；
-群抽奖端点（/welfare/lottery/*）已随群抽奖整族于 2026-11-23 下线删除
-（数据表与模型保留，仅下线代码与入口）。
+群抽奖端点（/welfare/lottery/*）已随群抽奖整族于 2026-11-23 下线删除，
+抽奖配置键与模型随后清扫（数据表由部署后 DDL 收口）。
 """
 
 from __future__ import annotations
@@ -22,13 +22,13 @@ from backend.api.admin_core import admin_router, get_current_admin, _audit
 from backend.database import get_db
 
 
-# ==================== 配置（抽奖/机器人） ====================
+# ==================== 配置（机器人） ====================
 
 WELFARE_CONFIG_KEYS = {
-    # 公益资格族键（资格码配额/注册送资格/到期保留/活力保号/福利申请）
-    # 已随公益资格整族于 2026-11-14 删除；注册送查看凭证两键已随
-    # 「注册不送体验」（2026-11-15）失效删除。本字典只剩抽奖/机器人
-    # 等在用键（字典名与端点路径为历史名，不动以免断现行调用）。
+    # 公益资格族键已随公益资格整族于 2026-11-14 删除；注册送查看
+    # 凭证两键已随「注册不送体验」（2026-11-15）失效删除；抽奖族键
+    # 已随群抽奖整族于 2026-11-23 删除。本字典只剩机器人等在用键
+    # （字典名与端点路径为历史名，不动以免断现行调用）。
     # P0 统一货币体系：充值比例
     "recharge_ratio": "1.2",
     # C4 商店改造：快捷金额（2026-11-15 币种改美刀：USD 档位）
@@ -67,22 +67,6 @@ WELFARE_CONFIG_KEYS = {
     "bot_channel_guard_enabled": "true",
     "bot_channel_whitelist": "",
     "bot_leave_action": "none",
-    # TG 门禁：公益服能力（签到/积分/红包/抽奖）是否要求绑定 Telegram
-    "welfare_require_tg_bind": "1",
-    # 群抽奖：总开关默认开（关闭后不可新建活动），允许群逗号分隔、空=不限制
-    "lottery_group_ids": "",
-    # 群抽奖自动开奖：总开关默认开，扫描间隔默认 60 秒（最小 30），开奖通知默认开
-    "lottery_draw_interval_sec": "60",
-    # 三重门：身份门（参赛者必须在 TG 群里，默认开）/ 资格门（新号限制天数、每日参加上限，默认 0=不限制）
-    "lottery_require_group_member": "1",
-    "lottery_min_account_age_days": "0",
-    "lottery_max_joins_per_day": "0",
-    # 公告根治（2026-10-31）：公告自动置顶默认开；人数提醒台阶默认 25 人一条，
-    # 开奖前 30 分钟最后一叫；公告卡人数编辑节流 20 秒（0=关/不节流走读侧口径）
-    "lottery_announce_pin_enabled": "1",
-    "lottery_reminder_step": "25",
-    "lottery_final_call_minutes": "30",
-    "lottery_announce_edit_min_interval_sec": "20",
     # 注册后 TG 绑定引导页总开关
     # 求片 v2：总开关 / 附议 / 附议者入库通知（默认全开）
     # 发言积分/积分兑换/积分转账键已随货币于 2026-11-13 下线（原
@@ -95,7 +79,7 @@ def welfare_config_get(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """读取配置（抽奖/机器人/查看赠送键）"""
+    """读取配置（机器人键）"""
     result = {}
     for key, default in WELFARE_CONFIG_KEYS.items():
         cfg = db.query(models.SystemConfig).filter(models.SystemConfig.key == key).first()
