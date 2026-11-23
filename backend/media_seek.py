@@ -717,6 +717,12 @@ def ensure_vote(db: Session, user, request_id: int) -> dict:
     """
     if not vote_enabled(db):
         raise ValueError("附议功能已关闭")
+    # A-043：先锁用户行再读每日用量——只锁求片行挡不住同一用户并发对不同
+    # 求片附议（各锁各行、互不阻塞，先查后插可突破每日上限）。锁序统一
+    # 「用户行 → 求片行」，与 api/user.py 查重转附议的既有持锁顺序一致；
+    # 已持用户行锁的调用方在同事务内重复取锁无副作用。
+    from backend.api.economy import lock_user_row
+    lock_user_row(db, user.id)
     req = db.query(models.MovieRequest).filter(
         models.MovieRequest.id == request_id
     ).with_for_update().first()
@@ -771,6 +777,12 @@ def toggle_vote(db: Session, user, request_id: int) -> dict:
     """
     if not vote_enabled(db):
         raise ValueError("附议功能已关闭")
+    # A-043：先锁用户行再读每日用量——只锁求片行挡不住同一用户并发对不同
+    # 求片附议（各锁各行、互不阻塞，先查后插可突破每日上限）。锁序统一
+    # 「用户行 → 求片行」，与 api/user.py 查重转附议的既有持锁顺序一致；
+    # 已持用户行锁的调用方在同事务内重复取锁无副作用。
+    from backend.api.economy import lock_user_row
+    lock_user_row(db, user.id)
     # 行锁读求片行：校验与 vote_count 更新在同一行锁下，并发附议不丢数
     req = db.query(models.MovieRequest).filter(
         models.MovieRequest.id == request_id
