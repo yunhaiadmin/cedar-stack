@@ -222,11 +222,29 @@ def test_apply_fill_stage_record_prefers_real_imdb_over_blank_tmdb():
 
 # --- R5：_suppress_flood 批量 done 旁路 _clear_blank_identity ---
 def test_suppress_flood_clears_blank_identity(db):
-    it = _make_item(db, tmdb_id="  ", imdb_id="  ",
+    """已绑定行被批量翻 done 时，另一列的纯空白仍须清成 NULL。
+
+    2026-11-23 跟进：旧版用例用「两列全是空白」的行断言翻转——纯
+    空白身份等于无身份，修后该行根本不许被翻（见下一条用例）；本
+    用例改以「一列真号 + 一列空白」的行钉住 #1383 的原意：翻转行
+    的空白清理仍在，不许把空白带进 done。"""
+    it = _make_item(db, tmdb_id="123", imdb_id="  ",
                     last_scraped_at=datetime.now())
     n = enrich_worker._suppress_flood(db)
     assert n == 1
     db.refresh(it)
     assert it.enrich_status == "done"
-    assert it.tmdb_id is None
+    assert it.tmdb_id == "123"
     assert it.imdb_id is None
+
+
+def test_suppress_flood_keeps_blank_only_identity_pending(db):
+    """跟进（2026-11-23，45 条实证）：两列全是纯空白 = 无身份，
+    不许被 _suppress_flood 盖成 done——翻过去就是假完成签名
+    （done + 无身份 + attempts=0）。留 pending 等 worker 真跑一轮。"""
+    it = _make_item(db, tmdb_id="  ", imdb_id="  ",
+                    last_scraped_at=datetime.now())
+    n = enrich_worker._suppress_flood(db)
+    assert n == 0
+    db.refresh(it)
+    assert it.enrich_status == "pending"
