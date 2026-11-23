@@ -164,3 +164,62 @@ export const releaseGovernanceFreeze = (userId: number) =>
 /** 治理审计日志只读查询（无写接口） */
 export const fetchGovernanceAuditLogs = (params: { limit?: number; action?: string; actor_id?: number; target_id?: number } = {}) =>
   get<{ items: GovernanceAuditLogRow[] }>(`${G}/audit-logs`, params)
+
+// ==================== 可见性治理复核（L7，O-02 补缺） ====================
+/**
+ * 端点：backend/api/admin_media_governance.py，挂 admin_emby_router
+ * （前缀 /api/admin/emby，这里只写余下部分）。
+ *
+ * 硬语义：准入/驳回只追加决策行与事件、留处置痕迹，**不改变任何露出
+ * 结果**——条目露不露永远由案 A 判定函数现算。页面文案必须如实说明。
+ */
+const VG = '/emby/visibility-governance'
+
+export type VisibilityTaskStatus = 'pending' | 'approved' | 'rejected'
+
+export interface VisibilityTaskRow {
+  id: number
+  item_id: number
+  item_name: string
+  /** shelf 货架 / search 搜索 / direct 直达 */
+  surface: string
+  status: VisibilityTaskStatus | string
+  reason: string | null
+  decided_by: number | null
+  decided_at: string | null
+  decision_note: string | null
+  created_at: string | null
+}
+
+export interface VisibilityEventRow {
+  id: number
+  task_id: number | null
+  item_id: number | null
+  event_type: string
+  actor: number | null
+  detail: Record<string, unknown>
+  created_at: string | null
+}
+
+export interface VisibilityPage<T> {
+  items: T[]
+  total: number
+  page: number
+  page_size: number
+}
+
+/** 复核队列分页列表（最新在前；status 可筛 pending/approved/rejected） */
+export const fetchVisibilityTasks = (params: { status?: string; page?: number; page_size?: number } = {}) =>
+  get<VisibilityPage<VisibilityTaskRow>>(`${VG}/tasks`, params)
+
+/** 准入（仅 pending 可判，否则 409）；只留痕，不改变露出结果 */
+export const approveVisibilityTask = (id: number, note = '') =>
+  post<VisibilityTaskRow>(`${VG}/tasks/${id}/approve`, { note })
+
+/** 驳回（仅 pending 可判，否则 409）；只留痕，不改变露出结果 */
+export const rejectVisibilityTask = (id: number, note = '') =>
+  post<VisibilityTaskRow>(`${VG}/tasks/${id}/reject`, { note })
+
+/** 事件流水只读列表（最新在前；item_id 可筛某条目） */
+export const fetchVisibilityEvents = (params: { item_id?: number; page?: number; page_size?: number } = {}) =>
+  get<VisibilityPage<VisibilityEventRow>>(`${VG}/events`, params)
