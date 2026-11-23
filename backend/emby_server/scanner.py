@@ -7103,7 +7103,32 @@ def _apply_scan_identity(item, scan_file) -> None:
         item.identity_json = json.dumps(evidence, sort_keys=True, ensure_ascii=False)
 
 
-def _apply_implicit_series_tmdb(ctx, series, series_guid, stats) -> tuple:
+def _apply_scan_cast(db, item, details) -> None:
+    """扫描写库段落演员：把预取 details 里的 credits 写进 ``emby_people``。
+
+    走 enrich 的同一写入实现（``_apply_people_rows``，全仓只许一套）。
+    **id 守卫**：details 的 id 必须与条目最终落定的 tmdb_id 一致才写——
+    被绑定复核拒绝的命中详情（id 是别人的）绝不许把演员落到本条目上。
+    details 缺失/无 credits 时静默跳过（演员是增强信息）。
+    """
+    if db is None or not details:
+        return
+    if getattr(item, "metadata_locked", False):
+        return
+    det_id = str(details.get("id") or "")
+    item_id = str(getattr(item, "tmdb_id", None) or "")
+    if not det_id or det_id != item_id:
+        return
+    try:
+        from backend.emby_server import enrich_worker as _ew
+        from backend.emby_server.tmdb import cast_list as _cast_list
+        _ew._apply_people_rows(db, item, _cast_list(details))
+    except Exception as exc:  # noqa: BLE001 — 演员落库失败不影响扫描主流程
+        logger.debug("扫描演员落库失败 %s: %s", getattr(item, "name", ""), exc)
+
+
+def _apply_implicit_series_tmdb(ctx, series, series_guid, stats,
+                                db=None) -> tuple:
     """隐式 series 的 TMDB 搜索命中落库，返回 (applied, rejected)。
 
     A-097：绑定复核拒绝时 apply() 与 apply_details() 一律不执行——
@@ -7120,6 +7145,7 @@ def _apply_implicit_series_tmdb(ctx, series, series_guid, stats) -> tuple:
         # 沿旧口径，有详情无命中时仍补详情，不视为拒绝。
         if series_details:
             _tmdb.tmdb_client.apply_details(series, series_details)
+            _apply_scan_cast(db, series, series_details)
         return (False, False)
     rej = _tmdb.binding_reject_reason(
         series_details or series_hit, "series",
@@ -7133,6 +7159,7 @@ def _apply_implicit_series_tmdb(ctx, series, series_guid, stats) -> tuple:
     stats["scraped"] += 1
     if series_details:
         _tmdb.tmdb_client.apply_details(series, series_details)
+        _apply_scan_cast(db, series, series_details)
     return (True, False)
 
 
@@ -7450,7 +7477,7 @@ def _scan_library_body(db: Session, library: emby_models.Library,
                     # B 方案补全：本批为隐式 series 预取的 TMDB 搜索命中先落库
                     # （补 tmdb_id/简介/海报/评分/别名；NFO 文本随后覆盖，保证 NFO 优先）
                     series_tmdb_applied, _series_rej = _apply_implicit_series_tmdb(
-                        ctx, series, series_guid, stats)
+                        ctx, series, series_guid, stats, db=db)
                     if (series_guid in ctx.series_tmdb_searched
                             and not series.tmdb_id and not series.last_scraped_at
                             and not _series_rej):
@@ -7475,6 +7502,11 @@ def _scan_library_body(db: Session, library: emby_models.Library,
                                 _tmdb.tmdb_client.apply_images(series, details)
                         nfo_lib.apply_nfo(series, series_nfo, "series", db=db)
                         stats["nfo"] = stats.get("nfo", 0) + 1
+                        # NFO 没带演员时，预取的 TMDB 详情 credits 补上
+                        # （apply_nfo 已写过演员则幂等跳过新增、只补空图）。
+                        _apply_scan_cast(
+                            db, series,
+                            ctx.nfo_series_details.get(series_guid))
 
                     season_guid = _pending.season_guid
                     season_item = _ensure_season_row(
@@ -7589,6 +7621,12 @@ def _scan_library_body(db: Session, library: emby_models.Library,
                             if needs_repair:
                                 item.repair_requested_at = None
                                 stats["repaired"] = stats.get("repaired", 0) + 1
+                    # 演员表（2026-11-24 缺口 #1）：预取详情自带 credits，
+                    # 此前写库段只落条目字段、credits 整段丢弃——批量入库
+                    # 条目演员恒空的根因。NFO 分支已由 apply_nfo 写过时
+                    # 幂等（只补空图）；id 守卫在 _apply_scan_cast 内，
+                    # 被复核拒绝的命中详情不许落演员。
+                    _apply_scan_cast(db, item, _pending.tmdb_details)
 
                 # 剧集海报回退：集 → 季 → 剧集（避免整库集图空白）
                 if item_type == "episode" and series is not None:

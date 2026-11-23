@@ -1245,12 +1245,13 @@ def _collect_multisource(item: Any, kind: str, result: dict) -> bool:
     # 与字段不连坐；判不出（详情瞬态）同样摘除留痕，本轮不落 tmdb、
     # 下轮重采再议——绝不放行未复核的桥 tmdb 编号。
     _ms_tmdb = (collected.external_ids or {}).get("tmdb")
+    _ms_details = None
+    _ms_reason: Optional[str] = None
     if (_ms_tmdb
             and str(_ms_tmdb) != str(getattr(item, "tmdb_id", None) or "")
             and kind in ("series", "movie")):
         from backend.emby_server import tmdb as _ms_tmdb_mod
         if _ms_tmdb_mod.tmdb_client.configured:
-            _ms_reason: Optional[str] = None
             try:
                 _ms_details = _ms_tmdb_mod.tmdb_client.details(
                     str(_ms_tmdb), kind)
@@ -1278,6 +1279,17 @@ def _collect_multisource(item: Any, kind: str, result: dict) -> bool:
                     _ms_tmdb, _ms_reason)
                 collected.external_ids.pop("tmdb", None)
                 result["multisource_tmdb_rejected"] = _ms_reason
+    if _ms_details and not _ms_reason and not collected.cast:
+        # 桥复核顺手拉到的 details 自带 credits：过门后把演员表并入归并
+        # 结果，写库阶段随 multisource 一起落 emby_people——零新增请求。
+        # 被门拒绝（_ms_reason 非空）时编号已摘除，演员绝不连坐落库。
+        try:
+            from backend.emby_server.tmdb import cast_list as _ms_cast_list
+            _ms_rows = _ms_cast_list(_ms_details)
+            if _ms_rows:
+                collected.cast = _ms_rows
+        except Exception:  # noqa: BLE001 — 演员是增强信息，不影响归并落账
+            pass
     result["multisource"] = collected.as_dict()
     return True
 
@@ -2542,6 +2554,17 @@ def _enrich_fetch_tmdb_post(result: dict, item: Any, tmdb_ctx: dict,
                                     _bgm_interval)
                             except Exception as exc:  # noqa: BLE001
                                 logger.debug("Bangumi 兜底失败 %s: %s", item.name, exc)
+                        if result.get("bangumi_hit"):
+                            # Bangumi 搜索不返回演职员：编号已经命中确认，
+                            # 顺手拉一次 characters（1 请求/条），写库阶段
+                            # 随兜底落库一起写 emby_people。失败静默。
+                            try:
+                                result["bangumi_cast"] = (
+                                    altmeta.fetch_bangumi_characters(
+                                        str(result["bangumi_hit"].get("id") or ""),
+                                        _bgm_interval))
+                            except Exception:  # noqa: BLE001
+                                result["bangumi_cast"] = []
     except Exception as exc:  # noqa: BLE001
         logger.warning("补全 TMDB 失败 %s: %s", item.file_path, exc)
         result["ok"] = False
@@ -2574,6 +2597,14 @@ def _enrich_fetch_tmdb_post(result: dict, item: Any, tmdb_ctx: dict,
                  if c.get("image")]
     if not cast_urls:
         cast_urls = [c["image"] for c in _douban_cast_rows(result.get("douban_cast"))
+                     if c.get("image")]
+    if not cast_urls:
+        cast_urls = [c["image"] for c in (result.get("bangumi_cast") or [])
+                     if c.get("image")]
+    if not cast_urls:
+        # 多源归并的演员（Bangumi characters / 桥复核 details 的 credits）
+        cast_urls = [c["image"] for c in
+                     ((result.get("multisource") or {}).get("cast") or [])
                      if c.get("image")]
     result["images_prewarmed"] = prewarm_images(
         result.get("tmdb_hit"), result.get("tmdb_details"),
@@ -2621,6 +2652,72 @@ def _douban_cast_rows(celebs: Optional[list]) -> list[dict]:
     return out
 
 
+def _kick_person_refresh_if_missing(missing_image: bool) -> None:
+    """有演员没头像：唤醒演员补全线程（TMDB 人物 / 豆瓣兜底），不在写事务里发请求。"""
+    if not missing_image:
+        return
+    try:
+        from backend.emby_server import refresh_person_worker as _rpw
+        _rpw.kick()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _apply_people_rows(db, item: Any, rows: list, *,
+                       backfill_existing: bool = True) -> bool:
+    """把归一化演员行写入 ``emby_people``——全仓唯一的 people 行写入实现。
+
+    行形状与 TMDB ``cast_list`` 一致（name/role/image/sort_order/person_id）：
+    TMDB credits、豆瓣演职员、Bangumi characters、多源归并都只许走这里，
+    不许另起第二套。幂等：条目已有演员行时不新增——``backfill_existing``
+    为真时只按名字补空头像/空 TMDB id（TMDB 口径）；为假时整表跳过
+    （豆瓣兜底口径：已有行说明更权威的来源写过，兜底不碰）。
+    返回 True 表示本轮确实动了行（新增或补空）。失败只记日志返回 False，
+    演员表是增强信息，不影响主流程。
+    """
+    if not rows:
+        return False
+    try:
+        existing = db.query(em.EmbyPerson).filter(
+            em.EmbyPerson.item_id == item.id).all()
+        missing_image = False
+        touched = False
+        if existing:
+            if not backfill_existing:
+                return False
+            # 已有演员行不重写（防重复），但把空着的头像 / TMDB id 按名字补上：
+            # 以前演员表写一次就再也不更新，首刮时 TMDB 还没头像的演员永远是占位。
+            by_name = {str(c.get("name") or ""): c for c in rows}
+            for p in existing:
+                c = by_name.get(p.name)
+                if c and c.get("image") and not p.image:
+                    p.image = str(c["image"])[:1024]
+                    touched = True
+                if c and c.get("person_id") and not p.person_tmdb_id:
+                    p.person_tmdb_id = str(c["person_id"])[:32]
+                    touched = True
+                missing_image = missing_image or not p.image
+        else:
+            for c in rows:
+                if not str(c.get("name") or "").strip():
+                    continue
+                db.add(em.EmbyPerson(
+                    item_id=item.id,
+                    name=str(c["name"])[:200],
+                    role=str(c.get("role") or "")[:200],
+                    image=str(c.get("image") or "")[:1024],
+                    sort_order=int(c.get("sort_order") or 0),
+                    person_tmdb_id=str(c.get("person_id") or "")[:32],
+                ))
+                touched = True
+                missing_image = missing_image or not c.get("image")
+        _kick_person_refresh_if_missing(missing_image)
+        return touched
+    except Exception as exc:  # noqa: BLE001 — 演员落库失败不该影响主流程
+        logger.debug("演员落库失败 %s: %s", getattr(item, "name", ""), exc)
+        return False
+
+
 def _apply_douban_cast(db, item: Any, celebs: Optional[list]) -> None:
     """写库阶段：豆瓣兜底命中、TMDB 没给演员表时，用豆瓣演职员表写 ``emby_people``。
 
@@ -2629,24 +2726,7 @@ def _apply_douban_cast(db, item: Any, celebs: Optional[list]) -> None:
     rows = _douban_cast_rows(celebs)
     if not rows:
         return
-    try:
-        exists = db.query(em.EmbyPerson.id).filter(
-            em.EmbyPerson.item_id == item.id).first()
-        if exists:
-            return
-        for c in rows:
-            db.add(em.EmbyPerson(
-                item_id=item.id, name=c["name"][:200], role=c["role"][:200],
-                image=c["image"][:1024], sort_order=c["sort_order"],
-                person_tmdb_id=""))
-        if any(not c["image"] for c in rows):
-            try:
-                from backend.emby_server import refresh_person_worker as _rpw
-                _rpw.kick()
-            except Exception:  # noqa: BLE001
-                pass
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("豆瓣演员落库失败 %s: %s", getattr(item, "name", ""), exc)
+    _apply_people_rows(db, item, rows, backfill_existing=False)
 
 
 def _apply_cast(db, item: Any, details: Optional[dict]) -> None:
@@ -2660,45 +2740,12 @@ def _apply_cast(db, item: Any, details: Optional[dict]) -> None:
     """
     if not details:
         return
+    from backend.emby_server.tmdb import cast_list as _cast_list
     try:
-        from backend.emby_server.tmdb import cast_list as _cast_list
-        cast = _cast_list(details)
-        if not cast:
-            return
-        existing = db.query(em.EmbyPerson).filter(
-            em.EmbyPerson.item_id == item.id).all()
-        missing_image = False
-        if existing:
-            # 已有演员行不重写（防重复），但把空着的头像 / TMDB id 按名字补上：
-            # 以前演员表写一次就再也不更新，首刮时 TMDB 还没头像的演员永远是占位。
-            by_name = {c["name"]: c for c in cast}
-            for p in existing:
-                c = by_name.get(p.name)
-                if c and c.get("image") and not p.image:
-                    p.image = str(c["image"])[:1024]
-                if c and c.get("person_id") and not p.person_tmdb_id:
-                    p.person_tmdb_id = str(c["person_id"])[:32]
-                missing_image = missing_image or not p.image
-        else:
-            for c in cast:
-                db.add(em.EmbyPerson(
-                    item_id=item.id,
-                    name=str(c["name"])[:200],
-                    role=str(c.get("role") or "")[:200],
-                    image=str(c.get("image") or "")[:1024],
-                    sort_order=int(c.get("sort_order") or 0),
-                    person_tmdb_id=str(c.get("person_id") or "")[:32],
-                ))
-                missing_image = missing_image or not c.get("image")
-        if missing_image:
-            # 有演员没头像：唤醒演员补全线程（TMDB 人物 / 豆瓣兜底），不在写事务里发请求
-            try:
-                from backend.emby_server import refresh_person_worker as _rpw
-                _rpw.kick()
-            except Exception:  # noqa: BLE001
-                pass
-    except Exception as exc:  # noqa: BLE001 — 演员落库失败不该影响主流程
-        logger.debug("演员落库失败 %s: %s", getattr(item, "name", ""), exc)
+        rows = _cast_list(details)
+    except Exception:  # noqa: BLE001 — 解析 credits 抛错同样不许拖垮主流程
+        return
+    _apply_people_rows(db, item, rows)
 
 
 def _parent_should_wait(db, item: Any) -> bool:
@@ -3145,6 +3192,25 @@ def _enrich_apply(db, item: Any, fetched: dict) -> None:
         nfo_lib.apply_nfo(item, nfo_data, kind,
                                           skip_overview=_ep_skip_overview,
                                           db=db)
+    elif (fetched.get("tmdb_details") and getattr(item, "tmdb_id", None)
+            and not fetched.get("tmdb_hit")
+            and not fetched.get("tmdb_gate_rejected")):
+        # 存量详情分支（2026-11-24 缺口 #3）：条目早已绑 tmdb_id、本轮搜索
+        # 未命中、详情是靠 existing_id 兜底拉回的（_tmdb_work / 批量 Round 3
+        # 同口径）——上面三个分支一个都不进，此前 apply_details 从不执行，
+        # 这批条目的简介/类型/评分永远补不上（终态 none 后经松绑修复/手动
+        # 识别绑上编号的 3,300 部剧正是这条路；演员靠下面 3.5 的无条件
+        # _apply_cast 幸免）。details 的 id 即条目自己的编号（抓取层按
+        # existing_id 取的），不是新绑定，不过复核门。apply_details 是
+        # 只填空口径（enrich_tmdb_text_fill_only），不会覆盖已有文本。
+        tmdb_client.apply_details(item, fetched["tmdb_details"])
+        if not (item.poster_path or item.primary_image_url):
+            tmdb_client.apply_images(item, fetched["tmdb_details"],
+                                     images_lang=fetched.get("tmdb_images_lang"))
+        if item.metadata_source == "none":
+            # 标记纠正：详情已真实落库，'none'（搜过无果）不再成立；
+            # 不纠正的话后续一切按 source 的统计/巡检都继续误判这批条目。
+            item.metadata_source = "tmdb"
 
     # 3.5 演员表（v2.51.0）：details 自带 credits；幂等，只在没有演员行时写。
     _apply_cast(db, item, fetched.get("tmdb_details"))
@@ -3332,6 +3398,9 @@ def _enrich_apply(db, item: Any, fetched: dict) -> None:
         except Exception as exc:  # noqa: BLE001 — 兜底落库失败不该影响主流程
             logger.debug("兜底落库失败 %s: %s", getattr(item, "name", ""), exc)
             alt_hit = None
+    if alt_hit and alt_source == "bangumi" and fetched.get("bangumi_cast"):
+        # Bangumi 演职员（IO 阶段按编号拉的 characters）：走唯一写入实现。
+        _apply_people_rows(db, item, fetched["bangumi_cast"])
 
     # Phase 6b：多源归并结果落库（与豆瓣兜底同一个位置）。result["multisource"]
     # 有两个来源：TMDB 没命中时的兜底采集，以及 TMDB 已认出但缺字段时的补缺
@@ -3339,12 +3408,12 @@ def _enrich_apply(db, item: Any, fetched: dict) -> None:
     # 只补缺项；用户主动「修复」时允许覆盖（fill_missing_only 跟 needs_repair 反向）。
     multi = fetched.get("multisource")
     multi_fields = (multi or {}).get("fields") or {}
-    if multi_fields:
+    if multi_fields or (multi or {}).get("cast"):
         try:
             from backend.emby_server.metasources import engine as _ms_engine
             _ms_engine.apply_to_item(
                 item, _ms_engine.CollectResult.from_dict(multi),
-                fill_missing_only=not needs_repair)
+                fill_missing_only=not needs_repair, db=db)
             if not item.last_scraped_at:
                 item.last_scraped_at = datetime.now()
         except Exception as exc:  # noqa: BLE001 — 多源落库失败不该影响主流程
@@ -5926,6 +5995,70 @@ def field_missing_stats(db) -> dict:
         "field_completeness_enabled": bool(
             enrich_tuning_value(CFG_ENRICH_FIELD_COMPLETENESS, db)),
     }
+
+
+def enqueue_details_refill(db, *, limit: int = 500,
+                           dry_run: bool = False) -> dict:
+    """定向补拉入队：已绑 TMDB 编号、却从未真正拉过详情的存量顶层条目。
+
+    人群口径：series/movie + ``enrich_status='done'`` + 未合并 + 未锁定
+    + ``tmdb_id`` 非空 + ``enrich_field_refill_done`` 非真，且仍缺可补
+    字段（简介空 / 类型空 / 评分空 / 无演员行，任一）。
+
+    为什么需要它：Step-5 的字段补队只在 ``_enrich_apply`` 瞬间触发，
+    ``_searched_no_hit`` 轮次整段跳过、done 存量永不重入——终态 none 后
+    经松绑修复/手动识别绑上编号的条目（生产实测剧集约 3,300 部）永远
+    等不到补拉。这里按 Step-5 同口径把它们翻回 pending：低优先级
+    （``ENRICH_PRIORITY_FIELD_REFILL``）、标记 ``refill_done=True`` 保证
+    只跑这一轮；工人认领后走现行抓取——搜索未命中时按 existing_id 兜底
+    拉详情（只填空 + 写演员，见 ``_enrich_apply`` 的存量详情分支），
+    每条约 1 次搜索 + 1 次详情请求，不新增搜索面。幂等：入队即置
+    ``refill_done``，重复执行匹配数为 0。
+
+    运维入口：``scripts/refill_bound_details.py``（默认 dry-run）。
+    返回 ``{"matched", "enqueued", "by_type", "ids"}``；dry_run 只计数
+    不写库（ids/by_type 为本批将入队的样本口径）。
+    """
+    from sqlalchemy import func as _func, or_ as _or
+
+    def _blank(col):
+        return _or(col.is_(None), _func.trim(col) == "")
+
+    has_cast = (db.query(em.EmbyPerson.id)
+                .filter(em.EmbyPerson.item_id == em.MediaItem.id).exists())
+    q = (db.query(em.MediaItem)
+         .filter(em.MediaItem.item_type.in_(["series", "movie"]),
+                 em.MediaItem.enrich_status == "done",
+                 em.MediaItem.deleted_at.is_(None),
+                 em.MediaItem.merged_into_id.is_(None),
+                 em.MediaItem.metadata_locked.isnot(True),
+                 em.MediaItem.tmdb_id.isnot(None),
+                 _func.trim(em.MediaItem.tmdb_id) != "",
+                 em.MediaItem.enrich_field_refill_done.isnot(True),
+                 _or(_blank(em.MediaItem.overview),
+                     _blank(em.MediaItem.genres),
+                     em.MediaItem.community_rating.is_(None),
+                     ~has_cast))
+         .order_by(em.MediaItem.id))
+    total = q.with_entities(_func.count(em.MediaItem.id)).scalar() or 0
+    rows = q.limit(max(0, int(limit))).all()
+    by_type: dict = {}
+    for it in rows:
+        by_type[it.item_type] = by_type.get(it.item_type, 0) + 1
+    if not dry_run:
+        for it in rows:
+            it.enrich_status = "pending"
+            it.enrich_priority = ENRICH_PRIORITY_FIELD_REFILL
+            it.enrich_field_refill_done = True
+            it.enrich_attempts = 0
+            it.enrich_next_retry_at = None
+            it.enrich_last_error = None
+        if rows:
+            db.flush()
+    return {"matched": int(total),
+            "enqueued": 0 if dry_run else len(rows),
+            "by_type": by_type,
+            "ids": [it.id for it in rows]}
 
 
 def _episode_lacks_own_data(ep: Any, parent: Any) -> bool:

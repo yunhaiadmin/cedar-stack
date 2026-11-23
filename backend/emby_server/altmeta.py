@@ -54,6 +54,7 @@ def _breaker_status_of(exc: Exception) -> Optional[int]:
 
 SUGGEST_URL = "https://movie.douban.com/j/subject_suggest"
 BANGUMI_SEARCH_URL = "https://api.bgm.tv/search/subject"
+BANGUMI_API_BASE = "https://api.bgm.tv/v0"
 CONFIG_ENABLED = "altmeta_enabled"
 # 注意：这个 key 的语义一旦确定就不能再改。PR #178 曾把它的语义从
 # "每分钟请求数"改成"两次请求最小间隔秒数"，沿用同名 key 会导致老配置
@@ -314,3 +315,77 @@ def search_bangumi(title: str, year: Optional[int] = None, kind: str = "series",
             "url": str(it.get("url") or ""),
         }
     return None
+
+
+def _bgm_image(images) -> str:
+    img = images or {}
+    return str(img.get("medium") or img.get("large") or img.get("small") or "")
+
+
+def fetch_bangumi_characters(subject_id: str,
+                             min_interval: float = DEFAULT_MIN_INTERVAL) -> list:
+    """拉 Bangumi 条目的演职员表（v0 ``subjects/{id}/characters``）。
+
+    搜索接口不返回演职员——这是 Bangumi 路径唯一能拿到演员表的地方，
+    只在条目已确认绑定 bangumi 编号后按编号拉（1 次请求/条目）。
+    返回与 TMDB ``cast_list`` 同形状的行（name/role/image/sort_order/
+    person_id）：name=出演者（声优/演员）、role=角色名。某个角色没挂
+    出演者时先跳过；**全部**角色都没有出演者时退回角色名本身兜底
+    （name=角色名、role 留空），好过整表为空。失败/熔断一律返回 []，
+    演员是增强信息，绝不让它中断补全主流程。
+    """
+    sid = str(subject_id or "").strip()
+    if not sid:
+        return []
+    if not provider_breaker.allow("bangumi"):
+        logger.debug("[altmeta] Bangumi 熔断中，跳过 characters %s", sid)
+        return []
+    _bgm_limiter.acquire(min_interval)
+    url = f"{BANGUMI_API_BASE}/subjects/{urllib.parse.quote(sid)}/characters"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": _UA})
+        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+            data = json.loads(resp.read().decode("utf-8", "ignore"))
+    except Exception as exc:  # noqa: BLE001 — 演员补拉失败不影响主流程
+        provider_breaker.record_failure(
+            "bangumi", status=_breaker_status_of(exc), error=str(exc))
+        logger.debug("[altmeta] Bangumi characters 失败 %s: %s", sid, exc)
+        return []
+    provider_breaker.record_success("bangumi")
+    if not isinstance(data, list):
+        return []
+    from backend.emby_server.tmdb import TMDB_CAST_LIMIT
+    actor_rows: list = []
+    character_rows: list = []
+    seen: set = set()
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        char_name = str(entry.get("name") or "").strip()
+        if not char_name:
+            continue
+        actors = [a for a in (entry.get("actors") or [])
+                  if isinstance(a, dict) and str(a.get("name") or "").strip()]
+        if not actors:
+            key = (char_name, "")
+            if key not in seen:
+                seen.add(key)
+                character_rows.append({
+                    "name": char_name, "role": "",
+                    "image": _bgm_image(entry.get("images")),
+                    "sort_order": len(character_rows), "person_id": ""})
+            continue
+        for actor in actors:
+            actor_name = str(actor.get("name") or "").strip()
+            key = (actor_name, char_name)
+            if key in seen:
+                continue
+            seen.add(key)
+            actor_rows.append({
+                "name": actor_name, "role": char_name,
+                "image": _bgm_image(actor.get("images")),
+                "sort_order": len(actor_rows), "person_id": ""})
+    rows = actor_rows or character_rows
+    for i, row in enumerate(rows[:TMDB_CAST_LIMIT]):
+        row["sort_order"] = i
+    return rows[:TMDB_CAST_LIMIT]
