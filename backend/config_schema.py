@@ -35,13 +35,19 @@ def normalize(key: str, spec: tuple, value: Any, bool_style: str = "word") -> Op
     同一个家族里不同键可能用不同存储风格（如告警总开关存 1/0），风格必须跟键走。
     ("str",): 自由字符串，不做类型校验（空串/None → None = 未设置）；
     ("enum", allowed): 白名单枚举，命中才收。
-    ("raw",): 原样存库的字符串：str(value) 直接落库，**空串/None 也照存**——
+    ("raw",): 原样存库的字符串：str(value) 直接落库，**空串也照存**——
     与 ("str",) 的"空串=未设置（删行）"不同。专为 economy 家族的 str/secret
     键保留：历史行为就是 str(value) 原样存（含空串存行），迁移时一字不变。
+    例外（A-046）：None 仍按全局约定返回 None（未设置、删行）——早期实现
+    把 None 也 str() 成字面 "None" 存库，site_url 等键会被读成真值 "None"，
+    与 save_config 的 None=删行约定相悖，已改判。
     """
     kind = spec[0]
     if kind == "raw":
-        # 注意：必须在下面的"空串/None → None"早退之前处理——raw 的空串是要存库的。
+        # 注意：必须在下面的"空串 → None"早退之前处理——raw 的空串是要存库的。
+        # 但 None 例外（A-046）：返回 None 走删行，不许 str(None) 存成字面 "None"。
+        if value is None:
+            return None
         return str(value)
     if value is None or (isinstance(value, str) and value.strip() == ""):
         return None
