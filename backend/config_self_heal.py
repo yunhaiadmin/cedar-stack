@@ -14,6 +14,9 @@ SystemConfig 新增键同样靠人工补行。
    指到假域名；
 2. **SystemConfig 自愈**：把代码各模块定义的 ``(key, 默认值)`` 注册表
    拿出来比对，数据库里没有的 key 插入默认值行。
+3. **钥匙回填**：钥匙类配置（见 ``SECRET_REFILL``）在服务器侧 env 里留
+   一份持久副本；DB 里该键为空时从 env 回填，已有非空值绝不覆盖
+   （管理面板是日常真源，env 只是空库重建时的恢复落点）。
 
 纪律（与 AGENTS.md「横切能力只许一套」一致）：
 
@@ -639,16 +642,103 @@ def detect_placeholder_config(db=None) -> list[str]:
         logger.error("[配置自愈] %s", problem)
     return problems
 
+# ---------------------------------------------------------------------------
+# 钥匙类配置 env 回填（SECRET_REFILL）
+# ---------------------------------------------------------------------------
+# 教训（2026-11-21）：旧服务器数据全失、空库重建后，只存 DB 的集成钥匙
+# 一并丢失——TMDB 钥匙靠运维从别处找到副本才恢复，OMDb / TheTVDB /
+# 豆瓣 Frodo / SMTP 至今缺失（找回密码发不出邮件）。
+#
+# 机制：钥匙类配置在服务器侧 env 文件（secrets.env，不进仓库）里留一份
+# 持久副本；启动自愈时 DB 里该键无行或值为空，就从 env 回填。
+# DB 已有非空值绝不覆盖——管理面板是日常真源，env 只是灾后恢复落点。
+#
+# 注册表：(DB 配置键, env 变量名, 说明)。env 名规则 = 键名大写，逐个写明
+# 是为了让静态扫描 / 文档能对上号，不靠运行时拼名。
+# 豆瓣 Frodo 不在此表：sources.py 里 douban 源没有 key_storage（不落 DB），
+# 其自备 key 本来就只读 env ``DOUBAN_FRODO_APIKEY``
+# （emby_server/metasources/douban_frodo.py），env 副本即唯一落点。
+SECRET_REFILL: tuple[tuple[str, str, str], ...] = (
+    ("telegram_bot_token", "TELEGRAM_BOT_TOKEN", "Telegram 机器人令牌"),
+    ("payment_gateway_url", "PAYMENT_GATEWAY_URL", "支付网关地址（易支付）"),
+    ("payment_partner_id", "PAYMENT_PARTNER_ID", "支付商户 ID"),
+    ("payment_partner_key", "PAYMENT_PARTNER_KEY", "支付商户密钥"),
+    ("email_enabled", "EMAIL_ENABLED", "邮件通知开关"),
+    ("email_smtp_host", "EMAIL_SMTP_HOST", "SMTP 服务器"),
+    ("email_smtp_port", "EMAIL_SMTP_PORT", "SMTP 端口"),
+    ("email_smtp_user", "EMAIL_SMTP_USER", "SMTP 账号"),
+    ("email_smtp_password", "EMAIL_SMTP_PASSWORD", "SMTP 密码 / 授权码"),
+    ("email_from_name", "EMAIL_FROM_NAME", "发件人显示名"),
+    ("email_from_email", "EMAIL_FROM_EMAIL", "发件地址"),
+    ("tmdb_api_keys", "TMDB_API_KEYS", "TMDB API Key（多个换行/逗号分隔）"),
+    ("meta_source_keys_omdb", "META_SOURCE_KEYS_OMDB", "OMDb 密钥池"),
+    ("meta_source_keys_tvdb", "META_SOURCE_KEYS_TVDB", "TheTVDB 密钥池"),
+)
+
+
+def heal_secrets_from_env(db, environ=None) -> list[str]:
+    """钥匙回填：env 非空且 DB 该键无行/值为空时写入 DB；返回回填的 key 列表。
+
+    - DB 已有非空值 → 跳过（绝不覆盖，管理面板是日常真源）；
+    - env 未设或为空 → 跳过（不写空行，SystemConfig 自愈已负责补默认行）；
+    - 写入走 ``integrations.store.write_values`` 统一入口，不另起一套；
+    - 日志只记 key 名与「已回填/已跳过」，绝不记值；
+    - 异常内部消化（回滚 + 记日志），不阻断启动。
+    """
+    from backend import models
+    from backend.integrations import store
+
+    env = os.environ if environ is None else environ
+    keys = [k for k, _, _ in SECRET_REFILL]
+    try:
+        rows = {
+            row.key: row.value
+            for row in db.query(models.SystemConfig)
+            .filter(models.SystemConfig.key.in_(keys)).all()
+        }
+        to_fill: dict[str, str] = {}
+        descriptions: dict[str, str] = {}
+        for key, env_name, desc in SECRET_REFILL:
+            raw = env.get(env_name)
+            value = raw.strip() if isinstance(raw, str) else ""
+            if not value:
+                logger.info("[配置自愈] 钥匙回填跳过 %s（env %s 未设置或为空）",
+                            key, env_name)
+                continue
+            current = rows.get(key)
+            if current is not None and str(current).strip():
+                logger.info("[配置自愈] 钥匙回填跳过 %s（DB 已有值）", key)
+                continue
+            to_fill[key] = value
+            descriptions[key] = desc
+        if not to_fill:
+            return []
+        store.write_values(db, to_fill, descriptions)
+        db.commit()
+    except Exception:  # noqa: BLE001 — 回填失败不能拦住启动（下次启动会重试）
+        logger.warning("[配置自愈] 钥匙回填失败（已跳过）", exc_info=True)
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return []
+    for key in to_fill:
+        logger.info("[配置自愈] 钥匙已回填 %s（来自 env）", key)
+    logger.info("[配置自愈] 钥匙回填本次共回填 %d 项", len(to_fill))
+    return list(to_fill)
+
 
 def run_config_self_heal(db=None, example_path: Path = ENV_EXAMPLE,
                          env_path: Path = ENV_FILE) -> dict:
-    """启动时调用的统一入口：先补 .env，再补 system_configs。
+    """启动时调用的统一入口：先补 .env，再补 system_configs，最后回填钥匙。
 
     任何一步失败都只记日志、不抛异常、不阻断启动。
     db 为空时自己开一个 Session（用完关闭）。
     """
-    result: dict[str, list[str]] = {"env_healed": [], "db_healed": [],
-                                    "placeholder_config": []}
+    result: dict[str, list[str]] = {
+        "env_healed": [], "db_healed": [], "secrets_refilled": [],
+        "placeholder_config": [],
+    }
     try:
         result["env_healed"] = heal_env_file(example_path, env_path)
     except Exception:  # noqa: BLE001 — 自愈失败不能拦住启动
@@ -669,13 +759,20 @@ def run_config_self_heal(db=None, example_path: Path = ENV_EXAMPLE,
             result["placeholder_config"] = detect_placeholder_config(db)
         except Exception:  # noqa: BLE001
             logger.warning("[配置自愈] 占位配置检出失败（已跳过）", exc_info=True)
+        try:
+            result["secrets_refilled"] = heal_secrets_from_env(db)
+        except Exception:  # noqa: BLE001
+            logger.warning("[配置自愈] 钥匙回填失败（已跳过）", exc_info=True)
     finally:
         if own_session:
             db.close()
 
-    n_env, n_db = len(result["env_healed"]), len(result["db_healed"])
-    if n_env or n_db:
-        logger.info("[配置自愈] 完成：.env 补 %d 项，system_configs 补 %d 项", n_env, n_db)
+    n_env = len(result["env_healed"])
+    n_db = len(result["db_healed"])
+    n_secret = len(result["secrets_refilled"])
+    if n_env or n_db or n_secret:
+        logger.info("[配置自愈] 完成：.env 补 %d 项，system_configs 补 %d 项，钥匙回填 %d 项",
+                    n_env, n_db, n_secret)
     else:
         logger.info("[配置自愈] 检查完成，无缺失项")
     return result
