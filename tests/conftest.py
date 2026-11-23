@@ -216,6 +216,32 @@ def _reset_claim_groups_cache():
 
 
 @pytest.fixture(autouse=True)
+def _reset_tmdb_client_key_pool():
+    """TMDB 密钥池是进程全局单例（tmdb_client.api_keys）：写配置类用例
+    （metasources write_config 写 tmdb 钥匙、后台加钥匙接口）会经
+    refresh_keys 把测试假钥匙写进全局池，文件内不还原就漏给同进程
+    后跑的文件——2026-11-23 #456/#458 全量随机红实证：test_meta_sources
+    的假钥匙 abcdef1234 漏进 test_douban_ban 的全流程用例，TMDB 被
+    误判已配置、401 瞬态把条目分流去失败重排（priority 0 ≠ -20 安静
+    补刮），xdist loadfile 下同 worker 撞上才红、单跑永不复现。
+    每测快照/还原（与 test_meta_key_storage 的 keys_pool 同口径），
+    钥匙只许在用例内生效。"""
+    try:
+        from backend.emby_server import tmdb as _tmdb
+        _client = _tmdb.tmdb_client
+        _keys = list(_client.api_keys)
+        _source = _client.key_source
+    except Exception:
+        yield
+        return
+    yield
+    try:
+        _client._set_keys(_keys, _source)
+    except Exception:
+        pass
+
+
+@pytest.fixture(autouse=True)
 def _reset_config_snapshot_caches():
     """挂载 / 服的 TTL 快照缓存（减负 A4）同理：只按 id 键、不分库，
     测试里每个文件都新建内存库、id 从 1 重来，不清会串到邻居文件。"""

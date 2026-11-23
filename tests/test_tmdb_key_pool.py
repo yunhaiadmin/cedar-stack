@@ -410,6 +410,9 @@ def test_keys_endpoint_reports_pool_state_and_mirror(db):
 
     store.write_values(db, {tmdb_mod.TMDB_KEYS_CONFIG_KEY: "key-0001,key-0002"})
     db.commit()
+    # 冷却要打在池里真实存在的 key 上：全局池状态自带，不许靠上一条
+    # 用例漏下的池（conftest 已按测还原全局池，靠泄漏即顺序假绿）。
+    admin_scrape.tmdb_client._set_keys(["key-0001", "key-0002"], "db")
     admin_scrape.tmdb_client._cool_key("key-0001", "限流（HTTP 429）", 600)
 
     body = admin_scrape.get_tmdb_keys(staff=None, db=db)
