@@ -54,6 +54,7 @@ import {
   fetchMountServingConfig, updateMountServingConfig,
   type MountServingConfigPayload, type MountServingConfig,
   fetchDriveApiConfig, updateDriveApiConfig, type DriveApiConfig,
+  fetchDeliveryPlanConfig, updateDeliveryPlanConfig, type DeliveryPlanConfig,
 } from '@/api/economy'
 import {
   fetchCapabilities, fetchCapability, saveCapability, testCapability,
@@ -577,7 +578,7 @@ async function load() {
 }
 
 onMounted(async () => {
-  await Promise.all([load(), loadCapabilities(), loadHotlink(), loadInstallApp(), loadItemsDedupCache(), loadTransfer(), loadMountServing(), loadDriveApi(), loadSoftdecode(), loadBotCfg(), loadDanmaku(), loadDanmuLines(), loadLoginLockout(), loadSiteDrawer(), loadPrivacyPolicy(), loadLicense(), loadPool()])
+  await Promise.all([load(), loadCapabilities(), loadHotlink(), loadInstallApp(), loadItemsDedupCache(), loadTransfer(), loadMountServing(), loadDriveApi(), loadDeliveryPlan(), loadSoftdecode(), loadBotCfg(), loadDanmaku(), loadDanmuLines(), loadLoginLockout(), loadSiteDrawer(), loadPrivacyPolicy(), loadLicense(), loadPool()])
   // Batch D 入口收敛：邀请页 / 客户端策略等用 hash 深链跳进来（如 #group-invitation）
   // R40：querySelector 直接塞 hash 会在畸形值时抛 SyntaxError；改用 getElementById
   if (route.hash) {
@@ -1185,6 +1186,58 @@ async function saveBotCfgCore(): Promise<boolean> {
   }
 }
 
+/** ==================== 播放交付计划卡片（独立 endpoint，非通用分组） ====================
+ * 交付编排器（delivery_plan）：播放前先算一份「交付计划」（走哪条腿、
+ * 副本是否就绪等），计划按 TTL 缓存复用。保存后回读一次核对落库值。 */
+const deliveryPlan = reactive({ enabled: true, ttl_sec: 600 })
+const deliveryPlanOriginal = reactive({ enabled: true, ttl_sec: 600 })
+const deliveryPlanLoading = ref(false)
+
+function applyDeliveryPlan(data: DeliveryPlanConfig) {
+  deliveryPlan.enabled = data.enabled !== false
+  deliveryPlan.ttl_sec = Number(data.ttl_sec) || 600
+  Object.assign(deliveryPlanOriginal, deliveryPlan)
+}
+
+async function loadDeliveryPlan() {
+  deliveryPlanLoading.value = true
+  try {
+    applyDeliveryPlan(await fetchDeliveryPlanConfig())
+  } catch {
+    // 错误提示由 HTTP 拦截器统一处理
+  } finally {
+    deliveryPlanLoading.value = false
+  }
+}
+
+const deliveryPlanDirty = computed(
+  () => deliveryPlan.enabled !== deliveryPlanOriginal.enabled
+    || deliveryPlan.ttl_sec !== deliveryPlanOriginal.ttl_sec,
+)
+
+/** 交付计划保存核心：PUT 后再 GET 回读，与提交值不一致视为没存上。 */
+async function saveDeliveryPlanCore(): Promise<boolean> {
+  if (!Number.isInteger(deliveryPlan.ttl_sec) || deliveryPlan.ttl_sec < 30 || deliveryPlan.ttl_sec > 3600) {
+    ElMessage.error('交付计划 TTL 须为 30~3600 的整数秒')
+    return false
+  }
+  const submitted = { enabled: deliveryPlan.enabled, ttl_sec: deliveryPlan.ttl_sec }
+  try {
+    applyDeliveryPlan(await updateDeliveryPlanConfig(submitted))
+    // 回读校验：以服务端当前值为准比对，防「报成功但没落库」
+    const readBack = await fetchDeliveryPlanConfig()
+    applyDeliveryPlan(readBack)
+    if (readBack.enabled !== submitted.enabled || Number(readBack.ttl_sec) !== submitted.ttl_sec) {
+      ElMessage.error('交付计划保存后回读不一致，请重试')
+      return false
+    }
+    return true
+  } catch {
+    // 拦截器已提示
+    return false
+  }
+}
+
 /** ==================== 网页软解卡片（独立 endpoint，非通用分组） ====================
  * 浏览器硬解失败时的站内软解兜底：只在网页播放路径生效，解码器是站内自编
  * 的 LGPL wasm（/wasm/decode/）。默认关：关时保持现状出解码提示卡。 */
@@ -1734,6 +1787,7 @@ async function reloadAll() {
   loadItemsDedupCache()
   loadMountServing()
   loadDriveApi()
+  loadDeliveryPlan()
   loadSoftdecode()
   loadBotCfg()
   loadDanmaku()
@@ -1768,7 +1822,7 @@ const dirtyGroups = computed(() => GROUPS.filter((g) => isDirty(g)))
 const dirtyCount = computed(() =>
   dirtyGroups.value.length + (regDirty.value ? 1 : 0) + (hotlinkDirty.value ? 1 : 0)
   + (itemsDedupCacheDirty.value ? 1 : 0) + (transferDirty.value ? 1 : 0) + (mountServingDirty.value ? 1 : 0)
-  + (driveApiDirty.value ? 1 : 0) + (softdecodeDirty.value ? 1 : 0) + (botCfgDirty.value ? 1 : 0) + (danmakuDirty.value ? 1 : 0) + (loginLockoutDirty.value ? 1 : 0) + (installAppDirty.value ? 1 : 0)
+  + (driveApiDirty.value ? 1 : 0) + (deliveryPlanDirty.value ? 1 : 0) + (softdecodeDirty.value ? 1 : 0) + (botCfgDirty.value ? 1 : 0) + (danmakuDirty.value ? 1 : 0) + (loginLockoutDirty.value ? 1 : 0) + (installAppDirty.value ? 1 : 0)
   + (siteDrawerDirty.value ? 1 : 0) + (privacyPolicyDirty.value ? 1 : 0),
 )
 const anyDirty = computed(() => dirtyCount.value > 0)
@@ -1879,6 +1933,10 @@ async function saveAll() {
       if (await saveDriveApiCore()) saved += 1
       else failed.push('Drive API 限速')
     }
+    if (deliveryPlanDirty.value) {
+      if (await saveDeliveryPlanCore()) saved += 1
+      else failed.push('交付计划')
+    }
     if (softdecodeDirty.value) {
       if (await saveSoftdecodeCore()) saved += 1
       else failed.push('网页软解')
@@ -1940,6 +1998,7 @@ async function discardAll() {
   loadTransfer()
   loadMountServing()
   loadDriveApi()
+  loadDeliveryPlan()
   loadSoftdecode()
   loadBotCfg()
   loadDanmaku()
@@ -2208,6 +2267,16 @@ watch(
               >
                 <Gauge :size="13" />Drive 限速
                 <span v-if="driveApiDirty" class="chip-dot" aria-label="有未保存的改动" />
+              </button>
+              <button
+                v-if="sec.id === 'playback'"
+                type="button"
+                class="group-chip"
+                :class="{ 'is-dirty': deliveryPlanDirty }"
+                @click="scrollToGroup('delivery-plan')"
+              >
+                <Network :size="13" />交付计划
+                <span v-if="deliveryPlanDirty" class="chip-dot" aria-label="有未保存的改动" />
               </button>
               <button
                 v-if="sec.id === 'playback'"
@@ -3183,6 +3252,39 @@ watch(
                     <span class="au-badge">{{ driveApi.binding_enabled ? '已开放新建绑定' : '已关闭新建绑定' }}</span>
                   </div>
                   <span class="field-hint">关：用户不能新建 Drive 绑定——发起授权会被拒绝、「我的网盘」也不再显示 Drive 入口；已经绑定的用户与播放不受影响。开关已摘面板、改走文件配置（env DRIVE_BINDING_ENABLED），当前为关＝绑盘已下线口径</span>
+                </div>
+              </el-form-item>
+            </el-form>
+          </SectionCard>
+          <!-- 播放交付计划：独立卡片，归「播放与风控」段（O-02 补缺） -->
+          <SectionCard
+            v-if="sec.id === 'playback'"
+            id="group-delivery-plan"
+            title="播放交付计划"
+            :icon="Network"
+            description="播放交付编排器：起播前先算一份交付计划（走哪条出流腿、副本是否就绪），计划在 TTL 内缓存复用，避免每次起播重复探测。关掉 = 不编排，播放回落现行直出路径。保存后会回读一次核对落库值。"
+            :tone="deliveryPlanDirty ? 'accent' : 'default'"
+            class="group-card"
+          >
+            <template v-if="deliveryPlanDirty" #actions>
+              <span class="au-badge au-badge-amber">未保存</span>
+            </template>
+
+            <el-form label-position="top" class="field-form field-grid">
+              <el-form-item label="编排器总开关">
+                <div class="field-stack">
+                  <div class="field-control">
+                    <el-switch v-model="deliveryPlan.enabled" active-text="开" inactive-text="关" />
+                  </div>
+                  <span class="field-hint">关掉 = 交付计划一行不算，完整回退现行出法</span>
+                </div>
+              </el-form-item>
+              <el-form-item label="计划 TTL（秒）">
+                <div class="field-stack">
+                  <div class="field-control">
+                    <el-input-number v-model="deliveryPlan.ttl_sec" :min="30" :max="3600" :step="30" />
+                  </div>
+                  <span class="field-hint">30~3600，默认 600。越大探测越省、计划越可能过期；越小越新鲜、起播探测越频</span>
                 </div>
               </el-form-item>
             </el-form>
