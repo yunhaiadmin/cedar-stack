@@ -468,6 +468,13 @@ def _item_image_impl(item_id: str, image_type: str, request: Request,
         # 不必每个客户端、每次缓存穿透都去第三方拉一趟。落下就记住路径，
         # 下次请求直接命中本地；落不下来（源站挂了/被限速）就走下面的代理，行为不变。
         cached = image_store.localize(src)
+        if not cached:
+            # 本地化停增（默认关）时 localize 恒空：已落盘的存量文件仍是
+            # 现成源站缓存，出图层只读命中照常发（不下载、不回写库，
+            # 写侧关态契约归 localize / landed_path 分工，见 image_store）
+            cached = image_store.landed_path(src)
+            if cached:
+                return _serve_sized(cached, ew, eh)
         if cached:
             _remember_local_image(db, item, kind, cached)
             return _serve_sized(cached, ew, eh)
@@ -562,7 +569,7 @@ def _serve_person_image(name: str, db: Session, ew=None, eh=None):
     src = person.image
     if not (src.startswith("http://") or src.startswith("https://")):
         raise HTTPException(status_code=404, detail="Image not found")
-    cached = image_store.localize(src)
+    cached = image_store.localize(src) or image_store.landed_path(src)
     if cached and os.path.isfile(cached):
         return _serve_sized(cached, ew, eh)
     raise HTTPException(status_code=404, detail="Image not found")

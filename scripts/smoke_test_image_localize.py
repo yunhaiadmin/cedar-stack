@@ -32,6 +32,9 @@ os.environ["SECRET_KEY"] = (os.environ.get("SECRET_KEY") or "").strip() or \
     "smoke-test-only-secret-key-not-for-production"
 IMAGE_DIR = tempfile.mkdtemp(prefix="imgcache_")
 os.environ["EMBY_IMAGE_DIR"] = IMAGE_DIR
+# 本地化总开关 2026-11-23 起默认关（图片交付改走 CF 边缘缓存）；
+# 本冒烟测的是本地化机制本身，全程显式开（第 5 节单独测关的形态）
+os.environ["EMBY_LOCALIZE_IMAGES"] = "1"
 
 import httpx  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -260,14 +263,17 @@ db.add(fresh)
 db.commit()
 tmdb.tmdb_client.apply(fresh, {**hit, "id": 999002}, "movie")
 db.commit()
-check("关闭开关后不下载", downloads == [] and image_store.localize(POSTER_URL) == "",
+# 关时断言用一张从未落盘的新图：已落盘文件按 2026-11-23 新口径
+# 在关时仍只读命中出图（存量作源站缓存），不再返回空
+check("关闭开关后不下载", downloads == [] and
+      image_store.localize(POSTER_URL + "?off=1") == "",
       f"下载 {len(downloads)} 次")
 check("关闭开关后仍然写入远程地址（行为回到本地化之前）",
       fresh.primary_image_url.endswith("/poster.jpg") and not fresh.poster_path,
       f"poster_path={fresh.poster_path}")
 check("关闭开关时 is_cached_path 仍只认缓存目录",
       image_store.is_cached_path(os.path.join(IMAGE_DIR, "x.jpg")) is True)
-os.environ.pop("EMBY_LOCALIZE_IMAGES", None)
+os.environ["EMBY_LOCALIZE_IMAGES"] = "1"   # 恢复本冒烟的工作态（后续节测开启行为）
 
 # ==================== 6. 清理策略 ====================
 old_used = image_store.localize(POSTER_URL)                 # 被条目引用

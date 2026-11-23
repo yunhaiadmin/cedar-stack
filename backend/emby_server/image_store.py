@@ -618,7 +618,7 @@ def enabled() -> bool:
     # 2026-11-23 起默认关（用户亲选 CF 边缘缓存方案）：本地图床停止新增
     # 落盘，回填驱动 / 逐条入队 / 取图按需自愈都收口在这一个开关后；
     # 显式置 1 即回滚到本地化口径。已落盘的存量文件继续作源站缓存出图
-    # （localize 对已落盘文件是只读命中，不受本开关影响）。
+    # （出图层经 landed_path 只读命中，不受本开关影响、不回写库）。
     return _env_flag("EMBY_LOCALIZE_IMAGES", False)
 
 
@@ -696,6 +696,20 @@ def existing_local_path(url: str) -> str:
         if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
             return candidate
     return ""
+
+
+def landed_path(url: Optional[str]) -> str:
+    """出图层专用：这张远程图若已落盘，返回本地路径（只读命中）；否则空串。
+
+    与 ``localize`` 的分工：``localize`` 是写侧入口，总开关关时直接
+    返回空串（写库路径行为回到本地化之前）；本函数不看开关、不下载、
+    不写任何状态——2026-11-23 本地化停增后，存量落盘文件继续作源站
+    缓存出图，靠的就是出图层（media_routes）先问 ``localize``、
+    再问本函数。写库路径不许用本函数回写 poster_path。
+    """
+    if not url or not url.startswith("http"):
+        return ""
+    return existing_local_path(url)
 
 
 def _download_attempts() -> int:
@@ -809,8 +823,10 @@ def localize(url: Optional[str], allow_download: bool = True,
              attempts: int = 1) -> str:
     """把远程图落成本地文件，返回本地路径；失败或未开启返回空串
 
-    未开启（默认，2026-11-23 起）时不下载新图，但已落盘的文件仍只读
-    命中返回——存量本地图是现成的源站缓存，不因停增而失效。
+    未开启（默认，2026-11-23 起）时直接返回空串——写库路径（刮削
+    apply / 入队 / 巡检）在关态下行为与本地化之前逐字一致，不落盘、
+    不回写 poster_path。已落盘文件的只读命中是出图层的事，见
+    ``landed_path``，不走本函数。
     同一张图并发请求只下载一次（按 URL 单飞）；文件已经存在就直接复用。
     写文件走「临时文件 → fsync → os.replace」：中途被杀不会留下半张图。
 
@@ -823,13 +839,13 @@ def localize(url: Optional[str], allow_download: bool = True,
     （`EMBY_IMAGE_RETRIES`，默认 3 次 + 指数退避），那才是刮削链上「图片下不下来」
     的主战场（问题一）。
     """
-    if not url or not url.startswith("http"):
+    if not url or not url.startswith("http") or not enabled():
         return ""
     path = local_path(url)
     existing = existing_local_path(url)
     if existing:
         return existing
-    if not enabled() or not allow_download:
+    if not allow_download:
         return ""
     with _LOCKS_LOCK:
         lock = _LOCKS.get(path) or threading.RLock()

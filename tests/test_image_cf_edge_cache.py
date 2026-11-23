@@ -9,7 +9,8 @@
 - F5-D-lite：无凭据出图尺寸封顶——Primary ≤600px 宽、Backdrop ≤1280px 宽，
   沿用 image_store 现行缩放档位体系；带凭据不封顶。
 - 本地化总开关 ``EMBY_LOCALIZE_IMAGES`` 默认关：回填 / 逐条入队 /
-  取图按需自愈都不再新增落盘；已落盘文件仍可经 localize 只读命中。
+  取图按需自愈都不再新增落盘；已落盘文件由出图层经 landed_path
+  只读命中照常出图（写侧 localize 关态恒空、不回写库）。
 """
 import os
 
@@ -290,7 +291,8 @@ def test_localize_off_never_downloads(monkeypatch, tmp_path):
 
 
 def test_localize_off_still_resolves_existing_file(monkeypatch, tmp_path):
-    # 已落盘的图：开关关也应只读命中（存量 2.1G 是现成源站缓存）
+    # 已落盘的图：开关关时写侧 localize 恒空（关态契约不回写、不落盘），
+    # 只读命中归出图层专用的 landed_path（存量 2.1G 是现成源站缓存）
     from backend.emby_server import image_store
 
     monkeypatch.delenv("EMBY_LOCALIZE_IMAGES", raising=False)
@@ -300,7 +302,33 @@ def test_localize_off_still_resolves_existing_file(monkeypatch, tmp_path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "wb") as fh:
         fh.write(_wide_jpeg(100, 100))
-    assert image_store.localize(url) == path
+    assert image_store.localize(url) == ""
+    assert image_store.landed_path(url) == path
+    assert image_store.landed_path("https://img.example/not-there.jpg") == ""
+
+
+def test_anon_serves_landed_file_while_switch_off(client, seed, monkeypatch,
+                                                  tmp_path):
+    # 关态 + 已落盘：出图层只读命中存量文件，200 + public，不走代理回源
+    from backend.emby_server import image_store, media_routes
+
+    monkeypatch.delenv("EMBY_LOCALIZE_IMAGES", raising=False)
+    monkeypatch.setattr(image_store, "image_dir", lambda: str(tmp_path))
+    url = "https://img.example/cfedge-wide.jpg"   # seed['remote'] 的远程图
+    path = image_store.local_path(url)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    landed = _wide_jpeg(100, 100)
+    with open(path, "wb") as fh:
+        fh.write(landed)
+
+    def _no_proxy(src):  # 命中存量就不许回源
+        raise AssertionError("已落盘时不许走代理回源")
+
+    monkeypatch.setattr(media_routes, "_proxy_remote_image", _no_proxy)
+    r = client.get(f"/emby/Items/{seed['remote']}/Images/Primary")
+    assert r.status_code == 200, r.text
+    assert r.content == landed
+    assert r.headers.get("cache-control", "").startswith("public")
 
 
 def test_localize_on_still_downloads(monkeypatch, tmp_path):
