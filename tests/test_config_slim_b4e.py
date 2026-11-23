@@ -3,7 +3,8 @@
 钉住点（全部是与迁移前行为逐字一致的断言）：
 1. 注册表与 ECONOMY_CONFIG_KEYS 逐键对齐，spec 口径与旧 economy_spec 一致；
 2. 存库字节逐字一致：bool/int 走同一 normalize；str/secret 用 ("raw",) 原样存
-   ——含"空串存行（不删行）""None 存成 'None'"这些历史口径；
+   ——含"空串存行（不删行）"的历史口径；（"None 存成 'None'" 已被 360° 审计
+   A-046 判为缺陷并改判为删行，见 tests/test_config_raw_none_a046.py）；
 3. 失效缺口补齐：旧代码只手动失效 stream_accel_*/vitality_*，其余键保存后
    60 秒内可能读旧值；迁移后全部键写时失效。
 """
@@ -104,11 +105,17 @@ def test_str_raw_empty_stored_not_deleted(db):
     assert _row(s, "payment_gateway_url").value == "  https://x.io/  "
 
 
-def test_str_none_stored_as_none_string(db):
-    """None 传进来：旧代码 str(None)="None" 存库——历史口径，原样保留。"""
+def test_str_none_deletes_row(db):
+    """None 传进来：A-046 改判——删行回未设置，不再 str(None) 存成字面 "None"。
+
+    迁移期曾把 "None" 存库钉为历史口径；360° 审计 A-046 确认其与
+    save_config 的 None=删行约定相悖且会污染 site_url 等真值读取，改判。
+    """
     s, admin = db
+    _save(s, admin, {"site_url": "https://example.com"})
+    assert _row(s, "site_url").value == "https://example.com"
     _save(s, admin, {"site_url": None})
-    assert _row(s, "site_url").value == "None"
+    assert _row(s, "site_url") is None
 
 
 def test_secret_mask_keeps_row(db):
