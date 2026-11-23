@@ -583,6 +583,38 @@ export const saveAccessGuardPolicy = (policy: AccessGuardPolicyInput) =>
 export const previewAccessGuard = (payload: { ip: string; user_agent: string }) =>
   post<{ success: boolean; result: AccessGuardPreview }>('/access-guard/preview', payload)
 
+// ==================== 播放器登录黑名单 ====================
+/**
+ * 一条黑名单规则（backend/emby_server/player_blacklist.py）：
+ * 对客户端名与 User-Agent 做大小写不敏感子串匹配——match 任一命中
+ * 且 exclude 全部未命中才拦登录（exclude 优先）。
+ */
+export interface PlayerBlacklistRule {
+  label: string
+  match: string[]
+  exclude: string[]
+}
+
+/** GET / PUT /api/admin/player-blacklist/config 的返回形状（backend/api/admin_player_blacklist.py） */
+export interface PlayerBlacklistConfig {
+  rules: PlayerBlacklistRule[]
+  /** true = 库里没有配置行，当前生效的是代码级默认名单 */
+  using_default: boolean
+  /** 命中时回给客户端的提示文案（后端常量，本页只展示不编辑） */
+  block_message: string
+}
+
+export const fetchPlayerBlacklistConfig = () =>
+  get<PlayerBlacklistConfig>('/player-blacklist/config')
+
+/**
+ * 保存黑名单规则：传规则数组 = 覆盖名单（空数组 = 清空名单、功能停用）；
+ * 传 null = 删行，恢复代码级默认名单。结构非法时后端回 400。
+ * 保存后返回的是后端归一后的真实生效值，调用方以它回填。
+ */
+export const savePlayerBlacklistConfig = (rules: PlayerBlacklistRule[] | null) =>
+  put<PlayerBlacklistConfig>('/player-blacklist/config', { rules })
+
 // ==================== 邀请码管理（v2.44.0 第一阶段） =============
 /** 邀请码状态：可用 / 已用完 / 已过期 / 已作废 */
 export type InvitationCodeState = 'active' | 'used_up' | 'expired' | 'revoked'

@@ -42,6 +42,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'share-guard', name: 'ShareGuard', component: () => import('@/views/ShareGuard.vue'), meta: { title: '防共享' } },
       // 访问拦截：UA 关键词 + IP 归属地。全站级开关，默认全关，仅超管可改。
       { path: 'access-guard', name: 'AccessGuard', component: () => import('@/views/AccessGuard.vue'), meta: { title: '访问拦截' } },
+      // 播放器登录黑名单：命中规则的播放器在客户端登录环节被拒（403），只拦登录
+      { path: 'player-blacklist', name: 'PlayerBlacklist', component: () => import('@/views/PlayerBlacklist.vue'), meta: { title: '播放器黑名单' } },
       { path: 'announcements', name: 'Announcements', component: () => import('@/views/Announcements.vue'), meta: { title: '公告管理' } },
       { path: 'tickets', name: 'Tickets', component: () => import('@/views/Tickets.vue'), meta: { title: '工单' } },
       // 等级治理 Step 2：举报终审队列 + 治理停权（一页两标签，?tab=suspensions 落到停权）
