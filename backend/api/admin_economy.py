@@ -205,6 +205,40 @@ def economy_update_settings(
                 _sa.validate_domain(_final("stream_accel_domain"))
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
+    # 支付设置 sanity 校验（2026-11-23）：空库重建后人工重填三键时，
+    # payment_partner_key 被粘成 392 字符长串落库无拦截，之后全部充值
+    # 订单验签失败。签名算法无误，问题是明显异常的密钥值被无声接受，
+    # 故在落库前按 stream_accel 联动校验的形态加端点层拦截（尚未写库）。
+    # detail 只带长度数字，绝不带密钥原文。
+    if "payment_partner_key" in request.settings:
+        _pk_raw = request.settings["payment_partner_key"]
+        if _pk_raw not in ("", "******"):
+            _pk = str(_pk_raw)
+            if (
+                _pk != _pk.strip()
+                or any(ch.isspace() for ch in _pk)
+                or len(_pk) > 128
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"支付商户密钥格式异常（当前 {len(_pk)} 字符），"
+                        "易支付商户密钥一般为 32 位左右，请到商户后台核对后"
+                        "重新粘贴，不要把整段无关文本粘进来。"
+                    ),
+                )
+    if "payment_gateway_url" in request.settings:
+        _gw_raw = request.settings["payment_gateway_url"]
+        if _gw_raw:
+            _gw = str(_gw_raw).strip()
+            if _gw and not _gw.startswith(("http://", "https://")):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "支付网关地址格式异常：请填写以 http:// 或 "
+                        "https:// 开头的完整 URL 地址。"
+                    ),
+                )
     # 配置瘦身第 4 批 4-6：落库走统一写入通道 config_service.save_config
     # （校验→批量落库→写时失效）。以下口径与旧代码逐字一致：
     # - 未知键静默忽略；secret 传空/"******" = 保留原行、不进落库；
