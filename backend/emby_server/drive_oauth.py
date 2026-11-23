@@ -1,61 +1,39 @@
-"""BYOS P2：Drive OAuth 全套 + 用户凭据维护（清单第 9 项）。
+"""存量 Drive 绑定的令牌托管（绑盘拆除一期后的剩余职责）。
 
-只做 P2 的三件事，多一件不做：
-1. 凭据分离：Drive 用户凭据只走 mount_credentials（scope=user，
-   密封 + key_id 信封，与 P1 的 115 绑定同款拼法：绑定行引用凭据
-   行，不另起第三套）。取用户 Drive 令牌的唯一口是
-   :func:`get_token_for_user`——它只读 scope=user 且
-   owner_user_id=本人的凭据行，**绝不**回落 SA 池、rclone.conf、
-   scope=source 行；回落会查错盘、跨用户。
-2. Drive OAuth 全套：授权接入（PKCE S256 + access_type=offline +
-   prompt=consent，保证拿到 refresh_token）→ 回调换 token → refresh
-   续期 → 状态机（复用 P1 绑定状态机 active/invalid/expired 与
-   失效三档文案）。绑完先验活（Drive about）才置 active；失效分
-   凭据错 / 过期 / 风控三档，不静默回落。
-3. 凭据维护工人：后台常驻刷新 / 过期标记 / 节流退避（照抄 FMBY
-   凭据维护工人口径：启动即跑一轮 + 周期跑 + 单行失败隔离 +
-   汇总日志），开关门控、默认关；失败只记警告、不挡播放与扫描。
+绑盘（用户绑定自带 Google Drive 供自己播）已于 2026-11-24 拆除
+一期下线：新建绑定的全部入口（OAuth 发起/回调、建绑端点、管理
+端开关、用户端绑盘页面）已删除，绑定开关收敛为代码常量关
+（user_bindings.drive_binding_enabled）。本模块只剩存量绑定的
+令牌托管三件事：
 
-不做：用户令牌中继播放接线（P2 的取令牌口已留好，video_stream
-选路改动是后续项，本 PR 不动选路）、按绑定扫描入库（P3）、
-115 绑定逻辑重写（只扩展 create/verify 的 drive 分支文案与恢复口）。
+1. 取令牌唯一口：get_token_for_user / get_binding_drive_access_token
+   只读本人 scope=user 凭据行，绝不回落 SA 池、rclone.conf、
+   scope=source 行（回落会查错盘、跨用户）；
+2. refresh 续期 + 验活 + 失效落态（复用绑定状态机 active /
+   invalid / expired 与失效三档文案，不静默回落）；
+3. 凭据维护工人：后台常驻刷新 / 过期标记 / 节流退避，开关门控、
+   默认关；失败只记警告、不挡播放与扫描。
 
-凭据纪律：本模块是唯一经手 Drive 用户令牌明文的地方（换 token、
-刷新、验活时解密封后立即用、用完不存变量外泄）；日志与返回值
-永远不出令牌原文、不出密封值、不出 code_verifier（只出
-has_credential 布尔值与状态）。OAuth state 行是单次有效、10 分钟
-过期；Google 授权码本身也是一次性的——换 token 失败无论哪档，
-state 行一律删除，失败重试必须重新走授权（不存在“用旧 state
-再换一次”）。
+贡献池成员的绑定同走本模块取令牌与刷新（池本体在 pool_gate，
+不在本模块）。凭据纪律不变：本模块是唯一经手 Drive 用户令牌
+明文的地方（刷新、验活时解密封后立即用、用完不存变量外泄）；
+日志与返回值永远不出令牌原文、不出密封值。
 
-服务器级 OAuth 应用：client_id / client_secret 是部署者在 Google
-Cloud 注册的应用凭据，走文件配置（env），不进库、不按用户存；
-回调地址 = EMBY_PUBLIC_URL + 固定路径，部署者须在 Google Cloud
-把该地址注册为授权重定向 URI；EMBY_PUBLIC_URL 未配时 start 口
-响亮拒绝，不猜 localhost（localhost 回调对真实用户不可用）。
-
-第二入口（新应用）：在老应用之外并列第二套服务器级凭据
-（DRIVE_OAUTH2_CLIENT_ID/SECRET，新应用在 Google Cloud 注册的
-回调 URI 与老应用完全同一条）。入口分流全靠落字：发起时把入口
-记进 state 行 oauth_client，回调仍是同一个端点、靠 state 行分流
-换 token 用哪套凭据；绑定行同样落 oauth_client，刷新时按行上
-记录选凭据——用错客户端刷新必失败，不许靠“试一遍”猜。仅限
-持有查看凭证的用户（判定复用 subscriptions.view_grant 全站唯一
-口径），发起端与回调端各查一次；老入口的凭据、行为与门禁一律
-不受第二入口影响，第二套凭据未配置时只有新入口不可用。
+服务器级 OAuth 应用凭据（client_id / client_secret）是部署者
+在 Google Cloud 注册的应用凭据，走文件配置（env），不进库、
+不按用户存；刷新时按绑定行记录的来源客户端（oauth_client）
+选凭据——refresh_token 是签给具体应用的，用错客户端必失败，
+不许靠“试一遍”猜。两套凭据（老应用 DRIVE_OAUTH_*、第二入口
+DRIVE_OAUTH2_*）都只为存量绑定的刷新保留。
 """
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
 import json
 import logging
 import os
-import secrets
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -66,7 +44,6 @@ from backend.emby_server.drive_changes import (
     TOKEN_URL,
 )
 from backend.emby_server.env_util import env_int
-from backend.emby_server.public_url import configured_public_url
 from backend.emby_server.secret_sealing import (
     SealedSecretError,
     seal_secret,
@@ -75,91 +52,46 @@ from backend.emby_server.secret_sealing import (
 
 logger = logging.getLogger(__name__)
 
-#: Google OAuth 端点（TOKEN_URL 复用 drive_changes 的唯一常量）。
-AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+#: Drive about 端点（验活用；TOKEN_URL 复用 drive_changes 的唯一常量）。
 DRIVE_ABOUT_URL = "https://www.googleapis.com/drive/v3/about"
-#: 只读 scope（Restricted）：读侧（共享源读取、BYOS 已有文件读取、
+#: 只读 scope（Restricted）：读侧（共享源读取、存量绑定文件读取、
 #: 用户盘任意文件读取）全靠它。写侧（转存目录建立、files.copy
 #: 建副本）不走它。
 DRIVE_READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 #: 写 scope（Console 列为 Non-sensitive）：只覆盖“应用创建或打开的
 #: 文件”——转存目录 aetrix-transfer 与转存副本都是应用创建的，
 #: 正在此覆盖内；用户用 Drive 选择器明确交给应用的文件也在内。
-#: 注意：单 file 不够读共享源文件与 BYOS 已有文件（都不在 file
-#: 覆盖里），故正常态授权请求是两档并列（readonly + file）。
+#: 注意：单 file 不够读共享源文件与存量绑定文件（都不在 file
+#: 覆盖里），故存量授权的完整范围集是两档并列（readonly + file）；
+#: binding_needs_rebind 按此判定已授范围是否缺档。
 DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file"
-#: 完整范围集（恢复 readonly 时的请求串；见 requested_scopes）。
+#: 完整范围集（存量绑定已授范围的完整形态）。
 DRIVE_OAUTH_SCOPES = (DRIVE_READONLY_SCOPE, DRIVE_FILE_SCOPE)
-#: 临时措施（2026-10-28 用户亲定）：drive.readonly 属受限范围、
-#: 尚未通过验证，正式版应用的新授权撞谷歌硬拦截“此应用已被阻止”。
-#: 在验证通过前，新绑定与重绑默认只请求 drive.file 一个范围
-#: （Console 列为非敏感，不用审核），让新用户先能绑上；存量
-#: readonly 授权不受影响。本开关只影响“新发起的授权请求串”，
-#: 已授范围一律以回调实授为准入库，绝不拿请求串冒充。
-#: 恢复方法（无需改代码）：部署环境设 DRIVE_OAUTH_INCLUDE_READONLY=1
-#: 并重建容器，请求串即恢复两档并列。
-INCLUDE_READONLY_ENV = "DRIVE_OAUTH_INCLUDE_READONLY"
-
-
-def include_readonly_in_request() -> bool:
-    """新授权是否同时请求 readonly（默认关；非法值按关处理）。"""
-    return env_int(INCLUDE_READONLY_ENV, 0, 0, 1) == 1
-
-
-def requested_scopes() -> tuple[str, ...]:
-    """本次授权请求发出的范围：默认仅 file；开关开时两档并列。"""
-    if include_readonly_in_request():
-        return DRIVE_OAUTH_SCOPES
-    return (DRIVE_FILE_SCOPE,)
-
-
-def requested_scope_string() -> str:
-    """授权请求实际发出的范围串（空格分隔；Google 回的已授范围
-    可能因用户在同意屏上逐项取消而少于此串，回调以实授为准入库）。"""
-    return " ".join(requested_scopes())
-#: 回调路径（挂在 portal 的 user_emby_router 下，前缀固定）。
-OAUTH_CALLBACK_PATH = "/api/user/emby/storage-bindings/drive/oauth/callback"
 
 #: 服务器级 OAuth 应用凭据（部署者文件配置，不进库）。
 CLIENT_ID_ENV = "DRIVE_OAUTH_CLIENT_ID"
 CLIENT_SECRET_ENV = "DRIVE_OAUTH_CLIENT_SECRET"
 #: 第二入口（新应用）的服务器级凭据：与老应用并列存在、互不
-#: 覆盖；老入口永远只读上面两个键，新入口只读下面两个键。
+#: 覆盖；刷新按绑定行记录选凭据，两套都保留。
 CLIENT2_ID_ENV = "DRIVE_OAUTH2_CLIENT_ID"
 CLIENT2_SECRET_ENV = "DRIVE_OAUTH2_CLIENT_SECRET"
 
-#: 入口/客户端落字口径（state 行与绑定行 oauth_client 列）：
+#: 入口/客户端落字口径（绑定行 oauth_client 列）：
 #: primary = 老应用（DRIVE_OAUTH_CLIENT_*）；oauth2 = 第二入口
 #: （DRIVE_OAUTH2_*）。NULL（本功能上线前的老行）与未知值在读
 #: 侧一律归一为 primary，与上线前行为一致。
 CLIENT_PRIMARY = "primary"
 CLIENT_OAUTH2 = "oauth2"
 
-#: 入口的展示名与说明：走文件配置（部署者可改），入口状态口随
-#: 响应下发、用户端照原样渲染，前端不写死这份文案。老入口已隐藏
-#: （2026-11-12 用户改令），用户端只呈现这一个绑定入口，默认文案
-#: 按单入口写，不带「新/第二入口」字样；资格限制说明保留。
-CLIENT2_LABEL_ENV = "DRIVE_OAUTH2_ENTRY_LABEL"
-CLIENT2_DESCRIPTION_ENV = "DRIVE_OAUTH2_ENTRY_DESCRIPTION"
-CLIENT2_LABEL_DEFAULT = "谷歌盘"
-CLIENT2_DESCRIPTION_DEFAULT = "绑定你的谷歌盘，仅限持有查看凭证的用户使用。"
-
-#: 第二入口门禁拒绝文案（发起与回调复核同一句，用户端原样
-#: 展示；入口状态口的 reason 也用它）。
-OAUTH2_VIEW_CREDENTIAL_REQUIRED_MESSAGE = (
-    "这个绑定入口仅限持有查看凭证的用户使用。")
 #: 维护工人开关与周期（默认关；周期是我方起步值，非 FMBY 常量）。
 MAINT_ENABLED_ENV = "BYOS_DRIVE_CRED_MAINT_ENABLED"
 MAINT_INTERVAL_ENV = "BYOS_DRIVE_CRED_MAINT_INTERVAL_SEC"
 MAINT_INTERVAL_DEFAULT = 3600
-#: 授权 state 有效期（秒；我方起步值）。
-STATE_TTL_ENV = "DRIVE_OAUTH_STATE_TTL_SEC"
-STATE_TTL_DEFAULT = 600
 
 
 class DriveOAuthError(ub.BindingError):
-    """Drive OAuth 失败（复用 BindingError 的 kind 体系，调用方同口径
-    定状态码与文案；kind 取值与 user_bindings 一致）。"""
+    """Drive 令牌托管失败（复用 BindingError 的 kind 体系，调用方
+    同口径定状态码与文案；kind 取值与 user_bindings 一致）。"""
 
 
 def _normalize_client(client: str | None) -> str:
@@ -180,97 +112,9 @@ def _client_secret(client: str | None = None) -> str:
     return (os.getenv(CLIENT_SECRET_ENV, "") or "").strip()
 
 
-def oauth2_configured() -> bool:
-    """第二套客户端凭据是否已配齐（未配齐时只有新入口不可用）。"""
-    return bool(_client_id(CLIENT_OAUTH2) and _client_secret(CLIENT_OAUTH2))
-
-
 def binding_oauth_client(binding) -> str:
     """绑定行记录的来源客户端（NULL / 未知值归一 primary）。"""
     return _normalize_client(getattr(binding, "oauth_client", None))
-
-
-def oauth2_entry_label() -> str:
-    return ((os.getenv(CLIENT2_LABEL_ENV, "") or "").strip()
-            or CLIENT2_LABEL_DEFAULT)
-
-
-def oauth2_entry_description() -> str:
-    return ((os.getenv(CLIENT2_DESCRIPTION_ENV, "") or "").strip()
-            or CLIENT2_DESCRIPTION_DEFAULT)
-
-
-def user_holds_view_credential(db: Session, user_id: int) -> bool:
-    """用户是否持有查看凭证（第二入口门禁的唯一判定口）。
-
-    复用全站唯一口径 subscriptions.view_grant（有效订阅或团队
-    播放资格，一律按到期时间现算、不信行上状态字段），
-    不另造第二套判定。用户行不存在按未持有。
-    """
-    from backend import models as base_models
-    from backend import subscriptions
-
-    user = (
-        db.query(base_models.WebUser)
-        .filter(base_models.WebUser.id == user_id)
-        .first()
-    )
-    if user is None:
-        return False
-    return bool(subscriptions.view_grant(db, user, None))
-
-
-def oauth2_entry_status(db: Session, user_id: int) -> dict:
-    """第二入口渲染状态口（用户端 providers 响应随行下发）。
-
-    available = 第二套客户端已配置（未配置时前端整块不渲染、
-    后端发起口也响亮拒绝）；eligible = 当前用户持有查看凭证；
-    不 eligible 时 reason 给用户看的原因（与发起口 403 同一句）。
-    本口只读、不抛错：资格判定异常按不 eligible 处理，不许把
-    整个绑定页打成 500。
-    """
-    available = oauth2_configured()
-    eligible = False
-    if available:
-        try:
-            eligible = user_holds_view_credential(db, user_id)
-        except Exception:  # noqa: BLE001 — 状态口异常不许拖垮绑定页
-            logger.warning("第二入口资格判定失败 user=%s",
-                           user_id, exc_info=True)
-            eligible = False
-    return {
-        "available": available,
-        "eligible": eligible,
-        "reason": (None if eligible
-                   else OAUTH2_VIEW_CREDENTIAL_REQUIRED_MESSAGE),
-        "label": oauth2_entry_label(),
-        "description": oauth2_entry_description(),
-    }
-
-
-def _assert_oauth2_entry_allowed(db: Session, user_id: int) -> None:
-    """第二入口门禁（start 发起与 complete 回调复核共用同一把关）。
-
-    未配置 → validation（部署者先配 DRIVE_OAUTH2_*，与老入口
-    未配凭据时同一档）；无查看凭证 → forbidden（403）。老入口
-    永不调用本函数，其凭据检查与行为不受第二入口影响。
-    """
-    if not oauth2_configured():
-        raise DriveOAuthError(
-            "validation",
-            "服务器未配置第二套 Drive OAuth 应用凭据"
-            "（DRIVE_OAUTH2_CLIENT_ID/SECRET），部署者须先配好。")
-    if not user_holds_view_credential(db, user_id):
-        raise DriveOAuthError(
-            "forbidden", OAUTH2_VIEW_CREDENTIAL_REQUIRED_MESSAGE)
-
-
-def redirect_uri() -> str:
-    """OAuth 回调地址；EMBY_PUBLIC_URL 未配时返回空串（调用方响亮拒绝）。"""
-    base = configured_public_url()
-    if not base:
-        return ""
-    return base + OAUTH_CALLBACK_PATH
 
 
 def maint_enabled() -> bool:
@@ -279,10 +123,6 @@ def maint_enabled() -> bool:
 
 def maint_interval_sec() -> int:
     return env_int(MAINT_INTERVAL_ENV, MAINT_INTERVAL_DEFAULT, lo=60)
-
-
-def state_ttl_sec() -> int:
-    return env_int(STATE_TTL_ENV, STATE_TTL_DEFAULT, lo=60)
 
 
 # ---------------------------------------------------------------------------
@@ -317,8 +157,7 @@ def decode_drive_token(text: str) -> dict:
     return data
 
 
-# ---------------------------------------------------------------------------
-# HTTP 失败分类（token 端点 / Drive API 共用；一过性失败返回 None）
+
 # ---------------------------------------------------------------------------
 
 def _classify_http_failure(status: int | None, body) -> str | None:
@@ -400,84 +239,8 @@ def _read_error_body(resp) -> object:
 
 
 # ---------------------------------------------------------------------------
-# OAuth：授权 URL、换 token、刷新、验活
+# 令牌刷新与验活（存量绑定的续期口）
 # ---------------------------------------------------------------------------
-
-def build_authorization_url(redirect_uri_value: str, state: str,
-                            code_challenge: str,
-                            client: str | None = None) -> str:
-    """Google 授权地址（access_type=offline + prompt=consent 是拿
-    refresh_token 的必要条件，缺了 refresh_token 的绑定无法维护，
-    完成时直接判 auth_error，不存半截行）。client 选哪套应用
-    凭据拼 client_id（默认老应用，第二入口传 CLIENT_OAUTH2）。"""
-    from urllib.parse import urlencode
-
-    params = {
-        "client_id": _client_id(client),
-        "redirect_uri": redirect_uri_value,
-        "response_type": "code",
-        "scope": requested_scope_string(),
-        "access_type": "offline",
-        "prompt": "consent",
-        "state": state,
-        "code_challenge": code_challenge,
-        "code_challenge_method": "S256",
-    }
-    return AUTH_URL + "?" + urlencode(params)
-
-
-def exchange_code_for_tokens(code: str, redirect_uri_value: str,
-                             code_verifier: str,
-                             http_post=None,
-                             client: str | None = None) -> dict:
-    """授权码换 token（单次调用；失败按三档分类，网络/5xx 抛 transient）。
-
-    client 必须与发起授权时用的那套一致（回调按 state 行记录
-    分流传入）：授权码是签给具体应用的，拿另一套凭据换必失败。
-    """
-    post = http_post or _default_http_post
-    try:
-        resp = post(TOKEN_URL, data={
-            "code": code,
-            "client_id": _client_id(client),
-            "client_secret": _client_secret(client),
-            "redirect_uri": redirect_uri_value,
-            "grant_type": "authorization_code",
-            "code_verifier": code_verifier,
-        }, timeout=30)
-    except Exception as exc:
-        raise DriveOAuthError(
-            "transient", f"换 token 时网络失败（可重试）：{exc}") from exc
-    if resp.status_code != 200:
-        kind = _classify_http_failure(resp.status_code,
-                                      _read_error_body(resp))
-        if kind is None:
-            raise DriveOAuthError(
-                "transient", f"换 token 时上游失败（可重试）：HTTP {resp.status_code}")
-        raise DriveOAuthError(kind, ub.error_message(kind))
-    try:
-        body = resp.json()
-    except Exception as exc:
-        raise DriveOAuthError(
-            "transient", "换 token 返回非 JSON（可重试）。") from exc
-    access = (body.get("access_token") or "").strip()
-    if not access:
-        raise DriveOAuthError("auth_error", "换 token 未返回 access_token。")
-    refresh = (body.get("refresh_token") or "").strip()
-    if not refresh:
-        # 没拿到 refresh_token 的绑定无法维护（过期即死），不成行。
-        raise DriveOAuthError(
-            "auth_error", "Google 未返回 refresh_token（须离线访问授权），请重新授权。")
-    expires_in = int(body.get("expires_in", 3600) or 3600)
-    return {
-        "access_token": access,
-        "refresh_token": refresh,
-        "expires_at": int(time.time()) + expires_in,
-        # Google token 响应原样回的已授范围（空格分隔）；用户在同意屏
-        # 上逐项取消时可能少于请求串，回调以此为准入库，不许拿请求串冒充。
-        "scope": (body.get("scope") or "").strip() or None,
-    }
-
 
 def refresh_access_token(refresh_token: str,
                          http_post=None,
@@ -555,20 +318,6 @@ def check_drive_liveness(access_token: str, http_get=None) -> dict:
     return body.get("user", {}) if isinstance(body, dict) else {}
 
 
-# ---------------------------------------------------------------------------
-# 授权 state 行（单次有效、TTL 内有效；行里只存哈希与密封 verifier）
-# ---------------------------------------------------------------------------
-
-def _hash_state(state: str) -> str:
-    return hashlib.sha256(state.encode("utf-8")).hexdigest()
-
-
-def _pkce_pair() -> tuple[str, str]:
-    verifier = secrets.token_urlsafe(64)
-    digest = hashlib.sha256(verifier.encode("utf-8")).digest()
-    challenge = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
-    return verifier, challenge
-
 
 def granted_scope_set(granted_scopes: str | None) -> set:
     """已授范围串（空格分隔）→ 集合；None/空串 → 空集。"""
@@ -583,10 +332,10 @@ def binding_needs_rebind(granted_scopes: str | None) -> bool:
 
 
 def reset_mkdir_failed_jobs(db: Session, user_id: int) -> int:
-    """Drive 重绑成功后的转存死单复活（历史名，Drive 侧入口）。
+    """转存死单复活的 Drive 侧入口（历史名，保留转发口）。
 
     实现已下沉 transfer_variant.revive_binding_failed_jobs
-    （全站唯一一份，115/夸克建绑/重验成功点共用同一份），本
+    （全站唯一一份），本
     函数只转调，行为与下沉前一字不变：命中三类行（建目录
     失败前缀 / 列目录 401 前缀 / error_kind == "no_binding"）、
     字段口径（pending + attempts 清零 + 错误/重试/租约清掉）、
@@ -612,402 +361,6 @@ def _revoke_refresh_token_best_effort(refresh_token: str,
         logger.warning("重绑旧 refresh 吊销失败（忽略）", exc_info=True)
 
 
-#: 回调浏览器会话 nonce 的 cookie 名（portal 下发/读取，本模块校验）。
-OAUTH_NONCE_COOKIE = "aetrix_drive_oauth_nonce"
-
-
-def oauth_nonce_cookie_domain(request_host: str | None) -> str | None:
-    """nonce cookie 的 Domain 推导（回调会话校验配套）。
-
-    发起端（前端同源 XHR）与回调端（Google 注册的对外地址）同
-    host → 返回 None（host-only cookie 即可）；不同 host 但共享
-    父域（如 aetrix.example.com 与 cdn.example.com 共享
-    example.com）→ 返回父域，cookie 才能跟过子域跳转；无共享
-    父域 → None（该部署下浏览器流程会 fail-closed，须让发起端
-    与回调端同域，见 PR 说明的已知边界）。
-    """
-    from urllib.parse import urlsplit
-
-    callback_host = urlsplit(configured_public_url() or "").hostname or ""
-    req_host = (request_host or "").split(":")[0].strip().lower()
-    cb_host = callback_host.strip().lower()
-    if not req_host or not cb_host or req_host == cb_host:
-        return None
-    req_labels = req_host.split(".")
-    cb_labels = cb_host.split(".")
-    common = []
-    for a, b in zip(reversed(req_labels), reversed(cb_labels)):
-        if a != b:
-            break
-        common.append(a)
-    if len(common) < 2:
-        return None
-    return ".".join(reversed(common))
-
-
-def assert_callback_browser_binding(db: Session, state: str,
-                                    nonce_cookie: str | None,
-                                    session_user_id: int | None) -> None:
-    """回调会话校验（安全收口 2026-10-30）：complete 消费 state 前把关。
-
-    堵的是审计第 1 点的 exploit 链：旧回调只认 state，攻击者用
-    自己合法生成的 state 诱使受害者在 Google 同意屏点同意，就能
-    把受害者的 Google 令牌绑到攻击者名下。本校验把回调绑回
-    “发起授权的那个浏览器 + 那个用户”：
-
-    - state 行不存在 → 本函数直接返回，交给 complete 按
-      not_found 原口径处理（不泄露 state 是否存在过）；
-    - 浏览器出示的 nonce 与行内 nonce_hash 对不上（无 cookie /
-      换了浏览器 / 上线前在途行 nonce_hash 为 NULL）→ 烧掉 state
-      行并抛 auth_error：受害者浏览器里没有发起者的 cookie，
-      链路在此断掉；烧行防同一 state 被反复试探；
-    - 请求自带可解析会话（JWT / Emby token）时，会话用户必须
-      等于 state 行 user_id，对不上同样烧行拒绝（纵深）。
-      浏览器回跳通常不带会话头，此时只靠 nonce 一条腿。
-    nonce 比对走 sha256 后 compare_digest，原文永不入库、不进日志。
-    """
-    row = (
-        db.query(em.DriveOAuthState)
-        .filter(em.DriveOAuthState.state_hash == _hash_state(state or ""))
-        .first()
-    )
-    if row is None:
-        return
-    nonce_ok = bool(
-        nonce_cookie and getattr(row, "nonce_hash", None)
-        and hmac.compare_digest(_hash_state(nonce_cookie), row.nonce_hash))
-    user_ok = session_user_id is None or session_user_id == row.user_id
-    if nonce_ok and user_ok:
-        return
-    db.delete(row)
-    db.commit()
-    logger.warning("Drive OAuth 回调会话校验失败（已烧 state 行）")
-    raise DriveOAuthError(
-        "auth_error",
-        "授权会话校验失败，请在发起绑定的浏览器里重新授权。")
-
-
-def _validate_label_and_quota(db: Session, user_id: int,
-                              account_label: str,
-                              exclude_binding_id: int | None = None) -> str:
-    """P1 同款校验（label 1–100 字、同 provider 重名拒、上限拒），
-    供 start 与 complete 两处共用（complete 时重查，防并发抢名）。
-    exclude_binding_id：重绑时传目标绑定 id——同名校验跳过自身、
-    上限计数不算自身（重绑不新增行，不许因“已达上限”把重绑挡在
-    门外）。"""
-    label = (account_label or "").strip()
-    if not label or len(label) > 100:
-        raise DriveOAuthError("validation", "account_label 需为 1–100 字。")
-    existing_q = (
-        db.query(em.UserStorageBinding)
-        .filter(em.UserStorageBinding.user_id == user_id,
-                em.UserStorageBinding.provider == ub.PROVIDER_DRIVE,
-                em.UserStorageBinding.account_label == label)
-    )
-    if exclude_binding_id is not None:
-        existing_q = existing_q.filter(
-            em.UserStorageBinding.id != exclude_binding_id)
-    if existing_q.first() is not None:
-        raise DriveOAuthError(
-            "validation", f"同 provider 下已存在同名绑定「{label}」。")
-    count_q = (
-        db.query(em.UserStorageBinding)
-        .filter(em.UserStorageBinding.user_id == user_id)
-    )
-    if exclude_binding_id is not None:
-        count_q = count_q.filter(
-            em.UserStorageBinding.id != exclude_binding_id)
-    # 上限口径（goal-33 通审决议 2）：有池候选/成员资格的用户走
-    # pool_gate.binding_limit_for_user 的池独立上限键，其余仍是个人
-    # 上限（env，默认 3）——判定收口在 pool_gate 一处，本处不另算。
-    from backend.emby_server import pool_gate as _pool_gate
-
-    limit = _pool_gate.binding_limit_for_user(db, user_id)
-    if count_q.count() >= limit:
-        raise DriveOAuthError(
-            "validation",
-            f"绑定已达上限（{limit} 个），请先解绑不用的账号。")
-    return label
-
-
-def start_drive_oauth(db: Session, user_id: int, account_label: str,
-                      redirect_uri_value: str | None = None,
-                      rebind_binding_id: int | None = None,
-                      client: str | None = None) -> dict:
-    """开始 Drive 授权：建 state 行、返回 Google 授权地址。
-
-    此时不建绑定行与凭据行——绑完先验活，没换到 token 就不成行。
-    前置缺失响亮拒绝：服务器应用凭据未配、对外地址未配、label
-    非法、重名、超上限，全部 validation（400），不生成 state。
-    rebind_binding_id：重绑时传目标绑定 id——目标须是本人名下的
-    Drive 绑定行，否则 validation；state 行记下它，回调成功时原地
-    换凭据（不新增行、不改 label、不改绑定 id），回调失败时目标行
-    落失败态（不另建失败行）。重绑中途放弃：旧绑定原样不动，
-    不像“先删后绑”那样丢行。
-
-    绑定开关（drive_binding_enabled，默认关）关时在最前面拒绝
-    （kind=disabled，403）：不建 state 行，重绑发起同样受管——
-    开关只管「新建绑定」这个动作，既有绑定的播放/维护不走本口。
-
-    client=CLIENT_OAUTH2 时走第二入口：授权地址用第二套凭据拼、
-    state 行落 oauth_client 供回调分流；发起前先过门禁（第二套
-    凭据未配 → validation；无查看凭证 → forbidden），不生成
-    state。默认（老入口）的凭据检查、门禁与行为逐字不变，老
-    入口永不受查看凭证门禁与第二套配置影响。
-    """
-    if not ub.drive_binding_enabled(db):
-        raise DriveOAuthError(
-            "disabled", ub.DRIVE_BINDING_DISABLED_MESSAGE)
-    slot = _normalize_client(client)
-    if slot == CLIENT_OAUTH2:
-        _assert_oauth2_entry_allowed(db, user_id)
-    elif not _client_id() or not _client_secret():
-        raise DriveOAuthError(
-            "validation",
-            "服务器未配置 Drive OAuth 应用凭据（DRIVE_OAUTH_CLIENT_ID/SECRET），"
-            "部署者须先在 Google Cloud 注册应用并配好。")
-    uri = redirect_uri_value or redirect_uri()
-    if not uri:
-        raise DriveOAuthError(
-            "validation",
-            "服务器未配置对外地址（EMBY_PUBLIC_URL），部署者须先配好并在 "
-            "Google Cloud 把回调地址注册为授权重定向 URI。")
-    rebind_target = None
-    if rebind_binding_id is not None:
-        rebind_target = (
-            db.query(em.UserStorageBinding)
-            .filter(em.UserStorageBinding.id == rebind_binding_id,
-                    em.UserStorageBinding.user_id == user_id,
-                    em.UserStorageBinding.provider == ub.PROVIDER_DRIVE)
-            .first()
-        )
-        if rebind_target is None:
-            raise DriveOAuthError(
-                "validation", "重绑目标不存在或不属于本人。")
-    label = _validate_label_and_quota(db, user_id, account_label,
-                                      exclude_binding_id=rebind_binding_id)
-    state = secrets.token_urlsafe(32)
-    nonce = secrets.token_urlsafe(32)
-    verifier, challenge = _pkce_pair()
-    now = datetime.now()
-    row = em.DriveOAuthState(
-        state_hash=_hash_state(state), user_id=user_id,
-        account_label=label, sealed_verifier=seal_secret(verifier),
-        nonce_hash=_hash_state(nonce),
-        created_at=now, expires_at=now + timedelta(seconds=state_ttl_sec()),
-        rebind_binding_id=rebind_binding_id, oauth_client=slot)
-    db.add(row)
-    db.commit()
-    return {
-        "authorization_url": build_authorization_url(
-            uri, state, challenge, client=slot),
-        "expires_in": state_ttl_sec(),
-        # 浏览器会话 nonce 原文：只许 portal 用它下发 HttpOnly
-        # cookie（portal 返回前端前会 pop 掉本键，绝不进 JSON）。
-        "_oauth_nonce": nonce,
-    }
-
-
-def _create_failed_drive_rows(db: Session, user_id: int, label: str,
-                              kind: str,
-                              oauth_client: str = CLIENT_PRIMARY
-                              ) -> em.UserStorageBinding:
-    """三档失败落行（P1 同款语义：行在、状态是失败态、客户端展示
-    重绑引导，不静默、不回落）。失败行也落来源客户端：之后重验
-    刷新要按它选凭据，记错一样刷不动。"""
-    cred = em.MountCredential(
-        mount_id=None, scope="user", owner_user_id=user_id,
-        sealed_credential="", key_id="fernet-v1", status="invalid")
-    db.add(cred)
-    db.flush()
-    binding = em.UserStorageBinding(
-        user_id=user_id, provider=ub.PROVIDER_DRIVE, account_label=label,
-        credential_id=cred.id, status="invalid",
-        oauth_client=_normalize_client(oauth_client))
-    db.add(binding)
-    db.flush()
-    ub._mark_failed(db, binding, kind)
-    db.commit()
-    return binding
-
-
-def complete_drive_oauth(db: Session, state: str, code: str,
-                         redirect_uri_value: str | None = None,
-                         http_post=None, http_get=None,
-                         ) -> em.UserStorageBinding:
-    """回调完成：state 单次验讫 → 换 token → 验活 → 建双行。
-
-    - state 查无 / 过期 → not_found（404），不泄露 state 是否存在过；
-    - 换 token / 验活属三档内 → 建失败态双行并返回该行（调用方按
-      200 + status 展示重绑引导，与 P1 的 201 + status 同口径）；
-    - 一过性失败 → 不落行，抛 transient（502），用户须重新走授权
-      （Google 授权码本身也是一次性，旧码换不第二次）；
-    - 成功 → 双行 active + last_verified_at。
-    无论成败，state 行在首次使用后即删（单次有效）。
-    重绑（state 行带 rebind_binding_id）：成功时原地换目标行的凭据
-    （凭据行 id、绑定行 id、label 全不变，只换密封令牌 + 已授范围
-    + active 态），并把该用户建转存目录失败的 failed 任务打回
-    pending；旧 refresh_token 尽力吊销（失败不挡重绑）；失败属三档
-    内时目标行落失败态（不另建行）；目标行中途已删时响亮拒绝，
-    不另建行（防 label 唯一约束冲突）。
-    绑定开关（drive_binding_enabled，默认关）关时在消费 state
-    之前拒绝（kind=disabled，403）：发起后开关被关掉的中途流程
-    同样建不了新绑定，state 行不烧、开关重开后仍可用（未过期时）。
-
-    入口分流：state 行 oauth_client 决定换 token 用哪套凭据、
-    绑定行最终落哪个来源。第二入口的行在换 token 前再过一次
-    门禁复核（发起后查看凭证被收回也绑不成）：不过关烧 state
-    行并抛原 kind（forbidden / validation），不换 token、不落行；
-    老入口的行不复核、行为逐字不变。
-    """
-    if not ub.drive_binding_enabled(db):
-        raise DriveOAuthError(
-            "disabled", ub.DRIVE_BINDING_DISABLED_MESSAGE)
-    uri = redirect_uri_value or redirect_uri()
-    row = (
-        db.query(em.DriveOAuthState)
-        .filter(em.DriveOAuthState.state_hash == _hash_state(state or ""))
-        .first()
-    )
-    if row is None:
-        raise DriveOAuthError("not_found", "授权会话不存在或已使用，请重新授权。")
-    user_id, label = row.user_id, row.account_label
-    slot = _normalize_client(getattr(row, "oauth_client", None))
-    if slot == CLIENT_OAUTH2:
-        try:
-            _assert_oauth2_entry_allowed(db, user_id)
-        except DriveOAuthError:
-            db.delete(row)
-            db.commit()
-            raise
-    rebind_binding_id = getattr(row, "rebind_binding_id", None)
-    try:
-        verifier = unseal_secret(row.sealed_verifier or "")
-    except SealedSecretError as exc:
-        db.delete(row)
-        db.commit()
-        raise DriveOAuthError(
-            "auth_error", "授权会话已失效（密钥轮换），请重新授权。") from exc
-    expired = row.expires_at is not None and row.expires_at <= datetime.now()
-    db.delete(row)
-    db.commit()
-    if expired:
-        raise DriveOAuthError("not_found", "授权会话已过期，请重新授权。")
-    if not uri:
-        raise DriveOAuthError(
-            "validation", "服务器未配置对外地址（EMBY_PUBLIC_URL）。")
-    try:
-        label = _validate_label_and_quota(
-            db, user_id, label, exclude_binding_id=rebind_binding_id)
-    except DriveOAuthError:
-        raise
-    rebind_target = None
-    if rebind_binding_id is not None:
-        rebind_target = (
-            db.query(em.UserStorageBinding)
-            .filter(em.UserStorageBinding.id == rebind_binding_id,
-                    em.UserStorageBinding.user_id == user_id,
-                    em.UserStorageBinding.provider == ub.PROVIDER_DRIVE)
-            .first()
-        )
-        if rebind_target is None:
-            raise DriveOAuthError(
-                "validation", "重绑目标已不存在，请重新绑定。")
-    try:
-        tokens = exchange_code_for_tokens(code, uri, verifier,
-                                          http_post=http_post, client=slot)
-    except DriveOAuthError as exc:
-        if exc.kind in ("auth_error", "expired", "throttled"):
-            if rebind_target is not None:
-                ub._mark_failed(db, rebind_target, exc.kind)
-                db.commit()
-                return rebind_target
-            return _create_failed_drive_rows(
-                db, user_id, label, exc.kind, oauth_client=slot)
-        raise
-    try:
-        check_drive_liveness(tokens["access_token"], http_get=http_get)
-    except DriveOAuthError as exc:
-        if exc.kind in ("auth_error", "expired", "throttled"):
-            if rebind_target is not None:
-                ub._mark_failed(db, rebind_target, exc.kind)
-                db.commit()
-                return rebind_target
-            return _create_failed_drive_rows(
-                db, user_id, label, exc.kind, oauth_client=slot)
-        raise
-    granted = tokens.get("scope")
-    if rebind_target is not None:
-        # 原地换凭据：凭据行 id 与绑定行 id 不变，旧 refresh 尽力吊销。
-        # 凭据行只取一次；旧令牌解不开时 old_refresh 留空（不挡重绑），
-        # 凭据行本身缺失则响亮失败（用户可删后重绑，不静默另建行）。
-        cred = ub._credential_of(db, rebind_target)
-        old_refresh = None
-        try:
-            old_refresh = decode_drive_token(
-                unseal_secret(cred.sealed_credential or "")
-            ).get("refresh_token")
-        except Exception:
-            old_refresh = None
-        cred.sealed_credential = seal_secret(encode_drive_token(
-            tokens["access_token"], tokens["refresh_token"],
-            tokens["expires_at"], scope=granted))
-        now = datetime.now()
-        cred.status = "active"
-        cred.last_verified_at = now
-        cred.last_error_kind = None
-        rebind_target.granted_scopes = granted
-        # 来源客户端随本次重绑改写：换 token 用的是 state 行记的
-        # 那套，之后刷新就按这个新记录走，两边必须同一步改。
-        rebind_target.oauth_client = slot
-        rebind_target.status = "active"
-        rebind_target.last_verified_at = now
-        rebind_target.last_error_kind = None
-        reset_mkdir_failed_jobs(db, user_id)
-        db.commit()
-        if old_refresh and old_refresh != tokens["refresh_token"]:
-            _revoke_refresh_token_best_effort(old_refresh, http_post)
-        # 死令牌待收回优先执行（2026-10-30 安全收口）：凭据死亡
-        # 期间登记的待收回行，趁新令牌可用先补收（作用域由本
-        # 绑定令牌的可见性决定，收不到的行留待清理周期兜底）。
-        # 补收失败绝不影响已成功的重绑。
-        try:
-            from backend.emby_server import transfer_variant as _tv
-            _pending_ids = _tv.pending_share_revoke_row_ids(db, user_id)
-            if _pending_ids:
-                _tv.revoke_user_copy_sharing(
-                    db, user_id, binding=rebind_target,
-                    row_ids=_pending_ids)
-                db.commit()
-        except Exception:  # noqa: BLE001 — 补收失败绝不影响重绑
-            logger.warning("重绑后待收回补收失败 user=%s",
-                           user_id, exc_info=True)
-            try:
-                db.rollback()
-            except Exception:  # noqa: BLE001
-                pass
-        return rebind_target
-    cred = em.MountCredential(
-        mount_id=None, scope="user", owner_user_id=user_id,
-        sealed_credential=seal_secret(encode_drive_token(
-            tokens["access_token"], tokens["refresh_token"],
-            tokens["expires_at"], scope=granted)),
-        key_id="fernet-v1", status="active")
-    db.add(cred)
-    db.flush()
-    binding = em.UserStorageBinding(
-        user_id=user_id, provider=ub.PROVIDER_DRIVE, account_label=label,
-        credential_id=cred.id, status="active", granted_scopes=granted,
-        oauth_client=slot)
-    db.add(binding)
-    db.flush()
-    now = datetime.now()
-    binding.last_verified_at = now
-    binding.last_error_kind = None
-    cred.last_verified_at = now
-    cred.last_error_kind = None
-    db.commit()
-    return binding
 
 
 # ---------------------------------------------------------------------------

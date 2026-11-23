@@ -421,11 +421,9 @@ TRANSFER_CONFIG_SCHEMA: dict[str, tuple] = {
 # 无行时读取侧回退默认 8。
 DRIVE_API_CONFIG_SCHEMA: dict[str, tuple] = {
     "drive_api_qps": ("float", 1, 20),
-    # 谷歌 Drive 绑定开关（2026-11-04 站主亲令：绑定能力保留、现置
-    # 关）：word 风格 ("bool",) 存 "true"/"false"；读侧唯一实现
-    # user_bindings.drive_binding_enabled——无行/非法一律关，只有
-    # "true" 才开。只管新建绑定，已有绑定不受影响。
-    "drive_binding_enabled": ("bool",),
+    # 谷歌 Drive 绑定开关 drive_binding_enabled 已随 2026-11-24 绑盘
+    # 拆除一期摘除：读侧收敛为代码常量关，配置键不再可经任何写口
+    # 落库（存量行二期清理）。
 }
 
 # 公共贡献池（goal-33 PR-1 地基，2026-11-07）：27 键，读取唯一实现

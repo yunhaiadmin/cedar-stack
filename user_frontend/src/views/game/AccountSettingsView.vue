@@ -74,7 +74,7 @@
          API Key 胶囊＋筛选胶囊＋会话行全部首屏可见，不再藏手风琴；API Key
          面板以插槽形式嵌在会话列表的副文案与筛选胶囊之间（友站顺序），
          登录记录入口保留。id="api-keys" 供概览「弹幕 API」行深链直达
-         （2026-11-18 自查 M-1，与 #my-drive 同口径） -->
+         （2026-11-18 自查 M-1） -->
     <section class="set-group" id="api-keys">
       <h2 class="set-gtitle">活跃会话</h2>
       <div class="set-rows">
@@ -87,17 +87,9 @@
       </div>
     </section>
 
-    <!-- 绑定：providers 门控结论由面板回报，未确认前整组不显示（v-show 保挂载，面板要先加载才能回报） -->
-    <section v-show="driveGroupVisible" id="my-drive" class="set-group">
-      <h2 class="set-gtitle">绑定</h2>
-      <p class="set-gsub">绑了自己的盘，播放走你自己的额度，不走共享池</p>
-      <div class="set-rows">
-        <DriveBindingsPanel ref="drivePanel" @loaded="onDriveLoaded" @active-binding="onActiveBinding" />
-      </div>
-    </section>
 
     <!-- 追剧订阅：管理面板原家在此；概览「我的片子」组摘除后归位回来。
-         门控同绑定组：面板常驻挂载先加载，summary 回报不可见（开关关 404）时整组不显示 -->
+         门控：面板常驻挂载先加载，summary 回报不可见（开关关 404）时整组不显示 -->
     <section v-show="followGroupVisible" class="set-group">
       <h2 class="set-gtitle">追剧订阅</h2>
       <p class="set-gsub">订阅的剧有新集到货，自动转存到你绑定的盘里</p>
@@ -182,19 +174,16 @@
  * 安全相关内容 2026-11-18 照友站账号安全页重组为四组——账户（用户名 /
  * 公开 ID 行 + 复制账户信息）、登录与恢复（密码 / Telegram / 动态验证
  * 码）、Passkeys（独立组）、活跃会话（创建 API Key + 合并会话列表 /
- * 登录记录）；其余组不变——绑定（谷歌盘管理 + 已
- * 下线绑定解绑）、追剧订阅（订阅列表 / 搜片名订阅 / 分集转存状态，
- * 面板原家；概览归组摘除后归位）、通
- * 知（TG 私聊偏好开关）、账号（退出登录）。各块逻辑都在 components/profile/ 的对应组件里（自旧
+ * 登录记录）；其余组不变——追剧订阅（订阅列表 / 搜片名订阅 /
+ * 分集转存状态，面板原家；概览归组摘除后归位）、通知（TG 私聊
+ * 偏好开关）、账号（退出登录）。原「绑定」组（谷歌盘管理）已随
+ * 2026-11-24 绑盘拆除一期整组摘除。各块逻辑都在 components/profile/ 的对应组件里（自旧
  * 账号页原样抽出，行为口径不变）；本页只留退出登录与账户组复制。原「展示与隐私」组
  * （发现页卡片展示 / 观影碑上榜开关）已随发现页删除与榜单下架定版整组
  * 摘除（2026-11-13 残留入口清理单）；2026-11-15 用户令恢复其中「观影
  * 排行榜上榜开关」一行（排行榜为活功能，用户须能关掉自己的展示），
  * 其余原组项不恢复；2026-11-18 用户令：该行亦摘除、整组不再留——页面
  * 不再提供修改入口，偏好默认开启、已存值与后端读取口径均不变。
- * 带 #my-drive 锚点进来（旧深链 / 播放器方案弹窗）时，等绑定组显示后
- * 自动展开谷歌盘并滚到位。点播引导带 bind_return 参数进来时，绑好
- * （列表出现可用绑定）自动回跳来源页并让其重开播放器选择。
  */
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -211,16 +200,9 @@ import PasskeysPanel from '@/components/profile/PasskeysPanel.vue'
 import ApiKeysPanel from '@/components/profile/ApiKeysPanel.vue'
 import TgBindModal from '@/components/TgBindModal.vue'
 import { tgApi } from '@/api/tg'
-import DriveBindingsPanel from '@/components/profile/DriveBindingsPanel.vue'
 import SeriesFollowsPanel from '@/components/profile/SeriesFollowsPanel.vue'
 import { panelApi, humanizeError } from '@/composables/usePanelApi'
 import { useClipboard } from '@/composables/useClipboard'
-import {
-  BIND_RETURN_QUERY,
-  BIND_TITLE_QUERY,
-  RESUME_TITLE_QUERY,
-  sanitizeBindReturnPath,
-} from '@/composables/useBindReturn'
 import { useUserStore } from '@/stores/user'
 import { useToast } from '@/composables/useToast'
 
@@ -266,40 +248,10 @@ function onTgBound() {
   tgBound.value = true
 }
 
-// ── 绑定组门控（providers 结论由 DriveBindingsPanel 回报） ──
-const drivePanel = ref<InstanceType<typeof DriveBindingsPanel> | null>(null)
-const driveGroupVisible = ref(false)
-function onDriveLoaded(payload: { visible: boolean }) {
-  driveGroupVisible.value = payload.visible
-  if (payload.visible && route.hash === '#my-drive') {
-    void nextTick(() => {
-      drivePanel.value?.expandDrive()
-      document.getElementById('my-drive')?.scrollIntoView({ block: 'start' })
-    })
-  }
-}
-
 // ── 追剧订阅组门控（面板 summary 回报：接口 404＝未启用，整组隐藏） ──
 const followGroupVisible = ref(false)
 function onFollowSummary(payload: { visible: boolean }) {
   followGroupVisible.value = payload.visible
-}
-
-// ── 绑盘回跳：点播被门禁拦下经引导进来（query 带 bind_return）时，
-// 名下出现可用绑定就自动带回来源页，并让来源页重开播放器选择 ──
-const bindReturnDone = ref(false)
-function onActiveBinding() {
-  if (bindReturnDone.value) return
-  const target = sanitizeBindReturnPath(route.query[BIND_RETURN_QUERY])
-  if (!target) return
-  bindReturnDone.value = true
-  const rawTitle = route.query[BIND_TITLE_QUERY]
-  const title = typeof rawTitle === 'string' ? rawTitle.trim() : ''
-  toast.success('绑好了，带你回到刚才的片')
-  void router.replace({
-    path: target,
-    query: title ? { [RESUME_TITLE_QUERY]: title } : {},
-  })
 }
 
 // ── TG 私聊通知偏好（只管机器人私聊，站内信不受影响） ──
@@ -354,8 +306,8 @@ async function handleLogout() {
 onMounted(() => {
   void loadNotifyPrefs()
   void loadTgStatus()
-  // 概览「弹幕 API」行带 #api-keys 进来时滚到活跃会话组（与 #my-drive
-  // 同口径；本组常驻渲染，无需等面板回报）
+  // 概览「弹幕 API」行带 #api-keys 进来时滚到活跃会话组
+  // （本组常驻渲染，无需等面板回报）
   if (route.hash === '#api-keys') {
     void nextTick(() => {
       document.getElementById('api-keys')?.scrollIntoView({ block: 'start' })

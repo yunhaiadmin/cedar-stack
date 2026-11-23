@@ -1,25 +1,22 @@
 # -*- coding: utf-8 -*-
 """谷歌安全收口（2026-10-30）回归测试。
 
-钉死五件（对应审计报告 ~/workspace/reports/security-audit-google-20261029.md
-在当前 main 上复核仍成立的缺口）：
+钉死四件（对应审计报告 ~/workspace/reports/security-audit-google-20261029.md
+在当前 main 上复核仍成立的缺口；原第 1 件「OAuth 回调浏览器会话
+绑定」已随 2026-11-24 绑盘拆除一期删除 OAuth 发起/回调入口，
+其测试一并摘除）：
 
-1. OAuth 回调浏览器会话绑定：start 落 nonce_hash、nonce 原文只
-   交 portal 下发 cookie；回调校验三态（无/错 cookie 拒且烧
-   state 行、会话用户不符拒、相符放行且行保留）＋上线前在途行
-   （nonce_hash 为 NULL）fail-closed＋未知 state 透传给 complete
-   的 not_found 口径＋cookie Domain 推导。
-2. 解绑调 Google revoke：drive 绑定删行前用该绑定 refresh
+1. 解绑调 Google revoke：drive 绑定删行前用该绑定 refresh
    token 打吊销端点；吊销抛错不阻塞解绑；pan115 跳过。
-3. Path B 暂存可验证化：成功后暂存删不掉落 orphan 登记行；
+2. Path B 暂存可验证化：成功后暂存删不掉落 orphan 登记行；
    清理周期暂存扫荡重试删除、成功删行销账、失败留行；作用域
    只限源盘 orphan（userdrive:/pan115: 的 orphan 不碰）。
-4. 服主副本闲置 TTL：owner_scope='source' 的 ready 行纳入
+3. 服主副本闲置 TTL：owner_scope='source' 的 ready 行纳入
    copy_idle_cleanup（先收后删、任一用户近期播过不算闲置、
    SystemConfig 开关可关、关时用户行口径不受影响）。
-5. 死令牌待收回登记：凭据死亡钩子在收回被跳过后落
-   share_revoke_pending_at；重绑成功后优先补收并清登记；
-   清理周期 run_pending_share_revokes 兜底。
+4. 死令牌待收回登记：凭据死亡钩子在收回被跳过后落
+   share_revoke_pending_at；清理周期
+   run_pending_share_revokes 兜底执行并清登记。
 
 全部离线：Google/Drive 一律桩（monkeypatch 只打类/模块属性），
 不碰真实端点；文中的令牌值都是假值。
@@ -31,7 +28,6 @@ os.environ.setdefault("REDIS_ENABLED", "false")
 
 import time
 from datetime import datetime, timedelta
-from urllib.parse import unquote
 
 import pytest
 from sqlalchemy import create_engine
@@ -95,30 +91,6 @@ class _FakeResp:
     @property
     def text(self):
         return self._payload if isinstance(self._payload, str) else ""
-
-
-def _token_post_factory(behavior="ok"):
-    """token 端点桩（与 test_byos_p2_drive_oauth 同款行为集）。"""
-    def _post(url, data=None, timeout=30):
-        grant = (data or {}).get("grant_type", "")
-        if behavior == "invalid_grant":
-            return _FakeResp(400, {"error": "invalid_grant"})
-        if grant == "authorization_code":
-            return _FakeResp(200, {"access_token": "AT-CODE",
-                                   "refresh_token": "RT-CODE",
-                                   "expires_in": 3600,
-                                   "token_type": "Bearer"})
-        return _FakeResp(200, {"access_token": "AT-NEW",
-                               "refresh_token": "RT-NEW",
-                               "expires_in": 3600,
-                               "token_type": "Bearer"})
-    return _post
-
-
-def _about_get_factory():
-    def _get(url, headers=None, timeout=30):
-        return _FakeResp(200, {"user": {"emailAddress": "u@example.com"}})
-    return _get
 
 
 def _seed_drive_binding(db, user_id=7, label="盘", status="active",
@@ -214,83 +186,6 @@ def _reset_fakes():
     _FakeSAClient.removed = []
     _FakeSAClient.deleted = []
     _FakeSAClient.fail_delete = set()
-
-
-# ---------------------------------------------------------------------------
-# 1. OAuth 回调浏览器会话绑定
-# ---------------------------------------------------------------------------
-
-def _start_state(db, user_id=7, label="盘"):
-    started = do.start_drive_oauth(db, user_id, label)
-    state = unquote(
-        started["authorization_url"].split("state=")[1].split("&")[0])
-    return state, started["_oauth_nonce"]
-
-
-def test_start_stores_nonce_hash(db):
-    _state, nonce = _start_state(db)
-    assert nonce
-    row = db.query(em.DriveOAuthState).one()
-    assert row.nonce_hash == do._hash_state(nonce)
-
-
-def test_callback_binding_no_cookie_rejected_and_state_burned(db):
-    state, _nonce = _start_state(db)
-    with pytest.raises(do.DriveOAuthError) as exc:
-        do.assert_callback_browser_binding(db, state, None, None)
-    assert exc.value.kind == "auth_error"
-    assert db.query(em.DriveOAuthState).count() == 0
-
-
-def test_callback_binding_wrong_cookie_rejected(db):
-    state, _nonce = _start_state(db)
-    with pytest.raises(do.DriveOAuthError) as exc:
-        do.assert_callback_browser_binding(db, state, "伪造的nonce", None)
-    assert exc.value.kind == "auth_error"
-    assert db.query(em.DriveOAuthState).count() == 0
-
-
-def test_callback_binding_session_user_mismatch_rejected(db):
-    state, nonce = _start_state(db, user_id=7)
-    with pytest.raises(do.DriveOAuthError) as exc:
-        do.assert_callback_browser_binding(db, state, nonce, 999)
-    assert exc.value.kind == "auth_error"
-    assert db.query(em.DriveOAuthState).count() == 0
-
-
-def test_callback_binding_ok_keeps_state(db):
-    state, nonce = _start_state(db, user_id=7)
-    do.assert_callback_browser_binding(db, state, nonce, None)
-    assert db.query(em.DriveOAuthState).count() == 1
-    do.assert_callback_browser_binding(db, state, nonce, 7)
-    assert db.query(em.DriveOAuthState).count() == 1
-
-
-def test_callback_binding_unknown_state_passes_through(db):
-    # state 不存在：不抛，交给 complete 按 not_found 原口径处理。
-    do.assert_callback_browser_binding(db, "不存在的state", None, None)
-
-
-def test_callback_binding_legacy_row_without_nonce_fail_closed(db):
-    row = em.DriveOAuthState(
-        state_hash=do._hash_state("legacy-state"), user_id=7,
-        account_label="盘", sealed_verifier=seal_secret("verifier"),
-        created_at=datetime.now(),
-        expires_at=datetime.now() + timedelta(minutes=10))
-    db.add(row)
-    db.commit()
-    with pytest.raises(do.DriveOAuthError) as exc:
-        do.assert_callback_browser_binding(db, "legacy-state", "任意", None)
-    assert exc.value.kind == "auth_error"
-    assert db.query(em.DriveOAuthState).count() == 0
-
-
-def test_nonce_cookie_domain_derivation():
-    # _oauth_env 下回调 host = aetrix.example。
-    assert do.oauth_nonce_cookie_domain("aetrix.example") is None
-    assert do.oauth_nonce_cookie_domain("cdn.aetrix.example") == "aetrix.example"
-    assert do.oauth_nonce_cookie_domain("other.org") is None
-    assert do.oauth_nonce_cookie_domain(None) is None
 
 
 # ---------------------------------------------------------------------------
@@ -535,7 +430,8 @@ def test_source_copy_idle_cleanup_switch_off(db, monkeypatch):
 # 5. 死令牌待收回登记 + 重绑补收 + 清理兜底
 # ---------------------------------------------------------------------------
 
-def test_dead_token_marks_pending_then_rebind_executes(db, monkeypatch):
+def test_dead_token_marks_pending_cleanup_skips_without_token(
+        db, monkeypatch):
     _reset_fakes()
     monkeypatch.setattr(tv, "UserDriveApiClient", _FakeUserClient)
     binding, _cred = _seed_drive_binding(
@@ -546,18 +442,15 @@ def test_dead_token_marks_pending_then_rebind_executes(db, monkeypatch):
     db.refresh(row)
     assert row.share_revoked_at is None
     assert row.share_revoke_pending_at is not None
-    # 重绑：新令牌可用后，complete 尾巴优先补收这批登记。
-    started = do.start_drive_oauth(db, 7, "盘",
-                                   rebind_binding_id=binding.id)
-    state = unquote(
-        started["authorization_url"].split("state=")[1].split("&")[0])
-    rebound = do.complete_drive_oauth(
-        db, state, "CODE-123", http_post=_token_post_factory(),
-        http_get=_about_get_factory())
-    assert rebound.status == "active"
+    # 绑盘拆除一期（2026-11-24）后重绑口已删，不再有「重绑补收」：
+    # 令牌已死的行在清理周期里无可用令牌，只能跳过——登记保留、
+    # 不许伪造已收回（有可用令牌时执行并清登记的正路径由
+    # test_pending_revokes_run_in_idle_cleanup 覆盖）。
+    stats = tv.copy_idle_cleanup(db, now=datetime.now())
+    assert stats["pending_revoked"] == 0
     db.refresh(row)
-    assert row.share_revoked_at is not None
-    assert row.share_revoke_pending_at is None
+    assert row.share_revoked_at is None
+    assert row.share_revoke_pending_at is not None
 
 
 def test_pending_revokes_run_in_idle_cleanup(db, monkeypatch):
@@ -573,60 +466,3 @@ def test_pending_revokes_run_in_idle_cleanup(db, monkeypatch):
     assert row.share_revoked_at is not None
     assert row.share_revoke_pending_at is None
 
-
-# ---------------------------------------------------------------------------
-# 1b. portal 端点接线：start 下发 cookie、callback 读 cookie 把关
-# ---------------------------------------------------------------------------
-
-from types import SimpleNamespace
-
-from fastapi import HTTPException, Response
-from starlette.requests import Request as StarletteRequest
-
-from backend.emby_server import portal
-
-
-def _http_request(cookie=None, host="aetrix.example"):
-    headers = [(b"host", host.encode())]
-    if cookie is not None:
-        headers.append((b"cookie", cookie.encode()))
-    scope = {"type": "http", "method": "GET", "path": "/",
-             "headers": headers, "query_string": b"",
-             "scheme": "https", "server": (host, 443),
-             "client": ("127.0.0.1", 40000)}
-    return StarletteRequest(scope)
-
-
-def test_portal_start_sets_nonce_cookie_and_hides_nonce(db):
-    response = Response()
-    result = portal.start_drive_oauth_binding(
-        portal.DriveOAuthStart(account_label="盘"),
-        _http_request(), response, SimpleNamespace(id=7), db)
-    assert "_oauth_nonce" not in result
-    set_cookie = response.headers.get("set-cookie", "")
-    assert do.OAUTH_NONCE_COOKIE + "=" in set_cookie
-    assert "HttpOnly" in set_cookie
-    assert "Path=" + do.OAUTH_CALLBACK_PATH in set_cookie
-
-
-def test_portal_callback_without_cookie_403(db, monkeypatch):
-    state, _nonce = _start_state(db)
-    called = []
-    monkeypatch.setattr(do, "complete_drive_oauth",
-                        lambda db_, s, c: called.append(s))
-    with pytest.raises(HTTPException) as exc:
-        portal.callback_drive_oauth_binding(
-            _http_request(), code="CODE", state=state, error="", db=db)
-    assert exc.value.status_code == 403
-    assert called == []
-
-
-def test_portal_callback_with_cookie_passes(db, monkeypatch):
-    state, nonce = _start_state(db)
-    binding, _cred = _seed_drive_binding(db, 7, label="已绑")
-    monkeypatch.setattr(do, "complete_drive_oauth",
-                        lambda db_, s, c: binding)
-    result = portal.callback_drive_oauth_binding(
-        _http_request(cookie=f"{do.OAUTH_NONCE_COOKIE}={nonce}"),
-        code="CODE", state=state, error="", db=db)
-    assert result["provider"] == "drive" and result["status"] == "active"

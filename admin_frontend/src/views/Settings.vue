@@ -925,13 +925,12 @@ async function saveMountServingCore(): Promise<boolean> {
 }
 
 /** ==================== Drive API 限速卡片（独立 endpoint，非通用分组） ==================== */
-const driveApi = reactive({ qps: 8, binding_enabled: false })
-const driveApiOriginal = reactive({ qps: 8, binding_enabled: false })
+const driveApi = reactive({ qps: 8 })
+const driveApiOriginal = reactive({ qps: 8 })
 const driveApiLoading = ref(false)
 
 function applyDriveApi(data: DriveApiConfig) {
   driveApi.qps = Number(data.qps) || 8
-  driveApi.binding_enabled = data.binding_enabled === true
   Object.assign(driveApiOriginal, driveApi)
 }
 
@@ -947,8 +946,7 @@ async function loadDriveApi() {
 }
 
 const driveApiDirty = computed(
-  () => driveApi.qps !== driveApiOriginal.qps
-    || driveApi.binding_enabled !== driveApiOriginal.binding_enabled,
+  () => driveApi.qps !== driveApiOriginal.qps,
 )
 
 /** Drive API 限速保存核心：返回是否成功，失败时拦截器/校验已提示。 */
@@ -960,7 +958,6 @@ async function saveDriveApiCore(): Promise<boolean> {
   try {
     applyDriveApi(await updateDriveApiConfig({
       qps: driveApi.qps,
-      binding_enabled: driveApi.binding_enabled,
     }))
     return true
   } catch {
@@ -3246,14 +3243,7 @@ watch(
                   <span class="field-hint">全部 Drive API 请求合计不超过这个速率，默认 8。谷歌 per-user 配额约 10 次/秒，实际靠 SA 池轮换分摊到多个账号</span>
                 </div>
               </el-form-item>
-              <el-form-item label="Google Drive 绑定开关">
-                <div class="field-stack">
-                  <div class="field-control">
-                    <span class="au-badge">{{ driveApi.binding_enabled ? '已开放新建绑定' : '已关闭新建绑定' }}</span>
-                  </div>
-                  <span class="field-hint">关：用户不能新建 Drive 绑定——发起授权会被拒绝、「我的网盘」也不再显示 Drive 入口；已经绑定的用户与播放不受影响。开关已摘面板、改走文件配置（env DRIVE_BINDING_ENABLED），当前为关＝绑盘已下线口径</span>
-                </div>
-              </el-form-item>
+
             </el-form>
           </SectionCard>
           <!-- 播放交付计划：独立卡片，归「播放与风控」段（O-02 补缺） -->

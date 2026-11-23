@@ -418,22 +418,3 @@ def test_binding_limit_exited_member_falls_back_to_3(db, monkeypatch):
     assert pool_gate.binding_limit_for_user(db, user) == 3
 
 
-def test_drive_oauth_quota_uses_pool_limit_for_candidate(db, monkeypatch):
-    """drive_oauth 建绑校验改走新判定：普通用户 3 个满额拒绝、
-    候选用户同数未满（上限 10）放行校验。"""
-    from backend.emby_server import drive_oauth
-
-    monkeypatch.delenv("BYOS_BINDING_LIMIT_PER_USER", raising=False)
-    plain = _user(db, "oauth-plain")
-    cand = _user(db, "oauth-cand")
-    for i in range(3):
-        _binding(db, plain.id, label=f"p{i}")
-        _binding(db, cand.id, label=f"c{i}")
-    pool_gate.grant_pool_candidate(db, cand.id)
-    # 候选：第 4 个 label 校验放行
-    assert drive_oauth._validate_label_and_quota(
-        db, cand.id, "新盘") == "新盘"
-    # 普通用户：已达个人上限 3，拒绝
-    with pytest.raises(drive_oauth.DriveOAuthError) as excinfo:
-        drive_oauth._validate_label_and_quota(db, plain.id, "新盘")
-    assert "上限" in excinfo.value.message

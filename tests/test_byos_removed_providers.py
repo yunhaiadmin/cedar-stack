@@ -46,9 +46,9 @@ def db_factory():
 @pytest.fixture()
 def db(db_factory):
     session = db_factory()
-    # 播种 Drive 绑定开关=开（2026-11-04 新增、默认关）：本套件测
-    # 已下线 provider 的收敛口径，期望名单含 drive；开关两态由
-    # test_drive_binding_switch.py 专门覆盖。
+    # 播种历史配置行 drive_binding_enabled=true：绑盘拆除一期
+    # （2026-11-24）后该键已是代码常量关，本套件钉住它不再
+    # 影响任何口径（名单恒空、存量行口径不变）。
     session.add(base_models.SystemConfig(
         key="drive_binding_enabled", value="true"))
     session.commit()
@@ -133,10 +133,12 @@ def test_providers_list_excludes_removed(db, monkeypatch):
         db.add(em.StorageMount(name=f"m{i}", mount_type=mt, path="",
                                is_enabled=True))
     db.commit()
-    assert ub.list_binding_providers(db) == ["drive"]
-    # env 额外名单也开放不了已下线 provider
+    # 绑盘拆除一期后名单恒空：drive 也不再出现（常量关），
+    # 已下线 provider 更不可能回来。
+    assert ub.list_binding_providers(db) == []
+    # env 额外名单也开放不了任何 provider
     monkeypatch.setenv("BYOS_EXTRA_BINDING_PROVIDERS", "pan115,quark")
-    assert ub.list_binding_providers(db) == ["drive"]
+    assert ub.list_binding_providers(db) == []
 
 
 @pytest.mark.parametrize("provider", ["pan115", "quark"])

@@ -64,7 +64,6 @@ from backend.emby_server.secret_sealing import (
     seal_secret,
     unseal_secret,
 )
-from backend.integrations import store
 
 logger = logging.getLogger(__name__)
 
@@ -115,32 +114,27 @@ REMOVED_PROVIDER_MESSAGE = "该网盘已下线，请改绑 Google Drive。"
 ERROR_KIND_TO_STATUS["provider_removed"] = "invalid"
 BINDING_ERROR_MESSAGES["provider_removed"] = REMOVED_PROVIDER_MESSAGE
 
-#: 谷歌 Drive 绑定开关（SystemConfig 键，2026-11-04 站主亲令：绑定
-#: 能力保留，但弄一个开关把绑定关掉、现置关）。管理端在既有
-#: 「Drive API 限速」卡片上可见可改（写入走 config_service 家族
-#: drive_api 校验，word 风格存 "true"/"false"）。
-#: 开关只管「新建 Drive 绑定」一个动作：OAuth 发起与回调完成被拒、
-#: providers 名单不返回 drive；已有绑定记录、解绑、状态查询与已绑
-#: 用户的既有能力（播放/取流/转存）一律不受影响。
+#: 谷歌 Drive 绑定开关（SystemConfig 键，历史）：2026-11-04 站主
+#: 亲令以开关关闭新建绑定；2026-11-24 绑盘拆除一期，开关收敛为
+#: 代码常量关——本键不再被任何代码读取，管理端写入面（Drive API
+#: 配置卡的 binding_enabled 字段）已摘除，env / 库里存量值一律
+#: 不再生效。键名常量保留备查（二期连同存量行一并清理）。
 KEY_DRIVE_BINDING_ENABLED = "drive_binding_enabled"
 
-#: 开关关闭时新建绑定的拒绝文案（用户端原样展示）。
+#: 新建绑定的拒绝文案（历史文案，保留备查；建绑口已随一期拆除）。
 DRIVE_BINDING_DISABLED_MESSAGE = "网盘绑定暂未开放。"
 
 
 def drive_binding_enabled(db: Session) -> bool:
-    """Drive 绑定开关现值（读取唯一实现）。
+    """Drive 新建绑定是否开放：恒 False（绑盘拆除一期收敛）。
 
-    默认关：无配置行 / 值非法 / 读取异常一律按关处理，只有字面
-    "true" 才算开（word 风格，与 register_gift_* 开关同口径）。
-    读口径走 store 热读（60 秒 TTL + 写时失效），管理端保存后
-    本进程立即生效、其余进程在 TTL 内跟上。
+    2026-11-24 起新建绑定的全部入口已删除（OAuth 发起/回调、
+    建绑端点、管理端开关、用户端页面），本函数从读 SystemConfig
+    改为代码常量关，签名保留供存量调用方（providers 名单等）
+    逐字不变地继续走“关”分支。存量绑定的解绑、状态查询与令牌
+    托管不受影响。
     """
-    try:
-        raw = store.get_value(db, KEY_DRIVE_BINDING_ENABLED, "")
-    except Exception:  # noqa: BLE001 配置层异常不许把绑定入口打成 500
-        return False
-    return str(raw).strip().lower() == "true"
+    return False
 
 
 class BindingError(RuntimeError):
@@ -438,12 +432,10 @@ def create_binding(db: Session, user_id: int, provider: str,
         # 不落行、不验活。
         raise BindingError("unsupported", REMOVED_PROVIDER_MESSAGE)
     if provider == PROVIDER_DRIVE:
-        # Drive 不收明文凭据：唯一建绑口是 OAuth start/callback
-        # （见 drive_oauth），存一个验不活的 Drive 凭据行会违反
-        # “绑完先验活”，故明确拒绝、不落行。
+        # Drive 建绑口（OAuth start/callback）已随 2026-11-24 绑盘
+        # 拆除一期删除，本函数是残存的内部口，一律拒绝、不落行。
         raise BindingError(
-            "unsupported",
-            "Drive 绑定请走 OAuth 授权：POST /storage-bindings/drive/oauth/start。")
+            "unsupported", "网盘绑定已下线。")
     raise BindingError("unsupported",
                        "该 provider 不支持建绑。")
 
