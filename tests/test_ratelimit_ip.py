@@ -1,9 +1,11 @@
-"""限流 IP 防伪造测试。
+"""限流 IP 提取测试。
 
-验证 get_client_ip 的可信代理逻辑：
-1. 不可信来源伪造 XFF → 忽略伪造头，用直连 IP（限流不被绕过）
-2. 可信代理的 XFF → 正常解析出真实客户端 IP
-3. 可信代理的 X-Real-IP → 优先使用
+验证 get_client_ip 的口径（2026-11-23 改版，见 ratelimit.get_client_ip）：
+1. 公网直连来源伪造 XFF → 忽略伪造头，用直连 IP（限流不被绕过）
+2. 自有代理层（内网/回环）对端 → 取 XFF 首项为真实客户端 IP
+   （生产链 Cloudflare → tls-bridge → web 容器下，客户端只在首项；
+   旧口径取末段/X-Real-IP 拿到的是代理与 CF 边缘 IP，全站共用一桶）
+3. XFF 首项缺失/非法 → 回落 X-Real-IP，再回落直连 IP
 4. Emby 登录的限流桶按「出口 IP + 账号」建，NAT 下不互相连坐
 """
 import os
@@ -62,23 +64,35 @@ class TestUntrustedSource:
 
 
 class TestTrustedProxy:
-    """可信代理：头可信，正常解析"""
+    """自有代理层对端：头可信，按 XFF 首项解析"""
 
-    def test_trusted_proxy_xff_last_hop(self):
-        """nginx 在 127.0.0.1（默认可信），XFF 取最后一段"""
+    def test_trusted_proxy_xff_first_hop(self):
+        """nginx 在 127.0.0.1（自有代理层），XFF 取首项。
+
+        2026-11-23 口径改版：旧实现取末段——那是单层 nginx 直面客户端
+        时的假设；生产链是 Cloudflare → tls-bridge → web 容器多跳，
+        末段是最近一跳代理、X-Real-IP 是 CF 边缘 IP，客户端只在首项
+        （链首写入者记录的地址，后续每跳往后追加）。
+        """
         req = _make_request(
             "127.0.0.1",
-            xff="1.2.3.4, 5.6.7.8",  # 客户端伪造了 1.2.3.4，nginx 追加了真实的 5.6.7.8
+            xff="1.2.3.4, 5.6.7.8",  # 首项是客户端，后段是链上代理
         )
-        assert get_client_ip(req) == "5.6.7.8"
+        assert get_client_ip(req) == "1.2.3.4"
 
-    def test_trusted_proxy_x_real_ip_priority(self):
-        """可信代理下 X-Real-IP 优先"""
+    def test_xff_first_hop_beats_x_real_ip(self):
+        """XFF 首项优先于 X-Real-IP：生产里 X-Real-IP 被 tls-bridge
+        写成 Cloudflare 边缘 IP，优先它等于按 CF 边缘分桶（仍连坐）。"""
         req = _make_request(
             "127.0.0.1",
             xff="9.9.9.9",
             x_real_ip="5.6.7.8",
         )
+        assert get_client_ip(req) == "9.9.9.9"
+
+    def test_x_real_ip_fallback_without_xff(self):
+        """无 XFF 时回落 X-Real-IP（单层自有 nginx 硬写 $remote_addr 的链）"""
+        req = _make_request("127.0.0.1", x_real_ip="5.6.7.8")
         assert get_client_ip(req) == "5.6.7.8"
 
     def test_trusted_proxy_no_headers(self):

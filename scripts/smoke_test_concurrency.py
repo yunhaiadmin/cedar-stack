@@ -4,7 +4,8 @@
 
 1. 单次卡码被多个请求同时核销 → 只能成功一次（不能发两份奖励，见第 7 节）
 2. 同一被邀请人被重复应用邀请码 → 只建立一次关系、邀请人天数奖励只发一次
-3. `client_ip` 不再采信攻击者可控的 `X-Forwarded-For` 首值（限流桶不可伪造）
+3. `client_ip` 口径：公网直连来源伪造的转发头不被采信（限流桶不可伪造）；
+   自有代理链（对端为内网/回环）下取 `X-Forwarded-For` 首项为客户端 IP
 4. 优惠券单人限领、卡码核销、订单退款的并发占位（见下文各节）
 
 2026-11-13 货币下线：原「并发签到」「_add_points 并发累加」两节随签到与
@@ -208,33 +209,39 @@ check("邀请并发：无未处理异常", all(r and r[0] for r in results),
       f"{[str(r[1])[:60] for r in results if r and not r[0]]}")
 
 # ==================== 5. 限流 IP 取值不可伪造 ====================
-# 注意：get_client_ip 只信任可信代理（TRUSTED_PROXIES，默认 127.0.0.0/8）的头。
-# 测试头解析时，直连 IP 必须用 127.0.0.1（可信）；测试防伪造时，用非可信 IP。
+# 口径（2026-11-23 改版，见 backend/ratelimit.py get_client_ip）：
+# 直连对端是自有代理层（回环/RFC1918/链路本地）或 TRUSTED_PROXIES 名单内
+# 时才采信转发头，取 XFF 首项（生产链 Cloudflare → tls-bridge → web 容器
+# 下客户端只在首项；X-Real-IP 是 CF 边缘 IP、XFF 末段是最近一跳代理）。
+# 公网直连对端的转发头一律不采信——下面的防伪造场景用公网 IP 当对端。
 
 ip_xff_multi = client_ip(FakeRequest({"x-forwarded-for": "1.2.3.4, 203.0.113.7"}, client_host="127.0.0.1"))
-check("client_ip：XFF 取最后一段（忽略攻击者前缀）", ip_xff_multi == "203.0.113.7", f"ip={ip_xff_multi}")
+check("client_ip：XFF 取首项（链首写入的客户端，后段是代理）", ip_xff_multi == "1.2.3.4", f"ip={ip_xff_multi}")
 
-ip_real_wins = client_ip(FakeRequest({
+ip_xff_wins = client_ip(FakeRequest({
     "x-real-ip": "198.51.100.5",
     "x-forwarded-for": "1.1.1.1, 2.2.2.2",
 }, client_host="127.0.0.1"))
-check("client_ip：X-Real-IP 优先（Nginx 按 $remote_addr 硬写）",
-      ip_real_wins == "198.51.100.5", f"ip={ip_real_wins}")
+check("client_ip：XFF 首项优先于 X-Real-IP（生产里后者是 CF 边缘 IP）",
+      ip_xff_wins == "1.1.1.1", f"ip={ip_xff_wins}")
 
-# 不可信来源伪造头 → 必须被忽略，用直连 IP
-ip_spoofed = client_ip(FakeRequest({"x-forwarded-for": "1.2.3.4", "x-real-ip": "5.6.7.8"}))
-check("client_ip：不可信来源的伪造头被忽略", ip_spoofed == "10.0.0.9", f"ip={ip_spoofed}")
+ip_real_fallback = client_ip(FakeRequest({"x-real-ip": "198.51.100.5"}, client_host="127.0.0.1"))
+check("client_ip：无 XFF 时回落 X-Real-IP", ip_real_fallback == "198.51.100.5", f"ip={ip_real_fallback}")
+
+# 公网直连来源伪造头 → 必须被忽略，用直连 IP
+ip_spoofed = client_ip(FakeRequest({"x-forwarded-for": "1.2.3.4", "x-real-ip": "5.6.7.8"}, client_host="203.0.113.9"))
+check("client_ip：不可信来源的伪造头被忽略", ip_spoofed == "203.0.113.9", f"ip={ip_spoofed}")
 
 ip_direct = client_ip(FakeRequest())
 check("client_ip：无代理头时使用直连地址", ip_direct == "10.0.0.9", f"ip={ip_direct}")
 
-# 攻击者轮换 XFF 但真实 IP 固定 → 仍然只能用一个限流桶
+# 公网攻击者轮换 XFF 伪造头 → 头全被忽略，仍然只能用一个限流桶
 from backend.ratelimit import check_rate_limit  # noqa: E402
 
-key_ip = client_ip(FakeRequest({"x-real-ip": "203.0.113.99", "x-forwarded-for": "1.1.1.1"}))
+key_ip = client_ip(FakeRequest({"x-real-ip": "203.0.113.99", "x-forwarded-for": "1.1.1.1"}, client_host="203.0.113.9"))
 statuses = []
 for i in range(9):
-    spoofed = FakeRequest({"x-real-ip": "203.0.113.99", "x-forwarded-for": f"9.9.9.{i}"})
+    spoofed = FakeRequest({"x-real-ip": "203.0.113.99", "x-forwarded-for": f"9.9.9.{i}"}, client_host="203.0.113.9")
     allowed, _ = check_rate_limit(f"cc-spoof:{client_ip(spoofed)}", 8, 60)
     statuses.append(allowed)
 check("限流不可靠伪造 XFF 绕过：第 9 次被拒",

@@ -421,11 +421,12 @@ _cors_origins = [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
 from backend.ratelimit import API_RATE_LIMITS as RATE_LIMITS  # noqa: E402
 
 def _get_client_ip(request) -> str:
-    """获取真实客户端 IP（防伪造）。
+    """获取真实客户端 IP。
 
-    已统一使用 backend.ratelimit.get_client_ip：
-    只有直连方是可信代理（TRUSTED_PROXIES）时才信任 XFF/X-Real-IP，
-    否则用直连 IP，防止伪造头绕过限流。
+    已统一使用 backend.ratelimit.get_client_ip（横切只许一套）：
+    直连方是自有代理层（内网/回环）或 TRUSTED_PROXIES 名单内时，
+    取 X-Forwarded-For 首项为客户端 IP；公网直连则忽略转发头、
+    用直连 IP，防伪造头绕过限流。口径细节见 ratelimit.get_client_ip。
     保留此函数名做兼容。
     """
     return get_client_ip(request)
