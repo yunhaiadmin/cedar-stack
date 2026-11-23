@@ -67,17 +67,19 @@ read -rp "权重（默认 100，多节点按权重分流）: " NODE_WEIGHT
 NODE_WEIGHT="${NODE_WEIGHT:-100}"
 
 info "从主服务拉取配置包…"
-# P1 安全加固：bundle 下发只接受 HMAC 签名头（有时效+防重放），不再接受静态
-# X-Panel-Key。签名规范见 backend/node_auth.py：canonical = ts\nonce\nMETHOD\npath。
-_bundle_sign() {
-  local ts nonce canonical
+# P1 安全加固：bundle 下发与节点注册/注销（A-072）都只接受 HMAC 签名头
+# （有时效+防重放），不再接受静态面板密钥头。签名规范见
+# backend/node_auth.py：canonical = ts\nonce\nMETHOD\npath。
+# 用法：_panel_sign METHOD PATH → 输出 "ts nonce sign" 三段。
+_panel_sign() {
+  local method="$1" path="$2" ts nonce canonical
   ts="$(date +%s)"
   nonce="$(openssl rand -hex 16)"
-  canonical="$(printf '%s\n%s\n%s\n%s' "$ts" "$nonce" "GET" "/api/admin/stream-nodes/bundle")"
+  canonical="$(printf '%s\n%s\n%s\n%s' "$ts" "$nonce" "$method" "$path")"
   printf '%s\n%s\n%s' "$ts" "$nonce" \
     "$(printf '%s' "$canonical" | openssl dgst -sha256 -hmac "$PANEL_KEY" | awk '{print $2}')"
 }
-read -r _BTS _BNO _BSG < <(_bundle_sign)
+read -r _BTS _BNO _BSG < <(_panel_sign "GET" "/api/admin/stream-nodes/bundle")
 BUNDLE="$(curl -fsSL -m 30 "$MAIN_URL/api/admin/stream-nodes/bundle" \
   -H "X-Panel-Ts: $_BTS" -H "X-Panel-Nonce: $_BNO" -H "X-Panel-Sign: $_BSG")" \
   || fatal "拉取失败：检查主服务地址/节点密钥（需与主服务 NODE_SHARED_SECRET 一致）"
@@ -222,8 +224,10 @@ curl -fsSL -m 10 "http://127.0.0.1:8001/api/health" >/dev/null \
 
 # ---------- 8. 回主服务注册 ----------
 info "向主服务注册流节点…"
+read -r _RTS _RNO _RSG < <(_panel_sign "POST" "/api/admin/stream-nodes/register")
 REG="$(curl -fsSL -m 20 -X POST "$MAIN_URL/api/admin/stream-nodes/register" \
-  -H "X-Panel-Key: $PANEL_KEY" -H "Content-Type: application/json" \
+  -H "X-Panel-Ts: $_RTS" -H "X-Panel-Nonce: $_RNO" -H "X-Panel-Sign: $_RSG" \
+  -H "Content-Type: application/json" \
   -d "$(jq -n --arg url "$NODE_URL" --arg name "$NODE_NAME" --argjson weight "$NODE_WEIGHT" \
     '{url:$url,name:$name,weight:$weight}')")" \
   || fatal "注册失败"

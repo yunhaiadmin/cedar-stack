@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Aetrix Portal Docker 一键更新脚本
 #
-# 默认流程：检查工作区 → 备份数据库（尽可能）→ git pull --ff-only
+# 默认流程：检查工作区 → 备份数据库（失败即停）→ git pull --ff-only
 #          → docker compose build --pull → docker compose up -d --remove-orphans
 #
 # 设计约束：
 # - 有未提交改动时直接拒绝，避免 git pull 覆盖现场；
-# - 更新前尽量备份容器内的 SQLite，备份失败会阻断更新；
-#   注意：默认的 PostgreSQL 部署下 /data 里没有 SQLite，本脚本会告警并跳过备份，
-#   等于没有备份——PG 部署更新前请先运行 scripts/backup_db.sh；
+# - 更新前先备份数据库，备份失败会阻断更新：PostgreSQL 部署（默认）走
+#   scripts/backup_db.sh（pg_dump＋完整性校验，A-071）；SQLite 部署备份
+#   容器内 /data 的数据库并做行数校验；
 # - 任何一步失败立即退出，不继续执行后续步骤；
 # - 不碰 .env、数据库卷、媒体目录和宿主机配置。
 #
@@ -141,10 +141,22 @@ if (( ! DRY_RUN )) && (( ! SKIP_BACKUP )); then
   fi
 fi
 
+# PostgreSQL 部署判定：postgres 容器在跑就走 PG 备份（A-071）。容器名
+# 口径与 scripts/backup_db.sh 一致（PG_CONTAINER / DB_CONTAINER 可覆盖）。
+pg_container="${PG_CONTAINER:-${DB_CONTAINER:-aetrix-postgres}}"
+pg_running=0
+if (( ! DRY_RUN )) && docker inspect -f '{{.State.Running}}' "$pg_container" 2>/dev/null | grep -qx true; then
+  pg_running=1
+fi
+
 if ((DRY_RUN)); then
-  log "dry-run：将在更新前尝试备份 /data 下的 SQLite 数据库。"
+  log "dry-run：将在更新前备份数据库（PG 走 scripts/backup_db.sh，SQLite 走容器内 /data 备份）。"
 elif ((SKIP_BACKUP)); then
   warn "已按 --skip-backup 跳过数据库备份。"
+elif ((pg_running)); then
+  log "PostgreSQL 部署：更新前先备份数据库（容器 $pg_container）。"
+  bash "$SCRIPT_DIR/backup_db.sh" || die "PostgreSQL 备份失败，已停止更新。"
+  log "PostgreSQL 备份完成并通过校验。"
 elif [[ -n "$backup_note" ]]; then
   warn "$backup_note"
 else

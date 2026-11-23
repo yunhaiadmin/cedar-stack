@@ -121,7 +121,8 @@ def test_stream_node_register_writes_system_audit(db, monkeypatch):
     """POST /api/admin/stream-nodes/register 写系统身份审计行。"""
     from backend.emby_server import stream_nodes
 
-    monkeypatch.setattr(stream_nodes, "_panel_auth", lambda request: None)
+    # A-072 起写口鉴权改 _signed_auth（只认 HMAC 签名头）；本条只测审计落行，桩掉鉴权
+    monkeypatch.setattr(stream_nodes, "_signed_auth", lambda request: None)
     result = stream_nodes.api_register(
         None, {"url": "https://stream.example.com", "name": "n1"}, db)
     assert result["ok"] is True
@@ -129,6 +130,7 @@ def test_stream_node_register_writes_system_audit(db, monkeypatch):
         base_models.AdminLog.action == "stream_node_register").one()
     assert row.admin_user_id is None
     assert row.details["actor"] == "system"
+    assert row.details["auth"] == "node_sign"
     assert row.details["url"] == "https://stream.example.com"
 
 
@@ -136,7 +138,8 @@ def test_stream_node_unregister_writes_system_audit(db, monkeypatch):
     """DELETE /api/admin/stream-nodes 写系统身份审计行（含 removed）。"""
     from backend.emby_server import stream_nodes
 
-    monkeypatch.setattr(stream_nodes, "_panel_auth", lambda request: None)
+    # A-072 起写口鉴权改 _signed_auth（只认 HMAC 签名头）；本条只测审计落行，桩掉鉴权
+    monkeypatch.setattr(stream_nodes, "_signed_auth", lambda request: None)
     stream_nodes.register_node(db, "https://stream.example.com", "n1")
     db.query(base_models.AdminLog).delete()
     db.commit()
