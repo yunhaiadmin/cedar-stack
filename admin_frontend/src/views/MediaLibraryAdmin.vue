@@ -13,12 +13,17 @@
  * 由 ITEM_ARTWORK_OVERRIDE_ENABLED 开关决定（写侧不受开关影响，
  * 可以先配好再开开关）。
  *
- * 布局纪律：本页就是媒体库设置的收纳面，封面策略与条目图覆盖在此
- * 分组呈现，不另起导航入口与新页面。
+ * 下二：多版本管理——按条目 guid 查同一作品的全部物理版本
+ * （含被合并行），可逐个拆出（unmerge）或整组拆分；也可手动触发
+ * 单集多版本合并（按库或全部库）。后端端点 /api/admin/media/versions*
+ * 与 /media/episode-versions/merge，操作后端自带审计。
+ *
+ * 布局纪律：本页就是媒体库设置的收纳面，封面策略、条目图覆盖与
+ * 多版本管理在此分组呈现，不另起导航入口与新页面。
  */
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, ArrowUp, Image as ImageIcon } from 'lucide-vue-next'
+import { ArrowDown, ArrowUp, Image as ImageIcon, Layers } from 'lucide-vue-next'
 import { PageHeader, SectionCard } from '@/components/ui'
 import DataTable from '@/components/DataTable.vue'
 import type { DataColumn } from '@/components/DataTable.vue'
@@ -26,10 +31,17 @@ import {
   deleteArtworkOverride,
   fetchArtworkOverrides,
   fetchCoverStrategy,
+  fetchItemVersions,
+  fetchLibraries,
+  mergeEpisodeVersions,
   setArtworkOverride,
   setCoverStrategy,
+  unmergeAllVersions,
+  unmergeVersion,
   type ArtworkOverrideRow,
+  type MediaVersionRow,
 } from '@/api/admin'
+import type { EmbyLibrary } from '@/types'
 
 const STRATEGY_META: Record<string, { label: string; desc: string }> = {
   borrow: { label: '借代表海报', desc: '借库内已绑定代表条目的海报' },
@@ -197,15 +209,153 @@ async function removeOverride(row: ArtworkOverrideRow) {
   }
 }
 
+// ==================== 多版本管理 ====================
+const versionColumns: DataColumn[] = [
+  { key: 'name', label: '版本', mobile: 'title' },
+  { key: 'file_path', label: '文件路径', minWidth: 260 },
+  { key: 'height', label: '分辨率', width: 100 },
+  { key: 'size', label: '大小', width: 110 },
+  { key: 'state', label: '状态', width: 110 },
+  { key: 'actions', label: '操作', width: 110 },
+]
+
+const versionGuid = ref('')
+const versionRows = ref<MediaVersionRow[]>([])
+const versionLoading = ref(false)
+const versionQueried = ref(false)
+const versionBusyGuid = ref('')
+const unmergeAllBusy = ref(false)
+
+const libraries = ref<EmbyLibrary[]>([])
+const mergeLibraryId = ref<number | null>(null)
+const mergeBusy = ref(false)
+const mergeResult = ref('')
+
+const mergedCount = computed(() => versionRows.value.filter((v) => v.is_merged).length)
+
+function formatSize(bytes: number) {
+  if (!bytes) return '—'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let v = bytes
+  let i = 0
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024
+    i++
+  }
+  return `${v.toFixed(v >= 100 ? 0 : 1)} ${units[i]}`
+}
+
+async function loadVersions() {
+  const guid = versionGuid.value.trim()
+  if (!guid) {
+    ElMessage.warning('请填条目 guid')
+    return
+  }
+  versionLoading.value = true
+  try {
+    const d = await fetchItemVersions(guid)
+    versionRows.value = d.versions
+    versionQueried.value = true
+  } catch (e) {
+    versionRows.value = []
+    versionQueried.value = false
+    ElMessage.error(e instanceof Error ? e.message : '版本列表加载失败')
+  } finally {
+    versionLoading.value = false
+  }
+}
+
+async function unmergeOne(row: MediaVersionRow) {
+  try {
+    await ElMessageBox.confirm(
+      `把版本「${row.name}」从合并中拆出、恢复为独立条目？拆出后它会单独出现在片库列表里。`,
+      '拆出版本',
+      { type: 'warning', confirmButtonText: '确认拆出', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  versionBusyGuid.value = row.guid
+  try {
+    const d = await unmergeVersion(row.guid)
+    ElMessage.success(d.message || '已拆出')
+    await loadVersions()
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '拆出失败')
+  } finally {
+    versionBusyGuid.value = ''
+  }
+}
+
+async function unmergeAll() {
+  const guid = versionGuid.value.trim()
+  if (!guid) return
+  try {
+    await ElMessageBox.confirm(
+      `解除该作品全部 ${mergedCount.value} 个版本的合并？所有版本都会恢复为独立条目。`,
+      '整组拆分',
+      { type: 'warning', confirmButtonText: '确认拆分', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  unmergeAllBusy.value = true
+  try {
+    const d = await unmergeAllVersions(guid)
+    ElMessage.success(d.message || '已整组拆分')
+    await loadVersions()
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '整组拆分失败')
+  } finally {
+    unmergeAllBusy.value = false
+  }
+}
+
+async function loadLibraries() {
+  try {
+    const d = await fetchLibraries()
+    libraries.value = d.libraries ?? []
+  } catch {
+    libraries.value = []
+  }
+}
+
+async function runEpisodeMerge() {
+  const lib = mergeLibraryId.value
+  const libName = lib == null ? '全部启用库' : (libraries.value.find((l) => l.id === lib)?.name ?? `库 #${lib}`)
+  try {
+    await ElMessageBox.confirm(
+      `对${libName}执行单集多版本合并？同一集的多个文件将合并为多版本（主记录展示，其余挂为版本）。`,
+      '触发单集合并',
+      { type: 'warning', confirmButtonText: '确认执行', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  mergeBusy.value = true
+  try {
+    const d = await mergeEpisodeVersions(lib)
+    mergeResult.value =
+      `处理分组 ${d.groups ?? 0}，新合并 ${d.merged ?? 0}，晋升主记录 ${d.promoted ?? 0}，` +
+      `孤儿解绑 ${d.unmerged_orphans ?? 0}，孤儿改挂 ${d.repointed_orphans ?? 0}`
+    ElMessage.success('单集合并已执行')
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '单集合并执行失败')
+  } finally {
+    mergeBusy.value = false
+  }
+}
+
 onMounted(() => {
   void loadStrategy()
   void loadOverrides()
+  void loadLibraries()
 })
 </script>
 
 <template>
   <div class="admin-page">
-    <PageHeader title="图片与顺序" description="库封面策略与条目图人工覆盖（媒体库学习 L1 / L4）；库展示顺序在媒体库页各库卡片封面处改" />
+    <PageHeader title="图片与顺序" description="库封面策略、条目图人工覆盖与多版本合并 / 拆分（媒体库学习 L1 / L4）；库展示顺序在媒体库页各库卡片封面处改" />
 
     <SectionCard title="库封面策略" :icon="ImageIcon">
       <template #actions>
@@ -267,6 +417,72 @@ onMounted(() => {
           <el-button type="danger" link @click="removeOverride(row)">取消</el-button>
         </template>
       </DataTable>
+    </SectionCard>
+
+    <SectionCard title="多版本管理" :icon="Layers">
+      <template #actions>
+        <el-button
+          type="warning"
+          :disabled="mergedCount === 0"
+          :loading="unmergeAllBusy"
+          @click="unmergeAll"
+        >
+          整组拆分{{ mergedCount ? `（${mergedCount} 个已合并）` : '' }}
+        </el-button>
+      </template>
+      <p class="ml-note">按条目 guid 查同一作品的全部物理版本：主记录正常展示，被合并的版本挂在主记录下。拆出后版本恢复为独立条目，会单独出现在片库列表里。</p>
+      <el-form label-position="top" class="ml-form" @submit.prevent="loadVersions">
+        <el-form-item label="条目 guid（条目详情页地址中的 id）">
+          <el-input v-model="versionGuid" placeholder="如 37a142b6546280b8a4f04147e41336af" clearable @keyup.enter="loadVersions" />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="versionLoading" @click="loadVersions">查询版本</el-button>
+        </el-form-item>
+      </el-form>
+      <DataTable
+        v-if="versionQueried"
+        :columns="versionColumns"
+        :rows="versionRows"
+        :loading="versionLoading"
+        row-key="guid"
+        empty="该条目没有其他版本"
+      >
+        <template #cell-height="{ row }">
+          {{ row.height ? `${row.height}p` : '—' }}
+        </template>
+        <template #cell-size="{ row }">
+          {{ formatSize(row.size) }}
+        </template>
+        <template #cell-state="{ row }">
+          <el-tag v-if="row.is_primary" type="success" size="small">主记录</el-tag>
+          <el-tag v-else-if="row.is_merged" type="info" size="small">已合并</el-tag>
+          <el-tag v-else type="warning" size="small">独立</el-tag>
+        </template>
+        <template #cell-actions="{ row }">
+          <el-button
+            v-if="row.is_merged"
+            type="warning"
+            link
+            :loading="versionBusyGuid === row.guid"
+            @click="unmergeOne(row)"
+          >
+            拆出
+          </el-button>
+        </template>
+      </DataTable>
+
+      <p class="ml-note" style="margin-top: 20px">手动触发单集多版本合并：同一集的多个文件合并为多版本。自动合并平时由入库链路完成，这里用于存量回填 / 主动整理。</p>
+      <el-form label-position="top" class="ml-form" @submit.prevent="runEpisodeMerge">
+        <el-form-item label="目标库">
+          <el-select v-model="mergeLibraryId" placeholder="全部启用库" clearable>
+            <el-option v-for="lib in libraries" :key="lib.id" :label="lib.name" :value="lib.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="mergeBusy" @click="runEpisodeMerge">执行单集合并</el-button>
+        </el-form-item>
+      </el-form>
+      <p v-if="mergeResult" class="ml-note">上次执行结果：{{ mergeResult }}</p>
     </SectionCard>
   </div>
 </template>

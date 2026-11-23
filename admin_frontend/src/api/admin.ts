@@ -2645,3 +2645,45 @@ export const fetchCoverStrategy = () =>
   get<CoverStrategyState>('/media-library/cover-strategy')
 export const setCoverStrategy = (order: string[]) =>
   put<{ ok: boolean; order: string[]; effective_order: string[] }>('/media-library/cover-strategy', { order })
+
+// ==================== 多版本管理（合并 / 拆分） ====================
+/** 一个物理版本行：主记录 is_primary=true；被合并行 is_merged=true */
+export interface MediaVersionRow {
+  id: number
+  guid: string
+  name: string
+  file_path: string
+  height: number
+  size: number
+  is_primary: boolean
+  is_merged: boolean
+}
+
+export interface MediaVersionsResponse {
+  primary_id: number
+  versions: MediaVersionRow[]
+}
+
+/** 查某条目（guid）的全部物理版本（含被合并行，管理面看合并真相） */
+export const fetchItemVersions = (guid: string) =>
+  get<MediaVersionsResponse>(`/media/versions/${encodeURIComponent(guid)}`)
+/** 解除单个版本的合并，恢复为独立条目 */
+export const unmergeVersion = (guid: string) =>
+  post<{ success: boolean; message: string }>(`/media/versions/${encodeURIComponent(guid)}/unmerge`)
+/** 解除该主记录下全部版本的合并 */
+export const unmergeAllVersions = (guid: string) =>
+  post<{ success: boolean; message: string }>(`/media/versions/${encodeURIComponent(guid)}/unmerge-all`)
+
+export interface EpisodeMergeStats {
+  success: boolean
+  groups?: number
+  merged?: number
+  promoted?: number
+  unmerged_orphans?: number
+  repointed_orphans?: number
+  [key: string]: unknown
+}
+
+/** 手动触发单集多版本合并；不传 libraryId = 全部启用库 */
+export const mergeEpisodeVersions = (libraryId?: number | null) =>
+  post<EpisodeMergeStats>(`/media/episode-versions/merge${libraryId ? `?library_id=${libraryId}` : ''}`)
