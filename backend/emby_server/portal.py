@@ -1281,7 +1281,13 @@ def get_chase_calendar(request: Request,
         for day in sorted(day_ids)
     ]
 
-    return {providers: user_bindings.list_binding_providers(db)}
+    return {
+        "start": start.date().isoformat(),
+        "end": end.date().isoformat(),
+        "total": len(rows),
+        "days": days,
+        "types": type_counts,
+    }
 
 
 @user_emby_router.get("/stats")
