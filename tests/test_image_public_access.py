@@ -36,6 +36,14 @@ Primary」扩到「公开库条目 Primary / Backdrop + 公开库封面 Primary�
 条件逐字不变（库对全体登录用户可见 + 按 IP 限流）；Art / Logo /
 Thumb、受限库、演员图无凭据仍 401/403。
 
+CF 边缘口径（2026-11-23，用户亲选 CF 方案、F5 的 C＋D-lite 提前同批）：
+无凭据成功响应改发 ``public`` 缓存头供 CF 边缘缓存（公开库图片本就对
+全体登录用户可见，权限口径不动）；无凭据失败（受限 / 未知 / 缺图 /
+类型不放行）统一 404 同 body，关掉存在性预言机；无凭据出图尺寸封顶
+（Primary ≤600、Backdrop ≤1280，细节见 test_image_cf_edge_cache.py）。
+本文件相应更新：无凭据成功用例改断言 public、原无凭据 401 用例改
+断言统一 404；带凭据面（401/403/private/不封顶）逐字不变。
+
 覆盖：无凭据 401 / 坏凭据 401 / api_key 与 X-Emby-Token 两形态 200 /
 集→剧回退 / maxWidth 缩略图 / 受限库条目 403 / 库封面可见 200、受限 403 /
 虚拟库派生封面（借可见成员 200、库本身不可见 403、借受限成员 403）/
@@ -275,7 +283,8 @@ def test_public_library_primary_allows_no_credentials(client, seed, which):
     assert r.status_code == 200, r.text
     assert r.headers["content-type"].startswith("image/")
     assert r.content
-    assert "private" in r.headers.get("cache-control", "")
+    # 2026-11-23 CF 边缘口径：无凭据成功响应改发 public（原断言 private）
+    assert r.headers.get("cache-control", "").startswith("public")
 
 
 def test_public_library_primary_index_allows_no_credentials(client, seed):
@@ -284,9 +293,11 @@ def test_public_library_primary_index_allows_no_credentials(client, seed):
 
 
 def test_restricted_library_primary_no_credentials_is_401(client, seed):
-    # lib_b 被播种用户的覆盖排除 → 不是全体可见 → 无凭据不放行
+    # lib_b 被播种用户的覆盖排除 → 不是全体可见 → 无凭据不放行。
+    # 2026-11-23 F5-C：对外形态由 401 改为统一 404（与不存在同 body，
+    # 关存在性预言机）；函数名保留历史命名，断言以新口径为准。
     r = client.get(f"/emby/Items/{seed['movie_b']}/Images/Primary")
-    assert r.status_code == 401, r.text
+    assert r.status_code == 404, r.text
 
 
 def test_public_library_backdrop_allows_no_credentials(client, seed):
@@ -305,15 +316,17 @@ def test_backdrop_index_allows_no_credentials(client, seed):
 
 
 def test_restricted_library_backdrop_no_credentials_is_401(client, seed):
-    # 扩围只限公开库：受限库 Backdrop 无凭据仍 401
+    # 扩围只限公开库：受限库 Backdrop 无凭据仍不放行
+    # （2026-11-23 F5-C：对外形态统一 404，见 Primary 用例注释）
     r = client.get(f"/emby/Items/{seed['movie_b']}/Images/Backdrop")
-    assert r.status_code == 401, r.text
+    assert r.status_code == 404, r.text
 
 
 def test_public_library_thumb_no_credentials_is_401(client, seed):
-    # 扩围只到 Primary / Backdrop：Thumb 等其它类型无凭据仍 401
+    # 扩围只到 Primary / Backdrop：Thumb 等其它类型无凭据仍不放行
+    # （2026-11-23 F5-C：对外形态统一 404）
     r = client.get(f"/emby/Items/{seed['series']}/Images/Thumb")
-    assert r.status_code == 401, r.text
+    assert r.status_code == 404, r.text
 
 
 def test_unknown_item_no_credentials_is_404(client, seed):
@@ -342,9 +355,10 @@ def test_library_cover_allows_no_credentials(client, seed):
 
 
 def test_restricted_library_cover_no_credentials_is_401(client, seed):
-    # 受限库封面无凭据仍 401（与受限条目同口径，不泄露库是否存在）
+    # 受限库封面无凭据仍不放行（与受限条目同口径，不泄露库是否存在；
+    # 2026-11-23 F5-C：对外形态统一 404）
     r = client.get(f"/emby/Items/{seed['lib_b']}/Images/Primary")
-    assert r.status_code == 401, r.text
+    assert r.status_code == 404, r.text
 
 
 def test_virtual_library_cover_allows_no_credentials(client, seed):
@@ -467,8 +481,10 @@ def test_person_by_digit_id_served_when_localized(client, seed, token,
 
 
 def test_person_by_digit_id_requires_credentials(client, seed):
+    # 演员图不在无凭据放行面内（口径不变）；2026-11-23 F5-C 后对外
+    # 形态并入统一 404（演员 id 是否存在同样不许被无凭据枚举出来）
     r = client.get(f"/emby/Items/{seed['person_img_id']}/Images/Primary")
-    assert r.status_code == 401, r.text
+    assert r.status_code == 404, r.text
 
 
 # ---------- 账号卡下发专用 web token ----------

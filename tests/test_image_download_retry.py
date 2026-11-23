@@ -64,6 +64,12 @@ def httpx_state(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _localize_on(monkeypatch):
+    # 本文件测下载重试本身：本地化总开关显式开（2026-11-23 起默认关）
+    monkeypatch.setenv("EMBY_LOCALIZE_IMAGES", "1")
+
+
+@pytest.fixture(autouse=True)
 def _stub_outbound_verify(monkeypatch):
     """本文件测的是 httpx 传输重试逻辑，不是 DNS：出站校验桩成放行。
 
