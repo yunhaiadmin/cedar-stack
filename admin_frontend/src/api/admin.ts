@@ -114,7 +114,7 @@ export const fetchUsers = (params: {
   offset?: number
 }) => get<UsersResponse>('/users', params)
 
-/** 用户 360° 详情：资料 / 订阅 / 订单 / 邀请 / 签到 / 观看 */
+/** 用户 360° 详情：资料 / 订阅 / 订单 / 邀请 / 观看 */
 export const fetchUserDetail = (id: number) => get<UserDetail>(`/users/${id}`)
 
 /** 用户授权资源卡片（Phase 4）：一个服一张，看他现在能用什么 */
@@ -788,10 +788,10 @@ export const fetchAnnouncements = (params: { active_only?: boolean } = {}) =>
   get<Announcement[]>('/announcements', params)
 
 export const createAnnouncement = (data: { title: string; content: string; type?: string; is_pinned?: boolean }) =>
-  post<{ success: boolean }>('/announcements', data)
+  post<{ success: boolean; tg_sent?: boolean; message?: string }>('/announcements', data)
 
 export const updateAnnouncement = (id: number, data: Partial<{ title: string; content: string; type: string; is_pinned: boolean; is_active: boolean }>) =>
-  put<{ success: boolean }>(`/announcements/${id}`, data)
+  put<{ success: boolean; tg_sent?: boolean; message?: string }>(`/announcements/${id}`, data)
 
 export const deleteAnnouncement = (id: number) => del<{ success: boolean }>(`/announcements/${id}`)
 

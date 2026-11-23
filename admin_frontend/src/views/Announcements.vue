@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** 公告管理：创建/编辑/置顶/删除，联动全站推送 */
+/** 公告管理：创建/编辑/置顶/删除；保存时同步发一条到 TG 正式群（站内广播已取消，不做全员推送） */
 import { computed, onMounted, ref } from 'vue'
 import { formatServerTime } from '@/utils/serverTime'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -88,12 +88,14 @@ async function submit() {
   }
   submitBusy.value = true
   try {
-    if (editing.value) {
-      await updateAnnouncement(editing.value.id, form.value)
-      ElMessage.success('公告已更新并推送')
+    const res = editing.value
+      ? await updateAnnouncement(editing.value.id, form.value)
+      : await createAnnouncement(form.value)
+    // 后端如实回 tg_sent：发进 TG 正式群才报成功；失败必须让管理员看见原因
+    if (res.tg_sent) {
+      ElMessage.success(res.message || '公告已保存，并发送到 Telegram 群')
     } else {
-      await createAnnouncement(form.value)
-      ElMessage.success('公告已创建并推送给所有用户')
+      ElMessage.warning(res.message || '公告已保存，但未能发送到 Telegram 群（群未配置或发送失败）')
     }
     dialogVisible.value = false
     load()
@@ -144,7 +146,7 @@ async function togglePin(a: Announcement) {
   rowBusyId.value = a.id
   try {
     await updateAnnouncement(a.id, { is_pinned: !a.is_pinned })
-    ElMessage.success(a.is_pinned ? '已取消置顶' : '已置顶（用户端消息中心排在最前）')
+    ElMessage.success(a.is_pinned ? '已取消置顶' : '已置顶（首页横幅排在最前）')
     await afterAction(a)
   } finally {
     rowBusyId.value = null
@@ -170,7 +172,7 @@ function fmtDate(s: string): string {
 
 <template>
   <div class="admin-page">
-    <PageHeader eyebrow="内容" title="公告管理" description="发布或修改公告会实时推送给所有在线用户；置顶、停用与删除在「管理」里。">
+    <PageHeader eyebrow="内容" title="公告管理" description="公告在首页以横幅展示，发布或修改时同步发一条到 TG 正式群；置顶、停用与删除在「管理」里。">
       <template #actions>
         <el-button :loading="loading" :icon="RefreshCw" @click="load">刷新</el-button>
         <el-button type="primary" :icon="Plus" @click="openCreate">发布公告</el-button>
@@ -182,7 +184,7 @@ function fmtDate(s: string): string {
       type="info"
       :closable="false"
       show-icon
-      title="公告以首页横幅形式展示，并实时推送给所有在线用户；不会进入用户的站内信收件箱。"
+      title="公告以首页横幅形式展示，并同步发送到 TG 正式群；不会进入用户的站内信收件箱。"
     />
 
     <SectionCard
@@ -212,7 +214,7 @@ function fmtDate(s: string): string {
         :loading="loading"
         :error="loadError"
         :empty="hasFilter ? '没有匹配的公告' : '还没有公告'"
-        :empty-description="hasFilter ? '换个关键字，或切回「全部」。' : '点右上角「发布公告」，所有在线用户会立即收到。'"
+        :empty-description="hasFilter ? '换个关键字，或切回「全部」。' : '点右上角「发布公告」，会同步发送到 TG 正式群。'"
         @retry="load"
       >
         <template #cell-title="{ row }">
@@ -268,8 +270,8 @@ function fmtDate(s: string): string {
         </div>
 
         <ul class="mg-hints">
-          <li>置顶：用户端消息中心的排序与预览里排在最前，不改变发布状态。</li>
-          <li>停用：立即从用户端消失（历史推送不回滚），随时可以再启用。</li>
+          <li>置顶：在首页横幅展示时排在最前，不改变发布状态。</li>
+          <li>停用：立即从首页横幅消失（已发到 TG 群的消息不撤回），随时可以再启用。</li>
           <li>删除：发布记录一并移除，不可恢复；只想下架用「停用」。</li>
         </ul>
       </div>
@@ -306,7 +308,7 @@ function fmtDate(s: string): string {
             <el-option label="活动" value="activity" />
           </el-select>
         </el-form-item>
-        <el-form-item label="置顶"><el-switch v-model="form.is_pinned" active-text="在用户端消息中心排在最前" /></el-form-item>
+        <el-form-item label="置顶"><el-switch v-model="form.is_pinned" active-text="在首页横幅排在最前" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
