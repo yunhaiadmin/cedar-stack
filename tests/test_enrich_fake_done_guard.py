@@ -8,8 +8,11 @@ external_ids 全空、enrich_attempts 全部 = 0、enrich_last_error 全空—�
    （tmdb_client.configured=False——钥匙后填只刷新 API 进程、工人
    进程从不 refresh_keys）时，标题+年份齐即判 done，写 source='none'
    并清零 attempts，与「真搜过无命中」终态同形。
-   → 守卫：无身份 + 没真搜过 + 无任何来源落过资料 → 打回 pending
-   退避重试，超限转 failed，绝不 done。
+   → 守卫：无身份 + 没真搜过 → 打回 pending 退避重试，超限转
+   failed，绝不 done。来源标签不作豁免（2026-11-23 跟进：生产
+   23 条 done + source='nfo'/'multisource' + 无身份 + attempts=0
+   正是旧条件「只拦 source 为空/none」的旁路；豆瓣来源同理，
+   有豆瓣号落 external_ids 即算身份、无号即拦）。
 2. ``TmdbClient._search_raw`` 把全部 key 401 / 未配置（status 401/0）
    当合法空结果返回 []，search() 随之「确认无命中」→ none 终态。
    → 改判 TmdbTransientError（没搜成 ≠ 搜过没有，与 search() docstring
@@ -158,14 +161,82 @@ def test_identity_present_unsearched_still_done(db):
     assert it.enrich_status == "done"
 
 
-def test_real_source_completion_not_blocked(db):
-    """已有真实来源落过资料（source='douban'）的完成不拦——守卫只拦
-    「什么都没落过」的 none/空来源，不误伤兜底源完成口径。"""
+def test_real_source_without_identity_blocked(db):
+    """跟进（2026-11-23）：来源标签不是身份——source='douban' 但
+    tmdb/imdb/external_ids 全空，同样不许 done。
+
+    旧版本用例断言「有来源即放行」，正是 23 条 nfo/multisource 假
+    完成的旁路口径：apply 侧只落文字不落编号时，行上只有来源标签、
+    没有身份。生产实测 done+无身份行里 douban 来源为 0 条，收紧
+    不影响任何存量 honest 终态；真有豆瓣号时号会落 external_ids，
+    见下一条用例。"""
     it = _item(db, item_type="movie", name="豆瓣兜底片",
                production_year=2010, poster_path="/img/p.jpg",
                metadata_source="douban", enrich_field_refill_done=True)
     _apply(db, it, dict(BASE_OK), configured=False)
+    assert it.enrich_status == "pending"
+    assert it.enrich_attempts == 1
+
+
+def test_real_source_with_identity_not_blocked(db):
+    """豆瓣号已落 external_ids 即算身份：守卫不拦，完成照旧。"""
+    it = _item(db, item_type="movie", name="豆瓣认到号的片",
+               production_year=2010, poster_path="/img/p.jpg",
+               metadata_source="douban",
+               external_ids='{"douban": "1234567"}',
+               enrich_field_refill_done=True)
+    _apply(db, it, dict(BASE_OK), configured=False)
     assert it.enrich_status == "done"
+
+
+def test_nfo_source_without_identity_blocked(db):
+    """跟进（2026-11-23）：source='nfo' 但无身份 → 打回，不许 done。
+    形态取生产 10 条 nfo 假完成：NFO 落了文字（标题/年份），
+    has_core 过线，但没落下任何编号。"""
+    it = _item(db, item_type="movie", name="只有NFO的片",
+               production_year=2019, poster_path="/img/p.jpg",
+               metadata_source="nfo", enrich_field_refill_done=True)
+    _apply(db, it, dict(BASE_OK), configured=False)
+    assert it.enrich_status == "pending"
+    assert it.enrich_attempts == 1
+
+
+def test_multisource_without_identity_blocked(db):
+    """跟进（2026-11-23）：source='multisource' 但无身份 → 打回。
+    形态取生产 13 条 multisource 假完成。"""
+    it = _item(db, item_type="series", name="只有多源文字的剧",
+               production_year=2021, poster_path="/img/p.jpg",
+               metadata_source="multisource",
+               enrich_field_refill_done=True)
+    _apply(db, it, dict(BASE_OK), configured=False)
+    assert it.enrich_status == "pending"
+    assert it.enrich_attempts == 1
+
+
+def test_nfo_with_tmdb_id_in_file_not_blocked(db):
+    """NFO 自带 tmdb_id 时 apply_nfo 落身份，守卫不拦：完成照旧。"""
+    it = _item(db, item_type="movie", name="NFO带号的片",
+               production_year=2019, enrich_field_refill_done=True)
+    fetched = dict(BASE_OK)
+    fetched["nfo_data"] = {"title": "NFO带号的片", "tmdb_id": "550",
+                           "plot": "简介"}
+    _apply(db, it, fetched, configured=False)
+    assert it.enrich_status == "done"
+    assert it.tmdb_id == "550"
+
+
+def test_nfo_text_only_applied_still_blocked(db):
+    """NFO 只落文字（无编号）时，即使本轮真实走了 apply_nfo，
+    终态仍须拦——来源落过资料 ≠ 拿到身份。"""
+    it = _item(db, item_type="movie", name="NFO纯文字的片",
+               production_year=2019, enrich_field_refill_done=True)
+    fetched = dict(BASE_OK)
+    fetched["nfo_data"] = {"title": "NFO纯文字的片",
+                           "plot": "简介", "year": 2019}
+    _apply(db, it, fetched, configured=False)
+    assert it.enrich_status == "pending"
+    assert it.metadata_source == "nfo"
+    assert it.tmdb_id is None
 
 
 def test_episode_inherit_done_not_blocked(db):

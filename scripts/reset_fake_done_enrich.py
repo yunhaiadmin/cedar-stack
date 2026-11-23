@@ -37,9 +37,17 @@ TMDB 搜索缓存（与 retry_unmatched 同口径），让工人以当前钥匙�
 /tmp/fake_done_reset_ids.json），供重置后按同一批 id 统计产出率
 （补上身份 / 真搜不中 / 仍在处理）。
 
+跟进（2026-11-23）：13:43 cohort 复核发现 68 条假完成签名复发
+（45 条 source='none' 经 _suppress_flood 旁路、23 条
+source='nfo'/'multisource' 经 _unearned_done 来源豁免旁路）。
+定点重置只动这 68 条：加 --attempts-zero 只匹配 attempts=0 的
+签名行——attempts>0 的 done+无身份行是真搜过无命中 / 资料不全超
+限的 honest 终态（生产 455 条），不许一并翻回重刮烧配额。
+
 用法（容器内）：
     docker exec -i -e PYTHONPATH=/app -w /app aetrix-api python3 scripts/reset_fake_done_enrich.py
     docker exec -i -e PYTHONPATH=/app -w /app aetrix-api python3 scripts/reset_fake_done_enrich.py --commit
+    docker exec -i -e PYTHONPATH=/app -w /app aetrix-api python3 scripts/reset_fake_done_enrich.py --attempts-zero --commit --ids-out /tmp/fake_done_followup_reset_ids.json
 """
 from __future__ import annotations
 
@@ -66,9 +74,13 @@ def _blank(col):
     return or_(col.is_(None), func.trim(col) == "")
 
 
-def _population(db):
-    """漏刮人群（定义见模块 docstring）。"""
-    return (
+def _population(db, *, attempts_zero=False):
+    """漏刮人群（定义见模块 docstring）。
+
+    attempts_zero=True 时只匹配 attempts=0 的假完成签名行（2026-11-23
+    跟进定点重置用）；False 时保持原口径（首轮 757 条全量重置）。
+    """
+    q = (
         db.query(em.MediaItem)
         .filter(
             em.MediaItem.enrich_status == "done",
@@ -84,19 +96,24 @@ def _population(db):
             ),
         )
     )
+    if attempts_zero:
+        q = q.filter(em.MediaItem.enrich_attempts == 0)
+    return q
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--commit", action="store_true",
                     help="真正写库（缺省 dry-run 只计数）")
+    ap.add_argument("--attempts-zero", action="store_true",
+                    help="只匹配 attempts=0 的假完成签名行（跟进定点重置）")
     ap.add_argument("--ids-out", default="/tmp/fake_done_reset_ids.json",
                     help="--commit 时受影响条目 id 清单落盘路径")
     args = ap.parse_args()
 
     db = SessionLocal()
     try:
-        rows = _population(db).all()
+        rows = _population(db, attempts_zero=args.attempts_zero).all()
         by_type = Counter(r.item_type for r in rows)
         by_source = Counter((r.metadata_source or "<null>") for r in rows)
         print(f"population: {len(rows)} "
@@ -142,7 +159,7 @@ def main() -> int:
             print(f"search cache invalidation skipped: {exc}")
 
         n = (
-            _population(db)
+            _population(db, attempts_zero=args.attempts_zero)
             .update(
                 {
                     em.MediaItem.enrich_status: "pending",
@@ -160,7 +177,7 @@ def main() -> int:
         with open(args.ids_out, "w", encoding="utf-8") as fh:
             json.dump(ids, fh)
         print(f"ids written to {args.ids_out}: {len(ids)}")
-        remaining = _population(db).count()
+        remaining = _population(db, attempts_zero=args.attempts_zero).count()
         print(f"population after reset: {remaining}")
         return 0
     finally:
