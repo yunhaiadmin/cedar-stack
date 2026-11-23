@@ -177,14 +177,14 @@ def test_host_key_normalization_matches_both_sides():
 # ---------------------------------------------------------------------------
 
 def test_meter_attributes_bytes_by_entry_host(db):
-    realm = _realm(db, "main", url="https://cdn.example.com")
+    realm = _realm(db, "main", url="https://cdn.aetrix.love")
     main = realms.ensure_realm_lines(db, realm)[0]  # 自动主线路
-    sub = _line(db, realm, "https://www.example.com")
+    sub = _line(db, realm, "https://www.aetrix.love")
     user = _user(db)
     tm.note_bytes(600, "relay", user_id=user.id,
-                  entry_host="cdn.example.com", day=DAY)
+                  entry_host="cdn.aetrix.love", day=DAY)
     tm.note_bytes(400, "local", user_id=user.id,
-                  entry_host="www.example.com", day=DAY)
+                  entry_host="www.aetrix.love", day=DAY)
     tm.note_direct_play(user_id=user.id, day=DAY)
     assert tm.flush_now(db) == 1  # 用户账一行
     # 两条线各记各的，互不串账
@@ -197,25 +197,25 @@ def test_meter_attributes_bytes_by_entry_host(db):
     assert (urow.relay_bytes, urow.local_bytes, urow.direct_plays) == (600, 400, 1)
     # 再落一笔：同线同日累计而不是覆盖
     tm.note_bytes(100, "relay", user_id=user.id,
-                  entry_host="cdn.example.com", day=DAY)
+                  entry_host="cdn.aetrix.love", day=DAY)
     tm.flush_now(db)
     db.expire_all()
     assert _line_row(db, main.id).relay_bytes == 700
 
 
 def test_meter_unmatched_host_counts_user_only(db):
-    realm = _realm(db, "main", url="https://cdn.example.com")
+    realm = _realm(db, "main", url="https://cdn.aetrix.love")
     realms.ensure_realm_lines(db, realm)
     user = _user(db)
     tm.note_bytes(999, "relay", user_id=user.id,
-                  entry_host="unknown.example.com", day=DAY)
+                  entry_host="unknown.aetrix.love", day=DAY)
     assert tm.flush_now(db) == 1  # 用户账照记
     assert db.query(em.LineTrafficUsageDaily).count() == 0
     assert tm.stats()["line_skipped_no_match"] == 999
 
 
 def test_meter_no_entry_host_no_line_accounting(db):
-    _realm(db, "main", url="https://cdn.example.com")
+    _realm(db, "main", url="https://cdn.aetrix.love")
     user = _user(db)
     tm.note_bytes(500, "relay", user_id=user.id, day=DAY)
     tm.flush_now(db)
@@ -224,9 +224,9 @@ def test_meter_no_entry_host_no_line_accounting(db):
 
 
 def test_meter_no_user_no_bytes_anywhere(db):
-    _realm(db, "main", url="https://cdn.example.com")
+    _realm(db, "main", url="https://cdn.aetrix.love")
     tm.note_bytes(999, "relay", user_id=None,
-                  entry_host="cdn.example.com", day=DAY)
+                  entry_host="cdn.aetrix.love", day=DAY)
     assert tm.flush_now(db) == 0
     assert db.query(em.LineTrafficUsageDaily).count() == 0
     assert db.query(em.TrafficUsageDaily).count() == 0
@@ -237,11 +237,11 @@ def test_meter_no_user_no_bytes_anywhere(db):
 # ---------------------------------------------------------------------------
 
 def test_ensure_generates_main_line_from_realm_url(db):
-    realm = _realm(db, "mig", url="https://cdn.example.com")
+    realm = _realm(db, "mig", url="https://cdn.aetrix.love")
     lines = realms.ensure_realm_lines(db, realm)
     assert len(lines) == 1
     assert lines[0].name == "主线路"
-    assert lines[0].url == "https://cdn.example.com"
+    assert lines[0].url == "https://cdn.aetrix.love"
     # 再调不重复生成
     assert len(realms.ensure_realm_lines(db, realm)) == 1
 
@@ -253,7 +253,7 @@ def test_ensure_no_url_no_line(db):
 
 def test_create_realm_with_url_generates_main_line(db):
     realm = realms.create_realm(db, name="国际线路x", slug="intlx",
-                                url="https://intl.example.com")
+                                url="https://intl.aetrix.love")
     lines = realms.list_lines(db, realm.id)
     assert len(lines) == 1
     assert lines[0].name == "主线路"
@@ -261,9 +261,9 @@ def test_create_realm_with_url_generates_main_line(db):
 
 
 def test_second_line_defaults_to_backup_name(db):
-    realm = _realm(db, "names", url="https://a.example.com")
+    realm = _realm(db, "names", url="https://a.aetrix.love")
     realms.ensure_realm_lines(db, realm)
-    second = _line(db, realm, "https://b.example.com")
+    second = _line(db, realm, "https://b.aetrix.love")
     assert second.name == "副线路"
 
 
@@ -273,7 +273,7 @@ def test_second_line_defaults_to_backup_name(db):
 
 def test_quota_zero_is_unlimited(db):
     realm = _realm(db, "free")
-    line = _line(db, realm, "https://a.example.com", quota=0)
+    line = _line(db, realm, "https://a.aetrix.love", quota=0)
     _seed_usage(db, line.id, relay=500 * GB)
     view = line_quota.quota_view(db, line)
     assert view["quota_bytes"] == 0
@@ -284,7 +284,7 @@ def test_quota_zero_is_unlimited(db):
 
 def test_quota_exhaustion_and_remaining(db):
     realm = _realm(db, "cap")
-    line = _line(db, realm, "https://a.example.com", quota=1000)
+    line = _line(db, realm, "https://a.aetrix.love", quota=1000)
     _seed_usage(db, line.id, relay=600)
     view = line_quota.quota_view(db, line)
     assert view["used_bytes"] == 600
@@ -299,8 +299,8 @@ def test_quota_exhaustion_and_remaining(db):
 
 def test_two_lines_same_realm_count_independently(db):
     realm = _realm(db, "two")
-    a = _line(db, realm, "https://a.example.com", quota=1000)
-    b = _line(db, realm, "https://b.example.com", quota=1000)
+    a = _line(db, realm, "https://a.aetrix.love", quota=1000)
+    b = _line(db, realm, "https://b.aetrix.love", quota=1000)
     _seed_usage(db, a.id, relay=1000)
     _seed_usage(db, b.id, relay=10)
     assert line_quota.is_exhausted(db, a) is True
@@ -310,7 +310,7 @@ def test_two_lines_same_realm_count_independently(db):
 
 def test_update_line_rejects_negative_quota(db):
     realm = _realm(db, "neg")
-    line = _line(db, realm, "https://a.example.com")
+    line = _line(db, realm, "https://a.aetrix.love")
     with pytest.raises(ValueError):
         realms.update_line(db, line, quota_bytes=-1)
 
@@ -321,8 +321,8 @@ def test_update_line_rejects_negative_quota(db):
 
 def test_reset_only_that_line_same_day(db):
     realm = _realm(db, "rst")
-    a = _line(db, realm, "https://a.example.com", quota=1000)
-    b = _line(db, realm, "https://b.example.com", quota=1000)
+    a = _line(db, realm, "https://a.aetrix.love", quota=1000)
+    b = _line(db, realm, "https://b.aetrix.love", quota=1000)
     _seed_usage(db, a.id, relay=1500)  # 今天就已超额
     _seed_usage(db, b.id, relay=700)
     assert line_quota.is_exhausted(db, a) is True
@@ -350,11 +350,11 @@ def _cards(db, user):
 
 
 def test_card_lines_shape_and_single_exhausted(db):
-    a = _realm(db, "a", url="https://a.example.com")
+    a = _realm(db, "a", url="https://a.aetrix.love")
     realms.ensure_realm_lines(db, a)
-    b = _realm(db, "b", url="https://b1.example.com")
+    b = _realm(db, "b", url="https://b1.aetrix.love")
     b_main = realms.ensure_realm_lines(db, b)[0]
-    b_sub = _line(db, b, "https://b2.example.com", quota=0)
+    b_sub = _line(db, b, "https://b2.aetrix.love", quota=0)
     realms.update_line(db, b_main, quota_bytes=100)
     user = _user(db)
     _sub(db, user, a)
@@ -372,15 +372,15 @@ def test_card_lines_shape_and_single_exhausted(db):
     assert cards[a.id]["lines"][0]["quota_exhausted"] is False
     # 卡级标记 = 主线路标记；地址照常下发（已连客户端不受影响）
     assert cards[b.id]["quota_exhausted"] is True
-    assert cards[b.id]["base_url"] == "https://b1.example.com"
-    assert b_lines[0]["url"] == "https://b1.example.com"
+    assert cards[b.id]["base_url"] == "https://b1.aetrix.love"
+    assert b_lines[0]["url"] == "https://b1.aetrix.love"
 
 
 def test_card_flags_all_lines_exhausted_fallback(db):
-    a = _realm(db, "a", url="https://a.example.com")
+    a = _realm(db, "a", url="https://a.aetrix.love")
     a_main = realms.ensure_realm_lines(db, a)[0]
     realms.update_line(db, a_main, quota_bytes=100)
-    b = _realm(db, "b", url="https://b.example.com")
+    b = _realm(db, "b", url="https://b.aetrix.love")
     b_main = realms.ensure_realm_lines(db, b)[0]
     realms.update_line(db, b_main, quota_bytes=100)
     user = _user(db)
@@ -421,7 +421,7 @@ def admin_client(db):
 
 
 def test_admin_api_line_crud_and_reset(admin_client, db):
-    realm = _realm(db, "api", url="https://cdn.example.com")
+    realm = _realm(db, "api", url="https://cdn.aetrix.love")
     # 列表：迁移兜底生成的主线路在列
     resp = admin_client.get(f"/api/admin/realms/{realm.id}/lines")
     assert resp.status_code == 200
@@ -433,7 +433,7 @@ def test_admin_api_line_crud_and_reset(admin_client, db):
     # 新增副线路（带配额）
     resp = admin_client.post(
         f"/api/admin/realms/{realm.id}/lines",
-        json={"url": "https://www.example.com", "quota_bytes": 2048})
+        json={"url": "https://www.aetrix.love", "quota_bytes": 2048})
     assert resp.status_code == 200
     sub_line = resp.json()["line"]
     assert sub_line["name"] == "副线路"
@@ -467,15 +467,15 @@ def test_admin_api_line_crud_and_reset(admin_client, db):
 
 
 def test_admin_api_line_negative_quota_rejected(admin_client, db):
-    realm = _realm(db, "api2", url="https://cdn.example.com")
+    realm = _realm(db, "api2", url="https://cdn.aetrix.love")
     resp = admin_client.post(
         f"/api/admin/realms/{realm.id}/lines",
-        json={"url": "https://x.example.com", "quota_bytes": -5})
+        json={"url": "https://x.aetrix.love", "quota_bytes": -5})
     assert resp.status_code == 422
 
 
 def test_admin_api_line_bad_url_rejected(admin_client, db):
-    realm = _realm(db, "api3", url="https://cdn.example.com")
+    realm = _realm(db, "api3", url="https://cdn.aetrix.love")
     resp = admin_client.post(
         f"/api/admin/realms/{realm.id}/lines",
         json={"url": "not-a-url"})
@@ -483,8 +483,8 @@ def test_admin_api_line_bad_url_rejected(admin_client, db):
 
 
 def test_admin_api_line_cross_realm_404(admin_client, db):
-    a = _realm(db, "xa", url="https://a.example.com")
-    b = _realm(db, "xb", url="https://b.example.com")
+    a = _realm(db, "xa", url="https://a.aetrix.love")
+    b = _realm(db, "xb", url="https://b.aetrix.love")
     b_line = realms.ensure_realm_lines(db, b)[0]
     resp = admin_client.put(
         f"/api/admin/realms/{a.id}/lines/{b_line.id}",
@@ -500,12 +500,12 @@ def test_admin_api_line_cross_realm_404(admin_client, db):
 # ---------------------------------------------------------------------------
 
 def test_admin_api_move_line_keeps_traffic_and_quota(admin_client, db):
-    a = _realm(db, "mv-a", url="https://a.example.com")
-    b = _realm(db, "mv-b", url="https://b.example.com")
+    a = _realm(db, "mv-a", url="https://a.aetrix.love")
+    b = _realm(db, "mv-b", url="https://b.aetrix.love")
     realms.ensure_realm_lines(db, b)
     resp = admin_client.post(
         f"/api/admin/realms/{a.id}/lines",
-        json={"url": "https://a2.example.com", "quota_bytes": 4096})
+        json={"url": "https://a2.aetrix.love", "quota_bytes": 4096})
     assert resp.status_code == 200
     sub = resp.json()["line"]
     _seed_usage(db, sub["id"], relay=1000)
@@ -536,7 +536,7 @@ def test_admin_api_move_line_keeps_traffic_and_quota(admin_client, db):
 
 
 def test_admin_api_move_line_to_missing_realm_404(admin_client, db):
-    a = _realm(db, "mv-x", url="https://a.example.com")
+    a = _realm(db, "mv-x", url="https://a.aetrix.love")
     main = realms.ensure_realm_lines(db, a)[0]
     resp = admin_client.put(
         f"/api/admin/realms/{a.id}/lines/{main.id}",
@@ -547,11 +547,11 @@ def test_admin_api_move_line_to_missing_realm_404(admin_client, db):
 
 
 def test_admin_api_move_primary_recalculates_both_sides(admin_client, db):
-    b = _realm(db, "mv-pb", url="https://b.example.com")
+    b = _realm(db, "mv-pb", url="https://b.aetrix.love")
     b_main = realms.ensure_realm_lines(db, b)[0]
-    a = _realm(db, "mv-pa", url="https://a.example.com")
+    a = _realm(db, "mv-pa", url="https://a.aetrix.love")
     a_main = realms.ensure_realm_lines(db, a)[0]
-    a_sub = _line(db, a, "https://a2.example.com")
+    a_sub = _line(db, a, "https://a2.aetrix.love")
     # 把 A 的主线路挪去 B：A 剩下的副线路自动成主，B 仍是原主线路为首
     resp = admin_client.put(
         f"/api/admin/realms/{a.id}/lines/{a_main.id}",
@@ -568,10 +568,10 @@ def test_admin_api_move_primary_recalculates_both_sides(admin_client, db):
 
 
 def test_card_lines_follow_moved_line(db):
-    a = _realm(db, "mv-ca", url="https://a.example.com")
+    a = _realm(db, "mv-ca", url="https://a.aetrix.love")
     a_main = realms.ensure_realm_lines(db, a)[0]
-    moved = _line(db, a, "https://a2.example.com", quota=100)
-    b = _realm(db, "mv-cb", url="https://b.example.com")
+    moved = _line(db, a, "https://a2.aetrix.love", quota=100)
+    b = _realm(db, "mv-cb", url="https://b.aetrix.love")
     b_main = realms.ensure_realm_lines(db, b)[0]
     user = _user(db)
     _sub(db, user, a)
@@ -586,15 +586,15 @@ def test_card_lines_follow_moved_line(db):
     b_lines = cards[b.id]["lines"]
     assert [l["id"] for l in b_lines] == [b_main.id, moved.id]
     assert b_lines[1]["quota_exhausted"] is True
-    assert cards[a.id]["base_url"] == "https://a.example.com"
+    assert cards[a.id]["base_url"] == "https://a.aetrix.love"
 
 
 def test_card_fallback_when_realm_left_without_active_line(db):
-    a = _realm(db, "mv-fa", url="https://a.example.com")
+    a = _realm(db, "mv-fa", url="https://a.aetrix.love")
     only_active = realms.ensure_realm_lines(db, a)[0]
-    realms.create_line(db, a, name="停用线", url="https://a-off.example.com",
+    realms.create_line(db, a, name="停用线", url="https://a-off.aetrix.love",
                        is_active=False)
-    b = _realm(db, "mv-fb", url="https://b.example.com")
+    b = _realm(db, "mv-fb", url="https://b.aetrix.love")
     realms.ensure_realm_lines(db, b)
     user = _user(db)
     _sub(db, user, a)
@@ -603,7 +603,7 @@ def test_card_fallback_when_realm_left_without_active_line(db):
     # 原大类一条启用线路都不剩：lines 下发空清单，用户端按现行口径
     # 回退 base_url 单行（地址照常下发，口径不动）
     assert cards[a.id]["lines"] == []
-    assert cards[a.id]["base_url"] == "https://a.example.com"
+    assert cards[a.id]["base_url"] == "https://a.aetrix.love"
 
 
 # ---------------------------------------------------------------------------
@@ -611,7 +611,7 @@ def test_card_fallback_when_realm_left_without_active_line(db):
 # ---------------------------------------------------------------------------
 
 def test_auto_line_has_default_category(db):
-    realm = _realm(db, "cat-auto", url="https://cdn.example.com")
+    realm = _realm(db, "cat-auto", url="https://cdn.aetrix.love")
     lines = realms.ensure_realm_lines(db, realm)
     # 自动生成的主线路带缺省大类；序列化（管理端/账号卡）都带 category
     assert lines[0].category == "国际线路"
@@ -622,12 +622,12 @@ def test_auto_line_has_default_category(db):
 
 
 def test_create_and_update_line_category(db):
-    realm = _realm(db, "cat-crud", url="https://cdn.example.com")
+    realm = _realm(db, "cat-crud", url="https://cdn.aetrix.love")
     realms.ensure_realm_lines(db, realm)
-    cn = realms.create_line(db, realm, url="https://cn.example.com",
+    cn = realms.create_line(db, realm, url="https://cn.aetrix.love",
                             category="国内线路")
     assert cn.category == "国内线路"
-    plain = realms.create_line(db, realm, url="https://www.example.com")
+    plain = realms.create_line(db, realm, url="https://www.aetrix.love")
     assert plain.category == "国际线路"  # 不传 = 缺省大类
     realms.update_line(db, plain, category="国内线路")
     db.refresh(plain)
@@ -635,15 +635,15 @@ def test_create_and_update_line_category(db):
     # 改大类只动 category 一列，与挪服（realm_id）互不干扰
     assert plain.realm_id == realm.id
     with pytest.raises(ValueError):
-        realms.create_line(db, realm, url="https://x.example.com",
+        realms.create_line(db, realm, url="https://x.aetrix.love",
                            category="长" * 81)
 
 
 def test_admin_api_line_category_roundtrip(admin_client, db):
-    realm = _realm(db, "cat-api", url="https://cdn.example.com")
+    realm = _realm(db, "cat-api", url="https://cdn.aetrix.love")
     resp = admin_client.post(
         f"/api/admin/realms/{realm.id}/lines",
-        json={"url": "https://cn.example.com", "category": "国内线路"})
+        json={"url": "https://cn.aetrix.love", "category": "国内线路"})
     assert resp.status_code == 200
     line = resp.json()["line"]
     assert line["category"] == "国内线路"
@@ -691,9 +691,9 @@ def _team(db, owner):
 
 def _two_category_realm(db, slug):
     """一个服、两个大类各一条线：自动主线路（国际）＋自建国内线。"""
-    realm = _realm(db, slug, url="https://intl.example.com")
+    realm = _realm(db, slug, url="https://intl.aetrix.love")
     intl = realms.ensure_realm_lines(db, realm)[0]
-    cn = realms.create_line(db, realm, url="https://cn.example.com",
+    cn = realms.create_line(db, realm, url="https://cn.aetrix.love",
                             category="国内线路")
     return realm, intl, cn
 

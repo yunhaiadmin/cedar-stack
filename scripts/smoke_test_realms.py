@@ -111,11 +111,11 @@ check("服清单含当前服与跨服汇总",
       str(body.get("summary")))
 
 r = client.post("/api/admin/realms", headers=H,
-                json={"name": f"二服{suf}", "slug": f"second{suf}", "url": "https://b.example.com/"})
+                json={"name": f"二服{suf}", "slug": f"second{suf}", "url": "https://b.aetrix.love/"})
 created = r.json().get("realm", {}) if r.status_code == 200 else {}
 realm_b = created.get("id")
 check("建第二个服成功，地址去掉尾部斜杠",
-      r.status_code == 200 and bool(realm_b) and created.get("url") == "https://b.example.com",
+      r.status_code == 200 and bool(realm_b) and created.get("url") == "https://b.aetrix.love",
       f"HTTP {r.status_code}")
 
 r = client.post("/api/admin/realms", headers=H, json={"name": f"二服{suf}", "slug": f"again{suf}"})
