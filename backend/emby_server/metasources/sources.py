@@ -275,6 +275,19 @@ def search_bangumi(title: str, year: Optional[int], kind: str, *, pool, gate) ->
     )
 
 
+def fetch_bangumi_cast(bangumi_id: str) -> list:
+    """按已确认的 Bangumi 编号拉演职员行（与 TMDB cast_list 同形状）。
+
+    搜索本身不返回演职员；只有归并确认编号后才值得多打这一次请求。
+    失败返回 []（熔断/限流/网络都在 altmeta 层吞掉），不抛错。
+    """
+    from backend.emby_server import altmeta
+
+    if not str(bangumi_id or "").strip():
+        return []
+    return altmeta.fetch_bangumi_characters(str(bangumi_id))
+
+
 # ---------------------------------------------------------------------------
 # 4. AniList：GraphQL，动漫覆盖好，native title 就是本地语言名
 # ---------------------------------------------------------------------------

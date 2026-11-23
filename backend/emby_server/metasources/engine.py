@@ -72,6 +72,11 @@ class CollectResult:
     outcomes: list = field(default_factory=list)
     prefer_chinese: bool = True
     _primary: str = ""
+    #: 演职员行（与 TMDB ``cast_list`` 同形状：name/role/image/sort_order/
+    #: person_id）。搜索接口普遍不返回演职员，这里只装「已确认编号后
+    #: 定向拉到」的行：Bangumi characters（collect 收尾挂）、或调用方
+    #: 复核时顺手拉到的 TMDB details credits（零新增请求）。
+    cast: list = field(default_factory=list)
 
     @property
     def primary(self) -> str:
@@ -87,6 +92,7 @@ class CollectResult:
             "outcomes": [o.as_dict() for o in self.outcomes],
             "primary": self.primary,
             "prefer_chinese": self.prefer_chinese,
+            "cast": [dict(c) for c in self.cast],
         }
 
     @classmethod
@@ -101,6 +107,8 @@ class CollectResult:
         result.external_ids = dict(payload.get("external_ids") or {})
         result.outcomes = outcomes
         result._primary = str(payload.get("primary") or "")
+        result.cast = [dict(c) for c in (payload.get("cast") or [])
+                       if isinstance(c, dict)]
         return result
 
 
@@ -270,7 +278,29 @@ def collect(db, title: str, year: Optional[int] = None, kind: str = "series",
     _relay_douban(result, hits, targets, title, year, kind,
                   only=only, db=db, imdb_id=imdb_id)
     _merge(result, hits)
+    _attach_bangumi_cast(result, kind)
     return result
+
+
+def _attach_bangumi_cast(result: CollectResult, kind: str) -> None:
+    """归并后补演员：结果带 bangumi 编号且尚无演员行时，拉一次 characters。
+
+    只在 collect（IO 阶段）调用——写库阶段不发网络请求是本模块的纪律。
+    Bangumi 源剧大多没有 tmdb 编号，TMDB credits 补不到它们，这是这批
+    条目唯一的演员来源。试采集（only）同样会走到 collect，预览多打一次
+    characters 请求可接受。失败静默：演员是增强信息，不是主链。
+    """
+    if result.cast or kind not in ("series", "movie"):
+        return
+    bgm = (result.external_ids or {}).get("bangumi")
+    if not bgm:
+        return
+    try:
+        rows = sources.fetch_bangumi_cast(str(bgm))
+    except Exception:  # noqa: BLE001 — 补演员失败不影响已采到的结果
+        return
+    if rows:
+        result.cast = rows
 
 
 def _relay_tmdb(result: CollectResult, hits: list, targets: list,
@@ -449,13 +479,19 @@ def _load_external_ids(item) -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def apply_to_item(item, result: CollectResult, *, fill_missing_only: bool = True) -> list:
+def apply_to_item(item, result: CollectResult, *, fill_missing_only: bool = True,
+                  db=None) -> list:
     """把归并结果落到条目上，返回实际写入的字段名列表
 
     默认**只补空缺**（与原豆瓣兜底同口径）：多源是补漏的，不是推翻重来的。
     修复队列（``repair_requested_at``）触发的这轮可以覆盖（``fill_missing_only=False``）。
+
+    ``db`` 给了且 ``result.cast`` 非空时，演员行走全仓唯一的写入实现
+    （enrich_worker 的 people 行写入）落 ``emby_people``；不给 db 时
+    行为与旧版逐字一致（演员无处可落、跳过）。演员写入失败不影响
+    字段落库（与 enrich 主路径同口径：演员是增强信息）。
     """
-    if not result.fields and not result.external_ids:
+    if not result.fields and not result.external_ids and not result.cast:
         return []
     changed: list = []
 
@@ -516,6 +552,14 @@ def apply_to_item(item, result: CollectResult, *, fill_missing_only: bool = True
     if ids != before_ids:
         item.external_ids = json.dumps(ids, ensure_ascii=False, sort_keys=True)
         changed.append("external_ids")
+
+    if db is not None and result.cast:
+        try:
+            from backend.emby_server import enrich_worker as _ew
+            if _ew._apply_people_rows(db, item, list(result.cast)):
+                changed.append("cast")
+        except Exception:  # noqa: BLE001 — 演员落库失败不影响字段落库
+            pass
 
     if changed and not getattr(item, "metadata_source", None):
         item.metadata_source = result.primary or "multisource"
