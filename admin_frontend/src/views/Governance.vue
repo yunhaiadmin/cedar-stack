@@ -7,8 +7,11 @@
  * - 治理冻结（2026-11-24，O-02 补缺）：Step 4 的 GovernanceFreeze——
  *   冻结治理特权 / 解冻 / 治理审计日志，与停权是两套独立机制。
  *   后端是 governance_admin.py（/api/admin/governance/freezes 等）。
+ * - 可见性复核（2026-11-24，O-02 补缺）：可见性治理队列准入 / 驳回，
+ *   只留痕、不改变露出结果。后端是 admin_media_governance.py
+ *   （/api/admin/emby/visibility-governance），与其余两页不同源。
  *
- * 两个标签页各自是一整页、按需加载；当前标签与 ?tab= 同步，刷新不丢。
+ * 四个标签页各自是一整页、按需加载；当前标签与 ?tab= 同步，刷新不丢（与 Welfare.vue 同一写法）。
  * 后端：backend/api/governance_report.py 的 admin_router（/api/admin/governance）。
  */
 import { computed, defineAsyncComponent } from 'vue'
@@ -17,8 +20,9 @@ import { useRoute, useRouter } from 'vue-router'
 const GovernanceReports = defineAsyncComponent(() => import('./GovernanceReports.vue'))
 const GovernanceSuspensions = defineAsyncComponent(() => import('./GovernanceSuspensions.vue'))
 const GovernanceFreezes = defineAsyncComponent(() => import('./GovernanceFreezes.vue'))
+const GovernanceVisibility = defineAsyncComponent(() => import('./GovernanceVisibility.vue'))
 
-type GovernanceTab = 'reports' | 'suspensions' | 'freezes'
+type GovernanceTab = 'reports' | 'suspensions' | 'freezes' | 'visibility'
 
 const route = useRoute()
 const router = useRouter()
@@ -28,7 +32,9 @@ const activeTab = computed<GovernanceTab>({
     ? 'suspensions'
     : route.query.tab === 'freezes'
       ? 'freezes'
-      : 'reports'),
+      : route.query.tab === 'visibility'
+        ? 'visibility'
+        : 'reports'),
   set: (tab) => {
     if (tab === activeTab.value) return
     router.replace({ query: { ...route.query, tab } })
@@ -79,19 +85,33 @@ const activeTab = computed<GovernanceTab>({
         治理冻结
         <span class="tab-hint">冻结治理特权 / 解冻 / 审计日志</span>
       </button>
+      <button
+        id="governance-tab-visibility"
+        type="button"
+        role="tab"
+        class="tab-btn"
+        :class="{ active: activeTab === 'visibility' }"
+        :aria-selected="activeTab === 'visibility'"
+        aria-controls="governance-panel"
+        @click="activeTab = 'visibility'"
+      >
+        可见性复核
+        <span class="tab-hint">治理队列 / 准入 / 驳回（只留痕）</span>
+      </button>
     </div>
 
     <div
       id="governance-panel"
       class="tab-panel"
       role="tabpanel"
-      :aria-labelledby="activeTab === 'reports' ? 'governance-tab-reports' : activeTab === 'suspensions' ? 'governance-tab-suspensions' : 'governance-tab-freezes'"
+      :aria-labelledby="activeTab === 'reports' ? 'governance-tab-reports' : activeTab === 'suspensions' ? 'governance-tab-suspensions' : activeTab === 'freezes' ? 'governance-tab-freezes' : 'governance-tab-visibility'"
     >
       <!-- KeepAlive：来回切标签不重拉数据、不丢筛选 -->
       <KeepAlive>
         <GovernanceReports v-if="activeTab === 'reports'" />
         <GovernanceSuspensions v-else-if="activeTab === 'suspensions'" />
-        <GovernanceFreezes v-else />
+        <GovernanceFreezes v-else-if="activeTab === 'freezes'" />
+        <GovernanceVisibility v-else />
       </KeepAlive>
     </div>
   </div>
