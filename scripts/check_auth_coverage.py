@@ -62,6 +62,7 @@ AUTH_DEPENDENCIES = (
     "require_admin",
     "require_staff",
     "require_panel_key",       # EA ↔ EM 之间用共享密钥，不是管理员 JWT
+    "verify_signed_headers",   # 节点面 HMAC 时效签名验签（backend/node_auth.py，A-072）
 )
 
 # ---------------------------------------------------------------------------
