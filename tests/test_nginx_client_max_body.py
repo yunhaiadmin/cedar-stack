@@ -22,6 +22,9 @@ def _location_block(text: str, location: str) -> str | None:
     """取 location 块全文（花括号计数；块内注释不含花括号）。"""
     start = text.find(f"location {location}")
     if start < 0:
+        # A-067 起 /api/ 带 ^~ 修饰，找块兼容两种写法
+        start = text.find(f"location ^~ {location}")
+    if start < 0:
         return None
     brace = text.find("{", start)
     if brace < 0:

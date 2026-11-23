@@ -77,8 +77,11 @@ def test_bare_emby_location_exists_and_proxies_like_emby():
     assert 'proxy_set_header Connection "";' in block
     assert "proxy_buffering off;" in block
     assert "proxy_read_timeout 300s;" in block
-    # X-Real-IP 必须透传上层值（同 /api/、/emby/ 处的纪律，不许 $remote_addr 覆盖）
-    assert "proxy_set_header X-Real-IP $http_x_real_ip;" in block
+    # X-Real-IP 发 realip 还原后的 $remote_addr（A-068：双层下即上层写好的
+    # 客户端 IP、不是 docker 网关，2026-10-22 的纪律由 realip 承接；旧钉版
+    # $http_x_real_ip 无条件透传可被单层部署的客户端伪造，已改判。realip
+    # 配置本体由 tests/test_nginx_api_svg_and_realip.py 钉）
+    assert "proxy_set_header X-Real-IP $remote_addr;" in block
 
 
 def test_bare_emby_segment_set_matches_gateway_table():
@@ -151,4 +154,4 @@ def test_spa_fallback_still_intact():
     # 红线：SPA 回退与 /api/ 反代不许被这次改动撞坏。
     text = NGINX_CONF.read_text(encoding="utf-8")
     assert "try_files $uri $uri/ /index.html;" in text
-    assert "location /api/ {" in text
+    assert "location ^~ /api/ {" in text  # A-067 起带 ^~（防静态正则劫持 /api/*.svg）
