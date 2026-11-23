@@ -84,6 +84,20 @@ INDIRECT_READS = {
     "WALLET_REFUND_TO_BALANCE": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
     "WALLET_TOPUP_RATE_MANUAL_OVERRIDE": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
     "WEB_SOFTDECODE_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
+    # 钥匙回填：SECRET_REFILL 注册表逐个写明 env 名，heal_secrets_from_env 经 environ.get 动态读取
+    "TELEGRAM_BOT_TOKEN": "backend/config_self_heal.py SECRET_REFILL 注册表 + heal_secrets_from_env 动态读取（钥匙回填）",
+    "PAYMENT_GATEWAY_URL": "backend/config_self_heal.py SECRET_REFILL 注册表 + heal_secrets_from_env 动态读取（钥匙回填）",
+    "PAYMENT_PARTNER_ID": "backend/config_self_heal.py SECRET_REFILL 注册表 + heal_secrets_from_env 动态读取（钥匙回填）",
+    "PAYMENT_PARTNER_KEY": "backend/config_self_heal.py SECRET_REFILL 注册表 + heal_secrets_from_env 动态读取（钥匙回填）",
+    "EMAIL_ENABLED": "backend/config_self_heal.py SECRET_REFILL 注册表 + heal_secrets_from_env 动态读取（钥匙回填）",
+    "EMAIL_SMTP_HOST": "backend/config_self_heal.py SECRET_REFILL 注册表 + heal_secrets_from_env 动态读取（钥匙回填）",
+    "EMAIL_SMTP_PORT": "backend/config_self_heal.py SECRET_REFILL 注册表 + heal_secrets_from_env 动态读取（钥匙回填）",
+    "EMAIL_SMTP_USER": "backend/config_self_heal.py SECRET_REFILL 注册表 + heal_secrets_from_env 动态读取（钥匙回填）",
+    "EMAIL_SMTP_PASSWORD": "backend/config_self_heal.py SECRET_REFILL 注册表 + heal_secrets_from_env 动态读取（钥匙回填）",
+    "EMAIL_FROM_NAME": "backend/config_self_heal.py SECRET_REFILL 注册表 + heal_secrets_from_env 动态读取（钥匙回填）",
+    "EMAIL_FROM_EMAIL": "backend/config_self_heal.py SECRET_REFILL 注册表 + heal_secrets_from_env 动态读取（钥匙回填）",
+    "META_SOURCE_KEYS_OMDB": "backend/config_self_heal.py SECRET_REFILL 注册表 + heal_secrets_from_env 动态读取（钥匙回填）",
+    "META_SOURCE_KEYS_TVDB": "backend/config_self_heal.py SECRET_REFILL 注册表 + heal_secrets_from_env 动态读取（钥匙回填）",
 }
 
 # 部署/编排专用键：代码不直接读，但 docker-compose / 部署脚本 / 授权版部署消费
