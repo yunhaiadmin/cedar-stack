@@ -52,6 +52,22 @@ class _Hit:
 
 
 @pytest.fixture(autouse=True)
+def _restore_tmdb_key_pool():
+    """write_config 写 tmdb 钥匙会顺手 refresh_keys 到进程全局的
+    tmdb_client 密钥池（生产口径：写完即热生效）——本文件的假钥匙
+    （abcdef1234）不还原会漏给同进程后跑的文件，把邻居用例的 TMDB
+    误判成已配置（2026-11-23 #456/#458 全量随机红实证）。每测快照/
+    还原，与 test_meta_key_storage 的 keys_pool 同口径；conftest 另有
+    同名兜底，这里是污染源本地的明账。"""
+    from backend.emby_server import tmdb as tmdb_lib
+    _client = tmdb_lib.tmdb_client
+    _keys = list(_client.api_keys)
+    _source = _client.key_source
+    yield
+    _client._set_keys(_keys, _source)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_registry():
     """每个用例把自己的假源装进 ``SPEC_BY_ID``（引擎就是从那里找“怎么问这个源”），
     用完恢复 —— 不污染同文件里直接用真实源清单的用例。
