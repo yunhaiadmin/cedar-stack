@@ -135,7 +135,10 @@ def test_client_search_hits_disk_across_instances(cache_dir, monkeypatch):
 def test_client_does_not_cache_failures(cache_dir, monkeypatch):
     """请求失败（data=None）不落盘：下一轮重试照旧真的发请求"""
     client, _ = _fake_client(monkeypatch)
-    monkeypatch.setattr(client, "_get", lambda path, params: None)   # 网络失败
+    # 2026-11-23 起 _search_raw 走 _get_with_status（要拿状态码区分
+    # 401/未配置与真阴性）：失败桩改打这一层，(None, 404) = 非瞬态失败。
+    monkeypatch.setattr(client, "_get_with_status",
+                        lambda path, params: (None, 404))
     assert client.search("失败剧", 2020, "series") is None
     assert not os.path.exists(
         tmdb_cache._key_path("tv", tmdb._norm_text("失败剧"), 2020))
@@ -188,7 +191,10 @@ def test_single_flight_merges_concurrent_searches(cache_dir, monkeypatch):
         release.wait(2)          # 第一个线程按住不放，放大竞态窗口
         return {"results": [{"id": 1, "name": params.get("query")}]}
 
-    monkeypatch.setattr(client, "_get", slow_get)
+    # 2026-11-23 起 _search_raw 走 _get_with_status：慢桩打这一层，
+    # 返回 (载荷, 200)；单飞合并的断言口径不变。
+    monkeypatch.setattr(client, "_get_with_status",
+                        lambda path, params: (slow_get(path, params), 200))
     got: list = []
 
     def worker():
