@@ -136,8 +136,13 @@ def test_helper_clears_only_blank():
 
 def test_success_done_clears_blank_and_stays_done_not_reclaimed(db):
     _pin_classic(db)
+    # 2026-11-23 守卫后「无任何身份 + 没真搜过」的 done 已不合法（假
+    # 完成堵漏，见 tests/test_enrich_fake_done_guard.py）：本例的 done
+    # 合法性由 external_ids 里的豆瓣身份提供（真实身份、非空白），
+    # 要验的仍是 tmdb_id/imdb_id 两列纯空白在终态被清成 NULL。
     it = _make_item(db, tmdb_id="  ", imdb_id="\t", overview="已有简介",
-                    production_year=2021)
+                    production_year=2021,
+                    external_ids='{"douban": "1234567"}')
     fetched = {"poster": None, "fanart": None, "external_subs": [],
                "nfo_data": None, "tmdb_hit": None, "tmdb_details": None,
                "ok": True}

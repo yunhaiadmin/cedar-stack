@@ -252,15 +252,24 @@ def _db_item(**kw):
 
 
 def test_none_terminal_writes_last_scraped_at(monkeypatch):
-    """搜过无命中（但 TMDB 未配置→走 _incomplete=False 路径）终态写戳。
+    """真搜过无命中终态写戳。
 
-    fetched 为空：series 无 tmdb_id、无命中 → metadata_source='none' →
-    终态 done。last_scraped_at 必须有值（与「从未跑过」区分）。
+    series 无 tmdb_id、TMDB 已配置且 search 真跑过无命中 →
+    metadata_source='none' → 终态 done。last_scraped_at 必须有值
+    （与「从未跑过」区分）。
+
+    2026-11-23 口径变更：本例旧设定是「TMDB 未配置 + fetched 为空」
+    也落 done+none 写戳——那正是假完成 757 条的产生形态，现已被
+    _enrich_apply 守卫拦下打回 pending（见
+    tests/test_enrich_fake_done_guard.py）。本例改为真搜过的前提，
+    继续钉「真终态写戳」这一性质。
     """
     # 字段级完成口径缺省开：开着时缺简介会先低优先回捞一轮；
     # 本例验经典终态写戳，经保存路径关掉，结束时删掉这行。
     from backend import models as _models
     from backend.integrations import store as _store
+    monkeypatch.setattr(tmdb_mod, "tmdb_client",
+                        SimpleNamespace(configured=True))
     s = _LocalSession()
     try:
         ew.save_enrich_tuning_config(
@@ -269,7 +278,10 @@ def test_none_terminal_writes_last_scraped_at(monkeypatch):
         item = s.query(em.MediaItem).filter(
             em.MediaItem.id == item_id).first()
         assert item.last_scraped_at is None
-        ew._enrich_apply(s, item, {})
+        ew._enrich_apply(s, item, {"ok": True, "poster": None,
+                                   "fanart": None, "external_subs": [],
+                                   "nfo_data": None, "tmdb_hit": None,
+                                   "tmdb_details": None, "error": None})
         s.commit()
         s.refresh(item)
         assert item.enrich_status == "done"

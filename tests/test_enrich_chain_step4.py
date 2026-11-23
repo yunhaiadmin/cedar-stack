@@ -200,7 +200,11 @@ def test_incomplete_five_times_flag_on_goes_none_not_failed(db):
     db.refresh(it)
     assert it.enrich_status == "done", "资料不全超限应转 done+none，不进 failed"
     assert it.metadata_source == "none"
-    assert it.enrich_attempts == 0, "回捞时从零开始计次"
+    # 2026-11-23 口径变更（假完成堵漏）：终态不再清零 attempts——保留
+    # 「真实尝试已攒满上限」的证据，与假完成（attempts=0 的 done+无
+    # 身份）区分；「回捞时从零开始计次」由回捞侧翻回 pending 时清零
+    # 保证（见 test_auto_reschedule_flips_overdue 的断言），不在终态侧。
+    assert it.enrich_attempts == 5, "终态保留 attempts 证据（4+本轮 1）"
     assert it.enrich_next_retry_at is not None
     assert before <= it.enrich_next_retry_at <= datetime.now()
 
