@@ -38,6 +38,8 @@ import re
 from collections import Counter
 from typing import Dict, List, Optional, Tuple
 
+from backend.emby_server import merge_enrich_sync as _mes
+
 logger = logging.getLogger(__name__)
 
 #: 候选轻量列扫描倍数（与宽松通道 MERGE_CANDIDATE_MULTIPLIER 同口径）。
@@ -470,11 +472,13 @@ def _fold_row(db, primary, row, season_no: int, stats: Dict[str, int],
         for sr in season_rows:
             if sr.merged_into_id is None:
                 sr.merged_into_id = target_season.id
+                _mes.settle_merged_row(sr)
                 stats["seasons_merged"] += 1
             else:
                 tgt = db.query(MI).filter(MI.id == sr.merged_into_id).first()
                 if tgt is None or tgt.series_id == row.id:
                     sr.merged_into_id = target_season.id
+                    _mes.settle_merged_row(sr)
                     stats["seasons_merged"] += 1
         moved: Dict[int, int] = {}
         for ep in visible_eps:
@@ -486,6 +490,7 @@ def _fold_row(db, primary, row, season_no: int, stats: Dict[str, int],
                 winner = ep_index.get((season_no, ep.episode_number))
             if winner is not None and winner != ep.id:
                 ep.merged_into_id = winner
+                _mes.settle_merged_row(ep)
                 moved[ep.id] = winner
                 stats["episodes_copied"] += 1
             else:
@@ -510,6 +515,7 @@ def _fold_row(db, primary, row, season_no: int, stats: Dict[str, int],
                 cp.series_id = primary.id
                 cp.season_number = season_no
                 cp.merged_into_id = moved[cp.merged_into_id]
+                _mes.settle_merged_row(cp)
                 stats["copies_rebased"] += 1
     # 此前已合并到被折行的 series/season 子行改指正主。
     children = (
@@ -523,6 +529,7 @@ def _fold_row(db, primary, row, season_no: int, stats: Dict[str, int],
     )
     for ch in children:
         ch.merged_into_id = primary.id
+        _mes.settle_merged_row(ch)
         stats["children_repointed"] += 1
     row.merged_into_id = primary.id
     row.enrich_status = "done"

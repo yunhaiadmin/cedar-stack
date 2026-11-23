@@ -19,6 +19,7 @@ StrmAssistant 做法（ScheduledTask/MergeMultiVersionTask.cs）：
 """
 
 import logging
+from backend.emby_server import merge_enrich_sync as _mes
 from backend.emby_server.env_util import env_float, env_int
 import os
 import threading
@@ -545,6 +546,9 @@ def _follow_series_episodes(db, group: List) -> None:
             main_ep = main_map.get(key)
             if main_ep is not None and main_ep.id != ep.id:
                 ep.merged_into_id = main_ep.id
+                # 同步结算（merge_enrich_sync）：跟随合并的集若还
+                # pending/enriching，不结算会被认领谓词永久卡住
+                _mes.settle_merged_row(ep)
                 logger.debug(
                     "集跟随：%s (id=%d) → 主集 id=%d",
                     ep.name, ep.id, main_ep.id,
@@ -606,6 +610,9 @@ def unmerge_version(db, item_id: int) -> bool:
     if not item or not item.merged_into_id:
         return False
     item.merged_into_id = None
+    # 恢复独立：合并时被结算的 done 若无自有元数据证据，翻回 pending
+    # 等重刮（见 merge_enrich_sync.restore_unmerged_row）
+    _mes.restore_unmerged_row(item)
     logger.info("解除多版本合并：%s (id=%d) 恢复为独立条目", item.name, item.id)
     return True
 
@@ -621,6 +628,8 @@ def unmerge_all(db, primary_id: int) -> int:
     )
     for item in items:
         item.merged_into_id = None
+        # 恢复独立：无自有元数据证据的 done 翻回 pending 等重刮
+        _mes.restore_unmerged_row(item)
     if items:
         logger.info("解除多版本合并：主记录 id=%d 下 %d 个版本恢复独立",
                     primary_id, len(items))

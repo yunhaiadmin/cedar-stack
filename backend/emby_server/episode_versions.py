@@ -28,6 +28,8 @@ import logging
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.emby_server import merge_enrich_sync as _mes
+
 logger = logging.getLogger(__name__)
 
 
@@ -224,6 +226,9 @@ def merge_episode_versions(db, library_id: Optional[int] = None) -> Dict[str, in
                 if r.merged_into_id is not None:
                     # 晋升：原主记录已删（或被合并），本行接任主记录
                     r.merged_into_id = None
+                    # 恢复独立：合并期被结算的 done 若无自有元数据证据，
+                    # 翻回 pending 等重刮（见 merge_enrich_sync）
+                    _mes.restore_unmerged_row(r)
                     stats["promoted"] += 1
                     logger.info(
                         "单集多版本晋升主记录：S%02dE%02d -> 条目 %s（%s）",
@@ -232,6 +237,9 @@ def merge_episode_versions(db, library_id: Optional[int] = None) -> Dict[str, in
             else:
                 if r.merged_into_id != primary.id:
                     r.merged_into_id = primary.id
+                    # 同步结算：副本元数据走主记录，pending/enriching
+                    # 不结算就会被认领谓词 not_merged 永久卡住
+                    _mes.settle_merged_row(r)
                     stats["merged"] += 1
         # 只打前 3 个组的明细：or 会让 merged<=10 的条件在回填时长期为真，
         # 数千条 INFO 刷屏；and 保证"组数≤3 且合并数≤10"才打
@@ -274,6 +282,7 @@ def merge_episode_versions(db, library_id: Optional[int] = None) -> Dict[str, in
                 # 目标未死、只是被合并到下游：改指存活根，版本关系不断裂。
                 # 旧行为直接清标，跟随集从此永久再滞留（531 集实锤）。
                 r.merged_into_id = root_id
+                _mes.settle_merged_row(r)
                 stats["repointed_orphans"] += 1
                 logger.info(
                     "单集多版本孤儿改指存活根：条目 %s -> %s（%s）",
@@ -281,6 +290,8 @@ def merge_episode_versions(db, library_id: Optional[int] = None) -> Dict[str, in
                 )
             else:
                 r.merged_into_id = None
+                # 恢复独立：无自有元数据证据的 done 翻回 pending 等重刮
+                _mes.restore_unmerged_row(r)
                 stats["unmerged_orphans"] += 1
                 logger.info("单集多版本孤儿恢复独立：条目 %s（%s）", r.id, r.file_path)
 
