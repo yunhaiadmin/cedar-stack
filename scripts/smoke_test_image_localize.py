@@ -32,8 +32,9 @@ os.environ["SECRET_KEY"] = (os.environ.get("SECRET_KEY") or "").strip() or \
     "smoke-test-only-secret-key-not-for-production"
 IMAGE_DIR = tempfile.mkdtemp(prefix="imgcache_")
 os.environ["EMBY_IMAGE_DIR"] = IMAGE_DIR
-# 本地化总开关 2026-11-23 起默认关（图片交付改走 CF 边缘缓存）；
-# 本冒烟测的是本地化机制本身，全程显式开（第 5 节单独测关的形态）
+# 本地化总开关默认关（现行口径为本地图床，生产以 env
+# EMBY_LOCALIZE_IMAGES=1 开启）；本冒烟测的是本地化机制本身，
+# 全程显式开（第 5 节单独测关的形态）
 os.environ["EMBY_LOCALIZE_IMAGES"] = "1"
 
 import httpx  # noqa: E402

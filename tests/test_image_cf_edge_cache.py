@@ -1,8 +1,11 @@
-"""图片交付改走 CF 边缘缓存（2026-11-23 用户亲选，F5 的 C＋D-lite 提前同批）
+"""图片无凭据出图的 F5 收口（2026-11-23，C＋D-lite）
 
 口径（本文件钉住）：
-- 无凭据且过 anon gate 的图片响应改发 ``public`` 缓存头（CF 边缘可缓存），
-  带凭据响应维持 ``private`` 不变；谁能取图的权限口径一律不动。
+- 缓存头不分面：无凭据与带凭据响应都走各下发腿自带头
+  （``private, max-age=86400``）；谁能取图的权限口径一律不动。
+  无凭据成功响应改发 ``public`` 供 CF 边缘缓存的口径曾于
+  2026-11-23 短暂上线、同日经用户亲令取消，图片交付现行口径
+  为本地图床（``EMBY_LOCALIZE_IMAGES``，生产置 1 开启）。
 - F5-C：无凭据取图失败（条目不存在 / 库未公开 / 图缺失 / 类型不放行）
   统一同一种失败响应（404 + 同一 body），关掉存在性预言机；
   限流 429 不在此列（与条目存在性无关）。
@@ -164,14 +167,16 @@ def _h(token):
     return {"X-Emby-Token": token}
 
 
-# ---------- 缓存头分面 ----------
+# ---------- 缓存头（不分面，CF 口径已取消） ----------
 
-def test_anon_public_poster_is_public_cacheable(client, seed):
+def test_anon_public_poster_not_public_cacheable(client, seed):
+    # 回归钉：CF 边缘口径取消后，无凭据成功响应不许再发 public /
+    # s-maxage，走下发腿自带头（private）
     r = client.get(f"/emby/Items/{seed['series']}/Images/Primary")
     assert r.status_code == 200, r.text
     cc = r.headers.get("cache-control", "")
-    assert cc.startswith("public"), cc
-    assert "s-maxage" in cc, cc
+    assert not cc.startswith("public"), cc
+    assert "s-maxage" not in cc, cc
 
 
 def test_auth_poster_stays_private(client, seed, token):
@@ -230,8 +235,8 @@ def _wide_jpeg(w=2000, h=1000) -> bytes:
     return buf.getvalue()
 
 
-def test_anon_proxy_remote_capped_and_public(client, seed, monkeypatch):
-    # 未本地化的远程图走代理回源：无凭据同样封顶 + public
+def test_anon_proxy_remote_capped(client, seed, monkeypatch):
+    # 未本地化的远程图走代理回源：无凭据同样封顶
     from backend.emby_server import media_routes
 
     monkeypatch.setattr(
@@ -240,7 +245,6 @@ def test_anon_proxy_remote_capped_and_public(client, seed, monkeypatch):
     r = client.get(f"/emby/Items/{seed['remote']}/Images/Primary")
     assert r.status_code == 200, r.text
     assert _width(r.content) <= 600
-    assert r.headers.get("cache-control", "").startswith("public")
 
 
 # ---------- C：失败响应统一（关存在性预言机） ----------
@@ -309,7 +313,7 @@ def test_localize_off_still_resolves_existing_file(monkeypatch, tmp_path):
 
 def test_anon_serves_landed_file_while_switch_off(client, seed, monkeypatch,
                                                   tmp_path):
-    # 关态 + 已落盘：出图层只读命中存量文件，200 + public，不走代理回源
+    # 关态 + 已落盘：出图层只读命中存量文件，200，不走代理回源
     from backend.emby_server import image_store, media_routes
 
     monkeypatch.delenv("EMBY_LOCALIZE_IMAGES", raising=False)
@@ -328,7 +332,6 @@ def test_anon_serves_landed_file_while_switch_off(client, seed, monkeypatch,
     r = client.get(f"/emby/Items/{seed['remote']}/Images/Primary")
     assert r.status_code == 200, r.text
     assert r.content == landed
-    assert r.headers.get("cache-control", "").startswith("public")
 
 
 def test_localize_on_still_downloads(monkeypatch, tmp_path):
