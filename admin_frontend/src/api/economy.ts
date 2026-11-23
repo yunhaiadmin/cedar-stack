@@ -379,6 +379,26 @@ export const fetchDriveApiConfig = () =>
 export const updateDriveApiConfig = (payload: DriveApiConfigPayload) =>
   put<DriveApiConfig>('/drive-api-config', payload)
 
+// ==================== 播放交付计划（2026-11-24，O-02 补缺） ====================
+// 后端：backend/api/admin_economy.py（/api/admin/delivery-plan-config）
+// 配置读取唯一实现：backend/emby_server/delivery_plan.py
+
+export interface DeliveryPlanConfig {
+  /** 交付编排器总开关：关时播放回落现行直出路径 */
+  enabled: boolean
+  /** 交付计划 TTL（秒）：30~3600，默认 600 */
+  ttl_sec: number
+  defaults: { enabled: boolean; ttl_sec: number }
+}
+
+export type DeliveryPlanConfigPayload = { enabled: boolean; ttl_sec: number }
+
+export const fetchDeliveryPlanConfig = () =>
+  get<DeliveryPlanConfig>('/delivery-plan-config')
+
+export const updateDeliveryPlanConfig = (payload: DeliveryPlanConfigPayload) =>
+  put<DeliveryPlanConfig>('/delivery-plan-config', payload)
+
 // ==================== 到期续费提醒（v2.8.0） ====================
 // 后端：backend/api/reminders_admin.py + backend/reminders.py
 
