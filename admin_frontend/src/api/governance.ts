@@ -115,3 +115,52 @@ export const createGovernanceSuspension = (data: { user_id: number; days: number
 /** 撤销停权（仅生效中的可撤销，否则 409） */
 export const revokeGovernanceSuspension = (id: number) =>
   post<GovernanceSuspensionRow>(`${G}/suspensions/${id}/revoke`)
+
+// ==================== 治理冻结（Step 4，O-02 补缺） ====================
+/**
+ * 端点：backend/api/governance_admin.py，挂 admin_router
+ * （前缀 /api/admin，这里只写余下部分）。
+ *
+ * 与 Step 2「治理停权」（GovernanceSuspension）是两套独立机制：
+ * 冻结（GovernanceFreeze）冻的是治理特权（举报 / 复核等治理参与权），
+ * 不扣经验、不影响核心权益。写操作双写审计（管理审计 + 治理审计日志）。
+ */
+export interface GovernanceFreezeRow {
+  id: number
+  user_id: number
+  username: string | null
+  reason: string
+  /** 空 = 不限期 */
+  expires_at: string | null
+  created_by: number | null
+  created_by_name: string | null
+  created_at: string | null
+}
+
+export interface GovernanceAuditLogRow {
+  id: number
+  action: string
+  actor_user_id: number | null
+  actor_name: string | null
+  target_user_id: number | null
+  target_name: string | null
+  target_ref: string | null
+  detail: Record<string, unknown>
+  created_at: string | null
+}
+
+/** 当前生效中的冻结列表（未解封且未过期，最新在前） */
+export const fetchGovernanceFreezes = () =>
+  get<{ items: GovernanceFreezeRow[] }>(`${G}/freezes`)
+
+/** 新建冻结：理由必填；已有生效中冻结 409；days 空 = 不限期 */
+export const createGovernanceFreeze = (data: { user_id: number; reason: string; days?: number | null }) =>
+  post<{ success: boolean; freeze_id: number; expires_at: string | null }>(`${G}/freeze`, data)
+
+/** 解冻（按用户）：无生效中冻结 404 */
+export const releaseGovernanceFreeze = (userId: number) =>
+  post<{ success: boolean; freeze_id: number }>(`${G}/freeze/release`, { user_id: userId })
+
+/** 治理审计日志只读查询（无写接口） */
+export const fetchGovernanceAuditLogs = (params: { limit?: number; action?: string; actor_id?: number; target_id?: number } = {}) =>
+  get<{ items: GovernanceAuditLogRow[] }>(`${G}/audit-logs`, params)
