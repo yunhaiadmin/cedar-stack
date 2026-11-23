@@ -8061,17 +8061,25 @@ def notify_transfer_wakeup(job_id=None):
 
 
 def _wake_subscriber_loop(stop_event):
-    """Redis 订阅线程：收到唤醒即置进程内 Event；订阅断了也先置
+    """Redis 订阅线程：收到唤醒即置进程内 Event；真断连也先置
     一次 Event 再重连——断连本身就是认领触发信号。
 
-    为什么不断连也唤醒（2026-11-02 生产实证）：Redis 客户端
-    socket_timeout=1 秒时 listen 每轮都抛 TimeoutError，订阅线程
-    每约 31 秒断开重连，期间新单的即时认领通道事实上失效，主循环
-    只剩 60 秒兜底扫；实测认领节奏启动突发后停 4–7 分钟一轮、
-    13 单 pending 无人认领。断连时先唤醒主循环跑一轮认领，再等
-    30 秒重连：最坏也只是断连期间每 30 秒多跑一轮认领查询
-    （空队时仅一次查库），不改 60 秒兜底扫、不改重连间隔。
-    订阅正常时行为逐字不变。"""
+    为什么不用 listen()（2026-11-23 生产实证）：Redis 客户端
+    socket_timeout=1 秒时，listen() 阻塞读空闲 1 秒即抛
+    TimeoutError，旧实现把它当断连走异常路径（warning 堆栈＋
+    置 Event＋等 30 秒重连）：订阅约 31 秒周期里 30 秒是死的，
+    期间发布的唤醒消息根本收不到（发布订阅不留存），且每约
+    31 秒刷一条 warning，实测 2 小时 231 条。2026-11-02 的
+    「断连即唤醒」补偿正是为这副死订阅兜底（当时实测认领节奏
+    停 4–7 分钟一轮、13 单 pending 无人认领）。
+
+    改用 get_message(timeout=1.0) 轮询：redis-py 对带 timeout
+    的读取走 select 等待，空闲超时在其内部消化、返回 None
+    不抛错——订阅连接持续有效，唤醒消息能真正收到（比旧实现
+    更好），空闲不记日志、不误唤醒。真断连时 ConnectionError
+    仍从 get_message 抛出，照旧走下方异常路径：先唤醒主循环
+    跑一轮认领，再等 30 秒重连（2026-11-02 补偿语义逐字
+    保留）；不改 60 秒兜底扫、不改重连间隔。"""
     while not stop_event.is_set():
         try:
             from backend.database import get_redis
@@ -8081,10 +8089,10 @@ def _wake_subscriber_loop(stop_event):
                 continue
             pubsub = client.pubsub()
             pubsub.subscribe(TRANSFER_WORKER_WAKE_CHANNEL)
-            for message in pubsub.listen():
-                if stop_event.is_set():
-                    break
-                if message.get("type") == "message":
+            while not stop_event.is_set():
+                message = pubsub.get_message(
+                    ignore_subscribe_messages=True, timeout=1.0)
+                if message is not None and message.get("type") == "message":
                     _WAKE_EVENT.set()
         except Exception:
             logger.warning("转存工人：唤醒订阅断开，30 秒后重连",
