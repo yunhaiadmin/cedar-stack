@@ -1,7 +1,9 @@
 """P0-4/P0-5 回归测试：初始化入口的部署者凭据与跨进程互斥。
 
 P0-4：初始化入口无部署者凭据，未初始化时可被任意访问者抢占管理员。
-修复：SETUP_BOOTSTRAP_TOKEN 环境变量；设置时请求必须携带一致的 bootstrap_token。
+修复：SETUP_BOOTSTRAP_TOKEN 环境变量（新装必填）；请求必须携带一致的
+bootstrap_token。未配置该环境变量时 fail-closed：POST 一律 403，
+不再保留「无凭据放行」的旧行为，消除新装部署的抢注窗口。
 
 P0-5：threading.Lock 只在进程内有效，多 worker 下两个进程可同时通过检查
 并创建不同用户名的管理员。修复：PG 用 advisory lock，SQLite 沿用进程内锁。
@@ -105,14 +107,30 @@ def test_bootstrap_token_correct_allows_setup(db, setup_client, monkeypatch):
     assert db.query(models.WebUser).filter_by(is_staff=True).count() == 1
 
 
-def test_no_bootstrap_token_env_keeps_old_behavior(db, setup_client, monkeypatch):
-    """未设置环境变量时保持旧行为（兼容），但能完成初始化。"""
+def test_no_bootstrap_token_env_fail_closed(db, setup_client, monkeypatch):
+    """未设置 SETUP_BOOTSTRAP_TOKEN 时 fail-closed：POST 一律 403。
+
+    旧行为是「未配 token 就无凭据放行建首管理员」，新装部署在部署者
+    填 token 之前存在被任意访问者抢注管理员的窗口，现改为硬拒绝：
+    不带 token 403、带任意 token 也 403（服务端根本没有可比对的凭据），
+    且不创建任何管理员、初始化状态不变。
+    """
     monkeypatch.delenv("SETUP_BOOTSTRAP_TOKEN", raising=False)
+    assert not _status(setup_client)
+
     r = setup_client.post("/api/admin/setup", json={
-        "username": "legacyadmin", "password": "LegacyAdmin123!@#",
+        "username": "attacker", "password": "Attacker123!@#",
     })
-    assert r.status_code == 200, r.text
-    assert _status(setup_client)
+    assert r.status_code == 403, r.text
+
+    r = setup_client.post("/api/admin/setup", json={
+        "username": "attacker", "password": "Attacker123!@#",
+        "bootstrap_token": "any-guess",
+    })
+    assert r.status_code == 403, r.text
+
+    assert db.query(models.WebUser).filter_by(is_staff=True).count() == 0
+    assert not _status(setup_client)
 
 
 # ===========================================================================
@@ -121,13 +139,15 @@ def test_no_bootstrap_token_env_keeps_old_behavior(db, setup_client, monkeypatch
 
 def test_setup_lock_is_reentrant_safe(db, setup_client, monkeypatch):
     """锁的基本语义：串行执行两次 setup，第二次 403，只有一个管理员。"""
-    monkeypatch.delenv("SETUP_BOOTSTRAP_TOKEN", raising=False)
+    monkeypatch.setenv("SETUP_BOOTSTRAP_TOKEN", "deploy-secret-123")
     r1 = setup_client.post("/api/admin/setup", json={
         "username": "first", "password": "FirstAdmin123!@#",
+        "bootstrap_token": "deploy-secret-123",
     })
     assert r1.status_code == 200, r1.text
     r2 = setup_client.post("/api/admin/setup", json={
         "username": "second", "password": "SecondAdmin123!@#",
+        "bootstrap_token": "deploy-secret-123",
     })
     assert r2.status_code == 403, r2.text
     assert db.query(models.WebUser).filter_by(is_staff=True).count() == 1

@@ -64,7 +64,8 @@
   （`backend/emby_server/stream_nodes.py:242` 起；时效 ±5 分钟＋nonce 防重放＋
   绑定 method＋path；静态 panel key 已拒）。
 - 首次运行向导 bootstrap（`backend/api/setup.py`）：完成后永久 403、限流、
-  设置 `SETUP_BOOTSTRAP_TOKEN` 时须带一致 token。
+  必须设置 `SETUP_BOOTSTRAP_TOKEN`（新装必填）且带一致 token；未配置时
+  fail-closed，POST 一律 403。
 
 ## 2. 核查方法与口径
 
@@ -176,7 +177,7 @@ B 档补充说明（不是缺口）：
 |---|---|---|---|
 | POST | `/api/admin/auth/login` | `backend/api/admin_auth.py:49` | 有意公开（登录本身）；限流 8 次／60 秒＋人机验证＋仅 `is_staff` 可登＋登录日志。非缺口 |
 | GET | `/api/admin/setup/status` | `backend/api/setup.py:165` | 有意公开；仅返回 `setup_completed` 布尔值，无敏感数据。非缺口 |
-| POST | `/api/admin/setup` | `backend/api/setup.py:179` | bootstrap；完成后永久 403、限流、设 `SETUP_BOOTSTRAP_TOKEN` 时须带一致 token。非缺口 |
+| POST | `/api/admin/setup` | `backend/api/setup.py:179` | bootstrap；完成后永久 403、限流、必须设 `SETUP_BOOTSTRAP_TOKEN` 且带一致 token，未配置时 fail-closed 403。非缺口 |
 | GET | `/api/admin/api-keys/verify` | `backend/api/admin_apikey.py:180` | API Key 鉴权：`Depends(api_key_core.require_api_key("read"))`，第三方自测用，不走管理员 JWT；AST 认不出工厂式 Depends，人工复核补获。非缺口 |
 | GET | `/api/admin/mounts/health` | `backend/emby_server/mount_health.py:244` | EA 挂载；装饰器 `require_panel_key`。非缺口 |
 | GET | `/api/admin/nodes/me` | `backend/emby_server/nodes.py:358` | EA；装饰器 `require_panel_key`。非缺口 |

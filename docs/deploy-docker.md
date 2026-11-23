@@ -41,7 +41,7 @@ cp env.example .env
 chmod 600 .env
 ```
 
-`.env` 里**只有两项必须改**，其余保持默认就能跑起来：
+`.env` 里**只有三项必须改**，其余保持默认就能跑起来：
 
 ```bash
 # 1) 会话签名密钥（至少 32 字符；泄露 = 别人能伪造登录态）
@@ -50,9 +50,12 @@ sed -i "s|^SECRET_KEY=.*|SECRET_KEY=$(python3 -c 'import secrets; print(secrets.
 # 2) 数据库密码
 sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')|" .env
 
-# 确认改到了（应输出 2 行 <已设置>，且长度都明显大于 1）
-grep -E '^(SECRET_KEY|POSTGRES_PASSWORD)=' .env | sed 's/=.*/=<已设置>/'
-awk -F= '/^SECRET_KEY=|^POSTGRES_PASSWORD=/{print $1, "长度:", length($2)}' .env
+# 3) 首次初始化向导的部署者凭据（新装必填；模板里默认是注释行，这条命令会把它启用并填值）
+sed -i "s|^#SETUP_BOOTSTRAP_TOKEN=.*|SETUP_BOOTSTRAP_TOKEN=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')|" .env
+
+# 确认改到了（应输出 3 行 <已设置>，且长度都明显大于 1）
+grep -E '^(SECRET_KEY|POSTGRES_PASSWORD|SETUP_BOOTSTRAP_TOKEN)=' .env | sed 's/=.*/=<已设置>/'
+awk -F= '/^SECRET_KEY=|^POSTGRES_PASSWORD=|^SETUP_BOOTSTRAP_TOKEN=/{print $1, "长度:", length($2)}' .env
 ```
 
 > macOS 的 `sed -i` 要写成 `sed -i '' "s|...|...|"`。写错了也不怕，下面的 `grep` 会当场告诉你。
@@ -62,7 +65,6 @@ awk -F= '/^SECRET_KEY=|^POSTGRES_PASSWORD=/{print $1, "长度:", length($2)}' .e
 | 配置项 | 说明 |
 |---|---|
 | `MEDIA_ROOT` | 宿主机上的影视目录，默认 `./media`，以**只读**方式挂进容器的 `/media`。之后在管理后台「媒体库管理」里按容器内路径加库；挂载配置里如果写的是宿主机路径，必须换成容器内能看到的路径 |
-| `SETUP_BOOTSTRAP_TOKEN` | 首次初始化向导的部署者凭据，**建议设置**（任意一串足够长的随机字符串）。设了之后，建第一个管理员时必须填对它，防止服务刚暴露到公网就被陌生人抢注管理员。生成方法同 `SECRET_KEY` |
 
 不要动的项：
 
@@ -137,7 +139,7 @@ bash scripts/deploy.sh          # 首次部署后端；--dry-run 可先看它要
 在那里创建第一个管理员账号（新库里不会有任何默认账号，第一个注册的普通用户也不会
 自动变成管理员，这是刻意的安全设计）。向导完成后入口永久关闭。
 
-- 如果你在 `.env` 里设了 `SETUP_BOOTSTRAP_TOKEN`，向导会要求填入它，照填即可；
+- `.env` 里必须已设 `SETUP_BOOTSTRAP_TOKEN`（新装必填），向导会要求填入一致的值，照填即可；没设时向导会返回 403，先补上该变量并重启服务再回来；
 - 向导不可用（比如旗标状态异常）时，自建版还可以用镜像里自带的脚本造管理员：
 
 ```bash

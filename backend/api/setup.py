@@ -20,8 +20,11 @@
 3. **限流**：与管理员登录同口径（8 次/分钟/IP），防字典跑向导入口；
 4. **不写第二套建账号逻辑**：复用 ``backend/admin_accounts.py`` 的
    ``validate_username / check_password_strength / upsert_admin``；
-5. **部署者凭据（P0-4）**：部署时设置 ``SETUP_BOOTSTRAP_TOKEN`` 环境变量，
-   向导 POST 必须携带一致的 ``bootstrap_token``，防未初始化时被任意访问者抢占管理员；
+5. **部署者凭据（P0-4）**：部署时必须设置 ``SETUP_BOOTSTRAP_TOKEN`` 环境变量
+   （新装必填），向导 POST 必须携带一致的 ``bootstrap_token``，防未初始化时
+   被任意访问者抢占管理员；**未配置该变量时 fail-closed**：POST 一律 403，
+   不再保留「无凭据放行」的旧行为，消除新装部署的抢注窗口（GET status
+   只读端点不受影响，仍只返回 ``setup_completed`` 布尔值）；
 6. **跨进程互斥（P0-5）**：``threading.Lock`` 只在进程内有效，多 worker 下
    两个进程可同时通过检查并创建不同用户名的管理员。改用 PG advisory lock
    （SQLite 沿用进程内锁）把「检查→创建→置旗」做成临界区。
@@ -60,7 +63,9 @@ SETUP_COMPLETED_DESC = "首次运行向导是否已完成（True 后初始化入
 # P0-4 修复：一次性 bootstrap token。
 # 部署时通过环境变量 SETUP_BOOTSTRAP_TOKEN 注入（受保护渠道交付，如密钥管理/部署脚本），
 # 向导 POST 必须携带一致的 token 才能建第一个管理员。成功后入口永久关闭，token 自然失效。
-# 未设置时保持旧行为（兼容已部署实例），但打 warning 提醒部署者配置。
+# 该变量为新装必填：未设置时 fail-closed，POST 一律 403（旧行为是无凭据放行，
+# 新装部署在部署者配置 token 前存在抢注窗口，故不再兼容放行）。已完成初始化的
+# 实例不受影响：POST 本就因 setup_completed 永久 403，管理员走正常登录。
 def _bootstrap_token() -> str:
     return (os.getenv("SETUP_BOOTSTRAP_TOKEN") or "").strip()
 
@@ -170,8 +175,9 @@ def setup_status(db: Session = Depends(get_db)) -> dict:
 class SetupRequest(BaseModel):
     username: str = Field(min_length=1, max_length=32)
     password: str = Field(min_length=1, max_length=128)
-    # P0-4：一次性 bootstrap token。部署时通过 SETUP_BOOTSTRAP_TOKEN 环境变量注入；
-    # 设置了该变量时，请求必须携带一致的 token，否则 403。
+    # P0-4：一次性 bootstrap token。部署时通过 SETUP_BOOTSTRAP_TOKEN 环境变量注入
+    # （新装必填）；请求必须携带一致的 token，否则 403；服务端未配置该变量时
+    # fail-closed，POST 一律 403。
     bootstrap_token: str | None = Field(default=None, max_length=256)
 
 
@@ -195,28 +201,41 @@ def setup_first_admin(
         )
         raise HTTPException(status_code=429, detail="尝试过于频繁，请稍后再试")
 
-    # P0-4 修复：部署者凭据。部署时设置了 SETUP_BOOTSTRAP_TOKEN 的，
-    # 请求必须携带一致的 bootstrap_token，否则任何能访问该接口的人
-    # 都可在管理员完成初始化前抢先创建管理员并永久关闭向导。
+    # P0-4 修复：部署者凭据。请求必须携带与 SETUP_BOOTSTRAP_TOKEN 一致的
+    # bootstrap_token，否则任何能访问该接口的人都可在管理员完成初始化前
+    # 抢先创建管理员并永久关闭向导。
+    # fail-closed：服务端未配置 SETUP_BOOTSTRAP_TOKEN 时一律 403——旧行为是
+    # 无凭据放行，新装部署在部署者配好 token 前存在抢注窗口，故硬拒绝；
+    # 部署者配置该变量并重启后即可正常走向导（或改用 scripts/create_admin.py
+    # 直接建管理员）。已初始化完成的实例 POST 本就永久 403，不受影响。
     expected_token = _bootstrap_token()
-    if expected_token:
-        provided = (request.bootstrap_token or "").strip()
-        # secrets.compare_digest 防时序攻击
-        import secrets
-        if not provided or not secrets.compare_digest(provided, expected_token):
-            record_event(
-                db, username=request.username.strip(), ip=log_ip(http_request),
-                agent=user_agent(http_request), success=False, reason="admin_setup_failed",
-                detail="bootstrap token 缺失或错误",
-            )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="初始化需要部署者凭据（bootstrap token）",
-            )
-    else:
+    if not expected_token:
         logger.warning(
-            "SETUP_BOOTSTRAP_TOKEN 未设置：向导入口无部署者凭据保护，"
-            "建议在部署时配置该环境变量"
+            "SETUP_BOOTSTRAP_TOKEN 未设置：向导 POST 已按 fail-closed 拒绝；"
+            "新装部署必须配置该环境变量后才能通过向导建第一个管理员"
+        )
+        record_event(
+            db, username=request.username.strip(), ip=log_ip(http_request),
+            agent=user_agent(http_request), success=False, reason="admin_setup_failed",
+            detail="服务器未配置 SETUP_BOOTSTRAP_TOKEN，向导已禁用（fail-closed）",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="服务器未配置 SETUP_BOOTSTRAP_TOKEN，初始化向导已禁用："
+                   "请部署者先在环境变量中设置该令牌再重试",
+        )
+    provided = (request.bootstrap_token or "").strip()
+    # secrets.compare_digest 防时序攻击
+    import secrets
+    if not provided or not secrets.compare_digest(provided, expected_token):
+        record_event(
+            db, username=request.username.strip(), ip=log_ip(http_request),
+            agent=user_agent(http_request), success=False, reason="admin_setup_failed",
+            detail="bootstrap token 缺失或错误",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="初始化需要部署者凭据（bootstrap token）",
         )
 
     # （限流检查已移到本函数开头，见 P1-2）
