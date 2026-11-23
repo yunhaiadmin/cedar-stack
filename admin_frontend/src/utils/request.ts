@@ -164,8 +164,15 @@ export function get<T = any>(url: string, params?: Record<string, unknown>): Pro
  * 按「保存了什么 / 创建了什么」弹具体文案——拦截器不知道业务语义，不抢戏）。
  * `silent: true` 连失败提示也跳过，调用方自行兜底。
  */
-export function post<T = any>(url: string, data?: unknown, options?: { silent?: boolean }): Promise<T> {
-  return request.post(url, data, { silent: options?.silent } as AdminRequestConfig) as Promise<T>
+export function post<T = any>(
+  url: string,
+  data?: unknown,
+  options?: { silent?: boolean; params?: Record<string, unknown> },
+): Promise<T> {
+  return request.post(url, data, {
+    silent: options?.silent,
+    params: options?.params,
+  } as AdminRequestConfig) as Promise<T>
 }
 
 /** multipart 直传；不要手动设置 boundary，交给浏览器 / Axios 生成。 */
