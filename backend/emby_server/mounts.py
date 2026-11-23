@@ -258,7 +258,9 @@ REMOTE_SUBTITLE_EXTS = {".srt", ".ass", ".ssa", ".vtt", ".sub"}
 MOUNT_PATH_PREFIX = "mount://"
 
 # 播放代理 / 探测共用：远程请求超时（秒）
-MOUNT_TIMEOUT = env_float("MOUNT_TIMEOUT", 20.0)
+# 缺省 120s：大库根列举实测可达 24s+（如影库根下 9,611 个子目录单次列举约 24 秒），
+# 20s 必超时致扫描只能 partial；120 为 2026-11-22 重建后生产实测口径。
+MOUNT_TIMEOUT = env_float("MOUNT_TIMEOUT", 120.0)
 # ffprobe / ffmpeg 读远程源时的 UA（多数网盘直链对 UA 有要求）
 MOUNT_UA = os.getenv("MOUNT_UA", transfer115.PAN115_UA)
 
