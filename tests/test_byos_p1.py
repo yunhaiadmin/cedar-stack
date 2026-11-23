@@ -110,12 +110,12 @@ def test_create_binding_removed_provider_rejected(db):
 
 
 def test_create_binding_drive_rejected_in_p1(db):
-    # P2 已上线：Drive 仍不收明文凭据，拒绝文案改为指引 OAuth 口
-    # （行为不变：kind=unsupported、不落行）。
+    # 绑盘拆除一期（2026-11-24）：Drive 建绑整体下线，拒绝文案
+    # 改为下线口径（行为不变：kind=unsupported、不落行）。
     with pytest.raises(ub.BindingError) as excinfo:
         ub.create_binding(db, 7, "drive", "盘", "whatever")
     assert excinfo.value.kind == "unsupported"
-    assert "oauth/start" in excinfo.value.message
+    assert "已下线" in excinfo.value.message
     assert db.query(em.UserStorageBinding).count() == 0
 
 

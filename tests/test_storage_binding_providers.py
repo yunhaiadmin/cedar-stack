@@ -27,9 +27,9 @@ def db_factory():
 @pytest.fixture()
 def db(db_factory):
     session = db_factory()
-    # Drive 绑定开关（2026-11-04）默认关会把 drive 从名单摘掉；本套件
-    # 测的是挂载映射口径，播种开关=开，开关两态由
-    # test_drive_binding_switch.py 专门覆盖。
+    # 绑盘拆除一期（2026-11-24）：drive_binding_enabled 已收敛为
+    # 代码常量关。本套件故意播种历史配置行=true，钉住它不再
+    # 打开名单——名单恒为空。
     session.add(base_models.SystemConfig(
         key="drive_binding_enabled", value="true"))
     session.commit()
@@ -52,19 +52,21 @@ def test_no_mounts_returns_empty(db):
 
 
 def test_drive_mapped_115_removed_and_others_skipped(db):
-    # 夸克/115 用户绑定线已下线（2026-11-02 删除单）：115 型挂载
-    # 仍可作共享库来源，但不再映射出用户绑定入口。
+    # 夸克/115 用户绑定线已下线（2026-11-02 删除单）；drive 型
+    # 挂载自绑盘拆除一期（2026-11-24）起也不再映射出用户绑定
+    # 入口（绑定总开关常量关）。挂载本身仍可作共享库来源。
     _mount(db, "m-drive", "drive")
     _mount(db, "m-115", "115")
     _mount(db, "m-local", "local")
     _mount(db, "m-rclone", "rclone")
-    assert ub.list_binding_providers(db) == ["drive"]
+    assert ub.list_binding_providers(db) == []
 
 
 def test_alias_mount_types_mapped(db):
+    # 别名型挂载（gdrive）同 drive 口径：绑盘拆除后不再映射。
     _mount(db, "m-gdrive", "gdrive")
     _mount(db, "m-pan115", "pan115")
-    assert ub.list_binding_providers(db) == ["drive"]
+    assert ub.list_binding_providers(db) == []
 
 
 def test_disabled_mounts_not_counted(db):
@@ -76,5 +78,5 @@ def test_disabled_mounts_not_counted(db):
 def test_result_contains_only_provider_names(db):
     _mount(db, "m-drive", "drive", )
     result = ub.list_binding_providers(db)
-    assert result == ["drive"]
+    assert result == []
     assert all(isinstance(p, str) for p in result)

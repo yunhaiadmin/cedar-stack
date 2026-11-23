@@ -572,18 +572,11 @@ def set_play_line_pref(req: dict,
     return {"line": "relay"}
 
 
-# ==================== BYOS 用户存储绑定（P1 + P2） ====================
-# 绑定是用户自己的网盘账号：建绑即验活（115）、解绑删行 + 凭据行、
-# 失效分三档文案。响应永远不含凭据原文与密封值（见 user_bindings）。
-# Drive 绑定走 P2 OAuth（下两口）：start 建 state 行并返回 Google
-# 授权地址，callback 凭 state 单次验讫换 token + 验活后建双行；
-# 凭据 POST 创建口仍只接受 pan115（Drive 不收明文凭据）。
-
-
-class StorageBindingCreate(BaseModel):
-    provider: str
-    account_label: str
-    credential: str
+# ==================== BYOS 用户存储绑定（存量） ====================
+# 绑盘已于 2026-11-24 拆除一期下线：建绑口（凭据 POST 创建、
+# Drive OAuth start/callback）全部删除，新建绑定不再可能；本节
+# 只剩存量绑定的列表 / 解绑 / 重验（解绑与池退出连带、令牌吊销
+# 仍在 user_bindings 内）。响应永远不含凭据原文与密封值。
 
 
 def _binding_error_status(exc) -> int:
@@ -624,44 +617,12 @@ def list_storage_binding_providers(
     才计入；前端按这份名单渲染对应 provider 的块，名单里没有的 provider 整个块
     不渲染，连该 provider 已绑的行也不展示（以名单为准；与“列表只出自己的行”
     口径的冲突点已写进 PR 描述，等父代理审）。
-    drive 另受绑定开关（drive_binding_enabled，默认关）管辖：关时名单
-    不返回 drive，前端整块不渲染，OAuth 发起口同时 403 拒绝。
-
-    响应另附 drive_oauth2（第二绑定入口状态，drive_oauth
-    .oauth2_entry_status）：available/eligible/reason/label/
-    description，前端据此决定第二入口整块渲不渲染、无凭证时为何
-    置灰；providers 名单本身的口径不变。
-    """
-    from backend.emby_server import drive_oauth, user_bindings
-
-    return {
-        "providers": user_bindings.list_binding_providers(db),
-        "drive_oauth2": drive_oauth.oauth2_entry_status(
-            db, request_user.id),
-    }
-
-
-@user_emby_router.post("/storage-bindings", status_code=201)
-def create_storage_binding(
-        body: StorageBindingCreate,
-        request_user: models.WebUser = Depends(get_admin_or_emby_user),
-        db: Session = Depends(get_db)):
-    """建绑 + 同步验活（P1 仅 pan115）。
-
-    验活通过返回 status=active；验活失败属三档内时仍 201 返回该行
-    （status=invalid/expired + error_message），由客户端展示重绑
-    引导——失效要响亮，不静默；一过性失败 502 且不落行。
+    绑盘拆除一期后 drive 恒不在名单内（绑定开关已收敛为代码常量
+    关、OAuth 发起口已删除）；本口保留供存量客户端兼容读取。
     """
     from backend.emby_server import user_bindings
 
-    try:
-        binding = user_bindings.create_binding(
-            db, request_user.id, body.provider,
-            body.account_label, body.credential)
-    except user_bindings.BindingError as exc:
-        raise HTTPException(
-            status_code=_binding_error_status(exc), detail=exc.message) from exc
-    return user_bindings.serialize_binding(binding)
+    return {"providers": user_bindings.list_binding_providers(db)}
 
 
 @user_emby_router.delete("/storage-bindings/{binding_id}")
@@ -772,135 +733,6 @@ def withdraw_pool_contribution(
     return {"member": pool_gate.member_public_payload(db, member)}
 
 
-class DriveOAuthStart(BaseModel):
-    account_label: str
-    rebind_binding_id: int | None = None
-
-
-def _apply_oauth_nonce_cookie(request: Request, response: Response,
-                              result: dict) -> dict:
-    """start 结果 → 下发会话 nonce cookie 并摘掉 nonce 原文后返回。
-
-    安全收口（2026-10-30）：nonce cookie（HttpOnly、只在回调路径
-    发送）把回调完成动作绑回本浏览器 + 本用户，堵“诱使他人点
-    授权链接、令牌落攻击者名下”的链（见 drive_oauth
-    .assert_callback_browser_binding）。nonce 原文只进 cookie，
-    绝不进返回 JSON。两个 start 口共用本函数，口径不许漂。
-    """
-    from backend.emby_server import drive_oauth
-
-    nonce = result.pop("_oauth_nonce", None)
-    if nonce:
-        response.set_cookie(
-            drive_oauth.OAUTH_NONCE_COOKIE, nonce,
-            max_age=drive_oauth.state_ttl_sec(),
-            path=drive_oauth.OAUTH_CALLBACK_PATH,
-            domain=drive_oauth.oauth_nonce_cookie_domain(
-                request.url.hostname),
-            httponly=True, samesite="lax",
-            secure=request.url.scheme == "https")
-    return result
-
-
-@user_emby_router.post("/storage-bindings/drive/oauth/start")
-def start_drive_oauth_binding(
-        body: DriveOAuthStart,
-        request: Request,
-        response: Response,
-        request_user: models.WebUser = Depends(get_admin_or_emby_user),
-        db: Session = Depends(get_db)):
-    """开始 Drive 授权：建 state 行、返回 Google 授权地址。
-
-    此时不建绑定行与凭据行（绑完先验活）；前端引导用户去授权地址
-    完成 Google 同意，Google 再把浏览器带回 callback 口。服务器
-    应用凭据 / 对外地址未配时响亮 400（部署者先配好，不猜）。
-    nonce cookie 的下发口径见 _apply_oauth_nonce_cookie。
-    """
-    from backend.emby_server import drive_oauth
-
-    try:
-        result = drive_oauth.start_drive_oauth(
-            db, request_user.id, body.account_label,
-            rebind_binding_id=body.rebind_binding_id)
-    except drive_oauth.DriveOAuthError as exc:
-        raise HTTPException(
-            status_code=_binding_error_status(exc), detail=exc.message) from exc
-    return _apply_oauth_nonce_cookie(request, response, result)
-
-
-@user_emby_router.post("/storage-bindings/drive/oauth2/start")
-def start_drive_oauth2_binding(
-        body: DriveOAuthStart,
-        request: Request,
-        response: Response,
-        request_user: models.WebUser = Depends(get_admin_or_emby_user),
-        db: Session = Depends(get_db)):
-    """开始 Drive 授权（第二入口，走新应用 DRIVE_OAUTH2_*）。
-
-    与老 start 口同形：建 state 行（落 oauth_client=oauth2）、
-    返回 Google 授权地址、同样下发 nonce cookie；回调仍是同一
-    个 callback 口，靠 state 行分流换 token。差异只有两点：授权
-    地址用第二套客户端凭据拼；仅限持有查看凭证的用户——未配
-    第二套凭据 400、无凭证 403（detail 是给用户看的人话）。
-    """
-    from backend.emby_server import drive_oauth
-
-    try:
-        result = drive_oauth.start_drive_oauth(
-            db, request_user.id, body.account_label,
-            rebind_binding_id=body.rebind_binding_id,
-            client=drive_oauth.CLIENT_OAUTH2)
-    except drive_oauth.DriveOAuthError as exc:
-        raise HTTPException(
-            status_code=_binding_error_status(exc), detail=exc.message) from exc
-    return _apply_oauth_nonce_cookie(request, response, result)
-
-
-@user_emby_router.get("/storage-bindings/drive/oauth/callback")
-def callback_drive_oauth_binding(
-        request: Request,
-        code: str = "",
-        state: str = "",
-        error: str = "",
-        db: Session = Depends(get_db)):
-    """Drive 授权回调：会话校验通过后，凭 state 单次验讫换 token
-    + 验活后建双行。
-
-    安全收口（2026-10-30，审计第 1 点）：旧口只认 state 行，
-    攻击者用自己生成的 state 诱使受害者在 Google 同意屏点
-    同意，就能把受害者令牌绑到攻击者名下。现口在消费 state
-    前先过 assert_callback_browser_binding：浏览器必须出示
-    start 时下发的 nonce cookie（绑回发起浏览器）；请求自带
-    会话时，会话用户还必须等于 state 行 user_id。校验不过
-    → 403 且 state 行被烧，不建任何绑定。
-    Google 拒授权（error 参数）时直接 400，不落行。换 token /
-    验活属三档内时返回 200 + 失败态绑定行（与 P1 的 201 +
-    status 同口径）；一过性失败 502 且不落行（授权码本身也是
-    一次性，须重新走授权）。
-    """
-    from backend.emby_server import drive_oauth, user_bindings
-
-    if error:
-        raise HTTPException(
-            status_code=400, detail=f"Google 授权失败：{error}")
-    session_user_id = None
-    try:
-        session_user_id = get_admin_or_emby_user(request, db).id
-    except HTTPException:
-        session_user_id = None
-    try:
-        drive_oauth.assert_callback_browser_binding(
-            db, state,
-            request.cookies.get(drive_oauth.OAUTH_NONCE_COOKIE),
-            session_user_id)
-    except drive_oauth.DriveOAuthError as exc:
-        raise HTTPException(status_code=403, detail=exc.message) from exc
-    try:
-        binding = drive_oauth.complete_drive_oauth(db, state, code)
-    except drive_oauth.DriveOAuthError as exc:
-        raise HTTPException(
-            status_code=_binding_error_status(exc), detail=exc.message) from exc
-    return user_bindings.serialize_binding(binding)
 
 
 @user_emby_router.get("/resume")
@@ -1449,13 +1281,7 @@ def get_chase_calendar(request: Request,
         for day in sorted(day_ids)
     ]
 
-    return {
-        "start": start.date().isoformat(),
-        "end": end.date().isoformat(),
-        "total": len(rows),
-        "days": days,
-        "types": type_counts,
-    }
+    return {providers: user_bindings.list_binding_providers(db)}
 
 
 @user_emby_router.get("/stats")
