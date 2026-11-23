@@ -1,7 +1,10 @@
 """R4 轮回归测试：限流 IP 提取的两项修复。
 
-R4-1：可信代理下 X-Forwarded-For 最后一段非法（如 "unknown"）时，
-     必须回落到直连 IP，不能被当作限流键/日志 IP。
+R4-1：被采信的 X-Forwarded-For 取值必须做合法性校验（如 "unknown"
+     不能被当作限流键/日志 IP），非法时按回落链走。
+     2026-11-23 口径改版：取值位置由末段改为首项（生产多跳代理链
+     下客户端只在首项，见 ratelimit.get_client_ip），校验与回落
+     语义不变，只是作用在首项上。
 R4-2：_trusted_proxies() 解析缓存——同配置下不重复解析，
      环境变量一变立即失效（monkeypatch 逐测改值必须生效）。
 """
@@ -34,38 +37,38 @@ def _clear_cache():
     ratelimit._trusted_proxies_cache = None
 
 
-class TestXffLastHopValidation:
-    """R4-1：XFF 最后一段合法性校验"""
+class TestXffFirstHopValidation:
+    """R4-1：XFF 首项合法性校验（2026-11-23 起取值位置为首项）"""
 
-    def test_unknown_last_hop_falls_back_to_direct(self):
-        """某些代理会写 XFF: <ip>, unknown → 回落到直连 IP"""
-        req = _make_request("127.0.0.1", xff="203.0.113.5, unknown")
+    def test_unknown_first_hop_falls_back_to_direct(self):
+        """某些代理会把首项写成 unknown → 不许当键，回落到直连 IP"""
+        req = _make_request("127.0.0.1", xff="unknown, 203.0.113.5")
         assert get_client_ip(req) == "127.0.0.1"
 
-    def test_garbage_last_hop_falls_back_to_direct(self):
-        """最后一段是垃圾字符串 → 回落到直连 IP"""
-        req = _make_request("127.0.0.1", xff="1.2.3.4, not-an-ip!!")
+    def test_garbage_first_hop_falls_back_to_direct(self):
+        """首项是垃圾字符串 → 回落到直连 IP"""
+        req = _make_request("127.0.0.1", xff="not-an-ip!!, 1.2.3.4")
         assert get_client_ip(req) == "127.0.0.1"
 
-    def test_valid_last_hop_still_used(self):
-        """合法最后一段行为不变"""
+    def test_valid_first_hop_used(self):
+        """合法首项即客户端，后段是链上代理、与取值无关"""
         req = _make_request("127.0.0.1", xff="1.2.3.4, 5.6.7.8")
-        assert get_client_ip(req) == "5.6.7.8"
+        assert get_client_ip(req) == "1.2.3.4"
 
-    def test_valid_last_hop_ipv6(self):
-        """合法 IPv6 最后一段也被采信"""
-        req = _make_request("127.0.0.1", xff="1.2.3.4, 2001:db8::1")
+    def test_valid_first_hop_ipv6(self):
+        """合法 IPv6 首项也被采信"""
+        req = _make_request("127.0.0.1", xff="2001:db8::1, 1.2.3.4")
         assert get_client_ip(req) == "2001:db8::1"
 
-    def test_x_real_ip_still_priority(self):
-        """X-Real-IP 合法时仍优先，不受 XFF 校验影响"""
+    def test_x_real_ip_fallback_when_first_hop_invalid(self):
+        """首项非法但 X-Real-IP 合法 → 回落到 X-Real-IP（回落链不变）"""
         req = _make_request(
-            "127.0.0.1", xff="1.2.3.4, unknown", x_real_ip="5.6.7.8"
+            "127.0.0.1", xff="unknown, 1.2.3.4", x_real_ip="5.6.7.8"
         )
         assert get_client_ip(req) == "5.6.7.8"
 
     def test_invalid_x_real_ip_and_invalid_xff(self):
-        """X-Real-IP 非法 + XFF 末段非法 → 回落直连"""
+        """X-Real-IP 非法 + XFF 首项非法 → 回落直连"""
         req = _make_request(
             "127.0.0.1", xff="garbage", x_real_ip="also-garbage"
         )

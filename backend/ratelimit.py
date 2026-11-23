@@ -226,45 +226,86 @@ def _is_trusted_proxy(ip: str) -> bool:
     return False
 
 
+# 自有代理层网段：回环 + RFC1918 + 链路本地 + IPv6 ULA/链路本地。
+# 公网流量无法以这类源地址到达本进程（进程端口只绑回环/内网），
+# 直连对端落在这里即说明请求经过自有反代链，转发头可采信。
+# 显式枚举，不用 ipaddress 的 is_private——它把 TEST-NET 等文档段
+# 也算 private，会误信公网直连方伪造的转发头。
+_INFRA_PEER_NETS = tuple(
+    ipaddress.ip_network(cidr)
+    for cidr in (
+        "127.0.0.0/8",
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "169.254.0.0/16",
+        "::1/128",
+        "fc00::/7",
+        "fe80::/10",
+    )
+)
+
+
+def _is_infra_peer(ip: str) -> bool:
+    """直连对端是否自有代理层（回环/内网/链路本地网段）。"""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    for net in _INFRA_PEER_NETS:
+        try:
+            if addr in net:
+                return True
+        except TypeError:
+            # IPv4 vs IPv6 不匹配就跳过
+            continue
+    return False
+
+
 def get_client_ip(request) -> str:
-    """获取真实客户端 IP（防伪造）。
+    """获取真实客户端 IP（限流键 / 登录日志共用口径，横切只许这一套）。
 
-    只有当直连方是可信代理（TRUSTED_PROXIES）时，才信任
-    X-Forwarded-For / X-Real-IP 头；否则直接用 request.client.host。
+    2026-11-23 口径改版（生产实证驱动）。生产请求链是
+    Cloudflare → tls-bridge（宿主机 nginx）→ web 容器 nginx → 本进程，
+    本进程的直连对端永远是 web 容器 IP。旧口径在这条链上取不到客户端：
+    - 采信门只认 TRUSTED_PROXIES 名单，生产从未配过 → 转发头全被
+      忽略，全站登录共用代理 IP 一个限流桶（生产 Redis 键
+      ``ratelimit:172.18.0.7:/emby/Users/AuthenticateByName:anon:*``
+      实锤：近 3 小时 981 次 429、仅 19 次登录成功）；
+    - 即便配上名单，旧优先级也错：X-Real-IP 被 tls-bridge 写成
+      Cloudflare 边缘 IP、XFF 末段是最近一跳代理（127.0.0.1），
+      都不是客户端。这条链上客户端 IP 只在 XFF **首项**
+      （Cloudflare 写入，后续每跳代理往后追加）。
 
-    原理：XFF 和 X-Real-IP 都是客户端可伪造的请求头。只有当请求
-    确实经过我们自己的反代（nginx）时，这些头才可信——而判断依据
-    是 TCP 直连的对端 IP 是否在可信代理列表里（这个伪造不了）。
-
-    可信代理场景下的优先级：
-    1. X-Real-IP：nginx 按 $remote_addr 硬写
-    2. X-Forwarded-For 最后一段：最近一跳代理追加的
-    3. 直连 IP
+    现口径：
+    1. 直连对端是自有代理层（回环/RFC1918/链路本地等内网网段，
+       见 _is_infra_peer）或 TRUSTED_PROXIES 名单内时，采信转发头：
+       先取 XFF 首项（须为合法 IP——某些代理会写 "unknown" 等
+       非 IP 值，非法值不许当限流键，R4-1）；首项缺失/非法再回落
+       X-Real-IP（须合法，A-P2-3），再回落直连 IP。
+    2. 直连对端是公网地址（服务被直接暴露）时，转发头一律不采信，
+       用直连 IP——防伪造不变量不变：公网客户端可任意伪造请求头，
+       采信即等于限流桶可任意轮换。
     """
     if request is None:
         return "unknown"
     direct_ip = request.client.host if request.client else "unknown"
 
-    # 直连方不是可信代理：所有转发头都不可信，直接用直连 IP
-    if not _is_trusted_proxy(direct_ip):
+    # 直连方既不是自有代理层、也不在可信名单：转发头不可信，用直连 IP
+    if not (_is_trusted_proxy(direct_ip) or _is_infra_peer(direct_ip)):
         return direct_ip
 
-    # 可信代理：X-Real-IP 优先（nginx 硬写，客户端伪造的会被覆盖）
-    real = (request.headers.get("x-real-ip") or "").strip()
-    # P2 修复（完美审查 A-P2-3）：必须是合法 IP 才采信——回环直连者可任意伪造
-    # X-Real-IP 绕限流（每次换桶）并污染 LoginLog.ip。非法值回落到 XFF/直连 IP。
-    if real and is_valid_ip(real):
-        return real
-    # 其次取 XFF 最后一段（最近一跳追加的才是真实客户端）
+    # XFF 首项：链首写入者（Cloudflare / 最外层自有代理）记录的客户端
     fwd = request.headers.get("x-forwarded-for")
     if fwd:
-        hops = [part.strip() for part in fwd.split(",") if part.strip()]
-        if hops:
-            # R4-1 修复：某些代理会写 "unknown" 等非 IP 值；不校验会被当限流键，
-            # 导致不同客户端归入同一桶。非法值直接回落到直连 IP（与 X-Real-IP
-            # 分支的回落语义一致）。
-            if is_valid_ip(hops[-1]):
-                return hops[-1]
+        first = fwd.split(",", 1)[0].strip()
+        if first and is_valid_ip(first):
+            return first
+    # 回落 X-Real-IP（须合法）：单层自有 nginx 硬写 $remote_addr 的部署
+    # 仍靠它拿到客户端（那种链上 XFF 首项可能缺失）。
+    real = (request.headers.get("x-real-ip") or "").strip()
+    if real and is_valid_ip(real):
+        return real
     return direct_ip
 
 
@@ -476,18 +517,17 @@ def login_lockout_record_success(scope: str, account: str) -> None:
 
 
 def client_ip(request) -> str:
-    """提取客户端 IP（只能信任我们自己的反代重新写入的头）
+    """提取客户端 IP（限流键与登录日志共用，口径见 get_client_ip）。
 
-    安全：此值同时用于登录/注册/核销的限流键与登录日志，之前取
-    `X-Forwarded-For` 的**第一段**——而仓库里的 Nginx 用的是
-    `$proxy_add_x_forwarded_for`（把客户端自带的头追加在前面），
-    于是任何人只要每次伪造一个 `X-Forwarded-For: 1.2.3.4` 就能换一个限流桶，
-    暴力破解与刷接口形同不设限。现在的优先级：
-
-    1. `X-Real-IP`：Nginx 按 `$remote_addr` 硬写，客户端无法伪造
-    2. `X-Forwarded-For` 的**最后一段**：由最近一跳代理追加，才是真实客户端
-    3. 直连时的 `request.client.host`
-
-    注意：已升级为可信代理校验版本（get_client_ip），保留此函数名做兼容。
+    历史教训（两头都踩过）：
+    - 无条件信 XFF 首项不行：服务被公网直连暴露时，客户端每次伪造
+      一个首项就能换一个限流桶，暴力破解形同不设限——所以公网直连
+      对端的转发头一律不采信（get_client_ip 的采信门）。
+    - 只信名单内对端、取 X-Real-IP/XFF 末段也不行：生产链
+      Cloudflare → tls-bridge → web 容器 → 本进程里，名单从未配上
+      导致全站共用代理桶（2026-11-23 实锤），且 X-Real-IP 是
+      Cloudflare 边缘 IP、XFF 末段是最近一跳代理，都不是客户端。
+    现口径（自有代理层/名单内对端才采信，取 XFF 首项）见
+    get_client_ip 的 docstring。保留此函数名做兼容。
     """
     return get_client_ip(request)

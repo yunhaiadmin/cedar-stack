@@ -164,7 +164,8 @@ from backend.ratelimit import API_RATE_LIMITS as _EA_RATE_LIMITS  # noqa: E402
 
 
 def _ea_get_ip(request: Request) -> str:
-    """真实客户端 IP（与原来同一口径：只有可信代理写进来的头才算数）。"""
+    """真实客户端 IP（与 EM 同一口径：backend.ratelimit.get_client_ip——
+    自有代理层/可信名单对端才采信转发头，取 X-Forwarded-For 首项）。"""
     from backend.ratelimit import get_client_ip
 
     return get_client_ip(request)
