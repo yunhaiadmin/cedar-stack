@@ -9010,8 +9010,14 @@ async def video_stream(
         if mount_lib.is_mount_path(getattr(item, "file_path", "")):
             _pt.mark("mount_relay")
             from backend.emby_server.streaming import serve_mount_relay_async
+            # 热缓存身份（2026-11-23 挂载腿二期）：条目绑定的谷歌
+            # drive_file_id 是不可变的内容身份，有它才给挂载中继开
+            # 热缓存命中/写穿/预读（吃掉每请求向谷歌重新开流的
+            # 1.6–2.2s TTFB）；无 fid 的条目传 None、行为逐字不变。
+            _mount_fid = getattr(item, "drive_file_id", None)
             _mount_relay_resp = await serve_mount_relay_async(
-                target.value, request, target.headers, media_type, pt=_pt)
+                target.value, request, target.headers, media_type, pt=_pt,
+                hot_identity=f"mount:{_mount_fid}" if _mount_fid else None)
             _note_watch_activity(
                 request, user, item,
                 getattr(_mount_relay_resp, "status_code", None))

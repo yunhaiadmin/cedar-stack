@@ -1,30 +1,37 @@
 # -*- coding: utf-8 -*-
 """中继热缓存（2026-11-22 智能中继＋热缓存阶段 1）。
 
-Drive 中继腿（SA / 池副本 / 本人令牌）的字节级磁盘分段缓存：
+Drive 中继腿（SA / 池副本 / 本人令牌）与挂载中继腿的字节级磁盘
+分段缓存：
 
 - 分段 = 1MB（与 streaming.READ_CHUNK 对齐），键 = 文件身份 + 分段
-  序号；身份由 streaming 经 _DriveLegScope 注入
-  （``drive:{drive_id}:{file_id}``），本模块不认识 URL 与令牌，
-  只管字节落盘与命中判定。
+  序号；身份由 streaming 注入——Drive 腿经 _DriveLegScope
+  （``drive:{drive_id}:{file_id}``）、挂载腿经 serve_mount_relay_async
+  的 hot_identity 参数（``mount:{drive_file_id}``），本模块不认识
+  URL 与令牌，只管字节落盘与命中判定。
 - 命中口径（streaming.serve_mount_relay_async 开流前查）：请求区间
   被已缓存分段**完全覆盖**才整段本地出字节、不回源；部分命中不
   拼凑，走现行透传 + 写穿（write-through）把流过的完整分段落盘，
   下次同区间请求才转全命中。
 - 写入走进程内有界队列 + 守护写线程（请求路径只投递、满了就丢，
   绝不阻塞出流），落盘临时文件 + 原子 rename；总容量走
-  SystemConfig ``relay_hot_cache_max_bytes``（默认 50GiB，注册见
+  SystemConfig ``relay_hot_cache_max_bytes``（默认 20GiB，注册见
   config_schema.RELAY_HOT_CACHE_CONFIG_SCHEMA），超限按 mtime
-  LRU 淘汰；磁盘剩余低于 RELAY_HOT_CACHE_MIN_FREE_BYTES 停写。
+  LRU 淘汰；磁盘余量护栏：可用空间低于 RELAY_HOT_CACHE_MIN_FREE_
+  BYTES（默认 10GiB）即停写新分段、出流照常透传（fail-open），
+  绝不把盘写满拖累主服务；已缓存分段的命中读不受护栏影响。
 - 身份的大小/校验器（ETag / Last-Modified）变化即整身份失效
   （note_validators 比对；代际计数让在途的旧写入自动作废）。
 - 本模块公开函数永不抛：缓存故障一律按未命中/丢弃处理，
   streaming 侧 fail-open 回现行透传路径。
 
-挂载腿二期：挂载身份只有路径/pickcode——115 已下线，rclone rcd
-路径可被原地换文件（同路径不同字节），全命中路径不回源就无从用
-校验器发现变化，身份与内容未绑定，本期不接（注入点已在
-_DriveLegScope 留好，挂载调用点不设身份即逐字不变）。
+挂载腿二期（2026-11-23 已接）：一期时挂载身份只有路径/pickcode
+——rcd 路径可被原地换文件（同路径不同字节），身份与内容未绑定，
+故一期不接。二期改用条目绑定的谷歌 drive_file_id 作身份
+（``mount:{drive_file_id}``，api.video_stream 注入）：file_id 是
+谷歌侧不可变身份、与内容绑定，不是路径；且每次透传仍按上游响应
+登记总长＋Last-Modified 校验器把关，变化即整身份失效。无
+drive_file_id 的挂载条目不设身份、不缓存，行为逐字不变。
 """
 from __future__ import annotations
 
@@ -48,14 +55,18 @@ SEGMENT_SIZE = 1024 * 1024
 #: #1527 先例）。
 KEY_MAX_BYTES = "relay_hot_cache_max_bytes"
 
-#: 总容量代码默认：50GiB（新机根盘 435G、空闲 403G，保守起步；
-#: 管理员改 SystemConfig 热生效，60 秒进程内缓存）。
-DEFAULT_MAX_BYTES = 50 * 1024 * 1024 * 1024
+#: 总容量代码默认：20GiB（2026-11-23 用户亲令收紧：根盘总共
+#: 435G、海报回填还要占约 55G，50G 缺省太贪）。两条腿共享同一个
+#: 缓存池/同一个总上限（分开计账护不住同一块盘）；管理员改
+#: SystemConfig 热生效，60 秒进程内缓存。
+DEFAULT_MAX_BYTES = 20 * 1024 * 1024 * 1024
 
 _MAX_BYTES_LIMIT = 10 ** 15
 _CONFIG_TTL_SEC = 60.0
 
 _DEFAULT_DIR = "/data/relay-hot-cache"
+#: 磁盘余量护栏缺省阈值：可用空间低于 10GiB 停写新分段（出流透传
+#: 不受影响）。env RELAY_HOT_CACHE_MIN_FREE_BYTES 可调。
 _DEFAULT_MIN_FREE_BYTES = 10 * 1024 * 1024 * 1024
 _DEFAULT_PREFETCH_SEGMENTS = 2
 
@@ -124,7 +135,7 @@ _CAP_CACHE_AT = 0.0
 
 def max_bytes() -> int:
     """总容量上限（字节）：SystemConfig relay_hot_cache_max_bytes
-    热读；无行/非法/读失败回代码默认 50GiB；0 = 关缓存（不读不写）。"""
+    热读；无行/非法/读失败回代码默认 20GiB；0 = 关缓存（不读不写）。"""
     global _CAP_CACHE, _CAP_CACHE_AT
     now = time.monotonic()
     with _CAP_LOCK:
