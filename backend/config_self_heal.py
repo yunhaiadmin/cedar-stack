@@ -575,6 +575,71 @@ def heal_system_config(db) -> list[str]:
     return healed
 
 
+def detect_placeholder_config(db=None) -> list[str]:
+    """检出已生效的模板占位配置（RFC 2606 占位域名），只报警、绝不改写。
+
+    检出范围：
+    - env ``EMBY_PUBLIC_URL`` 为占位主机；
+    - 传入 db 时，``server_realm_lines`` 表中 url 为占位主机的行（报行 id）；
+    - 传入 db 时，``system_configs`` 的 ``site_url`` 为占位主机。
+
+    对外身份配置必须人工填真值，自愈不许替人决定真实地址，所以这里
+    只返回问题清单并逐条 ``logger.error`` 大声记录（前缀「占位配置」）。
+    占位判定只许一套：复用 ``backend.realms.is_placeholder_url``。
+    """
+    from backend.realms import is_placeholder_url
+
+    problems: list[str] = []
+
+    env_url = (os.getenv("EMBY_PUBLIC_URL") or "").strip()
+    if env_url and is_placeholder_url(env_url):
+        problems.append(
+            f"占位配置：环境变量 EMBY_PUBLIC_URL 是模板占位地址 {env_url}，"
+            "请改填本站真实对外地址")
+
+    if db is not None:
+        from backend import models
+
+        try:
+            rows = db.query(models.ServerRealmLine).all()
+        except Exception:  # noqa: BLE001 — 表不存在等场景只跳过这一项检出
+            logger.warning("[配置自愈] 占位检出：读 server_realm_lines 失败，跳过",
+                           exc_info=True)
+            try:
+                db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            rows = []
+        for row in rows:
+            url = (getattr(row, "url", "") or "").strip()
+            if url and is_placeholder_url(url):
+                problems.append(
+                    f"占位配置：server_realm_lines id={row.id} 的 url "
+                    f"是模板占位地址 {url}，请改填本站真实对外地址")
+
+        try:
+            site_row = (db.query(models.SystemConfig)
+                        .filter(models.SystemConfig.key == "site_url").first())
+        except Exception:  # noqa: BLE001
+            logger.warning("[配置自愈] 占位检出：读 system_configs 失败，跳过",
+                           exc_info=True)
+            try:
+                db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            site_row = None
+        if site_row is not None:
+            site_url = (site_row.value or "").strip()
+            if site_url and is_placeholder_url(site_url):
+                problems.append(
+                    f"占位配置：system_configs 的 site_url 是模板占位地址 "
+                    f"{site_url}，请改填本站真实对外地址")
+
+    for problem in problems:
+        logger.error("[配置自愈] %s", problem)
+    return problems
+
+
 def run_config_self_heal(db=None, example_path: Path = ENV_EXAMPLE,
                          env_path: Path = ENV_FILE) -> dict:
     """启动时调用的统一入口：先补 .env，再补 system_configs。
@@ -582,7 +647,8 @@ def run_config_self_heal(db=None, example_path: Path = ENV_EXAMPLE,
     任何一步失败都只记日志、不抛异常、不阻断启动。
     db 为空时自己开一个 Session（用完关闭）。
     """
-    result: dict[str, list[str]] = {"env_healed": [], "db_healed": []}
+    result: dict[str, list[str]] = {"env_healed": [], "db_healed": [],
+                                    "placeholder_config": []}
     try:
         result["env_healed"] = heal_env_file(example_path, env_path)
     except Exception:  # noqa: BLE001 — 自愈失败不能拦住启动
@@ -598,6 +664,11 @@ def run_config_self_heal(db=None, example_path: Path = ENV_EXAMPLE,
             result["db_healed"] = heal_system_config(db)
         except Exception:  # noqa: BLE001
             logger.warning("[配置自愈] system_configs 自愈失败（已跳过）", exc_info=True)
+        try:
+            # 占位检出：只报警不改写；detect 内部已逐条 logger.error
+            result["placeholder_config"] = detect_placeholder_config(db)
+        except Exception:  # noqa: BLE001
+            logger.warning("[配置自愈] 占位配置检出失败（已跳过）", exc_info=True)
     finally:
         if own_session:
             db.close()

@@ -75,6 +75,44 @@ REALM_CONFIG_BASES = (
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 
+# RFC 2606 保留的占位域名：只出现在模板/文档示例里，永远不是真实地址。
+# 2026-11-21/22 迁机重建时 env.example 的占位值曾直接上线，导致播放
+# 地址全错、主线路也被种子成假地址——占位值在任何入口都不许生效。
+_PLACEHOLDER_HOSTS = ("example.com", "example.org", "example.net")
+
+
+def _host_is_placeholder(host: str) -> bool:
+    host = (host or "").strip().lower().rstrip(".")
+    if not host:
+        return False
+    return any(host == suffix or host.endswith("." + suffix)
+               for suffix in _PLACEHOLDER_HOSTS)
+
+
+def is_placeholder_url(url: str) -> bool:
+    """URL（或裸主机名）的主机是否为 RFC 2606 占位域名。"""
+    value = (url or "").strip()
+    if not value:
+        return False
+    from urllib.parse import urlsplit
+
+    try:
+        host = urlsplit(value).hostname
+    except ValueError:
+        host = None
+    if not host:
+        # 裸主机形态（无 scheme）：取第一段路径前的主机部分再判
+        host = value.split("/")[0].split(":")[0]
+    return _host_is_placeholder(host or "")
+
+
+def _reject_placeholder_url(url: str) -> None:
+    """占位地址拒绝落库：报错说明这是模板占位、请填真实地址。"""
+    if is_placeholder_url(url):
+        raise ValueError(
+            "该地址是模板占位地址（example.com / example.org / example.net "
+            "等 RFC 2606 占位域名），不是真实地址；请填本站真实对外地址")
+
 
 # ==================== 读 ====================
 
@@ -520,6 +558,8 @@ def create_realm(db: Session, *, name: str, slug: str = "", url: str = "",
         raise ValueError("请填写服的名称")
     if db.query(models.ServerRealm).filter(models.ServerRealm.name == name).first():
         raise ValueError(f"已存在同名的服：{name}")
+    if (url or "").strip():
+        _reject_placeholder_url((url or "").strip())
     slug = validate_slug(slug or _auto_slug(db, name))
     if db.query(models.ServerRealm).filter(models.ServerRealm.slug == slug).first():
         raise ValueError(f"标识 {slug} 已被占用")
@@ -575,6 +615,8 @@ def update_realm(db: Session, realm: models.ServerRealm, *, name: Optional[str] 
             raise ValueError(f"已存在同名的服：{name}")
         realm.name = name
     if url is not None:
+        if url.strip():
+            _reject_placeholder_url(url.strip())
         realm.url = url.strip().rstrip("/")
     if description is not None:
         realm.description = description.strip()
@@ -647,6 +689,12 @@ def ensure_realm_lines(db: Session, realm: models.ServerRealm) -> list[models.Se
     url = realm_public_url(db, realm.id)
     if not url:
         return []
+    if is_placeholder_url(url):
+        logger.error(
+            "占位配置：服 #%s（%s）的对外地址是模板占位地址 %s，"
+            "拒绝生成播放线路；请填本站真实对外地址",
+            realm.id, realm.name, url)
+        return []
     line = models.ServerRealmLine(
         realm_id=realm.id, name="主线路", url=url, sort_order=0,
         category=line_quota.DEFAULT_CATEGORY)
@@ -674,6 +722,7 @@ def validate_line_url(url: str) -> str:
         raise ValueError("线路地址不合法")
     if parts.scheme not in ("http", "https") or not parts.hostname:
         raise ValueError("线路地址必须是带域名的 http(s) 完整地址")
+    _reject_placeholder_url(value)
     return value
 
 
@@ -850,6 +899,7 @@ __all__ = [
     "update_line",
     "validate_line_url",
     "get_realm",
+    "is_placeholder_url",
     "legacy_realm",
     "legacy_realm_id",
     "list_realms",
