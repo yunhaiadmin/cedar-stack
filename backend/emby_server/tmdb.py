@@ -1844,16 +1844,20 @@ class TmdbClient:
         同一部剧的两个文件名（``Some Show`` 与 ``Some Show (2024)``）不再各打
         一遍——跨条目去重从此可靠而非碰运气（§7.3③）。
         瞬态失败直接抛 ``TmdbTransientError``（L1/L2 都不写，网络恢复后自然
-        重打）；``data=None`` 的非瞬态（401/404）不写 L2 磁盘；HTTP 成功但
+        重打）；``data=None`` 的非瞬态 4xx 不写 L2 磁盘；HTTP 成功但
         响应体里没有 ``results`` 数组的错误载荷（网关把错误包成 200 的情形）
         也按瞬态抛出去——绝不把错误体当成"搜过了没有"写进阴性缓存
         （2026-10-18 阴性缓存毒化事故：2,115 条假阴性/7 分钟）。
+        2026-11-23 堵漏：全部 key 返回 401（钥匙错误/失效）与未配置
+        （status=0）同样按瞬态抛出——这类情形下搜索根本没发生过，旧口径
+        把它当合法空结果返回 []，上层随之把条目终态化成 done+none
+        （生产 757 条假完成的一条产生路径）。会话建不起来同理。
 
         lang：指定语言（fallback 链用）；None 则用首选语言。
         """
         self._ensure_session()
         if not self.session:
-            return []
+            raise TmdbTransientError("TMDB 会话不可用（未搜成，不许当搜过没有）")
         endpoint = "tv" if kind == "series" else "movie"
         # 缓存键只许用 base 归一：繁简/数字折叠会把繁体候选查询
         # （WS6 的独立索引检索）短路成简体缓存命中，见 _norm_text_base。
@@ -1885,7 +1889,7 @@ class TmdbClient:
                     params["first_air_date_year"] = year
                 else:
                     params["year"] = year
-            data = self._get(f"/search/{endpoint}", params)
+            data, status = self._get_with_status(f"/search/{endpoint}", params)
             if isinstance(data, dict) and "results" in data:
                 # 真实成功的搜索响应：响应体里带 results 数组才算"搜过了"。
                 # 空数组是合法阴性（TMDB 确认无此片），允许写 L1/L2。
@@ -1894,7 +1898,15 @@ class TmdbClient:
                 self._cache_put(key, results)
                 return results
             if data is None:
-                # 非瞬态（401/404/未配置）：旧口径——L1 短缓存 300 秒，不写 L2。
+                if status in (401, 0):
+                    # 全部 key 401（钥匙错误/失效）或根本未配置：搜索没
+                    # 发生过。按瞬态抛出（L1/L2 都不写），条目进重试队列；
+                    # 绝不返回 [] 冒充"搜过了没有"——旧口径正是这样把
+                    # 条目批量终态化成 done+none 假完成的（2026-11-23）。
+                    raise TmdbTransientError(
+                        f"TMDB 搜索未执行（status={status}：未配置或全部"
+                        f" key 401）: {query}")
+                # 其余非瞬态 4xx：旧口径——L1 短缓存 300 秒，不写 L2。
                 self._cache_put(key, [])
                 return []
             # 错误载荷：HTTP 成功但响应体里没有 results 数组（网关/反代把错误

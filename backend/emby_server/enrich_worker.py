@@ -3525,6 +3525,21 @@ def _enrich_apply(db, item: Any, fetched: dict) -> None:
     if (not _douban_backfill_enqueued and not item.metadata_source
             and kind in ("series", "movie", "season", "episode")):
         item.metadata_source = "none"
+    # 假完成封堵（2026-11-23）：series/movie 同时满足「无任何身份
+    # （identity_gate 单一判据）＋本轮没有真实搜索无命中证据
+    # （_searched_no_hit=False）＋没有任何来源落过资料（source 为
+    # 空/none）」时不许走 done 终态。这类条目是 TMDB 未配置、钥匙只
+    # 同步到 API 进程而工人进程没跟上、或搜索分支被前置条件短路时，
+    # 被 has_core 口径（标题+年份齐即完成）误放的——生产实测 757 条
+    # done＋无身份且 attempts=0（脚本 scripts/reset_fake_done_enrich.py
+    # 负责存量重置）。走下面判定链的专属分支打回重试。
+    _unearned_done = False
+    if kind in ("series", "movie") and not _searched_no_hit:
+        from backend.emby_server import identity_gate as _ig_guard
+        _unearned_done = (
+            not _ig_guard.is_bound_row(item)
+            and (item.metadata_source or "none") == "none"
+        )
     if _fc_refill_enqueued or _douban_backfill_enqueued:
         # Step 5 / 豆瓣补刮：低优先级补一轮——保持上面设置的 pending +
         # priority（-10 / -20），跳过下面的 done/_incomplete 判定与优先级
@@ -3547,7 +3562,9 @@ def _enrich_apply(db, item: Any, fetched: dict) -> None:
                 item.enrich_status = "done"
                 _clear_blank_identity(item)
                 item.metadata_source = "none"
-                item.enrich_attempts = 0
+                # 2026-11-23：不清零 attempts——本终态的前提是真实尝试
+                # 已攒满上限，清零会把「真试过」抹成与假完成同形
+                # （attempts 证据纪律，与 done 分支同口径）。
                 # 记本次终态化时间：回捞周期后 janitor 按最旧优先自动捞回
                 item.enrich_next_retry_at = datetime.now()
                 # 批2小修：none 诚实终态写 last_scraped_at——「跑过、搜过无命中」
@@ -3569,10 +3586,41 @@ def _enrich_apply(db, item: Any, fetched: dict) -> None:
             item.enrich_next_retry_at = datetime.now() + timedelta(seconds=backoff)
             logger.info("补全资料不全待重试 id=%s attempts=%s %ss后",
                         item.id, attempts, backoff)
+    elif _unearned_done:
+        # 假完成拦截（见 _unearned_done 计算处）：与资料不全同款计次
+        # 退避，但超限转 failed 留痕——绝不转 done+none（那正是要堵的
+        # 假终态）；配置/钥匙恢复后由 failed 自动回捞或人工重试接手。
+        _tuning = _enrich_tuning_config(db)
+        attempts = (item.enrich_attempts or 0) + 1
+        item.enrich_attempts = attempts
+        if attempts >= _tuning["values"][CFG_ENRICH_MAX_ATTEMPTS]:
+            item.enrich_status = "failed"
+            item.enrich_next_retry_at = None
+            item.enrich_last_error = (
+                "未执行 TMDB 搜索即到达终态判定（TMDB 未配置/钥匙未同步"
+                "或搜索分支未进入），已拦截假完成 attempts=%d" % attempts)
+            logger.warning("补全假完成拦截超限转 failed id=%s attempts=%s",
+                           item.id, attempts)
+        else:
+            backoff = _tuning["values"][CFG_ENRICH_RETRY_BASE_SEC] * (
+                2 ** (attempts - 1))
+            item.enrich_status = "pending"
+            item.enrich_next_retry_at = datetime.now() + timedelta(
+                seconds=backoff)
+            item.enrich_last_error = (
+                "本轮未执行 TMDB 搜索，无身份条目不许标完成，已打回重试")
+            logger.warning("补全假完成拦截打回 pending id=%s attempts=%s "
+                           "%ss后", item.id, attempts, backoff)
     else:
         item.enrich_status = "done"
         _clear_blank_identity(item)
-        item.enrich_attempts = 0
+        if _searched_no_hit:
+            # 真搜过无命中的终态保留尝试证据（本轮计 1 次），与「没搜
+            # 过就 done」的假完成区分（2026-11-23 堵漏）：此前清零，
+            # 757 条假完成与真终态在库里同形（attempts=0）不可分辨。
+            item.enrich_attempts = (item.enrich_attempts or 0) + 1
+        else:
+            item.enrich_attempts = 0
         item.enrich_last_error = None  # WS1/T1：成功即清零
         if _searched_no_hit and enrich_tuning_value(CFG_ENRICH_NONE_AUTO_RESCHEDULE, db):
             # Step 4：flag 开时，「搜过无命中」的终态 none 记本次终态化时间，
@@ -4632,6 +4680,18 @@ def _janitor_loop() -> None:
         try:
             db = SessionLocal()
             try:
+                # TMDB 钥匙热同步（2026-11-23）：tmdb_client 的钥匙只在
+                # 进程构造时读一次，管理端后填/换钥匙的 refresh_keys 只
+                # 作用于 API 进程；工人进程长期拿空/旧钥匙跑是假完成
+                # 757 条的根因之一。janitor 每轮顺带刷新（env 优先、
+                # 其次 DB），失败只记 debug、不挡巡检。
+                try:
+                    from backend.emby_server.tmdb import (
+                        tmdb_client as _tmdb_client_for_keys)
+                    _tmdb_client_for_keys.refresh_keys(db)
+                except Exception:  # noqa: BLE001
+                    logger.debug("TMDB 钥匙热同步失败（下轮重试）",
+                                 exc_info=True)
                 n = _reclaim_stale(db)
                 if n:
                     logger.info("补全 janitor 回收 %d 条超时租约（enriching → pending）", n)

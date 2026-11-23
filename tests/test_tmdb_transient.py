@@ -9,6 +9,12 @@
   ``ok=False → _mark_failed`` 指数退避重试（见 tests/test_enrich_worker.py 的集成用例）。
 - 404 / 401 / 未配置仍返回 ``None``（阴性语义，不烧重试预算）。
 
+2026-11-23 口径细化（假完成 757 条堵漏）：上面是 ``_get`` 层的契约，
+不变；但 ``_search_raw`` 层把「全部 key 401 / 未配置」由返回 ``[]``
+（冒充搜过没有）改判 ``TmdbTransientError``——搜索根本没发生过，
+不许据此把条目终态化成 done+none。404 的 [] 旧口径保留。回归见
+tests/test_enrich_fake_done_guard.py。
+
 全部在假会话上跑，不发真请求。
 """
 from types import SimpleNamespace
