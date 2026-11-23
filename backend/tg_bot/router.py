@@ -102,6 +102,56 @@ def _verify_bind_code(db, update: dict) -> None:
     # reply 为 None → 不是有效的绑定码，静默忽略
 
 
+def _handle_group_bind_code(db, update: dict, *, silent: bool = False) -> None:
+    """群里出现的 6 位绑定码（A-033）：不验码，命中活码当场作废。
+
+    绑定码的设计流程是私聊 Bot 发送（backend/tg_bind.py）。群消息对
+    全体成员可见，码在群里被受理或留存都等于公开账号绑定凭证：任何
+    群成员抢先发送同一码（群里或私聊）都会把自己的 TG 绑到码主账号。
+    故群里一律不验；命中未用未过期的活码 → 标记已用（作废）＋尽力
+    删除原消息＋回一条自毁提示让码主重新生成并改走私聊。未命中
+    （普通 6 位数字消息）静默忽略，不刷屏、不删他人消息。
+    """
+    from datetime import datetime
+
+    from backend import models
+    from backend.tg_bot import sender
+
+    msg = update.get("message") or {}
+    text = (msg.get("text") or "").strip()
+    chat_id = (msg.get("chat") or {}).get("id")
+    if not chat_id:
+        return
+    now = datetime.now()
+    rec = (
+        db.query(models.TgBindCode)
+        .filter(
+            models.TgBindCode.code == text,
+            models.TgBindCode.user_id.isnot(None),
+            models.TgBindCode.telegram_id.is_(None),
+            models.TgBindCode.used_at.is_(None),
+            models.TgBindCode.expires_at > now,
+        )
+        .order_by(models.TgBindCode.id.desc())
+        .first()
+    )
+    if rec is None:
+        return
+    rec.used_at = now
+    db.commit()
+    logger.warning(
+        "tg 绑定码出现在群聊，已作废 code_id=%s chat=%s", rec.id, chat_id)
+    message_id = msg.get("message_id")
+    if message_id:
+        try:
+            sender.delete_message(db, chat_id, message_id)
+        except Exception:  # noqa: BLE001 - 删不掉（无权限等）只记日志，作废已生效
+            logger.warning(
+                "tg 删除群内绑定码消息失败 chat=%s", chat_id, exc_info=True)
+    if not silent:
+        _send_reply(db, chat_id, GROUP_BIND_CODE_TEXT, autodelete=True)
+
+
 def _send_reply(db, chat_id, text, reply_markup=None, *, autodelete=False):
     """机器人回复统一发送口（二期自毁接线）。
 
@@ -201,6 +251,13 @@ GROUP_ANONYMOUS_BOT_ID = 1087968824
 ANON_ADMIN_TEXT = (
     "🎭 你现在是匿名管理员身份，我认不出是哪位管理员，这个操作办不了。\n"
     "请关掉匿名、用你本人身份再发一次就行；你的账号绑定是好的，不用重新绑定。"
+)
+
+# 群里露脸的绑定码回执（A-033）：码已作废、请码主重新生成并改走私聊。
+# 文案不带码值本身，避免二次扩散。
+GROUP_BIND_CODE_TEXT = (
+    "⚠️ 绑定码不要发在群里：刚才这枚码群里所有人都能看到，已经作废。\n"
+    "请在网页重新生成绑定码，然后【私聊】机器人发送，不要发到任何群里。"
 )
 
 # 需要发送者身份的命令全集：handler 内走 resolve / _bound_user /
@@ -465,9 +522,14 @@ def dispatch(db, update: dict) -> None:
 
         group_limit = policy.group_rate_limit(cfg)
 
-        # 6 位纯数字 → 绑定码验证
+        # 6 位纯数字 → 绑定码验证（仅私聊；群里走作废路径，见 A-033）
         if text.isdigit() and len(text) == 6:
-            if in_group and not _group_allow(chat_id, group_limit):
+            if in_group:
+                if _is_anonymous_admin(msg):
+                    _handle_group_bind_code(db, update, silent=True)
+                    _send_reply(db, chat_id, ANON_ADMIN_TEXT, autodelete=True)
+                    return
+                _handle_group_bind_code(db, update)
                 return
             # 匿名发的绑定码认不出是谁，验了也绑不到本人：回匿名说明
             if _is_anonymous_admin(msg):
