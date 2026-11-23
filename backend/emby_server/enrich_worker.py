@@ -3382,8 +3382,31 @@ def _enrich_apply(db, item: Any, fetched: dict) -> None:
                 _maybe_queue_probe(db, item)
                 return
     elif kind in ("series", "movie"):
-        if (tmdb_client.configured and not item.tmdb_id and not alt_hit
-                and not multi_fields and not _dbn_first):
+        # 复核门全拒并入终态口径（2026-11-23 用户拍板）：fetch 阶段
+        # 绑定复核门（主门 tmdb_gate_rejected / 多源桥
+        # multisource_tmdb_rejected）把搜到的候选全拒时，候选已被
+        # pop、fetched 里只剩拒绝标记——与「无候选」在数据上的区别
+        # 正是这个标记。此前 _searched_no_hit 的外层条件要求
+        # not alt_hit / not multi_fields：被拒后豆瓣兜底只落文字
+        # （altmeta.apply 不落身份）、多源只采到字段就把终态挡死，
+        # 行落 _unearned_done 守卫 → pending→failed→janitor 30 天
+        # 回捞无限循环（生产 68 条实证）。故另开通道：有拒绝标记
+        # ＋ ok（真搜过、非瞬态——门取数瞬态时 fetch 置 ok=False
+        # 且不留标记，双保险）＋ 非 repair ＋ NFO 无 id ＋ 本轮全部
+        # apply 之后条目仍无任何身份（identity_gate 单一判据）→
+        # 与真搜不中同等对待，走下面同一套终态判定（含豆瓣封禁
+        # 跳过先进补刮队列的内层分支，口径逐字一致）。
+        _gate_reject_reason = (fetched.get("tmdb_gate_rejected")
+                               or fetched.get("multisource_tmdb_rejected"))
+        _rejected_no_identity = False
+        if (_gate_reject_reason and fetched.get("ok")
+                and not needs_repair
+                and not (nfo_data or {}).get("tmdb_id")):
+            from backend.emby_server import identity_gate as _ig_rej
+            _rejected_no_identity = not _ig_rej.is_bound_row(item)
+        if (tmdb_client.configured and not item.tmdb_id and not _dbn_first
+                and (not alt_hit and not multi_fields
+                     or _rejected_no_identity)):
             # 处方 5（终态化）：search **真的跑过**且无高置信命中 =「搜过、没有」——
             # 这批条目在旧实现里走 5 次重试 × 每 60~960 秒重打 4~5 个候选搜索，
             # 结果必然是空：积压数字永不下降，白白烧掉约 7 万次 TMDB 请求。
@@ -3416,13 +3439,20 @@ def _enrich_apply(db, item: Any, fetched: dict) -> None:
                     logger.info("豆瓣封禁期跳过豆瓣未命中，进安静补刮队列"
                                 "（解封后补）id=%s name=%r", item.id, item.name)
                 else:
-                    # 豆瓣/Bangumi 也没兜到（alt_hit 为空才会进到这里）：
+                    # 豆瓣/Bangumi 也没兜到身份（原口径 alt_hit 为空；
+                    # 复核门全拒通道下 alt/多源可有文字产出但无身份）：
                     # 显式记 none，与「从未标记过」区分开。
                     item.metadata_source = "none"
                     # 「跑过但没拿到」必须可见：以前这条是静默写入，
                     # 网络抖动被吞成搜不到时根本查不出（问题一的可见性缺口）
                     logger.info("TMDB 搜过无高置信命中（终态 none）id=%s name=%r year=%s",
                                 item.id, item.name, item.production_year)
+                    if _gate_reject_reason:
+                        # 复核门全拒通道进来的行多记一条带 reason 的
+                        # 日志，与纯无候选区分（对账/复盘用）。
+                        logger.info("TMDB 候选被复核门全拒（终态 none）"
+                                    "id=%s reason=%s",
+                                    item.id, _gate_reject_reason)
                     # FMBY 批二 #15：低置信人工审查队列（默认关）。TMDB 有
                     # 候选但无一过线 = 拿不准，不硬认也不丢弃——同事务入队
                     # 留证据等管理员处置。入队写失败会抛 ReviewEnqueueError
