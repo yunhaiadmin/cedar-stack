@@ -93,8 +93,9 @@ def _seed(db, key, value):
 
 def test_all_batch_keys_registered_panel_removed():
     assert set(REMOVED_KEYS_PROD) <= store.PANEL_REMOVED_SWITCH_KEYS
-    # 37（首批）+ 16（本批）= 53，store.py 注释数字须与实际一致
-    assert len(store.PANEL_REMOVED_SWITCHES) == 53
+    # 37（首批）+ 16（本批）− 4（2026-11-23 公益清扫删除抽奖/活力死键登记）
+    # = 49，store.py 注释数字须与实际一致
+    assert len(store.PANEL_REMOVED_SWITCHES) == 49
 
 
 def test_env_overrides_db_for_removed_keys(db, monkeypatch):
