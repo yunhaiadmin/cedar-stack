@@ -3527,19 +3527,22 @@ def _enrich_apply(db, item: Any, fetched: dict) -> None:
         item.metadata_source = "none"
     # 假完成封堵（2026-11-23）：series/movie 同时满足「无任何身份
     # （identity_gate 单一判据）＋本轮没有真实搜索无命中证据
-    # （_searched_no_hit=False）＋没有任何来源落过资料（source 为
-    # 空/none）」时不许走 done 终态。这类条目是 TMDB 未配置、钥匙只
-    # 同步到 API 进程而工人进程没跟上、或搜索分支被前置条件短路时，
-    # 被 has_core 口径（标题+年份齐即完成）误放的——生产实测 757 条
-    # done＋无身份且 attempts=0（脚本 scripts/reset_fake_done_enrich.py
-    # 负责存量重置）。走下面判定链的专属分支打回重试。
+    # （_searched_no_hit=False）」时不许走 done 终态。这类条目是 TMDB
+    # 未配置、钥匙只同步到 API 进程而工人进程没跟上、或搜索分支被前置
+    # 条件短路时，被 has_core 口径（标题+年份齐即完成）误放的——生产
+    # 实测 757 条 done＋无身份且 attempts=0（脚本
+    # scripts/reset_fake_done_enrich.py 负责存量重置）。走下面判定链
+    # 的专属分支打回重试。
+    # 2026-11-23 跟进：来源标签不作豁免——NFO/多源只落文字不落身份
+    # 时同样是「没拿到身份就 done」的假完成（生产 23 条实证：done +
+    # source='nfo'/'multisource' + 无身份 + attempts=0），此前只拦
+    # source 为空/none 的条件正是这 23 条的旁路。NFO 自带 tmdb/imdb
+    # 号、或多源采到外部编号时 apply 侧已落身份，守卫不拦；真搜过无
+    # 命中（_searched_no_hit）已在上面排除，不受影响。
     _unearned_done = False
     if kind in ("series", "movie") and not _searched_no_hit:
         from backend.emby_server import identity_gate as _ig_guard
-        _unearned_done = (
-            not _ig_guard.is_bound_row(item)
-            and (item.metadata_source or "none") == "none"
-        )
+        _unearned_done = not _ig_guard.is_bound_row(item)
     if _fc_refill_enqueued or _douban_backfill_enqueued:
         # Step 5 / 豆瓣补刮：低优先级补一轮——保持上面设置的 pending +
         # priority（-10 / -20），跳过下面的 done/_incomplete 判定与优先级
@@ -6033,7 +6036,20 @@ def _suppress_flood(db) -> int:
     不再单独算数。只带 tmdb_id、从未真刮过的行若在此被盖成 done，海报/
     简介永远没人补（欧美剧库 767 部假完成实锤）；这类行留 pending 由
     worker 按 tmdb_id 正常补刮详情即可。
+
+    注意（2026-11-23 跟进，45 条实证）：反过来，**无身份的行也不许
+    在此被盖成 done**——last_scraped_at 同样不是「真刮过」的证据。
+    45 条的完整链路：重置后 pending → 工人守卫 _unearned_done 计次
+    至 failed（拦截报错保留）→ janitor failed 定时回捞翻回 pending
+    （attempts 清零、报错保留）→ 下次容器重启 start() 调本函数，
+    pending + 无指纹 + 有 last_scraped_at 三条件全中，被批量盖成
+    done——产物与假完成签名逐字相同（done + 无身份 + attempts=0 +
+    拦截报错保留）。故本函数只翻已绑定身份的行（identity_gate 单一
+    判据：tmdb/imdb 任一非空，或 external_ids 任一在用来源键非空）；
+    无身份行留 pending，由 worker 真跑一轮搜索定终态。
     """
+    from backend.emby_server.identity_gate import _own_bound as _bound_sql
+    _bound = _bound_sql(em.MediaItem)
     # 批量 done 同样走终态清理（完美审查第三轮）：此前这里只翻状态，
     # 纯空白身份原样带进 done，#1383 的 4 处单条清理全旁路。
     # 先轻量查出本批行的身份列、按 strip 口径（与 _clear_blank_identity
@@ -6043,6 +6059,7 @@ def _suppress_flood(db) -> int:
         .filter(em.MediaItem.enrich_status == "pending")
         .filter(em.MediaItem.file_fingerprint.is_(None))
         .filter(em.MediaItem.last_scraped_at.isnot(None))
+        .filter(_bound)
         .all())
     for _col, _idx in (("tmdb_id", 1), ("imdb_id", 2)):
         _blank_ids = [r[0] for r in _flood_rows
@@ -6055,6 +6072,7 @@ def _suppress_flood(db) -> int:
          .filter(em.MediaItem.enrich_status == "pending")
          .filter(em.MediaItem.file_fingerprint.is_(None))
          .filter(em.MediaItem.last_scraped_at.isnot(None))
+         .filter(_bound)
          .update({"enrich_status": "done"}, synchronize_session=False))
     db.commit()
     return n

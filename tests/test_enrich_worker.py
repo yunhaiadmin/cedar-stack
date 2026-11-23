@@ -87,8 +87,12 @@ def test_suppress_flood_marks_scraped_old_data_done(db):
 
     2026-10-20 假完成修复后口径：tmdb_id 只是身份、不是刮削证据，
     只带 tmdb_id 的行不再被盖 done（见下一条回归用例）。
+    2026-11-23 跟进：反过来，无身份的行也不许被盖 done（45 条实证，
+    见 test_suppress_flood_keeps_unbound_rows_pending）——本用例的
+    翻转行须是已绑定身份的老数据。
     """
-    _make_item(db, file_fingerprint=None, last_scraped_at=datetime.now())
+    _make_item(db, file_fingerprint=None, tmdb_id="123",
+               last_scraped_at=datetime.now())
     _make_item(db, file_fingerprint=None, tmdb_id="123")
     _make_item(db, file_fingerprint=None)  # 真需要补的，保留 pending
     _make_item(db, file_fingerprint="abc", enrich_status="pending")  # L1 新数据不动
@@ -111,6 +115,40 @@ def test_suppress_flood_keeps_tmdb_only_rows_pending(db):
     assert n == 0
     db.refresh(it)
     assert it.enrich_status == "pending"
+
+
+def test_suppress_flood_keeps_unbound_rows_pending(db):
+    """防洪峰跟进回归（2026-11-23，45 条实证）：pending + 无指纹 +
+    有 last_scraped_at，但无任何身份 → 仍 pending，不许盖 done。
+
+    这正是 45 条的现场签名：重置后 pending → 守卫 _unearned_done
+    计次至 failed（拦截报错保留）→ janitor failed 定时回捞翻回
+    pending（attempts 清零、报错保留）→ 下次容器重启 start() 调
+    _suppress_flood 时被批量盖成 done。修后本函数只翻已绑定行，
+    该形状的行原地不动、报错原样保留，等 worker 真跑一轮搜索。
+    """
+    it = _make_item(db, item_type="series", file_fingerprint=None,
+                    last_scraped_at=datetime.now(),
+                    enrich_last_error="未执行 TMDB 搜索即到达终态判定"
+                    "（TMDB 未配置/钥匙未同步或搜索分支未进入），"
+                    "已拦截假完成 attempts=5")
+    n = enrich_worker._suppress_flood(db)
+    assert n == 0
+    db.refresh(it)
+    assert it.enrich_status == "pending"
+    assert it.enrich_attempts == 0
+    assert "已拦截假完成" in (it.enrich_last_error or "")
+
+
+def test_suppress_flood_flips_external_identity_rows(db):
+    """防洪峰：外部编号也算身份——external_ids 带豆瓣号的老数据照常翻 done。"""
+    it = _make_item(db, item_type="movie", file_fingerprint=None,
+                    last_scraped_at=datetime.now(),
+                    external_ids='{"douban": "123456"}')
+    n = enrich_worker._suppress_flood(db)
+    assert n == 1
+    db.refresh(it)
+    assert it.enrich_status == "done"
 
 
 def test_fake_done_patrol_flips_only_fake_done(db):
