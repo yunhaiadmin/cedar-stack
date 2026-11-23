@@ -276,7 +276,7 @@ class TestBE18PatrolSignalGate:
     def img(self, scene, monkeypatch, tmp_path):
         from backend.emby_server import image_store
         monkeypatch.setenv("EMBY_IMAGE_DIR", str(tmp_path / "images"))
-        monkeypatch.delenv("EMBY_LOCALIZE_IMAGES", raising=False)
+        monkeypatch.setenv("EMBY_LOCALIZE_IMAGES", "1")  # 2026-11-23 起默认关，本文件测开启态行为
         monkeypatch.delenv("EMBY_IMAGE_BACKFILL", raising=False)
         monkeypatch.setattr(image_store, "enqueue_thumb_warm",
                             lambda *a, **k: None)

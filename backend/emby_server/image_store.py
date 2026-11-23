@@ -17,7 +17,9 @@
 配置（都在环境里，缺省值面向小机器）：
 
 ======================  ==========================================================
-``EMBY_LOCALIZE_IMAGES``  ``0`` 关闭（默认开启）
+``EMBY_LOCALIZE_IMAGES``  ``1`` 开启（默认**关闭**，2026-11-23 起：图片交付
+                          改走 CF 边缘缓存、本地停止新增落盘；显式置 ``1`` 即
+                          回滚到本地化口径。已落盘文件仍可只读命中）
 ``EMBY_IMAGE_PREWARM``    刮削期图片预热（默认**关闭**）：关时刮削只落远程地址、
                           图由后台补下载巡检涓流落盘；``1`` 恢复刮削时预下载全量图
 ``EMBY_IMAGE_BACKFILL``   后台补下载巡检（默认开启）：``0`` 关掉后图只剩取图时按需下载
@@ -191,11 +193,13 @@ def thumb_engine() -> str:
 def thumb_widths() -> list[int]:
     """后台预生成的缩略图宽度档（环境变量 EMBY_THUMB_WIDTHS，逗号分隔）
 
-    默认 160,320,640：分别对应列表行、海报卡片、详情/背景。
+    默认 160,320,600,640,1280：分别对应列表行、海报卡片、无凭据海报
+    封顶（F5-D-lite 600）、详情、背景。600 / 1280 必须在册：无凭据出图
+    封顶靠现行吸附体系精确命中这两档，不另造缩放路径。
     早先默认是 320,640，但前端实际请求 160/300/342，一次都命不中预热产物，
     100% 的缩略图都落到请求线程里现做——反而把线程池打满。
     """
-    raw = (os.getenv(_THUMB_WIDTHS_ENV) or "160,320,640").strip()
+    raw = (os.getenv(_THUMB_WIDTHS_ENV) or "160,320,600,640,1280").strip()
     out: list[int] = []
     for part in raw.split(","):
         try:
@@ -428,6 +432,36 @@ def resized_variant(path: str, max_width=None, max_height=None) -> str:
             _LOCKS.pop(target, None)
 
 
+def shrink_image_bytes(data: bytes, max_width) -> Optional[bytes]:
+    """把内存中的图片字节按宽度封顶缩小，返回新 JPEG 字节；不需缩 / 处理
+    失败返回 None（调用方发原始字节）。
+
+    F5-D-lite 的代理腿落点：远程图未落盘时取图走代理回源、字节不过盘，
+    文件版 ``resized_variant`` 用不上——这里用同一套 Pillow 引擎与质量
+    口径在内存里等比缩小（只缩不放、转 JPEG、丢 alpha 通道），语义与
+    ``_thumb_pillow`` 对齐，不新造缩放体系。
+    """
+    width = _clamp_dim(max_width)
+    if not width or not data or not _PIL_OK:
+        return None
+    try:
+        import io
+
+        with _PILImage.open(io.BytesIO(data)) as img:
+            if img.size[0] <= width:
+                return None
+            img.load()
+            if img.mode in ("RGBA", "LA", "PA", "P"):
+                img = img.convert("RGB")
+            img.thumbnail((width, 10 ** 7), _PILImage.LANCZOS)
+            out = io.BytesIO()
+            img.save(out, "JPEG", quality=_THUMB_QUALITY,
+                     optimize=True, progressive=True)
+            return out.getvalue()
+    except Exception:  # noqa: BLE001 — 缩图失败只是没封顶，原图照发
+        return None
+
+
 # ---------- 后台预热队列 ----------
 # 入库/刮削落下原图后，把缩略图生成扔进这个单线程队列：不阻塞入库主流程，
 # 单线程串行也天然限速，不会跟扫描抢 CPU。
@@ -581,7 +615,11 @@ def pick_dim(*values) -> int | None:
 
 
 def enabled() -> bool:
-    return _env_flag("EMBY_LOCALIZE_IMAGES", True)
+    # 2026-11-23 起默认关（用户亲选 CF 边缘缓存方案）：本地图床停止新增
+    # 落盘，回填驱动 / 逐条入队 / 取图按需自愈都收口在这一个开关后；
+    # 显式置 1 即回滚到本地化口径。已落盘的存量文件继续作源站缓存出图
+    # （出图层经 landed_path 只读命中，不受本开关影响、不回写库）。
+    return _env_flag("EMBY_LOCALIZE_IMAGES", False)
 
 
 def prewarm_enabled() -> bool:
@@ -658,6 +696,20 @@ def existing_local_path(url: str) -> str:
         if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
             return candidate
     return ""
+
+
+def landed_path(url: Optional[str]) -> str:
+    """出图层专用：这张远程图若已落盘，返回本地路径（只读命中）；否则空串。
+
+    与 ``localize`` 的分工：``localize`` 是写侧入口，总开关关时直接
+    返回空串（写库路径行为回到本地化之前）；本函数不看开关、不下载、
+    不写任何状态——2026-11-23 本地化停增后，存量落盘文件继续作源站
+    缓存出图，靠的就是出图层（media_routes）先问 ``localize``、
+    再问本函数。写库路径不许用本函数回写 poster_path。
+    """
+    if not url or not url.startswith("http"):
+        return ""
+    return existing_local_path(url)
 
 
 def _download_attempts() -> int:
@@ -771,6 +823,10 @@ def localize(url: Optional[str], allow_download: bool = True,
              attempts: int = 1) -> str:
     """把远程图落成本地文件，返回本地路径；失败或未开启返回空串
 
+    未开启（默认，2026-11-23 起）时直接返回空串——写库路径（刮削
+    apply / 入队 / 巡检）在关态下行为与本地化之前逐字一致，不落盘、
+    不回写 poster_path。已落盘文件的只读命中是出图层的事，见
+    ``landed_path``，不走本函数。
     同一张图并发请求只下载一次（按 URL 单飞）；文件已经存在就直接复用。
     写文件走「临时文件 → fsync → os.replace」：中途被杀不会留下半张图。
 

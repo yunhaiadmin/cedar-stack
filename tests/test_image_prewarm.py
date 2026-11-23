@@ -31,7 +31,7 @@ DATA = {"poster_path": "/p.jpg", "backdrop_path": "/b.jpg"}
 def _image_env(tmp_path, monkeypatch):
     """本机图片目录指向临时目录；关掉缩略图预热（避免测试里起后台线程）"""
     monkeypatch.setenv("EMBY_IMAGE_DIR", str(tmp_path / "images"))
-    monkeypatch.delenv("EMBY_LOCALIZE_IMAGES", raising=False)
+    monkeypatch.setenv("EMBY_LOCALIZE_IMAGES", "1")  # 2026-11-23 起默认关，本文件测开启态行为
     monkeypatch.setattr(image_store, "enqueue_thumb_warm", lambda *a, **k: None)
     yield
 
@@ -79,7 +79,10 @@ def test_localize_refuses_to_download_when_not_allowed(downloads_forbidden):
 
 
 def test_localize_still_downloads_by_default(downloads):
-    """取图时的按需自愈是默认档，别把下载整个关掉（否则这张图永远补不上）"""
+    """本地化开关开时（本文件夹具显式开），取图按需自愈照常下载——
+    它与刮削期预热是两个开关，别把按需自愈连预热一起关掉。
+    （2026-11-23 前本条钉的是「默认开」；总开关默认已翻转为关，
+    默认关的行为由 test_image_cf_edge_cache.py 钉住。）"""
     path = image_store.localize(POSTER_URL)
     assert path and path.endswith(".jpg")
     assert downloads == [POSTER_URL]

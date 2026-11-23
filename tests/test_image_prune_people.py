@@ -23,6 +23,9 @@ from backend.emby_server import models as em  # noqa: E402
 @pytest.fixture()
 def db_session(tmp_path, monkeypatch):
     monkeypatch.setenv("EMBY_IMAGE_DIR", str(tmp_path))
+    # prune 同属本地化子系统、由总开关把门（2026-11-23 起默认关）；
+    # 本文件测 prune 本身的行为，显式开
+    monkeypatch.setenv("EMBY_LOCALIZE_IMAGES", "1")
     engine = create_engine("sqlite://")
     em.Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)

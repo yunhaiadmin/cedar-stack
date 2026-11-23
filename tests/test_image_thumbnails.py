@@ -23,6 +23,9 @@ def imgdir(tmp_path, monkeypatch):
     d.mkdir()
     monkeypatch.setattr(image_store, "image_dir", lambda: str(d))
     monkeypatch.setenv("EMBY_THUMB_WIDTHS", "320,640")
+    # prune / 缩略图补生成同属本地化子系统、由总开关把门
+    # （2026-11-23 起默认关）；本文件测它们的行为，显式开
+    monkeypatch.setenv("EMBY_LOCALIZE_IMAGES", "1")
     return str(d)
 
 

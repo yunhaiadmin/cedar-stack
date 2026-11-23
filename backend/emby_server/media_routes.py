@@ -247,6 +247,26 @@ _ANON_IMAGE_LIMIT_PER_MIN = 600
 _ANON_IMAGE_TYPES = ("Primary", "Backdrop")
 
 
+#: CF 边缘口径（2026-11-23，用户亲选）：无凭据且过 anon gate 的成功
+#: 响应改发 public——公开库图片本就对全体登录用户可见，共享缓存复用
+#: 不扩大可见面；带凭据响应维持 private 不变（各下发腿默认头不动，
+#: 只在 item_image 入口层覆盖无凭据成功响应）。浏览器侧仍是一天，
+#: 边缘侧一周：海报换图是低频事件，真要立刻换可去 CF 清缓存。
+_PUBLIC_IMAGE_CACHE_CONTROL = "public, max-age=86400, s-maxage=604800"
+
+#: F5-D-lite（2026-11-23，与 CF 方案同批提前）：无凭据出图尺寸封顶
+#: （宽，px）。600 / 1280 已入 image_store 默认缩放档位，靠现行吸附
+#: 体系精确命中，不另造缩放路径；带凭据不封顶。
+_ANON_PRIMARY_MAX_WIDTH = 600
+_ANON_BACKDROP_MAX_WIDTH = 1280
+
+#: F5-C（2026-11-23，同批）：无凭据取图失败的统一对外形态——不存在 /
+#: 未公开 / 已删 / 缺图 / 类型不放行一律同状态同 body，关掉「凭 guid
+#: 枚举条目是否存在」的存在性预言机。
+_ANON_FAILURE_STATUS = 404
+_ANON_FAILURE_DETAIL = "Image not found"
+
+
 def _anon_image_gate(db: Session, request: Request, image_type: str,
                      item=None, *, library_id=None) -> None:
     """无凭据出图门禁（Reflix/Lenna/Yamby 等纯 URL 取图客户端的兼容口径）
@@ -285,6 +305,36 @@ def item_image(item_id: str, image_type: str, request: Request,
                user: models.WebUser = Depends(optional_emby_user),
                maxWidth: str | None = None, maxHeight: str | None = None,
                w: str | None = None, h: str | None = None):
+    """条目图片（对外入口）：实现见 ``_item_image_impl``，本层只叠
+    2026-11-23 的 CF 边缘口径（用户亲选 CF 方案，F5 的 C＋D-lite 提前
+    同批落地）：
+
+    - **缓存头分面**：无凭据且过 anon gate 的成功响应改发 ``public``
+      供 CF 边缘缓存；带凭据维持 ``private``（impl 与各下发腿的默认
+      头不变，只在这里覆盖无凭据成功响应）。谁能取图的权限口径不动。
+    - **F5-C 失败统一**：无凭据失败在 impl 里形态各异（门禁 401 与
+      两种 404 文案），在这里一律收敛成同一状态与同一 body，关掉
+      存在性预言机；限流 429 与条目存在性无关，不并入。
+    """
+    try:
+        resp = _item_image_impl(item_id, image_type, request, db, user,
+                                maxWidth=maxWidth, maxHeight=maxHeight,
+                                w=w, h=h)
+    except HTTPException as exc:
+        if user is None and exc.status_code != 429:
+            raise HTTPException(status_code=_ANON_FAILURE_STATUS,
+                                detail=_ANON_FAILURE_DETAIL) from None
+        raise
+    if user is None and resp.status_code == 200:
+        resp.headers["Cache-Control"] = _PUBLIC_IMAGE_CACHE_CONTROL
+    return resp
+
+
+def _item_image_impl(item_id: str, image_type: str, request: Request,
+                     db: Session, user,
+                     maxWidth: str | None = None,
+                     maxHeight: str | None = None,
+                     w: str | None = None, h: str | None = None):
     """条目图片
 
     PA-036（2026-11-02 口径翻转，用户亲点字面修法）：本端点历史上公开
@@ -323,6 +373,14 @@ def item_image(item_id: str, image_type: str, request: Request,
     """
     # 按场景精确尺寸：海报墙 320/160、详情页 480、背景 1280，各调各的，不一刀切
     ew, eh = image_store.pick_dim(maxWidth, w), image_store.pick_dim(maxHeight, h)
+    if user is None:
+        # F5-D-lite：无凭据出图封顶——在这里钳 ew，本地下发腿与远程
+        # 代理腿共用同一个封顶后的尺寸口径；带凭据不钳。
+        _anon_cap = (_ANON_PRIMARY_MAX_WIDTH if image_type == "Primary"
+                     else _ANON_BACKDROP_MAX_WIDTH
+                     if image_type == "Backdrop" else None)
+        if _anon_cap is not None:
+            ew = _anon_cap if ew is None else min(ew, _anon_cap)
     # 媒体库封面：第三方客户端用库的 guid 拉 /Images/Primary
     _derived_item = None
     if image_type == "Primary":
@@ -410,6 +468,13 @@ def item_image(item_id: str, image_type: str, request: Request,
         # 不必每个客户端、每次缓存穿透都去第三方拉一趟。落下就记住路径，
         # 下次请求直接命中本地；落不下来（源站挂了/被限速）就走下面的代理，行为不变。
         cached = image_store.localize(src)
+        if not cached:
+            # 本地化停增（默认关）时 localize 恒空：已落盘的存量文件仍是
+            # 现成源站缓存，出图层只读命中照常发（不下载、不回写库，
+            # 写侧关态契约归 localize / landed_path 分工，见 image_store）
+            cached = image_store.landed_path(src)
+            if cached:
+                return _serve_sized(cached, ew, eh)
         if cached:
             _remember_local_image(db, item, kind, cached)
             return _serve_sized(cached, ew, eh)
@@ -432,10 +497,19 @@ def item_image(item_id: str, image_type: str, request: Request,
             logger.warning("远程图片获取失败 %s: %s", src, e)
             _queue_image_repair(db, item, src)
             raise HTTPException(status_code=404, detail="Image not found") from e
+        _content = r.content
+        _media_type = r.headers.get("content-type", "image/jpeg")
+        if user is None:
+            # F5-D-lite 代理腿：远程字节不过盘，用内存缩图封顶（ew 已
+            # 在函数头按无凭据口径钳过）；缩图失败回退原始字节。
+            _shrunk = image_store.shrink_image_bytes(_content, ew)
+            if _shrunk is not None:
+                _content, _media_type = _shrunk, "image/jpeg"
         return Response(
-            content=r.content,
-            media_type=r.headers.get("content-type", "image/jpeg"),
-            # PA-036：已鉴权内容不许共享缓存复用（否则受限图会被缓存发给他人）
+            content=_content,
+            media_type=_media_type,
+            # PA-036：已鉴权内容不许共享缓存复用（否则受限图会被缓存发给他人）；
+            # 无凭据成功响应由 item_image 入口层改发 public，这里不重复处理
             headers={"Cache-Control": "private, max-age=86400"},
         )
     if not os.path.isfile(src):
@@ -495,7 +569,7 @@ def _serve_person_image(name: str, db: Session, ew=None, eh=None):
     src = person.image
     if not (src.startswith("http://") or src.startswith("https://")):
         raise HTTPException(status_code=404, detail="Image not found")
-    cached = image_store.localize(src)
+    cached = image_store.localize(src) or image_store.landed_path(src)
     if cached and os.path.isfile(cached):
         return _serve_sized(cached, ew, eh)
     raise HTTPException(status_code=404, detail="Image not found")

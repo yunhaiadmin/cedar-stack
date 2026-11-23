@@ -56,7 +56,7 @@ def db():
 @pytest.fixture(autouse=True)
 def _image_env(tmp_path, monkeypatch):
     monkeypatch.setenv("EMBY_IMAGE_DIR", str(tmp_path / "images"))
-    monkeypatch.delenv("EMBY_LOCALIZE_IMAGES", raising=False)
+    monkeypatch.setenv("EMBY_LOCALIZE_IMAGES", "1")  # 2026-11-23 起默认关，本文件测开启态行为
     monkeypatch.delenv("EMBY_IMAGE_PREWARM", raising=False)
     monkeypatch.delenv("EMBY_IMAGE_BACKFILL", raising=False)
     monkeypatch.setattr(image_store, "enqueue_thumb_warm", lambda *a, **k: None)
