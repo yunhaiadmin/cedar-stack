@@ -27,7 +27,7 @@ import {
   Coins, Globe, KeyRound, Layers, Mail, MapPin, Network, Palette, RefreshCw, Save,
   ShieldCheck, Send, Sparkles, TicketCheck, UserPlus, Wallet, Lock, Zap,
   History, TriangleAlert, SlidersHorizontal, PlugZap, Rocket, HardDrive, Gauge,
-  Download, Cpu, MessageSquareText, PanelBottom, ScrollText,
+  Download, Cpu, MessageSquareText, PanelBottom, ScrollText, Bot,
 } from 'lucide-vue-next'
 import { EmptyState, PageHeader, SectionCard } from '@/components/ui'
 import { useBreakpoint } from '@/composables/useBreakpoint'
@@ -70,6 +70,9 @@ import {
   fetchInstallAppConfig, updateInstallAppConfig,
   type InstallAppConfigResponse, type InstallAppPlatformConfig,
 } from '@/api/installApp'
+import {
+  fetchWelfareConfig, saveWelfareConfig,
+} from '@/api/welfare'
 import NoticePanel from '@/components/NoticePanel.vue'
 
 const route = useRoute()
@@ -288,6 +291,7 @@ const SECTION_DEFS: Array<{ id: string; title: string; groups: string[] }> = [
   { id: 'growth', title: '注册与福利', groups: ['invitation', 'exchange'] },
   { id: 'commerce', title: '付费与支付', groups: ['payment', 'paywall'] },
   { id: 'playback', title: '播放与风控', groups: ['stream_accel'] },
+  { id: 'bot', title: '机器人', groups: [] },
   { id: 'library', title: '媒体库', groups: ['series_merge'] },
   { id: 'site', title: '站点与官网', groups: [] },
 ]
@@ -573,7 +577,7 @@ async function load() {
 }
 
 onMounted(async () => {
-  await Promise.all([load(), loadCapabilities(), loadHotlink(), loadInstallApp(), loadItemsDedupCache(), loadTransfer(), loadMountServing(), loadDriveApi(), loadSoftdecode(), loadDanmaku(), loadDanmuLines(), loadLoginLockout(), loadSiteDrawer(), loadPrivacyPolicy(), loadLicense(), loadPool()])
+  await Promise.all([load(), loadCapabilities(), loadHotlink(), loadInstallApp(), loadItemsDedupCache(), loadTransfer(), loadMountServing(), loadDriveApi(), loadSoftdecode(), loadBotCfg(), loadDanmaku(), loadDanmuLines(), loadLoginLockout(), loadSiteDrawer(), loadPrivacyPolicy(), loadLicense(), loadPool()])
   // Batch D 入口收敛：邀请页 / 客户端策略等用 hash 深链跳进来（如 #group-invitation）
   // R40：querySelector 直接塞 hash 会在畸形值时抛 SyntaxError；改用 getElementById
   if (route.hash) {
@@ -957,6 +961,223 @@ async function saveDriveApiCore(): Promise<boolean> {
       qps: driveApi.qps,
       binding_enabled: driveApi.binding_enabled,
     }))
+    return true
+  } catch {
+    // 拦截器已提示
+    return false
+  }
+}
+
+/** ==================== 机器人设置卡片（独立 endpoint，非通用分组） ====================
+ * TG 机器人的行为开关，走 /api/admin/welfare/config（后端
+ * welfare_admin.WELFARE_CONFIG_KEYS 白名单）。2026-11-24 查漏补缺
+ * N-02：这批键此前只有端点没有页面，机器人提示里的「先在管理后台
+ * 打开」指向不存在的入口，现补齐。字段默认值/类型/范围以后端注册表
+ * 为准（WELFARE_CONFIG_KEYS 默认值 + config_schema.
+ * WELFARE_CONFIG_SCHEMA 的 spec），前端不另立口径。
+ * 同一端点下的充值两键（recharge_ratio / recharge_quick_amounts）
+ * 不属于机器人设置，本卡不呈现，GET 回来也忽略、PUT 不发。 */
+interface BotFieldGroup {
+  id: string
+  title: string
+  fields: Field[]
+}
+const BOT_FIELD_GROUPS: BotFieldGroup[] = [
+  {
+    id: 'group-limit',
+    title: '群与限流',
+    fields: [
+      { key: 'bot_group_ids', label: '机器人交流群', type: 'str', hint: '机器人提供服务的群 ID，逗号分隔（如 -1001234567890）；播报与排行都发到这里，留空则群功能不可用' },
+      { key: 'bot_rate_limit_seconds', label: '命令限流间隔', type: 'int', suffix: '秒', hint: '同一用户两次命令的最小间隔，默认 3（范围 0~3600）' },
+      { key: 'bot_group_rate_limit', label: '群消息限流', type: 'int', suffix: '条/分钟', hint: '每个群每分钟最多处理多少条消息，超限静默丢弃，默认 20（范围 0~100000）' },
+    ],
+  },
+  {
+    id: 'digest',
+    title: '播报推送',
+    fields: [
+      { key: 'bot_update_digest_enabled', label: '入库播报', type: 'bool', hint: '新内容入库后攒批播报，默认开' },
+      { key: 'bot_update_digest_interval_minutes', label: '播报攒批间隔', type: 'int', suffix: '分钟', hint: '攒够一批再发的间隔，默认 30（范围 1~1440）' },
+      { key: 'bot_update_digest_chat_id', label: '播报发送目标', type: 'str', hint: '留空发交流群；填频道 @用户名或 -100 开头的频道 ID 则发到频道' },
+      { key: 'bot_rankpush_enabled', label: '观影榜海报日推', type: 'bool', hint: '每天把观影榜海报推到交流群，默认开' },
+    ],
+  },
+  {
+    id: 'playrank',
+    title: '每日播放排行榜',
+    fields: [
+      { key: 'bot_playrank_enabled', label: '排行榜总开关', type: 'bool', hint: '默认关；关时不定时推送，管理员在群里手动 /playrank 也会提示先在这里打开' },
+      { key: 'bot_playrank_time', label: '发送时间', type: 'str', hint: '每天几点发（HH:MM，上海时间），默认 21:30；格式不对会回落 21:30' },
+      { key: 'bot_playrank_top_n', label: '每榜条数', type: 'int', suffix: '条', hint: '每个榜取前几名，默认 5（范围 1~20）' },
+      { key: 'bot_playrank_users_enabled', label: '观看时长榜', type: 'bool', hint: '按用户观看时长排名，默认开' },
+      { key: 'bot_playrank_series_enabled', label: '剧集榜', type: 'bool', hint: '默认开' },
+      { key: 'bot_playrank_movies_enabled', label: '电影榜', type: 'bool', hint: '默认开' },
+      { key: 'bot_playrank_poster_enabled', label: '附带海报图', type: 'bool', hint: '推榜时带上海报图，默认开' },
+    ],
+  },
+  {
+    id: 'notify',
+    title: '通知提醒',
+    fields: [
+      { key: 'tg_notify_store_arrival_enabled', label: '求片到货通知', type: 'bool', hint: '求片到货后私聊通知求片人，默认开' },
+      { key: 'tg_notify_transfer_done_enabled', label: '转存完成通知', type: 'bool', hint: '转存到达终态时私聊通知，默认开' },
+      { key: 'tg_notify_new_request_enabled', label: '新求片提醒管理员', type: 'bool', hint: '有新求片时私聊提醒管理员，默认开' },
+      { key: 'tg_notify_merge_window_sec', label: '通知合并窗口', type: 'int', suffix: '秒', hint: '同一人的多条通知在窗口内合并成一条，默认 60（范围 0~3600）' },
+      { key: 'tg_notify_group_arrival_enabled', label: '到货群报喜', type: 'bool', hint: '许愿到货时在群里报喜，默认开；关了只发私聊' },
+      { key: 'tg_notify_group_pool_welcome_enabled', label: '新贡献者群欢迎', type: 'bool', hint: '贡献池新成员审核通过时在群里欢迎，默认开' },
+    ],
+  },
+  {
+    id: 'poolcast',
+    title: '贡献池播报',
+    fields: [
+      { key: 'bot_pool_digest_enabled', label: '贡献者每日小结', type: 'bool', hint: '每天私聊给每位贡献者发自己的贡献小结，默认开' },
+      { key: 'bot_pool_digest_time', label: '小结发送时间', type: 'str', hint: 'HH:MM（上海时间），默认 21:00' },
+      { key: 'bot_pool_report_enabled', label: '池群每晚战报', type: 'bool', hint: '每晚把贡献池战报发到交流群（不置顶），默认开' },
+      { key: 'bot_pool_report_time', label: '战报发送时间', type: 'str', hint: 'HH:MM（上海时间），默认 21:20' },
+      { key: 'bot_pool_hero_enabled', label: '每周英雄榜', type: 'bool', hint: '每周日把贡献英雄榜发到交流群，默认开' },
+      { key: 'bot_pool_hero_time', label: '英雄榜发送时间', type: 'str', hint: 'HH:MM（上海时间，周日发），默认 20:30' },
+    ],
+  },
+  {
+    id: 'governance',
+    title: '群治理',
+    fields: [
+      { key: 'bot_channel_guard_enabled', label: '频道马甲治理', type: 'bool', hint: '处理冒充官方的频道马甲发言，默认开' },
+      { key: 'bot_channel_whitelist', label: '频道白名单', type: 'str', hint: '逗号分隔的频道 ID，白名单内的频道不受治理处理' },
+      {
+        key: 'bot_leave_action',
+        label: '退群处置',
+        type: 'str',
+        choices: [
+          { value: 'none', label: '不处理（none）' },
+        ],
+        hint: '成员退群后的处置动作；后端当前只开放「不处理」',
+      },
+    ],
+  },
+]
+/** 默认值与后端 WELFARE_CONFIG_KEYS 逐字对齐（仅作加载前占位与缺值兜底，真实值以 GET 为准） */
+const BOT_DEFAULTS: Record<string, string> = {
+  bot_group_ids: '',
+  bot_rate_limit_seconds: '3',
+  bot_group_rate_limit: '20',
+  bot_rankpush_enabled: 'true',
+  bot_update_digest_enabled: 'true',
+  bot_update_digest_interval_minutes: '30',
+  bot_update_digest_chat_id: '',
+  bot_playrank_enabled: 'false',
+  bot_playrank_time: '21:30',
+  bot_playrank_top_n: '5',
+  bot_playrank_users_enabled: 'true',
+  bot_playrank_series_enabled: 'true',
+  bot_playrank_movies_enabled: 'true',
+  bot_playrank_poster_enabled: 'true',
+  tg_notify_store_arrival_enabled: 'true',
+  tg_notify_transfer_done_enabled: 'true',
+  tg_notify_new_request_enabled: 'true',
+  tg_notify_merge_window_sec: '60',
+  tg_notify_group_arrival_enabled: 'true',
+  tg_notify_group_pool_welcome_enabled: 'true',
+  bot_pool_digest_enabled: 'true',
+  bot_pool_digest_time: '21:00',
+  bot_pool_report_enabled: 'true',
+  bot_pool_report_time: '21:20',
+  bot_pool_hero_enabled: 'true',
+  bot_pool_hero_time: '20:30',
+  bot_channel_guard_enabled: 'true',
+  bot_channel_whitelist: '',
+  bot_leave_action: 'none',
+}
+const BOT_KEYS = Object.keys(BOT_DEFAULTS)
+const BOT_FIELD_LABELS: Record<string, string> = {}
+for (const g of BOT_FIELD_GROUPS) {
+  for (const f of g.fields) BOT_FIELD_LABELS[f.key] = f.label
+}
+/** int 键范围与 config_schema.WELFARE_CONFIG_SCHEMA 逐字对齐 */
+const BOT_INT_RANGES: Record<string, [number, number]> = {
+  bot_rate_limit_seconds: [0, 3600],
+  bot_group_rate_limit: [0, 100000],
+  bot_update_digest_interval_minutes: [1, 1440],
+  bot_playrank_top_n: [1, 20],
+  tg_notify_merge_window_sec: [0, 3600],
+}
+const BOT_TIME_KEYS = [
+  'bot_playrank_time', 'bot_pool_digest_time',
+  'bot_pool_report_time', 'bot_pool_hero_time',
+]
+const botCfg = reactive<Record<string, string>>({ ...BOT_DEFAULTS })
+const botCfgOriginal = ref<Record<string, string>>({ ...BOT_DEFAULTS })
+const botCfgLoading = ref(false)
+
+function applyBotCfg(data: Record<string, string>) {
+  for (const key of BOT_KEYS) {
+    botCfg[key] = typeof data[key] === 'string' ? data[key] : BOT_DEFAULTS[key]
+  }
+  botCfgOriginal.value = { ...botCfg }
+}
+
+async function loadBotCfg() {
+  botCfgLoading.value = true
+  try {
+    applyBotCfg(await fetchWelfareConfig())
+  } catch {
+    // 错误提示由 HTTP 拦截器统一处理
+  } finally {
+    botCfgLoading.value = false
+  }
+}
+
+const botCfgDirty = computed(
+  () => BOT_KEYS.some((key) => botCfg[key] !== botCfgOriginal.value[key]),
+)
+
+/** 保存前校验：与后端 schema 同口径，先在前端拦下，省一次往返 */
+function validateBotCfg(): string | null {
+  for (const [key, [min, max]] of Object.entries(BOT_INT_RANGES)) {
+    const raw = String(botCfg[key] ?? '').trim()
+    if (!/^-?\d+$/.test(raw) || Number(raw) < min || Number(raw) > max) {
+      return `「${BOT_FIELD_LABELS[key]}」须为 ${min}~${max} 之间的整数`
+    }
+  }
+  for (const key of BOT_TIME_KEYS) {
+    const raw = String(botCfg[key] ?? '').trim()
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(raw)) {
+      return `「${BOT_FIELD_LABELS[key]}」须为 HH:MM 格式（如 21:30）`
+    }
+  }
+  return null
+}
+
+/** 机器人设置保存核心：只发改过的键；PUT 只回 updated 名单不回
+ * 全量值，存完必须回读一遍核对才算数。 */
+async function saveBotCfgCore(): Promise<boolean> {
+  const err = validateBotCfg()
+  if (err) {
+    ElMessage.error(err)
+    return false
+  }
+  const payload: Record<string, string> = {}
+  for (const key of BOT_KEYS) {
+    if (botCfg[key] === botCfgOriginal.value[key]) continue
+    // int 键先归一成后端落库口径（去前导零），回读比对才不会假报警
+    payload[key] = key in BOT_INT_RANGES
+      ? String(Number.parseInt(String(botCfg[key]).trim(), 10))
+      : botCfg[key]
+  }
+  if (!Object.keys(payload).length) return true
+  try {
+    await saveWelfareConfig(payload)
+    const back = await fetchWelfareConfig()
+    applyBotCfg(back)
+    const mismatch = Object.keys(payload).filter(
+      (key) => String(back[key] ?? '') !== payload[key],
+    )
+    if (mismatch.length) {
+      ElMessage.warning(
+        `机器人设置已保存，但回读核对不一致：${mismatch.map((k) => BOT_FIELD_LABELS[k]).join('、')}，请刷新页面确认`,
+      )
+    }
     return true
   } catch {
     // 拦截器已提示
@@ -1514,6 +1735,7 @@ async function reloadAll() {
   loadMountServing()
   loadDriveApi()
   loadSoftdecode()
+  loadBotCfg()
   loadDanmaku()
   loadDanmuLines()
   loadLoginLockout()
@@ -1546,7 +1768,7 @@ const dirtyGroups = computed(() => GROUPS.filter((g) => isDirty(g)))
 const dirtyCount = computed(() =>
   dirtyGroups.value.length + (regDirty.value ? 1 : 0) + (hotlinkDirty.value ? 1 : 0)
   + (itemsDedupCacheDirty.value ? 1 : 0) + (transferDirty.value ? 1 : 0) + (mountServingDirty.value ? 1 : 0)
-  + (driveApiDirty.value ? 1 : 0) + (softdecodeDirty.value ? 1 : 0) + (danmakuDirty.value ? 1 : 0) + (loginLockoutDirty.value ? 1 : 0) + (installAppDirty.value ? 1 : 0)
+  + (driveApiDirty.value ? 1 : 0) + (softdecodeDirty.value ? 1 : 0) + (botCfgDirty.value ? 1 : 0) + (danmakuDirty.value ? 1 : 0) + (loginLockoutDirty.value ? 1 : 0) + (installAppDirty.value ? 1 : 0)
   + (siteDrawerDirty.value ? 1 : 0) + (privacyPolicyDirty.value ? 1 : 0),
 )
 const anyDirty = computed(() => dirtyCount.value > 0)
@@ -1661,6 +1883,10 @@ async function saveAll() {
       if (await saveSoftdecodeCore()) saved += 1
       else failed.push('网页软解')
     }
+    if (botCfgDirty.value) {
+      if (await saveBotCfgCore()) saved += 1
+      else failed.push('机器人设置')
+    }
     if (danmakuDirty.value) {
       if (await saveDanmakuCore()) saved += 1
       else failed.push('弹幕设置')
@@ -1715,6 +1941,7 @@ async function discardAll() {
   loadMountServing()
   loadDriveApi()
   loadSoftdecode()
+  loadBotCfg()
   loadDanmaku()
   loadDanmuLines()
   loadLoginLockout()
@@ -1903,6 +2130,16 @@ watch(
                 <component :is="g.icon" :size="13" />{{ g.title }}
                 <span v-if="hasAdvanced(g)" class="chip-adv" title="含高级调优项，默认收起">高级</span>
                 <span v-if="isDirty(g)" class="chip-dot" aria-label="有未保存的改动" />
+              </button>
+              <button
+                v-if="sec.id === 'bot'"
+                type="button"
+                class="group-chip"
+                :class="{ 'is-dirty': botCfgDirty }"
+                @click="scrollToGroup('bot')"
+              >
+                <Bot :size="13" />机器人设置
+                <span v-if="botCfgDirty" class="chip-dot" aria-label="有未保存的改动" />
               </button>
               <button
                 v-if="sec.id === 'playback'"
@@ -2304,6 +2541,71 @@ watch(
                 </el-form>
               </el-collapse-item>
             </el-collapse>
+          </SectionCard>
+
+          <!-- 机器人设置：独立卡片（走 /api/admin/welfare/config 独立 endpoint），自成一段 -->
+          <SectionCard
+            v-if="sec.id === 'bot'"
+            id="group-bot"
+            title="机器人设置"
+            :icon="Bot"
+            description="TG 机器人的播报、排行榜、通知与群治理行为开关。机器人本体与令牌在「能力与服务」页签的 Telegram 卡里，这里只管行为。"
+            :tone="botCfgDirty ? 'accent' : 'default'"
+            class="group-card"
+          >
+            <template v-if="botCfgDirty" #actions>
+              <span class="au-badge au-badge-amber">未保存</span>
+            </template>
+
+            <div v-loading="botCfgLoading">
+              <div v-for="bg in BOT_FIELD_GROUPS" :key="bg.id" class="bot-subgroup">
+                <div class="bot-subgroup-title">{{ bg.title }}</div>
+                <el-form label-position="top" class="field-form field-grid">
+                  <el-form-item
+                    v-for="f in bg.fields"
+                    :key="f.key"
+                    :label="f.label"
+                    :class="{ 'is-wide': f.type === 'str' }"
+                  >
+                    <div class="field-stack">
+                      <div class="field-control">
+                        <el-switch
+                          v-if="f.type === 'bool'"
+                          v-model="botCfg[f.key]"
+                          active-value="true"
+                          inactive-value="false"
+                        />
+                        <el-input
+                          v-else-if="f.type === 'int'"
+                          v-model="botCfg[f.key]"
+                          type="number"
+                          min="0"
+                          class="num-input"
+                        />
+                        <el-select
+                          v-else-if="f.choices"
+                          v-model="botCfg[f.key]"
+                          class="w-full"
+                        >
+                          <el-option
+                            v-for="c in f.choices"
+                            :key="c.value"
+                            :label="c.label"
+                            :value="c.value"
+                          />
+                        </el-select>
+                        <el-input
+                          v-else
+                          v-model="botCfg[f.key]"
+                        />
+                        <span v-if="f.suffix" class="field-suffix">{{ f.suffix }}</span>
+                      </div>
+                      <span v-if="f.hint" class="field-hint">{{ f.hint }}</span>
+                    </div>
+                  </el-form-item>
+                </el-form>
+              </div>
+            </div>
           </SectionCard>
 
           <!-- 防盗链：独立卡片（TTL 需要范围校验，走独立 endpoint），归在「播放与风控」段末 -->
@@ -3419,6 +3721,8 @@ watch(
 .group-nav-label { flex-shrink: 0; font-size: var(--ax-fs-micro); color: var(--au-text-3); margin-right: 2px; white-space: nowrap; }
 .section-title { margin: 8px 0 -4px; scroll-margin-top: 140px; }
 .field-hint.warn { color: var(--au-warning); }
+.bot-subgroup + .bot-subgroup { margin-top: 20px; }
+.bot-subgroup-title { font-size: var(--ax-fs-aux); font-weight: 600; color: var(--au-text-2); margin-bottom: 10px; }
 .group-chip {
   display: inline-flex;
   align-items: center;

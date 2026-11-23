@@ -62,6 +62,18 @@ WELFARE_CONFIG_KEYS = {
     "tg_notify_group_arrival_enabled": "true",
     # 新贡献者群欢迎（tg_bot.group_cheer）：审核通过时发，默认开。
     "tg_notify_group_pool_welcome_enabled": "true",
+    # 公共池播报（tg_bot.pool_digest / pool_report）：贡献者每日小结私聊
+    # 默认开、21:00；池群每晚战报默认开、21:20；每周英雄榜（周日）
+    # 默认开、20:30。六键此前只在 config_schema 登记＋机器人读侧消费，
+    # 没进本端点白名单，管理后台无入口（2026-11-24 查漏补缺 N-02 补齐；
+    # 默认值与读侧 DEFAULT_TIME / REPORT_DEFAULT_TIME / HERO_DEFAULT_TIME
+    # 逐字对齐）。
+    "bot_pool_digest_enabled": "true",
+    "bot_pool_digest_time": "21:00",
+    "bot_pool_report_enabled": "true",
+    "bot_pool_report_time": "21:20",
+    "bot_pool_hero_enabled": "true",
+    "bot_pool_hero_time": "20:30",
     # 频道马甲治理＋退群处置（2026-10-30 借鉴 embyboss 第 1 项；读侧
     # tg_bot.policy，缺省与 policy.DEFAULTS 逐字对齐）
     "bot_channel_guard_enabled": "true",
