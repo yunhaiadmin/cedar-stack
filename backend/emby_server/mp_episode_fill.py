@@ -89,7 +89,8 @@ LOAD_RATIO_LIMIT = 0.85
 # ---------------------------------------------------------------------------
 
 MP_FILL_CONFIG_DEFAULTS: dict = {
-    "mp_download_base": "http://167.17.76.115:4500",
+    "mp_download_base": "",  # 地址只许管理端配置；代码默认必须为空，
+    # 未配即失败关闭（L-027：真实地址不许写死进公开仓）
     "mp_download_token": "",
     "mp_episode_fill_enabled": False,
     "mp_episode_fill_daily_cap": 10,
@@ -155,7 +156,7 @@ class MpClient:
 
     def __init__(self, base_url: str, token: str, http=None,
                  timeout: float = 30.0):
-        self._base = (base_url or "").rstrip("/")
+        self._base = (base_url or "").strip().rstrip("/")
         self._token = token or ""
         self._http = http if http is not None else httpx.Client(
             timeout=timeout)
@@ -447,6 +448,10 @@ def fill_once(session_factory=None, cfg=None, client_factory=None,
             if not str(cfg.get("mp_download_token") or "").strip():
                 stats["reason"] = "not_configured"
                 logger.info("MP 补集通道未配 token，本轮跳过")
+                return stats
+            if not str(cfg.get("mp_download_base") or "").strip():
+                stats["reason"] = "not_configured"
+                logger.info("MP 补集通道未配地址，本轮跳过")
                 return stats
             if _circuit_open():
                 stats["reason"] = "circuit_open"

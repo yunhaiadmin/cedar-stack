@@ -231,7 +231,7 @@ onMounted(() => {
           <span>MoviePilot 地址</span>
           <el-input
             v-model="fillCfg.mp_download_base"
-            placeholder="http://167.17.76.115:4500"
+            placeholder="http://192.0.2.1:4500"
           />
         </label>
         <label class="fill-field fill-wide">
