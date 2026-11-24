@@ -136,7 +136,7 @@ def slow_upstream():
 def cache_env(monkeypatch, tmp_path):
     monkeypatch.setenv("RELAY_HOT_CACHE_DIR", str(tmp_path / "hc"))
     monkeypatch.setenv("RELAY_HOT_CACHE_MIN_FREE_BYTES", "0")
-    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_SEGMENTS", "0")
+    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_BYTES", "0")
     monkeypatch.setattr(hc, "max_bytes", lambda: 500 * 1024 * 1024)
     return tmp_path
 

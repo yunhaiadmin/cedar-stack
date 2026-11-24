@@ -130,8 +130,10 @@ async def _serve_mount(range_header=None, identity=None):
 
 # ---------------- 写穿 → 全命中 ----------------
 
-def test_mount_write_through_then_hit_skips_upstream(cache_env, upstream):
+def test_mount_write_through_then_hit_skips_upstream(
+        cache_env, upstream, monkeypatch):
     """首请求透传写穿；第二轮同 Range 全命中、不打上游。"""
+    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_BYTES", "0")
     status, _h, body = asyncio.run(_serve_mount(identity=MIDENT))
     assert status == 200
     assert body == BODY
@@ -152,10 +154,11 @@ def test_mount_write_through_then_hit_skips_upstream(cache_env, upstream):
     assert hc.stats()["hit_requests"] == hits_before + 1
 
 
-def test_mount_prefetch_fetches_following_segments(
+def test_mount_prefetch_fetches_window_from_frontier(
         cache_env, upstream, monkeypatch):
-    """出流后跨请求预读：请求区间之后 N 段被取回落盘。"""
-    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_SEGMENTS", "2")
+    """出流后跨请求预读：从覆盖前沿起按字节窗口取数（大区间一次
+    GET、本地切段落盘）；窗口外的段不取。"""
+    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_BYTES", str(2 * SEG))
     fetched_before = hc.stats()["prefetch_fetched"]
 
     async def scenario():
@@ -174,12 +177,37 @@ def test_mount_prefetch_fetches_following_segments(
     assert hc.stats()["prefetch_fetched"] - fetched_before == 2
     meta = hc.get_meta(MIDENT)
     assert meta
+    # 前沿＝第 0 段（首请求只流过 100 字节、没有完整段落盘）：
+    # 窗口 2MB 一次取回第 0、1 段，第 2 段在窗口外不取
+    assert hc.segment_present(MIDENT, meta, 0)
     assert hc.segment_present(MIDENT, meta, 1)
-    assert hc.segment_present(MIDENT, meta, 2)
-    assert not hc.segment_present(MIDENT, meta, 3)
-    assert f"bytes={SEG}-{2 * SEG - 1}" in upstream.ranges
-    # 尾段预读到文件末尾（总长 2.5 段），不是整段边界
-    assert f"bytes={2 * SEG}-{len(BODY) - 1}" in upstream.ranges
+    assert not hc.segment_present(MIDENT, meta, 2)
+    assert f"bytes=0-{2 * SEG - 1}" in upstream.ranges
+
+
+def test_mount_prefetch_after_open_ended_request(cache_env, upstream):
+    """开尾请求出流后预读真触发（L-007 根因 2 的端到端钉子）：旧
+    口径锚在区间末尾＝文件尾、取数恒 0；新口径从前沿按窗口取数，
+    整个文件被一次大区间取数覆盖。"""
+    fetched_before = hc.stats()["prefetch_fetched"]
+
+    async def scenario():
+        status, _h, body = await _serve_mount(
+            "bytes=0-99", identity=MIDENT)
+        assert status == 206
+        assert body == BODY[0:100]
+        for _ in range(100):
+            if hc.stats()["prefetch_fetched"] >= fetched_before + 3:
+                break
+            await asyncio.sleep(0.05)
+
+    asyncio.run(scenario())
+    hc.flush_writes()
+    assert hc.stats()["prefetch_fetched"] - fetched_before == 3
+    assert f"bytes=0-{len(BODY) - 1}" in upstream.ranges
+    meta = hc.get_meta(MIDENT)
+    for idx in (0, 1, 2):
+        assert hc.segment_present(MIDENT, meta, idx), idx
 
 
 def test_mount_no_identity_no_cache(cache_env, upstream):
@@ -214,7 +242,7 @@ def test_mount_cache_failure_fail_open(cache_env, upstream, monkeypatch):
 def test_mount_lru_eviction_over_capacity(
         cache_env, upstream, monkeypatch):
     """写超容量 → 按 mtime 最旧的挂载身份分段被淘汰（只写不清不许）。"""
-    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_SEGMENTS", "0")
+    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_BYTES", "0")
     monkeypatch.setattr(hc, "max_bytes", lambda: 2 * SEG + SEG // 2)
     idents = ["mount:LRU-A", "mount:LRU-B", "mount:LRU-C"]
     evicted_before = hc.stats()["segments_evicted"]
@@ -239,7 +267,7 @@ def test_mount_lru_eviction_over_capacity(
 def test_mount_validator_change_cleans_identity(
         cache_env, upstream, monkeypatch):
     """上游校验器（ETag）变 → 整身份失效、旧分段文件被清掉。"""
-    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_SEGMENTS", "0")
+    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_BYTES", "0")
     status, _h, _b = asyncio.run(
         _serve_mount(f"bytes=0-{SEG - 1}", identity=MIDENT))
     assert status == 206
@@ -265,6 +293,7 @@ def test_mount_validator_change_cleans_identity(
 def test_mount_disk_guardrail_stops_writes_fail_open(
         cache_env, upstream, monkeypatch):
     """磁盘余量低于安全线 → 停写缓存、出流照常透传（fail-open）。"""
+    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_BYTES", "0")
     monkeypatch.setattr(hc, "min_free_bytes", lambda: 10 ** 15)
     dropped_before = hc.stats()["segments_dropped"]
     status, _h, body = asyncio.run(_serve_mount(identity=MIDENT))
@@ -399,3 +428,188 @@ def test_api_mount_item_without_fid_passes_none(monkeypatch):
                                         object(), object()))
     assert resp.status_code == 200
     assert calls["hot_identity"] is None
+
+
+# ---------------- L-007：部分覆盖出流 ----------------
+
+BIG = (bytes(range(256)) * 30000)[: 6 * SEG + SEG // 2]  # 6.5 段
+PIDENT = "mount:L7PARTIAL"
+
+
+def _seed_segments(ident, body, idxs, monkeypatch):
+    """把 body 的指定完整分段直接落盘（同既有夹具的直投口径）。"""
+    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_BYTES", "0")
+    assert hc.note_validators(
+        ident, len(body), etag='"p1"',
+        last_modified="Wed, 01 Jan 2025 00:00:00 GMT")
+    for idx in idxs:
+        exp = hc.segment_expected_len(len(body), idx)
+        assert hc.submit_segment(
+            ident, idx, body[idx * SEG: idx * SEG + exp], len(body))
+    hc.flush_writes()
+
+
+def _local_upstream(monkeypatch, body):
+    up = _FakeUpstream(body=body)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(up.handler))
+    monkeypatch.setattr(streaming, "_mount_relay_client", lambda: client)
+    return up
+
+
+def test_mount_partial_hit_open_ended_range(
+        cache_env, upstream, monkeypatch):
+    """开尾 Range + 起始段起连续覆盖 ≥1 段 → 部分出流（L-007 改动
+    一）：206、Content-Range/Content-Length 钳到覆盖末尾、字节逐字
+    对、不回源。"""
+    _seed_segments(PIDENT, BIG, (0, 1, 2), monkeypatch)
+    partial_before = hc.stats()["partial_requests"]
+    hits_before = hc.stats()["hit_requests"]
+    status, headers, body = asyncio.run(
+        _serve_mount("bytes=0-", identity=PIDENT))
+    assert status == 206
+    assert headers.get("content-range") == \
+        f"bytes 0-{3 * SEG - 1}/{len(BIG)}"
+    assert headers.get("content-length") == str(3 * SEG)
+    assert body == BIG[:3 * SEG]
+    assert upstream.count == 0, "部分出流不许回源"
+    assert hc.stats()["partial_requests"] == partial_before + 1
+    assert hc.stats()["hit_requests"] == hits_before
+
+    # 段内起始：从已覆盖段中间起，同样钳到覆盖末尾
+    status, headers, body = asyncio.run(
+        _serve_mount("bytes=100-", identity=PIDENT))
+    assert status == 206
+    assert headers.get("content-range") == \
+        f"bytes 100-{3 * SEG - 1}/{len(BIG)}"
+    assert body == BIG[100:3 * SEG]
+    assert upstream.count == 0
+
+
+def test_mount_partial_hit_disabled_by_env(cache_env, monkeypatch):
+    """部分出流开关关 → 回现行全覆盖口径：开尾请求透传回源。"""
+    _seed_segments(PIDENT, BIG, (0, 1, 2), monkeypatch)
+    monkeypatch.setenv("RELAY_HOT_CACHE_PARTIAL_ENABLED", "0")
+    up = _local_upstream(monkeypatch, BIG)
+    status, _h, body = asyncio.run(
+        _serve_mount("bytes=0-", identity=PIDENT))
+    hc.flush_writes()
+    assert status == 206
+    assert body == BIG
+    assert up.count == 1
+
+
+def test_mount_no_partial_for_suffix_range(cache_env, monkeypatch):
+    """后缀 Range 不走部分出流（规格明示排除）：区间首段有覆盖、
+    尾段缺失时仍回源透传完整后缀区间。"""
+    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_BYTES", "0")
+    body4 = BIG[:4 * SEG]
+    ident = "mount:L7SUFFIX"
+    assert hc.note_validators(ident, len(body4), etag='"p1"')
+    assert hc.submit_segment(ident, 2, body4[2 * SEG:3 * SEG], len(body4))
+    hc.flush_writes()
+    up = _local_upstream(monkeypatch, body4)
+    status, _h, body = asyncio.run(
+        _serve_mount(f"bytes=-{2 * SEG}", identity=ident))
+    assert status == 206
+    assert body == body4[2 * SEG:]
+    assert up.count == 1, "后缀 Range 不许走部分出流"
+
+
+def test_mount_no_partial_when_start_segment_missing(
+        cache_env, monkeypatch):
+    """起始段无覆盖（第 0 段缺失、第 1 段在）→ 不出流、回透传。"""
+    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_BYTES", "0")
+    ident = "mount:L7NOHEAD"
+    assert hc.note_validators(ident, len(BIG), etag='"p1"')
+    assert hc.submit_segment(ident, 1, BIG[SEG:2 * SEG], len(BIG))
+    hc.flush_writes()
+    up = _local_upstream(monkeypatch, BIG)
+    status, _h, body = asyncio.run(
+        _serve_mount("bytes=0-", identity=ident))
+    assert status == 206
+    assert body == BIG
+    assert up.count == 1
+
+
+def test_mount_malformed_range_passthrough(cache_env, monkeypatch):
+    """多段 Range（parse_range 不认）→ 不走部分出流、逐字透传。"""
+    _seed_segments(PIDENT, BIG, (0, 1, 2), monkeypatch)
+
+    def handler(request):
+        return httpx.Response(
+            200, headers={"Content-Type": "video/mp4",
+                          "Content-Length": str(len(BIG))},
+            content=BIG)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(streaming, "_mount_relay_client", lambda: client)
+    status, _h, body = asyncio.run(
+        _serve_mount("bytes=0-99,200-299", identity=PIDENT))
+    hc.flush_writes()
+    assert status == 200
+    assert body == BIG
+
+
+def test_mount_partial_hit_chain_advances(cache_env, monkeypatch):
+    """链式前进（规格用例 5）：部分出流后覆盖前移，播放器对剩余
+    区间重发请求能继续部分出流，Content-Range 逐字接续。"""
+    _seed_segments("mount:L7CHAIN", BIG, (0, 1), monkeypatch)
+    up = _local_upstream(monkeypatch, BIG)
+    status, headers, body = asyncio.run(
+        _serve_mount("bytes=0-", identity="mount:L7CHAIN"))
+    assert status == 206
+    assert headers.get("content-range") == \
+        f"bytes 0-{2 * SEG - 1}/{len(BIG)}"
+    assert body == BIG[:2 * SEG]
+    # 预读/写穿把覆盖前沿推到第 3 段末（模拟下一窗落盘）
+    for idx in (2, 3):
+        exp = hc.segment_expected_len(len(BIG), idx)
+        assert hc.submit_segment(
+            "mount:L7CHAIN", idx, BIG[idx * SEG: idx * SEG + exp],
+            len(BIG))
+    hc.flush_writes()
+    status, headers, body = asyncio.run(
+        _serve_mount(f"bytes={2 * SEG}-", identity="mount:L7CHAIN"))
+    assert status == 206
+    assert headers.get("content-range") == \
+        f"bytes {2 * SEG}-{4 * SEG - 1}/{len(BIG)}"
+    assert body == BIG[2 * SEG:4 * SEG]
+    assert up.count == 0, "链式两跳都必须本地出流、不回源"
+
+
+def test_mount_play_timing_cache_field(cache_env, monkeypatch, caplog):
+    """[play-timing] 汇总行带 cache=hit|partial|miss（L-007 验收
+    前提）：三种出口各归其位，partial 附出流字节数。"""
+    import logging
+
+    from backend.emby_server.play_timing import PlayTimer
+
+    _seed_segments(PIDENT, BIG, (0, 1, 2), monkeypatch)
+    _local_upstream(monkeypatch, BIG)
+
+    async def _serve_pt(range_header, identity, label):
+        pt = PlayTimer(label)
+        resp = await streaming.serve_mount_relay_async(
+            "https://rcd.example/media", _request(range_header),
+            {"User-Agent": "t-ua"}, "video/mp4", pt=pt,
+            hot_identity=identity)
+        async for _c in resp.body_iterator:
+            pass
+        return resp
+
+    with caplog.at_level(logging.INFO,
+                         logger="backend.emby_server.play_timing"):
+        asyncio.run(_serve_pt("bytes=0-", PIDENT, "stream t=partial"))
+        asyncio.run(_serve_pt("bytes=0-99", PIDENT, "stream t=hit"))
+        asyncio.run(_serve_pt("bytes=0-", "mount:L7MISS",
+                              "stream t=miss"))
+    hc.flush_writes()
+    lines = [r.getMessage() for r in caplog.records
+             if "[play-timing]" in r.getMessage()]
+    partial = [l for l in lines if "t=partial" in l]
+    hit = [l for l in lines if "t=hit" in l]
+    miss = [l for l in lines if "t=miss" in l]
+    assert partial and "cache=partial" in partial[0], lines
+    assert f"cache_bytes={3 * SEG}" in partial[0], lines
+    assert hit and "cache=hit" in hit[0], lines
+    assert miss and "cache=miss" in miss[0], lines

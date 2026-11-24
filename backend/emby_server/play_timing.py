@@ -44,12 +44,13 @@ def is_enabled() -> bool:
 class PlayTimer:
     """轻量计时器：记录命名检查点，最后统一输出一行汇总。"""
 
-    __slots__ = ("label", "_start", "_marks")
+    __slots__ = ("label", "_start", "_marks", "_fields")
 
     def __init__(self, label: str):
         self.label = label
         self._start = time.perf_counter()
         self._marks: list[tuple[str, float]] = []
+        self._fields: list[tuple[str, str]] = []
 
     def mark(self, name: str) -> None:
         """记录一个检查点（毫秒精度）。"""
@@ -65,6 +66,13 @@ class PlayTimer:
         """
         self._marks.append((name, (time.perf_counter() - since) * 1000))
 
+    def field(self, name: str, value) -> None:
+        """附一个非耗时字段（``name=value`` 原样输出，如
+        ``cache=partial``）：耗时字段全是毫秒数，缓存出口这类
+        枚举/计数信息塞不进 mark/span，由 field 单独承载，
+        done() 时排在耗时字段之后、total 之前。"""
+        self._fields.append((name, str(value)))
+
     def elapsed_ms(self) -> int:
         """自计时器创建起已耗的毫秒数（起播事件 total_ms 的取数口）。"""
         return int((time.perf_counter() - self._start) * 1000)
@@ -73,6 +81,7 @@ class PlayTimer:
         """输出汇总日志：``[play-timing] <label> <阶段>=<毫秒>ms ... total=<毫秒>ms``。"""
         total = (time.perf_counter() - self._start) * 1000
         parts = [f"{name}={ms:.0f}ms" for name, ms in self._marks]
+        parts += [f"{name}={value}" for name, value in self._fields]
         parts.append(f"total={total:.0f}ms")
         # lazy 格式化：logger 的 %s 风格，关闭级别时不拼接字符串
         logger.info("[play-timing] %s %s", self.label, " ".join(parts))
@@ -87,6 +96,9 @@ class _NoopTimer:
         pass
 
     def span(self, name: str, since: float) -> None:  # noqa: ARG002
+        pass
+
+    def field(self, name: str, value) -> None:  # noqa: ARG002
         pass
 
     def elapsed_ms(self) -> None:
