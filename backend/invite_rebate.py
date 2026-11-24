@@ -246,6 +246,8 @@ def record_payment_rebate(
     返回计提行；下列情况返回 None（不计提）：付款人没有邀请人、比例
     为 0、返利算出来 ≤ 0、邀请人返利上限已用满。同一 (source,
     source_ref) 重复调用返回既有行（幂等，支付回调重放安全）。
+    「读累计 → 定档 → 插行」临界区按邀请人加行锁串行化：同邀请人的
+    并发付费依次计提，不会重复按前段比例计提或突破封顶（L-021）。
 
     **不提交**。钱包入账失败会向上抛——调用方（如履约）应在本函数外层
     套保存点：入账失败回滚保存点后，另起一次只落 pending 计提的调用，
@@ -278,6 +280,18 @@ def record_payment_rebate(
         logger.info("推广者已停用，跳过返利计提: inviter=%s",
                     relation.inviter_id)
         return None
+
+    # 串行化同一邀请人的计提临界区（L-021）：分档累计
+    # （_invitee_prior_paid）与封顶累计（_accrued_total）都是
+    # 「读累计 → 定档/截断 → 插行」，两笔付费并发计提会读到同一份
+    # 旧累计、双双按 5% 前段计提并突破封顶。先锁邀请人用户行再读
+    # 累计，后来者在行锁上等先者提交、读到新累计；与钱包入账
+    # credit 锁同一行、同一先后，不新增锁序。懒导入避免与
+    # backend.api.economy 循环依赖（同 invite_promoter 口径）。
+    from backend.api.economy import lock_user_row
+
+    lock_user_row(db, relation.inviter_id)
+
     override = invite_promoter.percent_override(db, relation.inviter_id)
 
     if override is not None:

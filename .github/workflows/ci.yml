@@ -697,6 +697,15 @@ jobs:
         timeout-minutes: 10
         run: python -m pytest tests/test_concurrent_redeem_dup_sub.py -q
 
+      # 邀请返利计提并发回归（L-021）：record_payment_rebate 的分档/封顶累计
+      # 曾无锁「读累计→定档→插行」，同邀请人两笔付费并发计提可双双按 5%
+      # 前段计提、合计突破封顶（已加 lock_user_row 串行化）。DATABASE_URL
+      # 由本 job 的 env 指向真 PG；无 PG 时 PG 用例自动跳过（SQLite 文件
+      # 库版本在普通门禁里跑）。
+      - name: 邀请返利计提并发回归（真 PG 行锁）
+        timeout-minutes: 10
+        run: python -m pytest tests/test_invite_rebate_concurrent.py -q
+
   deploy-check:
     name: 后端 · 部署自检（真起服务 + 真发 HTTP）
     needs: frontend
