@@ -894,9 +894,12 @@ function specChipsOf(source: EmbyMediaSource | null): string[] {
 /**
  * 右下规格标签的源：跟随当前所选/在播版本，解析口径见
  * utils/playerSpec.ts（正在播 → PlaybackInfo 选定 → query.ms 命中
- * 的条目源 → 条目首源）。旧口径三处各自回落条目首源：用户在弹层
- * 选了 1080p 进播放页，标签却显示条目首源 2160p REMUX 的
- * 「4K SDR HEVC / 92.6 Mbps」（2026-11-25 实测）。
+ * 的条目源 → query.ms 命中的版本行 → 命中不了不显示 → 没选版本才
+ * 回落条目首源）。第一轮只修到条目源一档：Versions 形态下 query.ms
+ * 是版本条目 id，条目 MediaSources 里只有主源，准备阶段（标签唯一
+ * 显示的阶段）current 为空、PlaybackInfo 还没到，标签照样显示主源
+ * 2160p REMUX 的「4K SDR HEVC / 92.6 Mbps」（2026-11-25 复测）。
+ * 所以这里必须把 item.Versions 也传进去，让解析走版本行一档。
  */
 const specSource = computed(() =>
   resolveSpecSource({
@@ -906,6 +909,7 @@ const specSource = computed(() =>
       : null,
     wantedId: String(route.query.ms || ''),
     itemSources: item.value?.MediaSources,
+    versionRows: item.value?.Versions,
   }),
 )
 

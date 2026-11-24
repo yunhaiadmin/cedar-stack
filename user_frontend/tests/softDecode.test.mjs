@@ -756,6 +756,8 @@ const {
   softSeekArrived,
   SOFT_SEEK_TIMEOUT_MS,
   SOFT_SEEK_MAX_RETRIES,
+  SOFT_SEEK_RESUME_MS,
+  SOFT_SEEK_RESUME_ADVANCE_S,
 } = await import('../src/utils/softDecode.ts')
 
 function fakeTimers() {
@@ -775,6 +777,7 @@ function fakeTimers() {
       timers.clear()
       for (const t of pending) t.fn()
     },
+    pendingMs: () => [...timers.values()].map((t) => t.ms),
     get size() {
       return timers.size
     },
@@ -783,12 +786,13 @@ function fakeTimers() {
 
 function makeGuard() {
   const timers = fakeTimers()
-  const calls = { retry: [], timeout: 0 }
+  const calls = { retry: [], timeout: 0, timeoutPhases: [] }
   const guard = new SoftSeekGuard({
     timeoutMs: 15000,
     onRetry: (attempt) => calls.retry.push(attempt),
-    onTimeout: () => {
+    onTimeout: (phase) => {
       calls.timeout += 1
+      calls.timeoutPhases.push(phase)
     },
     setTimer: timers.setTimer,
     clearTimer: timers.clearTimer,
@@ -878,6 +882,79 @@ check(
   softSeekArrived(100, 3000, 0),
   false,
 )
+
+// --- seek 两阶段：到达后确认恢复（2026-11-25 第二轮复测事故） ---
+// 第一轮看门狗只看位置：复测里时间永远停在目标值，轮询第一次就判
+// 到达撤防。arrive() 转入确认阶段：确认窗口内时间不推进同样走
+// 重试→判失败；暂停态由调用方直接 complete，不进确认阶段。
+check('seek resume: default confirm window is 5s', SOFT_SEEK_RESUME_MS, 5000)
+check('seek resume: default advance is 0.5s', SOFT_SEEK_RESUME_ADVANCE_S, 0.5)
+
+{
+  const { guard, timers, calls } = makeGuard()
+  guard.begin(300)
+  check('seek guard: seeking timer is 15s', [...timers.pendingMs()], [15000])
+  guard.arrive()
+  check('seek guard: confirming after arrive', guard.confirming, true)
+  check('seek guard: still pending while confirming', guard.pending, true)
+  check('seek guard: arrive switches to confirm timer', [...timers.pendingMs()], [SOFT_SEEK_RESUME_MS])
+  guard.arrive()
+  check('seek guard: second arrive is a no-op', [timers.size, ...timers.pendingMs()], [1, SOFT_SEEK_RESUME_MS])
+  timers.fireAll()
+  check('seek guard: confirm timeout retries once', calls.retry, [1])
+  check('seek guard: retry returns to seeking phase', [guard.confirming, ...timers.pendingMs()], [false, 15000])
+  guard.complete()
+  timers.fireAll()
+  check('seek guard: retry then complete => no timeout report', calls.timeout, 0)
+}
+
+{
+  const { guard, timers, calls } = makeGuard()
+  guard.begin(300)
+  guard.arrive()
+  timers.fireAll()
+  check('seek guard: confirm retry used once', calls.retry, [1])
+  guard.arrive()
+  timers.fireAll()
+  check('seek guard: confirm timeout after retry reports failure', calls.timeout, 1)
+  check('seek guard: timeout phase is confirming', calls.timeoutPhases, ['confirming'])
+  check('seek guard: not pending after confirm timeout', guard.pending, false)
+  timers.fireAll()
+  check('seek guard: confirm timeout reported only once', calls.timeout, 1)
+}
+
+{
+  const { guard, timers } = makeGuard()
+  guard.arrive()
+  check('seek guard: arrive when idle is a no-op', timers.size, 0)
+  guard.begin(300)
+  guard.arrive()
+  guard.complete()
+  check('seek guard: complete from confirming disarms', [guard.pending, timers.size], [false, 0])
+}
+
+{
+  const { guard, timers, calls } = makeGuard()
+  guard.begin(100)
+  guard.arrive()
+  timers.fireAll()
+  check('seek guard: first seek used its retry in confirming', calls.retry, [1])
+  guard.begin(500)
+  check('seek guard: new seek during confirming resets to seeking timer', [...timers.pendingMs()], [15000])
+  timers.fireAll()
+  check('seek guard: superseding seek resets retry budget', calls.retry, [1, 1])
+  check('seek guard: superseded seek not judged dead', calls.timeout, 0)
+  guard.complete()
+}
+
+{
+  const { guard, timers, calls } = makeGuard()
+  guard.begin(300)
+  guard.arrive()
+  guard.dispose()
+  timers.fireAll()
+  check('seek guard: dispose from confirming silences everything', [calls.retry.length, calls.timeout], [0, 0])
+}
 check(
   'seek arrived: backward seek landed near target',
   softSeekArrived(100, 101, 1),
