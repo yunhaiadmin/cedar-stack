@@ -8,7 +8,7 @@
 """
 import os
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 os.environ.setdefault("DATABASE_TYPE", "sqlite")
@@ -113,6 +113,12 @@ def test_down_on_enqueue_backlog(db, monkeypatch):
     """积压且近窗口没有任何完成 = down。有进展不再因为条数本身 down。"""
     from backend.emby_server import scan_progress as progress
     counts = {"done": 100, "failed": 0, "pending": 900, "enriching": 100}
+    # L-009 后口径：down 必须有「真停滞」的跨进程证据——worker 快照新鲜、
+    # 但上次完成已在进展窗口之外。无证据只 warn（见下面一组用例）。
+    _install_worker_snapshot(
+        monkeypatch, done_per_min=0.0,
+        last_done_at=(datetime.now() - timedelta(minutes=30)).isoformat(timespec="seconds"),
+        done_total=800)
     monkeypatch.setattr(health_report, "_count", lambda db, t, s: 20 if s == "done" else 0)
     monkeypatch.setattr(health_report, "_enrich_count", lambda db, s: counts.get(s, 0))
     monkeypatch.setattr(health_report, "library_scan_summary", lambda db: {"failed": 0})
@@ -219,7 +225,7 @@ def test_no_false_down_when_counter_empty(db, monkeypatch):
         res = health_report.collect(db)
     finally:
         progress.reset()
-    # 积压本身是 down，但「停滞」不能是 down
+    # 积压本身只 warn；没有停滞证据时更不能 down
     assert not any(i["key"] == "enrich_stalled" for i in res["issues"]), res
     assert any(i["key"] == "enrich_no_progress" and i["level"] == "warn"
                for i in res["issues"]), res
@@ -375,3 +381,132 @@ def test_collect_no_scan_issue_for_interrupted(db, monkeypatch):
     res = health_report.collect(db)
     assert any(i["key"] == "scan" and i["level"] == "warn" for i in res["issues"]), res
     assert any("失败库" in i["message"] for i in res["issues"] if i["key"] == "scan"), res
+
+
+# ---------- L-009：进展判定改跨进程证据（worker Redis 快照） ----------
+
+class _FakeRedis:
+    """只实现 health 读侧用到的 get/ping；payload 原样返回。"""
+
+    def __init__(self, raw):
+        self._raw = raw
+
+    def get(self, key):
+        return self._raw
+
+    def ping(self):
+        return True
+
+
+def _install_worker_snapshot(monkeypatch, *, done_per_min=0.0, last_done_at=None,
+                             done_total=0, age_sec=0):
+    """把 worker 发布的 Redis 快照（S8）装进假 Redis。
+
+    payload 形状与 enrich_worker._publish_stage_stats_to_redis 一致：
+    {ts, stages, throughput{done_per_min, last_done_at, done_total, ...}}。
+    age_sec 模拟快照陈旧（worker 没在发布）。
+    """
+    import json
+    import time as _time
+    payload = {
+        "ts": _time.time() - age_sec,
+        "stages": {},
+        "throughput": {
+            "done_per_min": done_per_min, "retry_per_min": 0.0,
+            "failed_per_min": 0.0, "window_sec": 300, "samples": 0,
+            "done_total": done_total, "retry_total": 0, "failed_total": 0,
+            "last_done_at": last_done_at, "idle_sec": None,
+        },
+    }
+    monkeypatch.setattr(_dbmod, "redis_client", _FakeRedis(json.dumps(payload)))
+
+
+def test_no_false_down_when_worker_snapshot_shows_progress(db, monkeypatch):
+    """L-009 生产复现：分离部署下 API 进程计数恒 0，复刮条目完成又不更新
+    last_scraped_at（DB 近窗口完成数也是 0），但 worker 快照显示正在完成
+    ——不得报 down。旧实现不看快照，只凭本进程计数+DB 时间戳 → 假 down。
+    """
+    from backend.emby_server import scan_progress as progress
+    _big_backlog(monkeypatch)
+    _install_worker_snapshot(
+        monkeypatch, done_per_min=25.0,
+        last_done_at=datetime.now().isoformat(timespec="seconds"),
+        done_total=1200)
+    progress.reset()
+    try:
+        res = health_report.collect(db)
+    finally:
+        progress.reset()
+    assert res["metrics"]["enrich_recent_done"] == 0, res["metrics"]
+    assert not any(i["level"] == "down" for i in res["issues"]), res
+    assert any(i["key"] == "enrich_backlog" and i["level"] == "warn"
+               for i in res["issues"]), res
+    assert res["level"] == "warn", res
+
+
+def test_no_down_when_worker_snapshot_missing(db, monkeypatch):
+    """证据不可得（Redis 里没有 worker 快照）时只 warn，不许 down。"""
+    from backend.emby_server import scan_progress as progress
+    _big_backlog(monkeypatch)
+    monkeypatch.setattr(_dbmod, "redis_client", _FakeRedis(None))
+    progress.reset()
+    try:
+        res = health_report.collect(db)
+    finally:
+        progress.reset()
+    assert not any(i["level"] == "down" for i in res["issues"]), res
+    assert any(i["key"] == "enrich_backlog" and i["level"] == "warn"
+               for i in res["issues"]), res
+
+
+def test_no_down_when_worker_snapshot_stale(db, monkeypatch):
+    """快照过期（worker 没在发布）= 证据不可得，只 warn 不 down。"""
+    from backend.emby_server import scan_progress as progress
+    _big_backlog(monkeypatch)
+    _install_worker_snapshot(
+        monkeypatch, done_per_min=25.0,
+        last_done_at=datetime.now().isoformat(timespec="seconds"),
+        done_total=1200, age_sec=3600)
+    progress.reset()
+    try:
+        res = health_report.collect(db)
+    finally:
+        progress.reset()
+    assert not any(i["level"] == "down" for i in res["issues"]), res
+    assert any(i["key"] == "enrich_backlog" and i["level"] == "warn"
+               for i in res["issues"]), res
+
+
+def test_no_down_when_worker_never_completed(db, monkeypatch):
+    """快照新鲜但 worker 尚无任何完成记录：没有「真停滞」证据，只 warn。"""
+    from backend.emby_server import scan_progress as progress
+    _big_backlog(monkeypatch)
+    _install_worker_snapshot(monkeypatch, done_per_min=0.0,
+                             last_done_at=None, done_total=0)
+    progress.reset()
+    try:
+        res = health_report.collect(db)
+    finally:
+        progress.reset()
+    assert not any(i["level"] == "down" for i in res["issues"]), res
+    assert any(i["key"] == "enrich_no_progress" and i["level"] == "warn"
+               for i in res["issues"]), res
+
+
+def test_down_when_worker_snapshot_shows_stall(db, monkeypatch):
+    """快照新鲜且上次完成已在进展窗口外 = 跨进程真停滞证据 → down 保留，
+    不许把探针改成永远 warn。"""
+    from backend.emby_server import scan_progress as progress
+    _big_backlog(monkeypatch)
+    _install_worker_snapshot(
+        monkeypatch, done_per_min=0.0,
+        last_done_at=(datetime.now() - timedelta(minutes=30)).isoformat(timespec="seconds"),
+        done_total=800)
+    progress.reset()
+    try:
+        res = health_report.collect(db)
+    finally:
+        progress.reset()
+    assert res["level"] == "down", res
+    assert any(i["key"] == "enrich_backlog" and i["level"] == "down"
+               for i in res["issues"]), res

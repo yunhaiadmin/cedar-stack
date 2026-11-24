@@ -43,8 +43,10 @@ WARN_PROBE_FAIL_RATIO = 0.30        # 探测失败率超过 30%
 WARN_ENRICH_FAIL_RATIO = 0.30       # 刮削失败率超过 30%
 # 积压达到此数才进入堆积判定。有进展（见下）只降级，不报 down。
 DOWN_QUEUE_BACKLOG = env_int("HEALTH_ENRICH_BACKLOG_FLOOR", 500, 1)
-# 最近这么多分钟内有完成条目 = 有进展。分离部署时看库里的 last_scraped_at，
-# 不看本进程计数器（API 进程的计数器恒为 0）。
+# 最近这么多分钟内有完成条目 = 有进展。判据以 worker 发布的 Redis 快照
+# 为准（跨进程完成证据，见 collect 内 L-009 说明）；库里的 last_scraped_at
+# 只作旁证（复刮完成不更新它），本进程计数器只在单进程部署时有意义
+# （分离部署时 API 进程恒为 0）。
 HEALTH_ENRICH_PROGRESS_MIN = env_int("HEALTH_ENRICH_PROGRESS_MIN", 10, 1)
 
 
@@ -83,15 +85,41 @@ ENRICH_STAGE_STATS_REDIS_KEY = "aetrix:enrich:stage_stats"
 ENRICH_STAGE_STATS_MAX_AGE_SEC = 180
 
 
+def _enrich_worker_snapshot() -> dict | None:
+    """读 worker 发布的 Redis 快照（S8 通道），只采信新鲜快照。
+
+    worker janitor 每轮把本进程 ``stage_stats()`` + ``throughput()``
+    序列化发布到 ``ENRICH_STAGE_STATS_REDIS_KEY``（见 enrich_worker
+    ``_publish_stage_stats_to_redis``）。返回解析后的 payload
+    （含 ts/stages/throughput）；未配置 Redis、键缺失、已过期
+    （> ENRICH_STAGE_STATS_MAX_AGE_SEC）或解析失败一律返回 None
+    ——即「跨进程证据不可得」，调用方不许据此下停滞结论。
+    """
+    try:
+        import json as _json
+
+        from backend import database as _dbmod
+        client = _dbmod.redis_client
+        if client is None:
+            return None
+        raw = client.get(ENRICH_STAGE_STATS_REDIS_KEY)
+        if not raw:
+            return None
+        payload = _json.loads(raw)
+        ts = float(payload.get("ts") or 0)
+        if time.time() - ts > ENRICH_STAGE_STATS_MAX_AGE_SEC:
+            return None
+        return payload
+    except Exception:  # noqa: BLE001 — 快照读不到就是无证据，不让健康检查自己抛
+        return None
+
+
 def _enrich_stage_stats() -> dict:
     """enrich 阶段耗时：本进程统计非空用本进程；为空时回退 Redis 快照。
 
     worker 与 api 分离部署时阶段统计只存在于 worker 进程内存里，
-    health 长期读到空（B6 观测缺口）。worker janitor 每轮把快照发布
-    到 Redis（见 enrich_worker._publish_stage_stats_to_redis）；这里
-    只采信 ts 距今 ≤180 秒的新鲜快照，解析出的 stages 填
-    ``enrich_stages``。读 Redis 全程 try/except 兜底留空，绝不让
-    健康检查自己抛。
+    health 长期读到空（B6 观测缺口）；快照读取走 _enrich_worker_snapshot
+    （与进展判定同一通道、同一新鲜度口径）。
     """
     try:
         from backend.emby_server import scan_progress as _progress
@@ -100,24 +128,39 @@ def _enrich_stage_stats() -> dict:
         local = {}
     if local:
         return local
-    try:
-        import json as _json
-
-        from backend import database as _dbmod
-        client = _dbmod.redis_client
-        if client is None:
-            return {}
-        raw = client.get(ENRICH_STAGE_STATS_REDIS_KEY)
-        if not raw:
-            return {}
-        payload = _json.loads(raw)
-        ts = float(payload.get("ts") or 0)
-        if time.time() - ts > ENRICH_STAGE_STATS_MAX_AGE_SEC:
-            return {}
-        stages = payload.get("stages")
-        return stages if isinstance(stages, dict) else {}
-    except Exception:  # noqa: BLE001 — 快照读不到就留空，不影响判定
+    payload = _enrich_worker_snapshot()
+    if not payload:
         return {}
+    stages = payload.get("stages")
+    return stages if isinstance(stages, dict) else {}
+
+
+def _enrich_snapshot_progress(payload: dict, window_min: int) -> str:
+    """按 worker 快照判进展：``progressing`` / ``stalled`` / ``unknown``。
+
+    - 快照显示窗口内有完成（``done_per_min`` > 0，或 ``last_done_at``
+      落在窗口内）→ progressing；
+    - 快照新鲜（worker 进程活着、持续在发布）但上次完成已在窗口外
+      → stalled：这是「真停滞」的跨进程证据，可以据此报 down；
+    - 从未有完成记录（worker 刚启动）或时间戳不可解析 → unknown：
+      没有证据，不下结论。
+    """
+    tp = (payload or {}).get("throughput") or {}
+    try:
+        if float(tp.get("done_per_min") or 0) > 0:
+            return "progressing"
+    except (TypeError, ValueError):
+        pass
+    last = tp.get("last_done_at")
+    if not last:
+        return "unknown"
+    try:
+        last_dt = datetime.fromisoformat(str(last))
+    except ValueError:
+        return "unknown"
+    if datetime.now() - last_dt <= timedelta(minutes=max(1, int(window_min))):
+        return "progressing"
+    return "stalled"
 
 
 def _enrich_recent_completed(db, minutes: int) -> int:
@@ -327,11 +370,19 @@ def collect(db) -> dict:
         backlog = epending + eenriching
         metrics["enrich_backlog"] = backlog
         # 堆积不再单独构成 down：存量大库会让 pending 长期超过阈值，
-        # 只要最近窗口里有完成条目，服务就在消化，报 degraded（warn）并带数字。
-        # 没进展且积压超过阈值才 down。进展有两个来源，任一即可：
-        #   - 库：last_scraped_at 落在 HEALTH_ENRICH_PROGRESS_MIN 内（跨进程）
-        #   - 本进程：scan_progress.throughput() 的 done_per_min > 0
-        # 分离部署时 API 进程计数器恒为 0，库内时间戳仍能证明 worker 在跑。
+        # 只要有证据显示最近窗口里有完成条目，服务就在消化，报 degraded
+        # （warn）并带数字。down 只给「有积压 + 有证据证明真停滞」。
+        # 进展/停滞的证据来源（L-009）：
+        #   - worker Redis 快照（S8，janitor 每 60 秒发布本进程
+        #     throughput）：唯一现成的跨进程「完成」证据——快照新鲜且
+        #     窗口内有完成 = 有进展；快照新鲜但上次完成已在窗口外 =
+        #     真停滞；快照不可得 = 无证据，只 warn 不 down。
+        #   - 库内 last_scraped_at 近窗口的 done 数：只能作「有进展」
+        #     旁证。该字段在各补全收尾路径只在为空时才写，复刮条目
+        #     完成不更新它，为 0 证明不了没进展（2026-11-24 假 down
+        #     的直接原因：补拉的复刮条目秒级完成，此数恒 0）。
+        #   - 本进程 scan_progress 计数：只在单进程部署时是真实证据
+        #     （分离部署时 API 进程恒为 0，绝不能据此判停滞）。
         try:
             from backend.emby_server import enrich_worker
             from backend.emby_server import scan_progress as progress
@@ -346,42 +397,74 @@ def collect(db) -> dict:
             metrics["enrich_progress_window_min"] = window_min
             # S8：本进程统计为空时回退 worker 发布的 Redis 快照
             metrics["enrich_stages"] = _enrich_stage_stats()
-            progressing = recent_done > 0 or done_per_min > 0
+            snapshot = _enrich_worker_snapshot()
+            snap_state = (_enrich_snapshot_progress(snapshot, window_min)
+                          if snapshot is not None else "unknown")
+            snap_tp = (snapshot or {}).get("throughput") or {}
+            try:
+                snap_rate = float(snap_tp.get("done_per_min") or 0)
+            except (TypeError, ValueError):
+                snap_rate = 0.0
+            metrics["enrich_worker_progress"] = snap_state
+            metrics["enrich_worker_done_per_min"] = snap_tp.get("done_per_min")
+            metrics["enrich_worker_last_done_at"] = snap_tp.get("last_done_at")
+            progressing = (recent_done > 0 or done_per_min > 0
+                           or snap_state == "progressing")
+            total = tp["done_total"] + tp["retry_total"] + tp["failed_total"]
+            # 停滞必须有证据：快照证明 worker 活着却无完成，或本进程
+            # （单进程部署时计数即真实）有过动作但窗口内无成功。
+            # 无证据不下停滞结论——证据不可得只 warn（L-009 口径）。
+            stalled = (snap_state == "stalled"
+                       or (done_per_min <= 0 and total > 0))
             if backlog >= DOWN_QUEUE_BACKLOG:
                 if progressing:
+                    bits = []
+                    if recent_done > 0:
+                        bits.append(f"近 {window_min} 分钟完成 {recent_done} 条")
+                    if done_per_min > 0:
+                        bits.append(f"本进程 {done_per_min:.1f} 条/分")
+                    if snap_state == "progressing":
+                        if snap_rate > 0:
+                            bits.append(f"worker {snap_rate:.1f} 条/分")
+                        else:
+                            bits.append(f"worker 近 {window_min} 分钟有完成")
                     _bump("warn")
                     issues.append({
                         "level": "warn", "key": "enrich_backlog",
                         "message": (
-                            f"补全队列堆积 {backlog} 条，近 {window_min} 分钟"
-                            f"完成 {recent_done} 条"
-                            f"（本进程 {done_per_min:.1f} 条/分），仍在消化")})
-                else:
+                            f"补全队列堆积 {backlog} 条，"
+                            f"{'，'.join(bits)}，仍在消化")})
+                elif stalled:
                     _bump("down")
                     issues.append({
                         "level": "down", "key": "enrich_backlog",
                         "message": (
                             f"补全队列堆积 {backlog} 条，近 {window_min} 分钟"
                             f"没有完成条目，已经处理不过来")})
-            # 没进展时保留「卡住 / 刚启动」细分，方便和「根本没跑」区分。
+                else:
+                    _bump("warn")
+                    issues.append({
+                        "level": "warn", "key": "enrich_backlog",
+                        "message": (
+                            f"补全队列堆积 {backlog} 条，暂未观察到完成条目"
+                            f"（进展证据不可得），先观察再排查")})
+            # 没进展时保留「卡住 / 证据不足」细分，方便和「根本没跑」区分。
             # 有进展就不再报这两条，避免和上面的 warn 重复。
             # worker 被显式关掉（ENRICH_WORKER=0）时不报「没在跑」：那就是设计如此。
             if (not progressing
                     and enrich_worker.ENRICH_ENABLED
-                    and backlog >= DOWN_QUEUE_BACKLOG
-                    and done_per_min <= 0):
-                total = tp["done_total"] + tp["retry_total"] + tp["failed_total"]
-                if total > 0:
+                    and backlog >= DOWN_QUEUE_BACKLOG):
+                if stalled:
                     _bump("down")
                     issues.append({
                         "level": "down", "key": "enrich_stalled",
                         "message": f"补全队列堆积 {backlog} 条，有动作但近 "
-                                   f"{tp['window_sec']} 秒没有任何成功 —— 是卡住了，不是跑得慢"})
+                                   f"{window_min} 分钟没有任何成功 —— 是卡住了，不是跑得慢"})
                 else:
                     _bump("warn")
                     issues.append({
                         "level": "warn", "key": "enrich_no_progress",
-                        "message": f"补全队列堆积 {backlog} 条，本进程尚未完成任何条目 —— "
+                        "message": f"补全队列堆积 {backlog} 条，尚未观察到完成条目 —— "
                                    "worker 可能刚启动或没在跑，先观察再排查"})
         except Exception as exc:  # noqa: BLE001
             logger.debug("统计补全速率出错: %s", exc)
