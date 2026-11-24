@@ -51,6 +51,13 @@ SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 SUPER_ONLY_PREFIXES = (
     "/api/admin/admins",           # 管理员与权限本身
     "/api/admin/economy/settings",  # 系统 / 经济设置
+    # 台账 L-029（2026-11-24）：上面那条前缀盖不住这两个同级经济设置写口
+    # （startswith 判定：/economy/wallet/settings 与 /teams/config 都不在
+    # /economy/settings 之下），此前 operator 可直接打接口改——
+    # 钱包口可写充值手续费率 / 手填汇率与强制覆盖 / 返利比例 / 余额购流量
+    # 单价，团队口可写团队价格锚点与 Premium 单价。只收写口，GET 不受影响。
+    "/api/admin/economy/wallet/settings",  # 钱包经济设置（手续费 / 汇率 / 返利 / 购流量单价）
+    "/api/admin/teams/config",  # 团队价格锚点与单价
     "/api/admin/playback/policy",   # 播放与客户端策略（影响所有人能不能看）
     "/api/admin/capabilities",      # 能力中心：上游 Key
     "/api/admin/share-guard",       # 防共享：enforce 档会停用用户 / 拦下会话
