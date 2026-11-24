@@ -498,6 +498,9 @@ check("关闭注册时注册 → 403", r.status_code == 403, str(r.status_code))
 # 带了注册码字段也整体忽略——码不核销（第二段里被兑换入口拒绝的
 # 那张存量码正好从没被消耗，这里再钉一次 use_count 仍为 0）
 set_config("register_ratelimit_max", "100")
+# L-022 回归备注：注册成功另有独立桶（默认 3 次/小时/IP），尝试桶与成功桶
+# 必须一起放宽——只放宽尝试桶时，本段 4 次成功注册会在第 4 个撞上限 429。
+set_config("register_success_ratelimit_max", "100")
 set_config("registration_mode", "code")
 r = client.post("/api/user/auth/register", json={
     "username": f"reg_legacy{suf}", "password": "pass12345",

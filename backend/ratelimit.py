@@ -49,6 +49,28 @@ class SlidingWindowLimiter:
                 self._purge(now)
             return True, 0
 
+    def peek(self, key: str, max_events: int, window_seconds: float) -> tuple[bool, int]:
+        """只查不记：返回 (是否放行, 剩余需等待秒数)，不追加计数。
+
+        给「事后才知道算不算数」的场景预检用（如注册成功桶：入口先 peek
+        封顶，真正成功了再用 check 记一笔）。过期时间戳顺手清掉，
+        与 check 的口径一致，但绝不新增计数。
+        """
+        now = time.monotonic()
+        with self._lock:
+            if window_seconds > self._max_window:
+                self._max_window = window_seconds
+            q = self._hits.get(key)
+            if not q:
+                return True, 0
+            cutoff = now - window_seconds
+            while q and q[0] < cutoff:
+                q.popleft()
+            if len(q) >= max_events:
+                retry_after = int(window_seconds - (now - q[0])) + 1
+                return False, max(retry_after, 1)
+            return True, 0
+
     def _purge(self, now: float) -> int:
         """丢掉所有已过期的桶（调用方持锁）
 
@@ -76,11 +98,17 @@ def check_rate_limit(key: str, max_events: int, window_seconds: float) -> tuple[
     return _limiter.check(key, max_events, window_seconds)
 
 
+def peek_rate_limit(key: str, max_events: int, window_seconds: float) -> tuple[bool, int]:
+    """模块级便捷入口：只查不记（与 check_rate_limit 配对，语义见 limiter.peek）。"""
+    return _limiter.peek(key, max_events, window_seconds)
+
+
 def reset_rate_limit(key: str) -> None:
     """模块级便捷入口：清掉某个键的全部计数（与 check_rate_limit 配对）。
 
-    用于「成功后退还额度」语义（如注册成功后 reset register:{ip}）：
-    失败尝试保留计数防爆破，成功不占后来者的额度。
+    注意：不要拿它给业务端点做「成功后退还额度」——注册端点曾在成功后
+    reset 尝试桶，把此前的失败计数一并抹掉，单 IP 可无限批量建号
+    （L-022）。成功路径要限量应改用独立计数桶＋peek_rate_limit 预检。
     """
     _limiter.reset(key)
 
