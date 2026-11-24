@@ -393,7 +393,14 @@ import {
   type SoftPlayerHandle,
 } from '@/utils/softDecode'
 import { prepStatusText as prepStatusTextFor, PREP_DECODER_HINT } from '@/utils/prepStatus'
-import { resolveSpecSource } from '@/utils/playerSpec'
+import {
+  resolveSpecSource,
+  resolutionLabel,
+  specChipsOf,
+  streamsOf,
+  videoStreamOf,
+  type SpecStreamLike,
+} from '@/utils/playerSpec'
 import {
   failCopyFor,
   fetchPlayStatus,
@@ -433,21 +440,6 @@ import {
 
 type Phase = 'loading' | 'idle' | 'preparing' | 'playing' | 'unsupported' | 'error'
 
-interface StreamLike {
-  Index: number
-  Type: string
-  Codec?: string
-  Language?: string
-  DisplayTitle?: string
-  IsExternal?: boolean
-  IsTextSubtitleStream?: boolean
-  IsDefault?: boolean
-  DeliveryUrl?: string
-  Width?: number
-  Height?: number
-  Channels?: number
-  BitRate?: number
-}
 
 /** 浏览器基本播不动的容器：先尝试，失败/超时落到不支持提示，不黑屏装死 */
 const RISKY_CONTAINERS = new Set(['mkv', 'avi', 'wmv', 'flv', 'rmvb', 'asf', 'ts', 'm2ts', 'vob'])
@@ -854,42 +846,6 @@ const resumeSeconds = computed(() => {
   if (Number.isFinite(at) && at > 0) return at
   return ticksToSeconds(item.value?.UserData?.PlaybackPositionTicks)
 })
-
-function streamsOf(source: EmbyMediaSource | null): StreamLike[] {
-  return (source?.MediaStreams || []) as StreamLike[]
-}
-function videoStreamOf(source: EmbyMediaSource | null): StreamLike | undefined {
-  return streamsOf(source).find((s) => s.Type === 'Video')
-}
-function resolutionLabel(vs: StreamLike | undefined): string {
-  if (!vs) return ''
-  const h = vs.Height || 0
-  const w = vs.Width || 0
-  if (h >= 2000 || w >= 3800) return '4K'
-  if (h >= 1000 || w >= 1900) return '1080p'
-  if (h >= 700 || w >= 1200) return '720p'
-  if (h > 0) return `${h}p`
-  return ''
-}
-function specChipsOf(source: EmbyMediaSource | null): string[] {
-  if (!source) return []
-  const chips: string[] = []
-  const vs = videoStreamOf(source)
-  const res = resolutionLabel(vs)
-  if (res) chips.push(res)
-  const title = vs?.DisplayTitle || ''
-  for (const token of ['Dolby Vision', '杜比视界', 'HDR10+', 'HDR10', 'HDR', 'HLG']) {
-    if (title.includes(token)) {
-      chips.push(token === 'Dolby Vision' ? '杜比视界' : token)
-      break
-    }
-  }
-  if (vs?.Codec) chips.push(vs.Codec.toUpperCase())
-  const audio = streamsOf(source).find((s) => s.Type === 'Audio')
-  if (audio?.Channels && audio.Channels >= 6) chips.push('5.1声道')
-  if (source.Container) chips.push(source.Container.toUpperCase())
-  return chips
-}
 
 /**
  * 右下规格标签的源：跟随当前所选/在播版本，解析口径见
@@ -2119,7 +2075,7 @@ function goBack(): void {
 
 const subBlobUrls = new Map<string, string>()
 
-async function processedSubUrl(track: StreamLike): Promise<string> {
+async function processedSubUrl(track: SpecStreamLike): Promise<string> {
   const url = track.DeliveryUrl || ''
   if (!url || subtitleDelayMs.value === 0) return url
   const cacheKey = `${track.Index}:${subtitleDelayMs.value}`
@@ -2155,7 +2111,7 @@ async function rebuildSubtitleTracks(): Promise<void> {
   const v = videoEl.value
   if (!v) return
   v.querySelectorAll('track').forEach((t) => t.remove())
-  const wanted: Array<{ track: StreamLike; kind: 'primary' | 'secondary' }> = []
+  const wanted: Array<{ track: SpecStreamLike; kind: 'primary' | 'secondary' }> = []
   const all = streamsOf(currentSource.value).filter(
     (s) => s.Type === 'Subtitle' && s.IsTextSubtitleStream && s.DeliveryUrl,
   )
