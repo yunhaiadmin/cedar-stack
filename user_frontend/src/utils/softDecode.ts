@@ -640,6 +640,19 @@ export const SOFT_SEEK_RESUME_MS = 5000
 export const SOFT_SEEK_RESUME_ADVANCE_S = 0.5
 
 /**
+ * 确认恢复要求时钟「持续前进」的跨度（毫秒），缺省 1000。
+ * 第四轮（2026-11-25 复测，三次同症）：seek 落点后解码器先播出
+ * 已缓冲的头几帧、时钟 tick 约 0.5 秒，随后因下一段是冷段而停
+ * 住；旧规则「前进 ≥0.5 秒即落定」把这一个 tick 当成恢复，几秒
+ * 内撤防、提示一闪而过，之后 2 分钟静默冻结没人管。单次 tick 不
+ * 算恢复：时钟必须在一段跨度里一直在前进（见 noteSeekProgress），
+ * 即前进被至少两次相隔此跨度的采样同时看到，才落定。取值：正常
+ * 播放 1 秒走 1 秒，1 秒跨度只让健康 seek 多亮约 1 秒提示；缓冲
+ * 头再长也只是一次 tick 的量级，不会被误认成持续播放。
+ */
+export const SOFT_SEEK_RESUME_SUSTAIN_MS = 1000
+
+/**
  * 进度读数是否已到达 seek 目标（elapsedSeconds = 距本次 seek 下发
  * 的秒数）：读数落在 [目标-容差, 目标+容差+elapsed] 窗口内才算。
  * 下界防「还停在旧位置」误判（卡死形态）；上界防回退 seek 的误
@@ -701,6 +714,14 @@ export interface SoftSeekGuardDeps {
  * 阶段里时间不推进同样走重试→判失败；暂停态由调用方按
  * pausedSettled 判定后 complete（时间本来就不走），未落定的短暂
  * 暂停先 arrive() 进确认阶段等着，不直接落定（第三轮）。
+ *
+ * 第四轮（2026-11-25 复测，三次同症）：确认阶段「前进 ≥0.5 秒
+ * 即落定」太弱——seek 落点后缓冲头先让时钟 tick 约 0.5 秒，随后
+ * 冷段断粮停住，看门狗把这一个 tick 当恢复、几秒内撤防。改成
+ * 「持续前进」（见 noteSeekProgress）：前进必须被两次相隔
+ * SOFT_SEEK_RESUME_SUSTAIN_MS 的采样同时看到才落定。另：每次变
+ * 迁（begin/arrive/complete/escalate）都打 console 日志，下一轮
+ * 复测可凭控制台日志定案看门狗走到了哪一步，不再盲修。
  */
 export class SoftSeekGuard {
   private deps: SoftSeekGuardDeps
@@ -736,6 +757,7 @@ export class SoftSeekGuard {
     this.retriesUsed = 0
     this.closed = false
     this.arm()
+    console.info('[softDecode] seek guard begin: target', targetSeconds, 's')
   }
 
   /**
@@ -749,14 +771,17 @@ export class SoftSeekGuard {
     if (this.phase === 'confirming') return
     this.phase = 'confirming'
     this.arm()
+    console.info('[softDecode] seek guard arrive: target', this.targetSeconds, 's')
   }
 
   /** seek 已落定（确认恢复阶段里时间真的往前走了）：撤防 */
   complete(): void {
     if (this.targetSeconds === null) return
+    const target = this.targetSeconds
     this.targetSeconds = null
     this.phase = 'seeking'
     this.disarm()
+    console.info('[softDecode] seek guard complete: target', target, 's')
   }
 
   /** 底层 seek promise 拒绝：不等计时到期，立刻走重试/判失败 */
@@ -810,11 +835,26 @@ export class SoftSeekGuard {
         this.phase = 'seeking'
         this.arm()
       }
+      console.info(
+        '[softDecode] seek guard retry',
+        this.retriesUsed,
+        'target',
+        this.targetSeconds,
+        's',
+      )
     } else {
       const phase = this.phase
+      const target = this.targetSeconds
       this.targetSeconds = null
       this.phase = 'seeking'
       this.closed = true
+      console.info(
+        '[softDecode] seek guard timeout: phase',
+        phase,
+        'target',
+        target,
+        's',
+      )
       this.deps.onTimeout(phase)
     }
   }
@@ -889,6 +929,8 @@ export interface CreateSoftPlayerOptions {
   seekTimeoutMs?: number
   /** seek 到达后确认恢复的窗口（毫秒），缺省 SOFT_SEEK_RESUME_MS */
   seekResumeMs?: number
+  /** 确认恢复要求时钟持续前进的跨度（毫秒），缺省 SOFT_SEEK_RESUME_SUSTAIN_MS；只为单测取小值 */
+  seekResumeSustainMs?: number
   /** seek 在飞时轮询 currentTime 的间隔（毫秒），缺省 500；只为单测取小值 */
   seekPollMs?: number
   /**
@@ -995,8 +1037,9 @@ export async function createSoftPlayer(
 
   // ---- seek 看门狗接线（2026-11-25 事故，状态机见 SoftSeekGuard）----
   // 两阶段：位置到达（seeked 事件 / time 事件 / 轮询读数三路并行，
-  // 哪路先到哪路转入确认）→ 确认恢复（播放态下时间真的往前走才
-  // 落定）。旧代码位置一到就撤防，复测里「到了目标但播不起来」
+  // 哪路先到哪路转入确认）→ 确认恢复（播放态下时间持续往前走才
+  // 落定，单次 tick 不算——见 noteSeekProgress 第四轮）。旧代码位置
+  // 一到就撤防，复测里「到了目标但播不起来」
   // 的卡死半秒内就没人管了。超时/底层拒绝由状态机先自动重试一次，
   // 仍无结果经 hooks.onSeekFailed 判失败（没接该钩子的调用方回落
   // failOnce/onError)——绝不静默冻结。
@@ -1015,6 +1058,14 @@ export async function createSoftPlayer(
   let seekTargetSeconds = 0
   let seekIssuedAt = 0
   let seekArrivedAt = 0
+  // 确认阶段「持续前进」的记账（第四轮）：时钟第一次前进的时刻、
+  // 那次的读数、与最近一次看到前进时的读数。单次 tick 不算恢复：
+  // 前进必须被两次相隔 SOFT_SEEK_RESUME_SUSTAIN_MS 的采样同时看到
+  // 到，且第二次的读数必须大于第一次（时钟还在走，不只是时间过
+  // 去了），才落定。
+  let confirmFirstMoveAt: number | null = null
+  let confirmFirstMoveSeconds = 0
+  let confirmLastSeenSeconds = 0
   let softPlaying = false
   // 最近一次 'paused' 事件的时刻（毫秒）；恢复播放时清掉。看门狗据
   // 此判断暂停是「用户本来就停着」还是「seek 后解码器的短暂
@@ -1085,18 +1136,48 @@ export async function createSoftPlayer(
     if (!seekGuard.pending) return
     if (seekGuard.confirming) {
       // 确认恢复阶段：落定的暂停（见 pausedSettled）时间不走是正常
-      // 的，直接算落定；播放态下时间必须继续往前走——停在目标值不
-      // 动就是复测里那次卡死；还没落定的短暂暂停先等着，不撤防。
+      // 的，直接算落定；还没落定的短暂暂停先等着，不撤防。
       if (!softPlaying && pausedSettled()) {
         seekGuard.complete()
+        console.info(
+          '[softDecode] seek guard complete: paused settled at',
+          seconds,
+          's target',
+          seekTargetSeconds,
+          's',
+        )
         setSeekingNotified(false)
         return
       }
+      // 持续前进（第四轮）：只认「时钟在一段跨度里一直在走」。单次
+      // tick（缓冲头播几帧就断粮）不落定：前进必须被两次相隔
+      // sustainMs 的采样同时看到，且第二次的读数大于第一次（时钟还
+      // 在走，不只是时间过去了），累计前进 ≥0.5 秒，才算真的恢复。
+      if (Number.isFinite(seconds) && seconds > confirmLastSeenSeconds) {
+        if (confirmFirstMoveAt === null) {
+          confirmFirstMoveAt = Date.now()
+          confirmFirstMoveSeconds = seconds
+        }
+        confirmLastSeenSeconds = seconds
+      }
       if (
+        confirmFirstMoveAt !== null &&
         Number.isFinite(seconds) &&
+        seconds > confirmFirstMoveSeconds &&
+        Date.now() - confirmFirstMoveAt >=
+          (options.seekResumeSustainMs ?? SOFT_SEEK_RESUME_SUSTAIN_MS) &&
         seconds >= seekArrivedAt + SOFT_SEEK_RESUME_ADVANCE_S
       ) {
+        const advanced = seconds - seekArrivedAt
         seekGuard.complete()
+        console.info(
+          '[softDecode] seek guard complete: sustained advance',
+          `${advanced.toFixed(2)}s`,
+          'at',
+          `${seconds.toFixed(2)}s`,
+          'target',
+          `${seekTargetSeconds}s`,
+        )
         setSeekingNotified(false)
       }
       return
@@ -1112,6 +1193,10 @@ export async function createSoftPlayer(
       return
     }
     seekArrivedAt = seconds
+    // 新一轮确认的记账清零：上一轮的前进不算进这一轮。
+    confirmFirstMoveAt = null
+    confirmFirstMoveSeconds = seconds
+    confirmLastSeenSeconds = seconds
     seekGuard.arrive()
   }
   async function issuePlayerSeek(seconds: number): Promise<void> {
