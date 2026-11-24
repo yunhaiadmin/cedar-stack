@@ -13,6 +13,9 @@
 //   瞬时暂停（第三轮）：seek 发出后解码器短暂发 'paused'、随后恢复
 //     'playing'、时间永久冻在目标值 → 必须走到 onSeekFailed。旧代码
 //     在到达瞬间见暂停就撤防，「正在定位」一次都不出现；
+//   缓冲头 tick（第四轮）：seek 落点后时钟先走约 0.6 秒、然后永久
+//     冻结（不发 paused）→ 必须走到 onSeekFailed。旧规则见 0.6 秒
+//     tick 就当恢复、几秒内撤防，「正在定位」一次都不出现；
 //   暂停后落定：seek 后暂停且一直不恢复 → 按暂停落定，不重试、不判
 //     失败（对照组，暂停持续满复核窗口即算真停住；暂停始于 seek 下
 //     发之后时，看门狗为此多发一次同目标重 seek，随后落定）；
@@ -32,6 +35,7 @@ const {
   SOFT_SEEK_TIMEOUT_MS,
   SOFT_SEEK_RESUME_MS,
   SOFT_SEEK_RESUME_ADVANCE_S,
+  SOFT_SEEK_RESUME_SUSTAIN_MS,
 } = await import('../src/utils/softDecode.ts')
 const { instances: fakePlayers } = await import('./fakeAvPlayer.mjs')
 
@@ -73,6 +77,7 @@ async function makeHandle() {
     startTimeoutMs: 5000,
     seekTimeoutMs: 5000,
     seekResumeMs: 200,
+    seekResumeSustainMs: 50,
     seekPollMs: 20,
   })
   const player = fakePlayers[before]
@@ -99,9 +104,12 @@ async function makeHandle() {
   const { handle, player, calls } = await makeHandle()
   try {
     const p = handle.seek(3419)
+    // 先同步发一次目标值 time 事件把到达钉死（seekArrivedAt=3419），
+    // 再 tick：否则到达可能由 tick 自己的 time 事件触发，模型变抖动。
+    player.emit('time', 3419000n)
     await sleep(50)
     player.tick(0.6)
-    await sleep(50)
+    await sleep(100)
     player.tick(0.6)
     await p
     await sleep(900)
@@ -162,6 +170,27 @@ async function makeHandle() {
   }
 }
 
+// --- 缓冲头 tick：seek 落点后时钟先走约 0.6 秒、然后永久冻结（第四轮，生产三次复测原样） ---
+{
+  const { handle, player, calls } = await makeHandle()
+  try {
+    const p = handle.seek(3419)
+    // 先同步发一次目标值 time 事件把到达钉死（seekArrivedAt=3419），
+    // 再 tick：否则到达可能由 tick 自己的 time 事件触发，旧代码也
+    // 会走对路、红的不再是新模型。
+    player.emit('time', 3419000n)
+    await sleep(50)
+    player.tick(0.6)
+    await p
+    await sleep(1500)
+    check('head tick then frozen: retried once then failed', [player.seekCalls.length, calls.seekFailed.length], [2, 1])
+    check('head tick then frozen: seeking pill visible until failure', calls.seeking, [true, false])
+    check('head tick then frozen: no decode error mixed in', calls.error, [])
+  } finally {
+    await handle.destroy()
+  }
+}
+
 // --- 暂停后落定：seek 后暂停且一直不恢复 → 按暂停落定，不重试不判失败 ---
 {
   const { handle, player, calls } = await makeHandle()
@@ -199,9 +228,10 @@ async function makeHandle() {
   }
 }
 
-// --- 常量口径：确认窗口 5 秒、至少再前进 0.5 秒 ---
+// --- 常量口径：确认窗口 5 秒、至少再前进 0.5 秒、且前进须持续 1 秒 ---
 check('seek resume: default confirm window is 5s', SOFT_SEEK_RESUME_MS, 5000)
 check('seek resume: default advance is 0.5s', SOFT_SEEK_RESUME_ADVANCE_S, 0.5)
+check('seek resume: default sustain span is 1s', SOFT_SEEK_RESUME_SUSTAIN_MS, 1000)
 check('seek guard: default timeout still 15s', SOFT_SEEK_TIMEOUT_MS, 15000)
 
 console.log(passed + ' passed')
