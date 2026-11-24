@@ -175,6 +175,7 @@ class TestRegisterCounting:
     @pytest.fixture(autouse=True)
     def _clean(self, db):
         _limiter.reset(self.KEY)
+        _limiter.reset(f"register-success:{self.IP}")
         # 注册限流收紧到 2 次/窗口，让 reset/计数差异可观测
         for k, v in (("register_ratelimit_max", "2"),
                      ("register_ratelimit_window", "3600")):
@@ -182,6 +183,7 @@ class TestRegisterCounting:
         db.commit()
         yield
         _limiter.reset(self.KEY)
+        _limiter.reset(f"register-success:{self.IP}")
 
     def _register(self, db, username):
         from backend.api.emby_portal import RegisterRequest, register
@@ -189,18 +191,26 @@ class TestRegisterCounting:
         req = _make_request(self.IP)
         return register(req, RegisterRequest(username=username, password="secret1"), db)
 
-    def test_success_resets_bucket(self, db):
-        """连着注册成功 3 次（额度只有 2）不应被限流：每次成功都退还计数。"""
-        for name in ("rg_a1", "rg_a2", "rg_a3"):
-            self._register(db, name)  # 不抛异常即成功
+    def test_success_no_longer_resets_bucket(self, db):
+        """L-022 改版：成功不再退还计数（旧 test_success_resets_bucket 已废）。
+
+        旧口径「成功 reset 尝试桶」被审计判为漏洞：失败计数会被成功一并
+        抹掉，单 IP 可无限批量建号。现口径下成功照样占尝试桶额度：
+        额度 2 时前两次成功放行，第 3 次尝试 429。
+        """
+        self._register(db, "rg_a1")
+        self._register(db, "rg_a2")
+        with pytest.raises(HTTPException) as exc:
+            self._register(db, "rg_a3")
+        assert exc.value.status_code == 429
 
     def test_failures_still_count(self, db):
-        """失败保留计数防爆破：同名重复注册（409）两次后，第 3 次尝试 429。"""
+        """失败保留计数防爆破（L-022 后口径）：成功不清零后，1 次成功＋
+        1 次失败（同名重复注册 409）即占满额度 2，下一次尝试 429。"""
         self._register(db, "rg_b1")
-        for _ in range(2):
-            with pytest.raises(HTTPException) as exc:
-                self._register(db, "rg_b1")
-            assert exc.value.status_code == 409
+        with pytest.raises(HTTPException) as exc:
+            self._register(db, "rg_b1")
+        assert exc.value.status_code == 409
         with pytest.raises(HTTPException) as exc:
             self._register(db, "rg_b2")
         assert exc.value.status_code == 429
