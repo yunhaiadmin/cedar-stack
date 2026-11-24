@@ -8,7 +8,7 @@ import os
 
 from fastapi import FastAPI, Request, status, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from contextlib import asynccontextmanager
@@ -920,6 +920,67 @@ def detailed_health_check(request: Request):
         health_status["status"] = agg["status"]
 
     return health_status
+
+
+# ==================== 线路测速字节流 ====================
+# 用户端「线路测速」页（/game/speedtest）从浏览器向所选线路入口真下载
+# 本端点的字节计量速度：fetch 的是 ${line.url}/speedtest/bin，线路域名
+# 与站点域名不同源、且前端是裸 fetch 不带令牌，故本端点免鉴权、响应
+# 自带 Access-Control-Allow-Origin: *。全局 CORSMiddleware 是白名单制
+# （CORS_ORIGINS 环境变量、带凭证），只服务应用接口，不给公网测速口
+# 复用它开口子；预检由下方 OPTIONS 处理器按同一口径直接应答。
+# （EA 侧 emby_api 有同名端点服务直连 EA 的线路入口，档位口径不同：
+# 那边是 32/64/100 白名单 + 400，本端点按前端契约钳制 1–100。）
+# 防滥用：mb 钳制兜底字节量，nginx location 侧另有 limit_conn 限并发。
+_SPEEDTEST_BLOCK = os.urandom(1024 * 1024)  # 1 MiB 不可压缩随机块，循环发出
+
+
+def _speedtest_mb(raw: str | None) -> int:
+    """mb 解析：非法/缺失按 32，合法值钳制到 1–100（不许 500/422）。"""
+    try:
+        mb = int(raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 32
+    return max(1, min(100, mb))
+
+
+@app.get("/speedtest/bin")
+async def speedtest_bin(mb: str | None = None):
+    """测速文件：返回恰好 mb MiB 不可压缩字节（mb 钳制 1–100）。"""
+    total = _speedtest_mb(mb) * 1024 * 1024
+
+    async def _gen():
+        remaining = total
+        while remaining > 0:
+            n = min(len(_SPEEDTEST_BLOCK), remaining)
+            yield _SPEEDTEST_BLOCK[:n]
+            remaining -= n
+
+    return StreamingResponse(
+        _gen(),
+        media_type="application/octet-stream",
+        headers={
+            "Content-Length": str(total),
+            "Cache-Control": "no-store",
+            "Access-Control-Allow-Origin": "*",
+            "X-Speedtest-Bytes": str(total),
+        },
+    )
+
+
+@app.options("/speedtest/bin")
+async def speedtest_bin_preflight():
+    """测速端点 CORS 预检兜底：裸 fetch 本是简单请求不触发预检，
+    带自定义头时由这里按与 GET 一致的口径应答。"""
+    return Response(
+        status_code=204,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Max-Age": "86400",
+        },
+    )
 
 
 # ==================== 路由注册 ====================
