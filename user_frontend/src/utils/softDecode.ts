@@ -632,7 +632,7 @@ export const SOFT_SEEK_ARRIVE_TOLERANCE_S = 2
  * 「正在定位」一闪而过、重试与错误页永不触发。到达只是「定位器
  * 就位」，不是「播起来了」：转入确认阶段后，播放态下时间必须在
  * 窗口内再前进至少这么多秒才算真正恢复；否则按卡住走重试→判失败。
- * 暂停态不适用（时间本来就不走，见 noteSeekProgress）。
+ * 暂停态不适用（时间本来就不走，见 SeekProgressTracker）。
  * 取值：冷段开流 + 解码重启实测约 2–3 秒，5 秒窗口留有余量；
  * 0.5 秒推进量约等于一次 time 事件步进的两倍，防单次读数抖动误判。
  */
@@ -645,7 +645,7 @@ export const SOFT_SEEK_RESUME_ADVANCE_S = 0.5
  * 已缓冲的头几帧、时钟 tick 约 0.5 秒，随后因下一段是冷段而停
  * 住；旧规则「前进 ≥0.5 秒即落定」把这一个 tick 当成恢复，几秒
  * 内撤防、提示一闪而过，之后 2 分钟静默冻结没人管。单次 tick 不
- * 算恢复：时钟必须在一段跨度里一直在前进（见 noteSeekProgress），
+ * 算恢复：时钟必须在一段跨度里一直在前进（见 SeekProgressTracker），
  * 即前进被至少两次相隔此跨度的采样同时看到，才落定。取值：正常
  * 播放 1 秒走 1 秒，1 秒跨度只让健康 seek 多亮约 1 秒提示；缓冲
  * 头再长也只是一次 tick 的量级，不会被误认成持续播放。
@@ -712,13 +712,13 @@ export interface SoftSeekGuardDeps {
  * confirmTimeoutMs）。只看位置会把「到了目标但播不起来」误判成
  * 成功——复测里时间永远停在目标值，旧代码半秒内就撤防了。确认
  * 阶段里时间不推进同样走重试→判失败；暂停态由调用方按
- * pausedSettled 判定后 complete（时间本来就不走），未落定的短暂
+ * SeekProgressTracker.pausedSettled 判定后 complete（时间本来就不走），未落定的短暂
  * 暂停先 arrive() 进确认阶段等着，不直接落定（第三轮）。
  *
  * 第四轮（2026-11-25 复测，三次同症）：确认阶段「前进 ≥0.5 秒
  * 即落定」太弱——seek 落点后缓冲头先让时钟 tick 约 0.5 秒，随后
  * 冷段断粮停住，看门狗把这一个 tick 当恢复、几秒内撤防。改成
- * 「持续前进」（见 noteSeekProgress）：前进必须被两次相隔
+ * 「持续前进」（见 SeekProgressTracker）：前进必须被两次相隔
  * SOFT_SEEK_RESUME_SUSTAIN_MS 的采样同时看到才落定。另：每次变
  * 迁（begin/arrive/complete/escalate）都打 console 日志，下一轮
  * 复测可凭控制台日志定案看门狗走到了哪一步，不再盲修。
@@ -764,7 +764,7 @@ export class SoftSeekGuard {
    * 位置已到目标：转入确认恢复阶段，改按确认窗口重新武装。
    * 未在飞 / 已在确认阶段时是空操作（轮询与 seeked 事件可能重复调）。
    * 落定的暂停调用方不应调它——直接 complete；未落定的短暂暂停
-   * 调用方调它进确认阶段等着（见 noteSeekProgress 的 pausedSettled）。
+   * 调用方调它进确认阶段等着（见 SeekProgressTracker.pausedSettled）。
    */
   arrive(): void {
     if (this.targetSeconds === null || this.closed) return
@@ -860,6 +860,193 @@ export class SoftSeekGuard {
   }
 }
 
+// ---------- seek 到达＋确认恢复记账（软/原生共用，第五轮抽出） ----------
+
+/** 一次进度采样（驱动层喂给 tracker 的原料） */
+export interface SeekProgressSample {
+  /** 本次采样看到的播放头秒数 */
+  seconds: number
+  /** 播放器当前是否处于播放态（暂停态下时间不走是正常的） */
+  playing: boolean
+  /** 最近一次暂停开始的时刻（毫秒，与 note 的 now 同一时钟）；正在播/从未暂停为 null */
+  pausedAt: number | null
+}
+
+export type SeekProgressVerdict =
+  | { kind: 'arrive' }
+  | {
+      kind: 'complete'
+      reason: 'sustained' | 'paused'
+      /** 本轮确认里时钟累计前进的秒数（sustained 时有意义） */
+      advancedSeconds: number
+      /** 判定发生在确认阶段（false = 找目标阶段到达即落定） */
+      fromConfirming: boolean
+    }
+
+/**
+ * seek 到达＋确认恢复的记账（纯逻辑，可单测）：原先是
+ * createSoftPlayer 闭包里的局部逻辑（noteSeekProgress），第五轮
+ * 抽成共享 helper——原生 <video> 路径的看门狗驱动（utils/
+ * nativeSeek.ts）与软解共用同一套到达判定（softSeekArrived）与
+ * 「持续前进」确认口径，不许复制一份。行为与抽出前逐字一致，
+ * 现有 softSeekResume 测试钉住。
+ *
+ * 用法：seek 下发时 begin(目标) + issued()（每次实际下发含重试
+ * 都刷新 issued）；进度采样（事件/轮询）喂 note(采样, 是否确认
+ * 阶段)，按返回判定调 SoftSeekGuard 的 arrive()/complete()。
+ */
+export class SeekProgressTracker {
+  private readonly opts: { resumeMs?: number; sustainMs?: number }
+  private targetSeconds = 0
+  private issuedAt = 0
+  private arrivedAt = 0
+  private hasArrived = false
+  private confirmFirstMoveAt: number | null = null
+  private confirmFirstMoveSeconds = 0
+  private confirmLastSeenSeconds = 0
+
+  constructor(opts: { resumeMs?: number; sustainMs?: number } = {}) {
+    this.opts = opts
+  }
+
+  /** 新 seek 下发（用户/调用方发起）：记目标。确认记账在到达时清零（与旧口径一致） */
+  begin(targetSeconds: number): void {
+    this.targetSeconds = Math.max(0, targetSeconds)
+    this.hasArrived = false
+  }
+
+  /** 每次实际下发（含看门狗重试）刷新下发时刻：到达判定窗口上界与暂停落定判定都按它算 */
+  issued(now: number = Date.now()): void {
+    this.issuedAt = now
+  }
+
+  /** 在飞 seek 的目标秒 */
+  get target(): number {
+    return this.targetSeconds
+  }
+
+  /** 确认阶段已前进量（秒）：最近一次看到前进的读数 − 到达读数；未到达为 0。只供状态串显示，不参与判定 */
+  get advancedSeconds(): number {
+    if (!this.hasArrived) return 0
+    return Math.max(0, this.confirmLastSeenSeconds - this.arrivedAt)
+  }
+
+  /**
+   * 当前暂停是否算「落定」：只有两种暂停可以让看门狗撤防——
+   * ① 暂停开始于本次 seek 下发之前（用户本来就停着，seek 是暂停
+   *    态下发的；重试会刷新下发时刻，所以暂停发生在 seek 下发之
+   *    后时，最多因此多发一次同目标重 seek，随后即落定）；
+   * ② 暂停已持续满确认窗口（仍无人恢复：要么用户真停住了，要么
+   *    解码器停顿超过窗口——后者与用户暂停已无法区分，按暂停
+   *    处理）。
+   * seek 后才开始的短暂暂停两种都不满足：不等它，也不撤防，进
+   * 确认阶段继续盯着。复核窗口直接复用确认窗口，不再新开可调
+   * 参数（单测里确认窗口取小值，复核窗口同步取小值）。
+   */
+  pausedSettled(sample: SeekProgressSample, now: number = Date.now()): boolean {
+    if (sample.playing || sample.pausedAt === null) return false
+    if (sample.pausedAt <= this.issuedAt) return true
+    return now - sample.pausedAt >= (this.opts.resumeMs ?? SOFT_SEEK_RESUME_MS)
+  }
+
+  /**
+   * 喂一次进度采样，返回判定（null = 还没结论，继续盯）：
+   * - confirming=false（找目标）：读数到达目标 → { kind:'arrive' }
+   *   （到达记账已清零，调用方随后调 guard.arrive()）；到达且暂停
+   *   已落定 → complete/paused；
+   * - confirming=true（确认恢复）：暂停已落定 → complete/paused；
+   *   时钟持续前进达标 → complete/sustained（口径见
+   *   SOFT_SEEK_RESUME_SUSTAIN_MS：单次 tick 不算，前进须被两次
+   *   相隔 sustainMs 的采样同时看到、且累计 ≥
+   *   SOFT_SEEK_RESUME_ADVANCE_S）。
+   */
+  note(
+    sample: SeekProgressSample,
+    confirming: boolean,
+    now: number = Date.now(),
+  ): SeekProgressVerdict | null {
+    const { seconds } = sample
+    if (confirming) {
+      // 确认恢复阶段：落定的暂停（见 pausedSettled）时间不走是
+      // 正常的，直接算落定；还没落定的短暂暂停先等着，不撤防。
+      if (!sample.playing && this.pausedSettled(sample, now)) {
+        return {
+          kind: 'complete',
+          reason: 'paused',
+          advancedSeconds: this.advancedSeconds,
+          fromConfirming: true,
+        }
+      }
+      // 持续前进（第四轮）：只认「时钟在一段跨度里一直在走」。单
+      // 次 tick（缓冲头播几帧就断粮）不落定：前进必须被两次相隔
+      // sustainMs 的采样同时看到，且第二次的读数大于第一次（时
+      // 钟还在走，不只是时间过去了），累计前进 ≥0.5 秒，才算真
+      // 的恢复。
+      if (Number.isFinite(seconds) && seconds > this.confirmLastSeenSeconds) {
+        if (this.confirmFirstMoveAt === null) {
+          this.confirmFirstMoveAt = now
+          this.confirmFirstMoveSeconds = seconds
+        }
+        this.confirmLastSeenSeconds = seconds
+      }
+      if (
+        this.confirmFirstMoveAt !== null &&
+        Number.isFinite(seconds) &&
+        seconds > this.confirmFirstMoveSeconds &&
+        now - this.confirmFirstMoveAt >=
+          (this.opts.sustainMs ?? SOFT_SEEK_RESUME_SUSTAIN_MS) &&
+        seconds >= this.arrivedAt + SOFT_SEEK_RESUME_ADVANCE_S
+      ) {
+        return {
+          kind: 'complete',
+          reason: 'sustained',
+          advancedSeconds: seconds - this.arrivedAt,
+          fromConfirming: true,
+        }
+      }
+      return null
+    }
+    const elapsed = this.issuedAt ? (now - this.issuedAt) / 1000 : 0
+    if (!softSeekArrived(this.targetSeconds, seconds, elapsed)) return null
+    // 位置已到目标：落定的暂停直接落定（时间本来就不走）；还没
+    // 落定的短暂暂停先按到达进确认阶段等着；播放态转入确认恢复
+    // 阶段，「正在定位」继续留着，直到时间真的往前走。
+    if (!sample.playing && this.pausedSettled(sample, now)) {
+      return {
+        kind: 'complete',
+        reason: 'paused',
+        advancedSeconds: 0,
+        fromConfirming: false,
+      }
+    }
+    this.arrivedAt = seconds
+    this.hasArrived = true
+    // 新一轮确认的记账清零：上一轮的前进不算进这一轮。
+    this.confirmFirstMoveAt = null
+    this.confirmFirstMoveSeconds = seconds
+    this.confirmLastSeenSeconds = seconds
+    return { kind: 'arrive' }
+  }
+}
+
+/** 看门狗状态变迁名（DOM 可观测状态串用，软/原生共用同一格式） */
+export type SeekGuardTransition = 'seeking' | 'confirming' | 'complete' | 'failed'
+
+/**
+ * 看门狗状态串（写到播放器根元素 data-seek-guard 上，复测不打开
+ * 控制台、直接读 DOM 即可定案看门狗走到了哪一步）：
+ * `<变迁> target=<目标>s advanced=<已前进>s retries=<已重试数>`，
+ * 秒数保留两位小数。无 seek 发生过时调用方用字面量 'idle'。
+ */
+export function seekGuardStateString(
+  transition: SeekGuardTransition,
+  targetSeconds: number,
+  advancedSeconds: number,
+  retriesUsed: number,
+): string {
+  return `${transition} target=${targetSeconds.toFixed(2)}s advanced=${advancedSeconds.toFixed(2)}s retries=${retriesUsed}`
+}
+
 // ---------- AVPlayer 包装 ----------
 
 /**
@@ -889,6 +1076,13 @@ export interface SoftPlayerHooks {
    * 出路，不许回落「浏览器解不了」的解码提示卡混淆原因。
    */
   onSeekFailed?: (message: string) => void
+  /**
+   * seek 看门狗状态变迁上报（可选）：begin/arrive/complete/retry/
+   * timeout 时以状态串回调（格式见 seekGuardStateString），调用
+   * 方写进播放器根元素的 data-seek-guard 属性——复测不打开控制
+   * 台、直接读 DOM 即可定案看门狗走到了哪一步。
+   */
+  onGuardState?: (state: string) => void
 }
 
 export interface SoftPlayerHandle {
@@ -1038,7 +1232,7 @@ export async function createSoftPlayer(
   // ---- seek 看门狗接线（2026-11-25 事故，状态机见 SoftSeekGuard）----
   // 两阶段：位置到达（seeked 事件 / time 事件 / 轮询读数三路并行，
   // 哪路先到哪路转入确认）→ 确认恢复（播放态下时间持续往前走才
-  // 落定，单次 tick 不算——见 noteSeekProgress 第四轮）。旧代码位置
+  // 落定，单次 tick 不算——见 SeekProgressTracker 的确认口径（第四轮））。旧代码位置
   // 一到就撤防，复测里「到了目标但播不起来」
   // 的卡死半秒内就没人管了。超时/底层拒绝由状态机先自动重试一次，
   // 仍无结果经 hooks.onSeekFailed 判失败（没接该钩子的调用方回落
@@ -1047,7 +1241,7 @@ export async function createSoftPlayer(
   // 发出 'paused'（seek 引发重缓冲时暂停渲染），第二轮「暂停态到达
   // 即落定」把这当成用户暂停了——复测里看门狗在到达瞬间撤防，「正
   // 在定位」一次都没出现、冻结 2–4 分钟没人管。所以暂停只有「落定」
-  // 时才算（见 pausedSettled）：暂停开始于本次 seek 下发之前（用户
+  // 时才算（见 SeekProgressTracker.pausedSettled）：暂停开始于本次 seek 下发之前（用户
   // 本来就停着），或暂停已持续满确认窗口（仍无人恢复：要么用户真停
   // 住了，要么解码器停顿超过窗口——后者与用户暂停已无法区分，按暂
   // 停处理）。seek 后才开始的短暂暂停先按到达进确认阶段等着：窗口
@@ -1056,29 +1250,30 @@ export async function createSoftPlayer(
   // 多因此多发一次同目标重 seek（重发刷新下发时刻，暂停随即早于下
   // 发时刻而落定），不判失败。
   let seekTargetSeconds = 0
-  let seekIssuedAt = 0
-  let seekArrivedAt = 0
-  // 确认阶段「持续前进」的记账（第四轮）：时钟第一次前进的时刻、
-  // 那次的读数、与最近一次看到前进时的读数。单次 tick 不算恢复：
-  // 前进必须被两次相隔 SOFT_SEEK_RESUME_SUSTAIN_MS 的采样同时看到
-  // 到，且第二次的读数必须大于第一次（时钟还在走，不只是时间过
-  // 去了），才落定。
-  let confirmFirstMoveAt: number | null = null
-  let confirmFirstMoveSeconds = 0
-  let confirmLastSeenSeconds = 0
+  // 到达＋确认恢复的记账走共享 tracker（SeekProgressTracker）：
+  // 软解与原生 <video> 两条路径共用同一套到达判定与「持续前进」
+  // 口径，不许各写一份（第五轮抽出，原闭包局部逻辑见 tracker）。
+  const seekTracker = new SeekProgressTracker({
+    resumeMs: options.seekResumeMs,
+    sustainMs: options.seekResumeSustainMs,
+  })
+  // 看门狗已用重试数（状态串上报用，onRetry 时更新）
+  let guardRetriesUsed = 0
   let softPlaying = false
   // 最近一次 'paused' 事件的时刻（毫秒）；恢复播放时清掉。看门狗据
   // 此判断暂停是「用户本来就停着」还是「seek 后解码器的短暂
-  // 停顿」（见 pausedSettled）。
+  // 停顿」（见 SeekProgressTracker.pausedSettled）。
   let pausedAt: number | null = null
   let seekingNotified = false
   let seekPollTimer: ReturnType<typeof setInterval> | undefined
   const seekGuard = new SoftSeekGuard({
     timeoutMs: options.seekTimeoutMs ?? SOFT_SEEK_TIMEOUT_MS,
     confirmTimeoutMs: options.seekResumeMs ?? SOFT_SEEK_RESUME_MS,
-    onRetry: () => {
+    onRetry: (attempt) => {
+      guardRetriesUsed = attempt
       // 重试 = 同一目标再下发一次（libmedia 以最新 seek 请求为准）
       void issuePlayerSeek(seekTargetSeconds)
+      reportGuardState('seeking')
     },
     onTimeout: (phase) => {
       setSeekingNotified(false)
@@ -1088,6 +1283,7 @@ export async function createSoftPlayer(
           : `seek timeout: no seeked/progress toward ${seekTargetSeconds}s after retry`
       // 判失败必须留痕：原始原因进控制台，调用方翻成人话上错误页
       console.error('[softDecode] seek 看门狗判失败:', message)
+      reportGuardState('failed')
       if (hooks.onSeekFailed) hooks.onSeekFailed(message)
       else failOnce(message)
     },
@@ -1113,95 +1309,58 @@ export async function createSoftPlayer(
     if (seekPollTimer) clearInterval(seekPollTimer)
     seekPollTimer = undefined
   }
-  /**
-   * 当前暂停是否算「落定」：只有两种暂停可以让看门狗撤防——
-   * ① 暂停开始于本次 seek 下发之前（用户本来就停着，seek 是暂停态
-   *    下发的；重试会刷新下发时刻，所以暂停发生在 seek 下发之后时，
-   *    最多因此多发一次同目标重 seek，随后即落定）；
-   * ② 暂停已持续满确认窗口（仍无人恢复：要么用户真停住了，要么解
-   *    码器停顿超过窗口——后者与用户暂停已无法区分，按暂停处理）。
-   * seek 后才开始的短暂暂停两种都不满足：不等它，也不撤防，进确认
-   * 阶段继续盯着。复核窗口直接复用确认窗口，不再新开可调参数（单
-   * 测里确认窗口取小值，复核窗口同步取小值）。
-   */
-  function pausedSettled(): boolean {
-    if (softPlaying || pausedAt === null) return false
-    if (pausedAt <= seekIssuedAt) return true
-    return (
-      Date.now() - pausedAt >=
-      (options.seekResumeMs ?? SOFT_SEEK_RESUME_MS)
+  /** 看门狗状态串上报（DOM 可观测，见 SoftPlayerHooks.onGuardState） */
+  function reportGuardState(transition: SeekGuardTransition): void {
+    hooks.onGuardState?.(
+      seekGuardStateString(
+        transition,
+        seekTargetSeconds,
+        seekTracker.advancedSeconds,
+        guardRetriesUsed,
+      ),
     )
   }
   function noteSeekProgress(seconds: number): void {
     if (!seekGuard.pending) return
-    if (seekGuard.confirming) {
-      // 确认恢复阶段：落定的暂停（见 pausedSettled）时间不走是正常
-      // 的，直接算落定；还没落定的短暂暂停先等着，不撤防。
-      if (!softPlaying && pausedSettled()) {
-        seekGuard.complete()
-        console.info(
-          '[softDecode] seek guard complete: paused settled at',
-          seconds,
-          's target',
-          seekTargetSeconds,
-          's',
-        )
-        setSeekingNotified(false)
-        return
-      }
-      // 持续前进（第四轮）：只认「时钟在一段跨度里一直在走」。单次
-      // tick（缓冲头播几帧就断粮）不落定：前进必须被两次相隔
-      // sustainMs 的采样同时看到，且第二次的读数大于第一次（时钟还
-      // 在走，不只是时间过去了），累计前进 ≥0.5 秒，才算真的恢复。
-      if (Number.isFinite(seconds) && seconds > confirmLastSeenSeconds) {
-        if (confirmFirstMoveAt === null) {
-          confirmFirstMoveAt = Date.now()
-          confirmFirstMoveSeconds = seconds
-        }
-        confirmLastSeenSeconds = seconds
-      }
-      if (
-        confirmFirstMoveAt !== null &&
-        Number.isFinite(seconds) &&
-        seconds > confirmFirstMoveSeconds &&
-        Date.now() - confirmFirstMoveAt >=
-          (options.seekResumeSustainMs ?? SOFT_SEEK_RESUME_SUSTAIN_MS) &&
-        seconds >= seekArrivedAt + SOFT_SEEK_RESUME_ADVANCE_S
-      ) {
-        const advanced = seconds - seekArrivedAt
-        seekGuard.complete()
-        console.info(
-          '[softDecode] seek guard complete: sustained advance',
-          `${advanced.toFixed(2)}s`,
-          'at',
-          `${seconds.toFixed(2)}s`,
-          'target',
-          `${seekTargetSeconds}s`,
-        )
-        setSeekingNotified(false)
-      }
+    const verdict = seekTracker.note(
+      { seconds, playing: softPlaying, pausedAt },
+      seekGuard.confirming,
+    )
+    if (!verdict) return
+    if (verdict.kind === 'arrive') {
+      seekGuard.arrive()
+      reportGuardState('confirming')
       return
     }
-    const elapsed = seekIssuedAt ? (Date.now() - seekIssuedAt) / 1000 : 0
-    if (!softSeekArrived(seekTargetSeconds, seconds, elapsed)) return
-    // 位置已到目标：落定的暂停直接落定（时间本来就不走）；还没落定
-    // 的短暂暂停先按到达进确认阶段等着；播放态转入确认恢复阶段，
-    // 「正在定位」继续留着，直到时间真的往前走。
-    if (!softPlaying && pausedSettled()) {
-      seekGuard.complete()
-      setSeekingNotified(false)
-      return
+    // 落定：明细日志口径与抽出前一致——确认阶段的暂停落定打
+    // 「paused settled」、持续前进打「sustained advance」（状态机
+    // 自己的 complete 日志在这之前）；找目标阶段到达即落定不打
+    // 明细。
+    seekGuard.complete()
+    if (verdict.reason === 'paused' && verdict.fromConfirming) {
+      console.info(
+        '[softDecode] seek guard complete: paused settled at',
+        seconds,
+        's target',
+        seekTargetSeconds,
+        's',
+      )
+    } else if (verdict.reason === 'sustained') {
+      console.info(
+        '[softDecode] seek guard complete: sustained advance',
+        `${verdict.advancedSeconds.toFixed(2)}s`,
+        'at',
+        `${seconds.toFixed(2)}s`,
+        'target',
+        `${seekTargetSeconds}s`,
+      )
     }
-    seekArrivedAt = seconds
-    // 新一轮确认的记账清零：上一轮的前进不算进这一轮。
-    confirmFirstMoveAt = null
-    confirmFirstMoveSeconds = seconds
-    confirmLastSeenSeconds = seconds
-    seekGuard.arrive()
+    setSeekingNotified(false)
+    reportGuardState('complete')
   }
   async function issuePlayerSeek(seconds: number): Promise<void> {
     // 每次下发（含看门狗重试）都刷新下发时刻：到达判定的窗口上界按它算
-    seekIssuedAt = Date.now()
+    seekTracker.issued()
     try {
       await player.seek(BigInt(Math.max(0, Math.round(seconds * 1000))))
     } catch {
@@ -1334,8 +1493,11 @@ export async function createSoftPlayer(
       // 走才落定；超时/卡住先自动重试一次、仍无结果判失败），不许再
       // 像旧行为那样打出去就不管、静默冻结
       seekTargetSeconds = Math.max(0, seconds)
+      seekTracker.begin(seekTargetSeconds)
+      guardRetriesUsed = 0
       seekGuard.begin(seekTargetSeconds)
       setSeekingNotified(true)
+      reportGuardState('seeking')
       return issuePlayerSeek(seekTargetSeconds)
     },
     setRate: (rate: number) => player.setPlaybackRate(rate),
