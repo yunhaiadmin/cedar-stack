@@ -730,6 +730,105 @@ def _version_label(item):
     return "480p"
 
 
+def _version_group_items(db, item):
+    """同组活副本全集（含 item 本身）：多版本下发的唯一分组口径。
+
+    PlaybackInfo 多源与详情 Versions 共用本函数，不许各拼各的：
+
+    - 单集：series_id 相同、season_number 相同、episode_number 相同，
+      且季/集号均非空。集号为空的行是集号解析失败的堆叠（生产实证
+      《僵尸国度》55 行 episode_number=NULL），把它们并成一组会把
+      不同集当成同集副本，绝不允许；
+    - 电影：tmdb_id 相同（非空）的全部活行，跨库——同一部片在多个
+      库各有一行是常态，只认同库会漏掉大半副本；tmdb_id 为空的
+      电影不归组（无可靠身份，维持单源）；
+    - 两类再并入 merged_into_id 指向组内任一行的合并行（合并行
+      本身也是可播副本；单集的合并行通常已同三键在组内，这里是
+      管理员手工合并等形态的兜底）。
+
+    被合并行先落到主记录再取键（与详情 DTO 的 primary 解析同
+    口径）：从合并行打开详情/点播，看到的应是整组而不是它自己。
+    「活行」= deleted_at 为空（与 get_alternate_versions 同口径）。
+    本函数不看每库展示开关（merge_same / enable_merge）：那两个
+    开关管的是列表去重与 AlternateVersions 的合并呈现，本函数的
+    分组是播放/详情的版本面，口径单独定版（2026-11-24 多版本
+    下发修复）。
+    """
+    if item.item_type not in ("movie", "episode"):
+        return [item]
+    anchor = item
+    if getattr(item, "merged_into_id", None):
+        primary = (
+            db.query(em.MediaItem)
+            .filter(em.MediaItem.id == item.merged_into_id)
+            .first()
+        )
+        if primary is not None and primary.deleted_at is None:
+            anchor = primary
+    group: dict[int, em.MediaItem] = {}
+    if item.item_type == "episode":
+        if (anchor.series_id is None or anchor.season_number is None
+                or anchor.episode_number is None):
+            return [item]
+        rows = (
+            db.query(em.MediaItem)
+            .filter(
+                em.MediaItem.item_type == "episode",
+                em.MediaItem.series_id == anchor.series_id,
+                em.MediaItem.season_number == anchor.season_number,
+                em.MediaItem.episode_number == anchor.episode_number,
+                em.MediaItem.deleted_at.is_(None),
+            )
+            .all()
+        )
+    else:
+        tmdb = (anchor.tmdb_id or "").strip()
+        if not tmdb:
+            return [item]
+        rows = (
+            db.query(em.MediaItem)
+            .filter(
+                em.MediaItem.item_type == "movie",
+                em.MediaItem.tmdb_id == tmdb,
+                em.MediaItem.deleted_at.is_(None),
+            )
+            .all()
+        )
+    for r in rows:
+        group[r.id] = r
+    if group:
+        merged_rows = (
+            db.query(em.MediaItem)
+            .filter(
+                em.MediaItem.merged_into_id.in_(list(group.keys())),
+                em.MediaItem.deleted_at.is_(None),
+            )
+            .all()
+        )
+        for r in merged_rows:
+            group.setdefault(r.id, r)
+    group.setdefault(anchor.id, anchor)
+    group[item.id] = item
+    return list(group.values())
+
+
+def _version_dto_entry(s, primary_id):
+    """详情 Versions 单条条目（电影/单集共用，字段口径逐字一致）。"""
+    return {
+        "Id": s.guid,
+        "Name": _version_label(s),
+        # 前端 EmbyItemVersion 读的别名（与 Name/Size 同值；Size
+        # 单位为字节，与 SizeBytes 同口径）
+        "VersionLabel": _version_label(s),
+        "Height": s.height or 0,
+        "Width": s.width or 0,
+        "Size": s.size or 0,
+        "SizeBytes": s.size or 0,
+        "Container": s.container or "",
+        "IsPrimary": s.id == primary_id,
+    }
+
+
 def _item_etag(item: em.MediaItem) -> str:
     """条目 ETag（官方 BaseItemDto.Etag，DtoService 按 ``item.GetEtag(user)`` 下发）
 
@@ -1084,10 +1183,19 @@ def _item_dto(item: em.MediaItem, base: str, user_id: int, db: Session, full: bo
                 logger.warning("合并版本查询失败 item=%s: %s",
                                getattr(item, "id", "?"), exc)
                 merged = []
-            # 合并两个来源，按 id 去重（sibs 已按 id 排序，merged 首个是主记录）
+            # 跨库同 tmdb 组（2026-11-24 多版本下发修复）：同一部片
+            # 在多个库各有一行、彼此未合并时，上面两个来源都捞不
+            # 到，跨库副本的详情 Versions 恒为空——按分组口径补上。
+            try:
+                group = _version_group_items(db, item)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("同组版本查询失败 item=%s: %s",
+                               getattr(item, "id", "?"), exc)
+                group = []
+            # 合并三个来源，按 id 去重（sibs 已按 id 排序，merged 首个是主记录）
             seen_ids = set()
             all_versions = []
-            for s in list(sibs) + merged:
+            for s in list(sibs) + merged + group:
                 if s.id not in seen_ids:
                     seen_ids.add(s.id)
                     all_versions.append(s)
@@ -1097,20 +1205,31 @@ def _item_dto(item: em.MediaItem, base: str, user_id: int, db: Session, full: bo
             all_versions = _sort_versions_by_bitrate(all_versions)
             if len(all_versions) > 1:
                 dto["Versions"] = [
-                    {
-                        "Id": s.guid,
-                        "Name": _version_label(s),
-                        # 前端 EmbyItemVersion 读的别名（与 Name/Size
-                        # 同值；Size 单位为字节，与 SizeBytes 同口径）
-                        "VersionLabel": _version_label(s),
-                        "Height": s.height or 0,
-                        "Width": s.width or 0,
-                        "Size": s.size or 0,
-                        "SizeBytes": s.size or 0,
-                        "Container": s.container or "",
-                        "IsPrimary": s.id == primary_id,
-                    }
+                    _version_dto_entry(s, primary_id)
                     for s in all_versions
+                ]
+            else:
+                dto["Versions"] = []
+        if item.item_type == "episode":
+            # 单集多版本（2026-11-24）：此前单集详情根本不拼
+            # Versions，客户端无从切换同集副本。分组键与
+            # PlaybackInfo 多源共用 _version_group_items（series +
+            # 季 + 集，季/集号均非空），条目结构与排序与电影同口径。
+            ep_primary_id = item.id
+            if getattr(item, "merged_into_id", None):
+                ep_primary_id = item.merged_into_id
+            try:
+                ep_versions = _version_group_items(db, item)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("单集版本查询失败 item=%s: %s",
+                               getattr(item, "id", "?"), exc)
+                ep_versions = []
+            ep_versions.sort(key=lambda s: s.id)
+            ep_versions = _sort_versions_by_bitrate(ep_versions)
+            if len(ep_versions) > 1:
+                dto["Versions"] = [
+                    _version_dto_entry(s, ep_primary_id)
+                    for s in ep_versions
                 ]
             else:
                 dto["Versions"] = []
@@ -6404,6 +6523,74 @@ def _resolve_series_playback_episode(db: Session, user, series: em.MediaItem):
 
 
 
+def _copy_version_sources(db, item, base, user, api_key, max_bitrate):
+    """PlaybackInfo 多副本源拼装：同组每个活副本一条 MediaSource。
+
+    每个副本都走与主源完全相同的单源构建路径、按副本自身生成——
+    _media_source(副本) 出基础体、_signed_local_stream_url(副本)
+    出带副本 guid 的签名取流地址、域名改写与字幕凭据补齐同主源
+    口径——不拼假地址、不绕门禁：订阅/播放门禁裁决在
+    playback_info 函数头已按请求统一算过，本函数只在放行后补
+    源；副本源随后与主源一起过转存状态覆盖、流量拦截等既有后
+    处理（调用点在它们之前）。副本落在用户不可见的库里时不下
+    发（与 _require_visible_item 的库范围同口径；范围为 None
+    时不过滤）。
+
+    排序与详情 Versions 同口径（_sort_versions_by_bitrate：码率
+    从高到低，id 升序为稳定基线）；Name 带版本区分标签
+    （_version_label，与 Versions 同口径）。无本地文件的托管行
+    不下发空壳（与主源同口径）。同步函数：调用方走 run_db。
+    """
+    from backend.emby_server import playback_strategy as _ps_cp
+    from backend.emby_server import stream_accel as _sa_cp
+
+    group = _version_group_items(db, item)
+    copies = [g for g in group if g.id != item.id]
+    if not copies:
+        return []
+    allowed = _library_scope(db, user)
+    if allowed is not None:
+        copies = [c for c in copies if c.library_id in allowed]
+    copies.sort(key=lambda c: c.id)
+    copies = _sort_versions_by_bitrate(copies)
+    out = []
+    for cp in copies:
+        if not cp.file_path:
+            continue
+        src = _media_source(cp, base, "", db, user=user)
+        url, exp, sig = _signed_local_stream_url(
+            cp, base, user.id, db, api_key)
+        # 域名改写与主源同口径：Drive 条目且直链开时跳过改写，
+        # 其余走统一改写（流节点 > 加速域名 > 原样）。
+        fid = (getattr(cp, "drive_file_id", "") or "").strip()
+        if not (fid and _ps_cp.drive_direct_play_enabled(db)):
+            url, _ = _sa_cp.rewrite_playback_urls_unified(db, url, base)
+        # 字幕 DeliveryUrl 补本次请求凭据（与主源同一处理：基础体
+        # 不带凭据，这里按副本自己的签名补）。
+        sub_auth = (f"api_key={api_key}" if api_key
+                    else f"uid={user.id}&exp={exp}&sign={sig}")
+        for st in src.get("MediaStreams") or []:
+            du = st.get("DeliveryUrl") if isinstance(st, dict) else None
+            if du and du.endswith("?api_key="):
+                st["DeliveryUrl"] = du[: -len("api_key=")] + sub_auth
+        if hide_media_path():
+            src.pop("Path", None)
+        eff = _effective_bitrate(cp)
+        src.update({
+            "SupportsDirectPlay": True,
+            "SupportsDirectStream": bool(eff and eff <= max_bitrate),
+            "SupportsTranscoding": False,
+            "DirectPlayUrl": url,
+            "DirectStreamUrl": url,
+        })
+        src.pop("TranscodingUrl", None)
+        label = _version_label(cp)
+        base_name = src.get("Name") or cp.name or ""
+        src["Name"] = f"{base_name} · {label}" if base_name else label
+        out.append(src)
+    return out
+
+
 @emby_router.post("/emby/Items/{item_id}/PlaybackInfo")
 @emby_router.post("/Items/{item_id}/PlaybackInfo")
 @emby_router.get("/emby/Items/{item_id}/PlaybackInfo")
@@ -6676,6 +6863,21 @@ async def playback_info(
                 media_source, _variants, guid=item.guid,
                 stream_url=stream_url,
                 direct_stream_ok=bool(direct))
+    # 多副本多源（2026-11-24）：同组活副本各补一条源（分组口径
+    # 与拼装见 _copy_version_sources）。放在转存状态覆盖与流量
+    # 拦截之前，副本源与主源过同一套后处理、同门禁；拼装失败
+    # 只回落单源，绝不打断 PlaybackInfo 本体。
+    if sources:
+        try:
+            _copy_sources = await run_db(
+                _copy_version_sources, db, item, base, user, api_key,
+                max_bitrate)
+            if _copy_sources:
+                sources = sources + _copy_sources
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "多副本源拼装失败 item=%s", getattr(item, "id", "?"),
+                exc_info=True)
     _pt.mark("variants")
 
     # 阶段 3 一等会话（默认关）：开时 PlaySessionId 不再是每次现生成的随机
