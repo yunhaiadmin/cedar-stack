@@ -459,10 +459,58 @@ def _repair_series_tmdb_loose(db, cfg) -> int:
     return repaired
 
 
+#: 合并链传递闭包深度上限（L-013）：读侧 get_alternate_versions 沿
+#: merged_into_id 逐层展开的最大层数。正常合并经写侧改指后链长恒为 1，
+#: 存量链实测 2 跳；32 层足够覆盖任何合理数据，又保证异常成环/超深
+#: 数据下必然终止（另有 visited 集合防环，不会重复返回同一行）。
+MERGE_CHAIN_MAX_DEPTH = 32
+
+
+def _repoint_merged_children(db, old_primary_id: int,
+                             new_primary_id: int) -> int:
+    """把指向 old_primary 的全部子行改指到 new_primary（L-013 写侧防链）。
+
+    主记录被并入新主记录时调用：其子行若不改指，就会形成
+    子行→旧主→新主 的合并链——子行不挂在新主的版本列表里、
+    旧主又是隐藏态，副本在下发层等于丢失（生产实锤 17 条）。
+    include_deleted 口径与 soft_delete.rehome_merged_children 一致：
+    已软删子行同样改指，避免悬空指向。只改属性不提交，
+    由调用方按原事务节奏统一 commit。返回改指行数（不计入
+    merge_group 的「新合并条目数」返回值）。
+    """
+    if db is None or not old_primary_id or old_primary_id == new_primary_id:
+        return 0
+    from backend.emby_server import models as em
+    from backend.emby_server import soft_delete as _sd
+
+    with _sd.include_deleted():
+        children = (
+            db.query(em.MediaItem)
+            .filter(em.MediaItem.merged_into_id == old_primary_id)
+            .all()
+        )
+    repointed = 0
+    for child in children:
+        if child.id == new_primary_id:
+            continue
+        child.merged_into_id = new_primary_id
+        # 改指后仍是合并副本：pending/enriching 同步结算（merge_enrich_sync）
+        _mes.settle_merged_row(child)
+        repointed += 1
+    if repointed:
+        logger.info(
+            "多版本合并改指：主记录 id=%d 并入 id=%d，其 %d 个子行一并改指",
+            old_primary_id, new_primary_id, repointed,
+        )
+    return repointed
+
+
 def merge_group(db, group: List) -> int:
     """合并一组：选主记录，其余 merged_into_id 指向主记录。
 
-    返回被合并的条目数。
+    被合并条目若本身是主记录（名下有子行），其子行在同一事务内
+    一并改指到新主记录（L-013），杜绝 A→B→C 合并链产生。
+    返回新合并的条目数（改指的子行不计入）。
     """
     from backend.emby_server import dedup
 
@@ -477,6 +525,9 @@ def merge_group(db, group: List) -> int:
         if item.merged_into_id is not None:
             continue
         item.merged_into_id = primary.id
+        # L-013：该条目若本身是主记录（名下挂着子行），子行一并改指
+        # 新主记录，否则形成 子行→本条目→新主 的合并链，子行丢失。
+        _repoint_merged_children(db, item.id, primary.id)
         # P2 修复（完美审查 C-P2-1）：被合并条目元数据走主记录，enrich 直接记 done——
         # 否则 _claim_batch 用 merged_into_id.is_(None) 永久排除它们，而 health_report
         # 的 backlog 照计 pending/enriching：永远不会被处理，也永远不会从 backlog 消失。
@@ -546,6 +597,8 @@ def _follow_series_episodes(db, group: List) -> None:
             main_ep = main_map.get(key)
             if main_ep is not None and main_ep.id != ep.id:
                 ep.merged_into_id = main_ep.id
+                # L-013：ep 若本身挂着版本子行，一并改指主集，防集级合并链
+                _repoint_merged_children(db, ep.id, main_ep.id)
                 # 同步结算（merge_enrich_sync）：跟随合并的集若还
                 # pending/enriching，不结算会被认领谓词永久卡住
                 _mes.settle_merged_row(ep)
@@ -572,20 +625,40 @@ def get_alternate_versions(db, primary_id: int,
     本函数只过滤返回列表，merged_into_id 数据零改动，开关翻转
     立即生效。管理面（admin /media/versions）要看物理合并真相，
     传 ``apply_display_switches=False`` 全量返回。
+
+    传递闭包（L-013 读侧防御）：沿 merged_into_id 逐层 BFS 展开，
+    存量合并链 A→B→C 中的 A 也挂在 C 名下（写侧改指已杜绝新链，
+    此处兜存量）。visited 集合防环（异常数据互指/自环不死循环、
+    不重复），展开深度上限 MERGE_CHAIN_MAX_DEPTH 层。
     """
     from backend.emby_server import models as em
 
     primary = db.query(em.MediaItem).filter(em.MediaItem.id == primary_id).first()
     if not primary or primary.deleted_at is not None:
         return []
-    alternates = (
-        db.query(em.MediaItem)
-        .filter(
-            em.MediaItem.merged_into_id == primary_id,
-            em.MediaItem.deleted_at.is_(None),
-        )
-        .all()
-    )
+    alternates = []
+    seen = {primary_id}
+    frontier = [primary_id]
+    depth = 0
+    while frontier and depth < MERGE_CHAIN_MAX_DEPTH:
+        next_frontier = []
+        for fid in frontier:
+            rows = (
+                db.query(em.MediaItem)
+                .filter(
+                    em.MediaItem.merged_into_id == fid,
+                    em.MediaItem.deleted_at.is_(None),
+                )
+                .all()
+            )
+            for row in rows:
+                if row.id in seen:
+                    continue
+                seen.add(row.id)
+                alternates.append(row)
+                next_frontier.append(row.id)
+        frontier = next_frontier
+        depth += 1
     if apply_display_switches and alternates:
         from backend.emby_server import dedup as _dedup
 
