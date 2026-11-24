@@ -1106,17 +1106,28 @@ def _fulfill_order(db: Session, subscription_order=None) -> list:
             # ——旧套餐剩余价值已在计价时折成钱抵扣（_switch_credit），
             # 天数不再叠加；不清掉旧行，_grant_subscription 会顺延
             # 旧行并翻档，等于钱天双给。同档续费不走这里（顺延）。
-            now_fulfill = datetime.now()
-            current = _active_sub_in_realm(db, user.id, plan, now_fulfill)
-            if current is not None and current.plan_id != plan.id:
-                current.end_date = now_fulfill
-                current.updated_at = now_fulfill
-                db.flush()
-            subscription = _grant_subscription(
-                db, user, plan,
-                grant_days,
-                realm_id=plan.realm_id,
-            )
+            # L-020：读旧行→置过期→发放整段必须在发放锁内。旧实现把
+            # 置过期放在 _grant_subscription 的锁外：_claim_order 只锁
+            # 订单行，两笔不同订单互不排斥，同用户两笔异档订单并发
+            # 履约时都读到同一旧行、都置过期，后到者在锁内看到先到者
+            # 新建的订阅又顺延一遍——两笔天数全额叠加（钱天双给）。
+            # 锁 key 与 _grant_subscription 内部同口径（plan.realm_id
+            # 经 _grant_realm_for_key 派生）；PG advisory 锁同事务内
+            # 可重入，内层再拿一次不自锁。回归：
+            # tests/test_fulfill_switch_race_pg.py。
+            grant_realm = _grant_realm_for_key(db, plan.realm_id)
+            with subscription_grant_lock(db, user.id, grant_realm):
+                now_fulfill = datetime.now()
+                current = _active_sub_in_realm(db, user.id, plan, now_fulfill)
+                if current is not None and current.plan_id != plan.id:
+                    current.end_date = now_fulfill
+                    current.updated_at = now_fulfill
+                    db.flush()
+                subscription = _grant_subscription(
+                    db, user, plan,
+                    grant_days,
+                    realm_id=plan.realm_id,
+                )
             # 记下「这条订单开出的是哪份订阅、多少天」：退款按这笔精确回滚，
             # 不靠猜用户当前那笔生效中的订阅（可能来自卡码/兑换码/别的订单）。
             subscription_order.subscription_id = subscription.id
