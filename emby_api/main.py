@@ -30,7 +30,6 @@ if os.getenv("TRACEMALLOC", "0") == "1":
     logging.getLogger(__name__).warning("tracemalloc 已启用（25 层栈）")
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 # 纯 ASGI 中间件（中转零拷贝优化）：替代原来的 @app.middleware("http")
 from emby_api.asgi_middleware import (
@@ -363,13 +362,16 @@ def _debug_tracemalloc_diff():
 
 
 # ==================== 中间件 ====================
-# Emby 客户端不走浏览器 CORS，但网页播放器与第三方 Web 播放页会；沿用 EM 的口径
-# 安全：CORS_ORIGINS 为空时不添加中间件（同源请求不需要 CORS），绝不回退到 ["*"]
-_cors_origins_env = os.getenv("CORS_ORIGINS", "").strip()
-_cors_origins = [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+# Emby 客户端不走浏览器 CORS，但网页播放器与第三方 Web 播放页会；与 EM 共用
+# backend.cors_origins 的一套白名单解析（横切只许一套）：CORS_ORIGINS 环境
+# 变量优先，没配回落本站自有域，绝不回退到 ["*"]。L-037 前的旧口径是
+# 「为空不注册中间件」，生产没配 env 时预检 OPTIONS 打到路由层拿 405，
+# www 入口的网页端搜索/列表/详情/播放器全线不可用——故中间件恒注册，
+# 默认清单在代码里，不靠部署时记得配 env。
+from backend.cors_origins import SiteCorsMiddleware
 # CORS 放最后注册 = 最外层（Starlette 逆序执行）：守卫中间件拦下的 403/429
 # 拦截响应也要带 CORS 头，否则网页播放器只报笼统 CORS 错误、读不到真实状态码
-# （与 backend/main.py r9 同口径；白名单解析逻辑不动）
+# （与 backend/main.py 同口径；解析与参数都在共享模块里）
 
 
 # 纯 ASGI 中间件（中转零拷贝）：只改 http.response.start 的头，body 原样透传。
@@ -426,20 +428,9 @@ app.add_middleware(CloudflareIPMiddleware)
 # 与路由 —— 客户端自拼 /emby + 用户又填带 /emby 的地址时不再整串 404。
 app.add_middleware(DoubleEmbyPrefixMiddleware)
 
-# CORS 最后注册 = 最外层（见上文注释）
-if _cors_origins:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=_cors_origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-        allow_headers=[
-            "Content-Type", "Authorization", "X-Emby-Authorization", "X-Emby-Token",
-            "X-MediaBrowser-Token", "X-Device-Id", "Range",
-        ],
-        # 直连流与 HLS 依赖这些响应头能被前端读取
-        expose_headers=["Content-Range", "Accept-Ranges", "Content-Length"],
-    )
+# CORS 最后注册 = 最外层（见上文注释）；统一装配恒注册（来源清单恒非空），
+# 参数与 /speedtest/bin 自管例外都在 backend.cors_origins 里，只此一份。
+app.add_middleware(SiteCorsMiddleware)
 
 
 @app.exception_handler(Exception)
