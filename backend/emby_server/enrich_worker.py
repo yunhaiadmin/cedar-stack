@@ -6585,7 +6585,14 @@ def _enrich_apply_two_stage(db, item: Any, fetched: dict,
                         item.id, exc)
                     db.rollback()
         try:
-            ts.apply_fill(db, item, fetched)
+            try:
+                from backend.emby_server.tmdb import tmdb_client as _tmdb_client
+
+                _fill_details_fetcher = _tmdb_client.details
+            except Exception:  # noqa: BLE001 — 客户端不可用时只读已有证据
+                _fill_details_fetcher = None
+            ts.apply_fill(db, item, fetched,
+                          tmdb_details_fetcher=_fill_details_fetcher)
         except Exception as exc:  # noqa: BLE001 — 补资料失败只重试补资料
             logger.warning("补资料段失败，本条回 pending id=%s: %s", item.id, exc)
             db.rollback()

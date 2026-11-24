@@ -338,3 +338,121 @@ def test_fill_without_credits_creates_no_people_rows(db):
     ts.apply_fill(db, item2, {"tmdb_details": {}})
     db.flush()
     assert _people_rows(db, item2.id) == []
+
+
+# ---------- ⑥ 补资料段建行前补拉详情（文字已齐、只缺演员，2026-11-24 续） ----------
+#
+# 批 2 实证：文字齐的条目进补资料段时本轮根本没拉过 TMDB 详情，
+# fetched 里没有 credits，#494 的建行路径拿到空详情静默返回——
+# 9,877 条「文字齐只缺演员」永远建不出行。本节钉死：无行 + 已绑
+# tmdb + 本轮无 credits 时，经分发注入的取数器补拉恰好 1 次详情
+# 再建行；有行 / 无 tmdb / 拉取失败时行为与此前逐字一致。
+
+def _make_text_complete_item(db, **kw):
+    kw.setdefault("overview", "已有简介")
+    kw.setdefault("community_rating", 8.4)
+    kw.setdefault("genres", "剧情")
+    kw.setdefault("poster_path", "/mnt/media/poster.jpg")
+    kw.setdefault("backdrop_path", "/mnt/media/backdrop.jpg")
+    return _make_item(db, **kw)
+
+
+class _CountingFetcher:
+    """TMDB 详情取数器替身：记录每次调用，可回放载荷或抛错。"""
+
+    def __init__(self, payload=None, exc=None):
+        self.calls = []
+        self.payload = payload
+        self.exc = exc
+
+    def __call__(self, tmdb_id, kind):
+        self.calls.append((tmdb_id, kind))
+        if self.exc is not None:
+            raise self.exc
+        return self.payload
+
+
+def test_fill_fetches_details_once_and_creates_people_when_text_complete(db):
+    """文字全齐 + 无演员行 + 已绑 tmdb + 本轮无 credits：补拉恰好
+    1 次详情、按 credits 建行；已有文字一个字都不许动。"""
+    from backend.emby_server.tmdb import cast_list
+    item = _make_text_complete_item(db, tmdb_id="60300")
+    payload = _fetched_with_credits()["tmdb_details"]
+    fetcher = _CountingFetcher(payload=payload)
+    filled = ts.apply_fill(db, item, {}, tmdb_details_fetcher=fetcher)
+    db.flush()
+    assert fetcher.calls == [("60300", "series")]
+    rows = _people_rows(db, item.id)
+    expected = cast_list(payload)
+    assert len(rows) == len(expected) == 2
+    for row, exp in zip(rows, expected):
+        assert row.name == exp["name"]
+        assert row.role == exp["role"]
+        assert row.image == exp["image"]
+        assert row.person_tmdb_id == exp["person_id"]
+    assert filled == []
+    assert item.overview == "已有简介"
+    assert item.genres == "剧情"
+
+
+def test_fill_with_existing_people_rows_never_fetches_details(db):
+    """已有演员行：取数器一次都不许调，行数与内容逐字不变
+    （拉取次数与改前一致的回归钉）。"""
+    item = _make_text_complete_item(db, tmdb_id="60300")
+    db.add(em.EmbyPerson(item_id=item.id, name="演员甲", role="角色甲",
+                         image="", sort_order=0, person_tmdb_id="111"))
+    db.flush()
+    fetcher = _CountingFetcher(
+        payload=_fetched_with_credits()["tmdb_details"])
+    ts.apply_fill(db, item, {}, tmdb_details_fetcher=fetcher)
+    db.flush()
+    assert fetcher.calls == []
+    rows = _people_rows(db, item.id)
+    assert len(rows) == 1
+    assert rows[0].name == "演员甲" and rows[0].role == "角色甲"
+
+
+def test_fill_details_fetch_failure_creates_no_rows_and_stays_silent(db):
+    """补拉详情抛错 / 返回空：不抛错、不建行、其余补资料行为不变。"""
+    item = _make_text_complete_item(db, tmdb_id="60300")
+    fetcher = _CountingFetcher(exc=RuntimeError("tmdb down"))
+    filled = ts.apply_fill(db, item, {}, tmdb_details_fetcher=fetcher)
+    db.flush()
+    assert fetcher.calls == [("60300", "series")]
+    assert _people_rows(db, item.id) == []
+    assert filled == []
+    item2 = _make_text_complete_item(db, tmdb_id="60301")
+    fetcher2 = _CountingFetcher(payload=None)
+    ts.apply_fill(db, item2, {}, tmdb_details_fetcher=fetcher2)
+    db.flush()
+    assert fetcher2.calls == [("60301", "series")]
+    assert _people_rows(db, item2.id) == []
+
+
+def test_fill_without_tmdb_id_never_fetches_details(db):
+    """只有 imdb 身份（无 tmdb_id）：不拉详情、不建行（维持现行口径）。"""
+    item = _make_text_complete_item(db, imdb_id="tt0903747")
+    fetcher = _CountingFetcher(
+        payload=_fetched_with_credits()["tmdb_details"])
+    ts.apply_fill(db, item, {}, tmdb_details_fetcher=fetcher)
+    db.flush()
+    assert fetcher.calls == []
+    assert _people_rows(db, item.id) == []
+
+
+def test_wrapper_fill_fetches_details_via_tmdb_client(db):
+    """生产分发口径：刮削队列跑补资料段时，分发层须把
+    tmdb_client.details 传进补资料段——文字齐只缺演员的条目据此
+    建行并 done（批 2 里 181 条卡住的正是这条生产路径）。"""
+    from unittest import mock
+    item = _make_text_complete_item(db, tmdb_id="60300")
+    payload = _fetched_with_credits()["tmdb_details"]
+    with mock.patch("backend.emby_server.tmdb.tmdb_client") as fake_client:
+        fake_client.details.return_value = payload
+        enrich_worker._enrich_apply_two_stage(
+            db, item, {}, identify=False, fill=True)
+    db.flush()
+    assert fake_client.details.call_count == 1
+    assert fake_client.details.call_args[0] == ("60300", "series")
+    assert len(_people_rows(db, item.id)) == 2
+    assert item.enrich_status == "done"

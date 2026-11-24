@@ -209,7 +209,8 @@ def test_none_overlimit_done_clears_blank_imdb(db, monkeypatch):
 def test_two_stage_fill_done_clears_blank_imdb_keeps_real_tmdb(db, monkeypatch):
     it = _make_item(db, item_type="series", tmdb_id="60300", imdb_id="  ",
                     production_year=2021)
-    monkeypatch.setattr(ts, "apply_fill", lambda _db, _item, _fetched: None)
+    monkeypatch.setattr(ts, "apply_fill",
+                        lambda _db, _item, _fetched, **_kw: None)
     enrich_worker._enrich_apply_two_stage(db, it, {}, identify=False, fill=True)
     db.commit()
     db.refresh(it)

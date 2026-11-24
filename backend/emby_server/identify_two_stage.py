@@ -1070,6 +1070,54 @@ def _default_people_fetcher(fetched):
     return _fetch
 
 
+def _ensure_details_for_people(item, fetched, tmdb_details_fetcher):
+    """建行前补拉详情：本轮 fetched 没有 credits 时，补拉恰好 1 次
+    TMDB 详情（带 credits 的现行 ``tmdb.details`` 口径）注入 fetched。
+
+    为什么需要它：采集段在「已绑定 + 文字齐」时不拉详情——这类条目
+    进补资料段时 fetched 里根本没有 tmdb_details，``_create_people_rows``
+    拿到空详情只能静默返回（2026-11-24 补拉批 2 实证：200 条里
+    181 条文字齐只缺演员、全部卡在这里；存量同口径约 9,877 条）。
+
+    触发条件（全满足才拉、恰好 1 次）：调用方已确认条目无任何人物
+    行（有行条目走补缺路径、根本到不了这里，拉取次数与此前逐字
+    一致）；条目已落库 tmdb_id（只有 imdb / 豆瓣身份的不拉——没有
+    TMDB 编号就无从拉）；item_type 是 movie / series（episode /
+    season 的编号不在 movie / tv 详情端点口径内，与
+    ``resolve_imdb_id`` 同口径）。
+
+    取数器口径与 ``resolve_imdb_id`` 同源：不给（None）时只读已有
+    证据、不发请求——生产分发负责传入 ``tmdb_client.details``，
+    测试注入替身。拉取失败 / 返回空 / 非 dict 时静默放弃（fetched
+    原样），建行随之跳过，绝不拖垮补资料段。
+    """
+    if tmdb_details_fetcher is None:
+        return
+    if not isinstance(fetched, dict):
+        return
+    details = fetched.get("tmdb_details")
+    if isinstance(details, dict) and isinstance(details.get("credits"), dict):
+        return
+    tmdb_id = _clean_identity(getattr(item, "tmdb_id", None))
+    if not tmdb_id:
+        return
+    if getattr(item, "item_type", None) not in ("movie", "series"):
+        return
+    kind = "series" if getattr(item, "item_type", None) == "series" else "movie"
+    try:
+        data = tmdb_details_fetcher(str(tmdb_id), kind)
+    except Exception as exc:  # noqa: BLE001 — 补拉失败 = 本轮无 credits
+        logger.warning(
+            "补资料段建行前补拉详情失败，跳过 id=%s tmdb_id=%s: %s",
+            getattr(item, "id", None), tmdb_id, exc)
+        return
+    if isinstance(data, dict) and data:
+        fetched["tmdb_details"] = data
+        logger.info(
+            "补资料段建行前补拉详情 id=%s tmdb_id=%s",
+            getattr(item, "id", None), tmdb_id)
+
+
 def _create_people_rows(db, item, fetched):
     """补资料段人物建行：条目尚无任何 emby_people 行时，用本轮已抓到
     的 TMDB credits 建行——与经典写库段 ``_apply_cast`` 平价（行形状
@@ -1079,7 +1127,9 @@ def _create_people_rows(db, item, fetched):
     为什么需要它：两段式条目不经过经典 ``_enrich_apply``，
     ``_apply_people_fill`` 原设计「建行仍归现行 _apply_cast」的委托
     落空，无行条目永远建不了行（2026-11-24 补拉试点 200 条演员补
-    到 0 条确诊）。只用本轮已抓到的 credits，不新增任何请求；无
+    到 0 条确诊）。credits 来源：本轮已抓到的详情；本轮没抓到时由
+    ``_ensure_details_for_people`` 在建行前补拉恰好 1 次（文字已齐
+    的条目采集段不拉详情，不补这一步它们永远建不了行）；无
     credits / 解析失败静默跳过。开关口径：建行是基础写库（经典
     路径无独立开关），只随补资料段本身启停，不受人物刮削开关
     ``PEOPLE_SCRAPE_ENABLED`` 管辖——那是「抓人物详情补已有行
@@ -1115,11 +1165,14 @@ def _create_people_rows(db, item, fetched):
     return created
 
 
-def _apply_people_fill(db, item, fetched, people_fetcher=None):
+def _apply_people_fill(db, item, fetched, people_fetcher=None,
+                       tmdb_details_fetcher=None):
     """补资料段人物环节：无行先建行，有行只填空缺、永不覆盖。
 
     无行条目：用本轮 TMDB credits 建行（``_create_people_rows``，
-    与经典 ``_apply_cast`` 平价）。已有行条目：记录源 = 本条目
+    与经典 ``_apply_cast`` 平价）；本轮无 credits 时先经
+    ``_ensure_details_for_people`` 补拉恰好 1 次详情（只在此分支
+    触发——已有行条目拉取次数与此前逐字一致）。已有行条目：记录源 = 本条目
     已有的人物行，只按名字填 role / image / person_tmdb_id 三列
     空缺（人物刮削；抓取源默认复用本轮 TMDB credits，调用方可
     注入 fetcher；开关关 / 无抓取源时静默跳过）。任何异常只记
@@ -1136,6 +1189,7 @@ def _apply_people_fill(db, item, fetched, people_fetcher=None):
         logger.warning("人物行读取失败，跳过 id=%s: %s", item.id, exc)
         return 0
     if not rows:
+        _ensure_details_for_people(item, fetched, tmdb_details_fetcher)
         return _create_people_rows(db, item, fetched)
     try:
         from backend.emby_server.metasources import people_scrape as _people
@@ -1176,7 +1230,8 @@ def _apply_people_fill(db, item, fetched, people_fetcher=None):
     return changed
 
 
-def apply_fill(db, item, fetched: dict, people_fetcher=None) -> list:
+def apply_fill(db, item, fetched: dict, people_fetcher=None,
+               tmdb_details_fetcher=None) -> list:
     """补资料段：只在已绑定条目上、只填空缺字段。
 
     调用方须保证条目已绑定；未绑定时本函数拒绝写任何字段、返回 []
@@ -1189,9 +1244,12 @@ def apply_fill(db, item, fetched: dict, people_fetcher=None) -> list:
     通道（聚合开关关时它返回空，行为与本批之前逐字一致；聚合开时
     它按源优先级逐字段补缺，Frodo 腿在聚合里不受独立 Frodo 开关
     管辖——见 zh_aggregate 模块头注）。最后跑人物环节：无人物行
-    时用本轮 credits 建行（与经典 _apply_cast 平价），已有人物行
-    时只填 role / image / person_tmdb_id 空缺、永不覆盖（补缺受
-    人物刮削开关管辖，开关关时不问源）。返回实际填上的字段名列表。
+    时用本轮 credits 建行（与经典 _apply_cast 平价；本轮无 credits
+    且条目已绑 tmdb 时，经 tmdb_details_fetcher 补拉恰好 1 次详情
+    再建行——取数器不给则只读已有证据、不发请求，与
+    resolve_imdb_id 同口径），已有人物行时只填 role / image /
+    person_tmdb_id 空缺、永不覆盖（补缺受人物刮削开关管辖，开关
+    关时不问源）。返回实际填上的字段名列表。
     """
     from backend.emby_server import identity_gate
 
@@ -1260,7 +1318,8 @@ def apply_fill(db, item, fetched: dict, people_fetcher=None) -> list:
                 setattr(item, field, agg_candidates[field])
                 filled.append(field)
     try:
-        _apply_people_fill(db, item, fetched, people_fetcher)
+        _apply_people_fill(db, item, fetched, people_fetcher,
+                           tmdb_details_fetcher)
     except Exception as exc:  # noqa: BLE001 — 人物补缺绝不拖垮补资料段
         logger.warning("补资料段人物补缺失败，跳过 id=%s: %s", item.id, exc)
     binding = None
