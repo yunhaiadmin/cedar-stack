@@ -609,6 +609,158 @@ export function humanizeSoftError(message: string): string {
   return (cleaned || '未知错误').slice(0, 60)
 }
 
+// ---------- seek 看门狗（2026-11-25 生产实测事故） ----------
+
+/**
+ * 软解 seek 单次看门狗时长（毫秒）。冷 seek 要经中继对大文件做远
+ * 距离 Range 取流：服务端 rcd 开流实测可达数秒，demux 定位关键帧
+ * 再叠 wasm 解码重启，15 秒是「慢但还活着」的上界；超时先重试
+ * 一次（见 SOFT_SEEK_MAX_RETRIES），仍无结果才判失败。
+ */
+export const SOFT_SEEK_TIMEOUT_MS = 15000
+
+/** seek 超时后自动重试的次数（重试 = 同一目标再下发一次 seek） */
+export const SOFT_SEEK_MAX_RETRIES = 1
+
+/** seek 到达容差（秒）：关键帧落点可略早于目标，读数到目标前此值以内算到达 */
+export const SOFT_SEEK_ARRIVE_TOLERANCE_S = 2
+
+/**
+ * 进度读数是否已到达 seek 目标（elapsedSeconds = 距本次 seek 下发
+ * 的秒数）：读数落在 [目标-容差, 目标+容差+elapsed] 窗口内才算。
+ * 下界防「还停在旧位置」误判（卡死形态）；上界防回退 seek 的误
+ * 判——回退时 seek 落定前的读数还停在旧位置（远在目标之后），
+ * 不设上界会被当成「已越过目标」把看门狗提前撤掉，seek 真卡住
+ * 时就又没人管了。落定后播放头以 1 倍速前进，窗口随 elapsed
+ * 同步放宽，不会把正常播放误判成未到达。读数无效（NaN）不算。
+ */
+export function softSeekArrived(
+  targetSeconds: number,
+  currentSeconds: number,
+  elapsedSeconds = 0,
+): boolean {
+  if (!Number.isFinite(currentSeconds)) return false
+  if (currentSeconds < targetSeconds - SOFT_SEEK_ARRIVE_TOLERANCE_S) return false
+  return (
+    currentSeconds <=
+    targetSeconds + SOFT_SEEK_ARRIVE_TOLERANCE_S + Math.max(0, elapsedSeconds)
+  )
+}
+
+export interface SoftSeekGuardDeps {
+  /** 单次看门狗时长（毫秒） */
+  timeoutMs: number
+  /** 超时/拒绝后自动重试次数，缺省 SOFT_SEEK_MAX_RETRIES */
+  maxRetries?: number
+  /** 该重试了：调用方把同一目标的 seek 再下发一次 */
+  onRetry: (attempt: number) => void
+  /** 重试用尽仍无结果：判失败，只调一次 */
+  onTimeout: () => void
+  /** 计时器注入（测试用），缺省走全局 setTimeout/clearTimeout */
+  setTimer?: (fn: () => void, ms: number) => unknown
+  clearTimer?: (handle: unknown) => void
+}
+
+/**
+ * seek 看门狗状态机（纯逻辑，可单测）：管「一次 seek 从下发到落
+ * 定」的生死，不碰播放器本身。
+ *
+ * 来历（2026-11-25 实测）：《黑洞表面》1080p mkv 软解拖到 52%
+ * 后永久冻结——旧接线把 seek 打出去就不管了：视图层
+ * .catch(()=>{}) 吞掉 promise 拒绝、包装层没订阅 libmedia 的
+ * seeked 事件、没有任何超时。AVPlayer 内部 seek 一旦卡住（demux
+ * 定位要经中继对 2.4GB 文件做远距离 Range 取流），'time' 事件
+ * 不再来、error 也不来，UI 就永远停在「播放态＋进度冻结＋无提
+ * 示」。看门狗把这条路堵死：begin 武装 → seeked/进度到达
+ * complete 撤防；计时到期或底层 promise 拒绝（fail）→ 先
+ * onRetry 重发一次，再无结果才 onTimeout 判失败（只报一次）。
+ * 新 seek 顶替在飞的 seek 时重试计数清零。
+ */
+export class SoftSeekGuard {
+  private deps: SoftSeekGuardDeps
+  private timer: unknown = null
+  private targetSeconds: number | null = null
+  private retriesUsed = 0
+  private closed = false
+
+  constructor(deps: SoftSeekGuardDeps) {
+    this.deps = deps
+  }
+
+  /** 是否有 seek 在飞 */
+  get pending(): boolean {
+    return this.targetSeconds !== null
+  }
+
+  /** 在飞 seek 的目标秒（无在飞时为 null） */
+  get target(): number | null {
+    return this.targetSeconds
+  }
+
+  /** 一次 seek 下发时调用：武装计时，重试计数清零（顶替旧 seek） */
+  begin(targetSeconds: number): void {
+    this.targetSeconds = targetSeconds
+    this.retriesUsed = 0
+    this.closed = false
+    this.arm()
+  }
+
+  /** seek 已落定（seeked 事件 / 进度到达目标）：撤防 */
+  complete(): void {
+    if (this.targetSeconds === null) return
+    this.targetSeconds = null
+    this.disarm()
+  }
+
+  /** 底层 seek promise 拒绝：不等计时到期，立刻走重试/判失败 */
+  fail(): void {
+    if (this.targetSeconds === null || this.closed) return
+    this.disarm()
+    this.escalate()
+  }
+
+  /** 实例销毁：撤防且此后不再有任何回调 */
+  dispose(): void {
+    this.targetSeconds = null
+    this.closed = true
+    this.disarm()
+  }
+
+  private arm(): void {
+    this.disarm()
+    const setTimer =
+      this.deps.setTimer ?? ((fn: () => void, ms: number) => setTimeout(fn, ms))
+    this.timer = setTimer(() => {
+      this.timer = null
+      if (this.targetSeconds === null || this.closed) return
+      this.escalate()
+    }, this.deps.timeoutMs)
+  }
+
+  private disarm(): void {
+    if (this.timer === null) return
+    const clearTimer =
+      this.deps.clearTimer ??
+      ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>))
+    clearTimer(this.timer)
+    this.timer = null
+  }
+
+  private escalate(): void {
+    const maxRetries = this.deps.maxRetries ?? SOFT_SEEK_MAX_RETRIES
+    if (this.retriesUsed < maxRetries) {
+      this.retriesUsed += 1
+      this.deps.onRetry(this.retriesUsed)
+      // onRetry 里调用方可能已 complete/dispose（同步判死）：仍在飞才重新武装
+      if (this.targetSeconds !== null && !this.closed) this.arm()
+    } else {
+      this.targetSeconds = null
+      this.closed = true
+      this.deps.onTimeout()
+    }
+  }
+}
+
 // ---------- AVPlayer 包装 ----------
 
 /**
@@ -630,6 +782,14 @@ export interface SoftPlayerHooks {
   onEnded: () => void
   /** 任何阶段的软解失败：只回调一次，调用方负责回落提示卡，不重试 */
   onError: (message: string) => void
+  /** seek 状态变化：true = 有 seek 在飞（UI 显示「正在定位」），false = 已落定或已判失败 */
+  onSeekingChange?: (seeking: boolean) => void
+  /**
+   * seek 看门狗判失败（自动重试后仍无结果）：与 onError 分开——
+   * 这不是解码失败，调用方给「跳转没能继续」的可见报错与重开
+   * 出路，不许回落「浏览器解不了」的解码提示卡混淆原因。
+   */
+  onSeekFailed?: (message: string) => void
 }
 
 export interface SoftPlayerHandle {
@@ -666,6 +826,8 @@ export interface CreateSoftPlayerOptions {
   ext?: string
   /** 首帧/起播超时（毫秒）：wasm 下载 + 分析超了就判失败回落，不干等 */
   startTimeoutMs?: number
+  /** seek 看门狗单次超时（毫秒），缺省 SOFT_SEEK_TIMEOUT_MS；超时先自动重试一次，仍无结果才判失败 */
+  seekTimeoutMs?: number
   /**
    * 以 MSE 原生管线构造（checkUseMSE 回调改判 true）。只许 4K 分流
    * 决策判 'mse' 时传 true（见 softDecodePipelineDecision）；缺省/
@@ -768,6 +930,70 @@ export async function createSoftPlayer(
     },
   }) as unknown as AVPlayerInstance
 
+  // ---- seek 看门狗接线（2026-11-25 事故，状态机见 SoftSeekGuard）----
+  // 落定三路并行，哪路先到哪路撤防：libmedia 的 seeked 事件、time
+  // 事件的进度到达、以及每 500ms 轮询实例 currentTime（暂停态 seek
+  // 没有 time 事件流，只能靠轮询）。超时/底层拒绝由状态机先自动
+  // 重试一次，仍无结果经 hooks.onSeekFailed 判失败（没接该钩子的
+  // 调用方回落 failOnce/onError)——绝不静默冻结。
+  let seekTargetSeconds = 0
+  let seekIssuedAt = 0
+  let seekingNotified = false
+  let seekPollTimer: ReturnType<typeof setInterval> | undefined
+  const seekGuard = new SoftSeekGuard({
+    timeoutMs: options.seekTimeoutMs ?? SOFT_SEEK_TIMEOUT_MS,
+    onRetry: () => {
+      // 重试 = 同一目标再下发一次（libmedia 以最新 seek 请求为准）
+      void issuePlayerSeek(seekTargetSeconds)
+    },
+    onTimeout: () => {
+      setSeekingNotified(false)
+      const message = `seek timeout: no seeked/progress toward ${seekTargetSeconds}s after retry`
+      // 判失败必须留痕：原始原因进控制台，调用方翻成人话上错误页
+      console.error('[softDecode] seek 看门狗判失败:', message)
+      if (hooks.onSeekFailed) hooks.onSeekFailed(message)
+      else failOnce(message)
+    },
+  })
+  function setSeekingNotified(v: boolean): void {
+    if (seekingNotified === v) return
+    seekingNotified = v
+    if (v) startSeekPoll()
+    else stopSeekPoll()
+    hooks.onSeekingChange?.(v)
+  }
+  function startSeekPoll(): void {
+    if (seekPollTimer) return
+    seekPollTimer = setInterval(() => {
+      if (!seekGuard.pending) {
+        setSeekingNotified(false)
+        return
+      }
+      noteSeekProgress(Number(player.currentTime) / 1000)
+    }, 500)
+  }
+  function stopSeekPoll(): void {
+    if (seekPollTimer) clearInterval(seekPollTimer)
+    seekPollTimer = undefined
+  }
+  function noteSeekProgress(seconds: number): void {
+    if (!seekGuard.pending) return
+    const elapsed = seekIssuedAt ? (Date.now() - seekIssuedAt) / 1000 : 0
+    if (!softSeekArrived(seekTargetSeconds, seconds, elapsed)) return
+    seekGuard.complete()
+    setSeekingNotified(false)
+  }
+  async function issuePlayerSeek(seconds: number): Promise<void> {
+    // 每次下发（含看门狗重试）都刷新下发时刻：到达判定的窗口上界按它算
+    seekIssuedAt = Date.now()
+    try {
+      await player.seek(BigInt(Math.max(0, Math.round(seconds * 1000))))
+    } catch {
+      // 底层 seek 拒绝：交给看门狗立刻走重试/判失败，不等计时到期
+      seekGuard.fail()
+    }
+  }
+
   player.on('firstVideoRendered', () => hooks.onFirstVideo())
   player.on('firstAudioRendered', () => hooks.onFirstAudio())
   player.on('playing', () => hooks.onPlaying())
@@ -776,6 +1002,12 @@ export async function createSoftPlayer(
   player.on('time', (pts) => {
     const ms = typeof pts === 'bigint' ? Number(pts) : Number(pts ?? 0)
     if (Number.isFinite(ms)) hooks.onTime(ms / 1000)
+    if (Number.isFinite(ms)) noteSeekProgress(ms / 1000)
+  })
+  player.on('seeked', () => {
+    // libmedia 明告 seek 已处理完：直接撤防，不等进度读数
+    seekGuard.complete()
+    setSeekingNotified(false)
   })
   player.on('ended', () => hooks.onEnded())
   player.on('error', (err) => {
@@ -867,7 +1099,14 @@ export async function createSoftPlayer(
   return {
     play: () => player.play(),
     pause: () => player.pause(),
-    seek: (seconds: number) => player.seek(BigInt(Math.max(0, Math.round(seconds * 1000)))),
+    seek: (seconds: number) => {
+      // seek 从这里开始归看门狗管（落定撤防、超时先自动重试一次、
+      // 仍无结果判失败），不许再像旧行为那样打出去就不管、静默冻结
+      seekTargetSeconds = Math.max(0, seconds)
+      seekGuard.begin(seekTargetSeconds)
+      setSeekingNotified(true)
+      return issuePlayerSeek(seekTargetSeconds)
+    },
     setRate: (rate: number) => player.setPlaybackRate(rate),
     currentTimeSeconds: () => Number(player.currentTime) / 1000,
     durationSeconds: () => Number(player.getDuration()) / 1000,
@@ -876,6 +1115,8 @@ export async function createSoftPlayer(
     receivedBytes: () => readReceivedBytes() ?? lastReceivedBytes,
     destroy: async () => {
       stopStatsPolling()
+      seekGuard.dispose()
+      stopSeekPoll()
       await player.destroy()
     },
   }

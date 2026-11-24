@@ -737,4 +737,174 @@ check(
   true,
 )
 
+// --- seek 看门狗（2026-11-25 生产实测事故）：软解拖动后静默冻结 ---
+// 《黑洞表面》1080p WEB-DL（H.264 mkv）走站内软解：起播正常、连续
+// 播放无卡顿，但拖到 52% 后 60 秒以上不恢复——进度冻结、按钮仍是
+// 播放态、无报错、无转圈。根因在接线：seek 打出去就没人管了——
+// 视图层 .catch(()=>{}) 吞掉拒绝、包装层没订阅 libmedia 的 seeked
+// 事件、也没有任何超时看门狗；AVPlayer 内部 seek 一旦卡住（demux
+// 定位要经中继对 2.4GB 文件做远距离 Range 取流），UI 没有任何一条
+// 路能知道。看门狗口径（SoftSeekGuard，纯状态机）：
+// - begin(目标秒) 武装计时；seeked 事件/进度到达目标 → complete 撤防；
+// - 计时到期或底层 seek promise 拒绝（fail）→ 先重试一次
+//   （onRetry，重新下发 seek），重试仍无结果才 onTimeout 判失败，
+//   且只报一次；
+// - 新 seek 顶替在飞的 seek 时重试计数清零，不许拿旧 seek 的账判死
+//   新 seek；dispose 后不再有任何回调。
+const {
+  SoftSeekGuard,
+  softSeekArrived,
+  SOFT_SEEK_TIMEOUT_MS,
+  SOFT_SEEK_MAX_RETRIES,
+} = await import('../src/utils/softDecode.ts')
+
+function fakeTimers() {
+  const timers = new Map()
+  let seq = 0
+  return {
+    setTimer: (fn, ms) => {
+      const id = ++seq
+      timers.set(id, { fn, ms })
+      return id
+    },
+    clearTimer: (id) => {
+      timers.delete(id)
+    },
+    fireAll: () => {
+      const pending = [...timers.values()]
+      timers.clear()
+      for (const t of pending) t.fn()
+    },
+    get size() {
+      return timers.size
+    },
+  }
+}
+
+function makeGuard() {
+  const timers = fakeTimers()
+  const calls = { retry: [], timeout: 0 }
+  const guard = new SoftSeekGuard({
+    timeoutMs: 15000,
+    onRetry: (attempt) => calls.retry.push(attempt),
+    onTimeout: () => {
+      calls.timeout += 1
+    },
+    setTimer: timers.setTimer,
+    clearTimer: timers.clearTimer,
+  })
+  return { guard, timers, calls }
+}
+
+check('seek guard: default timeout is 15s', SOFT_SEEK_TIMEOUT_MS, 15000)
+check('seek guard: default max retries is 1', SOFT_SEEK_MAX_RETRIES, 1)
+
+{
+  const { guard, timers, calls } = makeGuard()
+  guard.begin(300)
+  check('seek guard: pending after begin', guard.pending, true)
+  guard.complete()
+  check('seek guard: complete disarms', guard.pending, false)
+  check('seek guard: complete clears timer', timers.size, 0)
+  timers.fireAll()
+  check('seek guard: no retry/timeout after complete', [calls.retry.length, calls.timeout], [0, 0])
+}
+
+{
+  const { guard, timers, calls } = makeGuard()
+  guard.begin(300)
+  timers.fireAll()
+  check('seek guard: first timeout retries once', calls.retry, [1])
+  check('seek guard: still pending during retry', guard.pending, true)
+  guard.complete()
+  timers.fireAll()
+  check('seek guard: retry then complete => no timeout report', calls.timeout, 0)
+}
+
+{
+  const { guard, timers, calls } = makeGuard()
+  guard.begin(300)
+  timers.fireAll()
+  timers.fireAll()
+  check('seek guard: retry exhausted => timeout reported', calls.timeout, 1)
+  check('seek guard: not pending after timeout', guard.pending, false)
+  timers.fireAll()
+  guard.fail()
+  check('seek guard: timeout reported only once', calls.timeout, 1)
+}
+
+{
+  const { guard, timers, calls } = makeGuard()
+  guard.begin(300)
+  guard.fail()
+  check('seek guard: rejection retries immediately (no timer wait)', calls.retry, [1])
+  check('seek guard: timer re-armed after rejection retry', timers.size, 1)
+  guard.fail()
+  check('seek guard: second rejection => timeout reported', calls.timeout, 1)
+}
+
+{
+  const { guard, timers, calls } = makeGuard()
+  guard.begin(100)
+  timers.fireAll()
+  check('seek guard: first seek used its retry', calls.retry, [1])
+  guard.begin(500)
+  timers.fireAll()
+  check('seek guard: superseding seek resets retry budget', calls.retry, [1, 1])
+  check('seek guard: superseded seek not judged dead', calls.timeout, 0)
+  guard.complete()
+  check('seek guard: superseding seek completes clean', guard.pending, false)
+}
+
+{
+  const { guard, timers, calls } = makeGuard()
+  guard.begin(300)
+  guard.dispose()
+  timers.fireAll()
+  check('seek guard: dispose silences everything', [calls.retry.length, calls.timeout], [0, 0])
+}
+
+// --- seek 到达判定：seeked 事件之外，进度读数到达目标附近也算完成 ---
+// 关键帧落点可能略早于目标（容差 2 秒），越过目标更不用说；还停在
+// 旧位置附近的读数不许误判完成（那正是卡死形态）。
+check('seek arrived: lands 1s before target (keyframe)', softSeekArrived(300, 299), true)
+check('seek arrived: exactly at tolerance edge', softSeekArrived(300, 298), true)
+check('seek arrived: still near old position', softSeekArrived(300, 120), false)
+check('seek arrived: just outside tolerance', softSeekArrived(300, 297.9), false)
+check('seek arrived: played past target within elapsed window', softSeekArrived(300, 305, 10), true)
+check('seek arrived: NaN reading never completes', softSeekArrived(300, NaN), false)
+check(
+  'seek arrived: backward seek, pre-landing reading at old far position must not complete',
+  softSeekArrived(100, 3000, 0),
+  false,
+)
+check(
+  'seek arrived: backward seek landed near target',
+  softSeekArrived(100, 101, 1),
+  true,
+)
+
+// --- 结构断言：包装层必须真的接上看门狗与 seeked 事件 ---
+check(
+  'soft player subscribes seeked event for the seek guard',
+  softDecodeSrc.includes("player.on('seeked'"),
+  true,
+)
+check(
+  'soft player seek goes through the guard',
+  softDecodeSrc.includes('seekGuard.begin('),
+  true,
+)
+check(
+  'view shows a seeking indicator for soft seeks',
+  wpvSrc.includes('softSeeking'),
+  true,
+)
+check(
+  'view handles soft seek failure with a visible error',
+  wpvSrc.includes('onSeekFailed'),
+  true,
+)
+
+
 console.log(`\n${passed} passed`)

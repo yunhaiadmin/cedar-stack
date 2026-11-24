@@ -125,6 +125,14 @@
       </div>
     </div>
 
+    <!-- 软解跳转定位中：seek 在飞时的可见反馈（转圈＋文案）。旧行为
+         拖完进度条后无转圈无提示，seek 卡住就永远冻结（2026-11-25
+         实测事故）；落定自动消失，判失败走错误页（见 onSeekFailed）。 -->
+    <div v-if="phase === 'playing' && softSeeking" class="wp-seeking" role="status">
+      <LoaderCircle :size="16" class="wp-spin" />
+      <span>正在定位</span>
+    </div>
+
     <!-- 播放中控制层 -->
     <template v-if="phase === 'playing'">
       <button
@@ -385,6 +393,7 @@ import {
   type SoftPlayerHandle,
 } from '@/utils/softDecode'
 import { prepStatusText as prepStatusTextFor, PREP_DECODER_HINT } from '@/utils/prepStatus'
+import { resolveSpecSource } from '@/utils/playerSpec'
 import {
   failCopyFor,
   fetchPlayStatus,
@@ -493,6 +502,9 @@ const softHandle = ref<SoftPlayerHandle | null>(null)
  * 渲染器，display:none（0×0）下建出来只会黑屏（2026-11-15 实证） */
 const softStarting = ref(false)
 const softActive = computed(() => softHandle.value !== null || softStarting.value)
+/** 软解 seek 在飞（看门狗已武装、未落定）：模板据此显示「正在定位」，
+ * 旧行为拖完进度条后无任何反馈、卡住就静默冻结（2026-11-25 实测） */
+const softSeeking = ref(false)
 const softFailedFor = ref('')
 const noticeTitle = computed(() => {
   if (phase.value === 'unsupported') {
@@ -879,13 +891,29 @@ function specChipsOf(source: EmbyMediaSource | null): string[] {
   return chips
 }
 
-const specChips = computed(() =>
-  specChipsOf(currentSource.value || item.value?.MediaSources?.[0] || null),
+/**
+ * 右下规格标签的源：跟随当前所选/在播版本，解析口径见
+ * utils/playerSpec.ts（正在播 → PlaybackInfo 选定 → query.ms 命中
+ * 的条目源 → 条目首源）。旧口径三处各自回落条目首源：用户在弹层
+ * 选了 1080p 进播放页，标签却显示条目首源 2160p REMUX 的
+ * 「4K SDR HEVC / 92.6 Mbps」（2026-11-25 实测）。
+ */
+const specSource = computed(() =>
+  resolveSpecSource({
+    current: currentSource.value,
+    playbackPicked: playbackInfo.value
+      ? pickSource(playbackInfo.value, String(route.query.ms || '') || undefined)
+      : null,
+    wantedId: String(route.query.ms || ''),
+    itemSources: item.value?.MediaSources,
+  }),
 )
+
+const specChips = computed(() => specChipsOf(specSource.value))
 
 /** 右下规格主行：如「1080p SDR HEVC」，照录屏右下角的粗体规格行 */
 const specHeadline = computed(() => {
-  const src = currentSource.value || item.value?.MediaSources?.[0] || null
+  const src = specSource.value
   const vs = videoStreamOf(src)
   if (!vs) return ''
   const title = vs.DisplayTitle || ''
@@ -896,7 +924,7 @@ const specHeadline = computed(() => {
 
 /** 右下码率行：视频+音频码率合计，没有数据就不显示，不编数 */
 const bitrateText = computed(() => {
-  const src = currentSource.value || item.value?.MediaSources?.[0] || null
+  const src = specSource.value
   if (!src) return ''
   const total = streamsOf(src)
     .filter((s) => s.Type === 'Video' || s.Type === 'Audio')
@@ -1395,6 +1423,7 @@ async function destroySoft(): Promise<void> {
   const h = softHandle.value
   softHandle.value = null
   softStarting.value = false
+  softSeeking.value = false
   if (!h) return
   try {
     await h.destroy()
@@ -1531,6 +1560,23 @@ async function startSoftDecode(
               ? showSoft4kBlocked(source, verdict)
               : showDecodeUnsupported(source, verdict),
           )
+        },
+        onSeekingChange: (seeking: boolean) => {
+          softSeeking.value = seeking
+        },
+        onSeekFailed: () => {
+          // seek 看门狗判失败（自动重试后仍无结果）：不是解码失败，
+          // 不回落「浏览器解不了」的提示卡——销毁卡住的实例，上带
+          // 「再试一次」的错误页（retry 会重建播放器重新打开）。
+          if (!started) return
+          if (phase.value !== 'playing' && phase.value !== 'preparing') return
+          if (currentSource.value?.Id !== source.Id) return
+          softSeeking.value = false
+          void destroySoft().then(() => {
+            noticeText.value =
+              '跳转后一直没能继续播放（取流或解码卡住了）。点「再试一次」重新打开，或返回详情换个版本。'
+            phase.value = 'error'
+          })
         },
       },
       {
@@ -2667,6 +2713,23 @@ onUnmounted(() => {
    仅保留 float 档外阴影束（辉光/投影）；实底下 backdrop 无视觉
    作用，已摘除。
    包裹层不拦截点击：准备态下顶栏「一起看」等控件仍可操作。 */
+.wp-seeking {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 14;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  /* 实色深底（弹窗/浮层实色口径），不使用 backdrop-filter */
+  background: rgba(10, 10, 13, 0.92);
+  color: #fff;
+  font-size: 13px;
+  pointer-events: none;
+}
 .wp-prep-wrap {
   position: absolute;
   inset: 0;
