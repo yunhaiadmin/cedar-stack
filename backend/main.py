@@ -7,7 +7,6 @@ from pathlib import Path
 import os
 
 from fastapi import FastAPI, Request, status, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -407,10 +406,12 @@ app = FastAPI(
 
 # ==================== 中间件配置 ====================
 
-# CORS 中间件：CORS_ORIGINS 为空时不添加（同源不需要），绝不回退到 ["*"]
-# 白名单解析保留在此处；注册挪到所有守卫之后（最外层），见文件下方。
-_cors_origins_env = os.getenv("CORS_ORIGINS", "").strip()
-_cors_origins = [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+# CORS 中间件：与 EA 共用 backend.cors_origins 的一套白名单解析
+# （横切只许一套）：CORS_ORIGINS 环境变量优先，没配回落本站自有域，
+# 绝不回退到 ["*"]。L-037 前的旧口径是「为空不注册」，生产没配 env
+# 时 /emby 网关预检无人应答、www 入口网页端全线不可用——解析挪到
+# 共享模块且恒非空；注册仍在所有守卫之后（最外层），见文件下方。
+from backend.cors_origins import SiteCorsMiddleware
 
 
 # ============ API 限流（Redis 固定窗口）============
@@ -621,17 +622,9 @@ app.add_middleware(AdminWriteAuditMiddleware)
 
 # CORS 最后注册 = 最外层（Starlette 逆序执行中间件）：外层守卫拦截返回的 403
 # 也要带 CORS 头，否则浏览器只报笼统 CORS 错误、前端读不到真实状态码。
-# 白名单解析见上方 _cors_origins，为空时不注册（同源不需要）。
-if _cors_origins:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=_cors_origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-        allow_headers=["Content-Type", "Authorization", "X-Emby-Authorization", "X-Emby-Token",
-                       "X-MediaBrowser-Token", "X-Device-Id"],
-        expose_headers=["Content-Range", "Accept-Ranges", "Content-Length"],
-    )
+# 统一装配见 backend.cors_origins（与 EA 同一套）：白名单解析、方法/
+# 请求头/暴露头参数、/speedtest/bin 自管例外，全在共享模块里，只此一份。
+app.add_middleware(SiteCorsMiddleware)
 
 
 # ==================== 异常处理 ====================
