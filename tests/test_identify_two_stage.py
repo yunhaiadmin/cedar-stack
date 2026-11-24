@@ -258,3 +258,83 @@ def test_frodo_switch_off_returns_empty(db, monkeypatch):
     monkeypatch.setattr(ts, "IDENTIFY_FRODO_FILL_ENABLED", 0)
     item = _make_item(db, imdb_id="tt0903747")
     assert ts.fill_from_frodo(item) == {}
+
+
+# ---------- ⑤ 补资料段人物建行（无行条目，2026-11-24 补拉试点确诊） ----------
+
+def _fetched_with_credits():
+    fetched = _fetched()
+    fetched["tmdb_details"] = dict(fetched["tmdb_details"], credits={"cast": [
+        {"id": 111, "name": "演员甲", "character": "角色甲",
+         "profile_path": "/a.jpg", "order": 0},
+        {"id": 222, "name": "演员乙", "character": "角色乙",
+         "profile_path": None, "order": 1},
+    ]})
+    return fetched
+
+
+def _people_rows(db, item_id):
+    return (db.query(em.EmbyPerson)
+            .filter(em.EmbyPerson.item_id == item_id)
+            .order_by(em.EmbyPerson.sort_order).all())
+
+
+def test_fill_creates_people_rows_when_none_exist(db):
+    """无行条目 + 本轮 credits → 建行（与 cast_list 单一口径一致），
+    且重跑不重复建行（经典 _apply_cast 委托落空的回归钉）。"""
+    from backend.emby_server.tmdb import cast_list
+    item = _make_item(db, tmdb_id="60300")
+    fetched = _fetched_with_credits()
+    ts.apply_fill(db, item, fetched)
+    db.flush()
+    rows = _people_rows(db, item.id)
+    expected = cast_list(fetched["tmdb_details"])
+    assert len(rows) == len(expected) == 2
+    for row, exp in zip(rows, expected):
+        assert row.name == exp["name"]
+        assert row.role == exp["role"]
+        assert row.image == exp["image"]
+        assert row.person_tmdb_id == exp["person_id"]
+        assert row.sort_order == exp["sort_order"]
+    # 重跑一轮：已有行只许补缺、不许再建行。
+    ts.apply_fill(db, item, _fetched_with_credits())
+    db.flush()
+    assert len(_people_rows(db, item.id)) == 2
+
+
+def test_fill_with_existing_people_rows_never_creates(db, monkeypatch):
+    """已有行条目：行为与改前逐字一致——开关关时不动；开关开时只按
+    名字填空缺，credits 里多出的人也绝不新建行。"""
+    from backend.emby_server.metasources import people_scrape as _ps
+    item = _make_item(db, tmdb_id="60300")
+    db.add(em.EmbyPerson(item_id=item.id, name="演员甲", role="",
+                         image="", sort_order=0, person_tmdb_id=""))
+    db.flush()
+    # 开关关：人物环节整段跳过，已有行原样。
+    monkeypatch.setattr(_ps, "PEOPLE_SCRAPE_ENABLED", 0)
+    ts.apply_fill(db, item, _fetched_with_credits())
+    db.flush()
+    rows = _people_rows(db, item.id)
+    assert len(rows) == 1 and rows[0].role == "" and rows[0].image == ""
+    # 开关开：只填已有行的空缺，不新建「演员乙」行。
+    monkeypatch.setattr(_ps, "PEOPLE_SCRAPE_ENABLED", 1)
+    ts.apply_fill(db, item, _fetched_with_credits())
+    db.flush()
+    rows = _people_rows(db, item.id)
+    assert len(rows) == 1
+    assert rows[0].role == "角色甲"
+    assert rows[0].person_tmdb_id == "111"
+    assert rows[0].image.endswith("/w185/a.jpg")
+
+
+def test_fill_without_credits_creates_no_people_rows(db):
+    """fetched 无 credits：不建行、不报错，其余字段照常补填。"""
+    item = _make_item(db, tmdb_id="60300")
+    filled = ts.apply_fill(db, item, _fetched())
+    db.flush()
+    assert "overview" in filled
+    assert _people_rows(db, item.id) == []
+    item2 = _make_item(db, tmdb_id="60301")
+    ts.apply_fill(db, item2, {"tmdb_details": {}})
+    db.flush()
+    assert _people_rows(db, item2.id) == []
