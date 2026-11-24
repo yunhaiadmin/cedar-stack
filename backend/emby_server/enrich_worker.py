@@ -144,6 +144,17 @@ ENRICH_CLAIM_EPISODE_PARENT_READY = env_int(
 # （新 pending 插入 / 打回 pending / 修复请求）仍即时失效。
 # 0 = 关闭缓存，认领逐字走旧路径。
 ENRICH_CLAIM_GROUPS_TTL_SEC = env_int("ENRICH_CLAIM_GROUPS_TTL_SEC", 300, 0)
+# 认领快照失效防抖最小刷新间隔（秒，默认 60，下限 0；L-012）：扫描期入库
+# flush 极密（scanner 逐条/逐批 flush 新 pending），before_flush 监听若逐次
+# 硬作废快照，TTL 形同虚设、几乎每轮认领重打全量聚合（生产主变体均值
+# 537ms）。防抖口径：孤立失效（上一份待生效失效已被认领消费后才来的
+# 下一份）仍在下一轮认领即时生效；只有失效在待生效期间再次到达（流式）
+# 才合并——自首份待生效失效起 MIN_REFRESH 秒内认领复用旧快照，窗口过后
+# 下一轮认领重建一次。延迟上限 MIN_REFRESH 秒，远小于 TTL 已接受的
+# 300 秒陈旧度，认领语义（实时谓词 + 原子认领）不变。0 = 关闭防抖，
+# 失效逐字回到旧的即时硬作废口径。
+ENRICH_CLAIM_GROUPS_MIN_REFRESH_SEC = env_int(
+    "ENRICH_CLAIM_GROUPS_MIN_REFRESH_SEC", 60, 0)
 # 认领向剧倾斜预留比（%，默认 50，下限 0、上限 100；S1 提速）：每批先给
 # 「含待刮父级的组」（gate=1，组内有 pending 的 series/season 行）预留
 # 该百分比名额喂闸门关键路径——单集必须等父剧刮完才能认领，闸门放行
@@ -4039,13 +4050,42 @@ _CLAIM_GROUPS_SNAPSHOT_SIZE = 400  # 与旧递增分页的累计上限对齐
 _CLAIM_GROUPS_CACHE: dict = {}
 _CLAIM_GROUPS_LOCK = threading.Lock()
 _CLAIM_GROUPS_GEN = {"gen": 0}
+# L-012 失效防抖状态：since = 首份未被认领消费的失效到达时刻（monotonic），
+# extra = 该失效待生效期间又到达了新失效（流式标志）。硬作废
+# （invalidate_claim_groups_cache）与快照重建消费都会清掉它。
+_CLAIM_GROUPS_PENDING = {"since": None, "extra": False}
 
 
 def invalidate_claim_groups_cache() -> None:
-    """作废全部候选组快照（代际 +1 并清空）。"""
+    """作废全部候选组快照（代际 +1 并清空，含防抖待生效状态）。
+
+    这是硬失效口径：直接调用方（测试隔离、显式刷新点）用它立即作废；
+    入库监听走 _note_claim_groups_stale 的防抖口径，不走这里。
+    """
     with _CLAIM_GROUPS_LOCK:
         _CLAIM_GROUPS_GEN["gen"] += 1
         _CLAIM_GROUPS_CACHE.clear()
+        _CLAIM_GROUPS_PENDING["since"] = None
+        _CLAIM_GROUPS_PENDING["extra"] = False
+
+
+def _note_claim_groups_stale() -> None:
+    """记一份待生效失效（L-012 防抖合并；入库监听专用）。
+
+    不立即作废快照：_claim_groups_snapshot 在下一轮认领时判定——
+    孤立失效（extra 为假）即时重建；流式失效（extra 为真）在首份
+    失效到达后 ENRICH_CLAIM_GROUPS_MIN_REFRESH_SEC 秒内复用旧快照，
+    窗口过后重建一次并消费全部待生效失效。MIN_REFRESH<=0 时退回
+    旧口径：直接硬作废。
+    """
+    if ENRICH_CLAIM_GROUPS_MIN_REFRESH_SEC <= 0:
+        invalidate_claim_groups_cache()
+        return
+    with _CLAIM_GROUPS_LOCK:
+        if _CLAIM_GROUPS_PENDING["since"] is None:
+            _CLAIM_GROUPS_PENDING["since"] = time.monotonic()
+        else:
+            _CLAIM_GROUPS_PENDING["extra"] = True
 
 
 def _claim_groups_snapshot(key, fetch_groups):
@@ -4054,6 +4094,10 @@ def _claim_groups_snapshot(key, fetch_groups):
     ``key`` = (queue, skip_episode, ban_hold)：决定组集合与排序口径的
     运行时输入只有这三样（其余都是进程级常量）。``fetch_groups()`` 只在
     未命中时执行那条聚合查询，返回 [(gid, latest, lib, gate), ...]
+
+    L-012 防抖：命中但有待生效失效时，孤立失效立即重建、流式失效在
+    ENRICH_CLAIM_GROUPS_MIN_REFRESH_SEC 窗口内先复用旧快照（见
+    _note_claim_groups_stale）。
     （S1 起快照元组为 4 元，gate 见 _claim_batch 的 groups_q 注释；
     全仓只有 _claim_batch 消费该元组）。
     """
@@ -4063,15 +4107,39 @@ def _claim_groups_snapshot(key, fetch_groups):
         if (entry is not None
                 and entry["gen"] == _CLAIM_GROUPS_GEN["gen"]
                 and entry["expires"] > now_mono):
-            return entry
+            pend_since = _CLAIM_GROUPS_PENDING["since"]
+            if pend_since is None or pend_since <= entry["built_at"]:
+                return entry
+            # 有待生效失效且快照建于失效之前：孤立失效即时重建；
+            # 流式失效在防抖窗口内复用旧快照（L-012），窗口过后重建。
+            if (not _CLAIM_GROUPS_PENDING["extra"]
+                    or now_mono >= pend_since
+                    + ENRICH_CLAIM_GROUPS_MIN_REFRESH_SEC):
+                pass  # 失效已到期，落到下方重建
+            else:
+                return entry
     groups = fetch_groups()
-    entry = {
-        "gen": _CLAIM_GROUPS_GEN["gen"],
-        "expires": time.monotonic() + ENRICH_CLAIM_GROUPS_TTL_SEC,
-        "groups": list(groups),
-        "consumed": set(),
-    }
+    built_mono = time.monotonic()
     with _CLAIM_GROUPS_LOCK:
+        # 本次重建已反映待生效失效（构建时刻不早于失效到达）：消费它，
+        # 并 bump 代际——其他键的旧快照可能已过时（组当时不在其认领
+        # 范围、或组被标 consumed），失效后组的可认领性可能已变（典型：
+        # 父级转终态后单集可认领、回捞把行打回 pending），不清掉会把
+        # 组跳过到 TTL 到期。
+        # 代际 bump 后其他键下轮认领时各自懒重建一次（每窗口每键至多
+        # 一次，仍有界），不影响防抖对聚合总次数的压制。
+        if (_CLAIM_GROUPS_PENDING["since"] is not None
+                and _CLAIM_GROUPS_PENDING["since"] <= built_mono):
+            _CLAIM_GROUPS_PENDING["since"] = None
+            _CLAIM_GROUPS_PENDING["extra"] = False
+            _CLAIM_GROUPS_GEN["gen"] += 1
+        entry = {
+            "gen": _CLAIM_GROUPS_GEN["gen"],
+            "built_at": built_mono,
+            "expires": built_mono + ENRICH_CLAIM_GROUPS_TTL_SEC,
+            "groups": list(groups),
+            "consumed": set(),
+        }
         _CLAIM_GROUPS_CACHE[key] = entry
     return entry
 
@@ -4140,8 +4208,9 @@ def _install_claim_flush_watch() -> None:
     作废最多让排序新鲜度滞后 ≤TTL，不影响正确性；新待办的产生
     （插入 / 打回 pending / 修复请求）仍即时失效。
 
-    监听只 bump 代际、绝不抛错：整段包在 try/except 里，宁可漏失效
-    （TTL 兜底）也不许拖垮任何一次正常 flush。
+    监听只记待生效失效（_note_claim_groups_stale，L-012 防抖合并）、
+    绝不抛错：整段包在 try/except 里，宁可漏失效（TTL 兜底）也不许
+    拖垮任何一次正常 flush。
     """
     global _CLAIM_FLUSH_WATCH_INSTALLED
     if _CLAIM_FLUSH_WATCH_INSTALLED:
@@ -4207,7 +4276,7 @@ def _install_claim_flush_watch() -> None:
                         if bump:
                             break
                 if bump:
-                    invalidate_claim_groups_cache()
+                    _note_claim_groups_stale()
             except Exception:  # noqa: BLE001 — 监听绝不拖垮 flush
                 pass
 
@@ -4244,9 +4313,9 @@ def _install_claim_flush_watch() -> None:
                         # pending 才产生新待办、才作废；其余（含未
                         # 设置 enrich_status 的更新）不作废。
                         if has_status and new_status == "pending":
-                            invalidate_claim_groups_cache()
+                            _note_claim_groups_stale()
                         return
-                invalidate_claim_groups_cache()
+                _note_claim_groups_stale()
             except Exception:  # noqa: BLE001 — 监听绝不拖垮正常执行
                 pass
 

@@ -338,3 +338,103 @@ def test_self_write_bulk_delete_invalidates(db, lib, agg_counter):
         db.commit()
     enrich_worker._claim_batch(db, 2)
     assert agg_counter["agg"] == 2, "自写标记内批量 DELETE 保守仍须失效"
+
+
+# ---------- L-012：流式失效防抖合并（扫描期入库 flush 不再逐次作废快照） ----------
+
+def test_streaming_invalidations_coalesce_to_one_rebuild(
+        db, lib, agg_counter, monkeypatch):
+    """扫描期形态量化复现：认领间隔里连续多次入库失效，只许一次重建。
+
+    改前（硬失效）：每次入库 flush 都 gen+1，下一轮认领必重打聚合——
+    两次插入后认领聚合计数即 +1（本用例改前在此断言处红）。
+    改后：孤立失效仍立即生效；一旦失效在上一份待生效失效未被认领
+    消费前再次到达（流式），进入防抖窗口，窗口内认领复用旧快照，
+    聚合执行次数不增；窗口过后重建一次，新条目全部被认领（不漏）。
+    """
+    monkeypatch.setattr(
+        enrich_worker, "ENRICH_CLAIM_GROUPS_MIN_REFRESH_SEC", 3600)
+    _movies(db, lib, 10)
+    first = enrich_worker._claim_batch(db, 2)
+    assert len(first) == 2
+    assert agg_counter["agg"] == 1
+    # 模拟扫描期：两次独立入库（各自 commit），失效连续到达
+    row_a = _item(db, lib, "扫描入库A")
+    db.commit()
+    row_b = _item(db, lib, "扫描入库B")
+    db.commit()
+    # 防抖窗口内认领：复用旧快照，不重打聚合；新组不在旧快照里，
+    # 本轮只认领旧快照组（陈旧度 ≤ 既有 TTL 设计已接受的范围）
+    second = enrich_worker._claim_batch(db, 10)
+    assert agg_counter["agg"] == 1, (
+        "流式失效未被合并：窗口内认领又重打了一次全量聚合")
+    claimed_ids = {r.id for r in second}
+    assert row_a.id not in claimed_ids
+    assert row_b.id not in claimed_ids
+    assert claimed_ids.isdisjoint({r.id for r in first}), "不许双认领"
+    # 窗口过后（把最小刷新间隔调到 0 等价于窗口已过）：重建一次，
+    # 两条新入库都被认领——防抖只许延迟，不许漏认领
+    monkeypatch.setattr(
+        enrich_worker, "ENRICH_CLAIM_GROUPS_MIN_REFRESH_SEC", 0)
+    third = enrich_worker._claim_batch(db, 10)
+    assert agg_counter["agg"] == 2
+    third_ids = {r.id for r in third}
+    assert row_a.id in third_ids
+    assert row_b.id in third_ids
+
+
+def test_min_refresh_zero_restores_immediate_invalidation(
+        db, lib, agg_counter, monkeypatch):
+    """防抖关（=0）时逐字回到旧口径：流式失效也逐次即时重建。"""
+    monkeypatch.setattr(
+        enrich_worker, "ENRICH_CLAIM_GROUPS_MIN_REFRESH_SEC", 0)
+    _movies(db, lib, 10)
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 1
+    _item(db, lib, "关防抖入库A")
+    db.commit()
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 2
+    _item(db, lib, "关防抖入库B")
+    db.commit()
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 3, "MIN_REFRESH=0 必须逐轮即时失效重建"
+
+
+def test_min_refresh_default_is_60():
+    assert enrich_worker.ENRICH_CLAIM_GROUPS_MIN_REFRESH_SEC == 60
+
+
+def test_rebuild_on_one_key_refreshes_other_key_consumed(
+        db, lib, agg_counter):
+    """跨键快照陈旧隐患（L-012 防抖回归）：父级未终态时该组不进
+    fill 快照的认领范围；父级转终态后必须能被 fill 认领——identify
+    键的重建消费待生效失效时须 bump 代际，让 fill 键下轮懒重建；
+    否则 fill 会拿着旧快照把组跳过到 TTL 到期（单集迟迟不进 fill
+    队列）。旧硬失效口径靠整表清空天然没此问题。"""
+    series = _item(db, lib, "跨键剧", item_type="series")
+    fill_ep = _item(db, lib, "跨键剧 E1", item_type="episode",
+                    series_id=series.id, season_number=1, episode_number=1,
+                    tmdb_id="1399")
+    db.commit()
+    # fill 先行：父级未终态，单集被挡（组级父级门在 groups_q 里，
+    # 该组不进 fill 快照的认领范围），fill 认领为空
+    assert enrich_worker._claim_batch(db, 10, queue="fill") == []
+    # identify 认领父级
+    first = enrich_worker._claim_batch(db, 10, queue="identify")
+    assert [r.id for r in first] == [series.id]
+    agg_after_claims = agg_counter["agg"]
+    # 父级转终态（标记外写入 → 待生效失效）
+    row = db.query(em.MediaItem).filter(em.MediaItem.id == series.id).first()
+    row.enrich_status = "done"
+    db.commit()
+    enrich_worker._claim_batch(db, 10, queue="identify")
+    assert agg_counter["agg"] > agg_after_claims, "identify 键应已重建"
+    # identify 的重建消费失效时必须 bump 代际，fill 键下轮重建（聚合
+    # 计数再 +1）且单集可认领；若 fill 拿旧快照，组不在其中、单集
+    # 会被跳过到 TTL 到期
+    agg_before_fill = agg_counter["agg"]
+    fill = enrich_worker._claim_batch(db, 10, queue="fill")
+    assert agg_counter["agg"] > agg_before_fill, "fill 键应已随代际 bump 重建"
+    assert [r.id for r in fill] == [fill_ep.id], (
+        "fill 键旧快照未随失效刷新，单集被跳过")
