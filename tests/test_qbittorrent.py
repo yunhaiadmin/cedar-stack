@@ -51,7 +51,7 @@ def test_login_ok_qbt_sid_port_cookie():
     """生产实测：新版 qB 返回 QBT_SID_<port> 而不是 SID，也必须认"""
     async def go():
         async with _client(_resp_cookie("QBT_SID_12354")) as client:
-            return await qbittorrent._login(client, "http://167.17.76.115:12354", "admin", "x")
+            return await qbittorrent._login(client, "http://192.0.2.1:12354", "admin", "x")
     assert run(go())["ok"] is True
 
 
