@@ -126,3 +126,65 @@ def test_api_and_emby_still_proxy_to_upstream_with_keepalive_form():
         # keepalive 生效形态：HTTP/1.1 + 空 Connection 头
         assert "proxy_http_version 1.1;" in block, location
         assert 'proxy_set_header Connection "";' in block, location
+
+
+def _server_level_directives(text: str, name: str) -> list[str]:
+    """取 server 块直属（不在任何 location 块内）的某指令行。
+
+    先取 server 块全文，再逐行剥掉 location 块（花括号计数），
+    剩下的非注释行里挑以指令名开头的。
+    """
+    server = _block(text, "server {")
+    assert server is not None
+    kept: list[str] = []
+    depth = 0
+    skipping = False
+    for line in server.splitlines():
+        stripped = line.strip()
+        if not skipping and stripped.startswith("location"):
+            depth = line.count("{") - line.count("}")
+            skipping = depth > 0
+            continue
+        if skipping:
+            depth += line.count("{") - line.count("}")
+            if depth <= 0:
+                skipping = False
+            continue
+        if stripped.startswith("#"):
+            continue
+        if re.match(rf"{re.escape(name)}\b", stripped):
+            kept.append(stripped)
+    return kept
+
+
+def test_yamby_absolute_url_rewrite_shim_at_server_level():
+    """Yamby 垫片：/emby<绝对URL> 在 server 级被还原成真实路径（2026-11-24）。
+
+    Yamby/2.0.5.5 把 PlaybackInfo 下发的绝对签名流地址当相对路径拼到
+    它配置的服务器基址后，请求变成 /embyhttps://<host>/emby/Videos/...
+    ——不命中 /emby/ 前缀，掉进 SPA 的 try_files 回 index.html
+    （200 + HTML），客户端以为在播、实际黑屏（生产 access log 两例
+    实证）。垫片必须是 server 级 rewrite（location 选定前执行），
+    替换串 $1 不带 ?（原查询串与签名参数由 nginx 自动保留）、break。
+    """
+    text = NGINX_CONF.read_text(encoding="utf-8")
+    rewrites = [r for r in _server_level_directives(text, "rewrite")
+                if "/embyhttp" in r]
+    assert len(rewrites) == 1, rewrites
+    m = re.fullmatch(r"rewrite\s+(\S+)\s+\$1\s+break;", rewrites[0])
+    assert m, rewrites[0]
+    pattern = m.group(1)
+    # nginx 在 rewrite 匹配前已按 merge_slashes（默认开）把 URI 里的
+    # 连续斜杠并成一个：原始 https:// 与合并后的 https:/ 两种形态都
+    # 必须命中，捕获组必须是真实路径；正常路径不许被垫片碰到。
+    for uri in (
+        "/embyhttps://cdn.aetrix.love/emby/Videos/g1/stream.mkv",
+        "/embyhttps:/cdn.aetrix.love/emby/Videos/g1/stream.mkv",
+        "/embyhttp://emby.aetrix.love/emby/Videos/g1/stream.mkv",
+        "/embyhttp:/emby.aetrix.love/emby/Videos/g1/stream.mkv",
+    ):
+        hit = re.match(pattern, uri)
+        assert hit, uri
+        assert hit.group(1) == "/emby/Videos/g1/stream.mkv", uri
+    assert not re.match(pattern, "/emby/Videos/g1/stream.mkv")
+    assert not re.match(pattern, "/library")
