@@ -181,3 +181,68 @@ def test_maybe_check_once_releases_local_lock_on_sqlite(db, monkeypatch):
     monkeypatch.setattr(cw, "_check_once", lambda: None)
     cw._maybe_check_once()
     assert not cw._LOCAL_ADVISORY_LOCK.locked()
+
+# ---------------------------------------------------------------------------
+# L-011：同批重复 rel_path 去重 + 失败后 rollback 写历史
+# ---------------------------------------------------------------------------
+
+def test_diff_dedup_duplicate_rel_path_baseline(db):
+    changed = cw._diff_against_snapshot(db, 7, "mount://3", [
+        ("/a.mkv", 100, 1000.0),
+        ("/a.mkv", 100, 2000.0),
+        ("/b.mkv", 200, 1500.0),
+    ])
+    assert changed == []
+    rows = _rows(db)
+    assert len(rows) == 2
+    a = [r for r in rows if r.rel_path == "/a.mkv"][0]
+    assert a.mod_ts == 2000.0
+
+
+def test_diff_dedup_duplicate_rel_path_new_file(db):
+    cw._diff_against_snapshot(db, 7, "mount://3", [("/seed.mkv", 1, 1.0)])
+    changed = cw._diff_against_snapshot(db, 7, "mount://3", [
+        ("/a.mkv", 100, 2000.0),
+        ("/a.mkv", 100, 1000.0),
+    ])
+    assert changed == ["/a.mkv"]
+    rows = [r for r in _rows(db) if r.rel_path == "/a.mkv"]
+    assert len(rows) == 1
+    assert rows[0].mod_ts == 2000.0
+
+
+def test_diff_dedup_duplicate_rel_path_existing_row(db):
+    cw._diff_against_snapshot(db, 7, "mount://3", [("/a.mkv", 100, 1000.0)])
+    changed = cw._diff_against_snapshot(db, 7, "mount://3", [
+        ("/a.mkv", 100, 1500.0),
+        ("/a.mkv", 100, 1800.0),
+    ])
+    assert changed == ["/a.mkv"]
+    rows = _rows(db)
+    assert len(rows) == 1
+    assert rows[0].mod_ts == 1800.0
+
+
+def test_record_chase_run_after_failed_commit(db):
+    db.add(em.ChaseFileSnapshot(library_id=7, source_key="mount://3",
+                                rel_path="/a.mkv", size=100, mod_ts=1000.0,
+                                first_seen_at=datetime.now(timezone.utc),
+                                last_seen_at=datetime.now(timezone.utc)))
+    db.commit()
+    db.add(em.ChaseFileSnapshot(library_id=7, source_key="mount://3",
+                                rel_path="/a.mkv", size=100, mod_ts=1000.0,
+                                first_seen_at=datetime.now(timezone.utc),
+                                last_seen_at=datetime.now(timezone.utc)))
+    with pytest.raises(Exception):
+        db.commit()
+    cw.record_chase_run(db, source="poll",
+                        started_at=datetime.now(timezone.utc),
+                        finished_at=datetime.now(timezone.utc),
+                        libs_checked=1, files_listed=2, new_found=0,
+                        scans_triggered=0, status="fail", error="boom")
+    runs = db.query(em.ChaseRun).all()
+    assert len(runs) == 1
+    assert runs[0].status == "fail"
+    assert len(_rows(db)) == 1
+    changed = cw._diff_against_snapshot(db, 7, "mount://3", [("/b.mkv", 1, 1.0)])
+    assert changed == ["/b.mkv"]

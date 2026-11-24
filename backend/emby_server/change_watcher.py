@@ -176,9 +176,22 @@ def _diff_against_snapshot(db: Session, library_id: int, source_key: str,
     }
     changed: list[str] = []
 
+    # L-011：同一 rel_path 可能被两个枚举来源在同一批里重复列出（同 size、
+    # 不同 mod_ts）。不去重的话两条都走新增分支插同一主键，整批撞
+    # UniqueViolation 回滚。先按 rel_path 去重，保留 mod_ts 较新的一条
+    # （mod_ts 相同保留先出现的一条）。
+    _deduped: dict[str, tuple[str, float, float]] = {}
+    for _rel, _size, _mod in entries:
+        _size = _size or 0
+        _mod = _mod or 0.0
+        _prev = _deduped.get(_rel)
+        if _prev is None or _mod > _prev[2]:
+            _deduped[_rel] = (_rel, _size, _mod)
+    entries = list(_deduped.values())
+
     if baseline_if_empty and not existing and entries:
         for rel_path, size, mod_ts in entries:
-            db.add(em.ChaseFileSnapshot(
+            row = em.ChaseFileSnapshot(
                 library_id=library_id,
                 source_key=source_key,
                 rel_path=rel_path,
@@ -186,8 +199,14 @@ def _diff_against_snapshot(db: Session, library_id: int, source_key: str,
                 mod_ts=mod_ts or 0.0,
                 first_seen_at=now,
                 last_seen_at=now,
-            ))
-        db.commit()
+            )
+            db.add(row)
+            existing[rel_path] = row
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
         return []
 
     for rel_path, size, mod_ts in entries:
@@ -195,7 +214,7 @@ def _diff_against_snapshot(db: Session, library_id: int, source_key: str,
         mod_ts = mod_ts or 0.0
         row = existing.get(rel_path)
         if row is None:
-            db.add(em.ChaseFileSnapshot(
+            row = em.ChaseFileSnapshot(
                 library_id=library_id,
                 source_key=source_key,
                 rel_path=rel_path,
@@ -203,7 +222,9 @@ def _diff_against_snapshot(db: Session, library_id: int, source_key: str,
                 mod_ts=mod_ts,
                 first_seen_at=now,
                 last_seen_at=now,
-            ))
+            )
+            db.add(row)
+            existing[rel_path] = row
             changed.append(rel_path)
             continue
         if (row.size or 0) != size or abs((row.mod_ts or 0.0) - mod_ts) > 1e-6:
@@ -213,7 +234,11 @@ def _diff_against_snapshot(db: Session, library_id: int, source_key: str,
             changed.append(rel_path)
         else:
             row.last_seen_at = now
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return changed
 
 
@@ -223,12 +248,23 @@ def record_chase_run(db: Session, source: str, started_at: datetime,
                      scans_triggered: int = 0, status: str = "ok",
                      error: str = "") -> None:
     """写一行追新运行历史（chase_run），commit。status 取 ok/partial/fail。"""
+    # L-011：上游快照 flush/commit 失败会毒化 session（PendingRollback），
+    # 在毒化的 session 上写历史必二次失败、事故无记录。先 rollback，
+    # 再把历史行写成独立事务（与 drive_changes._write_heartbeat 同口径）。
+    try:
+        db.rollback()
+    except Exception:  # noqa: BLE001
+        pass
     db.add(em.ChaseRun(
         started_at=started_at, finished_at=finished_at, source=source,
         libs_checked=libs_checked, files_listed=files_listed,
         new_found=new_found, scans_triggered=scans_triggered,
         status=status, error=error or ""))
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
 
 _ADVISORY_LOCK_KEY = 20261010
@@ -798,6 +834,10 @@ def _check_once() -> None:
         logger.error("[chase-new] 轮询异常: %s", e)
     finally:
         if ran:
+            try:
+                db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
             try:
                 record_chase_run(db, source="poll", started_at=started,
                                  finished_at=datetime.now(timezone.utc),
