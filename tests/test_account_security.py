@@ -391,7 +391,14 @@ def test_challenge_token_binding():
     with pytest.raises(ValueError):
         sec.parse_challenge_token(token, "auth", 8)  # 串用户
     with pytest.raises(ValueError):
-        sec.parse_challenge_token(token[:-2] + "xx", "auth", 7)  # 篡改签名
+        # 篡改签名：换 sig 首字符为不同字符（首字符 6 位全有效，必改签名）。
+        # 旧写法 token[:-2] + "xx" 有约 1/1024 的概率撞上不改变解码的
+        # 碰撞：倒数第 2 字符恰为 'x' 且末字符为 'w' 时，base64 末字符
+        # 的填充位在解码时被忽略，篡改后令牌与原令牌等价、解析不抛错，
+        # 属测试抖动（2026-11-25 #514 CI 实证，1 failed / 9784 passed）。
+        body, sig = token.split(".", 1)
+        head = "B" if sig[0] == "A" else "A"
+        sec.parse_challenge_token(f"{body}.{head}{sig[1:]}", "auth", 7)  # 篡改签名
 
 
 def test_login_factors_unknown_user(db):
