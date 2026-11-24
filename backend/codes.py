@@ -268,8 +268,10 @@ def grant_membership_days(db: Session, user: models.WebUser, days: int,
     套餐不变），且指定套餐不存在 / 不属于目标服时回退现行口径并发放
     照常（见 ``_resolve_specified_plan``）。
 
-    `with_for_update()` 在 PostgreSQL 下锁住该订阅行，避免同一用户并发叠加天数时
-    两边读到同一到期时间、后提交的覆盖前者（丢天数）；SQLite 忽略该子句。
+    并发（L-010）：入口先拿 ``economy.subscription_grant_lock`` 按（用户，服）
+    串行再做「查-改/查-增」——``with_for_update()`` 只在行存在时有效，无行可锁时
+    两并发事务会各自新建（双 active 行、第二张码的天数并行消耗）；SQLite 忽略
+    该子句、改走进程内 RLock 兜底。
 
     **不提交**：调用方必须把「记卡码消耗」和「发天数」放在同一个事务里提交。
     旧实现在这里就 commit（``consume`` 里再 commit 一次），于是注册流程里两次提交之间
@@ -277,37 +279,50 @@ def grant_membership_days(db: Session, user: models.WebUser, days: int,
     ——两阶段提交不一致（见 docs/performance.md）。
     """
     from backend import realms
+    from backend.api.economy import _grant_realm_for_key, subscription_grant_lock
 
     total = PERMANENT_DAYS if days < 0 else max(int(days), 1)
     now = datetime.now()
+    # 并发说明（L-010，与 economy._grant_subscription 的 r52 缺口同款）：
+    # with_for_update() 只在行存在时有效，无行可锁时两并发事务各自 INSERT，
+    # 产生双 active 行。入口先拿 subscription_grant_lock 按（用户，服）串行，
+    # 再做「查-改/查-增」；PG 下事务级 advisory lock 覆盖到调用方提交之后，
+    # 第二个事务的检查一定能看到第一个已提交的行；SQLite 用进程内 RLock 兜底。
+    # 锁 key 与目标服都在锁外算好：key 用只读快照（不触发建服+commit，与
+    # _grant_subscription 同一取法）；claim 在锁外算，避免空库建服时 commit
+    # 提前释放 advisory lock。锁序：先拿本锁、再拿任何行锁（与 economy 同款
+    # 纪律）。本函数是卡码核销 / invite_trial / promotion 三处发天的共用口，
+    # 锁下沉于此即全覆盖。
+    key_realm = _grant_realm_for_key(db, realm_id)
     target = realms.claim(db, realm_id)
-    sub = (
-        db.query(models.UserSubscription)
-        .filter(
-            models.UserSubscription.user_id == user.id,
-            models.UserSubscription.realm_id == target,
-            models.UserSubscription.status == "active",
-            models.UserSubscription.end_date > now,
+    with subscription_grant_lock(db, user.id, key_realm):
+        sub = (
+            db.query(models.UserSubscription)
+            .filter(
+                models.UserSubscription.user_id == user.id,
+                models.UserSubscription.realm_id == target,
+                models.UserSubscription.status == "active",
+                models.UserSubscription.end_date > now,
+            )
+            .order_by(models.UserSubscription.end_date.desc())
+            .with_for_update()
+            .first()
         )
-        .order_by(models.UserSubscription.end_date.desc())
-        .with_for_update()
-        .first()
-    )
-    if sub:
-        # 同服已有生效订阅：叠加（续期语义），而非覆盖
-        sub.end_date = sub.end_date + timedelta(days=total)
-        sub.status = "active"
-    else:
-        plan = _resolve_specified_plan(db, plan_id, target) if plan_id else None
-        if plan is None:
-            plan = _resolve_plan(db, target)
-        sub = models.UserSubscription(
-            user_id=user.id, plan_id=plan.id, start_date=now,
-            end_date=now + timedelta(days=total), status="active",
-            realm_id=target,
-        )
-        db.add(sub)
-    db.flush()   # 拿主键；提交由调用方负责（与 economy._grant_subscription 同一口径）
+        if sub:
+            # 同服已有生效订阅：叠加（续期语义），而非覆盖
+            sub.end_date = sub.end_date + timedelta(days=total)
+            sub.status = "active"
+        else:
+            plan = _resolve_specified_plan(db, plan_id, target) if plan_id else None
+            if plan is None:
+                plan = _resolve_plan(db, target)
+            sub = models.UserSubscription(
+                user_id=user.id, plan_id=plan.id, start_date=now,
+                end_date=now + timedelta(days=total), status="active",
+                realm_id=target,
+            )
+            db.add(sub)
+        db.flush()   # 拿主键；提交由调用方负责（与 economy._grant_subscription 同一口径）
     # 订阅分档权益（PR-1）：本函数是卡码核销/邀请奖励发天的发放口（不走
     # _grant_subscription），同样要清该用户的权益解析缓存（见
     # backend/entitlements.py；跨进程靠 60 秒 TTL 兜底）。

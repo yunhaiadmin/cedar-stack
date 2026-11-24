@@ -689,6 +689,14 @@ jobs:
         timeout-minutes: 10
         run: python -m pytest tests/test_enrich_claim_skiplocked_race.py -q
 
+      # 并发核销回归（L-010）：grant_membership_days 的查-增曾无串行锁，
+      # 同一用户并发核销两张续期码会产生双 active 行、第二张码天数白白并行
+      # 消耗（已复用 subscription_grant_lock 串行化）。DATABASE_URL 由本
+      # job 的 env 指向真 PG；无 PG 时 PG 用例自动跳过。
+      - name: 并发核销回归（真 PG 串行锁）
+        timeout-minutes: 10
+        run: python -m pytest tests/test_concurrent_redeem_dup_sub.py -q
+
   deploy-check:
     name: 后端 · 部署自检（真起服务 + 真发 HTTP）
     needs: frontend
