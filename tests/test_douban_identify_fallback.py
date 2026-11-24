@@ -235,9 +235,9 @@ def test_two_stage_fill_queue_douban_only_runs_apply_fill(db, monkeypatch):
     calls = []
     orig_apply_fill = ts.apply_fill
 
-    def _recording(db_, item_, fetched_):
+    def _recording(db_, item_, fetched_, **kwargs):
         calls.append(True)
-        return orig_apply_fill(db_, item_, fetched_)
+        return orig_apply_fill(db_, item_, fetched_, **kwargs)
 
     monkeypatch.setattr(ts, "apply_fill", _recording)
     fetched = {"tmdb_details": {"overview": "豆瓣来的简介"}}
