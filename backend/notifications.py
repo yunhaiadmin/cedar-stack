@@ -220,6 +220,159 @@ class EmailChannel(NotificationChannel):
             return False, f"{type(exc).__name__}: {exc}"
 
 
+# seek.li（NodeSeek Mail API）发信：账号侧每日硬限 100 封
+SEEKLI_DAILY_LIMIT = 100
+SEEKLI_API_BASE = "https://seek.li/openapi/v1"
+
+
+class SeekLiMailChannel(NotificationChannel):
+    """邮件通知渠道（seek.li 开发者 API）：HTTP 发信，发件人由 mailboxId 指定。
+
+    与 EmailChannel 同接口（send / _deliver），渠道二选一在能力中心切换
+    （integrations/mail.py 的 email_provider），通知服务与能力中心构建的是同一个类。
+
+    每日上限：seek.li 账号侧硬限 100 封/日。通知路径 send() 动手前先按
+    NotificationHistory 当日 sent 计数拦截，超限如实记 failed 并写明原因，
+    不静默；直接调 _deliver 的路径（找回密码 / 后台测试）各有自己的限流，
+    真超过账号上限时 API 会拒收、错误原样上报，同样不静默。
+    """
+
+    def __init__(self, api_key: str = None, mailbox_id: int = 0):
+        self.name = "email"
+        self.api_key = (api_key or "").strip()
+        try:
+            self.mailbox_id = int(mailbox_id or 0)
+        except (TypeError, ValueError):
+            self.mailbox_id = 0
+        self.enabled = bool(self.api_key and self.mailbox_id > 0)
+
+    async def send(self, user_id: int, title: str, content: str,
+                   data: Optional[dict] = None, db: Session = None) -> bool:
+        """发送邮件通知（与 EmailChannel.send 同口径，多一道每日上限拦截）"""
+        if not self.enabled:
+            logger.warning("seek.li 邮件通知未配置，跳过发送")
+            return False
+
+        # G2-P1-1：自己创建的会话必须显式关闭
+        _own_db = db is None
+        try:
+            if db is None:
+                db = next(get_db())
+
+            user = db.query(models.WebUser).filter(models.WebUser.id == user_id).first()
+            if not user or not user.email:
+                logger.warning(f"用户 {user_id} 没有邮箱地址")
+                return False
+
+            if self._sent_today(db) >= SEEKLI_DAILY_LIMIT:
+                error = f"seek.li 每日发送上限 {SEEKLI_DAILY_LIMIT} 封已达，今日不再发送"
+                logger.error(f"邮件发送失败（用户 {user_id}）: {error}")
+                db.add(models.NotificationHistory(
+                    notification_type="email",
+                    target=user.email,
+                    title=title,
+                    content=content,
+                    status="failed",
+                    error_message=error,
+                    sent_at=None,
+                ))
+                db.commit()
+                return False
+
+            ok, error = await asyncio.to_thread(self._deliver, user.email, title, content)
+
+            history = models.NotificationHistory(
+                notification_type="email",
+                target=user.email,
+                title=title,
+                content=content,
+                status="sent" if ok else "failed",
+                error_message=error,
+                sent_at=datetime.now() if ok else None,
+            )
+            db.add(history)
+            db.commit()
+
+            if ok:
+                logger.info(f"邮件已发送给用户 {user_id}: {title}")
+            else:
+                logger.error(f"邮件发送失败（用户 {user_id}）: {error}")
+            return ok
+
+        except Exception as e:
+            logger.error(f"发送邮件失败: {e}")
+            if db:
+                db.rollback()
+            return False
+        finally:
+            if _own_db and db is not None:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+
+    @staticmethod
+    def _sent_today(db: Session) -> int:
+        """今日已成功发出的邮件数（通知历史口径；同一时刻只启用一个发信通道）"""
+        day_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        return (
+            db.query(models.NotificationHistory)
+            .filter(
+                models.NotificationHistory.notification_type == "email",
+                models.NotificationHistory.status == "sent",
+                models.NotificationHistory.sent_at >= day_start,
+            )
+            .count()
+        )
+
+    def _deliver(self, to_email: str, title: str, content: str) -> tuple[bool, Optional[str]]:
+        """同步 HTTP 投递（放在线程里跑，避免阻塞事件循环）"""
+        import html as _html
+
+        import httpx
+
+        body_html = "<div>" + _html.escape(content).replace("\n", "<br>") + "</div>"
+        try:
+            with httpx.Client(timeout=15) as client:
+                resp = client.post(
+                    f"{SEEKLI_API_BASE}/send",
+                    json={
+                        "mailboxId": self.mailbox_id,
+                        "to": [to_email],
+                        "subject": title,
+                        "bodyText": content,
+                        "bodyHtml": body_html,
+                    },
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                )
+            if resp.status_code != 200:
+                return False, f"HTTP {resp.status_code}: {resp.text[:200]}"
+            return True, None
+        except Exception as exc:  # noqa: BLE001 — 投递失败原因要原样记下来（httpx 异常不带请求头，不会泄漏 key）
+            return False, f"{type(exc).__name__}: {exc}"
+
+    def list_mailboxes(self) -> tuple[bool, Any]:
+        """GET /mailboxes 验 key 与发件邮箱（后台「测试」用，需 mailbox:read 权限）。
+
+        成功返回 (True, data 列表)；失败返回 (False, 错误文本)。
+        """
+        import httpx
+
+        try:
+            with httpx.Client(timeout=15) as client:
+                resp = client.get(
+                    f"{SEEKLI_API_BASE}/mailboxes",
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                )
+            if resp.status_code != 200:
+                return False, f"HTTP {resp.status_code}: {resp.text[:200]}"
+            body = resp.json()
+            data = body.get("data") if isinstance(body, dict) else None
+            return True, data if isinstance(data, list) else []
+        except Exception as exc:  # noqa: BLE001
+            return False, f"{type(exc).__name__}: {exc}"
+
+
 class TelegramChannel(NotificationChannel):
     """Telegram Bot API 渠道：文本 + 富媒体（sendPhoto / sendMediaGroup）"""
 
@@ -545,15 +698,34 @@ class NotificationService:
             email_config = {cfg.key: cfg.value for cfg in email_configs}
 
             if email_config.get('email_enabled') == 'true':
-                self.channels['email'] = EmailChannel(
-                    smtp_host=email_config.get('email_smtp_host'),
-                    smtp_port=int(email_config.get('email_smtp_port', 587)),
-                    smtp_user=email_config.get('email_smtp_user'),
-                    smtp_password=email_config.get('email_smtp_password'),
-                    from_name=email_config.get('email_from_name') or "",
-                    from_email=email_config.get('email_from_email') or "",
-                )
-                logger.info("邮件通知渠道已启用")
+                if (email_config.get('email_provider') or 'smtp').strip().lower() == 'seekli':
+                    # seek.li 的两个键不带 email_ 前缀，单独取（与 integrations/mail.py 同口径）
+                    seekli_config = {
+                        cfg.key: cfg.value
+                        for cfg in db.query(models.SystemConfig).filter(
+                            models.SystemConfig.key.in_(['seekli_api_key', 'seekli_mailbox_id'])
+                        ).all()
+                    }
+                    try:
+                        # 缺省 82449 与 integrations/mail.py 的 SEEKLI_DEFAULT_MAILBOX_ID 同口径
+                        mailbox_id = int((seekli_config.get('seekli_mailbox_id') or '').strip() or 82449)
+                    except ValueError:
+                        mailbox_id = 0
+                    self.channels['email'] = SeekLiMailChannel(
+                        api_key=(seekli_config.get('seekli_api_key') or '').strip(),
+                        mailbox_id=mailbox_id,
+                    )
+                    logger.info("邮件通知渠道已启用（seek.li）")
+                else:
+                    self.channels['email'] = EmailChannel(
+                        smtp_host=email_config.get('email_smtp_host'),
+                        smtp_port=int(email_config.get('email_smtp_port', 587)),
+                        smtp_user=email_config.get('email_smtp_user'),
+                        smtp_password=email_config.get('email_smtp_password'),
+                        from_name=email_config.get('email_from_name') or "",
+                        from_email=email_config.get('email_from_email') or "",
+                    )
+                    logger.info("邮件通知渠道已启用")
 
             # 获取 Telegram 配置
             tg_configs = db.query(models.SystemConfig).filter(
@@ -1103,6 +1275,7 @@ __all__ = [
     "NotificationService",
     "InAppChannel",
     "EmailChannel",
+    "SeekLiMailChannel",
     "TelegramChannel",
     "WebhookChannel",
     "get_notification_service",
