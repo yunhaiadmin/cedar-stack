@@ -1036,6 +1036,31 @@ async def _release_upstream_when_stalled(source, resp, url: str, timeout: float)
         await source.aclose()
 
 
+async def _pt_first_byte_body(source, pt, headers_perf):
+    """[play-timing] 首字节打点包装（只打点、不改流）。
+
+    首块交付消费端时补齐分段并输出汇总行：``rcd_first_chunk``＝上游
+    响应头到达（headers_perf）→首块的时长，``first_byte``＝累计点，
+    此后 ``total`` 即首字节时刻。流在首块前结束/出错/被关时在
+    finally 里补出汇总行，保证每次起播恰有一行 [play-timing]
+    stream（无首块就不打 first_byte，不假装）。块内容/顺序/异常
+    逐字透传，本包装不吞任何异常。
+    """
+    _seen = False
+    try:
+        async for chunk in source:
+            if not _seen:
+                _seen = True
+                if headers_perf is not None:
+                    pt.span("rcd_first_chunk", headers_perf)
+                pt.mark("first_byte")
+                pt.done()
+            yield chunk
+    finally:
+        if not _seen:
+            pt.done()
+
+
 def _relay_prefetch_chunks() -> int:
     """中继预读深度（块数，块 = READ_CHUNK 1MB）：env
     STREAM_RELAY_PREFETCH_CHUNKS，默认 3，钳 [0, 8]，0 = 关预读、
@@ -1172,6 +1197,7 @@ def _try_hot_cache_response(identity, range_header, media_type, pt):
     """热缓存全命中出流：命中返回 StreamingResponse，未命中/任何
     问题返回 None（调用方走现行透传，逐字不变）。"""
     opened = None
+    _pt_t0 = time.perf_counter() if pt is not None else None
     try:
         from backend.emby_server import relay_hot_cache as _hc
         if not _hc.enabled() or _hc.max_bytes() <= 0:
@@ -1205,6 +1231,9 @@ def _try_hot_cache_response(identity, range_header, media_type, pt):
                     "range=%d-%d bytes=%d",
                     identity, start, end, end - start + 1)
         if pt is not None:
+            # 命中路径的热缓存查询耗时在此补记（未命中路径由调用方在
+            # 本函数返回 None 后补记同名字段，口径一致）。
+            pt.span("cache_lookup", _pt_t0)
             pt.mark("ttfb")
             pt.done()
 
@@ -1583,8 +1612,11 @@ async def serve_mount_relay_async(
     # 热缓存全命中：请求区间被缓存分段完全覆盖时本地出字节、
     # 不回源；未命中回 None，走下面现行透传逐字不变。
     if _hot_identity:
+        _cache_t0 = time.perf_counter() if pt is not None else None
         _hit_resp = _try_hot_cache_response(
             _hot_identity, range_header, media_type, pt)
+        if _hit_resp is None and pt is not None:
+            pt.span("cache_lookup", _cache_t0)
         if _hit_resp is not None:
             if _mount_prefetch:
                 _schedule_mount_hot_prefetch(
@@ -1609,6 +1641,7 @@ async def serve_mount_relay_async(
     if _leg is not None:
         # 只有 Drive 腿进 Drive 限速口径；挂载腿（_leg 为 None）逐字不碰
         _try_drive_api_rate()
+    _rcd_t0 = time.perf_counter() if pt is not None else None
     try:
         try:
             # 跳转自己逐跳校验后跟随（内网目标拒绝、跨主机剥凭据），终态
@@ -1642,7 +1675,13 @@ async def serve_mount_relay_async(
             if _final_cache_key and not _used_cached_final \
                     and _current != url and resp.status_code < 400:
                 drive_final_url_cache_put(_final_cache_key, _current)
+        # 上游响应头到达时刻（rcd_first_chunk 分段的起点）：无论有无
+        # 计时器都取一次（perf_counter 约 20ns，不值当分支）。
+        _headers_perf = time.perf_counter()
         if pt is not None:
+            # 向 rcd 发请求→收到终态响应头的整段（含逐跳跳转/建连/
+            # rcd 内部向谷歌开流）：冷起播约 2 秒 TTFB 的主体在此。
+            pt.span("rcd_ttfb", _rcd_t0)
             pt.mark("ttfb")
         # 115 直链过期检测：403/404/410 时清 pickcode 缓存，客户端重试时
         # 挂载解析会拿到新直链（沿用删除前的口径）。
@@ -1798,8 +1837,13 @@ async def serve_mount_relay_async(
                     except Exception:
                         pass
 
+        _body = _release_upstream_when_stalled(
+            iter_mount(), resp, url, _mount_relay_stall_timeout())
         if pt is not None:
-            pt.done()
+            # [play-timing] 汇总行推迟到首字节交付时输出（见
+            # _pt_first_byte_body）：total 即首字节时刻、行内含
+            # rcd_first_chunk 分段。只动日志输出时机，不动流本身。
+            _body = _pt_first_byte_body(_body, pt, _headers_perf)
         if _mount_prefetch:
             # 挂载腿跨请求预读：本次出流后把请求区间之后的 N 个
             # 分段提前读进热缓存，播放器逐段请求时逐段命中（调度
@@ -1808,8 +1852,7 @@ async def serve_mount_relay_async(
             _schedule_mount_hot_prefetch(
                 _hot_identity, url, forward, range_header)
         return StreamingResponse(
-            _release_upstream_when_stalled(
-                iter_mount(), resp, url, _mount_relay_stall_timeout()),
+            _body,
             status_code=resp.status_code,
             media_type=content_type, headers=passthrough,
         )
