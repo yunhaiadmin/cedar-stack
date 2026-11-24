@@ -75,12 +75,30 @@ _DEFAULT_MIN_FREE_BYTES = 10 * 1024 * 1024 * 1024
 #: 跨请求预读窗口缺省（字节）：L-007 起预读以请求起始段为锚、从
 #: 覆盖前沿起按字节窗口推进（旧 RELAY_HOT_CACHE_PREFETCH_SEGMENTS
 #: 分段口径已废止——它以区间末尾为锚，开尾 Range 下恒为空转）。
-_DEFAULT_PREFETCH_BYTES = 32 * 1024 * 1024
-_PREFETCH_BYTES_LIMIT = 128 * 1024 * 1024
+#: L-007 二次优化（2026-11-25）窗口 32MB → 128MB：32MB 在 4K 码率
+#: （≈1.9MB/s）下十几秒就被消费完、窗一空就成串 miss；128MB 约
+#: 顶 60 秒以上消费，给预读流水线留出追赶余量。窗口按「距读取
+#: 前沿的字节距离」维护（见 streaming._hot_prefetch_run）。
+_DEFAULT_PREFETCH_BYTES = 128 * 1024 * 1024
+_PREFETCH_BYTES_LIMIT = 256 * 1024 * 1024
 #: 预读单次取数粒度缺省（字节）：一次开流取回一整块再本地切段，
 #: 摊薄谷歌开流成本（旧口径逐段一开流，每 1MB 重付一次 TTFB）。
-_DEFAULT_PREFETCH_FETCH_BYTES = 8 * 1024 * 1024
-_PREFETCH_FETCH_BYTES_LIMIT = 32 * 1024 * 1024
+#: 二次优化 8MB → 32MB：串行/少并发时前沿推进速率 ≈ 块/(ttfb+
+#: 传输)，8MB 块在 ttfb≈2s 下封顶 ≈4MB/s、只略高于 4K 消费速率，
+#: 一有抖动就被追上；32MB 块把同样的 ttfb 摊到 4 倍字节上。
+_DEFAULT_PREFETCH_FETCH_BYTES = 32 * 1024 * 1024
+_PREFETCH_FETCH_BYTES_LIMIT = 64 * 1024 * 1024
+#: 预读流水线并发缺省：一窗内同时在途的取数块数。ttfb 与块大小
+#: 无关，只能靠多块在途掩盖——并发 N 时推进速率 ≈ N×块/(ttfb+
+#: 传输)。信号量是全进程共享的（streaming._hot_prefetch_sem），
+#: 在途字节上限 = 并发 × 单块，全进程有界。
+_DEFAULT_PREFETCH_CONCURRENCY = 4
+_PREFETCH_CONCURRENCY_LIMIT = 16
+#: PlaybackInfo 预热窗口缺省（字节）：stream 请求到达前先把条目
+#: 首段喂进缓存，冷起播的第一下 miss 也尽量消掉。只预热首段
+#: 窗口（锚点 0），不抢占在途窗；0 = 关预热。
+_DEFAULT_WARMUP_BYTES = 32 * 1024 * 1024
+_WARMUP_BYTES_LIMIT = 128 * 1024 * 1024
 
 _WRITER_QUEUE_MAX = 128
 
@@ -138,18 +156,36 @@ def partial_enabled() -> bool:
 
 def prefetch_bytes() -> int:
     """跨请求预读窗口（字节）：env RELAY_HOT_CACHE_PREFETCH_BYTES，
-    默认 32MB，钳 [0, 128MB]，0 = 关预读。"""
+    默认 128MB，钳 [0, 256MB]，0 = 关预读。"""
     return _env_int("RELAY_HOT_CACHE_PREFETCH_BYTES",
                     _DEFAULT_PREFETCH_BYTES, 0, _PREFETCH_BYTES_LIMIT)
 
 
 def prefetch_fetch_bytes() -> int:
     """预读单次取数粒度（字节）：env RELAY_HOT_CACHE_PREFETCH_
-    FETCH_BYTES，默认 8MB，钳 [1 段, 32MB] 并向下对齐到整段——
+    FETCH_BYTES，默认 32MB，钳 [1 段, 64MB] 并向下对齐到整段——
     一次开流取回一整块、本地按 1MB 切段提交，块界不许切开分段。"""
     value = _env_int("RELAY_HOT_CACHE_PREFETCH_FETCH_BYTES",
                      _DEFAULT_PREFETCH_FETCH_BYTES,
                      SEGMENT_SIZE, _PREFETCH_FETCH_BYTES_LIMIT)
+    return value - value % SEGMENT_SIZE
+
+
+def prefetch_concurrency() -> int:
+    """预读流水线并发：env RELAY_HOT_CACHE_PREFETCH_CONCURRENCY，
+    默认 4，钳 [1, 16]。streaming 的预读信号量按进程内首次读取
+    建好后固定（改 env 需重启进程生效）；窗口/粒度则每次取数现读。"""
+    return _env_int("RELAY_HOT_CACHE_PREFETCH_CONCURRENCY",
+                    _DEFAULT_PREFETCH_CONCURRENCY, 1,
+                    _PREFETCH_CONCURRENCY_LIMIT)
+
+
+def warmup_bytes() -> int:
+    """PlaybackInfo 预热窗口（字节）：env RELAY_HOT_CACHE_WARMUP_
+    BYTES，默认 32MB，钳 [0, 128MB] 并向下对齐到整段，0 = 关预热。
+    预热只锚条目首段（字节 0 起），有界、失败放行、不抢占在途窗。"""
+    value = _env_int("RELAY_HOT_CACHE_WARMUP_BYTES",
+                     _DEFAULT_WARMUP_BYTES, 0, _WARMUP_BYTES_LIMIT)
     return value - value % SEGMENT_SIZE
 
 
@@ -202,6 +238,8 @@ _STATS = {
     "segments_evicted": 0,
     "prefetch_fetched": 0,
     "prefetch_bytes": 0,
+    "prefetch_blocks": 0,
+    "prefetch_fetch_ms": 0,
     "partial_requests": 0,
     "partial_bytes": 0,
 }
@@ -223,6 +261,15 @@ def note_miss() -> None:
 
 def note_prefetch_fetched() -> None:
     _bump("prefetch_fetched")
+
+
+def note_prefetch_block(fetch_ms: int) -> None:
+    """预读块级打点（L-007 二次优化）：每完成一次整块取数记一块
+    数与该块拉取耗时——验收时推进速率 = prefetch_bytes /
+    (prefetch_fetch_ms / prefetch_blocks 的块均耗时推算)，与消费
+    速率直接对账；旧 stats 只有段数/字节数，算不出块耗时。"""
+    _bump("prefetch_blocks")
+    _bump("prefetch_fetch_ms", int(fetch_ms))
 
 
 def note_prefetch_bytes(nbytes: int) -> None:
@@ -501,6 +548,28 @@ def open_covered_prefix(identity, meta, start, end):
             except Exception:  # noqa: BLE001
                 pass
         return None
+
+
+def covered_prefix_len(identity, meta, start: int, end: int,
+                       max_scan: int = 512) -> int:
+    """从 start 起连续覆盖的字节数（只 stat 长度、不打开文件）：
+    供 miss 路径打点报「前沿差」——读取前沿距已缓存前沿还差多少
+    字节。扫描上限 max_scan 段防大区间逐段 stat 拖慢热路径。
+    永不抛（异常回 0）。"""
+    try:
+        total = int(meta["total_size"])
+        first = start // SEGMENT_SIZE
+        last = min(end // SEGMENT_SIZE, first + max_scan - 1)
+        covered = 0
+        for idx in range(first, last + 1):
+            if not segment_present(identity, meta, idx):
+                break
+            seg_start = idx * SEGMENT_SIZE
+            seg_end = seg_start + segment_expected_len(total, idx) - 1
+            covered = min(seg_end, end) - start + 1
+        return max(0, covered)
+    except Exception:  # noqa: BLE001 — 打点取数永不抛
+        return 0
 
 
 def parse_range(range_header, total_size: int):

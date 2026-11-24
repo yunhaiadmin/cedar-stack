@@ -285,9 +285,12 @@ def test_prefetch_open_ended_range_anchors_at_start(cache_env):
         assert hc.segment_present(ident, meta, idx), idx
 
 
-def test_prefetch_fetch_granularity_and_cut(cache_env):
-    """取数粒度（L-007 根因 3）：窗口内按 8MB 一次 GET 取数、本地
-    切成 1MB 段逐段提交；尾窗按实际区间收尾。"""
+def test_prefetch_fetch_granularity_and_cut(cache_env, monkeypatch):
+    """取数粒度（L-007 根因 3）：窗口内按一次 GET 取数、本地切成
+    1MB 段逐段提交；尾窗按实际区间收尾。本例把粒度钳回 8MB 验证
+    切段机制（缺省已上调 32MB，见 test_l007_prefetch_depth）。"""
+    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_FETCH_BYTES",
+                       str(8 * SEG))
     ident = "drive:D9:GRAN"
     total = 20 * SEG
     assert hc.note_validators(ident, total, etag='"v1"')
@@ -309,9 +312,13 @@ def test_prefetch_fetch_granularity_and_cut(cache_env):
     assert hc.stats()["prefetch_bytes"] - bytes_before == total
 
 
-def test_prefetch_generation_change_drops_window(cache_env):
+def test_prefetch_generation_change_drops_window(cache_env,
+                                                 monkeypatch):
     """取数中途身份被失效（代际 +1）→ 在途窗口全部段按代际丢弃、
     且不再继续取下一块。"""
+    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_BYTES", str(32 * SEG))
+    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_FETCH_BYTES",
+                       str(8 * SEG))
     ident = "drive:D9:GEN"
     total = 20 * SEG
     assert hc.note_validators(ident, total, etag='"v1"')
@@ -333,9 +340,15 @@ def test_prefetch_generation_change_drops_window(cache_env):
         assert not hc.segment_present(ident, meta, idx), idx
 
 
-def test_prefetch_window_frontier_and_singleflight(cache_env):
+def test_prefetch_window_frontier_and_singleflight(cache_env,
+                                                   monkeypatch):
     """窗口从覆盖前沿起算（已缓存段不重取）；同身份同锚点并发只
-    允许一个窗口在途（single-flight），每块只取一次。"""
+    允许一个窗口在途（single-flight），每块只取一次。本例把窗口
+    /粒度钳回 32MB/8MB 验证几何（缺省已上调，见
+    test_l007_prefetch_depth）。"""
+    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_BYTES", str(32 * SEG))
+    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_FETCH_BYTES",
+                       str(8 * SEG))
     ident = "drive:D9:FRONT"
     total = 33 * SEG
     assert hc.note_validators(ident, total, etag='"v1"')
@@ -381,19 +394,20 @@ def test_prefetch_window_frontier_and_singleflight(cache_env):
 
 
 def test_prefetch_env_parsing(monkeypatch):
-    """预读 env 口径：窗口缺省 32MB、钳 [0, 128MB]；取数粒度缺省
-    8MB、按整段对齐（向下取整到 1MB 的整数倍、最小 1 段）。"""
+    """预读 env 口径：窗口缺省 128MB、钳 [0, 256MB]；取数粒度缺省
+    32MB、按整段对齐（向下取整到 1MB 的整数倍、最小 1 段）。
+    （L-007 二次优化上调，2026-11-25。）"""
     monkeypatch.delenv("RELAY_HOT_CACHE_PREFETCH_BYTES", raising=False)
     monkeypatch.delenv("RELAY_HOT_CACHE_PREFETCH_FETCH_BYTES",
                        raising=False)
-    assert hc.prefetch_bytes() == 32 * SEG
-    assert hc.prefetch_fetch_bytes() == 8 * SEG
+    assert hc.prefetch_bytes() == 128 * SEG
+    assert hc.prefetch_fetch_bytes() == 32 * SEG
     monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_BYTES", "0")
     assert hc.prefetch_bytes() == 0
     monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_BYTES", str(10 ** 12))
-    assert hc.prefetch_bytes() == 128 * SEG
+    assert hc.prefetch_bytes() == 256 * SEG
     monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_BYTES", "abc")
-    assert hc.prefetch_bytes() == 32 * SEG
+    assert hc.prefetch_bytes() == 128 * SEG
     monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_FETCH_BYTES", "2500000")
     assert hc.prefetch_fetch_bytes() == 2 * SEG
     monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_FETCH_BYTES", "100")
@@ -403,6 +417,8 @@ def test_prefetch_env_parsing(monkeypatch):
 def test_drive_prefetch_same_window_fetch(cache_env, monkeypatch):
     """Drive 腿与挂载腿同一套预读（横切只许一套）：Drive fetcher
     被窗口以 8MB 区间调用、字节切段落盘到 drive: 身份下。"""
+    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_FETCH_BYTES",
+                       str(8 * SEG))
     ident = "drive:D9:L7WIN"
     total = 10 * SEG
     body = (bytes(range(256)) * (total // 256 + 1))[:total]

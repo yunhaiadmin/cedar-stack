@@ -6591,6 +6591,112 @@ def _copy_version_sources(db, item, base, user, api_key, max_bitrate):
     return out
 
 
+# ---------------------------------------------------------------------------
+# PlaybackInfo 预热（L-007 二次优化）：解析预热目标 + 后台 spawn
+# ---------------------------------------------------------------------------
+#: 同一条目两次预热解析的最小间隔（秒）：PlaybackInfo 会被客户端
+#: 反复请求，冷却防解析线程/上游被放大；窗口已覆盖时重解析也只是
+#: 白扫一遍。进程内字典，条目 id 维度。
+_WARMUP_COOLDOWN_SEC = 120.0
+_WARMUP_LAST: dict = {}
+_WARMUP_LAST_LOCK = threading.Lock()
+
+
+def _playback_warmup_spec(db: Session, item: em.MediaItem):
+    """同步解析 PlaybackInfo 预热目标（后台线程里调用）。
+
+    回 [(identity, kind, locator, size_hint), ...] 或 None：
+    kind="mount" 时 locator=(url, headers)（挂载中继取数定位）；
+    kind="drive" 时 locator=(drive_id, file_id)。只认 mount://
+    路径 + 有 drive_file_id 的条目（两条腿的热缓存身份都锚在
+    drive_file_id 上，无 fid 不缓存、预热无从谈起）。
+
+    不走 _play_target：它带起播解析打点（method=resolve 事件），
+    预热不是起播、不许污染打点口径；这里直调
+    mount_lib.resolve_play_target 取同一份解析结果（无事件版）。
+    drive 型挂载两条身份都回：实际取流走挂载中继还是 Drive
+    中继由取流路由（换线表）定，预热有界（各 32MB、冷却 120s），
+    宁可都喂、不赌路由。永不抛（解析失败回 None 或只剩 drive 条）。
+    """
+    try:
+        fid = getattr(item, "drive_file_id", None)
+        path = getattr(item, "file_path", "") or ""
+        if not fid or not mount_lib.is_mount_path(path):
+            return None
+        size_hint = getattr(item, "size", None) or None
+        specs = []
+        drive_id = None
+        try:
+            drive_id = _drive_mount_id_for_item(db, item)
+        except Exception:  # noqa: BLE001 — drive 条拿不到只走挂载条
+            drive_id = None
+        if drive_id:
+            specs.append((f"drive:{drive_id}:{fid}", "drive",
+                          (drive_id, fid), size_hint))
+        try:
+            target = mount_lib.resolve_play_target(
+                path, db, getattr(item, "library", None))
+        except Exception:  # noqa: BLE001 — 挂载解析失败只剩 drive 条
+            target = None
+        if target is not None and target.kind == "url":
+            specs.append((f"mount:{fid}", "mount",
+                          (target.value, target.headers), size_hint))
+        return specs or None
+    except Exception:  # noqa: BLE001 — 预热解析绝不外抛
+        return None
+
+
+def _spawn_playback_warmup(item) -> None:
+    """起后台线程做预热解析并回主循环调度（PlaybackInfo 响应路径
+    零等待）。冷却内直接返回；线程自开 DB 会话（请求会话不许跨
+    线程/跨响应周期复用）；全程永不抛。"""
+    try:
+        item_id = getattr(item, "id", None)
+        if item_id is None:
+            return
+        now = time.monotonic()
+        with _WARMUP_LAST_LOCK:
+            if now - _WARMUP_LAST.get(item_id, 0.0) \
+                    < _WARMUP_COOLDOWN_SEC:
+                return
+            _WARMUP_LAST[item_id] = now
+        loop = asyncio.get_running_loop()
+
+        def _work():
+            try:
+                db2 = SessionLocal()
+                try:
+                    row = db2.query(em.MediaItem).filter(
+                        em.MediaItem.id == item_id).first()
+                    if row is None:
+                        return
+                    specs = _playback_warmup_spec(db2, row)
+                finally:
+                    db2.close()
+                if not specs:
+                    return
+
+                def _sched():
+                    from backend.emby_server import streaming as _st
+                    for identity, kind, locator, size_hint in specs:
+                        if kind == "mount":
+                            _st.schedule_mount_warmup(
+                                identity, locator[0], locator[1],
+                                size_hint)
+                        else:
+                            _st.schedule_drive_warmup(
+                                locator[0], locator[1], size_hint)
+
+                loop.call_soon_threadsafe(_sched)
+            except Exception:  # noqa: BLE001 — 预热线程绝不外抛
+                pass
+
+        threading.Thread(target=_work, name="playback-warmup",
+                         daemon=True).start()
+    except Exception:  # noqa: BLE001 — spawn 失败就算了
+        pass
+
+
 @emby_router.post("/emby/Items/{item_id}/PlaybackInfo")
 @emby_router.post("/Items/{item_id}/PlaybackInfo")
 @emby_router.get("/emby/Items/{item_id}/PlaybackInfo")
@@ -6696,6 +6802,11 @@ async def playback_info(
         logger.warning("交付计划预计算失败 item=%s",
                        getattr(item, "id", "?"), exc_info=True)
     _pt.mark("plan_spawn")
+    # PlaybackInfo 预热（L-007 二次优化）：起播请求到达前先把条目
+    # 首段窗口喂进中继热缓存，冷起播第一下 miss 也尽量消掉。解析
+    # 与调度全在后台线程/任务里（_spawn_playback_warmup 自带冷却、
+    # 永不抛），响应路径只多一次冷却判定，逐字不影响本次响应。
+    _spawn_playback_warmup(item)
     base = _base_url(request)
     body = {}
     try:
