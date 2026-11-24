@@ -93,3 +93,94 @@ function versionRowToSpecSource(row: SpecVersionRow): SpecSourceSynthesized {
     ],
   }
 }
+
+// ---------- 规格胶囊（第三轮：从 WebPlayerView 移入，便于单测） ----------
+
+/** 规格计算用的流子集（与 EmbyMediaStream / 版本行合成源的流结构兼容）。 */
+export interface SpecStreamLike {
+  Index: number
+  Type: string
+  Codec?: string
+  Language?: string
+  DisplayTitle?: string
+  IsExternal?: boolean
+  IsTextSubtitleStream?: boolean
+  IsDefault?: boolean
+  DeliveryUrl?: string
+  Width?: number | null
+  Height?: number | null
+  Channels?: number | null
+  BitRate?: number | null
+}
+
+/** 规格计算用的源子集（条目源与版本行合成源都满足）。 */
+export interface SpecSourceForChips {
+  Name?: string | null
+  Container?: string | null
+  MediaStreams?: readonly SpecStreamLike[] | null
+}
+
+export function streamsOf(source: SpecSourceForChips | null): SpecStreamLike[] {
+  return (source?.MediaStreams || []) as SpecStreamLike[]
+}
+
+export function videoStreamOf(source: SpecSourceForChips | null): SpecStreamLike | undefined {
+  return streamsOf(source).find((s) => s.Type === 'Video')
+}
+
+export function resolutionLabel(vs: SpecStreamLike | undefined): string {
+  if (!vs) return ''
+  const h = vs.Height || 0
+  const w = vs.Width || 0
+  if (h >= 2000 || w >= 3800) return '4K'
+  if (h >= 1000 || w >= 1900) return '1080p'
+  if (h >= 700 || w >= 1200) return '720p'
+  if (h > 0) return `${h}p`
+  return ''
+}
+
+/**
+ * 从版本名里读分辨率（第三轮）：版本行宽高为 0 时（如《黑洞表面》
+ * 1080p 版库里 width/height 都是 0），数值口径读不到数，胶囊就没
+ * 有分辨率——但版本名本身就是真实标签文本（后端 _version_label：
+ * 文件名 " - " 后缀原文，或按高度给的标准名），从里面解析 token
+ * 做回落。只读文本、不编数：名里没有分辨率 token 就返回 ''（不显
+ * 示），绝不猜。档位与 resolutionLabel 同口径（2160p/4320p 显示
+ * 4K，1440p 显示 1080p），同一部片两种来源不打架。
+ */
+export function resolutionFromName(name?: string | null): string {
+  if (!name) return ''
+  const p = /\b(\d{3,4})p\b/i.exec(name)
+  if (p) {
+    const h = Number(p[1])
+    if (Number.isFinite(h) && h > 0) {
+      if (h >= 2000) return '4K'
+      if (h >= 1000) return '1080p'
+      if (h >= 700) return '720p'
+      return `${h}p`
+    }
+  }
+  if (/\b4k\b/i.test(name)) return '4K'
+  if (/\b8k\b/i.test(name)) return '4K'
+  return ''
+}
+
+export function specChipsOf(source: SpecSourceForChips | null): string[] {
+  if (!source) return []
+  const chips: string[] = []
+  const vs = videoStreamOf(source)
+  const res = resolutionLabel(vs) || resolutionFromName(source.Name)
+  if (res) chips.push(res)
+  const title = vs?.DisplayTitle || ''
+  for (const token of ['Dolby Vision', '杜比视界', 'HDR10+', 'HDR10', 'HDR', 'HLG']) {
+    if (title.includes(token)) {
+      chips.push(token === 'Dolby Vision' ? '杜比视界' : token)
+      break
+    }
+  }
+  if (vs?.Codec) chips.push(vs.Codec.toUpperCase())
+  const audio = streamsOf(source).find((s) => s.Type === 'Audio')
+  if (audio?.Channels && audio.Channels >= 6) chips.push('5.1声道')
+  if (source.Container) chips.push(source.Container.toUpperCase())
+  return chips
+}

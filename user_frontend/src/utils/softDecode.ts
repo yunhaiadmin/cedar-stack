@@ -698,8 +698,9 @@ export interface SoftSeekGuardDeps {
  * → arrive() → 'confirming'（已到目标，确认时间真的往前走，计时
  * confirmTimeoutMs）。只看位置会把「到了目标但播不起来」误判成
  * 成功——复测里时间永远停在目标值，旧代码半秒内就撤防了。确认
- * 阶段里时间不推进同样走重试→判失败；暂停态由调用方直接
- * complete（时间本来就不走），不进确认阶段。
+ * 阶段里时间不推进同样走重试→判失败；暂停态由调用方按
+ * pausedSettled 判定后 complete（时间本来就不走），未落定的短暂
+ * 暂停先 arrive() 进确认阶段等着，不直接落定（第三轮）。
  */
 export class SoftSeekGuard {
   private deps: SoftSeekGuardDeps
@@ -740,7 +741,8 @@ export class SoftSeekGuard {
   /**
    * 位置已到目标：转入确认恢复阶段，改按确认窗口重新武装。
    * 未在飞 / 已在确认阶段时是空操作（轮询与 seeked 事件可能重复调）。
-   * 暂停态的调用方不应调它——直接 complete（见 noteSeekProgress）。
+   * 落定的暂停调用方不应调它——直接 complete；未落定的短暂暂停
+   * 调用方调它进确认阶段等着（见 noteSeekProgress 的 pausedSettled）。
    */
   arrive(): void {
     if (this.targetSeconds === null || this.closed) return
@@ -998,13 +1000,26 @@ export async function createSoftPlayer(
   // 的卡死半秒内就没人管了。超时/底层拒绝由状态机先自动重试一次，
   // 仍无结果经 hooks.onSeekFailed 判失败（没接该钩子的调用方回落
   // failOnce/onError)——绝不静默冻结。
-  // 暂停态 seek 不进确认阶段（时间本来就不走，到达即落定）；播放
-  // 态由 playing/played/paused 事件跟踪，卡住的解码器不会发 paused，
-  // 误判不了。
+  // 暂停态（第三轮，2026-11-25 复测）：libmedia 在 seek 前后会短暂
+  // 发出 'paused'（seek 引发重缓冲时暂停渲染），第二轮「暂停态到达
+  // 即落定」把这当成用户暂停了——复测里看门狗在到达瞬间撤防，「正
+  // 在定位」一次都没出现、冻结 2–4 分钟没人管。所以暂停只有「落定」
+  // 时才算（见 pausedSettled）：暂停开始于本次 seek 下发之前（用户
+  // 本来就停着），或暂停已持续满确认窗口（仍无人恢复：要么用户真停
+  // 住了，要么解码器停顿超过窗口——后者与用户暂停已无法区分，按暂
+  // 停处理）。seek 后才开始的短暂暂停先按到达进确认阶段等着：窗口
+  // 内恢复播放即按正常确认走（时间必须往前走）；持续到窗口满仍无
+  // 人恢复才按暂停落定。残余：暂停发生在 seek 下发之后时，看门狗最
+  // 多因此多发一次同目标重 seek（重发刷新下发时刻，暂停随即早于下
+  // 发时刻而落定），不判失败。
   let seekTargetSeconds = 0
   let seekIssuedAt = 0
   let seekArrivedAt = 0
   let softPlaying = false
+  // 最近一次 'paused' 事件的时刻（毫秒）；恢复播放时清掉。看门狗据
+  // 此判断暂停是「用户本来就停着」还是「seek 后解码器的短暂
+  // 停顿」（见 pausedSettled）。
+  let pausedAt: number | null = null
   let seekingNotified = false
   let seekPollTimer: ReturnType<typeof setInterval> | undefined
   const seekGuard = new SoftSeekGuard({
@@ -1047,12 +1062,32 @@ export async function createSoftPlayer(
     if (seekPollTimer) clearInterval(seekPollTimer)
     seekPollTimer = undefined
   }
+  /**
+   * 当前暂停是否算「落定」：只有两种暂停可以让看门狗撤防——
+   * ① 暂停开始于本次 seek 下发之前（用户本来就停着，seek 是暂停态
+   *    下发的；重试会刷新下发时刻，所以暂停发生在 seek 下发之后时，
+   *    最多因此多发一次同目标重 seek，随后即落定）；
+   * ② 暂停已持续满确认窗口（仍无人恢复：要么用户真停住了，要么解
+   *    码器停顿超过窗口——后者与用户暂停已无法区分，按暂停处理）。
+   * seek 后才开始的短暂暂停两种都不满足：不等它，也不撤防，进确认
+   * 阶段继续盯着。复核窗口直接复用确认窗口，不再新开可调参数（单
+   * 测里确认窗口取小值，复核窗口同步取小值）。
+   */
+  function pausedSettled(): boolean {
+    if (softPlaying || pausedAt === null) return false
+    if (pausedAt <= seekIssuedAt) return true
+    return (
+      Date.now() - pausedAt >=
+      (options.seekResumeMs ?? SOFT_SEEK_RESUME_MS)
+    )
+  }
   function noteSeekProgress(seconds: number): void {
     if (!seekGuard.pending) return
     if (seekGuard.confirming) {
-      // 确认恢复阶段：暂停态时间不走是正常的，直接算落定；播放态
-      // 下时间必须继续往前走——停在目标值不动就是复测里那次卡死。
-      if (!softPlaying) {
+      // 确认恢复阶段：落定的暂停（见 pausedSettled）时间不走是正常
+      // 的，直接算落定；播放态下时间必须继续往前走——停在目标值不
+      // 动就是复测里那次卡死；还没落定的短暂暂停先等着，不撤防。
+      if (!softPlaying && pausedSettled()) {
         seekGuard.complete()
         setSeekingNotified(false)
         return
@@ -1068,9 +1103,10 @@ export async function createSoftPlayer(
     }
     const elapsed = seekIssuedAt ? (Date.now() - seekIssuedAt) / 1000 : 0
     if (!softSeekArrived(seekTargetSeconds, seconds, elapsed)) return
-    // 位置已到目标：暂停态直接落定（时间本来就不走）；播放态转入
-    // 确认恢复阶段，「正在定位」继续留着，直到时间真的往前走。
-    if (!softPlaying) {
+    // 位置已到目标：落定的暂停直接落定（时间本来就不走）；还没落定
+    // 的短暂暂停先按到达进确认阶段等着；播放态转入确认恢复阶段，
+    // 「正在定位」继续留着，直到时间真的往前走。
+    if (!softPlaying && pausedSettled()) {
       seekGuard.complete()
       setSeekingNotified(false)
       return
@@ -1093,14 +1129,17 @@ export async function createSoftPlayer(
   player.on('firstAudioRendered', () => hooks.onFirstAudio())
   player.on('playing', () => {
     softPlaying = true
+    pausedAt = null
     hooks.onPlaying()
   })
   player.on('played', () => {
     softPlaying = true
+    pausedAt = null
     hooks.onPlaying()
   })
   player.on('paused', () => {
     softPlaying = false
+    pausedAt = Date.now()
     hooks.onPaused()
   })
   player.on('time', (pts) => {
@@ -1110,8 +1149,9 @@ export async function createSoftPlayer(
   })
   player.on('seeked', () => {
     // libmedia 明告 seek 已处理完（定位器已到目标）：走与进度到达
-    // 同一条路——暂停态落定，播放态转入确认恢复阶段。绝不能像旧
-    // 代码那样直接撤防：到了目标但播不起来时就又没人管了。
+    // 同一条路——落定的暂停落定、未落定的短暂暂停进确认阶段等着、
+    // 播放态转入确认恢复阶段。绝不能像旧代码那样直接撤防：到了目
+    // 标但播不起来时就又没人管了。
     noteSeekProgress(Number(player.currentTime) / 1000)
   })
   player.on('ended', () => hooks.onEnded())

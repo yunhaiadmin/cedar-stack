@@ -18,7 +18,7 @@
 // 运行：cd user_frontend && node tests/playerSpec.test.mjs
 import assert from 'node:assert'
 
-const { resolveSpecSource } = await import('../src/utils/playerSpec.ts')
+const { resolveSpecSource, specChipsOf, resolutionFromName } = await import('../src/utils/playerSpec.ts')
 
 let passed = 0
 function check(name, actual, expected) {
@@ -149,6 +149,56 @@ check(
   'spec source: all inputs missing => null',
   resolveSpecSource({}),
   null,
+)
+
+// --- 第三轮：分辨率胶囊回落（版本行宽高为 0 时读版本名） ---
+// 生产原样：《黑洞表面》1080p 版库里 width/height 都是 0，数值口径
+// 读不到数，胶囊没有分辨率；版本名本身就是真实标签文本（后端
+// _version_label），从里面解析 token 做回落。只读文本、不编数。
+check('resolution from name: 1080p WEB-DL', resolutionFromName('1080p WEB-DL'), '1080p')
+check('resolution from name: 2160p maps to 4K like the numeric path', resolutionFromName('2160p REMUX'), '4K')
+check('resolution from name: bare 4K', resolutionFromName('4K'), '4K')
+check('resolution from name: 720p', resolutionFromName('720p BluRay'), '720p')
+check('resolution from name: 480p', resolutionFromName('480p'), '480p')
+check('resolution from name: no token hides, never guesses', resolutionFromName('导演剪辑版'), '')
+check('resolution from name: empty hides', resolutionFromName(''), '')
+check('resolution from name: null hides', resolutionFromName(null), '')
+
+const video1080 = { Index: 0, Type: 'Video', Width: 1920, Height: 1080, Codec: 'hevc' }
+const videoZero = { Index: 0, Type: 'Video', Width: 0, Height: 0 }
+check(
+  'spec chips: numeric height wins',
+  specChipsOf({ Id: 'x', Name: '2160p REMUX', Container: 'mkv', MediaStreams: [{ Index: 0, Type: 'Video', Width: 3840, Height: 2160, Codec: 'hevc' }] }),
+  ['4K', 'HEVC', 'MKV'],
+)
+check(
+  'spec chips: zero height falls back to version name (production case)',
+  specChipsOf({ Id: 'c4a84409f1abcbeedf94c416ccc05807', Name: '1080p', Container: 'mkv', MediaStreams: [videoZero] }),
+  ['1080p', 'MKV'],
+)
+check(
+  'spec chips: no height and no token in name => no resolution chip',
+  specChipsOf({ Id: 'x', Name: '导演剪辑版', Container: 'mkv', MediaStreams: [videoZero] }),
+  ['MKV'],
+)
+check(
+  'spec chips: end-to-end via resolveSpecSource on a zero-height version row',
+  (() => {
+    const r = resolveSpecSource({
+      current: null,
+      playbackPicked: null,
+      wantedId: 'c4a84409f1abcbeedf94c416ccc05807',
+      itemSources: [remux4k],
+      versionRows: [{ Id: 'c4a84409f1abcbeedf94c416ccc05807', Name: '1080p', Width: 0, Height: 0, Container: 'mkv', SizeBytes: 2400000000 }],
+    })
+    return specChipsOf(r)
+  })(),
+  ['1080p', 'MKV'],
+)
+check(
+  'spec chips: numeric height on the row still wins over the name',
+  specChipsOf({ Id: 'x', Name: '1080p WEB-DL', Container: 'mkv', MediaStreams: [video1080] }),
+  ['1080p', 'HEVC', 'MKV'],
 )
 
 console.log(`\n${passed} passed`)
