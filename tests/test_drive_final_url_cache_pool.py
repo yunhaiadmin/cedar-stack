@@ -76,6 +76,11 @@ class _FakeClient:
 
 @pytest.fixture(autouse=True)
 def _reset_state(monkeypatch):
+    # 本文件只钉最终 URL 缓存与连接池：关掉热缓存跨请求预读，
+    # 免其取数调用混进 _follow_redirects 的严格计数（预读口径由
+    # test_relay_hot_cache / test_mount_hot_cache 专责覆盖；
+    # L-007 后预读以覆盖前沿为锚，这类合成小文件形态也会触发）。
+    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_BYTES", "0")
     monkeypatch.delenv("DRIVE_RELAY_FINAL_URL_CACHE_TTL_SEC",
                        raising=False)
     monkeypatch.delenv("DRIVE_RELAY_POOL_BREAKER_THRESHOLD",

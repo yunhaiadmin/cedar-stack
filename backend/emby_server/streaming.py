@@ -1186,15 +1186,34 @@ def _mount_relay_client() -> "httpx.AsyncClient":
 # api.video_stream 对有 drive_file_id 的挂载条目传 mount:{fid}）：
 # - 全命中：开流前查缓存，请求区间被分段完全覆盖 → 本地出字节、
 #   不回源；
-# - 未全命中：现行透传逐字不变，只在流上旁路写穿——流过的完整
+# - 部分命中（L-007）：带 Range 的请求自起始段起有连续覆盖前缀
+#   → 先本地出流这一截（短 206），剩余区间由播放器重发时再接；
+#   后缀 Range 不走部分出流；
+# - 未命中：现行透传逐字不变，只在流上旁路写穿——流过的完整
 #   分段投递给缓存写线程落盘，下次同区间才转全命中；
-# - 跨请求预读：一次出流后，后台把请求区间之后的 N 个分段提前
-#   读进缓存（有界并发、已缓存/在途去重、失败自吞）。
+# - 跨请求预读（L-007 重做）：一次出流后，后台以请求起始段为锚、
+#   从覆盖前沿起按字节窗口（缺省 32MB、8MB 一次取数切段）提前
+#   读进缓存（有界并发、同身份 single-flight、失败自吞）。
 # 任何缓存异常一律 fail-open：回现行透传，播放不受影响。
 
 
+def _pt_field(pt, name, value) -> None:
+    """给 [play-timing] 计时器附一个非耗时字段（cache=…）：计时器
+    或测试桩没有 field 方法就跳过——打点永不挡播放。"""
+    if pt is None:
+        return
+    fn = getattr(pt, "field", None)
+    if not callable(fn):
+        return
+    try:
+        fn(name, value)
+    except Exception:  # noqa: BLE001 — 打点永不抛
+        pass
+
+
 def _try_hot_cache_response(identity, range_header, media_type, pt):
-    """热缓存全命中出流：命中返回 StreamingResponse，未命中/任何
+    """热缓存命中出流：全覆盖 → 全命中出流；带 Range 且起始段起
+    有连续覆盖前缀 → 部分出流（短 206，L-007）；都够不着/任何
     问题返回 None（调用方走现行透传，逐字不变）。"""
     opened = None
     _pt_t0 = time.perf_counter() if pt is not None else None
@@ -1211,6 +1230,16 @@ def _try_hot_cache_response(identity, range_header, media_type, pt):
             return None
         start, end = rng
         opened = _hc.open_segments(identity, meta, start, end)
+        _partial = False
+        if opened is None and range_header and _hc.partial_enabled() \
+                and not _hc.range_is_suffix(range_header):
+            # L-007 部分覆盖出流：起始段起有连续覆盖前缀就先本地
+            # 出这一截（短 206），播放器对剩余区间重发请求时覆盖
+            # 已随写穿/预读前移。后缀 Range 不走此路（规格明示）。
+            _prefix = _hc.open_covered_prefix(identity, meta, start, end)
+            if _prefix is not None:
+                opened, end = _prefix
+                _partial = True
         if opened is None:
             _hc.note_miss()
             return None
@@ -1226,14 +1255,24 @@ def _try_hot_cache_response(identity, range_header, media_type, pt):
             headers["ETag"] = meta["etag"]
         if meta.get("last_modified"):
             headers["Last-Modified"] = meta["last_modified"]
-        _hc.note_hit(end - start + 1)
-        logger.info("relay_hot_cache 全命中出流 identity=%s "
-                    "range=%d-%d bytes=%d",
-                    identity, start, end, end - start + 1)
+        if _partial:
+            _hc.note_partial(end - start + 1)
+            logger.info("relay_hot_cache 部分覆盖出流 identity=%s "
+                        "range=%d-%d bytes=%d",
+                        identity, start, end, end - start + 1)
+        else:
+            _hc.note_hit(end - start + 1)
+            logger.info("relay_hot_cache 全命中出流 identity=%s "
+                        "range=%d-%d bytes=%d",
+                        identity, start, end, end - start + 1)
         if pt is not None:
             # 命中路径的热缓存查询耗时在此补记（未命中路径由调用方在
             # 本函数返回 None 后补记同名字段，口径一致）。
             pt.span("cache_lookup", _pt_t0)
+            # [play-timing] 缓存出口字段（L-007 验收前提）：hit /
+            # partial 在此记，miss 由调用方在返回 None 后记。
+            _pt_field(pt, "cache", "partial" if _partial else "hit")
+            _pt_field(pt, "cache_bytes", end - start + 1)
             pt.mark("ttfb")
             pt.done()
 
@@ -1361,13 +1400,15 @@ async def _hot_cache_tee(source, plan):
             dead = True
 
 
-#: 跨请求预读的在途任务与分段去重集（进程内）：任务上限防突发
+#: 跨请求预读的在途任务与单飞登记（进程内）：任务上限防突发
 #: 请求把预读放大成上游洪水；信号量限并发，绝不占满连接池。
+#: 单飞登记 identity → (锚点段, task)：同身份同锚点的窗口同时
+#: 只许一个在途；新请求换了锚点（拖动/重开）→ 旧窗取消、新窗接管。
 _HOT_PREFETCH_TASKS: set = set()
-_HOT_PREFETCH_INFLIGHT: set = set()
+_HOT_PREFETCH_RUNNING: dict = {}
 _HOT_PREFETCH_SEMS: dict = {}
 _HOT_PREFETCH_MAX_TASKS = 16
-_HOT_PREFETCH_CONCURRENCY = 2
+_HOT_PREFETCH_CONCURRENCY = 4
 
 
 def _hot_prefetch_sem() -> "asyncio.Semaphore":
@@ -1380,47 +1421,86 @@ def _hot_prefetch_sem() -> "asyncio.Semaphore":
 
 
 async def _hot_prefetch_run(identity, range_header, fetcher) -> None:
-    """预读主体：把请求区间之后 N 个未缓存分段取回落盘。
+    """预读主体（L-007 重做）：以请求起始段为锚、从覆盖前沿起按
+    字节窗口取数落盘。
 
-    fetcher(seg_start, seg_end) -> bytes | None 由调用方按腿构造。
-    已缓存/在途的分段跳过（去重）；任何失败自吞，绝不外抛。
+    fetcher(seg_start, seg_end) -> bytes | None 由调用方按腿构造
+    （挂载/Drive 同一口径）。窗口缺省 32MB（RELAY_HOT_CACHE_
+    PREFETCH_BYTES），窗口内按 8MB 一次取数（PREFETCH_FETCH_
+    BYTES）、回字节本地切成 1MB 段逐段提交——旧口径「以区间
+    末尾为锚、逐段一开流」在开尾 Range 下恒为空转（末尾＝文件
+    尾）、且每预读 1MB 重付一次谷歌开流，已废。同身份同锚点
+    single-flight；换锚点时旧窗被新窗接管取消。逐请求重锚：
+    前沿按本次请求到达时的盘面现算。任何失败自吞，绝不外抛。
     """
     try:
         from backend.emby_server import relay_hot_cache as _hc
         meta = _hc.get_meta(identity)
         if not meta:
             return
-        gen = _hc.current_generation(identity)
         total = int(meta["total_size"])
         rng = _hc.parse_range(range_header, total)
         if rng is None:
             return
+        window = _hc.prefetch_bytes()
+        window -= window % _hc.SEGMENT_SIZE
+        if window <= 0:
+            return
         seg = _hc.SEGMENT_SIZE
-        last_seg = (total - 1) // seg
-        cur_last = rng[1] // seg
-        n = _hc.prefetch_segments()
-        sem = _hot_prefetch_sem()
-        for idx in range(cur_last + 1,
-                         min(last_seg, cur_last + n) + 1):
-            key = (identity, idx)
-            if key in _HOT_PREFETCH_INFLIGHT:
-                continue
-            if _hc.segment_present(identity, meta, idx):
-                continue
-            _HOT_PREFETCH_INFLIGHT.add(key)
-            try:
-                s = idx * seg
-                e = min(s + seg, total) - 1
+        anchor_seg = rng[0] // seg
+        # single-flight 登记：同锚点已有窗在途 → 本路直接返回；
+        # 异锚点 → 取消旧窗接管（拖动/重开即新前沿）。
+        _me = asyncio.current_task()
+        _prev = _HOT_PREFETCH_RUNNING.get(identity)
+        if _prev is not None and _prev[1] is not _me \
+                and not _prev[1].done():
+            if _prev[0] == anchor_seg:
+                return
+            _prev[1].cancel()
+        _HOT_PREFETCH_RUNNING[identity] = (anchor_seg, _me)
+        try:
+            gen = _hc.current_generation(identity)
+            last_seg = (total - 1) // seg
+            # 覆盖前沿：锚点段起第一个未落盘的分段（扫描以一个
+            # 窗口为界——锚点起一个窗口内全覆盖就没什么可预读）。
+            frontier = anchor_seg
+            scan_limit = min(last_seg, anchor_seg + window // seg)
+            while frontier <= scan_limit and _hc.segment_present(
+                    identity, meta, frontier):
+                frontier += 1
+            if frontier > last_seg or frontier > scan_limit:
+                return
+            win_start = frontier * seg
+            win_end = min(win_start + window, total) - 1
+            fetch_bytes = _hc.prefetch_fetch_bytes()
+            sem = _hot_prefetch_sem()
+            pos = win_start
+            while pos <= win_end:
+                if _hc.current_generation(identity) != gen:
+                    break  # 身份被失效：旧代际的字节不再取
+                fend = min(pos + fetch_bytes, win_end + 1) - 1
                 async with sem:
-                    data = await fetcher(s, e)
-                if data and len(data) == e - s + 1:
-                    if _hc.submit_segment(identity, idx, data, total,
-                                          gen=gen):
-                        _hc.note_prefetch_fetched()
-            except Exception:  # noqa: BLE001 — 预读失败自吞
-                pass
-            finally:
-                _HOT_PREFETCH_INFLIGHT.discard(key)
+                    data = await fetcher(pos, fend)
+                if not data or len(data) != fend - pos + 1:
+                    break  # 取数不全：停窗，下次请求重锚再来
+                off = pos
+                while off <= fend:
+                    idx = off // seg
+                    exp = _hc.segment_expected_len(total, idx)
+                    chunk = data[off - pos: off - pos + exp]
+                    if len(chunk) != exp:
+                        break  # 块界未对齐整段（理论不达）：不拼凑
+                    if not _hc.segment_present(identity, meta, idx):
+                        if _hc.submit_segment(
+                                identity, idx, chunk, total, gen=gen):
+                            _hc.note_prefetch_fetched()
+                            _hc.note_prefetch_bytes(len(chunk))
+                    off += exp
+                pos = fend + 1
+        finally:
+            _cur = _HOT_PREFETCH_RUNNING.get(identity)
+            if _cur is not None and _cur[1] is _me:
+                _HOT_PREFETCH_RUNNING.pop(identity, None)
     except Exception:  # noqa: BLE001 — 预读绝不外抛
         pass
 
@@ -1430,7 +1510,7 @@ def _schedule_hot_prefetch(identity, range_header, fetcher) -> None:
     写穿/命中）时不挂——没有总长锚点，预读无从算起。永不抛。"""
     try:
         from backend.emby_server import relay_hot_cache as _hc
-        if not _hc.enabled() or _hc.prefetch_segments() <= 0:
+        if not _hc.enabled() or _hc.prefetch_bytes() <= 0:
             return
         if not _hc.get_meta(identity):
             return
@@ -1492,7 +1572,8 @@ async def _fetch_drive_segment_bytes(drive_id, file_id, access_token,
 def _schedule_drive_hot_prefetch(drive_id, file_id, access_token,
                                  request) -> None:
     """Drive 腿出流后的跨请求预读调度：fetcher 按腿构造（SA 腿现取
-    轮换凭据、令牌腿用本次令牌）。永不抛。"""
+    轮换凭据、令牌腿用本次令牌）；窗口/粒度与挂载腿共用
+    _hot_prefetch_run 同一口径（横切只许一套）。永不抛。"""
     try:
         range_header = None
         headers = getattr(request, "headers", None)
@@ -1540,7 +1621,8 @@ async def _fetch_mount_segment_bytes(url, headers, seg_start, seg_end):
 def _schedule_mount_hot_prefetch(identity, url, headers,
                                  range_header) -> None:
     """挂载腿出流后的跨请求预读调度：fetcher 按挂载上游构造（同一
-    URL＋同一份挂载凭据头，只换 Range）。永不抛。"""
+    URL＋同一份挂载凭据头，只换 Range）；窗口/粒度与 Drive 腿
+    共用 _hot_prefetch_run 同一口径（横切只许一套）。永不抛。"""
     try:
         async def _fetcher(seg_start, seg_end):
             return await _fetch_mount_segment_bytes(
@@ -1617,6 +1699,7 @@ async def serve_mount_relay_async(
             _hot_identity, range_header, media_type, pt)
         if _hit_resp is None and pt is not None:
             pt.span("cache_lookup", _cache_t0)
+            _pt_field(pt, "cache", "miss")
         if _hit_resp is not None:
             if _mount_prefetch:
                 _schedule_mount_hot_prefetch(

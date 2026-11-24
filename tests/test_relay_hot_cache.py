@@ -252,35 +252,112 @@ def test_lru_eviction_by_mtime(cache_env, monkeypatch):
         assert hc.segment_present(ident, meta, 0), ident
 
 
-def test_prefetch_bounded_and_deduped(cache_env, monkeypatch):
-    """预读只取请求区间之后 N 段；已缓存跳过、并发在途去重。"""
-    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_SEGMENTS", "2")
-    ident = "drive:D9:P"
+def _pattern_fetcher(calls):
+    """按绝对偏移生成可校验字节的假 fetcher：每段填段号+1。"""
+    async def fetcher(s, e):
+        calls.append((s, e))
+        out = bytearray()
+        pos = s
+        while pos <= e:
+            idx = pos // SEG
+            take = min(SEG - (pos - idx * SEG), e - pos + 1)
+            out += bytes([idx % 250 + 1]) * take
+            pos += take
+        return bytes(out)
+    return fetcher
+
+
+def test_prefetch_open_ended_range_anchors_at_start(cache_env):
+    """开尾 Range 预读钉子（L-007 根因 2）：旧口径以区间末尾为锚，
+    开尾时末尾＝文件尾 → 取数恒 0 次。新口径以起始段为锚、从覆盖
+    前沿起按字节窗口取数：空缓存时第一个取数区间必须从 0 开始。"""
+    ident = "drive:D9:OPEN"
     total = 5 * SEG
+    assert hc.note_validators(ident, total, etag='"v1"')
+    calls = []
+    asyncio.run(streaming._hot_prefetch_run(
+        ident, "bytes=0-", _pattern_fetcher(calls)))
+    hc.flush_writes()
+    assert calls, "开尾 Range 的预读取数不许为 0 次"
+    assert calls[0][0] == 0
+    meta = hc.get_meta(ident)
+    for idx in range(5):
+        assert hc.segment_present(ident, meta, idx), idx
+
+
+def test_prefetch_fetch_granularity_and_cut(cache_env):
+    """取数粒度（L-007 根因 3）：窗口内按 8MB 一次 GET 取数、本地
+    切成 1MB 段逐段提交；尾窗按实际区间收尾。"""
+    ident = "drive:D9:GRAN"
+    total = 20 * SEG
+    assert hc.note_validators(ident, total, etag='"v1"')
+    calls = []
+    fetched_before = hc.stats()["prefetch_fetched"]
+    bytes_before = hc.stats()["prefetch_bytes"]
+    asyncio.run(streaming._hot_prefetch_run(
+        ident, "bytes=0-99", _pattern_fetcher(calls)))
+    hc.flush_writes()
+    assert calls == [(0, 8 * SEG - 1), (8 * SEG, 16 * SEG - 1),
+                     (16 * SEG, total - 1)]
+    meta = hc.get_meta(ident)
+    for idx in range(20):
+        assert hc.segment_present(ident, meta, idx), idx
+    # 切段字节逐字对：段内字节与 fetcher 的按段图案一致
+    with open(hc._segment_path(ident, 3), "rb") as fh:
+        assert fh.read() == bytes([4]) * SEG
+    assert hc.stats()["prefetch_fetched"] - fetched_before == 20
+    assert hc.stats()["prefetch_bytes"] - bytes_before == total
+
+
+def test_prefetch_generation_change_drops_window(cache_env):
+    """取数中途身份被失效（代际 +1）→ 在途窗口全部段按代际丢弃、
+    且不再继续取下一块。"""
+    ident = "drive:D9:GEN"
+    total = 20 * SEG
+    assert hc.note_validators(ident, total, etag='"v1"')
+    calls = []
+
+    async def killing_fetcher(s, e):
+        calls.append((s, e))
+        if len(calls) == 1:
+            hc.invalidate(ident)
+            assert hc.note_validators(ident, total, etag='"v2"')
+        return b"\x07" * (e - s + 1)
+
+    asyncio.run(streaming._hot_prefetch_run(
+        ident, "bytes=0-99", killing_fetcher))
+    hc.flush_writes()
+    assert len(calls) == 1, "代际变化后不许再取下一块"
+    meta = hc.get_meta(ident)
+    for idx in range(8):
+        assert not hc.segment_present(ident, meta, idx), idx
+
+
+def test_prefetch_window_frontier_and_singleflight(cache_env):
+    """窗口从覆盖前沿起算（已缓存段不重取）；同身份同锚点并发只
+    允许一个窗口在途（single-flight），每块只取一次。"""
+    ident = "drive:D9:FRONT"
+    total = 33 * SEG
     assert hc.note_validators(ident, total, etag='"v1"')
     assert hc.submit_segment(ident, 0, b"\x00" * SEG, total)
     hc.flush_writes()
-
     calls = []
-
-    async def fetcher(s, e):
-        calls.append((s, e))
-        return bytes([(s // SEG) % 250 + 1]) * (e - s + 1)
-
-    asyncio.run(streaming._hot_prefetch_run(ident, "bytes=0-99", fetcher))
+    asyncio.run(streaming._hot_prefetch_run(
+        ident, "bytes=0-99", _pattern_fetcher(calls)))
     hc.flush_writes()
-    assert calls == [(SEG, 2 * SEG - 1), (2 * SEG, 3 * SEG - 1)]
+    # 前沿在第 1 段：32MB 窗口 = 4 次 8MB 取数，覆盖 1..32 段
+    assert calls == [(SEG, 9 * SEG - 1), (9 * SEG, 17 * SEG - 1),
+                     (17 * SEG, 25 * SEG - 1), (25 * SEG, total - 1)]
     meta = hc.get_meta(ident)
-    assert hc.segment_present(ident, meta, 1)
-    assert hc.segment_present(ident, meta, 2)
-    assert not hc.segment_present(ident, meta, 3)
+    for idx in range(33):
+        assert hc.segment_present(ident, meta, idx), idx
+    # 再跑：窗口内已全覆盖 → 零取数
+    asyncio.run(streaming._hot_prefetch_run(
+        ident, "bytes=0-99", _pattern_fetcher(calls)))
+    assert len(calls) == 4
 
-    # 再跑一次：已缓存 → 一次都不取
-    asyncio.run(streaming._hot_prefetch_run(ident, "bytes=0-99", fetcher))
-    assert len(calls) == 2
-
-    # 并发两路同区间预读：在途去重，每段只取一次
-    ident2 = "drive:D9:Q"
+    # 并发两路同锚点：single-flight，第二路直接返回不重复取数
+    ident2 = "drive:D9:FRONT2"
     assert hc.note_validators(ident2, total, etag='"v1"')
     assert hc.submit_segment(ident2, 0, b"\x00" * SEG, total)
     hc.flush_writes()
@@ -297,7 +374,55 @@ def test_prefetch_bounded_and_deduped(cache_env, monkeypatch):
             streaming._hot_prefetch_run(ident2, "bytes=0-99", slow_fetcher))
 
     asyncio.run(_both())
-    assert sorted(calls2) == [(SEG, 2 * SEG - 1), (2 * SEG, 3 * SEG - 1)]
+    hc.flush_writes()
+    assert sorted(calls2) == [(SEG, 9 * SEG - 1), (9 * SEG, 17 * SEG - 1),
+                              (17 * SEG, 25 * SEG - 1),
+                              (25 * SEG, total - 1)]
+
+
+def test_prefetch_env_parsing(monkeypatch):
+    """预读 env 口径：窗口缺省 32MB、钳 [0, 128MB]；取数粒度缺省
+    8MB、按整段对齐（向下取整到 1MB 的整数倍、最小 1 段）。"""
+    monkeypatch.delenv("RELAY_HOT_CACHE_PREFETCH_BYTES", raising=False)
+    monkeypatch.delenv("RELAY_HOT_CACHE_PREFETCH_FETCH_BYTES",
+                       raising=False)
+    assert hc.prefetch_bytes() == 32 * SEG
+    assert hc.prefetch_fetch_bytes() == 8 * SEG
+    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_BYTES", "0")
+    assert hc.prefetch_bytes() == 0
+    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_BYTES", str(10 ** 12))
+    assert hc.prefetch_bytes() == 128 * SEG
+    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_BYTES", "abc")
+    assert hc.prefetch_bytes() == 32 * SEG
+    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_FETCH_BYTES", "2500000")
+    assert hc.prefetch_fetch_bytes() == 2 * SEG
+    monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_FETCH_BYTES", "100")
+    assert hc.prefetch_fetch_bytes() == SEG
+
+
+def test_drive_prefetch_same_window_fetch(cache_env, monkeypatch):
+    """Drive 腿与挂载腿同一套预读（横切只许一套）：Drive fetcher
+    被窗口以 8MB 区间调用、字节切段落盘到 drive: 身份下。"""
+    ident = "drive:D9:L7WIN"
+    total = 10 * SEG
+    body = (bytes(range(256)) * (total // 256 + 1))[:total]
+    up = _FakeUpstream(body=body)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(up.handler))
+    monkeypatch.setattr(streaming, "_acquire_drive_client",
+                        lambda: (client, False))
+    assert hc.note_validators(ident, total, etag='"v1"')
+
+    async def fetcher(s, e):
+        return await streaming._fetch_drive_segment_bytes(
+            "D9", "L7WIN", "TOK", s, e)
+
+    asyncio.run(streaming._hot_prefetch_run(ident, "bytes=0-99", fetcher))
+    hc.flush_writes()
+    assert up.ranges == ["bytes=0-%d" % (8 * SEG - 1),
+                         "bytes=%d-%d" % (8 * SEG, total - 1)]
+    meta = hc.get_meta(ident)
+    for idx in range(10):
+        assert hc.segment_present(ident, meta, idx), idx
 
 
 def test_cache_failure_fail_open(cache_env, upstream, monkeypatch):
