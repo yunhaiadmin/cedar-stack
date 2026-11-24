@@ -1070,25 +1070,62 @@ def _default_people_fetcher(fetched):
     return _fetch
 
 
-def _apply_people_fill(db, item, fetched, people_fetcher=None):
-    """补资料段人物补缺（只填 emby_people 现有三列、永不覆盖）。
+def _create_people_rows(db, item, fetched):
+    """补资料段人物建行：条目尚无任何 emby_people 行时，用本轮已抓到
+    的 TMDB credits 建行——与经典写库段 ``_apply_cast`` 平价（行形状
+    走 ``tmdb.cast_list`` 单一口径、写人走全仓唯一实现
+    ``enrich_worker._apply_people_rows``，不许另起第二套）。
 
-    记录源 = 本条目已有的人物行（不新建行，建行仍归现行
-    _apply_cast）；抓取源默认复用本轮 TMDB credits，调用方可注入
-    fetcher。开关关 / 无行 / 无抓取源时静默跳过；任何异常只记日志，
-    绝不拖垮补资料段。返回实际改动的字段数（日志用，不进返回值）。
+    为什么需要它：两段式条目不经过经典 ``_enrich_apply``，
+    ``_apply_people_fill`` 原设计「建行仍归现行 _apply_cast」的委托
+    落空，无行条目永远建不了行（2026-11-24 补拉试点 200 条演员补
+    到 0 条确诊）。只用本轮已抓到的 credits，不新增任何请求；无
+    credits / 解析失败静默跳过。开关口径：建行是基础写库（经典
+    路径无独立开关），只随补资料段本身启停，不受人物刮削开关
+    ``PEOPLE_SCRAPE_ENABLED`` 管辖——那是「抓人物详情补已有行
+    空缺」的增强开关。幂等：``_apply_people_rows`` 内部先查已有
+    行，有行时只补空不新增，与经典路径 / 重跑相撞也不会重复
+    建行。返回新建行数（日志用）。
     """
+    details = (fetched or {}).get("tmdb_details") or {}
+    if not details:
+        return 0
     try:
-        from backend.emby_server.metasources import people_scrape as _people
-    except Exception as exc:  # noqa: BLE001 — 人物模块不可用不影响补资料
-        logger.warning("人物刮削模块不可用，跳过 id=%s: %s", item.id, exc)
+        from backend.emby_server.tmdb import cast_list as _cast_list
+        cast = _cast_list(details)
+    except Exception:  # noqa: BLE001 — credits 解析失败 = 无建行源
         return 0
-    if not _people.people_scrape_enabled():
+    if not cast:
         return 0
-    if people_fetcher is None:
-        people_fetcher = _default_people_fetcher(fetched)
-    if people_fetcher is None:
+    try:
+        from backend.emby_server import enrich_worker as _ew
+        touched = _ew._apply_people_rows(db, item, cast)
+    except Exception as exc:  # noqa: BLE001 — 建行失败不拖垮补资料段
+        logger.warning("补资料段人物建行失败，跳过 id=%s: %s", item.id, exc)
         return 0
+    if not touched:
+        return 0
+    created = (
+        db.query(em.EmbyPerson)
+        .filter(em.EmbyPerson.item_id == item.id)
+        .count()
+    )
+    if created:
+        logger.info("补资料段人物建行 id=%s created=%s", item.id, created)
+    return created
+
+
+def _apply_people_fill(db, item, fetched, people_fetcher=None):
+    """补资料段人物环节：无行先建行，有行只填空缺、永不覆盖。
+
+    无行条目：用本轮 TMDB credits 建行（``_create_people_rows``，
+    与经典 ``_apply_cast`` 平价）。已有行条目：记录源 = 本条目
+    已有的人物行，只按名字填 role / image / person_tmdb_id 三列
+    空缺（人物刮削；抓取源默认复用本轮 TMDB credits，调用方可
+    注入 fetcher；开关关 / 无抓取源时静默跳过）。任何异常只记
+    日志，绝不拖垮补资料段。返回实际改动的量（建行数或补缺
+    字段数，日志用，不进返回值）。
+    """
     try:
         rows = (
             db.query(em.EmbyPerson)
@@ -1099,6 +1136,17 @@ def _apply_people_fill(db, item, fetched, people_fetcher=None):
         logger.warning("人物行读取失败，跳过 id=%s: %s", item.id, exc)
         return 0
     if not rows:
+        return _create_people_rows(db, item, fetched)
+    try:
+        from backend.emby_server.metasources import people_scrape as _people
+    except Exception as exc:  # noqa: BLE001 — 人物模块不可用不影响补资料
+        logger.warning("人物刮削模块不可用，跳过 id=%s: %s", item.id, exc)
+        return 0
+    if not _people.people_scrape_enabled():
+        return 0
+    if people_fetcher is None:
+        people_fetcher = _default_people_fetcher(fetched)
+    if people_fetcher is None:
         return 0
     records = [
         {
@@ -1140,9 +1188,10 @@ def apply_fill(db, item, fetched: dict, people_fetcher=None) -> list:
     Frodo 只补缺口，不覆盖已填。Frodo 之后仍缺的字段再问中文聚合
     通道（聚合开关关时它返回空，行为与本批之前逐字一致；聚合开时
     它按源优先级逐字段补缺，Frodo 腿在聚合里不受独立 Frodo 开关
-    管辖——见 zh_aggregate 模块头注）。最后跑人物补缺（接线批）：
-    只填本条目已有人物行的 role / image / person_tmdb_id 空缺，
-    永不覆盖、不新建行；开关关时不问源。返回实际填上的字段名列表。
+    管辖——见 zh_aggregate 模块头注）。最后跑人物环节：无人物行
+    时用本轮 credits 建行（与经典 _apply_cast 平价），已有人物行
+    时只填 role / image / person_tmdb_id 空缺、永不覆盖（补缺受
+    人物刮削开关管辖，开关关时不问源）。返回实际填上的字段名列表。
     """
     from backend.emby_server import identity_gate
 
