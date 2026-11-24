@@ -55,6 +55,16 @@ class PlayTimer:
         """记录一个检查点（毫秒精度）。"""
         self._marks.append((name, (time.perf_counter() - self._start) * 1000))
 
+    def span(self, name: str, since: float) -> None:
+        """记录一段已测得的耗时（分段字段，毫秒）。
+
+        与 mark() 的「累计检查点」相对：span 存的是时长本身——调用方在
+        子过程前后取 perf_counter 点、事后一次性补记（如中继内部向
+        上游发请求等响应头的时长），不在子过程里逐点打日志。done()
+        输出格式与 mark 一致（name=<毫秒>ms），同一行里混排。
+        """
+        self._marks.append((name, (time.perf_counter() - since) * 1000))
+
     def elapsed_ms(self) -> int:
         """自计时器创建起已耗的毫秒数（起播事件 total_ms 的取数口）。"""
         return int((time.perf_counter() - self._start) * 1000)
@@ -74,6 +84,9 @@ class _NoopTimer:
     __slots__ = ()
 
     def mark(self, name: str) -> None:  # noqa: ARG002
+        pass
+
+    def span(self, name: str, since: float) -> None:  # noqa: ARG002
         pass
 
     def elapsed_ms(self) -> None:
