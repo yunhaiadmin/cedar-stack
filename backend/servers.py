@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -672,6 +673,32 @@ def active_config(db: Session, kind: str, realm_id: Optional[int] = None) -> Opt
             "config": parse_config(row)}
 
 
+def _seek_seasons(request) -> Optional[list[int]]:
+    """求片记录里申请的季 → 要逐季建订阅的季号列表（L-025）
+
+    ``MovieRequest.season`` 落单时已归一化（``"1,2"`` / ``"all"``，见
+    ``media_seek.normalize_season``）。``"all"``（全季）与空值（电影等
+    无季概念）返回 ``None``，表示沿用整剧订阅、不带 season；其余按
+    记录里实际列出的季逐个返回，不额外扩散。脏值解析不出数字时也
+    返回 ``None``（退回整剧订阅，不让一条脏数据把推送打死）。
+    """
+    raw = str(getattr(request, "season", "") or "").strip().lower()
+    if not raw or raw == "all":
+        return None
+    seasons: list[int] = []
+    for part in re.split(r"[,，、/\s]+", raw):
+        if part and part.isascii() and part.isdigit():
+            num = int(part)
+            if num not in seasons:
+                seasons.append(num)
+    return sorted(seasons) or None
+
+
+def _season_text(season: int) -> str:
+    """季号的展示文案：0 是特别篇，其余是「第 N 季」"""
+    return "特别篇" if season == 0 else f"第 {season} 季"
+
+
 async def push_media_seek(db: Session, request, target: str, link: str = "",
                           realm_id: Optional[int] = None) -> dict:
     """把一条求片转交给外部服务
@@ -700,8 +727,7 @@ async def push_media_seek(db: Session, request, target: str, link: str = "",
 
     config = server["config"]
     if target == "moviepilot":
-        result = await moviepilot.subscribe(
-            server["url"],
+        subscribe_kwargs = dict(
             username=str(config.get("username") or ""),
             password=str(config.get("password") or ""),
             name=request.movie_name,
@@ -709,6 +735,41 @@ async def push_media_seek(db: Session, request, target: str, link: str = "",
             mtype=moviepilot.media_type(request.type),
             save_path=str(config.get("save_path") or ""),
         )
+        seasons = _seek_seasons(request)
+        if seasons is None:
+            # 全季（all）/ 电影等无季：整剧订阅，不带 season（原行为）
+            result = await moviepilot.subscribe(server["url"], **subscribe_kwargs)
+        else:
+            # L-025：用户求了具体季就只订那些季——逐季各建一个带
+            # season 的订阅；部分季失败时整体如实报失败并写明哪季，
+            # 不假成功（push_message 会原样落库给管理员看）。
+            created: list[int] = []
+            failed: list[tuple[int, str]] = []
+            last_id = None
+            for season in seasons:
+                one = await moviepilot.subscribe(
+                    server["url"], season=season, **subscribe_kwargs)
+                if one.get("ok"):
+                    created.append(season)
+                    if one.get("id") is not None:
+                        last_id = one.get("id")
+                else:
+                    failed.append((season, str(one.get("message") or "")[:120]))
+            labels = "、".join(_season_text(s) for s in seasons)
+            if not failed:
+                message = (f"已按求片季号创建订阅：{labels}"
+                           if len(seasons) > 1 else f"已创建{labels}订阅")
+                result = {"ok": True, "message": message, "id": last_id}
+            else:
+                parts = []
+                if created:
+                    parts.append("已创建" + "、".join(
+                        _season_text(s) for s in created) + "订阅")
+                parts += [f"{_season_text(s)}失败"
+                          + (f"：{reason}" if reason else "")
+                          for s, reason in failed]
+                result = {"ok": False, "message": "；".join(parts),
+                          "id": last_id}
     else:
         result = await qbittorrent.add_torrent(
             server["url"],

@@ -46,7 +46,7 @@ from backend.ratelimit import (
     login_lockout_config,
     login_lockout_record_failure,
     login_lockout_record_success,
-    reset_rate_limit,
+    peek_rate_limit,
 )
 # 邮件（能力中心）：找回密码走与站内通知同一个 EmailChannel，不另造发信实现
 from backend.integrations import mail as integrations_mail
@@ -381,6 +381,54 @@ def _get_register_ratelimit(db: Session) -> tuple[bool, int, int]:
     return enabled, max_events, window_seconds
 
 
+# 注册成功独立计数桶默认值（L-022）：成功不再清零尝试桶，改为成功单独
+# 记一个桶封顶。3 次/小时/IP 的理由：尝试桶默认 5 次/小时管的是尝试总量
+# （含失败爆破）；成功桶管的是「真建成了几个号」——同一出口（家庭/办公
+# NAT）一小时内正常新建账号极少超过 3 个，而批量刷号恰恰要的是大量成功，
+# 钉在 3 次/小时能把刷号速率压到可忽略，又不误伤正常注册。
+REGISTER_SUCCESS_RATELIMIT_MAX_DEFAULT = 3
+REGISTER_SUCCESS_RATELIMIT_WINDOW_DEFAULT = 3600
+
+
+def _get_register_success_ratelimit(db: Session) -> tuple[int, int]:
+    """读取注册成功独立桶配置（与 _get_register_ratelimit 同口径）。
+
+    配置键（均存于 SystemConfig 表）：
+    - register_success_ratelimit_max：窗口内允许的最大成功注册次数，默认 3；
+    - register_success_ratelimit_window：窗口长度（秒），默认 3600。
+
+    启用与否跟随注册限流总开关（register_ratelimit_enabled），本函数只管
+    上限与窗口。读取/转换异常或非正数值一律回退默认，口径同尝试桶。
+    """
+    max_events = REGISTER_SUCCESS_RATELIMIT_MAX_DEFAULT
+    window_seconds = REGISTER_SUCCESS_RATELIMIT_WINDOW_DEFAULT
+    try:
+        rows = (
+            db.query(models.SystemConfig)
+            .filter(models.SystemConfig.key.in_([
+                "register_success_ratelimit_max",
+                "register_success_ratelimit_window",
+            ]))
+            .all()
+        )
+        values = {r.key: r.value for r in rows if r.value}
+    except Exception:
+        values = {}
+    try:
+        if "register_success_ratelimit_max" in values:
+            v = int(values["register_success_ratelimit_max"])
+            max_events = v if v >= 1 else REGISTER_SUCCESS_RATELIMIT_MAX_DEFAULT
+    except (TypeError, ValueError):
+        pass
+    try:
+        if "register_success_ratelimit_window" in values:
+            v = int(values["register_success_ratelimit_window"])
+            window_seconds = v if v >= 1 else REGISTER_SUCCESS_RATELIMIT_WINDOW_DEFAULT
+    except (TypeError, ValueError):
+        pass
+    return max_events, window_seconds
+
+
 # 注册不再送任何体验/赠送（2026-11-15 用户亲令）：原新注册冷启动赠送
 # （register_gift_view_* 控的查看行发放）已整段删除，register_gift_view_*
 # 与 register_gift_welfare_* 配置键就此失效（留库不管，代码不再读）。
@@ -395,9 +443,18 @@ def register(request: Request, req: RegisterRequest, db: Session = Depends(get_d
     """
     rl_enabled, rl_max, rl_window = _get_register_ratelimit(db)
     rl_key = f"register:{client_ip(request)}"
+    success_key = f"register-success:{client_ip(request)}"
+    s_max = REGISTER_SUCCESS_RATELIMIT_MAX_DEFAULT
+    s_window = REGISTER_SUCCESS_RATELIMIT_WINDOW_DEFAULT
     if rl_enabled:
         allowed, retry_after = check_rate_limit(rl_key, rl_max, rl_window)
         if not allowed:
+            raise HTTPException(status_code=429, detail="注册过于频繁，请稍后再试")
+        # 成功桶预检（L-022）：只查不记——本 IP 已建成的号达到上限就先拦下，
+        # 真正注册成功后再在成功桶里记一笔（见函数尾）。
+        s_max, s_window = _get_register_success_ratelimit(db)
+        s_allowed, _s_retry = peek_rate_limit(success_key, s_max, s_window)
+        if not s_allowed:
             raise HTTPException(status_code=429, detail="注册过于频繁，请稍后再试")
     username = req.username.strip()
     if not USERNAME_RE.match(username):
@@ -499,11 +556,14 @@ def register(request: Request, req: RegisterRequest, db: Session = Depends(get_d
                            exc_info=True)
 
     logger.info("新用户注册: %s (id=%s, mode=%s)", username, user.id, reg_mode)
-    # 计数语义：注册成功后退还该 IP 的注册限流计数，失败尝试（验证码错 /
-    # 用户名已存在 / 邮箱已注册等）保留计数防爆破。否则同一 NAT 出口下
-    # 一个人注册成功，就把同出口后来者的 5 次/小时额度白白烧掉一格。
+    # 计数语义（L-022）：注册成功不清零尝试桶。旧实现成功后整桶 reset，
+    # 把此前的失败计数（撞名/邮箱已注册等）一并抹掉，单 IP 可
+    # 「失败几次→成功一次→清零」无限循环批量建号。改为成功单独记进
+    # register-success 桶封顶（入口 peek 预检），尝试桶继续只管尝试
+    # 总量、失败口径不变，两个桶互不清零。代价是共享 NAT 出口下成功
+    # 也占尝试桶一格——防刷优先，这正是本次修复的取舍。
     if rl_enabled:
-        reset_rate_limit(rl_key)
+        check_rate_limit(success_key, s_max, s_window)
     return _issue_auth_response(user, db, plain_password=req.password, request=request)
 
 

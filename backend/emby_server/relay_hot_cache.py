@@ -10,9 +10,13 @@ Drive 中继腿（SA / 池副本 / 本人令牌）与挂载中继腿的字节级
   的 hot_identity 参数（``mount:{drive_file_id}``），本模块不认识
   URL 与令牌，只管字节落盘与命中判定。
 - 命中口径（streaming.serve_mount_relay_async 开流前查）：请求区间
-  被已缓存分段**完全覆盖**才整段本地出字节、不回源；部分命中不
-  拼凑，走现行透传 + 写穿（write-through）把流过的完整分段落盘，
-  下次同区间请求才转全命中。
+  被已缓存分段**完全覆盖**才整段本地出字节、不回源；未全覆盖走
+  现行透传 + 写穿（write-through）把流过的完整分段落盘。L-007
+  （2026-11-24）起另有部分覆盖出流：带 Range 的请求自起始段起有
+  ≥1 段连续覆盖前缀时，先本地出流这一截（短 206、Content-Range
+  钳到覆盖末尾），播放器对剩余区间重发时覆盖已随写穿/预读前移；
+  后缀 Range 不走部分出流。开关 RELAY_HOT_CACHE_PARTIAL_ENABLED，
+  关即回全覆盖口径。
 - 写入走进程内有界队列 + 守护写线程（请求路径只投递、满了就丢，
   绝不阻塞出流），落盘临时文件 + 原子 rename；总容量走
   SystemConfig ``relay_hot_cache_max_bytes``（默认 20GiB，注册见
@@ -68,7 +72,15 @@ _DEFAULT_DIR = "/data/relay-hot-cache"
 #: 磁盘余量护栏缺省阈值：可用空间低于 10GiB 停写新分段（出流透传
 #: 不受影响）。env RELAY_HOT_CACHE_MIN_FREE_BYTES 可调。
 _DEFAULT_MIN_FREE_BYTES = 10 * 1024 * 1024 * 1024
-_DEFAULT_PREFETCH_SEGMENTS = 2
+#: 跨请求预读窗口缺省（字节）：L-007 起预读以请求起始段为锚、从
+#: 覆盖前沿起按字节窗口推进（旧 RELAY_HOT_CACHE_PREFETCH_SEGMENTS
+#: 分段口径已废止——它以区间末尾为锚，开尾 Range 下恒为空转）。
+_DEFAULT_PREFETCH_BYTES = 32 * 1024 * 1024
+_PREFETCH_BYTES_LIMIT = 128 * 1024 * 1024
+#: 预读单次取数粒度缺省（字节）：一次开流取回一整块再本地切段，
+#: 摊薄谷歌开流成本（旧口径逐段一开流，每 1MB 重付一次 TTFB）。
+_DEFAULT_PREFETCH_FETCH_BYTES = 8 * 1024 * 1024
+_PREFETCH_FETCH_BYTES_LIMIT = 32 * 1024 * 1024
 
 _WRITER_QUEUE_MAX = 128
 
@@ -118,11 +130,27 @@ def min_free_bytes() -> int:
                     _DEFAULT_MIN_FREE_BYTES, 0, _MAX_BYTES_LIMIT)
 
 
-def prefetch_segments() -> int:
-    """跨请求预读深度（分段数）：env RELAY_HOT_CACHE_PREFETCH_
-    SEGMENTS，默认 2，钳 [0, 8]，0 = 关预读。"""
-    return _env_int("RELAY_HOT_CACHE_PREFETCH_SEGMENTS",
-                    _DEFAULT_PREFETCH_SEGMENTS, 0, 8)
+def partial_enabled() -> bool:
+    """部分覆盖出流开关：env RELAY_HOT_CACHE_PARTIAL_ENABLED，默认
+    开；关 → 回 L-007 前的全覆盖口径（未全覆盖即透传）。"""
+    return _env_flag("RELAY_HOT_CACHE_PARTIAL_ENABLED", True)
+
+
+def prefetch_bytes() -> int:
+    """跨请求预读窗口（字节）：env RELAY_HOT_CACHE_PREFETCH_BYTES，
+    默认 32MB，钳 [0, 128MB]，0 = 关预读。"""
+    return _env_int("RELAY_HOT_CACHE_PREFETCH_BYTES",
+                    _DEFAULT_PREFETCH_BYTES, 0, _PREFETCH_BYTES_LIMIT)
+
+
+def prefetch_fetch_bytes() -> int:
+    """预读单次取数粒度（字节）：env RELAY_HOT_CACHE_PREFETCH_
+    FETCH_BYTES，默认 8MB，钳 [1 段, 32MB] 并向下对齐到整段——
+    一次开流取回一整块、本地按 1MB 切段提交，块界不许切开分段。"""
+    value = _env_int("RELAY_HOT_CACHE_PREFETCH_FETCH_BYTES",
+                     _DEFAULT_PREFETCH_FETCH_BYTES,
+                     SEGMENT_SIZE, _PREFETCH_FETCH_BYTES_LIMIT)
+    return value - value % SEGMENT_SIZE
 
 
 # ---------------------------------------------------------------------------
@@ -173,6 +201,9 @@ _STATS = {
     "segments_dropped": 0,
     "segments_evicted": 0,
     "prefetch_fetched": 0,
+    "prefetch_bytes": 0,
+    "partial_requests": 0,
+    "partial_bytes": 0,
 }
 
 
@@ -192,6 +223,18 @@ def note_miss() -> None:
 
 def note_prefetch_fetched() -> None:
     _bump("prefetch_fetched")
+
+
+def note_prefetch_bytes(nbytes: int) -> None:
+    """预读实际落盘字节（投机拉取的成本口径，验收期与命中收益
+    对账：浪费比失控就调小窗口）。"""
+    _bump("prefetch_bytes", int(nbytes))
+
+
+def note_partial(nbytes: int) -> None:
+    """部分覆盖出流计数（与全命中分开记，验收口径 cache=partial）。"""
+    _bump("partial_requests")
+    _bump("partial_bytes", int(nbytes))
 
 
 def stats() -> dict:
@@ -378,6 +421,79 @@ def open_segments(identity: str, meta: dict, start: int, end: int):
             except OSError:
                 pass
         return opened or None
+    except OSError:
+        for fh, _ in opened:
+            try:
+                fh.close()
+            except Exception:  # noqa: BLE001
+                pass
+        return None
+
+
+def range_is_suffix(range_header) -> bool:
+    """Range 头是否为后缀形态（``bytes=-N``）：起始点由文件尾
+    倒推，L-007 部分出流明示排除（回现行透传/全覆盖口径）。"""
+    if not range_header:
+        return False
+    spec = str(range_header).strip()
+    if not spec.lower().startswith("bytes="):
+        return False
+    spec = spec[len("bytes="):].strip()
+    if "," in spec or spec.count("-") != 1:
+        return False
+    a, _, b = spec.partition("-")
+    return not a.strip() and bool(b.strip())
+
+
+def open_covered_prefix(identity, meta, start, end):
+    """部分覆盖出流（L-007）：[start, end] 自起始段起的最长连续
+    覆盖前缀。≥1 个完整分段连续在盘 → 打开并返回
+    ``(opened, covered_end)``（opened 形态同 open_segments，
+    covered_end 为实际可出流的末尾字节、≤ end，调用方据此钳制
+    Content-Range）；起始段缺失/长度不符 → None。校验口径与
+    open_segments 一致：长度精确、先打开再出流（淘汰 unlink 不
+    影响已打开句柄）、命中刷新 mtime。永不抛（OSError 收敛为
+    None，调用方 fail-open 回透传）。"""
+    total = int(meta["total_size"])
+    first = start // SEGMENT_SIZE
+    last = end // SEGMENT_SIZE
+    opened = []
+    covered_end = None
+    try:
+        for idx in range(first, last + 1):
+            seg_start = idx * SEGMENT_SIZE
+            exp = segment_expected_len(total, idx)
+            path = _segment_path(identity, idx)
+            try:
+                size_ok = os.path.getsize(path) == exp
+            except OSError:
+                size_ok = False
+            if not size_ok:
+                if idx == first:
+                    return None
+                break
+            fh = open(path, "rb")
+            in_off = max(0, start - seg_start)
+            take = min(seg_start + exp - 1, end) \
+                - (seg_start + in_off) + 1
+            if take <= 0:
+                fh.close()
+                continue
+            fh.seek(in_off)
+            opened.append((fh, take))
+            covered_end = seg_start + in_off + take - 1
+            try:
+                os.utime(path, None)
+            except OSError:
+                pass
+        if not opened or covered_end is None or covered_end < start:
+            for fh, _ in opened:
+                try:
+                    fh.close()
+                except Exception:  # noqa: BLE001
+                    pass
+            return None
+        return opened, covered_end
     except OSError:
         for fh, _ in opened:
             try:

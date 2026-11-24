@@ -697,6 +697,13 @@ jobs:
         timeout-minutes: 10
         run: python -m pytest tests/test_concurrent_redeem_dup_sub.py -q
 
+      # 换套餐履约并发回归（L-020）：_fulfill_order 曾把旧订阅置过期
+      # 放在 subscription_grant_lock 之外，两笔异档订单并发履约时旧
+      # 天数被叠加进新档（钱天双给）。修复为置过期与发放同锁串行。
+      # DATABASE_URL 由本 job 的 env 指向真 PG；无 PG 时自动跳过。
+      - name: 换套餐履约并发回归（真 PG 发放锁）
+        timeout-minutes: 10
+        run: python -m pytest tests/test_fulfill_switch_race_pg.py -q
       # 邀请返利计提并发回归（L-021）：record_payment_rebate 的分档/封顶累计
       # 曾无锁「读累计→定档→插行」，同邀请人两笔付费并发计提可双双按 5%
       # 前段计提、合计突破封顶（已加 lock_user_row 串行化）。DATABASE_URL

@@ -8,7 +8,7 @@
 - 选种：先对身份（年份冲突直接拒，Plan B 1995 假种是实证教训），
   再按覆盖缺集数优先、做种数次之、体积合理（单集体积离谱的拒）；
   整季包覆盖全缺集时只下它一个。
-- 工人：总开关默认关；token 未配整轮跳过（reason=not_configured）
+- 工人：总开关默认关；token/地址未配整轮跳过（reason=not_configured）
   不调 MP；每日上限按「已发起」计数硬停；同剧同季冷却内不重复
   发起（含失败/无种）；MP 报错单部隔离、不许整轮抛异常。
 - attempt 账只记事实（种子标题/站点/download_id/结果），本通道
@@ -277,6 +277,7 @@ class FakeMp:
 def _enable(db, **over):
     values = {
         "mp_episode_fill_enabled": True,
+        "mp_download_base": "http://192.0.2.1:4500",
         "mp_download_token": "tok-abc",
         "mp_episode_fill_daily_cap": 10,
         "mp_episode_fill_cooldown_hours": 24,
@@ -400,8 +401,51 @@ def test_worker_identity_mismatch_no_download(db, factory):
 
 def test_config_payload_defaults(db):
     payload = mf.mp_fill_config_payload(db)
-    assert payload["mp_download_base"] == "http://167.17.76.115:4500"
+    assert payload["mp_download_base"] == ""
     assert payload["mp_download_token"] == ""
     assert payload["mp_episode_fill_enabled"] is False
     assert payload["mp_episode_fill_daily_cap"] == 10
     assert payload["mp_episode_fill_cooldown_hours"] == 24
+
+
+# ---------------------------------------------------------------------------
+# L-027：MP 地址不许写死在代码默认里（公开仓隐私）；未配地址失败关闭
+# ---------------------------------------------------------------------------
+
+def test_worker_skips_when_base_unconfigured(db, factory):
+    # 只开开关 + 配 token、不配地址：整轮跳过，连客户端都不许建，
+    # 更不许回落到任何代码里写死的地址去连。
+    _save_cfg(db, mp_episode_fill_enabled=True, mp_download_token="tok-abc")
+    _open_record(db)
+    called = []
+    stats = mf.fill_once(
+        factory, client_factory=lambda cfg: called.append(1) or FakeMp())
+    assert stats["ran"] is False
+    assert stats["reason"] == "not_configured"
+    assert called == []
+
+
+def test_config_store_error_falls_back_to_empty_base(db, monkeypatch):
+    # 配置层读库异常时 _raw_config 回落代码默认：默认地址必须是空，
+    # 否则生产配置缺失/读失败就会真连到写死的地址。
+    def _boom(*args, **kwargs):
+        raise RuntimeError("store down")
+
+    monkeypatch.setattr(config_store, "get_values", _boom)
+    payload = mf.mp_fill_config_payload(db)
+    assert payload["mp_download_base"] == ""
+
+
+def test_client_empty_base_never_touches_http():
+    # 空/纯空白地址：请求层直接 MpError，绝不拼 URL 发请求。
+    touched = []
+
+    def handler(request):
+        touched.append(str(request.url))
+        return httpx.Response(200, json={"success": True, "data": {}})
+
+    for base in ("", "   "):
+        client = _client(handler, base=base)
+        with pytest.raises(mf.MpError):
+            client.get_media(89927)
+    assert touched == []

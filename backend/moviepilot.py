@@ -115,7 +115,7 @@ async def subscribe(base_url: str, *, username: str, password: str,
         payload["year"] = str(year)
     if mtype:
         payload["type"] = mtype
-    if season:
+    if season is not None:
         payload["season"] = int(season)
     if save_path:
         payload["save_path"] = save_path

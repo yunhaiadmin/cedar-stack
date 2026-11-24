@@ -258,3 +258,38 @@ def test_ga069_072_operator_daily_writes_not_blocked(method, path):
     """防误伤：同前缀 / 同模块的日常运营写口 operator 仍可写，viewer 仍全拦"""
     assert blocked_reason(_req(path, method), _admin(ROLE_OPERATOR)) is None, f"operator {method} {path}"
     assert blocked_reason(_req(path, method), _admin(ROLE_VIEWER)), f"viewer {method} {path} 应被拦"
+
+# ==================== 台账 L-029（2026-11-24） ====================
+# SUPER_ONLY_PREFIXES 此前只收了 /api/admin/economy/settings，前缀是
+# startswith 判定，漏收两个同级经济设置写口，operator 可直接打接口绕过：
+# - POST /api/admin/economy/wallet/settings：充值手续费率 / 手填汇率与
+#   强制覆盖 / 返利比例 / 余额购流量单价（backend/wallet.py 键表）；
+# - PUT /api/admin/teams/config：团队价格锚点与 Premium 单价。
+# 与 batch7 / GA 同口径：只拦写，GET 读口不受影响。
+
+_L029_SUPER_ONLY_WRITES = [
+    ("POST", "/api/admin/economy/wallet/settings"),
+    ("PUT", "/api/admin/teams/config"),
+]
+
+
+@pytest.mark.parametrize("method,path", _L029_SUPER_ONLY_WRITES)
+def test_l029_operator_and_viewer_cannot_write(method, path):
+    """运营 / 只读调这两个经济设置写口一律被拦"""
+    for role in (ROLE_OPERATOR, ROLE_VIEWER):
+        reason = blocked_reason(_req(path, method), _admin(role))
+        assert reason, f"{role} {method} {path} 应被拦"
+        assert "超级管理员" in reason
+
+
+@pytest.mark.parametrize("method,path", _L029_SUPER_ONLY_WRITES)
+def test_l029_super_can_still_write(method, path):
+    """超管调这两个写口仍放行：不能把超管自己挡在门外"""
+    assert blocked_reason(_req(path, method), _admin(ROLE_SUPER)) is None, f"super {method} {path}"
+
+
+@pytest.mark.parametrize("method,path", _L029_SUPER_ONLY_WRITES)
+def test_l029_reads_stay_open(method, path):
+    """只改写口：同路径 GET 读口运营 / 只读仍可看（前缀判定只拦非安全方法）"""
+    assert blocked_reason(_req(path, "GET"), _admin(ROLE_OPERATOR)) is None, f"operator GET {path}"
+    assert blocked_reason(_req(path, "GET"), _admin(ROLE_VIEWER)) is None, f"viewer GET {path}"
