@@ -314,6 +314,28 @@ def _probe_enrich(db) -> dict:
             tp = progress.throughput()
             m["done_per_min"] = tp.get("done_per_min", 0)
             m["idle_sec"] = tp.get("idle_sec")
+            if not (tp.get("done_total") or tp.get("retry_total")
+                    or tp.get("failed_total")):
+                # 本进程不是 worker（分离部署）：计数恒空，速率/闲置回退
+                # worker 发布的 Redis 快照——与 health_report 同一通道、
+                # 同一读取口（_probe_scan 引 health_report 同例），否则
+                # 面板速率恒 0、system_alerts 的补全停滞告警永远拿不到
+                # 真实的 idle_sec（L-009）。
+                from backend.health_report import _enrich_worker_snapshot
+                snap = _enrich_worker_snapshot()
+                if snap:
+                    stp = snap.get("throughput") or {}
+                    m["done_per_min"] = stp.get("done_per_min", 0)
+                    m["worker_last_done_at"] = stp.get("last_done_at")
+                    last = stp.get("last_done_at")
+                    if last:
+                        try:
+                            from datetime import datetime as _dt
+                            m["idle_sec"] = max(0, int(
+                                (_dt.now() - _dt.fromisoformat(str(last)))
+                                .total_seconds()))
+                        except ValueError:
+                            pass
         except Exception:  # noqa: BLE001
             pass
         if backlog >= THRESHOLDS["enrich_backlog_warn"]():
