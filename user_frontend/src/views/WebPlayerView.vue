@@ -408,7 +408,9 @@ import {
   fetchSoftDecodeEnabled,
   humanizeSoftError,
   pickSoftRelayUrl,
+  probeMseSeekSupport,
   probeSoftMseSupport,
+  shouldMseSeekRoute,
   shouldSoftDecode,
   softDecodePipelineDecision,
   softDecodeResolutionGate,
@@ -574,12 +576,19 @@ function refreshDiag(): void {
     diagLines.value = ['诊断：无 video 元素']
     return
   }
+  // 软解在场时原生 <video> 是闲置的：时间读软解时钟（onTime 已
+  // 同步到 currentTime），seeking 读软解看门狗状态；管线行标明
+  // 走的是 MSE 还是 wasm（第十一轮复测截图确认用）。
+  const softOn = !!softHandle.value
+  const clockSeconds = softOn ? currentTime.value : v.currentTime
+  const clockSeeking = softOn ? softSeeking.value : v.seeking
   const lines: string[] = [
+    `管线：${softOn ? (softPipeline.value === 'mse' ? 'MSE软解' : 'wasm软解') : '原生'}`,
     `错误：${videoErrorLabel(v.error)}`,
     `网络：${networkStateLabel(v.networkState)} / 就绪：${readyStateLabel(v.readyState)}`,
     `已缓冲：${formatTimeRanges(v.buffered)}`,
     `可定位：${formatTimeRanges(v.seekable)}`,
-    `时间：${v.currentTime.toFixed(2)}s${v.seeking ? '（seeking）' : ''}`,
+    `时间：${clockSeconds.toFixed(2)}s${clockSeeking ? '（seeking）' : ''}`,
     `看门狗：${seekGuardState.value}`,
   ]
   if (streamRanges.value.length) {
@@ -642,6 +651,8 @@ let nativePausedAt: number | null = null
 /** 当前播放管线（写到 .wp-root 的 data-pipeline）：软解在场即 soft，否则 native */
 const pipelineKind = computed(() => (softActive.value ? 'soft' : 'native'))
 const softFailedFor = ref('')
+/** 当前软解管线（诊断区用）：'mse' | 'wasm'，无软解实例时 '' */
+const softPipeline = ref<'mse' | 'wasm' | ''>('')
 const noticeTitle = computed(() => {
   if (phase.value === 'unsupported') {
     return decodeVerdict.value ? '这个版本浏览器解不了' : '这个格式网页里播不了'
@@ -1519,6 +1530,11 @@ async function playSource(source: EmbyMediaSource, atSeconds: number): Promise<v
       return
     }
   }
+  // 第十一轮：探测没说解不了时，原生 <video> 的冷跳对 HEVC MKV
+  // 是顺序扫描（十轮诊断定案）——容器 mkv 且本机 MSE+HEVC 通
+  // 时改走 MSE 精确取簇（libmedia demuxer 按 Cues 跳簇）；不
+  // 支持就保持原生（startMseSeekRoute 返回 false 即走 openSource）。
+  if (await startMseSeekRoute(source, atSeconds)) return
   await openSource(source, atSeconds)
 }
 
@@ -1528,6 +1544,7 @@ async function destroySoft(): Promise<void> {
   softHandle.value = null
   softStarting.value = false
   softSeeking.value = false
+  softPipeline.value = ''
   if (!h) return
   try {
     await h.destroy()
@@ -1577,48 +1594,24 @@ function onNativeSeeked(): void {
 }
 
 /**
- * 站内软解起播：开关关、编解码不在子集里、本版本已失败过，三者任一
- * 命中即返回 false（调用方按现行路径走）。起播成功返回 true；起播中
- * 的任何失败（wasm 拉不到、分析失败、超时）由 createSoftPlayer 内部
- * 销毁实例，这里只记失败版本、返回 false——调用方回落解码提示卡，
- * 不重试、不黑屏。
+ * 软解实例构造共享实现（第十一轮抽出）：旧的软解起播与新的
+ * MSE-seek 路由共用同一套构造＋钩子＋看门狗接线，只许一套
+ * 软解实例。两条路的差别只在进入门控与失败收口，由调用方以
+ * 回调传入：onStartFailure（构造抛错时调用，返回值即本函数
+ * 返回值）、onMidError（播起来之后的中途失败时调用，实例已
+ * 销毁）。失败收口绝不静默吞掉原因（2026-11-15 教训）。
  */
-async function startSoftDecode(
+async function startSoftPlayerInstance(
   source: EmbyMediaSource,
-  verdict: DecodeVerdict,
   atSeconds: number,
+  opts: {
+    mse: boolean
+    onStartFailure: () => boolean
+    onMidError: () => void
+  },
 ): Promise<boolean> {
-  if (softFailedFor.value === source.Id) return false
   const container = softEl.value
   if (!container) return false
-  if (!shouldSoftDecode(verdict, source, await fetchSoftDecodeEnabled())) return false
-  // 4K 分流：4K HEVC 纯 wasm 解码在 iOS Safari 上内存爆掉、页面被
-  // 系统反复杀（2026-11-17 事故，阈值口径见 softDecode.ts 的
-  // softDecodeResolutionGate，用所选源视频流的实际宽高）。达 4K 线
-  // 的源第一顺位走 MSE 原生管线：先按真实参数做 MSE 预检（移植
-  // 探针页 #279 已真机验通的闸门），过检才以 checkUseMSE 改判
-  // 构造试播（帧交系统播、不进页面内存）；预检不过/开关关，维持
-  // #260 行为——不实例化 AVPlayer、直接出提示卡，返回 true 表示
-  // 已处理。MSE 起播失败（含被否回解码管线的看门狗判失败）的
-  // 回落也在下面 catch 与 onError 里接回同一张提示卡，只试一次。
-  // WebCodecs 硬解尝试（#261）已被真机证明照样崩页，整段退役。
-  let mseAttempt = false
-  if (softDecodeResolutionGate(source, true).blocked) {
-    const mseSupported = SOFTDECODE_MSE_ENABLED
-      ? probeSoftMseSupport(source).supported
-      : false
-    if (
-      softDecodePipelineDecision(source, true, {
-        enabled: SOFTDECODE_MSE_ENABLED,
-        supported: mseSupported,
-      }).pipeline === 'mse'
-    ) {
-      mseAttempt = true
-    } else {
-      showSoft4kBlocked(source, verdict)
-      return true
-    }
-  }
   // 先停掉原生 video（切版本时它可能还在播旧源），再建软解实例
   videoEl.value?.pause()
   // 切软解：原生 seek 看门狗若有在飞 seek，一并取消
@@ -1647,6 +1640,7 @@ async function startSoftDecode(
   // 先亮出软解容器再构造播放器（见 softStarting 注释：隐藏容器下
   // AVPlayer 渲染器按 0×0 初始化，只会黑屏）
   softStarting.value = true
+  softPipeline.value = opts.mse ? 'mse' : 'wasm'
   try {
     softHandle.value = await createSoftPlayer(
       container,
@@ -1695,17 +1689,13 @@ async function startSoftDecode(
           // 不许再静默吞掉（2026-11-15 软解无声卡死教训）。
           softFailReason.value = humanizeSoftError(message)
           // 起播中的失败由调用方（playSource）决定回落，这里只处理
-          // 播起来之后的中途失败：销毁实例、回落解码提示卡，只一次。
+          // 播起来之后的中途失败：销毁实例、按调用方收口，只一次。
           if (!started) return
           if (phase.value !== 'playing' && phase.value !== 'preparing') return
           if (currentSource.value?.Id !== source.Id) return
-          // MSE 试播的会话报错回落 #260 的 4K 提示卡；普通软解照旧
-          // 回落解码提示卡。都只落一次，不重试。
-          void destroySoft().then(() =>
-            mseAttempt
-              ? showSoft4kBlocked(source, verdict)
-              : showDecodeUnsupported(source, verdict),
-          )
+          // 中途失败收口由调用方定（旧软解路回落提示卡、MSE-seek
+          // 路上错误页）。都只落一次，不重试。
+          void destroySoft().then(() => opts.onMidError())
         },
         onSeekingChange: (seeking: boolean) => {
           softSeeking.value = seeking
@@ -1732,7 +1722,7 @@ async function startSoftDecode(
       },
       {
         ext: (source.Container || '').toLowerCase() || undefined,
-        mse: mseAttempt,
+        mse: opts.mse,
         onReceivedBytes: (bytes: number) => {
           prepReceivedBytes.value = bytes
         },
@@ -1748,14 +1738,11 @@ async function startSoftDecode(
     }
     softHandle.value = null
     softStarting.value = false
-    if (mseAttempt) {
-      // MSE 试播起播失败：实例已由 createSoftPlayer 内部销毁，这里
-      // 直接回落 #260 的 4K 提示卡（返回 true＝已处理），不让调用
-      // 方再走原生试播，不重试。
-      showSoft4kBlocked(source, verdict)
-      return true
-    }
-    return false
+    softPipeline.value = ''
+    // 构造失败收口由调用方定（旧软解路：MSE 试播回落 4K 提示卡
+    // 返回 true＝已处理，普通软解返回 false；MSE-seek 路返回
+    // false，调用方回落原生）。实例已由 createSoftPlayer 内部销毁。
+    return opts.onStartFailure()
   }
   // 实例已接管 softActive，起播中标记可以撤了
   softStarting.value = false
@@ -1763,6 +1750,98 @@ async function startSoftDecode(
   softLoadDone.value = true
   started = true
   return true
+}
+
+/**
+ * 站内软解起播：开关关、编解码不在子集里、本版本已失败过，三者任一
+ * 命中即返回 false（调用方按现行路径走）。起播成功返回 true；起播中
+ * 的任何失败（wasm 拉不到、分析失败、超时）由 createSoftPlayer 内部
+ * 销毁实例，这里只记失败版本、返回 false——调用方回落解码提示卡，
+ * 不重试、不黑屏。
+ */
+async function startSoftDecode(
+  source: EmbyMediaSource,
+  verdict: DecodeVerdict,
+  atSeconds: number,
+): Promise<boolean> {
+  if (softFailedFor.value === source.Id) return false
+  const container = softEl.value
+  if (!container) return false
+  if (!shouldSoftDecode(verdict, source, await fetchSoftDecodeEnabled())) return false
+  // 4K 分流：4K HEVC 纯 wasm 解码在 iOS Safari 上内存爆掉、页面被
+  // 系统反复杀（2026-11-17 事故，阈值口径见 softDecode.ts 的
+  // softDecodeResolutionGate，用所选源视频流的实际宽高）。达 4K 线
+  // 的源第一顺位走 MSE 原生管线：先按真实参数做 MSE 预检（移植
+  // 探针页 #279 已真机验通的闸门），过检才以 checkUseMSE 改判
+  // 构造试播（帧交系统播、不进页面内存）；预检不过/开关关，维持
+  // #260 行为——不实例化 AVPlayer、直接出提示卡，返回 true 表示
+  // 已处理。MSE 起播失败（含被否回解码管线的看门狗判失败）的
+  // 回落也在下面 catch 与 onError 里接回同一张提示卡，只试一次。
+  // WebCodecs 硬解尝试（#261）已被真机证明照样崩页，整段退役。
+  let mseAttempt = false
+  if (softDecodeResolutionGate(source, true).blocked) {
+    const mseSupported = SOFTDECODE_MSE_ENABLED
+      ? probeSoftMseSupport(source).supported
+      : false
+    if (
+      softDecodePipelineDecision(source, true, {
+        enabled: SOFTDECODE_MSE_ENABLED,
+        supported: mseSupported,
+      }).pipeline === 'mse'
+    ) {
+      mseAttempt = true
+    } else {
+      showSoft4kBlocked(source, verdict)
+      return true
+    }
+  }
+  return startSoftPlayerInstance(source, atSeconds, {
+    mse: mseAttempt,
+    onStartFailure: () => {
+      if (mseAttempt) {
+        // MSE 试播起播失败：实例已由 createSoftPlayer 内部销毁，这里
+        // 直接回落 #260 的 4K 提示卡（返回 true＝已处理），不让调用
+        // 方再走原生试播，不重试。
+        showSoft4kBlocked(source, verdict)
+        return true
+      }
+      return false
+    },
+    onMidError: () => {
+      // MSE 试播的会话报错回落 #260 的 4K 提示卡；普通软解照旧
+      // 回落解码提示卡。都只落一次，不重试。
+      mseAttempt
+        ? showSoft4kBlocked(source, verdict)
+        : showDecodeUnsupported(source, verdict)
+    },
+  })
+}
+
+/**
+ * MSE 精确取簇起播（第十一轮）：探测说「解不了」时走旧软解路；
+ * 探测没说解不了、但容器是 mkv 且本机 MSE+HEVC 通时，原生
+ * <video> 的冷跳是顺序扫描（十轮诊断定案），改走 AVPlayer MSE
+ * 管线（libmedia demuxer 按 Cues 跳簇）。起播失败静默回落原
+ * 生（看门狗＋#522 观察器仍在）；中途失败上带「再试一次」的
+ * 错误页，不回落解码提示卡（探测没说解不了）。
+ */
+async function startMseSeekRoute(source: EmbyMediaSource, atSeconds: number): Promise<boolean> {
+  if (softFailedFor.value === source.Id) return false
+  const container = softEl.value
+  if (!container) return false
+  if (!(await fetchSoftDecodeEnabled())) return false
+  if (!shouldMseSeekRoute(source, probeMseSeekSupport(source).supported)) return false
+  return startSoftPlayerInstance(source, atSeconds, {
+    mse: true,
+    onStartFailure: () => false,
+    onMidError: () => {
+      // 播起来之后的中途失败：与 seek 看门狗判失败同款错误页，
+      // retry 会重建播放器重新打开。
+      noticeText.value =
+        '跳转后一直没能继续播放（取流或解码卡住了）。点「再试一次」重新打开，或返回详情换个版本。'
+      phase.value = 'error'
+    },
+  })
 }
 
 /** 把 PlaybackInfo 里的每个版本都探一遍，结果进缓存（设置面板给版本标「浏览器解不了」也用它） */
