@@ -4,6 +4,7 @@
 口径：
 - 发信走 POST https://seek.li/openapi/v1/send，Authorization: Bearer sk_live_…，
   发件人由 mailboxId 指定（缺省 82449 = aetrix@seek.li，配置可改）；
+- 收件人 to 必须是单个地址字符串（L-042 实测：to 传数组一律 400 BAD_REQUEST 参数错误，改字符串即 200 queued）；
 - 每日 100 封硬上限：通知路径 send() 按 NotificationHistory 当日 sent 计数拦截，
   超限如实记 failed 并写明原因，不静默吞；
 - API 错误（400 等）原样上报，错误文本里不许带 key；
@@ -154,7 +155,9 @@ def test_deliver_builds_request_and_succeeds(fake_http):
     assert call["headers"]["Authorization"] == f"Bearer {FAKE_KEY}"
     body = call["json"]
     assert body["mailboxId"] == MAILBOX_ID
-    assert body["to"] == ["user@example.com"]
+    # L-042 回归：to 必须是单个地址字符串，数组会被 seek.li 以 400 拒绝
+    assert isinstance(body["to"], str)
+    assert body["to"] == "user@example.com"
     assert body["subject"] == "标题"
     assert body["bodyText"] == "第一行\n第二行"
     assert "第一行" in body["bodyHtml"]
@@ -279,7 +282,7 @@ def test_password_reset_email_goes_through_seekli(db, fake_http):
     emby_portal._send_reset_email(db, user, "raw-token-123")
     assert len(fake_http.posts) == 1
     body = fake_http.posts[0]["json"]
-    assert body["to"] == ["someone@example.com"]
+    assert body["to"] == "someone@example.com"
     assert "/login?reset=raw-token-123" in body["bodyText"]
 
 
@@ -300,4 +303,4 @@ def test_capability_test_sends_when_recipient_given(db, fake_http):
     _seed_seekli(db)
     result = integrations_mail.test(db, {"to": "boss@example.com"})
     assert result["ok"] is True
-    assert fake_http.posts[0]["json"]["to"] == ["boss@example.com"]
+    assert fake_http.posts[0]["json"]["to"] == "boss@example.com"

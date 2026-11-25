@@ -326,7 +326,14 @@ class SeekLiMailChannel(NotificationChannel):
         )
 
     def _deliver(self, to_email: str, title: str, content: str) -> tuple[bool, Optional[str]]:
-        """同步 HTTP 投递（放在线程里跑，避免阻塞事件循环）"""
+        """同步 HTTP 投递（放在线程里跑，避免阻塞事件循环）。
+
+        真实契约（L-042，2026-11-25 对 seek.li 真实接口实测）：收件人 ``to``
+        必须是单个地址字符串；传数组会被 400 ``{"error":{"code":"BAD_REQUEST",
+        "message":"参数错误"}}`` 拒绝，改字符串即 200 ``{"data": {"status":
+        "queued", ...}}``。不要改回数组（tests/test_seekli_mail_channel.py
+        已把该形态钉进回归用例）。
+        """
         import html as _html
 
         import httpx
@@ -338,7 +345,7 @@ class SeekLiMailChannel(NotificationChannel):
                     f"{SEEKLI_API_BASE}/send",
                     json={
                         "mailboxId": self.mailbox_id,
-                        "to": [to_email],
+                        "to": to_email,
                         "subject": title,
                         "bodyText": content,
                         "bodyHtml": body_html,
