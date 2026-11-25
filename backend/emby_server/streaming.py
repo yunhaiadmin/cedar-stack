@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 import contextlib
 import contextvars
 import hashlib
@@ -1212,7 +1213,82 @@ def _pt_field(pt, name, value) -> None:
         pass
 
 
-def _try_hot_cache_response(identity, range_header, media_type, pt):
+#: seek 取证轮（2026-11-25，诊断报告 §4.2）：最近流请求 Range
+#: 记录。key=播放签名 sign（流地址 ?sign=，同一签发内的多次
+#: Range 请求共用同一 key）；每 key 只留最近 3 笔；键数上限
+#: 512（播完即失活，旧 key 靠上限淘汰）。只记头（Range 原文与
+#: Content-Range），不记 body、零下载额度代价。sign 只存内存、
+#: 绝不写进日志（它是短期播放凭证）。
+_STREAM_RANGE_RECENT_MAX_KEYS = 512
+_STREAM_RANGE_RECENT: dict[str, deque] = {}
+_STREAM_RANGE_LOCK = threading.Lock()
+
+
+def _stream_sign(request) -> str:
+    """从流请求取播放签名（无签请求，如三方客户端 api_key 直调，回空串）。"""
+    try:
+        qp = getattr(request, "query_params", None) or {}
+        return (qp.get("sign") or "").strip()
+    except Exception:  # noqa: BLE001 — 取不到签名不挡播放
+        return ""
+
+
+def _record_stream_range(identity, sign, range_header, start, end,
+                         outcome, content_range) -> None:
+    """记一笔流请求 Range：写 [range-log] 日志行 + 进最近 3 笔环形缓冲。
+
+    每笔流响应恰好记一次：hit/partial 在 _try_hot_cache_response
+    成功出流时记，miss 在 serve_mount_relay_async 透传出流时记。
+    sign 为空时只记日志、不进缓冲（无 key 可查）。永不抛。
+    """
+    try:
+        from backend.emby_server import relay_hot_cache as _hc
+        suffix = _hc.range_is_suffix(range_header)
+    except Exception:  # noqa: BLE001 — 后缀判定失败按非后缀记
+        suffix = False
+    try:
+        parsed = f"{start}-{end}" if start is not None and end is not None else "-"
+        logger.info(
+            "[range-log] identity=%s range=%s parsed=%s suffix=%s "
+            "outcome=%s content-range=%s",
+            identity or "-", range_header or "-", parsed,
+            "true" if suffix else "false", outcome,
+            content_range or "-")
+    except Exception:  # noqa: BLE001 — 日志失败不挡播放
+        pass
+    if not sign:
+        return
+    try:
+        entry = {
+            "range": range_header or None,
+            "start": start,
+            "end": end,
+            "suffix": bool(suffix),
+            "outcome": outcome,
+            "content_range": content_range or None,
+            "ts": time.time(),
+        }
+        with _STREAM_RANGE_LOCK:
+            buf = _STREAM_RANGE_RECENT.get(sign)
+            if buf is None:
+                if len(_STREAM_RANGE_RECENT) >= _STREAM_RANGE_RECENT_MAX_KEYS:
+                    _STREAM_RANGE_RECENT.pop(next(iter(_STREAM_RANGE_RECENT)))
+                buf = _STREAM_RANGE_RECENT[sign] = deque(maxlen=3)
+            buf.append(entry)
+    except Exception:  # noqa: BLE001 — 缓冲失败不挡播放
+        pass
+
+
+def recent_stream_ranges(sign: str) -> list:
+    """取某播放签名最近 3 笔流请求 Range 记录（播放页诊断区读口）。"""
+    if not sign:
+        return []
+    with _STREAM_RANGE_LOCK:
+        return [dict(e) for e in _STREAM_RANGE_RECENT.get(sign, ())]
+
+
+def _try_hot_cache_response(identity, range_header, media_type, pt,
+                            sign=None):
     """热缓存命中出流：全覆盖 → 全命中出流；带 Range 且起始段起
     有连续覆盖前缀 → 部分出流（短 206，L-007）；都够不着/任何
     问题返回 None（调用方走现行透传，逐字不变）。"""
@@ -1273,6 +1349,12 @@ def _try_hot_cache_response(identity, range_header, media_type, pt):
             logger.info("relay_hot_cache 全命中出流 identity=%s "
                         "range=%d-%d bytes=%d",
                         identity, start, end, end - start + 1)
+        # seek 取证轮（2026-11-25）：命中/部分出流的 Range 记一笔
+        # [range-log]（只记头）；miss 由调用方透传出流时记。
+        _record_stream_range(
+            identity, sign, range_header, start, end,
+            "partial" if _partial else "hit",
+            headers.get("Content-Range"))
         if pt is not None:
             # 命中路径的热缓存查询耗时在此补记（未命中路径由调用方在
             # 本函数返回 None 后补记同名字段，口径一致）。
@@ -1835,7 +1917,8 @@ async def serve_mount_relay_async(
     if _hot_identity:
         _cache_t0 = time.perf_counter() if pt is not None else None
         _hit_resp = _try_hot_cache_response(
-            _hot_identity, range_header, media_type, pt)
+            _hot_identity, range_header, media_type, pt,
+            sign=_stream_sign(request))
         if _hit_resp is None and pt is not None:
             pt.span("cache_lookup", _cache_t0)
             _pt_field(pt, "cache", "miss")
@@ -2073,6 +2156,23 @@ async def serve_mount_relay_async(
             # 预读在 serve_drive_relay_async 按 Drive fetcher 挂）。
             _schedule_mount_hot_prefetch(
                 _hot_identity, url, forward, range_header)
+        # seek 取证轮（2026-11-25）：透传出流的 Range 记一笔
+        # [range-log]（只记头）；命中/部分已在 _try_hot_cache_response
+        # 内记过，执行到此即未命中。Content-Range 取上游回的头。
+        _cr = passthrough.get("Content-Range")
+        _m_start = _m_end = None
+        if _cr:
+            _m = re.match(r"bytes (\d+)-(\d+)/\d+", _cr)
+            if _m:
+                _m_start, _m_end = int(_m.group(1)), int(_m.group(2))
+        elif not range_header:
+            # 整文件 200：无 Content-Range，区间即 0..总长-1。
+            _cl = passthrough.get("Content-Length")
+            if _cl and str(_cl).isdigit():
+                _m_start, _m_end = 0, int(_cl) - 1
+        _record_stream_range(
+            _hot_identity, _stream_sign(request), range_header,
+            _m_start, _m_end, "miss", _cr)
         return StreamingResponse(
             _body,
             status_code=resp.status_code,

@@ -2093,6 +2093,30 @@ async def get_my_devices(
     }
 
 
+# ==================== 播放诊断：最近流请求 Range ====================
+# seek 取证轮（2026-11-25，诊断报告 §4.1/§4.2）：播放页诊断区读
+# 本次播放签名最近 3 笔流请求 Range（服务端中继实收的区间）。签名
+# 须验过（play_sign 绑定 user/item/exp）才给读；只读最近记录，
+# 不触播放、不记新日志；签名过期/不对一律 403。
+
+
+@user_router.get("/emby/stream-ranges")
+def stream_ranges(
+    item_id: str,
+    exp: int,
+    sign: str,
+    current_user: models.WebUser = Depends(get_current_user),
+):
+    """本次播放最近 3 笔流请求 Range（播放页诊断区用）"""
+    from backend.emby_server import play_sign as _ps
+
+    if not _ps.verify_play_sign(current_user.id, item_id, exp, sign):
+        raise HTTPException(status_code=403, detail="播放签名无效")
+    from backend.emby_server.streaming import recent_stream_ranges
+
+    return {"item_id": item_id, "ranges": recent_stream_ranges(sign)}
+
+
 @user_router.delete("/emby/devices/{device_id}")
 async def remove_my_device(
     device_id: str,

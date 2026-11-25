@@ -23,6 +23,7 @@
  */
 import api from '@/api'
 import { embyAuthConfig, ensureEmbyBase, secondsToTicks, type EmbyMediaSource } from '@/api/emby'
+import type { StreamRangeEntry } from '@/utils/videoDiag'
 
 export interface PlaybackInfoResult {
   MediaSources: EmbyMediaSource[]
@@ -105,4 +106,21 @@ export function reportStoppedBeacon(r: SessionReport, overrideBase?: string): vo
   } catch {
     /* 卸载兜底，失败无声 */
   }
+}
+
+/**
+ * 本次播放最近 3 笔流请求 Range（seek 取证轮，2026-11-25，诊断报告 §4.1）：
+ * 门户 JWT 口（与弹幕同口径），不是 EA 口。失败时抛错，调用方
+ * （诊断区轮询）自行吞掉——诊断绝不能打断播放。
+ */
+export async function fetchStreamRanges(
+  itemId: string,
+  exp: string,
+  sign: string,
+): Promise<StreamRangeEntry[]> {
+  const res = await api.get<never, { ranges?: StreamRangeEntry[] }>(
+    '/api/user/emby/stream-ranges',
+    { params: { item_id: itemId, exp, sign } },
+  )
+  return res?.ranges || []
 }
