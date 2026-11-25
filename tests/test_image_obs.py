@@ -225,3 +225,54 @@ def test_middleware_disabled_counts_nothing():
                    headers={"user-agent": "Reflix/3.1"})
     assert r.status_code == 200
     assert image_obs._pending_for_tests() == {}
+
+
+# ---------------------------------------------------------------------------
+# API 进程挂载：观测中间件必须活在 backend.main:app 里
+# ---------------------------------------------------------------------------
+# 2026-11-25 根因：观测层 PR #289 只把中间件挂在独立 EA 进程
+# （emby_api/main.py），而生产单进程部署的真实图片流量走 API 进程
+# 的 Emby 网关（backend/main.py），观测表一周只采到 17 次请求。
+# 以下用例钉住「API 应用同样挂观测」这一接线，断了即回归。
+
+
+def test_api_app_registers_image_obs_middleware():
+    from backend.main import app as api_app
+
+    assert any(
+        getattr(m, "cls", None) is image_obs.ImageObsMiddleware
+        for m in api_app.user_middleware
+    )
+
+
+def test_api_app_lifespan_starts_image_obs_flusher():
+    # 不直接跑完整 lifespan（会拉起扫描/提醒/健康检查等后台任务）；
+    # 只钉住 lifespan 函数体引用了 flusher 启动器这一接线。
+    from backend import main as api_main
+
+    lifespan_fn = getattr(api_main.lifespan, "__wrapped__", api_main.lifespan)
+    assert "_start_image_obs_flusher" in lifespan_fn.__code__.co_names
+
+
+def test_api_app_counts_real_image_requests_both_path_forms():
+    import uuid
+
+    from backend.main import app as api_app
+
+    client = TestClient(api_app, raise_server_exceptions=False)
+    guid = uuid.uuid4().hex
+
+    r = client.get(f"/emby/Items/{guid}/Images/Primary",
+                   params={"maxHeight": "600"},
+                   headers={"user-agent": "Reflix/3.1"})
+    assert r.status_code == 404, r.text
+
+    r = client.get(f"/Items/{guid}/Images/Backdrop",
+                   headers={"user-agent": "Emby/4.8"})
+    assert r.status_code == 404, r.text
+
+    pending = image_obs._pending_for_tests()
+    assert len(pending) == 2
+    by_dims = {(k[1], k[2], k[3], k[4], k[5]): v for k, v in pending.items()}
+    assert by_dims[("reflix", False, "Primary", "standard", 404)] == 1
+    assert by_dims[("emby", False, "Backdrop", "original", 404)] == 1
