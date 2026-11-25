@@ -60,9 +60,11 @@ export interface NativeSeekHooks {
   /**
    * 看门狗判失败（自动重试后仍无结果）：actualSeconds 是判失败
    * 时刻 video 的真实 currentTime——视图把显示时间 snap 回它
-   * （去掉提交时的乐观值），再上错误页。
+   * （去掉提交时的乐观值），再上错误页；targetSeconds 是失败那
+   * 笔 seek 的目标（第九轮 late-recovery：失败后观察的基线与
+   * 状态串用）。
    */
-  onSeekFailed?: (message: string, actualSeconds: number) => void
+  onSeekFailed?: (message: string, actualSeconds: number, targetSeconds: number) => void
   /** 看门狗状态变迁上报（DOM 可观测，格式见 seekGuardStateString） */
   onGuardState?: (state: string) => void
 }
@@ -149,7 +151,7 @@ export function createNativeSeekDriver(
       // 判失败必须留痕：原始原因进控制台，视图翻成人话上错误页
       console.error('[nativeSeek] seek 看门狗判失败:', message)
       reportGuardState('failed')
-      hooks.onSeekFailed?.(message, readTime())
+      hooks.onSeekFailed?.(message, readTime(), tracker.target)
     },
   })
 
