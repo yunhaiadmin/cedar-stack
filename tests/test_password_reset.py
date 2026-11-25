@@ -2,7 +2,10 @@
 """邮箱找回密码（2026-11-13 用户亲点）：POST /api/auth/password-reset/request|confirm。
 
 口径：
-- 防枚举：查无此人 / 无邮箱 / 已发送三种情况响应一字不差（200＋同一文案）；
+- 防枚举：查无此人 / 无邮箱两种情况响应一字不差（200＋同一文案）；
+- 投递失败如实报错（2026-11-25 用户拍板，L-042 后续）：账号存在且有邮箱、
+  但邮件没发出去（渠道投递失败 / 未配置）时回 500，不再与成功同文案，
+  不许让用户干等永远不来的邮件；已发送成功仍回统一文案；
 - 令牌只存 SHA256，30 分钟过期、单次使用，重新申请作废旧令牌；
 - 人机验证已于 2026-11-15 整体摘除：申请不带任何验证令牌照常走完，
   存量 captcha_* 配置行残留也不许再拦人（摘除围栏见 test_captcha_scope.py）；
@@ -193,15 +196,30 @@ def test_unknown_and_no_email_are_indistinguishable(db, mail_channel):
     assert mail_channel.sent == []
 
 
-def test_send_failure_still_generic(db, monkeypatch):
+def test_send_failure_reports_error(db, monkeypatch):
+    """投递失败如实报错（2026-11-25 用户拍板，覆盖旧「失败仍回统一文案」口径）。
+
+    账号存在且有邮箱、渠道真投递但回失败 → 端点回 500 明示发送失败；
+    令牌行仍落库（申请本身成立），只是不许谎报「已发送」。"""
     user = _user(db)
     failing = _FakeChannel(ok=False)
     monkeypatch.setattr(integrations_mail, "build_channel", lambda db_: failing)
     client = _client(db)
     resp = _request_reset(client, user.username)
-    assert resp.status_code == 200
-    assert resp.json() == GENERIC
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "重置邮件发送失败，请稍后再试"
     assert db.query(models.PasswordResetToken).filter_by(user_id=user.id).count() == 1
+
+
+def test_no_channel_reports_error(db, monkeypatch):
+    """渠道未配置（build_channel 返回 None）：邮件根本发不出去，同样如实
+    报错回 500，不回统一成功文案。"""
+    user = _user(db)
+    monkeypatch.setattr(integrations_mail, "build_channel", lambda db_: None)
+    client = _client(db)
+    resp = _request_reset(client, user.username)
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "重置邮件发送失败，请稍后再试"
 
 
 def test_confirm_happy_path_and_side_effects(db, mail_channel):
