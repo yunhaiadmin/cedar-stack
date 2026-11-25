@@ -364,6 +364,9 @@ def _repair_series_tmdb_loose(db, cfg) -> int:
             em.MediaItem.deleted_at.is_(None),
             em.MediaItem.merged_into_id.is_(None),
             em.MediaItem.tmdb_id.is_(None),
+            # 人工解绑标记（2026-11-25）：解绑过的剧不许被宽松重识别
+            # 再绑回去（孪生回填与 API 搜索两条命中路都经本候选集）。
+            em.MediaItem.manual_unbound.isnot(True),
             em.MediaItem.tmdb_loose_repair_at.is_(None),
         )
         .order_by(em.MediaItem.id.asc())

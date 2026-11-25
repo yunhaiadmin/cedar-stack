@@ -1347,6 +1347,7 @@ def search_items_for_bind(
                 "item_type": r.item_type,
                 "tmdb_id": r.tmdb_id,
                 "metadata_locked": bool(r.metadata_locked),
+                "manual_unbound": bool(getattr(r, "manual_unbound", False)),
             }
             for r in rows
         ]
@@ -1390,6 +1391,7 @@ def list_unidentified_items(
                 "item_type": r.item_type,
                 "tmdb_id": r.tmdb_id,
                 "metadata_locked": bool(r.metadata_locked),
+                "manual_unbound": bool(getattr(r, "manual_unbound", False)),
                 "metadata_source": r.metadata_source,
                 "enrich_status": r.enrich_status,
             }
@@ -1577,6 +1579,11 @@ def bind_tmdb_id(
         item.enrich_next_retry_at = None
         # 解绑即解锁：绑定时加的锁随之解除，恢复自动刮削
         item.metadata_locked = False
+        # 人工解绑标记（2026-11-25）：解绑过的条目不许再被自动化绑
+        # 回去——巡检不翻 pending、识别认领排除、一切自动绑定路径
+        # 跳过（证据源 NFO/搜索没动，光解绑不持久，66305 等 7 条实证
+        # 被绑回）。管理员手动绑定成功时自动清除（见绑定分支）。
+        item.manual_unbound = True
         # 列表去重缓存：tmdb_id 变化影响去重/选主 → bump 该库数据版本号
         from backend.emby_server import items_dedup_cache as _idc
         _idc.bump_library_item_versions(db, [item.library_id], force=True)
@@ -1584,7 +1591,8 @@ def bind_tmdb_id(
         return {
             "success": True, "unbound": True,
             "item": {"id": item.id, "name": item.name, "item_type": item.item_type},
-            "notes": [f"已解绑（原 TMDB {before}）并重新排入补全队列"],
+            "notes": [f"已解绑（原 TMDB {before}）并标记人工解绑："
+                      "自动刮削不会再绑定，手动绑定可解除标记"],
         }
 
     if not (tid.isdigit() or _IMDB_ID_RE.match(tid)):
@@ -1615,6 +1623,11 @@ def bind_tmdb_id(
         notes.append(f"IMDb {imdb_id} → TMDB {tid}")
 
     item.tmdb_id = tid
+    # 手动绑定优先于人工解绑标记：绑定生效即清除标记（此后自动化仍
+    # 受下方 metadata_locked 保护，与手动绑定一贯口径一致）。清除须在
+    # 后面 apply_details 之前——它的 imdb 身份写入对带标记条目是跳过的。
+    _was_manual_unbound = bool(getattr(item, "manual_unbound", False))
+    item.manual_unbound = False
     item.last_scraped_at = datetime.now()
     item.metadata_source = "tmdb"
     # WS1/B3：missing 模式也要拉详情 —— 否则「仅补缺失」分支根本不可达，
@@ -1653,6 +1666,8 @@ def bind_tmdb_id(
     # 解绑（unbind 分支）时解锁，恢复自动刮削。
     item.metadata_locked = True
     notes.append("已锁定：自动刮削不再覆盖（解绑可解锁）")
+    if _was_manual_unbound:
+        notes.append("已清除人工解绑标记（手动绑定生效）")
     # 列表去重缓存：tmdb_id/海报/简介变化影响去重/选主 → bump 该库数据版本号
     from backend.emby_server import items_dedup_cache as _idc
     _idc.bump_library_item_versions(db, [item.library_id], force=True)
@@ -1674,6 +1689,7 @@ def _item_lock_view(item: "em.MediaItem") -> dict:
         "item_type": item.item_type,
         "tmdb_id": item.tmdb_id,
         "metadata_locked": bool(item.metadata_locked),
+        "manual_unbound": bool(getattr(item, "manual_unbound", False)),
     }
 
 

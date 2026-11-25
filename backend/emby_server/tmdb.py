@@ -2558,7 +2558,10 @@ class TmdbClient:
             if gnames:
                 item.genres = ",".join(gnames)
         imdb = (data.get("external_ids") or {}).get("imdb_id") or data.get("imdb_id")
-        if imdb:
+        # 人工解绑标记：详情里的 imdb 编号也是身份，带标记的条目不写
+        #（其余文字/图片补齐不受影响）。手动绑定在调本函数前已清除
+        # 标记（bind-tmdb 绑定分支），手动路径口径不变。
+        if imdb and not getattr(item, "manual_unbound", False):
             item.imdb_id = imdb
         if not getattr(item, "production_year", None):
             y = _year_from_tmdb_date(data)
@@ -2658,6 +2661,11 @@ class TmdbClient:
         return bool(specs)
 
     def apply(self, item: emby_models.MediaItem, hit: dict, kind: str) -> None:
+        # 人工解绑标记（2026-11-25）：命中的文字/图片/身份全来自自动
+        # 识别，带标记的条目一律不落。扫描首刮与 enrich 经典写库共用
+        # 本入口，一处守卫两处生效；手动绑定不经 apply()，不受影响。
+        if getattr(item, "manual_unbound", False):
+            return
         # 源站暂定填充在标记被改写前先记下：它不享受「只填空」保护。
         provisional = getattr(item, "metadata_source", None) == \
             PROVISIONAL_METADATA_SOURCE

@@ -7139,6 +7139,10 @@ def _apply_implicit_series_tmdb(ctx, series, series_guid, stats,
     tmdb_res = ctx.series_tmdb_results.get(series_guid)
     if not tmdb_res or series.tmdb_id:
         return (False, False)
+    # 人工解绑标记（2026-11-25）：存量 series 被管理员解绑过，扫描
+    # 首刮不许再绑回去（按「没刮」返回，调用方的已搜标记口径不变）。
+    if getattr(series, "manual_unbound", False):
+        return (False, False)
     series_hit, series_details = tmdb_res
     if not series_hit:
         # 理论上到不了：series_tmdb_results 只在命中非空时才登记；
