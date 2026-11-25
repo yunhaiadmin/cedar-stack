@@ -713,6 +713,15 @@ jobs:
         timeout-minutes: 10
         run: python -m pytest tests/test_invite_rebate_concurrent.py -q
 
+      # 会话上报首报并发回归（L-039）：_get_or_create_umd 曾是无锁
+      # 「查无 → 插入」，同一 (user_id, item_id) 的 Progress 与 Stopped
+      # 并发首报一路撞 uq_umdata_user_item 出 500（已改存点 flush 抢键 +
+      # 撞键重查复用）。DATABASE_URL 由本 job 的 env 指向真 PG；无 PG 时
+      # PG 用例自动跳过（SQLite 文件库版本在普通门禁里跑）。
+      - name: 会话上报首报并发回归（真 PG 存点合并）
+        timeout-minutes: 10
+        run: python -m pytest tests/test_umd_first_report_race.py -q
+
   deploy-check:
     name: 后端 · 部署自检（真起服务 + 真发 HTTP）
     needs: frontend

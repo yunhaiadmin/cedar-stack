@@ -272,7 +272,26 @@ def _get_or_create_umd(db: Session, user: models.WebUser, item: em.MediaItem) ->
     if not umd:
         # 第一次上报这个条目：即使会话被节流也必须落库（否则「继续观看」没有起点）
         umd = em.UserMediaData(user_id=user.id, item_id=item.id)
+        # L-039：查与调用方的 commit 之间无锁——同一条目的 Progress 与
+        # Stopped 并发首报时两路都查无、都 INSERT，一路撞 uq_umdata_user_item
+        # 出 500（2026-11-25 生产实证）。与 _upsert_session 同款存点防线：
+        # 先在本事务里 flush 抢唯一键，撞键只回滚存点内的 insert 本体，
+        # 再重查复用 winner 的行（其字段随后由本路 _apply_play_progress
+        # 按原口径覆盖）。存点建立前的既有写入不受回滚影响。
+        _sp = db.begin_nested()
         db.add(umd)
+        try:
+            db.flush()
+        except IntegrityError:
+            _sp.rollback()
+            umd = db.query(em.UserMediaData).filter(
+                em.UserMediaData.user_id == user.id,
+                em.UserMediaData.item_id == item.id,
+            ).first()
+            if umd is None:
+                raise
+            logger.info("观看进度并发建行合并：user=%s item=%s 复用已存在行",
+                        user.id, item.id)
     return umd
 
 
