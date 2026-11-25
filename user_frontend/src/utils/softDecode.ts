@@ -920,6 +920,23 @@ export class SeekProgressTracker {
     this.issuedAt = now
   }
 
+  /**
+   * 失败后观察的起手式（第九轮 late-recovery）：把确认记账的基线
+   * 钉在判失败时刻的真实位置上，之后 note(..., confirming=true)
+   * 按同一套「持续前进」口径判定（累计 ≥0.5s、两次相隔 sustainMs
+   * 的采样都看到、第二次读数大于第一次）。不另写一套确认逻辑。
+   * issuedAt 同样钉在失败时刻，暂停落定判定才有意义。
+   */
+  beginLateRecovery(baselineSeconds: number, now: number = Date.now()): void {
+    const base = Number.isFinite(baselineSeconds) ? baselineSeconds : 0
+    this.arrivedAt = base
+    this.hasArrived = true
+    this.issuedAt = now
+    this.confirmFirstMoveAt = null
+    this.confirmFirstMoveSeconds = base
+    this.confirmLastSeenSeconds = base
+  }
+
   /** 在飞 seek 的目标秒 */
   get target(): number {
     return this.targetSeconds

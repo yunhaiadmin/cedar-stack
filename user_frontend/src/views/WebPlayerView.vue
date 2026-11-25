@@ -420,6 +420,7 @@ import {
   createNativeSeekDriver,
   type NativeSeekDriver,
 } from '@/utils/nativeSeek'
+import { LateRecoveryWatcher } from '@/utils/lateRecovery'
 import {
   formatRangeEntry,
   formatTimeRanges,
@@ -589,6 +590,16 @@ function refreshDiag(): void {
   } else {
     lines.push('流请求：—')
   }
+  // 第九轮 late-recovery：错误页期间继续轻量观察 currentTime——
+  // 复用诊断区 500ms 节奏，不另起轮询。元素其实已活（时间持续
+  // 前进）时清除错误页回播放态，显示时间同步到真实位置。
+  if (phase.value === 'error' && lateRecovery.observing) {
+    if (lateRecovery.note(v.currentTime, !v.paused, nativePausedAt)) {
+      currentTime.value = v.currentTime || 0
+      phase.value = 'playing'
+      seekGuardState.value = lateRecovery.recoveredStateString()
+    }
+  }
   diagLines.value = lines
 }
 async function refreshDiagRanges(): Promise<void> {
@@ -619,6 +630,14 @@ function stopDiagTimer(): void {
     diagTimer = null
   }
 }
+
+/** 失败后迟到恢复观察（第九轮 late-recovery）：判失败后错误页不
+ * 再是终态——继续以诊断区 500ms 节奏读 video.currentTime，确认
+ * 持续前进即自动清除错误页回播放态。只在原生路径接线：软解判
+ * 失败后实例即销毁，没有可观察的、会前进的时钟。 */
+const lateRecovery = new LateRecoveryWatcher()
+/** 最近一次原生暂停开始的时刻（毫秒）：喂给观察器的 pausedAt；正在播为 null */
+let nativePausedAt: number | null = null
 
 /** 当前播放管线（写到 .wp-root 的 data-pipeline）：软解在场即 soft，否则 native */
 const pipelineKind = computed(() => (softActive.value ? 'soft' : 'native'))
@@ -1487,6 +1506,7 @@ async function playSource(source: EmbyMediaSource, atSeconds: number): Promise<v
   prepReceivedBytes.value = null
   softLoadDone.value = false
   seekGuardState.value = 'idle'
+  lateRecovery.reset()
   window.clearInterval(prepByteTimer)
   // 切版本：旧的软解实例先停掉，新版本再按决策重建（软解/原生二选一）
   if (softHandle.value) await destroySoft()
@@ -1528,7 +1548,7 @@ function ensureNativeDriver(): NativeSeekDriver | null {
       onSeekingChange: (seeking: boolean) => {
         nativeSeeking.value = seeking
       },
-      onSeekFailed: (_message: string, actualSeconds: number) => {
+      onSeekFailed: (_message: string, actualSeconds: number, targetSeconds: number) => {
         // 原生 seek 看门狗判失败：显示时间先 snap 回 video 的真
         // 实位置（去掉提交时的乐观值假死），再上与软解同款的、
         // 带「再试一次」的错误页
@@ -1538,6 +1558,9 @@ function ensureNativeDriver(): NativeSeekDriver | null {
         noticeText.value =
           '跳转后一直没能继续播放（取流或解码卡住了）。点「再试一次」重新打开，或返回详情换个版本。'
         phase.value = 'error'
+        // 第九轮 late-recovery：失败不再是终态——开始失败后观察
+        // （本会话已恢复过一次时 begin 返回 false，错误页终态停住）
+        lateRecovery.begin(targetSeconds, actualSeconds)
       },
       onGuardState: (state: string) => {
         seekGuardState.value = state
@@ -1870,12 +1893,14 @@ function onTimeUpdate(): void {
 }
 function onPlayEvent(): void {
   nativeDriver?.notifyPlay()
+  nativePausedAt = null
   isPaused.value = false
   reportStartIfNeeded()
   wtBroadcast('play')
 }
 function onPauseEvent(): void {
   nativeDriver?.notifyPause()
+  nativePausedAt = Date.now()
   isPaused.value = true
   sendProgress(true)
   wtBroadcast('pause')
