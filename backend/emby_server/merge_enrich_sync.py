@@ -78,6 +78,10 @@ def restore_unmerged_row(row) -> bool:
         return False
     if getattr(row, "metadata_locked", None):
         return False
+    # 人工解绑标记（2026-11-25）：与锁定同口径——恢复独立也不许翻回
+    # pending 等自动重绑（识别认领本就排除，翻回只会烂在 pending）。
+    if getattr(row, "manual_unbound", None):
+        return False
     if has_own_metadata(row):
         return False
     row.enrich_status = "pending"

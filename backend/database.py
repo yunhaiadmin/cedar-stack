@@ -962,6 +962,10 @@ def _auto_migrate():
             # 手动识别 P3：元数据锁定（Emby 式）。老库补列后默认 0 = 未锁定，
             # 行为与升级前完全一致；锁定只挡 enrich 自动抢单，不挡手动绑定/重刮。
             ("metadata_locked", "BOOLEAN", "0"),
+            # 人工解绑标记（2026-11-25）：老库补列后默认 0 = 未标记，行为
+            # 与升级前完全一致；置位后巡检不翻 pending、识别认领排除、
+            # 一切自动绑定路径跳过（管理员手动绑定成功时清除标记）。
+            ("manual_unbound", "BOOLEAN", "0"),
             # v2.51.0 演员刮削：TMDB details 的 origin_country / spoken_languages
             # 落库，供 EA 详情页 Countries / Languages 用。
             # 老库补列后为空串 = 以前的 []，行为与升级前一致。

@@ -541,6 +541,10 @@ def _maybe_fill_tmdb(db, plan: dict, primary, stats: Dict[str, int]) -> None:
     """正主缺 TMDB 且全组非空编号唯一 → 补空（只填空、不覆盖）。"""
     if (primary.tmdb_id or "").strip():
         return
+    # 人工解绑标记（2026-11-25）：正主被管理员解绑过，组内唯一编号
+    # 也不许再补回去。
+    if getattr(primary, "manual_unbound", False):
+        return
     from backend.emby_server import models as em
 
     rows = (

@@ -338,9 +338,14 @@ def apply_nfo(item: Any, data: Dict[str, Any], kind: str,
             item.genres = ",".join(data["genres"])
         if data.get("studios"):
             item.studios = ",".join(data["studios"])
-        if data.get("tmdb_id"):
+        # 人工解绑标记（2026-11-25）：NFO 里写死的编号正是「解绑后被
+        # 自动绑回」的实证来源（66305 案，stage record
+        # tmdb_id_source="nfo"）——带标记的条目 NFO 只落文字/流信息，
+        # 身份列一律不写。手动绑定不经 apply_nfo，不受本守卫影响。
+        _manual_unbound = bool(getattr(item, "manual_unbound", False))
+        if data.get("tmdb_id") and not _manual_unbound:
             item.tmdb_id = str(data["tmdb_id"])
-        if data.get("imdb_id"):
+        if data.get("imdb_id") and not _manual_unbound:
             item.imdb_id = data["imdb_id"]
         # NFO 自带海报/背景地址：只填空缺——side 本地图与 TMDB 图在本轮
         # 前面的阶段已处理（B 方案：图以它们为准），这里只兜「都没有」。

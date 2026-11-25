@@ -440,6 +440,15 @@ class MediaItem(Base):
     # 锁定防的是「自动」，手动永远优先。
     # 老库补列后为 0（False）= 未锁定，行为与升级前完全一致（见 database._auto_migrate）。
     metadata_locked = Column(Boolean, default=False)
+    # 人工解绑标记（2026-11-25）：管理员手动解绑过的条目置 True，自动化
+    # 不许再把它绑回去——巡检不翻 pending、识别认领排除、一切自动绑定
+    # 路径（两段式 apply_identity / 经典 _enrich_apply / NFO 身份写入 /
+    # 扫描首刮 / 宽松重识别 / 季折叠补空）都跳过。与 metadata_locked 的
+    # 区别：锁是「全部元数据不许自动碰」，本标记只挡身份绑定，资料补齐
+    # 不受影响；管理员手动绑定成功后自动清除（手动永远优先，与锁定
+    # 同口径）。老库补列后为 0（False）= 未标记，行为与升级前完全一致
+    # （见 database._auto_migrate）。
+    manual_unbound = Column(Boolean, default=False)
     # 元数据来源标记：这条条目的文字/图片**实际来自哪里**。
     # 取值：nfo=本地 NFO；tmdb=TMDB 搜索/详情；tmdb_img=NFO 给文字、TMDB 补图；
     # none=刮削跑过但没拿到数据（仍缺 tmdb_id/简介）。NULL=历史数据未标记。

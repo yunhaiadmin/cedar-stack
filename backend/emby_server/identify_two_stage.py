@@ -760,6 +760,14 @@ def apply_identity(db, item, fetched: dict, tmdb_details_fetcher=None) -> Option
     解析不到不改任何已有值，开关语义与此前逐字一致。
 
     """
+    # 人工解绑标记（2026-11-25）：管理员手动解绑过的条目，识别段不许
+    # 再绑回去——按「无绑定」返回，调用方走未定身份的现行终态。远端
+    # 认亲继承、补资料段的 imdb-only 身份升级都经本函数，一处守卫全
+    # 覆盖；手动绑定走管理端 bind-tmdb，不经本函数，不受影响。
+    if getattr(item, "manual_unbound", False):
+        logger.info("识别段跳过（人工解绑标记）id=%s",
+                    getattr(item, "id", "?"))
+        return None
     binding = extract_binding(item, fetched)
     if binding is not None and binding.get("provider") == "douban":
         # 豆瓣是兜底腿：远端同源继承能给出 tmdb/imdb（更强身份）时

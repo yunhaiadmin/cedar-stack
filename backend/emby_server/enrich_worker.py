@@ -3151,6 +3151,16 @@ def _enrich_apply(db, item: Any, fetched: dict) -> None:
         _maybe_queue_probe(db, item)
         return
 
+    # 人工解绑标记（2026-11-25）：管理员手动解绑过的条目，经典写库
+    # 不许再把候选身份落回去（两段式未定身份时也回落到本函数收尾，
+    # 故在此兜底）。下面各 TMDB 分支据此跳过身份/候选详情/演员写入；
+    # NFO 只落文字（apply_nfo 内部另有身份守卫），本地 side 图与
+    # 外挂字幕照常。
+    _manual_unbound = bool(getattr(item, "manual_unbound", False))
+    if _manual_unbound:
+        logger.info("补全写库（人工解绑标记，跳过自动绑定）id=%s name=%r",
+                    getattr(item, "id", "?"), getattr(item, "name", ""))
+
     item_type = item.item_type or ""
     kind = {"series": "series", "season": "season",
             "episode": "episode", "movie": "movie"}.get(item_type, "")
@@ -3199,11 +3209,12 @@ def _enrich_apply(db, item: Any, fetched: dict) -> None:
         # 终态的 _clear_blank_identity 再把空白清成 NULL——本轮真实 id
         # 就此丢失。空白与缺失同按“空”处理。
         _cur_tmdb = getattr(item, "tmdb_id", None)
-        if _cur_tmdb is None or (isinstance(_cur_tmdb, str)
-                                 and not _cur_tmdb.strip()):
+        if not _manual_unbound and (
+                _cur_tmdb is None or (isinstance(_cur_tmdb, str)
+                                      and not _cur_tmdb.strip())):
             item.tmdb_id = fetched["tmdb_id"]
         details = fetched.get("tmdb_details")
-        if details:
+        if details and not _manual_unbound:
             # 批2（刮削瘦身）：apply_details 门控收窄。apply_details 现在是
             # 「只填空不覆盖」，简介/类型不再是拉详情的理由——只留：
             # 修图请求、缺图、缺身份标识（imdb_id）。缺别名也不再是理由。
@@ -3230,7 +3241,7 @@ def _enrich_apply(db, item: Any, fetched: dict) -> None:
             or not (item.poster_path or item.primary_image_url)
             or not item.imdb_id
         )
-        if details and _needs_details_b:
+        if details and _needs_details_b and not _manual_unbound:
             tmdb_client.apply_details(item, details)
         if nfo_data:
             nfo_lib.apply_nfo(item, nfo_data, kind,
@@ -3274,8 +3285,11 @@ def _enrich_apply(db, item: Any, fetched: dict) -> None:
             item.metadata_source = "tmdb"
 
     # 3.5 演员表（v2.51.0）：details 自带 credits；幂等，只在没有演员行时写。
-    _apply_cast(db, item, fetched.get("tmdb_details"))
-    if fetched.get("douban_cast"):
+    # 人工解绑标记：候选详情/豆瓣候选的演员同样不落（与身份写入同口径，
+    # 防「没绑上却落了错候选的演员」）。
+    if not _manual_unbound:
+        _apply_cast(db, item, fetched.get("tmdb_details"))
+    if fetched.get("douban_cast") and not _manual_unbound:
         db.flush()
         _apply_douban_cast(db, item, fetched.get("douban_cast"))
     # 元数据片长（只补空）：apply_details 被「已有 imdb+别名」短路时也要落
@@ -4411,6 +4425,13 @@ def _claim_batch(db, limit: int, queue: Optional[str] = None) -> list:
     # isnot(True) 而不是 == False：容忍 NULL 旧行（migration 给 DEFAULT 0，
     # 但手写 SQL/旧版本 ORM 可能留 NULL），NULL 视为未锁定。
     unlocked = em.MediaItem.metadata_locked.isnot(True)
+    # 人工解绑标记（2026-11-25）：管理员手动解绑过的条目，识别认领
+    # 排除——自动化不许再把它绑回去。fill 队列只给已绑定条目补资料、
+    # 不产生绑定（其 imdb-only 身份升级经 apply_identity，另有守卫），
+    # 照常认领；queue=None 的单队列口径走经典写库（识别+补资料一体），
+    # 同样排除。isnot(True) 与 metadata_locked 同口径，容忍 NULL 旧行。
+    not_manual_unbound = (True if queue == "fill"
+                          else em.MediaItem.manual_unbound.isnot(True))
     # 单集夜间刮削：开关开且当前不在夜间窗口内 → 抢单时跳过单集（episode），
     # 白天优先刮顶层条目（movie/series/season）。夜间窗口内不限制。
     # 时间用服务器本地时间。默认关闭，不改变现有行为。
@@ -4502,6 +4523,7 @@ def _claim_batch(db, limit: int, queue: Optional[str] = None) -> list:
                              (em.MediaItem.item_type.in_(("series", "season")), 1),
                              else_=0)).label("gate"))
                 .filter(em.MediaItem.enrich_status == "pending", due, unlocked,
+                        not_manual_unbound,
                         not_episode, not_merged, not_ban_backfill, queue_pred,
                         parent_ready)
                 # library_id 必须显式入组（PG 要求）：组键是全局 id，
@@ -4524,6 +4546,7 @@ def _claim_batch(db, limit: int, queue: Optional[str] = None) -> list:
         """认领一个组的组员（谓词逐字实时，不吃任何缓存）。"""
         q = (db.query(em.MediaItem)
              .filter(em.MediaItem.enrich_status == "pending", due, unlocked,
+                     not_manual_unbound,
                      not_episode, not_merged, not_ban_backfill, queue_pred,
                      parent_ready,
                      # 轻量化 P1：组员谓词改索引直取，与 coalesce
@@ -5105,6 +5128,9 @@ def _missing_metadata_top_query(db):
                     em.MediaItem.deleted_at.is_(None),
                     em.MediaItem.merged_into_id.is_(None),
                     em.MediaItem.metadata_locked.isnot(True),
+                    # 人工解绑标记（2026-11-25）：解绑过的条目不翻回
+                    # pending（翻回也认领不到识别队列，只污染计数）。
+                    em.MediaItem.manual_unbound.isnot(True),
                     em.MediaItem.item_type.in_(["series", "movie"]),
                     _or(em.MediaItem.tmdb_id.is_(None),
                         em.MediaItem.tmdb_id == "",
@@ -5305,6 +5331,9 @@ def _none_reschedulable_query(db, cutoff, max_rounds, longtail_cutoff=None):
                     # isnot(True) 容忍 NULL 旧行）。翻回被锁定的行会使其永久卡
                     # 在 pending（抢单跳过），污染待刮计数，故这里直接剔除。
                     em.MediaItem.metadata_locked.isnot(True),
+                    # 人工解绑标记（2026-11-25）：解绑过的条目不许再被
+                    # 捞回去重新识别（与锁定同口径 isnot(True)）。
+                    em.MediaItem.manual_unbound.isnot(True),
                     # 轮数口径（2026-10-31 长尾兜底）：未达上限按常规周期
                     # （cutoff）判定；达到上限的行不再永久保留 done——过
                     # 长尾周期（longtail_cutoff，默认 30 天）仍可捞回，
@@ -5416,6 +5445,9 @@ def _failed_reschedulable_query(db, cutoff, max_rounds):
                     # 系统清点教训：merged_into_id 无全局过滤，回捞必须显式剔除副本
                     em.MediaItem.merged_into_id.is_(None),
                     em.MediaItem.enrich_failed_reschedules < max_rounds,
+                    # 人工解绑标记（2026-11-25）：不翻回 pending——翻回
+                    # 也会被识别认领排除，只会烂在 pending 污染计数。
+                    em.MediaItem.manual_unbound.isnot(True),
                     _or(em.MediaItem.enrich_next_retry_at.is_(None),
                         em.MediaItem.enrich_next_retry_at <= cutoff)))
 
@@ -5549,6 +5581,10 @@ def enrich_field_refill_recovery(db, limit: int = _FIELD_REFILL_RECOVERY_PER_ROU
                      em.MediaItem.deleted_at.is_(None),
                      em.MediaItem.merged_into_id.is_(None),
                      em.MediaItem.metadata_locked.isnot(True),
+                     # 人工解绑标记（2026-11-25）：解绑过的条目不翻回
+                     # pending 补齐（无 tmdb 的行补齐轮会重搜，有重绑
+                     # 风险；且识别认领本就排除，翻回只污染计数）。
+                     em.MediaItem.manual_unbound.isnot(True),
                      em.MediaItem.library_id.in_(cms_lib_ids),
                      em.MediaItem.enrich_field_refill_done.isnot(True),
                      _or(em.MediaItem.metadata_source.is_(None),
@@ -5612,7 +5648,9 @@ def fake_done_patrol(db) -> int:
                      em.MediaItem.item_type.in_(["series", "movie"]),
                      em.MediaItem.deleted_at.is_(None),
                      em.MediaItem.merged_into_id.is_(None),
-                     em.MediaItem.metadata_locked.isnot(True))
+                     em.MediaItem.metadata_locked.isnot(True),
+                     # 人工解绑标记（2026-11-25）：与锁定同口径豁免。
+                     em.MediaItem.manual_unbound.isnot(True))
              .order_by(em.MediaItem.id.asc())
              .limit(_FAKE_DONE_PATROL_PER_ROUND)
              .all())]
@@ -5711,6 +5749,9 @@ def dirty_done_patrol(db, *, now=None, details_fetcher=None) -> dict:
                     em.MediaItem.deleted_at.is_(None),
                     em.MediaItem.merged_into_id.is_(None),
                     em.MediaItem.metadata_locked.isnot(True),
+                    # 人工解绑标记（2026-11-25）：解绑过的条目（多半正
+                    # 是 no_tmdb 形态）不许再被巡检翻回 pending 重绑。
+                    em.MediaItem.manual_unbound.isnot(True),
                     _or(em.MediaItem.file_fingerprint.isnot(None),
                         em.MediaItem.repair_requested_at.isnot(None)),
                     _or(em.MediaItem.last_scraped_at.is_(None),
@@ -6225,6 +6266,9 @@ def _requeue_inherit_children_for_parent(db, parent_id: int) -> int:
                      em.MediaItem.enrich_status == "done",
                      em.MediaItem.metadata_source == "inherit",
                      em.MediaItem.metadata_locked.isnot(True),
+                     # 人工解绑标记（2026-11-25）：单集被单独解绑过时
+                     # 不翻回 pending（认领侧识别队列同样排除）。
+                     em.MediaItem.manual_unbound.isnot(True),
                      em.MediaItem.merged_into_id.is_(None),
                      _or(em.MediaItem.series_id == parent_id,
                          em.MediaItem.parent_id == parent_id))
