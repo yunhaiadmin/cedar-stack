@@ -2158,6 +2158,58 @@ def _douban_fallback_on_tmdb_miss(item: Any, kind: str, result: dict,
         return False
 
 
+def _reject_gate_hit_with_existing_fallback(result: dict, item: Any, kind: str,
+                                            reason: str, hit_id,
+                                            existing_tmdb) -> None:
+    """绑定复核门拒绝命中后的收口（2026-11-25 门拒回落修复）。
+
+    被拒命中整段丢弃（不写新绑定）；随后用条目已存编号拉一次详情走
+    存量详情分支（与 Round 3「无命中才拉 existing_id 兜底」并列）——
+    否则已存编号的条目命中被拒即永久丢详情，_apply_cast 拿到 None
+    静默跳过、条目以 done 终态，演员/文本永远补不上（914 条实证）。
+
+    回落详情属于已存编号（条目自己的身份），不是新绑定，不过复核门；
+    标记 tmdb_details_fallback_existing 供 _enrich_apply 的存量详情
+    分支放行（该分支平时被 tmdb_gate_rejected 挡住）。无已存编号、
+    详情 404、瞬态失败时均不留详情：404 即无回落可取；瞬态按既有口径
+    标 ok=False 待重试（与门取证瞬态同口径）。
+    """
+    from backend.emby_server.tmdb import tmdb_client
+    from backend.emby_server.tmdb import TmdbTransientError as _GateTransient
+
+    result.pop("tmdb_id", None)
+    result.pop("tmdb_hit", None)
+    result.pop("tmdb_details", None)
+    result.pop("tmdb_hit_folder_title", None)
+    result.pop("tmdb_hit_folder_year", None)
+    result["tmdb_gate_rejected"] = reason
+    logger.warning(
+        "绑定复核门拒绝 id=%s name=%r hit_id=%s existing_id=%s reason=%s",
+        getattr(item, "id", "?"), getattr(item, "name", ""),
+        hit_id, existing_tmdb, reason)
+    if not existing_tmdb:
+        return
+    try:
+        details = tmdb_client.details(str(existing_tmdb), kind)
+    except _GateTransient:
+        result["ok"] = False
+        result["error"] = "tmdb transient, retry later"
+        logger.warning(
+            "门拒回落已存编号取详情瞬态失败 id=%s existing_id=%s kind=%s",
+            getattr(item, "id", "?"), existing_tmdb, kind)
+        return
+    if details is None:
+        logger.info(
+            "门拒回落已存编号无详情 id=%s existing_id=%s kind=%s",
+            getattr(item, "id", "?"), existing_tmdb, kind)
+        return
+    result["tmdb_details"] = details
+    result["tmdb_details_fallback_existing"] = True
+    logger.info(
+        "门拒回落已存编号取回详情 id=%s existing_id=%s kind=%s details_id=%s",
+        getattr(item, "id", "?"), existing_tmdb, kind, details.get("id"))
+
+
 def _enrich_fetch_tmdb_post(result: dict, item: Any, tmdb_ctx: dict,
                               batch_out: Optional[dict] = None) -> dict:
     """IO 阶段后半：TMDB（批量或单条）→ 原语言海报 → 豆瓣兜底 → 图片预热。
@@ -2374,12 +2426,9 @@ def _enrich_fetch_tmdb_post(result: dict, item: Any, tmdb_ctx: dict,
                         or (_gate_evidence or {}).get("title"),
                         (_gate_evidence or {}).get("first_air_date")
                         or (_gate_evidence or {}).get("release_date"))
-                    result.pop("tmdb_id", None)
-                    result.pop("tmdb_hit", None)
-                    result.pop("tmdb_details", None)
-                    result.pop("tmdb_hit_folder_title", None)
-                    result.pop("tmdb_hit_folder_year", None)
-                    result["tmdb_gate_rejected"] = _reason
+                    _reject_gate_hit_with_existing_fallback(
+                        result, item, kind, _reason, _gate_cand,
+                        _existing_tmdb)
                 else:
                     # search 来源标题硬门（2026-11-04 两段式错绑定案）：
                     # 候选来自搜索命中（tmdb_hit）且条目名与候选官方
@@ -2413,12 +2462,9 @@ def _enrich_fetch_tmdb_post(result: dict, item: Any, tmdb_ctx: dict,
                             [str((_gate_evidence or {}).get(k) or "")
                              for k in ("name", "title", "original_name",
                                        "original_title")])
-                        result.pop("tmdb_id", None)
-                        result.pop("tmdb_hit", None)
-                        result.pop("tmdb_details", None)
-                        result.pop("tmdb_hit_folder_title", None)
-                        result.pop("tmdb_hit_folder_year", None)
-                        result["tmdb_gate_rejected"] = _title_reason
+                        _reject_gate_hit_with_existing_fallback(
+                            result, item, kind, _title_reason, _gate_cand,
+                            _existing_tmdb)
                     else:
                         # 名字对账（参考日志）：归一后无任何交集时留痕
                         # 供复核，非 search 来源不做硬门（译名/原名差异
@@ -3205,7 +3251,8 @@ def _enrich_apply(db, item: Any, fetched: dict) -> None:
                                           db=db)
     elif (fetched.get("tmdb_details") and getattr(item, "tmdb_id", None)
             and not fetched.get("tmdb_hit")
-            and not fetched.get("tmdb_gate_rejected")):
+            and (not fetched.get("tmdb_gate_rejected")
+                 or fetched.get("tmdb_details_fallback_existing"))):
         # 存量详情分支（2026-11-24 缺口 #3）：条目早已绑 tmdb_id、本轮搜索
         # 未命中、详情是靠 existing_id 兜底拉回的（_tmdb_work / 批量 Round 3
         # 同口径）——上面三个分支一个都不进，此前 apply_details 从不执行，
@@ -3214,6 +3261,9 @@ def _enrich_apply(db, item: Any, fetched: dict) -> None:
         # _apply_cast 幸免）。details 的 id 即条目自己的编号（抓取层按
         # existing_id 取的），不是新绑定，不过复核门。apply_details 是
         # 只填空口径（enrich_tmdb_text_fill_only），不会覆盖已有文本。
+        # 门拒回落标记（tmdb_details_fallback_existing）同样放行：回落
+        # 详情也是已存编号自己的详情（见
+        # _reject_gate_hit_with_existing_fallback），不是被拒命中。
         tmdb_client.apply_details(item, fetched["tmdb_details"])
         if not (item.poster_path or item.primary_image_url):
             tmdb_client.apply_images(item, fetched["tmdb_details"],

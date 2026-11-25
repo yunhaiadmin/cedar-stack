@@ -415,3 +415,306 @@ def test_enqueue_details_refill_population(db):
 
     again = ew.enqueue_details_refill(db)
     assert again["matched"] == 0, "已入队/已补过的人群不许重复入队"
+
+# ---------------------------------------------------------------------------
+# 门拒回落已存编号（2026-11-25）：搜索命中被绑定复核门拒绝后，详情须回落
+# 已存编号拉取，否则 914 条 done 条目永久无演员。
+#
+# 缺口：_run_tmdb_batch Round 3 / _tmdb_work 都是「有命中只拉命中详情，
+# 无命中才拉 existing_id 兜底」；命中被门拒后 _enrich_fetch_tmdb_post 把
+# 详情整段 pop 掉、_apply_cast 拿到 None 静默跳过，条目以 done 终态。
+# 修复点：门拒 pop 之后用已存编号拉一次详情（走存量详情分支）；被拒命中
+# 仍丢弃、不写新绑定；门拒时记结构化日志。
+# ---------------------------------------------------------------------------
+
+STORED_DETAILS_65942 = {
+    "id": 65942,
+    "name": "Re：从零开始的异世界生活",
+    "original_name": "Re:ゼロから始める異世界生活",
+    "first_air_date": "2016-04-04",
+    "overview": "菜月昴被召唤到异世界。",
+    "genres": [{"id": 16, "name": "动画"}],
+    "vote_average": 8.4,
+    "external_ids": {"imdb_id": "tt65942"},
+    "origin_country": ["JP"],
+    "spoken_languages": [{"english_name": "Japanese"}],
+    "credits": {"cast": [
+        {"name": "演员甲", "character": "角色甲",
+         "profile_path": "/a.jpg", "id": 101},
+        {"name": "演员乙", "character": "角色乙",
+         "profile_path": None, "id": 102},
+    ]},
+}
+
+# 被拒命中：2005 年的同名旧版，年份与条目 2016 差 11 年 → year_mismatch。
+HIT_DETAILS_2005 = {
+    "id": 65733,
+    "name": "Re:Zero 2005版",
+    "original_name": "Re:Zero 2005",
+    "first_air_date": "2005-04-04",
+    "overview": "这是被拒命中的简介。",
+    "genres": [{"id": 16, "name": "动画"}],
+    "vote_average": 5.0,
+    "credits": {"cast": [
+        {"name": "错绑演员", "character": "错角",
+         "profile_path": None, "id": 901},
+    ]},
+}
+
+STORED_DETAILS_WUJIANDAO = {
+    "id": 14636,
+    "name": "无间道",
+    "original_name": "無間道",
+    "first_air_date": "2002-12-12",
+    "overview": "卧底与内鬼的故事。",
+    "genres": [{"id": 80, "name": "犯罪"}],
+    "vote_average": 8.4,
+    "external_ids": {"imdb_id": "tt14636"},
+    "origin_country": ["HK"],
+    "spoken_languages": [{"english_name": "Cantonese"}],
+    "credits": {"cast": [
+        {"name": "演员甲", "character": "角色甲",
+         "profile_path": "/a.jpg", "id": 101},
+        {"name": "演员乙", "character": "角色乙",
+         "profile_path": None, "id": 102},
+    ]},
+}
+
+# 被拒命中：年份与条目 2002 一致、标题与「无间道」零交集 → title_mismatch。
+HIT_DETAILS_BHABHI = {
+    "id": 14310,
+    "name": "Bhabhi",
+    "original_name": "Bhabhi",
+    "first_air_date": "2002-01-01",
+    "overview": "这是被拒命中的简介。",
+    "genres": [{"id": 18, "name": "剧情"}],
+    "vote_average": 5.0,
+    "credits": {"cast": [
+        {"name": "错绑演员", "character": "错角",
+         "profile_path": None, "id": 901},
+    ]},
+}
+
+
+def _gate_item(**kw):
+    defaults = dict(
+        id=1054, library_id=1, item_type="series",
+        name="Re：从零开始的异世界生活",
+        file_path=None, size=0, container="", production_year=2016,
+        poster_path=None, primary_image_url=None, imdb_id=None, aliases=None,
+        tmdb_id="65942", overview=None, genres=None, metadata_locked=False,
+        metadata_source=None, enrich_status="enriching", enrich_attempts=0,
+        repair_requested_at=None, season_number=None, episode_number=None,
+        series_id=None,
+    )
+    defaults.update(kw)
+    return SimpleNamespace(**defaults)
+
+
+def _gate_post_ctx(**kw):
+    ctx = {"kind": "series", "needs_repair": False,
+           "tmdb_plan": {"op": "search",
+                         "name": "Re：从零开始的异世界生活",
+                         "year": 2016, "kind": "series",
+                         "existing_id": "65942"}}
+    ctx.update(kw)
+    return ctx
+
+
+class _StubProgress:
+    def __init__(self):
+        self.stages = []
+
+    def note_stage(self, s):
+        self.stages.append(s)
+
+
+def _run_gate_post(result, item, tmdb_ctx, details_fn, batch_out):
+    """驱动 _enrich_fetch_tmdb_post：details() 按调用方给的函数分发，
+    其余网络方向全部 mock（本节用例不许真发请求）。"""
+    from backend.emby_server import douban as dbn
+    with (
+        mock.patch.object(type(tmdb_mod.tmdb_client), "configured",
+                          new_callable=mock.PropertyMock, return_value=True),
+        mock.patch.object(tmdb_mod.tmdb_client, "details",
+                          side_effect=details_fn),
+        mock.patch.object(tmdb_mod, "poster_language", return_value="system"),
+        mock.patch.object(tmdb_mod, "prewarm_images", return_value=[]),
+        mock.patch.object(ew, "_douban_fallback_on_tmdb_miss",
+                          return_value=False),
+        mock.patch.object(ew, "_should_multisource_on_tmdb_miss",
+                          return_value=False),
+        mock.patch.object(ew, "_collect_multisource_guarded",
+                          return_value=False),
+        mock.patch.object(ew, "progress", _StubProgress()),
+        mock.patch.object(altmeta, "search", return_value=None),
+        mock.patch.object(dbn.client, "search", return_value=None),
+    ):
+        return ew._enrich_fetch_tmdb_post(result, item, tmdb_ctx,
+                                          batch_out=batch_out)
+
+
+def _stored_details_fn(calls):
+    """details() 分发：只认已存编号，其他 id 一律报错（防误调）。"""
+    def _fn(tmdb_id, kind, *a, **k):
+        calls.append((str(tmdb_id), kind))
+        if str(tmdb_id) == "65942":
+            return dict(STORED_DETAILS_65942)
+        if str(tmdb_id) == "14636":
+            return dict(STORED_DETAILS_WUJIANDAO)
+        raise AssertionError(f"details() 不应被调到 {tmdb_id!r}")
+    return _fn
+
+
+def test_gate_rejected_year_falls_back_to_stored_id_batch():
+    """批量路：命中年份被门拒 → 回落已存编号拉详情，cast 与文本都有源；
+    被拒命中丢弃、不写新绑定。"""
+    item = _gate_item()
+    result = {"tmdb_hit": None, "tmdb_details": None,
+              "ok": True, "error": None, "nfo_data": None}
+    batch_out = {"hit": {"id": 65733, "name": "Re:Zero 2005版"},
+                 "details": dict(HIT_DETAILS_2005), "transient": False}
+    calls = []
+    out = _run_gate_post(result, item, _gate_post_ctx(),
+                         _stored_details_fn(calls), batch_out)
+    assert out.get("tmdb_gate_rejected") == "year_mismatch"
+    assert "tmdb_id" not in out, "被拒命中不许留 tmdb_id（不写新绑定）"
+    assert "tmdb_hit" not in out, "被拒命中不许留 tmdb_hit"
+    assert calls == [("65942", "series")], calls
+    assert out.get("tmdb_details_fallback_existing") is True
+    details = out.get("tmdb_details") or {}
+    assert details.get("id") == 65942, "回落详情必须是已存编号的，不是被拒命中的"
+    assert (details.get("credits") or {}).get("cast"), "回落详情须带 credits 供 _apply_cast"
+
+
+def test_gate_rejected_title_falls_back_to_stored_id_batch():
+    """批量路：标题硬门被拒（年份一致、标题零交集）→ 同样回落已存编号。"""
+    item = _gate_item(id=119174, name="无间道", production_year=2002,
+                      tmdb_id="14636")
+    result = {"tmdb_hit": None, "tmdb_details": None,
+              "ok": True, "error": None, "nfo_data": None}
+    batch_out = {"hit": {"id": 14310, "name": "Bhabhi"},
+                 "details": dict(HIT_DETAILS_BHABHI), "transient": False}
+    calls = []
+    out = _run_gate_post(
+        result, item,
+        _gate_post_ctx(tmdb_plan={"op": "search", "name": "无间道",
+                                  "year": 2002, "kind": "series",
+                                  "existing_id": "14636"}),
+        _stored_details_fn(calls), batch_out)
+    assert out.get("tmdb_gate_rejected") == "title_mismatch"
+    assert "tmdb_id" not in out
+    assert "tmdb_hit" not in out
+    assert calls == [("14636", "series")], calls
+    assert out.get("tmdb_details_fallback_existing") is True
+    assert (out.get("tmdb_details") or {}).get("id") == 14636
+
+
+def test_gate_rejected_year_falls_back_to_stored_id_single():
+    """单条路：batch_out=None 时走 _tmdb_work，门拒后同样回落已存编号。"""
+    item = _gate_item(id=2001, name="门拒回落单条剧", production_year=2016)
+    result = {"tmdb_hit": None, "tmdb_details": None,
+              "ok": True, "error": None, "nfo_data": None}
+    calls = []
+
+    def _tmdb_work(need_search, name, year, kind, existing_id, want_details):
+        assert need_search is True
+        assert str(existing_id) == "65942"
+        return ({"id": 65733, "name": "Re:Zero 2005版"},
+                dict(HIT_DETAILS_2005))
+
+    with mock.patch.object(scanner, "_tmdb_work", side_effect=_tmdb_work):
+        out = _run_gate_post(result, item, _gate_post_ctx(),
+                             _stored_details_fn(calls), None)
+    assert out.get("tmdb_gate_rejected") == "year_mismatch"
+    assert "tmdb_id" not in out
+    assert "tmdb_hit" not in out
+    assert calls == [("65942", "series")], calls
+    assert out.get("tmdb_details_fallback_existing") is True
+    assert (out.get("tmdb_details") or {}).get("id") == 65942
+
+
+def test_gate_rejected_without_stored_id_no_fallback():
+    """守卫：条目本身无已存编号时，门拒后不拉详情、不崩、details() 一次不调。"""
+    item = _gate_item(tmdb_id=None)
+    result = {"tmdb_hit": None, "tmdb_details": None,
+              "ok": True, "error": None, "nfo_data": None}
+    batch_out = {"hit": {"id": 65733, "name": "Re:Zero 2005版"},
+                 "details": dict(HIT_DETAILS_2005), "transient": False}
+    calls = []
+    out = _run_gate_post(result, item, _gate_post_ctx(),
+                         _stored_details_fn(calls), batch_out)
+    assert out.get("tmdb_gate_rejected") == "year_mismatch"
+    assert out.get("tmdb_details") is None
+    assert calls == [], calls
+
+
+def test_gate_fallback_transient_retries_later():
+    """回落取详情遇瞬态错误 → 整条标 ok=False 待重试，不许静默标 done。"""
+    item = _gate_item()
+    result = {"tmdb_hit": None, "tmdb_details": None,
+              "ok": True, "error": None, "nfo_data": None}
+    batch_out = {"hit": {"id": 65733, "name": "Re:Zero 2005版"},
+                 "details": dict(HIT_DETAILS_2005), "transient": False}
+
+    def _boom(tmdb_id, kind, *a, **k):
+        raise tmdb_mod.TmdbTransientError("boom")
+
+    out = _run_gate_post(result, item, _gate_post_ctx(), _boom, batch_out)
+    assert out.get("tmdb_gate_rejected") == "year_mismatch"
+    assert out.get("ok") is False
+    assert "transient" in (out.get("error") or "")
+    assert out.get("tmdb_details") is None
+
+
+def test_gate_fallback_details_fill_text_and_cast(db):
+    """写库侧：门拒＋回落标记的详情走存量详情分支——文本落库、source 纠正、
+    演员表经 3.5 段写上；tmdb_id 不变（仍是已存编号）。"""
+    it = _make_item(
+        db, name="Re：从零开始的异世界生活", tmdb_id="65942",
+        metadata_source="none", overview=None, genres=None,
+        community_rating=None, poster_path="/tmp/p.jpg", imdb_id="tt65942",
+        production_year=2016, enrich_status="enriching")
+    real = tmdb_mod.tmdb_client
+    fake = SimpleNamespace(
+        configured=True, apply_details=real.apply_details,
+        apply_images=real.apply_images, apply=real.apply)
+    fetched = {"ok": True, "poster": None, "fanart": None,
+               "external_subs": [], "nfo_data": None, "tmdb_hit": None,
+               "tmdb_details": dict(STORED_DETAILS_65942),
+               "tmdb_gate_rejected": "year_mismatch",
+               "tmdb_details_fallback_existing": True, "error": None}
+    with mock.patch.object(tmdb_mod, "tmdb_client", fake):
+        ew._enrich_apply(db, it, fetched)
+    db.commit()
+    db.refresh(it)
+    assert it.tmdb_id == "65942", "回落不许改条目的 tmdb_id"
+    assert it.overview == "菜月昴被召唤到异世界。"
+    assert it.genres == "动画"
+    assert it.community_rating == 8.4
+    assert it.metadata_source == "tmdb", "已拿到已存编号的详情，'none' 必须纠正"
+    assert [p.name for p in _people(db, it)] == ["演员甲", "演员乙"]
+
+
+def test_gate_rejected_without_fallback_stays_inert(db):
+    """守卫：门拒且无回落标记、无详情时，写库侧不写演员、不填文本、不改身份。"""
+    it = _make_item(
+        db, name="Re：从零开始的异世界生活", tmdb_id="65942",
+        metadata_source="none", overview=None, genres=None,
+        community_rating=None, poster_path="/tmp/p.jpg", imdb_id="tt65942",
+        production_year=2016, enrich_status="enriching")
+    real = tmdb_mod.tmdb_client
+    fake = SimpleNamespace(
+        configured=True, apply_details=real.apply_details,
+        apply_images=real.apply_images, apply=real.apply)
+    fetched = {"ok": True, "poster": None, "fanart": None,
+               "external_subs": [], "nfo_data": None, "tmdb_hit": None,
+               "tmdb_details": None,
+               "tmdb_gate_rejected": "year_mismatch", "error": None}
+    with mock.patch.object(tmdb_mod, "tmdb_client", fake):
+        ew._enrich_apply(db, it, fetched)
+    db.commit()
+    db.refresh(it)
+    assert it.tmdb_id == "65942"
+    assert it.overview is None
+    assert _people(db, it) == []
