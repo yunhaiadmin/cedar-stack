@@ -9,6 +9,10 @@
 export const instances = []
 
 export default class FakeAVPlayer {
+  // 测试预置：下一实例的 useMSE。true = 平台走了 MSE 管线；
+  // false = libmedia 内部否回解码管线（否决看门狗须判失败）；
+  // undefined（缺省）= 旧行为（wasm 路，useMSE 不定）。
+  static nextUseMSE = undefined
   constructor(options) {
     this.options = options
     this.handlers = new Map()
@@ -16,6 +20,7 @@ export default class FakeAVPlayer {
     this.durationMs = 5757000n
     this.seekCalls = []
     this.destroyed = false
+    this.useMSE = FakeAVPlayer.nextUseMSE
     instances.push(this)
   }
 

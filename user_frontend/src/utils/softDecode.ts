@@ -278,10 +278,11 @@ interface MseCtorLike {
   isTypeSupported(mime: string): boolean
 }
 
-/** 跑一遍 MSE 预检：候选串逐个问平台 isTypeSupported（同步 API）。第二个参数仅供测试注入。 */
+/** 跑一遍 MSE 预检：候选串逐个问平台 isTypeSupported（同步 API）。第二个参数仅供测试注入；第三个参数供 MSE-seek 路由传入合成候选串（流信息为空时），不传则走真实参数。 */
 export function runSoftMsePreflight(
   source: DecodeSourceLike,
   isTypeSupported?: (mime: string) => boolean | null,
+  candidates?: MseMimeCandidate[],
 ): SoftMsePreflight {
   let mseApi: SoftMsePreflight['mseApi'] = ''
   let checker = isTypeSupported
@@ -308,7 +309,7 @@ export function runSoftMsePreflight(
       }
     }
   }
-  const entries: SoftMsePreflightEntry[] = mseMimeCandidates(source).map((c) => {
+  const entries: SoftMsePreflightEntry[] = (candidates ?? mseMimeCandidates(source)).map((c) => {
     let supported: boolean | null = null
     if (checker) {
       try {
@@ -356,6 +357,79 @@ export function probeSoftMseSupport(
 ): { supported: boolean; gate: SoftMseGate } {
   const gate = softMseGate(runSoftMsePreflight(source, isTypeSupported), source)
   return { supported: gate === 'pass', gate }
+}
+
+// ---------- MSE 精确取簇路由（2026-11-25 第十一轮） ----------
+
+/**
+ * MSE-seek 路由的候选串：
+ * 有流信息时走真实参数（与 4K MSE 路同一套 mseMimeCandidates）；
+ * 流信息为空（本站未探测到流，如《黑洞表面》）且容器是 mkv 时，
+ * 按 HEVC 猜一组合成候选——只是问平台支不支持，内容真身由
+ * AVPlayer load 时再认，认不出由 MSE 否决看门狗 + 原生回落接住。
+ * 非 mkv 容器不合成：libmedia 的 mkv demuxer 是 Cues 精确取簇
+ * 的载体，其它容器走原生。
+ */
+export function mseSeekCandidates(source: DecodeSourceLike): MseMimeCandidate[] {
+  const streams = source.MediaStreams || []
+  if (streams.length) return mseMimeCandidates(source)
+  if ((source.Container || '').toLowerCase() !== 'mkv') return []
+  const out: MseMimeCandidate[] = []
+  for (const param of ['hvc1.1.6.L120.90', 'hev1.1.6.L120.90', 'hvc1.2.4.L150.B0', 'hvc1']) {
+    out.push({ kind: 'video', codec: 'hevc', mime: `video/mp4; codecs="${param}"`, audioIndex: null })
+  }
+  for (const [codec, mime] of [
+    ['ac3', 'audio/mp4; codecs="ac-3"'],
+    ['eac3', 'audio/mp4; codecs="ec-3"'],
+    ['aac', 'audio/mp4; codecs="mp4a.40.2"'],
+  ] as const) {
+    out.push({ kind: 'audio', codec, mime, audioIndex: null })
+  }
+  return out
+}
+
+/**
+ * MSE-seek 路由的闸门：有流信息时复用软解闸门（默认音轨口径）；
+ * 流信息为空时只要求视频有带参数 HEVC 候选被认、且至少一条常见
+ * 音频候选被认——否则 MSE 管线连默认音轨都喂不进去。
+ */
+export function mseSeekGate(pre: SoftMsePreflight, source: DecodeSourceLike): SoftMseGate {
+  const streams = source.MediaStreams || []
+  if (streams.length) return softMseGate(pre, source)
+  if (!pre.mseApi) return 'no-mse-api'
+  const parameterized = (mime: string) => (mime.split('"')[1] || '').includes('.')
+  const videoOk = pre.entries.some(
+    (e) => e.kind === 'video' && e.supported === true && parameterized(e.mime),
+  )
+  if (!videoOk) return 'video-unsupported'
+  const audioOk = pre.entries.some((e) => e.kind === 'audio' && e.supported === true)
+  return audioOk ? 'pass' : 'audio-unsupported'
+}
+
+/** MSE-seek 预检一站式：候选串（真实或合成）+ 闸门结论。 */
+export function probeMseSeekSupport(
+  source: DecodeSourceLike,
+  isTypeSupported?: (mime: string) => boolean | null,
+): { supported: boolean; gate: SoftMseGate } {
+  const gate = mseSeekGate(
+    runSoftMsePreflight(source, isTypeSupported, mseSeekCandidates(source)),
+    source,
+  )
+  return { supported: gate === 'pass', gate }
+}
+
+/**
+ * MSE-seek 路由决策（纯函数）：只认 mkv 容器；有流信息时只对
+ * HEVC 视频走新路（H.264 原生能跳，不必换管线）；流信息为空时
+ * 按 HEVC 猜——AVPlayer load 时再认，认不出回落原生。
+ * mseSupported 来自 probeMseSeekSupport 的放行结论。
+ */
+export function shouldMseSeekRoute(source: DecodeSourceLike, mseSupported: boolean): boolean {
+  if (!mseSupported) return false
+  if ((source.Container || '').toLowerCase() !== 'mkv') return false
+  const streams = source.MediaStreams || []
+  if (!streams.length) return true
+  return normalizeVideoCodec(streams.find((s) => s.Type === 'Video')?.Codec) === 'hevc'
 }
 
 // ---------- 开关读取（公开端点，只读一个布尔值） ----------
