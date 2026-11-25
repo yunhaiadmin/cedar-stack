@@ -2,6 +2,8 @@
   <div
     class="wp-root"
     :class="[`wp-cue-${subtitleFontSize}`, { 'wp-idle-cursor': phase === 'playing' && !controlsVisible && !locked }]"
+    :data-pipeline="pipelineKind"
+    :data-seek-guard="seekGuardState"
     @mousemove="pokeControls"
     @touchstart.passive="pokeControls"
   >
@@ -20,6 +22,8 @@
       @pause="onPauseEvent"
       @ended="onEnded"
       @error="onVideoError"
+      @seeking="onNativeSeeking"
+      @seeked="onNativeSeeked"
     />
 
     <!-- 软解画布：浏览器硬解失败且开关开时，AVPlayer 在此渲染（canvas），
@@ -125,10 +129,11 @@
       </div>
     </div>
 
-    <!-- 软解跳转定位中：seek 在飞时的可见反馈（转圈＋文案）。旧行为
-         拖完进度条后无转圈无提示，seek 卡住就永远冻结（2026-11-25
-         实测事故）；落定自动消失，判失败走错误页（见 onSeekFailed）。 -->
-    <div v-if="phase === 'playing' && softSeeking" class="wp-seeking" role="status">
+    <!-- 跳转定位中（软解/原生共用一枚）：seek 在飞时的可见反馈
+         （转圈＋文案）。旧行为拖完进度条后无转圈无提示，seek 卡
+         住就永远冻结（2026-11-25 实测事故）；落定自动消失，判失
+         败走错误页（软解见 onSeekFailed、原生见驱动 onSeekFailed）。 -->
+    <div v-if="phase === 'playing' && (softSeeking || nativeSeeking)" class="wp-seeking" role="status">
       <LoaderCircle :size="16" class="wp-spin" />
       <span>正在定位</span>
     </div>
@@ -392,6 +397,10 @@ import {
   SOFT_4K_BLOCK_MESSAGE,
   type SoftPlayerHandle,
 } from '@/utils/softDecode'
+import {
+  createNativeSeekDriver,
+  type NativeSeekDriver,
+} from '@/utils/nativeSeek'
 import { prepStatusText as prepStatusTextFor, PREP_DECODER_HINT } from '@/utils/prepStatus'
 import {
   resolveSpecSource,
@@ -497,6 +506,15 @@ const softActive = computed(() => softHandle.value !== null || softStarting.valu
 /** 软解 seek 在飞（看门狗已武装、未落定）：模板据此显示「正在定位」，
  * 旧行为拖完进度条后无任何反馈、卡住就静默冻结（2026-11-25 实测） */
 const softSeeking = ref(false)
+/** 原生 <video> seek 在飞（原生看门狗已武装、未落定）：与
+ * softSeeking 共用同一枚「正在定位」胶囊（第五轮：原生路径此前
+ * 没有任何 seek 看门狗，冷段卡住就是静默冻结） */
+const nativeSeeking = ref(false)
+/** 看门狗状态串（写到 .wp-root 的 data-seek-guard）：复测直接读
+ * DOM 即可定案看门狗走到了哪一步，不用打开控制台抓日志 */
+const seekGuardState = ref('idle')
+/** 当前播放管线（写到 .wp-root 的 data-pipeline）：软解在场即 soft，否则 native */
+const pipelineKind = computed(() => (softActive.value ? 'soft' : 'native'))
 const softFailedFor = ref('')
 const noticeTitle = computed(() => {
   if (phase.value === 'unsupported') {
@@ -1288,6 +1306,8 @@ async function start(restart: boolean): Promise<void> {
 async function openSource(source: EmbyMediaSource, atSeconds: number): Promise<void> {
   const v = videoEl.value
   if (!v) return
+  // 新源加载：上一源若有在飞的原生 seek 看门狗，一并取消
+  nativeDriver?.cancel()
   decodeVerdict.value = null
   decodeAlt.value = null
   const url = source.DirectStreamUrl || ''
@@ -1363,6 +1383,7 @@ async function playSource(source: EmbyMediaSource, atSeconds: number): Promise<v
   prepSlow.value = false
   prepReceivedBytes.value = null
   softLoadDone.value = false
+  seekGuardState.value = 'idle'
   window.clearInterval(prepByteTimer)
   // 切版本：旧的软解实例先停掉，新版本再按决策重建（软解/原生二选一）
   if (softHandle.value) await destroySoft()
@@ -1390,6 +1411,43 @@ async function destroySoft(): Promise<void> {
   } catch {
     /* 销毁失败不影响回落 */
   }
+}
+
+/** 原生 <video> seek 看门狗驱动（utils/nativeSeek）：组件生命
+ * 周期内单例，绑同一个 <video> 元素；切源/切软解时 cancel 掉
+ * 在飞 seek，免得它拿旧目标在新源上判失败 */
+let nativeDriver: NativeSeekDriver | null = null
+function ensureNativeDriver(): NativeSeekDriver | null {
+  const v = videoEl.value
+  if (!v) return null
+  if (!nativeDriver) {
+    nativeDriver = createNativeSeekDriver(v, {
+      onSeekingChange: (seeking: boolean) => {
+        nativeSeeking.value = seeking
+      },
+      onSeekFailed: (_message: string, actualSeconds: number) => {
+        // 原生 seek 看门狗判失败：显示时间先 snap 回 video 的真
+        // 实位置（去掉提交时的乐观值假死），再上与软解同款的、
+        // 带「再试一次」的错误页
+        nativeSeeking.value = false
+        currentTime.value = actualSeconds
+        if (phase.value !== 'playing') return
+        noticeText.value =
+          '跳转后一直没能继续播放（取流或解码卡住了）。点「再试一次」重新打开，或返回详情换个版本。'
+        phase.value = 'error'
+      },
+      onGuardState: (state: string) => {
+        seekGuardState.value = state
+      },
+    })
+  }
+  return nativeDriver
+}
+function onNativeSeeking(): void {
+  nativeDriver?.notifySeeking()
+}
+function onNativeSeeked(): void {
+  nativeDriver?.notifySeeked()
 }
 
 /**
@@ -1437,6 +1495,8 @@ async function startSoftDecode(
   }
   // 先停掉原生 video（切版本时它可能还在播旧源），再建软解实例
   videoEl.value?.pause()
+  // 切软解：原生 seek 看门狗若有在飞 seek，一并取消
+  nativeDriver?.cancel()
   softFailedFor.value = source.Id
   phase.value = 'preparing'
   prepStepIndex.value = 2
@@ -1524,19 +1584,24 @@ async function startSoftDecode(
         onSeekingChange: (seeking: boolean) => {
           softSeeking.value = seeking
         },
+        onGuardState: (state: string) => {
+          seekGuardState.value = state
+        },
         onSeekFailed: () => {
           // seek 看门狗判失败（自动重试后仍无结果）：不是解码失败，
-          // 不回落「浏览器解不了」的提示卡——销毁卡住的实例，上带
-          // 「再试一次」的错误页（retry 会重建播放器重新打开）。
+          // 不回落「浏览器解不了」的提示卡——先同步上带「再试一
+          // 次」的错误页（retry 会重建播放器重新打开），再后台销
+          // 毁卡住的实例。顺序不能反：卡死的解码器可能让
+          // destroy() 一直不返回，先等销毁的话错误页永远出不来
+          // （第五轮隐患收口）。
           if (!started) return
           if (phase.value !== 'playing' && phase.value !== 'preparing') return
           if (currentSource.value?.Id !== source.Id) return
           softSeeking.value = false
-          void destroySoft().then(() => {
-            noticeText.value =
-              '跳转后一直没能继续播放（取流或解码卡住了）。点「再试一次」重新打开，或返回详情换个版本。'
-            phase.value = 'error'
-          })
+          noticeText.value =
+            '跳转后一直没能继续播放（取流或解码卡住了）。点「再试一次」重新打开，或返回详情换个版本。'
+          phase.value = 'error'
+          void destroySoft()
         },
       },
       {
@@ -1693,15 +1758,21 @@ function onCanPlay(): void {
 }
 function onTimeUpdate(): void {
   const v = videoEl.value
-  if (!v || seeking.value) return
+  if (!v) return
+  // 原生看门狗靠 timeupdate 喂到达/确认采样：拖动中也喂——在飞
+  // 的上一笔 seek 若还没落定，采样不能断
+  nativeDriver?.notifyTimeUpdate()
+  if (seeking.value) return
   currentTime.value = v.currentTime || 0
 }
 function onPlayEvent(): void {
+  nativeDriver?.notifyPlay()
   isPaused.value = false
   reportStartIfNeeded()
   wtBroadcast('play')
 }
 function onPauseEvent(): void {
+  nativeDriver?.notifyPause()
   isPaused.value = true
   sendProgress(true)
   wtBroadcast('pause')
@@ -1841,10 +1912,18 @@ function onSeekCommit(e: Event): void {
   }
   const v = videoEl.value
   if (!v) return
-  try {
-    v.currentTime = target
-  } catch {
-    /* 不支持定位的流忽略 */
+  // 原生 seek 归看门狗驱动管（utils/nativeSeek）：冷段卡住时亮
+  // 「正在定位」、自动重试一次、仍无结果判失败上错误页，不许再
+  // 像旧行为那样把 currentTime 一设就不管、静默冻结。驱动缺席
+  // （元素未就绪）时回落旧行为直接设值。
+  const driver = ensureNativeDriver()
+  if (driver) driver.seekTo(target)
+  else {
+    try {
+      v.currentTime = target
+    } catch {
+      /* 不支持定位的流忽略 */
+    }
   }
   seeking.value = false
   currentTime.value = target
@@ -2380,6 +2459,8 @@ onUnmounted(() => {
   window.clearInterval(wtAlignTimer)
   resetDanmakuData()
   wt.dispose()
+  nativeDriver?.dispose()
+  nativeDriver = null
   void destroySoft()
   sendStopped()
   subBlobUrls.forEach((u) => URL.revokeObjectURL(u))
