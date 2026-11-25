@@ -28,6 +28,8 @@ from backend.config_schema import ConfigValueError
 from backend.download_guard import DownloadGuardMiddleware
 from backend.access_guard import AccessGuardMiddleware
 from backend.emby_server.audit import AdminWriteAuditMiddleware
+# F5 图片流量观测（2026-11-25 补挂 API 进程）：与 emby_api/main.py:76 同款引入。
+from backend.emby_server.image_obs import ImageObsMiddleware, start_flusher as _start_image_obs_flusher
 # P3-3（2026-10-12）：顶层导入——observability 中间件每请求都跑，import 不许留在函数体内
 from backend.emby_server import observability as _observability
 from backend.websocket import websocket_router, notification_router, manager
@@ -347,6 +349,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:  # noqa: BLE001
         logger.warning(f"节点健康检查启动失败（可忽略）: {e}")
 
+    # 图片流量观测 flush 线程（F5 前置观测，2026-11-25 补挂 API 进程）：
+    # 观测层 PR #289 只挂了独立 EA 进程，但生产单进程部署下真实图片
+    # 流量走本进程的 Emby 网关、根本不经过 EA，观测表一周只采到 17 次
+    # 请求；这里与 emby_api/main.py:196 同款启动 flusher，失败只记
+    # 日志、不拦服务。
+    try:
+        _start_image_obs_flusher()
+    except Exception as exc:  # noqa: BLE001 — 观测起不来不拦服务
+        logger.warning("图片流量观测启动失败（可忽略）: %s", exc)
+
     logger.info("✅ Aetrix Portal 启动完成")
 
     yield
@@ -619,6 +631,15 @@ app.add_middleware(AccessGuardMiddleware)
 # 都查不到是谁干的。做成中间件而不是逐端点调用，是因为端点会新增，
 # 而「记得补审计」不是一种机制（详见 backend/emby_server/audit.py）。
 app.add_middleware(AdminWriteAuditMiddleware)
+
+# 图片流量观测（F5 前置观测，2026-11-25 补挂 API 进程）：纯 ASGI，只匹配
+# 条目图片路径、响应结束后聚合计数（UA 家族/凭据有无/类型/尺寸档/状态），
+# 不改任何鉴权与放行行为；计数由 image_obs 的后台线程批量落表。
+# 位置说明：本进程没有 DoubleEmbyPrefix 中间件、路径不做任何重写，
+# 请求以客户端原样到达（/emby/... 与裸根两种形态），正则两种都收，
+# 故无需像 EA 那样讲究内外层；注册在 CORS 内侧（CORS 仍是最外层），
+# 在三道守卫外侧——被守卫拦下的图片请求也会按最终状态计入观测。
+app.add_middleware(ImageObsMiddleware)
 
 # CORS 最后注册 = 最外层（Starlette 逆序执行中间件）：外层守卫拦截返回的 403
 # 也要带 CORS 头，否则浏览器只报笼统 CORS 错误、前端读不到真实状态码。
