@@ -306,7 +306,7 @@
     />
     <PlayerSubtitleSheet
       :open="subtitleOpen"
-      :tracks="subtitleTracks"
+      :tracks="sheetSubtitleTracks"
       :primary="primarySub"
       :secondary="secondarySub"
       :delay-ms="subtitleDelayMs"
@@ -417,6 +417,7 @@ import {
   SOFTDECODE_MSE_ENABLED,
   SOFT_4K_BLOCK_MESSAGE,
   type SoftPlayerHandle,
+  type SoftSubtitleTrack,
 } from '@/utils/softDecode'
 import {
   createNativeSeekDriver,
@@ -1080,6 +1081,27 @@ const subtitleTracks = computed<SubtitleTrackOption[]>(() => {
     }))
 })
 
+/** 图形字幕（PGS 等）：原生路不列（<track> 只吃文本字幕）；软解
+    模式下列出来，选中时给明确提示而不是静默无字幕（AVPlayer 的
+    字幕渲染同样只吃文本字幕）。只在 softActive 时非空。 */
+const graphicSubtitleTracks = computed<SubtitleTrackOption[]>(() => {
+  if (!softActive.value) return []
+  return streamsOf(currentSource.value)
+    .filter((s) => s.Type === 'Subtitle' && !s.IsTextSubtitleStream)
+    .map((s) => ({
+      index: s.Index,
+      label: `${s.DisplayTitle || s.Language || `字幕 ${s.Index}`}（图形字幕）`,
+      language: s.Language,
+    }))
+})
+const sheetSubtitleTracks = computed<SubtitleTrackOption[]>(() => [
+  ...subtitleTracks.value,
+  ...graphicSubtitleTracks.value,
+])
+function isGraphicSubtitleIndex(index: number | null): boolean {
+  return index != null && graphicSubtitleTracks.value.some((t) => t.index === index)
+}
+
 const sourceOptions = computed<SourceOption[]>(() => {
   return (playbackInfo.value?.MediaSources || []).map((s) => {
     const vs = videoStreamOf(s)
@@ -1593,6 +1615,18 @@ function onNativeSeeked(): void {
   nativeDriver?.notifySeeked()
 }
 
+/** 软解外挂字幕轨：指定源的文本字幕（与原生 subtitleTracks 同源同筛） */
+function softSubtitleTracksOf(source: EmbyMediaSource | null): SoftSubtitleTrack[] {
+  return streamsOf(source)
+    .filter((s) => s.Type === 'Subtitle' && s.IsTextSubtitleStream && s.DeliveryUrl)
+    .map((s) => ({
+      index: s.Index,
+      url: s.DeliveryUrl || '',
+      label: s.DisplayTitle || s.Language || `字幕 ${s.Index}`,
+      language: s.Language,
+    }))
+}
+
 /**
  * 软解实例构造共享实现（第十一轮抽出）：旧的软解起播与新的
  * MSE-seek 路由共用同一套构造＋钩子＋看门狗接线，只许一套
@@ -1723,6 +1757,12 @@ async function startSoftPlayerInstance(
       {
         ext: (source.Container || '').toLowerCase() || undefined,
         mse: opts.mse,
+        // 软解字幕：当前源的文本字幕轨（与原生 <track> 同源）＋当前
+        // 主/副选择与延时，起播即带上；运行中改选走 handle 同步
+        subtitles: softSubtitleTracksOf(source),
+        subtitlePrimary: primarySub.value,
+        subtitleSecondary: secondarySub.value,
+        subtitleDelayMs: subtitleDelayMs.value,
         onReceivedBytes: (bytes: number) => {
           prepReceivedBytes.value = bytes
         },
@@ -2020,8 +2060,8 @@ function onSoftTap(): void {
   onVideoTap()
 }
 
-/** 软解模式暂不支持字幕/弹幕（字幕轨挂在原生 video 的 <track> 上，
-    软解画布不走这条路）：点按钮时明说，不静默无反应。 */
+/** 软解模式暂不支持弹幕（弹幕挂在原生 video 上，软解画布不走这
+    条路）：点按钮时明说，不静默无反应。 */
 function openDanmaku(): void {
   if (softActive.value) {
     showToast('软解模式暂不支持弹幕')
@@ -2030,10 +2070,8 @@ function openDanmaku(): void {
   danmakuOpen.value = true
 }
 function openSubtitles(): void {
-  if (softActive.value) {
-    showToast('软解模式暂不支持字幕')
-    return
-  }
+  // 字幕已接 AVPlayer 外挂字幕（起播传参见 startSoftPlayerInstance
+  // 的 subtitles，运行中选轨/延时走 softHandle 同步），软解下照常开
   subtitleOpen.value = true
 }
 
@@ -2438,17 +2476,36 @@ function applySubtitleModes(): void {
   })
 }
 
+/** 软解字幕选轨同步：主/副选择递给 AVPlayer（实际渲染轨的取舍
+    在 softDecode 的 applySubtitleSelection 里） */
+function syncSoftSubtitleSelection(): void {
+  const h = softHandle.value
+  if (!h) return
+  void h.setSubtitleSelection(primarySub.value, secondarySub.value).catch(() => {})
+}
 function onPrimarySub(index: number | null): void {
+  if (isGraphicSubtitleIndex(index)) {
+    // 图形字幕（PGS 等）软解渲染不了：明说，不静默无字幕
+    showToast('软解模式暂不支持图形字幕（PGS 等），请选择文本字幕')
+    return
+  }
   primarySub.value = index
-  void rebuildSubtitleTracks()
+  if (softActive.value) syncSoftSubtitleSelection()
+  else void rebuildSubtitleTracks()
 }
 function onSecondarySub(index: number | null): void {
+  if (isGraphicSubtitleIndex(index)) {
+    showToast('软解模式暂不支持图形字幕（PGS 等），请选择文本字幕')
+    return
+  }
   secondarySub.value = index
-  void rebuildSubtitleTracks()
+  if (softActive.value) syncSoftSubtitleSelection()
+  else void rebuildSubtitleTracks()
 }
 function onSubtitleDelay(ms: number): void {
   subtitleDelayMs.value = ms
-  void rebuildSubtitleTracks()
+  if (softActive.value) softHandle.value?.setSubtitleDelayMs(ms)
+  else void rebuildSubtitleTracks()
   persistPlayerPrefs()
 }
 function onSubtitleFontSize(fs: SubtitleFontSize): void {
@@ -2708,6 +2765,8 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   background: #000;
+  /* 字幕字号 cqh 的计量容器（见下方 .ASS-dialogue 规则） */
+  container-type: size;
 }
 .wp-soft canvas {
   width: 100% !important;
@@ -2726,6 +2785,19 @@ onUnmounted(() => {
 }
 .wp-cue-large .wp-video::cue {
   font-size: 1.35em;
+}
+/* 软解字幕走 AVPlayer 的 ASS 渲染层（.ASS-dialogue），::cue 规则
+   对它无效：字号按同一组系数（0.72/1/1.35）映射为容器高度比例
+   的扁平覆盖（原生 ::cue 本身也是扁平口径；default 不覆盖、用
+   渲染层自带大小） */
+.wp-cue-small .wp-soft .ASS-dialogue {
+  font-size: 3.6cqh !important;
+}
+.wp-cue-medium .wp-soft .ASS-dialogue {
+  font-size: 5cqh !important;
+}
+.wp-cue-large .wp-soft .ASS-dialogue {
+  font-size: 6.75cqh !important;
 }
 
 .wp-top {

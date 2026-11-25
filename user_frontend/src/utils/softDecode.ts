@@ -1191,6 +1191,13 @@ export interface SoftPlayerHandle {
    * 只许拿它显示「已接收 X.XMB」，不许拿它推算其他量。
    */
   receivedBytes(): number | null
+  /**
+   * 软解字幕选轨（主/副槽位，Emby 流 Index；null=该槽关闭）：实际
+   * 渲染轨 = 主 ?? 副（AVPlayer 同时只渲染一条），都关则停渲染。
+   */
+  setSubtitleSelection(primary: number | null, secondary: number | null): Promise<void>
+  /** 软解字幕延时（毫秒，正值=字幕延后，与原生 shiftVtt 同号） */
+  setSubtitleDelayMs(ms: number): void
   destroy(): Promise<void>
 }
 
@@ -1204,6 +1211,54 @@ export interface SoftPlayerHandle {
  * 仍由 IO 层自己的错误先行暴露，不靠守卫兜底判死。
  */
 export const SOFT_START_TIMEOUT_MS = 90000
+
+/** 软解外挂字幕轨：与原生 <track> 同源的文本字幕（DeliveryUrl） */
+export interface SoftSubtitleTrack {
+  /** Emby 字幕流 Index（视图选轨口径） */
+  index: number
+  /** 字幕文件 URL（服务端 DeliveryUrl，通常以 Stream.vtt 结尾） */
+  url: string
+  label?: string
+  language?: string
+}
+
+/** AVPlayer loadExternalSubtitle 的载荷（ExternalSubtitle） */
+export interface SoftExternalSubtitle {
+  source: string
+  lang?: string
+  title?: string
+}
+
+/** Emby 字幕轨 → AVPlayer 外挂字幕载荷（纯映射，单测覆盖） */
+export function softExternalSubtitleOf(track: SoftSubtitleTrack): SoftExternalSubtitle {
+  const out: SoftExternalSubtitle = { source: track.url }
+  if (track.language) out.lang = track.language
+  if (track.label) out.title = track.label
+  return out
+}
+
+/**
+ * 软解实际渲染的字幕轨 Index：AVPlayer 的 SubtitleRender 同时只
+ * 渲染一条字幕流，主轨优先、副轨在主轨关闭时接管（原生 <track>
+ * 路可双轨同显，软解单轨是 libmedia 的真实形态，不是降级摆设）。
+ */
+export function effectiveSoftSubtitleIndex(
+  primary: number | null,
+  secondary: number | null,
+): number | null {
+  return primary ?? secondary
+}
+
+/** 按主/副选择在字幕轨列表里挑出实际渲染的那条（纯映射，单测覆盖） */
+export function pickSoftSubtitleTrack(
+  tracks: SoftSubtitleTrack[],
+  primary: number | null,
+  secondary: number | null,
+): SoftSubtitleTrack | null {
+  const index = effectiveSoftSubtitleIndex(primary, secondary)
+  if (index == null) return null
+  return tracks.find((t) => t.index === index) ?? null
+}
 
 export interface CreateSoftPlayerOptions {
   /** 容器扩展名（如 mkv/mp4）：DirectStreamUrl 常无扩展名，靠它选 demuxer */
@@ -1240,11 +1295,25 @@ export interface CreateSoftPlayerOptions {
    * 统计不可用时不回调。实例销毁后自动停轮询。
    */
   onReceivedBytes?: (bytes: number) => void
+  /**
+   * 软解字幕：当前源的文本字幕轨（与原生 <track> 同源的
+   * DeliveryUrl 列表）。起播时把初始选中轨以 loadExternalSubtitle
+   * 注册为外挂字幕；运行中选轨/延时经 handle 的 setSubtitleSelection
+   * / setSubtitleDelayMs 同步。内嵌字幕流不经这里（见 createSoftPlayer
+   * 内 applySubtitleSelection 的注释）。
+   */
+  subtitles?: SoftSubtitleTrack[]
+  /** 初始主字幕（Emby 流 Index，null/缺省=关闭） */
+  subtitlePrimary?: number | null
+  /** 初始副字幕（Emby 流 Index，null/缺省=关闭） */
+  subtitleSecondary?: number | null
+  /** 初始字幕延时（毫秒，正值=延后，与原生 shiftVtt 同号） */
+  subtitleDelayMs?: number
 }
 
 type AVPlayerInstance = {
   load(source: string, options?: { ext?: string }): Promise<void>
-  play(): Promise<void>
+  play(options?: { subtitle?: boolean }): Promise<void>
   pause(): Promise<void>
   seek(timestamp: bigint): Promise<void>
   setPlaybackRate(rate: number): void
@@ -1259,6 +1328,16 @@ type AVPlayerInstance = {
   useMSE?: boolean
   /** libmedia 统计（产物实证）：bufferReceiveBytes 是 IO 层实读字节累计（int64） */
   getStats?: () => { bufferReceiveBytes?: bigint | number } | null | undefined
+  /** 外挂字幕（1.3.1 产物实证）：注册一条外挂字幕流，返回状态码（0=成功），不是流 id */
+  loadExternalSubtitle(ext: SoftExternalSubtitle): Promise<number>
+  /** 切换当前渲染的字幕流（id 取自 getStreams）；无已选流时 libmedia 内部记错不抛 */
+  selectSubtitle(id: number): Promise<void>
+  getSelectedSubtitleStreamId(): number
+  getStreams(): Array<{ id: number }>
+  /** 字幕延时（毫秒，正值=延后）；渲染层未建时为无操作 */
+  setSubtitleDelay(delay: number): void
+  /** 字幕渲染启停；渲染层未建时为无操作 */
+  setSubtitleEnable(enable: boolean): void
 }
 
 /**
@@ -1527,6 +1606,100 @@ export async function createSoftPlayer(
     statsTimer = undefined
   }
 
+  // ---- 软解字幕（外挂文本字幕 → AVPlayer SubtitleRender）----
+  // 轨来源与原生路同源（视图传入当前源文本字幕的 DeliveryUrl）。
+  // AVPlayer 同时只渲染一条：主轨优先、副轨接管（见
+  // effectiveSoftSubtitleIndex）。内嵌字幕不走这里：壳层选轨口径是
+  // Emby 流 Index，而实际播放文件可能是同条目的中继副本，其内嵌
+  // 流序与 Emby Index 无法可靠对齐，硬凑会选错轨——宁可只做外挂。
+  const subtitleTracksByIndex = new Map<number, SoftSubtitleTrack>()
+  for (const t of options.subtitles ?? []) subtitleTracksByIndex.set(t.index, t)
+  const initialSubtitleTrack = pickSoftSubtitleTrack(
+    options.subtitles ?? [],
+    options.subtitlePrimary ?? null,
+    options.subtitleSecondary ?? null,
+  )
+  let desiredSubtitleDelayMs = options.subtitleDelayMs ?? 0
+  let subtitleDestroyed = false
+  const subtitleLoads = new Map<number, Promise<number | null>>()
+  function loadSoftSubtitleTrack(track: SoftSubtitleTrack): Promise<number | null> {
+    let p = subtitleLoads.get(track.index)
+    if (!p) {
+      p = (async () => {
+        try {
+          // loadExternalSubtitle 的返回值是状态码、不是流 id：靠注册
+          // 前后 getStreams() 的差集认出新流的 id（一次只注册一条）
+          const before = new Set(player.getStreams().map((s) => s.id))
+          await player.loadExternalSubtitle(softExternalSubtitleOf(track))
+          const added = player.getStreams().filter((s) => !before.has(s.id))
+          return added.length ? added[0].id : null
+        } catch (e) {
+          // 字幕加载失败不拖垮播放：按无此轨处理（与原生 <track>
+          // 加载失败同样无字幕，但控制台留痕、不静默）
+          console.error('[softDecode] 外挂字幕加载失败:', track.index, e)
+          return null
+        }
+      })()
+      subtitleLoads.set(track.index, p)
+    }
+    return p
+  }
+  async function applySubtitleSelection(
+    primary: number | null,
+    secondary: number | null,
+  ): Promise<void> {
+    if (subtitleDestroyed) return
+    const track = pickSoftSubtitleTrack(
+      [...subtitleTracksByIndex.values()],
+      primary,
+      secondary,
+    )
+    if (!track) {
+      try {
+        player.setSubtitleEnable(false)
+      } catch {
+        /* 渲染层未建：本来就没字幕 */
+      }
+      return
+    }
+    const streamId = await loadSoftSubtitleTrack(track)
+    if (subtitleDestroyed) return
+    if (streamId == null) {
+      try {
+        player.setSubtitleEnable(false)
+      } catch {
+        /* 同上 */
+      }
+      return
+    }
+    const selected = player.getSelectedSubtitleStreamId()
+    if (selected !== streamId && selected !== -1) {
+      // 已有流在渲染（play 时 findBestStream 的默认选择，可能是
+      // 内嵌轨）：切到用户选的轨
+      try {
+        await player.selectSubtitle(streamId)
+      } catch (e) {
+        console.error('[softDecode] 字幕切轨失败:', streamId, e)
+      }
+    }
+    // selected === streamId：已是目标轨。selected === -1：渲染层
+    // 还没建——起播前注册的轨由 play({ subtitle: true }) 建层时
+    // 选中，播中注册的轨由 loadExternalSubtitle 在播放稳态自建
+    // 渲染层并绑定该流（均为 1.3.1 产物实现口径），都不必再切。
+    // 最后统一补开渲染、补上期望延时（setSubtitleDelay 在渲染层
+    // 未建时是无操作，靠 desired 值在每次 apply 时重下，不丢）。
+    try {
+      player.setSubtitleEnable(true)
+    } catch {
+      /* 渲染层未建：无操作 */
+    }
+    try {
+      player.setSubtitleDelay(desiredSubtitleDelayMs)
+    } catch {
+      /* 同上 */
+    }
+  }
+
   const startTimeoutMs = options.startTimeoutMs ?? SOFT_START_TIMEOUT_MS
   let startTimer: ReturnType<typeof setTimeout> | undefined
   const startGuard = new Promise<never>((_resolve, reject) => {
@@ -1552,7 +1725,16 @@ export async function createSoftPlayer(
     await Promise.race([
       (async () => {
         await player.load(playUrl, options.ext ? { ext: options.ext } : undefined)
-        await player.play()
+        if (initialSubtitleTrack) {
+          // 起播前注册初始外挂字幕，play 的 findBestStream 才选得到
+          // 它；注册慢/失败不挡起播（5 秒未回先起播，play 后由
+          // applySubtitleSelection 等同一个加载承诺兜底纠正）
+          await Promise.race([
+            loadSoftSubtitleTrack(initialSubtitleTrack),
+            new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+          ])
+        }
+        await player.play(initialSubtitleTrack ? { subtitle: true } : undefined)
       })(),
       startGuard,
       mseVeto,
@@ -1576,6 +1758,15 @@ export async function createSoftPlayer(
     if (vetoTimer) clearInterval(vetoTimer)
   }
 
+  // 起播落定后把初始字幕选择纠正到位（play 的默认选流可能选了
+  // 内嵌轨）：不等它完成，字幕晚几百毫秒到位好过挡住起播返回
+  if (initialSubtitleTrack) {
+    void applySubtitleSelection(
+      options.subtitlePrimary ?? null,
+      options.subtitleSecondary ?? null,
+    ).catch((e) => console.error('[softDecode] 初始字幕应用失败:', e))
+  }
+
   return {
     play: () => player.play(),
     pause: () => player.pause(),
@@ -1597,7 +1788,18 @@ export async function createSoftPlayer(
     hasVideo: () => player.hasVideo(),
     hasAudio: () => player.hasAudio(),
     receivedBytes: () => readReceivedBytes() ?? lastReceivedBytes,
+    setSubtitleSelection: (primary: number | null, secondary: number | null) =>
+      applySubtitleSelection(primary, secondary),
+    setSubtitleDelayMs: (ms: number) => {
+      desiredSubtitleDelayMs = ms
+      try {
+        player.setSubtitleDelay(ms)
+      } catch {
+        /* 渲染层未建：desired 已记下，下次 apply 时补 */
+      }
+    },
     destroy: async () => {
+      subtitleDestroyed = true
       stopStatsPolling()
       seekGuard.dispose()
       stopSeekPoll()
