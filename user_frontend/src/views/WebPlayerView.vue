@@ -145,6 +145,11 @@
       <span v-if="seekGuardShort" class="wp-seeking-state">{{ seekGuardShort }}</span>
     </div>
 
+    <!-- 诊断区（seek 取证轮）：seeking 时常驻在胶囊下方，错误页另有一块 -->
+    <div v-if="diagVisible && phase === 'playing'" class="wp-diag" role="status">
+      <p v-for="line in diagLines" :key="line">{{ line }}</p>
+    </div>
+
     <!-- 播放中控制层 -->
     <template v-if="phase === 'playing'">
       <button
@@ -253,6 +258,9 @@
       <p v-if="phase === 'error' && seekGuardState.startsWith('failed')" class="wp-notice-sub">
         看门狗状态：{{ seekGuardState }}
       </p>
+      <div v-if="phase === 'error'" class="wp-diag wp-diag--inline" role="status">
+        <p v-for="line in diagLines" :key="line">{{ line }}</p>
+      </div>
       <p v-if="phase === 'unsupported' && softFailReason" class="wp-notice-sub">
         软解也没能启动：{{ softFailReason }}
       </p>
@@ -377,6 +385,7 @@ import {
 } from '@/api/emby'
 import {
   fetchPlaybackInfo,
+  fetchStreamRanges,
   reportPlaying,
   reportProgress,
   reportStopped,
@@ -411,6 +420,16 @@ import {
   createNativeSeekDriver,
   type NativeSeekDriver,
 } from '@/utils/nativeSeek'
+import {
+  formatRangeEntry,
+  formatTimeRanges,
+  networkStateLabel,
+  readyStateLabel,
+  streamSignFromUrl,
+  videoErrorLabel,
+  type StreamRangeEntry,
+  type StreamSign,
+} from '@/utils/videoDiag'
 import { prepStatusText as prepStatusTextFor, PREP_DECODER_HINT } from '@/utils/prepStatus'
 import {
   resolveSpecSource,
@@ -533,6 +552,74 @@ const seekGuardShort = computed(() => {
   if (!m) return ''
   return `${m[1]} · +${Number(m[2]).toFixed(1)}s · 重试 ${m[3]}`
 })
+
+/** 播放页可见诊断区（seek 取证轮，2026-11-25，诊断报告 §4.1）：
+ * 常驻文本行，seeking 胶囊下方与错误页各放一块；500ms 刷新一次
+ * <video> 实况，流请求 Range 每 2 秒向服务端拉一次。纯展示，
+ * 任何失败都静默，不改播放行为。 */
+const diagLines = ref<string[]>([])
+const streamRanges = ref<StreamRangeEntry[]>([])
+const streamSign = ref<StreamSign | null>(null)
+let diagTimer: number | null = null
+let diagLastRangesAt = 0
+const diagVisible = computed(
+  () =>
+    (phase.value === 'playing' && (softSeeking.value || nativeSeeking.value)) ||
+    phase.value === 'error',
+)
+function refreshDiag(): void {
+  const v = videoEl.value
+  if (!v) {
+    diagLines.value = ['诊断：无 video 元素']
+    return
+  }
+  const lines: string[] = [
+    `错误：${videoErrorLabel(v.error)}`,
+    `网络：${networkStateLabel(v.networkState)} / 就绪：${readyStateLabel(v.readyState)}`,
+    `已缓冲：${formatTimeRanges(v.buffered)}`,
+    `可定位：${formatTimeRanges(v.seekable)}`,
+    `时间：${v.currentTime.toFixed(2)}s${v.seeking ? '（seeking）' : ''}`,
+    `看门狗：${seekGuardState.value}`,
+  ]
+  if (streamRanges.value.length) {
+    lines.push('流请求（近 3 次，新在上）：')
+    for (const e of [...streamRanges.value].reverse()) {
+      lines.push(`  ${formatRangeEntry(e)}`)
+    }
+  } else {
+    lines.push('流请求：—')
+  }
+  diagLines.value = lines
+}
+async function refreshDiagRanges(): Promise<void> {
+  const sg = streamSign.value
+  if (!sg) return
+  try {
+    streamRanges.value = await fetchStreamRanges(sg.itemId, sg.exp, sg.sign)
+  } catch {
+    // 诊断拉不到不报错、不清旧值，下轮再试
+  }
+}
+function startDiagTimer(): void {
+  stopDiagTimer()
+  refreshDiag()
+  diagLastRangesAt = 0
+  diagTimer = window.setInterval(() => {
+    refreshDiag()
+    const now = Date.now()
+    if (now - diagLastRangesAt >= 2000) {
+      diagLastRangesAt = now
+      void refreshDiagRanges()
+    }
+  }, 500)
+}
+function stopDiagTimer(): void {
+  if (diagTimer !== null) {
+    window.clearInterval(diagTimer)
+    diagTimer = null
+  }
+}
+
 /** 当前播放管线（写到 .wp-root 的 data-pipeline）：软解在场即 soft，否则 native */
 const pipelineKind = computed(() => (softActive.value ? 'soft' : 'native'))
 const softFailedFor = ref('')
@@ -1365,6 +1452,10 @@ async function openSource(source: EmbyMediaSource, atSeconds: number): Promise<v
     }
   }, 500)
   v.src = url
+  // 取证轮：记下本次播放签发（sign/exp/版本 guid），诊断区据此
+  // 向服务端拉最近 3 笔流请求 Range；换源即清旧记录
+  streamSign.value = streamSignFromUrl(url)
+  streamRanges.value = []
   v.playbackRate = rate.value
   if (atSeconds > 0) {
     const onMeta = () => {
@@ -2086,6 +2177,10 @@ function danmakuTick(t: number): void {
 }
 
 watch(currentTime, (t) => danmakuTick(t))
+watch(diagVisible, (visible) => {
+  if (visible) startDiagTimer()
+  else stopDiagTimer()
+})
 
 async function sendDanmaku(): Promise<void> {
   const text = danmakuText.value.trim()
@@ -2466,6 +2561,7 @@ onUnmounted(() => {
   window.clearTimeout(probeTimer)
   window.clearTimeout(probeTimer2)
   window.clearInterval(prepByteTimer)
+  stopDiagTimer()
   window.clearInterval(progressTimer)
   window.clearInterval(wtStateTimer)
   window.clearInterval(wtAlignTimer)
@@ -2787,6 +2883,39 @@ onUnmounted(() => {
   opacity: 0.65;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+}
+/* 诊断区（seek 取证轮，2026-11-25）：seeking 胶囊下方常驻一块、
+   错误页内嵌一块；纯文本、等宽小字，可截图读到。 */
+.wp-diag {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 46px);
+  transform: translateX(-50%);
+  z-index: 14;
+  width: min(92vw, 560px);
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(10, 10, 13, 0.92);
+  color: rgba(255, 255, 255, 0.85);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.7;
+  text-align: left;
+  pointer-events: none;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.wp-diag p {
+  margin: 0;
+  max-width: none;
+  font-size: 11px;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.85);
+}
+.wp-diag--inline {
+  position: static;
+  transform: none;
+  margin-top: 4px;
 }
 .wp-prep-wrap {
   position: absolute;
