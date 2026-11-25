@@ -18,6 +18,17 @@
  * 底读 currentTime——冷段卡住时事件全停，靠轮询喂采样判死。
  * 判失败时把 video 的真实 currentTime 一并回调，视图据此把显
  * 示时间从乐观值 snap 回真实值，并上带「再试一次」的错误页。
+ *
+ * 第六轮（2026-11-25 复测）：静默冻结已消失，但冷跳仍不恢复——
+ * 跳到 48:15 后「正在定位」立即出现，约 10 秒转错误页；服务端
+ * 日志证明中继已吐出跳转区间字节（206，首字节约 1.7 秒），浏览
+ * 器没能恢复。根因在到达判定：轮询在下发 0.5 秒后就凭 currentTime
+ * 的乐观读数（设置后立即读回目标值）转入确认阶段，5 秒确认窗
+ * 口从还没取到一个字节就开始数，5 秒一到重试（重发同目标
+ * currentTime），再 5 秒判失败——合计约 11 秒，正是复测时序。
+ * 修法见 noteProgress 的 seeking 门与 onRetry 的不重发：只认
+ * seeked（定位真正完成），不认乐观读数；重试只等在途 seek，
+ * 不重发定位。
  */
 import {
   SoftSeekGuard,
@@ -29,10 +40,18 @@ import {
   type SoftSeekPhase,
 } from './softDecode'
 
-/** 驱动只依赖 video 的这两个属性（测试用假元素同形态） */
+/** 驱动只依赖 video 的这三个属性（测试用假元素同形态） */
 export interface NativeSeekVideoLike {
   currentTime: number
   readonly paused: boolean
+  /**
+   * 浏览器是否正在执行 seek（HTMLVideoElement.seeking：设置
+   * currentTime 后同步为 true，seeked 到后为 false）。第六轮：
+   * currentTime 在 seek 下发后立刻读回目标值（乐观值），不能拿
+   * 它当「已到达」——只有 seeking=false 时读数才是定位真正完成
+   * 后的位置。
+   */
+  readonly seeking: boolean
 }
 
 export interface NativeSeekHooks {
@@ -111,8 +130,13 @@ export function createNativeSeekDriver(
     ...(options.clearTimer ? { clearTimer: options.clearTimer } : {}),
     onRetry: (attempt) => {
       retriesUsed = attempt
-      // 重试 = 同一目标再下发一次（原生以最新定位为准）
-      issueSeek(tracker.target)
+      // （第六轮）重试不重发 currentTime：原生 seek 下发后浏览器
+      // 仍在取流/解码，同目标再设一次最多是空操作（Chrome 合并相
+      // 同目标的 seek——第五轮复测里重试后服务端再无流请求，重发
+      // 没拉到任何新字节），却可能打断在途的 demux/解码重启。
+      // 重试 = 再给在途 seek 一个找目标窗口（看门狗自行重武装
+      // 15 秒）：只刷新记账的下发时刻，不碰 video。
+      tracker.issued(now())
       reportGuardState('seeking')
     },
     onTimeout: (phase: SoftSeekPhase) => {
@@ -188,6 +212,15 @@ export function createNativeSeekDriver(
 
   function noteProgress(): void {
     if (disposed || !guard.pending) return
+    // （第六轮）浏览器 seek 未完成时 currentTime 读回的是下发目
+    // 标（乐观值），不是真正到达——此前轮询在下发 0.5 秒后就凭这
+    // 个读数转入确认阶段，5 秒确认窗口从还没取到一个字节就开始
+    // 数，5 秒一到重试，再 5 秒判失败（第五轮复测约 10 秒出错误
+    // 页正是这条时序）。seeking 为真时不做任何记账判定，只等：
+    // 要么 seeked 到（下一采样按真实位置记账），要么找目标 15 秒
+    // 超时走重试/判失败。确认阶段里 seeking 一般已为 false，此
+    // 门主要挡找目标阶段的乐观读数。
+    if (video.seeking) return
     // pause 事件万一漏接：采样时发现已暂停但没记时刻，按当下补
     // 记（落定窗口从补记起算，保守不误杀）
     if (video.paused && pausedAt === null) pausedAt = now()

@@ -130,20 +130,59 @@ function makeDriver(video, clock, hooksExtra = {}) {
   return { driver, calls }
 }
 
-// --- 落点冻结：位置跳到 46:03、seeked/timeupdate 永不来（06:49 生产原样） ---
+// --- 落点冻结（第六轮重写）：位置跳到 46:03、seeked 永不来（06:49 生产原样
+// 与第五轮复测的冷跳形态一致）——旧口径在下发 0.5 秒后就凭 currentTime
+// 的乐观读数转入确认阶段，约 11 秒判失败；新口径只认 seeked：seeking
+// 一直为真时不做任何到达判定，找目标 15 秒超时重试（重试不重发定位，
+// 只等在途 seek），再 15 秒仍无 seeked 才判失败。 ---
 {
   const clock = makeFakeClock()
   const video = makeFakeVideo({ startAt: 183 })
   const { driver, calls } = makeDriver(video, clock)
   driver.seekTo(2763)
-  clock.advance(500) // 轮询首采样：位置已到目标 → 转入确认阶段
-  clock.advance(5000) // 确认窗口内时钟零前进 → 重试一次
-  clock.advance(500) // 重试后轮询再采样：又到达 → 再入确认阶段
-  clock.advance(5000) // 仍零前进 → 判失败
-  check('frozen at target: retried once then failed', [video.sets.length, calls.failed.length], [2, 1])
-  check('frozen at target: seeking pill visible until failure', calls.seeking, [true, false])
+  clock.advance(11000) // 11 秒过去：乐观读数早已到目标，但 seeked 没来 → 仍在找目标，不判失败
+  check('seek never completes: no failure at 11s (old code failed here)', calls.failed.length, 0)
   check(
-    'frozen at target: guard states walk begin/confirm/retry/confirm/fail',
+    'seek never completes: never left seeking phase while seeking=true',
+    calls.states,
+    ['seeking target=2763.00s advanced=0.00s retries=0'],
+  )
+  clock.advance(20000) // 找目标 15s 超时 → 重试（不重发）→ 再 15s → 判失败
+  check('seek never completes: retried once then failed after 30s', [video.sets.length, calls.failed.length], [1, 1])
+  check('seek never completes: seeking pill visible until failure', calls.seeking, [true, false])
+  check(
+    'seek never completes: guard states walk seeking/retry/fail, never confirming',
+    calls.states,
+    [
+      'seeking target=2763.00s advanced=0.00s retries=0',
+      'seeking target=2763.00s advanced=0.00s retries=1',
+      'failed target=2763.00s advanced=0.00s retries=1',
+    ],
+  )
+  check('seek never completes: failure carries element position', calls.failed[0][1], 2763)
+  driver.dispose()
+}
+
+// --- 乐观读数不启动确认（第六轮回归：第五轮复测时序） ---
+// seek 下发后位置立刻读回目标值，但 seeked 迟到 11 秒才到：旧口径在
+// 0.5 秒转入确认、11 秒判失败；新口径等 seeked 到才开始确认，失败
+// 只发生在「seeked 到了、时间仍不走」的两轮确认窗口之后，且重试全
+// 程不重发 currentTime（sets 始终为 1）。
+{
+  const clock = makeFakeClock()
+  const video = makeFakeVideo({ startAt: 183 })
+  const { driver, calls } = makeDriver(video, clock)
+  driver.seekTo(2763)
+  clock.advance(11000) // seeked 迟迟不来：确认阶段绝不该开始
+  check('late seeked: no confirming before seeked arrives', calls.states.some((s) => s.startsWith('confirming')), false)
+  video.emitSeeked(driver) // 浏览器终于定位完成 → 转入确认阶段
+  clock.advance(5000) // 确认窗口内时钟零前进 → 重试一次（不重发定位）
+  check('late seeked: retry does not re-issue the seek', video.sets.length, 1)
+  clock.advance(500) // 重试后轮询再采样：seeked 已到、位置在目标 → 再入确认阶段
+  clock.advance(5000) // 仍零前进 → 判失败
+  check('late seeked: retried once then failed', [video.sets.length, calls.failed.length], [1, 1])
+  check(
+    'late seeked: guard states walk begin/confirm/retry/confirm/fail',
     calls.states,
     [
       'seeking target=2763.00s advanced=0.00s retries=0',
@@ -153,7 +192,6 @@ function makeDriver(video, clock, hooksExtra = {}) {
       'failed target=2763.00s advanced=0.00s retries=1',
     ],
   )
-  check('frozen at target: failure carries element position', calls.failed[0][1], 2763)
   driver.dispose()
 }
 
@@ -171,8 +209,8 @@ function makeDriver(video, clock, hooksExtra = {}) {
   })
   view.display = 2763 // onSeekCommit 的乐观显示值
   driver.seekTo(2763)
-  clock.advance(31000) // 找目标 15s 超时 → 重试 → 再 15s → 判失败
-  check('no movement: retried once then failed', [video.sets.length, calls.failed.length], [2, 1])
+  clock.advance(31000) // 找目标 15s 超时 → 重试（第六轮：不重发定位）→ 再 15s → 判失败
+  check('no movement: retried once then failed', [video.sets.length, calls.failed.length], [1, 1])
   check('no movement: never arrived (no confirming state)', calls.states.some((s) => s.startsWith('confirming')), false)
   check('no movement: display snaps back to real position', view.display, 183)
   check('no movement: seeking pill visible until failure', calls.seeking, [true, false])
@@ -207,7 +245,8 @@ function makeDriver(video, clock, hooksExtra = {}) {
   const video = makeFakeVideo({ startAt: 183, paused: true })
   const { driver, calls } = makeDriver(video, clock)
   driver.seekTo(2763)
-  clock.advance(500) // 轮询采样：已到达且暂停早于下发时刻 → 落定
+  clock.advance(500) // 轮询采样：seeking 仍为真，不做判定（第六轮）
+  video.emitSeeked(driver) // 暂停态 seek 同样会到 seeked：已到达且暂停早于下发时刻 → 落定
   clock.advance(40000) // 落定后不应再有任何重试/判失败
   check('paused seek: settles on arrival, no failure or retry', [calls.failed.length, video.sets.length], [0, 1])
   check('paused seek: seeking pill clears', calls.seeking, [true, false])

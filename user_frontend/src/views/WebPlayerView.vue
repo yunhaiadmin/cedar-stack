@@ -133,9 +133,16 @@
          （转圈＋文案）。旧行为拖完进度条后无转圈无提示，seek 卡
          住就永远冻结（2026-11-25 实测事故）；落定自动消失，判失
          败走错误页（软解见 onSeekFailed、原生见驱动 onSeekFailed）。 -->
-    <div v-if="phase === 'playing' && (softSeeking || nativeSeeking)" class="wp-seeking" role="status">
+    <div
+      v-if="phase === 'playing' && (softSeeking || nativeSeeking)"
+      class="wp-seeking"
+      role="status"
+      :title="seekGuardState"
+      :aria-label="`正在定位（${seekGuardState}）`"
+    >
       <LoaderCircle :size="16" class="wp-spin" />
       <span>正在定位</span>
+      <span v-if="seekGuardShort" class="wp-seeking-state">{{ seekGuardShort }}</span>
     </div>
 
     <!-- 播放中控制层 -->
@@ -243,6 +250,9 @@
       <TriangleAlert :size="30" class="wp-notice-icon" />
       <h2>{{ noticeTitle }}</h2>
       <p>{{ noticeText }}</p>
+      <p v-if="phase === 'error' && seekGuardState.startsWith('failed')" class="wp-notice-sub">
+        看门狗状态：{{ seekGuardState }}
+      </p>
       <p v-if="phase === 'unsupported' && softFailReason" class="wp-notice-sub">
         软解也没能启动：{{ softFailReason }}
       </p>
@@ -406,6 +416,7 @@ import {
   resolveSpecSource,
   resolutionLabel,
   specChipsOf,
+  specHeadlineOf,
   streamsOf,
   videoStreamOf,
   type SpecStreamLike,
@@ -513,6 +524,15 @@ const nativeSeeking = ref(false)
 /** 看门狗状态串（写到 .wp-root 的 data-seek-guard）：复测直接读
  * DOM 即可定案看门狗走到了哪一步，不用打开控制台抓日志 */
 const seekGuardState = ref('idle')
+/** 「正在定位」胶囊里的看门狗短状态（第六轮可观测性）：云浏览器打不开开发者工具、data-seek-guard 属性读不到，复测只能看页面文字——把 phase/已前进/重试数写进胶囊可见文本，下轮复测直接读它定案。无 seek 时为空。 */
+const seekGuardShort = computed(() => {
+  const m =
+    /^(seeking|confirming|complete|failed) target=[\d.]+s advanced=([\d.]+)s retries=(\d+)$/.exec(
+      seekGuardState.value,
+    )
+  if (!m) return ''
+  return `${m[1]} · +${Number(m[2]).toFixed(1)}s · 重试 ${m[3]}`
+})
 /** 当前播放管线（写到 .wp-root 的 data-pipeline）：软解在场即 soft，否则 native */
 const pipelineKind = computed(() => (softActive.value ? 'soft' : 'native'))
 const softFailedFor = ref('')
@@ -889,16 +909,8 @@ const specSource = computed(() =>
 
 const specChips = computed(() => specChipsOf(specSource.value))
 
-/** 右下规格主行：如「1080p SDR HEVC」，照录屏右下角的粗体规格行 */
-const specHeadline = computed(() => {
-  const src = specSource.value
-  const vs = videoStreamOf(src)
-  if (!vs) return ''
-  const title = vs.DisplayTitle || ''
-  const range =
-    ['Dolby Vision', 'HDR10+', 'HDR10', 'HDR', 'HLG'].find((t) => title.includes(t)) || 'SDR'
-  return [resolutionLabel(vs), range, vs.Codec?.toUpperCase()].filter(Boolean).join(' ')
-})
+/** 右下规格主行：如「1080p SDR HEVC」，照录屏右下角的粗体规格行；口径见 utils/playerSpec.specHeadlineOf（与 chips 同一套回落） */
+const specHeadline = computed(() => specHeadlineOf(specSource.value))
 
 /** 右下码率行：视频+音频码率合计，没有数据就不显示，不编数 */
 const bitrateText = computed(() => {
@@ -2770,6 +2782,11 @@ onUnmounted(() => {
   color: #fff;
   font-size: 13px;
   pointer-events: none;
+}
+.wp-seeking-state {
+  opacity: 0.65;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 .wp-prep-wrap {
   position: absolute;
