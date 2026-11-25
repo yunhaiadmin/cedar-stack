@@ -1204,6 +1204,19 @@ def _has_credits(data) -> bool:
     return isinstance(data, dict) and isinstance(data.get("credits"), dict)
 
 
+def _has_aggregate_cast(data) -> bool:
+    """aggregate_credits 载荷是否可用：必带 cast 列表。
+
+    空列表也是确定答案（该剧在 TMDB 就是没演员表）——与阴性 None
+    区分：None 是「没问到」，空列表是「问到了、没有」，可进缓存、
+    不必反复问。阴性缓存（None）返回 True，与 ``_has_credits``
+    同口径：保持「TTL 内不再重打」，重试归 worker 退避调度。
+    """
+    if data is None:
+        return True
+    return isinstance(data, dict) and isinstance(data.get("cast"), list)
+
+
 _CJK_ORIGINAL_LANGS = {"zh", "cn"}
 _HAN_RE = re.compile("[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 _ROMANIZED_RE = re.compile(r"^[A-Za-z][A-Za-z'\-]*(?: [A-Za-z][A-Za-z'\-]*){0,3}$")
@@ -1287,6 +1300,59 @@ def cast_list(details: Optional[dict], limit: int = TMDB_CAST_LIMIT) -> list[dic
             "image": f"{base}/w185{profile}" if profile else "",
             "sort_order": len(out),
             # StrmAssistant #9 对标：存 person tmdb_id，供后续刷新演员详情用
+            "person_id": str(c.get("id") or ""),
+        })
+    return out
+
+
+def aggregate_cast_list(data: Optional[dict], limit: int = TMDB_CAST_LIMIT,
+                        original_language: str = "") -> list[dict]:
+    """把 TMDB ``/tv/{id}/aggregate_credits`` 载荷映射成与 ``cast_list``
+    同形状的演员行（name/role/image/sort_order/person_id）。
+
+    为什么需要它：TMDB 对不少剧集只在 aggregate_credits 里给全剧
+    演员表，plain 详情的 credits.cast 是空的（2026-11-25 第二轮诊断
+    实证：916 条残余里 586 条 done 的 plain cast 为空；《X战警97》
+    plain 0 条、aggregate 93 条）。Jellyfin 的 TMDB 提供者对剧集
+    正是优先用 AggregateCredits，同一口径。
+
+    与 plain cast 的唯一差异在角色字段：aggregate 条目的角色挂在
+    ``roles`` 数组里（一个演员可有多个角色），取第一个角色名；
+    无 roles 时回落顶层 ``character``（个别载荷仍带）。其余口径
+    （头像 w185、华语片拼音角色名留空、person_id、取前 N）与
+    ``cast_list`` 逐字一致——写库仍走同一行形状、同一个
+    ``_apply_people_rows``，不许另起第二套。
+    """
+    if not data:
+        return []
+    cast = data.get("cast") or []
+    base = image_base()
+    cjk_title = str(original_language or "").lower() in _CJK_ORIGINAL_LANGS
+    out: list[dict] = []
+    for c in cast[: max(0, int(limit))]:
+        if not isinstance(c, dict):
+            continue
+        name = str(c.get("name") or "").strip()
+        if not name:
+            continue
+        role = ""
+        roles = c.get("roles")
+        if isinstance(roles, list):
+            for r in roles:
+                if isinstance(r, dict):
+                    role = str(r.get("character") or "").strip()
+                    if role:
+                        break
+        if not role:
+            role = str(c.get("character") or "").strip()
+        if cjk_title and is_romanized_role(name, role):
+            role = ""
+        profile = c.get("profile_path")
+        out.append({
+            "name": name,
+            "role": role,
+            "image": f"{base}/w185{profile}" if profile else "",
+            "sort_order": len(out),
             "person_id": str(c.get("id") or ""),
         })
     return out
@@ -2191,6 +2257,61 @@ class TmdbClient:
                 # 免得磁盘积错误体——读路径虽有 _has_credits 守卫不会误服，
                 # 但每次都会穿透重打网络。
                 tmdb_cache.save_details(endpoint, str(tmdb_id), data, lang, raw=data)
+            self._cache_put(key, data)
+            return data
+
+    def aggregate_credits(self, tmdb_id: str) -> Optional[dict]:
+        """剧集全剧演员表（``GET /tv/{id}/aggregate_credits``）。
+
+        TMDB 对不少剧集只在这里给演员表、plain 详情的 credits.cast
+        是空的（2026-11-25 第二轮诊断实证），补资料段建演员行时
+        以它回落（Jellyfin 的 TMDB 提供者对剧集优先用
+        AggregateCredits，同一口径）。只有 tv 端点，电影无此接口，
+        调用方只许对剧集调。
+
+        缓存与 ``details()`` 同口径：L1 300 秒 → L2 磁盘 30 天，
+        独立 endpoint 命名空间（``tv_aggregate_credits``），不与
+        details 载荷串味；真实 HTTP 404 落持久阴性标记（同 S6
+        口径，只认真实 404）；瞬态照旧抛 ``TmdbTransientError``，
+        绝不吞成空结果落缓存。
+        """
+        lang = preferred_language()
+        tid = str(tmdb_id)
+        key = ("aggregate_credits", "tv", tid, lang)
+        cached = self._cache_get(key)
+        if cached is not _MISS and _has_aggregate_cast(cached):
+            return cached
+        hit, data = tmdb_cache.load_details("tv_aggregate_credits", tid, lang)
+        if hit and tmdb_cache.is_details_negative(data):
+            self._cache_put(key, None)
+            return None
+        if hit and _has_aggregate_cast(data):
+            progress.note_stage("tmdb_disk_hit")
+            self._cache_put(key, data)
+            return data
+        with tmdb_cache.single_flight(key):
+            cached = self._cache_get(key)
+            if cached is not _MISS and _has_aggregate_cast(cached):
+                return cached
+            hit, data = tmdb_cache.load_details(
+                "tv_aggregate_credits", tid, lang)
+            if hit and tmdb_cache.is_details_negative(data):
+                self._cache_put(key, None)
+                return None
+            if hit and _has_aggregate_cast(data):
+                progress.note_stage("tmdb_disk_hit")
+                self._cache_put(key, data)
+                return data
+            data, status = self._get_with_status(
+                f"/tv/{tid}/aggregate_credits", {"language": lang})
+            if status == 404:
+                # 同 details 的 S6 口径：只认真实 HTTP 404 才落持久
+                # 阴性标记；瞬态在 _get_with_status 里照旧抛错。
+                tmdb_cache.save_details_negative(
+                    "tv_aggregate_credits", tid, lang)
+            if isinstance(data, dict) and "id" in data:
+                tmdb_cache.save_details(
+                    "tv_aggregate_credits", tid, data, lang, raw=data)
             self._cache_put(key, data)
             return data
 

@@ -1165,14 +1165,101 @@ def _create_people_rows(db, item, fetched):
     return created
 
 
+def _create_people_rows_from_aggregate(db, item, fetched,
+                                       tmdb_aggregate_fetcher):
+    """补资料段人物建行（aggregate_credits 回落）：剧集 plain 详情
+    credits.cast 为空时，改用 TMDB aggregate_credits 建行——行形状
+    走 ``tmdb.aggregate_cast_list``（与 ``cast_list`` 单一口径）、
+    写人仍走全仓唯一实现 ``enrich_worker._apply_people_rows``。
+
+    为什么需要它：TMDB 对不少剧集只在 aggregate_credits 里给全剧
+    演员表，plain 详情的 credits.cast 是空的（2026-11-25 第二轮
+    诊断：916 条残余里 586 条 done 的 plain cast 为空；样本
+    《X战警97》plain 0 条、aggregate 93 条）。Jellyfin 的 TMDB
+    提供者对剧集正是优先用 AggregateCredits，同一口径。
+
+    触发条件（全满足才发请求、恰好 1 次）：调用方已确认条目无任何
+    人物行、且 plain 路径（``_create_people_rows``）没建成行；本
+    函数再自查 plain cast 确为空（plain 有 cast 时已在 plain 路径
+    处理，不许重复问源）；item_type 是 series（电影没有 aggregate
+    端点）；已落库 tmdb_id；取数器已注入（不给时只读已有证据、
+    不发请求，与 ``_ensure_details_for_people`` 同口径）。
+
+    失败口径：aggregate 也空 / 404（取数器返回空）静默返回 0，
+    不影响 done 终态；瞬态失败（``TmdbTransientError``）只记日志
+    跳过——不落任何持久结论，条目下轮重跑仍可再试，绝不把瞬态
+    吞成「无演员」。
+    """
+    if tmdb_aggregate_fetcher is None:
+        return 0
+    if getattr(item, "item_type", None) != "series":
+        return 0
+    tmdb_id = _clean_identity(getattr(item, "tmdb_id", None))
+    if not tmdb_id:
+        return 0
+    details = (fetched or {}).get("tmdb_details") or {}
+    try:
+        from backend.emby_server.tmdb import cast_list as _cast_list
+        if _cast_list(details):
+            return 0
+    except Exception:  # noqa: BLE001 — plain 解析失败按无 cast 处理
+        pass
+    from backend.emby_server.tmdb import TmdbTransientError
+    try:
+        data = tmdb_aggregate_fetcher(str(tmdb_id))
+    except TmdbTransientError as exc:
+        logger.warning(
+            "补资料段 aggregate 回落瞬态失败，本轮跳过 id=%s tmdb_id=%s: %s",
+            getattr(item, "id", None), tmdb_id, exc)
+        return 0
+    except Exception as exc:  # noqa: BLE001 — 回落失败 = 本轮无 aggregate
+        logger.warning(
+            "补资料段 aggregate 回落取数失败，跳过 id=%s tmdb_id=%s: %s",
+            getattr(item, "id", None), tmdb_id, exc)
+        return 0
+    if not isinstance(data, dict) or not data:
+        return 0
+    try:
+        from backend.emby_server.tmdb import (
+            aggregate_cast_list as _aggregate_cast_list)
+        rows = _aggregate_cast_list(
+            data,
+            original_language=str(details.get("original_language") or ""))
+    except Exception:  # noqa: BLE001 — aggregate 解析失败 = 无建行源
+        return 0
+    if not rows:
+        return 0
+    try:
+        from backend.emby_server import enrich_worker as _ew
+        touched = _ew._apply_people_rows(db, item, rows)
+    except Exception as exc:  # noqa: BLE001 — 建行失败不拖垮补资料段
+        logger.warning("补资料段 aggregate 人物建行失败，跳过 id=%s: %s",
+                       item.id, exc)
+        return 0
+    if not touched:
+        return 0
+    created = (
+        db.query(em.EmbyPerson)
+        .filter(em.EmbyPerson.item_id == item.id)
+        .count()
+    )
+    if created:
+        logger.info("补资料段人物建行（aggregate 回落）id=%s created=%s",
+                    item.id, created)
+    return created
+
+
 def _apply_people_fill(db, item, fetched, people_fetcher=None,
-                       tmdb_details_fetcher=None):
+                       tmdb_details_fetcher=None,
+                       tmdb_aggregate_fetcher=None):
     """补资料段人物环节：无行先建行，有行只填空缺、永不覆盖。
 
     无行条目：用本轮 TMDB credits 建行（``_create_people_rows``，
     与经典 ``_apply_cast`` 平价）；本轮无 credits 时先经
     ``_ensure_details_for_people`` 补拉恰好 1 次详情（只在此分支
-    触发——已有行条目拉取次数与此前逐字一致）。已有行条目：记录源 = 本条目
+    触发——已有行条目拉取次数与此前逐字一致）；plain cast 仍为
+    空时，剧集再经 ``_create_people_rows_from_aggregate`` 回落
+    aggregate_credits 建行（同在此分支、恰好 1 次）。已有行条目：记录源 = 本条目
     已有的人物行，只按名字填 role / image / person_tmdb_id 三列
     空缺（人物刮削；抓取源默认复用本轮 TMDB credits，调用方可
     注入 fetcher；开关关 / 无抓取源时静默跳过）。任何异常只记
@@ -1190,7 +1277,11 @@ def _apply_people_fill(db, item, fetched, people_fetcher=None,
         return 0
     if not rows:
         _ensure_details_for_people(item, fetched, tmdb_details_fetcher)
-        return _create_people_rows(db, item, fetched)
+        created = _create_people_rows(db, item, fetched)
+        if not created:
+            created = _create_people_rows_from_aggregate(
+                db, item, fetched, tmdb_aggregate_fetcher)
+        return created
     try:
         from backend.emby_server.metasources import people_scrape as _people
     except Exception as exc:  # noqa: BLE001 — 人物模块不可用不影响补资料
@@ -1231,7 +1322,8 @@ def _apply_people_fill(db, item, fetched, people_fetcher=None,
 
 
 def apply_fill(db, item, fetched: dict, people_fetcher=None,
-               tmdb_details_fetcher=None) -> list:
+               tmdb_details_fetcher=None,
+               tmdb_aggregate_fetcher=None) -> list:
     """补资料段：只在已绑定条目上、只填空缺字段。
 
     调用方须保证条目已绑定；未绑定时本函数拒绝写任何字段、返回 []
@@ -1247,7 +1339,9 @@ def apply_fill(db, item, fetched: dict, people_fetcher=None,
     时用本轮 credits 建行（与经典 _apply_cast 平价；本轮无 credits
     且条目已绑 tmdb 时，经 tmdb_details_fetcher 补拉恰好 1 次详情
     再建行——取数器不给则只读已有证据、不发请求，与
-    resolve_imdb_id 同口径），已有人物行时只填 role / image /
+    resolve_imdb_id 同口径；剧集 plain cast 仍为空时再经
+    tmdb_aggregate_fetcher 回落 aggregate_credits 建行，恰好
+    1 次、同口径），已有人物行时只填 role / image /
     person_tmdb_id 空缺、永不覆盖（补缺受人物刮削开关管辖，开关
     关时不问源）。返回实际填上的字段名列表。
     """
@@ -1319,7 +1413,7 @@ def apply_fill(db, item, fetched: dict, people_fetcher=None,
                 filled.append(field)
     try:
         _apply_people_fill(db, item, fetched, people_fetcher,
-                           tmdb_details_fetcher)
+                           tmdb_details_fetcher, tmdb_aggregate_fetcher)
     except Exception as exc:  # noqa: BLE001 — 人物补缺绝不拖垮补资料段
         logger.warning("补资料段人物补缺失败，跳过 id=%s: %s", item.id, exc)
     binding = None
