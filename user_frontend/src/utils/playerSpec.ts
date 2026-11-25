@@ -165,6 +165,28 @@ export function resolutionFromName(name?: string | null): string {
   return ''
 }
 
+/**
+ * 右下规格主行（第六轮：从 WebPlayerView 移入，与 specChipsOf 同口
+ * 径、可单测）：如「1080p SDR HEVC」。与 chips 同一套回落：宽高
+ * 为 0 时从版本名读分辨率（《黑洞表面》1080p 版库里 width/height
+ * 都是 0），否则准备阶段主行会在 PlaybackInfo 落地前后从「SDR」
+ * 闪成空（第五轮复测「再试一次」后 SDR 不见的一半原因；另一半是
+ * 复测采样时已进 playing 态、规格区本就不渲染）。没有视频流且名
+ * 里也无分辨率时返回 ''——不许只剩一个孤零零的「SDR」冒充规格。
+ * 动态范围无 HDR 证据时按 SDR（与 PlayerSchemeSheet 同口径的既
+ * 有回落，本函数不改它）。
+ */
+export function specHeadlineOf(source: SpecSourceForChips | null): string {
+  if (!source) return ''
+  const vs = videoStreamOf(source)
+  const res = resolutionLabel(vs) || resolutionFromName(source.Name)
+  if (!vs && !res) return ''
+  const title = vs?.DisplayTitle || ''
+  const range =
+    ['Dolby Vision', 'HDR10+', 'HDR10', 'HDR', 'HLG'].find((t) => title.includes(t)) || 'SDR'
+  return [res, range, vs?.Codec?.toUpperCase()].filter(Boolean).join(' ')
+}
+
 export function specChipsOf(source: SpecSourceForChips | null): string[] {
   if (!source) return []
   const chips: string[] = []

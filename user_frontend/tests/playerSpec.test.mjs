@@ -18,7 +18,7 @@
 // 运行：cd user_frontend && node tests/playerSpec.test.mjs
 import assert from 'node:assert'
 
-const { resolveSpecSource, specChipsOf, resolutionFromName } = await import('../src/utils/playerSpec.ts')
+const { resolveSpecSource, specChipsOf, specHeadlineOf, resolutionFromName } = await import('../src/utils/playerSpec.ts')
 
 let passed = 0
 function check(name, actual, expected) {
@@ -199,6 +199,38 @@ check(
   'spec chips: numeric height on the row still wins over the name',
   specChipsOf({ Id: 'x', Name: '1080p WEB-DL', Container: 'mkv', MediaStreams: [video1080] }),
   ['1080p', 'HEVC', 'MKV'],
+)
+
+// --- 第六轮：规格主行与 chips 同一套回落 ---
+// 生产原样：准备阶段 specSource 会在 PlaybackInfo 落地前后切换——落地
+// 前是版本行合成源（宽高 0 → 主行回落 'SDR'），落地后 currentSource
+// 是 PlaybackInfo 源（MediaStreams 为空 → 旧主行直接返回 ''），主行
+// 从「SDR」闪成空（第五轮复测「再试一次」后 SDR 不见的一半原因）。
+check(
+  'spec headline: zero-height version row keeps resolution from name + SDR',
+  specHeadlineOf({ Id: 'c4a84409f1abcbeedf94c416ccc05807', Name: '1080p WEB-DL', Container: 'mkv', MediaStreams: [videoZero] }),
+  '1080p SDR',
+)
+check(
+  'spec headline: PlaybackInfo source with no streams still shows resolution from name',
+  specHeadlineOf({ Id: 'c4a84409f1abcbeedf94c416ccc05807', Name: '1080p WEB-DL', Container: 'mkv', MediaStreams: [] }),
+  '1080p SDR',
+)
+check(
+  'spec headline: numeric stream wins, HDR token from DisplayTitle',
+  specHeadlineOf({ Id: 'x', Name: '2160p REMUX', Container: 'mkv', MediaStreams: [{ Index: 0, Type: 'Video', Width: 3840, Height: 2160, Codec: 'hevc', DisplayTitle: '2160p HDR10 HEVC' }] }),
+  '4K HDR10 HEVC',
+)
+check(
+  'spec headline: 1080p stream with codec',
+  specHeadlineOf({ Id: 'x', Name: '1080p WEB-DL', Container: 'mkv', MediaStreams: [video1080] }),
+  '1080p SDR HEVC',
+)
+check('spec headline: null source hides', specHeadlineOf(null), '')
+check(
+  'spec headline: no stream and no resolution token hides (never a lone SDR)',
+  specHeadlineOf({ Id: 'x', Name: '导演剪辑版', Container: 'mkv', MediaStreams: [] }),
+  '',
 )
 
 console.log(`\n${passed} passed`)
