@@ -380,3 +380,38 @@ def test_change_email_code_bound_to_target_email(db, mail_channel):
     assert r.status_code == 400, r.text
     db.refresh(user)
     assert user.email == "bind@example.com"
+
+
+# ==================== 发码投递失败如实报错（L-042 后续，2026-11-25 用户拍板） ====================
+# 旧口径：_deliver_email 失败只记日志、端点照样 success——seek.li 全灭期间
+# 用户点了发码、页面说已发送、实际干等永远不来的码。用户拍板改如实报错：
+# 已登录发码端点（改密/换邮箱）在投递失败（含渠道未配置）时必须回失败。
+
+def test_send_code_delivery_failure_reports_error(db, monkeypatch):
+    user = _user(db, email="fail-deliver@example.com")
+    failing = _FakeChannel(ok=False)
+    monkeypatch.setattr(integrations_mail, "build_channel", lambda db_: failing)
+    client = _client(db)
+    r = client.post("/api/user/auth/change-password/send-code", headers=_bearer(user))
+    assert r.status_code == 500, r.text
+    assert "发送失败" in r.json()["detail"]
+
+
+def test_send_code_no_channel_reports_error(db, monkeypatch):
+    user = _user(db, email="no-channel@example.com")
+    monkeypatch.setattr(integrations_mail, "build_channel", lambda db_: None)
+    client = _client(db)
+    r = client.post("/api/user/auth/change-password/send-code", headers=_bearer(user))
+    assert r.status_code == 500, r.text
+    assert "发送失败" in r.json()["detail"]
+
+
+def test_change_email_send_code_delivery_failure_reports_error(db, monkeypatch):
+    user = _user(db, email="ce-fail@example.com")
+    failing = _FakeChannel(ok=False)
+    monkeypatch.setattr(integrations_mail, "build_channel", lambda db_: failing)
+    client = _client(db)
+    r = client.post("/api/user/auth/change-email/send-code", headers=_bearer(user),
+                    json={"current_password": OLD_PW, "new_email": "ce-new@example.com"})
+    assert r.status_code == 500, r.text
+    assert "发送失败" in r.json()["detail"]

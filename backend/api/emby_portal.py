@@ -1112,23 +1112,28 @@ def _verify_email_code(
     return True
 
 
-def _deliver_email(db: Session, to_email: str, title: str, content: str, what: str) -> None:
-    """经现行 EmailChannel 投递一封纯文本邮件；失败只记日志（不记正文
-    里的验证码），不改变调用方对外响应（同 _send_reset_email 口径）。"""
+def _deliver_email(db: Session, to_email: str, title: str, content: str, what: str) -> bool:
+    """经现行 EmailChannel 投递一封纯文本邮件，返回是否投递成功。
+
+    失败只记日志（不记正文里的验证码）。发码类调用方（用户在等这封邮件）
+    必须按返回值如实报错（2026-11-25 用户拍板，L-042 后续）；纯通知类
+    调用方（如换邮箱后通知旧邮箱，本体操作已落库）可忽略返回值。"""
     channel = integrations_mail.build_channel(db)
     if channel is None:
         logger.warning("%s未发送：邮件渠道未启用或未配置 to=%s", what, mask_email(to_email))
-        return
+        return False
     try:
         ok, error = channel._deliver(to_email, title, content)
     except Exception as exc:  # noqa: BLE001 — 发信异常不许影响主流程
         logger.error("%s发送失败 to=%s: %s: %s", what, mask_email(to_email), type(exc).__name__, exc)
-        return
+        return False
     if not ok:
         logger.error("%s发送失败 to=%s: %s", what, mask_email(to_email), error)
+        return False
+    return True
 
 
-def _send_email_code(db: Session, user: models.WebUser, to_email: str, raw_code: str, purpose: str) -> None:
+def _send_email_code(db: Session, user: models.WebUser, to_email: str, raw_code: str, purpose: str) -> bool:
     if purpose == EMAIL_CODE_PURPOSE_CHANGE_EMAIL:
         title = "Aetrix 换邮箱验证码"
         scene = "更换恢复邮箱"
@@ -1140,7 +1145,7 @@ def _send_email_code(db: Session, user: models.WebUser, to_email: str, raw_code:
         f"验证码是 {raw_code}，10 分钟内有效，输对了才会继续。\n\n"
         "如果不是你本人操作，请忽略这封邮件，你的账号不会有任何变化。"
     )
-    _deliver_email(db, to_email, title, content, f"{scene}验证码邮件")
+    return _deliver_email(db, to_email, title, content, f"{scene}验证码邮件")
 
 
 @auth_router.post("/change-password/send-code")
@@ -1173,7 +1178,10 @@ def change_password_send_code(
     raw_code = _issue_email_code(
         db, current_user, EMAIL_CODE_PURPOSE_CHANGE_PASSWORD, None, ip)
     db.commit()
-    _send_email_code(db, current_user, email, raw_code, EMAIL_CODE_PURPOSE_CHANGE_PASSWORD)
+    if not _send_email_code(db, current_user, email, raw_code, EMAIL_CODE_PURPOSE_CHANGE_PASSWORD):
+        # 如实报错（2026-11-25 用户拍板）：邮件没发出去不许回 success，
+        # 否则用户干等一个永远不来的验证码。
+        raise HTTPException(status_code=500, detail="验证码邮件发送失败，请稍后再试")
     return {
         "success": True,
         "verification": "email_code",
@@ -1304,7 +1312,9 @@ def change_email_send_code(
     raw_code = _issue_email_code(
         db, current_user, EMAIL_CODE_PURPOSE_CHANGE_EMAIL, new_email, client_ip(request))
     db.commit()
-    _send_email_code(db, current_user, new_email, raw_code, EMAIL_CODE_PURPOSE_CHANGE_EMAIL)
+    if not _send_email_code(db, current_user, new_email, raw_code, EMAIL_CODE_PURPOSE_CHANGE_EMAIL):
+        # 如实报错（2026-11-25 用户拍板）：同改密发码口径，投递失败回 500。
+        raise HTTPException(status_code=500, detail="验证码邮件发送失败，请稍后再试")
     return {
         "success": True,
         "email_masked": mask_email(new_email),
@@ -1362,8 +1372,9 @@ class PasswordResetConfirmIn(BaseModel):
     new_password: str = Field(..., min_length=6, max_length=64)
 
 
-#: 找回密码申请的统一对外文案：查无此人 / 无邮箱 / 已发送三种情况一字不差，
-#: 防止外部按响应差异枚举账号与邮箱绑定情况。
+#: 找回密码申请的统一对外文案：查无此人 / 无邮箱 / 已发送成功三种情况
+#: 一字不差，防止外部按响应差异枚举账号与邮箱绑定情况。投递失败是例外：
+#: 如实报错回 500（2026-11-25 用户拍板，L-042 后续）。
 PASSWORD_RESET_GENERIC_RESPONSE = {
     "success": True,
     "message": "如果该账号存在且绑定了邮箱，重置邮件已发送，请查收",
@@ -1404,9 +1415,12 @@ def _invalidate_reset_tokens(db: Session, user_id: int, now: datetime) -> None:
     ).update({models.PasswordResetToken.used_at: now}, synchronize_session=False)
 
 
-def _send_reset_email(db: Session, user: models.WebUser, raw_token: str) -> None:
-    """经现行 EmailChannel 发重置邮件；任何失败只记日志（含 user_id 与原因、
-    绝不记令牌原文），不改变对外响应。"""
+def _send_reset_email(db: Session, user: models.WebUser, raw_token: str) -> bool:
+    """经现行 EmailChannel 发重置邮件，返回是否投递成功。
+
+    失败只记日志（含 user_id 与原因、绝不记令牌原文）；调用方按返回值
+    如实报错（2026-11-25 用户拍板）：账号存在且有邮箱时邮件没发出去
+    不许再回统一成功文案。"""
     base = (
         _store_read_value(db, "site_url", "")
         or _store_read_value(db, "site_base_url", "")
@@ -1416,12 +1430,12 @@ def _send_reset_email(db: Session, user: models.WebUser, raw_token: str) -> None
         # 与 tg 免密登录链接同口径：站点地址未配置时链接拼不出来，留告警痕迹。
         logger.warning(
             "找回密码邮件未发送：站点地址 site_url 未配置 user_id=%s", user.id)
-        return
+        return False
     channel = integrations_mail.build_channel(db)
     if channel is None:
         logger.warning(
             "找回密码邮件未发送：邮件渠道未启用或未配置 user_id=%s", user.id)
-        return
+        return False
     link = f"{base}/login?reset={raw_token}"
     content = (
         f"你正在重置 Aetrix 账号（{user.username}）的密码。\n\n"
@@ -1431,13 +1445,15 @@ def _send_reset_email(db: Session, user: models.WebUser, raw_token: str) -> None
     try:
         # 与后台「邮件与模板」测试发信走同一段投递代码（EmailChannel._deliver）。
         ok, error = channel._deliver(user.email, "重置你的 Aetrix 密码", content)
-    except Exception as exc:  # noqa: BLE001 — 发信异常不许影响统一响应
+    except Exception as exc:  # noqa: BLE001 — 发信异常不许影响主流程判定
         logger.error(
             "找回密码邮件发送失败 user_id=%s: %s: %s",
             user.id, type(exc).__name__, exc)
-        return
+        return False
     if not ok:
         logger.error("找回密码邮件发送失败 user_id=%s: %s", user.id, error)
+        return False
+    return True
 
 
 @password_reset_router.post("/password-reset/request")
@@ -1446,7 +1462,9 @@ def password_reset_request(
     req: PasswordResetRequestIn,
     db: Session = Depends(get_db),
 ):
-    """申请邮箱找回密码：命中且有邮箱才真发信，三种情况对外响应完全一致。"""
+    """申请邮箱找回密码：命中且有邮箱才真发信；查无此人 / 无邮箱 /
+    已发送成功对外响应完全一致（防枚举），投递失败如实报错回 500
+    （2026-11-25 用户拍板）。"""
     ip = client_ip(request)
     allowed, _retry = check_rate_limit(f"password-reset-request:ip:{ip}", 5, 3600)
     if not allowed:
@@ -1489,7 +1507,11 @@ def password_reset_request(
         ip=log_ip(request), agent=user_agent(request), success=True,
         reason="password_reset_request", detail="重置邮件已申请",
     )
-    _send_reset_email(db, user, raw_token)
+    if not _send_reset_email(db, user, raw_token):
+        # 如实报错（2026-11-25 用户拍板）：账号存在、真的发了、没发出去，
+        # 不许回「已发送」的统一文案让用户干等。查无此人 / 无邮箱仍回
+        # 统一文案（上方分支），防枚举红线不变。
+        raise HTTPException(status_code=500, detail="重置邮件发送失败，请稍后再试")
     return PASSWORD_RESET_GENERIC_RESPONSE
 
 
