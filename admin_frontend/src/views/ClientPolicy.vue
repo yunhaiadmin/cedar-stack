@@ -349,17 +349,14 @@ function discardAll() {
     <SectionCard
       title="播放路径"
       :icon="Activity"
-      :meta="playLines ? '302 直链' : (loading ? '加载中…' : '')"
+      :meta="playLines ? playLines.label : (loading ? '加载中…' : '')"
       :description="playLines?.scope_note || lineBytesHint"
     >
-      <p class="cp-hint cp-lead">
-        Drive 文件直接 302 到谷歌直链，播放器自拉，字节不经服务器；
-        115 等挂载源暂不支持（410）。服务端不做转码。
-      </p>
+      <p class="cp-hint cp-lead">服务端不做转码。</p>
 
       <div v-if="playLines" class="line-card">
         <div class="line-head">
-          <span class="au-badge au-badge-amber">302 直链</span>
+          <span class="au-badge au-badge-amber">{{ playLines.label }}</span>
           <p class="line-summary">{{ playLines.summary }}</p>
         </div>
         <div class="tile-grid">
