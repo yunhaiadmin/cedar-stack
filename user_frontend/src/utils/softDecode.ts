@@ -1168,6 +1168,12 @@ export interface SoftPlayerHooks {
    */
   onSeekFailed?: (message: string) => void
   /**
+   * 起播后音频仍被浏览器拦住（AudioContext suspended/interrupted，
+   * iOS 无手势起播的常态）：调用方给用户可见提示（如「点一下画面
+   * 恢复声音」），点按手势里再调 handle.unlockAudio() 解锁。
+   */
+  onAudioBlocked?: () => void
+  /**
    * seek 看门狗状态变迁上报（可选）：begin/arrive/complete/retry/
    * timeout 时以状态串回调（格式见 seekGuardStateString），调用
    * 方写进播放器根元素的 data-seek-guard 属性——复测不打开控制
@@ -1198,6 +1204,13 @@ export interface SoftPlayerHandle {
   setSubtitleSelection(primary: number | null, secondary: number | null): Promise<void>
   /** 软解字幕延时（毫秒，正值=字幕延后，与原生 shiftVtt 同号） */
   setSubtitleDelayMs(ms: number): void
+  /**
+   * 音频解锁：在用户手势里调用——让 libmedia 的 AudioContext
+   * 建好并 resume，返回解锁后的上下文状态（见 unlockAudioContextOf）。
+   */
+  unlockAudio(): Promise<string | null>
+  /** 当前 AudioContext 状态（running/suspended/…；未建时 null） */
+  audioContextState(): string | null
   destroy(): Promise<void>
 }
 
@@ -1340,6 +1353,75 @@ type AVPlayerInstance = {
   setSubtitleEnable(enable: boolean): void
 }
 
+// ---------- 音频解锁（iOS 有画面没声音，2026-11-26 实报） ----------
+
+/** 音频解锁所需的 AVPlayer 静态面（类未加载时为 null） */
+export interface SoftAudioContextHost {
+  startAudioContext?: () => Promise<void>
+  audioContext?: { state: string; resume: () => Promise<void> }
+}
+
+/** AVPlayer 类的静态面持有（createSoftPlayer 动态 import 后填） */
+let softAVPlayerClass: SoftAudioContextHost | null = null
+
+/**
+ * libmedia 的 AudioContext 是否处于「被浏览器拦住」状态：suspended /
+ * interrupted 时音频渲染往没启动的上下文里送样本——画面照常、声音
+ * 全无。libmedia 1.3.1 产物实证：上下文在选流时才建（起播异步链路
+ * 里、用户手势窗口之外），内部只抢救一次 resume（与 0.1 秒竞速），
+ * 抢不到只留日志 "the audioContext was not allowed to start. It must
+ * be resumed after a user gesture"，此后无人再 resume 即恒无声。
+ * running / closed / 未知状态都不需要解锁。
+ */
+export function audioContextNeedsUnlock(state: string | null | undefined): boolean {
+  return state === 'suspended' || state === 'interrupted'
+}
+
+/**
+ * 对给定的 AVPlayer 静态面做一次音频解锁：上下文已在且未被拦住时
+ * 直接回状态（不重复 startAudioContext，避免重复注册状态监听）；
+ * 否则先 startAudioContext 建好上下文，被拦住再 resume()。返回解
+ * 锁后的上下文状态（类未加载/无此 API 时返回 null）。resume 在无
+ * 手势时被拒是常态——吞掉错误、回真实状态，靠调用方在手势里重试。
+ */
+export async function unlockAudioContextOf(
+  host: SoftAudioContextHost | null,
+): Promise<string | null> {
+  if (!host?.startAudioContext) return null
+  const existing = host.audioContext
+  if (existing && !audioContextNeedsUnlock(existing.state)) {
+    return existing.state
+  }
+  try {
+    await host.startAudioContext()
+  } catch {
+    return host.audioContext?.state ?? null
+  }
+  const ctx = host.audioContext
+  if (ctx && audioContextNeedsUnlock(ctx.state)) {
+    try {
+      await ctx.resume()
+    } catch {
+      /* 无手势的 resume 被拒：保持原状态，等手势内重试 */
+    }
+  }
+  return host.audioContext?.state ?? null
+}
+
+/** 当前软解 AudioContext 状态（类未加载/上下文未建时 null） */
+export function softAudioContextState(): string | null {
+  return softAVPlayerClass?.audioContext?.state ?? null
+}
+
+/** 用已加载的 AVPlayer 类做一次音频解锁（见 unlockAudioContextOf） */
+export async function unlockSoftAudioContext(): Promise<string | null> {
+  return unlockAudioContextOf(softAVPlayerClass)
+}
+
+/** AVPlayer 类：构造器 + 音频上下文静态面 */
+type AVPlayerClass = (new (options: Record<string, unknown>) => unknown) &
+  SoftAudioContextHost
+
 /**
  * 创建软解播放器：AVPlayer 动态 import（不进首屏包），默认强制
  * wasm 解码（enableHardware/enableWebCodecs 都关——<video> 已经探
@@ -1361,7 +1443,8 @@ export async function createSoftPlayer(
 ): Promise<SoftPlayerHandle> {
   const { default: AVPlayer } = (await import(
     /* @vite-ignore */ SOFT_PLAYER_SCRIPT_URL
-  )) as { default: new (options: Record<string, unknown>) => unknown }
+  )) as { default: AVPlayerClass }
+  softAVPlayerClass = AVPlayer
   // 取流地址先过软解口径：直链（302 跳跨源）换中继，fetch 才读得到
   const playUrl = await resolveSoftDecodeUrl(url)
   let errorReported = false
@@ -1621,6 +1704,7 @@ export async function createSoftPlayer(
   )
   let desiredSubtitleDelayMs = options.subtitleDelayMs ?? 0
   let subtitleDestroyed = false
+  let playerDestroyed = false
   const subtitleLoads = new Map<number, Promise<number | null>>()
   function loadSoftSubtitleTrack(track: SoftSubtitleTrack): Promise<number | null> {
     let p = subtitleLoads.get(track.index)
@@ -1758,6 +1842,18 @@ export async function createSoftPlayer(
     if (vetoTimer) clearInterval(vetoTimer)
   }
 
+  // 音频解锁首试（仅 wasm 管线；MSE 管线音频走 <video> 元素、与
+  // AudioContext 无关）：先补一次（恰在手势窗口内就直接解开）；
+  // 仍被拦住则经 onAudioBlocked 让调用方提示用户点画面——点按
+  // 处理里会再调 unlockAudio 在手势内解。销毁后不再回调。
+  if (options.mse !== true) {
+    void unlockSoftAudioContext().then((state) => {
+      if (!playerDestroyed && audioContextNeedsUnlock(state)) {
+        hooks.onAudioBlocked?.()
+      }
+    })
+  }
+
   // 起播落定后把初始字幕选择纠正到位（play 的默认选流可能选了
   // 内嵌轨）：不等它完成，字幕晚几百毫秒到位好过挡住起播返回
   if (initialSubtitleTrack) {
@@ -1788,6 +1884,8 @@ export async function createSoftPlayer(
     hasVideo: () => player.hasVideo(),
     hasAudio: () => player.hasAudio(),
     receivedBytes: () => readReceivedBytes() ?? lastReceivedBytes,
+    unlockAudio: () => unlockSoftAudioContext(),
+    audioContextState: () => softAudioContextState(),
     setSubtitleSelection: (primary: number | null, secondary: number | null) =>
       applySubtitleSelection(primary, secondary),
     setSubtitleDelayMs: (ms: number) => {
@@ -1799,6 +1897,7 @@ export async function createSoftPlayer(
       }
     },
     destroy: async () => {
+      playerDestroyed = true
       subtitleDestroyed = true
       stopStatsPolling()
       seekGuard.dispose()
