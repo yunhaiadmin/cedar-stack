@@ -1737,6 +1737,11 @@ async function startSoftPlayerInstance(
         onGuardState: (state: string) => {
           seekGuardState.value = state
         },
+        onAudioBlocked: () => {
+          // iOS 把软解音频上下文拦在手势之外：明说恢复办法，
+          // 不静默无声（点按处理 onSoftTap 里会补解锁）
+          showToast('声音被浏览器拦住了，点一下画面恢复声音')
+        },
         onSeekFailed: () => {
           // seek 看门狗判失败（自动重试后仍无结果）：不是解码失败，
           // 不回落「浏览器解不了」的提示卡——先同步上带「再试一
@@ -2055,8 +2060,12 @@ function onVideoTap(): void {
   }
 }
 
-/** 软解画布点按：与原生 video 点按同一口径（切换控制层显隐） */
+/** 软解画布点按：与原生 video 点按同一口径（切换控制层显隐）；
+    点按本身是用户手势，顺手补一次音频解锁（上下文被 iOS 拦住时
+    只有手势内的 resume 能解开） */
 function onSoftTap(): void {
+  const h = softHandle.value
+  if (h) void h.unlockAudio().catch(() => {})
   onVideoTap()
 }
 
@@ -2124,8 +2133,11 @@ function togglePlay(): void {
   }
   const soft = softHandle.value
   if (soft) {
-    if (isPaused.value) void soft.play()
-    else void soft.pause()
+    if (isPaused.value) {
+      // 按钮点按是用户手势：恢复播放顺手解锁音频上下文
+      void soft.unlockAudio().catch(() => {})
+      void soft.play()
+    } else void soft.pause()
     pokeControls()
     return
   }
