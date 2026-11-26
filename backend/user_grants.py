@@ -36,6 +36,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from backend import devices, models, realms, subscriptions
+from backend.emby_server import playback_strategy
 
 logger = logging.getLogger(__name__)
 
@@ -208,6 +209,11 @@ def summary(db: Session, user: models.WebUser, cards: list[dict]) -> dict:
     except Exception:  # noqa: BLE001 — 设备数读不到不该让整张抽屉失败
         logger.warning("读取用户 %s 的设备数失败（显示为未知）", user.id, exc_info=True)
         limit, used = None, None
+    # 播放线路按 Drive 直链开关现算（单一事实来源 playback_strategy）：
+    # 旧实现 play_line 写死 relay、标签写死「302 直链」，两者自相矛盾，
+    # 且 2026-11-23 关直链走中继后标签一直误报。开关函数自身读失败
+    # fail-safe，这里不再另兜一层。
+    direct = playback_strategy.drive_direct_play_enabled(db)
     return {
         "realms_total": len(cards),
         "realms_playable": len([c for c in cards if c["can_play"]]),
@@ -215,8 +221,8 @@ def summary(db: Session, user: models.WebUser, cards: list[dict]) -> dict:
         "realms_expired": len([c for c in cards if c["grant"] == GRANT_EXPIRED]),
         "devices_used": used,
         "device_limit": limit,
-        "play_line": "relay",
-        "play_line_label": "302 直链",
+        "play_line": "direct" if direct else "relay",
+        "play_line_label": "302 直链" if direct else "服务器中继",
         "scope_note": "授权与到期按当下现算（订阅行的 status 字段不会随时间自动过期）；"
                       "停用的服同样列出来并标注，它不改变播放判定，只是提醒管理员该清理了。",
     }

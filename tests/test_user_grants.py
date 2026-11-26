@@ -22,6 +22,8 @@ from sqlalchemy.orm import sessionmaker
 
 from backend import models, realms, subscriptions, user_grants
 from backend.emby_server import models as em
+from backend.emby_server import playback_strategy
+from backend.integrations import store
 
 
 @pytest.fixture()
@@ -317,7 +319,8 @@ def test_summary_counts_expiring_and_expired_realms(db):
     assert summary["realms_playable"] == 2
 
 
-def test_summary_reports_devices_and_play_line(db):
+def test_summary_reports_devices_and_play_line(db, monkeypatch):
+    monkeypatch.delenv("DRIVE_DIRECT_PLAY_ENABLED", raising=False)
     realm = _realm(db)
     user = _user(db)
     _sub(db, user, realm, _plan(db, realm))
@@ -326,13 +329,32 @@ def test_summary_reports_devices_and_play_line(db):
         user_id=user.id, device_id="dev-1", name="客厅电视",
         last_seen_at=datetime.now(),
     ))
+    # 直链开关关（2026-11-23 起生产现行口径：全部走中继）：线路标签
+    # 必须按开关现算，不许再写死成与 play_line 自相矛盾的「302 直链」
+    db.add(models.SystemConfig(
+        key=playback_strategy.KEY_DRIVE_DIRECT_PLAY, value="false"))
     db.commit()
+    store.invalidate(playback_strategy.KEY_DRIVE_DIRECT_PLAY)
 
     summary = user_grants.cards(db, user)["summary"]
     assert summary["device_limit"] == 2
     assert summary["devices_used"] == 1
-    # 没有偏好记录就是默认 302 直链（前端据此显示线路名而不是空白）
     assert summary["play_line"] == "relay"
+    assert summary["play_line_label"] == "服务器中继"
+
+
+def test_summary_play_line_reports_direct_when_switch_on(db, monkeypatch):
+    monkeypatch.delenv("DRIVE_DIRECT_PLAY_ENABLED", raising=False)
+    realm = _realm(db)
+    user = _user(db)
+    _sub(db, user, realm, _plan(db, realm))
+    db.add(models.SystemConfig(
+        key=playback_strategy.KEY_DRIVE_DIRECT_PLAY, value="true"))
+    db.commit()
+    store.invalidate(playback_strategy.KEY_DRIVE_DIRECT_PLAY)
+
+    summary = user_grants.cards(db, user)["summary"]
+    assert summary["play_line"] == "direct"
     assert summary["play_line_label"] == "302 直链"
 
 
