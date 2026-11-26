@@ -52,16 +52,24 @@
       >{{ f.text }}</span>
     </div>
 
-    <!-- 顶部栏：返回钮 + 一起看（差距 #1/#2）。桌面（≥768px）返回是
-         Ø40 玻璃圆钮、顶栏不置标题（标题只留左下元信息区）；手机返回是
-         文字胶囊（高 40、圆角 20、与一起看同款玻璃）：无集标题时
-         「← 返回」，有集标题时「← ＋集标题单行截断」。 -->
+    <!-- 顶部栏：返回钮 + 标题 + 一起看（差距 #1/#2，2026-11-26 皮肤重做
+         以友站实拍 d-01/d-03/m-01/m-03 校正）：标题在位时返回是 Ø40 玻
+         璃圆钮、标题以 14px 白字并列于钮右（剧集为「剧名 S1E1 · 集名」、
+         电影为片名，单行截断）；标题未载入（displayTitle 为空）时手机
+         退回「← 返回」文字胶囊、桌面只留圆钮。 -->
     <header v-show="chromeVisible" class="wp-top">
       <div class="wp-top-left">
-        <button type="button" class="wp-back" aria-label="返回" @click="goBack">
+        <button
+          type="button"
+          class="wp-back"
+          :class="{ 'wp-back--titled': hasTopTitle }"
+          aria-label="返回"
+          @click="goBack"
+        >
           <ChevronLeft :size="21" class="wp-back-icon" />
-          <span class="wp-back-text">{{ backPillText }}</span>
+          <span v-if="!hasTopTitle" class="wp-back-text">返回</span>
         </button>
+        <span v-if="hasTopTitle" class="wp-top-title">{{ displayTitle }}</span>
       </div>
       <button
         type="button"
@@ -980,13 +988,10 @@ const displayTitle = computed(() => {
   return it.Name
 })
 
-/** 手机顶栏返回胶囊的文字（差距 #1）：有集标题（剧集的本集名）时显
-    集标题（单行截断），否则「返回」；桌面圆钮形态下文字被 CSS 隐藏 */
-const backPillText = computed(() => {
-  const it = item.value
-  if (it?.Type === 'Episode' && it.Name) return it.Name
-  return '返回'
-})
+/** 顶栏标题是否在位（差距 #1/#2，2026-11-26 皮肤重做）：displayTitle
+    非空时返回钮收成 Ø40 圆钮、标题并列于钮右；为空（元数据未载入）
+    时手机退回「← 返回」文字胶囊、桌面只留圆钮 */
+const hasTopTitle = computed(() => displayTitle.value !== '')
 
 const episodeLine = computed(() => {
   const it = item.value
@@ -1068,7 +1073,7 @@ const progressPermille = computed(() => {
 })
 const progressBackground = computed(() => {
   const p = progressPermille.value / 10
-  return `linear-gradient(90deg, #fff ${p}%, rgba(255,255,255,.28) ${p}%)`
+  return `linear-gradient(90deg, #fff ${p}%, rgba(255,255,255,.33) ${p}%)`
 })
 
 const subtitleTracks = computed<SubtitleTrackOption[]>(() => {
@@ -2831,9 +2836,11 @@ onUnmounted(() => {
   gap: 10px;
   min-width: 0;
 }
-/* 返回钮（差距 #1/#2）：手机＝文字胶囊——高 40、圆角 20、与 .wp-together
-   同款玻璃（pill 档令牌：--ax-glass-d 底＋pill-filter＋pill-shadow）、
-   白字 14px；≥768px 变 Ø40 玻璃圆钮、文字隐藏，顶栏不再另置标题 */
+/* 返回钮（差距 #1/#2，2026-11-26 皮肤重做以友站实拍校正）：标题未
+   载入时手机＝「← 返回」文字胶囊（高 40、圆角 20，与 .wp-together
+   同款玻璃：--ax-glass-d 底＋pill-filter＋pill-shadow、白字 14px）；
+   标题在位时（.wp-back--titled，双端）与桌面（≥768px）一样是 Ø40
+   玻璃圆钮，标题以 14px 白字并列于钮右（.wp-top-title，单行截断） */
 .wp-back {
   flex: none;
   display: inline-flex;
@@ -2859,6 +2866,23 @@ onUnmounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* 标题在位时的圆钮形态（双端）：宽 40、居中 chevron，与桌面圆钮同形 */
+.wp-back--titled {
+  width: 40px;
+  padding: 0;
+  border-radius: 50%;
+  justify-content: center;
+}
+/* 顶栏标题（友站实拍 d-01/d-03/m-01/m-03）：14px 白字，单行截断 */
+.wp-top-title {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #fff;
+  font-size: 14px;
 }
 .wp-together {
   flex: none;
@@ -3210,7 +3234,7 @@ onUnmounted(() => {
   appearance: none;
   height: 4px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.33);
   outline: none;
   cursor: pointer;
 }
@@ -3467,8 +3491,41 @@ onUnmounted(() => {
   opacity: 0;
 }
 
+@media (max-width: 767px) {
+  /* 手机皮肤（2026-11-26 皮肤重做，实测值见 m-01/m-03）：控制条
+     加粗——进度条 23px pill、时间字 14px、图标钮 44px、激活白圆
+     48px；条高随之约 99px、一起看胶囊高 44px。桌面（d-03）现行
+     4px 轨 / 38px 钮 / 12px 时间已对，不动。 */
+  .wp-together {
+    height: 44px;
+  }
+  .wp-bar {
+    padding: 12px 16px 10px;
+  }
+  .wp-progress {
+    height: 23px;
+    border-radius: 12px;
+  }
+  .wp-time {
+    font-size: 14px;
+    min-width: 44px;
+  }
+  .wp-icon {
+    width: 44px;
+    height: 44px;
+  }
+  .wp-icon.on {
+    width: 48px;
+    height: 48px;
+  }
+  .wp-danmaku-slash {
+    width: 28px;
+  }
+}
+
 @media (min-width: 768px) {
-  /* 桌面返回钮回归 Ø40 玻璃圆钮，胶囊文字隐藏（差距 #1/#2） */
+  /* 桌面返回钮恒为 Ø40 玻璃圆钮，「返回」胶囊文字隐藏（差距 #1/#2，
+     2026-11-26 皮肤重做：标题在位时 .wp-top-title 并列于钮右） */
   .wp-back {
     width: 40px;
     padding: 0;
