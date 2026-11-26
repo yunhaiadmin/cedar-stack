@@ -27,6 +27,12 @@ SUB_CACHE_DIR = os.getenv(
     os.path.join(os.getenv("EMBY_CACHE_DIR", "/tmp/aetrix_cache"), "subs"),
 )
 
+# 内封字幕抽取超时（秒）：抽取须解封装整片，远程挂载整读以分钟计
+# ——2026-11-26 实测 1h50m 1080p 条目经 rcd 抽取约 190 秒，旧的
+# 180 秒会在长片抽完前先超时 504。抽完按条目+轨道缓存，后续请求
+# 直接命中，故上限放宽到 900 秒。
+EXTRACT_TIMEOUT_SECONDS = 900
+
 # 文本类字幕编码名（可转换为 VTT）；图片类（PGS/VobSub）无法转文本
 TEXT_SUB_CODECS = {
     "subrip", "srt", "ass", "ssa", "mov_text", "webvtt", "text", "vtt", "smi", "sami", "ttml",
@@ -205,12 +211,17 @@ def extract_embedded(media_path: str, item_guid: str, stream_index: int, subtitl
     head: list = []
     if input_headers:
         head = ["-headers", "".join(f"{k}: {v}\r\n" for k, v in input_headers.items())]
+    # 输出 tmp 以 .part 结尾（A-121 唯一后缀），ffmpeg 无法按扩展名
+    # 猜测封装格式：必须显式 -f webvtt，只给 -c:s webvtt（编码）时
+    # 真实 ffmpeg 以 "Unable to find a suitable output format" 退出 1，
+    # 内封文本字幕恒 404（2026-11-26 实报，条目 416741）。
     cmd = [
         FFMPEG, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-        *head, "-i", media_path, "-map", f"0:s:{subtitle_ordinal}", "-c:s", "webvtt", tmp,
+        *head, "-i", media_path, "-map", f"0:s:{subtitle_ordinal}",
+        "-c:s", "webvtt", "-f", "webvtt", tmp,
     ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, timeout=180)
+        proc = subprocess.run(cmd, capture_output=True, timeout=EXTRACT_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="字幕抽取超时")
     def _peer_published() -> bool:
@@ -219,6 +230,13 @@ def extract_embedded(media_path: str, item_guid: str, stream_index: int, subtitl
         except OSError:
             return False
 
+    if proc.returncode != 0:
+        # 失败必须留痕：stderr 尾部进日志，否则抽取失败在服务端
+        # 毫无踪迹（.part 格式事故即因此长期不可见）。
+        _tail = (proc.stderr or b"").decode("utf-8", "replace").strip()[-300:]
+        logger.warning(
+            "内封字幕抽取失败 %s 轨道 %s rc=%s: %s",
+            item_guid, stream_index, proc.returncode, _tail)
     if proc.returncode != 0 or not os.path.isfile(tmp) or os.path.getsize(tmp) == 0:
         if os.path.isfile(tmp):
             os.remove(tmp)
