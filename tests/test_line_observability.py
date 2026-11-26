@@ -134,3 +134,37 @@ def test_snapshot_counts_traffic(db):
 # 注：test_snapshot_calls_cache_state_exactly_once 已随 PR-B 删除——
 # 它测的是 line_health._cache_state 的调用次数，而该函数已按删除清单
 # （line_health 的 _cache_state）整删；snapshot() 不再产出 cache 段。
+
+
+# ---------------------------------------------------------------------------
+# 4. 快照文案口径随 Drive 直链开关现算（2026-11-26）
+#    开关关（生产现行）必须如实写服务器中继，不许再写死「302 直链」。
+# ---------------------------------------------------------------------------
+
+def _set_direct_play(db, enabled: bool):
+    from backend.integrations import store
+
+    store.write_values(
+        db, {"drive_direct_play_enabled": "true" if enabled else "false"})
+    db.commit()
+    store.invalidate()
+
+
+def test_snapshot_copy_when_direct_play_off(db):
+    _set_direct_play(db, False)
+    snap = line_health.snapshot(db)
+    assert snap["label"] == "服务器中继"
+    assert snap["lines"][0]["label"] == "服务器中继"
+    assert "中继" in snap["summary"]
+    assert "不经本机" not in snap["summary"]
+    assert "恒接近 0" not in snap["scope_note"]
+    # 字段结构不动
+    assert snap["path"] == "relay" and snap["default_line"] == "relay"
+
+
+def test_snapshot_copy_when_direct_play_on(db):
+    _set_direct_play(db, True)
+    snap = line_health.snapshot(db)
+    assert snap["label"] == "302 直链"
+    assert snap["lines"][0]["label"] == "302 直链"
+    assert "302" in snap["summary"]
