@@ -130,7 +130,10 @@ def test_reading_client_is_not_cut(relay_stack):
         end = time.time() + 3.5
         while time.time() < end:
             assert sock.recv(65536), "reading client was cut off"
-            time.sleep(0.05)
+            # 排空节律必须给看门狗留足余量：阈值 1s 按「单块 1MB 刷出耗时」判停滞，
+            # sleep(0.05) 时排空上限约 1.31MB/s、单块刷出约 0.77s，只剩约 25% 余量，
+            # 满载下客户端线程一慢就误触；0.01 时单块约 0.15s，余量约 6 倍。
+            time.sleep(0.01)
         assert _EndlessHandler.active == 1
     finally:
         sock.close()
