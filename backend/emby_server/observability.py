@@ -35,7 +35,8 @@
 | scan       | 各库扫描状态                          | library_scan_summary        |
 | sa_quota   | SA 数量（不打 API）                   | drive_auth.sa_count（文件清单缓存）|
 | workers    | 后台线程存活                          | worker_registry.snapshot    |
-| api        | P50/P99/错误率（进程内）              | 本模块环形缓冲              |
+| api        | P50/P99/错误率（进程内）              | 本模块环形缓冲；
+|            | 各路由 p50/p95/均值/最大值（直方图摘要）| backend.request_timing 快照 |
 | items_cache| ID 清单缓存命中率                     | items_list_cache.get_stats  |
 """
 from __future__ import annotations
@@ -379,6 +380,41 @@ def _probe_sa_quota() -> dict:
         return _warn("sa_quota", "SA 状态读取失败")
 
 
+def _request_timing_summary(top_n: int = 10) -> dict:
+    """request_timing 直方图的紧凑摘要（R-03，2026-11-28）。
+
+    只取按请求量前 N 的路由，每条给 count/mean_ms/p50_ms/p95_ms/
+    max_ms——分位由直方图桶近似算（与 snapshot() 的桶口径一致）。
+    完整直方图仍由 backend.request_timing.snapshot() 提供。
+    读不到（模块未加载/直方图为空）返回空摘要，绝不影响探针；
+    有界：只输出前 N 条，health 响应体不随路由数膨胀。
+    """
+    try:
+        from backend import request_timing as _rt
+        snap = _rt.snapshot()
+        rows = []
+        for key, e in (snap.get("routes") or {}).items():
+            cnt = int(e.get("count") or 0)
+            if cnt <= 0:
+                continue
+            rows.append({
+                "route": key,
+                "count": cnt,
+                "mean_ms": round(float(e.get("total_ms") or 0.0) / cnt, 1),
+                "p50_ms": _rt.approx_percentile_ms(e, 0.5),
+                "p95_ms": _rt.approx_percentile_ms(e, 0.95),
+                "max_ms": e.get("max_ms", 0),
+            })
+        rows.sort(key=lambda r: r["count"], reverse=True)
+        return {"started_at": snap.get("started_at"),
+                "bucket_bounds_ms": snap.get("bucket_bounds_ms"),
+                "total_routes": len(rows),
+                "top_routes": rows[:top_n]}
+    except Exception as exc:  # noqa: BLE001 — 摘要失败不影响探针
+        logger.debug("请求耗时摘要读取失败: %s", exc)
+        return {"total_routes": 0, "top_routes": []}
+
+
 def _probe_api() -> dict:
     """API 指标红黄灯（进程内数据，不打 API）。"""
     try:
@@ -390,6 +426,8 @@ def _probe_api() -> dict:
             "global_error_ratio": err,
             "totals": stats.get("totals", {}),
             "top_routes": stats.get("routes", []),
+            # R-03：后端请求耗时直方图摘要（只加新键，老字段不动）。
+            "request_timing": _request_timing_summary(),
         }
         if err >= THRESHOLDS["api_error_ratio_warn"]():
             return _warn("api", f"API 错误率 {err:.1%}", m)

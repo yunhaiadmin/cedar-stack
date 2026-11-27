@@ -98,3 +98,49 @@ class TestTimingMiddleware:
             tc.get("/Items/0123456789abcdef0123456789abcdef/Images/Primary")
         assert any("慢请求" in r.message for r in caplog.records), \
             "超阈值请求必须打 warning（归一路径）"
+
+
+class TestRequestTimingInObservability:
+    """R-03：直方图经 observability.api 探针进 /api/health（只加 metrics
+    新键，老字段一字不动）。先红：_probe_api 的 metrics 里还没有
+    request_timing 键。"""
+
+    @pytest.fixture(autouse=True)
+    def _reset(self):
+        from backend import request_timing as rt
+        from backend.emby_server import observability as obs
+        rt._reset_for_tests()
+        obs.reset_metrics()
+        yield
+        rt._reset_for_tests()
+        obs.reset_metrics()
+
+    def test_probe_api_exposes_timing_summary(self):
+        from backend import request_timing as rt
+        from backend.emby_server import observability as obs
+        rt._record("GET", "/Items/{id}/Images/Primary", 200, 120.0)
+        rt._record("GET", "/Items/{id}/Images/Primary", 200, 120.0)
+        rt._record("GET", "/api/user/wallet", 200, 30.0)
+        s = obs._probe_api()
+        assert s["status"] in ("ok", "warn", "down")
+        m = s["metrics"]
+        # 老键一个不少
+        assert "global_p99_ms" in m and "totals" in m and "top_routes" in m
+        timing = m["request_timing"]
+        assert timing["total_routes"] == 2
+        top = timing["top_routes"]
+        assert top[0]["route"] == "GET /Items/{id}/Images/Primary 200"
+        assert top[0]["count"] == 2
+        assert top[0]["mean_ms"] == 120.0
+        assert top[0]["p50_ms"] == 250.0  # 120ms 落在 (100, 250] 桶
+        assert top[0]["p95_ms"] == 250.0
+        assert top[0]["max_ms"] == 120.0
+        assert top[1]["route"] == "GET /api/user/wallet 200"
+        assert top[1]["count"] == 1
+
+    def test_probe_api_timing_empty_is_ok(self):
+        from backend.emby_server import observability as obs
+        s = obs._probe_api()
+        assert s["status"] == "ok"
+        assert s["metrics"]["request_timing"]["top_routes"] == []
+        assert s["metrics"]["request_timing"]["total_routes"] == 0
