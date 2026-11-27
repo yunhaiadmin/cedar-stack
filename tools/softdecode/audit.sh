@@ -27,7 +27,7 @@ fail() { echo "FAIL: $*"; FAIL=1; }
 pass() { echo "PASS: $*"; }
 
 echo "== check 1: configure summaries (LGPL assertions) =="
-EXPECTED_SUMMARIES="util-simd decoder-hevc-simd decoder-h264-simd decoder-aac-simd decoder-ac3-simd decoder-eac3-simd decoder-dca-simd"
+EXPECTED_SUMMARIES="util-simd decoder-hevc-simd decoder-h264-simd decoder-aac-simd decoder-ac3-simd decoder-eac3-simd decoder-dca-simd decoder-opus-simd decoder-flac-simd decoder-mp3-simd"
 for label in $EXPECTED_SUMMARIES; do
   dir=$SUMMARIES/$label
   [ -f "$dir/config.h" ] && [ -f "$dir/config.mak" ] || { fail "$label: summary missing (config.h/config.mak)"; continue; }
@@ -43,6 +43,32 @@ for label in $EXPECTED_SUMMARIES; do
   # recorded configuration means an outside codec library crept in.
   if grep '^FFMPEG_CONFIGURATION=' "$dir/config.mak" | grep -qE -- '--enable-lib[a-z0-9]'; then
     fail "$label: FFMPEG_CONFIGURATION enables an external library"
+  fi
+  pass "$label"
+done
+
+# External-library decoders (batch 2, 2026-11-27): AV1 links dav1d and
+# VP9 links libvpx - both BSD-licensed and deliberately admitted. The
+# allowance is exact and per-summary: the recorded configuration of
+# decoder-av1-simd must enable --enable-libdav1d and nothing else from
+# the --enable-lib* family; decoder-vp9-simd likewise for libvpx. The
+# LGPL assertions above apply unchanged (CONFIG_GPL 0 etc.).
+EXT_SUMMARIES="decoder-av1-simd:libdav1d decoder-vp9-simd:libvpx"
+for pair in $EXT_SUMMARIES; do
+  label=${pair%%:*}; lib=${pair##*:}
+  dir=$SUMMARIES/$label
+  [ -f "$dir/config.h" ] && [ -f "$dir/config.mak" ] || { fail "$label: summary missing (config.h/config.mak)"; continue; }
+  grep -q '^#define CONFIG_GPL 0$' "$dir/config.h" || fail "$label: CONFIG_GPL != 0"
+  grep -q '^#define CONFIG_NONFREE 0$' "$dir/config.h" || fail "$label: CONFIG_NONFREE != 0"
+  grep -q '^#define CONFIG_GPLV3 0$' "$dir/config.h" || fail "$label: CONFIG_GPLV3 != 0"
+  grep -q '^#define FFMPEG_LICENSE "LGPL version 3 or later"$' "$dir/config.h" \
+    || fail "$label: FFMPEG_LICENSE is not 'LGPL version 3 or later'"
+  if grep '^FFMPEG_CONFIGURATION=' "$dir/config.mak" | grep -q -- '--enable-gpl'; then
+    fail "$label: FFMPEG_CONFIGURATION contains --enable-gpl"
+  fi
+  libs=$(grep '^FFMPEG_CONFIGURATION=' "$dir/config.mak" | grep -oE -- '--enable-lib[a-z0-9]+' | sort -u | tr '\n' ' ')
+  if [ "$libs" != "--enable-$lib " ]; then
+    fail "$label: external libs [$libs] != exactly [--enable-$lib]"
   fi
   pass "$label"
 done
@@ -66,7 +92,7 @@ libmp3lame
 libopencore
 --enable-gpl
 GNU GENERAL PUBLIC LICENSE'
-WASM_FILES="decode/hevc-simd.wasm decode/h264-simd.wasm decode/aac-simd.wasm decode/ac3-simd.wasm decode/eac3-simd.wasm decode/dca-simd.wasm resample/resample-simd.wasm stretchpitch/stretchpitch-simd.wasm"
+WASM_FILES="decode/hevc-simd.wasm decode/h264-simd.wasm decode/aac-simd.wasm decode/ac3-simd.wasm decode/eac3-simd.wasm decode/dca-simd.wasm decode/opus-simd.wasm decode/flac-simd.wasm decode/mp3-simd.wasm decode/av1-simd.wasm decode/vp9-simd.wasm resample/resample-simd.wasm stretchpitch/stretchpitch-simd.wasm"
 for rel in $WASM_FILES; do
   f=$WASM_ROOT/$rel
   [ -s "$f" ] || { fail "$rel: missing or empty"; continue; }
@@ -83,10 +109,15 @@ EXPECTED_FILES='COPYING.LGPLv3
 THIRD-PARTY-LICENSES.txt
 decode/aac-simd.wasm
 decode/ac3-simd.wasm
+decode/av1-simd.wasm
 decode/dca-simd.wasm
 decode/eac3-simd.wasm
+decode/flac-simd.wasm
 decode/h264-simd.wasm
 decode/hevc-simd.wasm
+decode/mp3-simd.wasm
+decode/opus-simd.wasm
+decode/vp9-simd.wasm
 resample/resample-simd.wasm
 stretchpitch/stretchpitch-simd.wasm'
 actual=$(cd "$WASM_ROOT" 2>/dev/null && find . -type f | sed 's|^\./||' | sort)

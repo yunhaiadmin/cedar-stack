@@ -73,19 +73,20 @@ configure 结果（`config.h`＋`ffbuild/config.mak`）由 build-all 归档到
 
 ## 审计（tools/softdecode/audit.sh，三件套全绿才许交付）
 
-1. **configure 摘要断言**：7 个归档构建逐一断言 `CONFIG_GPL 0`、
+1. **configure 摘要断言**：12 个归档构建逐一断言 `CONFIG_GPL 0`、
    `CONFIG_NONFREE 0`、`CONFIG_GPLV3 0`、
    `FFMPEG_LICENSE "LGPL version 3 or later"`，且记录的
-   `FFMPEG_CONFIGURATION` 不含 `--enable-gpl`、不含任何
-   `--enable-lib*`（本子集零外部库）。GPL 与否由构建配置决定，
-   这是主证据。
+   `FFMPEG_CONFIGURATION` 不含 `--enable-gpl`；其中 10 个零外部库
+   构建不含任何 `--enable-lib*`，av1/vp9 两份各只精确放行自己的
+   `--enable-libdav1d` / `--enable-libvpx`（BSD 库，见增量一节），
+   多一个即失败。GPL 与否由构建配置决定，这是主证据。
 2. **strings 审计**（辅助证据）：产物不得含 libx264/libx265/libxvid/
    libpostproc/libfdk-aac/libmp3lame/libopencore、`--enable-gpl`、
    `GNU GENERAL PUBLIC LICENSE` 字样。注意裸串 `libfaac` 是 FFmpeg
    原生 AAC 解码器解析编码器版本元数据的格式串（aacdec.c），
    不是组件，未列入。
-3. **文件白名单**：`public/wasm/` 下只许白名单 10 个文件
-   （6 解码器＋resample＋stretchpitch＋两份许可文本），
+3. **文件白名单**：`public/wasm/` 下只许白名单 15 个文件
+   （11 解码器＋resample＋stretchpitch＋两份许可文本），
    多一个（尤其 `encode/` 类）即失败。
 
 ## 自托管口径（批 2 落地时执行）
@@ -97,6 +98,55 @@ configure 结果（`config.h`＋`ffbuild/config.mak`）由 build-all 归档到
   `Cache-Control: public, max-age=31536000, immutable`
   （一期原型已实证：配此头后二次播放零下载）。批 1 只保证仓库内
   静态资源就位与本地静态服务可取，响应头配置随批 2 的服务配置落地。
+
+## 增量一（2026-11-26 构建、2026-11-27 收尾）：补 AV1/VP9/Opus/FLAC/MP3
+
+基线不变（libmedia v1.3.1、FFmpeg release/7.1、emsdk 3.1.74、只出
+simd 变体）。新增五件解码器：opus/flac/mp3 是 FFmpeg 原生解码器
+（零外部库，与批 1 同法逐 codec 构建）；av1/vp9 各链一个 BSD 外部
+库——dav1d 1.5.1（BSD-2-Clause）与 libvpx v1.15.2（BSD-3-Clause），
+源码克隆与 libmedia/FFmpeg 同级放在构建区，先编两库、产物
+`lib/dav1d`、`lib/libvpx` 软链到各自的 `-simd` 变体（与
+`lib/ffmpeg` 同法），再逐 codec 走
+`build-ffmpeg-decoder.sh <codec> 1 0 0` → 归档摘要 →
+`build-decoder.sh <codec> 1 0 0` → `wasm-opt --bss`。
+
+### 本批适配留痕
+
+1. `upstream-build/build-dav1d-lib.sh`（新增，源自上游同名脚本）：
+   删 `-Denable_wasm_atomic` / `-Denable_wasm_simd`——stock
+   dav1d 1.5.1 的 `meson_options.txt` 没有这两个选项（上游作者的
+   私有改版 dav1d 才有），其余逐字一致。
+2. `upstream-build/build-libvpx-lib.sh`（新增，源自上游同名脚本）：
+   configure 改 `--target=generic-gnu`、删上游的
+   `--cpu=i686-gnu`（wasm 目标无 i686 概念），其余逐字一致。
+3. 构建区布局适配（不改脚本）：`dav1d.pc` 须软链进 emsdk
+   sysroot 的 `lib/pkgconfig/`。emconfigure 会把
+   `PKG_CONFIG_PATH` 清空、把 `PKG_CONFIG_LIBDIR` 钉死在 sysroot
+   两处目录，外部导出的 `PKG_CONFIG_PATH` 对 FFmpeg configure
+   不可见；FFmpeg 对 libdav1d 只有 pkg-config 一条探测路
+   （libvpx 另有直链回退，故 vp9 不受此影响）。
+
+### 事故留痕：av1 首轮冒名产物
+
+首轮构建里 av1 的 configure 因上述 pkg-config 可见性问题失败
+（`ERROR: dav1d >= 0.5.0 not found using pkg-config`），而
+`build-ffmpeg-decoder.sh` 不因 configure 失败而失败——流水线沿用
+上一轮（mp3）的配置，又产出一份 mp3 解码器冒名
+`av1-simd.wasm`（与 mp3 成品 md5 相同、归档摘要也是 mp3 的），
+驱动仍报 BUILD_ALL_DONE。交付前逐件 md5＋strings 核对抓出：
+补上 `.pc` 软链后单独重编 av1（862,038 B，含 dav1d 符号，
+摘要为 `--enable-decoder=libdav1d`＋`--enable-libdav1d`）。
+教训钉死：构建脚本报 DONE 不算数，摘要与产物必须逐件验明身份。
+
+### 前端放行（同批）
+
+`user_frontend/src/utils/softDecode.ts`：`SOFT_VIDEO_CODECS` 加
+av1/vp9、`SOFT_AUDIO_CODECS` 加 opus/flac/mp3、`CODEC_WASM_FILE`
+加 167=vp9、225=av1、86017=mp3、86028=flac、86076=opus（ID 以
+libmedia 的 AVCodecID 枚举为准，与 FFmpeg 7.1 `codec_id.h`
+一致）。4K 护栏与 MSE 分流未动；TrueHD 两边都无软解件，仍不在
+集内。
 
 ## 复测结果（2026-11-14，自编产物替换一期原型解码器，同脚本同口径）
 

@@ -102,31 +102,63 @@ check(
   false,
 )
 
-// --- 子集外编码 → 不走软解（AV1/Opus 不在 wasm 集里） ---
+// --- 增量一编码（AV1/VP9/Opus/FLAC/MP3）已进 wasm 集 → 走软解 ---
 check(
-  'av1 video => no soft',
+  'av1 video => soft',
   shouldSoftDecode(unsupported(true, false), src('av1', 'aac'), true),
-  false,
+  true,
 )
 check(
-  'opus audio => no soft',
+  'vp9 video => soft',
+  shouldSoftDecode(unsupported(true, false), src('vp9', 'opus'), true),
+  true,
+)
+check(
+  'opus audio => soft',
   shouldSoftDecode(unsupported(false, true), src('h264', 'opus'), true),
-  false,
+  true,
 )
 check(
-  'subset reason av1',
-  softDecodeCodecSubset(src('av1', 'aac')).reason,
-  'video-codec-out-of-subset',
+  'subset ok av1+opus',
+  softDecodeCodecSubset(src('av1', 'opus')).supported,
+  true,
 )
 check(
-  'subset reason opus',
-  softDecodeCodecSubset(src('h264', 'opus')).reason,
-  'audio-codec-out-of-subset',
+  'subset ok vp9+flac',
+  softDecodeCodecSubset(src('vp9', 'flac')).supported,
+  true,
+)
+check(
+  'subset ok hevc+mp3',
+  softDecodeCodecSubset(src('hevc', 'mp3')).supported,
+  true,
 )
 check(
   'subset ok hevc+eac3',
   softDecodeCodecSubset(src('hevc', 'eac3')).supported,
   true,
+)
+
+// --- 子集外编码 → 不走软解（VP8/TrueHD 仍不在 wasm 集里） ---
+check(
+  'vp8 video => no soft',
+  shouldSoftDecode(unsupported(true, false), src('vp8', 'aac'), true),
+  false,
+)
+check(
+  'truehd audio => no soft',
+  shouldSoftDecode(unsupported(false, true), src('h264', 'truehd'), true),
+  false,
+)
+check(
+  'subset reason vp8',
+  softDecodeCodecSubset(src('vp8', 'aac')).reason,
+  'video-codec-out-of-subset',
+)
+check(
+  'subset reason truehd',
+  softDecodeCodecSubset(src('h264', 'truehd')).reason,
+  'audio-codec-out-of-subset',
 )
 
 // --- wasm 取件映射：只认 simd 变体，不在表里的编解码返回 undefined ---
@@ -136,8 +168,13 @@ check('wasm aac', wasmPathForDecoder(86018), '/wasm/decode/aac-simd.wasm')
 check('wasm ac3', wasmPathForDecoder(86019), '/wasm/decode/ac3-simd.wasm')
 check('wasm dts', wasmPathForDecoder(86020), '/wasm/decode/dca-simd.wasm')
 check('wasm eac3', wasmPathForDecoder(86056), '/wasm/decode/eac3-simd.wasm')
-check('wasm av1 undefined', wasmPathForDecoder(226), undefined)
-check('wasm opus undefined', wasmPathForDecoder(86055 - 1), undefined)
+check('wasm vp9', wasmPathForDecoder(167), '/wasm/decode/vp9-simd.wasm')
+check('wasm av1', wasmPathForDecoder(225), '/wasm/decode/av1-simd.wasm')
+check('wasm mp3', wasmPathForDecoder(86017), '/wasm/decode/mp3-simd.wasm')
+check('wasm flac', wasmPathForDecoder(86028), '/wasm/decode/flac-simd.wasm')
+check('wasm opus', wasmPathForDecoder(86076), '/wasm/decode/opus-simd.wasm')
+check('wasm unknown video id undefined', wasmPathForDecoder(226), undefined)
+check('wasm unknown audio id undefined', wasmPathForDecoder(86055 - 1), undefined)
 
 // --- 开关读取：公开端点只读布尔值；取不到按关处理；同页只读一次 ---
 const realFetch = globalThis.fetch
