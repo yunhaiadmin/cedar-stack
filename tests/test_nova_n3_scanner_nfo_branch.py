@@ -71,6 +71,11 @@ def _cleanup(db, lib):
         db.query(em.MediaStream).filter(
             em.MediaStream.item_id.in_(item_ids)).delete(
                 synchronize_session=False)
+        # 删条目前先删其人物行：只删条目会留下孤儿 EmbyPerson 行，
+        # SQLite 复用该 id 后污染别的测试文件（2026-11-28 全量实证）。
+        db.query(em.EmbyPerson).filter(
+            em.EmbyPerson.item_id.in_(item_ids)).delete(
+                synchronize_session=False)
     db.query(em.MediaItem).filter(
         em.MediaItem.library_id == lib.id).delete(synchronize_session=False)
     db.query(em.Library).filter(em.Library.id == lib.id).delete()

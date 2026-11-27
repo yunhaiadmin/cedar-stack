@@ -89,6 +89,11 @@ def _make_item(s, made, **kw):
     s.add(it)
     s.commit()
     made.append(it.id)
+    # 与 nfo_cast 同款：SQLite id 复用会继承别的测试文件留下的孤儿
+    # EmbyPerson 行，新建后先清掉该 id 名下全部人物行（见该文件注释）。
+    s.query(em.EmbyPerson).filter(
+        em.EmbyPerson.item_id == it.id).delete(synchronize_session=False)
+    s.commit()
     return it
 
 

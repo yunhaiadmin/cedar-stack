@@ -98,6 +98,13 @@ def _make_item(s, made, item_type="movie", name="测试条目"):
     s.add(it)
     s.commit()
     made.append(it.id)
+    # SQLite 的 MediaItem id 会复用被删的最大 id：共享 worker 库里别的
+    # 测试文件删条目时没删其 EmbyPerson 行，孤儿行会挂到新复用的 id 下，
+    # 本用例的 _people 断言随即被污染（2026-11-28 全量实证）。新建后先
+    # 清掉该 id 名下全部人物行——新条目名下只可能是孤儿。
+    s.query(em.EmbyPerson).filter(
+        em.EmbyPerson.item_id == it.id).delete(synchronize_session=False)
+    s.commit()
     return it
 
 

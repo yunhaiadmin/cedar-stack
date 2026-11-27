@@ -19,6 +19,7 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 from backend import database as _database  # noqa: E402
 from backend import models as _core_models  # noqa: E402,F401 — 注册共享 Base 全部表
 from backend.emby_server import facets as _facets  # noqa: E402
+from backend.emby_server import foreground_activity as _fa  # noqa: E402
 from backend.emby_server import image_store as _image_store  # noqa: E402
 from backend.emby_server import maintenance as maint  # noqa: E402
 from backend.emby_server import models as em  # noqa: E402
@@ -38,6 +39,13 @@ def mem_db(monkeypatch, tmp_path):
     Session = sessionmaker(bind=engine)
     # janitor_tick 在函数内 from backend.database import SessionLocal
     monkeypatch.setattr(_database, "SessionLocal", Session)
+    # 前台打点是模块全局：别的测试文件里 API 测试经中间件 note() 后，
+    # 60 秒内跑到本文件的 test_full_mode_runs_heavy 时 janitor 会判定
+    # 前台活跃、跳过 thumbs_backfill → 断言失败（2026-11-28 全量实证，
+    # 单跑本文件恒绿）。每用例开始前复位进程内打点、掐断 Redis 源，
+    # 本文件内的 janitor 行为只由本用例自己的状态决定。
+    _fa.reset_for_tests()
+    monkeypatch.setattr(_fa, "_redis", lambda: None)
     try:
         yield Session
     finally:

@@ -38,6 +38,7 @@ os.environ.setdefault("DATABASE_TYPE", "sqlite")
 os.environ.setdefault("REDIS_ENABLED", "false")
 
 import asyncio
+import heapq
 import time
 from types import SimpleNamespace
 
@@ -88,6 +89,87 @@ def _make_fetcher(body, latency=0.0, calls=None, tracker=None,
             if tracker is not None:
                 tracker["inflight"] -= 1
     return fetcher
+
+
+class _VirtualClock:
+    """离散事件虚拟时钟：取数延迟按虚拟时间到期，与墙钟和 worker
+    负载完全无关。模拟里的「旧参数 miss 成串 / 新参数不 miss」
+    是虚拟时间线上的算术结论（推进速率 vs 消费速率），不再依赖
+    两条睡出来的真实时间线在繁忙 worker 上相对漂不漂移。"""
+
+    def __init__(self):
+        self.now = 0.0
+        self._heap = []  # (deadline, seq, fut)
+        self._seq = 0
+
+    async def sleep(self, delay):
+        if delay <= 0:
+            return
+        fut = asyncio.get_running_loop().create_future()
+        self._seq += 1
+        heapq.heappush(self._heap, (self.now + delay, self._seq, fut))
+        await fut
+
+    async def advance(self, dt):
+        target = self.now + dt
+        while self._heap and self._heap[0][0] <= target:
+            deadline, _, fut = heapq.heappop(self._heap)
+            self.now = deadline
+            if not fut.done():
+                fut.set_result(None)
+            await asyncio.sleep(0)
+        self.now = target
+        # 让刚被唤醒的任务把后续工作（submit_segment 等）跑完
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    async def quiesce(self):
+        while self._heap and self._heap[0][0] <= self.now:
+            _, _, fut = heapq.heappop(self._heap)
+            if not fut.done():
+                fut.set_result(None)
+            await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+
+class _VirtualClockFetcher:
+    """与 _make_fetcher 同契约的虚拟时钟假源：取数延迟按虚拟时钟
+    到期（clock.sleep），调用记录 / 在途计数 / 失败区间口径不变。"""
+
+    def __init__(self, body, clock, latency=0.0, calls=None,
+                 tracker=None, fail_ranges=()):
+        self.body = body
+        self.clock = clock
+        self.latency = latency
+        self.calls = calls
+        self.tracker = tracker
+        self.fail_ranges = fail_ranges
+
+    async def __call__(self, s, e):
+        if self.calls is not None:
+            self.calls.append((s, e))
+        if self.tracker is not None:
+            self.tracker["inflight"] += 1
+            self.tracker["max"] = max(
+                self.tracker["max"], self.tracker["inflight"])
+        try:
+            if self.latency:
+                await self.clock.sleep(self.latency)
+            if (s, e) in self.fail_ranges:
+                return None
+            return self.body[s:e + 1]
+        finally:
+            if self.tracker is not None:
+                self.tracker["inflight"] -= 1
+
+
+async def _fetch_with_time(clock, fetcher, s, e):
+    """直取一块：边等边推进虚拟时钟（期间预读同样按虚拟时钟到
+    期），否则模拟循环停在 await fetcher 上、时钟无人推进会死锁。"""
+    task = asyncio.create_task(fetcher(s, e))
+    while not task.done():
+        await clock.advance(0.01)
+    return task.result()
 
 
 # ---------------- 缺省参数 ----------------
@@ -145,23 +227,16 @@ def test_prefetch_pipeline_keeps_blocks_in_flight(cache_env,
 
 # ---------------- 假源模拟：旧参数 miss 成串 / 新参数不 miss ----------------
 
-async def _wait_present(ident, meta, idx, timeout=2.0):
-    t0 = time.monotonic()
-    while time.monotonic() - t0 < timeout:
-        if hc.segment_present(ident, meta, idx):
-            return True
-        await asyncio.sleep(0.01)
-    return hc.segment_present(ident, meta, idx)
-
-
-async def _simulate_player(ident, body, fetcher):
+async def _simulate_player(ident, body, fetcher, clock):
     """Rex 式逐段消费模拟：每轮在读位置调度一次预读（与 serve
     路径同口径）；读位置所在段不在盘 → 记一次 miss 并按需直取
     一块落盘（模拟中继透传+写穿）；然后消费前进 4 段。
 
-    节奏（等比缩放）：单块取数延迟 0.15s、每轮 0.03s 消费 4MB
-    ——消费 ≈133MB/s、旧参数串行推进 = 8MB/0.15s ≈ 53MB/s，
-    与生产的「消费 1.9MB/s、推进 ≈4MB/s、ttfb 2s」同形。"""
+    节奏（等比缩放，虚拟时间）：单块取数延迟 0.15s、每轮推进
+    虚拟时钟 0.03s 消费 4MB——消费 ≈133MB/s、旧参数串行推进 =
+    8MB/0.15s ≈ 53MB/s，与生产的「消费 1.9MB/s、推进 ≈4MB/s、
+    ttfb 2s」同形。miss 计数是虚拟时间线上的确定性算术，与
+    真实调度抖动无关。"""
     total = len(body)
     assert hc.note_validators(ident, total, etag='"sim"')
     meta = hc.get_meta(ident)
@@ -176,7 +251,7 @@ async def _simulate_player(ident, body, fetcher):
             block = hc.prefetch_fetch_bytes()
             bstart = idx * SEG
             bend = min(bstart + block - 1, total - 1)
-            data = await fetcher(bstart, bend)
+            data = await _fetch_with_time(clock, fetcher, bstart, bend)
             assert data and len(data) == bend - bstart + 1
             off = bstart
             while off <= bend:
@@ -186,9 +261,11 @@ async def _simulate_player(ident, body, fetcher):
                     ident, i2,
                     data[off - bstart: off - bstart + exp], total)
                 off += exp
-            await _wait_present(ident, meta, idx)
-        await asyncio.sleep(0.03)
+            hc.flush_writes()
+            assert hc.segment_present(ident, meta, idx)
+        await clock.advance(0.03)
         pos += 4 * SEG
+    await clock.quiesce()
     return misses
 
 
@@ -203,17 +280,46 @@ def test_simulation_old_params_miss_new_params_dont(cache_env,
     monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_FETCH_BYTES",
                        str(8 * SEG))
     monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_CONCURRENCY", "1")
+    clock = _VirtualClock()
     old_misses = asyncio.run(_simulate_player(
-        "mount:SIMOLD", body, _make_fetcher(body, latency=0.15)))
+        "mount:SIMOLD", body,
+        _VirtualClockFetcher(body, clock, latency=0.15), clock))
     assert old_misses >= 3, old_misses
 
     monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_BYTES", str(128 * SEG))
     monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_FETCH_BYTES",
                        str(32 * SEG))
     monkeypatch.setenv("RELAY_HOT_CACHE_PREFETCH_CONCURRENCY", "4")
+    clock = _VirtualClock()
     new_misses = asyncio.run(_simulate_player(
-        "mount:SIMNEW", body, _make_fetcher(body, latency=0.15)))
+        "mount:SIMNEW", body,
+        _VirtualClockFetcher(body, clock, latency=0.15), clock))
     assert new_misses <= 1, new_misses
+
+
+async def _wait_running(ident, timeout=5.0):
+    """等预读窗登记进 _HOT_PREFETCH_RUNNING：任务创建后何时开始跑由
+    调度定，固定 sleep(0.03) 在繁忙 worker 上不够用、且数值本身就是
+    墙钟假设。条件等待、非固定时长；超期即测试失败。"""
+    t0 = time.monotonic()
+    while ident not in streaming._HOT_PREFETCH_RUNNING:
+        if time.monotonic() - t0 > timeout:
+            raise AssertionError(f"预读窗未在 {timeout}s 内登记：{ident}")
+        await asyncio.sleep(0.005)
+
+
+async def _wait_no_prefetch_tasks(timeout=5.0):
+    """等 _HOT_PREFETCH_TASKS 里后台预读任务全部跑完（预热的让路
+    判定已做完），再断言在途窗状态。"""
+    t0 = time.monotonic()
+    while True:
+        tasks = [t for t in streaming._HOT_PREFETCH_TASKS
+                 if not t.done()]
+        if not tasks:
+            return
+        if time.monotonic() - t0 > timeout:
+            raise AssertionError("后台预读任务未在 5s 内跑完")
+        await asyncio.sleep(0.005)
 
 
 # ---------------- 重锚不乱杀在途窗 ----------------
@@ -236,7 +342,7 @@ def test_reanchor_inside_running_window_keeps_it(cache_env,
     async def scenario():
         t1 = asyncio.create_task(streaming._hot_prefetch_run(
             ident, "bytes=0-", fetcher))
-        await asyncio.sleep(0.03)  # 窗已在途
+        await _wait_running(ident)  # 窗已登记在途
         # 锚点前移到窗内第 4 段：不许取消 t1、不许另起重复窗
         await streaming._hot_prefetch_run(
             ident, f"bytes={4 * SEG}-", fetcher)
@@ -268,7 +374,7 @@ def test_seek_beyond_window_cancels_and_takes_over(cache_env,
     async def scenario():
         t1 = asyncio.create_task(streaming._hot_prefetch_run(
             ident, "bytes=0-", fetcher))
-        await asyncio.sleep(0.03)
+        await _wait_running(ident)  # 窗已登记在途
         await streaming._hot_prefetch_run(
             ident, f"bytes={40 * SEG}-", fetcher)
         assert t1.cancelled() or t1.done()
@@ -381,9 +487,9 @@ def test_warmup_does_not_take_over_running_window(cache_env,
     async def scenario():
         t1 = asyncio.create_task(streaming._hot_prefetch_run(
             ident, f"bytes={8 * SEG}-", fetcher))
-        await asyncio.sleep(0.03)  # 锚点 8 的窗在途
+        await _wait_running(ident)  # 锚点 8 的窗已登记在途
         streaming.schedule_warmup_prefetch(ident, fetcher)
-        await asyncio.sleep(0.05)
+        await _wait_no_prefetch_tasks()  # 预热任务已跑完（让路判定已做）
         assert not t1.cancelled() and not t1.done()
         await t1
 
