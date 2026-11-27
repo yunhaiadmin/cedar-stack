@@ -202,12 +202,28 @@ class TestProbeMetadataLoginGuard:
     """B：probe_metadata 命中登录页时短路，不喂 ffprobe。"""
 
     def test_login_page_short_circuits(self):
+        # C-11 起大文件走融合预检：头尾 Range 响应命中 text/html 时
+        # _http_fetch_range 抛 _LoginPageResponse，probe_metadata 翻译
+        # 成同一份 login_page 结果短路（判定与旧独立预检逐字一致）。
+        with mock.patch.object(scanner, "_http_fetch_range",
+                               side_effect=scanner._LoginPageResponse("x")), \
+             mock.patch.object(scanner, "_ffprobe") as ff:
+            out = scanner.probe_metadata("https://x/a.mkv",
+                                         {"Authorization": "Bearer t"},
+                                         size=10**9, container="mkv")
+        assert out["_error"] == "login_page"
+        assert out["_http_code"] == 200
+        assert "登录页" in out["_error_detail"]
+        ff.assert_not_called()
+
+    def test_login_page_short_circuits_small_file_preflight(self):
+        # 头尾不适用的小文件保留独立预检：预检命中同样短路。
         with mock.patch.object(scanner, "_remote_returns_login_page",
                                return_value=True), \
              mock.patch.object(scanner, "_ffprobe") as ff:
             out = scanner.probe_metadata("https://x/a.mkv",
                                          {"Authorization": "Bearer t"},
-                                         size=10**9, container="mkv")
+                                         size=100, container="mkv")
         assert out["_error"] == "login_page"
         assert out["_http_code"] == 200
         assert "登录页" in out["_error_detail"]
