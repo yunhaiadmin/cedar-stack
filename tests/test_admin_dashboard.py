@@ -5,6 +5,9 @@
   数据明细 6 表（2026-11-13 起；此前 7 表，points_flow 已随货币下线），builder 在 admin_dashboard 本模块）。
 - 口径断言：每个 part 与直接调用原 handler 的结果逐字段相等
   （失败时同样为 None——与前端原 soft() 兜底一致）。
+  例外：ops 的 disk.free_bytes/free_percent 是实时磁盘仪表读数，两次
+  调用必然不同，只比形状（见 _strip_disk_volatiles）；backend_services
+  的 timestamp 字段同理走 _strip_ts。
 - 降级：单个采集抛异常时，该 part 为 None，其余不受影响。
 - 缓存：20s TTL 内二次调用命中缓存。
 
@@ -129,6 +132,44 @@ def _strip_ts(obj):
     return obj
 
 
+def _strip_disk_volatiles(part):
+    """去掉 ops.disk 里随落盘实时变化的两个仪表读数，再做等值比对。
+
+    disk.free_bytes / free_percent 是 maintenance.resource_report() 对
+    shutil.disk_usage("/") 的实时读数：全量串行跑时，收集期就会 import
+    test_observability.py（模块顶层把 OBSERVABILITY_ENABLED 写成 "1"，
+    见 test_zz_env_import_hygiene.py 的存量登记），于是整个进程里
+    observability 都是开的；两次快照之间任何落盘（临时库、.pyc、其它
+    用例的文件）都会让 free_bytes 变掉——2026-11-28 实测：两次
+    get_ops_snapshot 之间只写 8MB，free_bytes 就正好少 8,388,608。
+    生产上它本来就是实时仪表，两次读数不同不是 bug；业务信号是
+    disk.warn（是否低于阈值），仍在等值比对里。与 _strip_ts 同一口径：
+    每次调用必然不同、无业务语义的字段不参与等值比对，只比形状。
+    """
+    if not isinstance(part, dict):
+        return part
+    out = dict(part)
+    disk = out.get("disk")
+    if isinstance(disk, dict):
+        out["disk"] = {k: v for k, v in disk.items()
+                       if k not in ("free_bytes", "free_percent")}
+    return out
+
+
+def _assert_disk_shape(part):
+    """ops.disk 形状断言：两个实时读数仍在、类型与范围正确。"""
+    if not isinstance(part, dict):
+        return
+    assert "disk" in part
+    disk = part.get("disk")
+    if disk is None:
+        return  # observability 关时 health/disk 双双为 None，前端走占位
+    assert isinstance(disk.get("free_bytes"), int) and disk["free_bytes"] >= 0
+    pct = disk.get("free_percent")
+    assert isinstance(pct, (int, float)) and 0 <= pct <= 100
+    assert isinstance(disk.get("warn"), bool)
+
+
 def test_collect_matches_direct_handlers(admin):
     """聚合 part 与原 handler 结果逐字段相等（字段一字不变）。"""
     # 先清缓存，避免其它用例的残留
@@ -143,6 +184,13 @@ def test_collect_matches_direct_handlers(admin):
         if key == "backend_services":
             assert _strip_ts(got[key]) == _strip_ts(want[key]), \
                 f"part {key} 与原接口响应不一致"
+        elif key == "ops":
+            # disk 读数是实时仪表（见 _strip_disk_volatiles），两次调用
+            # 必然不同；其余字段仍逐字段相等，disk 本身另做形状断言。
+            assert _strip_disk_volatiles(got[key]) == _strip_disk_volatiles(want[key]), \
+                f"part {key} 与原接口响应不一致"
+            _assert_disk_shape(got[key])
+            _assert_disk_shape(want[key])
         else:
             assert got[key] == want[key], f"part {key} 与原接口响应不一致"
 
