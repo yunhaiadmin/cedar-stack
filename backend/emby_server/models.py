@@ -159,6 +159,22 @@ class MediaItem(Base):
         Index("idx_item_probe", "probe_status", "probe_priority", "id"),
         # 退避到期判定 / 按状态统计「重试中」（v2.53）
         Index("idx_item_probe_retry", "probe_status", "probe_next_retry_at"),
+        # 探测抢单覆盖索引（C-04，2026-11-28 优化扫荡）：_claim_rows 的
+        # 过滤列（file_path / item_type / video_codec / duration_ticks /
+        # last_probed_at / probe_next_retry_at / library_id）全不在
+        # idx_item_probe 里，pending 约 4.4 万行每轮抢单逐行回表过滤
+        # （pg_stat_statements 6.3 天约 22.5 万次 × 19~47ms ≈ 5,935 秒）。
+        # 部分索引只含可抢形状的活行（pending + 未软删 + 未合并），
+        # INCLUDE 补齐过滤列后抢单全程 index-only、按 (priority, id)
+        # 索引序取满 LIMIT 即停。老库由 database.py _LEGACY_INDEXES
+        # 同名补建。回滚：DROP INDEX idx_item_probe_claim。
+        Index("idx_item_probe_claim", "probe_status", "probe_priority", "id",
+              postgresql_include=["file_path", "item_type", "video_codec",
+                                  "duration_ticks", "last_probed_at",
+                                  "probe_next_retry_at", "library_id"],
+              postgresql_where=text(
+                  "probe_status = 'pending' AND deleted_at IS NULL "
+                  "AND merged_into_id IS NULL")),
         # 补全队列抢单：WHERE enrich_status='pending' AND enrich_next_retry_at<=now
         # ORDER BY enrich_priority DESC。之前 enrich_status 只有单列索引，而抢单还
         # 带一个 to-time 条件与优先级排序，PG 得自己过滤 + 排序，积压一多就是全表级

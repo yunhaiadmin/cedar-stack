@@ -45,6 +45,11 @@ _ITEM_INDEXES = {
     "idx_item_enrich_open_parent": ["id"],
     # BE-24（2026-11-17）：身份门物化列计数/列表索引（spec 表末尾追加）
     "idx_item_identity_gate": ["item_type", "has_identity", "library_id"],
+    # C-04（2026-11-28）：探测抢单覆盖索引；SQLite 下 INCLUDE 列并进键列
+    "idx_item_probe_claim": ["probe_status", "probe_priority", "id",
+                             "file_path", "item_type", "video_codec",
+                             "duration_ticks", "last_probed_at",
+                             "probe_next_retry_at", "library_id"],
 }
 
 
@@ -60,6 +65,9 @@ def _engine(tmp_path):
             "parent_id INTEGER, repair_requested_at TEXT, "
             "metadata_locked BOOLEAN, tmdb_id TEXT, imdb_id TEXT, "
             "external_ids TEXT, "
+            # C-04：探测抢单覆盖索引的 INCLUDE 依赖列（SQLite 下并进键列）
+            "file_path TEXT, video_codec TEXT, duration_ticks INTEGER, "
+            "last_probed_at TEXT, "
             # BE-24：_auto_migrate 先行补出的身份物化列（索引依赖列）
             "identity_bound BOOLEAN, has_identity BOOLEAN, "
             "sort_name TEXT, is_hidden BOOLEAN, content_hash TEXT)"
@@ -115,6 +123,9 @@ def test_spec_table_covers_all_seven_in_restored_order():
         # 2026-11-23：一人一批一码按批查码（registration_codes.batch_id，
         # models.py 同名声明，spec 表末尾追加）
         "idx_reg_code_batch",
+        # C-04（2026-11-28）：探测抢单覆盖索引（emby_items，models.py
+        # 同名声明，spec 表末尾追加）
+        "idx_item_probe_claim",
     ]
 
 
@@ -245,7 +256,7 @@ def test_creates_missing_indexes_and_is_idempotent(tmp_path, monkeypatch, caplog
     # person_tmdb_id 列不存在 → 静默跳过
     assert _indexes(eng, "emby_people") == {}
     first = _migration_log_text()
-    assert first.count("已迁移") == 14
+    assert first.count("已迁移") == 15
 
     # 第二次：全部已存在，不再建、不再打日志
     caplog.clear()
