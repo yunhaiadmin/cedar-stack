@@ -800,7 +800,7 @@ def get_stats_trend(
     current_admin: models.WebUser = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """趋势统计（默认近 14 天）：新增用户 / 播放次数 / 新增入库 / 营收
+    """趋势统计（默认近 14 天）：新增用户 / 播放次数 / 新增入库 / 营收 / 新增订阅
 
     单次聚合查询后按日补零，保证折线图连续。另附 ``hourly``：最近 24 个
     上海整点桶的播放/新增入库序列（与按日同源同定义，只换分桶粒度）。
@@ -868,10 +868,19 @@ def get_stats_trend(
         models.SubscriptionOrder.status == "paid", models.SubscriptionOrder.paid_at >= start
     ).group_by(models.SubscriptionOrder.paid_at).all()
 
+    # 新增订阅（2026-11-27 仪表盘四块补口径）：按 UserSubscription.created_at
+    # 计数，与 new_users 同手法（原始时间戳分组 → _series +8h 上海日聚合）。
+    newsub_rows = db.query(
+        models.UserSubscription.created_at, func.count(models.UserSubscription.id)
+    ).filter(models.UserSubscription.created_at >= start).group_by(
+        models.UserSubscription.created_at
+    ).all()
+
     users_map = _series(user_rows)
     plays_map = _series(play_rows)
     items_map = _series(item_rows)
     sub_map = _series(sub_rows)
+    newsubs_map = _series(newsub_rows)
 
     series = []
     for i in range(days):
@@ -883,6 +892,7 @@ def get_stats_trend(
             "plays": int(plays_map.get(key, 0)),
             "new_items": int(items_map.get(key, 0)),
             "revenue": round(float(sub_map.get(key, 0)), 2),
+            "new_subscriptions": int(newsubs_map.get(key, 0)),
         })
 
     # 24 小时序列（2026-11-03 仪表盘补口径）：与按日同源同定义，只换
@@ -942,6 +952,7 @@ def get_stats_trend(
             "plays": sum(p["plays"] for p in series),
             "new_items": sum(p["new_items"] for p in series),
             "revenue": round(sum(p["revenue"] for p in series), 2),
+            "new_subscriptions": sum(p["new_subscriptions"] for p in series),
         },
         "hourly": {
             "hours": 24,

@@ -1117,7 +1117,26 @@ export interface DashboardAggregate {
     backend_services: { success: boolean; services: BackendServiceStatus[] } | null
     trend: TrendStats | null
     detail: DashboardDetailTables | null
+    ops: DashboardOps | null
   }
+}
+
+/** 仪表盘 ops part（2026-11-27 四块补缺口）：老 part 没有的订阅/运维数据。
+ * 每个子项独立降级，后端拿不到时该子项为 null，前端走占位。 */
+export interface DashboardOps {
+  subscriptions: { active: number; expiring_7d: number } | null
+  health: { status: string; reasons: string[] } | null
+  disk: { free_bytes: number | null; free_percent: number | null; warn: boolean } | null
+  probe: DashboardQueueStat | null
+  enrich: DashboardQueueStat | null
+  top_requests: { title: string; count: number }[] | null
+}
+
+export interface DashboardQueueStat {
+  pending_ready: number
+  rate_per_min: number | null
+  eta_hours: number | null
+  paused: boolean
 }
 export const fetchDashboardAggregate = (days = 14) =>
   get<DashboardAggregate>('/dashboard/overview', { days })

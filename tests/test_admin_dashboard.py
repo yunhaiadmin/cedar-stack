@@ -1,7 +1,7 @@
 """GET /api/admin/dashboard/overview 仪表盘聚合接口。
 
-- 9 个首屏 part 一次返回：overview / playback / economy / libraries /
-  servers / realms / backend_services / trend / detail（2026-10-23 新增，
+- 10 个首屏 part 一次返回：overview / playback / economy / libraries /
+  servers / realms / backend_services / trend / detail / ops（detail 2026-10-23 新增、ops 2026-11-27 新增，
   数据明细 6 表（2026-11-13 起；此前 7 表，points_flow 已随货币下线），builder 在 admin_dashboard 本模块）。
 - 口径断言：每个 part 与直接调用原 handler 的结果逐字段相等
   （失败时同样为 None——与前端原 soft() 兜底一致）。
@@ -105,6 +105,7 @@ def _direct_parts(admin, days=14):
         "get_services_status": lambda: get_services_status(admin, db),
         "get_stats_trend": lambda: get_stats_trend(days, admin, db),
         "get_detail_tables": lambda: admin_dashboard.get_detail_tables(admin, db),
+        "get_ops_snapshot": lambda: admin_dashboard.get_ops_snapshot(admin, db),
     }
     try:
         out = {}
@@ -136,7 +137,7 @@ def test_collect_matches_direct_handlers(admin):
     want = _direct_parts(admin, 14)
     assert set(got.keys()) == {
         "overview", "playback", "economy", "libraries",
-        "servers", "realms", "backend_services", "trend", "detail",
+        "servers", "realms", "backend_services", "trend", "detail", "ops",
     }
     for key in want:
         if key == "backend_services":
@@ -182,7 +183,7 @@ def test_endpoint_shape(admin):
     assert "fetched_at" in resp
     assert set(resp["parts"].keys()) == {
         "overview", "playback", "economy", "libraries",
-        "servers", "realms", "backend_services", "trend", "detail",
+        "servers", "realms", "backend_services", "trend", "detail", "ops",
     }
     # days 越界被钳制，不抛错
     admin_dashboard._dash_cache.clear()

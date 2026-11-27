@@ -24,7 +24,7 @@ import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Callable, Optional
 
 from fastapi import Depends
@@ -55,6 +55,7 @@ _JOBS: list[tuple[str, str]] = [
     ("backend_services", "get_services_status"),
     ("trend", "get_stats_trend"),
     ("detail", "get_detail_tables"),
+    ("ops", "get_ops_snapshot"),
 ]
 
 
@@ -113,6 +114,7 @@ def _collect(admin_id: int, days: int) -> dict:
             "trend", days, "get_stats_trend", a, d),
         "get_detail_tables": lambda a, d: _snapshot_or_live(
             "detail", 0, "get_detail_tables", a, d),
+        "get_ops_snapshot": lambda a, d: get_ops_snapshot(a, d),
     }
     parts: dict[str, Any] = {}
     ex = ThreadPoolExecutor(max_workers=len(_JOBS), thread_name_prefix="dashagg")
@@ -365,7 +367,7 @@ def dashboard_overview(
     days: int = 14,
     current_admin: base_models.WebUser = Depends(get_current_admin),
 ):
-    """仪表盘首屏聚合：一次返回 8 路数据。
+    """仪表盘首屏聚合：一次返回 10 路数据。
 
     - ``days``：趋势图天数（1–90，原 /stats/trend 口径，内部钳制）。
     - ``parts``：各原接口响应的原样映射，采集失败的 part 为 null。
@@ -379,6 +381,178 @@ def dashboard_overview(
         "fetched_at": datetime.now().isoformat(timespec="seconds"),
         "parts": parts,
     }
+
+
+
+# ==================== ops part（2026-11-27 仪表盘四块补缺口） ====================
+# 第 10 路：老 part 没有的数据一次补齐——有效订阅与 7 天到期、健康
+# 一句话、磁盘余量、探测/刮削积压、待处理求片热榜。每个子项独立采集、
+# 独立降级（失败只让该子项为 None），不拖垮整个 part。
+
+def _ops_subscriptions(db: Session) -> dict:
+    """有效订阅数 + 7 天内到期数。
+
+    口径与 admin_economy.economy_list_subscriptions 的 active/expiring
+    筛选逐字一致：status='active' 且 end_date 落在 (now, now+7d]。
+    """
+    now = datetime.now()
+    week_later = now + timedelta(days=7)
+    US = base_models.UserSubscription
+    active = db.query(US).filter(
+        US.status == "active", US.end_date > now).count()
+    expiring = db.query(US).filter(
+        US.status == "active", US.end_date > now,
+        US.end_date <= week_later).count()
+    return {"active": int(active), "expiring_7d": int(expiring)}
+
+
+def _ops_health_disk(db: Session) -> tuple[Optional[dict], Optional[dict]]:
+    """健康一句话 + 磁盘余量：复用 observability.snapshot 的探针产物。
+
+    status 只做 level 的映射（ok→healthy、其余→degraded），reasons 取
+    warn/down 组件的 message 原文——健康判定不在这里另造。开关未开
+    （snapshot enabled=False）时两项都为 None，前端走占位。
+    """
+    from backend.emby_server import observability
+
+    snap = observability.snapshot(db)
+    if not snap.get("enabled"):
+        return None, None
+    subsystems = snap.get("subsystems") or {}
+    reasons = [
+        str(s.get("message"))
+        for s in subsystems.values()
+        if s.get("status") in ("warn", "down") and s.get("message")
+    ]
+    health = {
+        "status": "healthy" if snap.get("level") == "ok" else "degraded",
+        "reasons": reasons,
+    }
+    disk = None
+    d = subsystems.get("disk")
+    if d is not None:
+        free_bytes = None
+        try:
+            from backend.emby_server import maintenance
+
+            free_bytes = maintenance.resource_report().get("disk_free_bytes")
+        except Exception:  # noqa: BLE001
+            free_bytes = None
+        disk = {
+            "free_bytes": free_bytes,
+            "free_percent": (d.get("metrics") or {}).get("disk_free_percent"),
+            "warn": d.get("status") != "ok",
+        }
+    return health, disk
+
+
+def _ops_probe(db: Session) -> dict:
+    """探测积压：复用 probe_worker.status_snapshot(light) 的现成字段。"""
+    from backend.emby_server import probe_worker
+
+    snap = probe_worker.status_snapshot(db, light=True)
+    rt = snap.get("runtime") or {}
+    return {
+        "pending_ready": int(snap.get("pending_ready") or 0),
+        "rate_per_min": rt.get("rate_per_min"),
+        "eta_hours": snap.get("eta_hours"),
+        "paused": bool(snap.get("paused")),
+    }
+
+
+def _ops_enrich(db: Session) -> dict:
+    """刮削积压：pending+enriching 为积压（与 observability._probe_enrich
+    的 backlog 同口径）；速率取 enrich_worker.get_progress 的 throughput，
+    本进程无完成样本时回退 worker 发布的 Redis 快照（同 _probe_enrich
+    通道）。get_progress 自带 session，db 参数只为与其余采集器签名一致。
+    """
+    from backend.emby_server import enrich_worker
+
+    prog = enrich_worker.get_progress(light=True)
+    en = prog.get("enrich") or {}
+    pending = int(en.get("pending") or 0) + int(en.get("enriching") or 0)
+    tp = prog.get("throughput") or {}
+    rate = tp.get("done_per_min") or 0
+    if not (tp.get("done_total") or tp.get("retry_total")
+            or tp.get("failed_total")):
+        try:
+            from backend.health_report import _enrich_worker_snapshot
+
+            snap = _enrich_worker_snapshot()
+            if snap:
+                rate = (snap.get("throughput") or {}).get("done_per_min") or 0
+        except Exception:  # noqa: BLE001
+            pass
+    rate = float(rate) if rate else None
+    return {
+        "pending_ready": pending,
+        "rate_per_min": rate,
+        "eta_hours": round(pending / rate / 60.0, 2) if rate else None,
+        "paused": not bool(prog.get("enabled", True)),
+    }
+
+
+def _ops_top_requests(db: Session) -> list:
+    """待处理求片按作品聚合前 5：有 tmdb_id 按 tmdb 归并（同片不同
+    译名合一），无 tmdb 时按片名；title 取组内任一非空片名，取不到
+    给占位文案。"""
+    from sqlalchemy import func
+
+    rows = (
+        db.query(
+            base_models.MovieRequest.tmdb_id,
+            base_models.MovieRequest.movie_name,
+            func.count(base_models.MovieRequest.id),
+        )
+        .filter(base_models.MovieRequest.status == "pending")
+        .group_by(base_models.MovieRequest.tmdb_id,
+                  base_models.MovieRequest.movie_name)
+        .all()
+    )
+    merged: dict[str, dict] = {}
+    for tmdb_id, name, cnt in rows:
+        key = f"tmdb:{tmdb_id}" if tmdb_id else f"name:{name or ''}"
+        entry = merged.setdefault(key, {"title": "", "count": 0})
+        entry["count"] += int(cnt or 0)
+        if not entry["title"] and name:
+            entry["title"] = name
+    top = sorted(merged.values(), key=lambda e: e["count"], reverse=True)[:5]
+    return [
+        {"title": e["title"] or "未命名求片", "count": e["count"]}
+        for e in top
+    ]
+
+
+def get_ops_snapshot(admin: Any, db: Session) -> dict:
+    """ops part 采集器（签名与其它 builder 一致：(admin, db)）。
+
+    子项逐个降级：任一子项抛错只让该子项为 None。
+    """
+    out: dict[str, Any] = {
+        "subscriptions": None,
+        "health": None,
+        "disk": None,
+        "probe": None,
+        "enrich": None,
+        "top_requests": None,
+    }
+
+    def _safe(key: str, fn: Callable[[], Any]) -> None:
+        try:
+            out[key] = fn()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("仪表盘 ops 子项 [%s] 采集失败: %s", key, e)
+            out[key] = None
+
+    _safe("subscriptions", lambda: _ops_subscriptions(db))
+    try:
+        out["health"], out["disk"] = _ops_health_disk(db)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("仪表盘 ops 子项 [health/disk] 采集失败: %s", e)
+    _safe("probe", lambda: _ops_probe(db))
+    _safe("enrich", lambda: _ops_enrich(db))
+    _safe("top_requests", lambda: _ops_top_requests(db))
+    return out
 
 
 # ==================== 数据明细（2026-10-23 用户要求补表） ====================
