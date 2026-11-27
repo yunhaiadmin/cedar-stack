@@ -51,29 +51,28 @@ HEALTH_ENRICH_PROGRESS_MIN = env_int("HEALTH_ENRICH_PROGRESS_MIN", 10, 1)
 
 
 def _count(db, item_type: str, status: str) -> int:
-    from backend.emby_server import models as em
     try:
         # 假数字修复（2026-10-19 系统清点 F7）：只数真实条目——合并副本
-        # （merged_into_id 非空）按设计不参与探测，与同文件 _enrich_count 对齐
-        return db.query(func.count(em.MediaItem.id)).filter(
-            em.MediaItem.item_type == item_type,
-            em.MediaItem.probe_status == status,
-            em.MediaItem.merged_into_id.is_(None),
-        ).scalar() or 0
+        # （merged_into_id 非空）按设计不参与探测，与同文件 _enrich_count 对齐。
+        # C-02（2026-11-28）：计数走 item_status_counts 共享分布（同口径、
+        # 短 TTL 缓存），不再每次健康检查现算。
+        from backend.emby_server import item_status_counts
+        by_type = item_status_counts.probe_counts_by_type(db)
+        return int((by_type.get(item_type) or {}).get(status, 0))
     except Exception as exc:  # noqa: BLE001 — 统计失败不该让健康检查 500
         logger.debug("统计 probe %s 失败: %s", status, exc)
         return 0
 
 
 def _enrich_count(db, status: str) -> int:
-    from backend.emby_server import models as em
     try:
         # 只数真实条目：合并副本（merged_into_id 非空）按设计不参与补全
         # （母条目补完即可），把它们算进来会让积压常年虚高几万条、
         # 健康灯长红（2026-10-16 实测：真实 pending 2 条、副本 pending 72167 条）。
-        return db.query(func.count(em.MediaItem.id)).filter(
-            em.MediaItem.enrich_status == status,
-            em.MediaItem.merged_into_id.is_(None)).scalar() or 0
+        # C-02（2026-11-28）：计数走 item_status_counts 共享分布（同口径、
+        # 短 TTL 缓存），不再每次健康检查现算。
+        from backend.emby_server import item_status_counts
+        return int(item_status_counts.enrich_status_counts(db).get(status, 0))
     except Exception as exc:  # noqa: BLE001
         logger.debug("统计 enrich %s 失败: %s", status, exc)
         return 0

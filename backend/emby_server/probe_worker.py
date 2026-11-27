@@ -1222,6 +1222,8 @@ def status_snapshot(db=None, light: bool = False) -> dict:
     light=True 时只做轻量计数（跳过 probe_last_error 全表聚合与
     retrying/stale 明细），供 tasks/overview 这类高频聚合接口用；
     返回字典键保持不变，轻量模式下未采集的项为 0/[]。
+    各状态计数走 item_status_counts 共享缓存（C-02，短 TTL，最多
+    滞后一个 TTL）；retrying/stale/错误分布仍实时查。
     """
     own = db is None
     if own:
@@ -1232,10 +1234,11 @@ def status_snapshot(db=None, light: bool = False) -> dict:
         # 假数字修复（2026-10-19 系统清点 F6）：合并副本按设计永不参与探测
         #（_shape_clause 要求 merged_into_id IS NULL），四个计数查询都加过滤
         _vis = (MI.merged_into_id.is_(None),)
-        rows = (db.query(MI.probe_status, func.count(MI.id))
-                .filter(MI.item_type.in_(PROBE_ITEM_TYPES), *_vis)
-                .group_by(MI.probe_status).all())
-        counts = {(s or "unknown"): int(c) for s, c in rows}
+        # C-02（2026-11-28）：状态分布走 item_status_counts 共享缓存
+        #（同口径：PROBE_ITEM_TYPES + merged_into_id IS NULL，短 TTL），
+        # 不再每次快照现算 GROUP BY。
+        from backend.emby_server import item_status_counts
+        counts = item_status_counts.probe_status_counts(db, PROBE_ITEM_TYPES)
         retrying = 0
         stale = 0
         errs = []
