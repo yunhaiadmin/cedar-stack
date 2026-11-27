@@ -6425,8 +6425,36 @@ def _copy_version_sources(db, item, base, user, api_key, max_bitrate):
 #: 反复请求，冷却防解析线程/上游被放大；窗口已覆盖时重解析也只是
 #: 白扫一遍。进程内字典，条目 id 维度。
 _WARMUP_COOLDOWN_SEC = 120.0
+#: 冷却字典上限（条目数）：冷却窗口仅 120 秒，过期键本就无意义；
+#: 超上限时先清过期键、再按时间戳删最旧键。删键 ≡ 从未预热过
+#: （下次请求重新走冷却判定），冷却语义不变。
+_WARMUP_LAST_MAX_ENTRIES = 4096
 _WARMUP_LAST: dict = {}
 _WARMUP_LAST_LOCK = threading.Lock()
+
+
+def _warmup_prune_locked(now: float) -> None:
+    """在 _WARMUP_LAST_LOCK 内清理冷却字典（超上限时才调用）。"""
+    if len(_WARMUP_LAST) <= _WARMUP_LAST_MAX_ENTRIES:
+        return
+    for item_id, ts in list(_WARMUP_LAST.items()):
+        if now - ts >= _WARMUP_COOLDOWN_SEC:
+            del _WARMUP_LAST[item_id]
+    if len(_WARMUP_LAST) > _WARMUP_LAST_MAX_ENTRIES:
+        overflow = len(_WARMUP_LAST) - _WARMUP_LAST_MAX_ENTRIES
+        for item_id, _ts in sorted(
+                _WARMUP_LAST.items(), key=lambda kv: kv[1])[:overflow]:
+            del _WARMUP_LAST[item_id]
+
+
+def _warmup_cooldown_hit(item_id, now: float) -> bool:
+    """冷却命中则 True（不登记）；未命中则登记本次时间戳并返回 False。"""
+    with _WARMUP_LAST_LOCK:
+        if now - _WARMUP_LAST.get(item_id, 0.0) < _WARMUP_COOLDOWN_SEC:
+            return True
+        _WARMUP_LAST[item_id] = now
+        _warmup_prune_locked(now)
+        return False
 
 
 def _playback_warmup_spec(db: Session, item: em.MediaItem):
@@ -6482,11 +6510,8 @@ def _spawn_playback_warmup(item) -> None:
         if item_id is None:
             return
         now = time.monotonic()
-        with _WARMUP_LAST_LOCK:
-            if now - _WARMUP_LAST.get(item_id, 0.0) \
-                    < _WARMUP_COOLDOWN_SEC:
-                return
-            _WARMUP_LAST[item_id] = now
+        if _warmup_cooldown_hit(item_id, now):
+            return
         loop = asyncio.get_running_loop()
 
         def _work():

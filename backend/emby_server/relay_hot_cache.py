@@ -292,13 +292,63 @@ def stats() -> dict:
 # ---------------------------------------------------------------------------
 # 身份代际（失效时 +1，在途旧写入在写线程里按代际作废）
 # ---------------------------------------------------------------------------
+#: 代际字典上限（身份数）与空闲 TTL（秒）：代际值只在「失效后丢弃
+#: 在途旧写入」的窗口内有意义。取段→提交是秒级操作（写线程投递
+#: 前后双验代际），空闲 1 小时后不可能还有在途写入，条目可删；
+#: 删后代际回 0，旧捕获值 ≥1 的写入仍被比对丢弃（失效后重新规划
+#: 的写入捕获 0，照常放行）。_GEN[identity] = (generation, touch)，
+#: touch 为最近一次读/ bump 的 time.monotonic（读不建条目）。
+_GEN_MAX_ENTRIES = 4096
+_GEN_IDLE_TTL_SEC = 3600.0
+#: 二级清理的最小空闲（秒）：只删盘上已无分段的身份；取段→提交
+#: 秒级完成，60 秒空闲后不可能还有在途写入。
+_GEN_PRUNE_MIN_IDLE_SEC = 60.0
 _GEN_LOCK = threading.Lock()
 _GEN: dict = {}
 
 
+def _identity_has_segments(identity: str) -> bool:
+    """该身份盘上是否还有分段文件（二级清理的存活判定）。"""
+    try:
+        d = _identity_dir(identity)
+        return any(name.startswith("seg-") and name.endswith(".bin")
+                   for name in os.listdir(d))
+    except OSError:
+        return False
+
+
+def _prune_generations_locked() -> None:
+    """_GEN 超上限时清理（须在 _GEN_LOCK 内调用）。"""
+    if len(_GEN) <= _GEN_MAX_ENTRIES:
+        return
+    now = time.monotonic()
+    for identity, (_gen, touched) in list(_GEN.items()):
+        if now - touched >= _GEN_IDLE_TTL_SEC:
+            del _GEN[identity]
+    if len(_GEN) <= _GEN_MAX_ENTRIES:
+        return
+    for identity, (_gen, touched) in sorted(
+            _GEN.items(), key=lambda kv: kv[1][1]):
+        if len(_GEN) <= _GEN_MAX_ENTRIES:
+            break
+        if now - touched < _GEN_PRUNE_MIN_IDLE_SEC:
+            continue
+        if _identity_has_segments(identity):
+            continue
+        del _GEN[identity]
+    if len(_GEN) > _GEN_MAX_ENTRIES:
+        logger.warning("relay_hot_cache 代际字典仍超上限（%d/%d），暂不删",
+                       len(_GEN), _GEN_MAX_ENTRIES)
+
+
 def _generation(identity: str) -> int:
     with _GEN_LOCK:
-        return _GEN.get(identity, 0)
+        entry = _GEN.get(identity)
+        if entry is None:
+            return 0
+        gen, _touched = entry
+        _GEN[identity] = (gen, time.monotonic())
+        return gen
 
 
 def current_generation(identity: str) -> int:
@@ -309,8 +359,10 @@ def current_generation(identity: str) -> int:
 
 def _bump_generation(identity: str) -> int:
     with _GEN_LOCK:
-        _GEN[identity] = _GEN.get(identity, 0) + 1
-        return _GEN[identity]
+        gen = _GEN.get(identity, (0, 0.0))[0] + 1
+        _GEN[identity] = (gen, time.monotonic())
+        _prune_generations_locked()
+        return gen
 
 
 def _segment_write_current(identity: str, gen: int) -> bool:
