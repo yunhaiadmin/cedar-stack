@@ -55,8 +55,15 @@ def _add_lib(setup, name, mount_id):
 
 
 def _clear_owners():
+    # guard 的 finally 还读 _RUNNING（被它覆盖的挂载交给排队任务的
+    # _release_locked 释放）：只清 _MOUNT_OWNER 不清 _RUNNING 时，
+    # 别的测试在同一 worker 进程留下的 _RUNNING 残留会让 guard 跳过
+    # 释放，末尾断言恰好看到 {3: 2, 4: 3}（2026-11-28 全量实证，
+    # 探针以 SimpleNamespace 残留复现一致）。两张表同清，本文件用例
+    # 只依赖干净的占用状态。
     with scan_queue._LOCK:
         scan_queue._MOUNT_OWNER.clear()
+        scan_queue._RUNNING.clear()
 
 
 # ==================== guard 本身 ====================

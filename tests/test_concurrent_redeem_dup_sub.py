@@ -32,7 +32,6 @@ from datetime import datetime, timedelta
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from backend import codes, models
 
@@ -52,11 +51,16 @@ def _pg_url():
 
 
 @pytest.fixture()
-def engine():
+def engine(tmp_path):
+    # 文件库 + 默认 QueuePool：每会话从池里拿各自的连接。旧口径是
+    # :memory: + StaticPool——两并发会话共用同一根 sqlite 连接，
+    # B 在拿锁前读库已在该连接上开事务，A 在同一连接上 commit 后
+    # B 再 commit 即 OperationalError「cannot commit - no
+    # transaction is active」（2026-11-28 #553 冒烟实证；生产 PG
+    # 每会话独立连接，不存在该形态）。串行语义仍由进程内 RLock 保证。
     eng = create_engine(
-        "sqlite://",
+        f"sqlite:///{tmp_path}/race.db",
         connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
     )
     models.Base.metadata.create_all(eng)
     try:

@@ -628,15 +628,24 @@ def test_real_uds_roundtrip(uds_sock_dir):
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        # 服务线程绑定是异步的：等 socket 文件出现再握手，避免首调用竞态。
+        # 就绪判定必须是握手成功，不是 socket 文件出现：serve_forever 里
+        # bind（此时文件已出现）与 listen 是两次调用，服务线程在两者
+        # 之间被抢占时，客户端照文件存在去 connect 仍得 ECONNREFUSED
+        # （2026-11-28 CI 实证：#552/#553 冒烟两次同错，本地满载 300
+        # 次未复现——窗口极窄但真实存在）。只重试 remote_unavailable
+        # （文件未建/未监听），其他 kind 立即抛；超期仍按原错失败。
         import time as _time
-        deadline = _time.time() + 5.0
-        while not os.path.exists(sock):
-            if _time.time() > deadline:
-                raise AssertionError("sidecar UDS 未在 5 秒内绑好")
-            _time.sleep(0.05)
-        client = ProviderRuntimeClient("yun139", sock)
-        manifest = client.handshake(YUN139_EXTENSIONS)
+        deadline = _time.time() + 10.0
+        while True:
+            try:
+                client = ProviderRuntimeClient("yun139", sock)
+                manifest = client.handshake(YUN139_EXTENSIONS)
+                break
+            except ProviderRuntimeError as exc:
+                if (exc.kind != "remote_unavailable"
+                        or _time.time() > deadline):
+                    raise
+                _time.sleep(0.02)
         assert manifest["provider"] == "yun139"
         # health 无会话也可探活；其余能力须先建会话。
         assert client.health()["ok"] is True
