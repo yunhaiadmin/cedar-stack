@@ -469,3 +469,78 @@ def test_target_fallback_to_group_when_empty(db, monkeypatch):
     res = updatedigest.push_digest(db, NOW)
     assert res["pushed"] and res["reason"] == "ok"
     assert sent["messages"][0]["chat_id"] == GROUP_ID
+
+
+# ---------- C-03 水位线收集 ----------
+
+def test_watermark_main_track_and_backfill_catchup(db, monkeypatch):
+    """水位主轨只查新行：水位之前入库、当时未绑定、事后才认出身份的
+    老行不进主轨（不重扫全表），靠副轨全量补捞在间隔到点后捞回——
+    不重不漏，只是这类老行最迟等一个补捞间隔。"""
+    _ready(db)
+    _item(db, "movie", "首批新片", year=2026, tmdb="501")
+    late = _item(db, "movie", "迟认出的老片", year=2026,
+                 added=NOW - timedelta(hours=2))  # 未绑定，水位会越过它
+    sent = _capture_send(monkeypatch)
+    res = updatedigest.push_digest(db, NOW)
+    assert res["reason"] == "ok"
+    assert "首批新片" in sent["messages"][0]["text"]
+    assert updatedigest._read_watermark(db) is not None
+
+    late.tmdb_id = "502"  # 水位推进后才认出身份
+    db.commit()
+    # 主轨：id 与 date_added 都在水位之前 → 本轮不捞（也不重播首批）
+    res2 = updatedigest.push_digest(db, NOW + timedelta(minutes=10))
+    assert res2["reason"] == "empty"
+    assert len(sent["messages"]) == 1
+    # 副轨到点（≥ BACKFILL_INTERVAL_HOURS）：全量补捞把它捞回来
+    res3 = updatedigest.push_digest(
+        db, NOW + timedelta(hours=updatedigest.BACKFILL_INTERVAL_HOURS, minutes=1))
+    assert res3["pushed"] and res3["reason"] == "ok"
+    assert "迟认出的老片" in sent["messages"][1]["text"]
+    assert db.query(models.TgUpdateDigestSent).count() == 2
+
+
+def test_partial_does_not_advance_watermark(db, monkeypatch):
+    """部分成功不推进水位：下轮同段重查、只续发未发条目；全部发完
+    才推进。发送失败同理（整批不记、下批原样重试）。"""
+    _ready(db)
+    total = 200
+    for i in range(total):
+        _item(db, "movie", f"水位续发长片名{i:03d}号作品加长版",
+              year=2026, tmdb=str(3000 + i),
+              added=NOW - timedelta(minutes=total - i))
+    calls = {"n": 0}
+
+    def flaky_message(db_, chat_id, text, reply_markup=None,
+                      parse_mode="HTML"):
+        calls["n"] += 1
+        return (False, "boom") if calls["n"] == 2 else (True, None)
+
+    monkeypatch.setattr(sender, "send_message", flaky_message)
+    res = updatedigest.push_digest(db, NOW)
+    assert res["reason"] == "partial"
+    assert updatedigest._read_watermark(db) is None  # 没推进
+
+    sent = _capture_send(monkeypatch)
+    res2 = updatedigest.push_digest(db, NOW)
+    assert res2["reason"] == "ok"
+    assert updatedigest._read_watermark(db) is not None  # 发完才推进
+    assert db.query(models.TgUpdateDigestSent).count() == total
+    assert len(sent["messages"]) >= 1
+
+
+def test_base_conditions_uses_not_exists(db):
+    """「未播过」判定走 NOT EXISTS 相关子查询（C-03），不再用
+    NOT IN 把整张已播表拖进计划。"""
+    from sqlalchemy.dialects import postgresql
+
+    conds = updatedigest._base_conditions(NOW - timedelta(days=14))
+    sql = " ".join(
+        str(c.compile(dialect=postgresql.dialect(),
+                      compile_kwargs={"literal_binds": True}))
+        for c in conds
+    )
+    assert "EXISTS" in sql
+    assert "tg_update_digest_sent.item_id = emby_items.id" in sql
+    assert "NOT IN (SELECT" not in sql
