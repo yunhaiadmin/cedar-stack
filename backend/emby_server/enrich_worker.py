@@ -4118,6 +4118,23 @@ _CLAIM_GROUPS_GEN = {"gen": 0}
 # extra = 该失效待生效期间又到达了新失效（流式标志）。硬作废
 # （invalidate_claim_groups_cache）与快照重建消费都会清掉它。
 _CLAIM_GROUPS_PENDING = {"since": None, "extra": False}
+# C-01（2026-11-28 优化扫荡）：_bulk_watch 的作废口径按列收窄。批量
+# UPDATE 只有动了这些列才可能产生/改变待办——组集合、组键
+# coalesce(series_id, id)、组间排序（priority / date_added / 库）、
+# 队列归属（身份三件）、父级就绪（父行状态经 before_flush 另有监听，
+# 这里覆盖批量改归属/类型）、due（next_retry_at / repair_requested_at）、
+# 可认领性（metadata_locked / manual_unbound / merged_into_id /
+# deleted_at）都只由这些列决定。只动其他列的批量写（探测抢单/释放/
+# 回填、缩略图、字幕等同进程其他 worker 的日常写）不再把快照打回
+# 重建。给 _claim_batch 加新谓词/新排序时先想：它读的列在本集合里吗？
+# 不在 → 必须补进来，否则快照会漏失效。
+_CLAIM_BULK_RELEVANT_COLUMNS = frozenset({
+    "enrich_status", "enrich_next_retry_at", "enrich_priority",
+    "repair_requested_at", "metadata_locked", "manual_unbound",
+    "merged_into_id", "deleted_at", "series_id", "parent_id",
+    "item_type", "library_id", "date_added",
+    "tmdb_id", "imdb_id", "external_ids",
+})
 
 
 def invalidate_claim_groups_cache() -> None:
@@ -4254,10 +4271,13 @@ def _install_claim_flush_watch() -> None:
     巡检恰恰全是批量口径（把 enriching/failed/none 批量打回
     pending）——没有这道钩子，它们打回的行在快照眼里不存在：组已
     被标 consumed 时整组被跳过、排序也还是旧相位，僵尸行回收后
-    无人能再认领（PR #79 冒烟实证）。凡命中 MediaItem 表的批量
-    更新/删除一律作废快照，唯一豁免是认领自身的那条原子 UPDATE
+    无人能再认领（PR #79 冒烟实证）。批量 DELETE 一律作废快照；
+    批量 UPDATE 的作废口径见 _bulk_watch：认领自身的那条原子 UPDATE
     （pending→enriching 且只动 enrich_status/claimed_at/token
-    三件套）：它不产生新待办，豁免它快照才跨轮命中。
+    三件套）豁免——它不产生新待办，豁免它快照才跨轮命中；C-01
+    （2026-11-28 优化扫荡）起再收窄一层：只动了与认领无关列的批量
+    UPDATE（如探测抢单只写 probe_* 列）同样不作废，动了认领相关
+    列（_CLAIM_BULK_RELEVANT_COLUMNS）或 values 读不到时照旧作废。
 
     S3 自写分流（_claim_snapshot_self_write 标记激活时；标记只在
     worker 处理线程设置，其他线程/进程恒未激活、行为逐字不变）：
@@ -4359,8 +4379,8 @@ def _install_claim_flush_watch() -> None:
                     values = getattr(state.statement, "_values", None)
                     new_status = None
                     has_status = False
+                    keys = set()
                     if values:
-                        keys = set()
                         for col, val in dict(values).items():
                             key = getattr(col, "key", None)
                             keys.add(key)
@@ -4378,6 +4398,13 @@ def _install_claim_flush_watch() -> None:
                         # 设置 enrich_status 的更新）不作废。
                         if has_status and new_status == "pending":
                             _note_claim_groups_stale()
+                        return
+                    # C-01 收窄（标记外）：批量 UPDATE 只动了与认领无关
+                    # 的列（探测/回填等同进程其他 worker 的日常写）不可
+                    # 能产生或改变待办，不作废；动了认领相关列、或
+                    # values 读不到（keys 为空集＝无法证明无关）时照旧
+                    # 作废。DELETE 不走这里，仍一律作废（上方分支外）。
+                    if values and not (keys & _CLAIM_BULK_RELEVANT_COLUMNS):
                         return
                 _note_claim_groups_stale()
             except Exception:  # noqa: BLE001 — 监听绝不拖垮正常执行

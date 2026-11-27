@@ -438,3 +438,85 @@ def test_rebuild_on_one_key_refreshes_other_key_consumed(
     assert agg_counter["agg"] > agg_before_fill, "fill 键应已随代际 bump 重建"
     assert [r.id for r in fill] == [fill_ep.id], (
         "fill 键旧快照未随失效刷新，单集被跳过")
+
+
+# ---------- C-01（2026-11-28 优化扫荡）：标记外批量 UPDATE 按列收窄作废 ----------
+# 深读结论：_bulk_watch 旧口径对 emby_items 的任何批量 UPDATE/DELETE 都记
+# 失效（认领三件套除外），而同进程的探测抢单（每约 3.3 秒一次、只写
+# probe_* 列）、探测回填（video_codec 等）都在持续触发——快照在稳态下被
+# 这些无关写打回重建（防抖后约每 60 秒一组键重建一次 + 代际 bump 连带
+# 其他键），全量聚合的 28 个 external_ids LIKE + 父级 EXISTS 谓词又不可
+# 索引，积压大时单次重建 1.2~1.9 秒。收窄口径：批量 UPDATE 只动与认领
+# 无关的列 → 不作废；动了认领相关列（状态/重试/优先级/修复请求/锁/解绑/
+# 合并/软删/父子归属/类型/库/入库时间/身份三件）→ 照旧作废；DELETE 与
+# values 读不到时保守照旧作废。
+
+def test_bulk_update_probe_columns_does_not_invalidate(db, lib, agg_counter):
+    from datetime import datetime
+    movies = _movies(db, lib, 8)
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 1
+    # 探测抢单的同款批量 UPDATE（只写 probe_status / probe_claimed_at）
+    (db.query(em.MediaItem)
+     .filter(em.MediaItem.id == movies[5].id)
+     .update({"probe_status": "probing", "probe_claimed_at": datetime.now()},
+             synchronize_session=False))
+    db.commit()
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 1, "只动探测列的批量 UPDATE 不许作废补全快照"
+
+
+def test_bulk_update_probe_result_columns_does_not_invalidate(db, lib, agg_counter):
+    movies = _movies(db, lib, 8)
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 1
+    # 探测完成回填的同款批量 UPDATE（编码/时长/探测时间）
+    (db.query(em.MediaItem)
+     .filter(em.MediaItem.id == movies[5].id)
+     .update({"video_codec": "hevc", "duration_ticks": 123456,
+              "last_probed_at": None},
+             synchronize_session=False))
+    db.commit()
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 1, "只动探测结果列的批量 UPDATE 不许作废补全快照"
+
+
+def test_bulk_update_back_to_pending_invalidates_outside_self_write(
+        db, lib, agg_counter):
+    done_row = _item(db, lib, "批量已完成", enrich_status="done")
+    _movies(db, lib, 8)
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 1
+    # janitor 回捞的同款批量 UPDATE（打回 pending）——PR #79 的事故面，
+    # 收窄后仍必须失效
+    (db.query(em.MediaItem)
+     .filter(em.MediaItem.id == done_row.id)
+     .update({"enrich_status": "pending"}, synchronize_session=False))
+    db.commit()
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 2, "批量打回 pending 仍须失效（回捞行要能被认领）"
+
+
+def test_bulk_update_series_link_invalidates(db, lib, agg_counter):
+    movies = _movies(db, lib, 8)
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 1
+    # 改父子归属会改变组键（coalesce(series_id, id)），仍须失效
+    (db.query(em.MediaItem)
+     .filter(em.MediaItem.id == movies[5].id)
+     .update({"series_id": movies[0].id}, synchronize_session=False))
+    db.commit()
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 2, "改 series_id 的批量 UPDATE 仍须失效"
+
+
+def test_bulk_delete_invalidates_outside_self_write(db, lib, agg_counter):
+    movies = _movies(db, lib, 8)
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 1
+    (db.query(em.MediaItem)
+     .filter(em.MediaItem.id == movies[5].id)
+     .delete(synchronize_session=False))
+    db.commit()
+    enrich_worker._claim_batch(db, 2)
+    assert agg_counter["agg"] == 2, "批量 DELETE 保守仍须失效"
