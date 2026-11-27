@@ -34,7 +34,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend import models
-from backend.tg_bot import pool_widget, router, sender
+from backend.tg_bot import router, sender
 
 
 @pytest.fixture()
@@ -84,8 +84,8 @@ class _SendCapture:
 def test_dispatcher_unknown_action_gets_error_answer(db, monkeypatch):
     seen = []
     monkeypatch.setattr(
-        pool_widget, "handle_widget_query",
-        lambda db_, q: seen.append(q))
+        router, "_widget_query_routes",
+        lambda: {"pool_refresh": lambda db_, q: seen.append(q)})
     answers = []
     monkeypatch.setattr(
         sender, "answer_widget_query",
@@ -104,8 +104,8 @@ def test_dispatcher_unknown_action_gets_error_answer(db, monkeypatch):
 def test_dispatcher_malformed_data_gets_error_answer(db, monkeypatch):
     seen = []
     monkeypatch.setattr(
-        pool_widget, "handle_widget_query",
-        lambda db_, q: seen.append(q))
+        router, "_widget_query_routes",
+        lambda: {"pool_refresh": lambda db_, q: seen.append(q)})
     answers = []
     monkeypatch.setattr(
         sender, "answer_widget_query",

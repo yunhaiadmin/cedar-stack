@@ -9,8 +9,6 @@
 - binding_id 未传时尽力解析该用户 active 的 Drive 绑定，
   解析不到留空、不丢整行；
 - purge 只删超保留期（默认 30 天）的行；
-- 池门禁 ensure_pool_copy_gate 的 verdict 落一行决策留痕
-  （scope=pool_gate），返回值逐字不变。
 
 全部离线：临时文件 SQLite；monkeypatch 只打模块属性（与既有
 决策留痕测试同口径），不打单例实例属性。
@@ -31,7 +29,6 @@ from sqlalchemy.orm import sessionmaker
 from backend import models as base_models
 from backend.emby_server import models as em
 from backend.emby_server import play_access_events as pae
-from backend.emby_server import pool_gate
 from backend.emby_server import transfer_decisions as td
 
 
@@ -168,28 +165,3 @@ def test_purge_deletes_only_expired(db, note_here):
     assert rows[0].created_at > now - timedelta(days=2)
 
 
-# ---------------------------------------------------------------------------
-# 池门禁 verdict 留痕（scope=pool_gate）
-# ---------------------------------------------------------------------------
-
-def test_pool_gate_notes_decision(db, db_factory, monkeypatch):
-    monkeypatch.setattr(td, "SessionLocal", db_factory)
-    item = SimpleNamespace(id=100)
-    user = SimpleNamespace(id=8)
-    result = pool_gate.ensure_pool_copy_gate(db, item, user)
-    # 池未开启时 impl 的原 verdict 逐字不变
-    assert result["verdict"] == "failed"
-    assert result["reason"] == "pool_disabled"
-    assert result["pool"] is True
-    rows = (db.query(em.TransferDecisionRound)
-            .filter(em.TransferDecisionRound.scope == "pool_gate")
-            .all())
-    assert len(rows) == 1
-    row = rows[0]
-    assert row.resource_key == "item:100"
-    assert row.decision == "failed"
-    assert row.reason == "pool_disabled"
-    cand = json.loads(row.candidates_json)
-    assert cand["item_id"] == 100
-    assert cand["user_id"] == 8
-    assert cand["verdict"] == "failed"

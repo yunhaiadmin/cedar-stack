@@ -3,8 +3,8 @@
 给网站端「起播前状态」展示用（详情页/选播器播放区）：用户点播前
 先看清这部片对他现在是什么状态，不再对着转圈猜：
 
-- ``ready``：已就绪——副本在本人绑盘（source=own）、公共池里有
-  可下发副本（source=pool）、或条目本身可直读（source=direct）。
+- ``ready``：已就绪——副本在本人绑盘（source=own）、或条目
+  本身可直读（source=direct）。
 - ``preparing``：有转存单在跑——stage=queued（pending）/
   working（running）；有落盘交付行且知道总大小时带
   progress_pct，没有字节进度时给时间型预计 eta_seconds
@@ -12,19 +12,14 @@
   绝不按 elapsed/p90 编百分比假进度条；elapsed > p90 时
   eta=null 且 slow=true（比平时慢）。
 - ``failed``：最近一张本人转存单失败——reason 是稳定类别键
-  （space/auth/source_dead/no_binding/generic），人话文案在前端；
-  本人单无失败时，未绑盘且池 eligible 的用户补查最新池失败单
-  （copy_forbidden → pool_source，no_member/pool_disabled →
-  pool_no_member，insufficient_space → space，其余 → generic）。
+  （space/auth/source_dead/no_binding/generic），人话文案在前端。
 - ``idle``：从没准备过（首播会现转存，前端不额外渲染）。
 
 纪律：本模块纯读——不建单、不写库、不碰播放门禁与主链路逻辑。
 判定口径全部复用播放主链路的现有单口实现：本人副本/制备中走
-``delivery_plan`` 的探针、池走 ``pool_gate`` 的资格与可下发口径、
-绑定与大文件分流走 ``pool_gate.large_file_pool_route``，不在此
-复制第二套判定。剧集（series）按其集行聚合（转存单/副本都是
-按集落的），任一集命中即按该状态报，优先级 own > pool > direct
-（direct 仅单条目）> preparing > failed。
+``delivery_plan`` 的探针，不在此复制第二套判定。剧集（series）
+按其集行聚合（转存单/副本都是按集落的），任一集命中即按该状态
+报，优先级 own > direct（direct 仅单条目）> preparing > failed。
 """
 from __future__ import annotations
 
@@ -65,24 +60,11 @@ _REASON_BY_KIND = {
 
 _INFLIGHT_STATUSES = ("pending", "running")
 
-#: 池失败单 error_kind → 前端人话类别键。copy_forbidden 与
-#: no_member/pool_disabled 映成不同键：两句副文不一样（源盘读不
-#: 到 vs 池里没可用成员盘），合一个键保不住两句文案——这是对
-#: 设计稿的微小纠偏（设计稿 §4 把两者同映 pool_source）。
-_POOL_REASON_BY_KIND = {
-    "copy_forbidden": "pool_source",
-    "no_member": "pool_no_member",
-    "pool_disabled": "pool_no_member",
-    "insufficient_space": "space",
-}
-
 #: 起播 ETA 配置默认值（SystemConfig 键，见 config_schema
 #: .PLAY_STATUS_ETA_CONFIG_SCHEMA）。值是 2026-11-19 生产近 7 天
-#: done 单实测：池单 1601 条 p50 23 秒 / p90 34 秒；本人单 940 条
-#: p50 6 秒 / p90 26 秒。分位数缓存默认 600 秒（10 分钟）。
+#: done 单实测：本人单 940 条 p50 6 秒 / p90 26 秒。分位数缓存
+#: 默认 600 秒（10 分钟）。
 PLAY_STATUS_ETA_CONFIG_DEFAULTS: dict[str, int] = {
-    "pool_eta_p50_sec": 23,
-    "pool_eta_p90_sec": 34,
     "user_eta_p50_sec": 6,
     "user_eta_p90_sec": 26,
     "play_status_eta_cache_sec": 600,
@@ -192,12 +174,8 @@ def _eta_for(route: str, elapsed: int,
     """
     cfg = _eta_config(db)
     quantiles = _eta_quantiles(db)
-    if route == "pool":
-        p50, p90 = quantiles.get(
-            "pool", (cfg["pool_eta_p50_sec"], cfg["pool_eta_p90_sec"]))
-    else:
-        p50, p90 = quantiles.get(
-            "user", (cfg["user_eta_p50_sec"], cfg["user_eta_p90_sec"]))
+    p50, p90 = quantiles.get(
+        "user", (cfg["user_eta_p50_sec"], cfg["user_eta_p90_sec"]))
     if elapsed > p90:
         return None, True
     return max(5, min(120, p50 - elapsed)), False
@@ -299,19 +277,6 @@ def _newest_user_job(db: Session, user_id: int, item_ids: list[int],
             .first())
 
 
-def _newest_pool_job(db: Session, item_ids: list[int], statuses):
-    """池在某组条目上最新的一张转存单（指定状态集内），与
-    _newest_user_job 对称（owner_scope=pool，不分成员）。"""
-    if not item_ids:
-        return None
-    return (db.query(em.TransferJob)
-            .filter(em.TransferJob.item_id.in_(item_ids),
-                    em.TransferJob.owner_scope == "pool",
-                    em.TransferJob.status.in_(statuses))
-            .order_by(em.TransferJob.id.desc())
-            .first())
-
-
 def _job_progress_pct(db: Session, job) -> int | None:
     """转存单的落盘进度（与 delivery_plan 制备中探针同口径：
     有交付行且总大小已知才给百分比，否则 None——不编造）。"""
@@ -325,7 +290,7 @@ def _job_progress_pct(db: Session, job) -> int | None:
 
 def compute_play_status(db: Session, user, item) -> dict:
     """(用户, 条目) → 起播状态 dict。纯读；各探针独立 fail-open。"""
-    from backend.emby_server import delivery_plan, pool_gate
+    from backend.emby_server import delivery_plan
 
     user_id = int(user.id)
     is_series = getattr(item, "item_type", "") == "series"
@@ -376,28 +341,6 @@ def compute_play_status(db: Session, user, item) -> dict:
         out.update(state="ready", source="own")
         return out
 
-    # 2) 池 ready 副本：资格（池开关+人群+门禁）成立且有可下发
-    #    副本。已绑盘用户只有大文件分流命中时才走池（与播放裁决
-    #    同口径 large_file_pool_route），未绑用户池就是他的播路。
-    try:
-        pool_ready = False
-        if pool_gate.pool_eligible(db, user, item) == "eligible":
-            from backend.emby_server import playback_gate
-            if playback_gate.has_active_binding(db, user_id):
-                pool_ready = bool(pool_gate.large_file_pool_route(
-                    db, user, item))
-            else:
-                pool_ready = any(
-                    pool_gate._servable_pool_copy_count(db, iid) > 0
-                    for iid in item_ids)
-    except Exception:  # noqa: BLE001
-        logger.warning("play_status pool probe failed item=%s",
-                       item.id, exc_info=True)
-        pool_ready = False
-    if pool_ready:
-        out.update(state="ready", source="pool")
-        return out
-
     # 3) 条目本身可直读（挂载直读）——仅单条目口径。
     if not is_series:
         for probe in (delivery_plan._probe_mount_direct,):
@@ -410,7 +353,7 @@ def compute_play_status(db: Session, user, item) -> dict:
                 return out
 
     # 4) 制备中：本人有未终态转存单（单条目走探针原口拿进度；
-    #    剧集按集聚合后用同一套进度口径）。未绑用户再看池在途单。
+    #    剧集按集聚合后用同一套进度口径）。
     job = None
     try:
         if is_series:
@@ -443,25 +386,6 @@ def compute_play_status(db: Session, user, item) -> dict:
             progress_pct=_job_progress_pct(db, job))
         out.update(_job_wait_fields(db, job, "own"))
         return out
-    try:
-        from backend.emby_server import playback_gate
-        if not playback_gate.has_active_binding(db, user_id) \
-                and pool_gate.pool_eligible(db, user, item) == "eligible":
-            pool_job = _newest_pool_job(db, item_ids, _INFLIGHT_STATUSES)
-            if pool_job is not None:
-                # 池 preparing 的 stage 按最新池单行真实 status 给
-                # （pending→queued、running→working），不再恒 working。
-                out.update(
-                    state="preparing",
-                    stage=("queued" if pool_job.status == "pending"
-                           else "working"),
-                    progress_pct=None)
-                out.update(_job_wait_fields(db, pool_job, "pool"))
-                return out
-    except Exception:  # noqa: BLE001
-        logger.warning("play_status pool-inflight probe failed item=%s",
-                       item.id, exc_info=True)
-
     # 5) 最近一张本人失败单 → failed + 类别键。
     try:
         failed = _newest_user_job(db, user_id, item_ids, ("failed",))
@@ -475,26 +399,6 @@ def compute_play_status(db: Session, user, item) -> dict:
                    reason=_REASON_BY_KIND.get(kind, "generic"),
                    route="own", job_id=failed.id)
         return out
-
-    # 5b) 池失败单：本人单无失败时，未绑盘且池 eligible 的用户补查
-    #     最新池失败单，给出池版失败人话类别（见模块头 failed）。
-    #     已绑盘用户不查——池失败与他无关，别吓他。
-    try:
-        from backend.emby_server import playback_gate
-        if not playback_gate.has_active_binding(db, user_id) \
-                and pool_gate.pool_eligible(db, user, item) == "eligible":
-            pool_failed = _newest_pool_job(db, item_ids, ("failed",))
-            if pool_failed is not None:
-                kind = (getattr(pool_failed, "error_kind", "")
-                        or "").strip()
-                out.update(
-                    state="failed",
-                    reason=_POOL_REASON_BY_KIND.get(kind, "generic"),
-                    route="pool", job_id=pool_failed.id)
-                return out
-    except Exception:  # noqa: BLE001
-        logger.warning("play_status pool-failed probe failed item=%s",
-                       item.id, exc_info=True)
 
     return out
 

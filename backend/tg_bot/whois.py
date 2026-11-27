@@ -323,23 +323,18 @@ _LITE_PROVIDER_SHORT = {"drive": "谷歌盘", "pan115": "115 网盘",
                         "quark": "夸克盘"}
 # 池成员行处于这些状态 = 仍算在池（未退出）；exited / rejected /
 # ejected 是终态出池，不打「池」字。
-_POOL_LIVE_STATUSES = ("pending", "active", "suspended")
 
 
 def _binding_lite_line(db, user_id: int) -> str:
     """绑定盘（精简）：一行汇总，用标签认盘（2026-11-08 用户拍板）。
 
-    形态：``💾 谷歌盘 ×4：123 ✓ · 456 ✓ · 789 ⏸已暂停·池 · 101 ✓``。
+    形态：``💾 谷歌盘 ×4：123 ✓ · 456 ✓ · 789 ✓ · 101 ✓``。
     - 取代 2026-11-01「只 provider＋状态、无 label」口径：标签是
       用户自设的展示名，用户明确批准进群卡认盘；隐私红线不变——
       邮箱 / 账号原文 / 凭据 id 绝不进卡。
     - 状态：active 只打 ✓ 不写字；invalid / expired 写 ✕＋现行
-      BINDING_STATUS_TEXT 文案；池成员被暂停（suspended）且绑定
-      本身正常时写 ⏸已暂停（熔断暂停的是池供片、不是绑定）。
-    - 在池（PoolMember 未退出）的绑定状态后加「池」字。
+      BINDING_STATUS_TEXT 文案。
     - 无标签（空串 / 纯空白）回退「盘N」序号（N = 全部绑定序位）。
-    池表缺失的夹具环境回落无池标记，与 _subscription_lite_line
-    的缺表回落同口径：只读展示路径不许因缺表炸掉整张卡。
     """
     rows = (
         db.query(em.UserStorageBinding)
@@ -349,18 +344,6 @@ def _binding_lite_line(db, user_id: int) -> str:
     )
     if not rows:
         return "💾 未绑定"
-    pool_status_by_binding = {}
-    try:
-        members = (
-            db.query(em.PoolMember)
-            .filter(em.PoolMember.user_id == user_id,
-                    em.PoolMember.binding_id.isnot(None))
-            .all()
-        )
-        pool_status_by_binding = {m.binding_id: m.status for m in members}
-    except Exception:
-        db.rollback()
-        pool_status_by_binding = {}
     groups: dict[str, list[str]] = {}
     order: list[str] = []
     for idx, row in enumerate(rows):
@@ -370,17 +353,12 @@ def _binding_lite_line(db, user_id: int) -> str:
         label = str(row.account_label or "").strip()
         if not label:
             label = f"盘{idx + 1}"
-        member_status = pool_status_by_binding.get(row.id)
         if row.status in BINDING_STATUS_TEXT and row.status != "active":
             status = f"✕{BINDING_STATUS_TEXT[row.status]}"
-        elif member_status == "suspended":
-            status = "⏸已暂停"
         elif row.status == "active":
             status = "✓"
         else:
             status = html.escape(str(row.status))
-        if member_status in _POOL_LIVE_STATUSES:
-            status += "池" if status == "✓" else "·池"
         groups[row.provider].append(f"{html.escape(label)} {status}")
     parts = []
     for provider in order:

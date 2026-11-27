@@ -1675,10 +1675,9 @@ class TransferVariant(Base):
     本表——重扫改写 ``drive_file_id`` 也动不了播放源（扫描锚定保护
     的第一层：播放源与身份锚天然解耦）。
 
-    - ``owner_scope``：``source``（服主盘副本）| ``user``（用户盘副本）|
-      ``pool``（公共贡献池副本，owner_ref 为成员 id 字符串）。
-      用户副本只许播给 ``owner_ref`` 本人，绝不跨用户复用；池副本
-      只许播给池观众（播出判定见 pool_gate）。
+    - ``owner_scope``：``source``（服主盘副本）| ``user``（用户盘副本）。
+      用户副本只许播给 ``owner_ref`` 本人，绝不跨用户复用。
+      （``pool`` 为已下线的公共贡献池历史值，存量行不再被选路。）
     - ``status``：``ready``（可播）| ``stale``（副本已死，巡检或播放
       实证标死，不再被选路）| ``orphan``（副本已建但不可播，如权限
       设置失败，文件在、登记在，等管理员处置，不自动删）|
@@ -1788,8 +1787,8 @@ class TransferJob(Base):
       transfer_variant._is_cross_job，2026-10-26 用户亲定“绑哪播哪”）。
     - ``owner_scope`` / ``owner_ref``：``source``（服主副本，
       owner_ref 为空）| ``user``（用户盘副本，owner_ref 为用户 id
-      字符串）| ``pool``（公共贡献池副本，owner_ref 为成员 id 字符串）。
-      工人按归属写对应 scope 的副本行。
+      字符串）。工人按归属写对应 scope 的副本行。
+      （``pool`` 为已下线的公共贡献池历史值。）
     - ``dest_drive_id``：用户任务的落盘标识（Drive 为
       ``userdrive:<user_id>``，115 为 ``pan115:user-<user_id>``）；
       服主任务为空（= drive_id，同盘拷贝）。
@@ -1862,11 +1861,11 @@ class TransferJob(Base):
     # 后不再回队（仿 enrich_failed_reschedules 口径）。老库补列后
     # 可能为 NULL，读取方一律按 0 处理。
     reschedule_count = Column(Integer, nullable=False, default=0)
-    # 池单换源标记（2026-11-19 失败等待优化第一层）：NULL = 按
+    # 换源标记（2026-11-19 失败等待优化第一层）：NULL = 按
     # 本行 item_id 条目自身的 drive_file_id 拷源；非空 = 本单是
     # copy_forbidden 换源单，实际拷源取该条目行（同作品替代源）
-    # 的 drive_file_id，副本仍登记在 item_id 条目名下。只对
-    # owner_scope=pool 的 Drive 单有意义，用户 scope 恒 NULL。
+    # 的 drive_file_id，副本仍登记在 item_id 条目名下。原只对
+    # 已下线的贡献池 Drive 单有意义，用户 scope 恒 NULL。
     # 老库由 auto-migrate 补列（NULL）。
     source_item_id = Column(Integer)
     created_at = Column(DateTime, default=datetime.now)
@@ -2396,345 +2395,6 @@ class UserStorageBinding(Base):
     #: 故随绑定行持久化；NULL = 本列上线前的老行，按 "primary" 读。
     #: 老库由 database._auto_migrate 补列。
     oauth_client = Column(String(20), nullable=True)
-
-
-class PoolMember(Base):
-    """公共贡献池成员（goal-33 PR-1 地基）：一行 = 一条被接纳为池盘
-    的用户绑定，或一条管理员预批的候选资格。
-
-    - ``binding_id``：指向 ``user_storage_bindings.id``，unique（一行
-      绑定至多一个成员行）；候选资格行（status=candidate，管理员在
-      贡献者绑盘之前预批）尚无绑定，``binding_id`` 为 NULL——上限
-      判定（pool_gate.binding_limit_for_user）靠候选行先行，贡献者
-      才能绑满 5 个盘（GOAL 通审决议 2）。
-    - ``user_id``：贡献者 WebUser.id（冗余存一份，免每次 join 查）。
-    - ``provider``：入池时从绑定行快照；候选行为 NULL（还没绑定）。
-      能力层不写死 provider（见 design §2.5）。
-    - ``status``：candidate（预批资格）| pending（申请待审）|
-      active | suspended | exited | rejected | ejected。
-    - ``capacity_cap_bytes``：管理员对单盘的覆盖上限，NULL = 用
-      全局配置 pool_member_capacity_bytes。
-    - ``suspended_reason``：manual / breaker / binding_invalid /
-      contributor_exit / admin_eject。
-    - 无外键（照 TransferVariant 先例）；新表由 create_all 建出。
-    """
-
-    __tablename__ = "pool_members"
-
-    __table_args__ = (
-        Index("ix_pool_members_user", "user_id"),
-        Index("ix_pool_members_status", "status"),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    binding_id = Column(Integer, unique=True, nullable=True)
-    user_id = Column(Integer, nullable=False)
-    provider = Column(String(20), nullable=True)
-    status = Column(String(20), nullable=False, default="pending")
-    capacity_cap_bytes = Column(BigInteger, nullable=True)
-    suspended_reason = Column(String(40), nullable=True)
-    breaker_until = Column(DateTime, nullable=True)
-    # 清退违规标志（PR-4）：管理员清退时勾选违规才置位——置位人
-    # （violation_flagged_by，管理员 WebUser.id）、置位时间、原因
-    # 三件留痕；清除走 clear_member_violation，只落 cleared_by/at，
-    # 置位痕迹保留备查。PR-6 结算的判定依据：status=ejected 且
-    # violation_flagged 的成员该期不结（design §11.2 第 4 条）。
-    violation_flagged = Column(Boolean, nullable=False, default=False)
-    violation_reason = Column(String(200), nullable=True)
-    violation_flagged_at = Column(DateTime, nullable=True)
-    violation_flagged_by = Column(Integer, nullable=True)
-    violation_cleared_at = Column(DateTime, nullable=True)
-    violation_cleared_by = Column(Integer, nullable=True)
-    joined_at = Column(DateTime, nullable=True)
-    status_changed_at = Column(DateTime, default=datetime.now)
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now,
-                        onupdate=datetime.now)
-
-
-class PoolMemberStatusEvent(Base):
-    """公共贡献池成员状态变迁流水（goal-33 PR-4，激励钩子 H2）。
-
-    成员每次状态变更经 pool_gate.transition_member_status 收口
-    写一行：from_status（新建行为 NULL）→ to_status + reason。
-    在线天数结算（PR-6）靠本表把 active 区间与北京时间自然日
-    求交——只有 pool_members 当前状态算不出历史区间，晚落即
-    数据永久缺失，故随生命周期首批调用点（PR-4）必落；PR-5
-    熔断连带复用同一写函数。无外键（照 TransferVariant 先例）。
-    """
-
-    __tablename__ = "pool_member_status_events"
-
-    __table_args__ = (
-        Index("ix_pool_member_status_events_member", "member_id"),
-        Index("ix_pool_member_status_events_created", "created_at"),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    member_id = Column(Integer, nullable=False)
-    from_status = Column(String(20), nullable=True)
-    to_status = Column(String(20), nullable=False)
-    reason = Column(String(80), nullable=True)
-    created_at = Column(DateTime, default=datetime.now)
-
-
-class PoolUsageDaily(Base):
-    """公共贡献池单盘日用量（goal-33 PR-1 地基）：一盘一天一行，
-    (member_id, day) 唯一。限额与选盘打分的数据面（PR-2 起写入）。
-
-    播放字节数不可观测（池副本走免凭证直链、字节不过服务器），
-    本表只记起播次数，不编造字节数。
-    """
-
-    __tablename__ = "pool_usage_daily"
-
-    __table_args__ = (
-        UniqueConstraint("member_id", "day",
-                         name="uq_pool_usage_daily_member_day"),
-        Index("ix_pool_usage_daily_member", "member_id"),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    member_id = Column(Integer, nullable=False)
-    day = Column(Date, nullable=False)
-    transfer_jobs = Column(Integer, nullable=False, default=0)
-    transfer_bytes = Column(BigInteger, nullable=False, default=0)
-    play_starts = Column(Integer, nullable=False, default=0)
-    quota_hits = Column(Integer, nullable=False, default=0)
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now,
-                        onupdate=datetime.now)
-
-
-class PoolPlayEvent(Base):
-    """公共贡献池播出原始事件（goal-33 PR-3，激励计量钩子 H1）。
-
-    一行 = 一次池播出成功下发（PlaybackInfo 下发池副本地址、或
-    video_stream 302/中继出字节）。只如实记录原始事件：哪个成员的
-    哪份副本、被哪个观众起播、何时。防刷判定（本人及同人多盘互看
-    不计、单日上限冻结等）与聚合结算都是 PR-6 的纯函数活，本表
-    不落 counted 结论——明细行结论由结算聚合时现算。
-
-    写入点口径（GA-033）：同观众同副本 30 分钟内的重复起播在
-    写入点先行去重（与 pool_reward 计量纯函数的去重窗口同为
-    1800 秒），不落重复行；这只是省行数的先行过滤，不是防刷
-    结论——结算聚合仍按存量事件把去重与其余防刷规则全量复核
-    一遍，写时去重有无都不改变结算口径（design §11.5 的
-    「写入点不做防刷判定」指不下 counted 结论，与此不冲突）。
-
-    写入纪律沿 PlayStartEvent：独立会话写、失败静默，绝不进起播
-    热路径的同步事务（见 pool_gate.note_pool_play_served）。
-    无外键（照 TransferVariant 先例）；新表由 create_all 建出。
-    """
-
-    __tablename__ = "pool_play_events"
-
-    __table_args__ = (
-        Index("ix_pool_play_events_member", "member_id"),
-        Index("ix_pool_play_events_variant", "variant_id"),
-        Index("ix_pool_play_events_viewer", "viewer_user_id"),
-        Index("ix_pool_play_events_created", "created_at"),
-        Index("ix_pool_play_events_member_created",
-              "member_id", "created_at"),
-        Index("ix_pool_play_events_viewer_variant_created",
-              "viewer_user_id", "variant_id", "created_at"),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    member_id = Column(Integer, nullable=False)
-    variant_id = Column(Integer, nullable=False)
-    item_id = Column(Integer, nullable=False)
-    viewer_user_id = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=datetime.now)
-
-
-class PoolItemSourceBlock(Base):
-    """公共贡献池条目级源熔断行（2026-11-12）：一行 = 一个条目
-    的源文件阻断态（item_id 唯一）。
-
-    产生：同条目池单 copy_forbidden 失败达「全员试过」或窗口
-    内阈值（pool_retry 子家族 pool_source_block_* 键），判定
-    收口在 pool_gate 的换盘/建单口。为什么要条目级：2026-11-10
-    换盘机制的「已试过」集合只活在每条失败行自己的短冷却窗
-    （默认 3600 秒）里，行一过期就掉出集合，下一轮点播把全员
-    当没试过重开整轮——《奥德赛》源分享坏死后 24h 烧出 236 个
-    失败单。本行是跨轮次的条目级记忆：
-    - ``blocked_until``：阻断到期时刻；期内任何入口不许为该
-      条目新建池单（只管 owner_scope=pool，个人盘不动）。
-    - ``probe_job_id``：冷却到期半开后放行的唯一探测单 id；
-      非空 = 探测已放行（在飞或待裁决）。裁决在 pool_gate
-      ._resolve_source_block 一处：done / 其它 kind 失败（源
-      可读）→ 删行解阻；copy_forbidden 失败 → 重新阻断一整轮。
-    - ``failure_count`` / ``tripped_at``：最近一次触发时窗口
-      内失败数与触发时刻，留痕对账用。
-    无外键（照本文件池表先例）；新表由 create_all 建出。
-    """
-
-    __tablename__ = "pool_item_source_blocks"
-
-    __table_args__ = (
-        UniqueConstraint("item_id",
-                         name="uq_pool_item_source_blocks_item"),
-        Index("ix_pool_item_source_blocks_item", "item_id"),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    item_id = Column(Integer, nullable=False)
-    blocked_until = Column(DateTime, nullable=True)
-    probe_job_id = Column(Integer, nullable=True)
-    failure_count = Column(Integer, nullable=False, default=0)
-    tripped_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now,
-                        onupdate=datetime.now)
-
-
-class PoolBadDriveCombo(Base):
-    """公共贡献池成员×源盘失败记忆（等待优化第二层）：
-    一行 = 一个成员读不了一个源盘的记忆。
-
-    产生：池单 copy_forbidden 终态失败时记（transfer_variant
-    ._fail_job 钩子，只记这一种——源文件没了是条目级问题，
-    不毒化整条源盘；用户盘单不记）。为什么要成员×源盘粒度：
-    条目级源熔断（PoolItemSourceBlock）只拦单个条目，而同一
-    源盘下的几百个条目会被 refill 跨天反复派给同一个读不了
-    该盘的成员（生产 7 天实测：263 次池失败 100% 来自成员 40
-    × 源盘 0AERUVu4kfWEfUk9PVA 这一个组合，225 个不同条目）。
-
-    语义：
-    - ``expires_at``：记忆到期时刻；期内 refill 选盘跳过该
-      组合，过期后可再探（权限可能已被重新授予）。默认 TTL
-      7 天（pool_retry 子家族 pool_bad_combo_ttl_days）：覆盖
-      跨天重复派单的观测窗口，又不永久拉黑。
-    - 成功即清：该组合任一池单成功登记 ready 后整行删除
-      （transfer_variant._register_ready_variant 钩子），
-      修好的权限不用等 TTL。
-    - ``failure_count`` / ``last_error_kind`` /
-      ``last_item_id``：留痕对账用；每次失败刷新 last_* 与
-      expires_at（按最新一次失败起算 TTL）。
-    无外键（照本文件池表先例）；新表由 create_all 建出。
-    """
-
-    __tablename__ = "pool_bad_drive_combos"
-
-    __table_args__ = (
-        UniqueConstraint("member_id", "source_drive_id",
-                         name="uq_pool_bad_drive_combos_member_drive"),
-        Index("ix_pool_bad_drive_combos_member", "member_id"),
-        Index("ix_pool_bad_drive_combos_drive", "source_drive_id"),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    member_id = Column(Integer, nullable=False)
-    source_drive_id = Column(String(191), nullable=False)
-    failure_count = Column(Integer, nullable=False, default=0)
-    first_failure_at = Column(DateTime, nullable=True)
-    last_failure_at = Column(DateTime, nullable=True)
-    expires_at = Column(DateTime, nullable=True)
-    last_error_kind = Column(String(40), nullable=True)
-    last_item_id = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now,
-                        onupdate=datetime.now)
-
-
-class PoolRewardSettlement(Base):
-    """公共贡献池激励结算批次（goal-33 PR-6，钩子 H3）。
-
-    一行 = 一个结算周期的一次结算建批：period_key 唯一
-    （monthly 形如 2026-11、weekly 形如 2026-W45，边界按
-    Asia/Shanghai 自然日/月，见 pool_reward.period_bounds_utc）。
-    建批时把当期全部 pool_reward_* 配置落 params_snapshot 快照，
-    事后改配置不影响已建批次口径。shadow=True 表示本批建批时
-    真发开关（pool_reward_payout_enabled）为关：明细只算账
-    落行、不发钱（影子跑对账期）；开关开后重跑同批才真发。
-
-    status：pending 待执行 / running 执行中 / done 已完成 /
-    failed 中途失败（可重跑续结，明细唯一键兜底不双发）。
-    无外键（照本文件池表先例）；新表由 create_all 建出。
-    """
-
-    __tablename__ = "pool_reward_settlements"
-
-    __table_args__ = (
-        UniqueConstraint("period_key",
-                         name="uq_pool_reward_settlements_period"),
-        Index("ix_pool_reward_settlements_status", "status"),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    period_key = Column(String(16), nullable=False)
-    period_kind = Column(String(8), nullable=False, default="monthly")
-    period_start = Column(DateTime, nullable=False)
-    period_end = Column(DateTime, nullable=False)
-    status = Column(String(16), nullable=False, default="pending")
-    shadow = Column(Boolean, nullable=False, default=True)
-    params_snapshot = Column(Text, nullable=True)
-    created_by = Column(Integer, nullable=True)
-    last_error = Column(String(255), nullable=True)
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now,
-                        onupdate=datetime.now)
-    finished_at = Column(DateTime, nullable=True)
-
-
-class PoolRewardDetail(Base):
-    """公共贡献池激励结算明细（goal-33 PR-6，钩子 H3）。
-
-    一行 = 一个成员在一个批次里的结算结论。(settlement_id,
-    member_id) 唯一约束是整条链的第一道幂等锚：重跑/续跑撞键
-    即已结；发放第二道锚是钱包流水 idempotency_key =
-    ``pool_reward:{detail_id}``（钱包侧幂等回放兜底）。
-
-    计量快照：counted_plays（过防刷后的起播数）、active_days
-    （有效在线日）、raw_plays（原始起播数，对账面）、
-    transfer_bytes（当期转存字节，仅展示/对账、一期不计奖）。
-    应发量（2026-11-15 改发美金）：amount_usd = 按费率精确累计
-    的美元额（4 位小数，封顶前）；credited_usd = 经月封顶
-    （本人套餐月价 × 比例）与钱包美分精度取整后的实际入账额；
-    wallet_ledger_id = 入账流水锚（未入账为空）。points/xp 是
-    2026-11-13/14 下线的旧影子数，历史行保留、新行 points 恒 0。
-
-    status：shadow 影子落行（只算账未发钱）/ pending 待发
-    （发放中断的中间态，续跑补发）/ frozen 冻结待人工审
-    （单日 counted 达冻结线）/ paid 已发放 / skipped 不结
-    （reason：below_threshold 门槛不达 / ejected_violation
-    违规清退 / user_missing 账号不存在）。
-    无外键（照本文件池表先例）；新表由 create_all 建出。
-    """
-
-    __tablename__ = "pool_reward_details"
-
-    __table_args__ = (
-        UniqueConstraint("settlement_id", "member_id",
-                         name="uq_pool_reward_details_batch_member"),
-        Index("ix_pool_reward_details_settlement", "settlement_id"),
-        Index("ix_pool_reward_details_member", "member_id"),
-        Index("ix_pool_reward_details_status", "status"),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    settlement_id = Column(Integer, nullable=False)
-    member_id = Column(Integer, nullable=False)
-    user_id = Column(Integer, nullable=False)
-    counted_plays = Column(Integer, nullable=False, default=0)
-    active_days = Column(Integer, nullable=False, default=0)
-    raw_plays = Column(Integer, nullable=False, default=0)
-    transfer_bytes = Column(BigInteger, nullable=False, default=0)
-    points = Column(Integer, nullable=False, default=0)
-    xp = Column(Integer, nullable=False, default=0)
-    amount_usd = Column(Numeric(14, 4), nullable=False, default=0)
-    credited_usd = Column(Numeric(12, 2), nullable=False, default=0)
-    wallet_ledger_id = Column(Integer, nullable=True)
-    status = Column(String(16), nullable=False, default="pending")
-    reason = Column(String(80), nullable=True)
-    points_log_id = Column(Integer, nullable=True)
-    granted_at = Column(DateTime, nullable=True)
-    released_by = Column(Integer, nullable=True)
-    released_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now,
-                        onupdate=datetime.now)
 
 
 class Pan115Account(Base):
@@ -3425,11 +3085,9 @@ class DriveOAuthState(Base):
     #: database._auto_migrate 补列；NULL = 本列上线前的在途行，
     #: 按 "primary" 读（与上线前行为一致）。
     oauth_client = Column(String(20), nullable=True)
-    #: 本次授权的用途落字（2026-11-24 池专属授权）：pool_join
-    #: = 贡献池入池授权（emby_server.pool_oauth 发起/消费）；各
-    #: 授权流只消费自己用途的行，异用途不查不断。老库由
-    #: database._auto_migrate 补列；NULL = 本列上线前的历史行，
-    #: 池流一律按异用途拒绝（在途行 10 分钟内自然过期）。
+    #: 本次授权的用途落字：各授权流只消费自己用途的行，异用途
+    #: 不查不断。老库由 database._auto_migrate 补列；NULL = 本列
+    #: 上线前的历史行。（原 pool_join 贡献池入池授权已下线。）
     purpose = Column(String(20), nullable=True)
 
 

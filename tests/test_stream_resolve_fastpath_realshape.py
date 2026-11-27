@@ -140,7 +140,6 @@ def _setup_real(monkeypatch):
     from backend.emby_server import drive_changes as _dc
     from backend.emby_server import playback_gate as _gate
     from backend.emby_server import playback_source_health as _psh
-    from backend.emby_server import pool_gate as _pool_gate
 
     item = _stream_item()
     copy_row = _copy_row()
@@ -166,13 +165,11 @@ def _setup_real(monkeypatch):
                         lambda db, it: True)
     monkeypatch.setattr(_dp, "plan_ready_leg",
                         lambda db, it, u: None)
-    monkeypatch.setattr(_pool_gate, "large_file_pool_route",
-                        lambda db, u, it: False)
+    monkeypatch.setattr(_gate, "binding_required_for_item",
+                        lambda db, it: True)
     monkeypatch.setattr(api, "_drive_mount_id_for_item",
                         lambda db, it: "drive-x")
     monkeypatch.setattr(api, "_user_drive_byos_available",
-                        lambda db, it, u: False)
-    monkeypatch.setattr(api, "_pool_copy_available",
                         lambda db, it, u: False)
 
     def fake_resolve(db, it, u):
@@ -354,7 +351,6 @@ def test_realshape_store_survives_serve_failure(monkeypatch):
 
 def test_realshape_tampered_sign_never_serves(monkeypatch):
     from backend.emby_server import playback_gate as _gate
-    from backend.emby_server import pool_gate as _pool_gate
 
     counts, relay_calls, notes = _setup_real(monkeypatch)
     user = SimpleNamespace(id=11)
@@ -367,12 +363,7 @@ def test_realshape_tampered_sign_never_serves(monkeypatch):
     def _deny(db, u, req=None):
         raise HTTPException(status_code=403, detail="未绑定")
 
-    def _deny_pool(db, u, it, req=None):
-        raise HTTPException(status_code=403, detail="未绑定")
-
     monkeypatch.setattr(_gate, "ensure_binding_playback_allowed", _deny)
-    monkeypatch.setattr(
-        _pool_gate, "ensure_playback_allowed_for_item", _deny_pool)
 
     # 32 位 ASCII、格式合法但值不对的签名（真 verify 必拒）
     bad = _real_request(11, sign="0" * 32, exp=exp)

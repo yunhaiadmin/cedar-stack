@@ -75,9 +75,8 @@ def _reset_worker_db_leaks():
     pool_enabled=True 残留让未绑盘用户被判 kind=pool 放行。
     每个测试文件开始前与结束后各清一次：
     ① user_id 无对应 WebUser 的孤儿 UserStorageBinding 行；
-    ② key 以 pool_ 开头的 SystemConfig 行（删行即回代码默认，
-       pool_enabled=False 等，见 pool_gate.POOL_CONFIG_DEFAULTS），
-       并清 integrations.store 的 60s 热缓存；
+    ② key 以 pool_ 开头的 SystemConfig 行（贡献池已下线，存量
+       残键删行清理），并清 integrations.store 的 60s 热缓存；
     ③ user_id 或 item_id 无对应行的孤儿 UserMediaData 行（2026-11-13
        #147/#153 冒烟：残留 (2, 8) 占着唯一约束，sqlite id 复用让后跑
        文件的种子新建同一对 id 即撞约束）。

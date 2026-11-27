@@ -77,7 +77,6 @@ const routes: RouteRecordRaw[] = [
       { path: 'missing-episodes', name: 'MissingEpisodes', component: () => import('@/views/MissingEpisodes.vue'), meta: { title: '缺集清单' } },
       // 字幕管理（二期全缺第 7 项）：已入库字幕轨的只读盘点面
       { path: 'subtitles', name: 'Subtitles', component: () => import('@/views/Subtitles.vue'), meta: { title: '字幕管理' } },
-      { path: 'pool', name: 'PoolAdmin', component: () => import('@/views/PoolAdmin.vue'), meta: { title: '贡献池' } },
       { path: 'transfer-variants', name: 'TransferVariants', component: () => import('@/views/TransferVariants.vue'), meta: { title: '转存变体' } },
       // 双盘审计台账已并入「操作日志」页的双盘审计标签（Logs.vue ?tab=audit）：旧地址跳到对应标签，收藏不会 404
       { path: 'audit', redirect: { path: '/logs', query: { tab: 'audit' } } },

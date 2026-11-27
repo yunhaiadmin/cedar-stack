@@ -3,13 +3,13 @@
 
 钉住的口径：
 - 无管理员鉴权 → 401/403（与管理端其他口同口径）；
-- 五路记录（决策留痕 / 池成员状态流水 / 池发奖明细 / Drive
-  报错 / 起播取用事件）归一成同一行式合并返回，时间倒序，
-  total 为各路命中数之和，limit/offset 分页口径一致；
+- 三路记录（决策留痕 / Drive 报错 / 起播取用事件）归一成
+  同一行式合并返回，时间倒序，total 为各路命中数之和，
+  limit/offset 分页口径一致；
 - 筛选：source / category / user_id / member_id / binding_id /
   item_id / outcome（归一结果组，查询层预过滤）/ start / end；
-- 成员维度经 pool_members 解析：决策表 member:<id> 行带出
-  user_id / binding_id，按 user / binding 筛也能命中成员路；
+- 贡献池下线后成员维度不再经成员表解析：决策表 member:<id>
+  历史行只按 member_id 文本键命中，不带出 user/binding；
 - Drive 报错只有账号哈希、无人/盘/片维度：按 user 筛时恒不
   命中（如实口径）。
 
@@ -58,10 +58,9 @@ def _hygiene_module_engine():
         _hyg_engine.dispose()
 
 
-_TABLES = (em.TransferDecisionRound, em.PoolMemberStatusEvent,
-           em.PoolRewardDetail, em.PoolRewardSettlement,
+_TABLES = (em.TransferDecisionRound,
            em.DriveApiErrorEvent, em.DrivePlayAccessEvent,
-           em.PoolMember, base_models.WebUser)
+           base_models.WebUser)
 
 _BASE = datetime(2026, 11, 9, 10, 0, 0)
 
@@ -120,13 +119,11 @@ def authed(client, admin):
 
 @pytest.fixture()
 def seeded(db):
-    """五路各塞已知行，时间从早到晚（分钟偏移见 _at 参数）。"""
-    member = em.PoolMember(user_id=7, binding_id=55, provider="drive",
-                           status="active")
-    db.add(member)
-    db.commit()
-    db.refresh(member)
-    mid = member.id
+    """三路各塞已知行，时间从早到晚（分钟偏移见 _at 参数）。
+
+    mid 是历史池决策行的成员文本键（成员表已随贡献池下线，
+    这里只用裸 id 验文本键匹配）。"""
+    mid = 4242
     db.add_all([
         # 决策：个人盘门禁放行（user 藏在 candidates 里）
         em.TransferDecisionRound(
@@ -153,10 +150,6 @@ def seeded(db):
                 '"verdict": "failed", "reason": "no_member", '
                 '"job_id": null}'),
             decision="failed", reason="no_member", created_at=_at(3)),
-        # 池成员状态流水
-        em.PoolMemberStatusEvent(
-            member_id=mid, from_status="active", to_status="suspended",
-            reason="breaker", created_at=_at(4)),
         # Drive 报错（无人/盘/片维度）
         em.DriveApiErrorEvent(
             status_code=429, reason="rateLimitExceeded",
@@ -175,19 +168,6 @@ def seeded(db):
             result="denied", reason="请先绑定自己的网盘账号才能点播",
             created_at=_at(8)),
     ])
-    settlement = em.PoolRewardSettlement(
-        period_key="2026-11", period_kind="monthly",
-        period_start=_BASE, period_end=_at(60), status="done",
-        shadow=False, created_at=_at(5))
-    db.add(settlement)
-    db.commit()
-    db.refresh(settlement)
-    db.add(em.PoolRewardDetail(
-        settlement_id=settlement.id, member_id=mid, user_id=7,
-        counted_plays=20, active_days=9, raw_plays=22,
-        transfer_bytes=1000, points=25, xp=25,
-        status="paid", reason=None, points_log_id=77,
-        granted_at=_at(5), created_at=_at(5)))
     db.commit()
     return {"member_id": mid}
 
@@ -207,29 +187,23 @@ def test_audit_events_require_auth(client, seeded):
 
 def test_audit_events_merge_all_sources(authed, seeded):
     body = _get(authed)
-    assert body["total"] == 8
+    assert body["total"] == 6
     items = body["items"]
-    assert len(items) == 8
+    assert len(items) == 6
     sources = [it["source"] for it in items]
     assert sources.count("decision") == 3
-    assert sources.count("member_event") == 1
-    assert sources.count("reward") == 1
     assert sources.count("drive_error") == 1
     assert sources.count("play_access") == 2
     # 时间倒序：最新一行是用户 8 的门禁被拒
     assert items[0]["source"] == "play_access"
     assert items[0]["result"] == "denied"
-    # 决策 member 行经 pool_members 带出 user/binding
+    # 历史池决策行只剩 member 文本键：带 member_id，不再解析
+    # 出 user/binding（成员表已下线）
     breaker = next(it for it in items if it["category"] == "pool_breaker")
-    assert breaker["user_id"] == 7
-    assert breaker["binding_id"] == 55
+    assert breaker["user_id"] is None
+    assert breaker["binding_id"] is None
     assert breaker["member_id"] == seeded["member_id"]
     assert breaker["outcome"] == "changed"
-    # 发奖行带批次与积分
-    reward = next(it for it in items if it["source"] == "reward")
-    assert reward["detail"]["period_key"] == "2026-11"
-    assert reward["detail"]["points"] == 25
-    assert reward["outcome"] == "success"
 
 
 def test_audit_events_source_and_category_filters(authed, seeded):
@@ -246,9 +220,9 @@ def test_audit_events_source_and_category_filters(authed, seeded):
 
 def test_audit_events_user_filter_crosses_sources(authed, seeded):
     body = _get(authed, user_id=7)
-    # 决策 2（门禁 candidates + 熔断 member 解析）+ 成员流水 1
-    # + 发奖 1 + 取用 1；Drive 报错无人维度恒不命中
-    assert body["total"] == 5
+    # 决策 1（门禁 candidates）+ 取用 1；历史熔断行 candidates
+    # 里没 user、成员表下线后不再解析；Drive 报错无人维度恒不命中
+    assert body["total"] == 2
     assert all(it["user_id"] == 7 for it in body["items"])
     body = _get(authed, user_id=8)
     assert body["total"] == 2
@@ -256,17 +230,19 @@ def test_audit_events_user_filter_crosses_sources(authed, seeded):
 
 def test_audit_events_binding_member_item_filters(authed, seeded):
     mid = seeded["member_id"]
-    assert _get(authed, binding_id=55)["total"] == 4
-    assert _get(authed, member_id=mid)["total"] == 3
+    # binding 维度：决策路无成员表可互查恒不命中，只剩取用 1
+    assert _get(authed, binding_id=55)["total"] == 1
+    # member 维度：只命中历史熔断决策行（文本键）
+    assert _get(authed, member_id=mid)["total"] == 1
     body = _get(authed, item_id=100)
     assert body["total"] == 3
     assert all(it["item_id"] == 100 for it in body["items"])
 
 
 def test_audit_events_outcome_filter(authed, seeded):
-    assert _get(authed, outcome="success")["total"] == 3
+    assert _get(authed, outcome="success")["total"] == 2
     assert _get(authed, outcome="rejected")["total"] == 2
-    assert _get(authed, outcome="changed")["total"] == 2
+    assert _get(authed, outcome="changed")["total"] == 1
     body = _get(authed, outcome="error")
     assert body["total"] == 1
     assert body["items"][0]["source"] == "drive_error"
@@ -278,12 +254,12 @@ def test_audit_events_outcome_filter(authed, seeded):
 def test_audit_events_time_range_and_pagination(authed, seeded):
     body = _get(authed, start=_at(3).isoformat(),
                 end=_at(6).isoformat())
-    # [03:00, 06:00) → 池门禁失败、成员流水、发奖 = 3
-    assert body["total"] == 3
+    # [03:00, 06:00) → 历史池门禁失败决策 = 1
+    assert body["total"] == 1
     page1 = _get(authed, limit=3, offset=0)
-    page2 = _get(authed, limit=3, offset=6)
-    assert page1["total"] == 8 and len(page1["items"]) == 3
-    assert len(page2["items"]) == 2
+    page2 = _get(authed, limit=3, offset=3)
+    assert page1["total"] == 6 and len(page1["items"]) == 3
+    assert len(page2["items"]) == 3
     ids1 = {it["id"] for it in page1["items"]}
     ids2 = {it["id"] for it in page2["items"]}
     assert not (ids1 & ids2)

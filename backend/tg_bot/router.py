@@ -402,11 +402,7 @@ def _widget_query_action(widget_query: dict) -> str | None:
 
 def _widget_query_routes() -> dict:
     """动作命名空间 → 处理函数（调用时懒加载，防循环导入）。"""
-    from backend.tg_bot import pool_widget
-
-    return {
-        "pool_refresh": pool_widget.handle_widget_query,
-    }
+    return {}
 
 
 def _dispatch_widget_query(db, widget_query: dict) -> None:

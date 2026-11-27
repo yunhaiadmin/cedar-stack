@@ -279,7 +279,6 @@ def _setup_stream(monkeypatch, *, copy_row, token="USER_TOKEN"):
     from backend.emby_server import drive_changes as _dc
     from backend.emby_server import playback_gate as _gate
     from backend.emby_server import playback_source_health as _psh
-    from backend.emby_server import pool_gate as _pool_gate
 
     item = _stream_item()
     user = SimpleNamespace(id=11)
@@ -304,19 +303,13 @@ def _setup_stream(monkeypatch, *, copy_row, token="USER_TOKEN"):
                         lambda db, it: True)
     monkeypatch.setattr(_dp, "plan_ready_leg",
                         lambda db, it, u: None)
-    monkeypatch.setattr(_pool_gate, "large_file_pool_route",
-                        lambda db, u, it: False)
-    # 2026-11-22 门禁改版：video_stream 放行分支改走池决策入口拿分流
-    # 裁决，本文件不测门禁，决策入口桩成 bound 放行。
-    monkeypatch.setattr(
-        _pool_gate, "ensure_playback_allowed_for_item",
-        lambda db, u, it, request=None: SimpleNamespace(
-            allowed=True, kind="bound", pool_routed=False))
+    # 贡献池下线后 video_stream 门禁只剩二值门禁 + 条目判定：
+    # 条目判定桩成 bound。
+    monkeypatch.setattr(_gate, "binding_required_for_item",
+                        lambda db, it: True)
     monkeypatch.setattr(api, "_drive_mount_id_for_item",
                         lambda db, it: "drive-x")
     monkeypatch.setattr(api, "_user_drive_byos_available",
-                        lambda db, it, u: False)
-    monkeypatch.setattr(api, "_pool_copy_available",
                         lambda db, it, u: False)
     monkeypatch.setattr(
         _tv, "resolve_play_file_id",

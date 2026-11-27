@@ -71,9 +71,7 @@ const view = computed<StatusView | null>(() => {
     const sub =
       s.source === 'own'
         ? '副本就在你的盘里，打开播放器直接看'
-        : s.source === 'pool'
-          ? '公共池里有现成副本，打开播放器直接看'
-          : '打开播放器直接看'
+        : '打开播放器直接看'
     return {
       state: 'ready',
       title: props.autoOpening ? '已备好，正在为你打开…' : '已就绪，可以直接看',
@@ -83,15 +81,12 @@ const view = computed<StatusView | null>(() => {
     }
   }
   if (s.state === 'preparing') {
-    // 副行按 route 分流：池路是往公共池里备，本人路按阶段说。
     const sub =
-      s.route === 'pool'
-        ? '正在往公共池里备这部片'
-        : s.stage === 'queued'
-          ? '已在排队，轮到就会开始搬运'
-          : s.progress_pct !== null
-            ? `正在搬运到你的盘里，已完成 ${s.progress_pct}%`
-            : '正在搬运到你的盘里'
+      s.stage === 'queued'
+        ? '已在排队，轮到就会开始搬运'
+        : s.progress_pct !== null
+          ? `正在搬运到你的盘里，已完成 ${s.progress_pct}%`
+          : '正在搬运到你的盘里'
     // ETA 行：每次轮询结果直接渲染，不在前端倒计时递减；eta 为
     // null（已超 p90）时不显示倒计时，改 slow 文案。
     let eta: string | null = null

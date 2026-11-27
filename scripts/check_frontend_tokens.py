@@ -427,7 +427,6 @@ ADMIN_FILTERBAR_REQUIRED = (
     "views/GovernanceSuspensions.vue",
     "views/MemberCodes.vue",
     "views/MissingEpisodes.vue",
-    "views/PoolAdmin.vue",
     "views/Subscriptions.vue",
     "views/Tickets.vue",
     # WelfareLotteryProposals.vue 已随公益服删除于 2026-11-19 下线

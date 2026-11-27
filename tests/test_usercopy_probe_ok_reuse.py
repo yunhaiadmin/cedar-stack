@@ -13,8 +13,6 @@ quota 裁决保持现口径。
 - 复用落 Redis（跨 aetrix-api / aetrix-ea 两进程）；Redis 不
   可用（None / 抛错）时行为与现状逐字一致（每次新鲜探测）。
 - quota / error 裁决绝不写复用：判定缓存到期后仍当场重探。
-- 池路径（user_id 形如 poolvar:<variant_id>）不走复用，行为
-  逐字不变（熔断恢复探测必须当场探，不许吃陈 ok）。
 - TTL=0 即关复用。
 全部离线。
 """
@@ -248,19 +246,6 @@ def test_decision_redis_raising_falls_back_to_fresh_probe(monkeypatch):
 
 
 # ---------- 边界：池路径与开关 ----------
-
-def test_decision_poolvar_never_reused(fake_redis, monkeypatch):
-    """池路径（poolvar:<variant_id>）不走复用：熔断恢复探测必须
-    当场探——两次判定各探一次，Redis 里不留池的复用记录。"""
-    calls = _ok_legs(monkeypatch)
-    assert tv.probe_user_copy_quota_decision(
-        "poolvar:9", COPY_FID) == "ok"
-    assert tv.probe_user_copy_quota_decision(
-        "poolvar:9", COPY_FID) == "ok"
-    _wait_calls(calls, {"range": 2, "get": 2})
-    assert calls == {"range": 2, "get": 2}
-    assert fake_redis.store == {}
-
 
 def test_decision_reuse_ttl_zero_disables(fake_redis, monkeypatch):
     """SystemConfig 把复用 TTL 设 0 = 关 Redis ok 复用：不写复用

@@ -347,7 +347,6 @@ class WebUser(Base):
     # 语义见 backend/notify_prefs.py。
     tg_notify_seek = Column(Boolean, default=True, nullable=False, server_default="1")
     tg_notify_expiry = Column(Boolean, default=True, nullable=False, server_default="1")
-    tg_notify_pool_digest = Column(Boolean, default=True, nullable=False, server_default="1")
     # 网页播放器设置同步（2026-11-15 ⚠️11）：弹幕显示/倍速/字幕等个人
     # 偏好的整对象 JSON，原样存取、服务端不解释内部结构（上限 16KB，
     # 口径见 backend/player_prefs.py）。与 privacy/通知偏好同一套

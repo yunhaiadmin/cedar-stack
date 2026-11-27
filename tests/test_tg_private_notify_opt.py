@@ -34,7 +34,6 @@ from sqlalchemy.pool import StaticPool
 from backend import models, notifications, notify_prefs, reminders
 from backend.api import admin as admin_api
 from backend.api import panel as panel_api
-from backend.api import pool_admin
 from backend.api import welfare_admin
 from backend import governance_report as gov
 from backend.emby_server import models as em
@@ -282,8 +281,7 @@ def test_watch_and_whyplay_buttons_coexist(db, sent):
 
 def test_notify_prefs_defaults_and_tg_allowed(db):
     user = _user(db, "u", telegram_id=3001)
-    for cat in (notify_prefs.CAT_SEEK, notify_prefs.CAT_EXPIRY,
-                notify_prefs.CAT_POOL_DIGEST):
+    for cat in (notify_prefs.CAT_SEEK, notify_prefs.CAT_EXPIRY):
         assert notify_prefs.tg_allowed(db, user.id, cat) is True
     # 查不到的用户按默认收（不因偏好查询失败丢通知）
     assert notify_prefs.tg_allowed(db, 999999, notify_prefs.CAT_SEEK) is True
@@ -292,9 +290,7 @@ def test_notify_prefs_defaults_and_tg_allowed(db):
 def test_panel_notify_prefs_roundtrip(db):
     user = _user(db, "u", telegram_id=3001)
     got = panel_api.get_notify_prefs(db=db, user=user)
-    assert got["data"] == {
-        "seek": True, "expiry": True, "pool_digest": True,
-    }
+    assert got["data"] == {"seek": True, "expiry": True}
     out = panel_api.set_notify_prefs(
         panel_api.NotifyPrefsIn(seek=False), db=db, user=user)
     assert out["data"]["seek"] is False
@@ -392,46 +388,6 @@ def test_subscription_reminder_pref_drops_telegram(db, reminder_calls):
     subs = [c for c in reminder_calls
             if str(c["event_type"]).startswith("subscription.")]
     assert subs and subs[0]["channels"] == ["in_app"]
-
-
-def test_pool_review_notifies_applicant(db, event_calls, monkeypatch):
-    from backend.emby_server import pool_gate
-    from backend.emby_server import transfer_variant as tv
-
-    # 入池容量门槛：本用例的盘按 5T 档打桩（类属性口径），
-    # 只验审核通知、不验容量判定本身。
-    monkeypatch.setattr(
-        tv.UserDriveApiClient, "about_storage",
-        lambda self, drive_id: {
-            "limit": 5_497_558_138_880, "usage": 0,
-            "free": 5_497_558_138_880})
-    pool_gate.clear_pool_quota_cache()
-    user = _user(db, "pooler", telegram_id=7001)
-    cred = em.MountCredential(
-        mount_id=None, scope="user", owner_user_id=user.id,
-        sealed_credential="", key_id="fernet-v1", status="active")
-    db.add(cred)
-    db.flush()
-    binding = em.UserStorageBinding(
-        user_id=user.id, provider="drive", account_label="贡献盘",
-        credential_id=cred.id, status="active",
-        granted_scopes=(
-            "https://www.googleapis.com/auth/drive.file "
-            "https://www.googleapis.com/auth/drive.readonly"),
-    )
-    db.add(binding)
-    db.commit()
-    db.refresh(binding)
-    member = pool_gate.apply_pool_membership(db, user.id, binding.id)
-    admin = _user(db, "admin")
-    req = SimpleNamespace(client=None)
-    pool_admin.pool_approve_member(member.id, req, current_admin=admin, db=db)
-    pool_calls = [c for c in event_calls
-                  if str(c.get("event_type", "")).startswith("pool.")]
-    assert len(pool_calls) == 1
-    assert pool_calls[0]["user_id"] == user.id
-    assert pool_calls[0]["channels"] == ["in_app", "telegram"]
-    assert "通过" in pool_calls[0]["title"]
 
 
 def test_governance_decide_notifies_reporter(db, event_calls):

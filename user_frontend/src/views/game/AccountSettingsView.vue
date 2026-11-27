@@ -131,22 +131,8 @@
             @click="toggleNotifyPref('expiry')"
           ></button>
         </div>
-        <div class="set-row">
-          <span class="set-row-ic" aria-hidden="true"><Bell :size="22" /></span>
-          <span class="set-row-name">贡献回响</span>
-          <button
-            type="button"
-            class="set-switch"
-            :class="{ 'is-on': notifyPrefs.pool_digest }"
-            :disabled="notifyLoading"
-            role="switch"
-            :aria-checked="notifyPrefs.pool_digest"
-            aria-label="贡献回响"
-            @click="toggleNotifyPref('pool_digest')"
-          ></button>
-        </div>
       </div>
-      <p class="set-note">求片到货、会员到期、抽奖中奖、公共池每日小结这四类机器人私聊，可以分别关掉；关掉后站内消息仍会发。</p>
+      <p class="set-note">求片到货、会员到期、抽奖中奖这三类机器人私聊，可以分别关掉；关掉后站内消息仍会发。</p>
       <p v-if="notifyError" class="set-errline">
         <span>{{ notifyError }}</span>
         <button type="button" class="set-retry" @click="loadNotifyPrefs">重试</button>
@@ -255,9 +241,9 @@ function onFollowSummary(payload: { visible: boolean }) {
 }
 
 // ── TG 私聊通知偏好（只管机器人私聊，站内信不受影响） ──
-type NotifyPrefKey = 'seek' | 'expiry' | 'pool_digest'
+type NotifyPrefKey = 'seek' | 'expiry'
 const notifyPrefs = ref<Record<NotifyPrefKey, boolean>>({
-  seek: true, expiry: true, pool_digest: true,
+  seek: true, expiry: true,
 })
 const notifyLoading = ref(false)
 const notifyError = ref('')
@@ -270,7 +256,6 @@ async function loadNotifyPrefs() {
     notifyPrefs.value = {
       seek: d.seek !== false,
       expiry: d.expiry !== false,
-      pool_digest: d.pool_digest !== false,
     }
   } catch (e) {
     notifyError.value = humanizeError(e)
@@ -287,7 +272,6 @@ async function toggleNotifyPref(key: NotifyPrefKey) {
     notifyPrefs.value = {
       seek: d.seek !== false,
       expiry: d.expiry !== false,
-      pool_digest: d.pool_digest !== false,
     }
     toast.success(next ? '已打开这类私聊通知' : '已关掉这类私聊通知')
   } catch (e) {

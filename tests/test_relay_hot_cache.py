@@ -522,6 +522,6 @@ def test_drive_leg_sets_hot_identity(monkeypatch):
     assert out == "RESP"
     assert seen["identity"] == "drive:DRIVE9:FID123"
     out = asyncio.run(streaming.serve_drive_relay_async(
-        req, "pooldrive:7", "FID999", access_token="MEMBERTOK"))
+        req, "memberdrive:7", "FID999", access_token="MEMBERTOK"))
     assert out == "RESP"
-    assert seen["identity"] == "drive:pooldrive:7:FID999"
+    assert seen["identity"] == "drive:memberdrive:7:FID999"

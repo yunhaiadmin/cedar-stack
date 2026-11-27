@@ -194,16 +194,6 @@ WELFARE_CONFIG_SCHEMA: dict[str, tuple] = {
     "bot_playrank_series_enabled": ("bool",),
     "bot_playrank_movies_enabled": ("bool",),
     "bot_playrank_poster_enabled": ("bool",),
-    # 公共池贡献者每日小结（tg_bot.pool_digest 读侧宽容解析）：
-    # 总开关默认开；发送时间原文存储、读侧校验 HH:MM 非法回落 21:00。
-    "bot_pool_digest_enabled": ("bool",),
-    "bot_pool_digest_time": ("str",),
-    # 公共池群播报（tg_bot.pool_report 读侧宽容解析）：每晚战报
-    # 默认 21:20、每周英雄榜默认周日 20:30，都发群不置顶。
-    "bot_pool_report_enabled": ("bool",),
-    "bot_pool_report_time": ("str",),
-    "bot_pool_hero_enabled": ("bool",),
-    "bot_pool_hero_time": ("str",),
     # 主动私聊提醒（tg_bot.proactive）：两个开关默认开（2026-11-08），
     # 合并窗口秒数默认 60。word 风格 ("bool",) 存 true/false。
     # 关时不发、不写已推记录。新求片提醒管理员（tg_bot.features）默认开。
@@ -213,10 +203,6 @@ WELFARE_CONFIG_SCHEMA: dict[str, tuple] = {
     "tg_notify_merge_window_sec": ("int", 0, 3600),
     # 许愿到货群报喜（tg_bot.group_cheer）：默认开；关了只发私聊不发群。
     "tg_notify_group_arrival_enabled": ("bool",),
-    # 新贡献者群欢迎（tg_bot.group_cheer）：池成员审核通过时发群，
-    # 默认开；驳回不发。审核私聊本身走 proactive，无独立总开关
-    # （只受「贡献回响」用户偏好门控）。
-    "tg_notify_group_pool_welcome_enabled": ("bool",),
 }
 
 # 告警设置（admin_alerts.update_alert_settings 的 4 个写键）。
@@ -426,148 +412,12 @@ DRIVE_API_CONFIG_SCHEMA: dict[str, tuple] = {
     # 落库（存量行二期清理）。
 }
 
-# 公共贡献池（goal-33 PR-1 地基，2026-11-07）：27 键，读取唯一实现
-# 在 emby_server.pool_gate（POOL_CONFIG_DEFAULTS 与本表同口径）；
-# 默认值按 25TB 补充节修正值（单盘容量 4.5TB、保底空闲 300GiB、
-# 日转存 600GiB），不是 design §3 的旧默认（0 不限 / 20GiB）。
-# 字节类上限给到 10**15：4.5TB 已超 _BIG（10**9）量级。
-# pool_enabled 默认关由读侧兜底（通审决议 1：分阶段接线期默认关，
-# 正式开池由管理员开闸）；激励子家族 pool_reward_* 随 PR-6 注册
-# 为独立家族 POOL_REWARD_CONFIG_SCHEMA（本表键集已被 PR-1 测试
-# 钉死，扩键原则上另立家族；本体扩键均用户亲批：入池门槛键
-# pool_join_min_capacity_bytes（2026-11-10，16 → 17）、大文件
-# 分流两键 pool_large_file_* 与选盘 v2 的 8 个权重/扶持键
-# （2026-11-10 同日，17 → 27）；校验/存储仍走同一体系）。
-POOL_CONFIG_SCHEMA: dict[str, tuple] = {
-    "pool_enabled": ("bool",),
-    "pool_audience": ("enum", ("all", "whitelist", "subscribers")),
-    "pool_join_mode": ("enum", ("apply_review", "admin_assign", "open")),
-    "pool_enabled_providers": ("str",),
-    "pool_member_capacity_bytes": ("int", 0, 10**15),
-    "pool_join_min_capacity_bytes": ("int", 0, 10**15),
-    "pool_member_reserve_free_bytes": ("int", 0, 10**15),
-    "pool_member_daily_transfer_bytes": ("int", 0, 10**15),
-    "pool_member_daily_transfer_jobs": ("int", 0, _BIG),
-    "pool_item_max_copies": ("int", 1, 8),
-    "pool_copy_idle_evict_days": ("int", 0, 3650),
-    "pool_global_concurrency": ("int", 1, 16),
-    "pool_enqueue_jitter_sec": ("int", 0, 600),
-    "pool_breaker_quota_hits_per_day": ("int", 0, _BIG),
-    "pool_breaker_cooldown_sec": ("int", 60, 604800),
-    "pool_pick_top_k": ("int", 1, 8),
-    # 池候选/成员的个人绑定上限（通审决议 2）：管理员预批资格先行，
-    # 见候选/成员资格时改走本键，个人上限（env，默认 3）不变。
-    "pool_member_max_bindings_per_user": ("int", 1, 100),
-    # 大文件分流（用户 2026-11-10 亲点）：已绑盘用户播大文件且
-    # 池有就绪副本时直接播池副本；开关默认开，阈值默认 15GB
-    # （十进制字节，下限 1 防 0 阈值把小文件也卷进来）。
-    "pool_large_file_routing_enabled": ("bool",),
-    "pool_large_file_bytes": ("int", 1, 10**15),
-    # 选盘打分 v2 权重（百分比，口径见 pool_gate._score_member）：
-    # 五项合计不必为 100，打分按 /100 折算、排序只看相对值。
-    "pool_pick_weight_capacity": ("int", 0, 100),
-    "pool_pick_weight_daily": ("int", 0, 100),
-    "pool_pick_weight_load": ("int", 0, 100),
-    "pool_pick_weight_health": ("int", 0, 100),
-    "pool_pick_weight_new": ("int", 0, 100),
-    # 新盘扶持窗口（天）：0 = 关闭扶持。
-    "pool_pick_new_member_boost_days": ("int", 0, 90),
-    # 播出选副本打分 v2 权重（百分比，见 pool_gate._serve_score）。
-    "pool_serve_weight_capacity": ("int", 0, 100),
-    "pool_serve_weight_load": ("int", 0, 100),
-}
 
-# 激励子家族 pool_reward_*（goal-33 PR-6，design §11.3）：计量、
-# 单价、门槛全进配置；默认值在 pool_gate
-# .POOL_REWARD_CONFIG_DEFAULTS（与下表同口径）。独立家族的理由
-# 见 POOL_CONFIG_SCHEMA 上方注释（本体键集已钉死）。
-POOL_REWARD_CONFIG_SCHEMA: dict[str, tuple] = {
-    "pool_reward_enabled": ("bool",),
-    # 真发开关（PR-6 任务书新增）：关＝结算只算账落影子行不发钱，
-    # 开＝按明细真入账钱包余额；与总开关分开，先影子跑对账再开闸。
-    "pool_reward_payout_enabled": ("bool",),
-    "pool_reward_period": ("enum", ("monthly", "weekly")),
-    # 美金额费率（2026-11-15 改发美金）：float-places 校验小数
-    # 位数并归一化落库字符串，读侧 Decimal 解析、无浮点误差。
-    "pool_reward_usd_per_play": ("float", 0, 10000, 4),
-    "pool_reward_usd_per_active_day": ("float", 0, 10000, 4),
-    # 月封顶比例：上限 = 本人当前套餐月价 × 本值（默认 1）。
-    "pool_reward_cap_ratio": ("float", 0, 100, 4),
-    "pool_reward_min_active_days": ("int", 0, 366),
-    "pool_reward_min_counted_plays": ("int", 0, _BIG),
-    "pool_reward_play_dedupe_window_sec": ("int", 0, 604800),
-    "pool_reward_daily_play_freeze": ("int", 0, _BIG),
-    "pool_reward_xp_per_play": ("int", 0, _BIG),
-    "pool_reward_xp_cap": ("int", 0, _BIG),
-    # 订阅延期：一期恒关（二期能力），键位按 design 留。
-    "pool_reward_subscription_enabled": ("bool",),
-    "pool_reward_title_enabled": ("bool",),
-}
-
-# 巡检子家族（闲置主动清理开关，用户 2026-11-09 亲点）：本体
-# POOL_CONFIG_SCHEMA 的键集已被 PR-1 测试钉死，扩键另立
-# 家族（同 pool_reward 先例）；默认值在 pool_gate
-# .POOL_JANITOR_CONFIG_DEFAULTS，唯一消费方是 pool_janitor。
-POOL_JANITOR_CONFIG_SCHEMA: dict[str, tuple] = {
-    "pool_idle_evict_proactive_enabled": ("bool",),
-    # 热门预热每轮补位上限（等待优化第二层）：0 = 关预热补位，
-    # 上限 200 防误配成单轮洪水。
-    "pool_refill_max_per_round": ("int", 0, 200),
-    # 热门预热目标份数（等待优化第二层）：1–8，与
-    # pool_item_max_copies 同上限。
-    "pool_refill_prefetch_target_copies": ("int", 1, 8),
-    # 点播排行补池开关（2026-11-21 池优化）：默认开（代码默认）。
-    "pool_refill_playrank_enabled": ("bool",),
-    # 点播排行补池取数上限：0 = 不取；上限 1000 防误配成整库扫。
-    "pool_refill_playrank_top_n": ("int", 0, 1000),
-}
-
-# 重试子家族（copy_forbidden 换盘重试，2026-11-10 生产定案）：
-# 本体 POOL_CONFIG_SCHEMA 键集已钉死，另立家族（同 pool_janitor
-# 先例）；默认值在 pool_gate.POOL_RETRY_CONFIG_DEFAULTS，消费方
-# 是 pool_gate 门禁/换盘与 transfer_variant 池执行器。
-POOL_RETRY_CONFIG_SCHEMA: dict[str, tuple] = {
-    # copy_forbidden 终态冷却（秒）：默认 3600（1 小时），不再
-    # 无条件 24h；下限 60 防误配成高频重试，上限 86400 不许比
-    # 旧口径更长。
-    "pool_copy_forbidden_cooldown_sec": ("int", 60, 86400),
-    # 单条目换盘总尝试上限：0 = 以可用成员盘试完为界；>0 达到
-    # 即终态。上限 64 防误配成无界重试。
-    "pool_copy_forbidden_max_attempts": ("int", 0, 64),
-    # 单条目 insufficient_space 换盘总尝试上限（2026-11-21 池
-    # 优化）：0 = 以可用成员盘试完为界；上限 64 同上。
-    "pool_insufficient_space_max_attempts": ("int", 0, 64),
-    # 条目级源熔断（2026-11-12）：窗口内 forbidden 失败数阈值，
-    # 0 = 关阈值条件（只按全员试过触发）；上限 1000 防误配。
-    "pool_source_block_max_failures": ("int", 0, 1000),
-    # 源熔断计数窗口（秒）：下限 300 防窗口小到数不齐一轮，
-    # 上限 7 天。
-    "pool_source_block_window_sec": ("int", 300, 604800),
-    # 源熔断阻断冷却（秒）：下限 300 防误配成高频重开，上限
-    # 7 天防把条目锁死太久（到期有半开探测兜底）。
-    "pool_source_block_cooldown_sec": ("int", 300, 604800),
-    # 源自愈开关（2026-11-12）：池单 copy_forbidden 时先经 SA
-    # 给源文件补 anyone-reader 再重试一次；默认开（代码默认）。
-    "pool_source_heal_enabled": ("bool",),
-    # 换源上限（2026-11-19）：单条目 copy_forbidden 换盘穷尽后
-    # 最多再换几个同作品替代源重试；0 = 关换源（回旧口径）。
-    # 上限 16 防同作品重复行很多时无界换源。
-    "pool_copy_forbidden_source_max_swaps": ("int", 0, 16),
-    # 成员×源盘失败记忆 TTL（天，等待优化第二层）：下限 1 防
-    # 0 天记忆当天即过期失去意义，上限 90 防误配成长锁。
-    "pool_bad_combo_ttl_days": ("int", 1, 90),
-}
-
-# 起播状态 ETA 分位数（等待优化第三层·进度可见）：池/本人转存耗时
+# 起播状态 ETA 分位数（等待优化第三层·进度可见）：本人转存耗时
 # p50/p90 兜底值与分位数缓存秒数。代码默认值在 play_status
 # .PLAY_STATUS_ETA_CONFIG_DEFAULTS（2026-11-19 生产 7 天实测值），
 # 本表只做范围校验；纯 SystemConfig 键，不进 env.example。
 PLAY_STATUS_ETA_CONFIG_SCHEMA: dict[str, tuple] = {
-    # 池转存耗时 p50（秒）：实测 23；下限 1 防 0 秒假精确，上限
-    # 3600 防误配成天文数字。
-    "pool_eta_p50_sec": ("int", 1, 3600),
-    # 池转存耗时 p90（秒）：实测 34。
-    "pool_eta_p90_sec": ("int", 1, 3600),
     # 本人转存耗时 p50（秒）：实测 6。
     "user_eta_p50_sec": ("int", 1, 3600),
     # 本人转存耗时 p90（秒）：实测 26。

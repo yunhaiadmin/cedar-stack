@@ -1,4 +1,4 @@
-"""callback_query 处理：主菜单按钮（menu:*）+ 查人面板（whois:*）+ 贡献池 widget（pool_widget）。
+"""callback_query 处理：主菜单按钮（menu:*）+ 查人面板（whois:*）。
 
 玩法类回调（红包/抽奖/老虎机/盲盒/对决/红包雨）已随批 9 断入口下线：
 历史消息上的旧按钮点到时无分支命中、静默忽略。对账处置回调
@@ -27,9 +27,6 @@ def handle_callback(db, callback_query: dict) -> None:
         return
     if data.startswith("whois:"):
         _handle_whois_callback(db, callback_query)
-        return
-    if data == "pool_widget":
-        _handle_pool_widget(db, callback_query)
         return
 
 
@@ -350,36 +347,4 @@ def _render_menu(db, tg_user: dict, tg_id: int, chat_id: int, is_private: bool,
 class _UnknownMenuAction(Exception):
     """未知菜单 action：调用方静默忽略。"""
 
-
-def _handle_pool_widget(db, callback_query: dict) -> None:
-    """发贡献池私聊面板 widget（Bot API 10.4 sendWidget，私聊限定）。
-
-    生产环境 widget 仅限私聊：群里点到（旧面板残留等）只回 toast、不发。
-    未绑定账号 toast；不是池成员 toast（面板无内容可看）。
-    """
-    from backend.tg_bot import pool_widget as pool_widget_mod
-
-    cb_id = callback_query.get("id")
-    from_user = callback_query.get("from") or {}
-    tg_id = from_user.get("id")
-    msg = callback_query.get("message") or {}
-    chat_id = (msg.get("chat") or {}).get("id")
-    if not cb_id or not tg_id or not chat_id:
-        return
-
-    def _answer(text: str, show_alert: bool = False) -> None:
-        sender.answer_callback_query(db, cb_id, text=text, show_alert=show_alert)
-
-    if int(chat_id) != int(tg_id):
-        _answer("我的贡献池仅支持私聊，群里看不了", show_alert=True)
-        return
-    user = resolve(db, int(tg_id))
-    if user is None:
-        _answer("请先绑定账号后再查看贡献池", show_alert=True)
-        return
-    ok, err, _mid = pool_widget_mod.send_pool_widget(db, chat_id, user)
-    if not ok:
-        _answer(err or "我的贡献池发送失败", show_alert=True)
-        return
-    _answer("我的贡献池已发出")
 
