@@ -27,7 +27,14 @@
 - 全量展示（2026-11-10 站主亲令「要展示完全」）：电影与剧集组
   全量入选、不设行数上限；正文超 Telegram 单条 4096 字上限时，
   在行边界切成多条顺序发送（不劈行，栏目头跟随其第一行所在条），
-  逐条记已播；中途某条失败即停，未发条目不记、下轮续发——不重不漏。
+  逐条记已播；单组集号行本身超限时按段拆成续行（行头带「（续）」），
+  任何情况下不许发出超限正文。
+- 失败口径（2026-11-28 毒数据事故后改版）：瞬时失败（超时/网络/
+  5xx/429）仍中途停发、已发记表、未发下轮续发；永久失败（400/
+  403/404 类 Bad Request、Telegram 回的 ok=false 描述）记死信
+  跳过（kind="skipped"，防重复表据此不再重选）并继续发后面的条，
+  一条毒数据不许再卡死整批；全批永久失败且一条未发时不记死信、
+  按整批失败下轮原样重试（无法排除频道级故障时不丢数据）。
 - 存量窗口：只报最近 14 天内入库（date_added）的行。
 - 上线基线（首跑种子）：功能上线时已在货架上（已绑定且 14 天内
   入库）的条目先整批记为 baseline 不播报——播报只播上线后新到的，
@@ -72,6 +79,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from datetime import datetime, timedelta
 
 from sqlalchemy import exists, func, insert, literal, or_, select
@@ -105,6 +113,8 @@ PRUNE_MAX_BATCHES = 10
 PRUNE_INTERVAL_HOURS = 24
 #: Telegram 单条消息正文上限（字符）：整批超此限按行边界分条发送。
 MESSAGE_LIMIT = 4096
+#: 行单元打包预留：栏目头（6 字）＋分隔符＋续行标记，宁可少装一段。
+_UNIT_SAFETY_MARGIN = 16
 _EPISODE_FETCH_CAP = 20000
 #: 水位主轨的重叠窗（分钟）：水位之前的这一小段每轮重查，兜底在
 #: 水位推进时刻已写库但收集快照未见的迟到入库行；重查行靠已播表
@@ -324,11 +334,13 @@ def format_movie_line(item) -> str:
     return f"🎬{_title_with_year(item)}"
 
 
-def _episode_segments(numbers: list[int]) -> str:
-    """集号列表 → 连续段拼写：[15,16,17,18] → E15-E18；[7] → E07；
-    [15,16,18] → E15-E16、E18（首段后以「、」连接）。"""
+def _episode_segment_parts(numbers: list[int]) -> list[str]:
+    """集号列表 → 连续段字符串列表：[15,16,17,18] → ["E15-E18"]；
+    [15,16,18] → ["E15-E16", "E18"]。"""
     nums = sorted(set(int(n) for n in numbers))
-    segments: list[str] = []
+    if not nums:
+        return []
+    segments: list[tuple[int, int]] = []
     start = prev = nums[0]
     for n in nums[1:]:
         if n == prev + 1:
@@ -337,10 +349,75 @@ def _episode_segments(numbers: list[int]) -> str:
         segments.append((start, prev))
         start = prev = n
     segments.append((start, prev))
-    parts = [
+    return [
         f"E{a:02d}" if a == b else f"E{a:02d}-E{b:02d}" for a, b in segments
     ]
-    return "、".join(parts)
+
+
+def _episode_segments(numbers: list[int]) -> str:
+    """集号列表 → 连续段拼写：[15,16,17,18] → E15-E18；[7] → E07；
+    [15,16,18] → E15-E16、E18（首段后以「、」连接）。"""
+    return "、".join(_episode_segment_parts(numbers))
+
+
+def _episode_group_units(group, *, first_group: bool) -> list[dict]:
+    """一个剧集组拆成若干行单元：单组集号行超单条上限时按段打包续行。
+
+    行头：首行 ``📺名 (年份) Sxx``，续行行头带「（续）」；第一组的
+    首行前面挂「电视剧更新」栏目头。每个单元只覆盖它自己的集子集
+    （记已播按单元走，不重不漏）。单段本身远小于上限，不会一行装不下。
+    """
+    series = group["series"]
+    header = f"📺{_title_with_year(series)} S{int(group['season']):02d}"
+    numbers = sorted(set(int(ep.episode_number) for ep in group["episodes"]))
+    if not numbers:
+        return []
+    runs: list[tuple[int, int]] = []
+    start = prev = numbers[0]
+    for n in numbers[1:]:
+        if n == prev + 1:
+            prev = n
+            continue
+        runs.append((start, prev))
+        start = prev = n
+    runs.append((start, prev))
+    parts = _episode_segment_parts(numbers)
+    episodes = sorted(group["episodes"], key=lambda ep: int(ep.episode_number))
+    units: list[dict] = []
+    batch: list[tuple[tuple[int, int], str]] = []
+    batch_len = 0
+
+    def flush(first: bool) -> None:
+        nonlocal batch, batch_len
+        if not batch:
+            return
+        head = header if first else header + "（续）"
+        prefix = "电视剧更新\n" if (first_group and first) else ""
+        text = prefix + head + "、".join(part for _, part in batch)
+        subset = [
+            ep for ep in episodes
+            if any(a <= int(ep.episode_number) <= b for (a, b), _ in batch)
+        ]
+        units.append({
+            "text": text,
+            "section": "tv",
+            "starts_section": first_group and first,
+            "movies": [],
+            "tv_groups": [{**group, "episodes": subset}],
+        })
+        batch, batch_len = [], 0
+
+    for run, part in zip(runs, parts):
+        cont = bool(units)  # 已出过单元 → 当前包是续行，行头多「（续）」
+        head_len = len(header) + (3 if cont else 0)
+        budget = MESSAGE_LIMIT - head_len - _UNIT_SAFETY_MARGIN
+        add = len(part) + (1 if batch else 0)  # 「、」分隔
+        if batch and batch_len + add > budget:
+            flush(first=not units)
+        batch.append((run, part))
+        batch_len += add
+    flush(first=not units)
+    return units
 
 
 def format_episode_line(group) -> str:
@@ -375,14 +452,7 @@ def _build_units(tv_groups, movie_rows) -> list[dict]:
     """
     units: list[dict] = []
     for i, group in enumerate(tv_groups):
-        prefix = "电视剧更新\n" if i == 0 else ""
-        units.append({
-            "text": prefix + format_episode_line(group),
-            "section": "tv",
-            "starts_section": i == 0,
-            "movies": [],
-            "tv_groups": [group],
-        })
+        units.extend(_episode_group_units(group, first_group=(i == 0)))
     for i, item in enumerate(movie_rows):
         prefix = "电影更新\n" if i == 0 else ""
         units.append({
@@ -395,13 +465,34 @@ def _build_units(tv_groups, movie_rows) -> list[dict]:
     return units
 
 
+def _split_overlong_unit(unit: dict, limit: int = MESSAGE_LIMIT) -> list[dict]:
+    """兜底：单行仍超限时按字符硬切（只应发生在病态长标题行），
+    覆盖归属记在最后一切上（整行发完才记已播）。"""
+    text = unit["text"]
+    if len(text) <= limit:
+        return [unit]
+    pieces = [text[i:i + limit] for i in range(0, len(text), limit)]
+    out: list[dict] = []
+    for j, piece in enumerate(pieces):
+        last = j == len(pieces) - 1
+        out.append({
+            **unit,
+            "text": piece,
+            "starts_section": unit["starts_section"] if j == 0 else False,
+            "movies": unit["movies"] if last else [],
+            "tv_groups": unit["tv_groups"] if last else [],
+        })
+    return out
+
+
 def build_message_chunks(tv_groups, movie_rows,
                          limit: int = MESSAGE_LIMIT) -> list[dict]:
     """整批正文按单条上限切成多条：[{text, movies, tv_groups}...]。
 
     切分只落在行边界（不劈行）：栏目头跟随其第一行所在条；同栏续行
     以单换行接、换栏以空行接，与 build_message 的一口气形态一致。
-    单行本身超限时自成一条（实际行长远不及上限，此为兜底）。
+    单组集号行超限由 _build_units 预先按段拆成续行；其余病态单行
+    由 _split_overlong_unit 硬切兜底——任何情况下不发出超限正文。
     """
     chunks: list[dict] = []
     texts: list[str] = []
@@ -418,7 +509,10 @@ def build_message_chunks(tv_groups, movie_rows,
             })
         texts, movies, groups, sections, length = [], [], [], set(), 0
 
+    units: list[dict] = []
     for unit in _build_units(tv_groups, movie_rows):
+        units.extend(_split_overlong_unit(unit))
+    for unit in units:
         sep = ""
         if texts:
             sep = "\n\n" if (
@@ -476,6 +570,32 @@ def _mark_sent(db, movie_rows, tv_groups) -> None:
     for group in tv_groups:
         for ep in group["episodes"]:
             db.add(models.TgUpdateDigestSent(item_id=int(ep.id), kind="episode"))
+    db.commit()
+
+
+def _is_permanent_send_error(err: str | None) -> bool:
+    """发送失败是否「重试也注定失败」的永久错：4xx（除 429 限流）或
+    Telegram 回的 ok=false 描述。超时/网络/5xx/429 与未知错误一律
+    按瞬时错处理（停发、下轮续发，不丢数据）。"""
+    if not err:
+        return False
+    if err.startswith("Telegram API 错误:"):
+        return True
+    m = re.search(r"HTTP 状态码错误: (\d+)", err)
+    if m:
+        code = int(m.group(1))
+        return 400 <= code < 500 and code != 429
+    return False
+
+
+def _mark_skipped(db, movie_rows, tv_groups) -> None:
+    """永久失败的条目记死信（kind="skipped"）：防重复表据此不再重选，
+    下轮不再为它热循环；kind 可查、可审计（与 baseline 同一机制）。"""
+    for item in movie_rows:
+        db.add(models.TgUpdateDigestSent(item_id=int(item.id), kind="skipped"))
+    for group in tv_groups:
+        for ep in group["episodes"]:
+            db.add(models.TgUpdateDigestSent(item_id=int(ep.id), kind="skipped"))
     db.commit()
 
 
@@ -552,9 +672,11 @@ def push_digest(db, now: datetime | None = None) -> dict:
 
     reason: ok / partial / disabled / no_group / empty / seeded /
     send_failed。整批正文按单条上限分条顺序发送、逐条记已播：
-    全部发完 → ok；中途某条失败即停，已发条记表、未发条不记
-    → partial（剩余下轮 tick 自然续上，不会卡死在同一批）；一条
-    都没发出去（首条失败）→ send_failed，整批不记、下批原样重试。
+    全部发完 → ok；瞬时失败（超时/网络/5xx/429）中途停发，已发条
+    记表、未发条不记 → partial（剩余下轮 tick 自然续上）；永久
+    失败（400 类 Bad Request）的条记死信跳过、继续发后面的条 →
+    partial（skipped 记死信条目数）；一条都没发出去 → send_failed，
+    整批不记、下批原样重试。
     配图只挂第一条：有横幅图且第一条文案放得进图注上限才发图，
     发图失败降级第一条纯文字。条间不加人为延时（sender 既有节流）。
     """
@@ -580,7 +702,10 @@ def push_digest(db, now: datetime | None = None) -> dict:
     sent_movies = 0
     sent_groups = 0
     chunks_sent = 0
+    skipped_items = 0
     failed = False
+    failed_transient = False
+    pending_failed: list[dict] = []
     for idx, chunk in enumerate(chunks):
         ok, err = False, None
         if idx == 0 and photo_path and layout.caption_fits(chunk["text"]):
@@ -594,34 +719,62 @@ def push_digest(db, now: datetime | None = None) -> dict:
             ok, err = sender.send_message(
                 db, group_id, chunk["text"], parse_mode=None)
         if not ok:
+            if _is_permanent_send_error(err):
+                # 永久错：先暂记、继续发后面的条；本轮结束时若有条已
+                # 发出（频道本身通）再把暂记的记死信；若一条都没发出
+                # 则无法排除频道级故障，不记死信、按整批失败重试。
+                pending_failed.append(chunk)
+                logger.warning(
+                    "updatedigest 第 %s/%s 条永久失败，暂记待本轮结束判定：%s",
+                    idx + 1, len(chunks), err,
+                )
+                continue
             logger.warning(
                 "updatedigest 第 %s/%s 条发送失败，停发待下轮续发：%s",
                 idx + 1, len(chunks), err,
             )
             failed = True
+            failed_transient = True
             break
         _mark_sent(db, chunk["movies"], chunk["tv_groups"])
         sent_movies += len(chunk["movies"])
         sent_groups += len(chunk["tv_groups"])
         chunks_sent += 1
+    if pending_failed and chunks_sent > 0:
+        for chunk in pending_failed:
+            _mark_skipped(db, chunk["movies"], chunk["tv_groups"])
+            skipped_items += len(chunk["movies"]) + sum(
+                len(g["episodes"]) for g in chunk["tv_groups"])
+        failed = True
+        logger.warning(
+            "updatedigest %s/%s 条永久失败已记死信跳过（skipped_items=%s）",
+            len(pending_failed), len(chunks), skipped_items,
+        )
     if chunks_sent == 0:
+        if pending_failed:
+            logger.error(
+                "updatedigest 整批 %s 条全部永久失败、一条未发，不记死信、"
+                "下轮原样重试（疑似频道级故障，请人工核查）",
+                len(chunks),
+            )
         return {
             **empty, "reason": "send_failed", "text": text,
-            "chunks": len(chunks),
+            "chunks": len(chunks), "skipped": 0,
         }
     logger.info(
         "updatedigest 已播报 group=%s movies=%s tv_groups=%s "
-        "chunks=%s/%s photo=%s partial=%s",
+        "chunks=%s/%s photo=%s partial=%s skipped=%s",
         group_id, sent_movies, sent_groups, chunks_sent, len(chunks),
-        bool(photo_path), failed,
+        bool(photo_path), failed, skipped_items,
     )
-    if not failed:
+    if not failed_transient:
         _advance_watermark(db, now, full_collect)
     return {
         "pushed": True,
         "reason": "partial" if failed else "ok",
         "movies": sent_movies, "tv_groups": sent_groups, "text": text,
         "chunks": len(chunks), "chunks_sent": chunks_sent,
+        "skipped": skipped_items,
     }
 
 

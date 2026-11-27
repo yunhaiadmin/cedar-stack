@@ -544,3 +544,105 @@ def test_base_conditions_uses_not_exists(db):
     assert "EXISTS" in sql
     assert "tg_update_digest_sent.item_id = emby_items.id" in sql
     assert "NOT IN (SELECT" not in sql
+
+
+# ---------- 超长单行拆分（哆啦A梦 400 毒数据） ----------
+
+def test_mega_group_line_splits_within_limit(db, monkeypatch):
+    """单组集号行超 4096（哆啦A梦 S01 数千集）时按段拆成续行：
+    每条 ≤4096、集全部记播、原因 ok；续行带「（续）」。"""
+    _ready(db)
+    series = _item(db, "series", "哆啦A梦", year=1979,
+                   external='{"douban": "12345"}')
+    # 集号每隔 3 取一个（1、4、7……）：没有连续段可合并，单行集号段
+    # 才够长、能复现生产 5157 字毒数据；连续取号会被压成 E01-E2500
+    # 一个短段，测不到拆分。
+    total = 2500
+    for n in range(1, total + 1):
+        _item(db, "episode", f"第{3 * n - 2}集", series_id=series.id,
+              season_number=1, episode_number=3 * n - 2,
+              added=NOW - timedelta(minutes=1))
+    sent = _capture_send(monkeypatch)
+    res = updatedigest.push_digest(db, NOW)
+    assert res["pushed"] and res["reason"] == "ok"
+    assert len(sent["messages"]) >= 2
+    for m in sent["messages"]:
+        assert len(m["text"]) <= updatedigest.MESSAGE_LIMIT
+    lines = [ln for m in sent["messages"]
+             for ln in m["text"].splitlines() if ln.startswith("📺")]
+    assert len(lines) >= 2
+    assert any("（续）" in ln for ln in lines)
+    assert db.query(models.TgUpdateDigestSent).count() == total
+    assert updatedigest.push_digest(db, NOW)["reason"] == "empty"
+
+
+def test_first_chunk_permanent_failure_skips_and_continues(db, monkeypatch):
+    """首条永久失败（400）不再卡死整批：记死信跳过、后续照常发、
+    水位推进、下轮不再重发死信条目。"""
+    _ready(db)
+    total = 200
+    for i in range(total):
+        _item(db, "movie", f"死信测试长片名{i:03d}号作品加长版",
+              year=2026, tmdb=str(4000 + i),
+              added=NOW - timedelta(minutes=total - i))
+    calls = {"n": 0}
+
+    def flaky(db_, chat_id, text, reply_markup=None, parse_mode="HTML"):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return False, "HTTP 状态码错误: 400（Bad Request: message is too long）"
+        return True, None
+
+    monkeypatch.setattr(sender, "send_message", flaky)
+    res = updatedigest.push_digest(db, NOW)
+    assert res["pushed"] and res["reason"] == "partial"
+    assert res["skipped"] > 0
+    assert res["chunks_sent"] == res["chunks"] - 1
+    skipped = db.query(models.TgUpdateDigestSent).filter_by(kind="skipped").count()
+    assert skipped == res["skipped"] > 0
+    assert db.query(models.TgUpdateDigestSent).count() == total
+    assert updatedigest._read_watermark(db) is not None
+    sent = _capture_send(monkeypatch)
+    assert updatedigest.push_digest(db, NOW)["reason"] == "empty"
+    assert sent["messages"] == []
+
+
+def test_transient_failure_stops_and_resumes(db, monkeypatch):
+    """瞬时失败（超时）仍走老纪律：停发、已发记表、水位不推进、
+    下轮只续发剩余，不记死信。"""
+    _ready(db)
+    total = 200
+    for i in range(total):
+        _item(db, "movie", f"瞬时失败长片名{i:03d}号作品加长版",
+              year=2026, tmdb=str(5000 + i),
+              added=NOW - timedelta(minutes=total - i))
+    calls = {"n": 0}
+
+    def flaky(db_, chat_id, text, reply_markup=None, parse_mode="HTML"):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            return False, "请求超时"
+        return True, None
+
+    monkeypatch.setattr(sender, "send_message", flaky)
+    res = updatedigest.push_digest(db, NOW)
+    assert res["reason"] == "partial"
+    assert res["skipped"] == 0
+    assert updatedigest._read_watermark(db) is None
+    sent = _capture_send(monkeypatch)
+    res2 = updatedigest.push_digest(db, NOW)
+    assert res2["reason"] == "ok"
+    assert db.query(models.TgUpdateDigestSent).count() == total
+
+
+def test_permanent_error_classification():
+    assert updatedigest._is_permanent_send_error("HTTP 状态码错误: 400")
+    assert updatedigest._is_permanent_send_error("HTTP 状态码错误: 403")
+    assert updatedigest._is_permanent_send_error(
+        "Telegram API 错误: Bad Request: chat not found")
+    assert not updatedigest._is_permanent_send_error("HTTP 状态码错误: 429")
+    assert not updatedigest._is_permanent_send_error("HTTP 状态码错误: 500")
+    assert not updatedigest._is_permanent_send_error("请求超时")
+    assert not updatedigest._is_permanent_send_error("网络请求失败: boom")
+    assert not updatedigest._is_permanent_send_error("boom")
+    assert not updatedigest._is_permanent_send_error(None)
