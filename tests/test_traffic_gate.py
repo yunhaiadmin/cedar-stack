@@ -369,7 +369,7 @@ class TestSourceClassification:
     def test_direct_variant_is_direct(self):
         assert tg.classify_source(_variant_source("drive_direct", True)) == "direct"
         assert tg.classify_source(_variant_source("byos115_direct", True)) == "direct"
-        assert tg.classify_source(_variant_source("pool_copy", True)) == "direct"
+        assert tg.classify_source(_variant_source("byos_drive_direct", True)) == "direct"
 
     def test_alt_media_source_is_direct(self):
         src = {"Id": GUID, "IsRemote": False,

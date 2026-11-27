@@ -122,7 +122,6 @@ def _setup_stream(monkeypatch, *, sign_ok=False, bound=True):
     from backend.emby_server import drive_changes as _dc
     from backend.emby_server import playback_gate as _gate
     from backend.emby_server import playback_source_health as _psh
-    from backend.emby_server import pool_gate as _pool_gate
 
     item = _stream_item()
     user = SimpleNamespace(id=11)
@@ -155,19 +154,15 @@ def _setup_stream(monkeypatch, *, sign_ok=False, bound=True):
                         lambda db, it: True)
     monkeypatch.setattr(_dp, "plan_ready_leg",
                         lambda db, it, u: None)
-    monkeypatch.setattr(_pool_gate, "large_file_pool_route",
-                        lambda db, u, it: False)
-    # 2026-11-22 门禁改版：video_stream 放行分支改走池决策入口拿分流
-    # 裁决，本文件不测门禁，决策入口桩成 bound 放行。
-    monkeypatch.setattr(
-        _pool_gate, "ensure_playback_allowed_for_item",
-        lambda db, u, it, request=None: SimpleNamespace(
-            allowed=True, kind="bound", pool_routed=False))
+    # 贡献池下线后 video_stream 门禁走 playback_gate 按条目
+    # 入口：本文件的假条目是需过门禁的 Drive 条目，条目判定恒
+    # True（bound 参数只代表用户侧资格/绑定，与原决策入口恒
+    # kind="bound" 的桩同口径）。
+    monkeypatch.setattr(_gate, "binding_required_for_item",
+                        lambda db, it: True)
     monkeypatch.setattr(api, "_drive_mount_id_for_item",
                         lambda db, it: "drive-x")
     monkeypatch.setattr(api, "_user_drive_byos_available",
-                        lambda db, it, u: False)
-    monkeypatch.setattr(api, "_pool_copy_available",
                         lambda db, it, u: False)
 
     def fake_resolve(db, it, u):
@@ -280,7 +275,6 @@ def test_fastpath_sign_present_but_invalid_never_serves(monkeypatch):
     回全链按原口径被门禁 403（get_play_user 在生产依赖层还会先
     拦一道，这里钉的是 video_stream 内部不凭缓存跳过验签）。"""
     from backend.emby_server import playback_gate as _gate
-    from backend.emby_server import pool_gate as _pool_gate
 
     user, counts, relay, final_calls, notes = _setup_stream(
         monkeypatch, sign_ok=False, bound=False)
@@ -293,12 +287,7 @@ def test_fastpath_sign_present_but_invalid_never_serves(monkeypatch):
     def _deny(db, u, req=None):
         raise HTTPException(status_code=403, detail="未绑定")
 
-    def _deny_pool(db, u, it, req=None):
-        raise HTTPException(status_code=403, detail="未绑定")
-
     monkeypatch.setattr(_gate, "ensure_binding_playback_allowed", _deny)
-    monkeypatch.setattr(
-        _pool_gate, "ensure_playback_allowed_for_item", _deny_pool)
 
     signed = _stream_request(
         b"variant=usercopy_relay&uid=11&exp=1999999999&sign=deadbeef")

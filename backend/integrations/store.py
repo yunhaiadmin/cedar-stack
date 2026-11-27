@@ -35,12 +35,12 @@ DEFAULTS_SENTINEL = object()
 
 # ---------------------------------------------------------------------------
 # A 类开关摘面板（2026-10-21 施工，用户 2026-10-19「功能开关从简」原则）：
-# 以下 49 个键管理后台不再提供开关（首批 37 个，2026-11-23 第二批 16 个，
-# 再减去 2026-11-23 公益清扫删除登记的抽奖/活力 4 键：
+# 以下 48 个键管理后台不再提供开关（首批 37 个，2026-11-23 第二批 16 个，
+# 再减去 2026-11-23 公益清扫删除登记的抽奖/活力 4 键、2026-11-27
+# 贡献池下线删除登记的大文件池分流 1 键：
 # 求片自动批准/订阅购买/QQ 钱包/钱包四键/跨 provider 转存/剧集预热/
-# 池大文件分流/挂载直读/Drive 绑定/网页软解/站内弹幕/弹幕外部源/
-# 登录锁定；UI 已同步摘除）。仍留在面板的：池总开关 pool_enabled 与
-# 订阅门禁 subscription_required（运营必需，审计 K-01 建议保留）、
+# 挂载直读/Drive 绑定/网页软解/站内弹幕/弹幕外部源/
+# 登录锁定；UI 已同步摘除）。仍留在面板的：订阅门禁 subscription_required（运营必需，审计 K-01 建议保留）、
 # promotion_reward_enabled / stream_accel_enabled（服主 2026-10-21
 # 明确要求留在面板）。第二批保值口径与首批一致：生产现值（2026-11-23
 # 只读查 system_configs）已逐键核对——多数键代码缺省即生产生效值；
@@ -108,7 +108,6 @@ PANEL_REMOVED_SWITCHES: tuple[tuple[str, str], ...] = (
     ("media_seek_auto_approve_enabled", "MEDIA_SEEK_AUTO_APPROVE_ENABLED"),
     ("mount_serving_enabled", "MOUNT_SERVING_ENABLED"),
     ("payment_qqpay_enabled", "PAYMENT_QQPAY_ENABLED"),
-    ("pool_large_file_routing_enabled", "POOL_LARGE_FILE_ROUTING_ENABLED"),
     ("subscription_purchase_enabled", "SUBSCRIPTION_PURCHASE_ENABLED"),
     ("transfer_series_preheat_enabled", "TRANSFER_SERIES_PREHEAT_ENABLED"),
     ("wallet_auto_renew_enabled", "WALLET_AUTO_RENEW_ENABLED"),

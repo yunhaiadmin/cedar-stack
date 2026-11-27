@@ -26,7 +26,6 @@ BACKEND_ROOT = REPO_ROOT / "backend"
 GA068_MODULES = (
     "backend.api.agents_admin",
     "backend.api.admin_license",
-    "backend.api.admin_pool",
     "backend.api.admin_alerts",
     "backend.api.admin_tasks",
     "backend.api.admin_player_blacklist",

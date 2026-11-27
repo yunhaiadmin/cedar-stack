@@ -973,10 +973,6 @@ class AdminEvent:
     # 治理举报终审结果（通知举报人，见 backend/governance_report.py）
     REPORT_DECIDED = "governance.report_decided"
 
-    # 贡献池成员审核结果（见 backend/api/pool_admin.py）
-    POOL_MEMBER_APPROVED = "pool.member_approved"
-    POOL_MEMBER_REJECTED = "pool.member_rejected"
-
     # 系统事件
     SYSTEM_MAINTENANCE = "system.maintenance"
     USER_WARNING = "user.warning"

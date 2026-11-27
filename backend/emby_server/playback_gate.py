@@ -240,13 +240,6 @@ def sign_allowed_for_item(db: Session, user_id, item) -> bool:
     有无无关；user_id 为空恒 False（与既有 ``bool(user_id)``
     前置同口径）。
 
-    池分支（goal-33 PR-3，design §4.1）：池 eligible 且该条目有
-    ready 池副本时也可签（池播出已接通，签名消费时由流端点现场
-    走池门禁选路到池副本）；不 ready 不签。2026-11-22 改版起池
-    不再是资格例外：池判定本体 pool_gate.pool_sign_allowed 内
-    同口径复核订阅资格，无资格恒不可签。池判定实现在
-    pool_gate.pool_sign_allowed（本模块不反向持有池逻辑，懒引
-    防循环）。
     """
     if not user_id:
         return False
@@ -259,9 +252,7 @@ def sign_allowed_for_item(db: Session, user_id, item) -> bool:
         return True
     if not binding_required_for_item(db, item):
         return True
-    from backend.emby_server import pool_gate as _pool_gate
-
-    return _pool_gate.pool_sign_allowed(db, user_id, item)
+    return False
 
 
 def raise_for_transfer_gate(gate_result) -> None:

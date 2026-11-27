@@ -239,7 +239,6 @@ const navGroups: NavGroup[] = [
       // 字幕管理（二期全缺第 7 项）：已入库字幕轨（内嵌＋外挂）的只读盘点
       { path: '/subtitles', label: '字幕管理', icon: Captions },
       // 贡献池：用户贡献盘组成的公共缓存池，成员生命周期管理（goal-33 PR-4）
-      { path: '/pool', label: '贡献池', icon: Users },
       // 转存变体（O-02 补缺）：转存副本登记/任务观测＋条目级手动转存与解绑
       { path: '/transfer-variants', label: '转存变体', icon: Copy },
       // 重新布局批 5：115/GDrive 账号降为「服务器」页「存储账号」标签，导航不再单列（旧路由跳到对应子标签）

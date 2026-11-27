@@ -356,29 +356,12 @@ class TestBE22DtoSign:
         db.commit()
         return movie
 
-    def test_pool_only_user_gets_signed_url(self, scene, monkeypatch):
-        from backend.emby_server import playback_gate, pool_gate
-        movie = self._movie(scene)
-        # 未绑盘、仅池资格：流端点会放行，DTO 也必须给签名轨（同源判定）
-        monkeypatch.setattr(playback_gate, "has_active_binding",
-                            lambda db, uid: False)
-        monkeypatch.setattr(pool_gate, "pool_sign_allowed",
-                            lambda db, uid, item: True)
-        dto = api._item_dto(movie, "http://t", scene.user.id, scene.db,
-                            full=True, api_key="k")
-        sources = dto.get("MediaSources") or []
-        assert sources, "本地行应有一条 MediaSource"
-        url = sources[0].get("DirectStreamUrl") or ""
-        assert "sign=" in url, (
-            f"仅池资格用户应拿到带签名地址，实际 {url!r}")
-
     def test_no_binding_no_pool_stays_unsigned(self, scene, monkeypatch):
-        from backend.emby_server import playback_gate, pool_gate
+        # 贡献池下线后：未绑盘且无播放资格的用户 DTO 不给签名轨。
+        from backend.emby_server import playback_gate
         movie = self._movie(scene)
         monkeypatch.setattr(playback_gate, "has_active_binding",
                             lambda db, uid: False)
-        monkeypatch.setattr(pool_gate, "pool_sign_allowed",
-                            lambda db, uid, item: False)
         dto = api._item_dto(movie, "http://t", scene.user.id, scene.db,
                             full=True, api_key="k")
         sources = dto.get("MediaSources") or []

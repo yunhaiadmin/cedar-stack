@@ -124,16 +124,6 @@ def test_list_gray_on_mount_item_stays_relay_only(monkeypatch):
         play_variants.MOUNT_RELAY]
 
 
-def test_list_gray_on_pool_copy_shape_unchanged(monkeypatch):
-    _gray_store(monkeypatch, gray=True)
-    pool_item = SimpleNamespace(guid="g-p", drive_file_id="FIDP",
-                                file_path="mount://3/pool.mkv")
-    names = _names(None, pool_item, pool_copy_available=True)
-    # 池变体仍以既有形态出现在末尾，绝不给池新增直链外行为。
-    assert names[-1] == play_variants.POOL_COPY
-    assert play_variants.BYOS_DRIVE_DIRECT not in names
-
-
 def test_list_gray_on_quota_known_hides_direct(monkeypatch):
     _gray_store(monkeypatch, gray=True)
     names = _names(None, _drive_item(), user_drive_byos_available=True,

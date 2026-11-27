@@ -30,13 +30,14 @@ from starlette.requests import Request as StarletteRequest
 from backend import license_client as lc
 from backend import media_seek, models, wallet
 from backend.api import admin_license
-from backend.emby_server import pool_gate, user_bindings
+from backend.emby_server import user_bindings
 from backend.integrations import store
 
 SECRET_CODE = "AX-SECRET-CODE-9876"
 
 #: 本批摘面板的 16 键 → 生产现值（2026-11-23 只读查得；无行键记
-#: 其代码缺省即生产生效值）
+#: 其代码缺省即生产生效值）。pool_large_file_routing_enabled 已于
+#: 2026-11-27 随贡献池功能整体下线，不在此列（余 15 键）。
 REMOVED_KEYS_PROD = {
     "media_seek_auto_approve_enabled": "true",
     "subscription_purchase_enabled": "true",
@@ -47,7 +48,6 @@ REMOVED_KEYS_PROD = {
     "wallet_auto_renew_enabled": "false",
     "cross_provider_transfer_enabled": "true",
     "transfer_series_preheat_enabled": "true",
-    "pool_large_file_routing_enabled": "true",
     "mount_serving_enabled": "true",
     "drive_binding_enabled": "false",
     "web_softdecode_enabled": "false",
@@ -94,8 +94,9 @@ def _seed(db, key, value):
 def test_all_batch_keys_registered_panel_removed():
     assert set(REMOVED_KEYS_PROD) <= store.PANEL_REMOVED_SWITCH_KEYS
     # 37（首批）+ 16（本批）− 4（2026-11-23 公益清扫删除抽奖/活力死键登记）
-    # = 49，store.py 注释数字须与实际一致
-    assert len(store.PANEL_REMOVED_SWITCHES) == 49
+    # − 1（2026-11-27 贡献池下线删除大文件池分流键登记）= 48，
+    # store.py 注释数字须与实际一致
+    assert len(store.PANEL_REMOVED_SWITCHES) == 48
 
 
 def test_env_overrides_db_for_removed_keys(db, monkeypatch):
@@ -120,8 +121,6 @@ def test_code_defaults_match_prod_for_aligned_keys(db):
 
     assert transfer_variant.cross_provider_enabled(db) is True
     assert transfer_variant.series_preheat_enabled(db) is True
-    assert pool_gate.pool_config_payload(db)[
-        "pool_large_file_routing_enabled"] is True
     assert mount_serving.serving_enabled(db) is True
     assert admin_softdecode.softdecode_enabled(db) is False
     assert danmaku.danmaku_enabled(db) is False

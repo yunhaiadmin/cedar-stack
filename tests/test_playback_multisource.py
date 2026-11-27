@@ -39,7 +39,7 @@ from starlette.requests import Request
 
 from backend import models as core
 from backend.database import Base
-from backend.emby_server import api, delivery_plan, pool_gate
+from backend.emby_server import api, delivery_plan, playback_gate
 from backend.emby_server import probe_worker, stream_accel
 from backend.emby_server import transfer_variant as _tv
 from backend.emby_server import models as em
@@ -193,10 +193,11 @@ def _call_pi(monkeypatch, scene, item):
     monkeypatch.setattr(api, "ensure_playback_allowed",
                         lambda db_, u_: None)
     monkeypatch.setattr(api, "_library_scope", lambda db_, u_: None)
+    # 贡献池下线后 PlaybackInfo 的 kind 只剩 bound/not_applicable：
+    # 条目判定桩成免门禁（not_applicable），等价于旧池决策桩。
     monkeypatch.setattr(
-        pool_gate, "ensure_playback_allowed_for_item",
-        lambda db_, u_, it, request=None: pool_gate.PoolDecision(
-            allowed=True, kind="not_applicable"))
+        playback_gate, "binding_required_for_item",
+        lambda db_, it: False)
     monkeypatch.setattr(probe_worker, "maybe_enqueue",
                         lambda db_, it: None)
     monkeypatch.setattr(delivery_plan, "spawn_ensure_plan",

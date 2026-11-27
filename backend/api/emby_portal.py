@@ -111,13 +111,6 @@ class WhitelistIdentityOut(BaseModel):
     label: str
 
 
-class PoolIdentityOut(BaseModel):
-    # 贡献池专属身份（goal-33 PR-6）：用户名下有 active 池成员行
-    # 即出固定称号「片库贡献者」；状态驱动、无编号（资历看成员
-    # joined_at），非在池贡献者为 None，整个元素不渲染
-    title: str
-
-
 class UserOut(BaseModel):
     id: int
     # 公开 ID（2026-11-15）：用户侧展示/复制用它，不再露数字 id；
@@ -137,9 +130,6 @@ class UserOut(BaseModel):
     # 白名单专属身份（创世编号+专属称号）；判定走 codes 唯一口径，
     # 非生效白名单为 None，用户端不渲染任何相关元素
     whitelist_identity: WhitelistIdentityOut | None = None
-    # 贡献池专属身份（称号「片库贡献者」）；判定走 pool_reward
-    # 状态驱动口径，非在池贡献者为 None，用户端不渲染
-    pool_identity: PoolIdentityOut | None = None
     # 家庭子账号（2026-11-15）：本号是子账号时为 True，
     # parent_username 为主账号用户名。子账号的订阅/流量/播放
     # 门禁按主账号算（backend/sub_accounts 有效账号解析），
@@ -194,18 +184,6 @@ def _user_out(user: models.WebUser, db: Session | None = None) -> UserOut:
                 whitelist_identity = WhitelistIdentityOut(**payload)
         except Exception:
             whitelist_identity = None
-    # 贡献池称号同为纯展示：状态驱动（pool_reward 唯一口径），异常一律 None
-    pool_identity = None
-    if db is not None:
-        try:
-            from backend.emby_server.pool_reward import (
-                pool_identity_payload)
-
-            payload = pool_identity_payload(db, user)
-            if payload:
-                pool_identity = PoolIdentityOut(**payload)
-        except Exception:
-            pool_identity = None
     return UserOut(
         id=user.id,
         public_id=getattr(user, "public_id", None),
@@ -218,7 +196,6 @@ def _user_out(user: models.WebUser, db: Session | None = None) -> UserOut:
         download_allowed=download_allowed(db) if db is not None else True,
         device_limit=device_limit(db) if db is not None else 0,
         whitelist_identity=whitelist_identity,
-        pool_identity=pool_identity,
         is_sub_account=_is_sub,
         parent_username=_parent_username,
         created_at=user.created_at.isoformat() if user.created_at else None,

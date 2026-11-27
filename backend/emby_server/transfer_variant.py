@@ -1056,13 +1056,6 @@ USERCOPY_QUOTA_DETAIL = "你的谷歌盘今日下载额度已满，约 24 小时
 
 USERCOPY_INTERSTITIAL_DETAIL = "你的谷歌盘副本被谷歌拦截页挡住，暂时无法直接播放，请稍后重试"
 
-#: 公共池副本的额度/拦截文案（goal-33 PR-3）：额度耗的是贡献者
-#: 的盘，不是观众本人的盘，文案不许写成「你的谷歌盘」。
-POOLCOPY_QUOTA_DETAIL = "公共池副本今日下载额度已满，约 24 小时后恢复"
-
-POOLCOPY_INTERSTITIAL_DETAIL = "公共池副本被谷歌拦截页挡住，暂时无法直接播放，请稍后重试"
-
-
 def usercopy_quota_probe_enabled() -> bool:
     """用户副本额度探测开关（TRANSFER_USERCOPY_QUOTA_PROBE_ENABLED），默认开。
 
@@ -1436,14 +1429,8 @@ def _usercopy_probe_ok_reuse_ttl() -> int:
 
 
 def _probe_ok_reuse_applies(user_id) -> bool:
-    """复用只服务用户副本判定点；池路径不走复用。
-
-    池的三处 decision 调用一律以 ``poolvar:<variant_id>`` 作
-    user_id（api 供播判定、pool_gate 熔断恢复探测）——熔断恢复
-    必须当场探、供播判定口径与复用上线前逐字一致，故见此前缀
-    直接不适用，读写都跳过。
-    """
-    return not str(user_id).startswith("poolvar:")
+    """复用服务于全部副本判定点（恒适用）。"""
+    return True
 
 
 def _probe_ok_reuse_hit(user_id, fid) -> bool:
@@ -1525,8 +1512,7 @@ def _probe_ok_reuse_clear(user_id, fid) -> None:
 # 窗口远小于已被批准的 600 秒 ok 复用风险面；error 永不缓存
 # （失败必须每次新鲜探，防把瞬时抖动冻成结论）；quota 不经
 # 本层（已被 600 秒主裁决缓存吃住且本层检查排在其后，新
-# quota 永远盖得住）。池路径（poolvar: 前缀）与 ok 复用同口
-# 径排除：熔断恢复要当场探、不许吃任何复用。缓存走既有
+# quota 永远盖得住）。缓存走既有
 # CacheManager（domain="playback"），不另造第二套。
 # ---------------------------------------------------------------------------
 
@@ -1620,8 +1606,7 @@ def probe_user_copy_quota_decision(user_id, fid) -> str:
     缓存到期重探」的既有定案同构。只缓存 ok：quota / error /
     interstitial 绝不写复用、行为与本修订前逐字一致（新鲜探
     测判 quota 时顺手清复用残留）；Redis 不可用时复用层整体
-    按未命中，判定回上面全部现行口径。池路径（poolvar: 前缀）
-    不走复用，逐字不变。
+    按未命中，判定回上面全部现行口径。
 
     失效/读取失败（缓存不可用）不阻断：吞掉异常照常探测——
     probe 对缓存异常本就按未命中处理。永不抛异常的口径与
@@ -1654,8 +1639,8 @@ def probe_user_copy_quota_decision(user_id, fid) -> str:
         # ok 裁决短时复用（2026-11-08 修订）：quota 方向的缓存
         # 口径已在上面收口，走到这里的只有非 quota 情形；Redis
         # 里有近 TTL 内的 ok 复用记录就直接吃，不再失效重探。
-        # Redis 不可用 / 池路径（poolvar:）在 _probe_ok_reuse_hit
-        # 内一律按未命中，行为回现行口径。
+        # Redis 不可用时在 _probe_ok_reuse_hit 内一律按未命中，
+        # 行为回现行口径。
         if _probe_ok_reuse_hit(user_id, fid):
             return "ok"
         # 新鲜裁决秒级短缓存（2026-11-12 起播拆账第 4 项）：
@@ -2426,23 +2411,6 @@ def prefer_user_variant(play_fid, play_variant, gate):
     return play_fid, play_variant
 
 
-def prefer_pool_variant(play_fid, play_variant, gate):
-    """池门禁确认 ready 池副本时，播出 fid 以门禁行为准（PR-3）。
-
-    与 prefer_user_variant 同纪律：``resolve_play_file_id`` 查询
-    异常会回共享原件、且它根本不认池副本——门禁已经拿到池副本
-    行时，不许沿用原件 fid（红线：池观众不许拿到共享原件 fid）。
-    """
-    variant = (gate or {}).get("variant")
-    if ((gate or {}).get("verdict") == "serve_pool_copy"
-            and variant is not None
-            and getattr(variant, "owner_scope", None) == "pool"):
-        fid = (getattr(variant, "variant_file_id", "") or "").strip()
-        if fid:
-            return fid, variant
-    return play_fid, play_variant
-
-
 def ensure_user_copy_public(db, user_id, file_id) -> bool:
     """PlaybackInfo 发用户副本直链前确保 anyone-reader（自愈存量副本）。
 
@@ -2475,114 +2443,6 @@ def ensure_user_copy_public(db, user_id, file_id) -> bool:
                        user_id, exc_info=True)
         return False
 
-
-def ensure_variant_copy_public(db, variant, file_id) -> bool:
-    """按变体 owner 解析令牌属主，确保副本 anyone-reader（PR-3）。
-
-    design §5.1 第 10 步的泛化：user 副本＝观众本人（直接转调
-    :func:`ensure_user_copy_public`，语义零变化）；pool 副本＝
-    成员绑定的属主——令牌只许来自成员行的绑定（binding_id），
-    绝不用观众本人的绑定、绝不用 SA 令牌。成员不存在/已非
-    active、绑定失效、令牌取不到、授权限失败一律 False（调用方
-    按各自口径处理：PlaybackInfo 不下发直链、取流端点走服务端
-    中继或明示失败；成员令牌绝不下发观众，GA-030），永不抛异常。
-    """
-    try:
-        fid = (file_id or "").strip()
-        if not fid or variant is None:
-            return False
-        scope = getattr(variant, "owner_scope", None)
-        if scope == "user":
-            try:
-                owner_id = int(getattr(variant, "owner_ref", "") or "")
-            except (TypeError, ValueError):
-                return False
-            return ensure_user_copy_public(db, owner_id, fid)
-        if scope != "pool":
-            return False
-        try:
-            member_id = int(getattr(variant, "owner_ref", "") or "")
-        except (TypeError, ValueError):
-            return False
-        member = (db.query(em.PoolMember)
-                  .filter(em.PoolMember.id == member_id).first())
-        if member is None or member.status != "active":
-            return False
-        binding_id = getattr(member, "binding_id", None)
-        if binding_id is None:
-            return False
-        binding = (db.query(em.UserStorageBinding)
-                   .filter(em.UserStorageBinding.id == binding_id)
-                   .first())
-        if binding is None or binding.status != "active":
-            return False
-        if _pool_copy_public_cache_valid(db, member_id, fid):
-            return True
-        from backend.emby_server import drive_oauth as _do
-        from backend.emby_server import drive_share as _ds
-        token = _do.get_binding_drive_access_token(db, binding)
-        if not token:
-            return False
-        ok = _ds.ensure_shared(fid, token) in ("ok", "already")
-        if ok:
-            _copy_public_cache_put(f"pool:{member_id}", fid)
-        return ok
-    except Exception:
-        logger.warning("池副本 anyone-reader 自愈失败 variant=%s",
-                       getattr(variant, "id", None), exc_info=True)
-        return False
-
-
-def _pool_copy_public_cache_valid(db, member_id, fid) -> bool:
-    """池版已公开缓存核对（与 _copy_public_cache_valid 同纪律）。
-
-    缓存键以 ``pool:<成员 id>`` 为属主段（不掺观众 id）；命中后仍
-    回库核对池变体行：status == ready 且 share_revoked_at 不晚于
-    缓存写入时间，任一不满足即失效、走原逻辑重新授权。
-    """
-    if copy_public_cache_ttl() <= 0:
-        return False
-    try:
-        from backend.database import CacheManager
-        raw = CacheManager.get(_copy_public_key(f"pool:{member_id}", fid),
-                               domain="playback")
-        if not raw:
-            return False
-        cached_at = datetime.fromisoformat(str(raw))
-        rows = (db.query(em.TransferVariant)
-                .filter(em.TransferVariant.owner_scope == "pool",
-                        em.TransferVariant.owner_ref == str(member_id),
-                        em.TransferVariant.variant_drive_id.like(
-                            "pooldrive:%"),
-                        em.TransferVariant.variant_file_id == fid)
-                .all())
-        if not rows:
-            return False
-        for row in rows:
-            if getattr(row, "status", None) != "ready":
-                return False
-            revoked = getattr(row, "share_revoked_at", None)
-            if revoked is not None and revoked >= cached_at:
-                return False
-        return True
-    except Exception:  # noqa: BLE001
-        logger.debug("池副本已公开缓存核对失败，按未命中", exc_info=True)
-        return False
-
-
-# ---------------------------------------------------------------------------
-# 起播去重（2026-10-29）：已确认公开的副本不再每次 permissions.create
-# ---------------------------------------------------------------------------
-# 生产实测每次 PlaybackInfo 都打一次 permissions.create（300-400ms），
-# 即使副本早已 anyone-reader。缓存值是“确认公开的时间”。命中后仍回库
-# 核对，任一不满足即视为失效、走原逻辑重新授权：
-# - 该用户名下该 fid 的 Drive 副本行存在且 status == "ready"
-#   （LRU / 闲置清理 / 额度信号标 deleted/stale/released 即失效）；
-# - share_revoked_at 为空，或早于缓存写入时间（解绑 / 令牌失效 / 闲置
-#   收回都会写 share_revoked_at=now，晚于缓存即失效）。
-# 这样不依赖逐个失效写点，Redis 不可用（缓存退回本进程内存）时同样
-# 正确；收回点另外主动删键，只是让下次少一次回库。核对只读本地库，
-# 不打谷歌。
 
 def copy_public_cache_ttl() -> int:
     """已公开缓存 TTL（秒），COPY_PUBLIC_CACHE_TTL_SEC，默认 6h，0 = 关。"""
@@ -4739,14 +4599,8 @@ def _note_job_terminal_cooldown(job):
     cooldown_until——存量行建单时没落字，靠这里补上；值仍按
     created_at 口径，与现算结果一致。非终态行不碰。
 
-    例外：池 copy_forbidden 行的 cooldown 已由执行器按
-    pool_copy_forbidden_cooldown_sec 落短冷却（_after_pool_
-    copy_forbidden），这里不许回刷成 24h——已有落字即保留。"""
+    """
     if getattr(job, "status", "") not in ("done", "failed"):
-        return
-    if ((getattr(job, "owner_scope", "") or "") == "pool"
-            and (getattr(job, "error_kind", "") or "") == "copy_forbidden"
-            and getattr(job, "cooldown_until", None) is not None):
         return
     _stamp_job_cooldown(job)
 
@@ -5055,7 +4909,7 @@ def _release_ready_rows(db, item_id, owner_scope, owner_ref=None) -> int:
          .filter(em.TransferVariant.item_id == item_id,
                  em.TransferVariant.owner_scope == owner_scope,
                  em.TransferVariant.status == "ready"))
-    if owner_scope in ("user", "pool"):
+    if owner_scope == "user":
         q = q.filter(em.TransferVariant.owner_ref == owner_ref)
     rows = q.all()
     for row in rows:
@@ -6523,20 +6377,6 @@ def _fail_job(db, job, kind, detail):
     job.error_detail = (detail or "")[:500]
     _note_proactive_terminal(db, job)
     db.commit()
-    # 成员×源盘失败记忆（等待优化第二层）：池单 copy_forbidden
-    # 即记，refill 不再反复派给已知读不了该源盘的成员；记忆
-    # 写不上不许拖垮任务落态（本函数已提交，钩子独立 try）。
-    if (getattr(job, "owner_scope", "") or "") == "pool":
-        try:
-            from backend.emby_server import pool_gate as _pg
-
-            _pg.record_bad_drive_combo(
-                db, (job.owner_ref or "").strip(),
-                (job.drive_id or "").strip(), kind,
-                getattr(job, "item_id", None))
-        except Exception:  # noqa: BLE001 — 记忆失败只丢这次记录
-            logger.warning("坏组合记忆记录失败 job=%s",
-                           getattr(job, "id", None), exc_info=True)
     return {"job_id": job.id, "outcome": "failed", "error_kind": kind}
 
 
@@ -6550,8 +6390,8 @@ def _spawn_quota_prewarm(user_id, fid) -> None:
     与点播只差 2 秒）。登记收口在此顺手把裁决提前探掉，与本
     函数下方既有的「登记后预填存在性正缓存」同位：点播（多为
     秒级之后）与后续判定点直接吃缓存。只探本人 userdrive 副
-    本（池副本走 poolvar 口径、115 的 fid 不是 Drive fid，都
-    不经这里）；探测开关关时不探（与判定点关时恒 ok 同口径）。
+    本（115 的 fid 不是 Drive fid，不经这里）；探测开关关时
+    不探（与判定点关时恒 ok 同口径）。
     守护线程 best-effort：不阻塞登记、不进转存工人节奏，失败
     只丢这次预探（判定点自会现探），永不抛。
     """
@@ -6602,18 +6442,6 @@ def _register_ready_variant(db, job, item, variant_fid, variant_drive_id,
     job.next_retry_at = None
     _note_proactive_terminal(db, job)
     db.commit()
-    # 成功清失败记忆（等待优化第二层）：该（成员，源盘）组合
-    # 既然拷通了，旧记忆立即作废，不用等 TTL。
-    if (getattr(job, "owner_scope", "") or "") == "pool":
-        try:
-            from backend.emby_server import pool_gate as _pg
-
-            _pg.clear_bad_drive_combo(
-                db, (job.owner_ref or "").strip(),
-                (job.drive_id or "").strip())
-        except Exception:  # noqa: BLE001 — 清记忆失败不影响登记
-            logger.warning("坏组合记忆清除失败 job=%s",
-                           getattr(job, "id", None), exc_info=True)
     # 登记 ready 后预填存在性正缓存（只对 Drive 副本；115 副本的
     # variant_file_id 不是 Drive fid，不进 Drive 存在性命名空间）。
     # 预填失败不影响登记（publish 内部永不抛错）。
@@ -6857,322 +6685,6 @@ def _run_drive_user_job(db, job, item, drive_api):
     row = _register_ready_variant(db, job, item, variant_fid,
                                   f"userdrive:{user_id}",
                                   size=(copied or {}).get("size"))
-    return {"job_id": job.id, "outcome": "done", "variant_id": row.id}
-
-
-def _after_pool_copy_forbidden(db, job, item):
-    """池单 copy_forbidden 终态后事：短冷却落字 + 换盘重建。
-
-    2026-11-10 生产定案：原口径「不重试 + 建单时落的 24h 冷却」
-    把观众锁死一整天（门禁还把死单冒充准备中，见 pool_gate
-    门禁 ⑤）。池路径改两点，个人盘路径不动：
-    - 本行 cooldown_until 改按 pool_retry 子家族键
-      pool_copy_forbidden_cooldown_sec（默认 3600 秒）落字；
-      _note_job_terminal_cooldown 对这类行不再回刷 24h。
-    - 立刻换盘→换源：经 pool_gate.try_pool_forbidden_recover
-      先排除已 forbidden 的盘重建一单，换盘穷尽再换同作品替
-      代源，不等观众下次点播才触发；无盘/无源可换/限额命中
-      是常态结果（门禁下次点播还会兜底），只记日志。本函数
-      永不抛异常——后事失败不许污染已落的终态。
-    """
-    from backend.emby_server import pool_gate as _pg
-
-    try:
-        cfg = _pg.retry_config_payload(db)
-        base = getattr(job, "created_at", None) or datetime.now()
-        job.cooldown_until = base + timedelta(
-            seconds=int(cfg["pool_copy_forbidden_cooldown_sec"]))
-        db.commit()
-    except Exception:  # noqa: BLE001 — 落字失败保留原 24h 冷却
-        logger.warning("池 copy_forbidden 短冷却落字失败 job=%s",
-                       getattr(job, "id", None), exc_info=True)
-        try:
-            db.rollback()
-        except Exception:  # noqa: BLE001
-            pass
-    try:
-        new_job, how = _pg.try_pool_forbidden_recover(db, item)
-        if new_job is not None:
-            logger.info("池 copy_forbidden %s重建 job=%s -> %s",
-                        "换源" if how == "source" else "换盘",
-                        getattr(job, "id", None), new_job.id)
-    except TransferError as exc:
-        logger.info("池 copy_forbidden 换盘/换源未建单 job=%s kind=%s",
-                    getattr(job, "id", None), exc.kind)
-        try:
-            db.rollback()
-        except Exception:  # noqa: BLE001
-            pass
-    except Exception:  # noqa: BLE001 — 换盘/换源失败门禁下次点播兜底
-        logger.warning("池 copy_forbidden 换盘/换源重建异常 job=%s",
-                       getattr(job, "id", None), exc_info=True)
-        try:
-            db.rollback()
-        except Exception:  # noqa: BLE001
-            pass
-
-
-def _after_pool_insufficient_space(db, job, item):
-    """池单 insufficient_space 终态后事：换盘重建（2026-11-21
-    池优化）。
-
-    与 copy_forbidden 后事的差别：空间不足是落盘这块成员盘
-    满了，只说明这块盘装不下，不说明源有问题、更不说明别的
-    盘装不下——旧口径直接终态，观众只能等下次点播在门禁吃
-    到如实 failed。本后事经 pool_gate.try_pool_space_swap
-    排除已满盘、当场换一个成员盘重建一单（尝试上限与穷尽
-    判定在 pool_gate 口内）；无盘可换/限额命中是常态结果，
-    只记日志。本函数永不抛异常——后事失败不许污染已落的
-    终态。个人盘路径不动（用户盘空间不足另有腾挪口径）。
-    """
-    from backend.emby_server import pool_gate as _pg
-
-    try:
-        new_job = _pg.try_pool_space_swap(db, item)
-        if new_job is not None:
-            logger.info("池 insufficient_space 换盘重建 job=%s -> %s",
-                        getattr(job, "id", None), new_job.id)
-    except TransferError as exc:
-        logger.info("池 insufficient_space 换盘未建单 job=%s kind=%s",
-                    getattr(job, "id", None), exc.kind)
-        try:
-            db.rollback()
-        except Exception:  # noqa: BLE001
-            pass
-    except Exception:  # noqa: BLE001 — 换盘失败不许污染终态
-        logger.warning("池 insufficient_space 换盘重建异常 job=%s",
-                       getattr(job, "id", None), exc_info=True)
-        try:
-            db.rollback()
-        except Exception:  # noqa: BLE001
-            pass
-
-
-def _try_pool_source_heal(db, job, item, drive_api, orig_fid) -> bool:
-    """池源自愈（2026-11-12）：成员令牌读不到源时，经 SA 通道
-    给源文件补 anyone-reader，补上返回 True（调用方原地重试
-    一次 copy）。
-
-    根因实证：MP 换源文件后新文件从没带 anyone-reader（老文件
-    带过、已删），池 Path A 是成员令牌直拷、无 SA 兜底，源缺
-    分享即全员 copy_forbidden（《奥德赛》）。补分享是治本：
-    MP 再换文件也能当场自愈，不必等熔断冷却或人工处置。
-
-    边界（不许扩）：
-    - 只对池单的源 fid 调（orig_fid = item.drive_file_id，
-      drive 走 job.drive_id 源盘），只走 SA 现成方法
-      DriveApiClient.add_anyone_reader（幂等），不新造权限路径；
-    - 开关 pool_source_heal_enabled（pool_retry 子家族）关时
-      不试；每单至多调一次（调用方管）；
-    - SA 无权/源已删等异常一律回 False（调用方落
-      copy_forbidden 终态、归条目级源熔断），本函数永不抛
-      异常、不许污染已定的终态口径。
-    结果经 transfer_decisions 留痕（scope=pool_source_heal）。
-    """
-    from backend.emby_server import pool_gate as _pg
-    from backend.emby_server import transfer_decisions as _decisions
-
-    item_id = getattr(item, "id", None)
-    try:
-        cfg = _pg.retry_config_payload(db)
-        if not cfg.get("pool_source_heal_enabled", True):
-            return False
-        if drive_api is None or not orig_fid:
-            return False
-        drive_api.add_anyone_reader(job.drive_id, orig_fid)
-    except Exception:  # noqa: BLE001 — 自愈失败归熔断口径
-        logger.info("池源自愈失败 job=%s item=%s",
-                    getattr(job, "id", None), item_id)
-        try:
-            _decisions.note_decision(
-                scope="pool_source_heal",
-                resource_key=f"item:{item_id}",
-                decision="heal_failed",
-                reason=f"job={getattr(job, 'id', None)}",
-                candidates=[])
-        except Exception:  # noqa: BLE001 — 留痕失败不挡终态
-            pass
-        return False
-    logger.info("池源自愈已补 anyone-reader job=%s item=%s",
-                getattr(job, "id", None), item_id)
-    try:
-        _decisions.note_decision(
-            scope="pool_source_heal",
-            resource_key=f"item:{item_id}",
-            decision="healed",
-            reason=f"job={getattr(job, 'id', None)}",
-            candidates=[])
-    except Exception:  # noqa: BLE001 — 留痕失败不挡重试
-        pass
-    return True
-
-
-def _run_drive_pool_job(db, job, item, drive_api):
-    """Drive 池盘任务（goal-33 PR-2）：成员令牌直拷 Path A。
-
-    与 ``_run_drive_user_job`` 同形、但归属是池：任务行
-    owner_scope=pool、owner_ref=成员 id；登记行
-    variant_drive_id=pooldrive:<成员id>。必须是真 copy
-    （files.copy），快捷方式不算。目录核对与 anyone-reader
-    口径与用户盘 Path A 逐字同（核不到记 copy_unresolved、
-    加权限失败记 orphan、不回落源文件播放）。
-
-    与用户盘不同的三点（设计使然）：
-    - 不走 Path B：成员令牌看不见源（_CopyForbidden）时先走源
-      自愈（SA 给源文件补 anyone-reader 后原地重试一次，
-      2026-11-12，见 _try_pool_source_heal），仍被拒才本单终态
-      copy_forbidden，不静默转 SA 中转；但池路径不止这一块盘、
-      不止一个源——终态后由 _after_pool_copy_forbidden 先换其
-      他成员盘、穷尽再换同作品替代源重建一单（2026-11-10 换
-      盘定案 + 2026-11-19 换源兜底，个人盘路径无此语义、逐
-      字不动）；本单 source_item_id 非空时拷的是替代源行的
-      文件（见函数内换源解析），副本仍登记在原条目名下；
-    - 不腾地方：copy 中途配额不足时直接终态 insufficient_space，
-      绝不调用 ensure_space_for_transfer——那会清掉贡献者自己的
-      用户副本给池让路；终态后由 _after_pool_insufficient_space
-      排除已满盘换一个成员盘重建（2026-11-21 池优化，空间是
-      单盘问题、换盘不换源）；
-    - 用量记账：完成记 transfer_bytes、配额失败记 quota_hits
-      （pool_usage_daily，PR-5 熔断的数据面）。
-    drive_api 参数只为与 run_transfer_job_once 同签名，池执行不
-    用 SA 客户端。
-    """
-    from backend.emby_server.drive_oauth import DriveOAuthError
-    try:
-        member_id = int((getattr(job, "owner_ref", "") or "").strip())
-    except (TypeError, ValueError):
-        member_id = None
-    member = None
-    if member_id is not None:
-        member = (db.query(em.PoolMember)
-                  .filter(em.PoolMember.id == member_id).first())
-    if member is None:
-        return _fail_job(db, job, "no_member",
-                         "池成员不存在（任务创建后成员行被删，不重试）")
-    if member.status != "active":
-        return _fail_job(db, job, "member_inactive",
-                         f"池成员已{member.status}，不执行池转存")
-    binding = (db.query(em.UserStorageBinding)
-               .filter(em.UserStorageBinding.id == member.binding_id)
-               .first())
-    if binding is None or binding.status != "active":
-        return _fail_job(db, job, "no_binding",
-                         "成员 Drive 绑定已失效或不存在（不重试；"
-                         "重绑后下次播放节流窗外可重建）")
-    from backend.emby_server import pool_gate as _pg
-    user_client = UserDriveApiClient(db, binding)
-    member_drive = f"myDrive:{member.user_id}"
-    # 换源单（2026-11-19）：job.source_item_id 非空时实际拷源
-    # 取替代源行的 fid/文件名/大小（目录核对按名找副本，必须
-    # 用真拷的那份的名字），副本仍登记在 job.item_id 条目名
-    # 下。替代行已删/无 fid 时回落本行条目源（与普通单同口
-    # 径），不因换源标记失效把单打死。
-    source_item = item
-    _src_item_id = getattr(job, "source_item_id", None)
-    if _src_item_id:
-        _alt_item = (db.query(em.MediaItem)
-                     .filter(em.MediaItem.id == _src_item_id,
-                             em.MediaItem.deleted_at.is_(None))
-                     .first())
-        if _alt_item is not None and (
-                getattr(_alt_item, "drive_file_id", "") or "").strip():
-            source_item = _alt_item
-    orig_fid = source_item.drive_file_id.strip()
-    name = _copy_name_for_item(source_item)
-    _file_size = _to_int(getattr(source_item, "size", None))
-    # copy 尝试（至多两轮）：首轮被拒（copy_forbidden）先走源
-    # 自愈——SA 给源文件补 anyone-reader 后原地重试一次（见
-    # _try_pool_source_heal）；补不上/重试仍拒才落终态。其余
-    # 异常口径逐字不变（quota 当场记数熔断、令牌失效 no_binding、
-    # 未知异常回队重试），两轮共用同一组 handler、不另立一套；
-    # 只有自愈分支限首轮（heal_tried 记账，至多补一次）。
-    copied = None
-    folder_id = None
-    heal_tried = False
-    while True:
-        try:
-            if hasattr(user_client, "ensure_folder_cached"):
-                folder_id, _ = user_client.ensure_folder_cached(
-                    member_drive, transfer_dir_name())
-            else:
-                folder_id = user_client.ensure_folder(member_drive,
-                                                      transfer_dir_name())
-            copied = user_client.copy_file(member_drive, orig_fid,
-                                           folder_id, name)
-            break
-        except _CopyForbidden:
-            if not heal_tried and _try_pool_source_heal(
-                    db, job, item, drive_api, orig_fid):
-                heal_tried = True
-                continue
-            result = _fail_job(db, job, "copy_forbidden",
-                               "成员令牌无权读取源文件（anyone-reader 未传播"
-                               "或源已撤分享）")
-            _after_pool_copy_forbidden(db, job, item)
-            return result
-        except _CopyQuotaExceeded:
-            _pg._bump_pool_usage(db, member.id, quota_hits=1)
-            # PR-5 熔断：本次命中记数后顺手查阈值，达线即当场熔断
-            # 该成员（状态变更骑 _fail_job 的提交，不另起事务）。
-            _pg.maybe_trip_member_breaker(db, member)
-            free, shortfall = _fresh_quota_numbers(
-                user_client, member_drive, _file_size)
-            result = _fail_job(db, job, "insufficient_space",
-                               f"成员盘空间不足：文件 {_file_size} 字节，"
-                               f"剩余 {free} 字节，还差 {shortfall} 字节，"
-                               "未静默回落共享")
-            _after_pool_insufficient_space(db, job, item)
-            return result
-        except DriveOAuthError as exc:
-            return _fail_job(db, job, "no_binding",
-                             f"成员 Drive 令牌失效：{exc}")
-        except Exception as exc:
-            return {"job_id": job.id,
-                    "outcome": _schedule_retry(db, job, exc)}
-    variant_fid = (copied or {}).get("id") or ""
-    if not variant_fid:
-        return {"job_id": job.id,
-                "outcome": _schedule_retry(
-                    db, job, Exception("copy 未返回新 file_id"))}
-    # 转存后目录核对（与用户盘 Path A 同口径）：copy 回执只作期望值，
-    # 必须在成员转存目录里按名核到才登记；核不到记 copy_unresolved
-    #（不重试、不回落源文件播放），目录列举失败则按可重试处理。
-    try:
-        verified_fid = _verify_drive_copy_in_dir(
-            user_client, member_drive, folder_id, name, variant_fid)
-    except Exception as exc:
-        return {"job_id": job.id,
-                "outcome": _schedule_retry(db, job, exc)}
-    if not verified_fid:
-        return _fail_job(
-            db, job, "copy_unresolved",
-            f"Drive copy 回执 id={variant_fid} 在成员转存目录中核不到"
-            f"（目录 id={folder_id}，文件名={name}），不登记、不回落")
-    variant_fid = verified_fid
-    try:
-        user_client.add_anyone_reader(member_drive, variant_fid)
-    except Exception as exc:
-        # 副本已建但不可播：记 orphan，不删文件，等管理员处置。
-        row = em.TransferVariant(
-            item_id=job.item_id, source_file_id=orig_fid,
-            variant_file_id=variant_fid,
-            variant_drive_id=f"pooldrive:{member.id}",
-            owner_scope="pool", owner_ref=str(member.id), status="orphan",
-            size_bytes=_to_int((copied or {}).get("size"))
-            or _to_int(getattr(source_item, "size", None)))
-        db.add(row)
-        return _fail_job(db, job, "orphan", str(exc))
-    # 登记传 source_item：变体行 item_id 取 job.item_id（原条
-    # 目），source_file_id 取实际拷源行的 fid（换源单如实记
-    # 替代源，不冒充原源）。
-    row = _register_ready_variant(db, job, source_item, variant_fid,
-                                  f"pooldrive:{member.id}",
-                                  size=(copied or {}).get("size"))
-    _pg._bump_pool_usage(
-        db, member.id,
-        bytes_=(_to_int((copied or {}).get("size"))
-                or _to_int(getattr(source_item, "size", None)) or 0))
-    db.commit()
     return {"job_id": job.id, "outcome": "done", "variant_id": row.id}
 
 
@@ -7783,14 +7295,13 @@ def run_transfer_job_once(db, job, drive_api):
     #   不能按 provider 直接分发到同 provider 执行器）；
     # - pan115 + user → 115 执行器（drive_id 可为空，靠条目 fid）；
     # - drive + user → Drive 用户盘执行器（Path A/B）；
-    # - drive + pool → Drive 池盘执行器（goal-33 PR-2，成员令牌 Path A）；
     # - drive + source → 下方既有同盘路径（逐字不动）；
     # - 其它组合（pan115 + source、未知 provider）→ 不支持，不重试。
     provider = (getattr(job, "provider", "") or "drive").strip() or "drive"
     owner_scope = (getattr(job, "owner_scope", "") or "source").strip() or "source"
     if (provider not in ("drive", "pan115")
             or (provider == "pan115" and owner_scope != "user")
-            or owner_scope not in ("source", "user", "pool")):
+            or owner_scope not in ("source", "user")):
         job.status = "failed"
         job.error_kind = "unsupported"
         job.error_detail = (
@@ -7868,8 +7379,6 @@ def run_transfer_job_once(db, job, drive_api):
                          PROVIDER_REMOVED_DETAIL)
     if owner_scope == "user":
         return _run_drive_user_job(db, job, item, drive_api)
-    if owner_scope == "pool":
-        return _run_drive_pool_job(db, job, item, drive_api)
     orig_fid = item.drive_file_id.strip()
     try:
         folder_id = drive_api.ensure_folder(job.drive_id, transfer_dir_name())
@@ -8929,8 +8438,8 @@ def patrol_once(db, drive_api_factory, now=None):
     - 已下线 provider 的副本行（variant_drive_id 以 quark: /
       pan115: 开头，2026-11-02 删除单）整行跳过：不再验活、不再
       取链、不记 strike、不复活，行数据原样留存（二期清理）；
-    - 池副本行（owner_scope=pool，goal-33 PR-5）整行跳过：文件
-      在成员盘里、SA 看不见，验活归 pool_janitor 成员令牌口径；
+    - 历史池副本行（owner_scope=pool，贡献池功能已下线）整行
+      跳过：文件在成员盘里、SA 看不见，行数据原样留存；
     - 其它异常（429/5xx/网络）→ 只记日志，不记 strike。
     孤儿文件的自动删除不在 v1（删用户数据自动执行风险高，留复核）。
     """
@@ -8948,10 +8457,10 @@ def patrol_once(db, drive_api_factory, now=None):
             .limit(PATROL_BATCH).all())
     for row in rows:
         if (getattr(row, "owner_scope", "") or "") == "pool":
-            # 池副本（goal-33 PR-5）：文件在成员自己的盘里，SA
-            # 客户端看不见——用 SA 口径验活只会误记 strike。
-            # 池行验活归 pool_janitor（成员令牌口径），本巡检
-            # 整行跳过、不记 strike、不改状态。
+            # 历史池副本行（贡献池已下线）：文件在成员自己的盘
+            # 里，SA 客户端看不见——用 SA 口径验活只会误记
+            # strike。本巡检整行跳过、不记 strike、不改状态，
+            # 行数据原样留存（与上方已下线 provider 行同口径）。
             continue
         if _dest_is_removed(row.variant_drive_id):
             # 已下线 provider 的存量副本行：整行跳过，不发任何

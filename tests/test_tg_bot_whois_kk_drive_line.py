@@ -4,7 +4,7 @@
 口径：
 - 一行汇总：``💾 谷歌盘 ×N：标签 状态 · 标签 状态``，用绑定自设
   标签认盘；正常只打 ✓ 不写字，异常才写文字（已暂停 / 已失效 /
-  已过期）；在公共池供片的绑定（PoolMember 未退出）状态后加「池」。
+  已过期）。
 - 本设计取代 2026-11-01「精简卡只出 provider＋状态、无 label」
   口径：标签是用户自设的展示名，用户 2026-11-08 明确批准进群卡；
   隐私红线不变——邮箱 / 账号原文 / 凭据 id 绝不出现。
@@ -41,7 +41,6 @@ def db():
         models.SystemConfig.__table__,
         models.UserSubscription.__table__,
         em.UserStorageBinding.__table__,
-        em.PoolMember.__table__,
     ):
         table.create(engine, checkfirst=True)
     session = sessionmaker(bind=engine)()
@@ -68,15 +67,6 @@ def _bind(db, user_id, label, provider="drive", status="active", cred=101):
     return row
 
 
-def _pool(db, user_id, binding, status):
-    m = em.PoolMember(
-        user_id=user_id, binding_id=binding.id,
-        provider=binding.provider, status=status)
-    db.add(m)
-    db.commit()
-    return m
-
-
 def test_four_active_drives_one_line_with_labels(db):
     u = _user(db)
     for i, label in enumerate(("123", "456", "789", "101")):
@@ -86,31 +76,6 @@ def test_four_active_drives_one_line_with_labels(db):
     # 旧渲染的重复文案绝不出现
     assert "谷歌网盘｜正常" not in line
     assert line.count("谷歌网盘") == 0
-
-
-def test_suspended_pool_drive_shows_pause_and_pool_mark(db):
-    u = _user(db)
-    _bind(db, u.id, "123", cred=100)
-    b101 = _bind(db, u.id, "101", cred=101)
-    _pool(db, u.id, b101, "suspended")
-    line = whois._binding_lite_line(db, u.id)
-    assert line == "💾 谷歌盘 ×2：123 ✓ · 101 ⏸已暂停·池"
-
-
-def test_active_pool_drive_shows_pool_mark_after_check(db):
-    u = _user(db)
-    b = _bind(db, u.id, "456", cred=100)
-    _pool(db, u.id, b, "active")
-    line = whois._binding_lite_line(db, u.id)
-    assert line == "💾 谷歌盘 ×1：456 ✓池"
-
-
-def test_exited_pool_member_has_no_pool_mark(db):
-    u = _user(db)
-    b = _bind(db, u.id, "456", cred=100)
-    _pool(db, u.id, b, "exited")
-    line = whois._binding_lite_line(db, u.id)
-    assert line == "💾 谷歌盘 ×1：456 ✓"
 
 
 def test_invalid_and_expired_status_text(db):

@@ -72,7 +72,6 @@ INDIRECT_READS = {
     "MEDIA_SEEK_AUTO_APPROVE_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
     "MOUNT_SERVING_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
     "PAYMENT_QQPAY_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
-    "POOL_LARGE_FILE_ROUTING_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
     "SUBSCRIPTION_PURCHASE_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
     "TRANSFER_SERIES_PREHEAT_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",
     "WALLET_AUTO_RENEW_ENABLED": "backend/integrations/store.py PANEL_REMOVED_SWITCHES 元组 + switch_env_value 动态拼名读 os.environ（2026-11-23 第二批开关摘面板）",

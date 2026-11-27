@@ -83,14 +83,6 @@ SUPER_ONLY_PREFIXES = (
     "/api/admin/login-logs/purge",  # 清空登录审计记录（删证据的操作只给超管）
     "/api/admin/items-dedup-cache-config",  # 列表去重缓存配置
     "/api/admin/transfer-config",  # 转存总开关（含跨 provider）+ 并发上限：影响全站播放路径
-    # 全局审计 GA-072（2026-11-12）：公共池配置是全站门禁级（总开关 pool_enabled
-    # 决定未绑盘用户能不能播、准入与限额决定谁能进池）。只收 4 个配置口本身，
-    # 同前缀下 pool_admin.py 的成员审核 / 暂停清退 / 奖励结算 / 副本释放是日常
-    # 运营写口，不在此列，不要顺手扩大。
-    "/api/admin/pool/config",
-    "/api/admin/pool/reward-config",
-    "/api/admin/pool/janitor-config",
-    "/api/admin/pool/retry-config",
     # 全局审计 GA-071（2026-11-12）：上游密钥增删此前只在 /api/admin/capabilities
     # 一处收紧，刮削页这套是漏网的第二入口，与 ROLE_HINTS「operator 改不了上游
     # Key」自相矛盾。只收密钥子树，不收整个 /api/admin/emby/scrape——那下面还有

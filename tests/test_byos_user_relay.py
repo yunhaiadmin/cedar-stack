@@ -84,15 +84,13 @@ def _setup_video_stream(monkeypatch, item, user, binding_row,
     monkeypatch.setattr(api, "_observe_traffic", lambda resp: resp)
     monkeypatch.setattr(api.play_sign, "check_referer",
                         lambda request, db: None)
-    # 2026-11-22 门禁改版：video_stream 放行分支改走池决策入口拿分流
-    # 裁决，本文件不测门禁，决策入口桩成 bound 放行（BYOS 分支自身的
-    # 绑定校验仍是各用例的判定层）。
-    from backend.emby_server import pool_gate as _pool_gate
-    from types import SimpleNamespace as _SNS
+    # 贡献池下线后 video_stream 门禁只剩二值门禁 + 条目判定：
+    # 条目判定桩成 bound（BYOS 分支自身的绑定校验仍是各用例的
+    # 判定层）。
+    from backend.emby_server import playback_gate as _gate2
     monkeypatch.setattr(
-        _pool_gate, "ensure_playback_allowed_for_item",
-        lambda db, u, it, request=None: _SNS(
-            allowed=True, kind="bound", pool_routed=False))
+        _gate2, "binding_required_for_item",
+        lambda db, it: True)
 
     relay_calls = []
 
@@ -238,16 +236,6 @@ def test_byos_missing_binding_403_gate_no_sa_fallback(monkeypatch):
                             detail=_gate.GATE_MESSAGE)
 
     monkeypatch.setattr(_gate, "ensure_binding_playback_allowed", _deny)
-    # 二值门禁 403 后 video_stream 还会问池决策入口复核（生产同口径
-    # 同文案）——入口同样桩成拒绝，请求才算在门禁处终局被拦。
-    from backend.emby_server import pool_gate as _pool_gate
-
-    def _deny_pool(db, u, it, request=None):
-        raise HTTPException(status_code=403,
-                            detail=_gate.GATE_MESSAGE)
-
-    monkeypatch.setattr(
-        _pool_gate, "ensure_playback_allowed_for_item", _deny_pool)
     with pytest.raises(HTTPException) as ei:
         _run(api.video_stream(
             "item1", _fake_request(), _user(), _FakeDB(None)))

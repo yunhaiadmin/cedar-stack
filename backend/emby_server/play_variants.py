@@ -94,13 +94,6 @@ BYOS_DRIVE_DIRECT = "byos_drive_direct"
 #: 打点口径：转存副本走主线源出流（与 115 副本同款，不进
 #: list_variants 显式清单），不许拿它当可选变体下发。
 BYOS_QUARK_RELAY = "byos_quark_relay"
-#: 公共贡献池副本（goal-33 PR-3）：未绑用户播池中 ready 副本——
-#: 经贡献者令牌给副本授 anyone-reader 后下发免凭证 usercontent
-#: 直链，客户端自拉、字节不过服务器，与 drive_direct 同形
-#: （is_remote=True / needs_relay=False）。只在调用方信号
-#: pool_copy_available（未绑 + 池 eligible + 变体行复核有 ready
-#: 池副本）为真时才进清单，绑盘用户与池外条目恒不列。
-POOL_COPY = "pool_copy"
 #: 用户 Drive 转存副本中继（2026-11-16 网页软解取流修复）：挂载/
 #: 共享原件条目在该用户自己 Drive 里有一份 ready 转存副本时，
 #: drive_direct 实际 302 到的是副本的免凭证 usercontent 直链——
@@ -144,18 +137,12 @@ _VARIANTS: dict[str, Variant] = {
     BYOS_DRIVE_RELAY: Variant(BYOS_DRIVE_RELAY, "我的 Drive 中继", "Http", False, True),
     # 直链形态：授 anyone-reader 后客户端从用户自己盘自拉
     # （免凭证公开链），is_remote=True / needs_relay=False
-    # ——与 drive_direct / pool_copy 同形。
+    # ——与 drive_direct 同形。
     BYOS_DRIVE_DIRECT: Variant(BYOS_DRIVE_DIRECT, "我的 Drive 直链", "Http", True, False),
     # 中继形态：字节过服务器（凭用户 Cookie 现取链取流），故
     # is_remote=False / needs_relay=True——与 drive 中继同形。
     BYOS_QUARK_RELAY: Variant(BYOS_QUARK_RELAY, "我的夸克中继", "Http", False, True),
-    # 池副本直链形态：客户端从贡献者盘自拉（免凭证公开链），
-    # is_remote=True / needs_relay=False——与 drive_direct 同形。
-    POOL_COPY: Variant(POOL_COPY, "公共池", "Http", True, False),
-    # 中继形态：字节过服务器（凭本人绑定令牌取本人副本），故
-    # is_remote=False / needs_relay=True——与 byos_drive_relay 同形，
-    # 只是副本来源是转存登记行而非 byos 扫描行。
-    USERCOPY_RELAY: Variant(USERCOPY_RELAY, "我的副本中继", "Http", False, True),
+        USERCOPY_RELAY: Variant(USERCOPY_RELAY, "我的副本中继", "Http", False, True),
 }
 
 
@@ -178,7 +165,6 @@ def list_variants(db: Session, item, *,
                   mount_can_generate_play_target: bool | None = None,
                   user115_direct_available: bool = False,
                   user_drive_byos_available: bool = False,
-                  pool_copy_available: bool = False,
                   byos_quota_known: bool = False,
                   user_copy_available: bool = False) -> list[Variant]:
     """按条目算可用变体清单（唯一判定口），第一条恒为现行主线变体。
@@ -213,12 +199,6 @@ def list_variants(db: Session, item, *,
     byos_drive_relay（第一条仍是现行主线，老客户端无感）。清单阶段
     不真取令牌——令牌只在取流时现取现用，失效时取流报 409/503，
     不静默回落共享 SA 池。
-
-    ``pool_copy_available`` 由调用方用 api._pool_copy_available 算好
-    传进来（未绑 + 池 eligible + 已复核有 ready 池副本行）：True
-    时在清单末尾追加 pool_copy（第一条仍是现行主线）。本函数内再
-    以 drive_file_id 兜底：无 fid 的条目即使调用方误传信号也不
-    追加（与 byos 双保险同纪律）。
 
     ``byos_quota_known`` 由调用方按 quota 探针缓存算好传进来
     （只读缓存、不触发探测）：True 表示该文件公开链已被探针判
@@ -279,11 +259,6 @@ def list_variants(db: Session, item, *,
     # 这里再以 fid 兜底、且 byos 信号成立时不叠加防外溢。
     if user_copy_available and fid and not user_drive_byos_available:
         names.append(USERCOPY_RELAY)
-    # 公共池：排在主线与 BYOS 之后（第一条仍是现行主线）；信号由
-    # 调用方按「未绑 + 池 eligible + 变体行复核」算好，这里再以
-    # fid 兜底防信号外溢。
-    if pool_copy_available and fid:
-        names.append(POOL_COPY)
     return [_VARIANTS[n] for n in names]
 
 

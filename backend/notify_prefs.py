@@ -5,7 +5,6 @@
 - ``seek`` 求片到货类：proactive 管道（求片到货 / 转存终态 / 管理员
   手动标记入库）与求片审批结果的 TG 份；
 - ``expiry`` 到期提醒类：订阅到期提醒的 TG 份；
-- ``pool_digest`` 贡献回响类：公共池贡献者每日小结私聊。
 
 （原 ``lottery`` 活动中奖类已随群抽奖整族于 2026-11-23 删除。）
 
@@ -26,14 +25,12 @@ logger = logging.getLogger(__name__)
 
 CAT_SEEK = "seek"
 CAT_EXPIRY = "expiry"
-CAT_POOL_DIGEST = "pool_digest"
 
-CATEGORIES = (CAT_SEEK, CAT_EXPIRY, CAT_POOL_DIGEST)
+CATEGORIES = (CAT_SEEK, CAT_EXPIRY)
 
 _FIELDS = {
     CAT_SEEK: "tg_notify_seek",
     CAT_EXPIRY: "tg_notify_expiry",
-    CAT_POOL_DIGEST: "tg_notify_pool_digest",
 }
 
 

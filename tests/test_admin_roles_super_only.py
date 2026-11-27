@@ -194,10 +194,6 @@ _GA_ALL_METHOD_SUPER_ONLY = [
 
 _GA_WRITE_SUPER_ONLY = [
     # GA-072：池 4 个配置口
-    ("PUT", "/api/admin/pool/config"),
-    ("PUT", "/api/admin/pool/reward-config"),
-    ("PUT", "/api/admin/pool/janitor-config"),
-    ("PUT", "/api/admin/pool/retry-config"),
     # GA-071：TMDB 密钥池（整池保存 / 新增 / 删除）
     ("PUT", "/api/admin/emby/scrape/tmdb-keys"),
     ("POST", "/api/admin/emby/scrape/tmdb-keys/add"),
@@ -209,11 +205,6 @@ _GA_WRITE_SUPER_ONLY = [
 
 # 防误伤：这些日常运营写口必须仍然对 operator 放行（viewer 照旧全拦）。
 _GA_OPERATOR_STILL_ALLOWED = [
-    # 池：成员审核 / 清退 / 奖励结算 / 成员补丁（pool_admin.py，与配置同前缀）
-    ("POST", "/api/admin/pool/members/3/approve"),
-    ("POST", "/api/admin/pool/members/3/eject"),
-    ("POST", "/api/admin/pool/rewards/settle"),
-    ("PATCH", "/api/admin/pool/members/3"),
     # 刮削：重刮 / 绑 TMDB / 锁条目 / 探活暂停 / 缺失重入队
     ("POST", "/api/admin/emby/scrape/libraries/9/rescrape"),
     ("POST", "/api/admin/emby/scrape/items/9/bind-tmdb"),

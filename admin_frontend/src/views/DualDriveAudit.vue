@@ -30,8 +30,6 @@ import {
 const SOURCE_OPTIONS = [
   { value: '', label: '全部来源' },
   { value: 'decision', label: '决策留痕' },
-  { value: 'member_event', label: '池成员状态' },
-  { value: 'reward', label: '池发奖' },
   { value: 'drive_error', label: 'Drive 报错' },
   { value: 'play_access', label: '起播取用' },
 ]
@@ -39,12 +37,6 @@ const SOURCE_OPTIONS = [
 const CATEGORY_OPTIONS = [
   { value: '', label: '全部动作' },
   { value: 'transfer_gate', label: '转存门禁（个人盘）' },
-  { value: 'pool_gate', label: '池门禁' },
-  { value: 'pool_pick', label: '池选盘' },
-  { value: 'pool_breaker', label: '池熔断' },
-  { value: 'pool_evict', label: '池清理淘汰' },
-  { value: 'member_status', label: '池成员状态变更' },
-  { value: 'pool_reward', label: '池发奖' },
   { value: 'gate_reject', label: '起播门禁被拒' },
   { value: 'copy_resolve', label: '副本选路' },
   { value: 'switch_failed', label: '换线失败' },

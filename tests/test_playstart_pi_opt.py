@@ -287,16 +287,6 @@ def test_decision_burst_never_caches_error(fake_cm, monkeypatch):
     assert calls["range"] == 2
 
 
-def test_decision_burst_skips_pool_path(fake_cm, monkeypatch):
-    calls = _decision_setup(
-        monkeypatch,
-        lambda url: (206, "video/mp4", b"\x00\x00\x00 ftypisom"))
-    assert tv.probe_user_copy_quota_decision("poolvar:9", FID) == "ok"
-    assert tv.probe_user_copy_quota_decision("poolvar:9", FID) == "ok"
-    # 池路径（熔断恢复须当场探）不走任何复用/短缓存：逐字旧口径
-    assert calls["range"] == 2
-
-
 # ---------------------------------------------------------------------------
 # 第 1 / 5 项：PlaybackInfo 接口级（TestClient + 独立种子）
 # ---------------------------------------------------------------------------
@@ -328,9 +318,6 @@ def _cleanup_pi(db):
         if old:
             cred_ids = [r[0] for r in db.query(em.UserStorageBinding.credential_id)
                         .filter(em.UserStorageBinding.user_id == old.id).all()]
-            db.query(em.PoolMember).filter(
-                em.PoolMember.user_id == old.id).delete(
-                synchronize_session=False)
             db.query(em.UserStorageBinding).filter(
                 em.UserStorageBinding.user_id == old.id).delete(
                 synchronize_session=False)
@@ -343,7 +330,6 @@ def _cleanup_pi(db):
                 synchronize_session=False)
             db.query(models.WebUser).filter(
                 models.WebUser.id == old.id).delete()
-    db.query(em.PoolUsageDaily).delete(synchronize_session=False)
     for lib in db.query(em.Library).filter(em.Library.name == LIB_NAME).all():
         ids = [r[0] for r in db.query(em.MediaItem.id)
                .filter(em.MediaItem.library_id == lib.id).all()]
@@ -391,11 +377,7 @@ def pi_seed():
         db.flush()
         return b
 
-    contrib_binding = _binding(users[CONTRIB])
-    member = em.PoolMember(
-        binding_id=contrib_binding.id, user_id=users[CONTRIB],
-        provider="drive", status="active")
-    db.add(member)
+    _binding(users[CONTRIB])
     _binding(users[BOUND])
     # 播放门禁（2026-11-22 改版）：资格看订阅——三种子用户各补 realm 1 订阅。
     from datetime import datetime as _dt, timedelta as _td
@@ -443,12 +425,6 @@ def pi_seed():
     data = {"bound_id": users[BOUND], "free_id": users[FREE],
             "movie1": movie1.guid, "movie2": movie2.guid,
             "movie2_id": movie2.id}
-    db.close()
-    db = SessionLocal()
-    config_service.save_config(
-        db, {"pool_enabled": True, "pool_enqueue_jitter_sec": 0},
-        schema="pool")
-    db.commit()
     db.close()
     store.invalidate()
     yield data
@@ -560,11 +536,8 @@ def test_playbackinfo_cache_key_ignores_profile_and_bitrate(
 
 @pytest.mark.usefixtures("_pi_env")
 def test_playbackinfo_unbound_no_copy_no_wait(pi_client, pi_seed):
-    """2026-11-22 二次改版：未绑订阅用户播无 ready 池副本的条目，
-    PlaybackInfo 直达本人链正常源——不再建池单、不再走池等流
-    （旧名 test_playbackinfo_pool_wait_is_short；池等流形态只剩
-    「已有在途池单」场景，由 test_pool_playbackinfo 的等流用例
-    覆盖）。"""
+    """未绑订阅用户播无本人 ready 副本的条目，PlaybackInfo 走
+    本人链正常源形态——不建池单（贡献池已下线）、不长等。"""
     token = _token(pi_client, FREE)
     start = time.monotonic()
     body = _playbackinfo(pi_client, token, pi_seed["movie2"])
@@ -578,6 +551,6 @@ def test_playbackinfo_unbound_no_copy_no_wait(pi_client, pi_seed):
         job = (db.query(em.TransferJob)
                .filter(em.TransferJob.item_id == pi_seed["movie2_id"],
                        em.TransferJob.owner_scope == "pool").first())
-        assert job is None, "直达本人链不许落池单"
+        assert job is None, "贡献池已下线，不许落池单"
     finally:
         db.close()

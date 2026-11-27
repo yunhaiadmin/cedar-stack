@@ -746,7 +746,6 @@ def _auto_migrate():
             # server_default 一致（backend/notify_prefs.py）。
             ("tg_notify_seek", "BOOLEAN", "1"),
             ("tg_notify_expiry", "BOOLEAN", "1"),
-            ("tg_notify_pool_digest", "BOOLEAN", "1"),
             # 网页播放器设置同步（2026-11-15 ⚠️11）：老库补列后为 NULL
             # = 从未保存过，与新列缺省一致（见 backend/player_prefs.py）。
             ("player_preferences", "JSON", "NULL"),
@@ -1205,18 +1204,6 @@ def _auto_migrate():
         ("emby_items", [
             ("identity_bound", "BOOLEAN", "NULL"),
             ("has_identity", "BOOLEAN", "NULL"),
-        ]),
-        # 公共贡献池 PR-4（2026-11-08）：成员行清退违规标志六列。
-        # 老库补列后 flagged=0（未置位）、其余 NULL（无置位/清除
-        # 痕迹），与升级前行为一致；新表 pool_member_status_events
-        # 由 create_all 建出，不走这里。
-        ("pool_members", [
-            ("violation_flagged", "BOOLEAN", "0"),
-            ("violation_reason", "VARCHAR(200)", "NULL"),
-            ("violation_flagged_at", "DATETIME", "NULL"),
-            ("violation_flagged_by", "INTEGER", "NULL"),
-            ("violation_cleared_at", "DATETIME", "NULL"),
-            ("violation_cleared_by", "INTEGER", "NULL"),
         ]),
         # 流量额度一期（2026-11-13）：时间换流量按比例口径留痕两列。
         # 本表由 create_all 随本期新建，老库（若已建表）补列后为 NULL
