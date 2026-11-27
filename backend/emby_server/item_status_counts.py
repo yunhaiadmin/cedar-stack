@@ -10,9 +10,14 @@ probe_worker.status_snapshot 与 enrich_worker.get_progress 各跑
 9,248 秒（全 DB 执行时间的 15.9%），且每次 health 检查、管理面
 打开都会整族重跑。
 
-本模块把这族聚合收敛成一份进程内共享快照：短 TTL（默认 60 秒，
+本模块把这族聚合收敛成一份进程内共享快照：短 TTL（默认 300 秒，
 ``ITEM_STATUS_COUNTS_TTL_SECONDS`` 可调）内所有消费者共用同一次
-聚合的结果。口径与原各消费者逐字一致：
+聚合的结果。R-01（2026-11-28）：默认 TTL 由 60 秒改为 300 秒——
+复扫实测 4 条残余查询各约 1 次/分钟、合计 0.87s/min，根因是快照
+每 60 秒刷新一次仍要跑全表 GROUP BY；300 秒后刷新降为约 0.2 次/
+分钟。代价：跨进程写入的数字最多滞后 5 分钟（健康/仪表盘口径本就
+容忍分钟级陈旧；本进程管理动作写入仍即时失效，见下）。
+口径与原各消费者逐字一致：
 
 - enrich 分布：``GROUP BY enrich_status``，``merged_into_id IS NULL``
   （软删由 ORM 钩子排除，与 _probe_enrich / _enrich_count 原口径同）。
@@ -20,6 +25,13 @@ probe_worker.status_snapshot 与 enrich_worker.get_progress 各跑
   ``merged_into_id IS NULL``（与 status_snapshot / get_progress /
   health_report._count 原口径同；按类型过滤在消费侧做，
   PROBE_ITEM_TYPES 的 env 变更不影响缓存口径）。
+- 错误分布（R-01）：``GROUP BY probe_last_error``，仅
+  ``probe_last_error IS NOT NULL`` 且 ``probe_status IN
+  (pending, failed)`` 的行，与 status_snapshot 原现算查询同口径；
+  status_snapshot 全量模式的 top_errors 取前 5。
+- 近期完成数（R-01）：``enrich_status='done'`` 且 ``last_scraped_at``
+  落在窗口内的行数，与 health_report._enrich_recent_completed 同
+  口径；窗口见 recent_done_window_minutes()。
 
 失效两条腿（与 enrich 认领快照的「事件失效 + TTL 兜底」同款）：
 - 本进程写入即时失效：Session before_flush / do_orm_execute 监听
@@ -47,17 +59,18 @@ import threading
 import time
 from typing import Any
 
-from backend.emby_server.env_util import env_float
+from backend.emby_server.env_util import env_float, env_int
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TTL_SECONDS = 60.0
+DEFAULT_TTL_SECONDS = 300.0
 
 # RLock：_compute 用调用方 session 现算时可能触发 autoflush，
 # flush 监听会同线程重入 _invalidate，普通锁会死锁。
 _CACHE_LOCK = threading.RLock()
 _CACHE: dict[str, Any] = {
     "bind": None, "at": 0.0, "enrich": None, "probe_by_type": None,
+    "errors": None, "recent_done": None,
 }
 _WATCH_INSTALLED = False
 
@@ -65,6 +78,13 @@ _WATCH_INSTALLED = False
 def _ttl_seconds() -> float:
     return env_float("ITEM_STATUS_COUNTS_TTL_SECONDS",
                      DEFAULT_TTL_SECONDS, lo=0.0)
+
+def recent_done_window_minutes() -> int:
+    """近期完成窗口（分钟）：与 health_report.HEALTH_ENRICH_PROGRESS_MIN
+    同源（同一 env 键 HEALTH_ENRICH_PROGRESS_MIN，默认 10 分钟）。
+    快照只存这一个窗口的值；health_report._enrich_recent_completed
+    请求别的窗口时不走快照、直接现算。"""
+    return env_int("HEALTH_ENRICH_PROGRESS_MIN", 10, lo=1)
 
 
 def _bind_of(db):
@@ -80,6 +100,8 @@ def _invalidate() -> None:
         _CACHE["at"] = 0.0
         _CACHE["enrich"] = None
         _CACHE["probe_by_type"] = None
+        _CACHE["errors"] = None
+        _CACHE["recent_done"] = None
 
 
 def _install_invalidate_watch() -> None:
@@ -126,8 +148,13 @@ def _install_invalidate_watch() -> None:
         logger.debug("状态分布写失效监听安装失败（TTL 兜底）", exc_info=True)
 
 
-def _compute(db) -> tuple[dict, dict]:
-    """两条 GROUP BY 现算分布（口径见模块 docstring）。"""
+def _compute(db) -> tuple[dict, dict, list, int]:
+    """四条聚合现算（口径见模块 docstring）：enrich 分布、probe 按类型
+    分布、错误分布、近期完成数。一次刷新把四条全算完，TTL 内所有
+    消费者共用——R-01 前错误分布与近期完成数是快照外的实时查，
+    各约 1 次/分钟；进快照后随刷新节律走（TTL 300 秒时约 0.2 次/分钟）。"""
+    from datetime import datetime, timedelta
+
     from sqlalchemy import func
 
     from backend.emby_server import models as em
@@ -150,10 +177,34 @@ def _compute(db) -> tuple[dict, dict]:
     for item_type, status, cnt in probe_rows:
         probe_by_type.setdefault(item_type or "unknown", {})[
             status or "unknown"] = int(cnt)
-    return enrich, probe_by_type
+    # 错误分布：与 probe_worker.status_snapshot 原现算查询同口径
+    #（probe_last_error 非空、probe_status 在 pending/failed、副本排除；
+    # 软删/realm 过滤由 ORM 钩子补，与原查询同一 session 同口径）。
+    error_rows = (
+        db.query(em.MediaItem.probe_last_error, func.count(em.MediaItem.id))
+        .filter(em.MediaItem.probe_last_error.isnot(None),
+                em.MediaItem.probe_status.in_(("pending", "failed")),
+                em.MediaItem.merged_into_id.is_(None))
+        .group_by(em.MediaItem.probe_last_error)
+        .order_by(func.count(em.MediaItem.id).desc())
+        .all()
+    )
+    errors = [(e, int(c)) for e, c in error_rows]
+    # 近期完成数：与 health_report._enrich_recent_completed 同口径。
+    cutoff = datetime.now() - timedelta(
+        minutes=recent_done_window_minutes())
+    recent_done = (
+        db.query(func.count(em.MediaItem.id))
+        .filter(em.MediaItem.enrich_status == "done",
+                em.MediaItem.merged_into_id.is_(None),
+                em.MediaItem.last_scraped_at.isnot(None),
+                em.MediaItem.last_scraped_at >= cutoff)
+        .scalar() or 0
+    )
+    return enrich, probe_by_type, errors, int(recent_done)
 
 
-def _distributions(db) -> tuple[dict, dict]:
+def _distributions(db) -> tuple[dict, dict, list, int]:
     """缓存入口：同 bind + TTL 内共用一份快照（collect_cached 同惯例）。"""
     _install_invalidate_watch()
     ttl = _ttl_seconds()
@@ -163,41 +214,62 @@ def _distributions(db) -> tuple[dict, dict]:
     with _CACHE_LOCK:
         if (_CACHE["bind"] is bind and _CACHE["enrich"] is not None
                 and (time.monotonic() - _CACHE["at"]) < ttl):
-            return _CACHE["enrich"], _CACHE["probe_by_type"]
+            return (_CACHE["enrich"], _CACHE["probe_by_type"],
+                    _CACHE["errors"], _CACHE["recent_done"])
         try:
-            enrich, probe_by_type = _compute(db)
+            enrich, probe_by_type, errors, recent_done = _compute(db)
         except Exception:  # noqa: BLE001 — 刷新失败退回旧快照
             if _CACHE["bind"] is bind and _CACHE["enrich"] is not None:
                 logger.debug("状态分布刷新失败，退回旧快照", exc_info=True)
-                return _CACHE["enrich"], _CACHE["probe_by_type"]
+                return (_CACHE["enrich"], _CACHE["probe_by_type"],
+                        _CACHE["errors"], _CACHE["recent_done"])
             raise
         _CACHE["bind"] = bind
         _CACHE["at"] = time.monotonic()
         _CACHE["enrich"] = enrich
         _CACHE["probe_by_type"] = probe_by_type
-        return enrich, probe_by_type
+        _CACHE["errors"] = errors
+        _CACHE["recent_done"] = recent_done
+        return enrich, probe_by_type, errors, recent_done
 
 
 def enrich_status_counts(db) -> dict[str, int]:
     """enrich 状态分布 ``{status: count}``（副本排除口径）。"""
-    enrich, _ = _distributions(db)
+    enrich, _, _, _ = _distributions(db)
     return dict(enrich)
 
 
 def probe_counts_by_type(db) -> dict[str, dict[str, int]]:
     """probe 状态分布 ``{item_type: {status: count}}``（副本排除口径）。"""
-    _, probe_by_type = _distributions(db)
+    _, probe_by_type, _, _ = _distributions(db)
     return {t: dict(m) for t, m in probe_by_type.items()}
 
 
 def probe_status_counts(db, item_types) -> dict[str, int]:
     """指定类型集合的 probe 状态总量 ``{status: count}``。"""
-    _, probe_by_type = _distributions(db)
+    _, probe_by_type, _, _ = _distributions(db)
     totals: dict[str, int] = {}
     for t in item_types:
         for status, cnt in (probe_by_type.get(t) or {}).items():
             totals[status] = totals.get(status, 0) + cnt
     return totals
+
+
+def probe_error_counts(db) -> list[tuple[str, int]]:
+    """探测错误分布 ``[(error, count)]``（按 count 倒序），与
+    probe_worker.status_snapshot 原现算 GROUP BY 同口径：
+    probe_last_error 非空、probe_status 在 (pending, failed)、
+    合并副本与软删行排除。值随快照走，最多滞后一个 TTL。"""
+    _, _, errors, _ = _distributions(db)
+    return list(errors)
+
+
+def enrich_recent_done(db) -> int:
+    """最近窗口内完成的可见条目数（done 且 last_scraped_at 落在窗口内），
+    与 health_report._enrich_recent_completed 同口径。窗口见
+    recent_done_window_minutes()；值随快照走，最多滞后一个 TTL。"""
+    _, _, _, recent_done = _distributions(db)
+    return int(recent_done)
 
 
 def _reset_cache() -> None:

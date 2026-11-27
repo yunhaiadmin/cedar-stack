@@ -7,7 +7,8 @@
    直接 GROUP BY 现算的结果相等。
 2. TTL 内多次调用只算一次：消费者整族 sweep（observability 探针 +
    health_report 计数 + status_snapshot + get_progress）只发出
-   2 条分布 GROUP BY；TTL 内第二遍 sweep 为 0 条。
+   3 条分布 GROUP BY（enrich + probe + 错误分布），近期完成 COUNT
+   也随快照只算一次；TTL 内第二遍 sweep 为 0 条。
 3. 缓存失效行为：TTL 过期后刷新；本进程写入（ORM 新增/批量更新）
    即时失效；刷新失败有旧快照退旧值、无旧快照抛错（消费者原有
    吞错口径不变）；不同 engine 不串扰。
@@ -218,12 +219,12 @@ def test_ttl_single_refresh_and_expiry():
             assert isc.probe_counts_by_type(db) == EXPECT_PROBE_BY_TYPE
             assert isc.probe_status_counts(db, ("movie", "episode")) == \
                 EXPECT_PROBE_TOTALS
-            # 三次调用只算一次（一份快照 = enrich + probe 两条 GROUP BY）
-            assert counter["n"] == 2
-            # TTL 过期后刷新（值不变、查询数 +2）
+            # 三次调用只算一次（一份快照 = enrich + probe + 错误分布三条 GROUP BY）
+            assert counter["n"] == 3
+            # TTL 过期后刷新（值不变、查询数 +3）
             isc._CACHE["at"] -= 3600
             assert isc.enrich_status_counts(db) == EXPECT_ENRICH
-            assert counter["n"] == 4
+            assert counter["n"] == 6
         finally:
             unlisten()
     finally:
@@ -243,11 +244,11 @@ def test_write_invalidation():
         counter, unlisten = _groupby_counter(engine)
         try:
             assert isc.enrich_status_counts(db)["pending"] == 3
-            assert counter["n"] == 2
+            assert counter["n"] == 3
             # ORM 新增一行 → 立刻失效重算
             _mk(db, lid, enrich_status="pending")
             assert isc.enrich_status_counts(db)["pending"] == 4
-            assert counter["n"] == 4
+            assert counter["n"] == 6
             # 批量 UPDATE（Query.update）→ 同样立刻失效
             db.query(em.MediaItem).filter(
                 em.MediaItem.enrich_status == "pending").update(
@@ -256,7 +257,7 @@ def test_write_invalidation():
             got = isc.enrich_status_counts(db)
             assert got.get("pending", 0) == 0
             assert got["done"] == EXPECT_ENRICH["done"] + 4
-            assert counter["n"] == 6
+            assert counter["n"] == 9
         finally:
             unlisten()
     finally:
@@ -357,14 +358,160 @@ def test_consumer_sweep_query_count():
             probe_worker.status_snapshot(db, light=True)
             enrich_worker.get_progress(light=True)
             # 迁移前这一遍要跑 18 条状态分布查询（4+4+8 COUNT + 2
-            # GROUP BY）；迁移后只有共享快照的 2 条 GROUP BY。
-            assert counter["n"] == 2
+            # GROUP BY）；迁移后只有共享快照的 3 条 GROUP BY
+            #（enrich + probe + 错误分布）。
+            assert counter["n"] == 3
             # TTL 内第二遍：0 条
             observability._probe_enrich(db)
             probe_worker.status_snapshot(db, light=True)
             enrich_worker.get_progress(light=True)
-            assert counter["n"] == 2
+            assert counter["n"] == 3
         finally:
             unlisten()
+    finally:
+        db.close()
+
+
+# ================= R-01（2026-11-28）：TTL 300 秒 + 错误分布/近期完成进快照 ===
+
+def test_ttl_default_is_300_seconds(monkeypatch):
+    """R-01：默认 TTL 由 60 秒改为 300 秒（env 仍可覆盖）。"""
+    assert isc.DEFAULT_TTL_SECONDS == 300.0
+    monkeypatch.delenv("ITEM_STATUS_COUNTS_TTL_SECONDS", raising=False)
+    assert isc._ttl_seconds() == 300.0
+    monkeypatch.setenv("ITEM_STATUS_COUNTS_TTL_SECONDS", "45")
+    assert isc._ttl_seconds() == 45.0
+
+
+def _seed_errors(db, lid):
+    """错误分布样本：pending/failed 带错（计入），其余不计。
+    计入：timeout x3（pending 2 + failed 1）、quota x1（failed）。
+    不计：done 带错、NULL 错误、合并副本、软删行。"""
+    from datetime import datetime
+    now = datetime.now()
+    _mk(db, lid, enrich_status="done", probe_status="pending",
+        probe_last_error="timeout")
+    _mk(db, lid, enrich_status="done", probe_status="pending",
+        probe_last_error="timeout")
+    _mk(db, lid, enrich_status="failed", probe_status="failed",
+        probe_last_error="timeout")
+    _mk(db, lid, enrich_status="done", probe_status="failed",
+        probe_last_error="quota")
+    _mk(db, lid, enrich_status="done", probe_status="done",
+        probe_last_error="timeout")
+    _mk(db, lid, enrich_status="done", probe_status="failed")
+    parent = _mk(db, lid, enrich_status="done", probe_status="done")
+    _mk(db, lid, enrich_status="done", probe_status="failed",
+        probe_last_error="timeout", merged_into_id=parent.id)
+    _mk(db, lid, enrich_status="done", probe_status="failed",
+        probe_last_error="timeout", deleted_at=now)
+    return lid
+
+
+def test_probe_error_counts_caliber():
+    """R-01：错误分布与原 status_snapshot 口径的现算 GROUP BY 逐字一致，
+    且 status_snapshot 全量模式的 top_errors 与快照一致。"""
+    db = SessionLocal()
+    try:
+        lid = _seed(db)
+        _seed_errors(db, lid)
+        got = isc.probe_error_counts(db)
+        assert got == [("timeout", 3), ("quota", 1)]
+        rows = (db.query(em.MediaItem.probe_last_error,
+                         func.count(em.MediaItem.id))
+                .filter(em.MediaItem.probe_last_error.isnot(None),
+                        em.MediaItem.probe_status.in_(("pending", "failed")),
+                        em.MediaItem.merged_into_id.is_(None))
+                .group_by(em.MediaItem.probe_last_error)
+                .order_by(func.count(em.MediaItem.id).desc()).all())
+        assert got == [(e, int(c)) for e, c in rows]
+        snap = probe_worker.status_snapshot(db, light=False)
+        assert [e["error"] for e in snap["top_errors"]] == ["timeout", "quota"]
+        assert [e["count"] for e in snap["top_errors"]] == [3, 1]
+    finally:
+        db.close()
+
+
+def test_recent_done_caliber():
+    """R-01：近期完成数与原 _enrich_recent_completed 口径的直接 COUNT 一致。"""
+    from datetime import datetime, timedelta
+    db = SessionLocal()
+    try:
+        lib = em.Library(guid="c02-lib-recent", name="C02 近期完成库")
+        db.add(lib)
+        db.commit()
+        lid = lib.id
+        w = health_report.HEALTH_ENRICH_PROGRESS_MIN
+        now = datetime.now()
+        for _ in range(2):
+            _mk(db, lid, enrich_status="done", probe_status="done",
+                last_scraped_at=now - timedelta(minutes=1))
+        _mk(db, lid, enrich_status="done", probe_status="done",
+            last_scraped_at=now - timedelta(minutes=w + 5))
+        _mk(db, lid, enrich_status="done", probe_status="done")
+        _mk(db, lid, enrich_status="pending", probe_status="done",
+            last_scraped_at=now - timedelta(minutes=1))
+        assert isc.enrich_recent_done(db) == 2
+        assert health_report._enrich_recent_completed(db, w) == 2
+        cutoff = now - timedelta(minutes=w)
+        direct = db.query(func.count(em.MediaItem.id)).filter(
+            em.MediaItem.enrich_status == "done",
+            em.MediaItem.merged_into_id.is_(None),
+            em.MediaItem.last_scraped_at.isnot(None),
+            em.MediaItem.last_scraped_at >= cutoff).scalar() or 0
+        assert direct == 2
+    finally:
+        db.close()
+
+
+def _last_scraped_counter(engine):
+    """数含 last_scraped_at 的语句条数，返回 (计数器 dict, 注销函数)。"""
+    counter = {"n": 0}
+
+    def _listen(conn, cursor, statement, parameters, context, executemany):
+        if "last_scraped_at" in statement:
+            counter["n"] += 1
+
+    event.listen(engine, "before_cursor_execute", _listen)
+    return counter, lambda: event.remove(
+        engine, "before_cursor_execute", _listen)
+
+
+def test_snapshot_covers_errors_and_recent_done():
+    """R-01：错误分布与近期完成数也进同一份快照——整族 sweep 只刷新一次。"""
+    db = SessionLocal()
+    engine = db.get_bind()
+    try:
+        lid = _seed(db)
+        _seed_errors(db, lid)
+        isc._reset_cache()
+        counter, unlisten = _groupby_counter(engine)
+        lsc, unlisten_ls = _last_scraped_counter(engine)
+        try:
+            observability._probe_enrich(db)
+            for st in ("done", "failed", "pending", "enriching"):
+                health_report._enrich_count(db, st)
+            for t in ("movie", "episode"):
+                for st in ("done", "degraded", "probed_no_duration",
+                           "failed"):
+                    health_report._count(db, t, st)
+            probe_worker.status_snapshot(db, light=False)
+            enrich_worker.get_progress(light=False)
+            health_report._enrich_recent_completed(
+                db, health_report.HEALTH_ENRICH_PROGRESS_MIN)
+            # 一份快照 = 3 条 GROUP BY + 1 条近期完成 COUNT
+            assert counter["n"] == 3
+            assert lsc["n"] == 1
+            # TTL 内第二遍：0 条新增
+            observability._probe_enrich(db)
+            probe_worker.status_snapshot(db, light=False)
+            enrich_worker.get_progress(light=False)
+            health_report._enrich_recent_completed(
+                db, health_report.HEALTH_ENRICH_PROGRESS_MIN)
+            assert counter["n"] == 3
+            assert lsc["n"] == 1
+        finally:
+            unlisten()
+            unlisten_ls()
     finally:
         db.close()
