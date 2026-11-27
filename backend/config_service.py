@@ -89,6 +89,8 @@ SCHEMAS: dict[str, dict[str, tuple]] = {
     "landing": config_schema.LANDING_CONTENT_SCHEMA,
     # 安装应用页（2026-11-13）：6 平台官方客户端下载链接
     "install_app": config_schema.INSTALL_APP_CONFIG_SCHEMA,
+    # 新人指南页（2026-11-27）：对外服务器地址兜底键
+    "guide": config_schema.GUIDE_CONFIG_SCHEMA,
     "welfare": config_schema.WELFARE_CONFIG_SCHEMA,
     # 4-6：economy 家族（设计报告说的 44 键，实查 49 键；校验语义与迁移前
     # economy_spec 的历史行为逐字一致，str/secret 用 ("raw",) 原样存库；
