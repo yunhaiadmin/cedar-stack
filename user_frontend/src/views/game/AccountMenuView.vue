@@ -238,9 +238,6 @@ const groups = computed<MenuGroup[]>(() => {
   const account: MenuItem[] = [
     { key: 'settings', label: '账号安全', to: '/game/account/settings' },
     { key: 'invite', label: '邀请好友', to: '/game/account/invite' },
-    // 贡献池（2026-11-24）：绑盘下线后入池走池专属授权，入口
-    // 常驻账户组（不设可见性门槛，未入池用户正是要看的人）。
-    { key: 'pool', label: '贡献池', to: '/game/account/pool' },
   ]
   // 团队管理（2026-11-18 重建批 2）：照友站「我的 · 账户」组序，
   // 紧随邀请好友；可见性与桌面侧栏同口径（见 showTeam）

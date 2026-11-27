@@ -156,10 +156,6 @@
           <span class="ov-trow__name">邀请好友</span>
           <ChevronRight :size="18" class="ov-row__chev" aria-hidden="true" />
         </RouterLink>
-        <RouterLink class="ov-trow" to="/game/account/pool">
-          <span class="ov-trow__name">贡献池</span>
-          <ChevronRight :size="18" class="ov-row__chev" aria-hidden="true" />
-        </RouterLink>
         <a
           v-if="docsUrl"
           class="ov-trow"
@@ -172,65 +168,6 @@
         </a>
       </section>
 
-      <!-- 子账号（2026-11-15 家庭版）：数据走 subAccountsApi 单口。
-           子账号视角只显示归属说明；主账号视角在套餐含子账号权益
-           （limit>0）或已有子账号时显示管理区（列表/新建/删除）。
-           接口失败整段不渲染，不假造名单。 -->
-      <section v-if="subAccounts && subSectionVisible" class="ov-sec">
-        <div class="ov-sec__head">
-          <h2 class="ov-sec__title">子账号</h2>
-          <span v-if="!subAccounts.is_sub_account" class="ov-sec__more">
-            {{ subAccounts.used }} / {{ subAccounts.limit }} 个
-          </span>
-        </div>
-        <template v-if="subAccounts.is_sub_account">
-          <p class="ov-sub-note">
-            你是家庭子账号，订阅、流量与播放都跟随主账号
-            @{{ subAccounts.parent_username }}；购买、充值、兑换请用主账号操作。
-          </p>
-        </template>
-        <template v-else>
-          <div v-for="item in subAccounts.items" :key="item.id" class="ov-drow">
-            <Users :size="24" class="ov-drow__icon" aria-hidden="true" />
-            <span class="ov-drow__name">{{ item.username }}</span>
-            <span v-if="!item.is_active" class="ov-drow__status">已删除</span>
-            <button
-              v-else
-              type="button"
-              class="ov-sub-del"
-              :disabled="subBusy"
-              @click="removeSubAccount(item)"
-            >
-              删除
-            </button>
-          </div>
-          <p v-if="!subAccounts.items.length" class="ov-sub-note">
-            还没有子账号。子账号用自己的用户名密码登录，订阅与流量和你共享。
-          </p>
-          <form v-if="subAccounts.can_create" class="ov-sub-form" @submit.prevent="createSubAccount">
-            <input
-              v-model.trim="subForm.username"
-              class="ov-sub-input"
-              type="text"
-              autocomplete="off"
-              placeholder="子账号用户名（3-32 个字符）"
-            />
-            <input
-              v-model="subForm.password"
-              class="ov-sub-input"
-              type="password"
-              autocomplete="new-password"
-              placeholder="子账号密码（至少 8 位）"
-            />
-            <button type="submit" class="ov-btn ov-sub-create" :disabled="subBusy">
-              新建子账号
-            </button>
-          </form>
-          <p v-else-if="subAccounts.limit > 0 && subAccounts.used >= subAccounts.limit" class="ov-sub-note">
-            子账号名额已满，删除一个后可以再建。
-          </p>
-        </template>
-      </section>
       </template>
     </div>
 
@@ -302,7 +239,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import {
-  Apple, ArrowUpRight, Captions, ChevronRight, Monitor, MonitorPlay, Route, Smartphone, Tv, Users,
+  Apple, ArrowUpRight, Captions, ChevronRight, Monitor, MonitorPlay, Route, Smartphone, Tv,
   type LucideIcon,
 } from 'lucide-vue-next'
 import AxAccountShellGate from '@/components/ax/AxAccountShellGate.vue'
@@ -323,11 +260,6 @@ import {
   type AccountCard,
 } from '@/api'
 import { walletApi, type WalletInfo } from '@/api/wallet'
-import {
-  subAccountsApi,
-  type SubAccountItem,
-  type SubAccountManagement,
-} from '@/api/subAccounts'
 import {
   deviceApi,
   type MyDevice, type MyDevicesResponse,
@@ -514,56 +446,6 @@ async function loadDevices() {
 const linesSheetOpen = ref(false)
 const danmuSheetOpen = ref(false)
 
-// ── 子账号段（subAccountsApi：拿不到整段不渲染） ──
-const subAccounts = ref<SubAccountManagement | null>(null)
-const subBusy = ref(false)
-const subForm = ref({ username: '', password: '' })
-/** 显示条件（任务书口径）：子账号视角恒显示归属说明；主账号视角
- * 仅当套餐含子账号权益（limit>0）或已有子账号（含已删除）时显示 */
-const subSectionVisible = computed(() => {
-  const data = subAccounts.value
-  if (!data) return false
-  if (data.is_sub_account) return true
-  return data.limit > 0 || data.items.length > 0
-})
-async function loadSubAccounts() {
-  try {
-    const res = await subAccountsApi.get()
-    if (res) subAccounts.value = res
-  } catch { /* 子账号接口失败整段不渲染 */ }
-}
-async function createSubAccount() {
-  if (subBusy.value) return
-  if (!subForm.value.username || !subForm.value.password) {
-    toast.error('请填写子账号用户名和密码')
-    return
-  }
-  subBusy.value = true
-  try {
-    await subAccountsApi.create({ ...subForm.value })
-    subForm.value = { username: '', password: '' }
-    toast.success('子账号已创建')
-    await loadSubAccounts()
-  } catch (err) {
-    toast.error((err as { userMessage?: string }).userMessage ?? '创建失败，请稍后再试')
-  } finally {
-    subBusy.value = false
-  }
-}
-async function removeSubAccount(item: SubAccountItem) {
-  if (subBusy.value) return
-  subBusy.value = true
-  try {
-    await subAccountsApi.remove(item.id)
-    toast.success('子账号已删除')
-    await loadSubAccounts()
-  } catch (err) {
-    toast.error((err as { userMessage?: string }).userMessage ?? '删除失败，请稍后再试')
-  } finally {
-    subBusy.value = false
-  }
-}
-
 // ── 总览数据 ──
 async function loadOverview() {
   // 订阅走单一数据源 store（落定前模板不渲染内容）
@@ -579,7 +461,6 @@ onMounted(() => {
   void loadTraffic()
   void loadDevices()
   void loadWallet()
-  void loadSubAccounts()
 
 })
 </script>
@@ -906,56 +787,6 @@ onMounted(() => {
   font-weight: var(--ax-fw-medium);
 }
 
-/* 子账号段：说明文字 / 删除钮 / 新建表单（沿用段内发丝线与弱化色） */
-.ov-sub-note {
-  margin: 0;
-  padding: 12px 2px;
-  font-size: 13.5px;
-  line-height: 1.6;
-  color: rgba(255, 255, 255, 0.55);
-  border-bottom: 1px solid #26262a;
-}
-.ov-sub-del {
-  flex: 0 0 auto;
-  border: none;
-  background: transparent;
-  padding: 6px 2px;
-  font-family: inherit;
-  font-size: 13.5px;
-  color: #f87171;
-  cursor: pointer;
-}
-.ov-sub-del:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-.ov-sub-form {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px 2px 4px;
-}
-.ov-sub-input {
-  height: 43px;
-  padding: 0 14px;
-  border-radius: 12px;
-  border: 1px solid #26262a;
-  background: rgba(255, 255, 255, 0.04);
-  color: #ffffff;
-  font-family: inherit;
-  font-size: 14.5px;
-  box-sizing: border-box;
-}
-.ov-sub-input::placeholder {
-  color: rgba(255, 255, 255, 0.35);
-}
-.ov-sub-create {
-  align-self: flex-start;
-}
-.ov-sub-create:disabled {
-  opacity: 0.5;
-}
-
 /* 纯文字行（常用及其余归段） */
 .ov-trow {
   width: 100%;
@@ -1220,9 +1051,6 @@ html[data-theme='light'] .ov-invite {
     var(--ax-rainbow) border-box;
 }
 html[data-theme='light'] .ov-invite__sub { color: #55575c; }
-html[data-theme='light'] .ov-sub-note { color: #55575c; border-bottom-color: #e5e5e7; }
-html[data-theme='light'] .ov-sub-input { background: #ffffff; border-color: #e5e5e7; color: #111111; }
-html[data-theme='light'] .ov-sub-input::placeholder { color: #9a9da3; }
 
 /* 兜底回滚块：守卫已不再把本页钉成 light（V4_PATHS 摘除 /game/account）；
    若主题解析与 data-theme 出现竞态不一致，用户选深色时由 .ov-dark 类回滚为深色 */
@@ -1268,7 +1096,4 @@ html[data-theme='light'] .ov-page.ov-dark .ov-rrow { border-bottom-color: #26262
 html[data-theme='light'] .ov-page.ov-dark .ov-rrow__name { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-rrow__amount { color: #ffffff; }
 html[data-theme='light'] .ov-page.ov-dark .ov-invite { color: #ffffff; }
-html[data-theme='light'] .ov-page.ov-dark .ov-sub-note { color: rgba(255, 255, 255, 0.55); border-bottom-color: #26262a; }
-html[data-theme='light'] .ov-page.ov-dark .ov-sub-input { background: rgba(255, 255, 255, 0.04); border-color: #26262a; color: #ffffff; }
-html[data-theme='light'] .ov-page.ov-dark .ov-sub-input::placeholder { color: rgba(255, 255, 255, 0.35); }
 </style>
