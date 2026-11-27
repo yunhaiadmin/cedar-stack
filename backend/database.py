@@ -1319,6 +1319,7 @@ def _auto_migrate():
     if ("emby_items", "video_resolution") in _newly_added_columns:
         _backfill_filename_meta()
     _ensure_legacy_indexes(existing_tables)
+    _migrate_drop_redundant_item_indexes(existing_tables)
     _migrate_user_storage_binding_provider_check(existing_tables)
     _migrate_scan_run_single_running(existing_tables)
     _migrate_exchange_discount_credit_fk(existing_tables)
@@ -1700,6 +1701,77 @@ def _ensure_legacy_indexes(existing_tables: set) -> None:
             logger.warning(f"  ⚠️ pg_stat_statements 扩展安装跳过: {exc}")
     for spec in _LEGACY_INDEXES:
         _ensure_index(existing_tables, *spec)
+
+
+def _migrate_drop_redundant_item_indexes(existing_tables: set) -> None:
+    """C-06（2026-11-28）：删 emby_items 上三对等价索引里的 ix_ 一套。
+
+    drive_file_id / content_hash / merged_into_id 各有两份索引：models.py
+    列上的 index=True 经 create_all 建出 ix_emby_items_*，_LEGACY_INDEXES
+    又给老库补了 idx_item_*。两套逐字等价（单列 btree、非唯一、无部分
+    谓词；2026-11-28 生产 pg_indexes 实查），新库两套都建、存量库两套
+    都在——三对合计约 47.5MB 冗余（生产实测 32MB + 8.9MB + 6.7MB），
+    且热表每次写要双份维护。
+
+    保留 idx_item_*（与本表其余手工索引同命名系），删 ix_ 一套：
+    - models.py 三列已去掉 index=True，新库 create_all 不再建 ix_；
+      _ensure_legacy_indexes 照旧补 idx_，本函数在它之后调用，孪生
+      必然已在；
+    - 存量库在这里删 ix_。防御式：孪生 idx_ 不存在、或 ix_ 的列/唯一
+      性与预期不符（定义被人改过）就跳过不删，绝不让表丢索引；
+    - 失败只警告不拦启动（与其余迁移同口径）。幂等：删完再跑空转。
+    回滚：按原定义重建 ix_ 索引（CREATE INDEX ix_emby_items_drive_
+    file_id ON emby_items (drive_file_id)，余类推）。
+    """
+    from sqlalchemy import inspect, text
+
+    if "emby_items" not in existing_tables:
+        return
+    pairs = (
+        ("ix_emby_items_drive_file_id", "idx_item_drive_file_id",
+         ["drive_file_id"]),
+        ("ix_emby_items_content_hash", "idx_item_content_hash",
+         ["content_hash"]),
+        ("ix_emby_items_merged_into_id", "idx_item_merged_into_id",
+         ["merged_into_id"]),
+    )
+    try:
+        by_name = {ix["name"]: ix
+                   for ix in inspect(engine).get_indexes("emby_items")}
+    except Exception as exc:  # noqa: BLE001 — 读不到索引清单就不动
+        logger.warning(f"  ⚠️ 冗余索引清理跳过（索引清单读取失败）: {exc}")
+        return
+    for drop_name, keep_name, cols in pairs:
+        target = by_name.get(drop_name)
+        if target is None:
+            continue
+        if keep_name not in by_name:
+            logger.warning(
+                f"  ⚠️ 冗余索引清理跳过 {drop_name}："
+                f"等价索引 {keep_name} 不存在")
+            continue
+        if (list(target.get("column_names") or []) != cols
+                or target.get("unique")):
+            logger.warning(
+                f"  ⚠️ 冗余索引清理跳过 {drop_name}：形状与预期不符"
+                f"（列={target.get('column_names')}，"
+                f"unique={target.get('unique')}）")
+            continue
+        try:
+            with engine.begin() as conn:
+                if engine.dialect.name == "mysql":
+                    conn.execute(text(
+                        f"DROP INDEX {drop_name} ON emby_items"))
+                else:
+                    # 存在性已由上方 inspector 清单核对，不写 IF EXISTS
+                    # （该字面被启动守卫 test_startup_retired_data_preserved
+                    # 明文禁止出现在本文件）
+                    conn.execute(text(f"DROP INDEX {drop_name}"))
+            logger.info(
+                f"  🔧 已迁移: emby_items 删除冗余索引 {drop_name}"
+                f"（保留等价的 {keep_name}）")
+        except Exception as exc:  # noqa: BLE001 — 删失败不拦启动
+            logger.warning(f"  ⚠️ 删除冗余索引 {drop_name} 跳过: {exc}")
 
 
 def _migrate_scan_run_single_running(existing_tables: set) -> None:

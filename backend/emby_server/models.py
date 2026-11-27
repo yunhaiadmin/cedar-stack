@@ -300,7 +300,7 @@ class MediaItem(Base):
     # Drive file_id: Google Drive stable ID, unchanged on rename/move.
     # Scanner matches existing items by it: rename/move only updates
     # path, never deletes the record or loses metadata.
-    drive_file_id = Column(String(64), index=True)
+    drive_file_id = Column(String(64))  # 索引 = idx_item_drive_file_id（_LEGACY_INDEXES 统一维护）；不设 index=True，防 create_all 再建一份等价 ix_ 索引（C-06）
     # 身份锚（清单第 8 项，挂载模型第 3 步）：条目自身身份，不再只靠 mount:// 字符串。
     # source_id 指向 library_sources 行（无外键：源行被管理端删了重插后锚悬空，
     # 播放回落现行 mount:// 解析，见 item_anchor）；provider_file_id 是供应商侧文件 id
@@ -320,7 +320,7 @@ class MediaItem(Base):
     # 认亲热路径只读列、不读它。NULL = 身份未知，不假装有。
     scan_title = Column(String(300), nullable=True)
     scan_year = Column(Integer, nullable=True)
-    content_hash = Column(String(40), nullable=True, index=True)
+    content_hash = Column(String(40), nullable=True)  # 索引 = idx_item_content_hash（_LEGACY_INDEXES）；不设 index=True 防 ix_ 重复（C-06）
     content_hash_algo = Column(String(16), nullable=True)
     identity_json = Column(Text, nullable=True)
     # Drive 链接分享（2026-10-19 播放事故治本）：播放 302 是 usercontent 匿名
@@ -496,7 +496,7 @@ class MediaItem(Base):
     # 被合并的条目指向主记录 id。API 列表默认过滤掉被合并的，
     # 播放时可通过主记录查看/选择多版本。
     # NULL = 主记录（或未参与合并）。
-    merged_into_id = Column(Integer, ForeignKey("emby_items.id"), default=None, index=True)
+    merged_into_id = Column(Integer, ForeignKey("emby_items.id"), default=None)  # 索引 = idx_item_merged_into_id（_LEGACY_INDEXES）；不设 index=True 防 ix_ 重复（C-06）
     # 上游托管标记（独有资源进库一期，2026-11-01）：非空 = 该行由上游
     # 聚合进库托管，值 = upstream_sources.id（不加外键，照 UpstreamSource
     # 先例）。这类行没有本地文件（file_path 恒空），播放只走上游线路；
