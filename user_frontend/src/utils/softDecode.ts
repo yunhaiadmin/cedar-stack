@@ -12,8 +12,9 @@
  * 4K/HDR——4K 走 libmedia 自带 MSE 原生管线（见下方管线决策一节），
  * MSE 预检不过/被否回就出护栏提示卡，不许拿 wasm 或 WebCodecs 解
  * 4K（解码帧进页面内存排队必爆内存崩页，#260/#261 两度实证）。
- * 软解只覆盖 HEVC/H.264 画面 + AAC/AC3/EAC3/DTS 声音；AV1/Opus 等
- * 不在 wasm 集里，照旧走解码提示卡，不许硬上。
+ * 软解覆盖 HEVC/H.264/AV1/VP9 画面 + AAC/AC3/EAC3/DTS/Opus/FLAC/MP3
+ * 声音（AV1/VP9/Opus/FLAC/MP3 为 2026-11-27 增量一自编补入）；TrueHD 等
+ * 仍不在 wasm 集里，照旧走解码提示卡，不许硬上。
  */
 import {
   normalizeAudioCodec,
@@ -24,23 +25,30 @@ import {
 } from './decodeSupport'
 
 /** 软解覆盖的视频编码（归一化后） */
-export const SOFT_VIDEO_CODECS = new Set(['hevc', 'h264'])
+export const SOFT_VIDEO_CODECS = new Set(['hevc', 'h264', 'av1', 'vp9'])
 /** 软解覆盖的音频编码（归一化后；dca/dts-hd 统一归一成 dts） */
-export const SOFT_AUDIO_CODECS = new Set(['aac', 'ac3', 'eac3', 'dts'])
+export const SOFT_AUDIO_CODECS = new Set(['aac', 'ac3', 'eac3', 'dts', 'opus', 'flac', 'mp3'])
 
 /**
  * AVCodecID（FFmpeg/libmedia）→ 自托管解码器文件名。
- * h264=27 hevc=173 aac=86018 ac3=86019 dts=86020 eac3=86056。
- * 不在表里的编码（AV1/Opus 等）返回 undefined，AVPlayer 拿不到
+ * h264=27 hevc=173 vp9=167 av1=225 aac=86018 ac3=86019 dts=86020
+ * eac3=86056 mp3=86017 flac=86028 opus=86076（ID 以 libmedia 的
+ * AVCodecID 枚举为准，与 FFmpeg 7.1 codec_id.h 一致）。
+ * 不在表里的编码（TrueHD 等）返回 undefined，AVPlayer 拿不到
  * wasm 就会报错——调用方先用 softDecodeCodecSubset 拦住，不许走到这。
  */
 export const CODEC_WASM_FILE: Record<number, string> = {
   27: 'h264',
   173: 'hevc',
+  167: 'vp9',
+  225: 'av1',
   86018: 'aac',
   86019: 'ac3',
   86020: 'dca',
   86056: 'eac3',
+  86017: 'mp3',
+  86028: 'flac',
+  86076: 'opus',
 }
 
 export function wasmPathForDecoder(codecId: number | undefined): string | undefined {
