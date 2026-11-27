@@ -126,9 +126,11 @@ def _set_max_rounds(value: str):
 def _flag_off():
     _set_flag("0")
     _set_max_rounds("6")
+    ew._reset_none_empty_cache()
     yield
     _drop_flag()
     _set_max_rounds("6")
+    ew._reset_none_empty_cache()
 
 
 @pytest.fixture()
@@ -620,3 +622,83 @@ def test_none_stock_stats_excludes_primary_image_url_only_leak(db):
     stats = ew.none_stock_stats(db)
     assert stats["leak_null_source_noposter"] == 1
     assert stats["reschedulable_now"] == 1
+
+
+# ================= R-05（2026-11-28）：回捞空结果短路缓存 =================
+
+def _candidate_query_counter(engine):
+    """数回捞候选查询的条数（SELECT 且同时含 poster_path 与
+    enrich_next_retry_at 的语句；翻回 UPDATE 不含 poster_path，不计入）。"""
+    from sqlalchemy import event as _sa_event
+    counter = {"n": 0}
+
+    def _listen(conn, cursor, statement, parameters, context, executemany):
+        if ("poster_path" in statement
+                and "enrich_next_retry_at" in statement
+                and statement.lstrip().upper().startswith("SELECT")):
+            counter["n"] += 1
+
+    _sa_event.listen(engine, "before_cursor_execute", _listen)
+    return counter, lambda: _sa_event.remove(
+        engine, "before_cursor_execute", _listen)
+
+
+def test_auto_reschedule_empty_result_cached(db):
+    """R-05：上轮查到 0 候选时 TTL 内不再查库；缓存清掉后恢复查询。"""
+    assert ew.ENRICH_NONE_EMPTY_CACHE_SEC == 600
+    _flag_on()
+    ew._reset_none_empty_cache()
+    engine = db.get_bind()
+    counter, unlisten = _candidate_query_counter(engine)
+    try:
+        assert ew.enrich_none_auto_reschedule(db) == 0
+        assert counter["n"] == 1
+        assert ew.enrich_none_auto_reschedule(db) == 0
+        assert counter["n"] == 1  # TTL 内短路，未发查询
+        ew._reset_none_empty_cache()
+        assert ew.enrich_none_auto_reschedule(db) == 0
+        assert counter["n"] == 2  # 缓存清掉后恢复查询
+    finally:
+        unlisten()
+        ew._reset_none_empty_cache()
+
+
+def test_auto_reschedule_empty_cache_delays_new_candidate_within_ttl(db):
+    """R-05：空缓存期间新出现的候选最多晚一个 TTL 才被捞回（不丢失）。"""
+    _flag_on()
+    ew._reset_none_empty_cache()
+    try:
+        assert ew.enrich_none_auto_reschedule(db) == 0  # 空结果进缓存
+        old = datetime.now() - timedelta(days=31)
+        row = _none_row(db, "缓存期内新超期", enrich_next_retry_at=old)
+        assert ew.enrich_none_auto_reschedule(db) == 0  # TTL 内仍短路
+        db.refresh(row)
+        assert row.enrich_status == "done"
+        ew._reset_none_empty_cache()  # 模拟 TTL 过期
+        assert ew.enrich_none_auto_reschedule(db) == 1
+        db.refresh(row)
+        assert row.enrich_status == "pending"
+    finally:
+        ew._reset_none_empty_cache()
+
+
+def test_auto_reschedule_nonempty_result_not_cached(db):
+    """R-05：查到候选时不进缓存——下一轮照常现查；查到 0 后才进缓存。"""
+    _flag_on()
+    ew._reset_none_empty_cache()
+    engine = db.get_bind()
+    counter, unlisten = _candidate_query_counter(engine)
+    try:
+        old = datetime.now() - timedelta(days=31)
+        _none_row(db, "超期剧", enrich_next_retry_at=old)
+        assert ew.enrich_none_auto_reschedule(db) == 1
+        assert counter["n"] == 1
+        # 行已翻回 pending，第二轮查到 0 候选才进缓存——查询本身仍跑了一次
+        assert ew.enrich_none_auto_reschedule(db) == 0
+        assert counter["n"] == 2
+        # 第三轮：空缓存生效，不再查库
+        assert ew.enrich_none_auto_reschedule(db) == 0
+        assert counter["n"] == 2
+    finally:
+        unlisten()
+        ew._reset_none_empty_cache()
