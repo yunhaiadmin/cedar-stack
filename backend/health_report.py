@@ -167,7 +167,16 @@ def _enrich_recent_completed(db, minutes: int) -> int:
 
     与 ``_enrich_count`` 同口径：排除合并副本。软删由 ORM 钩子排除。
     查询失败返回 0，调用方再看进程内计数器，不让健康检查自己抛。
+    R-01：请求的窗口与共享快照窗口（``HEALTH_ENRICH_PROGRESS_MIN``，
+    默认 10 分钟）一致时走 item_status_counts 共享快照，值最多滞后
+    一个 TTL（300 秒）；窗口不一致时仍直接现算，口径不变。
     """
+    try:
+        from backend.emby_server import item_status_counts
+        if int(minutes) == item_status_counts.recent_done_window_minutes():
+            return int(item_status_counts.enrich_recent_done(db))
+    except Exception as exc:  # noqa: BLE001 — 快照不可用时回退直接现算
+        logger.debug("近期完成数快照读取失败，回退直接现算: %s", exc)
     from backend.emby_server import models as em
     cutoff = datetime.now() - timedelta(minutes=max(1, int(minutes)))
     try:

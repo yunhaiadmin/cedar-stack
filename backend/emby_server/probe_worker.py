@@ -1219,11 +1219,11 @@ def _dispatcher_loop() -> None:
 def status_snapshot(db=None, light: bool = False) -> dict:
     """进度：各状态计数 + 重试中 + 运行时（速率/错误/熔断）+ ETA。供管理接口/health。
 
-    light=True 时只做轻量计数（跳过 probe_last_error 全表聚合与
+    light=True 时只做轻量计数（跳过错误分布与
     retrying/stale 明细），供 tasks/overview 这类高频聚合接口用；
     返回字典键保持不变，轻量模式下未采集的项为 0/[]。
-    各状态计数走 item_status_counts 共享缓存（C-02，短 TTL，最多
-    滞后一个 TTL）；retrying/stale/错误分布仍实时查。
+    各状态计数与错误分布走 item_status_counts 共享缓存（C-02/R-01，
+    TTL 300 秒，最多滞后一个 TTL）；retrying/stale 仍实时查。
     """
     own = db is None
     if own:
@@ -1251,11 +1251,11 @@ def status_snapshot(db=None, light: bool = False) -> dict:
             stale = db.query(func.count(MI.id)).filter(
                 MI.probe_status == "probing", *_vis,
                 or_(MI.probe_claimed_at.is_(None), MI.probe_claimed_at < stale_cut)).scalar() or 0
-            errs = (db.query(MI.probe_last_error, func.count(MI.id))
-                    .filter(MI.probe_last_error.isnot(None),
-                            MI.probe_status.in_(("pending", "failed")), *_vis)
-                    .group_by(MI.probe_last_error)
-                    .order_by(func.count(MI.id).desc()).limit(5).all())
+            # R-01：错误分布走 item_status_counts 共享快照（与原现算
+            # GROUP BY 同口径：probe_last_error 非空、probe_status 在
+            # pending/failed、副本与软删行排除；取前 5），不再每次快照
+            # 现算全表聚合。值最多滞后一个 TTL（300 秒）。
+            errs = item_status_counts.probe_error_counts(db)[:5]
         db.rollback()
     finally:
         if own:
