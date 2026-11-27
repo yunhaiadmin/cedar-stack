@@ -43,19 +43,26 @@
  * （今日已支付订单笔数，与今日营收同一 paid_at 上海日界口径，后端计数）；
  * 有效订阅数取自聚合的 realms part 汇总
  * （summary.active_subscriptions，与服管理页同口径）。
+ *
+ * v5（2026-11-27 用户拍板四块重排）：块1 生意（今日经营 4 卡 + 用户总数 /
+ * 有效订阅 / 媒体库条目 3 卡，有效订阅改走聚合新 ops part、hint 带 7 天内
+ * 到期数；媒体库条目 hint 带今日新增入库）/ 块2 待处理与异常（待办条 +
+ * 新增状态条：健康一句话、探测/刮削积压、磁盘余量，数据走 ops part）/
+ * 块3 大家在看什么（当前在播 + 今日观影榜前 5 + 求片最多前 5）/
+ * 块4 趋势（指标 tab 新增「新增订阅」）。ops 子项为 null 时各自走占位。
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import {
   MessageSquareDashed, Ticket, Users, Wallet,
   ArrowRight, TrendingUp,
-  Activity, AlertTriangle, Crown, Play, Receipt, UserPlus,
+  Activity, AlertTriangle, Crown, Library, Play, Receipt, UserPlus,
 } from 'lucide-vue-next'
 import { PageHeader, SectionCard, StatTile } from '@/components/ui'
 import {
   fetchOverview, fetchPlaybackStats,
   fetchStatsTrend, fetchDashboardAggregate, fetchRealmOverview,
-  type DashboardAggregate } from '@/api/admin'
+  type DashboardAggregate, type DashboardOps, type DashboardQueueStat } from '@/api/admin'
 import { fetchEconomyStats, type EconomyStats } from '@/api/economy'
 import type {
   OverviewStats, PlaybackStats, RealmOverview, TrendStats,
@@ -67,13 +74,15 @@ const economy = ref<EconomyStats | null>(null)
 const trend = ref<TrendStats | null>(null)
 /** 聚合 realms part：本页只消费 summary 的有效订阅数（用户与订阅区） */
 const realms = ref<RealmOverview | null>(null)
+/** 聚合 ops part（v5）：订阅到期 / 健康 / 磁盘 / 积压 / 求片热榜 */
+const ops = ref<DashboardOps | null>(null)
 const loading = ref(true)
 const trendLoading = ref(false)
 /** 核心三项（概览 / 播放 / 经营）里拿不到的那几项：页面照常渲染其余部分，顶部给一条可重试的提示 */
 const failedParts = ref<string[]>([])
 
 const days = ref(14)
-type Metric = 'new_users' | 'plays' | 'revenue'
+type Metric = 'new_users' | 'plays' | 'revenue' | 'new_subscriptions'
 const metric = ref<Metric>('new_users')
 // 趋势图指标色（ax 口径）：走 --au-* 令牌，随深浅主题与品牌色切换。
 // SVG 的 stroke / stop-color **属性**不认 var()，所以模板里一律写进 style（CSS 属性认）。
@@ -81,6 +90,7 @@ const metricTabs: { key: Metric; label: string; color: string }[] = [
   { key: 'new_users', label: '新增用户', color: 'var(--au-primary)' },
   { key: 'plays', label: '播放次数', color: 'var(--au-info)' },
   { key: 'revenue', label: '营收 ($)', color: 'var(--au-success)' },
+  { key: 'new_subscriptions', label: '新增订阅', color: 'var(--au-warning)' },
 ]
 
 async function loadTrend() {
@@ -121,6 +131,8 @@ async function loadAggregate(): Promise<boolean> {
   // 天数在请求途中被用户切换：沿用 watch 触发的新请求数据，不覆盖
   if (days.value === d) trend.value = parts.trend
   realms.value = parts.realms ?? null
+  // ops 与 realms 同口径：拿不到不点名进 failedParts，各区块自己走占位
+  ops.value = parts.ops ?? null
   failedParts.value = failed
   loading.value = false
   return true
@@ -192,27 +204,75 @@ const todoTotal = computed(() => todos.value.reduce((s, t) => s + t.count, 0))
 
 type KpiTone = 'plain' | 'ok' | 'info' | 'warn' | 'danger'
 
-/** 两张卡：用户总数（沿用原卡口径）→ 有效订阅数；待处理计数由待办条独占，不在此重复 */
+/**
+ * 三张卡：用户总数 → 有效订阅数 → 媒体库条目。
+ * 有效订阅优先走 ops part（与订阅总览页 active 筛选同口径，hint 带
+ * 7 天内到期数）；ops 没拿到时回退 realms 汇总（v4 口径）。
+ * 今日播放只在上方今日经营卡出现，这里不再重复。
+ */
 const userTiles = computed<{
   key: string; label: string; value: number | string; foot: string
   to: string; icon: unknown; tone: KpiTone; title: string
-}[]>(() => [
-  {
-    key: 'users', label: '用户总数', value: overview.value?.users.total ?? 0,
-    foot: `活跃 ${overview.value?.users.active ?? 0} · 今日播放 ${playback.value?.today.plays ?? 0} 次`,
-    to: '/users', icon: Users, tone: 'plain', title: '用户与账号',
-  },
-  {
-    key: 'subs', label: '有效订阅数',
-    value: realms.value ? realms.value.summary.active_subscriptions : '—',
-    foot: realms.value
-      ? (realms.value.summary.subscribers != null
-          ? `覆盖 ${realms.value.summary.subscribers} 位订阅用户`
-          : '全站有效订阅汇总')
-      : '订阅数据暂未拿到',
-    to: '/subscriptions', icon: Crown, tone: 'plain', title: '订阅总览',
-  },
-])
+}[]>(() => {
+  const sub = ops.value?.subscriptions
+  const items = overview.value?.emby
+  return [
+    {
+      key: 'users', label: '用户总数', value: overview.value?.users.total ?? 0,
+      foot: `活跃 ${overview.value?.users.active ?? 0}`,
+      to: '/users', icon: Users, tone: 'plain', title: '用户与账号',
+    },
+    {
+      key: 'subs', label: '有效订阅数',
+      value: sub ? sub.active
+        : (realms.value ? realms.value.summary.active_subscriptions : '—'),
+      foot: sub
+        ? `7 天内到期 ${sub.expiring_7d} 份`
+        : (realms.value
+            ? (realms.value.summary.subscribers != null
+                ? `覆盖 ${realms.value.summary.subscribers} 位订阅用户`
+                : '全站有效订阅汇总')
+            : '订阅数据暂未拿到'),
+      to: '/subscriptions', icon: Crown, tone: 'plain', title: '订阅总览',
+    },
+    {
+      key: 'items', label: '媒体库条目',
+      value: items ? items.total_items : '—',
+      foot: items ? `今日新增入库 ${items.today_new_items}` : '条目数据暂未拿到',
+      to: '/emby', icon: Library, tone: 'plain', title: '媒体库',
+    },
+  ]
+})
+
+// ==================== 状态条（块2：健康 / 积压 / 磁盘，ops part） ====================
+
+const healthText = computed(() => {
+  const h = ops.value?.health
+  if (!h) return '暂未拿到'
+  if (h.status === 'healthy') return '系统正常'
+  return h.reasons.length ? `有异常：${h.reasons.join('；')}` : '有异常'
+})
+
+function fmtQueue(q: DashboardQueueStat | null): string {
+  if (!q) return '—'
+  const parts = [`${q.pending_ready} 条`]
+  if (q.rate_per_min != null) parts.push(`${q.rate_per_min} 条/分钟`)
+  if (q.eta_hours != null) parts.push(`预计 ${q.eta_hours} 小时清完`)
+  if (q.paused) parts.push('已暂停')
+  return parts.join(' · ')
+}
+
+const diskText = computed(() => {
+  const d = ops.value?.disk
+  if (!d) return '—'
+  const gb = d.free_bytes != null ? `${(d.free_bytes / 2 ** 30).toFixed(1)} GB 可用` : '余量未知'
+  return d.free_percent != null ? `${gb}（剩 ${d.free_percent}%）` : gb
+})
+
+// ==================== 大家在看什么（块3） ====================
+
+const topItems = computed(() => (playback.value?.item_ranking ?? []).slice(0, 5))
+const topRequests = computed(() => ops.value?.top_requests ?? [])
 
 // ==================== 趋势图 ====================
 
@@ -267,7 +327,7 @@ function fmtMoney(v: number): string {
     <PageHeader
       eyebrow="概览"
       title="经营驾驶舱"
-      description="先看今天的生意，再处理手边的待办，最后看趋势。每个数字都能点进带好筛选的明细页。"
+      description="先看今天的生意，再处理手边的待办，看看大家在看什么，最后看趋势。每个数字都能点进带好筛选的明细页。"
     >
       <template #actions>
         <RouterLink to="/health" class="au-btn au-btn-ghost au-btn-sm">
@@ -334,10 +394,11 @@ function fmtMoney(v: number): string {
       </section>
 
       <!--
-        用户与订阅数据卡（v4）：用户总数（沿用原卡口径）→ 有效订阅数。
+        生意数据卡（v5）：用户总数 → 有效订阅数（ops 口径，hint 带 7 天内
+        到期数）→ 媒体库条目（hint 带今日新增入库）。
         待处理求片/工单的计数不在这里重复，由下方待办条独占。
       -->
-      <section class="kpi-grid cols-2" aria-label="用户与订阅">
+      <section class="kpi-grid" aria-label="用户、订阅与媒体库">
         <StatTile
           v-for="k in userTiles"
           :key="k.key"
@@ -375,6 +436,64 @@ function fmtMoney(v: number): string {
 
 
 
+
+      <!--
+        状态条（v5 块2 续）：健康一句话 + 探测/刮削积压 + 磁盘余量，
+        数据来自聚合 ops part；健康点进 /health、积压点进 /tasks。
+        ops 没拿到时整条不渲染（fail-soft），子项为 null 各自显示占位。
+      -->
+      <section v-if="ops" class="status-bar" aria-label="系统状态">
+        <RouterLink to="/health" class="status-item" :title="healthText">
+          <span
+            class="status-dot"
+            :class="ops.health ? (ops.health.status === 'healthy' ? 'ok' : 'warn') : 'none'"
+          />
+          <span class="status-label">健康</span>
+          <span class="status-text">{{ healthText }}</span>
+        </RouterLink>
+        <RouterLink to="/tasks" class="status-item">
+          <span class="status-label">探测积压</span>
+          <span class="status-text">{{ fmtQueue(ops.probe) }}</span>
+        </RouterLink>
+        <RouterLink to="/tasks" class="status-item">
+          <span class="status-label">刮削积压</span>
+          <span class="status-text">{{ fmtQueue(ops.enrich) }}</span>
+        </RouterLink>
+        <RouterLink to="/health" class="status-item" :class="{ warn: ops.disk?.warn }">
+          <span class="status-label">磁盘</span>
+          <span class="status-text">{{ diskText }}</span>
+        </RouterLink>
+      </section>
+
+      <!--
+        大家在看什么（v5 块3）：今日观影榜前 5（playback.item_ranking）
+        + 求片最多前 5（ops.top_requests）；当前在播路数在卡头 meta。
+        今日播放次数只在上方今日经营卡出现，这里不重复。
+      -->
+      <SectionCard title="大家在看什么" :icon="Play" :meta="`当前在播 ${overview?.emby.active_sessions ?? '—'} 路`">
+        <div class="watch-grid">
+          <div class="watch-col">
+            <div class="watch-sub">今日观影榜</div>
+            <ol v-if="topItems.length" class="rank-list">
+              <li v-for="(it, i) in topItems" :key="`${it.name}-${i}`">
+                <span class="rank-name">{{ it.name }}</span>
+                <span class="rank-count">{{ it.plays }} 次</span>
+              </li>
+            </ol>
+            <p v-else class="rank-empty">暂无数据</p>
+          </div>
+          <div class="watch-col">
+            <div class="watch-sub">求片最多</div>
+            <ol v-if="topRequests.length" class="rank-list">
+              <li v-for="(r, i) in topRequests" :key="`${r.title}-${i}`">
+                <span class="rank-name">{{ r.title }}</span>
+                <span class="rank-count">{{ r.count }} 人在求</span>
+              </li>
+            </ol>
+            <p v-else class="rank-empty">暂无数据</p>
+          </div>
+        </div>
+      </SectionCard>
 
       <!-- 趋势 -->
       <SectionCard title="趋势" :icon="TrendingUp" :meta="`近 ${days} 天`">
@@ -633,6 +752,65 @@ html[data-theme='light'] .metric-tab.active {
   color: var(--au-text-4);
   margin-top: 6px;
   font-variant-numeric: tabular-nums;
+}
+
+/* ===== 状态条（v5 块2，玻璃栈同待办条配方） ===== */
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px 22px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-radius: var(--au-r-lg);
+  border: 1px solid var(--ax-glass-border);
+  background: var(--ax-glass-d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--ax-shadow-card-d);
+  backdrop-filter: var(--ax-glass-filter);
+  -webkit-backdrop-filter: var(--ax-glass-filter);
+}
+html[data-theme='light'] .status-bar {
+  background: var(--ax-glass-l);
+  border-color: var(--ax-glass-border-l);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), var(--ax-shadow-card-l);
+}
+.status-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--au-text-2);
+  font-size: var(--ax-fs-aux-sm);
+  text-decoration: none;
+}
+.status-label { color: var(--au-text-3); flex-shrink: 0; }
+.status-text { color: var(--au-text); font-variant-numeric: tabular-nums; }
+.status-item.warn .status-text { color: var(--au-warning); }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--au-text-4); flex-shrink: 0; }
+.status-dot.ok { background: var(--au-success); }
+.status-dot.warn { background: var(--au-warning); }
+
+/* ===== 大家在看什么（v5 块3） ===== */
+.watch-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 28px; }
+.watch-sub { font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); margin-bottom: 8px; }
+.rank-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; counter-reset: rank; }
+.rank-list li {
+  display: flex; align-items: baseline; gap: 8px;
+  font-size: var(--ax-fs-aux); color: var(--au-text-2); min-width: 0;
+}
+.rank-list li::before {
+  counter-increment: rank; content: counter(rank);
+  color: var(--au-text-4); font-variant-numeric: tabular-nums; flex-shrink: 0;
+}
+.rank-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-count {
+  margin-left: auto; color: var(--au-text-3); font-size: var(--ax-fs-aux-sm);
+  font-variant-numeric: tabular-nums; flex-shrink: 0;
+}
+.rank-empty { font-size: var(--ax-fs-aux-sm); color: var(--au-text-4); margin: 0; }
+
+@media (max-width: 640px) {
+  .watch-grid { grid-template-columns: minmax(0, 1fr); }
+  .status-bar { padding: 10px 12px; gap: 8px 14px; }
 }
 
 /* ===== 手机 ===== */

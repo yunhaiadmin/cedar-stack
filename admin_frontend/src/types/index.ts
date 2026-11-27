@@ -808,7 +808,7 @@ export interface OverviewStats {
   users: { total: number; active: number }
   tickets: { open: number }
   media_seeks: { pending: number }
-  emby: { total_items: number; active_sessions: number }
+  emby: { total_items: number; active_sessions: number; today_new_items: number }
 }
 
 export interface PlaybackStats {
@@ -917,12 +917,14 @@ export interface TrendPoint {
   new_users: number
   plays: number
   revenue: number
+  /** 2026-11-27 新增；旧快照无此字段，消费方按 0 兜底 */
+  new_subscriptions?: number
 }
 
 export interface TrendStats {
   days: number
   series: TrendPoint[]
-  totals: { new_users: number; plays: number; revenue: number }
+  totals: { new_users: number; plays: number; revenue: number; new_subscriptions?: number }
 }
 
 /** 订阅总览（GET /api/admin/realms/{id}/subscriptions，`realm_id=0` = 全部服） */
