@@ -2,86 +2,45 @@
 /**
  * NewbieGuideView.vue —— 新人指南（用户中心 · 帮助组）
  *
- * 静态内容页（2026-11-27 用户亲令）：给第一次来的新用户看的上手
- * 说明，只放站内、登录后可见，不发任何外部渠道。内容为前端写死
- * 的静态文案，不走后端接口、不做管理端可编辑。事实口径（服务器
- * 地址、套餐价格、封禁播放器名单等）以本页注释与文案为准，改价
- * 或改名单时同步改这里。
+ * 内容页（2026-11-27 用户亲令）：给第一次来的新用户看的上手说明，
+ * 只放站内、登录后可见，不发任何外部渠道。文案为前端静态内容、
+ * 不做管理端可编辑；事实口径（套餐价格、封禁播放器名单等）以本页
+ * 注释与文案为准，改价或改名单时同步改这里。
  *
- * 服务器地址订阅门（2026-11-27 用户亲点）：第 4 章与第 7 章里的
- * 服务器地址只有有播放资格的用户能看到——有效订阅（订阅 store
- * 单一数据源，子账号由后端按主账号解析）或团队套餐资格（与后端
- * teams.play_eligible_team 同口径：团队 active 且未过期）。状态
- * 未落定一律先隐藏（fail-closed），绝不先闪出地址再收起；无资格
- * 时地址位置显示「开通订阅后显示服务器地址」。
+ * 唯一例外是服务器地址（2026-11-27 用户亲点改严）：地址不许出现在
+ * 前端源码里（前端包人人能下载，页面层隐藏挡不住翻代码），改由后端
+ * 接口 /api/user/guide/server-address 下发——只有有播放资格（有效
+ * 订阅或团队资格）的登录用户才拿到地址本体。页面三态沿用 #540
+ * 口径：未加载/无资格/拉不到一律显示「开通订阅后显示服务器地址」
+ * （fail-closed），绝不先闪出地址再收起。
  */
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import AxAccountLayout from '@/components/ax/AxAccountLayout.vue'
-import { useSubscriptionStore } from '@/stores/subscription'
-import { teamsApi, type TeamInfo } from '@/api/team'
+import { getGuideServerAddress } from '@/api/guide'
 
-// === guideAddressGate 开始 ===
-/** 地址可见性判定的输入：两条资格腿各自的落定状态与结论 */
-interface GuideAddressGate {
-  /** 订阅 store 是否已落定（成功或失败都算，失败按无订阅处理） */
-  subLoaded: boolean
-  /** 是否有有效订阅（store 的 activeSub 非空） */
-  hasActiveSub: boolean
-  /** 团队详情是否已落定（成功或失败都算，失败按无团队处理） */
-  teamSettled: boolean
-  /** 是否有团队播放资格（teamPlayEligible 的结论） */
-  teamEligible: boolean
-}
-
+// === guideAddressState 开始 ===
 /**
- * 服务器地址是否可见（fail-closed）：
- * 订阅腿未落定 → 隐藏；有有效订阅 → 显示；无订阅时等团队腿
- * 落定后按团队资格决定。任何未落定状态都不许先露出地址。
+ * 地址显示状态（fail-closed）：只有后端明确回 visible=true 且带
+ * 非空地址时才显示；未加载（null）/无资格/响应残缺一律回落占位。
  */
-function guideAddressVisible(gate: GuideAddressGate): boolean {
-  if (!gate.subLoaded) return false
-  if (gate.hasActiveSub) return true
-  if (!gate.teamSettled) return false
-  return gate.teamEligible
+function guideAddressState(
+  payload: { visible?: unknown; server_address?: unknown } | null,
+): { show: boolean; address: string } {
+  if (!payload || payload.visible !== true) return { show: false, address: '' }
+  const address = typeof payload.server_address === 'string' ? payload.server_address.trim() : ''
+  if (!address) return { show: false, address: '' }
+  return { show: true, address }
 }
+// === guideAddressState 结束 ===
 
-/**
- * 团队播放资格（与后端 teams.play_eligible_team 同口径）：
- * 团队 active 且 plan_expires_at 未过期；pending_activation
- * （已付款未开通播放权限）不算。nowMs 由调用方传入便于测试。
- */
-function teamPlayEligible(
-  team: { status: string; plan_expires_at: string | null } | null,
-  nowMs: number,
-): boolean {
-  if (!team || team.status !== 'active') return false
-  if (!team.plan_expires_at) return false
-  return Date.parse(team.plan_expires_at) > nowMs
-}
-// === guideAddressGate 结束 ===
-
-const subStore = useSubscriptionStore()
-const team = ref<TeamInfo | null>(null)
-const teamSettled = ref(false)
-
-const showServerAddress = computed(() =>
-  guideAddressVisible({
-    subLoaded: subStore.loaded,
-    hasActiveSub: subStore.activeSub != null,
-    teamSettled: teamSettled.value,
-    teamEligible: teamPlayEligible(team.value, Date.now()),
-  }),
-)
+const addressState = ref<{ show: boolean; address: string }>({ show: false, address: '' })
 
 onMounted(async () => {
-  void subStore.ensureLoaded()
   try {
-    team.value = (await teamsApi.detail()).team
+    addressState.value = guideAddressState(await getGuideServerAddress())
   } catch {
-    /* 拉不到按无团队处理：teamSettled 照样落定，地址按订阅腿结论走 */
-    team.value = null
-  } finally {
-    teamSettled.value = true
+    /* 拉不到按无资格处理：保持占位，地址不露出 */
+    addressState.value = { show: false, address: '' }
   }
 })
 </script>
@@ -130,7 +89,7 @@ onMounted(async () => {
           <li>装一个播放器 App（推荐见下面），打开后找「添加服务器」。</li>
           <li>
             服务器地址填：
-            <span v-if="showServerAddress" class="guide-addr">https://cdn.aetrix.love</span>
+            <span v-if="addressState.show" class="guide-addr">{{ addressState.address }}</span>
             <span v-else class="guide-addr guide-addr--locked">开通订阅后显示服务器地址</span>
           </li>
           <li>再用你的网站账号密码登录，就能看片了。</li>
@@ -159,7 +118,7 @@ onMounted(async () => {
       <section class="guide-card">
         <h2 class="guide-card-title">7. 常见问题</h2>
         <ul class="guide-list">
-          <li>登不上？按顺序查三件事：① 服务器地址是不是 <span v-if="showServerAddress">https://cdn.aetrix.love</span><span v-else>开通订阅后显示服务器地址</span>，一个字都别错；② 账号密码对不对；③ 订阅是不是过期了。</li>
+          <li>登不上？按顺序查三件事：① 服务器地址是不是 <span v-if="addressState.show">{{ addressState.address }}</span><span v-else>开通订阅后显示服务器地址</span>，一个字都别错；② 账号密码对不对；③ 订阅是不是过期了。</li>
           <li>播放卡？先去「线路测速」测一下，换一条快的线路再播。</li>
           <li>4K 片子放不动？用客户端 App（Rex、SenPlayer、官方 Emby）看 4K，别用网页播。</li>
         </ul>

@@ -102,6 +102,7 @@ from backend.api.install_app import (
     admin_install_app_router,
     user_install_app_router,
 )
+from backend.api.guide import user_guide_router
 from backend.api.admin_license import admin_license_router
 from backend.api.admin_pool import admin_pool_router
 from backend.api.pool_admin import pool_admin_router
@@ -1099,6 +1100,9 @@ app.include_router(player_prefs_router)
 # 见 backend/api/install_app.py
 app.include_router(user_install_app_router)
 app.include_router(admin_install_app_router)
+# 新人指南页服务器地址下发（2026-11-27）：登录 + 播放资格才给地址，
+# 见 backend/api/guide.py
+app.include_router(user_guide_router)
 # 软件授权（2026-11-07）：状态/填码/立即校验，见 backend/api/admin_license.py
 app.include_router(admin_license_router)
 # 公共贡献池（goal-33 PR-1 地基）：配置读写，见 backend/api/admin_pool.py

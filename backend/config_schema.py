@@ -1325,6 +1325,14 @@ INSTALL_APP_CONFIG_SCHEMA: dict[str, tuple] = {
     "install_app_macos_url": ("str",),
 }
 
+# 新人指南页（2026-11-27）：对外服务器地址兜底键。EMBY_PUBLIC_URL
+# （emby_server.public_url.configured_public_url）已配时以它为准、
+# 本键不生效；未配时读本键，再缺省用 backend/api/guide.py 的
+# DEFAULT_SERVER_ADDRESS。形状处理在读侧（strip/去尾斜杠）。
+GUIDE_CONFIG_SCHEMA: dict[str, tuple] = {
+    "client_server_address": ("str",),
+}
+
 # （原 ECONOMY_INT_RANGES / economy_spec 已并入下面的 ECONOMY_CONFIG_SCHEMA，
 # 4-6 迁移后不再有任何调用方，此处删除。）
 
