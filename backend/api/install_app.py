@@ -13,6 +13,13 @@
 
 服务器地址红线：对外只公布 CDN 地址 cdn.aetrix.love（橙云藏源）；
 源站地址与任何源 IP 不许出现在这里或前端页面里。
+
+服务器地址资格门（2026-11-27 用户亲点，与新人指南 #542 同口径）：
+地址只下发给有播放资格的登录用户（复用播放门禁单点
+``emby_server.playback_gate.has_play_grant``：有效订阅或团队播放
+资格，家庭子账号随主账号）；无资格时 user_payload 整字段不带
+server_address，响应里绝不出现地址字符串。平台下载链接是公开
+商店链接，不设门、照常下发。
 """
 from __future__ import annotations
 
@@ -99,23 +106,31 @@ def _effective_urls(db: Session) -> dict[str, str]:
     return {p["key"]: (values.get(p["config_key"]) or "") for p in PLATFORMS}
 
 
-def user_payload(db: Session) -> dict:
-    """用户端页面数据：服务器地址 + 已配链接的平台（未配整行不下发）。"""
+def user_payload(db: Session, user: models.WebUser) -> dict:
+    """用户端页面数据：已配链接的平台 + 服务器地址（仅播放资格）。
+
+    地址资格门见模块头：无资格整字段省略 server_address（不是置空），
+    有资格时与从前完全一致（取值仍是本文件 SERVER_ADDRESS 常量）。
+    """
+    # 懒引：playback_gate 在 emby_server 侧，避免顶层互相牵连
+    from backend.emby_server.playback_gate import has_play_grant
+
     urls = _effective_urls(db)
-    return {
-        "server_address": SERVER_ADDRESS,
-        "platforms": [
-            {
-                "key": p["key"],
-                "label": p["label"],
-                "devices": p["devices"],
-                "store": p["store"],
-                "url": urls[p["key"]],
-            }
-            for p in PLATFORMS
-            if urls[p["key"]]
-        ],
-    }
+    payload: dict = {}
+    if has_play_grant(db, user):
+        payload["server_address"] = SERVER_ADDRESS
+    payload["platforms"] = [
+        {
+            "key": p["key"],
+            "label": p["label"],
+            "devices": p["devices"],
+            "store": p["store"],
+            "url": urls[p["key"]],
+        }
+        for p in PLATFORMS
+        if urls[p["key"]]
+    ]
+    return payload
 
 
 def admin_payload(db: Session) -> dict:
@@ -165,8 +180,8 @@ def install_app_for_user(
     current_user: models.WebUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """安装应用页数据：服务器地址 + 6 平台下载链接（当前生效值）。"""
-    return user_payload(db)
+    """安装应用页数据：6 平台下载链接 + 服务器地址（仅播放资格下发）。"""
+    return user_payload(db, current_user)
 
 
 # ==================== 管理端 ====================

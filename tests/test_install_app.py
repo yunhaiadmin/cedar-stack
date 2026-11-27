@@ -6,6 +6,11 @@
   未配的平台不下发（整行不显示），配了才出现；
 - 管理端保存往返：配链接即时生效、清空取消配置、configured 标记；
 - 保存侧拒绝：坏链接（非 http(s)）400、未知平台 400、家族未知键拒绝。
+
+服务器地址的播放资格门（2026-11-27）单独在
+test_install_app_address_gate.py 覆盖；本文件直接调 user_payload
+的用例按新签名传用户：验地址口径的传有订阅用户，只验平台下发
+的传 admin（平台不设门，与资格无关）。
 """
 import pytest
 from fastapi import HTTPException
@@ -49,6 +54,30 @@ def admin(db):
     return user
 
 
+def _subscribed_user(db):
+    """有有效订阅的用户（地址资格门放行口径，与播放门禁同一把尺）。"""
+    from datetime import datetime, timedelta
+
+    from backend import models
+
+    user = models.WebUser(username="ia_subscribed", password_hash="x",
+                          is_active=True)
+    db.add(user)
+    db.flush()
+    plan = models.SubscriptionPlan(
+        name="ia-plan", price=1, duration_days=30, is_active=True)
+    db.add(plan)
+    db.flush()
+    now = datetime.now()
+    db.add(models.UserSubscription(
+        user_id=user.id, plan_id=plan.id, realm_id=1,
+        start_date=now - timedelta(days=1),
+        end_date=now + timedelta(days=30), status="active"))
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 def _request() -> Request:
     return Request({"type": "http", "method": "PUT", "path": "/",
                     "client": ("127.0.0.1", 12345), "headers": []})
@@ -82,7 +111,7 @@ class TestUserPayloadDefaults:
         import json
         from backend.api.install_app import user_payload
 
-        payload = user_payload(db)
+        payload = user_payload(db, _subscribed_user(db))
         # 对外地址只有一个口径：CDN 地址，绝不许出现源站地址
         # （源站域名在本文件里也只拼接出现，不落字面量）
         assert payload["server_address"] == "https://cdn.aetrix.love"
@@ -112,7 +141,7 @@ class TestAdminRoundtrip:
         assert by_key["ios"]["configured"] is True
         assert by_key["android"]["configured"] is False
         # 用户端立刻读到新值，且只下发已配的平台
-        user_platforms = user_payload(db)["platforms"]
+        user_platforms = user_payload(db, admin)["platforms"]
         assert [p["key"] for p in user_platforms] == ["ios"]
         assert user_platforms[0]["url"] == "https://example.com/emby-ios"
 
@@ -122,7 +151,7 @@ class TestAdminRoundtrip:
         by_key = {p["key"]: p for p in out["platforms"]}
         assert by_key["ios"]["configured"] is False
         assert by_key["ios"]["url"] == ""
-        assert user_payload(db)["platforms"] == []
+        assert user_payload(db, admin)["platforms"] == []
 
     def test_apple_tv_configured(self, db, admin):
         from backend.api.install_app import (
@@ -133,7 +162,7 @@ class TestAdminRoundtrip:
             InstallAppConfigRequest(
                 urls={"apple_tv": "https://example.com/emby-tvos"}),
             _request(), admin, db)
-        by_key = {p["key"]: p for p in user_payload(db)["platforms"]}
+        by_key = {p["key"]: p for p in user_payload(db, admin)["platforms"]}
         assert by_key["apple_tv"]["url"] == "https://example.com/emby-tvos"
 
 
