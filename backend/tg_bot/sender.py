@@ -10,6 +10,28 @@ from backend.integrations.telegram import token as get_telegram_token
 from backend.tg_bot.layout import BRAND_IMAGE, caption_fits, panel_image
 
 
+def _telegram_error_description(response) -> str:
+    """HTTP 报错体里 Telegram 的 description（定位 400 的关键信息，
+    此前只剩状态码）；解析不到返回空串。"""
+    try:
+        data = response.json()
+        if isinstance(data, dict):
+            desc = data.get("description")
+            if desc:
+                return str(desc)
+    except Exception:
+        pass
+    return ""
+
+
+def _http_error_text(exc: httpx.HTTPStatusError) -> str:
+    if exc.response is None:
+        return "HTTP 状态码错误"
+    base = f"HTTP 状态码错误: {exc.response.status_code}"
+    desc = _telegram_error_description(exc.response)
+    return f"{base}（{desc}）" if desc else base
+
+
 def _call(db, method: str, payload: dict) -> tuple[bool, str | None]:
     """
     调用 Telegram Bot API 的通用私有方法
@@ -45,7 +67,7 @@ def _call(db, method: str, payload: dict) -> tuple[bool, str | None]:
         return True, None
     except httpx.HTTPStatusError as exc:
         # HTTP 状态码异常
-        return False, f"HTTP 状态码错误: {exc.response.status_code}"
+        return False, _http_error_text(exc)
     except httpx.TimeoutException:
         # 请求超时
         return False, "请求超时"
@@ -76,7 +98,7 @@ def _call_ex(db, method: str, payload: dict) -> tuple[bool, str | None, dict | N
         result = data.get("result")
         return True, None, result if isinstance(result, dict) else None
     except httpx.HTTPStatusError as exc:
-        return False, f"HTTP 状态码错误: {exc.response.status_code}", None
+        return False, _http_error_text(exc), None
     except httpx.TimeoutException:
         return False, "请求超时", None
     except httpx.RequestError as exc:
@@ -177,7 +199,7 @@ def _call_multipart_ex(db, method: str, payload: dict, files: dict) -> tuple[boo
         result = data.get("result")
         return True, None, result if isinstance(result, dict) else None
     except httpx.HTTPStatusError as exc:
-        return False, f"HTTP 状态码错误: {exc.response.status_code}", None
+        return False, _http_error_text(exc), None
     except httpx.TimeoutException:
         return False, "请求超时", None
     except httpx.RequestError as exc:

@@ -122,3 +122,26 @@ def test_edit_message_media_reuses_file_id(db, monkeypatch):
     assert method == "editMessageMedia"
     assert payload["media"]["media"] == "big-id"
     assert payload["media"]["caption"] == "▎新标题"
+
+
+def test_call_includes_telegram_description_on_http_error(db, monkeypatch):
+    """400 时把 Telegram 返回的 description 带进错误串（此前只剩状态码、
+    生产 400 无法定位）。前缀保持旧格式，旧日志 grep 不变。"""
+    import httpx
+
+    monkeypatch.setattr(sender, "get_telegram_token", lambda db_: "dummy-token")
+
+    def fake_post(url, json=None, timeout=None):
+        assert "dummy-token" in url
+        request = httpx.Request("POST", url)
+        return httpx.Response(
+            400,
+            json={"ok": False, "error_code": 400,
+                  "description": "Bad Request: message is too long"},
+            request=request,
+        )
+
+    monkeypatch.setattr(sender.httpx, "post", fake_post)
+    ok, err = sender._call(db, "sendMessage", {"chat_id": 1, "text": "x"})
+    assert ok is False
+    assert "400" in err and "message is too long" in err

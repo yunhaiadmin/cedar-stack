@@ -2078,7 +2078,9 @@ class TgUpdateDigestSent(Base):
 
     item_id = emby_items 行 id：电影记顶层行 id，新集记集行 id。
     kind：movie / episode = 已实际播报；baseline = 上线首跑的基线种子
-    （功能上线前已在货架上的条目不翻旧账，只播上线后新入库的）。
+    （功能上线前已在货架上的条目不翻旧账，只播上线后新入库的）；
+    skipped = 永久失败记死信（内容毒数据，不重播、不重发，见
+    tg_bot.updatedigest._mark_skipped）。
     """
     __tablename__ = 'tg_update_digest_sent'
 
