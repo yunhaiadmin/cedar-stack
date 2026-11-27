@@ -220,6 +220,15 @@ const router = createRouter({
             component: () => import('@/views/game/LineSpeedtestView.vue'),
             meta: { title: '线路测速', requiresAuth: true },
           },
+          // 新人指南（2026-11-27 用户亲令）：静态上手说明，只放站内
+          // 登录后可见，不发外部渠道；入口在「我的 · 帮助」组与侧栏
+          // 「帮助」组首位。内容写死在页面组件里，不走后端接口。
+          {
+            path: '/game/guide',
+            name: 'game-guide',
+            component: () => import('@/views/game/NewbieGuideView.vue'),
+            meta: { title: '新人指南', requiresAuth: true },
+          },
         ]
       : []),
     {

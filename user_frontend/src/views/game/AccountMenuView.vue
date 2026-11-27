@@ -262,6 +262,8 @@ const groups = computed<MenuGroup[]>(() => {
   // 2026-11-13 求片反馈合并页：「求片」行摘除、「反馈」行改名「求片反馈」
   // 并指向新页 /game/requests（入口由这一行覆盖，不留两个指向同页的行）。
   const help: MenuItem[] = [
+    // 新人指南（2026-11-27）：静态上手说明页，帮助组首位
+    { key: 'newbie-guide', label: '新人指南', to: '/game/guide' },
     { key: 'requests', label: '求片反馈', to: '/game/requests' },
     // 安装应用（2026-11-13）：原先列表下方的 PWA 行改为进入整页
     // （服务器地址＋客户端下载＋教程），PWA 安装动作在整页内保留
