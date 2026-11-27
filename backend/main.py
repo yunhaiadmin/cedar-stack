@@ -30,6 +30,7 @@ from backend.access_guard import AccessGuardMiddleware
 from backend.emby_server.audit import AdminWriteAuditMiddleware
 # F5 图片流量观测（2026-11-25 补挂 API 进程）：与 emby_api/main.py:76 同款引入。
 from backend.emby_server.image_obs import ImageObsMiddleware, start_flusher as _start_image_obs_flusher
+from backend.request_timing import RequestTimingMiddleware
 # P3-3（2026-10-12）：顶层导入——observability 中间件每请求都跑，import 不许留在函数体内
 from backend.emby_server import observability as _observability
 from backend.websocket import websocket_router, notification_router, manager
@@ -639,6 +640,12 @@ app.add_middleware(AdminWriteAuditMiddleware)
 # 故无需像 EA 那样讲究内外层；注册在 CORS 内侧（CORS 仍是最外层），
 # 在三道守卫外侧——被守卫拦下的图片请求也会按最终状态计入观测。
 app.add_middleware(ImageObsMiddleware)
+
+# 请求耗时打点（C-08，2026-11-28）：纯 ASGI，全路径透传、只在请求
+# 结束后按（方法、归一路径、状态码）聚合耗时直方图，慢请求打
+# warning；不改任何业务行为。注册在 CORS 内侧、与其余观测同层。
+# 数据经 backend.request_timing.snapshot() 读取。
+app.add_middleware(RequestTimingMiddleware)
 
 # CORS 最后注册 = 最外层（Starlette 逆序执行中间件）：外层守卫拦截返回的 403
 # 也要带 CORS 头，否则浏览器只报笼统 CORS 错误、前端读不到真实状态码。
