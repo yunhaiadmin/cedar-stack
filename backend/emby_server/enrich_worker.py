@@ -5379,6 +5379,25 @@ def _none_reschedulable_query(db, cutoff, max_rounds, longtail_cutoff=None):
                     )))
 
 
+# R-05（2026-11-28）：回捞空结果短路缓存——janitor 每 60 秒跑一次回捞
+# 查询，稳态下候选恒为 0，白跑一次全表扫约 173ms（复扫实测 13 次 ×
+# 173ms ≈ 0.16s/min）。上轮查到 0 候选时记一个 TTL（默认 600 秒）：
+# TTL 内直接返回 0，不再查库。只缓存「空」：一旦有候选，每轮都现查，
+# 绝不复用缓存的 id 做翻回更新，不存在 stale id 重复翻回的风险。
+# 代价：新出现的候选最多晚一个 TTL 才被捞回（14 天周期里可忽略）。
+ENRICH_NONE_EMPTY_CACHE_SEC = env_int(
+    "ENRICH_NONE_EMPTY_CACHE_SECONDS", 600, 1)
+_NONE_EMPTY_UNTIL = 0.0
+_NONE_EMPTY_LOCK = threading.Lock()
+
+
+def _reset_none_empty_cache() -> None:
+    """测试隔离用：清空回捞空结果短路缓存。生产代码不调用。"""
+    global _NONE_EMPTY_UNTIL
+    with _NONE_EMPTY_LOCK:
+        _NONE_EMPTY_UNTIL = 0.0
+
+
 def enrich_none_auto_reschedule(db) -> int:
     """Step 4 定时回捞：超周期的 done+none 条目翻回 pending（janitor 每轮顺带）。
 
@@ -5404,6 +5423,8 @@ def enrich_none_auto_reschedule(db) -> int:
       已有海报或已有 tmdb_id 的条目一律不进回捞。
     - 单轮硬上限 ``ENRICH_NONE_AUTO_RESCHEDULE_BATCH``（2000，写死）：按最旧
       优先（NULL 最旧，其次按时间戳），捞满即停，下一轮 janitor 继续。
+    - 空结果短路（R-05）：上轮查到 0 候选时 TTL（默认 600 秒）内直接返回 0，
+    不再查库；有候选时每轮现查，不复用缓存 id。
     - 翻回动作复用 ``retry_unmatched`` 的逻辑：清 TMDB 搜索阴性缓存 +
       ``enrich_priority=50``。监控用 info 日志（例行调度，不走翻转告警，
       避免每轮 2000 条刷 PG 事件）。
@@ -5411,6 +5432,11 @@ def enrich_none_auto_reschedule(db) -> int:
     """
     if not enrich_tuning_value(CFG_ENRICH_NONE_AUTO_RESCHEDULE, db):
         return 0
+    # R-05：上轮空结果的 TTL 未过期时直接返回 0，不查库。
+    global _NONE_EMPTY_UNTIL
+    with _NONE_EMPTY_LOCK:
+        if time.monotonic() < _NONE_EMPTY_UNTIL:
+            return 0
     days = enrich_tuning_value(CFG_ENRICH_NONE_RESCHEDULE_DAYS, db)
     max_rounds = enrich_tuning_value(CFG_ENRICH_NONE_MAX_RESCHEDULES, db)
     cutoff = datetime.now() - timedelta(days=days)
@@ -5426,6 +5452,10 @@ def enrich_none_auto_reschedule(db) -> int:
              .limit(batch)
              .all())
     if not cands:
+        # R-05：空结果进短路缓存（只记时间戳，不存 id）。
+        with _NONE_EMPTY_LOCK:
+            _NONE_EMPTY_UNTIL = (time.monotonic()
+                                 + ENRICH_NONE_EMPTY_CACHE_SEC)
         return 0
     ids = [r[0] for r in cands]
     affected = {(r[1], r[2], r[3]) for r in cands}

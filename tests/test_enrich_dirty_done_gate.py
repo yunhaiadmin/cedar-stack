@@ -95,6 +95,8 @@ def _set_cfg(key, value):
 def _flags():
     _set_cfg(ew.CFG_ENRICH_NONE_AUTO_RESCHEDULE, "1")
     _set_cfg("enrich_dirty_done_patrol", "1")
+    # R-05：回捞空结果短路缓存是进程级全局，每用例前清掉，防用例间串扰。
+    ew._reset_none_empty_cache()
     yield
 
 
