@@ -288,25 +288,23 @@ def _probe_queue(db) -> dict:
 def _probe_enrich(db) -> dict:
     """enrich 积压（DB 聚合，只读）。
 
-    P3-5（2026-10-12）：这里与 ``health_report.collect`` 跑完全相同的 4 次
-    enrich_status COUNT（走 ``idx_item_enrich`` 索引，单次开销小）。重复是刻意的：
-    本模块顶层不导入项目内模块（设计原则#5），不与 health_report 共享中间结果，
-    避免循环依赖；开关默认关，/api/health 额外 4 次索引 COUNT 可接受。
+    P3-5（2026-10-12）时这里与 ``health_report.collect`` 各跑一份相同的
+    4 次 enrich_status COUNT，重复是刻意的（设计原则#5：顶层不导入项目
+    内模块）。C-02（2026-11-28）：这族聚合已收敛到 ``item_status_counts``
+    共享缓存（短 TTL），本探针在函数内懒导入取分布——原则#5 不变（仍不
+    在顶层导入），口径不变（见下 r37）。
     r37：与 health_report._enrich_count 同口径——只数真实条目，合并副本
     （merged_into_id 非空）按设计不参与补全，算进来会让积压常年虚高几万条、
     探针长 warn（2026-10-16 实测：真实 pending 2 条、副本 pending 72167 条）。
     """
     try:
-        from backend.emby_server import models as em
-        from sqlalchemy import func
-        counts = {}
-        for st in ("pending", "enriching", "done", "failed"):
-            try:
-                counts[st] = db.query(func.count(em.MediaItem.id)).filter(
-                    em.MediaItem.enrich_status == st,
-                    em.MediaItem.merged_into_id.is_(None)).scalar() or 0
-            except Exception:  # noqa: BLE001
-                counts[st] = 0
+        try:
+            from backend.emby_server import item_status_counts
+            dist = item_status_counts.enrich_status_counts(db)
+            counts = {st: int(dist.get(st, 0))
+                      for st in ("pending", "enriching", "done", "failed")}
+        except Exception:  # noqa: BLE001 — 分布读取失败按全 0（原逐状态口径）
+            counts = {"pending": 0, "enriching": 0, "done": 0, "failed": 0}
         backlog = counts["pending"] + counts["enriching"]
         m = {"backlog": backlog, **counts}
         try:

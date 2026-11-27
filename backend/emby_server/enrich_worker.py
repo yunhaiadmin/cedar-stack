@@ -7492,11 +7492,11 @@ def get_progress(light: bool = False) -> dict:
         # （2026-10-19：全表口径曾报出 pending 29,798 的幻影数，实为 29,797 不可见行）
         _visible = (em.MediaItem.deleted_at.is_(None),
                     em.MediaItem.merged_into_id.is_(None))
-        q = db.query(em.MediaItem.enrich_status,
-                     _func.count(em.MediaItem.id)).filter(
-                         *_visible).group_by(
-                             em.MediaItem.enrich_status).all()
-        by_status = {s or "unknown": c for s, c in q}
+        # C-02（2026-11-28）：状态分布走 item_status_counts 共享缓存
+        #（同口径：软删 / 合并副本均排除，短 TTL），不再每次进度快照
+        # 现算 GROUP BY；retrying 仍实时查。
+        from backend.emby_server import item_status_counts
+        by_status = item_status_counts.enrich_status_counts(db)
         retrying = db.query(_func.count(em.MediaItem.id)).filter(
             *_visible,
             em.MediaItem.enrich_status == "pending",
@@ -7508,13 +7508,8 @@ def get_progress(light: bool = False) -> dict:
             # 类型一并计入（2026-10-21 系统清点：failed 多 34、skipped
             # 多 30,227 的幻影数）。
             from backend.emby_server.probe_worker import PROBE_ITEM_TYPES
-            pq = db.query(em.MediaItem.probe_status,
-                          _func.count(em.MediaItem.id)).filter(
-                              *_visible,
-                              em.MediaItem.item_type.in_(
-                                  PROBE_ITEM_TYPES)).group_by(
-                                      em.MediaItem.probe_status).all()
-            probe_by_status = {s or "unknown": c for s, c in pq}
+            probe_by_status = item_status_counts.probe_status_counts(
+                db, PROBE_ITEM_TYPES)
         return {
             "enrich": {
                 "pending": by_status.get("pending", 0),
