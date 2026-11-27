@@ -132,16 +132,19 @@
         <button type="button" class="ia-retry" @click="load">重试</button>
       </div>
       <template v-else-if="!loading">
-        <!-- 服务器地址卡：对外地址只有一个口径（后端下发），带复制 -->
+        <!-- 服务器地址卡：后端按播放资格下发，无资格只显示占位、不渲染地址与复制 -->
         <section class="ia-sec" aria-label="服务器地址">
           <h2 class="ia-sec__title">服务器地址</h2>
           <div class="ia-addr-card">
-            <span class="ia-addr">{{ payload?.server_address }}</span>
-            <button type="button" class="ia-copy" @click="copyAddress">
-              <Check v-if="copied" :size="15" aria-hidden="true" />
-              <Copy v-else :size="15" aria-hidden="true" />
-              {{ copied ? '已复制' : '复制' }}
-            </button>
+            <template v-if="serverAddress">
+              <span class="ia-addr">{{ serverAddress }}</span>
+              <button type="button" class="ia-copy" @click="copyAddress">
+                <Check v-if="copied" :size="15" aria-hidden="true" />
+                <Copy v-else :size="15" aria-hidden="true" />
+                {{ copied ? '已复制' : '复制' }}
+              </button>
+            </template>
+            <span v-else class="ia-addr ia-addr--locked">开通订阅后显示服务器地址</span>
           </div>
           <div class="ia-notes">
             <p>所有设备共用这一个地址，添加服务器时原样粘贴，不用加端口，也不用加后缀。</p>
@@ -387,6 +390,9 @@ const payload = ref<InstallAppPayload | null>(null)
 const downloadPlatforms = computed(() =>
   (payload.value?.platforms ?? []).filter((p) => p.url),
 )
+// 地址资格门：后端无资格不下发字段、前端归一化为 null，未加载同样是
+// null——凭它显隐，占位之外不渲染地址本体与复制按钮（fail-closed）
+const serverAddress = computed(() => payload.value?.server_address ?? null)
 const loading = ref(true)
 const loadError = ref(false)
 const copied = ref(false)
@@ -405,7 +411,7 @@ async function load() {
 }
 
 async function copyAddress() {
-  const addr = payload.value?.server_address
+  const addr = serverAddress.value
   if (!addr) return
   const res = await writeToClipboard(addr)
   if (res.ok) {
@@ -713,6 +719,11 @@ html[data-theme='light'] .ia-addr-card {
   letter-spacing: 0.01em;
   overflow-wrap: anywhere;
 }
+.ia-addr--locked {
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 600;
+}
+html[data-theme='light'] .ia-addr--locked { color: rgba(17, 18, 20, 0.55); }
 .ia-copy {
   position: relative;
   flex: 0 0 auto;
