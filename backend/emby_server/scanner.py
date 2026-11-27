@@ -1564,12 +1564,25 @@ def _tail_moov_container(path: str, container: str = "") -> bool:
     return name in _TAIL_MOOV_CONTAINERS
 
 
+class _LoginPageResponse(Exception):
+    """Range 抓取的响应是 text/html 登录页（C-11 融合预检的信号）。
+
+    2026-10-19 教训的判定口径不变：2xx 且 Content-Type 为 text/html
+    即远端授权失效、返回的是登录页。原先由独立预检请求判定；C-11 起
+    头尾探测的头/尾 Range 响应兼任预检（见 _http_fetch_range），命中
+    时以本异常逐层上抛，由 probe_metadata 翻译成 login_page 结果。
+    """
+
+
 def _http_fetch_range(url: str, headers: Optional[dict], start: int, end: int) -> Optional[bytes]:
     """按 ``Range: bytes=start-end`` 取一段字节；失败返回 None（不抛）。
 
     云盘直链有几种不讲理的行为，这里都当正常情况处理：
     - 206（正常）与 200（**无视 Range 直接回整个文件**）都接受，后者按偏移自己切；
-    - 4xx/5xx 抛出去（403 配额、404 文件没了要在上层翻译成 _error）。
+    - 4xx/5xx 抛出去（403 配额、404 文件没了要在上层翻译成 _error）；
+    - 2xx 但 Content-Type 是 text/html：远端回的是登录页（授权失效），
+      抛 _LoginPageResponse——与独立预检 _remote_returns_login_page
+      逐字相同的判定（C-11 起头尾抓取兼任预检，省掉单独的预检请求）。
     """
     import httpx
 
@@ -1579,6 +1592,10 @@ def _http_fetch_range(url: str, headers: Optional[dict], start: int, end: int) -
         resp = client.get(url, headers=req)
     if resp.status_code >= 400:
         raise RuntimeError(f"HTTP {resp.status_code}")
+    if 200 <= resp.status_code < 300:
+        ctype = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+        if ctype == "text/html":
+            raise _LoginPageResponse(f"Range 响应是登录页：{url}")
     body = resp.content or b""
     if resp.status_code == 206:
         return body
@@ -1669,6 +1686,8 @@ def _headtail_sparse_temp(path: str, headers: Optional[dict], size: int) -> Opti
     远端直链走 HTTP Range（比走挂载稳）；本机/FUSE 路径走两次定长本地读。
     两个请求是并行的：先全部 submit 再取结果。
     任何一步没成就返回 None，调用方回退到现行流程，行为不倒退。
+    唯一例外：远端响应是登录页时 _LoginPageResponse 上抛（C-11 融合
+    预检的信号，见 _http_fetch_range），调用方据此判 login_page。
     """
     total = int(size or 0)
     head_n = int(PROBE_HEADTAIL_HEAD_BYTES)
@@ -1689,6 +1708,8 @@ def _headtail_sparse_temp(path: str, headers: Optional[dict], size: int) -> Opti
         try:
             head = head_future.result(timeout=PROBE_HTTP_TIMEOUT)
             tail = tail_future.result(timeout=PROBE_HTTP_TIMEOUT)
+        except _LoginPageResponse:
+            raise  # C-11：登录页信号必须上抛给 probe_metadata 翻译，不许吞成 None
         except Exception as exc:  # noqa: BLE001 — 抓字节失败只是「这次头尾没成」
             logger.debug("头尾探测抓取失败 %s: %s", path, exc)
             return None
@@ -1963,16 +1984,30 @@ def probe_metadata(path: str, headers: Optional[dict] = None, size: int = 0,
         "moov_position": None,
     }
     remote = path.startswith(("http://", "https://"))
-    if remote and _remote_returns_login_page(path, headers):
-        return {"_error": "login_page", "_http_code": 200,
-                "_error_detail": "远端返回登录页（Content-Type=text/html，需要有效授权）"}
+    _login_result = {"_error": "login_page", "_http_code": 200,
+                     "_error_detail": "远端返回登录页（Content-Type=text/html，需要有效授权）"}
+    # C-11 融合预检：头尾探测适用时（远端、已知大小且大于头尾窗口之和、
+    # 调用方没自带 Range），头/尾 Range 响应的 Content-Type 检查兼任
+    # 预检——命中登录页由 _http_fetch_range 抛 _LoginPageResponse、
+    # 下方捕获后翻译成同一份 login_page 结果，省掉独立预检的那一次
+    # 请求（快乐路径远端请求 3→2）。头尾探测不适用时（小文件/未知
+    # 大小/开关关/自带 Range）保留独立预检，判定口径逐字不变。
+    _ht_will_apply = bool(
+        remote and PROBE_HEADTAIL_ENABLED
+        and int(size or 0) > int(PROBE_HEADTAIL_HEAD_BYTES) + int(PROBE_HEADTAIL_TAIL_BYTES)
+        and not any(str(k).lower() == "range" for k in (headers or {})))
+    if remote and not _ht_will_apply and _remote_returns_login_page(path, headers):
+        return _login_result
     # 第零跳（头尾探测，探测正案第 1 步）：先于下面的第一跳。两次读（头 + 尾）写进
     # 同尺寸稀疏临时文件，对本地文件跑 ffprobe -probesize 5M -analyzeduration 0。
     # 拿到 format 就直接用，后面两级回退不再跑；拿不到则走下面的现行流程。
     data = None
     _via_headtail = False
     if PROBE_HEADTAIL_ENABLED:
-        _ht_tmp = _headtail_sparse_temp(path, headers, size)
+        try:
+            _ht_tmp = _headtail_sparse_temp(path, headers, size)
+        except _LoginPageResponse:
+            return _login_result  # C-11：融合预检命中登录页
         if _ht_tmp:
             try:
                 _ht_data = _ffprobe(path, headers, size=size, local_path=_ht_tmp,
