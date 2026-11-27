@@ -45,6 +45,24 @@ last_run 在推送成功（全部发完，或部分成功——至少一条已�
 已记表，剩余下轮自然续上）/空批/种子完成时推进；一条都没发出去
 时不推进，下个 tick 整批重试（与 rankpush 同纪律）。
 
+收集口径优化（2026-11-28，C-03）：候选收集改水位线推进，不再每轮
+对全表跑「窗口＋身份＋未播」全量评估（生产实测该族查询单次约
+1.1 秒、6.3 天累计约 5,800 秒）：
+- 水位 bot_update_digest_watermark（时间＋id 双水位）：主轨只查
+  「date_added 不早于水位时间 − 5 分钟重叠窗」或「id 大于水位 id」
+  的行——新入库行哪怕 date_added 写的是过去时间（补录/转存），
+  id 也必然越过水位，不会漏；重叠窗兜底迟到提交的入库行，重复
+  靠已播表排除＋身份复判，不重不漏。本轮全部发完（ok）或空批
+  （empty）才把水位推进到本轮收集时刻与当时最大 id，部分成功/
+  发送失败不推进——下轮同段重查，已播的被已播表排除、未发的
+  自然续上（与原续发纪律一致）。
+- 副轨补捞：水位缺失（首跑/存量升级）或距上次全量超过
+  BACKFILL_INTERVAL_HOURS 时，本轮走全量窗口收集——种子后才认出
+  身份的老行靠副轨捞回（最迟一个补捞间隔），不重不漏不变。
+- 「未播过」判定由 NOT IN 子查询改 NOT EXISTS 相关子查询（走
+  已播表 item_id 唯一索引逐行探查，不再每轮把整张已播表拖进
+  计划）；电影侧原 count 查询的结果无人使用，一并去掉。
+
 已播记录保留期清理：tg_update_digest_sent 只增不减，调度 tick 上
 低频（24 小时一轮）顺手把 sent_at 超过保留期（90 天，远大于 14 天
 去重回看窗口，删界不侵入窗口内行）的行分批删掉（每批 ≤10,000
@@ -56,7 +74,7 @@ import logging
 import os
 from datetime import datetime, timedelta
 
-from sqlalchemy import func, insert, literal, select
+from sqlalchemy import exists, func, insert, literal, or_, select
 
 from backend import models
 from backend.emby_server import identity_gate, image_store
@@ -72,6 +90,8 @@ TARGET_KEY = "bot_update_digest_chat_id"
 LAST_RUN_KEY = "bot_update_digest_last_run"
 SEEDED_KEY = "bot_update_digest_seeded"
 PRUNE_LAST_RUN_KEY = "bot_update_digest_prune_last_run"
+WATERMARK_KEY = "bot_update_digest_watermark"
+BACKFILL_LAST_RUN_KEY = "bot_update_digest_backfill_last_run"
 
 DEFAULT_INTERVAL_MINUTES = 30
 WINDOW_DAYS = 14
@@ -86,6 +106,12 @@ PRUNE_INTERVAL_HOURS = 24
 #: Telegram 单条消息正文上限（字符）：整批超此限按行边界分条发送。
 MESSAGE_LIMIT = 4096
 _EPISODE_FETCH_CAP = 20000
+#: 水位主轨的重叠窗（分钟）：水位之前的这一小段每轮重查，兜底在
+#: 水位推进时刻已写库但收集快照未见的迟到入库行；重查行靠已播表
+#: 排除＋身份复判去重，成本与窗内入库量成正比（分钟级，很小）。
+WATERMARK_OVERLAP_MINUTES = 5
+#: 副轨全量补捞间隔（小时）：种子后才认出身份的老行靠它捞回。
+BACKFILL_INTERVAL_HOURS = 1
 
 
 def _cfg(db, key: str, default: str = "") -> str:
@@ -118,17 +144,25 @@ def interval_minutes(db) -> int:
     return max(1, min(1440, value))
 
 
-def _base_conditions(window_start: datetime) -> list:
-    """候选行公共条件：近窗口内入库、未软删、未隐藏、非合并副本、未播报过。"""
-    return [
+def _base_conditions(window_start: datetime, extra_cond=None) -> list:
+    """候选行公共条件：近窗口内入库、未软删、未隐藏、非合并副本、未播报过。
+
+    ``extra_cond`` 是水位主轨的附加下界条件（None = 全量窗口，副轨
+    补捞/种子）。「未播过」用 NOT EXISTS 相关子查询：走已播表
+    item_id 唯一索引逐行探查，不再用 NOT IN 把整张已播表拖进
+    计划（C-03）。"""
+    conds = [
         em.MediaItem.deleted_at.is_(None),
         em.MediaItem.is_hidden == False,  # noqa: E712  # PA-011
         em.MediaItem.merged_into_id.is_(None),
         em.MediaItem.date_added.isnot(None),
         em.MediaItem.date_added >= window_start,
-        ~em.MediaItem.id.in_(select(models.TgUpdateDigestSent.item_id)),
+        ~exists().where(models.TgUpdateDigestSent.item_id == em.MediaItem.id),
         identity_gate.identity_clause(),
     ]
+    if extra_cond is not None:
+        conds.append(extra_cond)
+    return conds
 
 
 def _seed_baseline(db, now: datetime) -> int:
@@ -155,18 +189,19 @@ def _seed_baseline(db, now: datetime) -> int:
     return total
 
 
-def _collect_movies(db, window_start: datetime):
+def _collect_movies(db, window_start: datetime, extra_cond=None):
     """本批电影候选：返回 (总数, 全部行)。全量展示口径不设行数
-    上限，按入库先后 FIFO；正文过长由发送层分条，不在此截断。"""
-    conds = [em.MediaItem.item_type == "movie", *_base_conditions(window_start)]
-    total = int(db.query(func.count(em.MediaItem.id)).filter(*conds).scalar() or 0)
+    上限，按入库先后 FIFO；正文过长由发送层分条，不在此截断。
+    总数即行数（原先单跑一条 count 查询、结果无人使用，C-03 去掉）。"""
+    conds = [em.MediaItem.item_type == "movie",
+             *_base_conditions(window_start, extra_cond)]
     rows = (
         db.query(em.MediaItem)
         .filter(*conds)
         .order_by(em.MediaItem.date_added.asc(), em.MediaItem.id.asc())
         .all()
     )
-    return total, rows
+    return len(rows), rows
 
 
 def _resolve_series_map(db, episodes) -> dict[int, object]:
@@ -214,7 +249,7 @@ def _episode_season(db, ep, parents_cache: dict) -> int | None:
     return None
 
 
-def _collect_episode_groups(db, window_start: datetime):
+def _collect_episode_groups(db, window_start: datetime, extra_cond=None):
     """本批新集候选，按（剧，季）分组。返回 (总组数, 全部组)。
 
     每组：{"series": series 行, "season": int, "episodes": [集行...],
@@ -224,7 +259,8 @@ def _collect_episode_groups(db, window_start: datetime):
     安全帽（防极端积压一次全捞爆内存）：真命中帽时记一条 warning，
     帽外集行未记已播、下批自然续上。
     """
-    conds = [em.MediaItem.item_type == "episode", *_base_conditions(window_start)]
+    conds = [em.MediaItem.item_type == "episode",
+             *_base_conditions(window_start, extra_cond)]
     rows = (
         db.query(em.MediaItem)
         .filter(*conds)
@@ -443,6 +479,73 @@ def _mark_sent(db, movie_rows, tv_groups) -> None:
     db.commit()
 
 
+def _read_dt_cfg(db, key: str) -> datetime | None:
+    raw = _cfg(db, key, "")
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _read_watermark(db) -> tuple[datetime, int] | None:
+    """水位 = (时间, 当时最大条目 id)；缺失/损坏返回 None（走全量）。"""
+    raw = _cfg(db, WATERMARK_KEY, "")
+    if not raw:
+        return None
+    try:
+        import json
+
+        data = json.loads(raw)
+        return datetime.fromisoformat(str(data["t"])), int(data["id"])
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def _collect_window(db, now: datetime):
+    """本轮收集：决定走水位主轨还是全量副轨，返回 (movie_rows, tv_groups, full)。
+
+    主轨下界（任一命中即查）：date_added 不早于「水位时间 − 重叠窗」，
+    或 id 大于水位 id（新插入行哪怕 date_added 是过去时间也不漏）。
+    副轨（全量）：水位缺失（首跑/存量升级）或距上次全量已过
+    BACKFILL_INTERVAL_HOURS。窗口下界（14 天）两轨都守。"""
+    window_start = now - timedelta(days=WINDOW_DAYS)
+    watermark = _read_watermark(db)
+    backfill_last = _read_dt_cfg(db, BACKFILL_LAST_RUN_KEY)
+    full = (
+        watermark is None
+        or backfill_last is None
+        or (now - backfill_last) >= timedelta(hours=BACKFILL_INTERVAL_HOURS)
+    )
+    extra_cond = None
+    if not full:
+        wm_time, wm_id = watermark
+        since = max(window_start, wm_time - timedelta(minutes=WATERMARK_OVERLAP_MINUTES))
+        extra_cond = or_(
+            em.MediaItem.date_added >= since,
+            em.MediaItem.id > wm_id,
+        )
+    _movie_total, movie_rows = _collect_movies(db, window_start, extra_cond)
+    _tv_total, tv_groups = _collect_episode_groups(db, window_start, extra_cond)
+    return movie_rows, tv_groups, full
+
+
+def _advance_watermark(db, now: datetime, full: bool) -> None:
+    """本轮收集已完整覆盖（ok/empty）才推进水位：时间记本轮收集
+    时刻、id 记当前最大条目 id；全量轮同时记副轨时间。
+    partial/send_failed 不调此函数——水位不动，下轮同段重查续发
+    （见模块头 C-03 口径）。"""
+    import json
+
+    max_id = int(db.execute(select(func.max(em.MediaItem.id))).scalar() or 0)
+    values = {WATERMARK_KEY: json.dumps({"t": now.isoformat(), "id": max_id})}
+    if full:
+        values[BACKFILL_LAST_RUN_KEY] = now.isoformat()
+    store.write_values(db, values)
+    db.commit()
+
+
 def push_digest(db, now: datetime | None = None) -> dict:
     """攒一批并播报。返回 {pushed, reason, movies, tv_groups, text,
     chunks, chunks_sent}（movies / tv_groups 为已实际播出并记表的数）。
@@ -467,10 +570,9 @@ def push_digest(db, now: datetime | None = None) -> dict:
     if group_id is None:
         logger.warning("updatedigest 未配置发送目标（频道未填且 bot_group_ids 为空），跳过播报")
         return {**empty, "reason": "no_group"}
-    window_start = now - timedelta(days=WINDOW_DAYS)
-    _movie_total, movie_rows = _collect_movies(db, window_start)
-    _tv_total, tv_groups = _collect_episode_groups(db, window_start)
+    movie_rows, tv_groups, full_collect = _collect_window(db, now)
     if not movie_rows and not tv_groups:
+        _advance_watermark(db, now, full_collect)
         return {**empty, "reason": "empty"}
     text = build_message(tv_groups, movie_rows)
     chunks = build_message_chunks(tv_groups, movie_rows)
@@ -513,6 +615,8 @@ def push_digest(db, now: datetime | None = None) -> dict:
         group_id, sent_movies, sent_groups, chunks_sent, len(chunks),
         bool(photo_path), failed,
     )
+    if not failed:
+        _advance_watermark(db, now, full_collect)
     return {
         "pushed": True,
         "reason": "partial" if failed else "ok",
