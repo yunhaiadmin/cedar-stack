@@ -1621,6 +1621,17 @@ _LEGACY_INDEXES: tuple[tuple[str, ...], ...] = (
     # 回滚：DROP INDEX idx_reg_code_batch。
     ("registration_codes", "idx_reg_code_batch", "batch_id", "batch_id",
      "  🔧 已迁移: registration_codes.idx_reg_code_batch（一人一批一码按批查码）"),
+    # 探测抢单覆盖索引（C-04，2026-11-28 优化扫荡）：models.py 同名
+    # 声明（新库 create_all 自带），这里给老库补上。部分索引只含
+    # pending 活行，INCLUDE 补齐抢单过滤列（非 PG 方言把 INCLUDE 列
+    # 并进键列，覆盖语义等价）。回滚：DROP INDEX idx_item_probe_claim。
+    ("emby_items", "idx_item_probe_claim", "probe_status, probe_priority, id",
+     None,
+     "  🔧 已迁移: emby_items.idx_item_probe_claim（探测抢单覆盖索引）",
+     "probe_status = 'pending' AND deleted_at IS NULL AND merged_into_id IS NULL",
+     None,
+     "file_path, item_type, video_codec, duration_ticks, last_probed_at, "
+     "probe_next_retry_at, library_id"),
 )
 
 
