@@ -939,44 +939,137 @@ def prewarm(urls) -> int:
     return done
 
 
-def referenced_basenames(db) -> set:
-    """所有条目引用到的**本地图片文件名**（分批查，避免整库读进内存）；包含人物头像 URL 经 local_path 映射出的本地文件名"""
+def _absorb_item_rows(rows, found: set) -> None:
+    for _id, poster, backdrop in rows:
+        for path in (poster, backdrop):
+            if is_cached_path(path):
+                found.add(os.path.basename(path))
+
+
+def _absorb_people_rows(rows, found: set) -> None:
+    for _id, image_url in rows:
+        if image_url and image_url.lower().startswith(("http://", "https://")):
+            found.add(os.path.basename(local_path(image_url)))
+
+
+def _scan_referenced_basenames(db, item_cap: int, people_cap: int):
+    """全量构建引用集（分批查，避免整库读进内存）；只扫 id 不大于
+    上界的行，返回 (引用集, items 水位, people 水位)——水位即上界，
+    上界之后的行归增量合并管，两段不重不漏。包含人物头像 URL 经
+    local_path 映射出的本地文件名。"""
     from sqlalchemy import select
 
     from backend.emby_server import models as em
 
     found: set = set()
     last_id = 0
-    while True:
+    while last_id < item_cap:
         rows = db.execute(
             select(em.MediaItem.id, em.MediaItem.poster_path, em.MediaItem.backdrop_path)
-            .where(em.MediaItem.id > last_id)
+            .where(em.MediaItem.id > last_id, em.MediaItem.id <= item_cap)
             .order_by(em.MediaItem.id)
             .limit(5000)
         ).all()
         if not rows:
             break
         last_id = rows[-1][0]
-        for _id, poster, backdrop in rows:
-            for path in (poster, backdrop):
-                if is_cached_path(path):
-                    found.add(os.path.basename(path))
+        _absorb_item_rows(rows, found)
 
     last_id = 0
-    while True:
+    while last_id < people_cap:
         rows = db.execute(
             select(em.EmbyPerson.id, em.EmbyPerson.image)
-            .where(em.EmbyPerson.id > last_id)
+            .where(em.EmbyPerson.id > last_id, em.EmbyPerson.id <= people_cap)
             .order_by(em.EmbyPerson.id)
             .limit(5000)
         ).all()
         if not rows:
             break
         last_id = rows[-1][0]
-        for _id, image_url in rows:
-            if image_url and image_url.lower().startswith(("http://", "https://")):
-                found.add(os.path.basename(local_path(image_url)))
-    return found
+        _absorb_people_rows(rows, found)
+    return found, item_cap, people_cap
+
+
+def _table_max_id(db, model) -> int:
+    from sqlalchemy import func, select
+
+    return int(db.execute(select(func.max(model.id))).scalar() or 0)
+
+
+#: 引用集缓存（C-05）：prune 每约 10 分钟一轮，原先每轮都把
+#: emby_items 41 万行＋emby_people 18 万行全扫一遍构建引用集
+#: （生产实测 6.3 天 715 次全扫、约 1,223 秒）。改成：全量快照
+#: 按 TTL（默认 6 小时）重建，轮次间只增量合并水位之后的新行
+#: （新条目/新人物的引用及时入集）；快照时刻 built_at 同时是
+#: prune 的删除安全界——快照之后落盘的文件本轮绝不删（它们的
+#: 引用可能还没进快照），下轮增量/重建后才判。按 engine 分片，
+#: 不同库各自一份（测试的独立 engine 天然隔离）。
+_REF_CACHE_TTL_DEFAULT = 21600
+_REF_CACHE: dict = {}
+_REF_CACHE_LOCK = threading.Lock()
+
+
+def _referenced_state(db):
+    """取（或按需重建/增量合并）本 engine 的引用集缓存状态。"""
+    from backend.emby_server import models as em
+
+    key = db.get_bind()
+    now = time.time()
+    ttl = env_int("EMBY_IMAGE_REF_CACHE_TTL_SECONDS", _REF_CACHE_TTL_DEFAULT, 0)
+    with _REF_CACHE_LOCK:
+        state = _REF_CACHE.get(key)
+        if state is not None and ttl > 0 and now - state["built_at"] < ttl:
+            # 增量合并：水位之后的新行引用并入（全量段与增量段以
+            # 「重建时先取的 max id」为界，不重不漏）
+            item_cap = _table_max_id(db, em.MediaItem)
+            if item_cap > state["item_wm"]:
+                from sqlalchemy import select
+
+                rows = db.execute(
+                    select(em.MediaItem.id, em.MediaItem.poster_path,
+                           em.MediaItem.backdrop_path)
+                    .where(em.MediaItem.id > state["item_wm"],
+                           em.MediaItem.id <= item_cap)
+                    .order_by(em.MediaItem.id)
+                ).all()
+                _absorb_item_rows(rows, state["names"])
+                state["item_wm"] = item_cap
+            people_cap = _table_max_id(db, em.EmbyPerson)
+            if people_cap > state["people_wm"]:
+                from sqlalchemy import select
+
+                rows = db.execute(
+                    select(em.EmbyPerson.id, em.EmbyPerson.image)
+                    .where(em.EmbyPerson.id > state["people_wm"],
+                           em.EmbyPerson.id <= people_cap)
+                    .order_by(em.EmbyPerson.id)
+                ).all()
+                _absorb_people_rows(rows, state["names"])
+                state["people_wm"] = people_cap
+            return state
+        item_cap = _table_max_id(db, em.MediaItem)
+        people_cap = _table_max_id(db, em.EmbyPerson)
+        names, item_wm, people_wm = _scan_referenced_basenames(
+            db, item_cap, people_cap)
+        state = {
+            "built_at": now, "names": names,
+            "item_wm": item_wm, "people_wm": people_wm,
+        }
+        _REF_CACHE[key] = state
+        return state
+
+
+def referenced_basenames(db) -> set:
+    """所有条目引用到的**本地图片文件名**；走缓存快照＋增量合并
+    （见 _REF_CACHE 注释），返回副本，调用方改动不污染缓存。"""
+    return set(_referenced_state(db)["names"])
+
+
+def referenced_basenames_snapshot(db) -> tuple[set, float]:
+    """同 referenced_basenames，另带全量快照的构建时刻（epoch 秒）：
+    prune 以它为删除安全界——mtime 不早于快照时刻的文件本轮不删。"""
+    state = _referenced_state(db)
+    return set(state["names"]), float(state["built_at"])
 
 
 _THUMB_NAME_RE = re.compile(r"^[0-9a-f]{8,}(_[wh]\d+)+$")
@@ -1027,6 +1120,9 @@ def prune(db) -> dict:
 
     - **有引用的文件一张都不删**：宁可超出上限（只记日志），也不能把正在用的封面删掉；
     - 刚落下还没落库的文件有保护期（``EMBY_IMAGE_GRACE_SECONDS``）。
+    - 引用集走缓存快照（C-05）：快照之后落盘的文件本轮一律不删
+      （删除与淘汰都守 ``ref_built_at`` 界），它们的引用可能还没
+      进快照，下轮增量合并/快照重建后才判——不误删一张在用图。
     """
     result = {"removed": 0, "freed_bytes": 0, "files": 0, "bytes": 0, "over_limit": False}
     if not enabled():
@@ -1034,7 +1130,7 @@ def prune(db) -> dict:
     root = image_dir()
     if not os.path.isdir(root):
         return result
-    referenced = referenced_basenames(db)
+    referenced, ref_built_at = referenced_basenames_snapshot(db)
     # 文件清单一次物化（含分片子目录）：本轮新落盘的文件不在清单里，
     # 天然落在保护期外也删不到，下一轮再处理——方向是安全的。
     cache_files = list(_iter_cache_files(root))
@@ -1065,7 +1161,8 @@ def prune(db) -> dict:
     _cfg_tags = {f"_w{w}" for w in thumb_widths()}
 
     def _remove_file(name: str) -> int:
-        """删一个文件（含它的缩略图），返回释放的字节数"""
+        """删一个文件（含它的缩略图），返回释放的字节数。
+        连带缩略图同样守快照界：快照后落盘的缩略图不删（C-05）。"""
         freed = 0
         candidates = [name]
         digest = name.rsplit(".", 1)[0]
@@ -1076,6 +1173,8 @@ def prune(db) -> dict:
                 continue
             try:
                 st = os.stat(cpath)
+                if cname != name and st.st_mtime >= ref_built_at:
+                    continue
                 os.remove(cpath)
                 thumb_mem_drop(cname)  # 内存里那份也清掉（key 是文件名，内容寻址）
                 freed += st.st_size
@@ -1100,9 +1199,17 @@ def prune(db) -> dict:
             kept.append((name, stat.st_size, stat.st_mtime))
             continue
         if digest and digest not in referenced_digests:
-            # 孤儿缩略图（原图早被删了）：直接清掉，不占保护期
+            # 孤儿缩略图（原图早被删了）：直接清掉，不占保护期。
+            # 但快照之后落盘的不删（C-05 安全界：引用可能还没进快照），
+            # 留到下轮快照/增量覆盖后再判。
             try:
                 stat = os.stat(path)
+            except OSError:
+                continue
+            if stat.st_mtime >= ref_built_at:
+                kept.append((name, stat.st_size, stat.st_mtime))
+                continue
+            try:
                 os.remove(path)
                 thumb_mem_drop(name)
                 result["removed"] += 1
@@ -1113,6 +1220,10 @@ def prune(db) -> dict:
         try:
             stat = os.stat(path)
         except OSError:
+            continue
+        if stat.st_mtime >= ref_built_at:
+            # 快照之后落盘的文件：引用可能还没进快照，本轮不判孤儿
+            kept.append((name, stat.st_size, stat.st_mtime))
             continue
         if grace and now - stat.st_mtime < grace:
             kept.append((name, stat.st_size, stat.st_mtime))
@@ -1131,6 +1242,8 @@ def prune(db) -> dict:
                 break
             if name in protected:
                 continue            # 正在用的封面（含它的缩略图）不淘汰
+            if _mtime >= ref_built_at:
+                continue            # 快照后落盘的文件本轮不淘汰（C-05 安全界）
             if name in attempted:
                 continue
             attempted.add(name)
@@ -1149,6 +1262,8 @@ def prune(db) -> dict:
                     break
                 if name in attempted:
                     continue
+                if _mtime >= ref_built_at:
+                    continue        # 快照后落盘的文件本轮不淘汰（C-05 安全界）
                 if _thumb_digest(name) is None:
                     continue        # 原图非缩略图，第二轮绝不淘汰
                 attempted.add(name)
