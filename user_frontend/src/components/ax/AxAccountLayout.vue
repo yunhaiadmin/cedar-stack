@@ -16,7 +16,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  BookOpen, Briefcase, CreditCard, Download, Gauge,
+  BookOpen, Briefcase, Compass, CreditCard, Download, Gauge,
   Megaphone, ReceiptText, Settings, Sun, Moon, User, UserPlus, Users, Wallet,
 } from 'lucide-vue-next'
 import AxSidebar, { type AxSidebarGroup } from './AxSidebar.vue'
@@ -139,6 +139,8 @@ const groups = computed<AxSidebarGroup[]>(() => {
     {
       title: '帮助',
       items: [
+        // 新人指南（2026-11-27）：与手机菜单「帮助」组同口径，首位
+        { key: '/game/guide', label: '新人指南', icon: Compass },
         // 安装应用（侧栏统一单，2026-11-18 自查 M-2）：照手机菜单
         // 「帮助」组序，位于线路测速之前。
         { key: '/game/install', label: '安装应用', icon: Download },
