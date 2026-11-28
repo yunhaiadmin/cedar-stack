@@ -1224,6 +1224,19 @@ PROBE_HEADTAIL_TAIL_BYTES = env_int("PROBE_HEADTAIL_TAIL_BYTES", 16 << 20, 1 << 
 PROBE_HEADTAIL_PROBESIZE = env_int("PROBE_HEADTAIL_PROBESIZE", 5 << 20, 1024)
 PROBE_HEADTAIL_ANALYZEDURATION = env_int("PROBE_HEADTAIL_ANALYZEDURATION", 0, 0)
 
+#: 头尾探测那一次本地 ffprobe 的上限（秒）。跑的是本地临时文件（真实字节
+#: ≤20MB），健康用例 <2s；5s 是两倍以上余量。超过即当探测方法失效、由调用方
+#: 回退（且不计入挂载熔断，见 probe_metadata），不许它烧满 30s 再占 worker
+#: 槽位（L-045）。
+PROBE_HEADTAIL_TIMEOUT_SEC = env_float("PROBE_HEADTAIL_TIMEOUT_SEC", 5.0, 1.0)
+
+#: EBML 容器（Matroska / WebM）：时长与轨道都在文件头里，尾部 16MB 对探测
+#: 毫无用处——但同尺寸稀疏临时文件的全零空洞会让 EBML 解析器 resync 扫描
+#: 数 GB 零字节直至超时（L-045）。这类容器只取头窗、临时文件截断为头窗
+#: 大小，解复用器见 EOF 而非零字节；mp4/mov 系的 moov 可能在尾部，仍走
+#: 稀疏同尺寸文件（moov 靠绝对偏移定位，截断会丢）。
+_EBML_CONTAINERS = frozenset({"mkv", "webm"})
+
 #: 需要「尾部再读一次」的容器（moov 可能落在文件尾）。
 #: 只收 MP4/MOV 系：Matroska / WebM 的时长写在文件头的 Segment Info 里，
 #: 第一跳 1 MiB 稳定命中，给它们加尾部请求纯属白烧网盘流量与带宽。
@@ -1301,7 +1314,8 @@ def _parse_ffprobe_http_error(stderr: str) -> Optional[int]:
 
 def _ffprobe(path: str, headers: Optional[dict] = None, size: int = 0,
              ranged: bool = True, local_path: str = "",
-             probesize: Optional[int] = None, analyzeduration: Optional[int] = None) -> Optional[dict]:
+             probesize: Optional[int] = None, analyzeduration: Optional[int] = None,
+             timeout: Optional[float] = None) -> Optional[dict]:
     """ffprobe 提取媒体信息（无 ffprobe 时优雅降级）。
 
     远程直链补一个有限 Range，兼容 rclone rc-serve；本机文件不改变行为。
@@ -1312,6 +1326,8 @@ def _ffprobe(path: str, headers: Optional[dict] = None, size: int = 0,
     ffprobe 报 ``Option headers not found`` 直接失败。
     ``probesize`` / ``analyzeduration`` 非空时覆盖模块默认的 FFPROBE_PROBESIZE /
     FFPROBE_ANALYZEDURATION（头尾探测按正案要求用 -probesize 5M -analyzeduration 0）。
+    ``timeout`` 非空时覆盖按本机/远端推导的默认上限（头尾探测用短上限，见
+    PROBE_HEADTAIL_TIMEOUT_SEC，L-045）。
 
     返回的 dict 可能含 `_error` 字段：
     - `_error="quota"`：HTTP 403，远端配额/权限受限
@@ -1343,7 +1359,8 @@ def _ffprobe(path: str, headers: Optional[dict] = None, size: int = 0,
     # 本机文件（含 FUSE）与远端 URL 用不同上限：FUSE 读不出就是读不出，
     # 干等 90 秒只是白占 worker 槽位（见 PROBE_FILE_TIMEOUT 的说明）。
     _is_remote = (not local_path) and path.startswith(("http://", "https://"))
-    _timeout = PROBE_REMOTE_TIMEOUT if _is_remote else PROBE_FILE_TIMEOUT
+    _timeout = timeout if timeout is not None else (
+        PROBE_REMOTE_TIMEOUT if _is_remote else PROBE_FILE_TIMEOUT)
     # 每次调用先清零：上一次 ffprobe 超时不应让这一次的判定跟着走偏。
     _ffprobe_timeout_flag.timed_out = False
     try:
@@ -1564,6 +1581,16 @@ def _tail_moov_container(path: str, container: str = "") -> bool:
     return name in _TAIL_MOOV_CONTAINERS
 
 
+def _ebml_container(path: str, container: str = "") -> bool:
+    """是不是 EBML 容器（mkv/webm）——口径与 ``_tail_moov_container`` 同形：
+    优先用调用方从库里带来的 ``container``，没给就从路径后缀推。"""
+    name = (container or "").strip().lower().lstrip(".")
+    if not name:
+        bare = path.split("?", 1)[0].split("#", 1)[0]
+        name = posixpath.splitext(bare)[1].lstrip(".").lower()
+    return name in _EBML_CONTAINERS
+
+
 class _LoginPageResponse(Exception):
     """Range 抓取的响应是 text/html 登录页（C-11 融合预检的信号）。
 
@@ -1678,10 +1705,17 @@ def _bounded_whole_file_temp(path: str, headers: Optional[dict],
     return tmp, written, complete
 
 
-def _headtail_sparse_temp(path: str, headers: Optional[dict], size: int) -> Optional[str]:
+def _headtail_sparse_temp(path: str, headers: Optional[dict], size: int,
+                          container: str = "") -> Optional[str]:
     """头尾探测：并行取「头 PROBE_HEADTAIL_HEAD_BYTES + 尾 PROBE_HEADTAIL_TAIL_BYTES」，
     写进同尺寸的稀疏临时文件（ftruncate(total) 后只在头尾两处落盘，中间全是空洞），
     返回临时文件路径（调用方负责删）。
+
+    EBML 容器（mkv/webm，见 ``_ebml_container``）例外：时长与轨道全在文件头里，
+    尾部 16MB 对探测毫无用处，而同尺寸稀疏文件的全零空洞会让 EBML 解析器在头窗
+    耗尽后 resync 扫描数 GB 零字节直至超时（L-045）。这类容器只取头窗、临时文件
+    截断为头窗大小（ftruncate(head_n)），解复用器见 EOF 而非零字节，秒级返回
+    format；另省掉一次 16MB 尾部下载。mp4/mov 系的 moov 可能在尾部，仍走旧口径。
 
     远端直链走 HTTP Range（比走挂载稳）；本机/FUSE 路径走两次定长本地读。
     两个请求是并行的：先全部 submit 再取结果。
@@ -1702,27 +1736,44 @@ def _headtail_sparse_temp(path: str, headers: Optional[dict], size: int) -> Opti
     fetch = _http_fetch_range if remote else _local_fetch_range
     head_end = head_n - 1
     tail_start = total - tail_n
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        head_future = pool.submit(fetch, path, headers, 0, head_end)
-        tail_future = pool.submit(fetch, path, headers, tail_start, total - 1)
+    ebml = _ebml_container(path, container)
+    if ebml:
+        # L-045：EBML 只取头窗——尾部无用且空洞致命，见本函数 docstring。
+        # 登录页信号与旧口径一致：头取命中即上抛，调用方翻成 login_page。
         try:
-            head = head_future.result(timeout=PROBE_HTTP_TIMEOUT)
-            tail = tail_future.result(timeout=PROBE_HTTP_TIMEOUT)
+            head = fetch(path, headers, 0, head_end)
         except _LoginPageResponse:
             raise  # C-11：登录页信号必须上抛给 probe_metadata 翻译，不许吞成 None
         except Exception as exc:  # noqa: BLE001 — 抓字节失败只是「这次头尾没成」
             logger.debug("头尾探测抓取失败 %s: %s", path, exc)
             return None
-    if not head or len(head) != head_n or not tail or len(tail) != tail_n:
+        tail = None
+    else:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            head_future = pool.submit(fetch, path, headers, 0, head_end)
+            tail_future = pool.submit(fetch, path, headers, tail_start, total - 1)
+            try:
+                head = head_future.result(timeout=PROBE_HTTP_TIMEOUT)
+                tail = tail_future.result(timeout=PROBE_HTTP_TIMEOUT)
+            except _LoginPageResponse:
+                raise  # C-11：登录页信号必须上抛给 probe_metadata 翻译，不许吞成 None
+            except Exception as exc:  # noqa: BLE001 — 抓字节失败只是「这次头尾没成」
+                logger.debug("头尾探测抓取失败 %s: %s", path, exc)
+                return None
+    if not head or len(head) != head_n or (not ebml and (not tail or len(tail) != tail_n)):
         logger.debug("头尾探测缺段 %s：head=%s tail=%s",
                      path, len(head or b""), len(tail or b""))
         return None
     suffix = posixpath.splitext(path.split("?", 1)[0])[1][:8] or ".bin"
     fd, tmp = tempfile.mkstemp(prefix="probe-headtail-", suffix=suffix)
     try:
-        os.ftruncate(fd, total)  # 同尺寸稀疏文件：中间全是空洞，不占空间
+        if ebml:
+            os.ftruncate(fd, head_n)  # L-045：截断为头窗，见 EOF 而非零空洞
+        else:
+            os.ftruncate(fd, total)  # 同尺寸稀疏文件：中间全是空洞，不占空间
         os.pwrite(fd, head, 0)
-        os.pwrite(fd, tail, tail_start)
+        if not ebml:
+            os.pwrite(fd, tail, tail_start)
     except OSError as exc:
         logger.debug("头尾探测写临时文件失败 %s: %s", path, exc)
         try:
@@ -2005,14 +2056,26 @@ def probe_metadata(path: str, headers: Optional[dict] = None, size: int = 0,
     _via_headtail = False
     if PROBE_HEADTAIL_ENABLED:
         try:
-            _ht_tmp = _headtail_sparse_temp(path, headers, size)
+            _ht_tmp = _headtail_sparse_temp(path, headers, size, container=container)
         except _LoginPageResponse:
             return _login_result  # C-11：融合预检命中登录页
         if _ht_tmp:
             try:
+                from backend.emby_server import proc_util as _proc_util
+                _ht_timeouts_before = _proc_util.timeout_count()
                 _ht_data = _ffprobe(path, headers, size=size, local_path=_ht_tmp,
                                     probesize=PROBE_HEADTAIL_PROBESIZE,
-                                    analyzeduration=PROBE_HEADTAIL_ANALYZEDURATION)
+                                    analyzeduration=PROBE_HEADTAIL_ANALYZEDURATION,
+                                    timeout=PROBE_HEADTAIL_TIMEOUT_SEC)
+                if _last_ffprobe_timed_out():
+                    # L-045：头尾 ffprobe 超时是探测方法失效（本地临时文件解析
+                    # 不动），与挂载无关——挂载已靠头尾下载自证存活。把它从
+                    # proc_util 的超时计数里摘掉，probe_worker 就不会把它计为
+                    # 挂载超时、误触发 MountBreaker。这里消费该标志无副作用：
+                    # 下一跳 _ffprobe 入口会先清零，MediaInfo 备用探测的判定
+                    # 只看最后一跳。
+                    _proc_util.discard_timeouts(
+                        _proc_util.timeout_count() - _ht_timeouts_before)
                 if _ht_data and _ht_data.get("format"):
                     try:
                         # 合成大小取 ffprobe **自己报的**文件大小：稀疏临时文件与原文件

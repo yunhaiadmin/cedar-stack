@@ -18,7 +18,7 @@ import pytest
 
 from backend.emby_server import scanner
 
-URL = "http://rcd.example/media/big.mkv"
+URL = "http://rcd.example/media/big.mp4"  # L-045 起 mkv 只取头窗（1 次 GET），双取口径改用 mp4 钉
 SIZE = 30 * 1024 * 1024  # > 头 4MiB + 尾 16MiB，走头尾探测
 
 

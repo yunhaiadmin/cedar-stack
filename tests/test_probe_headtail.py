@@ -12,6 +12,9 @@
 4. 任一抓取缺段/短读 → 返回 None（fail-closed），不建残缺的临时文件；
 5. probe_metadata 里拿到 format 就直接用，不再跑后面的三跳；拿不到则回退现行流程；
 6. 临时文件探测完必须删掉。
+
+L-045 起 mkv/webm 只取头窗、临时文件截断为头窗（见 test_probe_l045_sparse_hole.py）；
+本文件改用 .mp4 钉住非 EBML 容器的旧口径（头尾双取、同尺寸稀疏文件）。
 """
 import os
 import threading
@@ -21,7 +24,7 @@ import pytest
 from backend.emby_server import scanner
 
 
-URL = "https://rclone:5572/[drv:]/movies/Big Movie (2021).mkv?sig=abc"
+URL = "https://rclone:5572/[drv:]/movies/Big Movie (2021).mp4?sig=abc"
 HEAD = int(scanner.PROBE_HEADTAIL_HEAD_BYTES)
 TAIL = int(scanner.PROBE_HEADTAIL_TAIL_BYTES)
 TOTAL = HEAD + TAIL + 1024 * 1024  # 比两段窗口之和大 1 MiB，两段才真的错开
@@ -127,7 +130,7 @@ def test_headtail_sparse_layout(monkeypatch, tmp_path):
 
 def test_headtail_local_path_uses_local_reads(monkeypatch, tmp_path):
     """本机/FUSE 路径走两次定长本地读，不走 HTTP。"""
-    real = tmp_path / "movie.mkv"
+    real = tmp_path / "movie.mp4"
     head = b"A" * HEAD
     tail = b"Z" * TAIL
     real.write_bytes(head + b"\x00" * (TOTAL - HEAD - TAIL) + tail)
@@ -227,7 +230,7 @@ def test_probe_metadata_uses_headtail_when_format_found(monkeypatch, tmp_path):
     calls = []
 
     def fake_ffprobe(path, headers=None, size=0, ranged=True, local_path="",
-                     probesize=None, analyzeduration=None):
+                     probesize=None, analyzeduration=None, timeout=None):
         calls.append((local_path, probesize, analyzeduration))
         assert local_path and os.path.exists(local_path), "第零跳走本地稀疏文件"
         assert probesize == scanner.PROBE_HEADTAIL_PROBESIZE
@@ -237,7 +240,7 @@ def test_probe_metadata_uses_headtail_when_format_found(monkeypatch, tmp_path):
                 "streams": []}
 
     monkeypatch.setattr(scanner, "_ffprobe", fake_ffprobe)
-    info = scanner.probe_metadata(URL, {}, size=TOTAL, container="mkv")
+    info = scanner.probe_metadata(URL, {}, size=TOTAL, container="mp4")
     assert info["duration_ticks"] == 7200 * 10_000_000
     # 合成文件算出的 1000 bps 要按 真实大小/(头+尾) 还原
     assert info["bitrate"] == int(1000 * TOTAL / (HEAD + TAIL))
@@ -253,7 +256,7 @@ def test_probe_metadata_falls_back_when_headtail_misses(monkeypatch):
     calls = []
 
     def fake_ffprobe(path, headers=None, size=0, ranged=True, local_path="",
-                     probesize=None, analyzeduration=None):
+                     probesize=None, analyzeduration=None, timeout=None):
         calls.append((ranged, local_path))
         return {"format": {"duration": "60.0"}, "streams": []}
 
@@ -273,7 +276,7 @@ def test_probe_metadata_headtail_respects_disabled_flag(monkeypatch):
     calls = []
 
     def fake_ffprobe(path, headers=None, size=0, ranged=True, local_path="",
-                     probesize=None, analyzeduration=None):
+                     probesize=None, analyzeduration=None, timeout=None):
         calls.append(True)
         return {"format": {"duration": "60.0"}, "streams": []}
 

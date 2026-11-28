@@ -34,7 +34,7 @@ def test_usercontent_download_url_shape():
 def _patch_probe(monkeypatch):
     calls = []
 
-    def fake_ffprobe(path, headers=None, size=0, ranged=True, local_path=""):
+    def fake_ffprobe(path, headers=None, size=0, ranged=True, local_path="", timeout=None):
         calls.append({"ranged": ranged})
         return {}
 

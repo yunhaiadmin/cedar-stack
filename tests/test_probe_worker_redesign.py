@@ -5,6 +5,7 @@
 复现与根因见 CHANGELOG 2.53.0 / 2.55.0；这里钉住修复后的每一条行为。
 """
 import os
+import shutil
 
 os.environ.setdefault("DATABASE_TYPE", "sqlite")
 os.environ.setdefault("REDIS_ENABLED", "false")
@@ -357,6 +358,37 @@ class TestProcessItem:
             assert probe_worker.breaker.snapshot()["mount://8/"]["consecutive_timeouts"] == 1
         finally:
             ev.set()
+            db.close()
+
+    @pytest.mark.skipif(shutil.which("ffprobe") is None,
+                        reason="needs real ffprobe (L-045)")
+    def test_headtail_sparse_hole_does_not_trip_breaker(self, lib, monkeypatch, tmp_path):
+        """L-045 端到端：10GB REMUX 稀疏源走 process_item，修后应 ok 且熔断不动；
+        修前头尾 ffprobe 在空洞里超时、撞上条目预算 -> timeout 且熔断 +1。"""
+        from backend.emby_server import scanner
+        monkeypatch.setattr(probe_worker, "PROBE_ITEM_TIMEOUT_SEC", 5.0)
+        monkeypatch.setattr(scanner, "PROBE_FILE_TIMEOUT", 8.0)
+        fixture = _ROOT / "tests" / "fixtures" / "l045_remux_head.mkv"
+        data = fixture.read_bytes()
+        total = 10 * 1024 * 1024 * 1024
+        src = tmp_path / "remux.mkv"
+        fd = os.open(src, os.O_CREAT | os.O_RDWR | os.O_TRUNC)
+        try:
+            os.ftruncate(fd, total)
+            os.pwrite(fd, data, 0)
+            os.pwrite(fd, data[-1024:], total - 1024)
+        finally:
+            os.close(fd)
+        monkeypatch.setattr(media_probe, "resolve_probe_input",
+                            lambda db, it: ((str(src), {}, total, "mkv"), None))
+        db = SessionLocal()
+        try:
+            i = self._claim(db, lib)
+            assert probe_worker.process_item(i) == "ok"
+            assert probe_worker.breaker.snapshot() == {}
+            it = db.query(em.MediaItem).get(i)
+            assert it.probe_status == "done" and it.duration_ticks > 0
+        finally:
             db.close()
 
     def test_success_writes_back(self, lib, monkeypatch):

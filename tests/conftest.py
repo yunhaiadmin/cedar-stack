@@ -65,6 +65,30 @@ def _xdist_worker_isolation() -> None:
 _xdist_worker_isolation()
 
 
+@pytest.fixture(autouse=True)
+def _reset_io_nice_prefix_cache():
+    """清掉 scanner._io_nice_prefix 的 lru_cache（L-045 暴露的隔离缺陷）。
+
+    该函数带 @lru_cache(maxsize=1)，生产里“启动时探一次”是对的；但测试里
+    有用例把 scanner.shutil_which mock 成“任何命令都返回 /usr/bin/ffprobe”
+    （只为假装 ffprobe 存在），首次调用即把毒化前缀 [ffprobe, -n, 10] 缓存
+    终身——此后同进程内一切真 ffprobe 都被错包成 `ffprobe -n 10 ffprobe …`
+    而报空输出（{}），与 L-045 无关的用例也会因此假失败。每个用例前后各清
+    一次，让前缀在各用例自己的 mock 环境下重新探测、互不污染。
+    """
+    _clear_io_nice_prefix_cache()
+    yield
+    _clear_io_nice_prefix_cache()
+
+
+def _clear_io_nice_prefix_cache() -> None:
+    try:
+        from backend.emby_server import scanner
+        scanner._io_nice_prefix.cache_clear()
+    except Exception:
+        pass
+
+
 @pytest.fixture(scope="module", autouse=True)
 def _reset_worker_db_leaks():
     """worker 级 DB 泄漏复位（#96 冒烟 8 failed 根因：跨文件状态串扰）。
