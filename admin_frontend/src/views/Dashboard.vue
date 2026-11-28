@@ -48,7 +48,7 @@
  * 有效订阅 / 媒体库条目 3 卡，有效订阅改走聚合新 ops part、hint 带 7 天内
  * 到期数；媒体库条目 hint 带今日新增入库）/ 块2 待处理与异常（待办条 +
  * 新增状态条：健康一句话、探测/刮削积压、磁盘余量，数据走 ops part）/
- * 块3 大家在看什么（当前在播 + 今日观影榜前 5 + 求片最多前 5）/
+ * 块3 大家在看什么（当前在播 + 近 7 天观影榜前 5 + 求片最多前 5）/
  * 块4 趋势（指标 tab 新增「新增订阅」）。ops 子项为 null 时各自走占位。
  */
 import { computed, onMounted, ref, watch } from 'vue'
@@ -466,17 +466,17 @@ function fmtMoney(v: number): string {
       </section>
 
       <!--
-        大家在看什么（v5 块3）：今日观影榜前 5（playback.item_ranking）
+        大家在看什么（v5 块3）：近 7 天观影榜前 5（playback.item_ranking）
         + 求片最多前 5（ops.top_requests）；当前在播路数在卡头 meta。
         今日播放次数只在上方今日经营卡出现，这里不重复。
       -->
       <SectionCard title="大家在看什么" :icon="Play" :meta="`当前在播 ${overview?.emby.active_sessions ?? '—'} 路`">
         <div class="watch-grid">
           <div class="watch-col">
-            <div class="watch-sub">今日观影榜</div>
+            <div class="watch-sub">近 7 天观影榜</div>
             <ol v-if="topItems.length" class="rank-list">
               <li v-for="(it, i) in topItems" :key="`${it.name}-${i}`">
-                <span class="rank-name">{{ it.name }}</span>
+                <span class="rank-name">{{ it.series_name ? `《${it.series_name}》${it.name}` : it.name }}</span>
                 <span class="rank-count">{{ it.plays }} 次</span>
               </li>
             </ol>

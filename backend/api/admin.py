@@ -1931,11 +1931,15 @@ def get_playback_stats(
         .all()
     )
 
-    # 热门条目（近 7 天）
+    # 热门条目（近 7 天）：按条目本身聚合，不许按 name 分组——全库所有剧的
+    # 「第 1 集」同名，按 name 分组会并成一行（2026-11-28 生产实测 45 次＝
+    # 22 部不同剧的第一集之和）。episode 行另带 series_name 供前端拼《剧名》。
     item_ranking = (
         db.query(
+            em.MediaItem.id,
             em.MediaItem.name,
             em.MediaItem.item_type,
+            em.MediaItem.series_id,
             func.count(em.PlaybackSession.id).label("plays"),
         )
         .join(em.PlaybackSession, em.PlaybackSession.item_id == em.MediaItem.id)
@@ -1943,11 +1947,25 @@ def get_playback_stats(
                 # PA-037：联结查询的 FROM 是 Join 对象，软删钩子看不见，
                 # 必须自己带 deleted_at 条件，否则已下架条目会进热门榜。
                 em.MediaItem.deleted_at.is_(None))
-        .group_by(em.MediaItem.name, em.MediaItem.item_type)
+        .group_by(em.MediaItem.id, em.MediaItem.name,
+                  em.MediaItem.item_type, em.MediaItem.series_id)
         .order_by(func.count(em.PlaybackSession.id).desc())
         .limit(10)
         .all()
     )
+
+    # episode 行的所属剧名：一次批量取回，避免逐行查库。
+    series_ids = {
+        series_id for _id, _name, item_type, series_id, _plays in item_ranking
+        if item_type == "episode" and series_id is not None
+    }
+    series_names = {}
+    if series_ids:
+        series_names = dict(
+            db.query(em.MediaItem.id, em.MediaItem.name)
+            .filter(em.MediaItem.id.in_(series_ids))
+            .all()
+        )
 
     return {
         "today": {"plays": today_count, "users": today_users},
@@ -1955,8 +1973,17 @@ def get_playback_stats(
             {"username": name, "plays": plays} for name, plays in user_ranking
         ],
         "item_ranking": [
-            {"name": name, "type": item_type, "plays": plays}
-            for name, item_type, plays in item_ranking
+            {
+                "name": name,
+                "type": item_type,
+                "plays": plays,
+                "series_name": (
+                    series_names.get(series_id, "")
+                    if item_type == "episode" and series_id is not None
+                    else ""
+                ),
+            }
+            for _id, name, item_type, series_id, plays in item_ranking
         ],
     }
 

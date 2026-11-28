@@ -814,7 +814,7 @@ export interface OverviewStats {
 export interface PlaybackStats {
   today: { plays: number; users: number }
   user_ranking: { username: string; plays: number }[]
-  item_ranking: { name: string; type: string; plays: number }[]
+  item_ranking: { name: string; type: string; plays: number; series_name: string }[]
 }
 
 // ==================== v2.4.0 运营管理补全 ====================
