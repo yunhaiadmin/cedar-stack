@@ -244,7 +244,7 @@ def test_dual_probe_cleans_up_temp_file(monkeypatch):
     monkeypatch.setattr(scanner, "shutil_which", lambda cmd: "/usr/bin/ffprobe")
     seen = {}
 
-    def fake_ffprobe(path, headers=None, size=0, ranged=True, local_path=""):
+    def fake_ffprobe(path, headers=None, size=0, ranged=True, local_path="", timeout=None):
         seen["local_path"] = local_path
         seen["exists"] = os.path.exists(local_path) if local_path else None
         return {"format": {"duration": "7200.0"}, "streams": []}
@@ -303,7 +303,7 @@ def test_mp4_second_hop_beats_slow_seek(monkeypatch):
     blob = _fake_mp4()
     calls = []
 
-    def fake_ffprobe(path, headers=None, size=0, ranged=True, local_path=""):
+    def fake_ffprobe(path, headers=None, size=0, ranged=True, local_path="", timeout=None):
         calls.append("local" if local_path else "ranged")
         if local_path:
             return {"format": {"duration": "5400.0", "bit_rate": "9000000"},
@@ -322,8 +322,9 @@ def test_mkv_takes_headtail_hop(monkeypatch):
     """头尾探测（正案第 1 步，用户 2026-10-19 亲定）：MKV 也走第零跳。
 
     旧行为「MKV 不该发尾部请求」是双 Range 时代的省流量优化；正案第 1 步改走
-    统一的头尾稀疏文件（4MB 头本就含 MKV 时长），容器不再设门。
-    第零跳拿到 format 后旧的三跳不再跑。
+    统一的头尾探测（4MB 头本就含 MKV 时长），容器不再设门。
+    L-045 起 mkv/webm 的临时文件截断为头窗（不留零空洞），第零跳口径不变：
+    拿到 format 后旧的三跳不再跑。
     """
     _size = int(scanner.PROBE_HEADTAIL_HEAD_BYTES) + int(scanner.PROBE_HEADTAIL_TAIL_BYTES) + (1 << 20)
     blob = b"M" * _size
@@ -331,7 +332,7 @@ def test_mkv_takes_headtail_hop(monkeypatch):
     calls = []
 
     def fake_ffprobe(path, headers=None, size=0, ranged=True, local_path="",
-                     probesize=None, analyzeduration=None):
+                     probesize=None, analyzeduration=None, timeout=None):
         calls.append((ranged, bool(local_path), probesize, analyzeduration))
         if local_path:
             return {"format": {"duration": "1800.0"}, "streams": []}
@@ -352,7 +353,7 @@ def test_falls_back_to_slow_seek_when_dual_range_fails(monkeypatch):
     """双 Range 失手不能把结果搞坏：仍能回退到旧的自由 seek 路径"""
     calls = []
 
-    def fake_ffprobe(path, headers=None, size=0, ranged=True, local_path=""):
+    def fake_ffprobe(path, headers=None, size=0, ranged=True, local_path="", timeout=None):
         if local_path:
             return {}  # 拼出来的文件也没读出 moov
         calls.append(ranged)

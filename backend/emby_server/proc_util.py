@@ -87,6 +87,19 @@ def timeout_count() -> int:
     return int(getattr(_local, "timeouts", 0) or 0)
 
 
+def discard_timeouts(n: int) -> None:
+    """从当前线程的累计超时计数里减掉 ``n`` 次（下限 0）。
+
+    调用方在确认某次超时与“远端/挂载无响应”无关时用（L-045：头尾探测的
+    本地 ffprobe 超时是探测方法失效，挂载已靠头尾下载自证存活）——这样
+    上层按 ``timeout_count()`` 前后相减判超时时，不会把这类超时计为挂载
+    故障、误触发熔断。只动当前线程的计数，不碰其它线程。
+    """
+    if n <= 0:
+        return
+    _local.timeouts = max(0, timeout_count() - int(n))
+
+
 def _kill_group(proc: subprocess.Popen) -> None:
     try:
         os.killpg(proc.pid, signal.SIGKILL)
