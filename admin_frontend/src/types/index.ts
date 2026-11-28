@@ -811,10 +811,23 @@ export interface OverviewStats {
   emby: { total_items: number; active_sessions: number; today_new_items: number }
 }
 
+export interface NowPlayingItem {
+  username: string
+  name: string
+  series_name: string
+  client_name: string
+  device_name: string
+  is_paused: boolean
+  position_ticks: number
+  duration_ticks: number
+  start_time: string
+}
+
 export interface PlaybackStats {
   today: { plays: number; users: number }
   user_ranking: { username: string; plays: number }[]
   item_ranking: { name: string; type: string; plays: number; series_name: string }[]
+  now_playing: NowPlayingItem[]
 }
 
 // ==================== v2.4.0 运营管理补全 ====================

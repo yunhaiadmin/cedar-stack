@@ -1901,6 +1901,8 @@ def get_playback_stats(
     - 今日播放次数 / 今日观看用户数（PlaybackSession 本地表）
     - 用户播放排行（Top 10）
     - 热门条目（Top 10）
+    - 正在看（now_playing）：ended_at 为空的会话，与 overview 的
+      active_sessions 同口径，按最近上报倒序最多 10 条
     """
     from backend.emby_server import models as em
 
@@ -1967,6 +1969,66 @@ def get_playback_stats(
             .all()
         )
 
+    # 正在看（实时）：ended_at 为空即在播，与 overview 的 active_sessions
+    # 同口径（条数须与仪表盘块头「当前在播 N 路」对得上）。先按最近上报
+    # 倒序取会话本体（不联结，避免孤儿行被 join 吃掉导致条数对不上），
+    # 用户名 / 条目 / 剧名再各一次批量取回，不许逐行查库。
+    np_sessions = (
+        db.query(em.PlaybackSession)
+        .filter(em.PlaybackSession.ended_at.is_(None))
+        .order_by(em.PlaybackSession.last_update_at.desc(),
+                  em.PlaybackSession.id.desc())
+        .limit(10)
+        .all()
+    )
+    np_user_ids = {s.user_id for s in np_sessions if s.user_id is not None}
+    np_usernames: dict = {}
+    if np_user_ids:
+        np_usernames = dict(
+            db.query(models.WebUser.id, models.WebUser.username)
+            .filter(models.WebUser.id.in_(np_user_ids))
+            .all()
+        )
+    np_item_ids = {s.item_id for s in np_sessions if s.item_id is not None}
+    np_items: dict = {}
+    if np_item_ids:
+        np_items = {
+            it.id: it
+            for it in db.query(em.MediaItem)
+            .filter(em.MediaItem.id.in_(np_item_ids))
+            .all()
+        }
+    # episode 行的所属剧名：一次批量取回（口径同 item_ranking 的 series_name）。
+    np_series_ids = {
+        it.series_id for it in np_items.values()
+        if it.item_type == "episode" and it.series_id is not None
+    }
+    np_series_names: dict = {}
+    if np_series_ids:
+        np_series_names = dict(
+            db.query(em.MediaItem.id, em.MediaItem.name)
+            .filter(em.MediaItem.id.in_(np_series_ids))
+            .all()
+        )
+
+    def _now_playing_row(s) -> dict:
+        it = np_items.get(s.item_id)
+        return {
+            "username": np_usernames.get(s.user_id, ""),
+            "name": (it.name or "") if it else "",
+            "series_name": (
+                np_series_names.get(it.series_id, "")
+                if it is not None and it.item_type == "episode"
+                and it.series_id is not None
+                else ""
+            ),
+            "client_name": s.client_name or "",
+            "device_name": s.device_name or "",
+            "is_paused": bool(s.is_paused),
+            "position_ticks": int(s.position_ticks or 0),
+            "duration_ticks": int(it.duration_ticks or 0) if it else 0,
+            "start_time": s.start_time.isoformat() if s.start_time else "",
+        }
     return {
         "today": {"plays": today_count, "users": today_users},
         "user_ranking": [
@@ -1985,6 +2047,7 @@ def get_playback_stats(
             }
             for _id, name, item_type, series_id, plays in item_ranking
         ],
+        "now_playing": [_now_playing_row(s) for s in np_sessions],
     }
 
 

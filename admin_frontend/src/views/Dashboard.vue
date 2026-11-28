@@ -273,6 +273,27 @@ const diskText = computed(() => {
 
 const topItems = computed(() => (playback.value?.item_ranking ?? []).slice(0, 5))
 const topRequests = computed(() => ops.value?.top_requests ?? [])
+const nowPlaying = computed(() => playback.value?.now_playing ?? [])
+
+type NowPlayingRow = NonNullable<typeof playback.value>['now_playing'][number]
+
+/** 正在看行标题：《剧名》集名（episode）或片名。 */
+function npTitle(np: NowPlayingRow): string {
+  return np.series_name ? `《${np.series_name}》${np.name}` : np.name
+}
+
+/** 正在看行右侧：客户端/设备名 · 进度百分比 · 已暂停（缺什么省什么）。 */
+function npMeta(np: NowPlayingRow): string {
+  const parts: string[] = []
+  const client = np.client_name || np.device_name
+  if (client) parts.push(client)
+  if (np.duration_ticks > 0) {
+    const pct = Math.min(100, Math.max(0, Math.round((np.position_ticks / np.duration_ticks) * 100)))
+    parts.push(`${pct}%`)
+  }
+  if (np.is_paused) parts.push('已暂停')
+  return parts.join(' · ')
+}
 
 // ==================== 趋势图 ====================
 
@@ -471,6 +492,16 @@ function fmtMoney(v: number): string {
         今日播放次数只在上方今日经营卡出现，这里不重复。
       -->
       <SectionCard title="大家在看什么" :icon="Play" :meta="`当前在播 ${overview?.emby.active_sessions ?? '—'} 路`">
+        <div class="watch-col now-playing">
+          <div class="watch-sub">正在看</div>
+          <ol v-if="nowPlaying.length" class="rank-list">
+            <li v-for="(np, i) in nowPlaying" :key="`np-${np.username}-${np.start_time}-${i}`">
+              <span class="rank-name">{{ np.username }} · {{ npTitle(np) }}</span>
+              <span v-if="npMeta(np)" class="rank-count">{{ npMeta(np) }}</span>
+            </li>
+          </ol>
+          <p v-else class="rank-empty">当前没人在看</p>
+        </div>
         <div class="watch-grid">
           <div class="watch-col">
             <div class="watch-sub">近 7 天观影榜</div>
@@ -791,6 +822,7 @@ html[data-theme='light'] .status-bar {
 
 /* ===== 大家在看什么（v5 块3） ===== */
 .watch-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 28px; }
+.now-playing { margin-bottom: 14px; }
 .watch-sub { font-size: var(--ax-fs-aux-sm); color: var(--au-text-3); margin-bottom: 8px; }
 .rank-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; counter-reset: rank; }
 .rank-list li {
